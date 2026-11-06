@@ -1,3 +1,4 @@
+import { CanvasRuntimeError } from "./canvas-runtime-messages.js";
 import { createHash, randomUUID } from "node:crypto";
 import { mkdir, readFile, realpath, writeFile } from "node:fs/promises";
 import { join, relative, resolve, sep } from "node:path";
@@ -76,7 +77,12 @@ function layersOf(artifacts: CanvasWorkspaceArtifact[]): CanvasArtifactLayer[] {
 	for (const artifact of artifacts) {
 		for (const layer of artifact.layers) {
 			const prior = layers.get(layer.id);
-			if (prior && prior.sha256 !== layer.sha256) throw new Error(`Conflicting canvas artifact identity: ${layer.id}`);
+			if (prior && prior.sha256 !== layer.sha256)
+				throw new CanvasRuntimeError(
+					`Conflicting canvas artifact identity: ${layer.id}`,
+					"error.artifactIdentityConflict",
+					{ id: layer.id },
+				);
 			if (!prior) layers.set(layer.id, layer);
 		}
 	}
@@ -90,11 +96,14 @@ async function trustedArtifactPath(workspace: CanvasWorkspace, path: string, nod
 	const resolved = resolve(path);
 	const parts = relative(runRoot, resolved).split(sep);
 	if (parts.length !== 2 || (nodeId && parts[0] !== nodeId) || !/^[a-zA-Z0-9-]+\.patch$/.test(parts[1] ?? "")) {
-		throw new Error("Untrusted canvas artifact path");
+		throw new CanvasRuntimeError("Untrusted canvas artifact path", "error.untrustedArtifactPath");
 	}
 	safeId(parts[0]);
 	if (!inside(runRoot, resolved) || (await realpath(resolved)) !== resolved || (await realpath(root)) !== root) {
-		throw new Error("Untrusted canvas artifact path: canonical location mismatch");
+		throw new CanvasRuntimeError(
+			"Untrusted canvas artifact path: canonical location mismatch",
+			"error.artifactLocationMismatch",
+		);
 	}
 	return resolved;
 }
@@ -109,14 +118,22 @@ async function assertWorkspaceIdentity(workspace: CanvasWorkspace, signal?: Abor
 		resolve(workspace.worktreePath) !== expected ||
 		(await realpath(expected)) !== expected
 	) {
-		throw new Error("Canvas worktree identity mismatch: canonical path changed");
+		throw new CanvasRuntimeError(
+			"Canvas worktree identity mismatch: canonical path changed",
+			"error.worktreePathChanged",
+		);
 	}
 	try {
 		const identity = workspaceIdentities.get(workspace);
-		if (!identity) throw new Error("Unregistered canvas workspace");
+		if (!identity) throw new CanvasRuntimeError("Unregistered canvas workspace", "error.workspaceUnregistered");
 		await verifyWorktreeIdentity(expected, workspace.repoRoot, signal, identity.gitDir, identity.commonDir);
 	} catch (error) {
-		throw new Error("Canvas worktree identity mismatch: Git repository changed", { cause: error });
+		throw new CanvasRuntimeError(
+			"Canvas worktree identity mismatch: Git repository changed",
+			"error.worktreeRepoChanged",
+			undefined,
+			{ cause: error },
+		);
 	}
 }
 
@@ -124,7 +141,8 @@ async function assertWorkspaceIdentity(workspace: CanvasWorkspace, signal?: Abor
 export async function prepareCanvasWorkspace(options: PrepareCanvasWorkspaceOptions): Promise<CanvasWorkspace> {
 	checkSignal(options.signal);
 	for (const value of [options.baseCwd, options.cwd ?? ""]) {
-		if (/^(?:ssh:\/\/|[^/\\]+@[^:]+:)/i.test(value)) throw new Error("Remote SSH canvas workspaces are not supported");
+		if (/^(?:ssh:\/\/|[^/\\]+@[^:]+:)/i.test(value))
+			throw new CanvasRuntimeError("Remote SSH canvas workspaces are not supported", "error.remoteUnsupported");
 	}
 	const baseCwd = resolve(options.baseCwd);
 	const cwd = resolve(baseCwd, options.cwd ?? ".");
@@ -144,25 +162,41 @@ export async function prepareCanvasWorkspace(options: PrepareCanvasWorkspaceOpti
 		repoRoot = (await git(baseCwd, ["rev-parse", "--show-toplevel"], options.signal)).trim();
 	} catch (error) {
 		checkSignal(options.signal);
-		throw new Error("Canvas isolation requires a local Git repository", { cause: error });
+		throw new CanvasRuntimeError(
+			"Canvas isolation requires a local Git repository",
+			"error.localGitRequired",
+			undefined,
+			{ cause: error },
+		);
 	}
 	repoRoot = await realpath(repoRoot);
 	const canonicalCwd = await canonicalPath(cwd);
 	workspace.dataDir = await canonicalPath(workspace.dataDir);
-	if (!inside(repoRoot, canonicalCwd)) throw new Error("Canvas cwd must be within the baseline repository");
+	if (!inside(repoRoot, canonicalCwd))
+		throw new CanvasRuntimeError("Canvas cwd must be within the baseline repository", "error.cwdOutsideRepo");
 	if (inside(repoRoot, workspace.dataDir))
-		throw new Error("Canvas isolation dataDir must be outside the baseline repository");
+		throw new CanvasRuntimeError(
+			"Canvas isolation dataDir must be outside the baseline repository",
+			"error.dataDirInsideRepo",
+		);
 	if ((await git(repoRoot, ["status", "--porcelain", "--untracked-files=all"], options.signal)).trim()) {
-		throw new Error("Canvas isolation refuses a dirty baseline; commit or stash changes explicitly first");
+		throw new CanvasRuntimeError(
+			"Canvas isolation refuses a dirty baseline; commit or stash changes explicitly first",
+			"error.dirtyBaseline",
+		);
 	}
 	const requestedBase = options.baseCommit ?? upstreamArtifacts[0]?.baseCommit ?? "HEAD";
-	if (requestedBase.startsWith("-")) throw new Error("Invalid canvas base commit");
+	if (requestedBase.startsWith("-"))
+		throw new CanvasRuntimeError("Invalid canvas base commit", "error.invalidBaseCommit");
 	const baseCommit = (
 		await git(repoRoot, ["rev-parse", "--verify", `${requestedBase}^{commit}`], options.signal)
 	).trim();
 	for (const artifact of upstreamArtifacts) {
 		if (resolve(artifact.repoRoot) !== resolve(repoRoot) || artifact.baseCommit !== baseCommit) {
-			throw new Error("Canvas upstream artifacts must share the repository and baseline commit");
+			throw new CanvasRuntimeError(
+				"Canvas upstream artifacts must share the repository and baseline commit",
+				"error.upstreamBaselineMismatch",
+			);
 		}
 	}
 	const patches: { layer: CanvasArtifactLayer; bytes: Buffer }[] = [];
@@ -171,7 +205,7 @@ export async function prepareCanvasWorkspace(options: PrepareCanvasWorkspaceOpti
 			(artifact.graphId && artifact.graphId !== workspace.graphId) ||
 			(artifact.runId && artifact.runId !== workspace.runId)
 		) {
-			throw new Error("Untrusted canvas artifact graph/run");
+			throw new CanvasRuntimeError("Untrusted canvas artifact graph/run", "error.untrustedArtifactRun");
 		}
 		await trustedArtifactPath(workspace, artifact.patchPath, artifact.nodeId);
 	}
@@ -184,17 +218,20 @@ export async function prepareCanvasWorkspace(options: PrepareCanvasWorkspaceOpti
 			!/^[a-f0-9]{40,64}$/.test(tree ?? "") ||
 			extra.length
 		) {
-			throw new Error("Untrusted canvas artifact layer identity");
+			throw new CanvasRuntimeError("Untrusted canvas artifact layer identity", "error.untrustedArtifactLayer");
 		}
 		const patchPath = await trustedArtifactPath(workspace, layer.patchPath, safeId(nodeId));
 		const bytes = await readFile(patchPath, { signal: options.signal });
 		if (createHash("sha256").update(bytes).digest("hex") !== layer.sha256)
-			throw new Error(`Canvas artifact checksum mismatch: ${layer.id}`);
+			throw new CanvasRuntimeError(`Canvas artifact checksum mismatch: ${layer.id}`, "error.artifactChecksum", {
+				id: layer.id,
+			});
 		patches.push({ layer, bytes });
 	}
 	const worktreePath = workspaceDir(workspace, "workspaces");
 	await mkdir(resolve(worktreePath, ".."), { recursive: true });
-	if ((await canonicalPath(worktreePath)) !== worktreePath) throw new Error("Canvas worktree path is redirected");
+	if ((await canonicalPath(worktreePath)) !== worktreePath)
+		throw new CanvasRuntimeError("Canvas worktree path is redirected", "error.worktreeRedirected");
 	await createDetachedWorktree(repoRoot, worktreePath, baseCommit, options.signal);
 	// Once created, failures deliberately retain the workspace for inspection. Never remove dirty outputs.
 	for (const { layer, bytes } of patches) {
@@ -205,14 +242,17 @@ export async function prepareCanvasWorkspace(options: PrepareCanvasWorkspaceOpti
 			await git(worktreePath, ["apply", "-"], options.signal, undefined, bytes);
 		} catch (error) {
 			checkSignal(options.signal);
-			throw new Error(`Canvas upstream artifact conflict: ${layer.id}; workspace retained at ${worktreePath}`, {
-				cause: error,
-			});
+			throw new CanvasRuntimeError(
+				`Canvas upstream artifact conflict: ${layer.id}; workspace retained at ${worktreePath}`,
+				"error.artifactConflict",
+				{ id: layer.id, path: worktreePath },
+				{ cause: error },
+			);
 		}
 	}
 	const preparedCwd = join(worktreePath, relative(repoRoot, canonicalCwd));
 	if (!inside(worktreePath, await canonicalPath(preparedCwd)))
-		throw new Error("Canvas integrated cwd escapes its worktree");
+		throw new CanvasRuntimeError("Canvas integrated cwd escapes its worktree", "error.cwdEscapesWorktree");
 	checkSignal(options.signal);
 	const prepared: CanvasWorkspace = {
 		...workspace,
@@ -240,7 +280,10 @@ export async function captureCanvasWorkspaceArtifact(
 		!workspace.baseCommit ||
 		!workspace.inputTree
 	) {
-		throw new Error("Canvas artifact capture requires a prepared isolated workspace");
+		throw new CanvasRuntimeError(
+			"Canvas artifact capture requires a prepared isolated workspace",
+			"error.captureRequiresWorkspace",
+		);
 	}
 	await assertWorkspaceIdentity(workspace, options.signal);
 	const outputTree = await snapshotTree(workspace.worktreePath, workspace.dataDir, options.signal);
@@ -252,7 +295,8 @@ export async function captureCanvasWorkspaceArtifact(
 	);
 	const directory = workspaceDir(workspace, "artifacts");
 	await mkdir(directory, { recursive: true });
-	if ((await realpath(directory)) !== directory) throw new Error("Untrusted canvas artifact output directory");
+	if ((await realpath(directory)) !== directory)
+		throw new CanvasRuntimeError("Untrusted canvas artifact output directory", "error.untrustedArtifactOutput");
 	// Immutable capture paths keep already-prepared consumers independent of subsequent captures.
 	const patchPath = join(directory, `${randomUUID()}.patch`);
 	checkSignal(options.signal);
@@ -282,14 +326,17 @@ export async function cleanupCanvasWorkspace(
 	checkSignal(options.signal);
 	if (!workspace.isolated || !workspace.worktreePath || !workspace.repoRoot || !workspace.baseCommit) return;
 	if (resolve(workspace.worktreePath) !== workspaceDir(workspace, "workspaces"))
-		throw new Error("Invalid canvas cleanup path");
+		throw new CanvasRuntimeError("Invalid canvas cleanup path", "error.invalidCleanupPath");
 	await assertWorkspaceIdentity(workspace, options.signal);
 	const head = (await git(workspace.worktreePath, ["rev-parse", "HEAD"], options.signal)).trim();
 	if (
 		head !== workspace.baseCommit ||
 		(await git(workspace.worktreePath, ["status", "--porcelain", "--untracked-files=all"], options.signal)).trim()
 	) {
-		throw new Error("Canvas workspace has pending artifacts or commits; retained for explicit adoption");
+		throw new CanvasRuntimeError(
+			"Canvas workspace has pending artifacts or commits; retained for explicit adoption",
+			"error.pendingArtifacts",
+		);
 	}
 	await git(workspace.repoRoot, ["worktree", "remove", workspace.worktreePath], options.signal);
 	workspaceIdentities.delete(workspace);

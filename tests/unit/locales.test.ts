@@ -5,7 +5,8 @@
 import { describe, expect, it } from "vitest";
 import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
-import { en, zh } from "../../web/src/i18n.js";
+import { en, zh } from "../../web/src/i18n/catalog.js";
+import { extractPlaceholders as placeholders, readCatalog } from "../../scripts/lib/i18n-catalog.mjs";
 import { resolveSystemDefaultLocale } from "../../server/locales.js";
 
 interface Pack {
@@ -23,11 +24,6 @@ const packs = new Map<string, Pack>();
 for (const f of files) {
 	const p = JSON.parse(readFileSync(join(dir, f), "utf8")) as Pack;
 	packs.set(p.code, p);
-}
-
-/** 与 i18n.tsx 的 t() 保持一致的占位符提取（marker 名只取到冒号前，示例标题允许本地化）。 */
-function placeholders(s: string): string[] {
-	return [...s.matchAll(/\$\{pwd\}|\{\{[a-z]+\}\}|\{\$?[a-zA-Z]+\}|\[\[[a-z_/-]+/g)].map((m) => m[0]).sort();
 }
 
 describe("language packs", () => {
@@ -65,6 +61,14 @@ describe("language packs", () => {
 		expect(zhKeys.length).toBeGreaterThan(800);
 		for (const [code, p] of packs) {
 			expect(Object.keys(p.strings), code).toEqual(zhKeys);
+		}
+	});
+
+	it("已翻译模块源码在 flat 下载包中逐 key 生效", () => {
+		for (const [code, messages] of readCatalog().translations) {
+			const pack = packs.get(code);
+			expect(pack, code).toBeDefined();
+			for (const [key, text] of messages) expect(pack!.strings[key], `${code}.${key}`).toBe(text);
 		}
 	});
 

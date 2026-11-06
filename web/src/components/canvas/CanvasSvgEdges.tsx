@@ -1,3 +1,5 @@
+import { useT } from "../../i18n";
+import { getEdgeTypeLabels } from "./canvas-i18n";
 /**
  * CanvasSvgEdges.tsx — 画布 SVG 贝塞尔曲线连线层。
  *
@@ -29,6 +31,8 @@ export function CanvasSvgEdges({
 	onDeleteEdge,
 	onUpdateEdge,
 }: CanvasSvgEdgesProps) {
+	const t = useT();
+	const edgeTypeLabels = getEdgeTypeLabels(t);
 	const nodeMap = useMemo(() => new Map(nodes.map((n) => [n.id, n])), [nodes]);
 	/** 双击改备注：正在编辑的边 + 输入框草稿 */
 	const [editingEdgeId, setEditingEdgeId] = useState<string | null>(null);
@@ -103,7 +107,7 @@ export function CanvasSvgEdges({
 					>
 						{/* 加粗透明命中区域，方便鼠标交互 */}
 						<path d={d} fill="none" stroke="transparent" strokeWidth="20" className="canvas-edge-hitbox">
-							<title>双击写备注，悬停显示删除按钮</title>
+							<title>{t("canvas.edges.editHint")}</title>
 						</path>
 
 						{/* 运行中外光晕层 */}
@@ -150,7 +154,7 @@ export function CanvasSvgEdges({
 								<div
 									className="canvas-edge-badge"
 									style={hasEdgeLabel || isEditingEdge ? undefined : { justifyContent: "center", padding: "2px 4px" }}
-									title={edge.label && edge.label.trim() ? undefined : "双击写备注，× 删除连线"}
+									title={edge.label && edge.label.trim() ? undefined : t("canvas.edges.editDeleteHint")}
 									onDoubleClick={(e) => {
 										if ((e.target as HTMLElement).closest("button,input")) return;
 										e.stopPropagation();
@@ -173,19 +177,19 @@ export function CanvasSvgEdges({
 											onClick={(e) => e.stopPropagation()}
 											onPointerDown={(e) => e.stopPropagation()}
 											onDoubleClick={(e) => e.stopPropagation()}
-											placeholder="写备注…"
+											placeholder={t("canvas.edges.notePlaceholder")}
 										/>
 									) : edge.label && edge.label.trim() ? (
 										<span
 											className="canvas-edge-text"
 											title={
 												(edge.label ? edge.label + " ｜ " : "") +
-												outPortLabel(edge.sourcePort) +
+												outPortLabel(edge.sourcePort, t) +
 												" → " +
-												inPortLabel(edge.targetPort) +
-												"（" +
-												edge.type +
-												"）"
+												inPortLabel(edge.targetPort, t) +
+												" (" +
+												edgeTypeLabels[edge.type] +
+												")"
 											}
 											onDoubleClick={(e) => {
 												e.stopPropagation();
@@ -199,7 +203,7 @@ export function CanvasSvgEdges({
 										<button
 											type="button"
 											className="canvas-edge-del"
-											title="删除此连线"
+											title={t("canvas.edges.delete")}
 											onClick={(e) => {
 												e.stopPropagation();
 												onDeleteEdge(edge.id);

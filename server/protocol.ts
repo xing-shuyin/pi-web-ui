@@ -1403,11 +1403,18 @@ export type CanvasEdgeType =
 export type CanvasNodeLogKind =
 	"prompt" | "text" | "tool" | "error" | "steer" | "handoff" | "review" | "system" | "done";
 
+/** Localize server-owned Canvas messages at the viewing client; keep text as a legacy fallback. */
+export interface CanvasMessage {
+	key: string;
+	vars?: Record<string, string | number>;
+}
+
 export interface CanvasNodeLogEntry {
 	id: string;
 	ts: number;
 	kind: CanvasNodeLogKind;
 	text: string;
+	message?: CanvasMessage;
 	toolName?: string;
 }
 
@@ -1432,10 +1439,12 @@ export interface CanvasNode {
 	status: CanvasNodeStatus;
 	activeConvId?: string;
 	currentAction?: string;
+	currentActionMessage?: CanvasMessage;
 	lastOutputSummary?: string;
 	/** AI 裁决结论（condition 开 aiJudge 后由模型写入）：true=成立边，false=不成立边；与关键词判定完全独立，不混用 */
 	aiVerdict?: boolean;
 	error?: string;
+	errorMessage?: CanvasMessage;
 	runId?: string;
 	attempt?: number;
 	artifact?: CanvasArtifact;
@@ -4554,6 +4563,7 @@ export type ServerMessage =
 			type: "canvas_error";
 			code: "rev_conflict" | "not_found" | "invalid_graph" | "execution_error" | "save_failed";
 			message: string;
+			messageI18n?: CanvasMessage;
 			graphId?: string;
 			graph?: CanvasGraph;
 			requestId?: string;
@@ -4564,8 +4574,10 @@ export type ServerMessage =
 			nodeId: string;
 			event: "started" | "progress" | "action" | "done" | "error" | "paused";
 			currentAction?: string;
+			currentActionMessage?: CanvasMessage;
 			summary?: string;
 			error?: string;
+			errorMessage?: CanvasMessage;
 	  }
 	| {
 			type: "canvas_node_log";

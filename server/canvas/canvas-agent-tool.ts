@@ -6,6 +6,7 @@
  * 运行与调试通过注入的 CanvasOrchestrator；编辑走版本检查与严格校验，成功后广播。
  * 运行失败广播明确错误，状态与证据由调度器统一持久化。
  */
+import { canvasErrorMessage } from "./canvas-runtime-messages.js";
 import { Type } from "typebox";
 import { defineTool, type ToolDefinition } from "@earendil-works/pi-coding-agent";
 import { pick, type ServerLang } from "../i18n.js";
@@ -755,6 +756,7 @@ export function makeCanvasTool(host: CanvasToolHost, lang?: () => ServerLang): T
 									code: "execution_error",
 									graphId,
 									message: (error as Error).message,
+									messageI18n: canvasErrorMessage(error),
 								});
 							});
 						return text(
@@ -781,6 +783,7 @@ export function makeCanvasTool(host: CanvasToolHost, lang?: () => ServerLang): T
 									code: "execution_error",
 									graphId,
 									message: (error as Error).message,
+									messageI18n: canvasErrorMessage(error),
 								});
 							});
 						return text(

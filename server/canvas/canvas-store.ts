@@ -4,6 +4,7 @@
  * 画布工程存放在 <dataDir>/canvas/<graphId>.json 中。
  * 提供画布的增删改查、列表摘要、以及内置开箱即用模板。
  */
+import { CanvasRuntimeError, canvasRuntimeMessage } from "./canvas-runtime-messages.js";
 import { existsSync, mkdirSync, readdirSync, readFileSync, unlinkSync } from "node:fs";
 import { join } from "node:path";
 import { writeJsonAtomicSync } from "../atomic-file.js";
@@ -14,7 +15,7 @@ export function createDefaultCanvasGraph(id = "default"): CanvasGraph {
 	const now = Date.now();
 	return {
 		id,
-		name: "开发 · 测试 · 人工验收",
+		name: "Develop · Test · Human acceptance",
 		viewport: { x: 50, y: 50, zoom: 1 },
 		status: "idle",
 		createdAt: now,
@@ -22,7 +23,7 @@ export function createDefaultCanvasGraph(id = "default"): CanvasGraph {
 		nodes: [
 			{
 				id: "node_architect",
-				title: "需求与验收条件",
+				title: "Requirements and acceptance criteria",
 				role: "trigger",
 				x: 80,
 				y: 180,
@@ -31,13 +32,13 @@ export function createDefaultCanvasGraph(id = "default"): CanvasGraph {
 				model: "",
 				cwd: ".",
 				useWorktree: false,
-				config: { payload: "请填写任务目标、修改范围与验收条件，再运行流程。" },
-				instruction: "将任务目标与验收条件交接下游。",
+				config: { payload: "Enter the task objective, scope, and acceptance criteria before running the workflow." },
+				instruction: "Pass the task objective and acceptance criteria to the next node.",
 				status: "idle",
 			},
 			{
 				id: "node_fe",
-				title: "实现工程师",
+				title: "Implementation engineer",
 				role: "coder",
 				x: 480,
 				y: 60,
@@ -46,13 +47,15 @@ export function createDefaultCanvasGraph(id = "default"): CanvasGraph {
 				model: "",
 				cwd: ".",
 				useWorktree: false,
-				systemPromptOverride: "根据任务与验收条件实现最小必要改动，检查现有约定并提供文件、验证命令和结果。",
-				instruction: "完成上游任务 {{上游摘要}}，交付可验证的实现与完整证据。",
+				systemPromptOverride:
+					"Make the smallest necessary changes to satisfy the task and acceptance criteria. Check existing conventions and report files, verification commands, and results.",
+				instruction:
+					"Complete the upstream task {{upstream}} and deliver a verifiable implementation with complete evidence.",
 				status: "idle",
 			},
 			{
 				id: "node_be",
-				title: "测试与代码审查",
+				title: "Testing and code review",
 				role: "tester",
 				x: 880,
 				y: 180,
@@ -61,13 +64,15 @@ export function createDefaultCanvasGraph(id = "default"): CanvasGraph {
 				model: "",
 				cwd: ".",
 				useWorktree: false,
-				systemPromptOverride: "审查实现，运行相关检查，明确记录通过、失败和未验证项。不得编造测试结果。",
-				instruction: "验证上游产物 {{上游摘要}}，提供检查命令、结果和剩余风险交给人工验收。",
+				systemPromptOverride:
+					"Review the implementation and run relevant checks. Record passing, failing, and unverified items explicitly. Never fabricate test results.",
+				instruction:
+					"Verify upstream deliverables {{upstream}} and provide commands, results, and remaining risks for human acceptance.",
 				status: "idle",
 			},
 			{
 				id: "node_qa",
-				title: "人工验收",
+				title: "Human acceptance",
 				role: "human",
 				x: 1280,
 				y: 180,
@@ -76,7 +81,8 @@ export function createDefaultCanvasGraph(id = "default"): CanvasGraph {
 				model: "",
 				cwd: ".",
 				useWorktree: false,
-				instruction: "检查实现与测试证据，批准完成或手动调整流程后重跑。",
+				instruction:
+					"Check the implementation and test evidence. Approve completion or adjust the workflow and run it again.",
 				status: "idle",
 			},
 		],
@@ -86,21 +92,21 @@ export function createDefaultCanvasGraph(id = "default"): CanvasGraph {
 				sourceNodeId: "node_architect",
 				targetNodeId: "node_fe",
 				type: "handoff",
-				label: "任务与验收条件",
+				label: "Task and acceptance criteria",
 			},
 			{
 				id: "edge_fe_to_be",
 				sourceNodeId: "node_fe",
 				targetNodeId: "node_be",
 				type: "handoff",
-				label: "实现与验证证据",
+				label: "Implementation and verification evidence",
 			},
 			{
 				id: "edge_be_to_qa",
 				sourceNodeId: "node_be",
 				targetNodeId: "node_qa",
 				type: "handoff",
-				label: "检查结果与待验收产物",
+				label: "Check results and deliverables for acceptance",
 			},
 		],
 	};
@@ -116,7 +122,10 @@ export function isSafeGraphId(id: unknown): id is string {
 }
 
 function assertSafeGraphId(id: string): void {
-	if (!isSafeGraphId(id)) throw new Error(`Invalid canvas graph id: ${JSON.stringify(id)}`);
+	if (!isSafeGraphId(id))
+		throw new CanvasRuntimeError(`Invalid canvas graph id: ${JSON.stringify(id)}`, "error.invalidGraphId", {
+			id: JSON.stringify(id),
+		});
 }
 
 /** 确保画布存储目录存在 */
@@ -179,7 +188,7 @@ export function loadCanvasGraph(dataDir: string, id: string): CanvasGraph {
 			saveCanvasGraph(dataDir, def);
 			return def;
 		}
-		throw new Error(`Canvas graph not found: ${id}`);
+		throw new CanvasRuntimeError(`Canvas graph not found: ${id}`, "error.graphNotFound", { id });
 	}
 	return JSON.parse(readFileSync(path, "utf8")) as CanvasGraph;
 }
@@ -233,6 +242,8 @@ export function saveCanvasGraph(
 const RUNTIME_FIELDS = [
 	"status",
 	"currentAction",
+	"currentActionMessage",
+	"errorMessage",
 	"lastOutputSummary",
 	"error",
 	"aiVerdict",
@@ -299,6 +310,7 @@ export function markInterruptedCanvasRuns(dataDir: string): void {
 				if (node.status === "running" || node.status === "queued") {
 					node.status = "paused";
 					node.currentAction = "Server restarted; run interrupted";
+					node.currentActionMessage = canvasRuntimeMessage("action.interrupted");
 				}
 			writeJsonAtomicSync(path, graph);
 		} catch (error) {

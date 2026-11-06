@@ -1,7 +1,7 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import type { CanvasGraph, CanvasNode, CanvasNodeRole } from "../../types";
-import { ROLE_METAS, ROLE_FIELDS } from "./CanvasTypes";
-import { useCanvasT } from "./canvas-i18n";
+import { getRoleMetas, getRoleFields } from "./CanvasTypes";
+import { useT } from "../../i18n";
 import { autoLayout } from "./canvas-p0";
 
 export interface CanvasAiBarProps {
@@ -53,7 +53,9 @@ export function CanvasAiBar({
 	defaultModel,
 	defaultCwd = ".",
 }: CanvasAiBarProps) {
-	const t = useCanvasT();
+	const t = useT();
+	const ROLE_METAS = useMemo(() => getRoleMetas(t), [t]);
+	const ROLE_FIELDS = useMemo(() => getRoleFields(t), [t]);
 	const [text, setText] = useState("");
 	const [open, setOpen] = useState(false);
 	const handleGenerate = () => {
@@ -64,7 +66,7 @@ export function CanvasAiBar({
 		// 起始触发器
 		nodes.push({
 			id: `n_${now}_trigger`,
-			title: "开始",
+			title: t("canvas.defaults.startNode"),
 			role: "trigger",
 			x: 80,
 			y: 80,
@@ -81,7 +83,7 @@ export function CanvasAiBar({
 			const nid = `n_${now}_${i}_${Math.random().toString(36).slice(2, 6)}`;
 			const node: CanvasNode = {
 				id: nid,
-				title: s.slice(0, 20) || meta.labelZh,
+				title: s.slice(0, 20) || meta.label,
 				role,
 				x: 80,
 				y: 80,
@@ -92,7 +94,8 @@ export function CanvasAiBar({
 				useWorktree: false,
 				status: "idle",
 			};
-			if (meta?.needsLlm) node.instruction = `${s}。参考{{上游摘要}}完成本步，输出结构化交付。`;
+			if (meta?.needsLlm)
+				node.instruction = `${s}. Complete this step using {{upstream}} and return a structured deliverable.`;
 			const defaults: Record<string, string | number | boolean> = {};
 			for (const f of ROLE_FIELDS[role] ?? []) {
 				if (f.default !== undefined) defaults[f.key] = f.default;
@@ -117,7 +120,7 @@ export function CanvasAiBar({
 		}));
 		onApply({
 			id: `graph_${now}_${Math.random().toString(36).slice(2, 6)}`,
-			name: text.slice(0, 24) || "AI 生成流水线",
+			name: text.slice(0, 24) || t("canvas.defaults.aiWorkflow"),
 			viewport: { x: 60, y: 60, zoom: 1 },
 			nodes: laid,
 			edges,
@@ -135,12 +138,9 @@ export function CanvasAiBar({
 				type="button"
 				className="canvas-ai-fab"
 				onClick={() => setOpen(true)}
-				title={t(
-					"按关键词生成串行步骤，执行前请检查指令",
-					"Generate sequential steps from keywords; review instructions before running",
-				)}
+				title={t("canvas.aiBar.generateSequentialStepsFromKeywordsReviewInstructionsBefore")}
 			>
-				{t("✨ 生成流程", "✨ Generate workflow")}
+				{t("canvas.aiBar.generateWorkflow")}
 			</button>
 		);
 	}
@@ -153,11 +153,11 @@ export function CanvasAiBar({
 					if (e.key === "Enter") handleGenerate();
 					if (e.key === "Escape") setOpen(false);
 				}}
-				placeholder="例：先调研方案，再编码实现，然后测试，最后审查汇总"
+				placeholder="Example: research a solution, implement it, test it, then review and summarize"
 				autoFocus
 			/>
 			<button type="button" className="canvas-btn primary" onClick={handleGenerate} disabled={!text.trim()}>
-				{t("关键词生成", "From keywords")}
+				{t("canvas.aiBar.fromKeywords")}
 			</button>
 			<button
 				type="button"
@@ -168,12 +168,12 @@ export function CanvasAiBar({
 					setText("");
 				}}
 				disabled={!text.trim() || smartPending}
-				title="发给当前对话的 AI，按需求智能拆工作流（回包确认后落图）"
+				title={t("canvas.aiBar.smartGenerateHint")}
 			>
-				{smartPending ? t("等待 AI…", "Waiting for AI…") : t("🤖 AI 生成", "🤖 From AI")}
+				{smartPending ? t("canvas.aiBar.waitingForAI") : t("canvas.aiBar.fromAI")}
 			</button>
 			<button type="button" className="canvas-btn" onClick={() => setOpen(false)}>
-				{t("取消", "Cancel")}
+				{t("canvas.aiBar.cancel")}
 			</button>
 		</div>
 	);

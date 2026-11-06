@@ -1,3 +1,5 @@
+import { useT } from "../../i18n";
+import { formatCanvasMessage } from "./canvas-i18n";
 /**
  * CanvasStudio.tsx — 智能体画布工作室 (Canvas Studio) 主视窗。
  *
@@ -29,8 +31,8 @@ import { autoLayout, HistoryStack, computeMinimap, fitCanvasViewport } from "./c
 import { CanvasNodeCard } from "./CanvasNodeCard";
 import { CanvasNodeDrawer } from "./CanvasNodeDrawer";
 import { CanvasToolbar } from "./CanvasToolbar";
-import { SQUAD_TEMPLATES } from "./CanvasTemplates";
-import { ROLE_METAS, ROLE_FIELDS, isRoleImplemented } from "./CanvasTypes";
+import { getSquadTemplates } from "./CanvasTemplates";
+import { getRoleMetas, getRoleFields, isRoleImplemented } from "./CanvasTypes";
 import { CanvasClient } from "./canvas-client";
 import { appSend } from "../../app-globals";
 import { FiPlus, FiUsers } from "react-icons/fi";
@@ -62,13 +64,17 @@ export function CanvasStudio({
 	currentCwd = ".",
 	active = true,
 }: CanvasStudioProps) {
+	const t = useT();
+	const ROLE_METAS = useMemo(() => getRoleMetas(t), [t]);
+	const ROLE_FIELDS = useMemo(() => getRoleFields(t), [t]);
+	const SQUAD_TEMPLATES = useMemo(() => getSquadTemplates(t), [t]);
 	const clientRef = useRef<CanvasClient | null>(null);
 	const requestTimers = useRef(new Map<string, ReturnType<typeof setTimeout>>());
 
 	// 画布工程全量状态
 	const [graph, setGraph] = useState<CanvasGraph>(() => ({
 		id: CanvasClient.readLastGraphId(),
-		name: "加载中…",
+		name: t("canvas.studio.loading"),
 		nodes: [],
 		edges: [],
 		viewport: { x: 60, y: 60, zoom: 1 },
@@ -121,6 +127,7 @@ export function CanvasStudio({
 	// 未保存更改追踪
 	const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
 	const draftState = useRef(new CanvasDraftState(typeof localStorage === "undefined" ? undefined : localStorage));
+	draftState.current.setTranslate(t);
 	if (!draftState.current.baseline) draftState.current.loaded(graph);
 	const afterSaveRef = useRef<{ graphId: string; action: () => void } | null>(null);
 	const [saveNotice, setSaveNotice] = useState("");
@@ -193,9 +200,9 @@ export function CanvasStudio({
 					requestId,
 					setTimeout(() => {
 						requestTimers.current.delete(requestId);
-						if (draftState.current.fail(requestId, "服务器确认超时")) {
+						if (draftState.current.fail(requestId, t("canvas.studio.confirmationTimeout"))) {
 							afterSaveRef.current = null;
-							setSaveNotice("服务器确认超时，草稿已保留。请重试保存或重新选择工程。");
+							setSaveNotice(t("canvas.studio.confirmationTimeoutHint"));
 						}
 					}, 15000),
 				);
@@ -209,7 +216,7 @@ export function CanvasStudio({
 			}
 			return appSend(msg);
 		},
-		[propSend],
+		[propSend, t],
 	);
 
 	// 初始化专用连接并订阅消息
@@ -225,7 +232,7 @@ export function CanvasStudio({
 			afterSaveRef.current = null;
 			for (const timer of requestTimers.current.values()) clearTimeout(timer);
 			requestTimers.current.clear();
-			setSaveNotice("画布连接已断开，保存结果未知；草稿已保留，重连后将核对服务器版本。");
+			setSaveNotice(t("canvas.studio.disconnectedHint"));
 		});
 		client.onLoadRequest = (request) => {
 			draftState.current.pendingLoad = { graphId: request.id, requestId: request.requestId! };
@@ -271,7 +278,7 @@ export function CanvasStudio({
 			setCustomCards(msg.cards ?? []);
 		} else if (msg.type === "canvas_error") {
 			if (!msg.requestId && msg.code === "execution_error" && msg.graphId === graphIdRef.current) {
-				setSaveNotice("运行失败：" + msg.message);
+				setSaveNotice(t("canvas.studio.runFailed", { name: formatCanvasMessage(msg.messageI18n, msg.message, t) }));
 				return;
 			}
 			const pendingLoad = draftState.current.pendingLoad;
@@ -281,16 +288,18 @@ export function CanvasStudio({
 				pendingLoad.requestId === msg.requestId &&
 				pendingLoad.graphId !== "default"
 			) {
-				draftState.current.fail(msg.requestId, msg.message);
+				draftState.current.fail(msg.requestId, formatCanvasMessage(msg.messageI18n, msg.message, t));
 				clientRef.current?.setCurrentGraphId("default");
-				setSaveNotice("上次工程已不存在，正在加载默认工程。原工程草稿仍保留。");
+				setSaveNotice(t("canvas.studio.missingProject"));
 				sendMessage(draftState.current.beginLoad("default", randomUuid()));
 				return;
 			}
-			if (draftState.current.fail(msg.requestId, msg.message)) {
+			if (draftState.current.fail(msg.requestId, formatCanvasMessage(msg.messageI18n, msg.message, t))) {
 				afterSaveRef.current = null;
 				if (msg.code === "rev_conflict" && msg.graph?.id === graphIdRef.current) setDraftConflict(msg.graph);
-				setSaveNotice("操作失败：" + msg.message + "。草稿已保留，请导出备份并核对远端版本。");
+				setSaveNotice(
+					t("canvas.studio.operationFailed", { name: formatCanvasMessage(msg.messageI18n, msg.message, t) }),
+				);
 			}
 		} else if (msg.type === "canvas_graph_state") {
 			const state = draftState.current;
@@ -313,7 +322,7 @@ export function CanvasStudio({
 					afterSaveRef.current = null;
 					if (queued?.graphId === current.id) queued.action();
 				}
-				setSaveNotice(dirty ? "已保存上一版本；仍有新编辑待保存。" : "保存成功");
+				setSaveNotice(dirty ? t("canvas.studio.previousVersionSaved") : t("canvas.studio.saved"));
 				return;
 			}
 			const loading = state.acceptsLoad(msg.graph, msg.requestId);
@@ -355,13 +364,13 @@ export function CanvasStudio({
 			setDraftConflict(conflict ? normalized : null);
 			setSaveNotice(
 				conflict
-					? "保存结果核对存在差异，本地草稿已保留。请明确选择本地或远端版本。"
+					? t("canvas.studio.reconnectedConflict")
 					: reconciled === "saved"
 						? recovered
-							? "重连核对：上一版本已保存，后续编辑仍保留在草稿。"
-							: "重连核对：保存成功。"
+							? t("canvas.studio.reconnectedPreviousSaved")
+							: t("canvas.studio.reconnectedSaved")
 						: recovered
-							? "已恢复本地未保存草稿，请检查后保存。"
+							? t("canvas.studio.draftRestored")
 							: "",
 			);
 			setViewport(next.viewport);
@@ -375,6 +384,8 @@ export function CanvasStudio({
 					return {
 						...n,
 						currentAction: currentAction ?? n.currentAction,
+						currentActionMessage: currentAction !== undefined ? msg.currentActionMessage : n.currentActionMessage,
+						errorMessage: error !== undefined ? msg.errorMessage : n.errorMessage,
 						lastOutputSummary: summary ?? n.lastOutputSummary,
 						error: error ?? n.error,
 						status:
@@ -629,7 +640,7 @@ export function CanvasStudio({
 			const nid = "n_" + Date.now() + "_" + Math.random().toString(36).slice(2, 6);
 			const newNode: CanvasNode = {
 				id: nid,
-				title: meta ? meta.labelZh : "队友 " + (graph.nodes.length + 1),
+				title: meta ? meta.label : t("canvas.defaults.teammate", { count: graph.nodes.length + 1 }),
 				role: role,
 				x: Math.round(-viewport.x / viewport.zoom + 300 + Math.random() * 100),
 				y: Math.round(-viewport.y / viewport.zoom + 200 + Math.random() * 100),
@@ -650,7 +661,7 @@ export function CanvasStudio({
 			setGraph((prev) => ({ ...prev, nodes: [...prev.nodes, newNode], updatedAt: Date.now() }));
 			setSelectedNodeId(newNode.id);
 		},
-		[graph, viewport, resolveNodeModel, currentCwd, pushHistory],
+		[graph, viewport, resolveNodeModel, currentCwd, pushHistory, t],
 	);
 
 	// 自定义卡片落图：标题/角色/指令/人设/模型/行为参数原样展开为普通节点
@@ -702,7 +713,7 @@ export function CanvasStudio({
 				return;
 			}
 			if (draftState.current.pendingSave || draftState.current.pendingLoad) {
-				setSaveNotice("请等待当前保存或加载确认后再应用模板。");
+				setSaveNotice(t("canvas.studio.waitBeforeTemplate"));
 				return;
 			}
 			setGraph(remapped);
@@ -710,7 +721,7 @@ export function CanvasStudio({
 			setViewport(remapped.viewport);
 			sendMessage(draftState.current.beginSave(remapped, randomUuid()));
 		},
-		[graph, pushHistory, resolveNodeModel, sendMessage],
+		[graph, pushHistory, resolveNodeModel, sendMessage, t],
 	);
 
 	// 每个节点已占用的端子（供卡片端子高亮）：in=被连入的 targetPort，out=被连出的 sourcePort
@@ -780,16 +791,16 @@ export function CanvasStudio({
 			const reader = new FileReader();
 			reader.onload = () => {
 				try {
-					const g = parseGraphImport(String(reader.result));
+					const g = parseGraphImport(String(reader.result), true, t);
 					handleApplyTemplate(g);
 				} catch (e) {
-					setSaveNotice(`导入失败：${e instanceof Error ? e.message : String(e)}`);
+					setSaveNotice(t("canvas.studio.importFailed", { name: e instanceof Error ? e.message : String(e) }));
 				}
 			};
 			reader.readAsText(f);
 		};
 		input.click();
-	}, [handleApplyTemplate]);
+	}, [handleApplyTemplate, t]);
 
 	// 复制/粘贴选中节点
 	const handleDuplicateNode = useCallback(() => {
@@ -803,12 +814,12 @@ export function CanvasStudio({
 			id: nid,
 			x: src.x + 40,
 			y: src.y + 40,
-			title: src.title + " 副本",
+			title: t("canvas.defaults.copyName", { name: src.title }),
 			status: "idle",
 		};
 		setGraph((p) => ({ ...p, nodes: [...p.nodes, copy], updatedAt: Date.now() }));
 		setSelectedNodeId(nid);
-	}, [graph, selectedNodeId, pushHistory]);
+	}, [graph, selectedNodeId, pushHistory, t]);
 	// 一键自动布局
 	const handleAutoLayout = useCallback(() => {
 		pushHistory(graph);
@@ -868,22 +879,22 @@ export function CanvasStudio({
 	// 保存工程
 	const handleSave = useCallback(() => {
 		if (draftState.current.unknownSaves.has(graphRef.current.id)) {
-			setSaveNotice("保存结果未知，请等待重连核对服务器版本。");
+			setSaveNotice(t("canvas.studio.unknownSaveResult"));
 			return;
 		}
 		if (draftConflict) {
-			setSaveNotice("请先处理草稿版本冲突。");
+			setSaveNotice(t("canvas.studio.resolveDraftConflict"));
 			return;
 		}
 		if (draftState.current.pendingSave) return;
 		const fullGraph: CanvasGraph = { ...graphRef.current, viewport: viewportRef.current };
 		const request = draftState.current.beginSave(fullGraph, randomUuid());
-		setSaveNotice("正在保存，等待服务器确认…");
+		setSaveNotice(t("canvas.studio.saving"));
 		if (!sendMessage(request)) {
-			draftState.current.fail(request.requestId, "连接不可用");
-			setSaveNotice("保存失败：连接不可用。草稿已保留。");
+			draftState.current.fail(request.requestId, t("canvas.studio.connectionUnavailable"));
+			setSaveNotice(t("canvas.studio.saveDisconnected"));
 		}
-	}, [graph, viewport, sendMessage, draftConflict]);
+	}, [graph, viewport, sendMessage, draftConflict, t]);
 
 	// 创建新画布工程
 	const handleCreateGraph = useCallback(
@@ -905,7 +916,7 @@ export function CanvasStudio({
 				return;
 			}
 			if (draftState.current.pendingSave || draftState.current.pendingLoad) {
-				setSaveNotice("请等待当前保存或加载确认后再新建。");
+				setSaveNotice(t("canvas.studio.waitBeforeCreate"));
 				return;
 			}
 			setGraph(newGraph);
@@ -913,7 +924,7 @@ export function CanvasStudio({
 			setViewport(newGraph.viewport);
 			sendMessage(draftState.current.beginSave(newGraph, randomUuid()));
 		},
-		[sendMessage],
+		[sendMessage, t],
 	);
 
 	// 删除画布工程
@@ -954,7 +965,7 @@ export function CanvasStudio({
 			// 的修改只在本地乐观状态 + 30s 后自动保存 —— 不先刷盘就会用旧模型跑
 			// （典型现象：换成 Gemini 后仍报 opencode-go 的错）。
 			if (!isRoleImplemented(graph.nodes.find((n) => n.id === nodeId)?.role ?? "subflow")) {
-				setSaveNotice("该节点尚未实现，不能运行。");
+				setSaveNotice(t("canvas.studio.nodeUnavailable"));
 				return;
 			}
 			const action = () => sendMessage({ type: "canvas_run_node", graphId: graph.id, nodeId });
@@ -966,7 +977,7 @@ export function CanvasStudio({
 				handleSave();
 			} else action();
 		},
-		[graph, sendMessage, handleSave],
+		[graph, sendMessage, handleSave, t],
 	);
 
 	// 停止单节点
@@ -981,7 +992,7 @@ export function CanvasStudio({
 	// 全图启动
 	const handleRunAll = useCallback(() => {
 		if (graph.nodes.some((n) => !isRoleImplemented(n.role))) {
-			setSaveNotice("包含尚未实现的节点，不能运行全图。");
+			setSaveNotice(t("canvas.studio.graphUnavailable"));
 			return;
 		}
 		const action = () => sendMessage({ type: "canvas_run_all", graphId: graph.id });
@@ -992,7 +1003,7 @@ export function CanvasStudio({
 			afterSaveRef.current = { graphId: graph.id, action };
 			handleSave();
 		} else action();
-	}, [graph, sendMessage, handleSave]);
+	}, [graph, sendMessage, handleSave, t]);
 
 	// 全图停止
 	const handleStopAll = useCallback(() => {
@@ -1023,14 +1034,28 @@ export function CanvasStudio({
 						? {
 								...n,
 								status: decision === "approve" ? ("done" as const) : ("waiting_approval" as const),
+								currentActionMessage: comment?.trim()
+									? {
+											key:
+												decision === "approve"
+													? "canvas.runtime.action.reviewApprovedComment"
+													: "canvas.runtime.action.reviewRejectedComment",
+											vars: { comment: comment.trim().slice(0, 500) },
+										}
+									: {
+											key:
+												decision === "approve"
+													? "canvas.runtime.action.reviewApproved"
+													: "canvas.runtime.action.reviewRejected",
+										},
 								currentAction:
 									comment && comment.trim()
 										? decision === "approve"
-											? `人工审查批准合流：${comment.trim().slice(0, 500)}`
-											: `人工驳回：${comment.trim().slice(0, 500)}`
+											? `Human review approved the merge: ${comment.trim().slice(0, 500)}`
+											: `Human review rejected: ${comment.trim().slice(0, 500)}`
 										: decision === "approve"
-											? "人工审查批准合流"
-											: "人工驳回：需补充完善测试与注释",
+											? "Human review approved the merge"
+											: "Human review rejected: add tests and comments",
 							}
 						: n,
 				),
@@ -1281,16 +1306,16 @@ export function CanvasStudio({
 				{saveNotice && <div role="status">{saveNotice}</div>}
 				{draftConflict && (
 					<div className="canvas-smart-banner" role="alert">
-						<span>本地草稿与远端版本冲突。保留本地将用当前远端 revision 保存，覆盖远端的结构编辑。</span>
+						<span>{t("canvas.studio.draftConflictHint")}</span>
 						<button
 							className="canvas-btn"
 							onClick={() => {
 								setGraph((prev) => ({ ...prev, rev: draftConflict.rev }));
 								setDraftConflict(null);
-								setSaveNotice("已选择保留本地草稿，请检查后保存。");
+								setSaveNotice(t("canvas.studio.localDraftSelected"));
 							}}
 						>
-							保留本地草稿
+							{t("canvas.studio.keepLocalDraft")}
 						</button>
 						<button
 							className="canvas-btn"
@@ -1301,88 +1326,109 @@ export function CanvasStudio({
 								setGraph(remote);
 								setViewport(remote.viewport);
 								setDraftConflict(null);
-								setSaveNotice("已采用远端版本。");
+								setSaveNotice(t("canvas.studio.remoteVersionSelected"));
 							}}
 						>
-							采用远端版本
+							{t("canvas.studio.useRemoteVersion")}
 						</button>
 					</div>
 				)}
 				{smartPending && (
-					<div className="canvas-smart-banner" role="dialog" aria-label="智能建图">
+					<div className="canvas-smart-banner" role="dialog" aria-label={t("canvas.studio.smartBuildTitle")}>
 						<span>
-							需求将放入主聊天草稿，由你检查并发送；AI 用 canvas 工具新建画布，不运行工作流。需求：
+							{t("canvas.studio.smartBuildHint")}
 							{smartTextRef.current}
 						</span>
 						<button
 							className="canvas-btn primary"
 							onClick={() => {
 								const text =
-									"请使用 canvas 工具新建工作流画布，先检查可用角色，保留端口与配置；完成后说明节点和连线供我核对。不要运行或覆盖已有图。工作目录：" +
+									"Use the canvas tool to create a workflow canvas. Check available roles first and preserve ports and configuration. Describe the nodes and connections for review. Do not run it or overwrite existing graphs. Working directory: " +
 									currentCwd +
-									"\n需求：" +
+									"\nRequest: " +
 									smartTextRef.current;
 								if (composeToComposer({ text })) {
 									setSmartPending(false);
-									setSaveNotice("已放入主聊天草稿，请切回聊天检查并发送。尚未请求 AI 建图。");
+									setSaveNotice(t("canvas.studio.chatDraftReady"));
 									focusComposer();
-								} else setSaveNotice("主聊天输入框尚未就绪，需求已保留；请打开聊天后重试。");
+								} else setSaveNotice(t("canvas.studio.chatNotReady"));
 							}}
 						>
-							放入主聊天草稿
+							{t("canvas.studio.putInChatDraft")}
 						</button>
 						<button
 							className="canvas-btn"
 							onClick={() => {
 								setSmartPending(false);
-								setSaveNotice("已取消，未提交建图请求。");
+								setSaveNotice(t("canvas.studio.smartBuildCancelled"));
 							}}
 						>
-							取消
+							{t("canvas.common.cancel")}
 						</button>
 					</div>
 				)}
 				<div className="canvas-export-bar">
-					<button type="button" className="canvas-dock-btn" onClick={handleExportPNG} title="导出当前画布为 PNG">
+					<button
+						type="button"
+						className="canvas-dock-btn"
+						onClick={handleExportPNG}
+						title={t("canvas.studio.exportPng")}
+					>
 						PNG
 					</button>
-					<button type="button" className="canvas-dock-btn" onClick={handleExportJSON} title="导出为 JSON 备份">
+					<button
+						type="button"
+						className="canvas-dock-btn"
+						onClick={handleExportJSON}
+						title={t("canvas.studio.exportJson")}
+					>
 						JSON
 					</button>
-					<button type="button" className="canvas-dock-btn" onClick={handleImportJSON} title="从 JSON 导入">
-						导入
+					<button
+						type="button"
+						className="canvas-dock-btn"
+						onClick={handleImportJSON}
+						title={t("canvas.studio.importJson")}
+					>
+						{t("canvas.studio.import")}
 					</button>
 				</div>
 			</div>
 			{graph.nodes.length === 0 && (
 				<div className="canvas-empty-state">
 					<div className="canvas-empty-icon">🎨</div>
-					<h3 className="canvas-empty-title">画布是空的</h3>
-					<p className="canvas-empty-desc">添加数字员工或加载一个战队模板来开始协作</p>
+					<h3 className="canvas-empty-title">{t("canvas.studio.emptyTitle")}</h3>
+					<p className="canvas-empty-desc">{t("canvas.studio.emptyHint")}</p>
 					<div className="canvas-empty-actions">
 						<button type="button" className="canvas-btn primary" onClick={() => handleAddNode("coder")}>
-							<FiPlus /> 添加第一个队友
+							<FiPlus />
+							{t("canvas.studio.addFirstTeammate")}
 						</button>
 						<button
 							type="button"
 							className="canvas-btn"
 							onClick={() => handleApplyTemplate(SQUAD_TEMPLATES[0].createGraph())}
 						>
-							<FiUsers /> 快速加载模板
+							<FiUsers />
+							{t("canvas.studio.loadTemplate")}
 						</button>
 					</div>
 					<div className="canvas-empty-shortcuts">
 						<span>
-							<kbd>Ctrl+S</kbd> 保存
+							<kbd>Ctrl+S</kbd>
+							{t("canvas.shortcuts.save")}
 						</span>
 						<span>
-							<kbd>Ctrl+0</kbd> 适配视图
+							<kbd>Ctrl+0</kbd>
+							{t("canvas.shortcuts.fitView")}
 						</span>
 						<span>
-							<kbd>Delete</kbd> 删除选中
+							<kbd>Delete</kbd>
+							{t("canvas.shortcuts.deleteSelected")}
 						</span>
 						<span>
-							<kbd>Esc</kbd> 取消选择
+							<kbd>Esc</kbd>
+							{t("canvas.shortcuts.clearSelection")}
 						</span>
 					</div>
 				</div>
@@ -1393,9 +1439,9 @@ export function CanvasStudio({
 					type="button"
 					className="canvas-timeline-toggle"
 					onClick={() => setShowTimeline((v) => !v)}
-					title="执行时间线 / 失败重试"
+					title={t("canvas.studio.timelineHint")}
 				>
-					{showTimeline ? "⏱ 收起" : "⏱ 时间线"}
+					{showTimeline ? t("canvas.studio.collapseTimeline") : t("canvas.studio.timeline")}
 				</button>
 			)}
 			{showTimeline && (
@@ -1418,7 +1464,7 @@ export function CanvasStudio({
 					height={100}
 					viewBox="0 0 160 100"
 					role="img"
-					aria-label="画布小地图"
+					aria-label={t("canvas.studio.minimap")}
 					style={{ cursor: "crosshair" }}
 					onPointerDown={(e) => {
 						e.stopPropagation();

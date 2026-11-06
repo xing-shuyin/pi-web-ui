@@ -1,6 +1,6 @@
 # 繁體中文語言包產生工具（zh-TW / zh-Hant / zh-HK）
 
-`locales/zh-TW.json`、`locales/zh-Hant.json` 與 `locales/zh-HK.json` 由簡中字典（`web/src/i18n.tsx` 的 `zh`）轉換產生：
+`locales/zh-TW.json`、`locales/zh-Hant.json` 與 `locales/zh-HK.json` 由 `web/src/i18n/messages/<module>/zh.json` 合併後轉換產生。所有工具透過 `scripts/lib/i18n-catalog.mjs` 讀取來源，不載入 React 或執行 TSX。`core` 在先，其餘模組依名稱排序；同模組已翻譯的 `<locale>.json` 優先覆蓋產生結果的同名 key：
 
 - **zh-TW（台灣繁體）**：OpenCC `cn → twp`（台灣詞彙）→ `glossary.mjs` 台灣用語規則 → `manual.json` 逐 key 修正。
 - **zh-Hant（通用繁體）**：OpenCC `cn → t`（通用字形）→ 標點符號正規化。
@@ -47,4 +47,6 @@ npm run i18n:sync
 
 `verify.mjs` 的「可能殘留簡體」是提示，不是錯誤：`核准`（准）、`干擾`（干）、`局限`（局）在台灣都是正確用法。
 
-簡中新增或修改 key 後，重跑 `npm run i18n:sync` 即可同步。個別修正可寫進 `manual.json` 或 `glossary.mjs`。
+簡中新增 key 後，重跑 `npm run i18n:sync` 即可同步；已有平鋪譯文會保留，已翻譯的模組來源則會覆蓋同名 key。個別修正可寫進模組 `<locale>.json`、`manual.json` 或 `glossary.mjs`。模組譯文的 key 集合與佔位符必須和 zh 一致，zh/en 順序也須一致；重複 key 會在合併前報錯。
+
+單獨轉換流程可用 `node scripts/zh-tw-locale/dump-zh.mjs <repo> <zh.json> <en.json>` 匯出合併字典，再執行 `convert.mjs` 與 `build-pack.mjs`。`build-pack.mjs` 也會套用模組譯文並保留現有 `serverStrings`。

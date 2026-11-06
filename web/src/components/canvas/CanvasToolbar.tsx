@@ -3,13 +3,13 @@
  *
  * 功能区：工程管理 | 通用节点库 + 战队模板 | 调度控制 | 视口缩放
  */
-import { useState, useRef, useEffect } from "react";
+import { useMemo, useState, useRef, useEffect } from "react";
 import { createPortal } from "react-dom";
-import { useCanvasT } from "./canvas-i18n";
+import { useT } from "../../i18n";
 import { useFloatingPanel } from "../../use-floating-panel";
 import type { CanvasCustomCard, CanvasGraph, CanvasGraphSummary, CanvasNodeRole } from "../../types";
-import { SQUAD_TEMPLATES } from "./CanvasTemplates";
-import { NODE_GROUPS, ROLE_METAS, isRoleImplemented } from "./CanvasTypes";
+import { getSquadTemplates } from "./CanvasTemplates";
+import { getRoleGroups, getRoleMetas, isRoleImplemented } from "./CanvasTypes";
 import {
 	FiPlus,
 	FiPlay,
@@ -84,7 +84,10 @@ export function CanvasToolbar({
 	onResetViewport,
 	hasUnsavedChanges,
 }: CanvasToolbarProps) {
-	const t = useCanvasT();
+	const t = useT();
+	const ROLE_METAS = useMemo(() => getRoleMetas(t), [t]);
+	const NODE_GROUPS = useMemo(() => getRoleGroups(t), [t]);
+	const SQUAD_TEMPLATES = useMemo(() => getSquadTemplates(t), [t]);
 	const [showSquadMenu, setShowSquadMenu] = useState(false);
 	const [showGraphMenu, setShowGraphMenu] = useState(false);
 	const [showNodeMenu, setShowNodeMenu] = useState(false);
@@ -151,7 +154,7 @@ export function CanvasToolbar({
 
 	const handleDeleteCurrentGraph = () => {
 		if (graphList.length <= 1) return; // 至少保留一个工程
-		const confirmed = window.confirm(`确定要删除画布工程「${graph.name}」吗？\n此操作不可撤销。`);
+		const confirmed = window.confirm(t("canvas.toolbar.deleteProjectConfirm", { name: graph.name }));
 		if (confirmed) {
 			onDeleteGraph(graph.id);
 		}
@@ -174,18 +177,18 @@ export function CanvasToolbar({
 							else if (e.key === "Escape") setRenamingGraph(false);
 						}}
 						onBlur={handleRenameSubmit}
-						placeholder="工程名称"
+						placeholder={t("canvas.toolbar.projectName")}
 					/>
 				) : (
 					<select
 						className="canvas-toolbar-select"
 						value={graph.id}
 						onChange={(e) => onSelectGraph(e.target.value)}
-						title="切换画布工程"
+						title={t("canvas.toolbar.switchProject")}
 					>
 						{graphList.map((g) => (
 							<option key={g.id} value={g.id}>
-								{g.name} ({g.nodeCount}人)
+								{t("canvas.toolbar.projectOption", { name: g.name, count: g.nodeCount })}
 							</option>
 						))}
 					</select>
@@ -196,7 +199,7 @@ export function CanvasToolbar({
 						type="button"
 						className="canvas-toolbar-btn"
 						onClick={() => setShowGraphMenu(!showGraphMenu)}
-						title="工程管理菜单"
+						title={t("canvas.toolbar.projectMenu")}
 					>
 						▾
 					</button>
@@ -225,7 +228,7 @@ export function CanvasToolbar({
 													setCreatingGraph(false);
 												}
 											}}
-											placeholder="输入新工程名称..."
+											placeholder={t("canvas.toolbar.newProjectPlaceholder")}
 											onClick={(e) => e.stopPropagation()}
 										/>
 										<button
@@ -243,9 +246,10 @@ export function CanvasToolbar({
 								) : (
 									<button type="button" className="canvas-dropdown-item" onClick={() => setCreatingGraph(true)}>
 										<b>
-											<FiFilePlus style={{ verticalAlign: "middle" }} /> 新建画布工程
+											<FiFilePlus style={{ verticalAlign: "middle" }} />
+											{t("canvas.toolbar.newProject")}
 										</b>
-										<small>创建一个全新的空白画布</small>
+										<small>{t("canvas.toolbar.newProjectHint")}</small>
 									</button>
 								)}
 								<button
@@ -258,9 +262,10 @@ export function CanvasToolbar({
 									}}
 								>
 									<b>
-										<FiEdit3 style={{ verticalAlign: "middle" }} /> 重命名当前工程
+										<FiEdit3 style={{ verticalAlign: "middle" }} />
+										{t("canvas.toolbar.renameProject")}
 									</b>
-									<small>修改「{graph.name}」的名称</small>
+									<small>{t("canvas.toolbar.renameProjectHint", { name: graph.name })}</small>
 								</button>
 								<button
 									type="button"
@@ -270,12 +275,17 @@ export function CanvasToolbar({
 										setShowGraphMenu(false);
 									}}
 									disabled={graphList.length <= 1}
-									title={graphList.length <= 1 ? "至少需保留一个画布工程" : ""}
+									title={graphList.length <= 1 ? t("canvas.toolbar.keepOneProject") : ""}
 								>
 									<b>
-										<FiTrash2 style={{ verticalAlign: "middle" }} /> 删除当前工程
+										<FiTrash2 style={{ verticalAlign: "middle" }} />
+										{t("canvas.toolbar.deleteProject")}
 									</b>
-									<small>{graphList.length <= 1 ? "仅剩一个工程，无法删除" : `永久删除「${graph.name}」`}</small>
+									<small>
+										{graphList.length <= 1
+											? t("canvas.toolbar.cannotDeleteLastProject")
+											: t("canvas.toolbar.deleteProjectHint", { name: graph.name })}
+									</small>
 								</button>
 							</div>,
 							document.body,
@@ -286,7 +296,7 @@ export function CanvasToolbar({
 					type="button"
 					className={`canvas-toolbar-btn ${hasUnsavedChanges ? "canvas-unsaved" : ""}`}
 					onClick={onSave}
-					title={hasUnsavedChanges ? "有未保存的更改 (Ctrl+S)" : "保存当前工程 (Ctrl+S)"}
+					title={hasUnsavedChanges ? t("canvas.toolbar.unsavedHint") : t("canvas.toolbar.saveHint")}
 				>
 					<FiSave />
 				</button>
@@ -300,9 +310,9 @@ export function CanvasToolbar({
 					type="button"
 					className="canvas-toolbar-btn primary"
 					onClick={() => onAddNode("coder")}
-					title="快速新增一个研发工程师节点，更多类型请点右侧节点库"
+					title={t("canvas.toolbar.quickAddHint")}
 				>
-					<FiPlus /> {t("新增队友", "Add teammate")}
+					<FiPlus /> {t("canvas.toolbar.addTeammate")}
 				</button>
 
 				<div className="canvas-dropdown-wrap" ref={nodeMenuRef}>
@@ -310,9 +320,9 @@ export function CanvasToolbar({
 						type="button"
 						className="canvas-toolbar-btn"
 						onClick={() => setShowNodeMenu(!showNodeMenu)}
-						title={t("可用节点；未实现角色已隐藏", "Available nodes; unimplemented roles are hidden")}
+						title={t("canvas.toolbar.availableNodesUnimplementedRolesAreHidden")}
 					>
-						{t("节点库", "Node library")} ▾
+						{t("canvas.toolbar.nodeLibrary")} ▾
 					</button>
 
 					{showNodeMenu &&
@@ -327,7 +337,9 @@ export function CanvasToolbar({
 							>
 								{customCards.length > 0 && (
 									<div className="canvas-palette-group">
-										<div className="canvas-palette-group-title">自定义卡片（{customCards.length}）</div>
+										<div className="canvas-palette-group-title">
+											{t("canvas.toolbar.customCardsCount", { count: customCards.length })}
+										</div>
 										{customCards.map((c) => (
 											<div
 												key={c.id}
@@ -341,16 +353,19 @@ export function CanvasToolbar({
 														onPlaceCard?.(c);
 														setShowNodeMenu(false);
 													}}
-													title={c.role + (c.instruction ? "：" + c.instruction.slice(0, 80) : "")}
+													title={
+														(ROLE_METAS[c.role]?.label ?? c.role) +
+														(c.instruction ? ": " + c.instruction.slice(0, 80) : "")
+													}
 												>
 													<b>🧩 {c.title}</b>
-													<small>{c.role}</small>
+													<small>{ROLE_METAS[c.role]?.label ?? c.role}</small>
 												</button>
 												<button
 													type="button"
 													className="canvas-toolbar-btn"
 													onClick={() => onDeleteCard?.(c.id)}
-													title={"删除卡片 " + c.title}
+													title={t("canvas.toolbar.deleteCard", { name: c.title })}
 												>
 													×
 												</button>
@@ -360,7 +375,7 @@ export function CanvasToolbar({
 								)}
 								{NODE_GROUPS.map((g) => (
 									<div key={g.id} className="canvas-palette-group">
-										<div className="canvas-palette-group-title">{t(g.labelZh, g.labelEn)}</div>
+										<div className="canvas-palette-group-title">{g.label}</div>
 										{(Object.values(ROLE_METAS) as (typeof ROLE_METAS)[keyof typeof ROLE_METAS][])
 											.filter((m) => m.group === g.id && isRoleImplemented(m.role))
 											.map((m) => (
@@ -376,7 +391,7 @@ export function CanvasToolbar({
 												>
 													<b>
 														<span style={{ marginRight: 6 }}>{m.icon}</span>
-														{t(m.labelZh, m.labelEn)}
+														{m.label}
 													</b>
 													<small>{m.blurb}</small>
 												</button>
@@ -393,12 +408,9 @@ export function CanvasToolbar({
 						type="button"
 						className="canvas-toolbar-btn"
 						onClick={() => setShowSquadMenu(!showSquadMenu)}
-						title={t(
-							"加载串行工作流，运行前检查任务与验收标准",
-							"Load a sequential workflow; review tasks and acceptance criteria before running",
-						)}
+						title={t("canvas.toolbar.loadASequentialWorkflowReviewTasksAndAcceptance")}
 					>
-						<FiUsers /> {t("串行模板", "Sequential templates")} ▾
+						<FiUsers /> {t("canvas.toolbar.sequentialTemplates")} ▾
 					</button>
 
 					{showSquadMenu &&
@@ -436,8 +448,13 @@ export function CanvasToolbar({
 			{/* 全图调度控制 */}
 			<div className="canvas-toolbar-group">
 				{graph.status === "running" ? (
-					<button type="button" className="canvas-toolbar-btn stop" onClick={onStopAll} title="全部停止">
-						<FiSquare /> {t("全部停止", "Stop all")}
+					<button
+						type="button"
+						className="canvas-toolbar-btn stop"
+						onClick={onStopAll}
+						title={t("canvas.toolbar.stopAll")}
+					>
+						<FiSquare /> {t("canvas.toolbar.stopAll")}
 					</button>
 				) : (
 					<button
@@ -445,14 +462,20 @@ export function CanvasToolbar({
 						className="canvas-toolbar-btn run"
 						disabled={graph.nodes.some((n) => !isRoleImplemented(n.role))}
 						onClick={onRunAll}
-						title="启动全队流水线"
+						title={t("canvas.toolbar.startSquad")}
 					>
-						<FiPlay /> {t("运行流程", "Run workflow")}
+						<FiPlay /> {t("canvas.toolbar.runWorkflow")}
 					</button>
 				)}
 
-				<button type="button" className="canvas-toolbar-btn" onClick={onResetStatus} title="重置全队状态为待命 (idle)">
-					<FiRotateCcw /> 复位
+				<button
+					type="button"
+					className="canvas-toolbar-btn"
+					onClick={onResetStatus}
+					title={t("canvas.toolbar.resetHint")}
+				>
+					<FiRotateCcw />
+					{t("canvas.toolbar.reset")}
 				</button>
 			</div>
 
@@ -464,7 +487,7 @@ export function CanvasToolbar({
 					className="canvas-toolbar-btn"
 					onClick={onUndo}
 					disabled={canUndo === false}
-					title="撤销 (Ctrl+Z)"
+					title={t("canvas.toolbar.undo")}
 				>
 					↩
 				</button>
@@ -473,14 +496,24 @@ export function CanvasToolbar({
 					className="canvas-toolbar-btn"
 					onClick={onRedo}
 					disabled={canRedo === false}
-					title="重做 (Ctrl+Shift+Z / Ctrl+Y)"
+					title={t("canvas.toolbar.redo")}
 				>
 					↪
 				</button>
-				<button type="button" className="canvas-toolbar-btn" onClick={onDuplicate} title="复制选中节点 (Ctrl+D)">
+				<button
+					type="button"
+					className="canvas-toolbar-btn"
+					onClick={onDuplicate}
+					title={t("canvas.toolbar.duplicateNode")}
+				>
 					⧉
 				</button>
-				<button type="button" className="canvas-toolbar-btn" onClick={onAutoLayout} title="一键自动布局">
+				<button
+					type="button"
+					className="canvas-toolbar-btn"
+					onClick={onAutoLayout}
+					title={t("canvas.toolbar.autoLayout")}
+				>
 					⛶
 				</button>
 			</div>
@@ -493,22 +526,32 @@ export function CanvasToolbar({
 					type="button"
 					className="canvas-toolbar-btn"
 					onClick={() => onZoomChange(Math.max(zoom - 0.15, 0.25))}
-					title="缩小"
+					title={t("canvas.toolbar.zoomOut")}
 				>
 					<FiZoomOut />
 				</button>
-				<button type="button" className="canvas-toolbar-btn" onClick={onResetViewport} title="恢复 100% 居中视图">
+				<button
+					type="button"
+					className="canvas-toolbar-btn"
+					onClick={onResetViewport}
+					title={t("canvas.toolbar.resetZoom")}
+				>
 					<FiMaximize2 /> {Math.round(zoom * 100)}%
 				</button>
 				<button
 					type="button"
 					className="canvas-toolbar-btn"
 					onClick={() => onZoomChange(Math.min(zoom + 0.15, 2.0))}
-					title="放大"
+					title={t("canvas.toolbar.zoomIn")}
 				>
 					<FiZoomIn />
 				</button>
-				<button type="button" className="canvas-toolbar-btn" onClick={onFitView} title="适配所有节点到视口 (Ctrl+0)">
+				<button
+					type="button"
+					className="canvas-toolbar-btn"
+					onClick={onFitView}
+					title={t("canvas.toolbar.fitAllNodes")}
+				>
 					<FiTarget />
 				</button>
 			</div>
