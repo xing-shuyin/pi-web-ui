@@ -280,6 +280,45 @@ describe("group conversation adapter", () => {
 		expect(body).toContain("展开查看工作内容与交付详情");
 		expect(body).toContain("API implementation complete with 5 endpoints.");
 	});
+	it("renders waiting task with dependsOnTaskId as friendly upstream-waiting card", () => {
+		const detail: GroupDetail = {
+			room: { id: "room", name: "Room", botIds: ["a", "b"] },
+			bots: [
+				{ id: "a", name: "Lead", deviceId: "host" },
+				{ id: "b", name: "Worker", deviceId: "worker-pc" },
+			],
+			messages: [],
+			tasks: [
+				{
+					id: "t1",
+					deviceId: "host",
+					botId: "a",
+					text: "write database migration",
+					createdAt: 1,
+					status: "running",
+				},
+				{
+					id: "t2",
+					deviceId: "worker-pc",
+					botId: "b",
+					text: "seed test data",
+					createdAt: 2,
+					status: "waiting",
+					dependsOnTaskId: "t1",
+				},
+			],
+		};
+		const { state, labels } = groupConversationState("room", detail, detail.bots, true);
+		expect(labels.get("group-task:t2")).toBe("Worker · worker-pc · 等待前序任务");
+		const waitingMsg = state.messages.find((m) => m.id === "group-task:t2");
+		expect(waitingMsg).toBeDefined();
+		const body = (waitingMsg!.content[0] as { text: string }).text;
+		expect(body).toContain("等待前序任务交付中");
+		expect(body).toContain("seed test data");
+		expect(body).toContain("依赖任务");
+		expect(body).toContain("@Lead");
+		expect(body).toContain("write database migration");
+	});
 	it("retries the same request with the same key and rotates for changed room/body/targets", () => {
 		let n = 0;
 		const key = () => String(++n);

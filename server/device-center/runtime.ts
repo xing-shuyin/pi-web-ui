@@ -43,7 +43,11 @@ import { PublicationStopUnconfirmedError } from "./local-publication.js";
 
 type Config = { hubUrl: string; deviceId: string; credential: string; allowExecution: boolean; accountId?: string };
 type Files = ReturnType<typeof createDeviceFileSync>;
-type Executor = { run(task: DeviceExecutorTask): Promise<string>; close(): void | Promise<void> };
+type Executor = {
+	run(task: DeviceExecutorTask): Promise<string>;
+	close(): void | Promise<void>;
+	steer?(text: string): boolean;
+};
 type Owner = DeviceCollabExecutionContext & { root: string };
 type TaskOwner = {
 	controller: AbortController;
@@ -1273,6 +1277,13 @@ export function createDeviceRuntime(options: {
 		},
 		cancelScheduledTask(taskId: string, attemptId?: string): boolean {
 			return scheduler.cancelTask(taskId, attemptId);
+		},
+		async steerTask(taskId: string, text: string): Promise<boolean> {
+			const owner = [...active].find((item) => item.taskId === taskId);
+			if (!owner || owner.controller.signal.aborted || owner.blocked || !owner.executor?.steer) {
+				return false;
+			}
+			return owner.executor.steer(text);
 		},
 		answerTaskInteraction(taskId: string, attemptId: string, answer: unknown): boolean {
 			const owner = [...active].find((item) => item.taskId === taskId && item.attemptId === attemptId);

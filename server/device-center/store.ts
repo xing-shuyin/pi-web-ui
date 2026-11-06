@@ -7,7 +7,14 @@ import {
 	type HubIndexState,
 	type HubTransactionDiff,
 } from "./hub-transaction-log.js";
-import type { DeviceConversation, DeviceDelivery, DeviceIntegration, DeviceReview } from "../protocol.js";
+import type {
+	BlackboardSection,
+	DeviceConversation,
+	DeviceDelivery,
+	DeviceIntegration,
+	DeviceReview,
+} from "../protocol.js";
+export type { BlackboardSection } from "../protocol.js";
 import { createHash, randomUUID, timingSafeEqual } from "node:crypto";
 import {
 	projectConversationState,
@@ -136,6 +143,7 @@ export interface GroupBlackboard {
 	updatedBy: { type: "human" | "bot"; id: string; name: string };
 	title?: string;
 	content: string; // Markdown 格式结构化共识，最大 32KB
+	sections?: Record<string, BlackboardSection>;
 }
 
 export type GroupWebhookEventType = "message" | "task_completed" | "task_failed" | "delivery";
@@ -639,6 +647,7 @@ export class DeviceHubStore {
 		// retain its transaction inputs, but cannot subsequently rewrite durable facts.
 		state = structuredClone(state);
 		if (diff) diff = structuredClone(diff);
+
 		if (this.projectionFailed) {
 			this.logs.messages.invalidateCache();
 			this.logs.tasks.invalidateCache();

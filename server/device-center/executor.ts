@@ -162,6 +162,7 @@ export function createDeviceTaskExecutor(options: DeviceTaskExecutorOptions) {
 	const root = executionRoot(cwd);
 	let closed = false;
 	let cancel: (() => void) | undefined;
+	let activeSend: ((message: ClientMessage) => void) | undefined;
 	let stopped: Promise<void> = Promise.resolve();
 
 	return {
@@ -320,6 +321,7 @@ export function createDeviceTaskExecutor(options: DeviceTaskExecutorOptions) {
 				const send = (message: ClientMessage) => {
 					if (ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify(message));
 				};
+				activeSend = send;
 				const context = () =>
 					`Task: ${task.id}\nAttempt: ${task.attemptId}\nLocal system: ${os.platform()} / ${os.arch()}\nLocal UI: ${origin.origin}/\nClient: ${clientId}\nConversation: ${conversationId ?? "not created"}`;
 				const finish = (error?: string, body = "", failurePhase?: ExecutionPhase) => {
@@ -327,6 +329,7 @@ export function createDeviceTaskExecutor(options: DeviceTaskExecutorOptions) {
 					settled = true;
 					interactions?.close();
 					options.registerInteractionAnswer?.(undefined);
+					activeSend = undefined;
 					capability.revoke();
 					// 锁的语义是「这个 bot/root 上还有一条任务在跑」，而 run 一旦 settle（capability
 					// 已撤销、不再有任何写入路径），它就不再是在跑。旧实现只在连接 close 时才放锁：
@@ -813,8 +816,14 @@ export function createDeviceTaskExecutor(options: DeviceTaskExecutorOptions) {
 				});
 			});
 		},
+		steer(text: string): boolean {
+			if (closed || !activeSend) return false;
+			activeSend({ type: "prompt", text, steer: true });
+			return true;
+		},
 		close(): Promise<void> {
 			closed = true;
+			activeSend = undefined;
 			cancel?.();
 			return stopped;
 		},

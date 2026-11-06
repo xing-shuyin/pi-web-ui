@@ -8,6 +8,8 @@
 // Serialized messages (server -> client snapshot)
 // ---------------------------------------------------------------------------
 
+export type ThinkingLevel = "off" | "minimal" | "low" | "medium" | "high" | "xhigh";
+
 export interface DeviceTaskActivity {
 	phase: "model" | "tool" | "waiting";
 	text?: string;
@@ -221,7 +223,7 @@ export interface DeviceTaskEventFrame {
 	executionCompleted?: boolean;
 	artifactProduced?: boolean;
 }
-export type DeviceTaskResultRejectReasonCode = "terminal_conflict" | "attempt_expired";
+export type DeviceTaskResultRejectReasonCode = "terminal_conflict" | "attempt_expired" | "legacy_lease_missing";
 export interface DeviceTaskResultAck {
 	taskId: string;
 	attemptId: string;
@@ -430,12 +432,21 @@ export interface RoomTaskCreateInput {
 	truncationBudget?: number;
 }
 
+export interface BlackboardSection {
+	id: string;
+	title: string;
+	content: string;
+	updatedAt: number;
+	updatedBy: { type: "human" | "bot"; id: string; name: string };
+}
+
 export interface GroupBlackboard {
 	version: number; // 严格自增版本号（从 1 开始）
 	updatedAt: number;
 	updatedBy: { type: "human" | "bot"; id: string; name: string };
 	title?: string;
 	content: string; // Markdown 格式结构化共识，最大 32KB
+	sections?: Record<string, BlackboardSection>;
 }
 
 // ===========================================================================
@@ -551,6 +562,7 @@ export interface DeviceTask {
 	interruptedReason?: string;
 	report?: string;
 	attenuatedTools?: string[];
+	dependsOnTaskId?: string;
 }
 
 export interface HubTask {
@@ -601,6 +613,7 @@ export interface HubTask {
 	lastHeartbeatAt?: number;
 	recoveryUntil?: number;
 	attenuatedTools?: string[];
+	dependsOnTaskId?: string;
 	[key: string]: unknown;
 }
 
@@ -1525,6 +1538,7 @@ export type ClientMessage =
 			 * steer semantic.
 			 */
 			queue?: boolean;
+			steer?: boolean;
 			attachments?: PromptAttachment[];
 	  }
 	// -- queued prompt management ---------------------------------------------
@@ -2101,6 +2115,11 @@ export type ClientMessage =
 			 *  + 自定义文本（空 = 内置默认）。pi 引擎的 scm_commitmsg 生成用。 */
 			scmCommitMsgPromptMode?: "append" | "replace";
 			scmCommitMsgPrompt?: string;
+			quickAskEnabled?: boolean;
+			quickAskModel?: string | null;
+			quickAskThinking?: ThinkingLevel;
+			quickAskSystemPrompt?: string;
+			quickAskExplainPrompt?: string;
 			/** 计划模式提示词：模式（append/replace，语义同 promptMode）+ 自定义
 			 *  文本（空 = 内置默认）。仅主会话计划模式注入用（硬闸门不受影响）。 */
 			planModePromptMode?: "append" | "replace";
@@ -4398,6 +4417,11 @@ export interface UiSettingsState {
 	scmCommitMsgPromptMode: "append" | "replace";
 	/** SCM「AI 生成提交信息」自定义提示词。 */
 	scmCommitMsgPrompt: string;
+	quickAskEnabled: boolean;
+	quickAskModel: string | null;
+	quickAskThinking: ThinkingLevel;
+	quickAskSystemPrompt: string;
+	quickAskExplainPrompt: string;
 	/** 计划模式提示词模式：追加/替换内置默认（空文本 = 内置默认）。 */
 	planModePromptMode: "append" | "replace";
 	/** 计划模式自定义提示词。 */
@@ -5487,6 +5511,7 @@ export type DeviceTaskBlockReason =
 	| "workspace_blocked"
 	| "room_fairness_yield"
 	| "resource_locked"
+	| "dependency"
 	| "dependency_waiting";
 
 export type DeviceBlockedTaskReason = "unconfirmed_stop" | "workspace_blocked";

@@ -90,6 +90,7 @@ import {
 } from "../prompt-history";
 import { randomUuid } from "../uuid";
 import { THINKING_VALUES } from "../thinking-levels";
+import { QuickAskSettings, type QuickAskPatch } from "./QuickAskSettings";
 import { formatTokenDraft, parseTokenInput } from "../token-input";
 import { useWideChat, saveChatWidthSettings, useHideModelRow, saveHideModelRowSettings } from "../chat-width-settings";
 import { usePresentAutoOpen, savePresentAutoOpen } from "../present-settings";
@@ -598,6 +599,7 @@ function PluginLogView({ pluginId }: { pluginId: string }) {
 type SettingsTab =
 	| "models"
 	| "prompt"
+	| "quick-ask"
 	| "prompt-history"
 	| "scheduler"
 	| "tools"
@@ -621,7 +623,7 @@ type SettingsTab =
 	| `plugin-page:${string}`;
 
 /** set_settings 允许的字段（原 setPartial 内联类型提出为具名类型，供乐观合并层复用）。 */
-interface SettingsPatch {
+interface SettingsPatch extends QuickAskPatch {
 	chatUploadMaxMb?: number;
 	workspaceUploadMaxMb?: number;
 	folderUploadMaxMb?: number;
@@ -1318,6 +1320,8 @@ export function SettingsModal({
 			: []),
 		// 系统提示词（Pi 引擎与 DSH 引擎均支持自定义提示词注入与查看）
 		...(isPi || isDsh ? [{ id: "prompt" as const, icon: <FiFileText />, label: t("settingsSystemPrompt") }] : []),
+		// Independent model-only window, available with every main conversation engine.
+		{ id: "quick-ask" as const, icon: <FiMessageSquare />, label: t("quickAskSettingsTitle") },
 		// 输入历史（全引擎通用）
 		{
 			id: "prompt-history",
@@ -1506,6 +1510,7 @@ export function SettingsModal({
 	const TAB_GROUPS: Record<string, "core" | "tools" | "ui" | "advanced"> = {
 		models: "core",
 		prompt: "core",
+		"quick-ask": "core",
 		presets: "core",
 		"dsh-presets": "core",
 		"subagent-templates": "core",
@@ -1553,6 +1558,7 @@ export function SettingsModal({
 			"r1",
 		],
 		prompt: ["系统提示词", "system prompt", "前缀", "角色", "instructions", "设定", "提示词", "自定义提示词"],
+		"quick-ask": ["随手问", "解释", "选中文字", "小窗", "quick ask", "explain", "popup"],
 		"prompt-history": ["历史", "输入历史", "prompt history", "记录", "清除历史", "对话历史"],
 		scheduler: ["定时", "定时任务", "cron", "scheduler", "自动化", "后台", "排期", "计划任务"],
 		tools: [
@@ -3463,6 +3469,8 @@ export function SettingsModal({
 								)}
 							</div>
 						)}
+
+						{tab === "quick-ask" && <QuickAskSettings settings={settings} onChange={setPartial} />}
 
 						{/* ---- AI 提交信息（SCM 面板的 scm_commitmsg 生成提示词） ---- */}
 						{tab === "prompt" && !isDsh && (

@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { mkdtemp, rm } from "node:fs/promises";
+import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { DeviceTaskEventFrame } from "../../server/protocol.js";
@@ -16,7 +16,7 @@ import {
 import { WebSocket } from "ws";
 import { createDeviceRelay, type DeviceRelayOptions } from "../../server/device-center/relay.js";
 import { createDeviceConnector, type DeviceConnectorOptions } from "../../server/device-center/connector.js";
-import { TaskRecoveryManager } from "../../server/device-center/task-recovery.js";
+import { TaskRecoveryManager, type TaskOutboxEntry } from "../../server/device-center/task-recovery.js";
 import { createDeviceHub } from "../../server/device-center/hub.js";
 import { DEFAULT_EXECUTION_SETTINGS } from "../../server/device-center/execution-settings.js";
 import { computeOutcomeFingerprint, computeLegacyOutcomeFingerprint } from "../../server/device-center/task-outcome.js";
@@ -98,7 +98,155 @@ function event(t: HubTask, fields: Partial<DeviceTaskEventFrame> = {}): DeviceTa
 	};
 }
 
+// Exact v0.116.0 recordTaskFinish disk shape and digest (aaab2581): no lease
+// fields, no proof fields, and task-active-leases.json is empty after finish.
+function legacyOutbox(t: HubTask, fields: Partial<TaskOutboxEntry> = {}): TaskOutboxEntry {
+	const entry: TaskOutboxEntry = {
+		id: `${t.id}:${t.attemptId}`,
+		taskId: t.id,
+		attemptId: t.attemptId,
+		botId: t.botId,
+		deviceId: t.deviceId,
+		roomId: t.roomId,
+		status: "completed",
+		report: "done",
+		createdAt: 1,
+		updatedAt: 1,
+		attempts: 1,
+		...fields,
+	};
+	entry.fingerprint = createHash("sha256")
+		.update(
+			`${entry.taskId}:${entry.attemptId}:${entry.status}:${entry.report ?? ""}:${entry.error ?? ""}${entry.reportMetadata ? JSON.stringify(entry.reportMetadata) : ""}`,
+		)
+		.digest("hex")
+		.slice(0, 16);
+	return entry;
+}
+function legacyEvent(t: HubTask, fields: Partial<TaskOutboxEntry> = {}): DeviceTaskEventFrame {
+	const entry = legacyOutbox(t, fields);
+	return {
+		type: "task_event",
+		taskId: entry.taskId,
+		attemptId: entry.attemptId,
+		botId: entry.botId,
+		status: entry.status,
+		report: entry.report,
+		error: entry.error,
+		reportMetadata: entry.reportMetadata,
+		fingerprint: entry.fingerprint,
+	};
+}
+
 describe("device task settlement fault boundaries", () => {
+	it.each(["legacy", "canonical", "absent"] as const)(
+		"ACKs an exact lease-less legacy duplicate with %s committed fingerprint without changing state",
+		(fingerprintKind) => {
+			const t = task("legacy-duplicate", {
+				status: "completed",
+				report: "done",
+				leaseToken: "lease",
+				leaseGeneration: 2,
+				stopConfirmed: true,
+				reportMetadata: reportUploadMetadata(),
+			});
+			const frame = legacyEvent(t, { reportMetadata: t.reportMetadata });
+			if (fingerprintKind === "legacy") t.outcomeFingerprint = frame.fingerprint;
+			if (fingerprintKind === "canonical") {
+				t.outcomeFingerprint = computeOutcomeFingerprint(
+					t.id,
+					t.attemptId,
+					"completed",
+					"done",
+					undefined,
+					t.reportMetadata,
+				);
+				t.outcomeCanonicalFingerprint = t.outcomeFingerprint;
+			}
+			const draft = state([t]);
+			const before = structuredClone(draft);
+			expect(settleTaskTerminalOutcome(draft, "device", frame, ctx)).toMatchObject({
+				accepted: true,
+				duplicate: true,
+				fingerprint: frame.fingerprint,
+			});
+			expect(draft).toEqual(before);
+		},
+	);
+
+	it.each([
+		{ report: "different" },
+		{ error: "different" },
+		{ status: "failed" as const },
+		{ reportMetadata: reportUploadMetadata() },
+	])("permanently rejects changed legacy duplicate content even with a valid old digest: %j", (fields) => {
+		const t = task("legacy-conflict", { status: "completed", report: "done", leaseToken: "lease", leaseGeneration: 1 });
+		const draft = state([t]);
+		const before = structuredClone(draft);
+		expect(settleTaskTerminalOutcome(draft, "device", legacyEvent(t, fields), ctx)).toMatchObject({
+			accepted: false,
+			permanent: true,
+			reasonCode: "terminal_conflict",
+		});
+		expect(draft).toEqual(before);
+	});
+
+	it.each([
+		{ leaseToken: "wrong", leaseGeneration: 2 },
+		{ leaseToken: "lease", leaseGeneration: 1 },
+		{ leaseToken: "lease" },
+		{ leaseGeneration: 2 },
+		{ executionCompleted: false },
+		{ artifactProduced: false },
+	])("does not extend legacy ACK compatibility to wrong/partial leases or stripped proof: %j", (fields) => {
+		const t = task("legacy-fenced", { status: "completed", report: "done", leaseToken: "lease", leaseGeneration: 2 });
+		const draft = state([t]);
+		const before = structuredClone(draft);
+		expect(settleTaskTerminalOutcome(draft, "device", { ...legacyEvent(t), ...fields }, ctx).accepted).toBe(false);
+		expect(draft).toEqual(before);
+	});
+
+	it.each([1, 2])("cannot use an old digest as lease proof to settle generation %i", (leaseGeneration) => {
+		const t = task("unsettled-legacy", { leaseToken: "lease", leaseGeneration });
+		const draft = state([t]);
+		const before = structuredClone(draft);
+		expect(settleTaskTerminalOutcome(draft, "device", legacyEvent(t), ctx)).toMatchObject({
+			accepted: false,
+			permanent: true,
+			reasonCode: "legacy_lease_missing",
+		});
+		expect(draft).toEqual(before);
+	});
+
+	it("checks device, account, Bot, room and attempt before acknowledging any legacy result", () => {
+		const t = task("legacy-identity", { status: "completed", report: "done", leaseToken: "lease", leaseGeneration: 1 });
+		for (const [deviceId, fields, mutate] of [
+			["other-device", {}, (_draft: HubState) => {}],
+			["device", { botId: "other-bot" }, (_draft: HubState) => {}],
+			["device", { attemptId: "other-attempt" }, (_draft: HubState) => {}],
+			[
+				"device",
+				{},
+				(draft: HubState) => {
+					draft.tasks[0].accountId = "other-account";
+				},
+			],
+			[
+				"device",
+				{},
+				(draft: HubState) => {
+					draft.rooms = [];
+				},
+			],
+		] as const) {
+			const draft = state([structuredClone(t)]);
+			mutate(draft);
+			const before = structuredClone(draft);
+			expect(settleTaskTerminalOutcome(draft, deviceId, legacyEvent(t, fields), ctx).accepted).toBe(false);
+			expect(draft).toEqual(before);
+		}
+	});
+
 	it("marks deleted attempts permanent only for the authenticated local Bot route", () => {
 		const t = task("deleted");
 		expect(settleTaskTerminalOutcome(state([]), "device", event(t), ctx)).toMatchObject({
@@ -458,6 +606,7 @@ async function listen(server: Server) {
 async function transport(
 	options: Pick<DeviceConnectorOptions, "recovery" | "onTask"> = {},
 	onTaskEvent?: DeviceRelayOptions["onTaskEvent"],
+	authenticateDevice: DeviceRelayOptions["authenticateDevice"] = () => true,
 ) {
 	const server = createServer((_req, res) => res.writeHead(404).end());
 	const url = await listen(server);
@@ -472,7 +621,7 @@ async function transport(
 	const relay = createDeviceRelay({
 		server,
 		publicUrl: url,
-		authenticateDevice: () => true,
+		authenticateDevice,
 		getAccount: () => "account",
 		ownsDevice: () => true,
 		onTaskEvent(id, frame) {
@@ -544,6 +693,99 @@ function codeOutcomeTask(id: string) {
 }
 
 describe("connector durable terminal wire outcomes", () => {
+	it.each(["legacy", "canonical", "absent", "unsettled", "conflict", "expired"] as const)(
+		"migrates a real v0.116 outbox through authenticated connector/relay/Hub: %s",
+		async (kind) => {
+			const t = task(`legacy-wire-${kind}`, { leaseToken: "old-lease", leaseGeneration: 1 });
+			const fixture = await persistedHub([t]);
+			let hub = fixture.hub;
+			const oldEntry = legacyOutbox(t);
+			if (kind !== "unsettled" && kind !== "expired") {
+				await hub.acceptTaskEvent("device", event(t, { report: kind === "conflict" ? "Hub report" : "done" }));
+				if (kind === "legacy" || kind === "absent")
+					await hub.store.transact((draft) => {
+						if (kind === "legacy") draft.tasks[0].outcomeFingerprint = oldEntry.fingerprint;
+						else delete draft.tasks[0].outcomeFingerprint;
+						delete draft.tasks[0].outcomeCanonicalFingerprint;
+					});
+			} else if (kind === "expired")
+				await hub.store.transact((draft) => {
+					draft.tasks = [];
+				});
+			const before = hub.store.snapshot();
+			const dataDir = await mkdtemp(join(tmpdir(), "legacy-task-wire-"));
+			cleanup.push(() => rm(dataDir, { recursive: true, force: true }));
+			await writeFile(join(dataDir, "task-recovery-outbox.json"), JSON.stringify([oldEntry]));
+			await writeFile(join(dataDir, "task-active-leases.json"), "[]");
+			const options = { dataDir, deviceId: "device" };
+			const recovery = new TaskRecoveryManager(options);
+			expect(recovery.outboxLoadError).toBe(false);
+			expect(recovery.getPendingOutboxEntry(t.id, t.attemptId)).toEqual(oldEntry);
+			expect(JSON.parse(await readFile(join(dataDir, "task-recovery-state.json"), "utf8"))).toMatchObject({
+				outbox: [oldEntry],
+				activeLeases: [],
+			});
+			const wire = await transport(
+				{ recovery },
+				(device, frame) => hub.acceptTaskEvent(device, frame),
+				(device, credential) => hub.store.authenticateDevice(device, credential),
+			);
+			await vi.waitFor(() => expect(recovery.getPendingOutbox()).toEqual([]));
+			expect(wire.relay.isOnline("device")).toBe(true);
+			expect(wire.events).toHaveLength(1);
+			expect(wire.events[0]).toMatchObject({ fingerprint: oldEntry.fingerprint, report: "done" });
+			expect(wire.events[0]).not.toHaveProperty("leaseToken");
+			expect(wire.events[0]).not.toHaveProperty("leaseGeneration");
+			expect(hub.store.snapshot()).toEqual(before);
+			const reloaded = new TaskRecoveryManager(options);
+			expect(reloaded.outboxLoadError).toBe(false);
+			expect(reloaded.getPendingOutbox()).toEqual([]);
+			if (kind === "unsettled" || kind === "conflict" || kind === "expired") {
+				const reasonCode =
+					kind === "unsettled" ? "legacy_lease_missing" : kind === "conflict" ? "terminal_conflict" : "attempt_expired";
+				expect(reloaded.getQuarantinedOutcomes()).toEqual([
+					{
+						reasonCode,
+						quarantinedAt: expect.any(Number),
+						outcome: { ...oldEntry, attempts: oldEntry.attempts + 1, updatedAt: expect.any(Number) },
+					},
+				]);
+			} else expect(reloaded.getQuarantinedOutcomes()).toEqual([]);
+			await wire.connector.close();
+			hub = await fixture.restart();
+			const second = await transport(
+				{ recovery: reloaded },
+				(device, frame) => hub.acceptTaskEvent(device, frame),
+				(device, credential) => hub.store.authenticateDevice(device, credential),
+			);
+			expect(second.relay.isOnline("device")).toBe(true);
+			expect(second.events).toEqual([]);
+		},
+	);
+
+	it("rejects an unauthenticated legacy replay before it can reach settlement or replace the device connection", async () => {
+		const t = task("legacy-auth", { status: "completed", report: "done", leaseToken: "lease", leaseGeneration: 1 });
+		const { hub } = await persistedHub([t]);
+		const before = hub.store.snapshot();
+		const wire = await transport(
+			{},
+			(device, frame) => hub.acceptTaskEvent(device, frame),
+			(device, credential) => hub.store.authenticateDevice(device, credential),
+		);
+		const endpoint = new URL("/device-connect?deviceId=device", wire.url);
+		endpoint.protocol = "ws:";
+		const socket = new WebSocket(endpoint, { headers: { authorization: "Bearer forged-credential" } });
+		cleanup.push(async () => socket.terminate());
+		const opened = vi.fn(() => socket.send(JSON.stringify(legacyEvent(t))));
+		socket.on("open", opened);
+		socket.on("error", () => {});
+		await new Promise<void>((resolve) => socket.on("close", () => resolve()));
+		expect(opened).not.toHaveBeenCalled();
+		expect(wire.events).toEqual([]);
+		expect(wire.relay.isOnline("device")).toBe(true);
+		expect(hub.store.snapshot()).toEqual(before);
+	});
+
 	it("replays identical code evidence after disconnect and only clears it on the committed duplicate ACK", async () => {
 		const { t, artifact } = codeOutcomeTask("artifact-replay");
 		const { hub } = await persistedHub([t]);

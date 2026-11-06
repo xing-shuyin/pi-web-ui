@@ -219,8 +219,11 @@ export function createDeviceCollabService(options: {
 						return await request(`${room()}/blackboard`, undefined, query);
 					}
 					case "blackboard_update": {
+						const url = args.sectionId
+							? `${room()}/blackboard/sections/${encodeURIComponent(args.sectionId)}`
+							: `${room()}/blackboard`;
 						return await request(
-							`${room()}/blackboard`,
+							url,
 							{
 								sourceBotId: args.sourceBotId!,
 								content: args.content!,

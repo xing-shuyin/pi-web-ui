@@ -355,6 +355,7 @@ describe("Hub Transaction Log & Atomic Persistence", () => {
 			expect((await stat(store.wal.walPath)).size).toBe(0);
 			expect(store.lastProjectionError).toBeUndefined();
 		}
+
 		await store.close();
 		const reopened = await DeviceHubStore.open(dir);
 		expect(reopened.snapshot().messages.map((row) => row.id)).toEqual(["msg-a", "msg-b"]);

@@ -258,9 +258,55 @@ export function settleTaskTerminalOutcome(
 		return reject("Task missing", 404);
 	if (task.attemptId !== event.attemptId)
 		return { ...reject("Attempt mismatch"), permanent: true, reasonCode: "attempt_expired" };
+	if (!isTerminal(event.status)) return reject("Terminal outcome required", 400);
+	// v0.116 persisted terminal outbox entries without their lease, then deleted
+	// the active lease. A legacy digest is content evidence, never lease proof:
+	// it may acknowledge an identical committed result, but cannot settle work.
+	const legacyLeaseMissing =
+		event.leaseToken === undefined &&
+		event.leaseGeneration === undefined &&
+		event.artifact === undefined &&
+		event.executionCompleted === undefined &&
+		event.artifactProduced === undefined &&
+		event.fingerprint ===
+			computeLegacyOutcomeFingerprint(
+				task.id,
+				task.attemptId,
+				event.status,
+				event.report,
+				event.error,
+				event.reportMetadata,
+			);
+	if (legacyLeaseMissing && (hasTaskLease(task) || isTerminal(task.status))) {
+		if (!isTerminal(task.status) || (!task.outcomeFingerprint && task.recoveryUntil !== undefined))
+			return {
+				...reject("Legacy outcome has no recoverable lease proof; retain evidence for manual recovery"),
+				permanent: true,
+				reasonCode: "legacy_lease_missing",
+			};
+		const displayReport =
+			event.report ||
+			event.error ||
+			(event.status === "failed"
+				? "Task execution failed without a report."
+				: "Task execution was interrupted without a report.");
+		if (
+			task.status !== event.status ||
+			task.report !== displayReport ||
+			task.error !== event.error ||
+			JSON.stringify(task.reportMetadata) !== JSON.stringify(event.reportMetadata) ||
+			task.artifact !== undefined ||
+			task.executionCompleted !== undefined ||
+			task.artifactProduced !== undefined ||
+			task.executionMode === "code" ||
+			task.contract?.executionMode === "code"
+		)
+			return { ...reject("Conflicting duplicate terminal outcome"), permanent: true, reasonCode: "terminal_conflict" };
+		// Do not backfill fingerprints, publish effects, or change the accepted lease.
+		return { accepted: true, duplicate: true, fingerprint: event.fingerprint, task };
+	}
 	if (task.leaseToken !== event.leaseToken || task.leaseGeneration !== event.leaseGeneration)
 		return reject("Lease token or generation mismatch");
-	if (!isTerminal(event.status)) return reject("Terminal outcome required", 400);
 	// An already committed terminal is compared below so identical retries retain their positive ACK.
 	if (event.status === "completed" && (task.cancelRequested || task.stopConfirmed) && !task.outcomeFingerprint)
 		return reject("Task stop requested");

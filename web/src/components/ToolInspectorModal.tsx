@@ -47,6 +47,7 @@ import { QuestionnaireCard } from "./QuestionnaireCard";
 import { CodemodeCard, DelegateBrief, TerminalCommand, ToolSearchDetails } from "./ToolCallBlock";
 import { Markdown } from "./Markdown";
 import { SplitDiffView, UnifiedDiffView, WriteCodeView } from "./FileChangeCard";
+import { SubagentInspectorView } from "./SubagentInspectorView";
 
 const TOOL_ICONS: Record<string, ReactNode> = {
 	bash: <FiTerminal />,
@@ -1120,11 +1121,14 @@ function GenericInspectorDialog({
 		[isQuestionnaire, args],
 	);
 
+	const isSubagent = name === "subagent" || name === "conversation";
+
 	const hasRichView = Boolean(
 		(isPresent && presentArgs) ||
 		(isDelegate && Object.keys(delegateArgs).length > 0) ||
 		(isCodemode && codemodeArgs?.code) ||
-		(isQuestionnaire && questionnaireArgs),
+		(isQuestionnaire && questionnaireArgs) ||
+		isSubagent,
 	);
 
 	return (
@@ -1259,6 +1263,17 @@ function GenericInspectorDialog({
 									output={output}
 									isError={isError}
 									waiting={state.statusClass === "run"}
+								/>
+							)}
+							{isSubagent && (
+								<SubagentInspectorView
+									name={name}
+									args={args}
+									details={details}
+									output={output}
+									duration={duration}
+									statusClass={state.statusClass}
+									isError={isError}
 								/>
 							)}
 

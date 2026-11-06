@@ -58,20 +58,20 @@ Linux 使用 `systemd --user`，macOS 使用 launchd 用户服务，Windows 使�
 
 不带子命令的 `pi-web-ui hub` 保留前台运行方式，可配置以下环境变量；源码目录也可以运行 `node bin/pi-device-hub.mjs`。
 
-| 环境变量                           | 说明                                                                     |
-| ---------------------------------- | ------------------------------------------------------------------------ |
-| `PI_DEVICE_HUB_PUBLIC_URL`         | 中心的 HTTP 或 HTTPS origin，如 `http://82.156.246.55:50001`，不可含路径 |
-| `PI_DEVICE_HUB_PATH_ACCESS`        | 默认开启；`0` 恢复旧版独立域名/端口模式                                  |
-| `PI_DEVICE_HUB_DEVICE_DOMAIN`      | 兼容旧版独立设备域配置；默认通过 Hub 单端口路径访问设备                  |
-| `PI_DEVICE_HUB_HOST`               | 默认 `127.0.0.1`                                                         |
-| `PI_DEVICE_HUB_PORT`               | 默认 `8790`                                                              |
-| `PI_DEVICE_HUB_DATA_DIR`           | 默认 `~/.pi-device-hub`，必须独立于客户端数据目录                        |
-| `PI_DEVICE_HUB_ALLOW_REGISTRATION` | `1` 开放注册，默认关闭；首次创建账号时开启，完成后重启关闭               |
+| 环境变量                           | 说明                                                                    |
+| ---------------------------------- | ----------------------------------------------------------------------- |
+| `PI_DEVICE_HUB_PUBLIC_URL`         | 中心的 HTTP 或 HTTPS origin，如 `http://203.0.113.10:50001`，不可含路径 |
+| `PI_DEVICE_HUB_PATH_ACCESS`        | 默认开启；`0` 恢复旧版独立域名/端口模式                                 |
+| `PI_DEVICE_HUB_DEVICE_DOMAIN`      | 兼容旧版独立设备域配置；默认通过 Hub 单端口路径访问设备                 |
+| `PI_DEVICE_HUB_HOST`               | 默认 `127.0.0.1`                                                        |
+| `PI_DEVICE_HUB_PORT`               | 默认 `8790`                                                             |
+| `PI_DEVICE_HUB_DATA_DIR`           | 默认 `~/.pi-device-hub`，必须独立于客户端数据目录                       |
+| `PI_DEVICE_HUB_ALLOW_REGISTRATION` | `1` 开放注册，默认关闭；首次创建账号时开启，完成后重启关闭              |
 
 ### 直接使用 HTTP 与公网 IP
 
 ```sh
-PI_DEVICE_HUB_PUBLIC_URL=http://82.156.246.55:50001 \
+PI_DEVICE_HUB_PUBLIC_URL=http://203.0.113.10:50001 \
 PI_DEVICE_HUB_HOST=0.0.0.0 \
 PI_DEVICE_HUB_PORT=50001 \
 PI_DEVICE_HUB_ALLOW_REGISTRATION=1 \
@@ -82,7 +82,7 @@ pi-web-ui hub
 
 ### 单端口路径与旧版独立来源兼容
 
-默认设备入口与 Hub 共用端口，例如 `http://82.156.246.55:50001/device/<设备ID>/`；自定义别名仍指向同一入口。不再按设备消耗额外端口。设备页面由 Hub 强制施加 CSP sandbox，并且不启用 `allow-same-origin`。随机能力路径只允许访问对应设备，不能作为 Hub 账号凭据使用；撤销设备会废止其访问权限。隔离页面的浏览器存储不可用时使用页面内存回退，刷新后此类本地偏好会重置。
+默认设备入口与 Hub 共用端口，例如 `http://203.0.113.10:50001/device/<设备ID>/`；自定义别名仍指向同一入口。不再按设备消耗额外端口。设备页面由 Hub 强制施加 CSP sandbox，并且不启用 `allow-same-origin`。随机能力路径只允许访问对应设备，不能作为 Hub 账号凭据使用；撤销设备会废止其访问权限。隔离页面的浏览器存储不可用时使用页面内存回退，刷新后此类本地偏好会重置。
 
 以下为旧版独立来源的兼容配置：
 

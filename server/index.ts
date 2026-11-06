@@ -22,6 +22,7 @@ import { ALL_AGENT_TOOL_ENTRIES, effectiveDisabledAgentTools, isToolSupportedOnP
 import "./patch-remote-catalog.js";
 import { existsSync, mkdirSync, readFileSync, readdirSync, statSync } from "node:fs";
 import { registerPromptTemplateRoutes } from "./prompt-templates.js";
+import { createQuickAskRuntime, registerQuickAskRoutes } from "./quick-ask.js";
 import { readFile, stat } from "node:fs/promises";
 import { createServer, type IncomingMessage } from "node:http";
 import { proxyHttp, type ProxyHit } from "./http-proxy.js";
@@ -128,6 +129,7 @@ import { setCanvasBroadcaster, setCanvasRuntime } from "./canvas/canvas-agent-to
 import { handleCanvasMessage } from "./canvas/canvas-dispatch.js";
 import type {
 	BgServer,
+	ThinkingLevel,
 	ClientMessage,
 	UiApprovalRule,
 	UiLayoutPrefs,
@@ -617,6 +619,10 @@ app.use((req, res, next) => {
 /** 共享客户端持久化存储：双引擎（pi + dsh）共用同一份内存缓存与落盘通道，避免互相覆盖。 */
 const sharedStateStore = new ClientStateStore(join(DATA_DIR, "client-state.json"));
 registerPromptTemplateRoutes(app, DATA_DIR);
+registerQuickAskRoutes(app, {
+	getSettings: () => sharedStateStore.getSettingsSnapshot(""),
+	getRuntime: (signal) => createQuickAskRuntime(getAgentDir(), signal),
+});
 
 /** 启动参数显式指定的引擎（--engine pi|dsh|codex|claude|durable 或 PI_WEB_ENGINE）。未显式传则优先读持久化默认引擎。 */
 const EXPLICIT_ENGINE_ARG = cliFlag("--engine") ?? process.env.PI_WEB_ENGINE;
@@ -1184,6 +1190,7 @@ const deviceCenter = await installLocalDeviceCenter({
 			recovery: runtime.recovery,
 			reportOutbox: runtime.reportOutbox,
 			onTask: runtime.onTask,
+			onSteer: (taskId, text) => runtime.steerTask(taskId, text),
 			onInteractionAnswer: (answer) => runtime.answerTaskInteraction(answer.taskId, answer.attemptId, answer),
 			onConnect: syncBots,
 			onCommand: runtime.onCommand,
@@ -1743,6 +1750,11 @@ export interface DispatchSession {
 		visionBridgePrompt?: string;
 		scmCommitMsgPromptMode?: "append" | "replace";
 		scmCommitMsgPrompt?: string;
+		quickAskEnabled?: boolean;
+		quickAskModel?: string | null;
+		quickAskThinking?: ThinkingLevel;
+		quickAskSystemPrompt?: string;
+		quickAskExplainPrompt?: string;
 		reviewPrompt?: string;
 		reviewDisabledSkills?: string[];
 	}): Promise<void>;

@@ -130,7 +130,7 @@ try {
 				return selection.toString();
 			}, selector);
 		};
-		const quoteButton = page.locator(".quote-selection-button");
+		const quoteButton = page.locator(".quote-selection-button").first();
 		const codeText = await select(".msg-assistant .msg-text pre");
 		await quoteButton.waitFor({ timeout: 3000 });
 		await quoteButton.click();

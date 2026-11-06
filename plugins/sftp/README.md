@@ -61,7 +61,7 @@
 			},
 		},
 		"prod": {
-			"host": "82.156.246.55",
+			"host": "203.0.113.10",
 			"username": "root",
 			"remotePath": "/project/app",
 			"auth": { "method": "password", "password": "${secret:prod-password}" },

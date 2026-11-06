@@ -36,6 +36,7 @@ export interface DeviceConnectorOptions {
 		signal?: AbortSignal,
 		callbacks?: import("./executor.js").DeviceTaskCallbacks,
 	) => unknown | Promise<unknown>;
+	onSteer?: (taskId: string, text: string) => boolean | Promise<boolean>;
 	/** Parent disposes its executor; the next task after reconnect must create a fresh executor. */
 	onInteractionAnswer?: (answer: import("../protocol.js").DeviceTaskInteractionAnswer) => boolean;
 	onDisconnect?: () => void;
@@ -215,6 +216,7 @@ export function createDeviceConnector(options: DeviceConnectorOptions) {
 		const rpc = createCommandChannel(ws, options.onCommand);
 		const messages = createWsMessageChannel(ws);
 		const cancellations = new Set<string>();
+		const steerings = new Set<string>();
 		ws.on("open", () => {
 			if (socket !== ws || closed) {
 				ws.terminate();
@@ -377,6 +379,40 @@ export function createDeviceConnector(options: DeviceConnectorOptions) {
 								stopped: matched && !task.stopUnconfirmed,
 							});
 					});
+					return;
+				}
+				if (frame.type === "task_steer") {
+					if (
+						typeof frame.id !== "string" ||
+						!frame.id ||
+						frame.id.length > 128 ||
+						typeof frame.taskId !== "string" ||
+						typeof frame.attemptId !== "string" ||
+						typeof frame.text !== "string" ||
+						steerings.size >= RELAY_LIMITS.steerings ||
+						steerings.has(frame.id)
+					)
+						throw new Error("Invalid task steer");
+					const id = frame.id;
+					const taskId = frame.taskId as string;
+					const text = frame.text as string;
+					const task = runningTasks.get(taskId);
+					const matched = task?.ws === ws && task.attemptId === frame.attemptId;
+					steerings.add(id);
+					void Promise.resolve()
+						.then(() => (matched && options.onSteer ? options.onSteer(taskId, text) : false))
+						.catch(() => false)
+						.then((steered) => {
+							steerings.delete(id);
+							if (socket === ws && !closed)
+								sendFrame(ws, {
+									type: "task_steered",
+									id,
+									taskId,
+									attemptId: frame.attemptId,
+									steered: Boolean(steered),
+								});
+						});
 					return;
 				}
 				if (frame.type === "task_interaction_answer") {

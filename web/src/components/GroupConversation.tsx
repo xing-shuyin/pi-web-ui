@@ -9,6 +9,7 @@ import { GroupWorkspaceActions } from "./GroupWorkspaceActions";
 import { GroupCanvasBinding } from "./GroupCanvasBinding";
 import { GroupBotPresets } from "./GroupBotPresets";
 import { GroupDrawer, type GroupDrawerTab } from "./GroupDrawer";
+import { GroupSteerModal } from "./GroupSteerModal";
 import { appUrl } from "../base-url";
 import { openGroupEventStream, taskProgressMatches, acceptTaskProgress } from "../group-event-stream";
 import { randomUuid } from "../uuid";
@@ -108,6 +109,7 @@ function GroupRoom({
 	const handleCloseDrawer = useCallback(() => {
 		setDrawerOpen(false);
 	}, []);
+	const [steerTask, setSteerTask] = useState<import("../device-group-messages").GroupTask | null>(null);
 	const [viewTaskId, setViewTaskId] = useState<string | null>(null);
 	const handleCloseDetails = useCallback(() => setViewTaskId(null), []);
 	function invalidatesRoom(cause: unknown): boolean {
@@ -299,28 +301,6 @@ function GroupRoom({
 		[roomId, conversations, zh],
 	);
 
-	const handleSteerTask = useCallback(
-		async (task: import("../device-group-messages").GroupTask) => {
-			const promptText = window.prompt(
-				zh
-					? `向正在运行的 @${task.botId} 注入飞行中实时转向指令 (In-flight Steering)：`
-					: `Inject in-flight steering instruction to running @${task.botId}:`,
-			);
-			if (!promptText || !promptText.trim()) return;
-			try {
-				await request(
-					`rooms/${encodeURIComponent(roomId)}/tasks/${encodeURIComponent(task.id)}/steer`,
-					new AbortController().signal,
-					{ text: promptText.trim() },
-				);
-				setRefresh((n) => n + 1);
-			} catch (err: any) {
-				setError(err?.message || (zh ? "转向注入失败" : "Failed to steer task"));
-			}
-		},
-		[roomId, zh],
-	);
-
 	useEffect(() => {
 		setActiveGroupRoomData({
 			roomId,
@@ -383,9 +363,10 @@ function GroupRoom({
 			);
 			return false;
 		}
+		const isPipeline = text.includes("->");
 		retry.current = groupSendAttempt(
 			retry.current,
-			JSON.stringify([roomId, destination, planOnly]),
+			JSON.stringify([roomId, destination, planOnly, isPipeline]),
 			text,
 			targets,
 			randomUuid,
@@ -400,8 +381,20 @@ function GroupRoom({
 				destination ? `${base}/conversations/${encodeURIComponent(destination)}/messages` : `${base}/messages`,
 				controller.signal,
 				destination
-					? { text, kind: "message", idempotencyKey: retry.current.key, ...(planOnly ? { planOnly: true } : {}) }
-					: { text, targetBotIds: targets, idempotencyKey: retry.current.key, ...(planOnly ? { planOnly: true } : {}) },
+					? {
+							text,
+							kind: "message",
+							idempotencyKey: retry.current.key,
+							...(planOnly ? { planOnly: true } : {}),
+							...(isPipeline ? { pipeline: true } : {}),
+						}
+					: {
+							text,
+							targetBotIds: targets,
+							idempotencyKey: retry.current.key,
+							...(planOnly ? { planOnly: true } : {}),
+							...(isPipeline ? { pipeline: true } : {}),
+						},
 			);
 			if (controller.signal.aborted || generation.current !== token) return false;
 			retry.current = null;
@@ -600,42 +593,85 @@ function GroupRoom({
 							</span>
 						</button>
 					)}
-					{detail?.tasks &&
-						detail.tasks.slice(0, 4).map((task) => {
+					{(() => {
+						const allTasks = detail?.tasks ?? [];
+						const activeTasks = allTasks.filter(
+							(t) => t.status === "running" || t.status === "waiting" || t.status === "queued",
+						);
+						let displayTasks = allTasks.slice(-4);
+						if (activeTasks.length > 0) {
+							const relevantIds = new Set(activeTasks.map((t) => t.id));
+							for (const t of activeTasks) {
+								if (t.dependsOnTaskId) relevantIds.add(t.dependsOnTaskId);
+							}
+							const recentCompleted = allTasks.filter((t) => t.status === "completed").slice(-2);
+							for (const t of recentCompleted) relevantIds.add(t.id);
+							const filtered = allTasks.filter((t) => relevantIds.has(t.id));
+							displayTasks = filtered.length > 0 ? filtered.slice(-6) : allTasks.slice(-6);
+						}
+
+						return displayTasks.map((task, index) => {
 							const { botPrefix, summary } = formatGroupTaskChip(task.text);
+							const prevTask = index > 0 ? displayTasks[index - 1] : undefined;
+							const isPipelineStep =
+								index > 0 &&
+								(task.dependsOnTaskId === prevTask?.id ||
+									(prevTask?.status === "completed" && (task.status === "running" || task.status === "waiting")) ||
+									task.dependsOnTaskId !== undefined);
+
 							return (
-								<div key={task.id} className="dg-task-chip">
-									<span className={`dg-task-status-dot status-${task.status}`} />
-									{botPrefix && <strong className="dg-task-bot-prefix">{botPrefix}</strong>}
-									<span className="dg-task-title" title={task.text}>
-										{summary.length > 24 ? summary.slice(0, 24) + "..." : summary}
-									</span>
-									<button type="button" className="btn dg-task-detail-btn" onClick={() => setViewTaskId(task.id)}>
-										{zh ? "详情" : "Details"}
-									</button>
-									{task.status === "running" && (
-										<button
-											type="button"
-											className="btn dg-task-detail-btn"
-											title={zh ? "飞行中实时注入转向纠偏" : "Inject in-flight steering"}
-											onClick={() => handleSteerTask(task)}
+								<div key={task.id} className="dg-pipeline-step-wrapper">
+									{isPipelineStep && (
+										<span
+											className="dg-pipeline-arrow"
+											title={zh ? "流水线流转依赖" : "Pipeline flow dependency"}
+											aria-hidden="true"
 										>
-											{zh ? "转向" : "Steer"}
-										</button>
+											→
+										</span>
 									)}
-									{(task.status === "running" || task.status === "queued") && (
-										<button
-											type="button"
-											className="btn dg-task-detail-btn dg-task-stop-action"
-											title={zh ? "中止此任务" : "Stop task"}
-											onClick={() => handleStopTask(task)}
-										>
-											{zh ? "中止" : "Stop"}
+									<div
+										className={`dg-task-chip ${task.status === "running" ? "is-running" : ""} ${task.status === "waiting" ? "is-waiting" : ""}`}
+									>
+										<span
+											className={`dg-task-status-dot status-${task.status}`}
+											title={task.status === "waiting" ? (zh ? "等待前序任务" : "Waiting for upstream") : task.status}
+										/>
+										{task.status === "waiting" && (
+											<span className="dg-task-waiting-badge">{zh ? "⏳ 等待中" : "⏳ Waiting"}</span>
+										)}
+										{botPrefix && <strong className="dg-task-bot-prefix">{botPrefix}</strong>}
+										<span className="dg-task-title" title={task.text}>
+											{summary.length > 24 ? summary.slice(0, 24) + "..." : summary}
+										</span>
+										<button type="button" className="btn dg-task-detail-btn" onClick={() => setViewTaskId(task.id)}>
+											{zh ? "详情" : "Details"}
 										</button>
-									)}
+										{task.status === "running" && (
+											<button
+												type="button"
+												className="btn dg-task-detail-btn"
+												title={zh ? "飞行中实时注入转向纠偏" : "Inject in-flight steering"}
+												onClick={() => setSteerTask(task)}
+											>
+												{zh ? "转向" : "Steer"}
+											</button>
+										)}
+										{(task.status === "running" || task.status === "queued" || task.status === "waiting") && (
+											<button
+												type="button"
+												className="btn dg-task-detail-btn dg-task-stop-action"
+												title={zh ? "中止此任务" : "Stop task"}
+												onClick={() => handleStopTask(task)}
+											>
+												{zh ? "中止" : "Stop"}
+											</button>
+										)}
+									</div>
 								</div>
 							);
-						})}
+						});
+					})()}
 				</div>
 			)}
 			<GroupNativeInteractions
@@ -673,6 +709,22 @@ function GroupRoom({
 			})()}
 			<MessageList state={state} liveOutputs={emptyMap} toolStatuses={emptyMap} messageLabels={labels} readOnly />
 			{viewTaskId && <GroupTaskDetails roomId={roomId} taskId={viewTaskId} onClose={handleCloseDetails} />}
+			{steerTask && (
+				<GroupSteerModal
+					task={steerTask}
+					botName={members.find((b) => b.id === steerTask.botId)?.name}
+					deviceName={devices.find((d) => d.id === steerTask.botId)?.deviceName || steerTask.deviceId}
+					onClose={() => setSteerTask(null)}
+					onSubmit={async (text) => {
+						await request(
+							`rooms/${encodeURIComponent(roomId)}/tasks/${encodeURIComponent(steerTask.id)}/steer`,
+							new AbortController().signal,
+							{ text: text.trim() },
+						);
+						setRefresh((n) => n + 1);
+					}}
+				/>
+			)}
 			<GroupDrawer
 				isOpen={drawerOpen}
 				activeTab={drawerTab}

@@ -9,12 +9,23 @@
  *
  * 纪律：
  *   1. 这里只描述**元数据**（字段名 / 分组 / 文案 key），净化与归一化仍在 preset-share 里；
- *   2. `PRESET_FIELD_NAMES` 必须覆盖 `ClientSettings` 的每个字段 —— 单测
+ *   2. `PRESET_FIELD_NAMES` / `PRESET_EXCLUDED_KEYS` 必须覆盖 `ClientSettings` 的每个字段 —— 单测
  *      `tests/unit/preset-share.test.ts` 用类型 + 快照双重守卫，漏字段会红；
  *   3. 分组只影响 UI 折叠与「勾一组」，不影响写入逻辑（导入按字段名过滤）。
  */
 
 import { resolveEnabledAgentTools } from "./tool-manager.js";
+
+/** Internal flags and independent popup preferences are excluded from agent presets. */
+export const PRESET_EXCLUDED_KEYS = [
+	"_promptPluginDevConfigured",
+	"quickAskEnabled",
+	"quickAskModel",
+	"quickAskThinking",
+	"quickAskSystemPrompt",
+	"quickAskExplainPrompt",
+] as const;
+export type PresetExcludedKey = (typeof PRESET_EXCLUDED_KEYS)[number];
 
 /** 预设字段分组（导入预览里的折叠块；顺序即展示顺序）。 */
 export const PRESET_GROUP_ORDER = ["prompt", "tools", "terminal", "skills", "ai", "ui", "engine"] as const;

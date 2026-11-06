@@ -9,6 +9,7 @@
  */
 
 import { startTurnTiming, finishTurnTiming } from "../turn-timing.js";
+import { normalizeQuickAskSettings } from "../quick-ask-settings.js";
 import { randomUUID } from "node:crypto";
 import { existsSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
@@ -2351,6 +2352,7 @@ export class UniversalSession implements DispatchSession {
 	pushSettings(): void {
 		const s = this.stateStore?.getSettings(this.clientId);
 		const settings: UiSettingsState = {
+			...normalizeQuickAskSettings(s ?? {}),
 			steeringMode: s?.steeringMode ?? "all",
 			followUpMode: s?.followUpMode ?? "all",
 			promptMode: s?.promptMode ?? "append",

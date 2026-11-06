@@ -16,7 +16,8 @@ import { deriveLegacy, legacyToDisabled, normalizeDisabledAgentTools } from "./t
 import { normalizeToolPromptOverrides, type ToolPromptOverrideMap } from "./tool-prompt-overrides.js";
 import { UI_SLOTS } from "./plugin-ui-slots.js";
 import { DEFAULT_PROMPT_DISABLED } from "./prompt-composer.js";
-import type { EngineId, QueueMode, UiAlign, UiLayoutPrefs, UiSlotId } from "./protocol.js";
+import type { EngineId, QueueMode, ThinkingLevel, UiAlign, UiLayoutPrefs, UiSlotId } from "./protocol.js";
+import { mergeQuickAskSettings, normalizeQuickAskSettings } from "./quick-ask-settings.js";
 
 /** System-prompt mode: append the custom text to the built prompt, or replace
  *  the whole system prompt with it. (遗留字段：主会话已迁移到 compose 模板，
@@ -434,6 +435,11 @@ export interface ClientSettings {
 	scmCommitMsgPromptMode: PromptMode;
 	/** SCM「AI 生成提交信息」自定义提示词（空 = 内置默认）。 */
 	scmCommitMsgPrompt: string;
+	quickAskEnabled: boolean;
+	quickAskModel: string | null;
+	quickAskThinking: ThinkingLevel;
+	quickAskSystemPrompt: string;
+	quickAskExplainPrompt: string;
 	/** 计划模式提示词模式：追加/替换内置默认（语义同 promptMode）。 */
 	planModePromptMode: PromptMode;
 	/** 计划模式自定义提示词（空 = 内置默认）。 */
@@ -1307,6 +1313,7 @@ export class ClientStateStore {
 			visionBridgePrompt: stored?.visionBridgePrompt ?? "",
 			scmCommitMsgPromptMode: stored?.scmCommitMsgPromptMode === "replace" ? "replace" : "append",
 			scmCommitMsgPrompt: stored?.scmCommitMsgPrompt ?? "",
+			...normalizeQuickAskSettings(stored ?? {}),
 			planModePromptMode: stored?.planModePromptMode === "replace" ? "replace" : "append",
 			planModePrompt: stored?.planModePrompt ?? "",
 			subagentDefaultModel: stored?.subagentDefaultModel ?? null,
@@ -1442,6 +1449,7 @@ export class ClientStateStore {
 			visionBridgePrompt: settings.visionBridgePrompt ?? cur.visionBridgePrompt ?? "",
 			scmCommitMsgPromptMode: settings.scmCommitMsgPromptMode ?? cur.scmCommitMsgPromptMode ?? "append",
 			scmCommitMsgPrompt: settings.scmCommitMsgPrompt ?? cur.scmCommitMsgPrompt ?? "",
+			...mergeQuickAskSettings(cur, settings),
 			planModePromptMode: settings.planModePromptMode ?? cur.planModePromptMode ?? "append",
 			planModePrompt: settings.planModePrompt ?? cur.planModePrompt ?? "",
 			reviewPrompt: settings.reviewPrompt ?? cur.reviewPrompt ?? "",

@@ -126,6 +126,7 @@ export interface HubRelay {
 		answer: import("../protocol.js").DeviceTaskInteractionAnswer,
 	) => boolean | Promise<boolean>;
 	cancelTask?: (deviceId: string, taskId: string, attemptId: string) => Promise<{ stopped: boolean }>;
+	steerTask?: (deviceId: string, taskId: string, attemptId: string, text: string) => Promise<{ steered: boolean }>;
 	handleOpen?: (req: Request, res: Response, deviceId: string) => Promise<void>;
 	handleRequest?: (req: IncomingMessage, res: ServerResponse) => boolean;
 	handleAliasOpen?: (req: IncomingMessage, res: ServerResponse, deviceId: string) => Promise<void>;
@@ -282,7 +283,9 @@ export async function createDeviceHub(options: DeviceHubOptions) {
 				(suffix === "/rooms" ||
 					conversationRoute ||
 					webhookRoute ||
-					/^\/rooms\/[^/]+\/(messages|rename|members|clear|delete|interactions|canvas|blackboard)$/.test(suffix) ||
+					/^\/rooms\/[^/]+\/(messages|rename|members|clear|delete|interactions|canvas|blackboard(?:\/sections\/[^/]+)?)$/.test(
+						suffix,
+					) ||
 					/^\/rooms\/[^/]+\/tasks\/[^/]+\/approve-plan$/.test(suffix) ||
 					/^\/rooms\/[^/]+\/transfers(?:\/start|\/[^/]+(?:\/(?:apply|abort|resume))?)?$/.test(suffix) ||
 					/^\/devices\/[^/]+\/(open|remark)$/.test(suffix)))
@@ -304,7 +307,7 @@ export async function createDeviceHub(options: DeviceHubOptions) {
 		if (
 			(req.method === "GET" &&
 				(["/devices", "/bots", "/rooms"].includes(suffix) ||
-					/^\/rooms\/[^/]+(?:\/(?:history|locks|blackboard))?$/.test(suffix) ||
+					/^\/rooms\/[^/]+(?:\/(?:history|locks|blackboard(?:\/sections\/[^/]+)?))?$/.test(suffix) ||
 					/^\/rooms\/[^/]+\/conversations(?:\/[^/]+(?:\/(?:task-state|evidence))?)?$/.test(suffix))) ||
 			(req.method === "POST" &&
 				(suffix === "/rooms" ||
@@ -312,7 +315,7 @@ export async function createDeviceHub(options: DeviceHubOptions) {
 					/^\/rooms\/[^/]+\/(?:messages|blackboard|conversations(?:\/[^/]+\/(?:messages|stop|deliveries|reviews|attention|task-state|integrations(?:\/[^/]+(?:\/(?:verify|apply|cancel|reconcile|resume))?)?))?)$/.test(
 						suffix,
 					))) ||
-			(req.method === "PUT" && /^\/rooms\/[^/]+\/blackboard$/.test(suffix))
+			(req.method === "PUT" && /^\/rooms\/[^/]+\/blackboard(?:\/sections\/[^/]+)?$/.test(suffix))
 		)
 			req.url = req.url.replace("/api/agent/", "/api/");
 		else if (!((suffix === "/transfers" && req.method === "POST") || (suffix === "/bots" && req.method === "PUT")))
@@ -351,7 +354,7 @@ export async function createDeviceHub(options: DeviceHubOptions) {
 		}
 		if (
 			(req.method === "PUT" || req.method === "POST") &&
-			/^\/api\/(?:agent\/)?rooms\/[^/]+\/blackboard$/.test(req.path)
+			/^\/api\/(?:agent\/)?rooms\/[^/]+\/blackboard(?:\/sections\/[^/]+)?$/.test(req.path)
 		) {
 			return blackboardJson(req, res, next);
 		}
@@ -1011,6 +1014,7 @@ export async function createDeviceHub(options: DeviceHubOptions) {
 				updatedBy,
 				...(title?.trim() ? { title: title.trim() } : {}),
 				content,
+				...(req.body?.sections && typeof req.body.sections === "object" ? { sections: req.body.sections } : {}),
 			};
 			room.blackboard = nextBlackboard;
 			return nextBlackboard;
@@ -1021,6 +1025,120 @@ export async function createDeviceHub(options: DeviceHubOptions) {
 	};
 	app.put("/api/rooms/:id/blackboard", handleBlackboardUpdate);
 	app.post("/api/rooms/:id/blackboard", handleBlackboardUpdate);
+
+	const handleBlackboardSectionUpdate = async (req: Request, res: Response) => {
+		const owner = account(req);
+		const roomId = String(req.params.id);
+		const rawSectionId = String(req.params.sectionId || "").trim();
+		if (!rawSectionId || rawSectionId.length > 100 || /[\x00-\x1F\x7F]/.test(rawSectionId)) {
+			fail(400, "Invalid sectionId");
+		}
+		const sectionId = rawSectionId;
+		const { content, expectedVersion, title } = req.body ?? {};
+		const settings = currentSettings();
+
+		if (typeof content !== "string" || !content.trim()) fail(400, "Content must be a nonempty string");
+		if (Buffer.byteLength(content, "utf8") > settings.blackboardMaxBytes)
+			fail(400, `Content exceeds ${settings.blackboardMaxBytes} bytes limit`);
+		if (/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/.test(content)) fail(400, "Content must not contain control characters");
+
+		if (expectedVersion !== undefined) {
+			if (typeof expectedVersion !== "number" || !Number.isSafeInteger(expectedVersion) || expectedVersion < 0) {
+				fail(400, "expectedVersion must be a non-negative safe integer");
+			}
+		}
+
+		if (title !== undefined) {
+			if (typeof title !== "string" || title.length > 200 || /[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/.test(title)) {
+				fail(400, "Invalid title");
+			}
+		}
+
+		let updatedBy: { type: "human" | "bot"; id: string; name: string };
+		const stateBefore = store.snapshot();
+		if (agents.has(req)) {
+			const agent = agents.get(req)!;
+			const sourceBotId = (req.body?.sourceBotId ?? req.query?.sourceBotId) as string | undefined;
+			if (!sourceBotId) fail(403, "Source Bot required");
+			const source = stateBefore.bots.find(
+				(b) => b.id === sourceBotId && b.deviceId === agent.device.id && b.accountId === agent.account.id && b.enabled,
+			);
+			if (!source) fail(403, "Source Bot access denied");
+			const preRoom = stateBefore.rooms.find((r) => r.id === roomId && r.accountId === owner.id);
+			if (!preRoom) fail(404, "Room missing");
+			if (!preRoom.botIds.includes(source.id)) fail(403, "Source Bot is not a room member");
+			updatedBy = { type: "bot", id: source.id, name: source.name };
+		} else {
+			const preRoom = stateBefore.rooms.find((r) => r.id === roomId && r.accountId === owner.id);
+			if (!preRoom) fail(404, "Room missing");
+			updatedBy = { type: "human", id: owner.id, name: owner.username };
+		}
+
+		const updatedBlackboard = await store.transact((draft) => {
+			const room = draft.rooms.find((r) => r.id === roomId && r.accountId === owner.id);
+			if (!room) fail(404, "Room missing");
+			if (agents.has(req) && !room.botIds.includes(updatedBy.id)) fail(403, "Source Bot is not a room member");
+
+			const current = room.blackboard;
+			if (expectedVersion !== undefined) {
+				if (current) {
+					if (current.version !== expectedVersion) fail(409, "Version conflict");
+				} else {
+					if (expectedVersion !== 0) fail(409, "Version conflict");
+				}
+			}
+
+			const sections: Record<string, import("./store.js").BlackboardSection> = current?.sections
+				? { ...current.sections }
+				: {};
+
+			if (Object.keys(sections).length === 0 && current?.content?.trim()) {
+				sections["main"] = {
+					id: "main",
+					title: current.title || "Main",
+					content: current.content,
+					updatedAt: current.updatedAt,
+					updatedBy: current.updatedBy,
+				};
+			}
+
+			const prevSection = sections[sectionId];
+			const sectionTitle = title?.trim() || prevSection?.title || sectionId;
+			const sectionUpdatedAt = Date.now();
+			sections[sectionId] = {
+				id: sectionId,
+				title: sectionTitle,
+				content,
+				updatedAt: sectionUpdatedAt,
+				updatedBy,
+			};
+
+			const compiledContent = Object.values(sections)
+				.map((sec) => `## ${sec.title}\n\n${sec.content}`)
+				.join("\n\n");
+
+			if (Buffer.byteLength(compiledContent, "utf8") > settings.blackboardMaxBytes) {
+				fail(400, `Aggregated blackboard content exceeds ${settings.blackboardMaxBytes} bytes limit`);
+			}
+
+			const nextVersion = current ? current.version + 1 : 1;
+			const nextBlackboard: import("./store.js").GroupBlackboard = {
+				version: nextVersion,
+				updatedAt: sectionUpdatedAt,
+				updatedBy,
+				...(current?.title ? { title: current.title } : {}),
+				content: compiledContent,
+				sections,
+			};
+			room.blackboard = nextBlackboard;
+			return nextBlackboard;
+		});
+
+		groupEvents.invalidate(roomId);
+		res.json({ ok: true, blackboard: updatedBlackboard });
+	};
+	app.put("/api/rooms/:id/blackboard/sections/:sectionId", handleBlackboardSectionUpdate);
+	app.post("/api/rooms/:id/blackboard/sections/:sectionId", handleBlackboardSectionUpdate);
 
 	// === Group Webhooks ===
 	app.get("/api/rooms/:id/webhooks", (req, res) => {
@@ -1579,11 +1697,14 @@ export async function createDeviceHub(options: DeviceHubOptions) {
 			});
 		});
 
-		const steerRelay = (options as any).onSteer ?? (options as any).relay?.onSteer;
-		if (steerRelay) {
-			await steerRelay(task.deviceId, { taskId: task.id, botId: task.botId, text: instruction }).catch(() => {});
+		let steered = false;
+		if (options.relay?.steerTask) {
+			const relayResult = await options.relay
+				.steerTask(task.deviceId, task.id, task.attemptId, instruction)
+				.catch(() => ({ steered: false }));
+			steered = relayResult.steered;
 		}
-		res.json({ success: true, taskId: task.id, steered: true });
+		res.json({ success: true, taskId: task.id, steered });
 	});
 
 	app.get("/api/rooms/:id/tasks/:taskId/journal", async (req, res) => {
@@ -2790,6 +2911,7 @@ export async function createDeviceHub(options: DeviceHubOptions) {
 					fail(409, "Too many open conversations; stop or delete conversations to free capacity");
 				const now = Date.now();
 				const rootId = root?.id ?? randomUUID();
+				const isPipeline = targets.length > 1 && (req.body?.pipeline === true || content.includes("->"));
 				const tasks: HubTask[] = targets.map((botId, index) => {
 					const targetBot = validBot(draft, botId, owner.id)!;
 					let attenuatedTools: string[] | undefined;
@@ -2803,6 +2925,7 @@ export async function createDeviceHub(options: DeviceHubOptions) {
 							attenuatedTools = attenuated;
 						}
 					}
+					const isWaitingInPipeline = isPipeline && index > 0;
 					return {
 						id: !root && index === 0 ? rootId : randomUUID(),
 						rootTaskId: rootId,
@@ -2816,16 +2939,25 @@ export async function createDeviceHub(options: DeviceHubOptions) {
 						botRevision: targetBot.revision,
 						...(source ? { sourceBotId: source.id } : {}),
 						text: content,
-						status: dependencyActive ? ("waiting" as const) : ("queued" as const),
-						...(dependencyActive
+						status: isWaitingInPipeline
+							? ("waiting" as const)
+							: dependencyActive
+								? ("waiting" as const)
+								: ("queued" as const),
+						...(isWaitingInPipeline
 							? {
-									blockReason: "dependency_waiting" as const,
-									blockReasonDetail: `Waiting for dependency task ${dependsOnTaskId}`,
-									dependsOnTaskId,
+									blockReason: "dependency" as const,
+									blockReasonDetail: "",
 								}
-							: dependsOnTaskId
-								? { dependsOnTaskId }
-								: {}),
+							: dependencyActive
+								? {
+										blockReason: "dependency_waiting" as const,
+										blockReasonDetail: `Waiting for dependency task ${dependsOnTaskId}`,
+										dependsOnTaskId,
+									}
+								: dependsOnTaskId
+									? { dependsOnTaskId }
+									: {}),
 						createdAt: now,
 						updatedAt: now,
 						...(resourceLocks && resourceLocks.length ? { resourceLocks } : {}),
@@ -2837,6 +2969,14 @@ export async function createDeviceHub(options: DeviceHubOptions) {
 						...(contract ? { contract } : {}),
 					};
 				});
+				if (isPipeline) {
+					for (let i = 1; i < tasks.length; i++) {
+						const prev = tasks[i - 1];
+						tasks[i].dependsOnTaskId = prev.id;
+						tasks[i].blockReason = "dependency";
+						tasks[i].blockReasonDetail = `Waiting for prior pipeline task ${prev.id} (@${prev.botId})`;
+					}
+				}
 				for (const task of tasks) {
 					task.kind = kind;
 					task.sourceConversationId = parent?.conversationId;
@@ -2867,11 +3007,14 @@ export async function createDeviceHub(options: DeviceHubOptions) {
 					} else establishConversation(draft, task);
 					recordConversationTurn(draft, task, key, fingerprint);
 				}
+				const messageText = isPipeline
+					? `${content}\n\n⛓️ **[流水线编排 / Pipeline Execution]**: ${targets.map((id) => `@${id}`).join(" ➔ ")}`
+					: content;
 				const message = {
 					id: randomUUID(),
 					roomId: room.id,
 					accountId: owner.id,
-					text: content,
+					text: messageText,
 					sender: source
 						? { type: "bot" as const, id: source.id, name: source.name, sourceDeviceId: source.deviceId }
 						: {

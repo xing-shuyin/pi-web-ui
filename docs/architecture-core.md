@@ -156,6 +156,19 @@ pi 的 `schedule` 创建任务时单独持久化创建来源（稳定 SDK 会话
 
 驱动将 `codex exec --json` 的线程、正文、思考、工具和用量事件转换为通用事件，线程 ID 随会话持久化以便续接。执行使用工作区写入沙盒，不绕过 Codex 的安全限制。Codex 不提供宿主工具审批、历史编辑或分叉；通用底座按能力声明隐藏这些入口。停止请求必须终止对应子进程并完成有界清理。
 
+## 随手问独立小窗
+
+**事实源**：`web/src/components/QuickAskPopover.tsx`、`web/src/quick-ask.ts`、`server/quick-ask.ts`；设置 UI 为 `web/src/components/QuickAskSettings.tsx`。
+
+- 右下角常驻入口随时打开小窗；在消息正文选中文字后的「解释」入口也打开同一小窗。小窗无背景遮罩，点击或滚动主对话不会关闭，也不改变主对话草稿、消息和阅读位置；Esc 或关闭按钮收起。
+- 普通提问在小窗内连续追问，历史仅保留于当前页面内存。收起后保留历史且请求可继续；页面刷新清空。「新话题」清空历史并取消正在生成的请求；点击「解释」同样开启新话题，避免前次问答影响解释。
+- 设置 → 随手问（所有主对话引擎均可用）提供常驻入口开关、独立模型、思考强度、系统提示词及解释模板。默认跟随当前模型；主引擎模型与独立 SDK 不兼容时，使用首个可用 SDK 模型，明确配置失效则报错。思考为 `off`，系统提示词为空，解释模板为 `解释下: {{input}}`。文字设置在失焦或关闭设置时保存。关闭常驻入口仍可通过选中文字解释进入。
+- `POST /api/quick-ask` 仅接收小窗自己的 `messages: [{role: "user" | "assistant", content: string}]` 与可选 `fallbackModel: "provider/id"`，返回 `{text, model}`。服务端仅从独立设置读取系统提示词和模型参数，直接调用模型，不创建 AgentSession，不读取主对话历史、预设、项目提示词或工具。客户端取消与超时均中止请求；被取消的旧响应不能写回新话题。
+- `GET /api/quick-ask/models` 从同一个独立模型运行时返回 `{models: [{provider, id, label}]}`，供所有主引擎下的小窗设置选择模型，避免依赖 Pi 专有的子代理模型列表。模型目录请求同样支持取消与超时。
+- 主会话只提供默认模型 ID。选中文字入口通过 `openQuickAsk` 事件发送文本快照，按独立解释模板插值后作为首条用户消息，不携带消息 ID、工具结果元数据或主会话提示词。
+
+验证：`tests/unit/quick-ask.test.ts`、`tests/unit/quick-ask-ui.test.ts` 和 `tests/quick-ask-ui-test.mjs`（桌面/移动端；解释隔离、追问、新话题、收起恢复、生成中重置和阅读位置）；原有引用流程保留在 `tests/quote-selection-ui-test.mjs`。
+
 ## 安全边界
 
 - **默认只绑 loopback**（`PI_WEB_HOST`，默认 `127.0.0.1`）：本地个人工具不暴露到网络；局域网/容器需显式 `PI_WEB_HOST=0.0.0.0`（docker-compose.yml 已内置，Docker 端口映射才能工作）。

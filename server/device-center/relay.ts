@@ -1,5 +1,7 @@
 import { randomBytes, randomUUID } from "node:crypto";
 import { parseReportMetadata } from "./report-metadata.js";
+import { computeLegacyOutcomeFingerprint } from "./task-outcome.js";
+import type { DeviceTaskEventFrame } from "../protocol.js";
 import { integrationErrorFromCode } from "./integration-errors.js";
 import { INTEGRATION_RPC_TIMEOUT_MS, VERIFICATION_RPC_TIMEOUT_MS } from "./verification-limits.js";
 import type { IncomingMessage, Server, ServerResponse } from "node:http";
@@ -15,6 +17,7 @@ export const RELAY_LIMITS = {
 	body: 64 * 1024 * 1024,
 	streams: 32,
 	cancellations: 16,
+	steerings: 16,
 	devices: 128,
 	sessions: 2048,
 };
@@ -574,6 +577,7 @@ export function createDeviceRelay(options: DeviceRelayOptions) {
 			>;
 			tasks: Map<string, RelayTaskBinding>;
 			cancellations: Map<string, { taskId: string; attemptId: string; finish: (stopped: boolean) => void }>;
+			steerings: Map<string, { taskId: string; attemptId: string; finish: (steered: boolean) => void }>;
 			rpc: ReturnType<typeof createCommandChannel>;
 			messages: ReturnType<typeof createWsMessageChannel>;
 		}
@@ -663,6 +667,7 @@ export function createDeviceRelay(options: DeviceRelayOptions) {
 	) {
 		for (const pending of interactionAcks.values()) if (pending.ws === entry.ws) pending.finish(false);
 		for (const pending of entry.cancellations.values()) pending.finish(false);
+		for (const pending of entry.steerings.values()) pending.finish(false);
 		entry.rpc.close();
 		entry.messages.close();
 		for (const [taskId, { attemptId, botId, hasLease, leaseToken, leaseGeneration }] of entry.tasks) {
@@ -1042,6 +1047,7 @@ export function createDeviceRelay(options: DeviceRelayOptions) {
 					streams: new Map(),
 					tasks: new Map<string, RelayTaskBinding>(),
 					cancellations: new Map<string, { taskId: string; attemptId: string; finish: (stopped: boolean) => void }>(),
+					steerings: new Map<string, { taskId: string; attemptId: string; finish: (steered: boolean) => void }>(),
 					rpc: createCommandChannel(ws),
 					messages: createWsMessageChannel(ws),
 				};
@@ -1063,6 +1069,18 @@ export function createDeviceRelay(options: DeviceRelayOptions) {
 							)
 								throw new Error("Invalid task cancellation acknowledgement");
 							pending.finish(frame.stopped);
+							return;
+						}
+						if (frame.type === "task_steered") {
+							const pending = typeof frame.id === "string" ? entry.steerings.get(frame.id) : undefined;
+							if (!pending) return;
+							if (
+								pending.taskId !== frame.taskId ||
+								pending.attemptId !== frame.attemptId ||
+								typeof frame.steered !== "boolean"
+							)
+								throw new Error("Invalid task steer acknowledgement");
+							pending.finish(frame.steered);
 							return;
 						}
 						if (frame.type === "task_interaction_result") {
@@ -1154,21 +1172,41 @@ export function createDeviceRelay(options: DeviceRelayOptions) {
 										const postCheck = entry.tasks.get(taskId);
 										if (postCheck?.attemptId === attemptId && postCheck.botId === botId) entry.tasks.delete(taskId);
 										if (
-											committed?.outcomeFingerprint &&
+											committed &&
 											committed.id === taskId &&
 											committed.attemptId === attemptId &&
 											committed.botId === botId &&
 											committed.status === frame.status
-										)
+										) {
+											const outcome = frame as unknown as DeviceTaskEventFrame;
+											// The Hub has verified this immutable legacy duplicate. Echo
+											// its old digest even if the stored result uses a canonical one.
+											const legacyDuplicate =
+												outcome.leaseToken === undefined &&
+												outcome.leaseGeneration === undefined &&
+												outcome.artifact === undefined &&
+												outcome.executionCompleted === undefined &&
+												outcome.artifactProduced === undefined &&
+												outcome.fingerprint ===
+													computeLegacyOutcomeFingerprint(
+														taskId,
+														attemptId,
+														outcome.status,
+														outcome.report,
+														outcome.error,
+														outcome.reportMetadata,
+													);
+											if (!committed.outcomeFingerprint && !legacyDuplicate) return;
 											sendFrame(ws, {
 												type: "task_result_ack",
 												taskId,
 												attemptId,
 												accepted: true,
 												status: committed.status,
-												fingerprint: committed.outcomeFingerprint,
+												fingerprint: legacyDuplicate ? outcome.fingerprint : committed.outcomeFingerprint,
 												artifactDigest: committed.artifact?.digest,
 											});
+										}
 									}
 								})
 								.catch((error: unknown) => {
@@ -1177,7 +1215,9 @@ export function createDeviceRelay(options: DeviceRelayOptions) {
 										devices.get(device) === entry &&
 										frame.status !== "running" &&
 										rejection?.permanent === true &&
-										["terminal_conflict", "attempt_expired"].includes(String(rejection.reasonCode)) &&
+										["terminal_conflict", "attempt_expired", "legacy_lease_missing"].includes(
+											String(rejection.reasonCode),
+										) &&
 										typeof frame.fingerprint === "string"
 									) {
 										const pending = entry.tasks.get(taskId);
@@ -1394,6 +1434,28 @@ export function createDeviceRelay(options: DeviceRelayOptions) {
 				timer.unref();
 				entry.cancellations.set(id, { taskId, attemptId, finish });
 				if (!sendFrame(entry.ws, { type: "task_cancel", id, taskId, attemptId })) finish(false);
+			});
+		},
+		steerTask(deviceId: string, taskId: string, attemptId: string, text: string): Promise<{ steered: boolean }> {
+			const entry = devices.get(deviceId);
+			if (
+				!entry ||
+				entry.ws.readyState !== WebSocket.OPEN ||
+				entry.tasks.get(taskId)?.attemptId !== attemptId ||
+				entry.steerings.size >= RELAY_LIMITS.steerings
+			)
+				return Promise.resolve({ steered: false });
+			const id = randomUUID();
+			return new Promise((resolve) => {
+				const finish = (steered: boolean) => {
+					if (!entry.steerings.delete(id)) return;
+					clearTimeout(timer);
+					resolve({ steered });
+				};
+				const timer = setTimeout(() => finish(false), 10_000);
+				timer.unref();
+				entry.steerings.set(id, { taskId, attemptId, finish });
+				if (!sendFrame(entry.ws, { type: "task_steer", id, taskId, attemptId, text })) finish(false);
 			});
 		},
 		callDevice(id: string, action: DeviceCommand, payload: unknown, options?: { signal?: AbortSignal }) {

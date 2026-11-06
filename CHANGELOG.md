@@ -10,11 +10,40 @@
 
 ## [Unreleased]
 
+## [0.117.0] — 2026-11-06
+
+### Added
+
+- **随手问**：新增独立问答小窗，支持选中文字解释、连续追问、停止、重试和清空话题；可单独配置模型、思考强度、系统提示和解释模板，不读取主对话或调用工具。
+- **群组交付闭环（内测）**：增加任务契约、上下文清单、隔离工作区和代码产物，将验证、独立验收、合入与发布恢复串联；发布结果未知时保留待核查状态。
+- **群组与子代理详情**：黑板支持分区浏览编辑，群任务提供流水线状态和干预弹窗，子代理详情集中展示任务、运行状态、输出与工作树信息。
+- **历史会话与导航**：左栏增加项目及对话过滤、键盘导航和页面内拖拽排序；历史会话可继续加载超过 200 条，并记住展开数量。
+- **自动压缩附加指令**：可为自动压缩摘要配置补充要求，随预设保存和分享；留空沿用默认摘要。
+- **主题与 Hub 维护入口**：新增 flow-cristallo、flow-ink、flow-obsidian、flow-zurich 四套主题；设备中心可更新 Hub 服务配置并重启，应用本机已安装版本。
+
 ### Fixed
 
-- **插件 SDK 在浏览器里加载不了**：`plugin-sdk/index.mjs` 顶格 `import { resolve, sep } from "node:path"`，而脚手架把同一份 `index.mjs` 拷进 `<插件>/client/sdk/`，宿主只暴露 `/plugins/<id>/client/*` —— 浏览器解到 `node:path` 直接拒收模块（控制台：`Failed to fetch dynamically imported module /plugins/<id>/client/entry.mjs` + `Access to script at 'node:path' … blocked by CORS`）。难查在服务端全绿：插件 `active:true`、日志正常、`/plugins-api/*` 路由通，只有插件视图整块空白。现改为零依赖路径解析（语义对齐 `path.resolve`，盖 POSIX / Windows 盘符 / UNC），`createMockHost().resolveInWorkspace()` 行为不变（区内放行 / 越界 403）。新增 `tests/unit/plugin-sdk-browser-safe.test.ts`：守「拷进 `client/sdk/` 的文件零静态 `node:` import」与「客户端可达依赖闭包不出 `plugin-sdk/`」，并用服务端专用的 `ssh-host-trust.mjs` 做阳性对照防扫描器空转。SDK 版本 `0.1.0 → 0.2.0`，已装插件用 `pi-web-ui plugin upgrade-sdk` 刷新。
+- **群任务可靠性**：以事务日志统一任务状态及终态收口，修复重连、重复结果和旧执行影响后续任务的问题；旧版未确认结果通过幂等确认或持久隔离处理，避免升级后反复断线。
+- **交付恢复**：持久记录发布意图及结果，增加结果回查、取消隔离和 owner 恢复门禁；无法确认旧执行已停止时保留隔离。
+- **Docker 与定时任务**：修复容器启动路径、随包资源和数据目录权限；修复下次触发时间过期、执行重叠及长任务影响其他排期，后台任务超时后中止对应会话。
+- **问卷与 Claude Code**：修复重连或会话过户后的问卷答复失效、重复弹出，以及部分工具事件遗漏或重复展示；选择官方模型时不再注入应用内第三方服务凭据。
+- **插件 SDK**：拆分服务端、浏览器和测试入口，修复浏览器加载 Node 依赖导致插件视图空白；已有插件可运行 pi-web-ui plugin upgrade-sdk 更新。
+- **历史加载与分发卫生**：修复历史预览切换完整会话时重复挂载与闪烁、浏览历史挤占运行名额的问题；脱敏公开文档中的主机地址，排除 dist 根目录临时文件进入 npm 包。
+
+### Changed
+
+- 优化大会话扫描、历史打开与列表加载，减少对其他客户端操作的阻塞；最近项目上限由 30 提升至 100，会话重命名失焦即可保存。
+- 左栏项目在页面打开期间保持位置稳定，拖拽顺序仅对本次页面有效；刷新后按最近使用重排。
+- 插件 SDK 升级至 0.3.0，脚手架与 SDK 升级工具同步适配入口拆分；SFTP 插件及页面选择扩展的文档示例完成脱敏并递增版本。
+- 随手问收起后保留当前页面的内存上下文，刷新后清空；群组工作区与进程监督用于协作隔离，不提供操作系统安全沙盒。
 
 <!-- auto-i18n:start -->
+
+### i18n
+
+- 前端新增 key（57）：`newChatAction`、`newChatInCurrentProjectTip`、`deviceSetupUpdate`、`deviceSetupUpdating`、`deviceSetupUpdateSuccess`、`deviceHubUpgradeAction`、`deviceHubUpgrading`、`deviceHubConfirmUpgrade`、`deviceHubUpgradeSuccess`、`lpShowMore`、`lpCollapsedHistory`、`lpBadgeFork`、`lpBadgeScheduler`、`lpChannelWechat`、`lpChannelFeishu`、`lpChannelDingtalk`、`lpOpenOnDesktopTip`、`lpFilterPlaceholder`、`lpFilterNoMatch`、`lpFilterClear`、`lpProjectsTree`、`lpDragToReorder`、`quickAskSettingsTitle`、`quickAskSettingsDesc`、`quickAskEnabled`、`quickAskEnabledHint`、`quickAskModel`、`quickAskFollowModel`、`quickAskThinking`、`quickAskSystemPrompt`、`quickAskSystemPromptHint`、`quickAskExplainPrompt`、`quickAskExplainPromptHint`、`quickAskResetExplainPrompt`、`quickAskOpen`、`quickAskTitle`、`quickAskPlaceholder`、`quickAskSend`、`quickAskNewTopic`、`quickAskEmpty`、`quickAskStop`、`quickAskStopped`、`quickAskClose`、`quickAskLoading`、`quickAskError`、`quickAskRetry`、`quickAskInputLabel`、`explainSelection`、`selectionExplainTitle`、`selectionExplainLoading`、`selectionExplainError`、`selectionExplainRetry`、`selectionExplainCancel`、`selectionExplainStopped`、`selectionExplainEmpty`、`selectionExplainSelection`、`selectionExplainClose`
+- 前端删除 key（1）：`waitingQuestionShort`
+
 <!-- auto-i18n:end -->
 
 ## [0.116.0] — 2026-11-05
@@ -1640,7 +1669,7 @@ when?, children?}`，也收 `topbar` / `settings` 这类简写别名）；宿主
 
 ### Added
 
-- **page-picker 扩展：在 pi-web-ui 页面上点一下图标就能绑定服务地址**——远程/局域网部署时地址是 `http://39.99.235.208:8787` 这种、端口也不固定，原来只能去选项页手打地址再点「授权该地址」。现在点扩展图标会**先认当前页**：页面上有宿主动作桥 `__piWebUiHost` 即认定，老版本则退一步探一次同源 `/api/health`（`{ok, piVersion}` 才算数，所以任何「所有路径都回 200」的站点都不会被误认）；认出是 pi-web-ui 就在页面底部弹浮条问「要不要把它设为拾取服务地址」，点一下即可（地址/端口/子路径全部按当前页面算，`?token=`、hash、尾斜杠都会归一掉），已经是当前地址时只说明现状不再多问，浮条上另有「在本页拾取元素」（开发 pi-web-ui 自己时用得上）。缺那一个 origin 的授权时，浮条会提示并给一个「打开设置页授权」按钮 —— `chrome.permissions.request` 必须在扩展自己的页面里点（网页上的按钮给不了浏览器要的手势），那个页面带 `?bind=` 预填地址、一键授权 + 绑定。**普通页面点图标的行为一点没变**（仍是进入拾取模式），也**绝不静默改地址**（改前一定在页面上问一次）。回归：`detectPiWebUi`/`bindView` 单测 + service worker 分流单测 + `?bind=` 面板单测（真 options.html）+ E2E（真 pi-web-ui 页 / 真夹具页各自认定 + 浮条绑定后照常投递）。
+- **page-picker 扩展：在 pi-web-ui 页面上点一下图标就能绑定服务地址**——远程/局域网部署时地址是 `http://203.0.113.10:8787` 这种、端口也不固定，原来只能去选项页手打地址再点「授权该地址」。现在点扩展图标会**先认当前页**：页面上有宿主动作桥 `__piWebUiHost` 即认定，老版本则退一步探一次同源 `/api/health`（`{ok, piVersion}` 才算数，所以任何「所有路径都回 200」的站点都不会被误认）；认出是 pi-web-ui 就在页面底部弹浮条问「要不要把它设为拾取服务地址」，点一下即可（地址/端口/子路径全部按当前页面算，`?token=`、hash、尾斜杠都会归一掉），已经是当前地址时只说明现状不再多问，浮条上另有「在本页拾取元素」（开发 pi-web-ui 自己时用得上）。缺那一个 origin 的授权时，浮条会提示并给一个「打开设置页授权」按钮 —— `chrome.permissions.request` 必须在扩展自己的页面里点（网页上的按钮给不了浏览器要的手势），那个页面带 `?bind=` 预填地址、一键授权 + 绑定。**普通页面点图标的行为一点没变**（仍是进入拾取模式），也**绝不静默改地址**（改前一定在页面上问一次）。回归：`detectPiWebUi`/`bindView` 单测 + service worker 分流单测 + `?bind=` 面板单测（真 options.html）+ E2E（真 pi-web-ui 页 / 真夹具页各自认定 + 浮条绑定后照常投递）。
 
 ## [0.81.0] — 2026-09-12
 
@@ -2226,7 +2255,8 @@ when?, children?}`，也收 `topbar` / `settings` 这类简写别名）；宿主
 [0.90.1]: https://github.com/xing-shuyin/pi-web-ui/releases/tag/v0.90.1
 [0.90.0]: https://github.com/xing-shuyin/pi-web-ui/releases/tag/v0.90.0
 [0.89.0]: https://github.com/xing-shuyin/pi-web-ui/releases/tag/v0.89.0
-[Unreleased]: https://github.com/xing-shuyin/pi-web-ui/compare/v0.88.0...main
+[Unreleased]: https://github.com/xing-shuyin/pi-web-ui/compare/v0.117.0...main
+[0.117.0]: https://github.com/xing-shuyin/pi-web-ui/releases/tag/v0.117.0
 [0.88.0]: https://github.com/xing-shuyin/pi-web-ui/releases/tag/v0.88.0
 [0.87.2]: https://github.com/xing-shuyin/pi-web-ui/releases/tag/v0.87.2
 [0.87.1]: https://github.com/xing-shuyin/pi-web-ui/releases/tag/v0.87.1

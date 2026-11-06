@@ -1,6 +1,6 @@
 # 发布流程
 
-> npm 发布者账号是 `xingshuyin`（`npm whoami` 验证）。`dist/`、`web/dist/` 被 gitignore 不进 git，但 `package.json` 的 `files` 白名单会把它们打进 npm 包；`prepublishOnly` 会在发布前自动 `npm run build`。
+> npm 发布者账号是 `xingshuyin`（`npm whoami` 验证）。`dist/server/`、`web/dist/` 被 gitignore 不进 git，但 `package.json` 的 `files` 白名单会把它们打进 npm 包；`dist/` 根目录的本地测试文件与桌面产物不进入 npm 包；`prepublishOnly` 会在发布前自动 `npm run build`。
 
 ## 步骤
 
@@ -27,6 +27,13 @@ git commit -m "feat(files): <一句话描述>"
 
 # 5) 推送 GitHub（仓库公开：xing-shuyin/pi-web-ui，分支 main）
 git push origin main
+
+# 5.5) CI 绿标守护：按本次提交 SHA 找到 main 的 CI，等待全部成功。
+#      失败则 gh run view <run-id> --log-failed，定位根因、本地复验、提交推送，
+#      重新等待新 SHA 的 CI；旧提交的绿标不能替代本次提交。
+#      全绿后展示版本和最终 Release Notes，取得用户发布确认，才可继续 tag / npm。
+gh run list --branch main --workflow CI --commit "$(git rev-parse HEAD)"
+gh run watch <run-id> --exit-status
 
 # 6) 打 tag 并推送（tag 带 v 前缀，数字与 npm 版本一一对应；issue #103 前缺的 tag 已回补）
 #    漏打 tag 会导致 GitHub 看到的"最新版"落后于 npm，务必每次都打。
@@ -72,7 +79,7 @@ git ls-remote --tags origin       # 应能看到 vX.Y.Z
 - 版本号格式：npm 不带 `v` 前缀（`0.70.0`），git tag / GitHub Release 带 `v` 前缀（`v0.70.0`）。
 - 提交信息不要带 `Co-authored-by`（P1 规则，仓库 hook 会拦）。
 - `.pi/commands.json` 是**每个项目各自**的个人命令（当前 cwd 的 `.pi/ 下），已被 gitignore，永远不会进公开仓库；切换 cwd 时命令列表自动刷新为该项目的命令。
-- 大改动发布前先问用户是否要 `npm publish`（会真实消耗账号权限、触发构建）。
+- CI 绿标守护模式下，必须先完成最终提交的 CI 验证，再展示版本与 Release Notes 请求发布确认；同一次确认涵盖该版本的 tag 推送及 `npm publish`。
 - **升级后的重启**：`npm i -g` 只更新磁盘文件，已运行进程内存里还是旧代码——前端是每次请求实时读盘的（会先变新），但 WS 消息处理是进程内旧逻辑，新旧混跑会表现为「界面是新的、某功能一直加载中」。界面内「立即更新」（顶栏更新下拉）现在是在可见终端 tab 中跑 `npm i -g pi-web-ui@latest`（复用 SCM/插件卸载同款 tab 模式），完成后需手动重启服务生效：`pi-web-ui server restart`（launchd/systemd 由服务管理器拉起；Docker 需 `docker compose restart`）。服务端保留 `PI_WEB_RESTART_CHILD` 端口等待握手（restart-handoff-test 回归），供外部编排的替换子进程使用。
 - **改桌面出包 workflow 先空跑再重推 tag**：`gh workflow run desktop-release.yml --ref main` 先验证三个平台 job 全绿，再重推 tag——重推 tag 会重建并 `--clobber` 覆盖 Release 资产，是正式出包的唯一路径。
 - **发布前检查示例文件不泄密**：`deploy/`、`README` 等随 npm 包（`files` 白名单含 `deploy/`）和 GitHub 分发的文件**绝不放真实 IP / 域名 / 密钥**——用占位符（如 `<LAN_IP>`、`<PUBLIC_IP>:<PUBLIC_PORT>`、`your-host`）。真实环境配置只在本地改，不进仓库。

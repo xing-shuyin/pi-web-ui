@@ -339,7 +339,17 @@ describe("Device Group Architecture Redesign - Proposal B", () => {
 			status: "running",
 		});
 
-		// Steer on running task
+		const unavailable = await f.request(
+			`/api/rooms/${roomId}/tasks/${task.id}/steer`,
+			{ text: "No executor available" },
+			cookie,
+		);
+		expect(unavailable.status).toBe(200);
+		expect(unavailable.body.steered).toBe(false);
+		const steerTask = vi.fn().mockResolvedValue({ steered: true });
+		f.hub.setRelay({ steerTask });
+
+		// Steer on running task through the actual relay boundary.
 		const steerRunning = await f.request(
 			`/api/rooms/${roomId}/tasks/${task.id}/steer`,
 			{ text: "Dynamic correction: skip slow tests" },
@@ -347,6 +357,29 @@ describe("Device Group Architecture Redesign - Proposal B", () => {
 		);
 		expect(steerRunning.status).toBe(200);
 		expect(steerRunning.body.steered).toBe(true);
+		expect(steerTask).toHaveBeenCalledWith(
+			dev.deviceId,
+			task.id,
+			task.attemptId,
+			expect.stringContaining("skip slow tests"),
+		);
+
+		await f.hub.acceptTaskEvent(dev.deviceId, {
+			botId: dev.botId,
+			taskId: task.id,
+			attemptId: task.attemptId,
+			leaseToken: taskLease.leaseToken,
+			leaseGeneration: taskLease.leaseGeneration,
+			status: "completed",
+			report: "Build completed",
+		});
+		const afterCompletion = await f.request(
+			`/api/rooms/${roomId}/tasks/${task.id}/steer`,
+			{ text: "Late steer" },
+			cookie,
+		);
+		expect(afterCompletion.status).toBe(409);
+		expect(steerTask).toHaveBeenCalledTimes(1);
 
 		// Verify message was broadcast to room messages
 		const snapshot = f.hub.store.snapshot();

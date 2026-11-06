@@ -78,7 +78,8 @@ export type GroupTask = {
 	conversationId?: string;
 	text: string;
 	report?: string;
-	status: "queued" | "running" | "completed" | "failed" | "interrupted";
+	status: "queued" | "waiting" | "running" | "completed" | "failed" | "interrupted";
+	dependsOnTaskId?: string;
 	createdAt: number;
 	botRevision?: number;
 	planOnly?: boolean;
@@ -205,9 +206,23 @@ export function groupConversationState(
 	const entries: UiMessage[] = [];
 	const bots = new Map(devices.map((bot) => [bot.id, bot]));
 	for (const bot of detail?.bots ?? []) bots.set(bot.id, { ...bots.get(bot.id), ...bot });
-	const statuses = zh
-		? { queued: "排队中", running: "运行中", completed: "已完成", failed: "失败", interrupted: "已中断" }
-		: { queued: "Queued", running: "Running", completed: "Completed", failed: "Failed", interrupted: "Interrupted" };
+	const statuses: Record<string, string> = zh
+		? {
+				queued: "排队中",
+				waiting: "等待依赖",
+				running: "运行中",
+				completed: "已完成",
+				failed: "失败",
+				interrupted: "已中断",
+			}
+		: {
+				queued: "Queued",
+				waiting: "Waiting",
+				running: "Running",
+				completed: "Completed",
+				failed: "Failed",
+				interrupted: "Interrupted",
+			};
 	const tasks = new Map((detail?.tasks ?? []).map((task) => [task.id, task]));
 	const reportedTasks = new Set<string>();
 	const botLabel = (botId: string | undefined, name: string, deviceId?: string) => {
@@ -258,11 +273,19 @@ export function groupConversationState(
 		const isSubagentTask = Boolean(task.parentTaskId || (task.sourceBotId && task.sourceBotId !== task.botId));
 		const subagentTag = zh ? "协同子代理" : "Worker Subagent";
 		const labelPrefix = botLabel(task.botId, bot?.name ?? task.botId, task.deviceId);
+		const statusLabel =
+			task.status === "waiting"
+				? task.dependsOnTaskId
+					? zh
+						? "等待前序任务"
+						: "Waiting for upstream"
+					: zh
+						? "等待依赖"
+						: "Waiting"
+				: (statuses[task.status] ?? task.status);
 		labels.set(
 			id,
-			isSubagentTask
-				? `${labelPrefix} [${subagentTag}] · ${statuses[task.status]}`
-				: `${labelPrefix} · ${statuses[task.status]}`,
+			isSubagentTask ? `${labelPrefix} [${subagentTag}] · ${statusLabel}` : `${labelPrefix} · ${statusLabel}`,
 		);
 		const rawReport = task.report;
 		const taskText = formatGroupDisplayText(task.text);
@@ -271,9 +294,8 @@ export function groupConversationState(
 			if (isSubagentTask) {
 				const summaryTitle = zh ? "📋 展开查看工作内容与交付详情" : "📋 View Detailed Delivery & Evidence";
 				body = [
-					`> 🤖 **${zh ? "协同子代理交付完成" : "Worker Subagent Completed"}** · \`@${bot?.name ?? task.botId}\``,
-					`>`,
-					`> 🎯 **${zh ? "分配指令" : "Instruction"}**：${taskText}`,
+					`🤖 **${zh ? "协同子代理交付完成" : "Worker Subagent Completed"}** · \`@${bot?.name ?? task.botId}\``,
+					`🎯 **${zh ? "分配指令" : "Instruction"}**：${taskText}`,
 					``,
 					`<details>`,
 					`<summary>${summaryTitle}</summary>`,
@@ -297,15 +319,26 @@ export function groupConversationState(
 			const toolName = task.progress?.toolName;
 			const progressText = task.progress?.text?.trim();
 			body = [
-				`> ⏳ **${phaseLabel}**${isSubagentTask ? ` · \`@${bot?.name ?? task.botId}\`` : ""}`,
-				`>`,
-				`> **${zh ? (isSubagentTask ? "分配指令" : "目标指令") : isSubagentTask ? "Instruction" : "Instruction"}**：${taskText}`,
+				`⏳ **${phaseLabel}**${isSubagentTask ? ` · \`@${bot?.name ?? task.botId}\`` : ""}`,
+				`🎯 **${zh ? (isSubagentTask ? "分配指令" : "目标指令") : "Instruction"}**：${taskText}`,
 				...(progressPhase
+					? [`⚙️ **${zh ? "执行阶段" : "Phase"}**：\`${progressPhase}\`${toolName ? ` · \`${toolName}\`` : ""}`]
+					: []),
+				...(progressText ? [``, `> ${progressText}`] : []),
+			].join("\n");
+		} else if (task.status === "waiting") {
+			const depTask = task.dependsOnTaskId ? tasks.get(task.dependsOnTaskId) : undefined;
+			const depBot = depTask ? (bots.get(depTask.botId)?.name ?? depTask.botId) : undefined;
+			const depSummary = depTask ? formatGroupTaskChip(depTask.text, depBot).summary : task.dependsOnTaskId;
+			const waitingHeader = zh ? "⏳ 等待前序任务交付中" : "⏳ Waiting for upstream task delivery";
+			body = [
+				`⏳ **${waitingHeader}**${isSubagentTask ? ` · \`@${bot?.name ?? task.botId}\`` : ""}`,
+				`🎯 **${zh ? (isSubagentTask ? "分配指令" : "目标指令") : "Instruction"}**：${taskText}`,
+				...(task.dependsOnTaskId
 					? [
-							`> **${zh ? "执行阶段" : "Phase"}**：\`${progressPhase}\`${toolName ? ` · ${zh ? "工具" : "Tool"}: \`${toolName}\`` : ""}`,
+							`🔗 **${zh ? "依赖任务" : "Depends on"}**：${depBot ? `@${depBot} · ` : ""}${depSummary || task.dependsOnTaskId}`,
 						]
 					: []),
-				...(progressText ? [`>`, `> ${progressText}`] : []),
 			].join("\n");
 		} else if (task.status === "queued") {
 			const queueLabel = isSubagentTask
@@ -316,19 +349,17 @@ export function groupConversationState(
 					? "任务排队等待调度"
 					: "Task Queued";
 			body = [
-				`> ⏱️ **${queueLabel}**${isSubagentTask ? ` · \`@${bot?.name ?? task.botId}\`` : ""}`,
-				`>`,
-				`> **${zh ? (isSubagentTask ? "分配指令" : "目标指令") : isSubagentTask ? "Instruction" : "Instruction"}**：${taskText}`,
+				`⏱️ **${queueLabel}**${isSubagentTask ? ` · \`@${bot?.name ?? task.botId}\`` : ""}`,
+				`🎯 **${zh ? (isSubagentTask ? "分配指令" : "目标指令") : "Instruction"}**：${taskText}`,
 			].join("\n");
 		} else if (task.status === "failed" && isSubagentTask) {
 			body = [
-				`> ❌ **${zh ? "协同子代理执行失败" : "Worker Subagent Failed"}** · \`@${bot?.name ?? task.botId}\``,
-				`>`,
-				`> 🎯 **${zh ? "分配指令" : "Instruction"}**：${taskText}`,
+				`❌ **${zh ? "协同子代理执行失败" : "Worker Subagent Failed"}** · \`@${bot?.name ?? task.botId}\``,
+				`🎯 **${zh ? "分配指令" : "Instruction"}**：${taskText}`,
 				...(rawReport ? [``, formatDeviceFailureReport(rawReport, zh)] : []),
 			].join("\n");
 		} else {
-			body = `${statuses[task.status]}\n\n${taskText}`;
+			body = `${statuses[task.status] || task.status}\n\n${taskText}`;
 		}
 		entries.push({
 			id,

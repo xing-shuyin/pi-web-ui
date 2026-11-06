@@ -10,6 +10,7 @@ import { existsSync, readFileSync } from "node:fs";
 import { basename, dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import type { AgentSession } from "@earendil-works/pi-coding-agent";
+import { mergeQuickAskSettings, normalizeQuickAskSettings, type QuickAskSettings } from "./quick-ask-settings.js";
 import type {
 	ClientMessage,
 	QueueMode,
@@ -591,6 +592,7 @@ export class SettingsService {
 				visionBridgePrompt: this.settings.visionBridgePrompt,
 				scmCommitMsgPromptMode: this.settings.scmCommitMsgPromptMode,
 				scmCommitMsgPrompt: this.settings.scmCommitMsgPrompt,
+				...normalizeQuickAskSettings(this.settings),
 				planModePromptMode: this.settings.planModePromptMode,
 				planModePrompt: this.settings.planModePrompt,
 				reviewPrompt: this.settings.reviewPrompt,
@@ -762,6 +764,11 @@ export class SettingsService {
 		visionBridgePrompt?: string;
 		scmCommitMsgPromptMode?: PromptMode;
 		scmCommitMsgPrompt?: string;
+		quickAskEnabled?: QuickAskSettings["quickAskEnabled"];
+		quickAskModel?: QuickAskSettings["quickAskModel"];
+		quickAskThinking?: QuickAskSettings["quickAskThinking"];
+		quickAskSystemPrompt?: QuickAskSettings["quickAskSystemPrompt"];
+		quickAskExplainPrompt?: QuickAskSettings["quickAskExplainPrompt"];
 		planModePromptMode?: PromptMode;
 		planModePrompt?: string;
 		reviewPrompt?: string;
@@ -999,6 +1006,7 @@ export class SettingsService {
 		if (partial.scmCommitMsgPrompt !== undefined) {
 			next.scmCommitMsgPrompt = partial.scmCommitMsgPrompt;
 		}
+		Object.assign(next, mergeQuickAskSettings(this.settings, partial));
 		if (partial.planModePromptMode !== undefined) {
 			next.planModePromptMode = partial.planModePromptMode;
 		}

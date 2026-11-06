@@ -389,6 +389,7 @@ import {
 import { createPromptBaseObservers, readPromptBase } from "./prompt-base-store.js";
 import type {
 	BgServer,
+	ThinkingLevel,
 	CommandDef,
 	ConversationSummary,
 	ElsewhereRunning,
@@ -9469,6 +9470,11 @@ export class ClientSession {
 		visionBridgePrompt?: string;
 		scmCommitMsgPromptMode?: PromptMode;
 		scmCommitMsgPrompt?: string;
+		quickAskEnabled?: boolean;
+		quickAskModel?: string | null;
+		quickAskThinking?: ThinkingLevel;
+		quickAskSystemPrompt?: string;
+		quickAskExplainPrompt?: string;
 		subagentDefaultModel?: string | null;
 		subagentMaxDepth?: number;
 		retryMaxAttempts?: number;

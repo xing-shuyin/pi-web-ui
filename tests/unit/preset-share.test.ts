@@ -73,16 +73,17 @@ import {
 	PRESET_FIELD_NAMES,
 	PRESET_GROUP_ORDER,
 	type PresetFieldName,
+	type PresetExcludedKey,
 } from "../../server/preset-fields.js";
 import type { ClientSettings } from "../../server/client-state.js";
 
 /**
- * 编译期守卫：`ClientSettings` 的每个字段都必须在 `preset-fields.ts` 里登记。
+ * 编译期守卫：`ClientSettings` 的每个字段都必须在 `preset-fields.ts` 里登记（含明确排除）。
  * 两者对不上时 `Exclude<...>` 不是 `never`，`Assert<true>` 立刻报类型错误。
  */
 type Assert<T extends true> = T;
 export type PresetFieldsCoverClientSettings = Assert<
-	Exclude<keyof ClientSettings, PresetFieldName | "_promptPluginDevConfigured"> extends never ? true : false
+	Exclude<keyof ClientSettings, PresetFieldName | PresetExcludedKey> extends never ? true : false
 >;
 
 const SETTINGS = {

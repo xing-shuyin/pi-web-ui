@@ -347,7 +347,7 @@ export class TaskRecoveryManager {
 				const archive: QuarantinedTaskOutcome[] = parsed.quarantine.map((item: QuarantinedTaskOutcome) => {
 					if (
 						!item ||
-						!["terminal_conflict", "attempt_expired"].includes(item.reasonCode) ||
+						!["terminal_conflict", "attempt_expired", "legacy_lease_missing"].includes(item.reasonCode) ||
 						!Number.isSafeInteger(item.quarantinedAt) ||
 						item.quarantinedAt < 0
 					)
@@ -1015,7 +1015,7 @@ export class TaskRecoveryManager {
 		if (
 			this.loadError ||
 			typeof reasonCode !== "string" ||
-			!["terminal_conflict", "attempt_expired"].includes(reasonCode)
+			!["terminal_conflict", "attempt_expired", "legacy_lease_missing"].includes(reasonCode)
 		)
 			return false;
 		const key = this.leaseKey(taskId, attemptId);

@@ -28,6 +28,7 @@
 import { startTurnTiming, finishTurnTiming } from "../turn-timing.js";
 import { DEFAULT_DSH_CAPABILITIES } from "../engine-capabilities.js";
 import type { AgentEngineCapabilities } from "../protocol.js";
+import { mergeQuickAskSettings, normalizeQuickAskSettings, type QuickAskSettings } from "../quick-ask-settings.js";
 import { existsSync, mkdirSync, readFileSync, renameSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { basename, dirname, join, resolve, sep } from "node:path";
 import { randomUUID } from "node:crypto";
@@ -4148,6 +4149,7 @@ export class DshClientSession {
 		const promptSections =
 			this.cachedPromptSections.length > 0 ? this.cachedPromptSections : this.buildFallbackPromptSections();
 		const settings: UiSettingsState = {
+			...normalizeQuickAskSettings(this.stateStore.getSettingsSnapshot(this.clientId)),
 			steeringMode: "all",
 			followUpMode: "all",
 			promptMode: this.settings.promptMode,
@@ -4251,6 +4253,11 @@ export class DshClientSession {
 	}
 
 	async setSettings(partial: {
+		quickAskEnabled?: QuickAskSettings["quickAskEnabled"];
+		quickAskModel?: QuickAskSettings["quickAskModel"];
+		quickAskThinking?: QuickAskSettings["quickAskThinking"];
+		quickAskSystemPrompt?: QuickAskSettings["quickAskSystemPrompt"];
+		quickAskExplainPrompt?: QuickAskSettings["quickAskExplainPrompt"];
 		promptMode?: "append" | "replace";
 		customSystemPrompt?: string;
 		promptTemplate?: string;
@@ -4352,6 +4359,7 @@ export class DshClientSession {
 		const markerGuidanceChanged = this.markerSvc.buildGuidance() !== prevMarkerGuidance;
 		// 持久化（跨重连存活）。
 		this.stateStore.saveSettings(this.clientId, {
+			...mergeQuickAskSettings(this.stateStore.getSettingsSnapshot(this.clientId), partial),
 			chatUploadMaxMb: partial.chatUploadMaxMb,
 			workspaceUploadMaxMb: partial.workspaceUploadMaxMb,
 			folderUploadMaxMb: partial.folderUploadMaxMb,

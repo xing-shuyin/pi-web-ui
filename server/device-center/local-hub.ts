@@ -74,6 +74,7 @@ export async function createLocalDeviceHub(dataDir: string, getSettings?: () => 
 		hub.setRelay({
 			onTask: relay.sendTask,
 			cancelTask: relay.cancelTask,
+			steerTask: relay.steerTask,
 			answerInteraction: relay.answerInteraction,
 			onRevoke: relay.revoke,
 			handleRequest: relay.handleRequest,

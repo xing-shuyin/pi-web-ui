@@ -173,6 +173,13 @@ const parameters = Type.Object(
 				},
 			),
 		),
+		sectionId: Type.Optional(
+			Type.String({
+				minLength: 1,
+				maxLength: 100,
+				description: "Optional section identifier for updating a specific blackboard section.",
+			}),
+		),
 	},
 	{ additionalProperties: false },
 );
@@ -324,7 +331,7 @@ const allowed: Record<DeviceCollabAction, string[]> = {
 	transfer_status: ["roomId", "sourceBotId", "targetBotId", "transferId"],
 	transfer_abort: ["roomId", "sourceBotId", "targetBotId", "transferId"],
 	blackboard_read: ["roomId", "sourceBotId"],
-	blackboard_update: ["roomId", "sourceBotId", "content", "expectedVersion", "title"],
+	blackboard_update: ["roomId", "sourceBotId", "content", "expectedVersion", "title", "sectionId"],
 };
 const required: Record<DeviceCollabAction, string[]> = {
 	...allowed,
@@ -561,6 +568,14 @@ export function validateDeviceCollabInput(input: DeviceCollabInput): void {
 				/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/.test(input.title))
 		)
 			throw new Error("Invalid title.");
+		if (
+			input.sectionId !== undefined &&
+			(typeof input.sectionId !== "string" ||
+				!input.sectionId.trim() ||
+				input.sectionId.length > 100 ||
+				/[\x00-\x1F\x7F]/.test(input.sectionId))
+		)
+			throw new Error("Invalid sectionId.");
 	}
 	for (const key of required[input.action]) {
 		if (key === "roomId" || key === "sourceBotId") continue;

@@ -153,6 +153,24 @@ describe("group stream lifecycle", () => {
 		expect(posts[1].url).toMatch(/conversations\/persistent-a\/messages$/);
 		expect(posts[1].body.text).toBe("@Twin(alpha) follow up");
 	});
+	it("sets pipeline: true in message payload when message text contains pipeline syntax '->'", async () => {
+		const posts: { url: string; body: any }[] = [];
+		vi.stubGlobal(
+			"fetch",
+			mockApi(async (url: string, init: RequestInit) => {
+				if (init.method === "POST") {
+					posts.push({ url, body: JSON.parse(init.body as string) });
+					return response({});
+				}
+				return response(url.endsWith("/conversations") ? { conversations: [] } : detail);
+			}),
+		);
+		await mount();
+		await append("@Twin(alpha) step1 -> step2");
+		await send();
+		expect(posts).toHaveLength(1);
+		expect(posts[0].body.pipeline).toBe(true);
+	});
 	it.each([false, true])(
 		"keeps one pending send with ecosystem panels mounted (continuation: %s)",
 		async (continued) => {
