@@ -75,7 +75,13 @@ describe("Windows Hub TCP handoff", () => {
 	it("orders preflight, TaskStop, kernel drain, Create/Run and unchanged health verification", async () => {
 		const f = fixture("win32");
 		const events: string[] = [];
-		const snapshots = [[{ state: 2, pid: 42 }], [{ state: 11, pid: 0 }], [{ state: 100, pid: 0 }], []];
+		const snapshots = [
+			[{ state: 2, pid: 42 }],
+			[{ state: 2, pid: 42 }],
+			[{ state: 11, pid: 0 }],
+			[{ state: 100, pid: 0 }],
+			[],
+		];
 		f.portQuery.mockImplementation(async () => {
 			const rows = snapshots.shift()!;
 			events.push(`tcp:${rows.map((r) => r.state).join(",")}`);
@@ -89,7 +95,7 @@ describe("Windows Hub TCP handoff", () => {
 			return { ...f.health, version: "2.0.0", bootId: "new" };
 		});
 		await runtime.runUpgradeJob(f.path, { ...f, ...clock(), wait, log: () => {} });
-		expect(events).toEqual(["tcp:2", "/End", "tcp:11", "tcp:100", "tcp:", "/Create", "/Run", "health"]);
+		expect(events).toEqual(["tcp:2", "/End", "tcp:2", "tcp:11", "tcp:100", "tcp:", "/Create", "/Run", "health"]);
 		expect(wait).toHaveBeenCalledWith(f.settings, { version: "2.0.0", fromBootId: "old", probe: f.probe });
 	});
 	it("fails query preflight before replacing the definition or stopping the task", async () => {
@@ -99,7 +105,7 @@ describe("Windows Hub TCP handoff", () => {
 		expect(f.run).not.toHaveBeenCalled();
 		expect(readFileSync(f.plan.file, "utf8")).toBe("original service");
 	});
-	it.each(["listener", "query", "cancel"])(
+	it.each(["query", "cancel"])(
 		"rolls back a %s failure with a separate port drain and no cancelled signal",
 		async (failure) => {
 			const f = fixture("win32");
@@ -110,7 +116,6 @@ describe("Windows Hub TCP handoff", () => {
 				events.push("query");
 				count++;
 				if (count === 2) {
-					if (failure === "listener") return [{ state: 2, pid: 42 }];
 					if (failure === "query") throw new Error("query unavailable");
 					controller.abort();
 					return [{ state: 11, pid: 0 }];
@@ -151,10 +156,10 @@ describe("Windows Hub TCP handoff", () => {
 		expect(readFileSync(f.plan.file)).toEqual(original);
 		expect(wait.mock.calls[1][1]).toMatchObject({ version: "legacy", fromBootId: "legacy", legacy: true });
 	});
-	it("gives each update/rollback drain four minutes and never starts while resources remain", async () => {
+	it.each([2, 11, 100])("never starts while TCP state %s persists through update and rollback", async (state) => {
 		const f = fixture("win32");
 		const time = clock();
-		f.portQuery.mockResolvedValue([{ state: 11, pid: 0 }]);
+		f.portQuery.mockResolvedValue([{ state, pid: state === 11 ? 0 : 42 }]);
 		const wait = vi.fn();
 		await expect(runtime.runUpgradeJob(f.path, { ...f, ...time, wait })).rejects.toThrow("rollback failed");
 		expect(time.now()).toBe(480_000);
@@ -405,7 +410,13 @@ describe("Hub release updater", () => {
 		});
 		await expect(runtime.runUpgradeJob(f.path, { ...f, wait })).rejects.toThrow("previous Hub service restored");
 		const text = readFileSync(join(f.root, "hub-upgrade.log"), "utf8");
-		expect(JSON.parse(text.trim().split("\n").at(-1)!)).toEqual({
+		expect(
+			text
+				.split("\n")
+				.filter((line) => line.startsWith("{"))
+				.map((line) => JSON.parse(line))
+				.find((record) => record.event === "windows-task-before-rollback"),
+		).toEqual({
 			event: "windows-task-before-rollback",
 			state: 3,
 			instances: 0,

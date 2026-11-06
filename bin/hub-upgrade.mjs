@@ -309,10 +309,11 @@ export async function queryWindowsHubTcp(settings, { run = execute, timeout = 10
 }
 export async function waitForWindowsHubPort(
 	settings,
-	{ query = queryWindowsHubTcp, now = () => performance.now(), sleep = delay, signal } = {},
+	{ query = queryWindowsHubTcp, now = () => performance.now(), sleep = delay, signal, onState = () => {} } = {},
 ) {
 	const deadline = now() + 4 * 60_000;
 	let rows = [];
+	let previousState;
 	while (now() < deadline) {
 		if (signal?.aborted) throw new Error("Windows Hub TCP handoff cancelled");
 		const remaining = deadline - now();
@@ -320,8 +321,13 @@ export async function waitForWindowsHubPort(
 		rows = await query(settings, { timeout: Math.min(10_000, remaining), signal });
 		if (signal?.aborted) throw new Error("Windows Hub TCP handoff cancelled");
 		if (now() >= deadline) break;
-		if (rows.some(({ state }) => state === 2))
-			throw new Error("Windows Hub TCP port still has a live listener; refusing service start");
+		const snapshot = JSON.stringify([...rows].sort((a, b) => a.state - b.state || a.pid - b.pid));
+		if (snapshot !== previousState) {
+			try {
+				onState(rows);
+			} catch {}
+			previousState = snapshot;
+		}
 		if (rows.length === 0) return;
 		const remainingSleep = deadline - now();
 		if (remainingSleep <= 0) break;
@@ -412,7 +418,17 @@ export async function runUpgradeJob(
 		for (const args of plan.commands.update) {
 			await run(plan.manager, args);
 			if (plan.manager === "schtasks.exe" && args[0] === "/End")
-				await waitForWindowsHubPort(settings, { query: portQuery, now, sleep, signal });
+				await waitForWindowsHubPort(settings, {
+					query: portQuery,
+					now,
+					sleep,
+					signal,
+					onState: (rows) =>
+						appendFileSync(
+							logPath,
+							`[tcp-handoff] ${new Date().toISOString()} port=${Number(settings.PI_DEVICE_HUB_PORT)} state/pid=${JSON.stringify(rows.slice(0, 32))}\n`,
+						),
+				});
 		}
 	};
 	try {
@@ -426,7 +442,13 @@ export async function runUpgradeJob(
 		writeFileSync(join(plan.root, "service.previous"), previousFile, { mode: 0o600 });
 		writeFileSync(logPath, `Hub upgrade ${job.id}\n`, { mode: 0o600 });
 		candidate = await install(plan.root, { source: settings.PI_DEVICE_HUB_UPDATE_SOURCE ?? source, logPath });
-		if (plan.manager === "schtasks.exe") await portQuery(settings, { timeout: 10_000, signal });
+		if (plan.manager === "schtasks.exe") {
+			const rows = await portQuery(settings, { timeout: 10_000, signal });
+			appendFileSync(
+				logPath,
+				`[tcp-preflight] ${new Date().toISOString()} port=${Number(settings.PI_DEVICE_HUB_PORT)} state/pid=${JSON.stringify(rows.slice(0, 32))}\n`,
+			);
+		}
 		update({ phase: "restarting", targetVersion: candidate.version });
 		const next = hubServicePlan({ ...plan.serviceOptions, entry: candidate.entry });
 		const temp = `${plan.file}.${job.id}.tmp`;
