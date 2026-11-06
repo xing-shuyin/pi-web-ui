@@ -1,4 +1,4 @@
-import type { DeviceDelivery, DeviceDeliveryArtifactRef } from "../protocol.js";
+import type { DeviceDelivery, DeviceDeliveryArtifactRef, DeviceIntegration } from "../protocol.js";
 import type { HubState, HubTask } from "./store.js";
 import { artifactRefsMatch } from "./delivery-subject.js";
 import { validateCodeArtifactOutcome, validateContextManifest, validateWorkContract } from "./work-contract.js";
@@ -90,6 +90,21 @@ export function assertDeliveryAuthority(state: HubState, delivery: DeviceDeliver
 		conflict("Delivery artifact subject changed");
 	return task;
 }
+/** Legacy records have no durable CAS identity: preserve their uncertainty for manual recovery. */
+export function isLegacyPublicationUnknown(integration: DeviceIntegration): boolean {
+	return (
+		!integration.publishIntent &&
+		(integration.status === "applying" || !!integration.error?.startsWith("Apply failed; check target outcome:"))
+	);
+}
+/** Effect receipts do not prove a previously started Git child has stopped. */
+export function hasOpenPublication(integration: DeviceIntegration): boolean {
+	return (
+		!!integration.publishIntent &&
+		((!!integration.publishStop && !integration.publishStop.stopConfirmed) ||
+			(!integration.publishReceipt && !(integration.publishStop?.closed && integration.publishStop.stopConfirmed)))
+	);
+}
 export function assertNoApplyingIntegration(
 	state: HubState,
 	accountId: string,
@@ -102,7 +117,7 @@ export function assertNoApplyingIntegration(
 			(i) =>
 				i.accountId === accountId &&
 				i.roomId === roomId &&
-				i.status === "applying" &&
+				(hasOpenPublication(i) || isLegacyPublicationUnknown(i)) &&
 				((!conversationId && !contractId) ||
 					(conversationId && i.conversationId === conversationId) ||
 					(contractId && i.artifactRef?.contractId === contractId)),

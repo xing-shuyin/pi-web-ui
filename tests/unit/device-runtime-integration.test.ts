@@ -6,17 +6,23 @@ import { createDeviceRuntime } from "../../server/device-center/runtime.js";
 import { createLocalBotRegistry } from "../../server/device-center/bots.js";
 import {
 	deviceCancelIntegration,
+	deviceConfirmIntegration,
 	devicePrepareIntegration,
 	deviceVerifyIntegration,
 	loadPersistentSessions,
 } from "../../server/device-center/device-integration.js";
 import { git } from "../../server/workspace-handle.js";
+import { publicationFixture } from "../helpers/publish-intent-fixture.js";
+import { intentForIntegration } from "../helpers/local-publication-fixture.js";
+import { PublicationStopUnconfirmedError } from "../../server/device-center/local-publication.js";
 import { VerificationStopUnconfirmedError } from "../../server/device-center/local-verification.js";
 
 vi.mock("../../server/device-center/device-integration.js", () => ({
 	devicePrepareIntegration: vi.fn(),
 	deviceVerifyIntegration: vi.fn(),
 	deviceConfirmIntegration: vi.fn(),
+	devicePublicationStatus: vi.fn(),
+	deviceCancelPublication: vi.fn(),
 	deviceCancelIntegration: vi.fn(),
 	loadPersistentSessions: vi.fn(async () => new Map()),
 }));
@@ -63,7 +69,13 @@ async function fixture() {
 		};
 	};
 	const options = {
-		config: { hubUrl: "http://127.0.0.1:8999", deviceId: "device", credential: "secret", allowExecution: true },
+		config: {
+			hubUrl: "http://127.0.0.1:8999",
+			deviceId: "device",
+			credential: "secret",
+			allowExecution: true,
+			accountId: "account",
+		},
 		localOrigin: "http://127.0.0.1:8989",
 		dataDir: join(dir, "data"),
 		bots,
@@ -90,6 +102,32 @@ async function fixture() {
 const signal = () => new AbortController().signal;
 
 describe("runtime integration ownership", () => {
+	it("retains the Bot lease and blocks its root when publication process stop is unconfirmed", async () => {
+		const f = await fixture();
+		const integration = publicationFixture().integration;
+		const { digest: _digest, verifiedAt: _at, ...facts } = integration.verification!;
+		const intent = intentForIntegration(
+			{ ...integration, id: f.command.integrationId, targetBotId: f.one.id, targetBotRevision: f.one.revision },
+			facts,
+		);
+		vi.mocked(deviceConfirmIntegration).mockRejectedValue(new PublicationStopUnconfirmedError());
+		const executor = vi.fn();
+		const runtime = createDeviceRuntime({ ...f.options, executorFactory: executor });
+		const command = {
+			...f.command,
+			accountId: intent.accountId,
+			roomId: intent.roomId,
+			conversationId: intent.conversationId,
+			publishIntent: intent,
+		};
+		await expect(runtime.onCommand("integration_confirm", command, signal())).rejects.toMatchObject({
+			stopUnconfirmed: true,
+		});
+		expect(f.leases()).toBe(1);
+		await expect(runtime.onTask(f.task)).rejects.toThrow("blocked");
+		expect(executor).not.toHaveBeenCalled();
+		await expect(runtime.close()).rejects.toMatchObject({ stopUnconfirmed: true });
+	});
 	it("shares root exclusion with normal tasks, queues tasks until integration releases its lease", async () => {
 		const f = await fixture();
 		let finish!: (value: any) => void;

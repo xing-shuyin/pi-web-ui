@@ -17,6 +17,8 @@ import {
 } from "../../server/device-center/device-integration.js";
 import { canonicalizeJson, computeArtifactDigest } from "../../server/device-center/work-contract.js";
 import { computeCanonicalRepositoryId } from "../../server/workspace-handle.js";
+import { publicationFixture } from "../helpers/publish-intent-fixture.js";
+import { intentForIntegration } from "../helpers/local-publication-fixture.js";
 import * as verifier from "../../server/device-center/local-verification.js";
 
 const exec = promisify(execFile);
@@ -120,12 +122,41 @@ async function fixture() {
 		expectedTargetSha: prepared.expectedTargetSha,
 		verificationPlan: plan(commands),
 	});
-	const confirm = (prepared: Awaited<ReturnType<typeof prepare>>) => ({
-		...identity,
-		deliveryId: "delivery",
-		materializedCommit: prepared.materializedCommit,
-		expectedTargetSha: prepared.expectedTargetSha,
-	});
+	const publicationIntents = new Map<string, ReturnType<typeof intentForIntegration>>();
+	const confirm = async (prepared: Awaited<ReturnType<typeof prepare>>, integrationId = identity.integrationId) => {
+		const params = {
+			...identity,
+			integrationId,
+			deliveryId: "delivery",
+			materializedCommit: prepared.materializedCommit,
+			expectedTargetSha: prepared.expectedTargetSha,
+		};
+		const session = (await loadPersistentSessions(dataDir)).get(integrationId);
+		if (!session?.localVerification || !session.verifiedPlan) return params;
+		const integration = {
+			...publicationFixture().integration,
+			id: integrationId,
+			accountId: "owner",
+			targetBotId: identity.targetBotId,
+			targetBotRevision: identity.targetBotRevision,
+			targetBranch: "target",
+			expectedTargetSha: prepared.expectedTargetSha,
+			repositoryId,
+			objectFormat: "sha1" as const,
+			commit: undefined,
+			artifactRef,
+			materializedCommit: prepared.materializedCommit,
+			preparedTree: prepared.preparedTree,
+			verificationPlan: session.verifiedPlan,
+		};
+		let publishIntent = publicationIntents.get(integrationId);
+		if (!publishIntent) {
+			publishIntent = intentForIntegration(integration, session.localVerification);
+			publicationIntents.set(integrationId, publishIntent);
+		}
+		return { ...params, publishIntent };
+	};
+
 	return {
 		identity,
 		repoRoot,
@@ -161,7 +192,7 @@ describe("device local artifact integration", { timeout: 30_000 }, () => {
 		expect(await readFile(join(session.worktreePath, "code.txt"), "utf8")).toContain(
 			"previous artifact\ncurrent artifact",
 		);
-		await expect(deviceConfirmIntegration(f.confirm(prepared))).rejects.toThrow("Owner-authorized");
+		await expect(deviceConfirmIntegration(await f.confirm(prepared))).rejects.toThrow("Owner-authorized");
 	});
 	it("runs the full artifact materialization, real verification and CAS apply path", async () => {
 		const fresh = { ...f.identity, integrationId: randomUUID() };
@@ -173,7 +204,7 @@ describe("device local artifact integration", { timeout: 30_000 }, () => {
 		});
 		const verified = await deviceVerifyIntegration({ ...f.verification(result), integrationId: fresh.integrationId });
 		expect(verified.status).toBe("verified");
-		const applied = await deviceConfirmIntegration({ ...f.confirm(result), integrationId: fresh.integrationId });
+		const applied = await deviceConfirmIntegration(await f.confirm(result, fresh.integrationId));
 		expect(await git(f.repoRoot, "rev-parse", "target")).toBe(applied.newCommitSha);
 		expect(await git(f.repoRoot, "rev-parse", `${applied.newCommitSha}^{tree}`)).toBe(f.outputTree);
 		expect(await git(f.repoRoot, "rev-parse", `${applied.newCommitSha}^2`)).toBe(result.materializedCommit);
@@ -305,7 +336,7 @@ describe("device local artifact integration", { timeout: 30_000 }, () => {
 		const rejected = expect(verification).rejects.toThrow("cancelled");
 		await vi.waitFor(() => expect(existsSync(join(session.worktreePath, "started"))).toBe(true), { timeout: 10_000 });
 		await expect(deviceVerifyIntegration(f.verification(prepared))).rejects.toThrow("already active");
-		await expect(deviceConfirmIntegration(f.confirm(prepared))).rejects.toThrow("already active");
+		await expect(deviceConfirmIntegration(await f.confirm(prepared))).rejects.toThrow("already active");
 		await expect(deviceCancelIntegration({ ...f.identity, targetBotId: "other" })).rejects.toThrow("identity mismatch");
 		await expect(deviceCancelIntegration(f.identity)).rejects.toThrow("dirty or changed");
 		await rejected;
@@ -331,7 +362,7 @@ describe("device local artifact integration", { timeout: 30_000 }, () => {
 		vi.resetModules();
 		const restarted = await import("../../server/device-center/device-integration.js");
 		await expect(restarted.deviceVerifyIntegration(f.verification(prepared))).rejects.toThrow("stop unconfirmed");
-		await expect(restarted.deviceConfirmIntegration(f.confirm(prepared))).rejects.toThrow();
+		await expect(restarted.deviceConfirmIntegration(await f.confirm(prepared))).rejects.toThrow();
 		await expect(restarted.deviceCancelIntegration(f.identity)).rejects.toThrow("stop unconfirmed");
 		expect(await restarted.recoverOrphanWorktrees(f.dataDir)).toEqual({ recoveredCount: 0, pendingCount: 1 });
 		expect(existsSync(session.worktreePath)).toBe(true);
@@ -356,18 +387,20 @@ describe("device local artifact integration", { timeout: 30_000 }, () => {
 			await deviceVerifyIntegration(f.verification(prepared));
 		});
 		it("applies through CAS with the materialized commit as second parent", async () => {
-			const applied = await deviceConfirmIntegration(f.confirm(prepared));
+			const applied = await deviceConfirmIntegration(await f.confirm(prepared));
 			expect(await git(f.repoRoot, "rev-parse", "target")).toBe(applied.newCommitSha);
 			expect(await git(f.repoRoot, "rev-parse", `${applied.newCommitSha}^2`)).toBe(prepared.materializedCommit);
 			expect(await git(f.repoRoot, "rev-parse", `${applied.newCommitSha}^{tree}`)).toBe(f.outputTree);
 		});
-		it("rechecks the worktree and target even with a prior successful receipt", async () => {
+		it("rechecks the worktree and target on explicit resume after successful verification", async () => {
 			await git(f.repoRoot, "update-ref", "refs/heads/target", f.outputCommit);
-			await expect(deviceConfirmIntegration(f.confirm(prepared))).rejects.toThrow();
+			await expect(deviceConfirmIntegration(await f.confirm(prepared))).rejects.toThrow();
 			await git(f.repoRoot, "update-ref", "refs/heads/target", f.baselineCommit);
 			const session = (await loadPersistentSessions(f.dataDir)).get(f.identity.integrationId)!;
 			await writeFile(join(session.worktreePath, "untracked"), "changed");
-			await expect(deviceConfirmIntegration(f.confirm(prepared))).rejects.toThrow("dirty or changed");
+			await expect(deviceConfirmIntegration({ ...(await f.confirm(prepared)), mode: "resume" })).rejects.toThrow(
+				"dirty or changed",
+			);
 		});
 	});
 });

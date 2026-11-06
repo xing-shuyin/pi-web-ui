@@ -212,6 +212,40 @@ describe("artifact delivery and acceptance tool boundary", () => {
 						id: "integration",
 						status: "verified",
 						materializedCommit: "4".repeat(40),
+						error: "/private/repository-read-error",
+						publishIntent: {
+							id: "intent",
+							digest,
+							candidateSha: "5".repeat(40),
+							review: { summary: "private-review" },
+							verification: { output: "/private/intent" },
+							cwd: "/private/repo",
+						},
+						publishReceipt: {
+							intentId: "intent",
+							intentDigest: digest,
+							candidateSha: "5".repeat(40),
+							outcome: "applied",
+							proof: "target_exact",
+							observedAt: 2,
+							raw: "/private/receipt",
+						},
+						publishObservation: {
+							target: "other",
+							targetSha: "6".repeat(40),
+							phase: "closed",
+							retryable: false,
+							observedAt: 3,
+							error: "/private/probe-error",
+						},
+						publishStop: {
+							closed: true,
+							stopConfirmed: false,
+							pastEffect: "applied",
+							fencedAt: 3,
+							pid: 12345,
+							repoRoot: "/private/root",
+						},
 						artifactRef: ref,
 						verification: { digest: verificationDigest, planDigest: "e".repeat(64), raw: "private-receipt" },
 						validationCommands: [
@@ -246,8 +280,17 @@ describe("artifact delivery and acceptance tool boundary", () => {
 			verificationDigest,
 			criteriaResults: review.criteriaResults,
 		});
-		expect(summary.integrations[0]).toMatchObject({ id: "integration", verification: { digest: verificationDigest } });
-		expect(JSON.stringify(response)).not.toMatch(/private-patch|private-receipt|\/private\//);
+		expect(summary.integrations[0]).toMatchObject({
+			id: "integration",
+			verification: { digest: verificationDigest },
+			publishIntent: { id: "intent", digest, candidateSha: "5".repeat(40) },
+			publishReceipt: { outcome: "applied", proof: "target_exact" },
+			publishObservation: { target: "other", targetSha: "6".repeat(40), retryable: false },
+			publishStop: { closed: true, stopConfirmed: false, pastEffect: "applied" },
+		});
+		expect(summary.integrations[0].publishIntent).not.toHaveProperty("review");
+		expect(summary.integrations[0].publishStop).not.toHaveProperty("pid");
+		expect(JSON.stringify(response)).not.toMatch(/private-patch|private-receipt|private-review|\/private\//);
 		expect(Buffer.byteLength(JSON.stringify(response.details))).toBeLessThan(48 * 1024);
 	});
 });
