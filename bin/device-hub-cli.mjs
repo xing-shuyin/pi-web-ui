@@ -4,6 +4,7 @@ import { createServer } from "node:net";
 import { request } from "node:http";
 import {
 	mkdirSync,
+	appendFileSync,
 	readFileSync,
 	writeFileSync,
 	renameSync,
@@ -14,7 +15,7 @@ import {
 } from "node:fs";
 import { homedir, hostname } from "node:os";
 import { setTimeout as delay, setImmediate as yieldImmediate } from "node:timers/promises";
-import { basename, join, resolve } from "node:path";
+import { basename, dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 export const HUB_HELP = `Usage: pi-web-ui hub [install|start|stop|restart|status|uninstall|update] [options]
@@ -341,13 +342,14 @@ export function runManager(file, args, inspect = spawnSync, now = () => performa
 		}
 	}
 	if (file === "schtasks.exe" && args[0] === "/End") {
+		// Stop must also cancel queued instances; /Run with IgnoreNew can otherwise keep the old action.
 		const taskName = args[args.indexOf("/TN") + 1].replace(/'/g, "''");
 		file = "powershell.exe";
 		args = [
 			"-NoProfile",
 			"-NonInteractive",
 			"-Command",
-			`$ErrorActionPreference='Stop'; $s=New-Object -ComObject Schedule.Service; $s.Connect(); $t=$s.GetFolder('\\').GetTask('${taskName}'); if ($t.State -eq 4) { $t.Stop(0) }`,
+			`$ErrorActionPreference='Stop'; $s=New-Object -ComObject Schedule.Service; $s.Connect(); $f=$s.GetFolder('\\'); $t=$f.GetTask('${taskName}'); if ($t.State -in @(2,4) -or $t.GetInstances(0).Count -gt 0) { $t.Stop(0) }; $clock=[Diagnostics.Stopwatch]::StartNew(); while ($true) { $t=$f.GetTask('${taskName}'); if ($t.State -in @(1,3) -and $t.GetInstances(0).Count -eq 0) { break }; if ($clock.ElapsedMilliseconds -ge 25000) { throw 'Hub scheduled task did not stop within 25s' }; Start-Sleep -Milliseconds 50 }`,
 		];
 	}
 	const result = native(file, args);
@@ -459,9 +461,32 @@ export async function runHubCli(
 	signal?.throwIfAborted();
 	if (argv[0] === "--service-config") {
 		if (argv.length !== 2) throw new Error("Invalid service configuration arguments");
-		const settings = JSON.parse(readFileSync(argv[1], "utf8"));
-		validateSettings(settings);
-		return foreground({ ...settings, PI_DEVICE_HUB_SERVICE_CONFIG: resolve(argv[1]) });
+		const record = (event, error) => {
+			try {
+				appendFileSync(
+					join(dirname(resolve(argv[1])), "service-runtime.log"),
+					`${JSON.stringify({
+						at: new Date().toISOString(),
+						event,
+						pid: process.pid,
+						version: JSON.parse(readFileSync(new URL("../package.json", import.meta.url), "utf8")).version,
+						...(error ? { code: /^[A-Z][A-Z0-9_]{0,63}$/.test(error.code) ? error.code : "STARTUP_FAILED" } : {}),
+					})}\n`,
+					{ mode: 0o600 },
+				);
+			} catch {}
+		};
+		record("starting");
+		try {
+			const settings = JSON.parse(readFileSync(argv[1], "utf8"));
+			validateSettings(settings);
+			const hub = await foreground({ ...settings, PI_DEVICE_HUB_SERVICE_CONFIG: resolve(argv[1]) });
+			record("ready");
+			return hub;
+		} catch (error) {
+			record("failed", error);
+			throw error;
+		}
 	}
 	const parsed = parseHubArgs(argv, env);
 	if (parsed.help) return log(HUB_HELP);

@@ -10,6 +10,16 @@ import { dirname, join, resolve } from "node:path";
 import { pathToFileURL, fileURLToPath } from "node:url";
 import { chromium } from "playwright-core";
 import { CHROME_PATH } from "./lib/chrome.mjs";
+import {
+	DIAGNOSTIC_LIMIT,
+	createDiagnosticRedactor,
+	summarizeUpgradeJob,
+	summarizeLaunchctl,
+	readLogTail,
+	diagnosticCommand,
+	observeUpgradeTerminal,
+	submittedUpgradeJob,
+} from "./lib/hub-upgrade-release.mjs";
 const args = process.argv.slice(2);
 const option = (key) => {
 	const i = args.indexOf(key);
@@ -49,6 +59,7 @@ if (args.includes("--background")) {
 		PI_DEVICE_HUB_SERVICE_NAME: serviceName,
 		PI_DEVICE_HUB_UPDATE_SOURCE: resolve(candidate),
 	};
+	const redact = createDiagnosticRedactor(env);
 	const report = {
 		platform: process.platform,
 		node: process.version,
@@ -58,13 +69,16 @@ if (args.includes("--background")) {
 			.digest("hex"),
 		serviceName,
 		checks: [],
+		upgradeAttempts: [],
 		state: "running",
 		startedAt: new Date().toISOString(),
 	};
+	// This hash is derived from the candidate bytes, not from credentials or logs.
+	const safeReport = () => ({ ...redact.json(report), sha256: report.sha256 });
 	const checkpoint = async (name, details = {}) => {
 		report.checks.push({ name, ...details });
 		console.log(`[hub-release] ${name}`);
-		await writeFile(join(output, "result.json"), JSON.stringify(report, null, 2));
+		await writeFile(join(output, "result.json"), JSON.stringify(safeReport(), null, 2));
 	};
 	const run = (argv, { cwd = work, timeout = 10 * 60_000 } = {}) =>
 		new Promise((done, reject) => {
@@ -98,6 +112,7 @@ if (args.includes("--background")) {
 	const base = `http://127.0.0.1:${port}`;
 	let cookie = "";
 	const request = async (path, body, headers = {}) => {
+		redact.remember(body);
 		const response = await fetch(base + path, {
 			method: body === undefined ? "GET" : "POST",
 			headers: { Origin: base, Cookie: cookie, "Content-Type": "application/json", Connection: "close", ...headers },
@@ -105,8 +120,181 @@ if (args.includes("--background")) {
 			signal: AbortSignal.timeout(10_000),
 		});
 		const result = await response.json();
-		assert(response.ok, `${path}: HTTP ${response.status}: ${JSON.stringify(result)}`);
+		redact.remember(result);
+		assert(response.ok, redact.text(`${path}: HTTP ${response.status}: ${JSON.stringify(result)}`));
 		return { response, result };
+	};
+	const readJob = async () => {
+		try {
+			return JSON.parse(await readFile(join(dataDir, "hub-upgrade.json"), "utf8"));
+		} catch (error) {
+			if (error.code === "ENOENT") return undefined;
+			throw error;
+		}
+	};
+	const browserUpgrade = async (page, expectedState) => {
+		const previousJob = await readJob();
+		const responsePromise = page.waitForResponse(
+			(response) =>
+				new URL(response.url()).pathname === "/api/system/upgrade" && response.request().method() === "POST",
+			{ timeout: 45_000 },
+		);
+		const [response] = await Promise.all([responsePromise, page.locator("#upgrade").click()]);
+		const body = await response.json();
+		const submittedJob = submittedUpgradeJob({
+			status: response.status(),
+			body,
+			persistedJob: await readJob(),
+			previousJobId: previousJob?.id,
+			expectedState,
+		});
+		const attempt = { expectedState, httpStatus: response.status(), submittedJob };
+		report.upgradeAttempts.push(attempt);
+		await checkpoint("Browser upgrade submitted", { jobId: submittedJob.id, expectedState });
+		return observeUpgradeTerminal({
+			jobId: submittedJob.id,
+			expectedState,
+			readJob,
+			readConnection: () =>
+				page
+					.locator("#connection")
+					.textContent({ timeout: 1000 })
+					.then((text) => text || "")
+					.catch(() => "connection element unavailable"),
+			onObservation: ({ job, connection }) => {
+				attempt.lastJob = job;
+				attempt.lastConnection = connection;
+			},
+		});
+	};
+	const collectFailureDiagnostics = async () => {
+		const directory = join(output, "diagnostics");
+		await mkdir(directory, { recursive: true });
+		report.diagnostics = { directory: "diagnostics", files: [], errors: [] };
+		const save = async (name, value) => {
+			const safe = typeof value === "string" ? redact.text(value) : JSON.stringify(redact.json(value), null, 2);
+			await writeFile(join(directory, name), Buffer.from(safe).subarray(0, DIAGNOSTIC_LIMIT));
+			report.diagnostics.files.push(name);
+		};
+		const capture = async (name, action) => {
+			try {
+				await action();
+			} catch (error) {
+				report.diagnostics.errors.push({ name, error: redact.text(error.message) });
+			}
+		};
+		// Learn credential values for redaction; never copy configuration or data.
+		if (plan)
+			await capture("redaction settings", async () => redact.remember(JSON.parse(await readFile(plan.config, "utf8"))));
+		let job;
+		await capture("upgrade job", async () => {
+			job = await readJob();
+			await save("upgrade-job.json", summarizeUpgradeJob(job));
+		});
+		await save("context.json", {
+			platform: process.platform,
+			node: process.version,
+			nodeExecutable: process.execPath,
+			uid: process.getuid?.(),
+			serviceName,
+			serviceManager: plan?.manager,
+			npmCliPresent: existsSync(npm),
+		});
+		const logFiles = [
+			...(plan
+				? [
+						["hub-stdout.log", join(plan.root, "stdout.log")],
+						["hub-stderr.log", join(plan.root, "stderr.log")],
+					]
+				: []),
+			["upgrade.log", join(dataDir, "hub-upgrade.log")],
+			["upgrade-worker.log", join(dataDir, "hub-upgrade-worker.log")],
+		];
+		for (const [name, path] of logFiles)
+			await capture(name, async () => {
+				const tail = await readLogTail(path);
+				await save(name, `${tail.truncated ? "[Earlier log content omitted]\n" : ""}${tail.text}`);
+			});
+		if (plan)
+			await capture("service-runtime.log", async () => {
+				const tail = await readLogTail(join(plan.root, "service-runtime.log"));
+				const records = tail.text
+					.split(/\r?\n/)
+					.filter(Boolean)
+					.map((line) => {
+						try {
+							const row = JSON.parse(line);
+							return Object.fromEntries(
+								["at", "event", "pid", "version", "code"]
+									.filter((key) => ["string", "number"].includes(typeof row[key]))
+									.map((key) => [key, row[key]]),
+							);
+						} catch {
+							return { event: "unreadable runtime record" };
+						}
+					});
+				await save("service-runtime.json", records);
+			});
+		await capture("commands.log", async () => {
+			const tail = await readLogTail(join(output, "commands.log"));
+			await writeFile(join(output, "commands.log"), Buffer.from(redact.text(tail.text)).subarray(0, DIAGNOSTIC_LIMIT));
+		});
+		const commands = [];
+		const jobId = job?.id && /^[a-f0-9-]{36}$/.test(job.id) ? job.id : undefined;
+		if (process.platform === "darwin") {
+			const uid = process.getuid();
+			for (const [role, label] of [
+				["hub", `com.xingshuyin.${serviceName}`],
+				...(jobId ? [["worker", `com.xingshuyin.pi-device-hub-update-${jobId}`]] : []),
+			]) {
+				for (const domain of ["gui", "user"])
+					commands.push([`${role}-${domain}.json`, "launchctl", ["print", `${domain}/${uid}/${label}`], true]);
+				commands.push([`${role}-submit-context.json`, "launchctl", ["list", label], true]);
+			}
+		} else if (process.platform === "linux") {
+			for (const [role, unit] of [
+				["hub", `${serviceName}.service`],
+				...(jobId ? [["worker", `pi-device-hub-update-${jobId}.service`]] : []),
+			]) {
+				commands.push([
+					`${role}-systemd.json`,
+					"systemctl",
+					[
+						"--user",
+						"show",
+						unit,
+						"--property=LoadState,ActiveState,SubState,Result,ExecMainCode,ExecMainStatus,MainPID,FragmentPath",
+					],
+				]);
+				commands.push([
+					`${role}-journal.json`,
+					"journalctl",
+					["--user", "-u", unit, "-n", "160", "--no-pager", "--output=short-iso"],
+				]);
+			}
+		} else if (process.platform === "win32") {
+			for (const [role, task] of [
+				["hub", serviceName],
+				...(jobId ? [["worker", `pi-device-hub-update-${jobId}`]] : []),
+			]) {
+				commands.push([
+					`${role}-task.json`,
+					"powershell.exe",
+					[
+						"-NoProfile",
+						"-NonInteractive",
+						"-Command",
+						`$ErrorActionPreference='Stop'; $t=Get-ScheduledTask -TaskName '${task}'; $i=$t|Get-ScheduledTaskInfo; [pscustomobject]@{State=[string]$t.State;LastTaskResult=$i.LastTaskResult;LastRunTime=$i.LastRunTime;NextRunTime=$i.NextRunTime}|ConvertTo-Json -Compress`,
+					],
+				]);
+			}
+		}
+		for (const [name, file, args, launchctl] of commands)
+			await capture(name, async () => {
+				const result = await diagnosticCommand(file, args);
+				if (launchctl) result.stdout = summarizeLaunchctl(result.stdout || "");
+				await save(name, { command: [file, ...args], ...result });
+			});
 	};
 	try {
 		await checkpoint("Installing the exact candidate tarball and the published baseline");
@@ -158,7 +346,10 @@ if (args.includes("--background")) {
 			["pass" + "word"]: randomUUID(),
 		});
 		cookie = registration.response.headers.get("set-cookie").split(";")[0];
+		redact.add(cookie);
+		redact.add(cookie.slice(cookie.indexOf("=") + 1));
 		const start = (await request("/api/pair/start", { name: "preserved-device" })).result;
+		redact.add(start.code);
 		await request("/api/pair/approve", { code: start.code });
 		const paired = (await request("/api/pair/poll", { pollToken: start.pollToken })).result;
 		const botId = `bot-${randomUUID()}`;
@@ -201,15 +392,13 @@ if (args.includes("--background")) {
 		page.on("dialog", (dialog) => dialog.accept());
 		await page.goto(base);
 		await page.locator("#upgrade").waitFor({ state: "visible" });
-		await page.locator("#upgrade").click();
-		await page.waitForFunction(() => document.querySelector("#connection")?.textContent.includes("升级成功"), null, {
-			timeout: 10 * 60_000,
-		});
+		const observedSuccess = await browserUpgrade(page, "succeeded");
 		await page.screenshot({ path: join(output, "browser-upgrade-success.png"), fullPage: true });
 		const secondHealth = (await request("/health")).result;
 		assert.notEqual(secondHealth.bootId, firstHealth.bootId);
 		assert.equal(secondHealth.version, candidateManifest.version);
 		const successJob = (await request("/api/system/upgrade")).result.job;
+		assert.equal(successJob.id, observedSuccess.id);
 		assert.equal(successJob.state, "succeeded");
 		assert.equal(successJob.version, candidateManifest.version);
 		assert.equal(successJob.bootId, secondHealth.bootId);
@@ -225,13 +414,12 @@ if (args.includes("--background")) {
 			plan.config,
 			JSON.stringify({ ...saved, PI_DEVICE_HUB_UPDATE_SOURCE: join(work, "missing-release.tgz") }),
 		);
-		await page.locator("#upgrade").click();
-		await page.waitForFunction(() => document.querySelector("#connection")?.textContent.includes("升级失败"), null, {
-			timeout: 10 * 60_000,
-		});
+		const observedFailure = await browserUpgrade(page, "failed");
 		await page.screenshot({ path: join(output, "browser-upgrade-failure.png"), fullPage: true });
 		assert.equal((await request("/health")).result.bootId, secondHealth.bootId);
-		assert.equal((await request("/api/system/upgrade")).result.job.state, "failed");
+		const failedJob = (await request("/api/system/upgrade")).result.job;
+		assert.equal(failedJob.id, observedFailure.id);
+		assert.equal(failedJob.state, "failed");
 		await checkpoint("Package installation failure is visible to the user; old Hub stays online");
 
 		const broken = join(work, "broken");
@@ -256,11 +444,9 @@ if (args.includes("--background")) {
 		);
 		await writeFile(plan.config, JSON.stringify({ ...saved, PI_DEVICE_HUB_UPDATE_SOURCE: brokenTar }));
 		await page.goto(base);
-		await page.locator("#upgrade").click();
-		await page.waitForFunction(() => document.querySelector("#connection")?.textContent.includes("升级失败"), null, {
-			timeout: 10 * 60_000,
-		});
+		const observedRollback = await browserUpgrade(page, "failed");
 		const rollbackJob = (await request("/api/system/upgrade")).result.job;
+		assert.equal(rollbackJob.id, observedRollback.id);
 		assert.equal(rollbackJob.state, "failed");
 		assert.match(rollbackJob.error, /previous Hub service restored/);
 		const rollbackHealth = (await request("/health")).result;
@@ -272,21 +458,25 @@ if (args.includes("--background")) {
 		report.state = "passed";
 	} catch (error) {
 		report.state = "failed";
-		report.error = error.stack || String(error);
+		report.error = redact.text(error.stack || String(error));
 		console.error(report.error);
 		process.exitCode = 1;
 	} finally {
-		await browser?.close();
+		if (report.state === "failed")
+			await collectFailureDiagnostics().catch((error) => {
+				report.diagnosticsError = redact.text(error.message);
+			});
+		await browser?.close().catch(() => {});
 		try {
 			if (installed || (plan && existsSync(plan.config))) await cli.runHubCli(["uninstall"], { env, plan });
 			if (plan) await rm(plan.root, { recursive: true, force: true });
 		} catch (error) {
-			report.cleanupError = error.message;
+			report.cleanupError = redact.text(error.message);
 			report.state = "failed";
 			process.exitCode = 1;
 		}
 		report.completedAt = new Date().toISOString();
-		await writeFile(join(output, "result.json"), JSON.stringify(report, null, 2));
+		await writeFile(join(output, "result.json"), JSON.stringify(safeReport(), null, 2));
 		await writeFile(
 			join(output, "result.md"),
 			`# Hub 发布包升级验收\n\n状态：${report.state}\n\n平台：${report.platform} / Node ${report.node}\n\n候选包 SHA-256：\`${report.sha256}\`\n\n${report.checks.map((check) => `- ${check.name}`).join("\n")}\n\n${report.error ? `失败原因：\n\n\`\`\`\n${report.error}\n\`\`\`\n` : ""}${report.cleanupError ? `清理失败：${report.cleanupError}\n` : ""}`,

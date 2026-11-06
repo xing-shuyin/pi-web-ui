@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { mkdtemp, readFile, writeFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { join, relative } from "node:path";
 import { fileURLToPath } from "node:url";
 import { createHubUpgradeManager } from "../../server/device-center/hub-upgrade.js";
 import { waitForHubUpgrade } from "../../web/src/hub-upgrade.js";
@@ -42,6 +42,28 @@ describe("durable Hub upgrade submission", () => {
 		const job = await f.manager.start("owner");
 		expect(await createHubUpgradeManager(f).status(job.id)).toEqual(job);
 		await expect(f.manager.start("owner")).rejects.toMatchObject({ status: 409 });
+	});
+	it("preserves the verified service location for workers with a different home or APPDATA", async () => {
+		const f = await fixture();
+		await writeFile(
+			f.serviceConfigPath,
+			JSON.stringify({
+				PI_DEVICE_HUB_INSTANCE_ID: f.instanceId,
+				PI_DEVICE_HUB_DATA_DIR: f.dataDir,
+				PI_DEVICE_HUB_SERVICE_NAME: "pi-device-hub-isolated",
+				PI_DEVICE_HUB_TOKEN: "not-copied-into-job",
+			}),
+		);
+		f.launch.mockImplementation(async (path) => {
+			const stored = JSON.parse(await readFile(path, "utf8"));
+			expect(stored.serviceConfigPath).toBe(f.serviceConfigPath);
+			expect(stored.serviceName).toBe("pi-device-hub-isolated");
+			expect(JSON.stringify(stored)).not.toContain("not-copied-into-job");
+		});
+		const manager = createHubUpgradeManager({ ...f, serviceConfigPath: relative(process.cwd(), f.serviceConfigPath) });
+		const job = await manager.start("owner");
+		expect(job).not.toHaveProperty("serviceConfigPath");
+		expect(await createHubUpgradeManager(f).status(job.id)).toEqual(job);
 	});
 	it("rejects overlapping submissions even while the configuration read is pending", async () => {
 		const f = await fixture();

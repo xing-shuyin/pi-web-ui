@@ -11,11 +11,11 @@ const roots: string[] = [];
 afterEach(() => {
 	for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true });
 });
-function fixture() {
+function fixture(platform: NodeJS.Platform = process.platform) {
 	const root = mkdtempSync(join(tmpdir(), "hub-update-runtime-"));
 	roots.push(root);
 	const env = { ...process.env, APPDATA: root, USERNAME: "tester", PI_DEVICE_HUB_SERVICE_NAME: "pi-device-hub-test" };
-	const plan = cli.hubServicePlan({ home: root, env });
+	const plan = cli.hubServicePlan({ platform, home: root, env });
 	mkdirSync(plan.root, { recursive: true });
 	mkdirSync(join(plan.file, ".."), { recursive: true });
 	const settings = {
@@ -24,6 +24,7 @@ function fixture() {
 		PI_DEVICE_HUB_PUBLIC_URL: "http://127.0.0.1:8790",
 		PI_DEVICE_HUB_DATA_DIR: root,
 		PI_DEVICE_HUB_INSTANCE_ID: "instance",
+		PI_DEVICE_HUB_SERVICE_NAME: "pi-device-hub-test",
 		PI_DEVICE_HUB_ALLOW_REGISTRATION: "0",
 	};
 	writeFileSync(plan.config, JSON.stringify(settings));
@@ -35,6 +36,7 @@ function fixture() {
 		state: "queued",
 		phase: "queued",
 		instanceId: "instance",
+		serviceName: "pi-device-hub-test",
 		fromVersion: "1.0.0",
 		fromBootId: "old",
 		createdAt: Date.now(),
@@ -60,6 +62,35 @@ function fixture() {
 	return { root, plan, settings, path, job, health, probe, install, run };
 }
 describe("Hub release updater", () => {
+	it("uses the saved service configuration when an independent worker has a different HOME/APPDATA", async () => {
+		const f = fixture();
+		runtime.writeUpgradeJob(f.path, { ...f.job, serviceConfigPath: f.plan.config });
+		const wait = vi.fn().mockResolvedValue({ ...f.health, version: "2.0.0", bootId: "new" });
+		await runtime.runUpgradeJob(f.path, { install: f.install, probe: f.probe, run: f.run, wait, log: () => {} });
+		expect(f.install).toHaveBeenCalledWith(f.plan.root, expect.any(Object));
+		expect(wait).toHaveBeenCalledWith(f.settings, expect.objectContaining({ version: "2.0.0" }));
+		expect(runtime.readUpgradeJob(f.path).state).toBe("succeeded");
+	});
+	it("rejects a saved configuration belonging to another named service", async () => {
+		const f = fixture();
+		runtime.writeUpgradeJob(f.path, { ...f.job, serviceConfigPath: f.plan.config, serviceName: "pi-device-hub-other" });
+		await expect(runtime.runUpgradeJob(f.path, { install: f.install })).rejects.toThrow("not a Hub service path");
+		expect(f.install).not.toHaveBeenCalled();
+	});
+	it("retains ownership checks after locating an explicit service configuration", async () => {
+		const f = fixture();
+		runtime.writeUpgradeJob(f.path, { ...f.job, serviceConfigPath: f.plan.config, instanceId: "other" });
+		await expect(runtime.runUpgradeJob(f.path, { install: f.install })).rejects.toThrow("does not belong");
+		expect(f.install).not.toHaveBeenCalled();
+	});
+	it("rejects a relative service configuration path before touching the service", async () => {
+		const f = fixture();
+		runtime.writeUpgradeJob(f.path, { ...f.job, serviceConfigPath: "service.json" });
+		await expect(runtime.runUpgradeJob(f.path, { install: f.install })).rejects.toThrow(
+			"Invalid Hub service configuration path",
+		);
+		expect(f.install).not.toHaveBeenCalled();
+	});
 	it("installs a release, rewrites the service and persists the verified runtime", async () => {
 		const f = fixture();
 		const wait = vi.fn().mockResolvedValue({ ...f.health, version: "2.0.0", bootId: "new" });
@@ -91,9 +122,52 @@ describe("Hub release updater", () => {
 			.mockResolvedValueOnce({ ...f.health, bootId: "rollback" });
 		await expect(runtime.runUpgradeJob(f.path, { ...f, wait })).rejects.toThrow("previous Hub service restored");
 		expect(readFileSync(f.plan.file, "utf8")).toBe("original service");
-		expect(f.run.mock.calls.map((call) => call[1])).toEqual([...f.plan.commands.update, ...f.plan.commands.update]);
+		expect(f.run.mock.calls.filter((call) => call[0] === f.plan.manager).map((call) => call[1])).toEqual([
+			...f.plan.commands.update,
+			...f.plan.commands.update,
+		]);
 		expect(wait.mock.calls[1][1]).toMatchObject({ version: "1.0.0", fromBootId: "old" });
 		expect(runtime.readUpgradeJob(f.path).state).toBe("failed");
+	});
+	it("captures only the failing Windows task fields before replacing its definition", async () => {
+		const f = fixture("win32");
+		const wait = vi.fn().mockRejectedValueOnce(new Error("not started")).mockResolvedValueOnce(f.health);
+		f.run.mockImplementation((file: string) => {
+			if (file !== "powershell.exe") return "";
+			expect(readFileSync(f.plan.file, "utf8")).not.toBe("original service");
+			return JSON.stringify({
+				state: 3,
+				instances: 0,
+				lastTaskResult: 1,
+				expectedNode: true,
+				expectedArguments: false,
+				credential: "private-value",
+				environment: { TOKEN: "private-value" },
+			});
+		});
+		await expect(runtime.runUpgradeJob(f.path, { ...f, wait })).rejects.toThrow("previous Hub service restored");
+		const text = readFileSync(join(f.root, "hub-upgrade.log"), "utf8");
+		expect(JSON.parse(text.trim().split("\n").at(-1)!)).toEqual({
+			event: "windows-task-before-rollback",
+			state: 3,
+			instances: 0,
+			lastTaskResult: 1,
+			expectedNode: true,
+			expectedArguments: false,
+		});
+		expect(text).not.toContain("private-value");
+	});
+	it("still restores the service when Windows diagnostics are unavailable", async () => {
+		const f = fixture("win32");
+		const wait = vi.fn().mockRejectedValueOnce(new Error("not started")).mockResolvedValueOnce(f.health);
+		f.run.mockImplementation((file: string) => {
+			if (file === "powershell.exe") throw new Error("private-value");
+		});
+		await expect(runtime.runUpgradeJob(f.path, { ...f, wait })).rejects.toThrow("previous Hub service restored");
+		const text = readFileSync(join(f.root, "hub-upgrade.log"), "utf8");
+		expect(text).toContain('"available":false');
+		expect(text).not.toContain("private-value");
+		expect(readFileSync(f.plan.file, "utf8")).toBe("original service");
 	});
 	it("preserves both upgrade and rollback errors", async () => {
 		const f = fixture();
@@ -135,6 +209,28 @@ describe("Hub release updater", () => {
 			}),
 		).rejects.toThrow("expected version");
 	});
+	it("reports safe last-health observations without exposing instance or boot identifiers", async () => {
+		const f = fixture();
+		f.probe.mockResolvedValue({
+			...f.health,
+			instanceId: "private-value",
+			bootId: "private-value",
+			version: "private-value",
+		});
+		const error = await runtime
+			.waitForRelease(f.settings, {
+				version: "2.0.0",
+				fromBootId: "old",
+				probe: f.probe,
+				timeout: 5,
+				sleep: async () => {},
+			})
+			.catch((error: Error) => error);
+		expect(error.message).toContain(
+			"last health: instance=other, registration=expected, version=missing/invalid, boot=changed",
+		);
+		expect(error.message).not.toContain("private-value");
+	});
 	it("accepts the exact new version and a different process", async () => {
 		const f = fixture();
 		f.probe.mockResolvedValue({ ...f.health, version: "2.0.0", bootId: "new" });
@@ -143,7 +239,8 @@ describe("Hub release updater", () => {
 		).resolves.toMatchObject({ bootId: "new" });
 	});
 	it.each(["linux", "darwin", "win32"])("submits an independent %s service-manager worker", (platform) => {
-		const plan = runtime.independentWorkerPlan("C:/path with spaces/job.json", {
+		const jobPath = join(tmpdir(), "path with spaces", "job.json");
+		const plan = runtime.independentWorkerPlan(jobPath, {
 			platform,
 			node: "C:/Node/node.exe",
 			worker: "C:/App/worker.mjs",
@@ -152,6 +249,10 @@ describe("Hub release updater", () => {
 		expect(plan.file).toBe({ linux: "systemd-run", darwin: "launchctl", win32: "powershell.exe" }[platform]);
 		expect(plan.args.join(" ")).toContain("--run");
 		expect(plan.args.join(" ")).toContain("path with spaces");
+		if (platform === "darwin") {
+			const logPath = join(tmpdir(), "path with spaces", "hub-upgrade-worker.log");
+			expect(plan.args.slice(3, 7)).toEqual(["-o", logPath, "-e", logPath]);
+		}
 	});
 	it("bootstraps an owned legacy published Hub without versioned health", async () => {
 		const f = fixture();

@@ -1,13 +1,14 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { createServer, type Server } from "node:http";
-import { mkdtemp, writeFile, rm } from "node:fs/promises";
+import { mkdtemp, readFile, writeFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { randomUUID } from "node:crypto";
+import { fileURLToPath } from "node:url";
 import express from "express";
 import { createDeviceHub } from "../../server/device-center/hub.js";
 import { installLocalDeviceCenter } from "../../server/device-center/local.js";
-import { HubUpgradeError } from "../../server/device-center/hub-upgrade.js";
+import { createHubUpgradeManager, HubUpgradeError } from "../../server/device-center/hub-upgrade.js";
 const cleanup: (() => Promise<unknown>)[] = [];
 afterEach(async () => {
 	for (const fn of cleanup.splice(0).reverse()) await fn();
@@ -80,6 +81,52 @@ describe("Hub upgrade authorization and actual client forwarding", () => {
 		expect(f.manager.start).not.toHaveBeenCalled();
 		expect((await f.request("/api/system/upgrade", {}, { Origin: f.base, Cookie: owner.cookie })).status).toBe(202);
 		expect(f.manager.start).toHaveBeenCalledWith(owner.body.account.id);
+	});
+	it("binds internal service configuration to the verified installation and excludes it from HTTP jobs", async () => {
+		const f = await fixture();
+		const owner = await f.register("owner");
+		const serviceConfigPath = join(f.dataDir, "isolated-service.json");
+		await writeFile(
+			serviceConfigPath,
+			JSON.stringify({
+				PI_DEVICE_HUB_INSTANCE_ID: "instance",
+				PI_DEVICE_HUB_DATA_DIR: f.dataDir,
+				PI_DEVICE_HUB_SERVICE_NAME: "pi-device-hub-isolated",
+				PI_DEVICE_HUB_TOKEN: "not-public",
+			}),
+		);
+		const manager = createHubUpgradeManager({
+			dataDir: f.dataDir,
+			instanceId: "instance",
+			serviceConfigPath,
+			version: "1",
+			bootId: "old",
+			workerPath: fileURLToPath(new URL("../../bin/hub-upgrade.mjs", import.meta.url)),
+			launch: async () => {},
+		});
+		f.manager.start.mockImplementation((id: string) => manager.start(id));
+		f.manager.status.mockImplementation((id?: string) => manager.status(id));
+		const response = await f.request(
+			"/api/system/upgrade",
+			{
+				serviceConfigPath: "/untrusted/service.json",
+				serviceName: "pi-device-hub-untrusted",
+				environment: { SECRET: "untrusted" },
+			},
+			{ Origin: f.base, Cookie: owner.cookie },
+		);
+		expect(response.status).toBe(202);
+		const path = join(f.dataDir, "hub-upgrade.json");
+		const stored = JSON.parse(await readFile(path, "utf8"));
+		expect(stored).toMatchObject({ serviceConfigPath, serviceName: "pi-device-hub-isolated" });
+		expect(JSON.stringify(stored)).not.toContain("untrusted");
+		expect(JSON.stringify(stored)).not.toContain("not-public");
+		expect(response.body.job).not.toHaveProperty("serviceConfigPath");
+		expect(JSON.stringify(response.body)).not.toContain(serviceConfigPath);
+		await writeFile(path, JSON.stringify({ ...stored, environment: { SECRET: "hidden" }, futureCredential: "hidden" }));
+		const status = await f.request(`/api/system/upgrade?id=${stored.id}`, undefined, { Cookie: owner.cookie });
+		expect(status.status).toBe(200);
+		expect(status.body.job).toEqual(response.body.job);
 	});
 	it("accepts the owner device's human credential without browser Origin, and rejects execution credentials", async () => {
 		const f = await fixture();

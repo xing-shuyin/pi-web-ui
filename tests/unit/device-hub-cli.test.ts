@@ -21,6 +21,68 @@ const {
 
 const env = { PI_DEVICE_HUB_PUBLIC_URL: "http://localhost:8790" };
 describe("Hub standalone CLI", () => {
+	it.skipIf(process.platform !== "win32").each([
+		[2, 1],
+		[4, 1],
+		[3, 1],
+		[3, 0],
+	])("waits for Windows task state %s with %s instances to stop", async (state, instances) => {
+		let script = "";
+		runManager("schtasks.exe", ["/End", "/TN", "pi-device-hub-test"], (_file: string, args: string[], options: any) => {
+			script = args.at(-1)!;
+			expect(options.timeout).toBeLessThanOrEqual(30000);
+			return { status: 0, stdout: "" };
+		});
+		const expectedStops = state === 3 && instances === 0 ? 0 : 1;
+		const harness = `
+$global:reads=0; $global:stops=0; $global:waits=0
+$global:task=[pscustomobject]@{State=${state}; Count=${instances}}
+$global:task | Add-Member ScriptMethod GetInstances { param($flags) [pscustomobject]@{Count=$this.Count} }
+$global:task | Add-Member ScriptMethod Stop { param($flags) $global:stops++ }
+$global:folder=[pscustomobject]@{}
+$global:folder | Add-Member ScriptMethod GetTask { param($name) $global:reads++; if ($global:stops -gt 0 -and $global:reads -ge 4) {$global:task.State=3; $global:task.Count=0}; $global:task }
+$global:service=[pscustomobject]@{}
+$global:service | Add-Member ScriptMethod Connect {}
+$global:service | Add-Member ScriptMethod GetFolder { param($path) $global:folder }
+function New-Object { param($ComObject) $global:service }
+function Start-Sleep { param($Milliseconds) $global:waits++ }
+${script}
+if ($global:stops -ne ${expectedStops}) { throw 'Incorrect Stop count' }
+if (${expectedStops} -eq 1 -and $global:waits -lt 2) { throw 'Returned while old instances still existed' }
+`;
+		await new Promise<void>((done, reject) => {
+			const child = spawn("powershell.exe", ["-NoProfile", "-NonInteractive", "-Command", harness], {
+				windowsHide: true,
+			});
+			let output = "";
+			for (const stream of [child.stdout, child.stderr]) stream.on("data", (chunk) => (output += chunk));
+			child.once("error", reject);
+			child.once("close", (code) => (code === 0 ? done() : reject(new Error(output))));
+		});
+	});
+	it.each([false, true])("records safe service startup diagnostics (failure=%s)", async (failure) => {
+		const root = mkdtempSync(join(tmpdir(), "hub-service-log-"));
+		try {
+			const config = join(root, "service.json");
+			writeFileSync(config, JSON.stringify({ ...parseHubArgs([], env).settings, credential: "private-value" }));
+			const error = Object.assign(new Error("private-value must never be logged"), { code: "EADDRINUSE" });
+			const foreground = failure ? vi.fn().mockRejectedValue(error) : vi.fn().mockResolvedValue("hub");
+			const operation = runHubCli(["--service-config", config], { foreground });
+			if (failure) await expect(operation).rejects.toBe(error);
+			else await expect(operation).resolves.toBe("hub");
+			const text = readFileSync(join(root, "service-runtime.log"), "utf8");
+			const records = text
+				.trim()
+				.split("\n")
+				.map((line) => JSON.parse(line));
+			expect(records.map((record) => record.event)).toEqual(["starting", failure ? "failed" : "ready"]);
+			if (failure) expect(records[1].code).toBe("EADDRINUSE");
+			expect(text).not.toContain("private-value");
+			expect(text).not.toContain("PI_DEVICE_HUB");
+		} finally {
+			rmSync(root, { recursive: true, force: true });
+		}
+	});
 	it.each(["bootstrap", "bootout"])("shares the macOS 30s deadline between print and %s", (action) => {
 		let elapsed = 0;
 		const calls: any[] = [];

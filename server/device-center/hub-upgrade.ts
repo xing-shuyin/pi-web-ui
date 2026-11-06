@@ -21,6 +21,31 @@ export interface HubUpgradeJob {
 	requestedBy: string;
 	serviceName?: string;
 }
+interface StoredHubUpgradeJob extends HubUpgradeJob {
+	serviceConfigPath?: string;
+}
+const PUBLIC_JOB_FIELDS = [
+	"schemaVersion",
+	"id",
+	"state",
+	"phase",
+	"createdAt",
+	"updatedAt",
+	"instanceId",
+	"fromVersion",
+	"fromBootId",
+	"targetVersion",
+	"version",
+	"bootId",
+	"error",
+	"requestedBy",
+	"serviceName",
+] as const satisfies readonly (keyof HubUpgradeJob)[];
+function publicJob(job: StoredHubUpgradeJob): HubUpgradeJob {
+	return Object.fromEntries(
+		PUBLIC_JOB_FIELDS.filter((key) => job[key] !== undefined).map((key) => [key, job[key]]),
+	) as unknown as HubUpgradeJob;
+}
 export interface HubUpgradeManager {
 	start(accountId: string): Promise<HubUpgradeJob>;
 	status(id?: string): Promise<HubUpgradeJob | undefined>;
@@ -45,7 +70,7 @@ export function createHubUpgradeManager(options: {
 }): HubUpgradeManager {
 	const path = join(options.dataDir, "hub-upgrade.json");
 	let submitting = false;
-	async function write(job: HubUpgradeJob) {
+	async function write(job: StoredHubUpgradeJob) {
 		const temp = `${path}.${randomUUID()}.tmp`;
 		try {
 			await writeFile(temp, `${JSON.stringify(job, null, 2)}\n`, { flag: "wx", mode: 0o600 });
@@ -55,9 +80,9 @@ export function createHubUpgradeManager(options: {
 		}
 	}
 	async function status(id?: string) {
-		let job: HubUpgradeJob;
+		let job: StoredHubUpgradeJob;
 		try {
-			job = JSON.parse(await readFile(path, "utf8")) as HubUpgradeJob;
+			job = JSON.parse(await readFile(path, "utf8")) as StoredHubUpgradeJob;
 		} catch (error) {
 			if ((error as NodeJS.ErrnoException).code === "ENOENT") return undefined;
 			throw error;
@@ -67,12 +92,12 @@ export function createHubUpgradeManager(options: {
 		if (id && job.id !== id) return undefined;
 		if ((job.state === "queued" || job.state === "running") && Date.now() - job.createdAt > MAX_AGE)
 			return {
-				...job,
+				...publicJob(job),
 				state: "failed" as const,
 				phase: "failed",
 				error: "Hub upgrade timed out; inspect hub-upgrade.log and hub status --json",
 			};
-		return job;
+		return publicJob(job);
 	}
 	const launch =
 		options.launch ??
@@ -134,7 +159,7 @@ export function createHubUpgradeManager(options: {
 				if (previous?.state === "queued" || previous?.state === "running")
 					throw new HubUpgradeError(409, "Hub upgrade is already in progress");
 				const now = Date.now();
-				const job: HubUpgradeJob = {
+				const job: StoredHubUpgradeJob = {
 					schemaVersion: 1,
 					id: randomUUID(),
 					state: "queued",
@@ -145,6 +170,7 @@ export function createHubUpgradeManager(options: {
 					fromVersion: options.version,
 					fromBootId: options.bootId,
 					requestedBy: accountId,
+					serviceConfigPath: resolve(options.serviceConfigPath),
 					...(settings.PI_DEVICE_HUB_SERVICE_NAME ? { serviceName: settings.PI_DEVICE_HUB_SERVICE_NAME } : {}),
 				};
 				await write(job);
@@ -160,7 +186,7 @@ export function createHubUpgradeManager(options: {
 					});
 					throw new HubUpgradeError(503, error instanceof Error ? error.message : "Hub upgrade submission failed");
 				}
-				return (await status(job.id)) ?? job;
+				return (await status(job.id)) ?? publicJob(job);
 			} finally {
 				releaseSubmission?.();
 				submitting = false;

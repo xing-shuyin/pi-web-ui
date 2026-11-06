@@ -3,6 +3,7 @@ import { randomUUID } from "node:crypto";
 import {
 	existsSync,
 	readFileSync,
+	appendFileSync,
 	writeFileSync,
 	renameSync,
 	mkdirSync,
@@ -11,10 +12,10 @@ import {
 	closeSync,
 	readdirSync,
 } from "node:fs";
-import { dirname, join, resolve } from "node:path";
+import { dirname, isAbsolute, join, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { setTimeout as delay } from "node:timers/promises";
-import { acquireHubLock, hubServicePlan, runManager, probeHub } from "./device-hub-cli.mjs";
+import { acquireHubLock, hubServicePlan, runManager, probeHub, windowsArg } from "./device-hub-cli.mjs";
 
 const SELF = fileURLToPath(import.meta.url);
 const PACKAGE = JSON.parse(readFileSync(new URL("../package.json", import.meta.url), "utf8"));
@@ -42,7 +43,18 @@ export function writeUpgradeJob(path, job) {
 	}
 }
 function planForJob(job) {
-	return hubServicePlan({ env: { ...process.env, PI_DEVICE_HUB_SERVICE_NAME: job.serviceName ?? "pi-device-hub" } });
+	const env = { ...process.env, PI_DEVICE_HUB_SERVICE_NAME: job.serviceName ?? "pi-device-hub" };
+	if (job.serviceConfigPath === undefined) return hubServicePlan({ env });
+	if (typeof job.serviceConfigPath !== "string" || !isAbsolute(job.serviceConfigPath))
+		throw new Error("Invalid Hub service configuration path in upgrade job");
+	const config = resolve(job.serviceConfigPath);
+	const root = dirname(config);
+	// Native workers inherit the service manager's environment, not the submitting CLI's HOME/APPDATA.
+	const plan = hubServicePlan(
+		process.platform === "win32" ? { env: { ...env, APPDATA: dirname(root) } } : { env, home: dirname(dirname(root)) },
+	);
+	if (resolve(plan.config) !== config) throw new Error("Upgrade job configuration is not a Hub service path");
+	return plan;
 }
 function installedSettings(plan, job) {
 	if (!existsSync(plan.config)) throw new Error("Hub service is not installed; install it before updating");
@@ -50,6 +62,7 @@ function installedSettings(plan, job) {
 	if (
 		job &&
 		(settings.PI_DEVICE_HUB_INSTANCE_ID !== job.instanceId ||
+			(settings.PI_DEVICE_HUB_SERVICE_NAME ?? "pi-device-hub") !== (job.serviceName ?? "pi-device-hub") ||
 			resolve(settings.PI_DEVICE_HUB_DATA_DIR) !== dirname(resolve(job.path)))
 	)
 		throw new Error("Upgrade job does not belong to this installed Hub");
@@ -105,7 +118,18 @@ export function independentWorkerPlan(
 	if (platform === "darwin")
 		return {
 			file: "launchctl",
-			args: ["submit", "-l", `com.xingshuyin.pi-device-hub-update-${id}`, "--", node, ...args],
+			args: [
+				"submit",
+				"-l",
+				`com.xingshuyin.pi-device-hub-update-${id}`,
+				"-o",
+				join(dirname(jobPath), "hub-upgrade-worker.log"),
+				"-e",
+				join(dirname(jobPath), "hub-upgrade-worker.log"),
+				"--",
+				node,
+				...args,
+			],
 		};
 	if (platform === "win32") {
 		const task = `pi-device-hub-update-${id}`;
@@ -199,8 +223,12 @@ export async function waitForRelease(
 	{ version, fromBootId, legacy = false, probe = probeHub, timeout = 30_000, sleep = delay } = {},
 ) {
 	const deadline = Date.now() + timeout;
+	let observed = "unreachable";
 	while (Date.now() < deadline) {
 		const health = await probe(settings);
+		observed = health
+			? `instance=${health.instanceId === settings.PI_DEVICE_HUB_INSTANCE_ID ? "expected" : "other"}, registration=${health.allowRegistration === (settings.PI_DEVICE_HUB_ALLOW_REGISTRATION === "1") ? "expected" : "other"}, version=${typeof health.version === "string" && /^\d+\.\d+\.\d+(?:-[\w.-]+)?(?:\+[\w.-]+)?$/.test(health.version) && health.version.length <= 80 ? health.version : "missing/invalid"}, boot=${typeof health.bootId !== "string" ? "missing" : health.bootId === fromBootId ? "unchanged" : "changed"}`
+			: "unreachable";
 		if (
 			health &&
 			health.instanceId === settings.PI_DEVICE_HUB_INSTANCE_ID &&
@@ -211,8 +239,36 @@ export async function waitForRelease(
 		await sleep(250);
 	}
 	throw new Error(
-		`Updated Hub did not start with expected version ${version}; old healthy processes do not count as a successful upgrade`,
+		`Updated Hub did not start with expected version ${version}; old healthy processes do not count as a successful upgrade; last health: ${observed}`,
 	);
+}
+function recordWindowsServiceFailure(plan, candidate, logPath, run) {
+	if (plan.manager !== "schtasks.exe") return;
+	try {
+		const quote = (s) => `'${String(s).replace(/'/g, "''")}'`;
+		const statusArgs = plan.commands.status[0];
+		const taskIndex = statusArgs.indexOf("/TN");
+		if (taskIndex < 0 || typeof statusArgs[taskIndex + 1] !== "string") throw new Error("Missing Hub task name");
+		const task = statusArgs[taskIndex + 1];
+		const expectedArgs = [candidate.entry, "--service-config", plan.config].map(windowsArg).join(" ");
+		const output = run("powershell.exe", [
+			"-NoProfile",
+			"-NonInteractive",
+			"-Command",
+			`$ErrorActionPreference='Stop'; $s=New-Object -ComObject Schedule.Service; $s.Connect(); $t=$s.GetFolder('\\').GetTask(${quote(task)}); $a=$t.Definition.Actions.Item(1); [pscustomobject]@{state=[int]$t.State; instances=[int]$t.GetInstances(0).Count; lastTaskResult=[long]$t.LastTaskResult; expectedNode=($a.Path -eq ${quote(plan.serviceOptions?.node ?? process.execPath)}); expectedArguments=($a.Arguments -eq ${quote(expectedArgs)})} | ConvertTo-Json -Compress`,
+		]);
+		const status = JSON.parse(output);
+		const record = { event: "windows-task-before-rollback" };
+		for (const key of ["state", "instances", "lastTaskResult"])
+			if (Number.isSafeInteger(status[key])) record[key] = status[key];
+		for (const key of ["expectedNode", "expectedArguments"])
+			if (typeof status[key] === "boolean") record[key] = status[key];
+		appendFileSync(logPath, `${JSON.stringify(record)}\n`, { mode: 0o600 });
+	} catch {
+		try {
+			appendFileSync(logPath, '{"event":"windows-task-before-rollback","available":false}\n', { mode: 0o600 });
+		} catch {}
+	}
 }
 function retainWorkingReleases(plan, candidate, previousFile) {
 	const releases = join(plan.root, "releases");
@@ -258,6 +314,7 @@ export async function runUpgradeJob(
 	let previousFile;
 	let changed = false;
 	let candidate;
+	const logPath = join(dirname(path), "hub-upgrade.log");
 	try {
 		const settings = installedSettings(plan, { ...job, path });
 		releaseLock = acquireHubLock(plan.root);
@@ -267,7 +324,6 @@ export async function runUpgradeJob(
 			throw new Error("Hub ownership or process changed before upgrade");
 		previousFile = readFileSync(plan.file);
 		writeFileSync(join(plan.root, "service.previous"), previousFile, { mode: 0o600 });
-		const logPath = join(dirname(path), "hub-upgrade.log");
 		writeFileSync(logPath, `Hub upgrade ${job.id}\n`, { mode: 0o600 });
 		candidate = await install(plan.root, { source: settings.PI_DEVICE_HUB_UPDATE_SOURCE ?? source, logPath });
 		update({ phase: "restarting", targetVersion: candidate.version });
@@ -291,6 +347,7 @@ export async function runUpgradeJob(
 	} catch (error) {
 		let reason = error instanceof Error ? error.message : String(error);
 		if (changed && previousFile) {
+			recordWindowsServiceFailure(plan, candidate, logPath, run);
 			try {
 				update({ phase: "rolling-back" });
 				const restore = `${plan.file}.${job.id}.rollback`;
@@ -340,6 +397,7 @@ export async function updateInstalledHub({ plan = hubServicePlan(), log = consol
 			fromVersion: health.version ?? "legacy",
 			fromBootId: health.bootId ?? "legacy",
 			requestedBy: "local-cli",
+			serviceConfigPath: resolve(plan.config),
 			...(settings.PI_DEVICE_HUB_SERVICE_NAME ? { serviceName: settings.PI_DEVICE_HUB_SERVICE_NAME } : {}),
 		});
 		return await runUpgradeJob(path, { ...options, plan, log });
