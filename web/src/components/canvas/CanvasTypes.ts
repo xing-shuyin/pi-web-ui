@@ -1,3 +1,5 @@
+import { canvasText } from "./canvas-i18n";
+
 /**
  * CanvasTypes.ts — 画布协作前端通用辅助函数与视觉配置。
  *
@@ -67,6 +69,7 @@ interface RoleMeta {
 	/** 节点分组：trigger=触发输入 agent=智能体 logic=逻辑控制 data=工具数据 output=收尾输出 */
 	group: "trigger" | "agent" | "logic" | "data" | "output";
 	blurb: string;
+	blurbEn: string;
 	defaultInstruction: string;
 	needsLlm: boolean;
 }
@@ -79,6 +82,7 @@ export const ROLE_METAS: Record<CanvasNodeRole, RoleMeta> = {
 		icon: "📋",
 		group: "trigger",
 		blurb: "流水线入口：填写本次业务需求或启动输入，触发全队流转",
+		blurbEn: "Pipeline entry: paste the business requirement once and let the whole team flow",
 		defaultInstruction: "",
 		needsLlm: false,
 	},
@@ -89,6 +93,7 @@ export const ROLE_METAS: Record<CanvasNodeRole, RoleMeta> = {
 		icon: "⏰",
 		group: "trigger",
 		blurb: "按 Cron 表达式定时启动（外部调度拉起）",
+		blurbEn: "Starts on a Cron schedule (launched by an external scheduler)",
 		defaultInstruction: "",
 		needsLlm: false,
 	},
@@ -99,6 +104,7 @@ export const ROLE_METAS: Record<CanvasNodeRole, RoleMeta> = {
 		icon: "🪝",
 		group: "trigger",
 		blurb: "外部系统回调启动（预留接入点）",
+		blurbEn: "Starts on an inbound callback from another system (wiring point reserved)",
 		defaultInstruction: "",
 		needsLlm: false,
 	},
@@ -109,6 +115,7 @@ export const ROLE_METAS: Record<CanvasNodeRole, RoleMeta> = {
 		icon: "🔄",
 		group: "data",
 		blurb: "文本↔JSON / 模板渲染，本地确定性执行",
+		blurbEn: "Text <-> JSON and template rendering, executed locally and deterministically",
 		defaultInstruction: "",
 		needsLlm: false,
 	},
@@ -119,6 +126,7 @@ export const ROLE_METAS: Record<CanvasNodeRole, RoleMeta> = {
 		icon: "🏛️",
 		group: "agent",
 		blurb: "需求拆解、技术选型与任务派发",
+		blurbEn: "Breaks down the requirement, picks the stack and dispatches the work",
 		defaultInstruction: "把业务需求拆解为前后端清晰的技术规约与数据契约，派发给下游工程师。",
 		needsLlm: true,
 	},
@@ -129,6 +137,7 @@ export const ROLE_METAS: Record<CanvasNodeRole, RoleMeta> = {
 		icon: "🗺️",
 		group: "agent",
 		blurb: "Chain-of-Thought 拆解为可执行步骤清单",
+		blurbEn: "Chain-of-Thought breakdown into an actionable step list",
 		defaultInstruction: "将目标拆解为 3-7 个可执行步骤，明确每步输入输出与验收标准，输出任务清单交接下游。",
 		needsLlm: true,
 	},
@@ -139,6 +148,7 @@ export const ROLE_METAS: Record<CanvasNodeRole, RoleMeta> = {
 		icon: "💻",
 		group: "agent",
 		blurb: "代码编写、重构与功能实现",
+		blurbEn: "Writes code, refactors and implements features",
 		defaultInstruction: "根据上游契约编写高质量代码，保持最小改动并保证可运行。",
 		needsLlm: true,
 	},
@@ -149,6 +159,7 @@ export const ROLE_METAS: Record<CanvasNodeRole, RoleMeta> = {
 		icon: "🌐",
 		group: "agent",
 		blurb: "联网搜索 + 文档研读 + 竞品分析",
+		blurbEn: "Web search + document study + competitor analysis",
 		defaultInstruction: "针对任务做联网调研与资料搜集，输出结构化调研结论（现状/方案对比/推荐）交接下游。",
 		needsLlm: true,
 	},
@@ -159,6 +170,7 @@ export const ROLE_METAS: Record<CanvasNodeRole, RoleMeta> = {
 		icon: "✍️",
 		group: "agent",
 		blurb: "需求文档 / README / 变更说明",
+		blurbEn: "Requirements docs / README / change notes",
 		defaultInstruction: "根据上游交付物编写清晰文档：背景、变更点、使用方式、注意事项。",
 		needsLlm: true,
 	},
@@ -169,6 +181,7 @@ export const ROLE_METAS: Record<CanvasNodeRole, RoleMeta> = {
 		icon: "📊",
 		group: "agent",
 		blurb: "日志 / 数据 / 性能分析与洞察",
+		blurbEn: "Log, data and performance analysis with insights",
 		defaultInstruction: "分析输入的数据与日志，给出量化结论与可执行优化建议。",
 		needsLlm: true,
 	},
@@ -179,6 +192,7 @@ export const ROLE_METAS: Record<CanvasNodeRole, RoleMeta> = {
 		icon: "🔍",
 		group: "agent",
 		blurb: "质量门禁：审查、打分与修改建议",
+		blurbEn: "Quality gate: review, scoring and change requests",
 		defaultInstruction: "审查上游代码：正确性、边界、安全与风格，给出通过/驳回结论与修改清单。",
 		needsLlm: true,
 	},
@@ -189,6 +203,7 @@ export const ROLE_METAS: Record<CanvasNodeRole, RoleMeta> = {
 		icon: "🧪",
 		group: "agent",
 		blurb: "编写并运行测试，报告结果与失败证据",
+		blurbEn: "Writes and runs tests, reports results and failure evidence",
 		defaultInstruction: "编写并运行相关测试，报告真实结果、失败证据与未验证范围。",
 		needsLlm: true,
 	},
@@ -199,6 +214,7 @@ export const ROLE_METAS: Record<CanvasNodeRole, RoleMeta> = {
 		icon: "🚀",
 		group: "agent",
 		blurb: "构建、部署与发布运维",
+		blurbEn: "Build, deploy and release operations",
 		defaultInstruction: "负责构建验证与发布流程，确保产物可部署、可回滚。",
 		needsLlm: true,
 	},
@@ -209,6 +225,7 @@ export const ROLE_METAS: Record<CanvasNodeRole, RoleMeta> = {
 		icon: "⚖️",
 		group: "output",
 		blurb: "LLM-as-Judge 打分，不达标走驳回边",
+		blurbEn: "LLM-as-Judge scoring; below the threshold takes the reject edge",
 		defaultInstruction: "作为质量裁判，按正确性/完整性/规范性逐项打分（0-100），低于 80 分给出驳回理由。",
 		needsLlm: true,
 	},
@@ -219,6 +236,7 @@ export const ROLE_METAS: Record<CanvasNodeRole, RoleMeta> = {
 		icon: "🤖",
 		group: "agent",
 		blurb: "完全自定义的 AI 队友",
+		blurbEn: "A fully custom AI teammate",
 		defaultInstruction: "",
 		needsLlm: true,
 	},
@@ -230,6 +248,7 @@ export const ROLE_METAS: Record<CanvasNodeRole, RoleMeta> = {
 		icon: "🔀",
 		group: "logic",
 		blurb: "按表达式走 true / false 两条边",
+		blurbEn: "Splits the flow into true / false edges by expression",
 		defaultInstruction: "",
 		needsLlm: false,
 	},
@@ -240,6 +259,7 @@ export const ROLE_METAS: Record<CanvasNodeRole, RoleMeta> = {
 		icon: "🧠",
 		group: "logic",
 		blurb: "模型语义判定走通过 / 打回两条边",
+		blurbEn: "Model-level semantic verdict: pass / send-back edges",
 		defaultInstruction: "",
 		needsLlm: true,
 	},
@@ -250,6 +270,7 @@ export const ROLE_METAS: Record<CanvasNodeRole, RoleMeta> = {
 		icon: "🔁",
 		group: "logic",
 		blurb: "限定次数内重复执行下游（防死循环熔断）",
+		blurbEn: "Repeats the downstream within a bounded count (loop breaker included)",
 		defaultInstruction: "",
 		needsLlm: false,
 	},
@@ -260,6 +281,7 @@ export const ROLE_METAS: Record<CanvasNodeRole, RoleMeta> = {
 		icon: "🧑‍⚖️",
 		group: "logic",
 		blurb: "暂停等待人工批准/驳回（Review Gate）",
+		blurbEn: "Pauses and waits for human approve / reject (Review Gate)",
 		defaultInstruction: "",
 		needsLlm: false,
 	},
@@ -270,6 +292,7 @@ export const ROLE_METAS: Record<CanvasNodeRole, RoleMeta> = {
 		icon: "🔗",
 		group: "logic",
 		blurb: "多条并行分支在此汇总后再往下走",
+		blurbEn: "Joins parallel branches before continuing downstream",
 		defaultInstruction: "",
 		needsLlm: false,
 	},
@@ -280,6 +303,7 @@ export const ROLE_METAS: Record<CanvasNodeRole, RoleMeta> = {
 		icon: "📦",
 		group: "logic",
 		blurb: "未实现：说明节点，不执行嵌套工作流",
+		blurbEn: "Not implemented: descriptive node, does not run a nested workflow",
 		defaultInstruction: "汇总上游产物，形成给子流程的输入摘要。",
 		needsLlm: true,
 	},
@@ -291,6 +315,7 @@ export const ROLE_METAS: Record<CanvasNodeRole, RoleMeta> = {
 		icon: "🛠️",
 		group: "data",
 		blurb: "bash / 文件 / 搜索等原子工具",
+		blurbEn: "Atomic tools such as bash / files / search",
 		defaultInstruction: "按工具调用规约执行：先说明调用目的，再执行，最后汇总结果交接下游。",
 		needsLlm: true,
 	},
@@ -301,6 +326,7 @@ export const ROLE_METAS: Record<CanvasNodeRole, RoleMeta> = {
 		icon: "📚",
 		group: "data",
 		blurb: "智能体按指令检索文件；无独立知识库索引",
+		blurbEn: "The agent searches files by instruction; no dedicated knowledge index",
 		defaultInstruction: "基于知识库检索回答：先列出检索到依据，再综合作答并标注来源。",
 		needsLlm: true,
 	},
@@ -311,6 +337,7 @@ export const ROLE_METAS: Record<CanvasNodeRole, RoleMeta> = {
 		icon: "🧩",
 		group: "data",
 		blurb: "智能体按指令编写和运行脚本；依赖可用工具",
+		blurbEn: "The agent writes and runs scripts by instruction; depends on available tools",
 		defaultInstruction: "编写并执行必要的脚本完成数据加工，把运行结果摘要交接下游。",
 		needsLlm: true,
 	},
@@ -321,6 +348,7 @@ export const ROLE_METAS: Record<CanvasNodeRole, RoleMeta> = {
 		icon: "🌍",
 		group: "data",
 		blurb: "智能体按指令请求 HTTP 接口；依赖可用工具",
+		blurbEn: "The agent calls HTTP endpoints by instruction; depends on available tools",
 		defaultInstruction: "调用配置中的外部 API，把返回结果清洗为摘要后交接下游。",
 		needsLlm: true,
 	},
@@ -331,6 +359,7 @@ export const ROLE_METAS: Record<CanvasNodeRole, RoleMeta> = {
 		icon: "🧠",
 		group: "data",
 		blurb: "未实现：说明节点，无持久记忆存储",
+		blurbEn: "Not implemented: descriptive node, no persistent memory store",
 		defaultInstruction: "",
 		needsLlm: false,
 	},
@@ -341,6 +370,7 @@ export const ROLE_METAS: Record<CanvasNodeRole, RoleMeta> = {
 		icon: "🏁",
 		group: "output",
 		blurb: "汇总所有上游产物形成最终交付",
+		blurbEn: "Aggregates every upstream deliverable into the final output",
 		defaultInstruction: "",
 		needsLlm: false,
 	},
@@ -351,6 +381,7 @@ export const ROLE_METAS: Record<CanvasNodeRole, RoleMeta> = {
 		icon: "🥔",
 		group: "agent",
 		blurb: "基于 Cursor 核心工程实践：深度优先、直击根因、去 AI 味、严谨实证",
+		blurbEn: "Built on Cursor's core engineering practice: depth first, root cause, no AI slop, evidence over claims",
 		defaultInstruction: "遵循所选 Pstack Skill 规约与准则开展工作，拒绝表面修补与 AI 废话，用运行证据证明交付。",
 		needsLlm: true,
 	},
@@ -361,6 +392,7 @@ export const ROLE_METAS: Record<CanvasNodeRole, RoleMeta> = {
 		icon: "✨",
 		group: "agent",
 		blurb: "以安装的 Skill 作为智能体灵魂：注入技能指令、行为模式与领域专长",
+		blurbEn: "Uses an installed Skill as the agent's soul: its instructions, behaviour and domain expertise",
 		defaultInstruction: "以指定 Skill 的专业技能规约为灵魂，严格遵循其步骤与标准执行任务。",
 		needsLlm: true,
 	},
@@ -429,57 +461,127 @@ export const STATUS_COLORS: Record<CanvasNodeStatus, { text: string; bg: string;
 interface CanvasPortDef {
 	key: string;
 	labelZh: string;
+	labelEn: string;
 	desc: string;
+	descEn: string;
 }
 
 export const IN_PORT_DEFS: CanvasPortDef[] = [
-	{ key: "contract", labelZh: "任务契约", desc: "主输入：上游交付产物作为任务契约注入" },
-	{ key: "instruction", labelZh: "AI指令", desc: "定向写入本轮 AI 指令（配合 {{上游摘要}} 变量）" },
-	{ key: "system", labelZh: "角色规约", desc: "以上游产物补充基座人设" },
-	{ key: "config", labelZh: "控制参数", desc: "写入条件表达式 / 循环次数等控制参数上下文" },
+	{
+		key: "contract",
+		labelZh: "任务契约",
+		desc: "主输入：上游交付产物作为任务契约注入",
+		labelEn: "Task contract",
+		descEn: "Primary input: the upstream deliverable is injected as the task contract",
+	},
+	{
+		key: "instruction",
+		labelZh: "AI指令",
+		desc: "定向写入本轮 AI 指令（配合 {{上游摘要}} 变量）",
+		labelEn: "AI instruction",
+		descEn: "Writes this round's AI instruction (pairs with the {{上游摘要}} variable)",
+	},
+	{
+		key: "system",
+		labelZh: "角色规约",
+		desc: "以上游产物补充基座人设",
+		labelEn: "Role contract",
+		descEn: "Augments the base persona with the upstream deliverable",
+	},
+	{
+		key: "config",
+		labelZh: "控制参数",
+		desc: "写入条件表达式 / 循环次数等控制参数上下文",
+		labelEn: "Control params",
+		descEn: "Context for control parameters such as condition expressions or loop counts",
+	},
 ];
 
-const OUT_PORT_DEFS_BASE: CanvasPortDef[] = [{ key: "result", labelZh: "交付产物", desc: "主输出：本节点交付摘要" }];
+const OUT_PORT_DEFS_BASE: CanvasPortDef[] = [
+	{
+		key: "result",
+		labelZh: "交付产物",
+		desc: "主输出：本节点交付摘要",
+		labelEn: "Deliverable",
+		descEn: "Primary output: this node's delivery summary",
+	},
+];
 
 /** 按角色追加分支输出端子（条件 / 人工 / 评估 / 审查）。 */
 export function outPortsForRole(role: CanvasNodeRole): CanvasPortDef[] {
 	const extra: CanvasPortDef[] = [];
 	if (role === "condition" || role === "ai_judge") {
 		extra.push(
-			{ key: "true", labelZh: "成立", desc: "条件成立走这条边（condition_true）" },
-			{ key: "false", labelZh: "不成立", desc: "条件不成立走这条边（condition_false）" },
+			{
+				key: "true",
+				labelZh: "成立",
+				desc: "条件成立走这条边（condition_true）",
+				labelEn: "True",
+				descEn: "Taken when the condition holds (condition_true)",
+			},
+			{
+				key: "false",
+				labelZh: "不成立",
+				desc: "条件不成立走这条边（condition_false）",
+				labelEn: "False",
+				descEn: "Taken when the condition does not hold (condition_false)",
+			},
 		);
 	}
 	if (role === "human") {
 		extra.push(
-			{ key: "approve", labelZh: "批准", desc: "人工批准后走这条边（approve）" },
-			{ key: "reject", labelZh: "驳回返工", desc: "人工驳回后走这条边（reject）" },
+			{
+				key: "approve",
+				labelZh: "批准",
+				desc: "人工批准后走这条边（approve）",
+				labelEn: "Approve",
+				descEn: "Taken after a human approves (approve)",
+			},
+			{
+				key: "reject",
+				labelZh: "驳回返工",
+				desc: "人工驳回后走这条边（reject）",
+				labelEn: "Reject / rework",
+				descEn: "Taken after a human rejects (reject)",
+			},
 		);
 	}
 	if (role === "evaluator" || role === "reviewer") {
 		extra.push(
-			{ key: "approve", labelZh: "通过", desc: "评估通过走这条边（approve）" },
-			{ key: "reject", labelZh: "驳回", desc: "评估驳回走这条边（reject / loop_back）" },
+			{
+				key: "approve",
+				labelZh: "通过",
+				desc: "评估通过走这条边（approve）",
+				labelEn: "Pass",
+				descEn: "Taken when the evaluation passes (approve)",
+			},
+			{
+				key: "reject",
+				labelZh: "驳回",
+				desc: "评估驳回走这条边（reject / loop_back）",
+				labelEn: "Reject",
+				descEn: "Taken when the evaluation rejects (reject / loop_back)",
+			},
 		);
 	}
 	return [...OUT_PORT_DEFS_BASE, ...extra];
 }
 
-export function inPortLabel(key: string | undefined): string {
-	if (!key || key === "contract") return "任务契约";
-	return IN_PORT_DEFS.find((d) => d.key === key)?.labelZh ?? key;
+export function inPortLabel(key: string | undefined, locale = "zh"): string {
+	const def = key ? IN_PORT_DEFS.find((d) => d.key === key) : undefined;
+	return canvasText(locale, def?.labelZh ?? "任务契约", def?.labelEn ?? "Task contract");
 }
 
-export function outPortLabel(key: string | undefined): string {
-	if (!key || key === "result") return "交付产物";
+export function outPortLabel(key: string | undefined, locale = "zh"): string {
 	const all: CanvasPortDef[] = [
 		...OUT_PORT_DEFS_BASE,
-		{ key: "true", labelZh: "成立", desc: "" },
-		{ key: "false", labelZh: "不成立", desc: "" },
-		{ key: "approve", labelZh: "批准/通过", desc: "" },
-		{ key: "reject", labelZh: "驳回", desc: "" },
+		{ key: "true", labelZh: "成立", labelEn: "True", desc: "", descEn: "" },
+		{ key: "false", labelZh: "不成立", labelEn: "False", desc: "", descEn: "" },
+		{ key: "approve", labelZh: "批准/通过", labelEn: "Approve / pass", desc: "", descEn: "" },
+		{ key: "reject", labelZh: "驳回", labelEn: "Reject", desc: "", descEn: "" },
 	];
-	return all.find((d) => d.key === key)?.labelZh ?? key;
+	const def = key ? all.find((d) => d.key === key) : undefined;
+	return canvasText(locale, def?.labelZh ?? "交付产物", def?.labelEn ?? "Deliverable");
 }
 
 /** 按角色分型的专属参数表：每个角色只露自己的配置，不再所有节点一个样。

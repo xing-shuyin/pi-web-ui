@@ -9,6 +9,7 @@ export type PstackCategory = "core" | "architecture" | "principles" | "quality" 
 export interface PstackSkillItem {
 	id: string;
 	nameZh: string;
+	nameEn: string;
 	category: PstackCategory;
 	icon: string;
 	description: string;
@@ -46,6 +47,7 @@ export const PSTACK_SKILLS: PstackSkillItem[] = [
 	{
 		id: "architect",
 		nameZh: "架构规约与模块先行",
+		nameEn: "Architect",
 		category: "architecture",
 		icon: "🏛️",
 		description:
@@ -56,6 +58,7 @@ export const PSTACK_SKILLS: PstackSkillItem[] = [
 	{
 		id: "arena",
 		nameZh: "方案竞斗与杂交优胜",
+		nameEn: "Arena",
 		category: "architecture",
 		icon: "🏟️",
 		description:
@@ -66,6 +69,7 @@ export const PSTACK_SKILLS: PstackSkillItem[] = [
 	{
 		id: "automate-me",
 		nameZh: "个人工作流自动化提炼",
+		nameEn: "Automate me",
 		category: "core",
 		icon: "🤖",
 		description:
@@ -76,6 +80,7 @@ export const PSTACK_SKILLS: PstackSkillItem[] = [
 	{
 		id: "benchmark-checklist",
 		nameZh: "性能基准自检清单",
+		nameEn: "Benchmark checklist",
 		category: "quality",
 		icon: "⏱️",
 		description:
@@ -86,6 +91,7 @@ export const PSTACK_SKILLS: PstackSkillItem[] = [
 	{
 		id: "blast-radius",
 		nameZh: "爆炸半径实证分析",
+		nameEn: "Blast radius",
 		category: "quality",
 		icon: "💥",
 		description:
@@ -96,6 +102,7 @@ export const PSTACK_SKILLS: PstackSkillItem[] = [
 	{
 		id: "bro",
 		nameZh: "同行极简直白沟通风",
+		nameEn: "Bro (plain talk)",
 		category: "communication",
 		icon: "💬",
 		description: "Restate the last message in plain human language, with no jargon.",
@@ -105,6 +112,7 @@ export const PSTACK_SKILLS: PstackSkillItem[] = [
 	{
 		id: "correct",
 		nameZh: "行为与逻辑严格正确性求证",
+		nameEn: "Correct",
 		category: "verification",
 		icon: "✅",
 		description:
@@ -115,6 +123,7 @@ export const PSTACK_SKILLS: PstackSkillItem[] = [
 	{
 		id: "create-formal-verification-skill",
 		nameZh: "形式化验证技能编写",
+		nameEn: "Create a formal verification skill",
 		category: "verification",
 		icon: "📐",
 		description:
@@ -125,6 +134,7 @@ export const PSTACK_SKILLS: PstackSkillItem[] = [
 	{
 		id: "create-verification-skill",
 		nameZh: "创建可复现验证技能",
+		nameEn: "Create a verification skill",
 		category: "verification",
 		icon: "🛠️",
 		description:
@@ -135,6 +145,7 @@ export const PSTACK_SKILLS: PstackSkillItem[] = [
 	{
 		id: "figure-it-out",
 		nameZh: "自主攻坚排查（破除僵局）",
+		nameEn: "Figure it out",
 		category: "verification",
 		icon: "🕵️",
 		description:
@@ -145,6 +156,7 @@ export const PSTACK_SKILLS: PstackSkillItem[] = [
 	{
 		id: "how",
 		nameZh: "多方案权衡与选型决断",
+		nameEn: "How",
 		category: "architecture",
 		icon: "💡",
 		description:
@@ -155,6 +167,7 @@ export const PSTACK_SKILLS: PstackSkillItem[] = [
 	{
 		id: "in-your-own-words",
 		nameZh: "深入浅出复述复杂概念",
+		nameEn: "Explain it in your own words",
 		category: "communication",
 		icon: "🗣️",
 		description:
@@ -164,6 +177,7 @@ export const PSTACK_SKILLS: PstackSkillItem[] = [
 	{
 		id: "interrogate",
 		nameZh: "多模型对抗交叉质询",
+		nameEn: "Interrogate",
 		category: "architecture",
 		icon: "⚔️",
 		description:
@@ -174,6 +188,7 @@ export const PSTACK_SKILLS: PstackSkillItem[] = [
 	{
 		id: "ketchup-video",
 		nameZh: "视频多媒体追赶提要",
+		nameEn: "Ketchup video",
 		category: "communication",
 		icon: "📹",
 		description:
@@ -184,6 +199,7 @@ export const PSTACK_SKILLS: PstackSkillItem[] = [
 	{
 		id: "ketchup",
 		nameZh: "工作进展追赶与对齐",
+		nameEn: "Catch up and align on work in progress",
 		category: "communication",
 		icon: "🍅",
 		description:
@@ -194,6 +210,7 @@ export const PSTACK_SKILLS: PstackSkillItem[] = [
 	{
 		id: "maintain-formal-verification-skill",
 		nameZh: "形式化验证技能维护",
+		nameEn: "Maintain a formal verification skill",
 		category: "verification",
 		icon: "📏",
 		description:
@@ -204,6 +221,7 @@ export const PSTACK_SKILLS: PstackSkillItem[] = [
 	{
 		id: "maintain-verification-skill",
 		nameZh: "维护既有验证技能",
+		nameEn: "Maintain a verification skill",
 		category: "verification",
 		icon: "🔧",
 		description:
@@ -214,6 +232,7 @@ export const PSTACK_SKILLS: PstackSkillItem[] = [
 	{
 		id: "make-bot-ui",
 		nameZh: "Bot 界面设计与交互规范",
+		nameEn: "How to make a bot UI",
 		category: "communication",
 		icon: "🤖",
 		description: ">-",
@@ -223,6 +242,7 @@ export const PSTACK_SKILLS: PstackSkillItem[] = [
 	{
 		id: "no-comments",
 		nameZh: "清理多余废话注释",
+		nameEn: "No comments",
 		category: "quality",
 		icon: "🧹",
 		description: "Spawn Comment Sicko, fix accepted findings, and offer encodings for claimed constraints.",
@@ -232,6 +252,7 @@ export const PSTACK_SKILLS: PstackSkillItem[] = [
 	{
 		id: "poteto-help",
 		nameZh: "Pstack 导航助手",
+		nameEn: "Pstack navigation helper",
 		category: "core",
 		icon: "🧭",
 		description:
@@ -242,6 +263,7 @@ export const PSTACK_SKILLS: PstackSkillItem[] = [
 	{
 		id: "poteto-mode",
 		nameZh: "Poteto 严谨总指挥",
+		nameEn: "Poteto rigorous lead",
 		category: "core",
 		icon: "🥔",
 		description:
@@ -252,6 +274,7 @@ export const PSTACK_SKILLS: PstackSkillItem[] = [
 	{
 		id: "principle-attack-the-premise",
 		nameZh: "审视问题前提（破除局部假设）",
+		nameEn: "Attack the premise (drop local assumptions)",
 		category: "principles",
 		icon: "💥",
 		description:
@@ -262,6 +285,7 @@ export const PSTACK_SKILLS: PstackSkillItem[] = [
 	{
 		id: "principle-boundary-discipline",
 		nameZh: "严守契约与模块边界",
+		nameEn: "Respect contracts and module boundaries",
 		category: "principles",
 		icon: "🧱",
 		description:
@@ -272,6 +296,7 @@ export const PSTACK_SKILLS: PstackSkillItem[] = [
 	{
 		id: "principle-build-the-lever",
 		nameZh: "构建自动化杠杆（磨刀不误砍柴工）",
+		nameEn: "Build the Lever",
 		category: "principles",
 		icon: "🏗️",
 		description:
@@ -282,6 +307,7 @@ export const PSTACK_SKILLS: PstackSkillItem[] = [
 	{
 		id: "principle-encode-lessons-in-structure",
 		nameZh: "将历史教训沉淀入架构",
+		nameEn: "Encode Lessons in Structure",
 		category: "principles",
 		icon: "🧱",
 		description:
@@ -292,6 +318,7 @@ export const PSTACK_SKILLS: PstackSkillItem[] = [
 	{
 		id: "principle-exhaust-the-design-space",
 		nameZh: "穷尽设计空间（防局部最优）",
+		nameEn: "Exhaust the Design Space",
 		category: "principles",
 		icon: "🌌",
 		description:
@@ -302,6 +329,7 @@ export const PSTACK_SKILLS: PstackSkillItem[] = [
 	{
 		id: "principle-experience-first",
 		nameZh: "第一开发者体验优先",
+		nameEn: "Experience First",
 		category: "principles",
 		icon: "✨",
 		description:
@@ -312,6 +340,7 @@ export const PSTACK_SKILLS: PstackSkillItem[] = [
 	{
 		id: "principle-explain-the-number",
 		nameZh: "深究指标背后物理事实",
+		nameEn: "Explain the physical fact behind a metric",
 		category: "principles",
 		icon: "📈",
 		description:
@@ -322,6 +351,7 @@ export const PSTACK_SKILLS: PstackSkillItem[] = [
 	{
 		id: "principle-fix-root-causes",
 		nameZh: "直击根因（严禁表象修补）",
+		nameEn: "Fix root causes, never patch symptoms",
 		category: "principles",
 		icon: "🎯",
 		description:
@@ -332,6 +362,7 @@ export const PSTACK_SKILLS: PstackSkillItem[] = [
 	{
 		id: "principle-foundational-thinking",
 		nameZh: "第一性原理底层思考",
+		nameEn: "First-principles thinking",
 		category: "principles",
 		icon: "🔬",
 		description:
@@ -342,6 +373,7 @@ export const PSTACK_SKILLS: PstackSkillItem[] = [
 	{
 		id: "principle-guard-the-context-window",
 		nameZh: "守护上下文窗口（防令牌爆炸）",
+		nameEn: "Guard the Context Window",
 		category: "principles",
 		icon: "🛡️",
 		description:
@@ -352,6 +384,7 @@ export const PSTACK_SKILLS: PstackSkillItem[] = [
 	{
 		id: "principle-laziness-protocol",
 		nameZh: "最小必要变更（克制无谓改动）",
+		nameEn: "Minimal necessary change",
 		category: "principles",
 		icon: "🦥",
 		description:
@@ -362,6 +395,7 @@ export const PSTACK_SKILLS: PstackSkillItem[] = [
 	{
 		id: "principle-make-operations-idempotent",
 		nameZh: "保证操作幂等（抵御重试并发）",
+		nameEn: "Make operations idempotent",
 		category: "principles",
 		icon: "🔁",
 		description:
@@ -372,6 +406,7 @@ export const PSTACK_SKILLS: PstackSkillItem[] = [
 	{
 		id: "principle-migrate-callers-then-delete-legacy-apis",
 		nameZh: "迁移调用方后彻底删旧接口",
+		nameEn: "Migrate Callers Then Delete Legacy APIs",
 		category: "principles",
 		icon: "🔄",
 		description:
@@ -382,6 +417,7 @@ export const PSTACK_SKILLS: PstackSkillItem[] = [
 	{
 		id: "principle-minimize-reader-load",
 		nameZh: "极简阅读负担（代码自解释）",
+		nameEn: "Minimise reader load (self-explaining code)",
 		category: "principles",
 		icon: "📖",
 		description:
@@ -392,6 +428,7 @@ export const PSTACK_SKILLS: PstackSkillItem[] = [
 	{
 		id: "principle-model-the-domain",
 		nameZh: "领域模型先行（确立数据形状）",
+		nameEn: "Model the Domain",
 		category: "principles",
 		icon: "📐",
 		description:
@@ -402,6 +439,7 @@ export const PSTACK_SKILLS: PstackSkillItem[] = [
 	{
 		id: "principle-never-block-on-the-human",
 		nameZh: "绝不阻塞等待人类（自主验证推进）",
+		nameEn: "Never block on the human",
 		category: "principles",
 		icon: "⚡",
 		description: "Apply when tempted to ask 'should I do X?' on reversible work.",
@@ -411,6 +449,7 @@ export const PSTACK_SKILLS: PstackSkillItem[] = [
 	{
 		id: "principle-outcome-oriented-execution",
 		nameZh: "结果导向交付（紧盯最终验收）",
+		nameEn: "Outcome-Oriented Execution",
 		category: "principles",
 		icon: "🏁",
 		description:
@@ -421,6 +460,7 @@ export const PSTACK_SKILLS: PstackSkillItem[] = [
 	{
 		id: "principle-prove-it-works",
 		nameZh: "运行时实证（拿证据说话）",
+		nameEn: "Prove it works at runtime (evidence, not claims)",
 		category: "principles",
 		icon: "🧪",
 		description:
@@ -431,6 +471,7 @@ export const PSTACK_SKILLS: PstackSkillItem[] = [
 	{
 		id: "principle-redesign-from-first-principles",
 		nameZh: "第一性原理彻底重构",
+		nameEn: "Redesign from first principles",
 		category: "principles",
 		icon: "🧬",
 		description: "Apply when integrating a new requirement into an existing design.",
@@ -440,6 +481,7 @@ export const PSTACK_SKILLS: PstackSkillItem[] = [
 	{
 		id: "principle-separate-before-serializing-shared-state",
 		nameZh: "分离共享状态后再序列化",
+		nameEn: "Separate shared state before serializing",
 		category: "principles",
 		icon: "🔀",
 		description:
@@ -450,6 +492,7 @@ export const PSTACK_SKILLS: PstackSkillItem[] = [
 	{
 		id: "principle-sequence-verifiable-units",
 		nameZh: "拆解为可独立验证单元",
+		nameEn: "Sequence verifiable units",
 		category: "principles",
 		icon: "🪜",
 		description:
@@ -460,6 +503,7 @@ export const PSTACK_SKILLS: PstackSkillItem[] = [
 	{
 		id: "principle-subtract-before-you-add",
 		nameZh: "能删绝不加（精简多余抽象）",
+		nameEn: "Subtract Before You Add",
 		category: "principles",
 		icon: "✂️",
 		description:
@@ -470,6 +514,7 @@ export const PSTACK_SKILLS: PstackSkillItem[] = [
 	{
 		id: "principle-test-behavior-not-implementation",
 		nameZh: "测试外部行为（不锁实现细节）",
+		nameEn: "Test behaviour, not implementation",
 		category: "principles",
 		icon: "🚦",
 		description:
@@ -480,6 +525,7 @@ export const PSTACK_SKILLS: PstackSkillItem[] = [
 	{
 		id: "principle-type-system-discipline",
 		nameZh: "类型严苛纪律（消灭 any 隐式丢失）",
+		nameEn: "Type System Discipline",
 		category: "principles",
 		icon: "💎",
 		description:
@@ -490,6 +536,7 @@ export const PSTACK_SKILLS: PstackSkillItem[] = [
 	{
 		id: "recall",
 		nameZh: "唤醒历史决策脉络",
+		nameEn: "Recall the history of decisions",
 		category: "communication",
 		icon: "🧠",
 		description:
@@ -500,6 +547,7 @@ export const PSTACK_SKILLS: PstackSkillItem[] = [
 	{
 		id: "reflect",
 		nameZh: "深度反思与复盘提炼",
+		nameEn: "Reflect",
 		category: "communication",
 		icon: "🪞",
 		description:
@@ -510,6 +558,7 @@ export const PSTACK_SKILLS: PstackSkillItem[] = [
 	{
 		id: "setup-pstack",
 		nameZh: "Pstack 环境模型配置",
+		nameEn: "Setup pstack",
 		category: "core",
 		icon: "⚙️",
 		description:
@@ -520,6 +569,7 @@ export const PSTACK_SKILLS: PstackSkillItem[] = [
 	{
 		id: "sharpen",
 		nameZh: "雕琢精炼（去除粗糙毛刺）",
+		nameEn: "Sharpen and polish the rough edges",
 		category: "verification",
 		icon: "🔪",
 		description: "Make a task deeper, not bigger, then rewrite the prompt. Use for /sharpen.",
@@ -529,6 +579,7 @@ export const PSTACK_SKILLS: PstackSkillItem[] = [
 	{
 		id: "show-me-your-work",
 		nameZh: "决策脉络与实证审计轨迹",
+		nameEn: "Show me your work",
 		category: "verification",
 		icon: "📋",
 		description:
@@ -539,6 +590,7 @@ export const PSTACK_SKILLS: PstackSkillItem[] = [
 	{
 		id: "statechart",
 		nameZh: "状态机建模与防御迁移",
+		nameEn: "Statechart modelling and defensive transitions",
 		category: "architecture",
 		icon: "📊",
 		description:
@@ -549,6 +601,7 @@ export const PSTACK_SKILLS: PstackSkillItem[] = [
 	{
 		id: "swarm",
 		nameZh: "矩阵式并行探索与测试",
+		nameEn: "Matrix-style parallel exploration and testing",
 		category: "architecture",
 		icon: "🐝",
 		description:
@@ -559,6 +612,7 @@ export const PSTACK_SKILLS: PstackSkillItem[] = [
 	{
 		id: "tdd",
 		nameZh: "测试驱动开发（红绿重构循环）",
+		nameEn: "TDD Bug Fix",
 		category: "quality",
 		icon: "🔴",
 		description:
@@ -569,6 +623,7 @@ export const PSTACK_SKILLS: PstackSkillItem[] = [
 	{
 		id: "teach",
 		nameZh: "启发式技术指导与教学",
+		nameEn: "Socratic technical guidance and teaching",
 		category: "communication",
 		icon: "🎓",
 		description:
@@ -579,6 +634,7 @@ export const PSTACK_SKILLS: PstackSkillItem[] = [
 	{
 		id: "technical-writing",
 		nameZh: "高水准技术写作与 PR 描述",
+		nameEn: "High-quality technical writing and PR descriptions",
 		category: "quality",
 		icon: "📝",
 		description:
@@ -589,6 +645,7 @@ export const PSTACK_SKILLS: PstackSkillItem[] = [
 	{
 		id: "typescript-best-practices",
 		nameZh: "TypeScript 工业级最佳实践",
+		nameEn: "TypeScript best practices",
 		category: "quality",
 		icon: "🔷",
 		description: "TypeScript best practices. Use when reading or editing any .ts or .tsx file.",
@@ -598,6 +655,7 @@ export const PSTACK_SKILLS: PstackSkillItem[] = [
 	{
 		id: "unslop",
 		nameZh: "去 AI 味与虚浮套话",
+		nameEn: "Remove AI slop and hollow filler",
 		category: "quality",
 		icon: "🧼",
 		description: "Cut AI tells from any writing.",
@@ -607,6 +665,7 @@ export const PSTACK_SKILLS: PstackSkillItem[] = [
 	{
 		id: "why",
 		nameZh: "设计意图与历史决策溯源",
+		nameEn: "Why",
 		category: "architecture",
 		icon: "🔍",
 		description:

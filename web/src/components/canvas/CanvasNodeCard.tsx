@@ -131,11 +131,15 @@ export function CanvasNodeCard({
 	const isAgent = roleNeedsInstruction(node.role);
 	const inPortTip = (key: string) => {
 		const def = IN_PORT_DEFS.find((d) => d.key === key);
-		return "输入端子 · " + (def ? def.labelZh + " — " + def.desc : key);
+		return (
+			t("输入端子 · ", "Input port · ") + (def ? t(def.labelZh, def.labelEn) + " — " + t(def.desc, def.descEn) : key)
+		);
 	};
 	const outPortTip = (key: string) => {
 		const def = outPortsForRole(node.role).find((d) => d.key === key);
-		return "输出端子 · " + (def ? def.labelZh + " — " + def.desc : key);
+		return (
+			t("输出端子 · ", "Output port · ") + (def ? t(def.labelZh, def.labelEn) + " — " + t(def.desc, def.descEn) : key)
+		);
 	};
 
 	const setCfg = (patch: Record<string, string | number | boolean>) =>
@@ -257,7 +261,7 @@ export function CanvasNodeCard({
 	/** 纯代码节点专属区：字段直接平铺（与 AI 指令同款输入框，不再套虚线外框），config 端子挂首个 label */
 	const renderUtilityFields = () => {
 		const fields = visibleRoleFields(node.role, roleCfg);
-		if (fields.length === 0) return <span className="canvas-muted-note">{roleMeta.blurb}</span>;
+		if (fields.length === 0) return <span className="canvas-muted-note">{t(roleMeta.blurb, roleMeta.blurbEn)}</span>;
 		return <>{fields.map((f, i) => renderRoleField(f, i === 0))}</>;
 	};
 	/** Agent 节点专属参数（调度器拼入提示词，所见即所得） */
@@ -489,7 +493,7 @@ export function CanvasNodeCard({
 						className="canvas-select canvas-role-select"
 						value={node.role}
 						onChange={(e) => onUpdate(node.id, { role: e.target.value as typeof node.role })}
-						title={roleMeta.blurb}
+						title={t(roleMeta.blurb, roleMeta.blurbEn)}
 					>
 						{Object.values(ROLE_METAS)
 							.filter((m) => isRoleImplemented(m.role) || m.role === node.role)
@@ -676,7 +680,7 @@ export function CanvasNodeCard({
 							<div key={bd.key} className="canvas-branch-row" title={outPortTip(bd.key)}>
 								<span className="canvas-branch-label">
 									{bd.key === "true" ? "✓ " : bd.key === "false" ? "✗ " : bd.key === "approve" ? "✓ " : "↺ "}
-									{bd.labelZh}
+									{t(bd.labelZh, bd.labelEn)}
 								</span>
 								<div
 									className={"canvas-row-port out" + (activePorts?.out.includes(bd.key) ? " connected" : "")}

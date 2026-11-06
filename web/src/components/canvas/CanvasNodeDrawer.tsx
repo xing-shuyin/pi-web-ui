@@ -810,7 +810,8 @@ export function CanvasNodeDrawer({
 														</div>
 														<div className="canvas-contract-ports">
 															<span className="canvas-port-tag">
-																{outPortLabel(edge.sourcePort)} → {inPortLabel(edge.targetPort)}
+																{t(outPortLabel(edge.sourcePort, "zh"), outPortLabel(edge.sourcePort, "en"))} →{" "}
+																{t(inPortLabel(edge.targetPort, "zh"), inPortLabel(edge.targetPort, "en"))}
 															</span>
 															<label>
 																{t("接入端子：", "Port: ")}
@@ -821,7 +822,7 @@ export function CanvasNodeDrawer({
 																>
 																	{IN_PORT_DEFS.map((d) => (
 																		<option key={d.key} value={d.key}>
-																			{d.labelZh} — {d.desc}
+																			{t(d.labelZh, d.labelEn)} — {t(d.desc, d.descEn)}
 																		</option>
 																	))}
 																</select>
@@ -886,7 +887,7 @@ export function CanvasNodeDrawer({
 																>
 																	{outPortsForRole(node.role).map((d) => (
 																		<option key={d.key} value={d.key}>
-																			{d.labelZh} — {d.desc}
+																			{t(d.labelZh, d.labelEn)} — {t(d.desc, d.descEn)}
 																		</option>
 																	))}
 																</select>
@@ -1005,14 +1006,15 @@ export function CanvasNodeDrawer({
 												}}
 											>
 												<h4 className="canvas-section-title" style={{ margin: 0 }}>
-													📖 Pstack 专项规约与工作依据: {skillItem.nameZh}
+													{t("📖 Pstack 专项规约与工作依据: ", "📖 Pstack skill & playbook: ")}
+													{t(skillItem.nameZh, skillItem.nameEn)}
 												</h4>
 												<button
 													type="button"
 													className="canvas-btn small"
 													onClick={() => setShowSkillDoc(!showSkillDoc)}
 												>
-													{showSkillDoc ? "收起" : "展开详情"}
+													{showSkillDoc ? t("收起", "Collapse") : t("展开详情", "Show details")}
 												</button>
 											</div>
 											<p style={{ fontSize: "12px", color: "var(--text-faint)", margin: 0 }}>{skillItem.description}</p>

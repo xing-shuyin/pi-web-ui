@@ -32,6 +32,8 @@ import { CanvasToolbar } from "./CanvasToolbar";
 import { SQUAD_TEMPLATES } from "./CanvasTemplates";
 import { ROLE_METAS, ROLE_FIELDS, isRoleImplemented } from "./CanvasTypes";
 import { CanvasClient } from "./canvas-client";
+import { canvasText } from "./canvas-i18n";
+import { useLocale } from "../../i18n";
 import { appSend } from "../../app-globals";
 import { FiPlus, FiUsers } from "react-icons/fi";
 
@@ -62,6 +64,7 @@ export function CanvasStudio({
 	currentCwd = ".",
 	active = true,
 }: CanvasStudioProps) {
+	const locale = useLocale();
 	const clientRef = useRef<CanvasClient | null>(null);
 	const requestTimers = useRef(new Map<string, ReturnType<typeof setTimeout>>());
 
@@ -629,7 +632,9 @@ export function CanvasStudio({
 			const nid = "n_" + Date.now() + "_" + Math.random().toString(36).slice(2, 6);
 			const newNode: CanvasNode = {
 				id: nid,
-				title: meta ? meta.labelZh : "队友 " + (graph.nodes.length + 1),
+				title: meta
+					? canvasText(locale, meta.labelZh, meta.labelEn)
+					: canvasText(locale, "队友 ", "Teammate ") + (graph.nodes.length + 1),
 				role: role,
 				x: Math.round(-viewport.x / viewport.zoom + 300 + Math.random() * 100),
 				y: Math.round(-viewport.y / viewport.zoom + 200 + Math.random() * 100),

@@ -81,7 +81,7 @@ export function CanvasAiBar({
 			const nid = `n_${now}_${i}_${Math.random().toString(36).slice(2, 6)}`;
 			const node: CanvasNode = {
 				id: nid,
-				title: s.slice(0, 20) || meta.labelZh,
+				title: s.slice(0, 20) || t(meta.labelZh, meta.labelEn),
 				role,
 				x: 80,
 				y: 80,
