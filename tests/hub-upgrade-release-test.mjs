@@ -15,6 +15,7 @@ import {
 	createDiagnosticRedactor,
 	summarizeUpgradeJob,
 	summarizeLaunchctl,
+	summarizeServiceRuntime,
 	readLogTail,
 	diagnosticCommand,
 	observeUpgradeTerminal,
@@ -223,12 +224,7 @@ if (args.includes("--background")) {
 					.filter(Boolean)
 					.map((line) => {
 						try {
-							const row = JSON.parse(line);
-							return Object.fromEntries(
-								["at", "event", "pid", "version", "code"]
-									.filter((key) => ["string", "number"].includes(typeof row[key]))
-									.map((key) => [key, row[key]]),
-							);
+							return summarizeServiceRuntime(JSON.parse(line));
 						} catch {
 							return { event: "unreadable runtime record" };
 						}

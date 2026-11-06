@@ -74,6 +74,33 @@ export function summarizeUpgradeJob(job) {
 	);
 }
 
+// Startup errors can contain paths, URLs and private addresses; export only bounded fields.
+export function summarizeServiceRuntime(row) {
+	if (!row || typeof row !== "object") return {};
+	const result = Object.fromEntries(
+		["at", "event", "pid", "version", "code"]
+			.filter((key) => ["string", "number"].includes(typeof row[key]))
+			.map((key) => [key, row[key]]),
+	);
+	for (const key of ["port", "hubPort"])
+		if (Number.isInteger(row[key]) && row[key] >= 1 && row[key] <= 65535) result[key] = row[key];
+	if (typeof row.syscall === "string" && /^[a-z_]{1,32}$/.test(row.syscall)) result.syscall = row.syscall;
+	if (["127.0.0.1", "::1", "0.0.0.0", "::"].includes(row.address)) result.address = row.address;
+	if (Array.isArray(row.tcp))
+		result.tcp = row.tcp
+			.slice(0, 32)
+			.filter(
+				(item) =>
+					Number.isInteger(item?.state) &&
+					item.state >= 1 &&
+					item.state <= 12 &&
+					Number.isSafeInteger(item?.pid) &&
+					item.pid >= 0,
+			)
+			.map(({ state, pid }) => ({ state, pid }));
+	return result;
+}
+
 // launchctl print includes inherited/default/service environments and potentially credentials.
 // Only retain top-level runtime fields, never a raw print/list dump or the service configuration.
 export function summarizeLaunchctl(output) {

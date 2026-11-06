@@ -4,7 +4,9 @@ import { hostname } from "node:os";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { spawn } from "node:child_process";
-import { createServer } from "node:http";
+import { createServer, globalAgent } from "node:http";
+import { createConnection } from "node:net";
+import * as releaseHelpers from "../lib/hub-upgrade-release.mjs";
 import * as hubCli from "../../bin/device-hub-cli.mjs";
 const {
 	parseHubArgs,
@@ -93,9 +95,38 @@ if (${expectedStops} -eq 1 -and $global:waits -lt 2) { throw 'Returned while old
 				? { status: 1, stderr: "Could not find service" }
 				: { status: 0, stdout: "ok" };
 		};
-		runManager("launchctl", [action, "gui/10/test", "/unit"], inspect, () => elapsed);
+		const run = () => runManager("launchctl", [action, "gui/10/test", "/unit"], inspect, () => elapsed);
+		if (action === "bootout") expect(run).toThrow(/30s deadline/);
+		else run();
 		expect(calls.map((c) => c.timeout)).toEqual([30000, 1000]);
 		expect(calls.every((c) => c.killSignal === "SIGKILL")).toBe(true);
+	});
+	it("waits for launchd removal before bootstrapping a replacement", () => {
+		let loaded = true;
+		let stopping = false;
+		let elapsed = 0;
+		let bootstraps = 0;
+		const inspect = (_file: string, args: string[]) => {
+			if (args[0] === "print")
+				return loaded
+					? { status: 0, stdout: stopping ? "state = exiting" : "state = running" }
+					: { status: 113, stderr: "Could not find service" };
+			if (args[0] === "bootout") stopping = true;
+			if (args[0] === "bootstrap") {
+				expect(loaded).toBe(false);
+				loaded = true;
+				bootstraps++;
+			}
+			return { status: 0, stdout: "ok" };
+		};
+		const pause = () => {
+			expect(stopping).toBe(true);
+			loaded = false;
+			elapsed += 50;
+		};
+		runManager("launchctl", ["bootout", "gui/10/test"], inspect, () => elapsed, pause);
+		runManager("launchctl", ["bootstrap", "gui/10", "/test.plist"], inspect, () => elapsed, pause);
+		expect(bootstraps).toBe(1);
 	});
 	it("shares the Windows absence-check deadline and refuses a new command after expiry", () => {
 		const plan = hubServicePlan({ platform: "win32", home: tmpdir(), env: { USERNAME: "test" } });
@@ -500,6 +531,109 @@ try {
 			rmSync(root, { recursive: true, force: true });
 		}
 	});
+	it("resets a real TCP self-connection before returning an unhealthy result", async () => {
+		const reservation = createServer();
+		await new Promise<void>((done) => reservation.listen(0, "127.0.0.1", done));
+		const port = (reservation.address() as { port: number }).port;
+		await new Promise<void>((done) => reservation.close(() => done()));
+		let socket: ReturnType<typeof createConnection> | undefined;
+		let reset: ReturnType<typeof vi.spyOn> | undefined;
+		let selfConnected = false;
+		const create = vi.spyOn(globalAgent, "createConnection").mockImplementationOnce((options: any) => {
+			socket = createConnection({ ...options, localPort: port });
+			reset = vi.spyOn(socket, "resetAndDestroy");
+			socket.once("connect", () => {
+				selfConnected = socket!.localAddress === socket!.remoteAddress && socket!.localPort === socket!.remotePort;
+			});
+			return socket;
+		});
+		try {
+			const settings = { ...parseHubArgs([], env).settings, PI_DEVICE_HUB_PORT: String(port) };
+			expect(await probeHub(settings)).toBeNull();
+			expect(selfConnected).toBe(true);
+			expect(reset).toHaveBeenCalledOnce();
+			expect(socket!.destroyed).toBe(true);
+			await expect(assertPortAvailable(settings)).resolves.toBeUndefined();
+		} finally {
+			socket?.destroy();
+			create.mockRestore();
+		}
+	});
+	it("projects only safe startup bind and TCP state fields", () => {
+		const summarize = (releaseHelpers as any).summarizeServiceRuntime;
+		const row = {
+			event: "failed",
+			port: 54321,
+			syscall: "listen",
+			address: "127.0.0.1",
+			tcp: [
+				{ state: 2, pid: 123, command: "private-value", remoteAddress: "private-value" },
+				{ state: 99, pid: 1 },
+			],
+			message: "private-value",
+			stack: "private-value",
+		};
+		expect(summarize(row)).toEqual({
+			event: "failed",
+			port: 54321,
+			syscall: "listen",
+			address: "127.0.0.1",
+			tcp: [{ state: 2, pid: 123 }],
+		});
+		expect(
+			summarize({
+				...row,
+				port: -1,
+				syscall: "private-value",
+				address: "10.0.0.1",
+				tcp: [{ state: 2, pid: "private-value" }],
+			}),
+		).toEqual({ event: "failed", tcp: [] });
+	});
+	it.skipIf(process.platform !== "win32")(
+		"captures only the conflicting Windows local port at startup failure",
+		async () => {
+			const root = mkdtempSync(join(tmpdir(), "hub-bind-log-"));
+			try {
+				const config = join(root, "service.json");
+				writeFileSync(config, JSON.stringify(parseHubArgs([], env).settings));
+				const error = Object.assign(new Error("private-value"), {
+					code: "EADDRINUSE",
+					port: 54321,
+					syscall: "listen",
+					address: "127.0.0.1",
+				});
+				const inspect = vi.fn().mockReturnValue({
+					status: 0,
+					stdout: JSON.stringify([
+						{ state: 2, pid: 123, command: "private-value" },
+						{ state: 11, pid: 0 },
+					]),
+				});
+				await expect(
+					runHubCli(["--service-config", config], { foreground: vi.fn().mockRejectedValue(error), inspect }),
+				).rejects.toBe(error);
+				const text = readFileSync(join(root, "service-runtime.log"), "utf8");
+				const failed = JSON.parse(text.trim().split("\n").at(-1)!);
+				expect(failed).toMatchObject({
+					port: 54321,
+					syscall: "listen",
+					address: "127.0.0.1",
+					tcp: [
+						{ state: 2, pid: 123 },
+						{ state: 11, pid: 0 },
+					],
+				});
+				expect(text).not.toContain("private-value");
+				expect(inspect).toHaveBeenCalledOnce();
+				const script = inspect.mock.calls[0][1].at(-1);
+				expect(script).toContain("Get-NetTCPConnection -LocalPort 54321");
+				expect(script).not.toMatch(/RemoteAddress|CommandLine|Environment/);
+			} finally {
+				rmSync(root, { recursive: true, force: true });
+			}
+		},
+	);
 	it("rejects a port conflict and probes instance identity with the correct Host", async () => {
 		const server = createServer((req, res) => {
 			expect(req.headers.host).toBe("localhost:8790");

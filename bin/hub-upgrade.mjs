@@ -107,30 +107,41 @@ export function execute(file, args, { timeout = 10 * 60_000, logPath, env = proc
 }
 export function independentWorkerPlan(
 	jobPath,
-	{ platform = process.platform, node = process.execPath, worker = SELF, id = randomUUID() } = {},
+	{
+		platform = process.platform,
+		node = process.execPath,
+		worker = SELF,
+		id = randomUUID(),
+		uid = process.getuid?.() ?? 0,
+	} = {},
 ) {
+	if (!/^[a-f0-9-]{36}$/.test(id)) throw new Error("Invalid Hub upgrade worker id");
 	const args = [worker, "--run", resolve(jobPath)];
 	if (platform === "linux")
 		return {
 			file: "systemd-run",
 			args: ["--user", "--collect", `--unit=pi-device-hub-update-${id}`, "--property=Type=exec", node, ...args],
 		};
-	if (platform === "darwin")
+	if (platform === "darwin") {
+		if (!Number.isSafeInteger(uid) || uid < 0) throw new Error("Invalid Hub upgrade worker uid");
+		const label = `com.xingshuyin.pi-device-hub-update-${id}`;
+		const plist = join(dirname(resolve(jobPath)), `${label}.plist`);
+		const log = join(dirname(resolve(jobPath)), "hub-upgrade-worker.log");
+		const xml = (value) =>
+			String(value).replace(
+				/[<>&"']/g,
+				(c) => ({ "<": "&lt;", ">": "&gt;", "&": "&amp;", '"': "&quot;", "'": "&apos;" })[c],
+			);
 		return {
 			file: "launchctl",
-			args: [
-				"submit",
-				"-l",
-				`com.xingshuyin.pi-device-hub-update-${id}`,
-				"-o",
-				join(dirname(jobPath), "hub-upgrade-worker.log"),
-				"-e",
-				join(dirname(jobPath), "hub-upgrade-worker.log"),
-				"--",
-				node,
-				...args,
-			],
+			args: ["bootstrap", `gui/${uid}`, plist],
+			target: `gui/${uid}/${label}`,
+			definition: {
+				path: plist,
+				content: `<?xml version="1.0" encoding="UTF-8"?>\n<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">\n<plist version="1.0"><dict><key>Label</key><string>${xml(label)}</string><key>ProgramArguments</key><array>${[node, ...args].map((arg) => `<string>${xml(arg)}</string>`).join("")}</array><key>RunAtLoad</key><true/><key>KeepAlive</key><false/><key>LaunchOnlyOnce</key><true/><key>StandardOutPath</key><string>${xml(log)}</string><key>StandardErrorPath</key><string>${xml(log)}</string></dict></plist>\n`,
+			},
 		};
+	}
 	if (platform === "win32") {
 		const task = `pi-device-hub-update-${id}`;
 		const quote = (s) => `'${s.replace(/'/g, "''")}'`;
@@ -152,16 +163,34 @@ export async function launchUpgradeJob(
 	if (!health || health.instanceId !== job.instanceId || health.bootId !== job.fromBootId)
 		throw new Error("Hub process changed before upgrade submission");
 	const launch = independentWorkerPlan(path, { ...options, id: job.id });
-	await run(launch.file, launch.args, { timeout: 30_000 });
-	const deadline = Date.now() + 10_000;
-	while (Date.now() < deadline) {
-		const current = readUpgradeJob(path);
-		if (current?.id !== job.id) throw new Error("Hub upgrade job changed during submission");
-		if (current.state === "failed") throw new Error(current.error || "Hub upgrade worker failed to start");
-		if (current.state !== "queued") return;
-		await sleep(100);
+	let definitionCreated = false;
+	let submissionAttempted = false;
+	try {
+		if (launch.definition) {
+			writeFileSync(launch.definition.path, launch.definition.content, { flag: "wx", mode: 0o600 });
+			definitionCreated = true;
+		}
+		submissionAttempted = true;
+		await run(launch.file, launch.args, { timeout: 30_000 });
+		const deadline = Date.now() + 10_000;
+		while (Date.now() < deadline) {
+			const current = readUpgradeJob(path);
+			if (current?.id !== job.id) throw new Error("Hub upgrade job changed during submission");
+			if (current.state === "failed") throw new Error(current.error || "Hub upgrade worker failed to start");
+			if (current.state !== "queued") return;
+			await sleep(100);
+		}
+		throw new Error("Hub upgrade worker did not start; inspect the system service manager");
+	} catch (error) {
+		if (submissionAttempted && launch.target) {
+			try {
+				await run(launch.file, ["bootout", launch.target], { timeout: 30_000 });
+			} catch {}
+		}
+		throw error;
+	} finally {
+		if (definitionCreated) rmSync(launch.definition.path, { force: true });
 	}
-	throw new Error("Hub upgrade worker did not start; inspect the system service manager");
 }
 function npmCli(node = process.execPath) {
 	const candidates = [
@@ -406,6 +435,18 @@ export async function updateInstalledHub({ plan = hubServicePlan(), log = consol
 	}
 }
 
+export async function cleanupUpgradeWorker(path, { platform = process.platform, run = execute, ...options } = {}) {
+	const job = readUpgradeJob(path);
+	if (!job) return;
+	if (platform === "darwin") {
+		const launch = independentWorkerPlan(path, { ...options, platform, id: job.id });
+		rmSync(launch.definition.path, { force: true });
+		await run(launch.file, ["bootout", launch.target], { timeout: 10_000 });
+	} else if (platform === "win32") {
+		await run("schtasks.exe", ["/Delete", "/TN", `pi-device-hub-update-${job.id}`, "/F"], { timeout: 10_000 });
+	}
+}
+
 if (process.argv[1] && resolve(process.argv[1]) === SELF) {
 	const [mode, path, ...extra] = process.argv.slice(2);
 	try {
@@ -417,13 +458,9 @@ if (process.argv[1] && resolve(process.argv[1]) === SELF) {
 		console.error(`[hub-upgrade] ${error.message}`);
 		process.exitCode = 1;
 	} finally {
-		if (mode === "--run" && process.platform === "win32") {
+		if (mode === "--run") {
 			try {
-				const job = readUpgradeJob(path);
-				if (job)
-					await execute("schtasks.exe", ["/Delete", "/TN", `pi-device-hub-update-${job.id}`, "/F"], {
-						timeout: 10_000,
-					});
+				await cleanupUpgradeWorker(path);
 			} catch {}
 		}
 	}

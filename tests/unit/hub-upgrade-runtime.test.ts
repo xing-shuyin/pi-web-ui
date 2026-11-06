@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { mkdtempSync, mkdirSync, readFileSync, writeFileSync, rmSync } from "node:fs";
+import { mkdtempSync, mkdirSync, readFileSync, writeFileSync, rmSync, existsSync, statSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { randomUUID } from "node:crypto";
@@ -244,15 +244,73 @@ describe("Hub release updater", () => {
 			platform,
 			node: "C:/Node/node.exe",
 			worker: "C:/App/worker.mjs",
-			id: "test",
+			id: randomUUID(),
+			uid: 501,
 		});
 		expect(plan.file).toBe({ linux: "systemd-run", darwin: "launchctl", win32: "powershell.exe" }[platform]);
-		expect(plan.args.join(" ")).toContain("--run");
-		expect(plan.args.join(" ")).toContain("path with spaces");
 		if (platform === "darwin") {
+			expect(plan.args).toEqual(["bootstrap", "gui/501", plan.definition.path]);
+			expect(plan.target).toMatch(/^gui\/501\/com\.xingshuyin\.pi-device-hub-update-/);
+			expect(plan.definition.content).toContain("<string>--run</string>");
+			expect(plan.definition.content).toContain("path with spaces");
+			expect(plan.definition.content).toContain("<key>RunAtLoad</key><true/>");
+			expect(plan.definition.content).toContain("<key>KeepAlive</key><false/>");
+			expect(plan.definition.content).toContain("<key>LaunchOnlyOnce</key><true/>");
 			const logPath = join(tmpdir(), "path with spaces", "hub-upgrade-worker.log");
-			expect(plan.args.slice(3, 7)).toEqual(["-o", logPath, "-e", logPath]);
+			expect(plan.definition.content.split(`<string>${logPath}</string>`)).toHaveLength(3);
+		} else {
+			expect(plan.args.join(" ")).toContain("--run");
+			expect(plan.args.join(" ")).toContain("path with spaces");
 		}
+	});
+	it("escapes all macOS worker XML arguments and rejects escaping worker ids", () => {
+		const plan = runtime.independentWorkerPlan(join(tmpdir(), "job &<>'\"", "job.json"), {
+			platform: "darwin",
+			uid: 501,
+			node: "/node &<>'\"",
+			worker: "/worker &<>'\"",
+			id: randomUUID(),
+		});
+		expect(plan.definition.content).toContain("<string>/node &amp;&lt;&gt;&apos;&quot;</string>");
+		expect(plan.definition.content).toContain("<string>/worker &amp;&lt;&gt;&apos;&quot;</string>");
+		expect(plan.definition.content).not.toContain("job &<>");
+		expect(() => runtime.independentWorkerPlan("job.json", { platform: "darwin", id: "../../escape" })).toThrow(
+			"worker id",
+		);
+		expect(() => runtime.independentWorkerPlan("job.json", { platform: "darwin", uid: "501" })).toThrow("worker uid");
+	});
+	it.each([false, true])("cleans up the private macOS worker definition (launch failure=%s)", async (failure) => {
+		const f = fixture("darwin");
+		const launch = runtime.independentWorkerPlan(f.path, { platform: "darwin", uid: 501, id: f.job.id });
+		const run = vi.fn(async (_file: string, args: string[]) => {
+			if (args[0] !== "bootstrap") return;
+			expect(readFileSync(launch.definition.path, "utf8")).toBe(launch.definition.content);
+			if (process.platform !== "win32") expect(statSync(launch.definition.path).mode & 0o777).toBe(0o600);
+			if (failure) throw new Error("bootstrap rejected");
+			runtime.writeUpgradeJob(f.path, { ...f.job, state: "running" });
+		});
+		const operation = runtime.launchUpgradeJob(f.path, { ...f, platform: "darwin", uid: 501, run });
+		if (failure) {
+			await expect(operation).rejects.toThrow("bootstrap rejected");
+			expect(run).toHaveBeenLastCalledWith("launchctl", ["bootout", launch.target], { timeout: 30000 });
+		} else await expect(operation).resolves.toBeUndefined();
+		expect(existsSync(launch.definition.path)).toBe(false);
+	});
+	it("does not overwrite or delete a preexisting macOS worker definition", async () => {
+		const f = fixture("darwin");
+		const launch = runtime.independentWorkerPlan(f.path, { platform: "darwin", uid: 501, id: f.job.id });
+		writeFileSync(launch.definition.path, "owned by another submission");
+		await expect(runtime.launchUpgradeJob(f.path, { ...f, platform: "darwin", uid: 501 })).rejects.toThrow();
+		expect(readFileSync(launch.definition.path, "utf8")).toBe("owned by another submission");
+		expect(f.run).not.toHaveBeenCalled();
+	});
+	it("unloads only its own one-shot macOS worker after completion", async () => {
+		const f = fixture("darwin");
+		const launch = runtime.independentWorkerPlan(f.path, { platform: "darwin", uid: 501, id: f.job.id });
+		writeFileSync(launch.definition.path, launch.definition.content);
+		await runtime.cleanupUpgradeWorker(f.path, { platform: "darwin", uid: 501, run: f.run });
+		expect(f.run).toHaveBeenCalledWith("launchctl", ["bootout", launch.target], { timeout: 10000 });
+		expect(existsSync(launch.definition.path)).toBe(false);
 	});
 	it("bootstraps an owned legacy published Hub without versioned health", async () => {
 		const f = fixture();

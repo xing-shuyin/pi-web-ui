@@ -303,6 +303,21 @@ export function probeHub(settings, signal) {
 				});
 			},
 		);
+		req.on("socket", (socket) => {
+			const rejectSelfConnection = () => {
+				// A client ephemeral port can equal the stopped Hub's port (TCP self-connect).
+				if (
+					socket.localPort &&
+					socket.localPort === socket.remotePort &&
+					socket.localAddress === socket.remoteAddress
+				) {
+					socket.once("close", () => done(null));
+					socket.resetAndDestroy();
+				}
+			};
+			if (socket.connecting) socket.once("connect", rejectSelfConnection);
+			else rejectSelfConnection();
+		});
 		req.on("timeout", () => req.destroy());
 		req.on("error", () => done(null));
 		req.end();
@@ -328,7 +343,13 @@ async function waitForHub(settings, signal) {
 	throw new Error("Hub did not become healthy within 15 seconds; service configuration retained for diagnosis");
 }
 
-export function runManager(file, args, inspect = spawnSync, now = () => performance.now()) {
+export function runManager(
+	file,
+	args,
+	inspect = spawnSync,
+	now = () => performance.now(),
+	pause = () => Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 50),
+) {
 	const native = nativePhase(inspect, now);
 	if (file === "launchctl" && ["bootout", "bootstrap"].includes(args[0])) {
 		const target = args[0] === "bootout" ? args[1] : `${args[1]}/${basename(args[2], ".plist")}`;
@@ -357,6 +378,17 @@ export function runManager(file, args, inspect = spawnSync, now = () => performa
 		throw new Error(
 			`${file} ${args.join(" ")}: ${result.error?.message || result.stderr || result.stdout || `exit ${result.status}`}`,
 		);
+	if (file === "launchctl" && args[0] === "bootout") {
+		while (true) {
+			const state = native(file, ["print", args[1]]);
+			if (state.error) throw state.error;
+			if (state.status !== 0) {
+				if (/Could not find service/i.test(state.stderr)) break;
+				throw new Error(state.stderr || "Could not confirm launchd job removal");
+			}
+			pause();
+		}
+	}
 	return result.stdout?.trim();
 }
 export function acquireHubLock(
@@ -461,16 +493,61 @@ export async function runHubCli(
 	signal?.throwIfAborted();
 	if (argv[0] === "--service-config") {
 		if (argv.length !== 2) throw new Error("Invalid service configuration arguments");
+		let hubPort;
 		const record = (event, error) => {
 			try {
+				const at = new Date().toISOString();
+				let tcp;
+				if (
+					process.platform === "win32" &&
+					error?.code === "EADDRINUSE" &&
+					Number.isInteger(error.port) &&
+					error.port >= 1 &&
+					error.port <= 65535
+				) {
+					try {
+						const result = inspect(
+							"powershell.exe",
+							[
+								"-NoProfile",
+								"-NonInteractive",
+								"-Command",
+								`$ErrorActionPreference='Stop'; $rows=@(Get-NetTCPConnection -LocalPort ${error.port} -ErrorAction SilentlyContinue | Select-Object -First 32 | ForEach-Object { [pscustomobject]@{state=[int]$_.State;pid=[int]$_.OwningProcess} }); ConvertTo-Json -InputObject $rows -Compress`,
+							],
+							{ encoding: "utf8", windowsHide: true, timeout: 5000, maxBuffer: 8192 },
+						);
+						if (result.status === 0) {
+							const rows = JSON.parse(result.stdout);
+							if (Array.isArray(rows))
+								tcp = rows
+									.slice(0, 32)
+									.filter(
+										(row) =>
+											Number.isInteger(row?.state) &&
+											row.state >= 1 &&
+											row.state <= 12 &&
+											Number.isSafeInteger(row?.pid) &&
+											row.pid >= 0,
+									)
+									.map(({ state, pid }) => ({ state, pid }));
+						}
+					} catch {}
+				}
 				appendFileSync(
 					join(dirname(resolve(argv[1])), "service-runtime.log"),
 					`${JSON.stringify({
-						at: new Date().toISOString(),
+						at,
 						event,
 						pid: process.pid,
 						version: JSON.parse(readFileSync(new URL("../package.json", import.meta.url), "utf8")).version,
 						...(error ? { code: /^[A-Z][A-Z0-9_]{0,63}$/.test(error.code) ? error.code : "STARTUP_FAILED" } : {}),
+						...(Number.isInteger(error?.port) && error.port >= 1 && error.port <= 65535 ? { port: error.port } : {}),
+						...(hubPort ? { hubPort } : {}),
+						...(typeof error?.syscall === "string" && /^[a-z_]{1,32}$/.test(error.syscall)
+							? { syscall: error.syscall }
+							: {}),
+						...(["127.0.0.1", "::1", "0.0.0.0", "::"].includes(error?.address) ? { address: error.address } : {}),
+						...(tcp ? { tcp } : {}),
 					})}\n`,
 					{ mode: 0o600 },
 				);
@@ -480,6 +557,7 @@ export async function runHubCli(
 		try {
 			const settings = JSON.parse(readFileSync(argv[1], "utf8"));
 			validateSettings(settings);
+			hubPort = Number(settings.PI_DEVICE_HUB_PORT);
 			const hub = await foreground({ ...settings, PI_DEVICE_HUB_SERVICE_CONFIG: resolve(argv[1]) });
 			record("ready");
 			return hub;
