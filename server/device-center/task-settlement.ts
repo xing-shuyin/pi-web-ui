@@ -1,12 +1,13 @@
 import { randomUUID } from "node:crypto";
-import type { DeviceTaskEventFrame } from "../protocol.js";
+import type { DeviceTaskEventFrame, DeviceTaskResultRejectReasonCode } from "../protocol.js";
 import type { HubState, HubTask } from "./store.js";
 import { isTerminal } from "./store.js";
 import { groupTaskContext, type GroupTaskContext } from "./group-context.js";
 import { queueParentResult, trimConversationHistory, trimRoomReceipts } from "./hub-conversations.js";
 
 import type { DeviceExecutionSettings } from "./execution-settings.js";
-import { computeOutcomeFingerprint, computeLegacyOutcomeFingerprint } from "./task-outcome.js";
+import { computeOutcomeFingerprint, computeLegacyOutcomeFingerprint, deepFreeze } from "./task-outcome.js";
+import { validateCodeArtifactOutcome, validateDeviceArtifact } from "./work-contract.js";
 
 export interface TaskSettlementContext {
 	settings: DeviceExecutionSettings;
@@ -31,6 +32,8 @@ export interface TaskSettlementResult extends Partial<TaskSettlementEffects> {
 	task?: HubTask;
 	reason?: string;
 	statusCode?: number;
+	permanent?: boolean;
+	reasonCode?: DeviceTaskResultRejectReasonCode;
 }
 export const hasTaskLease = (task: HubTask) => !!task.leaseToken || task.leaseGeneration !== undefined;
 export const isRecoveringTask = (task: HubTask, now: number) =>
@@ -44,11 +47,28 @@ function effects(): TaskSettlementEffects {
 export function recordTaskOutcome(
 	draft: HubState,
 	task: HubTask,
-	outcome: Pick<DeviceTaskEventFrame, "status" | "report" | "error" | "reportMetadata" | "fingerprint">,
+	outcome: Pick<
+		DeviceTaskEventFrame,
+		| "status"
+		| "report"
+		| "error"
+		| "reportMetadata"
+		| "fingerprint"
+		| "artifact"
+		| "executionCompleted"
+		| "artifactProduced"
+	>,
 	ctx: TaskSettlementContext,
 	now = Date.now(),
 ): TaskSettlementNotice | undefined {
 	if (task.outcomeFingerprint) return;
+	if (outcome.artifact !== undefined) {
+		// Defensive deep-freeze copy prevents in-memory alias mutation from altering stored evidence
+		task.artifact = deepFreeze(structuredClone(outcome.artifact));
+	}
+	if (outcome.executionCompleted !== undefined) task.executionCompleted = outcome.executionCompleted;
+	if (outcome.artifactProduced !== undefined) task.artifactProduced = outcome.artifactProduced;
+
 	task.outcomeFingerprint =
 		outcome.fingerprint ??
 		computeOutcomeFingerprint(
@@ -58,6 +78,9 @@ export function recordTaskOutcome(
 			outcome.report,
 			outcome.error,
 			outcome.reportMetadata,
+			outcome.artifact?.digest,
+			outcome.executionCompleted,
+			outcome.artifactProduced,
 		);
 	task.outcomeCanonicalFingerprint = computeOutcomeFingerprint(
 		task.id,
@@ -66,6 +89,9 @@ export function recordTaskOutcome(
 		outcome.report,
 		outcome.error,
 		outcome.reportMetadata,
+		outcome.artifact?.digest,
+		outcome.executionCompleted,
+		outcome.artifactProduced,
 	);
 	task.terminalAcceptedLeaseGeneration = task.leaseGeneration;
 	task.status = outcome.status;
@@ -140,6 +166,25 @@ export function settleTaskDependencies(
 			const pred = draft.tasks.find(
 				(p) => p.id === task.dependsOnTaskId && p.roomId === task.roomId && p.accountId === task.accountId,
 			);
+
+			// 统一依赖守卫：等待/queued未lease任务若其contract.id同dependency.contract.id而revision不同，明确failed而不能因old completed释放
+			if (
+				pred &&
+				task.contract?.id &&
+				pred.contract?.id &&
+				task.contract.id === pred.contract.id &&
+				task.contract.revision !== pred.contract.revision
+			) {
+				const report = `[契约版本冲突] 后继任务与依赖前置任务属于相同契约 (${task.contract.id}) 但版本不同 (后继 rev=${task.contract.revision}, 前置 rev=${pred.contract.revision})，跨版本依赖已终止。`;
+				const notice = recordTaskOutcome(draft, task, { status: "failed", report }, ctx, now);
+				delete task.blockReason;
+				delete task.blockReasonDetail;
+				if (notice) result.settledWakes.push(notice);
+				result.cascadedFailedTaskIds.push(task.id);
+				changed = true;
+				continue;
+			}
+
 			if (
 				pred &&
 				!pred.cancelRequested &&
@@ -202,15 +247,55 @@ export function settleTaskTerminalOutcome(
 	const bot = draft.bots.find(
 		(entry) => entry.id === event.botId && entry.deviceId === deviceId && entry.accountId === device?.accountId,
 	);
-	if (!task || !device || !bot || !draft.rooms.some((room) => room.id === task.roomId && room.botIds.includes(bot.id)))
+	if (!task) {
+		// Explicit task/room deletion can outlive a lost ACK. Only an authenticated,
+		// locally owned Bot with no colliding task identity can retire that replay.
+		if (device && bot && isTerminal(event.status) && !draft.tasks.some((entry) => entry.id === event.taskId))
+			return { ...reject("Task attempt no longer exists", 404), permanent: true, reasonCode: "attempt_expired" };
 		return reject("Task missing", 404);
-	if (task.attemptId !== event.attemptId) return reject("Attempt mismatch");
+	}
+	if (!device || !bot || !draft.rooms.some((room) => room.id === task.roomId && room.botIds.includes(bot.id)))
+		return reject("Task missing", 404);
+	if (task.attemptId !== event.attemptId)
+		return { ...reject("Attempt mismatch"), permanent: true, reasonCode: "attempt_expired" };
 	if (task.leaseToken !== event.leaseToken || task.leaseGeneration !== event.leaseGeneration)
 		return reject("Lease token or generation mismatch");
 	if (!isTerminal(event.status)) return reject("Terminal outcome required", 400);
-	if (event.status === "completed" && (task.cancelRequested || task.stopConfirmed))
+	// An already committed terminal is compared below so identical retries retain their positive ACK.
+	if (event.status === "completed" && (task.cancelRequested || task.stopConfirmed) && !task.outcomeFingerprint)
 		return reject("Task stop requested");
 	if (event.status === "completed" && !event.report) return reject("Completed task requires agent report", 400);
+
+	if (event.executionCompleted !== undefined && typeof event.executionCompleted !== "boolean") {
+		return reject("Execution proof 'executionCompleted' must be a boolean when present", 400);
+	}
+	if (event.artifactProduced !== undefined && typeof event.artifactProduced !== "boolean") {
+		return reject("Artifact proof 'artifactProduced' must be a boolean when present", 400);
+	}
+
+	// Consume detached, validated evidence for every mode, including chat outcomes with proof fields.
+	if (event.artifact !== undefined) {
+		const checked = validateDeviceArtifact(event.artifact);
+		if (!checked.valid) return reject(`Artifact validation failed: ${checked.reason}`, 400);
+		event = { ...event, artifact: checked.artifact };
+	}
+	const isCode = task.executionMode === "code" || task.contract?.executionMode === "code";
+	if (isCode) {
+		const codeRes = validateCodeArtifactOutcome({
+			task,
+			artifact: event.artifact,
+			executionCompleted: event.executionCompleted,
+			artifactProduced: event.artifactProduced,
+		});
+		if (!codeRes.valid) return reject(`Code artifact validation failed: ${codeRes.reason}`);
+		if (event.status === "completed" && (event.artifactProduced !== true || !event.artifact)) {
+			return reject("Completed code task requires verified artifactProduced proof and artifact", 400);
+		}
+	}
+
+	const hasProofOrArtifact =
+		event.artifact !== undefined || event.executionCompleted !== undefined || event.artifactProduced !== undefined;
+
 	const canonical = computeOutcomeFingerprint(
 		task.id,
 		task.attemptId,
@@ -218,21 +303,36 @@ export function settleTaskTerminalOutcome(
 		event.report,
 		event.error,
 		event.reportMetadata,
+		event.artifact?.digest,
+		event.executionCompleted,
+		event.artifactProduced,
 	);
-	const legacy = computeLegacyOutcomeFingerprint(
-		task.id,
-		task.attemptId,
-		event.status,
-		event.report,
-		event.error,
-		event.reportMetadata,
-	);
-	if (event.fingerprint !== undefined && event.fingerprint !== canonical && event.fingerprint !== legacy)
-		return reject("Outcome fingerprint mismatch");
+
+	if (hasProofOrArtifact) {
+		// 当有新字段时必须 canonical 新指纹，拒绝任何未绑定证据的兼容指纹
+		if (event.fingerprint !== undefined && event.fingerprint !== canonical) {
+			return reject("Outcome fingerprint mismatch (v46 artifact proof must match canonical digest)");
+		}
+	} else {
+		// 仅在没有 artifact / proof 的旧格式下允许 legacy 兼容
+		const legacy = computeLegacyOutcomeFingerprint(
+			task.id,
+			task.attemptId,
+			event.status,
+			event.report,
+			event.error,
+			event.reportMetadata,
+		);
+		if (event.fingerprint !== undefined && event.fingerprint !== canonical && event.fingerprint !== legacy)
+			return reject("Outcome fingerprint mismatch");
+	}
+
 	const fingerprint = event.fingerprint ?? canonical;
 	if (task.recoveryUntil !== undefined && !task.outcomeFingerprint && !isRecoveringTask(task, Date.now()))
 		return reject("Recovery window expired");
 	if (isTerminal(task.status) && !isRecoveringTask(task, Date.now())) {
+		const taskHasProofOrArtifact =
+			task.artifact !== undefined || task.executionCompleted !== undefined || task.artifactProduced !== undefined;
 		const existing =
 			task.outcomeFingerprint ??
 			computeOutcomeFingerprint(
@@ -242,6 +342,9 @@ export function settleTaskTerminalOutcome(
 				task.report,
 				typeof task.error === "string" ? task.error : undefined,
 				task.reportMetadata,
+				task.artifact?.digest,
+				task.executionCompleted,
+				task.artifactProduced,
 			);
 		const displayReport =
 			event.report ||
@@ -249,13 +352,35 @@ export function settleTaskTerminalOutcome(
 			(event.status === "failed"
 				? "Task execution failed without a report."
 				: "Task execution was interrupted without a report.");
-		const sameContent = task.outcomeCanonicalFingerprint
-			? task.outcomeCanonicalFingerprint === canonical
-			: (existing === canonical || existing === legacy) &&
-				task.report === displayReport &&
-				task.error === event.error &&
-				JSON.stringify(task.reportMetadata) === JSON.stringify(event.reportMetadata);
-		if (!sameContent || task.status !== event.status) return reject("Conflicting duplicate terminal outcome");
+		const artifactMatches = task.artifact?.digest === event.artifact?.digest;
+		const proofMatches =
+			task.executionCompleted === event.executionCompleted && task.artifactProduced === event.artifactProduced;
+
+		let sameContent = false;
+		if (taskHasProofOrArtifact || hasProofOrArtifact) {
+			sameContent =
+				task.outcomeCanonicalFingerprint === canonical &&
+				task.status === event.status &&
+				artifactMatches &&
+				proofMatches;
+		} else {
+			const legacy = computeLegacyOutcomeFingerprint(
+				task.id,
+				task.attemptId,
+				event.status,
+				event.report,
+				event.error,
+				event.reportMetadata,
+			);
+			sameContent = task.outcomeCanonicalFingerprint
+				? task.outcomeCanonicalFingerprint === canonical
+				: (existing === canonical || existing === legacy) &&
+					task.report === displayReport &&
+					task.error === event.error &&
+					JSON.stringify(task.reportMetadata) === JSON.stringify(event.reportMetadata);
+		}
+		if (!sameContent || task.status !== event.status)
+			return { ...reject("Conflicting duplicate terminal outcome"), permanent: true, reasonCode: "terminal_conflict" };
 		if (!task.outcomeFingerprint) {
 			task.outcomeFingerprint = existing;
 			task.terminalAcceptedLeaseGeneration = task.leaseGeneration;

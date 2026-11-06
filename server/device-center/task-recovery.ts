@@ -1,7 +1,12 @@
 import { readFileSync, unlinkSync } from "node:fs";
 import { join } from "node:path";
 import { writeAtomicSync } from "../atomic-file.js";
-import type { DeviceTaskClaim, DeviceTaskLeaseRenew } from "../protocol.js";
+import type {
+	DeviceArtifact,
+	DeviceTaskClaim,
+	DeviceTaskLeaseRenew,
+	DeviceTaskResultRejectReasonCode,
+} from "../protocol.js";
 import { parseReportMetadata } from "./report-metadata.js";
 import { TASK_REPORT_BYTES } from "./task-report.js";
 import {
@@ -11,6 +16,7 @@ import {
 	TASK_OUTCOME_ERROR_BYTES,
 	type NormalizedOutcome,
 } from "./task-outcome.js";
+import { validateDeviceArtifact } from "./work-contract.js";
 
 export { computeOutcomeFingerprint, normalizeTaskOutcome, type NormalizedOutcome };
 
@@ -27,6 +33,11 @@ export interface TaskOutboxEntry {
 	report?: string;
 	error?: string;
 	fingerprint?: string;
+	artifact?: DeviceArtifact;
+	executionCompleted?: boolean;
+	artifactProduced?: boolean;
+	contractDigest?: string;
+	manifestDigest?: string;
 	createdAt: number;
 	updatedAt: number;
 	attempts: number;
@@ -49,10 +60,24 @@ export interface ActiveTaskLease {
 	lastRenewedActivityAt: number;
 	transcriptPath?: string;
 	conversationId?: string;
+	contractDigest?: string;
+	manifestDigest?: string;
+	executionMode?: string;
 }
 
+export interface QuarantinedTaskOutcome {
+	outcome: TaskOutboxEntry;
+	reasonCode: DeviceTaskResultRejectReasonCode;
+	quarantinedAt: number;
+}
+
+export const TASK_QUARANTINE_LIMITS = { maxEntries: 128, maxTotalBytes: 2 * 1024 * 1024 };
+/** Includes both outcome budgets, active leases and serialization overhead. */
+export const TASK_RECOVERY_STATE_MAX_BYTES = 8 * 1024 * 1024;
+
 export interface DeviceTaskRecoveryStateFile {
-	version: 1;
+	version: 1 | 2;
+	quarantine?: QuarantinedTaskOutcome[];
 	deviceId: string;
 	hubUrl?: string;
 	outbox: TaskOutboxEntry[];
@@ -71,8 +96,10 @@ export const TASK_OUTBOX_LIMITS = {
 	maxTotalBytes: 2 * 1024 * 1024, // 2 MiB bounded durable storage budget
 };
 
-// Reserve worst-case JSON escaping plus bounded identity and metadata overhead before execution.
-export const TASK_OUTBOX_RESERVATION_BYTES = 6 * (TASK_REPORT_BYTES + TASK_OUTCOME_ERROR_BYTES) + 16 * 1024;
+// Reserve worst-case JSON escaping, artifact patchBase64, plus bounded identity and metadata overhead before execution.
+export const TASK_ARTIFACT_WORST_CASE_BYTES = 256 * 1024;
+export const TASK_OUTBOX_RESERVATION_BYTES =
+	6 * (TASK_REPORT_BYTES + TASK_OUTCOME_ERROR_BYTES) + 16 * 1024 + TASK_ARTIFACT_WORST_CASE_BYTES;
 
 export interface TaskRecoveryOptions {
 	dataDir?: string;
@@ -118,6 +145,10 @@ function validateOutboxItem(item: unknown, deviceId: string): TaskOutboxEntry {
 	if (entry.reportMetadata !== undefined) {
 		entry.reportMetadata = parseReportMetadata(entry.reportMetadata);
 	}
+	if (entry.artifact !== undefined) {
+		const res = validateDeviceArtifact(entry.artifact);
+		if (!res.valid) throw new Error(`Invalid outbox artifact: ${res.reason}`);
+	}
 	if (entry.leaseToken !== undefined && (typeof entry.leaseToken !== "string" || entry.leaseToken.length > 128)) {
 		throw new Error("Invalid outbox leaseToken");
 	}
@@ -130,6 +161,9 @@ function validateOutboxItem(item: unknown, deviceId: string): TaskOutboxEntry {
 	if (entry.hubUrl !== undefined && (typeof entry.hubUrl !== "string" || entry.hubUrl.length > 512)) {
 		throw new Error("Invalid outbox hubUrl");
 	}
+	const hasProofOrArtifact =
+		entry.artifact !== undefined || entry.executionCompleted !== undefined || entry.artifactProduced !== undefined;
+
 	const fingerprint = computeOutcomeFingerprint(
 		entry.taskId,
 		entry.attemptId,
@@ -137,17 +171,33 @@ function validateOutboxItem(item: unknown, deviceId: string): TaskOutboxEntry {
 		entry.report,
 		entry.error,
 		entry.reportMetadata,
+		entry.artifact?.digest,
+		entry.executionCompleted,
+		entry.artifactProduced,
 	);
-	const legacyFingerprint = computeLegacyOutcomeFingerprint(
-		entry.taskId,
-		entry.attemptId,
-		entry.status,
-		entry.report,
-		entry.error,
-		entry.reportMetadata,
-	);
-	if (entry.fingerprint !== undefined && entry.fingerprint !== fingerprint && entry.fingerprint !== legacyFingerprint) {
-		throw new Error("Invalid outbox outcome fingerprint");
+
+	if (hasProofOrArtifact) {
+		// 当有新字段时必须且只能匹配 canonical 指纹，禁止降级到旧指纹
+		if (entry.fingerprint !== undefined && entry.fingerprint !== fingerprint) {
+			throw new Error("Invalid outbox outcome fingerprint (proof bound artifact requires canonical fingerprint)");
+		}
+	} else {
+		// 仅在无 artifact / proof 的旧项中允许 legacy 指纹
+		const legacyFingerprint = computeLegacyOutcomeFingerprint(
+			entry.taskId,
+			entry.attemptId,
+			entry.status,
+			entry.report,
+			entry.error,
+			entry.reportMetadata,
+		);
+		if (
+			entry.fingerprint !== undefined &&
+			entry.fingerprint !== fingerprint &&
+			entry.fingerprint !== legacyFingerprint
+		) {
+			throw new Error("Invalid outbox outcome fingerprint");
+		}
 	}
 	entry.fingerprint ??= fingerprint;
 	return entry;
@@ -212,6 +262,7 @@ export class TaskRecoveryManager {
 	private otherHubLeases: ActiveTaskLease[] = [];
 	private haltedOrphans: ActiveTaskLease[] = [];
 	private loadError: boolean = false;
+	private quarantine: QuarantinedTaskOutcome[] = [];
 
 	constructor(options: TaskRecoveryOptions) {
 		this.deviceId = options.deviceId;
@@ -262,7 +313,11 @@ export class TaskRecoveryManager {
 		if (this.loadError) {
 			throw new Error("Outbox persistence blocked: corrupted storage was preserved");
 		}
-		const text = JSON.stringify(state, null, 2) + "\n";
+		// v2 prevents older readers from silently discarding archived terminal evidence.
+		const text =
+			JSON.stringify({ ...state, version: 2, quarantine: state.quarantine ?? this.quarantine }, null, 2) + "\n";
+		if (Buffer.byteLength(text) > TASK_RECOVERY_STATE_MAX_BYTES)
+			throw new Error("Recovery state capacity exceeded; evidence retained");
 		writeAtomicSync(this.statePath, text, { mode: 0o600, fsync: true });
 	}
 
@@ -274,8 +329,9 @@ export class TaskRecoveryManager {
 		// 1. Try reading the unified state file
 		try {
 			const raw = readFileSync(this.statePath, "utf8");
+			if (Buffer.byteLength(raw) > TASK_RECOVERY_STATE_MAX_BYTES) throw new Error("Recovery state capacity exceeded");
 			const parsed = JSON.parse(raw);
-			if (!parsed || typeof parsed !== "object" || parsed.version !== 1) {
+			if (!parsed || typeof parsed !== "object" || ![1, 2].includes(parsed.version)) {
 				throw new Error("Invalid recovery state file version or root");
 			}
 			if (typeof parsed.deviceId !== "string" || parsed.deviceId !== this.deviceId) {
@@ -285,13 +341,42 @@ export class TaskRecoveryManager {
 				throw new Error("Invalid recovery state file collections");
 			}
 
+			if (parsed.version === 2) {
+				if (!Array.isArray(parsed.quarantine)) throw new Error("Invalid quarantine collection");
+				const seen = new Set<string>();
+				const archive: QuarantinedTaskOutcome[] = parsed.quarantine.map((item: QuarantinedTaskOutcome) => {
+					if (
+						!item ||
+						!["terminal_conflict", "attempt_expired"].includes(item.reasonCode) ||
+						!Number.isSafeInteger(item.quarantinedAt) ||
+						item.quarantinedAt < 0
+					)
+						throw new Error("Invalid quarantined outcome");
+					const outcome = validateOutboxItem(item.outcome, this.deviceId);
+					const key = JSON.stringify([outcome.hubUrl, outcome.id]);
+					if (seen.has(key)) throw new Error("Duplicate quarantined outcome");
+					seen.add(key);
+					return { outcome, reasonCode: item.reasonCode, quarantinedAt: item.quarantinedAt };
+				});
+				if (
+					archive.length > TASK_QUARANTINE_LIMITS.maxEntries ||
+					Buffer.byteLength(JSON.stringify(archive)) > TASK_QUARANTINE_LIMITS.maxTotalBytes
+				)
+					throw new Error("Quarantine capacity exceeded");
+				this.quarantine = archive;
+			} else if (parsed.quarantine !== undefined) throw new Error("Unexpected v1 quarantine");
+
 			const seenOutboxKeys = new Set<string>();
 			const validOutbox: TaskOutboxEntry[] = [];
 			for (const item of parsed.outbox) {
 				const entry = validateOutboxItem(item, this.deviceId);
 				entry.hubUrl ??= typeof parsed.hubUrl === "string" ? parsed.hubUrl : this.hubUrl;
 				const scopedKey = JSON.stringify([entry.hubUrl, entry.id]);
-				if (seenOutboxKeys.has(scopedKey)) throw new Error("Duplicate outbox key in state file");
+				if (
+					seenOutboxKeys.has(scopedKey) ||
+					this.quarantine.some((item) => JSON.stringify([item.outcome.hubUrl, item.outcome.id]) === scopedKey)
+				)
+					throw new Error("Duplicate outbox or quarantined key in state file");
 				seenOutboxKeys.add(scopedKey);
 				validOutbox.push(entry);
 			}
@@ -516,15 +601,27 @@ export class TaskRecoveryManager {
 
 		const key = this.leaseKey(lease.taskId, lease.attemptId);
 
-		if (this.outbox.has(key)) {
+		if (
+			this.outbox.has(key) ||
+			this.quarantine.some((item) => this.matchesHub(item.outcome.hubUrl) && item.outcome.id === key)
+		) {
 			throw new Error(
 				`Cannot start task: outcome for task ${lease.taskId} attempt ${lease.attemptId} already finalized in outbox`,
 			);
 		}
 
-		if (this.activeLeases.has(key)) {
-			throw new Error(`Task lease already active for task ${lease.taskId} attempt ${lease.attemptId}`);
+		// Reject conflicting concurrent or prior attempts for the same taskId in active leases
+		for (const [existingKey, existingLease] of this.activeLeases) {
+			if (existingLease.taskId === lease.taskId) {
+				if (existingKey === key) {
+					throw new Error(`Task lease already active for task ${lease.taskId} attempt ${lease.attemptId}`);
+				}
+				throw new Error(
+					`Conflicting attempt active for task ${lease.taskId}: existing=${existingLease.attemptId}, new=${lease.attemptId}`,
+				);
+			}
 		}
+
 		if (lease.hubUrl !== undefined && lease.hubUrl !== this.hubUrl) throw new Error("Task lease Hub identity mismatch");
 		const capacity = this.hasOutboxCapacity();
 		if (!capacity.available) throw new Error(capacity.reason);
@@ -720,12 +817,17 @@ export class TaskRecoveryManager {
 			roomId?: string;
 			leaseToken?: string;
 			leaseGeneration?: number;
+			contractDigest?: string;
+			manifestDigest?: string;
 		},
 		outcome: {
 			status: "completed" | "failed" | "interrupted";
 			report?: string;
 			error?: unknown;
 			reportMetadata?: import("../protocol.js").DeviceTaskReportMetadata;
+			artifact?: DeviceArtifact;
+			executionCompleted?: boolean;
+			artifactProduced?: boolean;
 		},
 	): TaskOutboxEntry {
 		if (
@@ -753,14 +855,22 @@ export class TaskRecoveryManager {
 		const leaseToken = task.leaseToken ?? activeLease?.leaseToken;
 		const leaseGeneration = task.leaseGeneration ?? activeLease?.leaseGeneration;
 		const hubUrl = task.hubUrl ?? activeLease?.hubUrl ?? this.hubUrl;
+		const contractDigest = task.contractDigest ?? activeLease?.contractDigest;
+		const manifestDigest = task.manifestDigest ?? activeLease?.manifestDigest;
 
-		const existing = this.outbox.get(key);
+		const existing =
+			this.outbox.get(key) ??
+			this.quarantine.find((item) => this.matchesHub(item.outcome.hubUrl) && item.outcome.id === key)?.outcome;
 		if (existing) {
 			const targetDeviceId = task.deviceId || this.deviceId;
 			// Strict immutability: identical retry is idempotent; conflicting outcome is rejected.
 			// Lease fields must also be identical to prevent cross-generation outcome aliasing.
 			const leaseTokenMatches = leaseToken === undefined || existing.leaseToken === leaseToken;
 			const leaseGenMatches = leaseGeneration === undefined || existing.leaseGeneration === leaseGeneration;
+			const artifactMatches = existing.artifact?.digest === normalized.artifact?.digest;
+			const proofMatches =
+				existing.executionCompleted === normalized.executionCompleted &&
+				existing.artifactProduced === normalized.artifactProduced;
 
 			if (
 				existing.report === normalized.report &&
@@ -771,7 +881,9 @@ export class TaskRecoveryManager {
 				(task.roomId === undefined || existing.roomId === task.roomId) &&
 				JSON.stringify(existing.reportMetadata) === JSON.stringify(normalized.reportMetadata) &&
 				leaseTokenMatches &&
-				leaseGenMatches
+				leaseGenMatches &&
+				artifactMatches &&
+				proofMatches
 			) {
 				if (this.activeLeases.has(key)) {
 					this.removeActiveLease(task.id, task.attemptId);
@@ -797,6 +909,11 @@ export class TaskRecoveryManager {
 			report: normalized.report,
 			error: normalized.error,
 			fingerprint: normalized.fingerprint,
+			artifact: normalized.artifact,
+			executionCompleted: normalized.executionCompleted,
+			artifactProduced: normalized.artifactProduced,
+			contractDigest,
+			manifestDigest,
 			createdAt: now,
 			updatedAt: now,
 			attempts: 0,
@@ -882,11 +999,77 @@ export class TaskRecoveryManager {
 		}
 	}
 
+	/** Durable rejected evidence remains inspectable and never participates in automatic replay. */
+	getQuarantinedOutcomes(): QuarantinedTaskOutcome[] {
+		return structuredClone(this.quarantine.filter((item) => this.matchesHub(item.outcome.hubUrl)));
+	}
+
+	quarantineOutbox(
+		taskId: string,
+		attemptId: string,
+		fingerprint: unknown,
+		reasonCode: unknown,
+		status: unknown,
+		artifactDigest?: unknown,
+	): boolean {
+		if (
+			this.loadError ||
+			typeof reasonCode !== "string" ||
+			!["terminal_conflict", "attempt_expired"].includes(reasonCode)
+		)
+			return false;
+		const key = this.leaseKey(taskId, attemptId);
+		const outcome = this.outbox.get(key);
+		if (
+			!outcome ||
+			typeof fingerprint !== "string" ||
+			fingerprint !== outcome.fingerprint ||
+			status !== outcome.status ||
+			artifactDigest !== outcome.artifact?.digest
+		)
+			return false;
+		const next = [
+			...this.quarantine,
+			{
+				outcome: structuredClone(outcome),
+				reasonCode: reasonCode as DeviceTaskResultRejectReasonCode,
+				quarantinedAt: Date.now(),
+			},
+		];
+		if (
+			next.length > TASK_QUARANTINE_LIMITS.maxEntries ||
+			Buffer.byteLength(JSON.stringify(next)) > TASK_QUARANTINE_LIMITS.maxTotalBytes
+		)
+			return false;
+		// Commit archive + removal together. Keep all active leases and other hubs intact.
+		this.writeStateToDiskSync({
+			version: 2,
+			deviceId: this.deviceId,
+			hubUrl: this.hubUrl,
+			outbox: [...this.otherHubOutbox, ...Array.from(this.outbox.values()).filter((e) => e.id !== key)],
+			activeLeases: [...this.otherHubLeases, ...Array.from(this.activeLeases.values())],
+			quarantine: next,
+		});
+		this.quarantine = next;
+		this.outbox.delete(key);
+		return true;
+	}
+
 	/**
 	 * Acknowledge outbox entry upon receiving task_result_ack from Hub.
 	 * Strictly requires matching outcome fingerprint; rejects clearing without or with mismatched fingerprint.
 	 */
-	ackOutbox(taskId: string, attemptId: string, fingerprint?: string): boolean {
+	ackOutbox(
+		taskId: string,
+		attemptId: string,
+		fingerprint?: string,
+		extra?: {
+			artifactDigest?: string;
+			status?: string;
+			contractDigest?: string;
+			manifestDigest?: string;
+		},
+	): boolean {
 		const key = this.leaseKey(taskId, attemptId);
 		const entry = this.outbox.get(key);
 		if (!entry) return false;
@@ -896,6 +1079,17 @@ export class TaskRecoveryManager {
 				return false;
 			}
 		} else if (fingerprint) {
+			return false;
+		}
+
+		if (extra?.status !== undefined && entry.status !== extra.status) return false;
+		if (extra?.artifactDigest !== undefined && entry.artifact?.digest !== extra.artifactDigest) {
+			return false;
+		}
+		if (extra?.contractDigest !== undefined && entry.contractDigest !== extra.contractDigest) {
+			return false;
+		}
+		if (extra?.manifestDigest !== undefined && entry.manifestDigest !== extra.manifestDigest) {
 			return false;
 		}
 

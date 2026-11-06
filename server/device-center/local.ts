@@ -12,6 +12,7 @@ import { createLocalBotRegistry, type LocalBotRegistry, type LocalBotInput } fro
 import { loadExecutionSettings, saveExecutionSettings, type DeviceExecutionSettings } from "./execution-settings.js";
 import type { TaskSchedulerSnapshot } from "./task-scheduler.js";
 import { hostWithoutPort, isLoopbackHost } from "../host-guard.js";
+import { MAX_CONTRACT_REQUEST_BYTES } from "./work-contract.js";
 
 export interface LocalDeviceConfig {
 	hubUrl: string;
@@ -449,6 +450,7 @@ export async function installLocalDeviceCenter(options: Options) {
 		}
 	});
 	function userRoute(method: "get" | "post", path: string, fields: string[]) {
+		const supportsContract = method === "post" && fields.includes("contract");
 		options.app[method](`/api/device-center/${path}`, async (req, res) => {
 			try {
 				await serialize(ensureLocalHub);
@@ -470,7 +472,8 @@ export async function installLocalDeviceCenter(options: Options) {
 					typeof body !== "object" ||
 					Array.isArray(body) ||
 					Object.keys(body).some((key) => !fields.includes(key)) ||
-					Buffer.byteLength(JSON.stringify(body)) > 32768)
+					Buffer.byteLength(JSON.stringify(body)) >
+						(supportsContract && body.contract !== undefined ? MAX_CONTRACT_REQUEST_BYTES : 32768))
 			)
 				return res.status(400).json({ code: "INVALID_BODY", error: "Invalid group request" });
 			const controller = new AbortController();
@@ -751,7 +754,15 @@ export async function installLocalDeviceCenter(options: Options) {
 	]);
 	userRoute("get", "rooms/:id/conversations", []);
 	userRoute("get", "rooms/:id/conversations/:conversationId", []);
-	userRoute("post", "rooms/:id/conversations", ["name", "targetBotId", "text", "idempotencyKey", "planOnly"]);
+	userRoute("post", "rooms/:id/conversations", [
+		"name",
+		"targetBotId",
+		"text",
+		"idempotencyKey",
+		"planOnly",
+		"executionMode",
+		"contract",
+	]);
 	userRoute("post", "rooms/:id/conversations/:conversationId/messages", [
 		"text",
 		"kind",
@@ -759,6 +770,8 @@ export async function installLocalDeviceCenter(options: Options) {
 		"attentionId",
 		"idempotencyKey",
 		"planOnly",
+		"executionMode",
+		"contract",
 	]);
 	userRoute("post", "rooms/:id/conversations/:conversationId/deliveries", [
 		"repository",
@@ -816,6 +829,8 @@ export async function installLocalDeviceCenter(options: Options) {
 		"handoff",
 		"parentTaskId",
 		"planOnly",
+		"executionMode",
+		"contract",
 	]);
 	userRoute("get", "rooms/:id/webhooks", []);
 	userRoute("post", "rooms/:id/webhooks", [

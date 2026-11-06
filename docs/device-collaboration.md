@@ -11,7 +11,23 @@
 
 ## 2. 群任务派发与上下文
 
-群任务优先派给显式 @ 的稳定 Bot ID；可选 `primaryBotId` 接收未指定目标的人类消息并续接该 Bot 最近有效会话，Bot 公开消息不触发默认派发，移除主 Bot 时清除设置。`group-context.ts` 冻结主 Bot 身份，执行器按群与 Bot 双重匹配注入协调职责，使用已有持久会话和相关请求回复完成委派，角色不扩张权限。机器人接力继承父任务预算，禁止无界互派。Hub 持久化分两层：`device-hub.json` 为索引（`version: 2` 同 schema，`messages`/`tasks`/`conversationMessages` 为空数组），消息、任务与转录写入 `hub-log/` 下按群/按会话的追加日志；每笔事务先将索引与三个集合的增删差量写入 `hub-wal.jsonl`（递增序号与内容校验和），刷新到磁盘后才算提交；随后更新追加日志（`upsert`/`del` 行），最后原子替换带 `checkpointSeq` 的索引并清理已投影 WAL。投影失败不撤销已提交事务，必须保留 WAL、推进已提交内存版本，并在后续写入或重启时幂等补投影；不得复用序号或把已提交结果报告为普通失败。墓碑达到阈值后按存活行压缩，加载时按群保留 500 条并修复崩溃半行；WAL 完整行损坏须拒绝打开，仅不完整尾行可以修复。`readPersistedHub()` 只在内存重放，不修文件、不创建目录。旧版内联数据在 `open()` 时自动迁移；回退旧版本前必须导出完整状态（旧版读索引只能看到空集合）。群上下文由 `group-context.ts` 在派发前冻结，近期公开消息随任务传输（24 KiB），不重复落盘；`device_collab read_history` 按稳定游标回查原文（每群保留 500 条，超长消息可分段），必须验证来源 Bot 的设备、账号及群成员身份；清空/淘汰使旧游标失效。历史是参考数据，不能授权派发或执行。人类消息未显式给出 `targetBotIds` 时，由 Hub 按群成员解析正文 `@Name` / `@Name(<id>)`；同名多成员不猜、非成员不派发，不因客户端未解析而回落到主 Bot。消息可携带 `replyToMessageId`，必须指向同群消息。
+群任务优先派给显式 @ 的稳定 Bot ID；可选 `primaryBotId` 接收未指定目标的人类消息并续接该 Bot 最近有效会话，Bot 公开消息不触发默认派发，移除主 Bot 时清除设置。`group-context.ts` 冻结主 Bot 身份，执行器按群与 Bot 双重匹配注入协调职责，使用已有持久会话和相关请求回复完成委派，角色不扩张权限。机器人接力继承父任务预算，禁止无界互派。Hub 持久化分两层：`device-hub.json` 为索引（`version: 2` 同 schema，`messages`/`tasks`/`conversationMessages` 为空数组），消息、任务与转录写入 `hub-log/` 下按群/按会话的追加日志；每笔事务先将索引与三个集合的增删差量写入 `hub-wal.jsonl`（递增序号与内容校验和），刷新到磁盘后才算提交；随后更新追加日志（`upsert`/`del` 行），最后原子替换带 `checkpointSeq` 的索引并清理已投影 WAL。投影失败不撤销已提交事务，必须保留 WAL、推进已提交内存版本，并在后续写入或重启时幂等补投影；不得复用序号或把已提交结果报告为普通失败。墓碑达到阈值后按存活行压缩，加载时按群保留 500 条并修复崩溃半行；WAL 完整行损坏须拒绝打开，仅不完整尾行可以修复。`readPersistedHub()` 只在内存重放，不修文件、不创建目录。旧版内联数据在 `open()` 时自动迁移；回退旧版本前必须导出完整状态（旧版读索引只能看到空集合）。群上下文由 `group-context.ts` 在派发前冻结，近期公开消息随任务传输（24 KiB），普通聊天不重复落盘；显式契约任务将实际选入的上下文封存到下述 Manifest；`device_collab read_history` 按稳定游标回查原文（每群保留 500 条，超长消息可分段），必须验证来源 Bot 的设备、账号及群成员身份；清空/淘汰使旧游标失效。历史是参考数据，不能授权派发或执行。人类消息未显式给出 `targetBotIds` 时，由 Hub 按群成员解析正文 `@Name` / `@Name(<id>)`；同名多成员不猜、非成员不派发，不因客户端未解析而回落到主 Bot。消息可携带 `replyToMessageId`，必须指向同群消息。
+
+### 2.1 版本化契约与代码任务
+
+`device_collab` 的 `send_task`、`conversation_create`、`conversation_send` 以及对应 Hub / 本机代理入口接收 `executionMode` 和嵌套 `contract`。缺省模式为 `chat`。`code` 必须提供确定的 `baseline: { repositoryId, commit }`；commit 为完整 SHA，repositoryId 由本机规范化网络 origin（剥除凭据，保留仓库路径大小写）或无 origin 仓库的全部排序根提交摘要推导，不能用任意标签或本机路径代替。常见 SSH、SCP 与 HTTPS 默认端口地址可映射到相同 host/path；本地、file 与未知传输 origin 明确拒绝。`contract` 支持业务 `id`、递增 `revision`、目标、约束、验收条件与有序 `inputArtifacts`。Hub 计算内容摘要；客户端不能提供权威 Manifest 或审批证据。相同幂等键的精确重试复用契约，内容冲突拒绝；同一业务 id/revision 只能对应一个内容摘要；旧版本仍 queued、running、持有已发租约或处于恢复窗口时，新版本请求返回 409。旧版本结算后才可创建新版本；已提交旧结果丢 ACK 后仍可精确重放确认，旧业务版本不能为新版本提供接受证明。
+
+`work-contract.ts` 是契约、`ContextManifest` 和 `DeviceArtifact` 的摘要与验证入口。契约任务首次派发前，将实际选入的群上下文、taskState、有序输入产物 id/digest 引用、执行设备/Bot/revision 的策略引用和实际预算连同契约版本一次封存到任务事务。延期、重试与重启派发使用原 Manifest，不重新选取历史。摘要覆盖规范 JSON，输入必须复制并深度冻结；未知字段、损坏摘要和不匹配的契约引用均拒绝。
+
+`task-workspace.ts` 将源仓库、设备、Bot revision、task/attempt、契约和 Manifest 摘要绑定到本机注册的 opaque handle。网络传入的目录或仿制 JSON 不能成为执行能力。本批代码任务要求 Bot.cwd 为本地 Git 顶层目录、源 checkout 干净，且工作区数据目录位于源仓库之外；子目录 Bot 明确拒绝且不留下临时工作树，Canvas 原有子目录行为不变。代码任务沿用按 Bot 与源根的保守调度锁，创建隔离工作树不自动放宽并发。代码任务使用新执行会话，真实工具 cwd 必须来自经过验证的 handle；不得在另一工作区恢复旧转录。基线、HEAD、Git common-dir、gitdir 回指与真实路径须在跨 await 的关键边界复核。工作树只隔离修改位置，**不构成文件系统或网络安全沙盒**，原有工具权限与审批继续生效。
+
+契约 JSON 上限 256 KiB，Manifest 上限 96 KiB，契约创建请求上限 384 KiB；输入产物至多 8 份且受契约总量限制。已封存的 context/taskState 只随 Manifest 传输，外层不重复复制；派发前按完整 JSON 帧检查 512 KiB 上限，超限拒绝投递且不切断设备连接。输入产物携带内容与 SHA-256，不能引用发送设备的本地路径。每份输入补丁先证明其从声明基线生成的 outputTree，再按契约顺序合成；冲突、篡改或过大补丁明确失败。本批支持累计补丁的单父链与多个不重叠输入；将某祖先及已包含它的后继同时作为输入会显式冲突，不自动推断或去重依赖图。空补丁是合法的无修改产物。输出为从固定 baseline 到 outputTree 的累计 binary patch，同时记录本次执行的 inputTree；原始补丁上限 128 KiB。首次捕获固定产物身份与摘要，重发不得重新生成。Git retention ref 保留基线与产物对象，用户源 checkout 和 index 保持不变。准备与快照期间禁用 hooks、fsmonitor 以及所有配置来源的命令过滤器；快照按原始文件字节生成，避免隐式 clean/smudge 转换。
+
+执行结束、产物捕获、独立验证、交付接受是四类不同事实。本批仅记录 `executionCompleted`、`artifactProduced` 和产物内容，不因终态 `completed`、Bot 自报检查或已有 review 自动声明验证通过或交付接受。代码任务必须在确认执行器停止并成功捕获产物后才能报告完成；捕获失败仍可保存执行已结束这一事实。产物和证明进入持久 Outbox、终态指纹及 Hub 的不可变接纳记录，ACK 对应实际提交内容。
+
+若 Hub 已持久结算其他终态，或原 attempt 已永久失效，设备收到绑定原 task/attempt/status/fingerprint 的永久拒收回执后，将完整原结果与有限原因码原子移入持久隔离区；此后不继续重放该条，也不妨碍其他结果上传。字段或摘要不匹配、一般请求失败、网络错误与持久化错误不得触发隔离。隔离区独立限制为 128 条 / 2 MiB，满时保留原待发结果并拒绝继续清除；不会淘汰旧证据。统一 `task-recovery-state.json` 写为 version 2，兼容读取 version 1 及旧双文件状态，隔离区与活跃租约、待发结果同次原子提交，总状态文件上限 8 MiB。回退不认识 version 2 的旧设备代码前须备份并转换全部恢复状态，不能删除隔离区以绕过检查。
+
+所有显式契约任务及其会话（包括聊天契约、无产物的失败代码任务）均不受普通 500 条历史 / 已关闭会话裁剪影响，重启加载也必须保留；契约身份和最高版本不能因历史裁剪消失。普通无契约聊天仍按原策略保留。历史页面及工具结果只展示有界的契约、Manifest、产物身份与独立事实，原任务保留完整证据。`device_collab task_evidence` 使用 `evidenceKind: "artifact"`、`taskId`、`expectedDigest` 和字节 `offset` / `limit` 分页读取原始补丁；每页最多 24 KiB 原始字节，返回 base64 内容与补丁 SHA-256、产物摘要及来源 metadata。读取必须通过同账号、设备、群与会话校验，后续输入须重组完整内容并校验摘要。自动清理不得删除脏工作树或额外提交；已捕获产物的 retention refs 暂不自动过期，显式清空或删除群会清除 Hub 侧的契约、会话和证据记录并重置该群的业务版本权威，设备仓库中的保留对象需要另行显式维护。
 
 ## 3. Bot 注册表与持久会话
 

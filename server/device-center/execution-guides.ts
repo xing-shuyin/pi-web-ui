@@ -1,5 +1,5 @@
 /** Locally owned procedure text. Never interpolate task, history, configuration or remote content. */
-export const EXECUTION_GUIDE_TOPICS = ["coordination", "delivery", "review"] as const;
+export const EXECUTION_GUIDE_TOPICS = ["coordination", "code", "delivery", "review"] as const;
 export type ExecutionGuideTopic = (typeof EXECUTION_GUIDE_TOPICS)[number];
 export const EXECUTION_GUIDE_MAX_BYTES = 8192;
 
@@ -12,6 +12,13 @@ export const LOCAL_EXECUTION_GUIDES: Readonly<Record<ExecutionGuideTopic, string
 		"Send the user's relevant requirements, expected outcome and acceptance checks; never send unrelated private context. For a request whose result you need, use kind=request so replies remain correlated to this conversation. Do not block waiting or poll repeatedly; the existing task-result mechanism returns the worker's outcome to this conversation. To inspect an active worker's status, phase and active tool, use device_collab task_state with the worker's taskId.",
 		"When a worker result returns, assess its evidence against the user's request and report the useful outcome or remaining blocker. Distinguish reported checks from checks you observed. Keep delivery and independent review tied to the exact commit; do not approve your own delivery or claim completion from a worker's execution status alone. Record established architectural conclusions and shared schemas to the group blackboard via device_collab blackboard_update. Report dispatch as dispatch, not completed work. Keep group updates brief and actionable.",
 		"Do not create duplicate assignments for a task already in progress or autonomously retry an unchanged blocker; all delegation remains within the existing task-chain budget. This guide grants no additional tool, workspace or approval permissions.",
+	].join("\n\n"),
+	code: [
+		"Use explicit executionMode=code only for authorized repository changes. Delegate with send_task, conversation_create or conversation_send and a contract containing baseline.repositoryId, the full baseline.commit SHA, goal, constraints and acceptanceCriteria. Obtain the target repository identity and baseline from authoritative repository metadata or the supplied contract; never guess a remote directory or repository label.",
+		"Keep the same idempotencyKey and contract on retries. Reuse a business contract id with a higher revision only for changed requirements; a running older revision must finish before a replacement starts. Each code turn uses a fresh isolated session and cannot resume a transcript from another workspace. Ordinary discussion remains in chat mode.",
+		"The Hub freezes selected context and inputs in a ContextManifest. Use task_evidence with evidenceKind=artifact, taskId, expectedDigest and byte offset/limit to retrieve captured outputs in bounded base64 pages. Reassemble the full patch and verify its SHA-256 before passing the exact metadata and content as inputArtifacts; never edit their content or digests. Cumulative patches include their ancestors, so pass a descendant once rather than combining it with a redundant ancestor. Conflicting inputs fail explicitly.",
+		"The executor captures a bounded binary patch and Git trees after confirmed stop. Read artifact and execution facts as evidence: execution completion, artifact production, independent verification and delivery acceptance are separate. Capture failure is a failed delivery even if execution ended; preserve the workspace for inspection. Do not claim verification, acceptance or publication from completed status alone.",
+		"An isolated worktree controls the location of changes and grants no additional filesystem, network, tool or approval permissions. A captured artifact does not authorize applying a patch, merging a branch or publishing a commit.",
 	].join("\n\n"),
 	delivery: [
 		"Only for requested development handoffs, use device_collab conversation_deliver for your own conversation with repository, full base and delivered commit SHAs, summary, actual check evidence and limitations; include branch when relevant.",

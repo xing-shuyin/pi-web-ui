@@ -8,9 +8,9 @@ import { WebSocket, WebSocketServer } from "ws";
 import { capabilityBase, createPortalResponse, parseDevicePath, portalHeaders, wrapperHtml } from "./path-portal.js";
 
 export const RELAY_LIMITS = {
-	frame: 128 * 1024,
+	frame: 512 * 1024,
 	chunk: 32 * 1024,
-	queue: 2 * 1024 * 1024,
+	queue: 4 * 1024 * 1024,
 	body: 64 * 1024 * 1024,
 	streams: 32,
 	cancellations: 16,
@@ -1120,7 +1120,10 @@ export function createDeviceRelay(options: DeviceRelayOptions) {
 								throw new Error("Unknown task");
 							if (frame.reportMetadata !== undefined) frame.reportMetadata = parseReportMetadata(frame.reportMetadata);
 							const current = entry.tasks.get(taskId);
-							if (current && (current.attemptId !== attemptId || current.botId !== botId))
+							if (
+								current &&
+								(current.botId !== botId || (frame.status === "running" && current.attemptId !== attemptId))
+							)
 								throw new Error("Unknown task");
 							Promise.resolve()
 								.then(() => options.onTaskEvent?.(device, frame))
@@ -1143,10 +1146,37 @@ export function createDeviceRelay(options: DeviceRelayOptions) {
 												accepted: true,
 												status: committed.status,
 												fingerprint: committed.outcomeFingerprint,
+												artifactDigest: committed.artifact?.digest,
 											});
 									}
 								})
-								.catch(() => ws.terminate());
+								.catch((error: unknown) => {
+									const rejection = error as { permanent?: unknown; reasonCode?: unknown } | undefined;
+									if (
+										devices.get(device) === entry &&
+										frame.status !== "running" &&
+										rejection?.permanent === true &&
+										["terminal_conflict", "attempt_expired"].includes(String(rejection.reasonCode)) &&
+										typeof frame.fingerprint === "string"
+									) {
+										const pending = entry.tasks.get(taskId);
+										if (pending?.attemptId === attemptId && pending.botId === botId) entry.tasks.delete(taskId);
+										sendFrame(ws, {
+											type: "task_result_ack",
+											taskId,
+											attemptId,
+											accepted: false,
+											status: frame.status,
+											permanent: true,
+											reasonCode: rejection.reasonCode as import("../protocol.js").DeviceTaskResultRejectReasonCode,
+											fingerprint: frame.fingerprint,
+											artifactDigest:
+												typeof (frame.artifact as { digest?: unknown } | undefined)?.digest === "string"
+													? (frame.artifact as { digest: string }).digest
+													: undefined,
+										});
+									} else ws.terminate();
+								});
 							return;
 						}
 						// === Task Recovery / Reconnect Claim / Lease Renewal ===

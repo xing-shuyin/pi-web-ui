@@ -34,7 +34,7 @@ cron、webhook、memory、loop 等尚无确定性执行器的角色不得伪装�
 
 ## Git 隔离与产物
 
-`canvas-workspace.ts` 提供 prepare/capture/cleanup 三个边界。隔离目录位于 dataDir/canvas/workspaces/graph/run/node-attempt；使用 detached worktree，保留原 cwd 子目录。不会 reset 用户分支、自动 commit 或合并主树。
+`canvas-workspace.ts` 提供 prepare/capture/cleanup 三个 Canvas 边界，共享的异步 Git、路径和工作树身份校验、scratch index 快照与补丁原语位于 `server/workspace-handle.ts`。设备代码任务通过独立的 `device-center/task-workspace.ts` 适配相同原语，不借用 graph/run/node 身份；协议与证据约束见 [`device-collaboration.md`](device-collaboration.md#21-版本化契约与代码任务)。Canvas 的类型、产物层语义和公开 API 继续由本适配层维护。隔离目录位于 dataDir/canvas/workspaces/graph/run/node-attempt；使用 detached worktree，保留原 cwd 子目录。不会 reset 用户分支、自动 commit 或合并主树。
 
 隔离要求本地 Git 和干净源基线；不支持的 SSH/非 Git 隔离、脏基线、路径逃逸、创建失败均明确报错，不回落为共享目录。dataDir 必须在源仓库外。
 

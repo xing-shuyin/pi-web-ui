@@ -80,7 +80,7 @@ describe("local on-demand execution guides", () => {
 			});
 		}
 		expect(f.fetch).not.toHaveBeenCalled();
-		expect(f.release).toHaveBeenCalledTimes(3);
+		expect(f.release).toHaveBeenCalledTimes(EXECUTION_GUIDE_TOPICS.length);
 		await expect(
 			fixture(false).service.execute("execution_guide", { topic: "coordination" }, undefined, context),
 		).rejects.toThrow();

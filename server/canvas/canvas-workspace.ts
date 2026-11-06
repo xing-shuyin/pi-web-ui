@@ -1,7 +1,16 @@
-import { execFile } from "node:child_process";
 import { createHash, randomUUID } from "node:crypto";
-import { mkdir, readFile, realpath, rm, writeFile } from "node:fs/promises";
-import { isAbsolute, join, relative, resolve, sep } from "node:path";
+import { mkdir, readFile, realpath, writeFile } from "node:fs/promises";
+import { join, relative, resolve, sep } from "node:path";
+import {
+	canonicalPath,
+	checkSignal,
+	createDetachedWorktree,
+	git,
+	inside,
+	safeId,
+	snapshotTree,
+	verifyWorktreeIdentity,
+} from "../workspace-handle.js";
 
 export interface CanvasArtifactLayer {
 	id: string;
@@ -48,65 +57,6 @@ export interface PrepareCanvasWorkspaceOptions {
 	signal?: AbortSignal;
 }
 
-function checkSignal(signal?: AbortSignal): void {
-	signal?.throwIfAborted();
-}
-
-function safeId(value: string): string {
-	if (!/^[a-zA-Z0-9_-][a-zA-Z0-9_.-]{0,127}$/.test(value) || value === "." || value === "..") {
-		throw new Error(`Invalid canvas workspace identifier: ${value}`);
-	}
-	return value;
-}
-
-function inside(root: string, path: string): boolean {
-	const rel = relative(root, path);
-	return !isAbsolute(rel) && rel !== ".." && !rel.startsWith(`..${sep}`);
-}
-
-async function canonicalPath(path: string): Promise<string> {
-	try {
-		return await realpath(path);
-	} catch (error) {
-		if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
-		const parent = resolve(path, "..");
-		if (parent === path) throw error;
-		return join(await canonicalPath(parent), relative(parent, path));
-	}
-}
-
-async function git(cwd: string, args: string[], signal?: AbortSignal, index?: string, input?: Buffer): Promise<string> {
-	checkSignal(signal);
-	// Never let an inherited Git context redirect commands to the user's other repository/index.
-	const env = { ...process.env };
-	for (const key of Object.keys(env)) {
-		if (/^GIT_/i.test(key)) delete env[key];
-	}
-	if (index) env.GIT_INDEX_FILE = index;
-	const stdout = await new Promise<string>((done, reject) => {
-		const child = execFile(
-			"git",
-			["-c", "core.hooksPath=", ...args],
-			{
-				cwd,
-				signal,
-				windowsHide: true,
-				timeout: 60_000,
-				maxBuffer: 64 * 1024 * 1024,
-				env,
-			},
-			(error, stdout) => (error ? reject(error) : done(stdout)),
-		);
-		// Apply the bytes we validated, rather than reopening an attacker-replaceable path.
-		child.stdin?.on("error", () => {
-			/* execFile reports process failure. */
-		});
-		child.stdin?.end(input);
-	});
-	checkSignal(signal);
-	return stdout;
-}
-
 function workspaceDir(
 	workspace: Pick<CanvasWorkspace, "dataDir" | "graphId" | "runId" | "nodeId">,
 	kind: string,
@@ -119,21 +69,6 @@ function workspaceDir(
 		safeId(workspace.runId),
 		safeId(workspace.nodeId),
 	);
-}
-
-/** Build a tree without touching the user's index, branch, or commit history. Ignored files are excluded. */
-async function snapshotTree(cwd: string, dataDir: string, signal?: AbortSignal): Promise<string> {
-	const scratch = join(resolve(dataDir), "canvas", "indexes");
-	await mkdir(scratch, { recursive: true });
-	const index = join(scratch, randomUUID());
-	try {
-		await git(cwd, ["read-tree", "HEAD"], signal, index);
-		await git(cwd, ["add", "-A", "--", "."], signal, index);
-		return (await git(cwd, ["write-tree"], signal, index)).trim();
-	} finally {
-		await rm(index, { force: true });
-		await rm(`${index}.lock`, { force: true });
-	}
 }
 
 function layersOf(artifacts: CanvasWorkspaceArtifact[]): CanvasArtifactLayer[] {
@@ -164,6 +99,8 @@ async function trustedArtifactPath(workspace: CanvasWorkspace, path: string, nod
 	return resolved;
 }
 
+const workspaceIdentities = new WeakMap<CanvasWorkspace, { gitDir: string; commonDir: string }>();
+
 async function assertWorkspaceIdentity(workspace: CanvasWorkspace, signal?: AbortSignal): Promise<void> {
 	const expected = workspaceDir(workspace, "workspaces");
 	if (
@@ -174,22 +111,12 @@ async function assertWorkspaceIdentity(workspace: CanvasWorkspace, signal?: Abor
 	) {
 		throw new Error("Canvas worktree identity mismatch: canonical path changed");
 	}
-	const top = (await git(expected, ["rev-parse", "--show-toplevel"], signal)).trim();
-	const common = (await git(expected, ["rev-parse", "--path-format=absolute", "--git-common-dir"], signal)).trim();
-	const sourceCommon = (
-		await git(workspace.repoRoot, ["rev-parse", "--path-format=absolute", "--git-common-dir"], signal)
-	).trim();
-	const gitDir = (await git(expected, ["rev-parse", "--absolute-git-dir"], signal)).trim();
-	const canonicalGitDir = await realpath(gitDir);
-	const canonicalCommon = await realpath(common);
-	if (
-		resolve(top) !== expected ||
-		canonicalCommon !== (await realpath(sourceCommon)) ||
-		canonicalGitDir === canonicalCommon ||
-		!inside(join(canonicalCommon, "worktrees"), canonicalGitDir) ||
-		resolve((await readFile(join(canonicalGitDir, "gitdir"), "utf8")).trim()) !== join(expected, ".git")
-	) {
-		throw new Error("Canvas worktree identity mismatch: Git repository changed");
+	try {
+		const identity = workspaceIdentities.get(workspace);
+		if (!identity) throw new Error("Unregistered canvas workspace");
+		await verifyWorktreeIdentity(expected, workspace.repoRoot, signal, identity.gitDir, identity.commonDir);
+	} catch (error) {
+		throw new Error("Canvas worktree identity mismatch: Git repository changed", { cause: error });
 	}
 }
 
@@ -268,7 +195,7 @@ export async function prepareCanvasWorkspace(options: PrepareCanvasWorkspaceOpti
 	const worktreePath = workspaceDir(workspace, "workspaces");
 	await mkdir(resolve(worktreePath, ".."), { recursive: true });
 	if ((await canonicalPath(worktreePath)) !== worktreePath) throw new Error("Canvas worktree path is redirected");
-	await git(repoRoot, ["worktree", "add", "--detach", worktreePath, baseCommit], options.signal);
+	await createDetachedWorktree(repoRoot, worktreePath, baseCommit, options.signal);
 	// Once created, failures deliberately retain the workspace for inspection. Never remove dirty outputs.
 	for (const { layer, bytes } of patches) {
 		checkSignal(options.signal);
@@ -287,7 +214,7 @@ export async function prepareCanvasWorkspace(options: PrepareCanvasWorkspaceOpti
 	if (!inside(worktreePath, await canonicalPath(preparedCwd)))
 		throw new Error("Canvas integrated cwd escapes its worktree");
 	checkSignal(options.signal);
-	return {
+	const prepared: CanvasWorkspace = {
 		...workspace,
 		cwd: preparedCwd,
 		repoRoot,
@@ -295,6 +222,9 @@ export async function prepareCanvasWorkspace(options: PrepareCanvasWorkspaceOpti
 		baseCommit,
 		inputTree: await snapshotTree(worktreePath, workspace.dataDir, options.signal),
 	};
+	const identity = await verifyWorktreeIdentity(worktreePath, repoRoot, options.signal);
+	workspaceIdentities.set(prepared, { gitDir: identity.gitDir, commonDir: identity.commonDir });
+	return prepared;
 }
 
 /** Includes tracked changes, deletions, and non-ignored untracked files, including binary additions. */
@@ -362,4 +292,5 @@ export async function cleanupCanvasWorkspace(
 		throw new Error("Canvas workspace has pending artifacts or commits; retained for explicit adoption");
 	}
 	await git(workspace.repoRoot, ["worktree", "remove", workspace.worktreePath], options.signal);
+	workspaceIdentities.delete(workspace);
 }

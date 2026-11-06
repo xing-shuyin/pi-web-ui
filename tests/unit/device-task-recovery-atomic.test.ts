@@ -240,7 +240,8 @@ describe("Device Task Recovery Atomic & Immutability Tests", () => {
 
 		// Read new state file directly to verify versioned schema
 		const rawState = JSON.parse(readFileSync(newStateFile, "utf8"));
-		expect(rawState.version).toBe(1);
+		expect(rawState.version).toBe(2);
+		expect(rawState.quarantine).toEqual([]);
 		expect(rawState.deviceId).toBe("dev1");
 		expect(rawState.outbox).toBeInstanceOf(Array);
 		expect(rawState.outbox).toHaveLength(2); // 1 legacy completed + 1 halted orphan

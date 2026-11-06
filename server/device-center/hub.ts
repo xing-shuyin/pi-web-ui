@@ -19,12 +19,13 @@ import {
 import type { Request, Response, NextFunction } from "express";
 import { createServer, type Server } from "node:http";
 import type { IncomingMessage, ServerResponse } from "node:http";
-import { randomBytes, randomUUID } from "node:crypto";
+import { randomBytes, randomUUID, createHash } from "node:crypto";
 import {
 	DeviceHubStore,
 	hashSecret,
 	isTerminal,
 	taskPending,
+	taskHasImmutableEvidence,
 	publicDevice,
 	publicTask,
 	secretMatches,
@@ -56,8 +57,24 @@ import type {
 	DeviceTaskLeaseResult,
 	DeviceTaskState,
 	DeviceTaskUpdateRequest,
+	DeviceExecutionMode,
+	DeviceWorkContract,
+	ContextManifest,
 } from "../protocol.js";
-type DeliveryTask = HubTask & { context?: GroupTaskContext; taskState?: DeviceTaskState };
+type DeliveryTask = HubTask & {
+	context?: GroupTaskContext;
+	taskState?: DeviceTaskState;
+	executionMode?: DeviceExecutionMode;
+	contract?: DeviceWorkContract;
+	contextManifest?: ContextManifest;
+};
+import {
+	createWorkContract,
+	createContextManifest,
+	contractInputReferences,
+	MAX_CONTRACT_REQUEST_BYTES,
+	validateCodeArtifactOutcome,
+} from "./work-contract.js";
 import type { HubTask, Handoff, HubState } from "./store.js";
 import { createHubLockManager, validateResourceLocks } from "./hub-locks.js";
 import { createAccountAuth, hashPassword, verifyPassword, SESSION_TTL, HubRateLimiter } from "./hub-auth.js";
@@ -87,6 +104,7 @@ import {
 	type TaskSettlementEffects,
 } from "./task-settlement.js";
 import type { DeviceTaskEventFrame } from "../protocol.js";
+import { RELAY_LIMITS } from "./relay.js";
 
 export interface HubTaskEvent extends Omit<DeviceTaskEventFrame, "type"> {}
 export interface HubRelay {
@@ -308,11 +326,17 @@ export async function createDeviceHub(options: DeviceHubOptions) {
 		next();
 	});
 	const json = express.json({ limit: "32kb", strict: true });
+	const contractJson = express.json({ limit: MAX_CONTRACT_REQUEST_BYTES, strict: true });
 	const blackboardJson = express.json({ limit: "512kb", strict: true });
 	const reportJson = express.json({ limit: TASK_REPORT_UPLOAD_JSON_BYTES, strict: true });
 	const reportWrites = new HubRateLimiter(4096, 60000);
 	app.use((req, res, next) => {
 		if (agents.has(req) && req.path === "/api/agent/transfers") return next();
+		if (
+			req.method === "POST" &&
+			/^\/api\/rooms\/[^/]+\/(?:messages|tasks|conversations(?:\/[^/]+\/messages)?)$/.test(req.path)
+		)
+			return contractJson(req, res, next);
 		if (agents.has(req) && req.method === "POST" && /^\/api\/rooms\/[^/]+\/tasks\/[^/]+\/report$/.test(req.path)) {
 			if (!reportWrites.allow(agents.get(req)!.device.id))
 				return res.status(429).json({ error: "Too many report chunks" });
@@ -1291,6 +1315,7 @@ export async function createDeviceHub(options: DeviceHubOptions) {
 						(t) =>
 							t.roomId === activeRoom.id &&
 							isTerminal(t.status) &&
+							!taskHasImmutableEvidence(t) &&
 							!draft.conversations.some((c) => c.rootTaskId === t.id || c.id === t.conversationId),
 					)
 					.slice(0, -getHistoryLimit())
@@ -1357,6 +1382,12 @@ export async function createDeviceHub(options: DeviceHubOptions) {
 				conversationId: task.conversationId,
 				report: task.report,
 				...(task.attenuatedTools ? { attenuatedTools: task.attenuatedTools } : {}),
+				...(task.executionMode ? { executionMode: task.executionMode } : {}),
+				...(task.contract ? { contract: task.contract } : {}),
+				...(task.contextManifest ? { contextManifest: task.contextManifest } : {}),
+				...(task.artifact ? { artifact: task.artifact } : {}),
+				...(task.executionCompleted !== undefined ? { executionCompleted: task.executionCompleted } : {}),
+				...(task.artifactProduced !== undefined ? { artifactProduced: task.artifactProduced } : {}),
 			},
 			reportMeta,
 			interactionCount: interactions.length,
@@ -2022,7 +2053,18 @@ export async function createDeviceHub(options: DeviceHubOptions) {
 		);
 		if (!conversation) fail(404, "Conversation missing");
 
-		const allowedQueries = ["sourceBotId", "taskId", "deliveryId", "offset", "limit", "expectedDigest", "digest"];
+		const evidenceKind = req.query.evidenceKind ?? "report";
+		if (evidenceKind !== "report" && evidenceKind !== "artifact") fail(400, "Invalid evidenceKind");
+		const allowedQueries = [
+			"sourceBotId",
+			"taskId",
+			"deliveryId",
+			"offset",
+			"limit",
+			"expectedDigest",
+			"digest",
+			"evidenceKind",
+		];
 		for (const q of Object.keys(req.query)) {
 			if (!allowedQueries.includes(q)) fail(400, `Unknown query parameter: ${q}`);
 		}
@@ -2035,7 +2077,8 @@ export async function createDeviceHub(options: DeviceHubOptions) {
 		let limit = 8192;
 		if (req.query.limit !== undefined) {
 			limit = Number(req.query.limit);
-			if (!Number.isSafeInteger(limit) || limit < 1 || limit > 65536) fail(400, "Invalid limit");
+			if (!Number.isSafeInteger(limit) || limit < 1 || limit > (evidenceKind === "artifact" ? 24 * 1024 : 65536))
+				fail(400, "Invalid limit");
 		}
 		const expectedDigest =
 			typeof req.query.expectedDigest === "string"
@@ -2051,6 +2094,31 @@ export async function createDeviceHub(options: DeviceHubOptions) {
 			? state.deliveries.find((d) => d.id === deliveryId && d.conversationId === conversation.id)
 			: undefined;
 
+		if (evidenceKind === "artifact") {
+			if (!targetTask?.artifact) fail(404, "Task artifact missing");
+			if (expectedDigest && expectedDigest !== targetTask.artifact.digest)
+				fail(409, "Artifact version digest mismatch");
+			const { patchBase64, ...artifact } = targetTask.artifact;
+			if (typeof patchBase64 !== "string") fail(404, "Artifact patch missing");
+			const patch = Buffer.from(patchBase64, "base64");
+			if (offset > patch.length) fail(400, "Invalid offset");
+			const end = Math.min(offset + limit, patch.length);
+			res.json({
+				conversationId: conversation.id,
+				taskId,
+				artifact,
+				content: {
+					encoding: "base64",
+					data: patch.subarray(offset, end).toString("base64"),
+					offset,
+					limit,
+					totalBytes: patch.length,
+					nextOffset: end < patch.length ? end : null,
+					truncated: offset > 0 || end < patch.length,
+				},
+			});
+			return;
+		}
 		let evidence: TaskReportEvidence | undefined;
 
 		if (targetTask?.attemptId) {
@@ -2233,6 +2301,7 @@ export async function createDeviceHub(options: DeviceHubOptions) {
 	app.post(
 		[
 			"/api/rooms/:id/messages",
+			"/api/rooms/:id/tasks",
 			"/api/rooms/:id/conversations",
 			"/api/rooms/:id/conversations/:conversationId/messages",
 		],
@@ -2270,24 +2339,73 @@ export async function createDeviceHub(options: DeviceHubOptions) {
 			} catch (err: any) {
 				fail(400, err?.message ?? "Invalid resourceLocks");
 			}
-			const fingerprint = hashSecret(
-				JSON.stringify({
-					content,
-					attentionId,
-					targets,
-					conversationId,
-					kind,
-					requestId: req.body?.requestId,
-					transfer,
-					parentTaskId,
-					planOnly,
-					replyToMessageId,
-					resourceLocks,
-					sourceDeviceId: (agents.get(req) ?? users.get(req))?.device.id,
-					sourceBotId: agents.has(req) ? req.body?.sourceBotId : undefined,
-					senderType: agents.has(req) ? "bot" : "human",
-				}),
-			);
+
+			if (
+				req.body?.contract !== undefined &&
+				(!req.body.contract || typeof req.body.contract !== "object" || Array.isArray(req.body.contract))
+			)
+				fail(400, "Contract input must be a non-null object");
+			const rawExecutionMode = req.body?.executionMode;
+			const contractExecutionMode = req.body?.contract?.executionMode;
+			if (contractExecutionMode !== undefined && contractExecutionMode !== "chat" && contractExecutionMode !== "code")
+				fail(400, "Invalid contract executionMode: must be 'chat' or 'code'");
+			if (
+				rawExecutionMode !== undefined &&
+				contractExecutionMode !== undefined &&
+				rawExecutionMode !== contractExecutionMode
+			) {
+				fail(400, "executionMode conflicts with contract.executionMode.");
+			}
+			const executionMode: DeviceExecutionMode = rawExecutionMode ?? contractExecutionMode ?? "chat";
+			if (rawExecutionMode !== undefined && rawExecutionMode !== "chat" && rawExecutionMode !== "code") {
+				fail(400, "Invalid executionMode: must be 'chat' or 'code'");
+			}
+
+			let contract: DeviceWorkContract | undefined;
+			if (req.body?.contract !== undefined || executionMode === "code") {
+				try {
+					const stableFallbackId = `contract-${createHash("sha256").update(`${owner.id}:${req.params.id}:${key}`).digest("hex").slice(0, 16)}`;
+					contract = createWorkContract(
+						{
+							id: req.body?.contract?.id ?? stableFallbackId,
+							...(req.body?.contract ?? {}),
+							executionMode,
+						},
+						content,
+					);
+				} catch (err: any) {
+					fail(400, err?.message ?? "Invalid work contract");
+				}
+			}
+
+			const fingerprintFields = {
+				content,
+				attentionId,
+				targets,
+				conversationId,
+				kind,
+				requestId: req.body?.requestId,
+				transfer,
+				parentTaskId,
+				planOnly,
+				replyToMessageId,
+				resourceLocks,
+				executionMode,
+				contractDigest: contract?.digest,
+				contractId: contract?.id,
+				contractRevision: contract?.revision,
+				sourceDeviceId: (agents.get(req) ?? users.get(req))?.device.id,
+				sourceBotId: agents.has(req) ? req.body?.sourceBotId : undefined,
+				senderType: agents.has(req) ? "bot" : "human",
+			};
+			const fingerprint = hashSecret(JSON.stringify(fingerprintFields));
+			// v45 chat receipts predate the optional execution contract fields.
+			const legacyFingerprint =
+				executionMode === "chat" && !contract
+					? hashSecret(JSON.stringify({ ...fingerprintFields, executionMode: undefined }))
+					: undefined;
+			const matchesFingerprint = (stored: string | undefined) =>
+				stored === fingerprint || (legacyFingerprint !== undefined && stored === legacyFingerprint);
 			const result = await store.transact((draft) => {
 				const room = draft.rooms.find((r) => r.id === req.params.id && r.accountId === owner.id);
 				if (!room) fail(404, "Room missing");
@@ -2343,7 +2461,17 @@ export async function createDeviceHub(options: DeviceHubOptions) {
 							),
 					);
 					if (prior) {
-						if (prior.fingerprint !== fingerprint) fail(409, "Idempotency key reused");
+						if (!matchesFingerprint(prior.fingerprint)) fail(409, "Idempotency key reused");
+						const priorTask = draft.tasks.find((t) => t.id === prior.taskId);
+						if (priorTask) {
+							if (
+								priorTask.contract?.digest !== contract?.digest ||
+								priorTask.contract?.revision !== contract?.revision ||
+								(priorTask.executionMode ?? "chat") !== executionMode
+							) {
+								fail(409, "Idempotency key reused with different contract");
+							}
+						}
 						return {
 							message: draft.messages.find((m) => m.taskIds.includes(prior.taskId)),
 							tasks: draft.tasks.filter((t) => t.id === prior.taskId),
@@ -2353,7 +2481,19 @@ export async function createDeviceHub(options: DeviceHubOptions) {
 				}
 				const receipt = draft.receipts.find((r) => r.roomId === room.id && r.accountId === owner.id && r.key === key);
 				if (receipt) {
-					if (receipt.fingerprint !== fingerprint) fail(409, "Idempotency key reused");
+					if (!matchesFingerprint(receipt.fingerprint)) fail(409, "Idempotency key reused");
+					const priorReceiptTask = draft.tasks.find((t) =>
+						draft.messages.find((m) => m.id === receipt.messageId)?.taskIds.includes(t.id),
+					);
+					if (priorReceiptTask) {
+						if (
+							priorReceiptTask.contract?.digest !== contract?.digest ||
+							priorReceiptTask.contract?.revision !== contract?.revision ||
+							(priorReceiptTask.executionMode ?? "chat") !== executionMode
+						) {
+							fail(409, "Idempotency key reused with different contract");
+						}
+					}
 					return {
 						message: draft.messages.find((m) => m.id === receipt.messageId),
 						tasks: draft.tasks.filter((t) =>
@@ -2361,6 +2501,36 @@ export async function createDeviceHub(options: DeviceHubOptions) {
 						),
 						duplicate: true,
 					};
+				}
+
+				if (contract) {
+					const existingTasks = draft.tasks.filter(
+						(t) => t.roomId === room.id && t.accountId === owner.id && t.contract?.id === contract!.id,
+					);
+					if (
+						existingTasks.some(
+							(t) => t.contract!.revision === contract.revision && t.contract!.digest !== contract.digest,
+						)
+					)
+						fail(409, "Contract id and revision already bind different content");
+					// Queued leases and recovery represent live work. Replace only settled versions.
+					if (
+						existingTasks.some(
+							(t) =>
+								t.contract!.revision < contract.revision && (!isTerminal(t.status) || isRecoveringTask(t, Date.now())),
+						)
+					)
+						fail(409, "Cannot advance contract revision while an older revision is active");
+					if (depTask?.contract?.id === contract.id && depTask.contract.revision !== contract.revision)
+						fail(409, "A contract revision cannot inherit acceptance from a different revision");
+					for (const existing of existingTasks) {
+						if (existing.contract && existing.contract.revision > contract.revision) {
+							fail(
+								409,
+								`Contract '${contract.id}' already has a newer revision ${existing.contract.revision} (cannot submit older revision ${contract.revision})`,
+							);
+						}
+					}
 				}
 				// Resolve implicit human targets after replay detection so retries remain stable across configuration changes.
 				if (!source && !conversationApi && !targets.length && room.primaryBotId) {
@@ -2507,6 +2677,8 @@ export async function createDeviceHub(options: DeviceHubOptions) {
 						...(transfer ? { handoff: transfer } : {}),
 						...(parentTaskId ? { parentTaskId } : {}),
 						...(attenuatedTools ? { attenuatedTools } : {}),
+						executionMode,
+						...(contract ? { contract } : {}),
 					};
 				});
 				for (const task of tasks) {
@@ -2531,7 +2703,7 @@ export async function createDeviceHub(options: DeviceHubOptions) {
 								: undefined;
 					if (targetConv) {
 						task.conversationId = targetConv.id;
-						task.resume = true;
+						task.resume = task.executionMode !== "code";
 						advanceConversationTask(draft, targetConv, task);
 						targetConv.rootTaskId = task.rootTaskId!;
 						targetConv.updatedAt = now;
@@ -2584,6 +2756,7 @@ export async function createDeviceHub(options: DeviceHubOptions) {
 							(t) =>
 								t.roomId === room.id &&
 								isTerminal(t.status) &&
+								!taskHasImmutableEvidence(t) &&
 								!draft.conversations.some((c) => c.rootTaskId === t.id || c.id === t.conversationId),
 						)
 						.slice(0, -getHistoryLimit())
@@ -2775,6 +2948,19 @@ export async function createDeviceHub(options: DeviceHubOptions) {
 		);
 	}
 
+	function isSupersededContractTask(state: HubState, task: HubTask): boolean {
+		return (
+			!!task.contract &&
+			state.tasks.some(
+				(other) =>
+					other.accountId === task.accountId &&
+					other.roomId === task.roomId &&
+					other.contract?.id === task.contract!.id &&
+					other.contract.revision > task.contract!.revision,
+			)
+		);
+	}
+
 	function settlementContext() {
 		return { settings: currentSettings(), getHistoryLimit };
 	}
@@ -2911,6 +3097,22 @@ export async function createDeviceHub(options: DeviceHubOptions) {
 					current.lastHeartbeatAt = Date.now();
 					task.leaseToken = current.leaseToken;
 					task.leaseGeneration = current.leaseGeneration;
+
+					if (current.contract && !current.contextManifest) {
+						const activeTaskState = draft.conversations.find((entry) => entry.id === task.conversationId)?.taskState;
+						current.contextManifest = createContextManifest({
+							contract: current.contract,
+							executionPolicy: { deviceId: current.deviceId, botId: current.botId, botRevision: current.botRevision },
+							context: context ?? null,
+							taskState: activeTaskState ?? null,
+							inputs: contractInputReferences(current.contract),
+							policyRef: "server/device-center/group-context.ts#groupTaskContext",
+							truncationBudget: currentSettings().groupContextBytes,
+						});
+					}
+					if (current.contextManifest) {
+						task.contextManifest = current.contextManifest;
+					}
 				}
 				const conversation = draft.conversations.find((entry) => entry.id === task.conversationId);
 				if (conversation && !conversation.closed) {
@@ -2925,25 +3127,30 @@ export async function createDeviceHub(options: DeviceHubOptions) {
 			)
 				throw new Error("Conversation stopped before delivery");
 			const taskState = committed.conversations.find((entry) => entry.id === task.conversationId)?.taskState;
-			if (
-				!deliver ||
-				(await deliver(task.deviceId, {
-					...task,
-					leaseToken: task.leaseToken,
-					leaseGeneration: task.leaseGeneration,
-					context,
-					taskState,
-				})) === false
-			)
-				throw new Error("Delivery rejected");
-		} catch {
+			const wire: DeliveryTask = {
+				...task,
+				// Runtime consumes sealed snapshots directly. Legacy copies would count
+				// their serialized size twice and can exceed the relay frame ceiling.
+				...(task.contextManifest ? {} : { context, taskState }),
+				executionMode: task.executionMode ?? task.contract?.executionMode ?? "chat",
+			};
+			if (Buffer.byteLength(JSON.stringify({ type: "task", task: wire })) > RELAY_LIMITS.frame)
+				throw new HttpError(413, `Task payload exceeds relay frame size of ${RELAY_LIMITS.frame} bytes`);
+			if (!deliver || (await deliver(task.deviceId, wire)) === false) throw new Error("Delivery rejected");
+		} catch (error) {
 			const failure = await store.transact((draft) => {
 				const current = draft.tasks.find((entry) => entry.id === task.id && entry.attemptId === task.attemptId);
 				if (!current || isTerminal(current.status) || current.cancelRequested) return;
 				const notice = recordTaskOutcome(
 					draft,
 					current,
-					{ status: "failed", report: "Task delivery failed; submit a new request to retry." },
+					{
+						status: "failed",
+						report:
+							error instanceof HttpError && error.status === 413
+								? error.message
+								: "Task delivery failed; submit a new request to retry.",
+					},
 					settlementContext(),
 				);
 				const result = settleTaskDependencies(draft, settlementContext());
@@ -2982,13 +3189,38 @@ export async function createDeviceHub(options: DeviceHubOptions) {
 		}
 		const result = await store.transact((draft) => {
 			if (event.status !== "running") {
+				const device = draft.devices.find((entry) => entry.id === deviceId);
+				const targetTask = draft.tasks.find(
+					(entry) =>
+						entry.id === event.taskId &&
+						entry.deviceId === deviceId &&
+						entry.botId === event.botId &&
+						entry.accountId === device?.accountId,
+				);
+				// Settle identity and durable terminal conflicts first, so an obsolete
+				// artifact can receive a bound permanent rejection rather than retry forever.
 				const settled = settleTaskTerminalOutcome(
 					draft,
 					deviceId,
 					{ ...event, type: "task_event", reportMetadata } as DeviceTaskEventFrame,
 					settlementContext(),
 				);
-				if (!settled.accepted) fail(settled.statusCode ?? 409, settled.reason ?? "Outcome rejected");
+				if (!settled.accepted)
+					throw Object.assign(new HttpError(settled.statusCode ?? 409, settled.reason ?? "Outcome rejected"), {
+						permanent: settled.permanent,
+						reasonCode: settled.reasonCode,
+					});
+
+				if (targetTask) {
+					const validation = validateCodeArtifactOutcome({
+						task: targetTask,
+						artifact: event.artifact,
+						executionCompleted: event.executionCompleted,
+						artifactProduced: event.artifactProduced,
+					});
+					if (!validation.valid) fail(400, `Invalid code task outcome: ${validation.reason}`);
+					if (!settled.duplicate && validation.artifact) targetTask.artifact = validation.artifact;
+				}
 				return settled;
 			}
 			const device = draft.devices.find((entry) => entry.id === deviceId);
@@ -3015,6 +3247,7 @@ export async function createDeviceHub(options: DeviceHubOptions) {
 				task.leaseGeneration !== event.leaseGeneration
 			)
 				fail(409, "Attempt or lease mismatch");
+			if (isSupersededContractTask(draft, task)) fail(409, "Contract revision superseded");
 			if (!bot.enabled || bot.revision !== task.botRevision || task.cancelRequested || task.stopConfirmed)
 				fail(409, "Task unavailable");
 			if (task.recoveryUntil !== undefined && Date.now() > task.recoveryUntil) fail(409, "Recovery window expired");
@@ -3134,6 +3367,13 @@ export async function createDeviceHub(options: DeviceHubOptions) {
 			if (!task || !device) {
 				return { taskId: claim.taskId, attemptId: claim.attemptId, accepted: false, reason: "Task not found" };
 			}
+			if (isSupersededContractTask(draft, task))
+				return {
+					taskId: claim.taskId,
+					attemptId: claim.attemptId,
+					accepted: false,
+					reason: "Contract revision superseded",
+				};
 			if (task.recoveryUntil !== undefined && Date.now() > task.recoveryUntil)
 				return { taskId: claim.taskId, attemptId: claim.attemptId, accepted: false, reason: "Recovery window expired" };
 			const inRecovery = isRecoveringTask(task, Date.now());
@@ -3226,6 +3466,13 @@ export async function createDeviceHub(options: DeviceHubOptions) {
 			if (!task || !device || task.status !== "running") {
 				return { taskId: renew.taskId, attemptId: renew.attemptId, accepted: false, reason: "Task not running" };
 			}
+			if (isSupersededContractTask(draft, task))
+				return {
+					taskId: renew.taskId,
+					attemptId: renew.attemptId,
+					accepted: false,
+					reason: "Contract revision superseded",
+				};
 			if (task.cancelRequested || task.stopConfirmed) {
 				return { taskId: renew.taskId, attemptId: renew.attemptId, accepted: false, reason: "Task stop requested" };
 			}

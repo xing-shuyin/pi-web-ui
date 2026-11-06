@@ -1,5 +1,12 @@
 import { randomUUID } from "node:crypto";
-import { isTerminal, taskPending, type HubState, type HubTask, type HubConversation } from "./store.js";
+import {
+	isTerminal,
+	taskPending,
+	taskHasImmutableEvidence,
+	type HubState,
+	type HubTask,
+	type HubConversation,
+} from "./store.js";
 
 /** Closed conversations kept per room for reading history; open ones are capacity, closed ones are archive. */
 export const CLOSED_CONVERSATION_RETENTION = 200;
@@ -21,7 +28,8 @@ export function conversationHasAuditRecords(state: HubState, conversationId: str
 	return (
 		state.deliveries.some((delivery) => delivery.conversationId === conversationId) ||
 		state.reviews.some((review) => review.conversationId === conversationId) ||
-		state.integrations.some((integration) => integration.conversationId === conversationId)
+		state.integrations.some((integration) => integration.conversationId === conversationId) ||
+		state.tasks.some((task) => task.conversationId === conversationId && taskHasImmutableEvidence(task))
 	);
 }
 
@@ -69,7 +77,9 @@ export function trimRoomReceipts(state: HubState, roomId: string, limit = ROOM_R
 
 export function trimConversationHistory(state: HubState, roomId: string, limit = 500) {
 	const protectedIds = new Set<string>();
-	for (const task of state.tasks.filter((t) => t.roomId === roomId && taskPending(t))) {
+	for (const task of state.tasks.filter(
+		(t) => t.roomId === roomId && (taskPending(t) || taskHasImmutableEvidence(t)),
+	)) {
 		protectedIds.add(task.id);
 		if (task.rootTaskId) protectedIds.add(task.rootTaskId);
 		let ancestor = task.parentTaskId;
@@ -101,7 +111,16 @@ export function conversationPage(state: HubState, conversationId: string, before
 		if (!messages.length && size > 60 * 1024) {
 			message = { ...message, text: message.text.slice(0, 1024) };
 			if (task)
-				task = { ...task, text: task.text.slice(0, 1024), report: task.report?.slice(0, 1024), handoff: undefined };
+				task = {
+					...task,
+					text: task.text.slice(0, 1024),
+					report: task.report?.slice(0, 1024),
+					handoff: undefined,
+					// Full immutable payloads remain on the task; history pages are bounded projections.
+					contract: undefined,
+					contextManifest: undefined,
+					artifact: undefined,
+				};
 			truncated = true;
 			size = Buffer.byteLength(JSON.stringify({ message, task: includeTask ? task : undefined }));
 		}
