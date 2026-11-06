@@ -7,7 +7,15 @@ import {
 import { appUrl } from "../base-url";
 import { withToken } from "../auth-token";
 import type { GroupDevice } from "../device-group-messages";
-import type { DeviceDelivery, DeviceIntegration, DeviceReview } from "../types";
+import type { DeviceDelivery, DeviceIntegration, DeviceIntegrationListResponse, DeviceReview } from "../types";
+
+function publicationPending(integration: DeviceIntegration | null | undefined): boolean {
+	return (
+		!!integration?.publishIntent &&
+		((!!integration.publishStop && !integration.publishStop.stopConfirmed) ||
+			(!integration.publishReceipt && !(integration.publishStop?.closed && integration.publishStop.stopConfirmed)))
+	);
+}
 
 async function request<T>(path: string, signal: AbortSignal, body?: object, timeoutMs = 30000): Promise<T> {
 	const response = await fetch(withToken(appUrl(`/api/device-center/${path}`)), {
@@ -44,6 +52,7 @@ export function GroupIntegration({
 }: GroupIntegrationProps) {
 	const [, setIntegrations] = useState<DeviceIntegration[]>([]);
 	const [activeIntegration, setActiveIntegration] = useState<DeviceIntegration | null>(null);
+	const [canResumePublication, setCanResumePublication] = useState(false);
 	const [targetBotId, setTargetBotId] = useState<string>(delivery.botId || bots[0]?.id || "");
 	const [targetBranch, setTargetBranch] = useState<string>(delivery.branch || "main");
 	const [selectedCommands, setSelectedCommands] = useState<string[]>([]);
@@ -67,6 +76,7 @@ export function GroupIntegration({
 		generationRef.current++;
 		controllerRef.current?.abort();
 		setActiveIntegration(null);
+		setCanResumePublication(false);
 		setTargetBotId(delivery.botId || bots[0]?.id || "");
 		setTargetBranch(delivery.branch || "main");
 		setSelectedCommands([]);
@@ -95,8 +105,9 @@ export function GroupIntegration({
 
 		async function load() {
 			try {
-				const res = await request<{ integrations: DeviceIntegration[] }>(basePath, ctrl.signal, undefined, 15000);
+				const res = await request<DeviceIntegrationListResponse>(basePath, ctrl.signal, undefined, 15000);
 				if (ctrl.signal.aborted || generation !== generationRef.current) return;
+				setCanResumePublication(res.canResumePublication === true);
 				const list = res.integrations || [];
 				setIntegrations(list);
 				const current = list.filter((it) => it.deliveryId === delivery.id).sort((a, b) => b.createdAt - a.createdAt)[0];
@@ -117,13 +128,15 @@ export function GroupIntegration({
 		};
 	}, [isOpen, roomId, conversationId, delivery.id, delivery.commit, delivery.artifactRef?.artifactDigest]);
 
-	// A lost Verify response can leave an authoritative operation running on the server.
+	// Recovery observes an existing operation; it never repeats apply or resume.
+	const pendingPublication = publicationPending(activeIntegration);
 	useEffect(() => {
 		if (
 			!isOpen ||
 			disabled ||
 			busy ||
-			activeIntegration?.status !== "verifying" ||
+			!activeIntegration ||
+			(activeIntegration.status !== "verifying" && !pendingPublication) ||
 			activeIntegration.deliveryId !== delivery.id
 		)
 			return;
@@ -138,9 +151,17 @@ export function GroupIntegration({
 		const current = () => !ctrl.signal.aborted && generation === generationRef.current;
 		const exhausted = () =>
 			setError(
-				zh
-					? "验证仍在运行，稍后关闭并重新打开此面板以刷新状态。"
-					: "Verification is still running. Close and reopen this panel later to refresh its status.",
+				pendingPublication
+					? activeIntegration.publishReceipt
+						? zh
+							? "已记录发布效果，原进程停止仍未确认。请稍后回查。"
+							: "Publication effect is recorded; original process stop remains unconfirmed. Reconcile later."
+						: zh
+							? "发布结果仍未知。稍后手动回查；不会自动重发写入。"
+							: "Publication outcome remains unknown. Reconcile later; writes are never retried automatically."
+					: zh
+						? "验证仍在运行，稍后关闭并重新打开此面板以刷新状态。"
+						: "Verification is still running. Close and reopen this panel later to refresh its status.",
 			);
 		async function refresh() {
 			if (!current()) return;
@@ -150,19 +171,30 @@ export function GroupIntegration({
 			}
 			attempts++;
 			try {
-				const res = await request<{ integrations: DeviceIntegration[] }>(
-					basePath,
-					ctrl.signal,
-					undefined,
-					Math.min(15000, deadline - Date.now()),
-				);
+				let integration: DeviceIntegration | undefined;
+				if (pendingPublication) {
+					const res = await request<{ integration: DeviceIntegration }>(
+						`${basePath}/${encodeURIComponent(integrationId)}/reconcile`,
+						ctrl.signal,
+						{},
+						Math.min(INTEGRATION_UI_TIMEOUT_MS, deadline - Date.now()),
+					);
+					integration = res.integration;
+				} else {
+					const res = await request<DeviceIntegrationListResponse>(
+						basePath,
+						ctrl.signal,
+						undefined,
+						Math.min(15000, deadline - Date.now()),
+					);
+					if (!current()) return;
+					setCanResumePublication(res.canResumePublication === true);
+					integration = res.integrations.find((item) => item.id === integrationId && item.deliveryId === delivery.id);
+				}
 				if (!current()) return;
-				const integration = res.integrations.find(
-					(item) => item.id === integrationId && item.deliveryId === delivery.id,
-				);
-				if (integration) {
+				if (integration?.id === integrationId && integration.deliveryId === delivery.id) {
 					setActiveIntegration(integration);
-					if (integration.status !== "verifying") {
+					if (integration.status !== "verifying" && !publicationPending(integration)) {
 						setError(integration.error ?? "");
 						return;
 					}
@@ -182,11 +214,21 @@ export function GroupIntegration({
 			ctrl.abort();
 			clearTimeout(timer);
 		};
-	}, [isOpen, disabled, busy, activeIntegration?.id, activeIntegration?.status, delivery.id, basePath, zh]);
+	}, [
+		isOpen,
+		disabled,
+		busy,
+		activeIntegration?.id,
+		activeIntegration?.status,
+		pendingPublication,
+		delivery.id,
+		basePath,
+		zh,
+	]);
 
 	// 准备集成（在隔离 worktree 中检出并尝试预合并）
 	async function handlePrepare() {
-		if (disabled || busy || !targetBotId || (!delivery.artifactRef && !accepted)) return;
+		if (disabled || busy || !targetBotId || !canStartNew) return;
 		const generation = ++generationRef.current;
 		controllerRef.current?.abort();
 		const ctrl = new AbortController();
@@ -284,7 +326,7 @@ export function GroupIntegration({
 		}
 	}
 
-	// 用户最后明确确认后才写入目标 branch
+	// Every write requires an explicit action. A lost response only triggers observation.
 	async function handleApply() {
 		if (disabled || busy || !activeIntegration || !canApply) return;
 		const generation = ++generationRef.current;
@@ -307,11 +349,58 @@ export function GroupIntegration({
 		} catch (err) {
 			if (!ctrl.signal.aborted && generation === generationRef.current) {
 				setError(err instanceof Error ? err.message : String(err));
+				await refreshAfterPublicationError(activeIntegration.id, ctrl, generation);
 			}
 		} finally {
-			if (generation === generationRef.current) {
-				setBusy(false);
+			if (generation === generationRef.current) setBusy(false);
+		}
+	}
+
+	async function refreshAfterPublicationError(id: string, ctrl: AbortController, generation: number) {
+		try {
+			const res = await request<DeviceIntegrationListResponse>(basePath, ctrl.signal, undefined, 15000);
+			if (ctrl.signal.aborted || generation !== generationRef.current) return;
+			setCanResumePublication(res.canResumePublication === true);
+			const current = res.integrations.find((item) => item.id === id && item.deliveryId === delivery.id);
+			if (current) {
+				setActiveIntegration(current);
+				if (current.publishReceipt || (current.publishStop?.closed && current.publishStop.stopConfirmed))
+					setError(current.error ?? "");
 			}
+		} catch {
+			/* Keep the original transport error; never infer no effect. */
+		}
+	}
+
+	async function handlePublicationAction(action: "reconcile" | "resume") {
+		if (disabled || busy || !activeIntegration?.publishIntent || (action === "resume" && !canResume)) return;
+		const integration = activeIntegration;
+		const intent = integration.publishIntent!;
+		const generation = ++generationRef.current;
+		controllerRef.current?.abort();
+		const ctrl = new AbortController();
+		controllerRef.current = ctrl;
+		setBusy(true);
+		setError("");
+		try {
+			const res = await request<{ integration: DeviceIntegration }>(
+				`${basePath}/${encodeURIComponent(integration.id)}/${action}`,
+				ctrl.signal,
+				action === "resume"
+					? { intentId: intent.id, intentDigest: intent.digest, candidateSha: intent.candidateSha }
+					: {},
+				INTEGRATION_UI_TIMEOUT_MS,
+			);
+			if (ctrl.signal.aborted || generation !== generationRef.current) return;
+			setActiveIntegration(res.integration);
+			setIntegrations((prev) => prev.map((item) => (item.id === res.integration.id ? res.integration : item)));
+		} catch (cause) {
+			if (!ctrl.signal.aborted && generation === generationRef.current) {
+				setError(cause instanceof Error ? cause.message : String(cause));
+				await refreshAfterPublicationError(integration.id, ctrl, generation);
+			}
+		} finally {
+			if (generation === generationRef.current) setBusy(false);
 		}
 	}
 
@@ -338,25 +427,48 @@ export function GroupIntegration({
 		} catch (err) {
 			if (!ctrl.signal.aborted && generation === generationRef.current) {
 				setError(err instanceof Error ? err.message : String(err));
+				await refreshAfterPublicationError(activeIntegration.id, ctrl, generation);
 			}
 		} finally {
-			if (generation === generationRef.current) {
-				setBusy(false);
-			}
+			if (generation === generationRef.current) setBusy(false);
 		}
 	}
 
-	const isApplied = activeIntegration?.status === "applied";
+	const isApplied = !!activeIntegration?.publishReceipt || activeIntegration?.status === "applied";
+	const closedPublication = !!activeIntegration?.publishStop?.closed && activeIntegration.publishStop.stopConfirmed;
+	const legacyUnknown =
+		!!activeIntegration &&
+		!activeIntegration.publishIntent &&
+		(["applying", "cancelling"].includes(activeIntegration.status) ||
+			(activeIntegration.status === "failed" &&
+				/Apply failed; check target outcome|Publication outcome unknown/.test(activeIntegration.error ?? "")));
+	const publicationUnknown =
+		!isApplied &&
+		((!!activeIntegration?.publishIntent &&
+			!(closedPublication && activeIntegration.publishStop?.pastEffect === "not_applied")) ||
+			legacyUnknown);
+	const canResume =
+		canResumePublication &&
+		activeIntegration?.publishObservation?.retryable === true &&
+		!activeIntegration.publishStop?.closed &&
+		!activeIntegration.publishReceipt &&
+		activeIntegration.status !== "cancelling";
+	const canStartNew = (!!delivery.artifactRef || acceptedForDelivery()) && !pendingPublication && !legacyUnknown;
+	function acceptedForDelivery() {
+		return review?.verdict === "accepted" && deliveryReviewMatches(delivery, review);
+	}
 	const isConflict = activeIntegration?.status === "conflict";
 	const isCancelled = activeIntegration?.status === "cancelled";
 	const canVerify =
 		!activeIntegration?.verification &&
+		!activeIntegration?.publishIntent &&
 		(activeIntegration?.status === "prepared" ||
 			(activeIntegration?.status === "failed" && !!activeIntegration.verificationPlan));
 	const planLocked = !!activeIntegration?.verificationPlan || !!authorizedCommands;
 	const accepted = review?.verdict === "accepted" && deliveryReviewMatches(delivery, review);
 	const canApply =
 		activeIntegration?.status === "verified" &&
+		!activeIntegration.publishIntent &&
 		!!activeIntegration.verification?.digest &&
 		accepted &&
 		(!delivery.artifactRef
@@ -372,8 +484,6 @@ export function GroupIntegration({
 					),
 				));
 
-	if (!delivery.artifactRef && !accepted) return null;
-
 	return (
 		<details
 			className="gi-panel"
@@ -386,11 +496,15 @@ export function GroupIntegration({
 					? zh
 						? "已合并"
 						: "Merged"
-					: activeIntegration
-						? activeIntegration.status
-						: zh
-							? "待集成"
-							: "Ready to integrate"}
+					: publicationUnknown
+						? zh
+							? "发布结果未知"
+							: "Publication outcome unknown"
+						: activeIntegration
+							? activeIntegration.status
+							: zh
+								? "待集成"
+								: "Ready to integrate"}
 			</summary>
 			<div style={{ marginTop: "0.5rem" }}>
 				<p style={{ margin: "0 0 0.5rem 0", fontSize: "0.85rem", color: "var(--text-faint)" }}>
@@ -405,6 +519,78 @@ export function GroupIntegration({
 					</p>
 				)}
 
+				{activeIntegration?.publishIntent && (
+					<div className="gi-publication" style={{ overflowWrap: "anywhere", wordBreak: "break-word", minWidth: 0 }}>
+						<p role="status">
+							{isApplied
+								? zh
+									? `已记录发布效果（证据：${activeIntegration.publishReceipt?.proof ?? "legacy"}）。`
+									: `Publication effect recorded (proof: ${activeIntegration.publishReceipt?.proof ?? "legacy"}).`
+								: publicationUnknown
+									? zh
+										? "发布结果未知。回查只读取证据，不会自动重新写入分支。"
+										: "Publication outcome unknown. Reconciliation observes evidence and never retries branch writes."
+									: zh
+										? "已确认在发布前取消。"
+										: "Cancellation before publication is confirmed."}
+						</p>
+						<div>
+							{zh ? "发布意图：" : "Intent: "}
+							<code>{activeIntegration.publishIntent.id}</code>
+						</div>
+						<div>
+							{zh ? "候选提交：" : "Candidate: "}
+							<code>{activeIntegration.publishIntent.candidateSha}</code>
+						</div>
+						{activeIntegration.publishObservation && (
+							<p>
+								{zh ? "当前目标观察：" : "Current target observation: "}
+								{activeIntegration.publishObservation.target}{" "}
+								<code>{activeIntegration.publishObservation.targetSha}</code>
+							</p>
+						)}
+						{activeIntegration.publishStop && (
+							<p>
+								{!activeIntegration.publishStop.stopConfirmed
+									? zh
+										? "已封闭未来写入；原发布进程停止尚未确认，仍保持隔离。"
+										: "Future writes are fenced; the original publication process has not been confirmed stopped and remains isolated."
+									: activeIntegration.publishStop.pastEffect === "unknown"
+										? zh
+											? "已封闭写入并确认进程停止；历史发布结果仍未知。"
+											: "Writes are fenced and process stop is confirmed; historical publication outcome remains unknown."
+										: zh
+											? "已确认封闭并停止发布操作。"
+											: "Publication operation is fenced and confirmed stopped."}
+							</p>
+						)}
+						<button
+							type="button"
+							className="btn"
+							disabled={disabled || busy}
+							onClick={() => void handlePublicationAction("reconcile")}
+						>
+							{zh ? "回查发布证据" : "Reconcile publication"}
+						</button>
+						{canResume && (
+							<button
+								type="button"
+								className="btn"
+								disabled={disabled || busy}
+								onClick={() => void handlePublicationAction("resume")}
+							>
+								{zh ? "恢复同一发布意图" : "Resume same publication intent"}
+							</button>
+						)}
+					</div>
+				)}
+				{legacyUnknown && (
+					<p role="status">
+						{zh
+							? "旧发布记录缺少持久意图，历史结果未知。需本机核查；不会自动重试。"
+							: "Legacy publication has no durable intent; its historical outcome is unknown. Local inspection is required; it will not retry automatically."}
+					</p>
+				)}
 				{!activeIntegration || isCancelled ? (
 					<div className="gi-prepare-form" style={{ display: "flex", flexDirection: "column", gap: "0.5rem" }}>
 						<div style={{ display: "flex", gap: "0.5rem", flexWrap: "wrap", alignItems: "center" }}>
@@ -438,7 +624,7 @@ export function GroupIntegration({
 							<button
 								type="button"
 								className="btn primary"
-								disabled={disabled || busy || !targetBotId}
+								disabled={disabled || busy || !targetBotId || !canStartNew}
 								onClick={() => void handlePrepare()}
 							>
 								{busy ? (zh ? "准备中…" : "Preparing…") : zh ? "准备隔离集成" : "Prepare Isolated Integration"}
@@ -455,10 +641,14 @@ export function GroupIntegration({
 										color: isApplied ? "var(--green, #10b981)" : isConflict ? "var(--red, #f43f5e)" : "var(--accent)",
 									}}
 								>
-									{activeIntegration.status}
+									{publicationUnknown
+										? zh
+											? "发布结果未知"
+											: "Publication outcome unknown"
+										: activeIntegration.status}
 								</span>
 							</span>
-							{!isApplied && !isCancelled && (
+							{(!isApplied || pendingPublication) && !isCancelled && !closedPublication && (
 								<button
 									type="button"
 									className="btn danger"
@@ -466,7 +656,13 @@ export function GroupIntegration({
 									onClick={() => void handleCancel()}
 									style={{ fontSize: "0.75rem", padding: "0.2rem 0.5rem" }}
 								>
-									{zh ? "取消集成" : "Cancel"}
+									{isApplied
+										? zh
+											? "封闭写入并确认进程停止"
+											: "Fence writes & confirm process stop"
+										: zh
+											? "取消集成"
+											: "Cancel"}
 								</button>
 							)}
 						</div>
@@ -667,14 +863,14 @@ export function GroupIntegration({
 								</details>
 							</div>
 						)}
-						{activeIntegration.verification && !canApply && !isApplied && (
+						{activeIntegration.verification && !canApply && !isApplied && !activeIntegration.publishIntent && (
 							<p>
 								{zh
 									? "请完成与本次验证对应的独立验收，再确认合并。"
 									: "Complete an independent review for this verification before confirming the merge."}
 							</p>
 						)}
-						{!isApplied && (
+						{!isApplied && canStartNew && (
 							<button type="button" className="btn" disabled={disabled || busy} onClick={() => void handlePrepare()}>
 								{zh ? "新建整合与验证" : "Start a new integration & verification"}
 							</button>
@@ -712,8 +908,8 @@ export function GroupIntegration({
 							>
 								✓{" "}
 								{zh
-									? `已成功合并写入分支 ${activeIntegration.targetBranch}`
-									: `Successfully merged into branch ${activeIntegration.targetBranch}`}
+									? `已记录分支 ${activeIntegration.targetBranch} 的历史发布结果；当前分支状态以上方观察为准。`
+									: `Historical publication recorded for branch ${activeIntegration.targetBranch}; see the current target observation above.`}
 							</div>
 						)}
 					</div>

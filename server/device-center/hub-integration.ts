@@ -1,7 +1,13 @@
 import { randomUUID } from "node:crypto";
-import type { DeviceDelivery, DeviceIntegration, DeviceReview } from "../protocol.js";
+import type { DeviceDelivery, DeviceIntegration, DeviceReview, DeviceIntegrationResumeRequest } from "../protocol.js";
+import { sealPublishIntent, validatePublishIntent, validatePublicationResult } from "./publish-intent.js";
 import { getAcceptedDeliveryForIntegration } from "./hub-deliveries.js";
-import { assertDeliveryAuthority, assertNoApplyingIntegration } from "./delivery-authority.js";
+import {
+	assertDeliveryAuthority,
+	assertNoApplyingIntegration,
+	hasOpenPublication,
+	isLegacyPublicationUnknown,
+} from "./delivery-authority.js";
 import { artifactRefsMatch, deliveryReviewMatches } from "./delivery-subject.js";
 import {
 	computeVerificationDigest,
@@ -65,6 +71,8 @@ function wrapRpcError(error: unknown): Error {
 export interface IntegrationActor {
 	accountId: string;
 	bot?: Bot;
+	/** Authenticated historical device identity, for read-only reconcile only. */
+	originalBot?: { id: string; deviceId: string; accountId: string };
 }
 export interface HubIntegrationDriver {
 	callDeviceCommand: (
@@ -79,6 +87,7 @@ export type HubStoreLike = Pick<DeviceHubStore, "transact" | "snapshot">;
 function actorTask(state: HubState, roomId: string, actor: IntegrationActor): string | undefined {
 	const room = state.rooms.find((r) => r.id === roomId && r.accountId === actor.accountId);
 	if (!room) fail(404, "Room missing");
+	if (actor.originalBot) fail(403, "Historical actor is read-only");
 	if (!actor.bot) return undefined;
 	const bot = state.bots.find(
 		(b) =>
@@ -266,6 +275,13 @@ async function failed(
 ): Promise<never> {
 	await store.transact((draft) => {
 		const record = draft.integrations.find((i) => i.id === before.id);
+		if (record?.publishReceipt) return;
+		if (record?.publishIntent && before.publishIntent?.digest === record.publishIntent.digest) {
+			// An RPC/Hub failure says nothing about whether the reserved CAS happened.
+			record.error = `Publication outcome unknown: ${sanitizePublicError(error)}`.slice(0, 300);
+			record.updatedAt = Date.now();
+			return;
+		}
 		if (record?.status === status && record.currentOpId === before.currentOpId) {
 			record.status = "failed";
 			record.error = sanitizePublicError(error);
@@ -336,6 +352,9 @@ export async function hubPrepareIntegration(
 	try {
 		const raw = await rpc.callDeviceCommand(before.targetDeviceId!, "integration_prepare", {
 			integrationId: before.id,
+			accountId: before.accountId,
+			conversationId,
+			targetDeviceId: before.targetDeviceId,
 			roomId,
 			targetBotId,
 			targetBotRevision: before.targetBotRevision,
@@ -347,11 +366,19 @@ export async function hubPrepareIntegration(
 		if (!raw || typeof raw !== "object" || Array.isArray(raw)) fail(502, "Invalid device prepare response");
 		const obj = raw as Record<string, unknown>;
 		if (obj.status !== "prepared" && obj.status !== "conflict") fail(502, "Invalid integration status from device");
+		if (obj.objectFormat !== "sha1" && obj.objectFormat !== "sha256") fail(502, "Missing repository object format");
+		if (before.artifactRef && obj.objectFormat !== "sha1") fail(409, "SHA-256 artifact baselines are unsupported");
+		const repositoryId = text(obj.repositoryId, 1024, "repositoryId");
+		if (before.artifactRef && repositoryId !== before.artifactRef.repositoryId)
+			fail(502, "Repository identity mismatch");
 		const expectedTargetSha = sha(obj.expectedTargetSha);
+		if (expectedTargetSha.length !== (obj.objectFormat === "sha1" ? 40 : 64)) fail(502, "Object format mismatch");
 		if (before.artifactRef && expectedTargetSha !== before.artifactRef.baselineCommit)
 			fail(409, "Artifact target must equal sealed baseline commit");
 		const materializedCommit = obj.status === "prepared" ? sha(obj.materializedCommit) : undefined;
 		const preparedTree = obj.status === "prepared" ? sha(obj.preparedTree) : undefined;
+		if ([materializedCommit, preparedTree].some((value) => value && value.length !== expectedTargetSha.length))
+			fail(502, "Prepared object format mismatch");
 		if (before.artifactRef && obj.status === "prepared" && preparedTree !== before.artifactRef.outputTree)
 			fail(502, "Prepared artifact tree mismatch");
 		if (obj.conflicts !== undefined && (!Array.isArray(obj.conflicts) || obj.conflicts.length > 256))
@@ -365,6 +392,8 @@ export async function hubPrepareIntegration(
 				expectedTargetSha,
 				materializedCommit,
 				preparedTree,
+				objectFormat: obj.objectFormat,
+				repositoryId,
 				conflicts,
 				diff,
 				updatedAt: Date.now(),
@@ -389,6 +418,8 @@ export async function hubVerifyIntegration(
 	const { before, taskId } = await store.transact((draft) => {
 		const taskId = actorTask(draft, roomId, actor);
 		const record = recordFor(draft, roomId, conversationId, integrationId, actor);
+		if (record.publishIntent || isLegacyPublicationUnknown(record))
+			fail(409, "Publication outcome is unresolved; manual recovery or read-only reconcile required");
 		if (record.verification)
 			fail(409, "Successful verification is immutable; prepare a new integration to verify again");
 		if (record.status !== "prepared" && record.status !== "failed")
@@ -460,50 +491,64 @@ export async function hubConfirmIntegration(
 	input: Record<string, unknown>,
 	driver?: HubIntegrationDriver,
 ): Promise<DeviceIntegration> {
-	const rpc = driverRequired(driver);
-	const { before, taskId } = await store.transact((draft) => {
-		const taskId = actorTask(draft, roomId, actor);
+	// The synchronous WAL callback seals data only, before the first possible RPC.
+	const { before, dispatch } = await store.transact((draft) => {
 		const record = recordFor(draft, roomId, conversationId, integrationId, actor);
+		if (actor.originalBot) fail(403, "Historical actor is read-only");
+		if (record.publishIntent || record.status === "applied")
+			return { before: structuredClone(record), dispatch: false };
+		driverRequired(driver);
+		const taskId = actorTask(draft, roomId, actor);
 		if (record.status !== "verified" || !hasVerifiedIntegration(record))
 			fail(409, "Apply requires successful real verification proof");
-		const { review } = authority(draft, record, true);
+		const { delivery, review } = authority(draft, record, true);
 		const expected = text(input.expectedTargetSha ?? record.expectedTargetSha, 64, "expectedTargetSha");
 		if (expected !== record.expectedTargetSha) fail(409, "Expected target SHA mismatch");
+		if (!record.repositoryId || !record.objectFormat)
+			fail(409, "Prepare must capture repository identity and object format");
+		const createdAt = Date.now();
+		record.publishIntent = sealPublishIntent({
+			version: 1,
+			id: randomUUID(),
+			accountId: record.accountId,
+			roomId,
+			conversationId,
+			integrationId,
+			targetDeviceId: record.targetDeviceId!,
+			targetBotId: record.targetBotId,
+			targetBotRevision: record.targetBotRevision,
+			actor: {
+				accountId: actor.accountId,
+				...(actor.bot
+					? { botId: actor.bot.id, botRevision: actor.bot.revision, botDeviceId: actor.bot.deviceId, taskId }
+					: {}),
+			},
+			repositoryId: record.repositoryId,
+			objectFormat: record.objectFormat,
+			targetRef: record.targetBranch.startsWith("refs/heads/")
+				? record.targetBranch
+				: `refs/heads/${record.targetBranch}`,
+			expectedOld: record.expectedTargetSha,
+			preparedTree: record.preparedTree!,
+			materializedCommit: record.materializedCommit!,
+			createdAt,
+			delivery: {
+				id: delivery.id,
+				...(delivery.commit ? { commit: delivery.commit } : {}),
+				...(delivery.artifactRef ? { artifactRef: structuredClone(delivery.artifactRef) } : {}),
+			},
+			review: structuredClone(review!),
+			verificationPlan: structuredClone(record.verificationPlan!),
+			verification: structuredClone(record.verification!),
+		});
 		record.reviewId = review!.id;
 		record.status = "applying";
 		record.currentOpId = randomUUID();
-		record.updatedAt = Date.now();
-		return { before: structuredClone(record), taskId };
+		record.updatedAt = createdAt;
+		return { before: structuredClone(record), dispatch: true };
 	});
-	try {
-		const raw = await rpc.callDeviceCommand(before.targetDeviceId!, "integration_confirm", {
-			integrationId,
-			roomId,
-			targetBotId: before.targetBotId,
-			targetBotRevision: before.targetBotRevision,
-			deliveryId: before.deliveryId,
-			commit: before.commit,
-			expectedTargetSha: before.expectedTargetSha,
-			artifactRef: before.artifactRef,
-			materializedCommit: before.materializedCommit,
-			verificationDigest: before.verification!.digest,
-		});
-		if (!raw || typeof raw !== "object" || Array.isArray(raw) || (raw as any).status !== "applied")
-			fail(502, "Device failed to apply integration");
-		const obj = raw as Record<string, unknown>;
-		const newCommitSha = sha(obj.newCommitSha);
-		return await store.transact((draft) => {
-			const record = recheck(draft, before, roomId, conversationId, actor, taskId, "applying", true);
-			if (!hasVerifiedIntegration(record)) fail(409, "Verification proof invalidated during apply");
-			record.status = "applied";
-			record.newCommitSha = newCommitSha;
-			record.cleanupPending = obj.cleanupPending === true;
-			record.updatedAt = Date.now();
-			return structuredClone(record);
-		});
-	} catch (error) {
-		return failed(store, before, "applying", error);
-	}
+	if (!dispatch) return before;
+	return dispatchPublication(store, before, driverRequired(driver), "first");
 }
 
 export async function hubCancelIntegration(
@@ -514,10 +559,35 @@ export async function hubCancelIntegration(
 	actor: IntegrationActor,
 	driver?: HubIntegrationDriver,
 ): Promise<DeviceIntegration> {
+	const existing = recordFor(store.snapshot(), roomId, conversationId, integrationId, actor);
+	if (existing.publishIntent) {
+		if (actor.originalBot) fail(403, "Historical actor is read-only");
+		if (actor.bot) actorTask(store.snapshot(), roomId, actor);
+		if (existing.publishReceipt && !hasOpenPublication(existing)) return existing;
+		const rpc = driverRequired(driver);
+		const before = await store.transact((draft) => {
+			const record = recordFor(draft, roomId, conversationId, integrationId, actor);
+			if (record.publishIntent?.digest !== existing.publishIntent!.digest) fail(409, "Publication intent changed");
+			if (!record.publishReceipt && hasOpenPublication(record)) record.status = "cancelling";
+			if (record.publishObservation) record.publishObservation.retryable = false;
+			return structuredClone(record);
+		});
+		if (!hasOpenPublication(before)) return before;
+		try {
+			const raw = await rpc.callDeviceCommand(before.publishIntent!.targetDeviceId, "integration_cancel", {
+				...publicationPayload(before),
+				ownerCleanup: !actor.bot,
+			});
+			return await mergePublicationResult(store, before, raw);
+		} catch (error) {
+			return failed(store, before, "cancelling", error);
+		}
+	}
 	const { before, taskId, priorStatus } = await store.transact((draft) => {
 		const record = recordFor(draft, roomId, conversationId, integrationId, actor);
 		if (record.status === "applied") fail(409, "Already applied integration cannot be cancelled");
-		if (record.status === "applying") fail(409, "Applying integration cannot be cancelled");
+		if (isLegacyPublicationUnknown(record))
+			fail(409, "Legacy publication outcome unknown; manual investigation required");
 		const taskId = actor.bot ? actorTask(draft, roomId, actor) : undefined;
 		driverRequired(driver);
 		const priorStatus = record.status;
@@ -566,6 +636,282 @@ export async function hubCancelIntegration(
 		return failed(store, before, "cancelling", error);
 	}
 }
+function publicationPayload(record: DeviceIntegration) {
+	const intent = validatePublishIntent(record.publishIntent);
+	return {
+		integrationId: intent.integrationId,
+		accountId: intent.accountId,
+		roomId: intent.roomId,
+		conversationId: intent.conversationId,
+		targetBotId: intent.targetBotId,
+		targetBotRevision: intent.targetBotRevision,
+		publishIntent: intent,
+	};
+}
+
+async function mergePublicationResult(
+	store: HubStoreLike,
+	before: DeviceIntegration,
+	raw: unknown,
+): Promise<DeviceIntegration> {
+	const intent = validatePublishIntent(before.publishIntent);
+	const result = validatePublicationResult(raw, intent);
+	return store.transact((draft) => {
+		const record = draft.integrations.find(
+			(i) =>
+				i.id === intent.integrationId &&
+				i.accountId === intent.accountId &&
+				i.roomId === intent.roomId &&
+				i.conversationId === intent.conversationId,
+		);
+		if (!record || record.publishIntent?.digest !== intent.digest || record.publishIntent.id !== intent.id)
+			fail(409, "Publication intent changed");
+		validatePublishIntent(record.publishIntent);
+		// Match only the sealed operation. Current membership/review/task may have been revoked after CAS.
+		if (result.publishReceipt && !record.publishReceipt) record.publishReceipt = result.publishReceipt;
+		if (
+			result.publishObservation &&
+			(!record.publishObservation || result.publishObservation.observedAt >= record.publishObservation.observedAt)
+		)
+			record.publishObservation = result.publishObservation;
+		if (result.publishStop) {
+			const previous = record.publishStop;
+			if (!previous) record.publishStop = result.publishStop;
+			else if (!previous.stopConfirmed && result.publishStop.stopConfirmed)
+				record.publishStop = {
+					...result.publishStop,
+					closed: previous.closed || result.publishStop.closed,
+					fencedAt: Math.min(previous.fencedAt, result.publishStop.fencedAt),
+				};
+			else if (!previous.closed && result.publishStop.closed)
+				record.publishStop = {
+					...previous,
+					closed: true,
+					fencedAt: Math.min(previous.fencedAt, result.publishStop.fencedAt),
+				};
+		}
+		if (record.publishReceipt) {
+			record.status = "applied";
+			record.newCommitSha = intent.candidateSha;
+			if (record.publishStop) record.publishStop.pastEffect = "applied";
+			if (record.publishObservation) record.publishObservation.retryable = false;
+			record.error = undefined;
+		} else if (record.publishStop?.closed && record.publishStop.stopConfirmed) {
+			record.status = record.publishStop.pastEffect === "not_applied" ? "cancelled" : "cancelling";
+			if (record.publishObservation) record.publishObservation.retryable = false;
+			record.error =
+				record.publishStop.pastEffect === "unknown"
+					? "Publication closed for future writes; historical outcome remains unknown"
+					: undefined;
+		} else {
+			record.status = record.status === "cancelling" ? "cancelling" : "applying";
+			if (record.status === "cancelling" && record.publishObservation) record.publishObservation.retryable = false;
+			record.error = result.publishObservation?.error;
+		}
+		if (result.cleanupPending !== undefined) record.cleanupPending = result.cleanupPending;
+		record.updatedAt = Date.now();
+		return structuredClone(record);
+	});
+}
+
+async function dispatchPublication(
+	store: HubStoreLike,
+	before: DeviceIntegration,
+	driver: HubIntegrationDriver,
+	mode: "first" | "resume",
+): Promise<DeviceIntegration> {
+	try {
+		const raw = await driver.callDeviceCommand(before.publishIntent!.targetDeviceId, "integration_confirm", {
+			...publicationPayload(before),
+			mode,
+			deliveryId: before.deliveryId,
+			commit: before.commit,
+			expectedTargetSha: before.expectedTargetSha,
+			artifactRef: before.artifactRef,
+			materializedCommit: before.materializedCommit,
+			verificationDigest: before.verification!.digest,
+		});
+		return await mergePublicationResult(store, before, raw);
+	} catch (error) {
+		return failed(store, before, "applying", error);
+	}
+}
+
+function historicalActor(record: DeviceIntegration, actor: IntegrationActor): void {
+	const bot = actor.originalBot ?? actor.bot;
+	if (!bot) return;
+	const intent = record.publishIntent;
+	if (
+		!intent ||
+		bot.accountId !== intent.accountId ||
+		!(
+			(bot.id === intent.targetBotId && bot.deviceId === intent.targetDeviceId) ||
+			(bot.id === intent.actor.botId && bot.deviceId === intent.actor.botDeviceId)
+		)
+	)
+		fail(403, "Historical publication actor scope mismatch");
+}
+
+export async function hubReconcileIntegration(
+	store: HubStoreLike,
+	roomId: string,
+	conversationId: string,
+	actor: IntegrationActor,
+	id: string,
+	driver?: HubIntegrationDriver,
+): Promise<DeviceIntegration> {
+	const before = recordFor(store.snapshot(), roomId, conversationId, id, actor);
+	historicalActor(before, actor);
+	// Legacy records carry no journal identity. Never synthesize a receipt or retry them.
+	if (!before.publishIntent) return structuredClone(before);
+	try {
+		const raw = await driverRequired(driver).callDeviceCommand(
+			before.publishIntent.targetDeviceId,
+			"integration_publication_status",
+			publicationPayload(before),
+		);
+		return await mergePublicationResult(store, before, raw);
+	} catch (error) {
+		return failed(store, before, before.status, error);
+	}
+}
+
+export async function hubResumeIntegration(
+	store: HubStoreLike,
+	roomId: string,
+	conversationId: string,
+	actor: IntegrationActor,
+	id: string,
+	input: DeviceIntegrationResumeRequest,
+	driver?: HubIntegrationDriver,
+): Promise<DeviceIntegration> {
+	if (actor.bot || actor.originalBot) fail(403, "Only the human account owner may resume publication");
+	const before = await store.transact((draft) => {
+		actorTask(draft, roomId, actor);
+		const record = recordFor(draft, roomId, conversationId, id, actor);
+		const intent = validatePublishIntent(record.publishIntent);
+		if (
+			!input ||
+			input.intentId !== intent.id ||
+			input.intentDigest !== intent.digest ||
+			input.candidateSha !== intent.candidateSha
+		)
+			fail(409, "Resume must bind exact publication intent");
+		if (record.publishReceipt) return structuredClone(record);
+		if (record.publishStop?.closed) fail(409, "Publication is closed for future writes");
+		if (record.status === "cancelling") fail(409, "Publication cancellation is in progress");
+		if (
+			!record.publishObservation?.retryable ||
+			!["prepared", "cas_rejected"].includes(record.publishObservation.phase)
+		)
+			fail(409, "Publication is not proven safe to resume; reconcile first");
+		validatePublicationResult({ status: "pending", publishObservation: record.publishObservation }, intent);
+		const { review } = authority(draft, record, true);
+		if (
+			review?.id !== intent.review.id ||
+			!hasVerifiedIntegration(record) ||
+			record.verification?.digest !== intent.verification.digest ||
+			record.repositoryId !== intent.repositoryId ||
+			record.objectFormat !== intent.objectFormat ||
+			record.expectedTargetSha !== intent.expectedOld ||
+			record.preparedTree !== intent.preparedTree ||
+			record.materializedCommit !== intent.materializedCommit ||
+			record.targetDeviceId !== intent.targetDeviceId ||
+			record.targetBotId !== intent.targetBotId ||
+			record.targetBotRevision !== intent.targetBotRevision ||
+			(record.targetBranch.startsWith("refs/heads/") ? record.targetBranch : `refs/heads/${record.targetBranch}`) !==
+				intent.targetRef
+		)
+			fail(409, "Current publication authority or verification changed");
+		driverRequired(driver);
+		record.status = "applying";
+		record.currentOpId = randomUUID();
+		// Consume the Hub's retry capability before dispatch. Device independently checks the durable journal.
+		record.publishObservation.retryable = false;
+		record.updatedAt = Date.now();
+		return structuredClone(record);
+	});
+	if (before.publishReceipt) return before;
+	return dispatchPublication(store, before, driverRequired(driver), "resume");
+}
+
+const pendingRecovery = new WeakMap<HubStoreLike, Map<string, Promise<DeviceIntegration>>>();
+const recoveryBatches = new WeakMap<HubStoreLike, Promise<DeviceIntegration[]>>();
+const recoveryCursors = new WeakMap<HubStoreLike, Map<string, number>>();
+/** Startup/ready recovery only issues status queries. No implicit publication retry. */
+export async function reconcilePendingIntegrations(
+	store: HubStoreLike,
+	driver: HubIntegrationDriver,
+	options: { limit?: number; deviceId?: string } = {},
+): Promise<DeviceIntegration[]> {
+	const active = recoveryBatches.get(store);
+	if (active) return active;
+	const batch = runPendingRecovery(store, driver, options);
+	recoveryBatches.set(store, batch);
+	try {
+		return await batch;
+	} finally {
+		if (recoveryBatches.get(store) === batch) recoveryBatches.delete(store);
+	}
+}
+
+async function runPendingRecovery(
+	store: HubStoreLike,
+	driver: HubIntegrationDriver,
+	options: { limit?: number; deviceId?: string },
+): Promise<DeviceIntegration[]> {
+	const limit = Number.isFinite(options.limit) ? Math.max(1, Math.min(64, Math.floor(options.limit!))) : 16;
+	const all = store
+		.snapshot()
+		.integrations.filter(
+			(i) => hasOpenPublication(i) && (!options.deviceId || i.publishIntent!.targetDeviceId === options.deviceId),
+		);
+	let cursors = recoveryCursors.get(store);
+	if (!cursors) {
+		cursors = new Map();
+		recoveryCursors.set(store, cursors);
+	}
+	const scope = options.deviceId ?? "";
+	const start = (cursors.get(scope) ?? 0) % Math.max(1, all.length);
+	const pending = [...all.slice(start), ...all.slice(0, start)].slice(0, limit);
+	cursors.set(scope, (start + pending.length) % Math.max(1, all.length));
+	let running = pendingRecovery.get(store);
+	if (!running) {
+		running = new Map();
+		pendingRecovery.set(store, running);
+	}
+	const results: DeviceIntegration[] = [];
+	let cursor = 0;
+	await Promise.all(
+		Array.from({ length: Math.min(4, pending.length) }, async () => {
+			while (cursor < pending.length) {
+				const record = pending[cursor++];
+				const key = record.publishIntent!.id;
+				let operation = running!.get(key);
+				if (!operation) {
+					operation = hubReconcileIntegration(
+						store,
+						record.roomId,
+						record.conversationId,
+						{ accountId: record.accountId },
+						record.id,
+						driver,
+					);
+					running!.set(key, operation);
+				}
+				try {
+					results.push(await operation);
+				} catch {
+					/* Keep unresolved evidence for the next read-only probe. */
+				} finally {
+					if (running!.get(key) === operation) running!.delete(key);
+				}
+			}
+		}),
+	);
+	return results;
+}
+
 export function listIntegrations(state: HubState, conversationId: string): DeviceIntegration[] {
 	return state.integrations.filter((i) => i.conversationId === conversationId);
 }

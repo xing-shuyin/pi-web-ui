@@ -142,6 +142,7 @@ export const COMMANDS = [
 	"integration_prepare",
 	"integration_verify",
 	"integration_confirm",
+	"integration_publication_status",
 	"integration_cancel",
 ] as const;
 export type DeviceCommand = (typeof COMMANDS)[number];
@@ -335,6 +336,11 @@ export function createCommandChannel(
 				item.controller.signal.addEventListener("abort", onAbort, { once: true });
 				try {
 					const result = await handler!(item.action!, value, item.controller.signal);
+					const stop = result && typeof result === "object" && "publishStop" in result ? result.publishStop : undefined;
+					stopUnconfirmed =
+						!!stop && typeof stop === "object" && "stopConfirmed" in stop && stop.stopConfirmed === false;
+					if (stopUnconfirmed && (wasAborted || item.controller.signal.aborted) && pending.get(id) === item)
+						sendFrame(ws, { type: "rpc_error", id, stopUnconfirmed: true });
 					if (pending.get(id) !== item) return;
 					if (wasAborted || item.controller.signal.aborted) return;
 					await transmit(id, "rpc_response", result, item.controller.signal);

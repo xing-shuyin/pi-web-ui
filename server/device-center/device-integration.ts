@@ -6,6 +6,9 @@ import { join, resolve } from "node:path";
 import { promisify } from "node:util";
 import type {
 	DeviceArtifact,
+	DevicePublishIntent,
+	DevicePublicationResult,
+	DeviceGitObjectFormat,
 	DeviceDeliveryArtifactRef,
 	DeviceIntegrationVerificationFacts,
 	DeviceIntegrationVerificationPlan,
@@ -29,6 +32,15 @@ import {
 	VerificationStopUnconfirmedError,
 } from "./local-verification.js";
 import { integrationError } from "./integration-errors.js";
+import { readPublicationJournal } from "./publication-journal.js";
+import { assertPublishIntentScope, validatePublishIntent } from "./publish-intent.js";
+import {
+	cancelLocalPublication,
+	localPublicationStatus,
+	publishLocalIntent,
+	PublicationStopUnconfirmedError,
+	runPublicationGit,
+} from "./local-publication.js";
 
 const exec = promisify(execFile);
 const GIT_TIMEOUT_MS = 30_000;
@@ -56,6 +68,10 @@ export interface DeviceIntegrationSession {
 	stopUnconfirmed?: boolean;
 	verificationInFlight?: boolean;
 	verificationStopConfirmed?: boolean;
+	accountId?: string;
+	roomId?: string;
+	conversationId?: string;
+	targetDeviceId?: string;
 }
 
 /** 持久化会话映射表文件路径 */
@@ -161,7 +177,7 @@ function localOperation<T>(
 	operation.done = Promise.resolve()
 		.then(() => run(AbortSignal.any([operation.controller.signal, ...(signal ? [signal] : [])])))
 		.catch(async (error) => {
-			if (error instanceof VerificationStopUnconfirmedError) {
+			if (error instanceof VerificationStopUnconfirmedError || error instanceof PublicationStopUnconfirmedError) {
 				operation.blocked = error;
 				const session = memorySessions.get(key);
 				if (session) {
@@ -550,12 +566,18 @@ async function prepareIntegration(
 		commit?: string;
 		artifactRef?: DeviceDeliveryArtifactRef;
 		artifact?: DeviceArtifact;
+		accountId?: string;
+		roomId?: string;
+		conversationId?: string;
+		targetDeviceId?: string;
 	},
 	options?: { signal?: AbortSignal },
 ): Promise<{
 	status: "prepared" | "conflict";
 	materializedCommit?: string;
 	preparedTree?: string;
+	repositoryId?: string;
+	objectFormat?: DeviceGitObjectFormat;
 	expectedTargetSha: string;
 	conflicts?: string[];
 	diff?: string;
@@ -565,6 +587,10 @@ async function prepareIntegration(
 	const repository = await verifyRepoRoot(repoRoot, options?.signal);
 	if (repository.repoRoot !== repoRoot)
 		throw new Error("Integration Bot workspace must be the canonical repository root");
+	const repositoryId = await computeCanonicalRepositoryId(repoRoot, options?.signal);
+	const objectFormat = (
+		await runPublicationGit(repoRoot, ["rev-parse", "--show-object-format"], { signal: options?.signal })
+	).stdout.trim() as DeviceGitObjectFormat;
 	let commit = params.commit;
 	let retainedRef: string | undefined;
 	const { headSha: expectedTargetSha, isDirty } = await inspectLocalTarget(repoRoot, dataDir, targetBranch, options);
@@ -682,6 +708,10 @@ async function prepareIntegration(
 		artifactRef: params.artifactRef,
 		retainedRef,
 		verificationStopConfirmed: true,
+		accountId: params.accountId,
+		roomId: params.roomId,
+		conversationId: params.conversationId,
+		targetDeviceId: params.targetDeviceId,
 	};
 
 	try {
@@ -706,6 +736,8 @@ async function prepareIntegration(
 			expectedTargetSha,
 			materializedCommit: commit,
 			preparedTree: session.preparedTreeSha,
+			repositoryId,
+			objectFormat,
 			diff,
 		};
 	} catch (mergeError) {
@@ -734,6 +766,8 @@ async function prepareIntegration(
 			await runIsolatedGit(worktreePath, dataDir, ["merge", "--abort"], GIT_TIMEOUT_MS, options).catch(() => {});
 			return {
 				status: "conflict",
+				repositoryId,
+				objectFormat,
 				expectedTargetSha,
 				conflicts: conflictFiles,
 				diff,
@@ -825,8 +859,8 @@ async function assertTarget(session: DeviceIntegrationSession, dataDir: string, 
 	if (repo.commonDir !== session.commonDir || repo.repoRoot !== session.repoRoot)
 		throw new Error("Integration target repository identity changed");
 	const target = await inspectLocalTarget(session.repoRoot, dataDir, session.branch, { signal });
-	if (target.isDirty || target.headSha !== session.expectedTargetSha)
-		throw new Error("Integration target dirty or moved");
+	if (target.headSha !== session.expectedTargetSha) throw integrationError("INTEGRATION_TARGET_MOVED");
+	if (target.isDirty) throw new Error("Integration target dirty or moved");
 }
 
 async function verifyIntegration(
@@ -917,36 +951,31 @@ async function verifyIntegration(
  * 6. 执行原子 CAS update-ref 写入目标分支
  * 7. 若目标分支为 checked-out 分支，使用安全无覆盖 read-tree -u -m 同步当前工作区（绝不 hard reset！）
  */
+type ConfirmIntegrationParams = IntegrationIdentity & {
+	deliveryId: string;
+	commit?: string;
+	materializedCommit?: string;
+	expectedTargetSha: string;
+	publishIntent?: DevicePublishIntent;
+	mode?: "first" | "resume";
+};
 async function confirmIntegration(
-	params: {
-		integrationId: string;
-		targetBotId: string;
-		targetBotRevision: number;
-		repoRoot: string;
-		dataDir: string;
-		deliveryId: string;
-		commit?: string;
-		materializedCommit?: string;
-		expectedTargetSha: string;
-	},
+	params: ConfirmIntegrationParams,
 	options?: { signal?: AbortSignal },
-): Promise<{
-	status: "applied";
-	newCommitSha: string;
-}> {
+): Promise<DevicePublicationResult & { newCommitSha?: string }> {
 	const session = await getVerifiedSession(params.dataDir, params);
 	if (session.stopUnconfirmed) throw new VerificationStopUnconfirmedError();
-	const receipt = session.localVerification;
+	const facts = session.localVerification;
 	const plan = validateLocalVerificationPlan(session.verifiedPlan);
 	if (
-		!receipt ||
-		receipt.planDigest !== plan.digest ||
-		receipt.materializedCommit !== session.deliveryCommit ||
-		receipt.artifactDigest !== session.artifactRef?.artifactDigest ||
-		receipt.treeBefore !== session.preparedTreeSha ||
-		receipt.treeAfter !== session.preparedTreeSha ||
-		receipt.results.length !== plan.commands.length ||
-		!receipt.results.every(
+		!facts ||
+		facts.planDigest !== plan.digest ||
+		facts.materializedCommit !== session.deliveryCommit ||
+		facts.artifactDigest !== session.artifactRef?.artifactDigest ||
+		facts.treeBefore !== session.preparedTreeSha ||
+		facts.treeAfter !== session.preparedTreeSha ||
+		facts.results.length !== plan.commands.length ||
+		!facts.results.every(
 			(result, index) =>
 				result.command === plan.commands[index] &&
 				result.status === "passed" &&
@@ -956,159 +985,85 @@ async function confirmIntegration(
 		)
 	)
 		throw new Error("Successful local verification receipt required");
+	const intent = validatePublishIntent(params.publishIntent);
+	if (
+		session.accountId &&
+		(session.accountId !== intent.accountId ||
+			session.roomId !== intent.roomId ||
+			session.conversationId !== intent.conversationId ||
+			session.targetDeviceId !== intent.targetDeviceId)
+	)
+		throw new Error("Publication original session scope mismatch");
+	assertPublishIntentScope(intent, {
+		accountId: intent.accountId,
+		integrationId: params.integrationId,
+		targetBotId: params.targetBotId,
+		targetBotRevision: params.targetBotRevision,
+	});
 	const deliveryCommit = params.materializedCommit ?? params.commit;
-	if (deliveryCommit !== session.deliveryCommit) throw new Error("Confirmation materialized commit mismatch");
-	await assertPreparedTree(session, params.dataDir, options?.signal);
-
-	// 1. 幂等性防护：若本地已记录 CAS applied 成功（如重试或重启确认），直接幂等返回已生效的新提交 SHA
-	if (session.applied && session.newCommitSha) {
-		return {
-			status: "applied",
-			newCommitSha: session.newCommitSha,
-		};
-	}
-
-	// 2. 前置安全校验：在任何 commit 操作前完成所有检查，确保 409 拒绝后重试保持干净幂等
-	// 2.1 检查目标分支在任何工作树中未被检出（前置拦截，防止 commit 后才报错导致切离重试无改动）
-	const wtList = await runIsolatedGit(
-		session.repoRoot,
-		params.dataDir,
-		["worktree", "list", "--porcelain"],
-		GIT_TIMEOUT_MS,
-		options,
-	);
-	const targetBranchRef = `refs/heads/${session.branch}`;
-	for (const line of wtList.stdout.split("\n")) {
-		if (line.trim() === `branch ${targetBranchRef}`) {
-			throw integrationError("INTEGRATION_TARGET_CHECKED_OUT");
-		}
-	}
-
-	// 2.2 紧邻当下二次检查目标仓库 dirty 状态与目标分支 HEAD SHA
-	const { headSha: currentHeadSha, isDirty } = await inspectLocalTarget(
-		session.repoRoot,
-		params.dataDir,
-		session.branch,
-		options,
-	);
-	if (isDirty) {
-		throw new Error("Target repository has uncommitted changes (dirty state); cannot apply integration");
-	}
-	if (currentHeadSha !== params.expectedTargetSha || currentHeadSha !== session.expectedTargetSha) {
-		throw integrationError("INTEGRATION_TARGET_MOVED");
-	}
-
-	// 2.3 验证命令完整性校验：验证命令绝不能篡改代码或修改工作树内容
-	const unstaged = await runIsolatedGit(
-		session.worktreePath,
-		params.dataDir,
-		["diff", "--name-only"],
-		GIT_TIMEOUT_MS,
-		options,
-	);
-	if (unstaged.stdout.trim().length > 0) {
-		throw new Error("Worktree content modified by validation commands; integration rejected for security");
-	}
-	const untracked = await runIsolatedGit(
-		session.worktreePath,
-		params.dataDir,
-		["ls-files", "--others", "--exclude-standard"],
-		GIT_TIMEOUT_MS,
-		options,
-	);
-	if (untracked.stdout.trim().length > 0) {
-		throw new Error("Untracked files created by validation commands; integration rejected for security");
-	}
-	const treeRes = await runIsolatedGit(session.worktreePath, params.dataDir, ["write-tree"], GIT_TIMEOUT_MS, options);
-	const currentTreeSha = treeRes.stdout.trim();
-	if (session.preparedTreeSha && currentTreeSha !== session.preparedTreeSha) {
-		throw new Error(
-			"Worktree content tree SHA mismatch; validation commands altered repository contents, integration rejected for security",
-		);
-	}
-
-	// 3. 幂等生成或复用 merge commit
-	let newCommitSha = session.newCommitSha;
-	if (!newCommitSha) {
-		await runIsolatedGit(
-			session.worktreePath,
+	if (deliveryCommit !== session.deliveryCommit || intent.materializedCommit !== session.deliveryCommit)
+		throw new Error("Confirmation materialized commit mismatch");
+	if (
+		intent.delivery.id !== params.deliveryId ||
+		intent.expectedOld !== params.expectedTargetSha ||
+		intent.expectedOld !== session.expectedTargetSha ||
+		intent.preparedTree !== session.preparedTreeSha ||
+		intent.targetRef !== "refs/heads/" + session.branch
+	)
+		throw new Error("Publication intent does not match prepared integration");
+	const { digest: _digest, verifiedAt: _verifiedAt, ...intentFacts } = intent.verification;
+	if (
+		canonicalizeJson(intentFacts) !== canonicalizeJson(facts) ||
+		canonicalizeJson(intent.verificationPlan) !== canonicalizeJson(plan) ||
+		canonicalizeJson(intent.delivery.artifactRef ?? null) !== canonicalizeJson(session.artifactRef ?? null)
+	)
+		throw new Error("Publication intent local verification mismatch");
+	const verifiedRepo = await verifyRepoRoot(session.repoRoot, options?.signal);
+	const repositoryId = await computeCanonicalRepositoryId(session.repoRoot, options?.signal);
+	const format = (
+		await runPublicationGit(session.repoRoot, ["rev-parse", "--show-object-format"], { signal: options?.signal })
+	).stdout.trim();
+	if (repositoryId !== intent.repositoryId || format !== intent.objectFormat)
+		throw new Error("Publication intent repository identity mismatch");
+	const verify = async (signal: AbortSignal) => {
+		await assertPreparedTree(session, params.dataDir, signal);
+		const worktrees = await runIsolatedGit(
+			session.repoRoot,
 			params.dataDir,
-			[
-				"-c",
-				"user.name=Device Hub Integration",
-				"-c",
-				"user.email=integration@local",
-				"commit",
-				"-m",
-				`Merge delivery ${params.deliveryId.slice(0, 8)} (${deliveryCommit.slice(0, 8)}) into ${session.branch}`,
-			],
+			["worktree", "list", "--porcelain"],
 			GIT_TIMEOUT_MS,
-			options,
+			{ signal },
 		);
-
-		const rev = await runIsolatedGit(
-			session.worktreePath,
-			params.dataDir,
-			["rev-parse", "HEAD"],
-			GIT_TIMEOUT_MS,
-			options,
-		);
-		newCommitSha = rev.stdout.trim();
-		if (!/^[a-f0-9]{40,64}$/i.test(newCommitSha)) {
-			throw new Error("Failed to resolve integrated commit SHA");
-		}
-
-		// 严格核验父提交链拓扑：HEAD^1 必须等于 expectedTargetSha，HEAD^2 必须等于 deliveryCommit
-		const p1 = (
-			await runIsolatedGit(session.worktreePath, params.dataDir, ["rev-parse", "HEAD^1"], GIT_TIMEOUT_MS, options)
-		).stdout.trim();
-		const p2 = (
-			await runIsolatedGit(session.worktreePath, params.dataDir, ["rev-parse", "HEAD^2"], GIT_TIMEOUT_MS, options)
-		).stdout.trim();
-		if (p1 !== session.expectedTargetSha || p2 !== deliveryCommit) {
-			throw new Error("Integrated commit parent chain mismatch; foreign commits or altered ancestry detected");
-		}
-
-		session.newCommitSha = newCommitSha;
-		await persistSession(params.dataDir, params.integrationId, session);
-	}
-
-	await assertPreparedTree(session, params.dataDir, options?.signal);
-	await assertTarget(session, params.dataDir, options?.signal);
-	// 4. 执行原子 CAS update-ref 写入目标分支
-	await runIsolatedGit(
-		session.repoRoot,
-		params.dataDir,
-		["update-ref", `refs/heads/${session.branch}`, newCommitSha, params.expectedTargetSha],
-		GIT_TIMEOUT_MS,
-		options,
-	);
-
-	// 5. CAS 成功：立即落盘 applied receipt，保证掉电或崩溃不可重做
-	session.applied = true;
-	await persistSession(params.dataDir, params.integrationId, session);
-
-	// 6. 工作树安全清理
-	let cleanupPending = false;
-	try {
-		await safeRemoveWorktree(session.repoRoot, params.dataDir, session.worktreePath);
-		memorySessions.delete(sessionKey(params));
-		if (session.retainedRef)
-			await git(session.repoRoot, ["update-ref", "-d", session.retainedRef, session.deliveryCommit]);
-		await persistSession(params.dataDir, params.integrationId);
-	} catch (cleanupErr) {
-		cleanupPending = true;
-		console.warn(`[IntegrationCleanup] Worktree cleanup deferred: ${sanitizeError(cleanupErr)}`);
-	}
-
-	return {
-		status: "applied",
-		newCommitSha,
-		...(cleanupPending ? { cleanupPending: true } : {}),
+		const checkedOut = worktrees.stdout
+			.split("\n")
+			.some((line) => line.startsWith("branch ") && line.slice(7).trim() === intent.targetRef);
+		if (checkedOut) throw integrationError("INTEGRATION_TARGET_CHECKED_OUT");
+		await assertTarget(session, params.dataDir, signal);
 	};
+	const result = await publishLocalIntent(
+		{
+			dataDir: params.dataDir,
+			publishIntent: intent,
+			mode: params.mode ?? "first",
+			repository: { ...verifiedRepo, repositoryId, objectFormat: intent.objectFormat },
+			verify,
+		},
+		options,
+	);
+	if (result.publishReceipt) {
+		session.newCommitSha = intent.candidateSha;
+		session.applied = true;
+		try {
+			await persistSession(params.dataDir, params.integrationId, session);
+			await cancelIntegration(params, { stopConfirmed: true });
+		} catch {
+			return { ...result, newCommitSha: intent.candidateSha, cleanupPending: true };
+		}
+		return { ...result, newCommitSha: intent.candidateSha };
+	}
+	return result;
 }
 
-/** 设备本地：取消集成并清理隔离工作树（中断在途命令并核验租约归属） */
 async function cancelIntegration(
 	params: IntegrationIdentity & { priorStatus?: string; verificationMayBeRunning?: boolean },
 	options?: { signal?: AbortSignal; stopConfirmed?: boolean },
@@ -1186,8 +1141,40 @@ export function deviceConfirmIntegration(
 	options?: { signal?: AbortSignal },
 ) {
 	params = structuredClone(params);
-	return localOperation(params, options?.signal, (signal) => confirmIntegration(params, { signal }));
+	return (async () => {
+		if (params.publishIntent) {
+			const journal = await readPublicationJournal(params.dataDir, params.publishIntent);
+			if (journal?.receipt || journal?.stop || journal?.phase === "cas_started") {
+				const result = await localPublicationStatus({ dataDir: params.dataDir, publishIntent: params.publishIntent });
+				return { ...result, ...(result.publishReceipt ? { newCommitSha: result.publishReceipt.candidateSha } : {}) };
+			}
+		}
+		return localOperation(params, options?.signal, (signal) => confirmIntegration(params, { signal }));
+	})();
 }
+export function devicePublicationStatus(params: { dataDir: string; publishIntent: DevicePublishIntent }) {
+	return localPublicationStatus(params);
+}
+export function deviceCancelPublication(params: {
+	dataDir: string;
+	publishIntent: DevicePublishIntent;
+}): Promise<DevicePublicationResult> {
+	const intent = validatePublishIntent(params.publishIntent);
+	const operation = activeOperations.get(sessionKey({ dataDir: params.dataDir, integrationId: intent.integrationId }));
+	// Install the publication fence synchronously even if confirmation has not reached its gate yet.
+	const cancellation = cancelLocalPublication(params);
+	operation?.controller.abort(new Error("Publication cancelled"));
+	return (async () => {
+		await operation?.done.catch(() => {});
+		const result = await cancellation;
+		if (operation?.blocked) return { ...result, cleanupPending: true };
+		const session =
+			memorySessions.get(sessionKey({ dataDir: params.dataDir, integrationId: intent.integrationId })) ??
+			(await loadPersistentSessions(params.dataDir)).get(intent.integrationId);
+		return { ...result, ...(session ? { cleanupPending: true } : {}) };
+	})();
+}
+
 export async function deviceCancelIntegration(
 	params: Parameters<typeof cancelIntegration>[0],
 	options?: { signal?: AbortSignal },

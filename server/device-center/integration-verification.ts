@@ -53,8 +53,10 @@ export function validateVerificationFacts(
 		obj.materializedCommit !== integration.materializedCommit
 	)
 		fail("Verification subject mismatch");
-	const treeBefore = hex(obj.treeBefore, 40, "treeBefore");
-	const treeAfter = hex(obj.treeAfter, 40, "treeAfter");
+	// Artifact baselines remain SHA-1; legacy repositories may explicitly report SHA-256.
+	const objectLength = integration.objectFormat === "sha256" && !integration.artifactRef ? 64 : 40;
+	const treeBefore = hex(obj.treeBefore, objectLength, "treeBefore");
+	const treeAfter = hex(obj.treeAfter, objectLength, "treeAfter");
 	if (treeBefore !== integration.preparedTree || treeAfter !== integration.preparedTree)
 		fail("Verification changed prepared tree");
 	if (!Array.isArray(obj.results) || obj.results.length !== plan.commands.length || obj.results.length === 0)

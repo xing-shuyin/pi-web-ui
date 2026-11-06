@@ -11,6 +11,8 @@ import type { DeviceCollabExecutionContext } from "./collab-tool.js";
 import {
 	deviceCancelIntegration,
 	deviceConfirmIntegration,
+	devicePublicationStatus,
+	deviceCancelPublication,
 	devicePrepareIntegration,
 	deviceVerifyIntegration,
 	loadPersistentSessions,
@@ -35,8 +37,11 @@ import {
 	type TaskWorkspaceHandle,
 } from "./task-workspace.js";
 import { canonicalizeJson, validateContextManifest, validateWorkContract } from "./work-contract.js";
+import { assertPublishIntentScope, validatePublishIntent } from "./publish-intent.js";
+import { readPublicationJournal, loadPublicationJournals } from "./publication-journal.js";
+import { PublicationStopUnconfirmedError } from "./local-publication.js";
 
-type Config = { hubUrl: string; deviceId: string; credential: string; allowExecution: boolean };
+type Config = { hubUrl: string; deviceId: string; credential: string; allowExecution: boolean; accountId?: string };
 type Files = ReturnType<typeof createDeviceFileSync>;
 type Executor = { run(task: DeviceExecutorTask): Promise<string>; close(): void | Promise<void> };
 type Owner = DeviceCollabExecutionContext & { root: string };
@@ -178,12 +183,33 @@ export function createDeviceRuntime(options: {
 			await entry.files.close();
 		}
 	}
+	async function assertPublicationWorkspaceIdle(botId: string, root: string) {
+		if (!options.dataDir) return;
+		try {
+			const journals = await loadPublicationJournals(options.dataDir);
+			if (
+				journals.some(
+					(journal) =>
+						journal.casStarted &&
+						!journal.processStopped &&
+						!journal.stop?.stopConfirmed &&
+						(journal.intent.targetBotId === botId ||
+							(!!journal.repository &&
+								executionRootsOverlap(executionRoot(journal.repository.repoRoot), executionRoot(root)))),
+				)
+			)
+				throw new Error("Publication process stop unconfirmed; original workspace blocked");
+		} catch (error) {
+			throw new DeviceTaskStopUnconfirmedError(error);
+		}
+	}
 	async function acquire(botId: string, signal?: AbortSignal, cancellationId?: string) {
 		enabled(signal);
 		await sweep();
 		const lease = await bots.acquire(botId);
 		try {
 			enabled(signal);
+			await assertPublicationWorkspaceIdle(botId, lease.root);
 			if (options.dataDir) {
 				const pending = await loadPersistentSessions(options.dataDir);
 				for (const session of pending.values()) {
@@ -836,6 +862,27 @@ export function createDeviceRuntime(options: {
 		owner.done = operation;
 		return track(operation);
 	}
+	async function originalPublicationCommand(command: Record<string, unknown>, historical: boolean) {
+		const intent = validatePublishIntent(command.publishIntent);
+		assertPublishIntentScope(intent, {
+			accountId: config.accountId ?? intent.accountId,
+			targetDeviceId: config.deviceId,
+		});
+		if (
+			command.accountId !== intent.accountId ||
+			command.roomId !== intent.roomId ||
+			command.conversationId !== intent.conversationId ||
+			command.integrationId !== intent.integrationId ||
+			command.targetBotId !== intent.targetBotId ||
+			command.targetBotRevision !== intent.targetBotRevision
+		)
+			throw new Error("Publication command original scope mismatch");
+		const original = await readPublicationJournal(options.dataDir ?? process.cwd(), intent);
+		if (!config.accountId) {
+			if (!historical || !original) throw new Error("Authenticated publication account context required");
+		}
+		return intent;
+	}
 	async function ownerCleanup(command: Record<string, unknown>, signal: AbortSignal) {
 		if (!options.dataDir || typeof command.integrationId !== "string")
 			throw new Error("Original integration session required for owner cleanup");
@@ -846,6 +893,7 @@ export function createDeviceRuntime(options: {
 			session.targetBotRevision !== command.targetBotRevision
 		)
 			throw new Error("Original integration cleanup identity mismatch");
+		await assertPublicationWorkspaceIdle(session.targetBotId, session.repoRoot);
 		const identity = { botId: session.targetBotId, root: executionRoot(session.repoRoot) };
 		const existing = [...active].find(
 			(owner) => owner.taskId === `integration:${session.integrationId}` && owner.botId === session.targetBotId,
@@ -914,10 +962,18 @@ export function createDeviceRuntime(options: {
 			);
 		}
 		const operation = (async () => {
-			enabled(commandSignal);
 			if (!payload || typeof payload !== "object" || Array.isArray(payload))
 				throw new Error("Invalid transfer command");
 			const command = payload as Record<string, unknown>;
+			if (action === "integration_publication_status" || (action === "integration_cancel" && command.publishIntent)) {
+				const intent = await originalPublicationCommand(command, true);
+				const historical = { dataDir: options.dataDir ?? process.cwd(), publishIntent: intent };
+				return action === "integration_publication_status"
+					? devicePublicationStatus(historical)
+					: deviceCancelPublication(historical);
+			}
+			enabled(commandSignal);
+			if (action === "integration_confirm") await originalPublicationCommand(command, false);
 			if (typeof command.roomId !== "string" && !action.startsWith("integration_")) throw new Error("Room required");
 			if (typeof command.targetBotId !== "string" || !command.targetBotId) throw new Error("Target Bot required");
 			if (action === "integration_cancel" && command.ownerCleanup === true) return ownerCleanup(command, commandSignal);
@@ -991,6 +1047,10 @@ export function createDeviceRuntime(options: {
 							commit: command.commit as string | undefined,
 							artifactRef: command.artifactRef as DeviceDeliveryArtifactRef | undefined,
 							artifact: command.artifact as DeviceArtifact | undefined,
+							accountId: config.accountId,
+							roomId: command.roomId as string,
+							conversationId: command.conversationId as string,
+							targetDeviceId: config.deviceId,
 						},
 						{ signal: commandSignal },
 					);
@@ -1025,6 +1085,8 @@ export function createDeviceRuntime(options: {
 							commit: command.commit as string | undefined,
 							materializedCommit: command.materializedCommit as string | undefined,
 							expectedTargetSha: command.expectedTargetSha as string,
+							publishIntent: validatePublishIntent(command.publishIntent),
+							mode: command.mode === "resume" ? "resume" : "first",
 						},
 						{ signal: commandSignal },
 					);
@@ -1157,7 +1219,10 @@ export function createDeviceRuntime(options: {
 				}
 				throw new Error("Unsupported device command");
 			} catch (error) {
-				if (error instanceof VerificationStopUnconfirmedError && integrationOwner) {
+				if (
+					(error instanceof VerificationStopUnconfirmedError || error instanceof PublicationStopUnconfirmedError) &&
+					integrationOwner
+				) {
 					integrationOwner.blocked = error;
 					scheduler.markBlocked(integrationOwner.taskId, integrationOwner.attemptId, error);
 				}

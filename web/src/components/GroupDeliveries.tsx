@@ -645,7 +645,7 @@ function DeliveryCard({
 					{error && <p role="alert">{error}</p>}
 				</form>
 			)}
-			{!readOnly && (delivery.artifactRef || review?.verdict === "accepted") && roomId && conversationId && (
+			{!readOnly && roomId && conversationId && (
 				<GroupIntegration
 					key={`${roomId}:${conversationId}:${delivery.id}`}
 					roomId={roomId}

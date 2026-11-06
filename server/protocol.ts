@@ -672,6 +672,81 @@ export interface DeviceIntegrationVerification extends DeviceIntegrationVerifica
 	digest: string;
 	verifiedAt: number;
 }
+export type DeviceGitObjectFormat = "sha1" | "sha256";
+/** Sealed before dispatch. All authority and Git identity refer to the original operation. */
+export interface DevicePublishIntentFacts {
+	version: 1;
+	id: string;
+	accountId: string;
+	roomId: string;
+	conversationId: string;
+	integrationId: string;
+	targetDeviceId: string;
+	targetBotId: string;
+	targetBotRevision: number;
+	actor: { accountId: string; botId?: string; botRevision?: number; botDeviceId?: string; taskId?: string };
+	repositoryId: string;
+	objectFormat: DeviceGitObjectFormat;
+	targetRef: string;
+	expectedOld: string;
+	preparedTree: string;
+	materializedCommit: string;
+	createdAt: number;
+	delivery: { id: string; commit?: string; artifactRef?: DeviceDeliveryArtifactRef };
+	review: DeviceReview;
+	verificationPlan: DeviceIntegrationVerificationPlan;
+	verification: DeviceIntegrationVerification;
+}
+export interface DevicePublishIntent extends DevicePublishIntentFacts {
+	digest: string;
+	candidateSha: string;
+}
+/** Historical proof survives later authorization changes and branch movement. */
+export interface DevicePublishReceipt {
+	intentId: string;
+	intentDigest: string;
+	candidateSha: string;
+	outcome: "applied";
+	proof: "cas_exit" | "target_exact" | "target_descendant";
+	observedAt: number;
+	targetSha?: string;
+}
+export interface DevicePublishObservation {
+	intentId: string;
+	intentDigest: string;
+	candidateSha: string;
+	observedAt: number;
+	target: "candidate" | "descendant" | "expected_old" | "other" | "missing" | "unknown";
+	targetSha?: string;
+	phase: "absent" | "prepared" | "cas_started" | "cas_rejected" | "applied" | "closed" | "unknown";
+	/** True only when durable evidence proves CAS never started, or explicitly rejected and stopped. */
+	retryable: boolean;
+	error?: string;
+}
+export interface DevicePublishStop {
+	intentId: string;
+	intentDigest: string;
+	candidateSha: string;
+	/** Durable fence blocks future writes, independently of any already-running child. */
+	closed: boolean;
+	stopConfirmed: boolean;
+	pastEffect: "applied" | "not_applied" | "unknown";
+	fencedAt: number;
+	/** Present only after the original operation is positively known to have stopped. */
+	stoppedAt?: number;
+}
+export interface DevicePublicationResult {
+	status: "applied" | "pending" | "cancelled";
+	publishReceipt?: DevicePublishReceipt;
+	publishObservation?: DevicePublishObservation;
+	publishStop?: DevicePublishStop;
+	cleanupPending?: boolean;
+}
+export interface DeviceIntegrationResumeRequest {
+	intentId: string;
+	intentDigest: string;
+	candidateSha: string;
+}
 export interface DeviceIntegration {
 	id: string;
 	accountId: string;
@@ -683,6 +758,12 @@ export interface DeviceIntegration {
 	artifactRef?: DeviceDeliveryArtifactRef;
 	materializedCommit?: string;
 	preparedTree?: string;
+	objectFormat?: DeviceGitObjectFormat;
+	repositoryId?: string;
+	publishIntent?: DevicePublishIntent;
+	publishReceipt?: DevicePublishReceipt;
+	publishObservation?: DevicePublishObservation;
+	publishStop?: DevicePublishStop;
 	verificationPlan?: DeviceIntegrationVerificationPlan;
 	verification?: DeviceIntegrationVerification;
 	targetBotId: string;
@@ -725,6 +806,8 @@ export interface DeviceIntegrationResponse {
 
 export interface DeviceIntegrationListResponse {
 	integrations: DeviceIntegration[];
+	/** Authenticated human owner capability; retry safety is separately proven by the journal. */
+	canResumePublication?: boolean;
 }
 
 export type QueueMode = "all" | "one-at-a-time";

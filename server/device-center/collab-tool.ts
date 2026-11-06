@@ -997,6 +997,9 @@ function projectConversations(value: unknown): Record<string, unknown> {
 			"commit",
 			"materializedCommit",
 			"preparedTree",
+			"objectFormat",
+			"repositoryId",
+			"cleanupPending",
 			"status",
 			"targetBotId",
 			"targetBotRevision",
@@ -1007,6 +1010,47 @@ function projectConversations(value: unknown): Record<string, unknown> {
 			"updatedAt",
 		]);
 		if (input.artifactRef) result.artifactRef = projectArtifactRef(input.artifactRef);
+		if (input.publishIntent)
+			result.publishIntent = project(input.publishIntent, [
+				"id",
+				"digest",
+				"candidateSha",
+				"targetRef",
+				"expectedOld",
+				"objectFormat",
+			]);
+		if (input.publishReceipt)
+			result.publishReceipt = project(input.publishReceipt, [
+				"intentId",
+				"intentDigest",
+				"candidateSha",
+				"outcome",
+				"proof",
+				"observedAt",
+				"targetSha",
+			]);
+		if (input.publishObservation)
+			result.publishObservation = project(input.publishObservation, [
+				"intentId",
+				"intentDigest",
+				"candidateSha",
+				"observedAt",
+				"target",
+				"targetSha",
+				"phase",
+				"retryable",
+			]);
+		if (input.publishStop)
+			result.publishStop = project(input.publishStop, [
+				"intentId",
+				"intentDigest",
+				"candidateSha",
+				"closed",
+				"stopConfirmed",
+				"pastEffect",
+				"fencedAt",
+				"stoppedAt",
+			]);
 		if (input.verification) {
 			const verification = object(input.verification);
 			result.verification = project(verification, [

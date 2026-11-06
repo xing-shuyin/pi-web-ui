@@ -16,6 +16,9 @@ import {
 	hubVerifyIntegration,
 	hubConfirmIntegration,
 	hubCancelIntegration,
+	hubReconcileIntegration,
+	hubResumeIntegration,
+	reconcilePendingIntegrations,
 	listIntegrations,
 } from "./hub-integration.js";
 import type { Request, Response, NextFunction } from "express";
@@ -260,7 +263,7 @@ export async function createDeviceHub(options: DeviceHubOptions) {
 		if (req.method === "POST" && !agentWrites.allow("user:" + device.id)) fail(429, "Too many user writes");
 		const suffix = req.path.slice("/api/device-user".length);
 		const conversationRoute =
-			/^\/rooms\/[^/]+\/conversations(?:\/[^/]+(?:\/(?:messages|stop|deliveries|reviews|task-state|evidence|integrations(?:\/[^/]+(?:\/(?:verify|apply|cancel))?)?))?)?$/.test(
+			/^\/rooms\/[^/]+\/conversations(?:\/[^/]+(?:\/(?:messages|stop|deliveries|reviews|task-state|evidence|integrations(?:\/[^/]+(?:\/(?:verify|apply|cancel|reconcile|resume))?)?))?)?$/.test(
 				suffix,
 			);
 		const taskRoute = /^\/rooms\/[^/]+\/tasks\/[^/]+(?:\/(?:journal|report))?$/.test(suffix);
@@ -306,7 +309,7 @@ export async function createDeviceHub(options: DeviceHubOptions) {
 			(req.method === "POST" &&
 				(suffix === "/rooms" ||
 					/^\/rooms\/[^/]+\/tasks\/[^/]+\/report$/.test(suffix) ||
-					/^\/rooms\/[^/]+\/(?:messages|blackboard|conversations(?:\/[^/]+\/(?:messages|stop|deliveries|reviews|attention|task-state|integrations(?:\/[^/]+(?:\/(?:verify|apply|cancel))?)?))?)$/.test(
+					/^\/rooms\/[^/]+\/(?:messages|blackboard|conversations(?:\/[^/]+\/(?:messages|stop|deliveries|reviews|attention|task-state|integrations(?:\/[^/]+(?:\/(?:verify|apply|cancel|reconcile|resume))?)?))?)$/.test(
 						suffix,
 					))) ||
 			(req.method === "PUT" && /^\/rooms\/[^/]+\/blackboard$/.test(suffix))
@@ -526,7 +529,12 @@ export async function createDeviceHub(options: DeviceHubOptions) {
 			fail(404, "Device revoked");
 		}
 		pairs.delete(key);
-		res.json({ deviceId: pair.deviceId, credential: pair.credential, uiCredential: pair.uiCredential });
+		res.json({
+			deviceId: pair.deviceId,
+			accountId: pair.accountId,
+			credential: pair.credential,
+			uiCredential: pair.uiCredential,
+		});
 	});
 	app.get("/api/info", (_req, res) => {
 		res.json({
@@ -717,7 +725,7 @@ export async function createDeviceHub(options: DeviceHubOptions) {
 				}
 			return draft.bots.filter((b) => b.deviceId === device.id);
 		});
-		res.json({ bots });
+		res.json({ bots, accountId: owner.id });
 	});
 	app.get("/api/rooms", (req, res) =>
 		res.json({
@@ -1801,7 +1809,10 @@ export async function createDeviceHub(options: DeviceHubOptions) {
 			(c) => c.id === req.params.conversationId && c.roomId === req.params.id && c.accountId === owner.id,
 		);
 		if (!conversation) fail(404, "Conversation missing");
-		res.json({ integrations: listIntegrations(snapshot, req.params.conversationId as string) });
+		res.json({
+			integrations: listIntegrations(snapshot, req.params.conversationId as string),
+			canResumePublication: !agents.has(req) && conversation.accountId === owner.id,
+		});
 	});
 	app.post("/api/rooms/:id/conversations/:conversationId/integrations", async (req, res) => {
 		const owner = account(req);
@@ -1856,6 +1867,54 @@ export async function createDeviceHub(options: DeviceHubOptions) {
 			actor,
 			req.body ?? {},
 			driver,
+		);
+		res.json({ integration: result });
+	});
+	app.post("/api/rooms/:id/conversations/:conversationId/integrations/:integrationId/reconcile", async (req, res) => {
+		const owner = account(req);
+		const agent = agents.get(req);
+		// Historical queries keep the authenticated Bot identity even after its registry entry is disabled/deleted.
+		const actor = {
+			accountId: owner.id,
+			...(agent
+				? { originalBot: { id: req.body?.sourceBotId, accountId: agent.account.id, deviceId: agent.device.id } }
+				: {}),
+		};
+		if (agent && (typeof actor.originalBot?.id !== "string" || !actor.originalBot.id))
+			fail(403, "Source Bot access denied");
+		if (!options.relay?.callDevice) fail(503, "Device relay unavailable");
+		const result = await hubReconcileIntegration(
+			store,
+			req.params.id as string,
+			req.params.conversationId as string,
+			actor,
+			req.params.integrationId as string,
+			{
+				callDeviceCommand: (id, action, payload, opts) => options.relay!.callDevice!(id, action as any, payload, opts),
+			},
+		);
+		res.json({ integration: result });
+	});
+	app.post("/api/rooms/:id/conversations/:conversationId/integrations/:integrationId/resume", async (req, res) => {
+		const owner = account(req);
+		if (agents.has(req)) fail(403, "Publication resume requires a human account owner");
+		const input = req.body;
+		if (
+			!input ||
+			[input.intentId, input.intentDigest, input.candidateSha].some((value) => typeof value !== "string" || !value)
+		)
+			fail(400, "Exact publication intent and candidate required");
+		if (!options.relay?.callDevice) fail(503, "Device relay unavailable");
+		const result = await hubResumeIntegration(
+			store,
+			req.params.id as string,
+			req.params.conversationId as string,
+			{ accountId: owner.id },
+			req.params.integrationId as string,
+			{ intentId: input.intentId, intentDigest: input.intentDigest, candidateSha: input.candidateSha },
+			{
+				callDeviceCommand: (id, action, payload, opts) => options.relay!.callDevice!(id, action as any, payload, opts),
+			},
 		);
 		res.json({ integration: result });
 	});
@@ -3400,8 +3459,26 @@ export async function createDeviceHub(options: DeviceHubOptions) {
 			);
 		}
 	}
+	async function reconcilePendingPublications(deviceId?: string) {
+		if (!options.relay?.callDevice) return [];
+		try {
+			return await reconcilePendingIntegrations(
+				store,
+				{
+					callDeviceCommand: (id, action, payload, opts) =>
+						options.relay!.callDevice!(id, action as any, payload, opts),
+				},
+				{ limit: 16, deviceId },
+			);
+		} catch (cause) {
+			console.warn("[HubRecovery] Publication query failed", cause);
+			return [];
+		}
+	}
+	void reconcilePendingPublications();
 	let sweepInflight = false;
 	const recoverySweepTimer = setInterval(() => {
+		void reconcilePendingPublications();
 		if (sweepInflight) return;
 		const now = Date.now();
 		if (
@@ -3744,6 +3821,7 @@ export async function createDeviceHub(options: DeviceHubOptions) {
 		renewTaskLease,
 		onTaskDisconnect,
 		resumeQueuedTasks,
+		reconcilePendingPublications,
 		getAccount,
 		getRelayAccount: (req: IncomingMessage) => users.get(req as Request)?.account ?? getAccount(req) ?? undefined,
 		authenticateAgent,
@@ -3754,6 +3832,7 @@ export async function createDeviceHub(options: DeviceHubOptions) {
 		acceptTaskPlanReady,
 		setRelay(relay: HubRelay) {
 			options.relay = relay;
+			void reconcilePendingPublications();
 		},
 		async close() {
 			clearInterval(recoverySweepTimer);

@@ -419,7 +419,10 @@ describe("integration confirmation gates", () => {
 				}),
 			),
 		);
-		expect(host.querySelector(".gi-panel")).toBeNull();
+		expect(
+			[...host.querySelectorAll("button")].find((item) => item.textContent?.includes("Prepare Isolated Integration"))
+				?.disabled,
+		).toBe(true);
 	});
 
 	it("requires a real verification receipt on legacy commit deliveries too", async () => {

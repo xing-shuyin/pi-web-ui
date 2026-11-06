@@ -21,6 +21,8 @@ import {
 	deviceVerifyIntegration,
 	deviceConfirmIntegration,
 	deviceCancelIntegration,
+	deviceCancelPublication,
+	devicePublicationStatus,
 } from "../../server/device-center/device-integration.js";
 import {
 	computeArtifactDigest,
@@ -99,7 +101,9 @@ describe("artifact delivery verification authority through Hub HTTP and WAL", { 
 				if (action === "integration_prepare") return devicePrepareIntegration(local);
 				if (action === "integration_verify") return deviceVerifyIntegration(local);
 				if (action === "integration_confirm") return deviceConfirmIntegration(local);
-				if (action === "integration_cancel") return deviceCancelIntegration(local);
+				if (action === "integration_publication_status") return devicePublicationStatus(local);
+				if (action === "integration_cancel")
+					return payload.publishIntent ? deviceCancelPublication(local) : deviceCancelIntegration(local);
 				throw new Error("Unexpected RPC");
 			},
 		};
@@ -520,7 +524,7 @@ describe("artifact delivery verification authority through Hub HTTP and WAL", { 
 		).rejects.toThrow(/membership, revision or device/);
 		expect(hub.store.snapshot().integrations[0].verification).toBeUndefined();
 	});
-	it("freezes delivery, review and same contract before apply RPC and rechecks actor afterwards", async () => {
+	it("freezes delivery, review and same contract before RPC and preserves applied fact after actor revoke", async () => {
 		const verified = await verify(await prepare());
 		await review(verified);
 		const original = driver;
@@ -575,10 +579,15 @@ describe("artifact delivery verification authority through Hub HTTP and WAL", { 
 				return response;
 			},
 		};
-		await expect(
-			hubConfirmIntegration(hub.store, "room", "conversation", verified.id, actor, {}, race),
-		).rejects.toThrow(/Actor Bot/);
-		expect(hub.store.snapshot().integrations[0].status).toBe("failed");
+		const applied = await hubConfirmIntegration(hub.store, "room", "conversation", verified.id, actor, {}, race);
+		expect(applied.status).toBe("applied");
+		expect(applied.publishReceipt).toMatchObject({
+			outcome: "applied",
+			proof: "cas_exit",
+			candidateSha: applied.publishIntent!.candidateSha,
+		});
+		expect(await git(repo, ["rev-parse", "main"])).toBe(applied.publishIntent!.candidateSha);
+		expect(hub.store.snapshot().bots.find((b) => b.id === "author")!.revision).toBe(actor.bot.revision + 1);
 	});
 	it("freezes owner plan across failures and lets a current Bot reuse only the unchanged authorization", async () => {
 		const prep = await prepare();
@@ -638,6 +647,8 @@ describe("artifact delivery verification authority through Hub HTTP and WAL", { 
 		const fake = {
 			callDeviceCommand: async () => ({
 				status: "prepared",
+				objectFormat: "sha1",
+				repositoryId: delivery.artifactRef!.repositoryId,
 				expectedTargetSha: mismatch === "baseline" ? "f".repeat(40) : base,
 				materializedCommit: base,
 				preparedTree: mismatch === "tree" ? "f".repeat(40) : outputTree,
@@ -726,7 +737,7 @@ describe("artifact delivery verification authority through Hub HTTP and WAL", { 
 		expect(applied.status).toBe("applied");
 		expect(hub.store.snapshot().conversations[0].closed).not.toBe(true);
 	});
-	it("retains emergency device revocation during apply and explicitly records an uncertain target outcome", async () => {
+	it("retains emergency device revocation while settling the original successful publication", async () => {
 		const verified = await verify(await prepare());
 		await review(verified);
 		const original = driver;
@@ -737,13 +748,23 @@ describe("artifact delivery verification authority through Hub HTTP and WAL", { 
 				return original.callDeviceCommand(id, action, payload);
 			},
 		};
-		await expect(
-			hubConfirmIntegration(hub.store, "room", "conversation", verified.id, { accountId }, {}, revoked),
-		).rejects.toThrow();
-		const result = hub.store.snapshot().integrations[0];
-		expect(result.status).toBe("failed");
-		expect(result.cleanupPending).toBe(true);
-		expect(result.error).toMatch(/check target outcome/);
+		const result = await hubConfirmIntegration(
+			hub.store,
+			"room",
+			"conversation",
+			verified.id,
+			{ accountId },
+			{},
+			revoked,
+		);
+		expect(result.status).toBe("applied");
+		expect(result.publishReceipt).toMatchObject({
+			outcome: "applied",
+			proof: "cas_exit",
+			candidateSha: result.publishIntent!.candidateSha,
+		});
+		expect(await git(repo, ["rev-parse", "main"])).toBe(result.publishIntent!.candidateSha);
+		expect(hub.store.snapshot().devices.some((d) => d.id === "device")).toBe(false);
 		expect(result.verification!.digest).toBe(verified.verification!.digest);
 	});
 	it("allows sealed criteria beyond the author-input budget while preserving the summary and checks limit", async () => {

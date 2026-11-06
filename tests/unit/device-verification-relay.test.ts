@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { WebSocket } from "ws";
 import { createCommandChannel, type RelayFrame } from "../../server/device-center/relay.js";
 import { VERIFICATION_RPC_TIMEOUT_MS } from "../../server/device-center/verification-limits.js";
+import { PublicationStopUnconfirmedError } from "../../server/device-center/local-publication.js";
 import { VerificationStopUnconfirmedError } from "../../server/device-center/local-verification.js";
 
 afterEach(() => vi.useRealTimers());
@@ -50,25 +51,47 @@ describe("verification relay safety", () => {
 		await verificationRejected;
 		p.close();
 	});
-	it("never acknowledges cancellation as stopped when the runtime reports unconfirmed stop", async () => {
+	it.each([VerificationStopUnconfirmedError, PublicationStopUnconfirmedError])(
+		"never acknowledges cancellation as stopped for %s",
+		async (StopError) => {
+			let entered!: () => void;
+			const running = new Promise<void>((resolve) => {
+				entered = resolve;
+			});
+			const p = pair(async (_action, _payload, signal) => {
+				entered();
+				return new Promise((_, reject) =>
+					signal.addEventListener("abort", () => reject(new StopError()), { once: true }),
+				);
+			});
+			const controller = new AbortController();
+			const request = p.client.call("integration_verify", {}, { signal: controller.signal });
+			const rejected = expect(request).rejects.toMatchObject({ stopUnconfirmed: true });
+			await running;
+			controller.abort();
+			await rejected;
+			expect(p.sent.some((frame) => frame.type === "rpc_cancel_ack")).toBe(false);
+			expect(p.sent).toContainEqual(expect.objectContaining({ type: "rpc_error", stopUnconfirmed: true }));
+			p.close();
+		},
+	);
+	it("never acknowledges stopped when historical cancellation returns a durable future fence with stop unknown", async () => {
 		let entered!: () => void;
 		const running = new Promise<void>((resolve) => {
 			entered = resolve;
 		});
 		const p = pair(async (_action, _payload, signal) => {
 			entered();
-			return new Promise((_, reject) =>
-				signal.addEventListener("abort", () => reject(new VerificationStopUnconfirmedError()), { once: true }),
-			);
+			await new Promise<void>((resolve) => signal.addEventListener("abort", () => resolve(), { once: true }));
+			return { status: "pending", publishStop: { closed: true, stopConfirmed: false, pastEffect: "unknown" } };
 		});
 		const controller = new AbortController();
-		const request = p.client.call("integration_verify", {}, { signal: controller.signal });
+		const request = p.client.call("integration_cancel", {}, { signal: controller.signal });
 		const rejected = expect(request).rejects.toMatchObject({ stopUnconfirmed: true });
 		await running;
 		controller.abort();
 		await rejected;
 		expect(p.sent.some((frame) => frame.type === "rpc_cancel_ack")).toBe(false);
-		expect(p.sent).toContainEqual(expect.objectContaining({ type: "rpc_error", stopUnconfirmed: true }));
 		p.close();
 	});
 });

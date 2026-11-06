@@ -11,6 +11,8 @@ import {
 	hubVerifyIntegration,
 	hubConfirmIntegration,
 	hubCancelIntegration,
+	hubReconcileIntegration,
+	hubResumeIntegration,
 	listIntegrations,
 } from "../../server/device-center/hub-integration.js";
 import {
@@ -18,6 +20,8 @@ import {
 	deviceVerifyIntegration,
 	deviceConfirmIntegration,
 	deviceCancelIntegration,
+	deviceCancelPublication,
+	devicePublicationStatus,
 } from "../../server/device-center/device-integration.js";
 import type { DeviceDelivery, DeviceReview } from "../../server/protocol.js";
 import { freezeVerificationPlan } from "../../server/device-center/integration-verification.js";
@@ -173,6 +177,10 @@ describe("device-hub-integration", { timeout: 30000 }, () => {
 				if (action === "integration_prepare") {
 					return await devicePrepareIntegration(
 						{
+							accountId: payload.accountId,
+							roomId: payload.roomId,
+							conversationId: payload.conversationId,
+							targetDeviceId: devId,
 							integrationId: payload.integrationId,
 							targetBotId: payload.targetBotId,
 							targetBotRevision: payload.targetBotRevision ?? 1,
@@ -212,6 +220,8 @@ describe("device-hub-integration", { timeout: 30000 }, () => {
 							repoRoot: repoDir,
 							dataDir,
 							deliveryId: payload.deliveryId,
+							publishIntent: payload.publishIntent,
+							mode: payload.mode,
 							commit: payload.commit,
 							materializedCommit: payload.materializedCommit,
 							expectedTargetSha: payload.expectedTargetSha,
@@ -219,7 +229,10 @@ describe("device-hub-integration", { timeout: 30000 }, () => {
 						options,
 					);
 				}
+				if (action === "integration_publication_status")
+					return devicePublicationStatus({ dataDir, publishIntent: payload.publishIntent });
 				if (action === "integration_cancel") {
+					if (payload.publishIntent) return deviceCancelPublication({ dataDir, publishIntent: payload.publishIntent });
 					return await deviceCancelIntegration(
 						{
 							integrationId: payload.integrationId,
@@ -397,7 +410,10 @@ describe("device-hub-integration", { timeout: 30000 }, () => {
 		).rejects.toMatchObject({ code: "INTEGRATION_TARGET_MOVED", status: 409 });
 
 		const updated = store.snapshot().integrations.find((it) => it.id === prep.id);
-		expect(updated?.status).toBe("failed");
+		expect(updated?.status).toBe("applying");
+		expect(updated?.publishIntent).toBeDefined();
+		expect(updated?.publishReceipt).toBeUndefined();
+		expect(await runGit(repoDir, ["rev-parse", "main"])).toBe(advancedCommit);
 	});
 
 	it("rejects prepare when target repository has uncommitted dirty changes", async () => {
@@ -504,19 +520,16 @@ describe("device-hub-integration", { timeout: 30000 }, () => {
 		await expect(
 			hubCancelIntegration(store, roomId, conversationId, prep.id, { accountId: "other-account" }),
 		).rejects.toMatchObject({ status: 404 });
-		await expect(hubCancelIntegration(store, roomId, conversationId, prep.id, actor)).rejects.toMatchObject({
-			status: 409,
-			message: "Already applied integration cannot be cancelled",
-		});
+		expect((await hubCancelIntegration(store, roomId, conversationId, prep.id, actor)).status).toBe("applied");
 		let cancelCalls = 0;
-		await expect(
-			hubCancelIntegration(store, roomId, conversationId, prep.id, actor, {
-				callDeviceCommand: async () => {
-					cancelCalls++;
-					throw new Error("Unexpected cancellation RPC");
-				},
-			}),
-		).rejects.toThrow(/Already applied integration cannot be cancelled/i);
+		const retained = await hubCancelIntegration(store, roomId, conversationId, prep.id, actor, {
+			callDeviceCommand: async () => {
+				cancelCalls++;
+				throw new Error("Unexpected cancellation RPC");
+			},
+		});
+		expect(retained.status).toBe("applied");
+		expect(retained.publishReceipt).toBeDefined();
 		expect(cancelCalls).toBe(0);
 
 		const record = store.snapshot().integrations.find((it) => it.id === prep.id);
@@ -735,8 +748,15 @@ describe("device-hub-integration", { timeout: 30000 }, () => {
 		expect(afterContent).toHaveLength(0);
 	});
 
-	it("requires a new verified integration after failed apply, preserving successful verification history", async () => {
-		const driver = createTestDriver();
+	it("requires explicit owner resume of the same safe intent, preserving successful verification history", async () => {
+		const original = createTestDriver();
+		let confirms = 0;
+		const driver = {
+			callDeviceCommand: async (device: string, action: string, payload: unknown) => {
+				if (action === "integration_confirm") confirms++;
+				return original.callDeviceCommand(device, action, payload);
+			},
+		};
 		const actor = { accountId };
 
 		const prep = await hubPrepareIntegration(
@@ -782,28 +802,26 @@ describe("device-hub-integration", { timeout: 30000 }, () => {
 		// 人类切离 main 分支（切到 detached HEAD）
 		await runGit(repoDir, ["checkout", "--detach", baseCommit]);
 
-		// Failed records require a newly verified integration; status alone cannot authorize apply.
+		// Repeated apply returns the reserved operation without dispatching, even after the obstacle is removed.
+		const existing = await hubConfirmIntegration(store, roomId, conversationId, prep.id, actor, {}, driver);
+		expect(confirms).toBe(1);
 		await expect(
-			hubConfirmIntegration(store, roomId, conversationId, prep.id, actor, { expectedTargetSha: baseCommit }, driver),
-		).rejects.toThrow(/successful real verification proof/);
-		const next = await hubPrepareIntegration(
+			hubPrepareIntegration(store, roomId, conversationId, actor, { deliveryId, targetBotId: botId }, driver),
+		).rejects.toThrow(/freezes/);
+		const reconciled = await hubReconcileIntegration(store, roomId, conversationId, actor, prep.id, driver);
+		expect(reconciled.publishObservation).toMatchObject({ phase: "prepared", retryable: true, target: "expected_old" });
+		const intent = existing.publishIntent!;
+		const retried = await hubResumeIntegration(
 			store,
 			roomId,
 			conversationId,
 			actor,
-			{ deliveryId, targetBotId: botId },
+			prep.id,
+			{ intentId: intent.id, intentDigest: intent.digest, candidateSha: intent.candidateSha },
 			driver,
 		);
-		await hubVerifyIntegration(store, roomId, conversationId, next.id, actor, { commands: ["node test.js"] }, driver);
-		const retried = await hubConfirmIntegration(
-			store,
-			roomId,
-			conversationId,
-			next.id,
-			actor,
-			{ expectedTargetSha: baseCommit },
-			driver,
-		);
+		expect(confirms).toBe(2);
+		expect(retried.publishIntent).toEqual(intent);
 
 		expect(retried.status).toBe("applied");
 		expect(retried.newCommitSha).toBeDefined();
@@ -812,17 +830,13 @@ describe("device-hub-integration", { timeout: 30000 }, () => {
 		const content = await runGit(repoDir, ["show", "refs/heads/main:file.txt"]);
 		expect(content).toContain("Added line by bot");
 		const history = listIntegrations(store.snapshot(), conversationId);
-		expect(history).toHaveLength(2);
-		expect(history.find((record) => record.id === prep.id)).toMatchObject({
-			status: "failed",
-			verification: { digest: firstVerified.verification!.digest },
-		});
-		expect(history.find((record) => record.id === next.id)).toMatchObject({
+		expect(history).toHaveLength(1);
+		expect(history[0]).toMatchObject({
+			id: prep.id,
 			status: "applied",
-			newCommitSha: retried.newCommitSha,
+			newCommitSha: intent.candidateSha,
+			verification: { digest: firstVerified.verification!.digest },
+			publishReceipt: { candidateSha: intent.candidateSha, proof: "cas_exit" },
 		});
-		expect(history.find((record) => record.id === next.id)!.verification!.digest).not.toBe(
-			firstVerified.verification!.digest,
-		);
-	}, 60_000);
+	}, 30_000);
 });
