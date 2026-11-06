@@ -759,6 +759,7 @@ export function handleSettingsMessage(
 				retryMaxAttempts: (msg as { retryMaxAttempts?: number }).retryMaxAttempts,
 				softCapTokens: (msg as { softCapTokens?: number }).softCapTokens,
 				softCapByModel: (msg as { softCapByModel?: Record<string, number> }).softCapByModel,
+				autoCompactionInstructions: (msg as { autoCompactionInstructions?: string }).autoCompactionInstructions,
 				reviewPrompt: msg.reviewPrompt,
 				reviewDisabledSkills: msg.reviewDisabledSkills,
 				markersEnabled: (msg as { markersEnabled?: boolean }).markersEnabled,

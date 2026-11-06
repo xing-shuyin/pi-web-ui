@@ -13,17 +13,25 @@ pi-web-ui plugin create my-plugin --template renderer   # view:false + renderers
 
 常用选项：`--dir <插件父目录>`（默认 `<dataDir>/plugins`，也可用 `--data-dir` 指定数据目录）、`--force`（目标已存在时覆盖）。生成后会自动做一次 manifest 基础校验 + 生成文件的 `node --check` + **静态 import 自检**，有 warning 会直接打印；生效只需刷新浏览器（或发 `plugins_reload`），未运行则下次启动生效。
 
-> **为什么 SDK 拷两份**：宿主**只暴露 `/plugins/<id>/client/*`**（`server/plugins.ts` 的 `resolvePluginClientFile` 把根钉在 `client/`）—— 客户端 bundle 与它的依赖必须都在 `client/` 内，越界的相对 import 会让浏览器报 `Failed to fetch dynamically imported module` 且**整个 bundle 都不执行**（插件页空白，而服务端一切正常、`active:true`）。服务端入口则是同进程 `import()`，不受暴露面限制。所以：服务端用 `<plugin>/sdk/`、客户端用 `<plugin>/client/sdk/`，`client/entry.mjs` 里只能写 `import … from "./sdk/index.mjs"`。两份都拷 `index.mjs` + `client-utils.mjs`（前者末尾 `export * from "./client-utils.mjs"`，少一份连服务端都加载不了）。
+> **客户端 SDK 必须放在 `client/` 内**：宿主只暴露 `/plugins/<id>/client/*`（`server/plugins.ts` 的 `resolvePluginClientFile`）。越界的相对 import 会让整个客户端入口加载失败。服务端使用 `<plugin>/sdk/`，客户端使用 `<plugin>/client/sdk/`，新客户端入口导入 `./sdk/client.mjs`。
+>
+> **SDK 0.3.0 按运行环境拆分**：服务端 `sdk/` 包含 `index.mjs`、`client.mjs`、`client-utils.mjs`、`testing.mjs`；客户端 `client/sdk/` 只复制 `client.mjs` 与 `client-utils.mjs`，并生成仅转导出 `./client.mjs` 的兼容 `index.mjs`。因此已有客户端 `./sdk/index.mjs` 导入仍能工作。客户端模块及其完整依赖闭包禁止 Node 导入（包括动态导入与无 `node:` 前缀的内置模块），也不包含 `createMockHost`；测试 Harness 留在 Node 专用 `testing.mjs`。守卫：`tests/unit/plugin-sdk-browser-safe.test.ts`。
 
 ---
 
-`@pi-web-ui/plugin-sdk` 是写插件的**起手包**：`index.mjs`（零依赖纯 ESM，可直接拷进插件目录）+ `index.d.ts`（宿主接口精简类型，编辑器补全用）。
+`@pi-web-ui/plugin-sdk` 是写插件的**起手包**，运行时入口及对应类型如下：
+
+| 入口                           | 用途                                                                            | 包子路径                        |
+| ------------------------------ | ------------------------------------------------------------------------------- | ------------------------------- |
+| `index.mjs` / `index.d.ts`     | 服务端 `definePlugin` 与兼容总入口，转导出客户端及测试能力                      | `@pi-web-ui/plugin-sdk`         |
+| `client.mjs` / `client.d.ts`   | 浏览器 `defineView`、`defineRenderer`、UI 辅助与 `client-utils`                 | `@pi-web-ui/plugin-sdk/client`  |
+| `testing.mjs` / `testing.d.ts` | Node 测试用 `createMockHost`，路径解析直接使用 `node:path` 的 `resolve` / `sep` | `@pi-web-ui/plugin-sdk/testing` |
 
 > 和 `server/plugins.ts` 的全量 `PluginHost` 是**同语义的精简版**：运行时以宿主实际注入为准，宿主版本见 `PLUGIN_API_VERSION`。SDK 只求“写得顺”，不做运行时 polyfill。
 
 ## 怎么用
 
-1. 把 `index.mjs` + `client-utils.mjs`（和要补全就把 `index.d.ts`）拷进你的插件目录（如 `my-plugin/sdk/`）；**客户端要用到的那份再拷一份到 `my-plugin/client/sdk/`**（宿主只服务 `client/*`，见上文「为什么 SDK 拷两份」）；
+1. 优先用脚手架生成。手工 vendor 时，服务端将 `index.mjs`、`client.mjs`、`client-utils.mjs`、`testing.mjs` 拷到 `my-plugin/sdk/`；客户端只把 `client.mjs`、`client-utils.mjs` 拷到 `my-plugin/client/sdk/`。需要补全时同时保留 SDK 的 `.d.ts` 文件（类型入口共用 `index.d.ts`）；
 2. 服务端入口：
 
 ```js
@@ -53,7 +61,7 @@ export default definePlugin({
 3. 客户端视图（`client/entry.mjs`）：
 
 ```js
-import { defineView, onUiAction } from "./sdk/index.mjs";
+import { defineView, onUiAction } from "./sdk/client.mjs";
 
 export default defineView({
 	mount(el, ctx) {
@@ -74,14 +82,14 @@ export default defineView({
 
 ## 本地单测（createMockHost）
 
-插件作者不用起服务就能测 `activate`：SDK 自带 `createMockHost(overrides?)`（零依赖纯 ESM，`node --test` / vitest 均可）：
+插件作者不用起服务就能测 `activate`：`testing.mjs` 提供 `createMockHost(overrides?)`（仅依赖 Node 内置模块，`node --test` / vitest 均可）：
 
 ```js
 // my-plugin/index.test.mjs —— 跑法：node --test index.test.mjs
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 import plugin from "./index.mjs";
-import { createMockHost } from "./sdk/index.mjs";
+import { createMockHost } from "./sdk/testing.mjs";
 
 describe("my-plugin", () => {
 	it("activate 注册 UI + 读注入的设置", async () => {
@@ -107,11 +115,11 @@ describe("my-plugin", () => {
 
 - `host.calls`：全量调用记录 `{ method, args, seq }`（嵌套按点分路径，如 `"ui.register"`、`"fs.readText"`；`log`/`storage` 也记；`seq` 为本次窗口内序号）。`host.mock.calls(method?)` 按方法名过滤；`host.logs`：分级条目 `{ level, text }`；`host.reset()` 只清空两者（settings/handlers/注册表这些 fake 状态保留，要全新状态就重新 `createMockHost()`，零成本）。
 - `overrides.settings` 是 `getSettings()` 返回的预设对象（同一引用）；`host.mock.setSettings(next)` 合并预设，`host.mock.emitSettings(next)` 合并 + 触发 `onSettingsChanged`（模拟用户在设置面板保存）。其余 `overrides` 键整体替换对应方法（`fs`/`ui`/`llm` 等命名空间传对象 = 按子键合并覆盖），被覆盖的方法仍进 `calls` 记录。
-- 无注入回退（与宿主无 provider 时同语义）：`conversations.list/search` 回 `[]`、`get` 回 `null`；`prompt`/`steer`/`abortRun`/`chatWait`/`llm.complete`/`net.fetch`/`bash`/`scm` 回 `{ ok:false, … }`；`requestPermission` 回 `false`；`dialogs.select/input` 回 `{ ok:false }`、`confirm` 回 `false`；`notifyAction` resolve `null`；`schedule()` 只记调用不设真定时器（单测不泄漏句柄）。两处刻意差异：`chat()` 未注入时 resolve `{ ok:false }` 而不是 reject（真宿主 reject，由 `chatWait` 包成 `{ ok:false }`）；`fs.read/readPath` 给空 `Uint8Array`（浏览器侧 import 本文件也安全）。
+- 无注入回退（与宿主无 provider 时同语义）：`conversations.list/search` 回 `[]`、`get` 回 `null`；`prompt`/`steer`/`abortRun`/`chatWait`/`llm.complete`/`net.fetch`/`bash`/`scm` 回 `{ ok:false, … }`；`requestPermission` 回 `false`；`dialogs.select/input` 回 `{ ok:false }`、`confirm` 回 `false`；`notifyAction` resolve `null`；`schedule()` 只记调用不设真定时器（单测不泄漏句柄）。两处刻意差异：`chat()` 未注入时 resolve `{ ok:false }` 而不是 reject（真宿主 reject，由 `chatWait` 包成 `{ ok:false }`）；`fs.read/readPath` 给空 `Uint8Array`。
 - 注册/订阅类返回注销函数，传进来的 handler 存进 `host.mock.handlers[method]`，用 `host.mock.emit(method, ...args)` 同步触发（异步 handler 用 `await host.mock.emitAsync(...)` 按序 await，返回各返回值）。工具/命令/路由/定时任务的定义体另存进 `host.mock.agentTools/commands/routes/schedules`（活数组，注销即摘除；工具的 `execute` 可直接调）；`schedule()` 不设真定时器，用 `await host.mock.fireSchedules()` 手动触发。
 - `ui` 是内存注册表（同 id 覆盖、单次上限 32 条）：`list()` 真反映 register/update/remove/arrange。
 - 脚手架可直接生成这个最小单测：`pi-web-ui plugin create my-plugin --with-test`（生成 `index.test.mjs`，现有模板默认不变）。
-- `sdk/` 是静态拷贝（`index.mjs` + `client-utils.mjs`）：`SDK_VERSION` 与 `plugin-sdk/package.json` 的 version 保持一致；已装插件用 `pi-web-ui plugin upgrade-sdk [id]` 一键刷新拷贝（**服务端 `sdk/` 与客户端 `client/sdk/` 一起刷**；版本号或文件对不上才拷，客户端代码确实 `import "./sdk/"` 但目录缺失会补建，零 SDK 拷贝的插件跳过；同时会对每个插件跑一遍 import 自检并报出越界/缺失）。
+- SDK 是静态拷贝：`SDK_VERSION` 定义在 `client.mjs`，与 `plugin-sdk/package.json` 的 version 保持一致，总入口也转导出该版本。已装插件用 `pi-web-ui plugin upgrade-sdk [id]` 按服务端/客户端各自清单刷新；升级能识别旧 `index.mjs` 中的版本，保留旧客户端导入路径，补齐缺失文件及被引用但缺失的 `client/sdk/`，移除客户端误拷的 `testing.mjs`，再次执行保持幂等。零 SDK 拷贝的插件跳过；每个插件仍执行 import 自检。
 - 自检工具：`plugin-sdk/import-check.mjs`（纯 ESM、零依赖）扫一个插件目录里的相对 import，报「客户端越界」与「目标缺失」——`plugin create` 生成后自动跑（随包装在 CLI 旁边）；插件作者也可以自己对已有插件跑一遍：
   `node --input-type=module -e "const m = await import('./sdk/import-check.mjs'); console.log(m.checkPluginImports(process.cwd()))"`（从插件目录跑）。
 - mock 只在 SDK 层：不断言、不碰 `server/plugins.ts` 运行时。类型见 `index.d.ts` 的 `MockHost` / `MockHostOverrides` / `createMockHost`。

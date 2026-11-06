@@ -1,8 +1,8 @@
 import { describe, expect, it } from "vitest";
-import { resolve, join } from "node:path";
+import { resolve, join, parse, sep } from "node:path";
 import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { createMockHost } from "../../plugin-sdk/index.mjs";
+import { createMockHost } from "../../plugin-sdk/testing.mjs";
 import { PluginManager, type PluginHost } from "../../server/plugins.js";
 
 describe("插件宿主平台原语单测 (PluginHost Primitives)", () => {
@@ -33,6 +33,49 @@ describe("插件宿主平台原语单测 (PluginHost Primitives)", () => {
 		} finally {
 			rmSync(tempDir, { recursive: true, force: true });
 		}
+	});
+
+	it("mock 使用平台原生路径解析，并拒绝同名前缀的兄弟目录", () => {
+		const inside = ["a.txt", "./a.txt", "src/index.ts", "deep/nested/x.md", "a/../b.txt", "sub/./../b.txt", "sub/", ""];
+		const workspace = resolve(tmpdir(), "pi-parity");
+		for (const root of [workspace, workspace + sep, "./relative-workspace"]) {
+			const host = createMockHost({ cwd: root });
+			for (const candidate of [...inside, resolve(root, "absolute.txt")]) {
+				expect(host.resolveInWorkspace(candidate)).toBe(resolve(root, candidate));
+			}
+			expect(host.resolveInWorkspace(".")).toBe(resolve(root));
+			for (const candidate of ["..", "../../..", "../../secret.txt", resolve(resolve(root) + "-other", "x.txt")]) {
+				expect(() => host.resolveInWorkspace(candidate)).toThrowError(expect.objectContaining({ statusCode: 403 }));
+			}
+		}
+	});
+
+	it("工作区根设为本机系统根时正常放行区内文件", () => {
+		const root = parse(resolve(tmpdir())).root;
+		const host = createMockHost({ cwd: root });
+		for (const candidate of ["a.txt", "src/index.ts", ".", "..", ""]) {
+			expect(host.resolveInWorkspace(candidate)).toBe(resolve(root, candidate));
+		}
+	});
+
+	it.skipIf(process.platform === "win32")("POSIX 反斜杠是文件名字符，遵守原生路径语义", () => {
+		const host = createMockHost({ cwd: "/work/proj" });
+		for (const candidate of ["src\\a.ts", "..\\outside.txt", "C:notes.txt", "C:\\notes.txt"]) {
+			expect(host.resolveInWorkspace(candidate)).toBe(resolve("/work/proj", candidate));
+		}
+	});
+
+	it.skipIf(process.platform !== "win32")("Windows 盘符、盘符相对路径与 UNC 使用原生解析且拦越界", () => {
+		const drive = createMockHost({ cwd: "C:\\work\\proj" });
+		for (const candidate of ["src\\a.ts", "C:src\\a.ts", "C:\\work\\proj\\src\\..\\a.ts", "."]) {
+			expect(drive.resolveInWorkspace(candidate)).toBe(resolve("C:\\work\\proj", candidate));
+		}
+		for (const candidate of ["C:\\work\\proj\\..\\other\\b.ts", "C:\\other\\secret.txt", "D:\\other.txt"]) {
+			expect(() => drive.resolveInWorkspace(candidate)).toThrowError(expect.objectContaining({ statusCode: 403 }));
+		}
+		const unc = createMockHost({ cwd: "\\\\nas\\share\\proj" });
+		expect(unc.resolveInWorkspace("doc.md")).toBe(resolve("\\\\nas\\share\\proj", "doc.md"));
+		expect(() => unc.resolveInWorkspace("..\\..\\escape.txt")).toThrowError(/工作区/);
 	});
 
 	it("真实 PluginManager 宿主：resolveInWorkspace 支持多根工作区且越界 403", async () => {

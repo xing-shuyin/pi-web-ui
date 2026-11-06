@@ -1,9 +1,12 @@
 import { describe, expect, it } from "vitest";
 import { readFileSync } from "node:fs";
-import { createMockHost as createRawMockHost, definePlugin, SDK_VERSION } from "../../plugin-sdk/index.mjs";
+import { resolve } from "node:path";
+import { createMockHost as legacyCreateMockHost, definePlugin, SDK_VERSION } from "../../plugin-sdk/index.mjs";
+import { createMockHost as createRawMockHost } from "../../plugin-sdk/testing.mjs";
 // 值实现走 .mjs（运行时），类型走同目录 index.d.ts（与插件作者 `import type` 同款）：
 // 扩展名省略的 ".../index" 落到 index.d.ts，而带 .mjs 的值导入会被 tsc 按 JS 实现推断。
-import type { MockHost, MockHostCall, MockHostOverrides, PluginHost, PluginModule } from "../../plugin-sdk/index";
+import type { PluginHost, PluginModule } from "../../plugin-sdk/index";
+import type { MockHost, MockHostCall, MockHostOverrides } from "../../plugin-sdk/testing";
 // 防腐烂：服务端 PluginHost 加方法时这里编译失败，逼 mock 同步补上
 // （只 import type，零运行时依赖，不碰 server/plugins.ts 运行时）。
 import type { PluginHost as ServerPluginHost } from "../../server/plugins";
@@ -49,6 +52,27 @@ const regValue = (host: MockHost, m: string): unknown => {
 	expect(reg).toBeDefined();
 	return ((reg as MockHostCall).args[0] as { value?: unknown }).value;
 };
+
+describe("createMockHost：独立 Node 测试入口", () => {
+	it("兼容总入口与 testing 入口共享同一个 Harness", () => {
+		expect(legacyCreateMockHost).toBe(createRawMockHost);
+	});
+
+	it("原生路径解析成功与越界调用均只记录一次，reset 保留 Harness 状态", () => {
+		const cwd = resolve("sdk-mock-workspace");
+		const host = createMockHost({ cwd });
+		expect(host.resolveInWorkspace("src/../entry.mjs")).toBe(resolve(cwd, "entry.mjs"));
+		expect(() => host.resolveInWorkspace("../outside.txt")).toThrowError(/工作区/);
+		expect(host.mock.calls("resolveInWorkspace")).toEqual([
+			{ method: "resolveInWorkspace", args: ["src/../entry.mjs"], seq: 0 },
+			{ method: "resolveInWorkspace", args: ["../outside.txt"], seq: 1 },
+		]);
+		host.reset();
+		expect(host.calls).toEqual([]);
+		expect(host.resolveInWorkspace(".")).toBe(cwd);
+		expect(host.calls[0]).toMatchObject({ method: "resolveInWorkspace", seq: 0 });
+	});
+});
 
 describe("createMockHost：示例插件 activate", () => {
 	it("记录调用 + 读到注入的 settings + 分级日志", async () => {

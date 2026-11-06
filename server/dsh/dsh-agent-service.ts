@@ -4176,6 +4176,7 @@ export class DshClientSession {
 			// DSH 另有运行时：压缩软上限是 pi 引擎概念，这里保持关闭保协议完整。
 			softCapTokens: 0,
 			softCapByModel: {},
+			autoCompactionInstructions: "",
 			questionnaireEnabled: this.settings.questionnaireEnabled,
 			toolApprovalEnabled: this.settings.toolApprovalEnabled !== false,
 			// DSH 无审批弹窗，策略恒为空（保协议完整）。
@@ -4368,6 +4369,7 @@ export class DshClientSession {
 			// DSH 另有运行时：压缩软上限是 pi 引擎概念，这里保持关闭保协议完整。
 			softCapTokens: 0,
 			softCapByModel: {},
+			autoCompactionInstructions: "",
 			questionnaireEnabled: this.settings.questionnaireEnabled,
 			toolApprovalEnabled: this.settings.toolApprovalEnabled !== false,
 			goalModeEnabled: this.settings.goalModeEnabled,
@@ -4762,6 +4764,7 @@ export class DshClientSession {
 			// DSH 另有运行时：压缩软上限是 pi 引擎概念，预设里保持关闭。
 			softCapTokens: 0,
 			softCapByModel: {},
+			autoCompactionInstructions: "",
 			visionBridgePromptMode: "append" as const,
 			visionBridgePrompt: "",
 			reviewPrompt: this.settings.reviewPrompt,

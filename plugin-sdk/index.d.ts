@@ -691,6 +691,16 @@ export declare function uuid(): string;
 /** 归一化相对路径（反斜杠转斜杠、去除首尾多余斜杠与 "./"）。 */
 export declare function normalizeRel(p: string): string;
 
+/** 创建 Shadow DOM；宿主不支持时返回原容器。 */
+export declare function attachShadowRoot(hostEl: HTMLElement, customCss?: string): ShadowRoot | HTMLElement;
+
+/** 在隔离容器内挂载视图并返回清理函数。 */
+export declare function mountIsolated(
+	container: HTMLElement,
+	mountFn: (root: HTMLElement) => void | (() => void),
+	customCss?: string,
+): () => void;
+
 /** 计算安全的截断位置，避免割裂 UTF-16 代理对。 */
 export declare function safeSliceIndex(value: string, limit: number): number;
 

@@ -8,7 +8,7 @@ const root = dirname(fileURLToPath(import.meta.url));
 export default defineConfig({
 	resolve: {
 		alias: {
-			"@pi-web-ui/plugin-sdk/client": join(root, "plugin-sdk", "client-utils.mjs"),
+			"@pi-web-ui/plugin-sdk/client": join(root, "plugin-sdk", "client.mjs"),
 		},
 	},
 	test: {
