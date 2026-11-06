@@ -5,7 +5,10 @@
  * 触发 → 规划 → 执行(Agent群) → 工具/知识 → 条件/循环 → 人工审批 → 汇聚 → 评估 → 结束。
  */
 import type { CanvasEngineId, CanvasNodeRole, CanvasNodeStatus } from "../../types";
-import { PSTACK_SKILLS } from "./pstack-skills-data";
+import type { Translate } from "../../i18n";
+import { getPstackSkills } from "./pstack-skills-data";
+
+const untranslated: Translate = (key) => key;
 
 export interface EngineMeta {
 	id: CanvasEngineId;
@@ -16,53 +19,55 @@ export interface EngineMeta {
 	desc: string;
 }
 
-export const ENGINE_METAS: Record<CanvasEngineId, EngineMeta> = {
-	pi: {
-		id: "pi",
-		name: "Pi 原生",
-		badge: "PI",
-		color: "var(--accent, #a855f7)",
-		bgColor: "color-mix(in srgb, var(--accent, #a855f7) 15%, transparent)",
-		desc: "支持完整插件生态、工具延迟加载与全局子代理编排",
-	},
-	dsh: {
-		id: "dsh",
-		name: "DSH 极速",
-		badge: "DSH",
-		color: "var(--info-blue, #38bdf8)",
-		bgColor: "color-mix(in srgb, var(--info-blue, #38bdf8) 15%, transparent)",
-		desc: "基于 Hashline 补丁引擎，擅长极速高频代码重构与打补丁",
-	},
-	codex: {
-		id: "codex",
-		name: "Codex",
-		badge: "CODEX",
-		color: "var(--green, #22c55e)",
-		bgColor: "color-mix(in srgb, var(--green, #22c55e) 15%, transparent)",
-		desc: "OpenAI Codex CLI",
-	},
-	claude: {
-		id: "claude",
-		name: "Claude Code",
-		badge: "CLAUDE",
-		color: "var(--amber, #f97316)",
-		bgColor: "color-mix(in srgb, var(--amber, #f97316) 15%, transparent)",
-		desc: "Anthropic 官方基座，擅长跨模块复杂逻辑与疑难排错",
-	},
-	durable: {
-		id: "durable",
-		name: "Durable 自愈",
-		badge: "DURABLE",
-		color: "var(--green, #22c55e)",
-		bgColor: "color-mix(in srgb, var(--green, #22c55e) 15%, transparent)",
-		desc: "事务化长任务自愈引擎，专攻端到端自动化测试与自愈修复",
-	},
-};
+export function getEngineMetas(t: Translate): Record<CanvasEngineId, EngineMeta> {
+	return {
+		pi: {
+			id: "pi",
+			name: t("canvas.metadata.engine.pi.name"),
+			badge: t("canvas.metadata.engine.pi.badge"),
+			color: "var(--accent, #a855f7)",
+			bgColor: "color-mix(in srgb, var(--accent, #a855f7) 15%, transparent)",
+			desc: t("canvas.metadata.engine.pi.desc"),
+		},
+		dsh: {
+			id: "dsh",
+			name: t("canvas.metadata.engine.dsh.name"),
+			badge: t("canvas.metadata.engine.dsh.badge"),
+			color: "var(--info-blue, #38bdf8)",
+			bgColor: "color-mix(in srgb, var(--info-blue, #38bdf8) 15%, transparent)",
+			desc: t("canvas.metadata.engine.dsh.desc"),
+		},
+		codex: {
+			id: "codex",
+			name: t("canvas.metadata.engine.codex.name"),
+			badge: t("canvas.metadata.engine.codex.badge"),
+			color: "var(--green, #22c55e)",
+			bgColor: "color-mix(in srgb, var(--green, #22c55e) 15%, transparent)",
+			desc: t("canvas.metadata.engine.codex.desc"),
+		},
+		claude: {
+			id: "claude",
+			name: t("canvas.metadata.engine.claude.name"),
+			badge: t("canvas.metadata.engine.claude.badge"),
+			color: "var(--amber, #f97316)",
+			bgColor: "color-mix(in srgb, var(--amber, #f97316) 15%, transparent)",
+			desc: t("canvas.metadata.engine.claude.desc"),
+		},
+		durable: {
+			id: "durable",
+			name: t("canvas.metadata.engine.durable.name"),
+			badge: t("canvas.metadata.engine.durable.badge"),
+			color: "var(--green, #22c55e)",
+			bgColor: "color-mix(in srgb, var(--green, #22c55e) 15%, transparent)",
+			desc: t("canvas.metadata.engine.durable.desc"),
+		},
+	};
+}
 
 interface RoleMeta {
 	role: CanvasNodeRole;
-	labelZh: string;
-	labelEn: string;
+	label: string;
+
 	icon: string;
 	/** 节点分组：trigger=触发输入 agent=智能体 logic=逻辑控制 data=工具数据 output=收尾输出 */
 	group: "trigger" | "agent" | "logic" | "data" | "output";
@@ -71,314 +76,333 @@ interface RoleMeta {
 	needsLlm: boolean;
 }
 
-export const ROLE_METAS: Record<CanvasNodeRole, RoleMeta> = {
-	trigger: {
-		role: "trigger",
-		labelZh: "业务需求输入 (Input)",
-		labelEn: "Task Input / Trigger",
-		icon: "📋",
-		group: "trigger",
-		blurb: "流水线入口：填写本次业务需求或启动输入，触发全队流转",
-		defaultInstruction: "",
-		needsLlm: false,
-	},
-	cron: {
-		role: "cron",
-		labelZh: "定时触发 (Cron)",
-		labelEn: "Schedule / Cron",
-		icon: "⏰",
-		group: "trigger",
-		blurb: "按 Cron 表达式定时启动（外部调度拉起）",
-		defaultInstruction: "",
-		needsLlm: false,
-	},
-	webhook: {
-		role: "webhook",
-		labelZh: "Webhook 触发",
-		labelEn: "Webhook Trigger",
-		icon: "🪝",
-		group: "trigger",
-		blurb: "外部系统回调启动（预留接入点）",
-		defaultInstruction: "",
-		needsLlm: false,
-	},
-	transform: {
-		role: "transform",
-		labelZh: "格式转换 (Map)",
-		labelEn: "Transform / Map",
-		icon: "🔄",
-		group: "data",
-		blurb: "文本↔JSON / 模板渲染，本地确定性执行",
-		defaultInstruction: "",
-		needsLlm: false,
-	},
-	architect: {
-		role: "architect",
-		labelZh: "架构总指挥 (Lead)",
-		labelEn: "Lead Architect",
-		icon: "🏛️",
-		group: "agent",
-		blurb: "需求拆解、技术选型与任务派发",
-		defaultInstruction: "把业务需求拆解为前后端清晰的技术规约与数据契约，派发给下游工程师。",
-		needsLlm: true,
-	},
-	planner: {
-		role: "planner",
-		labelZh: "任务规划 (Planner)",
-		labelEn: "Task Planner",
-		icon: "🗺️",
-		group: "agent",
-		blurb: "Chain-of-Thought 拆解为可执行步骤清单",
-		defaultInstruction: "将目标拆解为 3-7 个可执行步骤，明确每步输入输出与验收标准，输出任务清单交接下游。",
-		needsLlm: true,
-	},
-	coder: {
-		role: "coder",
-		labelZh: "研发工程师 (Coder)",
-		labelEn: "Software Engineer",
-		icon: "💻",
-		group: "agent",
-		blurb: "代码编写、重构与功能实现",
-		defaultInstruction: "根据上游契约编写高质量代码，保持最小改动并保证可运行。",
-		needsLlm: true,
-	},
-	researcher: {
-		role: "researcher",
-		labelZh: "联网调研 (Research)",
-		labelEn: "Researcher",
-		icon: "🌐",
-		group: "agent",
-		blurb: "联网搜索 + 文档研读 + 竞品分析",
-		defaultInstruction: "针对任务做联网调研与资料搜集，输出结构化调研结论（现状/方案对比/推荐）交接下游。",
-		needsLlm: true,
-	},
-	writer: {
-		role: "writer",
-		labelZh: "文档写作 (Writer)",
-		labelEn: "Writer",
-		icon: "✍️",
-		group: "agent",
-		blurb: "需求文档 / README / 变更说明",
-		defaultInstruction: "根据上游交付物编写清晰文档：背景、变更点、使用方式、注意事项。",
-		needsLlm: true,
-	},
-	analyst: {
-		role: "analyst",
-		labelZh: "数据分析 (Analyst)",
-		labelEn: "Data Analyst",
-		icon: "📊",
-		group: "agent",
-		blurb: "日志 / 数据 / 性能分析与洞察",
-		defaultInstruction: "分析输入的数据与日志，给出量化结论与可执行优化建议。",
-		needsLlm: true,
-	},
-	reviewer: {
-		role: "reviewer",
-		labelZh: "代码审查员 (Reviewer)",
-		labelEn: "Code Reviewer",
-		icon: "🔍",
-		group: "agent",
-		blurb: "质量门禁：审查、打分与修改建议",
-		defaultInstruction: "审查上游代码：正确性、边界、安全与风格，给出通过/驳回结论与修改清单。",
-		needsLlm: true,
-	},
-	tester: {
-		role: "tester",
-		labelZh: "测试与运维 (DevOps)",
-		labelEn: "QA & DevOps",
-		icon: "🧪",
-		group: "agent",
-		blurb: "编写并运行测试，报告结果与失败证据",
-		defaultInstruction: "编写并运行相关测试，报告真实结果、失败证据与未验证范围。",
-		needsLlm: true,
-	},
-	devops: {
-		role: "devops",
-		labelZh: "运维与发布 (Deploy)",
-		labelEn: "Deploy & Release",
-		icon: "🚀",
-		group: "agent",
-		blurb: "构建、部署与发布运维",
-		defaultInstruction: "负责构建验证与发布流程，确保产物可部署、可回滚。",
-		needsLlm: true,
-	},
-	evaluator: {
-		role: "evaluator",
-		labelZh: "质量评估 (Judge)",
-		labelEn: "LLM-as-Judge",
-		icon: "⚖️",
-		group: "output",
-		blurb: "LLM-as-Judge 打分，不达标走驳回边",
-		defaultInstruction: "作为质量裁判，按正确性/完整性/规范性逐项打分（0-100），低于 80 分给出驳回理由。",
-		needsLlm: true,
-	},
-	custom: {
-		role: "custom",
-		labelZh: "自定义数字员工",
-		labelEn: "Custom Teammate",
-		icon: "🤖",
-		group: "agent",
-		blurb: "完全自定义的 AI 队友",
-		defaultInstruction: "",
-		needsLlm: true,
-	},
-	// —— 逻辑控制（弱 LLM / 无需独立会话，直通或轻量判定）——
-	condition: {
-		role: "condition",
-		labelZh: "条件分支 (If/Else)",
-		labelEn: "Condition Branch",
-		icon: "🔀",
-		group: "logic",
-		blurb: "按表达式走 true / false 两条边",
-		defaultInstruction: "",
-		needsLlm: false,
-	},
-	ai_judge: {
-		role: "ai_judge",
-		labelZh: "AI 裁决",
-		labelEn: "AI Judge",
-		icon: "🧠",
-		group: "logic",
-		blurb: "模型语义判定走通过 / 打回两条边",
-		defaultInstruction: "",
-		needsLlm: true,
-	},
-	loop: {
-		role: "loop",
-		labelZh: "循环重试 (Loop)",
-		labelEn: "Loop / Retry",
-		icon: "🔁",
-		group: "logic",
-		blurb: "限定次数内重复执行下游（防死循环熔断）",
-		defaultInstruction: "",
-		needsLlm: false,
-	},
-	human: {
-		role: "human",
-		labelZh: "人工审批 (Human)",
-		labelEn: "Human-in-the-loop",
-		icon: "🧑‍⚖️",
-		group: "logic",
-		blurb: "暂停等待人工批准/驳回（Review Gate）",
-		defaultInstruction: "",
-		needsLlm: false,
-	},
-	merge: {
-		role: "merge",
-		labelZh: "汇聚合并 (Join)",
-		labelEn: "Merge / Join",
-		icon: "🔗",
-		group: "logic",
-		blurb: "多条并行分支在此汇总后再往下走",
-		defaultInstruction: "",
-		needsLlm: false,
-	},
-	subflow: {
-		role: "subflow",
-		labelZh: "子工作流 (Subflow)",
-		labelEn: "Sub-workflow",
-		icon: "📦",
-		group: "logic",
-		blurb: "未实现：说明节点，不执行嵌套工作流",
-		defaultInstruction: "汇总上游产物，形成给子流程的输入摘要。",
-		needsLlm: true,
-	},
-	// —— 工具与数据 ——
-	tool: {
-		role: "tool",
-		labelZh: "工具调用 (Tool)",
-		labelEn: "Tool Call",
-		icon: "🛠️",
-		group: "data",
-		blurb: "bash / 文件 / 搜索等原子工具",
-		defaultInstruction: "按工具调用规约执行：先说明调用目的，再执行，最后汇总结果交接下游。",
-		needsLlm: true,
-	},
-	knowledge: {
-		role: "knowledge",
-		labelZh: "知识检索 (RAG)",
-		labelEn: "Knowledge Retrieval",
-		icon: "📚",
-		group: "data",
-		blurb: "智能体按指令检索文件；无独立知识库索引",
-		defaultInstruction: "基于知识库检索回答：先列出检索到依据，再综合作答并标注来源。",
-		needsLlm: true,
-	},
-	code: {
-		role: "code",
-		labelZh: "代码执行 (Code)",
-		labelEn: "Code Execution",
-		icon: "🧩",
-		group: "data",
-		blurb: "智能体按指令编写和运行脚本；依赖可用工具",
-		defaultInstruction: "编写并执行必要的脚本完成数据加工，把运行结果摘要交接下游。",
-		needsLlm: true,
-	},
-	api: {
-		role: "api",
-		labelZh: "API 调用 (HTTP)",
-		labelEn: "HTTP Request",
-		icon: "🌍",
-		group: "data",
-		blurb: "智能体按指令请求 HTTP 接口；依赖可用工具",
-		defaultInstruction: "调用配置中的外部 API，把返回结果清洗为摘要后交接下游。",
-		needsLlm: true,
-	},
-	memory: {
-		role: "memory",
-		labelZh: "记忆读写 (Memory)",
-		labelEn: "Memory Read/Write",
-		icon: "🧠",
-		group: "data",
-		blurb: "未实现：说明节点，无持久记忆存储",
-		defaultInstruction: "",
-		needsLlm: false,
-	},
-	end: {
-		role: "end",
-		labelZh: "结束输出 (End)",
-		labelEn: "End / Output",
-		icon: "🏁",
-		group: "output",
-		blurb: "汇总所有上游产物形成最终交付",
-		defaultInstruction: "",
-		needsLlm: false,
-	},
-	pstack: {
-		role: "pstack",
-		labelZh: "Pstack 专家 (Pstack)",
-		labelEn: "Pstack Rigorous Agent",
-		icon: "🥔",
-		group: "agent",
-		blurb: "基于 Cursor 核心工程实践：深度优先、直击根因、去 AI 味、严谨实证",
-		defaultInstruction: "遵循所选 Pstack Skill 规约与准则开展工作，拒绝表面修补与 AI 废话，用运行证据证明交付。",
-		needsLlm: true,
-	},
-	skill: {
-		role: "skill",
-		labelZh: "技能注入 (Skill)",
-		labelEn: "Skill / Soul Agent",
-		icon: "✨",
-		group: "agent",
-		blurb: "以安装的 Skill 作为智能体灵魂：注入技能指令、行为模式与领域专长",
-		defaultInstruction: "以指定 Skill 的专业技能规约为灵魂，严格遵循其步骤与标准执行任务。",
-		needsLlm: true,
-	},
-};
+export function getRoleMetas(t: Translate): Record<CanvasNodeRole, RoleMeta> {
+	return {
+		trigger: {
+			role: "trigger",
+			label: t("canvas.metadata.role.trigger.label"),
+
+			icon: "📋",
+			group: "trigger",
+			blurb: t("canvas.metadata.role.trigger.blurb"),
+			defaultInstruction: "",
+			needsLlm: LLM_ROLES.has("trigger"),
+		},
+		cron: {
+			role: "cron",
+			label: t("canvas.metadata.role.cron.label"),
+
+			icon: "⏰",
+			group: "trigger",
+			blurb: t("canvas.metadata.role.cron.blurb"),
+			defaultInstruction: "",
+			needsLlm: LLM_ROLES.has("cron"),
+		},
+		webhook: {
+			role: "webhook",
+			label: t("canvas.metadata.role.webhook.label"),
+
+			icon: "🪝",
+			group: "trigger",
+			blurb: t("canvas.metadata.role.webhook.blurb"),
+			defaultInstruction: "",
+			needsLlm: LLM_ROLES.has("webhook"),
+		},
+		transform: {
+			role: "transform",
+			label: t("canvas.metadata.role.transform.label"),
+
+			icon: "🔄",
+			group: "data",
+			blurb: t("canvas.metadata.role.transform.blurb"),
+			defaultInstruction: "",
+			needsLlm: LLM_ROLES.has("transform"),
+		},
+		architect: {
+			role: "architect",
+			label: t("canvas.metadata.role.architect.label"),
+
+			icon: "🏛️",
+			group: "agent",
+			blurb: t("canvas.metadata.role.architect.blurb"),
+			defaultInstruction:
+				"Break down the requirements into clear frontend and backend specifications and data contracts, then hand them off to downstream engineers.",
+			needsLlm: LLM_ROLES.has("architect"),
+		},
+		planner: {
+			role: "planner",
+			label: t("canvas.metadata.role.planner.label"),
+
+			icon: "🗺️",
+			group: "agent",
+			blurb: t("canvas.metadata.role.planner.blurb"),
+			defaultInstruction:
+				"Break the goal into 3–7 actionable steps. Specify each step's inputs, outputs, and acceptance criteria, then hand the task list downstream.",
+			needsLlm: LLM_ROLES.has("planner"),
+		},
+		coder: {
+			role: "coder",
+			label: t("canvas.metadata.role.coder.label"),
+
+			icon: "💻",
+			group: "agent",
+			blurb: t("canvas.metadata.role.coder.blurb"),
+			defaultInstruction:
+				"Implement high-quality code from the upstream contract. Keep changes minimal and ensure the result runs.",
+			needsLlm: LLM_ROLES.has("coder"),
+		},
+		researcher: {
+			role: "researcher",
+			label: t("canvas.metadata.role.researcher.label"),
+
+			icon: "🌐",
+			group: "agent",
+			blurb: t("canvas.metadata.role.researcher.blurb"),
+			defaultInstruction:
+				"Research the task online and collect supporting materials. Hand off structured findings covering the current state, alternatives, and recommendations.",
+			needsLlm: LLM_ROLES.has("researcher"),
+		},
+		writer: {
+			role: "writer",
+			label: t("canvas.metadata.role.writer.label"),
+
+			icon: "✍️",
+			group: "agent",
+			blurb: t("canvas.metadata.role.writer.blurb"),
+			defaultInstruction:
+				"Write clear documentation from the upstream deliverables, covering background, changes, usage, and caveats.",
+			needsLlm: LLM_ROLES.has("writer"),
+		},
+		analyst: {
+			role: "analyst",
+			label: t("canvas.metadata.role.analyst.label"),
+
+			icon: "📊",
+			group: "agent",
+			blurb: t("canvas.metadata.role.analyst.blurb"),
+			defaultInstruction:
+				"Analyze the input data and logs. Provide quantitative findings and actionable optimization recommendations.",
+			needsLlm: LLM_ROLES.has("analyst"),
+		},
+		reviewer: {
+			role: "reviewer",
+			label: t("canvas.metadata.role.reviewer.label"),
+
+			icon: "🔍",
+			group: "agent",
+			blurb: t("canvas.metadata.role.reviewer.blurb"),
+			defaultInstruction:
+				"Review the upstream code for correctness, edge cases, security, and style. Return an approval or rejection with a list of required changes.",
+			needsLlm: LLM_ROLES.has("reviewer"),
+		},
+		tester: {
+			role: "tester",
+			label: t("canvas.metadata.role.tester.label"),
+
+			icon: "🧪",
+			group: "agent",
+			blurb: t("canvas.metadata.role.tester.blurb"),
+			defaultInstruction:
+				"Write and run relevant tests. Report actual results, failure evidence, and unverified areas.",
+			needsLlm: LLM_ROLES.has("tester"),
+		},
+		devops: {
+			role: "devops",
+			label: t("canvas.metadata.role.devops.label"),
+
+			icon: "🚀",
+			group: "agent",
+			blurb: t("canvas.metadata.role.devops.blurb"),
+			defaultInstruction:
+				"Validate builds and manage the release process. Ensure artifacts can be deployed and rolled back.",
+			needsLlm: LLM_ROLES.has("devops"),
+		},
+		evaluator: {
+			role: "evaluator",
+			label: t("canvas.metadata.role.evaluator.label"),
+
+			icon: "⚖️",
+			group: "output",
+			blurb: t("canvas.metadata.role.evaluator.blurb"),
+			defaultInstruction:
+				"Act as a quality judge. Score correctness, completeness, and compliance from 0 to 100. Give reasons for rejection when the score is below 80.",
+			needsLlm: LLM_ROLES.has("evaluator"),
+		},
+		custom: {
+			role: "custom",
+			label: t("canvas.metadata.role.custom.label"),
+
+			icon: "🤖",
+			group: "agent",
+			blurb: t("canvas.metadata.role.custom.blurb"),
+			defaultInstruction: "",
+			needsLlm: LLM_ROLES.has("custom"),
+		},
+		// —— 逻辑控制（弱 LLM / 无需独立会话，直通或轻量判定）——
+		condition: {
+			role: "condition",
+			label: t("canvas.metadata.role.condition.label"),
+
+			icon: "🔀",
+			group: "logic",
+			blurb: t("canvas.metadata.role.condition.blurb"),
+			defaultInstruction: "",
+			needsLlm: LLM_ROLES.has("condition"),
+		},
+		ai_judge: {
+			role: "ai_judge",
+			label: t("canvas.metadata.role.ai_judge.label"),
+
+			icon: "🧠",
+			group: "logic",
+			blurb: t("canvas.metadata.role.ai_judge.blurb"),
+			defaultInstruction: "",
+			needsLlm: LLM_ROLES.has("ai_judge"),
+		},
+		loop: {
+			role: "loop",
+			label: t("canvas.metadata.role.loop.label"),
+
+			icon: "🔁",
+			group: "logic",
+			blurb: t("canvas.metadata.role.loop.blurb"),
+			defaultInstruction: "",
+			needsLlm: LLM_ROLES.has("loop"),
+		},
+		human: {
+			role: "human",
+			label: t("canvas.metadata.role.human.label"),
+
+			icon: "🧑‍⚖️",
+			group: "logic",
+			blurb: t("canvas.metadata.role.human.blurb"),
+			defaultInstruction: "",
+			needsLlm: LLM_ROLES.has("human"),
+		},
+		merge: {
+			role: "merge",
+			label: t("canvas.metadata.role.merge.label"),
+
+			icon: "🔗",
+			group: "logic",
+			blurb: t("canvas.metadata.role.merge.blurb"),
+			defaultInstruction: "",
+			needsLlm: LLM_ROLES.has("merge"),
+		},
+		subflow: {
+			role: "subflow",
+			label: t("canvas.metadata.role.subflow.label"),
+
+			icon: "📦",
+			group: "logic",
+			blurb: t("canvas.metadata.role.subflow.blurb"),
+			defaultInstruction: "Summarize the upstream deliverables into an input brief for the subflow.",
+			needsLlm: LLM_ROLES.has("subflow"),
+		},
+		// —— 工具与数据 ——
+		tool: {
+			role: "tool",
+			label: t("canvas.metadata.role.tool.label"),
+
+			icon: "🛠️",
+			group: "data",
+			blurb: t("canvas.metadata.role.tool.blurb"),
+			defaultInstruction:
+				"Follow the tool invocation contract: state the purpose, run the tool, then summarize the result for downstream nodes.",
+			needsLlm: LLM_ROLES.has("tool"),
+		},
+		knowledge: {
+			role: "knowledge",
+			label: t("canvas.metadata.role.knowledge.label"),
+
+			icon: "📚",
+			group: "data",
+			blurb: t("canvas.metadata.role.knowledge.blurb"),
+			defaultInstruction:
+				"Answer using knowledge retrieval. List the retrieved evidence first, then synthesize an answer with sources.",
+			needsLlm: LLM_ROLES.has("knowledge"),
+		},
+		code: {
+			role: "code",
+			label: t("canvas.metadata.role.code.label"),
+
+			icon: "🧩",
+			group: "data",
+			blurb: t("canvas.metadata.role.code.blurb"),
+			defaultInstruction:
+				"Write and run the scripts needed to process the data, then hand a summary of the results downstream.",
+			needsLlm: LLM_ROLES.has("code"),
+		},
+		api: {
+			role: "api",
+			label: t("canvas.metadata.role.api.label"),
+
+			icon: "🌍",
+			group: "data",
+			blurb: t("canvas.metadata.role.api.blurb"),
+			defaultInstruction:
+				"Call the external API in the configuration, clean up its response, and hand a summary downstream.",
+			needsLlm: LLM_ROLES.has("api"),
+		},
+		memory: {
+			role: "memory",
+			label: t("canvas.metadata.role.memory.label"),
+
+			icon: "🧠",
+			group: "data",
+			blurb: t("canvas.metadata.role.memory.blurb"),
+			defaultInstruction: "",
+			needsLlm: LLM_ROLES.has("memory"),
+		},
+		end: {
+			role: "end",
+			label: t("canvas.metadata.role.end.label"),
+
+			icon: "🏁",
+			group: "output",
+			blurb: t("canvas.metadata.role.end.blurb"),
+			defaultInstruction: "",
+			needsLlm: LLM_ROLES.has("end"),
+		},
+		pstack: {
+			role: "pstack",
+			label: t("canvas.metadata.role.pstack.label"),
+
+			icon: "🥔",
+			group: "agent",
+			blurb: t("canvas.metadata.role.pstack.blurb"),
+			defaultInstruction:
+				"Follow the selected Pstack skill's rules and principles. Avoid superficial fixes and AI filler. Prove the delivery with execution evidence.",
+			needsLlm: LLM_ROLES.has("pstack"),
+		},
+		skill: {
+			role: "skill",
+			label: t("canvas.metadata.role.skill.label"),
+
+			icon: "✨",
+			group: "agent",
+			blurb: t("canvas.metadata.role.skill.blurb"),
+			defaultInstruction:
+				"Use the specified skill's professional rules as your operating guide. Follow its steps and standards strictly when executing the task.",
+			needsLlm: LLM_ROLES.has("skill"),
+		},
+	};
+}
 
 interface NodeGroupMeta {
 	id: RoleMeta["group"];
-	labelZh: string;
-	labelEn: string;
+	label: string;
 }
 
-export const NODE_GROUPS: NodeGroupMeta[] = [
-	{ id: "trigger", labelZh: "触发与输入", labelEn: "Trigger & Input" },
-	{ id: "agent", labelZh: "AI 智能体", labelEn: "AI Agents" },
-	{ id: "logic", labelZh: "逻辑控制", labelEn: "Logic Control" },
-	{ id: "data", labelZh: "工具与数据", labelEn: "Tools & Data" },
-	{ id: "output", labelZh: "评估与收尾", labelEn: "Evaluate & Finish" },
-];
+export function getRoleGroups(t: Translate): NodeGroupMeta[] {
+	return [
+		{ id: "trigger", label: t("canvas.metadata.group.trigger") },
+		{ id: "agent", label: t("canvas.metadata.group.agent") },
+		{ id: "logic", label: t("canvas.metadata.group.logic") },
+		{ id: "data", label: t("canvas.metadata.group.data") },
+		{ id: "output", label: t("canvas.metadata.group.output") },
+	];
+}
 
 /** 纯透传控制节点：无需启动 LLM 会话，直接标记完成并向下游透传摘要 */
 const PASSTHROUGH_ROLES: ReadonlySet<CanvasNodeRole> = new Set([
@@ -398,8 +422,30 @@ export function isPassthroughRole(role: CanvasNodeRole): boolean {
 }
 
 /** 该角色是否展示「任务指令」输入框（LLM 型节点展示，纯控制节点展示配置项） */
+const LLM_ROLES: ReadonlySet<CanvasNodeRole> = new Set([
+	"architect",
+	"planner",
+	"coder",
+	"researcher",
+	"writer",
+	"analyst",
+	"reviewer",
+	"tester",
+	"devops",
+	"evaluator",
+	"custom",
+	"ai_judge",
+	"subflow",
+	"tool",
+	"knowledge",
+	"code",
+	"api",
+	"pstack",
+	"skill",
+]);
+
 export function roleNeedsInstruction(role: CanvasNodeRole): boolean {
-	return isRoleImplemented(role) && (ROLE_METAS[role]?.needsLlm ?? true);
+	return isRoleImplemented(role) && LLM_ROLES.has(role);
 }
 
 export const STATUS_COLORS: Record<CanvasNodeStatus, { text: string; bg: string; dot: string }> = {
@@ -422,64 +468,113 @@ export const STATUS_COLORS: Record<CanvasNodeStatus, { text: string; bg: string;
 	paused: { text: "var(--text-faint)", bg: "var(--bg-elev)", dot: "#647b8b" },
 };
 
+export function getStatusMetas(
+	t: Translate,
+): Record<CanvasNodeStatus, { label: string; text: string; bg: string; dot: string }> {
+	return {
+		skipped: { ...STATUS_COLORS.skipped, label: t("canvas.metadata.status.skipped") },
+		cancelled: { ...STATUS_COLORS.cancelled, label: t("canvas.metadata.status.cancelled") },
+		idle: { ...STATUS_COLORS.idle, label: t("canvas.metadata.status.idle") },
+		queued: { ...STATUS_COLORS.queued, label: t("canvas.metadata.status.queued") },
+		running: { ...STATUS_COLORS.running, label: t("canvas.metadata.status.running") },
+		waiting_approval: { ...STATUS_COLORS.waiting_approval, label: t("canvas.metadata.status.waiting_approval") },
+		done: { ...STATUS_COLORS.done, label: t("canvas.metadata.status.done") },
+		error: { ...STATUS_COLORS.error, label: t("canvas.metadata.status.error") },
+		paused: { ...STATUS_COLORS.paused, label: t("canvas.metadata.status.paused") },
+	};
+}
+
 /** 字段级端子目录：端口不再是整卡一进一出，而是绑定卡片内具体数值。
  *  - 输入端（左侧）：contract=任务契约（主输入） instruction=AI指令 system=角色规约 config=控制参数
  *  - 输出端（右侧）：result=交付产物（主输出） true/false=条件分支 approve/reject=审批裁决
  *  位置由卡片 DOM 实测（offsetTop）上报，SvgEdges 按实测 Y 绘制，历史无端口边回退 PORT_Y_OFFSET。 */
 interface CanvasPortDef {
 	key: string;
-	labelZh: string;
+	label: string;
 	desc: string;
 }
 
-export const IN_PORT_DEFS: CanvasPortDef[] = [
-	{ key: "contract", labelZh: "任务契约", desc: "主输入：上游交付产物作为任务契约注入" },
-	{ key: "instruction", labelZh: "AI指令", desc: "定向写入本轮 AI 指令（配合 {{上游摘要}} 变量）" },
-	{ key: "system", labelZh: "角色规约", desc: "以上游产物补充基座人设" },
-	{ key: "config", labelZh: "控制参数", desc: "写入条件表达式 / 循环次数等控制参数上下文" },
-];
+export function getInPortDefs(t: Translate): CanvasPortDef[] {
+	return [
+		{ key: "contract", label: t("canvas.metadata.port.contract.label"), desc: t("canvas.metadata.port.contract.desc") },
+		{
+			key: "instruction",
+			label: t("canvas.metadata.port.instruction.label"),
+			desc: t("canvas.metadata.port.instruction.desc"),
+		},
+		{ key: "system", label: t("canvas.metadata.port.system.label"), desc: t("canvas.metadata.port.system.desc") },
+		{ key: "config", label: t("canvas.metadata.port.config.label"), desc: t("canvas.metadata.port.config.desc") },
+	];
+}
 
-const OUT_PORT_DEFS_BASE: CanvasPortDef[] = [{ key: "result", labelZh: "交付产物", desc: "主输出：本节点交付摘要" }];
+export function getOutPortDefsBase(t: Translate): CanvasPortDef[] {
+	return [
+		{ key: "result", label: t("canvas.metadata.port.result.label"), desc: t("canvas.metadata.port.result.desc") },
+	];
+}
 
 /** 按角色追加分支输出端子（条件 / 人工 / 评估 / 审查）。 */
-export function outPortsForRole(role: CanvasNodeRole): CanvasPortDef[] {
+export function outPortsForRole(role: CanvasNodeRole, t: Translate = untranslated): CanvasPortDef[] {
 	const extra: CanvasPortDef[] = [];
 	if (role === "condition" || role === "ai_judge") {
 		extra.push(
-			{ key: "true", labelZh: "成立", desc: "条件成立走这条边（condition_true）" },
-			{ key: "false", labelZh: "不成立", desc: "条件不成立走这条边（condition_false）" },
+			{
+				key: "true",
+				label: t("canvas.metadata.port.condition.true.label"),
+				desc: t("canvas.metadata.port.condition.true.desc"),
+			},
+			{
+				key: "false",
+				label: t("canvas.metadata.port.condition.false.label"),
+				desc: t("canvas.metadata.port.condition.false.desc"),
+			},
 		);
 	}
 	if (role === "human") {
 		extra.push(
-			{ key: "approve", labelZh: "批准", desc: "人工批准后走这条边（approve）" },
-			{ key: "reject", labelZh: "驳回返工", desc: "人工驳回后走这条边（reject）" },
+			{
+				key: "approve",
+				label: t("canvas.metadata.port.human.approve.label"),
+				desc: t("canvas.metadata.port.human.approve.desc"),
+			},
+			{
+				key: "reject",
+				label: t("canvas.metadata.port.human.reject.label"),
+				desc: t("canvas.metadata.port.human.reject.desc"),
+			},
 		);
 	}
 	if (role === "evaluator" || role === "reviewer") {
 		extra.push(
-			{ key: "approve", labelZh: "通过", desc: "评估通过走这条边（approve）" },
-			{ key: "reject", labelZh: "驳回", desc: "评估驳回走这条边（reject / loop_back）" },
+			{
+				key: "approve",
+				label: t("canvas.metadata.port.review.approve.label"),
+				desc: t("canvas.metadata.port.review.approve.desc"),
+			},
+			{
+				key: "reject",
+				label: t("canvas.metadata.port.review.reject.label"),
+				desc: t("canvas.metadata.port.review.reject.desc"),
+			},
 		);
 	}
-	return [...OUT_PORT_DEFS_BASE, ...extra];
+	return [...getOutPortDefsBase(t), ...extra];
 }
 
-export function inPortLabel(key: string | undefined): string {
-	if (!key || key === "contract") return "任务契约";
-	return IN_PORT_DEFS.find((d) => d.key === key)?.labelZh ?? key;
+export function inPortLabel(key: string | undefined, t: Translate = untranslated): string {
+	if (!key || key === "contract") return t("canvas.metadata.port.contract.label");
+	return getInPortDefs(t).find((d) => d.key === key)?.label ?? key;
 }
 
-export function outPortLabel(key: string | undefined): string {
-	if (!key || key === "result") return "交付产物";
-	const all: CanvasPortDef[] = [
-		...OUT_PORT_DEFS_BASE,
-		{ key: "true", labelZh: "成立", desc: "" },
-		{ key: "false", labelZh: "不成立", desc: "" },
-		{ key: "approve", labelZh: "批准/通过", desc: "" },
-		{ key: "reject", labelZh: "驳回", desc: "" },
-	];
-	return all.find((d) => d.key === key)?.labelZh ?? key;
+export function outPortLabel(key: string | undefined, t: Translate = untranslated): string {
+	if (!key || key === "result") return t("canvas.metadata.port.result.label");
+	const labels: Record<string, string> = {
+		true: t("canvas.metadata.port.condition.true.label"),
+		false: t("canvas.metadata.port.condition.false.label"),
+		approve: t("canvas.metadata.port.approve.label"),
+		reject: t("canvas.metadata.port.review.reject.label"),
+	};
+	return labels[key] ?? key;
 }
 
 /** 按角色分型的专属参数表：每个角色只露自己的配置，不再所有节点一个样。
@@ -490,10 +585,10 @@ type RoleFieldKind = "text" | "textarea" | "number" | "select" | "hint" | "boole
 
 export interface RoleField {
 	key: string;
-	labelZh: string;
+	label: string;
 	kind: RoleFieldKind;
 	placeholder?: string;
-	options?: { value: string; labelZh: string }[];
+	options?: { value: string; label: string }[];
 	min?: number;
 	max?: number;
 	default?: string | number | boolean;
@@ -502,235 +597,301 @@ export interface RoleField {
 	showIf?: { key: string; value: string | number | boolean };
 }
 
-export const ROLE_FIELDS: Record<CanvasNodeRole, RoleField[]> = {
-	trigger: [
-		{
-			key: "payload",
-			labelZh: "业务需求 / 任务输入",
-			kind: "textarea",
-			rows: 4,
-			placeholder: "在此输入本次要实现的功能需求、修改目标或业务背景（例如：实现深色模式切换并记住用户偏好）…",
-		},
-	],
-	cron: [
-		{
-			key: "cron",
-			labelZh: "Cron 表达式",
-			kind: "text",
-			default: "*/30 * * * *",
-			placeholder: "*/30 * * * *（分 时 日 月 周）",
-			hint: "由外部调度按计划拉起，触发后向下游透传。",
-		},
-	],
-	webhook: [
-		{ key: "path", labelZh: "回调路径", kind: "text", default: "/hook/demo", placeholder: "/hook/order-created" },
-		{
-			key: "method",
-			labelZh: "方法",
-			kind: "select",
-			default: "POST",
-			options: [
-				{ value: "GET", labelZh: "GET" },
-				{ value: "POST", labelZh: "POST" },
-			],
-			hint: "外部系统回调此接入点即启动（预留接入，当前版本手动触发）。",
-		},
-	],
-	transform: [
-		{
-			key: "mode",
-			labelZh: "转换模式（本地执行）",
-			kind: "select",
-			default: "text2json",
-			options: [
-				{ value: "text2json", labelZh: "文本 → JSON" },
-				{ value: "json2text", labelZh: "JSON → 文本" },
-				{ value: "template", labelZh: "模板渲染" },
-			],
-		},
-		{
-			key: "template",
-			labelZh: "渲染模板",
-			kind: "textarea",
-			rows: 3,
-			default: "{{input}}",
-			placeholder: "模板，{{input}} 会被上游产物替换",
-			showIf: { key: "mode", value: "template" },
-		},
-	],
-	architect: [],
-	planner: [{ key: "maxSteps", labelZh: "拆解步骤上限", kind: "number", min: 2, max: 12, default: 5 }],
-	coder: [],
-	researcher: [
-		{
-			key: "depth",
-			labelZh: "调研深度",
-			kind: "select",
-			default: "标准",
-			options: [
-				{ value: "快速", labelZh: "快速（要点速览）" },
-				{ value: "标准", labelZh: "标准（多源对比）" },
-				{ value: "深度", labelZh: "深度（溯源研读）" },
-			],
-		},
-		{ key: "maxSources", labelZh: "引用来源上限", kind: "number", min: 1, max: 20, default: 5 },
-	],
-	writer: [],
-	analyst: [],
-	reviewer: [
-		{
-			key: "strictness",
-			labelZh: "审查严格度",
-			kind: "select",
-			default: "标准",
-			options: [
-				{ value: "宽松", labelZh: "宽松（只拦硬伤）" },
-				{ value: "标准", labelZh: "标准（正确性+规范）" },
-				{ value: "严格", labelZh: "严格（逐行挑刺）" },
-			],
-		},
-	],
-	tester: [
-		{
-			key: "testCommand",
-			labelZh: "测试命令",
-			kind: "text",
-			default: "npm test",
-			placeholder: "npm test / pytest / go test …",
-		},
-	],
-	devops: [
-		{
-			key: "environment",
-			labelZh: "发布环境",
-			kind: "select",
-			default: "预发",
-			options: [
-				{ value: "预发", labelZh: "预发" },
-				{ value: "生产", labelZh: "生产" },
-			],
-		},
-	],
-	evaluator: [
-		{
-			key: "threshold",
-			labelZh: "通过分数线",
-			kind: "number",
-			min: 0,
-			max: 100,
-			default: 80,
-			hint: "低于该分走驳回边。",
-		},
-	],
-	custom: [],
-	condition: [
-		{
-			key: "condition",
-			labelZh: "条件表达式",
-			kind: "text",
-			default: "上游产物包含 驳回/失败 关键词",
-			placeholder: "例：上游产物包含 成功 关键词",
-		},
-	],
-	ai_judge: [
-		{
-			key: "judge",
-			labelZh: "裁决问题",
-			kind: "textarea",
-			rows: 2,
-			placeholder: "例：回归摘要是否证明偶发不再复现？",
-			hint: "为空则读 AI 指令；都没有才按默认提问。无上游时直接答题，有上游以上游为据。模型只回结论通过/不通过。",
-		},
-	],
-	loop: [
-		{
-			key: "loopCount",
-			labelZh: "最大循环次数",
-			kind: "number",
-			min: 1,
-			max: 10,
-			default: 3,
-			hint: "熔断保护，超限暂停等人工。",
-		},
-	],
-	human: [
-		{
-			key: "approvalHint",
-			labelZh: "审批提示",
-			kind: "text",
-			default: "检查产物是否符合验收标准再批准",
-			placeholder: "例：检查产物是否符合验收标准再批准",
-		},
-	],
-	knowledge: [
-		{ key: "topK", labelZh: "检索 TopK", kind: "number", min: 1, max: 20, default: 5 },
-		{ key: "baseId", labelZh: "知识库标识", kind: "text", placeholder: "缺省用工作区全文检索" },
-	],
-	tool: [{ key: "toolName", labelZh: "工具名", kind: "text", default: "bash", placeholder: "bash / read / 搜索…" }],
-	code: [
-		{
-			key: "language",
-			labelZh: "脚本语言",
-			kind: "select",
-			default: "TypeScript",
-			options: [
-				{ value: "TypeScript", labelZh: "TypeScript" },
-				{ value: "Python", labelZh: "Python" },
-				{ value: "Bash", labelZh: "Bash" },
-			],
-		},
-		{ key: "entry", labelZh: "入口/说明", kind: "textarea", rows: 3, placeholder: "要完成的数据加工说明，或入口函数…" },
-	],
-	api: [
-		{ key: "apiUrl", labelZh: "API 地址", kind: "text", default: "https://", placeholder: "https://" },
-		{
-			key: "apiMethod",
-			labelZh: "方法",
-			kind: "select",
-			default: "POST",
-			options: [
-				{ value: "GET", labelZh: "GET" },
-				{ value: "POST", labelZh: "POST" },
-				{ value: "PUT", labelZh: "PUT" },
-				{ value: "DELETE", labelZh: "DELETE" },
-			],
-		},
-	],
-	merge: [],
-	memory: [
-		{ key: "memoryKey", labelZh: "记忆键", kind: "text", default: "shared_memory", placeholder: "shared_memory" },
-	],
-	end: [],
-	subflow: [{ key: "subflowId", labelZh: "子流程 ID", kind: "text", placeholder: "目标画布工程 id" }],
-	pstack: [
-		{
-			key: "skill",
-			labelZh: "选择工作依据 Skill",
-			kind: "select",
-			default: "poteto-mode",
-			options: PSTACK_SKILLS.map((s) => ({
-				value: s.id,
-				labelZh: `${s.icon} ${s.nameZh} (${s.id})`,
-			})),
-			hint: "选择该 Skill 作为本节点的核心描述、思考准则与工程工作依据",
-		},
-	],
-	skill: [
-		{
-			key: "skillName",
-			labelZh: "注入的技能灵魂 (Skill)",
-			kind: "select",
-			default: "",
-			options: [
-				{
-					value: "",
-					labelZh: "📦 选择已安装的技能...",
-				},
-			],
-			hint: "以此 Skill 作为本节点的灵魂规约与行动标准（仅展示本机已安装技能）",
-		},
-	],
-};
+export function getRoleFields(t: Translate): Record<CanvasNodeRole, RoleField[]> {
+	return {
+		trigger: [
+			{
+				key: "payload",
+				label: t("canvas.metadata.field.trigger.payload.label"),
+				kind: "textarea",
+				rows: 4,
+				placeholder: t("canvas.metadata.field.trigger.payload.placeholder"),
+			},
+		],
+		cron: [
+			{
+				key: "cron",
+				label: t("canvas.metadata.field.cron.cron.label"),
+				kind: "text",
+				default: "*/30 * * * *",
+				placeholder: t("canvas.metadata.field.cron.cron.placeholder"),
+				hint: t("canvas.metadata.field.cron.cron.hint"),
+			},
+		],
+		webhook: [
+			{
+				key: "path",
+				label: t("canvas.metadata.field.webhook.path.label"),
+				kind: "text",
+				default: "/hook/demo",
+				placeholder: t("canvas.metadata.field.webhook.path.placeholder"),
+			},
+			{
+				key: "method",
+				label: t("canvas.metadata.field.webhook.method.label"),
+				kind: "select",
+				default: "POST",
+				options: [
+					{ value: "GET", label: t("canvas.metadata.field.webhook.method.option0") },
+					{ value: "POST", label: t("canvas.metadata.field.webhook.method.option1") },
+				],
+				hint: t("canvas.metadata.field.webhook.method.hint"),
+			},
+		],
+		transform: [
+			{
+				key: "mode",
+				label: t("canvas.metadata.field.transform.mode.label"),
+				kind: "select",
+				default: "text2json",
+				options: [
+					{ value: "text2json", label: t("canvas.metadata.field.transform.mode.option0") },
+					{ value: "json2text", label: t("canvas.metadata.field.transform.mode.option1") },
+					{ value: "template", label: t("canvas.metadata.field.transform.mode.option2") },
+				],
+			},
+			{
+				key: "template",
+				label: t("canvas.metadata.field.transform.template.label"),
+				kind: "textarea",
+				rows: 3,
+				default: "{{input}}",
+				placeholder: t("canvas.metadata.field.transform.template.placeholder"),
+				showIf: { key: "mode", value: "template" },
+			},
+		],
+		architect: [],
+		planner: [
+			{
+				key: "maxSteps",
+				label: t("canvas.metadata.field.planner.maxSteps.label"),
+				kind: "number",
+				min: 2,
+				max: 12,
+				default: 5,
+			},
+		],
+		coder: [],
+		researcher: [
+			{
+				key: "depth",
+				label: t("canvas.metadata.field.researcher.depth.label"),
+				kind: "select",
+				default: "标准",
+				options: [
+					{ value: "快速", label: t("canvas.metadata.field.researcher.depth.option0") },
+					{ value: "标准", label: t("canvas.metadata.field.researcher.depth.option1") },
+					{ value: "深度", label: t("canvas.metadata.field.researcher.depth.option2") },
+				],
+			},
+			{
+				key: "maxSources",
+				label: t("canvas.metadata.field.researcher.maxSources.label"),
+				kind: "number",
+				min: 1,
+				max: 20,
+				default: 5,
+			},
+		],
+		writer: [],
+		analyst: [],
+		reviewer: [
+			{
+				key: "strictness",
+				label: t("canvas.metadata.field.reviewer.strictness.label"),
+				kind: "select",
+				default: "标准",
+				options: [
+					{ value: "宽松", label: t("canvas.metadata.field.reviewer.strictness.option0") },
+					{ value: "标准", label: t("canvas.metadata.field.reviewer.strictness.option1") },
+					{ value: "严格", label: t("canvas.metadata.field.reviewer.strictness.option2") },
+				],
+			},
+		],
+		tester: [
+			{
+				key: "testCommand",
+				label: t("canvas.metadata.field.tester.testCommand.label"),
+				kind: "text",
+				default: "npm test",
+				placeholder: t("canvas.metadata.field.tester.testCommand.placeholder"),
+			},
+		],
+		devops: [
+			{
+				key: "environment",
+				label: t("canvas.metadata.field.devops.environment.label"),
+				kind: "select",
+				default: "预发",
+				options: [
+					{ value: "预发", label: t("canvas.metadata.field.devops.environment.option0") },
+					{ value: "生产", label: t("canvas.metadata.field.devops.environment.option1") },
+				],
+			},
+		],
+		evaluator: [
+			{
+				key: "threshold",
+				label: t("canvas.metadata.field.evaluator.threshold.label"),
+				kind: "number",
+				min: 0,
+				max: 100,
+				default: 80,
+				hint: t("canvas.metadata.field.evaluator.threshold.hint"),
+			},
+		],
+		custom: [],
+		condition: [
+			{
+				key: "condition",
+				label: t("canvas.metadata.field.condition.condition.label"),
+				kind: "text",
+				default: "reject/fail",
+				placeholder: t("canvas.metadata.field.condition.condition.placeholder"),
+			},
+		],
+		ai_judge: [
+			{
+				key: "judge",
+				label: t("canvas.metadata.field.ai_judge.judge.label"),
+				kind: "textarea",
+				rows: 2,
+				placeholder: t("canvas.metadata.field.ai_judge.judge.placeholder"),
+				hint: t("canvas.metadata.field.ai_judge.judge.hint"),
+			},
+		],
+		loop: [
+			{
+				key: "loopCount",
+				label: t("canvas.metadata.field.loop.loopCount.label"),
+				kind: "number",
+				min: 1,
+				max: 10,
+				default: 3,
+				hint: t("canvas.metadata.field.loop.loopCount.hint"),
+			},
+		],
+		human: [
+			{
+				key: "approvalHint",
+				label: t("canvas.metadata.field.human.approvalHint.label"),
+				kind: "text",
+				default: "Check that the deliverable meets the acceptance criteria before approving",
+				placeholder: t("canvas.metadata.field.human.approvalHint.placeholder"),
+			},
+		],
+		knowledge: [
+			{
+				key: "topK",
+				label: t("canvas.metadata.field.knowledge.topK.label"),
+				kind: "number",
+				min: 1,
+				max: 20,
+				default: 5,
+			},
+			{
+				key: "baseId",
+				label: t("canvas.metadata.field.knowledge.baseId.label"),
+				kind: "text",
+				placeholder: t("canvas.metadata.field.knowledge.baseId.placeholder"),
+			},
+		],
+		tool: [
+			{
+				key: "toolName",
+				label: t("canvas.metadata.field.tool.toolName.label"),
+				kind: "text",
+				default: "bash",
+				placeholder: t("canvas.metadata.field.tool.toolName.placeholder"),
+			},
+		],
+		code: [
+			{
+				key: "language",
+				label: t("canvas.metadata.field.code.language.label"),
+				kind: "select",
+				default: "TypeScript",
+				options: [
+					{ value: "TypeScript", label: t("canvas.metadata.field.code.language.option0") },
+					{ value: "Python", label: t("canvas.metadata.field.code.language.option1") },
+					{ value: "Bash", label: t("canvas.metadata.field.code.language.option2") },
+				],
+			},
+			{
+				key: "entry",
+				label: t("canvas.metadata.field.code.entry.label"),
+				kind: "textarea",
+				rows: 3,
+				placeholder: t("canvas.metadata.field.code.entry.placeholder"),
+			},
+		],
+		api: [
+			{
+				key: "apiUrl",
+				label: t("canvas.metadata.field.api.apiUrl.label"),
+				kind: "text",
+				default: "https://",
+				placeholder: t("canvas.metadata.field.api.apiUrl.placeholder"),
+			},
+			{
+				key: "apiMethod",
+				label: t("canvas.metadata.field.api.apiMethod.label"),
+				kind: "select",
+				default: "POST",
+				options: [
+					{ value: "GET", label: t("canvas.metadata.field.api.apiMethod.option0") },
+					{ value: "POST", label: t("canvas.metadata.field.api.apiMethod.option1") },
+					{ value: "PUT", label: t("canvas.metadata.field.api.apiMethod.option2") },
+					{ value: "DELETE", label: t("canvas.metadata.field.api.apiMethod.option3") },
+				],
+			},
+		],
+		merge: [],
+		memory: [
+			{
+				key: "memoryKey",
+				label: t("canvas.metadata.field.memory.memoryKey.label"),
+				kind: "text",
+				default: "shared_memory",
+				placeholder: t("canvas.metadata.field.memory.memoryKey.placeholder"),
+			},
+		],
+		end: [],
+		subflow: [
+			{
+				key: "subflowId",
+				label: t("canvas.metadata.field.subflow.subflowId.label"),
+				kind: "text",
+				placeholder: t("canvas.metadata.field.subflow.subflowId.placeholder"),
+			},
+		],
+		pstack: [
+			{
+				key: "skill",
+				label: t("canvas.metadata.field.pstack.skill.label"),
+				kind: "select",
+				default: "poteto-mode",
+				options: getPstackSkills(t).map((s) => ({ value: s.id, label: `${s.icon} ${s.name} (${s.id})` })),
+				hint: t("canvas.metadata.field.pstack.skill.hint"),
+			},
+		],
+		skill: [
+			{
+				key: "skillName",
+				label: t("canvas.metadata.field.skill.skillName.label"),
+				kind: "select",
+				default: "",
+				options: [
+					{
+						value: "",
+						label: t("canvas.metadata.field.skill.skillName.option0"),
+					},
+				],
+				hint: t("canvas.metadata.field.skill.skillName.hint"),
+			},
+		],
+	};
+}
 
 /** 每个角色的输入输出速查（卡片 ? 提示用）：输入要什么 / 输出给什么 / 一句话用法 */
 interface RoleIoHelp {
@@ -739,97 +900,164 @@ interface RoleIoHelp {
 	usage: string;
 }
 
-export const ROLE_IO_HELP: Record<CanvasNodeRole, RoleIoHelp> = {
-	trigger: {
-		input: "无需上游；启动弹窗的输入会自动并入",
-		output: "启动载荷全文，原样透传下游",
-		usage: "载荷写好任务再点直接启动，下游用 {{上游摘要}} 引用",
-	},
-	cron: {
-		input: "无需上游，到点自动拉起",
-		output: "Cron 配置 + 空载荷透传",
-		usage: "定时流水线入口，后接触发执行节点",
-	},
-	webhook: { input: "外部 HTTP 回调", output: "回调 Body 原样透传", usage: "预留外部系统触发，当前版本手动触发" },
-	transform: {
-		input: "上游产物文本",
-		output: "按模式转换：文本↔JSON / 模板渲染结果",
-		usage: "Agent 干活前先清洗格式，模板里用 {{input}} 占位",
-	},
-	architect: {
-		input: "需求描述 / 上游摘要",
-		output: "技术规约 + 拆解后的任务清单",
-		usage: "放最前当总指挥，后接 planner / coder",
-	},
-	planner: {
-		input: "目标 / 需求摘要",
-		output: "3-7 步可执行清单（含验收标准）",
-		usage: "大任务先拆解，再扇出给多个 coder",
-	},
-	coder: {
-		input: "任务契约 + AI 指令（可用 {{上游摘要}}）",
-		output: "代码变更摘要 + git diff 统计",
-		usage: "核心干活节点：指令写清文件范围与验收标准",
-	},
-	researcher: {
-		input: "调研主题",
-		output: "现状 / 方案对比 / 推荐结论",
-		usage: "选型前先调研，结果交 architect / coder",
-	},
-	writer: { input: "上游交付物", output: "文档正文（背景/变更/用法）", usage: "收尾写 README / 变更说明，接 end" },
-	analyst: { input: "数据 / 日志文本", output: "量化结论 + 可执行优化建议", usage: "性能故障分析，结果回给 coder 修" },
-	reviewer: {
-		input: "待审代码摘要",
-		output: "通过走 approve，驳回走 reject + 修改清单",
-		usage: "接 coder 后当质量门禁，严格度在参数里调",
-	},
-	tester: {
-		input: "待测代码 / 需求",
-		output: "测试报告：通过或失败 + 自动修复",
-		usage: "配好测试命令，失败会自动修到通过",
-	},
-	devops: { input: "可发布产物", output: "构建 / 发布结果", usage: "流水线尾端做构建验证与发布" },
-	evaluator: {
-		input: "待评分产物",
-		output: "0-100 打分；低于阈值走驳回边",
-		usage: "当裁判打分，阈值在角色专属参数里调",
-	},
-	custom: { input: "上游摘要 + AI 指令", output: "自定义交付摘要", usage: "人设写在角色规约里，指令写任务" },
-	condition: {
-		input: "上游产物文本",
-		output: "关键词或 AI 裁决结论走成立 / 不成立边",
-		usage: "默认关键词包含；开 AI 裁决后按模型结论分流",
-	},
-	ai_judge: { input: "上游产物文本", output: "模型结论走通过 / 打回边", usage: "写裁决问题，模型与思考强度走节点配置" },
-	loop: { input: "上游产物", output: "原样透传，循环 N 次调下游", usage: "重试 / 批量用，次数防熔断" },
-	human: { input: "待审产物", output: "批准后透传，驳回则暂停", usage: "高危操作前加人工确认" },
-	merge: { input: "多条分支产物", output: "汇总后透传下游", usage: "并行扇出后在此 Join 再往下走" },
-	subflow: { input: "上游摘要", output: "子流程最终交付", usage: "填子流程 ID，复用另一个画布" },
-	tool: { input: "工具参数 / 上游摘要", output: "工具执行结果摘要", usage: "配工具名如 bash，先说目的再执行" },
-	knowledge: { input: "问题 / 关键词", output: "检索依据 + 综合答案", usage: "配 TopK，先建好本地知识库" },
-	code: { input: "待加工数据", output: "脚本运行结果摘要", usage: "选语言 + 写入口说明做加工校验" },
-	api: { input: "上游参数", output: "HTTP 返回清洗后的摘要", usage: "配 URL + 方法调外部接口" },
-	memory: { input: "写入：上游产物；读取：无", output: "记忆键对应快照", usage: "跨分支共享变量，键名保持一致" },
-	end: { input: "所有上游汇总", output: "最终交付（流程结束）", usage: "放最后汇总展示" },
-	pstack: {
-		input: "业务需求 / 架构规约 / 上游产物",
-		output: "高质量工程交付 + 验证证据（无 AI 废话/无表象修补）",
-		usage: "选择 58 个 Pstack Skill 之一作为角色准则，如 poteto-mode、fix-root-causes、unslop 等",
-	},
-	skill: {
-		input: "业务需求 / 任务契约",
-		output: "严格依据注入技能规约的交付产物",
-		usage: "以已安装技能作为智能体灵魂，继承其专属方法论与领域规约",
-	},
-};
+export function getRoleIoHelp(t: Translate): Record<CanvasNodeRole, RoleIoHelp> {
+	return {
+		trigger: {
+			input: t("canvas.metadata.io.trigger.input"),
+			output: t("canvas.metadata.io.trigger.output"),
+			usage: t("canvas.metadata.io.trigger.usage"),
+		},
+		cron: {
+			input: t("canvas.metadata.io.cron.input"),
+			output: t("canvas.metadata.io.cron.output"),
+			usage: t("canvas.metadata.io.cron.usage"),
+		},
+		webhook: {
+			input: t("canvas.metadata.io.webhook.input"),
+			output: t("canvas.metadata.io.webhook.output"),
+			usage: t("canvas.metadata.io.webhook.usage"),
+		},
+		transform: {
+			input: t("canvas.metadata.io.transform.input"),
+			output: t("canvas.metadata.io.transform.output"),
+			usage: t("canvas.metadata.io.transform.usage"),
+		},
+		architect: {
+			input: t("canvas.metadata.io.architect.input"),
+			output: t("canvas.metadata.io.architect.output"),
+			usage: t("canvas.metadata.io.architect.usage"),
+		},
+		planner: {
+			input: t("canvas.metadata.io.planner.input"),
+			output: t("canvas.metadata.io.planner.output"),
+			usage: t("canvas.metadata.io.planner.usage"),
+		},
+		coder: {
+			input: t("canvas.metadata.io.coder.input"),
+			output: t("canvas.metadata.io.coder.output"),
+			usage: t("canvas.metadata.io.coder.usage"),
+		},
+		researcher: {
+			input: t("canvas.metadata.io.researcher.input"),
+			output: t("canvas.metadata.io.researcher.output"),
+			usage: t("canvas.metadata.io.researcher.usage"),
+		},
+		writer: {
+			input: t("canvas.metadata.io.writer.input"),
+			output: t("canvas.metadata.io.writer.output"),
+			usage: t("canvas.metadata.io.writer.usage"),
+		},
+		analyst: {
+			input: t("canvas.metadata.io.analyst.input"),
+			output: t("canvas.metadata.io.analyst.output"),
+			usage: t("canvas.metadata.io.analyst.usage"),
+		},
+		reviewer: {
+			input: t("canvas.metadata.io.reviewer.input"),
+			output: t("canvas.metadata.io.reviewer.output"),
+			usage: t("canvas.metadata.io.reviewer.usage"),
+		},
+		tester: {
+			input: t("canvas.metadata.io.tester.input"),
+			output: t("canvas.metadata.io.tester.output"),
+			usage: t("canvas.metadata.io.tester.usage"),
+		},
+		devops: {
+			input: t("canvas.metadata.io.devops.input"),
+			output: t("canvas.metadata.io.devops.output"),
+			usage: t("canvas.metadata.io.devops.usage"),
+		},
+		evaluator: {
+			input: t("canvas.metadata.io.evaluator.input"),
+			output: t("canvas.metadata.io.evaluator.output"),
+			usage: t("canvas.metadata.io.evaluator.usage"),
+		},
+		custom: {
+			input: t("canvas.metadata.io.custom.input"),
+			output: t("canvas.metadata.io.custom.output"),
+			usage: t("canvas.metadata.io.custom.usage"),
+		},
+		condition: {
+			input: t("canvas.metadata.io.condition.input"),
+			output: t("canvas.metadata.io.condition.output"),
+			usage: t("canvas.metadata.io.condition.usage"),
+		},
+		ai_judge: {
+			input: t("canvas.metadata.io.ai_judge.input"),
+			output: t("canvas.metadata.io.ai_judge.output"),
+			usage: t("canvas.metadata.io.ai_judge.usage"),
+		},
+		loop: {
+			input: t("canvas.metadata.io.loop.input"),
+			output: t("canvas.metadata.io.loop.output"),
+			usage: t("canvas.metadata.io.loop.usage"),
+		},
+		human: {
+			input: t("canvas.metadata.io.human.input"),
+			output: t("canvas.metadata.io.human.output"),
+			usage: t("canvas.metadata.io.human.usage"),
+		},
+		merge: {
+			input: t("canvas.metadata.io.merge.input"),
+			output: t("canvas.metadata.io.merge.output"),
+			usage: t("canvas.metadata.io.merge.usage"),
+		},
+		subflow: {
+			input: t("canvas.metadata.io.subflow.input"),
+			output: t("canvas.metadata.io.subflow.output"),
+			usage: t("canvas.metadata.io.subflow.usage"),
+		},
+		tool: {
+			input: t("canvas.metadata.io.tool.input"),
+			output: t("canvas.metadata.io.tool.output"),
+			usage: t("canvas.metadata.io.tool.usage"),
+		},
+		knowledge: {
+			input: t("canvas.metadata.io.knowledge.input"),
+			output: t("canvas.metadata.io.knowledge.output"),
+			usage: t("canvas.metadata.io.knowledge.usage"),
+		},
+		code: {
+			input: t("canvas.metadata.io.code.input"),
+			output: t("canvas.metadata.io.code.output"),
+			usage: t("canvas.metadata.io.code.usage"),
+		},
+		api: {
+			input: t("canvas.metadata.io.api.input"),
+			output: t("canvas.metadata.io.api.output"),
+			usage: t("canvas.metadata.io.api.usage"),
+		},
+		memory: {
+			input: t("canvas.metadata.io.memory.input"),
+			output: t("canvas.metadata.io.memory.output"),
+			usage: t("canvas.metadata.io.memory.usage"),
+		},
+		end: {
+			input: t("canvas.metadata.io.end.input"),
+			output: t("canvas.metadata.io.end.output"),
+			usage: t("canvas.metadata.io.end.usage"),
+		},
+		pstack: {
+			input: t("canvas.metadata.io.pstack.input"),
+			output: t("canvas.metadata.io.pstack.output"),
+			usage: t("canvas.metadata.io.pstack.usage", { count: getPstackSkills(t).length }),
+		},
+		skill: {
+			input: t("canvas.metadata.io.skill.input"),
+			output: t("canvas.metadata.io.skill.output"),
+			usage: t("canvas.metadata.io.skill.usage"),
+		},
+	};
+}
 
 /** 取某角色可见的字段（含 showIf 联动显隐） */
 export function visibleRoleFields(
 	role: CanvasNodeRole,
 	config: Record<string, string | number | boolean | undefined> | undefined,
+	t: Translate = untranslated,
 ): RoleField[] {
-	if (!isRoleImplemented(role)) return [{ key: "capability", kind: "hint", labelZh: roleCapabilityNotice(role) }];
-	return (ROLE_FIELDS[role] ?? []).filter(
+	if (!isRoleImplemented(role)) return [{ key: "capability", kind: "hint", label: roleCapabilityNotice(role, t) }];
+	return (getRoleFields(t)[role] ?? []).filter(
 		(f) => !f.showIf || String(config?.[f.showIf.key] ?? "") === String(f.showIf.value),
 	);
 }
@@ -842,14 +1070,10 @@ export const UNIMPLEMENTED_ROLES: ReadonlySet<CanvasNodeRole> = new Set(["cron",
 export function isRoleImplemented(role: CanvasNodeRole): boolean {
 	return !UNIMPLEMENTED_ROLES.has(role);
 }
-export function roleCapabilityNotice(role: CanvasNodeRole, english = false): string {
-	if (!isRoleImplemented(role))
-		return english
-			? "Description only: scheduled execution, webhook endpoints, persistent memory and nested workflows are not implemented. Execution is disabled for this description node."
-			: "仅说明节点：尚未实现定时调度、Webhook 接入、持久记忆或嵌套工作流；此说明节点已禁用运行。";
-	if (["tool", "code", "api", "knowledge"].includes(role))
-		return english
-			? "Agent instruction: execution depends on the model and its enabled tools; no dedicated runtime is provided."
-			: "由智能体按指令执行，依赖当前模型及已启用工具；没有独立的专用运行时。";
+export function roleCapabilityNotice(role: CanvasNodeRole, t: Translate = untranslated): string {
+	if (!isRoleImplemented(role)) return t("canvas.metadata.capability.descriptionOnly");
+	if (["tool", "code", "api", "knowledge"].includes(role)) return t("canvas.metadata.capability.agentInstruction");
 	return "";
 }
+
+export const runtimeCapabilityNote = roleCapabilityNotice;

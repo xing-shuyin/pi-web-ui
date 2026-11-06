@@ -356,7 +356,7 @@ describe("Canvas Orchestrator", () => {
 
 		await orchestrator.runNode(graph, "n", undefined, undefined, true);
 		const promptLog = orchestrator.getNodeLog(graph.id, "n").find((e) => e.kind === "prompt");
-		expect(promptLog?.text).toContain("AI指令");
+		expect(promptLog?.text).toContain("AI instructions");
 		expect(promptLog?.text).toContain("XYZ-789");
 		orchestrator.stopAll(graph.id);
 	});
@@ -372,7 +372,7 @@ describe("Canvas Orchestrator", () => {
 
 		await orchestrator.runNode(graph, "n");
 		const promptLog = orchestrator.getNodeLog(graph.id, "n").find((e) => e.kind === "prompt");
-		expect(promptLog?.text).toContain("专属参数");
+		expect(promptLog?.text).toContain("Node-specific parameters");
 		expect(promptLog?.text).toContain("严格");
 		orchestrator.stopAll(graph.id);
 	});
@@ -428,7 +428,7 @@ describe("Canvas Orchestrator", () => {
 		await orchestrator.runNode(graph, "tri");
 		const tri = graph.nodes.find((n) => n.id === "tri")!;
 		expect(tri.status).toBe("done");
-		expect(tri.lastOutputSummary).toContain("手动触发");
+		expect(tri.lastOutputSummary).toContain("Manual trigger");
 		expect(orchestrator.getNodeLog(graph.id, "out").some((e) => e.kind === "handoff")).toBe(true);
 
 		await orchestrator.runNode(graph, "cro");

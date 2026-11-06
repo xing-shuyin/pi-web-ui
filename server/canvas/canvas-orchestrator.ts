@@ -14,6 +14,7 @@ import { isAbsolute, resolve } from "node:path";
 import { isRemoteWorkspaceUri } from "../remote-ssh-service.js";
 import type {
 	CanvasEngineId,
+	CanvasMessage,
 	CanvasGraph,
 	CanvasNode,
 	CanvasNodeLogEntry,
@@ -44,6 +45,8 @@ import {
 	isCanvasBackedge,
 	validateCanvasTopology,
 } from "./canvas-scheduler.js";
+
+import { CanvasRuntimeError, canvasErrorMessage, canvasRuntimeMessage } from "./canvas-runtime-messages.js";
 
 const exec = promisify(execFile);
 
@@ -154,7 +157,14 @@ export class CanvasOrchestrator {
 	}
 
 	/** 追加一条对话实录并广播 + 节流落盘 */
-	private appendLog(graphId: string, nodeId: string, kind: CanvasNodeLogKind, text: string, toolName?: string): void {
+	private appendLog(
+		graphId: string,
+		nodeId: string,
+		kind: CanvasNodeLogKind,
+		text: string,
+		toolName?: string,
+		message?: CanvasMessage,
+	): void {
 		if (!isSafeGraphId(graphId) || !isSafeGraphId(nodeId)) return;
 		const clean = (text ?? "").slice(0, 2000) || "(空)";
 		const entry: CanvasNodeLogEntry = {
@@ -162,6 +172,7 @@ export class CanvasOrchestrator {
 			ts: Date.now(),
 			kind,
 			text: clean,
+			...(message ? { message } : {}),
 			...(toolName ? { toolName: toolName.slice(0, 80) } : {}),
 		};
 		const key = this.logKey(graphId, nodeId);
@@ -216,7 +227,8 @@ export class CanvasOrchestrator {
 	}
 
 	async resolveNodeCwd(node: CanvasNode, runBase?: string): Promise<string> {
-		if (!isSafeGraphId(node.id)) throw new Error(`Invalid canvas node id: ${node.id}`);
+		if (!isSafeGraphId(node.id))
+			throw new CanvasRuntimeError(`Invalid canvas node id: ${node.id}`, "error.invalidNodeId", { id: node.id });
 		if (node.useWorktree)
 			return (
 				await prepareCanvasWorkspace({
@@ -293,9 +305,10 @@ export class CanvasOrchestrator {
 	): Promise<void> {
 		if (!fsExistsSync(pathJoin(this.dataDir, "canvas", `${graph.id}.json`))) return;
 		const execKey = `${graph.id}:${nodeId}`;
-		if (this.activeExecutions.has(execKey)) throw new Error(`Canvas node already running: ${nodeId}`);
+		if (this.activeExecutions.has(execKey))
+			throw new CanvasRuntimeError(`Canvas node already running: ${nodeId}`, "error.nodeRunning", { id: nodeId });
 		if (!scheduled && ["running", "waiting_approval"].includes(this.runningGraphs.get(graph.id)?.status ?? ""))
-			throw new Error("Canvas graph already running");
+			throw new CanvasRuntimeError("Canvas graph already running", "error.graphRunning");
 		// A separately loaded run_node must not replace an active graph object.
 		if ([...this.activeExecutions.values()].some((execution) => execution.graphId === graph.id)) {
 			graph = this.runningGraphs.get(graph.id) ?? graph;
@@ -335,6 +348,9 @@ export class CanvasOrchestrator {
 				if (target !== node) {
 					target.status = "idle";
 					target.error = undefined;
+					target.errorMessage = undefined;
+					target.currentAction = undefined;
+					target.currentActionMessage = undefined;
 					target.artifact = undefined;
 					target.lastOutputSummary = undefined;
 					target.aiVerdict = undefined;
@@ -353,7 +369,9 @@ export class CanvasOrchestrator {
 		node.actualModel = undefined;
 		node.status = "running";
 		node.error = undefined;
+		node.errorMessage = undefined;
 		node.currentAction = `[${node.engine.toUpperCase()}] 正在分配独立环境与工作目录...`;
+		node.currentActionMessage = canvasRuntimeMessage("action.allocating", { engine: node.engine.toUpperCase() });
 		saveCanvasRuntimeState(this.dataDir, graph);
 		this.broadcastCanvasRuntime(graph);
 		this.appendLog(
@@ -361,6 +379,14 @@ export class CanvasOrchestrator {
 			nodeId,
 			"system",
 			`启动节点「${node.title}」(${node.engine}/${node.model})，工作目录: ${node.cwd || "."}（基准: ${this.pickRunBase(runBase ?? this.runBaseByGraph.get(graph.id))}）`,
+			undefined,
+			canvasRuntimeMessage("log.nodeStarted", {
+				title: node.title,
+				engine: node.engine,
+				model: node.model,
+				cwd: node.cwd || ".",
+				base: this.pickRunBase(runBase ?? this.runBaseByGraph.get(graph.id)),
+			}),
 		);
 
 		this.broadcast({
@@ -369,6 +395,7 @@ export class CanvasOrchestrator {
 			nodeId,
 			event: "started",
 			currentAction: node.currentAction,
+			currentActionMessage: node.currentActionMessage,
 		});
 
 		let releaseSlot = () => {};
@@ -380,7 +407,9 @@ export class CanvasOrchestrator {
 		try {
 			releaseSlot = await this.executionQueue.acquire(controller.signal);
 			if (["cron", "webhook", "memory", "loop"].includes(node.role))
-				throw new Error(`Unsupported canvas executor: ${node.role}`);
+				throw new CanvasRuntimeError(`Unsupported canvas executor: ${node.role}`, "error.unsupportedExecutor", {
+					role: node.role,
+				});
 			if ((runBase ?? "").trim()) this.runBaseByGraph.set(graph.id, runBase as string);
 			const upstreamArtifacts = graph.edges
 				.filter((e) => e.targetNodeId === node.id && e.active === true)
@@ -432,12 +461,18 @@ export class CanvasOrchestrator {
 						? `skill: ${String(node.config?.skillName || node.config?.skill || "soul")}`
 						: node.role;
 			node.currentAction = `[${node.engine.toUpperCase()}] 启动 ${node.model} 执行中 (${roleDetail})...`;
+			node.currentActionMessage = canvasRuntimeMessage("action.starting", {
+				engine: node.engine.toUpperCase(),
+				model: node.model,
+				role: roleDetail,
+			});
 			this.broadcast({
 				type: "canvas_node_event",
 				graphId: graph.id,
 				nodeId,
 				event: "action",
 				currentAction: node.currentAction,
+				currentActionMessage: node.currentActionMessage,
 			});
 
 			// 组装前置契约提示词（若上游边有 handoff 产物）
@@ -445,18 +480,18 @@ export class CanvasOrchestrator {
 			let contractContext = "";
 			for (const edge of incomingEdges) {
 				if (edge.lastHandoffSummary) {
-					const PORT_ZH: Record<string, string> = {
-						contract: "任务契约",
-						instruction: "AI指令",
-						system: "角色规约",
-						config: "控制参数",
+					const PORT_LABELS: Record<string, string> = {
+						contract: "Task contract",
+						instruction: "AI instructions",
+						system: "Role instructions",
+						config: "Control parameters",
 					};
 					const srcTitle = graph.nodes.find((n) => n.id === edge.sourceNodeId)?.title || edge.sourceNodeId;
 					const portSuffix =
 						edge.targetPort && edge.targetPort !== "contract"
-							? ` → ${PORT_ZH[edge.targetPort] || edge.targetPort}`
+							? ` → ${PORT_LABELS[edge.targetPort] || edge.targetPort}`
 							: "";
-					contractContext += `\n【来自「${srcTitle}」的定向输入${portSuffix}】:\n${edge.lastHandoffSummary}\n`;
+					contractContext += `\n[Directed input from “${srcTitle}”${portSuffix}]:\n${edge.lastHandoffSummary}\n`;
 				}
 			}
 
@@ -478,11 +513,11 @@ export class CanvasOrchestrator {
 			const cfgEntries = Object.entries(node.config ?? {}).filter((entry) => entry[1] !== undefined && entry[1] !== "");
 			let configContext = "";
 			if (!isCanvasPassthroughRole(node.role) && node.role !== "transform" && cfgEntries.length > 0) {
-				configContext = `\n【本节点专属参数】:\n${cfgEntries.map((entry) => `${entry[0]}=${String(entry[1])}`).join("；")}\n`;
+				configContext = `\n[Node-specific parameters]:\n${cfgEntries.map((entry) => `${entry[0]}=${String(entry[1])}`).join("; ")}\n`;
 			}
 			let prompt = isInputOnly
 				? `${contractContext}${configContext ? `\n${configContext}` : ""}`
-				: `${expandedInstruction || "按照你的角色职责进行开发"}\n${configContext}${contractContext}`;
+				: `${expandedInstruction || "Carry out the development task according to your role."}\n${configContext}${contractContext}`;
 
 			if (
 				!contractContext.trim() &&
@@ -490,19 +525,19 @@ export class CanvasOrchestrator {
 				!node.instruction?.trim() &&
 				!isCanvasPassthroughRole(node.role)
 			) {
-				prompt += `\n\n【首节点启动指引】: 当前为流水线首节点。请结合当前工作区代码库现状，排查梳理项目架构规范与待实现的核心任务，输出明确的分工契约交由下游节点接力执行。`;
+				prompt += `\n\n[First-node guidance]: This is the first node in the workflow. Inspect the current workspace, establish the project architecture and conventions, identify the core tasks, and provide explicit task contracts for downstream nodes.`;
 			}
 
 			if (node.role === "pstack") {
 				const skillKey = String(node.config?.skill ?? "poteto-mode").trim();
 				const item = PSTACK_SKILLS_MAP[skillKey] || PSTACK_SKILLS_MAP["poteto-mode"];
-				const skillTitle = item ? `${item.icon} ${item.nameZh} (${item.id})` : skillKey;
+				const skillTitle = item ? `${item.icon} ${item.id}` : skillKey;
 				const skillDoc = item?.content ? item.content.slice(0, 4500) : "";
-				prompt = `【Pstack 严谨工程专项工作依据 · ${skillTitle}】\n${skillDoc}\n\n【Pstack 执行守则】\n1. 深入优先、拒绝 AI 废话（Unslop）：严禁生成无实质意义的虚浮描述和表面修补代码；\n2. 拿实证说话：完成修改后必须提供可复现的验证依据（测试输出、运行诊断或精确行为证据）；\n3. 遵循所选 Skill（${skillKey}）的全部非妥协原则（Non-negotiables）开展本节点任务。\n\n【本节点任务与上下文】\n${prompt}`;
+				prompt = `[Pstack engineering reference · ${skillTitle}]\n${skillDoc}\n\n[Pstack execution rules]\n1. Work thoroughly and avoid AI filler (Unslop): do not produce empty descriptions or superficial code fixes.\n2. Provide reproducible evidence after making changes: test output, runtime diagnostics, or precise behavioral evidence.\n3. Follow every non-negotiable principle of the selected skill (${skillKey}) for this node's task.\n\n[Node task and context]\n${prompt}`;
 			} else if (node.role === "skill") {
 				const targetSkillName = String(node.config?.skillName ?? node.config?.skill ?? "").trim();
 				let skillInstruction = "";
-				let foundSkillTitle = targetSkillName || "未指定技能";
+				let foundSkillTitle = targetSkillName || "Unspecified skill";
 				if (targetSkillName) {
 					const diskSkills = discoverDiskSkills({
 						cwd: resolvedCwd || this.baseCwd,
@@ -517,11 +552,11 @@ export class CanvasOrchestrator {
 						const pstackItem = PSTACK_SKILLS_MAP[targetSkillName.toLowerCase()];
 						if (pstackItem) {
 							skillInstruction = pstackItem.content;
-							foundSkillTitle = `${pstackItem.icon} ${pstackItem.nameZh} (${pstackItem.id})`;
+							foundSkillTitle = `${pstackItem.icon} ${pstackItem.id}`;
 						}
 					}
 				}
-				prompt = `【技能之魂 (Soul of Skill) · ${foundSkillTitle}】\n${skillInstruction ? `你当前以此 Skill 的规约与方法论作为你的核心灵魂与行动指南：\n${skillInstruction.slice(0, 4500)}` : `以「${foundSkillTitle}」技能要求为核心灵魂与行为准则。`}\n\n【执行契约】\n必须完全以该 Skill 的专业角色与标准推进工作，结合上游交付物严谨执行。\n\n【本节点任务与上下文】\n${prompt}`;
+				prompt = `[Soul of Skill · ${foundSkillTitle}]\n${skillInstruction ? `Use this skill's rules and methods as your core operating guidance:\n${skillInstruction.slice(0, 4500)}` : `Use the requirements of the "${foundSkillTitle}" skill as your operating principles.`}\n\n[Execution contract]\nPerform the work according to this skill's professional role and standards, carefully incorporating upstream deliverables.\n\n[Node task and context]\n${prompt}`;
 			}
 
 			let outputSummary = "";
@@ -533,16 +568,17 @@ export class CanvasOrchestrator {
 				graph.executionMode !== "simulate";
 			let judgeModel: string = node.model;
 			if (wantAiJudge) {
-				const condRef = String(node.config?.condition ?? "").trim() || "上游产物符合预期";
+				const condRef = String(node.config?.condition ?? "").trim() || "The upstream output meets expectations";
 				const instructionAsk = (node.instruction ?? "").trim().slice(0, 500);
 				const judgeAsk =
 					typeof node.config?.judge === "string" && node.config.judge.trim()
 						? String(node.config.judge).trim().slice(0, 500)
-						: instructionAsk || `判断上游产物是否满足【${condRef}】`;
+						: instructionAsk || `Determine whether the upstream output satisfies [${condRef}]`;
 				const upstreamBlock = contractContext.trim()
-					? `上游产物摘要：\n${contractContext.slice(0, 4000)}\n问题：${judgeAsk}（以上游产物为依据）`
-					: `无上游产物，直接回答问题：${judgeAsk}`;
-				prompt = `你是流水线分支裁判。只做二选一语义判断，不干别的活，不调用任何工具。\n${upstreamBlock}\n要求：最后一行必须 exactly 输出“结论：通过”或“结论：不通过”，前面可附一行理由。`;
+					? `Upstream output summary:\n${contractContext.slice(0, 4000)}\nQuestion: ${judgeAsk} (use the upstream output as evidence)`
+					: `No upstream output is available. Answer this question directly: ${judgeAsk}`;
+				// These two verdict tokens are a compatibility contract with the existing decision parser.
+				prompt = `You are the workflow branch judge. Make only a binary semantic decision; do not perform other work or call tools.\n${upstreamBlock}\nThe last line must be exactly "结论：通过" or "结论：不通过". You may precede it with one line of reasoning.`;
 				judgeModel =
 					typeof node.config?.judgeModel === "string" && node.config.judgeModel.trim()
 						? node.config.judgeModel.trim().slice(0, 120)
@@ -552,12 +588,18 @@ export class CanvasOrchestrator {
 					nodeId,
 					"system",
 					`AI 裁决启动（${node.engine}/${judgeModel}）：${judgeAsk.slice(0, 200)}`,
+					undefined,
+					canvasRuntimeMessage("log.judgeStarted", {
+						engine: node.engine,
+						model: judgeModel,
+						question: judgeAsk.slice(0, 200),
+					}),
 				);
 			} else if (!isCanvasPassthroughRole(node.role) && node.role !== "transform") {
-				prompt += `\n\n【流水线自动化执行安全公约】:
-1. 自治推进：这是无人值守的自动化协同流水线，严禁停留在向用户提问或等待人工决策阶段；遇分支情况请按最佳工程实践自主裁决并推进；
-2. 避免前台阻塞：如需启动服务或验证测试，严禁启动阻塞终端的前台长进程；遇到端口占用（如 3000/3001 等）先检测并释放，验证完成后务必确保退出并清理所有后台子进程；
-3. 交付明确：完成时请提供清晰的修改摘要、接口契约与当前状态，供下游节点或审查门禁接力。`;
+				prompt += `\n\n[Automated workflow execution rules]:
+1. Proceed autonomously: this is an unattended collaborative workflow. Do not stop to ask the user questions or wait for a human decision. Resolve branches using sound engineering judgment and continue.
+2. Avoid blocking the terminal: do not leave long-running services or verification commands in the foreground. Check and resolve occupied ports (such as 3000/3001), and stop and clean up all background child processes when verification finishes.
+3. Deliver clearly: provide a concise change summary, interface contracts, and the current status so downstream nodes or review gates can continue.`;
 			}
 			this.appendLog(graph.id, nodeId, "prompt", prompt.slice(0, 2000));
 			// 纯透传控制节点（条件/循环/人工/汇聚/记忆/结束）：不启动 LLM 会话，直接透传摘要。人工审批节点停留在 waiting_approval 等待抽屉批准，不自动向下游流转。
@@ -565,6 +607,7 @@ export class CanvasOrchestrator {
 				const transformed = executeTransformNode(graph, node);
 				node.status = "done";
 				node.currentAction = "格式转换完成（本地执行）";
+				node.currentActionMessage = canvasRuntimeMessage("action.transformCompleted");
 				node.lastOutputSummary = transformed;
 				await captureControlArtifact();
 				if (!isCurrent()) return;
@@ -580,6 +623,7 @@ export class CanvasOrchestrator {
 					nodeId,
 					event: "done",
 					currentAction: node.currentAction,
+					currentActionMessage: node.currentActionMessage,
 					summary: node.lastOutputSummary,
 				});
 				await this.handleDownstreamEdges(
@@ -596,10 +640,20 @@ export class CanvasOrchestrator {
 					node.status = "waiting_approval";
 					node.currentAction =
 						(node.config?.approvalHint ? String(node.config.approvalHint) + " —— " : "") + "等待人工在抽屉中批准/驳回";
+					node.currentActionMessage = node.config?.approvalHint
+						? canvasRuntimeMessage("action.waitingApprovalWithHint", { hint: String(node.config.approvalHint) })
+						: canvasRuntimeMessage("action.waitingApproval");
 					node.lastOutputSummary = passthroughSummary;
 					await captureControlArtifact();
 					if (!isCurrent()) return;
-					this.appendLog(graph.id, nodeId, "system", "人工审批节点已就绪，等待批准");
+					this.appendLog(
+						graph.id,
+						nodeId,
+						"system",
+						"人工审批节点已就绪，等待批准",
+						undefined,
+						canvasRuntimeMessage("log.approvalReady"),
+					);
 					if (!isCurrent()) return;
 					releaseCapacity();
 					this.activeExecutions.delete(execKey);
@@ -612,12 +666,14 @@ export class CanvasOrchestrator {
 						nodeId,
 						event: "paused",
 						currentAction: node.currentAction,
+						currentActionMessage: node.currentActionMessage,
 						summary: node.lastOutputSummary,
 					});
 					return;
 				}
 				node.status = "done";
 				node.currentAction = `控制节点直通 (${node.role})`;
+				node.currentActionMessage = canvasRuntimeMessage("action.passthrough", { role: node.role });
 				node.lastOutputSummary = passthroughSummary;
 				await captureControlArtifact();
 				if (!isCurrent()) return;
@@ -633,6 +689,7 @@ export class CanvasOrchestrator {
 					nodeId,
 					event: "done",
 					currentAction: node.currentAction,
+					currentActionMessage: node.currentActionMessage,
 					summary: node.lastOutputSummary,
 				});
 				await this.handleDownstreamEdges(
@@ -646,18 +703,20 @@ export class CanvasOrchestrator {
 
 			// 双模调度：真实引擎执行 (Real Engine) vs 拓扑演练演示 (Simulation)
 			if (graph.executionMode === "simulate") {
-				await this.simulateNodeExecution(node, resolvedCwd, prompt, controller.signal, (action) => {
+				await this.simulateNodeExecution(node, resolvedCwd, prompt, controller.signal, (action, message) => {
 					if (!isCurrent()) return;
 					node.currentAction = action;
+					node.currentActionMessage = message;
 					this.broadcast({
 						type: "canvas_node_event",
 						graphId: graph.id,
 						nodeId,
 						event: "action",
 						currentAction: action,
+						currentActionMessage: message,
 					});
 				});
-				outputSummary = `[${node.title}] 演练完成，工作目录：${node.cwd || "."}`;
+				outputSummary = `[${node.title}] Simulation completed, working directory: ${node.cwd || "."}`;
 			} else {
 				const savedModel = node.model;
 				if (wantAiJudge && judgeModel !== node.model) node.model = judgeModel;
@@ -668,15 +727,17 @@ export class CanvasOrchestrator {
 						resolvedCwd,
 						prompt,
 						controller.signal,
-						(action) => {
+						(action, message) => {
 							if (!isCurrent()) return;
 							node.currentAction = action;
+							node.currentActionMessage = message;
 							this.broadcast({
 								type: "canvas_node_event",
 								graphId: graph.id,
 								nodeId,
 								event: "action",
 								currentAction: action,
+								currentActionMessage: message,
 							});
 						},
 					);
@@ -703,6 +764,7 @@ export class CanvasOrchestrator {
 			// 节点完成
 			node.status = "done";
 			node.currentAction = `已完成 (${node.engine.toUpperCase()})`;
+			node.currentActionMessage = canvasRuntimeMessage("action.completed", { engine: node.engine.toUpperCase() });
 			node.lastOutputSummary = outputSummary;
 			if (wantAiJudge) {
 				const hits = [
@@ -710,7 +772,8 @@ export class CanvasOrchestrator {
 				];
 				const last = hits.length > 0 ? String(hits[hits.length - 1][1]).toLowerCase() : "";
 				node.aiVerdict = last ? ["通过", "成立", "是", "真", "true", "yes"].includes(last) : undefined;
-				if (node.aiVerdict === undefined) throw new Error("AI judge returned no explicit decision");
+				if (node.aiVerdict === undefined)
+					throw new CanvasRuntimeError("AI judge returned no explicit decision", "error.judgeNoDecision");
 				this.appendLog(
 					graph.id,
 					nodeId,
@@ -718,6 +781,14 @@ export class CanvasOrchestrator {
 					node.aiVerdict === undefined
 						? "AI 裁决未给出有效结论（默认走不成立边）。"
 						: `AI 裁决结论：${node.aiVerdict ? "通过" : "不通过"}（独立判定，未混入关键词）。`,
+					undefined,
+					canvasRuntimeMessage(
+						node.aiVerdict === undefined
+							? "log.judgeInvalid"
+							: node.aiVerdict
+								? "log.judgePassed"
+								: "log.judgeRejected",
+					),
 				);
 			}
 			this.appendLog(graph.id, nodeId, "done", outputSummary.slice(0, 2000));
@@ -733,6 +804,7 @@ export class CanvasOrchestrator {
 				nodeId,
 				event: "done",
 				currentAction: node.currentAction,
+				currentActionMessage: node.currentActionMessage,
 				summary: node.lastOutputSummary,
 			});
 
@@ -743,8 +815,10 @@ export class CanvasOrchestrator {
 			const msg = (err as Error).message || String(err);
 			node.status = "error";
 			node.error = msg;
+			node.errorMessage = canvasErrorMessage(err);
 			node.currentAction = `执行出错: ${msg}`;
-			this.appendLog(graph.id, node.id, "error", msg.slice(0, 2000));
+			node.currentActionMessage = node.errorMessage ?? canvasRuntimeMessage("action.failed", { error: msg });
+			this.appendLog(graph.id, node.id, "error", msg.slice(0, 2000), undefined, node.errorMessage);
 			if (!lifecycleCurrent() || controller.signal.aborted) return;
 			releaseCapacity();
 			this.activeExecutions.delete(execKey);
@@ -758,7 +832,9 @@ export class CanvasOrchestrator {
 				nodeId,
 				event: "error",
 				currentAction: node.currentAction,
+				currentActionMessage: node.currentActionMessage,
 				error: msg,
+				errorMessage: node.errorMessage,
 			});
 		} finally {
 			releaseCapacity();
@@ -770,9 +846,9 @@ export class CanvasOrchestrator {
 		if (!fsExistsSync(pathJoin(this.dataDir, "canvas", `${graph.id}.json`))) return;
 		const current = this.runningGraphs.get(graph.id);
 		if (current && ["running", "waiting_approval"].includes(current.status))
-			throw new Error("Canvas graph already running");
+			throw new CanvasRuntimeError("Canvas graph already running", "error.graphRunning");
 		if ([...this.activeExecutions.values()].some((e) => e.graphId === graph.id))
-			throw new Error("Canvas graph already running");
+			throw new CanvasRuntimeError("Canvas graph already running", "error.graphRunning");
 		validateCanvasTopology(graph);
 		for (const key of this.feedbackArtifacts.keys())
 			if (key.startsWith(`${graph.id}:`)) this.feedbackArtifacts.delete(key);
@@ -782,7 +858,9 @@ export class CanvasOrchestrator {
 		for (const node of graph.nodes) {
 			node.status = "idle";
 			node.error = undefined;
+			node.errorMessage = undefined;
 			node.currentAction = undefined;
+			node.currentActionMessage = undefined;
 			node.lastOutputSummary = undefined;
 			node.artifact = undefined;
 			node.aiVerdict = undefined;
@@ -890,11 +968,17 @@ export class CanvasOrchestrator {
 					edge.targetNodeId,
 					"handoff",
 					`收到来自「${completedNode.title}」的交接：${edge.lastHandoffSummary ?? ""}`,
+					undefined,
+					canvasRuntimeMessage("log.handoff", {
+						title: completedNode.title,
+						summary: (edge.lastHandoffSummary ?? "").slice(0, 2000),
+					}),
 				);
 			if (!selected || !back) continue;
 			if ((edge.currentLoopCount ?? 0) >= (edge.maxLoopRetries ?? 3)) {
 				completedNode.status = "waiting_approval";
 				completedNode.currentAction = "已达审查重试上限，等待人工仲裁";
+				completedNode.currentActionMessage = canvasRuntimeMessage("action.retryLimit");
 				continue;
 			}
 			const feedbackKey = `${graph.id}:${graph.run?.id}:${edge.id}`;
@@ -907,6 +991,7 @@ export class CanvasOrchestrator {
 		if (via === "reject" && rework.length === 0 && completedNode.status !== "waiting_approval") {
 			completedNode.status = "waiting_approval";
 			completedNode.currentAction = "Rejection requires a configured rework edge";
+			completedNode.currentActionMessage = canvasRuntimeMessage("action.reworkEdgeRequired");
 		}
 		// Reset the forward rework region, retaining the feedback contract and retry counts.
 		const reset = (id: string, seen = new Set<string>()) => {
@@ -916,6 +1001,9 @@ export class CanvasOrchestrator {
 			if (this.activeExecutions.has(graph.id + ":" + id)) this.stopNode(graph.id, id);
 			node.status = "idle";
 			node.error = undefined;
+			node.errorMessage = undefined;
+			node.currentAction = undefined;
+			node.currentActionMessage = undefined;
 			node.artifact = undefined;
 			node.lastOutputSummary = undefined;
 			node.aiVerdict = undefined;
@@ -980,8 +1068,9 @@ export class CanvasOrchestrator {
 			if (node) {
 				node.status = "cancelled";
 				node.currentAction = "已手动中止";
+				node.currentActionMessage = canvasRuntimeMessage("action.stopped");
 				this.settleGraph(graph);
-				this.appendLog(graphId, nodeId, "system", "已手动中止当前任务");
+				this.appendLog(graphId, nodeId, "system", "已手动中止当前任务", undefined, canvasRuntimeMessage("log.stopped"));
 				saveCanvasRuntimeState(this.dataDir, graph);
 				this.broadcastCanvasRuntime(graph);
 				this.broadcast({
@@ -990,6 +1079,7 @@ export class CanvasOrchestrator {
 					nodeId,
 					event: "paused",
 					currentAction: node.currentAction,
+					currentActionMessage: node.currentActionMessage,
 				});
 			}
 		}
@@ -1015,6 +1105,7 @@ export class CanvasOrchestrator {
 				if (["running", "idle", "waiting_approval"].includes(node.status)) {
 					node.status = "cancelled";
 					node.currentAction = "已手动中止";
+					node.currentActionMessage = canvasRuntimeMessage("action.stopped");
 				}
 			}
 			saveCanvasRuntimeState(this.dataDir, graph);
@@ -1042,9 +1133,15 @@ export class CanvasOrchestrator {
 		if (decision === "approve") {
 			node.status = "done";
 			node.currentAction = cleanComment ? `人工审查批准合流：${cleanComment}` : "人工审查批准合流";
+			node.currentActionMessage = cleanComment
+				? canvasRuntimeMessage("action.reviewApprovedComment", { comment: cleanComment })
+				: canvasRuntimeMessage("action.reviewApproved");
 		} else {
 			node.status = "done";
 			node.currentAction = cleanComment ? `人工驳回：${cleanComment}` : "人工驳回：需补充完善测试与注释";
+			node.currentActionMessage = cleanComment
+				? canvasRuntimeMessage("action.reviewRejectedComment", { comment: cleanComment })
+				: canvasRuntimeMessage("action.reviewRejected");
 		}
 		graph.updatedAt = Date.now();
 		saveCanvasRuntimeState(this.dataDir, graph);
@@ -1055,6 +1152,13 @@ export class CanvasOrchestrator {
 			nodeId,
 			"review",
 			`${decision === "approve" ? "人工审查批准合流" : "人工驳回"}${cleanComment ? `：${cleanComment}` : ""}`,
+			undefined,
+			cleanComment
+				? canvasRuntimeMessage(
+						decision === "approve" ? "action.reviewApprovedComment" : "action.reviewRejectedComment",
+						{ comment: cleanComment },
+					)
+				: canvasRuntimeMessage(decision === "approve" ? "action.reviewApproved" : "log.reviewRejected"),
 		);
 		// 执行中的节点同步收到审查意见（复用节点事件通道，currentAction 即裁决正文）
 		if (this.activeExecutions.has(`${graphId}:${nodeId}`)) {
@@ -1064,12 +1168,14 @@ export class CanvasOrchestrator {
 				nodeId,
 				event: decision === "approve" ? "done" : "paused",
 				currentAction: node.currentAction,
+				currentActionMessage: node.currentActionMessage,
 				summary: node.lastOutputSummary,
 			});
 		}
 		void this.handleDownstreamEdges(graph, node, decision).catch((error: unknown) => {
 			node.status = "error";
 			node.error = String(error);
+			node.errorMessage = canvasErrorMessage(error);
 			this.settleGraph(graph);
 			saveCanvasRuntimeState(this.dataDir, graph);
 			this.broadcastCanvasRuntime(graph);
@@ -1092,6 +1198,7 @@ export class CanvasOrchestrator {
 		if (!node) return;
 
 		node.currentAction = `[收到人工插话指导]: ${message.slice(0, 40)}`;
+		node.currentActionMessage = canvasRuntimeMessage("action.steered", { preview: message.slice(0, 40) });
 		saveCanvasRuntimeState(this.dataDir, graph);
 		this.broadcastCanvasRuntime(graph);
 		this.appendLog(graphId, nodeId, "steer", message.slice(0, 2000));
@@ -1102,6 +1209,7 @@ export class CanvasOrchestrator {
 			nodeId,
 			event: "action",
 			currentAction: node.currentAction,
+			currentActionMessage: node.currentActionMessage,
 		});
 
 		// 真正投递给底层会话（若节点正在执行）
@@ -1111,11 +1219,25 @@ export class CanvasOrchestrator {
 			try {
 				await execution.session.prompt(message);
 				if (execution.abortController?.signal.aborted || this.activeExecutions.get(execKey) !== execution) return;
-				this.appendLog(graphId, nodeId, "system", "已将插话实时投递进正在运行的智能体会话。");
+				this.appendLog(
+					graphId,
+					nodeId,
+					"system",
+					"已将插话实时投递进正在运行的智能体会话。",
+					undefined,
+					canvasRuntimeMessage("log.steerDelivered"),
+				);
 			} catch (err: unknown) {
 				if (execution.abortController?.signal.aborted || this.activeExecutions.get(execKey) !== execution) return;
 				const errMsg = err instanceof Error ? err.message : String(err);
-				this.appendLog(graphId, nodeId, "error", `插话投递底层会话失败: ${errMsg}`);
+				this.appendLog(
+					graphId,
+					nodeId,
+					"error",
+					`插话投递底层会话失败: ${errMsg}`,
+					undefined,
+					canvasRuntimeMessage("log.steerFailed", { error: errMsg.slice(0, 2000) }),
+				);
 			}
 		} else if (node.status !== "running") {
 			const cleanMsg = message.trim();
@@ -1135,7 +1257,9 @@ export class CanvasOrchestrator {
 			node.status = "idle";
 			node.aiVerdict = undefined;
 			node.error = undefined;
+			node.errorMessage = undefined;
 			node.currentAction = undefined;
+			node.currentActionMessage = undefined;
 			node.lastOutputSummary = undefined;
 		}
 		for (const edge of graph.edges) {
@@ -1152,18 +1276,18 @@ export class CanvasOrchestrator {
 		_cwd: string,
 		_prompt: string,
 		signal: AbortSignal,
-		onAction: (act: string) => void,
+		onAction: (act: string, message?: CanvasMessage) => void,
 	): Promise<void> {
 		const steps = [
-			`[${node.engine.toUpperCase()}] 分析任务上下文与关联代码库...`,
-			`[${node.engine.toUpperCase()}] 规划模块变更方案与接口契约...`,
-			`[${node.engine.toUpperCase()}] 写入并应用变更...`,
-			`[${node.engine.toUpperCase()}] 验证输出结果与测试检查...`,
+			[`[${node.engine.toUpperCase()}] 分析任务上下文与关联代码库...`, "action.simulateAnalyze"],
+			[`[${node.engine.toUpperCase()}] 规划模块变更方案与接口契约...`, "action.simulatePlan"],
+			[`[${node.engine.toUpperCase()}] 写入并应用变更...`, "action.simulateApply"],
+			[`[${node.engine.toUpperCase()}] 验证输出结果与测试检查...`, "action.simulateVerify"],
 		];
 
-		for (const step of steps) {
+		for (const [step, key] of steps) {
 			if (signal.aborted) return;
-			onAction(step);
+			onAction(step, canvasRuntimeMessage(key, { engine: node.engine.toUpperCase() }));
 			const stepDelay = process.env.NODE_ENV === "test" || process.env.VITEST ? 20 : 600;
 			await new Promise<void>((resolve, reject) => {
 				const timer = setTimeout(resolve, stepDelay);
@@ -1186,20 +1310,23 @@ export class CanvasOrchestrator {
 		resolvedCwd: string,
 		prompt: string,
 		signal: AbortSignal,
-		onAction: (act: string) => void,
+		onAction: (act: string, message?: CanvasMessage) => void,
 	): Promise<string> {
 		if (!this.engineGetter) {
-			throw new Error("引擎服务提供者未注入");
+			throw new CanvasRuntimeError("引擎服务提供者未注入", "error.engineProviderMissing");
 		}
 		const engineSvc = this.engineGetter(node.engine);
 		if (!engineSvc) {
-			throw new Error(`找不到智能体引擎：${node.engine}`);
+			throw new CanvasRuntimeError(`找不到智能体引擎：${node.engine}`, "error.engineMissing", { engine: node.engine });
 		}
 
 		const clientId = `canvas:${graph.id}:${node.id}`;
 		let collectedText = "";
 
-		onAction(`[${node.engine.toUpperCase()}] 正在接入真实引擎运行时...`);
+		onAction(
+			`[${node.engine.toUpperCase()}] 正在接入真实引擎运行时...`,
+			canvasRuntimeMessage("action.connecting", { engine: node.engine.toUpperCase() }),
+		);
 
 		// sink 具名持有：finally 必须用同一引用 detach，否则旧闭包永久残留串台（#698）
 		// 复用当前对话流：snapshot/appended 的标准 UiMessage 直接缓存 + 转播，抽屉复用 Message 组件渲染；
@@ -1217,7 +1344,13 @@ export class CanvasOrchestrator {
 				const delta = (msg as any).delta || "";
 				collectedText += delta;
 				if (collectedText.length % 50 === 0) {
-					onAction(`[${node.engine.toUpperCase()}] 正在生成: ${collectedText.slice(-30).replace(/\n/g, " ")}...`);
+					onAction(
+						`[${node.engine.toUpperCase()}] 正在生成: ${collectedText.slice(-30).replace(/\n/g, " ")}...`,
+						canvasRuntimeMessage("action.generating", {
+							engine: node.engine.toUpperCase(),
+							preview: collectedText.slice(-30).replace(/\n/g, " "),
+						}),
+					);
 				}
 			} else if (msg.type === "snapshot" || msg.type === "snapshot_delta") {
 				const messages = ((msg as any).state?.messages || (msg as any).appended || []) as UiMessage[];
@@ -1236,9 +1369,16 @@ export class CanvasOrchestrator {
 									? `工具 ${m.toolName} 报错${m.errorMessage ? `：${m.errorMessage.slice(0, 500)}` : ""}`
 									: `正在调用工具： ${m.toolName}`,
 								m.toolName,
+								canvasRuntimeMessage(
+									m.isError ? (m.errorMessage ? "log.toolFailedDetail" : "log.toolFailed") : "log.tool",
+									{ tool: m.toolName, ...(m.isError && m.errorMessage ? { error: m.errorMessage.slice(0, 500) } : {}) },
+								),
 							);
 						}
-						onAction(`[${node.engine.toUpperCase()}] 正在调用工具: ${m.toolName}`);
+						onAction(
+							`[${node.engine.toUpperCase()}] 正在调用工具: ${m.toolName}`,
+							canvasRuntimeMessage("action.tool", { engine: node.engine.toUpperCase(), tool: m.toolName }),
+						);
 					} else if (m.errorMessage) {
 						if (captureErrors && !baselineMsgIds.has(m.id)) sinkError = m.errorMessage;
 						if (!baselineMsgIds.has(m.id)) {
@@ -1253,7 +1393,8 @@ export class CanvasOrchestrator {
 		const execution = this.activeExecutions.get(execKey);
 		const cs = await engineSvc.attach(clientId, sink);
 		const checkCurrent = () => {
-			if (signal.aborted || this.activeExecutions.get(execKey) !== execution) throw new Error("任务已被手动中止");
+			if (signal.aborted || this.activeExecutions.get(execKey) !== execution)
+				throw new CanvasRuntimeError("任务已被手动中止", "error.aborted");
 		};
 		if (!signal.aborted && this.activeExecutions.get(execKey) === execution && execution) {
 			execution.session = cs;
@@ -1270,7 +1411,10 @@ export class CanvasOrchestrator {
 			// 真实应用模型切换（若模型不存在或 Key 无效，真实报错）
 			// 归一化双前缀：历史存量可能是 opencode-go/opencode-go/xxx，压成 opencode-go/xxx 再切换。
 			if (node.model) {
-				if (typeof cs.switchModelOrThrow !== "function") throw new Error(`Engine cannot select model: ${node.model}`);
+				if (typeof cs.switchModelOrThrow !== "function")
+					throw new CanvasRuntimeError(`Engine cannot select model: ${node.model}`, "error.modelSelection", {
+						model: node.model,
+					});
 				await cs.switchModelOrThrow(normalizeCanvasModelId(node.model));
 			}
 			node.actualEngine = node.engine;
@@ -1284,7 +1428,10 @@ export class CanvasOrchestrator {
 				} catch {}
 			}
 
-			onAction(`[${node.engine.toUpperCase()}] 开始执行任务...`);
+			onAction(
+				`[${node.engine.toUpperCase()}] 开始执行任务...`,
+				canvasRuntimeMessage("action.running", { engine: node.engine.toUpperCase() }),
+			);
 
 			// 本轮起点快照：报错检测只看本次运行新增的消息，
 			// 避免把该节点历史运行留下的旧报错当成本轮失败。
@@ -1315,7 +1462,7 @@ export class CanvasOrchestrator {
 				await new Promise((r) => setTimeout(r, 1200));
 				if (signal.aborted) {
 					await cs.abort().catch(() => {});
-					throw new Error("任务已被手动中止");
+					throw new CanvasRuntimeError("任务已被手动中止", "error.aborted");
 				}
 
 				let isStreaming = false;
@@ -1334,7 +1481,7 @@ export class CanvasOrchestrator {
 				}
 
 				if (turnError) {
-					throw new Error(`引擎执行失败：${turnError}`);
+					throw new CanvasRuntimeError(`引擎执行失败：${turnError}`, "error.engineFailed", { error: turnError });
 				}
 
 				if (!isStreaming && Date.now() - startTime > 3000) {
@@ -1343,7 +1490,7 @@ export class CanvasOrchestrator {
 
 				if (Date.now() - startTime > maxWaitMs) {
 					await cs.abort().catch(() => {});
-					throw new Error("任务执行超时 (15分钟)");
+					throw new CanvasRuntimeError("任务执行超时 (15分钟)", "error.timeout");
 				}
 			}
 
@@ -1359,7 +1506,7 @@ export class CanvasOrchestrator {
 						windowsHide: true,
 					});
 					if (diffStat.trim()) {
-						diffSummary = `\n【代码变更统计】:\n${diffStat.trim()}`;
+						diffSummary = `\n[Code change statistics]:\n${diffStat.trim()}`;
 					}
 				}
 			} catch {}
@@ -1371,7 +1518,7 @@ export class CanvasOrchestrator {
 				collectedText.trim() || extractRunReplyText(canvasSnapshotMessages(cs).slice(baselineMsgCount))
 			).trim();
 			if (replyText) return `${replyText}${diffSummary}`;
-			return `[${node.title}] 交付完成${diffSummary || "（未产生文件修改）"}`;
+			return `[${node.title}] Delivery completed${diffSummary || " (no file changes)"}`;
 		} finally {
 			if (execution) {
 				execution.session = undefined;
@@ -1455,7 +1602,7 @@ function executeTransformNode(graph: CanvasGraph, node: CanvasNode): string {
 	const fallbackInput = rawInput || String(cfg["input"] ?? "");
 	try {
 		if (mode === "json2text") {
-			if (!fallbackInput) return "【格式转换 " + node.title + "】输入为空，无输出";
+			if (!fallbackInput) return "[Format conversion " + node.title + "] Empty input; no output";
 			try {
 				const v = JSON.parse(fallbackInput) as unknown;
 				if (Array.isArray(v)) return v.map((x) => (typeof x === "string" ? x : JSON.stringify(x))).join("\n");
@@ -1473,14 +1620,14 @@ function executeTransformNode(graph: CanvasGraph, node: CanvasNode): string {
 			const tpl = String(cfg["template"] ?? "{{input}}");
 			return tpl.split("{{input}}").join(fallbackInput).split("{{上游摘要}}").join(fallbackInput);
 		}
-		if (!fallbackInput) return "【格式转换 " + node.title + "】输入为空，无输出";
+		if (!fallbackInput) return "[Format conversion " + node.title + "] Empty input; no output";
 		try {
 			return JSON.stringify(JSON.parse(fallbackInput), null, 2);
 		} catch {
 			return JSON.stringify({ text: fallbackInput }, null, 2);
 		}
 	} catch (err) {
-		return "【格式转换 " + node.title + "】转换失败：" + (err as Error).message;
+		return "[Format conversion " + node.title + "] Conversion failed: " + (err as Error).message;
 	}
 }
 
@@ -1501,51 +1648,34 @@ function buildPassthroughSummary(node: CanvasNode, contractContext: string, init
 	const cfgText = Object.entries(cfg)
 		.map(([k, v]) => `${k}=${String(v)}`)
 		.slice(0, 8)
-		.join("；");
-	const contract = contractContext ? contractContext : "（无上游输入，直接透传）";
+		.join("; ");
+	const contract = contractContext || "(No upstream input; passing through directly)";
 	switch (node.role) {
 		case "condition":
-			return `【条件分支 ${node.title}】判定配置：${cfgText || "未配置表达式，默认走 true 边"}\n透传上游产物：\n${contract}`;
+			return `[Condition branch ${node.title}] Decision configuration: ${cfgText || "No expression configured; using the true branch by default"}\nUpstream deliverables:\n${contract}`;
 		case "loop":
-			return `【循环控制 ${node.title}】循环配置：${cfgText || "默认最多 3 次（熔断保护）"}\n透传上游产物：\n${contract}`;
+			return `[Loop control ${node.title}] Loop configuration: ${cfgText || "Up to 3 attempts by default (circuit breaker)"}\nUpstream deliverables:\n${contract}`;
 		case "human":
-			return `【人工审批 ${node.title}】${cfgText ? `审批提示：${cfgText}` : ""}\n待人工在抽屉中批准/驳回。上游产物：\n${contract}`;
+			return `[Human approval ${node.title}] ${cfgText ? `Approval hint: ${cfgText}` : ""}\nWaiting for approval or rejection in the node drawer. Upstream deliverables:\n${contract}`;
 		case "trigger": {
 			const popup = (initialPrompt ?? "").trim();
 			const payload = popup || String(cfg["payload"] ?? "").trim() || String(node.instruction ?? "").trim();
 			const extra = contractContext || "";
 			if (payload)
-				return (
-					"【手动触发 · 业务需求输入 " +
-					node.title +
-					"】任务内容：\n" +
-					payload +
-					(extra ? "\n上游输入：\n" + extra : "")
-				);
-			return (
-				"【手动触发 · 业务需求输入 " + node.title + "】" + (extra ? "上游输入：\n" + extra : "（无载荷，直接启动）")
-			);
+				return `[Manual trigger · Task input ${node.title}] Task:\n${payload}${extra ? "\nUpstream input:\n" + extra : ""}`;
+			return `[Manual trigger · Task input ${node.title}]${extra ? "Upstream input:\n" + extra : "(No payload; starting directly)"}`;
 		}
 		case "cron":
-			return (
-				"【定时触发 " +
-				node.title +
-				"】计划：" +
-				(cfgText || "未配置 Cron（默认手动拉起）") +
-				"\n透传上游产物：\n" +
-				contract
-			);
+			return `[Scheduled trigger ${node.title}] Schedule: ${cfgText || "No Cron configured (manual start by default)"}\nUpstream deliverables:\n${contract}`;
 		case "webhook":
-			return (
-				"【Webhook 触发 " + node.title + "】接入配置：" + (cfgText || "未配置 path") + "\n透传上游产物：\n" + contract
-			);
+			return `[Webhook trigger ${node.title}] Connection configuration: ${cfgText || "No path configured"}\nUpstream deliverables:\n${contract}`;
 		case "merge":
-			return `【汇聚合并 ${node.title}】已汇总上游分支产物：\n${contract}`;
+			return `[Merge ${node.title}] Combined upstream deliverables:\n${contract}`;
 		case "memory":
-			return `【记忆读写 ${node.title}】记忆键：${cfgText || "default"}\n快照：\n${contract}`;
+			return `[Memory ${node.title}] Memory key: ${cfgText || "default"}\nSnapshot:\n${contract}`;
 		case "end":
-			return `【流水线结束 ${node.title}】最终交付汇总：\n${contract}`;
+			return `[Workflow end ${node.title}] Final delivery summary:\n${contract}`;
 		default:
-			return `【控制节点 ${node.title}】透传：\n${contract}`;
+			return `[Control node ${node.title}] Pass-through:\n${contract}`;
 	}
 }

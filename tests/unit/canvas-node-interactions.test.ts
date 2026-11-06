@@ -5,7 +5,11 @@ import { createRoot, type Root } from "react-dom/client";
 import { LanguageProvider } from "../../web/src/i18n";
 import { CanvasNodeCard, type CanvasNodeCardProps } from "../../web/src/components/canvas/CanvasNodeCard";
 import { CanvasToolbar, type CanvasToolbarProps } from "../../web/src/components/canvas/CanvasToolbar";
-import { SQUAD_TEMPLATES } from "../../web/src/components/canvas/CanvasTemplates";
+import { getSquadTemplates } from "../../web/src/components/canvas/CanvasTemplates";
+import { en, type Translate } from "../../web/src/i18n";
+
+const translate: Translate = (key) => en[key];
+const SQUAD_TEMPLATES = getSquadTemplates(translate);
 let root: Root | undefined;
 afterEach(() => {
 	act(() => root?.unmount());

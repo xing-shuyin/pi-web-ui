@@ -7,6 +7,7 @@ import { deleteCustomCard, listCustomCards } from "./canvas-cards.js";
 import type { CanvasOrchestrator } from "./canvas-orchestrator.js";
 import { assertCanvasGraph } from "./canvas-validation.js";
 import { validateDeviceProject } from "../device-center/workspaces.js";
+import { canvasErrorMessage, canvasRuntimeMessage } from "./canvas-runtime-messages.js";
 
 export function handleCanvasMessage(
 	msg: ClientMessage,
@@ -20,6 +21,7 @@ export function handleCanvasMessage(
 			type: "canvas_error",
 			code: "execution_error",
 			message: error instanceof Error ? error.message : String(error),
+			messageI18n: canvasErrorMessage(error),
 			graphId,
 			requestId,
 		});
@@ -55,6 +57,7 @@ export function handleCanvasMessage(
 					type: "canvas_error",
 					code: "not_found",
 					message: error instanceof Error ? error.message : String(error),
+					messageI18n: canvasErrorMessage(error),
 					graphId: msg.id,
 					requestId: msg.requestId,
 				});
@@ -71,6 +74,7 @@ export function handleCanvasMessage(
 					type: "canvas_error",
 					code: "invalid_graph",
 					message: (error as Error).message,
+					messageI18n: canvasErrorMessage(error),
 					graphId: msg.graph.id,
 					requestId: msg.requestId,
 				});
@@ -84,6 +88,7 @@ export function handleCanvasMessage(
 					type: "canvas_error",
 					code: "save_failed",
 					message: (error as Error).message,
+					messageI18n: canvasErrorMessage(error),
 					graphId: msg.graph.id,
 					requestId: msg.requestId,
 				});
@@ -94,6 +99,7 @@ export function handleCanvasMessage(
 					type: "canvas_error",
 					code: "rev_conflict",
 					message: "stale",
+					messageI18n: canvasRuntimeMessage("error.stale"),
 					graphId: msg.graph.id,
 					graph: res.graph,
 					requestId: msg.requestId,

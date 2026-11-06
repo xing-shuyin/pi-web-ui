@@ -5,7 +5,7 @@ import { createRoot, type Root } from "react-dom/client";
 import { act } from "react-dom/test-utils";
 import { DirectoryBrowser, MACHINE_ROOT } from "../../web/src/components/DirectoryBrowser.js";
 import { Dropdown } from "../../web/src/components/Dropdown.js";
-import { LanguageProvider } from "../../web/src/i18n.js";
+import { en, LanguageProvider } from "../../web/src/i18n.js";
 import { setAppGlobals, resetAppGlobals, setAppSend } from "../../web/src/app-globals.js";
 import { CanvasStudio } from "../../web/src/components/canvas/CanvasStudio.js";
 
@@ -319,7 +319,7 @@ describe("Canvas & Picker 事件隔离与关闭防护", () => {
 
 		// Fresh Studio is empty until its correlated server load; explicitly add the node under test.
 		const addFirst = Array.from(document.body.querySelectorAll("button")).find((b) =>
-			b.textContent?.includes("添加第一个队友"),
+			b.textContent?.includes(en["canvas.studio.addFirstTeammate"]),
 		);
 		expect(addFirst).toBeTruthy();
 		act(() => {

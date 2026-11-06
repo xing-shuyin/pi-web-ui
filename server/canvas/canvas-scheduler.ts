@@ -1,3 +1,4 @@
+import { CanvasRuntimeError } from "./canvas-runtime-messages.js";
 import type { CanvasEdge, CanvasGraph, CanvasNode } from "../protocol.js";
 
 /** FIFO slots; cancelled waiters never consume execution capacity. */
@@ -46,7 +47,8 @@ export function isCanvasBackedge(edge: CanvasEdge): boolean {
 
 export function canvasCondition(node: CanvasNode, graph: CanvasGraph): boolean {
 	if (node.role === "ai_judge" || node.config?.aiJudge === true) {
-		if (node.aiVerdict === undefined) throw new Error("AI judge returned no explicit decision");
+		if (node.aiVerdict === undefined)
+			throw new CanvasRuntimeError("AI judge returned no explicit decision", "error.judgeNoDecision");
 		return node.aiVerdict;
 	}
 	const input =
@@ -72,14 +74,15 @@ export function canvasReadiness(graph: CanvasGraph, node: CanvasNode): "ready" |
 
 export function validateCanvasTopology(graph: CanvasGraph): void {
 	const ids = new Set(graph.nodes.map((n) => n.id));
-	if (ids.size !== graph.nodes.length) throw new Error("Duplicate canvas node id");
+	if (ids.size !== graph.nodes.length) throw new CanvasRuntimeError("Duplicate canvas node id", "error.duplicateNode");
 	for (const edge of graph.edges)
 		if (!ids.has(edge.sourceNodeId) || !ids.has(edge.targetNodeId))
-			throw new Error("Canvas edge references a missing node");
+			throw new CanvasRuntimeError("Canvas edge references a missing node", "error.missingEdgeNode");
 	const visiting = new Set<string>(),
 		visited = new Set<string>();
 	const visit = (id: string) => {
-		if (visiting.has(id)) throw new Error("Canvas forward cycle requires an explicit rework edge");
+		if (visiting.has(id))
+			throw new CanvasRuntimeError("Canvas forward cycle requires an explicit rework edge", "error.reworkCycle");
 		if (visited.has(id)) return;
 		visiting.add(id);
 		for (const edge of graph.edges) if (edge.sourceNodeId === id && !isCanvasBackedge(edge)) visit(edge.targetNodeId);

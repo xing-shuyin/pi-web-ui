@@ -1,7 +1,7 @@
 /**
  * canvas-pstack-skills.test.ts — Pstack 58 个 Skills 与 Skill 灵魂角色在画布协同中的单元测试。
  */
-import { describe, it, expect, beforeEach, afterEach } from "vitest";
+import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import { mkdtempSync, rmSync, existsSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -9,8 +9,15 @@ import { PSTACK_SKILLS, PSTACK_SKILLS_MAP, PSTACK_CATEGORIES } from "../../serve
 import { CanvasOrchestrator } from "../../server/canvas/canvas-orchestrator.js";
 import { makeCanvasTool } from "../../server/canvas/canvas-agent-tool.js";
 import { createDefaultCanvasGraph, saveCanvasGraph } from "../../server/canvas/canvas-store.js";
-import { ROLE_METAS, ROLE_FIELDS, ROLE_IO_HELP } from "../../web/src/components/canvas/CanvasTypes.js";
-import { SQUAD_TEMPLATES } from "../../web/src/components/canvas/CanvasTemplates.js";
+import { getRoleMetas, getRoleFields, getRoleIoHelp } from "../../web/src/components/canvas/CanvasTypes.js";
+import { getSquadTemplates } from "../../web/src/components/canvas/CanvasTemplates.js";
+import { en, type Translate } from "../../web/src/i18n.js";
+
+const translate: Translate = (key) => en[key];
+const ROLE_METAS = getRoleMetas(translate);
+const ROLE_FIELDS = getRoleFields(translate);
+const ROLE_IO_HELP = getRoleIoHelp(translate);
+const SQUAD_TEMPLATES = getSquadTemplates(translate);
 import type { CanvasGraph, ServerMessage } from "../../server/protocol.js";
 
 describe("Pstack 58 Skills Catalog", () => {
@@ -111,6 +118,7 @@ describe("Canvas Tool & Orchestrator Execution for pstack and skill roles", () =
 	});
 
 	afterEach(() => {
+		vi.restoreAllMocks();
 		orchestrator.stopAll("g_pstack_exec");
 		orchestrator.stopAll("g_skill_exec");
 		orchestrator.stopAll("test_tool_graph");
@@ -191,14 +199,16 @@ describe("Canvas Tool & Orchestrator Execution for pstack and skill roles", () =
 		};
 
 		saveCanvasGraph(tempDir, graph);
+		const execute = vi.spyOn(orchestrator as any, "executeRealEngineNode").mockResolvedValue("Completed");
 		await orchestrator.runNode(graph, "n_pstack_fix");
 
-		const promptLog = orchestrator.getNodeLog(graph.id, "n_pstack_fix").find((e) => e.kind === "prompt");
-		expect(promptLog?.text).toContain("【Pstack 严谨工程专项工作依据");
-		expect(promptLog?.text).toContain("principle-fix-root-causes");
-		expect(promptLog?.text).toContain("深入优先、拒绝 AI 废话（Unslop）");
-		expect(promptLog?.text).toContain("拿实证说话");
-		expect(promptLog?.text).toContain("深入排查竞态根因");
+		// Verify the actual engine input; the diagnostic log intentionally truncates long skill bodies.
+		const prompt = execute.mock.calls[0][3] as string;
+		expect(prompt).toContain("[Pstack engineering reference");
+		expect(prompt).toContain("principle-fix-root-causes");
+		expect(prompt).toContain("Work thoroughly and avoid AI filler (Unslop)");
+		expect(prompt).toContain("Provide reproducible evidence");
+		expect(prompt).toContain("深入排查竞态根因");
 		orchestrator.stopAll(graph.id);
 	});
 
@@ -233,7 +243,7 @@ describe("Canvas Tool & Orchestrator Execution for pstack and skill roles", () =
 		await orchestrator.runNode(graph, "n_skill_node");
 
 		const promptLog = orchestrator.getNodeLog(graph.id, "n_skill_node").find((e) => e.kind === "prompt");
-		expect(promptLog?.text).toContain("【技能之魂 (Soul of Skill)");
+		expect(promptLog?.text).toContain("[Soul of Skill");
 		expect(promptLog?.text).toContain("bro");
 		expect(promptLog?.text).toContain("极简直白沟通");
 		orchestrator.stopAll(graph.id);

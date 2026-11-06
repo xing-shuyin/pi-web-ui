@@ -1,5 +1,7 @@
 import type { CanvasGraph } from "../../types";
-import { ROLE_METAS, IN_PORT_DEFS, outPortsForRole } from "./CanvasTypes";
+import type { Translate } from "../../i18n";
+import { getRoleMetas, getInPortDefs, outPortsForRole } from "./CanvasTypes";
+import { isCanvasMessage } from "../../../../server/canvas/canvas-runtime-messages.js";
 
 /** Only authored fields participate in dirty tracking; execution streams never save themselves. */
 export function graphFingerprint(graph: CanvasGraph): string {
@@ -11,6 +13,8 @@ export function graphFingerprint(graph: CanvasGraph): string {
 				status: _s,
 				activeConvId: _c,
 				currentAction: _a,
+				currentActionMessage: _actionMessage,
+				errorMessage: _errorMessage,
 				lastOutputSummary: _o,
 				aiVerdict: _v,
 				error: _e,
@@ -43,6 +47,8 @@ export function mergeGraphRuntime(local: CanvasGraph, remote: CanvasGraph): Canv
 		"status",
 		"activeConvId",
 		"currentAction",
+		"currentActionMessage",
+		"errorMessage",
 		"lastOutputSummary",
 		"aiVerdict",
 		"error",
@@ -102,7 +108,13 @@ export class CanvasDraftState {
 		return "saved";
 	}
 	error = "";
-	constructor(private readonly storage?: Pick<Storage, "getItem" | "setItem" | "removeItem">) {}
+	constructor(
+		private readonly storage?: Pick<Storage, "getItem" | "setItem" | "removeItem">,
+		private t: Translate = (key) => key,
+	) {}
+	setTranslate(t: Translate) {
+		this.t = t;
+	}
 	dirty(graph: CanvasGraph) {
 		return this.baseline !== graphFingerprint(graph);
 	}
@@ -111,14 +123,14 @@ export class CanvasDraftState {
 			this.storage?.setItem(`pi-web-ui.canvas.draft.${graph.id}`, JSON.stringify(graph));
 			return true;
 		} catch {
-			this.error = "本地草稿保存失败，请导出 JSON 后再切图。";
+			this.error = this.t("canvas.draft.storageFailed");
 			return false;
 		}
 	}
 	draft(id: string): CanvasGraph | null {
 		try {
 			const raw = this.storage?.getItem(`pi-web-ui.canvas.draft.${id}`);
-			return raw ? parseGraphImport(raw, false) : null;
+			return raw ? parseGraphImport(raw, false, this.t) : null;
 		} catch {
 			return null;
 		}
@@ -167,9 +179,16 @@ export class CanvasDraftState {
 }
 
 /** Validate before replacing anything. Reject dangling edges, duplicate IDs and unsupported DAGs. */
-export function parseGraphImport(raw: string, reset = true): CanvasGraph {
-	if (raw.length > 2_000_000) throw new Error("JSON 文件过大");
-	const g = JSON.parse(raw) as CanvasGraph;
+export function parseGraphImport(raw: string, reset = true, t: Translate = (key) => key): CanvasGraph {
+	const ROLE_METAS = getRoleMetas(t);
+	const IN_PORT_DEFS = getInPortDefs(t);
+	if (raw.length > 2_000_000) throw new Error(t("canvas.import.jsonTooLarge"));
+	let g: CanvasGraph;
+	try {
+		g = JSON.parse(raw) as CanvasGraph;
+	} catch {
+		throw new Error(t("canvas.import.invalidJson"));
+	}
 	if (
 		!g ||
 		typeof g !== "object" ||
@@ -182,10 +201,10 @@ export function parseGraphImport(raw: string, reset = true): CanvasGraph {
 		!Number.isFinite(g.createdAt) ||
 		!Number.isFinite(g.updatedAt)
 	)
-		throw new Error("画布字段不完整");
+		throw new Error(t("canvas.import.incompleteGraph"));
 	const ids = new Map<string, number>();
 	const allowed = (value: object, fields: string[]) => {
-		if (Object.keys(value).some((k) => !fields.includes(k))) throw new Error("未知 JSON 字段");
+		if (Object.keys(value).some((k) => !fields.includes(k))) throw new Error(t("canvas.import.unknownField"));
 	};
 	allowed(g, [
 		"id",
@@ -201,12 +220,12 @@ export function parseGraphImport(raw: string, reset = true): CanvasGraph {
 		"rev",
 	]);
 	if (g.nodes.length > 200 || g.edges.length > 1000 || (g.rev !== undefined && (!Number.isInteger(g.rev) || g.rev < 0)))
-		throw new Error("图规模或版本无效");
+		throw new Error(t("canvas.import.invalidSizeOrVersion"));
 	if (
 		!["idle", "running", "paused", "completed", "error", "blocked", "waiting_approval"].includes(g.status) ||
 		(g.executionMode !== undefined && !["real", "simulate"].includes(g.executionMode))
 	)
-		throw new Error("图状态无效");
+		throw new Error(t("canvas.import.invalidGraphStatus"));
 	if (
 		g.run !== undefined &&
 		(!g.run ||
@@ -216,7 +235,7 @@ export function parseGraphImport(raw: string, reset = true): CanvasGraph {
 			!["all", "node"].includes(g.run.scope) ||
 			(g.run.finishedAt !== undefined && !Number.isFinite(g.run.finishedAt)))
 	)
-		throw new Error("运行记录无效");
+		throw new Error(t("canvas.import.invalidRun"));
 	allowed(g.viewport ?? {}, ["x", "y", "zoom"]);
 	for (const [i, n] of g.nodes.entries()) {
 		if (
@@ -233,7 +252,7 @@ export function parseGraphImport(raw: string, reset = true): CanvasGraph {
 			typeof n.cwd !== "string" ||
 			typeof n.useWorktree !== "boolean"
 		)
-			throw new Error("节点 ID、位置或配置无效");
+			throw new Error(t("canvas.import.invalidNodeGeometry"));
 		allowed(n, [
 			"id",
 			"title",
@@ -253,6 +272,8 @@ export function parseGraphImport(raw: string, reset = true): CanvasGraph {
 			"status",
 			"activeConvId",
 			"currentAction",
+			"currentActionMessage",
+			"errorMessage",
 			"lastOutputSummary",
 			"aiVerdict",
 			"error",
@@ -263,13 +284,13 @@ export function parseGraphImport(raw: string, reset = true): CanvasGraph {
 			"actualModel",
 		]);
 		for (const key of ["thinkingLevel", "systemPromptOverride", "instruction"] as const)
-			if (n[key] !== undefined && typeof n[key] !== "string") throw new Error("节点文本无效");
+			if (n[key] !== undefined && typeof n[key] !== "string") throw new Error(t("canvas.import.invalidNodeText"));
 		if (
 			!["idle", "queued", "running", "waiting_approval", "done", "error", "paused", "skipped", "cancelled"].includes(
 				n.status,
 			)
 		)
-			throw new Error("节点状态无效");
+			throw new Error(t("canvas.import.invalidNodeStatus"));
 		if (
 			n.artifact !== undefined &&
 			(!n.artifact ||
@@ -278,16 +299,18 @@ export function parseGraphImport(raw: string, reset = true): CanvasGraph {
 				typeof n.artifact.summary !== "string" ||
 				!Number.isFinite(n.artifact.createdAt))
 		)
-			throw new Error("产物记录无效");
+			throw new Error(t("canvas.import.invalidArtifact"));
 		if (
 			n.artifact?.files !== undefined &&
 			(!Array.isArray(n.artifact.files) || n.artifact.files.some((f) => typeof f !== "string"))
 		)
-			throw new Error("产物文件无效");
+			throw new Error(t("canvas.import.invalidArtifactFile"));
 		for (const key of ["activeConvId", "currentAction", "lastOutputSummary", "error", "runId", "actualModel"] as const)
-			if (n[key] !== undefined && typeof n[key] !== "string") throw new Error("运行文本无效");
+			if (n[key] !== undefined && typeof n[key] !== "string") throw new Error(t("canvas.import.invalidRuntimeText"));
+		for (const key of ["currentActionMessage", "errorMessage"] as const)
+			if (n[key] !== undefined && !isCanvasMessage(n[key])) throw new Error(t("canvas.import.invalidRuntimeText"));
 		if (!Object.hasOwn(ROLE_METAS, n.role) || typeof n.title !== "string" || !n.title.trim() || n.title.length > 200)
-			throw new Error("节点角色或标题无效");
+			throw new Error(t("canvas.import.invalidRoleOrTitle"));
 		if (
 			n.config !== undefined &&
 			(!n.config ||
@@ -300,7 +323,7 @@ export function parseGraphImport(raw: string, reset = true): CanvasGraph {
 						(typeof value === "number" && !Number.isFinite(value)),
 				))
 		)
-			throw new Error("节点配置无效");
+			throw new Error(t("canvas.import.invalidConfig"));
 		ids.set(n.id, i);
 	}
 	const edges = new Set<string>();
@@ -313,7 +336,7 @@ export function parseGraphImport(raw: string, reset = true): CanvasGraph {
 			!ids.has(e.sourceNodeId) ||
 			!ids.has(e.targetNodeId)
 		)
-			throw new Error("连线 ID 或端点无效");
+			throw new Error(t("canvas.import.invalidEdgeEndpoints"));
 		allowed(e, [
 			"id",
 			"sourceNodeId",
@@ -329,7 +352,7 @@ export function parseGraphImport(raw: string, reset = true): CanvasGraph {
 			"active",
 		]);
 		if (e.maxLoopRetries !== undefined && (!Number.isInteger(e.maxLoopRetries) || e.maxLoopRetries < 0))
-			throw new Error("重试配置无效");
+			throw new Error(t("canvas.import.invalidRetryConfig"));
 		if (
 			![
 				"handoff",
@@ -342,14 +365,14 @@ export function parseGraphImport(raw: string, reset = true): CanvasGraph {
 				"reject",
 			].includes(e.type)
 		)
-			throw new Error("连线类型无效");
+			throw new Error(t("canvas.import.invalidEdgeType"));
 		const source = g.nodes[ids.get(e.sourceNodeId)!];
 		if (
 			(e.sourcePort !== undefined && !outPortsForRole(source.role).some((p) => p.key === e.sourcePort)) ||
 			(e.targetPort !== undefined && !IN_PORT_DEFS.some((p) => p.key === e.targetPort))
 		)
-			throw new Error("端口无效");
-		if (e.label !== undefined && typeof e.label !== "string") throw new Error("连线文本无效");
+			throw new Error(t("canvas.import.invalidPort"));
+		if (e.label !== undefined && typeof e.label !== "string") throw new Error(t("canvas.import.invalidEdgeText"));
 		const implied: Record<string, string> = {
 			true: "condition_true",
 			false: "condition_false",
@@ -357,7 +380,7 @@ export function parseGraphImport(raw: string, reset = true): CanvasGraph {
 			reject: "reject",
 		};
 		if (e.sourcePort && implied[e.sourcePort] && implied[e.sourcePort] !== e.type)
-			throw new Error("端口与连线类型不匹配");
+			throw new Error(t("canvas.import.portTypeMismatch"));
 		edges.add(e.id);
 	}
 
@@ -369,7 +392,7 @@ export function parseGraphImport(raw: string, reset = true): CanvasGraph {
 		g.viewport.zoom <= 0 ||
 		g.viewport.zoom > 4
 	)
-		throw new Error("视口无效");
+		throw new Error(t("canvas.import.invalidViewport"));
 	if (!reset) return g;
 	return {
 		...g,
@@ -383,6 +406,8 @@ export function parseGraphImport(raw: string, reset = true): CanvasGraph {
 			status: "idle",
 			activeConvId: undefined,
 			currentAction: undefined,
+			currentActionMessage: undefined,
+			errorMessage: undefined,
 			lastOutputSummary: undefined,
 			error: undefined,
 			runId: undefined,

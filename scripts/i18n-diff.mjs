@@ -3,7 +3,7 @@
  * i18n-diff.mjs — 发布时统计「翻译增量」：相对某个 base tag，文案源头新增/变更了哪些 key。
  *
  * 只看两处源头（语言包的翻译缺口不在这里管，运行时缺 key 会回落英文）：
- *   1. 前端 web/src/i18n.tsx 的 zh / en 内联文案（key 增删、中文/英文改字）；
+ *   1. 前端 web/src/i18n/messages/<module>/{zh,en}.json（兼容旧 git ref 的内联字典）；
  *   2. 服务端 server/**.ts 里 pick(lang, zh, en, key) / getServerBlock(lang, key, …) 的 key 增删、
  *      pick 内联中英文源头改字（getServerBlock 传的是标识符而非内联数组，只跟踪 key 增删）。
  *
@@ -21,27 +21,28 @@
  * 对比的是 base..工作区（含未提交修改），发版时工作区即发版内容。
  */
 import { execFileSync } from "node:child_process";
-import { readdirSync, readFileSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
+import { readCatalog } from "./lib/i18n-catalog.mjs";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
-const I18N_FILE = "web/src/i18n.tsx";
+const I18N_FILE = "web/src/i18n/messages";
 const SERVER_DIR = "server";
 
 /* ------------------------------------------------------------------ */
 /* git                                                                  */
 /* ------------------------------------------------------------------ */
 
-function git(args) {
-	return execFileSync("git", args, { cwd: root, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] }).trim();
+function git(args, repoRoot = root) {
+	return execFileSync("git", args, { cwd: repoRoot, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] }).trim();
 }
 
 /** 取不到返回 null（base 之前不存在该文件时视为全部新增）。 */
-function gitShow(ref, p) {
+function gitShow(ref, p, repoRoot = root) {
 	try {
 		return execFileSync("git", ["show", `${ref}:${p}`], {
-			cwd: root,
+			cwd: repoRoot,
 			encoding: "utf8",
 			stdio: ["ignore", "pipe", "pipe"],
 		});
@@ -222,187 +223,8 @@ function skipRegex(src, i) {
 	return n;
 }
 
-/** 从 '{' 起提花括号块内部文本（字符串/注释/正则感知）。 */
-function extractBraceInner(src, openIdx) {
-	const n = src.length;
-	let i = openIdx;
-	let depth = 0;
-	while (i < n) {
-		const c = src[i];
-		if (c === "/" && src[i + 1] === "/") {
-			const j = src.indexOf("\n", i);
-			i = j === -1 ? n : j;
-			continue;
-		}
-		if (c === "/" && src[i + 1] === "*") {
-			const j = src.indexOf("*/", i + 2);
-			i = j === -1 ? n : j + 2;
-			continue;
-		}
-		if (c === '"' || c === "'" || c === "`") {
-			i = skipString(src, i);
-			continue;
-		}
-		if (c === "{") depth++;
-		else if (c === "}") {
-			depth--;
-			if (depth === 0) return src.slice(openIdx + 1, i);
-		}
-		i++;
-	}
-	throw new Error("花括号不配对");
-}
-
-/* ------------------------------------------------------------------ */
-/* 前端：解析 zh / en 对象（key 有序，value 为解码后的字符串）          */
-/* ------------------------------------------------------------------ */
-
-function parseQuoted(src, i) {
-	const q = src[i];
-	const n = src.length;
-	let out = "";
-	let j = i + 1;
-	while (j < n) {
-		const c = src[j];
-		if (c === "\\") {
-			const e = src[j + 1];
-			if (e === "n") out += "\n";
-			else if (e === "t") out += "\t";
-			else if (e === "r") out += "\r";
-			else if (e === "u" && /^[0-9a-fA-F]{4}$/.test(src.slice(j + 2, j + 6))) {
-				out += String.fromCharCode(parseInt(src.slice(j + 2, j + 6), 16));
-				j += 6;
-				continue;
-			} else out += e ?? "";
-			j += 2;
-			continue;
-		}
-		if (c === q) return { value: out, end: j + 1 };
-		out += c;
-		j++;
-	}
-	throw new Error("字符串未闭合");
-}
-
-/** 读到 depth-0 的逗号或结尾（兜底：非字面量 value，当前文件里实际走不到）。 */
-function parseRawValue(block, i) {
-	const n = block.length;
-	let j = i;
-	let depth = 0;
-	while (j < n) {
-		const c = block[j];
-		if (c === '"' || c === "'" || c === "`") {
-			j = skipString(block, j);
-			continue;
-		}
-		if (c === "(" || c === "[" || c === "{") depth++;
-		else if (c === ")" || c === "]" || c === "}") depth--;
-		else if (c === "," && depth === 0) break;
-		j++;
-	}
-	return { value: block.slice(i, j).trim(), end: j };
-}
-
-function parseEntries(block) {
-	const entries = [];
-	let i = 0;
-	const n = block.length;
-	const skipWS = () => {
-		while (i < n) {
-			if (/\s/.test(block[i])) {
-				i++;
-				continue;
-			}
-			if (block[i] === "/" && block[i + 1] === "/") {
-				const j = block.indexOf("\n", i);
-				i = j === -1 ? n : j;
-				continue;
-			}
-			if (block[i] === "/" && block[i + 1] === "*") {
-				const j = block.indexOf("*/", i + 2);
-				i = j === -1 ? n : j + 2;
-				continue;
-			}
-			break;
-		}
-	};
-	while (true) {
-		skipWS();
-		if (i >= n) break;
-		let key;
-		if (block[i] === '"' || block[i] === "'") {
-			const r = parseQuoted(block, i);
-			key = r.value;
-			i = r.end;
-		} else {
-			const m = /^[A-Za-z_$][\w$]*/.exec(block.slice(i));
-			if (!m) throw new Error(`解析 key 失败（offset ${i}）：${JSON.stringify(block.slice(i, i + 40))}`);
-			key = m[0];
-			i += m[0].length;
-		}
-		skipWS();
-		if (block[i] !== ":") throw new Error(`key ${key} 后面不是冒号`);
-		i++;
-		skipWS();
-		let value;
-		if (block[i] === '"' || block[i] === "'") {
-			const r = parseQuoted(block, i);
-			value = r.value;
-			i = r.end;
-		} else if (block[i] === "`") {
-			const e = skipString(block, i);
-			value = block.slice(i + 1, e - 1);
-			i = e;
-		} else {
-			const r = parseRawValue(block, i);
-			value = r.value;
-			i = r.end;
-		}
-		// 字符串续行：长文案在 i18n.tsx 里写成 "..." +\n\t"..."（如 filesHelp）。
-		// diff 只关心解码后的完整值，这里把后续 + "..." 段拼进来；否则 + 会被误当下一个 key。
-		for (;;) {
-			skipWS();
-			if (block[i] !== "+") break;
-			i++;
-			skipWS();
-			if (block[i] === '"' || block[i] === "'") {
-				const r = parseQuoted(block, i);
-				value += r.value;
-				i = r.end;
-			} else if (block[i] === "`") {
-				const e = skipString(block, i);
-				value += block.slice(i + 1, e - 1);
-				i = e;
-			} else {
-				throw new Error(`+ 后面不是字符串（offset ${i}）`);
-			}
-		}
-		skipWS();
-		if (block[i] === ",") i++;
-		entries.push({ key, value });
-	}
-	return entries;
-}
-
-/** 返回 { zh: {order, map}, en: {order, map} }。 */
-export function parseLocaleMaps(fileSrc) {
-	const out = {};
-	for (const name of ["zh", "en"]) {
-		const marker = name === "zh" ? "export const zh =" : "const en";
-		const idx = fileSrc.indexOf(marker);
-		if (idx === -1) throw new Error(`找不到 ${marker}`);
-		const open = fileSrc.indexOf("{", idx);
-		const entries = parseEntries(extractBraceInner(fileSrc, open));
-		const map = new Map();
-		const order = [];
-		for (const e of entries) {
-			if (!map.has(e.key)) order.push(e.key);
-			map.set(e.key, e.value);
-		}
-		out[name] = { order, map };
-	}
-	return out;
-}
+// Compatibility export for release tooling/tests comparing the historical inline layout.
+export { parseLocaleMaps } from "./lib/i18n-catalog.mjs";
 
 /* ------------------------------------------------------------------ */
 /* 服务端：提取 pick / getServerBlock 的 key 与内联中英文源头           */
@@ -600,10 +422,11 @@ export function extractServerKeys(src, file) {
 	return found;
 }
 
-function listServerFilesRecursive(rel = SERVER_DIR) {
+function listServerFilesRecursive(rel = SERVER_DIR, repoRoot = root) {
 	const out = [];
-	for (const e of readdirSync(join(root, rel), { withFileTypes: true })) {
-		if (e.isDirectory()) out.push(...listServerFilesRecursive(`${rel}/${e.name}`));
+	if (!existsSync(join(repoRoot, rel))) return out;
+	for (const e of readdirSync(join(repoRoot, rel), { withFileTypes: true })) {
+		if (e.isDirectory()) out.push(...listServerFilesRecursive(`${rel}/${e.name}`, repoRoot));
 		else if (e.name.endsWith(".ts")) out.push(`${rel}/${e.name}`);
 	}
 	return out;
@@ -628,14 +451,14 @@ function collectServerKeys(getContent, files) {
 /* ------------------------------------------------------------------ */
 
 /** 返回每个包的 {code, version, missing[], extra[]}（missing 按 zh 顺序，extra 即死 key）。 */
-export function checkPacks() {
-	const zhKeys = parseLocaleMaps(readFileSync(join(root, I18N_FILE), "utf8")).zh.order;
+export function checkPacks({ repoRoot = root } = {}) {
+	const zhKeys = readCatalog({ repoRoot, includeTranslations: false }).zh.order;
 	const zhSet = new Set(zhKeys);
 	const out = [];
-	for (const f of readdirSync(join(root, "locales"))
+	for (const f of readdirSync(join(repoRoot, "locales"))
 		.filter((f) => f.endsWith(".json"))
 		.sort()) {
-		const p = JSON.parse(readFileSync(join(root, "locales", f), "utf8"));
+		const p = JSON.parse(readFileSync(join(repoRoot, "locales", f), "utf8"));
 		const keys = Object.keys(p.strings ?? {});
 		const packSet = new Set(keys);
 		out.push({
@@ -689,37 +512,33 @@ function diffKeyMaps(oldMap, newOrder, newMap) {
 	return { added, removed, changed };
 }
 
-export function diffWorktreeVsBase(base) {
-	// 前端
-	const newSrc = readFileSync(join(root, I18N_FILE), "utf8");
-	const oldSrc = gitShow(base, I18N_FILE);
-	const newMaps = parseLocaleMaps(newSrc);
-	const oldMaps = oldSrc
-		? parseLocaleMaps(oldSrc)
-		: { zh: { order: [], map: new Map() }, en: { order: [], map: new Map() } };
+export function diffWorktreeVsBase(base, { repoRoot = root } = {}) {
+	// 每个 ref 独立探测布局；跨模块移动原 key 不应产生虚假的增删。
+	const newMaps = readCatalog({ repoRoot, includeTranslations: false });
+	const oldMaps = readCatalog({ repoRoot, ref: base, includeTranslations: false });
 	const zhDiff = diffKeyMaps(oldMaps.zh.map, newMaps.zh.order, newMaps.zh.map);
 	const enDiff = diffKeyMaps(oldMaps.en.map, newMaps.en.order, newMaps.en.map);
 
 	// 服务端
 	let baseFiles = [];
 	try {
-		baseFiles = git(["ls-tree", "-r", "--name-only", base, "--", SERVER_DIR])
+		baseFiles = git(["ls-tree", "-r", "--name-only", base, "--", SERVER_DIR], repoRoot)
 			.split("\n")
 			.map((s) => s.trim())
 			.filter((s) => s.endsWith(".ts"));
 	} catch {
 		baseFiles = [];
 	}
-	const curFiles = listServerFilesRecursive().sort();
+	const curFiles = listServerFilesRecursive(SERVER_DIR, repoRoot).sort();
 	const files = [...new Set([...curFiles, ...baseFiles])].sort();
 	const curCol = collectServerKeys((f) => {
 		try {
-			return readFileSync(join(root, f), "utf8");
+			return readFileSync(join(repoRoot, f), "utf8");
 		} catch {
 			return null;
 		}
 	}, files);
-	const baseCol = collectServerKeys((f) => gitShow(base, f), files);
+	const baseCol = collectServerKeys((f) => gitShow(base, f, repoRoot), files);
 	const server = { added: [], removed: [], changed: [] };
 	for (const [key, v] of curCol.all) {
 		const o = baseCol.all.get(key);

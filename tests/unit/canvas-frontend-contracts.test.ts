@@ -1,4 +1,7 @@
 import { describe, expect, it } from "vitest";
+import { createElement } from "react";
+import { renderToStaticMarkup } from "react-dom/server";
+import { CanvasTimeline } from "../../web/src/components/canvas/CanvasTimeline";
 import type { CanvasNode, CanvasEdge } from "../../server/protocol";
 import { parseDagJson, dagToGraph, buildSmartPrompt } from "../../web/src/components/canvas/canvas-dag";
 import {
@@ -7,14 +10,29 @@ import {
 	fitCanvasViewport,
 	computeCanvasBounds,
 } from "../../web/src/components/canvas/canvas-p0";
-import { SQUAD_TEMPLATES } from "../../web/src/components/canvas/CanvasTemplates";
+import { getSquadTemplates } from "../../web/src/components/canvas/CanvasTemplates";
+import { getRoleMetas, getRoleFields, getStatusMetas } from "../../web/src/components/canvas/CanvasTypes";
+import { getPstackSkills } from "../../web/src/components/canvas/pstack-skills-data";
+import { graphFingerprint, mergeGraphRuntime, parseGraphImport } from "../../web/src/components/canvas/canvas-state";
+import type { Translate } from "../../web/src/i18n";
+import canvasZh from "../../web/src/i18n/messages/canvas/zh.json";
+import canvasEn from "../../web/src/i18n/messages/canvas/en.json";
 import {
 	isRoleImplemented,
 	visibleRoleFields,
 	STATUS_COLORS,
 	outPortsForRole,
 } from "../../web/src/components/canvas/CanvasTypes";
-import { canvasText } from "../../web/src/components/canvas/canvas-i18n";
+import { formatCanvasMessage } from "../../web/src/components/canvas/canvas-i18n";
+const translator =
+	(messages: Record<string, string>): Translate =>
+	(key, vars) =>
+		Object.entries(vars ?? {}).reduce(
+			(text, [name, value]) => text.replaceAll(`{${name}}`, String(value)),
+			messages[key] ?? key,
+		);
+const tZh = translator(canvasZh);
+const tEn = translator(canvasEn);
 const node = (id: string, x = 0, y = 0): CanvasNode => ({
 	id,
 	title: id,
@@ -145,7 +163,7 @@ describe("capability honesty and defaults", () => {
 		expect(visibleRoleFields(role, {})).toMatchObject([{ kind: "hint" }]);
 	});
 	it("ships serial templates with QA, explicit human acceptance and no worktrees", () => {
-		for (const tmpl of SQUAD_TEMPLATES) {
+		for (const tmpl of getSquadTemplates(tZh)) {
 			const graph = tmpl.createGraph();
 			expect(graph.nodes.some((n) => n.role === "human")).toBe(true);
 			expect(graph.nodes.some((n) => n.role === "reviewer" || n.title === "审查")).toBe(true);
@@ -155,10 +173,76 @@ describe("capability honesty and defaults", () => {
 				expect(graph.edges[i]).toMatchObject({ sourceNodeId: graph.nodes[i].id, targetNodeId: graph.nodes[i + 1].id });
 		}
 	});
-	it("supports new terminal statuses and locale fallback", () => {
+	it("supports translated terminal statuses and structured messages with literal fallbacks", () => {
 		expect(STATUS_COLORS.skipped).toBeTruthy();
 		expect(STATUS_COLORS.cancelled).toBeTruthy();
-		expect(canvasText("zh-CN", "中", "English")).toBe("中");
-		expect(canvasText("fr", "中", "English")).toBe("English");
+		expect(getStatusMetas(tZh).cancelled.label).not.toBe(getStatusMetas(tEn).cancelled.label);
+		expect(formatCanvasMessage({ key: "canvas.defaults.teammate", vars: { count: 3 } }, "old", tEn)).toBe("Teammate 3");
+		expect(formatCanvasMessage({ key: "unknown.future.key" }, "AI / 用户原文", tZh)).toBe("AI / 用户原文");
+		expect(formatCanvasMessage(undefined, "User-authored name", tZh)).toBe("User-authored name");
+	});
+});
+
+describe("Canvas localized metadata and saved data", () => {
+	it("refreshes template and role labels while leaving existing graph data and English execution content intact", () => {
+		const saved = getSquadTemplates(tZh)[1].createGraph();
+		const snapshot = structuredClone(saved);
+		const english = getSquadTemplates(tEn)[1].createGraph();
+		expect(english.name).not.toBe(saved.name);
+		expect(english.nodes[1].title).not.toBe(saved.nodes[1].title);
+		expect(english.nodes.map((n) => n.instruction)).toEqual(saved.nodes.map((n) => n.instruction));
+		expect(english.nodes.flatMap((n) => n.instruction ?? "").join(" ")).not.toMatch(/[\u4e00-\u9fff]/);
+		expect(getRoleMetas(tZh).coder.label).not.toBe(getRoleMetas(tEn).coder.label);
+		expect(getRoleFields(tZh).researcher.map((f) => f.default)).toEqual(
+			getRoleFields(tEn).researcher.map((f) => f.default),
+		);
+		expect(saved).toEqual(snapshot);
+	});
+	it("keeps official Pstack descriptions and content independent of UI language", () => {
+		const chinese = getPstackSkills(tZh),
+			english = getPstackSkills(tEn);
+		expect(english.map((s) => [s.id, s.category, s.description, s.content])).toEqual(
+			chinese.map((s) => [s.id, s.category, s.description, s.content]),
+		);
+		expect(english[0].name).not.toBe(chinese[0].name);
+	});
+	it("localizes validation errors without changing imported user data", () => {
+		expect(() => parseGraphImport("{", true, tEn)).toThrow("Invalid JSON");
+		expect(() => parseDagJson("{", 20, 200, tEn)).toThrow("Invalid DAG JSON");
+		const graph = getSquadTemplates(tZh)[1].createGraph();
+		graph.name = "用户命名 / User name";
+		graph.nodes[1].title = "用户节点 / User node";
+		const imported = parseGraphImport(JSON.stringify(graph), true, tEn);
+		expect(imported.name).toBe(graph.name);
+		expect(imported.nodes[1].title).toBe(graph.nodes[1].title);
+	});
+	it("excludes structured runtime messages from authored changes and clears stale metadata on runtime replacement", () => {
+		const graph = getSquadTemplates(tEn)[1].createGraph();
+		const running = structuredClone(graph);
+		running.nodes[0].currentAction = "old";
+		running.nodes[0].currentActionMessage = { key: "canvas.defaults.teammate", vars: { count: 1 } };
+		running.nodes[0].errorMessage = { key: "canvas.import.invalidJson" };
+		expect(graphFingerprint(running)).toBe(graphFingerprint(graph));
+		const merged = mergeGraphRuntime(running, graph);
+		expect(merged.nodes[0].currentActionMessage).toBeUndefined();
+		expect(merged.nodes[0].errorMessage).toBeUndefined();
+		expect(parseGraphImport(JSON.stringify(running), true, tEn).nodes[0].currentActionMessage).toBeUndefined();
+	});
+});
+
+describe("Canvas timeline display", () => {
+	it("translates status labels while keeping wire values in CSS classes", () => {
+		const html = renderToStaticMarkup(
+			createElement(CanvasTimeline, {
+				nodes: [{ ...node("timeline"), status: "error" }],
+				edges: [],
+				logs: {},
+				onRunNode: () => {},
+				onLocate: () => {},
+			}),
+		);
+		expect(html).toContain("st-error");
+		expect(html).toContain(canvasEn["canvas.metadata.status.error"]);
+		expect(html).not.toContain("canvas.metadata.");
 	});
 });

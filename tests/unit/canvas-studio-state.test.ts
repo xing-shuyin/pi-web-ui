@@ -3,7 +3,7 @@ import { act, createElement } from "react";
 import { createRoot } from "react-dom/client";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { CanvasStudio } from "../../web/src/components/canvas/CanvasStudio";
-import { LanguageProvider } from "../../web/src/i18n";
+import { en, LanguageProvider } from "../../web/src/i18n";
 import type { CanvasGraph, ServerMessage, ModelInfo } from "../../server/protocol";
 const connection = vi.hoisted(() => ({
 	notify: (_connected: boolean) => {},
@@ -52,6 +52,7 @@ afterEach(() => {
 	vi.restoreAllMocks();
 });
 function mount() {
+	vi.spyOn(navigator, "languages", "get").mockReturnValue(["en"]);
 	const host = document.createElement("div");
 	document.body.append(host);
 	const root = createRoot(host);
@@ -86,7 +87,7 @@ describe("Studio request and visibility boundaries", () => {
 			graphId: request.graph.id,
 			message: "engine unavailable",
 		});
-		expect(host.textContent).toContain("运行失败：engine unavailable");
+		expect(host.textContent).toContain(en["canvas.studio.runFailed"].replace("{name}", "engine unavailable"));
 		render(true, {
 			type: "canvas_error",
 			code: "execution_error",
@@ -100,7 +101,7 @@ describe("Studio request and visibility boundaries", () => {
 			request.graph.status,
 		);
 		render(true, { type: "canvas_graph_state", graph: { ...request.graph, rev: 1 }, requestId: request.requestId });
-		expect(host.textContent).toContain("保存成功");
+		expect(host.textContent).toContain(en["canvas.studio.saved"]);
 	});
 	it("model catalog arrival never rewrites existing engine models or creates an autosave", () => {
 		vi.useFakeTimers();
@@ -191,7 +192,7 @@ describe("Studio request and visibility boundaries", () => {
 			graph: { ...graph(), id: "default", name: "Fallback default" },
 			requestId: load.requestId,
 		});
-		expect(host.textContent).not.toContain("加载中…");
+		expect(host.textContent).not.toContain(en["canvas.studio.loading"]);
 		expect(host.querySelectorAll(".canvas-node-card")).toHaveLength(0);
 	});
 	it.each([true, false])("unblocks save after disconnect and read-back (committed=%s)", (committed) => {
@@ -200,14 +201,16 @@ describe("Studio request and visibility boundaries", () => {
 		save();
 		const request = send.mock.calls.find(([m]) => m.type === "canvas_save")![0];
 		act(() => connection.notify(false));
-		expect(host.textContent).toContain("保存结果未知");
+		expect(host.textContent).toContain(en["canvas.studio.disconnectedHint"]);
 		act(() => connection.load({ id: request.graph.id, requestId: "reconnect" }));
 		const remote = { ...request.graph, rev: committed ? 1 : 0, ...(!committed ? { name: "remote differs" } : {}) };
 		render(true, { type: "canvas_graph_state", graph: remote, requestId: "reconnect" });
-		if (committed) expect(host.textContent).toContain("重连核对：保存成功");
+		if (committed) expect(host.textContent).toContain(en["canvas.studio.reconnectedSaved"]);
 		else {
-			expect(host.textContent).toContain("保存结果核对存在差异");
-			const button = Array.from(host.querySelectorAll("button")).find((b) => b.textContent === "保留本地草稿")!;
+			expect(host.textContent).toContain(en["canvas.studio.reconnectedConflict"]);
+			const button = Array.from(host.querySelectorAll("button")).find(
+				(b) => b.textContent === en["canvas.studio.keepLocalDraft"],
+			)!;
 			act(() => button.click());
 		}
 		save();
@@ -219,7 +222,7 @@ describe("Studio request and visibility boundaries", () => {
 		expect(send.mock.calls.filter(([m]) => m.type === "canvas_save")).toHaveLength(2);
 		expect(host.textContent).not.toContain("late failure");
 		render(true, { type: "canvas_graph_state", graph: { ...latest.graph, rev: 2 }, requestId: latest.requestId });
-		expect(host.textContent).toContain("保存成功");
+		expect(host.textContent).toContain(en["canvas.studio.saved"]);
 	});
 	it("does not intercept shortcuts while inactive", () => {
 		const { render, send } = mount();
@@ -244,10 +247,10 @@ describe("Studio request and visibility boundaries", () => {
 			graphId: remote.id,
 			requestId: request.requestId,
 		});
-		expect(host.textContent).toContain("草稿已保留");
+		expect(host.textContent).toContain(en["canvas.studio.operationFailed"].replace("{name}", "conflict"));
 		render(true, { type: "canvas_graph_state", graph: remote, requestId: request.requestId });
-		expect(host.textContent).toContain("操作失败");
-		expect(host.textContent).toContain("保留本地草稿");
+		expect(host.textContent).toContain(en["canvas.studio.operationFailed"].replace("{name}", "conflict"));
+		expect(host.textContent).toContain(en["canvas.studio.keepLocalDraft"]);
 	});
 	it("unrelated broadcasts never change the current graph or save target", () => {
 		const { render, send } = mount();

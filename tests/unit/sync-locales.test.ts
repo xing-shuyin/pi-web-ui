@@ -1,152 +1,162 @@
-/**
- * sync-locales 单元测试：
- * 验证 scripts/sync-locales.mjs 的占位符提取、多语言包自动补齐、死 key 清理与键序重排。
- */
+/** Module source -> flat language pack synchronization, including metadata/token safety. */
 import { describe, expect, it } from "vitest";
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { extractPlaceholders, syncLocales } from "../../scripts/sync-locales.mjs";
 
+function moduleSource(repo: string, name: string, locale: string, strings: Record<string, string>) {
+	const dir = join(repo, "web/src/i18n/messages", name);
+	mkdirSync(dir, { recursive: true });
+	writeFileSync(join(dir, `${locale}.json`), JSON.stringify(strings));
+}
+
+function pack(repo: string, code: string, strings: Record<string, unknown>, extra = {}) {
+	mkdirSync(join(repo, "locales"), { recursive: true });
+	writeFileSync(
+		join(repo, `locales/${code}.json`),
+		JSON.stringify({ code, nativeName: code, version: "1.0.0", strings, ...extra }, null, "\t") + "\n",
+	);
+}
+
+function readPack(repo: string, code: string) {
+	return JSON.parse(readFileSync(join(repo, `locales/${code}.json`), "utf8"));
+}
+
+async function sandbox(run: (repo: string) => Promise<void>) {
+	const repo = mkdtempSync(join(tmpdir(), "pi-sync-locales-"));
+	try {
+		await run(repo);
+	} finally {
+		rmSync(repo, { recursive: true, force: true });
+	}
+}
+
+function core(repo: string) {
+	moduleSource(repo, "core", "zh", { apple: "苹果", banana: "香蕉 {count} 根", cherry: "樱桃" });
+	moduleSource(repo, "core", "en", { apple: "Apple", banana: "Banana {count} pcs", cherry: "Cherry" });
+}
+
 describe("sync-locales", () => {
-	it("extractPlaceholders 能正确提取各类占位符", () => {
-		const s = "Hello {name}, your count is {count}, pwd is ${pwd}, marker is [[marker:test]] and token is {{token}}.";
+	it("extractPlaceholders 提取嵌套、数字、下划线和重复 token", () => {
+		const s = "Hello {name}, {count}, ${pwd}, [[marker:test]], {{token}}.";
 		expect(extractPlaceholders(s)).toEqual(["${pwd}", "[[marker", "{count}", "{name}", "{{token}}"]);
+		expect(extractPlaceholders("{node_id} {node_id} {{auth2}} ${path_2}")).toEqual([
+			"${path_2}",
+			"{node_id}",
+			"{node_id}",
+			"{{auth2}}",
+		]);
 	});
 
-	it("当前工作区的 12 个语言包已与 web/src/i18n.tsx 完全对齐", async () => {
+	it("当前工作区的 12 个语言包已与模块源完全对齐", async () => {
 		const res = await syncLocales({ dryRun: true, checkOnly: true });
 		expect(res.ok).toBe(true);
 		expect(res.hasChanges).toBe(false);
 		expect(res.totalAdded).toBe(0);
 		expect(res.totalPruned).toBe(0);
+		expect(res.totalUpdated).toBe(0);
 	});
 
-	it("在隔离沙盒中能自动补齐缺失 key、清理死 key 并按 zh 键序重排", async () => {
-		const tempDir = mkdtempSync(join(tmpdir(), "pi-sync-locales-"));
-		try {
-			// 构建最小 mock 环境
-			mkdirSync(join(tempDir, "web/src"), { recursive: true });
-			mkdirSync(join(tempDir, "locales"), { recursive: true });
-
-			const mockI18n = `
-export const zh = {
-	apple: "苹果",
-	banana: "香蕉 {count} 根",
-	cherry: "樱桃",
-};
-
-export const en: Record<keyof typeof zh, string> = {
-	apple: "Apple",
-	banana: "Banana {count} pcs",
-	cherry: "Cherry",
-};
-`;
-			writeFileSync(join(tempDir, "web/src/i18n.tsx"), mockI18n, "utf8");
-
-			// de.json: 缺少 cherry，多余 deadKey，且已有 key 乱序 (banana 在 apple 前)
-			const mockDe = {
-				code: "de",
-				nativeName: "Deutsch",
-				version: "1.0.0",
-				strings: {
-					banana: "Banane {count} Stk",
-					apple: "Apfel",
-					deadKey: "Soll weg",
-				},
-			};
-			writeFileSync(join(tempDir, "locales/de.json"), JSON.stringify(mockDe, null, "\t") + "\n", "utf8");
-
-			// zh-TW.json: 缺少 banana 和 cherry
-			const mockTw = {
-				code: "zh-TW",
-				nativeName: "繁體中文（台灣）",
-				version: "1.0.0",
-				strings: {
-					apple: "蘋果",
-				},
-			};
-			writeFileSync(join(tempDir, "locales/zh-TW.json"), JSON.stringify(mockTw, null, "\t") + "\n", "utf8");
-
-			// 先测试 dryRun
-			const dryRes = await syncLocales({ repoRoot: tempDir, dryRun: true });
-			expect(dryRes.hasChanges).toBe(true);
-			expect(dryRes.totalAdded).toBe(3); // de 缺 1，zh-TW 缺 2
-			expect(dryRes.totalPruned).toBe(1); // de 多 1
-
-			// 验证 dryRun 下文件未被改写
-			const rawDeBefore = JSON.parse(readFileSync(join(tempDir, "locales/de.json"), "utf8"));
-			expect(rawDeBefore.strings.deadKey).toBe("Soll weg");
-
-			// 真实同步
-			const realRes = await syncLocales({ repoRoot: tempDir });
-			expect(realRes.hasChanges).toBe(true);
-
-			// 读取同步后的 de.json
-			const syncDe = JSON.parse(readFileSync(join(tempDir, "locales/de.json"), "utf8"));
-			// 1. 键序必须与 zh 一致
-			expect(Object.keys(syncDe.strings)).toEqual(["apple", "banana", "cherry"]);
-			// 2. 原有翻译保留
-			expect(syncDe.strings.apple).toBe("Apfel");
-			expect(syncDe.strings.banana).toBe("Banane {count} Stk");
-			// 3. 死 key 已被剔除
-			expect(syncDe.strings.deadKey).toBeUndefined();
-			// 4. 新 key 自动使用 en 的英文填充，无中文残留
-			expect(syncDe.strings.cherry).toBe("Cherry");
-			expect(/[\u4e00-\u9fff]/.test(syncDe.strings.cherry)).toBe(false);
-
-			// 读取同步后的 zh-TW.json
-			const syncTw = JSON.parse(readFileSync(join(tempDir, "locales/zh-TW.json"), "utf8"));
-			expect(Object.keys(syncTw.strings)).toEqual(["apple", "banana", "cherry"]);
-			expect(syncTw.strings.apple).toBe("蘋果");
-			expect(syncTw.strings.banana).toContain("{count}");
-
-			// 再次检查应该 0 差异
-			const checkRes = await syncLocales({ repoRoot: tempDir, checkOnly: true });
-			expect(checkRes.ok).toBe(true);
-			expect(checkRes.hasChanges).toBe(false);
-		} finally {
-			rmSync(tempDir, { recursive: true, force: true });
-		}
-	});
-
-	it("重写语言包时不得吞掉 serverStrings（服务端 pick() 的译文）", async () => {
-		// 回归：以前这里手工重建 { code, nativeName, version, strings }，每次
-		// `npm run i18n:sync` 都会把同一文件里的 serverStrings 静默删掉
-		// （pt/ja/tr 各丢 371/164/327 条，server-i18n / locales 单测连带全红）。
-		const tempDir = mkdtempSync(join(tmpdir(), "pi-sync-locales-ss-"));
-		try {
-			mkdirSync(join(tempDir, "web/src"), { recursive: true });
-			mkdirSync(join(tempDir, "locales"), { recursive: true });
-			writeFileSync(
-				join(tempDir, "web/src/i18n.tsx"),
-				`export const zh = { apple: "苹果", banana: "香蕉" };
-export const en: Record<keyof typeof zh, string> = { apple: "Apple", banana: "Banana" };
-`,
-				"utf8",
-			);
-			// pt.json：缺 banana（会触发重写）+ 带 serverStrings
-			const mockPt = {
-				code: "pt",
-				nativeName: "Português",
-				version: "1.0.0",
-				strings: { apple: "Maçã" },
-				serverStrings: { "agent.role.stop": "O modo objetivo encerrou uma conversa auxiliar" },
-			};
-			writeFileSync(join(tempDir, "locales/pt.json"), JSON.stringify(mockPt, null, "\t") + "\n", "utf8");
-
-			const res = await syncLocales({ repoRoot: tempDir });
+	it("补缺失 key、删除死 key、保留译文并以 core -> 模块顺序重排；dry-run 不写文件", async () => {
+		await sandbox(async (repo) => {
+			core(repo);
+			moduleSource(repo, "canvas", "zh", { "canvas.example": "画布 {name}" });
+			moduleSource(repo, "canvas", "en", { "canvas.example": "Canvas {name}" });
+			pack(repo, "de", { banana: "Banane {count} Stk", apple: "Apfel", deadKey: "Soll weg" });
+			pack(repo, "zh-TW", { apple: "蘋果" });
+			const dry = await syncLocales({ repoRoot: repo, dryRun: true });
+			expect(dry.totalAdded).toBe(5);
+			expect(dry.totalPruned).toBe(1);
+			expect(readPack(repo, "de").strings.deadKey).toBe("Soll weg");
+			const res = await syncLocales({ repoRoot: repo });
 			expect(res.hasChanges).toBe(true);
+			const de = readPack(repo, "de").strings;
+			expect(Object.keys(de)).toEqual(["apple", "banana", "cherry", "canvas.example"]);
+			expect(de).toEqual({
+				apple: "Apfel",
+				banana: "Banane {count} Stk",
+				cherry: "Cherry",
+				"canvas.example": "Canvas {name}",
+			});
+			expect(readPack(repo, "zh-TW").strings.apple).toBe("蘋果");
+			expect(readPack(repo, "zh-TW").strings.banana).toContain("{count}");
+			const check = await syncLocales({ repoRoot: repo, checkOnly: true });
+			expect(check.ok).toBe(true);
+			expect(check.hasChanges).toBe(false);
+		});
+	});
 
-			const synced = JSON.parse(readFileSync(join(tempDir, "locales/pt.json"), "utf8"));
-			expect(Object.keys(synced.strings)).toEqual(["apple", "banana"]);
+	it("额外模块译文覆盖既有 fallback，缺少模块译文的语言仍使用 en", async () => {
+		await sandbox(async (repo) => {
+			core(repo);
+			moduleSource(repo, "canvas", "zh", { "canvas.example": "画布 {name}" });
+			moduleSource(repo, "canvas", "en", { "canvas.example": "Canvas {name}" });
+			moduleSource(repo, "canvas", "de", { "canvas.example": "Leinwand {name}" });
+			moduleSource(repo, "canvas", "zh-TW", { "canvas.example": "畫布 {name}" });
+			const base = {
+				apple: "Apple",
+				banana: "Banana {count} pcs",
+				cherry: "Cherry",
+				"canvas.example": "Canvas {name}",
+			};
+			pack(repo, "de", base, { serverStrings: { "agent.example": "Server" }, custom: true });
+			pack(repo, "fr", base);
+			pack(repo, "zh-TW", base);
+			const before = readFileSync(join(repo, "locales/de.json"), "utf8");
+			const check = await syncLocales({ repoRoot: repo, checkOnly: true });
+			expect(check.ok).toBe(false);
+			expect(check.totalAdded).toBe(0);
+			expect(check.totalUpdated).toBe(2);
+			expect(readFileSync(join(repo, "locales/de.json"), "utf8")).toBe(before);
+			await syncLocales({ repoRoot: repo });
+			expect(readPack(repo, "de").strings["canvas.example"]).toBe("Leinwand {name}");
+			expect(readPack(repo, "zh-TW").strings["canvas.example"]).toBe("畫布 {name}");
+			expect(readPack(repo, "fr").strings["canvas.example"]).toBe("Canvas {name}");
+			expect(readPack(repo, "de").serverStrings).toEqual({ "agent.example": "Server" });
+			expect(readPack(repo, "de").custom).toBe(true);
+			expect((await syncLocales({ repoRoot: repo, checkOnly: true })).hasChanges).toBe(false);
+		});
+	});
+
+	it("仅占位符错误也应触发 check 失败和写回，不能保留损坏或非字符串译文", async () => {
+		await sandbox(async (repo) => {
+			core(repo);
+			pack(repo, "de", { apple: "", banana: "Banane {wrong}", cherry: null });
+			const check = await syncLocales({ repoRoot: repo, checkOnly: true });
+			expect(check.ok).toBe(false);
+			expect(check.totalUpdated).toBe(3);
+			expect(check.totalAdded).toBe(0);
+			expect(check.totalReordered).toBe(0);
+			await syncLocales({ repoRoot: repo });
+			expect(readPack(repo, "de").strings).toEqual({ apple: "Apple", banana: "Banana {count} pcs", cherry: "Cherry" });
+			expect((await syncLocales({ repoRoot: repo, checkOnly: true })).ok).toBe(true);
+		});
+	});
+
+	it("错误的模块译文在写包前失败，禁止静默覆盖或修复源码", async () => {
+		await sandbox(async (repo) => {
+			core(repo);
+			moduleSource(repo, "canvas", "zh", { "canvas.example": "画布 {name}" });
+			moduleSource(repo, "canvas", "en", { "canvas.example": "Canvas {name}" });
+			moduleSource(repo, "canvas", "de", { "canvas.example": "Leinwand {wrong}" });
+			pack(repo, "de", { apple: "Apfel" });
+			const path = join(repo, "locales/de.json");
+			const before = readFileSync(path, "utf8");
+			await expect(syncLocales({ repoRoot: repo })).rejects.toThrow(/canvas\/de.*placeholder.*canvas.example/);
+			expect(readFileSync(path, "utf8")).toBe(before);
+		});
+	});
+
+	it("重写语言包不得吞掉 serverStrings 和顶层字段顺序", async () => {
+		await sandbox(async (repo) => {
+			core(repo);
+			pack(repo, "pt", { apple: "Maçã" }, { serverStrings: { "agent.role.stop": "Encerrado" } });
+			await syncLocales({ repoRoot: repo });
+			const synced = readPack(repo, "pt");
 			expect(synced.strings.apple).toBe("Maçã");
-			// 服务端译文原样保留（不是被重建/清空）
-			expect(synced.serverStrings).toEqual({ "agent.role.stop": "O modo objetivo encerrou uma conversa auxiliar" });
-			// 顶层键顺序也保持（写回不再重排/丢键）
+			expect(synced.serverStrings).toEqual({ "agent.role.stop": "Encerrado" });
 			expect(Object.keys(synced)).toEqual(["code", "nativeName", "version", "strings", "serverStrings"]);
-		} finally {
-			rmSync(tempDir, { recursive: true, force: true });
-		}
+		});
 	});
 });

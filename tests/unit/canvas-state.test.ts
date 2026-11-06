@@ -8,6 +8,8 @@ import {
 	parseGraphImport,
 } from "../../web/src/components/canvas/canvas-state";
 import type { CanvasGraph } from "../../server/protocol";
+import { en, type Translate } from "../../web/src/i18n";
+const translate: Translate = (key) => en[key];
 const graph = (): CanvasGraph => ({
 	id: "g",
 	name: "Graph",
@@ -179,15 +181,18 @@ describe("canvas studio draft state", () => {
 		expect(graphRuntimeStatus([{ ...n, status: "cancelled" }])).toBe("blocked");
 	});
 	it("reports local storage failures instead of discarding edits", () => {
-		const state = new CanvasDraftState({
-			getItem: () => null,
-			setItem: () => {
-				throw Error("quota");
+		const state = new CanvasDraftState(
+			{
+				getItem: () => null,
+				setItem: () => {
+					throw Error("quota");
+				},
+				removeItem: () => {},
 			},
-			removeItem: () => {},
-		});
+			translate,
+		);
 		expect(state.retain(graph())).toBe(false);
-		expect(state.error).toContain("草稿保存失败");
+		expect(state.error).toBe(en["canvas.draft.storageFailed"]);
 	});
 });
 describe("canvas JSON import", () => {

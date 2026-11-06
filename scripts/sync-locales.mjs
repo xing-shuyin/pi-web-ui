@@ -1,10 +1,10 @@
 #!/usr/bin/env node
 /**
  * sync-locales.mjs — 自动同步多语言包：
- * 以 web/src/i18n.tsx 为唯一事实源，自动同步 locales/*.json 中的 12 个语言包。
+ * 以 web/src/i18n/messages/<module>/<locale>.json 为唯一事实源，自动同步 locales/*.json 中的 12 个语言包。
  *
  * 核心逻辑：
- * 1. 严格以 web/src/i18n.tsx 中 zh 字典的 key 列表与顺序为基准；
+ * 1. 严格以 合并模块后的 zh 字典的 key 列表与顺序为基准；
  * 2. 校验 en 字典与 zh 字典的 key 与顺序是否对齐，若有缺失或错位给出清晰提示；
  * 3. 对 12 个语言包（locales/*.json）：
  *    - 保留已有翻译（不覆盖历史翻译成果）；
@@ -24,10 +24,11 @@
 import { existsSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
-import { parseLocaleMaps } from "./i18n-diff.mjs";
+import { extractPlaceholders, readCatalog } from "./lib/i18n-catalog.mjs";
+export { extractPlaceholders } from "./lib/i18n-catalog.mjs";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
-const I18N_FILE = "web/src/i18n.tsx";
+const I18N_FILE = "web/src/i18n/messages";
 const LOCALES_DIR = "locales";
 
 /* ------------------------------------------------------------------ */
@@ -146,11 +147,6 @@ async function loadOpenCc(repoRoot) {
 	}
 }
 
-/** 提取占位符，与 locales.test.ts 保持一致。 */
-export function extractPlaceholders(s) {
-	return [...s.matchAll(/\$\{pwd\}|\{\{[a-z]+\}\}|\{\$?[a-zA-Z]+\}|\[\[[a-z_/-]+/g)].map((m) => m[0]).sort();
-}
-
 /* ------------------------------------------------------------------ */
 /* 主同步逻辑                                                          */
 /* ------------------------------------------------------------------ */
@@ -160,38 +156,13 @@ export async function syncLocales(options = {}) {
 	const dryRun = Boolean(options.dryRun);
 	const checkOnly = Boolean(options.checkOnly);
 
-	const i18nPath = join(repoRoot, I18N_FILE);
 	const localesDirPath = join(repoRoot, LOCALES_DIR);
-
-	const i18nSrc = readFileSync(i18nPath, "utf8");
-	const { zh, en } = parseLocaleMaps(i18nSrc);
+	// Validate the complete source before touching any pack. A translated module is authoritative.
+	const { zh, en, translations } = readCatalog({ repoRoot });
 
 	const warnings = [];
 	const zhKeys = zh.order;
 	const zhSet = new Set(zhKeys);
-	const enSet = new Set(en.order);
-
-	// 校验 en 字典
-	const missingEn = zhKeys.filter((k) => !enSet.has(k));
-	const extraEn = en.order.filter((k) => !zhSet.has(k));
-	if (missingEn.length > 0) {
-		warnings.push(
-			`web/src/i18n.tsx 中 en 缺少 ${missingEn.length} 个 key：${missingEn.slice(0, 5).join(", ")}${missingEn.length > 5 ? "…" : ""}`,
-		);
-	}
-	if (extraEn.length > 0) {
-		warnings.push(
-			`web/src/i18n.tsx 中 en 多余 ${extraEn.length} 个 key：${extraEn.slice(0, 5).join(", ")}${extraEn.length > 5 ? "…" : ""}`,
-		);
-	}
-	if (missingEn.length === 0 && extraEn.length === 0) {
-		const orderMismatch = zhKeys.findIndex((k, idx) => en.order[idx] !== k);
-		if (orderMismatch !== -1) {
-			warnings.push(
-				`web/src/i18n.tsx 中 zh 与 en 键顺序在第 ${orderMismatch + 1} 项错位（zh: "${zhKeys[orderMismatch]}", en: "${en.order[orderMismatch]}"）`,
-			);
-		}
-	}
 
 	const opencc = await loadOpenCc(repoRoot);
 
@@ -203,6 +174,7 @@ export async function syncLocales(options = {}) {
 	let totalAdded = 0;
 	let totalPruned = 0;
 	let totalReordered = 0;
+	let totalUpdated = 0;
 
 	for (const f of packFiles) {
 		const filePath = join(localesDirPath, f);
@@ -213,23 +185,29 @@ export async function syncLocales(options = {}) {
 		const origKeySet = new Set(originalKeys);
 
 		const addedKeys = [];
+		const updatedKeys = [];
+		const moduleStrings = translations.get(pack.code);
 		const prunedKeys = originalKeys.filter((k) => !zhSet.has(k));
 		let isReordered = false;
 
-		const newStrings = {};
+		const newStrings = Object.create(null);
 		for (let i = 0; i < zhKeys.length; i++) {
 			const k = zhKeys[i];
 			if (originalKeys[i] !== k) {
 				isReordered = true;
 			}
 
-			if (origKeySet.has(k)) {
+			if (!origKeySet.has(k)) addedKeys.push(k);
+			if (moduleStrings?.has(k)) {
+				// 已翻译的模块源码覆盖同名 flat key（包括之前写入的英文 fallback）。
+				newStrings[k] = moduleStrings.get(k);
+			} else if (origKeySet.has(k)) {
 				// 保留已有翻译，但需校验占位符完整性
 				let val = originalStrings[k];
 				const zhVal = zh.map.get(k) || "";
 				const zhHolders = extractPlaceholders(zhVal);
-				const valHolders = extractPlaceholders(val);
-				if (JSON.stringify(zhHolders) !== JSON.stringify(valHolders)) {
+				const valHolders = typeof val === "string" ? extractPlaceholders(val) : null;
+				if (typeof val !== "string" || !val.length || JSON.stringify(zhHolders) !== JSON.stringify(valHolders)) {
 					// 占位符不匹配：若该语言包本就是 fallback 状态或损坏，回退到 en 翻译保证单测通过
 					const enFallback = en.map.get(k);
 					if (enFallback && JSON.stringify(extractPlaceholders(enFallback)) === JSON.stringify(zhHolders)) {
@@ -239,7 +217,6 @@ export async function syncLocales(options = {}) {
 				newStrings[k] = val;
 			} else {
 				// 新增 key 自动补齐
-				addedKeys.push(k);
 				const zhVal = zh.map.get(k) || "";
 				const enVal = en.map.get(k) || zhVal;
 
@@ -254,18 +231,25 @@ export async function syncLocales(options = {}) {
 					newStrings[k] = enVal;
 				}
 			}
+			// Conversion/manual rules must preserve every token, too.
+			if (JSON.stringify(extractPlaceholders(newStrings[k])) !== JSON.stringify(extractPlaceholders(zh.map.get(k)))) {
+				newStrings[k] = en.map.get(k);
+			}
+			if (origKeySet.has(k) && newStrings[k] !== originalStrings[k]) updatedKeys.push(k);
 		}
 
 		totalAdded += addedKeys.length;
 		totalPruned += prunedKeys.length;
 		if (isReordered) totalReordered++;
 
-		const changed = addedKeys.length > 0 || prunedKeys.length > 0 || isReordered;
+		totalUpdated += updatedKeys.length;
+		const changed = addedKeys.length > 0 || prunedKeys.length > 0 || isReordered || updatedKeys.length > 0;
 		results.push({
 			file: f,
 			code: pack.code,
 			added: addedKeys,
 			pruned: prunedKeys,
+			updated: updatedKeys,
 			reordered: isReordered,
 			changed,
 		});
@@ -280,12 +264,13 @@ export async function syncLocales(options = {}) {
 		}
 	}
 
-	const hasChanges = totalAdded > 0 || totalPruned > 0 || totalReordered > 0;
+	const hasChanges = results.some((result) => result.changed);
 	return {
 		ok: !checkOnly || !hasChanges,
 		totalAdded,
 		totalPruned,
 		totalReordered,
+		totalUpdated,
 		warnings,
 		results,
 		hasChanges,
@@ -303,13 +288,15 @@ async function main() {
 
 	if (argv.includes("-h") || argv.includes("--help")) {
 		console.log("用法：node scripts/sync-locales.mjs [--dry-run] [--check]");
-		console.log("  （缺省）：以 web/src/i18n.tsx 为准，自动补齐缺失 key、清理死 key、按 zh 键序重排并写回 12 个语言包");
+		console.log(
+			`  （缺省）：以 ${I18N_FILE} 模块字典为准，自动补齐缺失 key、清理死 key、按 zh 键序重排并写回 12 个语言包`,
+		);
 		console.log("  --dry-run：只打印待改动内容，不写入文件");
 		console.log("  --check：检查是否有不同步，若存在差异以状态码 1 退出（用于 CI）");
 		return;
 	}
 
-	console.log(`[i18n:sync] 扫描 web/src/i18n.tsx 与 locales/*.json ...`);
+	console.log(`[i18n:sync] 扫描 ${I18N_FILE} 与 locales/*.json ...`);
 	const res = await syncLocales({ dryRun, checkOnly });
 
 	for (const w of res.warnings) {
@@ -320,6 +307,7 @@ async function main() {
 		const statusParts = [];
 		if (r.added.length > 0) statusParts.push(`+${r.added.length} 新增`);
 		if (r.pruned.length > 0) statusParts.push(`-${r.pruned.length} 死key`);
+		if (r.updated.length > 0) statusParts.push(`${r.updated.length} 文案/占位符更新`);
 		if (r.reordered) statusParts.push(`顺序重排`);
 
 		if (statusParts.length > 0) {

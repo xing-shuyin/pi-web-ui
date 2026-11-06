@@ -1,11 +1,11 @@
 // 驗證 zh-TW 輸出：key 完整與順序、佔位符、殘留簡體字、重複詞、禁用詞。
 import { readFileSync } from "node:fs";
 import { OpenCC } from "./opencc.mjs";
-// 用法：node verify.mjs <tw.json> <zh.json>
+import { extractPlaceholders as ph, readCatalog } from "../lib/i18n-catalog.mjs";
+// 用法：node verify.mjs <tw.json> [zh.json]（省略 zh 時讀取模組目錄）
 const [twPath, zhPath] = process.argv.slice(2);
-const zh = JSON.parse(readFileSync(zhPath, "utf8"));
+const zh = zhPath ? JSON.parse(readFileSync(zhPath, "utf8")) : Object.fromEntries(readCatalog().zh.map);
 const tw = JSON.parse(readFileSync(twPath, "utf8"));
-const ph = (s) => [...s.matchAll(/\$\{pwd\}|\{\{[a-z]+\}\}|\{\$?[a-zA-Z]+\}|\[\[[a-z_/-]+/g)].map((m) => m[0]).sort();
 let bad = 0;
 const report = (msg) => {
 	bad++;

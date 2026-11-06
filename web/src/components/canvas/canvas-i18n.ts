@@ -1,10 +1,23 @@
-import { useLocale } from "../../i18n";
+import { zh, type Translate } from "../../i18n";
+import { isCanvasMessage } from "../../../../server/canvas/canvas-runtime-messages.js";
 
-/** Canvas-local copy avoids concurrent edits to the shared translation catalog. */
-export function canvasText(locale: string, zh: string, en: string): string {
-	return locale.toLowerCase().startsWith("zh") ? zh : en;
+/** Translate only structured system messages; user and model text stays verbatim. */
+export function formatCanvasMessage(message: unknown, fallback: string | undefined, t: Translate): string {
+	return isCanvasMessage(message) && Object.hasOwn(zh, message.key)
+		? t(message.key as keyof typeof zh, message.vars)
+		: (fallback ?? "");
 }
-export function useCanvasT() {
-	const locale = useLocale();
-	return (zh: string, en: string) => canvasText(locale, zh, en);
+
+/** Wire enum values remain stable; only their UI labels are translated. */
+export function getEdgeTypeLabels(t: Translate) {
+	return {
+		handoff: t("canvas.edges.type.handoff"),
+		review: t("canvas.edges.type.review"),
+		parallel: t("canvas.edges.type.parallel"),
+		loop_back: t("canvas.edges.type.loop_back"),
+		condition_true: t("canvas.edges.type.condition_true"),
+		condition_false: t("canvas.edges.type.condition_false"),
+		approve: t("canvas.edges.type.approve"),
+		reject: t("canvas.edges.type.reject"),
+	};
 }
