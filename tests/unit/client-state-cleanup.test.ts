@@ -1,7 +1,7 @@
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
 	CLIENT_STATE_RETENTION_MS,
 	ClientStateStore,
@@ -37,6 +37,7 @@ describe("ClientStateStore 死 clientId 清理（issue #441）", () => {
 	});
 
 	afterEach(() => {
+		vi.restoreAllMocks();
 		try {
 			rmSync(dir, { recursive: true, force: true });
 		} catch {
@@ -93,6 +94,35 @@ describe("ClientStateStore 死 clientId 清理（issue #441）", () => {
 		expect(Object.keys(persisted)).toContain("fresh");
 	});
 
+	it("过期 client 的现存项目先迁移到全局，淘汰后重启仍能读取", async () => {
+		const legacyPath = join(dir, "legacy-project");
+		const stalePath = join(dir, "stale-project");
+		mkdirSync(legacyPath);
+		mkdirSync(stalePath);
+		writeFileSync(
+			file,
+			JSON.stringify({
+				legacy: { projects: [{ path: legacyPath, lastUsed: 1 }] },
+				stale: { lastActive: 2, projects: [{ path: stalePath, lastUsed: 2 }] },
+			}),
+		);
+
+		const store = new ClientStateStore(file);
+		const expected = [
+			{ path: stalePath, lastUsed: 2 },
+			{ path: legacyPath, lastUsed: 1 },
+		];
+		expect(await store.getRecentProjects("new-client")).toEqual(expected);
+		expect(store.get("legacy")).toEqual({ projects: [] });
+		expect(store.get("stale")).toEqual({ projects: [] });
+
+		// 加载迁移本身必须落盘，不依赖 remember 等后续写操作。
+		const persisted = JSON.parse(readFileSync(file, "utf8"));
+		expect(Object.keys(persisted)).toEqual(["__settings__"]);
+		expect(persisted.__settings__.projects).toEqual(expected);
+		expect(await new ClientStateStore(file).getRecentProjects("another-client")).toEqual(expected);
+	});
+
 	it("超过键数上限时按最近活跃保留前 50 个，淘汰最旧的", () => {
 		const now = Date.now();
 		const entries: Record<string, unknown> = { __settings__: { projects: [] } };
@@ -114,6 +144,9 @@ describe("ClientStateStore 死 clientId 清理（issue #441）", () => {
 		// 最近活跃的 50 个保留
 		expect(store.get("c05").locale).toBe("c05");
 		expect(store.get(`c${String(MAX_TRACKED_CLIENTS + 4).padStart(2, "0")}`).locale).toBe("c54");
+		// 数量上限淘汰前也先保留项目，包括来自最旧 5 个 client 的项目。
+		expect(store.get("__settings__").projects).toHaveLength(MAX_TRACKED_CLIENTS + 5);
+		expect(store.get("__settings__").projects.map((p) => p.path)).toContain("/p/0");
 
 		store.remember("c54", join(dir, "p"));
 		const persisted = JSON.parse(readFileSync(file, "utf8")) as Record<string, unknown>;
@@ -176,6 +209,18 @@ describe("ClientStateStore 死 clientId 清理（issue #441）", () => {
 
 		expect(recent.map((p) => p.path).sort()).toEqual(["/alive/a", "/alive/b"]);
 		expect(store.probes).toBe(4);
+	});
+
+	it("运行期间定期清理过期 client 后，remember 的全局项目仍然保留", async () => {
+		const store = new ClientStateStore(file);
+		const now = Date.now();
+		store.remember("c1", dir);
+		const expected = store.get("c1").projects;
+		vi.spyOn(Date, "now").mockReturnValue(now + CLIENT_STATE_RETENTION_MS + DAY);
+
+		expect(store.get("c1")).toEqual({ projects: [] });
+		expect(await store.getRecentProjects("new-client")).toEqual(expected);
+		expect(await new ClientStateStore(file).getRecentProjects("another-client")).toEqual(expected);
 	});
 
 	it("per-client 写路径打点 lastActive（活跃客户端不会被误淘汰）", () => {

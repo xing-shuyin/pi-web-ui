@@ -130,6 +130,8 @@ fork 基准的旧算法针对预归一化单链重现原固定点传播，不包
 
 - **项目排序**：每次加载（刷新页面）按最近使用（`lastUsed`）新→旧排序；页面打开期间保持稳定（切换工作区不跳动），会话期间新出现的项目追加到末尾。可拖拽项目头或在项目头上按 Alt+↑/↓ 调整本次会话内的顺序。废弃原 `pi-web-ui:projects-order` 持久化排位（加载时清理残留键）。
 - **项目上限**：最近项目由 30 提到 100（`RECENT_PROJECTS_MAX`，记录、合并读取、推送共用；DSH 引擎同步）。
+- **最近项目发现**：`pushProjects` 冷启动先等待现有的会话头轻量发现，再读取持久化列表，确保仅存在于历史会话中的工作区也出现在首份推送中。扫描单飞，60 秒内复用发现缓存；过期后后台续期，热请求仍读取当前持久化列表，保留新项目及删除墓碑。回归：`tests/left-panel-delete-test.mjs`。
+- **历史最近项目迁移**：旧 per-client 记录的清理不能丢失其项目。`ClientStateStore.load()` 首次加载先汇总所有 client 的墓碑，再将全局与旧 per-client 项目按 `normalizePathKey` 去重、取最新 `lastUsed`，过滤全部墓碑并降序截断至 `RECENT_PROJECTS_MAX`，最后清理死 client 并一并保存。即使旧 client 已超过 30 天保留期或数量上限，其项目仍可跨重启保留；后续 `remember()` 同时写入全局列表，定期清理沿用原期限，无需每次扫描磁盘历史。回归：`tests/unit/client-state-cleanup.test.ts`、`tests/unit/client-state-recent-projects.test.ts`（过期 client 迁移与重启、墓碑不复活、去重排序与上限）。
 - **过滤框**：项目区顶部过滤项目名 / 路径 / 已加载的对话标题；项目名命中照常显示，否则只显示命中的对话并展开；Esc 清空，↓ 进入列表。未加载会话列表的项目（未展开且无缓存）只能按项目名命中，全文检索仍走全局搜索。
 - **键盘与无障碍**：`role="tree"` / `treeitem` + `aria-expanded` / `aria-current`；↑/↓ 行间移动、Home/End、→/← 展开收起、会话行 ← 回到项目头。重命名时行主体渲染为 div（不再把 input 嵌进 button）；「显示更多」「已收起 N 条历史」改为 button；仅悬停可见的行内操作在键盘聚焦时同样显示，并有 `:focus-visible` 描边。
 - **重命名**：失焦即提交（原先失焦直接丢弃输入）；提交后立即乐观显示新名字，服务端列表体现后撤销覆盖（10s 兜底过期）；Enter 后卸载触发的 blur 不重复提交，Esc 取消不提交。

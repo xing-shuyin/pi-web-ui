@@ -16244,6 +16244,14 @@ export class ClientSession {
 	async pushProjects(): Promise<void> {
 		const now = Date.now();
 		try {
+			const cache = ClientSession.projectsCache;
+			if (!cache) {
+				// Cold starts must discover workspaces known only through saved session headers.
+				await this.ensureProjectsCache(false);
+			} else if (now - cache.at >= ClientSession.PROJECTS_CACHE_TTL) {
+				// Renew metadata in the background; warm requests still read current persisted state.
+				void this.ensureProjectsCache(false).catch(() => {});
+			}
 			const recent = await this.stateStore.getRecentProjects(this.clientId);
 			this.emit({ type: "projects", projects: this.withCurrentCwd(recent, now) });
 		} catch {

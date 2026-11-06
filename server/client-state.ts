@@ -884,8 +884,27 @@ export class ClientStateStore {
 				}
 			}
 		}
-		// 死键清理（issue #441）：在墓碑迁移之后做——各 client 的墓碑已先并入全局键，
-		// 淘汰死 client 不会丢墓碑；合并一次 save 落盘（迁移和淘汰只发生一次时也只写一遍）。
+		// 老版本的最近项目可能仅存在临时 clientId 下。先按全部墓碑过滤并迁移到全局，
+		// 再淘汰死 client，避免持久化列表丢失历史项目；只在首次加载时合并，不扫描磁盘历史。
+		const projectsByKey = new Map<string, ClientState["projects"][number]>();
+		for (const state of Object.values(this.cache)) {
+			for (const project of state.projects ?? []) {
+				const key = normalizePathKey(project.path);
+				if (globalSet.has(key)) continue;
+				const existing = projectsByKey.get(key);
+				if (!existing || project.lastUsed > existing.lastUsed) projectsByKey.set(key, project);
+			}
+		}
+		const projects = [...projectsByKey.values()].sort((a, b) => b.lastUsed - a.lastUsed).slice(0, RECENT_PROJECTS_MAX);
+		const previousProjects = globalState.projects ?? [];
+		if (
+			projects.length !== previousProjects.length ||
+			projects.some((p, i) => p.path !== previousProjects[i].path || p.lastUsed !== previousProjects[i].lastUsed)
+		) {
+			globalState.projects = projects;
+			migrated = true;
+		}
+		// 死键清理（issue #441）：墓碑和最近项目均迁移完毕后再淘汰，合并一次 save 落盘。
 		this.lastSweepAt = Date.now();
 		const evicted = this.sweepDeadClients();
 		if (migrated || evicted > 0) {

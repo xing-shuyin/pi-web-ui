@@ -1,8 +1,8 @@
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { ClientStateStore } from "../../server/client-state.js";
+import { ClientStateStore, RECENT_PROJECTS_MAX } from "../../server/client-state.js";
 
 describe("ClientStateStore 最近项目删除全局持久化", () => {
 	let dir: string;
@@ -94,6 +94,71 @@ describe("ClientStateStore 最近项目删除全局持久化", () => {
 		const newStore = new ClientStateStore(file);
 		// 全新 client 应该能继承老 client 的墓碑
 		expect(newStore.getRemovedProjects("brandNewClient")).toContain("/legacy/path/to/projectX");
+	});
+
+	it("迁移按归一化路径取最新记录，跨全局和所有 client 排序截断并立即持久化", () => {
+		const duplicate = join(dir, "duplicate");
+		const newest = { path: `${duplicate}/.`, lastUsed: RECENT_PROJECTS_MAX + 100 };
+		const globalOnly = { path: join(dir, "global-only"), lastUsed: RECENT_PROJECTS_MAX + 200 };
+		const projects = Array.from({ length: RECENT_PROJECTS_MAX + 5 }, (_, i) => ({
+			path: join(dir, `project-${i}`),
+			lastUsed: i + 1,
+		}));
+		writeFileSync(
+			file,
+			JSON.stringify({
+				__settings__: { projects: [globalOnly, { path: duplicate, lastUsed: 0 }] },
+				clientA: {
+					lastActive: Date.now(),
+					projects: [...projects.slice(0, 50), newest],
+				},
+				clientB: {
+					lastActive: Date.now(),
+					projects: [...projects.slice(50), { path: duplicate, lastUsed: 2 }],
+				},
+			}),
+		);
+
+		const expected = [globalOnly, newest, ...projects.reverse()].slice(0, RECENT_PROJECTS_MAX);
+		expect(store.get("__settings__").projects).toEqual(expected);
+		const persisted = JSON.parse(readFileSync(file, "utf8"));
+		// 两个 client 都未淘汰时，迁移仍须自行保存。
+		expect(Object.keys(persisted)).toHaveLength(3);
+		expect(persisted.__settings__.projects).toEqual(expected);
+		expect(new ClientStateStore(file).get("__settings__").projects).toEqual(expected);
+	});
+
+	it("迁移先汇总所有墓碑，过期 client 与全局中的项目均不能复活", async () => {
+		const globalRemoved = join(dir, "global-removed");
+		const legacyRemoved = join(dir, "legacy-removed");
+		mkdirSync(globalRemoved);
+		mkdirSync(legacyRemoved);
+		const expected = [{ path: dir, lastUsed: 1 }];
+		writeFileSync(
+			file,
+			JSON.stringify({
+				__settings__: {
+					projects: [{ path: legacyRemoved, lastUsed: 4 }],
+					removedProjects: [`${globalRemoved}/.`],
+				},
+				legacy: {
+					projects: [...expected, { path: globalRemoved, lastUsed: 3 }],
+				},
+				otherLegacy: {
+					projects: [{ path: legacyRemoved, lastUsed: 2 }],
+					removedProjects: [`${legacyRemoved}/.`],
+				},
+			}),
+		);
+
+		expect(await store.getRecentProjects("new-client")).toEqual(expected);
+		expect(store.get("__settings__").projects).toEqual(expected);
+		const reopened = new ClientStateStore(file);
+		expect(await reopened.getRecentProjects("another-client")).toEqual(expected);
+		expect(reopened.get("__settings__").projects).toEqual(expected);
+		expect(reopened.getRemovedProjects("another-client")).toEqual(
+			expect.arrayContaining([`${globalRemoved}/.`, `${legacyRemoved}/.`]),
+		);
 	});
 
 	it("getRecentProjects 跨 client 聚合且过滤墓碑与不存在目录", async () => {
