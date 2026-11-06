@@ -1863,17 +1863,17 @@
 		user-select: none;
 	}
 	.lp-project-head-row.active {
-		background: color-mix(in srgb, var(--blue, #3b82f6) 13%, transparent);
+		background: var(--project-active-bg, color-mix(in srgb, var(--blue, #3b82f6) 13%, transparent));
 		color: var(--text);
 		border: none;
 		box-shadow: none;
 		outline: none;
 	}
 	.lp-project-head-row.active:hover {
-		background: color-mix(in srgb, var(--blue, #3b82f6) 19%, transparent);
+		background: var(--project-active-hover-bg, color-mix(in srgb, var(--blue, #3b82f6) 19%, transparent));
 	}
 	.lp-project-head-row.switching {
-		background: color-mix(in srgb, var(--blue, #3b82f6) 13%, transparent);
+		background: var(--project-active-bg, color-mix(in srgb, var(--blue, #3b82f6) 13%, transparent));
 		color: var(--text);
 		border: none;
 		box-shadow: none;
@@ -37556,7 +37556,7 @@
 }
 
 .lp-project-head-row.active {
-	background: color-mix(in srgb, var(--blue, #3b82f6) 13%, transparent);
+	background: var(--project-active-bg, color-mix(in srgb, var(--blue, #3b82f6) 13%, transparent));
 	color: var(--text);
 	border: none;
 	box-shadow: none;
@@ -37564,11 +37564,11 @@
 }
 
 .lp-project-head-row.active:hover {
-	background: color-mix(in srgb, var(--blue, #3b82f6) 19%, transparent);
+	background: var(--project-active-hover-bg, color-mix(in srgb, var(--blue, #3b82f6) 19%, transparent));
 }
 
 .lp-project-head-row.switching {
-	background: color-mix(in srgb, var(--blue, #3b82f6) 13%, transparent);
+	background: var(--project-active-bg, color-mix(in srgb, var(--blue, #3b82f6) 13%, transparent));
 	color: var(--text);
 	border: none;
 	box-shadow: none;
