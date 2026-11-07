@@ -4,6 +4,12 @@ on:
   push:
     tags:
       - "v*"
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Existing release tag to regenerate notes for (for example v0.118.0)"
+        required: true
+        type: string
 
 permissions:
   contents: write
@@ -12,33 +18,40 @@ jobs:
   notes:
     runs-on: ubuntu-latest
     timeout-minutes: 10
+    env:
+      TAG: ${{ inputs.tag || github.ref_name }}
     steps:
       - uses: actions/checkout@v5
         with:
+          ref: ${{ inputs.tag || github.ref }}
           fetch-depth: 0
+
+      - name: Verify existing release tag
+        run: |
+          RELEASE_COMMIT="$(git rev-parse --verify "refs/tags/$TAG^{commit}")"
+          test "$RELEASE_COMMIT" = "$(git rev-parse HEAD)"
 
       - uses: actions/setup-node@v5
         with:
           node-version: 22
+          cache: npm
+
+      - name: Install release notes parser dependencies
+        run: npm ci --ignore-scripts
 
       - name: Compose release notes (CHANGELOG section + fresh i18n)
         run: |
-          TAG="${GITHUB_REF_NAME}"
           VER="${TAG#v}"
-          PREV="$(git tag --sort=-v:refname | grep -vx "$TAG" | head -n 1)"
-          if [ -z "$PREV" ]; then echo "no previous tag found"; exit 1; fi
+          PREV="$(git describe --tags --abbrev=0 "${TAG}^")"
           echo "version=$VER base=$PREV"
           node scripts/release-notes.mjs "$VER" --base "$PREV" --out /tmp/notes.md
-          echo "---- notes preview ----"
-          cat /tmp/notes.md
 
       - name: Create or update GitHub Release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          TAG="${GITHUB_REF_NAME}"
           if gh release view "$TAG" >/dev/null 2>&1; then
             gh release edit "$TAG" --notes-file /tmp/notes.md
           else
-            gh release create "$TAG" --title "$TAG" --notes-file /tmp/notes.md
+            gh release create "$TAG" --title "$TAG" --notes-file /tmp/notes.md --verify-tag
           fi

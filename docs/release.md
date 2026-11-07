@@ -42,9 +42,13 @@ git push origin vX.Y.Z
 
 # 7) GitHub Release（自动公示，无需手写）
 #    tag 一推送，Action（.github/workflows/release-notes.yml）自动跑：
-#    取 CHANGELOG 该版小节 + 按上个 tag 现场生成 ### i18n，创建 Release（已存在则更新 notes）。
-#    本地只预览确认实际会发什么；Action 失败时才手动补发：
+#    安装锁定的解析依赖（不运行安装脚本），取 CHANGELOG 小节 + 按上个 tag 生成 ### i18n，
+#    创建 Release（已存在则更新 notes）。本地可先预览：
 node scripts/release-notes.mjs X.Y.Z --base v<上个版本>   # 预览（输出到 stdout）
+#    自动任务失败并修复工作流后，从 main 的工作流重新处理已发布 tag；会校验并检出该 tag，
+#    再安装该 tag 的锁定依赖、生成及更新说明：
+# gh workflow run release-notes.yml --ref main -f tag=vX.Y.Z
+#    若工作流仍不可用，可在本地依赖齐备后手动补发：
 # node scripts/release-notes.mjs X.Y.Z --base v<上个版本> --out /tmp/notes.md --create
 
 # 8) 发布 npm（会自动跑 prepublishOnly 构建）
