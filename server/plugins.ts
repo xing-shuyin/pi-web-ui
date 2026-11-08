@@ -62,6 +62,10 @@ import { PluginGrantsStore, normalizeGrantPath } from "./plugin-grants.js";
 import { normalizeIconSvg } from "./icon-svg.js";
 import { cleanupRemovedPlugins } from "./plugin-removal.js";
 import { prepareBundledPlugins } from "./plugin-bundled.js";
+import { PluginInbox } from "./plugin-inbox.js";
+import { PluginLedgerStore } from "./plugin-ledger.js";
+import { DeliveryQueue } from "./plugin-delivery.js";
+import type { PluginDeliveryItem, PluginDeliveryRequest } from "../plugin-sdk/index.js";
 import { PluginDomConsent, declarationWantsDom } from "./plugin-dom.js";
 import { validatePluginManifest, formatManifestIssue, isKnownPermission } from "./plugin-manifest-validate.js";
 import { buildPluginApiCatalog } from "./plugin-api-catalog.js";
@@ -194,6 +198,13 @@ export interface PluginChatResult {
 	clientId: string;
 	runId?: string;
 }
+
+/**
+ * 加载作用域：
+ * - `all`：全部插件（首个客户端 attach / 手动扫描时）
+ * - `alwaysOn`：仅 manifest.alwaysOn === true 的常驻插件（宿主启动时，无 WebSocket 连接）
+ */
+export type PluginLoadScope = "all" | "alwaysOn";
 export interface PluginConversationListItem {
 	id: string;
 	title: string;
@@ -302,6 +313,10 @@ export interface PluginHost {
 	onClientModelChanged(handler: (snap: PluginConversationSnapshot) => void): () => void;
 	chat(req: PluginChatRequest): Promise<PluginChatResult>;
 	workItems: import("../plugin-sdk/index.js").PluginWorkItems;
+	/** 本地投递账本（至少一次 + 幂等键），跨重启去重；不依赖设备中心。 */
+	inbox: import("../plugin-sdk/index.js").PluginInboxApi;
+	/** 出站投递：与 inbox 共用同一个账本（direction=out），退避/死信/统计归宿主。 */
+	delivery: import("../plugin-sdk/index.js").PluginDeliveryApi;
 	chatWait(
 		req: PluginChatRequest,
 		opts?: { timeoutMs?: number },
@@ -1378,7 +1393,7 @@ export class PluginManager {
 	private panelSweepTimer: ReturnType<typeof setInterval> | null = null;
 	private epochCounter = 0;
 	private lifecycleGeneration = 0;
-	private loading: Promise<UiPluginInfo[]> | undefined;
+	private loadingByScope = new Map<PluginLoadScope, Promise<UiPluginInfo[]>>();
 	private reloading: Promise<UiPluginInfo[]> | undefined;
 	private activatingEffects = new Set<PluginEffectStack>();
 	private catalogEpoch = 0;
@@ -2051,6 +2066,13 @@ export class PluginManager {
 	modelLister: (() => PluginModelInfo[] | Promise<PluginModelInfo[]>) | undefined = undefined;
 	mcpProjects: McpProjectRuntimeRegistry | undefined = undefined;
 	readonly permGrants: PluginPermissionStore;
+	/** 插件投递账本：按插件 id 缓存，跨 reload/反激活保留（这正是账本的意义）。 */
+	private readonly inboxes = new Map<string, PluginInbox>();
+	/** 一个插件一个账本（入站/出站共用同一个 PluginLedgerStore 与同一份文件）。 */
+	private readonly ledgers = new Map<
+		string,
+		{ ledger: PluginLedgerStore; inbox: PluginInbox; delivery: DeliveryQueue }
+	>();
 	permissionRequester:
 		| ((
 				pluginId: string,
@@ -2524,16 +2546,104 @@ export class PluginManager {
 		});
 	}
 
-	ensureLoaded(lang?: () => ServerLang): Promise<UiPluginInfo[]> {
-		if (this.loading) return this.loading;
-		const pending = this.loadGeneration(this.lifecycleGeneration, lang).finally(() => {
-			if (this.loading === pending) this.loading = undefined;
+	ensureLoaded(lang?: () => ServerLang, opts?: { scope?: PluginLoadScope }): Promise<UiPluginInfo[]> {
+		const scope: PluginLoadScope = opts?.scope ?? "all";
+		const running = this.loadingByScope.get(scope);
+		if (running) return running;
+		const pending = this.loadGeneration(this.lifecycleGeneration, lang, scope).finally(() => {
+			if (this.loadingByScope.get(scope) === pending) this.loadingByScope.delete(scope);
 		});
-		this.loading = pending;
+		this.loadingByScope.set(scope, pending);
 		return pending;
 	}
 
-	private async loadGeneration(generation: number, lang?: () => ServerLang): Promise<UiPluginInfo[]> {
+	/** 取得（或创建）某个插件的投递账本。 */
+	/** 取得（或创建）某个插件的投递账本：入站与出站共享同一个存储。 */
+	private ledgerFor(pluginId: string): { ledger: PluginLedgerStore; inbox: PluginInbox; delivery: DeliveryQueue } {
+		const id = String(pluginId ?? "plugin").replace(/[^A-Za-z0-9_-]/g, "") || "plugin";
+		const existing = this.ledgers.get(id);
+		if (existing) return existing;
+		const ledger = new PluginLedgerStore({ dataDir: this.dataDir, pluginId: id });
+		const inbox = new PluginInbox({ dataDir: this.dataDir, pluginId: id, ledger });
+		const delivery = new DeliveryQueue({ ledger });
+		// 出站重试必须有后台 pump，否则入队的消息永远不会再发。
+		delivery.start();
+		const entry = { ledger, inbox, delivery };
+		this.ledgers.set(id, entry);
+		this.inboxes.set(id, inbox);
+		return entry;
+	}
+
+	inboxFor(pluginId: string): PluginInbox {
+		return this.ledgerFor(pluginId).inbox;
+	}
+
+	deliveryFor(pluginId: string): DeliveryQueue {
+		return this.ledgerFor(pluginId).delivery;
+	}
+
+	/** 所有渠道的出站人数聚合（供 /api/health）。 */
+	deliveryStats(): {
+		plugins: Record<string, { queued: number; due: number; dead: number; done: number; inboxDead: number }>;
+		totalQueued: number;
+		totalDead: number;
+	} {
+		const plugins: Record<string, { queued: number; due: number; dead: number; done: number; inboxDead: number }> = {};
+		let totalQueued = 0;
+		let totalDead = 0;
+		for (const [id, entry] of this.ledgers) {
+			const out = entry.delivery.stats();
+			const inboxDead = entry.inbox.dead().length;
+			plugins[id] = { ...out, inboxDead };
+			totalQueued += out.queued;
+			totalDead += out.dead + inboxDead;
+		}
+		return { plugins, totalQueued, totalDead };
+	}
+
+	/**
+	 * 启动时（无任何 WS 连接）激活声明了 manifest.alwaysOn 的插件。
+	 * 未声明的插件保持懒激活，等首个客户端 attach —— 避免开机拉起上百个 UI 插件的副作用。
+	 */
+	ensureAlwaysOnLoaded(lang?: () => ServerLang): Promise<UiPluginInfo[]> {
+		return this.ensureLoaded(lang, { scope: "alwaysOn" });
+	}
+
+	/**
+	 * 重新激活激活失败的常驻插件（供后台执行者的 on-failure 自愈）。
+	 * 成功激活的常驻插件保持不动，其余插件的懒激活状态不受影响。
+	 */
+	async rescanAlwaysOn(lang?: () => ServerLang): Promise<UiPluginInfo[]> {
+		// eslint-disable-next-line unicorn/no-useless-spread -- snapshot: deactivateEntry mutates this.loaded mid-loop
+		for (const [id, p] of [...this.loaded]) {
+			if (p.info.alwaysOn !== true || !p.info.error) continue;
+			this.deactivateEntry(id, p);
+			this.attempted.delete(id);
+		}
+		return this.ensureAlwaysOnLoaded(lang);
+	}
+
+	/** 常驻插件体检快照（供 /api/health 与后台执行者探针使用）。 */
+	alwaysOnSnapshot(): { id: string; version?: string; active: boolean; error?: string; diagnostics: string[] }[] {
+		const out: { id: string; version?: string; active: boolean; error?: string; diagnostics: string[] }[] = [];
+		for (const [id, p] of this.loaded) {
+			if (p.info.alwaysOn !== true) continue;
+			out.push({
+				id,
+				...(p.info.version ? { version: p.info.version } : {}),
+				active: !p.info.error,
+				...(p.info.error ? { error: p.info.error } : {}),
+				diagnostics: (p.info.diagnostics ?? []).slice(0, 10),
+			});
+		}
+		return out;
+	}
+
+	private async loadGeneration(
+		generation: number,
+		lang?: () => ServerLang,
+		scope: PluginLoadScope = "all",
+	): Promise<UiPluginInfo[]> {
 		const l = lang?.() ?? "en";
 		const found = await this.scan(lang);
 		if (generation !== this.lifecycleGeneration) return [];
@@ -2559,6 +2669,7 @@ export class PluginManager {
 			const info = byId.get(id)!;
 			if (this.loaded.has(info.id) || this.attempted.has(info.id)) continue;
 			if (!existsSync(join(this.pluginsDir, info.id, "index.mjs"))) continue;
+			if (scope === "alwaysOn" && info.alwaysOn !== true) continue;
 			await this.activate(info, lang);
 			if (generation !== this.lifecycleGeneration) return [];
 		}
@@ -2628,8 +2739,11 @@ export class PluginManager {
 
 	dispose(): void {
 		this.lifecycleGeneration += 1;
-		this.loading = undefined;
+		this.loadingByScope.clear();
 		this.reloading = undefined;
+		for (const entry of this.ledgers.values()) entry.delivery.dispose();
+		this.ledgers.clear();
+		this.inboxes.clear();
 		this.attempted.clear();
 		this.activatingGates.clear();
 		for (const effects of this.activatingEffects) effects.release();
@@ -2809,6 +2923,7 @@ export class PluginManager {
 					ui?: unknown;
 					isolated?: unknown;
 					shadow?: unknown;
+					alwaysOn?: unknown;
 				};
 				const wantsDom = declarationWantsDom(m.permissions);
 				this.domWants.set(name, wantsDom);
@@ -2899,6 +3014,7 @@ export class PluginManager {
 					settingsSchema: settingsSchemaForScan,
 					settingsValues: resolvedSettingsForScan.values,
 					settingsSources: resolvedSettingsForScan.sources,
+					alwaysOn: m.alwaysOn === true ? true : undefined,
 					isolated: m.isolated === true || m.shadow === true ? true : undefined,
 					renderers: Array.isArray(m.renderers)
 						? m.renderers.filter((r): r is string => typeof r === "string" && r.length > 0).slice(0, 32)
@@ -3509,6 +3625,39 @@ export class PluginManager {
 				completeDelivery: (id, result) => workItemsCall("completeDelivery", { id, ...result }),
 				failDelivery: (id, result) => workItemsCall("failDelivery", { id, ...result }),
 			},
+			inbox: (() => {
+				const inbox = self.inboxFor(info.id);
+				return {
+					claim: (key: string, meta?: Record<string, unknown>) => inbox.claim(key, meta),
+					complete: (
+						key: string,
+						result?: { conversationId?: string; runId?: string; meta?: Record<string, unknown> },
+					) => inbox.complete(key, result ?? {}),
+					fail: (key: string, error: unknown) => inbox.fail(key, error),
+					pending: () => inbox.pending(),
+					dead: () => inbox.dead(),
+				};
+			})(),
+			delivery: (() => {
+				const queue = self.deliveryFor(info.id);
+				const requireChat = (): void => {
+					if (!can("chat")) throw new Error(`插件未声明能力 "chat"（manifest.permissions）——出站发送被拒`);
+				};
+				return {
+					register: (input: { channel: string; send: (item: PluginDeliveryItem) => Promise<void> }) => {
+						requireChat();
+						queue.registerSender(String(input?.channel ?? ""), input.send);
+						return () => queue.unregisterSender(String(input?.channel ?? ""));
+					},
+					send: (req: PluginDeliveryRequest) => {
+						requireChat();
+						return queue.sendNow(req);
+					},
+					stats: () => queue.stats(),
+					pending: () => queue.pending(),
+					dead: () => queue.dead(),
+				};
+			})(),
 			chatWait: async (req, opts) => {
 				try {
 					const sent = await sendChat(req);

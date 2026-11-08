@@ -143,10 +143,22 @@ export const HOST_METHODS: ReadonlyArray<CatalogHostMethod> = [
 		example: `host.registerProxy("/app", 3000)`,
 	},
 	{
+		name: "delivery",
+		needs: "chat",
+		summary: "出站投递：register 发送器 + send 入队；失败按错误类别退避重试、死信可观测",
+		example: `await host.delivery.send({ channel: "qq", target, payload, key })`,
+	},
+	{
 		name: "chat",
 		needs: "chat",
 		summary: "无头调用：把外部通道文本投给 agent（fire-and-forget）",
 		example: `await host.chat({ text: "hi" })`,
+	},
+	{
+		name: "inbox",
+		needs: "-",
+		summary: "本地投递账本：claim 幂等占位 / complete / fail / pending / dead（跨重启去重）",
+		example: `if (host.inbox.claim(eventId).status !== "new") return;`,
 	},
 	{
 		name: "chatWait",

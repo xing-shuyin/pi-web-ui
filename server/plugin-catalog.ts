@@ -128,6 +128,12 @@ export function readCatalog(builtinPath: string, customPath: string, communityPa
 		if (!e) continue;
 		const idx = out.findIndex((x) => x.id === e.id);
 		if (idx >= 0) {
+			// 同 id 同 source = 同一条目被重复登记（典型：同步整份官方目录写进了自定义文件）。
+			// 这种情况不是「用户用 fork 覆盖内置」，保留原有条目与 origin，否则标签会在宿主自带/手动添加之间乱跳。
+			if (out[idx]!.source === e.source) {
+				seen.add(e.id);
+				continue;
+			}
 			out[idx] = { ...e, builtin: false, origin: "custom", overridesBuiltin: seenBuiltin.has(e.id) };
 		} else {
 			out.push(e);

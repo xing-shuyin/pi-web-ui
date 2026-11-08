@@ -89,6 +89,16 @@ export function validatePluginManifest(raw: unknown, dirName: string): ManifestV
 		apiVersion = av;
 	}
 
+	// alwaysOn: 声明为「无客户端连接时也应在宿主启动时激活」的常驻插件。
+	// 缺省 false —— 未声明的插件继续走懒激活（首个 WS attach 时）。
+	if (o.alwaysOn !== undefined && typeof o.alwaysOn !== "boolean") {
+		warnings.push({
+			path: "alwaysOn",
+			message: "alwaysOn 必须是布尔值，已按 false 处理",
+			messageEn: '"alwaysOn" must be a boolean; treated as false',
+		});
+	}
+
 	let permissions: string[] = [];
 	const perms = o.permissions;
 	if (perms === undefined) {

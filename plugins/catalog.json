@@ -313,47 +313,6 @@
 		"homepage": "https://github.com/xing-shuyin/pi-web-ui/tree/main/plugins/desktop-use"
 	},
 	{
-		"id": "pi-web-multigit",
-		"name": "multi-git",
-		"icon": "🌿",
-		"iconSvg": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><circle cx=\"12\" cy=\"18\" r=\"3\"/><circle cx=\"6\" cy=\"6\" r=\"3\"/><circle cx=\"18\" cy=\"6\" r=\"3\"/><path d=\"M18 9v2c0 .6-.4 1-1 1H7c-.6 0-1-.4-1-1V9\"/><path d=\"M12 12v3\"/></svg>",
-		"description": "多仓库 Git 总览：工作区内每个仓库的变更、差异、历史、分支、贮藏、跨仓搜索与时间线，另有工作区分支聚合、Fetch/Pull 与内置终端（其余只读）。",
-		"descriptionEn": "Multi-repo Git overview: changes, diffs, history, branches, stashes, cross-repo search and a timeline for every repository in the workspace, plus a workspace-wide branch view, Fetch/Pull and an optional terminal.",
-		"source": "EinErste/pi-web-multigit",
-		"homepage": "https://github.com/EinErste/pi-web-multigit"
-	},
-	{
-		"id": "codex-usage",
-		"name": "额度与成本",
-		"nameEn": "Usage & Billing",
-		"icon": "⚡",
-		"description": "会话级多模型账本：按 API 提供商和模型连续累计成本、显示 token 与有效单价；订阅明确不计费。",
-		"descriptionEn": "Conversation-level multi-model ledger: continuous cost totals by API provider and model, token and effective-rate details, with subscription calls explicitly excluded.",
-		"source": "xieweimo/pi-web-ui-contrib/plugins/codex-usage",
-		"homepage": "https://github.com/xieweimo/pi-web-ui-contrib/tree/main/plugins/codex-usage"
-	},
-	{
-		"id": "proxy-health",
-		"name": "代理健康",
-		"nameEn": "Proxy Health",
-		"icon": "🌐",
-		"description": "探测可配置的 HTTPS 目标及代理链路；无代理时检测直连，失败时对比第二目标，谨慎提示网络问题。",
-		"descriptionEn": "Probe a configurable HTTPS target via an HTTP(S) proxy or directly; compare a second site on failure without assuming the root cause.",
-		"source": "xieweimo/pi-web-ui-contrib/plugins/proxy-health",
-		"homepage": "https://github.com/xieweimo/pi-web-ui-contrib/tree/main/plugins/proxy-health"
-	},
-	{
-		"id": "reconnect",
-		"name": "重连",
-		"nameEn": "Reconnect",
-		"icon": "🔄",
-		"iconSvg": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><path d=\"M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8\"/><path d=\"M21 3v5h-5\"/><path d=\"M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16\"/><path d=\"M3 21v-5h5\"/></svg>",
-		"description": "断连恢复：查看网页服务与重启守护状态，一键重新连接或重启网页服务（支持单服务/全服务重启，配套可选独立守护进程）。",
-		"descriptionEn": "Reconnection & service recovery: inspect web service and companion watchdog health, reconnect or restart services in one click (supports multi-service restarts with companion watchdog).",
-		"source": "xieweimo/pi-web-ui-contrib/plugins/reconnect",
-		"homepage": "https://github.com/xieweimo/pi-web-ui-contrib/tree/main/plugins/reconnect"
-	},
-	{
 		"id": "sol-savings",
 		"name": "SoL-Pi 状态",
 		"nameEn": "SoL-Pi Status",
@@ -385,16 +344,6 @@
 		"descriptionEn": "Supervise AI-started background tasks with pm2: long-running services and debug instances get a name, a status and logs, so the host background-tasks panel and the plugin panel show one shared list with status/CPU/memory/restarts/logs plus per-app stop or delete; one-click pm2 install when missing. It never intercepts AI commands — whether a process goes through pm2 is up to the model and the user.",
 		"source": "xing-shuyin/pi-web-ui/plugins/pm2-manager",
 		"homepage": "https://github.com/xing-shuyin/pi-web-ui/tree/main/plugins/pm2-manager"
-	},
-	{
-		"id": "md-chat",
-		"name": "聊天归档",
-		"nameEn": "Chat Archive",
-		"icon": "📄",
-		"description": "本地持久聊天归档：保留压缩前原文、按分支浏览历史、问题跳转与 Markdown 文件查看；不调用模型，不修改原会话。",
-		"descriptionEn": "Persistent local chat archive preserving pre-compaction originals, with branch history, question navigation and a Markdown file viewer. No model calls or native-session edits.",
-		"source": "engharat/pi-web-ui-md-chat",
-		"homepage": "https://github.com/engharat/pi-web-ui-md-chat"
 	},
 	{
 		"id": "wallpaper-engine",
@@ -492,5 +441,17 @@
 		"descriptionEn": "Autonomous Bilibili duty agent: reads raw subtitles to filter fluff, delivers curated video digests directly to private DMs, supports bidirectional DM chat, video card wall, and auto-favorite.",
 		"source": "xing-shuyin/pi-web-ui/plugins/bili-scroll",
 		"homepage": "https://github.com/xing-shuyin/pi-web-ui/tree/main/plugins/bili-scroll"
+	},
+	{
+		"id": "quota-watch",
+		"name": "额度看板",
+		"nameEn": "Quota Watch",
+		"version": "0.3.2",
+		"icon": "📊",
+		"iconSvg": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.8\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><path d=\"M3 3v18h18\"/><rect x=\"7\" y=\"7\" width=\"3\" height=\"9\" rx=\"1\"/><rect x=\"13\" y=\"11\" width=\"3\" height=\"5\" rx=\"1\"/></svg>",
+		"description": "底栏只显示当前模型对应那家的额度，点它，宿主弹出跟随位置的小卡片：自动读取本机已登录的 Antigravity（反重力）、Claude Code、Codex 登录态，DeepSeek 填一次 Key 即可；卡片里是剩余百分比、重置倒计时与账户余额，刷新按钮外圈就是自动刷新进度、旁边实时显示数据有多旧，点刷新底栏与卡片同一帧更新，AI 也能用工具直接查。只查当前供应商，别家订阅不出网、不打扰。凭据只在本机读取，不外传、不写盘。",
+		"descriptionEn": "The bottom bar shows only the quota of the provider behind your current model; click it and the host pops a small card right next to it: local Antigravity, Claude Code and Codex logins are read automatically (DeepSeek needs one API key), with remaining percentage, reset countdowns and balance — the refresh button doubles as an auto-refresh progress ring, the data's age is shown live, and one click updates the bar and the card in the same frame. The AI can query it too. Only that provider is queried; other subscriptions are left alone. Credentials stay on this machine; nothing is uploaded or persisted.",
+		"source": "xing-shuyin/pi-web-ui/plugins/quota-watch",
+		"homepage": "https://github.com/xing-shuyin/pi-web-ui/tree/main/plugins/quota-watch"
 	}
 ]

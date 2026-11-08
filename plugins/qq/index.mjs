@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
-import { existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
-import { basename, join, resolve, sep } from "node:path";
+import { existsSync, mkdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { basename, dirname, join, resolve, sep } from "node:path";
 import { chunkMarkdownText } from "./markdown-chunks.mjs";
 import { createQqVoiceRenderer, speechReplyText } from "./voice.mjs";
 import {
@@ -17,6 +17,27 @@ import {
 export const SECRET_CLIENT_SECRET = "qq.clientSecret";
 const QQ_AUTH_URL = "https://bots.qq.com/app/getAppAccessToken";
 const QQ_API_BASE = "https://api.sgroup.qq.com";
+/** /gateway 的 URL 对同一个 bot 是稳定的：缓存期内重连直接复用，不再每次打一次 /gateway。 */
+const QQ_GATEWAY_URL_TTL_MS = 30 * 60 * 1000;
+const QQ_RECONNECT_BASE_MS = 5000;
+const QQ_RECONNECT_MAX_MS = 120 * 1000;
+/** 限流（100017）时至少等 60s 再试，杜绝固定 5s 重连把 /gateway 打到限流。 */
+const QQ_RATE_LIMIT_MIN_MS = 60 * 1000;
+const QQ_RATE_LIMIT_MAX_MS = 5 * 60 * 1000;
+
+/**
+ * QQ 发送失败分类：决定「值得重试」还是「重试也没用」。
+ * 顺序有讲究 —— 304023/40040003 这类要先于泛化的 400 规则命中。
+ */
+export function classifyQqDeliveryError(err) {
+	const msg = String(err?.message || err || "").toLowerCase();
+	if (/(expire|304023|304024|304026|40040003|50006|超时)/.test(msg)) return "expired";
+	if (/(429|too many|rate limit|frequency|频繁)/.test(msg)) return "rate_limited";
+	if (/(401|403|unauthor|invalid token|access_token|appid)/.test(msg)) return "auth";
+	if (/(reject|invalid|filter|内容|违规|敏感|forbidden)/.test(msg)) return "rejected";
+	if (/(econn|enotfound|etimedout|network|socket|fetch failed|aborted|timeout)/.test(msg)) return "network";
+	return "unknown";
+}
 
 export function stripInternalMarkers(text) {
 	return String(text ?? "")
@@ -233,11 +254,22 @@ export class QqBotBridge {
 		this.lastSequence = null;
 		this.accessToken = "";
 		this.tokenExpiresAt = 0;
+		this.tokenAppId = "";
 		this.tokenRefreshInFlight = null;
 		this.botUser = null;
 		this.offRunEvent = null;
 
+		/** 重连退避状态：定时器必须可取消，否则 stop→start 后旧定时器仍会再拉起一条 socket。 */
+		this.reconnectTimer = null;
+		this.reconnectAttempt = 0;
+		this.gatewayUrl = "";
+		this.gatewayUrlAt = 0;
+		/** 进程内实例身份 + 跨进程单实例锁，避免多宿主同 AppID 互相踢下线。 */
+		this.instanceId = `${process.pid}-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
+		this.instanceLockPath = "";
+
 		this.seenMessageIds = new Set();
+		this.lastDispatch = null;
 		this.pendingRuns = new Map();
 		this.earlyRuns = new Map();
 		this.runIdIndex = new Map();
@@ -350,8 +382,149 @@ export class QqBotBridge {
 		return false;
 	}
 
-	async start() {
-		if (this.running) return;
+	clearReconnect() {
+		if (this.reconnectTimer) {
+			clearTimeout(this.reconnectTimer);
+			this.reconnectTimer = null;
+		}
+	}
+
+	gatewayUrlFresh() {
+		return Boolean(this.gatewayUrl) && Date.now() - this.gatewayUrlAt < QQ_GATEWAY_URL_TTL_MS;
+	}
+
+	/**
+	 * 退避重连：失败越多、等越久；命中限流（100017）时至少 60s 起跳。
+	 * 每次只保留一个定时器，stop() 能真正取消，不再出现「旧 socket 的 onclose 再拉一条连接」。
+	 */
+	scheduleReconnect(reason = "") {
+		if (!this.running || this.reconnectTimer) return;
+		const text = `${reason} ${this.status.lastError || ""}`;
+		const rateLimited = /100017|429|频率|rate limit|too many|频繁/i.test(text);
+		const attempt = this.reconnectAttempt++;
+		const base = rateLimited ? QQ_RATE_LIMIT_MIN_MS : QQ_RECONNECT_BASE_MS;
+		const cap = rateLimited ? QQ_RATE_LIMIT_MAX_MS : QQ_RECONNECT_MAX_MS;
+		const delay = Math.min(base * 2 ** Math.min(attempt, 6), cap) + Math.floor(Math.random() * 2000);
+		this.status.state = "connecting";
+		if (reason) this.status.lastError = reason;
+		this.host?.broadcast?.({ type: "bot_status", status: this.getStatus() });
+		this.log(
+			"info",
+			`QQ Gateway reconnect in ${Math.round(delay / 1000)}s (attempt ${attempt + 1}${rateLimited ? ", rate limited" : ""})`,
+		);
+		this.reconnectTimer = setTimeout(() => {
+			this.reconnectTimer = null;
+			if (!this.running) return;
+			this.connectGateway().catch((err) => {
+				this.status.state = "error";
+				this.status.lastError = err.message;
+				this.log("warn", `QQ Gateway reconnect failed: ${err.message}`);
+				this.host?.broadcast?.({ type: "bot_status", status: this.getStatus() });
+				this.scheduleReconnect(err.message);
+			});
+		}, delay);
+		this.reconnectTimer.unref?.();
+	}
+
+	/** 单实例锁的锁文件路径（按 AppID 分桶，同一 dataDir 的所有宿主共享）。 */
+	instanceLockFile() {
+		const dataDir = String(this.host?.dataDir ?? "").trim();
+		const appId = String(this.getConfig()?.appId ?? "").trim();
+		if (!dataDir || !appId) return "";
+		return join(dataDir, "qq", `bot-${createHash("sha1").update(appId).digest("hex").slice(0, 12)}.lock`);
+	}
+
+	/**
+	 * 同一 AppID 只允许一条 Gateway 长连：两个宿主同时登录会互相踢下线，
+	 * 被踢的一方重连又踢回去 —— 这就是 /gateway 被打到限流（100017）的根源。
+	 */
+	acquireInstanceLock() {
+		const file = this.instanceLockFile();
+		if (!file) return { ok: true };
+		const readOwner = () => {
+			try {
+				return JSON.parse(readFileSync(file, "utf8"));
+			} catch {
+				return null;
+			}
+		};
+		const alive = (pid) => {
+			if (!Number.isSafeInteger(pid) || pid <= 0) return false;
+			if (pid === process.pid) return true;
+			try {
+				process.kill(pid, 0);
+				return true;
+			} catch (err) {
+				return err?.code === "EPERM";
+			}
+		};
+		const refuse = (owner) => ({
+			ok: false,
+			message: `QQ 机器人已在${owner.port ? `端口 ${owner.port} 的` : "另一个"}宿主进程（pid ${owner.pid}）连接同一 AppID；本实例不再重复长连以免 /gateway 频率限制，那个实例停掉后会自动接管。`,
+		});
+
+		const owner = readOwner();
+		if (owner?.instanceId === this.instanceId) {
+			this.instanceLockPath = file;
+			return { ok: true };
+		}
+		if (owner && alive(Number(owner.pid))) return refuse(owner);
+
+		const payload = JSON.stringify({
+			pid: process.pid,
+			instanceId: this.instanceId,
+			appId: this.getConfig()?.appId,
+			port: process.env.PI_WEB_PORT || "",
+			at: Date.now(),
+		});
+		try {
+			mkdirSync(dirname(file), { recursive: true });
+		} catch {}
+		try {
+			writeFileSync(file, payload, { flag: "wx" });
+		} catch (err) {
+			if (err?.code !== "EEXIST") {
+				this.log("warn", `QQ instance lock write failed: ${err.message}`);
+				return { ok: true };
+			}
+			// 抢锁竞争：再确认一次，仍被别人持有就让步，陈旧锁直接覆盖。
+			const again = readOwner();
+			if (again?.instanceId === this.instanceId) {
+				this.instanceLockPath = file;
+				return { ok: true };
+			}
+			if (again && alive(Number(again.pid))) return refuse(again);
+			try {
+				writeFileSync(file, payload);
+			} catch (writeErr) {
+				this.log("warn", `QQ instance lock write failed: ${writeErr.message}`);
+				return { ok: true };
+			}
+		}
+		this.instanceLockPath = file;
+		return { ok: true };
+	}
+
+	releaseInstanceLock() {
+		const file = this.instanceLockPath;
+		if (!file) return;
+		this.instanceLockPath = "";
+		try {
+			const owner = JSON.parse(readFileSync(file, "utf8"));
+			if (owner?.instanceId !== this.instanceId) return;
+		} catch {
+			return;
+		}
+		try {
+			rmSync(file, { force: true });
+		} catch {}
+	}
+
+	async start(options = {}) {
+		const force = Boolean(options?.force);
+		if (this.running && !force) return;
+		this.clearReconnect();
+		if (force) this.reconnectAttempt = 0;
 		this.running = true;
 		this.status.enabled = true;
 		this.status.state = "connecting";
@@ -364,20 +537,41 @@ export class QqBotBridge {
 			return;
 		}
 
+		const lock = this.acquireInstanceLock();
+		if (!lock.ok) {
+			this.status.state = "error";
+			this.status.connected = false;
+			this.status.lastError = lock.message;
+			this.log("warn", lock.message);
+			// 保持 running：等对方释放后由退避重连自动接管，不靠用户手动点。
+			this.scheduleReconnect(lock.message);
+			return;
+		}
+
 		if (this.host.onRunEvent) {
+			// force 重启时不能重复注册：先释放旧监听，否则同一事件会被处理多次。
+			try {
+				this.offRunEvent?.();
+			} catch {}
 			this.offRunEvent = this.host.onRunEvent((ev) => this.handleRunEvent(ev));
 		}
 
 		try {
-			const auth = await getQqAccessToken(cfg.appId, cfg.clientSecret);
-			this.accessToken = auth.accessToken;
-			this.tokenExpiresAt = Date.now() + auth.expiresInSec * 1000;
+			// 限流友好：token 仍在有效期内就复用（save_config / 手动启停 不再每次新振一个 token）。
+			if (!this.accessToken || this.tokenAppId !== cfg.appId || Date.now() >= this.tokenExpiresAt - 5 * 60 * 1000) {
+				const auth = await getQqAccessToken(cfg.appId, cfg.clientSecret);
+				this.accessToken = auth.accessToken;
+				this.tokenExpiresAt = Date.now() + auth.expiresInSec * 1000;
+				this.tokenAppId = cfg.appId;
+				this.gatewayUrl = "";
+			}
 			this.status.lastError = null;
 			this.log("info", "QQBot access token obtained successfully");
 		} catch (err) {
 			this.status.state = "error";
 			this.status.lastError = err.message;
 			this.log("warn", `QQBot auth failed: ${err.message}`);
+			this.scheduleReconnect(err.message);
 			return;
 		}
 
@@ -387,6 +581,8 @@ export class QqBotBridge {
 			this.status.state = "error";
 			this.status.lastError = err.message;
 			this.log("warn", `QQ Gateway start failed: ${err.message}`);
+			// 失败不再静默：进退避队列自愈，用户也能用「启停服务」强制重试。
+			this.scheduleReconnect(err.message);
 		}
 	}
 
@@ -394,6 +590,8 @@ export class QqBotBridge {
 		this.voiceController.abort();
 		this.voiceController = new AbortController();
 		this.stopGeneration++;
+		this.clearReconnect();
+		this.reconnectAttempt = 0;
 		this.running = false;
 		this.status.enabled = false;
 		this.status.connected = false;
@@ -405,10 +603,12 @@ export class QqBotBridge {
 		}
 
 		if (this.ws) {
-			try {
-				this.ws.close();
-			} catch {}
+			// 先摘引用再关：旧 socket 的 onclose 因 this.ws !== ws 而不再排重连（stop→start 不再多出一条连接）。
+			const stale = this.ws;
 			this.ws = null;
+			try {
+				stale.close();
+			} catch {}
 		}
 
 		if (this.offRunEvent) {
@@ -433,6 +633,7 @@ export class QqBotBridge {
 		this.runTasks.clear();
 		this.recentAssistantTexts.clear();
 
+		this.releaseInstanceLock();
 		this.host?.broadcast?.({ type: "bot_status", status: this.getStatus() });
 	}
 
@@ -448,6 +649,7 @@ export class QqBotBridge {
 					const auth = await getQqAccessToken(cfg.appId, cfg.clientSecret);
 					this.accessToken = auth.accessToken;
 					this.tokenExpiresAt = Date.now() + auth.expiresInSec * 1000;
+					this.tokenAppId = cfg.appId;
 				} catch (err) {
 					this.log("warn", `QQBot token refresh failed: ${err.message}`);
 				}
@@ -462,14 +664,26 @@ export class QqBotBridge {
 	async connectGateway() {
 		const cfg = this.getConfig();
 		const apiBase = cfg.useSandbox ? "https://sandbox.api.sgroup.qq.com" : QQ_API_BASE;
+		this.clearReconnect();
 
-		let wssUrl;
-		try {
-			const token = await this.ensureAccessToken();
-			const gw = await qqApi(token, "GET", "/gateway", null, { apiBase });
-			wssUrl = gw?.url;
-		} catch (err) {
-			throw new Error(`Failed to obtain QQ Gateway URL: ${err.message}`);
+		// 跨进程再确认一次所有权：另一个宿主早已关掉时，退避重连在这里接镐。
+		const lock = this.acquireInstanceLock();
+		if (!lock.ok) throw new Error(lock.message);
+
+		// /gateway 对同一 bot 是稳定的：缓存期内重用上次的 URL，重连不再每次新拉一次。
+		let wssUrl = this.gatewayUrlFresh() ? this.gatewayUrl : "";
+		if (!wssUrl) {
+			try {
+				const token = await this.ensureAccessToken();
+				const gw = await qqApi(token, "GET", "/gateway", null, { apiBase });
+				wssUrl = gw?.url;
+				if (wssUrl) {
+					this.gatewayUrl = wssUrl;
+					this.gatewayUrlAt = Date.now();
+				}
+			} catch (err) {
+				throw new Error(`Failed to obtain QQ Gateway URL: ${err.message}`);
+			}
 		}
 
 		if (!wssUrl) throw new Error("QQ /gateway returned empty URL");
@@ -478,23 +692,38 @@ export class QqBotBridge {
 			throw new Error("Node environment missing globalThis.WebSocket");
 		}
 
+		// 同一时刻只保留一条 socket：旧连接先摘引用再关，避免它的 onclose 再排一次重连。
+		if (this.ws) {
+			const stale = this.ws;
+			this.ws = null;
+			try {
+				stale.close();
+			} catch {}
+		}
+
 		const ws = new globalThis.WebSocket(wssUrl);
 		this.ws = ws;
 
 		ws.onopen = () => {
+			if (this.ws !== ws) return;
 			this.log("info", "QQBot WebSocket connection established");
 		};
 
 		ws.onmessage = (event) => {
+			if (this.ws !== ws) return;
 			this.handleGatewayPayload(event.data);
 		};
 
 		ws.onerror = (err) => {
+			if (this.ws !== ws) return;
 			this.status.lastError = err?.message || "WebSocket error";
 			this.log("warn", `QQ Gateway error: ${this.status.lastError}`);
 		};
 
 		ws.onclose = (event) => {
+			// 被新连接替换、或被 stop() 主动关闭的旧 socket：不负责重连。
+			if (this.ws !== ws) return;
+			this.ws = null;
 			this.status.connected = false;
 			if (this.heartbeatTimer) {
 				clearInterval(this.heartbeatTimer);
@@ -510,11 +739,7 @@ export class QqBotBridge {
 			}
 			if (this.running) {
 				this.status.state = "connecting";
-				if (reason) this.status.lastError = `Gateway close ${code || ""}: ${reason}`;
-				this.host?.broadcast?.({ type: "bot_status", status: this.getStatus() });
-				setTimeout(() => {
-					if (this.running) this.connectGateway().catch(() => {});
-				}, 5000);
+				this.scheduleReconnect(`Gateway close ${code || ""}${reason ? `: ${reason}` : ""}`);
 			} else {
 				this.status.state = "idle";
 				this.host?.broadcast?.({ type: "bot_status", status: this.getStatus() });
@@ -565,6 +790,8 @@ export class QqBotBridge {
 
 		if (op === 0) {
 			if (t === "READY") {
+				// 只有真正握手成功才清零退避：连得上但一直被踢的场景仍会逐次加大间隔。
+				this.reconnectAttempt = 0;
 				this.botUser = d?.user || {};
 				this.status.botUsername = this.botUser.username || "QQBot";
 				this.status.connected = true;
@@ -588,16 +815,54 @@ export class QqBotBridge {
 
 	async onInboundMessage(data, eventType) {
 		if (!data) return;
-		const messageId = data.id;
-		if (messageId) {
-			if (this.seenMessageIds.has(messageId)) return;
-			this.seenMessageIds.add(messageId);
+		// 投递账本：按消息 id 幂等占位（跨重启有效），避免重启/断线重连后重复处理同一条消息。
+		const inbox = this.host?.inbox;
+		const inboxKey = data.id ? `msg:${eventType}:${data.id}` : "";
+		if (!inbox && data.id) {
+			// 老宿主（无 host.inbox）：退回内存去重（上限 500，重启即失）。
+			if (this.seenMessageIds.has(data.id)) return;
+			this.seenMessageIds.add(data.id);
 			if (this.seenMessageIds.size > 500) {
 				const first = this.seenMessageIds.values().next().value;
 				this.seenMessageIds.delete(first);
 			}
 		}
+		if (inbox && inboxKey) {
+			let claim = null;
+			try {
+				claim = inbox.claim(inboxKey, {
+					eventType,
+					channelId: data.channel_id,
+					guildId: data.guild_id,
+					groupOpenid: data.group_openid,
+					userOpenid: data.author?.user_openid,
+				});
+			} catch {
+				claim = null;
+			}
+			if (claim && claim.status !== "new") return;
+		}
+		try {
+			await this.handleInboundMessage(data, eventType);
+			if (inbox && inboxKey) {
+				const done = this.lastDispatch || {};
+				this.lastDispatch = null;
+				try {
+					inbox.complete(inboxKey, done);
+				} catch {}
+			}
+		} catch (err) {
+			if (inbox && inboxKey) {
+				try {
+					inbox.fail(inboxKey, err);
+				} catch {}
+			}
+			throw err;
+		}
+	}
 
+	async handleInboundMessage(data, eventType) {
+		const messageId = data.id;
 		const authorId = data.author?.id || data.author?.user_openid || "";
 		if (data.author?.bot) return;
 
@@ -809,6 +1074,7 @@ export class QqBotBridge {
 
 			const r = await this.host.chat(chatReq);
 			if (!ownsDispatch()) return;
+			this.lastDispatch = { conversationId: r?.conversationId, runId: r?.runId };
 			this.inFlightConvs.delete(dispatchKey);
 			if (r?.conversationId) {
 				this.userActiveConvs.set(authorId, r.conversationId);
@@ -876,16 +1142,12 @@ export class QqBotBridge {
 		return canDeliver();
 	}
 
-	async replyMessage(target, text, explicitSeq = null) {
-		const cfg = this.getConfig();
-		const apiBase = cfg.useSandbox ? "https://sandbox.api.sgroup.qq.com" : QQ_API_BASE;
-		const token = await this.ensureAccessToken();
-
+	/** 构造平台 payload（msg_seq 单调递增，被动回复带 msg_id）。 */
+	async buildMessagePayload(target, text, explicitSeq = null) {
 		if (!target.__nextSeq || typeof target.__nextSeq !== "number") {
 			target.__nextSeq = 1;
 		}
 		const msgSeq = explicitSeq !== null ? explicitSeq : target.__nextSeq++;
-
 		const payload = {
 			content: text,
 			msg_seq: msgSeq,
@@ -893,7 +1155,17 @@ export class QqBotBridge {
 		if (target.msgId) {
 			payload.msg_id = target.msgId;
 		}
+		return payload;
+	}
 
+	/**
+	 * 真正发送一次（含「被动回复过期 → 改发主动消息」的降级）。
+	 * 也是 host.delivery 的 sender —— 重试时复用同一条路径。
+	 */
+	async sendRaw(target, payload) {
+		const cfg = this.getConfig();
+		const apiBase = cfg.useSandbox ? "https://sandbox.api.sgroup.qq.com" : QQ_API_BASE;
+		const token = await this.ensureAccessToken();
 		try {
 			if (target.channelId) {
 				await qqApi(token, "POST", `/channels/${target.channelId}/messages`, payload, { apiBase });
@@ -903,17 +1175,9 @@ export class QqBotBridge {
 				await qqApi(token, "POST", `/v2/users/${target.userOpenid}/messages`, payload, { apiBase });
 			}
 		} catch (err) {
-			const errMsg = String(err?.message || "").toLowerCase();
-			const isExpiredOrSeq =
-				errMsg.includes("expire") ||
-				errMsg.includes("timeout") ||
-				errMsg.includes("304023") ||
-				errMsg.includes("304024") ||
-				errMsg.includes("304026") ||
-				errMsg.includes("40040003") ||
-				errMsg.includes("50006");
-
+			const isExpiredOrSeq = classifyQqDeliveryError(err) === "expired";
 			if (isExpiredOrSeq) {
+				const text = payload?.content ?? "";
 				if (target.channelId) {
 					try {
 						await qqApi(token, "POST", `/channels/${target.channelId}/messages`, { content: text }, { apiBase });
@@ -938,6 +1202,26 @@ export class QqBotBridge {
 			}
 			throw err;
 		}
+	}
+
+	/**
+	 * 回一条消息。优先走 host.delivery（失败有账本、可重试、可观测）；
+	 * 老宿主没有 delivery 时退回直接发送（行为与改造前完全一致）。
+	 */
+	async replyMessage(target, text, explicitSeq = null) {
+		const payload = await this.buildMessagePayload(target, text, explicitSeq);
+		const delivery = this.host?.delivery;
+		if (!delivery?.send) return this.sendRaw(target, payload);
+		const peerKey = target.channelId || target.groupOpenid || target.userOpenid || "unknown";
+		const storedTarget = { ...target };
+		delete storedTarget.__nextSeq;
+		return delivery.send({
+			channel: "qq",
+			key: `out:qq:${peerKey}:${target.msgId || "-"}:${payload.msg_seq}`,
+			target: storedTarget,
+			payload,
+			classify: classifyQqDeliveryError,
+		});
 	}
 
 	async resetAuthorSession(authorId, replyTarget, cfg) {
@@ -1680,6 +1964,17 @@ export default async function activate(host) {
 		});
 	}
 
+	// 出站交给宿主投递队列：失败有账本、按错误类别退避、死信可观测。
+	let offDelivery = null;
+	try {
+		offDelivery = host.delivery?.register?.({
+			channel: "qq",
+			send: (item) => botBridge.sendRaw(item.target, item.payload),
+		});
+	} catch (err) {
+		host.log?.("warn", `QQ delivery register note: ${err?.message || err}`);
+	}
+
 	const savedRoutes = await host.storage.get("sessionRoutes");
 	if (savedRoutes && typeof savedRoutes === "object") {
 		for (const entry of Array.isArray(savedRoutes.epochs) ? savedRoutes.epochs.slice(-200) : []) {
@@ -1781,7 +2076,8 @@ export default async function activate(host) {
 							2,
 						);
 					}
-					const token = await getQqAccessToken(localConfig.appId, localConfig.clientSecret).then((r) => r.accessToken);
+					// 走缓存 token（ensureAccessToken），避免每次工具/面板调用都新振一个 access_token。
+					const token = await botBridge.ensureAccessToken();
 					const apiBase = localConfig.useSandbox ? "https://sandbox.api.sgroup.qq.com" : QQ_API_BASE;
 					const res = await qqApi(
 						token,
@@ -1928,9 +2224,7 @@ export default async function activate(host) {
 						break;
 					}
 					try {
-						const token = await getQqAccessToken(localConfig.appId, localConfig.clientSecret).then(
-							(r) => r.accessToken,
-						);
+						const token = await botBridge.ensureAccessToken();
 						const apiBase = localConfig.useSandbox ? "https://sandbox.api.sgroup.qq.com" : QQ_API_BASE;
 						const guilds = await qqApi(token, "GET", "/users/@me/guilds", null, { apiBase });
 						const result = [];
@@ -1985,7 +2279,7 @@ export default async function activate(host) {
 						break;
 					}
 					if (!channelId) throw new Error("发纯文本需要子频道 Channel ID（单聊/群聊目前只支持富媒体）");
-					const token = await getQqAccessToken(localConfig.appId, localConfig.clientSecret).then((r) => r.accessToken);
+					const token = await botBridge.ensureAccessToken();
 					const apiBase = localConfig.useSandbox ? "https://sandbox.api.sgroup.qq.com" : QQ_API_BASE;
 					const res = await qqApi(
 						token,
@@ -2003,7 +2297,8 @@ export default async function activate(host) {
 				case "start_bot": {
 					localConfig.botEnabled = true;
 					await host.storage.set("config", stripSecretsFromConfig(localConfig));
-					await botBridge.start();
+					// force：即使处于 error / 退避等待中也立即重试（旧行为被 running 挡住，点了没反应）。
+					await botBridge.start({ force: true });
 					reply({ type: "bot_status", success: true, status: botBridge.getStatus() });
 					break;
 				}
@@ -2026,6 +2321,9 @@ export default async function activate(host) {
 	});
 
 	return async () => {
+		try {
+			offDelivery?.();
+		} catch {}
 		await botBridge.stop().catch(() => {});
 	};
 }

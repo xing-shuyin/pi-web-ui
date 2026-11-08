@@ -1,0 +1,82 @@
+{
+	"id": "quota-watch",
+	"name": "额度看板",
+	"nameEn": "Quota Watch",
+	"version": "0.3.2",
+	"icon": "📊",
+	"iconSvg": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.8\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><path d=\"M3 3v18h18\"/><rect x=\"7\" y=\"7\" width=\"3\" height=\"9\" rx=\"1\"/><rect x=\"13\" y=\"11\" width=\"3\" height=\"5\" rx=\"1\"/></svg>",
+	"description": "底栏只显示当前模型对应那家的额度，点它，宿主弹出跟随位置的小卡片：自动读取本机已登录的 Antigravity（反重力）、Claude Code、Codex 登录态，DeepSeek 填一次 Key 即可；卡片里是剩余百分比、重置倒计时与账户余额，刷新按钮外圈就是自动刷新进度、旁边实时显示数据有多旧，点刷新底栏与卡片同一帧更新，AI 也能用工具直接查。只查当前供应商，别家订阅不出网、不打扰。凭据只在本机读取，不外传、不写盘。",
+	"descriptionEn": "The bottom bar shows only the quota of the provider behind your current model; click it and the host pops a small card right next to it: local Antigravity, Claude Code and Codex logins are read automatically (DeepSeek needs one API key), with remaining percentage, reset countdowns and balance — the refresh button doubles as an auto-refresh progress ring, the data's age is shown live, and one click updates the bar and the card in the same frame. The AI can query it too. Only that provider is queried; other subscriptions are left alone. Credentials stay on this machine; nothing is uploaded or persisted.",
+	"apiVersion": 2,
+	"view": false,
+	"permissions": ["ui", "http", "net", "tools"],
+	"netAllowlist": [
+		"oauth2.googleapis.com",
+		"daily-cloudcode-pa.googleapis.com",
+		"cloudcode-pa.googleapis.com",
+		"api.anthropic.com",
+		"console.anthropic.com",
+		"chatgpt.com",
+		"auth.openai.com",
+		"api.deepseek.com",
+		"platform.claude.com",
+		"api.openai.com"
+	],
+	"settings": [
+		{
+			"key": "antigravityEnabled",
+			"type": "boolean",
+			"label": "显示 Antigravity（反重力）",
+			"labelEn": "Show Antigravity",
+			"default": true,
+			"hint": "当前模型是 Gemini / Antigravity 时才读取 ~/.gemini/antigravity-cli 的登录态（CLI 与 IDE 共用）与 ~/.antigravity_tools/accounts 里的账号；无需填写任何东西。",
+			"hintEn": "Reads the login at ~/.gemini/antigravity-cli (shared by the CLI and the IDE) plus accounts under ~/.antigravity_tools/accounts — only while the current model is a Gemini one. Nothing to fill in."
+		},
+		{
+			"key": "claudeEnabled",
+			"type": "boolean",
+			"label": "显示 Claude Code",
+			"labelEn": "Show Claude Code",
+			"default": true,
+			"hint": "当前模型是 Claude 时读取 ~/.claude/.credentials.json（Claude Code 登录态）查询订阅的 5 小时 / 每周窗口用量，过期会自动续期，不回写你的凭据文件。",
+			"hintEn": "Reads ~/.claude/.credentials.json (your Claude Code login) for the 5-hour and weekly subscription windows — only while the current model is a Claude one. Expired tokens are refreshed in memory only; your credential file is never rewritten."
+		},
+		{
+			"key": "codexEnabled",
+			"type": "boolean",
+			"label": "显示 Codex",
+			"labelEn": "Show Codex",
+			"default": true,
+			"hint": "当前模型是 GPT / Codex 时读取 ~/.codex/auth.json（Codex CLI 登录态）查询 ChatGPT 订阅窗口用量。",
+			"hintEn": "Reads ~/.codex/auth.json (your Codex CLI login) for the ChatGPT subscription windows — only while the current model is a GPT/Codex one."
+		},
+		{
+			"key": "deepseekEnabled",
+			"type": "boolean",
+			"label": "显示 DeepSeek",
+			"labelEn": "Show DeepSeek",
+			"default": true,
+			"hint": "当前模型是 DeepSeek 时才查余额：DeepSeek 只提供账户余额接口（没有订阅窗口），Key 由本机 pi 已存的凭据或环境变量自动提供，一般不用填。",
+			"hintEn": "Only queried while the current model is a DeepSeek one. DeepSeek exposes an account balance endpoint (no subscription windows); the key comes from pi's stored credentials or the environment, so this usually needs no input."
+		},
+		{
+			"key": "deepseekKey",
+			"type": "secret",
+			"label": "DeepSeek API Key（可选）",
+			"labelEn": "DeepSeek API key (optional)",
+			"default": "",
+			"hint": "只用于请求 /user/balance。留空时依次尝试环境变量 DEEPSEEK_API_KEY 与本机 pi 已存的 provider 凭据（~/.pi/agent/auth.json）。",
+			"hintEn": "Used only for /user/balance. When empty the plugin falls back to DEEPSEEK_API_KEY and then to the DeepSeek provider credentials pi already stores (~/.pi/agent/auth.json)."
+		},
+		{
+			"key": "refreshMinutes",
+			"type": "text",
+			"label": "订阅型缓存时长（分钟）",
+			"labelEn": "Subscription cache TTL (minutes)",
+			"default": "5",
+			"hint": "只对订阅窗口（Antigravity / Claude Code / Codex）生效：它们的数字是 5 小时 / 每周量级的，没必要频繁出网。余额型（DeepSeek）固定 60 秒缓存，因为余额每花一次就变。",
+			"hintEn": "Applies to subscription windows only (Antigravity / Claude Code / Codex), whose numbers move on 5-hour / weekly scales. Balance providers (DeepSeek) always cache for 60s, since a balance changes with every request."
+		}
+	],
+	"preload": true
+}

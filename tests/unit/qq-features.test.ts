@@ -1401,3 +1401,188 @@ describe("QQ：对话被过户（改名 + 换客户端）后仍按 runId 回包"
 		vi.unstubAllGlobals();
 	});
 });
+
+describe("QQ 入站投递账本（host.inbox）", () => {
+	function makeInbox(overrides: { duplicateReason?: "done" | "in-flight" | "dead" } = {}) {
+		const seen = new Set<string>();
+		const completed: { key: string; result?: unknown }[] = [];
+		const failed: string[] = [];
+		return {
+			completed,
+			failed,
+			inbox: {
+				claim: (key: string) => {
+					if (seen.has(key) || overrides.duplicateReason) {
+						return { id: key, status: "duplicate", attempts: 1, reason: overrides.duplicateReason ?? "done" };
+					}
+					seen.add(key);
+					return { id: key, status: "new", attempts: 1 };
+				},
+				complete: (key: string, result?: unknown) => completed.push({ key, result }),
+				fail: (key: string) => failed.push(key),
+				pending: () => [],
+				dead: () => [],
+			},
+		};
+	}
+
+	it("同一 message id 只投递一次，成功后 complete 记账（带 conversationId/runId）", async () => {
+		const { inbox, completed } = makeInbox();
+		const chatSpy = vi.fn(async () => ({ conversationId: "c9", clientId: "plugin:qq:d", runId: "pr-1" }));
+		const bridge = new QqBotBridge({ host: { chat: chatSpy, inbox }, getConfig: () => ({}) });
+		bridge.replyMessage = vi.fn(async () => {});
+		const msg = { id: "m1", channel_id: "c1", author: { id: "u1", bot: false }, content: "你好" };
+
+		await bridge.onInboundMessage(msg, "AT_MESSAGE_CREATE");
+		await bridge.onInboundMessage(msg, "AT_MESSAGE_CREATE");
+
+		expect(chatSpy).toHaveBeenCalledTimes(1);
+		expect(completed).toEqual([{ key: "msg:AT_MESSAGE_CREATE:m1", result: { conversationId: "c9", runId: "pr-1" } }]);
+	});
+
+	it("账本判定 duplicate（在处理/已死信）时完全跳过处理", async () => {
+		const { inbox } = makeInbox({ duplicateReason: "in-flight" });
+		const chatSpy = vi.fn();
+		const bridge = new QqBotBridge({ host: { chat: chatSpy, inbox }, getConfig: () => ({}) });
+		await bridge.onInboundMessage(
+			{ id: "m2", channel_id: "c1", author: { id: "u1", bot: false }, content: "hi" },
+			"AT_MESSAGE_CREATE",
+		);
+		expect(chatSpy).not.toHaveBeenCalled();
+	});
+
+	it("老宿主（无 host.inbox）回退到内存去重，同一 id 仍只处理一次", async () => {
+		const chatSpy = vi.fn(async () => ({ conversationId: "c9", clientId: "plugin:qq:d", runId: "pr-2" }));
+		const bridge = new QqBotBridge({ host: { chat: chatSpy }, getConfig: () => ({}) });
+		bridge.replyMessage = vi.fn(async () => {});
+		const msg = { id: "m3", channel_id: "c1", author: { id: "u1", bot: false }, content: "hi" };
+		await bridge.onInboundMessage(msg, "AT_MESSAGE_CREATE");
+		await bridge.onInboundMessage(msg, "AT_MESSAGE_CREATE");
+		expect(chatSpy).toHaveBeenCalledTimes(1);
+	});
+});
+
+describe("QQ Gateway 连接韧性（限流根因）", () => {
+	class FakeWebSocket {
+		static instances: FakeWebSocket[] = [];
+		url: string;
+		readyState = 0;
+		closed = false;
+		onopen: ((ev?: any) => void) | null = null;
+		onmessage: ((ev?: any) => void) | null = null;
+		onerror: ((ev?: any) => void) | null = null;
+		onclose: ((ev?: any) => void) | null = null;
+		constructor(url: string) {
+			this.url = url;
+			FakeWebSocket.instances.push(this);
+		}
+		send() {}
+		close() {
+			this.closed = true;
+			this.readyState = 3;
+		}
+	}
+
+	function makeBridge(extraHost: Record<string, any> = {}) {
+		const bridge = new QqBotBridge({
+			host: { ...extraHost } as any,
+			getConfig: () => ({ appId: "102030", clientSecret: "mock_secret" }),
+			log: () => {},
+		});
+		bridge.accessToken = "token_cached";
+		bridge.tokenExpiresAt = Date.now() + 3600 * 1000;
+		bridge.tokenAppId = "102030";
+		return bridge;
+	}
+
+	it("/gateway 的 URL 在缓存期内复用：重连不再每次多打一次接口", async () => {
+		FakeWebSocket.instances = [];
+		vi.stubGlobal("WebSocket", FakeWebSocket);
+		const fetchMock = vi.fn().mockResolvedValue({
+			ok: true,
+			status: 200,
+			json: async () => ({ url: "wss://gateway.test/ws" }),
+		});
+		vi.stubGlobal("fetch", fetchMock);
+
+		const bridge = makeBridge();
+		try {
+			await bridge.connectGateway();
+			expect(FakeWebSocket.instances).toHaveLength(1);
+			await bridge.connectGateway();
+			expect(FakeWebSocket.instances).toHaveLength(2);
+			expect(fetchMock).toHaveBeenCalledTimes(1);
+			// 旧 socket 被替换后关闭，它的 onclose 不得再排重连（否则 stop→start 会多出一条连接）
+			expect(FakeWebSocket.instances[0]!.closed).toBe(true);
+			bridge.running = true;
+			FakeWebSocket.instances[0]!.onclose?.({ code: 1006, reason: "stale" });
+			expect(bridge.reconnectTimer).toBeNull();
+		} finally {
+			await bridge.stop();
+			vi.unstubAllGlobals();
+		}
+	});
+
+	it("限流（100017）时退避至少 60s，且同一时刻只保留一个重连定时器", () => {
+		vi.useFakeTimers();
+		const logs: string[] = [];
+		const bridge = new QqBotBridge({
+			host: {} as any,
+			getConfig: () => ({ appId: "1", clientSecret: "s" }),
+			log: (_level: string, msg: string) => logs.push(msg),
+		});
+		try {
+			bridge.running = true;
+			(bridge.status as any).lastError = "接口调用超过频率限制 (100017)";
+			bridge.scheduleReconnect("Gateway close 1006");
+			expect(bridge.reconnectTimer).not.toBeNull();
+			const delay = Number(/reconnect in (\d+)s/.exec(logs.at(-1) || "")?.[1]);
+			expect(delay).toBeGreaterThanOrEqual(60);
+
+			bridge.scheduleReconnect("Gateway close 1006");
+			expect(logs.filter((line) => line.includes("reconnect in"))).toHaveLength(1);
+		} finally {
+			vi.useRealTimers();
+		}
+	});
+
+	it("stop() 能真正取消已排队重连并释放单实例锁", async () => {
+		vi.useFakeTimers();
+		const dir = mkdtempSync(join(tmpdir(), "qq-lock-"));
+		const bridge = makeBridge({ dataDir: dir });
+		try {
+			bridge.running = true;
+			expect((bridge.acquireInstanceLock() as any).ok).toBe(true);
+			const connectSpy = vi.spyOn(bridge, "connectGateway").mockResolvedValue(undefined);
+			bridge.scheduleReconnect("Gateway close 1006");
+			expect(bridge.reconnectTimer).not.toBeNull();
+			await bridge.stop();
+			expect(bridge.reconnectTimer).toBeNull();
+			await vi.advanceTimersByTimeAsync(10 * 60 * 1000);
+			expect(connectSpy).not.toHaveBeenCalled();
+			expect(bridge.instanceLockPath).toBe("");
+		} finally {
+			vi.useRealTimers();
+			rmSync(dir, { recursive: true, force: true });
+		}
+	});
+
+	it("同一 AppID 只允许一个宿主长连：第二个实例拿不到锁并说明占用方", () => {
+		const dir = mkdtempSync(join(tmpdir(), "qq-lock-"));
+		const first = makeBridge({ dataDir: dir });
+		const second = makeBridge({ dataDir: dir });
+		try {
+			expect((first.acquireInstanceLock() as any).ok).toBe(true);
+			const blocked = second.acquireInstanceLock() as any;
+			expect(blocked.ok).toBe(false);
+			expect(blocked.message).toContain(String(process.pid));
+			first.releaseInstanceLock();
+			expect((second.acquireInstanceLock() as any).ok).toBe(true);
+			second.releaseInstanceLock();
+		} finally {
+			first.releaseInstanceLock();
+			second.releaseInstanceLock();
+			rmSync(dir, { recursive: true, force: true });
+		}
+	});
+});
