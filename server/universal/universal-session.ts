@@ -51,6 +51,7 @@ import {
 } from "../model-resolver.js";
 import { DEFAULT_UNIVERSAL_CAPABILITIES } from "../engine-capabilities.js";
 import { unsupportedToolInfo } from "../tool-info.js";
+import { conversationRowKind } from "../conversation-rows.js";
 import { SandboxManager } from "../sandbox-service.js";
 import { assertEngineWorkspaceSupported } from "../sandbox-engines.js";
 import { getWorktreeContext, removeWorktree } from "../worktree-service.js";
@@ -82,6 +83,7 @@ import {
 	isSubagentTerminal,
 	computeWaitCapMs,
 	makeSubagentTools,
+	CONVERSATION_TOOL_NAME,
 } from "../subagents.js";
 import {
 	recordSubagentHandoff,
@@ -1483,28 +1485,34 @@ export class UniversalSession implements DispatchSession {
 		}
 		const allList = Array.from(convMap.values()).sort((a, b) => b.updatedAt - a.updatedAt);
 
+		// ConversationSummary 是单源协议；会话身份（sessionId=会话 id）必须带上，
+		// 否则客户端无法把「运行中对话」和「历史会话」认成同一条，左栏会重复一遍。
+		// rowKind：universal 底座的会话全部已落盘（sessions 里都有一条），所以只有需要自占一行的
+		// （流式 / 子代理 / 固定 / 临时 / 有子代理的父节点）标 open，其余交给历史行代表。
+		const subagentParentIds = new Set(allList.map((c) => c.subagentParentId).filter((id): id is string => Boolean(id)));
 		const convs: ConversationSummary[] = allList.map((c) => ({
 			id: c.id,
 			title: c.title,
-			updatedAt: c.updatedAt,
-			createdAt: c.createdAt,
-			pinned: Boolean(c.pinned),
-			sessionPath: c.id,
-			// Same identity as the history row (`SessionSummary.sessionId`), so the left panel shows an
-			// open conversation once instead of both as "open" and as history.
-			sessionId: c.id,
-			active: c.id === this.activeConvId,
 			cwd: this.cwd,
 			messageCount: c.messages.length,
 			isStreaming: Boolean(c.id === this.activeConvId ? this.isStreaming : c.subagentStreaming),
 			isSubagent: Boolean(c.isSubagent),
-			subagentType: c.subagentType,
-			subagentParentId: c.subagentParentId,
-			subagentState: c.subagentState,
-			subagentStreaming: c.subagentStreaming,
-			subagentError: c.subagentError,
-			subagentCanceled: c.subagentCanceled,
-			isEphemeral: Boolean(c.isEphemeral),
+			pinned: Boolean(c.pinned),
+			sessionId: c.id,
+			modified: c.updatedAt,
+			rowKind: conversationRowKind({
+				isStreaming: c.id === this.activeConvId ? this.isStreaming : c.subagentStreaming,
+				isSubagent: c.isSubagent,
+				parentId: c.subagentParentId,
+				pinned: c.pinned,
+				isEphemeral: c.isEphemeral,
+				hasHistoryRow: true,
+				forceOpen: subagentParentIds.has(c.id),
+			}),
+			...(c.isEphemeral ? { isEphemeral: true as const } : {}),
+			...(c.subagentParentId ? { parentId: c.subagentParentId } : {}),
+			...(c.subagentType ? { agentPreset: c.subagentType } : {}),
+			...(c.subagentError ? { error: c.subagentError } : {}),
 		}));
 		this.send({ type: "conversations", conversations: convs, activeId: this.activeConvId });
 
@@ -1912,9 +1920,9 @@ export class UniversalSession implements DispatchSession {
 	}
 
 	getToolInfo(name: string): void {
-		if (name === "subagent") {
+		if (name === CONVERSATION_TOOL_NAME) {
 			const tools = makeSubagentTools(this.subagentHost);
-			const target = tools.find((t) => t.name === "subagent") ?? tools[0];
+			const target = tools.find((t) => t.name === name) ?? tools[0];
 			if (target) {
 				this.send({
 					type: "tool_info",
@@ -1951,9 +1959,9 @@ export class UniversalSession implements DispatchSession {
 
 	getToolPrompt(name: string): void {
 		let targetTool: ToolDefinition | undefined;
-		if (name === "subagent") {
+		if (name === CONVERSATION_TOOL_NAME) {
 			const tools = makeSubagentTools(this.subagentHost);
-			targetTool = tools.find((t) => t.name === "subagent") ?? tools[0];
+			targetTool = tools.find((t) => t.name === name) ?? tools[0];
 		} else if ((TERMINAL_TOOL_NAMES as readonly string[]).includes(name)) {
 			const tools = this.getTerminalTools();
 			targetTool = tools.find((t) => t.name === name);
@@ -2284,6 +2292,7 @@ export class UniversalSession implements DispatchSession {
 			disabledSkills: s?.disabledSkills ?? [],
 			disabledExtensions: s?.disabledExtensions ?? [],
 			disabledAgentTools: [],
+			toolOnDemandTools: [],
 			disabledPluginTools: [],
 			nativeCliInheritModel: { ...s?.nativeCliInheritModel },
 			terminalToolsEnabled: s?.terminalToolsEnabled ?? true,
@@ -2296,7 +2305,6 @@ export class UniversalSession implements DispatchSession {
 			toolLazyLoading: false,
 			codemodeMode: "on",
 			codemodeInlineBudget: 3000,
-			editSoftEnabled: false,
 			retryMaxAttempts: 0,
 			softCapTokens: 0,
 			softCapByModel: {},

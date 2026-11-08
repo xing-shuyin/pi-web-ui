@@ -261,7 +261,7 @@ export async function prepareNativeCliSessionLaunch(
 							"--fork",
 							"--no-session",
 						])
-					: flag(optionArgs, ["--conversation", "--continue", "-c"]);
+					: flag(optionArgs, ["--conversation", "--resume", "-r", "--continue", "-c"]);
 	const recoveredId =
 		durableId ||
 		[...oldEvents].reverse().find((event) => event.type === "session" && event.nativeId)?.nativeId ||
@@ -279,7 +279,11 @@ export async function prepareNativeCliSessionLaunch(
 		observedId = ref.nativeId;
 		capabilities = {
 			resume:
-				config.preset === "custom" ? "none" : config.preset === "agy" || !ref.nativeId ? "explicit-only" : "exact",
+				config.preset === "custom"
+					? "none"
+					: config.preset === "agy" || config.preset === "dsh" || !ref.nativeId
+						? "explicit-only"
+						: "exact",
 			events: observationFailed ? "process" : "hooks",
 		};
 		acceptsEvents = true;
@@ -469,6 +473,28 @@ export async function prepareNativeCliSessionLaunch(
 	} else if (config.preset === "agy") {
 		capabilities.resume = "explicit-only";
 		if (!explicit && ref.nativeId) launchOptions.push("--conversation", ref.nativeId);
+		if (!flag(optionArgs, ["--settings", "--disable-hooks", "--bare"])) {
+			const command = await reporter();
+			const hook = (type: string, matcher?: string) => [
+				{ ...(matcher ? { matcher } : {}), hooks: [{ type: "command", command: `${command} ${type}`, timeout: 5 }] },
+			];
+			launchOptions.push(
+				"--settings",
+				JSON.stringify({
+					hooks: {
+						SessionStart: hook("session"),
+						PreInvocation: hook("submitted"),
+						PreToolUse: hook("working", "*"),
+						Stop: hook("done"),
+					},
+				}),
+			);
+			capabilities.events = "hooks";
+			acceptsEvents = true;
+		}
+	} else if (config.preset === "dsh") {
+		capabilities.resume = "explicit-only";
+		if (!explicit && ref.nativeId) launchOptions.push("--resume", ref.nativeId);
 	}
 
 	if (!explicit) observedId = ref.nativeId;

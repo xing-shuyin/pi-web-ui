@@ -93,11 +93,12 @@ extract() {
   }
  }'
 }
-native=$(extract session_id)
+native=$(extract conversationId)
+[ -n "$native" ] || native=$(extract session_id)
 case "$native" in *[!a-fA-F0-9-]*) native= ;; esac
 case "$native" in ????????-????-????-????-????????????) ;; *) native= ;; esac
 case "$kind" in
- submitted) [ "$(extract hook_event_name)" = UserPromptSubmit ] || exit 0 ;;
+ submitted) [ "$(extract hook_event_name)" = UserPromptSubmit ] || [ -n "$(extract lastUserInput)" ] || [ -n "$(extract invocationNum)" ] || exit 0 ;;
  notification)
   notification=$(extract notification_type)
   case "$notification" in permission_prompt) kind=approval ;; elicitation_dialog) kind=question ;; *) exit 0 ;; esac ;;

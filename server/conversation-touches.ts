@@ -38,7 +38,7 @@ export function toolCallsOf(m: TouchableMessage | null | undefined): { name: str
 	return toolCallRefsOfContent(m.content);
 }
 
-const WRITE_TOOL_NAMES = new Set(["edit", "write", "edit_soft"]);
+const WRITE_TOOL_NAMES = new Set(["edit", "write"]);
 
 function pathOfWriteArgs(args: unknown): string | undefined {
 	if (!args || typeof args !== "object") return undefined;

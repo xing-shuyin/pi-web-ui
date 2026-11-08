@@ -21,10 +21,10 @@ import {
 	createAgentSessionFromServices,
 	createAgentSessionRuntime,
 	createAgentSessionServices,
-	createEditToolDefinition,
 	createFindToolDefinition,
 	createGrepToolDefinition,
 	createLsToolDefinition,
+	createPowerShellToolDefinition,
 	resolveModelScopeWithDiagnostics,
 	getAgentDir,
 	SessionManager,
@@ -205,6 +205,7 @@ import {
 
 const communicationAddress = conversationIdentity;
 import {
+	answersFromMessage,
 	conversationCommunication,
 	type CommunicationAction,
 	type CommunicationArgs,
@@ -227,6 +228,7 @@ import {
 	checkDangerousToolCall,
 	isApprovalPolicyEmpty,
 	pluginApprovalCategory,
+	unattendedApprovalTimeoutMs,
 	type ApprovalPolicy,
 	type PendingApprovalEntry,
 	type ToolApprovalResolution,
@@ -282,11 +284,25 @@ import {
 	SOFT_CAP_MIN_HEADROOM,
 	softCapReserveFor,
 } from "./soft-cap.js";
-import { makeEditSoftTool } from "./edit-soft-tool.js";
+import { makeEditToolDefinition } from "./edit-tool.js";
+import {
+	FIND_DESCRIPTION,
+	FIND_PARAMETERS,
+	GREP_DESCRIPTION,
+	GREP_PARAMETERS,
+	LS_DESCRIPTION,
+	LS_PARAMETERS,
+	POWERSHELL_DESCRIPTION,
+	POWERSHELL_PARAMETERS,
+	WRITE_DESCRIPTION,
+	WRITE_PARAMETERS,
+} from "./tool-prompts.js";
+import { withDefaultBashTimeout } from "./bash-timeout.js";
 import { makeReadDirTool, withReadDirSupport, type ReadDirToolOptions } from "./read-tool.js";
 import {
 	installToolOverrides,
 	syncSubagentOverride,
+	withSlimPrompt,
 	type AnyToolDefinition,
 	type OverrideSessionLike,
 	type ToolOverrideSpec,
@@ -455,6 +471,12 @@ const STALL_NOTIFY_MS = (() => {
 	const v = Number(process.env.PI_WEB_STALL_NOTIFY_MS);
 	return Number.isFinite(v) && v >= 0 ? v : 180_000;
 })();
+/**
+ * 无人值守会话（伪客户端：plugin:/scheduler:/canvas:）的审批等待上限与工具审批判定。
+ * 超时按「拒绝」处理 —— 无人可点时绝不自作主张放行，但也绝不无限期挂住整个 run。
+ *
+ * 判定与取值见 `unattendedApprovalTimeoutMs`（server/tool-approval.ts）。
+ */
 export const OFFLINE_ROW_TTL_MS = (() => {
 	const raw = String(process.env.PI_WEB_OFFLINE_ROWS_TTL_MS ?? "")
 		.trim()
@@ -491,10 +513,7 @@ import {
 	withApprovalGate,
 	isInsideWorkspaceRoots,
 	wrapWriteToolWithPermission,
-	EDIT_DESCRIPTION,
-	EDIT_GUIDELINES,
 	wrapEditToolWithPermission,
-	wrapEditSoftToolWithPermission,
 	wrapBashToolWithPermission,
 	wrapPatchToolWithPermission,
 } from "./tool-guards.js";
@@ -509,10 +528,7 @@ export {
 	withApprovalGate,
 	isInsideWorkspaceRoots,
 	wrapWriteToolWithPermission,
-	EDIT_DESCRIPTION,
-	EDIT_GUIDELINES,
 	wrapEditToolWithPermission,
-	wrapEditSoftToolWithPermission,
 	wrapBashToolWithPermission,
 	wrapPatchToolWithPermission,
 };
@@ -531,6 +547,8 @@ import {
 	makeBrowserPageTool,
 	extractShotImage,
 } from "./browser-page-tool.js";
+import { makeBrowserScriptTool } from "./browser-script-tool.js";
+export { makeBrowserScriptTool };
 export {
 	makeAskUserQuestionTool,
 	shouldPopQuestion,
@@ -683,6 +701,7 @@ import {
 	filterForkedParentSessions,
 	findMostRecentSessionFileFast,
 } from "./session-parser.js";
+import { conversationRowKind } from "./conversation-rows.js";
 
 export interface SessionOwnerInfo {
 	clientId: string;
@@ -2882,7 +2901,8 @@ export class ClientSession {
 	private subagentHost: SubagentToolHost = {
 		resolveConversationId: (id) => this.resolveExecution(id)?.convId,
 		consultParent: (selfId, questions, signal) => this.consultParent(selfId, questions, signal),
-		answerConsult: (selfId, runId, requestId, answers) => this.answerConsult(selfId, runId, requestId, answers),
+		answerConsult: (selfId, runId, requestId, answers, message) =>
+			this.answerConsult(selfId, runId, requestId, answers, message),
 		escalateConsult: (selfId, runId, requestId) => this.answerConsult(selfId, runId, requestId),
 		getPendingConsults: (parentId) => this.getPendingConsults(parentId),
 		setConsultWaiting: (parentId, waiting) => {
@@ -4152,39 +4172,6 @@ export class ClientSession {
 								return {};
 							},
 						}).map((tool) => withWorkspaceSnapshotGate(tool, () => this.awaitPendingWorkspaceSnapshot(ownerId))),
-						withGoalReviewGate(
-							withDelegationGate(
-								withPlanModeGate(
-									withSandboxJailGate(
-										wrapEditSoftToolWithPermission(
-											makeEditSoftTool(effectiveCwd, () => this.getLang()),
-											effectiveCwd,
-											() =>
-												(ownerId ? this.convs.get(ownerId)?.permissionPreset : undefined) ??
-												this.settingsSvc.current.defaultPermissionPreset ??
-												"workspace-write-never",
-											() => this.roots,
-											() => this.getLang(),
-											(toolCallId, toolName, params, reason, reasonEn, convId, category) =>
-												this.askApproval(toolCallId, toolName, params, reason, reasonEn, convId, category),
-											() => ownerId,
-											() => this.approvalRules.list(),
-										),
-										() => this.sandboxes.getExecutionIdentity(effectiveCwd, sandboxIdentity),
-										() => effectiveCwd,
-										() => this.getLang(),
-										{ trustedTool: true },
-										() => this.sandboxes.acquireExecution(effectiveCwd, sandboxIdentity),
-									),
-									() => this.planModeOf(ownerId),
-									() => this.getLang(),
-								),
-								() => this.delegateModeOf(ownerId),
-								() => this.getLang(),
-							),
-							() => this.goalReviewTurnOf(ownerId),
-							() => this.getLang(),
-						),
 						...(sandboxIdentity || (apply && apply.enabledExtensions.length > 0)
 							? []
 							: this.enabledPluginToolDefs(undefined, effectiveCwd)),
@@ -4233,6 +4220,7 @@ export class ClientSession {
 						),
 						makeAskUserQuestionTool(bridge, ownerId),
 						makeBrowserPageTool(bridge, ownerId),
+						makeBrowserScriptTool(bridge, ownerId),
 						makeConversationReadTool(this.conversationReadHost(), () => this.getLang(), {
 							listClaims: (cwd) =>
 								(this.getClaimStore?.().list(cwd) ?? []).map((c) => ({
@@ -6143,11 +6131,13 @@ export class ClientSession {
 			return Promise.reject(new Error("Questionnaire is disabled"));
 		}
 		const conv = this.convs.get(conversationId);
+		// 无人值守（伪客户端）与子代理一样按 questionTimeoutSeconds 超时；有人盯着的普通会话保持永不超时。
+		const unattended = conv?.isSubagent || isPseudoClientId(this.clientId ?? "");
 		const request = new PendingQuestion(
 			questions,
 			conversationId,
 			"user",
-			conv?.isSubagent ? (this.settingsSvc.current.questionTimeoutSeconds ?? 240) : 0,
+			unattended ? (this.settingsSvc.current.questionTimeoutSeconds ?? 240) : 0,
 			sig as AbortSignal,
 		);
 		this.registerQuestion(request);
@@ -6351,13 +6341,14 @@ export class ClientSession {
 					signal,
 				);
 			},
-			answerConsult: (_self, runId, requestId, answers) => {
+			answerConsult: (_self, runId, requestId, answers, message) => {
 				const home = current();
 				return home.session.answerConsult(
 					conversationIdentity(home.session.convs.get(home.convId)!),
 					runId,
 					requestId,
 					answers,
+					message,
 				);
 			},
 			escalateConsult: (_self, runId, requestId) => {
@@ -6569,17 +6560,25 @@ export class ClientSession {
 		return "queued";
 	}
 
-	private answerConsult(selfId: string, runId: string, requestId: string, answers?: QuestionAnswer[]): unknown {
+	private answerConsult(
+		selfId: string,
+		runId: string,
+		requestId: string,
+		answers?: QuestionAnswer[],
+		message?: string,
+	): unknown {
 		const parentOwner = this.subagentOwnerOf(selfId);
 		const parent = parentOwner.convs.get(this.subagentCurrentId(selfId));
 		const owner = this.subagentOwnerOf(runId);
 		const child = owner.convs.get(this.subagentCurrentId(runId));
+		const text = typeof message === "string" && message.trim() ? message : undefined;
 		if (parent && child && conversationCommunication.requestSource(requestId) === child) {
 			if (owner.parentExecution(child)?.conv !== parent)
 				return { ok: false, error: "Only the direct parent may use the compatibility answer action." };
-			return this.communicate(parent.id, answers ? "reply" : "escalate", {
+			if (answers === undefined && !text) return this.communicate(parent.id, "escalate", { requestId });
+			return this.communicate(parent.id, "reply", {
 				requestId,
-				...(answers ? { answers } : {}),
+				...(answers === undefined ? { message: text } : { answers }),
 			});
 		}
 		const request = owner.pendingQuestions.get(requestId);
@@ -6595,7 +6594,8 @@ export class ClientSession {
 		) {
 			return { ok: false, error: "Only the direct parent may answer or escalate its pending consult." };
 		}
-		if (answers) request.resolve(answers);
+		if (answers !== undefined) request.resolve(answers);
+		else if (text) request.resolve(answersFromMessage(text, request.questions) ?? null);
 		else {
 			request.audience = "user";
 			owner.questionsChanged();
@@ -6785,6 +6785,7 @@ export class ClientSession {
 			}
 			const approvalSession = conv.session;
 			let settled = false;
+			let unattendedTimer: ReturnType<typeof setTimeout> | null = null;
 			const onAbort = () => {
 				if (settled) return;
 				finish({ decision: "deny", reason: "Operation canceled" });
@@ -6795,6 +6796,10 @@ export class ClientSession {
 			const finish = (result: ToolApprovalResolution) => {
 				if (settled) return;
 				settled = true;
+				if (unattendedTimer) {
+					clearTimeout(unattendedTimer);
+					unattendedTimer = null;
+				}
 				settledApprovalRequests.add(entry);
 				signal?.removeEventListener("abort", onAbort);
 				if (conv.pendingApprovals?.get(entry.id) === entry) conv.pendingApprovals.delete(entry.id);
@@ -6820,6 +6825,31 @@ export class ClientSession {
 			if (signal?.aborted) {
 				onAbort();
 				return;
+			}
+			// 无人值守（plugin:/scheduler:/canvas: —— 没人能点 UI）：超时后安全拒绝，
+			// 并在会话里留一条可解释的 notice（渠道侧会把它当成 run 事件回给用户）。
+			const unattendedApprovalMs = unattendedApprovalTimeoutMs(this.clientId ?? "");
+			if (unattendedApprovalMs !== null) {
+				unattendedTimer = setTimeout(() => {
+					if (settled) return;
+					const seconds = Math.round(unattendedApprovalMs / 1000);
+					this.emitNotice(
+						"warning",
+						`无人值守审批超时（${seconds}s）：已拒绝工具 ${toolName}。如需自动放行请调整审批策略或该会话的白名单。`,
+						`Unattended approval timed out after ${seconds}s: tool ${toolName} was denied. Adjust the approval policy to allow it.`,
+					);
+					this.auditLogger.record({
+						conversationId: conv.id,
+						toolName,
+						params,
+						decision: "denied",
+						decisionSource: "unattended_timeout",
+						...(category ? { categoryId: category.id } : {}),
+						reason: "unattended approval timeout",
+					});
+					finish({ decision: "deny", reason: "Unattended approval timeout" });
+				}, unattendedApprovalMs);
+				unattendedTimer.unref?.();
 			}
 			this.notifyMobile(conv, "approval", id, conv.session?.sessionId, entry.createdAt);
 			this.emit({
@@ -8191,6 +8221,7 @@ export class ClientSession {
 		disabledSkills?: string[];
 		disabledExtensions?: string[];
 		disabledAgentTools?: string[];
+		toolOnDemandTools?: string[];
 		disabledPluginTools?: string[];
 		terminalToolsEnabled?: boolean;
 		terminalBash?: boolean;
@@ -8199,7 +8230,6 @@ export class ClientSession {
 		toolWatchdogTimeoutMs?: number;
 		readDirEnabled?: boolean;
 		bgAutoCleanupMin?: number;
-		editSoftEnabled?: boolean;
 		questionnaireEnabled?: boolean;
 		questionPresentation?: "queue" | "all" | "manual";
 		toolApprovalPresentation?: "queue" | "all" | "manual";
@@ -8237,7 +8267,6 @@ export class ClientSession {
 		quickAskTranslateTarget?: import("./quick-ask-settings.js").QuickAskSettings["quickAskTranslateTarget"];
 		quickAskTranslateStyle?: import("./quick-ask-settings.js").QuickAskSettings["quickAskTranslateStyle"];
 		quickAskTranslatePrompt?: import("./quick-ask-settings.js").QuickAskSettings["quickAskTranslatePrompt"];
-		quickAskShowOriginal?: import("./quick-ask-settings.js").QuickAskSettings["quickAskShowOriginal"];
 		quickAskReferenceMenus?: import("./quick-ask-settings.js").QuickAskSettings["quickAskReferenceMenus"];
 		quickAskConversationScope?: import("./quick-ask-settings.js").QuickAskSettings["quickAskConversationScope"];
 		quickAskFolderScope?: import("./quick-ask-settings.js").QuickAskSettings["quickAskFolderScope"];
@@ -8845,17 +8874,21 @@ export class ClientSession {
 				() => this.awaitPendingWorkspaceSnapshot(ownerId),
 			);
 		const composeWrite = (base?: AnyToolDefinition): ToolDefinition =>
-			planGate(
-				wrapWriteToolWithPermission(
-					cwd,
-					currentPermission,
-					() => this.roots,
-					() => this.getLang(),
-					approve,
-					() => ownerId,
-					() => this.approvalRules.list(),
-					base,
+			withSlimPrompt(
+				planGate(
+					wrapWriteToolWithPermission(
+						cwd,
+						currentPermission,
+						() => this.roots,
+						() => this.getLang(),
+						approve,
+						() => ownerId,
+						() => this.approvalRules.list(),
+						base,
+					),
 				),
+				WRITE_DESCRIPTION,
+				WRITE_PARAMETERS,
 			);
 		const composeEdit = (base?: AnyToolDefinition): ToolDefinition =>
 			planGate(
@@ -8971,39 +9004,67 @@ export class ClientSession {
 			{ name: "write", fallback: () => composeWrite(), composeWith: (base) => composeWrite(base) },
 			{
 				name: "edit",
-				fallback: () =>
-					composeEdit({
-						...createEditToolDefinition(cwd, remoteOps ? { operations: remoteOps.edit } : undefined),
-						description: EDIT_DESCRIPTION,
-						promptGuidelines: EDIT_GUIDELINES,
-					} as unknown as AnyToolDefinition),
+				fallback: () => composeEdit(makeEditToolDefinition(cwd, () => this.getLang()) as unknown as AnyToolDefinition),
 				composeWith: (base) => composeEdit(base),
 			},
+			{
+				name: "find",
+				fallback: () =>
+					withSlimPrompt(
+						createFindToolDefinition(
+							cwd,
+							remoteOps ? { operations: remoteOps.find } : undefined,
+						) as unknown as AnyToolDefinition,
+						FIND_DESCRIPTION,
+						FIND_PARAMETERS,
+					),
+			},
+			{
+				name: "grep",
+				fallback: () => {
+					const base = createGrepToolDefinition(cwd) as unknown as AnyToolDefinition;
+					const slimmed = remoteOps
+						? ({
+								...base,
+								execute: async (_id: string, params: any) => ({
+									content: [{ type: "text" as const, text: await remoteOps.grepExecute(params ?? {}) }],
+									details: undefined,
+								}),
+							} as unknown as AnyToolDefinition)
+						: base;
+					return withSlimPrompt(slimmed, GREP_DESCRIPTION, GREP_PARAMETERS);
+				},
+			},
+			{
+				name: "ls",
+				fallback: () =>
+					withSlimPrompt(
+						createLsToolDefinition(
+							cwd,
+							remoteOps ? { operations: remoteOps.ls } : undefined,
+						) as unknown as AnyToolDefinition,
+						LS_DESCRIPTION,
+						LS_PARAMETERS,
+					),
+			},
 		];
-		if (remoteOps) {
-			specs.push(
-				{
-					name: "ls",
-					fallback: () => createLsToolDefinition(cwd, { operations: remoteOps.ls }) as unknown as AnyToolDefinition,
+		if (process.platform === "win32") {
+			specs.push({
+				name: "powershell",
+				fallback: () => {
+					const slim = withSlimPrompt(
+						createPowerShellToolDefinition(cwd) as unknown as AnyToolDefinition,
+						POWERSHELL_DESCRIPTION,
+						POWERSHELL_PARAMETERS,
+					);
+					// 与 bash 同一处归一（server/bash-timeout.ts）：漏传 timeout 不等于无时限。
+					return {
+						...slim,
+						execute: (id, params, signal, onUpdate, ctx) =>
+							slim.execute(id, withDefaultBashTimeout(params as { timeout?: number }) as never, signal, onUpdate, ctx),
+					} as AnyToolDefinition;
 				},
-				{
-					name: "find",
-					fallback: () => createFindToolDefinition(cwd, { operations: remoteOps.find }) as unknown as AnyToolDefinition,
-				},
-				{
-					name: "grep",
-					fallback: () => {
-						const baseGrep = createGrepToolDefinition(cwd);
-						return {
-							...baseGrep,
-							execute: async (_id: string, params: any) => {
-								const text = await remoteOps.grepExecute(params ?? {});
-								return { content: [{ type: "text", text }], details: undefined };
-							},
-						} as unknown as AnyToolDefinition;
-					},
-				},
-			);
+			});
 		}
 		if (!anchor) return specs;
 		return specs.map((spec) => {
@@ -9095,7 +9156,7 @@ export class ClientSession {
 			forceActive: lazy && targetPreset !== "ask" ? [LOAD_TOOLS_TOOL_NAME, ...loadedNames] : [],
 		});
 		const ownerId = conv?.id;
-		const subagentOff = disabled.has("conversation") || disabled.has("subagent") || SPAWN_TOOLS_BARRED.has(session);
+		const subagentOff = disabled.has("conversation") || SPAWN_TOOLS_BARRED.has(session);
 		syncSubagentOverride(session as unknown as OverrideSessionLike, subagentOff, (name) =>
 			mergeConversationTools([
 				...(ownerId
@@ -12255,41 +12316,53 @@ export class ClientSession {
 			if (!this.shownInRunningList(conv) && !visibleParents.has(conv.id)) continue;
 			let messageCount = 0;
 			let isStreaming = false;
+			let sessionId: string | undefined;
+			let sessionFile: string | undefined;
 			try {
 				messageCount = conv.session.getSessionStats().totalMessages;
 				isStreaming = conv.session.isStreaming;
+				sessionId = conv.session.sessionId;
+				sessionFile = conv.session.sessionFile;
 			} catch {}
+			const completionPending = this.completionPending(conv);
+			const parentId = this.localParentId(conv);
+			const pendingQuestion = this.getPendingQuestionForConv(conv.id);
+			let modified = sessionFile ? ClientSession.conversationFileMtime(sessionFile) : undefined;
+			if (conv.nativeCli) {
+				const cliTime = Math.max(conv.nativeCli.status?.lastActivityAt ?? 0, conv.nativeCli.status?.updatedAt ?? 0);
+				if (cliTime > 0) modified = Math.max(modified ?? 0, cliTime);
+			}
 			conversations.push({
 				id: conv.id,
+				rowKind: conversationRowKind({
+					isStreaming,
+					completionPending,
+					hasQuestion: Boolean(pendingQuestion),
+					isSubagent: !!conv.isSubagent,
+					parentId,
+					pinned: conv.pinned,
+					isEphemeral: conv.isEphemeral,
+					nativeCli: conv.nativeCli,
+					hasHistoryRow: Boolean(sessionFile),
+					forceOpen: visibleParents.has(conv.id),
+				}),
 				...(conv.nativeCli ? { nativeCli: conv.nativeCli } : {}),
 				independent: conv.independent !== false,
 				title: conv.title,
 				cwd: conv.cwd,
 				messageCount,
 				isStreaming,
-				completionPending: this.completionPending(conv),
+				completionPending,
 				isSubagent: !!conv.isSubagent,
 				...(conv.isEphemeral ? { isEphemeral: true as const } : {}),
-				...(() => {
-					try {
-						const sid = conv.session.sessionId;
-						const f = conv.session.sessionFile;
-						const modified = f ? ClientSession.conversationFileMtime(f) : undefined;
-						return {
-							...(sid ? { sessionId: sid } : {}),
-							...(f ? { sessionFile: f } : {}),
-							...(modified ? { modified } : {}),
-						};
-					} catch {
-						return {};
-					}
-				})(),
+				...(sessionId ? { sessionId } : {}),
+				...(sessionFile ? { sessionFile } : {}),
+				...(modified ? { modified } : {}),
 				...(conv.isSubagent ? this.subagentRunOutcome(conv) : {}),
-				...(() => {
-					const pq = this.getPendingQuestionForConv(conv.id);
-					return pq ? { hasQuestion: true as const, questionId: pq.id, questionTitle: pq.title } : {};
-				})(),
-				parentId: this.localParentId(conv),
+				...(pendingQuestion
+					? { hasQuestion: true as const, questionId: pendingQuestion.id, questionTitle: pendingQuestion.title }
+					: {}),
+				parentId,
 				model: conv.session.model
 					? `${conv.session.model.provider}/${conv.session.model.id}`
 					: (conv.subagentTemplate?.model ?? undefined),

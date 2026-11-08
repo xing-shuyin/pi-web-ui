@@ -2093,6 +2093,21 @@ export function useChat() {
 					queue: msg.queue,
 				});
 				dispatch({ type: "optimistic_prompt_echo", text: msg.text, attachments: msg.attachments });
+			} else if (msg.type === "terminal_cli_paste") {
+				if (msg.data?.trim() || msg.attachments?.length) {
+					const targetId = msg.conversationId || curState?.conversationId;
+					const target = targetId
+						? currentChat.conversations.find((c) => c.id === targetId || c.sessionId === targetId)
+						: null;
+					if (target) {
+						recordUserPrompt(
+							{ ...target, engine: currentChat.engine, conversationId: target.id },
+							currentChat.conversations,
+						);
+					} else if (curState && targetId === curState.conversationId) {
+						recordUserPrompt({ ...curState, engine: currentChat.engine }, currentChat.conversations);
+					}
+				}
 			} else if (msg.type === "queue_remove") {
 				dispatch({
 					type: "optimistic_queue_remove",

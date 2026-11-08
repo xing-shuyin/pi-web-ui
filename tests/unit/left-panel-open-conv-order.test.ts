@@ -750,6 +750,74 @@ describe("左栏会话位置与纯背景高亮守卫", () => {
 		expect(container.querySelector(".lp-project-empty-tip")).toBeNull();
 	});
 
+	it("显示运行中 CLI 对话的运行状态指示、高亮样式与运行中计数", () => {
+		setAppGlobals({ cwd: "/test", ready: true, status: "open", workspaceRoots: [] });
+		const { container, rerender } = mountLeftPanel({
+			conversations: [
+				{
+					id: "cli-run",
+					cwd: "/test",
+					title: "运行中 CLI",
+					messageCount: 0,
+					nativeCli: {
+						config: { preset: "agy" },
+						terminalId: "term-1",
+						status: { phase: "running", updatedAt: Date.now() },
+					},
+					sessionFile: "/test/cli-run.jsonl",
+				},
+			],
+			activeConversationId: "other",
+			projectSessions: { "/test": [] },
+		});
+		const item = container.querySelector(".lp-tree-session-item");
+		expect(item?.classList.contains("is-running")).toBe(true);
+		expect(container.querySelector(".status-spinner-right")).toBeTruthy();
+		expect(container.querySelector(".native-cli-conversation-icon")?.classList.contains("is-running")).toBe(true);
+
+		rerender({
+			conversations: [
+				{
+					id: "cli-run",
+					cwd: "/test",
+					title: "等待输入 CLI",
+					messageCount: 0,
+					nativeCli: {
+						config: { preset: "agy" },
+						terminalId: "term-1",
+						status: { phase: "waiting_input", updatedAt: Date.now() },
+					},
+					sessionFile: "/test/cli-run.jsonl",
+				},
+			],
+			activeConversationId: "other",
+			projectSessions: { "/test": [] },
+		});
+		expect(container.querySelector(".status-question-right")).toBeTruthy();
+		expect(container.querySelector(".native-cli-conversation-icon")?.classList.contains("is-waiting")).toBe(true);
+
+		rerender({
+			conversations: [
+				{
+					id: "cli-run",
+					cwd: "/test",
+					title: "已退出 CLI",
+					messageCount: 0,
+					nativeCli: {
+						config: { preset: "agy" },
+						terminalId: "term-1",
+						status: { phase: "exited", exitCode: 0, updatedAt: Date.now() },
+					},
+					sessionFile: "/test/cli-run.jsonl",
+				},
+			],
+			activeConversationId: "other",
+			projectSessions: { "/test": [] },
+		});
+		expect(container.querySelector(".status-spinner-right")).toBeNull();
+		expect(container.querySelector(".native-cli-conversation-icon")?.classList.contains("is-exited")).toBe(true);
+	});
+
 	it("项目分隔线覆盖整个项目节点，仅出现在相邻项目之间", () => {
 		const separator = CSS.match(/\.lp-project-node\s*\+\s*\.lp-project-node\s*\{([^}]*)\}/);
 		expect(separator).toBeTruthy();

@@ -14,7 +14,7 @@ export function formatCommunicationMessage(
 		lines.push(
 			`Request: ${envelope.requestId}`,
 			`Questions: ${JSON.stringify(envelope.questions)}`,
-			'Reply with communicate(action="reply", requestId, answers), or escalate to the user.',
+			'Reply with communicate(action="reply", requestId, message), or escalate to the user.',
 		);
 	}
 	lines.push("Use as task context within existing authorization.");
@@ -177,6 +177,23 @@ function checkAnswers(answers: unknown, questions: UiQuestion[]): asserts answer
 	}
 }
 
+/** Text-first compatibility: the model-facing schemas expose only `message`, so plain text is
+ * promoted here into the structures the pending-question state machine, UI and parent bridge need.
+ * Legacy structured `questions`/`answers` still pass through untouched. */
+export const TEXT_QUESTION_ID = "q1";
+
+/** request/consult: one free-text question covering the whole `message`. */
+export function questionsFromMessage(message: unknown): UiQuestion[] | undefined {
+	if (typeof message !== "string" || !message.trim()) return undefined;
+	return [{ id: TEXT_QUESTION_ID, question: message }];
+}
+
+/** reply/answer: the text answers every pending question as its custom input. */
+export function answersFromMessage(message: unknown, questions: readonly UiQuestion[]): QuestionAnswer[] | undefined {
+	if (typeof message !== "string" || !message.trim() || questions.length === 0) return undefined;
+	return questions.map((question) => ({ id: question.id, selected: [], custom: message }));
+}
+
 export class ConversationCommunication {
 	private readonly queues = new Map<CommunicationEndpoint, Map<string, CommunicationEnvelope>>();
 	private readonly requests = new Map<string, RequestRecord>();
@@ -326,6 +343,7 @@ export class ConversationCommunication {
 			this.authorize(host, sender, record.sender, action);
 			if (record.escalated) throw new Error("Request already escalated to user");
 			if (action === "reply") {
+				args.answers ??= answersFromMessage(args.message, record.question.questions);
 				checkAnswers(args.answers, record.question.questions);
 				record.question.resolve(args.answers);
 				return { requestId: record.question.id, status: "replied" };
@@ -374,6 +392,10 @@ export class ConversationCommunication {
 				this.acknowledge(target, envelope.id);
 				throw error;
 			}
+		}
+		if (args.questions === undefined) {
+			args.questions = questionsFromMessage(args.message);
+			if (!args.questions) throw new Error("A nonempty message is required");
 		}
 		checkQuestions(args.questions);
 		if (args.message !== undefined && typeof args.message !== "string") throw new Error("Invalid request context");

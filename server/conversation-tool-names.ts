@@ -1,6 +1,6 @@
-import { SUBAGENT_TOOL_NAMES } from "./tool-manager.js";
+import { CONVERSATION_TOOL_NAME } from "./tool-manager.js";
 
-export const CONVERSATION_TOOL_NAMES = SUBAGENT_TOOL_NAMES;
+export const CONVERSATION_TOOL_NAMES = [CONVERSATION_TOOL_NAME] as const;
 
 export const READ_ONLY_CONVERSATION_ACTIONS = ["get_result", "list", "templates", "read", "files", "status"] as const;
 

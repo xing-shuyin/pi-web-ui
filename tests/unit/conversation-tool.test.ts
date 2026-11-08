@@ -20,7 +20,7 @@ describe("conversation compatibility", () => {
 		});
 		reader.execute = readExecute;
 		const tools = mergeConversationTools([...management, reader]);
-		expect(tools.map((tool) => tool.name)).toEqual(["conversation", "subagent"]);
+		expect(tools.map((tool) => tool.name)).toEqual(["conversation"]);
 		const schema = tools[0].parameters as any;
 		expect(schema.properties.action.enum).toEqual(
 			expect.arrayContaining(["spawn", "dismiss", "list", "read", "files", "status"]),
@@ -45,6 +45,56 @@ describe("conversation compatibility", () => {
 		}
 	});
 
+	it("keeps the merged schema flat and compact", () => {
+		const tools = mergeConversationTools([
+			...makeSubagentTools({} as SubagentToolHost),
+			makeConversationReadTool({} as any),
+		]);
+		const schema = tools[0].parameters as any;
+		const json = JSON.stringify(schema);
+		expect(Object.keys(schema.properties)).toEqual([
+			"action",
+			"prompt",
+			"message",
+			"summary",
+			"payload",
+			"runId",
+			"runIds",
+			"toRunId",
+			"requestId",
+			"type",
+			"model",
+			"thinking",
+			"notifyOnDone",
+			"cwd",
+			"persist",
+			"isolation",
+			"kind",
+			"scope",
+			"force",
+			"includePersisted",
+			"query",
+			"view",
+			"last",
+			"id",
+			"path",
+			"offset",
+			"limit",
+			"maxChars",
+			"timeoutSeconds",
+		]);
+		expect(schema.required).toEqual(["action"]);
+		expect(schema.properties.action.enum).toHaveLength(16);
+		expect(json).not.toMatch(/"(anyOf|oneOf|allOf|minLength|minItems|maxItems|minimum|maximum)"/);
+		expect(json.length).toBeLessThan(1900);
+		// 纯文本问答：结构化问题/回答只留在 ask_user_question。
+		expect(schema.properties.questions).toBeUndefined();
+		expect(schema.properties.answers).toBeUndefined();
+		expect(schema.properties.notifyOnDone.enum).toEqual([true, false, "manual"]);
+		// 严格校验端点（Moonshot 等）要求 Type.Unsafe 显式声明 type，见 tool-registration 单测。
+		expect(schema.properties.notifyOnDone.type).toEqual(["boolean", "string"]);
+	});
+
 	it("keeps inspection available without registering dispatch for restricted sessions", () => {
 		const tools = mergeConversationTools([makeConversationReadTool({} as any)]);
 		expect(tools.map((tool) => tool.name)).toEqual(["conversation"]);
@@ -57,34 +107,30 @@ describe("conversation compatibility", () => {
 			expect(gate("conversation", { action: "spawn" })).toBeDefined();
 		}
 	});
-	it("uses the same schema and execution for both names", async () => {
+	it("only registers the conversation tool (the legacy subagent alias is gone)", async () => {
 		const listSubagents = vi.fn(() => []);
 		const host = { listSubagents, getWatchdogTimeoutMs: () => 120000 } as unknown as SubagentToolHost;
-		const [primary, alias] = makeSubagentTools(host, () => "en");
-		expect(primary.name).toBe("conversation");
-		expect(alias.name).toBe("subagent");
-		expect(alias.parameters).toBe(primary.parameters);
-		expect(alias.execute).toBe(primary.execute);
-		for (const tool of [primary, alias])
-			await tool.execute("call", { action: "list" }, undefined, undefined, {} as any);
-		expect(listSubagents).toHaveBeenCalledTimes(2);
+		const tools = makeSubagentTools(host, () => "en");
+		expect(tools.map((tool) => tool.name)).toEqual(["conversation"]);
+		await tools[0].execute("call", { action: "list" }, undefined, undefined, {} as any);
+		expect(listSubagents).toHaveBeenCalledTimes(1);
 	});
 
 	it.each(["conversation", "conversation_read", "subagent", "subagent_spawn", "subagent_list"])(
-		"disabling %s disables both entry points",
+		"disabling %s folds into the conversation switch",
 		(name) => {
-			expect(normalizeDisabledAgentTools([name])).toEqual(["conversation", "subagent"]);
-			expect(normalizeDisabledAgentTools([name, "conversation", "subagent"])).toEqual(["conversation", "subagent"]);
+			expect(normalizeDisabledAgentTools([name])).toEqual(["conversation"]);
+			expect(normalizeDisabledAgentTools([name, "conversation"])).toEqual(["conversation"]);
 		},
 	);
 
-	it("shares legacy prompt settings and prefers explicit conversation settings", () => {
+	it("migrates legacy subagent prompt settings onto conversation", () => {
 		const old = { description: "legacy preference" };
 		const current = { description: "current preference" };
 		expect(toolPromptOverrideOf({ subagent: old }, "conversation")).toEqual(old);
 		const merged = normalizeToolPromptOverrides({ subagent: old, conversation: current });
 		expect(merged.conversation).toEqual(current);
-		expect(merged.subagent).toEqual(current);
+		expect(merged.subagent).toBeUndefined();
 	});
 
 	it("restores each first-party entry with the matching name after extension passthrough", () => {
@@ -97,6 +143,6 @@ describe("conversation compatibility", () => {
 		syncSubagentOverride(session as any, true);
 		expect(session._customTools).toEqual([]);
 		syncSubagentOverride(session as any, false, (name) => tools.find((tool) => tool.name === name)!);
-		expect(session._customTools.map((tool) => tool.name).sort()).toEqual(["conversation", "subagent"]);
+		expect(session._customTools.map((tool) => tool.name)).toEqual(["conversation"]);
 	});
 });

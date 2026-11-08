@@ -5,7 +5,12 @@ import * as fsPromises from "node:fs/promises";
 import { dirname, isAbsolute, resolve } from "node:path";
 import { writeJsonAtomicSync } from "./atomic-file.js";
 import { normalizeAutoCompactionInstructions, normalizeSoftCapByModel, normalizeSoftCapTokens } from "./soft-cap.js";
-import { deriveLegacy, legacyToDisabled, normalizeDisabledAgentTools } from "./tool-manager.js";
+import {
+	deriveLegacy,
+	legacyToDisabled,
+	normalizeDisabledAgentTools,
+	normalizeToolOnDemandList,
+} from "./tool-manager.js";
 import { normalizeToolPromptOverrides, type ToolPromptOverrideMap } from "./tool-prompt-overrides.js";
 import { UI_SLOTS } from "./plugin-ui-slots.js";
 import { DEFAULT_PROMPT_DISABLED } from "./prompt-composer.js";
@@ -231,6 +236,163 @@ export function normalizeUiLayout(v: unknown): UiLayoutPrefs {
 	};
 }
 
+export const DEFAULT_UI_LAYOUT: UiLayoutPrefs = Object.freeze({
+	hidden: [
+		"host:browser",
+		"host:sound",
+		"host:language",
+		"notes:__view",
+		"voice-input:camera",
+		"host:update",
+		"host:new-ephemeral-chat",
+		"host:open-project",
+		"host:search",
+		"browser-use:__view",
+		"office:__view",
+	],
+	shown: [
+		"host:cwd",
+		"host:tasks",
+		"host:chat",
+		"host:settings",
+		"notes:toggle",
+		"host:github",
+		"run-trace:__view",
+		"host:files",
+		"host:history",
+		"host:theme",
+		"pm2-manager:__view",
+		"sftp:__view",
+		"webmail:__view",
+		"host:terminal",
+		"image-gen:__view",
+		"image-toolkit:__view",
+		"host:brand",
+		"doubao-tts:__view",
+		"tts:__view",
+		"approval-gate:__view",
+		"tunnel:__view",
+		"legado-web:__view",
+		"vscode-editor:__view",
+		"qq:__view",
+		"office-preview:__view",
+		"univer-office:__view",
+		"office:__view",
+		"bili-scroll:__view",
+		"wechat-ilink:__view",
+	],
+	order: [
+		"notes:__view",
+		"host:msg-copy",
+		"host:msg-copy-text",
+		"host:msg-copy-markdown",
+		"host:msg-copy-image",
+		"host:msg-edit-reask",
+		"host:history",
+		"host:files",
+		"host:composer-upload",
+		"voice-input:mic",
+		"voice-input:camera",
+		"host:composer-templates",
+		"host:composer-model",
+		"host:composer-thinking",
+		"host:composer-send",
+		"pm2-manager:open-manager",
+		"host:github",
+		"host:host-metrics",
+		"host:cwd",
+		"host:conn",
+		"host:ctx",
+		"host:msg-count",
+		"host:cost",
+		"host:cache",
+		"sol-savings:sol-savings-badge",
+		"host:status-delegate",
+		"host:working",
+		"host:plugin-status",
+		"notes:toggle",
+		"host:engine",
+		"vscode-editor:__view",
+		"approval-gate:__view",
+		"legado-web:__view",
+		"tunnel:__view",
+		"image-toolkit:__view",
+		"run-trace:__view",
+		"wallpaper-engine:toggle",
+		"feishu:feishu-open",
+		"dingtalk:dingtalk-open",
+		"telegram:telegram-open",
+		"wecom:wecom-open",
+		"discord:discord-open",
+		"whatsapp:whatsapp-open",
+		"slack:slack-open",
+		"qq:qq-open",
+		"imessage:imessage-open",
+		"matrix:matrix-open",
+		"tts:__view",
+		"host:zen-mode",
+		"wechat-ilink:__view",
+		"office:__view",
+		"sftp:__view",
+		"webmail:__view",
+		"host:new-sandbox",
+		"bili-scroll:__view",
+		"qq:__view",
+		"host:canvas",
+		"live2d:toggle",
+		"host:brand",
+		"host:new-chat",
+		"host:chat",
+		"host:terminal",
+		"host:git",
+		"host:theme",
+		"host:plugins",
+		"host:tasks",
+		"host:settings",
+	],
+	align: {
+		"host:chat": "start",
+		"host:history": "start",
+		"host:new-chat": "start",
+		"host:files": "start",
+		"host:open-project": "center",
+		"notes:toggle": "start",
+		"host:new-ephemeral-chat": "center",
+		"host:terminal": "start",
+		"host:git": "start",
+		"host:plugins": "start",
+		"run-trace:__view": "end",
+		"host:github": "end",
+		"host:update": "center",
+		"host:theme": "start",
+		"host:language": "center",
+		"host:sound": "center",
+		"host:settings": "start",
+		"host:tasks": "start",
+		"host:browser": "center",
+		"host:search": "center",
+		"host:brand": "start",
+		"host:conn": "start",
+		"host:msg-count": "start",
+		"office:__view": "end",
+	} as Record<string, UiAlign>,
+	topbarText: false,
+	sideDockFloat: true,
+	slots: {
+		"host:chat": "topbar.primary",
+		"host:conn": "bottombar",
+		"host:working": "bottombar",
+		"host:plugin-status": "bottombar",
+		"host:ctx": "bottombar",
+		"host:msg-count": "bottombar",
+		"notes:toggle": "bottombar",
+		"host:github": "bottombar",
+		"host:engine": "bottombar",
+		"sftp:__view": "topbar.primary",
+		"office:__view": "topbar.primary",
+	} as Record<string, UiSlotId>,
+});
+
 export function normalizeSkillList(v: unknown): string[] {
 	return Array.isArray(v) ? v.filter((x): x is string => typeof x === "string") : [];
 }
@@ -311,8 +473,9 @@ export interface ClientSettings {
 	codemodeMode: "on" | "only";
 	codemodeInlineBudget: number;
 	disabledAgentTools: string[];
+	/** 按需列表：列内工具直接关闭（`effectiveDisabledAgentTools` 取并集）。 */
+	toolOnDemandTools: string[];
 	disabledPluginTools?: string[];
-	editSoftEnabled: boolean;
 	questionnaireEnabled: boolean;
 	questionPresentation?: "queue" | "all" | "manual";
 	toolApprovalPresentation?: "queue" | "all" | "manual";
@@ -338,7 +501,6 @@ export interface ClientSettings {
 	quickAskTranslateTarget: QuickAskSettings["quickAskTranslateTarget"];
 	quickAskTranslateStyle: QuickAskSettings["quickAskTranslateStyle"];
 	quickAskTranslatePrompt: QuickAskSettings["quickAskTranslatePrompt"];
-	quickAskShowOriginal: QuickAskSettings["quickAskShowOriginal"];
 	quickAskReferenceMenus: QuickAskSettings["quickAskReferenceMenus"];
 	quickAskConversationScope: QuickAskSettings["quickAskConversationScope"];
 	quickAskFolderScope: QuickAskSettings["quickAskFolderScope"];
@@ -380,6 +542,215 @@ export interface ClientSettings {
 	defaultAgentPreset?: string;
 	defaultPermissionPreset?: string;
 }
+
+export const DEFAULT_DARK_MINIMAL_SETTINGS: ClientSettings = Object.freeze({
+	promptMode: "append",
+	customSystemPrompt:
+		"回答尽量简短：先给结论，再给必要细节；不要复述我的问题，不要写“好的/当然可以”这类开场白。代码只在必要时给完整片段。",
+	promptTemplate: "",
+	promptOverrides: {
+		append:
+			"使用gh fnm uv\npr和issue处理完要回复 并且关闭, 分支合并之后就删除\n处理问题时 跳出“修补表象、头痛医头”的打地鼠视角 寻找根本的解决办法",
+	},
+	promptDisabled: ["persona", "plugin_dev"],
+	_promptPluginDevConfigured: false,
+	toolPromptOverrides: {},
+	disabledSkills: [],
+	disabledExtensions: [],
+	disabledAgentTools: [
+		"powershell",
+		"ls",
+		"terminal",
+		"delegate_task",
+		"plan_update",
+		"patch",
+		"lsp",
+		"eval",
+		"tool_search",
+		"schedule",
+		"compact_context",
+		"mcp_manage",
+		"sandbox",
+		"worktree",
+		"canvas",
+	],
+	toolOnDemandTools: [],
+	disabledPluginTools: [
+		"notes_add",
+		"notes_list",
+		"notes_reminder",
+		"notes_todo",
+		"notes_update",
+		"transcribe_audio",
+		"mail",
+		"sftp",
+		"image_watermark",
+		"image_transform",
+		"image_pick_color",
+		"image_info",
+		"image_config_service",
+		"image_compress",
+		"doubao_tts",
+		"db_connections",
+		"db_databases",
+		"db_query",
+		"db_redis_cmd",
+		"db_redis_get",
+		"db_redis_keys",
+		"db_rows",
+		"db_schema",
+		"db_tables",
+		"image_services",
+		"image_generate",
+		"live_preview",
+		"matrix",
+		"pm2",
+		"qq",
+		"session_migrate_import",
+		"session_migrate_scan",
+		"slack",
+		"telegram",
+		"tunnel_fetch",
+		"wecom",
+		"whatsapp",
+		"dingtalk",
+		"discord",
+		"feishu",
+		"legado_book_sources",
+		"legado_rules",
+		"imessage",
+		"legado_source_probe",
+		"legado_run_rule",
+		"bili_comments",
+		"bili_duty_run",
+		"bili_fav_add",
+		"bili_fav_folders",
+		"bili_hot_videos",
+		"bili_login_poll",
+		"bili_login_start",
+		"bili_rank",
+		"bili_related",
+		"bili_reply",
+		"bili_resolve_uid",
+		"bili_search",
+		"bili_send_message",
+		"bili_status",
+		"bili_subtitle",
+		"bili_up_videos",
+		"bili_video_info",
+		"bili_whoami",
+		"tts",
+		"office",
+		"desktop_click",
+		"desktop_elements",
+		"desktop_key",
+		"desktop_screenshot",
+		"desktop_type",
+		"desktop_window",
+		"wechat_send",
+		"remote_term",
+		"notes",
+	],
+	nativeCliInheritModel: {},
+	terminalToolsEnabled: false,
+	terminalBash: false,
+	terminalBashIdleMs: 0,
+	terminalBashMaxForegroundMs: 0,
+	toolWatchdogTimeoutMs: 2400000,
+	readDirEnabled: true,
+	bgAutoCleanupMin: 30,
+	toolLazyLoading: false,
+	codemodeMode: "on",
+	codemodeInlineBudget: 3000,
+	toolApprovalEnabled: false,
+	questionnaireEnabled: true,
+	questionPresentation: "queue",
+	toolApprovalPresentation: "all",
+	questionTimeoutSeconds: 240,
+	goalModeEnabled: false,
+	parallelReminderEnabled: true,
+	thinkingWrap: false,
+	toolsWrap: false,
+	toolImagesEnabled: true,
+	keepRecentMessages: 15,
+	reversePagination: false,
+	showForkedParentSessions: false,
+	retainFinishedConversations: false,
+	openRecentSessionOnProjectSwitch: true,
+	skillsFullText: [],
+	skillsCatalogMaxDesc: 250,
+	skillsCatalogShowLocation: false,
+	skillsCatalogBudget: 20000,
+	skillsMaxFileBytes: 8192,
+	skillsFullTextMaxBytes: 32768,
+	chatUploadMaxMb: 20,
+	workspaceUploadMaxMb: 100,
+	folderUploadMaxMb: 32,
+	visionBridgeEnabled: false,
+	visionBridgeModel: null,
+	visionBridgePromptMode: "append",
+	visionBridgePrompt: "",
+	scmCommitMsgPromptMode: "append",
+	scmCommitMsgPrompt: "",
+	quickAskEnabled: true,
+	quickAskModel: null,
+	quickAskThinking: "off",
+	quickAskSystemPrompt: "",
+	quickAskExplainPrompt: "解释下: {{input}}",
+	quickAskTranslateEnabled: true,
+	quickAskTranslateTarget: "auto",
+	quickAskTranslateStyle: "natural",
+	quickAskTranslatePrompt: "将以下文字翻译成{{targetLanguage}}，只输出译文，保留代码与专有名词。\n{{input}}",
+	quickAskReferenceMenus: true,
+	quickAskConversationScope: "recent",
+	quickAskFolderScope: "listing",
+	planModePromptMode: "append",
+	planModePrompt: "",
+	subagentDefaultModel: null,
+	subagentMaxDepth: 0,
+	subagentAutoWakeMaxTurns: 5,
+	steeringMode: "all",
+	followUpMode: "all",
+	retryMaxAttempts: 3,
+	softCapTokens: 0,
+	softCapByModel: {},
+	autoCompactionInstructions: "",
+	quickPhrases: ["继续", "上传发布", "上传github", "处理pr", "处理issue", "还有更好的方式吗", "关闭回复issue"],
+	quickPhrasesEnabled: true,
+	minimalNewChat: false,
+	preserveDraftAcrossConversations: false,
+	reviewPrompt: "",
+	reviewDisabledSkills: ["reverse-engineer-anything"],
+	disabledPlugins: [
+		"approval-gate",
+		"db-client",
+		"dingtalk",
+		"discord",
+		"feishu",
+		"image-toolkit",
+		"imessage",
+		"live-preview",
+		"matrix",
+		"mermaid",
+		"pm2-manager",
+		"run-trace",
+		"session-migrate",
+		"slack",
+		"telegram",
+		"tunnel",
+		"vscode-editor",
+		"wallpaper-engine",
+		"wecom",
+		"whatsapp",
+		"legado-web",
+		"webmail",
+	],
+	uiLayout: DEFAULT_UI_LAYOUT,
+	defaultAgentPreset: "standard",
+	defaultPermissionPreset: "danger-full-access",
+});
+
+export const DEFAULT_CLIENT_SETTINGS: ClientSettings = DEFAULT_DARK_MINIMAL_SETTINGS;
 
 export interface SettingsPreset extends Partial<ClientSettings> {
 	name: string;
@@ -483,6 +854,9 @@ export interface MarkerSettings {
 	markersEnabled: boolean;
 	disabledMarkers: string[];
 }
+
+/** 出厂默认关闭的内联标记（单源：客户端状态默认值、MarkerService 均取此处）。 */
+export const DEFAULT_DISABLED_MARKERS: readonly string[] = ["notify"];
 
 export interface ClientState {
 	lastCwd?: string;
@@ -933,38 +1307,50 @@ export class ClientStateStore {
 			promptOverrides = {
 				[stored.promptMode === "replace" ? "soul" : "append"]: stored.customSystemPrompt,
 			};
+		} else if (!stored) {
+			promptOverrides = { ...DEFAULT_CLIENT_SETTINGS.promptOverrides };
 		}
 		return {
 			promptMode: stored?.promptMode === "replace" ? "replace" : "append",
-			customSystemPrompt: stored?.customSystemPrompt ?? "",
+			customSystemPrompt: stored?.customSystemPrompt ?? (stored ? "" : DEFAULT_CLIENT_SETTINGS.customSystemPrompt),
 			promptTemplate,
 			promptOverrides,
 			promptDisabled: normalizePromptDisabled(stored),
 			_promptPluginDevConfigured: stored?._promptPluginDevConfigured,
 			toolPromptOverrides: normalizeToolPromptOverrides(stored?.toolPromptOverrides),
-			disabledSkills: stored?.disabledSkills ?? [],
-			disabledExtensions: stored?.disabledExtensions ?? [],
-			disabledAgentTools: legacyToDisabled(stored ?? {}),
-			disabledPluginTools: normalizeDisabledPluginTools(stored?.disabledPluginTools),
+			disabledSkills: stored?.disabledSkills ?? (stored ? [] : [...DEFAULT_CLIENT_SETTINGS.disabledSkills]),
+			disabledExtensions: stored?.disabledExtensions ?? (stored ? [] : [...DEFAULT_CLIENT_SETTINGS.disabledExtensions]),
+			disabledAgentTools:
+				stored?.disabledAgentTools !== undefined
+					? legacyToDisabled(stored)
+					: stored
+						? legacyToDisabled(stored ?? {})
+						: [...DEFAULT_CLIENT_SETTINGS.disabledAgentTools],
+			toolOnDemandTools: normalizeToolOnDemandList(stored?.toolOnDemandTools),
+			disabledPluginTools:
+				stored?.disabledPluginTools !== undefined
+					? normalizeDisabledPluginTools(stored.disabledPluginTools)
+					: stored
+						? []
+						: [...(DEFAULT_CLIENT_SETTINGS.disabledPluginTools ?? [])],
 			nativeCliInheritModel: normalizeNativeCliInheritModel(stored?.nativeCliInheritModel),
 			terminalToolsEnabled:
 				stored?.disabledAgentTools !== undefined
 					? deriveLegacy(legacyToDisabled(stored)).terminalToolsEnabled
-					: (stored?.terminalToolsEnabled ?? false),
-			terminalBash: stored?.terminalBash ?? false,
-			terminalBashIdleMs: stored?.terminalBashIdleMs ?? 15_000,
-			terminalBashMaxForegroundMs: stored?.terminalBashMaxForegroundMs ?? 60_000,
+					: (stored?.terminalToolsEnabled ?? (stored ? false : DEFAULT_CLIENT_SETTINGS.terminalToolsEnabled)),
+			terminalBash: stored?.terminalBash ?? (stored ? false : DEFAULT_CLIENT_SETTINGS.terminalBash),
+			terminalBashIdleMs: stored?.terminalBashIdleMs ?? (stored ? 15_000 : DEFAULT_CLIENT_SETTINGS.terminalBashIdleMs),
+			terminalBashMaxForegroundMs:
+				stored?.terminalBashMaxForegroundMs ?? (stored ? 60_000 : DEFAULT_CLIENT_SETTINGS.terminalBashMaxForegroundMs),
 			toolWatchdogTimeoutMs: normalizeToolWatchdogTimeoutMs(stored?.toolWatchdogTimeoutMs),
 			readDirEnabled: stored?.readDirEnabled ?? true,
-			bgAutoCleanupMin: normalizeBgCleanupMinutes(stored?.bgAutoCleanupMin),
+			bgAutoCleanupMin: normalizeBgCleanupMinutes(
+				stored?.bgAutoCleanupMin ?? (stored ? 0 : DEFAULT_CLIENT_SETTINGS.bgAutoCleanupMin),
+			),
 			toolLazyLoading: stored?.toolLazyLoading ?? DEFAULT_TOOL_LAZY_LOADING,
 			codemodeMode: normalizeCodemodeMode(stored?.codemodeMode),
 			codemodeInlineBudget: normalizeCodemodeInlineBudget(stored?.codemodeInlineBudget),
-			toolApprovalEnabled: stored?.toolApprovalEnabled ?? true,
-			editSoftEnabled:
-				stored?.disabledAgentTools !== undefined
-					? deriveLegacy(legacyToDisabled(stored)).editSoftEnabled
-					: (stored?.editSoftEnabled ?? false),
+			toolApprovalEnabled: stored?.toolApprovalEnabled ?? (stored ? true : DEFAULT_CLIENT_SETTINGS.toolApprovalEnabled),
 			questionnaireEnabled:
 				stored?.disabledAgentTools !== undefined
 					? deriveLegacy(legacyToDisabled(stored)).questionnaireEnabled
@@ -986,13 +1372,14 @@ export class ClientStateStore {
 			thinkingWrap: stored?.thinkingWrap ?? false,
 			devNoCache: stored?.devNoCache,
 			autoReload: stored?.autoReload,
-			toolsWrap: stored?.toolsWrap ?? true,
+			toolsWrap: stored?.toolsWrap ?? (stored ? true : DEFAULT_CLIENT_SETTINGS.toolsWrap),
 			toolImagesEnabled: stored?.toolImagesEnabled ?? true,
 			keepRecentMessages: normalizeKeepRecentMessages(stored?.keepRecentMessages),
 			reversePagination: stored?.reversePagination ?? false,
 			showForkedParentSessions: stored?.showForkedParentSessions ?? false,
 			retainFinishedConversations: stored?.retainFinishedConversations ?? false,
-			openRecentSessionOnProjectSwitch: stored?.openRecentSessionOnProjectSwitch ?? true,
+			openRecentSessionOnProjectSwitch:
+				stored?.openRecentSessionOnProjectSwitch ?? DEFAULT_CLIENT_SETTINGS.openRecentSessionOnProjectSwitch,
 			skillsFullText: normalizeSkillList(stored?.skillsFullText),
 			skillsCatalogMaxDesc: normalizeSkillsCatalogMaxDesc(stored?.skillsCatalogMaxDesc),
 			skillsCatalogShowLocation: Boolean(stored?.skillsCatalogShowLocation ?? false),
@@ -1002,7 +1389,7 @@ export class ClientStateStore {
 			chatUploadMaxMb: normalizeUploadMaxMb(stored?.chatUploadMaxMb, 20),
 			workspaceUploadMaxMb: normalizeUploadMaxMb(stored?.workspaceUploadMaxMb, 100),
 			folderUploadMaxMb: normalizeUploadMaxMb(stored?.folderUploadMaxMb, 32),
-			visionBridgeEnabled: stored?.visionBridgeEnabled ?? true,
+			visionBridgeEnabled: stored?.visionBridgeEnabled ?? (stored ? true : DEFAULT_CLIENT_SETTINGS.visionBridgeEnabled),
 			visionBridgeModel: stored?.visionBridgeModel ?? null,
 			visionBridgePromptMode: stored?.visionBridgePromptMode === "replace" ? "replace" : "append",
 			visionBridgePrompt: stored?.visionBridgePrompt ?? "",
@@ -1013,21 +1400,24 @@ export class ClientStateStore {
 			planModePrompt: stored?.planModePrompt ?? "",
 			subagentDefaultModel: stored?.subagentDefaultModel ?? null,
 			subagentMaxDepth: stored?.subagentMaxDepth ?? 0,
-			subagentAutoWakeMaxTurns: normalizeSubagentAutoWakeMaxTurns(stored?.subagentAutoWakeMaxTurns),
+			subagentAutoWakeMaxTurns: normalizeSubagentAutoWakeMaxTurns(
+				stored?.subagentAutoWakeMaxTurns ?? (stored ? undefined : DEFAULT_CLIENT_SETTINGS.subagentAutoWakeMaxTurns),
+			),
 			steeringMode: normalizeQueueMode(stored?.steeringMode),
 			followUpMode: normalizeQueueMode(stored?.followUpMode),
 			retryMaxAttempts: normalizeRetryMaxAttempts(stored?.retryMaxAttempts),
 			softCapTokens: normalizeSoftCapTokens(stored?.softCapTokens),
 			softCapByModel: normalizeSoftCapByModel(stored?.softCapByModel),
 			autoCompactionInstructions: normalizeAutoCompactionInstructions(stored?.autoCompactionInstructions),
-			quickPhrases: stored?.quickPhrases ?? [],
+			quickPhrases: stored?.quickPhrases ?? [...DEFAULT_CLIENT_SETTINGS.quickPhrases],
 			quickPhrasesEnabled: stored?.quickPhrasesEnabled ?? true,
 			minimalNewChat: stored?.minimalNewChat ?? false,
 			preserveDraftAcrossConversations: stored?.preserveDraftAcrossConversations ?? false,
 			reviewPrompt: stored?.reviewPrompt ?? "",
-			reviewDisabledSkills: stored?.reviewDisabledSkills ?? [],
-			disabledPlugins: stored?.disabledPlugins ?? [],
-			uiLayout: normalizeUiLayout(stored?.uiLayout),
+			reviewDisabledSkills:
+				stored?.reviewDisabledSkills ?? (stored ? [] : [...DEFAULT_CLIENT_SETTINGS.reviewDisabledSkills]),
+			disabledPlugins: stored?.disabledPlugins ?? (stored ? [] : [...(DEFAULT_CLIENT_SETTINGS.disabledPlugins ?? [])]),
+			uiLayout: stored?.uiLayout ? normalizeUiLayout(stored.uiLayout) : structuredClone(DEFAULT_UI_LAYOUT),
 			defaultAgentPreset:
 				typeof stored?.defaultAgentPreset === "string" && stored.defaultAgentPreset
 					? stored.defaultAgentPreset
@@ -1035,7 +1425,9 @@ export class ClientStateStore {
 			defaultPermissionPreset:
 				typeof stored?.defaultPermissionPreset === "string" && stored.defaultPermissionPreset
 					? stored.defaultPermissionPreset
-					: "workspace-write-never",
+					: stored
+						? "workspace-write-never"
+						: (DEFAULT_CLIENT_SETTINGS.defaultPermissionPreset ?? "workspace-write-never"),
 		};
 	}
 
@@ -1060,6 +1452,7 @@ export class ClientStateStore {
 			disabledSkills: settings.disabledSkills ?? cur.disabledSkills ?? [],
 			disabledExtensions: settings.disabledExtensions ?? cur.disabledExtensions ?? [],
 			disabledAgentTools: normalizeDisabledAgentTools(settings.disabledAgentTools ?? cur.disabledAgentTools),
+			toolOnDemandTools: normalizeToolOnDemandList(settings.toolOnDemandTools ?? cur.toolOnDemandTools),
 			disabledPluginTools: normalizeDisabledPluginTools(settings.disabledPluginTools ?? cur.disabledPluginTools),
 			nativeCliInheritModel: {
 				...normalizeNativeCliInheritModel(cur.nativeCliInheritModel),
@@ -1080,7 +1473,6 @@ export class ClientStateStore {
 				settings.codemodeInlineBudget ?? cur.codemodeInlineBudget ?? DEFAULT_CODEMODE_INLINE_BUDGET,
 			),
 			toolApprovalEnabled: settings.toolApprovalEnabled ?? cur.toolApprovalEnabled ?? true,
-			editSoftEnabled: settings.editSoftEnabled ?? cur.editSoftEnabled ?? false,
 			questionnaireEnabled: settings.questionnaireEnabled ?? cur.questionnaireEnabled ?? true,
 			questionPresentation: settings.questionPresentation ?? cur.questionPresentation ?? "queue",
 			toolApprovalPresentation: settings.toolApprovalPresentation ?? cur.toolApprovalPresentation ?? "all",
@@ -1151,7 +1543,7 @@ export class ClientStateStore {
 			reviewPrompt: settings.reviewPrompt ?? cur.reviewPrompt ?? "",
 			reviewDisabledSkills: settings.reviewDisabledSkills ?? cur.reviewDisabledSkills ?? [],
 			disabledPlugins: settings.disabledPlugins ?? cur.disabledPlugins ?? [],
-			uiLayout: normalizeUiLayout(settings.uiLayout ?? cur.uiLayout),
+			uiLayout: normalizeUiLayout(settings.uiLayout ?? cur.uiLayout ?? DEFAULT_UI_LAYOUT),
 			quickPhrases: settings.quickPhrases ?? cur.quickPhrases ?? [],
 			quickPhrasesEnabled: settings.quickPhrasesEnabled ?? cur.quickPhrasesEnabled ?? true,
 			minimalNewChat: settings.minimalNewChat ?? cur.minimalNewChat ?? false,
@@ -1536,17 +1928,17 @@ export class ClientStateStore {
 		const s = this.load()[ClientStateStore.GLOBAL_SETTINGS_KEY]?.markers;
 		return {
 			markersEnabled: s?.markersEnabled ?? true,
-			disabledMarkers: s?.disabledMarkers ?? [],
+			disabledMarkers: s?.disabledMarkers ?? [...DEFAULT_DISABLED_MARKERS],
 		};
 	}
 
 	saveMarkerSettings(_clientId: string, settings: Partial<MarkerSettings>): void {
 		const all = this.load();
 		const state = (all[ClientStateStore.GLOBAL_SETTINGS_KEY] ??= { projects: [] });
-		const cur = state.markers ?? { markersEnabled: true, disabledMarkers: [] };
+		const cur = state.markers ?? { markersEnabled: true, disabledMarkers: [...DEFAULT_DISABLED_MARKERS] };
 		state.markers = {
 			markersEnabled: settings.markersEnabled ?? cur.markersEnabled ?? true,
-			disabledMarkers: settings.disabledMarkers ?? cur.disabledMarkers ?? [],
+			disabledMarkers: settings.disabledMarkers ?? cur.disabledMarkers ?? [...DEFAULT_DISABLED_MARKERS],
 		};
 		this.save();
 	}

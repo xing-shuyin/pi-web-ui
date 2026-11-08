@@ -61,6 +61,7 @@ import { HalfRingSpinner } from "./HalfRingSpinner";
 import { composeToComposer, focusComposer } from "../composer-bridge";
 import { openQuickAsk, type QuickAskReferenceSource } from "../quick-ask";
 import { buildSessionDeepLink, extractSessionIdFromPath } from "../session-url";
+import { SessionIdentityIndex, sessionLookupKeys } from "../session-identity";
 import {
 	clearCachedProject,
 	clearCachedSession,
@@ -1390,7 +1391,7 @@ export const LeftPanel = memo(function LeftPanel({
 			return res;
 		};
 
-		const map = new Map<string, HistoryRunningInfo>();
+		const index = new SessionIdentityIndex<HistoryRunningInfo>();
 
 		for (const c of runningAll) {
 			const descendants = getDescendants(c.id);
@@ -1410,44 +1411,18 @@ export const LeftPanel = memo(function LeftPanel({
 				error: c.error,
 			};
 
-			if (c.sessionFile) {
-				const normF = normalizeSessionPathKey(c.sessionFile);
-				map.set(`file:${normF}`, info);
-				const fn = normF.split("/").pop();
-				if (fn) map.set(`fn:${fn}`, info);
-				const sidFromF = extractSessionIdFromPath(c.sessionFile);
-				if (sidFromF) map.set(`sid:${sidFromF.toLowerCase()}`, info);
-			}
-			if (c.sessionId) {
-				map.set(`sid:${c.sessionId.trim().toLowerCase()}`, info);
-			}
-			map.set(`conv:${c.id}`, info);
+			index.add(c, info, sessionLookupKeys(c));
 		}
 
-		return map;
+		return index;
 	}, [runningAll]);
 
 	const getHistoryRunningInfo = useCallback(
 		(s: SessionSummary): HistoryRunningInfo | undefined => {
-			if (s.path.startsWith("conv:") && runningInfoBySession.has(s.path)) {
-				return runningInfoBySession.get(s.path);
+			if (s.path.startsWith("conv:") && runningInfoBySession.has({ id: s.path })) {
+				return runningInfoBySession.get({ id: s.path });
 			}
-			const normP = normalizeSessionPathKey(s.path);
-			if (runningInfoBySession.has(`file:${normP}`)) {
-				return runningInfoBySession.get(`file:${normP}`);
-			}
-			if (s.sessionId && runningInfoBySession.has(`sid:${s.sessionId.trim().toLowerCase()}`)) {
-				return runningInfoBySession.get(`sid:${s.sessionId.trim().toLowerCase()}`);
-			}
-			const fn = normP.split("/").pop();
-			if (fn && runningInfoBySession.has(`fn:${fn}`)) {
-				return runningInfoBySession.get(`fn:${fn}`);
-			}
-			const sidFromPath = extractSessionIdFromPath(s.path);
-			if (sidFromPath && runningInfoBySession.has(`sid:${sidFromPath.toLowerCase()}`)) {
-				return runningInfoBySession.get(`sid:${sidFromPath.toLowerCase()}`);
-			}
-			return undefined;
+			return runningInfoBySession.get(s, sessionLookupKeys(s));
 		},
 		[runningInfoBySession],
 	);
@@ -1460,8 +1435,7 @@ export const LeftPanel = memo(function LeftPanel({
 			convsByProject.set(normalizeSessionPathKey(group.cwd), group.convs);
 		}
 		for (const c of runningAll) if (c.parentId) parentIds.add(c.parentId);
-		const claimedSessionPaths = new Set<string>();
-		const claimedSessionIds = new Set<string>();
+		const claimed = new SessionIdentityIndex<true>();
 		return effectiveProjects.map((p) => {
 			const pNorm = normalizeSessionPathKey(p.path);
 			const active = pNorm === curNorm;
@@ -1480,13 +1454,25 @@ export const LeftPanel = memo(function LeftPanel({
 			const isLoadingSessions =
 				!active && pStateSessions === undefined && loadingProjects.has(pNorm) && pRawSessions.length === 0;
 
-			let diskIds: Set<string> | null = null;
-			const getDiskIds = (): Set<string> => {
-				if (diskIds) return diskIds;
-				const ids = new Set<string>();
-				for (const s of pRawSessions) if (s.sessionId) ids.add(s.sessionId.trim().toLowerCase());
-				diskIds = ids;
-				return ids;
+			let diskIndex: SessionIdentityIndex<true> | null = null;
+			const getDiskIndex = (): SessionIdentityIndex<true> => {
+				if (diskIndex) return diskIndex;
+				const index = new SessionIdentityIndex<true>();
+				for (const s of pRawSessions) index.add(s, true);
+				diskIndex = index;
+				return index;
+			};
+			/**
+			 * 旧服务端兼容分支：不带 `rowKind` 时只能按字段猜。
+			 * 删除条件：移动端/桌面端与服务器最低支持版本都发过带 `rowKind` 的版本（新客户端连旧服）。
+			 */
+			const legacyOwnsRow = (c: RowConv): boolean => {
+				if (c.isStreaming || c.completionPending || c.hasQuestion) return true;
+				if (c.isSubagent || Boolean(c.parentId)) return true;
+				if (parentIds.has(c.id)) return true;
+				if (c.pinned || c.nativeCli) return true;
+				if (!c.sessionFile) return !getDiskIndex().has(c);
+				return false;
 			};
 
 			const orderScope = conversationOrderScope(engine, p.path);
@@ -1496,46 +1482,45 @@ export const LeftPanel = memo(function LeftPanel({
 				Boolean(ready && (!projectSessions || pNorm in projectSessions)),
 			);
 			const orderedConvs = conversationOrder.sort(orderScope, pConvsAll, (c) => c, false);
-			const pRunningRaw = orderedConvs.filter((c) => {
-				if (c.isStreaming || c.completionPending || c.hasQuestion) return true;
-				if (c.isSubagent || Boolean(c.parentId)) return true;
-				if (parentIds.has(c.id)) return true;
+			// 行归属由引擎裁定（`rowKind`）：open = 对话自占一行，history = 交给历史行。
+			const engineOwnsRows = pConvsAll.some((c) => c.rowKind !== undefined);
+			const ownsRow = (c: RowConv): boolean => {
 				if (c.elsewhere) return true;
-				if (c.pinned || c.nativeCli) return true;
-				if (!c.sessionFile) {
-					const matchesDisk = Boolean(c.sessionId && getDiskIds().has(c.sessionId.trim().toLowerCase()));
-					if (!matchesDisk) return true;
-				}
-				return false;
-			});
+				if (engineOwnsRows) return c.rowKind !== "history";
+				return legacyOwnsRow(c);
+			};
+			const openRowConvs = orderedConvs.filter(ownsRow);
 
-			const pRunningRows = buildConversationRows(pRunningRaw, collapsedSubagents);
+			const pRunningRows = buildConversationRows(openRowConvs, collapsedSubagents);
 
-			for (const c of pRunningRaw) {
-				if (c.sessionFile) claimedSessionPaths.add(normalizeSessionPathKey(c.sessionFile));
-				if (c.sessionId) claimedSessionIds.add(c.sessionId.trim().toLowerCase());
-			}
+			for (const c of openRowConvs) claimed.add(c, true);
 
 			const idleSessions = conversationOrder.sort(
 				orderScope,
 				pRawSessions.filter((s) => {
 					if (!isSessionMatchingProject(s, p.path)) return false;
-					const sNorm = normalizeSessionPathKey(s.path);
-					if (sNorm && claimedSessionPaths.has(sNorm)) return false;
-					const sId = s.sessionId?.trim().toLowerCase() || extractSessionIdFromPath(s.path)?.toLowerCase();
-					if (sId && claimedSessionIds.has(sId)) return false;
-					if (sNorm) claimedSessionPaths.add(sNorm);
-					if (sId) claimedSessionIds.add(sId);
+					// 同一会话已在“运行中对话”行里渲染过就不再进历史行（身份判定单源：session-identity）
+					if (claimed.has(s)) return false;
+					claimed.add(s, true);
 					return true;
 				}),
 				(session) => session,
 				false,
 			);
 
-			const actuallyRunningCount = pRunningRaw.filter(
-				(c) => c.isStreaming || c.hasQuestion || c.completionPending,
+			const actuallyRunningCount = openRowConvs.filter(
+				(c) =>
+					c.isStreaming ||
+					c.hasQuestion ||
+					c.completionPending ||
+					Boolean(
+						c.nativeCli &&
+						c.nativeCli.status?.phase !== "exited" &&
+						c.nativeCli.status?.phase !== "error" &&
+						c.nativeCli.status?.phase !== "disconnected",
+					),
 			).length;
-			const unreadRunningCount = pRunningRaw.filter(
+			const unreadRunningCount = openRowConvs.filter(
 				(c) =>
 					!c.isStreaming &&
 					!c.completionPending &&
@@ -1934,8 +1919,19 @@ export const LeftPanel = memo(function LeftPanel({
 		const isStreaming = Boolean(runInfo?.isStreaming);
 		const hasQuestion = Boolean(runInfo?.hasQuestion);
 		const hasError = Boolean(runInfo?.hasError || runInfo?.error);
+		const isCli = Boolean(s.nativeCli || runInfo?.conv?.nativeCli);
+		const cliPhase = runInfo?.conv?.nativeCli?.status?.phase;
+		const isCliRunning =
+			Boolean(runInfo?.conv?.nativeCli) &&
+			(cliPhase === "running" ||
+				cliPhase === "working" ||
+				cliPhase === "starting" ||
+				(!cliPhase && !runInfo?.conv?.error));
+		const isCliWaiting =
+			Boolean(runInfo?.conv?.nativeCli) && (cliPhase === "waiting_input" || cliPhase === "waiting_approval");
+		const isCliExited = isCli && !isCliRunning && !isCliWaiting;
 		const isActuallyRunning = Boolean(
-			isStreaming || hasQuestion || runInfo?.conv?.completionPending || runInfo?.conv?.isStreaming,
+			isStreaming || hasQuestion || runInfo?.conv?.completionPending || runInfo?.conv?.isStreaming || isCliRunning,
 		);
 		const isUnread =
 			!active &&
@@ -1988,6 +1984,18 @@ export const LeftPanel = memo(function LeftPanel({
 					}}
 				>
 					{active && <span className="conv-current-badge">{t("current")}</span>}
+					{isCli && (
+						<FiTerminal
+							size={13}
+							className={`native-cli-conversation-icon${isCliRunning ? " is-running" : isCliExited ? " is-exited" : isCliWaiting ? " is-waiting" : ""}`}
+							title={
+								cliPhase
+									? `${t("nativeCli")} (${t(`nativeCliSession.${cliPhase === "waiting_input" ? "waitingInput" : cliPhase === "waiting_approval" ? "waitingApproval" : cliPhase}`) || cliPhase})`
+									: t("nativeCli")
+							}
+							aria-label={t("nativeCli")}
+						/>
+					)}
 					{renaming === s.path ? (
 						<input
 							autoFocus
@@ -2029,14 +2037,24 @@ export const LeftPanel = memo(function LeftPanel({
 						<ConversationRowIndicator time={formatModified(s.modified)}>
 							{switching ? (
 								<HalfRingSpinner className="status-spinner-right" />
-							) : hasQuestion ? (
-								<span className="status-question-right" title={t("waitingQuestionBadge")}>
+							) : hasQuestion || isCliWaiting ? (
+								<span
+									className="status-question-right"
+									title={
+										cliPhase === "waiting_approval"
+											? t("nativeCliSession.waitingApproval")
+											: t("nativeCliSession.waitingInput") || t("waitingQuestionBadge")
+									}
+								>
 									?
 								</span>
-							) : isStreaming ? (
+							) : isStreaming || isCliRunning ? (
 								<div className="status-spinner-right" title={t("streaming")} />
-							) : hasError ? (
-								<span className="status-error-right" title={runInfo?.error}>
+							) : hasError || cliPhase === "error" ? (
+								<span
+									className="status-error-right"
+									title={runInfo?.error || runInfo?.conv?.nativeCli?.status?.error || t("nativeCliSession.error")}
+								>
 									!
 								</span>
 							) : isActuallyRunning ? (
@@ -2125,7 +2143,8 @@ export const LeftPanel = memo(function LeftPanel({
 					return false;
 				})
 			: undefined;
-		const convTime = c.modified ?? matchSess?.modified;
+		const cliActivity = c.nativeCli?.status?.lastActivityAt ?? c.nativeCli?.status?.updatedAt;
+		const convTime = Math.max(c.modified ?? 0, matchSess?.modified ?? 0, cliActivity ?? 0) || undefined;
 
 		if ((c as RowConv).elsewhere) {
 			const elseOwner = (c as RowConv).owner;
@@ -2350,7 +2369,13 @@ export const LeftPanel = memo(function LeftPanel({
 			);
 		}
 		const active = !sharedConversationOwner && activeConversationId === c.id;
-		const isActuallyRunning = Boolean(c.isStreaming || hasStreaming || c.completionPending);
+		const isCli = Boolean(c.nativeCli);
+		const cliPhase = c.nativeCli?.status?.phase;
+		const isCliRunning =
+			isCli && (cliPhase === "running" || cliPhase === "working" || cliPhase === "starting" || (!cliPhase && !c.error));
+		const isCliWaiting = isCli && (cliPhase === "waiting_input" || cliPhase === "waiting_approval");
+		const isCliExited = isCli && (cliPhase === "exited" || cliPhase === "disconnected");
+		const isActuallyRunning = Boolean(c.isStreaming || hasStreaming || c.completionPending || isCliRunning);
 		const isUnread =
 			!active &&
 			!isActuallyRunning &&
@@ -2412,8 +2437,12 @@ export const LeftPanel = memo(function LeftPanel({
 					{c.nativeCli && (
 						<FiTerminal
 							size={13}
-							className="native-cli-conversation-icon"
-							title={t("nativeCli")}
+							className={`native-cli-conversation-icon${isCliRunning ? " is-running" : isCliExited ? " is-exited" : isCliWaiting ? " is-waiting" : ""}`}
+							title={
+								cliPhase
+									? `${t("nativeCli")} (${t(`nativeCliSession.${cliPhase === "waiting_input" ? "waitingInput" : cliPhase === "waiting_approval" ? "waitingApproval" : cliPhase}`) || cliPhase})`
+									: t("nativeCli")
+							}
 							aria-label={t("nativeCli")}
 						/>
 					)}
@@ -2463,14 +2492,24 @@ export const LeftPanel = memo(function LeftPanel({
 						)}
 
 						<ConversationRowIndicator time={convTime ? formatModified(convTime) : undefined}>
-							{hasQuestion || c.hasQuestion ? (
-								<span className="status-question-right" title={t("waitingQuestionBadge")}>
+							{hasQuestion || c.hasQuestion || isCliWaiting ? (
+								<span
+									className="status-question-right"
+									title={
+										cliPhase === "waiting_approval"
+											? t("nativeCliSession.waitingApproval")
+											: t("nativeCliSession.waitingInput") || t("waitingQuestionBadge")
+									}
+								>
 									?
 								</span>
 							) : isActuallyRunning ? (
 								<div className="status-spinner-right" title={t("streaming")} />
-							) : c.error ? (
-								<span className="status-error-right" title={c.error}>
+							) : c.error || cliPhase === "error" ? (
+								<span
+									className="status-error-right"
+									title={c.error || c.nativeCli?.status?.error || t("nativeCliSession.error")}
+								>
 									!
 								</span>
 							) : isUnread ? (

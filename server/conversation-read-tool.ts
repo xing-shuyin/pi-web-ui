@@ -444,49 +444,22 @@ export function makeConversationReadTool(
 		promptSnippet: "inspect another conversation the user mentions (list/read/files/status)",
 		parameters: Type.Object({
 			action: Type.Optional(
-				Type.String({
-					description:
-						'Default "list": running conversations + history sessions; read = one transcript (≤600 chars/msg); ' +
-						"files = files it created/modified; status = last tool call, last assistant text, pending question.",
+				Type.Unsafe<string>({
+					type: "string",
+					enum: ["list", "read", "files", "status"],
+					description: "list(kind?,query?) | read(id|path,view?) | files(id|path,query?) | status(id)",
 				}),
 			),
-			scope: Type.Optional(
-				Type.String({
-					description: 'list only: "current" = this project, "all" = every project. Default "all".',
-				}),
-			),
-			kind: Type.Optional(
-				Type.String({
-					description: 'list only: "running" | "history" | "all" (which sections to show). Default "all".',
-				}),
-			),
-			query: Type.Optional(
-				Type.String({
-					description:
-						"list: case-insensitive filter over id/title/path/first message. read/files: search within the transcript (read returns hits ±1 context).",
-				}),
-			),
-			view: Type.Optional(
-				Type.String({
-					description:
-						'read only: "chat" = only user/assistant text (default, cheap); "full" = incl. tool calls/results.',
-				}),
-			),
-			last: Type.Optional(
-				Type.Number({ description: "read only: take the latest N messages instead of guessing offset." }),
-			),
-			id: Type.Optional(
-				Type.String({ description: 'read only: running conversation id (e.g. "c3"), from action=list.' }),
-			),
-			path: Type.Optional(Type.String({ description: "read only: history session file path, from action=list." })),
-			offset: Type.Optional(Type.Number({ description: "read only: first message index (0-based). Default 0." })),
-			limit: Type.Optional(
-				Type.Number({
-					description:
-						"list: max entries per section (history defaults to 15, running uncapped up to 50). read/files: max messages/entries (1-200, default 50).",
-				}),
-			),
-			maxChars: Type.Optional(Type.Number({ description: "read only: max characters. Default 20000." })),
+			scope: Type.Optional(Type.String({ enum: ["current", "all"] })),
+			kind: Type.Optional(Type.String({ enum: ["running", "history", "all"] })),
+			query: Type.Optional(Type.String()),
+			view: Type.Optional(Type.String({ enum: ["chat", "full"] })),
+			last: Type.Optional(Type.Number()),
+			id: Type.Optional(Type.String()),
+			path: Type.Optional(Type.String()),
+			offset: Type.Optional(Type.Number()),
+			limit: Type.Optional(Type.Number()),
+			maxChars: Type.Optional(Type.Number()),
 		}),
 		execute: async (_id, p, _signal, _onUpdate, ctx) => {
 			const action = (p.action ?? "list").trim().toLowerCase();
