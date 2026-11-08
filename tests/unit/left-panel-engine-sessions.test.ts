@@ -90,14 +90,25 @@ describe("LeftPanel with CLI engines (Claude/Codex)", () => {
 			messageCount: 2,
 			modified: Date.now(),
 		};
+		// The `sessions` prop is the active project's list, but the engine reports every project's rows
+		// (bare conversation ids, no slug in `path`). The beta row must not be adopted by alpha.
+		const otherProjectSession: SessionSummary = {
+			path: "conv-beta-1",
+			sessionId: "conv-beta-1",
+			cwd: cwdB,
+			name: "Beta 对话",
+			displayName: "Beta 对话",
+			firstMessage: "yo",
+			messageCount: 2,
+			modified: Date.now() - 500,
+		};
 		const container = mount(
 			{
 				engine: "claude",
 				sessionFile: "conv-alpha-1",
 				conversations: [conv],
 				activeConversationId: conv.id,
-				sessions: [session],
-				projectSessions: { [cwdA.toLowerCase()]: [session], [cwdB.toLowerCase()]: [] },
+				sessions: [session, otherProjectSession],
 				projects: [
 					{ path: cwdA, lastUsed: Date.now() },
 					{ path: cwdB, lastUsed: Date.now() - 1000 },
@@ -107,6 +118,7 @@ describe("LeftPanel with CLI engines (Claude/Codex)", () => {
 		);
 		const scroll = container.querySelector(".projects-scroll") ?? container;
 		expect(countText(scroll, "Alpha 对话")).toBe(1);
+		expect(countText(scroll, "Beta 对话")).toBe(0);
 		const beta = projectBlock(container, "beta");
 		expect(beta).toBeTruthy();
 		expect(beta!.textContent).not.toContain("Alpha 对话");
