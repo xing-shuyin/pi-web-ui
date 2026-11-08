@@ -16,8 +16,7 @@ function session(result: unknown = { ok: true } as never) {
 	return { tool: makeBrowserScriptTool({ pageCall }), calls, pageCall };
 }
 
-const params = (tool: { parameters: unknown }): Record<string, any> =>
-	(tool.parameters as any)?.properties ?? {};
+const params = (tool: { parameters: unknown }): Record<string, any> => (tool.parameters as any)?.properties ?? {};
 
 describe("browser_script 工具定义", () => {
 	it("注册进工具目录，模型侧名字与动作枚举固定", () => {
