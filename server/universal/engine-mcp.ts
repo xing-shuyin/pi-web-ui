@@ -101,6 +101,10 @@ export function toCodexMcpOverrides(servers: Record<string, McpServerSpec>): {
 			if (spec.cwd) push(name, "cwd", spec.cwd);
 		} else continue;
 		if (typeof spec.timeout === "number" && spec.timeout > 0) push(name, "tool_timeout_sec", spec.timeout);
+		// The driver runs `--ask-for-approval never`; Codex rejects MCP calls that would need a
+		// prompt ("requires approval, but approval policy is never"), so servers the user enabled
+		// in pi are pre-approved — same trust level as Claude's --dangerously-skip-permissions.
+		push(name, "default_tools_approval_mode", "approve");
 	}
 	return { args, env };
 }
