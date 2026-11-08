@@ -78,6 +78,7 @@
 - **审查者委派模式（Delegate Mode）**：开启后主对话只审不干，用户输入自动派发给常驻执行会话；闸门强制拦截写操作与子代理派发；计划模式优先级高于委派（`server/delegate-mode.ts`、`server/plan-mode.ts`）。
 - **预设依赖与部分应用**：交换文档顶层 `plugins` 仅携带插件需求元数据，不含配置、密钥、存储或授权；安装复用显式 `plugin_job`。部分预设未携带的字段不得补默认或清空当前设置，`plugins` 不得进入运行设置；保存、应用、延后加载和应用失败分别回执（见 [`preset-sharing.md`](preset-sharing.md)）。
 - **预设分享必须白名单严格净化**：导入外部 JSON 必须通过 `server/preset-share.ts` 白名单校验（`preset-fields.ts`），丢弃未知字段，执行 dryRun 确认，严禁未经校验直接摊入 `ClientSettings`（守卫：`preset-share.test.ts`，文档：[`preset-sharing.md`](preset-sharing.md)）。
+- **原子写 / 重试单源在 `server/atomic-file.ts`**：`writeAtomicSync` / `writeAtomic` / `readFileSyncRetry` 自带 EPERM/EACCES/EBUSY 的**真退避**（20/60/150/400ms）——Windows 上杀毒与索引器会短暂占用刚写完的文件，`rename` 的瞬时失败是常态，空转重试（无 sleep）等于没重试。Hub 升级 worker 不能 import TS，故 `bin/lib/atomic-file.mjs` 由 `npm run gen:atomic`（`build:server` 末尾自动跑）从同一份实现生成，禁手改；升级记账写失败**不得**阻断回滚（先恢复旧服务，元数据降级为尽力而为）（守卫：`atomic-file.test.ts`、`atomic-file-generated.test.ts`、`hub-upgrade-runtime.test.ts`）。
 - **Windows 最小化通知**：Windows 最小化时页面 visibility 状态不准确，必须通过窗口尺寸矩形判断（`isCollapsedWindow`）；通知禁止携带 `tag` 字段，防止被系统静默吞并。
 - **压缩软上限必须双层监控，换模型必须走 `applySessionModel`**：SDK 的 `compaction.reserveTokens` 是**回合内**唯一的检查点（工具调用间隙 `_compactBeforeNextAssistantResponse`），必须逐会话算成 `cw - cap`，否则自治长跑（子代理 / 单回合几十次工具调用）全程无空闲态，永不会压（`#773`）；且 reserve 依赖会话**当前**模型，任何裸 `session.setModel()` 都会让判定线卡在上一模型的 `W - C` 上，换模型一律走 `applySessionModel`；cap ≤ keepRecent + headroom 时不注射（否则每个工具间隙重压一次）。`server/soft-cap.ts`。
 - **模型目录官方整表替换**：通过 `patch-remote-catalog.ts` 幂等改写 SDK 目录，不残留旧定义，升级后自动重新应用。

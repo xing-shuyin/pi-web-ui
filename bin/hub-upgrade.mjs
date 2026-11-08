@@ -16,14 +16,22 @@ import { dirname, isAbsolute, join, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { setTimeout as delay } from "node:timers/promises";
 import { acquireHubLock, hubServicePlan, runManager, probeHub, windowsArg } from "./device-hub-cli.mjs";
+import { readFileSyncRetry, writeAtomicFileSync } from "./lib/atomic-file.mjs";
 
 const SELF = fileURLToPath(import.meta.url);
 const PACKAGE = JSON.parse(readFileSync(new URL("../package.json", import.meta.url), "utf8"));
 export const UPGRADE_TIMEOUT_MS = 30 * 60_000;
 export const jobPathFor = (dataDir) => join(resolve(dataDir), "hub-upgrade.json");
 export function readUpgradeJob(path) {
-	if (!existsSync(path)) return undefined;
-	const job = JSON.parse(readFileSync(path, "utf8"));
+	let text;
+	try {
+		text = readFileSyncRetry(path);
+	} catch (error) {
+		// 没有任务文件是正常情况；但 EPERM/EBUSY 这类瞬时占用已被 readFileSyncRetry 退避过，不再兜。
+		if (error?.code === "ENOENT") return undefined;
+		throw error;
+	}
+	const job = JSON.parse(text);
 	if (
 		job.schemaVersion !== 1 ||
 		typeof job.id !== "string" ||
@@ -34,13 +42,12 @@ export function readUpgradeJob(path) {
 	return job;
 }
 export function writeUpgradeJob(path, job) {
-	const temp = `${path}.${randomUUID()}.tmp`;
-	try {
-		writeFileSync(temp, `${JSON.stringify(job, null, 2)}\n`, { flag: "wx", mode: 0o600 });
-		renameSync(temp, path);
-	} finally {
-		rmSync(temp, { force: true });
-	}
+	// Windows 杀毒/索引器会短暂占用刚写完的文件，rename 报 EPERM/EBUSY 是瞬时状态：走 atomic-file 的退避重试。
+	writeAtomicFileSync(path, `${JSON.stringify(job, null, 2)}\n`, {
+		nonce: `${process.pid}.${randomUUID()}`,
+		mode: 0o600,
+		fsync: true,
+	});
 }
 function planForJob(job) {
 	const env = { ...process.env, PI_DEVICE_HUB_SERVICE_NAME: job.serviceName ?? "pi-device-hub" };
@@ -398,16 +405,18 @@ export async function runUpgradeJob(
 		signal,
 		source = process.env.PI_DEVICE_HUB_UPDATE_SOURCE,
 		log = console.log,
+		readJob = readUpgradeJob,
+		writeJob = writeUpgradeJob,
 	} = {},
 ) {
-	let job = readUpgradeJob(path);
+	let job = readJob(path);
 	if (!job || job.state !== "queued") throw new Error("Hub upgrade job is not queued");
 	plan ??= planForJob(job);
 	const update = (patch) => {
-		const current = readUpgradeJob(path);
+		const current = readJob(path);
 		if (current?.id !== job.id) throw new Error("Hub upgrade job was replaced");
 		job = { ...job, ...patch, updatedAt: Date.now() };
-		writeUpgradeJob(path, job);
+		writeJob(path, job);
 	};
 	let releaseLock;
 	let previousFile;
@@ -469,10 +478,19 @@ export async function runUpgradeJob(
 		return job;
 	} catch (error) {
 		let reason = error instanceof Error ? error.message : String(error);
+		// 回滚是「把旧服务救回来」，而给任务文件记状态只是记账。记账写不进去（Windows 上 rename 撞上杀毒/服务
+		// 句柄就是 EPERM）绝不能把回滚本身拖掉：先恢复服务，元数据一律降级为尽力而为。
+		const record = (patch) => {
+			try {
+				update(patch);
+			} catch (metadataError) {
+				log(`Hub upgrade state write deferred (${metadataError?.message ?? metadataError})`);
+			}
+		};
 		if (changed && previousFile) {
 			recordWindowsServiceFailure(plan, candidate, logPath, run);
+			record({ phase: "rolling-back" });
 			try {
-				update({ phase: "rolling-back" });
 				const restore = `${plan.file}.${job.id}.rollback`;
 				writeFileSync(restore, previousFile, { mode: 0o600 });
 				renameSync(restore, plan.file);
@@ -489,8 +507,8 @@ export async function runUpgradeJob(
 				reason += `; rollback failed: ${rollbackError.message}. Inspect hub status --json and hub-upgrade.log`;
 			}
 		}
-		update({ state: "failed", phase: "failed", error: reason.slice(0, 4096) });
-		throw new Error(job.error);
+		record({ state: "failed", phase: "failed", error: reason.slice(0, 4096) });
+		throw new Error(job.error ?? reason);
 	} finally {
 		releaseLock?.();
 	}

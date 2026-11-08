@@ -137,6 +137,41 @@ describe("Windows Hub TCP handoff", () => {
 			expect(wait).toHaveBeenCalledExactlyOnceWith(f.settings, expect.objectContaining({ version: "1.0.0" }));
 		},
 	);
+	it("元数据写失败不再吃掉回滚：旧服务照样恢复，最终状态尽力落盘", async () => {
+		const f = fixture("darwin");
+		const original = readFileSync(f.plan.file);
+		const wait = vi.fn().mockRejectedValueOnce(new Error("new runtime unhealthy")).mockResolvedValueOnce(f.health);
+		const writeJob = vi.fn((path: string, job: any) => {
+			// 复现 Windows 上 rename 撞杀毒/服务句柄：rolling-back 这一步写不进去
+			if (job.phase === "rolling-back") throw Object.assign(new Error("EPERM: rename"), { code: "EPERM" });
+			runtime.writeUpgradeJob(path, job);
+		});
+		await expect(runtime.runUpgradeJob(f.path, { ...f, ...clock(), wait, writeJob })).rejects.toThrow(
+			"previous Hub service restored",
+		);
+		// 服务定义被恢复，且最终 state=failed 落盘（不因中间的 EPERM 丢失结论）
+		expect(readFileSync(f.plan.file)).toEqual(original);
+		expect(wait).toHaveBeenCalledTimes(2);
+		const final = runtime.readUpgradeJob(f.path);
+		expect(final.state).toBe("failed");
+		expect(final.error).toContain("previous Hub service restored");
+		expect(final.error).not.toContain("rollback failed");
+		expect(writeJob).toHaveBeenCalledWith(f.path, expect.objectContaining({ state: "failed" }));
+	});
+	it("连最终状态都写不进去时，抛出的仍是真实失败原因", async () => {
+		const f = fixture("darwin");
+		const wait = vi.fn().mockRejectedValueOnce(new Error("new runtime unhealthy")).mockResolvedValueOnce(f.health);
+		let writes = 0;
+		const writeJob = vi.fn((path: string, job: any) => {
+			// 前两次（installing / restarting）正常，真失败之后连状态都写不进去
+			if (++writes >= 3) throw Object.assign(new Error("EPERM: rename"), { code: "EPERM" });
+			runtime.writeUpgradeJob(path, job);
+		});
+		await expect(runtime.runUpgradeJob(f.path, { ...f, ...clock(), wait, writeJob, log: () => {} })).rejects.toThrow(
+			"new runtime unhealthy; previous Hub service restored",
+		);
+		expect(readFileSync(f.plan.file, "utf8")).toBe("original service");
+	});
 	it("waits again before restoring the exact legacy 0.117 service definition", async () => {
 		const f = fixture("win32");
 		runtime.writeUpgradeJob(f.path, { ...f.job, fromVersion: "legacy", fromBootId: "legacy" });
