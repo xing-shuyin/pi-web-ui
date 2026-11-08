@@ -216,7 +216,12 @@ describe("native CLI configuration and argv", () => {
 			mkdirSync(join(root, "node_modules", "cli"), { recursive: true });
 			writeFileSync(script, "// cli");
 			const args = ["a b", 'a" & echo injected', "%PATH%", "$(id)"];
-			for (const prefix of ["", "endLocal & goto #_undefined_# 2>NUL || title %COMSPEC% & "]) {
+			// 第三种前缀是 npm 11+（cmd-shim 9）的逐字输出，`pi.cmd` / `claude.cmd` 现在都是这个形状。
+			for (const prefix of [
+				"",
+				"endLocal & goto #_undefined_# 2>NUL || title %COMSPEC% & ",
+				"endLocal & goto #_undefined_# 2>NUL || title %COMSPEC% & set PATHEXT=%PATHEXT:;.JS;=;% & ",
+			]) {
 				writeFileSync(
 					join(root, "claude.cmd"),
 					`@ECHO off\r\nSET "_prog=node"\r\n${prefix}"%_prog%" "%dp0%\\node_modules\\cli\\bin.js" %*\r\n`,
