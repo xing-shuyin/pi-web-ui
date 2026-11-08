@@ -36,7 +36,7 @@ async function main() {
 	if (!skipPack) {
 		console.log("[make-portable] 正在调用 electron-builder 打包最新构建到 win-unpacked...");
 		try {
-			run("npx electron-builder -c desktop/electron-builder.yml --win dir");
+			run("node scripts/run-electron-builder.mjs -c desktop/electron-builder.yml --win dir");
 		} catch (err) {
 			if (existsSync(unpackedDir)) {
 				console.warn(`⚠ electron-builder 打包遇到网络波动（如 504 超时），回落复用已有的 win-unpacked: ${err.message}`);
