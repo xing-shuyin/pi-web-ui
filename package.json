@@ -1,6 +1,6 @@
 {
 	"name": "pi-web-ui",
-	"version": "0.118.0",
+	"version": "0.119.0",
 	"description": "Just open your browser to get all your work done — browser cockpit for AI coding agents (chat, code, files, terminal, Git in one tab)",
 	"license": "MIT",
 	"author": {
@@ -92,7 +92,7 @@
 		"start": "node --import ./dist/server/resolve-global-sdk.js dist/server/index.js",
 		"build:desktop": "tsc -p desktop/tsconfig.json && node scripts/build-browser.mjs",
 		"desktop:dev": "npm run build:desktop && electron dist/desktop/main.js",
-		"desktop:dist": "npm run build && npm run build:desktop && electron-builder -c desktop/electron-builder.yml",
+		"desktop:dist": "npm run build && npm run build:desktop && node scripts/run-electron-builder.mjs -c desktop/electron-builder.yml",
 		"desktop:portable": "npm run build && npm run build:desktop && node scripts/make-portable.mjs",
 		"desktop:portable:full": "npm run build && npm run build:desktop && node scripts/make-portable.mjs --with-git",
 		"format": "prettier --write server/ web/src/ extensions/ scripts/ bin/ desktop/ tests/*.mjs tests/unit/ *.mjs",

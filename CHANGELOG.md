@@ -10,6 +10,67 @@
 
 ## [Unreleased]
 
+## [0.119.0] — 2026-11-08
+
+### Added
+
+- **页面脚本注入**：AI 可给网页注入临时或永久脚本／样式；设置内新增「页面脚本」面板，可停用、查看代码、删除，另有总开关。
+- **.crx 扩展安装**：设置里选文件或把 .crx 拖进浏览器窗口即自动解包安装，重启后自动恢复；同一扩展重装不再报错。
+- **无人值守运行**：不打开网页也会自动上线 QQ、微信、Telegram、飞书等 11 个消息渠道（常驻插件），机器重启后照常收消息。
+- **额度看板插件**：底栏显示当前模型所属厂商的剩余额度，点开小卡片可看百分比、重置时间与余额，AI 也能查询。
+- **按需工具清单**：设置内可把 sandbox、worktree、canvas、MCP 管理、patch、delegate_task、ls 等重量级工具列入清单彻底关闭，移出清单即恢复。
+- **防卡死命令执行**：bash／powershell／终端接管默认 120 秒硬超时、杀进程树、输出先落盘，AI 不再挂在死命令上。
+- **网页悬浮球**：浏览器右下角圆钮提供后退、前进、刷新、收藏、复制 Markdown，位置可拖动；默认注入所有网页（此前设置项存在但未生效），可关掉。
+- **桌面分栏拖拽**：桌面壳分栏出现分割线，拖动实时显示比例百分比，拖到边缘自动切成单栏。
+- **底栏插件状态位**：插件可把额度／用量接在「对话费用」后显示（如 `$0.76 / DS ¥15.82`），点击由宿主弹出统一浮层。
+- **DSH 原生终端**：引擎可安装 `dsh-tui`，终端面板可直接运行 DSH 会话并继续上次会话。
+- **本机 CLI 预检**：新建原生 CLI 会话时检测本机 CLI 是否安装，未安装可直接点「安装」或查看安装说明。
+- **健康检查扩展**：`/api/health` 增加常驻执行者状态、出站积压与死信，排障不必翻日志。
+- **浏览器增强**：新标签页搜索条可直接切 Bing／Google／百度／DuckDuckGo；地址栏支持 Ctrl+L 居中搜索浮层与页面加载进度条。
+
+### Fixed
+
+- **左栏重复会话行**：同一会话曾同时出现在「运行中对话」与历史里；现在行归属由服务端裁定，并按统一身份去重，只显示一行。
+- **原生 CLI 状态与排序**：左栏 CLI 行显示真实状态（运行／等待输入或审批／已退出），CLI 活动纳入排序，提交输入后立刻置顶。
+- **浮层互相遮挡**：预览与工具详情按打开顺序叠放，授权类弹窗始终盖在最上层，关掉一层其余自动收拢。
+- **口令被回显**：读取页面或填写口令后不再返回密码值，填写本身照常可用。
+- **操作落到后台标签**：同站点多标签时优先操作用户正在看的页面；多页面歧义报错直接点名当前页面。
+- **QQ 重复回话与重连风暴**：同一入站消息跨重启不再重复处理（投递账本去重）；同一 AppID 保证单实例长连，命中频率限制至少等 60 秒再重连。
+- **发送失败静默丢失**：出站按错误类别退避重试、超窗进死信，积压可在健康检查里看到。
+- **切回 CLI 画面重建**：切到别的会话再切回来，原生 CLI 面板保持存活，终端画面与滚动位置不再重建。
+- **终端尺寸被重置**：重新打开终端不再把行列改回 80×24，输出回滚上限从 200KB 提到 2MB。
+- **桌面版拖不动窗口／浏览器入口消失**：窄分栏下整条顶栏可作为拖拽区；顶栏固定保留「浏览器」入口。
+- **Agent 起不来只剩空白**：给出「Agent 暂时不可用」提示与「切换到浏览器模式」出口，切模式不再把对话整窗切走。
+- **插件列表标签错乱**：同一条目重复登记时，宿主自带插件不再被标成「手动添加」。
+- **便携版「位置不可用」**：便携模式补齐桌面／下载等标准目录，选文件、装扩展不再报错。
+
+### Changed
+
+- **默认主题**：未选过主题的用户默认使用「极简行文 · 天青墨韵」，不再使用内置深色基线；选「无主题」也会被记住。
+- **编辑工具合并**：`edit_soft` 下线，宽松匹配改为 `edit` 的 `soft` 参数，旧开关与旧预设自动折算。
+- **出厂默认关闭更多工具**：ls、patch、delegate_task、sandbox、worktree、canvas、MCP 管理 出厂默认关闭，需要时在设置里打开。
+- **工具契约瘦身**：工具说明与参数 schema 合计减少约四成字符，每轮固定上下文开销明显下降。
+- **浏览器外壳**：合成单行 40px 工具栏，新增 Ctrl+Shift+1/2/3 切换浏览器／Agent／分栏、Ctrl+Alt+M 循环、Alt+←/→ 前进后退。
+- **桌面默认启动模式**：桌面默认进 Agent 界面，新增「桌面应用 → 启动模式」设置，运行中切模式不再改写它。
+- **插件页重组**：插件页从「市场、已安装」改为「插件目录、社区生态、插件列表」，自定义条目归入插件目录。
+- **入口改名与精简**：「浏览器操作」改为「浏览器」，面板去掉示例话术与单页提示，新标签页去掉「最近访问」区块。
+- **跨对话问答简化**：communicate／conversation 的提问与回复只收纯文本，选项弹窗只留给提问工具。
+- **设置项下线**：`edit_soft` 开关与随手问「显示原文」移除，旧预设里这两个字段自动忽略。
+
+<!-- auto-i18n:start -->
+
+### i18n
+
+- 前端新增 key（21）：`nativeCliDetecting`、`nativeCliNotInstalled`、`nativeCliInstall`、`nativeCliInstallDocs`、`nativeCliDiscoveryFailed`、`settingsDesktopApp`、`settingsStartupMode`、`settingsStartupModeHint`、`settingsStartupModeAgent`、`settingsStartupModeBrowser`、`settingsStartupModeSplit`、`settingsStartupModeFailed`、`providerDetailEmptyHint`、`browserScriptEnabledDesc`、`browserScriptOffHint`、`toolOnDemandTools`、`toolOnDemandToolsDesc`、`quickAskEmptyAnswer`、`quickAskNetworkError`、`pluginCatalogCustomHint`、`pluginUninstall`
+- 前端删除 key（21）：`htmlJsOff`、`htmlJsOffTip`、`htmlJsOn`、`htmlJsOnTip`、`htmlEnableJs`、`htmlDisableJs`、`editSoftEnabled`、`editSoftEnabledDesc`、`editSoftOffHint`、`browserControlExamples`、`browserControlExample1`、`browserControlExample2`、`browserControlOpenPanel`、`browserControlSingleTip`、`quickAskShowOriginal`、`quickAskExpandSource`、`quickAskCollapseSource`、`quickAskExplainQuestion`、`selectionExplainEmpty`、`pluginInstalled`、`pluginCatalogBuiltin`
+- 前端中文变更（10）：`browserControl`、`toolsSubagentDepHint`、`delegateTaskOffHint`、`toolDescSubagent`、`pluginCatalogCustom`、`pluginCatalogTabBuiltin`、`pluginCatalogTabCustom`、`pluginCatalogRemoveHint`、`preset.codeDesc`、`subagentMaxDepthDesc`
+- 前端英文变更（10）：`browserControl`、`toolsSubagentDepHint`、`delegateTaskOffHint`、`toolDescSubagent`、`pluginCatalogCustom`、`pluginCatalogTabBuiltin`、`pluginCatalogTabCustom`、`pluginCatalogRemoveHint`、`preset.codeDesc`、`subagentMaxDepthDesc`
+- 服务端新增 key（12）：`edit.oldtext.empty`、`edit.exact.not.unique`、`edit.soft.oldtext.blank`、`edit.soft.fragment.not.supported`、`edit.soft.match.not.found`、`edit.soft.match.not.unique`、`edit.edits.overlap`、`edit.result.identical`、`edit.input.no.edits`、`edit.operation.aborted`、`edit.file.access.failed`、`edit.soft.replace.done`
+- 服务端文案变更（1）：`subagents.spawn.template.unavailable`
+- 服务端删除 key（12）：`editsoft.oldtext.empty`、`editsoft.exact.not.unique`、`editsoft.oldtext.blank`、`editsoft.fragment.not.supported`、`editsoft.match.not.found`、`editsoft.match.not.unique`、`editsoft.edits.overlap`、`editsoft.result.identical`、`editsoft.input.no.edits`、`editsoft.operation.aborted`、`editsoft.file.access.failed`、`editsoft.replace.done`
+
+<!-- auto-i18n:end -->
+
 ## [0.118.0] — 2026-11-07
 
 ### Added
@@ -2296,7 +2357,8 @@ when?, children?}`，也收 `topbar` / `settings` 这类简写别名）；宿主
 [0.90.1]: https://github.com/xing-shuyin/pi-web-ui/releases/tag/v0.90.1
 [0.90.0]: https://github.com/xing-shuyin/pi-web-ui/releases/tag/v0.90.0
 [0.89.0]: https://github.com/xing-shuyin/pi-web-ui/releases/tag/v0.89.0
-[Unreleased]: https://github.com/xing-shuyin/pi-web-ui/compare/v0.118.0...main
+[Unreleased]: https://github.com/xing-shuyin/pi-web-ui/compare/v0.119.0...main
+[0.119.0]: https://github.com/xing-shuyin/pi-web-ui/releases/tag/v0.119.0
 [0.118.0]: https://github.com/xing-shuyin/pi-web-ui/releases/tag/v0.118.0
 [0.117.0]: https://github.com/xing-shuyin/pi-web-ui/releases/tag/v0.117.0
 [0.88.0]: https://github.com/xing-shuyin/pi-web-ui/releases/tag/v0.88.0
