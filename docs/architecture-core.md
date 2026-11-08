@@ -205,7 +205,7 @@ pi 的 `schedule` 创建任务时单独持久化创建来源（稳定 SDK 会话
 - **执行即原版 CLI**：两个引擎都只启动本机 `claude` / `codex`，工具、登录、会话存储、CLAUDE.md/AGENTS.md、CLI 自己的 MCP 与技能全部由 CLI 负责；底座不模拟 CLI 能力。
 - **图片**：Claude 走 `-p --input-format stream-json`，图片作为原生 `image` 块（>5MB 或非 png/jpeg/webp/gif 时落盘为文件交给 CLI 读取）；Codex 走 `--image`。
 - **上传文件**：浏览器上传的 `fileData` 由底座先存入 `<dataDir>/uploads/<clientId>/`（与 Pi 共用清理策略），再以绝对路径告诉 CLI；禁止只传文件名。
-- **MCP**：pi 配置的已启用服务器（`<agentDir>/mcp.json` + `<cwd>/.pi/mcp.json`，项目覆盖全局）**叠加**在 CLI 自身配置之上：Claude 用 0600 临时文件 `--mcp-config`（轮次结束删除，不用 `--strict-mcp-config`），Codex 用 `-c mcp_servers.*`，HTTP 头值经 `env_http_headers` 走环境变量以免出现在命令行。pi 侧 OAuth 令牌不随之传递。
+- **MCP**：pi 配置的已启用服务器（`<agentDir>/mcp.json` + `<cwd>/.pi/mcp.json`，项目覆盖全局）**叠加**在 CLI 自身配置之上：Claude 用 0600 临时文件 `--mcp-config`（轮次结束删除，不用 `--strict-mcp-config`），Codex 用 `-c mcp_servers.*`，HTTP 头值经 `env_http_headers` 走环境变量以免出现在命令行；因驱动以 `--ask-for-approval never` 运行，桥接的服务器一律带 `default_tools_approval_mode="approve"`（否则 Codex 拒绝调用："requires approval, but approval policy is never"），与 Claude 的 `--dangerously-skip-permissions` 同级。pi 侧 OAuth 令牌不随之传递。
 - **模型**：Claude 列表为 CLI 别名（`default` 不传 `--model`，跟随 CLI 配置；`opus`/`sonnet`/`haiku`）加 models.json 中兼容的自定义服务商；已下线的 `claude-3-*` 存档自动迁移为 `default`。会话构造时必须把当前模型同步给驱动。
 - **斜杠命令**：Claude 的命令清单取自 CLI `system/init` 事件的 `slash_commands`，原样透传给 CLI（含 `/compact`、技能）；pi 自管 UI 状态的命令（`/new`、`/model`、`/name` 等）保留在 pi。通用底座不得伪造压缩（只裁剪界面消息而 CLI 上下文不变）；不支持原生压缩的引擎只提示。
 - **会话 ID**：`createSession()` 不得返回占位 ID；真实 ID 来自 CLI 事件并经 `onSessionStarted` 回写，否则后续 `--resume` 会被 CLI 拒绝。

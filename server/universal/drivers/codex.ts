@@ -25,6 +25,16 @@ export async function probeCodex(
 		: result;
 }
 
+/** Text content of a completed `mcp_tool_call` item (`result.content[].text`), if any. */
+function mcpResultText(item: any): string | undefined {
+	if (item?.type !== "mcp_tool_call" || !Array.isArray(item.result?.content)) return undefined;
+	const text = item.result.content
+		.map((part: any) => (part?.type === "text" && typeof part.text === "string" ? part.text : ""))
+		.filter(Boolean)
+		.join("\n");
+	return text || undefined;
+}
+
 interface ActiveRun {
 	child: ChildProcess;
 	done: Promise<void>;
@@ -205,8 +215,10 @@ export class CodexDriver extends BaseAgentDriver {
 						}
 						if (event.type === "item.completed")
 							sink.onToolEnd(id, {
-								output: item.aggregated_output ?? JSON.stringify(item),
-								...(item.status === "failed" || (typeof item.exit_code === "number" && item.exit_code !== 0)
+								output: item.aggregated_output ?? mcpResultText(item) ?? JSON.stringify(item),
+								...(item.status === "failed" ||
+								item.error ||
+								(typeof item.exit_code === "number" && item.exit_code !== 0)
 									? { error: item.error?.message || `Codex ${item.type} failed (${item.exit_code ?? item.status})` }
 									: {}),
 							});

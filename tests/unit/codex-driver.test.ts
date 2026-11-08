@@ -122,6 +122,39 @@ describe("Codex CLI driver", () => {
 			expect.arrayContaining(["--sandbox", "workspace-write", "--ask-for-approval", "never"]),
 		);
 	});
+	it("shows MCP tool result text and surfaces MCP call errors", async () => {
+		const { child, driver, sink, emit } = setup();
+		const done = driver.sendPrompt("hello", undefined, sink);
+		const base = { type: "mcp_tool_call", server: "pitest", tool: "magic_word", arguments: {} };
+		emit({
+			type: "item.completed",
+			item: {
+				...base,
+				id: "m1",
+				status: "completed",
+				error: null,
+				result: { content: [{ type: "text", text: "PINEAPPLE-42" }], structured_content: null },
+			},
+		});
+		emit({
+			type: "item.completed",
+			item: {
+				...base,
+				id: "m2",
+				status: "failed",
+				result: null,
+				error: { message: "MCP tool call requires approval, but approval policy is never" },
+			},
+		});
+		emit({ type: "turn.completed" });
+		child.emit("close", 0);
+		await done;
+		expect(sink.onToolEnd).toHaveBeenCalledWith("m1", { output: "PINEAPPLE-42" });
+		expect(sink.onToolEnd).toHaveBeenCalledWith(
+			"m2",
+			expect.objectContaining({ error: "MCP tool call requires approval, but approval policy is never" }),
+		);
+	});
 	it("resumes the allocated thread and passes the chosen model and effort", async () => {
 		const { driver, child, sink, emit } = setup();
 		await driver.resumeSession("thread-1");
@@ -192,8 +225,10 @@ describe("Codex CLI driver", () => {
 			'mcp_servers.my-fs.env={ "A" = "1" }',
 			'mcp_servers.my-fs.cwd="/w"',
 			"mcp_servers.my-fs.tool_timeout_sec=30",
+			'mcp_servers.my-fs.default_tools_approval_mode="approve"',
 			'mcp_servers.web.url="https://mcp.example/mcp"',
 			'mcp_servers.web.env_http_headers={ "Authorization" = "PI_MCP_WEB_H0" }',
+			'mcp_servers.web.default_tools_approval_mode="approve"',
 		]);
 		expect((args as string[]).join(" ")).not.toContain("secret");
 		expect(options.env.PI_MCP_WEB_H0).toBe("Bearer secret");
