@@ -344,7 +344,8 @@ describe("conversation communication", () => {
 
 	it("rejects malformed questions and unauthorized or invalid answers without consuming requests", async () => {
 		const { a, b, host, service } = fixture();
-		await expect(service.communicate(host, b, "request", { to: "a", message: "only" })).rejects.toThrow("structured");
+		await expect(service.communicate(host, b, "request", { to: "a" })).rejects.toThrow("nonempty message");
+		await expect(service.communicate(host, b, "request", { to: "a", questions: [] })).rejects.toThrow("structured");
 		await expect(
 			service.communicate(host, b, "request", { to: "a", questions, timeoutSeconds: Infinity }),
 		).rejects.toThrow("Timeout");

@@ -530,6 +530,11 @@ describe("native CLI conversations", () => {
 		expect(cs.convs.size).toBe(3);
 		const rows = cs.emit.mock.calls.map(([msg]: any[]) => msg).findLast((msg: any) => msg.type === "conversations");
 		expect(rows.conversations.filter((item: any) => item.nativeCli)).toHaveLength(2);
+		// 原生 CLI 对话自己占左栏一行（终端要留在活动行），引擎必须明说
+		expect(rows.conversations.filter((item: any) => item.nativeCli).every((item: any) => item.rowKind === "open")).toBe(
+			true,
+		);
+		expect(rows.conversations.find((item: any) => item.id === first.id)?.modified).toBeGreaterThan(0);
 		await cs.switchConversation("normal");
 		await cs.switchConversation(first.id);
 		expect(ptys).toHaveLength(2);

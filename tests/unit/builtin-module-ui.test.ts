@@ -114,7 +114,7 @@ describe("built-in modules are absent from user plugin management", () => {
 			} as any),
 		);
 		const installed = [...document.querySelectorAll<HTMLButtonElement>('[role="tab"]')].find((button) =>
-			/插件列表|Plugin list|Installed/i.test(button.textContent ?? ""),
+			/插件列表|Plugin list|Installed|安装/i.test(button.textContent ?? ""),
 		);
 		expect(installed).toBeDefined();
 		await act(async () => installed!.click());

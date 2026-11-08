@@ -5,6 +5,7 @@ import {
 	AGENT_TOOL_CATALOG,
 	ASK_USER_QUESTION_TOOL_NAME,
 	BROWSER_PAGE_TOOL_NAME,
+	BROWSER_SCRIPT_TOOL_NAME,
 	CANVAS_TOOL_NAME,
 	CLAIM_FILES_TOOL_NAME,
 	CODEMODE_TOOL_NAME,
@@ -12,7 +13,6 @@ import {
 	CONVERSATION_READ_TOOL_NAME,
 	DELEGATE_TASK_TOOL_NAME,
 	DEVICE_COLLAB_TOOL_NAME,
-	EDIT_SOFT_TOOL_NAME,
 	EVAL_TOOL_NAME,
 	GROUP_BOT_TOOL_CATALOG,
 	LSP_TOOL_NAME,
@@ -25,7 +25,7 @@ import {
 	PRESENT_FILES_TOOL_NAME,
 	SCHEDULE_TOOL_NAME,
 	SKILL_TOOL_NAME,
-	SUBAGENT_TOOL_NAMES,
+	CONVERSATION_TOOL_NAME,
 	COMMUNICATE_TOOL_NAME,
 	TERMINAL_TOOL_NAMES,
 	TOOL_SEARCH_TOOL_NAME,
@@ -44,7 +44,7 @@ it("registers exactly one terminal catalog entry", () => {
 
 const AGENT_SERVICE_SRC = readFileSync(join(__dirname, "..", "..", "server", "agent-service.ts"), "utf8");
 
-const INTRINSIC = new Set(["bash", "read"]);
+const INTRINSIC = new Set(["bash", "read", "edit"]);
 
 const HARNESS = new Set([LOAD_TOOLS_TOOL_NAME]);
 
@@ -56,12 +56,13 @@ const FACTORY_TOOLS: Record<string, string[]> = {
 	makeTerminalBashTool: ["bash"],
 	makePersistentTerminalTools: [...TERMINAL_TOOL_NAMES],
 	makeReadDirTool: ["read"],
-	makeEditSoftTool: [EDIT_SOFT_TOOL_NAME],
-	makeSubagentTools: [...SUBAGENT_TOOL_NAMES],
+	makeEditToolDefinition: ["edit"],
+	makeSubagentTools: [CONVERSATION_TOOL_NAME],
 	makeCommunicateTool: [COMMUNICATE_TOOL_NAME],
 	makeDelegateTaskTool: [DELEGATE_TASK_TOOL_NAME],
 	makeAskUserQuestionTool: [ASK_USER_QUESTION_TOOL_NAME],
 	makeBrowserPageTool: [BROWSER_PAGE_TOOL_NAME],
+	makeBrowserScriptTool: [BROWSER_SCRIPT_TOOL_NAME],
 	makeConversationReadTool: [CONVERSATION_READ_TOOL_NAME],
 	makeClaimFilesTool: [CLAIM_FILES_TOOL_NAME],
 	makePlanUpdateTool: [PLAN_UPDATE_TOOL_NAME],

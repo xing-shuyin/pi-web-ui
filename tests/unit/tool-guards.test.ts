@@ -8,7 +8,6 @@ import {
 	withDelegationGate,
 	wrapWriteToolWithPermission,
 	wrapEditToolWithPermission,
-	wrapEditSoftToolWithPermission,
 	wrapPatchToolWithPermission,
 	wrapBashToolWithPermission,
 	type AskApprovalFn,
@@ -52,16 +51,6 @@ const wrappers: Record<string, (tool: ToolDefinition, ask: AskApprovalFn) => Too
 			() => "conv",
 			undefined,
 			tool,
-		),
-	edit_soft: (tool, ask) =>
-		wrapEditSoftToolWithPermission(
-			tool,
-			cwd,
-			() => "danger-full-access",
-			() => [],
-			() => "en",
-			ask,
-			() => "conv",
 		),
 	patch: (tool, ask) =>
 		wrapPatchToolWithPermission(

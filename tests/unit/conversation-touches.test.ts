@@ -23,11 +23,11 @@ function toolMsg(name: string, args: unknown, ts?: number): TouchableMessage {
 }
 
 describe("extractTouches 只算写不算读", () => {
-	it("edit/write/edit_soft 的 path 算写（含次数与最后时间）", () => {
+	it("edit/write 的 path 算写（含次数与最后时间）", () => {
 		const msgs = [
 			toolMsg("edit", { path: "E:/repo/a.ts" }, 10),
 			toolMsg("write", { path: "E:/repo/b.ts" }, 20),
-			toolMsg("edit_soft", { path: "E:/repo/a.ts" }, 30),
+			toolMsg("edit", { path: "E:/repo/a.ts" }, 30),
 		];
 		const out = extractTouches(msgs);
 		expect(out).toHaveLength(2);

@@ -40,8 +40,8 @@ function setup() {
 		() => "en",
 		() => selfId,
 	);
-	const call = (params: unknown, signal?: AbortSignal, alias = false) =>
-		tools[alias ? 1 : 0].execute!("test", params as never, signal, undefined, {} as any);
+	const call = (params: unknown, signal?: AbortSignal) =>
+		tools[0].execute!("test", params as never, signal, undefined, {} as any);
 	return {
 		host,
 		children,
@@ -127,6 +127,22 @@ describe("parent consult tools", () => {
 		await expect(call({ action: "consult", questions })).rejects.toThrow("unavailable");
 	});
 
+	it("accepts message-only consult and answer (text-first schema)", async () => {
+		const { host, call, setSelf } = setup();
+		setSelf("child");
+		await call({ action: "consult", message: "Which approach?" });
+		expect(host.consultParent).toHaveBeenCalledWith("child", [{ id: "q1", question: "Which approach?" }], undefined);
+		setSelf("parent");
+		await call({ action: "answer", runId: "child", requestId: "request-1", message: "Use A" });
+		expect(host.answerConsult).toHaveBeenCalledWith("parent", "child", "request-1", undefined, "Use A");
+	});
+
+	it("still rejects answer and consult without text or legacy structure", async () => {
+		const { call } = setup();
+		await expect(call({ action: "answer", runId: "child", requestId: "r" })).rejects.toThrow("nonempty message");
+		await expect(call({ action: "consult", message: "   " })).rejects.toThrow("nonempty message");
+	});
+
 	it("does not deliver answers after cancellation while the host was pending", async () => {
 		const { host, call } = setup();
 		const controller = new AbortController();
@@ -210,12 +226,13 @@ describe("wait_all consult interruption", () => {
 		expect(host.markSubagentsConsumed).not.toHaveBeenCalled();
 	});
 
-	it("does not spin on the same request through the legacy alias, but returns new requests", async () => {
+	it("does not spin on an already delivered request, but returns new requests", async () => {
 		vi.useFakeTimers();
 		const { call, setPending } = setup();
-		await call({ action: "wait_all" });
+		const first = await call({ action: "wait_all" });
+		expect(first.details).toMatchObject({ status: "needs_input", requests: [{ requestId: "request-1" }] });
 		let settled = false;
-		const second = call({ action: "wait_all", timeoutSeconds: 1 }, undefined, true).then((r) => {
+		const second = call({ action: "wait_all", timeoutSeconds: 1 }).then((r) => {
 			settled = true;
 			return r;
 		});

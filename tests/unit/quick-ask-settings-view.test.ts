@@ -19,7 +19,6 @@ const settings = {
 	quickAskTranslateTarget: "auto",
 	quickAskTranslateStyle: "natural",
 	quickAskTranslatePrompt: "Translate {{input}} into {{targetLanguage}}",
-	quickAskShowOriginal: false,
 	quickAskReferenceMenus: true,
 	quickAskConversationScope: "recent",
 	quickAskFolderScope: "listing",
@@ -201,7 +200,6 @@ describe("quick ask settings draft flush on close", () => {
 		for (const [suffix, patch] of [
 			["enabled", { quickAskEnabled: false }],
 			["translate-enabled", { quickAskTranslateEnabled: false }],
-			["original", { quickAskShowOriginal: true }],
 			["reference-menus", { quickAskReferenceMenus: false }],
 		] as const) {
 			click(`input[id$="-${suffix}"]`);

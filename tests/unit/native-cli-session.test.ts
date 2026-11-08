@@ -42,7 +42,11 @@ afterEach(async () => {
 	vi.unstubAllEnvs();
 	await rm(root, { recursive: true, force: true });
 });
-async function prepare(preset: "pi" | "claude" | "codex" | "agy" | "custom", args: string[] = [], ref = { key }) {
+async function prepare(
+	preset: "pi" | "claude" | "codex" | "agy" | "dsh" | "custom",
+	args: string[] = [],
+	ref = { key },
+) {
 	const launch = await prepareNativeCliSessionLaunch({ preset, args }, ref, ctx);
 	launches.push(launch);
 	return launch;
@@ -221,13 +225,21 @@ describe("native CLI exact session binding", () => {
 		const codex = await prepare("codex", ["resume", "--last"]);
 		expect(codex.capabilities.resume).toBe("explicit-only");
 	});
-	it("keeps agy and custom honest about process-only lifecycle and initial identity", async () => {
-		const agy = await prepare("agy");
-		expect(agy.config.args).toEqual([]);
-		expect(agy.capabilities).toEqual({ resume: "explicit-only", events: "process" });
+	it("keeps dsh and custom honest about process-only lifecycle and initial identity", async () => {
+		const agyDisabled = await prepare("agy", ["--disable-hooks"]);
+		expect(agyDisabled.config.args).toEqual(["--disable-hooks"]);
+		expect(agyDisabled.capabilities).toEqual({ resume: "explicit-only", events: "process" });
+		const dsh = await prepare("dsh");
+		expect(dsh.config.args).toEqual([]);
+		expect(dsh.capabilities).toEqual({ resume: "explicit-only", events: "process" });
 		const custom = await prepare("custom", ["--my-option"]);
 		expect(custom.config.args).toEqual(["--my-option"]);
 		expect(custom.capabilities).toEqual({ resume: "none", events: "process" });
+	});
+	it("wires official Antigravity lifecycle hooks through settings by default", async () => {
+		const agy = await prepare("agy");
+		expect(agy.config.args).toContain("--settings");
+		expect(agy.capabilities).toEqual({ resume: "explicit-only", events: "hooks" });
 	});
 	it("inserts internal flags before -- without consuming user prompt arguments", async () => {
 		const launch = await prepare("pi", ["--", "--session", "this is prompt content"]);

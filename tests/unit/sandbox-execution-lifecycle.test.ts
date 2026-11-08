@@ -2,7 +2,7 @@ import { mkdtempSync, mkdirSync, rmSync, writeFileSync, readFileSync } from "nod
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { makeEditSoftTool } from "../../server/edit-soft-tool.js";
+import { makeEditToolDefinition } from "../../server/edit-tool.js";
 import { makeSandboxTool } from "../../server/sandbox-tool.js";
 import { ClientSession } from "../../server/agent-service.js";
 import { SandboxManager, withSandboxJailGate } from "../../server/sandbox-service.js";
@@ -49,12 +49,12 @@ describe("sandbox execution ownership and lifecycle", () => {
 		await expect(owner.coordinateSandboxLifecycle(sandbox.id, "destroy")).rejects.toThrow(/Failed to move/);
 		expect(mgr.get(sandbox.id)).toBeDefined();
 	});
-	it("allows real local edit_soft operations through the sandbox gate", async () => {
+	it("allows real local edit(soft) operations through the sandbox gate", async () => {
 		const mgr = manager();
 		const { sandbox } = await mgr.create({});
 		writeFileSync(join(sandbox.path, "a.txt"), "  before\n");
 		const tool = withSandboxJailGate(
-			makeEditSoftTool(sandbox.path, () => "en"),
+			makeEditToolDefinition(sandbox.path, () => "en"),
 			() => mgr.getExecutionIdentity(sandbox.path, sandbox),
 			() => sandbox.path,
 			() => "en",
@@ -63,7 +63,7 @@ describe("sandbox execution ownership and lifecycle", () => {
 		);
 		const result = await tool.execute(
 			"edit",
-			{ path: "a.txt", edits: [{ oldText: "before", newText: "after" }] },
+			{ path: "a.txt", edits: [{ oldText: "  before", newText: "  after" }], soft: true },
 			undefined,
 			undefined,
 			{} as any,

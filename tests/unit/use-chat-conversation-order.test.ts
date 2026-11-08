@@ -166,4 +166,21 @@ describe("user submission ordering through useChat", () => {
 		receive(submitted);
 		expect(order()).toEqual(["recent", "older"]);
 	});
+
+	it("promotes conversation when user submits terminal_cli_paste", () => {
+		const order = mount();
+		expect(order()).toEqual(["recent", "older"]);
+		act(() => {
+			expect(
+				api.send({
+					type: "terminal_cli_paste",
+					requestId: "req-1",
+					terminalId: "term-1",
+					conversationId: "older",
+					data: "echo hello",
+				}),
+			).toBe(true);
+		});
+		expect(order()).toEqual(["older", "recent"]);
+	});
 });

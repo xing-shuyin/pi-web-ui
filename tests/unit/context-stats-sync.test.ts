@@ -26,10 +26,10 @@ describe("上下文统计与工具门控同步", () => {
 	});
 
 	it("normalizeDisabledAgentTools 保留核心内置工具", () => {
-		const res = normalizeDisabledAgentTools(["bash", "read", "invalid_xyz", "edit_soft", "powershell", "ls"]);
+		const res = normalizeDisabledAgentTools(["bash", "read", "invalid_xyz", "patch", "powershell", "ls"]);
 		expect(res).toContain("bash");
 		expect(res).toContain("read");
-		expect(res).toContain("edit_soft");
+		expect(res).toContain("patch");
 		expect(res).toContain("powershell");
 		expect(res).toContain("ls");
 		expect(res).not.toContain("invalid_xyz");
@@ -64,13 +64,13 @@ describe("上下文统计与工具门控同步", () => {
 	});
 
 	it("预设模式正确裁减内置工具与扩展工具", () => {
-		const allTools = ["bash", "read", "edit", "write", "edit_soft", "delegate_task", "plugin_foo"];
+		const allTools = ["bash", "read", "edit", "write", "patch", "delegate_task", "plugin_foo"];
 
 		expect(filterToolsByPreset(allTools, "ask")).toEqual([]);
 
 		expect(filterToolsByPreset(allTools, "minimal")).toEqual(["bash", "read"]);
 
-		expect(filterToolsByPreset(allTools, "code")).toEqual(["bash", "read", "edit", "write", "edit_soft"]);
+		expect(filterToolsByPreset(allTools, "code")).toEqual(["bash", "read", "edit", "write"]);
 
 		const readerTools = filterToolsByPreset(allTools, "reader");
 		expect(readerTools).toContain("read");

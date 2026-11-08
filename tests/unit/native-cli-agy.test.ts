@@ -46,9 +46,16 @@ describe("standalone Antigravity CLI", () => {
 			}),
 		).toEqual({ file: process.execPath, args: ["--model=explicit", "--prompt-interactive", "a task with spaces"] });
 	});
-	it("rejects DSH's profile launcher as a native terminal preset", () => {
-		expect(() => validateNativeCliConfig({ preset: "dsh" })).toThrow(/no standalone CLI/);
-		expect(() => validateNativeCliConfig({ preset: "dsh", args: ["web"] })).toThrow(/no standalone CLI/);
+	it("rejects Durable's library-only profile as a native terminal preset", () => {
+		expect(() => validateNativeCliConfig({ preset: "durable" })).toThrow(/no standalone CLI/);
+		expect(() => validateNativeCliConfig({ preset: "durable", args: ["web"] })).toThrow(/no standalone CLI/);
+	});
+	it("accepts DSH as a native terminal preset with standalone TUI CLI", () => {
+		expect(validateNativeCliConfig({ preset: "dsh" })).toEqual({ preset: "dsh" });
+		expect(validateNativeCliConfig({ preset: "dsh", args: ["--resume", "123"] })).toEqual({
+			preset: "dsh",
+			args: ["--resume", "123"],
+		});
 	});
 	it.skipIf(!windows)("finds the official Windows installer location without PATH", () => {
 		const localData = join(root, "local data");

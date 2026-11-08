@@ -143,10 +143,10 @@ describe("terminal history bridge", () => {
 			},
 			dispose() {},
 		});
-		bridge.write("a", "user", "x".repeat(210_000), true);
+		bridge.write("a", "user", "x".repeat(2_100_000), true);
 		const screen = display();
 		bridge.register("a", "user", screen);
-		expect(screen.text.length).toBe(200_000);
+		expect(screen.text.length).toBe(2_000_000);
 		bridge.write("a", "user", "tail");
 		expect(screen.text.endsWith("tail")).toBe(true);
 	});

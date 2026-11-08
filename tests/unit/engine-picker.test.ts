@@ -4,6 +4,7 @@ import { createRoot } from "react-dom/client";
 import { act } from "react-dom/test-utils";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { resetAppGlobals, setAppGlobals, setAppSend } from "../../web/src/app-globals.js";
+import { ENGINE_CATALOG } from "../../server/engine-catalog";
 import { EnginePicker, SUPPORTED_ENGINES } from "../../web/src/components/EnginePicker.js";
 import { LanguageProvider } from "../../web/src/i18n.js";
 
@@ -45,9 +46,10 @@ describe("引擎列表元数据与安装检测 (SUPPORTED_ENGINES & EnginePicker
 		expect(pi).toBeDefined();
 		expect(pi?.packageName).toBe("@earendil-works/pi-coding-agent");
 
+		// DSH 的可卸载包与安装命令同时覆盖 TUI，避免只装库却启动不了 dsh-tui。
 		expect(dsh).toBeDefined();
 		expect(dsh?.packageName).toBe("@deepseek-ai/dsh");
-		expect(dsh?.installCommand).toBe("npm i -g @deepseek-ai/dsh");
+		expect(dsh?.installCommand).toBe("npm i -g @deepseek-ai/dsh @deepseek-harness-tui/dsh-tui");
 
 		expect(claude).toBeDefined();
 		expect(claude?.packageName).toBe("@anthropic-ai/claude-code");
@@ -55,6 +57,14 @@ describe("引擎列表元数据与安装检测 (SUPPORTED_ENGINES & EnginePicker
 		const codex = SUPPORTED_ENGINES.find((e) => e.id === "codex");
 		expect(codex?.packageName).toBe("@openai/codex");
 		expect(codex?.installCommand).toBe("npm i -g @openai/codex");
+	});
+
+	it("包名与安装命令单一来源于引擎目录，界面不再手抄一份", () => {
+		for (const item of SUPPORTED_ENGINES) {
+			const engine = ENGINE_CATALOG[item.id as keyof typeof ENGINE_CATALOG];
+			expect(item.packageName).toBe(engine.packageName);
+			expect(item.installCommand).toBe(engine.installCommand);
+		}
 	});
 
 	it("未安装的引擎显示「未安装」标签与「安装」按钮，且点击无法切换引擎只能触发安装终端", () => {
@@ -101,7 +111,7 @@ describe("引擎列表元数据与安装检测 (SUPPORTED_ENGINES & EnginePicker
 		});
 		expect(sentMessages.filter((m) => m.type === "switch_engine")).toHaveLength(0);
 		expect(runCommandEvents).toHaveLength(1);
-		expect(runCommandEvents[0].detail.command).toBe("npm i -g @deepseek-ai/dsh");
+		expect(runCommandEvents[0].detail.command).toBe("npm i -g @deepseek-ai/dsh @deepseek-harness-tui/dsh-tui");
 		expect(runCommandEvents[0].detail.title).toBe("安装 DSH 引擎");
 
 		act(() => {

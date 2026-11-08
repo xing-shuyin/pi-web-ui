@@ -53,7 +53,6 @@ const defaults = {
 	quickAskTranslateTarget: "auto",
 	quickAskTranslateStyle: "natural",
 	quickAskTranslatePrompt: "将以下文字翻译成{{targetLanguage}}，只输出译文，保留代码与专有名词。\n{{input}}",
-	quickAskShowOriginal: false,
 	quickAskReferenceMenus: true,
 	quickAskConversationScope: "recent",
 	quickAskFolderScope: "listing",
@@ -63,7 +62,6 @@ const referencePreferences = {
 	quickAskTranslateTarget: "ja" as const,
 	quickAskTranslateStyle: "technical" as const,
 	quickAskTranslatePrompt: "Translate {{input}} into {{targetLanguage}}",
-	quickAskShowOriginal: true,
 	quickAskReferenceMenus: false,
 	quickAskConversationScope: "full" as const,
 	quickAskFolderScope: "content" as const,
@@ -203,7 +201,6 @@ describe("quick ask settings wiring", () => {
 		expect(
 			normalizeQuickAskSettings({
 				quickAskTranslateEnabled: "false",
-				quickAskShowOriginal: 1,
 				quickAskReferenceMenus: null,
 				quickAskTranslateTarget: "zh",
 				quickAskTranslateStyle: "fancy",

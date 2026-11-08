@@ -71,14 +71,30 @@ describe("shared engine CLI discovery", () => {
 	it("reports an actionable missing CLI error", () => {
 		expect(() => resolveEngineCliLaunch("codex")).toThrow(/npm i -g @openai\/codex/);
 	});
-	it.each(["dsh", "durable"] as const)("never invents an interactive %s CLI", async (id) => {
-		expect(() => resolveEngineCliLaunch(id)).toThrow(/no standalone CLI/);
-		expect(await probeEngineCliVersion(id)).toMatchObject({
+	it("never invents an interactive durable CLI", async () => {
+		expect(() => resolveEngineCliLaunch("durable")).toThrow(/no standalone CLI/);
+		expect(await probeEngineCliVersion("durable")).toMatchObject({
 			available: false,
 			error: expect.stringContaining("no standalone CLI"),
 		});
 		expect(findNativeCliExecutable).not.toHaveBeenCalled();
 		expect(probeGlobalPackage).not.toHaveBeenCalled();
+	});
+	it("uses DSH's declared dsh-tui npm bin when PATH is absent", () => {
+		const script = join(root, "bin", "dsh-tui.js");
+		mkdirSync(join(root, "bin"));
+		writeFileSync(script, "// DSH TUI fixture");
+		writeFileSync(join(root, "package.json"), JSON.stringify({ bin: { "dsh-tui": "bin/dsh-tui.js" } }));
+		vi.mocked(probeGlobalPackage).mockReturnValue({ installed: true, packagePath: root, version: "0.2.0" });
+		expect(resolveEngineCliLaunch("dsh", { refresh: true })).toEqual({
+			file: process.execPath,
+			args: [script],
+		});
+		expect(probeGlobalPackage).toHaveBeenCalledWith("@deepseek-harness-tui/dsh-tui", { refresh: true });
+	});
+	it("falls back to dst when dsh-tui is not found", () => {
+		vi.mocked(findNativeCliExecutable).mockImplementation((cmd) => (cmd === "dst" ? process.execPath : undefined));
+		expect(resolveEngineCliLaunch("dsh")).toEqual({ file: process.execPath, args: [] });
 	});
 	it("launches Antigravity's native binary without an npm package or forced noninteractive mode", () => {
 		vi.mocked(findNativeCliExecutable).mockReturnValue(process.execPath);

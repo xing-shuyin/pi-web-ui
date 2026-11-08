@@ -76,4 +76,8 @@ describe("设置面板多引擎动态自适应（分区条件隐藏与模型中�
 		expect(SETTINGS_SRC).toMatch(/tab === "device-collab"\s*&&\s*isPi[\s\S]*?<DeviceExecutionSettings/);
 		expect(SETTINGS_SRC).toContain("onNotice={() => triggerSyncState()}");
 	});
+
+	it("设置面板引擎卡片不渲染冗余的「可更新」文字标签（已有更新按钮，避免挤压重叠）", () => {
+		expect(SETTINGS_SRC).not.toContain('t("engineUpdateAvailable")');
+	});
 });

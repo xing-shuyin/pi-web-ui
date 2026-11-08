@@ -21,7 +21,7 @@ describe("引擎探测与更新检测模块 (server/engine-probe.ts)", () => {
 	it("元数据登记包含 pi、dsh 与 claude 三种引擎的包名与安装命令", () => {
 		expect(ENGINE_PACKAGES.pi.packageName).toBe("@earendil-works/pi-coding-agent");
 		expect(ENGINE_PACKAGES.dsh.packageName).toBe("@deepseek-ai/dsh");
-		expect(ENGINE_PACKAGES.dsh.installCommand).toBe("npm i -g @deepseek-ai/dsh");
+		expect(ENGINE_PACKAGES.dsh.installCommand).toBe("npm i -g @deepseek-ai/dsh @deepseek-harness-tui/dsh-tui");
 		expect(ENGINE_PACKAGES.claude.packageName).toBe("@anthropic-ai/claude-code");
 		expect(ENGINE_PACKAGES.claude.installCommand).toBe("npm i -g @anthropic-ai/claude-code");
 		expect(ENGINE_PACKAGES.codex.packageName).toBe("@openai/codex");

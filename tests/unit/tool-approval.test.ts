@@ -4,6 +4,7 @@ import {
 	checkDangerousToolCall,
 	isApprovalPolicyEmpty,
 	pluginApprovalCategory,
+	unattendedApprovalTimeoutMs,
 	type ApprovalPolicy,
 } from "../../server/tool-approval.js";
 
@@ -65,7 +66,7 @@ describe("高危操作识别与人机协同拦截 (Tool Approval / Human-in-the-
 		});
 	});
 
-	describe("文件修改高危识别 (write/edit/edit_soft)", () => {
+	describe("文件修改高危识别 (write/edit)", () => {
 		it("识别修改敏感密钥与配置文件 (.env, ssh 密钥, shell 配置)", () => {
 			const resEnv = checkDangerousToolCall("write", { path: ".env" }, cwd);
 			expect(resEnv.dangerous).toBe(true);
@@ -77,7 +78,7 @@ describe("高危操作识别与人机协同拦截 (Tool Approval / Human-in-the-
 			const resSsh = checkDangerousToolCall("write", { path: "/home/user/.ssh/id_rsa" }, cwd);
 			expect(resSsh.dangerous).toBe(true);
 
-			const resBashrc = checkDangerousToolCall("edit_soft", { path: "/home/user/.bashrc" }, cwd);
+			const resBashrc = checkDangerousToolCall("edit", { path: "/home/user/.bashrc" }, cwd);
 			expect(resBashrc.dangerous).toBe(true);
 		});
 
@@ -104,7 +105,7 @@ describe("高危操作识别与人机协同拦截 (Tool Approval / Human-in-the-
 				["bash", { command: "mkfs.ext4 /dev/sda1" }, "bash.disk"],
 				["write", { path: ".env" }, "file.sensitive.env"],
 				["write", { path: "/home/u/.ssh/id_rsa" }, "file.sensitive.ssh"],
-				["edit_soft", { path: "/home/u/.bashrc" }, "file.sensitive.shell"],
+				["edit", { path: "/home/u/.bashrc" }, "file.sensitive.shell"],
 				["write", { path: "../../outside.txt" }, "file.outside-workspace"],
 			];
 			for (const [tool, params, id] of cases) {
@@ -176,5 +177,25 @@ describe("高危操作识别与人机协同拦截 (Tool Approval / Human-in-the-
 			expect(res.dangerous).toBe(false);
 			expect(res.hits).toBeUndefined();
 		});
+	});
+});
+
+describe("unattendedApprovalTimeoutMs（无人值守审批超时）", () => {
+	it("普通会话返回 null —— 有真人看着就不自动拒绝", () => {
+		expect(unattendedApprovalTimeoutMs("client-abc")).toBeNull();
+		expect(unattendedApprovalTimeoutMs("device-xyz")).toBeNull();
+	});
+
+	it("伪客户端（plugin:/scheduler:/canvas:）默认 120s", () => {
+		for (const id of ["plugin:qq:default", "scheduler:t1", "canvas:main", "canvas-3"]) {
+			expect(unattendedApprovalTimeoutMs(id, undefined)).toBe(120_000);
+		}
+	});
+
+	it("env 可覆盖，非法值回落默认，上限 1h", () => {
+		expect(unattendedApprovalTimeoutMs("plugin:qq:default", "30")).toBe(30_000);
+		expect(unattendedApprovalTimeoutMs("plugin:qq:default", "abc")).toBe(120_000);
+		expect(unattendedApprovalTimeoutMs("plugin:qq:default", "0")).toBe(120_000);
+		expect(unattendedApprovalTimeoutMs("plugin:qq:default", "999999")).toBe(3_600_000);
 	});
 });

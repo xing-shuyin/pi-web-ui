@@ -61,7 +61,7 @@ describe("copy sandbox capability policy", () => {
 		expect(decide(name, { action: "list", dryRun: true })).not.toBeNull();
 	});
 
-	it.each(["read", "grep", "find", "write", "edit", "edit_soft", "patch", "sandbox", "subagent"])(
+	it.each(["read", "grep", "find", "write", "edit", "patch", "sandbox", "conversation"])(
 		"does not trust a tool named %s without host ownership",
 		(name) => {
 			expect(decide(name, { path: "src/task.js", action: "list" }, {})).not.toBeNull();
@@ -74,13 +74,13 @@ describe("copy sandbox capability policy", () => {
 		}
 	});
 
-	it.each(["read", "write", "edit", "edit_soft"])("allows bounded basic file operation %s", (name) => {
+	it.each(["read", "write", "edit"])("allows bounded basic file operation %s", (name) => {
 		expect(decide(name, { path: "src/task.js" })).toBeNull();
 		expect(decide(name, { file_path: "src/new-file.ts" })).toBeNull();
 		expect(decide(name, { path: join(root, "src", "nested", "new.ts") })).toBeNull();
 	});
 
-	it.each(["read", "write", "edit", "edit_soft", "grep", "find"])("checks all paths of %s", (name) => {
+	it.each(["read", "write", "edit", "grep", "find"])("checks all paths of %s", (name) => {
 		for (const path of [
 			outside,
 			"../credentials/token",
@@ -143,7 +143,7 @@ describe("copy sandbox capability policy", () => {
 
 	it("rejects symlink and dangling-link file operations and recursive discovery", () => {
 		symlinkSync(outside, join(root, "escape"), process.platform === "win32" ? "junction" : "dir");
-		for (const name of ["read", "write", "edit", "edit_soft", "grep", "find"]) {
+		for (const name of ["read", "write", "edit", "grep", "find"]) {
 			expect(decide(name, { path: "escape/token" })).not.toBeNull();
 		}
 		expect(decide("write", { path: "escape/new-file" })).not.toBeNull();
@@ -176,8 +176,8 @@ describe("copy sandbox capability policy", () => {
 	});
 
 	it("allows subagents only when host-enforced inheritance is explicit", () => {
-		expect(decide("subagent", { action: "spawn" })).not.toBeNull();
-		expect(decide("subagent", { action: "spawn" }, { inheritedSandboxSubagent: true })).not.toBeNull();
-		expect(decide("subagent", { action: "spawn" }, { ...trusted, inheritedSandboxSubagent: true })).toBeNull();
+		expect(decide("conversation", { action: "spawn" })).not.toBeNull();
+		expect(decide("conversation", { action: "spawn" }, { inheritedSandboxSubagent: true })).not.toBeNull();
+		expect(decide("conversation", { action: "spawn" }, { ...trusted, inheritedSandboxSubagent: true })).toBeNull();
 	});
 });

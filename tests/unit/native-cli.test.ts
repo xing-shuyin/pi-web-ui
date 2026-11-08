@@ -96,6 +96,12 @@ describe("native CLI configuration and argv", () => {
 			expect(resolveNativeCliLaunch({ preset, args }, { env: { PATH: root } })).toEqual({ file, args });
 		},
 	);
+	it("uses dsh-tui with no injected output, auth or permission flags", () => {
+		const file = join(root, `dsh-tui${process.platform === "win32" ? ".exe" : ""}`);
+		writeFileSync(file, "CLI fixture", { mode: 0o755 });
+		const args: string[] = [];
+		expect(resolveNativeCliLaunch({ preset: "dsh", args }, { env: { PATH: root } })).toEqual({ file, args });
+	});
 	it.each(["pi", "claude", "codex", "agy"] as const)(
 		"launches %s with its supported captured model options",
 		(preset) => {
@@ -184,10 +190,9 @@ describe("native CLI configuration and argv", () => {
 		{},
 		{ preset: "unknown" },
 		{ preset: "durable" },
-		{ preset: "dsh" },
-		{ preset: "dsh", args: [] },
-		{ preset: "dsh", args: [" ", "ignored-profile"] },
-		{ preset: "dsh", args: ["tui"] },
+		{ preset: "durable", args: [] },
+		{ preset: "durable", args: [" ", "ignored-profile"] },
+		{ preset: "durable", args: ["tui"] },
 		{ preset: "custom" },
 		{ preset: "claude", executable: " " },
 		{ preset: "claude", executable: "a\nb" },

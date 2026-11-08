@@ -81,10 +81,10 @@ function mockService(files: string[], remotePath = "/remote/node/bin:/usr/bin") 
 
 describe("remote CLI resolution", () => {
 	it("returns only standalone presets, availability and remote executable paths", async () => {
-		const service = mockService(["/remote/bin/pi", "", "/remote/bin/codex", "/remote/bin/agy"]);
+		const service = mockService(["/remote/bin/pi", "", "/remote/bin/claude", "/remote/bin/codex", "/remote/bin/agy"]);
 		const controller = new AbortController();
 		const result = await discoverRemoteNativeClis(service, uri, controller.signal);
-		expect(result.map((item) => item.preset)).toEqual(["pi", "claude", "codex", "agy"]);
+		expect(result.map((item) => item.preset)).toEqual(["pi", "dsh", "claude", "codex", "agy"]);
 		expect(result[0]).toEqual({ preset: "pi", available: true, executable: "/remote/bin/pi" });
 		expect(result[1].available).toBe(false);
 		expect(result[1].error).toContain("remote PATH");
@@ -153,12 +153,13 @@ describe("remote discovery scripts in a local POSIX shell", () => {
 	it("finds local-bin, npm, nvm and agy installations without local server paths", async () => {
 		await executable("bin/uname", "#!/bin/sh\nprintf '%s\\n' Linux\n");
 		const pi = await executable(".local/bin/pi");
+		const dsh = await executable(".local/bin/dsh-tui");
 		const claude = await executable(".npm-global/bin/claude");
 		const codex = await executable(".nvm/versions/node/v24/bin/codex");
 		const agy = await executable(".agy/bin/agy");
 		const service = { execInWorkspace: vi.fn((_uri: string, command: string) => run(command)) };
 		const result = await discoverRemoteNativeClis(service, uri);
-		expect(result.map((item) => item.executable)).toEqual([pi, claude, codex, agy]);
+		expect(result.map((item) => item.executable)).toEqual([pi, dsh, claude, codex, agy]);
 		expect(result.every((item) => item.available)).toBe(true);
 	});
 	it("uses explicitly configured remote tool-manager directories", async () => {

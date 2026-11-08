@@ -35,7 +35,6 @@ function makeMockHost(savedSettings: Record<string, unknown> = {}) {
 				bgAutoCleanupMin: 0,
 				toolLazyLoading: true,
 				toolApprovalEnabled: true,
-				editSoftEnabled: false,
 				questionnaireEnabled: true,
 				goalModeEnabled: true,
 				parallelReminderEnabled: true,

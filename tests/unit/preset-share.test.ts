@@ -88,7 +88,6 @@ const SETTINGS = {
 	terminalBash: false,
 	terminalBashIdleMs: 0,
 	terminalBashMaxForegroundMs: 0,
-	editSoftEnabled: false,
 	retryMaxAttempts: 6,
 	softCapTokens: 0,
 	softCapByModel: {},

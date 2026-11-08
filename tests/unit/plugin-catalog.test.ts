@@ -159,6 +159,23 @@ describe("readCatalog", () => {
 		expect(myCustom.origin).toBe("custom");
 		expect(myCustom.builtin).toBe(false);
 	});
+
+	it("同 id 同来源的自定义条目视为同一条目，不改写 origin（同步整份目录不翻转标签）", () => {
+		writeFileSync(
+			custom,
+			JSON.stringify({
+				entries: [{ id: "webmail", name: "webmail（同步回写）", source: "xing-shuyin/pi-web-ui/plugins/webmail" }],
+			}),
+		);
+
+		const list = readCatalog(builtin, custom, community);
+		expect(list).toHaveLength(2);
+		const webmail = list.find((e) => e.id === "webmail")!;
+		expect(webmail.origin).toBe("builtin");
+		expect(webmail.builtin).toBe(true);
+		expect(webmail.overridesBuiltin).toBeUndefined();
+		expect(webmail.name).toBe("webmail");
+	});
 });
 
 describe("addCustomEntry / removeCustomEntry", () => {

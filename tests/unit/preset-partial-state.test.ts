@@ -130,7 +130,6 @@ describe("ClientStateStore partial preset persistence", () => {
 			"reviewPrompt",
 			"disabledAgentTools",
 			"terminalToolsEnabled",
-			"editSoftEnabled",
 		] as const)
 			expect(after[field]).toEqual(before[field]);
 		expect(after).not.toHaveProperty("plugins");

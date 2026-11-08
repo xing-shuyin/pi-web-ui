@@ -213,13 +213,13 @@ describe("通用底座（Universal Base）子代理（Subagent）体系单测", 
 		expect(session.subagentHost.getSubagent(sub2)).toBeUndefined();
 	});
 
-	it("10. getToolInfo：subagent 工具信息正确返回定义", () => {
+	it("10. getToolInfo：conversation 工具信息正确返回定义", () => {
 		outbox.length = 0;
-		session.getToolInfo("subagent");
+		session.getToolInfo("conversation");
 
 		const toolInfoMsg = outbox.find((m) => m.type === "tool_info") as any;
 		expect(toolInfoMsg).toBeDefined();
-		expect(toolInfoMsg.name).toBe("subagent");
+		expect(toolInfoMsg.name).toBe("conversation");
 		expect(toolInfoMsg.found).toBe(true);
 		expect(toolInfoMsg.description).toBeDefined();
 		expect(toolInfoMsg.parameters).toBeDefined();
@@ -250,7 +250,9 @@ describe("通用底座（Universal Base）子代理（Subagent）体系单测", 
 		const targetSummary = convMsg.conversations.find((c: ConversationSummary) => c.id === convId);
 		expect(targetSummary).toBeDefined();
 		expect(targetSummary.isSubagent).toBe(true);
-		expect(targetSummary.subagentType).toBe("review");
-		expect(targetSummary.subagentParentId).toBe(parentId);
+		// 会话摘要走 ConversationSummary 单源：子代理类型进 agentPreset，父子关系进 parentId
+		expect(targetSummary.agentPreset).toBe("review");
+		expect(targetSummary.parentId).toBe(parentId);
+		expect(targetSummary.sessionId).toBe(convId);
 	});
 });

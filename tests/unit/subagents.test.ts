@@ -12,7 +12,6 @@ import {
 import { MAX_SUBAGENTS, getMaxSubagents } from "../../server/agent-formatters.js";
 import { countActiveSubagents, isSubagentActive, toSubagentSnapshot } from "../../server/subagent-helpers.js";
 import type { Conversation } from "../../server/agent-service.js";
-import { SUBAGENT_TOOL_NAMES } from "../../server/tool-manager.js";
 
 function makeHostSpies() {
 	const host: SubagentToolHost = {
@@ -46,8 +45,7 @@ describe("subagents tools", () => {
 		}
 	});
 
-	it("SUBAGENT_TOOL_NAMES 包含 conversation 与兼容别名，SUBAGENT_ACTIONS 包含 13 种 action", () => {
-		expect(SUBAGENT_TOOL_NAMES).toEqual(["conversation", "subagent"]);
+	it("makeSubagentTools 只产出 conversation，SUBAGENT_ACTIONS 包含 13 种 action", () => {
 		expect(SUBAGENT_ACTIONS).toEqual([
 			"spawn",
 			"complete",
@@ -65,7 +63,7 @@ describe("subagents tools", () => {
 		]);
 		const host = makeHostSpies();
 		const tools = makeSubagentTools(host);
-		expect(tools.map((t) => t.name)).toEqual(["conversation", "subagent"]);
+		expect(tools.map((t) => t.name)).toEqual(["conversation"]);
 		const [subagent] = tools;
 		expect(subagent.description.length).toBeGreaterThan(10);
 		expect(subagent.description.length).toBeLessThan(700);

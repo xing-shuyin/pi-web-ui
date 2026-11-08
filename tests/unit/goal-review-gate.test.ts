@@ -7,8 +7,8 @@ describe("目标审查闸门 goalReviewDenial", () => {
 		for (const action of ["create", "close", "input", "key", "unknown"])
 			expect(goalReviewDenial("terminal", { action })).toBeDefined();
 	});
-	it("写类工具一律拒（write/edit/edit_soft/git 工具/形态变换）", () => {
-		for (const name of ["write", "edit", "edit_soft", "apply_patch", "rm", "mkdir", "git", "format"]) {
+	it("写类工具一律拒（write/edit/git 工具/形态变换）", () => {
+		for (const name of ["write", "edit", "apply_patch", "rm", "mkdir", "git", "format"]) {
 			const d = goalReviewDenial(name, {});
 			expect(d?.kind, name).toBe("write-tool");
 			expect(d!.reason).toContain("只回 verdict JSON");
@@ -32,9 +32,9 @@ describe("目标审查闸门 goalReviewDenial", () => {
 		]) {
 			expect(goalReviewDenial(name, {}), name).toBeUndefined();
 		}
-		expect(goalReviewDenial("subagent", { action: "get_result" })).toBeUndefined();
-		expect(goalReviewDenial("subagent", { action: "list" })).toBeUndefined();
-		expect(goalReviewDenial("subagent", { action: "templates" })).toBeUndefined();
+		expect(goalReviewDenial("conversation", { action: "get_result" })).toBeUndefined();
+		expect(goalReviewDenial("conversation", { action: "list" })).toBeUndefined();
+		expect(goalReviewDenial("conversation", { action: "templates" })).toBeUndefined();
 	});
 
 	it("只读 bash 放行（跑测试/看 diff），写命令拒绝", () => {
@@ -63,8 +63,8 @@ describe("目标审查闸门 goalReviewDenial", () => {
 	});
 
 	it("派发类工具一律拒（D6：轮次由服务端控制）", () => {
-		expect(goalReviewDenial("subagent", { action: "spawn" })?.kind).toBe("dispatch-tool");
-		expect(goalReviewDenial("subagent", { action: "wait_all" })?.kind).toBe("dispatch-tool");
+		expect(goalReviewDenial("conversation", { action: "spawn" })?.kind).toBe("dispatch-tool");
+		expect(goalReviewDenial("conversation", { action: "wait_all" })?.kind).toBe("dispatch-tool");
 		for (const name of ["delegate_task", "schedule"]) {
 			const d = goalReviewDenial(name, {});
 			expect(d?.kind, name).toBe("dispatch-tool");

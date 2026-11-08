@@ -181,7 +181,7 @@ describe("planModeDenial", () => {
 		expect(d?.kind).toBe("write-tool");
 		expect(d?.reason).toContain("plan_update");
 		expect(d?.reasonEn).toContain("Plan mode");
-		expect(planModeDenial("edit_soft", {})?.kind).toBe("write-tool");
+		expect(planModeDenial("write", {})?.kind).toBe("write-tool");
 		expect(planModeDenial("patch", {})?.kind).toBe("write-tool");
 		expect(planModeDenial("git", { command: "commit" })?.kind).toBe("write-tool");
 		expect(planModeDenial("eval", { code: "require('fs').writeFileSync('x','y')" })?.kind).toBe("write-tool");
@@ -203,18 +203,18 @@ describe("planModeDenial", () => {
 		expect(planModeDenial("schedule", {})?.kind).toBe("bypass-tool");
 	});
 
-	it("subagent 只放行只读 action，写向 action 一律拒", () => {
+	it("conversation 只放行只读 action，写向 action 一律拒", () => {
 		for (const readonly of ["get_result", "list", "templates"]) {
-			expect(planModeDenial("subagent", { action: readonly }), readonly).toBeUndefined();
+			expect(planModeDenial("conversation", { action: readonly }), readonly).toBeUndefined();
 		}
 		for (const action of ["spawn", "steer", "stop", "wait_all", "handoff", "erase"]) {
-			const d = planModeDenial("subagent", { action });
+			const d = planModeDenial("conversation", { action });
 			expect(d, action).toBeDefined();
 			expect(d!.kind).toBe("bypass-tool");
 		}
-		expect(planModeDenial("subagent", { action: "" })?.kind).toBe("bypass-tool");
-		expect(planModeDenial("subagent", {})?.kind).toBe("bypass-tool");
-		expect(planModeDenial("subagent", undefined)?.kind).toBe("bypass-tool");
+		expect(planModeDenial("conversation", { action: "" })?.kind).toBe("bypass-tool");
+		expect(planModeDenial("conversation", {})?.kind).toBe("bypass-tool");
+		expect(planModeDenial("conversation", undefined)?.kind).toBe("bypass-tool");
 	});
 
 	it("拒绝常驻终端写向工具（terminal_input/terminal_key）", () => {

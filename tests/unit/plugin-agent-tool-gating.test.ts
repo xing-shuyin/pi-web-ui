@@ -140,7 +140,6 @@ describe("禁用语义（会话同步层面）", () => {
 					terminalBash: false,
 					terminalBashIdleMs: 15_000,
 					terminalBashMaxForegroundMs: 60_000,
-					editSoftEnabled: false,
 					questionnaireEnabled: true,
 					goalModeEnabled: true,
 					thinkingWrap: false,

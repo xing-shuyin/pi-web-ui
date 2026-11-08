@@ -1,12 +1,12 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { AGENT_TOOL_CATALOG, SUBAGENT_TOOL_NAMES, TERMINAL_TOOL_NAMES } from "../../server/tool-manager.js";
+import { AGENT_TOOL_CATALOG, CONVERSATION_TOOL_NAME, TERMINAL_TOOL_NAMES } from "../../server/tool-manager.js";
 import { zh } from "../../web/src/i18n.js";
 
 const SETTINGS_SRC = readFileSync(join(__dirname, "..", "..", "web", "src", "components", "SettingsModal.tsx"), "utf8");
 
-const LOOP_RENDERED = new Set<string>([...TERMINAL_TOOL_NAMES, ...SUBAGENT_TOOL_NAMES]);
+const LOOP_RENDERED = new Set<string>([...TERMINAL_TOOL_NAMES, CONVERSATION_TOOL_NAME]);
 
 describe("设置「工具」页覆盖率", () => {
 	it("「其他」组每个目录项都自带文案 key（且 key 真存在），循环才画得出说明", () => {
@@ -52,49 +52,46 @@ describe("设置「工具」页覆盖率", () => {
 		expect(SETTINGS_SRC).toContain("CONVERSATION_TOOL_NAMES.map");
 	});
 
-	it("切换新旧任一名字时同时加入或移除两个禁用名，保留无关工具", () => {
+	it("切换开关只增删该工具名，不动其他工具的禁用状态", () => {
 		const body = SETTINGS_SRC.match(/const toggleAgentTool = \(name: string\) => \{([\s\S]*?)\n\t\};/)?.[1];
 		expect(body).toBeTruthy();
 		const toggle = new Function("name", "disabledTools", "setPartial", body!);
-		for (const name of ["conversation", "subagent"]) {
-			for (const aliases of [[], ["conversation"], ["subagent"], ["conversation", "subagent"]]) {
+		for (const name of ["conversation", "communicate"]) {
+			for (const off of [[], ["bash"], [name], ["bash", name]]) {
 				let result: string[] = [];
-				toggle(name, new Set(["bash", ...aliases]), (patch: { disabledAgentTools: string[] }) => {
+				toggle(name, new Set(off), (patch: { disabledAgentTools: string[] }) => {
 					result = patch.disabledAgentTools;
 				});
-				expect(result).toEqual(aliases.length ? ["bash"] : ["bash", "conversation", "subagent"]);
+				expect(result).toEqual(off.includes(name) ? off.filter((n) => n !== name) : [...off, name]);
 			}
 		}
 	});
 
-	it("文案编辑使用主名，保存和重置同时处理两个覆盖", () => {
-		expect(SETTINGS_SRC).toContain('const canonical = name === "subagent" ? "conversation" : name');
-		expect(SETTINGS_SRC).toContain("name={canonical}");
+	it("文案编辑按工具名读写覆盖，不再映射别名", () => {
 		const expression = SETTINGS_SRC.match(
 			/const applyToolPromptOverride = \(name: string, override: UiToolPromptOverride \| null\) =>([\s\S]*?);/,
 		)?.[1];
 		expect(expression).toBeTruthy();
 		const apply = new Function("name", "override", "setPartial", `return ${expression?.trim()}`);
-		for (const name of ["conversation", "subagent"]) {
+		for (const name of ["conversation", "communicate"]) {
 			for (const override of [null, { description: "Shared prompt" }]) {
 				let result: unknown;
 				apply(name, override, (patch: unknown) => {
 					result = patch;
 				});
-				expect(result).toEqual({ toolPromptOverrides: { conversation: override ?? {}, subagent: override ?? {} } });
+				expect(result).toEqual({ toolPromptOverrides: { [name]: override ?? {} } });
 			}
 		}
 	});
 
-	it("工具卡与详情的新旧名字使用同一协作图标", () => {
+	it("工具卡与详情用协作图标，且不再保留已删除的 subagent 别名", () => {
 		for (const file of ["ToolCallBlock.tsx", "ToolInspectorModal.tsx"]) {
 			const source = readFileSync(join(__dirname, "../../web/src/components", file), "utf8");
 			expect(source).toMatch(/conversation: <FiUsers \/>/);
-			expect(source).toMatch(/subagent: <FiUsers \/>/);
+			expect(source).not.toMatch(/subagent: <FiUsers \/>/);
 			if (file === "ToolCallBlock.tsx") {
-				for (const name of ["conversation", "subagent"]) {
-					expect(source).toContain(`${name}: "toolcall-icon tc-tone-agent"`);
-				}
+				expect(source).toContain('conversation: "toolcall-icon tc-tone-agent"');
+				expect(source).not.toContain('subagent: "toolcall-icon tc-tone-agent"');
 			}
 		}
 	});

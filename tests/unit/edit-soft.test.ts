@@ -1,11 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { applySoftEdits, oldTextCores } from "../../server/edit-soft-tool.js";
+import { applySoftEdits, oldTextCores } from "../../server/edit-tool.js";
 
 function run(content: string, edits: { oldText: string; newText: string }[], path = "a.js") {
 	return applySoftEdits(content, edits, path);
 }
 
-describe("edit_soft applySoftEdits", () => {
+describe("edit(soft: true) applySoftEdits", () => {
 	it("精确子串匹配保留周围空白", () => {
 		const { newContent } = run("  const x = 1;  \n", [{ oldText: "const x = 1;  ", newText: "const y = 2;  " }]);
 		expect(newContent).toBe("  const y = 2;  \n");
@@ -85,7 +85,7 @@ describe("edit_soft applySoftEdits", () => {
 	});
 });
 
-describe("edit_soft 非法片段防御", () => {
+describe("edit(soft: true) 非法片段防御", () => {
 	it("跨行未对齐片段被拒绝（不再静默写坏）", () => {
 		expect(() => run("foo(a);\nfoo(b);\n", [{ oldText: "a);\nfoo(", newText: "z();" }])).toThrow(/line boundaries/);
 		expect(() => run("foo(a);\nb();\n", [{ oldText: "a);\nb();", newText: "z();" }])).toThrow(/line boundaries/);
@@ -103,7 +103,7 @@ describe("edit_soft 非法片段防御", () => {
 	});
 });
 
-describe("edit_soft oldTextCores", () => {
+describe("edit(soft: true) oldTextCores", () => {
 	it("去掉尾部空行并逐行 trim", () => {
 		expect(oldTextCores("  if (a) {\n    b();\n}")).toEqual(["if (a) {", "b();", "}"]);
 		expect(oldTextCores("  x = 1;\n")).toEqual(["x = 1;"]);

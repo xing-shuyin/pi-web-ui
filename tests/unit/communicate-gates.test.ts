@@ -35,8 +35,8 @@ describe.each(["readonly", "verify"] as const)("restricted %s communication", (m
 		expect(subagentSecurityDenial(mode, "write", { path: "out.txt" })).toBeDefined();
 		expect(subagentSecurityDenial(mode, "conversation", { action: "spawn" })).toBeDefined();
 	});
-	it("allows completion for both conversation names", () => {
-		for (const name of ["conversation", "subagent"])
+	it("allows completion for the conversation tool", () => {
+		for (const name of ["conversation"])
 			expect(subagentSecurityDenial(mode, name, { action: "complete" })).toBeUndefined();
 	});
 	it("permits inbox reads only when the communication tool is allowed", () => {

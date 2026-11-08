@@ -8,7 +8,7 @@ describe("delegationDenial", () => {
 			expect(delegationDenial("terminal", { action })).toBeDefined();
 	});
 	it("写类工具一律拒（主对话只审阅不施工）", () => {
-		for (const name of ["write", "edit", "edit_soft", "patch", "rm", "mkdir", "git", "notebook_edit"]) {
+		for (const name of ["write", "edit", "patch", "rm", "mkdir", "git", "notebook_edit"]) {
 			const d = delegationDenial(name, {});
 			expect(d, name).toBeDefined();
 			expect(d!.kind).toBe("write-tool");
@@ -18,7 +18,7 @@ describe("delegationDenial", () => {
 	});
 
 	it("派发类工具拒：派活是服务端的活", () => {
-		for (const name of ["subagent", "delegate_task", "schedule"]) {
+		for (const name of ["conversation", "delegate_task", "schedule"]) {
 			const d = delegationDenial(name, {});
 			expect(d, name).toBeDefined();
 			expect(d!.kind).toBe("dispatch-tool");

@@ -27,6 +27,25 @@ function getMobile768Blocks(css: string): string {
 
 const MOBILE_CSS = getMobile768Blocks(CSS);
 
+/**
+ * 读某个选择器块里的 z-index 数值。允许两种单源写法：
+ * - 字面值（如 `.modal-backdrop` 的 300）；
+ * - 令牌 `var(--z-notice)`——回查 `styles.css` 里的令牌声明取值。
+ * 叠栈区间的层级禁止写死数字（守卫：`tests/unit/overlay-stack.test.ts`）。
+ */
+function blockZIndex(selector: string): number {
+	const block = CSS.match(new RegExp(`\\.${selector}\\s*\\{[^}]*z-index:\\s*([^;}]+)`));
+	expect(block, `${selector} 缺少 z-index 声明`).not.toBeNull();
+
+	const raw = block![1].trim();
+	if (!raw.startsWith("var(")) return Number(raw);
+
+	const token = raw.slice("var(".length, raw.indexOf(")")).trim();
+	const declared = CSS.match(new RegExp(`${token}:\\s*([0-9]+);`));
+	expect(declared, `${selector} 引用的令牌 ${token} 未在 styles.css 中定义`).not.toBeNull();
+	return Number(declared![1]);
+}
+
 describe("手机端通知与横幅宽度规则（≤768px 满宽防过窄）", () => {
 	it(".notice-text 具有断行和防溢出声明", () => {
 		expect(CSS).toMatch(/\.notice-text\s*\{[^}]*overflow-wrap:\s*anywhere/);
@@ -54,22 +73,15 @@ describe("手机端通知与横幅宽度规则（≤768px 满宽防过窄）", (
 
 describe("通知与横幅层级规则（高于遮罩与弹窗）", () => {
 	it(".notices 的 z-index 处于顶层，高于一切弹窗与遮罩（如 .modal-backdrop 300）", () => {
-		const noticeZMatch = CSS.match(/\.notices\s*\{[^}]*z-index:\s*([0-9]+)/);
-		expect(noticeZMatch).not.toBeNull();
-		const noticeZ = Number(noticeZMatch![1]);
-
-		const modalBackdropZMatch = CSS.match(/\.modal-backdrop\s*\{[^}]*z-index:\s*([0-9]+)/);
-		expect(modalBackdropZMatch).not.toBeNull();
-		const modalBackdropZ = Number(modalBackdropZMatch![1]);
+		const noticeZ = blockZIndex("notices");
+		const modalBackdropZ = blockZIndex("modal-backdrop");
 
 		expect(noticeZ).toBeGreaterThan(modalBackdropZ);
 		expect(noticeZ).toBeGreaterThan(100000);
 	});
 
 	it(".banner-container 的 z-index 处于顶层，高于遮罩与弹窗", () => {
-		const bannerZMatch = CSS.match(/\.banner-container\s*\{[^}]*z-index:\s*([0-9]+)/);
-		expect(bannerZMatch).not.toBeNull();
-		const bannerZ = Number(bannerZMatch![1]);
+		const bannerZ = blockZIndex("banner-container");
 		expect(bannerZ).toBeGreaterThan(100000);
 	});
 });

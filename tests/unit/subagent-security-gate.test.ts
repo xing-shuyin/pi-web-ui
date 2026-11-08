@@ -122,7 +122,7 @@ describe("subagent-security-gate", () => {
 			it("blocks write tools", () => {
 				expect(subagentSecurityDenial("readonly", "write", {})?.kind).toBe("write-tool");
 				expect(subagentSecurityDenial("readonly", "edit", {})?.kind).toBe("write-tool");
-				expect(subagentSecurityDenial("readonly", "edit_soft", {})?.kind).toBe("write-tool");
+				expect(subagentSecurityDenial("readonly", "write", {})?.kind).toBe("write-tool");
 				expect(subagentSecurityDenial("readonly", "codemode", {})?.kind).toBe("write-tool");
 				expect(subagentSecurityDenial("readonly", "powershell", {})?.kind).toBe("write-tool");
 			});
@@ -135,13 +135,13 @@ describe("subagent-security-gate", () => {
 
 			it("blocks subagent dispatch tools", () => {
 				expect(subagentSecurityDenial("readonly", "delegate_task", {})?.kind).toBe("dispatch-tool");
-				expect(subagentSecurityDenial("readonly", "subagent", { action: "spawn" })?.kind).toBe("dispatch-tool");
-				expect(subagentSecurityDenial("readonly", "subagent", { action: "steer" })?.kind).toBe("dispatch-tool");
+				expect(subagentSecurityDenial("readonly", "conversation", { action: "spawn" })?.kind).toBe("dispatch-tool");
+				expect(subagentSecurityDenial("readonly", "conversation", { action: "steer" })?.kind).toBe("dispatch-tool");
 			});
 
 			it("allows read-only subagent actions", () => {
-				expect(subagentSecurityDenial("readonly", "subagent", { action: "get_result" })).toBeUndefined();
-				expect(subagentSecurityDenial("readonly", "subagent", { action: "list" })).toBeUndefined();
+				expect(subagentSecurityDenial("readonly", "conversation", { action: "get_result" })).toBeUndefined();
+				expect(subagentSecurityDenial("readonly", "conversation", { action: "list" })).toBeUndefined();
 			});
 
 			it("allows read-only bash commands", () => {

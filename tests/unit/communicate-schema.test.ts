@@ -25,17 +25,9 @@ function expectObjectSchema(schema: any) {
 	expect(schema.type).toBe("object");
 	expect(schema.anyOf).toBeUndefined();
 	expect(schema.required).toContain("action");
-	expect(Object.keys(schema.properties).sort()).toEqual([
-		"action",
-		"answers",
-		"message",
-		"questions",
-		"requestId",
-		"timeoutSeconds",
-		"to",
-	]);
-	expect(schema.properties.questions.items.properties.options.maxItems).toBe(4);
-	expect(schema.properties.timeoutSeconds.maximum).toBe(86400);
+	expect(Object.keys(schema.properties).sort()).toEqual(["action", "message", "requestId", "timeoutSeconds", "to"]);
+	expect(schema.properties.action.enum).toEqual(["read", "send", "request", "reply", "escalate"]);
+	expect(JSON.stringify(schema)).not.toMatch(/"(anyOf|minLength|minItems|maxItems|minimum|maximum)"/);
 }
 
 describe("communicate provider schema", () => {

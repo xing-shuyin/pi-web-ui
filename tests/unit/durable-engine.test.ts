@@ -37,7 +37,10 @@ describe("Pi Durable 独立引擎接入规范", () => {
 	});
 
 	it("DurableAgentDriver 具备标准能力且支持安全退避", async () => {
-		const driver = new DurableAgentDriver(process.cwd());
+		// 用隔离的 dataDir / agentDir：不读取用户全局模型配置，避免退回真实 provider 联网调用。
+		// 有可用模型时 submit 会发起真实 LLM 请求，离线/无凭据环境会挂到超时（曾表现为 30s timeout）。
+		const tempDir = mkdtempSync(join(tmpdir(), "pi-durable-driver-"));
+		const driver = new DurableAgentDriver(process.cwd(), { dataDir: tempDir, agentDir: tempDir });
 		try {
 			expect(driver.id).toBe("durable");
 			expect(driver.capabilities.supportsTreeFork).toBe(true);
@@ -68,10 +71,14 @@ describe("Pi Durable 独立引擎接入规范", () => {
 				},
 			});
 
+			// 没有可用模型时必须立刻降级返回（而不是挂住）并回调 onTurnComplete。
 			expect(textOutput.length).toBeGreaterThan(0);
 			expect(completed).toBe(true);
 		} finally {
 			driver.dispose();
+			try {
+				rmSync(tempDir, { recursive: true, force: true });
+			} catch {}
 		}
 	}, 30000);
 

@@ -15,23 +15,23 @@ describe("pi 引擎 Agent 预设（Agent Presets）", () => {
 	});
 
 	it("filterToolsByPreset: standard 保持全部工具", () => {
-		const tools = ["bash", "read", "edit", "write", "edit_soft", "browser_page", "custom_tool"];
+		const tools = ["bash", "read", "edit", "write", "patch", "browser_page", "custom_tool"];
 		expect(filterToolsByPreset(tools, "standard")).toEqual(tools);
 		expect(filterToolsByPreset(tools, undefined)).toEqual(tools);
 	});
 
 	it("filterToolsByPreset: minimal 仅保留 bash 与 read", () => {
-		const tools = ["bash", "read", "edit", "write", "edit_soft", "browser_page"];
+		const tools = ["bash", "read", "edit", "write", "patch", "browser_page"];
 		expect(filterToolsByPreset(tools, "minimal")).toEqual(["bash", "read"]);
 	});
 
 	it("filterToolsByPreset: code 仅保留代码读写与执行工具", () => {
-		const tools = ["bash", "read", "edit", "write", "edit_soft", "browser_page", "notes"];
-		expect(filterToolsByPreset(tools, "code")).toEqual(["bash", "read", "edit", "write", "edit_soft"]);
+		const tools = ["bash", "read", "edit", "write", "patch", "browser_page", "notes"];
+		expect(filterToolsByPreset(tools, "code")).toEqual(["bash", "read", "edit", "write"]);
 	});
 
 	it("filterToolsByPreset: reader 过滤掉所有写/执行工具", () => {
-		const tools = ["bash", "powershell", "read", "edit", "write", "edit_soft", "terminal", "office_read", "notes"];
+		const tools = ["bash", "powershell", "read", "edit", "write", "terminal", "office_read", "notes"];
 		const filtered = filterToolsByPreset(tools, "reader");
 		expect(filtered).toEqual(["read", "terminal", "office_read", "notes"]);
 	});
@@ -42,7 +42,7 @@ describe("pi 引擎 Agent 预设（Agent Presets）", () => {
 	});
 
 	it("applyAgentToolsGating 支持传入 preset 白名单过滤", () => {
-		const full = ["bash", "read", "edit", "write", "edit_soft"];
+		const full = ["bash", "read", "edit", "write"];
 		let current = [...full];
 		const mockSession: ActiveToolSet = {
 			getActiveToolNames: () => [...current],
@@ -55,7 +55,7 @@ describe("pi 引擎 Agent 预设（Agent Presets）", () => {
 		applyAgentToolsGating(mockSession, [], "minimal");
 		expect(current).toEqual(["bash", "read"]);
 
-		const fullWithPlan = ["bash", "read", "edit", "write", "edit_soft", "plan_update", "subagent"];
+		const fullWithPlan = ["bash", "read", "edit", "write", "plan_update", "conversation"];
 		let currentCode = [...fullWithPlan];
 		const mockCodeSession: ActiveToolSet = {
 			getActiveToolNames: () => [...currentCode],
@@ -65,7 +65,7 @@ describe("pi 引擎 Agent 预设（Agent Presets）", () => {
 			},
 		};
 		applyAgentToolsGating(mockCodeSession, [], "code");
-		expect(currentCode).toEqual(["bash", "read", "edit", "write", "edit_soft"]);
+		expect(currentCode).toEqual(["bash", "read", "edit", "write"]);
 		expect(currentCode.includes("plan_update")).toBe(false);
 
 		applyAgentToolsGating(mockSession, [], "ask");

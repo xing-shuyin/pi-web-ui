@@ -9,10 +9,9 @@ import {
 	SessionManager,
 	createReadToolDefinition,
 	createWriteToolDefinition,
-	createEditToolDefinition,
 } from "@earendil-works/pi-coding-agent";
 import type { SandboxInfo } from "../../server/protocol.js";
-import { makeEditSoftTool } from "../../server/edit-soft-tool.js";
+import { makeEditToolDefinition } from "../../server/edit-tool.js";
 import { createSandboxRuntimeGate, sandboxExtensionOptions } from "../../server/sandbox-runtime-gate.js";
 
 const dirs: string[] = [];
@@ -66,15 +65,10 @@ describe("sandbox final SDK execution gate", () => {
 		expect(invalid.check({ toolName: "read", input: { path: "safe.txt" } })?.block).toBe(true);
 	});
 
-	it("executes real SDK read/write/edit/edit_soft through the final hook and rejects a replaced read", async () => {
+	it("executes real SDK read/write/edit(soft) through the final hook and rejects a replaced read", async () => {
 		const cwd = directory();
 		const gate = createSandboxRuntimeGate(() => ({ path: cwd }) as SandboxInfo, cwd);
-		const definitions = [
-			createReadToolDefinition(cwd),
-			createWriteToolDefinition(cwd),
-			createEditToolDefinition(cwd),
-			makeEditSoftTool(cwd),
-		];
+		const definitions = [createReadToolDefinition(cwd), createWriteToolDefinition(cwd), makeEditToolDefinition(cwd)];
 		const loader = new DefaultResourceLoader({
 			cwd,
 			agentDir: directory(),
@@ -125,15 +119,20 @@ describe("sandbox final SDK execution gate", () => {
 				false,
 			);
 			expect(
-				(await call("edit_soft", { path: "safe.txt", edits: [{ oldText: "after", newText: "soft edit works" }] }))
-					.isError,
+				(
+					await call("edit", {
+						path: "safe.txt",
+						edits: [{ oldText: "after", newText: "soft edit works" }],
+						soft: true,
+					})
+				).isError,
 			).toBe(false);
 			const result = await call("read", { path: "safe.txt" });
 			expect(result.isError).toBe(false);
 			expect(JSON.stringify(result)).toContain("soft edit works");
-			expect((await call("edit_soft", { path: "../secret", edits: [{ oldText: "x", newText: "y" }] })).isError).toBe(
-				true,
-			);
+			expect(
+				(await call("edit", { path: "../secret", edits: [{ oldText: "x", newText: "y" }], soft: true })).isError,
+			).toBe(true);
 			await session.reload();
 			expect((await call("read", { path: "safe.txt" })).isError).toBe(false);
 			expect((await call("read", { path: "../secret" })).isError).toBe(true);

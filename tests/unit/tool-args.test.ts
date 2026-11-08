@@ -65,7 +65,7 @@ describe("toolArgHints — 脏输入不抛错", () => {
 });
 
 describe("toolArgHints — 路径", () => {
-	it("识别 path（read / write / edit / edit_soft / ls 都用它）", () => {
+	it("识别 path（read / write / edit / ls 都用它）", () => {
 		expect(toolArgHints('{"path":"src/a.ts"}').path).toBe("src/a.ts");
 		expect(toolArgHints('{"path":"E:\\\\pi-web-ui\\\\web\\\\src\\\\a.ts","offset":1}').path).toBe(
 			"E:\\pi-web-ui\\web\\src\\a.ts",

@@ -5,7 +5,6 @@ import {
 	type SubagentSnapshot,
 	type SubagentToolHost,
 } from "../../server/subagents.js";
-import { SUBAGENT_TOOL_NAMES } from "../../server/tool-manager.js";
 
 function makeMockHost(subagents: Record<string, SubagentSnapshot> = {}): SubagentToolHost {
 	return {
@@ -22,14 +21,10 @@ function makeMockHost(subagents: Record<string, SubagentSnapshot> = {}): Subagen
 }
 
 describe("subagent_handoff (Peer-to-Peer Hand-off)", () => {
-	it("SUBAGENT_TOOL_NAMES 和 makeSubagentTools 包含 subagent 工具", () => {
-		expect(SUBAGENT_TOOL_NAMES).toContain("subagent");
+	it("makeSubagentTools 只注册 conversation 一个工具（subagent 别名已删除）", () => {
 		const host = makeMockHost();
 		const tools = makeSubagentTools(host, () => "zh", "sa-source-1111");
-		const tool = tools.find((t) => t.name === "subagent");
-		expect(tool).toBeDefined();
-		expect(tool?.label).toBe("Conversation collaboration (legacy alias)");
-		expect(tools.find((t) => t.name === "conversation")?.execute).toBe(tool?.execute);
+		expect(tools.map((t) => t.name)).toEqual(["conversation"]);
 	});
 
 	it("不能交接给自身，交接给自身时应拒绝并返回错误提示", async () => {
@@ -46,7 +41,7 @@ describe("subagent_handoff (Peer-to-Peer Hand-off)", () => {
 			},
 		});
 		const tools = makeSubagentTools(host, () => "zh", "sa-self-1111");
-		const tool = tools.find((t) => t.name === "subagent")!;
+		const tool = tools.find((t) => t.name === "conversation")!;
 
 		const result = (await tool.execute(
 			"call-1",
@@ -67,7 +62,7 @@ describe("subagent_handoff (Peer-to-Peer Hand-off)", () => {
 	it("目标子代理不存在时，应返回未找到提示", async () => {
 		const host = makeMockHost({});
 		const tools = makeSubagentTools(host, () => "zh", "sa-source-1111");
-		const tool = tools.find((t) => t.name === "subagent")!;
+		const tool = tools.find((t) => t.name === "conversation")!;
 
 		const result = (await tool.execute(
 			"call-2",
@@ -99,7 +94,7 @@ describe("subagent_handoff (Peer-to-Peer Hand-off)", () => {
 			},
 		});
 		const tools = makeSubagentTools(host, () => "zh", "sa-source-1111");
-		const tool = tools.find((t) => t.name === "subagent")!;
+		const tool = tools.find((t) => t.name === "conversation")!;
 
 		const result = (await tool.execute(
 			"call-3",

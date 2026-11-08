@@ -121,7 +121,7 @@ describe("SandboxManager & Hard Jail Isolation", () => {
 		expect(existsSync(join(sourceProjectDir, "package.json"))).toBe(true);
 	});
 
-	it("enforces hard jail isolation on write, edit, edit_soft, patch, bash, sftp, and mail", async () => {
+	it("enforces hard jail isolation on write, edit, patch, bash, sftp, and mail", async () => {
 		const mgr = new SandboxManager(dataDir);
 		const { sandbox } = await mgr.create({
 			sourcePath: sourceProjectDir,
@@ -147,7 +147,7 @@ describe("SandboxManager & Hard Jail Isolation", () => {
 			evaluateSandboxJail(sandbox, "write", { path: "../escape.txt" }, sandbox.path, { trustedTool: true }),
 		).not.toBeNull();
 		expect(
-			evaluateSandboxJail(sandbox, "edit_soft", { path: join(sourceProjectDir, "src/index.ts") }, sandbox.path, {
+			evaluateSandboxJail(sandbox, "edit", { path: join(sourceProjectDir, "src/index.ts") }, sandbox.path, {
 				trustedTool: true,
 			}),
 		).not.toBeNull();

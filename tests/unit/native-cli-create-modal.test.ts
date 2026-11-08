@@ -44,6 +44,15 @@ const discoveryResponse = (cwd = remoteCwd) => ({
 		{ preset: "codex", available: false, error: "codex: command not found on remote host" },
 	],
 });
+const localDiscovery = (clis?: Array<Record<string, unknown>>) => ({
+	target: "local",
+	cwd: "/project",
+	clis:
+		clis ??
+		Object.values(ENGINE_CATALOG)
+			.filter((engine) => engine.cliCommand)
+			.map((engine) => ({ preset: engine.id, available: true, executable: `/usr/local/bin/${engine.id}` })),
+});
 const flush = () => act(async () => {});
 const retry = () => click(document.querySelector<HTMLButtonElement>(".native-cli-create-body button.btn")!);
 
@@ -51,6 +60,7 @@ beforeEach(() => {
 	(globalThis as any).IS_REACT_ACT_ENVIRONMENT = true;
 	resetAppGlobals();
 	vi.stubGlobal("fetch", vi.fn());
+	vi.mocked(fetch).mockResolvedValue(new Response(JSON.stringify(localDiscovery())));
 	localStorage.setItem("pi-web-ui:lang", "en");
 	container = document.createElement("div");
 	document.body.appendChild(container);
@@ -131,9 +141,13 @@ describe("SSH CLI persistence selection", () => {
 });
 
 describe("native CLI creation", () => {
-	it("offers every executable catalog engine and starts parameter-free choices immediately", () => {
+	it("offers every executable catalog engine and starts parameter-free choices immediately", async () => {
 		renderModal();
+		await flush();
 		const engines = Object.values(ENGINE_CATALOG).filter((engine) => engine.cliCommand);
+		expect(fetch).toHaveBeenCalledExactlyOnceWith("/api/native-cli/discovery?cwd=%2Fproject", {
+			signal: expect.any(AbortSignal),
+		});
 		expect(document.querySelectorAll(".native-cli-create-option")).toHaveLength(engines.length + 1);
 		expect(
 			Array.from(document.querySelectorAll(".native-cli-create-option strong"))
@@ -142,18 +156,22 @@ describe("native CLI creation", () => {
 		).toEqual(["Claude Code", "Codex", "Pi"]);
 		for (const engine of engines) {
 			expect(option(engine.name)).toBeDefined();
+			expect(option(engine.name).disabled).toBe(false);
 			if (engine.cliRequiresArgs) continue;
 			click(option(engine.name));
 			expect(props.onCreate).toHaveBeenLastCalledWith({ preset: engine.id });
 		}
 		expect(document.querySelector("form")).toBeNull();
+		expect(document.querySelector(".native-cli-create-install")).toBeNull();
 		expect(props.onClose).not.toHaveBeenCalled();
-		expect(fetch).not.toHaveBeenCalled();
 	});
 
-	it("starts the standalone Antigravity TUI directly and omits DSH's non-terminal profile launcher", () => {
+	it("starts standalone Antigravity and DSH TUIs directly and omits library-only engines", () => {
 		renderModal();
-		expect(option(ENGINE_CATALOG.dsh.name)).toBeUndefined();
+		expect(option(ENGINE_CATALOG.durable.name)).toBeUndefined();
+		expect(option(ENGINE_CATALOG.dsh.name)).toBeDefined();
+		click(option(ENGINE_CATALOG.dsh.name));
+		expect(props.onCreate).toHaveBeenCalledWith({ preset: "dsh" });
 		click(option(ENGINE_CATALOG.agy.name));
 		expect(props.onCreate).toHaveBeenCalledWith({ preset: "agy" });
 		expect(document.querySelector("form")).toBeNull();
@@ -263,12 +281,15 @@ describe("native CLI creation", () => {
 		const firstSignal = vi.mocked(fetch).mock.calls[0][1]!.signal!;
 		renderModal({ cwd: "/local" });
 		expect(firstSignal.aborted).toBe(true);
-		expect(fetch).toHaveBeenCalledTimes(1);
+		// The local workspace probes its own CLIs instead of inheriting the SSH result.
+		expect(fetch).toHaveBeenCalledTimes(2);
+		const localSignal = vi.mocked(fetch).mock.calls[1][1]!.signal!;
 		renderModal({ cwd: remoteCwd });
+		expect(localSignal.aborted).toBe(true);
 		expect(document.querySelector("form")).toBeNull();
 		await act(async () => pending[0](new Response(JSON.stringify(discoveryResponse()))));
 		expect(option(ENGINE_CATALOG.claude.name).disabled).toBe(true);
-		await act(async () => pending[1](new Response(JSON.stringify(discoveryResponse()))));
+		await act(async () => pending[2](new Response(JSON.stringify(discoveryResponse()))));
 		expect(option(ENGINE_CATALOG.claude.name).disabled).toBe(false);
 	});
 
@@ -300,6 +321,68 @@ describe("native CLI creation", () => {
 		expect(document.querySelector('[role="alert"]')?.textContent).toContain("Remote CLI detection failed");
 		expect(option(ENGINE_CATALOG.claude.name).disabled).toBe(true);
 		expect(document.querySelector<HTMLButtonElement>(".native-cli-create-body button.btn")!.disabled).toBe(false);
+	});
+});
+
+describe("local CLI detection", () => {
+	const installButtons = () => Array.from(document.querySelectorAll<HTMLButtonElement>(".native-cli-create-install"));
+
+	it("keeps every engine usable while local detection is still running", () => {
+		renderModal();
+		expect(document.querySelector('[role="status"]')?.textContent).toContain("Detecting local CLIs…");
+		expect(option(ENGINE_CATALOG.codex.name).disabled).toBe(false);
+	});
+
+	it("reports missing local CLIs before launch and installs them from a terminal tab", async () => {
+		const events: CustomEvent[] = [];
+		const onRunCommand = (event: Event) => events.push(event as CustomEvent);
+		window.addEventListener("pi-web-ui:plugin-run-command", onRunCommand);
+		vi.mocked(fetch).mockResolvedValue(
+			new Response(
+				JSON.stringify(
+					localDiscovery([
+						{ preset: "claude", available: true, executable: "/usr/local/bin/claude" },
+						{ preset: "codex", available: false, error: "Codex CLI executable not found" },
+						{ preset: "agy", available: false, error: "Antigravity CLI executable not found" },
+					]),
+				),
+			),
+		);
+		try {
+			renderModal();
+			await flush();
+			expect(option(ENGINE_CATALOG.claude.name).disabled).toBe(false);
+			expect(option(ENGINE_CATALOG.claude.name).textContent).toContain("/usr/local/bin/claude");
+			expect(option(ENGINE_CATALOG.codex.name).disabled).toBe(true);
+			expect(option(ENGINE_CATALOG.codex.name).textContent).toContain("Not installed");
+			expect(installButtons().map((button) => button.textContent)).toEqual(["Install", "Install guide"]);
+			expect(installButtons()[1].getAttribute("href")).toBe(ENGINE_CATALOG.agy.installCommand);
+			click(option(ENGINE_CATALOG.codex.name));
+			expect(props.onCreate).not.toHaveBeenCalled();
+			click(installButtons()[0]);
+			expect(events).toHaveLength(1);
+			expect(events[0].detail).toEqual({
+				title: "Install Codex engine",
+				command: ENGINE_CATALOG.codex.installCommand,
+			});
+			expect(props.onClose).toHaveBeenCalledOnce();
+		} finally {
+			window.removeEventListener("pi-web-ui:plugin-run-command", onRunCommand);
+		}
+	});
+
+	it("never blocks creation when the local probe itself fails", async () => {
+		vi.mocked(fetch).mockResolvedValue(
+			new Response(JSON.stringify({ error: "The terminal feature is not enabled on this instance" }), { status: 403 }),
+		);
+		renderModal();
+		await flush();
+		expect(document.querySelector('[role="alert"]')?.textContent).toContain(
+			"The terminal feature is not enabled on this instance",
+		);
+		expect(document.querySelector(".native-cli-create-install")).toBeNull();
+		click(option(ENGINE_CATALOG.codex.name));
+		expect(props.onCreate).toHaveBeenCalledExactlyOnceWith({ preset: "codex" });
 	});
 });
 
@@ -431,5 +514,50 @@ describe("retired CLI view tabs", () => {
 			click(button);
 			expect(onViewChange).toHaveBeenLastCalledWith("chat");
 		}
+	});
+});
+
+describe("长路径单行省略", () => {
+	const longExecutable =
+		"C:\Users\alice\AppData\Roaming\fnm\node-versions\v25.9.0\installation\node_modules\@anthropic-ai\claude-code\cli.js";
+	const longCwd = "/Users/alice/workspaces/2026/pi-web-ui-monorepo/apps/desktop-shell";
+
+	it("引擎路径保留尾部并缩短，完整路径留在 title", async () => {
+		vi.mocked(fetch).mockResolvedValue(
+			new Response(
+				JSON.stringify({
+					...localDiscovery([{ preset: "claude", available: true, executable: longExecutable }]),
+					cwd: longCwd,
+				}),
+			),
+		);
+		renderModal({ cwd: longCwd });
+		await flush();
+		const detail = option(ENGINE_CATALOG.claude.name).querySelector("small")!;
+		expect(detail.textContent).toContain("cli.js");
+		expect(detail.textContent).toContain("…");
+		expect(detail.textContent!.length).toBeLessThan(longExecutable.length);
+		expect(detail.getAttribute("title")).toBe(longExecutable);
+	});
+
+	it("工作目录同样单行省略，完整目录留在 title", async () => {
+		vi.mocked(fetch).mockResolvedValue(new Response(JSON.stringify({ ...localDiscovery(), cwd: longCwd })));
+		renderModal({ cwd: longCwd });
+		await flush();
+		const cwd = document.querySelector(".native-cli-create-cwd")!;
+		expect(cwd.textContent).toContain("desktop-shell");
+		expect(cwd.textContent!.length).toBeLessThan(longCwd.length);
+		expect(cwd.getAttribute("title")).toBe(longCwd);
+	});
+
+	it("状态与报错文字不加省略类，仍可折行显示", async () => {
+		vi.mocked(fetch).mockResolvedValue(new Response(JSON.stringify(discoveryResponse())));
+		renderModal({ cwd: remoteCwd });
+		await flush();
+		const codex = option(ENGINE_CATALOG.codex.name).querySelector("small")!;
+		expect(codex.textContent).toBe("codex: command not found on remote host");
+		expect(codex.classList.contains("native-cli-create-path")).toBe(false);
+		const claude = option(ENGINE_CATALOG.claude.name).querySelector("small")!;
+		expect(claude.classList.contains("native-cli-create-path")).toBe(true);
 	});
 });

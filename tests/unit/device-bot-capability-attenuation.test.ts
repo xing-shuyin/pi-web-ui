@@ -123,12 +123,12 @@ async function fixture(publicUrl = "https://hub.test") {
 
 describe("Capability Attenuation (跨 Bot 安全能力衰减与不可信调用链隔离)", () => {
 	describe("High privilege tool classification & computeAttenuatedTools", () => {
-		it("correctly classifies high-privilege tools including bash, terminal, and subagents", () => {
+		it("correctly classifies high-privilege tools including bash, terminal, and conversations", () => {
 			expect(isBotToolHighPrivilege("bash")).toBe(true);
 			expect(isBotToolHighPrivilege("terminal")).toBe(true);
 			expect(isBotToolHighPrivilege("powershell")).toBe(true);
 			expect(isBotToolHighPrivilege("codemode")).toBe(true);
-			expect(isBotToolHighPrivilege("subagent")).toBe(true);
+			expect(isBotToolHighPrivilege("conversation")).toBe(true);
 			expect(isBotToolHighPrivilege("subagent_worker")).toBe(true);
 			expect(isBotToolHighPrivilege("team")).toBe(true);
 			expect(isBotToolHighPrivilege("team_planner")).toBe(true);
@@ -333,7 +333,7 @@ describe("Capability Attenuation (跨 Bot 安全能力衰减与不可信调用�
 			const { hub, request, register, pairWithTools } = await fixture();
 			const cookie = await register();
 			const lowBot = await pairWithTools(cookie, "LowBot", ["read"]);
-			const sysBot = await pairWithTools(cookie, "SysBot", ["read", "bash", "subagent", "terminal"]);
+			const sysBot = await pairWithTools(cookie, "SysBot", ["read", "bash", "conversation", "terminal"]);
 			const room = (await request("/api/rooms", { name: "audit-room", botIds: [lowBot.botId, sysBot.botId] }, cookie))
 				.body.room;
 
@@ -365,11 +365,11 @@ describe("Capability Attenuation (跨 Bot 安全能力衰减与不可信调用�
 
 			const pub = publicTask(subtask);
 			expect(pub.attenuatedTools).toBeDefined();
-			expect(pub.attenuatedTools).toEqual(expect.arrayContaining(["bash", "subagent", "terminal"]));
+			expect(pub.attenuatedTools).toEqual(expect.arrayContaining(["bash", "conversation", "terminal"]));
 
 			const details = await request(`/api/rooms/${room.id}/tasks/${subtask.id}`, undefined, cookie);
 			expect(details.status).toBe(200);
-			expect(details.body.task.attenuatedTools).toEqual(expect.arrayContaining(["bash", "subagent", "terminal"]));
+			expect(details.body.task.attenuatedTools).toEqual(expect.arrayContaining(["bash", "conversation", "terminal"]));
 
 			const dummySysBot: LocalBot = {
 				id: sysBot.botId,
@@ -379,7 +379,7 @@ describe("Capability Attenuation (跨 Bot 安全能力衰减与不可信调用�
 				cwd: resolve(tmpdir()),
 				revision: 1,
 				enabled: true,
-				tools: ["read", "bash", "subagent", "terminal"],
+				tools: ["read", "bash", "conversation", "terminal"],
 				skills: [],
 				mcpServers: [],
 			};

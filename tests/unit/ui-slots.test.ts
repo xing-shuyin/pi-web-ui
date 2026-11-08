@@ -945,6 +945,7 @@ describe("面板 chrome 宿主条目（file.preview / goalbar / scm / terminal /
 			"host:fp-md",
 			"host:fp-toc",
 			"host:fp-html",
+			"host:fp-external",
 			"host:fp-edit",
 			"host:fp-wrap",
 			"host:fp-zoom",

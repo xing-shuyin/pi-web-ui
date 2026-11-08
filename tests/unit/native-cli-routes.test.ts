@@ -95,7 +95,7 @@ describe("native CLI discovery endpoint", () => {
 		await nativeCliDiscoveryHandler(() => true)({ query: { cwd: "E:/project" } } as any, res);
 		const result = res.json.mock.calls[0][0];
 		expect(result.target).toBe("local");
-		expect(result.clis.map((item: any) => item.preset)).toEqual(["pi", "claude", "codex", "agy"]);
+		expect(result.clis.map((item: any) => item.preset)).toEqual(["pi", "dsh", "claude", "codex", "agy"]);
 		expect(discoverRemoteNativeClis).not.toHaveBeenCalled();
 	});
 });

@@ -436,8 +436,8 @@ describe("openModal/closeModal（宿主 API v10，modal.dialog 槽位）", () =>
 		expect(throwing.api.openModal("plugin:x")).toBe(false);
 		expect(throwing.api.closeModal()).toBe(true);
 	});
-	it("宿主 API 版本已升到 v15（统一图片预览与 OCR 提供者）", () => {
-		expect(PLUGIN_HOST_API_VERSION).toBe(16);
+	it("宿主 API 版本已升到 v18（底栏状态槽自带跟随浮层内容渲染）", () => {
+		expect(PLUGIN_HOST_API_VERSION).toBe(18);
 	});
 	it("pickDirectory 与 pickModel 转发调用到 deps", async () => {
 		const h = harness({
