@@ -34,6 +34,28 @@ npm run test:smoke   # 零 token 协议冒烟聚合跑器（tests/run-smoke.mjs�
 npm run test:freeze  # 冻结/重连回归测试（Playwright，需要本机 chromium headless）
 ```
 
+Electron 相关依赖（`electron` / `electron-builder` 的二进制）走 npmmirror：打包命令（`desktop:dist`、`desktop:portable*`）已由 `scripts/run-electron-builder.mjs` 自动注入 `ELECTRON_MIRROR` / `ELECTRON_BUILDER_BINARIES_MIRROR`（默认值见 `scripts/lib/electron-mirror.mjs`）。这些镜像**禁止**写进 `.npmrc`——npm 11 会对自定义键告警，npm 12 起不再透传。首次 `npm install` 要下载 Electron 二进制，国内网络请先自带 `ELECTRON_MIRROR` 环境变量。
+
+## 命令执行防卡死
+
+`scripts/safe-exec.mjs` 是跨平台（Windows / macOS / Linux）的命令执行器，给 AI、CI 和人工终端共用。它只做三件事：子进程 **stdin 接到 `/dev/null`**（交互确认、pager、REPL 一律读到 EOF，不再挂死）、**硬超时后杀整棵进程树**（复用 `server/process-utils.ts` 的 `killPidTree`，Win 走 `taskkill /T /F`）、**原始输出先落盘只回显尾部**（不稀释上下文）。
+
+```bash
+node scripts/safe-exec.mjs --timeout 60 -- npx vitest run tests/unit/foo.test.ts   # 短任务：单测/lint/typecheck
+node scripts/safe-exec.mjs --timeout 600 --log .safe-exec/build.log -- npm run build # 长构建：必带 --log
+node scripts/safe-exec.mjs --detach --timeout 1800 -- npm run build                # >3 分钟：后台托管，立即返回
+node scripts/safe-exec.mjs --status .safe-exec/20260101T000000-npm-run-build.pid    # 轮询（打印存活 + 日志尾）
+node scripts/safe-exec.mjs --kill .safe-exec/20260101T000000-npm-run-build.pid      # 终止（杀进程树）
+```
+
+退出码约定：`0` 成功、`124` 硬超时（**不许原样重试**，先读日志定位卡点再改分档）、`127` 命令不存在、其余透传真实退出码。日志默认落 `.safe-exec/`（已 gitignore），可用 `--log` 指定。`--stream` 把输出实时 echo 到终端（给人看），默认只落盘 + 尾部 40 行。
+
+Windows 上 `npx` / `npm` / `pnpm` / `yarn` 是 `.cmd` 垫片，直接 `spawn` 会 ENOENT：执行器会按 `PATHEXT` 解析，只有命中 `.cmd` / `.bat` 才转 cmd.exe（相对路径自动还原成反斜杠绝对路径），其余命令保持直连 spawn，不经 shell。
+
+时限分档：单测/lint/typecheck 60 秒、全量构建 600 秒、预计 >3 分钟一律 `--detach` 托管；AI 的单次 bash 调用另有 pi 工具层 `timeout` 参数与会话看门狗兜底，三者不重叠也不互相替代。
+
+**不要再手写 `timeout 60s` / `nohup ... &` / `ps -p` 前缀**：Windows 上 `timeout` 是「等待按键 N 秒」的 `timeout.exe`（语义正好相反），`nohup`、`ps -p` 也不存在；Git Bash、PowerShell、cmd 三套语义各不相同，跨平台只能由 Node 包装器统一。
+
 ## CI
 
 GitHub Actions ubuntu-latest（`.github/workflows/ci.yml`，push/PR → main 触发）：`format:check → lint → check:protocol → typecheck → build → build:extension → pack:extension → vitest → test:smoke`。
