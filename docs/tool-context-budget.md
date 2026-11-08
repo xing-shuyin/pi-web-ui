@@ -1,7 +1,7 @@
 # 工具上下文预算（tool context budget）
 
 > 模型每轮都要吞下「全部活跃工具」的名字 + 完整参数 schema。工具一多，这是几万字符的
-> **固定开销**（哪怕这轮只用 bash）。本文档记录压这块开销的三条手段、各自的取舍，以及
+> **固定开销**（哪怕这轮只用 bash）。本文档记录压这块开销的四条手段、各自的取舍，以及
 > **延迟加载为什么不会打坏供应商的前缀缓存**（这是实现里最容易踩坏的一条）。
 >
 > 相关代码：`server/load-tools-tool.ts`（按需加载入口）、`server/tool-manager.ts`（门控 +
@@ -46,7 +46,7 @@ SDK 没有自动压缩指令及权限前别名解析的公开接口，分别用 
 参数 schema 是结构化的**契约**（枚举、默认值、范围、逐 action 语义），删了模型就会传错参数，
 所以「抠字」这条路的下限很低（实测全量收敛后只能再降 ~11%）。
 
-## 2. 三条手段
+## 2. 四条手段
 
 ### 2.1 文案精简（已做）
 
@@ -90,6 +90,116 @@ SDK 没有自动压缩指令及权限前别名解析的公开接口，分别用 
 - 「已经加载过」按**活跃集**判断，不只看已加载集合：只标记不激活的半吊子状态会被当成
   重新加载并修正，而不是回一句「已经加载过了」把模型堵死（同 #652）。
 - DSH 引擎没有 pi 工具注册面，不适用（设置行不显示，协议字段恒为 false 占位）。
+
+### 2.4 共享子 schema 单源（大工具专用）
+
+一个问题对象曾经在 `ask_user_question` / `communicate` / `conversation` 各抄一遍
+（`preview` / `recommended` / `dependsOn` / `optionsMap` 这套富交互字段），下发给模型
+就是同一段结构的三份拷贝，改字段还得改三处。现在统一在 `server/question-params.ts`：
+
+- `richQuestionsSchema()`：富弹窗的全量字段（`preview` / `dependsOn` / `optionsMap` 这些弹窗专属能力的事实源）；
+- `askQuestionsSchema()`：`ask_user_question` 下发给模型的派生视图——去掉弹窗专属字段与装饰关键字，模型只看到「问什么、给哪些选项」，字段定义仍只有富档一处；
+- **跨对话工具不再声明问题/回答结构**：`communicate` 的 `request`/`reply` 与 `conversation`
+  的 `consult`/`answer` 只收纯文本 `message`，结构化提问只留在 `ask_user_question`。
+  服务端在状态机入口（`server/conversation-communication.ts` 的 `questionsFromMessage()` /
+  `answersFromMessage()`）把文本折成内部结构：问题包成 `[{ id: "q1", question: message }]`，
+  回答按待答问题展开成 `{ id, selected: [], custom: message }`。旧的结构化
+  `questions`/`answers` 仍然照收（TypeBox 不写 `additionalProperties: false`），由
+  `checkQuestions`/`checkAnswers` 原样校验后转发——**能力不减，只是不再付费下发结构**。
+
+同期收紧同一批大工具的文案冗余（实测，字符数含 description/snippet/guidelines，括号内为参数 schema 本体）：
+
+| 工具           | 前                | 后                | 手段                                                                                                            |
+| -------------- | ----------------- | ----------------- | --------------------------------------------------------------------------------------------------------------- |
+| `conversation` | 4785（参数 4505） | 1998（参数 1718） | 结构化问题/回答结构下线、逐参数文案清零、`enum` 取代 `anyOf`、边界校验移进 handler、action 用一行签名管全部参数 |
+| `communicate`  | 2217（参数 1418） | 1266（参数 467）  | 同上：`questions`/`answers` 下线、`enum` 取代 `anyOf`、`minLength`/`min/max` 移进 handler                       |
+
+判断标准：参数 schema 是契约，字段类型与 `enum` 不能删；能删的是**同一段结构/同一句话的
+第二份拷贝**、逐字段的 description（改成 `action` 字段里一行紧凑签名）、机械边界
+（`minLength`/`minItems`/`minimum`/`maximum`，一律搬进 handler 用 `Math.min/Math.max` 兜底），
+以及 description 里的「何时用」（那是 snippet 的职责）。另一条路是彻底不付这笔钱：把这两个
+工具交给延迟加载（§2.3），代价是模型多一步 `load_tools`。
+
+同一套标准现在覆盖全部常驻工具（`read` / `bash` / `edit` / `write` / `ask_user_question` /
+`browser_page` / `claim_files` / `present_files` / `skill` / `grep` / `find`）：导出 schema 只剩
+字段名与类型，候选值写 `enum`（`browser_page.op` 的签名一句话交代每个 op 要哪些参数），逐字段
+说明只留真不自解释的五个（`read.offset`、`bash.timeout`/`persist`、`edit.soft`、
+`present_files.items[].focus`、`skill.name`）。`write` / `grep` / `find` 的实现仍是 SDK 内置，只是
+文案与 schema 由 `server/tool-prompts.ts` 换掉（`withSlimPrompt()`），字段名与 SDK 定义的一致性由
+`tests/unit/tool-schema-slim.test.ts` 盯住。后续把同一把尺子推到其余 15 个宿主/SDK 工具与 `sftp`
+插件（§2.5）。`codemode` 的 description 由 SDK 按每轮 loadout 现算（内含 `tools.<name>` 声明），
+宿主不覆盖它，预算由 `codemodeInlineBudget` 控。
+
+### 2.5 低频/大工具同样脱水（第二批，实测 −37%）
+
+同一套标准此前只落在 11 个常驻工具上，其余 15 个宿主/SDK 工具 + `sftp` 插件没人守，于是又长回来了：
+`action` 用 `Type.Union([Type.Literal…])` 展开成 `anyOf` 的 const 数组、`Type.Record()` 展开成
+`patternProperties`、`minimum`/`maximum`/`minLength` 全在、逐字段说明复述一遍 action 语义。
+
+现在按同一把尺子收敛（实测字符数：description + snippet + guidelines + 参数 schema 本体）：
+
+| 工具              | 前   | 后   | 手段                                                                                             |
+| ----------------- | ---- | ---- | ------------------------------------------------------------------------------------------------ |
+| `canvas`          | 2946 | 2516 | 24 项 `action` 的 `anyOf/const` → `enum`；`Type.Record()` 的 `patternProperties` → `type:object` |
+| `mcp_manage`      | 2777 | 1436 | 3 处 `anyOf` → `enum`、`env`/`headers` 的 `patternProperties` 下线、14 条字段说明 → 1 行签名     |
+| `sandbox`         | 2245 | 1020 | 2 处 `anyOf` → `enum`、8 条字段说明清零                                                          |
+| `delegate_task`   | 2139 | 1554 | 7 个必填字段的说明搬进 `promptGuidelines`（字段契约不变，只换陈述位置）                          |
+| `terminal`        | 2131 | 1274 | `anyOf` → `enum`、`minimum`/`maximum`/`minLength` 搬进 `create` 的 `Math.min/max` 兜底           |
+| `schedule`        | 1685 | 881  | 逐字段说明清零，只留 `schedule` 的 cron/延迟一句                                                 |
+| `worktree`        | 1525 | 963  | 2 处 `anyOf` → `enum`/`type:["boolean","string"]`、7 条说明清零                                  |
+| `lsp`             | 1526 | 803  | 8 条字段说明 → 1 行 action 签名、`minimum/maximum` 清零（handler 已 `Math.min/max`）             |
+| `patch`           | 1295 | 1114 | `minimum/maximum` + 2 条说明清零（description 是 Hashline 语法本体，保留）                       |
+| `plan_update`     | 1121 | 771  | 6 条字段说明清零                                                                                 |
+| `compact_context` | 1065 | 694  | `minimum/maximum` 清零（`calculateEffectiveKeepRecentTokens` 已夹紧）、只留 `focus` 一句         |
+| `eval`            | 882  | 492  | `minimum/maximum` 清零（handler 已夹紧）、只留 `timeout`/`reset` 两句                            |
+| `powershell`      | 590  | 252  | 同 `write`/`grep`/`find`：SDK 实现 + `withSlimPrompt()` 换文案与 schema                          |
+| `ls`              | 422  | 180  | 同上                                                                                             |
+| `sftp`（插件）    | 4851 | 2807 | 24 条字段说明 → 1 行 action 签名 + 6 条凭据字段的关键提示；`manifest.json` 0.4.8 → 0.4.9         |
+
+合计 **27.9k → 16.9k 字符（−39%）**；当时出厂默认常驻的那 9 个（`ls` / `patch` / `delegate_task` /
+`sandbox` / `worktree` / `plan_update` / `compact_context` / `schedule` / `canvas`）**14.5k → 9.7k
+（−33%，约省 1.3k tokens/轮）**。
+
+> 后续产品决定（见 `server/tool-manager.ts` 目录）：`ls` / `patch` / `delegate_task` / `sandbox` /
+> `worktree` / `canvas` 均改为 `defaultOn: false`。出厂默认常驻的只剩 `plan_update` /
+> `compact_context` / `schedule` 三个，上表的「出厂默认常驻」口径按此收窄；`ls` / `patch` 等工具
+> 的 schema 瘦身成果仍在，用户显式打开后照旧受益。
+
+**这一批刻意没做的事**（都量过代价，结论是负收益）：
+
+- **不删工具**。`powershell` / `eval` / `lsp` / `terminal` / `mcp_manage` / `tool_search` 出厂
+  `defaultOn: false`，在默认口径里本来就是 0 字符——删掉只丢能力不省预算；`ls` / `patch` /
+  `delegate_task` 是 `defaultOn: true` 的产品面（`tool-manager.ts` 目录 + 设置行 + i18n + 守卫单测），
+  删的是功能不是开销。`patch` 的 926 字符 description 是 Hashline 语法契约本身（`[path#TAG]`/`PUT`/`CUT`），
+  删了模型就写不出补丁；`delegate_task` 的 7 个必填字段是反「含糊派单」的校验契约，改成可选就把
+  `validateDelegation()` 的失败模式放回来了——所以只搬陈述位置，不动必填性。
+- **不合并 `sandbox` + `worktree`**。两者都是「换 cwd」，但一个是 CoW 工作区、一个是 git 分支隔离，
+  合并只省约 1.2k 字符（~330 tokens），代价是两套 service/审批/设置行/权限闸门并成一套 15 项 action 的
+  混合枚举，且违反「一个能力一个工具名」。
+- **不改默认开关去「延迟加载」它们**（当时结论）。延迟加载已经由 §2.3 的全局开关提供；把 `canvas` /
+  `sandbox` / `schedule` 这类主打功能默认改成待加载，是产品决定，不是预算优化的顺带结论。后来的
+  产品决定是**直接默认关闭** `ls` / `patch` / `delegate_task` / `sandbox` / `worktree` / `canvas`
+  （目录 `defaultOn: false` + 出厂设置 `disabledAgentTools` 同名单），理由不再是预算，而是默认工具面
+  收窄；`plan_update` / `compact_context` / `schedule` 仍默认开。
+
+守卫：`tests/unit/tool-schema-slim.test.ts` 现在把上面 21 个工具全部纳进来（含 `patternProperties`），
+任何一条装饰约束、任何一个白名单外的字段说明都会红。
+
+### 2.6 按需列表：把「按需」做成一张清单，列进去就直接关
+
+§2.3 的延迟加载是**模式**（非核心工具一律延迟，模型再调 `load_tools` 拉回来）。实际用下来，
+真正想要的往往是更朴素的一件事：**维护一份清单，把工具丢进去它就没了**。
+
+`toolOnDemandTools`（设置 → 工具区「按需工具列表」，协议字段与预设字段同名）就是这份清单：
+
+- **列进去 = 直接关闭**。不激活、参数 schema 不进上下文、模型也调不到——不是延迟，没有
+  `load_tools` 往返，也不会被 JIT 复活。
+- **只做减法**。`effectiveDisabledAgentTools()` 里与 `disabledAgentTools` 取并集：两处都列只算
+  一次；开关里没关的工具不会因为「不在清单里」被复活或被剔除。**没有第二条门控路径**——
+  `applyAgentToolsGating` / `allowedToolNames` / 提示词目录 / 平台闸门读的都是同一个并集。
+- 与 §2.3 的关系：延迟加载开关照旧存在、出厂仍关；两者可叠加（延迟负责「临时收起」，清单负责
+  「长期不想要」）。DSH 引擎不适用（无 pi 工具注册面，设置行不显示）。
+- 守卫：`tests/unit/tool-manager.test.ts`「按需列表」用例钉住合并语义、未知名字丢弃与去重。
 
 ## 3. 硬约束：不能打坏前缀缓存
 

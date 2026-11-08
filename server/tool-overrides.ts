@@ -62,7 +62,7 @@ export function syncSubagentOverride(
 ): void {
 	if (!Array.isArray(session._customTools) || typeof session._refreshToolRegistry !== "function") return;
 	let changed = false;
-	for (const name of ["conversation", "subagent"]) {
+	for (const name of ["conversation"]) {
 		if (!extensionToolDefinition(session, name)) continue;
 		const idx = session._customTools.findIndex((t) => t.name === name);
 		if (subagentDisabled && idx !== -1) {
@@ -74,4 +74,16 @@ export function syncSubagentOverride(
 		}
 	}
 	if (changed) session._refreshToolRegistry();
+}
+
+/**
+ * 只换模型看到的文案与参数 schema，行为仍走 base（SDK 内置实现）。
+ * 用于那些「宿主不拥有实现、但拥有提示词」的工具（write/grep/find）。
+ */
+export function withSlimPrompt<T extends AnyToolDefinition>(
+	base: T,
+	description: string,
+	parameters: AnyToolDefinition["parameters"],
+): T {
+	return { ...base, description, parameters };
 }

@@ -15,10 +15,10 @@ export const LEGACY_TERMINAL_TOOL_NAMES = [
 
 export const CONVERSATION_TOOL_NAME = "conversation";
 export const COMMUNICATE_TOOL_NAME = "communicate";
-export const SUBAGENT_TOOL_NAME = "subagent";
-export const SUBAGENT_TOOL_NAMES = [CONVERSATION_TOOL_NAME, SUBAGENT_TOOL_NAME] as const;
 
+/** Tool names that fold into `conversation`: the pre-rename subagent_* family plus the retired `subagent` alias. */
 export const LEGACY_SUBAGENT_TOOL_NAMES = [
+	"subagent",
 	"subagent_spawn",
 	"subagent_get_result",
 	"subagent_steer",
@@ -29,10 +29,10 @@ export const LEGACY_SUBAGENT_TOOL_NAMES = [
 	"subagent_handoff",
 ] as const;
 
-export const EDIT_SOFT_TOOL_NAME = "edit_soft";
 export const DELEGATE_TASK_TOOL_NAME = "delegate_task";
 export const ASK_USER_QUESTION_TOOL_NAME = "ask_user_question";
 export const BROWSER_PAGE_TOOL_NAME = "browser_page";
+export const BROWSER_SCRIPT_TOOL_NAME = "browser_script";
 export const CONVERSATION_READ_TOOL_NAME = CONVERSATION_TOOL_NAME;
 export const SKILL_TOOL_NAME = "skill";
 export const SCHEDULE_TOOL_NAME = "schedule";
@@ -73,12 +73,12 @@ export const AGENT_TOOL_CATALOG: AgentToolEntry[] = [
 		defaultOn: false,
 		dshVisible: true,
 	})),
-	...SUBAGENT_TOOL_NAMES.map((name): AgentToolEntry => ({
-		name,
+	{
+		name: CONVERSATION_TOOL_NAME,
 		group: "subagent",
 		defaultOn: true,
 		dshVisible: false,
-	})),
+	},
 	{
 		name: COMMUNICATE_TOOL_NAME,
 		group: "subagent",
@@ -88,17 +88,9 @@ export const AGENT_TOOL_CATALOG: AgentToolEntry[] = [
 		offHintKey: "communicateOffHint",
 	},
 	{
-		name: EDIT_SOFT_TOOL_NAME,
-		group: "other",
-		defaultOn: false,
-		dshVisible: false,
-		descKey: "editSoftEnabledDesc",
-		offHintKey: "editSoftOffHint",
-	},
-	{
 		name: DELEGATE_TASK_TOOL_NAME,
 		group: "other",
-		defaultOn: true,
+		defaultOn: false,
 		dshVisible: false,
 		descKey: "delegateTaskEnabledDesc",
 		offHintKey: "delegateTaskOffHint",
@@ -120,6 +112,14 @@ export const AGENT_TOOL_CATALOG: AgentToolEntry[] = [
 		offHintKey: "browserPageOffHint",
 	},
 	{
+		name: BROWSER_SCRIPT_TOOL_NAME,
+		group: "other",
+		defaultOn: false,
+		dshVisible: false,
+		descKey: "browserScriptEnabledDesc",
+		offHintKey: "browserScriptOffHint",
+	},
+	{
 		name: CLAIM_FILES_TOOL_NAME,
 		group: "other",
 		defaultOn: true,
@@ -138,7 +138,7 @@ export const AGENT_TOOL_CATALOG: AgentToolEntry[] = [
 	{
 		name: PATCH_TOOL_NAME,
 		group: "other",
-		defaultOn: true,
+		defaultOn: false,
 		dshVisible: false,
 		descKey: "patchToolEnabledDesc",
 		offHintKey: "patchToolOffHint",
@@ -218,7 +218,7 @@ export const AGENT_TOOL_CATALOG: AgentToolEntry[] = [
 	{
 		name: SANDBOX_TOOL_NAME,
 		group: "other",
-		defaultOn: true,
+		defaultOn: false,
 		dshVisible: false,
 		descKey: "sandboxEnabledDesc",
 		offHintKey: "sandboxOffHint",
@@ -226,7 +226,7 @@ export const AGENT_TOOL_CATALOG: AgentToolEntry[] = [
 	{
 		name: WORKTREE_TOOL_NAME,
 		group: "other",
-		defaultOn: true,
+		defaultOn: false,
 		dshVisible: false,
 		descKey: "toolsWorktreeDesc",
 		offHintKey: "toolsWorktreeOffHint",
@@ -234,7 +234,7 @@ export const AGENT_TOOL_CATALOG: AgentToolEntry[] = [
 	{
 		name: CANVAS_TOOL_NAME,
 		group: "other",
-		defaultOn: true,
+		defaultOn: false,
 		dshVisible: false,
 		descKey: "canvasToolEnabledDesc",
 		offHintKey: "canvasToolOffHint",
@@ -279,7 +279,7 @@ export const CORE_TOOL_CATALOG: readonly CoreToolEntry[] = [
 		allowAgentToggle: false,
 		descKey: "toolCorePowershellDesc",
 	},
-	{ name: "ls", group: "core", defaultOn: true, allowAgentToggle: false, descKey: "toolCoreLsDesc" },
+	{ name: "ls", group: "core", defaultOn: false, allowAgentToggle: false, descKey: "toolCoreLsDesc" },
 	{ name: "grep", group: "core", defaultOn: true, allowAgentToggle: false, descKey: "toolCoreGrepDesc" },
 	{ name: "find", group: "core", defaultOn: true, allowAgentToggle: false, descKey: "toolCoreFindDesc" },
 ] as const;
@@ -356,10 +356,6 @@ export function normalizeDisabledAgentTools(v: unknown): string[] {
 			name = CONVERSATION_TOOL_NAME;
 		}
 		if (name === "conversation_read") name = CONVERSATION_TOOL_NAME;
-		if (typeof name === "string" && (SUBAGENT_TOOL_NAMES as readonly string[]).includes(name)) {
-			for (const alias of SUBAGENT_TOOL_NAMES) if (!out.includes(alias)) out.push(alias);
-			continue;
-		}
 		if (typeof name === "string" && (LEGACY_SCHEDULE_TOOL_NAMES as readonly string[]).includes(name)) {
 			name = SCHEDULE_TOOL_NAME;
 		}
@@ -441,7 +437,7 @@ export function applyAgentToolsGating(
 
 		for (const t of AGENT_TOOL_CATALOG) {
 			if (off.has(t.name)) {
-				const isShadowedCustomTool = (SUBAGENT_TOOL_NAMES as readonly string[]).includes(t.name);
+				const isShadowedCustomTool = t.name === CONVERSATION_TOOL_NAME;
 				const hasExtensionTool =
 					isShadowedCustomTool &&
 					Boolean(
@@ -486,6 +482,18 @@ export function applyAgentToolsGating(
 	} catch {}
 }
 
+export function normalizeToolOnDemandList(v: unknown): string[] {
+	if (!Array.isArray(v)) return [];
+	const out: string[] = [];
+	for (const x of v) {
+		if (typeof x !== "string") continue;
+		const name = x.trim();
+		if (!name || !ALL_KNOWN_SET.has(name) || out.includes(name)) continue;
+		out.push(name);
+	}
+	return out;
+}
+
 export function lazyLoadingDisabledTools(
 	allNames: readonly string[],
 	loaded: Iterable<string>,
@@ -522,9 +530,9 @@ export const PI_AGENT_PRESETS: UiAgentPreset[] = [
 		isDefault: false,
 		name: "代码开发",
 		nameEn: "Code development",
-		description: "专注于代码读写与执行（bash, read, edit, write, edit_soft）；插件工具与技能名录同步隐藏",
+		description: "专注于代码读写与执行（bash, read, edit, write）；插件工具与技能名录同步隐藏",
 		descriptionEn:
-			"Focused on reading, writing and running code (bash, read, edit, write, edit_soft); plugin tools and skill catalog are hidden too",
+			"Focused on reading, writing and running code (bash, read, edit, write); plugin tools and skill catalog are hidden too",
 		order: 2,
 	},
 	{
@@ -555,8 +563,8 @@ export const PI_PERMISSION_OPTIONS: DshPermissionOption[] = [
 		value: "read-only",
 		name: "只读模式",
 		nameEn: "Read Only",
-		description: "禁止所有文件修改（write/edit/edit_soft）及任何非只读操作",
-		descriptionEn: "Forbids all file modification (write/edit/edit_soft) and any non-read-only operation",
+		description: "禁止所有文件修改（write/edit）及任何非只读操作",
+		descriptionEn: "Forbids all file modification (write/edit) and any non-read-only operation",
 	},
 	{
 		value: "workspace-write-never",
@@ -599,14 +607,13 @@ export function filterToolsByPreset(tools: Iterable<string>, preset?: string): s
 		return all.filter((n) => n === "bash" || n === "read");
 	}
 	if (preset === "code") {
-		const codeSet = new Set(["bash", "read", "edit", "write", "edit_soft"]);
+		const codeSet = new Set(["bash", "read", "edit", "write"]);
 		return all.filter((n) => codeSet.has(n));
 	}
 	if (preset === "reader") {
 		const writeTools = new Set([
 			"write",
 			"edit",
-			"edit_soft",
 			"bash",
 			"powershell",
 			"terminal_create",
@@ -635,9 +642,10 @@ export function presetHasQuestionnaire(preset?: string): boolean {
 
 export interface LegacyToolSwitches {
 	terminalToolsEnabled?: boolean;
-	editSoftEnabled?: boolean;
 	questionnaireEnabled?: boolean;
 	disabledAgentTools?: unknown;
+	/** 按需列表：列内工具直接关闭（与 `disabledAgentTools` 取并集，只做减法）。 */
+	toolOnDemandTools?: unknown;
 }
 
 export function legacyToDisabled(s: LegacyToolSwitches): string[] {
@@ -646,27 +654,24 @@ export function legacyToDisabled(s: LegacyToolSwitches): string[] {
 	if (s.terminalToolsEnabled === true) {
 		for (const n of TERMINAL_TOOL_NAMES) off.delete(n);
 	}
-	if (s.editSoftEnabled === true) off.delete(EDIT_SOFT_TOOL_NAME);
 	if (s.questionnaireEnabled === false) off.add(ASK_USER_QUESTION_TOOL_NAME);
 	return normalizeDisabledAgentTools([...off]);
 }
 
 export function deriveLegacy(disabled: readonly string[]): {
 	terminalToolsEnabled: boolean;
-	editSoftEnabled: boolean;
 	questionnaireEnabled: boolean;
 } {
 	const off = new Set(disabled);
 	return {
 		terminalToolsEnabled: TERMINAL_TOOL_NAMES.every((n) => !off.has(n)),
-		editSoftEnabled: !off.has(EDIT_SOFT_TOOL_NAME),
 		questionnaireEnabled: !off.has(ASK_USER_QUESTION_TOOL_NAME),
 	};
 }
 
 export function foldLegacyIntoDisabled(
 	current: readonly string[],
-	legacy: Pick<LegacyToolSwitches, "terminalToolsEnabled" | "editSoftEnabled" | "questionnaireEnabled">,
+	legacy: Pick<LegacyToolSwitches, "terminalToolsEnabled" | "questionnaireEnabled">,
 ): string[] {
 	const next = new Set(normalizeDisabledAgentTools(current));
 	const applyGroup = (names: readonly string[], v: boolean | undefined) => {
@@ -677,7 +682,6 @@ export function foldLegacyIntoDisabled(
 		}
 	};
 	applyGroup(TERMINAL_TOOL_NAMES, legacy.terminalToolsEnabled);
-	applyGroup([EDIT_SOFT_TOOL_NAME], legacy.editSoftEnabled);
 	applyGroup([ASK_USER_QUESTION_TOOL_NAME], legacy.questionnaireEnabled);
 	return [...next];
 }
@@ -685,6 +689,8 @@ export function foldLegacyIntoDisabled(
 export function effectiveDisabledAgentTools(s: LegacyToolSwitches): string[] {
 	const next = new Set(legacyToDisabled({ ...s, disabledAgentTools: s.disabledAgentTools }));
 	if (s.questionnaireEnabled === false) next.add(ASK_USER_QUESTION_TOOL_NAME);
+	// 按需列表只会把工具从活跃集里拿掉：`disabledAgentTools` 的补集无法把列内工具复活。
+	for (const name of normalizeToolOnDemandList(s.toolOnDemandTools)) next.add(name);
 	return [...next];
 }
 

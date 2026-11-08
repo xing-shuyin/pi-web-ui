@@ -14,8 +14,11 @@ import {
 	PRESENT_FILES_TOOL_NAME,
 	SKILL_TOOL_NAME,
 	ALL_AGENT_TOOL_ENTRIES,
+	CANVAS_TOOL_NAME,
 	CORE_BUILTIN_TOOL_NAMES,
 	CORE_TOOL_CATALOG,
+	DELEGATE_TASK_TOOL_NAME,
+	WORKTREE_TOOL_NAME,
 	getAgentToolEntry,
 	isToolSupportedOnPlatform,
 	applyAgentToolsGating,
@@ -33,13 +36,13 @@ import {
 	isTerminalGuidanceOn,
 	legacyToDisabled,
 	normalizeDisabledAgentTools,
+	normalizeToolOnDemandList,
 	filterToolsByPreset,
 	presetAllowsPluginTools,
 	presetHasQuestionnaire,
 	presetShowsSkillCatalog,
 	setAgentToolEnabled,
 	setAgentToolsEnabled,
-	SUBAGENT_TOOL_NAMES,
 	TERMINAL_TOOL_NAMES,
 	LEGACY_TERMINAL_TOOL_NAMES,
 	resolveDisabledAgentToolsFromEnabled,
@@ -70,12 +73,11 @@ function fakeSet(initial: string[] = []) {
 }
 
 describe("catalog", () => {
-	it("核心工具目录 CORE_TOOL_CATALOG 声明完整（8 个工具，powershell 默认关，其余默认开）", () => {
+	it("核心工具目录 CORE_TOOL_CATALOG 声明完整（8 个工具，powershell/ls 默认关，其余默认开）", () => {
 		expect(CORE_TOOL_CATALOG).toHaveLength(8);
 		expect(CORE_TOOL_CATALOG.map((c) => c.name)).toEqual([...CORE_BUILTIN_TOOL_NAMES]);
-		const ps = CORE_TOOL_CATALOG.find((c) => c.name === "powershell");
-		expect(ps?.defaultOn).toBe(false);
-		expect(CORE_TOOL_CATALOG.filter((c) => c.name !== "powershell").every((c) => c.defaultOn)).toBe(true);
+		const off = new Set(CORE_TOOL_CATALOG.filter((c) => !c.defaultOn).map((c) => c.name));
+		expect([...off].sort()).toEqual(["ls", "powershell"]);
 	});
 
 	it("ALL_AGENT_TOOL_ENTRIES 汇总核心、可开关与群组目录，默认禁用声明式派生", () => {
@@ -102,30 +104,34 @@ describe("catalog", () => {
 		expect(getAgentToolEntry("powershell")?.allowAgentToggle).toBe(false);
 		expect(isKnownAgentTool("bash")).toBe(false);
 		expect(isKnownAgentTool("powershell")).toBe(false);
-		expect(isKnownAgentTool("subagent")).toBe(true);
-		expect(isKnownAgentTool("edit_soft")).toBe(true);
 	});
 
-	it("对话协作同时登记主名称与兼容名称", () => {
+	it("对话协作只登记 conversation（旧 subagent 别名已删除）", () => {
 		expect(new Set(AGENT_TOOL_CATALOG.map((tool) => tool.name)).size).toBe(AGENT_TOOL_CATALOG.length);
 		expect(TERMINAL_TOOL_NAMES).toEqual(["terminal"]);
-		expect(SUBAGENT_TOOL_NAMES).toEqual(["conversation", "subagent"]);
+		expect(
+			AGENT_TOOL_CATALOG.filter((tool) => tool.group === "subagent")
+				.map((tool) => tool.name)
+				.sort(),
+		).toEqual(["communicate", "conversation"]);
 	});
 
-	it("默认：终端组/edit_soft/eval 关，其余开（与改动前行为一致）", () => {
+	it("默认：终端组 / ls / patch / delegate_task / sandbox / worktree / canvas / eval / lsp / codemode 关，其余开", () => {
 		const off = new Set(defaultDisabledAgentTools());
 		for (const n of TERMINAL_TOOL_NAMES) expect(off.has(n)).toBe(true);
-		expect(off.has("edit_soft")).toBe(true);
 		expect(off.has(EVAL_TOOL_NAME)).toBe(true);
 		expect(off.has(LSP_TOOL_NAME)).toBe(true);
 		expect(off.has(CODEMODE_TOOL_NAME)).toBe(true);
 		expect(off.has(TOOL_SEARCH_TOOL_NAME)).toBe(true);
 		expect(off.has(MCP_MANAGE_TOOL_NAME)).toBe(true);
 		expect(off.has("powershell")).toBe(true);
-		expect(off.has(PATCH_TOOL_NAME)).toBe(false);
-		expect(off.has(SANDBOX_TOOL_NAME)).toBe(false);
-		for (const n of SUBAGENT_TOOL_NAMES) expect(off.has(n)).toBe(false);
-		expect(off.has("delegate_task")).toBe(false);
+		expect(off.has("ls")).toBe(true);
+		expect(off.has(PATCH_TOOL_NAME)).toBe(true);
+		expect(off.has(SANDBOX_TOOL_NAME)).toBe(true);
+		expect(off.has(WORKTREE_TOOL_NAME)).toBe(true);
+		expect(off.has(CANVAS_TOOL_NAME)).toBe(true);
+		expect(off.has(DELEGATE_TASK_TOOL_NAME)).toBe(true);
+		expect(off.has("conversation")).toBe(false);
 		expect(off.has(ASK_USER_QUESTION_TOOL_NAME)).toBe(false);
 		expect(off.has(CONVERSATION_READ_TOOL_NAME)).toBe(false);
 		expect(off.has(SKILL_TOOL_NAME)).toBe(false);
@@ -139,7 +145,7 @@ describe("catalog", () => {
 describe("normalize", () => {
 	it("非数组回落默认；脏数据只保留已知工具名（去重）", () => {
 		expect(normalizeDisabledAgentTools(undefined)).toEqual(defaultDisabledAgentTools());
-		expect(normalizeDisabledAgentTools(["edit_soft", "nope", "edit_soft", 42])).toEqual(["edit_soft"]);
+		expect(normalizeDisabledAgentTools(["eval", "nope", "eval", 42])).toEqual(["eval"]);
 	});
 
 	it("旧定时任务三件套迁移到合并后的 schedule（任一关闭都保持关闭）", () => {
@@ -153,8 +159,8 @@ describe("normalize", () => {
 	it("isHostManagedTool 与 isConfigurableAgentTool 正确识别宿主受管工具与外部工具", () => {
 		expect(isHostManagedTool("bash")).toBe(true);
 		expect(isHostManagedTool("read")).toBe(true);
-		expect(isHostManagedTool("edit_soft")).toBe(true);
-		expect(isHostManagedTool("subagent")).toBe(true);
+		expect(isHostManagedTool("patch")).toBe(true);
+		expect(isHostManagedTool("conversation")).toBe(true);
 		expect(isHostManagedTool("url_context")).toBe(false);
 		expect(isHostManagedTool("unknown_external_tool")).toBe(false);
 
@@ -163,10 +169,10 @@ describe("normalize", () => {
 	});
 
 	it("isKnownAgentTool / isAgentToolEnabled", () => {
-		expect(isKnownAgentTool("subagent")).toBe(true);
+		expect(isKnownAgentTool("conversation")).toBe(true);
 		expect(isKnownAgentTool("bash")).toBe(false);
-		expect(isAgentToolEnabled("edit_soft", ["edit_soft"])).toBe(false);
-		expect(isAgentToolEnabled("edit_soft", [])).toBe(true);
+		expect(isAgentToolEnabled("eval", ["eval"])).toBe(false);
+		expect(isAgentToolEnabled("eval", [])).toBe(true);
 	});
 });
 
@@ -174,7 +180,6 @@ describe("legacy sync", () => {
 	it("旧存档（仅遗留三开关）折算语义与改动前一致", () => {
 		const d = legacyToDisabled({});
 		for (const n of TERMINAL_TOOL_NAMES) expect(d).toContain(n);
-		expect(d).toContain("edit_soft");
 		expect(d).toContain("powershell");
 		expect(d).not.toContain(ASK_USER_QUESTION_TOOL_NAME);
 		expect(legacyToDisabled({ disabledAgentTools: [], terminalToolsEnabled: false })).toEqual([]);
@@ -183,24 +188,24 @@ describe("legacy sync", () => {
 	it("deriveLegacy 回填（终端组全开才算开）", () => {
 		expect(deriveLegacy([])).toEqual({
 			terminalToolsEnabled: true,
-			editSoftEnabled: true,
 			questionnaireEnabled: true,
 		});
 		const partial = deriveLegacy([TERMINAL_TOOL_NAMES[0]]);
 		expect(partial.terminalToolsEnabled).toBe(false);
-		expect(partial.editSoftEnabled).toBe(true);
 	});
 
 	it("foldLegacyIntoDisabled 只动覆盖的组", () => {
-		const cur = ["edit_soft", "subagent"];
-		expect(foldLegacyIntoDisabled(cur, { terminalToolsEnabled: false })).toEqual([
-			"edit_soft",
+		expect(foldLegacyIntoDisabled(["subagent", "eval"], { terminalToolsEnabled: false })).toEqual([
 			"conversation",
-			"subagent",
+			"eval",
 			...TERMINAL_TOOL_NAMES,
 		]);
-		expect(foldLegacyIntoDisabled(["edit_soft"], { editSoftEnabled: true })).toEqual([]);
-		expect(foldLegacyIntoDisabled(["edit_soft"], {})).toEqual(["edit_soft"]);
+		expect(foldLegacyIntoDisabled(["eval"], { questionnaireEnabled: true })).toEqual(["eval"]);
+		expect(foldLegacyIntoDisabled(["subagent"], {})).toEqual(["conversation"]);
+	});
+
+	it("旧存档里的 subagent 别名折算到 conversation，不会复活成独立开关", () => {
+		expect(normalizeDisabledAgentTools(["subagent"])).toEqual(["conversation"]);
 	});
 
 	it("effectiveDisabled 合并问卷别名（双保险）", () => {
@@ -208,6 +213,21 @@ describe("legacy sync", () => {
 			ASK_USER_QUESTION_TOOL_NAME,
 		);
 		expect(effectiveDisabledAgentTools({ disabledAgentTools: [] })).not.toContain(ASK_USER_QUESTION_TOOL_NAME);
+	});
+
+	it("按需列表：列内工具直接关闭（与开关取并集，只做减法）", () => {
+		expect(normalizeToolOnDemandList(["canvas", "canvas", " nope ", 7, "sandbox"])).toEqual(["canvas", "sandbox"]);
+		expect(normalizeToolOnDemandList(undefined)).toEqual([]);
+		const merged = effectiveDisabledAgentTools({ disabledAgentTools: [], toolOnDemandTools: ["canvas"] });
+		expect(merged).toContain("canvas");
+		// 开关里没关的工具，不能因为“不在按需列表里”而被复活或剔除
+		expect(merged).not.toContain("sandbox");
+		// 两处重复只会出现一次
+		const both = effectiveDisabledAgentTools({
+			disabledAgentTools: ["canvas"],
+			toolOnDemandTools: ["canvas"],
+		});
+		expect(both.filter((n) => n === "canvas")).toHaveLength(1);
 	});
 
 	it("终端引导只在组内有启用工具时注入", () => {
@@ -219,11 +239,11 @@ describe("legacy sync", () => {
 
 describe("tool_manage 出入口", () => {
 	it("setAgentToolEnabled 开关单个工具，未知名/未就绪返回 false", () => {
-		const s = fakeSet(["edit_soft", "bash"]);
-		expect(setAgentToolEnabled(s, "edit_soft", false)).toBe(true);
+		const s = fakeSet(["eval", "bash"]);
+		expect(setAgentToolEnabled(s, "eval", false)).toBe(true);
 		expect(s.peek()).toEqual(["bash"]);
-		expect(setAgentToolEnabled(s, "edit_soft", true)).toBe(true);
-		expect(s.peek()).toEqual(["bash", "edit_soft"]);
+		expect(setAgentToolEnabled(s, "eval", true)).toBe(true);
+		expect(s.peek()).toEqual(["bash", "eval"]);
 		expect(setAgentToolEnabled(s, "bash", false)).toBe(false);
 		expect(setAgentToolEnabled(s, "nope", true)).toBe(false);
 		const broken = {
@@ -235,7 +255,7 @@ describe("tool_manage 出入口", () => {
 			},
 			setActiveToolsByName: () => {},
 		};
-		expect(setAgentToolEnabled(broken, "edit_soft", true)).toBe(false);
+		expect(setAgentToolEnabled(broken, "eval", true)).toBe(false);
 	});
 
 	it("setAgentToolsEnabled 批量（组头全开/全关），返回处理数", () => {
@@ -252,7 +272,7 @@ describe("tool_manage 出入口", () => {
 		expect(names).toContain("bash");
 		expect(names).toContain("read");
 		for (const t of AGENT_TOOL_CATALOG) expect(names).toContain(t.name);
-		const s2 = fakeSet(["bash", "edit_soft", "subagent"]);
+		const s2 = fakeSet(["bash", "eval"]);
 		applyAgentToolsGating(
 			s2,
 			AGENT_TOOL_CATALOG.map((t) => t.name),

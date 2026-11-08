@@ -276,8 +276,96 @@ export interface PluginWorkItems {
 	failDelivery(id: string, result: { leaseToken: string; error: string }): Promise<void>;
 }
 
+export interface PluginInboxClaimResult {
+	id: string;
+	status: "new" | "duplicate";
+	attempts: number;
+	reason?: "done" | "in-flight" | "dead";
+}
+
+export interface PluginInboxRecord {
+	id: string;
+	key: string;
+	state: "claimed" | "done" | "failed";
+	attempts: number;
+	createdAt: number;
+	updatedAt: number;
+	conversationId?: string;
+	runId?: string;
+	error?: string;
+	meta?: Record<string, unknown>;
+}
+
+export interface PluginInboxApi {
+	claim(key: string, meta?: Record<string, unknown>): PluginInboxClaimResult;
+	complete(key: string, result?: { conversationId?: string; runId?: string; meta?: Record<string, unknown> }): void;
+	fail(key: string, error: unknown): void;
+	/** 卡在处理中、可以重投的记录。 */
+	pending(): PluginInboxRecord[];
+	/** 超过重试上限的死信。 */
+	dead(): PluginInboxRecord[];
+}
+
+export interface PluginDeliveryItem {
+	id: string;
+	key: string;
+	channel: string;
+	target: unknown;
+	payload: unknown;
+	attempts: number;
+	createdAt: number;
+	errorClass?: string;
+	error?: string;
+}
+
+export type PluginDeliveryErrorClass = "network" | "rate_limited" | "expired" | "auth" | "rejected" | "unknown";
+
+export interface PluginDeliveryRequest {
+	channel: string;
+	target: unknown;
+	payload: unknown;
+	/** 幂等键：同一 key 重复 send 只发一次。 */
+	key?: string;
+	/** 错误分类：返回 `null` 表示不可重试（立即死信并抛错）。 */
+	classify?: (err: unknown) => PluginDeliveryErrorClass | null;
+	/** 退避表（毫秒）。 */
+	backoffMs?: readonly number[];
+	/** 超过这个时长不再重发（默认 10 分钟）。 */
+	ttlMs?: number;
+}
+
+export type PluginDeliveryOutcome =
+	{ status: "sent" } | { status: "duplicate" } | { status: "queued"; attempts: number; nextAttemptAt: number };
+
+export interface PluginDeliveryStats {
+	queued: number;
+	due: number;
+	dead: number;
+	done: number;
+}
+
+export interface PluginDeliveryApi {
+	/** 注册发送器；返回注销函数（插件反激活时调用）。 */
+	register(input: { channel: string; send: (item: PluginDeliveryItem) => Promise<void> }): () => void;
+	/** 立即尝试一次：可重试失败会转为后台队列（返回 queued），不可重试会抛错。 */
+	send(req: PluginDeliveryRequest): Promise<PluginDeliveryOutcome>;
+	stats(): PluginDeliveryStats;
+	pending(): PluginDeliveryItem[];
+	dead(): PluginDeliveryItem[];
+}
+
 export interface PluginHost {
 	workItems: PluginWorkItems;
+	/**
+	 * 本地投递账本（至少一次 + 幂等键）。渠道插件用它替掉内存去重 Set：
+	 * `claim(eventId)` 拿到 `new` 才处理，处理完 `complete` / `fail`。跨重启去重，卡住的可在下次重投。
+	 */
+	inbox: PluginInboxApi;
+	/**
+	 * 出站投递（与 inbox 共用一个账本，direction=out）。
+	 * 插件只提供 `send(item)`，退避重试 / 死信 / 统计全归宿主。
+	 */
+	delivery: PluginDeliveryApi;
 	broadcast(payload: unknown): void;
 	notify(level: "info" | "warning" | "error", text: string, textEn?: string): void;
 	onMessage(handler: (payload: unknown, from?: string) => void): () => void;
@@ -564,6 +652,20 @@ export interface PluginHostBridge {
 	};
 	setView(view: string): void;
 	openModal(id: string): boolean;
+	/**
+	 * 往宿主内置底栏状态槽写一段文本（宿主决定位置与样式）。
+	 * `content.render(container)` 由宿主的跟随浮层调用（位置 / 翻转 / 关闭全归宿主，需宿主 API ≥ 18）。
+	 */
+	setFooterStatus?(
+		key: string,
+		value: {
+			text: string;
+			tip?: string;
+			pluginId?: string;
+			action?: string;
+			content?: { render(container: HTMLElement): void | (() => void) };
+		} | null,
+	): boolean;
 	closeModal(): boolean;
 	onUiAction(action: string, handler: (itemId: string, value?: string) => void): () => void;
 }

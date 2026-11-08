@@ -31,10 +31,14 @@
   1. Tool Schema 的 `description`：仅描述「做什么与边界」，≤600 字符；
   2. 系统提示词中的 `promptSnippet`：仅写「何时触发」，≤80 字符，不带工具名前缀；
   3. `Guidelines` 段落的 `promptGuidelines`：仅写「调用顺序/禁令/跨工具路由」。
-     _必须使用精炼纯英文，违规会被守卫单测拦截_（守卫：`tests/unit/tool-prompt-hygiene.test.ts`）。`edit` 工具提示词亦归本项目单源覆盖（`agent-service.ts`）。
+     _必须使用精炼纯英文，违规会被守卫单测拦截_（守卫：`tests/unit/tool-prompt-hygiene.test.ts`）。`bash` / `edit` 的模型可见文案单源在 `server/tool-prompts.ts`。
+- **编辑能力只有一个工具名**：宽松匹配是 `edit` 的参数 `soft: true`（`server/edit-tool.ts`），**禁止**再新增 `edit_soft` 这类第二个编辑工具：同名能力拆成两个工具会逼模型二选一，并把开关、提示词、审批规则三处联动凭空翻倍。旧存档里的相关开关只需在归一化里折算，不留运行时分支。
 - **工具延迟加载硬约束：绝不破坏前缀缓存**：
   供应商 Prompt Cache 依赖系统提示词前缀完全一致。系统提示词 `{{tools}}` 目录必须保持完整且不随已加载状态变化；新加载工具的要点随 `load_tools` 回执进入对话；注册表仅允许追加（`toolsAdded`），严禁就地修改或删除（守卫：`tests/lazy-tools-test.mjs`，文档：[`tool-context-budget.md`](tool-context-budget.md)）。
 - **单工具多执行路径必须提示词单源**：以 bash 为例，原生、终端和自适应分流路径共用 `server/tool-prompts.ts`，禁止在 execute 覆盖实现中硬编码或复制描述。
+- **bash / powershell 的默认超时单源在 `server/bash-timeout.ts`**：模型漏传 `timeout` 时按 `DEFAULT_BASH_TIMEOUT_SEC`（120s，`PI_WEB_BASH_TIMEOUT_SEC` 可改）执行，过大值夹到 `MAX_BASH_TIMEOUT_SEC`（1 小时）—— 不得退回「无超时」只等会话看门狗（默认 20 分钟）收尸。三条执行路径（`bash-tool.ts` 本地/SSH、`terminals.ts` 终端接管、`agent-service.ts` 的 powershell）必须都过 `withDefaultBashTimeout()`，禁止各处另写数值或把 `0` 当「不限」（SDK 对 0/负数直接抛 `Invalid timeout`）（守卫：`tests/unit/bash-timeout.test.ts`）。
+- **Schema 只写字段名与类型**：导出的 JSON Schema 里不放 `minItems` / `maxItems` / `minimum` / `maximum` / `minLength` / `anyOf` 这类装饰约束，也不给自解释的字段写 `description`；约束校验搬到 handler（`readArguments` 一类），候选值写 `enum`，每个参数能填什么写在该参数的**唯一**一句签名里（`communicate`、`browser_page` 的 `action`/`op` 就是范例）。少数确实不自解释的字段（`read.offset`、`bash.persist`、`edit.soft`、`present_files.items[].focus`、`skill.name`）才留一句短说明。SDK 自带但文案归我们的 `write` / `grep` / `find` 用 `withSlimPrompt()` 在 `server/tool-prompts.ts` 里换文案与 schema，实现仍走 SDK（守卫：`tests/unit/tool-schema-slim.test.ts`，它同时比对字段名与 SDK 内置定义，SDK 增删参数会直接报红）。
+- **工具关闭只有一个漏斗**：`disabledAgentTools`（开关）与 `toolOnDemandTools`（按需列表）都由 `effectiveDisabledAgentTools()` 取并集，只做减法、不产生第二条门控路径；禁止为新开关另写一套 `setActiveTools` 过滤（守卫：`tests/unit/tool-manager.test.ts`「按需列表」用例）。
 - **新增工具三处联动**：新增可开关工具必须同时登记到 `tool-manager.ts`（`AGENT_TOOL_CATALOG` 事实源）、`agent-service.ts`（`customTools` 列表）以及 `tests/unit/tool-registration.test.ts`；内置工具覆盖必须走 `tool-overrides.ts`。
 - **逐工具文案可编辑机制**：用户自定义文案仅作为偏好存入 `toolPromptOverrides`，新增可配置维度必须同步打补丁逻辑、wire 协议与设置页编辑器三处（守卫：`tests/unit/tool-prompt-overrides.test.ts`）。
 
@@ -59,6 +63,7 @@
 - **UI 扩展点与浮层规则**：
   - 下拉菜单必须 Portal 到 `body` + `fixed` 布局，防止被父容器 `overflow` 截断；
   - 浮层统一使用 `useFloatingPanel`，禁止在 `scroll` 事件中强制关闭浮层（仅重算锚点，通过 mousedown/Escape 关闭）；
+  - **叠人式浮层禁写死 z-index**：能盖在另一个浮层之上的浮层（工具详情、文件预览、图片预览、全屏 diff、审批/授权弹窗……）一律用 `web/src/overlay-stack.ts` 的 `useOverlayZIndex()` 取层号，内联 `style.zIndex` 覆盖主题；叠栈从 `var(--z-overlay-stack)`（100000）起、按打开顺序往上排，临时通知固定在 `var(--z-notice)`（100050）永远在最上。**不要再给“比谁高”另挑一个更大的数字**（100001/100005 那类叠上去只会把下一个套娃浮层又盖住）；需要自开 stacking context 的弹窗用 `.overlay-layer` 壳。静态浮层最高 10000（守卫：`tests/unit/overlay-stack.test.ts`）。
   - 侧边停靠栏（`SideDock`）为流内 flex 项目，浮动模式由 `sideDockFloat` 控制，严禁写死 fixed 遮挡侧边按钮。
 - **输入框上方那条带子属于消息区**：快捷短语行只是浮在它上面，正文从芯片**之间**的缝里透出来（芯片本身是实底小卡片，压在正文上必须压得住字）。带子高度单源在 `.main` 的 `--composer-strip`（= `--composer-pad-top` + ChatInput 实测写入的 `--quick-row-h` + 6px）；改输入区上内边距或短语行留白必须同时顾三处：`.messages-wrap` 的负 margin、`.messages` 的底部留白、以及按容器底缘定位的 `.scroll-bottom` / `.qn-rail`（都要 `+ var(--composer-strip)` 回补），严禁把短语行改回 `position: absolute`（会与药丸/浮标抢同一条带子，折行时必叠）。守卫：`messages-behind-composer.test.ts`。
 - **拖拽与触控交互标准**：
@@ -108,3 +113,23 @@
 - 默认不写源码注释；删除复述代码、文件头介绍、分段标题、历史变更、临时说明和注释掉的废代码，避免过期说明误导后续判断。维护规则与架构说明放在对应 `docs/` 文档。
 - 保留许可证、类型与构建/检查指令、运行时读取的元数据，以及解释非显然安全边界或约束的简短说明；字符串、正则和模板里的文本按实际用途判断。
 - 测试按实际代码结构或稳定标识定位源码，不依赖普通注释的文字。
+
+## 七、终端命令执行（防卡死）
+
+挂死只有四类根因，规则按**根因**写，不要按「看起来卡住的命令」逐个打补丁（`| sort` 只是缓冲导致看不到进度，读的是 EOF，本身不会死锁）：
+
+1. **等 stdin**：`npx` 安装确认、`git commit` 无 `-m`、REPL、`read -p`。必须显式非交互（`CI=true`、`npx --yes`、`npm i --no-audit --no-fund`、`git commit -m`）；执行器一律把子进程 stdin 接 `/dev/null`，读到 EOF 即返回。
+2. **不退出**：`--watch`、dev server、前台 daemon、死循环。禁止前台跑，改用后台托管 + 轮询。
+3. **pager**：`less` / `more` / `git log` 默认分页器等 TTY 按键。用 `PAGER=cat`、`GIT_PAGER=cat`、`git --no-pager`；执行器默认注入。
+4. **输出淹没上下文 / 后台子进程继承 stdout**：原始输出先落盘，只回显尾部；分析用 `grep` / `read --offset` 分步读，禁止 `cmd | sort` / `| less` / `| head` 这类必须吃到 EOF、T 掉 TTY 或持住管道句柄才算完的直连管道。
+
+时长分档与用法（`scripts/safe-exec.mjs`，跨平台 Node 包装器）：
+
+| 场景               | 命令                                                               | 判据                   |
+| ------------------ | ------------------------------------------------------------------ | ---------------------- |
+| 单测 / lint / 类型 | `node scripts/safe-exec.mjs --timeout 60 -- npx vitest run <file>` | 超时返回 `124`         |
+| 全量构建 / 编译    | `--timeout 600`，必带 `--log`                                      | 超时返回 `124`         |
+| 预计 >3 分钟       | `--detach` 托管 + `--status <pidfile>` 轮询 + `--kill` 终止        | 启动立即返回           |
+| AI 单次工具调用    | pi `bash` 工具的 `timeout` 参数 + 会话级工具看门狗                 | 超时 `session.abort()` |
+
+`124` 意味着**换策略**，不是重试：先读日志定位卡点（慢？卡网络？等锁？），再调分档或改后台。进程树终止以 `server/process-utils.ts` 的 `killPidTree` 为单源，不另行手写 `taskkill` / `kill -9` 片段。守卫：`tests/unit/safe-exec.test.ts`。

@@ -54,10 +54,8 @@ export function normalizeToolPromptOverrides(
 	const source = { ...(v as Record<string, unknown>) };
 	const conversationOverride =
 		normalizeToolPromptOverride(source.conversation) ?? normalizeToolPromptOverride(source.subagent);
-	if (conversationOverride) {
-		source.conversation = conversationOverride;
-		source.subagent = conversationOverride;
-	}
+	if (conversationOverride) source.conversation = conversationOverride;
+	delete source.subagent;
 	const legacyNames = [
 		"terminal_create",
 		"terminal_list",
@@ -93,9 +91,7 @@ export function toolPromptOverrideOf(
 	map: ToolPromptOverrideMap | undefined,
 	name: string,
 ): UiToolPromptOverride | null {
-	const ov = ["terminal", "conversation", "subagent"].includes(name)
-		? normalizeToolPromptOverrides(map)[name]
-		: map?.[name];
+	const ov = ["terminal", "conversation"].includes(name) ? normalizeToolPromptOverrides(map)[name] : map?.[name];
 	return ov && Object.keys(ov).length > 0 ? ov : null;
 }
 
