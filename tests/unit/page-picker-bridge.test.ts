@@ -794,15 +794,24 @@ describe("decideAiRoute（目标页面必须在授权列表里）", () => {
 		if (!res.ok) expect(res.message).toContain("授权");
 	});
 
-	it("唯一页面可以省略 target；多个页面必须显式指定", () => {
+	it("唯一页面可以省略 target；多个页面必须显式指定，并点明用户正在看哪一个", () => {
 		expect(decideAiRoute([aiPage()], undefined)).toMatchObject({ ok: true, peer: TARGET });
-		const many = decideAiRoute([aiPage(TARGET), aiPage("https://b.example")], undefined);
+		const many = decideAiRoute([aiPage(TARGET), aiPage("https://b.example")], undefined, "https://b.example");
 		expect(many.ok).toBe(false);
-		if (!many.ok) expect(many.code).toBe("ambiguous");
+		if (!many.ok) {
+			expect(many.code).toBe("ambiguous");
+			expect(many.message).toContain("用户正在看的是 https://b.example");
+		}
 		expect(decideAiRoute([aiPage(TARGET), aiPage("https://b.example")], "https://b.example")).toMatchObject({
 			ok: true,
 			peer: "https://b.example",
 		});
+	});
+
+	it("active 提示只采纳已授权页面，不把未授权地址当成用户正在看", () => {
+		const many = decideAiRoute([aiPage(TARGET), aiPage("https://b.example")], undefined, "https://evil.example");
+		expect(many.ok).toBe(false);
+		if (!many.ok) expect(many.message).not.toContain("用户正在看的是");
 	});
 
 	it("指定了没授权的页面 → 拒绝并列出现有授权", () => {
@@ -892,10 +901,48 @@ describe("handleBridgeCall 的 AI 分支（模型在操作页面）", () => {
 		expect(injection.args[0]).toMatchObject({ op: "read", builtin: true, from: "http://127.0.0.1:8787" });
 	});
 
-	it("pages 动作由 worker 直接答（带标题与“开着没”），不去打扰页面", async () => {
+	it("同 origin 开着好几个标签 → 操作用户当前打开（active）的那个，而不是后台那个", async () => {
+		const chrome = fakeChrome({
+			aiPages: [aiPage()],
+			tabs: [
+				{ id: 1, url: `${TARGET}/a` },
+				{ id: 2, url: `${TARGET}/b`, active: true },
+			],
+			peerResult: { ok: true, value: { text: "页面正文" } },
+		});
+		expect(await handleBridgeCall({ op: "read" }, hostSender)).toEqual({ ok: true, value: { text: "页面正文" } });
+		expect(lastInjection(chrome).target).toEqual({ tabId: 2 });
+	});
+
+	it("pages 动作由 worker 直接答（带标题、是否打开与用户正在看的那一个），不去打扰页面", async () => {
 		const chrome = fakeChrome({ aiPages: [aiPage()], tabs: [{ id: 1, url: `${TARGET}/x` }] });
 		const res = await handleBridgeCall({ op: "pages" }, hostSender);
-		expect(res).toEqual({ ok: true, value: { pages: [{ origin: TARGET, title: "开发站", open: true }] } });
+		expect(res).toEqual({
+			ok: true,
+			value: { pages: [{ origin: TARGET, title: "开发站", open: true, active: false }] },
+		});
+		expect(chrome.scripting.executeScript).not.toHaveBeenCalled();
+	});
+
+	it("用户正在看的已授权页面标 active 并给出 activeOrigin（未授权的当前页不泄露）", async () => {
+		const chrome = fakeChrome({
+			aiPages: [aiPage(), aiPage("https://b.example", "另一个站")],
+			tabs: [
+				{ id: 1, url: `${TARGET}/x` },
+				{ id: 2, url: "https://b.example/y", active: true },
+			],
+		});
+		const res = await handleBridgeCall({ op: "pages" }, hostSender);
+		expect(res).toEqual({
+			ok: true,
+			value: {
+				activeOrigin: "https://b.example",
+				pages: [
+					{ origin: TARGET, title: "开发站", open: true, active: false },
+					{ origin: "https://b.example", title: "另一个站", open: true, active: true },
+				],
+			},
+		});
 		expect(chrome.scripting.executeScript).not.toHaveBeenCalled();
 	});
 
@@ -905,7 +952,7 @@ describe("handleBridgeCall 的 AI 分支（模型在操作页面）", () => {
 		const value = res.value as Record<string, unknown>;
 		expect(res.ok).toBe(true);
 		expect(value).toMatchObject({ installed: true, aiControl: true, allowEval: false });
-		expect(value.pages).toEqual([{ origin: TARGET, title: "开发站", open: true }]);
+		expect(value.pages).toEqual([{ origin: TARGET, title: "开发站", open: true, active: false }]);
 		expect(String(value.optionsUrl)).toContain("options.html");
 		expect(chrome.scripting.executeScript).not.toHaveBeenCalled();
 	});

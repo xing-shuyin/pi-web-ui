@@ -562,6 +562,21 @@ export async function removeBridgeFromOrigin(origin: unknown): Promise<number> {
 	return count;
 }
 
+/**
+ * 同 origin 可能开着好几个标签：优先用户当前打开（active）的那个，否则取第一个。
+ * 不这样选，"操作这个页面"就会落到后台标签上，“用户看不见页面在动”的那类怪事就从这里来。
+ */
+async function findPeerTab(origin: string): Promise<chrome.tabs.Tab | undefined> {
+	let tabs: chrome.tabs.Tab[] = [];
+	try {
+		tabs = await chrome.tabs.query({ url: [originPattern(origin)] });
+	} catch {
+		return undefined;
+	}
+	const matches = tabs.filter((t) => t.id != null && normalizeOrigin(t.url) === origin);
+	return matches.find((t) => t.active === true) ?? matches[0];
+}
+
 async function callPeerTab(
 	tabId: number,
 	req: { op: string; args?: unknown; from: string; builtin?: boolean },
@@ -638,13 +653,7 @@ export async function handleBridgeCall(raw: unknown, sender: chrome.runtime.Mess
 			error: getMessage("bridge_noPermission", [pattern], `还没授权 ${pattern} —— 到扩展选项页「页面桥」里点一次授权`),
 		};
 	}
-	let tabs: chrome.tabs.Tab[] = [];
-	try {
-		tabs = await chrome.tabs.query({ url: [pattern] });
-	} catch {
-		tabs = [];
-	}
-	const target = tabs.find((t) => t.id != null && normalizeOrigin(t.url) === route.peer);
+	const target = await findPeerTab(route.peer);
 	if (!target?.id) {
 		return {
 			ok: false,
@@ -681,13 +690,55 @@ async function openOrigins(origins: string[]): Promise<Set<string>> {
 	return open;
 }
 
+/**
+ * 用户正在看的已授权页面：只看最后一个聚焦窗口里 active 的那个标签。
+ * 不加 `tabs` 权限，只对已授 host 权限的 origin 查询——未授权页面连 url 都读不到，也就不该被报给模型。
+ */
+async function activeOrigins(origins: string[]): Promise<Set<string>> {
+	const active = new Set<string>();
+	for (const origin of origins) {
+		const pattern = originPattern(origin);
+		if (!(await hasOriginPermission(pattern))) continue;
+		try {
+			const tabs = await chrome.tabs.query({ url: [pattern], active: true, lastFocusedWindow: true });
+			if (tabs.some((t) => t.id != null && normalizeOrigin(t.url) === origin)) active.add(origin);
+		} catch {}
+	}
+	return active;
+}
+
+async function describeAiPages(
+	ctx: BridgeContext,
+): Promise<{ pages: { origin: string; title: string; open: boolean; active: boolean }[]; activeOrigin?: string }> {
+	const origins = ctx.aiPages.map((page) => page.origin);
+	const [open, active] = await Promise.all([openOrigins(origins), activeOrigins(origins)]);
+	const activeOrigin = origins.find((origin) => active.has(origin));
+	return {
+		pages: ctx.aiPages.map((page) => ({
+			origin: page.origin,
+			title: page.title ?? page.origin,
+			open: open.has(page.origin),
+			active: page.origin === activeOrigin,
+		})),
+		...(activeOrigin ? { activeOrigin } : {}),
+	};
+}
+
+/** 没指定 target 且有多个授权页面时，把"用户正在看的那一个"带给路由裁决，好在报错里直接点明。 */
+async function activeOriginHint(ctx: BridgeContext, to: string | undefined): Promise<string | undefined> {
+	const want = typeof to === "string" ? to.trim() : "";
+	if (want || ctx.aiPages.length < 2) return undefined;
+	const active = await activeOrigins(ctx.aiPages.map((page) => page.origin));
+	return ctx.aiPages.map((page) => page.origin).find((origin) => active.has(origin));
+}
+
 async function handleAiCall(
 	req: { op: string; args?: unknown; to?: string; timeoutMs: number; from: string },
 	ctx: BridgeContext,
 ): Promise<PeerCallResult> {
 	const { op, args, to, timeoutMs, from } = req;
 	if (op === "status") {
-		const open = await openOrigins(ctx.aiPages.map((page) => page.origin));
+		const listing = await describeAiPages(ctx);
 		return {
 			ok: true,
 			value: {
@@ -698,11 +749,7 @@ async function handleAiCall(
 				allowEval: ctx.settings.allowEval,
 				allowShot: ctx.settings.allowShot,
 				shotPermission: await hasShotPermission(),
-				pages: ctx.aiPages.map((page) => ({
-					origin: page.origin,
-					title: page.title ?? page.origin,
-					open: open.has(page.origin),
-				})),
+				...listing,
 				optionsUrl: chrome.runtime.getURL("options.html"),
 			},
 		};
@@ -762,19 +809,7 @@ async function handleAiCall(
 			),
 		};
 	}
-	if (op === "pages") {
-		const open = await openOrigins(ctx.aiPages.map((page) => page.origin));
-		return {
-			ok: true,
-			value: {
-				pages: ctx.aiPages.map((page) => ({
-					origin: page.origin,
-					title: page.title ?? page.origin,
-					open: open.has(page.origin),
-				})),
-			},
-		};
-	}
+	if (op === "pages") return { ok: true, value: await describeAiPages(ctx) };
 	const target = await resolveAiTarget(ctx, to);
 	if (!target.ok) return target.result;
 	if (op === "shot") return await captureShot(target.tab, (args ?? {}) as Record<string, unknown>);
@@ -792,7 +827,7 @@ async function resolveAiTarget(
 	ctx: BridgeContext,
 	to: string | undefined,
 ): Promise<{ ok: true; tab: chrome.tabs.Tab } | { ok: false; result: PeerCallResult }> {
-	const route = decideAiRoute(ctx.aiPages, to);
+	const route = decideAiRoute(ctx.aiPages, to, await activeOriginHint(ctx, to));
 	if (!route.ok) return { ok: false, result: { ok: false, code: route.code, error: route.message } };
 	const pattern = originPattern(route.peer);
 	if (!(await hasOriginPermission(pattern))) {
@@ -808,13 +843,7 @@ async function resolveAiTarget(
 			},
 		};
 	}
-	let tabs: chrome.tabs.Tab[] = [];
-	try {
-		tabs = await chrome.tabs.query({ url: [pattern] });
-	} catch {
-		tabs = [];
-	}
-	const tab = tabs.find((t) => t.id != null && normalizeOrigin(t.url) === route.peer);
+	const tab = await findPeerTab(route.peer);
 	if (!tab?.id) {
 		return {
 			ok: false,

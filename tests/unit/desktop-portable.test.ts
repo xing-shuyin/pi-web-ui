@@ -1,4 +1,4 @@
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
@@ -200,6 +200,10 @@ describe("desktop/portable.ts 便携模式纯逻辑", () => {
 
 			expect(setPaths.userData).toBe(join(tempDir, "data", "electron"));
 			expect(setPaths.sessionData).toBe(join(tempDir, "data", "electron", "session"));
+			expect(setPaths.home).toBe(join(tempDir, "data", "home"));
+			expect(setPaths.desktop).toBe(join(tempDir, "data", "home", "Desktop"));
+			expect(setPaths.documents).toBe(join(tempDir, "data", "home", "Documents"));
+			expect(setPaths.downloads).toBe(join(tempDir, "data", "home", "Downloads"));
 
 			expect(env.PI_PORTABLE).toBe("1");
 			expect(env.PI_PORTABLE_ROOT).toBe(tempDir);
@@ -222,6 +226,14 @@ describe("desktop/portable.ts 便携模式纯逻辑", () => {
 			const npmGlobalIdx = env.PATH!.indexOf(join(tempDir, "data", "npm-global"));
 			const nodeIdx = env.PATH!.indexOf(nodeDir);
 			expect(npmGlobalIdx).toBeLessThan(nodeIdx);
+		});
+
+		it("重定向的 HOME 里建出标准外壳目录（桌面/文档/下载…），否则系统选文件对话框报「位置不可用」", () => {
+			const paths = resolvePortablePaths(join(tempDir, "app", "pi.exe"), { PI_PORTABLE_ROOT: tempDir })!;
+			applyPortableEnvironment(paths, {}, { setPath() {} });
+			for (const name of ["Desktop", "Documents", "Downloads", "Pictures", "Music", "Videos"]) {
+				expect(existsSync(join(paths.userHome, name)), name).toBe(true);
+			}
 		});
 	});
 });

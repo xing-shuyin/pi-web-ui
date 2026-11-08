@@ -112,7 +112,7 @@ const waitChips = (n) =>
 		.then(() => true)
 		.catch(() => false);
 
-check("未授权任何页面 → 普通「浏览器操作」按钮", (await normalBtn.count()) === 1, `${await normalBtn.count()} 个`);
+check("未授权任何页面 → 普通「浏览器」按钮", (await normalBtn.count()) === 1, `${await normalBtn.count()} 个`);
 
 await setPages([PAGE_A]);
 await normalBtn.click();

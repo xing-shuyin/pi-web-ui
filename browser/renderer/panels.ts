@@ -3,6 +3,9 @@ import {
 	element,
 	button,
 	iconButton,
+	closeIcon,
+	editIcon,
+	folderIcon,
 	input,
 	label,
 	empty,
@@ -73,7 +76,7 @@ async function openPanel(panel: Panel): Promise<void> {
 	const header = element("header", "pb-dialog-header");
 	const title = element("h2", "", t(panel));
 	title.id = "pb-panel-heading";
-	header.append(title, iconButton("×", t("close"), closePanel));
+	header.append(title, iconButton(closeIcon(10), t("close"), closePanel));
 	const content = element("div", "pb-dialog-content");
 	content.append(empty(t("loading")));
 	node.append(header, content);
@@ -228,12 +231,14 @@ async function bookmarksPanel(container: HTMLElement): Promise<void> {
 				},
 				"pb-item-open",
 			);
+			const symbol = element("span", "pb-item-symbol");
+			if (item.type === "folder") {
+				symbol.append(folderIcon(14));
+			} else {
+				symbol.textContent = item.char || item.name.slice(0, 1).toUpperCase();
+			}
 			opener.append(
-				element(
-					"span",
-					"pb-item-symbol",
-					item.type === "folder" ? "▰" : item.char || item.name.slice(0, 1).toUpperCase(),
-				),
+				symbol,
 				details(
 					item.name,
 					item.type === "folder" ? `${item.children?.length || 0} · ${t("bookmarks")}` : item.url || "",
@@ -241,8 +246,8 @@ async function bookmarksPanel(container: HTMLElement): Promise<void> {
 			);
 			row.append(
 				opener,
-				iconButton("✎", t("edit"), () => showEditor(item)),
-				iconButton("×", t("delete"), async () => {
+				iconButton(editIcon(12), t("edit"), () => showEditor(item)),
+				iconButton(closeIcon(8), t("delete"), async () => {
 					const confirmation = element("div", "pb-confirm");
 					confirmation.append(
 						element("span", "", t("confirmDelete")),
@@ -340,6 +345,14 @@ async function settingsPanel(container: HTMLElement): Promise<void> {
 		openMode.append(option);
 	}
 	openMode.value = settings.newTabOpenMode === "current" ? "current" : "new";
+	const startupMode = element("select", "pb-input");
+	for (const value of ["agent", "browser", "split"] as const) {
+		const option = element("option", "", t(value));
+		option.value = value;
+		startupMode.append(option);
+	}
+	startupMode.value =
+		settings.defaultMode === "browser" || settings.defaultMode === "split" ? settings.defaultMode : "agent";
 	const agentUrl = input(settings.agentUrl || currentState?.agentUrl || "", "url", "http://127.0.0.1:3000");
 	const connection = element(
 		"p",
@@ -359,11 +372,26 @@ async function settingsPanel(container: HTMLElement): Promise<void> {
 		permissions.append(row);
 		switches.set(key, control);
 	}
+	const pageScripts = element("section", "pb-section");
+	const allowScripts = input("", "checkbox");
+	allowScripts.checked = settings.allowScripts !== false;
+	const allowScriptsRow = element("label", "pb-switch");
+	allowScriptsRow.append(allowScripts, element("span", "", t("allowScripts")));
+	const scriptList = element("div", "pb-list");
+	pageScripts.append(
+		element("h3", "", t("pageScripts")),
+		element("p", "pb-muted", t("pageScriptsHelp")),
+		allowScriptsRow,
+		scriptList,
+	);
 	form.append(
 		label(t("searchEngine"), engine),
 		element("p", "pb-muted", t("engineHelp")),
 		label(t("openMode"), openMode),
+		label(t("startupMode"), startupMode),
+		element("p", "pb-muted", t("startupModeHelp")),
 		permissions,
+		pageScripts,
 		save,
 	);
 	form.addEventListener("submit", (event) => {
@@ -372,6 +400,8 @@ async function settingsPanel(container: HTMLElement): Promise<void> {
 			settings: {
 				searchEngine: engine.value,
 				newTabOpenMode: openMode.value,
+				defaultMode: startupMode.value,
+				allowScripts: allowScripts.checked,
 				...Object.fromEntries([...switches].map(([key, control]) => [key, control.checked])),
 			},
 		})
@@ -427,7 +457,91 @@ async function settingsPanel(container: HTMLElement): Promise<void> {
 		element("p", "pb-muted", t("shortcuts")),
 		element("small", "pb-muted", t("language")),
 	);
-	await Promise.all([vaultSection(vault), extensionsSection(extensions)]);
+	await Promise.all([vaultSection(vault), extensionsSection(extensions), pageScriptsSection(scriptList)]);
+}
+/** 页面脚本条目：字段与内核 scripts.list 的返回契约对齐。 */
+interface PageScript {
+	id: string;
+	name: string;
+	matches: string[];
+	code: string;
+	css: string;
+	runAt: "document-start" | "dom-ready";
+	world: "main" | "isolated";
+	spa: boolean;
+	enabled: boolean;
+	persistent: boolean;
+	createdBy: "agent" | "user";
+	createdAt: string;
+	updatedAt: string;
+}
+async function pageScriptsSection(list: HTMLElement): Promise<void> {
+	let scripts: PageScript[];
+	try {
+		scripts = await call<PageScript[]>("scripts.list");
+	} catch (error) {
+		list.replaceChildren(element("p", "pb-muted", error instanceof Error ? error.message : t("error")));
+		return;
+	}
+	if (!list.isConnected) return;
+	const render = (): void => {
+		list.replaceChildren();
+		for (const script of scripts)
+			list.append(
+				pageScriptRow(script, () => {
+					scripts = scripts.filter((entry) => entry.id !== script.id);
+					render();
+				}),
+			);
+		if (!scripts.length) list.append(empty(t("pageScriptsEmpty")));
+	};
+	render();
+}
+function pageScriptRow(script: PageScript, onRemoved: () => void): HTMLElement {
+	const row = element("div", "pb-list-item pb-script-item");
+	const tags = element("div", "pb-script-tags");
+	tags.append(
+		element("span", "pb-badge", t(script.persistent ? "pageScriptPermanent" : "pageScriptTemporary")),
+		element("span", "pb-badge", t(script.createdBy === "agent" ? "pageScriptSourceAgent" : "pageScriptSourceUser")),
+	);
+	if (script.runAt === "document-start") tags.append(element("span", "pb-badge", "document-start"));
+	if (script.world === "isolated") tags.append(element("span", "pb-badge", "isolated"));
+	const control = input("", "checkbox");
+	control.checked = script.enabled;
+	control.setAttribute("aria-label", script.name);
+	control.title = script.name;
+	control.addEventListener("change", () => {
+		const enabled = control.checked;
+		void call<boolean>("scripts.toggle", { id: script.id, enabled })
+			.then((ok) => {
+				if (!ok) throw new Error(t("error"));
+				script.enabled = enabled;
+			})
+			.catch((error: unknown) => {
+				control.checked = !enabled;
+				reportError(error);
+			});
+	});
+	const toggle = element("label", "pb-switch");
+	toggle.append(control);
+	const code = element("details", "pb-script-code-block");
+	code.append(element("summary", "", t("showCode")));
+	if (script.code) code.append(element("pre", "pb-script-code", script.code));
+	if (script.css)
+		code.append(element("div", "pb-muted", t("pageScriptCss")), element("pre", "pb-script-code", script.css));
+	if (!script.code && !script.css) code.append(element("p", "pb-muted", t("empty")));
+	row.append(
+		details(script.name, script.matches.length ? script.matches.join(", ") : "*"),
+		tags,
+		toggle,
+		iconButton(closeIcon(8), t("delete"), async () => {
+			if (!(await call<boolean>("scripts.remove", { id: script.id }))) throw new Error(t("error"));
+			onRemoved();
+			notify(t("pageScriptRemoved"));
+		}),
+		code,
+	);
+	return row;
 }
 interface Credential {
 	id: string;
@@ -486,7 +600,7 @@ async function vaultSection(container: HTMLElement): Promise<void> {
 						await closePanel();
 						notify(t("credentialFilled"));
 					}),
-					iconButton("×", t("removeCredential"), async () => {
+					iconButton(closeIcon(8), t("removeCredential"), async () => {
 						const next = entries.filter((value) => value.id !== entry.id);
 						await call("passwords.save", { entries: next });
 						entries = next;
@@ -560,7 +674,16 @@ async function extensionsSection(container: HTMLElement): Promise<void> {
 			load.disabled = false;
 		}
 	});
-	container.append(load, list);
+	const install = button(t("installCrx"), async () => {
+		install.disabled = true;
+		try {
+			await call("extensions.installCrx");
+			await refresh();
+		} finally {
+			install.disabled = false;
+		}
+	});
+	container.append(load, install, list);
 	try {
 		await refresh();
 	} catch (error) {

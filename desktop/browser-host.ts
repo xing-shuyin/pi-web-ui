@@ -7,15 +7,24 @@ import {
 	type IpcMainInvokeEvent,
 	type WebContents,
 } from "electron";
-import { readFile, realpath, stat, writeFile, rename } from "node:fs/promises";
+import { mkdir, readFile, realpath, rm, stat, writeFile, rename } from "node:fs/promises";
 import { basename, extname, join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { BrowserManager } from "../browser/runtime/manager.js";
+import { extractCrxInto, readCrxManifest } from "../browser/runtime/crx.js";
 import { fillCredential } from "../browser/runtime/credentials.js";
 import { createBrowserExecutor } from "../browser/automation/executor.js";
 import type { BrowserMode, BrowserPageRequest, BrowserState } from "../browser/contracts.js";
-import { browserLayout, isBrowserAssetUrl, isTrustedAgentUrl, normalizeAgentUrl } from "./browser-policy.js";
+import {
+	browserLayout,
+	initialBrowserMode,
+	isBrowserAssetUrl,
+	isTrustedAgentUrl,
+	normalizeAgentUrl,
+	MIN_SPLIT_RATIO,
+	MAX_SPLIT_RATIO,
+} from "./browser-policy.js";
 
 const TEXT_EXTENSIONS = new Set([
 	".txt",
@@ -53,7 +62,17 @@ export class DesktopBrowserHost {
 	private disposed = false;
 	private fileGrants = new Set<string>();
 	private shortcutContents = new WeakSet<WebContents>();
-	private readonly ipcChannels = ["pi-browser:trust", "pi-browser:shell", "pi-browser:page-call"];
+	private readonly ipcChannels = [
+		"pi-browser:trust",
+		"pi-browser:shell",
+		"pi-browser:page-call",
+		"pi-desktop:browser-set-mode",
+		"pi-desktop:browser-set-split-ratio",
+		"pi-desktop:browser-get-startup-mode",
+		"pi-desktop:browser-set-startup-mode",
+		"pi-desktop:browser-get-state",
+		"pi-desktop:browser-create-tab",
+	];
 
 	constructor(
 		private readonly window: BrowserWindow,
@@ -70,9 +89,10 @@ export class DesktopBrowserHost {
 			assetsDir: options.assetsDir,
 			dataDir: options.dataDir,
 			onChange: () => this.publish(),
+			onFileDrop: (file) => void this.installDroppedCrx(file),
 		});
 		const settings = this.browser.getSettings();
-		this.mode = settings.mode === "agent" || settings.mode === "split" ? settings.mode : "browser";
+		this.mode = initialBrowserMode(settings);
 		this.splitRatio = typeof settings.splitRatio === "number" ? settings.splitRatio : 0.5;
 		this.installIpc();
 		this.installPermissions();
@@ -82,6 +102,7 @@ export class DesktopBrowserHost {
 		window.webContents.on("did-finish-load", () => this.publish());
 		this.attachShortcuts(window.webContents);
 		this.publish();
+		void this.restoreExtensions();
 	}
 
 	isTrustedContents(contents: WebContents, kind: "window" | "controller" = "window"): boolean {
@@ -140,7 +161,49 @@ export class DesktopBrowserHost {
 				allowEval: this.browser.getSettings().allowEval === true,
 				aiControl: this.browser.getSettings().aiControl !== false,
 				allowShot: this.browser.getSettings().allowShot !== false,
+				allowScripts: this.browser.getSettings().allowScripts !== false,
+				scripts: this.browser,
 			})(req as BrowserPageRequest, event.sender.id);
+		});
+		ipcMain.handle("pi-desktop:browser-set-mode", (event, mode: unknown) => {
+			if (!this.isTrustedContents(event.sender, "window")) throw new Error("Untrusted request");
+			if (mode === "browser" || mode === "agent" || mode === "split") {
+				this.setMode(mode);
+				return true;
+			}
+			return false;
+		});
+		ipcMain.handle("pi-desktop:browser-set-split-ratio", (event, ratio: unknown) => {
+			if (!this.isTrustedContents(event.sender, "window")) throw new Error("Untrusted request");
+			const num = Number(ratio);
+			if (Number.isFinite(num)) {
+				this.splitRatio = Math.max(MIN_SPLIT_RATIO, Math.min(MAX_SPLIT_RATIO, num));
+				this.browser.saveSettings({ ...this.browser.getSettings(), splitRatio: this.splitRatio });
+				this.publish();
+				return true;
+			}
+			return false;
+		});
+		ipcMain.handle("pi-desktop:browser-get-state", (event) => {
+			if (!this.isTrustedContents(event.sender, "window")) throw new Error("Untrusted request");
+			return this.getState();
+		});
+		// 启动模式：浏览器面板与应用设置页共用同一份设置（BrowserSettings.defaultMode）
+		ipcMain.handle("pi-desktop:browser-get-startup-mode", (event) => {
+			if (!this.isTrustedContents(event.sender, "window")) throw new Error("Untrusted request");
+			return this.browser.getSettings().defaultMode;
+		});
+		ipcMain.handle("pi-desktop:browser-set-startup-mode", (event, mode: unknown) => {
+			if (!this.isTrustedContents(event.sender, "window")) throw new Error("Untrusted request");
+			if (mode !== "browser" && mode !== "agent" && mode !== "split") return false;
+			this.browser.saveSettings({ ...this.browser.getSettings(), defaultMode: mode });
+			return true;
+		});
+		ipcMain.handle("pi-desktop:browser-create-tab", (event, url: unknown) => {
+			if (!this.isTrustedContents(event.sender, "window")) throw new Error("Untrusted request");
+			const tabId = this.browser.createTab(typeof url === "string" ? url : undefined);
+			if (this.mode === "agent") this.setMode("split");
+			return tabId;
 		});
 	}
 
@@ -224,6 +287,9 @@ export class DesktopBrowserHost {
 				.map((tab) => this.browser.getWebContents(tab.id)),
 		])
 			if (contents && !contents.isDestroyed()) contents.send("pi-browser:state", state);
+		if (this.agent && !this.agent.webContents.isDestroyed()) {
+			this.agent.webContents.send("pi-browser:state", state);
+		}
 		this.layout();
 	}
 
@@ -235,7 +301,9 @@ export class DesktopBrowserHost {
 		this.browser.setVisible(!this.overlay && layout.showBrowser);
 		if (this.agent && !this.agent.webContents.isDestroyed()) {
 			this.agent.setBounds(layout.agent);
-			this.agent.setVisible(!this.overlay && layout.showAgent);
+			// 启动中不禁用可见性：晚显一次可见性会留下陈旧的输入/拖拽区域（整窗拖不动、点不了）
+			// 只有确定失败（agentError）才隐藏它，让 shell 的错误卡露出来并给出切换出口
+			this.agent.setVisible(!this.overlay && layout.showAgent && this.agentError === undefined);
 		}
 	}
 
@@ -267,7 +335,6 @@ export class DesktopBrowserHost {
 	setMode(mode: BrowserMode): void {
 		if (!["browser", "agent", "split"].includes(mode)) throw new Error("Invalid browser mode");
 		this.mode = mode;
-		this.browser.saveSettings({ ...this.browser.getSettings(), mode });
 		this.publish();
 		if (mode === "agent") this.agent?.webContents.focus();
 		else this.browser.getWebContents(this.browser.getActiveTabId() ?? "")?.focus();
@@ -287,7 +354,6 @@ export class DesktopBrowserHost {
 					sandbox: true,
 					contextIsolation: true,
 					nodeIntegration: false,
-					additionalArguments: ["--pi-browser-embedded"],
 				},
 			});
 			this.window.contentView.addChildView(this.agent);
@@ -295,7 +361,7 @@ export class DesktopBrowserHost {
 			this.agent.webContents.setWindowOpenHandler(({ url: external }) => {
 				try {
 					this.browser.createTab(external);
-					this.setMode("browser");
+					this.setMode(this.mode === "agent" ? "split" : this.mode);
 				} catch {}
 				return { action: "deny" };
 			});
@@ -307,7 +373,7 @@ export class DesktopBrowserHost {
 					event.preventDefault();
 					try {
 						this.browser.createTab(target);
-						this.setMode("browser");
+						this.setMode(this.mode === "agent" ? "split" : this.mode);
 					} catch {}
 				}
 			});
@@ -316,6 +382,8 @@ export class DesktopBrowserHost {
 				this.agentReady = true;
 				this.agentError = undefined;
 				this.publish();
+				// 启动占位消失在 Agent 模式时，把焦点交给刚就绪的页面，避免用户再点一下
+				if (this.mode === "agent") this.agent.webContents.focus();
 			});
 			this.agent.webContents.on("render-process-gone", (_event, details) =>
 				this.setAgentError(`Agent renderer: ${details.reason}`),
@@ -374,7 +442,7 @@ export class DesktopBrowserHost {
 				this.setMode(text(args.mode) as BrowserMode);
 				return true;
 			case "splitRatio":
-				this.splitRatio = Math.max(0.2, Math.min(0.8, Number(args.ratio) || 0.5));
+				this.splitRatio = Math.max(MIN_SPLIT_RATIO, Math.min(MAX_SPLIT_RATIO, Number(args.ratio) || 0.5));
 				this.browser.saveSettings({ ...this.browser.getSettings(), splitRatio: this.splitRatio });
 				this.publish();
 				return true;
@@ -411,6 +479,22 @@ export class DesktopBrowserHost {
 				this.setMode("browser");
 				return true;
 			}
+			case "scripts.list":
+				return this.browser.listPageScripts();
+			case "scripts.toggle": {
+				const id = text(args.id);
+				if (!id) throw new Error("scripts.toggle requires an id");
+				const enabled = this.browser.setPageScriptEnabled(id, args.enabled === true);
+				this.publish();
+				return enabled;
+			}
+			case "scripts.remove": {
+				const id = text(args.id);
+				if (!id) throw new Error("scripts.remove requires an id");
+				const removed = this.browser.removePageScript(id);
+				this.publish();
+				return removed;
+			}
 			case "downloads.list":
 				return this.browser.getDownloads();
 			case "download.open": {
@@ -425,8 +509,17 @@ export class DesktopBrowserHost {
 			case "extensions.load": {
 				const chosen = await dialog.showOpenDialog(this.window, { properties: ["openDirectory"] });
 				if (chosen.canceled || !chosen.filePaths[0]) return null;
-				const extension = await this.browser.session.extensions.loadExtension(chosen.filePaths[0]);
-				return { id: extension.id, name: extension.name, version: extension.version };
+				return await this.loadExtensionDir(chosen.filePaths[0]);
+			}
+			case "extensions.installCrx": {
+				const direct = text(args.path);
+				if (direct) return await this.installCrx(direct);
+				const chosen = await dialog.showOpenDialog(this.window, {
+					properties: ["openFile"],
+					filters: [{ name: "Chrome 扩展（.crx）", extensions: ["crx"] }],
+				});
+				if (chosen.canceled || !chosen.filePaths[0]) return null;
+				return await this.installCrx(chosen.filePaths[0]);
 			}
 			case "data.import": {
 				const chosen = await dialog.showOpenDialog(this.window, { properties: ["openDirectory"] });
@@ -454,6 +547,107 @@ export class DesktopBrowserHost {
 		const actual = await realpath(path);
 		if (!this.fileGrants.has(actual)) throw new Error("Choose the file with the browser's file picker first");
 		return actual;
+	}
+
+	private extensionRoot(): string {
+		return join(this.options.dataDir, "extensions");
+	}
+
+	/** 已装扩展清单：Electron 的 loadExtension 不随重启保留，重启后靠这份清单重新加载。 */
+	private async rememberExtensionDir(dir: string): Promise<void> {
+		const file = join(this.extensionRoot(), "installed.json");
+		let list: string[] = [];
+		try {
+			const raw = JSON.parse(await readFile(file, "utf8")) as unknown;
+			if (Array.isArray(raw)) list = raw.filter((item): item is string => typeof item === "string");
+		} catch {}
+		const target = resolve(dir);
+		if (list.some((item) => resolve(item) === target)) return;
+		list.push(target);
+		await mkdir(this.extensionRoot(), { recursive: true });
+		await writeFile(file, JSON.stringify(list, null, 1), "utf8");
+	}
+
+	private async loadExtensionDir(dir: string): Promise<{ id: string; name: string; version: string }> {
+		const target = resolve(dir);
+		// 同一目录重复安装（如重装同一份 .crx）直接返回已有扩展，避免重复 loadExtension 抛错
+		const existing = this.browser.session.extensions.getAllExtensions().find((item) => resolve(item.path) === target);
+		if (existing) return { id: existing.id, name: existing.name, version: existing.version };
+		const extension = await this.browser.session.extensions.loadExtension(target);
+		await this.rememberExtensionDir(target).catch((err: Error) =>
+			console.warn(`[desktop] [extensions] 记录已装扩展失败：${err.message}`),
+		);
+		return { id: extension.id, name: extension.name, version: extension.version };
+	}
+
+	/**
+	 * 安装 .crx：剥掉签名头 → 解到 data/extensions/crx-<内容哈希> → 校验 manifest → 加载。
+	 * 目录名取自 crx 内容哈希，同时保证「同一份 crx 重装不换路径」（Electron 的扩展 id 取自路径，
+	 * 路径稳定才不会丢扩展存储），也保证「不同 crx 不互相覆写」。
+	 */
+	private async installCrx(file: string): Promise<{ id: string; name: string; version: string }> {
+		if (!/\.crx$/i.test(file)) throw new Error("Only .crx files can be installed this way");
+		const buf = await readFile(file);
+		const digest = createHash("sha256").update(buf).digest("hex").slice(0, 16);
+		const root = this.extensionRoot();
+		const target = join(root, `crx-${digest}`);
+		const installed = await stat(target).then(
+			(info) => info.isDirectory(),
+			() => false,
+		);
+		if (!installed) {
+			const staging = join(root, `.staging-${randomUUID()}`);
+			await mkdir(root, { recursive: true });
+			await rm(staging, { recursive: true, force: true });
+			await mkdir(staging, { recursive: true });
+			try {
+				await extractCrxInto(buf, staging);
+				await readCrxManifest(staging);
+				await rename(staging, target);
+			} catch (err) {
+				await rm(staging, { recursive: true, force: true }).catch(() => {});
+				throw err;
+			}
+		}
+		return await this.loadExtensionDir(target);
+	}
+
+	/** 启动时把上次装过的扩展重新加载（文件夹与 .crx 一视同仁），单个失败不拦其它。 */
+	/** 拖到网页上的 .crx：主进程装着，结果用系统弹窗告诉用户（网页里的渲染层看不到这次拖放）。 */
+	private async installDroppedCrx(file: string): Promise<void> {
+		try {
+			const extension = await this.installCrx(file);
+			await dialog.showMessageBox(this.window, {
+				type: "info",
+				message: `已安装扩展：${extension.name} ${extension.version}`,
+				detail: extension.id,
+			});
+		} catch (err) {
+			await dialog.showMessageBox(this.window, {
+				type: "error",
+				message: "安装 .crx 失败",
+				detail: (err as Error).message,
+			});
+		}
+	}
+
+	private async restoreExtensions(): Promise<void> {
+		const file = join(this.extensionRoot(), "installed.json");
+		let list: string[] = [];
+		try {
+			const raw = JSON.parse(await readFile(file, "utf8")) as unknown;
+			if (Array.isArray(raw)) list = raw.filter((item): item is string => typeof item === "string");
+		} catch {
+			return;
+		}
+		for (const dir of list) {
+			if (this.disposed) return;
+			try {
+				await this.browser.session.extensions.loadExtension(dir);
+			} catch (err) {
+				console.warn(`[desktop] [extensions] 恢复扩展失败（${dir}）：${(err as Error).message}`);
+			}
+		}
 	}
 
 	private async openFile(args: Record<string, unknown>): Promise<unknown> {

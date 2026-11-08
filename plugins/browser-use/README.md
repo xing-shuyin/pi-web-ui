@@ -1,10 +1,10 @@
 # browser-use · 常驻 Chrome 自动化与智能搜索插件
 
-基于 [DrissionPage](https://www.drissionpage.cn) 的常驻 Chrome 自动化插件，为 AI 注册原生的 `browser_search` 与 `browser_use` 工具族。
+基于 [DrissionPage](https://www.drissionpage.cn) 的常驻 Chrome 自动化插件，为 AI 注册**单一**原生工具 `browser_use`：页面交互与联网搜索（`action: "search"`）合一，省下一份工具定义与一次决策成本。
 
 ## 核心特性
 
-- **高效真实浏览器搜索（`browser_search`）**：
+- **高效真实浏览器搜索（`browser_use(action: "search")`）**：
   - **独立后台标签页隔离（Tab Isolation）**：搜索在后台专用的 Worker 标签页上静默执行，无论前台当前在浏览文档、填表还是等待用户操作，**绝不冲掉前台活动页面**；搜索完毕前台焦点完好保留。
   - **CDP 极速无图渲染（Fast SERP）**：通过底层 CDP 阻断图片、视频、字体及第三方跟踪脚本的加载，页面毫秒级就绪，端到端速度提升 50%~70%，大幅节省带宽。
   - **时效性过滤与发布时间提取**：支持 `timeRange` 参数（`day` 过去24小时、`week` 过去1周、`month` 过去1个月、`year` 过去1年），并自动从 SERP 卡片中提纯绝对日期（如 `2024-03-15`）或相对时间（如 `3小时前`），彻底消除知识时效盲区。
@@ -60,9 +60,9 @@
 - **一键精准停止**：在后台任务列表中点击 **[停止]** 按钮，系统会先发送平稳优雅退出信号，并配合端口级强力释放兜底，确保在 1~2 秒内彻底关闭 Chrome 进程并完全释放端口，绝不残留僵尸进程；
 - **与宿主生命周期打通**：支持 Web UI 的“全部关闭”与“自动清理遗留任务”机制，随应用优雅启停。
 
-## 搜索工具：`browser_search`
+## 搜索能力：`browser_use(action: "search")`
 
-用于需要联网搜索最新资讯、排查报错、查找官方文档时的首选工具：
+搜索不单独注册工具，统一由 `browser_use` 的 `search` 动作承载；需要联网搜索最新资讯、排查报错、查找官方文档时首选该动作（关键词误传进 `text` 也会被自动兜底识别）：
 
 | 参数 `param`      | 类型      | 必填 | 说明                                                                                                                                                                |
 | :---------------- | :-------- | :--- | :------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
@@ -73,11 +73,10 @@
 | `fetchTopContent` | `boolean` | 否   | **搜阅一体模式**：在搜索的同时自动在后台提取排名第一的权威自然结果核心纯净正文（1500~2000 字符），一次 Tool Call 即刻搞定“搜+阅”（默认 `false`）                    |
 | `limit`           | `number`  | 否   | 返回的最大自然搜索结果数量（1~20，默认 `8` 条）                                                                                                                     |
 | `officialOnly`    | `boolean` | 否   | **官网与权威站点过滤**：优先/仅保留官方认证站点与权威开源文档（默认 `false`）                                                                                       |
-| `fallback`        | `boolean` | 否   | 当首选引擎遇到人机验证拦截或超时时，是否自动按降级链轮转其他可用引擎（默认 `true`）                                                                                 |
 
 ### 如何让搜索精准搜到官网与权威站点（彻底杜绝广告）
 
-在面对充斥着山寨下载站、代理商推广与营销洗稿站的网络环境时，`browser_search` 从三个维度确保官网与权威站点精准优先：
+在面对充斥着山寨下载站、代理商推广与营销洗稿站的网络环境时，`browser_use(action: "search")` 从三个维度确保官网与权威站点精准优先：
 
 1. **自动识别官方认证徽章（Official Badges）**：
    - 内置针对各大搜索引擎官方认证标记的 DOM 识别器（如百度 `.c-icon-v` 官方认证、360 `.icon-official` 官网盾牌、搜狗 `.vr-official` 标签、Google/Bing 官方知识卡片）；
@@ -107,7 +106,7 @@
 
 ### 零结果必须说清「被拦」还是「真没有」
 
-搜索零结果是最容易被误读的场景：**「未找到结果」不等于关键词搜不到**，很可能是反爬验证码或网络不可达。因此 `browser_search` 在零结果时不再输出统一话术，而是逐引擎交代真实原因：
+搜索零结果是最容易被误读的场景：**「未找到结果」不等于关键词搜不到**，很可能是反爬验证码或网络不可达。因此 `browser_use(action: "search")` 在零结果时不再输出统一话术，而是逐引擎交代真实原因：
 
 ```
 ⚠️ 没有拿到任何结果，但这不等于「搜不到」——各引擎实际回报：
@@ -144,40 +143,40 @@
 
 ## 交互工具：`browser_use`
 
-AI 可以直接使用原生 tool call 控制常驻浏览器：
+AI 可以直接使用原生 tool call 控制常驻浏览器（含搜索）：
 
-| 动作 `action`       | 关键参数                                                                                              | 说明                                                                                                                |
-| :------------------ | :---------------------------------------------------------------------------------------------------- | :------------------------------------------------------------------------------------------------------------------ |
-| `search`            | `query`, `engine?`, `timeRange?`, `page?`, `fetchTopContent?`, `limit?`, `officialOnly?`, `fallback?` | 执行真实浏览器搜索并直接提取自然搜索结果（等同于 `browser_search`）                                                 |
-| `read_page`         | `url?`, `maxChars?`                                                                                   | 阅读器模式提取网页纯净正文与核心代码块，过滤所有噪音与广告；支持 HTML 表格转 Markdown、代码块语法高亮（极省 Token） |
-| `open`              | `url`                                                                                                 | 在当前标签页打开网址（自动补齐 `https://`）                                                                         |
-| `new`               | `url`                                                                                                 | 新建标签页并打开网址                                                                                                |
-| `tabs`              | -                                                                                                     | 列出所有标签页（含序号、标题、网址及当前激活状态）                                                                  |
-| `switch`            | `target`                                                                                              | 按序号（如 `"2"`）、标题或网址片段切换标签页                                                                        |
-| `close`             | `target?`                                                                                             | 关闭标签页（默认当前激活页）                                                                                        |
-| `snapshot`          | `interactiveOnly?`                                                                                    | 获取页面结构快照；`interactiveOnly: true` 时仅返回带序号的交互元素                                                  |
-| `click`             | `target`, `byJs?`                                                                                     | 点击元素（可传快照序号 `"3"`、文本 `"Sign in"` 或 CSS 选择器）                                                      |
-| `input`             | `target`, `text`                                                                                      | 清空并输入文本                                                                                                      |
-| `select`            | `target`, `option`                                                                                    | 下拉框选择（按选项文本、值或序号）                                                                                  |
-| `check` / `uncheck` | `target`                                                                                              | 勾选 / 取消勾选复选框或单选框                                                                                       |
-| `type`              | `text`                                                                                                | 向当前获得焦点的元素直接打字                                                                                        |
-| `press`             | `key`                                                                                                 | 触发按键或快捷键（如 `"Enter"`、`"ctrl+a"`、`"Escape"`）                                                            |
-| `hover`             | `target`                                                                                              | 鼠标悬停在指定元素上                                                                                                |
-| `scroll`            | `scroll`                                                                                              | 页面滚动：`"top"`、`"bottom"`、`"up"`、`"down"` 或像素值                                                            |
-| `wait`              | `seconds`                                                                                             | 等待指定秒数                                                                                                        |
-| `js` / `jsx`        | `code`                                                                                                | 执行 JavaScript 代码或获取表达式值                                                                                  |
-| `console`           | `level?`, `clear?`, `limit?`, `query?`                                                                | 查看当前标签页控制台日志（自动捕获 `log`/`warn`/`error` 与未捕获异常，支持按级别过滤与清空）                        |
-| `screenshot`        | `path?`, `fullPage?`                                                                                  | 截取页面截图（支持 fullPage 长图）                                                                                  |
-| `quit`              | -                                                                                                     | 关闭常驻浏览器窗口，结束当前自动化会话                                                                              |
+| 动作 `action`       | 关键参数                                                                                            | 说明                                                                                                                |
+| :------------------ | :-------------------------------------------------------------------------------------------------- | :------------------------------------------------------------------------------------------------------------------ |
+| `search`            | `query`(或 `text`), `engine?`, `timeRange?`, `page?`, `fetchTopContent?`, `limit?`, `officialOnly?` | 执行真实浏览器搜索并直接提取自然搜索结果（原 `browser_search` 能力全部并入此动作）                                  |
+| `read_page`         | `url?`, `maxChars?`                                                                                 | 阅读器模式提取网页纯净正文与核心代码块，过滤所有噪音与广告；支持 HTML 表格转 Markdown、代码块语法高亮（极省 Token） |
+| `open`              | `url`                                                                                               | 在当前标签页打开网址（自动补齐 `https://`）                                                                         |
+| `new`               | `url`                                                                                               | 新建标签页并打开网址                                                                                                |
+| `tabs`              | -                                                                                                   | 列出所有标签页（含序号、标题、网址及当前激活状态）                                                                  |
+| `switch`            | `target`                                                                                            | 按序号（如 `"2"`）、标题或网址片段切换标签页                                                                        |
+| `close`             | `target?`                                                                                           | 关闭标签页（默认当前激活页）                                                                                        |
+| `snapshot`          | `interactiveOnly?`                                                                                  | 获取页面结构快照；`interactiveOnly: true` 时仅返回带序号的交互元素                                                  |
+| `click`             | `target`, `byJs?`                                                                                   | 点击元素（可传快照序号 `"3"`、文本 `"Sign in"` 或 CSS 选择器）                                                      |
+| `input`             | `target`, `text`                                                                                    | 清空并输入文本                                                                                                      |
+| `select`            | `target`, `option`                                                                                  | 下拉框选择（按选项文本、值或序号）                                                                                  |
+| `check` / `uncheck` | `target`                                                                                            | 勾选 / 取消勾选复选框或单选框                                                                                       |
+| `type`              | `text`                                                                                              | 向当前获得焦点的元素直接打字                                                                                        |
+| `press`             | `key`                                                                                               | 触发按键或快捷键（如 `"Enter"`、`"ctrl+a"`、`"Escape"`）                                                            |
+| `hover`             | `target`                                                                                            | 鼠标悬停在指定元素上                                                                                                |
+| `scroll`            | `scroll`                                                                                            | 页面滚动：`"top"`、`"bottom"`、`"up"`、`"down"` 或像素值                                                            |
+| `wait`              | `seconds`                                                                                           | 等待指定秒数                                                                                                        |
+| `js` / `jsx`        | `code`                                                                                              | 执行 JavaScript 代码或获取表达式值                                                                                  |
+| `console`           | `level?`, `clear?`, `limit?`, `query?`                                                              | 查看当前标签页控制台日志（自动捕获 `log`/`warn`/`error` 与未捕获异常，支持按级别过滤与清空）                        |
+| `screenshot`        | `path?`, `fullPage?`                                                                                | 截取页面截图（支持 fullPage 长图）                                                                                  |
+| `quit`              | -                                                                                                   | 关闭常驻浏览器窗口，结束当前自动化会话                                                                              |
 
 ## 典型对话示例
 
 - _“帮我查一下 Python 3.13 去除 GIL 的官方 PEP 进展”_  
-  → AI 调用 `browser_search(query: "Python 3.13 free threaded GIL PEP")`  
+  → AI 调用 `browser_use(action: "search", query: "Python 3.13 free threaded GIL PEP")`  
   → 2 秒内直接返回精简无广告的自然结果列表与官方链接。
 
 - _“帮我去 GitHub 搜索热门的 DrissionPage 库并查看正文详情”_  
-  → AI 调用 `browser_search(query: "DrissionPage github repo", limit: 3)` 获取候选 URL  
+  → AI 调用 `browser_use(action: "search", query: "DrissionPage github repo", limit: 3)` 获取候选 URL  
   → AI 调用 `browser_use(action: "read_page", url: "https://github.com/g1879/DrissionPage")` 极速提取干净 README 正文（零垃圾代码与广告，仅消耗约 1,500 tokens）。
 
 - _“看看刚才打开的页面为什么报错，控制台输出了什么”_  

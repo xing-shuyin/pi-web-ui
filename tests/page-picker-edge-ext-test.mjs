@@ -442,7 +442,7 @@ await sw.evaluate(async () => {
 });
 
 const chip = await piPage.evaluate(() => document.querySelector(".browser-control")?.textContent ?? null);
-check("顶栏渲染出「浏览器操作」入口", chip !== null && chip.includes("浏览器操作"), String(chip));
+check("顶栏渲染出「浏览器」入口", chip !== null && chip.includes("浏览器"), String(chip));
 const panelText = await piPage.evaluate(async () => {
 	document.querySelector(".browser-control")?.click();
 	await new Promise((r) => setTimeout(r, 400));

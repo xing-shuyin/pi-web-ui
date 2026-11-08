@@ -69,7 +69,7 @@ describe("browser-use 插件单元测试", () => {
 		expect(item.icon).toBe("🌐");
 	});
 
-	it("index.mjs 正确注册 browser_use 与 browser_search 工具且符合提示词规范", () => {
+	it("index.mjs 只注册单一 browser_use 工具（搜索并入 action: 'search'）", () => {
 		const registeredTools: any[] = [];
 		let bgTaskEntry: any = null;
 		const mockHost = {
@@ -92,69 +92,129 @@ describe("browser-use 插件单元测试", () => {
 				? (browserUsePlugin as any)(mockHost)
 				: browserUsePlugin.activate(mockHost as any);
 		expect(plugin).toBeDefined();
-		expect(mockHost.registerAgentTool).toHaveBeenCalledTimes(2);
+		expect(bgTaskEntry).toBeNull();
+		expect(mockHost.registerAgentTool).toHaveBeenCalledTimes(1);
+		expect(registeredTools).toHaveLength(1);
+		expect(registeredTools.some((t) => t.name === "browser_search")).toBe(false);
 
-		const tool = registeredTools.find((t) => t.name === "browser_use");
-		expect(tool).toBeDefined();
-		expect(tool.description).toBeTruthy();
+		const tool = registeredTools[0];
+		expect(tool.name).toBe("browser_use");
+		expect(tool.description).toBe("Control persistent Chrome (port 9333) and search the web. State/cookies persist.");
 		expect(tool.description.length).toBeLessThanOrEqual(600);
 		expect(tool.promptSnippet.length).toBeLessThanOrEqual(80);
+		expect(tool.promptSnippet.toLowerCase().startsWith("browser use")).toBe(false);
 		expect(Array.isArray(tool.promptGuidelines)).toBe(true);
-
-		const actionProp = tool.parameters?.properties?.action;
-		expect(actionProp).toBeDefined();
-		expect(actionProp.enum).toContain("open");
-		expect(actionProp.enum).toContain("new");
-		expect(actionProp.enum).toContain("search");
-		expect(actionProp.enum).toContain("read_page");
-		expect(actionProp.enum).toContain("tabs");
-		expect(actionProp.enum).toContain("switch");
-		expect(actionProp.enum).toContain("close");
-		expect(actionProp.enum).toContain("snapshot");
-		expect(actionProp.enum).toContain("click");
-		expect(actionProp.enum).toContain("input");
-		expect(actionProp.enum).toContain("select");
-		expect(actionProp.enum).toContain("scroll");
-		expect(actionProp.enum).toContain("press");
-		expect(actionProp.enum).toContain("console");
-		expect(actionProp.enum).toContain("screenshot");
-		expect(actionProp.enum).toContain("quit");
-
-		const searchTool = registeredTools.find((t) => t.name === "browser_search");
-		expect(searchTool).toBeDefined();
-		expect(searchTool.description).toBeTruthy();
-		expect(searchTool.description.length).toBeLessThanOrEqual(600);
-		expect(searchTool.promptSnippet.length).toBeLessThanOrEqual(80);
-		expect(searchTool.promptSnippet.startsWith("browser_search")).toBe(false);
-		expect(Array.isArray(searchTool.promptGuidelines)).toBe(true);
-		for (const g of searchTool.promptGuidelines) {
+		for (const g of tool.promptGuidelines) {
 			expect(g.length).toBeLessThanOrEqual(200);
 		}
 
-		const searchParams = searchTool.parameters?.properties;
-		expect(searchParams).toBeDefined();
-		expect(searchParams.query).toBeDefined();
-		expect(searchTool.parameters.required).toContain("query");
-		expect(searchParams.engine?.enum).toEqual([
-			"auto",
-			"bing",
-			"sogou",
-			"so",
-			"baidu",
-			"google",
-			"duckduckgo",
-			"brave",
-			"yahoo",
+		const params = tool.parameters;
+		expect(params.required).toEqual(["action"]);
+		const props = params.properties;
+		const actionProp = props.action;
+		expect(actionProp.type).toBe("string");
+		expect(actionProp.anyOf).toBeUndefined();
+		expect(actionProp.enum).toEqual([
+			"search",
+			"open",
+			"new",
+			"read_page",
+			"tabs",
+			"switch",
+			"close",
+			"snapshot",
+			"click",
+			"input",
+			"select",
+			"check",
+			"uncheck",
+			"type",
+			"press",
+			"hover",
+			"scroll",
+			"wait",
+			"js",
+			"jsx",
+			"console",
+			"screenshot",
+			"quit",
 		]);
-		expect(searchParams.limit).toBeDefined();
-		expect(searchParams.page).toBeDefined();
-		expect(searchParams.fetchTopContent).toBeDefined();
-		expect(searchParams.fallback).toBeDefined();
-		expect(searchParams.officialOnly).toBeDefined();
-		expect(searchParams.timeRange?.enum).toEqual(["all", "day", "week", "month", "year"]);
+		expect(actionProp.description).toBe(
+			"search(query,engine?,timeRange?,limit?,fetchTopContent?) | open/new(url) | read_page(maxChars?) | switch(target) | snapshot(interactiveOnly?) | click/hover/check/uncheck(target,byJs?) | input/type(target,text) | select(target,option) | press(key) | scroll(scroll) | wait(seconds) | js/jsx(code) | console(level?,clear?) | screenshot(path?,fullPage?)",
+		);
 
-		const useEngineProp = tool.parameters?.properties?.engine;
-		expect(useEngineProp?.enum).toEqual([
+		// 参数顺序固定为「搜索参数 → 交互参数 → 其它」，防止回退成随机排布
+		expect(Object.keys(props)).toEqual([
+			"action",
+			"query",
+			"engine",
+			"timeRange",
+			"page",
+			"limit",
+			"fetchTopContent",
+			"officialOnly",
+			"url",
+			"target",
+			"text",
+			"key",
+			"option",
+			"scroll",
+			"code",
+			"seconds",
+			"path",
+			"fullPage",
+			"interactiveOnly",
+			"byJs",
+			"maxChars",
+			"level",
+			"clear",
+		]);
+
+		// fallback 不再暴露给 LLM（运行时默认 true）
+		expect(props.fallback).toBeUndefined();
+
+		// 自解释字段不带 description
+		for (const key of [
+			"url",
+			"query",
+			"engine",
+			"timeRange",
+			"page",
+			"fetchTopContent",
+			"officialOnly",
+			"maxChars",
+			"text",
+			"option",
+			"level",
+			"clear",
+			"interactiveOnly",
+			"byJs",
+			"code",
+			"seconds",
+			"path",
+			"fullPage",
+		]) {
+			expect(props[key], key).toBeDefined();
+			expect(props[key].description, key).toBeUndefined();
+		}
+
+		// 仅保留 4 个字段的简短说明（action 上承载函数签名映射表）
+		expect(props.limit.description).toBe("Max search results (default: 8)");
+		expect(props.target.description).toBe("Snapshot ID (e.g. '3'), CSS selector, text, or tab ID");
+		expect(props.key.description).toBe("e.g. 'Enter', 'ctrl+a', 'Escape'");
+		expect(props.scroll.description).toBe("'top', 'bottom', 'up', 'down', or px");
+		const described = Object.keys(props)
+			.filter((k) => props[k]?.description)
+			.sort();
+		expect(described).toEqual(["action", "key", "limit", "scroll", "target"]);
+
+		// 枚举统一为 type: string + enum，不产生 anyOf
+		for (const key of ["engine", "timeRange", "level"]) {
+			expect(props[key].type, key).toBe("string");
+			expect(props[key].anyOf, key).toBeUndefined();
+			expect(Array.isArray(props[key].enum), key).toBe(true);
+		}
+		expect(props.engine.enum).toEqual([
 			"auto",
 			"bing",
 			"sogou",
@@ -165,10 +225,13 @@ describe("browser-use 插件单元测试", () => {
 			"brave",
 			"yahoo",
 		]);
-		expect(tool.parameters?.properties?.officialOnly).toBeDefined();
-		expect(tool.parameters?.properties?.timeRange?.enum).toEqual(["all", "day", "week", "month", "year"]);
-		expect(tool.parameters?.properties?.page).toBeDefined();
-		expect(tool.parameters?.properties?.fetchTopContent).toBeDefined();
+		expect(props.timeRange.enum).toEqual(["all", "day", "week", "month", "year"]);
+
+		// 搜索仍由 browser_use(action="search") 承载，并对 query/text 双字段兜底
+		const src = readFileSync(join(PLUGIN_DIR, "index.mjs"), "utf8");
+		expect(src).not.toContain("browser_search");
+		expect(src).toMatch(/const q = p\.query \|\| p\.text;/);
+		expect(src).toContain("if (p.fallback === false)");
 
 		expect(typeof plugin).toBe("function");
 		expect(() => (plugin as () => void)()).not.toThrow();

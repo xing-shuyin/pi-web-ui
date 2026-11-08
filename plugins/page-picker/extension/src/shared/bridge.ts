@@ -331,7 +331,7 @@ export type AiRouteDecision =
 	| { ok: true; page: AiPage; peer: string }
 	| { ok: false; code: "bad-origin" | "no-page" | "ambiguous"; message: string };
 
-export function decideAiRoute(aiPages: AiPage[], toOrigin?: unknown): AiRouteDecision {
+export function decideAiRoute(aiPages: AiPage[], toOrigin?: unknown, activeOrigin?: unknown): AiRouteDecision {
 	const rawTo = typeof toOrigin === "string" ? toOrigin.trim() : "";
 	const want = rawTo ? normalizeOrigin(rawTo) : undefined;
 	if (rawTo && !want) {
@@ -360,10 +360,12 @@ export function decideAiRoute(aiPages: AiPage[], toOrigin?: unknown): AiRouteDec
 		return { ok: true, page, peer: want };
 	}
 	if (aiPages.length > 1) {
+		const viewing = normalizeOrigin(typeof activeOrigin === "string" ? activeOrigin : "");
+		const viewingNote = viewing && aiPages.some((p) => p.origin === viewing) ? `；用户正在看的是 ${viewing}` : "";
 		return {
 			ok: false,
 			code: "ambiguous",
-			message: `有多个已授权页面（${aiPages.map((p) => p.origin).join("、")}）—— 调用时用 target 指定一个`,
+			message: `有多个已授权页面（${aiPages.map((p) => p.origin).join("、")}）—— 调用时用 target 指定一个${viewingNote}`,
 		};
 	}
 	return { ok: true, page: aiPages[0], peer: aiPages[0].origin };

@@ -343,6 +343,44 @@ check(
 	JSON.stringify(pagedRead),
 );
 
+// 口令框：查询 / 取 HTML / 输入 三条路径都不许把 value 带出页面（与桌面原生 page-operation 同口径）
+await pageB.evaluate(() => {
+	document.body.insertAdjacentHTML(
+		"beforeend",
+		'<form id="login"><input id="user" value="alice">' +
+			'<input id="pw1" type="password" value="markup-secret">' +
+			'<input id="pw2" type="password"></form>',
+	);
+	document.querySelector("#pw2").value = "typed-by-user-123";
+});
+
+const pwQuery = await hostCall("read", { what: "query", selector: "input[type=password]" });
+const pwItems = Array.isArray(pwQuery.value?.items) ? pwQuery.value.items : [];
+check(
+	"**口令框的值不出页面**（query 结果里没有 value 字段，text 也是空的）",
+	pwQuery.ok && pwItems.length === 2 && pwItems.every((item) => !("value" in item) && item.text === ""),
+	JSON.stringify(pwQuery),
+);
+
+const pwHtml = await hostCall("read", { what: "html", selector: "form#login" });
+const pwHtmlText = String(pwHtml.value?.html ?? "");
+check(
+	"**口令框的值不出页面**（html 里 value 属性被清掉，同一表单的普通字段不受影响）",
+	pwHtml.ok && !pwHtmlText.includes("markup-secret") && pwHtmlText.includes('value="alice"'),
+	JSON.stringify(pwHtml),
+);
+
+const pwType = await hostCall("type", { selector: "#pw2", text: "typed-by-agent-456" });
+await pageB.waitForFunction(() => document.querySelector("#pw2")?.value === "typed-by-agent-456", null, {
+	timeout: 3000,
+});
+const pwTyped = await pageB.evaluate(() => document.querySelector("#pw2")?.value);
+check(
+	"口令框照样能填（只隐藏回显：页面里真的写进去了，返回值里没有 value）",
+	pwType.ok && pwType.value?.typed === true && !("value" in (pwType.value ?? {})) && pwTyped === "typed-by-agent-456",
+	`${JSON.stringify(pwType)} typed=${pwTyped}`,
+);
+
 const pagedClick = await hostCall("eval", { code: "1" });
 check(
 	"eval 默认关：即使总开关开着也拒（默认关的开关必须真的关）",

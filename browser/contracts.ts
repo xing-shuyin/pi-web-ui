@@ -35,6 +35,7 @@ export type BrowserShellAction =
 	| "downloads.list"
 	| "extensions.list"
 	| "extensions.load"
+	| "extensions.installCrx"
 	| "tabs.create"
 	| "tabs.activate"
 	| "tabs.close"
@@ -59,4 +60,7 @@ export type BrowserShellAction =
 	| "passwords.available"
 	| "passwords.fill"
 	| "data.import"
+	| "scripts.list"
+	| "scripts.toggle"
+	| "scripts.remove"
 	| "download.open";

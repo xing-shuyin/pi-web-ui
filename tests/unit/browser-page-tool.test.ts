@@ -9,6 +9,7 @@ import {
 	type PageCallRequest,
 	type PageCallResult,
 } from "../../server/agent-service.js";
+import { BROWSER_PAGE_OPS, BROWSER_PAGE_OP_SIGNATURE } from "../../server/browser-page-tool.js";
 import { AGENT_TOOL_CATALOG, BROWSER_PAGE_TOOL_NAME, defaultDisabledAgentTools } from "../../server/tool-manager.js";
 import { fakeClientSession } from "../helpers/fake-session.js";
 
@@ -73,19 +74,24 @@ describe("makeBrowserPageTool 工具定义", () => {
 
 	it("description / promptGuidelines 提到 op 与「只读用户授权的页面」", () => {
 		const tool = makeBrowserPageTool(mockSession(async () => ({ ok: true })));
-		expect(tool.description).toContain("pages");
-		expect(tool.description).toContain("eval");
+		const op = (tool.parameters as any).properties.op;
+		expect(op.enum).toEqual([...BROWSER_PAGE_OPS]);
+		expect(op.description).toBe(BROWSER_PAGE_OP_SIGNATURE);
+		expect(BROWSER_PAGE_OP_SIGNATURE).toContain("pages");
+		expect(BROWSER_PAGE_OP_SIGNATURE).toContain("eval(code)");
 		expect(String(tool.promptSnippet)).toContain("page-picker");
 		const guidelines = (tool.promptGuidelines ?? []).join("\n");
 		expect(guidelines).toContain("browser_page");
 	});
 
-	it("提示词同时支持原生标签页和扩展，保留原 schema", () => {
+	it("提示词同时支持原生标签页和扩展，每个 op 只在一处声明", () => {
 		const tool = makeBrowserPageTool(mockSession(async () => ({ ok: true })));
 		expect(tool.description).toContain("AI Browser");
 		expect(tool.description).toContain("page-picker");
-		expect(tool.description).toContain("snapshot");
-		expect((tool.promptGuidelines ?? []).join("\n")).toContain("tabId as target");
+		expect(BROWSER_PAGE_OP_SIGNATURE).toContain("snapshot");
+		expect(tool.description).not.toContain("snapshot");
+		expect((tool.promptGuidelines ?? []).join("\n")).toContain("active:true");
+		expect((tool.promptGuidelines ?? []).join("\n")).toContain("tabId");
 	});
 
 	it("execute 只把已提供的参数收进 args，并带上 op/target/timeoutMs", async () => {

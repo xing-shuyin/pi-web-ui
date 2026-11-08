@@ -2,6 +2,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { randomUUID } from "node:crypto";
 import type { BrowserMode } from "../contracts.js";
+import { readPageScripts, type PageScript } from "../runtime/scripts.js";
 import { isWebUrl } from "../runtime/urls.js";
 
 export interface Bookmark {
@@ -33,12 +34,15 @@ export interface BrowserSettings {
 	customScrollbar: boolean;
 	officeEnabled: boolean;
 	shortcuts: Record<string, string>;
-	mode: BrowserMode;
+	/** 启动时使用的界面模式（agent / browser / split）；运行期切换不写回这里 */
+	defaultMode: BrowserMode;
 	splitRatio: number;
 	agentUrl: string;
 	aiControl: boolean;
 	allowShot: boolean;
 	allowEval: boolean;
+	/** Agent 页面脚本注入总开关（脚本本身不做能力/体积/条数限制） */
+	allowScripts: boolean;
 	sitePermissions: Record<string, boolean>;
 }
 export interface SavedTabs {
@@ -59,12 +63,13 @@ const DEFAULT_SETTINGS: BrowserSettings = {
 	customScrollbar: true,
 	officeEnabled: true,
 	shortcuts: {},
-	mode: "browser",
+	defaultMode: "agent",
 	splitRatio: 0.5,
 	agentUrl: "",
 	aiControl: true,
 	allowShot: true,
 	allowEval: false,
+	allowScripts: true,
 	sitePermissions: {},
 };
 const emptyBookmarks = (): Bookmark => ({ name: "全部收藏", type: "folder", children: [] });
@@ -92,9 +97,20 @@ function settings(value: unknown, base = DEFAULT_SETTINGS): BrowserSettings {
 	const next = { ...base, shortcuts: { ...base.shortcuts }, sitePermissions: { ...base.sitePermissions } };
 	for (const key of ["searchEngine", "theme", "newTabOpenMode"] as const)
 		if (typeof value[key] === "string") next[key] = value[key];
-	for (const key of ["smartDock", "customScrollbar", "officeEnabled", "aiControl", "allowShot", "allowEval"] as const)
+	for (const key of [
+		"smartDock",
+		"customScrollbar",
+		"officeEnabled",
+		"aiControl",
+		"allowShot",
+		"allowEval",
+		"allowScripts",
+	] as const)
 		if (typeof value[key] === "boolean") next[key] = value[key];
-	if (["browser", "agent", "split"].includes(String(value.mode))) next.mode = value.mode as BrowserMode;
+	if (["browser", "agent", "split"].includes(String(value.defaultMode)))
+		next.defaultMode = value.defaultMode as BrowserMode;
+	// 旧版本把「上次使用的模式」存进 mode；迁移成启动默认模式，老用户升级后启动行为不变
+	else if (["browser", "agent", "split"].includes(String(value.mode))) next.defaultMode = value.mode as BrowserMode;
 	if (typeof value.splitRatio === "number" && Number.isFinite(value.splitRatio))
 		next.splitRatio = Math.max(0.15, Math.min(0.85, value.splitRatio));
 	if (typeof value.agentUrl === "string" && (!value.agentUrl || isWebUrl(value.agentUrl)))
@@ -161,6 +177,15 @@ export class BrowserStorage {
 	saveBookmarks(value: unknown): boolean {
 		this.write("bookmarks", bookmarks(value));
 		return true;
+	}
+	listScripts(): PageScript[] {
+		const value = this.read("scripts");
+		return value === undefined ? [] : readPageScripts(value);
+	}
+	saveScripts(value: unknown): PageScript[] {
+		const scripts = readPageScripts(value);
+		this.write("scripts", scripts);
+		return scripts;
 	}
 	listHistory(): HistoryEntry[] {
 		const value = this.read("history");

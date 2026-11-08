@@ -45,7 +45,7 @@ describe("BrowserStorage", () => {
 			theme: "light",
 			searchEngine: "google",
 			agentUrl: "https://agent.example",
-			mode: "split",
+			defaultMode: "split",
 			splitRatio: 0.6,
 		});
 		storage.saveSettings({
@@ -57,7 +57,7 @@ describe("BrowserStorage", () => {
 		expect(storage.getSettings()).toMatchObject({
 			theme: "light",
 			searchEngine: "google",
-			mode: "split",
+			defaultMode: "split",
 			splitRatio: 0.85,
 			agentUrl: "https://agent.example",
 			shortcuts: { reload: "Ctrl+R" },
@@ -66,6 +66,22 @@ describe("BrowserStorage", () => {
 			storage.saveBookmarks({ ...tree, children: [{ name: "Unsafe", type: "link", url: "file:///secret" }] }),
 		).toThrow();
 		expect(storage.listBookmarks()).toEqual(tree);
+	});
+
+	it("defaults new users to Agent mode and migrates the legacy last-used mode", () => {
+		const fresh = new BrowserStorage(directory(), encryption);
+		expect(fresh.getSettings().defaultMode).toBe("agent");
+
+		const legacy = new BrowserStorage(directory(), encryption);
+		fs.writeFileSync(
+			path.join(legacy.dataDir, "settings.json"),
+			JSON.stringify({ mode: "browser", searchEngine: "google" }),
+		);
+		expect(legacy.getSettings()).toMatchObject({ defaultMode: "browser", searchEngine: "google" });
+		// 迁移后不再写回旧 mode，用户之后修改启动模式不会被它覆盖
+		legacy.saveSettings({ defaultMode: "agent" });
+		expect(legacy.getSettings().defaultMode).toBe("agent");
+		expect(legacy.getSettings()).not.toHaveProperty("mode");
 	});
 
 	it("persists automation consent and sanitizes permission choices", () => {

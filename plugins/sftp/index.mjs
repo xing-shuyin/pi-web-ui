@@ -851,27 +851,15 @@ export default {
 
 		const PROFILE_PROP = {
 			type: "string",
-			description: "Connection profile name from .pi/sftp.json; omitted = the active profile",
+			description: "Profile name from .pi/sftp.json; omitted = active profile",
 		};
 		const SSH_AUTH_PROPS = {
-			username: { type: "string", description: "save: SSH username (default keeps the previous value)" },
-			password: {
-				type: ["string", "null"],
-				description: "save: password or a ${env:VAR}/${secret:name} reference; null clears it",
-			},
-			privateKey: {
-				type: ["string", "null"],
-				description: "save: inline private key PEM or a reference; null clears it",
-			},
-			privateKeyPath: {
-				type: "string",
-				description: "save: private key file path, ~ expansion supported; wins over privateKey",
-			},
-			passphrase: {
-				type: ["string", "null"],
-				description: "save: private key passphrase or a reference; null clears it",
-			},
-			agent: { type: "string", description: "save: ssh-agent socket path, e.g. $SSH_AUTH_SOCK" },
+			username: { type: "string" },
+			password: { type: ["string", "null"], description: "${env:VAR}/${secret:name} reference; null clears" },
+			privateKey: { type: ["string", "null"], description: "Inline PEM or a reference; null clears" },
+			privateKeyPath: { type: "string", description: "File path (~ allowed); wins over privateKey" },
+			passphrase: { type: ["string", "null"], description: "Reference or literal; null clears" },
+			agent: { type: "string", description: "ssh-agent socket path, e.g. $SSH_AUTH_SOCK" },
 		};
 
 		const sftpActions = {
@@ -1106,15 +1094,8 @@ export default {
 				name: "sftp",
 				label: "SFTP 同步 / 远端文件",
 				description:
-					"Project-scoped SFTP over one SSH connection: inspect or edit the connection profile, verify it, diff local against remote, transfer files and manage the remote tree. " +
-					"action=status lists profiles with credentials redacted; save creates or updates a profile (omitted fields keep their old value, null clears a credential, target=local writes the machine override); " +
-					"secret stores a password, passphrase or key in the encrypted store and returns a ${secret:name} reference; test connects and probes the remote root; " +
-					"plan reports the diff without transferring anything; sync transfers (dryRun defaults to true, pass dryRun=false to move bytes); " +
-					"cancel stops the sync that is running (or its scan phase) after the current files; " +
-					"ls, read, write, mkdir, mv, rm and search work on remote files; exec runs a remote shell command. " +
-					"With exec access enabled, planning uses one remote find and many small files upload as one tar batch. " +
-					"path means a local relative path for plan and sync, and a remote absolute path for the file actions; direction=up|down|both and scope=all|tree|file shape a transfer; " +
-					"deletePolicy=none|remote-only|both decides what may be cleaned up, and removals always land in a trash folder first.",
+					"Project-scoped SFTP over one SSH connection: inspect or edit the profile, verify it, diff local against remote, " +
+					"transfer files, manage the remote tree, and (when exec access is enabled) run remote commands.",
 				promptSnippet: "Moving code to or from the deployment server",
 				promptGuidelines: [
 					"Diff before you deploy: run action=plan, show the user the result, then repeat it as action=sync with dryRun=false",
@@ -1128,60 +1109,35 @@ export default {
 						action: {
 							type: "string",
 							enum: actions,
-							description: "Which SFTP action to perform.",
+							description:
+								"status | save(name,host?...creds,target?,activate?) | secret(name,value) | test(profile?) | cancel(profile?) | " +
+								"plan(path?,direction?,scope?,deletePolicy?) | sync(path?,direction?,scope?,deletePolicy?,dryRun?) | " +
+								"ls/read/mkdir/rm(path) | write(path,text) | mv(from,to) | search(path,query,maxResults?,maxDepth?) | exec(cmd,timeoutMs?). " +
+								"path: local-relative for plan/sync, remote-absolute for file ops",
 						},
 						profile: PROFILE_PROP,
-						name: {
-							type: "string",
-							description: "save: profile name (letters, digits, dot, dash, underscore); secret: secret name",
-						},
-						value: { type: "string", description: "secret: the secret value itself (never echoed back)" },
-						host: { type: "string", description: "save: hostname or IP of the SSH server" },
-						port: { type: "number", description: "save: SSH port (default 22)" },
-						remotePath: { type: "string", description: "save: remote root directory, absolute, e.g. /srv/app" },
+						name: { type: "string" },
+						value: { type: "string", description: "secret value; never echoed back" },
+						host: { type: "string" },
+						port: { type: "number" },
+						remotePath: { type: "string", description: "save: remote root, absolute" },
 						...SSH_AUTH_PROPS,
-						ignore: {
-							type: "array",
-							items: { type: "string" },
-							description: "save: extra exclude globs for this profile",
-						},
-						target: {
-							type: "string",
-							enum: ["base", "local"],
-							description: "save: which config file to write (default base)",
-						},
-						activate: { type: "boolean", description: "save: make this the active profile (default true)" },
-						direction: {
-							type: "string",
-							enum: ["up", "down", "both"],
-							description: "plan/sync/save: up = upload, down = download, both = two-way",
-						},
-						scope: {
-							type: "string",
-							enum: ["all", "tree", "file"],
-							description: "plan/sync: all = every sync root (default), tree = a subtree, file = a single file",
-						},
-						path: {
-							type: "string",
-							description: "plan/sync: local relative path; ls/read/write/mkdir/rm/search: remote absolute path",
-						},
-						deletePolicy: {
-							type: "string",
-							enum: ["none", "remote-only", "both"],
-							description: "plan/sync/save: what may be cleaned up (removals go to a trash folder)",
-						},
-						dryRun: {
-							type: "boolean",
-							description: "sync: true (default) only reports the plan; false transfers",
-						},
-						from: { type: "string", description: "mv: source remote absolute path" },
-						to: { type: "string", description: "mv: destination remote absolute path" },
-						text: { type: "string", description: "write: full file content (UTF-8)" },
-						query: { type: "string", description: "search: case-insensitive substring matched against file names" },
-						maxResults: { type: "number", description: "search: result cap (default 60)" },
-						maxDepth: { type: "number", description: "search: directory depth cap (default 6)" },
-						cmd: { type: "string", description: "exec: shell command line, run by the remote login shell" },
-						timeoutMs: { type: "number", description: "exec: timeout in ms (default 120000)" },
+						ignore: { type: "array", items: { type: "string" } },
+						target: { type: "string", enum: ["base", "local"] },
+						activate: { type: "boolean" },
+						direction: { type: "string", enum: ["up", "down", "both"] },
+						scope: { type: "string", enum: ["all", "tree", "file"] },
+						path: { type: "string" },
+						deletePolicy: { type: "string", enum: ["none", "remote-only", "both"] },
+						dryRun: { type: "boolean", description: "sync: default true only reports the plan" },
+						from: { type: "string" },
+						to: { type: "string" },
+						text: { type: "string" },
+						query: { type: "string" },
+						maxResults: { type: "number" },
+						maxDepth: { type: "number" },
+						cmd: { type: "string" },
+						timeoutMs: { type: "number", description: "Milliseconds, default 120000" },
 					},
 					required: ["action"],
 				},

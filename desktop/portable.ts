@@ -21,6 +21,24 @@ export interface ElectronAppPathSetter {
 	setPath(name: string, path: string): void;
 }
 
+/**
+ * 便携模式把 HOME/USERPROFILE 重定向到 data/home，但系统对话框（Electron 选目录 / 选文件、
+ * 系统浏览器的「加载已解压的扩展程序」等）默认落在「桌面」「下载」等标准子目录。
+ * 这些子目录不存在时，Windows 会弹出「位置不可用」错误而不是回退到可用目录，
+ * 因此必须把标准外壳目录一并建出来，并把 Electron 的已知目录指向它们。
+ */
+const HOME_SHELL_DIRS = ["Desktop", "Documents", "Downloads", "Pictures", "Music", "Videos"] as const;
+
+const ELECTRON_HOME_PATHS: ReadonlyArray<readonly [string, string]> = [
+	["home", ""],
+	["desktop", "Desktop"],
+	["documents", "Documents"],
+	["downloads", "Downloads"],
+	["pictures", "Pictures"],
+	["music", "Music"],
+	["videos", "Videos"],
+];
+
 export function hasPortableMarkers(dir: string): boolean {
 	return (
 		existsSync(join(dir, "Portable.flag")) ||
@@ -153,6 +171,7 @@ export function applyPortableEnvironment(
 		paths.npmCacheDir,
 		dirname(paths.gitConfigGlobal),
 		paths.userHome,
+		...HOME_SHELL_DIRS.map((name) => join(paths.userHome, name)),
 	]) {
 		try {
 			mkdirSync(dir, { recursive: true });
@@ -163,8 +182,11 @@ export function applyPortableEnvironment(
 		try {
 			app.setPath("userData", paths.electronDataDir);
 			app.setPath("sessionData", join(paths.electronDataDir, "session"));
+			for (const [name, sub] of ELECTRON_HOME_PATHS) {
+				app.setPath(name, sub ? join(paths.userHome, sub) : paths.userHome);
+			}
 		} catch (err) {
-			console.warn(`[desktop] [portable] 重定向 Electron userData 异常：${(err as Error).message}`);
+			console.warn(`[desktop] [portable] 重定向 Electron 目录异常：${(err as Error).message}`);
 		}
 	}
 

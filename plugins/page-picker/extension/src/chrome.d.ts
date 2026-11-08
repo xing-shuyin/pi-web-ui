@@ -48,7 +48,12 @@ declare namespace chrome {
 			url?: string;
 			active?: boolean;
 		}
-		function query(info: { url?: string | string[]; active?: boolean; currentWindow?: boolean }): Promise<Tab[]>;
+		function query(info: {
+			url?: string | string[];
+			active?: boolean;
+			currentWindow?: boolean;
+			lastFocusedWindow?: boolean;
+		}): Promise<Tab[]>;
 		function update(tabId: number, props: { active?: boolean }): Promise<Tab>;
 		function create(props: { url: string }): Promise<Tab>;
 		function captureVisibleTab(

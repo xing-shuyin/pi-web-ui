@@ -44,7 +44,14 @@ describe("browser automation target resolution", () => {
 			ok: true,
 			result: {
 				pages: [
-					{ origin: "https://example.com", title: "other", open: true, tabId: "other", url: "https://example.com/a" },
+					{
+						origin: "https://example.com",
+						title: "other",
+						open: true,
+						tabId: "other",
+						url: "https://example.com/a",
+						active: false,
+					},
 				],
 			},
 		});
@@ -52,6 +59,50 @@ describe("browser automation target resolution", () => {
 			ok: true,
 			result: { installed: true, hasHost: true, aiControl: true, allowEval: false, allowShot: true },
 		});
+	});
+
+	it("marks the tab the user is viewing and names it in status/pages", async () => {
+		const f = fixture([tab("one"), tab("two", "https://example.com/b")], "two");
+		expect(await f.execute({ op: "pages" })).toEqual({
+			ok: true,
+			result: {
+				activeTabId: "two",
+				pages: [
+					{
+						origin: "https://example.com",
+						title: "one",
+						open: true,
+						tabId: "one",
+						url: "https://example.com/a",
+						active: false,
+					},
+					{
+						origin: "https://example.com",
+						title: "two",
+						open: true,
+						tabId: "two",
+						url: "https://example.com/b",
+						active: true,
+					},
+				],
+			},
+		});
+		expect(await f.execute({ op: "status" })).toMatchObject({ ok: true, result: { activeTabId: "two" } });
+	});
+
+	it("never presents an internal or caller tab as the page the user is viewing", async () => {
+		for (const { active, caller } of [
+			{ active: "internal", caller: 11 },
+			{ active: "caller", caller: 10 },
+		]) {
+			const f = fixture([tab("caller"), tab("internal", "pi://newtab", true), tab("other")], active);
+			const res = await f.execute({ op: "pages" }, caller);
+			if (!res.ok) throw new Error(res.error);
+			const result = res.result as { activeTabId?: string; pages: { active: boolean }[] };
+			expect(result.activeTabId).toBeUndefined();
+			expect(result.pages.length).toBeGreaterThan(0);
+			expect(result.pages.every((page) => page.active === false)).toBe(true);
+		}
 	});
 
 	it("an explicit stale target, full URL or origin prefix never falls back to the active tab", async () => {
@@ -95,9 +146,11 @@ describe("browser automation target resolution", () => {
 		expect(f.contents.every((c) => c.executeJavaScript.mock.calls.length === 0)).toBe(true);
 	});
 
-	it("multiple available pages require a target even when one is active", async () => {
+	it("multiple available pages require a target and name the tab the user is viewing", async () => {
 		const f = fixture([tab("one"), tab("two")], "two");
-		expect(await f.execute({ op: "read" })).toMatchObject({ ok: false, error: expect.stringContaining("Several") });
+		const res = await f.execute({ op: "read" });
+		expect(res).toMatchObject({ ok: false, error: expect.stringContaining("Several") });
+		expect(res).toMatchObject({ ok: false, error: expect.stringContaining("the user is viewing two") });
 		expect(f.contents.every((c) => c.executeJavaScript.mock.calls.length === 0)).toBe(true);
 	});
 

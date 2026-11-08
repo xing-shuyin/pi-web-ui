@@ -1,6 +1,7 @@
 import type { WebContents } from "electron";
 import type { BrowserPageRequest, BrowserPageResult, BrowserTab } from "../contracts.js";
 import { runPageOperation } from "./page-operation.js";
+import { runScriptOperation, type BrowserScriptHost } from "./scripts.js";
 
 export interface BrowserExecutorManager {
 	getTabs(): BrowserTab[];
@@ -14,6 +15,9 @@ export interface BrowserExecutorOptions {
 	aiControl?: boolean;
 	allowEval?: boolean;
 	allowShot?: boolean;
+	allowScripts?: boolean;
+	/** 页面脚本宿主（BrowserManager）；缺失时 script.* 一律报不可用 */
+	scripts?: BrowserScriptHost;
 }
 
 const MAX_RESULT_CHARS = 512 * 1024;
@@ -43,6 +47,14 @@ export function createBrowserExecutor(
 		try {
 			const op = typeof req.op === "string" ? req.op.trim() : "";
 			if (!op || op.length > 64) throw new Error("A browser operation of 1-64 characters is required");
+			// 页面脚本是主进程侧注入（CSS / executeJavaScript / CDP），不进页面操作函数表
+			if (op.startsWith("script.")) {
+				if (!options.scripts) throw new Error("Page scripts are unavailable in this browser build");
+				if (options.allowScripts === false)
+					throw new Error("Browser page scripts are disabled in the native browser settings");
+				const scriptArgs = (req.args ?? {}) as Record<string, unknown>;
+				return bounded(await runScriptOperation(options.scripts, op.slice("script.".length), scriptArgs, req.target));
+			}
 			if (
 				![
 					"status",
@@ -69,13 +81,18 @@ export function createBrowserExecutor(
 				return !tab.internal && !!contents && !contents.isDestroyed() && contents.id !== callerWebContentsId;
 			};
 			const available = tabs.filter(usable);
+			// 用户正在看的标签：active 只标在可操作的页面上，内部页/调用方页面不当成"用户在看"对外暴露
+			const activeTabId = manager.getActiveTabId();
+			const viewing = available.find((tab) => tab.id === activeTabId);
 			const pages = available.map((tab) => ({
 				origin: originOf(tab.url),
 				title: tab.title || tab.url,
 				open: true,
 				tabId: tab.id,
 				url: tab.url,
+				active: tab.id === activeTabId,
 			}));
+			const listing = { ...(viewing ? { activeTabId: viewing.id } : {}), pages };
 			if (op === "status")
 				return bounded({
 					installed: true,
@@ -84,11 +101,12 @@ export function createBrowserExecutor(
 					aiControl: options.aiControl !== false,
 					allowEval: options.allowEval === true,
 					allowShot: options.allowShot !== false,
+					allowScripts: options.allowScripts !== false && !!options.scripts,
 					shotPermission: true,
-					pages,
+					...listing,
 				});
 			if (options.aiControl === false) throw new Error("Browser AI control is disabled in the native browser settings");
-			if (op === "pages") return bounded({ pages });
+			if (op === "pages") return bounded(listing);
 			if (op === "shot" && options.allowShot === false)
 				throw new Error("Browser screenshots are disabled in the native browser settings");
 			if (op === "eval" && options.allowEval !== true)
@@ -120,7 +138,11 @@ export function createBrowserExecutor(
 			} else {
 				if (available.length === 1) tab = available[0];
 				else if (available.length > 1)
-					throw new Error("Several browser tabs are available; select a target from op:pages");
+					throw new Error(
+						viewing
+							? `Several browser tabs are available; the user is viewing ${viewing.id} (${viewing.url}) — pass it as target, or pick another tabId from op:pages`
+							: "Several browser tabs are available; select a target from op:pages",
+					);
 				else throw new Error("No browser page is available; open a browser tab first");
 			}
 			if (!usable(tab))

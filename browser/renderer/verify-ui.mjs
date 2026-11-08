@@ -99,6 +99,8 @@ await page.addInitScript(() => {
 	window.__calls = [];
 	setTimeout(() => {
 		window.piBrowserShell = {
+			// 与 browser/preload.cts 的 filePath 同形：渲染层只能靠它拿拖入文件的真实路径
+			filePath: () => "C:/mock-extension.crx",
 			onState(callback) {
 				listeners.push(callback);
 				return () => {};
@@ -157,21 +159,48 @@ await page.addInitScript(() => {
 				return true;
 			},
 		};
-		window.piDesktop = { window: { minimize() {}, toggleMaximize() {}, close() {} } };
+		// 与 common.ts 的 window.piDesktop.window 声明一致（缺一个方法就会让整块 shell 模块抛错、连标签都不渲染）
+		window.piDesktop = {
+			platform: "win32",
+			window: {
+				minimize() {},
+				toggleMaximize() {},
+				close() {},
+				async isMaximized() {
+					return false;
+				},
+				onMaximizedChange() {
+					return () => {};
+				},
+			},
+		};
 	}, 200);
 });
 try {
 	await page.goto("http://127.0.0.1:8994/shell.html");
 	await page.locator(".pb-tab").first().waitFor();
-	assert.equal(await page.locator(".pb-chrome").evaluate((node) => node.getBoundingClientRect().height), 88);
+	assert.equal(await page.locator(".pb-tab").count(), 2);
+	// 现在的 chrome 是单行 40px，body 必须保持透明（上下由原生 WebContentsView 铺）
+	assert.equal(await page.locator(".pb-chrome").evaluate((node) => node.getBoundingClientRect().height), 40);
 	assert.equal(
 		await page.locator("body").evaluate((node) => getComputedStyle(node).backgroundColor),
 		"rgba(0, 0, 0, 0)",
 	);
-	await page.getByRole("button", { name: "Split", exact: true }).click();
-	await page.locator(".pb-split-control").waitFor({ state: "visible" });
-	await page.locator(".pb-address input").fill("test query & emoji");
-	await page.locator(".pb-address input").press("Enter");
+
+	// 模式按钮：browser → split，chrome 让出左半并显示分栏线
+	await page.locator(".pb-tool-btn").first().click();
+	await page.locator(".pb-split-divider").waitFor({ state: "visible" });
+	const splitBox = await page.locator(".pb-chrome").evaluate((node) => node.getBoundingClientRect());
+	assert.ok(splitBox.left > 0 && splitBox.width < (await page.evaluate(() => innerWidth)));
+	assert.ok(
+		await page.evaluate(() => window.__calls.some((call) => call.action === "mode" && call.args.mode === "split")),
+	);
+
+	// Ctrl+L：搜索浮层 → 回车直达搜索页
+	await page.keyboard.press("Control+l");
+	await page.locator(".pb-search-overlay.pb-open").waitFor();
+	await page.locator(".pb-search-input").fill("test query & emoji");
+	await page.locator(".pb-search-input").press("Enter");
 	assert.ok(
 		await page.evaluate(() =>
 			window.__calls.some(
@@ -180,23 +209,36 @@ try {
 			),
 		),
 	);
-	await page.getByRole("button", { name: "Bookmarks", exact: true }).click();
-	await page.locator("dialog[open]").waitFor();
-	assert.equal(await page.locator("dialog script, dialog img").count(), 0);
-	await page.getByRole("button", { name: /Work <script>/ }).click();
-	assert.ok(await page.getByRole("button", { name: /Example <img/ }).isVisible());
-	await page.getByRole("button", { name: "Add", exact: true }).click();
-	await page.getByLabel("Name", { exact: true }).fill("New bookmark");
-	await page.getByLabel("URL", { exact: true }).fill("https://new.example.com");
-	await page.getByRole("button", { name: "Save", exact: true }).click();
-	await page.getByRole("button", { name: /New bookmark/ }).waitFor();
+	assert.ok(
+		await page.evaluate(() => window.__calls.some((call) => call.action === "overlay" && call.args.open === true)),
+	);
+
+	// 原生菜单「聚焦地址栏」走同一条桥，Esc 关闭并归还 overlay
+	await page.evaluate(() => window.__focusAddress());
+	await page.locator(".pb-search-overlay.pb-open").waitFor();
 	await page.keyboard.press("Escape");
+	await page.waitForFunction(() => !document.querySelector(".pb-search-overlay.pb-open"));
 	assert.ok(
 		await page.evaluate(() => window.__calls.some((call) => call.action === "overlay" && call.args.open === false)),
 	);
-	await page.evaluate(() => window.__focusAddress());
-	await page.waitForFunction(() => document.activeElement === document.querySelector(".pb-address input"));
+
+	// 拖入 .crx：由 preload 取路径，交给主进程安装
+	await page.evaluate(() => {
+		const transfer = new DataTransfer();
+		transfer.items.add(new File(["crx"], "mock-extension.crx", { type: "application/x-chrome-extension" }));
+		for (const type of ["dragover", "drop"])
+			document.body.dispatchEvent(new DragEvent(type, { bubbles: true, cancelable: true, dataTransfer: transfer }));
+	});
+	await page.waitForFunction(() =>
+		window.__calls.some(
+			(call) => call.action === "extensions.installCrx" && call.args.path === "C:/mock-extension.crx",
+		),
+	);
+	assert.equal(await page.locator(".pb-drop-hint").count(), 0);
+
+	// 设置面板（原生菜单「选项」→ showPanel）
 	await page.evaluate(() => window.__openOptions());
+	await page.locator("dialog[open]").waitFor();
 	await page.getByLabel("Search engine").selectOption("google");
 	await page.getByLabel("Allow AI screenshots", { exact: true }).uncheck();
 	await page.getByRole("button", { name: "Add credential", exact: true }).click();
@@ -208,34 +250,80 @@ try {
 	await page.getByText("Test account", { exact: true }).waitFor();
 	await page.getByRole("button", { name: "Delete credential", exact: true }).click();
 	await page.getByText("No saved credentials", { exact: true }).waitFor();
+	// 两条扩展安装入口都在：解压目录 + .crx
 	await page.getByRole("button", { name: "Load unpacked extension", exact: true }).click();
+	await page.getByRole("button", { name: "Install .crx extension", exact: true }).click();
 	assert.ok(await page.evaluate(() => window.__calls.some((call) => call.action === "extensions.load")));
+	assert.ok(
+		await page.evaluate(() =>
+			window.__calls.some((call) => call.action === "extensions.installCrx" && call.args.path === undefined),
+		),
+	);
 	await page.getByRole("button", { name: "Save", exact: true }).click();
 	assert.ok(
 		await page.evaluate(() =>
-			window.__calls.some((call) => call.action === "settings.save" && call.args.settings.searchEngine === "google"),
+			window.__calls.some(
+				(call) =>
+					call.action === "settings.save" &&
+					call.args.settings.searchEngine === "google" &&
+					call.args.settings.allowShot === false,
+			),
 		),
 	);
 	await page.keyboard.press("Escape");
+	await page.waitForFunction(() => !document.querySelector("dialog[open]"));
+
+	// 新标签页：收藏行不注入外部内容，搜索直达
+	await page.goto("http://127.0.0.1:8994/newtab.html");
+	// 假体是 +200ms 才挂到 window 上的，先等桥就绪再交互
+	await page.waitForFunction(() => typeof window.piBrowserShell !== "undefined");
+	await page.locator(".unified-bar").waitFor();
+	assert.equal(await page.locator(".unified-flow-row img, .unified-flow-row script").count(), 0);
+	await page.locator(".unified-bar input").fill("hello world");
+	await page.locator(".unified-bar input").press("Enter");
+	await page.waitForFunction(
+		() =>
+			window.__calls.some(
+				(call) => call.action === "navigate" && String(call.args?.url ?? "").endsWith("hello%20world"),
+			),
+		undefined,
+		{ timeout: 10000 },
+	);
+
+	// 书签面板：XSS 文本只当文本；新增书签；Esc 归还 overlay
+	await page.getByRole("button", { name: "Bookmarks", exact: true }).click();
+	await page.locator("dialog[open]").waitFor();
+	// 恶意书名/网址只当日志文本渲染，不产生 script/img 元素
+	assert.equal(await page.locator("dialog script, dialog img").count(), 0);
+	const panel = page.locator("dialog[open]");
+	await panel.getByRole("button", { name: /Work <script>/ }).click();
+	assert.ok(await panel.getByRole("button", { name: /Example <img/ }).isVisible());
+	await panel.getByRole("button", { name: "Add", exact: true }).click();
+	await panel.getByLabel("Name", { exact: true }).fill("New bookmark");
+	await panel.getByLabel("URL", { exact: true }).fill("https://new.example.com");
+	await panel.getByRole("button", { name: "Save", exact: true }).click();
+	await panel.getByRole("button", { name: /New bookmark/ }).waitFor();
+	await page.keyboard.press("Escape");
+	assert.ok(
+		await page.evaluate(() => window.__calls.some((call) => call.action === "overlay" && call.args.open === false)),
+	);
+
+	// 下载面板：打开已完成下载
 	await page.getByRole("button", { name: "Downloads", exact: true }).click();
 	await page.getByText("Report.txt", { exact: true }).waitFor();
 	await page.getByRole("button", { name: "Open", exact: true }).click();
 	assert.ok(
 		await page.evaluate(() => window.__calls.some((call) => call.action === "download.open" && call.args.id === "dl")),
 	);
-	await page.goto("http://127.0.0.1:8994/newtab.html");
-	await page.locator(".pb-quick-link").first().waitFor();
-	assert.equal(await page.locator(".pb-quick-links img,.pb-quick-links script").count(), 0);
-	await page.locator(".pb-search input").fill("hello world");
-	await page.locator(".pb-search input").press("Enter");
-	assert.ok(
-		await page.evaluate(() =>
-			window.__calls.some((call) => call.action === "navigate" && call.args.url.endsWith("hello%20world")),
-		),
-	);
+	await page.keyboard.press("Escape");
+
+	// 窄窗口不横向溢出
 	await page.setViewportSize({ width: 520, height: 900 });
 	assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth));
+
+	// CSV 编辑保存
 	await page.goto("http://127.0.0.1:8994/office.html?path=C:/table.csv");
+	await page.waitForFunction(() => typeof window.piBrowserShell !== "undefined");
 	await page.locator(".pb-sheet tbody input").first().waitFor();
 	assert.equal(await page.locator(".pb-sheet tbody tr").count(), 3);
 	assert.equal(await page.locator(".pb-sheet tbody tr").nth(1).locator("input").nth(1).inputValue(), "comma, quoted");
@@ -246,6 +334,8 @@ try {
 			window.__calls.some((call) => call.action === "files.save" && call.args.content.startsWith("Updated,Note")),
 		),
 	);
+
+	// 真实 deflate 的 DOCX/XLSX/PPTX 预览
 	const docx = archive({
 		"word/document.xml": '<w:document xmlns:w="w"><w:p><w:r><w:t>Actual document</w:t></w:r></w:p></w:document>',
 	});
@@ -277,7 +367,7 @@ try {
 	assert.deepEqual(previews.slides.slides, [["First"], ["Second"]]);
 	assert.deepEqual(errors, []);
 	console.log(
-		"PASS: shell 88px/transparent, delayed preload, modes/ratio, address search, overlay, escaped bookmarks/history, add bookmark, settings, downloads, responsive newtab, vault add/delete, extensions load, permissions, native focus/options events, CSV edit/save, actual deflated DOCX/XLSX/PPTX preview.",
+		"PASS: shell 40px/transparent, split divider, search overlay + focus-address bridge, crx drop install, settings (engine/screenshots/vault/extensions), overlay release, escaped bookmarks, downloads, responsive newtab, CSV edit/save, actual deflated DOCX/XLSX/PPTX preview.",
 	);
 } finally {
 	await browser.close();

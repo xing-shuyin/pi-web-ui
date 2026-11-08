@@ -81,6 +81,24 @@ export function installBridgePage(options?: {
 		return String(raw).replace(/\r/g, "").trim();
 	};
 
+	/** 口令框的值一律不出页面：查询/点击/取 HTML 都按同一口径脱敏（与桌面原生 `browser/automation/page-operation.ts` 对齐）。 */
+	const isPassword = (node: Element): boolean =>
+		node.tagName.toLowerCase() === "input" && (node as HTMLInputElement).type.toLowerCase() === "password";
+
+	/** 取 HTML 前先克隆并清空口令框的 value，避免 `<input type=password value="...">` 被带出去。 */
+	const outerHtmlMasked = (node: Element | null): string => {
+		if (!node) return "";
+		const clone = node.cloneNode(true) as Element;
+		const passwords = [...clone.querySelectorAll('input[type="password" i]')];
+		if (isPassword(clone)) passwords.push(clone);
+		for (const input of passwords) {
+			input.removeAttribute("value");
+			(input as HTMLInputElement).value = "";
+			input.textContent = "";
+		}
+		return clone.outerHTML;
+	};
+
 	const brief = (node: Element, index: number): Record<string, unknown> => {
 		const rect = node.getBoundingClientRect();
 		const classes = node.classList ? [...node.classList].slice(0, 6) : [];
@@ -90,12 +108,12 @@ export function installBridgePage(options?: {
 			tag,
 			...(node.id ? { id: node.id } : {}),
 			...(classes.length > 0 ? { classes } : {}),
-			text: cut(textOf(node).replace(/\s+/g, " "), 160),
+			text: isPassword(node) ? "" : cut(textOf(node).replace(/\s+/g, " "), 160),
 			...(tag === "a" ? { href: (node as HTMLAnchorElement).href } : {}),
 			...(tag === "input" || tag === "textarea"
 				? {
 						...((node as HTMLInputElement).type ? { type: (node as HTMLInputElement).type } : {}),
-						value: (node as HTMLInputElement).value,
+						...(!isPassword(node) ? { value: (node as HTMLInputElement).value } : {}),
 						...((node as HTMLInputElement).placeholder ? { placeholder: (node as HTMLInputElement).placeholder } : {}),
 					}
 				: {}),
@@ -167,11 +185,11 @@ export function installBridgePage(options?: {
 		if (what === "html") {
 			const node = selector ? (docAny?.querySelector(selector) ?? null) : (docAny?.documentElement ?? null);
 			if (selector && !node) return { error: `选择器没匹上：${selector}` };
-			return { html: cut(node?.outerHTML ?? "", 20000), selector: selector || null };
+			return { html: cut(outerHtmlMasked(node), 20000), selector: selector || null };
 		}
 		const node = selector ? (docAny?.querySelector(selector) ?? null) : (docAny?.body ?? null);
 		if (selector && !node) return { error: `选择器没匹上：${selector}` };
-		return { text: cut(textOf(node), 12000), selector: selector || null };
+		return { text: node && isPassword(node) ? "" : cut(textOf(node), 12000), selector: selector || null };
 	};
 
 	actions["click"] = (args) => {
@@ -216,7 +234,7 @@ export function installBridgePage(options?: {
 		return {
 			typed: true,
 			selector,
-			value: (node as HTMLInputElement).value ?? textOf(node),
+			...(!isPassword(node) ? { value: (node as HTMLInputElement).value ?? textOf(node) } : {}),
 			submitted: args.submit === true,
 		};
 	};

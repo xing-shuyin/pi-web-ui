@@ -87,15 +87,17 @@ function setup(dataDir = directory()) {
 		contentView: { addChildView: vi.fn(), removeChildView: vi.fn() },
 	});
 	const onChange = vi.fn();
+	const onFileDrop = vi.fn();
 	const manager = new BrowserManager({
 		window: window as unknown as BrowserWindow,
 		assetsDir,
 		dataDir,
 		preloadPath: path.resolve("browser/preload.cjs"),
 		onChange,
+		onFileDrop,
 	});
 	managers.push(manager);
-	return { manager, window, onChange, dataDir };
+	return { manager, window, onChange, onFileDrop, dataDir };
 }
 beforeEach(() => {
 	mock.views.length = 0;
@@ -198,6 +200,23 @@ describe("BrowserManager", () => {
 		const snapshot = manager.getTabs();
 		snapshot[0].url = "modified";
 		expect(manager.getTabs()[0].url).toBe("https://example.com/");
+	});
+
+	it("hands dropped .crx files to onFileDrop and keeps blocking other file navigations", async () => {
+		const { manager, onFileDrop } = setup();
+		await manager.navigate("https://example.com");
+		const wc = mock.views[0].webContents;
+		const preventDefault = vi.fn();
+		const crx = pathToFileURL(path.join(mock.downloadsDir, "extension.crx")).href;
+		wc.emit("will-navigate", { preventDefault }, crx);
+		expect(preventDefault).toHaveBeenCalledTimes(1);
+		expect(onFileDrop).toHaveBeenCalledTimes(1);
+		expect(onFileDrop.mock.calls[0][0].endsWith("extension.crx")).toBe(true);
+
+		// 非 .crx 的本地文件照旧拒绝，且不触发安装
+		wc.emit("will-navigate", { preventDefault }, pathToFileURL(path.join(mock.downloadsDir, "note.txt")).href);
+		expect(preventDefault).toHaveBeenCalledTimes(2);
+		expect(onFileDrop).toHaveBeenCalledTimes(1);
 	});
 
 	it("restores session URLs and selection, skips invalid URLs, and disposes every renderer", () => {

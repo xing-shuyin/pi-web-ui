@@ -182,7 +182,7 @@ describe("compactPage / pageCitation（顶栏单页紧凑态 + 网页引用 chip
 		expect(compactPage([a])).toEqual(a);
 	});
 
-	it("没授权 / 多个页面 → 不进入紧凑态（保持「浏览器操作 · N」+ 面板）", () => {
+	it("没授权 / 多个页面 → 不进入紧凑态（保持「浏览器 · N」+ 面板）", () => {
 		expect(compactPage([])).toBeNull();
 		expect(compactPage([a, b])).toBeNull();
 	});

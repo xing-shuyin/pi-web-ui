@@ -11,6 +11,8 @@ export interface BrowserControlPage {
 	origin: string;
 	title: string;
 	open: boolean;
+	/** 用户当前正在看的页面（同一时刻最多一个）。 */
+	active?: boolean;
 	tabId?: string;
 	url?: string;
 }
@@ -21,6 +23,8 @@ export interface BrowserControlStatus {
 	desktop?: boolean;
 	aiControl?: boolean;
 	allowEval?: boolean;
+	activeTabId?: string;
+	activeOrigin?: string;
 	pages: BrowserControlPage[];
 	error?: string;
 }
@@ -84,6 +88,8 @@ export async function queryBrowserControl(): Promise<BrowserControlStatus> {
 			...(nativeHost() ? { native: true } : {}),
 			aiControl: value.aiControl === true,
 			allowEval: value.allowEval === true,
+			...(typeof value.activeTabId === "string" ? { activeTabId: value.activeTabId } : {}),
+			...(typeof value.activeOrigin === "string" ? { activeOrigin: value.activeOrigin } : {}),
 			pages: Array.isArray(value.pages) ? (value.pages as BrowserControlPage[]) : [],
 		};
 		if (next.available) {

@@ -117,6 +117,17 @@ node scripts/make-portable.mjs --skip-pack --with-git --with-node --zip
 
 组装脚本不是升级器：每次都会替换输出的 `app/` 并清空 `data/` 下的八个标准子目录，勿在使用中的便携目录上重跑。它还会复用已有 `runtime/`，所以无下载参数不代表输出一定不含旧运行时。electron-builder 失败时，脚本可能回落到已有 `release/win-unpacked`；分发前确认版本与运行时内容。
 
+### 卡在 `packaging` 不动
+
+electron-builder 打印 `• packaging platform=win32 ...` 之后长时间无输出、CPU 与网络都静止时，按顺序排查（两种原因看起来都是「卡住」）：
+
+1. **残留下载锁**：上次打包被 `Ctrl+C`/强杀后，`%TEMP%\eb-dl-*.lock.lock` 目录会残留，新进程要等 `proper-lockfile` 判定过期（10 分钟）才继续。删掉这些目录即可立刻恢复。
+2. **重新下载 Electron**：`@electron/get` 命中本地缓存后仍要拉 `SHASUMS256.txt` 做校验，直连 GitHub 失败（`UND_ERR_CONNECT_TIMEOUT`）就会回落到重下 158MB 的 Electron zip，国内常见几十 KB/s。镜像统一由 `scripts/lib/electron-mirror.mjs` 提供，`npm run desktop:dist` 与 `scripts/make-portable.mjs` 已经由包装器 `scripts/run-electron-builder.mjs` 在子进程里注入 `ELECTRON_MIRROR` / `ELECTRON_BUILDER_BINARIES_MIRROR`（自己带同名的非空环境变量即可覆盖，方便走代理）。**不要再把这些 URL 写进 `.npmrc`**：npm 11 会把自定义键当成未识别配置逐条告警，npm 12 起不再透传 `npm_config_*`，镜像会静默失效（守卫：`tests/unit/electron-mirror-guard.test.ts`）。绕过包装器直接 `npx electron-builder` 时，需自行带上述两个环境变量。
+
+首次 `npm install` 会由 `electron` 包的 postinstall 下载 Electron 二进制，那一步没有包装器可用：国内网络请先设置 `ELECTRON_MIRROR`（或用户级 `~/.npmrc` 的 `electron_mirror`，代价是每条 npm 命令都会有一条未识别配置警告）。
+
+想看它究竟停在哪一步，加 `DEBUG='electron-builder*,@electron/get*'` 重跑，日志会显示是等锁还是下载。
+
 `--with-git` / `PI_BUNDLE_PORTABLE_GIT=1` 下载 PortableGit，`--with-node` / `PI_BUNDLE_PORTABLE_NODE=1` 下载独立 Node.js；下载和解压需要网络及可用的 `curl`、解压工具。`--zip` 额外生成 `release/pi-web-ui-desktop-<版本>-portable.zip`。当前脚本固定下载 Windows x64 的 Git/Node，不是通用跨平台运行时。完整布局与手动补充方法见[便携版说明](../launcher/README.md)。
 
 ## 开发架构与打包配置

@@ -45,6 +45,21 @@ contextBridge.exposeInMainWorld("piDesktop", {
 	isDesktop: true as const,
 	embedded: process.argv.includes("--pi-browser-embedded"),
 	platform: process.platform,
+	browser: {
+		setMode: (mode: "browser" | "agent" | "split"): Promise<boolean> =>
+			ipcRenderer.invoke("pi-desktop:browser-set-mode", mode),
+		setSplitRatio: (ratio: number): Promise<boolean> => ipcRenderer.invoke("pi-desktop:browser-set-split-ratio", ratio),
+		getStartupMode: (): Promise<string> => ipcRenderer.invoke("pi-desktop:browser-get-startup-mode"),
+		setStartupMode: (mode: "browser" | "agent" | "split"): Promise<boolean> =>
+			ipcRenderer.invoke("pi-desktop:browser-set-startup-mode", mode),
+		getState: (): Promise<unknown> => ipcRenderer.invoke("pi-desktop:browser-get-state"),
+		createTab: (url?: string): Promise<string> => ipcRenderer.invoke("pi-desktop:browser-create-tab", url),
+		onState: (cb: (state: unknown) => void) => {
+			const listener = (_event: IpcRendererEvent, state: unknown) => cb(state);
+			ipcRenderer.on("pi-browser:state", listener);
+			return () => ipcRenderer.removeListener("pi-browser:state", listener);
+		},
+	},
 	openHub: (url: string): Promise<boolean> => ipcRenderer.invoke("pi-desktop:open-hub", url),
 	setTitleBarOverlay: (opts: { color?: string; symbolColor?: string }) =>
 		ipcRenderer.invoke("pi-desktop:set-title-bar-overlay", opts),

@@ -285,12 +285,7 @@ const TOOL_GUIDELINES = [
 	"Click target can be a numerical index from snapshot (e.g. '3'), CSS selector ('#submit'), or text ('Sign in').",
 	"Browser persists across calls; use tabs/switch to inspect or switch between tabs instead of reopening URLs.",
 	"Use console action to inspect JavaScript errors, warnings, and uncaught exceptions when diagnosing web app issues.",
-];
-
-const SEARCH_GUIDELINES = [
-	"Use browser_search when you need real-time web information, fresh documentation, or technical error solutions.",
-	"Default engine is bing; switch to google for global tech, or baidu for Chinese local topics.",
-	"Use clean URLs from results to inspect full pages with browser_use or read when detailed content is needed.",
+	"Reach for action='search' for live info, fresh docs, or error solutions: bing by default, google for global tech, baidu for Chinese topics; feed result URLs to open/read_page for depth.",
 ];
 
 function formatConsoleLogsText(resp) {
@@ -490,9 +485,8 @@ export function activate(host) {
 	const tool = {
 		name: "browser_use",
 		label: "Browser Use",
-		description:
-			"Control a persistent Chrome browser via DrissionPage (port 9333). Actions: open/new tab, list tabs, switch tab, close tab, snapshot human-visible elements, click, input, select dropdown, check/uncheck, type, press key, hover, scroll, wait, execute JS, inspect console logs, screenshot, and quit. State (cookies, logins, tabs) persists across commands.",
-		promptSnippet: "automate a persistent Chrome browser (tabs, snapshot, click, type, console)",
+		description: "Control persistent Chrome (port 9333) and search the web. State/cookies persist.",
+		promptSnippet: "browse and search via persistent Chrome (tabs, snapshot, click, console)",
 		promptGuidelines: TOOL_GUIDELINES,
 		parameters: {
 			type: "object",
@@ -500,9 +494,9 @@ export function activate(host) {
 				action: {
 					type: "string",
 					enum: [
+						"search",
 						"open",
 						"new",
-						"search",
 						"read_page",
 						"tabs",
 						"switch",
@@ -524,74 +518,40 @@ export function activate(host) {
 						"screenshot",
 						"quit",
 					],
-					description: "Browser action to execute.",
+					description:
+						"search(query,engine?,timeRange?,limit?,fetchTopContent?) | open/new(url) | read_page(maxChars?) | switch(target) | snapshot(interactiveOnly?) | click/hover/check/uncheck(target,byJs?) | input/type(target,text) | select(target,option) | press(key) | scroll(scroll) | wait(seconds) | js/jsx(code) | console(level?,clear?) | screenshot(path?,fullPage?)",
 				},
-				url: { type: "string", description: "URL to open or navigate to (auto-prefixes https://)." },
-				query: { type: "string", description: "Search query string when action is 'search'." },
+				query: { type: "string" },
 				engine: {
 					type: "string",
 					enum: ["auto", "bing", "sogou", "so", "baidu", "google", "duckduckgo", "brave", "yahoo"],
-					description: "Search engine when action is 'search' (default: auto).",
 				},
 				timeRange: {
 					type: "string",
 					enum: ["all", "day", "week", "month", "year"],
-					description: "Optional freshness limit for search action.",
 				},
-				page: {
-					type: "number",
-					description: "Target page index when action is 'search' (default: 1).",
-				},
-				limit: {
-					type: "number",
-					description: "Max natural results to return when searching (1-20, default: 8).",
-				},
-				fetchTopContent: {
-					type: "boolean",
-					description: "Extract content of the top result during search.",
-				},
-				fallback: {
-					type: "boolean",
-					description: "Allow engine fallback on failure (default: true).",
-				},
-				officialOnly: {
-					type: "boolean",
-					description: "Only keep authoritative sources.",
-				},
-				maxChars: {
-					type: "number",
-					description: "Max chars for read_page (default: 5000).",
-				},
-				target: {
-					type: "string",
-					description:
-						"Element locator (snapshot index like '3', CSS selector like '#q', text like 'Sign in') or tab target for switch.",
-				},
-				text: { type: "string", description: "Text to enter (for input/type actions)." },
-				key: { type: "string", description: "Key or combination to press (e.g. 'Enter', 'ctrl+a', 'Escape')." },
-				option: { type: "string", description: "Option text, value, or index for dropdown select." },
+				page: { type: "number" },
+				limit: { type: "number", description: "Max search results (default: 8)" },
+				fetchTopContent: { type: "boolean" },
+				officialOnly: { type: "boolean" },
+				url: { type: "string" },
+				target: { type: "string", description: "Snapshot ID (e.g. '3'), CSS selector, text, or tab ID" },
+				text: { type: "string" },
+				key: { type: "string", description: "e.g. 'Enter', 'ctrl+a', 'Escape'" },
+				option: { type: "string" },
+				scroll: { type: "string", description: "'top', 'bottom', 'up', 'down', or px" },
+				code: { type: "string" },
+				seconds: { type: "number" },
+				path: { type: "string" },
+				fullPage: { type: "boolean" },
+				interactiveOnly: { type: "boolean" },
+				byJs: { type: "boolean" },
+				maxChars: { type: "number" },
 				level: {
 					type: "string",
 					enum: ["all", "error", "warn", "info", "log", "debug"],
-					description: "Log level filter for console action (default: all).",
 				},
-				clear: {
-					type: "boolean",
-					description: "If true, clear captured console logs after reading.",
-				},
-				interactiveOnly: {
-					type: "boolean",
-					description: "If true, snapshot returns only interactive elements with IDs.",
-				},
-				byJs: { type: "boolean", description: "If true, click uses JavaScript click." },
-				scroll: {
-					type: "string",
-					description: "Scroll argument: 'top', 'bottom', 'up', 'down', or pixels (e.g. '600').",
-				},
-				code: { type: "string", description: "JavaScript code or expression to execute in page context." },
-				seconds: { type: "number", description: "Seconds to sleep or wait." },
-				path: { type: "string", description: "File path for screenshot." },
-				fullPage: { type: "boolean", description: "Whether screenshot captures full scrollable page." },
+				clear: { type: "boolean" },
 			},
 			required: ["action"],
 		},
@@ -783,111 +743,7 @@ export function activate(host) {
 		},
 	};
 
-	const searchTool = {
-		name: "browser_search",
-		label: "Browser Search",
-		description:
-			"Search the web using a real headless Chrome instance with ad-filtering and direct SERP extraction. Returns structured natural results and instant answers across Bing, Sogou, 360, Baidu, Google, DuckDuckGo, Brave, and Yahoo.",
-		promptSnippet: "search the web via real browser with ad filtering and fast SERP extraction",
-		promptGuidelines: SEARCH_GUIDELINES,
-		parameters: {
-			type: "object",
-			properties: {
-				query: {
-					type: "string",
-					description: "Search keywords or advanced search query.",
-				},
-				engine: {
-					type: "string",
-					enum: ["auto", "bing", "sogou", "so", "baidu", "google", "duckduckgo", "brave", "yahoo"],
-					description: "Search engine to use (default: auto).",
-				},
-				timeRange: {
-					type: "string",
-					enum: ["all", "day", "week", "month", "year"],
-					description: "Time scope limit: 'day' (past 24h), 'week', 'month', or 'year'.",
-				},
-				page: {
-					type: "number",
-					description: "Result page number to inspect (1-20, default: 1).",
-				},
-				limit: {
-					type: "number",
-					description: "Maximum number of natural search results to return (1-20, default: 8).",
-				},
-				fetchTopContent: {
-					type: "boolean",
-					description: "Fetch pure markdown text excerpt of the top match.",
-				},
-				fallback: {
-					type: "boolean",
-					description: "Auto-retry alternative search engines on captcha or error.",
-				},
-				officialOnly: {
-					type: "boolean",
-					description: "Prefer verified domain results.",
-				},
-			},
-			required: ["query"],
-		},
-		async execute(_id, params, signal) {
-			const p = params ?? {};
-			if (!p.query) throw new Error("browser_search 需要提供 query 关键词");
-
-			const scriptArgs = ["search", String(p.query)];
-			if (p.engine) scriptArgs.push("--engine", String(p.engine));
-			if (p.timeRange) scriptArgs.push("--time-range", String(p.timeRange));
-			if (p.page && p.page > 1) scriptArgs.push("--page", String(p.page));
-			if (p.fetchTopContent) scriptArgs.push("--fetch-top");
-			if (p.limit) scriptArgs.push("--limit", String(p.limit));
-			if (p.officialOnly) scriptArgs.push("--official-only");
-			if (p.fallback === false) scriptArgs.push("--no-fallback");
-
-			const py = resolvePython();
-			const env = buildBrowserEnv();
-
-			const resp = await enqueueSearch(() => runPythonScript(py, scriptArgs, { env, signal }));
-			if (!resp.ok) {
-				const errMsg = resp.error || "未知搜索错误";
-				const hintMsg = resp.hint ? `\n提示: ${resp.hint}` : "";
-				throw new Error(`[browser_search] ${errMsg}${hintMsg}`);
-			}
-
-			const tabCount =
-				typeof resp.tabs === "number" ? resp.tabs : Array.isArray(resp.tabs) ? resp.tabs.length : undefined;
-			recordActivity(tabCount);
-
-			const outputText = formatSearchResultsText(resp);
-			const detailsSafe = {
-				ok: true,
-				action: "search",
-				query: resp.query,
-				engine: resp.engine,
-				fallback_from: resp.fallback_from,
-				page: resp.page,
-				time_range: resp.time_range,
-				related_queries: resp.related_queries,
-				top_content: resp.top_content
-					? {
-							title: resp.top_content.title,
-							url: resp.top_content.url,
-							snippet: resp.top_content.content ? resp.top_content.content.slice(0, 500) : undefined,
-						}
-					: undefined,
-				count: resp.count,
-				results: (resp.results || []).slice(0, 8),
-				attempts: resp.attempts,
-			};
-
-			return {
-				content: [{ type: "text", text: outputText }],
-				details: detailsSafe,
-			};
-		},
-	};
-
 	const unregUse = host.registerAgentTool(tool);
-	const unregSearch = host.registerAgentTool(searchTool);
 
 	return async function deactivate() {
 		stopIdleTimer();
@@ -897,7 +753,6 @@ export function activate(host) {
 		removeBackgroundTask();
 		offSettings?.();
 		unregUse?.();
-		unregSearch?.();
 	};
 }
 

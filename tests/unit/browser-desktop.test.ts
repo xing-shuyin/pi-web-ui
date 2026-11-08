@@ -3,18 +3,29 @@ import { pathToFileURL } from "node:url";
 import { resolve } from "node:path";
 import {
 	browserLayout,
+	initialBrowserMode,
 	isBrowserAssetUrl,
 	isTrustedAgentUrl,
 	normalizeAgentUrl,
+	MIN_SPLIT_RATIO,
+	MAX_SPLIT_RATIO,
 } from "../../desktop/browser-policy.js";
 import { getDesktopWindowBridge, isDesktopShell } from "../../web/src/desktop.js";
 
 describe("desktop browser composition", () => {
+	it("starts in Agent mode unless the saved startup mode says otherwise", () => {
+		expect(initialBrowserMode({ defaultMode: "agent" })).toBe("agent");
+		expect(initialBrowserMode({ defaultMode: "browser" })).toBe("browser");
+		expect(initialBrowserMode({ defaultMode: "split" })).toBe("split");
+		expect(initialBrowserMode(undefined)).toBe("agent");
+		expect(initialBrowserMode({})).toBe("agent");
+		expect(initialBrowserMode({ defaultMode: "bogus" })).toBe("agent");
+	});
 	it("keeps the browser and Agent in the same usable viewport when switching modes", () => {
 		const browser = browserLayout(1200, 800, "browser", 0.5);
 		const agent = browserLayout(1200, 800, "agent", 0.5);
-		expect(browser.browser).toEqual({ x: 0, y: 88, width: 1200, height: 712 });
-		expect(agent.agent).toEqual(browser.browser);
+		expect(browser.browser).toEqual({ x: 0, y: 40, width: 1200, height: 760 });
+		expect(agent.agent).toEqual({ x: 0, y: 0, width: 1200, height: 800 });
 		expect(browser.showBrowser).toBe(true);
 		expect(browser.showAgent).toBe(false);
 		expect(agent.showBrowser).toBe(false);
@@ -24,9 +35,15 @@ describe("desktop browser composition", () => {
 		const split = browserLayout(1201, 800, "split", 0.4);
 		expect(split.agent.width + split.browser.width).toBe(1201);
 		expect(split.browser.x).toBe(split.agent.width);
-		expect(split.agent.height).toBe(712);
-		expect(browserLayout(1200, 20, "split", Infinity).agent.height).toBe(0);
-		expect(browserLayout(1200, 800, "split", 10).agent.width).toBe(960);
+		expect(split.agent.height).toBe(800);
+		expect(split.browser.height).toBe(760);
+		expect(browserLayout(1200, 20, "split", Infinity).agent.height).toBe(20);
+		expect(browserLayout(1200, 20, "split", Infinity).browser.height).toBe(0);
+		expect(browserLayout(1200, 800, "split", 10).agent.width).toBe(1200 * MAX_SPLIT_RATIO);
+		expect(browserLayout(1200, 800, "split", -1).agent.width).toBe(1200 * MIN_SPLIT_RATIO);
+		expect(browserLayout(1200, 800, "split", 0.05).agent.width).toBe(1200 * MIN_SPLIT_RATIO);
+		expect(browserLayout(1200, 800, "split", 0.05).browser.x).toBe(1200 * MIN_SPLIT_RATIO);
+		expect(browserLayout(1200, 800, "split", 0.05).browser.width).toBe(1200 - 1200 * MIN_SPLIT_RATIO);
 	});
 	it("trusts exactly the configured HTTP origin and rejects prefix lookalikes", () => {
 		expect(isTrustedAgentUrl("https://agent.example/app/device/one/", "https://agent.example/app/")).toBe(true);
