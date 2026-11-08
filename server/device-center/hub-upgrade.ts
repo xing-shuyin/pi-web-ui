@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { spawn } from "node:child_process";
-import { readFile, writeFile, rename, rm, mkdir } from "node:fs/promises";
+import { readFile, mkdir } from "node:fs/promises";
+import { readFileRetry, writeAtomic } from "../atomic-file.js";
 import { pathToFileURL } from "node:url";
 import { dirname, join, resolve } from "node:path";
 
@@ -70,19 +71,14 @@ export function createHubUpgradeManager(options: {
 }): HubUpgradeManager {
 	const path = join(options.dataDir, "hub-upgrade.json");
 	let submitting = false;
+	// Windows 杀毒 / 索引器会短暂占用刚写完的文件，rename 因此报 EPERM/EBUSY —— 统一由 atomic-file 退避重试。
 	async function write(job: StoredHubUpgradeJob) {
-		const temp = `${path}.${randomUUID()}.tmp`;
-		try {
-			await writeFile(temp, `${JSON.stringify(job, null, 2)}\n`, { flag: "wx", mode: 0o600 });
-			await rename(temp, path);
-		} finally {
-			await rm(temp, { force: true });
-		}
+		await writeAtomic(path, `${JSON.stringify(job, null, 2)}\n`, { mode: 0o600, fsync: true });
 	}
 	async function status(id?: string) {
 		let job: StoredHubUpgradeJob;
 		try {
-			job = JSON.parse(await readFile(path, "utf8")) as StoredHubUpgradeJob;
+			job = JSON.parse(await readFileRetry(path)) as StoredHubUpgradeJob;
 		} catch (error) {
 			if ((error as NodeJS.ErrnoException).code === "ENOENT") return undefined;
 			throw error;

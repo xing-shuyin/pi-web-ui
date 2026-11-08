@@ -3,7 +3,7 @@ import { mkdtempSync, readFileSync, readdirSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import * as fs from "node:fs";
-import { writeAtomicSync } from "../../server/atomic-file.js";
+import { ATOMIC_RETRY_DELAY_MS, writeAtomicSync } from "../../server/atomic-file.js";
 import { ClientStateStore } from "../../server/client-state.js";
 import { ComposerDraftsStore } from "../../server/composer-drafts.js";
 import { SettingsService, type SettingsHost } from "../../server/settings-service.js";
@@ -67,10 +67,12 @@ describe("atomic replacement failures", () => {
 			throw locked;
 		});
 		vi.mocked(fs.writeFileSync).mockClear();
+		vi.mocked(fs.renameSync).mockClear();
 		expect(() => writeAtomicSync(path, '{"new":true}')).toThrow(locked);
 		expect(readFileSync(path, "utf8")).toBe('{"old":true}');
 		expect(vi.mocked(fs.writeFileSync).mock.calls.every(([target]) => target !== path)).toBe(true);
-		expect(fs.renameSync).toHaveBeenCalledTimes(4);
+		// 一次首发 + 退避表里的每一次重试（EPERM 属瞬时码，会一直重试到表尾才放弃）
+		expect(fs.renameSync).toHaveBeenCalledTimes(ATOMIC_RETRY_DELAY_MS.length + 1);
 		expect(readdirSync(dirs[0])).toEqual(["state.json"]);
 	});
 	it("recovers from a transient rename failure", () => {
