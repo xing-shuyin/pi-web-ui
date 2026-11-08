@@ -32,11 +32,10 @@
 			"soul": "务实、敏捷、技术视野开阔。不讲废话，直接给出可执行的生产级解决方案。"
 		},
 		"disabledAgentTools": [
-			"edit_soft",
 			"delegate_task",
 			"ask_user_question",
 			"browser_page",
-			"conversation_read",
+			"conversation",
 			"plan_update",
 			"present_files",
 			"skill",
@@ -66,7 +65,6 @@
 		"toolApprovalEnabled": false,
 		"toolWatchdogTimeoutMs": 1200000,
 		"questionnaireEnabled": false,
-		"editSoftEnabled": false,
 		"terminalToolsEnabled": true,
 		"terminalBash": true,
 		"terminalBashIdleMs": 15000,

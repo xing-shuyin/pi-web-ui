@@ -52,19 +52,20 @@
 
 ## 三、运维与接入（★）
 
-| 文档                                                                               | 主题                                                             | 何时读                     |
-| ---------------------------------------------------------------------------------- | ---------------------------------------------------------------- | -------------------------- |
-| [`env-vars.md`](env-vars.md)                                                       | 环境变量全表（端口/鉴权/数据目录/引擎/窗口/预设/SSH/远程桌面）   | 改配置、排查行为差异       |
-| [`deployment.md`](deployment.md)                                                   | 部署：前台、自启（launchd/systemd/Run 键）、Docker、反代与子路径 | 上线、装机、守护进程       |
-| [`device-center-deployment.md`](device-center-deployment.md)                       | 设备中心独立部署：Hub 拓扑、账号、连接器、域名与 TLS             | 部署设备中心               |
-| [`hub-upgrade-release-testing.md`](hub-upgrade-release-testing.md)                 | Hub 升级流程与发布前升级验证                                     | 发布与验证 Hub 更新        |
-| [`release.md`](release.md)                                                         | 发布：版本号、changelog:i18n、tag 与 Action、npm publish         | 发版                       |
-| [`official-providers.md`](official-providers.md)                                   | 官方供应商快速配置                                               | 接官方 API Key             |
-| [`antigravity-proxy.md`](antigravity-proxy.md)                                     | Antigravity-Manager 反代接入（本机 8045）                        | 用反代接 Google/Anthropic  |
-| [`magpie-proxy.md`](magpie-proxy.md)                                               | Magpie 反代接入（多供应商统一网关）                              | 用 Magpie 聚合供应商       |
-| [`external-channel-capabilities.md`](external-channel-capabilities.md)             | 外部消息渠道：11 个平台命令与能力矩阵                            | 接微信/QQ/飞书/Telegram 等 |
-| [`daily-ai-maintainer-workflow.md`](daily-ai-maintainer-workflow.md)               | 每日 AI 仓库维护：执行锁、分诊顺序、交付形态                     | 维护定时维护任务           |
-| [`workflows/daily-ai-maintainer-setup.md`](workflows/daily-ai-maintainer-setup.md) | 上述工作流的落地配置（含 `workflows/*.canvas.json` 画布定义）    | 首次搭维护流水线           |
+| 文档                                                                               | 主题                                                                 | 何时读                               |
+| ---------------------------------------------------------------------------------- | -------------------------------------------------------------------- | ------------------------------------ |
+| [`env-vars.md`](env-vars.md)                                                       | 环境变量全表（端口/鉴权/数据目录/引擎/窗口/预设/SSH/远程桌面）       | 改配置、排查行为差异                 |
+| [`deployment.md`](deployment.md)                                                   | 部署：前台、自启（launchd/systemd/Run 键）、Docker、反代与子路径     | 上线、装机、守护进程                 |
+| [`device-center-deployment.md`](device-center-deployment.md)                       | 设备中心独立部署：Hub 拓扑、账号、连接器、域名与 TLS                 | 部署设备中心                         |
+| [`hub-upgrade-release-testing.md`](hub-upgrade-release-testing.md)                 | Hub 升级流程与发布前升级验证                                         | 发布与验证 Hub 更新                  |
+| [`release.md`](release.md)                                                         | 发布：版本号、changelog:i18n、tag 与 Action、npm publish             | 发版                                 |
+| [`official-providers.md`](official-providers.md)                                   | 官方供应商快速配置                                                   | 接官方 API Key                       |
+| [`antigravity-proxy.md`](antigravity-proxy.md)                                     | Antigravity-Manager 反代接入（本机 8045）                            | 用反代接 Google/Anthropic            |
+| [`magpie-proxy.md`](magpie-proxy.md)                                               | Magpie 反代接入（多供应商统一网关）                                  | 用 Magpie 聚合供应商                 |
+| [`external-channel-capabilities.md`](external-channel-capabilities.md)             | 外部消息渠道：11 个平台命令与能力矩阵                                | 接微信/QQ/飞书/Telegram 等           |
+| [`unattended-operation.md`](unattended-operation.md)                               | 无人值守：`manifest.alwaysOn` 与后台执行者注册表、`/api/health` 探针 | 不开网页也要跑（机房/容器/开机自启） |
+| [`daily-ai-maintainer-workflow.md`](daily-ai-maintainer-workflow.md)               | 每日 AI 仓库维护：执行锁、分诊顺序、交付形态                         | 维护定时维护任务                     |
+| [`workflows/daily-ai-maintainer-setup.md`](workflows/daily-ai-maintainer-setup.md) | 上述工作流的落地配置（含 `workflows/*.canvas.json` 画布定义）        | 首次搭维护流水线                     |
 
 ## 四、参考材料（○，不必通读）
 
@@ -90,6 +91,7 @@
 | 动插件 / UI 插槽 / MCP       | `architecture-plugins.md` → `agent-rules.md`（插件版本号、`arrange.label`、peerDependencies） |
 | 动目标模式 / 委派 / 计划模式 | `goal-conversation-design.md` → `agent-rules.md`（运行态铁律）                                |
 | 动沙盒                       | `architecture-sandbox.md` → `root-cause-boundaries.md`                                        |
+| 不开网页也要跑 / 常驻执行者  | `unattended-operation.md` → `architecture-plugins.md`（生命周期与权限）                       |
 | 排查内存 / 上下文爆炸        | `tool-context-budget.md` → `loading-performance.md` → `streaming-stability.md`                |
 | 部署 / 排障环境变量          | `deployment.md` → `env-vars.md`（设备中心另见 `device-center-deployment.md`）                 |
 
