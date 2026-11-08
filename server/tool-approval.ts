@@ -1,4 +1,5 @@
 import type { UiApprovalCategory } from "./protocol.js";
+import { isPseudoClientId } from "./client-id-utils.js";
 import {
 	DEFAULT_APPROVAL_RULES,
 	evaluateApprovalRules,
@@ -20,6 +21,23 @@ export interface DangerousCheckResult {
 export interface ApprovalPolicy {
 	allowAll: boolean;
 	categories: Map<string, UiApprovalCategory>;
+}
+
+/** 无人值守会话的审批等待上限（秒）；实际值可用 PI_WEB_UNATTENDED_APPROVAL_TIMEOUT 覆盖。 */
+export const DEFAULT_UNATTENDED_APPROVAL_TIMEOUT_S = 120;
+
+/**
+ * 伪客户端（plugin: / scheduler: / canvas:）的会话没有人在看 UI。
+ * 这类会话的审批等不到人点，必须超时兜底。
+ */
+export function unattendedApprovalTimeoutMs(
+	clientId: string,
+	rawEnv: unknown = process.env.PI_WEB_UNATTENDED_APPROVAL_TIMEOUT,
+): number | null {
+	if (!isPseudoClientId(clientId)) return null;
+	const v = Number(rawEnv);
+	const seconds = Number.isFinite(v) && v > 0 ? Math.min(v, 3_600) : DEFAULT_UNATTENDED_APPROVAL_TIMEOUT_S;
+	return seconds * 1000;
 }
 
 export function isApprovalPolicyEmpty(policy: ApprovalPolicy | undefined): boolean {
@@ -53,7 +71,7 @@ export function isWideScopeOrRootOperation(toolName: string, params: unknown): b
 		}
 	}
 
-	if (toolName === "write" || toolName === "edit" || toolName === "edit_soft" || toolName === "patch") {
+	if (toolName === "write" || toolName === "edit" || toolName === "patch") {
 		const p = extractTargetPath(params);
 		if (
 			p.includes("/etc/") ||

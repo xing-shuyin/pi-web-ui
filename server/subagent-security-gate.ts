@@ -129,7 +129,6 @@ export const SUBAGENT_WRITE_TOOL_NAMES = new Set<string>([
 	"write_file",
 	"edit",
 	"edit_file",
-	"edit_soft",
 	"apply_patch",
 	"patch",
 	"patch_tool",

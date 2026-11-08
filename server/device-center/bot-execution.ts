@@ -38,7 +38,6 @@ const highPrivilegeTools = new Set([
 	"powershell",
 	"terminal",
 	"conversation",
-	"subagent",
 	"worktree",
 	"canvas",
 	"mcp",

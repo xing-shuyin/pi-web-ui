@@ -133,10 +133,8 @@ export function makeScheduleTool(
 		name: SCHEDULE_TOOL_NAME,
 		label: "Manage scheduled tasks",
 		description:
-			"Create, list, or cancel persistent scheduled tasks. Without graphId, delivers a required prompt to the current conversation; " +
-			"if unavailable, falls back to the project's active conversation or a headless run. With graphId, runs that existing canvas; " +
-			"prompt is optional and otherwise uses the graph's input. Canvas tasks do not bind a conversation or override node models. " +
-			"One-shot by default; recurring=true repeats. Minimum delay 60s.",
+			"Schedule persistent tasks that fire later or on a cron: a turn in this conversation, or a run of an existing canvas graph. " +
+			"Minimum delay 60s.",
 		promptSnippet: "Create, list, or cancel conversation or canvas schedules",
 		promptGuidelines: [
 			"Use action=create for periodic checks, delayed reminders, and scheduled summaries — never sleep loops (they cannot push messages back)",
@@ -146,36 +144,18 @@ export function makeScheduleTool(
 			action: Type.Unsafe<ScheduleAction>({
 				type: "string",
 				enum: [...SCHEDULE_ACTIONS],
-				description: "The schedule action to perform.",
+				description: "list | cancel(id) | create(schedule,prompt?,graphId?,label?,recurring?)",
 			}),
 			schedule: Type.Optional(
 				Type.String({
-					description:
-						'create: when to fire — 5-field cron ("0 * * * *" hourly) or relative delay ("in 30m", "in 1h", "30m"). Minimum 60s.',
+					description: 'create: 5-field cron ("0 * * * *") or relative delay ("in 30m"), minimum 60s',
 				}),
 			),
-			graphId: Type.Optional(
-				Type.String({
-					description: "create: existing canvas graph id; when provided, targets the canvas instead of a conversation.",
-				}),
-			),
-			prompt: Type.Optional(
-				Type.String({
-					description:
-						"create: instruction for the conversation or canvas. Required for conversations; omit for canvas to use graph input. Max 8000 chars.",
-				}),
-			),
-			label: Type.Optional(
-				Type.String({
-					description: "create: short name shown in the background-tasks panel. Defaults to the prompt head.",
-				}),
-			),
-			recurring: Type.Optional(
-				Type.Boolean({
-					description: "create: repeat on schedule (default false = one-shot, auto-deleted after firing).",
-				}),
-			),
-			id: Type.Optional(Type.String({ description: "cancel: task id from action=list." })),
+			graphId: Type.Optional(Type.String()),
+			prompt: Type.Optional(Type.String()),
+			label: Type.Optional(Type.String()),
+			recurring: Type.Optional(Type.Boolean()),
+			id: Type.Optional(Type.String()),
 		}),
 		execute: async (_id, p, signal) => {
 			signal?.throwIfAborted();

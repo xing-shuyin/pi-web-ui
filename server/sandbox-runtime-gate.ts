@@ -1,7 +1,7 @@
 import type { SandboxInfo } from "./protocol.js";
 import { evaluateSandboxJail } from "./sandbox-service.js";
 
-const HOST_CAPABILITIES = new Set(["read", "write", "edit", "edit_soft", "patch", "present_files", "sandbox"]);
+const HOST_CAPABILITIES = new Set(["read", "write", "edit", "patch", "present_files", "sandbox"]);
 
 type Definition = { name: string; execute: unknown };
 type Session = { getToolDefinition(name: string): Definition | undefined };

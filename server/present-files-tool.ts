@@ -295,37 +295,25 @@ export function makePresentFilesTool(fallbackCwd: string, options: PresentFilesT
 	return defineTool({
 		name: PRESENT_FILES_TOOL_NAME,
 		label: "Show files to the user",
-		description:
-			"Show files to the user as preview cards in the chat: images/videos/audio inline, text/markdown/HTML in a preview dialog; " +
-			"each card can open locally, reveal in file manager, download, or copy path. " +
-			"Give workspace-relative paths (max 12); `title`/`note` show above the cards, `caption` next to the name, `focus: true` opens that item immediately.",
+		description: "Show workspace files (1-12) as preview cards in chat.",
 		promptSnippet: "show a produced artifact (image/chart/report) to the user",
 		promptGuidelines: [
 			"After producing something visual or user-facing (screenshot, chart, video, report, log, build output), show it with present_files instead of only printing the path",
 			"Skip it for ordinary source edits the user did not ask to see; never call it twice for the same file in one turn",
 		],
 		parameters: Type.Object({
-			title: Type.Optional(
-				Type.String({
-					description: "Optional card title (short, e.g. 'Q3 revenue chart').",
-				}),
-			),
-			note: Type.Optional(
-				Type.String({
-					description: "Optional one-line note above the cards (markdown).",
-				}),
-			),
+			title: Type.Optional(Type.String()),
+			note: Type.Optional(Type.String()),
 			items: Type.Array(
 				Type.Object({
-					path: Type.String({ description: "File path (workspace-relative like 'docs/chart.png', or absolute)." }),
-					caption: Type.Optional(Type.String({ description: "Optional short caption next to the file name." })),
+					path: Type.String(),
+					caption: Type.Optional(Type.String()),
 					focus: Type.Optional(
 						Type.Boolean({
-							description: "true → open this item in the preview dialog immediately.",
+							description: "Open preview dialog immediately",
 						}),
 					),
 				}),
-				{ description: `Files to show (1-${MAX_PRESENT_ITEMS}).` },
 			),
 		}),
 		async execute(_toolCallId, params, signal, _onUpdate, ctx) {

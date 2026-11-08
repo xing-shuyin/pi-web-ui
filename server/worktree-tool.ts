@@ -6,40 +6,26 @@ import { createWorktree, listWorktrees, normalizeWirePath, removeWorktree } from
 
 export const WORKTREE_TOOL_NAME = "worktree";
 
+const WORKTREE_ACTIONS = ["list", "create", "switch", "remove"] as const;
+
+type WorktreeAction = (typeof WORKTREE_ACTIONS)[number];
+
+/** 每 action 要哪些参数，只在 `action` 字段里交代一次；字段本身不再写说明。 */
+export const WORKTREE_ACTION_SIGNATURE =
+	"list | create(path,branch?,newBranch?,commit?,switchTo?) | switch(path) | remove(path,force?)";
+
 const WorktreeParameters = Type.Object({
-	action: Type.Union([Type.Literal("list"), Type.Literal("create"), Type.Literal("switch"), Type.Literal("remove")], {
-		description: "Operation to perform: list | create | switch | remove.",
+	action: Type.Unsafe<WorktreeAction>({
+		type: "string",
+		enum: [...WORKTREE_ACTIONS],
+		description: WORKTREE_ACTION_SIGNATURE,
 	}),
-	path: Type.Optional(
-		Type.String({
-			description: "Target directory path for worktree create/switch/remove (relative or absolute).",
-		}),
-	),
-	branch: Type.Optional(
-		Type.String({
-			description: "Branch name to check out or bind to the worktree.",
-		}),
-	),
-	newBranch: Type.Optional(
-		Type.Union([Type.Boolean(), Type.String()], {
-			description: "Create and switch to a new branch (boolean true or string branch name).",
-		}),
-	),
-	commit: Type.Optional(
-		Type.String({
-			description: "Base commit or branch to branch off from.",
-		}),
-	),
-	switchTo: Type.Optional(
-		Type.Boolean({
-			description: "create: true to switch the active workspace to the new worktree immediately.",
-		}),
-	),
-	force: Type.Optional(
-		Type.Boolean({
-			description: "remove: true to force removal even if dirty or containing unmerged changes.",
-		}),
-	),
+	path: Type.Optional(Type.String()),
+	branch: Type.Optional(Type.String()),
+	newBranch: Type.Optional(Type.Unsafe<boolean | string>({ type: ["boolean", "string"] })),
+	commit: Type.Optional(Type.String()),
+	switchTo: Type.Optional(Type.Boolean()),
+	force: Type.Optional(Type.Boolean()),
 });
 
 export type WorktreeToolInput = Static<typeof WorktreeParameters>;

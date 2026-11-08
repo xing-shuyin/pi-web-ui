@@ -38,48 +38,36 @@ export interface ReadDirToolOptions {
 
 interface ReadDirInput {
 	path?: string;
+	/** 静默兼容：部分客户端仍发 file_path，导出 schema 不再声明它。 */
 	file_path?: string;
 	offset?: number;
 	limit?: number;
 }
 
-const readDirSchema = Type.Object(
-	{
-		path: Type.String({
-			description: "Path to the file (or directory) to read (relative or absolute)",
+const readDirSchema = Type.Object({
+	path: Type.String(),
+	offset: Type.Optional(
+		Type.Number({
+			description: "1-indexed start line",
 		}),
-		file_path: Type.Optional(
-			Type.String({
-				description: "Alias of `path` — some clients/models emit file_path; if both are given, `path` wins",
-			}),
-		),
-		offset: Type.Optional(
-			Type.Number({
-				description: "Line number to start reading from (1-indexed)",
-			}),
-		),
-		limit: Type.Optional(
-			Type.Number({
-				description: "Maximum number of lines to read (for a directory path: maximum number of entries)",
-			}),
-		),
-	},
-	{},
-);
+	),
+	limit: Type.Optional(Type.Number()),
+});
 
 export function prepareReadArguments(raw: unknown): Static<typeof readDirSchema> {
 	const args: Record<string, unknown> =
 		raw && typeof raw === "object" && !Array.isArray(raw) ? { ...(raw as Record<string, unknown>) } : {};
-	const primary = typeof args.path === "string" ? args.path : "";
-	const alias = typeof args.file_path === "string" ? args.file_path : "";
-	if (!primary.trim() && alias.trim()) args.path = alias;
+	const path = typeof args.path === "string" && args.path.trim() ? args.path : (args as ReadDirInput).file_path;
+	if (typeof path === "string") args.path = path;
 	return args as unknown as Static<typeof readDirSchema>;
 }
 
 const DIR_DESCRIPTION_NOTE =
 	"Also accepts a directory path: its entries are listed instead of contents (one per line, directories suffixed with '/'); `limit` then caps entries and `offset` is ignored.";
 
-const FILE_PATH_ALIAS_NOTE = "Also accepts `file_path` as an alias of `path`.";
+/** `read` 的主描述（目录能力与截断规则都在这一句里）。 */
+const READ_DESCRIPTION =
+	"Read file text/image or list directory entries ('/' suffix). Truncated to 2000 lines/50KB; use offset/limit to paginate.";
 
 const DIR_GUIDELINE = "No need to shell out to `ls`: read lists a directory's entries";
 
@@ -170,7 +158,7 @@ export function makeReadDirTool(fallbackCwd: string, options: ReadDirToolOptions
 
 	return defineTool({
 		...base,
-		description: `${base.description} ${FILE_PATH_ALIAS_NOTE} ${DIR_DESCRIPTION_NOTE}`,
+		description: READ_DESCRIPTION,
 		promptSnippet: "file contents by path (a directory lists its entries)",
 		promptGuidelines: [...(base.promptGuidelines ?? []), DIR_GUIDELINE],
 		parameters: readDirSchema,

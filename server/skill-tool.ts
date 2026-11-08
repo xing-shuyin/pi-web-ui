@@ -20,6 +20,10 @@ export interface SkillToolHost {
 
 export const SKILL_TOOL_FILE_CAP = 8192;
 
+export const SKILL_ACTIONS = ["read", "list", "report"] as const;
+
+type SkillAction = (typeof SKILL_ACTIONS)[number];
+
 function effectiveFileCap(host: SkillToolHost): number {
 	const raw = host.maxFileBytes?.();
 	if (typeof raw === "number" && Number.isFinite(raw) && raw >= 0) return Math.floor(raw);
@@ -90,22 +94,15 @@ export function makeSkillTool(host: SkillToolHost, lang?: () => ServerLang): Too
 	return defineTool({
 		name: SKILL_TOOL_NAME,
 		label: "Load a skill",
-		description:
-			"Load a skill's full text by its exact name (see the <available_skills> catalog). " +
-			"Prefer this over reading the skill file with read — no path guessing.",
+		description: "Load skill text or list catalog.",
 		promptSnippet: "use a skill from <available_skills> by name",
 		parameters: Type.Object({
 			name: Type.Optional(
 				Type.String({
-					description: "Exact skill name from the catalog. Omit to list the current catalog.",
+					description: "Skill name (omit to list catalog)",
 				}),
 			),
-			action: Type.Optional(
-				Type.String({
-					description:
-						"Action: omit or 'read' to load skill text; 'list' to show catalog; 'report' to view multi-agent sources.",
-				}),
-			),
+			action: Type.Optional(Type.Unsafe<SkillAction>({ type: "string", enum: [...SKILL_ACTIONS] })),
 		}),
 		execute: async (_id, p) => {
 			let skills: SkillCatalogEntry[] = [];

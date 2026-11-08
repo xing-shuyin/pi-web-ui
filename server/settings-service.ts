@@ -46,7 +46,12 @@ import { PLAN_MODE_SYSTEM_PROMPT } from "./plan-mode.js";
 import { DEFAULT_TEMPLATES, localizeTemplate, type SubagentTemplatesStore } from "./subagent-templates.js";
 import { discoverDiskSkills, isSkillStillOnDisk, type DiscoveredSkill } from "./skill-discovery.js";
 import type { ApprovalRulesStore } from "./approval-rules.js";
-import { deriveLegacy, foldLegacyIntoDisabled, normalizeDisabledAgentTools } from "./tool-manager.js";
+import {
+	deriveLegacy,
+	foldLegacyIntoDisabled,
+	normalizeDisabledAgentTools,
+	normalizeToolOnDemandList,
+} from "./tool-manager.js";
 import { normalizeToolPromptOverrides } from "./tool-prompt-overrides.js";
 import { resolveServerLang, type ServerLang } from "./i18n.js";
 import {
@@ -181,12 +186,12 @@ export class SettingsService {
 		if (
 			changed(
 				"disabledAgentTools",
+				"toolOnDemandTools",
 				"disabledPluginTools",
 				"disabledPlugins",
 				"toolPromptOverrides",
 				"toolLazyLoading",
 				"terminalToolsEnabled",
-				"editSoftEnabled",
 				"questionnaireEnabled",
 			)
 		)
@@ -480,6 +485,7 @@ export class SettingsService {
 				promptDisabled: [...(this.settings.promptDisabled ?? [])],
 				toolPromptOverrides: { ...this.settings.toolPromptOverrides },
 				disabledAgentTools: [...normalizeDisabledAgentTools(this.settings.disabledAgentTools)],
+				toolOnDemandTools: [...normalizeToolOnDemandList(this.settings.toolOnDemandTools)],
 				disabledPluginTools: [...normalizeDisabledPluginTools(this.settings.disabledPluginTools)],
 				nativeCliInheritModel: { ...this.settings.nativeCliInheritModel },
 				terminalToolsEnabled: legacyTools.terminalToolsEnabled,
@@ -495,7 +501,6 @@ export class SettingsService {
 				toolApprovalEnabled: this.settings.toolApprovalEnabled !== false,
 				approvalPolicy: this.host.getApprovalPolicy?.() ?? { allowAll: false, categories: [] },
 				approvalRules: this.approvalRules?.list() ?? [],
-				editSoftEnabled: legacyTools.editSoftEnabled,
 				questionnaireEnabled: legacyTools.questionnaireEnabled,
 				parallelReminderEnabled: this.settings.parallelReminderEnabled ?? true,
 				goalModeEnabled: this.settings.goalModeEnabled,
@@ -621,6 +626,7 @@ export class SettingsService {
 		disabledSkills?: string[];
 		disabledExtensions?: string[];
 		disabledAgentTools?: string[];
+		toolOnDemandTools?: string[];
 		disabledPluginTools?: string[];
 		nativeCliInheritModel?: NativeCliInheritModel;
 		terminalToolsEnabled?: boolean;
@@ -634,7 +640,6 @@ export class SettingsService {
 		codemodeMode?: "on" | "only";
 		codemodeInlineBudget?: number;
 		toolApprovalEnabled?: boolean;
-		editSoftEnabled?: boolean;
 		questionnaireEnabled?: boolean;
 		questionPresentation?: "queue" | "all" | "manual";
 		toolApprovalPresentation?: "queue" | "all" | "manual";
@@ -675,7 +680,6 @@ export class SettingsService {
 		quickAskTranslateTarget?: QuickAskSettings["quickAskTranslateTarget"];
 		quickAskTranslateStyle?: QuickAskSettings["quickAskTranslateStyle"];
 		quickAskTranslatePrompt?: QuickAskSettings["quickAskTranslatePrompt"];
-		quickAskShowOriginal?: QuickAskSettings["quickAskShowOriginal"];
 		quickAskReferenceMenus?: QuickAskSettings["quickAskReferenceMenus"];
 		quickAskConversationScope?: QuickAskSettings["quickAskConversationScope"];
 		quickAskFolderScope?: QuickAskSettings["quickAskFolderScope"];
@@ -714,10 +718,10 @@ export class SettingsService {
 			partial.disabledExtensions !== undefined;
 		const toolGatingChanged =
 			partial.disabledAgentTools !== undefined ||
+			partial.toolOnDemandTools !== undefined ||
 			partial.disabledPluginTools !== undefined ||
 			partial.disabledPlugins !== undefined ||
 			partial.terminalToolsEnabled !== undefined ||
-			partial.editSoftEnabled !== undefined ||
 			partial.questionnaireEnabled !== undefined ||
 			partial.toolPromptOverrides !== undefined ||
 			partial.toolLazyLoading !== undefined;
@@ -761,24 +765,21 @@ export class SettingsService {
 		if (partial.disabledAgentTools !== undefined) {
 			next.disabledAgentTools = normalizeDisabledAgentTools(partial.disabledAgentTools);
 		}
+		if (partial.toolOnDemandTools !== undefined) {
+			next.toolOnDemandTools = normalizeToolOnDemandList(partial.toolOnDemandTools);
+		}
 		if (partial.disabledPluginTools !== undefined) {
 			next.disabledPluginTools = normalizeDisabledPluginTools(partial.disabledPluginTools);
 		}
-		if (
-			partial.terminalToolsEnabled !== undefined ||
-			partial.editSoftEnabled !== undefined ||
-			partial.questionnaireEnabled !== undefined
-		) {
+		if (partial.terminalToolsEnabled !== undefined || partial.questionnaireEnabled !== undefined) {
 			next.disabledAgentTools = foldLegacyIntoDisabled(next.disabledAgentTools ?? [], {
 				terminalToolsEnabled: partial.terminalToolsEnabled,
-				editSoftEnabled: partial.editSoftEnabled,
 				questionnaireEnabled: partial.questionnaireEnabled,
 			});
 		}
 		{
 			const legacy = deriveLegacy(next.disabledAgentTools ?? []);
 			next.terminalToolsEnabled = legacy.terminalToolsEnabled;
-			next.editSoftEnabled = legacy.editSoftEnabled;
 			next.questionnaireEnabled = legacy.questionnaireEnabled;
 		}
 		if (partial.nativeCliInheritModel !== undefined) {
@@ -981,7 +982,6 @@ export class SettingsService {
 		if (
 			partial.disabledAgentTools !== undefined ||
 			partial.terminalToolsEnabled !== undefined ||
-			partial.editSoftEnabled !== undefined ||
 			partial.questionnaireEnabled !== undefined
 		) {
 			patch.disabledAgentTools = next.disabledAgentTools;
@@ -1040,14 +1040,13 @@ export class SettingsService {
 			});
 			return;
 		}
-		const hasToolSettings = ["disabledAgentTools", "terminalToolsEnabled", "editSoftEnabled"].some((key) =>
+		const hasToolSettings = ["disabledAgentTools", "toolOnDemandTools", "terminalToolsEnabled"].some((key) =>
 			Object.prototype.hasOwnProperty.call(p, key),
 		);
 		const presetDisabled = normalizeDisabledAgentTools(
 			(p as { disabledAgentTools?: unknown }).disabledAgentTools ??
 				foldLegacyIntoDisabled(this.settings.disabledAgentTools ?? [], {
 					terminalToolsEnabled: p.terminalToolsEnabled,
-					editSoftEnabled: p.editSoftEnabled,
 				}),
 		);
 		const presetLegacy = deriveLegacy(presetDisabled);
@@ -1061,8 +1060,10 @@ export class SettingsService {
 			...(hasToolSettings
 				? {
 						disabledAgentTools: presetDisabled,
+						toolOnDemandTools: normalizeToolOnDemandList(
+							(p as { toolOnDemandTools?: unknown }).toolOnDemandTools ?? this.settings.toolOnDemandTools,
+						),
 						terminalToolsEnabled: presetLegacy.terminalToolsEnabled,
-						editSoftEnabled: presetLegacy.editSoftEnabled,
 					}
 				: {}),
 		});

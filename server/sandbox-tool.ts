@@ -9,62 +9,37 @@ import type { AskApprovalFn } from "./tool-guards.js";
 
 export const SANDBOX_TOOL_NAME = "sandbox";
 
+const SANDBOX_ACTIONS = [
+	"list",
+	"create",
+	"diff",
+	"reset",
+	"persist",
+	"promote",
+	"apply_to_source",
+	"destroy",
+] as const;
+
+type SandboxAction = (typeof SANDBOX_ACTIONS)[number];
+
+/** 每 action 要哪些参数，只在 `action` 字段里交代一次；字段本身不再写说明。 */
+export const SANDBOX_ACTION_SIGNATURE =
+	"list | create(mode?,sourcePath?,name?,ephemeral?,switchTo?) | diff/reset/persist/apply_to_source(sandbox?) | " +
+	"promote(targetPath,sandbox?,switchTo?) | destroy(sandbox?)";
+
 const SandboxParameters = Type.Object({
-	action: Type.Union(
-		[
-			Type.Literal("list"),
-			Type.Literal("create"),
-			Type.Literal("diff"),
-			Type.Literal("reset"),
-			Type.Literal("persist"),
-			Type.Literal("promote"),
-			Type.Literal("apply_to_source"),
-			Type.Literal("destroy"),
-		],
-		{
-			description:
-				"Operation to perform: list | create | diff | reset | persist | promote | apply_to_source | destroy.",
-		},
-	),
-	mode: Type.Optional(
-		Type.Union([Type.Literal("blank"), Type.Literal("import")], {
-			description:
-				'create: "import" clones an existing project into an isolated sandbox (default); "blank" creates an empty sandbox.',
-		}),
-	),
-	sourcePath: Type.Optional(
-		Type.String({
-			description:
-				'create (when mode="import"): source directory path to clone. Defaults to the current workspace (or its original sourcePath if already in a sandbox).',
-		}),
-	),
-	name: Type.Optional(
-		Type.String({
-			description: "create: optional display name for the sandbox.",
-		}),
-	),
-	ephemeral: Type.Optional(
-		Type.Boolean({
-			description: "create: true (default) for a temporary sandbox; false for a permanent sandbox.",
-		}),
-	),
-	switchTo: Type.Optional(
-		Type.Boolean({
-			description:
-				"create/promote: true to switch the active workspace to the created/exported directory immediately; false (default for create) keeps the current workspace and returns the sandbox path (useful for spawning a subagent with cwd).",
-		}),
-	),
-	sandbox: Type.Optional(
-		Type.String({
-			description:
-				"diff/reset/persist/promote/apply_to_source/destroy: target sandbox ID or path. Defaults to the current workspace if it is a sandbox.",
-		}),
-	),
-	targetPath: Type.Optional(
-		Type.String({
-			description: "promote: destination directory path outside sandboxes (must be a new or empty directory).",
-		}),
-	),
+	action: Type.Unsafe<SandboxAction>({
+		type: "string",
+		enum: [...SANDBOX_ACTIONS],
+		description: SANDBOX_ACTION_SIGNATURE,
+	}),
+	mode: Type.Optional(Type.Unsafe<"blank" | "import">({ type: "string", enum: ["blank", "import"] })),
+	sourcePath: Type.Optional(Type.String()),
+	name: Type.Optional(Type.String()),
+	ephemeral: Type.Optional(Type.Boolean()),
+	switchTo: Type.Optional(Type.Boolean()),
+	sandbox: Type.Optional(Type.String()),
+	targetPath: Type.Optional(Type.String()),
 });
 
 export type SandboxToolInput = Static<typeof SandboxParameters>;
@@ -91,8 +66,7 @@ export function makeSandboxTool(
 		name: SANDBOX_TOOL_NAME,
 		label: "Manage isolated sandbox workspaces",
 		description:
-			"Create, inspect, diff, reset, export, or destroy isolated copy-on-write sandbox workspaces. " +
-			"Supports blank sandboxes or imported project copies (auto-skipping node_modules and build caches) where edits never touch the original files.",
+			"Manage isolated copy-on-write sandbox workspaces: blank or imported project copies where edits never touch the original files.",
 		promptSnippet: "create or manage isolated sandbox workspaces for safe experimentation",
 		promptGuidelines: [
 			"Use sandbox(action='create') for risky refactors, dependency upgrades, or standalone prototypes so original project files remain untouched",

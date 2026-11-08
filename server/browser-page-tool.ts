@@ -18,6 +18,32 @@ export function normalizePageCallTimeoutMs(v: unknown): number {
 
 const BROWSER_PAGE_ARG_KEYS = ["what", "selector", "text", "url", "code", "all", "index", "maxEdge"] as const;
 
+/** `op` 的枚举：schema 里显式列出，运行时仍接受任意非空字符串（旧客户端兼容）。 */
+export const BROWSER_PAGE_OPS = [
+	"status",
+	"pages",
+	"read",
+	"click",
+	"type",
+	"scroll",
+	"goto",
+	"wait",
+	"eval",
+	"shot",
+	"snapshot",
+] as const;
+
+type BrowserPageOp = (typeof BROWSER_PAGE_OPS)[number];
+
+export const BROWSER_PAGE_WHAT = ["text", "html", "title", "url", "query"] as const;
+
+type BrowserPageWhat = (typeof BROWSER_PAGE_WHAT)[number];
+
+/** 每 op 的签名是参数文档的唯一归属地，字段本身不再写说明。 */
+export const BROWSER_PAGE_OP_SIGNATURE =
+	"status | pages | read(target?,what?,selector?,all?) | click(selector,index?) | type(selector,text) | " +
+	"scroll(selector?) | goto(url) | wait(selector?,text?,timeoutMs?) | eval(code) | shot(maxEdge?) | snapshot";
+
 export function collectBrowserPageArgs(params: Record<string, unknown>): Record<string, unknown> {
 	const args: Record<string, unknown> = {};
 	for (const k of BROWSER_PAGE_ARG_KEYS) {
@@ -40,8 +66,8 @@ export function formatBrowserPageError(op: string, error: string): string {
 	return [
 		`browser_page "${op}" failed: ${error}`,
 		`browser_page "${op}" 失败：${error}`,
-		'Next: try op:"pages" in AI Browser to find an open tab. In a regular browser, enable and pair page-picker and allow the target page in the extension.',
-		'下一步：在 AI Browser 中用 op:"pages" 查找已打开的标签页；使用普通浏览器时，请启用并配对 page-picker，再在扩展中授权目标页面。',
+		'Next: op:"pages" lists the open tabs and marks the one the user has open with active:true. In a regular browser, enable and pair page-picker and allow the target page in the extension.',
+		'下一步：op:"pages" 会列出已打开的标签页，并用 active:true 标出用户当前打开的那个；使用普通浏览器时，请启用并配对 page-picker，再在扩展中授权目标页面。',
 	].join("\n");
 }
 
@@ -59,58 +85,31 @@ export function makeBrowserPageTool(
 	return {
 		name: BROWSER_PAGE_TOOL_NAME,
 		label: "Browser page",
-		description: [
-			"Read or act on a page in the user's AI Browser tabs or a regular browser through page-picker (the server only forwards).",
-			"Only the parameters below exist — an op option that is not a field here (e.g. type's submit) is unavailable.",
-			"ops: status | pages | read (what? selector? all?) | click (selector? index?) | type (selector text) | scroll (selector?) | goto (url) | wait (selector? text? timeoutMs?) | eval (code, disabled by default) | shot (maxEdge?) | snapshot (AI Browser)",
-		].join("\n"),
+		description: "Read or act on AI Browser tabs or page-picker.",
 		promptSnippet: "operate a page in AI Browser or through the page-picker extension",
 		promptGuidelines: [
 			"Only use browser_page when the user asked you to read or act on a page in their browser; " +
 				"never click or type on their pages on your own initiative",
-			'Start with op:"pages"; use tabId as target in AI Browser or an allowed page-picker origin. ' +
-				"If unavailable, explain which browser capability or extension setting is needed instead of retrying.",
+			'Start with op:"pages"; the page marked active:true is the one the user is viewing now. When the user says "this page", pass that page\'s tabId (AI Browser) or origin (page-picker) as target.',
+			"Multiple tabs may be open: always pass an explicit target rather than assuming one, " +
+				"and name the missing browser setting instead of retrying when the tool is unavailable.",
 		],
 		parameters: Type.Object({
-			op: Type.String({
-				description: "Action to perform in the native browser or page-picker.",
+			op: Type.Unsafe<BrowserPageOp>({
+				type: "string",
+				enum: [...BROWSER_PAGE_OPS],
+				description: BROWSER_PAGE_OP_SIGNATURE,
 			}),
-			target: Type.Optional(
-				Type.String({
-					description:
-						"Target page origin (e.g. https://example.com) or native tabId from pages. Use tabId to distinguish tabs sharing an origin.",
-				}),
-			),
-			what: Type.Optional(
-				Type.String({ description: 'For op:read — "text" | "html" | "title" | "url" | "query" (default: text).' }),
-			),
-			selector: Type.Optional(
-				Type.String({ description: "CSS selector, for op:read / click / type / scroll / wait." }),
-			),
-			text: Type.Optional(
-				Type.String({ description: "For op:type — the text to enter; for op:wait — the text to wait for." }),
-			),
-			url: Type.Optional(Type.String({ description: "For op:goto — the absolute URL to navigate to." })),
-			code: Type.Optional(
-				Type.String({
-					description:
-						"For op:eval — JS to run in the page (native browser or extension setting, disabled by default).",
-				}),
-			),
-			all: Type.Optional(
-				Type.Boolean({ description: "For op:read — return every match instead of only the first one." }),
-			),
-			index: Type.Optional(Type.Number({ description: "For op:click — which match to click (default: 0)." })),
-			maxEdge: Type.Optional(
-				Type.Number({
-					description: "For op:shot — max px of the longer side (320-1568, default 1280).",
-				}),
-			),
-			timeoutMs: Type.Optional(
-				Type.Number({
-					description: "How long the server waits for the browser (1000-120000 ms, default 30000).",
-				}),
-			),
+			target: Type.Optional(Type.String({ description: "Origin URL or native tabId" })),
+			what: Type.Optional(Type.Unsafe<BrowserPageWhat>({ type: "string", enum: [...BROWSER_PAGE_WHAT] })),
+			selector: Type.Optional(Type.String()),
+			text: Type.Optional(Type.String()),
+			url: Type.Optional(Type.String()),
+			code: Type.Optional(Type.String()),
+			all: Type.Optional(Type.Boolean()),
+			index: Type.Optional(Type.Number()),
+			maxEdge: Type.Optional(Type.Number()),
+			timeoutMs: Type.Optional(Type.Number()),
 		}),
 		execute: async (_id: string, params: unknown, signal: AbortSignal | undefined): Promise<unknown> => {
 			const p = (params ?? {}) as Record<string, unknown>;

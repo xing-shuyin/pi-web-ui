@@ -84,16 +84,23 @@ export function resolveEngineCliLaunch(id: NativeCliEngineId, options: EngineCli
 	const args = options.args ?? [];
 	if (options.executablePath)
 		return resolveCliExecutableLaunch(options.executablePath, args, { ...options, autoDetect: false });
-	const file = findNativeCliExecutable(meta.cliCommand, { ...options, autoDetect: true });
+	let file = findNativeCliExecutable(meta.cliCommand, { ...options, autoDetect: true });
+	if (!file && id === "dsh") {
+		file = findNativeCliExecutable("dst", { ...options, autoDetect: true });
+	}
 	if (file) return unwrapExecutable(file, args, options);
 
-	const pkg = meta.packageName ? probeGlobalPackage(meta.packageName, { refresh: options.refresh }) : undefined;
+	const cliPackage = (meta as { cliPackageName?: string | null }).cliPackageName ?? meta.packageName;
+	const pkg = cliPackage ? probeGlobalPackage(cliPackage, { refresh: options.refresh }) : undefined;
 	if (pkg?.packagePath) {
 		try {
 			const manifest = JSON.parse(readFileSync(resolve(pkg.packagePath, "package.json"), "utf8")) as {
 				bin?: string | Record<string, string>;
 			};
-			const bin = typeof manifest.bin === "string" ? manifest.bin : manifest.bin?.[meta.cliCommand];
+			const bin =
+				typeof manifest.bin === "string"
+					? manifest.bin
+					: (manifest.bin?.[meta.cliCommand] ?? (id === "dsh" ? manifest.bin?.dst : undefined));
 			if (typeof bin === "string") {
 				const entry = resolve(pkg.packagePath, bin);
 				if (statSync(entry).isFile()) return unwrapExecutable(entry, args, options);

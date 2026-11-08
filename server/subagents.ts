@@ -4,8 +4,11 @@ import type { QuestionAnswer, UiQuestion } from "./protocol.js";
 import { pick, type ServerLang } from "./i18n.js";
 import { type SubagentSpawnExtra, resolveSecurityMode } from "./subagent-security-gate.js";
 import { THINKING_LEVELS } from "./subagent-templates.js";
-import { CONVERSATION_TOOL_NAME, SUBAGENT_TOOL_NAME } from "./tool-manager.js";
-export { CONVERSATION_TOOL_NAME, SUBAGENT_TOOL_NAME } from "./tool-manager.js";
+import { CONVERSATION_TOOL_NAME } from "./tool-manager.js";
+import { richQuestionsSchema } from "./question-params.js";
+import { questionsFromMessage } from "./conversation-communication.js";
+import { Value } from "typebox/value";
+export { CONVERSATION_TOOL_NAME } from "./tool-manager.js";
 
 export type SubagentState = "running" | "queued" | "done" | "canceled";
 
@@ -62,7 +65,13 @@ export interface SubagentSnapshot {
 export interface SubagentToolHost {
 	completeSubagent?(selfId: string, summary: string): unknown;
 	consultParent?(selfConvId: string, questions: UiQuestion[], signal?: AbortSignal): Promise<unknown>;
-	answerConsult?(selfConvId: string, runId: string, requestId: string, answers: QuestionAnswer[]): unknown;
+	answerConsult?(
+		selfConvId: string,
+		runId: string,
+		requestId: string,
+		answers?: QuestionAnswer[],
+		message?: string,
+	): unknown;
 	escalateConsult?(selfConvId: string, runId: string, requestId: string): unknown;
 	getPendingConsults?(parentId: string): Array<{ runId: string; requestId: string; questions: UiQuestion[] }>;
 	setConsultWaiting?(parentId: string, waiting: boolean): void;
@@ -175,6 +184,12 @@ export const SUBAGENT_ACTIONS = [
 
 export type SubagentAction = (typeof SUBAGENT_ACTIONS)[number];
 
+/** Compact action signature: the single place documenting parameters, so field schemas stay prose-free. */
+export const MANAGEMENT_ACTION_SIGNATURE =
+	"spawn(prompt,type?) | steer/answer(runId,message,requestId?) | complete(summary) | consult(message) | " +
+	"escalate(runId,requestId) | get_result/stop(runId) | wait_all/dismiss(runIds?) | handoff(toRunId,payload) | " +
+	"list(kind?) | templates";
+
 export function makeSubagentTool(
 	host: SubagentToolHost,
 	lang?: () => ServerLang,
@@ -252,190 +267,52 @@ export function makeSubagentTool(
 		typeof host.getWatchdogTimeoutMs === "function"
 			? computeWaitCapMs(host.getWatchdogTimeoutMs())
 			: computeWaitCapMs();
-	const capSeconds = Math.floor(currentWaitCapMs / 1000);
 
 	return defineTool({
 		name: CONVERSATION_TOOL_NAME,
 		label: "Conversation collaboration",
 		description:
-			"Create and manage collaborative conversations, including temporary subagents and persistent sessions, for delegation, research, and execution. " +
-			"Each action's arguments are documented on the parameters below.",
+			"Create and manage collaborative conversations, including temporary subagents and persistent sessions, for delegation, research, and execution.",
 		promptSnippet: "Delegate tasks, inspect results, or request task completion.",
-		promptGuidelines: [
-			"Prefer communicate for messages and questions; consult/answer/escalate/handoff remain compatible.",
-		],
+		promptGuidelines: ["Prefer communicate; consult/answer/escalate/handoff stay supported as legacy routes."],
 		parameters: Type.Object({
 			action: Type.Unsafe<SubagentAction>({
 				type: "string",
 				enum: [...SUBAGENT_ACTIONS],
-				description: "The subagent action to perform.",
+				description: MANAGEMENT_ACTION_SIGNATURE,
 			}),
-			questions: Type.Optional(
-				Type.Array(
-					Type.Object({
-						id: Type.String({ minLength: 1 }),
-						question: Type.String({ minLength: 1 }),
-						detail: Type.Optional(Type.String()),
-						header: Type.Optional(Type.String()),
-						options: Type.Optional(
-							Type.Array(
-								Type.Object({
-									label: Type.String(),
-									description: Type.Optional(Type.String()),
-									preview: Type.Optional(Type.String()),
-									recommended: Type.Optional(Type.Boolean()),
-								}),
-							),
-						),
-						multiSelect: Type.Optional(Type.Boolean()),
-						dependsOn: Type.Optional(
-							Type.Object({
-								questionId: Type.String(),
-								value: Type.Optional(Type.Union([Type.String(), Type.Array(Type.String())])),
-							}),
-						),
-						optionsMap: Type.Optional(
-							Type.Record(
-								Type.String(),
-								Type.Array(
-									Type.Object({
-										label: Type.String(),
-										description: Type.Optional(Type.String()),
-										preview: Type.Optional(Type.String()),
-										recommended: Type.Optional(Type.Boolean()),
-									}),
-								),
-							),
-						),
-					}),
-					{ description: "consult: ask the parent for a decision.", minItems: 1, maxItems: 3 },
-				),
-			),
-			requestId: Type.Optional(Type.String({ description: "answer/escalate: pending consult request ID." })),
-			answers: Type.Optional(
-				Type.Array(
-					Type.Object({
-						id: Type.String(),
-						selected: Type.Array(Type.String()),
-						custom: Type.Optional(Type.String()),
-					}),
-					{ description: "answer: responses to the child's consult.", minItems: 1 },
-				),
-			),
-			prompt: Type.Optional(
-				Type.String({
-					description: "spawn: instructions (goal, constraints, expected output).",
-				}),
-			),
-			runId: Type.Optional(
-				Type.String({
-					description: "get_result/steer/stop/dismiss/answer/escalate: target conversation ID.",
-				}),
-			),
-			runIds: Type.Optional(
-				Type.Array(Type.String(), {
-					description: "wait_all/dismiss: conversation IDs to wait for or dismiss.",
-				}),
-			),
-			message: Type.Optional(
-				Type.String({
-					description: "steer: follow-up instruction; complete: completion summary alias.",
-				}),
-			),
-			summary: Type.Optional(Type.String({ description: "complete: final task summary." })),
-			payload: Type.Optional(
-				Type.String({
-					description: "handoff: what to transfer to the peer.",
-				}),
-			),
-			toRunId: Type.Optional(
-				Type.String({
-					description: "handoff: target peer ID.",
-				}),
-			),
-			fromRunId: Type.Optional(
-				Type.String({
-					description: "handoff: optional source ID; must match the calling conversation.",
-				}),
-			),
-			type: Type.Optional(
-				Type.String({
-					description:
-						"spawn: role/type (e.g. explore/implement/review, default: general). When matching a template name, the template and its security profile (e.g. readonly for explore, verify for review) are automatically applied.",
-				}),
-			),
-			template: Type.Optional(
-				Type.String({
-					description: "spawn: template name (see action=templates).",
-				}),
-			),
-			model: Type.Optional(
-				Type.String({
-					description: 'spawn: model override "provider/id".',
-				}),
-			),
-			thinking: Type.Optional(
-				Type.String({
-					enum: [...THINKING_LEVELS],
-					description:
-						'spawn: thinking budget level ("off" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max").',
-				}),
-			),
+			prompt: Type.Optional(Type.String()),
+			message: Type.Optional(Type.String({ description: "Steer instruction, consult question, or answer text." })),
+			summary: Type.Optional(Type.String()),
+			payload: Type.Optional(Type.String()),
+			runId: Type.Optional(Type.String()),
+			runIds: Type.Optional(Type.Array(Type.String())),
+			toRunId: Type.Optional(Type.String()),
+			requestId: Type.Optional(Type.String()),
+			type: Type.Optional(Type.String({ description: "Role/template (explore, implement, review, general)." })),
+			model: Type.Optional(Type.String()),
+			thinking: Type.Optional(Type.String({ enum: [...THINKING_LEVELS] })),
 			notifyOnDone: Type.Optional(
-				Type.Union([Type.Boolean(), Type.Literal("manual")], {
-					description:
-						"spawn: true wakes parent per turn, false disables wakes, manual waits for task completion (default: true).",
-				}),
+				Type.Unsafe<boolean | "manual">({ type: ["boolean", "string"], enum: [true, false, "manual"] }),
 			),
-			cwd: Type.Optional(
-				Type.String({
-					description: "spawn: working directory (default = current).",
-				}),
-			),
-			persist: Type.Optional(
-				Type.Boolean({
-					description: "spawn: persist as a regular session (default = ephemeral).",
-				}),
-			),
-			isolation: Type.Optional(
-				Type.String({
-					enum: ["worktree", "none"],
-					description:
-						'spawn: workspace isolation mode ("worktree" creates a dedicated git worktree & branch; "none" = shared cwd).',
-				}),
-			),
-			kind: Type.Optional(
-				Type.String({
-					enum: ["all", "subagent", "persistent"],
-					description: "list: filter subagents by kind (default: all).",
-				}),
-			),
-			timeoutSeconds: Type.Optional(
-				Type.Integer({
-					description: `wait_all: max wait in seconds (default: ${capSeconds}s); returns early for new parent consults.`,
-					minimum: 1,
-					maximum: capSeconds,
-				}),
-			),
-			scope: Type.Optional(
-				Type.String({
-					enum: ["finished_all"],
-					description: 'dismiss: batch dismissal scope ("finished_all" to dismiss all finished descendant subagents).',
-				}),
-			),
-			force: Type.Optional(
-				Type.Boolean({
-					description: "dismiss: force abort running subagents before dismissing (default: false).",
-				}),
-			),
-			includePersisted: Type.Optional(
-				Type.Boolean({
-					description: "dismiss: allow dismissing persisted subagents (default: false).",
-				}),
-			),
+			cwd: Type.Optional(Type.String()),
+			persist: Type.Optional(Type.Boolean()),
+			isolation: Type.Optional(Type.String({ enum: ["worktree", "none"] })),
+			kind: Type.Optional(Type.String({ enum: ["all", "subagent", "persistent"] })),
+			scope: Type.Optional(Type.String({ enum: ["finished_all"] })),
+			force: Type.Optional(Type.Boolean()),
+			includePersisted: Type.Optional(Type.Boolean()),
+			timeoutSeconds: Type.Optional(Type.Integer()),
 		}),
 		execute: async (_id, p, signal, _onUpdate, ctx) => {
 			const action = (p.action ?? "").trim().toLowerCase();
+			// Text-first compatibility: the schema exposes `message` only; legacy/undocumented fields pass through.
+			const legacy = p as typeof p & {
+				questions?: UiQuestion[];
+				answers?: QuestionAnswer[];
+				template?: string;
+				fromRunId?: string;
+			};
 			if (!action) {
 				return text(
 					pick(
@@ -467,19 +344,29 @@ export function makeSubagentTool(
 					signal?.throwIfAborted();
 					const selfId = selfIdOf();
 					if (!selfId || !host.consultParent) throw new Error("Parent consultation is unavailable.");
+					const questions = legacy.questions ?? questionsFromMessage(p.message);
 					if (
-						!Array.isArray(p.questions) ||
-						p.questions.length < 1 ||
-						p.questions.length > 3 ||
-						p.questions.some(
+						!Array.isArray(questions) ||
+						questions.length < 1 ||
+						questions.length > 3 ||
+						questions.some(
 							(q) =>
 								!q || typeof q.id !== "string" || !q.id.trim() || typeof q.question !== "string" || !q.question.trim(),
 						) ||
-						new Set(p.questions.map((q) => q.id)).size !== p.questions.length
+						new Set(questions.map((q) => q.id)).size !== questions.length
 					) {
-						throw new Error("consult requires 1-3 questions with unique IDs and nonempty text.");
+						throw new Error("consult requires a nonempty message (or 1-3 legacy questions with unique IDs).");
 					}
-					const result = await host.consultParent(selfId, p.questions, signal);
+					// schema 只下发展开档，富字段（options/optionsMap/dependsOn）的校验在这里补上，否则会把残缺选项透给 UI。
+					const questionErrors = Value.Errors(richQuestionsSchema(), questions);
+					if (questionErrors.length) {
+						throw new Error(
+							`Invalid consult questions: ${questionErrors
+								.map((error) => `${error.instancePath || "/"}: ${error.message}`)
+								.join("; ")}`,
+						);
+					}
+					const result = await host.consultParent(selfId, questions, signal);
 					signal?.throwIfAborted();
 					return text(
 						`${JSON.stringify(result) ?? "Consult resolved."}\nIf timed_out, do not choose on the parent's behalf. Ask again with only the context needed for the decision.`,
@@ -496,22 +383,30 @@ export function makeSubagentTool(
 					let result: unknown;
 					if (action === "answer") {
 						if (!host.answerConsult) throw new Error("Consult answers are unavailable.");
-						if (
-							!Array.isArray(p.answers) ||
-							p.answers.length === 0 ||
-							p.answers.some(
-								(a) =>
-									!a ||
-									typeof a.id !== "string" ||
-									!a.id.trim() ||
-									!Array.isArray(a.selected) ||
-									a.selected.some((s) => typeof s !== "string") ||
-									(a.custom !== undefined && typeof a.custom !== "string"),
-							)
-						) {
-							throw new Error("answer requires structured answers.");
+						const answers = legacy.answers;
+						const answerText = typeof p.message === "string" ? p.message.trim() : "";
+						if (answers !== undefined) {
+							if (
+								!Array.isArray(answers) ||
+								answers.length === 0 ||
+								answers.some(
+									(a) =>
+										!a ||
+										typeof a.id !== "string" ||
+										!a.id.trim() ||
+										!Array.isArray(a.selected) ||
+										a.selected.some((s) => typeof s !== "string") ||
+										(a.custom !== undefined && typeof a.custom !== "string"),
+								)
+							) {
+								throw new Error("answer requires structured answers with unique IDs.");
+							}
+							result = await host.answerConsult(selfId, p.runId, p.requestId, answers);
+						} else if (answerText) {
+							result = await host.answerConsult(selfId, p.runId, p.requestId, undefined, answerText);
+						} else {
+							throw new Error("answer requires a nonempty message (or legacy structured answers).");
 						}
-						result = await host.answerConsult(selfId, p.runId, p.requestId, p.answers);
 					} else {
 						if (!host.escalateConsult) throw new Error("Consult escalation is unavailable.");
 						result = await host.escalateConsult(selfId, p.runId, p.requestId);
@@ -533,19 +428,19 @@ export function makeSubagentTool(
 						);
 					}
 					let templateName: string | undefined;
-					if (p.template) {
-						if (!host.isTemplateUsable(p.template)) {
+					if (legacy.template) {
+						if (!host.isTemplateUsable(legacy.template)) {
 							return text(
 								pick(
 									getLang(),
-									`子代理模板不可用：${p.template}（不存在或已停用）。用 subagent(action="templates") 查看当前可用模板清单；不传 template 则按默认配置运行。`,
-									`Subagent template unavailable: ${p.template} (missing or disabled). Use subagent(action="templates") to list available templates; omit template to run with defaults.`,
+									`子代理模板不可用：${legacy.template}（不存在或已停用）。用 subagent(action="templates") 查看当前可用模板清单；不传 template 则按默认配置运行。`,
+									`Subagent template unavailable: ${legacy.template} (missing or disabled). Use subagent(action="templates") to list available templates; omit template to run with defaults.`,
 									"subagents.spawn.template.unavailable",
-									{ "p.template": p.template },
+									{ "p.template": legacy.template },
 								),
 							);
 						}
-						templateName = p.template.trim();
+						templateName = legacy.template.trim();
 					} else if (p.type && typeof p.type === "string" && host.isTemplateUsable(p.type.trim())) {
 						templateName = p.type.trim();
 					}
@@ -648,7 +543,7 @@ export function makeSubagentTool(
 								convId,
 								subagentType,
 								subagentTitleText,
-								"p.template": p.template,
+								"p.template": legacy.template,
 								"p.model": p.model,
 								"p.thinking": p.thinking,
 								templateLineZh,
@@ -670,7 +565,7 @@ export function makeSubagentTool(
 						{
 							convId,
 							executionId,
-							template: p.template,
+							template: legacy.template,
 							model: p.model,
 							thinking: p.thinking,
 							persisted: !!p.persist,
@@ -1122,7 +1017,7 @@ export function makeSubagentTool(
 					signal?.throwIfAborted();
 					const fromId = selfIdOf();
 					if (!fromId) throw new Error("Handoff requires a verified conversation identity.");
-					if (p.fromRunId && p.fromRunId !== fromId) {
+					if (legacy.fromRunId && legacy.fromRunId !== fromId) {
 						throw new Error("Handoff source must match the calling conversation.");
 					}
 					if (!p.toRunId || typeof p.toRunId !== "string" || !p.toRunId.trim()) {
@@ -1504,18 +1399,7 @@ export function makeSubagentTools(
 	lang?: () => ServerLang,
 	selfConvId?: string | (() => string | undefined),
 ): ToolDefinition[] {
-	const primary = makeSubagentTool(host, lang, selfConvId);
-	return [
-		primary,
-		{
-			...primary,
-			name: SUBAGENT_TOOL_NAME,
-			label: "Conversation collaboration (legacy alias)",
-			description:
-				"Compatibility alias for conversation. Prefer conversation for new calls; parameters and behavior are identical.",
-			promptSnippet: "support existing subagent calls; prefer conversation",
-		},
-	];
+	return [makeSubagentTool(host, lang, selfConvId)];
 }
 
 function shortId(id: string): string {

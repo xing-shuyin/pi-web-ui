@@ -104,6 +104,7 @@ import { createDeviceLanAccess } from "./device-center/device-lan-access.js";
 
 import { createHostMetricsSampler } from "./host-metrics.js";
 import { SchedulerStore } from "./scheduler-tasks.js";
+import { BackgroundExecutorRegistry } from "./background-executors.js";
 import { initHttpProxy } from "./http-proxy.js";
 import { globalLspPool } from "./lsp-tool.js";
 import { buildPiWebTokenCookie, decodeCookieToken, isTlsRequest } from "./auth-cookie.js";
@@ -620,6 +621,8 @@ app.get("/api/health", (_req, res) => {
 		engine: currentDefaultEngine,
 		instanceName: process.env.PI_WEB_INSTANCE_NAME?.trim() || undefined,
 		faviconColor: process.env.PI_WEB_FAVICON_COLOR?.trim() || undefined,
+		executors: backgroundExecutors.snapshotLive(),
+		unhealthy: backgroundExecutors.unhealthy(),
 	});
 });
 
@@ -1508,7 +1511,6 @@ export interface DispatchSession {
 		terminalBash?: boolean;
 		terminalBashIdleMs?: number;
 		terminalBashMaxForegroundMs?: number;
-		editSoftEnabled?: boolean;
 		thinkingWrap?: boolean;
 		toolsWrap?: boolean;
 		toolImagesEnabled?: boolean;
@@ -1529,7 +1531,6 @@ export interface DispatchSession {
 		quickAskTranslateTarget?: import("./quick-ask-settings.js").QuickAskSettings["quickAskTranslateTarget"];
 		quickAskTranslateStyle?: import("./quick-ask-settings.js").QuickAskSettings["quickAskTranslateStyle"];
 		quickAskTranslatePrompt?: import("./quick-ask-settings.js").QuickAskSettings["quickAskTranslatePrompt"];
-		quickAskShowOriginal?: import("./quick-ask-settings.js").QuickAskSettings["quickAskShowOriginal"];
 		quickAskReferenceMenus?: import("./quick-ask-settings.js").QuickAskSettings["quickAskReferenceMenus"];
 		quickAskConversationScope?: import("./quick-ask-settings.js").QuickAskSettings["quickAskConversationScope"];
 		quickAskFolderScope?: import("./quick-ask-settings.js").QuickAskSettings["quickAskFolderScope"];
@@ -1993,6 +1994,17 @@ initAttachmentStore(DATA_DIR);
 loadServerStrings(DATA_DIR);
 const pluginMgr = new PluginManager(DATA_DIR, CWD, join(pkgRoot, "plugins", "catalog.json"));
 const pluginInstaller = new PluginInstaller({ dataDir: DATA_DIR, pkgRoot, managed: MANAGED });
+/**
+ * 后台执行者统一监管：监听端口后启动 `kind: "boot"` 的执行者（常驻插件、定时任务），
+ * 60s 探针写入 /api/health。以前插件只能寄生在首个 WS attach 上，没人开页面就不上线。
+ */
+const backgroundExecutors = new BackgroundExecutorRegistry({
+	log: (level, message) => {
+		if (level === "error") console.error(`[background] ${message}`);
+		else if (level === "warning") console.warn(`[background] ${message}`);
+		else console.log(`[background] ${message}`);
+	},
+});
 async function reloadPluginsAndPush(lang?: () => ServerLang): Promise<void> {
 	await pluginMgr.reload(lang);
 	await pluginMgr.pushToAll();
@@ -2285,7 +2297,8 @@ const scheduler = new SchedulerStore(DATA_DIR, {
 		} catch {}
 	},
 });
-scheduler.start();
+// 定时任务不再在模块顶层直接 start —— 由 backgroundExecutors 的 boot 阶段统一拉起，
+// 这样它的启用时机、失败与健康快照和其它常驻执行者一致。
 function pushSchedulerTasks(): void {
 	try {
 		const payload = JSON.stringify({ type: "scheduler_tasks", tasks: scheduler.list() });
@@ -2375,6 +2388,60 @@ pluginMgr.onAgentToolsChanged = () => {
 pluginMgr.onCommandsChanged = () => service.applyPluginCommandCatalog();
 pluginMgr.onMarkersChanged = () => service.applyPluginMarkers?.();
 pluginMgr.onBgTasksChanged = () => service.refreshBackgroundServers();
+
+// ── 后台执行者登记：所有「无客户端连接也该活着」的组件都在这里启动 ──
+// 只影响 boot 期插件诊断文案的语言（无客户端时取不到 cs.getLang()），复用已有的 PI_WEB_LOCALE。
+const bootLang = (): string => process.env.PI_WEB_LOCALE?.trim() || "zh";
+backgroundExecutors.register({
+	id: "scheduler",
+	kind: "boot",
+	start: () => {
+		scheduler.start();
+	},
+	health: () => {
+		const tasks = scheduler.list();
+		const enabled = tasks.filter((t) => t.enabled).length;
+		return { ok: true, detail: `${tasks.length} task(s), ${enabled} enabled`, stats: { tasks: tasks.length, enabled } };
+	},
+});
+backgroundExecutors.register({
+	id: "plugins:always-on",
+	kind: "boot",
+	// 激活失败通常是暂时的（数据目录瞬断 / 外部依赖未就绪）：5min 冷却、最多 3 次，之后只报警。
+	restart: "on-failure",
+	start: async () => {
+		const plugins = await pluginMgr.rescanAlwaysOn(bootLang);
+		const alwaysOn = plugins.filter((p) => p.alwaysOn === true);
+		const failed = alwaysOn.filter((p) => p.error);
+		if (failed.length > 0) {
+			throw new Error(
+				`${failed.length}/${alwaysOn.length} alwaysOn plugin(s) failed: ${failed.map((p) => p.id).join(", ")}`,
+			);
+		}
+	},
+	health: () => {
+		const loaded = pluginMgr.alwaysOnSnapshot();
+		const broken = loaded.filter((p) => !p.active);
+		// 出站/入站的死信与积压是「静默失败」的唯一可观测出口，一起进 health。
+		const delivery = pluginMgr.deliveryStats();
+		const deadLetters = delivery.totalDead;
+		return {
+			ok: broken.length === 0,
+			detail:
+				broken.length > 0
+					? `${broken.length}/${loaded.length} alwaysOn plugin(s) not active: ${broken.map((p) => p.id).join(", ")}`
+					: `${loaded.length} alwaysOn plugin(s) active; outbox queued ${delivery.totalQueued}, dead letters ${deadLetters}`,
+			stats: {
+				active: loaded.length - broken.length,
+				total: loaded.length,
+				ids: loaded.map((p) => p.id),
+				outbox: delivery.plugins,
+				outboxQueued: delivery.totalQueued,
+				deadLetters,
+			},
+		};
+	},
+});
 {
 	const pm = pluginMgr as unknown as Record<string, unknown>;
 	type PluginConvListItem = { id: string; title: string; cwd: string; kind: string; isStreaming: boolean };
@@ -3529,6 +3596,12 @@ httpServer.listen(PORT, HOST, () => {
 		console.warn("  ─────────────────────────────────────────────────────────────────────────────");
 	}
 	console.log("");
+	// 无客户端连接也能跑的后台执行者（常驻插件 / 定时任务）：永不抛错、不阻断监听。
+	void backgroundExecutors
+		.startAll()
+		.then(() => backgroundExecutors.probe())
+		.then(() => backgroundExecutors.startProbing())
+		.catch((err) => console.warn(`[background] start failed: ${(err as Error).message}`));
 });
 
 scheduleUploadCleanup();

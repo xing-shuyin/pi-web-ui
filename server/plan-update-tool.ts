@@ -52,24 +52,18 @@ export function makePlanUpdateTool(
 		parameters: Type.Object({
 			steps: Type.Array(
 				Type.Object({
-					id: Type.String({ description: "Unique step ID, e.g. '1', 'step-1'" }),
-					title: Type.String({ description: "Short step title" }),
+					id: Type.String(),
+					title: Type.String(),
 					status: Type.Optional(
 						Type.Unsafe<"pending" | "in_progress" | "done" | "failed">({
 							type: "string",
 							enum: ["pending", "in_progress", "done", "failed"],
-							description: "Step status: pending | in_progress | done | failed (default: pending)",
 						}),
 					),
-					description: Type.Optional(
-						Type.String({
-							description: "Optional step detail: acceptance criteria, files touched, rollback note.",
-						}),
-					),
+					description: Type.Optional(Type.String()),
 				}),
-				{ description: "List of plan steps" },
 			),
-			activeStepId: Type.Optional(Type.String({ description: "ID of the step currently being executed" })),
+			activeStepId: Type.Optional(Type.String()),
 		}),
 		execute: async (toolCallId: string, params: unknown) => {
 			const target = getActiveConvTarget();

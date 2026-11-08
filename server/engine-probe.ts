@@ -21,6 +21,7 @@ import { probeEngineCliVersion } from "./engine-cli.js";
 export interface EnginePackageMeta {
 	id: string;
 	packageName: string;
+	cliPackageName?: string | null;
 	installCommand: string;
 }
 
@@ -293,11 +294,13 @@ export async function uninstallEngineBackground(
 	}
 
 	if (currentEntry) currentEntry.uninstalling = true;
-	const pkg = meta.packageName;
+	const packages = [meta.packageName, meta.cliPackageName].filter((p): p is string => Boolean(p));
 	const timeoutMs = Math.max(10_000, Number(options?.timeoutMs ?? 180_000));
 	const isWin = process.platform === "win32";
 	const spawnCmd = isWin ? process.env.ComSpec || "cmd.exe" : "npm";
-	const spawnArgs = isWin ? ["/d", "/s", "/c", "npm", "uninstall", "-g", pkg] : ["uninstall", "-g", pkg];
+	const spawnArgs = isWin
+		? ["/d", "/s", "/c", "npm", "uninstall", "-g", ...packages]
+		: ["uninstall", "-g", ...packages];
 
 	try {
 		const child = spawn(spawnCmd, spawnArgs, {
@@ -346,7 +349,7 @@ export async function uninstallEngineBackground(
 		});
 
 		if (res.ok) {
-			registryCache.delete(pkg);
+			for (const p of packages) registryCache.delete(p);
 			try {
 				await probeAllEngines(true);
 			} catch {}
@@ -382,11 +385,12 @@ export async function updateEngineBackground(
 	}
 
 	if (currentEntry) currentEntry.updating = true;
-	const pkg = meta.packageName;
+	const packages = [meta.packageName, meta.cliPackageName].filter((p): p is string => Boolean(p));
 	const timeoutMs = Math.max(10_000, Number(options?.timeoutMs ?? 300_000));
 	const isWin = process.platform === "win32";
 	const spawnCmd = isWin ? process.env.ComSpec || "cmd.exe" : "npm";
-	const spawnArgs = isWin ? ["/d", "/s", "/c", "npm", "i", "-g", `${pkg}@latest`] : ["i", "-g", `${pkg}@latest`];
+	const updatePkgs = packages.map((p) => `${p}@latest`);
+	const spawnArgs = isWin ? ["/d", "/s", "/c", "npm", "i", "-g", ...updatePkgs] : ["i", "-g", ...updatePkgs];
 
 	try {
 		const child = spawn(spawnCmd, spawnArgs, {
@@ -435,7 +439,7 @@ export async function updateEngineBackground(
 		});
 
 		if (res.ok) {
-			registryCache.delete(pkg);
+			for (const p of packages) registryCache.delete(p);
 			try {
 				await probeAllEngines(true);
 			} catch {}

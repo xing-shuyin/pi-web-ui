@@ -8,7 +8,6 @@ export const DELEGATE_MODE_BLOCKED_TOOL_NAMES: readonly string[] = [
 	"write_file",
 	"edit",
 	"edit_file",
-	"edit_soft",
 	"apply_patch",
 	"patch",
 	"patch_tool",

@@ -104,54 +104,68 @@ const VALID_ROLES = new Set([
 	"skill",
 ]);
 
+const CANVAS_ACTIONS = [
+	"list",
+	"get",
+	"create_graph",
+	"delete_graph",
+	"run_all",
+	"run_node",
+	"stop_node",
+	"stop_all",
+	"steer_node",
+	"review_node",
+	"get_log",
+	"reset_status",
+	"layout_graph",
+	"card_list",
+	"card_add",
+	"card_update",
+	"card_delete",
+	"card_place",
+	"add_node",
+	"update_node",
+	"delete_node",
+	"add_edge",
+	"delete_edge",
+	"apply_dag",
+] as const;
+
+type CanvasAction = (typeof CANVAS_ACTIONS)[number];
+
+/** 每 action 要哪些参数，只在 `action` 字段里交代一次；字段本身不再写说明。 */
+export const CANVAS_ACTION_SIGNATURE =
+	"list | get(graphId) | create_graph(title?,instruction?) | delete_graph/layout_graph/run_all/stop_all/reset_status(graphId) | " +
+	"run_node/stop_node/get_log(graphId,nodeId) | steer_node(graphId,nodeId,message) | " +
+	"review_node(graphId,nodeId,decision,comment?) | add_node(graphId,title,role,instruction?) | " +
+	"update_node(graphId,nodeId,patch) | delete_node(graphId,nodeId) | " +
+	"add_edge(graphId,sourceNodeId,targetNodeId) | delete_edge(graphId,edgeId) | apply_dag(graphId,nodes,edges) | " +
+	"card_list | card_add(title,role,instruction?) | card_update(cardId,title?,role?,instruction?,patch?) | " +
+	"card_delete/card_place(cardId)";
+
 const canvasSchema = Type.Object({
-	action: Type.Union([
-		Type.Literal("list"),
-		Type.Literal("get"),
-		Type.Literal("create_graph"),
-		Type.Literal("delete_graph"),
-		Type.Literal("run_all"),
-		Type.Literal("run_node"),
-		Type.Literal("stop_node"),
-		Type.Literal("stop_all"),
-		Type.Literal("steer_node"),
-		Type.Literal("review_node"),
-		Type.Literal("get_log"),
-		Type.Literal("reset_status"),
-		Type.Literal("layout_graph"),
-		Type.Literal("card_list"),
-		Type.Literal("card_add"),
-		Type.Literal("card_update"),
-		Type.Literal("card_delete"),
-		Type.Literal("card_place"),
-		Type.Literal("add_node"),
-		Type.Literal("update_node"),
-		Type.Literal("delete_node"),
-		Type.Literal("add_edge"),
-		Type.Literal("delete_edge"),
-		Type.Literal("apply_dag"),
-	]),
-	graphId: Type.Optional(Type.String({ description: "Target canvas graph id (list omits it)" })),
+	action: Type.Unsafe<CanvasAction>({
+		type: "string",
+		enum: [...CANVAS_ACTIONS],
+		description: CANVAS_ACTION_SIGNATURE,
+	}),
+	graphId: Type.Optional(Type.String()),
 	title: Type.Optional(Type.String()),
 	role: Type.Optional(Type.String()),
 	instruction: Type.Optional(Type.String()),
 	nodeId: Type.Optional(Type.String()),
-	cardId: Type.Optional(Type.String({ description: "Custom card id (card_list shows them)" })),
-	cwd: Type.Optional(
-		Type.String({
-			description: "Working directory for a new node (absolute path pins a project; omit = current project)",
-		}),
-	),
+	cardId: Type.Optional(Type.String()),
+	cwd: Type.Optional(Type.String({ description: "Working directory for a new node (absolute path pins a project)" })),
 	message: Type.Optional(Type.String()),
 	prompt: Type.Optional(Type.String()),
 	decision: Type.Optional(Type.String()),
 	comment: Type.Optional(Type.String()),
-	patch: Type.Optional(Type.Record(Type.String(), Type.Unknown())),
+	patch: Type.Optional(Type.Unsafe<Record<string, unknown>>({ type: "object" })),
 	sourceNodeId: Type.Optional(Type.String()),
 	targetNodeId: Type.Optional(Type.String()),
 	edgeId: Type.Optional(Type.String()),
-	nodes: Type.Optional(Type.Array(Type.Record(Type.String(), Type.Unknown()))),
-	edges: Type.Optional(Type.Array(Type.Record(Type.String(), Type.Unknown()))),
+	nodes: Type.Optional(Type.Array(Type.Unsafe<Record<string, unknown>>({ type: "object" }))),
+	edges: Type.Optional(Type.Array(Type.Unsafe<Record<string, unknown>>({ type: "object" }))),
 });
 
 function hasCycle(n: number, edges: { from: number; to: number }[]): boolean {
@@ -187,7 +201,7 @@ export function makeCanvasTool(host: CanvasToolHost, lang?: () => ServerLang): T
 		name: CANVAS_TOOL_NAME,
 		label: "Canvas pipeline",
 		description:
-			"Read and edit canvas workflow graphs: list/get/create/delete graphs, add/update/delete nodes and edges, replace the DAG, layout/rearrange nodes on a tidy grid, run all or one node, stop, steer a running node, approve/reject review gates, read node logs, reset status, manage reusable custom cards. Use it when the user asks to create, change, run, or debug a pipeline.",
+			"Read and edit canvas workflow graphs: nodes and edges (single or whole DAG), layout, run and steer nodes, review gates, logs, and reusable custom cards.",
 		promptSnippet: "Inspect, edit, run, or debug canvas workflows and canvas references.",
 		promptGuidelines: [
 			"Get the referenced graph before editing or running it; a canvas reference alone does not request execution",

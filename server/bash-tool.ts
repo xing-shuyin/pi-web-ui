@@ -6,6 +6,7 @@ import {
 import type { ServerLang } from "./i18n.js";
 import { applyHeadTail } from "./terminals.js";
 import { BASH_DESCRIPTION, BASH_PARAMETERS, BASH_PROMPT_GUIDELINES, BASH_PROMPT_SNIPPET } from "./tool-prompts.js";
+import { withDefaultBashTimeout } from "./bash-timeout.js";
 import {
 	getGlobalRemoteSshService,
 	isRemoteWorkspaceUri,
@@ -63,14 +64,14 @@ export function makeKillableBashTool(
 		prepareArguments: tool.prepareArguments,
 		executionMode: tool.executionMode,
 		execute: async (toolCallId, params, signal, onUpdate, ctx) => {
-			const result = (await tool.execute(
-				toolCallId,
-				params as { command: string; timeout?: number },
-				signal,
-				onUpdate,
-				ctx,
-			)) as { content?: Array<{ type: string; text?: string }> };
-			const p = params as { head?: number; tail?: number };
+			// 模型漏传 timeout 时不给"无时限"：默认 120s，由 server/bash-timeout.ts 单源归一。
+			const effective = withDefaultBashTimeout(
+				params as { command: string; timeout?: number; head?: number; tail?: number },
+			);
+			const result = (await tool.execute(toolCallId, effective, signal, onUpdate, ctx)) as {
+				content?: Array<{ type: string; text?: string }>;
+			};
+			const p = effective;
 			if ((p?.head || p?.tail) && result?.content?.[0]?.text != null) {
 				result.content![0].text = applyHeadTail(result.content![0].text!, p.head, p.tail, lang());
 			}

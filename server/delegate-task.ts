@@ -113,43 +113,15 @@ export function buildDelegationPrompt(input: DelegationInput, lang: ServerLang =
 }
 
 const delegateSchema = Type.Object({
-	agent: Type.String({
-		description:
-			"Specialist template to delegate to (e.g. oracle, explore, review, librarian). " +
-			"Must be enabled — use subagent (action='templates') to list them and pick the domain match.",
-	}),
-	task: Type.String({
-		description: "Atomic, specific goal: ONE action per delegation. Vague tasks are rejected.",
-	}),
-	expected_outcome: Type.String({
-		description: "Concrete deliverables with done criteria.",
-	}),
-	required_tools: Type.String({
-		description: "Explicit tool whitelist for the subagent (prevents tool sprawl).",
-	}),
-	must_do: Type.String({
-		description: "Exhaustive requirements — leave NOTHING implicit.",
-	}),
-	must_not_do: Type.String({
-		description: "Forbidden actions — anticipate and block rogue behavior.",
-	}),
-	context: Type.String({
-		description: "File paths, existing patterns, constraints the subagent must know.",
-	}),
-	model: Type.Optional(
-		Type.String({
-			description:
-				'Optional model "provider/id" for this delegation; ' +
-				"omit = template model → panel default → follow the main conversation model.",
-		}),
-	),
-	persist: Type.Optional(
-		Type.Boolean({
-			description:
-				"Persist as a regular session saved in history (default false = lightweight in-memory subagent); " +
-				"use for tasks needing long-term retention.",
-		}),
-	),
+	agent: Type.String({ description: "Template name from subagent(action='templates')" }),
+	task: Type.String(),
+	expected_outcome: Type.String(),
+	required_tools: Type.String({ description: "Free text; 'read-only' switches the subagent to a readonly whitelist" }),
+	must_do: Type.String(),
+	must_not_do: Type.String(),
+	context: Type.String(),
+	model: Type.Optional(Type.String({ description: "provider/id; omit to inherit the template and panel model" })),
+	persist: Type.Optional(Type.Boolean({ description: "Keep the session in history" })),
 });
 
 export function makeDelegateTaskTool(host: SubagentToolHost, lang?: () => ServerLang): ToolDefinition {
@@ -162,11 +134,11 @@ export function makeDelegateTaskTool(host: SubagentToolHost, lang?: () => Server
 		name: DELEGATE_TOOL_NAME,
 		label: "Delegate task",
 		description:
-			"Delegate ONE well-defined task to a specialist template via a six-section brief (TASK / EXPECTED OUTCOME / REQUIRED TOOLS / MUST DO / MUST NOT DO / CONTEXT). " +
-			"Vague sections are rejected server-side — fill every one concretely. Prefer it over subagent (action='spawn'). Spawns a real subagent conversation; " +
-			"follow up with subagent (action='wait_all' | 'get_result' | 'steer' | 'stop'), continuing the SAME session rather than delegating again.",
+			"Delegate ONE well-defined task to a specialist template through a fixed six-part brief (task / expected_outcome / required_tools / must_do / must_not_do / context); vague sections are rejected server-side.",
 		promptSnippet: "hand a well-scoped task to a specialist template",
 		promptGuidelines: [
+			"Fill every section concretely: one action, deliverables plus done criteria, explicit tool whitelist, exhaustive must_do/must_not_do, file paths and constraints",
+			"Prefer delegate_task over subagent(action='spawn'): it spawns a real subagent conversation and can be followed up in that SAME session instead of delegating again",
 			"Before delegating, declare which template you chose and WHY its description matches the task",
 			"After delegation ALWAYS verify the result: " +
 				"does it work, does it follow codebase patterns, did it respect MUST DO / MUST NOT DO",

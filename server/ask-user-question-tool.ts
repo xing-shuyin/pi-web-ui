@@ -2,6 +2,7 @@ import { Type } from "typebox";
 import type { ToolDefinition } from "@earendil-works/pi-coding-agent";
 import type { QuestionAnswer, UiQuestion } from "./protocol.js";
 import type { QuestionResult } from "./pending-question.js";
+import { askQuestionsSchema } from "./question-params.js";
 
 export function makeAskUserQuestionTool(
 	clientSession: {
@@ -9,70 +10,17 @@ export function makeAskUserQuestionTool(
 	},
 	ownerId?: string,
 ): ToolDefinition {
-	const QuestionOptionSchema = Type.Object({
-		label: Type.String({ description: "Display label (1-5 words)" }),
-		description: Type.Optional(
-			Type.String({
-				description: "Short explanation of impact/tradeoff",
-			}),
-		),
-		preview: Type.Optional(
-			Type.String({
-				description: "Optional preview (markdown/HTML/code)",
-			}),
-		),
-		recommended: Type.Optional(
-			Type.Boolean({
-				description: "Highlight as recommended option",
-			}),
-		),
-	});
-	const QuestionSchema = Type.Object({
-		id: Type.String({ description: "Unique identifier (snake_case)" }),
-		question: Type.String({ description: "Question text (markdown/HTML ok)" }),
-		detail: Type.Optional(Type.String({ description: "Optional context under question" })),
-		header: Type.Optional(Type.String({ description: "Optional short header" })),
-		options: Type.Optional(
-			Type.Array(QuestionOptionSchema, {
-				description: "2-4 choices (recommended option first)",
-				minItems: 2,
-				maxItems: 4,
-			}),
-		),
-		multiSelect: Type.Optional(Type.Boolean({ description: "Allow multiple choices (default: false)" })),
-		dependsOn: Type.Optional(
-			Type.Object({
-				questionId: Type.String({ description: "Prior question ID" }),
-				value: Type.Optional(
-					Type.Union([Type.String(), Type.Array(Type.String())], {
-						description: "Show when prior answer matches",
-					}),
-				),
-			}),
-		),
-		optionsMap: Type.Optional(
-			Type.Record(Type.String(), Type.Array(QuestionOptionSchema), {
-				description: "Dynamic options keyed by prior answer",
-			}),
-		),
-	});
 	return {
 		name: "ask_user_question",
 		label: "Ask the user",
-		description:
-			"Ask the user 1-3 focused questions to clarify requirements, confirm decisions, or choose options. " +
-			"Renders a rich browser dialog; resumes on submit or cancel.",
+		description: "Ask the user 1-3 questions via interactive dialog.",
 		promptSnippet: "clarify ambiguous requirements or confirm a decision with the user",
 		promptGuidelines: [
 			"When requirements are ambiguous, clarify with ask_user_question: 1 to 3 focused questions (prefer 1), 2-4 choices with the recommended option first, each with a concise impact/tradeoff",
 			"A cancelled question comes back as a tool error — respect it without immediately re-asking",
 		],
 		parameters: Type.Object({
-			questions: Type.Array(QuestionSchema, {
-				description: "Questions to ask (prefer 1).",
-				minItems: 1,
-				maxItems: 3,
-			}),
+			questions: askQuestionsSchema(),
 		}),
 		execute: async (_id: string, params: unknown, signal: AbortSignal | undefined): Promise<unknown> => {
 			const qs = (params as { questions: UiQuestion[] }).questions;

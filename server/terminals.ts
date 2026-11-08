@@ -24,6 +24,7 @@ import {
 } from "./remote-cli-persistence.js";
 import { resolveRemoteNativeCliLaunch } from "./remote-native-cli.js";
 import { BASH_DESCRIPTION, BASH_PARAMETERS, BASH_PROMPT_GUIDELINES, BASH_PROMPT_SNIPPET } from "./tool-prompts.js";
+import { withDefaultBashTimeout } from "./bash-timeout.js";
 import { pick, type ServerLang } from "./i18n.js";
 import { armDelay } from "./plugin-schedule.js";
 import {
@@ -187,7 +188,7 @@ const isWindows = process.platform === "win32";
 const MAX_TERMINALS = 16;
 const OUTPUT_FLUSH_MS = 16;
 const MAX_TERMINAL_HISTORY = 32;
-const MAX_OUTPUT = 200_000;
+const MAX_OUTPUT = 2_000_000;
 const MAX_INPUT = 64 * 1024;
 const MAX_ID = 80;
 
@@ -850,7 +851,11 @@ export class TerminalManager {
 	attach(id: string, cols: number, rows: number): boolean {
 		const entry = this.find(id);
 		if (!entry) return false;
-		this.resize(id, cols, rows);
+		const isDefaultFallback = cols === 80 && rows === 24;
+		const hasStableExistingSize = entry.cols > 80 || entry.rows > 24;
+		if (!isDefaultFallback || !hasStableExistingSize) {
+			this.resize(id, cols, rows);
+		}
 		this.flushPending(entry);
 		this.emit({ type: "terminal_output", terminalId: id, data: entry.output, reset: true });
 		return true;
@@ -2270,7 +2275,9 @@ export function makeTerminalBashTool(
 		promptSnippet: BASH_PROMPT_SNIPPET,
 		promptGuidelines: BASH_PROMPT_GUIDELINES,
 		parameters: BASH_PARAMETERS,
-		execute: async (_id, p, signal) => {
+		execute: async (_id, rawParams, signal) => {
+			// 与 makeKillableBashTool 同一处归一（server/bash-timeout.ts）：没传 timeout 就是 120s，不是无限制。
+			const p = withDefaultBashTimeout(rawParams);
 			const lang: ServerLang = opts.lang?.() ?? "en";
 			if (signal?.aborted) throw new Error("Command aborted");
 			const incomplete = sentinelUnsafeReason(detectTrailingLimiter(p.command)?.base ?? p.command);
@@ -2601,6 +2608,11 @@ export interface PersistentTerminalToolsOptions {
 	) => Promise<TerminalSafetyCheckResult> | TerminalSafetyCheckResult;
 }
 
+/** `terminal` 的 action 单源：schema 枚举与 execute 的合法性校验共用这一份。 */
+export const TERMINAL_ACTIONS = ["create", "list", "close", "input", "key", "read", "wait"] as const;
+
+export type TerminalAction = (typeof TERMINAL_ACTIONS)[number];
+
 export function makePersistentTerminalTools(
 	terminals: TerminalManager,
 	cwd: string,
@@ -2646,27 +2658,26 @@ export function makePersistentTerminalTools(
 			name: "terminal",
 			label: "Terminal",
 			description:
-				"Manage persistent interactive PTYs. Actions: create/list/close/input/key/read/wait. terminalId is required except for list; input requires data and key requires key. read returns incremental output and cursor, with optional waiting and head/tail/search filters. wait blocks for a tracked bash command's completion marker or timeout; input/key commands have no completion marker. read/wait are read-only; all other actions are write operations.",
+				"Drive persistent interactive PTYs and read their output incrementally. Only list is read-only on the tool itself; input/key drive the program.",
 			promptSnippet: "drive interactive programs or inspect persistent terminal output",
 			promptGuidelines: [
 				"Prefer bash for ordinary commands. Use read(waitMs) for output from input/key; use wait only for tracked bash commands. Retain the returned cursor for incremental reads.",
 			],
 			parameters: Type.Object({
-				action: Type.Union([
-					Type.Literal("create"),
-					Type.Literal("list"),
-					Type.Literal("close"),
-					Type.Literal("input"),
-					Type.Literal("key"),
-					Type.Literal("read"),
-					Type.Literal("wait"),
-				]),
-				terminalId: Type.Optional(Type.String({ minLength: 1, description: "Required except for list" })),
-				cwd: Type.Optional(Type.String({ description: "Workspace-relative directory for create" })),
-				cols: Type.Optional(Type.Integer({ minimum: 2, maximum: 500 })),
-				rows: Type.Optional(Type.Integer({ minimum: 2, maximum: 200 })),
-				data: Type.Optional(Type.String({ description: "Required for input; include newline to submit" })),
-				key: Type.Optional(Type.String({ description: "Required for key, e.g. Enter or c" })),
+				action: Type.Unsafe<TerminalAction>({
+					type: "string",
+					enum: [...TERMINAL_ACTIONS],
+					description:
+						"list | create(terminalId,cwd?,cols?,rows?) | close(terminalId) | input(terminalId,data) | " +
+						"key(terminalId,key,modifiers?) | read(terminalId,cursor?,waitMs?,maxBytes?,head?|tail?,search?) | " +
+						"wait(terminalId,maxWaitMs?)",
+				}),
+				terminalId: Type.Optional(Type.String()),
+				cwd: Type.Optional(Type.String()),
+				cols: Type.Optional(Type.Integer()),
+				rows: Type.Optional(Type.Integer()),
+				data: Type.Optional(Type.String({ description: "Include newline to submit" })),
+				key: Type.Optional(Type.String()),
 				modifiers: Type.Optional(
 					Type.Object({
 						ctrl: Type.Optional(Type.Boolean()),
@@ -2674,24 +2685,17 @@ export function makePersistentTerminalTools(
 						shift: Type.Optional(Type.Boolean()),
 					}),
 				),
-				cursor: Type.Optional(
-					Type.Integer({ minimum: 0, description: "Absolute output offset; pass returned cursor on next read" }),
-				),
-				maxBytes: Type.Optional(Type.Integer({ minimum: 1, maximum: 100000 })),
-				waitMs: Type.Optional(Type.Integer({ minimum: 0, maximum: 120000 })),
-				maxWaitMs: Type.Optional(Type.Integer({ minimum: 100, maximum: 600000 })),
-				head: Type.Optional(Type.Integer({ minimum: 1, description: "Read: first N matching lines" })),
-				tail: Type.Optional(
-					Type.Integer({ minimum: 1, description: "Read: last N matching lines; exclusive with head" }),
-				),
-				search: Type.Optional(
-					Type.String({ description: "Read: literal, case-sensitive line filter after stripping ANSI" }),
-				),
+				cursor: Type.Optional(Type.Integer()),
+				maxBytes: Type.Optional(Type.Integer()),
+				waitMs: Type.Optional(Type.Integer()),
+				maxWaitMs: Type.Optional(Type.Integer()),
+				head: Type.Optional(Type.Integer()),
+				tail: Type.Optional(Type.Integer()),
+				search: Type.Optional(Type.String()),
 			}),
 			execute: async (_id, args, signal) => {
 				signal?.throwIfAborted();
-				if (!["create", "list", "close", "input", "key", "read", "wait"].includes(args.action))
-					throw new Error("Unknown terminal action");
+				if (!TERMINAL_ACTIONS.includes(args.action as TerminalAction)) throw new Error("Unknown terminal action");
 				if (args.action !== "list" && (typeof args.terminalId !== "string" || !args.terminalId.trim()))
 					throw new Error("terminalId is required for " + args.action);
 				if (args.action === "input" && typeof args.data !== "string") throw new Error("data is required for input");

@@ -1536,6 +1536,7 @@ export type ClientMessage =
 			disabledSkills?: string[];
 			disabledExtensions?: string[];
 			disabledAgentTools?: string[];
+			toolOnDemandTools?: string[];
 			disabledPluginTools?: string[];
 			disabledPlugins?: string[];
 			nativeCliInheritModel?: NativeCliInheritModel;
@@ -1549,7 +1550,6 @@ export type ClientMessage =
 			toolLazyLoading?: boolean;
 			codemodeMode?: "on" | "only";
 			codemodeInlineBudget?: number;
-			editSoftEnabled?: boolean;
 			questionnaireEnabled?: boolean;
 			questionPresentation?: "queue" | "all" | "manual";
 			toolApprovalPresentation?: "queue" | "all" | "manual";
@@ -1592,7 +1592,6 @@ export type ClientMessage =
 			quickAskTranslateTarget?: QuickAskTranslateTarget;
 			quickAskTranslateStyle?: QuickAskTranslateStyle;
 			quickAskTranslatePrompt?: string;
-			quickAskShowOriginal?: boolean;
 			quickAskReferenceMenus?: boolean;
 			quickAskConversationScope?: "recent" | "full";
 			quickAskFolderScope?: "listing" | "content";
@@ -2449,6 +2448,7 @@ export interface UiPluginInfo {
 	iconSvg?: string;
 	error?: string;
 	active?: boolean;
+	alwaysOn?: boolean;
 	permissions?: string[];
 	netAllowlist?: string[];
 	engines?: Record<string, string>;
@@ -2723,6 +2723,13 @@ export interface ConversationSummary {
 		title?: string;
 	};
 	modified?: number;
+	/**
+	 * 左栏行归属（引擎裁定，客户端不再猜）：
+	 * - `open`：这个对话在左栏自己占一行（运行中 / 未落盘 / 子代理 / 临时 / 固定 / 原生 CLI）。
+	 * - `history`：已由历史会话行代表，客户端不要再为它出行。
+	 * 缺省 = 旧引擎，客户端退回按 sessionFile 推断的启发式。
+	 */
+	rowKind?: "open" | "history";
 }
 
 export interface ElsewhereRunning {
@@ -2965,6 +2972,8 @@ export interface UiSettingsState {
 	disabledSkills: string[];
 	disabledExtensions: string[];
 	disabledAgentTools: string[];
+	/** 按需列表：列内工具直接关闭（与 `disabledAgentTools` 取并集）。 */
+	toolOnDemandTools: string[];
 	disabledPluginTools: string[];
 	/** @deprecated 遗留别名（由 disabledAgentTools 推导）：全开才算开。Off → terminal_*
 	 *  tools are removed from the active set and the guidance prompt is not injected. */
@@ -2979,8 +2988,6 @@ export interface UiSettingsState {
 	toolLazyLoading: boolean;
 	codemodeMode: "on" | "only";
 	codemodeInlineBudget: number;
-	/** @deprecated 遗留别名（由 disabledAgentTools 推导）。开 → AI 可用不严格要求缩进的 edit_soft 工具。 */
-	editSoftEnabled: boolean;
 	questionnaireEnabled: boolean;
 	questionPresentation?: "queue" | "all" | "manual";
 	toolApprovalPresentation?: "queue" | "all" | "manual";
@@ -3024,7 +3031,6 @@ export interface UiSettingsState {
 	quickAskTranslateTarget: QuickAskTranslateTarget;
 	quickAskTranslateStyle: QuickAskTranslateStyle;
 	quickAskTranslatePrompt: string;
-	quickAskShowOriginal: boolean;
 	quickAskReferenceMenus: boolean;
 	quickAskConversationScope: "recent" | "full";
 	quickAskFolderScope: "listing" | "content";

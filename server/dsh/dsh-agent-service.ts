@@ -1,5 +1,6 @@
 import { startTurnTiming, finishTurnTiming } from "../turn-timing.js";
 import { DEFAULT_DSH_CAPABILITIES } from "../engine-capabilities.js";
+import { conversationRowKind } from "../conversation-rows.js";
 import type { AgentEngineCapabilities } from "../protocol.js";
 import { mergeQuickAskSettings, normalizeQuickAskSettings, type QuickAskSettings } from "../quick-ask-settings.js";
 import { captureQuickAskConversation } from "../quick-ask-context.js";
@@ -209,7 +210,6 @@ interface DshSettings {
 	terminalBashMaxForegroundMs: number;
 	toolWatchdogTimeoutMs: number;
 	bgAutoCleanupMin: number;
-	editSoftEnabled: boolean;
 	questionnaireEnabled: boolean;
 	toolApprovalEnabled: boolean;
 	parallelReminderEnabled: boolean;
@@ -269,7 +269,6 @@ const DEFAULT_SETTINGS: DshSettings = {
 	terminalBashMaxForegroundMs: 60_000,
 	toolWatchdogTimeoutMs: 20 * 60_000,
 	bgAutoCleanupMin: 0,
-	editSoftEnabled: false,
 	questionnaireEnabled: true,
 	toolApprovalEnabled: true,
 	goalModeEnabled: true,
@@ -494,7 +493,6 @@ export class DshClientSession {
 				terminalBashMaxForegroundMs: savedSettings.terminalBashMaxForegroundMs ?? 60_000,
 				toolWatchdogTimeoutMs: savedSettings.toolWatchdogTimeoutMs ?? 20 * 60_000,
 				bgAutoCleanupMin: Number(savedSettings.bgAutoCleanupMin ?? 0),
-				editSoftEnabled: savedSettings.editSoftEnabled,
 				questionnaireEnabled: savedSettings.questionnaireEnabled ?? true,
 				toolApprovalEnabled: savedSettings.toolApprovalEnabled ?? true,
 				goalModeEnabled: savedSettings.goalModeEnabled ?? true,
@@ -1711,6 +1709,12 @@ export class DshClientSession {
 				id: conv.id,
 				sessionId: conv.sessionId,
 				...(sf ? { sessionFile: sf } : {}),
+				rowKind: conversationRowKind({
+					isStreaming: conv.isStreaming,
+					pinned: isPinned,
+					// pushSessions 只列有消息的会话日志，空对话没有历史行可代表
+					hasHistoryRow: Boolean(sf) && conv.messages.length > 0,
+				}),
 				title: conv.title,
 				cwd: conv.cwd,
 				messageCount: conv.messages.length,
@@ -3744,6 +3748,7 @@ export class DshClientSession {
 			disabledSkills: this.settings.disabledSkills,
 			disabledExtensions: this.settings.disabledExtensions,
 			disabledAgentTools: [],
+			toolOnDemandTools: [],
 			disabledPluginTools: [],
 			terminalToolsEnabled: this.settings.terminalToolsEnabled,
 			terminalBash: this.settings.terminalBash,
@@ -3755,7 +3760,6 @@ export class DshClientSession {
 			toolLazyLoading: false,
 			codemodeMode: "on",
 			codemodeInlineBudget: 3000,
-			editSoftEnabled: this.settings.editSoftEnabled,
 			retryMaxAttempts: DEFAULT_RETRY_MAX_ATTEMPTS,
 			softCapTokens: 0,
 			softCapByModel: {},
@@ -3837,7 +3841,6 @@ export class DshClientSession {
 		quickAskTranslateTarget?: QuickAskSettings["quickAskTranslateTarget"];
 		quickAskTranslateStyle?: QuickAskSettings["quickAskTranslateStyle"];
 		quickAskTranslatePrompt?: QuickAskSettings["quickAskTranslatePrompt"];
-		quickAskShowOriginal?: QuickAskSettings["quickAskShowOriginal"];
 		quickAskReferenceMenus?: QuickAskSettings["quickAskReferenceMenus"];
 		quickAskConversationScope?: QuickAskSettings["quickAskConversationScope"];
 		quickAskFolderScope?: QuickAskSettings["quickAskFolderScope"];
@@ -3856,7 +3859,6 @@ export class DshClientSession {
 		terminalBashMaxForegroundMs?: number;
 		toolWatchdogTimeoutMs?: number;
 		bgAutoCleanupMin?: number;
-		editSoftEnabled?: boolean;
 		questionnaireEnabled?: boolean;
 		toolApprovalEnabled?: boolean;
 		goalModeEnabled?: boolean;
@@ -3902,7 +3904,6 @@ export class DshClientSession {
 			this.settings.toolWatchdogTimeoutMs = normalizeToolWatchdogTimeoutMs(partial.toolWatchdogTimeoutMs);
 		if (partial.bgAutoCleanupMin !== undefined)
 			this.settings.bgAutoCleanupMin = normalizeBgCleanupMinutes(partial.bgAutoCleanupMin);
-		if (partial.editSoftEnabled !== undefined) this.settings.editSoftEnabled = partial.editSoftEnabled;
 		if (partial.questionnaireEnabled !== undefined) this.settings.questionnaireEnabled = partial.questionnaireEnabled;
 		if (partial.toolApprovalEnabled !== undefined) this.settings.toolApprovalEnabled = partial.toolApprovalEnabled;
 		if (partial.goalModeEnabled !== undefined) this.settings.goalModeEnabled = partial.goalModeEnabled;
@@ -3953,7 +3954,6 @@ export class DshClientSession {
 			terminalBash: this.settings.terminalBash,
 			terminalBashIdleMs: this.settings.terminalBashIdleMs,
 			terminalBashMaxForegroundMs: this.settings.terminalBashMaxForegroundMs,
-			editSoftEnabled: this.settings.editSoftEnabled,
 			retryMaxAttempts: DEFAULT_RETRY_MAX_ATTEMPTS,
 			softCapTokens: 0,
 			softCapByModel: {},
@@ -4296,11 +4296,11 @@ export class DshClientSession {
 			disabledSkills: this.settings.disabledSkills,
 			disabledExtensions: this.settings.disabledExtensions,
 			disabledAgentTools: [],
+			toolOnDemandTools: [],
 			terminalToolsEnabled: this.settings.terminalToolsEnabled,
 			terminalBash: this.settings.terminalBash,
 			terminalBashIdleMs: this.settings.terminalBashIdleMs,
 			terminalBashMaxForegroundMs: this.settings.terminalBashMaxForegroundMs,
-			editSoftEnabled: this.settings.editSoftEnabled,
 			skillsFullText: [],
 			retryMaxAttempts: DEFAULT_RETRY_MAX_ATTEMPTS,
 			softCapTokens: 0,
@@ -4368,12 +4368,12 @@ export class DshClientSession {
 					disabledSkills: [...(s.disabledSkills ?? [])],
 					disabledExtensions: [...(s.disabledExtensions ?? [])],
 					disabledAgentTools: [],
+					toolOnDemandTools: [],
 					disabledPluginTools: [],
 					terminalToolsEnabled: s.terminalToolsEnabled,
 					terminalBash: s.terminalBash,
 					terminalBashIdleMs: s.terminalBashIdleMs,
 					terminalBashMaxForegroundMs: s.terminalBashMaxForegroundMs,
-					editSoftEnabled: s.editSoftEnabled,
 					skillsFullText: [],
 					reviewPrompt: s.reviewPrompt ?? "",
 					reviewDisabledSkills: [],

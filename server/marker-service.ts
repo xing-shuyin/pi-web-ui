@@ -15,11 +15,6 @@ import type { MarkerContext } from "./markers/marker.js";
 
 ensureMarkersRegistered();
 
-const _DEFAULT_MARKERS: MarkerSettings = {
-	markersEnabled: true,
-	disabledMarkers: [],
-};
-
 export interface MarkerHost {
 	clientId: string;
 	stateStore: ClientStateStore;

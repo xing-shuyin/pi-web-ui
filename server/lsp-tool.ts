@@ -880,11 +880,7 @@ export function makeLspTool(options: LspToolOptions) {
 		name: LSP_TOOL_NAME,
 		promptSnippet: "semantic code intelligence (definitions, references, diagnostics, impact)",
 		label: "LSP code intelligence",
-		description:
-			"IDE-grade semantic analysis (LSP) across the workspace (lines are 1-indexed). `definition` / `references` / `hover`: " +
-			"resolve the symbol at `line`/`character` in `path` to its definition, workspace usages, or type and docs. `diagnostics`: " +
-			"file errors/warnings. `documentSymbol`: symbol outline. `read_symbol`: body of `symbol` in `path`. `workspaceSymbol`: " +
-			"symbols matching `query`. `cascade`: diagnostics of files referencing `path`.",
+		description: "IDE-grade semantic analysis (LSP) across the workspace; lines are 1-indexed.",
 		parameters: Type.Object({
 			action: Type.Unsafe<LspAction>({
 				type: "string",
@@ -898,46 +894,17 @@ export function makeLspTool(options: LspToolOptions) {
 					"workspaceSymbol",
 					"cascade",
 				],
-				description: "The LSP operation to perform.",
+				description:
+					"definition|references|hover(path,line,character?) | diagnostics|documentSymbol|cascade(path) | " +
+					"read_symbol(path,symbol) | workspaceSymbol(query)",
 			}),
-			path: Type.Optional(
-				Type.String({
-					description: "Workspace-relative or absolute file path (required for every action except workspaceSymbol).",
-				}),
-			),
-			symbol: Type.Optional(
-				Type.String({
-					description: "Symbol for 'read_symbol' (e.g. 'fn' or 'Class.method').",
-				}),
-			),
-			query: Type.Optional(
-				Type.String({
-					description: "Search query for 'workspaceSymbol'.",
-				}),
-			),
-			line: Type.Optional(
-				Type.Number({
-					description: "1-indexed line in the file.",
-				}),
-			),
-			character: Type.Optional(
-				Type.Number({
-					description: "1-indexed column/character position (defaults to 1).",
-				}),
-			),
-			timeout: Type.Optional(
-				Type.Number({
-					minimum: 1,
-					maximum: 120,
-					description: "Timeout in seconds (default 15).",
-				}),
-			),
-			allowInstall: Type.Optional(
-				Type.Boolean({
-					description:
-						"Install the missing language server into ~/.pi-web/lsp-servers (user-space, no sudo). Default false: the tool returns an installHint instead.",
-				}),
-			),
+			path: Type.Optional(Type.String()),
+			symbol: Type.Optional(Type.String()),
+			query: Type.Optional(Type.String()),
+			line: Type.Optional(Type.Number()),
+			character: Type.Optional(Type.Number()),
+			timeout: Type.Optional(Type.Number({ description: "Seconds, default 15" })),
+			allowInstall: Type.Optional(Type.Boolean({ description: "Install missing language server in user space" })),
 		}),
 		async execute(
 			_callId,

@@ -44,7 +44,7 @@ export function sanitizeToolParameters(toolName: string, params: unknown): Recor
 			result.fileType = ext ? `.${ext.slice(0, 8)}` : "file";
 			result.action = "read_file";
 		}
-	} else if (toolName === "write" || toolName === "edit" || toolName === "edit_soft") {
+	} else if (toolName === "write" || toolName === "edit") {
 		if (typeof input.path === "string") {
 			const ext = input.path.split(".").pop();
 			result.fileType = ext ? `.${ext.slice(0, 8)}` : "file";
@@ -71,7 +71,7 @@ export function summarizeToolOutput(toolName: string, output: string, isError = 
 	if (toolName === "read") {
 		return `[read completed: ${byteLen} bytes read]`;
 	}
-	if (toolName === "write" || toolName === "edit" || toolName === "edit_soft") {
+	if (toolName === "write" || toolName === "edit") {
 		return `[${toolName} completed: ${byteLen} bytes written]`;
 	}
 	if (toolName === "bash" || toolName === "terminal") {

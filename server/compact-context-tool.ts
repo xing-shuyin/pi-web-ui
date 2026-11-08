@@ -48,24 +48,10 @@ export function buildCompactionInstructions(focus: string, customSummary?: strin
 
 export const CompactContextParams = Type.Object({
 	focus: Type.String({
-		description:
-			"Compression focus for the current issue. State: 1) the active problem/goal; " +
-			"2) context to PRESERVE (decisions, code changes, conventions, constraints); " +
-			"3) what to REMOVE or condense (failed attempts, resolved debugging, off-topic history).",
+		description: "1) Active goal, 2) context to PRESERVE, 3) history to REMOVE or condense",
 	}),
-	keepRecentTokens: Type.Optional(
-		Type.Number({
-			minimum: MIN_KEEP_RECENT_TOKENS,
-			maximum: MAX_KEEP_RECENT_TOKENS,
-			description:
-				"Recent tokens to keep uncompacted; smaller compacts more aggressively; omit = auto-calculated from session size.",
-		}),
-	),
-	summary: Type.Optional(
-		Type.String({
-			description: "Optional structured summary; used as the basis for the compaction entry.",
-		}),
-	),
+	keepRecentTokens: Type.Optional(Type.Number({ description: "Recent tokens kept verbatim; omit = auto" })),
+	summary: Type.Optional(Type.String()),
 });
 
 export type CompactContextParamsType = Static<typeof CompactContextParams>;
@@ -77,8 +63,7 @@ export function makeCompactContextTool(host: CompactContextHost, lang?: () => Se
 		name: COMPACT_CONTEXT_TOOL_NAME,
 		label: "Compact conversation context based on current issue",
 		description:
-			"Compress the conversation context around the current task. Compaction executes when the current turn settles, " +
-			"so the refreshed context applies from the next turn on.",
+			"Compress the conversation context around the current task; compaction runs when this turn settles, so the refreshed context applies from the next turn on.",
 		promptSnippet: "compact a long or noisy conversation context",
 		promptGuidelines: [
 			"Use it when the conversation has grown long or after extensive exploration, to refocus context on the current problem.",

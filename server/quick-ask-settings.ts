@@ -32,7 +32,6 @@ export interface QuickAskSettings {
 	quickAskTranslateTarget: QuickAskTranslateTarget;
 	quickAskTranslateStyle: QuickAskTranslateStyle;
 	quickAskTranslatePrompt: string;
-	quickAskShowOriginal: boolean;
 	quickAskReferenceMenus: boolean;
 	quickAskConversationScope: "recent" | "full";
 	quickAskFolderScope: "listing" | "content";
@@ -82,7 +81,6 @@ export function normalizeQuickAskSettings(value: Partial<Record<keyof QuickAskSe
 			translatePrompt.length <= MAX_QUICK_ASK_PROMPT_LENGTH
 				? translatePrompt
 				: DEFAULT_QUICK_ASK_TRANSLATE_PROMPT,
-		quickAskShowOriginal: typeof value.quickAskShowOriginal === "boolean" ? value.quickAskShowOriginal : false,
 		quickAskReferenceMenus: typeof value.quickAskReferenceMenus === "boolean" ? value.quickAskReferenceMenus : true,
 		quickAskConversationScope: value.quickAskConversationScope === "full" ? "full" : "recent",
 		quickAskFolderScope: value.quickAskFolderScope === "content" ? "content" : "listing",

@@ -6,6 +6,10 @@ import { CLAIM_TTL_MS, resolveClaimPath, type ClaimStore } from "./claim-store.j
 
 export { CLAIM_FILES_TOOL_NAME };
 
+export const CLAIM_FILES_ACTIONS = ["claim", "release", "list"] as const;
+
+type ClaimFilesAction = (typeof CLAIM_FILES_ACTIONS)[number];
+
 export interface ClaimFilesHost {
 	cwd(): string;
 	self(): { convId: string; title: string };
@@ -26,22 +30,13 @@ export function makeClaimFilesTool(host: ClaimFilesHost, lang?: () => ServerLang
 	return defineTool({
 		name: CLAIM_FILES_TOOL_NAME,
 		label: "Claim files to avoid parallel conflicts",
-		description:
-			"Declare files you are about to edit so parallel runs in the same project steer clear (advisory — never blocks edits). " +
-			"Claims release when the run ends (completion, error, or stop); prompts refresh their 30-minute fallback expiry. " +
-			"Paths must stay inside the project.",
+		description: "Advisory file reservation for parallel runs (auto-releases on run end).",
 		promptSnippet: "reserve files you are about to edit (parallel-run guard)",
 		parameters: Type.Object({
-			action: Type.Optional(
-				Type.String({ description: 'claim = reserve paths; release = free yours; list = show table. Default "list".' }),
-			),
-			paths: Type.Optional(
-				Type.Array(Type.String(), { description: "claim/release only: file paths (inside the project)." }),
-			),
-			note: Type.Optional(Type.String({ description: "claim only: why you need them (shown to others, ≤200 chars)." })),
-			ttlMinutes: Type.Optional(
-				Type.Number({ description: "claim only: expiry in minutes (1-480, default 30; refreshed by your prompts)." }),
-			),
+			action: Type.Optional(Type.Unsafe<ClaimFilesAction>({ type: "string", enum: [...CLAIM_FILES_ACTIONS] })),
+			paths: Type.Optional(Type.Array(Type.String())),
+			note: Type.Optional(Type.String()),
+			ttlMinutes: Type.Optional(Type.Number()),
 		}),
 		execute: async (_id, p, _signal, _onUpdate, _ctx) => {
 			const store = host.store();

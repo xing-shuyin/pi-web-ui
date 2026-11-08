@@ -197,7 +197,7 @@ export function buildRemoteWorkspacePersona(remoteUri: string): string {
 		`You are operating inside a REMOTE SSH workspace (${remoteUri}).`,
 		`- Target host: ${hostDesc}`,
 		`- Remote working directory: ${remoteDir}`,
-		`- All built-in workspace tools (bash, read, write, edit, edit_soft, ls, find, grep) and interactive terminals are ALREADY transparently bridged to execute directly on the remote host in "${remoteDir}".`,
+		`- All built-in workspace tools (bash, read, write, edit, ls, find, grep) and interactive terminals are ALREADY transparently bridged to execute directly on the remote host in "${remoteDir}".`,
 		`- Use normal POSIX relative paths (e.g. "src/index.ts") or remote absolute paths (e.g. "${remoteDir}/src/index.ts") directly in read/write/edit/bash/ls/find/grep. Do NOT wrap bash commands in "ssh ..." and do NOT treat this workspace as the local client OS.`,
 		``,
 		`Follow these rules to avoid hanging the session:`,

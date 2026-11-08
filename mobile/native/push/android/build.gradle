@@ -10,6 +10,9 @@ buildscript {
 
 apply plugin: 'com.android.library'
 
+def androidxAppCompatVersion = rootProject.ext.has('androidxAppCompatVersion') ? rootProject.ext.androidxAppCompatVersion : '1.7.1'
+def androidxCoreVersion = rootProject.ext.has('androidxCoreVersion') ? rootProject.ext.androidxCoreVersion : '1.17.0'
+
 android {
     namespace 'app.pi.mobile.push'
     compileSdk rootProject.ext.has('compileSdkVersion') ? rootProject.ext.compileSdkVersion : 36
@@ -31,6 +34,8 @@ repositories {
 
 dependencies {
     implementation project(':capacitor-android')
+    implementation "androidx.appcompat:appcompat:$androidxAppCompatVersion"
+    implementation "androidx.core:core:$androidxCoreVersion"
     implementation('cn.jiguang.sdk:jpush:6.3.0') {
         exclude group: 'cn.jiguang.sdk', module: 'jcore'
     }

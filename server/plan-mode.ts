@@ -5,7 +5,6 @@ const BLOCKED_TOOLS = new Set([
 	"write_file",
 	"edit",
 	"edit_file",
-	"edit_soft",
 	"apply_patch",
 	"patch",
 	"patch_tool",
@@ -396,10 +395,11 @@ export function readOnlyToolCallAllowed(name: string, params: unknown): boolean 
 			"tool_search",
 			"compact_context",
 			"ask_user_question",
-			"browser_search",
 		].includes(name)
 	)
 		return true;
+	// 搜索已并入 browser_use(action="search")；只读搜索在计划模式下仍然放行
+	if (name === "browser_use") return String(p.action ?? "") === "search";
 	const action = typeof p.action === "string" ? p.action : "";
 	if (name === "skill") return !action || ["read", "list", "report"].includes(action);
 	if (name === "scm") return !action || ["status", "diff", "log", "history", "branches", "show"].includes(action);
@@ -421,6 +421,7 @@ export function readOnlyToolCallAllowed(name: string, params: unknown): boolean 
 			"cascade",
 		].includes(action);
 	if (name === "browser_page") return ["pages", "read", "shot"].includes(String(p.op));
+	if (name === "browser_script") return ["list", "status"].includes(String(p.action));
 	return false;
 }
 

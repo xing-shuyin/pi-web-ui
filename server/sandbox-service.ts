@@ -202,7 +202,6 @@ export function evaluateSandboxJail(
 		case "read":
 		case "write":
 		case "edit":
-		case "edit_soft":
 			if (p.path !== undefined) paths.push(p.path);
 			if (p.file_path !== undefined) paths.push(p.file_path);
 			break;

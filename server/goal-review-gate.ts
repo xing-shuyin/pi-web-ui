@@ -8,7 +8,6 @@ const WRITE_TOOLS = new Set([
 	"write_file",
 	"edit",
 	"edit_file",
-	"edit_soft",
 	"apply_patch",
 	"patch",
 	"patch_tool",

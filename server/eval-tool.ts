@@ -507,33 +507,11 @@ export function makeEvalTool(opts: { cwd: string; ownerId?: string; lang?: () =>
 			"Variables and imported modules persist across calls within the conversation.",
 		promptSnippet: "run a code snippet without creating a script file",
 		parameters: Type.Object({
-			code: Type.String({
-				description: "The code snippet to evaluate. Top-level variables and functions persist across calls.",
-			}),
-			language: Type.Optional(
-				Type.Unsafe<"py" | "js" | "ts">({
-					type: "string",
-					enum: ["py", "js", "ts"],
-					description: 'Target language: "py" for Python (default), "js" or "ts" for Node.js sandbox.',
-				}),
-			),
-			title: Type.Optional(
-				Type.String({
-					description: "Optional short label for this step.",
-				}),
-			),
-			timeout: Type.Optional(
-				Type.Integer({
-					minimum: 1,
-					maximum: MAX_TIMEOUT_SECONDS,
-					description: `Execution timeout in seconds (default: ${DEFAULT_TIMEOUT_SECONDS}, maximum: ${MAX_TIMEOUT_SECONDS}).`,
-				}),
-			),
-			reset: Type.Optional(
-				Type.Boolean({
-					description: "Whether to reset the sandbox environment before executing (clears all previous variables).",
-				}),
-			),
+			code: Type.String(),
+			language: Type.Optional(Type.Unsafe<"py" | "js" | "ts">({ type: "string", enum: ["py", "js", "ts"] })),
+			title: Type.Optional(Type.String()),
+			timeout: Type.Optional(Type.Integer({ description: "Seconds" })),
+			reset: Type.Optional(Type.Boolean({ description: "Clear variables before running" })),
 		}),
 		execute: async (_id, params) => {
 			const lang = getLang();

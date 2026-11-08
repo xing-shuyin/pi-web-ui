@@ -12,7 +12,6 @@ export const PRESET_EXCLUDED_KEYS = [
 	"quickAskTranslateTarget",
 	"quickAskTranslateStyle",
 	"quickAskTranslatePrompt",
-	"quickAskShowOriginal",
 	"quickAskReferenceMenus",
 	"quickAskConversationScope",
 	"quickAskFolderScope",
@@ -34,6 +33,7 @@ export const PRESET_FIELD_GROUPS = {
 	],
 	tools: [
 		"disabledAgentTools",
+		"toolOnDemandTools",
 		"disabledPluginTools",
 		"toolPromptOverrides",
 		"toolLazyLoading",
@@ -46,7 +46,6 @@ export const PRESET_FIELD_GROUPS = {
 		"questionPresentation",
 		"toolApprovalPresentation",
 		"questionTimeoutSeconds",
-		"editSoftEnabled",
 		"terminalToolsEnabled",
 	],
 	terminal: ["terminalBash", "terminalBashIdleMs", "terminalBashMaxForegroundMs"],
@@ -193,6 +192,12 @@ export const PRESET_FIELD_META = {
 		hintZh: "不在 AI 可用工具列表中暴露的内置工具",
 		hintEn: "Built-in tools removed from agent visibility",
 	},
+	toolOnDemandTools: {
+		labelZh: "按需工具列表",
+		labelEn: "On-Demand Tools",
+		hintZh: "列进这个清单的工具直接关闭（与上方开关取并集，只做减法）",
+		hintEn: "Every tool in this list is switched off (unioned with the switches above; subtract only)",
+	},
 	disabledPluginTools: {
 		labelZh: "禁用的插件工具",
 		labelEn: "Disabled Plugin Tools",
@@ -289,12 +294,6 @@ export const PRESET_FIELD_META = {
 		labelEn: "Subagent question timeout",
 		hintZh: "秒；0 为持续等待，超时不自动选择答案",
 		hintEn: "Seconds; 0 waits indefinitely, timeout never selects an answer",
-	},
-	editSoftEnabled: {
-		labelZh: "宽松缩进编辑 (edit_soft)",
-		labelEn: "Soft Indentation Edit",
-		hintZh: "提供忽略前导空白缩进差异的鲁棒编辑工具",
-		hintEn: "Provide indentation-tolerant text replacement tool",
 	},
 	terminalToolsEnabled: {
 		labelZh: "终端工具集",
@@ -653,6 +652,19 @@ export function formatPresetFieldValue(
 				`[${isZh ? "已禁用（默认没开即关）" : "Disabled Tools (defaults to off)"} (${disabledList.length})]`,
 				...disabledList.map((item) => `  ✗ ${item}`),
 			].join("\n"),
+		};
+	}
+
+	if (field === "toolOnDemandTools") {
+		const list = Array.isArray(value) ? value.filter((x): x is string => typeof x === "string" && Boolean(x)) : [];
+		if (list.length === 0) {
+			return { summary: isZh ? "空（无工具被按需关闭）" : "Empty (nothing switched off)" };
+		}
+		return {
+			summary: isZh
+				? `按需关闭 ${list.length} 个工具（${list.join(", ")}）`
+				: `${list.length} tool(s) switched off on demand: ${list.join(", ")}`,
+			detail: list.map((item) => `- ${item}`).join("\n"),
 		};
 	}
 

@@ -13,6 +13,10 @@ export interface McpManageToolHost {
 	reloadServers(): Promise<{ servers: UiMcpServer[] }>;
 }
 
+export const MCP_MANAGE_ACTIONS = ["list", "check", "install", "remove", "reload"] as const;
+
+type McpManageAction = (typeof MCP_MANAGE_ACTIONS)[number];
+
 function formatServerLine(s: UiMcpServer): string {
 	const target = s.url ? s.url : [s.command, ...(s.args ?? [])].filter(Boolean).join(" ");
 	const toolNames = (s.tools ?? []).map((t) => t.name).join(", ");
@@ -35,7 +39,7 @@ export function makeMcpManageTool(host: McpManageToolHost, lang?: () => ServerLa
 		name: MCP_MANAGE_TOOL_NAME,
 		label: "Manage MCP servers",
 		description:
-			"Inspect, verify, install, remove, or reload Model Context Protocol (MCP) servers in project (.pi/mcp.json) or global (~/.pi/agent/mcp.json) config and sync their tools into the active session.",
+			"Manage Model Context Protocol servers in the project (.pi/mcp.json) or global (~/.pi/agent/mcp.json) config; install and reload sync their tools into this session.",
 		promptSnippet: "check whether an MCP server is installed or install/configure one",
 		promptGuidelines: [
 			"Run mcp_manage with action='check' before installing an MCP server to avoid duplicate entries.",
@@ -43,86 +47,31 @@ export function makeMcpManageTool(host: McpManageToolHost, lang?: () => ServerLa
 			"Prefer package shorthand (e.g. package='@modelcontextprotocol/server-filesystem') for npm-based stdio MCP servers.",
 		],
 		parameters: Type.Object({
-			action: Type.Union(
-				[
-					Type.Literal("list"),
-					Type.Literal("check"),
-					Type.Literal("install"),
-					Type.Literal("remove"),
-					Type.Literal("reload"),
-				],
-				{
-					description: "Operation to perform: list, check, install, remove, or reload.",
-				},
-			),
-			query: Type.Optional(
-				Type.String({
-					description: "check: server name, npm package name, command, or URL substring to look up.",
-				}),
-			),
-			name: Type.Optional(
-				Type.String({
-					description:
-						"install/remove: server identifier (letters, digits, underscore, hyphen). Auto-derived from package/url if omitted on install.",
-				}),
-			),
-			package: Type.Optional(
-				Type.String({
-					description:
-						"install: npm package name shorthand (e.g. '@modelcontextprotocol/server-memory'); expands to npx -y <package>.",
-				}),
-			),
-			command: Type.Optional(
-				Type.String({
-					description: "install: executable for stdio MCP server (e.g. 'npx', 'uvx', 'node', 'python').",
-				}),
-			),
-			args: Type.Optional(
-				Type.Array(Type.String(), {
-					description: "install: command arguments (appended after package when package is set).",
-				}),
-			),
-			env: Type.Optional(
-				Type.Record(Type.String(), Type.String(), {
-					description: "install: environment variables passed to the stdio MCP server.",
-				}),
-			),
-			cwd: Type.Optional(
-				Type.String({
-					description: "install: working directory for the stdio MCP server.",
-				}),
-			),
-			url: Type.Optional(
-				Type.String({
-					description: "install: endpoint URL for http / streamable-http MCP server.",
-				}),
-			),
-			headers: Type.Optional(
-				Type.Record(Type.String(), Type.String(), {
-					description: "install: HTTP headers for remote MCP server.",
-				}),
-			),
+			action: Type.Unsafe<McpManageAction>({
+				type: "string",
+				enum: [...MCP_MANAGE_ACTIONS],
+				description:
+					"list | check(query) | remove(name,scope?) | reload | " +
+					"install(name?,package?|command?|url?,args?,env?,cwd?,headers?,type?,scope?,overwrite?,description?)",
+			}),
+			query: Type.Optional(Type.String()),
+			name: Type.Optional(Type.String({ description: "Server id; install derives it from package/url" })),
+			package: Type.Optional(Type.String({ description: "npm package, expands to npx -y <package>" })),
+			command: Type.Optional(Type.String()),
+			args: Type.Optional(Type.Array(Type.String())),
+			env: Type.Optional(Type.Unsafe<Record<string, string>>({ type: "object" })),
+			cwd: Type.Optional(Type.String()),
+			url: Type.Optional(Type.String()),
+			headers: Type.Optional(Type.Unsafe<Record<string, string>>({ type: "object" })),
 			type: Type.Optional(
-				Type.Union([Type.Literal("stdio"), Type.Literal("http"), Type.Literal("streamable-http")], {
-					description: "install: transport type (defaults to stdio, or streamable-http when url is given).",
+				Type.Unsafe<"stdio" | "http" | "streamable-http">({
+					type: "string",
+					enum: ["stdio", "http", "streamable-http"],
 				}),
 			),
-			scope: Type.Optional(
-				Type.Union([Type.Literal("project"), Type.Literal("global")], {
-					description: "install/remove: config scope ('project' = .pi/mcp.json, 'global' = ~/.pi/agent/mcp.json).",
-				}),
-			),
-			overwrite: Type.Optional(
-				Type.Boolean({
-					description:
-						"install: set true to replace an existing server with the same name (its command/args/env get overwritten).",
-				}),
-			),
-			description: Type.Optional(
-				Type.String({
-					description: "install: human-readable server note.",
-				}),
-			),
+			scope: Type.Optional(Type.Unsafe<"project" | "global">({ type: "string", enum: ["project", "global"] })),
+			overwrite: Type.Optional(Type.Boolean()),
+			description: Type.Optional(Type.String()),
 		}),
 		execute: async (_id, params) => {
 			const L = getLang();

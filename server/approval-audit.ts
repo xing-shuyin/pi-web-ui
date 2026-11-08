@@ -16,7 +16,9 @@ export interface ApprovalAuditEntry {
 		| "suppressed_disabled"
 		| "rule_denied"
 		| "batch_approved_policy"
-		| "batch_approved_disabled";
+		| "batch_approved_disabled"
+		/** 无人值守会话（plugin:/scheduler:/canvas:）等不到人点审批，超时安全拒绝。 */
+		| "unattended_timeout";
 	scope?: "once" | "category" | "all";
 	userEdited?: boolean;
 	ruleId?: string;

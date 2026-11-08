@@ -37,17 +37,8 @@ Each file section starts with \`[path#TAG]\` (or \`[path]\` if the hash is unkno
 - Body rows under \`:\` headers MUST start with \`+\` (\`+\` alone = blank line). Divergence triggers a 3-way merge.
 Success returns the next anchor tag and live LSP diagnostics.`,
 		parameters: Type.Object({
-			patch: Type.String({
-				description:
-					"The complete Hashline patch text containing one or more [path#TAG] sections with PUT/CUT/REM/MV operations.",
-			}),
-			timeout: Type.Optional(
-				Type.Number({
-					minimum: 1,
-					maximum: 300,
-					description: "Optional execution timeout in seconds.",
-				}),
-			),
+			patch: Type.String(),
+			timeout: Type.Optional(Type.Number({ description: "Seconds" })),
 		}),
 		async execute(_callId, params: { patch: string; timeout?: number }, _signal, _onUpdate, _ctx) {
 			const L = getLang();

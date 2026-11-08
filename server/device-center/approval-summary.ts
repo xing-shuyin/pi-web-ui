@@ -11,7 +11,6 @@ export function approvalOperationSummary(toolName: string, params: unknown): str
 				lines.push(`正文大小 / Content size: ${Buffer.byteLength(input.content, "utf8")} bytes`);
 			break;
 		case "edit":
-		case "edit_soft":
 			lines.push("操作：修改文件 / Operation: edit a file");
 			if (Array.isArray(input.edits)) lines.push(`替换项数量 / Replacement count: ${input.edits.length}`);
 			break;

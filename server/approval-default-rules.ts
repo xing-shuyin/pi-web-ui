@@ -113,7 +113,7 @@ export const DEFAULT_APPROVAL_RULES: ApprovalRule[] = [
 	{
 		id: "builtin.file.sensitive.env",
 		enabled: true,
-		tools: ["write", "edit", "edit_soft", "patch"],
+		tools: ["write", "edit", "patch"],
 		field: "path",
 		match: "regex",
 		value: "(^|[\\/\\\\])\\.env(\\.[a-zA-Z0-9_-]+)?$",
@@ -128,7 +128,7 @@ export const DEFAULT_APPROVAL_RULES: ApprovalRule[] = [
 	{
 		id: "builtin.file.sensitive.ssh",
 		enabled: true,
-		tools: ["write", "edit", "edit_soft", "patch"],
+		tools: ["write", "edit", "patch"],
 		field: "path",
 		match: "regex",
 		value: "(^|[\\/\\\\])(id_rsa|id_ed25519|authorized_keys|known_hosts)$",
@@ -143,7 +143,7 @@ export const DEFAULT_APPROVAL_RULES: ApprovalRule[] = [
 	{
 		id: "builtin.file.sensitive.shell",
 		enabled: true,
-		tools: ["write", "edit", "edit_soft", "patch"],
+		tools: ["write", "edit", "patch"],
 		field: "path",
 		match: "regex",
 		value: "(^|[\\/\\\\])(\\.bashrc|\\.zshrc|\\.profile|\\.bash_profile)$",
@@ -158,7 +158,7 @@ export const DEFAULT_APPROVAL_RULES: ApprovalRule[] = [
 	{
 		id: "builtin.file.outside-workspace",
 		enabled: true,
-		tools: ["write", "edit", "edit_soft", "patch"],
+		tools: ["write", "edit", "patch"],
 		field: "path",
 		match: "outside_workspace",
 		value: "",
