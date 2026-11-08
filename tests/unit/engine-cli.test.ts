@@ -5,7 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { ENGINE_CATALOG, isBuiltinEngineId, isNativeCliEngineId } from "../../server/engine-catalog.js";
 import { probeGlobalPackage } from "../../server/global-loader.js";
 import { findNativeCliExecutable } from "../../server/native-cli-discovery.js";
-import { probeEngineCliVersion, resolveEngineCliLaunch } from "../../server/engine-cli.js";
+import { probeEngineCliVersion, readNpmShimTargets, resolveEngineCliLaunch } from "../../server/engine-cli.js";
 
 vi.mock("../../server/global-loader.js", () => ({ probeGlobalPackage: vi.fn() }));
 vi.mock("../../server/native-cli-discovery.js", () => ({ findNativeCliExecutable: vi.fn() }));
@@ -103,5 +103,45 @@ describe("shared engine CLI discovery", () => {
 			expect(isNativeCliEngineId(value)).toBe(true);
 			expect(isBuiltinEngineId(value)).toBe(value !== "agy");
 		}
+	});
+});
+
+// 纯文本解析，不依赖 win32：CI 跑 ubuntu，Windows 分支本身不会被执行到。
+describe("npm .cmd shim dialects", () => {
+	const head =
+		"@ECHO off\r\nGOTO start\r\n:find_dp0\r\nSET dp0=%~dp0\r\nEXIT /b\r\n:start\r\nSETLOCAL\r\nCALL :find_dp0\r\n";
+	const progBlock =
+		'\r\nIF EXIST "%dp0%\\node.exe" (\r\n  SET "_prog=%dp0%\\node.exe"\r\n) ELSE (\r\n  SET "_prog=node"\r\n)\r\n\r\n';
+	const entry = "node_modules\\@earendil-works\\pi-coding-agent\\dist\\bundle\\cli.js";
+
+	// cmd-shim 9（npm 11+/12）的逐字模板；pi 1.5.0 的 pi.cmd 长这样。
+	it("accepts the cmd-shim 9 PATHEXT segment", () => {
+		const shim = `${head}${progBlock}endLocal & goto #_undefined_# 2>NUL || title %COMSPEC% & set PATHEXT=%PATHEXT:;.JS;=;% & "%_prog%"  "%dp0%\\${entry}" %*\r\n`;
+		expect(readNpmShimTargets(shim)).toEqual({ nodeTarget: entry, nativeTarget: undefined });
+	});
+
+	it("still accepts the cmd-shim <= 8 form without the PATHEXT segment", () => {
+		const shim = `${head}${progBlock}endLocal & goto #_undefined_# 2>NUL || title %COMSPEC% & "%_prog%"  "%dp0%\\${entry}" %*\r\n`;
+		expect(readNpmShimTargets(shim)).toEqual({ nodeTarget: entry, nativeTarget: undefined });
+		expect(readNpmShimTargets(`${head}${progBlock}"%_prog%" "%dp0%\\${entry}" %*\r\n`).nodeTarget).toBe(entry);
+	});
+
+	it("rejects a shim whose invocation is followed by another command", () => {
+		for (const invocation of [
+			`"%_prog%" "%dp0%\\${entry}" --injected %*`,
+			`"%_prog%" "%dp0%\\${entry}" %* & calc.exe`,
+		]) {
+			const shim = `${head}${progBlock}endLocal & goto #_undefined_# 2>NUL || title %COMSPEC% & set PATHEXT=%PATHEXT:;.JS;=;% & ${invocation}\r\n`;
+			const targets = readNpmShimTargets(shim);
+			expect([targets.nodeTarget, targets.nativeTarget].filter(Boolean)).toHaveLength(0);
+		}
+	});
+
+	it("keeps parsing native executable shims", () => {
+		const shim = `${head}"%dp0%\\node_modules\\@anthropic-ai\\claude-code\\claude.exe"   %*\r\n`;
+		expect(readNpmShimTargets(shim)).toEqual({
+			nodeTarget: undefined,
+			nativeTarget: "node_modules\\@anthropic-ai\\claude-code\\claude.exe",
+		});
 	});
 });
