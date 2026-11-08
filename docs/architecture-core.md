@@ -36,6 +36,14 @@ React + Capacitor 手机客户端、Hub 账号隔离推送与设备切换见 [`m
 
 会话 ID、sessionId 与文件路径关联到同一位置，保证活动/历史表示切换、重新打开或过户后保留顺序。子代理保持父子树（含工作树子代理），向子代理直接发送消息时整体提升所属父树。顺序只保存在页面内存，不写入存储；项目排位沿用独立规则。相邻项目节点之间使用主题边框色分隔线与间距，分隔范围覆盖整个会话子树。
 
+「运行中对话」（`conversations`）和「历史会话」（`sessions`）是两个通道，但常常指向同一批会话，左栏必须把它们认成同一条，否则同一条会话会渲染成两行。分工：**行归属由引擎裁定、身份由客户端归一**。
+
+- 行归属：`ConversationSummary.rowKind`（`server/conversation-rows.ts`★ 单源）—— `open` = 对话自占一行（运行中 / 等回答 / 子代理 / 固定 / 临时 / 原生 CLI / 未落盘），`history` = 已由历史行代表。三个引擎（pi `agent-service`、claude/codex `universal`、`dsh`）都在推送前算好；客户端只读 `rowKind !== "history"`，**不再自己按 `sessionFile` / `pinned` / 磁盘索引猜**。`hasHistoryRow` 未声明时默认 `open`（宁可多一行也不让对话凭空消失）。
+- 身份：`web/src/session-identity.ts` 的强键（对话 id / sessionId 或规范文件名推导的 uuid / 会话文件路径）；裸 token 的 path 视为会话 id（universal 底座就是这种形态），所以引擎即使漏发 `sessionId` 也不会重复。弱键 `fn:`（裸文件名）只用于关联状态点、未读与停止按钮，不能参与去重（不同目录可能同名）。
+- 引擎侧的 `conversations` 摘要必须带 `sessionId`（= 会话 id）与 `modified`，否则客户端既认不出身份、也显示不出时间、排序也不对。
+
+兼容分支：客户端只在**整个 payload 都没带 `rowKind`**（旧服务端 / 移动端与服务器版本错位）时走 `legacyOwnsRow()` 启发式；新版本发过后可整块删除（删除条件写在函数注释里）。协议改动同步 bump `PROTOCOL_VERSION`（双端 `protocol-version.ts`）。验证：`tests/unit/conversation-rows.test.ts`、`tests/unit/conversation-rows-engine.test.ts`、`tests/unit/conversation-row-declared.test.ts`（引擎漏声明即红）、`tests/unit/session-identity.test.ts`、`tests/unit/left-panel-row-kind.test.ts`、`tests/unit/left-panel-universal-dedupe.test.ts`。
+
 验证：`tests/unit/conversation-order.test.ts`、`tests/unit/use-chat-conversation-order.test.ts`、`tests/unit/left-panel-open-conv-order.test.ts` 与侧栏搜索、折叠、操作回归。
 
 本地对话、历史会话与“另一处”对话运行完成后，尚未查看时统一在行尾显示蓝色对勾；查看后清除该标记。所有会话状态图标（加载/运行转圈、等待问题、错误、未查看对勾）通过 `ConversationRowIndicator` 共用最右侧 14px 槽位，位于类别/预设徽标之后；显示状态图标时隐藏时间，没有状态图标时才显示时间。
@@ -54,9 +62,9 @@ Git 工作树通过顶栏 `host:worktrees` 项目入口显示数量与未提交�
 
 ## 对话协作工具兼容
 
-对话协作主工具名为 `conversation`，支持子代理及持久对话；转录、文件与状态按需读取统一使用 `conversation(action="read"/"files"/"status")`，原 `conversation_read` 不再独立注册。旧名 `subagent` 保持兼容。设置页只展示一个 `conversation` 开关，禁用状态统一包含新旧两个名字，启用时同时移除；历史工具调用的新旧名称均使用协作图标展示。模板等子代理专属概念保留原有术语。
+对话协作只有一个工具名 `conversation`，支持子代理及持久对话；转录、文件与状态按需读取统一使用 `conversation(action="read"/"files"/"status")`，原 `conversation_read` 不再独立注册。历史别名 `subagent` 已删除：`makeSubagentTools()` 只产出 `conversation` 一个定义，前端也只渲染一个开关。
 
-工具注册仍以 `server/tool-manager.ts` 的 `AGENT_TOOL_CATALOG` 为事实源，`SUBAGENT_TOOL_NAMES = ["conversation", "subagent"]` 同时登记主名与兼容别名；`agent-service.ts` 注册两名工具，注册守卫覆盖两名，前端展示时合并为一个开关。逐工具文案统一编辑 `conversation`，保存和重置均同时提交两名覆盖（空对象表示删除），防止旧名覆盖在归一化时回填。
+工具注册仍以 `server/tool-manager.ts` 的 `AGENT_TOOL_CATALOG` 为事实源。旧存档里的 `subagent` 与 `subagent_*`（`LEGACY_SUBAGENT_TOOL_NAMES`）在 `normalizeDisabledAgentTools()` 里折算成 `conversation`，因此老预设的禁用状态依旧生效，但不会复活成独立开关；`toolPromptOverrides` 里的旧 `subagent` 覆盖同样在归一化时并入 `conversation`。
 
 ## 异步归属与持久化边界
 
@@ -134,7 +142,7 @@ pi 的 `schedule` 创建任务时单独持久化创建来源（稳定 SDK 会话
 
 `communicate` 统一同项目执行对话的 `send/request/reply/escalate/read`；目标支持 `parent`、`root` 和稳定对话 ID。独立 coordinator 以 Conversation 对象身份保存收件箱与问答关系，过户不重建身份。`read` 同时返回可达对话目录与稳定执行身份地址，跨页面同名对话优先使用该地址；来源 endpoint 必须贯穿投递，不得按接收方局部 ID 重新推断发送者。通信项目沿服务端登记的父子对话链解析：独立 cwd/克隆中的子代理继承仍可解析的祖先项目，受管 worktree 映射到主仓库；无关独立克隆不因仓库相同而互通，祖先不可达时回落到最后可解析对话的目录。项目标识统一经 `normalizePathKey` 规范化。消息是带来源的协作数据，不授予执行权限；宿主仍按执行对话校验沙盒和 Bot 边界，父子关系不豁免这些限制。只读子代理可通信，计划/委派审查/目标审查模式拒绝通过此工具派发工作。
 
-`send` 返回投递或排队状态，不等待接收方处理任务；`read` 分页读取并消费自己的收件箱，熔断期间消息仍保留。`request` 等待结构化回答，服务端限制消息字节、队列与请求数量并拒绝请求循环；`reply` 仅允许原接收对话，`escalate` 将同一 PendingQuestion 交给用户，沿用原始截止时间。`wait_all` 为待当前对话处理的请求提前返回。旧 `handoff/consult/answer/escalate` 作为兼容入口转接通信服务；历史挂起问卷保持可结算。
+`send` 返回投递或排队状态，不等待接收方处理任务；`read` 分页读取并消费自己的收件箱，熔断期间消息仍保留。`request` 等待回答，服务端限制消息字节、队列与请求数量并拒绝请求循环；参数只收纯文本 `message`（`questionsFromMessage()` 折成单个内部问题），结构化 `questions` 仍照收。`reply` 仅允许原接收对话，`message` 按待答问题展开成 `custom` 回答，旧 `answers` 结构仍照收；`escalate` 将同一 PendingQuestion 交给用户，沿用原始截止时间。`wait_all` 为待当前对话处理的请求提前返回。旧 `handoff/consult/answer/escalate` 作为兼容入口转接通信服务；历史挂起问卷保持可结算。
 
 任务完成通过 `conversation(action="complete", summary)` 登记，与发送消息分开。`spawn.notifyOnDone` 保留布尔兼容并支持 `"manual"`。manual 本轮退出但还有运行中下级、问卷、通信或待投递子结果时保持 taskPending，禁止提前通知、消费结果或结算工作树；完成登记不能绕过这些条件。所有依赖收口后使用显式 summary，未登记则以最终正文兜底。错误与取消继续通知，自动唤醒不清除手动完成意图。当前 manual 和通信宿主为 pi 引擎，Universal 明确拒绝不支持的 manual 模式。
 
@@ -218,7 +226,7 @@ pi 的 `schedule` 创建任务时单独持久化创建来源（稳定 SDK 会话
 - 右下角常驻入口支持鼠标 / 触屏拖动，轻点或按 Enter / Space 打开默认位于右下角的轻量浮窗；拖动松手不会误触打开，窗口缩放后入口保持在视口内。在消息正文选中文字后的「解释 / 翻译」入口也打开同一小窗。标题栏空白、图标与标题支持鼠标 / 触屏拖动，按钮和语言选择器保留原有操作；拖动时收起更多菜单，入口与浮窗各自保存位置到当前页面内存，收起再打开及新话题沿用位置，刷新恢复默认。指针捕获保证移出标题栏后继续拖动；窗口缩放、浮窗内容展开或流式增高时重新约束位置，保持浮窗在视口内。采用「一句即懂」紧凑布局：宽度上限 320px，高度随内容变化，标题与选文合为一行；回答与小窗历史始终直接渲染完整 Markdown，长内容在回答区内滚动，不截断预览，也不提供「展开 / 收起回答」步骤。选文点击后展开，追问框按需出现；空白新话题自动显示输入框，手动追问保持输入框可用。标题栏直接显示「新话题」加号，一次点击清空当前问答并取消生成；完整回答复制、当前模型信息与独立对话说明收进「更多操作」浮层；菜单复用 `useFloatingPanel`，支持视口边界定位、点击外部与 Esc 关闭。完整回答阅读区最高 290px，流式、停止或错误时保留可直接阅读的正文，停止与重试均可直接操作。正文保持 14px 并使用主题令牌，窄屏不放大为全宽卡片。小窗无背景遮罩，点击或滚动主对话不会关闭，也不改变主对话草稿、消息和阅读位置；Esc 或关闭按钮收起。
 - 普通提问在小窗内连续追问，提供代码示例和一句话总结快捷追问；历史仅保留于当前页面内存。真实模型文本增量按动画帧合并渲染 Markdown；停止或失败保留已收到的文本，重试从当前问题重新生成。仅当用户停留在问答区底部时跟随新内容，上翻阅读不被拉回。收起后保留历史、草稿和阅读位置且请求可继续；完成后入口显示提示点。页面刷新清空。「新话题」清空历史并取消正在生成的请求；点击「解释」同样开启新话题，避免前次问答影响解释。
 - 设置 → 随手问（所有主对话引擎均可用）采用 A「紧凑分组」：基础、划词翻译、附件与引用、提示词 / 模板四组卡片；模型与思考、目标语言与风格并排，引用范围按需展开，三个提示词只展开一个编辑器。切换、收起、失焦或卸载编辑器均保存草稿；恢复默认只作用于对应模板。设置弹窗外层负责拉取快照，内容组件仅在快照就绪后挂载，避免首次加载的空快照改变 Hook 调用顺序。默认跟随当前模型；主引擎模型与独立 SDK 不兼容时，使用首个可用 SDK 模型，明确配置失效则报错。思考为 `off`，系统提示词为空，解释模板为 `解释下: {{input}}`。关闭常驻入口仍可通过选中文字解释或翻译进入。
-- 划词翻译默认启用，目标语言 `auto` 跟随界面语言，支持自然、直译、技术三种风格；默认不展开原文。翻译模板只对 `{{input}}` 与 `{{targetLanguage}}` 做字面替换，选文里的美元符号或模板字样不被二次插值。结果卡头可临时改目标语言并重新请求，不改变保存的默认目标。每次解释或翻译都从新话题开始，取消未完成的引用快照，不将上次小窗问答带入新选文。
+- 划词翻译默认启用，目标语言 `auto` 跟随界面语言，支持自然、直译、技术三种风格；选中的原文始终显示在提问气泡里（气泡即用户消息本身，不再有「展开原文」开关）。翻译模板只对 `{{input}}` 与 `{{targetLanguage}}` 做字面替换，选文里的美元符号或模板字样不被二次插值。结果卡头可临时改目标语言并重新请求，不改变保存的默认目标。每次解释或翻译都从新话题开始，取消未完成的引用快照，不将上次小窗问答带入新选文。请求失败时网络级错误（`Failed to fetch`）统一转成可读提示，不再把浏览器原始报错丢给用户。
 - 小窗底部附件按钮支持上传文本 / 图片、选择本地文件夹以及显式引用当前对话。会话、文件、文件夹和正文文件路径的右键菜单提供「引用到随手问」；内置条目复用 `contextmenu.session` / `contextmenu.file` 的 hidden/order，引用入口可关闭。右键时固化目标 ID、owner、sessionFile 或 path/cwd，异步过程中不回读 active。引用显示为可移除标签，超过两项折叠；添加引用不触发提问、不改主对话草稿。
 - `POST /api/quick-ask/context` 接收 `{source, scope?, clientId?}`：源可为文件、目录、显式会话，或 `{kind:"upload", name, data:base64, mimeType?}` 上传。返回 `{attachment}` 文本 / 图片快照；仅提取用户和助手正文，不包含 system、工具、预设或主会话提示词，读取不切换会话。会话默认最近 10 条，可选完整对话；目录默认清单，可选清单与文本，限制深度 2、100 项并跳过 symlink。源 ID 按规范来源稳定生成，重复引用去重；上传按名称与内容生成 ID。上下文读取支持取消和 15 秒超时；远程 SSH 工作区当前返回明确的不支持错误。
 - `POST /api/quick-ask` 接收小窗自己的 `messages: [{role: "user" | "assistant", content: string, attachments?: QuickAskAttachment[]}]` 与可选 `fallbackModel: "provider/id"`。附件仅允许挂在用户轮次；首次使用或内容改变时发送快照，未变化的追问引用不重复消耗预算。旧轮次快照保持不变，移除待引用标签不重写旧轮次。每个话题最多 8 项附件，单文本 32,768 字符、含来源边界的总文本 65,536 字符；单文件 / 图片 2 MiB、图片合计 6 MiB。文件编码和图片魔数统一在服务端校验，未知二进制、图片不受模型支持或超限均明确报错。
@@ -331,7 +339,7 @@ pi 的 `schedule` 创建任务时单独持久化创建来源（稳定 SDK 会话
 
 规则由 `server/approval-rules.ts` 的 `ApprovalRulesStore` 持久化，所有客户端全局共享。规则在设置面板「审批规则」页可视化编辑与排序，按列表顺序自顶向下匹配，首个命中生效：
 
-- **适用工具**（tools）：支持单工具（如 `bash`）、多工具组合（如 `["write", "edit", "edit_soft"]`）或通配 `*`；
+- **适用工具**（tools）：支持单工具（如 `bash`）、多工具组合（如 `["write", "edit", "patch"]`）或通配 `*`；
 - **检查字段**（field）：`command`（命令字符串）、`path`（目标文件路径：认 `path` / `file_path` / `file` 三种写法，见 `extractTargetPath()`，扩展实现如 pi-better-edit 的 `edit` 用 `file`）、`params`（完整参数 JSON 字符串）；
 - **匹配模式**（match）：
   - `regex`：大小写不敏感正则表达式匹配；
@@ -379,15 +387,20 @@ bash 工具卡片运行中显示「停止」→ 发 `{ type: "abort_bash" }` →
 
 命令被中止时 SDK 会把**终止前已输出的内容拼接进工具错误结果**（AI 能看到输出 + "Command aborted"）；随后 `abortBash()` 再 `sendUserMessage` 注入「用户手动停止」提示，让 AI 明确知道是用户手动而非失败。
 
-### 独立宽松编辑工具 edit_soft（不覆盖内置 edit）
+### edit 的 soft 参数（原 edit_soft 已合并进来）
 
-内置 `edit` 要求 oldText 与文件恰好匹配（含缩进/空白）。对缩进非语法意义的语言（如 JS/JSON），模型给出的 oldText 常与文件差几个空格/制表符而导致编辑失败。pi-web-ui 经 `customTools` 注入一个**不覆盖**内置 `edit` 的独立工具 `edit_soft`（`server/edit-soft-tool.ts`）：先用精确子串匹配，失败后按「逐行核心（trim）序列一致」做宽松匹配（忽略行首/行尾空白差异），命中后**整行原样写入 newText**（缩进即最终缩进）。仅唯一匹配才写，重叠 edit 报错，并参与同一个 per-file 变异队列（`withFileMutationQueue`）。
+内置 `edit` 要求 oldText 与文件恰好匹配（含缩进/空白）。对缩进非语法意义的语言（如 JS/JSON），模型给出的 oldText 常与文件差几个空格/制表符而导致编辑失败。pi-web-ui 经 `customTools` **覆盖**内置 `edit`（`server/edit-tool.ts` 的 `makeEditToolDefinition`，包装点仍是 `toolOverrideSpecs` 的 `composeEdit`），在 `path` / `edits` 之外只加一个参数 `soft`：
+
+- 不给 `soft`：原样转发 SDK 实现（含它自带的尾空白/全角字符宽松匹配），本宿主不重复实现精确匹配，两边不会漂移；提示词 guideline 明写「找不到文本就把同一处编辑换成 soft=true 重试」，模型一次自愈。
+- `soft: true`：先试精确子串，失败后按「逐行核心（trim）序列一致」做宽松匹配（忽略行首/行尾空白差异），命中后**整行原样写入 newText**（缩进即最终缩进）。仅唯一匹配才写，重叠 edit 报错，并参与同一个 per-file 变异队列（`withFileMutationQueue`）。
+
+`edit` 属核心内置工具（`CORE_TOOL_CATALOG`），不是 `AGENT_TOOL_CATALOG` 里的可开关项，因此没有「宽松编辑」开关：`soft` 由模型按需传。DSH 引擎不下发该参数。
 
 **多 edit 必须按位置排序再逆序应用**（`applySoftEdits`）：所有 edit 都相对同一份原内容定位，得到各自的 `start/end` 后要**先按位置升序排**、再逆序套用，左侧偏移才稳定。早期实现漏了排序，直接按 edits 的传入顺序逆序应用 —— 模型若把靠后的 edit 写在前面，后面的替换先改变长度，前面的偏移随即串位，写出错乱内容（历史 bug：`protocol.ts` / `use-chat.ts` / `ChatInput.tsx` 被写坏）。内置 `edit` 同样是先按 `matchIndex` 排序（`edit-diff.js`），此处对齐。回归测试覆盖全部 6 种排列。
 
 **非法片段防御**：宽松匹配要求 oldText 每行都是完整行。（a）精确命中若跨多行却首/尾未落在行边界（如 `a);\nfoo(`），直接子串替换会吃掉行首/行尾残留写出粘连内容（`foo(z();b);`）→ 拒绝并提示按整行给；（b）宽松阶段整块对不上、且首/尾行只是某行的一部分时，报「片段」错而非笼统的「找不到」；（c）单行片段（如 `b();`）不改行结构，照旧支持。
 
-开关走统一工具管理（`server/tool-manager.ts` 的 `disabledAgentTools`，默认关）：关闭时该工具从活跃集移除（`applyAgentToolsGating` 经 `setActiveToolsByName`，与终端/子代理工具同一机制，live 生效无需 reload），不会出现在 Available tools 段。DSH 引擎无该工具，设置面板无「工具」分区。
+`soft` 只在宽松分支生效（`applySoftEdits`）：SDK 的宽松匹配管不到**行首**缩进，这里正好补上；非 soft 调用零额外开销，也不改写 SDK 会精确命中的区域。
 
 ### read 覆盖：路径是目录时列出目录条目（`server/read-tool.ts`）
 
@@ -435,7 +448,7 @@ pi-web-ui 覆盖了 SDK 内置 `bash` / `read` / `write` / `edit`。SDK 的注�
 
 两层防护，缺一不可：
 
-1. **硬闸门（`withPlanModeGate`，唯一的强制点）**：装饰在工具定义外层、`execute` 之前判定一次，比权限沙箱与插件守卫更靠外。命中即返回 `isError` 的工具结果（`details.planModeDenied`），把「写进计划、等确认」的替代路径回给模型。挂载点三处：① 整列 `customTools`（含 bash 覆盖、`edit_soft`、`patch`、`eval`、子代理派发与排程工具）；② `installToolOverrides` 注入的 `write` / `edit`（`toolOverrideSpecs` 的 `composeWrite`/`composeEdit`）；③ 常驻终端工具的 `checkSafety`。关闭时只多一层布尔判断。
+1. **硬闸门（`withPlanModeGate`，唯一的强制点）**：装饰在工具定义外层、`execute` 之前判定一次，比权限沙箱与插件守卫更靠外。命中即返回 `isError` 的工具结果（`details.planModeDenied`），把「写进计划、等确认」的替代路径回给模型。挂载点三处：① 整列 `customTools`（含 bash 覆盖、`patch`、`eval`、子代理派发与排程工具）；② `installToolOverrides` 注入的 `write` / `edit`（`toolOverrideSpecs` 的 `composeWrite`/`composeEdit`，`edit` 自身带 `soft` 参数）；③ 常驻终端工具的 `checkSafety`。关闭时只多一层布尔判断。
 2. **软约束（`PLAN_MODE_SYSTEM_PROMPT`）**：`appendSystemPromptOverride` 按当前会话状态追加一段纯英文硬规则，切换开关时 `session.reload()` 重建，下一轮即生效。这段提示词真正的载荷是两条：
    - **禁代码倾倒**（`## Output shape` 段）：`NEVER write the implementation` —— 不贴整文件、不贴完整函数、不给「成品版代码」，只描述改哪些文件、结构、关键决策、风险、验证方式与第一步；代码只允许「棘手处的短片段（~20 行、至多两处）」。**这条是硬闸门的补丁**：闸门让模型写不出文件，模型就会把整份实现当正文吐出来（烧 token 又没落地，实报过一次「让它写单页贪吃蛇，上来就贴几百行源码」）。注意回归：提示词段内禁中文（`tests/unit/plan-mode.test.ts` 有 CJK 断言，写「开始实施」这类 UI 字样要改写英文）。
    - **小需求走短计划**（`## Plan board` 段）：只有「3+ 步或有真未知」才先 `plan_update` 列 pending 步骤；「写个单页贪吃蛇」这类小而明确的需求**跳过看板**，直接给短计划（要动哪些文件 / 结构 / 验收 / 第一步），省一轮工具往返。
@@ -488,7 +501,7 @@ page-picker 扩展 ── content script → service worker → chrome.scripting
 **闸门全在扩展侧**（授权表 + 白名单 + 总开关 + eval 开关）：服务端不做动作白名单，否则
 「扩展能做什么」就散落在两处了。
 
-**入口在网页侧**（顶栏「浏览器操作」按钮 + `web/src/browser-control.ts` + `BrowserControl.tsx`）：
+**入口在网页侧**（顶栏「浏览器」按钮 + `web/src/browser-control.ts` + `BrowserControl.tsx`）：
 能力在扩展里，网页只能做三件事 —— 报状态（扩展动作 `status`）、把人送到扩展设置页
 （动作 `openOptions`，因为网页不能自己导航到 `chrome-extension://`）、给可照抄的例子。
 状态是**按需查询**（不进快照流）：挂载后查一次 + 打开面板时刷新 + 45s 轮询。

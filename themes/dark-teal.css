@@ -196,9 +196,6 @@
 	background: #121215;
 }
 
-.fp-html-bar {
-	background: var(--accent-soft);
-}
 /* 输入框发送\停止按钮阴影 */
 .inputbox .btn.send,
 .inputbox .btn.stop,

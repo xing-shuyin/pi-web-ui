@@ -5,6 +5,7 @@ import { appSend } from "../app-globals";
 import { isZhLocale, useI18n, useT } from "../i18n";
 import { renderHighlightedCommand } from "../bash-danger";
 import { questionWaitTime } from "../question-queue";
+import { useOverlayZIndex } from "../overlay-stack";
 import type { UiToolApproval } from "../types";
 import { PendingQueue } from "./PendingQueue";
 
@@ -58,6 +59,8 @@ export function ToolApprovalDialog({
 function ApprovalDialog({ approval, onDefer }: ToolApprovalDialogProps & { onDefer: () => void }) {
 	const t = useT();
 	const { locale } = useI18n();
+	// 审批是打断式浮层：不管底下开着图片预览还是工具详情，都要盖在最上面
+	const overlayZIndex = useOverlayZIndex(!!approval);
 
 	const [paramsText, setParamsText] = useState("");
 	const [parseError, setParseError] = useState<string | null>(null);
@@ -136,7 +139,7 @@ function ApprovalDialog({ approval, onDefer }: ToolApprovalDialogProps & { onDef
 	};
 
 	return createPortal(
-		<div className="modal-backdrop">
+		<div className="modal-backdrop" style={{ zIndex: overlayZIndex }}>
 			<div
 				className="tool-info-modal approval-modal"
 				role="dialog"

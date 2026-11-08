@@ -13,7 +13,7 @@ export interface ThemeInfo {
 }
 
 const STORAGE_KEY = "pi-web-ui:theme";
-const DEFAULT_THEME_ID = "dark";
+export const DEFAULT_THEME_ID = "flow-ink";
 const LINK_ID = "theme-stylesheet";
 const THEME_ASSET_REV = Date.now().toString(36);
 let assetReload = 0;
@@ -24,15 +24,16 @@ export const THEME_CHANGE_EVENT = "pi-web-ui:theme-change";
 export function loadTheme(): string | null {
 	try {
 		const saved = localStorage.getItem(STORAGE_KEY);
-		if (saved && saved !== DEFAULT_THEME_ID) return saved;
+		if (saved === "none") return null;
+		if (saved && saved !== "dark") return saved;
 	} catch {}
-	return null;
+	return DEFAULT_THEME_ID;
 }
 
 function saveTheme(id: string | null): void {
 	try {
-		if (id) localStorage.setItem(STORAGE_KEY, id);
-		else localStorage.removeItem(STORAGE_KEY);
+		if (id !== null) localStorage.setItem(STORAGE_KEY, id);
+		else localStorage.setItem(STORAGE_KEY, "none");
 	} catch {}
 }
 function setThemeHref(link: HTMLLinkElement, id: string): void {
@@ -122,7 +123,7 @@ export function useTheme() {
 		saveTheme(theme);
 	}, [theme, connected]);
 
-	const switchTheme = (id: string | null) => setTheme(id === DEFAULT_THEME_ID ? null : id);
+	const switchTheme = (id: string | null) => setTheme(id);
 
 	return { themes, theme, switchTheme, reloadThemes };
 }

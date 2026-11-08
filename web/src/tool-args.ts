@@ -65,7 +65,6 @@ export function resolveToolHeadline(args: {
 		case "read":
 		case "write":
 		case "edit":
-		case "edit_soft":
 		case "patch":
 		case "ls": {
 			if (!hints.path) return null;

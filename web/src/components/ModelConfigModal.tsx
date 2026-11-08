@@ -1094,6 +1094,16 @@ export function ModelConfigModal({
 		}
 	};
 
+	// 关闭当前服务商详情：回到「未选中」概览态，避免只能靠选中另一家才能离开
+	const closeProviderDetail = () => {
+		setActiveNav({ type: "custom", id: "" });
+		setEditing(null);
+		setConnFeedback(null);
+		setFetchMsg(null);
+		setEnrichMsg(null);
+		setAppendingFor(null);
+	};
+
 	const submitAppend = (providerId: string) => {
 		const id = appendId.trim();
 		if (!id || appendBusy) return;
@@ -1355,6 +1365,15 @@ export function ModelConfigModal({
 										</div>
 										<button type="button" className="btn primary sm" onClick={saveCustomProvider}>
 											{t("save")}
+										</button>
+										<button
+											type="button"
+											className="iconbtn studio-card-close"
+											title={t("close")}
+											aria-label={t("close")}
+											onClick={closeProviderDetail}
+										>
+											<FiX />
 										</button>
 									</div>
 								</div>
@@ -1964,6 +1983,15 @@ export function ModelConfigModal({
 														<FiTrash2 /> {t("clearKey")}
 													</button>
 												)}
+												<button
+													type="button"
+													className="iconbtn studio-card-close"
+													title={t("close")}
+													aria-label={t("close")}
+													onClick={closeProviderDetail}
+												>
+													<FiX />
+												</button>
 											</div>
 										</div>
 
@@ -2082,6 +2110,27 @@ export function ModelConfigModal({
 									</div>
 								);
 							})()}
+
+						{!editing && activeNav.type === "custom" && (
+							<div className="studio-card studio-empty-card">
+								<div className="studio-empty-icon">
+									<FiCpu />
+								</div>
+								<p className="studio-empty-hint">{t("providerDetailEmptyHint")}</p>
+								<button
+									type="button"
+									className="btn primary sm"
+									onClick={() => {
+										setActiveNav({ type: "custom", id: "" });
+										setEditing(emptyDraft());
+										setConnFeedback(null);
+										setFetchMsg(null);
+									}}
+								>
+									<FiPlus /> {t("addCustomProvider")}
+								</button>
+							</div>
+						)}
 					</div>
 				</div>
 

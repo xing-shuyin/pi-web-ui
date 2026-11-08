@@ -208,31 +208,6 @@
 		gap: 1px;
 		margin-left: auto;
 	}
-	.quick-ask-source-toggle {
-		display: flex;
-		align-items: center;
-		gap: 3px;
-		min-width: 0;
-		max-width: 145px;
-		padding: 0 0 0 8px;
-		border: 0;
-		border-left: 1px solid var(--border);
-		background: transparent;
-		color: var(--text-dim);
-		font: inherit;
-		font-size: 11px;
-		cursor: pointer;
-	}
-	.quick-ask-source-toggle > span {
-		min-width: 0;
-		overflow: hidden;
-		text-overflow: ellipsis;
-		white-space: nowrap;
-	}
-	.quick-ask-source-toggle > svg {
-		flex-shrink: 0;
-		color: var(--text-muted);
-	}
 	.quick-ask-header .btn-icon {
 		display: grid;
 		place-items: center;
@@ -251,21 +226,10 @@
 		background: var(--bg-elev);
 		color: var(--text);
 	}
-	.quick-ask-context-text {
-		flex-shrink: 0;
-		min-width: 0;
-		max-height: min(100px, 18dvh);
-		margin: 4px 14px 2px;
-		padding-left: 9px;
-		border-left: 2px solid var(--border);
+	.quick-ask-selection {
+		max-height: min(140px, 24dvh);
 		overflow: auto;
 		overscroll-behavior: contain;
-		overflow-wrap: anywhere;
-		word-break: break-word;
-		white-space: pre-wrap;
-		color: var(--text-dim);
-		font-size: 11px;
-		line-height: 1.7;
 	}
 	.quick-ask-body {
 		flex: 0 1 auto;
@@ -571,7 +535,7 @@
 		.quick-ask-body {
 			max-height: 50dvh;
 		}
-		.quick-ask-context-text {
+		.quick-ask-selection {
 			max-height: 15dvh;
 		}
 	}
@@ -592,12 +556,6 @@
 		font: inherit;
 		font-size: 10px;
 		cursor: pointer;
-	}
-	.quick-ask-source-toggle.is-translation {
-		flex-shrink: 0;
-		gap: 1px;
-		padding-left: 3px;
-		border-left: 0;
 	}
 	.quick-ask-references {
 		display: flex;
@@ -1001,6 +959,13 @@
 		--inputbox-bg: color-mix(in srgb, var(--bg-elev2) var(--wallpaper-panel-alpha, 62%), transparent);
 
 		--menu-bg: var(--bg-elev2);
+
+		/* 浮层层级：静态浮层最高到 10000（提示气泡一类），别再往上写死数字。
+		   能盖在另一个浮层之上的浮层（工具详情 / 文件预览 / 图片预览 / 审批弹窗）
+		   一律用 web/src/overlay-stack.ts 的 useOverlayZIndex() 拿层号，后打开的在上；
+		   这里只留两个固定锚点：叠栈起点与永远压在叠栈之上的临时通知。 */
+		--z-overlay-stack: 100000;
+		--z-notice: 100050;
 	}
 
 	* {
@@ -8094,6 +8059,82 @@
 		font-variant-numeric: tabular-nums;
 	}
 
+	/* 插件写入的底栏状态：嵌在「当前对话费用」格里，斜杠接续读成一行 */
+	.cost-quota {
+		display: inline-flex;
+		align-items: center;
+		gap: 4px;
+		max-width: 46ch;
+		margin-left: 2px;
+		font-variant-numeric: tabular-nums;
+		border-radius: 6px;
+	}
+
+	.cost-quota.is-clickable {
+		cursor: pointer;
+	}
+
+	.cost-quota.is-clickable:hover .bar-item-text {
+		color: var(--text);
+		text-decoration: underline;
+		text-underline-offset: 2px;
+	}
+
+	.cost-quota .bar-item-char {
+		opacity: 0.55;
+	}
+
+	.cost-quota .bar-item-text {
+		overflow: hidden;
+		text-overflow: ellipsis;
+		white-space: nowrap;
+	}
+
+	/* 底栏内置状态槽的跟随浮层（宿主外壳；内容由插件填，见 FooterSlotPopover）
+	   层级压过底栏、低于模态；位置由 use-floating-panel 算，这里只管长相 */
+	.footer-slot-popover {
+		z-index: 9000;
+		box-sizing: border-box;
+		display: flex;
+		flex-direction: column;
+		max-width: min(360px, calc(100vw - 16px));
+		overflow: hidden;
+		border: 1px solid var(--border);
+		border-radius: 10px;
+		background: var(--bg-elev);
+		box-shadow: 0 10px 28px rgb(0 0 0 / 26%);
+		color: var(--text);
+		font-family: var(--sans);
+		animation: footer-slot-popover-in 0.12s ease-out;
+	}
+
+	.footer-slot-popover:focus {
+		outline: none;
+	}
+
+	.footer-slot-popover-body {
+		max-height: min(52vh, 320px);
+		overflow-y: auto;
+		overscroll-behavior: contain;
+	}
+
+	@keyframes footer-slot-popover-in {
+		from {
+			opacity: 0;
+			transform: translateY(3px);
+		}
+		to {
+			opacity: 1;
+			transform: none;
+		}
+	}
+
+	@media (prefers-reduced-motion: reduce) {
+		.footer-slot-popover {
+			animation: none;
+		}
+	}
+
 	.rate-spin {
 		display: none;
 	}
@@ -9275,8 +9316,19 @@
 	}
 
 	body.is-desktop .topbar {
-		-webkit-app-region: drag;
+		-webkit-app-region: no-drag;
 		user-select: none;
+	}
+
+	body.is-desktop .topbar .tb-spacer {
+		-webkit-app-region: drag;
+	}
+
+	/* 整条 topbar-flow 自身可拖窗：窄分栏（手机视图）会把 .tb-spacer 收成 display: contents，
+	   没有盒子=没有拖拽区，靠 spacer 供拖拽会让整个头部拖不动窗。
+	   交互条目由下面的 no-drag 规则逐条挖洞。 */
+	body.is-desktop .topbar-flow {
+		-webkit-app-region: drag;
 	}
 
 	body.is-desktop .topbar button,
@@ -9289,6 +9341,7 @@
 	body.is-desktop .topbar .dropdown-menu,
 	body.is-desktop .topbar .panel-toggle,
 	body.is-desktop .topbar .bar-item,
+	body.is-desktop .topbar .bar-item-wrap,
 	body.is-desktop .topbar .tb-tab,
 	body.is-desktop .topbar .plugin-topbar-item,
 	body.is-desktop .topbar .topbar-flow > *:not(.tb-spacer),
@@ -10636,8 +10689,7 @@
 .topbar .tb-tab:not(.active):not([aria-selected="true"]),
 .topbar .bar-item:not(.active):not([aria-selected="true"]),
 .topbar .plugin-topbar-item:not(.active):not([aria-selected="true"]),
-.topbar .panel-toggle,
-.topbar .win-ctrl-btn:not(.win-ctrl-close) {
+.topbar .panel-toggle {
 		height: var(--topbar-ctl-h, 28px);
 		padding: 0 8px;
 		border-radius: 8px;
@@ -10662,7 +10714,6 @@
 	.topbar .plugin-topbar-item:not(.active):not([aria-selected="true"]):hover,
 	.topbar .panel-toggle:hover,
 	.topbar .panel-toggle.has-label:hover,
-	.topbar .win-ctrl-btn:not(.win-ctrl-close):hover,
 	.topbar .dropdown.open > .chip,
 	.topbar .dropdown.open > .bar-item,
 	.topbar .dropdown.open > button,
@@ -11479,7 +11530,7 @@
 		top: 52px;
 		left: 50%;
 		transform: translateX(-50%);
-		z-index: 100050;
+		z-index: var(--z-notice);
 		padding: 6px 14px;
 		border-radius: 8px;
 		background: color-mix(in srgb, var(--amber) 12%, transparent);
@@ -11994,7 +12045,7 @@
 		top: 58px;
 		left: 50%;
 		transform: translateX(-50%);
-		z-index: 100050;
+		z-index: var(--z-notice);
 		display: flex;
 		flex-direction: column;
 		gap: 6px;
@@ -12102,7 +12153,7 @@
 		position: fixed;
 		top: 54px;
 		right: 16px;
-		z-index: 100050;
+		z-index: var(--z-notice);
 		display: flex;
 		flex-direction: column;
 		gap: 10px;
@@ -14871,7 +14922,8 @@
 	.file-diff-fullscreen-backdrop {
 		position: fixed;
 		inset: 0;
-		z-index: 100005;
+		/* 全屏 diff 从卡片（可能已在详情弹窗里）再往上开，层级同样由叠栈发放 */
+		z-index: var(--z-overlay-stack);
 		background: var(--sunken-bg, rgba(4, 6, 12, 0.85));
 		backdrop-filter: blur(12px) saturate(120%);
 		-webkit-backdrop-filter: blur(12px) saturate(120%);
@@ -15790,7 +15842,8 @@
 	.img-lightbox {
 		position: fixed;
 		inset: 0;
-		z-index: 1500;
+		/* 层级由叠栈发放（内联 style 覆盖）：图片预览能从工具详情/文件预览里打开，必须盖在上面 */
+		z-index: var(--z-overlay-stack);
 		display: flex;
 		flex-direction: column;
 		gap: 12px;
@@ -20258,6 +20311,12 @@
 		box-shadow: 0 0 0 2px var(--accent-soft);
 	}
 
+	.chip.browser-control.active {
+		background: var(--accent);
+		color: var(--accent-contrast);
+		border-color: var(--accent);
+	}
+
 	.browser-control.attention {
 		border-color: #f59e0b;
 		color: #fbbf24;
@@ -20387,7 +20446,8 @@
 		color: var(--text-dim, #94a3b8);
 		white-space: nowrap;
 	}
-	.browser-control-modal .bc-open.on {
+	.browser-control-modal .bc-open.on,
+	.browser-control-modal .bc-open.current {
 		color: #4ade80;
 	}
 	.browser-control-modal .bc-examples li {
@@ -24761,16 +24821,6 @@
 		line-height: 1.2;
 		white-space: nowrap;
 	}
-	.smart-badge-installed {
-		background: var(--green-soft);
-		color: var(--green);
-		border: 1px solid color-mix(in srgb, var(--green) 30%, transparent);
-	}
-	.smart-badge-builtin {
-		background: rgba(56, 189, 248, 0.12);
-		color: #38bdf8;
-		border: 1px solid rgba(56, 189, 248, 0.3);
-	}
 	.smart-badge-custom {
 		background: color-mix(in srgb, var(--amber) 12%, transparent);
 		color: var(--amber);
@@ -24818,17 +24868,33 @@
 		gap: 6px;
 		flex-shrink: 0;
 	}
+	/* 空槽位：没有官网链接的行也占位，保证每行按钮列对齐 */
+	.smart-icon-slot {
+		display: inline-block;
+		width: 26px;
+		height: 26px;
+		flex-shrink: 0;
+	}
 	.smart-btn-action {
 		display: inline-flex;
 		align-items: center;
+		justify-content: center;
 		gap: 5px;
+		height: 26px;
+		min-width: 76px;
+		box-sizing: border-box;
 		font-size: 12px;
 		font-weight: 600;
-		padding: 4px 12px;
+		line-height: 1;
+		padding: 0 12px;
 		border-radius: 999px;
 		cursor: pointer;
 		border: none;
 		transition: all 0.15s ease;
+	}
+	.smart-btn-action:disabled {
+		cursor: default;
+		opacity: 0.65;
 	}
 	.smart-btn-action.install {
 		background: var(--button-primary-bg);
@@ -24848,16 +24914,13 @@
 		color: var(--red);
 		border: 1px solid color-mix(in srgb, var(--red) 30%, transparent);
 	}
-	.smart-tag-installed {
-		display: inline-flex;
-		align-items: center;
-		gap: 4px;
-		font-size: 11.5px;
-		font-weight: 500;
-		color: var(--green);
-		background: var(--green-soft);
-		padding: 3px 9px;
-		border-radius: 999px;
+	.smart-btn-action.danger:hover:not(:disabled) {
+		background: color-mix(in srgb, var(--red) 22%, transparent);
+	}
+	.smart-btn-action.danger.confirming {
+		background: var(--red);
+		color: var(--on-red);
+		border-color: transparent;
 	}
 	.smart-icon-btn {
 		display: inline-flex;
@@ -26273,7 +26336,8 @@
 	.fp-overlay {
 		position: fixed;
 		inset: 0;
-		z-index: 250;
+		/* 文件预览能从工具详情/消息卡里打开，也能再开图片预览：层级由叠栈发放 */
+		z-index: var(--z-overlay-stack);
 		display: flex;
 		align-items: center;
 		justify-content: center;
@@ -26393,6 +26457,7 @@
 	.fp-attach.wrap.on,
 	.fp-attach.toc:hover,
 	.fp-attach.toc.on,
+	.fp-attach.open:hover,
 	.fp-attach.edit:hover,
 	.fp-attach.edit.on,
 	.fp-attach.download:hover,
@@ -26630,60 +26695,6 @@
 		overflow: hidden;
 		padding: 0;
 		background: var(--bg);
-	}
-	.fp-html-bar {
-		display: flex;
-		align-items: center;
-		gap: 10px;
-		padding: 6px 12px;
-		border-bottom: 1px solid var(--border-soft);
-		background: var(--bg-elev);
-		font-size: 12px;
-		color: var(--text-dim);
-		flex-shrink: 0;
-	}
-	.fp-html-hint {
-		flex: 1;
-		min-width: 0;
-		white-space: nowrap;
-		overflow: hidden;
-		text-overflow: ellipsis;
-	}
-	.fp-html-js {
-		flex: none;
-		padding: 3px 10px;
-		border: 1px solid var(--border);
-		border-radius: 6px;
-		background: transparent;
-		color: var(--text-dim);
-		font-size: 12px;
-		cursor: pointer;
-	}
-	.fp-html-js:hover {
-		border-color: var(--accent);
-		color: var(--text);
-	}
-	.fp-html-js.on {
-		border-color: var(--warning, #f59e0b);
-		color: var(--warning, #f59e0b);
-	}
-	.fp-html-btn {
-		display: inline-flex;
-		align-items: center;
-		gap: 4px;
-		padding: 3px 10px;
-		border: 1px solid var(--border);
-		border-radius: 6px;
-		background: transparent;
-		color: var(--text-dim);
-		font-size: 12px;
-		text-decoration: none;
-		cursor: pointer;
-		flex: none;
-	}
-	.fp-html-btn:hover {
-		border-color: var(--accent);
-		color: var(--text);
 	}
 	.fp-html-frame {
 		display: block;
@@ -27227,10 +27238,6 @@
 		.fp-html {
 			padding: 0;
 			gap: 0;
-		}
-		.fp-html-bar {
-			padding: 4px 8px;
-			gap: 6px;
 		}
 		.fp-html-frame {
 			border: none;
@@ -30724,11 +30731,20 @@
 		flex-shrink: 0;
 	}
 
+	/* 叠栈壳（web/src/overlay-stack.ts）：自己只负责层级，不画背景也不拦点击，
+	   内部浮层写的 z-index 都在这个壳子里排序，于是一层套一层也不会互相顶掉。 */
+	.overlay-layer {
+		position: fixed;
+		inset: 0;
+		z-index: var(--z-overlay-stack);
+		pointer-events: none;
+	}
+
 	.tool-inspector-backdrop,
 	.pi-we-inspector-backdrop {
 		position: fixed;
 		inset: 0;
-		z-index: 100000;
+		z-index: var(--z-overlay-stack);
 		background: var(--sunken-bg, rgba(4, 6, 12, 0.72));
 		backdrop-filter: blur(10px) saturate(120%);
 		-webkit-backdrop-filter: blur(10px) saturate(120%);
@@ -30796,7 +30812,7 @@
 		border: none;
 		margin: 0;
 		transform: none;
-		z-index: 100001;
+		z-index: var(--z-overlay-stack);
 	}
 
 	.tool-inspector-dialog.is-maximized .tool-inspector-body,
@@ -37139,4 +37155,75 @@
 	.quick-ask-settings-textarea {
 		font-size: 16px;
 	}
+}
+
+/* 桌面端分栏协作拖动分割线 (Desktop Split Resizer) */
+.desktop-split-resizer {
+	position: fixed;
+	top: 0;
+	bottom: 0;
+	right: 0;
+	width: 6px;
+	z-index: 9999;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	cursor: col-resize;
+	user-select: none;
+	background: transparent;
+	transition: background 0.15s ease;
+}
+
+.desktop-split-resizer:hover,
+.desktop-split-resizer.dragging {
+	background: rgba(91, 140, 255, 0.12);
+}
+
+.desktop-split-resizer-line {
+	width: 2px;
+	height: 100%;
+	background: var(--border, #2a2c33);
+	transition: all 0.15s ease;
+}
+
+.desktop-split-resizer:hover .desktop-split-resizer-line,
+.desktop-split-resizer.dragging .desktop-split-resizer-line {
+	background: var(--accent, #5b8cff);
+	box-shadow: 0 0 8px rgba(91, 140, 255, 0.8);
+}
+
+.desktop-split-resizer.snap-agent .desktop-split-resizer-line,
+.desktop-split-resizer.snap-browser .desktop-split-resizer-line {
+	background: var(--red, #ef4444);
+	box-shadow: 0 0 10px rgba(239, 68, 68, 0.9);
+}
+
+.desktop-split-resizer-badge {
+	position: absolute;
+	top: 50%;
+	right: 14px;
+	transform: translateY(-50%);
+	padding: 6px 12px;
+	border-radius: 8px;
+	background: rgba(20, 22, 28, 0.94);
+	border: 1px solid rgba(255, 255, 255, 0.14);
+	color: #e6e8ee;
+	font-size: 12px;
+	white-space: nowrap;
+	pointer-events: none;
+	box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5);
+	backdrop-filter: blur(8px);
+}
+
+.desktop-split-resizer.snap-agent .desktop-split-resizer-badge,
+.desktop-split-resizer.snap-browser .desktop-split-resizer-badge {
+	color: var(--on-red, #ffffff);
+	border-color: rgba(239, 68, 68, 0.5);
+	background: rgba(45, 15, 18, 0.94);
+	box-shadow: 0 0 12px rgba(239, 68, 68, 0.4);
+}
+
+.desktop-is-resizing {
+	cursor: col-resize;
+	user-select: none;
 }

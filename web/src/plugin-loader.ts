@@ -2,6 +2,7 @@ import type { UiPluginInfo } from "./types";
 import { appUrl } from "./base-url";
 import { isMobileRuntime } from "./mobile-runtime";
 import { withPluginScopeAsync } from "./plugin-host";
+import { clearFooterStatusesOf } from "./footer-status";
 import { clearImageOcrProviders, syncImageOcrProviderOwners } from "./image-ocr-providers";
 
 export interface PluginViewContext {
@@ -281,7 +282,14 @@ export async function ensurePluginViewLoaded(p: UiPluginInfo, epoch: number): Pr
 
 export async function syncPluginViews(plugins: UiPluginInfo[], epoch: number): Promise<void> {
 	if (isMobileRuntime()) return;
-	activePluginIds = new Set(plugins.filter((plugin) => !plugin.error).map((plugin) => plugin.id));
+	const nextActive = new Set(plugins.filter((plugin) => !plugin.error).map((plugin) => plugin.id));
+	// 停用 / 移除 / 激活失败的插件：把它在底栏内置槽留的文本清掉（否则会留一条僵尸状态）
+	if (activePluginIds) {
+		for (const id of activePluginIds) {
+			if (!nextActive.has(id)) clearFooterStatusesOf(id);
+		}
+	}
+	activePluginIds = nextActive;
 	syncImageOcrProviderOwners(activePluginIds);
 	if (epoch !== lastEpoch) {
 		lastEpoch = epoch;

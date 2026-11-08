@@ -415,7 +415,7 @@ export function parseFileMutationArgs(
 	output?: string,
 ): FileDiffData | null {
 	const isWrite = toolName === "write";
-	const isEdit = toolName === "edit" || toolName === "edit_soft" || toolName === "patch";
+	const isEdit = toolName === "edit" || toolName === "patch";
 
 	if (!isWrite && !isEdit) {
 		return null;

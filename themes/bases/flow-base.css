@@ -842,7 +842,7 @@
 .pi-we-inspector-backdrop {
 	position: fixed;
 	inset: 0;
-	z-index: 100000;
+	z-index: var(--z-overlay-stack);
 	background: var(--sunken-bg, rgba(4, 6, 12, 0.72));
 	backdrop-filter: blur(10px) saturate(120%);
 	-webkit-backdrop-filter: blur(10px) saturate(120%);

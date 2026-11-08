@@ -4,6 +4,7 @@ import { FiCheck, FiCopy, FiExternalLink, FiFileText, FiMaximize2, FiMinimize2, 
 import { useT } from "../i18n";
 import { openFilePreview } from "../file-preview-bridge";
 import { useCopyFeedback } from "../use-copy-feedback";
+import { useOverlayZIndex } from "../overlay-stack";
 import { parseFileMutationArgs, type DiffHunk, type DiffLine } from "../file-diff";
 
 export interface FileChangeCardProps {
@@ -26,6 +27,8 @@ export const FileChangeCard = memo(function FileChangeCard({
 	const t = useT();
 	const [viewMode, setViewMode] = useState<"unified" | "split" | "raw">("unified");
 	const [isFullscreen, setIsFullscreen] = useState(false);
+	// 全屏 diff 是从卡片（可能已经在工具详情弹窗里）再往上开的，层级交给叠栈
+	const fullscreenZIndex = useOverlayZIndex(isFullscreen);
 	const { copied, copy } = useCopyFeedback({ duration: 1200 });
 
 	const data = useMemo(
@@ -256,6 +259,7 @@ export const FileChangeCard = memo(function FileChangeCard({
 				createPortal(
 					<div
 						className="file-diff-fullscreen-backdrop"
+						style={{ zIndex: fullscreenZIndex }}
 						role="dialog"
 						aria-modal="true"
 						onClick={(e) => {

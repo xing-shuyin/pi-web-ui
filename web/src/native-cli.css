@@ -7,6 +7,10 @@
 	overflow: hidden;
 }
 
+.native-cli-main.hidden {
+	display: none !important;
+}
+
 .native-cli-chat-content {
 	display: contents;
 }

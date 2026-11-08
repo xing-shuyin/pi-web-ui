@@ -2,8 +2,6 @@ import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import {
 	FiArrowUp,
-	FiChevronDown,
-	FiFileText,
 	FiGlobe,
 	FiLock,
 	FiMessageCircle,
@@ -61,7 +59,6 @@ export function QuickAskPopover({
 	const launcherDrag = useDraggablePopover<HTMLButtonElement>(!open && settings?.quickAskEnabled !== false);
 	const [messages, setMessages] = useState<QuickAskMessage[]>([]);
 	const [selection, setSelection] = useState("");
-	const [sourceExpanded, setSourceExpanded] = useState(false);
 	const [inputExpanded, setInputExpanded] = useState(false);
 	const [menuOpen, setMenuOpen] = useState(false);
 	const [input, setInput] = useState("");
@@ -71,7 +68,6 @@ export function QuickAskPopover({
 	const [unread, setUnread] = useState(false);
 	const [model, setModel] = useState("");
 	const [mode, setMode] = useState<"ask" | "explain" | "translate">("ask");
-	const selectionAction = useRef<"explain" | "translate">("explain");
 	const [target, setTarget] = useState(settings?.quickAskTranslateTarget || "auto");
 	const [attachments, setAttachments] = useState<QuickAskAttachment[]>([]);
 	const attachmentsRef = useRef<QuickAskAttachment[]>([]);
@@ -126,7 +122,6 @@ export function QuickAskPopover({
 		retryRef.current = null;
 		setMessages([]);
 		setSelection("");
-		setSourceExpanded(false);
 		setInputExpanded(true);
 		setMenuOpen(false);
 		setInput("");
@@ -181,7 +176,13 @@ export function QuickAskPopover({
 		} catch (err) {
 			if (isCurrent()) {
 				const message = err instanceof Error ? err.message : String(err);
-				setError(message === "Model returned no answer" ? t("selectionExplainEmpty") : message);
+				setError(
+					err instanceof TypeError || /failed to fetch|networkerror|load failed/i.test(message)
+						? t("quickAskNetworkError")
+						: message === "Model returned no answer"
+							? t("quickAskEmptyAnswer")
+							: message,
+				);
 			}
 		} finally {
 			if (controllerRef.current === controller) {
@@ -268,13 +269,11 @@ export function QuickAskPopover({
 			setReferenceError(t("quickAskEmptySelection"));
 			return;
 		}
-		selectionAction.current = action;
 		clearReferences();
 		setOpen(true);
 		setMode(action);
 		setTarget(language);
 		setSelection(text);
-		setSourceExpanded(action === "translate" && Boolean(settings?.quickAskShowOriginal));
 		setInputExpanded(false);
 		setMenuOpen(false);
 		setInput("");
@@ -308,7 +307,6 @@ export function QuickAskPopover({
 		settings?.quickAskTranslateTarget,
 		settings?.quickAskTranslateStyle,
 		settings?.quickAskTranslateEnabled,
-		settings?.quickAskShowOriginal,
 		settings?.quickAskConversationScope,
 		settings?.quickAskFolderScope,
 		fallbackModel,
@@ -350,7 +348,7 @@ export function QuickAskPopover({
 		if (open && followRef.current && bodyRef.current) {
 			bodyRef.current.scrollTop = bodyRef.current.scrollHeight;
 		}
-	}, [open, messages, loading, error, stopped, sourceExpanded]);
+	}, [open, messages, loading, error, stopped]);
 
 	const modelLabel = model || settings?.quickAskModel || fallbackModel || t("quickAskFollowModel");
 	const latestAnswer = messages.findLast((message) => message.role === "assistant");
@@ -431,20 +429,6 @@ export function QuickAskPopover({
 								))}
 							</select>
 						)}
-						{selection && (
-							<button
-								type="button"
-								className={`quick-ask-source-toggle${mode === "translate" ? " is-translation" : ""}`}
-								title={sourceExpanded ? t("quickAskCollapseSource") : t("quickAskExpandSource")}
-								aria-label={sourceExpanded ? t("quickAskCollapseSource") : t("quickAskExpandSource")}
-								aria-expanded={sourceExpanded}
-								aria-controls="quick-ask-source"
-								onClick={() => setSourceExpanded(!sourceExpanded)}
-							>
-								{mode === "translate" ? <FiFileText size={12} aria-hidden="true" /> : <span>{selection}</span>}
-								<FiChevronDown size={11} aria-hidden="true" />
-							</button>
-						)}
 						<div className="quick-ask-header-actions">
 							<button
 								type="button"
@@ -488,11 +472,6 @@ export function QuickAskPopover({
 							setAttachments(next);
 						}}
 					/>
-					{selection && sourceExpanded && (
-						<div id="quick-ask-source" className="quick-ask-context-text">
-							{selection}
-						</div>
-					)}
 					<div
 						ref={bodyRef}
 						id="quick-ask-answer"
@@ -529,10 +508,8 @@ export function QuickAskPopover({
 								) : (
 									<>
 										<QuickAskReferenceChips attachments={message.attachments || []} />
-										<div>
-											{index === 0 && selection
-												? t(selectionAction.current === "translate" ? "quickAskTranslate" : "quickAskExplainQuestion")
-												: message.content}
+										<div className={index === 0 && selection ? "quick-ask-selection" : undefined}>
+											{index === 0 && selection ? selection : message.content}
 										</div>
 									</>
 								)}

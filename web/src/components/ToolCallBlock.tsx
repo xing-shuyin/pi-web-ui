@@ -78,11 +78,9 @@ const TOOL_ICONS: Record<string, ReactNode> = {
 	bash: <FiTerminal />,
 	delegate_task: <FiLayers />,
 	conversation: <FiUsers />,
-	subagent: <FiUsers />,
 	read: <FiFileText />,
 	write: <FiEdit3 />,
 	edit: <FiEdit2 />,
-	edit_soft: <FiEdit2 />,
 	patch: <FiFilePlus />,
 	grep: <FiSearch />,
 	find: <FiCompass />,
@@ -120,7 +118,6 @@ const TOOL_ICON_CLASSES: Record<string, string> = {
 	obs_recall: "toolcall-icon tc-tone-read",
 	write: "toolcall-icon tc-tone-edit",
 	edit: "toolcall-icon tc-tone-edit",
-	edit_soft: "toolcall-icon tc-tone-edit",
 	patch: "toolcall-icon tc-tone-edit",
 	claim_files: "toolcall-icon tc-tone-edit",
 	grep: "toolcall-icon tc-tone-search",
@@ -134,7 +131,6 @@ const TOOL_ICON_CLASSES: Record<string, string> = {
 	compact_context: "toolcall-icon tc-tone-code",
 	delegate_task: "toolcall-icon tc-tone-agent",
 	conversation: "toolcall-icon tc-tone-agent",
-	subagent: "toolcall-icon tc-tone-agent",
 	worktree: "toolcall-icon tc-tone-agent",
 	plan_update: "toolcall-icon tc-tone-agent",
 	schedule: "toolcall-icon tc-tone-agent",
@@ -561,8 +557,7 @@ const ToolCallCard = memo(function ToolCallCard({
 		[isQuestionnaire, shown, block.argumentsText],
 	);
 
-	const isFileChange =
-		block.name === "edit" || block.name === "write" || block.name === "edit_soft" || block.name === "patch";
+	const isFileChange = block.name === "edit" || block.name === "write" || block.name === "patch";
 
 	const fileChangeData = useMemo(() => {
 		if (!isFileChange) return null;

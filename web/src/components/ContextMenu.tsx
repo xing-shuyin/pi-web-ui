@@ -15,6 +15,7 @@ import {
 	useContextMenu,
 	type ContextMenuRequest,
 } from "../context-menu-state";
+import { useOverlayZIndex } from "../overlay-stack";
 import type { UiSlotEntry } from "../ui-slots";
 
 interface ContextMenuProps {
@@ -23,6 +24,8 @@ interface ContextMenuProps {
 
 export function ContextMenu({ onAction }: ContextMenuProps): JSX.Element | null {
 	const menu = useContextMenu();
+	// 菜单永远盖在当前打开的那层之上（弹出的东西只能压住已开着的，不能反被压住）
+	const overlayZIndex = useOverlayZIndex(!!menu);
 
 	const items = useMemo(() => (menu ? contextMenuItems(menu.entries) : []), [menu]);
 	const { items: menuItems, selectParents } = useMemo(() => expandSelectEntries(items), [items]);
@@ -285,6 +288,7 @@ export function ContextMenu({ onAction }: ContextMenuProps): JSX.Element | null 
 			style={{
 				left: pos?.x ?? menu.x,
 				top: pos?.y ?? menu.y,
+				zIndex: overlayZIndex,
 				visibility: pos ? "visible" : "hidden",
 			}}
 			onContextMenu={(e) => {

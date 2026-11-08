@@ -16,6 +16,7 @@ import {
 import { isZhLocale, useLocale, useT } from "../i18n";
 import { listImageOcrProviders, subscribeImageOcrProviders } from "../image-ocr-providers";
 import { useCopyFeedback } from "../use-copy-feedback";
+import { useOverlayZIndex } from "../overlay-stack";
 import { ImageAnnotationEditor } from "./ImageAnnotationEditor";
 import type { ImageLightboxTarget } from "../image-lightbox-bridge";
 import { getImageOcrInstallState, subscribeImageOcrInstall, installImageOcr } from "../image-ocr-install";
@@ -35,6 +36,7 @@ export interface ImageLightboxProps extends ImageLightboxTarget {
 
 export function ImageLightbox({ src, alt, onClose, onSaveAnnotation, actions, composerSessionId }: ImageLightboxProps) {
 	const t = useT();
+	const zIndex = useOverlayZIndex();
 	const isZh = isZhLocale(useLocale());
 	const sessionId = composerSessionId;
 	const session = useRef(sessionId);
@@ -250,6 +252,8 @@ export function ImageLightbox({ src, alt, onClose, onSaveAnnotation, actions, co
 		<div
 			ref={root}
 			className="img-lightbox"
+			// 预览窗可能从工具详情/文件预览里打开，层级一律由叠栈发放（后开的在上）
+			style={{ zIndex }}
 			role="dialog"
 			aria-modal="true"
 			aria-label={alt || t("toolImageZoom")}

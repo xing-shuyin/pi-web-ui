@@ -1085,6 +1085,38 @@
 	gap: 8px;
 }
 
+/* 服务商详情卡片的关闭键：只收起详情，不关整个弹窗 */
+.studio-card-close {
+	flex-shrink: 0;
+}
+
+.studio-card-close:hover {
+	color: var(--red-text);
+	background: var(--red-soft);
+}
+
+.studio-empty-card {
+	align-items: center;
+	justify-content: center;
+	gap: 12px;
+	padding: 40px 20px;
+	text-align: center;
+	color: var(--text-dim);
+}
+
+.studio-empty-icon {
+	font-size: 26px;
+	opacity: 0.45;
+}
+
+.studio-empty-hint {
+	margin: 0;
+	max-width: 360px;
+	font-size: 12.5px;
+	line-height: 1.6;
+	overflow-wrap: anywhere;
+}
+
 @media (max-width: 768px) {
 	.studio-header {
 		padding: 10px 12px;

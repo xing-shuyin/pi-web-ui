@@ -110,7 +110,14 @@ export function TermXterm({
 			terminalId,
 			{
 				write: (data) => term.write(stripExitBanner(data).clean),
-				reset: () => term.write("", () => term.reset()),
+				reset: () => {
+					// xterm parses writes asynchronously, so calling reset() inline would run it
+					// before output still sitting in the write queue. Queue an empty write and
+					// reset from its callback: earlier output is parsed (and then dropped) first,
+					// later output lands below the replayed history, and the real scrollback is
+					// cleared by RIS instead of staying above the replay.
+					term.write("", () => term.reset());
+				},
 				dispose: () => disposeDisplay(),
 			},
 			typeof ownerKind === "undefined" ? "client" : ownerKind,
@@ -125,6 +132,8 @@ export function TermXterm({
 		};
 
 		const sendDims = () => {
+			const container = containerRef.current;
+			if (!container || container.offsetWidth <= 0 || container.offsetHeight <= 0) return;
 			try {
 				fit.fit();
 				appSend({
@@ -246,18 +255,21 @@ export function TermXterm({
 		if (!active) return;
 		const raf = requestAnimationFrame(() => {
 			const inst = termRef.current;
+			const container = containerRef.current;
 			if (!inst) return;
-			try {
-				inst.fit.fit();
-				appSend({
-					type: "terminal_resize",
-					terminalId,
-					conversationId: routeConversationId,
-					ownerKind,
-					cols: inst.term.cols,
-					rows: inst.term.rows,
-				});
-			} catch {}
+			if (container && container.offsetWidth > 0 && container.offsetHeight > 0) {
+				try {
+					inst.fit.fit();
+					appSend({
+						type: "terminal_resize",
+						terminalId,
+						conversationId: routeConversationId,
+						ownerKind,
+						cols: inst.term.cols,
+						rows: inst.term.rows,
+					});
+				} catch {}
+			}
 			inst.term.focus();
 		});
 		return () => cancelAnimationFrame(raf);

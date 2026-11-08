@@ -1,5 +1,6 @@
 import { useState, useRef } from "react";
 import { FiAperture, FiCheck, FiDownload, FiRefreshCw, FiTrash2 } from "react-icons/fi";
+import { ENGINE_CATALOG, type BuiltinEngineId } from "../../../server/engine-catalog";
 import { appSend, useAppGlobals, useEngineStatuses } from "../app-globals";
 import { useI18n } from "../i18n";
 import type { EngineId } from "../types";
@@ -26,7 +27,8 @@ export interface EngineMeta {
 	installCommand?: string;
 }
 
-export const SUPPORTED_ENGINES: EngineMeta[] = [
+/** Display-only metadata; install package and command come from the shared engine catalog. */
+const ENGINE_UI_META: Array<Omit<EngineMeta, "id" | "packageName" | "installCommand"> & { id: BuiltinEngineId }> = [
 	{
 		id: "pi",
 		titleKey: "settingsEnginePiTitle",
@@ -34,8 +36,6 @@ export const SUPPORTED_ENGINES: EngineMeta[] = [
 		tagKey: "engineTagFull",
 		descKey: "settingsEnginePiDesc",
 		colorClass: "engine-pi",
-		packageName: "@earendil-works/pi-coding-agent",
-		installCommand: "npm i -g @earendil-works/pi-coding-agent",
 	},
 	{
 		id: "dsh",
@@ -44,8 +44,6 @@ export const SUPPORTED_ENGINES: EngineMeta[] = [
 		tagKey: "engineTagFast",
 		descKey: "settingsEngineDshDesc",
 		colorClass: "engine-dsh",
-		packageName: "@deepseek-ai/dsh",
-		installCommand: "npm i -g @deepseek-ai/dsh",
 	},
 	{
 		id: "claude",
@@ -54,8 +52,6 @@ export const SUPPORTED_ENGINES: EngineMeta[] = [
 		tagKey: "engineTagUniversal",
 		descKey: "settingsEngineClaudeDesc",
 		colorClass: "engine-claude",
-		packageName: "@anthropic-ai/claude-code",
-		installCommand: "npm i -g @anthropic-ai/claude-code",
 	},
 	{
 		id: "codex",
@@ -64,8 +60,6 @@ export const SUPPORTED_ENGINES: EngineMeta[] = [
 		tagKey: "engineTagUniversal",
 		descKey: "settingsEngineCodexDesc",
 		colorClass: "engine-codex",
-		packageName: "@openai/codex",
-		installCommand: "npm i -g @openai/codex",
 	},
 	{
 		id: "durable",
@@ -74,10 +68,17 @@ export const SUPPORTED_ENGINES: EngineMeta[] = [
 		tagKey: "engineTagDurable",
 		descKey: "settingsEngineDurableDesc",
 		colorClass: "engine-durable",
-		packageName: "@earendil-works/pi-durable",
-		installCommand: "npm i -g @earendil-works/pi-durable",
 	},
 ];
+
+export const SUPPORTED_ENGINES: EngineMeta[] = ENGINE_UI_META.map((item) => {
+	const engine = ENGINE_CATALOG[item.id];
+	return {
+		...item,
+		...(engine.packageName ? { packageName: engine.packageName } : {}),
+		...(engine.installCommand ? { installCommand: engine.installCommand } : {}),
+	};
+});
 
 interface EnginePickerProps {
 	direction?: "down" | "up" | "left" | "right";

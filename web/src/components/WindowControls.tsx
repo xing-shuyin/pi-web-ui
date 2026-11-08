@@ -6,6 +6,7 @@ export function WindowControls() {
 	const { locale } = useI18n();
 	const [isMaximized, setIsMaximized] = useState(false);
 	const [mounted, setMounted] = useState(() => typeof window !== "undefined");
+	const [browserMode, setBrowserMode] = useState<string | null>(null);
 
 	useEffect(() => {
 		setMounted(true);
@@ -20,7 +21,32 @@ export function WindowControls() {
 		return () => cleanup();
 	}, []);
 
-	if (!mounted || !isDesktopShell()) return null;
+	useEffect(() => {
+		const b = (
+			window as unknown as {
+				piDesktop?: {
+					browser?: {
+						getState?: () => Promise<unknown>;
+						onState?: (cb: (s: unknown) => void) => () => void;
+					};
+				};
+			}
+		).piDesktop?.browser;
+		if (!b) return;
+		void b.getState?.().then((s) => {
+			if (s && typeof s === "object" && "mode" in s && typeof s.mode === "string") {
+				setBrowserMode(s.mode);
+			}
+		});
+		const unsub = b.onState?.((s) => {
+			if (s && typeof s === "object" && "mode" in s && typeof s.mode === "string") {
+				setBrowserMode(s.mode);
+			}
+		});
+		return () => unsub?.();
+	}, []);
+
+	if (!mounted || !isDesktopShell() || browserMode === "split") return null;
 	const platform = getDesktopPlatform();
 	if (platform === "darwin") return null;
 

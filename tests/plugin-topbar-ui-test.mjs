@@ -127,7 +127,9 @@ async function main() {
 	await sleep(600);
 	check("设置面板出现「界面布局」管理段", (await page.getByText("界面布局", { exact: false }).count()) > 0);
 	check("插件市场出现「源码构建」勾选项", (await page.getByText("源码构建", { exact: false }).count()) > 0);
-	const installedSub = page.locator(".set-subtab", { hasText: /插件列表|Plugin list/ }).first();
+	const installedSub = page
+		.locator(".smart-tab-pill, .set-subtab", { hasText: /插件列表|Plugin list|安装|Installed/ })
+		.first();
 	if (await installedSub.count()) await installedSub.click();
 	await sleep(600);
 

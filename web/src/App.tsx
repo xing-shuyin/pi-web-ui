@@ -18,9 +18,11 @@ import { MessageList } from "./components/MessageList";
 import { ChatInput } from "./components/ChatInput";
 import { GoalBar } from "./components/GoalBar";
 import { SandboxModal } from "./components/SandboxModal";
+import { DesktopSplitResizer } from "./components/DesktopSplitResizer";
 import { WorktreeView, useWorktreeRefresh } from "./components/WorktreeBanner";
 import { FiRefreshCw, FiFeather } from "react-icons/fi";
 import { useEscapeKey } from "./shortcut-stack";
+import { useOverlayZIndex } from "./overlay-stack";
 
 import { FooterBar } from "./components/FooterBar";
 import { formatSessionHash, parseSessionHash } from "./session-url";
@@ -67,6 +69,7 @@ import { QuickAskPopover } from "./components/QuickAskPopover";
 import { openQuickAsk, type QuickAskReferenceSource } from "./quick-ask";
 import { IconEditor } from "./components/IconEditor";
 import { showBanner, dismissBanner, dismissBannersWhere } from "./banner-notice";
+import { setFooterStatus as setFooterStatusStore } from "./footer-status";
 import { ensurePluginViewLoaded } from "./plugin-loader";
 import {
 	registerAttachmentSink,
@@ -125,7 +128,15 @@ import { openDeviceGroup } from "./device-group-navigation";
 const GroupConversation = lazy(() =>
 	import("./components/GroupConversation").then((m) => ({ default: m.GroupConversation })),
 );
-import type { ClientMessage, CommandDef, NativeCliConfig, PromptAttachment, UiMessage, UiTextBlock } from "./types";
+import type {
+	ClientMessage,
+	CommandDef,
+	NativeCliConfig,
+	NativeCliConversation,
+	PromptAttachment,
+	UiMessage,
+	UiTextBlock,
+} from "./types";
 import { isZhLocale, useT, useI18n } from "./i18n";
 import { QUICK_PHRASE_DEFAULTS } from "./quick-phrases";
 import {
@@ -473,6 +484,39 @@ export function App() {
 			? viewChosen
 			: "chat";
 	const isNativeCliConversation = Boolean(chat.state?.nativeCli) && !activeGroupId && !sharedReadOnly;
+	const [cachedNativeClis, setCachedNativeClis] = useState<
+		Record<string, { nativeCli: NativeCliConversation; cwd: string }>
+	>({});
+
+	useEffect(() => {
+		if (isNativeCliConversation && chat.state?.nativeCli && chat.state.conversationId) {
+			const id = chat.state.conversationId;
+			const nativeCli = chat.state.nativeCli;
+			const cwd = chat.state.cwd;
+			setCachedNativeClis((prev) => {
+				const current = prev[id];
+				if (current && current.nativeCli === nativeCli && current.cwd === cwd) return prev;
+				return { ...prev, [id]: { nativeCli, cwd } };
+			});
+		}
+	}, [isNativeCliConversation, chat.state?.nativeCli, chat.state?.conversationId, chat.state?.cwd]);
+
+	useEffect(() => {
+		const liveConvIds = new Set(chat.conversations.map((c) => c.id));
+		setCachedNativeClis((prev) => {
+			let changed = false;
+			const next: typeof prev = {};
+			for (const [id, val] of Object.entries(prev)) {
+				if (liveConvIds.has(id)) {
+					next[id] = val;
+				} else {
+					changed = true;
+				}
+			}
+			return changed ? next : prev;
+		});
+	}, [chat.conversations]);
+
 	const nativeCliViewRef = useRef(false);
 	nativeCliViewRef.current = view === "chat" && isNativeCliConversation;
 	const refreshWorktrees = useCallback(() => send({ type: "refresh_worktrees" }), [send]);
@@ -786,6 +830,7 @@ export function App() {
 					return true;
 				},
 				closeModal: () => setOpenModalId(null),
+				setFooterStatus: (key, value) => setFooterStatusStore(key, value ? { ...value } : null),
 				pickDirectory: (opts) =>
 					new Promise((resolve) => {
 						setPluginDirPicker({ initialPath: opts?.initialPath, resolve });
@@ -1087,6 +1132,8 @@ export function App() {
 		setAnsweredPermRequests((prev) => new Set(prev).add(id));
 	};
 	const pendingPermRequest = chat.permRequests.find((r) => !answeredPermRequests.has(r.id)) ?? null;
+	// 插件授权/路径请求是打断式浮层：层级跟着叠栈走，才能盖住已打开的预览/详情
+	const permOverlayZIndex = useOverlayZIndex(!!(pendingPermRequest || pendingPathRequest || pluginPathConfirm));
 	const wide = useWideChat();
 	const hideModelRow = useHideModelRow();
 	const isMinimalEmpty =
@@ -2490,11 +2537,31 @@ export function App() {
 								chat.transition && !chat.transition.previewMessages?.length ? " main-transitioning" : ""
 							}${isMinimalEmpty ? " main-minimal-empty" : ""}`}
 						>
-							{isNativeCliConversation && chat.state?.nativeCli && (
+							{Object.entries(cachedNativeClis).map(([id, info]) => {
+								const isCurrent = isNativeCliConversation && chat.state?.conversationId === id;
+								const active = isCurrent && view === "chat" && !chat.transition;
+								return (
+									<Suspense key={id} fallback={null}>
+										<div className={`native-cli-main ${isCurrent ? "" : "hidden"}`}>
+											<NativeCliPanel
+												chat={chat}
+												terminal={terminal}
+												send={send}
+												conversationId={id}
+												nativeCli={isCurrent && chat.state?.nativeCli ? chat.state.nativeCli : info.nativeCli}
+												active={active}
+												cwd={info.cwd}
+												onAddFiles={addNativeCliFiles}
+												pushNotice={pushNotice}
+											/>
+										</div>
+									</Suspense>
+								);
+							})}
+							{isNativeCliConversation && chat.state?.nativeCli && !cachedNativeClis[chat.state.conversationId] && (
 								<Suspense fallback={null}>
 									<div className="native-cli-main">
 										<NativeCliPanel
-											key={chat.state.conversationId}
 											chat={chat}
 											terminal={terminal}
 											send={send}
@@ -3335,7 +3402,7 @@ export function App() {
 			)}
 			{(pendingPermRequest || pendingPathRequest || pluginPathConfirm) &&
 				createPortal(
-					<div className="modal-backdrop perm-modal-backdrop">
+					<div className="modal-backdrop perm-modal-backdrop" style={{ zIndex: permOverlayZIndex }}>
 						{pendingPermRequest && (
 							<div className="dialog-inline perm-dialog-card" data-dialog-kind="confirm">
 								<div className="dialog-head">
@@ -3526,6 +3593,7 @@ export function App() {
 				}
 				fallbackModel={chat.state?.model ? `${chat.state.model.provider}/${chat.state.model.id}` : undefined}
 			/>
+			<DesktopSplitResizer />
 			<BannerContainer />
 		</div>
 	);

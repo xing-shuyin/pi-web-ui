@@ -29,6 +29,7 @@ import {
 } from "react-icons/fi";
 import { isZhLocale, useLocale, useT } from "../i18n";
 import { closeToolInspector, useToolInspectorState, type ToolInspectorState } from "../tool-inspector-state";
+import { useOverlayZIndex } from "../overlay-stack";
 import { openContextMenu } from "../context-menu-state";
 import { openToolInfo } from "../tool-info-state";
 import { createHostSlotEntry, type UiSlotEntry } from "../ui-slots";
@@ -56,7 +57,6 @@ const TOOL_ICONS: Record<string, ReactNode> = {
 	read: <FiFileText />,
 	write: <FiEdit3 />,
 	edit: <FiEdit2 />,
-	edit_soft: <FiEdit2 />,
 	grep: <FiSearch />,
 	find: <FiCompass />,
 	codemode: <FiZap />,
@@ -64,7 +64,6 @@ const TOOL_ICONS: Record<string, ReactNode> = {
 	lsp: <FiCode />,
 	tool_search: <FiSearch />,
 	conversation: <FiUsers />,
-	subagent: <FiUsers />,
 	delegate_task: <FiLayers />,
 	present_files: <FiPackage />,
 	browser_search: <FiSearch />,
@@ -115,7 +114,21 @@ export function resolveInspectorStatus(
 export function ToolInspectorModal() {
 	const state = useToolInspectorState();
 	if (!state || typeof document === "undefined") return null;
-	return createPortal(<ToolInspectorRouter state={state} />, document.body);
+	return <ToolInspectorPortal state={state} />;
+}
+
+/**
+ * 详情弹窗自己的叠栈层号要罩住里面的所有子浮层：用一个 fixed 壳子开 stacking context，
+ * 内部背景层/全屏视图就算写了 z-index 100000+ 也只在这个壳子里排序。
+ */
+function ToolInspectorPortal({ state }: { state: ToolInspectorState }) {
+	const zIndex = useOverlayZIndex();
+	return createPortal(
+		<div className="overlay-layer" style={{ zIndex }}>
+			<ToolInspectorRouter state={state} />
+		</div>,
+		document.body,
+	);
 }
 
 function ToolInspectorRouter({ state }: { state: ToolInspectorState }) {
@@ -140,7 +153,7 @@ function ToolInspectorRouter({ state }: { state: ToolInspectorState }) {
 
 	const name = state.name || "";
 
-	const isFileChange = name === "edit" || name === "write" || name === "edit_soft" || name === "patch";
+	const isFileChange = name === "edit" || name === "write" || name === "patch";
 	if (isFileChange) {
 		return <FileDiffInspectorDialog state={state} isMaximized={isMaximized} onToggleMaximize={onToggleMaximize} />;
 	}
@@ -834,7 +847,7 @@ function FileDiffInspectorDialog({
 	const { copied, copy } = useCopyFeedback({ duration: 1200 });
 
 	const { name = "edit", args = "", details, output = "", isError = false, status, duration } = state;
-	const isEdit = name === "edit" || name === "edit_soft" || name === "patch";
+	const isEdit = name === "edit" || name === "patch";
 	const data = useMemo(() => parseFileMutationArgs(name, args, details, output), [name, args, details, output]);
 
 	const detailsKeysCount =
@@ -1092,7 +1105,7 @@ function GenericInspectorDialog({
 		[isQuestionnaire, args],
 	);
 
-	const isSubagent = name === "subagent" || name === "conversation";
+	const isSubagent = name === "conversation";
 
 	const hasRichView = Boolean(
 		(isPresent && presentArgs) ||

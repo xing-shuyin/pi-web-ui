@@ -17,7 +17,6 @@ export type QuickAskPatch = Partial<
 		| "quickAskTranslateTarget"
 		| "quickAskTranslateStyle"
 		| "quickAskTranslatePrompt"
-		| "quickAskShowOriginal"
 		| "quickAskReferenceMenus"
 		| "quickAskConversationScope"
 		| "quickAskFolderScope"
@@ -277,16 +276,6 @@ export function QuickAskSettings({
 						</select>
 					</label>
 				</div>
-				<label className="quick-ask-settings-toggle" htmlFor={id + "-original"}>
-					<span>{t("quickAskShowOriginal")}</span>
-					<input
-						id={id + "-original"}
-						aria-label={t("quickAskShowOriginal")}
-						type="checkbox"
-						checked={settings.quickAskShowOriginal ?? false}
-						onChange={(e) => onChange({ quickAskShowOriginal: e.target.checked })}
-					/>
-				</label>
 			</section>
 			<section className="quick-ask-settings-group" aria-labelledby={id + "-references"}>
 				<h3 className="quick-ask-settings-heading" id={id + "-references"}>

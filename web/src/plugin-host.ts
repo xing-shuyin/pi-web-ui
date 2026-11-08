@@ -15,7 +15,7 @@ import { randomUuid } from "./uuid";
 import { requestNewChat } from "./new-chat-request";
 
 const PLUGIN_HOST_GLOBAL = "__piWebUiHost";
-export const PLUGIN_HOST_API_VERSION = 16;
+export const PLUGIN_HOST_API_VERSION = 18;
 
 export interface PluginHostPickDirectoryOptions {
 	initialPath?: string;
@@ -232,6 +232,23 @@ interface PluginHostApi {
 	onUiAction(name: string, handler: PluginTopbarActionHandler): () => void;
 	openModal(id: string): boolean;
 	closeModal(): boolean;
+	/**
+	 * 往宿主内置底栏状态槽（`host:quota` 等）写一段文本：宿主决定位置与样式，
+	 * 插件不占自己的 chip。传 `null` 清除。
+	 *
+	 * `content.render(container)` 可选：给了它，点这段文字时**宿主**弹跟随浮层并把容器交给插件画内容
+	 * （定位 / 翻转 / 跟随 / 点外关闭 / 层级全归宿主，v18 起）。
+	 */
+	setFooterStatus(
+		key: string,
+		value: {
+			text: string;
+			tip?: string;
+			action?: string;
+			pluginId?: string;
+			content?: { render(container: HTMLElement): void | (() => void) };
+		} | null,
+	): boolean;
 	onTopbarAction(name: string, handler: PluginTopbarActionHandler): () => void;
 	pageCall(opts: PluginHostPageCallOptions): Promise<PluginHostPageResult>;
 	pickDirectory(opts?: PluginHostPickDirectoryOptions): Promise<PluginHostPickDirectoryResult>;
@@ -321,6 +338,16 @@ interface PluginHostDeps {
 	loadPluginBundle?: (pluginId: string) => Promise<boolean>;
 	openModal?: (id: string) => boolean;
 	closeModal?: () => void;
+	setFooterStatus?: (
+		key: string,
+		value: {
+			text: string;
+			tip?: string;
+			action?: string;
+			pluginId?: string;
+			content?: { render(container: HTMLElement): void | (() => void) };
+		} | null,
+	) => boolean;
 	openFileContextMenu?: (opts: PluginHostFileContextMenuOptions) => void;
 	pickDirectory?: (opts?: PluginHostPickDirectoryOptions) => Promise<PluginHostPickDirectoryResult>;
 	pickModel?: (opts?: PluginHostPickModelOptions) => Promise<PluginHostPickModelResult>;
@@ -456,6 +483,14 @@ export function createPluginHostApi(deps: PluginHostDeps): PluginHostApi {
 			if (!target || typeof deps.openModal !== "function") return false;
 			try {
 				return deps.openModal(target);
+			} catch {
+				return false;
+			}
+		},
+		setFooterStatus(key, value) {
+			if (typeof deps.setFooterStatus !== "function") return false;
+			try {
+				return deps.setFooterStatus(String(key ?? ""), value);
 			} catch {
 				return false;
 			}

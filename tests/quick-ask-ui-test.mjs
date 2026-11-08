@@ -276,9 +276,10 @@ try {
 			(await popup.locator(".quick-ask-answer").innerText()).includes(reply.split("\n").at(-1)),
 			"scrolling reaches the end without expanding",
 		);
-		await popup.getByRole("button", { name: "展开原文", exact: true }).click();
-		assert((await popup.locator(".quick-ask-context-text").innerText()).includes("console.log"));
-		await popup.getByRole("button", { name: "收起原文", exact: true }).click();
+		assert(
+			(await popup.locator(".quick-ask-user .quick-ask-selection").innerText()).includes("console.log"),
+			"the selected text is visible in the question bubble",
+		);
 		await popup.getByRole("button", { name: "更多操作", exact: true }).click();
 		const more = page.getByRole("dialog", { name: "更多操作", exact: true });
 		await more.waitFor();
@@ -433,7 +434,7 @@ try {
 		assert(rect && rect.x >= 0 && rect.y >= 0 && rect.x + rect.width <= 1200);
 		console.log("✓ 生成中重置取消旧请求，无过期结果污染");
 
-		assert.equal(await popup.locator(".quick-ask-source-toggle").count(), 0, "new topics clear the selection");
+		assert.equal(await popup.locator(".quick-ask-selection").count(), 0, "new topics clear the selection");
 		await quickInput.fill("流式验证");
 		await quickInput.press("Enter");
 		const incrementalAnswer = popup.locator(".quick-ask-assistant").last();
@@ -649,8 +650,7 @@ try {
 		await select(".msg-assistant .msg-text pre");
 		await page.locator(".selection-explain-trigger").click();
 		await waitForAnswer();
-		await popup.getByRole("button", { name: "展开原文", exact: true }).click();
-		assert((await popup.locator(".quick-ask-context-text").innerText()).includes("console.log"));
+		assert((await popup.locator(".quick-ask-user .quick-ask-selection").innerText()).includes("console.log"));
 		const configuredRequest = requests.at(-1);
 		assert.equal(configuredRequest.messages.length, 2);
 		assert.equal(configuredRequest.messages[0].role, "system");
@@ -663,7 +663,9 @@ try {
 		await waitForAnswer();
 		assert((await popup.locator(".quick-ask-answer").innerText()).includes("文字コマンド"));
 		assert.equal(await popup.locator("textarea").count(), 0);
-		assert((await popup.locator(".quick-ask-context-text").innerText()).includes("command-line interface"));
+		assert(
+			(await popup.locator(".quick-ask-user .quick-ask-selection").innerText()).includes("command-line interface"),
+		);
 		const translatedRequest = JSON.stringify(requests.at(-1).messages);
 		assert(translatedRequest.includes("译成Japanese"));
 		assert(translatedRequest.includes("precise technical terminology"));

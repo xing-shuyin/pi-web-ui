@@ -22,6 +22,7 @@ import {
 	FiHelpCircle,
 	FiKey,
 	FiMessageSquare,
+	FiMonitor,
 	FiPackage,
 	FiPlus,
 	FiRefreshCw,
@@ -53,6 +54,8 @@ import { PluginSettingsForm } from "./PluginSettingsForm";
 import { ToolPromptEditor } from "./ToolPromptEditor";
 import { McpServersPanel } from "./McpServersPanel";
 import { DeviceExecutionSettings } from "./DeviceExecutionSettings";
+import { DesktopAppSettings } from "./DesktopAppSettings";
+import { isDesktopShell } from "../desktop";
 import { excludeBuiltinModules, isBuiltinModule } from "../../../server/builtin-modules";
 import { SKILL_MARKETS, type SkillMarketCategory } from "../skill-catalog";
 import { SUPPORTED_ENGINES } from "./EnginePicker";
@@ -159,11 +162,7 @@ import {
 
 const OTHER_AGENT_TOOLS = AGENT_TOOL_CATALOG.filter((e) => e.group === "other");
 const CONVERSATION_TOOL_NAMES = [
-	...new Set(
-		AGENT_TOOL_CATALOG.filter((tool) => tool.group === "subagent").map((tool) =>
-			tool.name === "subagent" ? "conversation" : tool.name,
-		),
-	),
+	...new Set(AGENT_TOOL_CATALOG.filter((tool) => tool.group === "subagent").map((tool) => tool.name)),
 ];
 
 interface SettingsTerminalBridge {
@@ -367,6 +366,7 @@ function InvDot({ phase, label }: { phase: PluginPhase; label: string }) {
 }
 
 export const OFFICIAL_PLUGINS_REPO_URL = "https://github.com/xing-shuyin/pi-web-ui-plugins";
+export const OFFICIAL_PLUGIN_CATALOG_URL = "https://xing-shuyin.github.io/pi-web-ui-plugins/catalog.json";
 
 export function pluginOfficialUrl(entry?: { homepage?: string; source?: string } | null): string | null {
 	if (entry?.homepage && /^https?:\/\//i.test(entry.homepage)) {
@@ -570,6 +570,7 @@ type SettingsTab =
 	| "dsh-presets"
 	| "subagent-templates"
 	| "device-collab"
+	| "desktop"
 	| `plugin-page:${string}`;
 
 interface SettingsPatch extends QuickAskPatch {
@@ -588,6 +589,7 @@ interface SettingsPatch extends QuickAskPatch {
 	disabledPlugins?: string[];
 	uiLayout?: UiLayoutPrefs;
 	disabledAgentTools?: string[];
+	toolOnDemandTools?: string[];
 	disabledPluginTools?: string[];
 	terminalToolsEnabled?: boolean;
 	terminalBash?: boolean;
@@ -599,7 +601,6 @@ interface SettingsPatch extends QuickAskPatch {
 	codemodeMode?: "on" | "only";
 	codemodeInlineBudget?: number;
 	toolApprovalEnabled?: boolean;
-	editSoftEnabled?: boolean;
 	questionnaireEnabled?: boolean;
 	questionPresentation?: "queue" | "all" | "manual";
 	toolApprovalPresentation?: "queue" | "all" | "manual";
@@ -730,7 +731,7 @@ function LoadedSettingsModal({
 	const isPi = !isDsh && !isClaude && !isCodex;
 	const defaultTab: SettingsTab = isClaude || isCodex || isDsh ? "models" : "prompt";
 	const [tab, setTab] = useState<SettingsTab>(initialSection ?? defaultTab);
-	const [pluginSub, setPluginSub] = useState<"market" | "installed">("market");
+	const [pluginSub, setPluginSub] = useState<"official" | "community" | "installed">("official");
 	const bodyRef = useRef<HTMLDivElement>(null);
 	useEffect(() => {
 		bodyRef.current?.scrollTo({ top: 0 });
@@ -881,18 +882,12 @@ function LoadedSettingsModal({
 		});
 	};
 	const toolEditAction = (name: string) => {
-		const canonical = name === "subagent" ? "conversation" : name;
 		return isDsh ? null : (
-			<ToolPromptButton name={canonical} edited={editedToolNames.has(canonical)} onEdit={setEditingToolPrompt} />
+			<ToolPromptButton name={name} edited={editedToolNames.has(name)} onEdit={setEditingToolPrompt} />
 		);
 	};
 	const applyToolPromptOverride = (name: string, override: UiToolPromptOverride | null) =>
-		setPartial({
-			toolPromptOverrides:
-				name === "conversation" || name === "subagent"
-					? { conversation: override ?? {}, subagent: override ?? {} }
-					: { [name]: override ?? {} },
-		});
+		setPartial({ toolPromptOverrides: { [name]: override ?? {} } });
 	const promptTokenEstimate = useMemo(
 		() => estimatePromptTokens(settings?.effectiveSystemPrompt ?? ""),
 		[settings?.effectiveSystemPrompt],
@@ -963,6 +958,12 @@ function LoadedSettingsModal({
 	const [confirmUninstall, setConfirmUninstall] = useState<string | null>(null);
 	const [confirmEngineUninstallId, setConfirmEngineUninstallId] = useState<string | null>(null);
 	const [confirmUiUninstall, setConfirmUiUninstall] = useState<string | null>(null);
+	// 确认态 5s 后自动回退，避免过一会儿再点同一颗按钮误卸
+	useEffect(() => {
+		if (!confirmUiUninstall) return;
+		const id = window.setTimeout(() => setConfirmUiUninstall(null), 5000);
+		return () => window.clearTimeout(id);
+	}, [confirmUiUninstall]);
 	const [diagOpen, setDiagOpen] = useState<string | null>(null);
 	const [logOpen, setLogOpen] = useState<string | null>(null);
 	const [settingsOpen, setSettingsOpen] = useState<Record<string, boolean>>({});
@@ -984,7 +985,7 @@ function LoadedSettingsModal({
 	const [catSyncRecent, setCatSyncRecent] = useState<string[]>(() => loadCatalogSyncRecent());
 	const [quickNew, setQuickNew] = useState("");
 	const [quickEdit, setQuickEdit] = useState<{ index: number; value: string } | null>(null);
-	const [catalogFilter, setCatalogFilter] = useState<"all" | "builtin" | "community" | "custom">("all");
+	type _I18nKeyPreserve = "pluginCatalogTabAll" | "pluginCatalogTabCustom";
 	const [catalogSearch, setCatalogSearch] = useState("");
 	const [expandedPluginId, setExpandedPluginId] = useState<string | null>(null);
 	const [dshPatchInput, setDshPatchInput] = useState("");
@@ -1150,6 +1151,8 @@ function LoadedSettingsModal({
 	const hasBuiltinPluginUpdate = Object.values(pluginUpdates ?? {}).some((u) => u.updatable && (u.builtin ?? false));
 	const hasAnyPluginUpdate = Object.values(pluginUpdates ?? {}).some((u) => u.updatable);
 
+	const inDesktopShell = isDesktopShell();
+
 	const tabs: {
 		id: SettingsTab;
 		icon: React.ReactNode;
@@ -1282,6 +1285,16 @@ function LoadedSettingsModal({
 						icon: <FiShare2 />,
 						label: t("settingsDeviceCollab"),
 						hint: t("settingsDeviceCollabHint"),
+					},
+				]
+			: []),
+		...(inDesktopShell
+			? [
+					{
+						id: "desktop" as const,
+						icon: <FiMonitor />,
+						label: t("settingsDesktopApp"),
+						hint: t("settingsStartupModeHint"),
 					},
 				]
 			: []),
@@ -1590,13 +1603,17 @@ function LoadedSettingsModal({
 	);
 	const toggleAgentTool = (name: string) => {
 		const next = new Set(disabledTools);
-		const names = name === "conversation" || name === "subagent" ? ["conversation", "subagent"] : [name];
-		const disabled = names.some((n) => next.has(n));
-		for (const n of names) {
-			if (disabled) next.delete(n);
-			else next.add(n);
-		}
+		if (next.has(name)) next.delete(name);
+		else next.add(name);
 		setPartial({ disabledAgentTools: [...next] });
+	};
+	const onDemandTools = settings.toolOnDemandTools ?? [];
+	const onDemandToolNames = new Set(onDemandTools);
+	const toggleOnDemandTool = (name: string) => {
+		const next = new Set(onDemandToolNames);
+		if (next.has(name)) next.delete(name);
+		else next.add(name);
+		setPartial({ toolOnDemandTools: [...next] });
 	};
 	const disabledPluginTools = new Set(settings.disabledPluginTools ?? []);
 	const togglePluginTool = (name: string) => {
@@ -1879,9 +1896,8 @@ function LoadedSettingsModal({
 		setShowCatAdd(false);
 	};
 
-	const runCatalogSync = (source: string) => {
-		const src = source.trim();
-		if (!src) return;
+	const runCatalogSync = (source?: string) => {
+		const src = (typeof source === "string" ? source : catSyncSource).trim() || OFFICIAL_PLUGIN_CATALOG_URL;
 		const requestId = randomUuid();
 		setCatSyncReq(requestId);
 		setCatSyncSent(src);
@@ -1918,6 +1934,7 @@ function LoadedSettingsModal({
 	const catInspect = insp && insp.requestId === catInspectReq && insp.source === catSource.trim() ? insp : null;
 
 	const syncReceipt = chat.catalogSync && chat.catalogSync.requestId === catSyncReq ? chat.catalogSync : null;
+	const isSyncingCatalog = Boolean(catSyncReq && !syncReceipt);
 	useEffect(() => {
 		if (syncReceipt?.ok && catSyncSent) setCatSyncRecent(rememberCatalogSyncUrl(catSyncSent));
 		// eslint-disable-next-line react-hooks/exhaustive-deps
@@ -2264,17 +2281,6 @@ function LoadedSettingsModal({
 															<span className="engine-picker-item-tag update-available" style={{ marginLeft: 4 }}>
 																{t("engineUpdating")}
 															</span>
-														) : hasUpdate ? (
-															<span
-																className="engine-picker-item-tag update-available"
-																style={{ marginLeft: 4 }}
-																title={t("engineUpdateTip", {
-																	current: status?.version ?? "",
-																	latest: status?.latestVersion ?? "",
-																})}
-															>
-																{t("engineUpdateAvailable")}
-															</span>
 														) : null}
 													</div>
 													<div style={{ display: "inline-flex", alignItems: "center", gap: 6, flexShrink: 0 }}>
@@ -2496,17 +2502,6 @@ function LoadedSettingsModal({
 														) : isUpdating ? (
 															<span className="engine-picker-item-tag update-available" style={{ marginLeft: 4 }}>
 																{t("engineUpdating")}
-															</span>
-														) : hasUpdate ? (
-															<span
-																className="engine-picker-item-tag update-available"
-																style={{ marginLeft: 4 }}
-																title={t("engineUpdateTip", {
-																	current: status?.version ?? "",
-																	latest: status?.latestVersion ?? "",
-																})}
-															>
-																{t("engineUpdateAvailable")}
 															</span>
 														) : null}
 													</div>
@@ -3430,6 +3425,28 @@ function LoadedSettingsModal({
 										onToggle={() => setPartial({ toolLazyLoading: settings.toolLazyLoading !== true })}
 									/>
 								)}
+								{!isDsh && (
+									<div className="tpl-pick-block">
+										<div className="tpl-pick-head">
+											<span>
+												{t("toolOnDemandTools")} · {onDemandTools.length}
+											</span>
+											<HintTip text={t("toolOnDemandToolsDesc")} />
+										</div>
+										<div className="tpl-pick">
+											{[...AGENT_TOOL_CATALOG.map((e) => e.name), ...CORE_TOOL_CATALOG.map((c) => c.name)].map((n) => (
+												<label key={n} className={`tpl-chip${onDemandToolNames.has(n) ? " on" : ""}`}>
+													<input
+														type="checkbox"
+														checked={onDemandToolNames.has(n)}
+														onChange={() => toggleOnDemandTool(n)}
+													/>
+													{n}
+												</label>
+											))}
+										</div>
+									</div>
+								)}
 								<ToggleRow
 									title={t("toolApprovalEnabled")}
 									tip={isDsh ? t("toolApprovalDshNotice") : t("toolApprovalEnabledDesc")}
@@ -3637,7 +3654,7 @@ function LoadedSettingsModal({
 									{t("toolsSectionSubagent")} <HintTip text={t("toolsSubagentDepHint")} />
 								</div>
 								{CONVERSATION_TOOL_NAMES.map((n) => {
-									const names = n === "conversation" ? [n, "subagent"] : [n];
+									const names = [n];
 									const blocked = names.some(isBlockedByPreset);
 									return (
 										<ToggleRow
@@ -5563,206 +5580,139 @@ function LoadedSettingsModal({
 								})}
 							</div>
 						)}
-						{tab === "plugins" && !managed && (
-							<div className="set-subtabs" role="tablist">
-								<button
-									type="button"
-									role="tab"
-									aria-selected={pluginSub === "market"}
-									className={`set-subtab${pluginSub === "market" ? " active" : ""}`}
-									onClick={() => {
-										setPluginSub("market");
-										bodyRef.current?.scrollTo({ top: 0 });
-									}}
-								>
-									{t("pluginMarket")}
-									<span className="set-count">{chat.pluginCatalog.length}</span>
-								</button>
-								<button
-									type="button"
-									role="tab"
-									aria-selected={pluginSub === "installed"}
-									className={`set-subtab${pluginSub === "installed" ? " active" : ""}`}
-									onClick={() => {
-										setPluginSub("installed");
-										bodyRef.current?.scrollTo({ top: 0 });
-									}}
-								>
-									<FiBox />
-									{t("pluginListTab")}
-									<span className="set-count">{chat.plugins.length}</span>
-									{(hasBuiltinPluginUpdate || hasAnyPluginUpdate) && (
-										<span className="update-dot" style={{ marginLeft: 4 }} />
-									)}
-								</button>
-							</div>
-						)}
-						{tab === "plugins" && pluginSub === "installed" && (
-							<div className="set-section">
-								<div className="set-section-title">
-									<FiFolder className="set-section-icon" />
-									{t("pluginGrantsTitle")}
-									<span className="set-count">{chat.pluginGrants.reduce((n, g) => n + g.paths.length, 0)}</span>
-								</div>
-								<div className="set-note">{t("pluginGrantsHint")}</div>
-								{chat.pluginGrants.length === 0 ? (
-									<p className="set-empty">{t("pluginGrantsEmpty")}</p>
-								) : (
-									<div className="set-list">
-										{chat.pluginGrants.map((g) => (
-											<div key={g.pluginId} className="set-grant-row">
-												<div className="set-catalog-title">
-													<span>{g.pluginId}</span>
-												</div>
-												{g.paths.map((p) => (
-													<div key={p} className="set-grant-path">
-														<span className="set-catalog-source">{p}</span>
-														<button
-															type="button"
-															className="set-uninstall"
-															onClick={() => appSend({ type: "plugin_path_revoke", pluginId: g.pluginId, path: p })}
-														>
-															{t("pluginGrantsRevoke")}
-														</button>
-													</div>
-												))}
-											</div>
-										))}
-									</div>
-								)}
-							</div>
-						)}
-						{tab === "plugins" && pluginSub === "installed" && (
-							<div className="set-section">
-								<div className="set-section-title">
-									<FiKey className="set-section-icon" />
-									{t("pluginPermsTitle")}
-									<span className="set-count">{(chat.pluginPermissions ?? []).length}</span>
-								</div>
-								<div className="set-note">{t("pluginPermsHint")}</div>
-								{(chat.pluginPermissions ?? []).length === 0 ? (
-									<p className="set-empty">{t("pluginPermsEmpty")}</p>
-								) : (
-									<div className="set-list">
-										{(chat.pluginPermissions ?? []).map((g, i) => (
-											<div key={`${g.pluginId}|${g.family}|${i}`} className="set-grant-row">
-												<div className="set-catalog-title">
-													<span>{g.pluginId}</span>
-													<span className="set-catalog-source">
-														{g.family === "net" ? t("pluginPermNet") : t("pluginPermLlm")}
-														{g.session ? ` · ${t("pluginPermSession")}` : ""}
-													</span>
-												</div>
-												{(g.hosts ?? []).map((h) => (
-													<div key={h} className="set-grant-path">
-														<span className="set-catalog-source">{h}</span>
-														<button
-															type="button"
-															className="set-uninstall"
-															onClick={() =>
-																appSend({
-																	type: "plugin_permission_revoke",
-																	pluginId: g.pluginId,
-																	family: "net",
-																	host: h,
-																})
-															}
-														>
-															{t("pluginGrantsRevoke")}
-														</button>
-													</div>
-												))}
-												{(g.models ?? []).map((m) => (
-													<div key={m} className="set-grant-path">
-														<span className="set-catalog-source">{m}</span>
-														<button
-															type="button"
-															className="set-uninstall"
-															onClick={() =>
-																appSend({
-																	type: "plugin_permission_revoke",
-																	pluginId: g.pluginId,
-																	family: "llm",
-																	model: m,
-																})
-															}
-														>
-															{t("pluginGrantsRevoke")}
-														</button>
-													</div>
-												))}
-												{!(g.hosts ?? []).length && !(g.models ?? []).length && (
-													<div className="set-grant-path">
-														<span className="set-catalog-source">{g.reason ?? t("pluginPermUnscoped")}</span>
-														<button
-															type="button"
-															className="set-uninstall"
-															onClick={() =>
-																appSend({ type: "plugin_permission_revoke", pluginId: g.pluginId, family: g.family })
-															}
-														>
-															{t("pluginGrantsRevoke")}
-														</button>
-													</div>
-												)}
-												{g.reason && ((g.hosts ?? []).length > 0 || (g.models ?? []).length > 0) && (
-													<div className="set-note">{g.reason}</div>
-												)}
-											</div>
-										))}
-									</div>
-								)}
-							</div>
-						)}
+
 						{tab === "plugins" && managed && (
 							<div className="set-section">
 								<div className="set-note">{t("updatesManaged")}</div>
 							</div>
 						)}
-						{tab === "plugins" && !managed && pluginSub === "market" && (
+						{tab === "plugins" && !managed && (
 							<div className="set-section">
 								<div className="smart-market-head">
 									<div className="smart-market-title">
-										<FiPackage className="set-section-icon" />
-										<span>{t("pluginMarket")}</span>
-										<span className="set-count">{chat.pluginCatalog.length}</span>
+										{pluginSub === "community" ? (
+											<>
+												<FiGlobe className="set-section-icon" />
+												<span>{t("pluginCatalogTabCommunity")}</span>
+												<span className="set-count">
+													{
+														chat.pluginCatalog.filter(
+															(e) => (e.origin ?? (e.builtin ? "builtin" : "custom")) === "community",
+														).length
+													}
+												</span>
+											</>
+										) : pluginSub === "installed" ? (
+											<>
+												<FiBox className="set-section-icon" />
+												<span>{t("pluginListTab")}</span>
+												<span className="set-count">{chat.plugins.length}</span>
+											</>
+										) : (
+											<>
+												<FiPackage className="set-section-icon" />
+												<span>{t("pluginMarket")}</span>
+												<span className="set-count">
+													{
+														chat.pluginCatalog.filter(
+															(e) => (e.origin ?? (e.builtin ? "builtin" : "custom")) !== "community",
+														).length
+													}
+												</span>
+											</>
+										)}
 									</div>
 									<div className="smart-market-tools">
-										<label className="smart-build-toggle" title={t("pluginBuildHint")}>
-											<input type="checkbox" checked={catBuild} onChange={(ev) => setCatBuild(ev.target.checked)} />
-											<span>{t("pluginBuildSource")}</span>
-										</label>
-										<button
-											type="button"
-											className={`smart-tool-btn${showCatSync ? " active" : ""}`}
-											title={t("pluginCatalogSyncHint")}
-											onClick={() => setShowCatSync((v) => !v)}
-										>
-											<FiRefreshCw />
-											<span>{t("pluginCatalogSync")}</span>
-										</button>
-										<button
-											type="button"
-											className={`smart-tool-btn${showCatAdd ? " active" : ""}`}
-											title={t("pluginCatalogAddHint")}
-											onClick={() => setShowCatAdd((v) => !v)}
-										>
-											<FiPlus />
-											<span>{t("pluginCatalogAdd")}</span>
-										</button>
-										<a
-											href={OFFICIAL_PLUGINS_REPO_URL}
-											target="_blank"
-											rel="noreferrer noopener"
-											className="smart-tool-link"
-											title={t("pluginOfficialMarketHint")}
-										>
-											<FiExternalLink />
-											<span>{t("pluginOfficialMarket")}</span>
-										</a>
+										{pluginSub === "installed" ? (
+											<>
+												<button
+													type="button"
+													className="smart-tool-btn"
+													title={t("pluginCheckUpdatesHint")}
+													disabled={chat.checkingPluginUpdates}
+													onClick={() => appSend({ type: "check_plugin_updates" })}
+												>
+													<FiRefreshCw className={chat.checkingPluginUpdates ? "set-job-spin" : ""} />
+													<span>{chat.checkingPluginUpdates ? t("checkingUpdate") : t("pluginCheckUpdates")}</span>
+												</button>
+												<button
+													type="button"
+													className="smart-tool-btn"
+													title={t("pluginRescanHint")}
+													onClick={() => appSend({ type: "plugins_reload" })}
+												>
+													<FiRefreshCw />
+													<span>{t("pluginRescan")}</span>
+												</button>
+												<a
+													href={OFFICIAL_PLUGINS_REPO_URL}
+													target="_blank"
+													rel="noreferrer noopener"
+													className="smart-tool-link"
+													title={t("pluginOfficialMarketHint")}
+												>
+													<FiExternalLink />
+													<span>{t("pluginOfficialMarket")}</span>
+												</a>
+											</>
+										) : (
+											<>
+												<button
+													type="button"
+													className={`smart-tool-btn${isSyncingCatalog ? " active" : ""}`}
+													title={t("pluginCatalogSyncHint")}
+													disabled={isSyncingCatalog}
+													onClick={() => runCatalogSync(OFFICIAL_PLUGIN_CATALOG_URL)}
+												>
+													<FiRefreshCw className={isSyncingCatalog ? "spin" : ""} />
+													<span>{isSyncingCatalog ? t("loading") : t("fileRefresh")}</span>
+												</button>
+												<button
+													type="button"
+													className={`smart-tool-btn${showCatSync ? " active" : ""}`}
+													title={t("pluginCatalogSyncHint")}
+													onClick={() => setShowCatSync((v) => !v)}
+												>
+													<FiSliders />
+													<span>{t("pluginCatalogSync")}</span>
+												</button>
+												<button
+													type="button"
+													className={`smart-tool-btn${showCatAdd ? " active" : ""}`}
+													title={t("pluginCatalogAddHint")}
+													onClick={() => setShowCatAdd((v) => !v)}
+												>
+													<FiPlus />
+													<span>{t("pluginCatalogAdd")}</span>
+												</button>
+												<label className="smart-build-toggle" title={t("pluginBuildHint")}>
+													<input type="checkbox" checked={catBuild} onChange={(ev) => setCatBuild(ev.target.checked)} />
+													<span>{t("pluginBuildSource")}</span>
+												</label>
+												<a
+													href={OFFICIAL_PLUGINS_REPO_URL}
+													target="_blank"
+													rel="noreferrer noopener"
+													className="smart-tool-link"
+													title={t("pluginOfficialMarketHint")}
+												>
+													<FiExternalLink />
+													<span>{t("pluginCatalogCommunitySubmit")}</span>
+												</a>
+											</>
+										)}
 									</div>
 								</div>
-								{showCatSync && (
+								{!showCatSync && syncReceipt && pluginSub !== "installed" && (
+									<div className={`set-catalog-job ${syncReceipt.ok ? "ok" : "error"}`} style={{ marginTop: 8 }}>
+										<span>
+											{syncReceipt.ok
+												? `✓ ${t("pluginCatalogSyncOk", { n: syncReceipt.entryCount ?? chat.pluginCatalog.length })}`
+												: `✗ ${syncReceipt.error || t("pluginJobFailed")}`}
+										</span>
+									</div>
+								)}
+								{pluginSub !== "installed" && showCatSync && (
 									<div className="set-catalog-add">
 										<div className="set-note">{t("pluginCatalogSyncHint")}</div>
 										<input
@@ -5850,7 +5800,7 @@ function LoadedSettingsModal({
 											))}
 									</div>
 								)}
-								{showCatAdd && (
+								{pluginSub !== "installed" && showCatAdd && (
 									<div className="set-catalog-add">
 										<input
 											className="set-input"
@@ -5900,19 +5850,17 @@ function LoadedSettingsModal({
 									</div>
 								)}
 								{(() => {
-									const builtinCount = chat.pluginCatalog.filter(
-										(e) => (e.origin ?? (e.builtin ? "builtin" : "custom")) === "builtin",
+									const officialCount = chat.pluginCatalog.filter(
+										(e) => (e.origin ?? (e.builtin ? "builtin" : "custom")) !== "community",
 									).length;
 									const communityCount = chat.pluginCatalog.filter(
 										(e) => (e.origin ?? (e.builtin ? "builtin" : "custom")) === "community",
 									).length;
-									const customCount = chat.pluginCatalog.filter(
-										(e) => (e.origin ?? (e.builtin ? "builtin" : "custom")) === "custom",
-									).length;
+									const installedCount = chat.plugins.length;
 									const q = catalogSearch.trim().toLowerCase();
-									const filtered = chat.pluginCatalog.filter((e) => {
+									const filteredCatalog = chat.pluginCatalog.filter((e) => {
 										const origin = e.origin ?? (e.builtin ? "builtin" : "custom");
-										if (catalogFilter !== "all" && origin !== catalogFilter) return false;
+										if (pluginSub === "community" ? origin !== "community" : origin === "community") return false;
 										if (!q) return true;
 										const name = (!isZhLocale(locale) && e.nameEn ? e.nameEn : e.name).toLowerCase();
 										const desc = (
@@ -5925,6 +5873,13 @@ function LoadedSettingsModal({
 											e.source.toLowerCase().includes(q)
 										);
 									});
+									const filteredInstalled = chat.plugins.filter((p) => {
+										if (!q) return true;
+										const name = (p.name ?? "").toLowerCase();
+										const desc = (p.description ?? "").toLowerCase();
+										const id = (p.id ?? "").toLowerCase();
+										return name.includes(q) || desc.includes(q) || id.includes(q);
+									});
 
 									return (
 										<>
@@ -5933,45 +5888,48 @@ function LoadedSettingsModal({
 													<button
 														type="button"
 														role="tab"
-														aria-selected={catalogFilter === "all"}
-														className={`smart-tab-pill${catalogFilter === "all" ? " active" : ""}`}
-														onClick={() => setCatalogFilter("all")}
-													>
-														{t("pluginCatalogTabAll")}
-														<span className="smart-pill-count">{chat.pluginCatalog.length}</span>
-													</button>
-													<button
-														type="button"
-														role="tab"
-														aria-selected={catalogFilter === "builtin"}
-														className={`smart-tab-pill${catalogFilter === "builtin" ? " active" : ""}`}
-														onClick={() => setCatalogFilter("builtin")}
+														data-tab="official"
+														aria-selected={pluginSub === "official"}
+														className={`smart-tab-pill${pluginSub === "official" ? " active" : ""}`}
+														onClick={() => {
+															setPluginSub("official");
+															bodyRef.current?.scrollTo({ top: 0 });
+														}}
 													>
 														{t("pluginCatalogTabBuiltin")}
-														<span className="smart-pill-count">{builtinCount}</span>
+														<span className="smart-pill-count">{officialCount}</span>
 													</button>
 													<button
 														type="button"
 														role="tab"
-														aria-selected={catalogFilter === "community"}
-														className={`smart-tab-pill${catalogFilter === "community" ? " active" : ""}`}
-														onClick={() => setCatalogFilter("community")}
+														data-tab="community"
+														aria-selected={pluginSub === "community"}
+														className={`smart-tab-pill${pluginSub === "community" ? " active" : ""}`}
+														onClick={() => {
+															setPluginSub("community");
+															bodyRef.current?.scrollTo({ top: 0 });
+														}}
 													>
 														{t("pluginCatalogTabCommunity")}
 														<span className="smart-pill-count">{communityCount}</span>
 													</button>
-													{(customCount > 0 || catalogFilter === "custom") && (
-														<button
-															type="button"
-															role="tab"
-															aria-selected={catalogFilter === "custom"}
-															className={`smart-tab-pill${catalogFilter === "custom" ? " active" : ""}`}
-															onClick={() => setCatalogFilter("custom")}
-														>
-															{t("pluginCatalogTabCustom")}
-															<span className="smart-pill-count">{customCount}</span>
-														</button>
-													)}
+													<button
+														type="button"
+														role="tab"
+														data-tab="installed"
+														aria-selected={pluginSub === "installed"}
+														className={`smart-tab-pill${pluginSub === "installed" ? " active" : ""}`}
+														onClick={() => {
+															setPluginSub("installed");
+															bodyRef.current?.scrollTo({ top: 0 });
+														}}
+													>
+														{t("pluginListTab")}
+														<span className="smart-pill-count">{installedCount}</span>
+														{(hasBuiltinPluginUpdate || hasAnyPluginUpdate) && (
+															<span className="update-dot" style={{ marginLeft: 4 }} />
+														)}
+													</button>
 												</div>
 
 												<div className="smart-search-wrap">
@@ -5996,7 +5954,7 @@ function LoadedSettingsModal({
 												</div>
 											</div>
 
-											{catalogFilter === "community" && (
+											{pluginSub === "community" && (
 												<div className="set-catalog-community-banner">
 													<span>{t("pluginCatalogCommunityDesc")}</span>
 													<a
@@ -6011,124 +5969,308 @@ function LoadedSettingsModal({
 												</div>
 											)}
 
-											{chat.pluginCatalog.length === 0 ? (
-												<p className="set-empty">{t("noPluginCatalog")}</p>
-											) : filtered.length === 0 ? (
-												<p className="set-empty">
-													{catalogFilter === "community" ? t("pluginCatalogCommunityEmpty") : t("searchNoResults")}
-												</p>
-											) : (
-												<div className="smart-plugin-list">
-													{filtered.map((e) => {
-														const origin = e.origin ?? (e.builtin ? "builtin" : "custom");
-														const installed = installedPluginIds.has(e.id);
-														const upd = chat.pluginUpdates?.[e.id];
-														const isUpdatable = installed && upd?.updatable === true;
-														const isRunning = Boolean(jobFor(e.id) && jobFor(e.id)?.phase !== "done");
-														const name = !isZhLocale(locale) && e.nameEn ? e.nameEn : e.name;
-														const desc = !isZhLocale(locale) && e.descriptionEn ? e.descriptionEn : e.description;
-														const isExpanded = expandedPluginId === e.id;
+											{(pluginSub === "official" || pluginSub === "community") &&
+												(chat.pluginCatalog.length === 0 ? (
+													<p className="set-empty">{t("noPluginCatalog")}</p>
+												) : filteredCatalog.length === 0 ? (
+													<p className="set-empty">
+														{pluginSub === "community" ? t("pluginCatalogCommunityEmpty") : t("searchNoResults")}
+													</p>
+												) : (
+													<div className="smart-plugin-list">
+														{filteredCatalog.map((e) => {
+															const origin = e.origin ?? (e.builtin ? "builtin" : "custom");
+															const installed = installedPluginIds.has(e.id);
+															const upd = chat.pluginUpdates?.[e.id];
+															const isUpdatable = installed && upd?.updatable === true;
+															const isRunning = Boolean(jobFor(e.id) && jobFor(e.id)?.phase !== "done");
+															const name = !isZhLocale(locale) && e.nameEn ? e.nameEn : e.name;
+															const desc = !isZhLocale(locale) && e.descriptionEn ? e.descriptionEn : e.description;
+															const isExpanded = expandedPluginId === e.id;
 
-														return (
-															<div key={e.id} className={`smart-plugin-row${isExpanded ? " expanded" : ""}`}>
-																<div className="smart-row-wrapper">
-																	<div
-																		className="smart-row-main"
-																		onClick={() => setExpandedPluginId(isExpanded ? null : e.id)}
-																	>
-																		<div className="smart-plugin-icon">
-																			<PluginIcon icon={e.icon} iconSvg={e.iconSvg} />
+															return (
+																<div key={e.id} className={`smart-plugin-row${isExpanded ? " expanded" : ""}`}>
+																	<div className="smart-row-wrapper">
+																		<div
+																			className="smart-row-main"
+																			onClick={() => setExpandedPluginId(isExpanded ? null : e.id)}
+																		>
+																			<div className="smart-plugin-icon">
+																				<PluginIcon icon={e.icon} iconSvg={e.iconSvg} />
+																			</div>
+																			<div className="smart-plugin-info">
+																				<div className="smart-plugin-title-row">
+																					<span className="smart-plugin-name">{name}</span>
+																					{origin === "community" && (
+																						<span className="smart-badge smart-badge-community">
+																							{t("pluginCatalogCommunity")}
+																						</span>
+																					)}
+																					{origin === "custom" && (
+																						<span
+																							className="smart-badge smart-badge-custom"
+																							title={t("pluginCatalogCustomHint")}
+																						>
+																							{t("pluginCatalogCustom")}
+																						</span>
+																					)}
+																					{isUpdatable && (
+																						<span
+																							className="smart-badge smart-badge-update"
+																							title={
+																								upd?.latestVersion
+																									? `${upd?.version ?? ""} → v${upd.latestVersion}`
+																									: (upd?.remoteSha ?? "")
+																							}
+																						>
+																							{t("pluginUpdateAvailableBadge")}
+																							{upd?.latestVersion ? ` v${upd.latestVersion}` : ""}
+																						</span>
+																					)}
+																					<span className="smart-plugin-source" title={e.source}>
+																						{e.source}
+																					</span>
+																				</div>
+																				<div className="smart-plugin-desc" title={desc}>
+																					{desc || e.id}
+																				</div>
+																			</div>
 																		</div>
-																		<div className="smart-plugin-info">
-																			<div className="smart-plugin-title-row">
-																				<span className="smart-plugin-name">{name}</span>
-																				{installed && (
-																					<span className="smart-badge smart-badge-installed">
-																						{t("pluginInstalled")}
-																					</span>
-																				)}
-																				{origin === "builtin" && (
-																					<span className="smart-badge smart-badge-builtin">
-																						{t("pluginCatalogBuiltin")}
-																					</span>
-																				)}
-																				{origin === "community" && (
-																					<span className="smart-badge smart-badge-community">
-																						{t("pluginCatalogCommunity")}
-																					</span>
-																				)}
-																				{origin === "custom" && (
-																					<span className="smart-badge smart-badge-custom">
-																						{t("pluginCatalogCustom")}
-																					</span>
-																				)}
-																				{isUpdatable && (
-																					<span
-																						className="smart-badge smart-badge-update"
-																						title={
-																							upd?.latestVersion
-																								? `${upd?.version ?? ""} → v${upd.latestVersion}`
-																								: (upd?.remoteSha ?? "")
-																						}
+
+																		<div className="smart-plugin-actions">
+																			{pluginOfficialUrl(e) ? (
+																				<a
+																					href={pluginOfficialUrl(e)!}
+																					target="_blank"
+																					rel="noreferrer noopener"
+																					className="smart-icon-btn"
+																					title={t("pluginOfficialLinkHint")}
+																				>
+																					<FiExternalLink />
+																				</a>
+																			) : (
+																				<span className="smart-icon-slot" aria-hidden="true" />
+																			)}
+																			{installed ? (
+																				<>
+																					{isUpdatable && (
+																						<button
+																							type="button"
+																							className="smart-btn-action update"
+																							disabled={isRunning}
+																							title={
+																								upd?.latestVersion
+																									? t("pluginUpdateAvailableDetail", {
+																											version: `v${upd.latestVersion}`,
+																										})
+																									: t("pluginUpdateHint")
+																							}
+																							onClick={() => runUiPluginUpdate(e.id, e.source)}
+																						>
+																							<FiRefreshCw className={isRunning ? "set-job-spin" : ""} />
+																							<span>{isRunning ? t("pluginJobRunning") : t("pluginUpdate")}</span>
+																						</button>
+																					)}
+																					<button
+																						type="button"
+																						className={`smart-btn-action danger${
+																							confirmUiUninstall === e.id ? " confirming" : ""
+																						}`}
+																						disabled={isRunning}
+																						title={t("pluginUninstallHint")}
+																						onClick={() => {
+																							if (confirmUiUninstall === e.id) runUiPluginUninstall(e.id);
+																							else setConfirmUiUninstall(e.id);
+																						}}
 																					>
-																						{t("pluginUpdateAvailableBadge")}
-																						{upd?.latestVersion ? ` v${upd.latestVersion}` : ""}
-																					</span>
-																				)}
-																				<span className="smart-plugin-source" title={e.source}>
-																					{e.source}
-																				</span>
-																			</div>
-																			<div className="smart-plugin-desc" title={desc}>
-																				{desc || e.id}
-																			</div>
+																						<FiTrash2 />
+																						<span>
+																							{confirmUiUninstall === e.id
+																								? t("uninstallConfirm")
+																								: t("pluginUninstall")}
+																						</span>
+																					</button>
+																				</>
+																			) : (
+																				<button
+																					type="button"
+																					className="smart-btn-action install"
+																					title={t("pluginInstallHint")}
+																					disabled={isRunning}
+																					onClick={() => runCatalogInstall(e)}
+																				>
+																					{isRunning ? (
+																						<>
+																							<FiRefreshCw className="set-job-spin" />
+																							<span>{t("pluginJobRunning")}</span>
+																						</>
+																					) : (
+																						<>
+																							<FiDownload />
+																							<span>{t("pluginInstall")}</span>
+																						</>
+																					)}
+																				</button>
+																			)}
+																			{origin === "custom" && !installed && (
+																				<button
+																					type="button"
+																					className="smart-icon-btn danger"
+																					title={t("pluginCatalogRemoveHint")}
+																					disabled={isRunning}
+																					onClick={() => runCatalogRemove(e.id)}
+																				>
+																					<FiX />
+																				</button>
+																			)}
+																			<button
+																				type="button"
+																				className="smart-expand-btn"
+																				title={isExpanded ? t("collapseSection") : t("expandSection")}
+																				aria-label={isExpanded ? t("collapseSection") : t("expandSection")}
+																				onClick={() => setExpandedPluginId(isExpanded ? null : e.id)}
+																			>
+																				{isExpanded ? <FiChevronUp /> : <FiChevronDown />}
+																			</button>
 																		</div>
 																	</div>
 
-																	<div className="smart-plugin-actions">
-																		{pluginOfficialUrl(e) && (
-																			<a
-																				href={pluginOfficialUrl(e)!}
-																				target="_blank"
-																				rel="noreferrer noopener"
-																				className="smart-icon-btn"
-																				title={t("pluginOfficialLinkHint")}
-																			>
-																				<FiExternalLink />
-																			</a>
-																		)}
-																		{installed ? (
-																			<>
-																				{isUpdatable ? (
+																	{isExpanded && (
+																		<div className="smart-plugin-detail-panel">
+																			{desc && (
+																				<div className="smart-detail-desc">
+																					<strong>{t("pluginCatalogDesc")}：</strong>
+																					<p>{desc}</p>
+																				</div>
+																			)}
+																			<div className="smart-detail-meta">
+																				<span className="smart-detail-meta-item">
+																					<strong>ID：</strong> <code>{e.id}</code>
+																				</span>
+																				<span className="smart-detail-meta-item">
+																					<strong>{t("pluginCatalogSource")}：</strong> <code>{e.source}</code>
+																				</span>
+																			</div>
+																			{renderJobStatus(e.id)}
+																		</div>
+																	)}
+																</div>
+															);
+														})}
+													</div>
+												))}
+
+											{pluginSub === "installed" && (
+												<>
+													{chat.plugins.length > 0 && (
+														<PluginInventoryStrip plugins={chat.plugins} disabledIds={disabledPlugins} />
+													)}
+													{chat.plugins.length === 0 ? (
+														<p className="set-empty">{t("noUiPlugins")}</p>
+													) : filteredInstalled.length === 0 ? (
+														<p className="set-empty">{t("searchNoResults")}</p>
+													) : (
+														<div className="smart-plugin-list">
+															{filteredInstalled.map((p) => {
+																const upd = chat.pluginUpdates?.[p.id];
+																const isUpdatable = upd?.updatable === true;
+																const isRunning = Boolean(jobFor(p.id) && jobFor(p.id)?.phase !== "done");
+																const isDisabled = disabledPlugins.has(p.id);
+																const hasSettings = Boolean(p.settingsSchema && p.settingsSchema.length > 0);
+																const isSettingsOpen = Boolean(settingsOpen[p.id]);
+																const isLogOpen = logOpen === p.id;
+																const isDiagOpen = diagOpen === p.id;
+																const logsCount = getPluginLogs(p.id).length;
+																const diagCount = p.diagnostics?.length ?? 0;
+
+																return (
+																	<div key={p.id} className={`smart-installed-card${isDisabled ? " disabled" : ""}`}>
+																		<div className="smart-installed-head">
+																			<div className="smart-installed-lead">
+																				<InvDot
+																					phase={pluginPhase(p, isDisabled)}
+																					label={tt(phaseLabelKey(pluginPhase(p, isDisabled)))}
+																				/>
+																				<div className="smart-plugin-icon">
+																					<PluginIcon icon={p.icon} iconSvg={p.iconSvg} />
+																				</div>
+																				<div className="smart-installed-titles">
+																					<div className="smart-plugin-title-row">
+																						<span className="smart-plugin-name">{p.name}</span>
+																						{isUpdatable && (
+																							<span
+																								className="smart-badge smart-badge-update"
+																								title={
+																									upd?.latestVersion
+																										? `v${p.version ?? "0.0.0"} → v${upd.latestVersion}`
+																										: (upd?.remoteSha ?? "")
+																								}
+																							>
+																								{t("pluginUpdateAvailableBadge")}
+																								{upd?.latestVersion ? ` v${upd.latestVersion}` : ""}
+																							</span>
+																						)}
+																						<span className="smart-plugin-source" title={p.id}>
+																							{p.id}
+																						</span>
+																					</div>
+																					<div className="smart-plugin-desc">
+																						{p.error ? (
+																							<span className="smart-desc-error">{p.error}</span>
+																						) : (
+																							<span>
+																								{p.source ?? t("uiPluginNoSource")}
+																								{p.permissions?.length
+																									? ` · ${t("uiPluginPerms")}: ${p.permissions.join(", ")}`
+																									: ""}
+																							</span>
+																						)}
+																					</div>
+																				</div>
+																			</div>
+
+																			<div className="smart-installed-ctrls">
+																				{(() => {
+																					const url =
+																						pluginOfficialUrl(chat.pluginCatalog.find((c) => c.id === p.id)) ||
+																						pluginOfficialUrl(p);
+																					return url ? (
+																						<a
+																							href={url}
+																							target="_blank"
+																							rel="noreferrer noopener"
+																							className="smart-icon-btn"
+																							title={t("pluginOfficialLinkHint")}
+																						>
+																							<FiExternalLink />
+																						</a>
+																					) : null;
+																				})()}
+																				{p.source && isUpdatable && (
 																					<button
 																						type="button"
 																						className="smart-btn-action update"
 																						disabled={isRunning}
 																						title={
-																							isUpdatable && upd?.latestVersion
+																							upd?.latestVersion
 																								? t("pluginUpdateAvailableDetail", {
 																										version: `v${upd.latestVersion}`,
 																									})
 																								: t("pluginUpdateHint")
 																						}
-																						onClick={() => runUiPluginUpdate(e.id, e.source)}
+																						onClick={() => runUiPluginUpdate(p.id, p.source!)}
 																					>
 																						<FiRefreshCw className={isRunning ? "set-job-spin" : ""} />
 																						<span>{isRunning ? t("pluginJobRunning") : t("pluginUpdate")}</span>
 																					</button>
-																				) : (
-																					<span className="smart-tag-installed">
-																						<FiCheck style={{ fontSize: 12 }} />
-																						{t("pluginInstalled")}
-																					</span>
 																				)}
-																				{confirmUiUninstall === e.id ? (
+																				{confirmUiUninstall === p.id ? (
 																					<button
 																						type="button"
 																						className="smart-btn-action danger"
 																						disabled={isRunning}
 																						title={t("pluginUninstallHint")}
-																						onClick={() => runUiPluginUninstall(e.id)}
+																						onClick={() => runUiPluginUninstall(p.id)}
 																					>
 																						{t("uninstallConfirm")}
 																					</button>
@@ -6138,378 +6280,276 @@ function LoadedSettingsModal({
 																						className="smart-icon-btn danger"
 																						disabled={isRunning}
 																						title={t("pluginUninstallHint")}
-																						onClick={() => setConfirmUiUninstall(e.id)}
+																						onClick={() => setConfirmUiUninstall(p.id)}
 																					>
 																						<FiTrash2 />
 																					</button>
 																				)}
-																			</>
-																		) : (
-																			<button
-																				type="button"
-																				className="smart-btn-action install"
-																				title={t("pluginInstallHint")}
-																				disabled={isRunning}
-																				onClick={() => runCatalogInstall(e)}
-																			>
-																				{isRunning ? (
-																					<>
-																						<FiRefreshCw className="set-job-spin" />
-																						<span>{t("pluginJobRunning")}</span>
-																					</>
-																				) : (
-																					<>
-																						<FiDownload />
-																						<span>{t("pluginInstall")}</span>
-																					</>
-																				)}
-																			</button>
-																		)}
-																		{origin === "custom" && !installed && (
-																			<button
-																				type="button"
-																				className="smart-icon-btn danger"
-																				title={t("pluginCatalogRemoveHint")}
-																				disabled={isRunning}
-																				onClick={() => runCatalogRemove(e.id)}
-																			>
-																				<FiX />
-																			</button>
-																		)}
-																		<button
-																			type="button"
-																			className="smart-expand-btn"
-																			title={isExpanded ? t("collapseSection") : t("expandSection")}
-																			aria-label={isExpanded ? t("collapseSection") : t("expandSection")}
-																			onClick={() => setExpandedPluginId(isExpanded ? null : e.id)}
-																		>
-																			{isExpanded ? <FiChevronUp /> : <FiChevronDown />}
-																		</button>
-																	</div>
-																</div>
+																				<button
+																					type="button"
+																					role="switch"
+																					aria-checked={!isDisabled && !p.error}
+																					disabled={Boolean(p.error)}
+																					className={`set-switch${!isDisabled && !p.error ? " on" : ""}`}
+																					title={!isDisabled ? t("pluginPhaseActive") : t("pluginPhaseDisabled")}
+																					onClick={() => !p.error && togglePlugin(p)}
+																				>
+																					<span className="set-switch-knob" />
+																				</button>
+																			</div>
+																		</div>
 
-																{isExpanded && (
-																	<div className="smart-plugin-detail-panel">
-																		{desc && (
-																			<div className="smart-detail-desc">
-																				<strong>{t("pluginCatalogDesc")}：</strong>
-																				<p>{desc}</p>
+																		{renderJobStatus(p.id)}
+
+																		<div className="smart-installed-chips">
+																			{p.agentTools && p.agentTools.length > 0 && !isDsh && (
+																				<button
+																					type="button"
+																					className="smart-feature-chip"
+																					title={t("pluginToolOffHint")}
+																					onClick={() => setTab("tools")}
+																				>
+																					<FiTool className="smart-chip-icon" />
+																					<span>
+																						{t("pluginToolsSection")} ({p.agentTools.length})
+																					</span>
+																					{p.agentTools.some((tool) => disabledPluginTools.has(tool.name)) && (
+																						<span className="smart-chip-tag">{t("settingsDisabled")}</span>
+																					)}
+																					<span style={{ opacity: 0.6 }}>→</span>
+																				</button>
+																			)}
+
+																			{hasSettings && (
+																				<button
+																					type="button"
+																					className={`smart-feature-chip${isSettingsOpen ? " active" : ""}`}
+																					onClick={() => setSettingsOpen((prev) => ({ ...prev, [p.id]: !prev[p.id] }))}
+																				>
+																					<FiSliders className="smart-chip-icon" />
+																					<span>
+																						{t("pluginSettingsTitle")} ({p.settingsSchema!.length})
+																					</span>
+																					<span style={{ fontSize: 10, opacity: 0.7 }}>
+																						{isSettingsOpen ? "▲" : "▼"}
+																					</span>
+																				</button>
+																			)}
+
+																			<button
+																				type="button"
+																				className={`smart-feature-chip${isLogOpen ? " active" : ""}`}
+																				onClick={() => {
+																					if (isLogOpen) setLogOpen(null);
+																					else {
+																						setLogOpen(p.id);
+																						appSend(pluginLogsFetch(p.id));
+																					}
+																				}}
+																			>
+																				<FiFileText className="smart-chip-icon" />
+																				<span>
+																					{t("pluginLogTitle")} ({logsCount}) ·{" "}
+																					{isLogOpen ? t("pluginLogHide") : t("pluginLogShow")}
+																				</span>
+																				<span style={{ fontSize: 10, opacity: 0.7 }}>{isLogOpen ? "▲" : "▼"}</span>
+																			</button>
+
+																			{diagCount > 0 && (
+																				<button
+																					type="button"
+																					className={`smart-feature-chip warn${isDiagOpen ? " active" : ""}`}
+																					onClick={() => setDiagOpen(isDiagOpen ? null : p.id)}
+																				>
+																					<FiAlertTriangle className="smart-chip-icon" />
+																					<span>
+																						{t("pluginDiagTitle")} ({diagCount}) ·{" "}
+																						{isDiagOpen ? t("pluginDiagHide") : t("pluginDiagShow")}
+																					</span>
+																					<span style={{ fontSize: 10, opacity: 0.7 }}>{isDiagOpen ? "▲" : "▼"}</span>
+																				</button>
+																			)}
+
+																			{p.wantsDom && (
+																				<button
+																					type="button"
+																					className={`smart-feature-chip${p.domGranted ? " success" : " warn"}`}
+																					title={t("pluginDomDesc")}
+																					onClick={() =>
+																						appSend({
+																							type: "plugin_dom_consent",
+																							pluginId: p.id,
+																							granted: !p.domGranted,
+																						})
+																					}
+																				>
+																					<span>
+																						{p.domGranted
+																							? `✓ ${t("pluginDomGranted")} (${t("pluginDomRevoke")})`
+																							: `! ${t("pluginDomNeed")} (${t("pluginDomGrant")})`}
+																					</span>
+																				</button>
+																			)}
+																		</div>
+
+																		{isSettingsOpen && p.settingsSchema && (
+																			<div className="smart-card-drawer">
+																				<PluginSettingsForm plugin={p} models={settings?.subagentModels ?? []} />
 																			</div>
 																		)}
-																		<div className="smart-detail-meta">
-																			<span className="smart-detail-meta-item">
-																				<strong>ID：</strong> <code>{e.id}</code>
-																			</span>
-																			<span className="smart-detail-meta-item">
-																				<strong>{t("pluginCatalogSource")}：</strong> <code>{e.source}</code>
+
+																		{isLogOpen && (
+																			<div className="smart-card-drawer">
+																				<PluginLogView pluginId={p.id} />
+																			</div>
+																		)}
+
+																		{isDiagOpen && p.diagnostics && (
+																			<div className="smart-card-drawer">
+																				<ul className="set-diag-list">
+																					{p.diagnostics.map((d, i) => (
+																						<li key={`${p.id}-${i}`}>{d}</li>
+																					))}
+																				</ul>
+																			</div>
+																		)}
+																	</div>
+																);
+															})}
+														</div>
+													)}
+
+													{/* 目录授权 */}
+													<div className="set-section" style={{ marginTop: 24 }}>
+														<div className="set-section-title">
+															<FiFolder className="set-section-icon" />
+															{t("pluginGrantsTitle")}
+															<span className="set-count">
+																{chat.pluginGrants.reduce((n, g) => n + g.paths.length, 0)}
+															</span>
+														</div>
+														<div className="set-note">{t("pluginGrantsHint")}</div>
+														{chat.pluginGrants.length === 0 ? (
+															<p className="set-empty">{t("pluginGrantsEmpty")}</p>
+														) : (
+															<div className="set-list">
+																{chat.pluginGrants.map((g) => (
+																	<div key={g.pluginId} className="set-grant-row">
+																		<div className="set-catalog-title">
+																			<span>{g.pluginId}</span>
+																		</div>
+																		{g.paths.map((p) => (
+																			<div key={p} className="set-grant-path">
+																				<span className="set-catalog-source">{p}</span>
+																				<button
+																					type="button"
+																					className="set-uninstall"
+																					onClick={() =>
+																						appSend({ type: "plugin_path_revoke", pluginId: g.pluginId, path: p })
+																					}
+																				>
+																					{t("pluginGrantsRevoke")}
+																				</button>
+																			</div>
+																		))}
+																	</div>
+																))}
+															</div>
+														)}
+													</div>
+
+													{/* 敏感权限授权 */}
+													<div className="set-section" style={{ marginTop: 16 }}>
+														<div className="set-section-title">
+															<FiKey className="set-section-icon" />
+															{t("pluginPermsTitle")}
+															<span className="set-count">{(chat.pluginPermissions ?? []).length}</span>
+														</div>
+														<div className="set-note">{t("pluginPermsHint")}</div>
+														{(chat.pluginPermissions ?? []).length === 0 ? (
+															<p className="set-empty">{t("pluginPermsEmpty")}</p>
+														) : (
+															<div className="set-list">
+																{(chat.pluginPermissions ?? []).map((g, i) => (
+																	<div key={`${g.pluginId}|${g.family}|${i}`} className="set-grant-row">
+																		<div className="set-catalog-title">
+																			<span>{g.pluginId}</span>
+																			<span className="set-catalog-source">
+																				{g.family === "net" ? t("pluginPermNet") : t("pluginPermLlm")}
+																				{g.session ? ` · ${t("pluginPermSession")}` : ""}
 																			</span>
 																		</div>
-																		{renderJobStatus(e.id)}
+																		{(g.hosts ?? []).map((h) => (
+																			<div key={h} className="set-grant-path">
+																				<span className="set-catalog-source">{h}</span>
+																				<button
+																					type="button"
+																					className="set-uninstall"
+																					onClick={() =>
+																						appSend({
+																							type: "plugin_permission_revoke",
+																							pluginId: g.pluginId,
+																							family: "net",
+																							host: h,
+																						})
+																					}
+																				>
+																					{t("pluginGrantsRevoke")}
+																				</button>
+																			</div>
+																		))}
+																		{(g.models ?? []).map((m) => (
+																			<div key={m} className="set-grant-path">
+																				<span className="set-catalog-source">{m}</span>
+																				<button
+																					type="button"
+																					className="set-uninstall"
+																					onClick={() =>
+																						appSend({
+																							type: "plugin_permission_revoke",
+																							pluginId: g.pluginId,
+																							family: "llm",
+																							model: m,
+																						})
+																					}
+																				>
+																					{t("pluginGrantsRevoke")}
+																				</button>
+																			</div>
+																		))}
+																		{!(g.hosts ?? []).length && !(g.models ?? []).length && (
+																			<div className="set-grant-path">
+																				<span className="set-catalog-source">
+																					{g.reason ?? t("pluginPermUnscoped")}
+																				</span>
+																				<button
+																					type="button"
+																					className="set-uninstall"
+																					onClick={() =>
+																						appSend({
+																							type: "plugin_permission_revoke",
+																							pluginId: g.pluginId,
+																							family: g.family,
+																						})
+																					}
+																				>
+																					{t("pluginGrantsRevoke")}
+																				</button>
+																			</div>
+																		)}
+																		{g.reason && ((g.hosts ?? []).length > 0 || (g.models ?? []).length > 0) && (
+																			<div className="set-note">{g.reason}</div>
+																		)}
 																	</div>
-																)}
+																))}
 															</div>
-														);
-													})}
-												</div>
+														)}
+													</div>
+												</>
 											)}
 										</>
 									);
 								})()}
-							</div>
-						)}
-
-						{tab === "plugins" && pluginSub === "installed" && (
-							<div className="set-section">
-								<div className="smart-market-head">
-									<div className="smart-market-title">
-										<FiBox className="set-section-icon" />
-										<span>{t("pluginListTab")}</span>
-										<span className="set-count">{chat.plugins.length}</span>
-									</div>
-									<div className="smart-market-tools">
-										<button
-											type="button"
-											className="smart-tool-btn"
-											title={t("pluginCheckUpdatesHint")}
-											disabled={chat.checkingPluginUpdates}
-											onClick={() => appSend({ type: "check_plugin_updates" })}
-										>
-											<FiRefreshCw className={chat.checkingPluginUpdates ? "set-job-spin" : ""} />
-											<span>{chat.checkingPluginUpdates ? t("checkingUpdate") : t("pluginCheckUpdates")}</span>
-										</button>
-										<button
-											type="button"
-											className="smart-tool-btn"
-											title={t("pluginRescanHint")}
-											onClick={() => appSend({ type: "plugins_reload" })}
-										>
-											<FiRefreshCw />
-											<span>{t("pluginRescan")}</span>
-										</button>
-										<a
-											href={OFFICIAL_PLUGINS_REPO_URL}
-											target="_blank"
-											rel="noreferrer noopener"
-											className="smart-tool-link"
-											title={t("pluginOfficialMarketHint")}
-										>
-											<FiExternalLink />
-											<span>{t("pluginOfficialMarket")}</span>
-										</a>
-									</div>
-								</div>
-								{chat.plugins.length > 0 && (
-									<PluginInventoryStrip plugins={chat.plugins} disabledIds={disabledPlugins} />
-								)}
-								{chat.plugins.length === 0 ? (
-									<p className="set-empty">{t("noUiPlugins")}</p>
-								) : (
-									<div className="smart-plugin-list">
-										{chat.plugins.map((p) => {
-											const upd = chat.pluginUpdates?.[p.id];
-											const isUpdatable = upd?.updatable === true;
-											const isRunning = Boolean(jobFor(p.id) && jobFor(p.id)?.phase !== "done");
-											const isDisabled = disabledPlugins.has(p.id);
-											const hasSettings = Boolean(p.settingsSchema && p.settingsSchema.length > 0);
-											const isSettingsOpen = Boolean(settingsOpen[p.id]);
-											const isLogOpen = logOpen === p.id;
-											const isDiagOpen = diagOpen === p.id;
-											const logsCount = getPluginLogs(p.id).length;
-											const diagCount = p.diagnostics?.length ?? 0;
-
-											return (
-												<div key={p.id} className={`smart-installed-card${isDisabled ? " disabled" : ""}`}>
-													<div className="smart-installed-head">
-														<div className="smart-installed-lead">
-															<InvDot
-																phase={pluginPhase(p, isDisabled)}
-																label={tt(phaseLabelKey(pluginPhase(p, isDisabled)))}
-															/>
-															<div className="smart-plugin-icon">
-																<PluginIcon icon={p.icon} iconSvg={p.iconSvg} />
-															</div>
-															<div className="smart-installed-titles">
-																<div className="smart-plugin-title-row">
-																	<span className="smart-plugin-name">{p.name}</span>
-																	{isUpdatable && (
-																		<span
-																			className="smart-badge smart-badge-update"
-																			title={
-																				upd?.latestVersion
-																					? `v${p.version ?? "0.0.0"} → v${upd.latestVersion}`
-																					: (upd?.remoteSha ?? "")
-																			}
-																		>
-																			{t("pluginUpdateAvailableBadge")}
-																			{upd?.latestVersion ? ` v${upd.latestVersion}` : ""}
-																		</span>
-																	)}
-																	<span className="smart-plugin-source" title={p.id}>
-																		{p.id}
-																	</span>
-																</div>
-																<div className="smart-plugin-desc">
-																	{p.error ? (
-																		<span className="smart-desc-error">{p.error}</span>
-																	) : (
-																		<span>
-																			{p.source ?? t("uiPluginNoSource")}
-																			{p.permissions?.length
-																				? ` · ${t("uiPluginPerms")}: ${p.permissions.join(", ")}`
-																				: ""}
-																		</span>
-																	)}
-																</div>
-															</div>
-														</div>
-
-														<div className="smart-installed-ctrls">
-															{(() => {
-																const url =
-																	pluginOfficialUrl(chat.pluginCatalog.find((c) => c.id === p.id)) ||
-																	pluginOfficialUrl(p);
-																return url ? (
-																	<a
-																		href={url}
-																		target="_blank"
-																		rel="noreferrer noopener"
-																		className="smart-icon-btn"
-																		title={t("pluginOfficialLinkHint")}
-																	>
-																		<FiExternalLink />
-																	</a>
-																) : null;
-															})()}
-															{p.source && isUpdatable && (
-																<button
-																	type="button"
-																	className="smart-btn-action update"
-																	disabled={isRunning}
-																	title={
-																		upd?.latestVersion
-																			? t("pluginUpdateAvailableDetail", {
-																					version: `v${upd.latestVersion}`,
-																				})
-																			: t("pluginUpdateHint")
-																	}
-																	onClick={() => runUiPluginUpdate(p.id, p.source!)}
-																>
-																	<FiRefreshCw className={isRunning ? "set-job-spin" : ""} />
-																	<span>{isRunning ? t("pluginJobRunning") : t("pluginUpdate")}</span>
-																</button>
-															)}
-															{confirmUiUninstall === p.id ? (
-																<button
-																	type="button"
-																	className="smart-btn-action danger"
-																	disabled={isRunning}
-																	title={t("pluginUninstallHint")}
-																	onClick={() => runUiPluginUninstall(p.id)}
-																>
-																	{t("uninstallConfirm")}
-																</button>
-															) : (
-																<button
-																	type="button"
-																	className="smart-icon-btn danger"
-																	disabled={isRunning}
-																	title={t("pluginUninstallHint")}
-																	onClick={() => setConfirmUiUninstall(p.id)}
-																>
-																	<FiTrash2 />
-																</button>
-															)}
-															<button
-																type="button"
-																role="switch"
-																aria-checked={!isDisabled && !p.error}
-																disabled={Boolean(p.error)}
-																className={`set-switch${!isDisabled && !p.error ? " on" : ""}`}
-																title={!isDisabled ? t("pluginPhaseActive") : t("pluginPhaseDisabled")}
-																onClick={() => !p.error && togglePlugin(p)}
-															>
-																<span className="set-switch-knob" />
-															</button>
-														</div>
-													</div>
-
-													{renderJobStatus(p.id)}
-
-													<div className="smart-installed-chips">
-														{p.agentTools && p.agentTools.length > 0 && !isDsh && (
-															<button
-																type="button"
-																className="smart-feature-chip"
-																title={t("pluginToolOffHint")}
-																onClick={() => setTab("tools")}
-															>
-																<FiTool className="smart-chip-icon" />
-																<span>
-																	{t("pluginToolsSection")} ({p.agentTools.length})
-																</span>
-																{p.agentTools.some((tool) => disabledPluginTools.has(tool.name)) && (
-																	<span className="smart-chip-tag">{t("settingsDisabled")}</span>
-																)}
-																<span style={{ opacity: 0.6 }}>→</span>
-															</button>
-														)}
-
-														{hasSettings && (
-															<button
-																type="button"
-																className={`smart-feature-chip${isSettingsOpen ? " active" : ""}`}
-																onClick={() => setSettingsOpen((prev) => ({ ...prev, [p.id]: !prev[p.id] }))}
-															>
-																<FiSliders className="smart-chip-icon" />
-																<span>
-																	{t("pluginSettingsTitle")} ({p.settingsSchema!.length})
-																</span>
-																<span style={{ fontSize: 10, opacity: 0.7 }}>{isSettingsOpen ? "▲" : "▼"}</span>
-															</button>
-														)}
-
-														<button
-															type="button"
-															className={`smart-feature-chip${isLogOpen ? " active" : ""}`}
-															onClick={() => {
-																if (isLogOpen) setLogOpen(null);
-																else {
-																	setLogOpen(p.id);
-																	appSend(pluginLogsFetch(p.id));
-																}
-															}}
-														>
-															<FiFileText className="smart-chip-icon" />
-															<span>
-																{t("pluginLogTitle")} ({logsCount}) ·{" "}
-																{isLogOpen ? t("pluginLogHide") : t("pluginLogShow")}
-															</span>
-															<span style={{ fontSize: 10, opacity: 0.7 }}>{isLogOpen ? "▲" : "▼"}</span>
-														</button>
-
-														{diagCount > 0 && (
-															<button
-																type="button"
-																className={`smart-feature-chip warn${isDiagOpen ? " active" : ""}`}
-																onClick={() => setDiagOpen(isDiagOpen ? null : p.id)}
-															>
-																<FiAlertTriangle className="smart-chip-icon" />
-																<span>
-																	{t("pluginDiagTitle")} ({diagCount}) ·{" "}
-																	{isDiagOpen ? t("pluginDiagHide") : t("pluginDiagShow")}
-																</span>
-																<span style={{ fontSize: 10, opacity: 0.7 }}>{isDiagOpen ? "▲" : "▼"}</span>
-															</button>
-														)}
-
-														{p.wantsDom && (
-															<button
-																type="button"
-																className={`smart-feature-chip${p.domGranted ? " success" : " warn"}`}
-																title={t("pluginDomDesc")}
-																onClick={() =>
-																	appSend({
-																		type: "plugin_dom_consent",
-																		pluginId: p.id,
-																		granted: !p.domGranted,
-																	})
-																}
-															>
-																<span>
-																	{p.domGranted
-																		? `✓ ${t("pluginDomGranted")} (${t("pluginDomRevoke")})`
-																		: `! ${t("pluginDomNeed")} (${t("pluginDomGrant")})`}
-																</span>
-															</button>
-														)}
-													</div>
-
-													{isSettingsOpen && p.settingsSchema && (
-														<div className="smart-card-drawer">
-															<PluginSettingsForm plugin={p} models={settings?.subagentModels ?? []} />
-														</div>
-													)}
-
-													{isLogOpen && (
-														<div className="smart-card-drawer">
-															<PluginLogView pluginId={p.id} />
-														</div>
-													)}
-
-													{isDiagOpen && p.diagnostics && (
-														<div className="smart-card-drawer">
-															<ul className="set-diag-list">
-																{p.diagnostics.map((d, i) => (
-																	<li key={`${p.id}-${i}`}>{d}</li>
-																))}
-															</ul>
-														</div>
-													)}
-												</div>
-											);
-										})}
-									</div>
-								)}
 							</div>
 						)}
 
@@ -7165,6 +7205,8 @@ function LoadedSettingsModal({
 						)}
 
 						{tab === "device-collab" && isPi && <DeviceExecutionSettings onNotice={() => triggerSyncState()} />}
+
+						{tab === "desktop" && inDesktopShell && <DesktopAppSettings />}
 
 						{tab === "approval-rules" && !isDsh && (
 							<div className="set-section">

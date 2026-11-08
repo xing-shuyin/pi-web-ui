@@ -20,6 +20,7 @@ import {
 import type { FileContent } from "../types";
 import type { UiSlotEntry } from "../ui-slots";
 import { assignHeadingIds, shouldShowToc, type TocHeading } from "../preview-toc";
+import { useOverlayZIndex } from "../overlay-stack";
 import { Markdown } from "./Markdown";
 import { renderMergedToolbar } from "../slot-toolbar";
 import { useT } from "../i18n";
@@ -66,6 +67,7 @@ export function FilePreview({
 	onUiAction,
 }: FilePreviewProps) {
 	const t = useT();
+	const overlayZIndex = useOverlayZIndex();
 	const [loaded, setLoaded] = useState<FileContent | null>(null);
 	const [loading, setLoading] = useState(false);
 	const [sel, setSel] = useState<Range | null>(null);
@@ -75,7 +77,6 @@ export function FilePreview({
 	const [draft, setDraft] = useState("");
 	const [markdownPreview, setMarkdownPreview] = useState(true);
 	const [htmlPreview, setHtmlPreview] = useState(true);
-	const [allowJs, setAllowJs] = useState(false);
 	const editViewRef = useRef(false);
 	const [wrap, setWrap] = useState(true);
 	const [fullscreen, setFullscreen] = useState(false);
@@ -103,7 +104,6 @@ export function FilePreview({
 		setDraft("");
 		setMarkdownPreview(true);
 		setHtmlPreview(true);
-		setAllowJs(false);
 		editViewRef.current = false;
 		savingRef.current = false;
 		setSaving(false);
@@ -323,6 +323,17 @@ export function FilePreview({
 		for (const node of nodes) observer.observe(node);
 		return () => observer.disconnect();
 	}, [toc, tocOpen]);
+	const mediaUrl = (p: string) =>
+		withToken(appUrl(`/api/file?clientId=${encodeURIComponent(getClientId())}&path=${encodeURIComponent(p)}`));
+	const htmlUrl = (p: string) => {
+		const segs = p
+			.split("/")
+			.map((s) => encodeURIComponent(s))
+			.join("/");
+		const abs = /^[A-Za-z]:([\\/]|$)/.test(p) || p.startsWith("/");
+		const base = abs ? `/api/preview/__abs__/${segs}` : `/api/preview/${segs}`;
+		return withToken(appUrl(`${base}?clientId=${encodeURIComponent(getClientId())}&allowJs=1`));
+	};
 	const fpHostNodes: Record<string, ReactNode> = {
 		"host:fp-md":
 			isMarkdown && kind === "text" && !isBinary && loaded ? (
@@ -358,6 +369,19 @@ export function FilePreview({
 				>
 					{htmlPreview ? <FiCode /> : <FiEye />}
 				</button>
+			) : null,
+		"host:fp-external":
+			isHtml && kind === "text" && !isBinary && loaded ? (
+				<a
+					className="fp-attach open"
+					href={htmlUrl(file.path)}
+					target="_blank"
+					rel="noopener noreferrer"
+					data-tip={t("openInNewTab")}
+					aria-label={t("openInNewTab")}
+				>
+					<FiExternalLink />
+				</a>
 			) : null,
 		"host:fp-edit":
 			kind === "text" && !isBinary && loaded ? (
@@ -446,6 +470,7 @@ export function FilePreview({
 					"host:fp-md",
 					"host:fp-toc",
 					"host:fp-html",
+					"host:fp-external",
 					"host:fp-edit",
 					"host:fp-wrap",
 					"host:fp-zoom",
@@ -454,17 +479,6 @@ export function FilePreview({
 					"host:fp-full",
 				].map((id) => ({ id, source: "host" }) as UiSlotEntry)
 			: uiFilePreviewToolbar.filter((e) => !e.hidden && e.id !== "host:fp-close");
-	const mediaUrl = (p: string) =>
-		withToken(appUrl(`/api/file?clientId=${encodeURIComponent(getClientId())}&path=${encodeURIComponent(p)}`));
-	const htmlUrl = (p: string) => {
-		const segs = p
-			.split("/")
-			.map((s) => encodeURIComponent(s))
-			.join("/");
-		const abs = /^[A-Za-z]:([\\/]|$)/.test(p) || p.startsWith("/");
-		const base = abs ? `/api/preview/__abs__/${segs}` : `/api/preview/${segs}`;
-		return withToken(appUrl(`${base}?clientId=${encodeURIComponent(getClientId())}${allowJs ? "&allowJs=1" : ""}`));
-	};
 
 	if (kind === "image" && !loading) {
 		return (
@@ -480,6 +494,7 @@ export function FilePreview({
 	return (
 		<div
 			className={`fp-overlay ${fullscreen ? "fullscreen" : ""}`}
+			style={{ zIndex: overlayZIndex }}
 			onMouseDown={(e) => {
 				if (e.target === e.currentTarget) handleClose();
 			}}
@@ -546,35 +561,11 @@ export function FilePreview({
 
 				{!loading && showHtml && loaded && (
 					<div className="fp-html">
-						<div className="fp-html-bar">
-							<span className="fp-html-hint" title={t(allowJs ? "htmlJsOnTip" : "htmlJsOffTip")}>
-								{allowJs ? t("htmlJsOn") : t("htmlJsOff")}
-							</span>
-							<button
-								type="button"
-								className={`fp-html-js ${allowJs ? "on" : ""}`}
-								data-tip={allowJs ? t("htmlDisableJs") : t("htmlEnableJs")}
-								onClick={() => setAllowJs((v) => !v)}
-							>
-								{allowJs ? t("htmlDisableJs") : t("htmlEnableJs")}
-							</button>
-							<a
-								className="fp-html-btn fp-html-external"
-								href={htmlUrl(file.path)}
-								target="_blank"
-								rel="noopener noreferrer"
-								title={t("openInNewTab")}
-							>
-								<FiExternalLink />
-								<span>{t("openInNewTab")}</span>
-							</a>
-						</div>
 						<iframe
-							key={allowJs ? "js" : "nojs"}
 							className="fp-html-frame"
 							src={htmlUrl(file.path)}
 							title={file.name}
-							sandbox={allowJs ? "allow-scripts" : ""}
+							sandbox="allow-scripts"
 							referrerPolicy="no-referrer"
 						/>
 					</div>

@@ -4,7 +4,7 @@ export interface TerminalWriter {
 	reset?(): void;
 }
 
-const MAX_TERM_BUFFER = 200_000;
+export const MAX_TERM_BUFFER = 2_000_000;
 
 export type TerminalOwnerKind = "client" | "conversation";
 type BufferedOutput = { data: string; reset: boolean };

@@ -10,7 +10,6 @@ import {
 	FiFolderPlus,
 	FiGitBranch,
 	FiGithub,
-	FiGlobe,
 	FiMenu,
 	FiMessageSquare,
 	FiSearch,
@@ -21,7 +20,15 @@ import {
 	FiTerminal,
 } from "react-icons/fi";
 import { GoTriangleDown } from "react-icons/go";
-import { LuFlaskConical, LuFolders, LuMessageSquareDashed, LuWorkflow } from "react-icons/lu";
+import {
+	LuFlaskConical,
+	LuFolderTree,
+	LuFolders,
+	LuLanguages,
+	LuMessageSquareDashed,
+	LuMonitorSmartphone,
+	LuWorkflow,
+} from "react-icons/lu";
 import type { ChatState, UpdateAllItem } from "../use-chat";
 import type { CommandDef } from "../types";
 import { buildUpdateCommand } from "../update-command";
@@ -926,7 +933,7 @@ export function TopBar({
 					aria-label={t("openFiles")}
 					onClick={() => onOpenPanel("right")}
 				>
-					<FiFolder />
+					<LuFolderTree />
 					<span>{t("openFiles")}</span>
 				</button>
 			) : null,
@@ -1050,9 +1057,10 @@ export function TopBar({
 				<span className="chip-sub">{t("searchGlobal")}</span>
 			</button>
 		),
-		"host:browser": !(chat.settings?.disabledAgentTools?.includes(BROWSER_PAGE_TOOL_NAME) ?? false) ? (
-			<BrowserControl />
-		) : null,
+		"host:browser":
+			isDesktopShell() || !(chat.settings?.disabledAgentTools?.includes(BROWSER_PAGE_TOOL_NAME) ?? false) ? (
+				<BrowserControl />
+			) : null,
 		"host:tasks": (
 			<button type="button" className="chip bg-task-chip" data-tip={t("bgTasksTip")} onClick={onOpenBgTasks}>
 				<FiLayers />
@@ -1081,7 +1089,7 @@ export function TopBar({
 				onClick={() => onViewChange("devices")}
 				aria-pressed={view === "devices"}
 			>
-				<FiGlobe />
+				<LuMonitorSmartphone />
 				<span className="chip-sub">{t("deviceCenter")}</span>
 			</button>
 		),
@@ -1095,7 +1103,7 @@ export function TopBar({
 			<Dropdown
 				trigger={
 					<>
-						<FiGlobe />
+						<LuLanguages />
 						<span className="chip-sub">{localeShort(locale)}</span>
 					</>
 				}
@@ -1368,7 +1376,8 @@ export function TopBar({
 	const flowItems: { id: string; entry: UiSlotEntry | null; node: ReactNode }[] = [];
 	for (const it of topEntries) {
 		if (it.id === "host:native-cli" || (it.id === "host:chat" && (view === "chat" || view === "native-cli"))) continue;
-		if (it.entry?.hidden) continue;
+		const isItemHidden = it.id === "host:browser" && isDesktopShell() ? false : it.entry?.hidden;
+		if (isItemHidden) continue;
 		if (isTabGatedOff(it.id)) continue;
 		if (it.id === "host:worktrees" && !chat.state?.worktree) continue;
 		let node: ReactNode = null;
@@ -1481,7 +1490,7 @@ export function TopBar({
 			flow.clientWidth,
 			gap,
 			0,
-			new Set([...REQUIRED_TOPBAR_ITEM_IDS, "host:worktrees"]),
+			new Set([...REQUIRED_TOPBAR_ITEM_IDS, "host:worktrees", ...(isDesktopShell() ? ["host:browser"] : [])]),
 		);
 		setDroppedIds((prev) => (prev.size === next.size && [...next].every((id) => prev.has(id)) ? prev : next));
 	};

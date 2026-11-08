@@ -8,7 +8,7 @@ import {
 	useState,
 	type ReactNode,
 } from "react";
-import { FiChevronRight, FiTerminal } from "react-icons/fi";
+import { FiChevronRight, FiDownload, FiTerminal } from "react-icons/fi";
 import { ENGINE_CATALOG } from "../../../server/engine-catalog";
 import type { NativeCliConfig, NativeCliDiscoveryResult } from "../types";
 import { appUrl } from "../base-url";
@@ -16,6 +16,7 @@ import { parseRemoteWorkspaceUri } from "../remote-ssh-client";
 import { useT } from "../i18n";
 import { useAppField } from "../app-globals";
 import { isNativeCliRemoteCwd, nativeCliArgumentLines } from "../native-cli";
+import { shortenPath } from "../tool-args";
 import { Modal } from "./Modal";
 import "./NativeCliCreateModal.css";
 
@@ -24,6 +25,20 @@ export interface NativeCliCreateModalProps {
 	onClose: () => void;
 	onCreate: (config: NativeCliConfig) => void;
 	disabled?: boolean;
+}
+
+// 单行能容下的路径字符数（560px 弹窗里卡片文字宽约 178px ≈ 30 个 ASCII 字符）：
+// 超出走尾部优先的中段省略，完整路径始终留在 title 里，CSS ellipsis 只做兜底。
+const ENGINE_PATH_BUDGET = 30;
+const CWD_PATH_BUDGET = 56;
+
+// 中日韩等全宽字符宽度翻倍，同样像素预算下只能放一半字符。
+const pathBudget = (value: string) =>
+	/[^\x00-\x7f]/.test(value) ? Math.round(ENGINE_PATH_BUDGET / 2) : ENGINE_PATH_BUDGET;
+
+interface EngineDetail {
+	text: string;
+	full?: string;
 }
 
 export function NativeCliCreateModal(props: NativeCliCreateModalProps) {
@@ -46,9 +61,10 @@ function NativeCliCreateForm({ cwd, onClose, onCreate, disabled = false }: Nativ
 	const withPersistence = (config: NativeCliConfig): NativeCliConfig =>
 		keepAlive && persistenceAvailable ? { ...config, keepAlive: true } : config;
 	const discoveryController = useRef<AbortController | null>(null);
-	const detecting = remote && !discovery && discoveryError === null;
+	const detecting = Boolean(cwd) && !discovery && discoveryError === null;
+	// Probe the same endpoint for local and SSH workspaces so missing CLIs are reported before a launch fails.
 	useEffect(() => {
-		if (!remote || !cwd) return;
+		if (!cwd) return;
 		const controller = new AbortController();
 		discoveryController.current = controller;
 		void (async () => {
@@ -59,7 +75,7 @@ function NativeCliCreateForm({ cwd, onClose, onCreate, disabled = false }: Nativ
 				const result = await response.json();
 				if (controller.signal.aborted) return;
 				if (!response.ok) throw new Error(result.error || "");
-				if (result.cwd !== cwd || result.target !== "ssh" || !Array.isArray(result.clis)) {
+				if (result.cwd !== cwd || result.target !== (remote ? "ssh" : "local") || !Array.isArray(result.clis)) {
 					throw new Error();
 				}
 				setDiscovery(result);
@@ -75,9 +91,36 @@ function NativeCliCreateForm({ cwd, onClose, onCreate, disabled = false }: Nativ
 		discoveryController.current?.abort();
 		onClose();
 	};
-	const presetUnavailable = (preset: NativeCliConfig["preset"]) =>
-		disabled ||
-		(remote && preset !== "custom" && !discovery?.clis.some((cli) => cli.preset === preset && cli.available));
+	const detected = (preset: NativeCliConfig["preset"]) =>
+		preset === "custom" ? undefined : discovery?.clis.find((cli) => cli.preset === preset);
+	// SSH presets stay unavailable until detection confirms them; a failed local probe must never block creation.
+	const presetUnavailable = (preset: NativeCliConfig["preset"]) => {
+		if (disabled || preset === "custom") return disabled;
+		const cli = detected(preset);
+		return remote ? !cli?.available : cli?.available === false;
+	};
+	const engineDetail = (engine: (typeof engines)[number]): EngineDetail => {
+		const cli = detected(engine.id);
+		const command = engine.cliCommand ?? engine.name;
+		if (cli?.available) {
+			const full = cli.executable ?? command;
+			return { text: shortenPath(full, pathBudget(full)), full };
+		}
+		if (remote) {
+			return { text: cli?.error ?? (detecting ? t("nativeCliRemoteDetecting") : t("nativeCliRemoteUnavailable")) };
+		}
+		if (cli) return { text: t("nativeCliNotInstalled") };
+		if (detecting) return { text: t("nativeCliDetecting") };
+		return { text: engine.cliRequiresArgs ? t("nativeCliConfigureArgs") : command };
+	};
+	const installEngine = (name: string, command: string) => {
+		window.dispatchEvent(
+			new CustomEvent("pi-web-ui:plugin-run-command", {
+				detail: { title: t("installEngineTabTitle", { name }), command },
+			}),
+		);
+		close();
+	};
 	const engines = Object.values(ENGINE_CATALOG).filter((engine) => engine.cliCommand);
 	const preferred = ["claude", "codex", "pi"];
 	engines.sort((a, b) => {
@@ -93,6 +136,12 @@ function NativeCliCreateForm({ cwd, onClose, onCreate, disabled = false }: Nativ
 		!presetUnavailable(configuredPreset) &&
 		(configuredPreset !== "custom" || Boolean(executable.trim())) &&
 		(!requiresArgs || Boolean(args[0]?.trim()));
+
+	const installMethod = (engine: (typeof engines)[number]): "terminal" | "docs" | null => {
+		const command = engine.installCommand;
+		if (!command) return null;
+		return /^https?:\/\//i.test(command) ? "docs" : "terminal";
+	};
 
 	const select = (preset: NativeCliConfig["preset"]) => {
 		if (presetUnavailable(preset)) return;
@@ -124,105 +173,124 @@ function NativeCliCreateForm({ cwd, onClose, onCreate, disabled = false }: Nativ
 										host: `${remoteLocation.username}@${remoteLocation.host}:${remoteLocation.port}`,
 									})}
 								</div>
-								<div>{t("nativeCliRemotePath", { path: remoteLocation.remotePath })}</div>
+								<div>{t("nativeCliRemotePath", { path: shortenPath(remoteLocation.remotePath, CWD_PATH_BUDGET) })}</div>
 							</>
 						) : (
-							cwd
+							shortenPath(cwd, CWD_PATH_BUDGET)
 						)}
 					</div>
 				)}
+				{detecting && (
+					<p className="native-cli-create-hint" role="status">
+						{t(remote ? "nativeCliRemoteDetecting" : "nativeCliDetecting")}
+					</p>
+				)}
+				{discoveryError !== null && (
+					<div role="alert" className="native-cli-create-hint">
+						<p>{discoveryError || t(remote ? "nativeCliRemoteDiscoveryFailed" : "nativeCliDiscoveryFailed")}</p>
+						{remote && <p>{t("nativeCliRemoteConnectHint")}</p>}
+					</div>
+				)}
+				{cwd && (
+					<div>
+						<button
+							type="button"
+							className="btn"
+							disabled={disabled || detecting}
+							onClick={() => {
+								discoveryController.current?.abort();
+								setDiscovery(null);
+								setKeepAlive(false);
+								setDiscoveryError(null);
+								setAttempt((current) => current + 1);
+							}}
+						>
+							{t("nativeCliRemoteRetry")}
+						</button>
+					</div>
+				)}
 				{remote && (
-					<>
-						{detecting && (
-							<p className="native-cli-create-hint" role="status">
-								{t("nativeCliRemoteDetecting")}
-							</p>
-						)}
-						{discoveryError !== null && (
-							<div role="alert" className="native-cli-create-hint">
-								<p>{discoveryError || t("nativeCliRemoteDiscoveryFailed")}</p>
-								<p>{t("nativeCliRemoteConnectHint")}</p>
-							</div>
-						)}
-						<div>
-							<button
-								type="button"
-								className="btn"
-								disabled={disabled || detecting}
-								onClick={() => {
-									discoveryController.current?.abort();
-									setDiscovery(null);
-									setKeepAlive(false);
-									setDiscoveryError(null);
-									setAttempt((current) => current + 1);
-								}}
-							>
-								{t("nativeCliRemoteRetry")}
-							</button>
-						</div>
-						<div className="native-cli-persistence">
-							<label>
-								<input
-									type="checkbox"
-									checked={keepAlive && persistenceAvailable}
-									disabled={disabled || !persistenceAvailable}
-									onChange={(event) => setKeepAlive(event.target.checked)}
-									aria-describedby={`${formId}-persistence-hint`}
-								/>
-								{t("nativeCliSession.keepAlive")}
-							</label>
-							<p id={`${formId}-persistence-hint`} className="native-cli-create-hint">
-								{persistenceAvailable
-									? t("nativeCliSession.keepAliveHint")
-									: discovery?.persistence?.error || t("nativeCliSession.persistenceUnavailable")}
-							</p>
-						</div>
-					</>
+					<div className="native-cli-persistence">
+						<label>
+							<input
+								type="checkbox"
+								checked={keepAlive && persistenceAvailable}
+								disabled={disabled || !persistenceAvailable}
+								onChange={(event) => setKeepAlive(event.target.checked)}
+								aria-describedby={`${formId}-persistence-hint`}
+							/>
+							{t("nativeCliSession.keepAlive")}
+						</label>
+						<p id={`${formId}-persistence-hint`} className="native-cli-create-hint">
+							{persistenceAvailable
+								? t("nativeCliSession.keepAliveHint")
+								: discovery?.persistence?.error || t("nativeCliSession.persistenceUnavailable")}
+						</p>
+					</div>
 				)}
 				<div className="native-cli-create-options">
 					{engines.map((engine) => {
-						const detected = discovery?.clis.find((cli) => cli.preset === engine.id);
-						const detail = remote
-							? detected?.available
-								? (detected.executable ?? engine.cliCommand)
-								: (detected?.error ?? (detecting ? t("nativeCliRemoteDetecting") : t("nativeCliRemoteUnavailable")))
-							: engine.cliRequiresArgs
-								? t("nativeCliConfigureArgs")
-								: engine.cliCommand;
+						const detectedCli = detected(engine.id);
+						const detail = engineDetail(engine);
+						const installer = !remote && detectedCli?.available === false ? installMethod(engine) : null;
+						const installCommand = engine.installCommand ?? "";
 						return (
-							<button
-								key={engine.id}
-								type="button"
-								className="native-cli-create-option"
-								disabled={presetUnavailable(engine.id)}
-								aria-expanded={engine.cliRequiresArgs ? configuredPreset === engine.id : undefined}
-								aria-controls={engine.cliRequiresArgs ? `${formId}-config` : undefined}
-								onClick={() => select(engine.id)}
-							>
-								<FiTerminal size={18} />
-								<span>
-									<strong>{engine.name}</strong>
-									<small>{detail}</small>
-								</span>
-								<FiChevronRight size={16} />
-							</button>
+							<div key={engine.id} className="native-cli-create-item">
+								<button
+									type="button"
+									className="native-cli-create-option"
+									disabled={presetUnavailable(engine.id)}
+									aria-expanded={engine.cliRequiresArgs ? configuredPreset === engine.id : undefined}
+									aria-controls={engine.cliRequiresArgs ? `${formId}-config` : undefined}
+									onClick={() => select(engine.id)}
+								>
+									<FiTerminal size={18} />
+									<span>
+										<strong>{engine.name}</strong>
+										<small className={detail.full ? "native-cli-create-path" : undefined} title={detail.full}>
+											{detail.text}
+										</small>
+									</span>
+									<FiChevronRight size={16} />
+								</button>
+								{installer === "terminal" && (
+									<button
+										type="button"
+										className="native-cli-create-install"
+										disabled={disabled}
+										title={installCommand}
+										onClick={() => installEngine(engine.name, installCommand)}
+									>
+										<FiDownload size={13} />
+										{t("nativeCliInstall")}
+									</button>
+								)}
+								{installer === "docs" && (
+									<a className="native-cli-create-install" href={installCommand} target="_blank" rel="noreferrer">
+										<FiDownload size={13} />
+										{t("nativeCliInstallDocs")}
+									</a>
+								)}
+							</div>
 						);
 					})}
-					<button
-						type="button"
-						className="native-cli-create-option"
-						disabled={disabled}
-						aria-expanded={configuredPreset === "custom"}
-						aria-controls={`${formId}-config`}
-						onClick={() => select("custom")}
-					>
-						<FiTerminal size={18} />
-						<span>
-							<strong>{t("nativeCliCustom")}</strong>
-							<small>{t("nativeCliExecutable")}</small>
-						</span>
-						<FiChevronRight size={16} />
-					</button>
+					<div className="native-cli-create-item">
+						<button
+							type="button"
+							className="native-cli-create-option"
+							disabled={disabled}
+							aria-expanded={configuredPreset === "custom"}
+							aria-controls={`${formId}-config`}
+							onClick={() => select("custom")}
+						>
+							<FiTerminal size={18} />
+							<span>
+								<strong>{t("nativeCliCustom")}</strong>
+								<small>{t("nativeCliExecutable")}</small>
+							</span>
+							<FiChevronRight size={16} />
+						</button>
+					</div>
 				</div>
 				{configuredPreset && (
 					<form

@@ -10,7 +10,6 @@ import {
 	FiFolderPlus,
 	FiGitBranch,
 	FiGithub,
-	FiGlobe,
 	FiLayers,
 	FiMenu,
 	FiMessageSquare,
@@ -20,7 +19,16 @@ import {
 	FiSun,
 	FiTerminal,
 } from "react-icons/fi";
-import { LuFlaskConical, LuFolders, LuMessageSquareDashed, LuWorkflow } from "react-icons/lu";
+import {
+	LuFlaskConical,
+	LuFolderTree,
+	LuFolders,
+	LuLanguages,
+	LuMessageSquareDashed,
+	LuMessagesSquare,
+	LuMonitorSmartphone,
+	LuWorkflow,
+} from "react-icons/lu";
 import { REQUIRED_TOPBAR_ITEM_IDS, restoreUiItem, type UiSlotEntry, type UiSlotId } from "../ui-slots";
 import type { ChatState } from "../use-chat";
 import { useFormattedCost } from "../cost-format";
@@ -30,9 +38,12 @@ import { PluginIcon } from "../plugin-icon";
 import { BrandDeviceMenu } from "./BrandDeviceMenu";
 import { focusComposer } from "../composer-bridge";
 import { openContextMenu } from "../context-menu-state";
+import { FooterSlotPopover } from "./FooterSlotPopover";
+import { useFooterStatus } from "../footer-status";
 import { cacheMetrics, estimateStreamTokens, streamRate, trimRateSamples, type RateSample } from "../cache-stats";
 import { Dropdown, DropdownItem } from "./Dropdown";
 import { BrowserControl } from "./BrowserControl";
+import { isDesktopShell } from "../desktop";
 import { BROWSER_PAGE_TOOL_NAME } from "../../../server/tool-manager.js";
 import { EnginePicker } from "./EnginePicker";
 import { NativeCliCreateEntry } from "./NativeCliCreateModal";
@@ -146,6 +157,16 @@ export function BarItem({
 		return () => window.clearInterval(timer);
 	}, [entry.id, timingRunning, timing?.startedAt]);
 	const costDisplay = useFormattedCost(stats?.cost ?? 0);
+	// 插件写入的底栏状态（`host:quota`）：在顶部无条件订阅，branch 里只读
+	const footerStatus = useFooterStatus();
+	// 底栏状态槽的跟随浮层：外壳、定位、关闭归宿主，内容由插件画（见 FooterSlotPopover）
+	const [footerPopoverOpen, setFooterPopoverOpen] = useState(false);
+	const footerSlotRef = useRef<HTMLSpanElement | null>(null);
+	const footerPopoverContent = footerStatus?.content ?? null;
+	useEffect(() => {
+		// 插件清了槽（被停用 / 模型没有对应来源）→ 浮层跟着收
+		if (!footerPopoverContent) setFooterPopoverOpen(false);
+	}, [footerPopoverContent]);
 
 	const samplesRef = useRef<RateSample[]>([]);
 	const streamEst = state?.streamingMessage ? estimateStreamTokens(state.streamingMessage.content) : 0;
@@ -481,6 +502,18 @@ export function BarItem({
 		const cost = stats?.cost ?? 0;
 		const costTip = costDisplay.tooltip || t("cumulativeCost");
 		const isZero = cost <= 0;
+		// 插件写入的底栏状态（如额度）：嵌在费用格里，用斜杠接续成 `$0.7607 / DS ¥15.82`。
+		// 放在这一格里而不是另立条目 —— 用户在「界面布局」里排过底栏顺序，另一条的 order 保证不了相邻。
+		const quota = footerStatus;
+		// 有 content → 宿主弹跟随浮层；只有 action → 老路径，把动作派给插件
+		const quotaClickable = Boolean(quota?.text) && Boolean(quota?.content || quota?.action);
+		const openQuota = () => {
+			if (quota?.content) {
+				setFooterPopoverOpen((open) => !open);
+				return;
+			}
+			if (quota?.action) onUiAction?.({ ...entry, action: quota.action, source: `plugin:${quota.pluginId ?? ""}` });
+		};
 		return (
 			<span
 				className={`bar-item status-item status-cost bar-item-cost${isZero ? " is-zero" : ""}${custom ? " has-name" : ""}`}
@@ -492,6 +525,41 @@ export function BarItem({
 				{custom ? <span className="bar-item-text">{custom}</span> : null}
 				{costDisplay.symbol ? <span className="bar-item-char">{costDisplay.symbol}</span> : null}
 				<span className="bar-item-text">{costDisplay.value}</span>
+				{quota ? (
+					<span
+						ref={footerSlotRef}
+						className={`cost-quota${quotaClickable ? " is-clickable" : ""}`}
+						data-bar-item="host:cost-quota"
+						data-plugin={quota.pluginId ?? ""}
+						title={quota.tip || quota.text}
+						data-tip={quota.tip || quota.text}
+						role={quotaClickable ? "button" : undefined}
+						tabIndex={quotaClickable ? 0 : undefined}
+						aria-haspopup={quota?.content ? "dialog" : undefined}
+						aria-expanded={quota?.content ? footerPopoverOpen : undefined}
+						onClick={quotaClickable ? openQuota : undefined}
+						onKeyDown={
+							quotaClickable
+								? (e) => {
+										if (e.key !== "Enter" && e.key !== " ") return;
+										e.preventDefault();
+										e.stopPropagation();
+										openQuota();
+									}
+								: undefined
+						}
+					>
+						<span className="bar-item-char">/</span>
+						<span className="bar-item-text">{quota.text}</span>
+					</span>
+				) : null}
+				{quota?.content && footerPopoverOpen ? (
+					<FooterSlotPopover
+						anchor={footerSlotRef.current}
+						content={quota.content}
+						onClose={() => setFooterPopoverOpen(false)}
+					/>
+				) : null}
 			</span>
 		);
 	}
@@ -508,7 +576,7 @@ export function BarItem({
 				onContextMenu={handleContextMenu}
 				data-bar-item={id}
 			>
-				<FiMessageSquare className="bar-item-icon" />
+				<LuMessagesSquare className="bar-item-icon" />
 				<span className="bar-item-text">{withName(String(count))}</span>
 			</span>
 		);
@@ -594,7 +662,7 @@ export function BarItem({
 	}
 
 	if (id === "host:browser") {
-		if (chat.settings?.disabledAgentTools?.includes(BROWSER_PAGE_TOOL_NAME)) return null;
+		if (!isDesktopShell() && chat.settings?.disabledAgentTools?.includes(BROWSER_PAGE_TOOL_NAME)) return null;
 		return (
 			<span className="bar-item-wrap" onContextMenu={handleContextMenu} data-bar-item={id}>
 				<BrowserControl />
@@ -621,7 +689,7 @@ export function BarItem({
 				dataBarItem={id}
 				trigger={
 					<>
-						<FiGlobe className="bar-item-icon" />
+						<LuLanguages className="bar-item-icon" />
 						<span className="chip-sub bar-item-text">{withName(localeShort(locale))}</span>
 					</>
 				}
@@ -884,7 +952,7 @@ export function BarItem({
 			break;
 		case "host:files":
 			if (view && view !== "chat") return null;
-			iconNode = <FiFolder className="bar-item-icon" />;
+			iconNode = <LuFolderTree className="bar-item-icon" />;
 			labelText = named(t("openFiles"));
 			extraClasses = "panel-toggle has-label";
 			onClick = () => onOpenPanel?.("right");
@@ -920,7 +988,7 @@ export function BarItem({
 			onClick = () => onToggleZenMode?.();
 			break;
 		case "host:device-center":
-			iconNode = <FiGlobe className="bar-item-icon" />;
+			iconNode = <LuMonitorSmartphone className="bar-item-icon" />;
 			labelText = named(t("deviceCenter"));
 			extraClasses = "chip";
 			tipOverride = t("deviceCenterTip");

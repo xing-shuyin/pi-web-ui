@@ -164,7 +164,10 @@ async function main() {
 	check("设置面板打开", await openSettings(page));
 	await page.waitForSelector(".settings-tab", { timeout: 10000 });
 	await tap(page, page.locator(".settings-tab", { hasText: /界面插件|UI plugins/ }).first());
-	await tap(page, page.locator(".set-subtab").nth(1));
+	await tap(
+		page,
+		page.locator(".smart-tab-pill, .set-subtab", { hasText: /插件列表|Plugin list|安装|Installed/ }).first(),
+	);
 	check(
 		"界面插件配置默认折叠（表单未渲染且存在展开按钮）",
 		await until(

@@ -8,6 +8,17 @@ export interface DesktopWindowBridge {
 	onMaximizedChange: (cb: (maximized: boolean) => void) => () => void;
 }
 
+export interface DesktopBrowserBridge {
+	setMode: (mode: "browser" | "agent" | "split") => Promise<boolean>;
+	setSplitRatio?: (ratio: number) => Promise<boolean>;
+	/** 启动模式（桌面版下次启动时的界面），与浏览器面板的设置同源 */
+	getStartupMode?: () => Promise<string>;
+	setStartupMode?: (mode: "browser" | "agent" | "split") => Promise<boolean>;
+	getState: () => Promise<unknown>;
+	createTab: (url?: string) => Promise<string>;
+	onState: (cb: (state: unknown) => void) => () => void;
+}
+
 export interface DesktopShellWindow {
 	piDesktop?: {
 		isDesktop?: unknown;
@@ -17,6 +28,7 @@ export interface DesktopShellWindow {
 		onFullScreenChange?: (cb: (isFullScreen: boolean) => void) => () => void;
 		window?: DesktopWindowBridge;
 		updater?: unknown;
+		browser?: DesktopBrowserBridge;
 	};
 	navigator?: { userAgent?: unknown };
 }
@@ -80,7 +92,6 @@ export function syncDesktopTitleBarTheme(win?: unknown): void {
 
 export function setupDesktopWindowDecorations(): () => void {
 	if (typeof window === "undefined" || !isDesktopShell()) return () => {};
-	if ((window as unknown as DesktopShellWindow).piDesktop?.embedded === true) return () => {};
 
 	const platform = getDesktopPlatform();
 	const body = document.body;
