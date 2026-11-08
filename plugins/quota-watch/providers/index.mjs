@@ -1,6 +1,5 @@
 import { homedir } from "node:os";
 import { join } from "node:path";
-import * as antigravity from "./antigravity.mjs";
 import * as claude from "./claude.mjs";
 import * as codex from "./codex.mjs";
 import * as deepseek from "./deepseek.mjs";
@@ -100,18 +99,11 @@ function withTimeout(promise, id) {
 }
 
 /**
- * 四个额度来源 → 采集器。与 `badge.mjs` 的 MODEL_RULES 一一对应：
+ * 三个额度来源 → 采集器。与 `badge.mjs` 的 MODEL_RULES 一一对应：
  * 模型认出哪家，就只查哪家（见 collectActive）。
  * @type {Array<{ id: string, name: string, setting: string, kind: "balance" | "subscription", run: (ctx: CollectContext) => Promise<any> }>}
  */
 const SOURCES = [
-	{
-		id: antigravity.ID,
-		name: antigravity.NAME,
-		setting: "antigravityEnabled",
-		kind: "subscription",
-		run: ({ host, home }) => antigravity.collect({ host, home }),
-	},
 	{
 		id: claude.ID,
 		name: claude.NAME,

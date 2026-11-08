@@ -11,15 +11,13 @@ const MODEL_RULES = [
 	{ id: "deepseek", test: /deepseek/i },
 	{ id: "claude", test: /claude|anthropic|-opus|-sonnet|-haiku/i },
 	{ id: "codex", test: /codex|openai|(^|[/\s-])gpt|(^|[/\s-])o[134]([/\s-]|$)|chatgpt/i },
-	{ id: "antigravity", test: /gemini|antigravity|palm/i },
 ];
 
 /** 徽标里的短名（底栏空间小）。 */
-const SHORT = { antigravity: "AG", claude: "CL", codex: "CX", deepseek: "DS" };
+const SHORT = { claude: "CL", codex: "CX", deepseek: "DS" };
 
 /** 中文/英文展示名。 */
 const LABEL = {
-	antigravity: { zh: "Antigravity", en: "Antigravity" },
 	claude: { zh: "Claude Code", en: "Claude Code" },
 	codex: { zh: "Codex", en: "Codex" },
 	deepseek: { zh: "DeepSeek", en: "DeepSeek" },

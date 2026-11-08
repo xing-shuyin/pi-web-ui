@@ -4,7 +4,6 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import * as antigravity from "../../plugins/quota-watch/providers/antigravity.mjs";
 import * as claude from "../../plugins/quota-watch/providers/claude.mjs";
 import * as codex from "../../plugins/quota-watch/providers/codex.mjs";
 import * as deepseek from "../../plugins/quota-watch/providers/deepseek.mjs";
@@ -74,16 +73,10 @@ describe("quota-watch manifest", () => {
 		// view:false 也需要客户端 bundle：preload 是它被加载的唯一理由
 		expect(manifest.preload).toBe(true);
 		for (const need of ["ui", "http", "net"]) expect(manifest.permissions).toContain(need);
-		for (const hostname of [
-			"daily-cloudcode-pa.googleapis.com",
-			"api.anthropic.com",
-			"chatgpt.com",
-			"api.deepseek.com",
-		]) {
+		for (const hostname of ["api.anthropic.com", "chatgpt.com", "api.deepseek.com"]) {
 			expect(manifest.netAllowlist).toContain(hostname);
 		}
 		expect(manifest.settings.map((s: { key: string }) => s.key)).toEqual([
-			"antigravityEnabled",
 			"claudeEnabled",
 			"codexEnabled",
 			"deepseekEnabled",
@@ -92,72 +85,6 @@ describe("quota-watch manifest", () => {
 		]);
 		// 只查当前供应商 → 不再提供「全部来源并排」这类模式开关
 		expect(manifest.settings.some((s: { key: string }) => s.key === "badgeMode")).toBe(false);
-	});
-});
-
-describe("antigravity provider", () => {
-	it("用现有 access token 查额度，并把 remainingFraction 折算成剩余百分比", async () => {
-		const home = makeHome();
-		writeJson(join(home, ".gemini", "antigravity-cli", "antigravity-oauth-token"), {
-			access_token: "access-1",
-			refresh_token: "refresh-1",
-			expiry: "2099-01-01T00:00:00Z",
-		});
-		const { host, calls } = fakeHost({
-			retrieveUserQuotaSummary: () => ({
-				groups: [
-					{
-						displayName: "Claude and GPT models",
-						buckets: [
-							{ bucketId: "3p-weekly", window: "weekly", remainingFraction: 0.25, resetTime: "2099-01-02T00:00:00Z" },
-							{ bucketId: "3p-5h", window: "5h", remainingFraction: 1, resetTime: "2099-01-01T01:00:00Z" },
-						],
-					},
-				],
-			}),
-			loadCodeAssist: () => ({ currentTier: { name: "Pro" } }),
-		});
-
-		const result = await antigravity.collect({ host, home });
-		expect(result.status).toBe("ok");
-		expect(result.plan).toBe("Pro");
-		expect(result.windows).toHaveLength(2);
-		expect(result.windows[0].remainingPercent).toBe(25);
-		expect(result.windows[0].usedPercent).toBe(75);
-		expect(result.windows[1].remainingPercent).toBe(100);
-		expect(result.windows[0].label).toContain("每周窗口");
-		expect(calls[0].url).toContain("daily-cloudcode-pa.googleapis.com");
-		expect(calls[0].init.headers.authorization).toBe("Bearer access-1");
-	});
-
-	it("access token 过期时用 refresh_token 换新，再查额度", async () => {
-		const home = makeHome();
-		writeJson(join(home, ".gemini", "antigravity-cli", "antigravity-oauth-token"), {
-			access_token: "stale",
-			refresh_token: "refresh-1",
-			expiry: "2000-01-01T00:00:00Z",
-		});
-		const { host, calls } = fakeHost({
-			"oauth2.googleapis.com/token": () => ({ access_token: "fresh", expires_in: 3600 }),
-			retrieveUserQuotaSummary: () => ({
-				groups: [{ displayName: "g", buckets: [{ window: "weekly", remainingFraction: 0.5 }] }],
-			}),
-			loadCodeAssist: () => ({ currentTier: { name: "Free" } }),
-		});
-
-		const result = await antigravity.collect({ host, home });
-		expect(result.status).toBe("ok");
-		expect(result.windows[0].remainingPercent).toBe(50);
-		expect(calls[0].url).toContain("oauth2.googleapis.com/token");
-		expect(calls[1].init.headers.authorization).toBe("Bearer fresh");
-	});
-
-	it("没有任何登录态时给出可操作提示而不是报错", async () => {
-		const home = makeHome();
-		const { host } = fakeHost({});
-		const result = await antigravity.collect({ host, home });
-		expect(result.status).toBe("signed-out");
-		expect(result.hint).toContain("Antigravity");
 	});
 });
 
@@ -342,29 +269,11 @@ describe("网络失败 ≠ 登录失效", () => {
 		expect(result.hint).toContain("代理");
 	});
 
-	it("网络挂了时 Antigravity 立刻停手，不再换账号重试", async () => {
-		const home = makeHome();
-		writeJson(join(home, ".gemini", "antigravity-cli", "antigravity-oauth-token"), {
-			access_token: "expired",
-			refresh_token: "r",
-			expiry: "2000-01-01T00:00:00Z",
-		});
-		writeJson(join(home, ".antigravity_tools", "accounts", "a.json"), {
-			email: "second@example.com",
-			token: { access_token: "x", refresh_token: "y", expiry_timestamp: 1 },
-		});
-		const { host, calls } = fakeHost({ "oauth2.googleapis.com/token": () => new TypeError("fetch failed") });
-		const result = await antigravity.collect({ host, home });
-		expect(result.status).toBe("network");
-		// 只试了第一个账号的刷新，没继续撞第二个账号
-		expect(calls).toHaveLength(1);
-	});
-
 	it("网络不可达在徽标里是 ⇅", () => {
 		// collectActive() 只会给出当前供应商这一条，所以徽标也只讲它
-		const snap = { providers: [{ id: "antigravity", name: "AG", status: "network", windows: [] }] };
-		expect(formatBadge(snap, "antigravity", true)).toEqual({ label: "AG", badge: "⇅" });
-		expect(formatHint(snap, "antigravity", true)).toContain("网络不可达");
+		const snap = { providers: [{ id: "codex", name: "CX", status: "network", windows: [] }] };
+		expect(formatBadge(snap, "codex", true)).toEqual({ label: "CX", badge: "⇅" });
+		expect(formatHint(snap, "codex", true)).toContain("网络不可达");
 	});
 });
 
@@ -484,7 +393,6 @@ describe("底栏徽标与当前供应商识别", () => {
 		["openai/gpt-5.1-codex", "codex"],
 		["codex-mini-latest", "codex"],
 		["auto/o3-mini", "codex"],
-		["google/gemini-3-pro", "antigravity"],
 		["magpie/qwen3-coder", ""],
 		["", ""],
 	];
@@ -495,12 +403,6 @@ describe("底栏徽标与当前供应商识别", () => {
 
 	// collectActive() 只返回当前供应商那一条，所以夹具也按「一条」来摆
 	const providers: Record<string, any> = {
-		antigravity: {
-			id: "antigravity",
-			name: "Antigravity（反重力）",
-			status: "ok",
-			windows: [{ label: "每周窗口", labelEn: "Weekly", remainingPercent: 99.98132, resetAt: "" }],
-		},
 		claude: { id: "claude", name: "Claude Code", status: "signed-out", windows: [] },
 		codex: {
 			id: "codex",
@@ -521,7 +423,6 @@ describe("底栏徽标与当前供应商识别", () => {
 
 	it("徽标只讲当前供应商：百分比 / 余额 / 未登录占位", () => {
 		expect(formatBadge(only("codex"), "codex", true)).toEqual({ label: "CX", badge: "12.3%" });
-		expect(formatBadge(only("antigravity"), "antigravity", true)).toEqual({ label: "AG", badge: "100%" });
 		expect(formatBadge(only("deepseek"), "deepseek", true)).toEqual({ label: "DS", badge: "¥16.82" });
 		expect(formatBadge(only("claude"), "claude", true)).toEqual({ label: "CL", badge: "—" });
 	});
@@ -537,7 +438,7 @@ describe("底栏徽标与当前供应商识别", () => {
 		const lines = hint.split(String.fromCharCode(10));
 		expect(lines[0]).toContain("当前供应商：Codex");
 		expect(hint).toContain("5 小时窗口 剩余 12.3%");
-		expect(hint).not.toContain("Antigravity");
+		expect(hint).not.toContain("Claude");
 		expect(hint).toContain("点击打开额度看板");
 	});
 
@@ -567,12 +468,8 @@ describe("底栏徽标与当前供应商识别", () => {
 });
 
 describe("collectActive 只查当前供应商", () => {
-	it("当前是 Codex 时，即使本机也登录了 Antigravity，也只打 Codex 的接口", async () => {
+	it("当前是 Codex 时，即使本机也登录了别家，也只打 Codex 的接口", async () => {
 		const home = makeHome();
-		writeJson(join(home, ".gemini", "antigravity-cli", "antigravity-oauth-token"), {
-			access_token: "access-1",
-			expiry: "2099-01-01T00:00:00Z",
-		});
 		writeJson(join(home, ".codex", "auth.json"), { tokens: { access_token: "codex-access" } });
 		const { host, calls } = fakeHost({
 			retrieveUserQuotaSummary: () => ({ groups: [{ buckets: [{ window: "weekly", remainingFraction: 0.9 }] }] }),

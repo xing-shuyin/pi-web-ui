@@ -9,12 +9,11 @@
 
 ## 支持哪些来源
 
-| 平台                                 | 凭据（自动探测）                                                                            | 接口                                                                    | 展示                                              |
-| ------------------------------------ | ------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------- | ------------------------------------------------- |
-| Antigravity（反重力，IDE + agy CLI） | `~/.gemini/antigravity-cli/antigravity-oauth-token`、`~/.antigravity_tools/accounts/*.json` | `daily-cloudcode-pa.googleapis.com/v1internal:retrieveUserQuotaSummary` | 每周 / 5 小时窗口剩余百分比 + 重置时间 + 订阅档位 |
-| Claude Code                          | `~/.claude/.credentials.json`                                                               | `api.anthropic.com/api/oauth/usage`                                     | 5 小时 / 每周 / 分模型窗口                        |
-| Codex（ChatGPT 订阅）                | `~/.codex/auth.json`                                                                        | `chatgpt.com/backend-api/wham/usage`                                    | 主 / 次窗口 + 赠送额度                            |
-| DeepSeek                             | 设置里填 API Key，或环境变量 `DEEPSEEK_API_KEY`                                             | `api.deepseek.com/user/balance`                                         | 账户余额（赠送 / 充值拆分）                       |
+| 平台                  | 凭据（自动探测）                                | 接口                                 | 展示                        |
+| --------------------- | ----------------------------------------------- | ------------------------------------ | --------------------------- |
+| Claude Code           | `~/.claude/.credentials.json`                   | `api.anthropic.com/api/oauth/usage`  | 5 小时 / 每周 / 分模型窗口  |
+| Codex（ChatGPT 订阅） | `~/.codex/auth.json`                            | `chatgpt.com/backend-api/wham/usage` | 主 / 次窗口 + 赠送额度      |
+| DeepSeek              | 设置里填 API Key，或环境变量 `DEEPSEEK_API_KEY` | `api.deepseek.com/user/balance`      | 账户余额（赠送 / 充值拆分） |
 
 「自动探测」的含义：你只要在对应 CLI / IDE 里登录过，插件就能查到，**不需要再填任何东西**。
 登录态过期时插件在内存里用 refresh_token 续期，**不会改写**你的凭据文件。
@@ -33,8 +32,6 @@
 
 这些平台给官方 CLI / IDE 用的就是这几条接口，插件的做法与客户端一致：
 
-- **Antigravity**：用官方 `agy` 客户端内置的 Google OAuth 公开客户端换取 access token，再调客户端的
-  `retrieveUserQuotaSummary`（返回 `groups[].buckets[].remainingFraction` 与 `resetTime`）。
 - **Claude Code**：`api/oauth/usage` 返回 `five_hour` / `seven_day` / `seven_day_opus` 的 `utilization`
   与 `resets_at`；token 过期用 Claude Code 的公开 OAuth 客户端续期。
 - **Codex**：`backend-api/wham/usage` 返回 `rate_limit.primary_window` / `secondary_window` 的
@@ -62,7 +59,6 @@
   | `auto/deepseek-v4.1-flash`、`*/deepseek-*` | DeepSeek     | `DS ¥15.82`（余额） |
   | `*/claude-sonnet-4`、`*anthropic*`         | Claude Code  | `CL 58%`            |
   | `*/gpt-5.1-codex`、`*codex*`、`*/o3-*`     | Codex        | `CX 12.3%`          |
-  | `*/gemini-3-pro`、`*antigravity*`          | Antigravity  | `AG 100%`           |
 
 - 只有一段文字，没有「当前 + 最紧」这类多来源模式：别家不会出网查询，也就没有数字可并排。
   认不出模型（自建模型 / 关掉了对应开关）时**整段不渲染** —— 不留 `额度 --` 这种既占地方又没信息的残片。
@@ -99,7 +95,7 @@
 - `client/store.mjs`：一次刷新 = 一次请求 + 通知所有订阅者。浮层里点 `⟳` 走的就是这里，
   所以**底栏与卡片在同一帧更新**；同时刻只有一个请求在飞，两边撞在一起时后者复用前者的结果。
 - 节奏：`hold()` 的持有者 > 0（浮层开着）时 15s，否则 60s；页面不可见时不发请求。
-- **TTL 分档**（服务端 `index.mjs`）：订阅窗口（Antigravity / Claude / Codex）按设置里的分钟数，
+- **TTL 分档**（服务端 `index.mjs`）：订阅窗口（Claude / Codex）按设置里的分钟数，
   默认 5 分钟；余额型（DeepSeek）固定 **60 秒** —— 余额每发一次请求就变，5 分钟缓存太钝，
   这正是「余额更新不及时」的根因。
 - **可见的新鲜度**：`/summary` 多返回 `updatedAt / staleMs / ttlMs / lastGoodAt`，卡片的
@@ -158,7 +154,7 @@
 npx vitest run tests/unit/quota-watch.test.ts tests/unit/quota-watch-card.test.ts
 ```
 
-覆盖：manifest 形状、四个 provider 的请求与解析（含窗口归一化）、access token 过期续期、
+覆盖：manifest 形状、三个 provider 的请求与解析（含窗口归一化）、access token 过期续期、
 401 重试、无登录态的降级、本机 pi 凭据兜底、**只查当前供应商**（别家不出网 / 关掉开关不出网 / 认不出模型不出网）、
 徽标与 tooltip 的单供应商文案、AI 摘要文案；**刷新链路**（TTL 分档、失败保留上次成功的数字、
 两张卡共用一份快照且刷新后同时更新、浮层关掉后轮询回到慢档）；卡片内容（余额/窗口/空态/陈旧态/强制刷新/清理）。
