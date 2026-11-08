@@ -113,7 +113,7 @@ const mock = createServer(async (req, res) => {
 					index: 0,
 					id: `call_${toolMsgs.length}_${action}`,
 					type: "function",
-					function: { name: "subagent", arguments: JSON.stringify({ action, ...args }) },
+					function: { name: "conversation", arguments: JSON.stringify({ action, ...args }) },
 				},
 			],
 		}),

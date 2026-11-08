@@ -172,12 +172,22 @@ check("已切到 mock 模型", state?.model?.id === "lazy-tools-mock", `model=${
 ws.send(JSON.stringify({ type: "get_settings" }));
 for (let i = 0; i < 50 && typeof settings?.toolLazyLoading !== "boolean"; i++) await sleep(50);
 check(
-	"默认关：开箱即用全部工具，load_tools 不出现",
+	"默认关：开箱即用只给出厂默认工具（重量级默认关闭），load_tools 不出现",
 	settings?.toolLazyLoading === false &&
 		Array.isArray(state?.tools) &&
 		!state.tools.includes("load_tools") &&
-		state.tools.includes("patch"),
+		state.tools.includes("read") &&
+		state.tools.includes("bash") &&
+		!state.tools.includes("patch"),
 	`lazy=${settings?.toolLazyLoading} tools=${state?.tools?.join(",")}`,
+);
+// 本测试用 patch 当「按需加载」的样例工具，而它出厂默认关闭 —— 先全开工具，再验按需加载语义
+ws.send(JSON.stringify({ type: "set_settings", disabledAgentTools: [] }));
+for (let i = 0; i < 50 && !state?.tools?.includes("patch"); i++) await sleep(50);
+check(
+	"全开工具后 patch 回到列表（供按需加载用例使用）",
+	Boolean(state?.tools?.includes("patch")),
+	`tools=${state?.tools?.join(",")}`,
 );
 
 ws.send(JSON.stringify({ type: "set_settings", toolLazyLoading: true }));

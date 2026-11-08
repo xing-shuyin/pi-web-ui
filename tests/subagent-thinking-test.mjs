@@ -111,7 +111,7 @@ const spawnCall = (index, template, prompt) => ({
 	id: `call_${template}`,
 	type: "function",
 	function: {
-		name: "subagent",
+		name: "conversation",
 		arguments: JSON.stringify({ action: "spawn", prompt, type: template, template, notifyOnDone: false }),
 	},
 });

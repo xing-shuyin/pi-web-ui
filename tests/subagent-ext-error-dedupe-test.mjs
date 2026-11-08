@@ -93,9 +93,9 @@ const mock = createServer(async (req, res) => {
 		sse(res, [delta(payload.model, { content: "SUBAGENT_SMOKE_OK" }), delta(payload.model, {}, "stop")]);
 		return;
 	}
-	const hasSubagentTool = (payload.tools ?? []).some((t) => t?.function?.name === "subagent");
+	const hasConversationTool = (payload.tools ?? []).some((t) => t?.function?.name === "conversation");
 	const hasToolResult = messages.some((m) => m.role === "tool");
-	if (hasSubagentTool && !hasToolResult) {
+	if (hasConversationTool && !hasToolResult) {
 		sse(res, [
 			delta(payload.model, {
 				tool_calls: [
@@ -104,7 +104,7 @@ const mock = createServer(async (req, res) => {
 						id: "call_spawn",
 						type: "function",
 						function: {
-							name: "subagent",
+							name: "conversation",
 							arguments: JSON.stringify({ action: "spawn", prompt: "SUBAGENT_RUN", type: "probe" }),
 						},
 					},
