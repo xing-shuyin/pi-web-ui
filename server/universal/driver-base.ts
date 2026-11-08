@@ -56,6 +56,8 @@ export abstract class BaseAgentDriver {
 	abstract readonly id: string;
 	abstract readonly name: string;
 	abstract readonly capabilities: AgentCapabilities;
+	/** Inline images above this size are handed to the CLI as files instead (engine API limit). */
+	readonly maxInlineImageBytes?: number;
 
 	protected cwd: string;
 
@@ -121,4 +123,10 @@ export abstract class BaseAgentDriver {
 	async getSkills?(): Promise<Array<{ name: string; description: string; filePath?: string }>> {
 		return [];
 	}
+
+	/** True when `/name` must be sent to the native CLI verbatim instead of pi's slash handlers. */
+	handlesNativeSlashCommand?(name: string): boolean;
+
+	/** True once after the driver's native slash command list changed (e.g. learned from CLI init). */
+	consumeSlashCommandsChanged?(): boolean;
 }

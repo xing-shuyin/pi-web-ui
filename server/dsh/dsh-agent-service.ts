@@ -2467,9 +2467,9 @@ export class DshClientSession {
 					});
 				} catch {}
 			}
-			this.emit({ type: "sessions", sessions: summaries });
+			this.emit({ type: "sessions", sessions: summaries, cwd: this.cwd });
 		} catch {
-			this.emit({ type: "sessions", sessions: [] });
+			this.emit({ type: "sessions", sessions: [], cwd: this.cwd });
 		}
 	}
 

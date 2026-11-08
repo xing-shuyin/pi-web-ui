@@ -1,4 +1,7 @@
 import { EventEmitter } from "node:events";
+import { mkdtempSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { PassThrough } from "node:stream";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 const { spawnMock, killMock, launchMock, probeMock } = vi.hoisted(() => ({
@@ -37,6 +40,7 @@ function setup() {
 	const emit = (event: unknown) => child.stdout.write(JSON.stringify(event) + "\n");
 	return { child, driver, sink, emit };
 }
+const emptyAgentDir = () => mkdtempSync(join(tmpdir(), "pi-codex-agent-"));
 beforeEach(() => {
 	launchMock.mockReset().mockReturnValue({ file: "shared-node", args: ["/cli path/codex.js", "--launcher-flag"] });
 	probeMock.mockReset();
@@ -140,6 +144,62 @@ describe("Codex CLI driver", () => {
 		await done;
 		expect(sink.onError).toHaveBeenCalledWith(expect.objectContaining({ message: "authentication required" }));
 		expect(sink.onTurnComplete).not.toHaveBeenCalled();
+	});
+	it("passes images natively and uploads/quotes as readable pointers", async () => {
+		const { child, sink, emit } = setup();
+		const driver = new CodexDriver(process.cwd(), { executablePath: "codex-test", agentDir: emptyAgentDir() });
+		let input = "";
+		child.stdin.on("data", (c) => (input += c.toString()));
+		const png = Buffer.from("png").toString("base64");
+		const done = driver.sendPrompt(
+			"look",
+			[
+				{ path: "", imageData: `data:image/png;base64,${png}` },
+				{ path: "", uploadPath: "/uploads/c1/1-notes.txt", name: "notes.txt" },
+				{ path: "", mode: "quote", quote: { text: "quoted", messageId: "m", role: "user" } },
+			],
+			sink,
+		);
+		const args = spawnMock.mock.calls[0][1] as string[];
+		expect(args[args.indexOf("--image") + 1]).toMatch(/0\.png$/);
+		emit({ type: "turn.completed" });
+		child.emit("close", 0);
+		await done;
+		expect(input).toContain('Attached file: "/uploads/c1/1-notes.txt" (notes.txt)');
+		expect(input).toContain("<quote>\nquoted\n</quote>");
+		expect(input).not.toContain('File reference: ""');
+	});
+	it("bridges enabled pi MCP servers through -c overrides, header secrets via env", async () => {
+		const { child, sink, emit } = setup();
+		const agentDir = emptyAgentDir();
+		writeFileSync(
+			join(agentDir, "mcp.json"),
+			JSON.stringify({
+				mcpServers: {
+					"my-fs": { command: "npx", args: ["-y", "srv"], env: { A: "1" }, cwd: "/w", timeout: 30 },
+					web: { type: "http", url: "https://mcp.example/mcp", headers: { Authorization: "Bearer secret" } },
+					off: { command: "x", enabled: false },
+				},
+			}),
+		);
+		const driver = new CodexDriver(mkdtempSync(join(tmpdir(), "pi-codex-ws-")), { agentDir });
+		const done = driver.sendPrompt("hi", undefined, sink);
+		const [, args, options] = spawnMock.mock.calls[0];
+		const overrides = (args as string[]).filter((_, i, a) => a[i - 1] === "-c" && a[i].startsWith("mcp_servers."));
+		expect(overrides).toEqual([
+			'mcp_servers.my-fs.command="npx"',
+			'mcp_servers.my-fs.args=["-y", "srv"]',
+			'mcp_servers.my-fs.env={ "A" = "1" }',
+			'mcp_servers.my-fs.cwd="/w"',
+			"mcp_servers.my-fs.tool_timeout_sec=30",
+			'mcp_servers.web.url="https://mcp.example/mcp"',
+			'mcp_servers.web.env_http_headers={ "Authorization" = "PI_MCP_WEB_H0" }',
+		]);
+		expect((args as string[]).join(" ")).not.toContain("secret");
+		expect(options.env.PI_MCP_WEB_H0).toBe("Bearer secret");
+		emit({ type: "turn.completed" });
+		child.emit("close", 0);
+		await done;
 	});
 	it("cancels only its process tree and permits the next turn after close", async () => {
 		const { driver, child, sink } = setup();

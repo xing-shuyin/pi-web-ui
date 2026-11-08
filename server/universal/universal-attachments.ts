@@ -1,14 +1,78 @@
 import { randomUUID } from "node:crypto";
 import { existsSync, statSync } from "node:fs";
-import { basename, isAbsolute, relative, resolve } from "node:path";
+import { basename, isAbsolute, relative, resolve, sep } from "node:path";
 import type { PromptAttachment, UiMessage } from "../protocol.js";
 import { readSkillInstruction, type DiscoveredSkill } from "../skill-discovery.js";
 import { isRemoteWorkspaceUri } from "../remote-ssh-service.js";
+import { CLIENT_ID_PATTERN, saveUpload, uploadsRoot } from "../uploads.js";
 
 export function formatUnavailableCanvasReference(att: PromptAttachment): string {
 	const escape = (s: string) =>
 		s.replace(/&/g, "&amp;").replace(/"/g, "&quot;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 	return `<canvas-ref id="${escape(att.path)}" title="${escape(att.name || att.path)}">Canvas tooling is unavailable in this engine. This is a graph identifier, not a file path; do not read it as a file or start a run.</canvas-ref>`;
+}
+
+/** Image MIME types the native CLIs accept as inline image input. */
+export const CLI_IMAGE_MIME_TYPES = ["image/png", "image/jpeg", "image/webp", "image/gif"] as const;
+
+/** Splits `data:<mime>;base64,<data>` (or bare base64 + mimeType) into its parts. */
+export function decodeInlineImage(att: PromptAttachment): { mimeType: string; data: string } | null {
+	if (!att.imageData) return null;
+	const match = /^data:([^;,]+);base64,([\s\S]+)$/.exec(att.imageData);
+	const mimeType = (match?.[1] ?? att.mimeType ?? "").toLowerCase();
+	const data = (match?.[2] ?? att.imageData).replace(/\s+/g, "");
+	if (!(CLI_IMAGE_MIME_TYPES as readonly string[]).includes(mimeType) || !data) return null;
+	return { mimeType, data };
+}
+
+/**
+ * Persists browser uploads (`fileData`, or unsupported inline images) into the per-client upload
+ * dir so the native CLI can open them by absolute path; turns relative `uploadPath`s absolute.
+ * Upload retention/cleanup is shared with the pi engine (`server/uploads.ts`).
+ */
+export function materializeUploads(
+	attachments: readonly PromptAttachment[],
+	opts: { clientId: string; dataDir?: string; maxInlineImageBytes?: number },
+): PromptAttachment[] {
+	const clientId = CLIENT_ID_PATTERN.test(opts.clientId) ? opts.clientId : "universal";
+	const root = uploadsRoot(opts.dataDir || undefined);
+	return attachments.map((att) => {
+		const image = decodeInlineImage(att);
+		const oversized =
+			image !== null &&
+			opts.maxInlineImageBytes !== undefined &&
+			(image.data.length * 3) / 4 > opts.maxInlineImageBytes;
+		const encoded = att.fileData ?? (att.imageData && (!image || oversized) ? att.imageData : undefined);
+		if (encoded) {
+			const raw = encoded.replace(/^data:[^;,]+;base64,/, "");
+			const { abs } = saveUpload(clientId, att.name || "file", Buffer.from(raw, "base64"), opts.dataDir || undefined);
+			const { fileData: _f, imageData: _i, ...rest } = att;
+			return { ...rest, uploadPath: abs, name: att.name || basename(abs) };
+		}
+		if (att.uploadPath) {
+			const abs = resolve(root, att.uploadPath);
+			const rel = relative(root, abs);
+			if (rel === ".." || rel.startsWith(`..${sep}`) || isAbsolute(rel)) {
+				const { uploadPath: _u, ...rest } = att;
+				return rest;
+			}
+			return { ...att, uploadPath: abs };
+		}
+		return att;
+	});
+}
+
+/** Plain-text pointer for a non-image attachment, shared by the CLI drivers. */
+export function describeCliAttachment(att: PromptAttachment): string | null {
+	if (att.mode === "canvas") return formatUnavailableCanvasReference(att);
+	if (att.mode === "page" || att.mode === "conversation")
+		return `Referenced ${att.mode}: ${JSON.stringify(att.path)} (host access unavailable in this engine).`;
+	if (att.mode === "quote" && att.quote) return `<quote>\n${att.quote.text}\n</quote>`;
+	if (att.uploadPath)
+		return `Attached file: ${JSON.stringify(att.uploadPath)}${att.name ? ` (${att.name})` : ""}. Read it from this path.`;
+	if (att.path)
+		return `File reference: ${JSON.stringify(att.path)}${att.mode === "lines" && att.lines ? ` (lines ${att.lines.start}-${att.lines.end})` : ""}`;
+	return null;
 }
 
 export interface ScanResult {
@@ -129,6 +193,23 @@ export function createAttachmentUiMessages(attachments: PromptAttachment[], time
 					name: att.name || att.path,
 					path: att.path,
 					mode: "page",
+				},
+			});
+			continue;
+		}
+
+		if (att.uploadPath) {
+			out.push({
+				id: cardId,
+				role: "custom",
+				customType: "file",
+				timestamp,
+				content: [{ type: "text", text: `<file path="${att.uploadPath}" />` }],
+				details: {
+					name: att.name || basename(att.uploadPath),
+					path: att.uploadPath,
+					mode: "reference",
+					isDir: false,
 				},
 			});
 			continue;

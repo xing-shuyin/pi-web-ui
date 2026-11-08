@@ -259,35 +259,91 @@ describe("通用底座与多引擎 / 和 @ 命令体系测试", () => {
 		});
 	});
 
-	describe("4. Claude Code 驱动专有命令扩展", () => {
-		it("ClaudeCodeDriver 注册专有命令 (/cost, /doctor, /init, /clear) 并能正确执行", async () => {
+	describe("4. Claude Code 原生命令透传", () => {
+		const initEvent = {
+			type: "system",
+			subtype: "init",
+			session_id: "11111111-2222-3333-4444-555555555555",
+			slash_commands: ["compact", "init", "cost", "model", "review", "simplify"],
+			skills: ["simplify"],
+		};
+
+		it("命令列表来自 CLI init 事件，pi 自管的命令（/model 等）不重复下发", async () => {
 			const driver = new ClaudeCodeDriver(workspaceDir, { agentDir });
-			const slashCmds = await driver.getSlashCommands();
-			const cmdNames = slashCmds.map((c) => c.name);
+			expect(await driver.getSlashCommands()).toEqual([]);
+			expect(driver.handlesNativeSlashCommand("compact")).toBe(true);
+			expect(driver.handlesNativeSlashCommand("init")).toBe(false);
 
-			expect(cmdNames).toContain("cost");
-			expect(cmdNames).toContain("doctor");
-			expect(cmdNames).toContain("init");
-			expect(cmdNames).toContain("clear");
+			const sink = { onSessionStarted: vi.fn() } as any;
+			(driver as any).handleClaudeEvent(initEvent, sink);
+			expect(sink.onSessionStarted).toHaveBeenCalledWith(initEvent.session_id);
+			expect(driver.getActiveSessionId()).toBe(initEvent.session_id);
+			expect(driver.consumeSlashCommandsChanged()).toBe(true);
+			expect(driver.consumeSlashCommandsChanged()).toBe(false);
 
-			const notices: string[] = [];
-			const context = {
-				emitNotice: (_level: string, text: string) => notices.push(text),
-			};
-
-			const docHandled = await driver.execSlashCommand("doctor", "", context as any);
-			expect(docHandled).toBe(true);
-			expect(notices.some((n) => n.includes("Claude Code CLI"))).toBe(true);
-
-			const initHandled = await driver.execSlashCommand("init", "", context as any);
-			expect(initHandled).toBe(true);
-			expect(existsSync(join(workspaceDir, "CLAUDE.md"))).toBe(true);
-
-			const clearHandled = await driver.execSlashCommand("clear", "", context as any);
-			expect(clearHandled).toBe(true);
-			expect(driver.getActiveSessionId()).toBeNull();
-
+			const names = (await driver.getSlashCommands()).map((c) => c.name);
+			expect(names).toEqual(["compact", "init", "cost", "review", "simplify"]);
+			expect(driver.handlesNativeSlashCommand("init")).toBe(true);
+			expect(driver.handlesNativeSlashCommand("model")).toBe(false);
+			expect(driver.handlesNativeSlashCommand("new")).toBe(false);
+			// No simulated commands that would bypass the CLI (old fake /init wrote a template CLAUDE.md).
+			expect(await driver.execSlashCommand!("init", "", {})).toBe(false);
+			expect(existsSync(join(workspaceDir, "CLAUDE.md"))).toBe(false);
 			driver.dispose();
+		});
+
+		it("原生命令与 /compact 原样交给 CLI，而不是由通用底座模拟或裁剪界面消息", async () => {
+			const store = new UniversalSessionStore(tempDir);
+			const driver = new ClaudeCodeDriver(workspaceDir, { agentDir });
+			(driver as any).handleClaudeEvent(initEvent, {});
+			const prompts: string[] = [];
+			vi.spyOn(driver, "sendPrompt").mockImplementation(async (p, _atts, sink) => {
+				prompts.push(p);
+				sink.onTextDelta("ok");
+				sink.onTurnComplete();
+			});
+			const session = new UniversalSession({
+				clientId: "native-slash",
+				cwd: workspaceDir,
+				agentDir,
+				send: () => {},
+				store,
+				driver,
+			});
+			for (let i = 0; i < 4; i++) await session.prompt(`问题 ${i}`);
+			const before = (session as any).activeConv.messages.length;
+
+			await session.prompt("/init");
+			await session.prompt("/compact 保留接口约定");
+			await session.compactActiveConversation("按钮触发");
+
+			expect(prompts.slice(-3)).toEqual(["/init", "/compact 保留接口约定", "/compact 按钮触发"]);
+			const messages = (session as any).activeConv.messages as Array<{ role: string }>;
+			expect(messages.some((m) => m.role === "compactionSummary")).toBe(false);
+			expect(messages.length).toBe(before + 6);
+			session.dispose();
+		});
+
+		it("不支持原生压缩的引擎只提示，不再伪造压缩结果", async () => {
+			const store = new UniversalSessionStore(tempDir);
+			const driver = new MockAgentDriver(workspaceDir);
+			const sent: ServerMessage[] = [];
+			const session = new UniversalSession({
+				clientId: "no-native-compact",
+				cwd: workspaceDir,
+				agentDir,
+				send: (m) => sent.push(m),
+				store,
+				driver,
+			});
+			for (let i = 0; i < 4; i++) await session.prompt(`问题 ${i}`);
+			const before = (session as any).activeConv.messages.length;
+			await session.compactActiveConversation();
+			expect((session as any).activeConv.messages.length).toBe(before);
+			expect(sent.some((m) => m.type === "notice" && m.textEn?.includes("does not support manual compaction"))).toBe(
+				true,
+			);
+			session.dispose();
 		});
 	});
 

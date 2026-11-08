@@ -1471,7 +1471,7 @@ export const LeftPanel = memo(function LeftPanel({
 
 			const pStateSessions = projectSessions?.[pNorm];
 			const propSessionsMatch = Boolean(
-				sessions && sessions.length > 0 && isSessionMatchingProject(sessions[0].path, p.path),
+				sessions && sessions.length > 0 && isSessionMatchingProject(sessions[0], p.path),
 			);
 			const pCached = readCachedSessions(p.path, engine);
 			const pRawSessions = propSessionsMatch
@@ -1519,7 +1519,7 @@ export const LeftPanel = memo(function LeftPanel({
 			const idleSessions = conversationOrder.sort(
 				orderScope,
 				pRawSessions.filter((s) => {
-					if (!isSessionMatchingProject(s.path, p.path)) return false;
+					if (!isSessionMatchingProject(s, p.path)) return false;
 					const sNorm = normalizeSessionPathKey(s.path);
 					if (sNorm && claimedSessionPaths.has(sNorm)) return false;
 					const sId = s.sessionId?.trim().toLowerCase() || extractSessionIdFromPath(s.path)?.toLowerCase();

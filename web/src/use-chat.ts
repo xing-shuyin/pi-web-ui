@@ -1729,12 +1729,13 @@ export function isSessionMatchingProject(
 	if (sessionPath.startsWith("conv:") || sessionPath.startsWith("virtual:")) return true;
 
 	const normS = sessionPath.toLowerCase().replace(/\\/g, "/");
-	const { normP, sdkSlug1, sdkSlugRoot, sdkSlug2 } = projectMatcher(projectPath);
+	const { sdkSlug1, sdkSlugRoot, sdkSlug2 } = projectMatcher(projectPath);
 
 	if (!normS.includes("/")) return true;
 
-	if (normS.startsWith(normP + "/")) return true;
-
+	// The per-project slug dir is authoritative. Check it before the path-prefix rule: the agent's
+	// sessions dir usually lives under the home directory, so a project opened at `~` would otherwise
+	// claim every project's transcripts.
 	const segments = normS.split("/").filter(Boolean);
 	const dirSegments = segments.slice(0, -1);
 	const sessionSlugSeg = dirSegments.find((seg) => seg.startsWith("--") && seg.endsWith("--"));
@@ -1747,6 +1748,7 @@ export function isSessionMatchingProject(
 		);
 	}
 
+	// No slug dir (custom session dir): there is no reliable owner signal in the path; keep it.
 	return true;
 }
 

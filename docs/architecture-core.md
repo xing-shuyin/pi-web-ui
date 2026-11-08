@@ -198,6 +198,19 @@ pi 的 `schedule` 创建任务时单独持久化创建来源（稳定 SDK 会话
 
 驱动将 `codex exec --json` 的线程、正文、思考、工具和用量事件转换为通用事件，线程 ID 随会话持久化以便续接。执行使用工作区写入沙盒，不绕过 Codex 的安全限制。Codex 不提供宿主工具审批、历史编辑或分叉；通用底座按能力声明隐藏这些入口。停止请求必须终止对应子进程并完成有界清理。
 
+## Claude Code / Codex 原版接入约定
+
+**事实源**：`server/universal/drivers/claude-code.ts`、`drivers/codex.ts`、`server/universal/engine-mcp.ts`、`universal-attachments.ts`（`materializeUploads` / `describeCliAttachment`）。回归：`tests/unit/claude-driver-launch.test.ts`、`codex-driver.test.ts`、`universal-commands.test.ts`（第 4 组）、`universal-attachments.test.ts`。
+
+- **执行即原版 CLI**：两个引擎都只启动本机 `claude` / `codex`，工具、登录、会话存储、CLAUDE.md/AGENTS.md、CLI 自己的 MCP 与技能全部由 CLI 负责；底座不模拟 CLI 能力。
+- **图片**：Claude 走 `-p --input-format stream-json`，图片作为原生 `image` 块（>5MB 或非 png/jpeg/webp/gif 时落盘为文件交给 CLI 读取）；Codex 走 `--image`。
+- **上传文件**：浏览器上传的 `fileData` 由底座先存入 `<dataDir>/uploads/<clientId>/`（与 Pi 共用清理策略），再以绝对路径告诉 CLI；禁止只传文件名。
+- **MCP**：pi 配置的已启用服务器（`<agentDir>/mcp.json` + `<cwd>/.pi/mcp.json`，项目覆盖全局）**叠加**在 CLI 自身配置之上：Claude 用 0600 临时文件 `--mcp-config`（轮次结束删除，不用 `--strict-mcp-config`），Codex 用 `-c mcp_servers.*`，HTTP 头值经 `env_http_headers` 走环境变量以免出现在命令行。pi 侧 OAuth 令牌不随之传递。
+- **模型**：Claude 列表为 CLI 别名（`default` 不传 `--model`，跟随 CLI 配置；`opus`/`sonnet`/`haiku`）加 models.json 中兼容的自定义服务商；已下线的 `claude-3-*` 存档自动迁移为 `default`。会话构造时必须把当前模型同步给驱动。
+- **斜杠命令**：Claude 的命令清单取自 CLI `system/init` 事件的 `slash_commands`，原样透传给 CLI（含 `/compact`、技能）；pi 自管 UI 状态的命令（`/new`、`/model`、`/name` 等）保留在 pi。通用底座不得伪造压缩（只裁剪界面消息而 CLI 上下文不变）；不支持原生压缩的引擎只提示。
+- **会话 ID**：`createSession()` 不得返回占位 ID；真实 ID 来自 CLI 事件并经 `onSessionStarted` 回写，否则后续 `--resume` 会被 CLI 拒绝。
+- **左栏归属与去重**（所有引擎）：左栏按 `ConversationSummary.sessionFile/sessionId` 与 `SessionSummary.path/sessionId` 认定「打开中的对话」与「历史会话」是同一条；按 `SessionSummary.cwd` 认定所属项目。通用底座的会话 `path` 是对话 ID（无项目 slug），因此对话摘要必须带 `sessionId`、历史行与 `sessions` 消息必须带 `cwd`，否则会重复显示且出现在每个项目下。`isSessionMatchingProject` 必须传会话对象（优先比 `cwd`），按路径判断时先看 `--slug--` 目录再看路径前缀——会话目录通常在家目录下，把 `~` 当项目时前缀规则会吞掉所有项目的会话。回归：`tests/unit/left-panel-engine-sessions.test.ts`、`universal-session-list.test.ts`、`list-sessions-dispatch.test.ts`。
+
 ## 随手问独立小窗
 
 **事实源**：`web/src/components/QuickAskPopover.tsx`、`QuickAskAttachments.tsx`、`web/src/use-draggable-popover.ts`、`web/src/quick-ask.ts`、`web/src/quick-ask-context.ts`、`server/quick-ask.ts`、`server/quick-ask-context.ts`；设置 UI 为 `web/src/components/QuickAskSettings.tsx`，独立设置单源为 `server/quick-ask-settings.ts`。

@@ -123,7 +123,9 @@ describe("Universal Agent 底座体系单测", () => {
 
 			const models = await driver.listModels();
 			expect(models.length).toBeGreaterThan(0);
-			expect(models.some((m) => m.id.includes("claude-3-7-sonnet"))).toBe(true);
+			expect(models[0].id).toBe("default");
+			expect(models.map((m) => m.id)).toEqual(expect.arrayContaining(["opus", "sonnet", "haiku"]));
+			expect(models.some((m) => m.id.startsWith("claude-3-"))).toBe(false);
 		});
 
 		it("能够正确解析 Claude Code NDJSON 事件流并分发到 sink", () => {

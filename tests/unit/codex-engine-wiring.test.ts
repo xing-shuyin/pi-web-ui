@@ -126,7 +126,9 @@ describe("Codex engine wiring", () => {
 		const index = readFileSync(new URL("../../server/index.ts", import.meta.url), "utf8");
 		expect(index).toContain('EXPLICIT_ENGINE_ARG === "codex"');
 		expect(index).toContain('msg.engine === "codex"');
-		expect(index).toContain("driverFactory: (cwd) => new CodexDriver(cwd)");
+		expect(index).toContain(
+			"driverFactory: (cwd) => new CodexDriver(cwd, { agentDir: getAgentDir(), dataDir: DATA_DIR })",
+		);
 		expect(index).toContain("if (codexServiceInstance) list.push(codexServiceInstance)");
 		const protocol = readFileSync(new URL("../../server/protocol.ts", import.meta.url), "utf8");
 		const engine: EngineId = "codex";
