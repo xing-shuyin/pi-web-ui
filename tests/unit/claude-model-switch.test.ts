@@ -5,6 +5,7 @@ import { join } from "node:path";
 import { UniversalSession } from "../../server/universal/universal-session.js";
 import { UniversalSessionStore } from "../../server/universal/session-store.js";
 import { ClaudeCodeDriver } from "../../server/universal/drivers/claude-code.js";
+import { ClientStateStore } from "../../server/client-state.js";
 import type { ServerMessage, UiState } from "../../server/protocol.js";
 
 describe("Claude 引擎模型切换与状态联动", () => {
@@ -50,7 +51,7 @@ describe("Claude 引擎模型切换与状态联动", () => {
 		expect(latestState.model).toBeDefined();
 
 		const currentModelId = `${latestState.model!.provider}/${latestState.model!.id}`;
-		expect(currentModelId).toBe("claude-code/claude-3-7-sonnet-20250219");
+		expect(currentModelId).toBe("claude-code/default");
 
 		const firstModel = modelsMsg!.models[0];
 		expect(currentModelId).toBe(firstModel.id);
@@ -59,7 +60,7 @@ describe("Claude 引擎模型切换与状态联动", () => {
 		session.dispose();
 	});
 
-	it("在 Claude 引擎下切换到官方其他模型（如 Sonnet 3.5）时，状态、名称与前端计算 ID 完整更新", async () => {
+	it("在 Claude 引擎下切换到官方其他模型（如 Sonnet 别名）时，状态、名称与前端计算 ID 完整更新", async () => {
 		const emitted: ServerMessage[] = [];
 		const driver = new ClaudeCodeDriver(process.cwd(), { agentDir: testAgentDir });
 		const session = new UniversalSession({
@@ -74,7 +75,7 @@ describe("Claude 引擎模型切换与状态联动", () => {
 		await session.listModels();
 		emitted.length = 0;
 
-		await session.setModel("claude-code/claude-3-5-sonnet-20241022");
+		await session.setModel("claude-code/sonnet");
 
 		const snapshots = emitted.filter((m): m is Extract<ServerMessage, { type: "snapshot" }> => m.type === "snapshot");
 		const notices = emitted.filter((m): m is Extract<ServerMessage, { type: "notice" }> => m.type === "notice");
@@ -82,15 +83,15 @@ describe("Claude 引擎模型切换与状态联动", () => {
 		expect(snapshots.length).toBeGreaterThan(0);
 		const state: UiState = snapshots[snapshots.length - 1].state;
 
-		expect(state.model?.id).toBe("claude-3-5-sonnet-20241022");
+		expect(state.model?.id).toBe("sonnet");
 		expect(state.model?.provider).toBe("claude-code");
 
-		expect(state.model?.name).toBe("Claude 3.5 Sonnet");
+		expect(state.model?.name).toBe("Sonnet (latest)");
 
 		const currentModelId = `${state.model?.provider}/${state.model?.id}`;
-		expect(currentModelId).toBe("claude-code/claude-3-5-sonnet-20241022");
+		expect(currentModelId).toBe("claude-code/sonnet");
 
-		expect(notices.some((n) => n.text?.includes("Claude 3.5 Sonnet"))).toBe(true);
+		expect(notices.some((n) => n.text?.includes("Sonnet (latest)"))).toBe(true);
 
 		session.dispose();
 	});
@@ -144,6 +145,23 @@ describe("Claude 引擎模型切换与状态联动", () => {
 		const currentModelId = `${state.model?.provider}/${state.model?.id}`;
 		expect(currentModelId).toBe("my-proxy/claude-3-7-sonnet");
 
+		session.dispose();
+	});
+
+	it("已保存的旧版 Claude 3.x 模型（已下线）迁移为 CLI 默认，并同步到驱动", async () => {
+		const stateStore = new ClientStateStore(join(testDataDir, "client-state.json"));
+		stateStore.saveProjectModel("legacy-client", process.cwd(), "claude-code/claude-3-7-sonnet-20250219", "claude");
+		const driver = new ClaudeCodeDriver(process.cwd(), { agentDir: testAgentDir, defaultModel: "opus" });
+		const session = new UniversalSession({
+			clientId: "legacy-client",
+			cwd: process.cwd(),
+			agentDir: testAgentDir,
+			send: () => {},
+			store,
+			stateStore,
+			driver,
+		});
+		expect((driver as any).currentModel).toBe("claude-code/default");
 		session.dispose();
 	});
 
@@ -236,7 +254,7 @@ describe("Claude 引擎模型切换与状态联动", () => {
 
 		it("多轮对话在切换模型后能保留历史并在新模型下继续", async () => {
 			const emitted: ServerMessage[] = [];
-			let currentModelInDriver = "claude-code/claude-3-7-sonnet-20250219";
+			let currentModelInDriver = "claude-code/opus";
 			let lastTurnModel = "";
 			const mockDriver = {
 				id: "claude-code",
@@ -252,8 +270,8 @@ describe("Claude 引擎模型切换与状态联动", () => {
 				},
 				abort: async () => {},
 				listModels: async () => [
-					{ id: "claude-3-7-sonnet-20250219", name: "Claude 3.7 Sonnet" },
-					{ id: "claude-3-5-sonnet-20241022", name: "Claude 3.5 Sonnet" },
+					{ id: "opus", name: "Opus (latest)" },
+					{ id: "sonnet", name: "Sonnet (latest)" },
 				],
 				setModel: async (_m: string) => {
 					currentModelInDriver = _m;
@@ -272,12 +290,13 @@ describe("Claude 引擎模型切换与状态联动", () => {
 			});
 
 			await session.prompt("第一轮问题");
-			expect(lastTurnModel).toBe("claude-code/claude-3-7-sonnet-20250219");
+			// The driver is synced to the UI model (CLI default) at construction, not left on its own default.
+			expect(lastTurnModel).toBe("default");
 
-			await session.setModel("claude-code/claude-3-5-sonnet-20241022");
+			await session.setModel("claude-code/sonnet");
 
 			await session.prompt("第二轮问题");
-			expect(lastTurnModel).toBe("claude-code/claude-3-5-sonnet-20241022");
+			expect(lastTurnModel).toBe("claude-code/sonnet");
 
 			session.flushSnapshot(true);
 			const snapshots = emitted.filter((m): m is Extract<ServerMessage, { type: "snapshot" }> => m.type === "snapshot");

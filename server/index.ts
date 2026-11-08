@@ -1765,7 +1765,7 @@ function ensureEngine(engine: EngineId): EngineService {
 				agentDir: getAgentDir(),
 				stateStore: sharedStateStore,
 				engine: "codex",
-				driverFactory: (cwd) => new CodexDriver(cwd),
+				driverFactory: (cwd) => new CodexDriver(cwd, { agentDir: getAgentDir(), dataDir: DATA_DIR }),
 			});
 			for (let i = 0; i < sharedSocketCount; i++) codexServiceInstance.noteSocketOpen();
 			if (sharedQuiesced) codexServiceInstance.quiesce();
@@ -1794,7 +1794,7 @@ function ensureEngine(engine: EngineId): EngineService {
 				dataDir: DATA_DIR,
 				agentDir: getAgentDir(),
 				stateStore: sharedStateStore,
-				driverFactory: (cwd) => new ClaudeCodeDriver(cwd, { agentDir: getAgentDir() }),
+				driverFactory: (cwd) => new ClaudeCodeDriver(cwd, { agentDir: getAgentDir(), dataDir: DATA_DIR }),
 			});
 			for (let i = 0; i < sharedSocketCount; i++) claudeServiceInstance.noteSocketOpen();
 			if (sharedQuiesced) claudeServiceInstance.quiesce();

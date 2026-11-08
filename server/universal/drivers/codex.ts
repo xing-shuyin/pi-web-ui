@@ -7,10 +7,13 @@ import { BaseAgentDriver, type AgentCapabilities, type AgentEventSink, type Agen
 import type { PromptAttachment } from "../../protocol.js";
 import { probeEngineCliVersion, resolveEngineCliLaunch } from "../../engine-cli.js";
 import { killPidTree } from "../../process-utils.js";
-import { formatUnavailableCanvasReference } from "../universal-attachments.js";
+import { decodeInlineImage, describeCliAttachment } from "../universal-attachments.js";
+import { collectEnabledMcpServers, toCodexMcpOverrides } from "../engine-mcp.js";
 
 export interface CodexDriverOptions {
 	executablePath?: string;
+	agentDir?: string;
+	dataDir?: string;
 }
 
 export async function probeCodex(
@@ -95,29 +98,22 @@ export class CodexDriver extends BaseAgentDriver {
 		let input = prompt;
 		try {
 			for (const att of attachments ?? []) {
-				if (att.mode === "canvas") {
-					input += `\n${formatUnavailableCanvasReference(att)}`;
-					continue;
-				}
-				if (att.mode === "page" || att.mode === "conversation") {
-					input += `\nReferenced ${att.mode}: ${JSON.stringify(att.path)} (host access unavailable in Codex).`;
-					continue;
-				}
-				if (att.imageData) {
-					const match = /^data:(image\/(?:png|jpeg|webp|gif));base64,([\s\S]+)$/.exec(att.imageData);
-					const mime = match?.[1] ?? att.mimeType;
-					if (!mime || !["image/png", "image/jpeg", "image/webp", "image/gif"].includes(mime))
-						throw new Error("Unsupported Codex image format");
-					const encoded = match?.[2] ?? att.imageData;
-					if (encoded.length > 28 * 1024 * 1024) throw new Error("Codex image exceeds size limit");
+				if (att.imageData && !att.fileData && !att.uploadPath) {
+					const image = decodeInlineImage(att);
+					if (!image) throw new Error("Unsupported Codex image format");
+					if (image.data.length > 28 * 1024 * 1024) throw new Error("Codex image exceeds size limit");
 					imageDir ??= mkdtempSync(join(tmpdir(), "pi-codex-images-"));
-					const path = join(imageDir, `${imageArgs.length}.${mime.split("/")[1]}`);
-					writeFileSync(path, Buffer.from(encoded, "base64"), { mode: 0o600 });
+					const path = join(imageDir, `${imageArgs.length}.${image.mimeType.split("/")[1]}`);
+					writeFileSync(path, Buffer.from(image.data, "base64"), { mode: 0o600 });
 					imageArgs.push("--image", path);
-				} else if (att.mode === "quote" && att.quote) input += `\n<quote>\n${att.quote.text}\n</quote>`;
-				else
-					input += `\nFile reference: ${JSON.stringify(att.path)}${att.mode === "lines" ? ` (lines ${att.lines?.start ?? ""}-${att.lines?.end ?? ""})` : ""}`;
+					continue;
+				}
+				const note = describeCliAttachment(att);
+				if (note) input += `\n${note}`;
 			}
+			const mcp = toCodexMcpOverrides(
+				collectEnabledMcpServers({ cwd, agentDir: this.options.agentDir, dataDir: this.options.dataDir }),
+			);
 			const launch = resolveEngineCliLaunch("codex", { executablePath: this.options.executablePath, cwd });
 			const args = [
 				...launch.args,
@@ -132,6 +128,7 @@ export class CodexDriver extends BaseAgentDriver {
 				"never",
 				"-c",
 				`model_reasoning_effort=${JSON.stringify(this.effort)}`,
+				...mcp.args,
 			];
 			if (this.model !== "default") args.push("--model", this.model);
 			if (this.sessionId) args.push("resume", this.sessionId);
@@ -141,7 +138,7 @@ export class CodexDriver extends BaseAgentDriver {
 				windowsHide: true,
 				detached: process.platform !== "win32",
 				stdio: ["pipe", "pipe", "pipe"],
-				env: { ...process.env, NO_COLOR: "1" },
+				env: { ...process.env, ...mcp.env, NO_COLOR: "1" },
 			});
 			let finish!: () => void;
 			const run: ActiveRun = {

@@ -36,6 +36,31 @@ describe("list_sessions dispatch and matching", () => {
 		expect(refreshSessions).not.toHaveBeenCalled();
 	});
 
+	it("isSessionMatchingProject does not attach every session to a project that contains the agent dir", () => {
+		const session = "C:/Users/x/.pi/agent/sessions/--D--pi-web-ui--/2026-11-07T01-00-00-000Z_abc.jsonl";
+		expect(isSessionMatchingProject(session, "C:/Users/x")).toBe(false);
+		expect(isSessionMatchingProject(session, "C:\\Users\\x")).toBe(false);
+		expect(isSessionMatchingProject(session, "D:/pi-web-ui")).toBe(true);
+		expect(
+			isSessionMatchingProject(
+				"C:/Users/x/.pi/agent/sessions/--C--Users-x--/2026-11-07T01-00-00-000Z_h.jsonl",
+				"C:/Users/x",
+			),
+		).toBe(true);
+	});
+
+	it("isSessionMatchingProject scopes engine sessions without a transcript path by their cwd", () => {
+		expect(
+			isSessionMatchingProject({ path: "conv-1", cwd: "D:/a", firstMessage: "", messageCount: 0, modified: 0 }, "D:/b"),
+		).toBe(false);
+		expect(
+			isSessionMatchingProject(
+				{ path: "conv-1", cwd: "D:\\a", firstMessage: "", messageCount: 0, modified: 0 },
+				"D:/a",
+			),
+		).toBe(true);
+	});
+
 	it("isSessionMatchingProject accurately identifies sessions matching project slugs", () => {
 		expect(isSessionMatchingProject("C:/Users/c/.pi/agent/sessions/--e--t--/2026-03-31t11-00-00.jsonl", "E:/t")).toBe(
 			true,

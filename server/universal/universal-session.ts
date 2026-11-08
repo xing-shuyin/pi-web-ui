@@ -33,7 +33,12 @@ import { BgServerTracker } from "../bg-servers.js";
 import { ModelAdminService } from "../model-admin.js";
 import { WebUIContext } from "../webui-context.js";
 import type { BaseAgentDriver, AgentEventSink, AgentTurnMeta } from "./driver-base.js";
-import { ClaudeCodeDriver, probeClaudeCode } from "./drivers/claude-code.js";
+import {
+	CLAUDE_CODE_MODELS,
+	ClaudeCodeDriver,
+	normalizeClaudeModelId,
+	probeClaudeCode,
+} from "./drivers/claude-code.js";
 import { CodexDriver, probeCodex } from "./drivers/codex.js";
 import type { UniversalSessionStore } from "./session-store.js";
 import type { UniversalConversation } from "./universal-types.js";
@@ -52,7 +57,12 @@ import { getWorktreeContext, removeWorktree } from "../worktree-service.js";
 import { MarkerService } from "../marker-service.js";
 import { SlashCommandsService, parseSlash } from "../slash-commands.js";
 import { discoverDiskSkills, readSkillInstruction, type DiscoveredSkill } from "../skill-discovery.js";
-import { scanAtMentions, createAttachmentUiMessages, formatPromptWithSkills } from "./universal-attachments.js";
+import {
+	scanAtMentions,
+	createAttachmentUiMessages,
+	formatPromptWithSkills,
+	materializeUploads,
+} from "./universal-attachments.js";
 import type { PluginCommandDef } from "../plugins.js";
 import { scmCommitContext } from "../scm.js";
 import { buildCommitMsgInput, sanitizeCommitMessage } from "../scm-commitmsg.js";
@@ -154,7 +164,7 @@ export class UniversalSession implements DispatchSession {
 	private followUpQueue: QueuedMessageEntry[] = [];
 
 	private readonly engine: string;
-	private currentModel = "claude-3-7-sonnet-20250219";
+	private currentModel = "default";
 	private thinkingLevel = "medium";
 	private lang = "zh";
 	private readonly modelsMap = new Map<string, { id: string; name: string; provider: string; vision: boolean }>();
@@ -368,7 +378,7 @@ export class UniversalSession implements DispatchSession {
 			lang: () => this.getLang() as any,
 		});
 		if (opts.driver.id === "claude-code") {
-			this.currentModel = "claude-3-7-sonnet-20250219";
+			this.currentModel = "default";
 			this.seedDefaultClaudeModels();
 		} else if (opts.driver.id === "codex") {
 			this.currentModel = "default";
@@ -384,8 +394,11 @@ export class UniversalSession implements DispatchSession {
 			opts.stateStore?.getProjectModel(opts.clientId, opts.cwd, this.engine) ??
 			opts.stateStore?.getDefaultModel(this.engine);
 		if (savedModel) {
-			this.currentModel = savedModel;
+			// Retired Claude 3.x ids saved by older builds make every turn fail; fall back to the CLI default.
+			this.currentModel = opts.driver.id === "claude-code" ? normalizeClaudeModelId(savedModel) : savedModel;
 		}
+		// The driver must run the model the UI shows, not its own construction-time default.
+		void Promise.resolve(this.driver.setModel?.(this.currentModel)).catch(() => {});
 
 		const rememberedThinking = getModelThinkingLevelFromSettings(this.currentModel, this.agentDir);
 		if (rememberedThinking) {
@@ -479,13 +492,7 @@ export class UniversalSession implements DispatchSession {
 	}
 
 	private seedDefaultClaudeModels(): void {
-		const defaults = [
-			{ id: "claude-3-7-sonnet-20250219", name: "Claude 3.7 Sonnet" },
-			{ id: "claude-3-5-sonnet-20241022", name: "Claude 3.5 Sonnet" },
-			{ id: "claude-3-5-haiku-20241022", name: "Claude 3.5 Haiku" },
-			{ id: "claude-3-opus-20240229", name: "Claude 3 Opus" },
-		];
-		for (const d of defaults) {
+		for (const d of CLAUDE_CODE_MODELS) {
 			const canonicalId = `${this.driver.id}/${d.id}`;
 			const entry = { id: d.id, name: d.name, provider: this.driver.id, vision: true };
 			this.modelsMap.set(canonicalId, entry);
@@ -525,12 +532,7 @@ export class UniversalSession implements DispatchSession {
 
 		return {
 			id: this.currentModel,
-			name:
-				this.currentModel === "claude-3-7-sonnet-20250219"
-					? "Claude 3.7 Sonnet"
-					: this.currentModel === "deepseek-v4-flash"
-						? "DeepSeek V4 Flash"
-						: this.currentModel,
+			name: this.currentModel === "deepseek-v4-flash" ? "DeepSeek V4 Flash" : this.currentModel,
 			provider: this.driver.id === "dsh" ? "deepseek" : this.driver.id,
 			vision: true,
 		};
@@ -795,8 +797,11 @@ export class UniversalSession implements DispatchSession {
 					return this.prompt(skillPrompt, attachments, _queue, targetConv, rebuiltContext);
 				}
 			}
-			const handled = await this.slash.exec(slash.name, slash.args);
-			if (handled) return;
+			// Native CLI commands (e.g. Claude Code's /compact, /init, skills) go to the engine verbatim.
+			if (!this.driver.handlesNativeSlashCommand?.(slash.name)) {
+				const handled = await this.slash.exec(slash.name, slash.args);
+				if (handled) return;
+			}
 		}
 
 		if (this.switchingProject || this.disposed || this.abortPromise || generation !== this.projectGeneration) return;
@@ -814,7 +819,11 @@ export class UniversalSession implements DispatchSession {
 			const availableSkills = await this.collectUniversalSkills();
 			if (!isCurrent()) return;
 			const scanResult = scanAtMentions(text, turn.cwd, availableSkills, attachments ?? []);
-			const effectiveAttachments = [...(attachments ?? []), ...scanResult.detectedAttachments];
+			const effectiveAttachments = materializeUploads([...(attachments ?? []), ...scanResult.detectedAttachments], {
+				clientId: this.clientId,
+				dataDir: this.dataDir,
+				maxInlineImageBytes: this.driver.maxInlineImageBytes,
+			});
 			const finalPrompt = formatPromptWithSkills(text, scanResult.detectedSkills);
 
 			const hasNoUserMessages = !conv.messages.some((m) => m.role === "user");
@@ -1052,6 +1061,7 @@ export class UniversalSession implements DispatchSession {
 				conv.driverSessionId = activeSid;
 			}
 		}
+		if (this.driver.consumeSlashCommandsChanged?.()) void this.pushSlashCommands();
 
 		finishTurnTiming(conv);
 		this.isStreaming = false;
@@ -1480,6 +1490,9 @@ export class UniversalSession implements DispatchSession {
 			createdAt: c.createdAt,
 			pinned: Boolean(c.pinned),
 			sessionPath: c.id,
+			// Same identity as the history row (`SessionSummary.sessionId`), so the left panel shows an
+			// open conversation once instead of both as "open" and as history.
+			sessionId: c.id,
 			active: c.id === this.activeConvId,
 			cwd: this.cwd,
 			messageCount: c.messages.length,
@@ -1508,6 +1521,8 @@ export class UniversalSession implements DispatchSession {
 				return {
 					path: c.id,
 					sessionId: c.id,
+					// Ids carry no project slug; without cwd the left panel attaches them to every project.
+					cwd: this.cwd,
 					name: c.title,
 					displayName,
 					firstMessage: firstMsg,
@@ -1516,7 +1531,7 @@ export class UniversalSession implements DispatchSession {
 					pinned: Boolean(c.pinned),
 				};
 			});
-		this.send({ type: "sessions", sessions: sessionSummaries });
+		this.send({ type: "sessions", sessions: sessionSummaries, cwd: this.cwd });
 	}
 
 	resolveSessionDisplayName(conv: UniversalConversation, firstMsg: string): string {
@@ -1751,6 +1766,7 @@ export class UniversalSession implements DispatchSession {
 	}
 
 	async setModel(modelId: string): Promise<void> {
+		if (this.driver.id === "claude-code") modelId = normalizeClaudeModelId(modelId);
 		this.currentModel = modelId;
 		if (this.stateStore) {
 			this.stateStore.saveProjectModel(this.clientId, this.cwd, modelId, this.engine);
@@ -2226,30 +2242,17 @@ export class UniversalSession implements DispatchSession {
 	}
 
 	async compactActiveConversation(instructions?: string): Promise<void> {
-		const conv = this.activeConv;
-		if (conv.messages.length <= 4) {
-			this.emitNotice("info", "当前对话上下文较短，无需压缩", "Conversation context is short, no compaction needed");
+		// Compaction must happen inside the engine's own context; trimming UI messages would only hide
+		// history while the CLI session keeps the full context.
+		if (this.driver.handlesNativeSlashCommand?.("compact")) {
+			await this.prompt(`/compact ${instructions ?? ""}`.trim());
 			return;
 		}
-		const first = conv.messages.slice(0, 2);
-		const recent = conv.messages.slice(-4);
-		const summaryMsg: UiMessage = {
-			id: `compaction-${Date.now()}`,
-			role: "compactionSummary",
-			content: [
-				{
-					type: "text",
-					text: instructions ? `上下文已根据说明压缩: ${instructions}` : "历史消息已由通用底座自动压缩归纳",
-				},
-			],
-			timestamp: Date.now(),
-		};
-		conv.messages = [...first, summaryMsg, ...recent];
-		if (!conv.isEphemeral) {
-			this.store.saveConversation(this.cwd, conv);
-		}
-		this.flushSnapshot();
-		this.emitNotice("info", "已压缩当前会话上下文", "Current conversation context compacted");
+		this.emitNotice(
+			"info",
+			`${this.driver.name} 引擎不支持手动压缩，上下文由 CLI 自动管理`,
+			`${this.driver.name} does not support manual compaction; the CLI manages its context automatically`,
+		);
 	}
 
 	async reloadSessionResources(): Promise<void> {
