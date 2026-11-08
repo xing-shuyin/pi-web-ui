@@ -18,13 +18,14 @@ export interface EngineCliLaunchOptions extends Omit<NativeCliDiscoveryOptions, 
 /**
  * npm's cmd-shim writes two Windows recoverable shapes, both anchored to `"%dp0%\<entry>" %*` so an
  * extra command after the invocation still fails the parse:
- *   cmd-shim <= 8: endLocal & goto #_undefined_# 2>NUL || title %COMSPEC% & "%_prog%" "%dp0%\<entry>" %*
- *   cmd-shim 9   : ... title %COMSPEC% & set PATHEXT=%PATHEXT:;.JS;=;% & "%_prog%" "%dp0%\<entry>" %*
- * The second form (npm 11+) is emitted for every dependency bin, so `pi.cmd` / `claude.cmd` from a current
- * npm are unparsable without tolerating the PATHEXT segment.
+ *   cmd-shim 8 (npm 11): endLocal & goto #_undefined_# 2>NUL || title %COMSPEC% & "%_prog%" "%dp0%\<entry>" %*
+ *   cmd-shim 9 (npm 12): ... title %COMSPEC% & set PATHEXT=%PATHEXT:;.JS;=;% & "%_prog%" "%dp0%\<entry>" %*
+ * npm 12 writes the second form for every dependency bin, so `pi.cmd` / `claude.cmd` from a current npm are
+ * unparsable without tolerating the PATHEXT segment. The optional segment stays single-line (`[^&\r\n]*`) so a
+ * shim cannot smuggle a second line into the prefix.
  */
 const NPM_SHIM_NODE_TARGET =
-	/^\s*(?:endLocal\s*&\s*goto\s+#_undefined_#\s+2>NUL\s*\|\|\s*title\s+%COMSPEC%\s*&)?\s*(?:set\s+PATHEXT=[^&]*&\s*)?(?:"%_prog%"|"%dp0%[\\/]node\.exe"|node(?:\.exe)?)\s+"%dp0%[\\/]([^"\r\n]+)"\s+%\*\s*$/im;
+	/^\s*(?:endLocal\s*&\s*goto\s+#_undefined_#\s+2>NUL\s*\|\|\s*title\s+%COMSPEC%\s*&)?\s*(?:set\s+PATHEXT=[^&\r\n]*&\s*)?(?:"%_prog%"|"%dp0%[\\/]node\.exe"|node(?:\.exe)?)\s+"%dp0%[\\/]([^"\r\n]+)"\s+%\*\s*$/im;
 const NPM_SHIM_NATIVE_TARGET = /^\s*"%dp0%[\\/]([^"\r\n]+\.(?:exe|com))"\s+%\*\s*$/im;
 
 /**
@@ -53,7 +54,7 @@ function unwrapExecutable(file: string, args: readonly string[], options: Native
 	const { nodeTarget, nativeTarget } = readNpmShimTargets(readFileSync(file, "utf8"));
 	const target = nodeTarget ?? nativeTarget;
 	if (!target || (nodeTarget && !/\.(?:[cm]?js)$/i.test(nodeTarget)) || /[%\x00-\x1f]/.test(target))
-		throw new Error("Unsupported CLI .cmd shim; configure its executable directly");
+		throw new Error(`Unsupported CLI .cmd shim (${file}); configure its executable directly`);
 	const entryPoint = win32.resolve(win32.dirname(file), target);
 	if (!statSync(entryPoint).isFile()) throw new Error("CLI npm entry point is not a file");
 	if (!nodeTarget) return { file: entryPoint, args: [...args] };

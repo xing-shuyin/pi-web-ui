@@ -114,10 +114,15 @@ describe("npm .cmd shim dialects", () => {
 		'\r\nIF EXIST "%dp0%\\node.exe" (\r\n  SET "_prog=%dp0%\\node.exe"\r\n) ELSE (\r\n  SET "_prog=node"\r\n)\r\n\r\n';
 	const entry = "node_modules\\@earendil-works\\pi-coding-agent\\dist\\bundle\\cli.js";
 
-	// cmd-shim 9（npm 11+/12）的逐字模板；pi 1.5.0 的 pi.cmd 长这样。
+	// cmd-shim 9（npm 12）的逐字模板；pi 1.5.0 的 pi.cmd 长这样。
 	it("accepts the cmd-shim 9 PATHEXT segment", () => {
 		const shim = `${head}${progBlock}endLocal & goto #_undefined_# 2>NUL || title %COMSPEC% & set PATHEXT=%PATHEXT:;.JS;=;% & "%_prog%"  "%dp0%\\${entry}" %*\r\n`;
 		expect(readNpmShimTargets(shim)).toEqual({ nodeTarget: entry, nativeTarget: undefined });
+	});
+
+	it("rejects a PATHEXT segment that wraps onto another line", () => {
+		const shim = `${head}${progBlock}endLocal & goto #_undefined_# 2>NUL || title %COMSPEC% & set PATHEXT=%PATHEXT:;.JS;=;%\r\ncalc.exe & "%_prog%" "%dp0%\\${entry}" %*\r\n`;
+		expect(readNpmShimTargets(shim)).toEqual({ nodeTarget: undefined, nativeTarget: undefined });
 	});
 
 	it("still accepts the cmd-shim <= 8 form without the PATHEXT segment", () => {
