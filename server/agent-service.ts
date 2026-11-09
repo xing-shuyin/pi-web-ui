@@ -53,6 +53,7 @@ import {
 import { collectInstalledEngineTargets } from "./engine-probe.js";
 import { captureQuickAskConversation } from "./quick-ask-context.js";
 import { checkPluginUpdates } from "./plugin-updater.js";
+import { enablePluginAfterInstall } from "./plugin-installer.js";
 import { getAppVersion, getPkgRoot } from "./pkg-info.js";
 import { isBundledInUse, sdkCopies } from "./sdk-origin.js";
 import {
@@ -8406,6 +8407,18 @@ export class ClientSession {
 				}
 			}
 		}
+	}
+
+	/**
+	 * 安装成功即启用：把插件从 `disabledPlugins` 里摘掉。设置是全局的，写一次所有客户端下次收到 settings 即生效。
+	 * 「更新」不走这里——用户主动禁用过的插件升级后应保持禁用。
+	 */
+	async enableInstalledPlugin(pluginId: string): Promise<boolean> {
+		if (this.botExecution) return false;
+		const next = enablePluginAfterInstall(this.settingsSvc.current.disabledPlugins, pluginId);
+		if (!next) return false;
+		await this.settingsSvc.set({ disabledPlugins: next });
+		return true;
 	}
 
 	async savePreset(name: string): Promise<void> {

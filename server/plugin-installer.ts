@@ -93,6 +93,23 @@ export function buildPluginJobArgs(
 	return { args };
 }
 
+/**
+ * 安装成功后的启用运算：把插件 id 从 `disabledPlugins` 里摘掉，返回新的禁用列表。
+ * 出厂默认设置把一批可选插件写进了禁用清单（`DEFAULT_CLIENT_SETTINGS.disabledPlugins`），
+ * 安装若不同步启用，用户拿到的是「装好了但界面上完全找不到」——「安装即启用」由这里兜住。
+ * 无需改动（未禁用 / 空 id）时返回 null，调用方据此跳过写盘。
+ */
+export function enablePluginAfterInstall(
+	disabledPlugins: readonly string[] | undefined,
+	pluginId: string,
+): string[] | null {
+	const id = String(pluginId ?? "").trim();
+	if (!id) return null;
+	const list = disabledPlugins ?? [];
+	if (!list.includes(id)) return null;
+	return list.filter((x) => x !== id);
+}
+
 export async function inspectInstallSpec(
 	rawSpec: string,
 	deps: {

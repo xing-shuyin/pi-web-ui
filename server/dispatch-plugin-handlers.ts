@@ -161,6 +161,15 @@ export function handlePluginMessage(msg: ClientMessage, ctx: PluginDispatchConte
 					emit: (m) => send(m),
 					done: async (ok, info) => {
 						if (ok) {
+							// 安装即启用：出厂默认把一批插件放在 disabledPlugins 里，不摘掉会变成「装了却找不到」
+							if (jobAction === "install") {
+								try {
+									await cs?.enableInstalledPlugin?.(pluginId);
+								} catch (err) {
+									// 设置落盘失败时 commitSettings 已发过错误 notice，这里不阻断后面的重载与成功回执
+									console.warn(`[plugins] enable after install failed (${pluginId}):`, err);
+								}
+							}
 							await reloadPluginsAndPush(jobLang);
 							if (typeof cs?.checkPluginUpdates === "function") {
 								void cs.checkPluginUpdates(false);

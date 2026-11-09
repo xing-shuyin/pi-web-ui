@@ -6,8 +6,10 @@ import {
 	PluginInstaller,
 	buildPluginJobArgs,
 	confirmPluginInstall,
+	enablePluginAfterInstall,
 	inspectInstallSpec,
 } from "../../server/plugin-installer.js";
+import { DEFAULT_CLIENT_SETTINGS } from "../../server/client-state.js";
 import type { ServerMessage } from "../../server/protocol.js";
 
 let root: string;
@@ -143,6 +145,34 @@ describe("buildPluginJobArgs", () => {
 		expect(buildPluginJobArgs({ jobId: "j", action: "install", id: "ok", source: "onerepo" }, dataDir)).toHaveProperty(
 			"error",
 		);
+	});
+});
+
+describe("enablePluginAfterInstall", () => {
+	it("只摘掉目标 id，其余禁用项与顺序不变", () => {
+		expect(enablePluginAfterInstall(["a", "run-trace", "b"], "run-trace")).toEqual(["a", "b"]);
+		// 不就地改写调用方的数组（设置快照是冻结的）
+		const frozen = Object.freeze(["run-trace", "b"]);
+		expect(enablePluginAfterInstall(frozen, "run-trace")).toEqual(["b"]);
+		expect(frozen).toEqual(["run-trace", "b"]);
+	});
+
+	it("未禁用 / 空 id 返回 null，调用方不写盘", () => {
+		expect(enablePluginAfterInstall(["a"], "run-trace")).toBeNull();
+		expect(enablePluginAfterInstall(undefined, "run-trace")).toBeNull();
+		expect(enablePluginAfterInstall(["a"], "  ")).toBeNull();
+		// 首尾空白按 trim 后的 id 比较（服务端作业传来的 id 可能带空白）
+		expect(enablePluginAfterInstall(["run-trace"], " run-trace ")).toEqual([]);
+	});
+
+	it("出厂默认禁用清单里的每个插件安装后都能被启用（「装了却找不到」回归）", () => {
+		const defaults = DEFAULT_CLIENT_SETTINGS.disabledPlugins ?? [];
+		expect(defaults.length).toBeGreaterThan(0);
+		for (const id of defaults) {
+			const next = enablePluginAfterInstall(defaults, id);
+			expect(next, id).not.toBeNull();
+			expect(next, id).not.toContain(id);
+		}
 	});
 });
 

@@ -1420,6 +1420,8 @@ export interface DispatchSession {
 	checkUpdate(): Promise<void>;
 	checkUpdatesAll(force?: boolean): Promise<void>;
 	checkPluginUpdates?(manual?: boolean): Promise<void>;
+	/** 安装成功即启用：把插件从 disabledPlugins 摘掉（返回是否真的改了设置）。 */
+	enableInstalledPlugin?(pluginId: string): Promise<boolean>;
 	resolveDialog(id: number, value: string | boolean | null): void;
 	handleTuiOverlayInput?(id: number, data: string): void;
 	handleTuiOverlayResize?(id: number, cols: number, rows: number): void;
