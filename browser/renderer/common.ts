@@ -1,6 +1,6 @@
 import "../../web/src/styles.css";
 import "./browser.css";
-import type { BrowserShellAction, BrowserState } from "../contracts.js";
+import type { BrowserPanelEvent, BrowserShellAction, BrowserState } from "../contracts.js";
 import { t } from "./i18n.js";
 
 export interface Bookmark {
@@ -33,8 +33,10 @@ export interface FileResult {
 	encoding?: string;
 }
 export interface ShellBridge {
-	call<T = unknown>(action: BrowserShellAction | "overlay", args?: Record<string, unknown>): Promise<T>;
+	call<T = unknown>(action: BrowserShellAction, args?: Record<string, unknown>): Promise<T>;
 	onState(callback: (state: BrowserState) => void): (() => void) | void;
+	/** 面板视图里的改动（书签 / 设置 / 扩展）：面板是独立视图，window 事件跨不过去，由宿主转发 */
+	onPanelEvent?(callback: (name: BrowserPanelEvent) => void): (() => void) | void;
 	onOpenOptions?(callback: () => void): (() => void) | void;
 	onFocusAddress?(callback: () => void): (() => void) | void;
 	/** 拖入文件的真实路径（preload 用 webUtils 取，渲染层拿不到） */
@@ -72,10 +74,7 @@ export function bridgeReady(): Promise<ShellBridge> {
 		}, 50);
 	}));
 }
-export async function call<T = unknown>(
-	action: BrowserShellAction | "overlay",
-	args?: Record<string, unknown>,
-): Promise<T> {
+export async function call<T = unknown>(action: BrowserShellAction, args?: Record<string, unknown>): Promise<T> {
 	return (await bridgeReady()).call<T>(action, args);
 }
 export function element<K extends keyof HTMLElementTagNameMap>(
@@ -304,6 +303,29 @@ export function folderIcon(size = 13): SVGSVGElement {
 		),
 	]);
 }
+
+/** 三个点：行尾「更多动作」（右键菜单的可见入口）。 */
+export function moreIcon(size = 13): SVGSVGElement {
+	return createSvg(size, size, "0 0 13 13", [
+		svgCircle(3, 6.5, 1, "0", "currentColor"),
+		svgCircle(6.5, 6.5, 1, "0", "currentColor"),
+		svgCircle(10, 6.5, 1, "0", "currentColor"),
+	]);
+}
+
+/** 拼图块：工具栏的扩展入口（等同 Chrome 的扩展图标）。 */
+export function extensionIcon(size = 13): SVGSVGElement {
+	return createSvg(size, size, "0 0 12 12", [
+		svgPath("M1.5 1.5h2.7a1.2 1.2 0 0 1 2.4 0H9v2.7a1.2 1.2 0 0 1 0 2.4V9H1.5z", "1.1", "round", "round"),
+	]);
+}
+export function reloadIcon(size = 12): SVGSVGElement {
+	return createSvg(size, size, "0 0 16 16", [
+		svgPath("M13 8a5 5 0 1 1-1.7-3.7", "1.4", "round"),
+		svgPath("M13 1.6v3.6h-3.6", "1.4", "round", "round"),
+	]);
+}
+
 let toastTimer: ReturnType<typeof setTimeout>;
 export function notify(message: string, error = false): void {
 	let node = document.querySelector<HTMLElement>(".pb-toast");
@@ -447,6 +469,7 @@ export function enableCrxDropTarget(): void {
 				if (!path) throw new Error(t("crxDropNoPath"));
 				if (!/\.crx$/i.test(path)) throw new Error(t("crxDropOnly"));
 				const installed = await call<{ name: string; version: string } | null>("extensions.installCrx", { path });
+				if (installed) window.dispatchEvent(new Event("pb-extensions-changed"));
 				notify(installed ? `${t("crxInstalled")}: ${installed.name} ${installed.version}` : t("crxInstalled"));
 			})().catch(reportError);
 		},
@@ -457,6 +480,18 @@ export function listenState(callback: (state: BrowserState) => void): void {
 	void bridgeReady()
 		.then((bridge) => {
 			const dispose = bridge.onState(callback);
+			if (dispose) window.addEventListener("pagehide", dispose, { once: true });
+		})
+		.catch(reportError);
+}
+/**
+ * 面板视图里的改动（书签 / 设置 / 扩展）由宿主转发过来。
+ * 面板现在开在自己的视图里，`window` 事件跨不过去，所以外壳与内部标签页都得用这条路刷新。
+ */
+export function listenPanelEvents(callback: (name: BrowserPanelEvent) => void): void {
+	void bridgeReady()
+		.then((bridge) => {
+			const dispose = bridge.onPanelEvent?.(callback);
 			if (dispose) window.addEventListener("pagehide", dispose, { once: true });
 		})
 		.catch(reportError);

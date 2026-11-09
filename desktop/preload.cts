@@ -1,6 +1,13 @@
 import type { IpcRendererEvent } from "electron";
 import electron = require("electron");
+import browserAction = require("electron-chrome-extensions/browser-action");
 const { contextBridge, ipcRenderer } = electron;
+
+// 工具栏扩展图标（<browser-action-list>）靠这个注入：它把 chrome.action 的状态和点击
+// 变成壳层里的一个自定义元素。只给 shell 页注入——Agent 视图不需要，也不该拿到这个桥。
+if (!process.argv.includes("--pi-browser-embedded") && location.pathname.endsWith("/shell.html")) {
+	browserAction.injectBrowserAction();
+}
 
 if (!process.argv.includes("--pi-browser-embedded")) {
 	contextBridge.exposeInMainWorld("piBrowserShell", {

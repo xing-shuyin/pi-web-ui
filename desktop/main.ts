@@ -1,4 +1,5 @@
-import { app, BrowserWindow, ipcMain, type IpcMainInvokeEvent } from "electron";
+import { app, BrowserWindow, ipcMain, session, type IpcMainInvokeEvent } from "electron";
+import { ElectronChromeExtensions, setSessionPartitionResolver } from "electron-chrome-extensions";
 import { spawn, type ChildProcess } from "node:child_process";
 import { existsSync, mkdirSync } from "node:fs";
 import { createServer } from "node:net";
@@ -6,6 +7,7 @@ import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { DesktopBrowserHost } from "./browser-host.js";
+import { BROWSER_EXTENSION_PARTITION } from "../browser/contracts.js";
 import { createHubBrowser } from "./hub-browser.js";
 import { setupPortableMode } from "./portable.js";
 import { buildDesktopLoadUrl, DEFAULT_DESKTOP_PORT, resolveHealthTimeoutMs, waitForHealth } from "./startup.js";
@@ -68,6 +70,14 @@ async function resolvePort(): Promise<number> {
 let serverProc: ChildProcess | null = null;
 let mainWin: BrowserWindow | null = null;
 let browserHost: DesktopBrowserHost | null = null;
+
+// 浏览器 session 是 `session.fromPath()` 建的，没有 partition 字符串；扩展层（<browser-action-list>、
+// crx:// 图标协议）要按名字反查 session，所以这里给那个 session 一个稳定的别名。
+setSessionPartitionResolver((partition) =>
+	partition === BROWSER_EXTENSION_PARTITION && browserHost
+		? browserHost.browser.session
+		: session.fromPartition(partition),
+);
 
 function exitOnStartupFailure(code = 1): void {
 	try {
@@ -160,6 +170,8 @@ async function createWindow(): Promise<void> {
 		},
 	});
 	const assetsDir = join(here, "..", "browser", "renderer");
+	// 扩展图标走 crx://，而 shell 页在 defaultSession：协议要挂在「显式显示图标」的那个 session 上
+	ElectronChromeExtensions.handleCRXProtocol(session.defaultSession);
 	browserHost = new DesktopBrowserHost(mainWin, {
 		assetsDir,
 		browserPreload: join(here, "..", "browser", "preload.cjs"),

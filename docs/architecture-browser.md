@@ -28,7 +28,15 @@ BrowserWindow 的 webContents 加载本地 shell.html，标签与专用 Agent �
 
 切换模式复用同一个视图并更新可见性、边界和焦点，不重载页面。隐藏页保留有效尺寸，不缩成 1×1。标签关闭时关闭对应 WebContents；应用关闭时清理标签、下载、Agent 和挂起通道。
 
-原生视图不能被普通 DOM 的 z-index 覆盖。外壳打开设置等浮层时通过 overlay 通知宿主临时隐藏内容区；内部标签自己的浮层不隐藏其所在视图。Agent 可通过 `piDesktop.browser` 与宿主同步模式与标签状态。
+原生视图不能被普通 DOM 的 z-index 覆盖，所以外壳面板（书签 / 历史 / 下载 / 设置 / 扩展）**不再用 DOM 浮层 + 隐藏内容区**：一块面板 = 一个 `panel.html` 视图（`WebContentsView`），比页面视图晚加入 `contentView` 即盖在它上面，宿主按面板自己回报的尺寸把它摆成工具栏下沿、贴窗口右侧的一块矩形（`desktop/browser-policy.ts` 的 `panelLayerBounds`）。矩形之外的网页与 Agent 分栏照常可见、可点——这正是修「一点开插件列表，页面和聊天全变黑」的地方。
+
+- 开/收走 `panel` 动作（`{ open, panel }`）；同一个面板再点一次就是收起（工具栏按钮本身是开关，不需要前端记状态）。尺寸由面板页回报（`{ size }`），面板自己量、宿主夹进可用区域；量不出来有兜底时长（`PANEL_LAYER_SHOW_DELAY`）。
+- 面板在自己的视图里，`window` 事件跨不过去：书签 / 设置 / 扩展的改动走 `panel` 的 `{ event }`，宿主转发成 `pi-browser:panel-event`（`browser/preload.cts` 的 `onPanelEvent`），外壳与新标签页各自刷新。
+- 面板里的动作要「先办事再收面板」（导航、开扩展页）：视图销毁会带走后面那次 IPC。
+- 内部标签页（新标签页等）自己的浮层仍用本页 DOM：`dialog.show()` 而不是 `showModal()`——不要 `::backdrop` 遮罩、不把整窗变 inert，点面板外或 Esc 收起（`browser/renderer/panels.ts` 的 `handleOutsidePointer`/`handlePanelEscape`）。
+- `overlay` 动作现在只服务外壳的搜索浮层：那是盖满整块内容区的 DOM 浮层，内容视图得让位，和面板是两回事。
+
+Agent 可通过 `piDesktop.browser` 与宿主同步模式与标签状态。
 
 窗口拖拽区（`-webkit-app-region`）不能挂在会消失的布局产物上：Agent 顶栏原先只靠 `.tb-spacer` 供拖拽，而窄分栏进手机视图后媒体查询把 spacer 收成 `display: contents`（无盒子＝无拖拽区），整个头部就再也拖不动窗口。现在 `body.is-desktop .topbar-flow` 自身声明 `drag`，交互条目逐条 `no-drag`，与 spacer 是否存在无关；回归守卫见 `tests/unit/desktop-agent-input-regions.test.ts`。
 
@@ -61,8 +69,38 @@ Agent 服务 → 页面已有 WebSocket → page_request
 - 「用户当前打开的是哪个标签」属于协议事实，不是客户端猜测（原生侧唯一事实源是 `BrowserManager.getActiveTabId()`）：`browser_page` 的 `pages`/`status` 给当前标签打 `active: true` 并返回 `activeTabId`（只暴露可操作页面，内部页与调用方自己的视图不算）；多标签并存时仍要求显式 `target`，报错文案直接点名用户当前打开的那个标签。page-picker 同理：已授权页面里只有最后一个聚焦窗口的 active 标签会标 `active`，并给出 `activeOrigin`；未授权页面即便在前台也不上报（扩展不发 `tabs` 权限，只对已授 host 权限的 origin 查 `active: true, lastFocusedWindow: true`）。
 - 本地文件必须由系统选择器授权，读取上限 32 MiB，文本文档可保存；二进制 Office 文档只读预览，禁止把文本写回原二进制文件。
 - **口令框的值不出页面**：两条通道同一口径 —— `read what=query` 不返回 `value`、`text` 置空，`read what=html` 克隆后清掉 `value` 属性，`type` 回显也不带值。原生侧事实源 `browser/automation/page-operation.ts` 的 `isPassword`；page-picker 侧 `plugins/page-picker/extension/src/content/bridge-page.ts` 的 `isPassword`/`outerHtmlMasked`。改任何一侧都要同步：口令框能照常 `type` 填写，只是不再回显。回归见 `tests/unit/page-picker-password-mask.test.ts` 与 `tests/page-picker-bridge-test.mjs`。
-- 扩展安装与「加载已解压扩展」同信任级：只接受用户手动选择的目录或 `.crx` 文件。`.crx` 由主进程剥掉 `Cr24` 签名头后解包（条目数/体积上限，禁止越界路径与链接，`manifest.json` 必须存在），**不校验签名**；解包目标 `userData/extensions/crx-<内容哈希>`，同一文件重装不换路径。装过的目录记入 `userData/extensions/installed.json`，重启时自动重新加载（Electron 的 `loadExtension` 本身不持久）。
+- 扩展安装与「加载已解压扩展」同信任级：只接受用户手动选择的目录或 `.crx` 文件。`.crx` 由主进程剥掉 `Cr24` 签名头后解包（条目数/体积上限，禁止越界路径与链接，`manifest.json` 必须存在），**不校验签名**；解包目标 `userData/extensions/crx-<内容哈希>`，同一文件重装不换路径。装过的目录记入 `userData/extensions/installed.json`（`{ path, enabled }[]`，旧版纯字符串数组仍可读），重启时只恢复 `enabled` 的那些（Electron 的 `loadExtension` 本身不持久）。
+- 扩展面板由浏览器工具栏的扩展图标（`shell.ts` 的拼图按钮，徽标=已启用数量）打开，和 Chrome 的扩展菜单同一个入口语义：**一行一个扩展，点整行就开它自己的页面**（`default_popup`，没有就退到选项页），启停开关在行首，重载/选项/移除在行尾 `⋯`（与右键同一张原生菜单）。面板是小浮层（`pb-dialog-compact`，360px 宽、高矮跟着列表走），不是整屏大窗。`extensions.list` 把「会话里真正加载的」（`session.extensions.getAllExtensions()`）与「`installed.json` 记住的」合并，停用项的名字/版本回磁盘读 manifest 补，已加载项带上 `popup`（manifest 的 `action`/`browser_action`/`page_action` 的 `default_popup`，规则单源在 `browser/runtime/extension-state.ts`）。`extensions.toggle` 停用= `removeExtension`，启用=重新 `loadExtension`；`extensions.reload` 先卸再装同一目录（改完扩展代码不用重启应用）；`extensions.remove` 只卸载 + 从清单里忘掉，**不删磁盘目录**（用户选的解压目录不该被浏览器删）。设置面板只留一个「管理扩展」入口，不再重复列出扩展。
+- 工具栏上的扩展图标由 `electron-chrome-extensions` 的 `<browser-action-list>` 渲染（见下节「扩展能力边界」），点击开的就是 Chrome 语义的 `default_popup` / `onClicked`。扩展**面板**行是同一个语义：点整行走 `extensions.openPopup { path, anchor }`，用**同一 session 的独立无边框小窗**加载 `chrome-extension://<id>/<default_popup>`，定位在面板行右下角（按屏幕工作区收边）、失焦即关——同一扩展的页面只保留一个窗口；开之前先收起面板（浮层不盖在刚打开的网页上，网页随之还回来），停用行则提示先启用。弹窗窗口**按扩展页自己要的尺寸开**（Chrome 的 popup 就是内容多大开多大，不是固定 400×560，否则窄页面上两侧会空出一大条）：开窗前在页面里量内容外接框（和视口一样宽/高的盒子只算被撑开的容器，内容比视口还高的那类算进去，再加上滚动条实际占的宽度），夹到 Chrome 的 800×600 上限内，量两趟（宽度一变文字会重新折行），量不到就退回兜底尺寸；纯函数与量尺寸脚本在 `browser/runtime/extension-popup.ts`（单测 `tests/unit/extension-popup.test.ts`）。两条路径同一个口径：Chromium 的首选尺寸模式（`preferred-size-changed`）对 `chrome-extension://` 页面实测不发事件，所以工具栏动作图标那条（库的 `PopupView`）也被接管——宿主监听 `browser-action-popup-created`，先给窗口一个正常视口、用同一套量法量出内容尺寸，再调库自己的 `updatePosition()`（锚点与对齐在库手里）并 `show()`；不接管的话窗口会卡在 25×25 且一直藏着（点图标没反应）。选项页走 `extensions.openOptions { path, anchor }`（`options_ui.page` 优先，其次旧式 `options_page`）：开了普通可调大小的窗口、失焦不关——Chrome 的「标签页 / 嵌在 chrome://extensions 里」两种展示在这里统一成一个正常窗口，`open_in_tab` 不参与建模。浏览器导航策略不变——只有「已加载扩展自己声明的页面」能开，`extensionPageUrl` 会校验 id 形状并拒绝 `..`/绝对路径/带协议的路径，不接受任意 `chrome-extension://` 地址；扩展页里的外部链接走系统浏览器（`setWindowOpenHandler` deny + `shell.openExternal`）。原生回归见 `tests/browser-desktop-smoke.mjs`（预置已解压扩展 → 启动恢复 → 弹窗 + 选项页 → 停用/启用/重载/移除）。
+- 扩展行的 `⋯` 与右键是**同一张原生菜单**（`extensions.menu { items, anchor }`）：菜单项的文案、勾选态、可用态由渲染层拼（跟界面语言走），主进程只负责 `Menu.popup` 并把选中项 id 回传，关掉菜单返回 `null`；未加载的扩展不出现「弹窗 / 选项」。不再另写一行用法提示——菜单按钮本身就是入口。
 - 拖入 `.crx` 也走同一条安装路径：内部页由 preload 的 `webUtils.getPathForFile` 取路径后调 `extensions.installCrx { path }`；拖到网页上的话由 `BrowserManager` 的导航守卫拦住 file:// 导航并交给 `onFileDrop`，主进程装完用系统弹窗回报。
+
+### 扩展能力边界（Electron ≠ Chrome）
+
+Electron 44 的扩展上下文只认 **15 个命名空间**（`action alarms declarativeNetRequest dom extension i18n idle management offscreen proxy runtime scripting storage tabs webRequest`），`tabs` 还缺 `create/remove/captureVisibleTab`，`storage.sync` 没有后端。扩展生态假设全套 API 都在，所以这里分两层：
+
+**第一层：`electron-chrome-extensions`（`desktop/browser-host.ts`）——语义层，不拥有窗口。**
+它在扩展 session 上补出 `windows / contextMenus / notifications / cookies / webNavigation / permissions / commands / downloads / topSites / privacy`，并把 tabs/windows 的写操作回调到**我们自己的模型**：`createTab → BrowserManager.createTab`、`selectTab → activateTab`、`removeTab → closeTab`、`createWindow → 独立 BrowserWindow`（popup 类型给无边框小窗，建完 `addTab` 让 `chrome.tabs.query` 看得见）、`removeWindow → destroy`（拒绝关主窗口）、`requestPermissions → 弹原生确认`。标签生命周期由 `BrowserManagerOptions.extensionHooks` 在 `createTab/activateTab` 处上报，右键菜单走 `webContents.on("context-menu") → getContextMenuItems()` 拼原生 `Menu`（编辑项 → 扩展项 → 后退/前进/重载）。
+
+工具栏动作：库的 `<browser-action-list>` 由 `desktop/preload.cts` 里的 `injectBrowserAction()` 注入（只对 `shell.html` 生效，preload 用 esbuild 打成单文件——沙箱 preload 不能做模块解析），`shell.ts` 动态创建元素，`partition` 取 `browser/contracts.ts` 的 `BROWSER_EXTENSION_PARTITION`，主进程用 `setSessionPartitionResolver` 把它映射回 `session.fromPath()` 的浏览器 session；图标走 `ElectronChromeExtensions.handleCRXProtocol(session.defaultSession)` 提供的 `crx://`。点图标就是 Chrome 的语义：开 `action.default_popup` 或触发 `chrome.action.onClicked`，badge/title/icon 全由库维护。
+
+**第二层：`browser/runtime/extension-compat.ts`——只补第一层也没盖的缺口。**
+
+- `chrome.tabs.captureVisibleTab / duplicate / move / highlight / discard`（库没实现）；
+- `chrome.storage.sync` 落到 `local`（库已映射一次，这里是无库时的兜底）；
+- 入口三处都盖：MV3 `background.service_worker` 包一层 `__pi-sw.js`（classic `importScripts`、`type: module` 用 `import`）、MV2 `background.scripts` 前插一行、`content_scripts` 逐个插（`world: "MAIN"` 不插），声明的 popup/options 页在 `<head>` 插 `<script src="/__pi-compat.js">`。
+- **不再假装成功**：调不通的成员回调 `undefined` 并打一条 `[pi] chrome.<api> is not implemented` 警告，而不是返回 `[]/true` 骗扩展。
+
+约束与边界：
+
+- 库的 preload 最后会 `Object.freeze(chrome)`：**顶层新增命名空间已经不可能**（例如 `fontSettings`），兼容层只能往已有命名空间里补成员。
+- 只写 crx 解包目录（`userData/extensions/crx-<hash>`），用户自己「加载已解压扩展」选的目录一个字节都不改；幂等，原 manifest 备份 `manifest.original.json`，版本标记 `__pi-compat.json`（`COMPAT_VERSION`，3 起配合语义层），开机自愈升级。
+- **`declarativeNetRequest` 静态规则由我们真正执行**（`browser/runtime/dnr.ts`）：Electron 自己的 DNR 只存不拦（实测确认），宿主读已加载扩展 manifest 里 `declarative_net_request.rule_resources` 的 JSON，编成 `session.webRequest.onBeforeRequest` 的判定——这是 Electron 里唯一真能拦请求的通道。支持 `block`/`allow`、`urlFilter`/`regexFilter`、`resourceTypes`/`excludedResourceTypes`、`domains`/`requestDomains`/`initiatorDomains` 及排除项、优先级（高者胜，同优先级 allow 胜 block）；host 权限门禁按 Chrome 语义（`example.com` 不覆盖子域，子域要写 `*.example.com`）。字面量预筛 + 正则体积/回引限制控制开销与 ReDoS；内置页面（`file:`）与扩展页永不拦截。扩展加载/停用/移除/重载后合并成一次刷新。
+- 仍然做不到的：动态/会话 DNR 规则（存在扩展的 LevelDB 里，主进程读不到）、`redirect` / `modifyHeaders` / `allowAllRequests` 动作、`sidePanel` / `tabGroups` / `identity`、以及 `fontSettings` 这类库不提供又被 freeze 挡住的命名空间；MV2 的 `webRequest` blocking 仍可用但已被 Electron 44 标 deprecated。
+- `chrome.tabs.captureVisibleTab` 有真实现：宿主把一小段桥脚本（`browser/runtime/extension-bridge.ts`）挂到浏览器 session 的 frame / service-worker，扩展上下文里才有 `__piExtensionBridge`（普通网页 `location.protocol !== "chrome-extension:"`，什么都不暴露）；主进程再校验 sender 属于同一 session 且来源是 `chrome-extension://`，截当前激活标签的 `capturePage()`，支持 `format: jpeg` + `quality`。
+- 兼容层还补了库的两个小缺口：`windows.getAll({ populate: true })` 用真实 `tabs.query` 填每个窗口的 `tabs`（库的 dist 里没有 populate 实现）；`chrome.storage.sync` 落到 local。剩余仍是空实现的只有 `tabs.duplicate / move / highlight / discard`。
+
+判断依据是主进程 stderr 里的 Chromium 日志（`ExtensionLoadWarning` / `Extension Error` 块）。原生回归见 `tests/browser-desktop-smoke.mjs`：工具栏渲染动作按钮 → 点击开 `chrome-extension://<id>/popup.html`、`extensions.list` 恢复、面板弹窗/选项页、停用/启用/重载/移除、`crx compat shim` 用例（手搓 crx → 解包 → 包装 manifest → SW 用 `chrome.windows` 不崩 → 选项页拿到库命名空间与兼容层补的 `tabs` 成员 → 内容脚本仍注入）。纯函数与幂等性见 `tests/unit/extension-compat.test.ts`。
 
 浏览器文件与 session 位于 Electron userData/browser；Agent 原有数据目录继续使用原配置。凭据使用 Electron safeStorage，安全加密后端不可用时拒绝保存。保险箱可由用户明确选择填写当前网站，主进程与页面内都检查精确 origin，不自动提交表单。旧 AI Browser 数据可由用户选择旧目录导入，存在的目标文件不会覆盖；导入错误单列报告。
 

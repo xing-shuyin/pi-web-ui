@@ -11,9 +11,11 @@ import {
 	createSvg,
 	element,
 	enableCrxDropTarget,
+	extensionIcon,
 	globeIcon,
 	iconButton,
 	input,
+	listenPanelEvents,
 	listenState,
 	plusIcon,
 	reportError,
@@ -25,8 +27,9 @@ import {
 	type Settings,
 } from "./common.js";
 import { t } from "./i18n.js";
-import { addCurrentBookmark, closePanel, setPanelState, showPanel } from "./panels.js";
+import { addCurrentBookmark, closeShellPanel, showShellPanel } from "./panels.js";
 import type { BrowserMode, BrowserState } from "../contracts.js";
+import { BROWSER_EXTENSION_PARTITION } from "../contracts.js";
 
 document.body.classList.add("pb-shell");
 enableCrxDropTarget();
@@ -38,7 +41,7 @@ async function browserAction(
 	action: "navigate" | "back" | "forward" | "reload" | "tabs.activate" | "tabs.create",
 	args?: Record<string, unknown>,
 ): Promise<void> {
-	await closePanel();
+	await closeShellPanel();
 	if (searchOpen) await hideSearch();
 	if (state?.mode === "agent") await call("mode", { mode: "browser" });
 	await call(action, args);
@@ -80,7 +83,7 @@ function renderBoot(next: BrowserState, left: number): void {
 }
 
 const modeBtn = iconButton(splitModeIcon(13), "模式切换 (Ctrl+Alt+M)", async () => {
-	await closePanel();
+	await closeShellPanel();
 	if (searchOpen) await hideSearch();
 	const nextMode: BrowserMode = state?.mode === "browser" ? "split" : state?.mode === "split" ? "agent" : "browser";
 	await call("mode", { mode: nextMode });
@@ -92,6 +95,25 @@ const searchBtn = iconButton(searchIcon(13), "搜索或输入网址 (Ctrl+L)", (
 	else void openSearch();
 });
 searchBtn.classList.add("pb-tool-btn");
+
+// 扩展入口：点开就是扩展面板（点行开扩展页面 / 行尾菜单启停、重载、移除），徽标只报「已启用」数量
+const extensionsBtn = iconButton(extensionIcon(13), t("extensions"), () => showShellPanel("extensions"));
+extensionsBtn.classList.add("pb-tool-btn");
+const extensionsCount = element("span", "pb-tool-btn-count");
+extensionsCount.hidden = true;
+extensionsBtn.append(extensionsCount);
+
+async function refreshExtensionsCount(): Promise<void> {
+	try {
+		const entries = await call<{ enabled: boolean }[]>("extensions.list");
+		const enabled = entries.filter((entry) => entry.enabled).length;
+		extensionsCount.textContent = String(enabled);
+		extensionsCount.hidden = enabled === 0;
+	} catch {
+		// 面板自己能报错，工具栏上的计数静默降级
+		extensionsCount.hidden = true;
+	}
+}
 
 const MIN_SPLIT_RATIO = 0.2;
 const MAX_SPLIT_RATIO = 0.8;
@@ -143,7 +165,18 @@ if (window.piDesktop?.platform === "darwin") {
 
 controls.append(minBtn, maxBtn, closeBtn);
 
-titlebar.append(tabs, create, dragArea, modeBtn, searchBtn, controls);
+// 扩展动作：Electron 不渲染 chrome.action 的图标/badge，electron-chrome-extensions 的
+// <browser-action-list> 把它们变成工具栏上真实的按钮（点击就是 Chrome 的 popup / onClicked）。
+// 必须用 JS 建：库在 preload 里定义自定义元素，HTML 里的静态标签会在升级前就被解析。
+const actionList = document.createElement("browser-action-list");
+actionList.className = "pb-action-list";
+actionList.setAttribute("partition", BROWSER_EXTENSION_PARTITION);
+actionList.setAttribute("alignment", "bottom left");
+
+const items = element("div", "pb-tool-items");
+items.append(actionList);
+
+titlebar.append(tabs, create, dragArea, modeBtn, searchBtn, items, extensionsBtn, controls);
 
 // 中间可拖拽分栏线 (Direct Draggable Split Divider)
 const divider = element("div", "pb-split-divider");
@@ -279,7 +312,7 @@ document.body.append(searchOverlay);
 
 async function openSearch(): Promise<void> {
 	if (searchOpen) return;
-	await closePanel();
+	await closeShellPanel();
 	searchOpen = true;
 	await call("overlay", { open: true });
 	searchOverlay.classList.add("pb-open");
@@ -345,7 +378,6 @@ function updateProgress(next: BrowserState): void {
 function render(next: BrowserState): void {
 	const previous = state;
 	state = next;
-	setPanelState(next);
 	tabs.replaceChildren();
 	for (const tab of next.tabs) {
 		const row = element("div", `pb-tab${tab.id === next.activeTabId ? " pb-active" : ""}`);
@@ -424,7 +456,7 @@ listenState(render);
 void bridgeReady()
 	.then((bridge) => {
 		const dispose = bridge.onOpenOptions?.(() => {
-			void showPanel("settings").catch(reportError);
+			void showShellPanel("settings").catch(reportError);
 		});
 		if (dispose) window.addEventListener("pagehide", dispose, { once: true });
 		const focusDispose = bridge.onFocusAddress?.(() => {
@@ -441,6 +473,12 @@ async function loadSettings(): Promise<void> {
 
 window.addEventListener("pb-settings-changed", () => {
 	void loadSettings().catch(reportError);
+});
+window.addEventListener("pb-extensions-changed", () => void refreshExtensionsCount());
+// 面板开在自己的视图里，那里的改动只能由宿主转发过来
+listenPanelEvents((name) => {
+	if (name === "pb-settings-changed") void loadSettings().catch(reportError);
+	if (name === "pb-extensions-changed") void refreshExtensionsCount();
 });
 window.addEventListener("focus", () => {
 	void loadSettings().catch(reportError);
@@ -493,4 +531,6 @@ window.addEventListener("keydown", (event) => {
 	}
 });
 
-void Promise.all([call<BrowserState>("state").then(render), loadSettings()]).catch(reportError);
+void Promise.all([call<BrowserState>("state").then(render), loadSettings(), refreshExtensionsCount()]).catch(
+	reportError,
+);

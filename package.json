@@ -111,6 +111,7 @@
 		"@deepseek-ai/dsh-sdk-protocol": "^0.2.1-rc.2",
 		"@earendil-works/pi-mcp": "^1.4.0",
 		"compression": "^1.8.2",
+		"electron-chrome-extensions": "4.10.0",
 		"electron-updater": "^6.8.9",
 		"express": "^5.2.1",
 		"node-pty": "^1.1.0",
@@ -137,6 +138,7 @@
 		}
 	},
 	"devDependencies": {
+		"@types/chrome": "^0.3.7",
 		"@types/compression": "^1.8.1",
 		"@types/express": "^5.0.6",
 		"@types/node": "^26.6.1",

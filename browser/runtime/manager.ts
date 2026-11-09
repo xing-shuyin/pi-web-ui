@@ -35,6 +35,16 @@ export interface BrowserManagerOptions {
 	onChange?: () => void;
 	/** 把文件拖到网页上时 Chromium 会试着导航到 file://，这里接管 .crx（其余照旧拦掉）。 */
 	onFileDrop?: (file: string) => void;
+	/**
+	 * 标签生命周期钩子，供 `electron-chrome-extensions` 记账（chrome.tabs 需要知道有哪些标签、谁在前台）。
+	 * 钩子在宿主侧可空：扩展层没装或初始化失败时浏览器照常工作。
+	 */
+	extensionHooks?: {
+		addTab?: (contents: WebContents, window: BrowserWindow) => void;
+		selectTab?: (contents: WebContents) => void;
+	};
+	/** 页面右键菜单：宿主返回 true 表示已自行弹出（含扩展 contextMenus 项）。 */
+	onContextMenu?: (contents: WebContents, params: Electron.ContextMenuParams) => boolean;
 }
 export interface BrowserDownload {
 	id: string;
@@ -188,6 +198,9 @@ export class BrowserManager {
 			if (!isMain || params.isSameDocument === true) return;
 			this.resetScriptRun(id);
 		}) as never);
+		wc.on("context-menu", (_event, params) => {
+			this.options.onContextMenu?.(wc, params);
+		});
 		wc.on("did-start-loading", update);
 		wc.on("did-stop-loading", update);
 		wc.on("did-navigate", update);
@@ -230,6 +243,8 @@ export class BrowserManager {
 		wc.once("destroyed", () => {
 			if (!this.disposed && this.tabs.get(id) === record) this.closeTab(id);
 		});
+		// 扩展层要在标签进入前台之前先认识它（chrome.tabs.onCreated 早于 onActivated）
+		this.options.extensionHooks?.addTab?.(wc, this.options.window);
 		this.activateTab(id);
 		void wc.loadURL(target).catch(() => {
 			if (!this.disposed && this.tabs.get(id) === record) {
@@ -243,6 +258,8 @@ export class BrowserManager {
 	activateTab(id: string): void {
 		if (this.disposed || !this.tabs.has(id)) return;
 		this.activeTabId = id;
+		const contents = this.getWebContents(id);
+		if (contents) this.options.extensionHooks?.selectTab?.(contents);
 		this.mount();
 		this.changed();
 	}

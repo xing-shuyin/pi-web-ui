@@ -21,6 +21,14 @@ void ipcRenderer
 					ipcRenderer.on("pi-browser:state", listener);
 					return () => ipcRenderer.removeListener("pi-browser:state", listener);
 				},
+				// 面板视图里的改动（书签 / 设置 / 扩展）由宿主转发：面板是独立视图，window 事件跨不过去
+				onPanelEvent: (callback: (name: string) => void) => {
+					const listener = (_event: IpcRendererEvent, name: unknown) => {
+						if (typeof name === "string") callback(name);
+					};
+					ipcRenderer.on("pi-browser:panel-event", listener);
+					return () => ipcRenderer.removeListener("pi-browser:panel-event", listener);
+				},
 			});
 		if (trust.controller)
 			contextBridge.exposeInMainWorld("__piBrowser", {

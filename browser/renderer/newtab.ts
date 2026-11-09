@@ -10,6 +10,7 @@ import {
 	enableCrxDropTarget,
 	gearIcon,
 	input,
+	listenPanelEvents,
 	listenState,
 	normalizeBookmarks,
 	flattenBookmarks,
@@ -59,12 +60,13 @@ const main = element("main", "pb-start pb-unified-flow-page");
 // 顶部极简导航栏（左上角不再显示品牌标识，只保留右侧工具栏）
 const top = element("header", "pb-start-top");
 
+// 面板按钮兼作开关：再点一下收起（面板点外部也会收起，见 panels.ts 的 handleOutsidePointer）
 const tools = element("nav", "pb-toolbar");
 tools.append(
-	button([starIcon(13), element("span", "", t("bookmarks"))], () => showPanel("bookmarks")),
-	button([downloadIcon(13), element("span", "", t("downloads"))], () => showPanel("downloads")),
-	button([clockIcon(13), element("span", "", t("history"))], () => showPanel("history")),
-	button([gearIcon(13), element("span", "", t("settings"))], () => showPanel("settings")),
+	button([starIcon(13), element("span", "", t("bookmarks"))], () => showPanel("bookmarks"), "pb-panel-toggle"),
+	button([downloadIcon(13), element("span", "", t("downloads"))], () => showPanel("downloads"), "pb-panel-toggle"),
+	button([clockIcon(13), element("span", "", t("history"))], () => showPanel("history"), "pb-panel-toggle"),
+	button([gearIcon(13), element("span", "", t("settings"))], () => showPanel("settings"), "pb-panel-toggle"),
 );
 top.append(tools);
 
@@ -219,7 +221,7 @@ function linkPill(bookmark: Bookmark): HTMLElement {
 const addPill = button(
 	[plusIcon(11), element("span", "", "添加")],
 	() => showPanel("bookmarks"),
-	"flow-pill flow-pill-add",
+	"flow-pill flow-pill-add pb-panel-toggle",
 );
 addPill.title = "管理或添加收藏书签";
 
@@ -258,13 +260,19 @@ async function refreshSettings(): Promise<void> {
 }
 
 listenState(setPanelState);
-for (const [event, refresh] of [
+const refreshers = [
 	["pb-bookmarks-changed", refreshBookmarks],
 	["pb-settings-changed", refreshSettings],
-] as const)
+] as const;
+for (const [event, refresh] of refreshers)
 	window.addEventListener(event, () => {
 		void refresh().catch(reportError);
 	});
+// 面板开在自己的视图里，那里的改动只能由宿主转发过来
+listenPanelEvents((name) => {
+	const found = refreshers.find(([event]) => event === name);
+	if (found) void found[1]().catch(reportError);
+});
 
 window.addEventListener("focus", () => {
 	void Promise.all([refreshSettings(), refreshBookmarks()]).catch(reportError);

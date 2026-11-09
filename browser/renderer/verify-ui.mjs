@@ -94,6 +94,17 @@ await page.addInitScript(() => {
 			children: [{ name: "Example <img src=x onerror=alert(1)>", type: "link", url: "https://example.com" }],
 		},
 	];
+	let extensions = [
+		{
+			id: "ext",
+			name: "Test extension",
+			version: "1.0",
+			path: "C:/extensions/test",
+			enabled: true,
+			popup: "popup.html",
+			options: "options.html",
+		},
+	];
 	let settings = { searchEngine: "bing", newTabOpenMode: "current", agentUrl: state.agentUrl };
 	const listeners = [];
 	window.__calls = [];
@@ -139,7 +150,25 @@ await page.addInitScript(() => {
 					];
 				if (action === "passwords.available") return true;
 				if (action === "passwords.list") return [];
-				if (action === "extensions.list") return [{ id: "ext", name: "Test extension", version: "1.0" }];
+				if (action === "scripts.list") return [];
+				if (action === "extensions.list") return structuredClone(extensions);
+				if (action === "extensions.reload") return true;
+				if (action === "extensions.openPopup") return true;
+				if (action === "extensions.openOptions") return true;
+				// 原生右键菜单在浏览器里假不了：直接返回「选项」，验证菜单选择能接回真实动作
+				if (action === "extensions.menu") return window.__menuChoice || "options";
+				if (action === "extensions.load") return { id: "ext-unpacked", name: "Unpacked extension", version: "2.0" };
+				if (action === "extensions.installCrx") return { id: "ext-crx", name: "Crx extension", version: "3.0" };
+				if (action === "extensions.toggle") {
+					extensions = extensions.map((entry) =>
+						entry.path === args.path ? { ...entry, enabled: args.enabled === true } : entry,
+					);
+					return args.enabled === true;
+				}
+				if (action === "extensions.remove") {
+					extensions = extensions.filter((entry) => entry.path !== args.path);
+					return true;
+				}
 				if (action === "mode") state.mode = args.mode;
 				if (action === "tabs.activate") state.activeTabId = args.id;
 				if (action === "tabs.close") state.tabs = state.tabs.filter((tab) => tab.id !== args.id);
@@ -236,9 +265,35 @@ try {
 	);
 	assert.equal(await page.locator(".pb-drop-hint").count(), 0);
 
-	// 设置面板（原生菜单「选项」→ showPanel）
+	// 面板浮层：外壳只向宿主请一块视图（`panel` 动作），面板自己画在 panel.html 里——
+	// 原生视图盖在页面之上，页面与 Agent 分栏照常可见，不再隐藏内容区
 	await page.evaluate(() => window.__openOptions());
+	assert.ok(
+		await page.evaluate(() =>
+			window.__calls.some(
+				(call) => call.action === "panel" && call.args.open === true && call.args.panel === "settings",
+			),
+		),
+		"the native options menu asks the host for the settings panel layer",
+	);
+	// 工具栏扩展按钮（等同 Chrome 的扩展菜单）走的也是这条：外壳不再自己挂 dialog
+	await page.getByRole("button", { name: "Extensions", exact: true }).click();
+	assert.ok(
+		await page.evaluate(() =>
+			window.__calls.some(
+				(call) => call.action === "panel" && call.args.open === true && call.args.panel === "extensions",
+			),
+		),
+	);
+	assert.equal(await page.locator("dialog[open]").count(), 0, "the shell mounts no panel dialog itself");
+	// 徽标只算「已启用」的那几个
+	await page.waitForFunction(() => document.querySelector(".pb-tool-btn-count")?.textContent === "1");
+
+	// 设置面板本体：同一份 panels.ts，画在自己的浮层视图里
+	await page.goto("http://127.0.0.1:8994/panel.html?panel=settings");
 	await page.locator("dialog[open]").waitFor();
+	// 浮层不是模态：没有遮罩（`::backdrop` 只属于 showModal）
+	assert.equal(await page.locator("dialog[open]").evaluate((node) => node.matches(":modal")), false);
 	await page.getByLabel("Search engine").selectOption("google");
 	await page.getByLabel("Allow AI screenshots", { exact: true }).uncheck();
 	await page.getByRole("button", { name: "Add credential", exact: true }).click();
@@ -250,16 +305,10 @@ try {
 	await page.getByText("Test account", { exact: true }).waitFor();
 	await page.getByRole("button", { name: "Delete credential", exact: true }).click();
 	await page.getByText("No saved credentials", { exact: true }).waitFor();
-	// 两条扩展安装入口都在：解压目录 + .crx
-	await page.getByRole("button", { name: "Load unpacked extension", exact: true }).click();
-	await page.getByRole("button", { name: "Install .crx extension", exact: true }).click();
-	assert.ok(await page.evaluate(() => window.__calls.some((call) => call.action === "extensions.load")));
-	assert.ok(
-		await page.evaluate(() =>
-			window.__calls.some((call) => call.action === "extensions.installCrx" && call.args.path === undefined),
-		),
-	);
-	await page.getByRole("button", { name: "Save", exact: true }).click();
+	// 设置里只留一个入口，扩展的启停/移除都在独立面板里
+	await page.getByRole("button", { name: "Manage extensions", exact: true }).waitFor();
+	// 设置表单的保存键排在凭据编辑器之前（后者此刻是收起的）
+	await page.getByRole("button", { name: "Save", exact: true }).first().click();
 	assert.ok(
 		await page.evaluate(() =>
 			window.__calls.some(
@@ -270,8 +319,78 @@ try {
 			),
 		),
 	);
+	// Esc 由面板页自己接（非模态 dialog 收不到 cancel），收起时通知宿主销毁这块视图
 	await page.keyboard.press("Escape");
 	await page.waitForFunction(() => !document.querySelector("dialog[open]"));
+	assert.ok(
+		await page.evaluate(() => window.__calls.some((call) => call.action === "panel" && call.args.open === false)),
+		"closing a panel asks the host to drop its layer view",
+	);
+
+	// 扩展面板：一行一个扩展，点整行就开它自己的页面（先开页、再收起面板）
+	const openExtensionsPanel = async () => {
+		await page.goto("http://127.0.0.1:8994/panel.html?panel=extensions");
+		await page.locator("dialog[open]").waitFor();
+		await page.getByText("Test extension", { exact: true }).waitFor();
+	};
+	await openExtensionsPanel();
+	await page.getByRole("checkbox", { name: "Disable this extension: Test extension", exact: true }).click();
+	await page.getByRole("checkbox", { name: "Enable this extension: Test extension", exact: true }).waitFor();
+	assert.ok(
+		await page
+			.locator(".pb-extension-item")
+			.first()
+			.evaluate((row) => row.classList.contains("pb-extension-off")),
+	);
+	await page.getByRole("checkbox", { name: "Enable this extension: Test extension", exact: true }).click();
+	await page.getByRole("checkbox", { name: "Disable this extension: Test extension", exact: true }).waitFor();
+	assert.equal(
+		await page
+			.locator(".pb-extension-item")
+			.first()
+			.evaluate((row) => row.classList.contains("pb-extension-off")),
+		false,
+	);
+	// 点整行 = 点工具栏上的动作图标：开它自己的弹窗（锚点在行右下角），面板自己收起
+	await page.locator(".pb-extension-open").first().click();
+	assert.ok(
+		await page.evaluate(() => {
+			const call = window.__calls.find((entry) => entry.action === "extensions.openPopup");
+			return !!call && Number.isFinite(call.args.anchor.x) && Number.isFinite(call.args.anchor.y);
+		}),
+	);
+	await page.waitForFunction(() => !document.querySelector("dialog[open]"));
+	// 行尾「更多操作」和右键是同一张原生菜单：重载 / 选项 / 移除都在这里
+	await openExtensionsPanel();
+	await page.evaluate(() => (window.__menuChoice = "reload"));
+	await page.locator(".pb-extension-more").first().click();
+	assert.ok(await page.evaluate(() => window.__calls.some((call) => call.action === "extensions.reload")));
+	await page.evaluate(() => (window.__menuChoice = "options"));
+	await page.locator(".pb-extension-item").first().click({ button: "right" });
+	assert.ok(
+		await page.evaluate(() => {
+			const call = window.__calls.find((entry) => entry.action === "extensions.menu");
+			return !!call && call.args.items.some((item) => item.id === "options");
+		}),
+	);
+	await page.waitForFunction(() => window.__calls.some((call) => call.action === "extensions.openOptions"));
+	// 菜单里选「选项」也会先收起面板（与点整行一致）
+	await page.waitForFunction(() => !document.querySelector("dialog[open]"));
+	// 安装入口在底部：两个按钮各自落到 extensions.load / extensions.installCrx
+	await openExtensionsPanel();
+	await page.getByRole("button", { name: "Load unpacked extension", exact: true }).click();
+	await page.getByRole("button", { name: "Install .crx extension", exact: true }).click();
+	assert.ok(await page.evaluate(() => window.__calls.some((call) => call.action === "extensions.load")));
+	assert.ok(
+		await page.evaluate(() =>
+			window.__calls.some((call) => call.action === "extensions.installCrx" && call.args.path === undefined),
+		),
+	);
+	// 移除：只改清单，列表立刻变空
+	await page.evaluate(() => (window.__menuChoice = "remove"));
+	await page.locator(".pb-extension-more").first().click();
+	await page.getByText("No extensions installed yet.", { exact: true }).waitFor();
+	assert.ok(await page.evaluate(() => window.__calls.some((call) => call.action === "extensions.remove")));
 
 	// 新标签页：收藏行不注入外部内容，搜索直达
 	await page.goto("http://127.0.0.1:8994/newtab.html");
@@ -367,7 +486,7 @@ try {
 	assert.deepEqual(previews.slides.slides, [["First"], ["Second"]]);
 	assert.deepEqual(errors, []);
 	console.log(
-		"PASS: shell 40px/transparent, split divider, search overlay + focus-address bridge, crx drop install, settings (engine/screenshots/vault/extensions), overlay release, escaped bookmarks, downloads, responsive newtab, CSV edit/save, actual deflated DOCX/XLSX/PPTX preview.",
+		"PASS: shell 40px/transparent, split divider, search overlay + focus-address bridge, crx drop install, settings (engine/screenshots/vault), extensions panel (icon badge/toggle/reload/popup/options menu/remove/install), overlay release, escaped bookmarks, downloads, responsive newtab, CSV edit/save, actual deflated DOCX/XLSX/PPTX preview.",
 	);
 } finally {
 	await browser.close();

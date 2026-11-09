@@ -7,6 +7,12 @@ import {
 	isBrowserAssetUrl,
 	isTrustedAgentUrl,
 	normalizeAgentUrl,
+	panelLayerBounds,
+	panelLayerDefaultSize,
+	PANEL_LAYER_MARGIN,
+	PANEL_LAYER_MIN_HEIGHT,
+	PANEL_LAYER_MIN_WIDTH,
+	PANEL_LAYER_TOP,
 	MIN_SPLIT_RATIO,
 	MAX_SPLIT_RATIO,
 } from "../../desktop/browser-policy.js";
@@ -60,9 +66,44 @@ describe("desktop browser composition", () => {
 		const url = pathToFileURL(resolve(dir, "office.html"));
 		url.searchParams.set("path", "example.txt");
 		expect(isBrowserAssetUrl(url.href, dir)).toBe(true);
+		expect(isBrowserAssetUrl(pathToFileURL(resolve(dir, "panel.html")).href, dir)).toBe(true);
 		expect(isBrowserAssetUrl(pathToFileURL(resolve(dir, "arbitrary.html")).href, dir)).toBe(false);
 		expect(isBrowserAssetUrl(pathToFileURL(resolve(dir, "child", "newtab.html")).href, dir)).toBe(false);
 		expect(isBrowserAssetUrl("https://example.test/newtab.html", dir)).toBe(false);
+	});
+	it("keeps the panel layer inside the window, under the toolbar and clear of the edges", () => {
+		const area = { width: 1200, height: 800 };
+		// 面板自己报多大就摆多大，右边缘距窗口 14px、顶边落在工具栏下沿
+		expect(panelLayerBounds(area, { width: 360, height: 240 })).toEqual({
+			x: 1200 - 14 - 360,
+			y: PANEL_LAYER_TOP,
+			width: 360,
+			height: 240,
+		});
+		// 报得比窗口还大：夹进可用区域，底部与右边都不越界
+		const huge = panelLayerBounds(area, { width: 4000, height: 4000 });
+		expect(huge.width).toBe(1200 - 28);
+		expect(huge.height).toBe(800 - PANEL_LAYER_TOP - 14);
+		expect(huge.x + huge.width + 14).toBe(1200);
+		expect(huge.y + huge.height + 14).toBe(800);
+		// 量不出来（0 / NaN）时退回最小尺寸，不能变成看不见的一条线
+		const broken = panelLayerBounds(area, { width: 0, height: Number.NaN });
+		expect(broken).toEqual({
+			x: 1200 - 14 - PANEL_LAYER_MIN_WIDTH,
+			y: PANEL_LAYER_TOP,
+			width: PANEL_LAYER_MIN_WIDTH,
+			height: PANEL_LAYER_MIN_HEIGHT,
+		});
+		// 小窗口也不能把面板挤到负坐标
+		const tiny = panelLayerBounds({ width: 200, height: 120 }, { width: 360, height: 320 });
+		expect(tiny.x).toBe(PANEL_LAYER_MARGIN);
+		expect(tiny.width).toBe(PANEL_LAYER_MIN_WIDTH);
+		expect(tiny.height).toBe(PANEL_LAYER_MIN_HEIGHT);
+	});
+	it("puts the extension panel on its own small layer and everything else on a dialog-sized one", () => {
+		expect(panelLayerDefaultSize("extensions")).toEqual({ width: 360, height: 320 });
+		expect(panelLayerDefaultSize("settings")).toEqual({ width: 650, height: 620 });
+		expect(panelLayerDefaultSize("bogus")).toEqual(panelLayerDefaultSize("bookmarks"));
 	});
 	it("keeps native capabilities on the embedded Agent while avoiding duplicate window controls", () => {
 		const windowControls = {} as any;

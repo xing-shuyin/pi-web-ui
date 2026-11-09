@@ -98,7 +98,8 @@ body {
 }
 
 body.pb-shell,
-body.pb-internal {
+body.pb-internal,
+body.pb-panel-layer {
 	--bg: var(--pb-bg-main);
 	--bg-elev: var(--pb-card);
 	--bg-elev2: var(--pb-tab-active);
@@ -118,6 +119,14 @@ body.pb-shell {
 	height: 100vh;
 	overflow: hidden;
 	background: transparent;
+}
+
+/* 面板浮层视图（panel.html）：视图本身就盖在页面之上，所以这里不铺遮罩、不留边距，
+   面板直接铺满自己那块矩形；页面在矩形之外照常可见、可点 */
+body.pb-panel-layer {
+	height: 100vh;
+	overflow: hidden;
+	background: var(--pb-modal-bg);
 }
 
 body.pb-internal {
@@ -603,6 +612,62 @@ html[data-theme="light"] body.pb-internal {
 	transform: scale(0.94);
 }
 
+/* 扩展入口的「已启用」计数徽标（0 个时不显示）；按钮本身是定位参照 */
+.pb-tool-btn {
+	position: relative;
+}
+
+.pb-tool-btn-count {
+	position: absolute;
+	top: -1px;
+	right: -1px;
+	min-width: 12px;
+	height: 12px;
+	padding: 0 3px;
+	border-radius: 999px;
+	background: var(--pb-accent);
+	color: var(--accent-contrast, #ffffff);
+	font-size: 9px;
+	line-height: 12px;
+	text-align: center;
+	pointer-events: none;
+}
+
+/* 扩展动作（electron-chrome-extensions 的 <browser-action-list>）：
+   库自己在 shadow DOM 里画图标与徽标，这里只把它对齐到工具栏的控制尺寸与间距 */
+.pb-tool-items {
+	display: inline-flex;
+	align-items: center;
+	gap: var(--pb-ctl-gap);
+	flex: 0 0 auto;
+	-webkit-app-region: no-drag;
+}
+
+.pb-action-list {
+	display: inline-flex;
+	align-items: center;
+	gap: 2px;
+}
+
+/* 没有已启用扩展时不占位（否则工具栏会多一段 5px 的空白） */
+.pb-action-list:empty {
+	display: none;
+}
+
+.pb-action-list::part(action) {
+	width: var(--pb-ctl-size);
+	height: var(--pb-ctl-size);
+	border-radius: var(--pb-ctl-radius);
+	background-size: 60%;
+}
+
+.pb-action-list::part(badge) {
+	height: 13px;
+	line-height: 13px;
+	border-radius: 999px;
+	font-size: 9px;
+}
+
 .pb-window-controls .pb-win-close:hover,
 .pb-window-controls .pb-button:last-child:hover {
 	background: #e81123 !important;
@@ -1029,10 +1094,12 @@ html[data-theme="light"] body.pb-internal {
 	flex: 0 0 auto;
 }
 
-/* 面板弹窗 (From E:\ai-browser\src\style.css .search-modal-card) */
+/* 面板弹窗 (From E:\ai-browser\src\style.css .search-modal-card)
+   非模态浮层：不遮罩、不接管整窗（见 panels.ts 的 show()），所以层级得自己给 */
 .pb-dialog {
 	position: fixed;
 	inset: 48px 14px 14px auto;
+	z-index: 150;
 	margin: 0;
 	padding: 0;
 	width: min(650px, calc(100vw - 28px));
@@ -1044,9 +1111,16 @@ html[data-theme="light"] body.pb-internal {
 	color: var(--pb-fg);
 	background: var(--pb-modal-bg);
 	box-shadow: var(--pb-shadow);
-	backdrop-filter: blur(8px);
-	-webkit-backdrop-filter: blur(8px);
 	overflow: hidden;
+}
+
+.pb-dialog:focus {
+	outline: none;
+}
+
+.pb-dialog:focus-visible {
+	outline: 1px solid var(--pb-border-focus);
+	outline-offset: -1px;
 }
 
 .pb-dialog[open] {
@@ -1060,10 +1134,56 @@ html[data-theme="light"] body.pb-internal {
 	max-height: calc(100dvh - 40px);
 }
 
-.pb-dialog::backdrop {
-	background: rgba(0, 0, 0, 0.58);
-	backdrop-filter: blur(8px);
-	-webkit-backdrop-filter: blur(8px);
+/* 小浮层（扩展面板）：高矮跟着列表走，不铺满整块屏幕 */
+.pb-dialog-compact {
+	inset: 48px 14px auto auto;
+	width: min(360px, calc(100vw - 28px));
+	height: auto;
+	max-height: min(560px, calc(100dvh - 60px));
+}
+
+.pb-dialog-compact .pb-dialog-header {
+	padding: 8px 6px 8px 12px;
+}
+
+.pb-dialog-compact .pb-dialog-header h2 {
+	font-size: 13px;
+}
+
+.pb-dialog-compact .pb-dialog-content {
+	gap: 4px;
+	padding: 4px;
+}
+
+.pb-dialog-compact .pb-toast {
+	margin: 0 6px 6px;
+}
+
+.pb-dialog-compact .pb-empty {
+	padding: 14px 8px;
+}
+
+/* 浮层视图里的面板：位置与尺寸由宿主给定（视图矩形 = 面板矩形），
+   这里只把dialog 铺满视图，并让高度跟着内容走、超出时内部滚动 */
+.pb-panel-layer .pb-dialog-layer {
+	position: fixed;
+	top: 0;
+	right: 0;
+	bottom: auto;
+	left: 0;
+	width: 100vw;
+	height: auto;
+	max-width: none;
+	max-height: 100dvh;
+	border-radius: 12px;
+	box-shadow: none;
+}
+
+/* 扩展面板在浮层里同样贴内容，但要按视图高度封顶（拿 `100dvh` 而不是 `calc(100dvh - 60px)`：
+   减常数会让「视图尺寸 → 面板尺寸 → 视图尺寸」每轮缩一截，收敛不下来） */
+.pb-panel-layer .pb-dialog-compact.pb-dialog-layer {
+	width: 100vw;
+	max-height: min(560px, 100dvh);
 }
 
 .pb-dialog-header {
@@ -1345,6 +1465,83 @@ html[data-theme="light"] body.pb-internal {
 	line-height: 1.5;
 	white-space: pre-wrap;
 	overflow-wrap: anywhere;
+}
+
+/* 扩展面板：Chrome 扩展菜单的语义——一行一个扩展，点整行就开它自己的页面（行尾菜单管启停/重载/移除） */
+.pb-extension-item {
+	flex-wrap: nowrap;
+	gap: 2px;
+	padding: 1px 2px 1px 4px;
+	border-bottom: 0;
+}
+
+.pb-extension-item .pb-switch {
+	flex: 0 0 auto;
+	padding: 0 2px 0 4px;
+}
+
+.pb-extension-open {
+	flex: 1 1 auto;
+	justify-content: flex-start;
+	gap: 6px;
+	min-width: 0;
+	min-height: 0;
+	padding: 6px 4px;
+	border: 0;
+	background: transparent;
+	color: var(--pb-fg);
+	text-align: left;
+}
+
+/* 名字会很长（描述性 manifest 名），只占一行，超出省略号；整行高度因此是固定的 */
+.pb-extension-name {
+	flex: 0 1 auto;
+	min-width: 0;
+	font-size: 13px;
+	font-weight: 500;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+
+.pb-extension-meta {
+	flex: 0 0 auto;
+	font-size: 11px;
+	color: var(--pb-fg-dim);
+}
+
+/* 停用的扩展不消失，只是变淡（点行不会开页面） */
+.pb-extension-off .pb-extension-name {
+	color: var(--pb-fg-dim);
+	font-weight: 400;
+}
+
+.pb-extension-off .pb-extension-open {
+	cursor: default;
+}
+
+.pb-extension-more {
+	width: 24px;
+	height: 24px;
+	flex: 0 0 24px;
+}
+
+/* 安装入口放底部：面板的主体是「已装的扩展」，不是安装表单；行多到要滚时它钉在底部 */
+.pb-extension-install {
+	display: flex;
+	gap: 6px;
+	padding: 6px 2px 2px;
+	border-top: 1px solid var(--pb-border-subtle);
+	background: var(--pb-modal-bg);
+	position: sticky;
+	bottom: 0;
+}
+
+.pb-extension-install .pb-button {
+	flex: 1 1 0;
+	min-height: 26px;
+	padding: 3px 6px;
+	font-size: 12px;
 }
 
 /* ==========================================================================

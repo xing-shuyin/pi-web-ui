@@ -13,6 +13,10 @@ files:
   - plugins/catalog.json
   - docs/architecture-plugins.md
   - package.json
+  # 桌面主进程 requires 它（内部用 debug/ms），不进打包名单就会在安装版里 MODULE_NOT_FOUND
+  - node_modules/electron-chrome-extensions/**
+  - node_modules/debug/**
+  - node_modules/ms/**
 extraMetadata:
   main: dist/desktop/main.js
 asar: false
