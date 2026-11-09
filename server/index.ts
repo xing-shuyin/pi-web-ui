@@ -1962,6 +1962,19 @@ const service: EngineService = {
 		}
 		return Promise.resolve();
 	},
+	/**
+	 * 关闭对话：pi 引擎走 daemon 的跨客户端路由（左栏 elsewhere / 离线残骸行都能删）。
+	 * 其他引擎的 `dismissConversation` 是本端语义（id, withFinished, force），不能当 daemon 路由用，
+	 * 直接退回请求方自己的会话。
+	 */
+	async dismissConversation(clientId, msg) {
+		const engine = ensureEngine(resolveClientEngine(clientId));
+		if (engine instanceof AgentService) return engine.dismissConversation(clientId, msg);
+		const cs = engine.get(clientId);
+		if (!cs?.dismissConversation) return false;
+		await cs.dismissConversation(msg.id, msg.withFinishedSubagents, msg.force);
+		return true;
+	},
 	peekElsewhereQuestion(targetId, ownerId, convId) {
 		const targetSvc = ensureEngine(resolveClientEngine(targetId));
 		if (typeof targetSvc.peekElsewhereQuestion === "function") {

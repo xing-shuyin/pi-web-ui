@@ -53,8 +53,20 @@ import {
 	type TakeoverPayload,
 } from "./agent-service.js";
 
+/**
+ * 左栏行级会话操作：只影响某一行的删除/重命名/固定/保存。
+ * 指向别的会话时不能当共享操作拦下（见 dispatchSharedConversationMessage）。
+ */
+const PANEL_CONVERSATION_OPS = new Set<ClientMessage["type"]>([
+	"dismiss_conversation",
+	"rename_conversation",
+	"pin_conversation",
+	"persist_conversation",
+]);
+
 export class AgentService {
 	static isPseudoClientId = isPseudoClientId;
+
 	private sharedViewers = new Map<
 		string,
 		{
@@ -229,6 +241,17 @@ export class AgentService {
 			run(() => {
 				throw new Error(`Shared conversation operation unavailable: ${message.type}`);
 			});
+		// 左栏行级操作（删除/重命名/固定/保存）指向的不是当前共享会话时，它不是共享操作：
+		// 交回调用方自己的分发（本端会话直接处理，跨端会话由 daemon.dismissConversation 路由）。
+		// 不这么做的话，只要进过一次共享视图（包括刷新后自动恢复的绑定），左栏别的行全部被拒。
+		// 只读共享（手机 peek / 通知打开）仍不代别人动手，只放行 viewer 自己持有的会话。
+		if (PANEL_CONVERSATION_OPS.has(message.type)) {
+			const targetId = "id" in message && typeof message.id === "string" ? message.id : "";
+			if (targetId !== conv.id) {
+				if (!binding.readOnly || this.clients.get(viewerClientId)?.getConversation(targetId)) return false;
+				return reject();
+			}
+		}
 		if (
 			binding.readOnly &&
 			![

@@ -1,4 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
+import { readFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
 import { handleSessionLifecycleMessage } from "../../server/dispatch-domain-handlers.js";
 import type { DispatchSession } from "../../server/index.js";
 import { isSessionMatchingProject } from "../../web/src/use-chat.js";
@@ -34,6 +36,37 @@ describe("list_sessions dispatch and matching", () => {
 		expect(handleSessionLifecycleMessage({ type: "list_sessions", path: "/work/other-project" }, cs)).toBe(true);
 		expect(pushSessionsForCwd).toHaveBeenCalledWith("/work/other-project");
 		expect(refreshSessions).not.toHaveBeenCalled();
+	});
+
+	it("dismiss_conversation 走 daemon 的跨端路由（左栏 elsewhere / 离线残骸行也删得掉）", async () => {
+		const dismissConversation = vi.fn().mockResolvedValue(true);
+		const localDismiss = vi.fn().mockResolvedValue(undefined);
+		const cs = { cwd: "/work", dismissConversation: localDismiss } as unknown as DispatchSession;
+		const daemon = { dismissConversation } as unknown as Parameters<typeof handleSessionLifecycleMessage>[3];
+
+		expect(
+			handleSessionLifecycleMessage(
+				{ type: "dismiss_conversation", id: "elsewhere-conv", force: true, owner: "other-client" },
+				cs,
+				undefined,
+				daemon,
+				"viewer",
+			),
+		).toBe(true);
+		await vi.waitFor(() =>
+			expect(dismissConversation).toHaveBeenCalledWith("viewer", {
+				type: "dismiss_conversation",
+				id: "elsewhere-conv",
+				force: true,
+				owner: "other-client",
+			}),
+		);
+		expect(localDismiss).not.toHaveBeenCalled();
+	});
+
+	it("index.ts 的引擎门面真的把 dismissConversation 接线了（曾经只声明没实现）", () => {
+		const source = readFileSync(fileURLToPath(new URL("../../server/index.ts", import.meta.url)), "utf8");
+		expect(source).toMatch(/^\t(?:async\s+)?dismissConversation\(clientId, msg\) \{/m);
 	});
 
 	it("isSessionMatchingProject does not attach every session to a project that contains the agent dir", () => {

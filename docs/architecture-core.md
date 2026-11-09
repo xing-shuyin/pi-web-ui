@@ -20,6 +20,8 @@ React + Capacitor 手机客户端、Hub 账号隔离推送与设备切换见 [`m
 
 通知点击携带实例、设备、session 与 owner / conversation 标识。跨客户端通过 `open_shared_conversation` 的 `readOnly: true` 查看原执行对象，快照的 `sharedConversation.readOnly` 驱动只读 UI；服务端只允许查询及已有问卷 / 单次审批答复，拒绝 prompt、终端、设置和工作区写操作。该模式可查看 independent / 子代理，但不放宽普通共享入口，也不搬迁 owner 或重新 load 会话。
 
+共享视图不抢左栏行操作：`dismiss / rename / pin / persist_conversation` 指向的不是当前共享会话时不算共享操作——本端会话交回本端分发，跨端 elsewhere 行由 `daemon.dismissConversation` 路由（`server/index.ts` 门面必须接线，否则 ✕ 静默无效）；只读共享仍只放行 viewer 自己持有的会话。行角标的分叉身份同理要跨重启：`forkFrom` 只在内存，客户端判角标必须同时看 `forked`（引擎从会话文件头 `parentSession` 推出）与历史行的 `parentSessionPath`，否则重开/别处运行的分叉会话会掉成普通行。
+
 ## 桌面通知定位对话
 
 `web/src/notify.ts` 在创建通知时固化目标会话的 `#s=<sessionId>` 深链；后台完成和后台问卷显式传入各自的稳定 `sessionId`，避免用户切换对话或等待 Service Worker 注册期间通知目标漂移。链接沿用部署子路径，移除 `token` 和 `view` 查询参数，鉴权沿用 Cookie。通知继续不设置 `tag`，避免 Windows 静默替换旧提醒。
