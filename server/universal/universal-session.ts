@@ -1645,8 +1645,8 @@ export class UniversalSession implements DispatchSession {
 		await this.files.listFiles(path);
 	}
 
-	async searchFiles(query: string, reqId: number): Promise<void> {
-		await this.files.searchFiles(query, reqId);
+	async searchFiles(query: string, reqId: number, scope?: string): Promise<void> {
+		await this.files.searchFiles(query, reqId, scope);
 	}
 
 	async readFile(path: string): Promise<void> {

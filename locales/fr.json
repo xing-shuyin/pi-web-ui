@@ -657,6 +657,7 @@
 		"filesShowHidden": "Show hidden files (names starting with a dot)",
 		"filesHideHidden": "Hide files whose name starts with a dot",
 		"filesHelp": "Naviguer : cliquer un dossier pour entrer, un fichier pour prévisualiser, « .. » pour remonter ; Racine revient au projet actuel, Ce PC parcourt tous les lecteurs, 🏠 va à votre dossier personnel, 🖥️ au bureau.\nGérer : clic droit pour nouveau fichier/dossier, renommer, copier/couper/coller, dupliquer, supprimer, téléverser ; les fichiers sont téléchargeables, les boutons copient nom/chemin.\nChanger de projet : clic droit sur un dossier pour l'ouvrir comme projet, ou cliquez sur le bouton 📁 du chemin en bas à droite pour saisir/choisir un répertoire.\nEnvoyer à l'IA : les boutons joignent le contenu ou référencent le chemin, ou glissez des fichiers dans la saisie.",
+		"filesFilterPlaceholder": "Search current directory and subdirectories…",
 		"workspaceRoots": "Workspace roots",
 		"workspaceRootsHint": "Roots the file tree can switch to; plugins may read and write them without a separate prompt.",
 		"addWorkspaceRoot": "Add as workspace root",

@@ -657,6 +657,7 @@
 		"filesShowHidden": "Show hidden files (names starting with a dot)",
 		"filesHideHidden": "Hide files whose name starts with a dot",
 		"filesHelp": "Explorar: clic en una carpeta para entrar, en un archivo para previsualizar, «..» para subir; Raíz vuelve al proyecto actual, Este equipo muestra todas las unidades, 🏠 va a tu carpeta personal, 🖥️ al escritorio.\nGestionar: clic derecho para nuevo archivo/carpeta, renombrar, copiar/cortar/pegar, duplicar, eliminar, subir; los archivos se pueden descargar, los botones copian nombre/ruta.\nCambiar de proyecto: clic derecho en una carpeta para abrirla como proyecto, o haz clic en el botón 📁 de ruta abajo a la derecha para escribir/seleccionar un directorio.\nEnviar a la IA: los botones adjuntan el contenido o referencian la ruta, o arrastra archivos a la entrada.",
+		"filesFilterPlaceholder": "Search current directory and subdirectories…",
 		"workspaceRoots": "Workspace roots",
 		"workspaceRootsHint": "Roots the file tree can switch to; plugins may read and write them without a separate prompt.",
 		"addWorkspaceRoot": "Add as workspace root",

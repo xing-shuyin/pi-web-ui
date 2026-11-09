@@ -1,6 +1,7 @@
-import { memo, useCallback, useEffect, useRef, useState } from "react";
+import { Fragment, memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
 	FiCheck,
+	FiChevronDown,
 	FiChevronRight,
 	FiClipboard,
 	FiCopy,
@@ -14,9 +15,10 @@ import {
 	FiLink,
 	FiMaximize2,
 	FiMonitor,
+	FiSearch,
 	FiX,
 } from "react-icons/fi";
-import type { ClientMessage, FileListing, UiPluginInfo } from "../types";
+import type { ClientMessage, FileListing, FileSearchResult, UiPluginInfo } from "../types";
 import { useT } from "../i18n";
 import { useAppField } from "../app-globals";
 import { downloadFile, DOWNLOAD_FILE_NOT_FOUND } from "../download";
@@ -71,6 +73,81 @@ function isProtectedRoot(p: string): boolean {
 	return p === MACHINE_ROOT || p === "/" || /^[A-Za-z]:$/.test(p);
 }
 
+interface SearchTreeNode {
+	name: string;
+	path: string;
+	type: "file" | "dir";
+	matched: boolean;
+	children: SearchTreeNode[];
+}
+function SearchTreeRows({
+	nodes,
+	depth,
+	collapsed,
+	onToggle,
+	onOpenDir,
+	onOpenFile,
+}: {
+	nodes: SearchTreeNode[];
+	depth: number;
+	collapsed: readonly string[];
+	onToggle: (path: string) => void;
+	onOpenDir: (path: string) => void;
+	onOpenFile: (path: string, name: string) => void;
+}) {
+	return (
+		<>
+			{nodes.map((n) => (
+				<Fragment key={n.path || n.name}>
+					{n.type === "dir" ? (
+						<div className="file-item dir" style={{ paddingLeft: 4 + depth * 12 }}>
+							<button
+								type="button"
+								className="btn"
+								style={{ padding: 2, flex: "none" }}
+								onClick={() => onToggle(n.path)}
+								aria-label={n.path}
+							>
+								{collapsed.includes(n.path) ? (
+									<FiChevronRight aria-hidden="true" />
+								) : (
+									<FiChevronDown aria-hidden="true" />
+								)}
+							</button>
+							<button type="button" className="file-dir-main" onClick={() => onOpenDir(n.path)} title={n.path}>
+								<FiFolder className="file-icon" />
+								<span className="file-name" style={n.matched ? undefined : { opacity: 0.65 }}>
+									{n.name}
+								</span>
+							</button>
+						</div>
+					) : (
+						<button
+							type="button"
+							className="file-item"
+							style={{ paddingLeft: 8 + depth * 12 }}
+							onClick={() => onOpenFile(n.path, n.name)}
+							title={n.path}
+						>
+							<FiFile className="file-icon" />
+							<span className="file-name">{n.name}</span>
+						</button>
+					)}
+					{n.type === "dir" && !collapsed.includes(n.path) && (
+						<SearchTreeRows
+							nodes={n.children}
+							depth={depth + 1}
+							collapsed={collapsed}
+							onToggle={onToggle}
+							onOpenDir={onOpenDir}
+							onOpenFile={onOpenFile}
+						/>
+					)}
+				</Fragment>
+			))}
+		</>
+	);
+}
 function isAbsoluteWire(p: string): boolean {
 	return p.startsWith("/") || /^[A-Za-z]:([/]|$)/.test(p);
 }
@@ -89,6 +166,7 @@ interface RightPanelProps {
 	fileChanged: { path: string } | null;
 	widgets: { key: string; lines: string[] }[];
 	panelSend: (msg: ClientMessage) => boolean;
+	fileSearch?: { reqId: number; ok: boolean; results: FileSearchResult[]; truncated?: boolean } | null;
 	onAttach: (path: string, name: string, mode: AttachMode, isDir?: boolean) => void;
 	onPreview: (path: string, name: string) => void;
 	onNotice: (level: "info" | "warning" | "error", text: string) => void;
@@ -105,6 +183,7 @@ interface RightPanelProps {
 
 export const RightPanel = memo(function RightPanel({
 	files,
+	fileSearch,
 	fileChanged,
 	widgets,
 	panelSend,
@@ -152,6 +231,74 @@ export const RightPanel = memo(function RightPanel({
 			return false;
 		}
 	});
+	const [fileFilter, setFileFilter] = useState("");
+	const [pathSearching, setPathSearching] = useState(false);
+	const fileSearchReqRef = useRef(0);
+	const [collapsedSearchDirs, setCollapsedSearchDirs] = useState<string[]>([]);
+	const fileFilterQuery = fileFilter.trim();
+	useEffect(() => {
+		if (fileFilterQuery === "") return;
+		const timer = setTimeout(() => {
+			fileSearchReqRef.current += 1;
+			panelSend({ type: "search_files", reqId: fileSearchReqRef.current, query: fileFilterQuery, scope: currentPath });
+		}, 300);
+		return () => clearTimeout(timer);
+	}, [fileFilterQuery, currentPath, panelSend]);
+	const scopedSearchResults = (
+		fileFilterQuery !== "" && fileSearch && fileSearch.reqId === fileSearchReqRef.current ? fileSearch.results : []
+	).filter(
+		(r) =>
+			r.path !== currentPath &&
+			(currentPath === "" || currentPath === "@root" || r.path === currentPath || r.path.startsWith(`${currentPath}/`)),
+	);
+	useEffect(() => {
+		setCollapsedSearchDirs([]);
+	}, [fileFilterQuery, currentPath]);
+	const searchTree = useMemo(() => {
+		if (fileFilterQuery === "") return [];
+		const root: SearchTreeNode = { name: "", path: "", type: "dir", matched: false, children: [] };
+		const scopePrefix = currentPath !== "" && currentPath !== "@root" ? `${currentPath}/` : "";
+		const q = fileFilterQuery.toLowerCase();
+		const insertPath = (fullPath: string, leafType: "file" | "dir") => {
+			const rel =
+				scopePrefix !== "" && fullPath.startsWith(scopePrefix) ? fullPath.slice(scopePrefix.length) : fullPath;
+			const parts = rel.split("/").filter(Boolean);
+			if (parts.length === 0) return;
+			let node = root;
+			let acc = scopePrefix === "" ? "" : scopePrefix.slice(0, -1);
+			parts.forEach((part, i) => {
+				const last = i === parts.length - 1;
+				acc = acc === "" ? part : `${acc}/${part}`;
+				let child = node.children.find((c) => c.name === part);
+				if (!child) {
+					child = { name: part, path: acc, type: last ? leafType : "dir", matched: false, children: [] };
+					node.children.push(child);
+				} else if (last && leafType === "dir") {
+					child.type = "dir";
+				}
+				if (last) child.matched = true;
+				node = child;
+			});
+		};
+		if (files && files.path === currentPath) {
+			for (const e of visibleTreeEntries(files.entries, showHiddenFiles)) {
+				if (e.type === "file" && e.name.toLowerCase().includes(q)) insertPath(e.path, e.type);
+			}
+		}
+		for (const r of scopedSearchResults) {
+			insertPath(r.path, r.type);
+		}
+
+		const sortNodes = (n: SearchTreeNode) => {
+			n.children.sort((a, b) => (a.type === b.type ? a.name.localeCompare(b.name) : a.type === "dir" ? -1 : 1));
+			n.children.forEach(sortNodes);
+		};
+		sortNodes(root);
+		return root.children;
+	}, [scopedSearchResults, currentPath, files, showHiddenFiles, fileFilterQuery]);
+	const toggleSearchDir = useCallback((path: string) => {
+		setCollapsedSearchDirs((prev) => (prev.includes(path) ? prev.filter((p) => p !== path) : [...prev, path]));
+	}, []);
 	useEffect(() => {
 		try {
 			localStorage.setItem(LS_FILES_SHOW_HIDDEN, showHiddenFiles ? "1" : "0");
@@ -815,6 +962,18 @@ export const RightPanel = memo(function RightPanel({
 	}, [fileChanged, currentPath, request]);
 
 	const openDir = (path: string) => request(path);
+	useEffect(() => {
+		const onOpenFolder = (e: Event) => {
+			const detail = (e as CustomEvent).detail;
+			if (!detail || typeof detail.path !== "string") return;
+			window.dispatchEvent(
+				new CustomEvent("pi:select-slot-tab", { detail: { group: "rightpanel", id: FILES_TAB_ID } }),
+			);
+			request(detail.path);
+		};
+		window.addEventListener("pi:open-folder", onOpenFolder);
+		return () => window.removeEventListener("pi:open-folder", onOpenFolder);
+	}, [request]);
 	const goUp = () => {
 		if (files?.parent !== null && files?.parent !== undefined) {
 			request(files.parent);
@@ -835,6 +994,12 @@ export const RightPanel = memo(function RightPanel({
 		}
 		return parts.map((_p, i) => ({ label: parts[i], path: parts.slice(0, i + 1).join("/") }));
 	})();
+	const pathSegs =
+		currentPath.startsWith("/") || currentPath === MACHINE_ROOT
+			? crumbs
+			: [{ label: t("rootDir"), path: "" }, ...crumbs];
+	const shownPathSegs: ((typeof pathSegs)[number] | null)[] = pathSegs;
+	const fullPathTitle = currentPath === "" ? cwd || t("rootDir") : currentPath;
 
 	const pluginTabs: SlotTab[] = [];
 	for (const entry of uiRightPanelTabs ?? []) {
@@ -889,14 +1054,7 @@ export const RightPanel = memo(function RightPanel({
 										label: t("openFiles"),
 										element: (
 											<>
-												<div className="panel-crumbs">
-													<button
-														type="button"
-														className={`crumb ${currentPath === "" ? "active" : ""}`}
-														onClick={() => request("")}
-													>
-														{t("rootDir")}
-													</button>
+												<div className="panel-crumbs files-toolbar">
 													<TipButton
 														className={`crumb ${currentPath === MACHINE_ROOT ? "active" : ""}`}
 														tip={t("computer")}
@@ -929,6 +1087,17 @@ export const RightPanel = memo(function RightPanel({
 														onClick={() => setShowHiddenFiles((v) => !v)}
 													>
 														{showHiddenFiles ? <FiEye /> : <FiEyeOff />}
+													</TipButton>
+													<TipButton
+														className={`crumb ${pathSearching ? "active" : ""}`}
+														tip={t("filesFilterPlaceholder")}
+														aria-pressed={pathSearching}
+														onClick={() => {
+															if (pathSearching) setFileFilter("");
+															setPathSearching((v) => !v);
+														}}
+													>
+														<FiSearch />
 													</TipButton>
 													<HintTip text={t("filesHelp")} />
 													{workspaceRoots.length > 0 && (
@@ -992,18 +1161,85 @@ export const RightPanel = memo(function RightPanel({
 															)}
 														</div>
 													)}
-													{crumbs.map((c) => (
-														<span key={c.path} className="crumb-seg">
-															<FiChevronRight />
+												</div>
+												<div className="panel-crumbs files-pathrow" style={{ flexWrap: "nowrap" }}>
+													{pathSearching ? (
+														<span
+															className="crumb file-filter-wrap"
+															style={{ flex: 1, display: "inline-flex", alignItems: "center", gap: 6 }}
+														>
+															<FiSearch aria-hidden="true" />
+															<input
+																className="file-filter-input"
+																autoFocus
+																value={fileFilter}
+																onChange={(e) => setFileFilter(e.target.value)}
+																placeholder={t("filesFilterPlaceholder")}
+																aria-label={t("filesFilterPlaceholder")}
+																onKeyDown={(e) => {
+																	if (e.key === "Escape") {
+																		setFileFilter("");
+																		setPathSearching(false);
+																	}
+																}}
+																style={{
+																	flex: 1,
+																	minWidth: 0,
+																	background: "transparent",
+																	border: "none",
+																	outline: "none",
+																	color: "inherit",
+																}}
+															/>
 															<button
 																type="button"
-																className={`crumb ${c.path === currentPath ? "active" : ""}`}
-																onClick={() => request(c.path)}
+																className="btn"
+																style={{ padding: 2 }}
+																onClick={() => {
+																	if (fileFilter !== "") setFileFilter("");
+																	else setPathSearching(false);
+																}}
+																aria-label={t("close")}
+																title={t("close")}
 															>
-																{c.label}
+																<FiX aria-hidden="true" />
 															</button>
 														</span>
-													))}
+													) : (
+														<>
+															<span
+																className="file-path-text"
+																title={fullPathTitle}
+																style={{
+																	flex: 1,
+																	minWidth: 0,
+																	overflow: "hidden",
+																	textOverflow: "ellipsis",
+																	whiteSpace: "nowrap",
+																}}
+															>
+																{shownPathSegs.map((s, i) =>
+																	s === null ? (
+																		<span key="ellipsis" className="crumb-seg" style={{ margin: "0 2px" }}>
+																			…<FiChevronRight aria-hidden="true" />
+																		</span>
+																	) : (
+																		<span key={s.path || "root"} className="crumb-seg">
+																			{i > 0 && <FiChevronRight aria-hidden="true" />}
+																			<button
+																				type="button"
+																				className={`crumb ${s.path === currentPath ? "active" : ""}`}
+																				onClick={() => request(s.path)}
+																				title={s.path || fullPathTitle}
+																			>
+																				{s.label}
+																			</button>
+																		</span>
+																	),
+																)}
+															</span>
+														</>
+													)}
 												</div>
 												<div
 													ref={attachBody}
@@ -1153,164 +1389,186 @@ export const RightPanel = memo(function RightPanel({
 													{loading && <div className="panel-empty">{t("loading")}</div>}
 													{!loading && files && files.path === currentPath && (
 														<>
-															{files.parent != null && (
+															{fileFilterQuery === "" && files.parent != null && (
 																<button type="button" className="file-item dir" onClick={goUp}>
 																	<FiFolder className="file-icon" />
 																	<span className="file-name">..</span>
 																</button>
 															)}
-															{visibleTreeEntries(files.entries, showHiddenFiles).map((e) =>
-																e.type === "dir" ? (
-																	<div
-																		key={e.path}
-																		className={`file-item dir${clipboard?.cut && clipboard.src === e.path ? " cut" : ""}`}
-																		data-type="dir"
-																		data-path={e.path}
-																		onClick={(ev) => {
-																			if (renamingPath === e.path) return;
-																			if ((ev.target as HTMLElement).closest(".file-attach")) return;
-																			openDir(e.path);
-																		}}
-																		onContextMenu={(ev) => openFileMenu(ev, { id: e.path, kind: "dir", label: e.name })}
-																	>
-																		{renamingPath === e.path ? (
-																			renderNameInput(renameDraft, setRenameDraft, submitRename, () =>
-																				setRenamingPath(null),
-																			)
-																		) : (
+															{visibleTreeEntries(files.entries, showHiddenFiles)
+																.filter(
+																	(e) =>
+																		fileFilterQuery === "" &&
+																		(fileFilter.trim() === "" ||
+																			e.name.toLowerCase().includes(fileFilter.trim().toLowerCase())),
+																)
+																.map((e) =>
+																	e.type === "dir" ? (
+																		<div
+																			key={e.path}
+																			className={`file-item dir${clipboard?.cut && clipboard.src === e.path ? " cut" : ""}`}
+																			data-type="dir"
+																			data-path={e.path}
+																			onClick={(ev) => {
+																				if (renamingPath === e.path) return;
+																				if ((ev.target as HTMLElement).closest(".file-attach")) return;
+																				openDir(e.path);
+																			}}
+																			onContextMenu={(ev) =>
+																				openFileMenu(ev, { id: e.path, kind: "dir", label: e.name })
+																			}
+																		>
+																			{renamingPath === e.path ? (
+																				renderNameInput(renameDraft, setRenameDraft, submitRename, () =>
+																					setRenamingPath(null),
+																				)
+																			) : (
+																				<button
+																					type="button"
+																					className="file-dir-main"
+																					onClick={(ev) => {
+																						ev.stopPropagation();
+																						openDir(e.path);
+																					}}
+																				>
+																					<FiFolder className="file-icon" />
+																					<span className="file-name">{e.name}</span>
+																				</button>
+																			)}
 																			<button
 																				type="button"
-																				className="file-dir-main"
+																				className="file-attach ref"
+																				data-tip={t("linkFolderTip")}
+																				aria-label={t("linkFolderTip")}
 																				onClick={(ev) => {
 																					ev.stopPropagation();
-																					openDir(e.path);
+																					onAttach(e.path, e.name, "reference", true);
 																				}}
 																			>
-																				<FiFolder className="file-icon" />
-																				<span className="file-name">{e.name}</span>
+																				<FiLink />
 																			</button>
-																		)}
-																		<button
-																			type="button"
-																			className="file-attach ref"
-																			data-tip={t("linkFolderTip")}
-																			aria-label={t("linkFolderTip")}
+																			<button
+																				type="button"
+																				className={`file-attach copy${copiedKey === `name:${e.path}` ? " copied" : ""}`}
+																				data-tip={t("copyName")}
+																				aria-label={t("copyName")}
+																				onClick={(ev) => {
+																					ev.stopPropagation();
+																					copyText(e.name, `name:${e.path}`);
+																				}}
+																			>
+																				{copiedKey === `name:${e.path}` ? <FiCheck /> : <FiCopy />}
+																			</button>
+																			<button
+																				type="button"
+																				className={`file-attach copy${copiedKey === `path:${e.path}` ? " copied" : ""}`}
+																				data-tip={t("copyPath")}
+																				aria-label={t("copyPath")}
+																				onClick={(ev) => {
+																					ev.stopPropagation();
+																					copyText(absPathOf(e.path), `path:${e.path}`);
+																				}}
+																			>
+																				{copiedKey === `path:${e.path}` ? <FiCheck /> : <FiClipboard />}
+																			</button>
+																		</div>
+																	) : (
+																		<div
+																			key={e.path}
+																			className={`file-item file${clipboard?.cut && clipboard.src === e.path ? " cut" : ""}`}
+																			data-type="file"
+																			data-path={e.path}
 																			onClick={(ev) => {
-																				ev.stopPropagation();
-																				onAttach(e.path, e.name, "reference", true);
+																				if (renamingPath === e.path) return;
+																				if ((ev.target as HTMLElement).closest(".file-attach")) return;
+																				onPreview(e.path, e.name);
 																			}}
+																			onContextMenu={(ev) =>
+																				openFileMenu(ev, { id: e.path, kind: "file", label: e.name })
+																			}
 																		>
-																			<FiLink />
-																		</button>
-																		<button
-																			type="button"
-																			className={`file-attach copy${copiedKey === `name:${e.path}` ? " copied" : ""}`}
-																			data-tip={t("copyName")}
-																			aria-label={t("copyName")}
-																			onClick={(ev) => {
-																				ev.stopPropagation();
-																				copyText(e.name, `name:${e.path}`);
-																			}}
-																		>
-																			{copiedKey === `name:${e.path}` ? <FiCheck /> : <FiCopy />}
-																		</button>
-																		<button
-																			type="button"
-																			className={`file-attach copy${copiedKey === `path:${e.path}` ? " copied" : ""}`}
-																			data-tip={t("copyPath")}
-																			aria-label={t("copyPath")}
-																			onClick={(ev) => {
-																				ev.stopPropagation();
-																				copyText(absPathOf(e.path), `path:${e.path}`);
-																			}}
-																		>
-																			{copiedKey === `path:${e.path}` ? <FiCheck /> : <FiClipboard />}
-																		</button>
-																	</div>
+																			{renamingPath === e.path ? (
+																				renderNameInput(renameDraft, setRenameDraft, submitRename, () =>
+																					setRenamingPath(null),
+																				)
+																			) : (
+																				<button
+																					type="button"
+																					className="file-name"
+																					title={`${e.path} — ${t("previewFile")}`}
+																					onClick={(ev) => {
+																						ev.stopPropagation();
+																						onPreview(e.path, e.name);
+																					}}
+																				>
+																					<FiFile className="file-icon" />
+																					<span className="file-name-text">{e.name}</span>
+																				</button>
+																			)}
+																			<button
+																				type="button"
+																				className="file-attach download"
+																				data-tip={t("downloadFile")}
+																				onClick={(ev) => {
+																					ev.stopPropagation();
+																					downloadEntry(e.path, e.name);
+																				}}
+																			>
+																				<FiDownload />
+																			</button>
+																			<button
+																				type="button"
+																				className="file-attach ref"
+																				data-tip={t("referenceTip")}
+																				aria-label={t("referenceTip")}
+																				onClick={(ev) => {
+																					ev.stopPropagation();
+																					onAttach(e.path, e.name, "reference");
+																				}}
+																			>
+																				<FiLink />
+																			</button>
+																			<button
+																				type="button"
+																				className={`file-attach copy${copiedKey === `name:${e.path}` ? " copied" : ""}`}
+																				data-tip={t("copyName")}
+																				aria-label={t("copyName")}
+																				onClick={(ev) => {
+																					ev.stopPropagation();
+																					copyText(e.name, `name:${e.path}`);
+																				}}
+																			>
+																				{copiedKey === `name:${e.path}` ? <FiCheck /> : <FiCopy />}
+																			</button>
+																			<button
+																				type="button"
+																				className={`file-attach copy${copiedKey === `path:${e.path}` ? " copied" : ""}`}
+																				data-tip={t("copyPath")}
+																				aria-label={t("copyPath")}
+																				onClick={(ev) => {
+																					ev.stopPropagation();
+																					copyText(absPathOf(e.path), `path:${e.path}`);
+																				}}
+																			>
+																				{copiedKey === `path:${e.path}` ? <FiCheck /> : <FiClipboard />}
+																			</button>
+																		</div>
+																	),
+																)}
+															{fileFilterQuery !== "" &&
+																(searchTree.length > 0 ? (
+																	<SearchTreeRows
+																		nodes={searchTree}
+																		depth={0}
+																		collapsed={collapsedSearchDirs}
+																		onToggle={toggleSearchDir}
+																		onOpenDir={openDir}
+																		onOpenFile={onPreview}
+																	/>
 																) : (
-																	<div
-																		key={e.path}
-																		className={`file-item file${clipboard?.cut && clipboard.src === e.path ? " cut" : ""}`}
-																		data-type="file"
-																		data-path={e.path}
-																		onClick={(ev) => {
-																			if (renamingPath === e.path) return;
-																			if ((ev.target as HTMLElement).closest(".file-attach")) return;
-																			onPreview(e.path, e.name);
-																		}}
-																		onContextMenu={(ev) =>
-																			openFileMenu(ev, { id: e.path, kind: "file", label: e.name })
-																		}
-																	>
-																		{renamingPath === e.path ? (
-																			renderNameInput(renameDraft, setRenameDraft, submitRename, () =>
-																				setRenamingPath(null),
-																			)
-																		) : (
-																			<button
-																				type="button"
-																				className="file-name"
-																				title={`${e.path} — ${t("previewFile")}`}
-																				onClick={(ev) => {
-																					ev.stopPropagation();
-																					onPreview(e.path, e.name);
-																				}}
-																			>
-																				<FiFile className="file-icon" />
-																				<span className="file-name-text">{e.name}</span>
-																			</button>
-																		)}
-																		<button
-																			type="button"
-																			className="file-attach download"
-																			data-tip={t("downloadFile")}
-																			onClick={(ev) => {
-																				ev.stopPropagation();
-																				downloadEntry(e.path, e.name);
-																			}}
-																		>
-																			<FiDownload />
-																		</button>
-																		<button
-																			type="button"
-																			className="file-attach ref"
-																			data-tip={t("referenceTip")}
-																			aria-label={t("referenceTip")}
-																			onClick={(ev) => {
-																				ev.stopPropagation();
-																				onAttach(e.path, e.name, "reference");
-																			}}
-																		>
-																			<FiLink />
-																		</button>
-																		<button
-																			type="button"
-																			className={`file-attach copy${copiedKey === `name:${e.path}` ? " copied" : ""}`}
-																			data-tip={t("copyName")}
-																			aria-label={t("copyName")}
-																			onClick={(ev) => {
-																				ev.stopPropagation();
-																				copyText(e.name, `name:${e.path}`);
-																			}}
-																		>
-																			{copiedKey === `name:${e.path}` ? <FiCheck /> : <FiCopy />}
-																		</button>
-																		<button
-																			type="button"
-																			className={`file-attach copy${copiedKey === `path:${e.path}` ? " copied" : ""}`}
-																			data-tip={t("copyPath")}
-																			aria-label={t("copyPath")}
-																			onClick={(ev) => {
-																				ev.stopPropagation();
-																				copyText(absPathOf(e.path), `path:${e.path}`);
-																			}}
-																		>
-																			{copiedKey === `path:${e.path}` ? <FiCheck /> : <FiClipboard />}
-																		</button>
-																	</div>
-																),
-															)}
-															{files.truncated && (
+																	<div className="panel-empty">{t("searchNoResults")}</div>
+																))}
+															{fileFilterQuery === "" && files.truncated && (
 																<div className="panel-empty files-truncated">{t("filesTruncated")}</div>
 															)}
 														</>

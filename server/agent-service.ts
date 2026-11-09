@@ -14537,8 +14537,8 @@ export class ClientSession {
 		return this.files.listFiles(relPath);
 	}
 
-	async searchFiles(query: string, reqId: number): Promise<void> {
-		return this.files.searchFiles(query, reqId);
+	async searchFiles(query: string, reqId: number, scope?: string): Promise<void> {
+		return this.files.searchFiles(query, reqId, scope);
 	}
 
 	private sessionSearchController?: AbortController;

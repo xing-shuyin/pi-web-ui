@@ -1391,7 +1391,7 @@ export interface DispatchSession {
 	switchSession(path: string, sessionId?: string, independent?: boolean): Promise<void>;
 	switchConversation(id: string): Promise<void>;
 	listFiles(path?: string): Promise<void>;
-	searchFiles(query: string, reqId: number): Promise<void>;
+	searchFiles(query: string, reqId: number, scope?: string): Promise<void>;
 	searchSessions(query: string, reqId: number): Promise<void>;
 	scmQuery(
 		kind: "status" | "history" | "filediff" | "commit",

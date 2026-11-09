@@ -657,6 +657,7 @@
 		"filesShowHidden": "Show hidden files (names starting with a dot)",
 		"filesHideHidden": "Hide files whose name starts with a dot",
 		"filesHelp": "탐색: 폴더를 클릭하면 들어가고, 파일을 클릭하면 미리보기, 「..」로 위로 이동. 루트는 현재 프로젝트로, 내 컴퓨터는 모든 드라이브를 보고, 🏠는 홈 디렉터리로, 🖥️는 바탕 화면으로 이동.\n관리: 마우스 오른쪽 클릭으로 새 파일/폴더, 이름 바꾸기, 복사/잘라내기/붙여넣기, 복제, 삭제, 업로드. 파일은 다운로드할 수 있고, 행 버튼으로 이름/경로를 복사.\n프로젝트 전환: 폴더를 마우스 오른쪽 클릭해서 프로젝트로 열거나, 오른쪽 아래 📁 경로 버튼을 눌러 디렉터리를 입력/선택.\nAI에게 보내기: 행 버튼으로 내용 첨부 또는 경로 참조, 입력란으로 드래그도 가능.",
+		"filesFilterPlaceholder": "Search current directory and subdirectories…",
 		"workspaceRoots": "Workspace roots",
 		"workspaceRootsHint": "Roots the file tree can switch to; plugins may read and write them without a separate prompt.",
 		"addWorkspaceRoot": "Add as workspace root",

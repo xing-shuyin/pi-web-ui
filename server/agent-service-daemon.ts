@@ -299,7 +299,9 @@ export class AgentService {
 						.uploadFile(message.dirPath, message.name, message.data, message.uploadId),
 				);
 			case "search_files":
-				return run(() => owner.createConversationFiles(conv, send).searchFiles(message.query, message.reqId));
+				return run(() =>
+					owner.createConversationFiles(conv, send).searchFiles(message.query, message.reqId, message.scope),
+				);
 			case "complete_path":
 				return run(() => files().completePath(message.path));
 			case "file_create":

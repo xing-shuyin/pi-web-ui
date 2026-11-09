@@ -657,6 +657,7 @@
 		"filesShowHidden": "Mostrar arquivos ocultos (nomes que começam com ponto)",
 		"filesHideHidden": "Ocultar arquivos cujo nome começa com ponto",
 		"filesHelp": "Navegar: clique numa pasta para entrar, num arquivo para pré-visualizar, «..» para subir; Raiz volta ao projeto atual, Este computador mostra todas as unidades, 🏠 vai para a sua pasta pessoal, 🖥️ para a área de trabalho.\nGerenciar: clique com o botão direito para criar arquivo/pasta, renomear, copiar/recortar/colar, duplicar, excluir, enviar; os arquivos podem ser baixados, e os botões copiam nome/caminho.\nTrocar de projeto: clique com o botão direito numa pasta para abri-la como projeto, ou clique no botão 📁 do caminho no canto inferior direito para digitar/escolher um diretório.\nEnviar à IA: os botões anexam o conteúdo ou referenciam o caminho, ou arraste arquivos para o campo de entrada.",
+		"filesFilterPlaceholder": "Search current directory and subdirectories…",
 		"workspaceRoots": "Raízes do espaço de trabalho",
 		"workspaceRootsHint": "Raízes para as quais a árvore de arquivos pode alternar; os plugins podem ler e gravar nelas sem pedir autorização separada.",
 		"addWorkspaceRoot": "Adicionar como raiz do espaço de trabalho",

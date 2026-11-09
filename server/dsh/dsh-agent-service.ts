@@ -3242,8 +3242,8 @@ export class DshClientSession {
 		await this.files.listFiles(relPath);
 	}
 
-	async searchFiles(query: string, reqId: number): Promise<void> {
-		await this.files.searchFiles(query, reqId);
+	async searchFiles(query: string, reqId: number, scope?: string): Promise<void> {
+		await this.files.searchFiles(query, reqId, scope);
 	}
 
 	async searchSessions(query: string, reqId: number): Promise<void> {

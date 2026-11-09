@@ -657,6 +657,7 @@
 		"filesShowHidden": "Show hidden files (names starting with a dot)",
 		"filesHideHidden": "Hide files whose name starts with a dot",
 		"filesHelp": "Esplora: clic su una cartella per entrare, su un file per l'anteprima, «..» per salire; Radice torna al progetto attuale, Questo PC sfoglia tutte le unità, 🏠 va alla cartella personale, 🖥️ alla scrivania.\nGestisci: clic destro per nuovo file/cartella, rinomina, copia/taglia/incolla, duplica, elimina, carica; i file si possono scaricare, i pulsanti copiano nome/percorso.\nCambia progetto: clic destro su una cartella per aprirla come progetto, oppure fai clic sul pulsante 📁 del percorso in basso a destra per digitare/scegliere una directory.\nInvia all'IA: i pulsanti allegano il contenuto o referenziano il percorso, oppure trascina i file nell'input.",
+		"filesFilterPlaceholder": "Search current directory and subdirectories…",
 		"workspaceRoots": "Workspace roots",
 		"workspaceRootsHint": "Roots the file tree can switch to; plugins may read and write them without a separate prompt.",
 		"addWorkspaceRoot": "Add as workspace root",

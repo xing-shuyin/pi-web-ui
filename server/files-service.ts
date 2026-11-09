@@ -336,10 +336,10 @@ export class FilesService {
 	 * with a search_files_result echoing reqId so the client's request never
 	 * stalls (ok:false on unexpected failure).
 	 */
-	async searchFiles(query: string, reqId: number): Promise<void> {
+	async searchFiles(query: string, reqId: number, scope?: string): Promise<void> {
 		const activeCwd = this.host.getActiveCwd();
 		if (isRemoteWorkspaceUri(activeCwd)) {
-			await this.searchRemoteFiles(activeCwd, query, reqId);
+			await this.searchRemoteFiles(activeCwd, query, reqId, scope);
 			return;
 		}
 		const { join } = await import("node:path");
@@ -350,6 +350,18 @@ export class FilesService {
 			return;
 		}
 		const root = resolve(activeCwd);
+		const normScope = (scope ?? "").trim().replace(/\\/g, "/").replace(/\/+$/, "");
+		let walkAbs = root;
+		let walkRel = "";
+		if (normScope !== "" && normScope !== "@root") {
+			const scopeAbs = resolve(root, normScope);
+			const rawRel = relative(root, scopeAbs);
+			if (rawRel !== ".." && !rawRel.startsWith(`..${sep}`) && !rawRel.includes(`${sep}..`)) {
+				walkAbs = scopeAbs;
+				walkRel = rawRel.split(sep).join("/");
+			}
+		}
+		const inScope = (p: string) => walkRel === "" || p === walkRel || p.startsWith(`${walkRel}/`);
 		const ignored = ignoredEntries();
 		const MAX_RESULTS = 50;
 		const MAX_VISITED = 20000;
@@ -374,21 +386,23 @@ export class FilesService {
 						: join(home, normQuery.slice(2))
 					: wireToAbs(normQuery);
 				const st = await fsp.stat(targetAbs).catch(() => null);
-				if (st) {
+				if (st && st.isFile()) {
 					const wp = workspacePath(root, targetAbs);
 					const wirePath = wp ? wp.rel : targetAbs.split(sep).join("/");
-					const baseName = targetAbs.split(/[\\/]/).pop() || wirePath;
-					results.push({
-						path: wirePath,
-						name: baseName,
-						type: st.isDirectory() ? "dir" : "file",
-					});
+					if (inScope(wirePath)) {
+						const baseName = targetAbs.split(/[\\/]/).pop() || wirePath;
+						results.push({
+							path: wirePath,
+							name: baseName,
+							type: st.isDirectory() ? "dir" : "file",
+						});
+					}
 				}
 			} else {
 				const directWp = workspacePath(root, normQuery);
 				if (directWp) {
 					const st = await fsp.stat(directWp.abs).catch(() => null);
-					if (st) {
+					if (st && st.isFile() && inScope(directWp.rel)) {
 						const baseName = directWp.abs.split(/[\\/]/).pop() || directWp.rel;
 						results.push({
 							path: directWp.rel,
@@ -430,7 +444,11 @@ export class FilesService {
 				}
 				const childRelLower = childRel.toLowerCase();
 				const nameLower = d.name.toLowerCase();
-				if ((nameLower.includes(q) || childRelLower.includes(q)) && !results.some((r) => r.path === childRel)) {
+				if (
+					!isDir &&
+					(nameLower.includes(q) || childRelLower.includes(q)) &&
+					!results.some((r) => r.path === childRel)
+				) {
 					results.push({
 						path: childRel,
 						name: d.name,
@@ -443,7 +461,7 @@ export class FilesService {
 			}
 		};
 		try {
-			await walk(root, "", 0);
+			await walk(walkAbs, walkRel, 0);
 			this.host.emit({
 				type: "search_files_result",
 				reqId,
@@ -1575,7 +1593,7 @@ export class FilesService {
 		}
 	}
 
-	private async searchRemoteFiles(rawCwd: string, query: string, reqId: number): Promise<void> {
+	private async searchRemoteFiles(rawCwd: string, query: string, reqId: number, scope?: string): Promise<void> {
 		const rawQuery = query.trim();
 		if (!rawQuery) {
 			this.host.emit({ type: "search_files_result", reqId, ok: true, results: [] });
@@ -1589,19 +1607,23 @@ export class FilesService {
 		try {
 			const normQuery = rawQuery.replace(/\\/g, "/");
 			const q = normQuery.toLowerCase();
+			const normScope = (scope ?? "").trim();
+			const inScope = (p: string) => normScope === "" || p === normScope || p.startsWith(normScope + "/");
 			const results: FileSearchResult[] = [];
 			let truncated = false;
 
 			const target = this.resolveRemoteTarget(rawCwd, normQuery);
-			if (target) {
+			if (target && inScope(target.rel)) {
 				try {
 					const st = await sshSvc.sftpStat(rawCwd, target.abs);
-					const name = posix.basename(target.abs) || target.rel;
-					results.push({
-						path: target.rel,
-						name,
-						type: st.isDirectory ? "dir" : "file",
-					});
+					if (!st.isDirectory) {
+						const name = posix.basename(target.abs) || target.rel;
+						results.push({
+							path: target.rel,
+							name,
+							type: "file",
+						});
+					}
 				} catch {}
 			}
 
@@ -1614,6 +1636,7 @@ export class FilesService {
 				const name = posix.basename(clean);
 				if (
 					(name.toLowerCase().includes(q) || clean.toLowerCase().includes(q)) &&
+					inScope(clean) &&
 					!results.some((r) => r.path === clean)
 				) {
 					results.push({

@@ -74,6 +74,20 @@ export function SlotTabs({ storageKey, tabs, epoch, send, extra, className }: Sl
 		}
 	}, [active, activeId, storageKey]);
 
+	useEffect(() => {
+		const onSelect = (e: Event) => {
+			const detail = (e as CustomEvent).detail;
+			if (!detail || detail.group !== storageKey || typeof detail.id !== "string") return;
+			if (tabs.some((x) => x.id === detail.id)) {
+				setActiveId(detail.id);
+				savedRef.current = `${storageKey}:${detail.id}`;
+				saveActiveId(storageKey, detail.id);
+			}
+		};
+		window.addEventListener("pi:select-slot-tab", onSelect);
+		return () => window.removeEventListener("pi:select-slot-tab", onSelect);
+	}, [storageKey, tabs]);
+
 	const selectTab = (tab: SlotTab): void => {
 		setActiveId(tab.id);
 		savedRef.current = `${storageKey}:${tab.id}`;

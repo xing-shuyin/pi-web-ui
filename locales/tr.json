@@ -657,6 +657,7 @@
 		"filesShowHidden": "Nokta (.) ile başlayan gizli dosyaları göster",
 		"filesHideHidden": "Nokta (.) ile başlayan dosyaları gizle",
 		"filesHelp": "Gezinme: klasöre tıklayıp girin, dosyaya tıklayıp önizleyin, «..» ile üst dizine dönün; «Kök dizin» geçerli projenin köküne döner, «Bu Bilgisayar» tüm disklerde gezinmenizi sağlar, 🏠 kullanıcı dizinine, 🖥️ masaüstüne götürür.\nDosya işlemleri: sağ tık ile yeni dosya/klasör oluştur, yeniden adlandır, kopyala/kes/yapıştır, kopya oluştur, sil, dosya yükle; dosyalar indirilebilir, satır sonundaki düğmeler adı/yolu kopyalar.\nProje değiştirme: klasöre sağ tıklayıp «Proje olarak aç» deyin veya sağ alttaki 📁 yol düğmesine tıklayarak bir dizin yazın/seçin.\nAI'ya gönderme: satır sonundaki düğmeler içeriği ekler veya yalnızca yola referans verir; dosyaları giriş kutusuna da sürükleyebilirsiniz.",
+		"filesFilterPlaceholder": "Search current directory and subdirectories…",
 		"workspaceRoots": "Çalışma alanı kökleri",
 		"workspaceRootsHint": "Dosya ağacı bu köklere geçebilir; eklentiler bu dizinleri ayrıca yetki istemeden okuyup yazabilir.",
 		"addWorkspaceRoot": "Çalışma alanı kökü olarak ekle",

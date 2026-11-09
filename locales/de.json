@@ -657,6 +657,7 @@
 		"filesShowHidden": "Show hidden files (names starting with a dot)",
 		"filesHideHidden": "Hide files whose name starts with a dot",
 		"filesHelp": "Navigation: Ordner anklicken zum Öffnen, Datei zur Vorschau, „..“ eine Ebene hoch; Root zurück zum aktuellen Projekt, Dieser PC zeigt alle Laufwerke, 🏠 springt ins Benutzerverzeichnis, 🖥️ auf den Schreibtisch.\nVerwalten: Rechtsklick für neue Datei/Ordner, Umbenennen, Kopieren/Ausschneiden/Einfügen, Duplizieren, Löschen, Hochladen; Dateien lassen sich herunterladen, Zeilenknöpfe kopieren Name/Pfad.\nProjekt wechseln: Ordner per Rechtsklick als Projekt öffnen, oder unten rechts auf die 📁-Pfadschaltfläche klicken, um ein Verzeichnis einzugeben/auszuwählen.\nAn die KI senden: Zeilenknöpfe hängen Inhalt an oder verweisen auf den Pfad, oder Dateien in die Eingabe ziehen.",
+		"filesFilterPlaceholder": "Search current directory and subdirectories…",
 		"workspaceRoots": "Workspace roots",
 		"workspaceRootsHint": "Roots the file tree can switch to; plugins may read and write them without a separate prompt.",
 		"addWorkspaceRoot": "Add as workspace root",

@@ -657,6 +657,7 @@
 		"filesShowHidden": "Show hidden files (names starting with a dot)",
 		"filesHideHidden": "Hide files whose name starts with a dot",
 		"filesHelp": "移動：フォルダをクリックで開く、ファイルをクリックでプレビュー、「..」で上へ。ルートで現在のプロジェクトに戻り、このコンピューターで全ドライブを参照、🏠でホームディレクトリへ、🖥️でデスクトップへ。\n操作：右クリックで新規ファイル/フォルダ、名前変更、コピー/切り取り/貼り付け、複製、削除、アップロード。ファイルはダウンロード可能、行末ボタンで名前/パスをコピー。\nプロジェクト切替：フォルダを右クリックしてプロジェクトとして開くか、右下の📁パスボタンを押してディレクトリを入力/選択。\nAIへ送る：行末ボタンで内容添付またはパス参照、入力欄へのドラッグも可。",
+		"filesFilterPlaceholder": "Search current directory and subdirectories…",
 		"workspaceRoots": "Workspace roots",
 		"workspaceRootsHint": "Roots the file tree can switch to; plugins may read and write them without a separate prompt.",
 		"addWorkspaceRoot": "Add as workspace root",

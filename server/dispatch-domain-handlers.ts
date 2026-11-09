@@ -13,7 +13,7 @@ export function handleFileMessage(msg: ClientMessage, cs: DispatchSession): bool
 			void cs.listFiles(msg.path);
 			return true;
 		case "search_files":
-			void cs.searchFiles(msg.query, msg.reqId);
+			void cs.searchFiles(msg.query, msg.reqId, msg.scope);
 			return true;
 		case "read_file":
 			void cs.readFile(msg.path);

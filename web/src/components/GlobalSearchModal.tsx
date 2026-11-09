@@ -25,6 +25,7 @@ interface GlobalSearchModalProps {
 	onSwitchSession: (path: string, anchors?: MessageAnchor[]) => void;
 	onSwitchProject: (path: string) => void;
 	onPreviewFile: (path: string, name: string) => void;
+	onOpenFolder?: (path: string) => void;
 }
 
 function matches(text: string, q: string): boolean {
@@ -40,6 +41,7 @@ export function GlobalSearchModal({
 	onSwitchSession,
 	onSwitchProject,
 	onPreviewFile,
+	onOpenFolder,
 }: GlobalSearchModalProps) {
 	const t = useT();
 	const capabilities = useEngineCapabilities();
@@ -218,6 +220,7 @@ export function GlobalSearchModal({
 		| { kind: "session"; path: string; anchors: MessageAnchor[] }
 		| { kind: "project"; path: string }
 		| { kind: "file"; path: string; name: string }
+		| { kind: "folder"; path: string }
 		| { kind: "plugin"; providerId: string; providerLabel: string; title: string; action: string };
 	const navItems = useMemo<NavItem[]>(
 		() => [
@@ -228,6 +231,7 @@ export function GlobalSearchModal({
 			})),
 			...projectHits.map((p) => ({ kind: "project" as const, path: p.path })),
 			...fileHits.filter((f) => f.type === "file").map((f) => ({ kind: "file" as const, path: f.path, name: f.name })),
+			...fileHits.filter((f) => f.type === "dir").map((f) => ({ kind: "folder" as const, path: f.path })),
 			...pluginHits.map((h) => ({
 				kind: "plugin" as const,
 				providerId: h.providerId,
@@ -261,11 +265,14 @@ export function GlobalSearchModal({
 					appSend({ type: "search_files", reqId, query: qq });
 					appSend({ type: "search_sessions", reqId, query: qq });
 				}
+			} else if (item.kind === "folder") {
+				onOpenFolder?.(item.path);
+				onClose();
 			} else if (item.kind === "plugin") {
 				void triggerPluginUiAction(item.providerId, item.action, item.action).catch(() => {});
 			} else onPreviewFile(item.path, item.name);
 		},
-		[onSwitchSession, onSwitchProject, onPreviewFile, deferredQuery],
+		[onSwitchSession, onSwitchProject, onPreviewFile, onOpenFolder, deferredQuery],
 	);
 
 	useEffect(() => {
@@ -424,8 +431,7 @@ export function GlobalSearchModal({
 										key={`${f.type}:${f.path}`}
 										type="button"
 										className={idx === active ? "gs-item active" : "gs-item"}
-										disabled={f.type === "dir"}
-										title={f.type === "dir" ? undefined : t("gsOpenPreview")}
+										title={t("gsOpenPreview")}
 										onMouseEnter={() => setActive(idx)}
 										onClick={() => {
 											if (f.type === "file")
@@ -433,6 +439,11 @@ export function GlobalSearchModal({
 													kind: "file",
 													path: f.path,
 													name: f.name,
+												});
+											else
+												activate({
+													kind: "folder",
+													path: f.path,
 												});
 										}}
 									>

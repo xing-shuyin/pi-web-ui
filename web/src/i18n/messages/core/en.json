@@ -653,6 +653,7 @@
 	"filesShowHidden": "Show hidden files (names starting with a dot)",
 	"filesHideHidden": "Hide files whose name starts with a dot",
 	"filesHelp": "Navigate: click a folder to enter, a file to preview, '..' to go up; Root returns to the current project, This PC browses all drives, 🏠 jumps to your home directory, 🖥️ to the desktop.\nManage: right-click for new file/folder, rename, copy/cut/paste, duplicate, delete, upload; files can be downloaded, row buttons copy name/path.\nSwitch projects: right-click a folder → Open as project, or click the bottom-right 📁 path button to type/pick a directory.\nSend to AI: row buttons attach content or reference a path, or drag files into the input.",
+	"filesFilterPlaceholder": "Search current directory and subdirectories…",
 	"workspaceRoots": "Workspace roots",
 	"workspaceRootsHint": "Roots the file tree can switch to; plugins may read and write them without a separate prompt.",
 	"addWorkspaceRoot": "Add as workspace root",

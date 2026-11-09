@@ -3135,6 +3135,38 @@
 		align-items: center;
 		color: var(--text-faint);
 	}
+	.files-pathrow .file-filter-wrap {
+		max-width: none;
+		flex: 1 1 auto;
+		min-width: 0;
+	}
+	.files-pathrow .file-path-text {
+		display: flex;
+		flex: 1 1 auto;
+		max-width: none;
+		align-items: center;
+		min-width: 0;
+		overflow: hidden;
+		white-space: nowrap;
+	}
+	.files-pathrow .file-path-text .crumb-seg {
+		flex: 0 1 auto;
+		min-width: 0;
+	}
+	.files-pathrow .file-path-text .crumb-seg:last-child {
+		flex-shrink: 0;
+	}
+	.files-pathrow .file-path-text .crumb-seg:last-child .crumb {
+		max-width: none;
+	}
+	.files-pathrow .file-path-text .crumb {
+		max-width: 160px;
+	}
+	.files-pathrow .file-filter-input {
+		flex: 1 1 auto;
+		min-width: 0;
+		width: 100%;
+	}
 
 	.root-picker {
 		position: relative;
