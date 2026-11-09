@@ -45,7 +45,7 @@ function stubZhStorage() {
 	localStorage.setItem("pi-web-ui:lp-expanded-projects", JSON.stringify([CWD]));
 }
 
-function mount(conversations: unknown[], sessions: unknown[]) {
+function mount(conversations: unknown[], sessions: unknown[], elsewhere: unknown[] = []) {
 	stubZhStorage();
 	setAppGlobals({ cwd: CWD, ready: true, status: "open", workspaceRoots: [] });
 	const container = document.createElement("div");
@@ -61,7 +61,7 @@ function mount(conversations: unknown[], sessions: unknown[]) {
 					active: true,
 					sessionFile: FILE,
 					conversations,
-					elsewhere: [],
+					elsewhere,
 					sessions,
 					projects: [{ path: CWD, lastUsed: Date.now() }],
 					activeConversationId: "c1",
@@ -97,6 +97,9 @@ const baseConv = {
 const rowTitles = (container: HTMLElement) =>
 	[...container.querySelectorAll(".conv-title-text")].map((el) => el.textContent?.trim());
 
+const forkBadges = (container: HTMLElement) =>
+	[...container.querySelectorAll(".category-badge-pill.fork")].map((el) => el.textContent?.trim());
+
 describe("左栏行归属（rowKind）", () => {
 	it("history：只剩历史行，标题取历史行", () => {
 		const c = mount([{ ...baseConv, rowKind: "history" }], [baseSession]);
@@ -121,5 +124,35 @@ describe("左栏行归属（rowKind）", () => {
 	it("缺省 rowKind：固定 / 流式的对话仍自占一行", () => {
 		const c = mount([{ ...baseConv, pinned: true }], [baseSession]);
 		expect(rowTitles(c)).toEqual(["对话标题"]);
+	});
+});
+
+describe("分叉角标", () => {
+	it("open 行只有引擎的 forked 标记（重启后 forkFrom 丢了）也出分支角标", () => {
+		const c = mount([{ ...baseConv, rowKind: "open", forked: true }], [baseSession]);
+		expect(forkBadges(c)).toEqual(["🌿分支"]);
+	});
+
+	it("open 行落回匹配的历史行 parentSessionPath 也认得分叉", () => {
+		const c = mount(
+			[{ ...baseConv, rowKind: "open" }],
+			[{ ...baseSession, parentSessionPath: "/w/.sessions/parent.jsonl" }],
+		);
+		expect(forkBadges(c)).toEqual(["🌿分支"]);
+	});
+
+	it("elsewhere 行带 forked 时同样出分支角标（不再只有“别处”角标）", () => {
+		const elsewhere = [
+			{
+				convId: "c2",
+				owner: "other-client",
+				title: "别处分叉会话",
+				cwd: CWD,
+				isStreaming: false,
+				forked: true,
+			},
+		];
+		const c = mount([], [baseSession], elsewhere);
+		expect(forkBadges(c)).toEqual(["🌿分支"]);
 	});
 });

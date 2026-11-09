@@ -647,6 +647,8 @@ export interface Conversation {
 		messageId?: string;
 		title?: string;
 	};
+	/** 会话文件头里的 `parentSession`：重启/重开后 `forkFrom` 没了，用它出「分支」角标。 */
+	forkedFromSessionPath?: string;
 	stallNoticed: boolean;
 	goal: GoalStatus;
 	goalGeneration: number;
@@ -702,6 +704,7 @@ import {
 	discoverRecentProjectsFromDisk,
 	filterForkedParentSessions,
 	findMostRecentSessionFileFast,
+	parentSessionOfManager,
 } from "./session-parser.js";
 import { conversationRowKind } from "./conversation-rows.js";
 
@@ -4615,6 +4618,8 @@ export class ClientSession {
 			toolWatchdogs: new Map(),
 			workspaceSnapshots: readWorkspaceSnapshotsFromSession(runtime.session.sessionManager),
 		};
+		const forkedFromSessionPath = parentSessionOfManager(runtime.session.sessionManager);
+		if (forkedFromSessionPath) conv.forkedFromSessionPath = forkedFromSessionPath;
 		if (conv.nativeCli) this.ensureNativeCliBinding(conv);
 		conversationIdentity(conv);
 		this.restorePlan(conv);
@@ -10022,6 +10027,7 @@ export class ClientSession {
 		isStreaming: boolean;
 		convId: string;
 		independent: boolean;
+		forked: boolean;
 		hasQuestion: boolean;
 		questionTitle?: string;
 		sessionFile?: string;
@@ -10036,6 +10042,7 @@ export class ClientSession {
 			isStreaming: boolean;
 			convId: string;
 			independent: boolean;
+			forked: boolean;
 			hasQuestion: boolean;
 			questionTitle?: string;
 			sessionFile?: string;
@@ -10063,6 +10070,7 @@ export class ClientSession {
 				isStreaming: streaming,
 				convId: conv.id,
 				independent: conv.independent !== false,
+				forked: Boolean(conv.forkFrom || conv.forkedFromSessionPath),
 				hasQuestion: !!pq,
 				...(pq?.title ? { questionTitle: pq.title } : {}),
 				...(sessionFile ? { sessionFile } : {}),
@@ -12538,6 +12546,7 @@ export class ClientSession {
 				...(conv.pinned ? { pinned: true as const } : {}),
 				...(conv.terminals.countUserBlockingLive() > 0 ? { hasUserTerminals: true as const } : {}),
 				...(conv.forkFrom ? { forkFrom: conv.forkFrom } : {}),
+				...(conv.forkFrom || conv.forkedFromSessionPath ? { forked: true as const } : {}),
 			});
 		}
 		try {

@@ -36,6 +36,37 @@ describe("elsewhere（「另一处」）排重与过户生命周期防护", () =
 		expect(summaries[0].convId).toBe("c1");
 	});
 
+	it("streamingSummariesAll: 分叉会话透出 forked（内存 forkFrom 与会话文件头 parentSession 都要算）", () => {
+		const cs = fakeClientSession() as any;
+		cs.convs = new Map();
+		cs.conversationStreaming = vi.fn().mockReturnValue(false);
+		cs.shownInRunningList = vi.fn().mockReturnValue(true);
+		cs.getPendingQuestionForConv = vi.fn().mockReturnValue(undefined);
+
+		cs.convs.set("fork-live", {
+			id: "fork-live",
+			title: "刚分叉的",
+			cwd: "/fake/work",
+			isSubagent: false,
+			session: {},
+			forkFrom: { conversationId: "parent", messageId: "m1", title: "父会话" },
+		});
+		cs.convs.set("fork-restored", {
+			id: "fork-restored",
+			title: "重开后依然认得分叉的",
+			cwd: "/fake/work",
+			isSubagent: false,
+			session: {},
+			forkedFromSessionPath: resolve("/fake/work/sessions/parent.jsonl"),
+		});
+		cs.convs.set("plain", { id: "plain", title: "普通对话", cwd: "/fake/work", isSubagent: false, session: {} });
+
+		const byId = new Map<string, any>(cs.streamingSummariesAll().map((s: any) => [s.convId, s]));
+		expect(byId.get("fork-live")?.forked).toBe(true);
+		expect(byId.get("fork-restored")?.forked).toBe(true);
+		expect(byId.get("plain")?.forked).toBe(false);
+	});
+
 	it("listExternalRunning: 排除当前客户端自己已持有的会话（相同 sessionFile 或相同 cwd+title）", () => {
 		const svc = fakeAgentService() as any;
 		svc.clients = new Map();

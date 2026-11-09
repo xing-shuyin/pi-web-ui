@@ -2754,6 +2754,12 @@ export interface ConversationSummary {
 		messageId?: string;
 		title?: string;
 	};
+	/**
+	 * 该会话是从别的会话分叉出来的（角标用）。
+	 * `forkFrom` 只活在内存里，重启/重开后只能靠会话文件头的 `parentSession` 推出来，
+	 * 所以客户端判角标要同时看 `forkFrom || forked`。
+	 */
+	forked?: true;
 	modified?: number;
 	/**
 	 * 左栏行归属（引擎裁定，客户端不再猜）：
@@ -2766,6 +2772,7 @@ export interface ConversationSummary {
 
 export interface ElsewhereRunning {
 	independent?: boolean;
+	forked?: boolean;
 	title: string;
 	cwd: string;
 	isStreaming: boolean;

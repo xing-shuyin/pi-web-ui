@@ -1348,6 +1348,7 @@ export const LeftPanel = memo(function LeftPanel({
 				elsewhere: true as const,
 				pseudo: Boolean(w.pseudo),
 				independent: w.independent,
+				...(w.forked ? { forked: true as const } : {}),
 				ownerOffline: Boolean(w.ownerOffline),
 				sessionFile: w.sessionFile,
 				...(w.owner && w.convId ? { owner: w.owner, convId: w.convId } : {}),
@@ -1951,7 +1952,7 @@ export const LeftPanel = memo(function LeftPanel({
 		const { cleanTitle, categoryTag } = categorizeTitle(
 			rawTitle,
 			{
-				fork: Boolean(s.parentSessionPath || runInfo?.conv?.forkFrom),
+				fork: Boolean(s.parentSessionPath || runInfo?.conv?.forkFrom || runInfo?.conv?.forked),
 				scheduler: Boolean(runInfo?.conv?.elsewhere && runInfo.conv.owner?.startsWith("scheduler:")),
 				tui: s.source === "tui",
 			},
@@ -2183,7 +2184,7 @@ export const LeftPanel = memo(function LeftPanel({
 
 			const { cleanTitle, categoryTag } = categorizeTitle(
 				c.title,
-				{ fork: Boolean(c.forkFrom), scheduler: isScheduler },
+				{ fork: Boolean(c.forkFrom || c.forked), scheduler: isScheduler },
 				t,
 			);
 
@@ -2394,7 +2395,7 @@ export const LeftPanel = memo(function LeftPanel({
 		const { cleanTitle, categoryTag } = categorizeTitle(
 			renameOverrides[c.id] ?? c.title,
 			{
-				fork: Boolean(c.forkFrom),
+				fork: Boolean(c.forkFrom || c.forked || matchSess?.parentSessionPath),
 				scheduler: Boolean((c as RowConv).elsewhere && (c as RowConv).owner?.startsWith("scheduler:")),
 			},
 			t,

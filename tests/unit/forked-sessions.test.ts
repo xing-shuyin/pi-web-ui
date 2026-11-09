@@ -4,7 +4,7 @@ import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { ClientSession } from "../../server/agent-service.js";
 import { ClientStateStore } from "../../server/client-state.js";
-import { filterForkedParentSessions } from "../../server/session-parser.js";
+import { filterForkedParentSessions, parentSessionOfManager } from "../../server/session-parser.js";
 import { SettingsService, type SettingsHost } from "../../server/settings-service.js";
 import { fakeClientSession } from "../helpers/fake-session.js";
 
@@ -24,6 +24,23 @@ function tempStore(): ClientStateStore {
 
 afterEach(() => {
 	for (const dir of roots.splice(0)) rmSync(dir, { recursive: true, force: true });
+});
+
+describe("分叉来源读取（parentSessionOfManager）", () => {
+	it("从会话管理器头部读 parentSession；缺省/异常一律 undefined", () => {
+		expect(parentSessionOfManager({ getHeader: () => ({ parentSession: "C:\\s\\p.jsonl" }) })).toBe("C:\\s\\p.jsonl");
+		expect(parentSessionOfManager({ getHeader: () => null })).toBeUndefined();
+		expect(parentSessionOfManager({ getHeader: () => ({ parentSession: "   " }) })).toBeUndefined();
+		expect(parentSessionOfManager({})).toBeUndefined();
+		expect(parentSessionOfManager(undefined)).toBeUndefined();
+		expect(
+			parentSessionOfManager({
+				getHeader: () => {
+					throw new Error("broken header");
+				},
+			}),
+		).toBeUndefined();
+	});
 });
 
 describe("Fork 会话历史过滤（filterForkedParentSessions）", () => {

@@ -229,6 +229,22 @@ export async function parseSessionInfoFast(
 	}
 }
 
+/**
+ * 会话管理器头部里的分叉来源（`parentSession`）。
+ *
+ * `Conversation.forkFrom` 只活在内存里：重启、`switch_session` 重开之后就没有了，
+ * 但会话文件头一直记着分叉来源。左栏的「分支」角标用它兜底，别再依赖重建 forkFrom。
+ */
+export function parentSessionOfManager(sm: unknown): string | undefined {
+	try {
+		const header = (sm as { getHeader?: () => unknown } | undefined)?.getHeader?.();
+		const parent = (header as { parentSession?: unknown } | null | undefined)?.parentSession;
+		return typeof parent === "string" && parent.trim() ? parent : undefined;
+	} catch {
+		return undefined;
+	}
+}
+
 export function filterForkedParentSessions<T extends { path: string; parentSessionPath?: string }>(
 	infos: T[],
 	showForkedParents = false,
