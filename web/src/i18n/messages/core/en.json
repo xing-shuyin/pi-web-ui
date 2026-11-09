@@ -240,9 +240,11 @@
 	"bgTasksEmpty": "No background tasks",
 	"bgTasksDesc": "Processes the AI started that are still listening (detected by port)",
 	"bgTaskPort": "Port",
+	"bgTaskJobKind": "Background run",
 	"bgTaskPid": "PID",
 	"bgTaskSince": "Started",
 	"bgTaskStop": "Stop",
+	"bgTaskStopping": "Stopping…",
 	"bgTaskStopAll": "Stop all",
 	"bgTaskRefresh": "Refresh",
 	"bgTaskKeep": "Keep (never auto-cleaned)",
@@ -2627,5 +2629,9 @@
 	"sandboxDiffDeletedNote": "Only additions, edits, and deletions since import shown in this preview are applied. Conflicts reject the write; other source changes, .git, and dependency caches are preserved.",
 	"sandboxApplySubmit": "Confirm Sync ({count} files)",
 	"sandboxEnabledDesc": "Allow AI to create and manage sandboxes for restricted file editing. Host bash, eval, and uncontrolled tools are disabled; unsupported engines refuse to start. Writing back requires approval, preview validation, and source conflict checks.",
-	"sandboxOffHint": "Disabled: AI cannot invoke the sandbox tool to create or manage isolated sandboxes"
+	"sandboxOffHint": "Disabled: AI cannot invoke the sandbox tool to create or manage isolated sandboxes",
+	"bgTaskRestart": "Restart",
+	"bgTaskStart": "Start",
+	"bgTaskRunning": "Running",
+	"bgTaskQuickStart": "Quick start (package.json scripts)"
 }

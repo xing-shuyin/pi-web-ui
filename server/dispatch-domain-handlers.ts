@@ -166,6 +166,15 @@ export function handleBgServerMessage(msg: ClientMessage, cs: DispatchSession): 
 		case "list_bg_servers":
 			void cs.listBgServers();
 			return true;
+		case "project_scripts":
+			cs.listProjectScripts?.(msg.cwd);
+			return true;
+		case "start_bg_script":
+			cs.startBgScript?.(msg.script, msg.cwd);
+			return true;
+		case "restart_bg_job":
+			cs.restartBgJob?.(msg.taskId);
+			return true;
 		case "set_bg_keep":
 			cs.setBackgroundKeep(msg.port, msg.keep);
 			return true;

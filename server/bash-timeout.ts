@@ -32,3 +32,19 @@ export function withDefaultBashTimeout<T extends object>(params: T): T & { timeo
 	const timeout = resolveBashTimeoutSec(requested);
 	return (timeout === requested ? params : { ...params, timeout }) as T & { timeout: number };
 }
+
+/**
+ * 后台任务（`bash({ background: true })`）的总时长上限（秒）。
+ * 只防手滑传天文数字把定时器算坏，不承担"防挂死"职责：长驻服务本来就该一直活着。
+ */
+export const MAX_BACKGROUND_TIMEOUT_SEC = 7 * 24 * 3600;
+
+/**
+ * 后台任务的 timeout 语义与前台**故意不同**（前台：默认 120 / 上限 3600）：
+ * 缺省、0、非法值一律 = 不限；显式给正数才计时，并夹到一个防手滑的极大值。
+ * 别把这里换成 `resolveBashTimeoutSec`：那会把 "0 = 不限" 翻成 120 秒，服务两分钟后被杀。
+ */
+export function resolveBackgroundTimeoutSec(requested?: number): number {
+	if (typeof requested !== "number" || !Number.isFinite(requested) || requested <= 0) return 0;
+	return Math.min(Math.ceil(requested), MAX_BACKGROUND_TIMEOUT_SEC);
+}

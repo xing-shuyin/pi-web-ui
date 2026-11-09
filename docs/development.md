@@ -41,23 +41,43 @@ Electron 相关依赖（`electron` / `electron-builder` 的二进制）走 npmmi
 
 ## 命令执行防卡死
 
-`scripts/safe-exec.mjs` 是跨平台（Windows / macOS / Linux）的命令执行器，给 AI、CI 和人工终端共用。它只做三件事：子进程 **stdin 接到 `/dev/null`**（交互确认、pager、REPL 一律读到 EOF，不再挂死）、**硬超时后杀整棵进程树**（复用 `server/process-utils.ts` 的 `killPidTree`，Win 走 `taskkill /T /F`）、**原始输出先落盘只回显尾部**（不稀释上下文）。
+两条入口，职责不重叠：
+
+| 场景                                 | 用哪个                                                 | 为什么                                                                                                                           |
+| ------------------------------------ | ------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------- |
+| 产品内（任意用户项目）跑长驻服务     | `bash({ background: true })`（`server/job-runner.ts`） | 进程挂在 server 里，prompt 立刻返回 job id + 日志路径，顶栏「后台任务」面板可见可停；不依赖 `scripts/`，npm / 桌面安装版天然可用 |
+| 源码仓库 / CI / 人工终端跑一次性命令 | `scripts/safe-exec.mjs`                                | 调用方不常驻，靠 `--detach` 守护进程 + jobfile 三件套（`.pid`/`.state.json`/`.cursor`）托管                                      |
+
+`background: true` 的 timeout 语义与前台**故意不同**（`server/bash-timeout.ts` 分两条归一）：前台缺省 120s、上限 3600s；后台缺省 / 传 0 = **不限**，显式正数才计时（上限 7 天，仅防手滑）。所以起 FastAPI 这类服务不会被“默认 120s”杀掉。日志落 `<dataDir>/jobs/<id>-<slug>.log`，任务结束（正常退出 / 超时 / 空闲 / 被停 / 起不来）会发一条通知，有对话归属时还会补一条系统消息。
+
+`scripts/safe-exec.mjs` 是跨平台（Windows / macOS / Linux）的命令执行器，给 AI、CI 和人工终端共用。它治的是五类挂死：子进程 **stdin 接到空设备**（交互确认、pager、REPL 一律读到 EOF）、**硬超时 + 空闲超时**（连续 N 秒无任何输出判静默卡死）、**杀整棵进程树**（`server/process-utils.ts` 的 `killPidTree` 为单源：Win `taskkill /T /F`，Posix `kill(-pgid)`）、**原始输出先落盘只回显尾部**、**跨平台轮询**（`--wait` 在 Node 里计时，不拼 `sleep` / `&&` / `$?`）。
 
 ```bash
 node scripts/safe-exec.mjs --timeout 60 -- npx vitest run tests/unit/foo.test.ts   # 短任务：单测/lint/typecheck
 node scripts/safe-exec.mjs --timeout 600 --log .safe-exec/build.log -- npm run build # 长构建：必带 --log
-node scripts/safe-exec.mjs --detach --timeout 1800 -- npm run build                # >3 分钟：后台托管，立即返回
-node scripts/safe-exec.mjs --status .safe-exec/20260101T000000-npm-run-build.pid    # 轮询（打印存活 + 日志尾）
-node scripts/safe-exec.mjs --kill .safe-exec/20260101T000000-npm-run-build.pid      # 终止（杀进程树）
+node scripts/safe-exec.mjs --detach --timeout 1800 --idle-timeout 300 -- npm run build # >3 分钟：托管，立即返回
+node scripts/safe-exec.mjs --wait .safe-exec/20260101T000000-npm-run-build.pid --wait-sec 10 --json  # 轮询
+node scripts/safe-exec.mjs --status .safe-exec/20260101T000000-npm-run-build.pid --json              # 立即查
+node scripts/safe-exec.mjs --kill .safe-exec/20260101T000000-npm-run-build.pid                      # 终止
 ```
 
-退出码约定：`0` 成功、`124` 硬超时（**不许原样重试**，先读日志定位卡点再改分档）、`127` 命令不存在、其余透传真实退出码。日志默认落 `.safe-exec/`（已 gitignore），可用 `--log` 指定。`--stream` 把输出实时 echo 到终端（给人看），默认只落盘 + 尾部 40 行。
+`--detach` 起的是 **detached 守护进程**（内部模式 `--supervise`）：它自己每秒巡检空闲时长与总时长并强杀，**不依赖 AI 来轮询**——AI 崩了、终端关了，到点照样清场。父进程只写 job 规格就退出，**不持有日志句柄**（Windows 上正是这一步带来 `EBUSY` 和退出挂住）。Job 三件套：`.pid`（规格，一次性写）、`.state.json`（状态/终态）、`.cursor`（增量游标，供 `--wait` 只回新输出）。
+
+状态机：`RUNNING` / `SUCCESS` / `FAILED` / `TIMEOUT` / `IDLE_TIMEOUT` / `KILLED` / `ENOENT` / `ABORTED`（守护进程被外部杀掉，或看门狗 8s 宽限后子进程仍未死 → 终态也可能是 `ABORTED`，先 `--kill` 再重跑）/ `UNKNOWN`。`--json` 输出 `status` / `exitCode` / `reason` / `elapsedSec` / `idleSec` / `childAlive` / `terminal` / `orphanAlive` / `pipesForced` / `newOutput` / `next`（`next` 就是下一条该跑的命令）。
+
+`--status` 是**只读观测者**（只算增量、不推进 `.cursor`），`--wait` 才是消费者（推进游标）：前者可以随手反复调，不会偷走主循环的输出。子进程已退出但孙进程仍持有输出管道时，`--wait` 会先等 1.5s 排空，随后强拆管道并自行结算，标 `pipesForced: true`（旧实现会一直等到硬超时）。
+
+退出码约定：`0` 成功、`124` 硬超时或空闲超时（**不许原样重试**，先读日志定位卡点再改分档）、`127` 命令不存在、`2` 用法错误，其余透传真实退出码。日志默认落 `.safe-exec/`（已 gitignore），可用 `--log` 指定。`--stream` 把输出实时 echo 到终端（给人看），默认只落盘 + 尾部 40 行。`--idle-timeout` 默认关闭：构建/类型检查本来就可能长时间安静，只有确认「正常运行必有心跳输出」的任务才开。
+
+`--kill` 先杀子进程树（Posix 的 `-pid` 只对进程组组长有效），再收守护进程；只有子 PID 还没发布时才退化为单杀守护进程并明确告警。`ABORTED` 且子进程仍活的任务不会被当成「已结束」跳过，`--kill` 会继续清场并把终态改写成 `KILLED`。
 
 Windows 上 `npx` / `npm` / `pnpm` / `yarn` 是 `.cmd` 垫片，直接 `spawn` 会 ENOENT：执行器会按 `PATHEXT` 解析，只有命中 `.cmd` / `.bat` 才转 cmd.exe（相对路径自动还原成反斜杠绝对路径），其余命令保持直连 spawn，不经 shell。
 
 时限分档：单测/lint/typecheck 60 秒、全量构建 600 秒、预计 >3 分钟一律 `--detach` 托管；AI 的单次 bash 调用另有 pi 工具层 `timeout` 参数与会话看门狗兜底，三者不重叠也不互相替代。
 
-**不要再手写 `timeout 60s` / `nohup ... &` / `ps -p` 前缀**：Windows 上 `timeout` 是「等待按键 N 秒」的 `timeout.exe`（语义正好相反），`nohup`、`ps -p` 也不存在；Git Bash、PowerShell、cmd 三套语义各不相同，跨平台只能由 Node 包装器统一。
+**不要再手写 `timeout 60s` / `nohup ... &` / `ps -p` / `sleep 5` 前缀**：Windows 上 `timeout` 是「等待按键 N 秒」的 `timeout.exe`（语义正好相反），`nohup`、`ps -p`、`sleep` 的 cmd / PowerShell / bash 语法各不相同；空设备也不是一个名字（`/dev/null` vs `NUL`），`$?` 三元语法同样不通用。跨平台只能由 Node 包装器统一：等待用 `--wait`，查状态用 `--status --json`，终止用 `--kill`。
+
+`--shell` 只在命令必须整行交给 shell 时用（`--shell "<整行命令>"`，必要时配 `--shell-bin`）。`--shell-bin auto` 在 Windows 下优先探测真 Git Bash（`C:\Program Files\Git\bin\bash.exe`），类 Unix 用 `bash -c`，因此 `cd /e/pi-web-ui && ...` 这类 POSIX 路径才不会被 `cmd.exe` 认错盘符；解释器也可以是 `powershell` / `pwsh`（走 `-NoProfile -NonInteractive -Command`）。
 
 ## CI
 

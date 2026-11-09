@@ -3299,6 +3299,7 @@ export function App() {
 				<Suspense fallback={null}>
 					<BgTasksModal
 						servers={chat.bgServers}
+						projectScripts={chat.projectScripts}
 						plugins={chat.plugins}
 						epoch={chat.pluginsEpoch}
 						send={send}

@@ -39,6 +39,8 @@ import {
 } from "@earendil-works/pi-coding-agent";
 import { getSdkBuiltinExtensionFactories, SDK_DISABLED_BUILTIN_EXTENSIONS } from "./sdk-builtin-extensions.js";
 import { BG_CLEANUP_FALLBACK_MIN, BgServerTracker } from "./bg-servers.js";
+import { JobRegistry, JOB_TASK_PREFIX, type JobSnapshot } from "./job-runner.js";
+import { resolveProjectScripts } from "./project-scripts.js";
 import {
 	checkAll as checkAllUpdates,
 	collectTargets,
@@ -852,11 +854,29 @@ export class ClientSession {
 		getLang: () => this.getLang(),
 		getUploadMaxBytes: () => (this.settingsSvc.current.workspaceUploadMaxMb ?? 100) * 1024 * 1024,
 	});
+	private readonly jobs = new JobRegistry({
+		logDir: () =>
+			join(this.stateStore?.dataDir ?? resolve(process.env.PI_WEB_DATA_DIR ?? join(homedir(), ".pi-web")), "jobs"),
+		onChange: () => this.bg.push(),
+		onExit: (job) => this.notifyBackgroundJobDone(job),
+	});
 	private readonly bg = new BgServerTracker({
 		emit: (msg) => this.emit(msg),
 		flushSnapshot: () => this.flushSnapshot(),
 		isDisposed: () => this.disposed,
 		pluginTasks: () => this.pluginBgTasksProvider?.() ?? [],
+		jobs: () =>
+			this.jobs.list().map((job) => ({
+				taskId: `${JOB_TASK_PREFIX}${job.id}`,
+				pid: job.pid,
+				since: job.since,
+				name: job.label,
+				command: job.command,
+				status: "running",
+				...(job.origin ? { origin: job.origin } : {}),
+				logPath: job.logPath,
+			})),
+		killAllJobs: () => this.jobs.killAll(),
 		cleanupMinutes: () => this.settingsSvc.current.bgAutoCleanupMin ?? 0,
 		workspaceCwd: () => this.convs.get(this.activeId)?.cwd ?? this.cwd,
 	});
@@ -1235,6 +1255,59 @@ export class ClientSession {
 				.sendCustomMessage(
 					{
 						customType: "terminal-bash-done",
+						content: [{ type: "text", text }],
+						display: true,
+					},
+					{ deliverAs: "nextTurn" },
+				)
+				.catch(() => {});
+		}
+	}
+
+	private notifyBackgroundJobDone(job: JobSnapshot): void {
+		if (this.disposed) return;
+		const conv = job.origin ? this.convs.get(job.origin) : undefined;
+		const reasonText =
+			job.reason === "timeout"
+				? "超时被强杀"
+				: job.reason === "idle"
+					? "静默卡死被强杀"
+					: job.reason === "killed"
+						? "被手动停止"
+						: job.reason === "spawn-error"
+							? "启动失败"
+							: "正常退出";
+		const reasonEn =
+			job.reason === "timeout"
+				? "killed on hard timeout"
+				: job.reason === "idle"
+					? "killed as idle"
+					: job.reason === "killed"
+						? "stopped manually"
+						: job.reason === "spawn-error"
+							? "failed to start"
+							: "exited";
+		const cmdShort = job.command.length > 120 ? `${job.command.slice(0, 120)}…` : job.command;
+		const tail = (job.tail ?? "").trim() || "（无输出）";
+		// 先发一条可见 notice（面板/提示区），再在有归属对话时补一条系统消息。
+		this.emit({
+			type: "notice",
+			level: job.exitCode === 0 || job.reason === "killed" ? "info" : "warning",
+			text: `后台任务 ${job.id} 已结束（${reasonText}，退出码 ${job.exitCode ?? "null"}）：${cmdShort}`,
+			textEn: `Background job ${job.id} ended (${reasonEn}, exit ${job.exitCode ?? "null"}): ${cmdShort}`,
+		});
+		if (!conv) return;
+		const text =
+			`（系统：你之前用 background=true 起的后台任务 ${job.id} 已结束（${reasonText}，退出码 ${job.exitCode ?? "null"}）：${cmdShort}\n` +
+			`日志：${job.logPath}\n最后输出：\n${tail}）`;
+		const session = conv.runtime.session;
+		if (session.isStreaming) {
+			void session.sendUserMessage(text).catch(() => {});
+		} else {
+			void session
+				.sendCustomMessage(
+					{
+						customType: "background-job-done",
 						content: [{ type: "text", text }],
 						display: true,
 					},
@@ -8930,7 +9003,13 @@ export class ClientSession {
 					};
 				} else {
 					core = makeAdaptiveBashTool(
-						makeKillableBashTool(cwd, convKills, () => this.getLang()),
+						makeKillableBashTool(
+							cwd,
+							convKills,
+							() => this.getLang(),
+							this.jobs,
+							() => ownerId,
+						),
 						terminals
 							? makeTerminalBashTool(terminals, {
 									cwd,
@@ -8942,7 +9021,13 @@ export class ClientSession {
 									notifyBackgroundDone: (info) => this.notifyTerminalBashDone(terminals, info),
 									lang: () => this.getLang(),
 								})
-							: makeKillableBashTool(cwd, convKills, () => this.getLang()),
+							: makeKillableBashTool(
+									cwd,
+									convKills,
+									() => this.getLang(),
+									this.jobs,
+									() => ownerId,
+								),
 						() => Boolean(terminals && this.settingsSvc.current.terminalBash),
 					);
 				}
@@ -10859,6 +10944,60 @@ export class ClientSession {
 		await this.bg.listAndPush();
 	}
 
+	listProjectScripts(cwd?: string): void {
+		const base = (typeof cwd === "string" && cwd.trim()) || this.convs.get(this.activeId)?.cwd || this.cwd;
+		try {
+			const found = resolveProjectScripts(base);
+			this.emit({ type: "project_scripts", cwd: found.cwd, scripts: found.scripts });
+		} catch (err) {
+			this.emit({
+				type: "project_scripts",
+				cwd: base,
+				scripts: {},
+				error: err instanceof Error ? err.message : String(err),
+			});
+		}
+	}
+
+	startBgScript(script: string, cwd?: string): void {
+		const name = String(script ?? "").trim();
+		if (!/^[A-Za-z0-9 _.:-]+$/.test(name) || name.length > 80) {
+			this.emitNotice("warning", `启动脚本名不合法：「${name}」`);
+			return;
+		}
+		const dir = (typeof cwd === "string" && cwd.trim()) || this.convs.get(this.activeId)?.cwd || this.cwd;
+		const found = resolveProjectScripts(dir);
+		if (!found.scripts[name]) {
+			this.emitNotice("warning", `package.json 里没有脚本「${name}」`);
+			return;
+		}
+		try {
+			this.jobs.start({ command: `npm run ${name}`, cwd: found.cwd, label: name, origin: this.activeId });
+		} catch (err) {
+			this.emitNotice("warning", `启动失败：${err instanceof Error ? err.message : String(err)}`);
+		}
+		this.bg.push();
+		this.flushSnapshot();
+	}
+
+	restartBgJob(taskId: string): void {
+		const id = String(taskId ?? "");
+		if (!id.startsWith(JOB_TASK_PREFIX)) return;
+		const snap = this.jobs.get(id.slice(JOB_TASK_PREFIX.length));
+		if (!snap) {
+			this.emitNotice("info", `后台任务「${id}」不存在或已结束`);
+			return;
+		}
+		this.jobs.kill(snap.id);
+		try {
+			this.jobs.start({ command: snap.command, cwd: snap.cwd, label: snap.label, origin: this.activeId });
+		} catch (err) {
+			this.emitNotice("warning", `重启失败：${err instanceof Error ? err.message : String(err)}`);
+		}
+		this.bg.push();
+		this.flushSnapshot();
+	}
+
 	refreshBgTasks(): void {
 		this.bg.push();
 	}
@@ -10868,6 +11007,35 @@ export class ClientSession {
 	}
 
 	async killBackgroundServer(port: number | undefined, taskId?: string): Promise<boolean> {
+		if (taskId?.startsWith(JOB_TASK_PREFIX)) {
+			const raw = taskId.slice(JOB_TASK_PREFIX.length);
+			const res = await this.jobs.killAndWait(raw);
+			if (!res.ok) {
+				this.emit({
+					type: "notice",
+					level: "info",
+					text: `后台任务「${taskId}」不存在或已结束`,
+					textEn: `Background job "${taskId}" does not exist or has ended`,
+				});
+			}
+			if (res.timedOut) {
+				this.emit({
+					type: "notice",
+					level: "warning",
+					text: `后台任务「${taskId}」停止超时，已强制从列表移除；若进程仍在请手动 kill`,
+					textEn: `Background job "${taskId}" stop timed out, force-removed; kill manually if still alive`,
+				});
+			}
+			this.bg.push();
+			this.flushSnapshot();
+			setTimeout(() => {
+				if (!this.disposed) {
+					this.bg.push();
+					this.flushSnapshot();
+				}
+			}, 2000)?.unref?.();
+			return res.ok;
+		}
 		if (taskId) {
 			const ok = this.pluginStopBgTask?.(taskId) ?? false;
 			if (!ok) {
@@ -15345,6 +15513,9 @@ export class ClientSession {
 			}
 		} catch {}
 		this.bg.stop();
+		// jobs 是后台任务 WIP 特性新增的字段：测试替身（fakeClientSession）可能没初始化它，
+		// 释放路径必须容忍缺失，别让 dispose 本身炸掉。
+		(this.jobs as unknown as { dispose?: () => void } | undefined)?.dispose?.();
 		for (const conv of this.convs.values()) {
 			this.clearConversationToolStates(conv);
 			disposeEvalSession(conv.id);

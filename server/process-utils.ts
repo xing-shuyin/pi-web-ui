@@ -224,6 +224,16 @@ export async function lookupProcessDetailsBatch(pids: number[]): Promise<Map<num
 	return out;
 }
 
+export function pidAlive(pid: number): boolean {
+	if (!(pid > 1 && pid !== process.pid)) return false;
+	try {
+		process.kill(pid, 0);
+		return true;
+	} catch {
+		return false;
+	}
+}
+
 export async function killPidTree(pid: number): Promise<void> {
 	if (!(pid > 1 && pid !== process.pid)) return;
 	try {

@@ -320,6 +320,7 @@ export interface ChatState {
 	goal: GoalStatus;
 	settings: UiSettingsState | null;
 	bgServers: BgServer[];
+	projectScripts: { cwd: string; scripts: Record<string, string> } | null;
 	/** Built-in scheduled tasks (issue #184, global list, all projects). */
 	schedulerTasks: SchedulerTaskView[];
 	pluginPanelGroups: PluginPanelGroup[];
@@ -691,6 +692,7 @@ type Action =
 			result: { ok: boolean; skillId: string; content: string; error?: string };
 	  }
 	| { type: "bg_servers"; servers: BgServer[] }
+	| { type: "project_scripts"; cwd: string; scripts: Record<string, string> }
 	| { type: "scheduler_tasks"; tasks: SchedulerTaskView[] }
 	| { type: "plugin_panel_items"; groups: PluginPanelGroup[] }
 	| { type: "plugins"; plugins: UiPluginInfo[]; epoch: number }
@@ -1269,6 +1271,8 @@ export function reducer(state: ChatState, action: Action): ChatState {
 			return { ...state, skillContentResult: action.result };
 		case "bg_servers":
 			return { ...state, bgServers: action.servers };
+		case "project_scripts":
+			return { ...state, projectScripts: { cwd: action.cwd, scripts: action.scripts } };
 		case "scheduler_tasks":
 			return { ...state, schedulerTasks: action.tasks };
 		case "plugin_panel_items":
@@ -1831,6 +1835,7 @@ export function useChat() {
 		terminalActiveId: null,
 		goal: DEFAULT_GOAL,
 		bgServers: [],
+		projectScripts: null,
 		schedulerTasks: [],
 		pluginPanelGroups: [],
 		settings: null,
@@ -2811,6 +2816,9 @@ export function useChat() {
 					break;
 				case "bg_servers":
 					dispatch({ type: "bg_servers", servers: msg.servers });
+					break;
+				case "project_scripts":
+					dispatch({ type: "project_scripts", cwd: msg.cwd, scripts: msg.scripts });
 					break;
 				case "scheduler_tasks":
 					dispatch({ type: "scheduler_tasks", tasks: msg.tasks });

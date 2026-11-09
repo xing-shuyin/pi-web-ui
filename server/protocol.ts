@@ -1378,9 +1378,12 @@ export type ClientMessage =
 	| { type: "kill_background_server"; port?: number; taskId?: string }
 	| { type: "kill_background_servers" }
 	| { type: "list_bg_servers" }
+	| { type: "project_scripts"; cwd?: string }
+	| { type: "start_bg_script"; script: string; cwd?: string }
+	| { type: "restart_bg_job"; taskId: string }
 	| { type: "set_bg_keep"; port: number; keep: boolean }
 	| { type: "clean_bg_leftovers"; minutes?: number }
-	| { type: "search_files"; reqId: number; query: string }
+	| { type: "search_files"; reqId: number; query: string; scope?: string }
 	| { type: "search_sessions"; reqId: number; query: string }
 	| {
 			type: "load_earlier_messages";
@@ -2144,6 +2147,12 @@ export interface BgServer {
 	command?: string;
 	status?: string;
 	keep?: boolean;
+	/** 行来源：port（监听端口的进程）/ plugin（插件常驻任务）/ job（bash background 的后台任务） */
+	kind?: "port" | "plugin" | "job";
+	/** job 行：发起归属（对话 id），多对话并行时用来区分是谁起的 */
+	origin?: string;
+	/** job 行：日志文件路径（面板上可直接复制去 read） */
+	logPath?: string;
 }
 
 export interface SchedulerRunInfo {
@@ -3712,6 +3721,7 @@ export type ServerMessage =
 			timeoutMs: number;
 	  }
 	| { type: "bg_servers"; servers: BgServer[] }
+	| { type: "project_scripts"; cwd: string; scripts: Record<string, string>; error?: string }
 	| { type: "scheduler_tasks"; tasks: SchedulerTaskView[] }
 	| {
 			type: "compacted_messages_result";

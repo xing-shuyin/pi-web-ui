@@ -211,7 +211,11 @@ describe("工具 schema 脱水（只留字段名与类型，说明归唯一归�
 	it("字段说明只留在自解释不了的那几个字段上", () => {
 		const expected: Record<string, Record<string, string>> = {
 			read: { offset: "1-indexed start line" },
-			bash: { timeout: "Seconds, default 120", persist: "Retain shell state (cd/venv/ssh) in ai-bash terminal" },
+			bash: {
+				timeout: "Seconds, default 120; background jobs default to 0 (no limit)",
+				persist: "Retain shell state (cd/venv/ssh) in ai-bash terminal",
+				background: "Detached: call returns a job id, process keeps running",
+			},
 			edit: { soft: "Ignore leading whitespace/indentation per line" },
 			write: {},
 			ask_user_question: {},

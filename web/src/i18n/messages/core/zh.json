@@ -240,9 +240,11 @@
 	"bgTasksEmpty": "暂无后台任务",
 	"bgTasksDesc": "AI 运行中启动并仍在监听的进程（按监听端口检测）",
 	"bgTaskPort": "端口",
+	"bgTaskJobKind": "后台运行",
 	"bgTaskPid": "PID",
 	"bgTaskSince": "启动",
 	"bgTaskStop": "停止",
+	"bgTaskStopping": "正在停止…",
 	"bgTaskStopAll": "全部关闭",
 	"bgTaskRefresh": "刷新",
 	"bgTaskKeep": "保留（自动清理不碰）",
@@ -2627,5 +2629,9 @@
 	"sandboxDiffDeletedNote": "写回仅应用本次预览中相对导入基线的新增、修改和删除；检测到冲突会拒绝写回，源项目其他改动、.git 与依赖缓存会保留。",
 	"sandboxApplySubmit": "确认写回 ({count} 个文件)",
 	"sandboxEnabledDesc": "允许 AI 创建并管理受限文件编辑沙盒；宿主 bash、eval 和不受控工具禁用，不支持的引擎拒绝启动。写回须审批，并校验预览内容与源项目冲突。",
-	"sandboxOffHint": "已关闭：AI 无法调用 sandbox 工具创建或管理隔离沙盒项目"
+	"sandboxOffHint": "已关闭：AI 无法调用 sandbox 工具创建或管理隔离沙盒项目",
+	"bgTaskRestart": "重启",
+	"bgTaskStart": "启动",
+	"bgTaskRunning": "运行中",
+	"bgTaskQuickStart": "一键启动（package.json scripts）"
 }

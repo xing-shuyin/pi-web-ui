@@ -118,20 +118,28 @@
 
 ## 七、终端命令执行（防卡死）
 
-挂死只有四类根因，规则按**根因**写，不要按「看起来卡住的命令」逐个打补丁（`| sort` 只是缓冲导致看不到进度，读的是 EOF，本身不会死锁）：
+挂死只有五类根因，规则按**根因**写，不要按「看起来卡住的命令」逐个打补丁（`| sort` 只是缓冲导致看不到进度，读的是 EOF，本身不会死锁）：
 
 1. **等 stdin**：`npx` 安装确认、`git commit` 无 `-m`、REPL、`read -p`。必须显式非交互（`CI=true`、`npx --yes`、`npm i --no-audit --no-fund`、`git commit -m`）；执行器一律把子进程 stdin 接 `/dev/null`，读到 EOF 即返回。
-2. **不退出**：`--watch`、dev server、前台 daemon、死循环。禁止前台跑，改用后台托管 + 轮询。
+2. **不退出**：`--watch`、dev server、前台 daemon、死循环。禁止前台跑。**产品内（任意用户项目）用 `bash({background:true})`**：调用立即返回 job id + 日志路径，进程登记在顶栏「后台任务」面板（可单独停止 / 全部关闭 / 不参与遗留清理）；源码仓库与 CI 里仍用 `safe-exec --detach` 托管 + 轮询。
 3. **pager**：`less` / `more` / `git log` 默认分页器等 TTY 按键。用 `PAGER=cat`、`GIT_PAGER=cat`、`git --no-pager`；执行器默认注入。
 4. **输出淹没上下文 / 后台子进程继承 stdout**：原始输出先落盘，只回显尾部；分析用 `grep` / `read --offset` 分步读，禁止 `cmd | sort` / `| less` / `| head` 这类必须吃到 EOF、T 掉 TTY 或持住管道句柄才算完的直连管道。
+5. **静默卡死**：进程活着但再也不产出（等锁、等网络、等一个拿不到的句柄、把活丢给已死的孙进程）。靠 `--idle-timeout` 判：连续 N 秒零输出即强杀。只给「正常跑必有心跳输出」的任务开（默认关闭）；构建 / 类型检查这类天然安静的别开。
 
 时长分档与用法（`scripts/safe-exec.mjs`，跨平台 Node 包装器）：
 
-| 场景               | 命令                                                               | 判据                   |
-| ------------------ | ------------------------------------------------------------------ | ---------------------- |
-| 单测 / lint / 类型 | `node scripts/safe-exec.mjs --timeout 60 -- npx vitest run <file>` | 超时返回 `124`         |
-| 全量构建 / 编译    | `--timeout 600`，必带 `--log`                                      | 超时返回 `124`         |
-| 预计 >3 分钟       | `--detach` 托管 + `--status <pidfile>` 轮询 + `--kill` 终止        | 启动立即返回           |
-| AI 单次工具调用    | pi `bash` 工具的 `timeout` 参数 + 会话级工具看门狗                 | 超时 `session.abort()` |
+| 场景               | 命令                                                               | 判据                                    |
+| ------------------ | ------------------------------------------------------------------ | --------------------------------------- |
+| 单测 / lint / 类型 | `node scripts/safe-exec.mjs --timeout 60 -- npx vitest run <file>` | 超时返回 `124`                          |
+| 全量构建 / 编译    | `--timeout 600`，必带 `--log`                                      | 超时返回 `124`                          |
+| 预计 >3 分钟       | `--detach` 托管 → `--wait <jobfile> --json` 轮询 → `--kill` 终止   | 启动立即返回；`--wait` 提前结束提前返回 |
+| AI 单次工具调用    | pi `bash` 工具的 `timeout` 参数 + 会话级工具看门狗                 | 超时 `session.abort()`                  |
 
 `124` 意味着**换策略**，不是重试：先读日志定位卡点（慢？卡网络？等锁？），再调分档或改后台。进程树终止以 `server/process-utils.ts` 的 `killPidTree` 为单源，不另行手写 `taskkill` / `kill -9` 片段。守卫：`tests/unit/safe-exec.test.ts`。
+
+后台托管协议（AI 照抄即可，禁自行发明轮询方式）：
+
+1. **起**：`--detach --timeout <总秒> [--idle-timeout <N>] --log <path> -- <cmd...>`，从输出（或 `--json`）拿 `job=<jobfile>`。
+2. **等**：只跑 `node scripts/safe-exec.mjs --wait "<jobfile>" --wait-sec 10 --json`。它内部计时，任务提前结束立刻返回，到点则返回这段时间的 `newOutput`（游标已推进，**不会重复输出**）。不写 `sleep`、不拼 `&&`、不依赖 `$?`。
+3. **判**：`status` 为 `RUNNING` 继续 `--wait`；`SUCCESS` / `FAILED` 看 `exitCode` 与日志；`ABORTED`（含 `childAlive: true` 的「看门狗宽限后未死透」）说明子进程还在跑，先 `--kill` 再重跑；`TIMEOUT` / `IDLE_TIMEOUT` 禁止原样重试，先读日志改分档或去掉管道；`pipesForced: true` 说明有孙进程继承了输出管道且已强制结算，日志可能只到 exit 为止。
+4. **收**：`--kill "<jobfile>"` 先杀子进程树再收守护进程；产物三件套 `.pid` / `.state.json` / `.cursor` 留在日志旁，终态后可直接删。`--status` 可以随手查（只读，不消费增量），别用 `--status` 代替 `--wait` 做轮询循环。

@@ -5,8 +5,10 @@ import { fileURLToPath } from "node:url";
 import { afterAll, describe, expect, it, vi } from "vitest";
 import {
 	DEFAULT_BASH_TIMEOUT_SEC,
+	MAX_BACKGROUND_TIMEOUT_SEC,
 	MAX_BASH_TIMEOUT_SEC,
 	defaultBashTimeoutSec,
+	resolveBackgroundTimeoutSec,
 	resolveBashTimeoutSec,
 	withDefaultBashTimeout,
 } from "../../server/bash-timeout.js";
@@ -56,6 +58,20 @@ describe("bash 默认超时归一（server/bash-timeout.ts）", () => {
 		vi.stubEnv("PI_WEB_BASH_TIMEOUT_SEC", "not-a-number");
 		expect(defaultBashTimeoutSec()).toBe(DEFAULT_BASH_TIMEOUT_SEC);
 		vi.unstubAllEnvs();
+	});
+
+	// 回归：后台任务的 timeout 语义必须与前台分家。
+	// 若有人把这里换成 resolveBashTimeoutSec，0 会被翻成 120s —— FastAPI 服务两分钟后被杀。
+	it("后台任务：缺省 / 0 / 非法值 = 不限，显式正数才计时", () => {
+		expect(resolveBackgroundTimeoutSec()).toBe(0);
+		expect(resolveBackgroundTimeoutSec(undefined)).toBe(0);
+		expect(resolveBackgroundTimeoutSec(0)).toBe(0);
+		expect(resolveBackgroundTimeoutSec(-1)).toBe(0);
+		expect(resolveBackgroundTimeoutSec(Number.NaN)).toBe(0);
+		expect(resolveBackgroundTimeoutSec(600)).toBe(600);
+		expect(resolveBackgroundTimeoutSec(1.2)).toBe(2);
+		expect(resolveBackgroundTimeoutSec(MAX_BACKGROUND_TIMEOUT_SEC + 1)).toBe(MAX_BACKGROUND_TIMEOUT_SEC);
+		expect(MAX_BACKGROUND_TIMEOUT_SEC).toBeGreaterThan(MAX_BASH_TIMEOUT_SEC);
 	});
 
 	it("withDefaultBashTimeout 只在需要补值时造新对象", () => {

@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { FiLayers, FiRefreshCw, FiSquare, FiTerminal, FiTrash2, FiX } from "react-icons/fi";
+import { FiLayers, FiPlay, FiRefreshCw, FiSquare, FiX } from "react-icons/fi";
 import type { BgServer, UiPluginInfo } from "../types";
 import { useI18n, useT } from "../i18n";
 import { appSend } from "../app-globals";
@@ -9,6 +9,7 @@ import { PluginPage } from "./PluginPage";
 
 interface BgTasksModalProps {
 	servers: BgServer[];
+	projectScripts?: { cwd: string; scripts: Record<string, string> } | null;
 	onClose: () => void;
 	plugins?: UiPluginInfo[];
 	epoch?: number;
@@ -29,6 +30,7 @@ function formatSince(since: number, t: ReturnType<typeof useT>): string {
 
 export function BgTasksModal({
 	servers,
+	projectScripts,
 	onClose,
 	plugins = [],
 	epoch = 0,
@@ -38,19 +40,23 @@ export function BgTasksModal({
 }: BgTasksModalProps) {
 	const t = useT();
 	const { locale } = useI18n();
-	const [expanded, setExpanded] = useState<Set<string>>(new Set());
-	const toggleCmd = (key: string) =>
-		setExpanded((prev) => {
-			const next = new Set(prev);
-			if (next.has(key)) next.delete(key);
-			else next.add(key);
-			return next;
-		});
 
 	useEffect(() => {
 		appSend({ type: "list_bg_servers" });
+		appSend({ type: "project_scripts" });
 		// eslint-disable-next-line react-hooks/exhaustive-deps
 	}, []);
+
+	const jobs = useMemo(() => servers.filter((s) => (s.kind ?? (s.taskId ? "plugin" : "port")) === "job"), [servers]);
+	const runningScripts = useMemo(() => {
+		const set = new Set<string>();
+		for (const j of jobs) {
+			const m = /npm run ([A-Za-z0-9 _.:-]+)/.exec(j.command ?? "");
+			if (m) set.add(m[1]);
+		}
+		return set;
+	}, [jobs]);
+	const scriptEntries = useMemo(() => Object.entries(projectScripts?.scripts ?? {}), [projectScripts]);
 
 	const pluginPanels = useMemo(() => {
 		const slots = buildUiSlots(withPluginViewItems(plugins), {
@@ -60,182 +66,213 @@ export function BgTasksModal({
 		return (slots["tasks.panel"] ?? []).filter((e) => !e.hidden && e.source !== "host" && e.kind !== "divider");
 	}, [plugins, locale, t]);
 
+	const [stopping, setStopping] = useState<Set<string>>(new Set());
+	const stopServer = (s: BgServer) => {
+		const key = s.taskId ?? String(s.port);
+		setStopping((prev) => new Set(prev).add(key));
+		const kind = s.kind ?? (s.taskId ? "plugin" : "port");
+		if (kind === "plugin" || kind === "job") appSend({ type: "kill_background_server", taskId: s.taskId });
+		else appSend({ type: "kill_background_server", port: s.port });
+		// 后端杀进程是异步的（等 taskkill + close），立即重刷一次 + 延迟再刷一次，
+		// 否则列表不变，看着像“点击停止无效”。
+		appSend({ type: "list_bg_servers" });
+		setTimeout(() => appSend({ type: "list_bg_servers" }), 1500);
+		setTimeout(() => appSend({ type: "list_bg_servers" }), 4000);
+		// 8 秒后还没消失（杀失败）就恢复按钮，让用户能再点一次
+		setTimeout(() => {
+			setStopping((prev) => {
+				const next = new Set(prev);
+				next.delete(key);
+				return next;
+			});
+		}, 8000);
+	};
+
 	return (
-		<Modal className="bg-task-modal" onClose={onClose} showCloseButton={false}>
+		<Modal className="bg-task-modal bg-task-modal-a" onClose={onClose} showCloseButton={false}>
 			<div className="bg-task-head">
-				<span className="bg-task-title">
-					<FiLayers /> {t("bgTasks")}
-					{servers.length > 0 && <em className="bg-task-count">{servers.length}</em>}
-				</span>
+				<div className="bg-task-title">
+					<FiLayers aria-hidden />
+					<span>{t("bgTasks")}</span>
+					{servers.length > 0 && <em className="bg-task-count">{servers.length} 运行</em>}
+				</div>
 				<div className="bg-task-head-actions">
 					<button
 						type="button"
-						className="btn bg-task-head-btn"
+						className="bg-task-icon-btn"
 						title={t("bgTaskRefresh")}
-						onClick={() => appSend({ type: "list_bg_servers" })}
+						onClick={() => {
+							appSend({ type: "list_bg_servers" });
+							appSend({ type: "project_scripts" });
+						}}
 					>
 						<FiRefreshCw />
 					</button>
-					<button type="button" className="btn bg-task-head-btn" title={t("close")} onClick={onClose}>
+					<button type="button" className="bg-task-icon-btn" title={t("close")} onClick={onClose}>
 						<FiX />
 					</button>
 				</div>
 			</div>
 
-			{servers.length === 0 ? (
-				<div className="bg-task-empty">
-					<FiLayers />
-					<span>{t("bgTasksEmpty")}</span>
-					<small>{t("bgTasksDesc")}</small>
-				</div>
-			) : (
-				<ul className="bg-task-list">
-					{servers.map((s) => {
-						const isPlugin = !!s.taskId;
-						const key = s.taskId ?? String(s.port);
-						return (
-							<li key={key} className="bg-task-item">
-								<span className="bg-task-icon" title={isPlugin ? s.plugin : t("bgTaskPort")} />
-								<div className="bg-task-info">
-									<div className="bg-task-line1">
-										{isPlugin ? (
-											<span className="bg-task-port" title={s.taskId}>
-												🧩 {s.plugin}
-											</span>
-										) : (
-											<span className="bg-task-port">:{s.port}</span>
-										)}
-										{s.name && <span className="bg-task-name">{s.name}</span>}
+			<div className="bg-task-body">
+				{servers.length === 0 && scriptEntries.length === 0 ? (
+					<div className="bg-task-empty">
+						<FiLayers />
+						<span>{t("bgTasksEmpty")}</span>
+						<small>{t("bgTasksDesc")}</small>
+					</div>
+				) : null}
+
+				{servers.length > 0 && (
+					<div className="bg-task-running">
+						{servers.map((s) => {
+							const kind = s.kind ?? (s.taskId ? "plugin" : "port");
+							const isPlugin = kind === "plugin";
+							const isJob = kind === "job";
+							const key = s.taskId ?? String(s.port);
+							const label = isPlugin ? s.plugin : isJob ? s.name || t("bgTaskJobKind") : `:${s.port}`;
+							const meta = [
+								s.name && !isJob ? s.name : null,
+								isPlugin && s.status ? s.status : null,
+								t("bgTaskSince") + " " + formatSince(s.since, t),
+								!isPlugin && s.pid ? `${t("bgTaskPid")} ${s.pid}` : null,
+							]
+								.filter(Boolean)
+								.join(" · ");
+							return (
+								<div key={key} className="bg-task-run-card" title={s.command || undefined}>
+									<span className="bg-task-dot" aria-hidden />
+									<div className="bg-task-run-main">
+										<div className="bg-task-run-name">{label}</div>
+										<div className="bg-task-run-sub">{meta}</div>
 									</div>
-									<div className="bg-task-line2">
-										{!isPlugin && (
-											<span>
-												{t("bgTaskPid")} {s.pid}
-											</span>
+									<div className="bg-task-run-actions">
+										{kind === "port" && (
+											<button
+												type="button"
+												className={`bg-task-icon-btn ${s.keep ? "active" : ""}`}
+												title={s.keep ? t("bgTaskKeepOn") : t("bgTaskKeep")}
+												aria-pressed={!!s.keep}
+												onClick={() => appSend({ type: "set_bg_keep", port: s.port ?? 0, keep: !s.keep })}
+											>
+												📌
+											</button>
 										)}
-										<span>
-											{t("bgTaskSince")} {formatSince(s.since, t)}
-										</span>
-										{isPlugin && s.status && <span className="bg-task-status">{s.status}</span>}
-									</div>
-									{s.command && (
+										{isJob && (
+											<button
+												type="button"
+												className="bg-task-icon-btn"
+												title={t("bgTaskRestart")}
+												onClick={() => appSend({ type: "restart_bg_job", taskId: s.taskId ?? "" })}
+											>
+												<FiRefreshCw />
+											</button>
+										)}
 										<button
 											type="button"
-											className={`bg-task-cmd ${expanded.has(key) ? "open" : ""}`}
-											title={`${t("bgTaskCommand")}: ${s.command}`}
-											onClick={() => toggleCmd(key)}
+											className="btn bg-task-btn danger sm"
+											disabled={stopping.has(s.taskId ?? String(s.port))}
+											onClick={() => stopServer(s)}
 										>
-											<FiTerminal />
-											<code>{s.command}</code>
+											{stopping.has(s.taskId ?? String(s.port)) ? t("bgTaskStopping") : t("bgTaskStop")}
 										</button>
-									)}
+									</div>
 								</div>
-								{!isPlugin && (
-									<button
-										type="button"
-										className="btn bg-task-keep"
-										title={s.keep ? t("bgTaskKeepOn") : t("bgTaskKeep")}
-										aria-pressed={!!s.keep}
-										onClick={() => appSend({ type: "set_bg_keep", port: s.port ?? 0, keep: !s.keep })}
-									>
-										{s.keep ? "📌" : "📍"}
-									</button>
-								)}
-								<button
-									type="button"
-									className="btn bg-task-stop"
-									title={t("bgTaskStop")}
-									onClick={() =>
-										isPlugin
-											? appSend({ type: "kill_background_server", taskId: s.taskId })
-											: appSend({ type: "kill_background_server", port: s.port })
-									}
-								>
-									<FiSquare />
-									<span>{t("bgTaskStop")}</span>
-								</button>
-							</li>
-						);
-					})}
-				</ul>
-			)}
+							);
+						})}
+					</div>
+				)}
 
-			{pluginPanels.map((entry) => {
-				const plugin = plugins.find((p) => p.id === entry.source.slice("plugin:".length));
-				if (entry.kind === "view") {
-					if (!plugin) return null;
-					return (
-						<div key={entry.id}>
-							<PluginPage plugin={plugin} epoch={epoch} send={send ?? (() => {})} />
+				{scriptEntries.length > 0 && (
+					<div className="bg-task-scripts">
+						<div className="bg-task-kicker">
+							<span>{t("bgTaskQuickStart")}</span>
+							{projectScripts?.cwd ? (
+								<span className="bg-task-cwd mono" title={projectScripts.cwd}>
+									{projectScripts.cwd}
+								</span>
+							) : null}
 						</div>
+						<div className="bg-task-script-list">
+							{scriptEntries.map(([name, cmd]) => {
+								const running = runningScripts.has(name);
+								return (
+									<div key={name} className="bg-task-script-row" title={cmd}>
+										<div className="bg-task-script-cmd mono">
+											<span className="bg-task-npm">npm run </span>
+											<span className="bg-task-script-name">{name}</span>
+										</div>
+										<button
+											type="button"
+											className={`btn bg-task-btn sm ${running ? "" : "primary"}`}
+											disabled={running}
+											onClick={() => appSend({ type: "start_bg_script", script: name })}
+										>
+											{running ? (
+												t("bgTaskRunning")
+											) : (
+												<>
+													<FiPlay aria-hidden /> {t("bgTaskStart")}
+												</>
+											)}
+										</button>
+									</div>
+								);
+							})}
+						</div>
+					</div>
+				)}
+
+				{pluginPanels.map((entry) => {
+					const plugin = plugins.find((p) => p.id === entry.source.slice("plugin:".length));
+					if (entry.kind === "view") {
+						if (!plugin) return null;
+						return (
+							<div key={entry.id} className="bg-task-plugin-panel">
+								<PluginPage plugin={plugin} epoch={epoch} send={send ?? (() => {})} />
+							</div>
+						);
+					}
+					return (
+						<button
+							key={entry.id}
+							type="button"
+							className="btn"
+							title={entry.hint ?? entry.label}
+							onClick={() => onUiAction?.(entry)}
+						>
+							{entry.label}
+						</button>
 					);
-				}
-				return (
-					<button
-						key={entry.id}
-						type="button"
-						className="btn"
-						title={entry.hint ?? entry.label}
-						onClick={() => onUiAction?.(entry)}
-					>
-						{entry.label}
-					</button>
-				);
-			})}
+				})}
+			</div>
 
 			<div className="bg-task-foot">
-				<div className="bg-task-cleanup-bar">
-					<label className="bg-task-cleanup-field" title={t("bgTaskCleanupHint")}>
-						<span className="bg-task-cleanup-label">{t("bgTaskCleanup")}</span>
-						<select
-							className="bg-task-cleanup-select"
-							value={String(autoCleanupMin)}
-							onChange={(e) =>
-								appSend({
-									type: "set_settings",
-									bgAutoCleanupMin: Number(e.target.value),
-								})
-							}
-						>
-							<option value="0">{t("bgTaskCleanupOff")}</option>
-							{[15, 30, 60, 120].map((m) => (
-								<option key={m} value={String(m)}>
-									{t("bgTaskCleanupMinutes", { n: m })}
-								</option>
-							))}
-						</select>
-					</label>
-					<button
-						type="button"
-						className="btn bg-task-clean-btn"
-						title={t("bgTaskCleanNowHint")}
-						onClick={() => appSend({ type: "clean_bg_leftovers" })}
+				<label className="bg-task-cleanup" title={t("bgTaskCleanupHint")}>
+					<span>{t("bgTaskCleanup")}</span>
+					<select
+						className="bg-task-select"
+						value={String(autoCleanupMin)}
+						onChange={(e) => appSend({ type: "set_settings", bgAutoCleanupMin: Number(e.target.value) })}
 					>
-						<FiTrash2 />
-						<span>{t("bgTaskCleanNow")}</span>
-					</button>
-				</div>
-				<div className="bg-task-actions-bar">
-					<button
-						type="button"
-						className="btn bg-task-refresh-btn"
-						title={t("bgTaskRefresh")}
-						onClick={() => appSend({ type: "list_bg_servers" })}
-					>
-						<FiRefreshCw />
-						<span>{t("bgTaskRefresh")}</span>
-					</button>
-					<button
-						type="button"
-						className="btn bg-task-stopall"
-						disabled={servers.length === 0}
-						title={t("bgTaskStopAll")}
-						onClick={() => appSend({ type: "kill_background_servers" })}
-					>
-						<FiSquare />
-						<span>{t("bgTaskStopAll")}</span>
-					</button>
-				</div>
+						<option value="0">{t("bgTaskCleanupOff")}</option>
+						{[15, 30, 60, 120].map((m) => (
+							<option key={m} value={String(m)}>
+								{t("bgTaskCleanupMinutes", { n: m })}
+							</option>
+						))}
+					</select>
+				</label>
+				<span className="sp" />
+				<button
+					type="button"
+					className="btn bg-task-btn ghost danger sm"
+					disabled={servers.length === 0}
+					title={t("bgTaskStopAll")}
+					onClick={() => appSend({ type: "kill_background_servers" })}
+				>
+					<FiSquare aria-hidden /> {t("bgTaskStopAll")}
+				</button>
 			</div>
 		</Modal>
 	);

@@ -6,16 +6,22 @@ export const BASH_PROMPT_SNIPPET = "run shell commands";
 
 export const BASH_PROMPT_GUIDELINES = [
 	"For interactive commands (REPLs, y/n prompts) set persist=true and drive them with terminal(action='input'/'key')",
+	"Set background=true for long-lived services (dev servers, watchers) instead of raising timeout: the call returns a job id plus the log path, and the process stays listed under Background tasks until stopped",
 	"Use the dedicated worktree tool instead of running 'git worktree' in bash to prevent unsynchronized workspace state",
 	"timeout defaults to 120s: pass a larger value for long builds instead of retrying a killed command",
 ];
 
 export const BASH_PARAMETERS = Type.Object({
 	command: Type.String(),
-	timeout: Type.Optional(Type.Number({ description: "Seconds, default 120" })),
+	timeout: Type.Optional(Type.Number({ description: "Seconds, default 120; background jobs default to 0 (no limit)" })),
 	persist: Type.Optional(
 		Type.Boolean({
 			description: "Retain shell state (cd/venv/ssh) in ai-bash terminal",
+		}),
+	),
+	background: Type.Optional(
+		Type.Boolean({
+			description: "Detached: call returns a job id, process keeps running",
 		}),
 	),
 	head: Type.Optional(Type.Integer()),

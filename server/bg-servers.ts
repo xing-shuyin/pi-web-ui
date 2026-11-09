@@ -219,6 +219,10 @@ export class BgServerTracker {
 			flushSnapshot: () => void;
 			isDisposed: () => boolean;
 			pluginTasks?: () => BgServer[];
+			/** bash background 的任务行（由 JobRegistry 映射，不走端口 diff）。 */
+			jobs?: () => BgServer[];
+			/** 「全部关闭」时一并停掉 job 行，返回被停的 job id。 */
+			killAllJobs?: () => string[];
 			cleanupMinutes?: () => number;
 			workspaceCwd?: () => string | undefined;
 		},
@@ -325,12 +329,15 @@ export class BgServerTracker {
 				port,
 				pid: v.pid,
 				since: v.since,
+				kind: "port" as const,
 				...(v.name ? { name: v.name } : {}),
 				...(v.command ? { command: v.command } : {}),
 				...(v.keep ? { keep: true } : {}),
 			}))
 			.sort((a, b) => a.since - b.since);
-		for (const t of this.opts.pluginTasks?.() ?? []) out.push(t);
+		for (const t of this.opts.pluginTasks?.() ?? []) out.push({ kind: "plugin", ...t });
+		// bash background 的 job 行：不靠端口 diff，而是 JobRegistry 显式登记（不监听端口的任务也能看见）。
+		for (const j of this.opts.jobs?.() ?? []) out.push({ kind: "job", ...j });
 		return out;
 	}
 
@@ -460,17 +467,20 @@ export class BgServerTracker {
 	}
 
 	async killAll(): Promise<string[]> {
-		if (this.servers.size === 0) return [];
-		await this.verifyBeforeKill();
-		if (this.servers.size === 0) return [];
-		const killed: string[] = [];
-		// eslint-disable-next-line unicorn/no-useless-spread -- snapshot: handlers may unsubscribe mid-emit
-		for (const [port, { pid }] of [...this.servers]) {
-			killPidTree(pid);
-			killed.push(String(port));
+		// 「全部关闭」的语义是「把后台都停了」：端口行 + bash background 的 job 行一起收。
+		// 插件常驻任务不在内（它们由插件自己的 stop 回调负责，面板上也单独走 kill_background_server{taskId}）。
+		const killedJobs = this.opts.killAllJobs?.() ?? [];
+		const killed: string[] = killedJobs.map((id) => `job:${id}`);
+		if (this.servers.size > 0) {
+			await this.verifyBeforeKill();
+			// eslint-disable-next-line unicorn/no-useless-spread -- snapshot: killPidTree 的异步回调可能改 map
+			for (const [port, { pid }] of [...this.servers]) {
+				killPidTree(pid);
+				killed.push(String(port));
+			}
+			this.servers.clear();
 		}
-		this.servers.clear();
-		this.push();
+		if (killed.length > 0) this.push();
 		return killed;
 	}
 }

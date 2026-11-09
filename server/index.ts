@@ -1337,6 +1337,9 @@ export interface DispatchSession {
 	killBackgroundServer(port?: number, taskId?: string): Promise<boolean>;
 	killAllBackgroundServers(): Promise<string[]>;
 	listBgServers(): Promise<void>;
+	listProjectScripts?(cwd?: string): void;
+	startBgScript?(script: string, cwd?: string): void;
+	restartBgJob?(taskId: string): void;
 	setBackgroundKeep(port: number, keep: boolean): boolean;
 	cleanBackgroundLeftovers(minutesOverride?: number): Promise<number[]>;
 	newChat(
