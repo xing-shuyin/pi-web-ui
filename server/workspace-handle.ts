@@ -38,6 +38,79 @@ export async function canonicalPath(path: string): Promise<string> {
 	}
 }
 
+/** filter.* override 缓存：key 是「配置文件指纹」，值是要透传给 git 的 `-c` 参数。 */
+const FILTER_OVERRIDE_CACHE = new Map<string, string[]>();
+
+/**
+ * 仓库身份查询缓存：`rev-parse --show-toplevel` / `--git-common-dir` / `--absolute-git-dir`/
+ * `--show-object-format` / `--is-inside-work-tree` 在一条集成管线里被反复问（实测 41+25+16 次/管线）。
+ * 这些值对一个「目录」是恒定的，缓存可命中 77/82。
+ *
+ * 安全性：只在能算出 config 指纹（确认在仓内）且未传 index 时启用；key 里带 **cwd**
+ * （主仓与各工作树指纹相同但 toplevel 不同，漏 cwd 会串值）；仓被重建/换配置 → 指纹变 → 自然失效。
+ * 会变的查询（`HEAD`、`--verify`、`status`、`is-shallow-repository`）不在模式表里，永不走缓存。
+ */
+const REPO_QUERY_CACHE = new Map<string, string>();
+const REPO_QUERY_PATTERNS: ReadonlyArray<ReadonlyArray<string>> = [
+	["--show-toplevel"],
+	["--git-common-dir"],
+	["--path-format=absolute", "--git-common-dir"],
+	["--absolute-git-dir"],
+	["--show-object-format"],
+	["--is-inside-work-tree"],
+];
+function repoQueryOf(args: string[]): string | undefined {
+	// args 是完整子命令（首项是 `rev-parse`），模式表里只写 flag
+	if (args[0] !== "rev-parse") return undefined;
+	const rest = args.slice(1);
+	const hit = REPO_QUERY_PATTERNS.find(
+		(pattern) => pattern.length === rest.length && pattern.every((v, i) => rest[i] === v),
+	);
+	return hit?.join(" ");
+}
+
+/**
+ * 算出决定 `filter.*`（以及仓库身份查询缓存键）的指纹：仓库配置文件 + `.git` 指针 + commondir。
+ *
+ * 只认 repo-local config（全局/system 已被 `GIT_CONFIG_GLOBAL` / `GIT_CONFIG_NOSYSTEM` 隔离掉）。
+ * 任何一项不确定性都返回 undefined —— 调用方据此不缓存、继续每次探测（宁慢不弱化安全）。
+ * 特别地：配置里只要出现 `[include]` / `[includeIf]`，外部文件指纹不可靠，直接不缓存。
+ */
+async function filterConfigFingerprint(cwd: string): Promise<string | undefined> {
+	let dir = resolve(cwd);
+	for (;;) {
+		const dotGit = join(dir, ".git");
+		const placed = await lstat(dotGit).catch(() => undefined);
+		if (placed) {
+			let gitDir = dotGit;
+			const parts: string[] = [];
+			if (placed.isFile()) {
+				const pointer = await readFile(dotGit, "utf8").catch(() => undefined);
+				const match = pointer ? /^gitdir:\s*(.+)$/m.exec(pointer) : null;
+				if (!match || pointer === undefined) return undefined;
+				gitDir = resolve(dir, match[1].trim());
+				// 指针内容必须进指纹：把工作树 .git 换成指向别处的攻击会改这里（实测回归案例）。
+				parts.push(`pointer:${pointer.trim()}`);
+			} else if (!placed.isDirectory()) return undefined;
+			const commonPointer = await readFile(join(gitDir, "commondir"), "utf8").catch(() => undefined);
+			const commonDir = commonPointer ? resolve(gitDir, commonPointer.trim()) : gitDir;
+			if (commonPointer !== undefined) parts.push(`commondir:${commonPointer.trim()}`);
+			for (const configPath of [join(commonDir, "config"), join(gitDir, "config.worktree")]) {
+				const stat = await lstat(configPath).catch(() => undefined);
+				if (!stat) continue;
+				const text = await readFile(configPath, "utf8").catch(() => undefined);
+				if (text === undefined) return undefined;
+				if (/(?:^|\n)\s*\[include/i.test(text)) return undefined;
+				parts.push(`${configPath}:${stat.mtimeMs}:${stat.size}`);
+			}
+			return parts.length ? parts.join("|") : undefined;
+		}
+		const parent = resolve(dir, "..");
+		if (parent === dir) return undefined;
+		dir = parent;
+	}
+}
+
 export async function git(
 	cwd: string,
 	args: string[],
@@ -81,28 +154,51 @@ export async function git(
 			child.stdin?.on("error", () => {});
 			child.stdin?.end(stdin);
 		});
-	let filters: string;
-	try {
-		filters = await execute(["config", "--null", "--get-regexp", "^filter\\..*\\.(clean|smudge|process)$"]);
-	} catch (error) {
-		checkSignal(signal);
-		if ((error as { code?: unknown }).code !== 1) throw error;
-		filters = "";
+	// filter.* 中和是安全硬化：每次 git 都先探测一次再跑真命令，等于每次逻辑调用两个子进程。
+	// 实测一条集成管线（3 次 prepare/verify/confirm）要 462 次 git（11.8s），其中一半是这个探测。
+	// 改成按「配置文件指纹」缓存：指纹不变就不重复探测；任何不确定（找不到 .git、配置里有
+	// include/includeIf 引入外部文件、stat 失败）一律不缓存，退回原来的每次探测。
+	const fingerprint = await filterConfigFingerprint(cwd);
+	const repoQuery = fingerprint && !index ? repoQueryOf(args) : undefined;
+	// 必须带上 cwd：`--show-toplevel` 按目录变化（主仓与各工作树指纹相同，但 toplevel 不同）
+	const repoQueryKey = repoQuery ? [fingerprint, resolve(cwd), repoQuery].join("\u0000") : undefined;
+	if (repoQueryKey) {
+		const cached = REPO_QUERY_CACHE.get(repoQueryKey);
+		if (cached !== undefined) {
+			checkSignal(signal);
+			return cached;
+		}
 	}
-	const drivers = new Set(
-		filters
-			.split("\0")
-			.filter(Boolean)
-			.map((entry) => entry.slice(0, entry.indexOf("\n")).replace(/\.(clean|smudge|process)$/, "")),
-	);
-	const overrides = [...drivers].flatMap((driver) =>
-		["clean", "smudge", "process", "required"].flatMap((setting) => [
-			"-c",
-			`${driver}.${setting}=${setting === "required" ? "false" : ""}`,
-		]),
-	);
+	let overrides = fingerprint ? FILTER_OVERRIDE_CACHE.get(fingerprint) : undefined;
+	if (!overrides) {
+		let filters: string;
+		try {
+			filters = await execute(["config", "--null", "--get-regexp", "^filter\\..*\\.(clean|smudge|process)$"]);
+		} catch (error) {
+			checkSignal(signal);
+			if ((error as { code?: unknown }).code !== 1) throw error;
+			filters = "";
+		}
+		const drivers = new Set(
+			filters
+				.split("\0")
+				.filter(Boolean)
+				.map((entry) => entry.slice(0, entry.indexOf("\n")).replace(/\.(clean|smudge|process)$/, "")),
+		);
+		overrides = [...drivers].flatMap((driver) =>
+			["clean", "smudge", "process", "required"].flatMap((setting) => [
+				"-c",
+				`${driver}.${setting}=${setting === "required" ? "false" : ""}`,
+			]),
+		);
+		if (fingerprint) {
+			if (FILTER_OVERRIDE_CACHE.size >= 64) FILTER_OVERRIDE_CACHE.clear();
+			FILTER_OVERRIDE_CACHE.set(fingerprint, overrides);
+		}
+	}
 	const stdout = await execute(args, input, overrides);
 	checkSignal(signal);
+	if (repoQueryKey) REPO_QUERY_CACHE.set(repoQueryKey, stdout);
 	return stdout;
 }
 

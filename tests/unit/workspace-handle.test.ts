@@ -181,6 +181,27 @@ describe("workspace-handle neutral primitives", { timeout: 30_000 }, () => {
 		await removeDetachedWorktree(repo, worktree, { force: true });
 	});
 
+	it("refreshes the filter-override cache when repo config changes mid-session", async () => {
+		// 背景：`git()` 原本每次调用都先探测一次 `filter.*` 再跑真命令（两个子进程/次），
+		// 现改为按「配置文件指纹」缓存。这里守住最危险的面：会话中途新增 filter 后，
+		// 下一次 `git()` 必须重新探测并中和它（指纹变了，不能拿旧缓存放行）。
+		const { repo, dataDir } = await fixtureRepo();
+		const marker = join(dataDir, "executed");
+		const command = `printf executed >> '${marker.replace(/\\/g, "/")}'`;
+
+		// 1) 先跑一次，让缓存把「无 filter」记下来
+		await git(repo, ["status", "--porcelain"]);
+
+		// 2) 事后才把恶意 filter 写进仓库配置（config mtime 变化 → 指纹失效）
+		await writeFile(join(repo, ".gitattributes"), "*.ts filter=late\n");
+		await gitExec(repo, "config", "filter.late.clean", command);
+		await writeFile(join(repo, "src", "late.ts"), "late\n");
+
+		// 3) 这一步若走了旧缓存，clean filter 就会真被执行（写出 marker）
+		await git(repo, ["add", "--", "src/late.ts"]);
+		await expect(readFile(marker)).rejects.toMatchObject({ code: "ENOENT" });
+	});
+
 	it("snapshots working tree without touching HEAD, git branch, or user index", async () => {
 		const { repo, dataDir } = await fixtureRepo();
 		await writeFile(join(repo, "src", "new.ts"), "const x = 1;\n");
@@ -194,6 +215,33 @@ describe("workspace-handle neutral primitives", { timeout: 30_000 }, () => {
 		const treeContent = await gitExec(repo, "ls-tree", tree);
 		expect(treeContent).not.toContain(".env");
 		expect(treeContent).toContain("src");
+	});
+
+	it("answers repository identity per directory, not per repository", async () => {
+		// 守卫：仓库身份查询缓存不能把主仓的结果串给工作树（或反过来）。
+		// 主仓与它的各个工作树共享同一份 config（指纹相同），但 `--show-toplevel` 必须各自不同。
+		const { repo, baseCommit, dataDir } = await fixtureRepo();
+		const worktreePath = join(dataDir, "worktree-identity");
+		await createDetachedWorktree(repo, worktreePath, baseCommit);
+
+		const slash = (value: string) => value.replace(/\\/g, "/").toLowerCase();
+		const repoTop = (await git(repo, ["rev-parse", "--show-toplevel"])).trim();
+		const worktreeTop = (await git(worktreePath, ["rev-parse", "--show-toplevel"])).trim();
+		expect(slash(repoTop)).toBe(slash(repo));
+		expect(slash(worktreeTop)).toBe(slash(worktreePath));
+
+		// 第二轮必须命中缓存且仍然各自正确
+		expect(slash((await git(repo, ["rev-parse", "--show-toplevel"])).trim())).toBe(slash(repo));
+		expect(slash((await git(worktreePath, ["rev-parse", "--show-toplevel"])).trim())).toBe(slash(worktreePath));
+
+		// common-dir 反而应当两边一致（它就是同一个仓）
+		const repoCommon = (await git(repo, ["rev-parse", "--path-format=absolute", "--git-common-dir"])).trim();
+		const worktreeCommon = (
+			await git(worktreePath, ["rev-parse", "--path-format=absolute", "--git-common-dir"])
+		).trim();
+		expect(slash(worktreeCommon)).toBe(slash(repoCommon));
+
+		await removeDetachedWorktree(repo, worktreePath, { force: true });
 	});
 
 	it("creates and deeply verifies detached worktree identity", async () => {
