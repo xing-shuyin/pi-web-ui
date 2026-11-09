@@ -10,6 +10,7 @@ import { resolveDefaultPkgRoot } from "./plugin-updater.js";
 import { isAudioFile, previewKind } from "./text-sniff.js";
 import type {
 	RemoteSshDirItem,
+	RemoteSshHostTrustOffer,
 	RemoteSshProbeParams,
 	RemoteSshProfileSummary,
 	RemoteSshSystemInfo,
@@ -352,6 +353,7 @@ export class RemoteSshService {
 	private readonly hostConnections = new Map<string, string>();
 	private readonly inflightConnects = new Map<string, Promise<ActiveConnection>>();
 	private readonly credentialCache = new Map<string, RemoteSshProbeParams>();
+	private pendingHostKeys = new Map<string, { key: Buffer; fingerprint: string }>();
 	private secretKey: Buffer | null = null;
 
 	constructor(dataDir: string) {
@@ -791,6 +793,7 @@ export class RemoteSshService {
 
 	async probe(params: RemoteSshProbeParams): Promise<{
 		ok: boolean;
+		hostTrust?: RemoteSshHostTrustOffer;
 		connectionId?: string;
 		error?: string;
 		system?: RemoteSshSystemInfo;
@@ -817,9 +820,19 @@ export class RemoteSshService {
 				hydrated = res.hydrated;
 				conn = this.registerConnection(client, hydrated);
 			} catch (err) {
+				const anyErr = err as Error & { hostTrust?: RemoteSshHostTrustOffer };
+				const hostKey = (err as Error & { hostKey?: Buffer }).hostKey;
+				if (anyErr.hostTrust && Buffer.isBuffer(hostKey)) {
+					if (!this.pendingHostKeys) this.pendingHostKeys = new Map();
+					this.pendingHostKeys.set(`${anyErr.hostTrust.host.toLowerCase()}:${anyErr.hostTrust.port}`, {
+						key: Buffer.from(hostKey),
+						fingerprint: anyErr.hostTrust.fingerprint,
+					});
+				}
 				return {
-					ok: false,
+					ok: false as const,
 					error: (err as Error).message || String(err),
+					hostTrust: anyErr.hostTrust,
 				};
 			}
 		}
@@ -871,6 +884,36 @@ done
 				connectionId: conn.id,
 				error: `探针执行失败: ${(err as Error).message}`,
 			};
+		}
+	}
+	async trustHostKey(params: { host: string; port: number; fingerprint: string; replace?: boolean }): Promise<{
+		ok: boolean;
+		error?: string;
+	}> {
+		try {
+			const pending = this.pendingHostKeys?.get(`${params.host.toLowerCase()}:${params.port}`);
+			if (!pending || pending.fingerprint !== params.fingerprint) {
+				return {
+					ok: false,
+					error: "主机密钥已过期，请重新连接获取最新指纹后再确认 / Host key expired; reconnect first",
+				};
+			}
+			const packageRoot = resolveDefaultPkgRoot();
+			if (!packageRoot) throw new Error("Cannot locate SSH host verification module");
+			const { saveTrustedHostKey } = await import(
+				pathToFileURL(path.join(packageRoot, "plugin-sdk", "ssh-host-trust.mjs")).href
+			);
+			await saveTrustedHostKey({
+				host: params.host,
+				port: params.port,
+				key: pending.key,
+				fingerprint: pending.fingerprint,
+				replace: params.replace,
+			});
+			this.pendingHostKeys?.delete(`${params.host.toLowerCase()}:${params.port}`);
+			return { ok: true };
+		} catch (err) {
+			return { ok: false, error: (err as Error).message || String(err) };
 		}
 	}
 

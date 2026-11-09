@@ -1107,6 +1107,21 @@ export function handleRemoteSshMessage(
 				});
 			})();
 			return true;
+		case "remote_ssh_trust_host":
+			void (async () => {
+				const res = await remoteSshSvc.trustHostKey({
+					host: msg.host,
+					port: msg.port,
+					fingerprint: msg.fingerprint,
+					replace: msg.replace,
+				});
+				send({
+					type: "remote_ssh_trust_host_result",
+					reqId: msg.reqId,
+					...res,
+				});
+			})();
+			return true;
 		case "remote_ssh_list_dir":
 			void (async () => {
 				const res = await remoteSshSvc.listDir(msg.connectionId, msg.path);

@@ -1848,6 +1848,20 @@ export type ClientMessage =
 			params: RemoteSshProbeParams;
 	  }
 	| {
+			type: "remote_ssh_trust_host";
+			reqId?: string;
+			host: string;
+			port: number;
+			fingerprint: string;
+			replace?: boolean;
+	  }
+	| {
+			type: "remote_ssh_trust_host_result";
+			reqId?: string;
+			ok: boolean;
+			error?: string;
+	  }
+	| {
 			type: "remote_ssh_list_dir";
 			reqId?: string;
 			connectionId: string;
@@ -1880,6 +1894,15 @@ export interface RemoteSshProbeParams {
 	auth: RemoteSshAuth;
 	profileName?: string;
 	saveProfile?: boolean;
+}
+
+export interface RemoteSshHostTrustOffer {
+	host: string;
+	port: number;
+	algorithm: string;
+	fingerprint: string;
+	knownHostsFile: string;
+	status: "unknown" | "changed" | "revoked";
 }
 
 export interface RemoteSshSystemInfo {
@@ -3747,10 +3770,17 @@ export type ServerMessage =
 			ok: boolean;
 			connectionId?: string;
 			error?: string;
+			hostTrust?: RemoteSshHostTrustOffer;
 			system?: RemoteSshSystemInfo;
 			tools?: RemoteSshToolsInfo;
 			packageManager?: string;
 			suggestedInstall?: string[];
+	  }
+	| {
+			type: "remote_ssh_trust_host_result";
+			reqId?: string;
+			ok: boolean;
+			error?: string;
 	  }
 	| {
 			type: "remote_ssh_list_dir_result";

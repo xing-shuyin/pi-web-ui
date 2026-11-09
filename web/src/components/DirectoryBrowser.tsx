@@ -24,12 +24,19 @@ import {
 	formatRemoteWorkspaceUri,
 	isRemoteWorkspaceUri,
 	parseRemoteWorkspaceUri,
+	requestRemoteTrustHost,
 	requestRemoteInstallTools,
 	requestRemoteListDir,
 	requestRemoteProbe,
 	requestRemoteProfiles,
 } from "../remote-ssh-client";
-import type { RemoteSshDirItem, RemoteSshProfileSummary, RemoteSshSystemInfo, RemoteSshToolsInfo } from "../types";
+import type {
+	RemoteSshHostTrustOffer,
+	RemoteSshDirItem,
+	RemoteSshProfileSummary,
+	RemoteSshSystemInfo,
+	RemoteSshToolsInfo,
+} from "../types";
 
 export const MACHINE_ROOT = "@root";
 
@@ -136,6 +143,9 @@ export function DirectoryBrowser({
 
 	const [connecting, setConnecting] = useState(false);
 	const [sshError, setSshError] = useState<string | null>(null);
+	const [trustVerified, setTrustVerified] = useState(false);
+	const [trusting, setTrusting] = useState(false);
+	const [hostTrustOffer, setHostTrustOffer] = useState<RemoteSshHostTrustOffer | null>(null);
 	const [connectionId, setConnectionId] = useState<string | null>(null);
 	const [remoteSystem, setRemoteSystem] = useState<RemoteSshSystemInfo | null>(null);
 	const [remoteTools, setRemoteTools] = useState<RemoteSshToolsInfo | null>(null);
@@ -313,6 +323,8 @@ export function DirectoryBrowser({
 		setConnecting(false);
 
 		if (!res.ok || !res.connectionId) {
+			setHostTrustOffer((res as any).hostTrust ?? null);
+			setTrustVerified(false);
 			setSshError(res.error || (isZh ? "连接远程服务器失败" : "Failed to connect to remote server"));
 			return;
 		}
@@ -893,6 +905,71 @@ export function DirectoryBrowser({
 									</div>
 								)}
 
+								{hostTrustOffer && (
+									<div style={{ border: "1px solid #d97706", borderRadius: "8px", padding: "8px", marginTop: "6px" }}>
+										<div style={{ fontSize: "12px", fontWeight: 600, marginBottom: "4px" }}>
+											{hostTrustOffer.status === "changed"
+												? isZh
+													? "主机密钥已变更"
+													: "Host key changed"
+												: isZh
+													? "新主机密钥待确认"
+													: "New host key"}
+										</div>
+										<div style={{ fontSize: "11px", wordBreak: "break-all", marginBottom: "4px" }}>
+											{hostTrustOffer.host}:{hostTrustOffer.port} {hostTrustOffer.algorithm}{" "}
+											{hostTrustOffer.fingerprint}
+										</div>
+										<div style={{ fontSize: "11px", color: "var(--text-dim)", marginBottom: "6px" }}>
+											{isZh
+												? "请先去服务器控制台核对指纹，确认一致再勾选。"
+												: "Verify fingerprint on server console first."}
+										</div>
+										<label style={{ fontSize: "11px", display: "flex", gap: "6px", marginBottom: "6px" }}>
+											<input
+												type="checkbox"
+												checked={trustVerified}
+												onChange={(e) => setTrustVerified(e.target.checked)}
+											/>
+											<span>{isZh ? "我已核对过，该指纹正确" : "I verified this fingerprint"}</span>
+										</label>
+										<div style={{ display: "flex", gap: "8px" }}>
+											<button
+												type="button"
+												className="cwd-choose-btn primary"
+												disabled={!trustVerified || trusting}
+												onClick={async () => {
+													setTrusting(true);
+													const r = await requestRemoteTrustHost({
+														host: hostTrustOffer.host,
+														port: hostTrustOffer.port,
+														fingerprint: hostTrustOffer.fingerprint,
+														replace: hostTrustOffer.status === "changed",
+													});
+													setTrusting(false);
+													if (!r.ok) {
+														setSshError(r.error || "fail");
+														return;
+													}
+													setHostTrustOffer(null);
+													void handleConnectAndProbe();
+												}}
+											>
+												{isZh ? "信任并重试" : "Trust & retry"}
+											</button>
+											<button
+												type="button"
+												className="cwd-choose-btn"
+												onClick={() => {
+													setHostTrustOffer(null);
+													setTrustVerified(false);
+												}}
+											>
+												{isZh ? "取消" : "Cancel"}
+											</button>
+										</div>
+									</div>
+								)}
 								{sshError && (
 									<div style={{ color: "var(--red)", fontSize: "11px", padding: "2px 0" }}>⚠️ {sshError}</div>
 								)}

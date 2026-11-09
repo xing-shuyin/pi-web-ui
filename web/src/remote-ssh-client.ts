@@ -1,6 +1,7 @@
 import { appSend } from "./app-globals";
 import type {
 	RemoteSshDirItem,
+	RemoteSshHostTrustOffer,
 	RemoteSshProbeParams,
 	RemoteSshProfileSummary,
 	RemoteSshSystemInfo,
@@ -64,6 +65,7 @@ export function requestRemoteProbe(params: RemoteSshProbeParams): Promise<{
 	tools?: RemoteSshToolsInfo;
 	packageManager?: string;
 	suggestedInstall?: string[];
+	hostTrust?: RemoteSshHostTrustOffer;
 }> {
 	const reqId = `probe_${Date.now()}_${nextReqId++}`;
 	return new Promise((resolve) => {
@@ -78,6 +80,7 @@ export function requestRemoteProbe(params: RemoteSshProbeParams): Promise<{
 					tools: msg.tools,
 					packageManager: msg.packageManager,
 					suggestedInstall: msg.suggestedInstall,
+					hostTrust: (msg as any).hostTrust,
 				});
 			}
 		});
@@ -212,5 +215,27 @@ export function deleteRemoteProfile(name: string): void {
 	appSend({
 		type: "remote_ssh_delete_profile",
 		name,
+	});
+}
+
+export function requestRemoteTrustHost(args: {
+	host: string;
+	port: number;
+	fingerprint: string;
+	replace?: boolean;
+}): Promise<{ ok: boolean; error?: string }> {
+	const reqId = `trust_${Date.now()}_${nextReqId++}`;
+	return new Promise((resolve) => {
+		const cleanup = subscribeRemoteSsh((msg) => {
+			if (msg.type === "remote_ssh_trust_host_result" && msg.reqId === reqId) {
+				cleanup();
+				resolve({ ok: msg.ok, error: msg.error });
+			}
+		});
+		const sent = appSend({ type: "remote_ssh_trust_host", reqId, ...args });
+		if (!sent) {
+			cleanup();
+			resolve({ ok: false, error: "WebSocket 连接不可用" });
+		}
 	});
 }
