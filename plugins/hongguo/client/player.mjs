@@ -101,6 +101,7 @@ export function createPlayer(host, options = {}) {
 		controls,
 		floatingButton,
 		splitButton,
+		sideFullscreenButton,
 		miniButton;
 	let lastFocus,
 		observer,
@@ -182,13 +183,39 @@ export function createPlayer(host, options = {}) {
 		padding("padding-inline-end", state.open ? box.reserveRight : 0);
 		padding("padding-block-end", state.open ? box.reserveBottom : 0);
 		floatingButton.setAttribute("aria-pressed", String(state.mode === "floating"));
-		splitButton.setAttribute("aria-pressed", String(state.mode === "split"));
+		splitButton.setAttribute("aria-pressed", String(state.mode === "split" && prefs.sideFullscreen !== true));
+		sideFullscreenButton?.setAttribute("aria-pressed", String(state.mode === "split" && prefs.sideFullscreen === true));
 		miniButton.disabled = state.mode === "split" || !state.current;
 	}
 	function setMode(mode) {
 		gestureCleanup?.();
 		state.mode = mode;
 		if (mode === "split") state.mini = false;
+		else prefs.sideFullscreen = false;
+		if (mode !== "split" && prefs.splitWidthBefore) {
+			prefs.splitWidth = prefs.splitWidthBefore;
+			prefs.splitWidthBefore = undefined;
+		}
+		savePrefs();
+		layout();
+	}
+	function toggleSideFullscreen() {
+		gestureCleanup?.();
+		if (state.mode !== "split") {
+			state.mode = "split";
+			state.mini = false;
+		}
+		const turningOn = prefs.sideFullscreen !== true;
+		prefs.sideFullscreen = turningOn;
+		const rect = app?.getBoundingClientRect?.();
+		const width = rect?.width || window.innerWidth;
+		if (turningOn) {
+			if (!prefs.splitWidthBefore) prefs.splitWidthBefore = prefs.splitWidth ?? 400;
+			prefs.splitWidth = Math.min(1200, Math.max(480, width * 0.82));
+		} else if (prefs.splitWidthBefore) {
+			prefs.splitWidth = prefs.splitWidthBefore;
+			prefs.splitWidthBefore = undefined;
+		}
 		savePrefs();
 		layout();
 	}
@@ -338,6 +365,11 @@ export function createPlayer(host, options = {}) {
 		root.append(el("style", { text: css }));
 		floatingButton = button(t("悬浮", "Float"), () => setMode("floating"), { "aria-pressed": "false" });
 		splitButton = button(t("分屏", "Split"), () => setMode("split"), { "aria-pressed": "false" });
+		sideFullscreenButton = button(t("侧边全屏", "Side fullscreen"), () => toggleSideFullscreen(), {
+			"aria-pressed": "false",
+			title: t("侧边全屏", "Side fullscreen"),
+			"aria-label": t("侧边全屏", "Side fullscreen"),
+		});
 		miniButton = button(
 			icon("mini"),
 			() => {
@@ -361,6 +393,7 @@ export function createPlayer(host, options = {}) {
 				{ class: "hg-modes", role: "group", "aria-label": t("播放布局", "Player layout") },
 				floatingButton,
 				splitButton,
+				sideFullscreenButton,
 			),
 			miniButton,
 			button(icon("close"), close, {

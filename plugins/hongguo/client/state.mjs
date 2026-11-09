@@ -22,7 +22,8 @@ export function writeStored(storage, key, value) {
 export function layoutFor(mode, width, height, prefs = {}) {
 	if (mode === "split") {
 		if (width >= 800) {
-			const w = clamp(number(prefs.splitWidth, 400), 300, Math.min(600, width * 0.48));
+			const maxWidth = prefs.sideFullscreen === true ? Math.min(1200, width * 0.88) : Math.min(600, width * 0.48);
+			const w = clamp(number(prefs.splitWidth, 400), 300, maxWidth);
 			return { x: width - w, y: 0, w, h: height, reserveRight: w, reserveBottom: 0, axis: "x" };
 		}
 		const h = clamp(number(prefs.splitHeight, height * 0.48), Math.min(200, height * 0.45), height * 0.55);
