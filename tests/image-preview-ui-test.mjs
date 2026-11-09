@@ -304,6 +304,30 @@ try {
 	await page.getByRole("button", { name: "适应窗口", exact: true }).click();
 	assert.equal(await page.locator(".img-lightbox-image-zoomed").count(), 0);
 	await page.screenshot({ path: join(artifactDir, "screenshot-preview-actions.png") });
+	// 默认是小巧浮卡（不铺满），满屏靠按钮 / 双击 / F 键切；图标按钮不写文字，靠 data-tip 即时提示
+	assert.equal(await page.locator(".img-lightbox").getAttribute("data-fullscreen"), null);
+	const compactBox = await page.locator(".img-lightbox-panel").boundingBox();
+	assert.ok(compactBox.width < 1200 && compactBox.height < 860, `默认预览不该铺满整屏：${Object.values(compactBox)}`);
+	assert.equal(
+		await page.evaluate(() => [...document.querySelectorAll(".img-lightbox-btn")].every((btn) => btn.dataset.tip)),
+		true,
+	);
+	const isFullscreen = (value) =>
+		value === true
+			? document.querySelector(".img-lightbox")?.dataset.fullscreen === "true"
+			: document.querySelector(".img-lightbox")?.dataset.fullscreen !== "true";
+	await page.getByRole("button", { name: "全屏", exact: true }).click();
+	await page.waitForFunction(isFullscreen, true);
+	const fullBox = await page.locator(".img-lightbox-panel").boundingBox();
+	assert.ok(fullBox.width > compactBox.width, "全屏后浮卡应当铺开");
+	await page.screenshot({ path: join(artifactDir, "screenshot-preview-fullscreen.png") });
+	await page.keyboard.press("Escape");
+	await page.waitForFunction(isFullscreen, false);
+	assert.equal(await page.getByRole("dialog").count(), 1, "Esc 先退出全屏，不直接关窗");
+	await page.locator(".img-lightbox-image img").dblclick();
+	await page.waitForFunction(isFullscreen, true);
+	await page.getByRole("button", { name: "退出全屏", exact: true }).click();
+	await page.waitForFunction(isFullscreen, false);
 	await page.getByRole("button", { name: "还原原图", exact: true }).click();
 	await page.waitForFunction(() => document.querySelector(".img-lightbox-image img")?.src === window.originalSample);
 	await page.getByRole("button", { name: "标注图片", exact: true }).click();

@@ -96,13 +96,15 @@
 ## 统一图片预览、OCR 与附件标注
 
 - `web/src/components/ImageLightbox.tsx` 是图片预览唯一实现：消息附件、待发附件、工具结果、工具详情、Markdown 图片、`present_files` 卡片、文件树图片预览和图片工作台生图画廊都复用它。入口走 `image-lightbox-bridge.ts`，文件预览面板的图片分支直接使用同一组件。支持 Esc、背景关闭、键盘焦点约束与窄屏布局。
+- 弹窗默认是**小巧浮卡**：`.img-lightbox-panel` 用 `width: fit-content` + `--lb-image-max-w/-h`（`min(78vw, 880px)` / `min(62dvh, 620px)`）按图片尺寸收着开，小图不撑大、大图才缩到上限；满屏由工具栏全屏按钮 / 双击图片 / `F` 键切换，锚在根节点 `data-fullscreen` 上（全屏时覆盖层 `padding: 0`、浮卡铺满视口）。进“标注图片”自动切全屏，保证画布够大；Esc 顺序为「退出标注 → 退出全屏 → 关闭」。窄屏（≤640px）改为贴底小卡，底部吃 `env(safe-area-inset-bottom)`。
+- 工具栏一律是图标按钮（`.img-lightbox-btn`）：不写可见文字，提示走 `data-tip` 伪元素（`opacity` 0.09s，无原生 `title` 的延迟；`@media (hover: none)` 下不显示），无障碍名同源 `aria-label`（OCR 安装态例外，`label` 单独给）；无损裁剪：浮卡不 `overflow: hidden`，图片圆角自己收。层级仍由 `useOverlayZIndex()` 发放。
 - “识别文字”按钮始终显示；没有 OCR 提供者时，点击通过已有 `plugin_job` 安装官方 `image-ocr`，已禁用时通过 `set_settings` 启用，已有但未加载时重载。安装进度和失败原因在当前预览内展示；安装授权弹窗通过 Portal 挂到 body，位于预览上层，预览的焦点约束暂时让位给授权窗口。安装后无需关闭图片，按钮切换为识别。
 - `plugins/image-ocr` 是 `view:false` / `preload:true` 的浏览器插件：顶层只注册提供者，点击才下载固定版本 Tesseract.js 6.0.1、WASM 和中英文字库。图片从应用原始地址读取为字节，识别在本地 Worker 完成；CDN 只提供程序和字库。首次下载依赖网络，远程图片需允许 CORS，否则先保存成附件。结果支持选择、复制、无文字提示和失败重试。
 - OCR 任务绑定当前图片和提供者；取消、关闭、换图、插件禁用/卸载/重载均使旧任务失效，插件终止执行 Worker（含初始化阶段的子 Worker）。引擎只输出文本，不自动发送给对话。
 - 所有图片预览都有“标注图片”：每次打开默认选中画笔，可切换箭头、矩形、文字、颜色与撤销，Pointer Events 支持鼠标/触摸/笔。编辑独立画布；取消丢弃本次修改。待发附件通过 `onSaveAnnotation` 按原附件对象身份替换草稿中的图片；其余入口保存后继续留在预览，可再次标注或还原原图。已发送消息和工作区原文件不会被覆盖。附件已发送/移除或切换草稿时，不会把迟到结果写到其他附件。
 - 统一工具栏提供“附加到输入框”“复制图片”“下载文件”。操作使用当前预览中的图片，包含已保存的标注；只追加草稿附件，保留输入框文本，不自动发送。同一张图附加成功后禁用重复附加；待发附件预览直接显示已附加。异步图片处理前捕获 `composerSessionId`，完成后复核，切换会话或关闭预览不会把结果写进其他对话。
 - 附加结果复用 `image-paste.ts` 的 ≤1568px / ≤2MB 图片处理后写入 `imageData`；大于限制的结果明确失败。编辑画布最长边限 4096px 以控制内存。`image-preview-actions.ts` 保留原图下载字节，剪贴板按浏览器要求将非 PNG 转为 PNG，并在点击时立即发起写入以保留用户激活；下载复用 `saveDownloadBlob`，取消另存为不误报成功。失败在预览内反馈，不关闭图片。
-- 预览提供图片尺寸、放大/缩小、100% 原始尺寸与适应窗口，放大后可滚动查看细节。`ImageLightboxTarget.actions` 保留调用方上下文动作；文件预览直接使用统一下载，插件不再另建图片灯箱。
+- 预览提供图片尺寸、放大/缩小、100% 原始尺寸与适应窗口，放大后可滚动查看细节。`ImageLightboxTarget.actions` 保留调用方上下文动作（带文字标签，其余按钮只留图标）；文件预览直接使用统一下载，插件不再另建图片灯箱。
 - 提供者及插件桥协议见 `architecture-plugins.md` 的“图片预览与 OCR 提供者”。回归：`tests/unit/image-ocr.test.ts`、`tests/unit/image-preview-actions.test.ts`（原始字节、MIME、剪贴板激活、下载取消与失败）、`tests/image-preview-ui-test.mjs`（`PI_TEST_REAL_OCR=1` 验证真实中英文引擎下载/识别）、`tests/image-ocr-install-ui-test.mjs`（构建后验证未安装点击安装、授权层级及禁用后重新启用，不调用模型）。
 
 ## 文件预览协议

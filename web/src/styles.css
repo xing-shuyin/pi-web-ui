@@ -15709,12 +15709,47 @@
 		/* 层级由叠栈发放（内联 style 覆盖）：图片预览能从工具详情/文件预览里打开，必须盖在上面 */
 		z-index: var(--z-overlay-stack);
 		display: flex;
-		flex-direction: column;
-		gap: 12px;
-		background: rgba(0, 0, 0, 0.85);
-		padding: 16px;
+		align-items: center;
+		justify-content: center;
+		padding: clamp(10px, 2.4vmin, 28px);
+		background: color-mix(in srgb, #000 64%, transparent);
 		overscroll-behavior: contain;
 		color: var(--text);
+	}
+	.img-lightbox[data-fullscreen="true"] {
+		padding: 0;
+	}
+	/* 小巧浮卡：默认按图片原尺寸收着开，不做上来就整屏；满屏交给右上角按钮 / 双击图片 / F 键 */
+	.img-lightbox-panel {
+		--lb-image-max-w: min(78vw, 880px);
+		--lb-image-max-h: min(62dvh, 620px);
+		display: flex;
+		flex-direction: column;
+		gap: 6px;
+		width: fit-content;
+		max-width: 100%;
+		max-height: 100%;
+		padding: 6px;
+		border: 1px solid var(--border);
+		border-radius: 14px;
+		background: var(--bg-elev);
+		box-shadow:
+			0 18px 48px -14px rgba(0, 0, 0, 0.62),
+			0 2px 10px rgba(0, 0, 0, 0.32);
+		/* 不裁剪：图标按钮的悬浮提示要能贴边溢出，图片圆角由图片自己收 */
+		isolation: isolate;
+	}
+	.img-lightbox[data-fullscreen="true"] .img-lightbox-panel {
+		--lb-image-max-w: none;
+		--lb-image-max-h: none;
+		width: 100%;
+		height: 100%;
+		max-width: none;
+		max-height: none;
+		padding: 8px;
+		border: 0;
+		border-radius: 0;
+		box-shadow: none;
 	}
 	.img-lightbox-toolbar,
 	.img-lightbox-ocr-head,
@@ -15727,48 +15762,133 @@
 	}
 	.img-lightbox-toolbar {
 		flex: none;
-		flex-wrap: wrap;
-		padding: 8px;
-		border-radius: 10px;
-		background: var(--bg-elev);
+		padding: 0 0 0 8px;
 	}
 	.img-lightbox-name {
-		flex: 1;
+		flex: 1 1 auto;
 		min-width: 0;
+		max-width: min(32ch, 40vw);
 		overflow: hidden;
 		text-overflow: ellipsis;
 		white-space: nowrap;
+		font-size: 12px;
+		color: var(--text-dim);
 	}
-	.img-lightbox-toolbar .btn,
-	.img-lightbox-close {
+	.img-lightbox-actions {
+		display: flex;
 		flex: none;
-	}
-	.img-lightbox-close {
-		display: inline-flex;
+		flex-wrap: wrap;
 		align-items: center;
-		justify-content: center;
-		width: 36px;
-		height: 36px;
+		justify-content: flex-end;
+		gap: 2px;
+		margin-left: auto;
+	}
+	/* 图标按钮：不放文字，悬浮即时出提示（data-tip 立即显，避开原生 title 的延迟） */
+	.img-lightbox-btn {
+		position: relative;
+		display: inline-grid;
+		place-items: center;
+		flex: none;
+		width: 30px;
+		height: 30px;
+		padding: 0;
+		border: 1px solid transparent;
 		border-radius: 8px;
+		background: transparent;
+		color: var(--text-dim);
+		font-size: 15px;
+		line-height: 1;
+		cursor: pointer;
+		transition:
+			background-color 0.14s ease,
+			border-color 0.14s ease,
+			color 0.14s ease,
+			scale 0.14s ease;
+	}
+	.img-lightbox-btn:hover:not(:disabled) {
+		background: color-mix(in srgb, var(--text) 12%, transparent);
+		color: var(--text);
+	}
+	.img-lightbox-btn:active:not(:disabled) {
+		scale: 0.94;
+	}
+	.img-lightbox-btn:focus-visible {
+		outline: 2px solid var(--accent);
+		outline-offset: 1px;
+	}
+	.img-lightbox-btn:disabled {
+		opacity: 0.36;
+		cursor: not-allowed;
+	}
+	.img-lightbox-btn-text {
+		width: auto;
+		padding: 0 9px;
+		font-size: 12px;
+	}
+	.img-lightbox-close:hover:not(:disabled) {
+		background: color-mix(in srgb, var(--red) 18%, transparent);
+		color: var(--red-text);
+	}
+	.img-lightbox-btn[data-tip]::after {
+		content: attr(data-tip);
+		position: absolute;
+		top: calc(100% + 7px);
+		right: -2px;
+		z-index: 40;
+		padding: 4px 8px;
 		border: 1px solid var(--border);
+		border-radius: 6px;
+		background: var(--tooltip-bg);
+		color: var(--text);
+		font-size: 11px;
+		line-height: 1.4;
+		white-space: nowrap;
+		pointer-events: none;
+		opacity: 0;
+		translate: 0 -2px;
+		box-shadow: 0 6px 18px rgba(0, 0, 0, 0.45);
+		transition:
+			opacity 0.09s ease,
+			translate 0.09s ease;
+	}
+	.img-lightbox-btn[data-tip]:hover::after,
+	.img-lightbox-btn[data-tip]:focus-visible::after {
+		opacity: 1;
+		translate: 0 0;
+	}
+	.img-lightbox-select {
+		flex: none;
+		max-width: 140px;
+		height: 28px;
+		padding: 0 6px;
+		border: 1px solid var(--border);
+		border-radius: 7px;
 		background: var(--bg-elev2);
 		color: var(--text);
-		font-size: 20px;
-		cursor: pointer;
+		font-size: 12px;
 	}
 	.img-lightbox-content {
 		display: flex;
-		flex: 1;
-		gap: 16px;
+		/* 紧凑态：图在上、识别结果在下，卡片按内容收着 */
+		flex-direction: column;
+		gap: 4px;
 		min-width: 0;
 		min-height: 0;
 	}
+	.img-lightbox[data-fullscreen="true"] .img-lightbox-content {
+		flex: 1;
+		flex-direction: row;
+		gap: 12px;
+	}
 	.img-lightbox-notice {
 		flex: none;
-		padding: 8px 16px;
-		color: var(--text);
-		background: var(--bg-elev);
+		align-self: flex-start;
+		max-width: 100%;
+		padding: 4px 10px;
 		border-radius: 8px;
+		background: color-mix(in srgb, var(--text) 9%, transparent);
+		color: var(--text);
+		font-size: 11px;
 		white-space: pre-wrap;
 		word-break: break-word;
 		overflow-wrap: anywhere;
@@ -15779,40 +15899,69 @@
 	.img-lightbox-viewer {
 		display: flex;
 		flex-direction: column;
-		flex: 1;
+		gap: 2px;
 		min-width: 0;
 		min-height: 0;
+	}
+	.img-lightbox[data-fullscreen="true"] .img-lightbox-viewer {
+		flex: 1;
 	}
 	.img-lightbox-view-controls {
 		display: flex;
 		align-items: center;
 		justify-content: center;
 		flex-wrap: wrap;
-		gap: 6px;
-		padding: 8px;
+		gap: 2px;
 		color: var(--text-dim);
-		font-size: 12px;
+		font-size: 11px;
 	}
-	.img-lightbox-view-controls .btn {
-		min-height: 30px;
+	.img-lightbox-view-controls .img-lightbox-btn {
+		width: 26px;
+		height: 26px;
+		font-size: 13px;
+	}
+	.img-lightbox-dims,
+	.img-lightbox-zoom {
+		font-variant-numeric: tabular-nums;
+	}
+	.img-lightbox-dims {
+		margin: 0 6px 0 4px;
+	}
+	.img-lightbox-zoom {
+		min-width: 34px;
+		text-align: center;
+		color: var(--text);
 	}
 	.img-lightbox-image {
-		display: flex;
-		align-items: center;
-		justify-content: center;
-		flex: 1;
+		display: grid;
+		place-items: center;
 		min-width: 0;
 		min-height: 0;
 		overflow: auto;
 		overscroll-behavior: contain;
+		border-radius: 10px;
+	}
+	.img-lightbox[data-fullscreen="true"] .img-lightbox-image {
+		flex: 1;
+	}
+	/* 加载中先占位，避免卡片从一条线长出来（少一次布局跳动） */
+	.img-lightbox-image[data-pending="true"] {
+		min-width: min(300px, 56vw);
+		min-height: min(160px, 28dvh);
+		background: color-mix(in srgb, var(--text) 6%, transparent);
 	}
 	.img-lightbox-image img {
+		display: block;
+		width: auto;
+		height: auto;
+		max-width: var(--lb-image-max-w);
+		max-height: var(--lb-image-max-h);
+		object-fit: contain;
+		border-radius: 10px;
+	}
+	.img-lightbox[data-fullscreen="true"] .img-lightbox-image img {
 		width: 100%;
 		height: 100%;
-		min-width: 0;
-		min-height: 0;
-		object-fit: contain;
-		border-radius: 8px;
 	}
 	.img-lightbox-image-zoomed {
 		display: block;
@@ -15825,17 +15974,26 @@
 	.img-lightbox-ocr {
 		display: flex;
 		flex-direction: column;
-		gap: 12px;
-		flex: 0 1 380px;
+		gap: 10px;
+		flex: 0 1 auto;
+		width: 100%;
 		min-width: 0;
 		max-width: 100%;
-		padding: 16px;
+		max-height: min(36dvh, 260px);
+		padding: 12px;
 		border-radius: 10px;
-		background: var(--bg-elev);
+		background: var(--bg-elev2);
 		overflow: auto;
 		overscroll-behavior: contain;
 		overflow-wrap: anywhere;
 		word-break: break-word;
+	}
+	.img-lightbox[data-fullscreen="true"] .img-lightbox-ocr {
+		flex: 0 1 380px;
+		width: auto;
+		max-height: 100%;
+		padding: 16px;
+		background: var(--bg-elev);
 	}
 	.img-lightbox-ocr-head {
 		justify-content: space-between;
@@ -15873,6 +16031,10 @@
 		padding: 12px;
 		border-radius: 10px;
 		background: var(--bg-elev);
+	}
+	.img-lightbox .image-annotation-editor {
+		padding: 6px 2px 2px;
+		background: transparent;
 	}
 	.image-annotation-toolbar {
 		flex-wrap: wrap;
@@ -15915,26 +16077,46 @@
 		cursor: crosshair;
 	}
 	@media (max-width: 640px) {
+		/* 窄屏改成贴底小卡：拇指够得着，也不遮满屏 */
 		.img-lightbox {
-			padding: 8px;
-			gap: 8px;
+			align-items: flex-end;
+			padding: 0;
 		}
-		.img-lightbox-toolbar {
-			flex-wrap: wrap;
+		.img-lightbox[data-fullscreen="true"] {
+			align-items: stretch;
+		}
+		.img-lightbox-panel {
+			--lb-image-max-w: 100%;
+			--lb-image-max-h: min(44dvh, 420px);
+			width: 100%;
+			padding: 6px 6px max(6px, env(safe-area-inset-bottom));
+			border-radius: 14px 14px 0 0;
+			border-bottom: 0;
+		}
+		.img-lightbox[data-fullscreen="true"] .img-lightbox-panel {
+			padding: 6px;
+			border-radius: 0;
 		}
 		.img-lightbox-name {
-			flex-basis: 100%;
+			max-width: 46vw;
 		}
-		.img-lightbox-content {
-			flex-direction: column;
-			gap: 8px;
+		.img-lightbox-btn {
+			width: 28px;
+			height: 28px;
+			font-size: 14px;
 		}
 		.img-lightbox-ocr {
-			flex: 0 1 45%;
-			padding: 12px;
+			max-height: 32dvh;
+			padding: 10px;
 		}
 		.img-lightbox-ocr textarea {
-			min-height: 80px;
+			min-height: 72px;
+		}
+	}
+	/* 触摸屏没有真实悬停：别让点按残留一条提示 */
+	@media (hover: none) {
+		.img-lightbox-btn[data-tip]::after {
+			display: none;
 		}
 	}
 
