@@ -45,8 +45,9 @@ attach 之后才有会话。渠道插件（QQ/微信/Telegram…）靠 `host.cha
 imessage、feishu、dingtalk、wecom**（11 个外部消息渠道都要靠出站长连接收消息，收不到就永远没活干）。
 
 **已安装副本怎么拿到新 manifest**：`server/plugins.ts` 的 `syncBuiltinPlugins()` 在每次 `scan()` 开头
-把安装包内的 `plugins/<id>` 与 `<dataDir>/plugins/<id>` 比版本，源更高时 `ensureBackup` + 覆盖
-（保留 `storage.json` / `secrets.bin` —— 这两个被 `.gitignore` 排除，发布包里没有，不会被覆盖）。
+把安装包内的 `plugins/<id>` 与 `<dataDir>/plugins/<id>` 比版本，源更高时 `ensureBackup` + 覆盖。
+用户状态（`storage.json` / `secrets.bin` / `schedules.json`）不在代码目录里，而是
+`<dataDir>/plugin-data/<id>/`，所以覆盖代码永远碰不到配置；半残的代码目录会按物化回执自动补齐。
 所以声明 `alwaysOn` 时**递增 manifest 版本号**即可让老用户重启后自动生效，不需要手动重装。
 
 ### 2.2 `BackgroundExecutorRegistry`：谁负责把它们拉起来

@@ -16,6 +16,7 @@ import {
 	withFileRmwLock,
 } from "../../server/plugin-facilities.js";
 import { PLUGIN_API_VERSION, PluginManager, type PluginHost } from "../../server/plugins.js";
+import { pluginStateDir } from "../../server/plugin-paths.js";
 
 let dir: string;
 let mgr: PluginManager;
@@ -79,7 +80,7 @@ describe("host.storage", () => {
 		expect(h.storage.get("layout")).toEqual({ split: 0.3 });
 		expect(h.storage.get("missing", "fallback")).toBe("fallback");
 		expect(Object.keys(h.storage.all())).toContain("layout");
-		expect(existsSync(join(dir, "plugins", "a", "storage.json"))).toBe(true);
+		expect(existsSync(join(pluginStateDir(dir, "a"), "storage.json"))).toBe(true);
 
 		h.storage.set("k", 1);
 		expect(h.storage.has("k")).toBe(true);
@@ -204,7 +205,7 @@ describe("host.secrets", () => {
 		expect(h.secrets.has("mail_pass")).toBe(true);
 		expect(h.secrets.list()).toEqual(["mail_pass"]);
 
-		const raw = readFileSync(join(dir, "plugins", "b", "secrets.bin"), "utf8");
+		const raw = readFileSync(join(pluginStateDir(dir, "b"), "secrets.bin"), "utf8");
 		expect(raw).not.toContain(secret);
 		expect(raw.length).toBeGreaterThan(50);
 

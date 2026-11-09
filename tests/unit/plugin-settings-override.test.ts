@@ -3,6 +3,7 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { PluginManager, type PluginHost } from "../../server/plugins.js";
+import { pluginStateDir } from "../../server/plugin-paths.js";
 
 const SCHEMA = [
 	{ key: "tone", type: "text", label: "语气", default: "full" },
@@ -32,7 +33,9 @@ function writeOverlay(id: string, obj: unknown): void {
 }
 
 function writeStorage(id: string, settings: Record<string, unknown>): void {
-	writeFileSync(join(dir, "plugins", id, "storage.json"), JSON.stringify({ settings }));
+	// 状态在 plugin-data/<id>/ 里；宿主的原子写会自己建目录，测试直接落盘要手工建
+	mkdirSync(pluginStateDir(dir, id), { recursive: true });
+	writeFileSync(join(pluginStateDir(dir, id), "storage.json"), JSON.stringify({ settings }));
 }
 
 async function infoOf(id: string) {

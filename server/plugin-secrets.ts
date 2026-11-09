@@ -46,9 +46,13 @@ export class PluginSecrets {
 	private readonly file: string;
 	private readonly settingsFile: string;
 	private readonly key: Buffer;
-	constructor(dataDir: string, pluginDir: string) {
-		this.file = join(pluginDir, "secrets.bin");
-		this.settingsFile = join(pluginDir, "storage.json");
+	/**
+	 * @param stateDir 插件**状态**目录（`pluginStateDir(dataDir, id)`）。机密与设置都属于状态，
+	 * 不放在代码目录里 —— 代码目录是纯缓存，随时可能被重新物化。
+	 */
+	constructor(dataDir: string, stateDir: string) {
+		this.file = join(stateDir, "secrets.bin");
+		this.settingsFile = join(stateDir, "storage.json");
 		this.key = PluginSecrets.keyFor(dataDir);
 	}
 	private static keys = new Map<string, Buffer>();

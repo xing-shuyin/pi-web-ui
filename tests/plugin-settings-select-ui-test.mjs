@@ -43,6 +43,8 @@ const check = (name, cond, extra) => {
 };
 
 const pdir = join(DATA_DIR, "plugins", "dds");
+// 插件状态落在 plugin-data/<id>/，代码目录是纯缓存
+const pstate = join(DATA_DIR, "plugin-data", "dds");
 mkdirSync(pdir, { recursive: true });
 writeFileSync(
 	join(pdir, "manifest.json"),
@@ -223,7 +225,7 @@ async function main() {
 	check("改选后保存按钮可用（脏判定生效）", await saveBtn.isEnabled());
 	await tap(page, saveBtn);
 
-	const storage = join(pdir, "storage.json");
+	const storage = join(pstate, "storage.json");
 	const saved = await until(
 		() => {
 			try {

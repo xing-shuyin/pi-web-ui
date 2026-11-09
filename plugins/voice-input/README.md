@@ -62,7 +62,7 @@ pi-web-ui install xing-shuyin/pi-web-ui/plugins/voice-input
 | 模型下载源     | 留空 = 官方 `huggingface.co`；国内直连超时填 `https://hf-mirror.com`。也认环境变量 `HF_ENDPOINT`                                         |
 | 本地模型       | 默认 `base`（中文更准，约 290MB）；`tiny` 更小更快（约 150MB）；`small` 最准（约 500MB，CPU 转写慢 3~4 倍）。转写时常驻内存约 1GB        |
 | 转写接口基址   | OpenAI 兼容基址，如 `https://api.openai.com/v1`；留空 = 没配远端转写                                                                     |
-| 转写接口密钥   | 存在 `<dataDir>/plugins/voice-input/storage.json`，**不下发浏览器**                                                                      |
+| 转写接口密钥   | 存在 `<dataDir>/plugin-data/voice-input/storage.json`，**不下发浏览器**                                                                      |
 | 转写模型       | 默认 `whisper-1`                                                                                                                         |
 | 给 AI 转写工具 | 默认开；注册 `transcribe_audio` 给 AI 用。关掉这里即从 AI 的工具表里下架；此外宿主设置 →「工具」页的「注册的 AI 工具」分组里也能单独关它 |
 

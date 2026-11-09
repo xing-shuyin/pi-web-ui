@@ -155,13 +155,14 @@ export interface PersistentScheduleRecord {
 	createdAt: number;
 }
 
-export function scheduleFile(pluginDir: string): string {
-	return join(pluginDir, "schedules.json");
+/** 状态目录里的持久任务表（代码目录可重建，定时任务的 lastRun 不能丢） */
+export function scheduleFile(stateDir: string): string {
+	return join(stateDir, "schedules.json");
 }
 
-export function loadScheduleRecords(pluginDir: string): Record<string, PersistentScheduleRecord> {
+export function loadScheduleRecords(stateDir: string): Record<string, PersistentScheduleRecord> {
 	try {
-		const parsed = JSON.parse(readFileSync(scheduleFile(pluginDir), "utf8")) as {
+		const parsed = JSON.parse(readFileSync(scheduleFile(stateDir), "utf8")) as {
 			v?: unknown;
 			schedules?: unknown;
 		};
@@ -187,10 +188,10 @@ export function loadScheduleRecords(pluginDir: string): Record<string, Persisten
 	}
 }
 
-export function saveScheduleRecords(pluginDir: string, records: Record<string, PersistentScheduleRecord>): void {
+export function saveScheduleRecords(stateDir: string, records: Record<string, PersistentScheduleRecord>): void {
 	try {
-		writeJsonAtomicSync(scheduleFile(pluginDir), { v: 1, schedules: records });
+		writeJsonAtomicSync(scheduleFile(stateDir), { v: 1, schedules: records });
 	} catch (err) {
-		console.error(`[plugin-schedule] persist failed (${pluginDir}):`, err);
+		console.error(`[plugin-schedule] persist failed (${stateDir}):`, err);
 	}
 }

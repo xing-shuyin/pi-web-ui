@@ -11,7 +11,7 @@ import {
 import { AsyncLocalStorage } from "node:async_hooks";
 import { ttsService, type TtsClient, type TtsEngine } from "./tts-service.js";
 import { mkdir, readdir, readFile, rm, stat, writeFile } from "node:fs/promises";
-import { cpSync, existsSync, lstatSync, readFileSync, readdirSync, watch as fsWatch, writeFileSync } from "node:fs";
+import { cpSync, existsSync, lstatSync, readFileSync, readdirSync, watch as fsWatch } from "node:fs";
 import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { pathToFileURL } from "node:url";
 import { writeJsonAtomicSync } from "./atomic-file.js";
@@ -62,6 +62,8 @@ import { PluginGrantsStore, normalizeGrantPath } from "./plugin-grants.js";
 import { normalizeIconSvg } from "./icon-svg.js";
 import { cleanupRemovedPlugins } from "./plugin-removal.js";
 import { prepareBundledPlugins } from "./plugin-bundled.js";
+import { materializePlugin } from "./plugin-materialize.js";
+import { migratePluginState, pluginCodeDir, pluginStateDir } from "./plugin-paths.js";
 import { PluginInbox } from "./plugin-inbox.js";
 import { PluginLedgerStore } from "./plugin-ledger.js";
 import { DeliveryQueue } from "./plugin-delivery.js";
@@ -1250,9 +1252,18 @@ function resolveSettingsValues(
 	return { values, sources };
 }
 
-function readStoredSettings(dir: string): Record<string, unknown> {
+function readManifestVersion(manifestPath: string): string {
 	try {
-		const parsed = JSON.parse(readFileSync(join(dir, "storage.json"), "utf8")) as Record<string, unknown>;
+		const raw = JSON.parse(readFileSync(manifestPath, "utf8")) as { version?: unknown };
+		return typeof raw.version === "string" ? raw.version.trim() : "";
+	} catch {
+		return "";
+	}
+}
+
+function readStoredSettings(stateDir: string): Record<string, unknown> {
+	try {
+		const parsed = JSON.parse(readFileSync(join(stateDir, "storage.json"), "utf8")) as Record<string, unknown>;
 		if (parsed && typeof parsed === "object" && parsed.settings && typeof parsed.settings === "object") {
 			return parsed.settings as Record<string, unknown>;
 		}
@@ -1261,12 +1272,12 @@ function readStoredSettings(dir: string): Record<string, unknown> {
 }
 
 function runtimeSettingsValues(
-	dir: string,
+	stateDir: string,
 	schema: UiPluginSettingField[],
 	secrets: Pick<PluginSecrets, "get">,
 	overlay: Record<string, unknown> = {},
 ): Record<string, unknown> {
-	return resolveSettingsValues(schema, readStoredSettings(dir), overlay, { get: (k) => secrets.get(k) }).values;
+	return resolveSettingsValues(schema, readStoredSettings(stateDir), overlay, { get: (k) => secrets.get(k) }).values;
 }
 
 function cleanNonSecretSettingsField(
@@ -1314,7 +1325,7 @@ function cleanNonSecretSettingsField(
 }
 
 function saveSettingsValues(
-	dir: string,
+	stateDir: string,
 	schema: UiPluginSettingField[],
 	values: Record<string, unknown> | undefined,
 	lang?: () => ServerLang,
@@ -1353,7 +1364,7 @@ function saveSettingsValues(
 		const secretKeys = new Set(schema.filter((f) => f.type === "secret").map((f) => f.key));
 		const persist: Record<string, unknown> = {};
 		for (const [k, v] of Object.entries(clean)) if (!secretKeys.has(k)) persist[k] = v;
-		const file = join(dir, "storage.json");
+		const file = join(stateDir, "storage.json");
 		withFileRmwLockSync(file, () => {
 			if (secrets) secrets.commitSettings(persist, secretUpdates);
 			else {
@@ -1369,7 +1380,7 @@ function saveSettingsValues(
 			}
 		});
 	} catch (err) {
-		console.error(`[plugins] settings persist failed (${dir}):`, err);
+		console.error(`[plugins] settings persist failed (${stateDir}):`, err);
 		return { error: (err as Error).message, clean };
 	}
 	return { clean };
@@ -1516,7 +1527,7 @@ export class PluginManager {
 	savePluginSettings(pluginId: string, values: Record<string, unknown>, lang?: () => ServerLang): { error?: string } {
 		const l = lang?.() ?? "en";
 		if (!ID_RE.test(pluginId)) return { error: pick(l, "非法的插件 id", "Invalid plugin id", "plugins.id.invalid") };
-		const dir = join(this.pluginsDir, pluginId);
+		const stateDir = pluginStateDir(this.dataDir, pluginId);
 		const info = this.loaded.get(pluginId)?.info;
 		const schema = info?.settingsSchema ?? [];
 		if (!schema.length)
@@ -1530,7 +1541,7 @@ export class PluginManager {
 			};
 		let result: ReturnType<typeof saveSettingsValues>;
 		try {
-			result = saveSettingsValues(dir, schema, values, lang, new PluginSecrets(this.dataDir, dir));
+			result = saveSettingsValues(stateDir, schema, values, lang, new PluginSecrets(this.dataDir, stateDir));
 		} catch (err) {
 			return { error: (err as Error).message };
 		}
@@ -1658,9 +1669,9 @@ export class PluginManager {
 		}
 	}
 
-	private async maybeConsentNotice(info: UiPluginInfo, dir: string, perms: string[]): Promise<void> {
+	private async maybeConsentNotice(info: UiPluginInfo, stateDir: string, perms: string[]): Promise<void> {
 		try {
-			const markerFile = join(dir, ".pi-approved");
+			const markerFile = join(stateDir, ".pi-approved");
 			const key = createHash("sha256").update(JSON.stringify(perms)).digest("hex").slice(0, 32);
 			let prev = "";
 			try {
@@ -1673,7 +1684,8 @@ export class PluginManager {
 				`插件「${info.name}」已激活（${prev ? "能力清单变更" : "首次安装"}；声明能力：${list}）——请确认来源可信`,
 				`Plugin "${info.name}" activated (${prev ? "capability list changed" : "first install"}; declared: ${list}) — verify the source is trusted`,
 			);
-			writeFileSync(markerFile, JSON.stringify({ v: 1, key, perms }), "utf8");
+			// 状态目录可能还没建（新装/刚迁移），原子写自带 mkdir；直接 writeFileSync 会 ENOENT 且每次都重报
+			writeJsonAtomicSync(markerFile, { v: 1, key, perms });
 		} catch (err) {
 			console.error(`[plugin:${info.id}] consent notice failed:`, err);
 		}
@@ -2805,7 +2817,7 @@ export class PluginManager {
 		}
 
 		try {
-			prepareBundledPlugins(
+			const outcomes = prepareBundledPlugins(
 				this.dataDir,
 				this.builtinCatalogPath,
 				new Set(
@@ -2814,6 +2826,13 @@ export class PluginManager {
 						.map((entry) => entry.id),
 				),
 			);
+			for (const outcome of outcomes) {
+				if (outcome.status === "repaired") {
+					console.log(`[plugins] 随包插件 ${outcome.id} 就地修复（缺回执或文件不全）→ ${outcome.files} 个文件`);
+				} else if (outcome.status === "failed" || outcome.status === "source-invalid") {
+					console.warn(`[plugins] 随包插件 ${outcome.id} 物化失败：${outcome.error ?? outcome.status}`);
+				}
+			}
 		} catch (err) {
 			console.warn("[plugins] Preparing bundled modules failed:", err);
 		}
@@ -2849,23 +2868,29 @@ export class PluginManager {
 			const targetManifest = join(targetDir, "manifest.json");
 			const sourceManifest = join(sourceDir, "manifest.json");
 
-			if (!existsSync(sourceDir) || !existsSync(sourceManifest) || !existsSync(targetManifest)) {
-				continue;
-			}
+			if (!existsSync(sourceDir) || !existsSync(sourceManifest)) continue;
 
 			try {
 				const srcRaw = JSON.parse(readFileSync(sourceManifest, "utf8")) as { version?: string };
-				const tgtRaw = JSON.parse(readFileSync(targetManifest, "utf8")) as { version?: string };
 				const srcVer = typeof srcRaw.version === "string" ? srcRaw.version.trim() : "";
-				const tgtVer = typeof tgtRaw.version === "string" ? tgtRaw.version.trim() : "";
+				const tgtVer = readManifestVersion(targetManifest);
+				const upgrade = Boolean(srcVer && tgtVer && compareVersions(srcVer, tgtVer) > 0);
 
-				if (srcVer && tgtVer && compareVersions(srcVer, tgtVer) > 0) {
-					ensureBackup(this.dataDir, name, { source: `builtin:${srcVer}` });
-					cpSync(sourceDir, targetDir, {
-						recursive: true,
-						filter: (s) => !/(^|[\\/])(\.git|node_modules)([\\/]|$)/.test(s),
-					});
+				const outcome = materializePlugin({
+					id: name,
+					sourceDir,
+					targetDir,
+					upgrade,
+					beforeOverwrite: () => {
+						ensureBackup(this.dataDir, name, { source: `builtin:${srcVer}` });
+					},
+				});
+				if (outcome.status === "failed" || outcome.status === "source-invalid") {
+					console.warn(`[plugins] 自动同步内置插件 ${name} 失败：${outcome.error ?? outcome.status}`);
+				} else if (outcome.status === "upgraded") {
 					console.log(`[plugins] 内置插件 ${name} 随宿主自动同步升级：${tgtVer} → ${srcVer}`);
+				} else if (outcome.status === "repaired") {
+					console.log(`[plugins] 内置插件 ${name} 重新物化（缺回执或文件不全）→ ${outcome.files} 个文件`);
 				}
 			} catch (err) {
 				console.warn(`[plugins] 自动同步内置插件 ${name} 失败:`, err);
@@ -2887,13 +2912,18 @@ export class PluginManager {
 		const out: UiPluginInfo[] = [];
 		for (const name of names.sort()) {
 			if (!ID_RE.test(name)) continue;
-			const dir = join(this.pluginsDir, name);
+			const dir = pluginCodeDir(this.dataDir, name);
 			try {
 				const st = await stat(dir);
 				if (generation !== this.lifecycleGeneration) return [];
 				if (!st.isDirectory()) continue;
 			} catch {
 				continue;
+			}
+			const stateDir = pluginStateDir(this.dataDir, name);
+			// 老布局（状态住在代码目录）→ 状态目录，幂等；从此代码目录可自由重放
+			for (const movedFile of migratePluginState(this.dataDir, name)) {
+				console.log(`[plugins] 插件 ${name} 的状态文件 ${movedFile} 已迁到 plugin-data/${name}/`);
 			}
 			try {
 				const raw = await readFile(join(dir, "manifest.json"), "utf8");
@@ -2964,9 +2994,9 @@ export class PluginManager {
 				for (const w of [...overlayFileForScan.warnings, ...overlayForScan.warnings]) uiDiags.push(`override: ${w}`);
 				const resolvedSettingsForScan = resolveSettingsValues(
 					settingsSchemaForScan,
-					readStoredSettings(dir),
+					readStoredSettings(stateDir),
 					overlayForScan.values,
-					{ has: (k) => new PluginSecrets(this.dataDir, dir).has(k) },
+					{ has: (k) => new PluginSecrets(this.dataDir, stateDir).has(k) },
 				);
 				const hasClient = existsSync(join(dir, "client", "entry.mjs"));
 				out.push({
@@ -3192,7 +3222,9 @@ export class PluginManager {
 	private async activate(info: UiPluginInfo, lang?: () => ServerLang): Promise<void> {
 		const l = lang?.() ?? "en";
 		this.attempted.add(info.id);
-		const dir = join(this.pluginsDir, info.id);
+		const dir = pluginCodeDir(this.dataDir, info.id);
+		const stateDir = pluginStateDir(this.dataDir, info.id);
+		migratePluginState(this.dataDir, info.id);
 		try {
 			const rawManifest = readFileSync(join(dir, "manifest.json"), "utf8");
 			const parsedManifest: unknown = JSON.parse(rawManifest);
@@ -3413,8 +3445,8 @@ export class PluginManager {
 			}
 		}
 		const netAllow = info.netAllowlist ?? [];
-		const storage = new PluginStorage(join(dir, "storage.json"));
-		const secrets = new PluginSecrets(this.dataDir, dir);
+		const storage = new PluginStorage(join(stateDir, "storage.json"));
+		const secrets = new PluginSecrets(this.dataDir, stateDir);
 		const workspaceFs = new WorkspaceFS(() => self.cwdValue);
 		const allowAbs = (p: string): string => {
 			const abs = normalizeGrantPath(p);
@@ -4257,7 +4289,7 @@ export class PluginManager {
 				const schema = info.settingsSchema ?? [];
 				const overlayFile = readSettingsOverlayFile(self.dataDir, info.id);
 				const overlay = cleanOverlaySettings(schema, overlayFile.raw, "en");
-				return runtimeSettingsValues(dir, schema, secrets, overlay.values);
+				return runtimeSettingsValues(stateDir, schema, secrets, overlay.values);
 			},
 			onSettingsChanged: (h) => {
 				settingsHandlers.add(h);
@@ -4358,7 +4390,7 @@ export class PluginManager {
 							: "";
 					if (!sid || !ID_RE.test(sid))
 						throw new Error("schedule: persistent 任务必须给合法 id（字母/数字/下划线/连字符），重启后靠它重建");
-					const records = loadScheduleRecords(dir);
+					const records = loadScheduleRecords(stateDir);
 					const prev = records[sid];
 					records[sid] = {
 						spec: specText,
@@ -4367,7 +4399,7 @@ export class PluginManager {
 						...(prev?.lastRun !== undefined ? { lastRun: prev.lastRun } : {}),
 						createdAt: prev?.createdAt ?? Date.now(),
 					};
-					saveScheduleRecords(dir, records);
+					saveScheduleRecords(stateDir, records);
 				}
 				let timer: NodeJS.Timeout | undefined;
 				let grace: NodeJS.Timeout | undefined;
@@ -4422,11 +4454,11 @@ export class PluginManager {
 				const fire = (): void => {
 					if (cancelled) return;
 					if (persistent) {
-						const records = loadScheduleRecords(dir);
+						const records = loadScheduleRecords(stateDir);
 						const rec = records[sid];
 						if (rec) {
 							rec.lastRun = Date.now();
-							saveScheduleRecords(dir, records);
+							saveScheduleRecords(stateDir, records);
 						}
 					}
 					try {
@@ -4462,7 +4494,7 @@ export class PluginManager {
 				}
 				if (persistent && catchUp === "once") {
 					const refTime =
-						loadScheduleRecords(dir)[sid]?.lastRun ?? loadScheduleRecords(dir)[sid]?.createdAt ?? Date.now();
+						loadScheduleRecords(stateDir)[sid]?.lastRun ?? loadScheduleRecords(stateDir)[sid]?.createdAt ?? Date.now();
 					const missed = parts
 						? (() => {
 								const at = nextCronFire(parts, refTime);
@@ -4487,10 +4519,10 @@ export class PluginManager {
 					cancelTimer();
 					bgUnreg?.();
 					if (persistent) {
-						const records = loadScheduleRecords(dir);
+						const records = loadScheduleRecords(stateDir);
 						if (sid in records) {
 							delete records[sid];
-							saveScheduleRecords(dir, records);
+							saveScheduleRecords(stateDir, records);
 						}
 					}
 				};
@@ -4809,7 +4841,7 @@ export class PluginManager {
 				settingsHandlers,
 			});
 			console.log(`[plugin:${info.id}] activated (v${info.version ?? "?"})`);
-			void this.maybeConsentNotice(info, dir, permsDeclared);
+			void this.maybeConsentNotice(info, stateDir, permsDeclared);
 		} catch (err) {
 			const failed = effects.release();
 			httpRoutes.clear();

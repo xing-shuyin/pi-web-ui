@@ -4,6 +4,7 @@ import { fileURLToPath } from "node:url";
 import { execFile } from "node:child_process";
 import { pick, type ServerLang } from "./i18n.js";
 import { parseInstallSpec, manifestCandidateUrls } from "./plugin-install-spec.js";
+import { copyTree } from "./fs-copy.js";
 
 const PLUGIN_ID_RE = /^[A-Za-z0-9_-]+$/;
 export const BACKUP_KEEP = 3;
@@ -39,10 +40,7 @@ export function ensureBackup(dataDir: string, id: string, opts?: { source?: stri
 	const dest = join(dataDir, "plugin-backups", `${id}-${ts}`);
 	try {
 		mkdirSync(dirnameOf(dest)!, { recursive: true });
-		cpSync(target, dest, {
-			recursive: true,
-			filter: (s) => !/(^|[\\/])(\.git|node_modules|whisper-cache)([\\/]|$)/.test(s),
-		});
+		copyTree(target, dest, { skip: [".git", "node_modules", "whisper-cache"] });
 		writeFileSync(join(dest, ".pi-backup.json"), JSON.stringify({ id, ts, source: opts?.source }, null, 2) + "\n");
 		pruneBackups(dataDir, id);
 		return ts;

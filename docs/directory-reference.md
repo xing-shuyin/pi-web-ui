@@ -120,7 +120,7 @@ server/
 ├── webui-context.ts        # 扩展 UI 桥（WebUIContext：widgets/statuses/dialog → 浏览器）
 ├── themes.ts               # 主题管理（listThemes/resolveThemeFile）
 ├── tabs.ts                 # 实例能力页签选择（Chat / Terminal / Git / Search / …）
-├── plugins.ts              # 可选界面组件插件（扫描 <dataDir>/plugins/<id>/；renderer 插件字段 view:false + renderers）
+├── plugins.ts              # 可选界面组件插件（扫描 <dataDir>/plugins/<id>/ 代码；状态在 <dataDir>/plugin-data/<id>/；renderer 插件字段 view:false + renderers）
 ├── plugin-api-catalog.ts   # 机器可读的注册面目录（slot 的 key/kind/occupants/example）
 ├── plugin-catalog.ts       # 插件市场列表（builtin plugins/catalog.json + 用户自定义 <dataDir>/plugin-catalog.json）+ 目录同步纯函数（normalizeSyncPayload/writeCustomCatalog，issue #148）
 ├── plugin-catalog-sync.ts  # 市场目录同步编排（拉取/校验/原子写/可选安装/重载+重推，issue #148）
@@ -134,9 +134,13 @@ server/
 ├── plugin-manifest-validate.ts # manifest 本体校验（schema 失败即拒）
 ├── plugin-permissions.ts   # 插件能力动态授权表（host.requestPermission 的底层）
 ├── plugin-project.ts       # ★ 插件项目组装执行层（host.project.create：clone/写文件/git init；路径越界三道校验，授权由上层判，本模块不动授权）
-├── plugin-schedule.ts      # 插件定时任务的 cron 解析与持久化（host.schedule 的底层）
+├── plugin-bundled.ts       # 随包插件首次物化（内置模块 + catalog 里 `preinstall` 的候选；回执裁定「已装好」，半残目录就地修，issue #856）
+├── plugin-materialize.ts   # ★ 插件目录物化单源：staging + 验收 + 回执（.pi-materialized.json）/ 只补缺 / 覆盖式升级
+├── plugin-paths.ts         # ★ 插件代码目录与状态目录的单源（`plugins/<id>` = 纯缓存；`plugin-data/<id>` = 设置/机密/定时，老布局幂等迁移）
+├── plugin-schedule.ts      # 插件定时任务的 cron 解析与持久化（host.schedule 的底层；schedules.json 写状态目录）
 ├── plugin-tool-guard.ts    # 插件工具拦截扩展点（pre + post，只覆盖已接管的 bash/read）
-├── plugin-updater.ts       # 插件更新辅助（备份/回滚 + 远端 sha 对比）
+├── plugin-updater.ts       # 插件更新辅助（代码目录备份/回滚 + 远端 sha 对比；状态目录不参与）
+├── fs-copy.ts              # ★ 目录复制原语：跳过项按**相对路径**判定（绝对路径含 node_modules 会把整棵树过滤光），附文件清单/清理空目录
 ├── mcp-bridge.ts           # MCP 工具桥（外部 stdio MCP 服务器的工具接入 pi 会话）
 ├── mcp-hot-reload.ts       # mcp.json 热加载（改完即生效，不重启）
 ├── icon-svg.ts             # 插件内联 SVG 图标（manifest `iconSvg`）校验与规范化

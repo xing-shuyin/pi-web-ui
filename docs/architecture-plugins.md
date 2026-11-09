@@ -165,11 +165,30 @@ HTTP MCP 卡片的 OAuth 登录通过 `mcp_oauth_start {reqId,name,scope}` 发�
 
 下载、排队和 `host.chat` 请求持有启动时的代次。重置后的迟到回执、结束事件和异步设置验证不得覆盖新会话状态；迟到的旧运行按真实 `runId` 中止。运行中不能切换的通道必须明确提示先停止，不能回报重置成功。历史记录保留，中止失败须告知用户。回归见 `tests/unit/channel-plugins.test.ts` 和各通道的行为、重置测试。
 
+### 插件目录：代码是纯缓存，状态独立存放（`plugin-paths.ts`★ / `plugin-materialize.ts`★）
+
+插件在数据目录里拆成两个互不干扰的根：
+
+| 路径                          | 内容                                                  | 可丢弃？                                        |
+| ----------------------------- | ----------------------------------------------------- | ----------------------------------------------- |
+| `<dataDir>/plugins/<id>/`     | 代码本体（manifest / index.mjs / client / 依赖）      | **可以**：随包插件可重放，`node_modules` 可重装 |
+| `<dataDir>/plugin-data/<id>/` | 状态：`storage.json`、`secrets.bin`、`schedules.json` | **不可以**：用户配置、渠道授权、定时任务进度    |
+
+- 状态路径只走 `pluginStateDir()` / `pluginStateFile()`；老布局（状态住在代码目录）在扫描/激活时由
+  `migratePluginState()` 幂等搬过去，两边都有时以状态目录为准（绝不拿旧副本覆盖新状态）。
+- 代码目录的物化由 `materializePlugin()` 负责，并留一份回执 `.pi-materialized.json`：
+  **存在 ≠ 已准备** —— 回执登记的每个文件都还在才算装好；目录在但缺回执/缺文件 = 半残，下次启动就地补齐。
+  新装走 staging + rename 原子落盘，复制后验收（`manifest.json` 在 + 文件数 > 0）失败就报错，绝不签收空目录。
+- 复制黑名单（`.git` / `node_modules` / `whisper-cache`）**只允许**在 `server/fs-copy.ts` 里按
+  **相对路径**判定。历史事故：三处各自拿 `cpSync` 的绝对路径去匹配 `node_modules`，而 npm -g 安装时
+  包目录本身就在 `…/node_modules/pi-web-ui` 下，整棵树被过滤成空副本还被当成已安装（issue #856）。
+- 卸载会同时删掉状态目录（重装不闯回旧设置）；回滚只回滚代码，状态不回滚。
+
 ### 宿主设施（plugin-facilities.ts）
 
 | 设施         | 说明                                                                 |
 | ------------ | -------------------------------------------------------------------- |
-| `storage`    | `<pluginDir>/storage.json` 原子 KV                                   |
+| `storage`    | `<dataDir>/plugin-data/<id>/storage.json` 原子 KV                    |
 | `secrets`    | AES-256-GCM 加密机密，密钥 `<dataDir>/secrets.key`，拷机 fail closed |
 | `ensureDeps` | npm 自动补装单飞                                                     |
 

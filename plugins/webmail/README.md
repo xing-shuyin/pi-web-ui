@@ -30,7 +30,7 @@ auth.json 同级安全模型；密码见下，优先走加密机密）：
 配置回显脱敏：只返回 `hasPass` 是否存在，密码不回传浏览器。
 
 密码优先存宿主的加密机密（`host.secrets`，AES-256-GCM →
-`<pluginDir>/secrets.bin`），写入成功后 config.json 里的 `pass` 为空。
+`<dataDir>/plugin-data/webmail/secrets.bin`），写入成功后 config.json 里的 `pass` 为空。
 旧版宿主没有机密设施、或机密写盘失败（目录只读 / 磁盘满）时，密码会
 回退为明文写进 config.json 并提示一次——宁可明文，也不能保存后丢密码。
 

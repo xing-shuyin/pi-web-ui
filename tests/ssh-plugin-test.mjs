@@ -196,7 +196,7 @@ try {
 	const cfgRaw = readFileSync(join(plugDirPath, "ssh-hosts.json"), "utf8");
 	if (cfgRaw.includes("secret123")) fail("明文密码不应落在 ssh-hosts.json（应只在加密机密库）");
 	else console.log("✓ ssh-hosts.json 不再含明文密码（已迁入 host.secrets）");
-	if (!existsSync(join(plugDirPath, "secrets.bin"))) fail("secrets.bin 机密文件缺失");
+	if (!existsSync(join(dataDir, "plugin-data", PLUGIN_ID, "secrets.bin"))) fail("secrets.bin 机密文件缺失");
 	else console.log("✓ 加密机密文件 secrets.bin 已生成");
 
 	r = await rpc(sock, { action: "connect", id: badHost.id }, 30_000);

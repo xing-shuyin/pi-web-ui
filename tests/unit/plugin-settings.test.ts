@@ -5,6 +5,7 @@ import { existsSync, mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { PluginManager, type PluginHost } from "../../server/plugins.js";
+import { pluginStateDir } from "../../server/plugin-paths.js";
 
 let dir: string;
 let mgr: PluginManager;
@@ -46,7 +47,7 @@ describe("schema 解析 + 默认值", () => {
 		const p = list.find((x) => x.id === "cfg")!;
 		expect(p.settingsSchema?.length).toBe(5);
 		expect(p.settingsValues).toEqual({ pollSec: 60, notify: true, theme: "dark", name: "demo", pass: "" });
-		expect(existsSync(join(dir, "plugins", "cfg", "storage.json"))).toBe(false);
+		expect(existsSync(join(pluginStateDir(dir, "cfg"), "storage.json"))).toBe(false);
 	});
 
 	it("坏字段被跳过（非法 type / 重复 key / 缺 key）", async () => {
@@ -92,7 +93,7 @@ describe("optionsFrom（select 候选值由宿主动态提供）", () => {
 		expect(h.getSettings().thinking).toBe("high");
 		expect(mgr.savePluginSettings("dyn", { model: "gone/model" }).error).toBeUndefined();
 		expect(h.getSettings().model).toBe("gone/model");
-		expect(JSON.parse(readFileSync(join(dir, "plugins", "dyn", "storage.json"), "utf8")).settings).toEqual({
+		expect(JSON.parse(readFileSync(join(pluginStateDir(dir, "dyn"), "storage.json"), "utf8")).settings).toEqual({
 			model: "gone/model",
 			thinking: "",
 		});
@@ -113,7 +114,7 @@ describe("savePluginSettings", () => {
 			pass: "s3cret",
 		});
 		expect(r.error).toBeUndefined();
-		const raw = JSON.parse(readFileSync(join(dir, "plugins", "cfg", "storage.json"), "utf8"));
+		const raw = JSON.parse(readFileSync(join(pluginStateDir(dir, "cfg"), "storage.json"), "utf8"));
 		expect(raw.settings).toEqual({ pollSec: 120, notify: false, theme: "light", name: "prod", pass: "s3cret" });
 		expect(raw.custom).toBe(42);
 		const list = await mgr.list();
@@ -191,7 +192,7 @@ describe("secret 类型（P0-4 加密存、浏览器只见有无）", () => {
 		h.onSettingsChanged((v) => received.push(v));
 		let release!: () => void;
 		const held = withFileRmwLock(
-			join(dir, "plugins", "sec", "storage.json"),
+			join(pluginStateDir(dir, "sec"), "storage.json"),
 			() =>
 				new Promise<void>((resolve) => {
 					release = resolve;
@@ -208,7 +209,7 @@ describe("secret 类型（P0-4 加密存、浏览器只见有无）", () => {
 		mgr.savePluginSettings("sec", { apiKey: "old", name: "before" });
 		const received: unknown[] = [];
 		h.onSettingsChanged((value) => received.push(value));
-		const file = join(dir, "plugins", "sec", "storage.json");
+		const file = join(pluginStateDir(dir, "sec"), "storage.json");
 		writeFileSync(file, broken);
 		let result: { error?: string } = {};
 		expect(() => {
@@ -234,7 +235,7 @@ describe("secret 类型（P0-4 加密存、浏览器只见有无）", () => {
 		expect(mgr.savePluginSettings("sec", { apiKey: "old", name: "before" }).error).toBeUndefined();
 		const received: unknown[] = [];
 		h.onSettingsChanged((value) => received.push(value));
-		const file = join(dir, "plugins", "sec", "storage.json");
+		const file = join(pluginStateDir(dir, "sec"), "storage.json");
 		const original = readFileSync(file, "utf8");
 		const write = atomicFile.writeJsonAtomicSync;
 		const fail = vi.spyOn(atomicFile, "writeJsonAtomicSync").mockImplementation((target, data, indent) => {
@@ -263,7 +264,7 @@ describe("secret 类型（P0-4 加密存、浏览器只见有无）", () => {
 		expect(h.getSettings().apiKey).toBe("sk-live-123");
 		const list = await mgr.list();
 		expect(list.find((x) => x.id === "sec")!.settingsValues?.apiKey).toBe(true);
-		const raw = readFileSync(join(dir, "plugins", "sec", "storage.json"), "utf8");
+		const raw = readFileSync(join(pluginStateDir(dir, "sec"), "storage.json"), "utf8");
 		expect(raw).not.toContain("sk-live-123");
 		expect(JSON.parse(raw).settings).toEqual({ name: "demo" });
 		expect(mgr.savePluginSettings("sec", { apiKey: "" }).error).toBeUndefined();

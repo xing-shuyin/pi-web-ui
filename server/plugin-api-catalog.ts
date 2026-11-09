@@ -235,7 +235,7 @@ export const HOST_METHODS: ReadonlyArray<CatalogHostMethod> = [
 	{
 		name: "storage",
 		needs: "-",
-		summary: "插件私有 KV（storage.json，原子写，卸载即删）",
+		summary: "插件私有 KV（plugin-data/<id>/storage.json，原子写，卸载即删）",
 		example: `host.storage.get("k")`,
 	},
 	{ name: "secrets", needs: "-", summary: "加密 secrets（明文永不落盘/下发）", example: `host.secrets.get("token")` },

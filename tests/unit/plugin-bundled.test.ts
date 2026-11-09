@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
+import { pluginStateDir } from "../../server/plugin-paths.js";
 import { prepareBundledPlugins } from "../../server/plugin-bundled.js";
 import { PluginManager } from "../../server/plugins.js";
 
@@ -70,7 +71,9 @@ describe("bundled module provisioning", () => {
 			active: true,
 			hasClient: true,
 		});
-		expect(readFileSync(join(target, "storage.json"), "utf8")).toBe(saved);
+		// 状态住在 plugin-data/：老布局的 storage.json 被迁走，代码升级不会碰到用户的配置
+		expect(readFileSync(join(pluginStateDir(data, "superagent"), "storage.json"), "utf8")).toBe(saved);
+		expect(existsSync(join(target, "storage.json"))).toBe(false);
 	});
 	it("loads a preinstalled module in the same initial scan", async () => {
 		manager = new PluginManager(data, root, catalog);
@@ -124,5 +127,30 @@ describe("bundled module provisioning", () => {
 		expect(() => prepareBundledPlugins(data, catalog)).toThrow();
 		expect(existsSync(join(data, "plugins", "sample"))).toBe(false);
 		expect(readFileSync(join(data, "bundled-plugin-installs.json"), "utf8")).toBe("broken");
+	});
+	it("materialises a payload whose package path itself contains node_modules (npm -g layout)", () => {
+		// 回归 issue #856：全局安装时包就在 .../node_modules/pi-web-ui 下，
+		// 拿绝对路径去匹配 node_modules 会把整棵树过滤光，只剩一个空目录。
+		const pkgPlugins = join(root, "node_modules", "pi-web-ui", "plugins");
+		mkdirSync(join(pkgPlugins, "sample"), { recursive: true });
+		writeFileSync(join(pkgPlugins, "catalog.json"), JSON.stringify([{ id: "sample", preinstall: true }]));
+		writeFileSync(join(pkgPlugins, "sample", "manifest.json"), JSON.stringify({ id: "sample", version: "1.0.0" }));
+		writeFileSync(join(pkgPlugins, "sample", "index.mjs"), "export default {};");
+		const outcomes = prepareBundledPlugins(data, join(pkgPlugins, "catalog.json"));
+		expect(outcomes.find((o) => o.id === "sample")?.status).toBe("created");
+		expect(existsSync(join(data, "plugins", "sample", "manifest.json"))).toBe(true);
+		expect(existsSync(join(data, "plugins", "sample", "index.mjs"))).toBe(true);
+	});
+	it("repairs an empty plugin directory left behind by a failed copy instead of treating it as installed", () => {
+		mkdirSync(join(data, "plugins", "sample"), { recursive: true });
+		prepareBundledPlugins(data, catalog);
+		expect(existsSync(join(data, "plugins", "sample", "manifest.json"))).toBe(true);
+		expect(existsSync(join(data, "plugins", "sample", "index.mjs"))).toBe(true);
+	});
+	it("keeps a half-materialised directory repairable across restarts", () => {
+		prepareBundledPlugins(data, catalog);
+		rmSync(join(data, "plugins", "sample", "index.mjs"));
+		prepareBundledPlugins(data, catalog);
+		expect(existsSync(join(data, "plugins", "sample", "index.mjs"))).toBe(true);
 	});
 });

@@ -18,7 +18,10 @@ function installed() {
 	mkdirSync(target, { recursive: true });
 	writeFileSync(join(target, "manifest.json"), '{"id":"desktop-use"}');
 	writeFileSync(join(target, "libnut.node"), "native addon");
-	return { root, target };
+	const state = join(root, "plugin-data", "desktop-use");
+	mkdirSync(state, { recursive: true });
+	writeFileSync(join(state, "storage.json"), '{"settings":{"token":"keep-until-uninstall"}}');
+	return { root, target, state };
 }
 afterEach(() => {
 	vi.mocked(rmSync).mockReset().mockImplementation(actualRm);
@@ -29,9 +32,11 @@ const { rmSync: actualRm, renameSync: actualRename } = await vi.importActual<typ
 
 describe("plugin removal", () => {
 	it("removes an installation without leaving a loadable directory", () => {
-		const { root, target } = installed();
+		const { root, target, state } = installed();
 		expect(removePlugin(root, "desktop-use")).toEqual({ deferred: false });
 		expect(existsSync(target)).toBe(false);
+		// 卸载即删：状态跟代码一起走，重装不会闯回旧设置与机密
+		expect(existsSync(state)).toBe(false);
 		expect(readdirSync(join(root, "plugin-trash"))).toEqual([]);
 	});
 
@@ -48,13 +53,15 @@ describe("plugin removal", () => {
 	});
 
 	it("preserves the installation if moving it fails", () => {
-		const { root, target } = installed();
+		const { root, target, state } = installed();
 		vi.mocked(renameSync).mockImplementationOnce(() => {
 			throw new Error("rename denied");
 		});
 		expect(() => removePlugin(root, "desktop-use")).toThrow("rename denied");
 		expect(existsSync(join(target, "manifest.json"))).toBe(true);
 		expect(existsSync(join(target, "libnut.node"))).toBe(true);
+		// 代码没动，状态也不能提前没了
+		expect(existsSync(join(state, "storage.json"))).toBe(true);
 	});
 
 	it("does not clean unrelated files and rejects path traversal", () => {

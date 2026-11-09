@@ -12,7 +12,7 @@
 
 ## 调度、持久化与画布
 
-插件 cron 的分片计时保留同一个 `dueAt`，仅在该时刻到期并执行后计算下一次。普通插件设置与加密后的 `setting:` secret 同存 `storage.json`，以一次原子替换提交；内部 `__settingsSecrets` 为保留键，插件 storage API 不可读取或修改，旧 `secrets.bin` 仍作为未迁移项的兼容读取源。保存失败不通知设置回调或返回成功。
+插件 cron 的分片计时保留同一个 `dueAt`，仅在该时刻到期并执行后计算下一次。普通插件设置与加密后的 `setting:` secret 同存 **状态目录** `<dataDir>/plugin-data/<id>/storage.json`（代码目录 `plugins/<id>/` 是纯缓存，可被重新物化），以一次原子替换提交；内部 `__settingsSecrets` 为保留键，插件 storage API 不可读取或修改，旧 `secrets.bin` 仍作为未迁移项的兼容读取源。保存失败不通知设置回调或返回成功。
 
 MCP 同文件改名一次原子提交；跨作用域迁移先写恢复日志、提交目标，再清理源。迁移失败保留至少一份记录，重复相同保存请求可以恢复；目标冲突或两端内容变化则拒绝恢复。原子写复用 `atomic-file.ts`，MCP 新文件默认 `0600`，支持刷新暂存文件；这不构成断电持久性承诺。
 

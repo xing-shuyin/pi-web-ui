@@ -12,6 +12,8 @@ let proc = null;
 const dataDir = mkdtempSync(join(tmpdir(), "pi-web-settings-plugin-"));
 
 const plugDir = join(dataDir, "plugins", "opts");
+// 插件状态（设置/机密/定时）在 plugin-data/<id>/，代码目录是纯缓存
+const plugStateDir = join(dataDir, "plugin-data", "opts");
 mkdirSync(plugDir, { recursive: true });
 writeFileSync(
 	join(plugDir, "manifest.json"),
@@ -131,7 +133,7 @@ try {
 		}),
 	);
 	await waitFor(sock, (m) => m.type === "notice" && m.text === "插件设置已保存", "save notice");
-	const raw = JSON.parse(readFileSync(join(plugDir, "storage.json"), "utf8"));
+	const raw = JSON.parse(readFileSync(join(plugStateDir, "storage.json"), "utf8"));
 	if (
 		raw.settings?.pollSec !== 120 ||
 		raw.settings?.notify !== false ||
@@ -151,7 +153,7 @@ try {
 	sock.send(JSON.stringify({ type: "plugin_settings", pluginId: "opts", values: { pollSec: 5 } }));
 	const err = await waitFor(sock, (m) => m.type === "notice" && m.text.includes("插件设置保存失败"), "reject notice");
 	if (!err.text.includes("超出范围")) fail(`拒绝文案不对：${err.text}`);
-	const raw2 = JSON.parse(readFileSync(join(plugDir, "storage.json"), "utf8"));
+	const raw2 = JSON.parse(readFileSync(join(plugStateDir, "storage.json"), "utf8"));
 	if (raw2.settings?.pollSec !== 120) fail("非法保存不应改动已存值");
 	else console.log("✓ 越界值被拒（notice 报错）且已存值不变");
 

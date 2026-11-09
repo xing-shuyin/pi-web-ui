@@ -556,7 +556,7 @@ try {
 
 	{
 		writeFileSync(
-			join(plugDst, "storage.json"),
+			join(dataDir, "plugin-data", PLUGIN_ID, "storage.json"),
 			`${JSON.stringify({ settings: { allowExec: true, concurrency: 2 } }, null, "\t")}\n`,
 			"utf8",
 		);
@@ -676,7 +676,7 @@ try {
 
 	{
 		writeFileSync(
-			join(plugDst, "storage.json"),
+			join(dataDir, "plugin-data", PLUGIN_ID, "storage.json"),
 			`${JSON.stringify({ settings: { allowExec: false, concurrency: 2 } }, null, "\t")}\n`,
 			"utf8",
 		);

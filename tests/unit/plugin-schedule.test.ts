@@ -12,6 +12,7 @@ import {
 	saveScheduleRecords,
 } from "../../server/plugin-schedule.js";
 import { PluginManager, type PluginHost } from "../../server/plugins.js";
+import { pluginStateDir } from "../../server/plugin-paths.js";
 
 describe("parseCronField", () => {
 	it("星/步长/范围/列表/单值", () => {
@@ -167,7 +168,7 @@ describe("host.schedule 持久版", () => {
 		makePlugin("s");
 		const h = await hostOf("s");
 		const off = h.schedule("0 9 * * *", () => {}, { persistent: true, id: "daily", label: "日报" });
-		const raw = JSON.parse(readFileSync(join(dir, "plugins", "s", "schedules.json"), "utf8"));
+		const raw = JSON.parse(readFileSync(join(pluginStateDir(dir, "s"), "schedules.json"), "utf8"));
 		expect(raw.schedules.daily.spec).toBe("0 9 * * *");
 		expect(raw.schedules.daily.catchUp).toBe("skip");
 		const tasks = mgr.bgTasks().filter((t) => t.taskId === "schedule:daily");
@@ -175,21 +176,22 @@ describe("host.schedule 持久版", () => {
 		expect(tasks[0]!.plugin).toBe("s");
 		expect(tasks[0]!.name).toContain("日报");
 		off();
-		expect(JSON.parse(readFileSync(join(dir, "plugins", "s", "schedules.json"), "utf8")).schedules).toEqual({});
+		expect(JSON.parse(readFileSync(join(pluginStateDir(dir, "s"), "schedules.json"), "utf8")).schedules).toEqual({});
 		expect(mgr.bgTasks().filter((t) => t.taskId === "schedule:daily")).toHaveLength(0);
 	});
 	it("activate 重调同 id 幂等：保留 lastRun/createdAt，只更新声明", async () => {
 		makePlugin("s");
 		const h = await hostOf("s");
+		mkdirSync(pluginStateDir(dir, "s"), { recursive: true });
 		writeFileSync(
-			join(dir, "plugins", "s", "schedules.json"),
+			join(pluginStateDir(dir, "s"), "schedules.json"),
 			JSON.stringify({
 				v: 1,
 				schedules: { daily: { spec: "0 8 * * *", catchUp: "skip", createdAt: 100, lastRun: 123 } },
 			}),
 		);
 		h.schedule("0 9 * * *", () => {}, { persistent: true, id: "daily", catchUp: "once" });
-		const rec = JSON.parse(readFileSync(join(dir, "plugins", "s", "schedules.json"), "utf8")).schedules.daily;
+		const rec = JSON.parse(readFileSync(join(pluginStateDir(dir, "s"), "schedules.json"), "utf8")).schedules.daily;
 		expect(rec.spec).toBe("0 9 * * *");
 		expect(rec.catchUp).toBe("once");
 		expect(rec.lastRun).toBe(123);
@@ -208,7 +210,7 @@ describe("host.schedule 持久版", () => {
 		makePlugin("s");
 		const h = await hostOf("s");
 		const off = h.schedule(1000, () => {}, { persistent: true, id: "fast" });
-		expect(JSON.parse(readFileSync(join(dir, "plugins", "s", "schedules.json"), "utf8")).schedules.fast.spec).toBe(
+		expect(JSON.parse(readFileSync(join(pluginStateDir(dir, "s"), "schedules.json"), "utf8")).schedules.fast.spec).toBe(
 			"60000",
 		);
 		off();
