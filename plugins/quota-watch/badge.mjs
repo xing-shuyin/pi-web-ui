@@ -6,31 +6,48 @@
  * 徽标与 tooltip 也只讲这一家 —— 不再有「当前 + 最紧」「全部来源并排」的多来源模式。
  */
 
-/** 模型标识里的关键字 → 额度来源 id（顺序有意义：先认更具体的）。 */
+/**
+ * 模型标识里的关键字 → 额度来源 id（顺序有意义：先认更具体的）。
+ * 注意：OpenCode 不在这里 —— 它走供应商段精确匹配（见 providerFromModel），
+ * 因为它的模型名五花八门（grok/hy3/kimi…），唯一靠谱的信号是 `供应商/模型` 里斜杠前的供应商 id。
+ */
 const MODEL_RULES = [
 	{ id: "deepseek", test: /deepseek/i },
 	{ id: "claude", test: /claude|anthropic|-opus|-sonnet|-haiku/i },
 	{ id: "codex", test: /codex|openai|(^|[/\s-])gpt|(^|[/\s-])o[134]([/\s-]|$)|chatgpt/i },
+	// OpenCode 网关透出的模型名（如 Iceman Contributor Free）里没有 opencode 字样，
+	// 但这些是 OpenCode 订阅（Zen 等）才有的档位，放到最后兜底，避免误伤上面的精确规则。
+	{ id: "opencode", test: /opencode|iceman|contributor/i },
 ];
 
 /** 徽标里的短名（底栏空间小）。 */
-const SHORT = { claude: "CL", codex: "CX", deepseek: "DS" };
+const SHORT = { claude: "CL", codex: "CX", deepseek: "DS", opencode: "OC" };
 
 /** 中文/英文展示名。 */
 const LABEL = {
 	claude: { zh: "Claude Code", en: "Claude Code" },
 	codex: { zh: "Codex", en: "Codex" },
 	deepseek: { zh: "DeepSeek", en: "DeepSeek" },
+	opencode: { zh: "OpenCode", en: "OpenCode" },
 };
 
 /**
- * 从模型标识（如 `auto/deepseek-v4.1-flash`、`anthropic/claude-sonnet-4`）认出额度来源。
+ * 从模型标识（如 `opencode-go/grok-4.7`、`anthropic/claude-sonnet-4`）认出额度来源。
+ *
+ * 匹配分两步，对所有用户都成立，不依赖任何个人配置：
+ * 1. 供应商段精确匹配：取 `/` 前面的供应商 id，只要含 `opencode`（SDK 内置的 `opencode` /
+ *    `opencode-go`，以及克隆出来的 `opencode-go-2`、手建的 `my-opencode` 都命中）→ 直接认成 opencode。
+ *    供应商 id 是用户/系统显式选的，比模型名里的子串可靠得多。
+ * 2. 剩下的才走模型名关键字（deepseek/claude/codex 等）。
  * @param {unknown} model
  * @returns {string} provider id，认不出返回空串
  */
 export function providerFromModel(model) {
 	const text = String(model ?? "").trim();
 	if (!text) return "";
+	const slash = text.indexOf("/");
+	const segment = (slash === -1 ? text : text.slice(0, slash)).trim();
+	if (/opencode/i.test(segment)) return "opencode";
 	for (const rule of MODEL_RULES) {
 		if (rule.test.test(text)) return rule.id;
 	}
@@ -119,6 +136,20 @@ function describeProvider(provider, zh) {
 		const text = String(balance.text ?? "");
 		return { text, detail: `${name} 余额 ${text}`, ok: true };
 	}
+	// OpenCode 这类「聚合登录态」来源：没有窗口/余额，只有 extra 里的各家登录态 —— 有条目即视为有效
+	const extras = Array.isArray(provider?.extra) ? provider.extra : [];
+	if (extras.length) {
+		const text = `●${extras.length}`;
+		return {
+			text,
+			detail: `${name}：已配置 ${extras.length} 家（${extras
+				.map((e) => e?.label)
+				.filter(Boolean)
+				.join("、")
+				.slice(0, 80)}）`,
+			ok: true,
+		};
+	}
 	return { text: "—", detail: `${name}：无额度数据`, ok: false };
 }
 
@@ -176,7 +207,7 @@ export function formatHint(snapshot, activeId, zh) {
 			const pct = remaining === null ? (zh ? "未知" : "unknown") : `${pctText(remaining)}%`;
 			lines.push(`${label} ${zh ? "剩余" : "left"} ${pct}`);
 		}
-	} else if (!active.balance) {
+	} else if (!active.balance && !(active.extra ?? []).length) {
 		lines.push(zh ? "接口没有返回额度数据" : "No quota data returned");
 	}
 	if (active.balance) lines.push(`${zh ? "余额" : "Balance"} ${active.balance.text}`);

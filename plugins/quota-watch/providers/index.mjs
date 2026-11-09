@@ -3,6 +3,7 @@ import { join } from "node:path";
 import * as claude from "./claude.mjs";
 import * as codex from "./codex.mjs";
 import * as deepseek from "./deepseek.mjs";
+import * as opencode from "./opencode.mjs";
 import { errorText, isNetworkError, makeProvider, readJson } from "./util.mjs";
 
 const PER_PROVIDER_TIMEOUT_MS = 30_000;
@@ -99,7 +100,7 @@ function withTimeout(promise, id) {
 }
 
 /**
- * 三个额度来源 → 采集器。与 `badge.mjs` 的 MODEL_RULES 一一对应：
+ * 四个额度来源 → 采集器。与 `badge.mjs` 的 MODEL_RULES 一一对应：
  * 模型认出哪家，就只查哪家（见 collectActive）。
  * @type {Array<{ id: string, name: string, setting: string, kind: "balance" | "subscription", run: (ctx: CollectContext) => Promise<any> }>}
  */
@@ -125,6 +126,14 @@ const SOURCES = [
 		// 余额型：没有订阅窗口，数字随一次请求就变 —— 缓存该短得多（见 index.mjs 的 TTL 分档）
 		kind: "balance",
 		run: ({ host, settings, home }) => deepseek.collect({ host, apiKey: resolveDeepSeekKey(host, settings, home) }),
+	},
+	{
+		id: opencode.ID,
+		name: opencode.NAME,
+		setting: "opencodeEnabled",
+		// 聚合登录态：只读本机 auth.json，不出网 —— 缓存沿用订阅档（见 index.mjs 的 TTL 分档）
+		kind: "subscription",
+		run: ({ host, settings, home }) => opencode.collect({ host, settings, home }),
 	},
 ];
 

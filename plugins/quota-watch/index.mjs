@@ -238,7 +238,7 @@ export default {
 			label: "订阅额度",
 			description:
 				"Report the remaining quota of the provider serving the user's current model (Claude Code, " +
-				"Codex or DeepSeek): per-window remaining percentage, reset time and account balance, read from local CLI " +
+				"Codex, DeepSeek or OpenCode): per-window remaining percentage, reset time and account balance, read from local CLI " +
 				"logins. Only that one provider is queried — other subscriptions on this machine are intentionally ignored. " +
 				"Use it before starting long autonomous runs or when the user asks how much quota is left.",
 			promptSnippet: "check the remaining quota of the current model's provider",

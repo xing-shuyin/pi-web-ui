@@ -7,6 +7,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import * as claude from "../../plugins/quota-watch/providers/claude.mjs";
 import * as codex from "../../plugins/quota-watch/providers/codex.mjs";
 import * as deepseek from "../../plugins/quota-watch/providers/deepseek.mjs";
+import * as opencode from "../../plugins/quota-watch/providers/opencode.mjs";
 import {
 	formatBadge,
 	formatHint,
@@ -81,6 +82,8 @@ describe("quota-watch manifest", () => {
 			"codexEnabled",
 			"deepseekEnabled",
 			"deepseekKey",
+			"opencodeEnabled",
+			"opencodeKey",
 			"refreshMinutes",
 		]);
 		// 只查当前供应商 → 不再提供「全部来源并排」这类模式开关
@@ -221,6 +224,71 @@ describe("deepseek provider", () => {
 		expect(result.windows).toEqual([]);
 		expect(result.extra.map((item: any) => item.value)).toEqual(["¥5.50", "¥100.00"]);
 		expect(calls[0].init.headers.authorization).toBe("Bearer sk-deepseek");
+	});
+});
+
+describe("opencode provider", () => {
+	it("go/status 的三档用量计换算成剩余百分比 + 重置时间", async () => {
+		const home = makeHome();
+		writeJson(join(home, ".pi", "agent", "provider-keys.json"), {
+			"opencode-go": { activeKeyName: "pi", keys: [{ name: "pi", apiKey: "oc_sk_test" }] },
+		});
+		writeJson(join(home, ".local", "share", "opencode", "auth.json"), {
+			"opencode-go": { type: "api", key: "sk-local" },
+		});
+		const { host } = fakeHost({
+			"opencode.ai/console/api/go/status": () => ({
+				product: "go",
+				access: {
+					endsAt: "2026-12-02T09:23:11.000Z",
+					meters: {
+						fiveHour: {
+							startsAt: "2026-11-09T06:45:28.000Z",
+							resetsAt: "2026-11-09T11:45:28.000Z",
+							limitMicroCents: "1200000000",
+							usedMicroCents: "10122818",
+						},
+						week: {
+							startsAt: "2026-11-09T00:00:00.000Z",
+							resetsAt: "2026-11-16T00:00:00.000Z",
+							limitMicroCents: "3000000000",
+							usedMicroCents: "10122818",
+						},
+						month: {
+							resetsAt: "2026-12-02T09:23:11.000Z",
+							limitMicroCents: "6000000000",
+							usedMicroCents: "71660699",
+						},
+					},
+				},
+			}),
+		});
+		const result = await opencode.collect({ host, settings: {}, home });
+		expect(result.status).toBe("ok");
+		expect(result.plan).toContain("Go");
+		expect(result.windows.map((w: any) => w.id)).toEqual(["five-hour", "weekly", "monthly"]);
+		// 1 - 10122818/1200000000 ≈ 99.16%，1 - 71660699/6000000000 ≈ 98.81%
+		expect(result.windows[0].remainingPercent).toBeCloseTo(99.16, 1);
+		expect(result.windows[2].remainingPercent).toBeCloseTo(98.81, 1);
+		expect(result.windows[0].resetAt).toBe("2026-11-09T11:45:28.000Z");
+		// 本机登录态列表照样附上
+		expect(result.extra.map((e: any) => e.label)).toContain("opencode-go");
+	});
+
+	it("没有 Key 也没有本机登录态时 signed-out，有登录态无 Key 时只读本地", async () => {
+		const bare = makeHome();
+		const { host } = fakeHost({});
+		expect((await opencode.collect({ host, settings: {}, home: bare })).status).toBe("signed-out");
+
+		const home = makeHome();
+		writeJson(join(home, ".local", "share", "opencode", "auth.json"), {
+			"opencode-go": { type: "api", key: "sk-local" },
+		});
+		const { host: host2 } = fakeHost({});
+		const local = await opencode.collect({ host: host2, settings: {}, home });
+		expect(local.status).toBe("ok");
+		expect(local.windows).toEqual([]);
+		expect(local.extra.length).toBe(1);
 	});
 });
 
@@ -391,6 +459,15 @@ describe("底栏徽标与当前供应商识别", () => {
 		["anthropic/claude-sonnet-4", "claude"],
 		["auto/claude-opus-4-1", "claude"],
 		["openai/gpt-5.1-codex", "codex"],
+		// OpenCode：模型名五花八门，只看 `/` 前的供应商段（含 opencode 即命中，与个人配置无关）
+		["opencode/kimi-k2.6", "opencode"],
+		["opencode-go/kimi-k3", "opencode"],
+		["opencode-go/grok-4.7", "opencode"],
+		["opencode-go-2/hy3", "opencode"],
+		// OpenCode 网关透出的订阅模型名里没有 opencode 字样，兜底识别（见 badge.mjs）
+		["Iceman Contributor Free", "opencode"],
+		["iceman-contributor-free", "opencode"],
+		["my-opencode/some-model", "opencode"],
 		["codex-mini-latest", "codex"],
 		["auto/o3-mini", "codex"],
 		["magpie/qwen3-coder", ""],

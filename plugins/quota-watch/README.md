@@ -9,11 +9,12 @@
 
 ## 支持哪些来源
 
-| 平台                  | 凭据（自动探测）                                | 接口                                 | 展示                        |
-| --------------------- | ----------------------------------------------- | ------------------------------------ | --------------------------- |
-| Claude Code           | `~/.claude/.credentials.json`                   | `api.anthropic.com/api/oauth/usage`  | 5 小时 / 每周 / 分模型窗口  |
-| Codex（ChatGPT 订阅） | `~/.codex/auth.json`                            | `chatgpt.com/backend-api/wham/usage` | 主 / 次窗口 + 赠送额度      |
-| DeepSeek              | 设置里填 API Key，或环境变量 `DEEPSEEK_API_KEY` | `api.deepseek.com/user/balance`      | 账户余额（赠送 / 充值拆分） |
+| 平台                  | 凭据（自动探测）                                | 接口                                 | 展示                         |
+| --------------------- | ----------------------------------------------- | ------------------------------------ | ---------------------------- |
+| Claude Code           | `~/.claude/.credentials.json`                   | `api.anthropic.com/api/oauth/usage`  | 5 小时 / 每周 / 分模型窗口   |
+| Codex（ChatGPT 订阅） | `~/.codex/auth.json`                            | `chatgpt.com/backend-api/wham/usage` | 主 / 次窗口 + 赠送额度       |
+| DeepSeek              | 设置里填 API Key，或环境变量 `DEEPSEEK_API_KEY` | `api.deepseek.com/user/balance`      | 账户余额（赠送 / 充值拆分）  |
+| OpenCode（Go 订阅）   | 本机 pi 已存的 opencode 凭据，或设置里填 Key    | `opencode.ai/console/api/go/status`  | 5 小时 / 每周 / 每月剩余额度 |
 
 「自动探测」的含义：你只要在对应 CLI / IDE 里登录过，插件就能查到，**不需要再填任何东西**。
 登录态过期时插件在内存里用 refresh_token 续期，**不会改写**你的凭据文件。
@@ -38,6 +39,10 @@
   `used_percent`、`limit_window_seconds`、`reset_at`，以及 `credits`。
 - **DeepSeek**：只有余额接口，没有订阅窗口，所以卡片只展示余额数字（附赠送 / 充值拆分），不画进度条 ——
   余额的「百分比」没有语义。
+- **OpenCode**：`console/api/go/status` 返回订阅三档用量计（`access.meters` 的 `fiveHour` / `week` / `month`，
+  微美分 `usedMicroCents / limitMicroCents`），插件换算成剩余百分比 + `resetsAt` 倒计时。
+  免费模型（Iceman Contributor Free 等）在 Go 表里是 Unlimited，不占订阅窗口 —— 显示的永远是账号维度的剩余额度。
+  没有订阅窗口的账号降级为只展示本机登录态列表。
 
 接口是各家私有但稳定的 CLI 通道，任何一个平台改协议时，插件会显示「查询失败 + 原因」而不是静默消失。
 

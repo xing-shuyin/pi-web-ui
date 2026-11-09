@@ -446,10 +446,10 @@
 		"id": "quota-watch",
 		"name": "额度看板",
 		"nameEn": "Quota Watch",
-		"version": "0.3.2",
+		"version": "0.5.0",
 		"icon": "📊",
 		"iconSvg": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.8\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><path d=\"M3 3v18h18\"/><rect x=\"7\" y=\"7\" width=\"3\" height=\"9\" rx=\"1\"/><rect x=\"13\" y=\"11\" width=\"3\" height=\"5\" rx=\"1\"/></svg>",
-		"description": "底栏只显示当前模型对应那家的额度，点它，宿主弹出跟随位置的小卡片：自动读取本机已登录的 Antigravity（反重力）、Claude Code、Codex 登录态，DeepSeek 填一次 Key 即可；卡片里是剩余百分比、重置倒计时与账户余额，刷新按钮外圈就是自动刷新进度、旁边实时显示数据有多旧，点刷新底栏与卡片同一帧更新，AI 也能用工具直接查。只查当前供应商，别家订阅不出网、不打扰。凭据只在本机读取，不外传、不写盘。",
+		"description": "底栏只显示当前模型对应那家的额度，点它，宿主弹出跟随位置的小卡片：自动读取本机已登录的 Claude Code、Codex、OpenCode（Go 订阅剩余额度）登录态，DeepSeek 填一次 Key 即可；卡片里是剩余百分比、重置倒计时与账户余额，刷新按钮外圈就是自动刷新进度、旁边实时显示数据有多旧，点刷新底栏与卡片同一帧更新，AI 也能用工具直接查。只查当前供应商，别家订阅不出网、不打扰。凭据只在本机读取，不外传、不写盘。",
 		"descriptionEn": "The bottom bar shows only the quota of the provider behind your current model; click it and the host pops a small card right next to it: local Antigravity, Claude Code and Codex logins are read automatically (DeepSeek needs one API key), with remaining percentage, reset countdowns and balance — the refresh button doubles as an auto-refresh progress ring, the data's age is shown live, and one click updates the bar and the card in the same frame. The AI can query it too. Only that provider is queried; other subscriptions are left alone. Credentials stay on this machine; nothing is uploaded or persisted.",
 		"source": "xing-shuyin/pi-web-ui/plugins/quota-watch",
 		"homepage": "https://github.com/xing-shuyin/pi-web-ui/tree/main/plugins/quota-watch"
