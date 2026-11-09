@@ -344,6 +344,8 @@
 		"openHistory": "Geçmiş konuşmalar",
 		"openFiles": "Dosya listesi",
 		"openProject": "Projeyi aç",
+		"openLocalProject": "Open local project",
+		"openRemoteProject": "Open remote project",
 		"newChatAction": "New Chat",
 		"newChatInCurrentProjectTip": "Start a new conversation in this project",
 		"streaming": "Devam ediyor…",

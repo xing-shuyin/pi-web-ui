@@ -344,6 +344,8 @@
 		"openHistory": "이전 대화",
 		"openFiles": "파일 목록",
 		"openProject": "프로젝트 열기",
+		"openLocalProject": "Open local project",
+		"openRemoteProject": "Open remote project",
 		"newChatAction": "New Chat",
 		"newChatInCurrentProjectTip": "Start a new conversation in this project",
 		"streaming": "진행 중…",

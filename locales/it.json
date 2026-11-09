@@ -344,6 +344,8 @@
 		"openHistory": "Cronologia",
 		"openFiles": "File",
 		"openProject": "Apri progetto",
+		"openLocalProject": "Open local project",
+		"openRemoteProject": "Open remote project",
 		"newChatAction": "New Chat",
 		"newChatInCurrentProjectTip": "Start a new conversation in this project",
 		"streaming": "Streaming…",

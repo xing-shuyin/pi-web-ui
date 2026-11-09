@@ -344,6 +344,8 @@
 		"openHistory": "История диалогов",
 		"openFiles": "Файлы",
 		"openProject": "Открыть проект",
+		"openLocalProject": "Open local project",
+		"openRemoteProject": "Open remote project",
 		"newChatAction": "Новый чат",
 		"newChatInCurrentProjectTip": "Начать новый диалог в этом проекте",
 		"streaming": "Выполняется…",

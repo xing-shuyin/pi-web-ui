@@ -74,9 +74,21 @@ export const parentOf = (p: string): string | null => {
 	return /^[A-Za-z]:$/.test(parent) ? parent + "/" : parent;
 };
 
+const PROJECT_PICKER_TAB_KEY = "pi-web-ui:project-picker-tab";
+
+function readStoredProjectPickerTab(): "local" | "remote" | null {
+	try {
+		const v = localStorage.getItem(PROJECT_PICKER_TAB_KEY);
+		return v === "local" || v === "remote" ? v : null;
+	} catch {
+		return null;
+	}
+}
+
 interface DirectoryBrowserProps {
 	portalContainer?: HTMLElement;
 	localOnly?: boolean;
+	initialTab?: "local" | "remote";
 	currentCwd: string;
 	pathCompletions: { name: string; path: string; type: "dir" | "file" }[];
 	workspaceRoots: string[];
@@ -103,6 +115,7 @@ export function DirectoryBrowser({
 	role,
 	ariaLabel,
 	localOnly = false,
+	initialTab,
 	portalContainer,
 }: DirectoryBrowserProps) {
 	const t = useT();
@@ -112,9 +125,22 @@ export function DirectoryBrowser({
 	const homeDir = useAppField("homeDir");
 	const desktopDir = useAppField("desktopDir");
 
-	const [activeTab, setActiveTab] = useState<"local" | "remote">(() =>
-		supportsRemoteSsh && isRemoteWorkspaceUri(currentCwd) ? "remote" : "local",
-	);
+	const [activeTab, setActiveTabState] = useState<"local" | "remote">(() => {
+		if (!supportsRemoteSsh) return "local";
+		if (initialTab === "local" || initialTab === "remote") return initialTab;
+		const stored = readStoredProjectPickerTab();
+		if (stored) return stored;
+		return isRemoteWorkspaceUri(currentCwd) ? "remote" : "local";
+	});
+
+	const setActiveTab = (tab: "local" | "remote") => {
+		setActiveTabState(tab);
+		try {
+			localStorage.setItem(PROJECT_PICKER_TAB_KEY, tab);
+		} catch {
+			// ignore quota / privacy-mode failures
+		}
+	};
 
 	useEffect(() => {
 		if (!supportsRemoteSsh && activeTab === "remote") {

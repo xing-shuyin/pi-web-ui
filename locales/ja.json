@@ -344,6 +344,8 @@
 		"openHistory": "履歴チャット",
 		"openFiles": "ファイル一覧",
 		"openProject": "プロジェクトを開く",
+		"openLocalProject": "Open local project",
+		"openRemoteProject": "Open remote project",
 		"newChatAction": "New Chat",
 		"newChatInCurrentProjectTip": "Start a new conversation in this project",
 		"streaming": "進行中…",

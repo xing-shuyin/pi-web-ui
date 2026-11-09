@@ -22,10 +22,12 @@ import {
 	FiFolder,
 	FiFolderPlus,
 	FiGitBranch,
+	FiHardDrive,
 	FiMessageSquare,
 	FiMoreVertical,
 	FiPlus,
 	FiSearch,
+	FiServer,
 	FiTrash2,
 	FiTerminal,
 	FiUsers,
@@ -452,6 +454,7 @@ export const LeftPanel = memo(function LeftPanel({
 	const currentCwd = cwd;
 	const conversationOrderVersion = useConversationOrderVersion();
 	const [projectPickerOpen, setProjectPickerOpen] = useState(false);
+	const [projectPickerInitialTab, setProjectPickerInitialTab] = useState<"local" | "remote" | undefined>(undefined);
 	const [confirmDel, setConfirmDel] = useState<string | null>(null);
 	const [confirmTakeover, setConfirmTakeover] = useState<string | null>(null);
 	const [renaming, setRenaming] = useState<string | null>(null);
@@ -2773,11 +2776,24 @@ export const LeftPanel = memo(function LeftPanel({
 										className="lp-workspace-menu-item lp-manage-projects-btn"
 										onClick={() => {
 											setWorkspaceMenuOpen(false);
+											setProjectPickerInitialTab("local");
 											setProjectPickerOpen(true);
 										}}
 									>
-										<FiFolder style={{ fontSize: "13px" }} />
-										<span>{t("openProject")}</span>
+										<FiHardDrive style={{ fontSize: "13px" }} />
+										<span>{t("openLocalProject")}</span>
+									</button>
+									<button
+										type="button"
+										className="lp-workspace-menu-item lp-manage-projects-btn"
+										onClick={() => {
+											setWorkspaceMenuOpen(false);
+											setProjectPickerInitialTab("remote");
+											setProjectPickerOpen(true);
+										}}
+									>
+										<FiServer style={{ fontSize: "13px" }} />
+										<span>{t("openRemoteProject")}</span>
 									</button>
 									{onOpenSandboxModal && (
 										<button
@@ -3289,6 +3305,7 @@ export const LeftPanel = memo(function LeftPanel({
 			))}
 			<ProjectPicker
 				open={projectPickerOpen}
+				initialTab={projectPickerInitialTab}
 				currentCwd={currentCwd}
 				pathCompletions={pathCompletions ?? []}
 				workspaceRoots={workspaceRoots}

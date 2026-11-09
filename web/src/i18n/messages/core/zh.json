@@ -340,6 +340,8 @@
 	"openHistory": "历史",
 	"openFiles": "文件列表",
 	"openProject": "打开项目",
+	"openLocalProject": "打开本地项目",
+	"openRemoteProject": "打开远程项目",
 	"newChatAction": "新建对话",
 	"newChatInCurrentProjectTip": "新建当前项目的对话",
 	"streaming": "进行中…",

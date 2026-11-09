@@ -13,6 +13,7 @@ export { MACHINE_ROOT, browseQuery, joinProjectPath, isValidProjectName, parentO
 interface ProjectPickerProps {
 	portalContainer?: HTMLElement;
 	localOnly?: boolean;
+	initialTab?: "local" | "remote";
 	open: boolean;
 	currentCwd: string;
 	pathCompletions: { name: string; path: string; type: "dir" | "file" }[];
@@ -33,6 +34,7 @@ export function ProjectPicker({
 	onCreateProject,
 	mode = "project",
 	localOnly,
+	initialTab,
 	portalContainer,
 }: ProjectPickerProps) {
 	const t = useT();
@@ -42,6 +44,7 @@ export function ProjectPicker({
 		<DirectoryBrowser
 			portalContainer={portalContainer}
 			localOnly={localOnly}
+			initialTab={initialTab}
 			currentCwd={currentCwd}
 			pathCompletions={pathCompletions}
 			workspaceRoots={workspaceRoots}

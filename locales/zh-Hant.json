@@ -344,6 +344,8 @@
 		"openHistory": "歷史",
 		"openFiles": "文件列表",
 		"openProject": "打開項目",
+		"openLocalProject": "打开本地專案",
+		"openRemoteProject": "打开远程專案",
 		"newChatAction": "新建對話",
 		"newChatInCurrentProjectTip": "新建当前專案的對話",
 		"streaming": "進行中…",
