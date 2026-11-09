@@ -20899,7 +20899,10 @@
 		color: var(--green);
 		background: color-mix(in srgb, var(--green) 12%, transparent);
 		padding: 4px 10px;
+		border: 0;
 		border-radius: 9999px;
+		font-family: inherit;
+		cursor: default;
 		user-select: none;
 		transition:
 			color 0.2s,
@@ -20908,6 +20911,12 @@
 	.settings-live-pill.syncing {
 		color: var(--accent);
 		background: var(--accent-soft);
+	}
+	/* 保存未确认（超时无回执 / 通道断开）：必须显式报警并可重试，禁止假装已保存 */
+	.settings-live-pill.failed {
+		color: var(--red-text);
+		background: color-mix(in srgb, var(--red) 16%, transparent);
+		cursor: pointer;
 	}
 	.settings-live-dot {
 		width: 6px;

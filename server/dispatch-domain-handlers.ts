@@ -863,8 +863,11 @@ export function handleSettingsMessage(
 		case "get_settings":
 			cs.refreshSettings();
 			return true;
-		case "set_settings":
-			void (cs as unknown as { setSettings: (p: Record<string, unknown>) => Promise<void> }).setSettings({
+		case "set_settings": {
+			// 同步抛错与 Promise 拒绝都要回告前端；实现可能是同步 mock（返回 undefined）
+			const saving = (
+				cs as unknown as { setSettings: (p: Record<string, unknown>) => Promise<void> | void }
+			).setSettings({
 				promptMode: msg.promptMode,
 				customSystemPrompt: msg.customSystemPrompt,
 				promptTemplate: (msg as { promptTemplate?: string }).promptTemplate,
@@ -946,7 +949,17 @@ export function handleSettingsMessage(
 				quickPhrasesSeeded: (msg as { quickPhrasesSeeded?: boolean }).quickPhrasesSeeded,
 				uiLayout: (msg as { uiLayout?: unknown }).uiLayout,
 			});
+			void Promise.resolve(saving).catch((error) => {
+				// 保存失败必须回告前端：否则面板只能靠超时猜，用户永远不知道改没生效
+				send?.({
+					type: "notice",
+					level: "error",
+					text: `设置保存失败，修改未生效：${error instanceof Error ? error.message : String(error)}`,
+					textEn: `Settings were not saved: ${error instanceof Error ? error.message : String(error)}`,
+				});
+			});
 			return true;
+		}
 		case "extensions_reload":
 			void cs.reloadExtensions();
 			return true;

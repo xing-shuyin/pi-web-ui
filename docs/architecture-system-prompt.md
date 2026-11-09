@@ -135,6 +135,24 @@
     「查看当前完整提示词」只读预览 = 组合渲染结果
     文案键：promptTok_<token> / promptTok_<token>_desc（zh/en 同步）
 
+    保存与回执（事实源 web/src/settings-sync.ts，回归 tests/settings-prompt-save-test.mjs
+    + tests/unit/settings-sync.test.ts）—— 改这块前必须读懂四条：
+    1. 任何修改先进 pending overlay（服务端快照 ⊕ 未确认补丁），只有服务端 settings_state
+       回执与补丁值一致才移除。UI 因此不会因为一次未确认（或已失败）的保存回退旧值。
+    2. promptOverrides / toolPromptOverrides 是 map 语义字段（服务端「子键覆盖、空串删除」）。
+       本地 overlay 用同一语义叠加，绝不把局部 patch 当整值 —— 否则面板会把没动过的 token
+       当成已删除，再把重建结果写回服务端就是真丢配置。
+    3. 草稿重建只刷新未被本地占用的 token（reconcileOverrideDraft）：正在编辑（focus）
+       与已改未回执（dirty）的 token 永远保留；服务端回执一致后才释放 dirty。
+    4. 顶部胶囊显示真实回执状态：saving / saved / failed（超时未确认或通道断开）。failed
+       可点击重试，禁止用定时器假装「已保存」。
+
+    覆盖框两种落盘路径：输入后 800ms 自动提交（不依赖 blur）+ 失焦立即提交；
+    关面板 / 切分区 / 卸载时 flushAllDrafts 再补一次（比对基准一律是服务端真值，
+    不是叠加了 pending 的 settings）。
+    「恢复默认模板并清空所有覆盖」必须把现存 token 逐个发空串：空对象补丁在服务端
+    是「不删任何子键」，发 {} 等于什么都没清（历史 bug，已有单测守卫）。
+
 ## 八、与子代理模板的关系
 
     子代理模板保留自身 append/replace 语义（角色化预设）：白名单过滤技能/扩展；

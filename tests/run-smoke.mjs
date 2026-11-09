@@ -77,6 +77,7 @@ const ALL = [
 	"running-list-test",
 	"scm-features-test",
 	"settings-test",
+	"settings-prompt-save-test",
 	"sftp-plugin-test",
 	"shutdown-test",
 	"slash-commands-test",

@@ -19,7 +19,7 @@ pi 编码智能体（`@earendil-works/pi-coding-agent` SDK）的 Web 聊天界�
 | 侧栏会话排序 / 用户发送置顶 / 对话↔历史行归属与身份 | `web/src/conversation-order.ts`★ · `server/conversation-rows.ts`★ · `web/src/session-identity.ts`★ · `web/src/components/LeftPanel.tsx` · `web/src/use-chat.ts` | [`architecture-core.md`](docs/architecture-core.md#侧栏历史会话加载) |
 | 安全边界（loopback/Origin/Cookie/appUrl） | `server/index.ts` · `server/auth-cookie.ts` | [`architecture-core.md`](docs/architecture-core.md) · [`agent-rules.md`](docs/agent-rules.md#一通信协议与数据安全) |
 | 随手问 / 选中文字解释 | `server/quick-ask.ts` · `web/src/quick-ask.ts` · `web/src/components/QuickAskPopover.tsx` | [`architecture-core.md`](docs/architecture-core.md#随手问独立小窗) |
-| 系统提示词组装 | `server/prompt-composer.ts` | [`architecture-system-prompt.md`](docs/architecture-system-prompt.md) |
+| 系统提示词组装 / 设置保存回执 | `server/prompt-composer.ts`★ · `web/src/settings-sync.ts`★（pending overlay + 回执） | [`architecture-system-prompt.md`](docs/architecture-system-prompt.md) |
 | 工具开关 / 工具提示词 / 内置工具覆盖 | `server/tool-manager.ts`★ · `server/tool-prompts.ts`★ · `server/tool-overrides.ts` · `server/bash-timeout.ts`（bash/powershell 默认超时单源） | [`agent-rules.md`](docs/agent-rules.md#二工具定义与提示词规范) · [`tool-context-budget.md`](docs/tool-context-budget.md) |
 | 上下文预算 / 延迟加载 / 证据外置 | `server/soft-cap.ts` · `server/request-context.ts` · `server/evidence-tool-hooks.ts` | [`tool-context-budget.md`](docs/tool-context-budget.md) |
 | 工具审批门禁与规则库 | `server/tool-approval.ts` | [`architecture-core.md`](docs/architecture-core.md#审批队列与共享展示) |

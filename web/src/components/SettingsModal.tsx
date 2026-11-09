@@ -134,6 +134,7 @@ import type {
 } from "../use-chat";
 import { PresetShareModal, type PresetShareTab } from "./PresetShareModal";
 import { appSend, useAppGlobals, useEngineStatuses } from "../app-globals";
+import { reconcileOverrideDraft, releaseConfirmedDrafts, useSettingsSync } from "../settings-sync";
 import { countPluginPhases, pluginPhase, type PluginPhase } from "../plugin-phase";
 import {
 	PLUGIN_LOG_LEVELS,
@@ -650,17 +651,6 @@ interface SettingsPatch extends QuickAskPatch {
 	disabledMarkers?: string[];
 }
 
-function looseEqual(a: unknown, b: unknown): boolean {
-	if (a === b) return true;
-	try {
-		return JSON.stringify(a) === JSON.stringify(b);
-	} catch {
-		return false;
-	}
-}
-
-const PENDING_MAX_AGE_MS = 10_000;
-
 export function SettingsModal({ chat, ...props }: SettingsModalProps) {
 	const managedChat = useMemo(
 		() => ({
@@ -702,26 +692,14 @@ function LoadedSettingsModal({
 	const t = useT();
 	const { locale } = useI18n();
 	const tt = (k: string) => t(k as Parameters<typeof t>[0]);
-	const [pendingSettings, setPendingSettings] = useState<Record<string, { value: unknown; at: number }>>({});
-	const settings = useMemo<UiSettingsState>(() => {
-		if (Object.keys(pendingSettings).length === 0) return serverSettings;
-		const merged = { ...serverSettings } as UiSettingsState & Record<string, unknown>;
-		for (const [k, { value }] of Object.entries(pendingSettings)) merged[k] = value;
-		return merged;
-	}, [serverSettings, pendingSettings]);
-	useEffect(() => {
-		if (!serverSettings) return;
-		setPendingSettings((prev) => {
-			if (Object.keys(prev).length === 0) return prev;
-			const next: Record<string, { value: unknown; at: number }> = {};
-			const now = Date.now();
-			for (const [k, { value, at }] of Object.entries(prev)) {
-				const confirmed = looseEqual((serverSettings as unknown as Record<string, unknown>)[k], value);
-				if (!confirmed && now - at < PENDING_MAX_AGE_MS) next[k] = { value, at };
-			}
-			return Object.keys(next).length === Object.keys(prev).length ? prev : next;
-		});
-	}, [serverSettings]);
+	const {
+		settings,
+		status: saveStatus,
+		failedKeys: failedSaveKeys,
+		patch: sendSettingsPatch,
+		retry: retryFailedSave,
+		pulse: pulseSaved,
+	} = useSettingsSync(serverSettings, (patch) => appSend({ type: "set_settings", ...patch } as never));
 	const approvalPolicy = settings?.approvalPolicy;
 	const { engine, managed } = useAppGlobals();
 	const engines = useEngineStatuses();
@@ -813,10 +791,15 @@ function LoadedSettingsModal({
 	const promptTemplateDraftRef = useRef(promptTemplateDraft);
 	promptTemplateDraftRef.current = promptTemplateDraft;
 	const templateDebounceTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+	/** 模板有未回执的本地修改：服务端快照不得覆盖（focus 只是其中一种情况） */
+	const templateDirtyRef = useRef(false);
 
 	const [promptOverridesDraft, setPromptOverridesDraft] = useState<Record<string, string>>({});
 	const promptOverridesDraftRef = useRef(promptOverridesDraft);
 	promptOverridesDraftRef.current = promptOverridesDraft;
+	/** 已改但未拿到服务端回执的 token：草稿重建时必须保留，否则“保存了又变回去” */
+	const overridesDirtyRef = useRef<Set<string>>(new Set());
+	const overrideCommitTimers = useRef(new Map<string, ReturnType<typeof setTimeout>>());
 	const templateFocus = useRef(false);
 	const overrideFocus = useRef<string | null>(null);
 	const orderedPromptTokens = [...PROMPT_TOKENS].sort((a, b) => rankPromptToken(a) - rankPromptToken(b));
@@ -996,14 +979,16 @@ function LoadedSettingsModal({
 
 	useEffect(() => {
 		if (!settings) return;
-		if (!templateFocus.current) {
+		if (!templateDirtyRef.current) {
 			setPromptTemplateDraft(settings.promptTemplate ?? "");
 			promptTemplateDraftRef.current = settings.promptTemplate ?? "";
 		}
+		// 草稿 = 服务端真值 ⊕ 本地占用（dirty / 正在编辑）的 token。
+		// 不能整块用服务端值重建：一次未回执的保存会被其它字段的回执抹掉，看起来就是“保存无效”。
+		const keepTokens = new Set<string>(overridesDirtyRef.current);
+		if (overrideFocus.current) keepTokens.add(overrideFocus.current);
 		setPromptOverridesDraft((prev) => {
-			const next: Record<string, string> = {};
-			for (const [k, v] of Object.entries(settings.promptOverrides ?? {})) next[k] = v ?? "";
-			if (overrideFocus.current) next[overrideFocus.current] = prev[overrideFocus.current] ?? "";
+			const next = reconcileOverrideDraft(prev, settings.promptOverrides, keepTokens);
 			promptOverridesDraftRef.current = next;
 			return next;
 		});
@@ -1037,6 +1022,20 @@ function LoadedSettingsModal({
 			dshCustomPromptDraftRef.current = settings.customSystemPrompt ?? "";
 		}
 	}, [settings, vbPromptMode, scmMsgMode, planModeMode]);
+
+	// 服务端回执到达：解除本地占用（用服务端快照比对，不能用叠加了本次补丁的 settings，否则永远算“已确认”）
+	useEffect(() => {
+		if (!serverSettings) return;
+		const released = releaseConfirmedDrafts(
+			overridesDirtyRef.current,
+			promptOverridesDraftRef.current,
+			serverSettings.promptOverrides,
+		);
+		if (released.size !== overridesDirtyRef.current.size) overridesDirtyRef.current = released;
+		if (templateDirtyRef.current && templateSentRef.current === (serverSettings.promptTemplate ?? "")) {
+			templateDirtyRef.current = false;
+		}
+	}, [serverSettings]);
 
 	const [idleMsDraft, setIdleMsDraft] = useState<string>(String(settings?.terminalBashIdleMs ?? 15000));
 	useEffect(() => {
@@ -1315,17 +1314,8 @@ function LoadedSettingsModal({
 	const [tabSearchQuery, setTabSearchQuery] = useState("");
 	const searchInputRef = useRef<HTMLInputElement>(null);
 
-	const [syncState, setSyncState] = useState<"idle" | "syncing" | "synced">("idle");
-	const syncTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-
-	const triggerSyncState = () => {
-		setSyncState("syncing");
-		if (syncTimerRef.current) clearTimeout(syncTimerRef.current);
-		syncTimerRef.current = setTimeout(() => {
-			setSyncState("synced");
-			syncTimerRef.current = setTimeout(() => setSyncState("idle"), 2400);
-		}, 300);
-	};
+	// 本地动作（如插件面板自己保存）后的「已保存」脉冲；真正的保存状态由 useSettingsSync 的回执驱动
+	const triggerSyncState = pulseSaved;
 
 	useEffect(() => {
 		const handleKeyDown = (e: KeyboardEvent) => {
@@ -1529,16 +1519,7 @@ function LoadedSettingsModal({
 	const disabledSkills = new Set(settings.disabledSkills);
 	const disabledExts = new Set(settings.disabledExtensions);
 
-	const setPartial = (patch: SettingsPatch) => {
-		triggerSyncState();
-		const now = Date.now();
-		setPendingSettings((prev) => {
-			const stamped = { ...prev };
-			for (const [k, v] of Object.entries(patch)) stamped[k] = { value: v, at: now };
-			return stamped;
-		});
-		appSend({ type: "set_settings", ...patch });
-	};
+	const setPartial = (patch: SettingsPatch) => sendSettingsPatch(patch as unknown as Record<string, unknown>);
 
 	const commitQuickEdit = () => {
 		if (!quickEdit || !settings) return;
@@ -1947,24 +1928,59 @@ function LoadedSettingsModal({
 		setPartial({ reviewDisabledSkills: [...disabled] });
 	};
 
+	/** 服务端已确认的模板值（未回执前不得被服务端快照覆盖） */
+	const templateSentRef = useRef<string | null>(null);
+
 	const commitTemplate = () => {
 		if (templateDebounceTimer.current) {
 			clearTimeout(templateDebounceTimer.current);
 			templateDebounceTimer.current = null;
 		}
 		const cur = promptTemplateDraftRef.current;
-		if (cur !== (settings?.promptTemplate ?? "")) {
-			setPartial({ promptTemplate: cur });
+		if (cur === (serverSettings?.promptTemplate ?? "")) {
+			// 与服务端已一致：不需要发送，也不需要占用草稿
+			templateDirtyRef.current = false;
+			return;
+		}
+		templateDirtyRef.current = true;
+		templateSentRef.current = cur;
+		setPartial({ promptTemplate: cur });
+	};
+
+	const clearOverrideTimer = (token: string) => {
+		const timer = overrideCommitTimers.current.get(token);
+		if (timer) {
+			clearTimeout(timer);
+			overrideCommitTimers.current.delete(token);
 		}
 	};
 
 	const commitOverride = (token: string) => {
+		clearOverrideTimer(token);
 		const val = promptOverridesDraftRef.current[token] ?? "";
+		// 与上一次回执相同就不发：多余的 set_settings 会把别的字段的 pending 冲掉
+		if (val === ((serverSettings?.promptOverrides ?? {})[token] ?? "")) return;
+		overridesDirtyRef.current.add(token);
+		// 立即占位一个 local=val 的 pending（setPartial 内部完成），回执后才释放 dirty
 		setPartial({ promptOverrides: { [token]: val } });
+	};
+
+	/** 输入完成后 800ms 自动落盘（不依赖 blur，关窗口/切浏览器也不会丢） */
+	const scheduleOverrideCommit = (token: string) => {
+		clearOverrideTimer(token);
+		overrideCommitTimers.current.set(
+			token,
+			setTimeout(() => {
+				overrideCommitTimers.current.delete(token);
+				commitOverride(token);
+			}, 800),
+		);
 	};
 
 	const resetOverride = (token: string) => {
 		if (overrideFocus.current === token) overrideFocus.current = null;
+		clearOverrideTimer(token);
+		overridesDirtyRef.current.delete(token);
 		setEditingSource(null);
 		setPromptOverridesDraft((p) => {
 			const n = { ...p };
@@ -1972,12 +1988,16 @@ function LoadedSettingsModal({
 			promptOverridesDraftRef.current = n;
 			return n;
 		});
-		setPartial({ promptOverrides: { [token]: "" } });
+		// 服务端或未回执的 pending 里还有这个 token 才需要发删除
+		if ((settings?.promptOverrides ?? {})[token] !== undefined) {
+			setPartial({ promptOverrides: { [token]: "" } });
+		}
 	};
 
 	const toggleDefault = (tk: string) => setDefaultOpen((p) => ({ ...p, [tk]: !p[tk] }));
 
 	const seedFromDefault = (tk: string, def: string) => {
+		overridesDirtyRef.current.add(tk);
 		setPromptOverridesDraft((p) => {
 			const next = { ...p, [tk]: def };
 			promptOverridesDraftRef.current = next;
@@ -1991,15 +2011,27 @@ function LoadedSettingsModal({
 			clearTimeout(templateDebounceTimer.current);
 			templateDebounceTimer.current = null;
 		}
+		for (const token of overrideCommitTimers.current.keys()) clearOverrideTimer(token);
 		templateFocus.current = false;
 		overrideFocus.current = null;
+		overridesDirtyRef.current.clear();
+		templateDirtyRef.current = false;
 		setPromptTemplateDraft(DEFAULT_PROMPT_TEMPLATE);
 		promptTemplateDraftRef.current = DEFAULT_PROMPT_TEMPLATE;
 		setPromptOverridesDraft({});
 		promptOverridesDraftRef.current = {};
+		// 服务端的 promptOverrides 补丁是「子键覆盖、空串删除」—— 空对象 = 什么都不删。
+		// 必须把现存/待保存的 token 逐个发空串，才能真的清空覆盖。
+		const clearing: Record<string, string> = {};
+		for (const tk of new Set([
+			...Object.keys(serverSettings?.promptOverrides ?? {}),
+			...Object.keys(settings?.promptOverrides ?? {}),
+		])) {
+			clearing[tk] = "";
+		}
 		setPartial({
 			promptTemplate: DEFAULT_PROMPT_TEMPLATE,
-			promptOverrides: {},
+			promptOverrides: clearing,
 			promptDisabled: [...DEFAULT_PROMPT_DISABLED],
 		});
 	};
@@ -2013,6 +2045,8 @@ function LoadedSettingsModal({
 		const next = cur.trim() ? `${cur}\n\n{{${token}}}` : `{{${token}}}`;
 		setPromptTemplateDraft(next);
 		promptTemplateDraftRef.current = next;
+		templateDirtyRef.current = true;
+		templateSentRef.current = next;
 		setPartial({ promptTemplate: next });
 	};
 
@@ -2022,16 +2056,21 @@ function LoadedSettingsModal({
 			templateDebounceTimer.current = null;
 		}
 		const curTpl = promptTemplateDraftRef.current;
-		if (curTpl !== (settings?.promptTemplate ?? "")) {
+		if (curTpl !== (serverSettings?.promptTemplate ?? "")) {
+			templateDirtyRef.current = true;
+			templateSentRef.current = curTpl;
 			setPartial({ promptTemplate: curTpl });
 		}
 		templateFocus.current = false;
 
+		for (const token of overrideCommitTimers.current.keys()) clearOverrideTimer(token);
 		const curOvs = promptOverridesDraftRef.current;
-		const savedOvs = settings?.promptOverrides ?? {};
+		// 比对基准必须是服务端真值：拿叠加了 pending 的 settings 比会把未回执的修改当成已保存
+		const savedOvs = serverSettings?.promptOverrides ?? {};
 		const patchOvs: Record<string, string> = {};
 		let hasOvsDiff = false;
-		for (const [tk, val] of Object.entries(curOvs)) {
+		for (const tk of new Set([...Object.keys(curOvs), ...overridesDirtyRef.current])) {
+			const val = curOvs[tk] ?? "";
 			const def = settings?.promptSourceDefaults?.[tk] ?? "";
 			const effVal = val.trim() && val === def ? "" : val;
 			if (effVal !== (savedOvs[tk] ?? "")) {
@@ -2040,6 +2079,7 @@ function LoadedSettingsModal({
 			}
 		}
 		if (hasOvsDiff) {
+			for (const tk of Object.keys(patchOvs)) overridesDirtyRef.current.add(tk);
 			setPartial({ promptOverrides: patchOvs });
 		}
 		overrideFocus.current = null;
@@ -2049,7 +2089,7 @@ function LoadedSettingsModal({
 			dshPromptDebounceTimer.current = null;
 		}
 		const curDshPrompt = dshCustomPromptDraftRef.current;
-		if (curDshPrompt !== (settings?.customSystemPrompt ?? "")) {
+		if (curDshPrompt !== (serverSettings?.customSystemPrompt ?? "")) {
 			setPartial({ customSystemPrompt: curDshPrompt });
 		}
 		dshPromptFocus.current = false;
@@ -2116,21 +2156,29 @@ function LoadedSettingsModal({
 					</div>
 
 					<div className="settings-head-actions">
-						<div
-							className={`settings-live-pill${syncState === "syncing" ? " syncing" : ""}`}
-							title={t("settingsAutoSavedTip")}
+						<button
+							type="button"
+							className={`settings-live-pill${saveStatus === "saving" ? " syncing" : ""}${
+								saveStatus === "failed" ? " failed" : ""
+							}`}
+							title={
+								saveStatus === "failed"
+									? failedSaveKeys.length > 0
+										? `${t("settingsSaveFailed")} · ${failedSaveKeys.join(", ")}`
+										: t("settingsSaveFailed")
+									: t("settingsAutoSavedTip")
+							}
+							onClick={saveStatus === "failed" ? retryFailedSave : undefined}
 						>
 							<span className="settings-live-dot" />
 							<span className="settings-live-text">
-								{syncState === "syncing"
-									? isZhLocale(locale)
-										? "同步中..."
-										: "Syncing..."
-									: isZhLocale(locale)
-										? "已即时生效"
-										: "Live synced"}
+								{saveStatus === "saving"
+									? t("settingsSaveSaving")
+									: saveStatus === "failed"
+										? t("settingsSaveFailed")
+										: t("settingsSaveSaved")}
 							</span>
-						</div>
+						</button>
 						<button
 							type="button"
 							className="modal-close settings-modal-close"
@@ -2724,12 +2772,14 @@ function LoadedSettingsModal({
 												}}
 												onChange={(e) => {
 													const val = e.target.value;
+													templateDirtyRef.current = true;
 													setPromptTemplateDraft(val);
 													promptTemplateDraftRef.current = val;
 													if (templateDebounceTimer.current) clearTimeout(templateDebounceTimer.current);
 													templateDebounceTimer.current = setTimeout(() => {
 														templateDebounceTimer.current = null;
-														if (val !== (settings?.promptTemplate ?? "")) {
+														templateSentRef.current = val;
+														if (val !== (serverSettings?.promptTemplate ?? "")) {
 															setPartial({ promptTemplate: val });
 														}
 													}, 800);
@@ -2884,7 +2934,7 @@ function LoadedSettingsModal({
 																	}}
 																	onBlur={() => {
 																		if (overrideFocus.current === tk) overrideFocus.current = null;
-																		const val = promptOverridesDraft[tk] ?? "";
+																		const val = promptOverridesDraftRef.current[tk] ?? "";
 																		if (val.trim() && val === def) {
 																			resetOverride(tk);
 																			return;
@@ -2894,11 +2944,13 @@ function LoadedSettingsModal({
 																	}}
 																	onChange={(e) => {
 																		const val = e.target.value;
+																		overridesDirtyRef.current.add(tk);
 																		setPromptOverridesDraft((p) => {
 																			const next = { ...p, [tk]: val };
 																			promptOverridesDraftRef.current = next;
 																			return next;
 																		});
+																		scheduleOverrideCommit(tk);
 																	}}
 																/>
 																<div className="override-edit-foot">
