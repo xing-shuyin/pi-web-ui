@@ -9,6 +9,7 @@ import {
 	Fragment,
 	type ReactNode,
 } from "react";
+import { loadProjectClickSwitch } from "../project-click-settings";
 import { DeviceGroupSection } from "./DeviceGroupSection";
 import { NativeCliCreateEntry } from "./NativeCliCreateModal";
 import {
@@ -3013,7 +3014,7 @@ export const LeftPanel = memo(function LeftPanel({
 														aria-keyshortcuts="Alt+ArrowUp Alt+ArrowDown"
 														onClick={() => {
 															if (!switching) {
-																if (!active) {
+																if (!active && loadProjectClickSwitch()) {
 																	panelSend({ type: "set_cwd", path: p.path });
 																	setExpandedProjects((prev) => {
 																		const norm = normalizeSessionPathKey(p.path);

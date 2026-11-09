@@ -1807,6 +1807,8 @@
 		"retainFinishedConversationsDesc": "Açık: başka bir konuşmaya geçerken veya yeni konuşma açarken bitmiş (boşta) konuşmalar, ✕ ile elle kaldırılana kadar «Çalışan konuşmalar» listesinde kalır; Kapalı: devam edilmeyen konuşmalar otomatik kaldırılır",
 		"openRecentSessionOnProjectSwitch": "Proje değiştirirken son oturumu aç",
 		"openRecentSessionOnProjectSwitchDesc": "Açık: başka bir projeye geçerken o projenin en son oturumunu otomatik olarak sürdürür; Kapalı: proje değiştirirken her zaman yepyeni boş bir sohbet başlatır",
+		"projectClickSwitch": "Click project name to switch",
+		"projectClickSwitchDesc": "On: clicking another project in the sidebar switches to it and expands it (default, previous behaviour); Off: clicking only collapses or expands that project — switch with double-click instead (opens a new chat there)",
 		"toolImageZoom": "Önizlemek için tıklayın",
 		"imageAttach": "Attach to input",
 		"imageAttached": "Attached to input",

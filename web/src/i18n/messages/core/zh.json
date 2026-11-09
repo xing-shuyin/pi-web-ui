@@ -1803,6 +1803,8 @@
 	"retainFinishedConversationsDesc": "开启：切换对话或新建对话时，已结束（空闲）的对话依然保留在「运行的对话」列表中，直到手动点击 ✕ 移出；关闭：切走且未继续对话的会话自动移出",
 	"openRecentSessionOnProjectSwitch": "切换项目时打开最近会话",
 	"openRecentSessionOnProjectSwitchDesc": "开启：切换工作区到其他项目时自动打开该项目最近的会话；关闭：切换项目时始终创建全新的空白对话",
+	"projectClickSwitch": "点击项目名切换项目",
+	"projectClickSwitchDesc": "开启：左栏点击其他项目即切换并展开（默认，老行为）；关闭：点击只折叠或展开该项目，切换改用双击（会在该项目开新对话）",
 	"toolImageZoom": "点击预览大图",
 	"imageAttach": "附加到输入框",
 	"imageAttached": "已附加到输入框",

@@ -100,6 +100,7 @@ import { QuickAskSettings, type QuickAskPatch } from "./QuickAskSettings";
 import { formatTokenDraft, parseTokenInput } from "../token-input";
 import { useWideChat, saveChatWidthSettings, useHideModelRow, saveHideModelRowSettings } from "../chat-width-settings";
 import { usePresentAutoOpen, savePresentAutoOpen } from "../present-settings";
+import { useProjectClickSwitch, saveProjectClickSwitch } from "../project-click-settings";
 import { type SendKey, saveSendKeyPref, useEffectiveSendKey } from "../composer-keys";
 import { useProjectTitle, saveTitleSettings } from "../title-settings";
 import {
@@ -884,6 +885,7 @@ function LoadedSettingsModal({
 	const hideModelRow = useHideModelRow();
 	const effectiveSendKey = useEffectiveSendKey();
 	const presentAutoOpen = usePresentAutoOpen();
+	const projectClickSwitch = useProjectClickSwitch();
 	const projectTitle = useProjectTitle();
 	const faviconSettings = useFaviconSettings();
 	const wallpaper = useWallpaperSettings();
@@ -4185,6 +4187,12 @@ function LoadedSettingsModal({
 										})
 									}
 								/>
+								<ToggleRow
+									title={t("projectClickSwitch")}
+									tip={t("projectClickSwitchDesc")}
+									enabled={projectClickSwitch}
+									onToggle={() => saveProjectClickSwitch(!projectClickSwitch)}
+								/>{" "}
 								<ToggleRow
 									title={t("minimalNewChat")}
 									tip={t("minimalNewChatDesc")}

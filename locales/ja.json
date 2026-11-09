@@ -1807,6 +1807,8 @@
 		"retainFinishedConversationsDesc": "オン：別の会話への切替時や新規会話作成時も、終了（アイドル）状態の会話を実行中リストに残し、✕ で手動削除するまで保持します。オフ：メッセージ送信のないまま離れた会話を自动削除します",
 		"openRecentSessionOnProjectSwitch": "プロジェクト切替時に最近のセッションを開く",
 		"openRecentSessionOnProjectSwitchDesc": "有効: 他のプロジェクトに切り替える際に最新のセッションを自動で再開します。無効: 常に新しい空のチャットで開始します",
+		"projectClickSwitch": "Click project name to switch",
+		"projectClickSwitchDesc": "On: clicking another project in the sidebar switches to it and expands it (default, previous behaviour); Off: clicking only collapses or expands that project — switch with double-click instead (opens a new chat there)",
 		"toolImageZoom": "クリックで拡大",
 		"imageAttach": "Attach to input",
 		"imageAttached": "Attached to input",

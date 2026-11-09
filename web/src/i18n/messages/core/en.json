@@ -1803,6 +1803,8 @@
 	"retainFinishedConversationsDesc": "On: keep finished (idle) conversations in the Running Chats list when switching away or creating new chats until manually removed with ✕; Off: chats left without continuing are auto-cleared",
 	"openRecentSessionOnProjectSwitch": "Open recent session on project switch",
 	"openRecentSessionOnProjectSwitchDesc": "On: automatically resume the most recent session when switching to another project; Off: always start with a fresh blank chat",
+	"projectClickSwitch": "Click project name to switch",
+	"projectClickSwitchDesc": "On: clicking another project in the sidebar switches to it and expands it (default, previous behaviour); Off: clicking only collapses or expands that project — switch with double-click instead (opens a new chat there)",
 	"toolImageZoom": "Click to preview",
 	"imageAttach": "Attach to input",
 	"imageAttached": "Attached to input",

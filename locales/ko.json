@@ -1807,6 +1807,8 @@
 		"retainFinishedConversationsDesc": "켜짐: 다른 대화로 전환하거나 새 대화를 만들 때 완료(대기) 상태의 대화를 실행 중 목록에 유지하며 ✕ 로 직접 닫을 때까지 유지합니다. 꺼짐: 새 메시지 없이 벗어난 대화는 자동으로 제거됩니다",
 		"openRecentSessionOnProjectSwitch": "프로젝트 전환 시 최근 세션 열기",
 		"openRecentSessionOnProjectSwitchDesc": "켜짐: 다른 프로젝트로 전환할 때 해당 프로젝트의 최근 세션을 자동으로 다시 시작합니다. 꺼짐: 항상 새로운 빈 대화로 시작합니다",
+		"projectClickSwitch": "Click project name to switch",
+		"projectClickSwitchDesc": "On: clicking another project in the sidebar switches to it and expands it (default, previous behaviour); Off: clicking only collapses or expands that project — switch with double-click instead (opens a new chat there)",
 		"toolImageZoom": "클릭하면 확대",
 		"imageAttach": "Attach to input",
 		"imageAttached": "Attached to input",

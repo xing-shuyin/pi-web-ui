@@ -1807,6 +1807,8 @@
 		"retainFinishedConversationsDesc": "Ativado: conversas concluídas (inativas) permanecem na lista de conversas ativas ao alternar ou criar novos chats até serem removidas manualmente com ✕; Desativado: chats não continuados são removidos automaticamente",
 		"openRecentSessionOnProjectSwitch": "Abrir sessão recente ao alternar de projeto",
 		"openRecentSessionOnProjectSwitchDesc": "Ativado: retoma automaticamente a sessão mais recente ao alternar para outro projeto; Desativado: inicia sempre com um novo chat em branco",
+		"projectClickSwitch": "Click project name to switch",
+		"projectClickSwitchDesc": "On: clicking another project in the sidebar switches to it and expands it (default, previous behaviour); Off: clicking only collapses or expands that project — switch with double-click instead (opens a new chat there)",
 		"toolImageZoom": "Clique para ampliar",
 		"imageAttach": "Attach to input",
 		"imageAttached": "Attached to input",

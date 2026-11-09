@@ -1807,6 +1807,8 @@
 		"retainFinishedConversationsDesc": "Activé : les conversations terminées (inactives) restent dans la liste des conversations actives lors d'un changement ou de la création de nouveaux chats jusqu'à leur suppression manuelle avec ✕ ; Désactivé : les chats non poursuivis sont automatiquement retirés",
 		"openRecentSessionOnProjectSwitch": "Ouvrir la session récente lors du changement de projet",
 		"openRecentSessionOnProjectSwitchDesc": "Activé : reprendre automatiquement la session la plus récente lors du changement de projet ; Désactivé : toujours démarrer avec un nouveau chat vide",
+		"projectClickSwitch": "Click project name to switch",
+		"projectClickSwitchDesc": "On: clicking another project in the sidebar switches to it and expands it (default, previous behaviour); Off: clicking only collapses or expands that project — switch with double-click instead (opens a new chat there)",
 		"toolImageZoom": "Cliquer pour agrandir",
 		"imageAttach": "Attach to input",
 		"imageAttached": "Attached to input",

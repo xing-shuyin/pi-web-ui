@@ -1807,6 +1807,8 @@
 		"retainFinishedConversationsDesc": "開啓：切換對話或新建對話時，已結束（空閒）的對話依然保留在「運行的對話」列表中，直到手動點擊 ✕ 移出；關閉：切走且未繼續對話的會話自動移出",
 		"openRecentSessionOnProjectSwitch": "切換項目時打開最近會話",
 		"openRecentSessionOnProjectSwitchDesc": "開啓：切換工作區到其他項目時自動打開該項目最近的會話；關閉：切換項目時始終創建全新的空白對話",
+		"projectClickSwitch": "點擊項目名切換項目",
+		"projectClickSwitchDesc": "開啓：左欄點擊其他項目即切換並展開（默認，老行爲）；關閉：點擊只摺疊或展開該項目，切換改用雙擊（會在該項目開新對話）",
 		"toolImageZoom": "點擊預覽大圖",
 		"imageAttach": "附加到輸入框",
 		"imageAttached": "已附加到輸入框",

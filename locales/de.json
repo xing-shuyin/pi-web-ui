@@ -1807,6 +1807,8 @@
 		"retainFinishedConversationsDesc": "Aktiviert: Beendete (inaktive) Unterhaltungen bleiben beim Wechsel oder Erstellen neuer Chats in der Liste der aktiven Chats, bis sie manuell mit ✕ entfernt werden; Deaktiviert: Nicht fortgesetzte Chats werden automatisch entfernt",
 		"openRecentSessionOnProjectSwitch": "Beim Projektwechsel letzte Sitzung öffnen",
 		"openRecentSessionOnProjectSwitchDesc": "Aktiviert: Öffnet beim Wechsel zu einem anderen Projekt automatisch dessen letzte Sitzung; Deaktiviert: Startet immer mit einem neuen leeren Chat",
+		"projectClickSwitch": "Click project name to switch",
+		"projectClickSwitchDesc": "On: clicking another project in the sidebar switches to it and expands it (default, previous behaviour); Off: clicking only collapses or expands that project — switch with double-click instead (opens a new chat there)",
 		"toolImageZoom": "Klicken zum Vergrößern",
 		"imageAttach": "Attach to input",
 		"imageAttached": "Attached to input",
