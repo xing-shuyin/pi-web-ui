@@ -29,7 +29,10 @@ npm run format       # prettier 全仓库格式化（.prettierrc.json：tabs + �
 npm run format:check # 只检查不改写（CI 跑这个）
 npm run build        # build:web (vite) + build:server (tsc) + build:dsh-runtime + build:mermaid-vendor + build:runtrace-vendor
 npm start            # 跑编译产物 dist/server/index.js（生产）
-npm test             # Vitest 单测与仓库守卫（tests/unit/，含部分浏览器/进程集成，零 token）
+npm test             # Vitest 快池（快慢分层见下文「两个池」，≈180s）
+npm run test:changed # 开发回路：只跑受 Git 改动影响的文件（改叶子模块时几秒~几十秒）
+npm run test:integration # 重型集成池：真 git / 真子进程 / 真 Hub（≈170s）
+npm run test:all     # 两池都跑（提交前/CI 的完整门禁）
 npm run test:smoke   # 零 token 协议冒烟聚合跑器（tests/run-smoke.mjs，82 个自包含测试；--core 只跑 PR 快检子集；--no-build 跳过套件前的构建）
 npm run test:freeze  # 冻结/重连回归测试（Playwright，需要本机 chromium headless）
 ```
@@ -155,6 +158,33 @@ spawn 后记录 `server.pid`，测试收尾（含异常 catch 路径）用 `proc
 ### 验证项
 
 本地迭代先运行与变更相关的 `npx vitest run <测试文件>`；涉及协议时运行 `npm run check:protocol` 和对应 `tests/*-test.mjs`，涉及真实 UI 交互时再跑相关浏览器测试。测试 server 使用隔离端口与独立 data-dir；Chromium 由 `tests/lib/chrome.mjs` 逐平台探测，`PI_WEB_CHROME` 可覆盖。提交前按 `AGENTS.md` 完成改动文件格式化、`npm run typecheck` 和相关单测；全量 `npm test` 与分层 `test:smoke` 继续由 CI 执行，共享基础设施变更时本地也应跑相应全量套件。
+
+### 测试耗时观测（慢在哪）
+
+`vitest.config.ts` 的 `silent: true` 会吞掉默认 reporter 的 per-file 行，全量跑十几分钟却看不到任何耗时。因此配了 `tests/lib/test-timing-reporter.mjs`：每条用例一行「结束时刻 + 耗时」，收尾再打「最慢文件 Top10 / 最慢用例 Top20」。
+
+```bash
+npm test                              # 默认 PI_TEST_TIMING=all，逐条打印
+PI_TEST_TIMING=slow npm test          # 只打 ≥1s 的用例（PI_TEST_SLOW_MS 可改阈值）
+PI_TEST_TIMING=off npm test           # 只留收尾小结
+npx vitest run --reporter=json --outputFile=<tmp>/timing.json   # 事后逐用例复用
+```
+
+本地实测基线（Windows 12C/24T，1028 个文件 / ≈12.5k 用例）：墙钟 ≈705s，用例累计 ≈1955s，并行系数 2.78×。**约 75% 的时间集中在 6 个真实集成文件**（`device-hub-artifact-integration` / `device-local-integration` / `device-hub-integration` / `task-workspace` / `canvas-workspace` / `device-center-runtime-code-artifact`），它们真跑 git 子进程与 Hub HTTP；这些文件单跑最慢用例 17–52s，4 worker 满载下会被拉长约 2.3×。
+
+两条据此定的规矩：① **重集成用例的超时预算写 90s**（与 `task-workspace` 对齐），别写 20–30s——那是零余量，满载时稳态假红，且每条假红要白烧 30s；② 同一文件内的用例是串行的，把几百秒的重活拆成多个文件比调 worker 数更有效。
+
+### 两个池：默认快池 + 重型集成池
+
+单选那个数字（`maxWorkers`）救不了这个套件：**重型池**从 4 抬到 8，同一条用例从 30s 膨胀到 83s、其余撞 60s/90s 预算，并发上去反而更慢且假红；而**快池**恰好相反，它卡在 1023 次 fork 上，worker 越多越快。所以按成本分层，清单单源在 [`tests/lib/suite-partition.mjs`](../tests/lib/suite-partition.mjs)（判据：实测 ≥60s）：
+
+| 池           | 入口                       | 内容                                          | 预算                         |
+| ------------ | -------------------------- | --------------------------------------------- | ---------------------------- |
+| 快池（默认） | `npm test`                 | 除下表之外的全部单测（1023 文件 / 12.4k 条）  | 8 worker · 60s（实测 ≈186s） |
+| 重型集成     | `npm run test:integration` | 6 个真 git / 真子进程 / 真 Hub 文件（111 条） | 4 worker · 90s（实测 ≈470s） |
+| 全量         | `npm run test:all`         | 两个都跑                                      | —                            |
+
+`PI_TEST_ALL=1 npx vitest run` 也能一次跑完全部；CI 的 `Unit tests` 与 `Integration tests` 两步分别跑两个池（`tests/unit/test-suite-partition.test.ts` 守卫「两边拼起来必须等于 `tests/unit/**` 全集」，防止某个文件被 exclude 后再也没人跑）。重文件新增时往清单里加一行即可。
 
 ### 测试家族速查
 

@@ -37,7 +37,9 @@ const exec = promisify(execFile);
 const git = async (cwd: string, args: string[]) => (await exec("git", args, { cwd, windowsHide: true })).stdout.trim();
 const digest = (text: string) => createHash("sha256").update(text).digest("hex");
 
-describe("artifact delivery verification authority through Hub HTTP and WAL", { timeout: 30000 }, () => {
+// 真 Hub HTTP + WAL + 真实 git 提交：单跑最慢用例 26s，4 worker 满载实测 31s+ 撞 30s 墙。
+// 原 30s 预算零余量 → 稳态 5 条假红；90s 与 task-workspace 的重用例对齐。
+describe("artifact delivery verification authority through Hub HTTP and WAL", { timeout: 90_000 }, () => {
 	let dir: string, repo: string, dataDir: string, base: string, outputTree: string;
 	let hub: Awaited<ReturnType<typeof createDeviceHub>>;
 	let accountId: string, cookie: string, port: number;
@@ -230,10 +232,12 @@ describe("artifact delivery verification authority through Hub HTTP and WAL", { 
 				checks: [],
 			}),
 		);
-	}, 30000);
+	}, 90_000);
 	afterEach(async () => {
 		await hub?.close();
-		await rm(dir, { recursive: true, force: true });
+		// Windows 上刚退出的 git / Hub 子进程可能还揑着工作树句柄（EBUSY），
+		// 与仓库其他临时目录清理对齐：退避重试而不是把清理失败算成用例失败。
+		await rm(dir, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
 	});
 	const criteriaResults = [
 		{ criterionIndex: 0, verdict: "met", evidence: "verified file content" },
@@ -341,7 +345,7 @@ describe("artifact delivery verification authority through Hub HTTP and WAL", { 
 		expect(persisted.tasks.find((t) => t.id === "code-task")!.artifact!.digest).toBe(
 			delivery.artifactRef!.artifactDigest,
 		);
-	}, 30000);
+	}, 90_000);
 	it("reads evidence by delivery artifact subject instead of the latest running task and rejects conflicting selectors", async () => {
 		const ok = await request(`${path}/evidence?evidenceKind=artifact&deliveryId=${delivery.id}`);
 		expect(ok.status).toBe(200);

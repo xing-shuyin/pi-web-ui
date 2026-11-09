@@ -68,6 +68,9 @@ jobs:
       - name: Unit tests
         run: npx vitest run
 
+      - name: Integration tests (真 git / 真子进程 / 真 Hub)
+        run: npm run test:integration
+
       - name: Protocol smoke tests (core, PR fast gate)
         if: github.event_name == 'pull_request'
         env:

@@ -25,7 +25,8 @@ const exec = promisify(execFile);
 const dirs: string[] = [];
 afterEach(async () => {
 	vi.restoreAllMocks();
-	for (const dir of dirs.splice(0)) await rm(dir, { recursive: true, force: true });
+	// Windows EBUSY：刚退出的 git 子进程可能还揑着工作树句柄，退避重试。
+	for (const dir of dirs.splice(0)) await rm(dir, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
 });
 async function git(cwd: string, ...args: string[]) {
 	return (
@@ -172,7 +173,9 @@ async function fixture() {
 	};
 }
 
-describe("device local artifact integration", { timeout: 30_000 }, () => {
+// 真 git 物化 + 真命令验证：单跑最慢用例 ~25s，4 worker 满载实测 52s。
+// 原 30s 预算零余量 → 稳态假红；90s 与 task-workspace 的重用例对齐。
+describe("device local artifact integration", { timeout: 90_000 }, () => {
 	let f: Awaited<ReturnType<typeof fixture>>;
 	let prepared: Awaited<ReturnType<typeof devicePrepareIntegration>>;
 	beforeEach(async () => {
@@ -403,7 +406,7 @@ describe("device local artifact integration", { timeout: 30_000 }, () => {
 	});
 });
 
-describe("legacy local verification lifecycle", { timeout: 30_000 }, () => {
+describe("legacy local verification lifecycle", { timeout: 90_000 }, () => {
 	let f: Awaited<ReturnType<typeof fixture>>;
 	let prepared: Awaited<ReturnType<typeof devicePrepareIntegration>>;
 	beforeEach(async () => {

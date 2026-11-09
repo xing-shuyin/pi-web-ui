@@ -33,7 +33,9 @@ async function runGit(cwd: string, args: string[]): Promise<string> {
 	return stdout.trim();
 }
 
-describe("device-hub-integration", { timeout: 30000 }, () => {
+// 本文件走真实 git / 子进程：单跑最慢用例 19s，4 worker 满载实测 31s+。
+// 原 30s 预算零余量 → 稳态偶发红（不是功能坏）。90s 与 task-workspace 的重用例对齐。
+describe("device-hub-integration", { timeout: 90_000 }, () => {
 	let testDir: string;
 	let dataDir: string;
 	let repoDir: string;
@@ -513,7 +515,7 @@ describe("device-hub-integration", { timeout: 30000 }, () => {
 
 		const record = store.snapshot().integrations.find((it) => it.id === prep.id);
 		expect(record?.status).toBe("applied");
-	}, 30000);
+	}, 90_000);
 
 	it("rejects integration when device driver is offline (no Hub local fallback)", async () => {
 		const actor = { accountId };
@@ -798,5 +800,5 @@ describe("device-hub-integration", { timeout: 30000 }, () => {
 			verification: { digest: firstVerified.verification!.digest },
 			publishReceipt: { candidateSha: intent.candidateSha, proof: "cas_exit" },
 		});
-	}, 30_000);
+	}, 90_000);
 });

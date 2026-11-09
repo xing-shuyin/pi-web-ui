@@ -42,10 +42,15 @@ async function fixture(): Promise<PrepareCanvasWorkspaceOptions> {
 }
 
 afterEach(async () => {
-	await Promise.all(roots.splice(0).map((root) => rm(root, { recursive: true, force: true })));
+	// Windows 上刚退出的 git 子进程可能还揑着工作树句柄：退避重试，不去吞错。
+	await Promise.all(
+		roots.splice(0).map((root) => rm(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 })),
+	);
 });
 
-describe("canvas workspace isolation", { timeout: 20_000 }, () => {
+// 真工作树/真实 Git 操作：单跑最慢用例 17s，4 worker 满载实测 20s+ 撞 20s 墙。
+// 原 20s 预算零余量 → 稳态假红；90s 与 task-workspace 的重用例对齐。
+describe("canvas workspace isolation", { timeout: 90_000 }, () => {
 	it("uses detached graph/run/node paths, preserves subdirectories, and never resets existing worktrees", async () => {
 		const options = await fixture();
 		const branch = await git(options.baseCwd, "branch", "--show-current");

@@ -172,13 +172,15 @@ describe("Canvas scheduler run semantics", () => {
 				expect(g.nodes[2].status).toBe("waiting_approval");
 				expect(g.nodes[2].artifact?.workspace).toBeDefined();
 			},
-			{ timeout: 15000 },
+			// 内部等待预算写 15s 太紧：满载时这步排队能被拖到 >50s（12 worker 实测），与外面 90s 的用例预算不匹配。
+			{ timeout: 30_000 },
 		);
 		expect(observed).toHaveLength(2);
 		expect(g.nodes[0].attempt).toBe(2);
 		expect(readFileSync(join(g.nodes[2].artifact!.cwd!, "implementation.txt"), "utf8")).toBe("first implementation");
 		local.stopAll(g.id);
-	}, 30000);
+		// 这条在队列/审批上真等实时时钟：单跑 17s，4 worker 满载实测 30s+ 撞墙。
+	}, 90_000);
 
 	it("an explicit false AI verdict requests rework while an ordinary completion does not", async () => {
 		const g = admit(
