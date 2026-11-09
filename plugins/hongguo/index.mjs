@@ -109,6 +109,7 @@ export function createHongguo(host, overrides = {}) {
 	let disposed = false;
 	let resolveQueue = Promise.resolve();
 	const playModels = new Map();
+	const playbackInfo = new Map();
 	const fetchImpl = overrides.fetch ?? fetch;
 	const log = (text) => host.log?.(`[hongguo] ${text}`);
 
@@ -255,11 +256,29 @@ export function createHongguo(host, overrides = {}) {
 		}
 	}
 
-	async function media(id) {
+	function mediaPath(id, index = 0) {
+		return index <= 0
+			? join(mediaDir, `${id}.${PLAYBACK_FORMAT}.mp4`)
+			: join(mediaDir, `${id}.q${index}.${PLAYBACK_FORMAT}.mp4`);
+	}
+
+	async function qualityIndex(id, qualityParam = "") {
+		const raw = String(qualityParam ?? "").trim();
+		if (!raw) return 0;
+		if (/^\d+$/.test(raw)) return Math.max(0, Number(raw));
+		const result = await resolvePlayback(id);
+		const files = (result.playback?.streams ?? []).filter((stream) => stream.url && !stream.hls && !stream.dash);
+		const found = files.findIndex((stream) => (stream.definition ?? stream.quality ?? "") === raw);
+		return found >= 0 ? found : 0;
+	}
+
+	async function media(id, qualityParam = "") {
 		id = safeId(id);
-		const output = join(mediaDir, `${id}.${PLAYBACK_FORMAT}.mp4`);
+		const index = await qualityIndex(id, qualityParam);
+		const output = mediaPath(id, index);
 		if (await hasMedia(output)) return output;
-		if (jobs.has(id)) return jobs.get(id);
+		const jobKey = `${id}:${index}`;
+		if (jobs.has(jobKey)) return jobs.get(jobKey);
 		if (jobs.size >= 2) throw new Error("正在准备视频，请稍后重试");
 		const job = (async () => {
 			await run(ffmpegPath(), ["-version"], 10_000);
@@ -271,16 +290,23 @@ export function createHongguo(host, overrides = {}) {
 			let key;
 			try {
 				// Old caches contain decrypted HEVC. Convert them without another download or key.
-				if (!(await hasMedia(legacy))) {
-					let model = playModels.get(id);
+				const useLegacy = index === 0 && (await hasMedia(legacy));
+				if (!useLegacy) {
+					let model = playModels.get(`${id}:${index}`);
 					if (!model) {
 						const result = await resolvePlayback(id);
-						model = {
-							source: result.playback.streams.find((stream) => stream.url && !stream.hls && !stream.dash),
-							key: result.contentKey?.key,
-						};
+						const files = (result.playback?.streams ?? []).filter(
+							(stream) => stream.url && !stream.hls && !stream.dash,
+						);
+						if (result.playback?.protected === true && !result.contentKey?.key) throw new Error("未获取到视频内容密钥");
+						files.forEach((source, i) => {
+							playModels.set(`${id}:${i}`, { source, key: result.contentKey?.key });
+						});
+						playbackInfo.set(id, { files, duration: result.playback.duration_seconds });
+						const selected = files[Math.min(index, Math.max(0, files.length - 1))];
+						model = selected ? { source: selected, key: result.contentKey?.key } : null;
 					}
-					if (!model.source) throw new Error("未获取到可播放视频");
+					if (!model?.source) throw new Error("未获取到可播放视频");
 					key = model.key;
 					const { response, limit } = await upstream(model.source.url);
 					if (!response.ok) {
@@ -294,16 +320,16 @@ export function createHongguo(host, overrides = {}) {
 				}
 				await run(ffmpegPath(), playbackArgs(input, partial, key), 300_000);
 				await rename(partial, output);
-				playModels.delete(id);
+				playModels.delete(`${id}:${index}`);
 				// A client may still hold the old cache open on Windows.
-				void rm(legacy, { force: true }).catch(() => {});
+				if (index === 0) void rm(legacy, { force: true }).catch(() => {});
 				void trimCache(mediaDir, ".mp4", 12).catch(() => {});
 				return output;
 			} finally {
 				await Promise.all([rm(downloaded, { force: true }), rm(partial, { force: true })]);
 			}
-		})().finally(() => jobs.delete(id));
-		jobs.set(id, job);
+		})().finally(() => jobs.delete(jobKey));
+		jobs.set(jobKey, job);
 		return job;
 	}
 
@@ -391,20 +417,40 @@ export function createHongguo(host, overrides = {}) {
 				{ kind: "file", url: `./media/${id}?format=${PLAYBACK_FORMAT}`, mimeType: "video/mp4", definition: "兼容" },
 			],
 		};
-		if (
-			jobs.has(id) ||
+		const info = playbackInfo.get(id);
+		const cached =
+			jobs.has(`${id}:0`) ||
 			(await hasMedia(join(mediaDir, `${id}.${PLAYBACK_FORMAT}.mp4`))) ||
-			(await hasMedia(join(mediaDir, `${id}.mp4`)))
-		)
-			return compatible;
+			(await hasMedia(join(mediaDir, `${id}.mp4`)));
+		if (cached && info?.files?.length) {
+			const streams = info.files.map((source, i) => ({
+				kind: "file",
+				url:
+					i === 0 ? `./media/${id}?format=${PLAYBACK_FORMAT}` : `./media/${id}?format=${PLAYBACK_FORMAT}&quality=${i}`,
+				mimeType: "video/mp4",
+				definition: source.definition ?? source.quality ?? (i === 0 ? "兼容" : ""),
+			}));
+			return { episodeId: id, duration: info.duration, streams };
+		}
+		if (cached) return compatible;
 		const result = await resolvePlayback(id);
 		const playback = result.playback;
 		const files = playback.streams.filter((stream) => stream.url && !stream.hls && !stream.dash);
 		if (files.length) {
 			if (playback.protected === true && !result.contentKey?.key) throw new Error("未获取到视频内容密钥");
-			playModels.set(id, { source: files[0], key: result.contentKey?.key });
-			while (playModels.size > 32) playModels.delete(playModels.keys().next().value);
-			return { ...compatible, duration: playback.duration_seconds };
+			files.forEach((source, i) => {
+				playModels.set(`${id}:${i}`, { source, key: result.contentKey?.key });
+			});
+			playbackInfo.set(id, { files, duration: playback.duration_seconds });
+			while (playModels.size > 128) playModels.delete(playModels.keys().next().value);
+			const streams = files.map((source, i) => ({
+				kind: "file",
+				url:
+					i === 0 ? `./media/${id}?format=${PLAYBACK_FORMAT}` : `./media/${id}?format=${PLAYBACK_FORMAT}&quality=${i}`,
+				mimeType: "video/mp4",
+				definition: source.definition ?? source.quality ?? (i === 0 ? "兼容" : ""),
+			}));
+			return { episodeId: id, duration: playback.duration_seconds, streams };
 		}
 		const streams = playback.streams
 			.filter((stream) => stream.url)
@@ -418,7 +464,16 @@ export function createHongguo(host, overrides = {}) {
 	}
 
 	async function serveMedia(req, res, id) {
-		const file = await media(id);
+		const query = new URL(req.url, "http://localhost").searchParams;
+		const qualityParam =
+			query.get("quality") ??
+			query.get("q") ??
+			query.get("src") ??
+			query.get("index") ??
+			query.get("definition") ??
+			query.get("def") ??
+			"";
+		const file = await media(id, qualityParam);
 		if (res.destroyed) return;
 		const size = (await stat(file)).size;
 		res.setHeader("content-type", "video/mp4");
@@ -512,7 +567,15 @@ export function createHongguo(host, overrides = {}) {
 			}
 			if (path === "/preload") {
 				const id = safeId(query.get("episode"));
-				await media(id);
+				await media(
+					id,
+					query.get("quality") ??
+						query.get("q") ??
+						query.get("src") ??
+						query.get("index") ??
+						query.get("definition") ??
+						"",
+				);
 				return json({ episodeId: id, ready: true });
 			}
 			if (path.startsWith("/media/")) return await serveMedia(req, res, safeId(path.slice(7)));

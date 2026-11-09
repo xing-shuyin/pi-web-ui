@@ -253,6 +253,7 @@ export function createPlayer(host, options = {}) {
 			gestureCleanup = null;
 			savePrefs();
 		};
+		root.classList.add("hg-dragging");
 		window.addEventListener("pointermove", move, true);
 		window.addEventListener("pointerup", stop, true);
 		window.addEventListener("pointercancel", stop, true);
@@ -263,7 +264,6 @@ export function createPlayer(host, options = {}) {
 		} catch {
 			/* synthetic events may have no active pointer */
 		}
-		root.classList.add("hg-dragging");
 		gestureCleanup = () => stop();
 	}
 
@@ -291,7 +291,11 @@ export function createPlayer(host, options = {}) {
 		state.preloadState = "loading";
 		renderControls();
 		try {
-			const data = await api(`preload?episode=${encodeURIComponent(next.id)}`, request.signal, {
+			const quality = prefs.quality ?? state.source?.definition ?? state.source?.quality ?? "";
+			const preloadPath = quality
+				? `preload?episode=${encodeURIComponent(next.id)}&quality=${encodeURIComponent(quality)}`
+				: `preload?episode=${encodeURIComponent(next.id)}`;
+			const data = await api(preloadPath, request.signal, {
 				method: "POST",
 				timeout: 360_000,
 			});
@@ -491,8 +495,18 @@ export function createPlayer(host, options = {}) {
 			const sources = el(
 				"select",
 				{
-					"aria-label": t("播放线路", "Video source"),
-					onchange: (event) => play(state.current, video.currentTime, Number(event.target.value)),
+					"aria-label": t("清晰度", "Quality"),
+					onchange: (event) => {
+						const index = Number(event.target.value);
+						const selected = state.sources[index];
+						if (selected) {
+							prefs.quality = selected.definition ?? selected.quality ?? prefs.quality;
+							savePrefs();
+						}
+						stopPreload();
+						play(state.current, video.currentTime, index);
+						if (prefs.preloadNext !== false) void prepareNext();
+					},
 				},
 				state.sources.map((source, i) => el("option", { value: i }, source.definition || `${source.kind} ${i + 1}`)),
 			);
@@ -575,7 +589,7 @@ export function createPlayer(host, options = {}) {
 			engine.initialize(video, url, false);
 		}
 	}
-	async function play(episode, position, sourceIndex = 0) {
+	async function play(episode, position, sourceIndex) {
 		if (!episode || destroyed || !state.open) return;
 		saveProgress();
 		const version = ++playVersion;
@@ -599,9 +613,20 @@ export function createPlayer(host, options = {}) {
 			const data = await api(`play?episode=${encodeURIComponent(episode.id)}`, playRequest.signal);
 			if (version !== playVersion || destroyed || !state.open) return;
 			state.sources = data.streams ?? [];
-			const source = state.sources[sourceIndex] ?? state.sources[0];
+			let resolvedIndex = typeof sourceIndex === "number" ? sourceIndex : -1;
+			if (resolvedIndex < 0 && prefs.quality) {
+				resolvedIndex = state.sources.findIndex(
+					(source) => (source.definition ?? source.quality ?? "") === prefs.quality,
+				);
+			}
+			if (resolvedIndex < 0) resolvedIndex = 0;
+			const source = state.sources[resolvedIndex] ?? state.sources[0];
 			if (!source) throw new Error(t("没有可用的视频线路", "No playable video source"));
 			state.source = source;
+			if (source?.definition || source?.quality) {
+				prefs.quality = source.definition ?? source.quality;
+				savePrefs();
+			}
 			await attach(source, version);
 			if (version !== playVersion || destroyed || !state.open) return;
 			video.playbackRate = prefs.speed ?? 1;
