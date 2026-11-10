@@ -12,7 +12,9 @@ let dir = "";
 const prevEnv = process.env.PI_CODING_AGENT_SESSION_DIR;
 
 beforeEach(() => {
-	for (const k of ["SESSION_LIST_DEFAULT", "SESSION_LIST_PARSE_LIMIT", "SESSION_LIST_MAX"]) saved[k] = CS[k];
+	for (const k of ["SESSION_LIST_MIN", "SESSION_LIST_DEFAULT", "SESSION_LIST_PARSE_LIMIT", "SESSION_LIST_MAX"])
+		saved[k] = CS[k];
+	CS.SESSION_LIST_MIN = 5;
 	CS.SESSION_LIST_DEFAULT = 5;
 	CS.SESSION_LIST_PARSE_LIMIT = 6;
 	CS.SESSION_LIST_MAX = 50;
@@ -80,7 +82,7 @@ describe("sessionListPayload", () => {
 		expect(again.sessions).toHaveLength(20);
 	});
 
-	it("limit 夹在 [默认, 上限] 之间", () => {
+	it("limit 夹在 [下限, 上限] 之间；下限比默认小，允许只取首屏那几条", () => {
 		const s = svc();
 		expect(s.setSessionListLimit(dir, 1)).toBe(5);
 		expect(s.setSessionListLimit(dir, 10_000)).toBe(50);

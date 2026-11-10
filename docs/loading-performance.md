@@ -185,7 +185,28 @@ fork 基准的旧算法针对预归一化单链重现原固定点传播，不包
 ### 会话列表分页（B5）
 
 - 协议（均为可选、向后兼容；本批已 bump 到 v44）：`list_sessions` 加 `limit`（希望拿到的总条数），`sessions` 加 `hasMore`。
-- 服务端按项目记住 `limit`（`setSessionListLimit`，夹在 [200, 5000]），之后每轮对话后的自动刷新沿用它，已展开的列表不会缩回 200。`loadSessionInfos` 的列表模式按 `limit + 60` 提前停止解析。缓存记录这份列表是按多少条的需求解析的（`parsedFor`），需求更大时不复用。`hasMore` = 摘要多于 limit，或解析提前停止（还有未解析的旧文件）。
-- 客户端：reducer 按项目记录 `projectSessionsHasMore`。「显示更多」在本地余量用完、且服务端还有更多时，以下一页的 limit 请求，按钮显示加载态。每个项目展开到的条数持久化（`pi-web-ui:lp-visible-counts`），刷新或展开项目时按此前条数请求，超过 200 条的会话不再只能靠全局搜索找到。
+- 服务端按项目记住 `limit`（`setSessionListLimit`，夹在 [`SESSION_LIST_MIN = 20`, `SESSION_LIST_MAX = 5000`]），之后每轮对话后的自动刷新沿用它，已展开的列表不会缩回。`loadSessionInfos` 的列表模式按 `SESSION_LIST_PARSE_LIMIT + (limit - SESSION_LIST_DEFAULT)` 提前停止解析：默认口径仍是 260 个文件，而首屏只要 20 条时只需扫 80 个。缓存记录这份列表是按多少条的需求解析的（`parsedFor`），需求更大时不复用。`hasMore` = 摘要多于 limit，或解析提前停止（还有未解析的旧文件）。
+- 客户端：reducer 按项目记录 `projectSessionsHasMore`。「显示更多」在本地余量用完、且服务端还有更多时，以下一页的 limit 请求，按钮显示加载态。每个项目默认只渲染 `SESSION_ROWS_DEFAULT = 5` 条历史会话，每点一次「显示更多」多 `SESSION_ROWS_STEP = 10` 条；展开条数只活在本页内存里（旧版的 `pi-web-ui:lp-visible-counts` 持久化已废弃并在加载时清除），刷新页面一律回到 5 条，不会把上次展开的几十上百条原样恢复。
+- 首屏请求就是 `SESSION_LIST_FIRST_PAGE = 20`（= 服务端下限），比渲染的 5 条多要一些当本地余量：下一次「显示更多」不必再跑一轮网络 + 磁盘扫描。已展开到很多条的项目重挂载时，请求量跟着当前展开数走（`visible + 10`），列表不会缩回去。
 
-测试：`tests/unit/session-open-async.test.ts`（与 `SessionManager.open` 逐项一致、预解析路径不回退、可继续追加写入、非法 / 空文件回退、开关、解析期间让出事件循环）；`tests/unit/session-list-paging.test.ts`（翻页、hasMore、limit 记忆与夹取、reducer）；`tests/unit/left-panel-stage-d.test.ts` 新增 B5 用例（向服务端翻页与加载态、本地余量不发请求、条数持久化后按条数请求）。
+测试：`tests/unit/session-open-async.test.ts`（与 `SessionManager.open` 逐项一致、预解析路径不回退、可继续追加写入、非法 / 空文件回退、开关、解析期间让出事件循环）；`tests/unit/session-list-paging.test.ts`（翻页、hasMore、limit 记忆与夹取（含下限）、reducer）；`tests/unit/left-panel-stage-d.test.ts` 新增 B5 用例（向服务端翻页与加载态、本地余量不发请求、刷新不继承旧条数）。
+
+### 会话列表磁盘索引（`server/session-list-index.ts`）
+
+列表要在每个项目里找出「最新的 N 条」，原实现只能把最新的 260 个 `.jsonl` 整个扫一遍。本机 pi-web-ui 项目（1883 个会话文件 / 1.5 GB，最新 260 个 275 MB）实测：冷启动 readdir + stat 29 ms、扫描 463 ms，而真正展示的只有前几屏。
+
+- 索引把「文件 mtime + size + 扫描状态」落盘到 `<dataDir>/cache/session-list-index/<sha1(项目目录)>.json`，命中就跳过整份文件扫描。有效性判定与内存缓存同一把尺子：**mtime 和 size 都没变才认**（改名 / 压缩 / 重写都会改这两者）。
+- 纯缓存：删掉、损坏、写失败都只是下次重扫，不影响任何会话数据；没有 `dataDir`（无状态存储）时整套自动关闭。
+- 存的就是 `SessionListScanState`，所以它同时是增量续扫的偏移：重启后追加过的大会话从上次偏移接着读（`previousScan`），签名不符时 `scanSessionListInfo` 自己退回全扫。
+- 单项目上限 3000 条 / 4 MiB（超了只留最新 1000 条），写盘去抖 500 ms、原子替换；一轮枚举结束后按实际存在的文件修剪（枚举不完整时只跳过修剪，不误删）；项目不再打开的旧索引文件超过 30 天、启动后清一次（每次最多 20 个）。
+- 列表摘要只建 `limit + 1` 条（命中索引后 `infos` 可能是项目全量），不再对上千条全建一遍再切。
+
+实测（同目录，首次请求 20 条 / 解析 80 个文件）：
+
+| 场景                      | readdir + stat |   扫描 |   合计 |
+| ------------------------- | -------------: | -----: | -----: |
+| 老口径（解析最新 260 个） |          25 ms | 463 ms | 488 ms |
+| 首屏 20 条（解析 80 个）  |          29 ms | 161 ms | 190 ms |
+| 重启后命中磁盘索引        |          20 ms |   4 ms |  24 ms |
+
+测试：`tests/unit/session-list-index.test.ts`（落盘后重启免解析：内容被换掉但 mtime + size 不变仍给出原元信息；文件变了才重扫；增量续扫补齐条数；删文件后条目消失；无 dataDir 时不落盘）。

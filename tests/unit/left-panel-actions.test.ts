@@ -846,6 +846,7 @@ describe("LeftPanel 会话行删除确认与重命名按钮互斥", () => {
 		expect(sent).toContainEqual({
 			type: "list_sessions",
 			path: "/test/unopened",
+			limit: 20,
 		});
 		expect(sent.some((m: any) => m.type === "set_cwd")).toBe(false);
 

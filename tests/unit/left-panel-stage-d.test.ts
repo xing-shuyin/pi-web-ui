@@ -277,18 +277,19 @@ describe("B5：显示更多向服务端翻页", () => {
 			messageCount: 1,
 		}));
 
-	it("本地已下发的用完且服务端还有更多：请求更大的 limit，显示加载态；新数据到达后恢复", () => {
+	it("本地已下发用完且服务端还有更多：按下一页的 limit 请求，显示加载态；新数据到达后恢复", () => {
 		setAppGlobals({ cwd: "/w/a", ready: true, status: "open", workspaceRoots: [] });
 		mount({ projects: [{ path: "/w/a", lastUsed: 2 }], sessions: mk(8), projectSessionsHasMore: { "/w/a": true } });
 		const more = () => container.querySelector<HTMLButtonElement>(".lp-show-more-row");
 		expect(more()).not.toBeNull();
 		sent.length = 0;
 		act(() => more()!.click());
-		expect(sent).toContainEqual({ type: "list_sessions", path: "/w/a", limit: 400 });
+		// 首屏 5 + 一页 10 = 15；再多要一页当本地余量 → 25
+		expect(sent).toContainEqual({ type: "list_sessions", path: "/w/a", limit: 25 });
 		expect(more()!.disabled).toBe(true);
 		render({ sessions: mk(40), projectSessionsHasMore: {} });
 		expect(more()!.disabled).toBe(false);
-		expect(container.querySelectorAll(".lp-tree-session-item").length).toBe(28);
+		expect(container.querySelectorAll(".lp-tree-session-item").length).toBe(15);
 	});
 
 	it("本地还有余量时只在本地展开，不请求服务端", () => {
@@ -297,17 +298,20 @@ describe("B5：显示更多向服务端翻页", () => {
 		sent.length = 0;
 		act(() => container.querySelector<HTMLButtonElement>(".lp-show-more-row")!.click());
 		expect(sent.filter((m) => (m as { type: string }).type === "list_sessions")).toEqual([]);
-		expect(container.querySelectorAll(".lp-tree-session-item").length).toBe(28);
+		expect(container.querySelectorAll(".lp-tree-session-item").length).toBe(15);
 	});
 
-	it("展开条数持久化，重新挂载时按此前条数请求列表", () => {
+	it("刷新页面不继承上次展开的条数：默认只渲染 5 条，也不按旧条数要列表", () => {
 		setAppGlobals({ cwd: "/w/a", ready: true, status: "open", workspaceRoots: [] });
-		mount({ projects: [{ path: "/w/a", lastUsed: 2 }], sessions: mk(10) });
 		localStorage.setItem("pi-web-ui:lp-visible-counts", JSON.stringify({ "/w/a": 450 }));
+		mount({ projects: [{ path: "/w/a", lastUsed: 2 }], sessions: mk(10) });
+		expect(container.querySelectorAll(".lp-tree-session-item").length).toBe(5);
 		act(() => root!.unmount());
 		root = createRoot(container);
 		sent.length = 0;
 		render();
-		expect(sent).toContainEqual({ type: "list_sessions", limit: 600 });
+		expect(sent).toContainEqual({ type: "list_sessions", limit: 20 });
+		expect(sent).not.toContainEqual({ type: "list_sessions", limit: 600 });
+		expect(container.querySelectorAll(".lp-tree-session-item").length).toBe(5);
 	});
 });

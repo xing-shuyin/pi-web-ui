@@ -693,6 +693,7 @@ export interface Conversation {
 }
 
 import { mapSessionsConcurrent } from "./session-scan.js";
+import { SessionListDiskIndex } from "./session-list-index.js";
 import {
 	searchSessions as searchSessionTranscripts,
 	piSessionsRoot,
@@ -12621,6 +12622,8 @@ export class ClientSession {
 	private static sessionInfosGeneration = 0;
 	private static readonly SESSION_INFO_CACHE_TTL = 30_000;
 	private static readonly SESSION_LIST_PARSE_EXTRA = 60;
+	/** 一页至少要这么多条（客户端首屏要的就是这个数）。 */
+	static readonly SESSION_LIST_MIN = 20;
 	static readonly SESSION_LIST_DEFAULT = 200;
 	static readonly SESSION_LIST_MAX = 5000;
 	private static SESSION_LIST_PARSE_LIMIT = ClientSession.SESSION_LIST_DEFAULT + ClientSession.SESSION_LIST_PARSE_EXTRA;
@@ -12631,10 +12634,7 @@ export class ClientSession {
 	): Promise<SessionInfo[]> {
 		const targetCwd = forCwd ?? this.cwd;
 		const listOnly = opts?.listOnly === true;
-		const listLimit = Math.max(
-			ClientSession.SESSION_LIST_DEFAULT,
-			opts?.listLimit ?? ClientSession.SESSION_LIST_DEFAULT,
-		);
+		const listLimit = Math.max(ClientSession.SESSION_LIST_MIN, opts?.listLimit ?? ClientSession.SESSION_LIST_DEFAULT);
 		const parseNeed = listOnly
 			? ClientSession.SESSION_LIST_PARSE_LIMIT + (listLimit - ClientSession.SESSION_LIST_DEFAULT)
 			: Number.POSITIVE_INFINITY;
@@ -12662,6 +12662,10 @@ export class ClientSession {
 			try {
 				const projectDir = SessionManager.create(sessionBaseDir).getSessionDir();
 				const extraRoot = piSessionsRoot() ? resolve(piSessionsRoot()!) : undefined;
+				// 磁盘索引（纯缓存）：命中就不必再读文件内容，只用 readdir + stat 校对文件没变。
+				const diskIndex = SessionListDiskIndex.open(this.stateStore?.dataDir, projectDir);
+				await diskIndex?.ensureLoaded();
+				let enumerationComplete = true;
 
 				const candidateFiles = new Map<string, string>();
 				if (existsSync(projectDir)) {
@@ -12691,7 +12695,10 @@ export class ClientSession {
 									candidateFiles.set(normalizePathKey(fp), fp);
 								}
 							}
-						} catch {}
+						} catch {
+							// 枚举不全时不要根据 present 修剪索引，否则会把没枚举到的条目全删掉
+							enumerationComplete = false;
+						}
 					}
 				}
 
@@ -12724,11 +12731,29 @@ export class ClientSession {
 						if (isOwn(cached.info)) ownCount++;
 						return cached.info;
 					}
+					// 磁盘索引命中：文件 mtime + size 没变，元信息直接用，省掉整份文件扫描。
+					const indexed = diskIndex?.lookup(file);
+					if (indexed) {
+						if (generation === ClientSession.sessionInfosGeneration) {
+							ClientSession.sessionFileCacheStore(file.path, {
+								mtime: file.mtime,
+								size: file.size,
+								info: indexed.info,
+								scan: indexed.scan,
+							});
+						}
+						if (isOwn(indexed.info)) ownCount++;
+						return indexed.info;
+					}
 					if (ownCount >= parseLimit) {
 						truncated = true;
 						return null;
 					}
-					const scanned = await scanSessionListInfo(file.path, file.mtime, cached?.scan);
+					const scanned = await scanSessionListInfo(
+						file.path,
+						file.mtime,
+						cached?.scan ?? diskIndex?.previousScan(file.path),
+					);
 					const info = scanned?.info ?? null;
 					if (info && scanned) {
 						if (generation === ClientSession.sessionInfosGeneration) {
@@ -12739,10 +12764,12 @@ export class ClientSession {
 								scan: scanned.state,
 							});
 						}
+						diskIndex?.remember(file, scanned.state);
 						if (isOwn(info)) ownCount++;
 					}
 					return info;
 				});
+				diskIndex?.reconcile(new Set(validStats.map((f) => normalizePathKey(f.path))), { prune: enumerationComplete });
 
 				const validInfos = results.filter((info): info is SessionInfo => info !== null);
 				const ownInfos = validInfos.filter(isOwn);
@@ -12842,7 +12869,7 @@ export class ClientSession {
 		if (typeof limit === "number" && Number.isFinite(limit)) {
 			const clamped = Math.min(
 				ClientSession.SESSION_LIST_MAX,
-				Math.max(ClientSession.SESSION_LIST_DEFAULT, Math.floor(limit)),
+				Math.max(ClientSession.SESSION_LIST_MIN, Math.floor(limit)),
 			);
 			this.sessionListLimits.set(key, clamped);
 			return clamped;
@@ -12853,10 +12880,11 @@ export class ClientSession {
 	private async sessionListPayload(targetCwd: string): Promise<{ sessions: SessionSummary[]; hasMore: boolean }> {
 		const limit = this.setSessionListLimit(targetCwd);
 		const infos = await this.loadSessionInfos(targetCwd, { listOnly: true, listLimit: limit });
-		const all = this.buildSessionSummaries(targetCwd, infos, Number.POSITIVE_INFINITY);
+		// 多取一条只是为了判 hasMore：索引命中后 infos 可能是项目全量（上千条），没必要全建摘要。
+		const page = this.buildSessionSummaries(targetCwd, infos, limit + 1);
 		const cached = ClientSession.sessionInfosCache.get(normalizePathKey(targetCwd));
-		const hasMore = all.length > limit || (cached ? !cached.complete : false);
-		return { sessions: all.slice(0, limit), hasMore };
+		const hasMore = page.length > limit || (cached ? !cached.complete : false);
+		return { sessions: page.slice(0, limit), hasMore };
 	}
 
 	private buildSessionSummaries(

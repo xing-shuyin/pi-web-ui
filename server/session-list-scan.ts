@@ -157,6 +157,16 @@ function toInfo(filePath: string, fileMtime: number, f: Fields): SessionListInfo
 	};
 }
 
+/** 由（可能是从磁盘索引里读回来的）扫描状态还原列表元信息；`toInfo` 的对外版本。 */
+export function sessionListInfoFromScan(
+	filePath: string,
+	fileMtime: number,
+	state: SessionListScanState,
+): SessionListInfo | null {
+	const { offset: _offset, headSig: _headSig, tailSig: _tailSig, ...fields } = state;
+	return toInfo(filePath, fileMtime, fields);
+}
+
 export interface SessionListScanResult {
 	info: SessionListInfo | null;
 	state: SessionListScanState;

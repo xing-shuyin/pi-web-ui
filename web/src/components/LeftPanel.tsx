@@ -282,8 +282,21 @@ function usePluginSectionCollapse(): [ReadonlySet<string>, (key: string) => void
 	}, []);
 	return [collapsed, toggle];
 }
-const LS_VISIBLE_COUNTS = "pi-web-ui:lp-visible-counts";
-const SESSION_LIST_DEFAULT = 200;
+/** 每个项目默认先渲染这么多条历史会话，其余靠「显示更多」逐页展开。 */
+const SESSION_ROWS_DEFAULT = 5;
+/** 「显示更多」每点一次多渲染的条数。 */
+const SESSION_ROWS_STEP = 10;
+/**
+ * 首屏向服务端要的条数（服务端下限 `SESSION_LIST_MIN` 同值）。
+ * 比首屏渲染的 5 条多要一些，多出来的当本地余量：下一次「显示更多」不用再跑一轮网络 + 磁盘扫描。
+ * 服务端也只按这个数向前解析（约 80 个文件），不再无脑扫最新的 260 个。
+ */
+const SESSION_LIST_FIRST_PAGE = 20;
+// 旧版本把展开条数写进 localStorage，刷新后会把上次展开的几十上百条原样恢复（阅读压力大）。
+// 展开条数现在只活在本页内存里，刷新一律回到 SESSION_ROWS_DEFAULT；顺手清掉历史键。
+try {
+	if (typeof localStorage !== "undefined") localStorage.removeItem("pi-web-ui:lp-visible-counts");
+} catch {}
 
 const LS_PROJECTS_ORDER_KEY = "pi-web-ui:projects-order";
 try {
@@ -764,29 +777,13 @@ export const LeftPanel = memo(function LeftPanel({
 		} catch {}
 	}, [expandedProjects]);
 
-	const [projectVisibleCounts, setProjectVisibleCounts] = useState<Record<string, number>>(() => {
-		try {
-			const raw = localStorage.getItem(LS_VISIBLE_COUNTS);
-			const parsed = raw ? (JSON.parse(raw) as unknown) : null;
-			if (parsed && typeof parsed === "object") {
-				const out: Record<string, number> = {};
-				for (const [k, v] of Object.entries(parsed as Record<string, unknown>)) {
-					if (typeof v === "number" && v > 8) out[k] = Math.min(v, 5000);
-				}
-				return out;
-			}
-		} catch {}
-		return {};
-	});
-	useEffect(() => {
-		try {
-			localStorage.setItem(LS_VISIBLE_COUNTS, JSON.stringify(projectVisibleCounts));
-		} catch {}
-	}, [projectVisibleCounts]);
+	// 只记在内存里：刷新页面回到 SESSION_ROWS_DEFAULT，不会把上次展开到的大条数带回来。
+	const [projectVisibleCounts, setProjectVisibleCounts] = useState<Record<string, number>>({});
 	const serverListLimit = useCallback(
-		(projectPath: string): number | undefined => {
-			const n = projectVisibleCounts[normalizeSessionPathKey(projectPath)];
-			return n && n > SESSION_LIST_DEFAULT ? Math.ceil(n / SESSION_LIST_DEFAULT) * SESSION_LIST_DEFAULT : undefined;
+		(projectPath: string): number => {
+			const visible = projectVisibleCounts[normalizeSessionPathKey(projectPath)] ?? SESSION_ROWS_DEFAULT;
+			// 已经展开到很多条的项目重挂载时一次要够，别让列表缩回去。
+			return Math.max(SESSION_LIST_FIRST_PAGE, visible + SESSION_ROWS_STEP);
 		},
 		[projectVisibleCounts],
 	);
@@ -843,13 +840,7 @@ export const LeftPanel = memo(function LeftPanel({
 			});
 			if (willExpand) {
 				const limit = serverListLimit(projectPath);
-				if (
-					ready &&
-					status === "open" &&
-					panelSend(
-						limit ? { type: "list_sessions", path: projectPath, limit } : { type: "list_sessions", path: projectPath },
-					)
-				) {
+				if (ready && status === "open" && panelSend({ type: "list_sessions", path: projectPath, limit })) {
 					initialRequestedRef.current.add(normP);
 					setLoadingProjects((lp) => new Set(lp).add(normP));
 				}
@@ -877,9 +868,7 @@ export const LeftPanel = memo(function LeftPanel({
 			if (pNorm === curNorm) continue;
 			if (expandedProjects.has(pNorm) && !initialRequestedRef.current.has(pNorm)) {
 				const limit = serverListLimit(p.path);
-				const sent = panelSend(
-					limit ? { type: "list_sessions", path: p.path, limit } : { type: "list_sessions", path: p.path },
-				);
+				const sent = panelSend({ type: "list_sessions", path: p.path, limit });
 				if (sent) {
 					initialRequestedRef.current.add(pNorm);
 					setLoadingProjects((lp) => (lp.has(pNorm) ? lp : new Set(lp).add(pNorm)));
@@ -1535,7 +1524,7 @@ export const LeftPanel = memo(function LeftPanel({
 				checkUnread({ sessionId: s.sessionId, sessionFile: s.path, path: s.path }),
 			).length;
 
-			const maxVisible = projectVisibleCounts[pNorm] ?? 8;
+			const maxVisible = projectVisibleCounts[pNorm] ?? SESSION_ROWS_DEFAULT;
 			const blocks: (
 				| { kind: "conversation"; target: ConversationSummary; rows: ConvRowItem[] }
 				| { kind: "session"; target: SessionSummary }
@@ -1555,7 +1544,6 @@ export const LeftPanel = memo(function LeftPanel({
 			const serverHasMore = Boolean(projectSessionsHasMore?.[pNorm]);
 			return {
 				serverHasMore,
-				loadedCount: pRawSessions.length,
 				p,
 				pNorm,
 				active,
@@ -1718,7 +1706,7 @@ export const LeftPanel = memo(function LeftPanel({
 		if (!active || !ready || status !== "open") return;
 		if (!cwd) return;
 		const limit = serverListLimit(cwd);
-		panelSend(limit ? { type: "list_sessions", limit } : { type: "list_sessions" });
+		panelSend({ type: "list_sessions", limit });
 		panelSend({ type: "list_projects" });
 		// eslint-disable-next-line react-hooks/exhaustive-deps
 	}, [active, ready, status, cwd, panelSend]);
@@ -2935,7 +2923,6 @@ export const LeftPanel = memo(function LeftPanel({
 											actuallyRunningCount,
 											unreadCount,
 											serverHasMore,
-											loadedCount,
 										} = m;
 										const switching = transitionCwdNorm !== null && transitionCwdNorm === pNorm;
 										const sbx = p.sandbox;
@@ -3186,15 +3173,17 @@ export const LeftPanel = memo(function LeftPanel({
 																		disabled={loadingMore.has(pNorm)}
 																		onClick={(e) => {
 																			e.stopPropagation();
-																			const nextVisible = maxVisible + 20;
+																			const nextVisible = maxVisible + SESSION_ROWS_STEP;
 																			setProjectVisibleCounts((prev) => ({
 																				...prev,
 																				[pNorm]: nextVisible,
 																			}));
 																			if (serverHasMore && nextVisible >= idleSessions.length) {
-																				const limit =
-																					Math.ceil((loadedCount + 1) / SESSION_LIST_DEFAULT) * SESSION_LIST_DEFAULT +
-																					SESSION_LIST_DEFAULT;
+																				// 多要一页当本地余量；服务端按这个数决定解析多少个文件
+																				const limit = Math.max(
+																					SESSION_LIST_FIRST_PAGE,
+																					nextVisible + SESSION_ROWS_STEP,
+																				);
 																				panelSend({ type: "list_sessions", path: p.path, limit });
 																				setLoadingMore((prev) => new Set(prev).add(pNorm));
 																			}
