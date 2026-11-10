@@ -67,7 +67,7 @@ describe("tool-inspector-state store", () => {
 		unsub();
 	});
 
-	it("updateToolInspectorLive 仅在 toolCallId 匹配且非思考流时平滑更新并通知", () => {
+	it("updateToolInspectorLive 在 toolCallId 匹配且种类一致时平滑更新并通知", () => {
 		openToolInspector({
 			isThinking: false,
 			name: "bash",
@@ -99,6 +99,82 @@ describe("tool-inspector-state store", () => {
 			output: "line 1\nline 2\n",
 		});
 		expect(notified).toBe(1);
+
+		unsub();
+	});
+
+	it("思考弹窗能被思考增量持续刷新（流式思考不能定格在打开时的快照）", () => {
+		openToolInspector({
+			isThinking: true,
+			title: "思考过程",
+			statusClass: "run",
+			streaming: true,
+			toolCallId: "msg_1:thinking:0",
+			thinking: "先看",
+			output: "先看",
+		});
+
+		let notified = 0;
+		const unsub = subscribeToolInspector(() => {
+			notified++;
+		});
+
+		updateToolInspectorLive(
+			"msg_1:thinking:0",
+			{ thinking: "先看目录", output: "先看目录", streaming: true, statusClass: "run" },
+			"thinking",
+		);
+		expect(notified).toBe(1);
+		expect(getToolInspectorState()?.thinking).toBe("先看目录");
+
+		updateToolInspectorLive(
+			"msg_1:thinking:0",
+			{ thinking: "先看目录，再读文件", output: "先看目录，再读文件", streaming: false, statusClass: "ok" },
+			"thinking",
+		);
+		expect(notified).toBe(2);
+		expect(getToolInspectorState()?.streaming).toBe(false);
+
+		unsub();
+	});
+
+	it("工具增量不得覆盖已打开的思考弹窗（两条流不串台）", () => {
+		openToolInspector({
+			isThinking: true,
+			title: "思考过程",
+			toolCallId: "shared_id",
+			thinking: "思考内容",
+			output: "思考内容",
+		});
+
+		let notified = 0;
+		const unsub = subscribeToolInspector(() => {
+			notified++;
+		});
+
+		updateToolInspectorLive("shared_id", { output: "工具输出" });
+		expect(notified).toBe(0);
+		expect(getToolInspectorState()?.output).toBe("思考内容");
+
+		unsub();
+	});
+
+	it("思考增量不得覆盖已打开的工具弹窗（两条流不串台）", () => {
+		openToolInspector({
+			isThinking: false,
+			name: "bash",
+			toolCallId: "shared_id",
+			output: "工具输出",
+		});
+
+		let notified = 0;
+		const unsub = subscribeToolInspector(() => {
+			notified++;
+		});
+
+		updateToolInspectorLive("shared_id", { thinking: "思考内容", output: "思考内容" }, "thinking");
+		expect(notified).toBe(0);
+		expect(getToolInspectorState()?.output).toBe("工具输出");
 
 		unsub();
 	});

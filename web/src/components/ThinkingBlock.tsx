@@ -173,17 +173,21 @@ export function ThinkingBlock({
 		const cur = getToolInspectorState();
 		if (!cur || !cur.isThinking) return;
 		if (cur.toolCallId !== thinkingId) return;
-		updateToolInspectorLive(cur.toolCallId ?? thinkingId, {
-			status: activeStream ? t("thinkingNow") : displayDuration ? `${t("done")} (${displayDuration})` : t("done"),
-			statusClass: activeStream ? "run" : "ok",
-			duration: displayDuration,
-			durationMs: timeRange.durationMs,
-			startTimestamp: timeRange.start,
-			endTimestamp: timeRange.end,
-			output: bodyText || thinking,
-			thinking: displayedThinking || thinking,
-			streaming: activeStream,
-		});
+		updateToolInspectorLive(
+			cur.toolCallId ?? thinkingId,
+			{
+				status: activeStream ? t("thinkingNow") : displayDuration ? `${t("done")} (${displayDuration})` : t("done"),
+				statusClass: activeStream ? "run" : "ok",
+				duration: displayDuration,
+				durationMs: timeRange.durationMs,
+				startTimestamp: timeRange.start,
+				endTimestamp: timeRange.end,
+				output: bodyText || thinking,
+				thinking: displayedThinking || thinking,
+				streaming: activeStream,
+			},
+			"thinking",
+		);
 	}, [
 		thinkingId,
 		displayedThinking,

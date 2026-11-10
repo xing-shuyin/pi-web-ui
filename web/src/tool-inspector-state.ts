@@ -57,8 +57,22 @@ export function closeToolInspector(): void {
 	notify();
 }
 
-export function updateToolInspectorLive(toolCallId: string, patch: Partial<ToolInspectorState>): void {
-	if (!activeState || activeState.isThinking || activeState.toolCallId !== toolCallId) {
+export type ToolInspectorLiveKind = "tool" | "thinking";
+
+/**
+ * 实时同步更新当前检查器弹窗数据（仅当已打开弹窗的 toolCallId 相同、且种类一致时更新）。
+ * 用于工具执行 / 思考过程中的流式增量输出与状态平滑切换，避免弹窗定格在旧快照。
+ * kind 必须与已打开弹窗种类一致：思考弹窗只吃思考增量、工具弹窗只吃工具增量，防两条流互相覆盖。
+ */
+export function updateToolInspectorLive(
+	toolCallId: string,
+	patch: Partial<ToolInspectorState>,
+	kind: ToolInspectorLiveKind = "tool",
+): void {
+	if (!activeState || activeState.toolCallId !== toolCallId) {
+		return;
+	}
+	if (activeState.isThinking !== (kind === "thinking")) {
 		return;
 	}
 	let changed = false;
