@@ -1,5 +1,22 @@
-import { useState, type FormEvent } from "react";
+import { useEffect, useState, type FormEvent } from "react";
+import { Capacitor } from "@capacitor/core";
+import { LocalEngine } from "@pi-mobile/native-local-engine";
+import type { LocalEngineStatus } from "@pi-mobile/native-local-engine";
+import { resetLocalEngine } from "./connection-local";
 import type { ConnectionInput, ConnectionMode, SavedConnection } from "./connections";
+
+function enginePhaseLabel(phase: LocalEngineStatus["phase"]): string {
+	const labels: Record<LocalEngineStatus["phase"], string> = {
+		notInstalled: "未安装",
+		installing: "安装中",
+		installed: "已安装",
+		starting: "启动中",
+		running: "运行中",
+		stopping: "停止中",
+		error: "异常",
+	};
+	return labels[phase] ?? phase;
+}
 
 interface Props {
 	initialError?: string;
@@ -22,6 +39,36 @@ export function ConnectionScreen({ initialError = "", saved, onConnect, onRetry 
 	const [busy, setBusy] = useState(false);
 	const [error, setError] = useState(initialError);
 	const hub = mode === "hub";
+	const local = mode === "local";
+	const androidNative = Capacitor.isNativePlatform() && Capacitor.getPlatform() === "android";
+	const [engineStatus, setEngineStatus] = useState<LocalEngineStatus | null>(null);
+	const [engineProgress, setEngineProgress] = useState("");
+	useEffect(() => {
+		if (!local) {
+			setEngineStatus(null);
+			setEngineProgress("");
+			return;
+		}
+		let active = true;
+		void LocalEngine.getStatus().then((status) => {
+			if (active) setEngineStatus(status);
+		});
+		const statusHandle = LocalEngine.addListener("status", ({ status }) => {
+			if (active) setEngineStatus(status);
+		});
+		const progressHandle = LocalEngine.addListener("progress", ({ step, done, total }) => {
+			if (!active) return;
+			const percent = total > 0 ? Math.round((done / total) * 100) : 0;
+			setEngineProgress(
+				step === "verify" ? `校验分卷… ${percent}%` : `已解压 ${(done / 1048576).toFixed(0)} MB`,
+			);
+		});
+		return () => {
+			active = false;
+			void statusHandle.then((handle) => handle.remove());
+			void progressHandle.then((handle) => handle.remove());
+		};
+	}, [local]);
 	const run = async (action: () => Promise<void>) => {
 		setBusy(true);
 		setError("");
@@ -37,7 +84,11 @@ export function ConnectionScreen({ initialError = "", saved, onConnect, onRetry 
 		event.preventDefault();
 		void run(() =>
 			onConnect(
-				hub ? { mode: "hub", serverUrl: hubUrl, username, password } : { mode: "direct", serverUrl: deviceUrl, token },
+				hub
+					? { mode: "hub", serverUrl: hubUrl, username, password }
+					: local
+						? { mode: "local" }
+						: { mode: "direct", serverUrl: deviceUrl, token },
 			),
 		);
 	};
@@ -57,7 +108,8 @@ export function ConnectionScreen({ initialError = "", saved, onConnect, onRetry 
 						[
 							["hub", "设备中心"],
 							["direct", "直连设备"],
-						] as const
+							...(androidNative ? ([["local", "本机运行"]] as const) : []),
+						] as Array<[ConnectionMode, string]>
 					).map(([value, label]) => (
 						<button
 							key={value}
@@ -75,22 +127,39 @@ export function ConnectionScreen({ initialError = "", saved, onConnect, onRetry 
 					))}
 				</div>
 				<form onSubmit={connect} className="mobile-connect-form">
-					<label htmlFor="mobile-server-url">{hub ? "设备中心地址" : "设备地址"}</label>
-					<input
-						id="mobile-server-url"
-						name="serverUrl"
-						type="url"
-						inputMode="url"
-						autoCapitalize="none"
-						autoCorrect="off"
-						autoComplete="url"
-						placeholder={hub ? "https://hub.example.com" : "https://pi.example.com"}
-						value={hub ? hubUrl : deviceUrl}
-						onChange={(event) => (hub ? setHubUrl : setDeviceUrl)(event.target.value)}
-						required
-						disabled={busy}
-					/>
-					{hub ? (
+					{!local && (
+						<>
+							<label htmlFor="mobile-server-url">{hub ? "设备中心地址" : "设备地址"}</label>
+							<input
+								id="mobile-server-url"
+								name="serverUrl"
+								type="url"
+								inputMode="url"
+								autoCapitalize="none"
+								autoCorrect="off"
+								autoComplete="url"
+								placeholder={hub ? "https://hub.example.com" : "https://pi.example.com"}
+								value={hub ? hubUrl : deviceUrl}
+								onChange={(event) => (hub ? setHubUrl : setDeviceUrl)(event.target.value)}
+								required
+								disabled={busy}
+							/>
+						</>
+					)}
+					{local ? (
+						<>
+							<p className="mobile-hint">
+								运行环境装在手机里，无需电脑即可使用。首次启动需要解压运行环境，请保持电量充足。
+							</p>
+							{engineProgress && <p className="mobile-hint">{engineProgress}</p>}
+							{engineStatus && <p className="mobile-hint">引擎状态：{enginePhaseLabel(engineStatus.phase)}</p>}
+							{engineStatus?.error && (
+								<p className="mobile-error" role="alert">
+									{engineStatus.error}
+								</p>
+							)}
+						</>
+					) : hub ? (
 						<>
 							<label htmlFor="mobile-username">账号</label>
 							<input
@@ -143,8 +212,18 @@ export function ConnectionScreen({ initialError = "", saved, onConnect, onRetry 
 							{error}
 						</p>
 					)}
+					{local && engineStatus?.error && (
+						<button
+							type="button"
+							className="btn mobile-retry-button"
+							disabled={busy}
+							onClick={() => void run(() => resetLocalEngine())}
+						>
+							重置本机引擎
+						</button>
+					)}
 					<button type="submit" className="btn primary mobile-connect-button" disabled={busy}>
-						{busy ? "正在连接…" : hub ? "登录设备中心" : "连接设备"}
+						{busy ? (local ? "正在启动…" : "正在连接…") : hub ? "登录设备中心" : local ? "启动本机引擎" : "连接设备"}
 						<span aria-hidden="true">→</span>
 					</button>
 				</form>
@@ -154,13 +233,19 @@ export function ConnectionScreen({ initialError = "", saved, onConnect, onRetry 
 					</button>
 				)}
 				<p className="mobile-hint">
-					{hub ? "登录后选择工作设备，集中接收各设备通知。" : "直接进入这台设备的工作区，通知由该设备发送。"}
+					{local
+						? "任务在本机运行，数据不出手机。"
+						: hub
+							? "登录后选择工作设备，集中接收各设备通知。"
+							: "直接进入这台设备的工作区，通知由该设备发送。"}
 					连接凭据保存在手机安全存储中。
 				</p>
-				<div className="mobile-connect-note">
-					<span className="mobile-status-dot" />
-					任务在原设备上继续运行，手机可随时离开。
-				</div>
+				{!local && (
+					<div className="mobile-connect-note">
+						<span className="mobile-status-dot" />
+						任务在原设备上继续运行，手机可随时离开。
+					</div>
+				)}
 			</div>
 			<footer className="mobile-connect-footer">你的设备 · 你的工作区</footer>
 		</main>

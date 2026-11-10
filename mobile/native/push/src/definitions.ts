@@ -29,7 +29,7 @@ export interface PiPushPlugin {
 export interface ConnectionCredentials {
 	serverUrl: string;
 	token: string;
-	mode?: "hub" | "direct";
+	mode?: "hub" | "direct" | "local";
 }
 
 export interface PiCredentialsPlugin {

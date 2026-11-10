@@ -23,6 +23,7 @@
 		"@capacitor/network": "^8.0.0",
 		"@capacitor/splash-screen": "^8.0.0",
 		"@capacitor/status-bar": "^8.0.0",
+		"@pi-mobile/native-local-engine": "file:./native/local-engine",
 		"@pi-mobile/native-push": "file:./native/push",
 		"react": "^19.2.0",
 		"react-dom": "^19.2.0"

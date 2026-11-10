@@ -1,0 +1,6 @@
+<resources>
+    <string name="localengine_channel_name">本机引擎</string>
+    <string name="localengine_channel_description">pi-web-ui 本机运行引擎的前台服务通知</string>
+    <string name="localengine_notification_title">pi 本机引擎</string>
+    <string name="localengine_notification_running">引擎运行中（127.0.0.1）</string>
+</resources>

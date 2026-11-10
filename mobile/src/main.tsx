@@ -210,13 +210,19 @@ function openTarget(target: NotificationTarget): void {
 async function connect(input: ConnectionInput): Promise<void> {
 	const connection = await authenticateConnection(input, installationId);
 	if (native) await PiCredentials.set(connection);
-	await enterConnection(connection);
+	await enterConnection(connection, { minted: true });
 }
 
-async function enterConnection(connection: SavedConnection): Promise<void> {
+async function enterConnection(connection: SavedConnection, options: { minted?: boolean } = {}): Promise<void> {
+	// 本机引擎凭据每次启动重新铸币（minted per boot）：保存值不可复用，重试必须重走 ensure 流程；
+	// 但 connect() 刚铸出来的凭据不能再回 connect —— 那是自己调自己。
+	if (connection.mode === "local" && !options.minted) {
+		await connect({ mode: "local" });
+		return;
+	}
 	initializing = true;
 	if (connection.mode === "hub") devices = await listHubDevices(connection);
-	else await readServerStatus(connection, installationId);
+	else if (connection.mode === "direct") await readServerStatus(connection, installationId);
 	activeConnection = connection;
 	hubConnection = connection.mode === "hub" ? connection : null;
 	activeDevice = null;
@@ -230,7 +236,7 @@ async function enterConnection(connection: SavedConnection): Promise<void> {
 	sessionStorage.removeItem(PENDING_TARGET);
 	pendingTarget = restorePendingTarget(savedTarget, connection, controller.getDetails().instanceId) ?? pendingTarget;
 	initializing = false;
-	if (connection.mode === "direct") {
+	if (connection.mode !== "hub") {
 		await startSharedUi(connection);
 		return;
 	}
@@ -353,7 +359,12 @@ async function boot(): Promise<void> {
 			const credentials = await PiCredentials.get();
 			if (credentials) {
 				saved = restoreConnection(credentials);
-				await enterConnection(saved);
+				if (saved.mode === "local") {
+					// Engine credentials are minted per boot; re-run the ensure flow instead of reusing them.
+					await connect({ mode: "local" });
+				} else {
+					await enterConnection(saved);
+				}
 				return;
 			}
 		} catch (cause) {

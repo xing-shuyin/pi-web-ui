@@ -80,7 +80,7 @@ public final class PiCredentialsPlugin extends Plugin {
         String serverUrl = call.getString("serverUrl");
         String token = call.getString("token");
         String mode = call.getString("mode", "hub");
-        if (!"hub".equals(mode) && !"direct".equals(mode)) {
+        if (!"hub".equals(mode) && !"direct".equals(mode) && !"local".equals(mode)) {
             call.reject("Unknown connection mode", "INVALID_ARGUMENT");
             return;
         }

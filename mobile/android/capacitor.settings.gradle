@@ -17,5 +17,8 @@ project(':capacitor-splash-screen').projectDir = new File('../node_modules/@capa
 include ':capacitor-status-bar'
 project(':capacitor-status-bar').projectDir = new File('../node_modules/@capacitor/status-bar/android')
 
+include ':pi-mobile-native-local-engine'
+project(':pi-mobile-native-local-engine').projectDir = new File('../node_modules/@pi-mobile/native-local-engine/android')
+
 include ':pi-mobile-native-push'
 project(':pi-mobile-native-push').projectDir = new File('../node_modules/@pi-mobile/native-push/android')

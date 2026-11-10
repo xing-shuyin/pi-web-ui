@@ -5,19 +5,25 @@ import {
 	type MobileConnection,
 	type NotificationTarget,
 } from "./connection";
+import { ensureLocalEngineRunning } from "./connection-local";
 import { loginHub } from "./hub";
 
-export type ConnectionMode = "hub" | "direct";
+export type ConnectionMode = "hub" | "direct" | "local";
 export interface SavedConnection extends MobileConnection {
 	mode: ConnectionMode;
 }
 export type ConnectionInput =
 	| { mode: "hub"; serverUrl: string; username: string; password: string }
-	| { mode: "direct"; serverUrl: string; token: string };
+	| { mode: "direct"; serverUrl: string; token: string }
+	| { mode: "local" };
 
 export function restoreConnection(saved: MobileConnection & { mode?: unknown }): SavedConnection {
-	if (saved.mode !== undefined && saved.mode !== "hub" && saved.mode !== "direct") {
+	if (saved.mode !== undefined && saved.mode !== "hub" && saved.mode !== "direct" && saved.mode !== "local") {
 		throw new Error("保存的连接方式无法识别，请重新连接。");
+	}
+	if (saved.mode === "local") {
+		// Local engine credentials are minted per boot; the screen re-runs ensureLocalEngineRunning.
+		return { mode: "local", serverUrl: "", token: "" };
 	}
 	const token = saved.token.trim();
 	if (!token || token.length > 4096 || /\s/.test(token)) throw new Error("请输入有效的设备访问令牌。");
@@ -28,6 +34,9 @@ export async function authenticateConnection(input: ConnectionInput, installatio
 	if (input.mode === "hub") {
 		return { ...(await loginHub(input.serverUrl, input.username, input.password)), mode: "hub" };
 	}
+	if (input.mode === "local") {
+		return { ...(await ensureLocalEngineRunning()), mode: "local" };
+	}
 	const connection = restoreConnection(input);
 	await readServerStatus(connection, installationId);
 	return connection;
@@ -37,6 +46,7 @@ export function notificationDestination(
 	mode: ConnectionMode,
 	target: NotificationTarget,
 ): "device" | "conversation" | "settings" {
+	if (mode === "local") return "settings";
 	if (mode === "hub") return target.deviceId ? "device" : "settings";
 	return target.deviceId ? "settings" : "conversation";
 }

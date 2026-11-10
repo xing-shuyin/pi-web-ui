@@ -1,7 +1,7 @@
 ext {
     minSdkVersion = 24
     compileSdkVersion = 36
-    targetSdkVersion = 36
+    targetSdkVersion = 28   // 本机引擎：私有目录 exec 豁免（W^X），同 Termux/dsh-go；不上 Google Play
     androidxActivityVersion = '1.11.0'
     androidxAppCompatVersion = '1.7.1'
     androidxCoordinatorLayoutVersion = '1.3.0'

@@ -71,7 +71,9 @@ export function NotificationSettings({
 				<div className="mobile-status-list">
 					<div>
 						<span>连接方式</span>
-						<strong>{connection.mode === "hub" ? "设备中心" : "设备直连"}</strong>
+						<strong>
+							{connection.mode === "hub" ? "设备中心" : connection.mode === "local" ? "本机运行" : "设备直连"}
+						</strong>
 					</div>
 					<div>
 						<span>服务器推送</span>

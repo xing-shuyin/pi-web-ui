@@ -1,0 +1,4 @@
+# Bundled engine artifacts are built by CI (mobile/local-engine/runtime/build-runtime.sh).
+# Never commit the multi-hundred-MB rootfs slices.
+rootfs.tgz.part-*
+runtime.json

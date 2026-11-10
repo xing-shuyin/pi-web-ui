@@ -14,6 +14,7 @@ dependencies {
     implementation project(':capacitor-network')
     implementation project(':capacitor-splash-screen')
     implementation project(':capacitor-status-bar')
+    implementation project(':pi-mobile-native-local-engine')
     implementation project(':pi-mobile-native-push')
 
 }

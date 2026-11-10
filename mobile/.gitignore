@@ -6,6 +6,7 @@ dist/
 android/.gradle/
 android/local.properties
 android/**/build/
+native/*/android/build/
 android/pi-push.properties
 android/app/oem-push.gradle
 ios/App/Pods/
