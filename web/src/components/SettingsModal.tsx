@@ -2467,165 +2467,17 @@ function LoadedSettingsModal({
 						)}
 
 						{tab === "prompt" && (
-							<div className="set-section">
-								<div className="set-section-title">
-									<FiAperture className="set-section-icon" />
-									{t("settingsEngineSection")}
-									<HintTip text={t("settingsEngineHint")} />
-								</div>
-								<div className="set-mode-row" role="radiogroup" aria-label={t("settingsEngineSection")}>
-									{SUPPORTED_ENGINES.map((item) => {
-										const isSelected = item.id === engine;
-										const status = engines.find((e) => e.id === item.id);
-										const isInstalled = item.id === "pi" || (status ? status.installed : false);
-										const isUpdating = Boolean(status?.updating);
-										const isUninstalling = Boolean(status?.uninstalling);
-										const hasUpdate = Boolean(isInstalled && status?.hasUpdate && status?.latestVersion);
-										const showUpdate = hasUpdate || isUpdating;
-										const canUninstall = item.id !== "pi" && isInstalled;
-
-										const handleInstall = (e: React.MouseEvent) => {
-											e.stopPropagation();
-											if (item.installCommand) {
-												runTerminalCommand(t("installEngineTabTitle", { name: item.badge }), item.installCommand);
-											}
-										};
-
-										const handleUpdate = (e: React.MouseEvent) => {
-											e.stopPropagation();
-											if (isUpdating || isUninstalling) return;
-											appSend({ type: "update_engine", engineId: item.id });
-										};
-
-										const handleUninstall = (e: React.MouseEvent) => {
-											e.stopPropagation();
-											if (isUninstalling || isUpdating) return;
-											if (isSelected) return;
-											if (confirmEngineUninstallId === item.id) {
-												setConfirmEngineUninstallId(null);
-												appSend({ type: "uninstall_engine", engineId: item.id });
-											} else {
-												setConfirmEngineUninstallId(item.id);
-											}
-										};
-
-										return (
-											<button
-												key={item.id}
-												type="button"
-												role="radio"
-												aria-checked={isSelected}
-												data-testid={`engine-switch-${item.id}`}
-												title={!isInstalled ? t("engineInstallTip") : undefined}
-												className={`set-mode-btn${isSelected ? " active" : ""}${!isInstalled ? " uninstalled" : ""}`}
-												onClick={() => {
-													if (!isInstalled) {
-														if (item.installCommand) {
-															runTerminalCommand(t("installEngineTabTitle", { name: item.badge }), item.installCommand);
-														}
-														return;
-													}
-													if (!isSelected) appSend({ type: "switch_engine", engine: item.id as EngineId });
-												}}
-											>
-												<div
-													className="set-mode-title"
-													style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 6 }}
-												>
-													<div style={{ display: "inline-flex", alignItems: "center", gap: 6, minWidth: 0 }}>
-														{t(item.titleKey) !== item.badge ? (
-															<>
-																<span>{t(item.titleKey)}</span>
-																<span className={`engine-badge ${item.colorClass}`}>{item.badge}</span>
-															</>
-														) : (
-															<span className={`engine-badge ${item.colorClass}`}>{item.badge}</span>
-														)}
-														{!isInstalled ? (
-															<span className="engine-picker-item-tag uninstalled" style={{ marginLeft: 4 }}>
-																{t("engineNotInstalled")}
-															</span>
-														) : isUninstalling ? (
-															<span className="engine-picker-item-tag uninstalling" style={{ marginLeft: 4 }}>
-																{t("engineUninstalling")}
-															</span>
-														) : isUpdating ? (
-															<span className="engine-picker-item-tag update-available" style={{ marginLeft: 4 }}>
-																{t("engineUpdating")}
-															</span>
-														) : null}
-													</div>
-													<div style={{ display: "inline-flex", alignItems: "center", gap: 6, flexShrink: 0 }}>
-														{!isInstalled && item.installCommand && (
-															<button
-																type="button"
-																className="engine-picker-install-btn"
-																title={t("engineInstallTip")}
-																onClick={handleInstall}
-															>
-																<FiDownload className="engine-install-icon" />
-																<span>{t("engineInstall")}</span>
-															</button>
-														)}
-														{showUpdate && (
-															<button
-																type="button"
-																className="engine-picker-update-btn"
-																disabled={isUpdating || isUninstalling}
-																title={
-																	isUpdating
-																		? t("engineUpdating")
-																		: t("engineUpdateTip", {
-																				current: status?.version ?? "",
-																				latest: status?.latestVersion ?? "",
-																			})
-																}
-																onClick={handleUpdate}
-															>
-																<FiRefreshCw className={`engine-update-icon${isUpdating ? " spinning" : ""}`} />
-																<span>{isUpdating ? t("engineUpdating") : t("engineUpdate")}</span>
-															</button>
-														)}
-														{canUninstall && (
-															<button
-																type="button"
-																data-testid={`settings-engine-uninstall-${item.id}`}
-																className={`engine-picker-uninstall-btn${confirmEngineUninstallId === item.id ? " confirm" : ""}`}
-																disabled={isUninstalling || isUpdating || isSelected}
-																title={
-																	isSelected
-																		? t("engineActiveNoUninstall")
-																		: isUninstalling
-																			? t("engineUninstalling")
-																			: confirmEngineUninstallId === item.id
-																				? t("engineUninstallConfirm")
-																				: t("engineUninstallTip")
-																}
-																onClick={handleUninstall}
-															>
-																<FiTrash2 className="engine-uninstall-icon" />
-																<span>
-																	{isUninstalling
-																		? t("engineUninstalling")
-																		: confirmEngineUninstallId === item.id
-																			? t("engineUninstallConfirm")
-																			: t("engineUninstall")}
-																</span>
-															</button>
-														)}
-													</div>
-												</div>
-												<div className="set-mode-desc">{t(item.descKey)}</div>
-											</button>
-										);
-									})}
-								</div>
-								<div className="set-section-title" style={{ marginTop: 16 }}>
-									<FiZap className="set-section-icon" />
-									{t("settingsSystemPrompt")}
+							<div className="set-section prompt-a">
+								{/* A单列流：引擎切换只在「模型」页，此处不再重复展示 */}
+								<div className="prompt-a-engine-note">
+									<span className="prompt-a-dot" />
+									<span className="prompt-a-engine-name">{t("settingsSystemPrompt")}</span>
 									<HintTip
 										text={isDsh ? t("dshPromptSectionsDesc") : `${t("promptComposeHint")}\n${t("promptComposeDesc")}`}
 									/>
+									<button type="button" className="prompt-a-engine-jump" onClick={() => handleTabChange("models")}>
+										{t("settingsEngineSection")} ›
+									</button>
 								</div>
 								{totalContextTokenEstimate > 0 ? (
 									<div className="set-token-meter-card">
@@ -2763,7 +2615,7 @@ function LoadedSettingsModal({
 											<label className="set-field-label">{t("promptTemplateLabel")}</label>
 											<textarea
 												className="set-prompt-input"
-												rows={6}
+												rows={4}
 												spellCheck={false}
 												placeholder={DEFAULT_PROMPT_TEMPLATE}
 												value={promptTemplateDraft}
@@ -3282,55 +3134,61 @@ function LoadedSettingsModal({
 						{tab === "quick-ask" && <QuickAskSettings settings={settings} onChange={setPartial} />}
 
 						{tab === "prompt" && !isDsh && (
-							<div className="set-section">
-								<div className="set-section-title">
+							<details className="set-section prompt-a-fold">
+								<summary className="prompt-a-fold-head">
 									<FiGitBranch className="set-section-icon" />
 									{t("scmCommitMsgSettingsTitle")}
 									<HintTip text={t("scmCommitMsgSettingsDesc")} />
+									<span className="prompt-a-fold-chev">›</span>
+								</summary>
+								<div className="prompt-a-fold-body">
+									<PromptOverrideEditor
+										mode={scmMsgMode}
+										onModeChange={setScmMsgMode}
+										draft={scmMsgDraft}
+										onDraftChange={setScmMsgDraft}
+										defaultPrompt={settings.scmCommitMsgDefaultPrompt}
+										placeholder={t("scmCommitMsgPromptPlaceholder")}
+										rows={4}
+										onCommit={(mode, text) => {
+											setPartial({
+												scmCommitMsgPromptMode: mode,
+												scmCommitMsgPrompt: text,
+											});
+										}}
+										hint={t("scmCommitMsgSettingsHint")}
+										focusRef={scmMsgFocus}
+									/>
 								</div>
-								<PromptOverrideEditor
-									mode={scmMsgMode}
-									onModeChange={setScmMsgMode}
-									draft={scmMsgDraft}
-									onDraftChange={setScmMsgDraft}
-									defaultPrompt={settings.scmCommitMsgDefaultPrompt}
-									placeholder={t("scmCommitMsgPromptPlaceholder")}
-									rows={4}
-									onCommit={(mode, text) => {
-										setPartial({
-											scmCommitMsgPromptMode: mode,
-											scmCommitMsgPrompt: text,
-										});
-									}}
-									hint={t("scmCommitMsgSettingsHint")}
-									focusRef={scmMsgFocus}
-								/>
-							</div>
+							</details>
 						)}
 
 						{tab === "prompt" && !isDsh && (
-							<div className="set-section">
-								<div className="set-section-title">
+							<details className="set-section prompt-a-fold">
+								<summary className="prompt-a-fold-head">
 									<FiEdit3 className="set-section-icon" />
 									{t("planModePromptSettingsTitle")}
 									<HintTip text={t("planModePromptSettingsDesc")} />
+									<span className="prompt-a-fold-chev">›</span>
+								</summary>
+								<div className="prompt-a-fold-body">
+									<PromptOverrideEditor
+										mode={planModeMode}
+										onModeChange={setPlanModeMode}
+										draft={planModeDraft}
+										onDraftChange={setPlanModeDraft}
+										defaultPrompt={settings.planModeDefaultPrompt}
+										placeholder={t("planModePromptPlaceholder")}
+										rows={8}
+										onCommit={(mode, text) => {
+											setPartial({ planModePromptMode: mode, planModePrompt: text });
+										}}
+										modeLabel={t("planModePromptMode")}
+										hint={t("planModePromptSettingsHint")}
+										focusRef={planModeFocus}
+									/>
 								</div>
-								<PromptOverrideEditor
-									mode={planModeMode}
-									onModeChange={setPlanModeMode}
-									draft={planModeDraft}
-									onDraftChange={setPlanModeDraft}
-									defaultPrompt={settings.planModeDefaultPrompt}
-									placeholder={t("planModePromptPlaceholder")}
-									rows={8}
-									onCommit={(mode, text) => {
-										setPartial({ planModePromptMode: mode, planModePrompt: text });
-									}}
-									modeLabel={t("planModePromptMode")}
-									hint={t("planModePromptSettingsHint")}
-									focusRef={planModeFocus}
-								/>
-							</div>
+							</details>
 						)}
 
 						{tab === "scheduler" && !isDsh && (

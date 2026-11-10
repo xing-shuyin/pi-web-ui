@@ -22110,6 +22110,103 @@
 		font-size: 11.5px;
 		color: var(--text-faint);
 	}
+	/* A单列流：系统提示词紧凑版面（引擎切换只在「模型」页） */
+	.prompt-a-engine-note {
+		display: flex;
+		align-items: center;
+		gap: 8px;
+		padding: 8px 2px;
+		margin-bottom: 2px;
+	}
+	.prompt-a-dot {
+		width: 7px;
+		height: 7px;
+		border-radius: 50%;
+		background: var(--green);
+		box-shadow: 0 0 6px var(--green);
+		flex-shrink: 0;
+	}
+	.prompt-a-engine-name {
+		font-size: 13px;
+		font-weight: 650;
+		overflow: hidden;
+		text-overflow: ellipsis;
+		white-space: nowrap;
+	}
+	.prompt-a-engine-jump {
+		margin-left: auto;
+		background: none;
+		border: 1px solid var(--border-soft);
+		border-radius: 999px;
+		color: var(--text-dim);
+		font-size: 11.5px;
+		padding: 2px 10px;
+		cursor: pointer;
+		white-space: nowrap;
+		flex-shrink: 0;
+	}
+	.prompt-a-engine-jump:hover {
+		border-color: var(--accent);
+		color: var(--text);
+	}
+	.prompt-a .set-token-meter-card {
+		gap: 6px;
+		padding: 8px 10px;
+		margin-bottom: 10px;
+		border-radius: 8px;
+	}
+	.prompt-a .set-token-bar-track {
+		height: 4px;
+	}
+	.prompt-a .set-token-tag {
+		font-size: 11.5px;
+	}
+	.prompt-a .set-token-cache-hint,
+	.prompt-a .set-token-safe-badge {
+		font-size: 11px;
+	}
+	.prompt-a .set-prompt-view-triggers {
+		gap: 6px;
+	}
+	.prompt-a .set-view-prompt-btn {
+		padding: 3px 9px;
+		font-size: 11.5px;
+	}
+	.prompt-a .override-row {
+		padding: 6px 10px;
+		margin-top: 6px;
+	}
+	.prompt-a .override-row-head {
+		margin-bottom: 2px;
+		row-gap: 2px;
+	}
+	.prompt-a-fold {
+		padding: 0;
+	}
+	.prompt-a-fold-head {
+		display: flex;
+		align-items: center;
+		gap: 8px;
+		padding: 10px 12px;
+		cursor: pointer;
+		list-style: none;
+		font-size: 13px;
+		font-weight: 600;
+	}
+	.prompt-a-fold-head::-webkit-details-marker {
+		display: none;
+	}
+	.prompt-a-fold-head .prompt-a-fold-chev {
+		margin-left: auto;
+		color: var(--text-faint);
+		transition: transform 0.15s ease;
+	}
+	.prompt-a-fold[open] .prompt-a-fold-chev {
+		transform: rotate(90deg);
+	}
+	.prompt-a-fold-body {
+		padding: 0 12px 12px;
+	}
 
 	.settings-modal-actions {
 		display: flex;
