@@ -4,6 +4,7 @@ import {
 	getToolInspectorState,
 	isFlowMode,
 	openToolInspector,
+	retargetToolInspector,
 	subscribeToolInspector,
 	updateToolInspectorLive,
 } from "../../web/src/tool-inspector-state.js";
@@ -155,6 +156,30 @@ describe("tool-inspector-state store", () => {
 		updateToolInspectorLive("shared_id", { output: "工具输出" });
 		expect(notified).toBe(0);
 		expect(getToolInspectorState()?.output).toBe("思考内容");
+
+		unsub();
+	});
+
+	it("retargetToolInspector 只迁移同一个弹窗的归属 id", () => {
+		openToolInspector({
+			isThinking: true,
+			toolCallId: "stream-1:thinking:0",
+			thinking: "思考",
+			output: "思考",
+		});
+
+		let notified = 0;
+		const unsub = subscribeToolInspector(() => {
+			notified++;
+		});
+
+		expect(retargetToolInspector("other-id", "a-1:thinking:0")).toBe(false);
+		expect(getToolInspectorState()?.toolCallId).toBe("stream-1:thinking:0");
+		expect(notified).toBe(0);
+
+		expect(retargetToolInspector("stream-1:thinking:0", "a-1:thinking:0")).toBe(true);
+		expect(getToolInspectorState()?.toolCallId).toBe("a-1:thinking:0");
+		expect(notified).toBe(1);
 
 		unsub();
 	});

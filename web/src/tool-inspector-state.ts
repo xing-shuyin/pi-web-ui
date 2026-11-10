@@ -89,6 +89,20 @@ export function updateToolInspectorLive(
 	}
 }
 
+/**
+ * 把已打开弹窗的归属 id 迁移到新 id。
+ * 流式消息落地成持久消息时同一条思考会换壳（stream-xxx → a-xxx），
+ * 不迁移的话后续增量全部匹配不上，弹窗会定格在换壳前的快照。
+ */
+export function retargetToolInspector(fromId: string, toId: string): boolean {
+	if (!activeState || fromId === toId || activeState.toolCallId !== fromId) {
+		return false;
+	}
+	activeState = { ...activeState, toolCallId: toId };
+	notify();
+	return true;
+}
+
 export function getToolInspectorState(): ToolInspectorState | null {
 	return activeState;
 }

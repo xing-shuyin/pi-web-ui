@@ -2,7 +2,14 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { FiCheck, FiCheckCircle, FiClock, FiCopy, FiCpu } from "react-icons/fi";
 import { useT } from "../i18n";
 import { useCopyFeedback } from "../use-copy-feedback";
-import { getToolInspectorState, isFlowMode, openToolInspector, updateToolInspectorLive } from "../tool-inspector-state";
+import {
+	getToolInspectorState,
+	isFlowMode,
+	openToolInspector,
+	retargetToolInspector,
+	updateToolInspectorLive,
+	type ToolInspectorState,
+} from "../tool-inspector-state";
 import { CollapsibleHead } from "./CollapsibleHead";
 import { HalfRingSpinner } from "./HalfRingSpinner";
 import { useSmoothStreamText } from "./StreamMarkdown";
@@ -150,44 +157,53 @@ export function ThinkingBlock({
 	const liveElapsed =
 		activeStream && timeRange.start !== undefined ? Math.max(0, nowTick - timeRange.start) : undefined;
 
+	const settledStatus = displayDuration ? `${t("done")} (${displayDuration})` : t("done");
+	const livePatch: Partial<ToolInspectorState> = {
+		status: activeStream ? t("thinkingNow") : settledStatus,
+		statusClass: activeStream ? "run" : "ok",
+		duration: displayDuration,
+		durationMs: timeRange.durationMs,
+		startTimestamp: timeRange.start,
+		endTimestamp: timeRange.end,
+		output: bodyText || thinking,
+		thinking: displayedThinking || thinking,
+		streaming: activeStream,
+	};
+	const livePatchRef = useRef(livePatch);
+	livePatchRef.current = livePatch;
+	const settledStatusRef = useRef(settledStatus);
+	settledStatusRef.current = settledStatus;
+	const rawThinkingRef = useRef(thinking);
+	rawThinkingRef.current = thinking;
+	// 本实例用过的 thinkingId：流式消息落地成持久消息时 message.id 会换壳
+	const thinkingIdsRef = useRef<Set<string>>(new Set<string>());
+	if (thinkingId) thinkingIdsRef.current.add(thinkingId);
+
 	const handleOpenInspector = () => {
 		openToolInspector({
 			isThinking: true,
 			title: t("toolInspectorThinkingTitle"),
-			status: activeStream ? t("thinkingNow") : displayDuration ? `${t("done")} (${displayDuration})` : t("done"),
-			statusClass: activeStream ? "run" : "ok",
-			duration: displayDuration,
-			durationMs: timeRange.durationMs,
-			startTimestamp: timeRange.start,
-			endTimestamp: timeRange.end,
-			output: bodyText || thinking,
-			thinking: displayedThinking || thinking,
-			streaming: activeStream,
+			...livePatch,
 			toolCallId: thinkingId,
 		});
 	};
 
-	// 思考弹窗打开后跟随流式增量：只同步属于自己 thinkingId 的弹窗，避免串到别的思考上
+	// 思考弹窗打开后跟随流式增量。只接管属于自己这条思考的弹窗：
+	// 1) id 相同；2) 同一实例自己换过壳的旧 id；3) 同一条思考的续写（弹窗内容是自己内容的前缀）。
 	useEffect(() => {
 		if (!thinkingId) return;
 		const cur = getToolInspectorState();
 		if (!cur || !cur.isThinking) return;
-		if (cur.toolCallId !== thinkingId) return;
-		updateToolInspectorLive(
-			cur.toolCallId ?? thinkingId,
-			{
-				status: activeStream ? t("thinkingNow") : displayDuration ? `${t("done")} (${displayDuration})` : t("done"),
-				statusClass: activeStream ? "run" : "ok",
-				duration: displayDuration,
-				durationMs: timeRange.durationMs,
-				startTimestamp: timeRange.start,
-				endTimestamp: timeRange.end,
-				output: bodyText || thinking,
-				thinking: displayedThinking || thinking,
-				streaming: activeStream,
-			},
-			"thinking",
-		);
+		const popupId = cur.toolCallId;
+		if (!popupId) return;
+		if (popupId !== thinkingId) {
+			const shown = formatThinkingBody(cur.thinking || cur.output || "");
+			const mine = bodyText || thinking;
+			const continues = !!shown && mine.startsWith(shown);
+			if (!thinkingIdsRef.current.has(popupId) && !continues) return;
+			retargetToolInspector(popupId, thinkingId);
+		}
+		updateToolInspectorLive(thinkingId, livePatchRef.current, "thinking");
 	}, [
 		thinkingId,
 		displayedThinking,
@@ -200,6 +216,29 @@ export function ThinkingBlock({
 		timeRange.durationMs,
 		t,
 	]);
+
+	// 折叠 / 虚拟化 / 换壳把本实例卸载时，别让弹窗永远停在「思考中」
+	useEffect(() => {
+		return () => {
+			const cur = getToolInspectorState();
+			if (!cur || !cur.isThinking || !cur.streaming) return;
+			const popupId = cur.toolCallId;
+			if (!popupId || !thinkingIdsRef.current.has(popupId)) return;
+			const settledText = formatThinkingBody(rawThinkingRef.current);
+			updateToolInspectorLive(
+				popupId,
+				{
+					...livePatchRef.current,
+					thinking: rawThinkingRef.current || livePatchRef.current.thinking,
+					output: settledText || livePatchRef.current.output,
+					status: settledStatusRef.current,
+					statusClass: "ok",
+					streaming: false,
+				},
+				"thinking",
+			);
+		};
+	}, []);
 
 	const handleToggle = () => {
 		if (isFlowMode(rootRef.current)) {
