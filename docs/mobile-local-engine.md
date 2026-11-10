@@ -112,20 +112,23 @@ MethodChannel `pwu/localengine`，事件流推送状态：
 - 过滤器让 `renameat2` 直接返回 ENOSYS；glibc 2.28+ 的 `rename()` 只走 `renameat2`、不做回退（Node 的 `fs.rename*`
   都落到这里），于是 App 进程内一次 rename 都成功不了 → 引擎起得来也存不住状态。
 
-对策是 APK 侧 preload，而不是改每个调用点、也不是去文本替换 rootfs 里的 `dist`：
+对策分两层，都不去改调用点、也不去文本替换 rootfs 里的 `dist`：
 
-- `mobile/native/local-engine/android/src/main/assets/pi-localengine/rename-compat.cjs` 在 node 启动前把
-  `fs.renameSync` / `fs.rename` / `fs.promises.rename` 包一层：**只有** ENOSYS（及 ENOTSUP/EOPNOTSUPP）才降级为
-  「复制 + 删源」，其它错误码原样抛出，不掩盖真实故障。
-- `LocalEngineService` 每次启动把它写进 `rootfs/root/.pi-mobile/rename-compat.cjs`，并以 `node --require` 注入
-  （App 内装不了 npm 包，preload 只能随 APK 自带；按内容比对重写，升级 APK 即生效）。
+1. **rootfs 内置 C 垫片（主路，覆盖所有子进程）**：`mobile/local-engine/runtime/rename-preload.c` 编译成
+   `/usr/local/lib/pi-mobile/librename-compat.so`，并在 rootfs 的 `/etc/ld.so.preload` 里登记 —— guest 内每个
+   glibc 程序（node、bash、git、mv）启动时自动加载，`rename` / `renameat` 改道 `renameat`（它在允许名单里）。
+   proot 自身是 bionic，不读这个文件。实测：App 进程内 `rename` 恢复成功，`[rename-compat]` 降级日志不再出现。
+2. **node 侧 JS 兜底（旧 rootfs / 垫片缺失时）**：
+   `assets/pi-localengine/rename-compat.cjs` 把 `fs.renameSync` / `fs.rename` / `fs.promises.rename` 包一层，
+   **只有** ENOSYS（及 ENOTSUP/EOPNOTSUPP）才降级为「复制 + 删源」，其它错误码原样抛出。`LocalEngineService`
+   每次启动把它写进 `rootfs/root/.pi-mobile/rename-compat.cjs`，以 `node --require` 注入；写不进去只告警不阻断。
 
 代价与边界：
 
-- 丢掉 rename 的原子性（系统里根本没有可用的 rename）：断电窗口内可能出现半写文件，这是 App 沙箱的硬限制。
-- **只覆盖 node 自身**：终端里跑的子进程（`git`、`mv` 等，直接链 glibc 的 `rename`）仍在同一沙箱下，`git` 的
-  lockfile 提交会 ENOSYS。彻底修需在 rootfs 构建期编一个 `rename → renameat` 的 `LD_PRELOAD` 垫片、并用
-  `proot -E` 只注入 guest —— 属阶段 C 待办（前提是确认 App seccomp 放行 `renameat`）。
+- C 垫片保留了 rename 的真实语义（`renameat` 仍是原子改名）；只有走兜底路径时才丢原子性（复制 + 删源）。
+- `renameat2` 带 flag 的语义（`RENAME_NOREPLACE` / `RENAME_EXCHANGE`）没有 `renameat` 等价物，保持和沙箱一样的
+  ENOSYS 失败语义，不做假装支持。
+- 旧 rootfs（没有垫片）启动时，Service 会在日志里明说「终端里的 git 等子进程可能仍报 ENOSYS」。
 
 ## React 连接层（`mobile/src/`）改动
 

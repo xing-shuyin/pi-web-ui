@@ -103,6 +103,7 @@ public final class LocalEngineService extends Service {
 			if (!serverEntry.isFile()) throw new IOException("运行环境不完整：缺少 dist/server，请重新安装运行环境。");
 			RuntimeInstaller.ensureDataLayout(this);
 			installRenameCompat(rootfs);
+			warnWhenRenamePreloadMissing(rootfs);
 			File prootTmp = new File(getCacheDir(), "proot-tmp");
 			if (!prootTmp.isDirectory() && !prootTmp.mkdirs()) throw new IOException("无法创建 proot 临时目录。");
 
@@ -268,6 +269,16 @@ public final class LocalEngineService extends Service {
 		} catch (IOException missing) {
 			return false;
 		}
+	}
+
+	/**
+	 * rootfs 内置的 rename 垫片（`/etc/ld.so.preload`）是终端里 git/mv 等子进程能正常 rename 的前提；
+	 * 旧版本 rootfs 没有它，只能靠 node 侧的 JS 降级，子进程仍会报 ENOSYS —— 至少要让日志说清楚。
+	 */
+	private void warnWhenRenamePreloadMissing(File rootfs) {
+		File shim = new File(rootfs, "usr/local/lib/pi-mobile/librename-compat.so");
+		if (shim.isFile()) return;
+		EngineState.systemLog("运行环境未内置 rename 垫片（旧版本 rootfs）：终端里的 git 等子进程可能仍报 ENOSYS。");
 	}
 
 	private Map<String, String> engineEnvironment(int port, String token, File rootfs) {

@@ -174,8 +174,20 @@ rm -f "$ROOT/install-packages.sh" "$ROOT/pi-web-ui.tgz"
 [[ -f "$ROOT/usr/local/lib/node_modules/pi-web-ui/dist/server/index.js" ]] || { echo "pi-web-ui dist/server 缺失" >&2; exit 1; }
 [[ -f "$ROOT/usr/local/lib/node_modules/pi-web-ui/dist/server/resolve-global-sdk.js" ]] || { echo "SDK hook 缺失" >&2; exit 1; }
 [[ -d "$ROOT/usr/local/lib/node_modules/@earendil-works/pi-coding-agent" ]] || { echo "pi SDK 缺失" >&2; exit 1; }
-# rename 的 ENOSYS 降级不在 rootfs 里做：它由 APK 侧的 preload（assets/pi-localengine/rename-compat.cjs）统一接管，
-# 见 docs/mobile-local-engine.md「App 沙箱与 rename」。
+
+# App 沙箱的 zygote seccomp 过滤器对 renameat2 返回 ENOSYS，glibc 的 rename() 不回退：compile 一个
+# rename→renameat 垫片，用 /etc/ld.so.preload 让 guest 内所有 glibc 程序（node / git / bash）自动加载。
+# proot 自身是 bionic，不读这个文件。node 侧另有 JS 兜底（assets/pi-localengine/rename-compat.cjs）。
+echo "==> 4b/7 rename 垫片（renameat2 ENOSYS → renameat）"
+mkdir -p "$ROOT/usr/local/lib/pi-mobile"
+cp "$SCRIPT_DIR/rename-preload.c" "$ROOT/tmp/rename-preload.c"
+if [[ "$NEED_QEMU" == "1" ]]; then cp "$QEMU_BIN" "$ROOT/usr/bin/"; fi
+chroot "$ROOT" /usr/bin/env -i HOME=/root PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin \
+	gcc -shared -fPIC -O2 -o /usr/local/lib/pi-mobile/librename-compat.so /tmp/rename-preload.c
+if [[ "$NEED_QEMU" == "1" ]]; then rm -f "$ROOT/usr/bin/$QEMU"; fi
+rm -f "$ROOT/tmp/rename-preload.c"
+[[ -f "$ROOT/usr/local/lib/pi-mobile/librename-compat.so" ]] || { echo "rename 垫片编译失败" >&2; exit 1; }
+echo /usr/local/lib/pi-mobile/librename-compat.so > "$ROOT/etc/ld.so.preload"
 
 echo "==> 5/7 proot ($PROOT_VERSION)"
 fetch "$PROOT_POOL_URL/proot_${PROOT_VERSION}_${TERMUX_ARCH}.deb" "$WORK/proot.deb" "$PROOT_SHA256"
