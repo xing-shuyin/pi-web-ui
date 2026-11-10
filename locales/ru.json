@@ -1862,7 +1862,6 @@
 		"toolInspectorStats": "{chars} символов · {lines} строк",
 		"toolTimeRange": "{start}→{end} · {duration}",
 		"toolTimeRunning": "{start}→… · {duration}",
-		"toolInlineOpenInspector": "Open popup",
 		"diffViewUnified": "Объединённо",
 		"diffViewSplit": "Разделённо",
 		"diffViewRaw": "Raw JSON",

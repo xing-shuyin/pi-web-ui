@@ -1862,7 +1862,6 @@
 		"toolInspectorStats": "{chars} chars · {lines} lines",
 		"toolTimeRange": "{start}→{end} · {duration}",
 		"toolTimeRunning": "{start}→… · {duration}",
-		"toolInlineOpenInspector": "Open popup",
 		"diffViewUnified": "Unified",
 		"diffViewSplit": "Split",
 		"diffViewRaw": "Raw JSON",

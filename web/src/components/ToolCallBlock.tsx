@@ -40,8 +40,6 @@ import {
 } from "react-icons/fi";
 import type { ToolStatus, UiImageBlock, UiMessage, UiToolCallBlock } from "../types";
 import { formatDuration as formatDurationShared, formatTimeFull, resolveToolTimeRange } from "../tool-time";
-import { DeferredMount } from "./DeferredMount";
-import { Markdown } from "./Markdown";
 import { isZhLocale, useLocale, useT } from "../i18n";
 import { openContextMenu } from "../context-menu-state";
 import { openToolInfo } from "../tool-info-state";
@@ -65,7 +63,7 @@ import { useCopyFeedback } from "../use-copy-feedback";
 import { PresentedFiles } from "./PresentedFiles";
 import { QuestionnaireCard } from "./QuestionnaireCard";
 import { renderHighlightedCommand } from "../bash-danger";
-import { FileChangeCard, WriteCodeView } from "./FileChangeCard";
+import { FileChangeCard } from "./FileChangeCard";
 import { parseFileMutationArgs } from "../file-diff";
 
 export interface ToolView {
@@ -946,101 +944,77 @@ const ToolCallCard = memo(function ToolCallCard({
 				</div>
 			)}
 			{!isFlow && shown && (
-				<div className="toolcall-body toolcall-body--inspector">
-					<DeferredMount active={shown}>
-						{isPresent && presentArgs ? (
-							<PresentedFiles
-								args={presentArgs}
-								details={view.result?.details}
-								toolCallId={view.result?.toolCallId ?? block.id}
-								resultTimestamp={view.result?.timestamp}
-							/>
-						) : isDelegate ? (
-							<DelegateBrief args={delegateArgs} />
-						) : isCodemode && codemodeArgs?.code ? (
-							<CodemodeCard
-								code={codemodeArgs.code}
-								options={codemodeArgs.options}
-								details={view.result?.details}
-								output={output}
-							/>
-						) : isQuestionnaire && questionnaireArgs ? (
-							<QuestionnaireCard
-								questions={questionnaireArgs.questions}
-								details={view.result?.details}
-								output={output}
-								isError={isError}
-								waiting={running || waitingModel}
-							/>
-						) : isFileChange ? (
-							<FileChangeCard
-								toolName={block.name}
-								argumentsText={block.argumentsText}
-								details={view.result?.details}
-								output={output}
-								isError={isError}
-								onOpenInspector={handleOpenInspector}
-							/>
-						) : isBash ? (
-							<div className="bash-terminal-viewport bash-terminal-viewport--inline toolcall-output toolcall-output--inspector">
-								{bashCommand && <TerminalCommand command={bashCommand} />}
-								{!bashCommand && block.argumentsText && (
-									<div className="toolcall-args">
-										<pre>{block.argumentsText}</pre>
-									</div>
-								)}
-								{output.length > 0 && <pre className="bash-output-pre bash-output-pre--inline">{output}</pre>}
+				<div className="toolcall-body">
+					{isPresent && presentArgs ? (
+						<PresentedFiles
+							args={presentArgs}
+							details={view.result?.details}
+							toolCallId={view.result?.toolCallId ?? block.id}
+							resultTimestamp={view.result?.timestamp}
+						/>
+					) : isDelegate ? (
+						<DelegateBrief args={delegateArgs} />
+					) : isCodemode && codemodeArgs?.code ? (
+						<CodemodeCard
+							code={codemodeArgs.code}
+							options={codemodeArgs.options}
+							details={view.result?.details}
+							output={output}
+						/>
+					) : isQuestionnaire && questionnaireArgs ? (
+						<QuestionnaireCard
+							questions={questionnaireArgs.questions}
+							details={view.result?.details}
+							output={output}
+							isError={isError}
+							waiting={running || waitingModel}
+						/>
+					) : isFileChange ? (
+						<FileChangeCard
+							toolName={block.name}
+							argumentsText={block.argumentsText}
+							details={view.result?.details}
+							output={output}
+							isError={isError}
+							onOpenInspector={handleOpenInspector}
+						/>
+					) : (
+						block.argumentsText && (
+							<div className="toolcall-args">
+								{bashCommand ? <TerminalCommand command={bashCommand} /> : <pre>{block.argumentsText}</pre>}
 							</div>
-						) : (
-							block.argumentsText && (
-								<div className="toolcall-args">
-									<pre>{block.argumentsText}</pre>
-								</div>
-							)
-						)}
-						{block.name === "tool_search" && <ToolSearchDetails details={view.result?.details} />}
-						{output.length > 0 &&
-							!(isQuestionnaire && questionnaireArgs) &&
-							!isBash &&
-							!isFileChange &&
-							!(isCodemode && codemodeArgs?.code) && (
-								<div className="toolcall-output toolcall-output--inspector">
-									<div className="toolcall-output-label">
-										{isError ? t("errorOutput") : t("output")}
-										{(running || waitingModel) && <span className="cursor" />}
-									</div>
-									{hasMarkdown ? (
-										<div className="generic-output-md">
-											<Markdown text={output} />
-										</div>
-									) : block.name === "read" || block.name === "ls" || block.name === "grep" || block.name === "find" ? (
-										<WriteCodeView content={output} />
-									) : (
-										<pre
-											ref={outputPreRef}
-											onWheel={(e) => {
-												if (e.deltaY < 0) {
-													outputStickRef.current = false;
-												} else if (e.deltaY > 0 && outputPreRef.current) {
-													const el = outputPreRef.current;
-													if (el.scrollHeight - el.scrollTop - el.clientHeight < 32) {
-														outputStickRef.current = true;
-													}
-												}
-											}}
-											onScroll={(e) => {
-												const el = e.currentTarget;
-												if (el.scrollHeight - el.scrollTop - el.clientHeight < 24) {
-													outputStickRef.current = true;
-												}
-											}}
-										>
-											{output}
-										</pre>
-									)}
-								</div>
-							)}
-					</DeferredMount>
+						)
+					)}
+					{block.name === "tool_search" && <ToolSearchDetails details={view.result?.details} />}
+					{output.length > 0 && !(isQuestionnaire && questionnaireArgs) && (
+						<div className="toolcall-output">
+							<div className="toolcall-output-label">
+								{isError ? t("errorOutput") : t("output")}
+								{(running || waitingModel) && <span className="cursor" />}
+							</div>
+							<pre
+								ref={outputPreRef}
+								onWheel={(e) => {
+									if (e.deltaY < 0) {
+										outputStickRef.current = false;
+									} else if (e.deltaY > 0 && outputPreRef.current) {
+										const el = outputPreRef.current;
+										if (el.scrollHeight - el.scrollTop - el.clientHeight < 32) {
+											outputStickRef.current = true;
+										}
+									}
+								}}
+								onScroll={(e) => {
+									const el = e.currentTarget;
+									if (el.scrollHeight - el.scrollTop - el.clientHeight < 24) {
+										outputStickRef.current = true;
+									}
+								}}
+							>
+								{output}
+							</pre>
+						</div>
+					)}
 					{running && output.length === 0 && (
 						<div className="toolcall-waiting">
 							<span className="cursor" /> {t("waitingOutput")}
@@ -1067,17 +1041,6 @@ const ToolCallCard = memo(function ToolCallCard({
 											? formatTimeFull(timeRange.start)
 											: ""}
 							</span>
-							<span className="toolcall-time-spacer" />
-							<button
-								type="button"
-								className="toolcall-time-open"
-								onClick={(e) => {
-									e.stopPropagation();
-									handleOpenInspector();
-								}}
-							>
-								{t("toolInlineOpenInspector")}
-							</button>
 						</div>
 					)}
 					{uiToolCardFooter && uiToolCardFooter.length > 0 && (

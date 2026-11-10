@@ -1862,7 +1862,6 @@
 		"toolInspectorStats": "{chars} 字符 · {lines} 行",
 		"toolTimeRange": "{start}→{end} · {duration}",
 		"toolTimeRunning": "{start}→… · {duration}",
-		"toolInlineOpenInspector": "弹窗查看",
 		"diffViewUnified": "统一差异",
 		"diffViewSplit": "分屏对照",
 		"diffViewRaw": "原始参数",

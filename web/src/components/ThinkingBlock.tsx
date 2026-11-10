@@ -6,8 +6,6 @@ import { getToolInspectorState, isFlowMode, openToolInspector, updateToolInspect
 import { CollapsibleHead } from "./CollapsibleHead";
 import { HalfRingSpinner } from "./HalfRingSpinner";
 import { useSmoothStreamText } from "./StreamMarkdown";
-import { DeferredMount } from "./DeferredMount";
-import { Markdown } from "./Markdown";
 import { formatDuration, formatTimeFull, resolveThinkingTimeRange } from "../tool-time";
 
 const MAX_PREVIEW_LEN = 300;
@@ -320,39 +318,31 @@ export function ThinkingBlock({
 				) : null}
 			</CollapsibleHead>
 			{!isFlow && shown && (
-				<div className="thinking-body thinking-body--inspector">
-					<DeferredMount active={shown}>
-						{bodyText ? (
-							<div className="markdown thinking-markdown">
-								<Markdown text={bodyText} />
-								{activeStream && <span className="stream-cursor" />}
-							</div>
-						) : activeStream ? (
-							<span className="stream-cursor" />
-						) : null}
-					</DeferredMount>
-					{(timeRange.start !== undefined || timeRange.end !== undefined || liveElapsed !== undefined) && (
-						<div className="toolcall-time-footer thinking-time-footer">
-							<FiClock className="toolcall-time-icon" />
-							<span className="toolcall-time-text">
-								{timeRange.start !== undefined && timeRange.end !== undefined && timeRange.durationMs !== undefined
-									? t("toolTimeRange", {
+				<>
+					<div className="thinking-body">
+						{bodyText}
+						{activeStream && <span className="stream-cursor" />}
+					</div>
+					<div className="toolcall-time-footer thinking-time-footer">
+						<FiClock className="toolcall-time-icon" />
+						<span className="toolcall-time-text">
+							{timeRange.start !== undefined && timeRange.end !== undefined && timeRange.durationMs !== undefined
+								? t("toolTimeRange", {
+										start: formatTimeFull(timeRange.start),
+										end: formatTimeFull(timeRange.end),
+										duration: formatDuration(timeRange.durationMs),
+									})
+								: activeStream && timeRange.start !== undefined && liveElapsed !== undefined
+									? t("toolTimeRunning", {
 											start: formatTimeFull(timeRange.start),
-											end: formatTimeFull(timeRange.end),
-											duration: formatDuration(timeRange.durationMs),
+											duration: formatDuration(liveElapsed),
 										})
-									: activeStream && timeRange.start !== undefined && liveElapsed !== undefined
-										? t("toolTimeRunning", {
-												start: formatTimeFull(timeRange.start),
-												duration: formatDuration(liveElapsed),
-											})
-										: timeRange.start !== undefined
-											? formatTimeFull(timeRange.start)
-											: ""}
-							</span>
-						</div>
-					)}
-				</div>
+									: timeRange.start !== undefined
+										? formatTimeFull(timeRange.start)
+										: ""}
+						</span>
+					</div>
+				</>
 			)}
 		</div>
 	);
