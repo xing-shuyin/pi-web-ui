@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import { openImageLightbox } from "../image-lightbox-bridge";
 import { useCopyFeedback } from "../use-copy-feedback";
@@ -50,6 +50,32 @@ import { CodemodeCard, DelegateBrief, TerminalCommand, ToolSearchDetails } from 
 import { Markdown } from "./Markdown";
 import { SplitDiffView, UnifiedDiffView, WriteCodeView } from "./FileChangeCard";
 import { SubagentInspectorView } from "./SubagentInspectorView";
+import { formatDuration, formatTimeFull } from "../tool-time";
+
+function InspectorTimeText({ state }: { state: ToolInspectorState }): string {
+	const t = useT();
+	const start =
+		state.startTimestamp ??
+		(state.resultTimestamp !== undefined && state.durationMs !== undefined
+			? state.resultTimestamp - state.durationMs
+			: undefined);
+	const end = state.endTimestamp ?? state.resultTimestamp;
+	const dur = state.durationMs;
+	if (start !== undefined && end !== undefined && dur !== undefined) {
+		try {
+			return t("toolTimeRange", {
+				start: formatTimeFull(start),
+				end: formatTimeFull(end),
+				duration: formatDuration(dur),
+			});
+		} catch {
+			return "";
+		}
+	}
+	if (end !== undefined) return formatTimeFull(end);
+	if (start !== undefined) return formatTimeFull(start);
+	return "";
+}
 
 const TOOL_ICONS: Record<string, ReactNode> = {
 	bash: <FiTerminal />,
@@ -185,6 +211,18 @@ function ThinkingInspectorDialog({
 	const text = state.thinking || state.output || "";
 	const chars = text.length;
 	const lines = text ? text.split("\n").length : 0;
+	// 流式时自动跟随到底部；用户手动上翻后不再强行拉回
+	const bodyRef = useRef<HTMLDivElement>(null);
+	const stickRef = useRef(true);
+	useEffect(() => {
+		stickRef.current = true;
+	}, [state.toolCallId]);
+	useEffect(() => {
+		if (!state.streaming) return;
+		const el = bodyRef.current;
+		if (!el || !stickRef.current) return;
+		el.scrollTop = el.scrollHeight;
+	}, [text, state.streaming]);
 
 	return (
 		<div
@@ -245,11 +283,26 @@ function ThinkingInspectorDialog({
 					</div>
 				</div>
 
-				<div className="file-diff-inspector-body">
+				<div
+					className="file-diff-inspector-body"
+					ref={bodyRef}
+					onWheel={(e) => {
+						if (e.deltaY < 0) stickRef.current = false;
+						else if (e.deltaY > 0 && bodyRef.current) {
+							const el = bodyRef.current;
+							if (el.scrollHeight - el.scrollTop - el.clientHeight < 32) stickRef.current = true;
+						}
+					}}
+					onScroll={(e) => {
+						const el = e.currentTarget;
+						if (el.scrollHeight - el.scrollTop - el.clientHeight < 24) stickRef.current = true;
+					}}
+				>
 					<div className="thinking-inspector-content">
 						{text ? (
 							<div className="markdown thinking-markdown">
 								<Markdown text={text} />
+								{state.streaming && <span className="stream-cursor" />}
 							</div>
 						) : (
 							<div className="diff-empty-tip">{t("toolInspectorEmptyThinking")}</div>
@@ -264,11 +317,11 @@ function ThinkingInspectorDialog({
 							{state.streaming ? "思考分析链路生成中..." : `分析记录共 ${lines} 行`}
 						</span>
 					</div>
-					{state.duration && (
-						<div className="file-diff-footer-meta">
-							<span>耗时: {state.duration}</span>
-						</div>
-					)}
+					<div className="file-diff-footer-meta">
+						<InspectorTimeText state={state} />
+						{state.duration && <span className="meta-sep">|</span>}
+						{state.duration && <span>耗时: {state.duration}</span>}
+					</div>
 				</div>
 			</div>
 		</div>

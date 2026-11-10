@@ -21,6 +21,8 @@ export interface ToolInspectorState {
 	statusClass?: "ok" | "run" | "err" | "idle";
 	duration?: string;
 	durationMs?: number;
+	startTimestamp?: number;
+	endTimestamp?: number;
 	exitHint?: string;
 	hints?: ToolArgHints;
 	args?: string;

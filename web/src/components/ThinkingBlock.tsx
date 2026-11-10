@@ -1,11 +1,14 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { FiCheck, FiCheckCircle, FiCopy, FiCpu } from "react-icons/fi";
+import { FiCheck, FiCheckCircle, FiClock, FiCopy, FiCpu } from "react-icons/fi";
 import { useT } from "../i18n";
 import { useCopyFeedback } from "../use-copy-feedback";
-import { isFlowMode, openToolInspector } from "../tool-inspector-state";
+import { getToolInspectorState, isFlowMode, openToolInspector, updateToolInspectorLive } from "../tool-inspector-state";
 import { CollapsibleHead } from "./CollapsibleHead";
 import { HalfRingSpinner } from "./HalfRingSpinner";
 import { useSmoothStreamText } from "./StreamMarkdown";
+import { DeferredMount } from "./DeferredMount";
+import { Markdown } from "./Markdown";
+import { formatDuration, formatTimeFull, resolveThinkingTimeRange } from "../tool-time";
 
 const MAX_PREVIEW_LEN = 300;
 
@@ -77,9 +80,22 @@ interface ThinkingBlockProps {
 	streaming?: boolean;
 	wrap?: boolean;
 	forceOpen?: boolean;
+	startTimestamp?: number;
+	endTimestamp?: number;
+	durationMs?: number;
+	thinkingId?: string;
 }
 
-export function ThinkingBlock({ thinking, streaming, wrap = true, forceOpen = false }: ThinkingBlockProps) {
+export function ThinkingBlock({
+	thinking,
+	streaming,
+	wrap = true,
+	forceOpen = false,
+	startTimestamp,
+	endTimestamp,
+	durationMs: durationMsProp,
+	thinkingId,
+}: ThinkingBlockProps) {
 	const t = useT();
 	const [open, setOpen] = useState<boolean | null>(null);
 	const expanded = open ?? wrap;
@@ -120,17 +136,68 @@ export function ThinkingBlock({ thinking, streaming, wrap = true, forceOpen = fa
 	const rootRef = useRef<HTMLDivElement>(null);
 	const isFlow = isFlowMode(rootRef.current);
 
+	const timeRange = resolveThinkingTimeRange(
+		startTimestamp,
+		durationMsProp ??
+			(endTimestamp !== undefined && startTimestamp !== undefined ? endTimestamp - startTimestamp : undefined),
+	);
+	const displayDuration = timeRange.durationMs !== undefined ? formatDuration(timeRange.durationMs) : "";
+	// 流式思考：用本地 tick 显示已用时长（开始时间来自父消息 timestamp）
+	const [nowTick, setNowTick] = useState(() => Date.now());
+	useEffect(() => {
+		if (!activeStream || timeRange.start === undefined) return;
+		const id = window.setInterval(() => setNowTick(Date.now()), 1000);
+		return () => window.clearInterval(id);
+	}, [activeStream, timeRange.start]);
+	const liveElapsed =
+		activeStream && timeRange.start !== undefined ? Math.max(0, nowTick - timeRange.start) : undefined;
+
 	const handleOpenInspector = () => {
 		openToolInspector({
 			isThinking: true,
 			title: t("toolInspectorThinkingTitle"),
-			status: activeStream ? t("thinkingNow") : t("done"),
+			status: activeStream ? t("thinkingNow") : displayDuration ? `${t("done")} (${displayDuration})` : t("done"),
 			statusClass: activeStream ? "run" : "ok",
+			duration: displayDuration,
+			durationMs: timeRange.durationMs,
+			startTimestamp: timeRange.start,
+			endTimestamp: timeRange.end,
 			output: bodyText || thinking,
-			thinking,
+			thinking: displayedThinking || thinking,
 			streaming: activeStream,
+			toolCallId: thinkingId,
 		});
 	};
+
+	// 思考弹窗打开后跟随流式增量：只同步属于自己 thinkingId 的弹窗，避免串到别的思考上
+	useEffect(() => {
+		if (!thinkingId) return;
+		const cur = getToolInspectorState();
+		if (!cur || !cur.isThinking) return;
+		if (cur.toolCallId !== thinkingId) return;
+		updateToolInspectorLive(cur.toolCallId ?? thinkingId, {
+			status: activeStream ? t("thinkingNow") : displayDuration ? `${t("done")} (${displayDuration})` : t("done"),
+			statusClass: activeStream ? "run" : "ok",
+			duration: displayDuration,
+			durationMs: timeRange.durationMs,
+			startTimestamp: timeRange.start,
+			endTimestamp: timeRange.end,
+			output: bodyText || thinking,
+			thinking: displayedThinking || thinking,
+			streaming: activeStream,
+		});
+	}, [
+		thinkingId,
+		displayedThinking,
+		bodyText,
+		thinking,
+		activeStream,
+		displayDuration,
+		timeRange.start,
+		timeRange.end,
+		timeRange.durationMs,
+		t,
+	]);
 
 	const handleToggle = () => {
 		if (isFlowMode(rootRef.current)) {
@@ -255,9 +322,38 @@ export function ThinkingBlock({ thinking, streaming, wrap = true, forceOpen = fa
 				) : null}
 			</CollapsibleHead>
 			{!isFlow && shown && (
-				<div className="thinking-body">
-					{bodyText}
-					{activeStream && <span className="stream-cursor" />}
+				<div className="thinking-body thinking-body--inspector">
+					<DeferredMount active={shown}>
+						{bodyText ? (
+							<div className="markdown thinking-markdown">
+								<Markdown text={bodyText} />
+								{activeStream && <span className="stream-cursor" />}
+							</div>
+						) : activeStream ? (
+							<span className="stream-cursor" />
+						) : null}
+					</DeferredMount>
+					{(timeRange.start !== undefined || timeRange.end !== undefined || liveElapsed !== undefined) && (
+						<div className="toolcall-time-footer thinking-time-footer">
+							<FiClock className="toolcall-time-icon" />
+							<span className="toolcall-time-text">
+								{timeRange.start !== undefined && timeRange.end !== undefined && timeRange.durationMs !== undefined
+									? t("toolTimeRange", {
+											start: formatTimeFull(timeRange.start),
+											end: formatTimeFull(timeRange.end),
+											duration: formatDuration(timeRange.durationMs),
+										})
+									: activeStream && timeRange.start !== undefined && liveElapsed !== undefined
+										? t("toolTimeRunning", {
+												start: formatTimeFull(timeRange.start),
+												duration: formatDuration(liveElapsed),
+											})
+										: timeRange.start !== undefined
+											? formatTimeFull(timeRange.start)
+											: ""}
+							</span>
+						</div>
+					)}
 				</div>
 			)}
 		</div>

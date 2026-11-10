@@ -849,6 +849,7 @@ export interface UiMessage {
 	role: string;
 	content: UiContentBlock[];
 	timestamp?: number;
+	durationMs?: number;
 	model?: string;
 	provider?: string;
 	usageCost?: number;

@@ -1389,6 +1389,10 @@ export const Message = memo(function Message({
 											uiContextToolCall={uiContextToolCall}
 											uiToolCardFooter={uiToolCardFooter}
 											onUiAction={onUiAction}
+											parentTimestamp={message.timestamp}
+											parentDurationMs={message.durationMs}
+											parentId={message.id}
+											blockIndex={i}
 										/>
 									),
 								)}
@@ -1417,6 +1421,10 @@ export const Message = memo(function Message({
 										uiContextToolCall={uiContextToolCall}
 										uiToolCardFooter={uiToolCardFooter}
 										onUiAction={onUiAction}
+										parentTimestamp={message.timestamp}
+										parentDurationMs={message.durationMs}
+										parentId={message.id}
+										blockIndex={i}
 									/>
 								))}
 							</PluginWidgetBlock>
@@ -1443,6 +1451,10 @@ export const Message = memo(function Message({
 										uiContextToolCall={uiContextToolCall}
 										uiToolCardFooter={uiToolCardFooter}
 										onUiAction={onUiAction}
+										parentTimestamp={message.timestamp}
+										parentDurationMs={message.durationMs}
+										parentId={message.id}
+										blockIndex={i}
 									/>
 									{i === anchorIndex && showMessageActions && renderMessageActions()}
 								</Fragment>
@@ -1880,6 +1892,10 @@ function Block({
 	uiContextToolCall,
 	uiToolCardFooter,
 	onUiAction,
+	parentTimestamp,
+	parentDurationMs,
+	parentId,
+	blockIndex,
 }: {
 	block: UiContentBlock;
 	toolResults: ReadonlyMap<string, UiMessage>;
@@ -1900,6 +1916,10 @@ function Block({
 	uiContextToolCall?: UiSlotEntry[];
 	uiToolCardFooter?: UiSlotEntry[];
 	onUiAction?: (item: UiSlotEntry, value?: string) => void;
+	parentTimestamp?: number;
+	parentDurationMs?: number;
+	parentId?: string;
+	blockIndex?: number;
 }) {
 	const t = useT();
 	const { copied, copy } = useCopyFeedback({ duration: 1200 });
@@ -2011,6 +2031,14 @@ function Block({
 				streaming={streaming && isLast && isTrailing}
 				wrap={thinkingWrap}
 				forceOpen={searchActive || forceThinking}
+				startTimestamp={parentTimestamp}
+				endTimestamp={
+					parentTimestamp !== undefined && parentDurationMs !== undefined
+						? parentTimestamp + parentDurationMs
+						: undefined
+				}
+				durationMs={parentDurationMs}
+				thinkingId={parentId !== undefined ? `${parentId}:thinking:${blockIndex ?? 0}` : undefined}
 			/>
 		);
 	}
