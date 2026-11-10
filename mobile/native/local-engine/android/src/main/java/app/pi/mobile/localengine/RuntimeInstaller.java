@@ -367,7 +367,7 @@ public final class RuntimeInstaller {
 	/** Prepares the on-rootfs data directories（/root/piwebui-data）；bind 点上的 rename 是 ENOSYS，必须住 rootfs 内部。 */
 	public static void ensureDataLayout(Context context) {
 		File dataRoot = new File(rootfsDir(context), "root/piwebui-data");
-		File[] layout = { new File(dataRoot, "data"), new File(dataRoot, "workspace") };
+		File[] layout = { new File(dataRoot, "data"), new File(dataRoot, "workspace"), new File(dataRoot, "pi-agent") };
 		for (File dir : layout) {
 			if (!dir.isDirectory() && !dir.mkdirs()) {
 				EngineState.systemLog("警告：无法创建数据目录 " + dir);

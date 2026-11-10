@@ -27,7 +27,8 @@ fi
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
-ASSETS_DIR="$SCRIPT_DIR/../../native/local-engine/android/src/main/assets/localengine"
+# 容器里 /work 是挂载点，`$SCRIPT_DIR/../..` 会跑出宿主的仓库结构，所以允许显式指定
+ASSETS_DIR="${ASSETS_DIR:-$SCRIPT_DIR/../../native/local-engine/android/src/main/assets/localengine}"
 OUT_DIR="$SCRIPT_DIR/out/$ABI"
 WORK="$(mktemp -d)"
 trap 'rm -rf "$WORK"' EXIT
@@ -154,14 +155,14 @@ NODE_GOT="$(sha256sum "$WORK/$NODE_FILE" | awk '{print $1}')"
 tar -xJf "$WORK/$NODE_FILE" -C "$ROOT/usr/local" --strip-components=1
 
 echo "==> 4/7 安装 pi-web-ui@$PI_WEB_UI_VERSION 与 pi SDK@$PI_SDK_VERSION"
-if [[ -n "$PI_WEB_UI_TGZ" ]]; then cp "$PI_WEB_UI_TGZ" "$WORK/pi-web-ui.tgz"; PI_WEB_UI_SPEC="/pi-web-ui.tgz"; else PI_WEB_UI_SPEC="pi-web-ui@$PI_WEB_UI_VERSION"; fi
+if [[ -n "$PI_WEB_UI_TGZ" ]]; then cp "$PI_WEB_UI_TGZ" "$ROOT/pi-web-ui.tgz"; PI_WEB_UI_SPEC="/pi-web-ui.tgz"; else PI_WEB_UI_SPEC="pi-web-ui@$PI_WEB_UI_VERSION"; fi
 cat > "$ROOT/install-packages.sh" <<EOF
 #!/bin/bash
 set -euo pipefail
 export npm_config_registry="$NPM_REGISTRY"
 export npm_config_nodedir="/usr/local"   # node-gyp 用本地 headers，不走网络下载
-npm install -g "$PI_WEB_UI_SPEC"
-npm install -g "@earendil-works/pi-coding-agent@$PI_SDK_VERSION"
+npm install -g --no-audit --no-fund "$PI_WEB_UI_SPEC"
+npm install -g --no-audit --no-fund "@earendil-works/pi-coding-agent@$PI_SDK_VERSION"
 node -e "require('/usr/local/lib/node_modules/pi-web-ui/node_modules/node-pty')" || { echo "node-pty native 绑定不可用" >&2; exit 1; }
 node --version
 EOF
@@ -169,7 +170,7 @@ if [[ "$NEED_QEMU" == "1" ]]; then cp "$QEMU_BIN" "$ROOT/usr/bin/"; fi
 chroot "$ROOT" /usr/bin/env -i HOME=/root PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin \
 	bash /install-packages.sh
 if [[ "$NEED_QEMU" == "1" ]]; then rm -f "$ROOT/usr/bin/$QEMU"; fi
-rm -f "$ROOT/install-packages.sh"
+rm -f "$ROOT/install-packages.sh" "$ROOT/pi-web-ui.tgz"
 [[ -f "$ROOT/usr/local/lib/node_modules/pi-web-ui/dist/server/index.js" ]] || { echo "pi-web-ui dist/server 缺失" >&2; exit 1; }
 [[ -f "$ROOT/usr/local/lib/node_modules/pi-web-ui/dist/server/resolve-global-sdk.js" ]] || { echo "SDK hook 缺失" >&2; exit 1; }
 [[ -d "$ROOT/usr/local/lib/node_modules/@earendil-works/pi-coding-agent" ]] || { echo "pi SDK 缺失" >&2; exit 1; }

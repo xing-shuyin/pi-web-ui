@@ -92,6 +92,10 @@ MethodChannel `pwu/localengine`，事件流推送状态：
 | `start` / `stop` | 前台服务托管；stdout 环形日志；crash 自动重启（上限退避）                                   |
 | `getLogSnapshot` | 最近 N 行日志（seq 递增，重启不归零），供引擎日志页                                         |
 
+- 数据落点：`rootfs/root/piwebui-data/{data,workspace,pi-agent}`——三份都在「重置运行环境」的保留名单里（reset 只重建 rootfs）。
+  `pi-agent` 通过 `PI_CODING_AGENT_DIR` 显式指定：pi 默认的 `~/.pi/agent` 住在 rootfs 内部，跟着 rootfs 一起被删，
+  会把 API Key 配置与聊天记录一起洗掉。
+
 - `targetSdk = 28`（同 Termux 做法，绕开 Android 10+ 私有目录 `exec` 禁令；本项目分发不走 Google Play，无 28→35 约束）。
 - 前台服务 + 部分唤醒锁 + 电池优化白名单引导页；通知栏常驻显示运行状态。
 - ABI 产品风味 `arm64`（真机）/ `x64`（模拟器）。

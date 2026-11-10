@@ -277,6 +277,9 @@ public final class LocalEngineService extends Service {
 		env.put("PI_WEB_TOKEN", token);
 		env.put("PI_WEB_DATA_DIR", "/root/piwebui-data/data"); // bind 点上的 rename 是 ENOSYS，数据必须住 rootfs 内部真实路径
 		env.put("PI_WEB_CWD", "/root/piwebui-data/workspace");
+		// pi 配置与会话（auth/models/skills/sessions）默认落 ~/.pi/agent —— 那在 rootfs 里，
+		// 重置运行环境会被整根删掉；挤进 piwebui-data 才能跟着 reset 保留。
+		env.put("PI_CODING_AGENT_DIR", "/root/piwebui-data/pi-agent");
 		env.put("PI_WEB_SDK", "/usr/local/lib/node_modules/@earendil-works/pi-coding-agent");
 		env.put("HOME", "/root");
 		env.put("PATH", "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin");
