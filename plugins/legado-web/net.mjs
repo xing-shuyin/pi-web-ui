@@ -19,6 +19,15 @@ export function decodeBytes(buf, charset) {
 	if (isUtf8(cs)) {
 		const s = buf.toString("utf8");
 		if (!s.includes("\uFFFD")) return s;
+		// 文件本身可能合法地包含 U+FFFD（如该书源合集里的占位符），不能一见 FFFD 就整包按 GBK 重解
+		// （UTF-8 中文按 GBK 解会产生 \ 或 " 等字符，直接破坏 JSON 结构导致解析失败）。
+		// 只有当 buffer 不是合法 UTF-8 时才回退到 GBK。
+		try {
+			new TextDecoder("utf-8", { fatal: true }).decode(buf);
+			return s;
+		} catch {
+			// 非法 UTF-8 序列：按 GBK 解（老行为，兼容 GBK 书源站）
+		}
 		try {
 			return new TextDecoder("gbk").decode(buf);
 		} catch {

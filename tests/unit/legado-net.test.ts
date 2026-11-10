@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { isPrivateHost } from "../../plugins/legado-web/net.mjs";
+import { decodeBytes, encodeText, isPrivateHost } from "../../plugins/legado-web/net.mjs";
 
 describe("legado-web net SSRF guard", () => {
 	it("blocks private, loopback, link-local and CGNAT hosts", () => {
@@ -22,5 +22,21 @@ describe("legado-web net SSRF guard", () => {
 
 		expect(isPrivateHost("8.8.8.8")).toBe(false);
 		expect(isPrivateHost("1.1.1.1")).toBe(false);
+	});
+
+	describe("decodeBytes utf-8/gbk fallback", () => {
+		it("keeps valid utf-8 that legitimately contains U+FFFD (e.g. 1331.json合集)", () => {
+			const src = '{"comment":"【请勿删除】' + "\uFFFD" + "占位符" + "\uFFFD" + '","name":"墨辰"}';
+			const buf = Buffer.from(src, "utf8");
+			expect(buf.toString("utf8").includes("\uFFFD")).toBe(true);
+			const out = decodeBytes(buf, "utf-8");
+			expect(out).toBe(src);
+			expect(() => JSON.parse(out)).not.toThrow();
+		});
+
+		it("still falls back to gbk for real gbk bytes", () => {
+			const buf = encodeText("中文测试", "gbk");
+			expect(decodeBytes(buf, "utf-8")).toBe("中文测试");
+		});
 	});
 });
