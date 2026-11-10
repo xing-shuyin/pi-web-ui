@@ -1021,7 +1021,7 @@ describe("编排：分享与目录", () => {
 	it("formatPresetFieldValue：开关与数值字段具备易读性", () => {
 		expect(formatPresetFieldValue("terminalBash", true, "zh").summary).toContain("开启");
 		expect(formatPresetFieldValue("terminalBash", false, "zh").summary).toContain("关闭");
-		expect(formatPresetFieldValue("toolLazyLoading", true, "zh").summary).toContain("仅核心工具常驻");
+		expect(formatPresetFieldValue("toolLazyLoading", true, "zh").summary).toContain("仅名单里的工具延迟");
 		expect(formatPresetFieldValue("retryMaxAttempts", 6, "zh").summary).toBe("最大重试 6 次");
 		expect(formatPresetFieldValue("softCapTokens", 50000, "zh").summary).toBe("50000 tokens");
 	});

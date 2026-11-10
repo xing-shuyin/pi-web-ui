@@ -36,6 +36,7 @@ import {
 	isTerminalGuidanceOn,
 	legacyToDisabled,
 	normalizeDisabledAgentTools,
+	normalizeLazyOnDemandList,
 	normalizeToolOnDemandList,
 	filterToolsByPreset,
 	presetAllowsPluginTools,
@@ -215,19 +216,19 @@ describe("legacy sync", () => {
 		expect(effectiveDisabledAgentTools({ disabledAgentTools: [] })).not.toContain(ASK_USER_QUESTION_TOOL_NAME);
 	});
 
-	it("按需列表：列内工具直接关闭（与开关取并集，只做减法）", () => {
+	it("按需名单：只决定延迟范围，不再硬关闭", () => {
 		expect(normalizeToolOnDemandList(["canvas", "canvas", " nope ", 7, "sandbox"])).toEqual(["canvas", "sandbox"]);
 		expect(normalizeToolOnDemandList(undefined)).toEqual([]);
+		// 名单不再并入禁用集：开关关闭时名单无效果。
 		const merged = effectiveDisabledAgentTools({ disabledAgentTools: [], toolOnDemandTools: ["canvas"] });
-		expect(merged).toContain("canvas");
-		// 开关里没关的工具，不能因为“不在按需列表里”而被复活或剔除
+		expect(merged).not.toContain("canvas");
 		expect(merged).not.toContain("sandbox");
-		// 两处重复只会出现一次
-		const both = effectiveDisabledAgentTools({
-			disabledAgentTools: ["canvas"],
-			toolOnDemandTools: ["canvas"],
-		});
-		expect(both.filter((n) => n === "canvas")).toHaveLength(1);
+		// 核心工具进名单会被过滤（永不延迟）。
+		expect(normalizeLazyOnDemandList(["bash", "canvas", "load_tools"])).toEqual(["canvas"]);
+		// 名单制门控：只延迟名单里的，未加载且不在名单里的常驻。
+		expect(lazyLoadingDisabledTools(["bash", "patch", "canvas"], [], undefined, ["canvas"])).toEqual(["canvas"]);
+		expect(lazyLoadingDisabledTools(["bash", "patch", "canvas"], ["canvas"], undefined, ["canvas"])).toEqual([]);
+		expect(lazyLoadingDisabledTools(["bash", "patch"], [], undefined, [])).toEqual([]);
 	});
 
 	it("终端引导只在组内有启用工具时注入", () => {

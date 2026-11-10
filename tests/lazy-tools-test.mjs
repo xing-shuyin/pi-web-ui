@@ -193,6 +193,9 @@ check(
 ws.send(JSON.stringify({ type: "set_settings", toolLazyLoading: true }));
 for (let i = 0; i < 50 && settings?.toolLazyLoading !== true; i++) await sleep(50);
 check("默认关：显式打开按需加载后设置生效", settings?.toolLazyLoading === true, `value=${settings?.toolLazyLoading}`);
+// 名单制：只有名单里的才延迟；本用例用 patch / find 验证延迟与 JIT。
+ws.send(JSON.stringify({ type: "set_settings", toolOnDemandTools: ["patch", "find"] }));
+await sleep(800);
 ws.send(JSON.stringify({ type: "new_chat" }));
 const lazPrevConv = state?.conversationId;
 for (let i = 0; i < 50 && state?.conversationId === lazPrevConv; i++) await sleep(50);

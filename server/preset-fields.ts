@@ -195,8 +195,8 @@ export const PRESET_FIELD_META = {
 	toolOnDemandTools: {
 		labelZh: "按需工具列表",
 		labelEn: "On-Demand Tools",
-		hintZh: "列进这个清单的工具直接关闭（与上方开关取并集，只做减法）",
-		hintEn: "Every tool in this list is switched off (unioned with the switches above; subtract only)",
+		hintZh: "延迟名单：仅按需加载开启时生效，列内工具需 load_tools 拉取",
+		hintEn: "Lazy list: only applies when lazy loading is on; listed tools need load_tools to activate",
 	},
 	disabledPluginTools: {
 		labelZh: "禁用的插件工具",
@@ -213,8 +213,8 @@ export const PRESET_FIELD_META = {
 	toolLazyLoading: {
 		labelZh: "工具按需延迟加载",
 		labelEn: "Tool Lazy Loading",
-		hintZh: "仅常驻核心工具，其余工具通过 load_tools 按需动态引入（节省上下文）",
-		hintEn: "Keep only core tools active; load others on demand (saves context)",
+		hintZh: "总开关：开启才有 load_tools；仅名单里的工具延迟加载",
+		hintEn: "Master switch for load_tools; only listed tools load on demand",
 	},
 	codemodeMode: {
 		labelZh: "codemode 运行模式",
@@ -658,12 +658,12 @@ export function formatPresetFieldValue(
 	if (field === "toolOnDemandTools") {
 		const list = Array.isArray(value) ? value.filter((x): x is string => typeof x === "string" && Boolean(x)) : [];
 		if (list.length === 0) {
-			return { summary: isZh ? "空（无工具被按需关闭）" : "Empty (nothing switched off)" };
+			return { summary: isZh ? "空（无延迟加载工具）" : "Empty (nothing lazy)" };
 		}
 		return {
 			summary: isZh
-				? `按需关闭 ${list.length} 个工具（${list.join(", ")}）`
-				: `${list.length} tool(s) switched off on demand: ${list.join(", ")}`,
+				? `延迟加载 ${list.length} 个工具（${list.join(", ")})`
+				: `${list.length} tool(s) lazy: ${list.join(", ")}`,
 			detail: list.map((item) => `- ${item}`).join("\n"),
 		};
 	}
@@ -849,8 +849,8 @@ export function formatPresetFieldValue(
 			return {
 				summary: value
 					? isZh
-						? "开启（仅核心工具常驻，其余按需加载）"
-						: "Enabled (core only, others on-demand)"
+						? "开启（仅名单里的工具延迟，其余常驻）"
+						: "Enabled (only listed tools lazy, others resident)"
 					: isZh
 						? "关闭（所有工具全部直接挂载）"
 						: "Disabled (all tools loaded)",

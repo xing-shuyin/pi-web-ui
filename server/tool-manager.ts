@@ -494,13 +494,26 @@ export function normalizeToolOnDemandList(v: unknown): string[] {
 	return out;
 }
 
+export function normalizeLazyOnDemandList(v: unknown): string[] {
+	return normalizeToolOnDemandList(v).filter(
+		(n) => n !== LOAD_TOOLS_TOOL_NAME && !(LAZY_CORE_TOOL_NAMES as readonly string[]).includes(n),
+	);
+}
+
 export function lazyLoadingDisabledTools(
 	allNames: readonly string[],
 	loaded: Iterable<string>,
 	core: readonly string[] = LAZY_CORE_TOOL_NAMES,
+	only?: Iterable<string>,
 ): string[] {
 	const keep = new Set<string>([...core, LOAD_TOOLS_TOOL_NAME, ...loaded]);
-	return allNames.filter((n) => !keep.has(n));
+	const onlySet = only ? new Set(only) : undefined;
+	return allNames.filter((n) => {
+		if (keep.has(n)) return false;
+		// 名单制：只延迟名单里的工具；名单外常驻。`only` 为空集合时等于都不延迟。
+		if (onlySet && !onlySet.has(n)) return false;
+		return true;
+	});
 }
 
 export const PI_AGENT_PRESETS: UiAgentPreset[] = [
@@ -644,7 +657,7 @@ export interface LegacyToolSwitches {
 	terminalToolsEnabled?: boolean;
 	questionnaireEnabled?: boolean;
 	disabledAgentTools?: unknown;
-	/** 按需列表：列内工具直接关闭（与 `disabledAgentTools` 取并集，只做减法）。 */
+	/** 按需名单：仅当 `toolLazyLoading` 开启时生效，列内工具走延迟加载（需 `load_tools` 拉取）。 */
 	toolOnDemandTools?: unknown;
 }
 
@@ -689,8 +702,8 @@ export function foldLegacyIntoDisabled(
 export function effectiveDisabledAgentTools(s: LegacyToolSwitches): string[] {
 	const next = new Set(legacyToDisabled({ ...s, disabledAgentTools: s.disabledAgentTools }));
 	if (s.questionnaireEnabled === false) next.add(ASK_USER_QUESTION_TOOL_NAME);
-	// 按需列表只会把工具从活跃集里拿掉：`disabledAgentTools` 的补集无法把列内工具复活。
-	for (const name of normalizeToolOnDemandList(s.toolOnDemandTools)) next.add(name);
+	// 按需名单不再是硬关闭：它只在 `toolLazyLoading` 开启时决定哪些工具延迟，
+	// 常驻/禁用只由 `disabledAgentTools`、预设与模式闸门决定。这里不并入名单。
 	return [...next];
 }
 

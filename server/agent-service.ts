@@ -268,6 +268,7 @@ import {
 	LAZY_CORE_TOOL_NAMES,
 	lazyLoadingDisabledTools,
 	LOAD_TOOLS_TOOL_NAME,
+	normalizeLazyOnDemandList,
 	CANVAS_TOOL_NAME,
 	localizedName,
 	PI_AGENT_PRESETS,
@@ -2425,14 +2426,28 @@ export class ClientSession {
 		}
 	}
 
+	private lazyOnDemandSet(): Set<string> {
+		try {
+			return new Set(normalizeLazyOnDemandList(this.settingsSvc.current.toolOnDemandTools));
+		} catch {
+			return new Set();
+		}
+	}
+
 	private lazyLoadedFor(session: AgentSession, seedFromActive: boolean): Set<string> {
 		const existing = this.lazyLoadedBySession.get(session);
 		if (existing) return existing;
 		const seed: string[] = [];
 		if (seedFromActive) {
 			const core = new Set<string>([...LAZY_CORE_TOOL_NAMES, LOAD_TOOLS_TOOL_NAME]);
+			const onDemand = this.lazyOnDemandSet();
 			try {
-				for (const n of session.getActiveToolNames()) if (!core.has(n)) seed.push(n);
+				for (const n of session.getActiveToolNames()) {
+					if (core.has(n)) continue;
+					// 名单制：只记住名单里的已加载，名单外常驻无需记忆。
+					if (onDemand.size > 0 && !onDemand.has(n)) continue;
+					seed.push(n);
+				}
 			} catch {}
 		}
 		const set = new Set(seed);
@@ -2448,11 +2463,14 @@ export class ClientSession {
 		if (!session || !this.lazyLoadingOn()) return empty;
 		try {
 			const all = this.allowedToolNames(session, conv);
+			const onDemand = this.lazyOnDemandSet();
+			if (onDemand.size === 0) return empty;
 			const active = new Set(session.getActiveToolNames());
 			const names: string[] = [];
 			const snippets: Record<string, string> = {};
 			const infos: LoadableToolInfo[] = [];
 			for (const name of all) {
+				if (!onDemand.has(name)) continue;
 				if (active.has(name) || name === LOAD_TOOLS_TOOL_NAME) continue;
 				const def = session.getToolDefinition(name);
 				const snippet = this.toolSnippetOf(def);
@@ -2487,8 +2505,11 @@ export class ClientSession {
 					)
 					.map((t) => t.name),
 			);
+			const onDemand = this.lazyOnDemandSet();
+			if (onDemand.size === 0) return empty;
+			const core = new Set<string>([...LAZY_CORE_TOOL_NAMES]);
 			const names = this.allowedToolNames(session, conv).filter(
-				(n) => n !== LOAD_TOOLS_TOOL_NAME && !mcpDeferred.has(n),
+				(n) => n !== LOAD_TOOLS_TOOL_NAME && !mcpDeferred.has(n) && (core.has(n) || onDemand.has(n)),
 			);
 			const snippets: Record<string, string> = {};
 			const signatures: Record<string, string> = {};
@@ -2544,6 +2565,21 @@ export class ClientSession {
 		}
 		const base = new Set<string>([...LAZY_CORE_TOOL_NAMES, LOAD_TOOLS_TOOL_NAME]);
 		return all.filter((n) => base.has(n));
+	}
+
+	private lazyResidentNames(session: AgentSession, conv: Conversation | undefined): string[] {
+		try {
+			const onDemand = this.lazyOnDemandSet();
+			const allowed = new Set(this.allowedToolNames(session, conv));
+			// 常驻 = 允许集里不在名单里的（核心工具天然不在名单里，已被 normalize 滤掉）。
+			// 名单为空时全部常驻；load_tools 本体也在允许集里（门控 forceActive），一并算常驻。
+			return session
+				.getAllTools()
+				.map((t) => t.name)
+				.filter((n) => allowed.has(n) && !onDemand.has(n));
+		} catch {
+			return this.lazyBaselineNames(session);
+		}
 	}
 
 	private loadToolsHost(ownerId: string | undefined): LoadToolsHost {
@@ -2652,6 +2688,19 @@ export class ClientSession {
 				rejected.push({ name, reason: pick(lang, "已经加载过了", "already loaded", "loadtools.already") });
 				continue;
 			}
+			// 名单制：不在名单里的常驻可用，无需加载。
+			if (!this.lazyOnDemandSet().has(name)) {
+				rejected.push({
+					name,
+					reason: pick(
+						lang,
+						"常驻工具，无需加载（不在按需名单里，直接调用即可）",
+						"always available without loading (not in the on-demand list, call it directly)",
+						"loadtools.always",
+					),
+				});
+				continue;
+			}
 			if (disabled.has(name)) {
 				rejected.push({
 					name,
@@ -2711,6 +2760,8 @@ export class ClientSession {
 		) {
 			return;
 		}
+		// 名单制：只有名单里的才会被 JIT 激活，名单外常驻本就可用。
+		if (!this.lazyOnDemandSet().has(name)) return;
 		const loaded = this.lazyLoadedFor(session, this.sessionHasTranscript(session));
 		if (loaded.has(name)) return;
 		const allowed = new Set(this.allowedToolNames(session, conv));
@@ -2849,8 +2900,8 @@ export class ClientSession {
 						snippets: {} as Record<string, string>,
 						signatures: {} as Record<string, string>,
 					};
-			const baseNames = lazyOn ? this.lazyBaselineNames(sess) : active;
-			const baseSet = new Set(baseNames);
+			// 名单制：基线 = 常驻（允许集 - 名单，含核心 + load_tools），目录 = 核心 + 名单。
+			const baseNames = lazyOn ? this.lazyResidentNames(sess, conv) : active;
 			const snippets: Record<string, string> = {};
 			const signatures: Record<string, string> = catalog.signatures ?? {};
 			const guidelines: string[] = [];
@@ -2862,7 +2913,13 @@ export class ClientSession {
 				if (eff.promptSnippet && eff.promptSnippet.trim() && (lazyOn || ov?.promptSnippet)) {
 					snippets[name] = eff.promptSnippet.trim();
 				}
-				if (baseSet.has(name) && eff.promptGuidelines) guidelines.push(...eff.promptGuidelines);
+			}
+			for (const name of baseNames) {
+				const def = sess.getToolDefinition(name);
+				if (!def) continue;
+				const ov = toolPromptOverrideOf(this.settingsSvc.current.toolPromptOverrides, name);
+				const eff = effectiveToolPrompt(def, ov);
+				if (eff.promptGuidelines) guidelines.push(...eff.promptGuidelines);
 			}
 			const texts = resolveSectionTexts(
 				this.composeInputs({
@@ -4010,8 +4067,7 @@ export class ClientSession {
 														snippets: {},
 														signatures: {},
 													};
-										const baseNames = lazyOn && sess ? this.lazyBaselineNames(sess) : activeToolNames;
-										const baseSet = new Set(baseNames);
+										const baseNames = lazyOn && sess ? this.lazyResidentNames(sess, conv) : activeToolNames;
 										const activeSnippets: Record<string, string> = {};
 										const activeSignatures: Record<string, string> = catalog.signatures ?? {};
 										const activeGuidelines: string[] = [];
@@ -4024,9 +4080,13 @@ export class ClientSession {
 												if (eff.promptSnippet && eff.promptSnippet.trim() && (lazyOn || ov?.promptSnippet)) {
 													activeSnippets[name] = eff.promptSnippet.trim();
 												}
-												if (baseSet.has(name) && eff.promptGuidelines) {
-													activeGuidelines.push(...eff.promptGuidelines);
-												}
+											}
+											for (const name of baseNames) {
+												const def = sess.getToolDefinition(name);
+												if (!def) continue;
+												const ov = toolPromptOverrideOf(this.settingsSvc.current.toolPromptOverrides, name);
+												const eff = effectiveToolPrompt(def, ov);
+												if (eff.promptGuidelines) activeGuidelines.push(...eff.promptGuidelines);
 											}
 										}
 										const currentPreset =
@@ -9246,9 +9306,13 @@ export class ClientSession {
 			try {
 				const loaded = this.lazyLoadedFor(session, this.sessionHasTranscript(session));
 				loadedNames = [...loaded];
+				// 名单制：只延迟名单里的工具；名单为空等于都不延迟（仅常驻 + load_tools）。
+				const only = this.lazyOnDemandSet();
 				for (const name of lazyLoadingDisabledTools(
 					session.getAllTools().map((t) => t.name),
 					loaded,
+					undefined,
+					only,
 				)) {
 					disabled.add(name);
 				}

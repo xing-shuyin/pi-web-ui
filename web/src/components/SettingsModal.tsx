@@ -3489,11 +3489,18 @@ function LoadedSettingsModal({
 										</div>
 										<div className="tpl-pick">
 											{[...AGENT_TOOL_CATALOG.map((e) => e.name), ...CORE_TOOL_CATALOG.map((c) => c.name)].map((n) => (
-												<label key={n} className={`tpl-chip${onDemandToolNames.has(n) ? " on" : ""}`}>
+												<label
+													key={n}
+													className={`tpl-chip${onDemandToolNames.has(n) ? " on" : ""}${CORE_TOOL_CATALOG.some((c) => c.name === n) ? " is-disabled" : ""}`}
+													title={CORE_TOOL_CATALOG.some((c) => c.name === n) ? "核心常驻，不可延迟" : undefined}
+												>
 													<input
 														type="checkbox"
 														checked={onDemandToolNames.has(n)}
-														onChange={() => toggleOnDemandTool(n)}
+														disabled={CORE_TOOL_CATALOG.some((c) => c.name === n)}
+														onChange={() => {
+															if (!CORE_TOOL_CATALOG.some((c) => c.name === n)) toggleOnDemandTool(n);
+														}}
 													/>
 													{n}
 												</label>

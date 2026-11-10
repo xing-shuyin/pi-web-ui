@@ -312,8 +312,8 @@ function buildToolsText(inputs: PromptComposerInputs, lang: ServerLang): string 
 		parts.push(
 			pick(
 				lang,
-				"核心工具（bash, read, edit, write）及 `load_tools` 始终常驻可用，无需加载。上表中其他尚未附加参数 schema 的工具，调用前先用 `load_tools` 附加上完整参数（本对话后续轮次持续有效）。",
-				"Core tools (bash, read, edit, write) and `load_tools` are always active and ready to use. Other tools above do NOT have their parameter schema attached yet: pass their names to `load_tools` before calling them to attach full schemas for the rest of this conversation.",
+				"核心工具（bash, read, edit, write）及 `load_tools` 始终常驻可用，无需加载；不在按需名单里的其余工具同样常驻、可直接调用。上表中除核心工具外的按需名单工具尚未附加参数 schema，调用前先用 `load_tools` 附加上完整参数（本对话后续轮次持续有效）。",
+				"Core tools (bash, read, edit, write) and `load_tools` are always active and ready to use. Other resident tools NOT in the on-demand list are also active and callable directly. On-demand tools above (other than core) do NOT have their parameter schema attached yet: pass their names to `load_tools` before calling them to attach full schemas for the rest of this conversation.",
 				"prompt.tools.lazy",
 			),
 		);
