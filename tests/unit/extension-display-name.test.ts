@@ -1,17 +1,15 @@
+import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { extensionDisplayName } from "../../server/settings-service.js";
 
 describe("extensionDisplayName", () => {
 	it("以目录名命名手动放进 extensions 目录的扩展，而不是入口文件名", () => {
+		// Build the path with `join` so this asserts the same thing on win32 and POSIX:
+		// the helper resolves separators through `node:path`, which is platform-bound, so a
+		// hard-coded `C:\\...` literal would only parse on Windows.
+		const entry = join("/home/alice/.pi/agent/extensions/openviking", "index.ts");
 		expect(
-			extensionDisplayName({
-				path: String.raw`C:\Users\alice\.pi\agent\extensions\openviking\index.ts`,
-				sourceInfo: {
-					origin: "top-level",
-					source: "auto",
-					path: String.raw`C:\Users\alice\.pi\agent\extensions\openviking\index.ts`,
-				},
-			}),
+			extensionDisplayName({ path: entry, sourceInfo: { origin: "top-level", source: "auto", path: entry } }),
 		).toBe("openviking");
 	});
 
