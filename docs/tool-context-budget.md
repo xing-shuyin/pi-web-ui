@@ -186,7 +186,7 @@ SDK 没有自动压缩指令及权限前别名解析的公开接口，分别用 
 守卫：`tests/unit/tool-schema-slim.test.ts` 现在把上面 21 个工具全部纳进来（含 `patternProperties`），
 任何一条装饰约束、任何一个白名单外的字段说明都会红。
 
-### 2.6 按需列表：把「按需」做成一张清单，列进去就直接关
+### 2.6 按需名单：延迟范围统一注册表（内置 + 插件自动合并）
 
 §2.3 的延迟加载是**名单制**（只有名单里的才延迟，模型再调 `load_tools` 拉回来）。名单外的常驻，
 名单为空等于都不延迟。
@@ -194,11 +194,17 @@ SDK 没有自动压缩指令及权限前别名解析的公开接口，分别用 
 `toolOnDemandTools`（设置 → 工具区「按需工具列表」，协议字段与预设字段同名）就是这份延迟名单：
 
 - **列进去 = 延迟**。开关开着时：不激活、参数 schema 不进上下文，模型需先调 `load_tools` 拉取（加载后本对话后续常驻），也会被 JIT 自动激活；
-  开关关着时名单无效果（全部按开关/预设常驻）。核心工具与 `load_tools` 进名单会被过滤（永不延迟）。
-- **不再硬关闭**。`effectiveDisabledAgentTools()` 不再并入名单，常驻/禁用只由 `disabledAgentTools`、预设与模式闸门决定。**没有第二条门控路径**——
+  开关关着时名单无效果（全部按开关/预设常驻）。`isNeverLazyTool()`（核心 4 件套 + `load_tools`）永不延迟，前后端共用同一语义。
+- **统一注册表，不写死**。`TOOL_NAME_PATTERN` + `foldLegacyToolName()` + `isValidToolName()` 是唯一命名口径（见 `server/tool-manager.ts`）：
+  内置直接收，插件 / MCP / 未来工具按正则收，孤儿项（插件已卸载/跨设备）保留防丢；旧别名自动折叠。
+  前端库存见 `web/src/tool-inventory.ts`（`buildOnDemandOptions`）：内置目录 + 实时插件库存 + 孤儿兜底，
+  所有工具管理 UI 都从此库存派生，不再手写 `[...AGENT, ...CORE]`。
+- **划分单源**。`partitionLazyTools({all, allowed, onDemand, loaded})` 一次算出 `{resident, pending, loadedLazy}`，
+  门控/目录/加载/JIT/提示词基线共用同一划分；`disabledToolSet()` 收敛计划/委派/子代理闸门，`loadLazyTools` 不再手写第二份。
+- **不再硬关闭**。`effectiveDisabledAgentTools()` 不再并入名单，常驻/禁用只由 `disabledAgentTools`（内置）+ `disabledPluginTools`（插件，注册层过滤）+ 预设与模式闸门决定。**没有第二条门控路径**——
   `applyAgentToolsGating` / `allowedToolNames` / 提示词目录读的都是同一套允许集，延迟只是临时加禁用（`lazyLoadingDisabledTools(..., onDemand)`）。
-- 与 §2.3 的关系：开关是 `load_tools` 总闸（开才有该工具），名单决定延迟范围。DSH 引擎不适用（无 pi 工具注册面，设置行不显示）。
-- 守卫：`tests/unit/tool-manager.test.ts`「按需名单」用例钉住名单语义、未知名字丢弃与去重；`tests/lazy-tools-test.mjs` 开关打开后先写名单再建会话。
+- 与 §2.3 的关系：开关是 `load_tools` 总闸（开才有该工具），名单决定延迟范围（含插件）。DSH 引擎不适用（无 pi 工具注册面，设置行不显示）。
+- 守卫：`tests/unit/tool-manager.test.ts`「按需名单 + 架构单源」用例钉住命名规则/别名/划分/孤儿保留；`tests/lazy-tools-test.mjs` 开关打开后先写名单再建会话。
 
 ## 3. 硬约束：不能打坏前缀缓存
 

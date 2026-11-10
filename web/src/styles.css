@@ -25532,6 +25532,201 @@
 		accent-color: var(--accent);
 		margin: 0;
 	}
+	/* 工具管理 flow-A：分类块 + 流式三态 chips */
+	.toolflow-top {
+		display: flex;
+		gap: 10px;
+		align-items: center;
+		flex-wrap: wrap;
+		background: var(--bg-elev, rgb(28 30 36 / 0.4));
+		border: 1px solid var(--border-soft);
+		border-radius: 12px;
+		padding: 10px 12px;
+		margin-bottom: 10px;
+	}
+	.toolflow-counts {
+		display: flex;
+		gap: 6px;
+		margin-left: auto;
+		font-size: 12px;
+		color: var(--text-dim);
+	}
+	.toolflow-count {
+		border: 1px solid var(--border-soft);
+		border-radius: 999px;
+		padding: 2px 10px;
+		background: var(--bg-elev2);
+	}
+	.toolflow-count b {
+		margin-left: 4px;
+		color: var(--text);
+	}
+	.toolflow-search {
+		flex: 1;
+		min-width: 160px;
+		display: flex;
+		gap: 8px;
+		align-items: center;
+		background: var(--bg-elev2);
+		border: 1px solid var(--border-soft);
+		border-radius: 8px;
+		padding: 6px 10px;
+	}
+	.toolflow-search input {
+		flex: 1;
+		min-width: 0;
+		background: transparent;
+		border: none;
+		outline: none;
+		color: var(--text);
+		font-size: 13px;
+	}
+	.toolflow-cat {
+		border: 1px solid var(--border-soft);
+		border-radius: 12px;
+		margin-bottom: 10px;
+		overflow: hidden;
+		background: transparent;
+	}
+	.toolflow-chead {
+		display: flex;
+		gap: 8px;
+		align-items: center;
+		padding: 8px 12px;
+		border-bottom: 1px solid var(--border-soft);
+		font-size: 12px;
+		color: var(--text-dim);
+	}
+	.toolflow-chead b {
+		font-size: 12.5px;
+		color: var(--text);
+	}
+	.toolflow-chead .sub {
+		color: var(--text-faint);
+		font-size: 11px;
+	}
+	.toolflow-chead .nums {
+		margin-left: auto;
+		display: flex;
+		gap: 8px;
+		font-size: 11px;
+	}
+	.toolflow-flow {
+		display: flex;
+		flex-wrap: wrap;
+		gap: 8px;
+		padding: 12px;
+	}
+	.toolflow-chip {
+		width: 148px;
+		flex: none;
+		text-align: left;
+		border: 1px solid var(--border-soft);
+		background: var(--bg-elev2);
+		border-radius: 9px;
+		padding: 7px 9px;
+		cursor: pointer;
+		position: relative;
+		transition:
+			border-color 0.12s ease,
+			background 0.12s ease;
+		color: var(--text);
+	}
+	.toolflow-chip:hover {
+		border-color: var(--accent);
+	}
+	.toolflow-chip .nm {
+		font-family: ui-monospace, Menlo, monospace;
+		font-size: 12px;
+		white-space: nowrap;
+		overflow: hidden;
+		text-overflow: ellipsis;
+		display: flex;
+		gap: 6px;
+		align-items: center;
+	}
+	.toolflow-chip .st {
+		font-size: 10px;
+		margin-top: 3px;
+		color: var(--text-dim);
+		display: flex;
+		gap: 5px;
+		align-items: center;
+		white-space: nowrap;
+		overflow: hidden;
+		text-overflow: ellipsis;
+	}
+	.toolflow-chip .dot {
+		width: 6px;
+		height: 6px;
+		border-radius: 50%;
+		flex: none;
+		background: var(--text-faint);
+	}
+	.toolflow-chip[data-s="resident"] {
+		border-color: color-mix(in srgb, #34d399 35%, transparent);
+	}
+	.toolflow-chip[data-s="resident"] .dot {
+		background: #34d399;
+	}
+	.toolflow-chip[data-s="resident"] .st {
+		color: #34d399;
+	}
+	.toolflow-chip[data-s="lazy"] {
+		border-color: var(--accent);
+		background: color-mix(in srgb, var(--accent) 8%, transparent);
+	}
+	.toolflow-chip[data-s="lazy"] .dot {
+		background: var(--accent);
+	}
+	.toolflow-chip[data-s="lazy"] .st {
+		color: var(--accent);
+	}
+	.toolflow-chip[data-s="off"] {
+		opacity: 0.6;
+	}
+	.toolflow-chip[data-s="off"] .dot {
+		background: #f87171;
+	}
+	.toolflow-chip[data-s="off"] .st {
+		color: #f87171;
+	}
+	.toolflow-chip:disabled {
+		opacity: 0.4;
+		cursor: not-allowed;
+	}
+	.toolflow-chip .plug {
+		font-size: 9px;
+		color: var(--accent);
+		border: 1px solid var(--accent);
+		border-radius: 4px;
+		padding: 0 4px;
+		margin-left: auto;
+		flex: none;
+	}
+	.toolflow-chip .editbtn {
+		position: absolute;
+		top: 5px;
+		right: 6px;
+		font-size: 10px;
+		color: var(--text-faint);
+		background: none;
+		border: none;
+		cursor: pointer;
+		padding: 1px 3px;
+		border-radius: 4px;
+		opacity: 0;
+	}
+	.toolflow-chip:hover .editbtn {
+		opacity: 0.9;
+	}
+	.toolflow-chip .editbtn:hover {
+		color: var(--accent);
+	}
+	.toolflow-chip .editbtn.has-edit {
+		opacity: 0.9;
+		color: var(--accent);
+	}
 	.tpl-actions {
 		display: flex;
 		align-items: center;

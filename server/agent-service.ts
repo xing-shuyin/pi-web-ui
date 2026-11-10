@@ -264,11 +264,13 @@ import {
 	effectiveDisabledAgentTools,
 	filterToolsByPreset,
 	isAgentToolEnabled,
+	isNeverLazyTool,
 	isTerminalGuidanceOn,
 	LAZY_CORE_TOOL_NAMES,
 	lazyLoadingDisabledTools,
 	LOAD_TOOLS_TOOL_NAME,
 	normalizeLazyOnDemandList,
+	partitionLazyTools,
 	CANVAS_TOOL_NAME,
 	localizedName,
 	PI_AGENT_PRESETS,
@@ -2439,11 +2441,10 @@ export class ClientSession {
 		if (existing) return existing;
 		const seed: string[] = [];
 		if (seedFromActive) {
-			const core = new Set<string>([...LAZY_CORE_TOOL_NAMES, LOAD_TOOLS_TOOL_NAME]);
 			const onDemand = this.lazyOnDemandSet();
 			try {
 				for (const n of session.getActiveToolNames()) {
-					if (core.has(n)) continue;
+					if (isNeverLazyTool(n)) continue;
 					// 名单制：只记住名单里的已加载，名单外常驻无需记忆。
 					if (onDemand.size > 0 && !onDemand.has(n)) continue;
 					seed.push(n);
@@ -2462,16 +2463,14 @@ export class ClientSession {
 		const empty = { names: [] as string[], snippets: {} as Record<string, string>, infos: [] as LoadableToolInfo[] };
 		if (!session || !this.lazyLoadingOn()) return empty;
 		try {
-			const all = this.allowedToolNames(session, conv);
-			const onDemand = this.lazyOnDemandSet();
-			if (onDemand.size === 0) return empty;
+			const { pending } = this.lazyPartition(session, conv);
+			if (pending.length === 0) return empty;
 			const active = new Set(session.getActiveToolNames());
 			const names: string[] = [];
 			const snippets: Record<string, string> = {};
 			const infos: LoadableToolInfo[] = [];
-			for (const name of all) {
-				if (!onDemand.has(name)) continue;
-				if (active.has(name) || name === LOAD_TOOLS_TOOL_NAME) continue;
+			for (const name of pending) {
+				if (active.has(name) || isNeverLazyTool(name)) continue;
 				const def = session.getToolDefinition(name);
 				const snippet = this.toolSnippetOf(def);
 				if (snippet) snippets[name] = snippet;
@@ -2505,11 +2504,30 @@ export class ClientSession {
 					)
 					.map((t) => t.name),
 			);
-			const onDemand = this.lazyOnDemandSet();
-			if (onDemand.size === 0) return empty;
+			const { resident, pending, loadedLazy } = this.lazyPartition(session, conv);
+			if (pending.length === 0 && loadedLazy.length === 0) {
+				// 名单为空：目录只剩核心，模型无 load 需求；工具 schema 本就携带全部常驻。
+				const coreOnly = new Set<string>([...LAZY_CORE_TOOL_NAMES]);
+				const names = this.allowedToolNames(session, conv).filter(
+					(n) => n !== LOAD_TOOLS_TOOL_NAME && !mcpDeferred.has(n) && coreOnly.has(n),
+				);
+				const snippets: Record<string, string> = {};
+				const signatures: Record<string, string> = {};
+				for (const name of names) {
+					const def = session.getToolDefinition(name);
+					const snippet = this.toolSnippetOf(def);
+					if (snippet) snippets[name] = snippet;
+					if (def?.parameters) {
+						const sig = formatCompactSignature(def.parameters);
+						if (sig) signatures[name] = sig;
+					}
+				}
+				return { names, snippets, signatures };
+			}
 			const core = new Set<string>([...LAZY_CORE_TOOL_NAMES]);
+			const stableSet = new Set([...resident.filter((n) => core.has(n)), ...pending, ...loadedLazy]);
 			const names = this.allowedToolNames(session, conv).filter(
-				(n) => n !== LOAD_TOOLS_TOOL_NAME && !mcpDeferred.has(n) && (core.has(n) || onDemand.has(n)),
+				(n) => n !== LOAD_TOOLS_TOOL_NAME && !mcpDeferred.has(n) && stableSet.has(n),
 			);
 			const snippets: Record<string, string> = {};
 			const signatures: Record<string, string> = {};
@@ -2528,10 +2546,8 @@ export class ClientSession {
 		}
 	}
 
-	private allowedToolNames(session: AgentSession, conv: Conversation | undefined): string[] {
-		const all = session.getAllTools().map((t) => t.name);
-		const preset = conv?.agentPreset ?? this.settingsSvc.current.defaultAgentPreset ?? "standard";
-		const allowed = new Set(filterToolsByPreset(all, preset));
+	/** 禁用集单源：内置禁用 + 计划/委派/子代理闸门。插件硬禁用在注册层过滤，不在此处。 */
+	private disabledToolSet(session: AgentSession, conv: Conversation | undefined, all: readonly string[]): Set<string> {
 		const disabled = new Set(effectiveDisabledAgentTools(this.settingsSvc.current));
 		if (conv?.planMode === true) for (const n of PLAN_MODE_BLOCKED_TOOL_NAMES) disabled.add(n);
 		if (conv?.subagentAllowedTools && conv.subagentAllowedTools.size > 0) {
@@ -2544,7 +2560,36 @@ export class ClientSession {
 				disabled.add(toolName);
 			}
 		}
+		return disabled;
+	}
+
+	private allowedToolNames(session: AgentSession, conv: Conversation | undefined): string[] {
+		const all = session.getAllTools().map((t) => t.name);
+		const preset = conv?.agentPreset ?? this.settingsSvc.current.defaultAgentPreset ?? "standard";
+		const allowed = new Set(filterToolsByPreset(all, preset));
+		const disabled = this.disabledToolSet(session, conv, all);
 		return all.filter((n) => allowed.has(n) && !disabled.has(n));
+	}
+
+	/** 延迟上下文单源：allowed + onDemand + loaded 一次算出 resident/pending，供目录/门控/加载共用。 */
+	private lazyPartition(
+		session: AgentSession,
+		conv: Conversation | undefined,
+	): {
+		all: string[];
+		allowed: string[];
+		onDemand: Set<string>;
+		loaded: Set<string>;
+		resident: string[];
+		pending: string[];
+		loadedLazy: string[];
+	} {
+		const all = session.getAllTools().map((t) => t.name);
+		const allowed = this.allowedToolNames(session, conv);
+		const onDemand = this.lazyOnDemandSet();
+		const loaded = this.lazyLoadedFor(session, this.sessionHasTranscript(session));
+		const part = partitionLazyTools({ all, allowed, onDemand, loaded });
+		return { all, allowed, onDemand, loaded, ...part };
 	}
 
 	private toolSnippetOf(def: ToolDefinition | undefined): string {
@@ -2569,14 +2614,8 @@ export class ClientSession {
 
 	private lazyResidentNames(session: AgentSession, conv: Conversation | undefined): string[] {
 		try {
-			const onDemand = this.lazyOnDemandSet();
-			const allowed = new Set(this.allowedToolNames(session, conv));
-			// 常驻 = 允许集里不在名单里的（核心工具天然不在名单里，已被 normalize 滤掉）。
-			// 名单为空时全部常驻；load_tools 本体也在允许集里（门控 forceActive），一并算常驻。
-			return session
-				.getAllTools()
-				.map((t) => t.name)
-				.filter((n) => allowed.has(n) && !onDemand.has(n));
+			// 单源划分：常驻 = 允许 - 可延迟名单（含插件），与门控/目录同一口径。
+			return this.lazyPartition(session, conv).resident;
 		} catch {
 			return this.lazyBaselineNames(session);
 		}
@@ -2644,20 +2683,12 @@ export class ClientSession {
 			};
 		}
 		const known = new Set(all);
+		// 与 allowedToolNames 同一口径：预设 + 禁用集单源，避免两处手写分歧。
+		// 插件硬禁用在注册层已过滤（不在 known 里），此处按未知处理，提示模型看目录。
 		const preset = conv?.agentPreset ?? this.settingsSvc.current.defaultAgentPreset ?? "standard";
-		const allowed = new Set(filterToolsByPreset(all, preset));
-		const disabled = new Set(effectiveDisabledAgentTools(this.settingsSvc.current));
-		if (conv?.planMode === true) for (const n of PLAN_MODE_BLOCKED_TOOL_NAMES) disabled.add(n);
-		if (conv?.subagentAllowedTools && conv.subagentAllowedTools.size > 0) {
-			for (const t of all) {
-				if (!conv.subagentAllowedTools.has(t)) disabled.add(t);
-			}
-		}
-		if (conv?.subagentSecurityMode === "readonly" || conv?.subagentSecurityMode === "verify") {
-			for (const toolName of SUBAGENT_WRITE_TOOL_NAMES) {
-				disabled.add(toolName);
-			}
-		}
+		const presetAllowed = new Set(filterToolsByPreset(all, preset));
+		const disabled = this.disabledToolSet(session, conv, all);
+		const allowed = new Set(all.filter((n) => presetAllowed.has(n) && !disabled.has(n)));
 		const set = this.lazyLoadedFor(session, this.sessionHasTranscript(session));
 		let activeNow = new Set<string>();
 		try {
@@ -2677,7 +2708,7 @@ export class ClientSession {
 				});
 				continue;
 			}
-			if (name === LOAD_TOOLS_TOOL_NAME || (LAZY_CORE_TOOL_NAMES as readonly string[]).includes(name)) {
+			if (isNeverLazyTool(name)) {
 				rejected.push({
 					name,
 					reason: pick(lang, "常驻核心工具，无需加载", "always available without loading", "loadtools.always"),
@@ -2752,12 +2783,7 @@ export class ClientSession {
 	}
 
 	private autoActivateToolIfLoadable(session: AgentSession, conv: Conversation, name: string): void {
-		if (
-			!this.lazyLoadingOn() ||
-			!name ||
-			name === LOAD_TOOLS_TOOL_NAME ||
-			(LAZY_CORE_TOOL_NAMES as readonly string[]).includes(name)
-		) {
+		if (!this.lazyLoadingOn() || !name || isNeverLazyTool(name)) {
 			return;
 		}
 		// 名单制：只有名单里的才会被 JIT 激活，名单外常驻本就可用。

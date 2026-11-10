@@ -154,18 +154,16 @@ import {
 	isReadonlyPromptSource,
 } from "../../../server/prompt-composer.js";
 import { isWindowsPlatform } from "../notify";
-import {
-	AGENT_TOOL_CATALOG,
-	CORE_TOOL_CATALOG,
-	filterToolsByPreset,
-	presetShowsSkillCatalog,
-	TERMINAL_TOOL_NAMES,
-} from "../../../server/tool-manager.js";
+import { AGENT_TOOL_CATALOG, filterToolsByPreset, presetShowsSkillCatalog } from "../../../server/tool-manager.js";
 
-const OTHER_AGENT_TOOLS = AGENT_TOOL_CATALOG.filter((e) => e.group === "other");
-const CONVERSATION_TOOL_NAMES = [
-	...new Set(AGENT_TOOL_CATALOG.filter((tool) => tool.group === "subagent").map((tool) => tool.name)),
-];
+import {
+	buildFlowCategories,
+	buildOnDemandOptions,
+	getFlowState,
+	nextFlowState,
+	applyFlowState,
+	NEVER_LAZY_NAMES,
+} from "../tool-inventory";
 
 interface SettingsTerminalBridge {
 	create: (meta: {
@@ -339,21 +337,6 @@ function ToggleRow({
 				<span className="set-switch-knob" />
 			</button>
 		</div>
-	);
-}
-
-function ToolPromptButton({ name, edited, onEdit }: { name: string; edited: boolean; onEdit: (name: string) => void }) {
-	const t = useT();
-	return (
-		<button
-			type="button"
-			className={`set-icon-btn tool-prompt-edit${edited ? " edited" : ""}`}
-			title={edited ? t("toolPromptEdited") : t("toolPromptEdit")}
-			aria-label={t("toolPromptEdit")}
-			onClick={() => onEdit(name)}
-		>
-			<FiEdit3 />
-		</button>
 	);
 }
 
@@ -865,11 +848,7 @@ function LoadedSettingsModal({
 			return next;
 		});
 	};
-	const toolEditAction = (name: string) => {
-		return isDsh ? null : (
-			<ToolPromptButton name={name} edited={editedToolNames.has(name)} onEdit={setEditingToolPrompt} />
-		);
-	};
+
 	const applyToolPromptOverride = (name: string, override: UiToolPromptOverride | null) =>
 		setPartial({ toolPromptOverrides: { [name]: override ?? {} } });
 	const promptTokenEstimate = useMemo(
@@ -1565,49 +1544,70 @@ function LoadedSettingsModal({
 		setPartial({ disabledExtensions: [...next] });
 	};
 
-	const SUBAGENT_TOOL_TIPS: Record<string, string> = {
-		conversation: t("toolDescSubagent"),
-		...Object.fromEntries(
-			AGENT_TOOL_CATALOG.filter((tool) => tool.group === "subagent" && tool.descKey).map((tool) => [
-				tool.name,
-				`${t(tool.descKey as any)}${tool.offHintKey ? `\n${t(tool.offHintKey as any)}` : ""}`,
-			]),
-		),
-		subagent_spawn: t("toolDescSubagentSpawn"),
-		subagent_get_result: t("toolDescSubagentGetResult"),
-		subagent_steer: t("toolDescSubagentSteer"),
-		subagent_list: t("toolDescSubagentList"),
-		subagent_stop: t("toolDescSubagentStop"),
-		subagent_wait_all: t("toolDescSubagentWaitAll"),
-		subagent_templates: t("toolDescSubagentTemplates"),
-	};
-	const CORE_TOOL_TIPS: Record<string, string> = Object.fromEntries(
-		CORE_TOOL_CATALOG.map((c) => [c.name, t(c.descKey as any)]),
-	);
-	const toggleAgentTool = (name: string) => {
-		const next = new Set(disabledTools);
-		if (next.has(name)) next.delete(name);
-		else next.add(name);
-		setPartial({ disabledAgentTools: [...next] });
-	};
 	const onDemandTools = settings.toolOnDemandTools ?? [];
 	const onDemandToolNames = new Set(onDemandTools);
-	const toggleOnDemandTool = (name: string) => {
-		const next = new Set(onDemandToolNames);
-		if (next.has(name)) next.delete(name);
-		else next.add(name);
-		setPartial({ toolOnDemandTools: [...next] });
+
+	// 统一库存：内置 + 实时插件 + 孤儿兜底（见 web/src/tool-inventory.ts），不再写死 AGENT+CORE。
+	const onDemandEffectiveCount = onDemandTools.filter((n) => !NEVER_LAZY_NAMES.has(n)).length;
+	// flow-A：分类块 + 流式三态（正式面板单源，旧 chips/各组 ToggleRow 逐步下线）。
+	const [toolFlowQuery, setToolFlowQuery] = useState("");
+	const toolFlowMasterOn = settings.toolLazyLoading === true;
+	const toolFlowInventory = buildOnDemandOptions({
+		plugins: chat.plugins,
+		selections: [...onDemandTools, ...disabledTools, ...Array.from(new Set(settings.disabledPluginTools ?? []))],
+	});
+	const toolFlowCats = buildFlowCategories(toolFlowInventory, { isWindows: isWindowsPlatform() });
+	const getFlowStateFor = (name: string) =>
+		getFlowState(name, {
+			disabled: disabledTools,
+			disabledPlugin: new Set(settings.disabledPluginTools ?? []),
+			onDemand: onDemandToolNames,
+			masterOn: toolFlowMasterOn,
+		});
+	const cycleFlowTool = (name: string, isPlugin: boolean, neverLazy: boolean) => {
+		if (neverLazy || isBlockedByPreset(name)) return;
+		const cur = getFlowStateFor(name);
+		const next = nextFlowState(cur, { masterOn: toolFlowMasterOn, neverLazy });
+		const r = applyFlowState(name, next, {
+			disabled: disabledTools,
+			disabledPlugin: new Set(settings.disabledPluginTools ?? []),
+			onDemand: onDemandToolNames,
+			isPlugin,
+		});
+		const patch: Partial<typeof settings> = {
+			disabledAgentTools: r.disabled,
+			disabledPluginTools: r.disabledPlugin,
+			toolOnDemandTools: r.onDemand,
+		};
+		if (r.needMasterOn && !toolFlowMasterOn) (patch as Record<string, unknown>).toolLazyLoading = true;
+		setPartial(patch);
+	};
+	const bulkFlowCat = (names: string[], isPluginOf: (n: string) => boolean, target: "resident" | "lazy" | "off") => {
+		const d = new Set(disabledTools);
+		const dp = new Set(settings.disabledPluginTools ?? []);
+		const od = new Set(onDemandToolNames);
+		let needMaster = false;
+		for (const n of names) {
+			if (NEVER_LAZY_NAMES.has(n) || isBlockedByPreset(n)) continue;
+			const r = applyFlowState(n, target, { disabled: d, disabledPlugin: dp, onDemand: od, isPlugin: isPluginOf(n) });
+			// applyFlowState 返回的是快照，逐项合并回工作集。
+			d.clear();
+			r.disabled.forEach((x) => d.add(x));
+			dp.clear();
+			r.disabledPlugin.forEach((x) => dp.add(x));
+			od.clear();
+			r.onDemand.forEach((x) => od.add(x));
+			if (r.needMasterOn) needMaster = true;
+		}
+		const patch: Partial<typeof settings> = {
+			disabledAgentTools: [...d],
+			disabledPluginTools: [...dp],
+			toolOnDemandTools: [...od],
+		};
+		if (needMaster && !toolFlowMasterOn) (patch as Record<string, unknown>).toolLazyLoading = true;
+		setPartial(patch);
 	};
 	const disabledPluginTools = new Set(settings.disabledPluginTools ?? []);
-	const togglePluginTool = (name: string) => {
-		const next = new Set(disabledPluginTools);
-		if (next.has(name)) next.delete(name);
-		else next.add(name);
-		setPartial({ disabledPluginTools: [...next] });
-	};
-	const pluginToolGroups = chat.plugins
-		.map((p) => ({ plugin: p, tools: [...(p.agentTools ?? [])].sort((a, b) => a.name.localeCompare(b.name)) }))
-		.filter((g) => g.tools.length > 0);
 
 	const markersEnabled = settings.markersEnabled ?? true;
 	const disabledMarkers = new Set(settings.disabledMarkers ?? []);
@@ -3480,34 +3480,197 @@ function LoadedSettingsModal({
 									/>
 								)}
 								{!isDsh && (
-									<div className="tpl-pick-block">
-										<div className="tpl-pick-head">
-											<span>
-												{t("toolOnDemandTools")} · {onDemandTools.length}
-											</span>
+									<div className="toolflow-top">
+										<div className="toolflow-counts">
+											{(() => {
+												let rs = 0,
+													lz = 0,
+													of = 0;
+												for (const c of toolFlowCats)
+													for (const it of c.items) {
+														const st = getFlowStateFor(it.name);
+														if (st === "resident") rs++;
+														else if (st === "lazy") lz++;
+														else of++;
+													}
+												return (
+													<>
+														<span className="toolflow-count">
+															{t("toolOnDemandTools")} · {onDemandEffectiveCount}
+														</span>
+														<span className="toolflow-count">
+															常驻<b>{rs}</b>
+														</span>
+														<span className="toolflow-count">
+															按需<b>{lz}</b>
+														</span>
+														<span className="toolflow-count">
+															关闭<b>{of}</b>
+														</span>
+													</>
+												);
+											})()}
 											<HintTip text={t("toolOnDemandToolsDesc")} />
 										</div>
-										<div className="tpl-pick">
-											{[...AGENT_TOOL_CATALOG.map((e) => e.name), ...CORE_TOOL_CATALOG.map((c) => c.name)].map((n) => (
-												<label
-													key={n}
-													className={`tpl-chip${onDemandToolNames.has(n) ? " on" : ""}${CORE_TOOL_CATALOG.some((c) => c.name === n) ? " is-disabled" : ""}`}
-													title={CORE_TOOL_CATALOG.some((c) => c.name === n) ? "核心常驻，不可延迟" : undefined}
-												>
-													<input
-														type="checkbox"
-														checked={onDemandToolNames.has(n)}
-														disabled={CORE_TOOL_CATALOG.some((c) => c.name === n)}
-														onChange={() => {
-															if (!CORE_TOOL_CATALOG.some((c) => c.name === n)) toggleOnDemandTool(n);
-														}}
-													/>
-													{n}
-												</label>
-											))}
+										<div className="toolflow-search">
+											<span>🔍</span>
+											<input
+												value={toolFlowQuery}
+												onChange={(e) => setToolFlowQuery(e.target.value)}
+												placeholder="搜索工具名 / 描述 / 插件…"
+											/>
+											{toolFlowQuery && (
+												<button type="button" className="tpl-chip" onClick={() => setToolFlowQuery("")}>
+													×
+												</button>
+											)}
 										</div>
 									</div>
 								)}
+								{!isDsh &&
+									toolFlowCats.map((cat) => {
+										const title =
+											cat.id === "core"
+												? t("toolsSectionCore")
+												: cat.id === "terminal"
+													? `${t("toolsSectionTerminal")} · ${t("toolsSectionSubagent")}`
+													: cat.id === "other"
+														? t("toolsSectionOther")
+														: cat.id === "plugin"
+															? t("toolsSectionPlugin")
+															: cat.fallbackTitle;
+										const kw = toolFlowQuery.trim().toLowerCase();
+										const items = cat.items.filter((it) => {
+											if (!kw) return true;
+											const desc =
+												it.kind === "plugin"
+													? (it.description ?? it.pluginName ?? "")
+													: it.descKey
+														? String(t(it.descKey as never) ?? "")
+														: "";
+											return (
+												it.name.toLowerCase().includes(kw) ||
+												desc.toLowerCase().includes(kw) ||
+												(it.pluginName ?? "").toLowerCase().includes(kw)
+											);
+										});
+										if (items.length === 0) return null;
+										const isPluginCat = cat.id === "plugin" || cat.id === "orphan";
+										const bulk = (target: "resident" | "lazy" | "off") =>
+											bulkFlowCat(
+												items.filter((it) => !NEVER_LAZY_NAMES.has(it.name)).map((it) => it.name),
+												(n) => isPluginCat || toolFlowInventory.some((x) => x.name === n && x.kind === "plugin"),
+												target,
+											);
+										return (
+											<div className="toolflow-cat" key={cat.id}>
+												<div className="toolflow-chead">
+													<b>{title}</b>
+													<span className="sub">{cat.sub}</span>
+													<span className="nums">
+														{(() => {
+															let rs = 0,
+																lz = 0,
+																of = 0;
+															for (const it of items) {
+																const st = getFlowStateFor(it.name);
+																if (st === "resident") rs++;
+																else if (st === "lazy") lz++;
+																else of++;
+															}
+															return (
+																<>
+																	<span>常驻 {rs}</span>
+																	<span>按需 {lz}</span>
+																	<span>关闭 {of}</span>
+																</>
+															);
+														})()}
+													</span>
+													<button type="button" className="tpl-chip" onClick={() => bulk("resident")}>
+														全常驻
+													</button>
+													<button type="button" className="tpl-chip" onClick={() => bulk("lazy")}>
+														全按需
+													</button>
+													<button type="button" className="tpl-chip" onClick={() => bulk("off")}>
+														全关
+													</button>
+												</div>
+												<div className="toolflow-flow">
+													{items.map((item) => {
+														const n = item.name;
+														const neverLazy = item.neverLazy || NEVER_LAZY_NAMES.has(n);
+														const blocked = isBlockedByPreset(n);
+														const pluginOff = !!item.pluginId && disabledPlugins.has(item.pluginId);
+														const st = getFlowStateFor(n);
+														const desc =
+															item.kind === "plugin"
+																? (item.description ?? item.pluginName ?? "")
+																: item.descKey
+																	? String(t(item.descKey as never) ?? "")
+																	: item.group;
+														const stateLabel = st === "resident" ? "常驻" : st === "lazy" ? "按需" : "关闭";
+														const title = neverLazy
+															? "核心常驻，不可延迟"
+															: blocked
+																? t("toolsBlockedByPreset", { name: piPresetName })
+																: pluginOff
+																	? t("pluginToolsDisabledByPlugin")
+																	: item.kind === "plugin"
+																		? `插件工具 · ${item.pluginName ?? item.pluginId ?? "plugin"} · 点一下轮转三态`
+																		: item.kind === "orphan"
+																			? "已选但暂不可见（插件已卸载/跨设备），保留以免丢配置"
+																			: `${desc} · 点一下轮转：常驻 → 按需 → 关闭`;
+														const disabled = neverLazy || blocked || pluginOff;
+														const isPlugin = item.kind === "plugin" || item.kind === "orphan";
+														return (
+															<div
+																key={n}
+																role="button"
+																tabIndex={disabled ? -1 : 0}
+																className="toolflow-chip"
+																data-s={st}
+																title={title}
+																aria-disabled={disabled}
+																onClick={() => cycleFlowTool(n, isPlugin, neverLazy)}
+																onKeyDown={(e) => {
+																	if (e.key === "Enter" || e.key === " ") {
+																		e.preventDefault();
+																		cycleFlowTool(n, isPlugin, neverLazy);
+																	}
+																}}
+															>
+																<div className="nm">
+																	<span className="dot" />
+																	<span style={{ overflow: "hidden", textOverflow: "ellipsis" }}>{n}</span>
+																	{item.kind === "plugin" && item.pluginName ? (
+																		<span className="plug">{item.pluginName}</span>
+																	) : null}
+																</div>
+																<div className="st">
+																	{stateLabel} · {desc || item.group}
+																</div>
+																{!isDsh && !blocked && !pluginOff ? (
+																	<button
+																		type="button"
+																		className={"editbtn" + (editedToolNames.has(n) ? " has-edit" : "")}
+																		title={editedToolNames.has(n) ? "文案已自定义，点一下继续改" : "改这个工具的提示词"}
+																		onClick={(e) => {
+																			e.stopPropagation();
+																			setEditingToolPrompt(n);
+																		}}
+																	>
+																		{editedToolNames.has(n) ? "●✎" : "✎"}
+																	</button>
+																) : null}
+															</div>
+														);
+													})}
+												</div>
+											</div>
+										);
+									})}
 								<ToggleRow
 									title={t("toolApprovalEnabled")}
 									tip={isDsh ? t("toolApprovalDshNotice") : t("toolApprovalEnabledDesc")}
@@ -3623,44 +3786,6 @@ function LoadedSettingsModal({
 										}}
 									/>
 								</FieldRow>
-								<div className="set-field-label">
-									{t("toolsSectionCore")}
-									<HintTip text={t("toolsCoreHint")} />
-								</div>
-								{CORE_TOOL_CATALOG.filter(
-									(c) => !c.platform || (c.platform === "win32" ? isWindowsPlatform() : true),
-								).map((c) => {
-									const n = c.name;
-									const blocked = isBlockedByPreset(n);
-									return (
-										<ToggleRow
-											key={n}
-											title={n}
-											tip={CORE_TOOL_TIPS[n]}
-											action={toolEditAction(n)}
-											subtitle={blocked ? t("toolsBlockedByPreset", { name: piPresetName }) : undefined}
-											enabled={!blocked && !disabledTools.has(n)}
-											disabled={blocked}
-											onToggle={() => toggleAgentTool(n)}
-										/>
-									);
-								})}
-								<div className="set-field-label">{t("toolsSectionTerminal")}</div>
-								{TERMINAL_TOOL_NAMES.map((n) => {
-									const blocked = isBlockedByPreset(n);
-									return (
-										<ToggleRow
-											key={n}
-											title={n}
-											tip={t("settingsTerminalToolsDesc")}
-											action={toolEditAction(n)}
-											subtitle={blocked ? t("toolsBlockedByPreset", { name: piPresetName }) : undefined}
-											enabled={!blocked && !disabledTools.has(n)}
-											disabled={blocked}
-											onToggle={() => toggleAgentTool(n)}
-										/>
-									);
-								})}
 								<ToggleRow
 									title={t("terminalBashTakeover")}
 									tip={t("terminalBashTakeoverDesc")}
@@ -3712,25 +3837,6 @@ function LoadedSettingsModal({
 									</>
 								)}
 								<div className="set-field-label">
-									{t("toolsSectionSubagent")} <HintTip text={t("toolsSubagentDepHint")} />
-								</div>
-								{CONVERSATION_TOOL_NAMES.map((n) => {
-									const names = [n];
-									const blocked = names.some(isBlockedByPreset);
-									return (
-										<ToggleRow
-											key={n}
-											title={n}
-											tip={SUBAGENT_TOOL_TIPS[n]}
-											action={toolEditAction(n)}
-											subtitle={blocked ? t("toolsBlockedByPreset", { name: piPresetName }) : undefined}
-											enabled={!blocked && !names.some((name) => disabledTools.has(name))}
-											disabled={blocked}
-											onToggle={() => toggleAgentTool(n)}
-										/>
-									);
-								})}
-								<div className="set-field-label">
 									{t("settingsMarkers")}
 									<HintTip text={`${t("settingsMarkersDesc")}\n${t("markerRenameTip")}`} />
 								</div>
@@ -3767,125 +3873,66 @@ function LoadedSettingsModal({
 										/>
 									))}
 								<div className="set-field-label">{t("toolsSectionOther")}</div>
-								{OTHER_AGENT_TOOLS.map((tool) => {
-									const blocked = isBlockedByPreset(tool.name);
-									const isCodemodeActive = tool.name === "codemode" && !blocked && !disabledTools.has(tool.name);
-									const isConfigExpanded = expandedToolConfigs.has(tool.name);
-
-									const configToggleBtn = isCodemodeActive ? (
-										<button
-											type="button"
-											className={`set-icon-btn tool-sub-config-btn${isConfigExpanded ? " active" : ""}`}
-											title={isConfigExpanded ? t("collapseSection") : t("expandSection")}
-											aria-expanded={isConfigExpanded}
-											aria-label={isConfigExpanded ? t("collapseSection") : t("expandSection")}
-											onClick={() => toggleToolConfigExpand(tool.name)}
-										>
-											<FiSliders />
-										</button>
-									) : null;
-
+								{(() => {
+									const blocked = isBlockedByPreset("codemode");
+									const active = !blocked && !disabledTools.has("codemode");
+									if (!active) return null;
+									const expanded = expandedToolConfigs.has("codemode");
 									return (
-										<div key={tool.name}>
-											<ToggleRow
-												title={tool.name}
-												tip={`${tt(tool.descKey ?? tool.name)}\n${tt(tool.offHintKey ?? tool.name)}`}
-												action={
-													<div style={{ display: "inline-flex", alignItems: "center", gap: 4 }}>
-														{configToggleBtn}
-														{toolEditAction(tool.name)}
-													</div>
-												}
-												subtitle={blocked ? t("toolsBlockedByPreset", { name: piPresetName }) : undefined}
-												enabled={!blocked && !disabledTools.has(tool.name)}
-												disabled={blocked}
-												onToggle={() => toggleAgentTool(tool.name)}
-											/>
-											{isCodemodeActive && isConfigExpanded && (
-												<div className="tool-sub-config-card">
-													<div className="tool-sub-config-row">
-														<label className="set-field-label">
-															{t("codemodeModeLabel")}
-															<HintTip text={t("codemodeModeHint")} />
-														</label>
-														<select
-															className="set-select"
-															style={{ width: "auto", minWidth: 140 }}
-															value={settings.codemodeMode ?? "on"}
-															onChange={(e) => setPartial({ codemodeMode: e.target.value as "on" | "only" })}
-														>
-															<option value="on">{t("codemodeModeOn")}</option>
-															<option value="only">{t("codemodeModeOnly")}</option>
-														</select>
-													</div>
-													<div className="tool-sub-config-row">
-														<label className="set-field-label">
-															{t("codemodeInlineBudgetLabel")}
-															<HintTip text={t("codemodeInlineBudgetHint")} />
-														</label>
-														<input
-															type="number"
-															className="set-input"
-															style={{ width: 100, textAlign: "right" }}
-															min={500}
-															max={50000}
-															step={500}
-															value={settings.codemodeInlineBudget ?? 3000}
-															onChange={(e) => {
-																const val = parseInt(e.target.value, 10);
-																if (!isNaN(val) && val > 0) {
-																	setPartial({ codemodeInlineBudget: val });
-																}
-															}}
-														/>
-													</div>
+										<div className="tool-sub-config-card">
+											<div className="tool-sub-config-row">
+												<label className="set-field-label">
+													{t("codemodeModeLabel")}
+													<HintTip text={t("codemodeModeHint")} />
+												</label>
+												<div style={{ display: "inline-flex", alignItems: "center", gap: 4 }}>
+													<button
+														type="button"
+														className={`set-icon-btn tool-sub-config-btn${expanded ? " active" : ""}`}
+														title={expanded ? t("collapseSection") : t("expandSection")}
+														aria-expanded={expanded}
+														aria-label={expanded ? t("collapseSection") : t("expandSection")}
+														onClick={() => toggleToolConfigExpand("codemode")}
+													>
+														<FiSliders />
+													</button>
+													<select
+														className="set-select"
+														style={{ width: "auto", minWidth: 140 }}
+														value={settings.codemodeMode ?? "on"}
+														onChange={(e) => setPartial({ codemodeMode: e.target.value as "on" | "only" })}
+													>
+														<option value="on">{t("codemodeModeOn")}</option>
+														<option value="only">{t("codemodeModeOnly")}</option>
+													</select>
+												</div>
+											</div>
+											{expanded && (
+												<div className="tool-sub-config-row">
+													<label className="set-field-label">
+														{t("codemodeInlineBudgetLabel")}
+														<HintTip text={t("codemodeInlineBudgetHint")} />
+													</label>
+													<input
+														type="number"
+														className="set-input"
+														style={{ width: 100, textAlign: "right" }}
+														min={500}
+														max={50000}
+														step={500}
+														value={settings.codemodeInlineBudget ?? 3000}
+														onChange={(e) => {
+															const val = parseInt(e.target.value, 10);
+															if (!isNaN(val) && val > 0) {
+																setPartial({ codemodeInlineBudget: val });
+															}
+														}}
+													/>
 												</div>
 											)}
 										</div>
 									);
-								})}
-								<div className="set-field-label">
-									{t("toolsSectionPlugin")}
-									<HintTip text={t("toolsPluginHint")} />
-								</div>
-								{pluginToolGroups.length === 0 ? (
-									<p className="set-empty">{chat.plugins.length === 0 ? t("noUiPlugins") : t("pluginToolsEmpty")}</p>
-								) : (
-									pluginToolGroups.map((g) => {
-										const pluginDisabled = disabledPlugins.has(g.plugin.id);
-										return (
-											<div key={g.plugin.id}>
-												<div className="set-row-desc">
-													{g.plugin.icon ? `${g.plugin.icon} ` : ""}
-													{g.plugin.name} · {g.plugin.id}
-													{pluginDisabled ? ` (${t("pluginDisabledInPlugins")})` : ""}
-												</div>
-												{g.tools.map((tool) => (
-													<ToggleRow
-														key={tool.name}
-														title={tool.label && tool.label !== tool.name ? `${tool.label} (${tool.name})` : tool.name}
-														tip={
-															tool.description
-																? `${tool.description}\n${t("pluginToolOffHint")}`
-																: t("pluginToolOffHint")
-														}
-														action={toolEditAction(tool.name)}
-														subtitle={
-															pluginDisabled
-																? t("pluginToolsDisabledByPlugin")
-																: piPresetFiltering
-																	? t("toolsBlockedByPreset", { name: piPresetName })
-																	: undefined
-														}
-														enabled={!pluginDisabled && !piPresetFiltering && !disabledPluginTools.has(tool.name)}
-														disabled={pluginDisabled || piPresetFiltering}
-														onToggle={() => !pluginDisabled && !piPresetFiltering && togglePluginTool(tool.name)}
-													/>
-												))}
-											</div>
-										);
-									})
-								)}
+								})()}
 							</div>
 						)}
 

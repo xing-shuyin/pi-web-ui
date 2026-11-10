@@ -46,6 +46,10 @@ import {
 	setAgentToolsEnabled,
 	TERMINAL_TOOL_NAMES,
 	LEGACY_TERMINAL_TOOL_NAMES,
+	isValidToolName,
+	isNeverLazyTool,
+	foldLegacyToolName,
+	partitionLazyTools,
 	resolveDisabledAgentToolsFromEnabled,
 	resolveEnabledAgentTools,
 	TOOL_SEARCH_TOOL_NAME,
@@ -217,8 +221,19 @@ describe("legacy sync", () => {
 	});
 
 	it("按需名单：只决定延迟范围，不再硬关闭", () => {
-		expect(normalizeToolOnDemandList(["canvas", "canvas", " nope ", 7, "sandbox"])).toEqual(["canvas", "sandbox"]);
+		// 架构级：内置 + 插件/MCP/未来工具按统一命名规则收，不写死名单；孤儿项保留。
+		expect(normalizeToolOnDemandList(["canvas", "canvas", "sftp", "mcp__gh__search", 7, ""])).toEqual([
+			"canvas",
+			"sftp",
+			"mcp__gh__search",
+		]);
+		expect(normalizeToolOnDemandList(["  patch  ", "a b", "x".repeat(200), "ok-name.v2"])).toEqual([
+			"patch",
+			"ok-name.v2",
+		]);
 		expect(normalizeToolOnDemandList(undefined)).toEqual([]);
+		// 旧别名折叠：终端旧名收敛到 terminal，保证旧存档不丢项。
+		expect(normalizeToolOnDemandList(["terminal_create"])).toEqual(["terminal"]);
 		// 名单不再并入禁用集：开关关闭时名单无效果。
 		const merged = effectiveDisabledAgentTools({ disabledAgentTools: [], toolOnDemandTools: ["canvas"] });
 		expect(merged).not.toContain("canvas");
@@ -229,6 +244,31 @@ describe("legacy sync", () => {
 		expect(lazyLoadingDisabledTools(["bash", "patch", "canvas"], [], undefined, ["canvas"])).toEqual(["canvas"]);
 		expect(lazyLoadingDisabledTools(["bash", "patch", "canvas"], ["canvas"], undefined, ["canvas"])).toEqual([]);
 		expect(lazyLoadingDisabledTools(["bash", "patch"], [], undefined, [])).toEqual([]);
+	});
+
+	it("工具名架构单源：校验/别名/永不延迟/划分共用同一口径", () => {
+		expect(isValidToolName("canvas")).toBe(true);
+		expect(isValidToolName("mcp__gh__search")).toBe(true);
+		expect(isValidToolName("sftp")).toBe(true);
+		expect(isValidToolName("a b")).toBe(false);
+		expect(isValidToolName("")).toBe(false);
+		expect(isValidToolName("x".repeat(200))).toBe(false);
+		expect(foldLegacyToolName("terminal_create")).toBe("terminal");
+		expect(foldLegacyToolName("canvas")).toBe("canvas");
+		expect(isNeverLazyTool("bash")).toBe(true);
+		expect(isNeverLazyTool("load_tools")).toBe(true);
+		expect(isNeverLazyTool("canvas")).toBe(false);
+		expect(isNeverLazyTool("sftp")).toBe(false);
+		// 划分单源：常驻/待延迟/已加载三态一次算出，孤儿名单项自动忽略。
+		const part = partitionLazyTools({
+			all: ["bash", "patch", "canvas", "sftp"],
+			allowed: ["bash", "patch", "canvas", "sftp"],
+			onDemand: ["canvas", "sftp", "ghost-plugin-tool"],
+			loaded: ["canvas"],
+		});
+		expect(part.resident).toEqual(["bash", "patch"]);
+		expect(part.pending).toEqual(["sftp"]);
+		expect(part.loadedLazy).toEqual(["canvas"]);
 	});
 
 	it("终端引导只在组内有启用工具时注入", () => {
