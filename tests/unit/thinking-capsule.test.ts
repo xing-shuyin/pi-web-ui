@@ -36,16 +36,14 @@ afterEach(() => {
 });
 
 describe("思考小胶囊按钮与流式状态结构守卫", () => {
-	it("思考块渲染出纯净的名称节点 .thinking-name 与状态节点 .thinking-status", () => {
+	it("思考块折叠标题直接显示思考内容，不再拼接名称前缀", () => {
 		const container = mount("First step of thinking process", false, false);
 		const thinkingRoot = container.querySelector(".thinking");
 		expect(thinkingRoot).not.toBeNull();
 		expect(thinkingRoot!.classList.contains("ok")).toBe(true);
 		expect(thinkingRoot!.getAttribute("data-thinking")).toBe("First step of thinking process");
 
-		const nameEl = container.querySelector(".thinking-name");
-		expect(nameEl).not.toBeNull();
-		expect(nameEl!.textContent?.trim()).toBeTruthy();
+		expect(container.querySelector(".thinking-name")).toBeNull();
 
 		const statusEl = container.querySelector(".thinking-status");
 		expect(statusEl).not.toBeNull();
@@ -53,6 +51,7 @@ describe("思考小胶囊按钮与流式状态结构守卫", () => {
 
 		const summaryEl = container.querySelector(".thinking-summary-text");
 		expect(summaryEl).not.toBeNull();
+		expect(summaryEl!.textContent).toBe("First step of thinking process");
 	});
 
 	it("流式思考中具备 .run 状态类与转圈加载指示器", () => {
@@ -73,7 +72,9 @@ describe("思考小胶囊按钮与流式状态结构守卫", () => {
 			const thinkingRoot = container.querySelector(".thinking");
 			expect(thinkingRoot).not.toBeNull();
 
-			expect(container.querySelector(".thinking-name")).not.toBeNull();
+			const nameEl = container.querySelector(".thinking-name");
+			expect(nameEl).not.toBeNull();
+			expect(nameEl!.textContent?.trim()).toBeTruthy();
 			expect(container.querySelector(".thinking-status")).not.toBeNull();
 
 			expect(container.querySelector(".thinking-body")).toBeNull();

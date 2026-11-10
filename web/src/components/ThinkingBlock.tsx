@@ -232,7 +232,7 @@ export function ThinkingBlock({
 					<span className="thinking-icon chead-icon">
 						<FiCpu />
 					</span>
-					<span className="thinking-name chead-title">think</span>
+					<span className="thinking-name chead-title">{t("thinking")}</span>
 					<span
 						className="thinking-status toolcall-status"
 						title={activeStream ? t("thinkingNow") : t("done")}
@@ -294,7 +294,6 @@ export function ThinkingBlock({
 					</>
 				}
 			>
-				<span className="thinking-name">think</span>
 				{activeStream && shown ? (
 					<span className="thinking-live-label">
 						{t("thinkingNow")}
@@ -303,7 +302,6 @@ export function ThinkingBlock({
 				) : activeStream ? (
 					preview ? (
 						<span className="thinking-preview-live">
-							<span className="thinking-preview-prefix"> · </span>
 							<span className="thinking-preview-viewport">
 								<span className="thinking-preview-track">
 									{preview}
@@ -318,7 +316,7 @@ export function ThinkingBlock({
 						</span>
 					)
 				) : preview ? (
-					<span className="thinking-summary-text"> · {preview}</span>
+					<span className="thinking-summary-text">{preview}</span>
 				) : null}
 			</CollapsibleHead>
 			{!isFlow && shown && (
