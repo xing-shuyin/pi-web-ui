@@ -70,6 +70,43 @@ export interface MarkerStateForSettings {
 	markers: import("./protocol.js").UiMarkerInfo[];
 }
 
+/** Directory entry files whose own name says nothing about the extension. */
+const EXTENSION_ENTRY_FILE_NAMES = new Set([
+	"index.ts",
+	"index.js",
+	"index.mts",
+	"index.mjs",
+	"index.cts",
+	"index.cjs",
+]);
+
+/**
+ * Label for an extension in the settings list.
+ *
+ * Package installs carry their spec (`npm:cc-safety-net`, `git:host/repo`), which is
+ * already the name a user recognises. Everything else is discovered from disk, and a
+ * directory extension resolves to its entry file, so `basename()` alone would list every
+ * such extension as `index.ts`. Fall back to the containing directory in that case; a
+ * single-file extension keeps its own file name.
+ *
+ * `sourceInfo.path` is an absolute path, so this stays platform-neutral on win32 too.
+ */
+export function extensionDisplayName(extension: {
+	path: string;
+	sourceInfo?: { origin?: string; source?: string; path?: string } | undefined;
+}): string {
+	const { sourceInfo } = extension;
+	if (sourceInfo?.origin === "package" && sourceInfo.source) return sourceInfo.source;
+	const path = sourceInfo?.path ?? extension.path;
+	const fileName = basename(path);
+	if (EXTENSION_ENTRY_FILE_NAMES.has(fileName)) {
+		const directoryName = basename(dirname(path));
+		// A bare file name yields "." on POSIX; nothing to walk up to.
+		if (directoryName && directoryName !== ".") return directoryName;
+	}
+	return fileName;
+}
+
 export interface SettingsRuntimeTarget {
 	isStreaming: () => boolean;
 	reloadSession: () => Promise<void>;
@@ -362,7 +399,7 @@ export class SettingsService {
 				const p = e.sourceInfo?.path ?? e.path;
 				this.knownExtensions.set(id, {
 					id,
-					name: e.sourceInfo?.origin === "package" && e.sourceInfo.source ? e.sourceInfo.source : basename(p),
+					name: extensionDisplayName(e),
 					path: p,
 					enabled: true,
 				});
@@ -449,10 +486,7 @@ export class SettingsService {
 				const path = extension.sourceInfo?.path ?? extension.path;
 				this.knownExtensions.set(id, {
 					id,
-					name:
-						extension.sourceInfo?.origin === "package" && extension.sourceInfo.source
-							? extension.sourceInfo.source
-							: basename(path),
+					name: extensionDisplayName(extension),
 					path,
 					enabled: true,
 				});
