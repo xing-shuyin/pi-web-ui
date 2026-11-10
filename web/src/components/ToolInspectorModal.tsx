@@ -52,7 +52,7 @@ import { SplitDiffView, UnifiedDiffView, WriteCodeView } from "./FileChangeCard"
 import { SubagentInspectorView } from "./SubagentInspectorView";
 import { formatDuration, formatTimeFull } from "../tool-time";
 
-function InspectorTimeText({ state }: { state: ToolInspectorState }): string {
+function InspectorTimeText({ state }: { state: ToolInspectorState }): ReactNode {
 	const t = useT();
 	const start =
 		state.startTimestamp ??
@@ -61,20 +61,31 @@ function InspectorTimeText({ state }: { state: ToolInspectorState }): string {
 			: undefined);
 	const end = state.endTimestamp ?? state.resultTimestamp;
 	const dur = state.durationMs;
+	let text = "";
 	if (start !== undefined && end !== undefined && dur !== undefined) {
 		try {
-			return t("toolTimeRange", {
+			text = t("toolTimeRange", {
 				start: formatTimeFull(start),
 				end: formatTimeFull(end),
 				duration: formatDuration(dur),
 			});
 		} catch {
-			return "";
+			text = "";
 		}
+	} else if (end !== undefined) {
+		text = formatTimeFull(end);
+	} else if (start !== undefined) {
+		text = formatTimeFull(start);
 	}
-	if (end !== undefined) return formatTimeFull(end);
-	if (start !== undefined) return formatTimeFull(start);
-	return "";
+	if (!text) return null;
+	return (
+		<>
+			<span className="inspector-time" title={text}>
+				{text}
+			</span>
+			<span className="meta-sep">|</span>
+		</>
+	);
 }
 
 const TOOL_ICONS: Record<string, ReactNode> = {
@@ -319,8 +330,6 @@ function ThinkingInspectorDialog({
 					</div>
 					<div className="file-diff-footer-meta">
 						<InspectorTimeText state={state} />
-						{state.duration && <span className="meta-sep">|</span>}
-						{state.duration && <span>耗时: {state.duration}</span>}
 					</div>
 				</div>
 			</div>
@@ -598,6 +607,7 @@ function BashInspectorDialog({
 						</span>
 					</div>
 					<div className="file-diff-footer-meta">
+						<InspectorTimeText state={state} />
 						{detailsKeysCount > 0 && <span>details: {detailsKeysCount} keys</span>}
 						{detailsKeysCount > 0 && <span className="meta-sep">|</span>}
 						<button
@@ -866,6 +876,7 @@ function ReadInspectorDialog({
 						</span>
 					</div>
 					<div className="file-diff-footer-meta">
+						<InspectorTimeText state={state} />
 						{detailsKeysCount > 0 && <span>details: {detailsKeysCount} keys</span>}
 						{detailsKeysCount > 0 && <span className="meta-sep">|</span>}
 						<button
@@ -1092,6 +1103,7 @@ function FileDiffInspectorDialog({
 						</span>
 					</div>
 					<div className="file-diff-footer-meta">
+						<InspectorTimeText state={state} />
 						{detailsKeysCount > 0 && <span>details: {detailsKeysCount} keys</span>}
 						{detailsKeysCount > 0 && <span className="meta-sep">|</span>}
 						<button
@@ -1367,6 +1379,7 @@ function GenericInspectorDialog({
 						</span>
 					</div>
 					<div className="file-diff-footer-meta">
+						<InspectorTimeText state={state} />
 						{detailsKeysCount > 0 && <span>details: {detailsKeysCount} keys</span>}
 						{detailsKeysCount > 0 && <span className="meta-sep">|</span>}
 						<button
