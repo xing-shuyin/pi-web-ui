@@ -61,7 +61,19 @@ export function handleCanvasMessage(
 		}
 
 		case "canvas_save": {
-			if (!isSafeGraphId(msg.graph?.id)) return true;
+			if (!isSafeGraphId(msg.graph?.id)) {
+				send({
+					type: "canvas_error",
+					code: "invalid_graph",
+					message: `Invalid canvas graph id: ${String(msg.graph?.id)}`,
+					messageI18n: canvasRuntimeMessage("error.invalidGraphId", {
+						id: String(msg.graph?.id),
+					}),
+					graphId: typeof msg.graph?.id === "string" ? msg.graph.id : undefined,
+					requestId: msg.requestId,
+				});
+				return true;
+			}
 			try {
 				assertCanvasGraph(msg.graph);
 			} catch (error) {

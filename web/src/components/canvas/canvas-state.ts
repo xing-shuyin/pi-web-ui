@@ -1,5 +1,6 @@
 import type { CanvasGraph } from "../../types";
 import type { Translate } from "../../i18n";
+import { randomUuid } from "../../uuid";
 import { getRoleMetas, getInPortDefs, outPortsForRole } from "./CanvasTypes";
 import { isCanvasMessage } from "../../../../server/canvas/canvas-runtime-messages.js";
 
@@ -391,7 +392,7 @@ export function parseGraphImport(raw: string, reset = true, t: Translate = (key)
 	if (!reset) return g;
 	return {
 		...g,
-		id: `graph_${crypto.randomUUID()}`,
+		id: `graph_${randomUuid()}`,
 		rev: 0,
 		run: undefined,
 		status: "idle",

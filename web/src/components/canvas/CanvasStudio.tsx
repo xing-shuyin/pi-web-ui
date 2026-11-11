@@ -673,14 +673,33 @@ export function CanvasStudio({
 				setSaveNotice(draftState.current.error);
 				return;
 			}
-			if (draftState.current.pendingSave || draftState.current.pendingLoad) {
+			// Import/template must win over any in-flight load: cancel it so a stale
+			// `canvas_load` response cannot clobber the freshly imported graph.
+			// (Pending saves are short-lived; keep blocking on them to avoid
+			// overwriting an unacknowledged save.)
+			if (draftState.current.pendingLoad) {
+				const pendingId = draftState.current.pendingLoad.requestId;
+				if (pendingId) {
+					const timer = requestTimers.current.get(pendingId);
+					if (timer) {
+						clearTimeout(timer);
+						requestTimers.current.delete(pendingId);
+					}
+				}
+				draftState.current.pendingLoad = null;
+			}
+			if (draftState.current.pendingSave) {
 				setSaveNotice(t("canvas.studio.waitBeforeTemplate"));
 				return;
 			}
 			setGraph(remapped);
 			graphRef.current = remapped;
+			graphIdRef.current = remapped.id;
+			clientRef.current?.setCurrentGraphId(remapped.id);
 			setViewport(remapped.viewport);
-			sendMessage(draftState.current.beginSave(remapped, randomUuid()));
+			if (!sendMessage(draftState.current.beginSave(remapped, randomUuid()))) {
+				setSaveNotice(t("canvas.studio.saveDisconnected"));
+			}
 		},
 		[graph, pushHistory, resolveNodeModel, sendMessage, t],
 	);
@@ -865,14 +884,29 @@ export function CanvasStudio({
 				setSaveNotice(draftState.current.error);
 				return;
 			}
-			if (draftState.current.pendingSave || draftState.current.pendingLoad) {
+			if (draftState.current.pendingLoad) {
+				const pendingId = draftState.current.pendingLoad.requestId;
+				if (pendingId) {
+					const timer = requestTimers.current.get(pendingId);
+					if (timer) {
+						clearTimeout(timer);
+						requestTimers.current.delete(pendingId);
+					}
+				}
+				draftState.current.pendingLoad = null;
+			}
+			if (draftState.current.pendingSave) {
 				setSaveNotice(t("canvas.studio.waitBeforeCreate"));
 				return;
 			}
 			setGraph(newGraph);
 			graphRef.current = newGraph;
+			graphIdRef.current = newGraph.id;
+			clientRef.current?.setCurrentGraphId(newGraph.id);
 			setViewport(newGraph.viewport);
-			sendMessage(draftState.current.beginSave(newGraph, randomUuid()));
+			if (!sendMessage(draftState.current.beginSave(newGraph, randomUuid()))) {
+				setSaveNotice(t("canvas.studio.saveDisconnected"));
+			}
 		},
 		[sendMessage, t],
 	);
