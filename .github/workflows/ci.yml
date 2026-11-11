@@ -8,10 +8,17 @@ on:
   schedule:
     - cron: "0 16 * * *"
 
+# 同一分支的新推送取消上一轮在跑的检查：连续 push 时不再排队跑过期提交。
+# 不取消 main 上的推送（那是在验证已合并的代码）。
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 jobs:
-  ci:
+  # 静态检查 + 构建：全部是秒级步骤，合成一个 job 免得反复装依赖。
+  checks:
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v5
 
@@ -65,11 +72,82 @@ jobs:
       - name: Pack browser extension (自校验 zip)
         run: npm run pack:extension
 
-      - name: Unit tests
-        run: npx vitest run
+  # 单测分片：1047 个文件 / 12000+ 条，单机跑要 6.5 分钟，是整条流水线的瓶颈。
+  # 8 片各跑一个 4 核 runner：一片只剩 130 来个文件（单测壁钟 ~110s → ~55s）。
+  # 不再往上拆：每个 job 都有 ~50s 固定开销（装依赖 + build:server），再拆只摊薄固定开销，
+  # 壁钟就到 2 分钟附近见底了。`--shard` 由 vitest 按文件哈希切分。
+  unit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    strategy:
+      # 一片红不要连坐取消其他片：并行跑完才能一次看全所有失败。
+      fail-fast: false
+      matrix:
+        shard: [1, 2, 3, 4, 5, 6, 7, 8]
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: |
+            package-lock.json
+            mobile/package-lock.json
+
+      # mobile 依赖也要装：分片后 shard 3 里有 mobile-connections /
+      # mobile-push-controller 两条用例 import mobile/src/*，缺 @capacitor/core、
+      # @pi-mobile/native-local-engine 会直接 "Cannot find package"。
+      - name: Install dependencies
+        run: |
+          npm ci --no-audit --no-fund
+          npm --prefix mobile ci --no-audit --no-fund
+
+      # atomic-file-generated 的逐字节比对需要在场时才有 dist 可比；顺带覆盖其他读 dist 的用例。
+      - name: Build server
+        run: npm run build:server
+
+      - name: Unit tests (shard ${{ matrix.shard }}/8)
+        run: npx vitest run --shard=${{ matrix.shard }}/8
+
+  integration:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: package-lock.json
+
+      - name: Install dependencies
+        run: npm ci --no-audit --no-fund
+
+      - name: Build server
+        run: npm run build:server
 
       - name: Integration tests (真 git / 真子进程 / 真 Hub)
         run: npm run test:integration
+
+  smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: package-lock.json
+
+      - name: Install dependencies
+        run: npm ci --no-audit --no-fund
+
+      - name: Build
+        run: npm run build
 
       - name: Protocol smoke tests (core, PR fast gate)
         if: github.event_name == 'pull_request'

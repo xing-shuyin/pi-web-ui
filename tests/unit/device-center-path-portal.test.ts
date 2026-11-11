@@ -4,6 +4,7 @@ import { once } from "node:events";
 import { gzipSync } from "node:zlib";
 import { WebSocketServer } from "ws";
 import { chromium } from "playwright-core";
+import { BROWSER_TEST_TIMEOUT_MS } from "../lib/chrome.mjs";
 import { createDeviceRelay } from "../../server/device-center/relay.js";
 import { createDeviceConnector } from "../../server/device-center/connector.js";
 import {
@@ -306,39 +307,43 @@ describe("single-port device path portal", () => {
 		);
 		expect(transformPortalHtml('<a href="/next">', base)).toContain(`href="${base}next"`);
 	});
-	it("runs opaque HTML modules, null-origin fetch and WebSocket in real Chrome", async () => {
-		const chromeHelper = "../lib/chrome.mjs";
-		const { CHROME_PATH } = await import(chromeHelper);
-		if (!CHROME_PATH) throw new Error("Chrome required: set PI_WEB_CHROME");
-		const f = await fixture();
-		const { ticketPath } = await f.open();
-		const fresh = await f.request("/open", { cookie: "hub=secret", origin: f.origin }, "POST");
-		const browser = await chromium.launch({ executablePath: CHROME_PATH, headless: true, args: ["--no-sandbox"] });
-		cleanup.push(() => browser.close());
-		const context = await browser.newContext();
-		await context.addCookies([{ name: "hub", value: "secret", url: f.origin }]);
-		const page = await context.newPage();
-		await page.goto(JSON.parse(fresh.body).url + "#s=initial");
-		const frame = page.frames().find((frame) => frame !== page.mainFrame())!;
-		await vi.waitFor(async () => expect(await frame.locator("body").textContent()).toContain('"ws":true'), {
-			timeout: 10000,
-		});
-		const result = JSON.parse((await frame.locator("body").textContent())!);
-		expect(result).toEqual({ module: "loaded", opaque: true, fetch: true, ws: true, hubBlocked: true });
-		await frame.evaluate(() => {
-			document.body.innerHTML = '<div id="root"><span class="status-conn">Connecting</span></div>';
-		});
-		await expect.poll(() => page.locator("#loading").isHidden()).toBe(true);
-		await expect.poll(() => frame.getByRole("status").isVisible()).toBe(true);
-		await frame.evaluate(() => document.querySelector(".status-conn")!.classList.add("ok"));
-		await expect.poll(() => frame.getByRole("status").isHidden()).toBe(true);
-		await frame.evaluate(() => document.querySelector(".status-conn")!.classList.remove("ok"));
-		await expect.poll(() => frame.getByRole("status").isVisible()).toBe(true);
-		expect(f.hubHits()).toBe(0);
-		await expect.poll(() => page.url()).toContain("#s=synced");
-		expect(frame.url()).toContain("#s=initial");
-		expect((await context.cookies()).find((cookie) => cookie.name === "hub")?.value).toBe("secret");
-		expect(f.received.every((headers) => !headers.cookie?.includes("hub=secret"))).toBe(true);
-		expect(ticketPath).toContain("/__open?ticket=");
-	}, 20000);
+	it(
+		"runs opaque HTML modules, null-origin fetch and WebSocket in real Chrome",
+		async () => {
+			const chromeHelper = "../lib/chrome.mjs";
+			const { CHROME_PATH } = await import(chromeHelper);
+			if (!CHROME_PATH) throw new Error("Chrome required: set PI_WEB_CHROME");
+			const f = await fixture();
+			const { ticketPath } = await f.open();
+			const fresh = await f.request("/open", { cookie: "hub=secret", origin: f.origin }, "POST");
+			const browser = await chromium.launch({ executablePath: CHROME_PATH, headless: true, args: ["--no-sandbox"] });
+			cleanup.push(() => browser.close());
+			const context = await browser.newContext();
+			await context.addCookies([{ name: "hub", value: "secret", url: f.origin }]);
+			const page = await context.newPage();
+			await page.goto(JSON.parse(fresh.body).url + "#s=initial");
+			const frame = page.frames().find((frame) => frame !== page.mainFrame())!;
+			await vi.waitFor(async () => expect(await frame.locator("body").textContent()).toContain('"ws":true'), {
+				timeout: 10000,
+			});
+			const result = JSON.parse((await frame.locator("body").textContent())!);
+			expect(result).toEqual({ module: "loaded", opaque: true, fetch: true, ws: true, hubBlocked: true });
+			await frame.evaluate(() => {
+				document.body.innerHTML = '<div id="root"><span class="status-conn">Connecting</span></div>';
+			});
+			await expect.poll(() => page.locator("#loading").isHidden()).toBe(true);
+			await expect.poll(() => frame.getByRole("status").isVisible()).toBe(true);
+			await frame.evaluate(() => document.querySelector(".status-conn")!.classList.add("ok"));
+			await expect.poll(() => frame.getByRole("status").isHidden()).toBe(true);
+			await frame.evaluate(() => document.querySelector(".status-conn")!.classList.remove("ok"));
+			await expect.poll(() => frame.getByRole("status").isVisible()).toBe(true);
+			expect(f.hubHits()).toBe(0);
+			await expect.poll(() => page.url()).toContain("#s=synced");
+			expect(frame.url()).toContain("#s=initial");
+			expect((await context.cookies()).find((cookie) => cookie.name === "hub")?.value).toBe("secret");
+			expect(f.received.every((headers) => !headers.cookie?.includes("hub=secret"))).toBe(true);
+			expect(ticketPath).toContain("/__open?ticket=");
+		},
+		BROWSER_TEST_TIMEOUT_MS,
+	);
 });
