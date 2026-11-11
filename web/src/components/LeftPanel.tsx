@@ -90,7 +90,7 @@ interface LeftPanelProps {
 	unreadConvKeys?: ReadonlySet<string>;
 	panelSend: (
 		msg:
-			| { type: "new_chat" }
+			| { type: "new_chat"; cwd?: string }
 			| { type: "list_sessions"; path?: string; limit?: number }
 			| { type: "list_projects" }
 			| { type: "switch_session"; path: string }
@@ -2635,8 +2635,7 @@ export const LeftPanel = memo(function LeftPanel({
 							onContextMenu={(e) => openProjectMenu(e, { path: g.cwd, lastUsed: 0 })}
 							onDoubleClick={(e) => {
 								e.stopPropagation();
-								panelSend({ type: "set_cwd", path: g.cwd });
-								panelSend({ type: "new_chat" });
+								panelSend({ type: "new_chat", cwd: g.cwd });
 								focusComposer();
 							}}
 						>
@@ -3028,12 +3027,7 @@ export const LeftPanel = memo(function LeftPanel({
 														onDoubleClick={(e) => {
 															e.stopPropagation();
 															if (switching) return;
-															if (active) {
-																panelSend({ type: "new_chat" });
-															} else {
-																panelSend({ type: "set_cwd", path: p.path });
-																panelSend({ type: "new_chat" });
-															}
+															panelSend({ type: "new_chat", cwd: p.path });
 															focusComposer();
 														}}
 													>
@@ -3093,8 +3087,7 @@ export const LeftPanel = memo(function LeftPanel({
 																title={t("newChat") || "新建对话"}
 																onClick={(e) => {
 																	e.stopPropagation();
-																	if (!active) panelSend({ type: "set_cwd", path: p.path });
-																	panelSend({ type: "new_chat" });
+																	panelSend({ type: "new_chat", cwd: p.path });
 																	focusComposer();
 																}}
 															>

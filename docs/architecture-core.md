@@ -56,6 +56,8 @@ React + Capacitor 手机客户端、Hub 账号隔离推送与设备切换见 [`m
 
 置顶归属由**会话文件 header 的 `cwd`** 决定，不是由「当前在哪个项目里点的钉住」决定：`pinSession()` 先 `readCwdFromSessionHeader()` 再记账，预打开置顶会话前再用 `pinnedPathsOwnedBy()` 按归属过滤一次。在项目 A 的视图下钉住属于 B 的会话，记录落在 B 名下；历史上钉错项目的脏数据（`client-state.json` 里同一路径挂在两个 cwd 键下）也会被这层过滤拦住，不会把 B 的会话预打开进 A。验证：`tests/unit/pin-session-cwd.test.ts`。
 
+新建对话的 cwd 由客户端在 `new_chat` 消息里用 `cwd` 字段声明，服务端在 `newChat()` 之前先 `await setCwd(cwd)` 并核对 `cs.cwd` 已落到目标目录，核对不过就报错并且**不建会话**；`set_cwd` 之后紧跟 `new_chat` 的连发是禁止的，因为 `setCwd()` 要 stat、恢复最近会话、建 runtime，`this.cwd` 到流程末尾才更新，而 `newChat()` 全程读 `this.cwd`，并发时新对话会落进上一个项目（现象：在项目 A 点「+ 新建对话」，会话出现在项目 B，`client-state.json` 的 `pinnedSessions` 里仍是干净的）。验证：`tests/unit/new-chat-cwd.test.ts`。
+
 侧栏子代理树从一级开始每层缩进 12px，有无子代理的行使用相同标题基线，层级仅通过缩进表达，不绘制连接线。折叠按钮使用细描边箭头并随深度同步右移；图标为 12×12px，独立点击区域为 18×24px，与标题保持 2px 间隔，提供悬停及键盘焦点反馈。运行中和其他客户端的对话树共用同一布局，按钮通过 `aria-expanded` 表达展开状态。层内样式与 `styles.css` 末尾结构复位规则保持一致，避免主题或选中态覆盖缩进。
 
 ## 工作树入口

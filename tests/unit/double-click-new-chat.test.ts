@@ -126,7 +126,7 @@ describe("双击项目名字与运行的对话空白处新建对话", () => {
 		expect(sent.filter((m: any) => m.type === "new_chat")).toHaveLength(0);
 	});
 
-	it("双击最近项目中的当前活跃项目触发 new_chat", () => {
+	it("双击最近项目中的当前活跃项目：new_chat 带上该项目的 cwd", () => {
 		const sent: unknown[] = [];
 		const panelSend = (msg: unknown) => {
 			sent.push(msg);
@@ -160,10 +160,10 @@ describe("双击项目名字与运行的对话空白处新建对话", () => {
 			projButtons[0].dispatchEvent(new MouseEvent("dblclick", { bubbles: true, cancelable: true }));
 		});
 
-		expect(sent).toEqual([{ type: "new_chat" }]);
+		expect(sent).toEqual([{ type: "new_chat", cwd: "/workspace/proj-a" }]);
 	});
 
-	it("双击最近项目中的非当前项目触发 set_cwd 与 new_chat", () => {
+	it("双击最近项目中的非当前项目：new_chat 带目标 cwd（不再单发 set_cwd）", () => {
 		const sent: unknown[] = [];
 		const panelSend = (msg: unknown) => {
 			sent.push(msg);
@@ -197,11 +197,10 @@ describe("双击项目名字与运行的对话空白处新建对话", () => {
 			projButtons[1].dispatchEvent(new MouseEvent("dblclick", { bubbles: true, cancelable: true }));
 		});
 
-		expect(sent).toContainEqual({ type: "set_cwd", path: "/workspace/proj-b" });
-		expect(sent).toContainEqual({ type: "new_chat" });
+		expect(sent).toEqual([{ type: "new_chat", cwd: "/workspace/proj-b" }]);
 	});
 
-	it("双击跨项目的项目标题（.project-item）触发 set_cwd 与 new_chat", () => {
+	it("双击跨项目的项目标题（.project-item）：new_chat 带目标 cwd（不再单发 set_cwd）", () => {
 		const sent: unknown[] = [];
 		const panelSend = (msg: unknown) => {
 			sent.push(msg);
@@ -248,8 +247,7 @@ describe("双击项目名字与运行的对话空白处新建对话", () => {
 			projButtons[1].dispatchEvent(new MouseEvent("dblclick", { bubbles: true, cancelable: true }));
 		});
 
-		expect(sent).toContainEqual({ type: "set_cwd", path: "/workspace/proj-other" });
-		expect(sent).toContainEqual({ type: "new_chat" });
+		expect(sent).toEqual([{ type: "new_chat", cwd: "/workspace/proj-other" }]);
 	});
 
 	it("双击 BarItem 中的 host:cwd 触发 new_chat", () => {

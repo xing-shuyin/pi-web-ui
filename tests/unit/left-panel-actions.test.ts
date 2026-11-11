@@ -114,7 +114,7 @@ describe("LeftPanel 标题栏操作与项目管理", () => {
 
 		sent.length = 0;
 		act(() => newChatBtn!.click());
-		expect(sent).toEqual([{ type: "new_chat" }]);
+		expect(sent).toEqual([{ type: "new_chat", cwd: "/test" }]);
 	});
 
 	it("标题行容器与折叠按钮不产生嵌套 button（无 button button）", () => {

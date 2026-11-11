@@ -1400,7 +1400,15 @@ export type ClientMessage =
 	| { type: "scm_filediff"; reqId: number; path: string }
 	| { type: "scm_commit"; reqId: number; hash: string }
 	| { type: "scm_commitmsg"; reqId: number }
-	| { type: "new_chat"; preset?: string; ephemeral?: boolean; requestId?: string; independent?: boolean }
+	| {
+			type: "new_chat";
+			preset?: string;
+			ephemeral?: boolean;
+			requestId?: string;
+			independent?: boolean;
+			/** 目标工作目录：服务端先完成 setCwd 再建会话，避免「切项目 + 新建」并发落到旧 cwd。 */
+			cwd?: string;
+	  }
 	| { type: "new_cli_chat"; config: NativeCliConfig; cwd?: string; requestId?: string }
 	| { type: "open_shared_conversation"; owner: string; id: string; readOnly?: boolean }
 	| { type: "delete_message"; messageId: string; conversationId?: string }

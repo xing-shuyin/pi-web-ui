@@ -633,11 +633,31 @@ export function handleSessionLifecycleMessage(
 				acknowledge();
 				return true;
 			}
-			const pending =
-				msg.type === "new_cli_chat"
-					? cs.newCliChat?.(msg.config, msg.cwd, acknowledge)
-					: cs.newChat(msg.preset, msg.ephemeral, acknowledge, msg.independent);
-			void Promise.resolve(pending)
+			// cwd 前缀必须串行：set_cwd 是异步的（要 stat、恢复最近会话、建 runtime），
+			// 与 new_chat 并发时 newChat 读到的还是旧 this.cwd，新对话就会落进上一个项目。
+			const targetCwd = msg.type === "new_chat" ? (msg.cwd ?? "").trim() : "";
+			const startChat = async () => {
+				if (targetCwd && normalizePathKey(targetCwd) !== normalizePathKey(cs.cwd)) {
+					try {
+						await cs.setCwd(targetCwd);
+					} catch {}
+					if (normalizePathKey(targetCwd) !== normalizePathKey(cs.cwd)) {
+						send?.({
+							type: "notice",
+							level: "error",
+							text: `新建对话失败：没能切换到工作目录 ${targetCwd}`,
+							textEn: `Failed to create chat: could not switch the workspace to ${targetCwd}`,
+						});
+						return;
+					}
+				}
+				const pending =
+					msg.type === "new_cli_chat"
+						? cs.newCliChat?.(msg.config, msg.cwd, acknowledge)
+						: cs.newChat(msg.preset, msg.ephemeral, acknowledge, msg.independent);
+				await Promise.resolve(pending);
+			};
+			void startChat()
 				.then(() => acknowledge())
 				.catch(() => acknowledge());
 			return true;
