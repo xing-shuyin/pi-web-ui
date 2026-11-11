@@ -213,7 +213,7 @@ describe("ChatInput 回车语义与文案联动（issue #664）", () => {
 		const ta = c.querySelector("textarea") as HTMLTextAreaElement;
 		const sendBtn = c.querySelector(".btn.send") as HTMLElement;
 
-		expect(ta.placeholder).toBe(zh.placeholderIdle);
+		expect(ta.placeholder).toBe(zh.placeholderIdle.replace("{name}", "pi"));
 		expect(sendBtn.title).toBe(zh.sendTip);
 
 		typeText(c, "test message");
@@ -245,7 +245,7 @@ describe("ChatInput 回车语义与文案联动（issue #664）", () => {
 			saveSendKeyPref("mod-enter");
 		});
 
-		expect(ta.placeholder).toBe(zh.placeholderIdleMod);
+		expect(ta.placeholder).toBe(zh.placeholderIdleMod.replace("{name}", "pi"));
 		expect(sendBtn.title).toBe(zh.sendTipMod);
 
 		typeText(c, "hello mod");
