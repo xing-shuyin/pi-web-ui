@@ -186,3 +186,5 @@ macOS 下若服务由 launchd 拉起（`process.ppid === 1`，LaunchAgent/孤儿
 ## Windows shell 解析
 
 `terminals.ts` 的 `resolveShell()` 每次创建终端时解析，优先 bash——`PI_WEB_SHELL` 显式 → `$SHELL` → Git Bash（ProgramFiles）→ busybox 兜底（`~/.pi-web/bin/bash.exe`，`ensure-bash.ts` 无 Git Bash 时自动下载 busybox-w32）→ `$COMSPEC` → powershell。与 SDK bash 工具（Git Bash / PATH 上的 bash）保持一致，避免 PowerShell/bash 混用挂死。
+
+bash 工具本身与 pi CLI 同源：`server/bash-tool.ts` 把 `settings.json` 的 `shellPath`（全局 agent 目录 + 项目 `.pi/settings.json`，`SettingsManager.getShellPath()`）透传给 `createLocalBashOperations`，缺失时才是上面那套 Git Bash / PATH 探测（issue #866）。终端面板不读该配置——它只认 `PI_WEB_SHELL`，两者的差异是故意的：终端是给用户看一眼的可见 shell，bash 工具要跟 CLI 行为对齐。
