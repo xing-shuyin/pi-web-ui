@@ -77,7 +77,7 @@
 | [`test-performance-audit.md`](test-performance-audit.md)                                                                                                                                             | 单测性能审计：实测基线、快/重两池、未解瓶颈            |
 | [`reviews/canvas-usability-review-2026-07.md`](reviews/canvas-usability-review-2026-07.md)                                                                                                           | 画布可用性评审记录                                     |
 | [`proposals/`](proposals)                                                                                                                                                                            | 旧提案（issue #769 diff 可视化两个 HTML 方案）         |
-| [`composer-height-solutions.html`](composer-height-solutions.html) · [`plugin-market-redesign.html`](plugin-market-redesign.html) · [`settings-modern-redesign.html`](settings-modern-redesign.html) | 交互/视觉设计稿（HTML，浏览器直接看）                  |
+| [`composer-height-solutions.html`](composer-height-solutions.html) · [`plugin-market-redesign.html`](plugin-market-redesign.html) · [`settings-modern-redesign.html`](settings-modern-redesign.html) · [`settings-mobile-redesign.html`](settings-mobile-redesign.html) | 交互/视觉设计稿（HTML，浏览器直接看）                  |
 | [`presets/README.md`](presets/README.md) · [`examples/`](examples)                                                                                                                                   | 预设交换格式示例与内置预设样例                         |
 
 ## 五、按场景的阅读路线
