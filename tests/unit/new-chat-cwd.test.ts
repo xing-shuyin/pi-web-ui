@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 import { handleSessionLifecycleMessage } from "../../server/dispatch-domain-handlers.js";
 import type { DispatchSession } from "../../server/index.js";
 import type { ServerMessage } from "../../server/protocol.js";
+import { normalizePathKey } from "../../server/client-state.js";
 
 type Stub = {
 	cs: DispatchSession;
@@ -52,13 +53,28 @@ describe("new_chat 的目标 cwd", () => {
 		expect(state.order).toEqual(["setCwd:E:\\work\\project-b", "newChat:E:\\work\\project-b"]);
 	});
 
-	it("目标目录就是当前目录时不重复切", async () => {
+	it("目标目录就是当前目录时不重复切（大小写、分隔符、尾斜杠都算同一个）", async () => {
 		const state = stub("E:\\work\\project-a");
 
-		handleSessionLifecycleMessage({ type: "new_chat", cwd: "e:/WORK/project-a" }, state.cs, collect(state));
+		handleSessionLifecycleMessage({ type: "new_chat", cwd: "e:/WORK/project-a/" }, state.cs, collect(state));
 
 		await vi.waitFor(() => expect(state.newChat).toHaveBeenCalledTimes(1));
 		expect(state.setCwd).not.toHaveBeenCalled();
+	});
+
+	it("非 win32 下盘符路径同样归一（CI 跑 ubuntu，这条防回归）", async () => {
+		// normalizePathKey 在非 win32 上手拼盘符路径，早先没去尾斜杠：
+		// Windows 上 resolve() 会去，Linux 上不会，于是同一路径在 CI 里被当成两个。
+		const platform = vi.spyOn(process, "platform", "get").mockReturnValue("linux");
+		try {
+			expect(normalizePathKey("E:\\work\\project-a")).toBe(normalizePathKey("e:/WORK/project-a/"));
+			const state = stub("E:\\work\\project-a");
+			handleSessionLifecycleMessage({ type: "new_chat", cwd: "e:/WORK/project-a/" }, state.cs, collect(state));
+			await vi.waitFor(() => expect(state.newChat).toHaveBeenCalledTimes(1));
+			expect(state.setCwd).not.toHaveBeenCalled();
+		} finally {
+			platform.mockRestore();
+		}
 	});
 
 	it("没带 cwd 时保持原行为：直接建会话", async () => {
