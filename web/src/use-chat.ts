@@ -95,6 +95,7 @@ import { emitPluginData } from "./plugin-loader";
 import { ingestPluginLogsData } from "./plugin-logs";
 import { resolveCatalogSyncResult } from "./plugin-host";
 import { resolveNewChatResult } from "./new-chat-request";
+import { attachIntentCwd, noteSent, settleIntent, type PendingCwd } from "./pending-workspace";
 import { recordUserPrompt } from "./conversation-order";
 import { PROTOCOL_VERSION } from "./protocol-version";
 import { earlierPageNeedsResync, mergeEarlierPage } from "./history-window";
@@ -1961,6 +1962,9 @@ export function useChat() {
 		return () => clearInterval(iv);
 	}, [chat.transition, chat.state, chat.ready]);
 
+	// 「已声明、还没确认」的目标工作目录：让「先切项目再新建对话」的意图跟着消息走（见 pending-workspace）。
+	const pendingCwdRef = useRef<PendingCwd>(null);
+
 	const send = useCallback((msg: ClientMessage, context?: AppSendContext) => {
 		const ws = wsRef.current;
 		if (!isWsOpen(ws)) {
@@ -1978,6 +1982,8 @@ export function useChat() {
 			msg = { ...msg, ownerKind: "client" };
 		}
 		const curState = currentChat.state;
+		pendingCwdRef.current = noteSent(pendingCwdRef.current, msg);
+		msg = attachIntentCwd(msg, pendingCwdRef.current, curState?.cwd);
 		if (
 			msg.type === "load_earlier_messages" &&
 			curState &&
@@ -2278,6 +2284,10 @@ export function useChat() {
 				}
 				case "snapshot":
 					lastDeltaSeqRef.current = new Map();
+					pendingCwdRef.current = settleIntent(pendingCwdRef.current, {
+						kind: "snapshot",
+						cwd: msg.state.cwd,
+					});
 					dispatch({ type: "snapshot", state: msg.state });
 					syncPendingQuestion(msg.state.pendingQuestion, msg.state.conversationId);
 					break;
@@ -2342,6 +2352,12 @@ export function useChat() {
 					break;
 				}
 				case "transition_progress":
+					pendingCwdRef.current = settleIntent(pendingCwdRef.current, {
+						kind: "transition",
+						transitionKind: msg.kind,
+						phase: msg.phase,
+						target: msg.target,
+					});
 					dispatch({ type: "transition_progress", msg });
 					break;
 				case "engines_status":

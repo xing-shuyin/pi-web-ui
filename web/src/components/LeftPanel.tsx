@@ -98,7 +98,7 @@ interface LeftPanelProps {
 	unreadConvKeys?: ReadonlySet<string>;
 	panelSend: (
 		msg:
-			| { type: "new_chat" }
+			| { type: "new_chat"; cwd?: string }
 			| { type: "list_sessions"; path?: string; limit?: number }
 			| { type: "list_projects" }
 			| { type: "switch_session"; path: string }
@@ -2677,8 +2677,7 @@ export const LeftPanel = memo(function LeftPanel({
 							onContextMenu={(e) => openProjectMenu(e, { path: g.cwd, lastUsed: 0 })}
 							onDoubleClick={(e) => {
 								e.stopPropagation();
-								panelSend({ type: "set_cwd", path: g.cwd });
-								panelSend({ type: "new_chat" });
+								panelSend({ type: "new_chat", cwd: g.cwd });
 								focusComposer();
 							}}
 						>
@@ -3068,12 +3067,9 @@ export const LeftPanel = memo(function LeftPanel({
 														onDoubleClick={(e) => {
 															e.stopPropagation();
 															if (switching) return;
-															if (active) {
-																panelSend({ type: "new_chat" });
-															} else {
-																panelSend({ type: "set_cwd", path: p.path });
-																panelSend({ type: "new_chat" });
-															}
+															// 目标项目直接写在 new_chat 上：服务端先切工作区、核验后再建会话（#872），
+															// 不再发「set_cwd + new_chat」两条各自竞速的消息。
+															panelSend({ type: "new_chat", cwd: p.path });
 															focusComposer();
 														}}
 													>
@@ -3137,8 +3133,7 @@ export const LeftPanel = memo(function LeftPanel({
 																title={t("newChat") || "新建对话"}
 																onClick={(e) => {
 																	e.stopPropagation();
-																	if (!active) panelSend({ type: "set_cwd", path: p.path });
-																	panelSend({ type: "new_chat" });
+																	panelSend({ type: "new_chat", cwd: p.path });
 																	focusComposer();
 																}}
 															>
