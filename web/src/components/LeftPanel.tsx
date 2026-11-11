@@ -1577,6 +1577,7 @@ export const LeftPanel = memo(function LeftPanel({
 	]);
 	const sectionPlan = withDeviceGroupSection(planLeftSections(uiSections));
 	const shownPlan = sectionPlan.filter((p) => p.shown);
+	const hasGroupsSection = shownPlan.some((p) => p.key === "groups");
 
 	const effectivePlan = useMemo(() => {
 		return shownPlan.filter((p) => {
@@ -1587,6 +1588,12 @@ export const LeftPanel = memo(function LeftPanel({
 			return true;
 		});
 	}, [shownPlan, workspaceTab]);
+
+	// 群组分区被隐藏后，「群组」tab 不再渲染；此时若记忆的模式仍停在 groups，
+	// 左栏会落在没有任何 tab 高亮的空态，故把模式归一化回 projects。
+	useEffect(() => {
+		if (!hasGroupsSection && workspaceTab === "groups") setWorkspaceTab("projects");
+	}, [hasGroupsSection, workspaceTab]);
 
 	const collapsedOf = useCallback(
 		(k: LpSectionKey): boolean =>
@@ -2694,27 +2701,29 @@ export const LeftPanel = memo(function LeftPanel({
 										<span>{t("tabProjects")}</span>
 										<span style={{ fontSize: "11px", opacity: 0.85 }}>({projects.length})</span>
 									</span>
-									<span
-										role="button"
-										tabIndex={0}
-										className={`lp-conv-tab ${workspaceTab === "groups" ? "active" : ""}`}
-										onClick={(e) => {
-											e.stopPropagation();
-											setWorkspaceTab("groups");
-										}}
-										onKeyDown={(e) => {
-											if (e.key === "Enter" || e.key === " ") {
-												e.preventDefault();
+									{hasGroupsSection && (
+										<span
+											role="button"
+											tabIndex={0}
+											className={`lp-conv-tab ${workspaceTab === "groups" ? "active" : ""}`}
+											onClick={(e) => {
 												e.stopPropagation();
 												setWorkspaceTab("groups");
-											}
-										}}
-										title={t("deviceGroups")}
-									>
-										<FiUsers style={{ fontSize: "12.5px" }} />
-										<span>{t("deviceGroups")}</span>
-										{groupCount > 0 && <span style={{ fontSize: "11px", opacity: 0.85 }}>({groupCount})</span>}
-									</span>
+											}}
+											onKeyDown={(e) => {
+												if (e.key === "Enter" || e.key === " ") {
+													e.preventDefault();
+													e.stopPropagation();
+													setWorkspaceTab("groups");
+												}
+											}}
+											title={t("deviceGroups")}
+										>
+											<FiUsers style={{ fontSize: "12.5px" }} />
+											<span>{t("deviceGroups")}</span>
+											{groupCount > 0 && <span style={{ fontSize: "11px", opacity: 0.85 }}>({groupCount})</span>}
+										</span>
+									)}
 								</span>
 							</span>
 						</button>
@@ -2817,7 +2826,7 @@ export const LeftPanel = memo(function LeftPanel({
 						</div>
 					</div>
 					{!collapseProjects &&
-						(workspaceTab === "groups" ? (
+						(workspaceTab === "groups" && hasGroupsSection ? (
 							<DeviceGroupSection
 								entry={uiSections?.find((entry) => entry.id === "host:lp-groups")}
 								active={active}

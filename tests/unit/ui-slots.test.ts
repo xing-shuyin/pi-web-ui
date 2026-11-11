@@ -497,8 +497,13 @@ describe("buildUiSlots / 第 3 层：插件 arrange", () => {
 		}
 	});
 
-	it("HIDDEN_FROM_LAYOUT_ITEM_IDS 锁定手机端抽屉按钮不进入布局设置", () => {
-		expect([...HIDDEN_FROM_LAYOUT_ITEM_IDS].sort()).toEqual(["host:files", "host:history"]);
+	it("HIDDEN_FROM_LAYOUT_ITEM_IDS 锁定手机端抽屉按钮与两个已并入项目树的左栏分区不进入布局设置", () => {
+		expect([...HIDDEN_FROM_LAYOUT_ITEM_IDS].sort()).toEqual([
+			"host:files",
+			"host:history",
+			"host:lp-history",
+			"host:lp-running",
+		]);
 	});
 
 	it("undefined 的字段 = 不动（hide 缺省不会把条目藏起来）", () => {
