@@ -448,7 +448,9 @@ export class SettingsService {
 				if (!this.extensionStillOnDisk(id)) continue;
 				this.knownExtensions.set(id, {
 					id,
-					name: id.startsWith("npm:") ? id : basename(id),
+					// Disabled extensions never come back from the loader, so this is the only row a
+					// user can see them in — and the one they need to recognise to re-enable them.
+					name: extensionDisplayName({ path: id }),
 					path: "",
 					enabled: false,
 				});
