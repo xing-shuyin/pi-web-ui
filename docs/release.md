@@ -71,21 +71,25 @@ npm publish
 #    签名（SignPath Foundation）以后加在这个 workflow 里——SignPath 只签 CI 产物，
 #    本地 npm run desktop:dist 永远签不上（本地打包只能验证 Windows）。
 
-# 8.6) 手机端 APK（自动，只需要一个 job）
-#    同一个 tag 也触发 .github/workflows/mobile-release.yml：
-#      ubuntu-latest → 构建 arm64 引擎运行时（qemu chroot）→ 打 APK → 挂到该 tag 的 Release
-#    产物：pi-web-ui-mobile-arm64-<版本>-debug.apk + pi-web-ui-mobile-arm64.sha256
-#      （x86_64 flavor 只给模拟器冒烟用，不发 Release）
-#    三条硬约束：
-#      - APK 里的引擎必须和前端同源：workflow 先 npm pack 本仓库，再把它喂给 build-runtime.sh
-#        （PI_WEB_UI_TGZ），否则协议版本错位，手机上会一直弹「页面版本与服务器不一致」
-#      - RUNTIME_REVISION 用发布版本号：手机端据此判断要不要重装运行时
-#      - 签名必须稳定：debug 包默认每次 CI 生成不同 debug keystore，装不上旧包（本地引擎数据
-#        也会跟着清掉）。要发可升级的包就先建一次固定 keystore，配成仓库 secrets：
-#          keytool -genkeypair -v -keystore pi-mobile.jks -alias pi -keyalg RSA #            -keysize 2048 -validity 10000 -storepass <密码> -keypass <密码>
-#          base64 -w0 pi-mobile.jks    → MOBILE_KEYSTORE_BASE64
-#          另配 MOBILE_KEYSTORE_PASSWORD / MOBILE_KEY_ALIAS / MOBILE_KEY_PASSWORD
-#        没配也照样出包，只是换包得先卸载（workflow 会打 ::warning 提示）。
+# 8.6) 手机端 APK + 桌面安装包（本地一键，推荐）
+#    一条命令出齐：桌面（当前平台）+ 手机 arm64（含引擎运行时），并挂到该 tag 的 Release：
+npm run release:local -- vX.Y.Z                # 全量：桌面 + 手机（手机那步 qemu 构建 15–25 分钟）
+npm run release:local -- vX.Y.Z --skip-mobile  # 只打桌面
+npm run release:local -- vX.Y.Z --skip-desktop # 只打手机
+npm run release:local -- vX.Y.Z --no-upload    # 只打包，不碰 Release
+npm run release:local -- vX.Y.Z --portable     # 额外出便携版（内置 Git/Node，较慢）
+#    脚本会先校验 tag 与 package.json 版本一致，然后：npm run build → 桌面打包 → （可选）构建
+#    arm64 运行时并打 APK → 生成 SHA256SUMS.txt → gh release upload --clobber。
+#    为什么本地优先：手机 APK 里带 280 MB 引擎运行时，CI 那份 qemu 又慢又每次换 debug 签名
+#    （新包装不上旧包，连手机上的引擎数据一起清）；桌面 Windows 安装包本地几分钟就出。
+#    两个已知限制：
+#      - Windows 的 NSIS 安装包本地生不出来（electron-builder 打完要执行刚产出的 setup.exe
+#        生成卸载器，本机被系统拦下：ERR_ELECTRON_BUILDER_CANNOT_EXECUTE / exit code null），
+#        所以本地出的是免安装 zip（release/pi-web-ui-desktop-<版本>-win-x64-portable.zip）；
+#        需要正式安装包时用 CI 的 desktop-release windows job。
+#      - macOS / Linux 安装包只能在对应系统上打，仍由 .github/workflows/desktop-release.yml 出。
+#    .github/workflows/mobile-release.yml 保留但改成手动触发（Actions 里点），用于云端兜底；
+#    它需要可选的 MOBILE_KEYSTORE_BASE64 等 secrets 才能发出可升级的包。
 
 # 9) 验证
 npm view pi-web-ui version        # 应显示新版本（registry 有缓存延迟属正常）

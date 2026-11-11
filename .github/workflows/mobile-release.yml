@@ -4,10 +4,10 @@ name: Mobile APK
 # 所以这里先构建运行时再打包，两者同源同版（协议版本不会错位）。
 # x86_64 flavor 只给模拟器冒烟用，不发 Release。
 
+# 只在手动触发时跑：日常发版走本地 `npm run release:local -- vX.Y.Z`（快，且用本机固定
+# keystore 签名，包能覆盖升级）。CI 每次 runner 都会新生成 debug keystore，产物装不上旧包，
+# 所以不让它跟着 tag 自动发。需要云端兜底时在 Actions 里手点。
 on:
-  push:
-    tags:
-      - "v*"
   workflow_dispatch:
 
 permissions:
