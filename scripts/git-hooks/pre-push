@@ -1,0 +1,25 @@
+#!/bin/sh
+# pre-push：推之前跑一遍 CI 的静态门禁（格式 / lint / 协议单源 / 语言包 / 类型检查）。
+#
+# 存在意义：这几步 CI 必跑，但本地开发常常跳过，于是出现「本地绿、远程红」。
+# 默认只跑 static 档（1-3 分钟）；要全量复刻 main 的门禁：
+#   CI_LOCAL_PROFILE=full git push     # ≈16 分钟，含全量 smoke
+#   CI_LOCAL_PROFILE=pr   git push     # ≈ PR CI
+# 确认要跳过（例如只推文档）：
+#   SKIP_CI_LOCAL=1 git push
+set -u
+
+if [ "${SKIP_CI_LOCAL:-0}" = "1" ]; then
+	echo "[pre-push] SKIP_CI_LOCAL=1 —— 已跳过本地 CI 门禁"
+	exit 0
+fi
+
+PROFILE="${CI_LOCAL_PROFILE:-static}"
+echo "[pre-push] 运行本地 CI 门禁：npm run ci:local -- --profile $PROFILE"
+if ! node scripts/ci-local.mjs --profile "$PROFILE"; then
+	echo ""
+	echo "[pre-push] ✗ 门禁未通过，已阻止推送。修好后重推，或 SKIP_CI_LOCAL=1 git push 强制跳过。"
+	exit 1
+fi
+echo "[pre-push] ✓ 门禁通过"
+exit 0
