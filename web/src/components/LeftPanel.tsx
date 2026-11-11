@@ -74,6 +74,29 @@ import {
 	readCachedSessions,
 	type WorkspaceTransitionState,
 } from "../use-chat";
+/** 项目排位的持久化键：值是 [[归一化路径, 排位], …]，只记顺序不记业务数据。 */
+const PROJECT_RANK_KEY = "pi-web-ui:lp-project-rank";
+
+function readProjectRanks(): Map<string, number> {
+	const map = new Map<string, number>();
+	try {
+		const raw = localStorage.getItem(PROJECT_RANK_KEY);
+		const parsed = raw ? (JSON.parse(raw) as unknown) : null;
+		if (!Array.isArray(parsed)) return map;
+		for (const entry of parsed) {
+			if (!Array.isArray(entry) || typeof entry[0] !== "string") continue;
+			const rank = Number(entry[1]);
+			if (Number.isFinite(rank)) map.set(entry[0], rank);
+		}
+	} catch {}
+	return map;
+}
+
+function writeProjectRanks(ranks: Map<string, number>): void {
+	try {
+		localStorage.setItem(PROJECT_RANK_KEY, JSON.stringify([...ranks.entries()]));
+	} catch {}
+}
 
 interface LeftPanelProps {
 	sessionFile: string | null;
@@ -713,16 +736,21 @@ export const LeftPanel = memo(function LeftPanel({
 		return list;
 	}, [projects, currentCwd, conversations, elsewhere, activeConversationId]);
 
-	const projectRankMapRef = useRef<Map<string, number>>(new Map());
+	// 项目排位持久化：只在页面内存里排的话，刷新后按项目的 lastUsed 重新排，
+	// 刚打开的项目会突然跳到最上面，和刷新前的顺序对不上。
+	const projectRankMapRef = useRef<Map<string, number> | null>(null);
+	if (projectRankMapRef.current === null) projectRankMapRef.current = readProjectRanks();
+	const projectRankMap = () => projectRankMapRef.current ?? readProjectRanks();
 	const [projectOrderVersion, setProjectOrderVersion] = useState(0);
 
 	const stableProjects = useMemo(() => {
-		const rankMap = projectRankMapRef.current;
+		const rankMap = projectRankMap();
 		let maxRank = 0;
 		for (const r of rankMap.values()) if (r > maxRank) maxRank = r;
 		const newcomers = deduplicatedProjects.filter((p) => !rankMap.has(normalizeSessionPathKey(p.path)));
 		newcomers.sort((a, b) => (b.lastUsed ?? 0) - (a.lastUsed ?? 0));
 		for (const p of newcomers) rankMap.set(normalizeSessionPathKey(p.path), ++maxRank);
+		if (newcomers.length > 0) writeProjectRanks(rankMap);
 		return [...deduplicatedProjects].sort(
 			(a, b) =>
 				(rankMap.get(normalizeSessionPathKey(a.path)) ?? 0) - (rankMap.get(normalizeSessionPathKey(b.path)) ?? 0),
@@ -739,10 +767,11 @@ export const LeftPanel = memo(function LeftPanel({
 			const idx = keys.indexOf(to);
 			if (idx < 0) return;
 			keys.splice(after ? idx + 1 : idx, 0, from);
-			const rankMap = projectRankMapRef.current;
+			const rankMap = projectRankMap();
 			let r = 0;
 			for (const k of keys) rankMap.set(k, ++r);
 			for (const [k, v] of rankMap) if (!keys.includes(k)) rankMap.set(k, r + v);
+			writeProjectRanks(rankMap);
 			setProjectOrderVersion((v) => v + 1);
 		},
 		[stableProjects],
