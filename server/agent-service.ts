@@ -6217,6 +6217,8 @@ export class ClientSession {
 			}
 			case "turn_end": {
 				this.emitRun(conv, { type: "turn_end" });
+				// 这一轮写进会话文件后，所属项目的会话列表要跟着刷新（可能属于别的项目）。
+				this.scheduleSessionsPush(conv.cwd);
 				break;
 			}
 			case "message_update": {
@@ -13087,6 +13089,13 @@ export class ClientSession {
 
 	private sessionsRequested = false;
 
+	/**
+	 * 会话跑完一轮后按它自己的 cwd 补推列表的节流句柄（cwd key → timer）。
+	 * 服务端在内容变化时只做缓存失效、不推送：前端「运行中」分组把会话移走之后，
+	 * 所属项目的会话列表里也没有它，得手点项目发一次 list_sessions 重新扫盘才出现。
+	 */
+	private sessionsPushTimers = new Map<string, ReturnType<typeof setTimeout>>();
+
 	private static projectsCache: { at: number; projects: ProjectSummary[] } | null = null;
 	private static readonly PROJECTS_CACHE_TTL = 60_000;
 	private static projectsInFlight: Promise<ProjectSummary[] | null> | null = null;
@@ -13358,6 +13367,33 @@ export class ClientSession {
 			ClientSession.sessionInfosCache.delete(cwdKey);
 		}
 		if (this.sessionsRequested) void this.refreshSessions();
+	}
+
+	/**
+	 * 会话跑完一轮后，按会话自己的 cwd 补推列表：第一轮立刻推，600ms 内的后续轮次
+	 * 合并成一次尾部推送。
+	 * 不推的话前端「运行中」分组随手把会话移走、左栏里又没有它；推迟 600ms 再推的话
+	 * 中间那段空窗就是「跑完闪一下不见了，过一会儿又冒出来」，所以首轮必须立刻推。
+	 */
+	private scheduleSessionsPush(cwd: string): void {
+		if (!cwd || this.disposed || !this.sessionsRequested) return;
+		const key = normalizePathKey(cwd);
+		// 这一轮刚写进会话文件：先让该项目的列表缓存失效，否则推出去还是旧列表。
+		ClientSession.sessionInfosCache.delete(key);
+		const pending = this.sessionsPushTimers.get(key);
+		if (pending) {
+			clearTimeout(pending);
+		} else {
+			void this.pushSessionsForCwd(cwd).catch(() => {});
+		}
+		const timer = setTimeout(() => {
+			this.sessionsPushTimers.delete(key);
+			if (this.disposed) return;
+			ClientSession.sessionInfosCache.delete(key);
+			void this.pushSessionsForCwd(cwd).catch(() => {});
+		}, 600);
+		(timer as unknown as { unref?: () => void }).unref?.();
+		this.sessionsPushTimers.set(key, timer);
 	}
 
 	private sessionListLimits = new Map<string, number>();
@@ -16027,6 +16063,8 @@ export class ClientSession {
 			clearTimeout(this.sessionsTimer);
 			this.sessionsTimer = null;
 		}
+		for (const timer of this.sessionsPushTimers.values()) clearTimeout(timer);
+		this.sessionsPushTimers.clear();
 		if (this.widgetsTimer) {
 			clearInterval(this.widgetsTimer);
 			this.widgetsTimer = null;
