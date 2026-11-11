@@ -202,12 +202,28 @@ function formatModified(ts: number): string {
 	return `${d.getMonth() + 1}/${d.getDate()}`;
 }
 
+/**
+ * 项目收起时，钉住的历史行仍然保持展开：钉住就是让它常驻，
+ * 否则一收起项目它就从左栏消失，和没钉一样。
+ */
+export function isPinnedRowVisible(
+	isCollapsed: boolean,
+	block: { kind: "conversation" | "session"; target: { pinned?: boolean } },
+): boolean {
+	return isCollapsed && block.kind === "session" && Boolean(block.target.pinned);
+}
+
 type SessionMenuTarget = {
 	id: string;
 	kind: "running" | "history" | "section" | "elsewhere";
 	label: string;
 	owner?: string;
 	pseudo?: boolean;
+	/**
+	 * 该行自己的钉住状态。跨项目的历史行不在「当前项目的 sessions」里，
+	 * 菜单只能靠它判断该显示「钉住」还是「取消钉住」（否则永远显示「钉住」）。
+	 */
+	pinned?: boolean;
 };
 
 function isEditableTarget(el: EventTarget | null): boolean {
@@ -797,23 +813,22 @@ export const LeftPanel = memo(function LeftPanel({
 
 	const effectiveProjects = stableProjects;
 
+	// 本地有没有「上次的展开/收起记录」：有就按记录恢复（刷新不该自己弹开），
+	// 没有就是首次使用（当前项目要展开）。这个判断必须在挂载时定下来 ——
+	// `cwd` 来自 websocket 快照，挂载那一刻通常还没到，不能拿它当判据。
+	const persistedExpandedRef = useRef<Set<string> | null>(null);
 	const [expandedProjects, setExpandedProjects] = useState<Set<string>>(() => {
 		try {
 			const raw = localStorage.getItem("pi-web-ui:lp-expanded-projects");
 			if (raw) {
 				const arr = JSON.parse(raw);
 				if (Array.isArray(arr)) {
-					const s = new Set<string>(arr);
-					const norm = normalizeSessionPathKey(currentCwd);
-					if (norm) s.add(norm);
-					return s;
+					persistedExpandedRef.current = new Set<string>(arr);
+					return persistedExpandedRef.current;
 				}
 			}
 		} catch {}
-		const s = new Set<string>();
-		const norm = normalizeSessionPathKey(currentCwd);
-		if (norm) s.add(norm);
-		return s;
+		return new Set<string>();
 	});
 
 	useEffect(() => {
@@ -854,9 +869,16 @@ export const LeftPanel = memo(function LeftPanel({
 		});
 	}, [projectSessions]);
 
+	const expandedSeededRef = useRef(false);
 	useEffect(() => {
 		const normCur = normalizeSessionPathKey(currentCwd);
 		if (normCur) {
+			// 首个拿到的 cwd：刷新场景保留用户收起的状态（有记录就不动），
+			// 首次使用（没有记录）要展开当前项目；之后再切项目一律自动展开。
+			if (!expandedSeededRef.current) {
+				expandedSeededRef.current = true;
+				if (persistedExpandedRef.current) return;
+			}
 			setExpandedProjects((prev) => {
 				if (prev.has(normCur)) return prev;
 				const next = new Set(prev);
@@ -1061,7 +1083,7 @@ export const LeftPanel = memo(function LeftPanel({
 						: { ...entry, hidden: true };
 				if (entry.id === "host:conv-pin") {
 					if (target.kind === "history") {
-						const isPinned = sessions.find((s) => s.path === target.id)?.pinned;
+						const isPinned = target.pinned ?? sessions.find((s) => s.path === target.id)?.pinned;
 						return isPinned ? { ...entry, label: t("unpinConversation") } : entry;
 					}
 					if (!scopeId) return { ...entry, hidden: true };
@@ -1168,8 +1190,9 @@ export const LeftPanel = memo(function LeftPanel({
 			}
 			if (entry.id === "host:conv-pin") {
 				if (target.kind === "history") {
-					const cur = sessions.find((s) => s.path === target.id);
-					panelSend({ type: "pin_session", path: target.id, pinned: !cur?.pinned });
+					// 这里的 target 是右键系统的精简对象（没有 pinned），完整目标在 sessionMenuRef 里。
+					const pinned = sessionMenuRef.current?.target.pinned ?? sessions.find((s) => s.path === target.id)?.pinned;
+					panelSend({ type: "pin_session", path: target.id, pinned: !pinned });
 					return;
 				}
 				if (scopeId) {
@@ -2007,7 +2030,7 @@ export const LeftPanel = memo(function LeftPanel({
 				key={s.path}
 				data-session-key={sessionKey}
 				onMouseLeave={() => setConfirmDel((k) => (k === `sess:${s.path}` ? null : k))}
-				onContextMenu={(e) => openSessionMenu(e, { id: s.path, kind: "history", label: rawTitle })}
+				onContextMenu={(e) => openSessionMenu(e, { id: s.path, kind: "history", label: rawTitle, pinned: s.pinned })}
 			>
 				<RowMain
 					editing={renaming === s.path}
@@ -2926,7 +2949,11 @@ export const LeftPanel = memo(function LeftPanel({
 										transition?.kind === "cwd" ? normalizeSessionPathKey(transition.target) : null;
 									const q = filterText.trim().toLowerCase();
 									const views = projectTreeModel.map((m) => {
-										const visibleIdle = new Set(m.idleSessions.slice(0, m.maxVisible));
+										// 钉住的行不受 maxVisible 截断：它常驻，翻页也不能把它藏起来。
+										const visibleIdle = new Set([
+											...m.idleSessions.slice(0, m.maxVisible),
+											...m.idleSessions.filter((s) => s.pinned),
+										]);
 										const visibleModel = {
 											...m,
 											orderedBlocks: m.orderedBlocks.filter(
@@ -2991,11 +3018,15 @@ export const LeftPanel = memo(function LeftPanel({
 										if (!isCollapsed) {
 											everExpandedRef.current.add(pNorm);
 										}
+										const hasPinnedHistory = idleSessions.some((s) => s.pinned);
 										const shouldMountChildren =
 											!isCollapsed ||
 											pRunningRows.length > 0 ||
 											hasUnread ||
 											active ||
+											// 刷新后一直是收起状态、也没展开过的项目：只要里面有钉住的行，
+											// 子节点就得挂上，否则那行永远不出现（要手动展开再收才看得到）。
+											hasPinnedHistory ||
 											everExpandedRef.current.has(pNorm);
 
 										const dropClass =
@@ -3193,19 +3224,26 @@ export const LeftPanel = memo(function LeftPanel({
 														className={`lp-project-tree-children${isCollapsed ? " is-collapsed" : " is-expanded"}${pRunningRows.length > 0 ? " has-running-rows" : ""}`}
 													>
 														{}
-														{orderedBlocks.map((block) => (
-															<Fragment key={block.key}>
-																{block.kind === "conversation" ? (
-																	block.rows.map((row) => renderSingleConvRow(row, p.path))
-																) : (
-																	<div className={`lp-history-collapsible${isCollapsed ? " collapsed" : " expanded"}`}>
-																		<div className="lp-history-collapsible-inner">
-																			{renderHistorySessionRow(block.target, p.path)}
+														{orderedBlocks.map((block) => {
+															// 钉住的历史行在项目收起时仍然显示 —— 钉住就是让它常驻，
+															// 否则一收起项目它就从左栏消失了，跟没钉一样。
+															const pinnedVisible = isPinnedRowVisible(isCollapsed, block);
+															return (
+																<Fragment key={block.key}>
+																	{block.kind === "conversation" ? (
+																		block.rows.map((row) => renderSingleConvRow(row, p.path))
+																	) : (
+																		<div
+																			className={`lp-history-collapsible${isCollapsed && !pinnedVisible ? " collapsed" : " expanded"}${pinnedVisible ? " is-pinned-visible" : ""}`}
+																		>
+																			<div className="lp-history-collapsible-inner">
+																				{renderHistorySessionRow(block.target, p.path)}
+																			</div>
 																		</div>
-																	</div>
-																)}
-															</Fragment>
-														))}
+																	)}
+																</Fragment>
+															);
+														})}
 
 														{}
 														<div className={`lp-history-collapsible${isCollapsed ? " collapsed" : " expanded"}`}>

@@ -3,7 +3,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { createElement } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { act } from "react-dom/test-utils";
-import { LeftPanel } from "../../web/src/components/LeftPanel.js";
+import { isPinnedRowVisible, LeftPanel } from "../../web/src/components/LeftPanel.js";
 import { joinProjectPath, isValidProjectName, parentOf, MACHINE_ROOT } from "../../web/src/components/ProjectPicker.js";
 import { LanguageProvider } from "../../web/src/i18n.js";
 import { conversationOrder } from "../../web/src/conversation-order.js";
@@ -974,5 +974,203 @@ describe("LeftPanel 会话行删除确认与重命名按钮互斥", () => {
 		const siteChildren = siteNode.querySelector<HTMLElement>(".lp-project-tree-children");
 		expect(siteChildren).not.toBeNull();
 		expect(siteChildren!.textContent).toContain("你好");
+	});
+});
+
+describe("跨项目历史行的钉住菜单", () => {
+	it("已钉住的跨项目会话：菜单显示「取消钉住」，点下去发 pinned=false", () => {
+		stubZhStorage();
+		localStorage.setItem("pi-web-ui:lp-expanded-projects", JSON.stringify(["/project-a"]));
+		setAppGlobals({ cwd: "/project-b", ready: true, status: "open", workspaceRoots: [] });
+		const container = document.createElement("div");
+		document.body.appendChild(container);
+		root = createRoot(container);
+		const sent: unknown[] = [];
+		const session = {
+			path: "/sessions/--C--desktop--/x.jsonl",
+			name: "串台测试",
+			firstMessage: "串台测试",
+			modified: Date.now(),
+			messageCount: 2,
+			pinned: true,
+			cwd: "/project-a",
+		};
+		act(() => {
+			root!.render(
+				createElement(
+					LanguageProvider,
+					null,
+					createElement(LeftPanel as any, {
+						active: false,
+						sessionFile: null,
+						conversations: [],
+						elsewhere: [],
+						// 当前项目（/project-b）的列表里没有它：这正是跨项目行拿不到 pinned 的场景。
+						sessions: [],
+						projectSessions: { "/project-a": [session] },
+						projects: [{ path: "/project-a", lastUsed: Date.now() }],
+						activeConversationId: "",
+						panelSend: (msg: unknown) => {
+							sent.push(msg);
+							return true;
+						},
+						uiContextSession: [{ id: "host:conv-pin", source: "host", label: "钉住" }],
+					}),
+				),
+			);
+		});
+
+		// 展开 /project-a：真实交互路径比直接塞 localStorage 更可靠（首帧与点击后的状态机不同）。
+		const header = [...container.querySelectorAll<HTMLElement>("[data-project-path]")].find(
+			(el) => el.getAttribute("data-project-path") === "/project-a",
+		);
+		expect(header).toBeTruthy();
+		act(() => header!.click());
+		const row = container.querySelector<HTMLElement>(`[data-session-key]`);
+		expect(row).toBeTruthy();
+		act(() => {
+			row!.dispatchEvent(new MouseEvent("contextmenu", { bubbles: true, cancelable: true, clientX: 10, clientY: 20 }));
+		});
+		const menu = getContextMenu();
+		expect(menu?.target).toMatchObject({ kind: "history", id: session.path, pinned: true });
+		expect(menu?.entries.map((e) => e.label)).toContain("取消钉住");
+
+		closeContextMenu();
+		container.remove();
+	});
+});
+
+describe("钉住的历史行在项目收起时仍然可见", () => {
+	it("isPinnedRowVisible：只有收起状态 + 历史行 + pinned 才保持可见", () => {
+		const pinnedSession = { kind: "session" as const, target: { pinned: true } };
+		const plainSession = { kind: "session" as const, target: {} };
+		const pinnedConv = { kind: "conversation" as const, target: { pinned: true } };
+		expect(isPinnedRowVisible(true, pinnedSession)).toBe(true);
+		expect(isPinnedRowVisible(false, pinnedSession)).toBe(false);
+		expect(isPinnedRowVisible(true, plainSession)).toBe(false);
+		expect(isPinnedRowVisible(true, pinnedConv)).toBe(false);
+	});
+});
+
+describe("刷新后收起状态的项目里的钉住行", () => {
+	it("项目一开始就是收起的：钉住的行仍然渲染，未钉住的折叠", () => {
+		stubZhStorage();
+		// 刷新后的真实状态：降低展开记录里没有 /project-a，它一开始就是收起的。
+		setAppGlobals({ cwd: "/project-b", ready: true, status: "open", workspaceRoots: [] });
+		const container = document.createElement("div");
+		document.body.appendChild(container);
+		root = createRoot(container);
+		const pinnedSession = {
+			path: "/sessions/x/pinned.jsonl",
+			name: "串台测试",
+			firstMessage: "串台测试",
+			modified: Date.now(),
+			messageCount: 2,
+			pinned: true,
+			cwd: "/project-a",
+		};
+		const plainSession = {
+			path: "/sessions/x/plain.jsonl",
+			name: "say ok",
+			firstMessage: "say ok",
+			modified: Date.now(),
+			messageCount: 2,
+			cwd: "/project-a",
+		};
+		act(() => {
+			root!.render(
+				createElement(
+					LanguageProvider,
+					null,
+					createElement(LeftPanel as any, {
+						active: false,
+						sessionFile: null,
+						conversations: [],
+						elsewhere: [],
+						sessions: [],
+						projectSessions: { "/project-a": [pinnedSession, plainSession] },
+						projects: [{ path: "/project-a", lastUsed: Date.now() }],
+						activeConversationId: "",
+						panelSend: () => true,
+					}),
+				),
+			);
+		});
+
+		const wrapperOf = (text: string) => {
+			const item = [...container.querySelectorAll<HTMLElement>("[data-session-key]")].find((el) =>
+				(el.textContent ?? "").includes(text),
+			);
+			return item?.closest(".lp-history-collapsible") ?? null;
+		};
+		const pinnedWrapper = wrapperOf("串台测试");
+		expect(pinnedWrapper).toBeTruthy();
+		expect(pinnedWrapper!.classList.contains("expanded")).toBe(true);
+		expect(wrapperOf("say ok")?.classList.contains("collapsed")).toBe(true);
+		container.remove();
+	});
+});
+
+describe("刷新后保持项目收起状态", () => {
+	it("降低展开记录里没有当前项目时，渲染后它仍是收起的", () => {
+		stubZhStorage();
+		// 用户上一次把它收起来了：展开记录是空数组。
+		localStorage.setItem("pi-web-ui:lp-expanded-projects", JSON.stringify([]));
+		setAppGlobals({ cwd: "/project-a", ready: true, status: "open", workspaceRoots: [] });
+		const container = document.createElement("div");
+		document.body.appendChild(container);
+		root = createRoot(container);
+		act(() => {
+			root!.render(
+				createElement(
+					LanguageProvider,
+					null,
+					createElement(LeftPanel as any, {
+						active: true,
+						sessionFile: null,
+						conversations: [],
+						elsewhere: [],
+						sessions: [],
+						projects: [{ path: "/project-a", lastUsed: Date.now() }],
+						activeConversationId: "",
+						panelSend: () => true,
+					}),
+				),
+			);
+		});
+		// active 项目即使收起也会挂载子节点（过渡动画需要），但必须是收起态。
+		const children = container.querySelector(".lp-project-tree-children");
+		expect(children?.classList.contains("is-collapsed")).toBe(true);
+		expect(children?.classList.contains("is-expanded")).toBe(false);
+		container.remove();
+	});
+
+	it("首次使用（没有任何展开记录）时仍然展开当前项目", () => {
+		stubZhStorage();
+		setAppGlobals({ cwd: "/project-a", ready: true, status: "open", workspaceRoots: [] });
+		const container = document.createElement("div");
+		document.body.appendChild(container);
+		root = createRoot(container);
+		act(() => {
+			root!.render(
+				createElement(
+					LanguageProvider,
+					null,
+					createElement(LeftPanel as any, {
+						active: true,
+						sessionFile: null,
+						conversations: [],
+						elsewhere: [],
+						sessions: [],
+						projects: [{ path: "/project-a", lastUsed: Date.now() }],
+						activeConversationId: "",
+						panelSend: () => true,
+					}),
+				),
+			);
+		});
+		const children = container.querySelector(".lp-project-tree-children");
+		expect(children?.classList.contains("is-expanded")).toBe(true);
+		container.remove();
 	});
 });

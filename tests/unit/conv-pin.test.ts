@@ -51,11 +51,16 @@ describe("钉住（pinned）会话", () => {
 		const emitted: unknown[] = [];
 		const conv = fakeConv({ title: "我的对话" });
 		let emitCalls = 0;
+		const pushed: string[] = [];
 		const cs = {
 			emit: (msg: unknown) => emitted.push(msg),
 			flushSnapshot: vi.fn(),
 			emitConversations: () => {
 				emitCalls++;
+			},
+			// 钉住状态记在 sessions 摘要里，改完要推该会话 cwd 的列表，否则历史行的 📌 不刷新。
+			pushSessionsForCwd: async (cwd: string) => {
+				pushed.push(cwd);
 			},
 			convs: new Map([["c1", conv]]),
 		} as unknown as ClientSession;
@@ -69,6 +74,7 @@ describe("钉住（pinned）会话", () => {
 		expect(conv.pinned).toBeUndefined();
 		expect((cs as unknown as { convs: Map<string, unknown> }).convs.get("c1")).toBe(conv);
 		expect(emitCalls).toBe(2);
+		expect(pushed).toEqual([conv.cwd, conv.cwd]);
 	});
 
 	it("setConversationPinned：不存在的对话 / 子代理 / 重复请求均安全", async () => {

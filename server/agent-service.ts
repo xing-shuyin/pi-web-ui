@@ -13677,6 +13677,10 @@ export class ClientSession {
 		}
 		this.emitConversations();
 		this.flushSnapshot();
+		// 历史行上的 📌 来自 sessions 摘要（`isSessionPinned`），emitConversations 不会动它：
+		// 不推的话，取消钉住后图标要等点一下项目重新拉列表才消失。按会话自己的 cwd 推，
+		// 在项目 A 里取消属于 B 的钉住时刷的也是 B 的列表。
+		void this.pushSessionsForCwd(conv.cwd).catch(() => {});
 		this.emit({
 			type: "notice",
 			level: "info",
@@ -13710,7 +13714,10 @@ export class ClientSession {
 
 		this.emitConversations();
 		this.flushSnapshot();
-		await this.refreshSessions();
+		// 摘要里的 pinned 按归属项目的 cwd 记账：与当前项目不同就推那一边的列表，
+		// 否则在这边怎么刷都不会让另一边的图标变化。
+		if (normalizePathKey(pinCwd) === normalizePathKey(this.cwd)) await this.refreshSessions();
+		else await this.pushSessionsForCwd(pinCwd);
 	}
 
 	async renameConversation(id: string, name: string): Promise<void> {
