@@ -1772,6 +1772,13 @@ export type ClientMessage =
 			result?: unknown;
 			error?: string;
 	  }
+	| {
+			type: "phone_response";
+			id: string;
+			ok: boolean;
+			result?: unknown;
+			error?: string;
+	  }
 	| { type: "apply_preset"; name: string }
 	| { type: "delete_preset"; name: string }
 	| {
@@ -3752,6 +3759,13 @@ export type ServerMessage =
 			op: string;
 			args?: Record<string, unknown>;
 			target?: string;
+			timeoutMs: number;
+	  }
+	| {
+			type: "phone_request";
+			id: string;
+			op: string;
+			args?: Record<string, unknown>;
 			timeoutMs: number;
 	  }
 	| { type: "bg_servers"; servers: BgServer[] }

@@ -4,6 +4,7 @@ import { Capacitor } from "@capacitor/core";
 import { App as NativeApp } from "@capacitor/app";
 import { Network } from "@capacitor/network";
 import { StatusBar } from "@capacitor/status-bar";
+import { PiPhoneControl } from "@pi-mobile/native-phone-control";
 import { PiCredentials } from "@pi-mobile/native-push";
 import { configureMobileRuntime, openMobileNotificationTarget } from "../../web/src/mobile-runtime";
 import {
@@ -350,6 +351,93 @@ function pressBack(): boolean {
 	return event.defaultPrevented;
 }
 
+/** 服务端 `phone_request` 的落地端：把 op 映射到无障碍插件，结果原样回给 web 层的桥。 */
+function installPhoneBridge(): void {
+	if (!native) return;
+	const num = (value: unknown): number | undefined =>
+		typeof value === "number" && Number.isFinite(value) ? value : undefined;
+	const str = (value: unknown): string | undefined => (typeof value === "string" ? value : undefined);
+	(globalThis as unknown as { __piPhoneHost?: unknown }).__piPhoneHost = {
+		phoneCall: async ({ op, args }: { op: string; args?: Record<string, unknown> }) => {
+			const a = args ?? {};
+			try {
+				switch (op) {
+					case "status":
+						return { ok: true, result: await PiPhoneControl.getStatus() };
+					case "dump":
+						return {
+							ok: true,
+							result: await PiPhoneControl.dump({
+								maxNodes: num(a.maxNodes) ?? 400,
+								maxDepth: num(a.maxDepth) ?? 14,
+							}),
+						};
+					case "tap": {
+						const x = num(a.x);
+						const y = num(a.y);
+						if (x === undefined || y === undefined) return { ok: false, error: "tap 需要 x/y 坐标。" };
+						return { ok: true, result: await PiPhoneControl.tap({ x, y }) };
+					}
+					case "long_press": {
+						const x = num(a.x);
+						const y = num(a.y);
+						if (x === undefined || y === undefined) return { ok: false, error: "long_press 需要 x/y 坐标。" };
+						return {
+							ok: true,
+							result: await PiPhoneControl.longPress({ x, y, durationMs: num(a.durationMs) ?? 800 }),
+						};
+					}
+					case "swipe": {
+						const [x1, y1, x2, y2] = [num(a.x1), num(a.y1), num(a.x2), num(a.y2)];
+						if (x1 === undefined || y1 === undefined || x2 === undefined || y2 === undefined)
+							return { ok: false, error: "swipe 需要 x1/y1/x2/y2 坐标。" };
+						return {
+							ok: true,
+							result: await PiPhoneControl.swipe({ x1, y1, x2, y2, durationMs: num(a.durationMs) ?? 300 }),
+						};
+					}
+					case "input": {
+						const text = str(a.text);
+						if (text === undefined) return { ok: false, error: "input 需要 text。" };
+						await PiPhoneControl.setText({ text });
+						return { ok: true, result: { typed: text.length } };
+					}
+					case "key": {
+						const name = str(a.name) ?? str(a.key);
+						if (!name) return { ok: false, error: "key 需要 name（back/home/recents/notifications/quickSettings）。" };
+						await PiPhoneControl.key({ name: name as Parameters<typeof PiPhoneControl.key>[0]["name"] });
+						return { ok: true };
+					}
+					case "launch": {
+						const packageName = str(a.packageName);
+						if (!packageName) return { ok: false, error: "launch 需要 packageName。" };
+						await PiPhoneControl.launchApp({ packageName });
+						return { ok: true };
+					}
+					case "screenshot": {
+						const shot = await PiPhoneControl.screenshot({ maxWidth: num(a.maxWidth) ?? 720 });
+						return {
+							ok: true,
+							result: {
+								image: {
+									dataUrl: `data:image/png;base64,${shot.data}`,
+									mimeType: "image/png",
+									width: shot.width,
+									height: shot.height,
+								},
+							},
+						};
+					}
+					default:
+						return { ok: false, error: `不支持的手机动作：${op}` };
+				}
+			} catch (error) {
+				return { ok: false, error: error instanceof Error ? error.message : String(error) };
+			}
+		},
+	};
+}
+
 function installLifecycle(): void {
 	if (native) {
 		let refreshing: Promise<void> | null = null;
@@ -429,3 +517,4 @@ async function boot(): Promise<void> {
 }
 void boot();
 applySafeAreaInsets();
+installPhoneBridge();

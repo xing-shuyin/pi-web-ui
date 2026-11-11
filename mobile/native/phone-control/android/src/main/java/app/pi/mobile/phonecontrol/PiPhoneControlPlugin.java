@@ -124,8 +124,9 @@ public final class PiPhoneControlPlugin extends Plugin {
             call.reject("缺少 text。", "INVALID_ARGS");
             return;
         }
-        if (!service.setText(text)) {
-            call.reject("当前界面没有可输入的焦点输入框。", "NO_FOCUS");
+        String error = service.setText(text);
+        if (error != null) {
+            call.reject(error, "INPUT_REJECTED");
             return;
         }
         call.resolve();

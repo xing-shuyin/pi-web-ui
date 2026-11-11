@@ -164,16 +164,21 @@ public final class PiAccessibilityService extends AccessibilityService {
 
     // ---- 输入 ----
 
-    boolean setText(String value) {
+    /**
+     * 写入当前焦点输入框。返回 null 表示成功，否则是给用户看的失败原因。
+     * 密码框一律不代填：这类内容不该经过模型，留给人自己点。
+     */
+    String setText(String value) {
         AccessibilityNodeInfo target = findFocus(AccessibilityNodeInfo.FOCUS_INPUT);
         if (target == null) {
             AccessibilityNodeInfo root = getRootInActiveWindow();
             if (root != null) target = findEditable(root);
         }
-        if (target == null) return false;
+        if (target == null) return "当前界面没有可输入的焦点输入框。";
+        if (target.isPassword()) return "这是密码输入框，按规则不代填，请让用户自己输入。";
         Bundle args = new Bundle();
         args.putCharSequence(AccessibilityNodeInfo.ACTION_ARGUMENT_SET_TEXT_CHARSEQUENCE, value);
-        return target.performAction(AccessibilityNodeInfo.ACTION_SET_TEXT, args);
+        return target.performAction(AccessibilityNodeInfo.ACTION_SET_TEXT, args) ? null : "系统拒绝写入这个输入框。";
     }
 
     private AccessibilityNodeInfo findEditable(AccessibilityNodeInfo node) {

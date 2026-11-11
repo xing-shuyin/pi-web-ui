@@ -13,6 +13,7 @@ import { appUrl, appWsUrl } from "./base-url";
 import { isMobileRuntime } from "./mobile-runtime";
 import { handleNativeCliEvent, resolveNativeCliControlResult } from "./native-cli-events";
 import { notifySessionSwitch } from "./composer-bridge";
+import { phoneHost } from "./phone-control";
 import { syncKnownInlineMarkers } from "./components/Message";
 import type {
 	ClientMessage,
@@ -2733,6 +2734,39 @@ export function useChat() {
 									? {}
 									: { result: res.result }
 								: { error: res.error ?? "页面操作失败" }),
+						});
+					})();
+					break;
+				}
+				case "phone_request": {
+					void (async () => {
+						const call = phoneHost();
+						let res: { ok: boolean; result?: unknown; error?: string };
+						if (!call) {
+							res = {
+								ok: false,
+								error: "当前页面没有手机操控桥：请在 pi 手机端打开（浏览器/桌面端不支持）。",
+							};
+						} else {
+							try {
+								res = await call({
+									op: msg.op,
+									...(msg.args === undefined ? {} : { args: msg.args }),
+									timeoutMs: msg.timeoutMs,
+								});
+							} catch (err) {
+								res = { ok: false, error: err instanceof Error ? err.message : String(err) };
+							}
+						}
+						send({
+							type: "phone_response",
+							id: msg.id,
+							ok: res.ok === true,
+							...(res.ok === true
+								? res.result === undefined
+									? {}
+									: { result: res.result }
+								: { error: res.error ?? "手机操作失败" }),
 						});
 					})();
 					break;

@@ -451,6 +451,8 @@ export class AgentService {
 					: reject();
 			case "page_response":
 				return run(() => owner.resolvePageCall(message.id, message.ok, message.result, message.error, conv.id));
+			case "phone_response":
+				return run(() => owner.resolvePhoneCall(message.id, message.ok, message.result, message.error, conv.id));
 			case "dialog_response":
 			case "tui_overlay_input":
 			case "tui_overlay_resize":

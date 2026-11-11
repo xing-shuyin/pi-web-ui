@@ -570,6 +570,14 @@ import {
 	extractShotImage,
 } from "./browser-page-tool.js";
 import { makeBrowserScriptTool } from "./browser-script-tool.js";
+import {
+	normalizePhoneCallTimeoutMs,
+	collectPhoneArgs,
+	formatPhoneCallResult,
+	formatPhoneError,
+	makePhoneTool,
+	type PhoneCallResult,
+} from "./phone-tool.js";
 export { makeBrowserScriptTool };
 export {
 	makeAskUserQuestionTool,
@@ -3703,6 +3711,17 @@ export class ClientSession {
 		return undefined;
 	}
 
+	private phoneSeq = 0;
+	private pendingPhoneCalls = new Map<
+		string,
+		{
+			resolve: (r: PhoneCallResult) => void;
+			timer: ReturnType<typeof setTimeout>;
+			conversationId?: string;
+			timeoutMs: number;
+		}
+	>();
+
 	private pageSeq = 0;
 	private pendingPageCalls = new Map<
 		string,
@@ -4666,6 +4685,7 @@ export class ClientSession {
 						),
 						makeAskUserQuestionTool(bridge, ownerId),
 						makeBrowserPageTool(bridge, ownerId),
+						makePhoneTool(bridge, ownerId),
 						makeBrowserScriptTool(bridge, ownerId),
 						makeConversationReadTool(this.conversationReadHost(), () => this.getLang(), {
 							listClaims: (cwd) =>
@@ -6558,6 +6578,13 @@ export class ClientSession {
 				const h = home();
 				return h.session.pageCall(req, sig, h.convId);
 			},
+			phoneCall: (
+				req: { op: string; args?: Record<string, unknown>; timeoutMs?: number },
+				sig: { aborted?: boolean },
+			) => {
+				const h = home();
+				return h.session.phoneCall(req, sig, h.convId);
+			},
 			canSeeImages: () => home().session.canSeeImages(),
 			transcribeToolImage: (image: { data: string; mimeType: string }, signal?: AbortSignal) =>
 				home().session.transcribeToolImage(image, signal),
@@ -7664,6 +7691,14 @@ export class ClientSession {
 			}
 			conv.pendingApprovals.clear();
 		}
+		for (const [id, p] of this.pendingPhoneCalls) {
+			if (p.conversationId !== convId) continue;
+			this.pendingPhoneCalls.delete(id);
+			clearTimeout(p.timer);
+			try {
+				p.resolve({ ok: false, error: "会话已重置或停止，挂起中的手机操控已取消。" });
+			} catch {}
+		}
 		for (const [id, p] of this.pendingPageCalls) {
 			if (p.conversationId !== convId) continue;
 			this.pendingPageCalls.delete(id);
@@ -7768,6 +7803,51 @@ export class ClientSession {
 			this.pendingPageCalls.set(id, { resolve, timer, conversationId, req, timeoutMs });
 			this.emit({ type: "page_request", id, op: req.op, args: req.args, target: req.target, timeoutMs });
 		});
+	}
+
+	/** 手机操控调用：与 pageCall 同一套「服务端发起 → 客户端执行 → 回来兑现 Promise」的桥。 */
+	phoneCall(
+		req: { op: string; args?: Record<string, unknown>; timeoutMs?: number },
+		sig: { aborted?: boolean },
+		conversationId?: string,
+	): Promise<PhoneCallResult> {
+		return new Promise((resolve) => {
+			if (sig?.aborted || this.disposed) {
+				resolve({ ok: false, error: "手机操控已中止（phone aborted）。" });
+				return;
+			}
+			if (this.sinks.size === 0) {
+				resolve({
+					ok: false,
+					error: "没有已连接的手机客户端（no phone connected）。请在手机上打开 pi，并确认无障碍服务已开启。",
+				});
+				return;
+			}
+			const id = `ph-${++this.phoneSeq}`;
+			const timeoutMs = normalizePhoneCallTimeoutMs(req.timeoutMs);
+			const timer = setTimeout(() => {
+				if (this.pendingPhoneCalls.delete(id)) {
+					resolve({
+						ok: false,
+						error: `${Math.round(timeoutMs / 1000)} 秒内没有收到手机响应（timeout ${timeoutMs}ms）。请确认 pi 手机端在前台且无障碍服务已开启。`,
+					});
+				}
+			}, timeoutMs);
+			this.pendingPhoneCalls.set(id, { resolve, timer, conversationId, timeoutMs });
+			this.emit({ type: "phone_request", id, op: req.op, args: req.args, timeoutMs });
+		});
+	}
+
+	resolvePhoneCall(id: string, ok: boolean, result?: unknown, error?: string, conversationId?: string): void {
+		const pending = this.pendingPhoneCalls.get(id);
+		if (conversationId && pending?.conversationId !== conversationId)
+			throw new Error("Phone request does not belong to the shared conversation");
+		if (!pending) return;
+		this.pendingPhoneCalls.delete(id);
+		clearTimeout(pending.timer);
+		pending.resolve(
+			ok ? { ok: true, result } : { ok: false, error: error?.trim() || "手机操作失败（no error message）" },
+		);
 	}
 
 	resolvePageCall(id: string, ok: boolean, result?: unknown, error?: string, conversationId?: string): void {

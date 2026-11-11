@@ -33,6 +33,7 @@ export const DELEGATE_TASK_TOOL_NAME = "delegate_task";
 export const ASK_USER_QUESTION_TOOL_NAME = "ask_user_question";
 export const BROWSER_PAGE_TOOL_NAME = "browser_page";
 export const BROWSER_SCRIPT_TOOL_NAME = "browser_script";
+export const PHONE_TOOL_NAME = "phone";
 export const CONVERSATION_READ_TOOL_NAME = CONVERSATION_TOOL_NAME;
 export const SKILL_TOOL_NAME = "skill";
 export const SCHEDULE_TOOL_NAME = "schedule";
@@ -146,6 +147,13 @@ export const AGENT_TOOL_CATALOG: AgentToolEntry[] = [
 		dshVisible: false,
 		descKey: "browserScriptEnabledDesc",
 		offHintKey: "browserScriptOffHint",
+	},
+	{
+		// 让智能体操作手机（无障碍服务）。默认关：等于把整台手机交给模型，必须用户显式打开。
+		name: PHONE_TOOL_NAME,
+		group: "other",
+		defaultOn: false,
+		dshVisible: false,
 	},
 	{
 		name: CLAIM_FILES_TOOL_NAME,

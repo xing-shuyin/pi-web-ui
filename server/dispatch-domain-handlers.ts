@@ -1098,6 +1098,9 @@ export function handleInteractiveResponseMessage(
 		case "page_response":
 			cs.resolvePageCall?.(msg.id, msg.ok, msg.result, msg.error);
 			return true;
+		case "phone_response":
+			cs.resolvePhoneCall?.(msg.id, msg.ok, msg.result, msg.error);
+			return true;
 		default:
 			return false;
 	}
