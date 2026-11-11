@@ -292,9 +292,7 @@ export function makeSubagentTool(
 			type: Type.Optional(Type.String({ description: "Role/template (explore, implement, review, general)." })),
 			model: Type.Optional(Type.String()),
 			thinking: Type.Optional(Type.String({ enum: [...THINKING_LEVELS] })),
-			notifyOnDone: Type.Optional(
-				Type.Unsafe<boolean | "manual">({ type: ["boolean", "string"], enum: [true, false, "manual"] }),
-			),
+			notifyOnDone: Type.Optional(Type.Unsafe<boolean | "manual">({ type: ["boolean", "string"] })),
 			cwd: Type.Optional(Type.String()),
 			persist: Type.Optional(Type.Boolean()),
 			isolation: Type.Optional(Type.String({ enum: ["worktree", "none"] })),

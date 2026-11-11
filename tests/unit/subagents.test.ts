@@ -70,6 +70,13 @@ describe("subagents tools", () => {
 		expect(subagent.parameters).toBeDefined();
 	});
 
+	it("notifyOnDone 不在联合类型上使用 enum，兼容 Moonshot schema 限制", () => {
+		const [tool] = makeSubagentTools(makeHostSpies());
+		const schema = tool.parameters.properties.notifyOnDone;
+		expect(schema).toMatchObject({ type: ["boolean", "string"] });
+		expect(schema).not.toHaveProperty("enum");
+	});
+
 	it("缺少 action 或未知 action 时给出明确提示", async () => {
 		const host = makeHostSpies();
 		const tool = makeSubagentTool(host, () => "zh");
