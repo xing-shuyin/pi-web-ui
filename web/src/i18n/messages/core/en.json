@@ -2654,5 +2654,9 @@
 	"bgTaskRestart": "Restart",
 	"bgTaskStart": "Start",
 	"bgTaskRunning": "Running",
-	"bgTaskQuickStart": "Quick start (package.json scripts)"
+	"bgTaskQuickStart": "Quick start (package.json scripts)",
+	"subagentVerdictUnverified": "unverified",
+	"subagentVerdictPartial": "partial",
+	"subagentVerdictBlocked": "blocked",
+	"subagentVerdictHint": "The subagent's completion evidence did not fully match its own transcript: see the completion notice or get_result"
 }

@@ -2738,6 +2738,11 @@ export interface ConversationSummary {
 	presetLocked?: boolean;
 	error?: string;
 	canceled?: boolean;
+	/**
+	 * 子代理完成证据的裁决：服务端已经用子代理自己的转录核对过它自报的文件/命令。
+	 * `unverified`/`partial`/`blocked` 要在左栏显式标出来，别让「没验证」看起来像「已验证」。
+	 */
+	subagentVerdict?: "pass" | "partial" | "unverified" | "blocked";
 	parentId?: string;
 	model?: string;
 	thinkingLevel?: string;

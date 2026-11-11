@@ -389,6 +389,26 @@ function groupSessionsByTime(
 	return groups;
 }
 
+/**
+ * 完成证据角标：只标「没核对通过」的三种裁决，`pass` 不占位（免噪声）。
+ * 详情（哪些文件/命令没对上）在完成通知与 get_result 里，这里只负责别让未验证看起来像已验证。
+ */
+function subagentVerdictBadge(c: ConversationSummary, t: Translate) {
+	const verdict = c.subagentVerdict;
+	if (!verdict || verdict === "pass") return null;
+	const meta =
+		verdict === "blocked"
+			? { kind: "blocked", label: t("subagentVerdictBlocked") }
+			: verdict === "partial"
+				? { kind: "partial", label: t("subagentVerdictPartial") }
+				: { kind: "unverified", label: t("subagentVerdictUnverified") };
+	return (
+		<span className={`category-badge-pill evidence-${meta.kind}`} title={t("subagentVerdictHint")}>
+			{meta.label}
+		</span>
+	);
+}
+
 function ConversationRowIndicator({ children, time }: { children: ReactNode; time?: string }) {
 	if (children) return <span className="conv-indicator-slot">{children}</span>;
 	return time ? <span className="conv-time">{time}</span> : null;
@@ -2288,6 +2308,8 @@ export const LeftPanel = memo(function LeftPanel({
 								</span>
 							)}
 
+							{subagentVerdictBadge(c, t)}
+
 							<ConversationRowIndicator time={convTime ? formatModified(convTime) : undefined}>
 								{c.hasQuestion ? (
 									<span
@@ -2483,6 +2505,8 @@ export const LeftPanel = memo(function LeftPanel({
 								{presetNames?.[c.agentPreset] ?? c.agentPreset}
 							</span>
 						)}
+
+						{subagentVerdictBadge(c, t)}
 
 						<ConversationRowIndicator time={convTime ? formatModified(convTime) : undefined}>
 							{hasQuestion || c.hasQuestion || isCliWaiting ? (

@@ -2065,12 +2065,15 @@ export class ClientSession {
 			.map((record) => `${record.title || record.type}（${record.runId.slice(0, 8)}）`)
 			.join("、");
 		const more = recovered.length > 5 ? ` 等 ${recovered.length} 个` : "";
-		this.pendingNotices.push({
+		const notice: ServerMessage = {
 			type: "notice",
 			level: "warning",
 			text: `上次服务重启中断了 ${recovered.length} 个子代理运行：${shown}${more}。用 conversation(action="resume", runId="…") 带已知进度续跑，或 get_result 取已产出的证据。`,
 			textEn: `${recovered.length} subagent run(s) were interrupted by the last restart: ${shown}${more}. Use conversation(action="resume", runId="…") to relaunch with the recorded progress, or get_result for the evidence already produced.`,
-		});
+		};
+		// 对账是异步的：已有客户端就直发，否则排队到下次 attach（别只塞 pendingNotices 等下一次连接）。
+		if (this.sinks?.size === 0) this.pendingNotices.push(notice);
+		else this.emit(notice);
 	}
 
 	async spawnSubagentViaHost(
@@ -12931,6 +12934,7 @@ export class ClientSession {
 				...(sessionFile ? { sessionFile } : {}),
 				...(modified ? { modified } : {}),
 				...(conv.isSubagent ? this.subagentRunOutcome(conv) : {}),
+				...(conv.subagentEvidence ? { subagentVerdict: conv.subagentEvidence.verdict } : {}),
 				...(pendingQuestion
 					? { hasQuestion: true as const, questionId: pendingQuestion.id, questionTitle: pendingQuestion.title }
 					: {}),
