@@ -2,7 +2,7 @@ import { readFileSync } from "node:fs";
 import { createServer } from "node:http";
 import express from "express";
 import { chromium } from "playwright-core";
-import { CHROME_PATH } from "../lib/chrome.mjs";
+import { BROWSER_TEST_TIMEOUT_MS, CHROME_PATH } from "../lib/chrome.mjs";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
 const source = readFileSync(new URL("../../server/index.ts", import.meta.url), "utf8");
@@ -70,7 +70,7 @@ describe("inline file policy", () => {
 				await browser.close();
 			}
 		},
-		20000,
+		BROWSER_TEST_TIMEOUT_MS,
 	);
 	it("installs policy before local and remote handlers", () => {
 		expect(start).toBeGreaterThan(0);

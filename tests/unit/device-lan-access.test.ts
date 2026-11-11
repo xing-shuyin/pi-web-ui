@@ -3,6 +3,7 @@ import { createServer, type Server } from "node:http";
 import type { Socket, AddressInfo } from "node:net";
 import { WebSocket, WebSocketServer } from "ws";
 import { chromium } from "playwright-core";
+import { BROWSER_TEST_TIMEOUT_MS } from "../lib/chrome.mjs";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { createDeviceLanServer } from "../../server/device-center/device-lan.js";
 import { createDeviceLanAccess } from "../../server/device-center/device-lan-access.js";
@@ -128,65 +129,73 @@ async function fixture(basePath = "/", desktop = false, browserScript = "") {
 }
 
 describe("local capability portal over authenticated LAN", () => {
-	it("loads a prefixed LAN UI inside the real opaque desktop iframe and falls back after losing LAN", async () => {
-		const chromeHelper = "../lib/chrome.mjs";
-		const { CHROME_PATH } = await import(chromeHelper);
-		if (!CHROME_PATH) throw new Error("Chrome required: set PI_WEB_CHROME");
-		const f = await fixture(
-			"/pi/",
-			true,
-			`(async()=>{const result={opaque:false,fetch:false,ws:false};try{void document.cookie}catch{result.opaque=true}const base=new URL(document.baseURI);const response=await fetch(new URL('api/echo',base),{method:'POST',headers:{'Content-Type':'application/json'},body:'{"ok":true}',credentials:'omit'});result.fetch=(await response.json()).ok;const ws=new WebSocket(new URL('ws',base).href.replace(/^http/,'ws'));await new Promise((resolve,reject)=>{ws.onopen=()=>ws.send('hello');ws.onmessage=event=>{result.ws=event.data==='hello';resolve()};ws.onerror=reject});document.getElementById('root').textContent=JSON.stringify(result)})()`,
-		);
-		const fresh = await f.freshUrl();
-		const browser = await chromium.launch({ executablePath: CHROME_PATH, headless: true, args: ["--no-sandbox"] });
-		cleanups.push(() => browser.close());
-		const page = await browser.newPage();
-		await page.route(f.sourceOrigin + "/embed", (route) =>
-			route.fulfill({
-				contentType: "text/html",
-				body: `<iframe sandbox="allow-scripts allow-forms allow-pointer-lock" src="${fresh}"></iframe>`,
-			}),
-		);
-		await page.route("https://hub.example/**", (route) =>
-			route.fulfill({ contentType: "text/html", body: "Hub fallback" }),
-		);
-		await page.goto(f.sourceOrigin + "/embed");
-		await vi.waitFor(
-			async () => {
-				const frame = page
-					.frames()
-					.find((frame) => frame.url().includes("/__relay/") && !frame.url().endsWith("/__lan_view"));
-				expect(await frame?.locator("#root").textContent()).toContain('"ws":true');
-			},
-			{ timeout: 10000 },
-		);
-		let inner = page
-			.frames()
-			.find((frame) => frame.url().includes("/__relay/") && !frame.url().endsWith("/__lan_view"))!;
-		expect(JSON.parse((await inner.locator("#root").textContent())!)).toEqual({ opaque: true, fetch: true, ws: true });
-		const wrapperFrame = page.frames().find((frame) => frame.url().endsWith("/__lan_view"))!;
-		await wrapperFrame.goto(wrapperFrame.url());
-		await vi.waitFor(
-			async () => {
-				inner = page
-					.frames()
-					.find((frame) => frame.url().includes("/__relay/") && !frame.url().endsWith("/__lan_view"))!;
-				expect(await inner?.locator("#root").textContent()).toContain('"ws":true');
-			},
-			{ timeout: 10000 },
-		);
-		f.setLanAvailable(false);
-		f.transport.close();
-		await inner.evaluate(() => parent.postMessage({ type: "device-portal-disconnected" }, "*"));
-		await vi.waitFor(
-			() =>
-				expect(page.frames().some((frame) => frame.url().startsWith("https://hub.example/device/remote/__open"))).toBe(
-					true,
-				),
-			{ timeout: 10000 },
-		);
-		expect(f.getFallbackCalls()).toBe(1);
-	}, 20000);
+	it(
+		"loads a prefixed LAN UI inside the real opaque desktop iframe and falls back after losing LAN",
+		async () => {
+			const chromeHelper = "../lib/chrome.mjs";
+			const { CHROME_PATH } = await import(chromeHelper);
+			if (!CHROME_PATH) throw new Error("Chrome required: set PI_WEB_CHROME");
+			const f = await fixture(
+				"/pi/",
+				true,
+				`(async()=>{const result={opaque:false,fetch:false,ws:false};try{void document.cookie}catch{result.opaque=true}const base=new URL(document.baseURI);const response=await fetch(new URL('api/echo',base),{method:'POST',headers:{'Content-Type':'application/json'},body:'{"ok":true}',credentials:'omit'});result.fetch=(await response.json()).ok;const ws=new WebSocket(new URL('ws',base).href.replace(/^http/,'ws'));await new Promise((resolve,reject)=>{ws.onopen=()=>ws.send('hello');ws.onmessage=event=>{result.ws=event.data==='hello';resolve()};ws.onerror=reject});document.getElementById('root').textContent=JSON.stringify(result)})()`,
+			);
+			const fresh = await f.freshUrl();
+			const browser = await chromium.launch({ executablePath: CHROME_PATH, headless: true, args: ["--no-sandbox"] });
+			cleanups.push(() => browser.close());
+			const page = await browser.newPage();
+			await page.route(f.sourceOrigin + "/embed", (route) =>
+				route.fulfill({
+					contentType: "text/html",
+					body: `<iframe sandbox="allow-scripts allow-forms allow-pointer-lock" src="${fresh}"></iframe>`,
+				}),
+			);
+			await page.route("https://hub.example/**", (route) =>
+				route.fulfill({ contentType: "text/html", body: "Hub fallback" }),
+			);
+			await page.goto(f.sourceOrigin + "/embed");
+			await vi.waitFor(
+				async () => {
+					const frame = page
+						.frames()
+						.find((frame) => frame.url().includes("/__relay/") && !frame.url().endsWith("/__lan_view"));
+					expect(await frame?.locator("#root").textContent()).toContain('"ws":true');
+				},
+				{ timeout: 10000 },
+			);
+			let inner = page
+				.frames()
+				.find((frame) => frame.url().includes("/__relay/") && !frame.url().endsWith("/__lan_view"))!;
+			expect(JSON.parse((await inner.locator("#root").textContent())!)).toEqual({
+				opaque: true,
+				fetch: true,
+				ws: true,
+			});
+			const wrapperFrame = page.frames().find((frame) => frame.url().endsWith("/__lan_view"))!;
+			await wrapperFrame.goto(wrapperFrame.url());
+			await vi.waitFor(
+				async () => {
+					inner = page
+						.frames()
+						.find((frame) => frame.url().includes("/__relay/") && !frame.url().endsWith("/__lan_view"))!;
+					expect(await inner?.locator("#root").textContent()).toContain('"ws":true');
+				},
+				{ timeout: 10000 },
+			);
+			f.setLanAvailable(false);
+			f.transport.close();
+			await inner.evaluate(() => parent.postMessage({ type: "device-portal-disconnected" }, "*"));
+			await vi.waitFor(
+				() =>
+					expect(
+						page.frames().some((frame) => frame.url().startsWith("https://hub.example/device/remote/__open")),
+					).toBe(true),
+				{ timeout: 10000 },
+			);
+			expect(f.getFallbackCalls()).toBe(1);
+		},
+		BROWSER_TEST_TIMEOUT_MS,
+	);
 	it("opens the whole device UI with opaque sandboxing and rewritten assets without contacting a Hub", async () => {
 		const f = await fixture();
 		expect(f.wrapper.status).toBe(200);

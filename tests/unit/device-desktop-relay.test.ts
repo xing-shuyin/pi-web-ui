@@ -4,7 +4,7 @@ import express from "express";
 import { JSDOM } from "jsdom";
 import { desktopPage } from "../../server/device-center/desktop-page.js";
 import { chromium } from "playwright-core";
-import { CHROME_PATH } from "../lib/chrome.mjs";
+import { BROWSER_TEST_TIMEOUT_MS, CHROME_PATH } from "../lib/chrome.mjs";
 import http, { type Server } from "node:http";
 import { once } from "node:events";
 import { mkdtempSync, rmSync } from "node:fs";
@@ -297,7 +297,7 @@ describe("native desktop through device relay and connector", () => {
 			await vi.waitFor(() => expect(f.sessions[1].close).toHaveBeenCalledTimes(1));
 			await vi.waitFor(() => expect(session.close).toHaveBeenCalledTimes(1));
 		},
-		30_000,
+		BROWSER_TEST_TIMEOUT_MS,
 	);
 	it("rewrites local authorization and transports binary frames and read-only ACKs through the full tunnel", async () => {
 		const f = await fixture();

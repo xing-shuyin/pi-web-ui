@@ -7,7 +7,7 @@ import { stripTypeScriptTypes } from "node:module";
 import { chromium } from "playwright-core";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import plugin from "../../plugins/live-preview/index.mjs";
-import { CHROME_PATH } from "../lib/chrome.mjs";
+import { BROWSER_TEST_TIMEOUT_MS, CHROME_PATH } from "../lib/chrome.mjs";
 
 const source = readFileSync(new URL("../../server/index.ts", import.meta.url), "utf8");
 function extract(from: string, until: string) {
@@ -179,7 +179,7 @@ describe("live-preview isolated capability service with TOKEN enabled", () => {
 				await browser.close();
 			}
 		},
-		20000,
+		BROWSER_TEST_TIMEOUT_MS,
 	);
 	it("revokes the capability on deactivation, including existing SSE connections", async () => {
 		const res = await fetch(base + cap + "/__livepreview/events");

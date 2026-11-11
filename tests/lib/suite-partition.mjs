@@ -9,6 +9,8 @@
  * 新增重文件时：只改这里 + 跑 `tests/unit/test-suite-partition.test.ts` 确认全覆盖。
  */
 
+import os from "node:os";
+
 /** 重型集成测试：真 git / 真子进程 / 真 Hub。（路径相对仓库根） */
 export const HEAVY_SUITE = [
 	"tests/unit/device-hub-artifact-integration.test.ts",
@@ -30,4 +32,20 @@ export const HEAVY_TIMEOUT_MS = 90_000;
  * 实测扫描（1023 文件 / 12383 条，Windows 12C/24T）：4 → 280s、8 → 186s、12 → 172s 但出现 1 条假红
  * （`canvas-scheduler` 内部的 `vi.waitFor({timeout: 15_000})` 被 12 路争抢拖过预算）。取 8：再高只能
  * 换 14s 壁钟，代价是开始撞各种写死的内部等待预算。 */
-export const FAST_MAX_WORKERS = 8;
+export const FAST_MAX_WORKERS = workerBudget();
+
+/**
+ * fork 数上限：8 是本机 12C/24T 的实测最优，但 GitHub 的 ubuntu-latest 只有 4 vCPU，
+ * 8 个 fork 抢 4 个核时并行系数只有 1.66×（单测墙钟 392s / 用例累计 628s）。
+ * 所以按实际核数收口：4 核 runner 用 4，开发机仍然用 8。
+ */
+function workerBudget() {
+	const cores = (() => {
+		try {
+			return os.availableParallelism?.() ?? os.cpus().length;
+		} catch {
+			return 8;
+		}
+	})();
+	return Math.max(2, Math.min(8, cores));
+}
