@@ -3506,7 +3506,6 @@ export class ClientSession {
 				},
 				promptSnapshot: () => this.promptSnapshot(),
 				getMarkerState: () => ({
-					markersEnabled: this.markerSvc.current.markersEnabled,
 					disabledMarkers: [...this.markerSvc.current.disabledMarkers],
 					markers: this.markerSvc.listForUi(),
 				}),
@@ -8444,7 +8443,6 @@ export class ClientSession {
 		reviewPrompt?: string;
 		reviewDisabledSkills?: string[];
 		disabledPlugins?: string[];
-		markersEnabled?: boolean;
 		disabledMarkers?: string[];
 		quickPhrases?: string[];
 		quickPhrasesEnabled?: boolean;
@@ -8452,18 +8450,14 @@ export class ClientSession {
 		preserveDraftAcrossConversations?: boolean;
 	}): Promise<void> {
 		if (this.botExecution) throw new Error("Bot settings are fixed");
-		const { markersEnabled, disabledMarkers, quickPhrasesSeeded, ...rest } = partial as {
-			markersEnabled?: boolean;
+		const { disabledMarkers, quickPhrasesSeeded, ...rest } = partial as {
 			disabledMarkers?: string[];
 			quickPhrasesSeeded?: boolean;
 		} & typeof partial;
 		if (quickPhrasesSeeded) this.stateStore.markQuickPhrasesSeeded();
 		let markerChanged = false;
-		if (markersEnabled !== undefined || disabledMarkers !== undefined) {
-			this.markerSvc.setAll({
-				...(markersEnabled !== undefined ? { markersEnabled } : {}),
-				...(disabledMarkers !== undefined ? { disabledMarkers } : {}),
-			});
+		if (disabledMarkers !== undefined) {
+			this.markerSvc.setDisabledMarkers(disabledMarkers);
 			markerChanged = true;
 		}
 		await this.settingsSvc.set(rest as never);

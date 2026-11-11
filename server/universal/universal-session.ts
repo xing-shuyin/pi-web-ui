@@ -354,7 +354,7 @@ export class UniversalSession implements DispatchSession {
 		const markerStateStore =
 			this.stateStore ??
 			({
-				getMarkerSettings: () => ({ markersEnabled: true, disabledMarkers: [] }),
+				getMarkerSettings: () => ({ disabledMarkers: [] }),
 				saveMarkerSettings: () => {},
 			} as unknown as ClientStateStore);
 
@@ -2362,7 +2362,6 @@ export class UniversalSession implements DispatchSession {
 			reviewSkills: [],
 			extensions: [],
 			presets: (this.stateStore?.getPresets(this.clientId) ?? []).map(settingsPresetToUi),
-			markersEnabled: this.markerSvc.current.markersEnabled,
 			disabledMarkers: [...this.markerSvc.current.disabledMarkers],
 			markers: this.markerSvc.listForUi(),
 			subagentTemplates: this.subagentTemplates.list(),

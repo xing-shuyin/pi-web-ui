@@ -939,7 +939,6 @@ export function handleSettingsMessage(
 				autoCompactionInstructions: (msg as { autoCompactionInstructions?: string }).autoCompactionInstructions,
 				reviewPrompt: msg.reviewPrompt,
 				reviewDisabledSkills: msg.reviewDisabledSkills,
-				markersEnabled: (msg as { markersEnabled?: boolean }).markersEnabled,
 				disabledMarkers: (msg as { disabledMarkers?: string[] }).disabledMarkers,
 				quickPhrases: (msg as { quickPhrases?: string[] }).quickPhrases,
 				quickPhrasesEnabled: (msg as { quickPhrasesEnabled?: boolean }).quickPhrasesEnabled,

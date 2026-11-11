@@ -36,25 +36,48 @@ export class MarkerService {
 	private overlayCache = new Map<string, string[]>();
 
 	constructor(private readonly host: MarkerHost) {
-		this.settings = this.host.stateStore.getMarkerSettings(this.host.clientId);
+		const loaded = this.host.stateStore.getMarkerSettings(this.host.clientId);
+		this.settings = { disabledMarkers: [...loaded.disabledMarkers] };
+		// 旧版有独立的「启用标记工具（全局）」开关：曾经全局关闭的用户迁移成「所有标记关闭」，
+		// 否则升级后标记会默默复活。写回后旧字段随 markers 整块覆盖消失。
+		if (this.host.stateStore.getLegacyMarkersGlobalOff?.() === true) {
+			this.setDisabledMarkers(this.visibleMarkerNames());
+		}
 	}
 
 	get current(): MarkerSettings {
-		return { ...this.settings, disabledMarkers: [...this.settings.disabledMarkers] };
+		return { disabledMarkers: [...this.settings.disabledMarkers] };
 	}
 
 	get allMarkerNames(): string[] {
 		return listMarkerNames();
 	}
 
+	/** UI 可见（非别名）的标记名：全局开关只看这一组，别名跟随主标记。 */
+	private visibleMarkerNames(): string[] {
+		const names: string[] = [];
+		for (const m of allMarkers()) {
+			if (m.isAlias || m.name === "suggest") continue;
+			if (names.includes(m.name)) continue;
+			names.push(m.name);
+		}
+		return names;
+	}
+
+	private isNameEnabled(name: string): boolean {
+		const disabled = this.settings.disabledMarkers;
+		if (disabled.includes(name)) return false;
+		if (name === "suggest" && disabled.includes("action")) return false;
+		return true;
+	}
+
+	/** 全局是否启用：没有独立开关，只要还剩任意一个标记开着就是启用；全关 = 全局关闭。 */
 	isGlobalEnabled(): boolean {
-		return this.settings.markersEnabled;
+		return this.visibleMarkerNames().some((name) => this.isNameEnabled(name));
 	}
 
 	isMarkerEnabled(name: string): boolean {
-		if (!this.settings.markersEnabled) return false;
-		if (name === "suggest" && this.settings.disabledMarkers.includes("action")) return false;
-		return !this.settings.disabledMarkers.includes(name);
+		return this.isNameEnabled(name) && this.isGlobalEnabled();
 	}
 
 	private lang(): ServerLang {
@@ -62,7 +85,7 @@ export class MarkerService {
 	}
 
 	buildGuidance(): string {
-		if (!this.settings.markersEnabled) return "";
+		if (!this.isGlobalEnabled()) return "";
 		const disabled = new Set(this.settings.disabledMarkers);
 		const lines = collectGuidance(disabled, "en");
 		if (lines.length === 0) return "";
@@ -75,9 +98,14 @@ export class MarkerService {
 		);
 	}
 
-	setEnabled(enabled: boolean): void {
-		this.settings.markersEnabled = !!enabled;
+	private persist(): void {
 		this.host.stateStore.saveMarkerSettings(this.host.clientId, this.settings);
+	}
+
+	/** per-marker 开关的唯一写入口；全局状态由它派生，不再接受「全局开关」字段。 */
+	setDisabledMarkers(names: string[]): void {
+		this.settings = { disabledMarkers: [...new Set(names)] };
+		this.persist();
 	}
 
 	toggleMarker(name: string, enabled: boolean): void {
@@ -89,19 +117,7 @@ export class MarkerService {
 			set.add(name);
 			if (name === "action") set.add("suggest");
 		}
-		this.settings.disabledMarkers = [...set];
-		this.host.stateStore.saveMarkerSettings(this.host.clientId, this.settings);
-	}
-
-	setAll(settings: Partial<MarkerSettings>): void {
-		if (settings.markersEnabled !== undefined) this.settings.markersEnabled = !!settings.markersEnabled;
-		if (settings.disabledMarkers !== undefined) {
-			this.settings.disabledMarkers = [...new Set(settings.disabledMarkers)];
-		} else {
-			this.host.stateStore.saveMarkerSettings(this.host.clientId, this.settings);
-			return;
-		}
-		this.host.stateStore.saveMarkerSettings(this.host.clientId, this.settings);
+		this.setDisabledMarkers([...set]);
 	}
 
 	private memFor(convId: string, ns: string): unknown | undefined {
@@ -167,7 +183,7 @@ export class MarkerService {
 	}
 
 	private async processAssistantText(conversationId: string, text: string): Promise<void> {
-		if (!text || !this.settings.markersEnabled) return;
+		if (!text || !this.isGlobalEnabled()) return;
 		const tokens = parseMarkers(text);
 		if (tokens.length === 0) return;
 
@@ -256,6 +272,7 @@ export class MarkerService {
 
 	overlayLines(conversationId: string): string[] {
 		const lines: string[] = [];
+		if (!this.isGlobalEnabled()) return lines;
 		for (const m of allMarkers()) {
 			if (m.isAlias || m.name === "suggest") continue;
 			if (this.settings.disabledMarkers.includes(m.name)) continue;

@@ -3814,7 +3814,6 @@ export class DshClientSession {
 			reviewSkills: [],
 			extensions: [],
 			presets: this.stateStore.getPresets(this.clientId).map(settingsPresetToUi),
-			markersEnabled: this.markerSvc.current.markersEnabled,
 			disabledMarkers: [...this.markerSvc.current.disabledMarkers],
 			markers: this.markerSvc.listForUi(),
 			subagentTemplates: [],
@@ -3879,7 +3878,6 @@ export class DshClientSession {
 		visionBridgePrompt?: string;
 		reviewPrompt?: string;
 		reviewDisabledSkills?: string[];
-		markersEnabled?: boolean;
 		disabledMarkers?: string[];
 		quickPhrases?: string[];
 		quickPhrasesEnabled?: boolean;
@@ -3935,10 +3933,7 @@ export class DshClientSession {
 		if (partial.preserveDraftAcrossConversations !== undefined)
 			this.settings.preserveDraftAcrossConversations = partial.preserveDraftAcrossConversations;
 		const prevMarkerGuidance = this.markerSvc.buildGuidance();
-		this.markerSvc.setAll({
-			markersEnabled: partial.markersEnabled,
-			disabledMarkers: partial.disabledMarkers,
-		});
+		if (partial.disabledMarkers !== undefined) this.markerSvc.setDisabledMarkers(partial.disabledMarkers);
 		const markerGuidanceChanged = this.markerSvc.buildGuidance() !== prevMarkerGuidance;
 		this.stateStore.saveSettings(this.clientId, {
 			nativeCliInheritModel: partial.nativeCliInheritModel,

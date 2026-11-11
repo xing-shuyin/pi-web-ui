@@ -63,7 +63,7 @@ raw.githubusercontent.com 会撞 CORS。所以「解析 → 净化 → 落盘」
 | `ui` 界面与交互偏好       | `uiLayout` · `disabledPlugins` · `thinkingWrap` · `toolsWrap` · `toolImagesEnabled` · `keepRecentMessages` · `showForkedParentSessions` · `quickPhrases` · `quickPhrasesEnabled` · `devNoCache` · `autoReload`                                                                                                               |
 | `engine` 引擎默认         | `defaultAgentPreset` · `defaultPermissionPreset`                                                                                                                                                                                                                                                                             |
 
-**仍在预设之外**（不在 `ClientSettings` 里，各有自己的存储）：标记开关（`markersEnabled`/`disabledMarkers`）、
+**仍在预设之外**（不在 `ClientSettings` 里，各有自己的存储）：标记开关（`disabledMarkers`；无独立全局开关，全关即全局关闭）、
 审批规则库（`approval-rules.json`）、子代理模板库（`subagent-templates.json`）、以及纯前端 localStorage 的
 偏好（墙纸、宽屏聊天列、present 自动预览、标题设置、声音/TTS、通知、输入历史）。
 

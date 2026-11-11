@@ -866,7 +866,7 @@ export function normalizeWorkspaceRoots(v: unknown): string[] {
 }
 
 export interface MarkerSettings {
-	markersEnabled: boolean;
+	/** 已关闭的标记名。全局状态由此派生：任意一个标记开着 = 全局启用，全部关闭 = 全局关闭。 */
 	disabledMarkers: string[];
 }
 
@@ -1942,17 +1942,26 @@ export class ClientStateStore {
 	getMarkerSettings(_clientId: string): MarkerSettings {
 		const s = this.load()[ClientStateStore.GLOBAL_SETTINGS_KEY]?.markers;
 		return {
-			markersEnabled: s?.markersEnabled ?? true,
 			disabledMarkers: s?.disabledMarkers ?? [...DEFAULT_DISABLED_MARKERS],
 		};
+	}
+
+	/**
+	 * 【一次性迁移】旧版独立的「启用标记工具（全局）」开关是否被关掉。
+	 * `undefined` = 旧数据里没有这个字段。新语义「全关即全局关闭」由 MarkerService 从 disabledMarkers 派生。
+	 */
+	getLegacyMarkersGlobalOff(): boolean | undefined {
+		const markers = this.load()[ClientStateStore.GLOBAL_SETTINGS_KEY]?.markers as unknown as
+			{ markersEnabled?: unknown } | undefined;
+		return typeof markers?.markersEnabled === "boolean" ? !markers.markersEnabled : undefined;
 	}
 
 	saveMarkerSettings(_clientId: string, settings: Partial<MarkerSettings>): void {
 		const all = this.load();
 		const state = (all[ClientStateStore.GLOBAL_SETTINGS_KEY] ??= { projects: [] });
-		const cur = state.markers ?? { markersEnabled: true, disabledMarkers: [...DEFAULT_DISABLED_MARKERS] };
+		const cur = state.markers ?? { disabledMarkers: [...DEFAULT_DISABLED_MARKERS] };
+		// 只落盘 per-marker 黑名单：整块覆盖会顺带清掉旧数据里已下线的 markersEnabled 字段
 		state.markers = {
-			markersEnabled: settings.markersEnabled ?? cur.markersEnabled ?? true,
 			disabledMarkers: settings.disabledMarkers ?? cur.disabledMarkers ?? [...DEFAULT_DISABLED_MARKERS],
 		};
 		this.save();

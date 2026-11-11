@@ -631,7 +631,6 @@ interface SettingsPatch extends QuickAskPatch {
 	softCapByModel?: Record<string, number>;
 	reviewPrompt?: string;
 	reviewDisabledSkills?: string[];
-	markersEnabled?: boolean;
 	disabledMarkers?: string[];
 }
 
@@ -1609,7 +1608,9 @@ function LoadedSettingsModal({
 	};
 	const disabledPluginTools = new Set(settings.disabledPluginTools ?? []);
 
-	const markersEnabled = settings.markersEnabled ?? true;
+	// 标记没有独立的全局开关：只要还剩一个开着就是启用，全关 = 不再注入/解析标记。
+	const markersOn = (settings.markers ?? []).filter((m) => m.enabled).length;
+	const markersTotal = settings.markers?.length ?? 0;
 	const disabledMarkers = new Set(settings.disabledMarkers ?? []);
 	const toggleMarker = (name: string) => {
 		const next = new Set(disabledMarkers);
@@ -3757,25 +3758,14 @@ function LoadedSettingsModal({
 										</FieldRow>
 									</>
 								)}
-								<div className="set-field-label">
-									{t("settingsMarkers")}
-									<HintTip text={`${t("settingsMarkersDesc")}\n${t("markerRenameTip")}`} />
-								</div>
-								<ToggleRow
-									title={t("markersEnabled")}
-									tip={`${t("markersEnabledDesc")}\n${t("markersOffHint")}`}
-									enabled={markersEnabled}
-									onToggle={() => setPartial({ markersEnabled: !markersEnabled })}
-								/>
-								{markersEnabled && (settings.markers?.length ?? 0) === 0 && (
-									<p className="set-empty">{t("loading")}...</p>
-								)}
-								{markersEnabled && settings.markers && settings.markers.length > 0 && (
+								{markersTotal === 0 && <p className="set-empty">{t("loading")}...</p>}
+								{markersTotal > 0 && settings.markers && (
 									<div className="toolflow-cat">
 										<div className="toolflow-chead">
-											<b>全部标记</b>
+											<b>{t("settingsMarkers")}</b>
+											<HintTip text={`${t("settingsMarkersDesc")}\n${t("markerRenameTip")}`} />
 											<span className="sub">
-												{settings.markers.filter((m) => m.enabled).length} / {settings.markers.length} 已启用
+												{markersOn === 0 ? "已全部关闭" : `${markersOn} / ${markersTotal} 已启用`}
 											</span>
 											<span className="ops">
 												<button

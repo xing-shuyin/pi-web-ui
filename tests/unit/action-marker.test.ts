@@ -205,7 +205,10 @@ describe("actionMarker 单元测试", () => {
 });
 
 describe("MarkerService 建议操作集成测试", () => {
-	function createService(settings: MarkerSettings = { markersEnabled: true, disabledMarkers: [] }) {
+	function createService(
+		settings: MarkerSettings = { disabledMarkers: [] },
+		legacyGlobalOff: boolean | undefined = undefined,
+	) {
 		let currentSettings = { ...settings };
 		let actionsChanged = 0;
 		const host = {
@@ -215,6 +218,7 @@ describe("MarkerService 建议操作集成测试", () => {
 				saveMarkerSettings: (_id: string, s: MarkerSettings) => {
 					currentSettings = { ...s };
 				},
+				getLegacyMarkersGlobalOff: () => legacyGlobalOff,
 			} as unknown as ClientStateStore,
 			emit: () => {},
 			isDisposed: () => false,
@@ -256,17 +260,37 @@ describe("MarkerService 建议操作集成测试", () => {
 	});
 
 	it("禁用 action 时返回 null", async () => {
-		const { svc } = createService({ markersEnabled: true, disabledMarkers: ["action"] });
+		const { svc } = createService({ disabledMarkers: ["action"] });
 		const text = "[[action:suggest:测试]]";
 		await svc.handleAssistantText("conv-1", text);
 		expect(svc.getActionSuggestions("conv-1")).toBeNull();
 	});
 
-	it("全局禁用标记时返回 null", async () => {
-		const { svc } = createService({ markersEnabled: false, disabledMarkers: [] });
+	it("所有标记全关 = 全局关闭（不解析、不注入引导）", async () => {
+		const { svc } = createService();
+		svc.setDisabledMarkers(svc.allMarkerNames);
+		expect(svc.isGlobalEnabled()).toBe(false);
+		expect(svc.buildGuidance()).toBe("");
 		const text = "[[action:suggest:测试]]";
 		await svc.handleAssistantText("conv-1", text);
 		expect(svc.getActionSuggestions("conv-1")).toBeNull();
+	});
+
+	it("全局状态只由标记开关派生：再开任意一个即恢复", () => {
+		const { svc } = createService();
+		expect(svc.isGlobalEnabled()).toBe(true);
+		const all = svc.listForUi().map((m) => m.name);
+		svc.setDisabledMarkers(all);
+		expect(svc.isGlobalEnabled()).toBe(false);
+		svc.toggleMarker("action", true);
+		expect(svc.isGlobalEnabled()).toBe(true);
+		expect(svc.buildGuidance()).not.toBe("");
+	});
+
+	it("旧版全局开关关闭的用户迁移成全部标记关闭", () => {
+		const { svc } = createService({ disabledMarkers: [] }, true);
+		expect(svc.isGlobalEnabled()).toBe(false);
+		expect(svc.current.disabledMarkers).toEqual(svc.listForUi().map((m) => m.name));
 	});
 
 	it("buildGuidance 为精简纯英文且不重复注入别名", () => {

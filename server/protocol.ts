@@ -1609,7 +1609,6 @@ export type ClientMessage =
 			softCapTokens?: number;
 			softCapByModel?: Record<string, number>;
 			autoCompactionInstructions?: string;
-			markersEnabled?: boolean;
 			disabledMarkers?: string[];
 			uiLayout?: UiLayoutPrefs;
 			quickPhrases?: string[];
@@ -3092,7 +3091,6 @@ export interface UiSettingsState {
 	reviewSkills: UiSkillInfo[];
 	extensions: UiExtensionInfo[];
 	presets: UiSettingsPreset[];
-	markersEnabled: boolean;
 	disabledMarkers: string[];
 	markers: UiMarkerInfo[];
 	subagentTemplates: UiSubagentTemplate[];
