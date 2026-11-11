@@ -912,7 +912,9 @@ export function normalizePathKey(p: string): string {
 		}
 		if (/^[a-zA-Z]:[\\/]/.test(p)) {
 			const drive = p.slice(0, 2).toLowerCase();
-			const rest = p.slice(2).replace(/\\/g, "/").replace(/\/+/g, "/");
+			// 尾部斜杠也要归一：win32 走 resolve() 已经去掉了，这条非 win32 分支是自己拼的，
+			// 留着会让 "e:/work/p" 与 "E:\\work\\p\\" 被当成两个目录（cwd 比对 / 缓存键 / 去重全分叉）。
+			const rest = p.slice(2).replace(/\\/g, "/").replace(/\/+/g, "/").replace(/\/+$/, "");
 			return (drive + rest).toLowerCase();
 		}
 		return resolve(p);

@@ -299,6 +299,12 @@ pi 的 `schedule` 创建任务时单独持久化创建来源（稳定 SDK 会话
 
 - 每客户端 `convs: Map<convId, Conversation>`，**每个对话一个独立 `AgentSessionRuntime`**：`new_chat` 新建 runtime + 新 session 文件（旧对话继续在后台跑，不中断）；`switch_conversation` 只换 `activeId`（不碰其他 runtime）；`runtime`/`session` 访问器指向当前活动对话。**对话按项目归属**：`conv.cwd` 即所属项目，每个项目各自的活动对话互不干扰。
 - **`set_cwd` 不再重建当前对话**——改为切到目标项目自己的对话（该项目最近活动的那个；没有则新建一个并恢复该项目最近的持久会话）。
+- **工作区命令必须串行（#872）**：`cs.cwd`、活动对话、runtime 绑定是同一组可变状态，而改它们的命令（`set_cwd` / `new_chat` / `new_cli_chat` / `switch_session` / `switch_conversation` / `fork_session` / `rollback_session` / `make_dir(setAsCwd)` / 沙盒切换）都是异步重活（stat、恢复最近会话、挂载 runtime、复制沙盒）。ws 消息逐条派发，上一条还在 await，下一条已经在跑 —— 「先切项目再新建对话」抢跑时 `newChat()` 读到的还是旧 cwd，新对话就落进上一个项目（左栏里像「消失」了）。
+  - **唯一单源 `server/workspace-queue.ts`**：派发层对上述命令只做「同步认领 + 入队」，按会话实例 FIFO，后一条等前一条落定；空闲时只多一个微任务。新增工作区命令必须入队，且**不得**在 handler 里自己写「等一会儿再干」。
+  - **声明式目标目录**：`new_chat` 可带 `cwd`（`ClientMessage`），服务端在同一条队列任务里「切工作区 → 核验 → 建会话」；**切不过去就不建会话**（错误提示 + `new_chat_result ok:false`），绝不静默落到旧项目。`new_cli_chat` 自带 cwd，自验证、不受这条拦截。
+  - **客户端意图单源**：`web/src/pending-workspace.ts` 记住「已声明、未确认」的 `set_cwd` 目标，并自动挂到紧随其后的 `new_chat` 上（各入口不各自记一遍，禁逐处补 cwd）；快照落到目标目录或 cwd 过渡 `done`/`error` 即清理。
+  - **入队的命令必须自己是有界的**（自带超时 / 中止）：队列是 FIFO，一条永不落定的命令会堵住该客户端所有工作区操作。`prompt` 与文件类命令不进队（各走自己的路）。
+  - 回归：`tests/unit/workspace-queue.test.ts`、`tests/unit/pending-workspace.test.ts`。
 - **「运行的对话」列表生命周期**（每个对话 `listed` / `promptedSinceActive` / `lastActiveAt` 三字段）：
   - 入列：活动对话**正在流式输出时**被挤到后台（new_chat / switch_conversation / set_cwd，**跨项目切换同样入列**）→ `listed=true`；从历史显式恢复的会话在打开时即设 `listed=true` + `promptedSinceActive=true`，首次切走不发新消息也保留。
   - **临时对话防丢失（#793）**：已开始的 `isEphemeral` 对话切走时始终保留并设 `listed=true`，不依赖全局 `retainFinishedConversations`、原先的 `listed` 或本次是否发新消息；重复打开再切走同样保留。空白临时对话仍可自动回收，显式 ✕ 仍可销毁；保留不代表落盘，需「保存为正式对话」才能进入历史。

@@ -104,7 +104,7 @@ describe("LeftPanel 标题栏操作与项目管理", () => {
 		expect(container.querySelector(".projects-scroll")).toBeNull();
 	});
 
-	it("项目行渲染新对话加号按钮，点击后发送 new_chat", () => {
+	it("项目行渲染新对话加号按钮，点击后带目标项目发 new_chat", () => {
 		setAppGlobals({ cwd: "/test", ready: true, status: "open", workspaceRoots: [] });
 		const { container, sent } = mountLeftPanel();
 
@@ -114,7 +114,8 @@ describe("LeftPanel 标题栏操作与项目管理", () => {
 
 		sent.length = 0;
 		act(() => newChatBtn!.click());
-		expect(sent).toEqual([{ type: "new_chat" }]);
+		// 项目行的「+」直接把目标项目写进 new_chat，服务端先切工作区再建会话（#872）
+		expect(sent).toEqual([{ type: "new_chat", cwd: "/test" }]);
 	});
 
 	it("标题行容器与折叠按钮不产生嵌套 button（无 button button）", () => {
