@@ -1696,6 +1696,8 @@
 		"parallelReminderOffHint": "Desactivado: sin avisos de trabajo en paralelo; la IA tampoco recibe el aviso de conflicto",
 		"browserPageEnabledDesc": "Permite que el modelo actúe en las páginas que autorices en la extensión page-picker (browser_page: leer / clic / escribir / desplazar / navegar; eval tiene su propio interruptor).",
 		"browserPageOffHint": "Desactivado: el modelo ya no puede hacer clic en tus páginas ni ejecutar scripts en ellas",
+		"phoneEnabledDesc": "Let the model read and drive this phone through its accessibility service (UI tree / tap / swipe / type / back-home keys / launch app / screenshots). Enable the \"pi 手机操控\" service in system settings first; password fields are never filled.",
+		"phoneOffHint": "Disabled: the model can neither read nor operate this phone",
 		"browserScriptEnabledDesc": "Let the model inject JavaScript or CSS into AI Browser pages, temporarily or permanently (browser_script tool: list / status / create / update / remove / enable / disable / run).",
 		"browserScriptOffHint": "Disabled: the model can no longer inject or manage page scripts",
 		"scheduleTaskEnabledDesc": "Permite a la IA crear activaciones programadas o diferidas (schedule: action=create crea, action=list muestra, action=cancel cancela): al vencerse, la instrucción vuelve a la conversación de origen para ejecutarse e informar; de un solo uso por defecto, se elimina sola tras activarse.",

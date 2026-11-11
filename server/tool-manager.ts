@@ -154,6 +154,8 @@ export const AGENT_TOOL_CATALOG: AgentToolEntry[] = [
 		group: "other",
 		defaultOn: false,
 		dshVisible: false,
+		descKey: "phoneEnabledDesc",
+		offHintKey: "phoneOffHint",
 	},
 	{
 		name: CLAIM_FILES_TOOL_NAME,

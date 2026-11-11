@@ -1696,6 +1696,8 @@
 		"parallelReminderOffHint": "Devre dışı: paralel çalışmada anımsatma yapılmaz, AI çakışma ipucu da almaz",
 		"browserPageEnabledDesc": "Modelin page-picker eklentisinde yetkilendirdiğiniz sayfalarda işlem yapmasını sağlar (browser_page aracı: oku / tıkla / yaz / kaydır / git; eval için ayrı bir anahtar vardır). Önce eklenti seçenekler sayfasında hedef sayfayı yetkilendirmeniz gerekir.",
 		"browserPageOffHint": "Devre dışı: model artık sayfalarınıza tıklayamaz veya sayfalarda betik çalıştıramaz",
+		"phoneEnabledDesc": "Let the model read and drive this phone through its accessibility service (UI tree / tap / swipe / type / back-home keys / launch app / screenshots). Enable the \"pi 手机操控\" service in system settings first; password fields are never filled.",
+		"phoneOffHint": "Disabled: the model can neither read nor operate this phone",
 		"browserScriptEnabledDesc": "Let the model inject JavaScript or CSS into AI Browser pages, temporarily or permanently (browser_script tool: list / status / create / update / remove / enable / disable / run).",
 		"browserScriptOffHint": "Disabled: the model can no longer inject or manage page scripts",
 		"scheduleTaskEnabledDesc": "AI'nın zamanlanmış/gecikmeli uyandırmalar oluşturmasını sağlar (`schedule` aracı: action=create görev oluşturur, action=list görüntüler, action=cancel iptal eder): süre dolduğunda komut, yürütmek ve raporlamak için kaynak konuşmaya geri teslim edilir; varsayılan olarak tek seferliktir, çalıştıktan sonra otomatik silinir.",

@@ -1692,6 +1692,8 @@
 	"parallelReminderOffHint": "Disabled: no parallel-work reminders; the AI gets no conflict hint either",
 	"browserPageEnabledDesc": "Let the model act on pages you granted in the page-picker extension (browser_page tool: read / click / type / scroll / goto; eval has its own switch). Grant the target page in the extension options first.",
 	"browserPageOffHint": "Disabled: the model can no longer click your pages or run scripts in them",
+	"phoneEnabledDesc": "Let the model read and drive this phone through its accessibility service (UI tree / tap / swipe / type / back-home keys / launch app / screenshots). Enable the \"pi 手机操控\" service in system settings first; password fields are never filled.",
+	"phoneOffHint": "Disabled: the model can neither read nor operate this phone",
 	"browserScriptEnabledDesc": "Let the model inject JavaScript or CSS into AI Browser pages, temporarily or permanently (browser_script tool: list / status / create / update / remove / enable / disable / run).",
 	"browserScriptOffHint": "Disabled: the model can no longer inject or manage page scripts",
 	"scheduleTaskEnabledDesc": "Let the AI create scheduled/delayed wake-ups (the `schedule` tool: action=create makes a task, action=list inspects, action=cancel cancels): on fire the prompt is delivered back into the originating conversation to run and report; one-shot by default, auto-deleted after firing.",
