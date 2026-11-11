@@ -1050,3 +1050,62 @@ describe("钉住的历史行在项目收起时仍然可见", () => {
 		expect(isPinnedRowVisible(true, pinnedConv)).toBe(false);
 	});
 });
+
+describe("刷新后收起状态的项目里的钉住行", () => {
+	it("项目一开始就是收起的：钉住的行仍然渲染，未钉住的折叠", () => {
+		stubZhStorage();
+		// 刷新后的真实状态：降低展开记录里没有 /project-a，它一开始就是收起的。
+		setAppGlobals({ cwd: "/project-b", ready: true, status: "open", workspaceRoots: [] });
+		const container = document.createElement("div");
+		document.body.appendChild(container);
+		root = createRoot(container);
+		const pinnedSession = {
+			path: "/sessions/x/pinned.jsonl",
+			name: "串台测试",
+			firstMessage: "串台测试",
+			modified: Date.now(),
+			messageCount: 2,
+			pinned: true,
+			cwd: "/project-a",
+		};
+		const plainSession = {
+			path: "/sessions/x/plain.jsonl",
+			name: "say ok",
+			firstMessage: "say ok",
+			modified: Date.now(),
+			messageCount: 2,
+			cwd: "/project-a",
+		};
+		act(() => {
+			root!.render(
+				createElement(
+					LanguageProvider,
+					null,
+					createElement(LeftPanel as any, {
+						active: false,
+						sessionFile: null,
+						conversations: [],
+						elsewhere: [],
+						sessions: [],
+						projectSessions: { "/project-a": [pinnedSession, plainSession] },
+						projects: [{ path: "/project-a", lastUsed: Date.now() }],
+						activeConversationId: "",
+						panelSend: () => true,
+					}),
+				),
+			);
+		});
+
+		const wrapperOf = (text: string) => {
+			const item = [...container.querySelectorAll<HTMLElement>("[data-session-key]")].find((el) =>
+				(el.textContent ?? "").includes(text),
+			);
+			return item?.closest(".lp-history-collapsible") ?? null;
+		};
+		const pinnedWrapper = wrapperOf("串台测试");
+		expect(pinnedWrapper).toBeTruthy();
+		expect(pinnedWrapper!.classList.contains("expanded")).toBe(true);
+		expect(wrapperOf("say ok")?.classList.contains("collapsed")).toBe(true);
+		container.remove();
+	});
+});

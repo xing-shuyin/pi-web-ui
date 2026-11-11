@@ -2895,7 +2895,11 @@ export const LeftPanel = memo(function LeftPanel({
 										transition?.kind === "cwd" ? normalizeSessionPathKey(transition.target) : null;
 									const q = filterText.trim().toLowerCase();
 									const views = projectTreeModel.map((m) => {
-										const visibleIdle = new Set(m.idleSessions.slice(0, m.maxVisible));
+										// 钉住的行不受 maxVisible 截断：它常驻，翻页也不能把它藏起来。
+										const visibleIdle = new Set([
+											...m.idleSessions.slice(0, m.maxVisible),
+											...m.idleSessions.filter((s) => s.pinned),
+										]);
 										const visibleModel = {
 											...m,
 											orderedBlocks: m.orderedBlocks.filter(
@@ -2960,11 +2964,15 @@ export const LeftPanel = memo(function LeftPanel({
 										if (!isCollapsed) {
 											everExpandedRef.current.add(pNorm);
 										}
+										const hasPinnedHistory = idleSessions.some((s) => s.pinned);
 										const shouldMountChildren =
 											!isCollapsed ||
 											pRunningRows.length > 0 ||
 											hasUnread ||
 											active ||
+											// 刷新后一直是收起状态、也没展开过的项目：只要里面有钉住的行，
+											// 子节点就得挂上，否则那行永远不出现（要手动展开再收才看得到）。
+											hasPinnedHistory ||
 											everExpandedRef.current.has(pNorm);
 
 										const dropClass =
