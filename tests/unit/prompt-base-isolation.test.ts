@@ -50,7 +50,6 @@ function soulOf(loader: object | undefined): string {
 		piExamples: "",
 		appendFiles: [...base.append],
 		windowsPersona: "",
-		terminalGuidance: "",
 		markersGuidance: "",
 		contextFiles: [],
 		skills: [],

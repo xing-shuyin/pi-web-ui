@@ -49,7 +49,7 @@ pi 编码智能体（`@earendil-works/pi-coding-agent` SDK）的 Web 聊天界�
 
 | 主题 | 文档 | 常用入口 |
 | --- | --- | --- |
-| 开发工作流 / CI | [`development.md`](docs/development.md) | `npm run dev` · `npm run typecheck` · `npm run lint` · `npm test` · `npm run test:smoke` |
+| 开发工作流 / CI | [`development.md`](docs/development.md) | `npm run dev` · `npm run typecheck` · `npm run lint` · `npm test` · `npm run test:smoke` · `npm run ci:local`（本地复刻 CI 门禁） |
 | 测试规范 | [`development.md`](docs/development.md) | 端口 ≥8900、data-dir `mkdtemp`、禁 `pkill -f`、冒烟禁用 `ensure-build.mjs` |
 | 发布 | [`release.md`](docs/release.md) | `npm run changelog:i18n` → commit → tag `vX.Y.Z` → `npm publish` |
 | 部署 | [`deployment.md`](docs/deployment.md) | `pi-web-ui server install` · `docker compose up -d` |
@@ -65,6 +65,7 @@ pi 编码智能体（`@earendil-works/pi-coding-agent` SDK）的 Web 聊天界�
 | **提示词/工具** | 提示词 base（SYSTEM.md / APPEND_SYSTEM.md）归属 session 的 loader，禁客户端级「最近一次」字段 | `prompt-base-scope` |
 | **服务端/运行态** | 压缩软上限双层监控；换模型只走 `applySessionModel` | — |
 | **服务端/运行态** | 会话过户必须事务性回滚；跨 await 用稳定身份，禁读 active | `takeover-rollback-test` |
+| **服务端/运行态** | 工作区命令（set_cwd/new_chat/switch_*/沙盒）一律走 `server/workspace-queue.ts` 队列；`new_chat.cwd` 切不过去就不建会话 | `workspace-queue` · `pending-workspace` |
 | **服务端/运行态** | 服务端禁同步子进程（`spawnSync`/`execSync`/`execFileSync`），热路径改异步 spawn 或静态推导 | `sync-child-process-guard` |
 | **服务端/运行态** | 远期定时器 >6h 必须 `armDelay` 分片；预设分享必须白名单净化 + dryRun | `plugin-cron-overflow-test` · `preset-share` |
 | **前端/样式** | 强调色/语义色实底文字走 `--accent-contrast` / `--on-*`；主题文字令牌有对比度下限 | `accent-contrast` · `semantic-contrast` · `theme-text-contrast` |

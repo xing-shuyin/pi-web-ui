@@ -244,8 +244,8 @@ export function subagentSecurityDenial(
 		if (!isReadOnlyConversationAction(act)) {
 			return {
 				kind: "dispatch-tool",
-				reason: `受限子代理（${mode}）：禁止调用 subagent(action="${act || "spawn"}") 派生或操控其他子代理。`,
-				reasonEn: `Restricted subagent (${mode}): subagent(action="${act || "spawn"}") is blocked in restricted mode.`,
+				reason: `受限子代理（${mode}）：禁止调用 conversation(action="${act || "spawn"}") 派生或操控其他子代理。`,
+				reasonEn: `Restricted subagent (${mode}): conversation(action="${act || "spawn"}") is blocked in restricted mode.`,
 			};
 		}
 	}

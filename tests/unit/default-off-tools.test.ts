@@ -1,4 +1,4 @@
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
@@ -68,7 +68,6 @@ describe("出厂默认关闭的标记", () => {
 
 	it("新客户端 getMarkerSettings 回落默认值", () => {
 		const s = store.getMarkerSettings("fresh-client");
-		expect(s.markersEnabled).toBe(true);
 		expect(s.disabledMarkers).toEqual([...DEFAULT_DISABLED_MARKERS]);
 	});
 
@@ -80,5 +79,17 @@ describe("出厂默认关闭的标记", () => {
 	it("显式开启 notify 能落盘", () => {
 		store.saveMarkerSettings("c1", { disabledMarkers: [] });
 		expect(store.getMarkerSettings("c1").disabledMarkers).toEqual([]);
+	});
+
+	it("旧版全局开关能从落盘数据读出（供迁移）", () => {
+		const file = join(dir, "legacy-state.json");
+		writeFileSync(
+			file,
+			JSON.stringify({ __settings__: { projects: [], markers: { markersEnabled: false, disabledMarkers: [] } } }),
+		);
+		const legacy = new ClientStateStore(file);
+		expect(legacy.getLegacyMarkersGlobalOff()).toBe(true);
+		legacy.saveMarkerSettings("c1", { disabledMarkers: ["notify", "conv", "action"] });
+		expect(legacy.getLegacyMarkersGlobalOff()).toBeUndefined();
 	});
 });

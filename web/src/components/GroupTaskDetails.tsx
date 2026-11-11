@@ -56,7 +56,10 @@ export function GroupTaskDetails({ roomId, taskId, onClose }: GroupTaskDetailsPr
 
 	useEffect(() => {
 		const handleKeyDown = (e: KeyboardEvent) => {
-			if (e.key === "Escape") onCloseRef.current();
+			if (e.key === "Escape") {
+				e.preventDefault();
+				onCloseRef.current();
+			}
 		};
 		window.addEventListener("keydown", handleKeyDown);
 		panelRef.current?.focus();

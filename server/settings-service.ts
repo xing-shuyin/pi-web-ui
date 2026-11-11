@@ -65,7 +65,6 @@ import {
 } from "./preset-share.js";
 
 export interface MarkerStateForSettings {
-	markersEnabled: boolean;
 	disabledMarkers: string[];
 	markers: import("./protocol.js").UiMarkerInfo[];
 }
@@ -588,7 +587,6 @@ export class SettingsService {
 				...(this.host.getMarkerState
 					? this.host.getMarkerState()
 					: {
-							markersEnabled: true,
 							disabledMarkers: [] as string[],
 							markers: [] as import("./protocol.js").UiMarkerInfo[],
 						}),
@@ -735,7 +733,6 @@ export class SettingsService {
 		softCapTokens?: number;
 		softCapByModel?: Record<string, number>;
 		autoCompactionInstructions?: string;
-		markersEnabled?: boolean;
 		disabledMarkers?: string[];
 		quickPhrases?: string[];
 		quickPhrasesEnabled?: boolean;

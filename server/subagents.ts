@@ -4,6 +4,15 @@ import type { QuestionAnswer, UiQuestion } from "./protocol.js";
 import { pick, type ServerLang } from "./i18n.js";
 import { type SubagentSpawnExtra, resolveSecurityMode } from "./subagent-security-gate.js";
 import { THINKING_LEVELS } from "./subagent-templates.js";
+import {
+	evidenceVerdictLabel,
+	formatEvidenceSummary,
+	normalizeEvidenceInput,
+	type SubagentEvidence,
+	type SubagentEvidenceInput,
+} from "./subagent-evidence.js";
+import type { SettleWakeReason } from "./subagent-settle.js";
+import type { LedgerEvent, LedgerRunRecord, LedgerRunState } from "./subagent-ledger.js";
 import { CONVERSATION_TOOL_NAME } from "./tool-manager.js";
 import { richQuestionsSchema } from "./question-params.js";
 import { questionsFromMessage } from "./conversation-communication.js";
@@ -11,6 +20,71 @@ import { Value } from "typebox/value";
 export { CONVERSATION_TOOL_NAME } from "./tool-manager.js";
 
 export type SubagentState = "running" | "queued" | "done" | "canceled";
+
+/** 单次派发的扇出上限：超过就分多次调用，避免一次调用把并发预算挤爆。 */
+export const SUBAGENT_FANOUT_MAX = 16;
+
+/** 运行键长度与形状：模型给的短名，映射到真实运行身份。 */
+export const SUBAGENT_KEY_PATTERN = /^[A-Za-z0-9_][A-Za-z0-9_.-]{0,39}$/;
+
+/** 一次派发请求（单发与 `tasks[]` 扇出共用同一份归一化结果）。 */
+export interface SubagentSpawnRequest {
+	key?: string;
+	prompt?: string;
+	type?: string;
+	template?: string;
+	model?: string;
+	thinking?: string;
+	isolation?: string;
+	persist?: boolean;
+	notifyOnDone?: boolean | "manual";
+}
+
+export interface NormalizedSpawnSpec {
+	key?: string;
+	prompt: string;
+	type: string;
+	templateName?: string;
+	model?: string;
+	thinking?: string;
+	isolationMode?: "worktree" | "none";
+	persist?: boolean;
+	notifyOnDone?: boolean | "manual";
+}
+
+/** 运行中改指令的回执：告诉父代理这次 steer 到底落在哪里。 */
+export type SubagentSteerState = "delivered" | "queued" | "restarted" | "missed";
+
+export interface SubagentSteerReceipt {
+	state: SubagentSteerState;
+}
+
+/** 子代理本次运行的用量（输入/输出 token）。 */
+export interface SubagentUsage {
+	input: number;
+	output: number;
+	total: number;
+}
+
+export interface SubagentCompletionRecord {
+	ok: boolean;
+	error?: string;
+	issues?: string[];
+	evidence?: SubagentEvidence;
+}
+
+/** 续跑结果：进程内子代理会话不落盘，所以续跑是「带上下文重派」，不是假装接上原转录。 */
+export type SubagentResumeResult =
+	| {
+			ok: true;
+			runId: string;
+			convId: string;
+			executionId?: string;
+			mode: "relaunch";
+			previousState: LedgerRunState;
+			sessionFile?: string;
+	  }
+	| { ok: false; error: string; runId?: string };
 
 export function computeWaitCapMs(watchdogMs?: number): number {
 	const customSecs = Number(process.env.PI_WEB_SUBAGENT_WAIT_CAP_SECONDS);
@@ -49,6 +123,8 @@ export interface SubagentSnapshot {
 	output: string;
 	parentId?: string;
 	persisted?: boolean;
+	evidence?: SubagentEvidence;
+	usage?: SubagentUsage;
 	handoffTo?: string[];
 	handoffFrom?: string[];
 	worktree?: {
@@ -63,7 +139,21 @@ export interface SubagentSnapshot {
 }
 
 export interface SubagentToolHost {
-	completeSubagent?(selfId: string, summary: string): unknown;
+	completeSubagent?(
+		selfId: string,
+		summary: string,
+		evidence?: SubagentEvidenceInput,
+	): SubagentCompletionRecord | Promise<SubagentCompletionRecord>;
+	/** 运行账本（重启后可读）：只支持持久化的引擎提供；缺省时工具降级为只看活运行。 */
+	listLedgerRuns?(opts?: { limit?: number }): Promise<LedgerRunRecord[]>;
+	getLedgerRun?(runId: string): Promise<LedgerRunRecord | undefined>;
+	getLedgerEvents?(runId: string, limit?: number): Promise<LedgerEvent[]>;
+	resumeLedgerRun?(selfId: string, runId: string, message?: string): Promise<SubagentResumeResult>;
+	/**
+	 * 等待 `ids` 里任意一个发生可观察变化（回合结束、停止、移出、问卷/请示、通知状态）。
+	 * 返回 `timeout` 表示这段等待到点，调用方自己判断是否继续等；返回 `aborted` 表示外部取消。
+	 */
+	waitForSubagentSettle(ids: string[], opts: { timeoutMs: number; signal?: AbortSignal }): Promise<SettleWakeReason>;
 	consultParent?(selfConvId: string, questions: UiQuestion[], signal?: AbortSignal): Promise<unknown>;
 	answerConsult?(
 		selfConvId: string,
@@ -93,7 +183,7 @@ export interface SubagentToolHost {
 	getSubagent(convId: string): SubagentSnapshot | undefined;
 	resolveConversationId?(id: string): string | undefined;
 	listSubagents(scope?: "all" | "subagent" | "persistent", forSelfId?: string): SubagentSnapshot[];
-	steerSubagent(convId: string, message: string): Promise<void>;
+	steerSubagent(convId: string, message: string): Promise<SubagentSteerReceipt | void>;
 	stopSubagent(convId: string): Promise<void>;
 	listTemplates(): {
 		name: string;
@@ -180,15 +270,17 @@ export const SUBAGENT_ACTIONS = [
 	"consult",
 	"answer",
 	"escalate",
+	"resume",
 ] as const;
 
 export type SubagentAction = (typeof SUBAGENT_ACTIONS)[number];
 
 /** Compact action signature: the single place documenting parameters, so field schemas stay prose-free. */
 export const MANAGEMENT_ACTION_SIGNATURE =
-	"spawn(prompt,type?) | steer/answer(runId,message,requestId?) | complete(summary) | consult(message) | " +
-	"escalate(runId,requestId) | get_result/stop(runId) | wait_all/dismiss(runIds?) | handoff(toRunId,payload) | " +
-	"list(kind?) | templates";
+	"spawn(prompt,type?,key? | tasks[{key,prompt,type?,template?,model?,thinking?,isolation?,persist?,notifyOnDone?}]) | " +
+	"steer/answer(runId,message,requestId?) | complete(summary,evidence{files[],commands[],none?,blocked?}) | consult(message) | " +
+	"escalate(runId,requestId) | get_result/stop/resume(runId,message?) | wait_all/dismiss(runIds? keys accepted) | " +
+	"handoff(toRunId,payload) | list(kind?) | templates";
 
 export function makeSubagentTool(
 	host: SubagentToolHost,
@@ -209,6 +301,179 @@ export function makeSubagentTool(
 	const deliveredConsults = new Set<string>();
 	const consultKey = (parentId: string, runId: string, requestId: string) =>
 		JSON.stringify([parentId, runId, requestId]);
+
+	// 扇出键表：模型给短 key，工具映射成稳定运行身份（有界，旧的先丢）。
+	const RUN_KEY_CAP = 256;
+	const runKeys = new Map<string, string>();
+	const rememberRunKey = (key: string | undefined, convId: string): void => {
+		if (!key) return;
+		runKeys.delete(key);
+		runKeys.set(key, convId);
+		while (runKeys.size > RUN_KEY_CAP) {
+			const oldest = runKeys.keys().next().value;
+			if (oldest === undefined) break;
+			runKeys.delete(oldest);
+		}
+	};
+	/** `key` 与真实 id 都接受：命中键表就换成运行身份，否则原样返回。 */
+	const resolveRunRef = (ref: string): string => runKeys.get(ref.trim()) ?? ref;
+
+	const normalizeSpawnRequest = (
+		request: SubagentSpawnRequest,
+		ordinal: number,
+	): { spec: NormalizedSpawnSpec } | { error: string } => {
+		const lang = getLang();
+		const zh = lang === "zh";
+		const rawKey = typeof request.key === "string" ? request.key.trim() : "";
+		const label = rawKey ? `[${rawKey}]` : zh ? `[第 ${ordinal} 项]` : `[task ${ordinal}]`;
+		const prompt = typeof request.prompt === "string" ? request.prompt : "";
+		if (!prompt.trim()) {
+			return {
+				error: pick(
+					lang,
+					`${label} 缺少 prompt。`,
+					`${label} is missing a prompt.`,
+					"subagents.spawn.task.missing.prompt",
+					{ label },
+				),
+			};
+		}
+		if (rawKey && !SUBAGENT_KEY_PATTERN.test(rawKey)) {
+			return {
+				error: pick(
+					lang,
+					`${label} 的 key 不合法：只用字母/数字/下划线/点/横线，最长 40 字符。`,
+					`${label} has an invalid key: use letters/digits/\`_.-\`, max 40 chars.`,
+					"subagents.spawn.task.bad.key",
+					{ label },
+				),
+			};
+		}
+		const type = typeof request.type === "string" && request.type.trim() ? request.type.trim() : "general";
+		const requestedTemplate =
+			typeof request.template === "string" && request.template.trim() ? request.template.trim() : undefined;
+		let templateName: string | undefined;
+		if (requestedTemplate) {
+			if (!host.isTemplateUsable(requestedTemplate)) {
+				return {
+					error: pick(
+						lang,
+						`${label} 的子代理模板不可用：${requestedTemplate}（不存在或已停用）。用 conversation(action="templates") 看清单。`,
+						`${label} requests an unavailable template: ${requestedTemplate} (missing or disabled). Use conversation(action="templates") to list them.`,
+						"subagents.spawn.template.unavailable",
+						{ label, "p.template": requestedTemplate },
+					),
+				};
+			}
+			templateName = requestedTemplate;
+		} else if (host.isTemplateUsable(type)) {
+			templateName = type;
+		}
+		const thinking =
+			typeof request.thinking === "string" && request.thinking.trim() ? request.thinking.trim() : undefined;
+		if (thinking && !THINKING_LEVELS.includes(thinking as (typeof THINKING_LEVELS)[number])) {
+			return {
+				error: pick(
+					lang,
+					`${label} 非法思考强度：${thinking}。可选档位：${THINKING_LEVELS.join(", ")}。`,
+					`${label} has an invalid thinking level: ${thinking}. Allowed levels: ${THINKING_LEVELS.join(", ")}.`,
+					"subagents.spawn.thinking.invalid",
+					{ label, thinking, levels: THINKING_LEVELS.join(", ") },
+				),
+			};
+		}
+		const rawIsolation = typeof request.isolation === "string" ? request.isolation.trim().toLowerCase() : "";
+		if (rawIsolation && rawIsolation !== "worktree" && rawIsolation !== "none") {
+			return {
+				error: pick(
+					lang,
+					`${label} 不支持的隔离模式：${rawIsolation}（可选 worktree / none）。`,
+					`${label} uses an unsupported isolation mode: ${rawIsolation} (worktree / none).`,
+					"subagents.spawn.isolation.invalid",
+					{ label, isolation: rawIsolation },
+				),
+			};
+		}
+		const model = typeof request.model === "string" && request.model.trim() ? request.model.trim() : undefined;
+		return {
+			spec: {
+				key: rawKey || undefined,
+				prompt,
+				type,
+				templateName,
+				model,
+				thinking,
+				isolationMode: rawIsolation === "worktree" || rawIsolation === "none" ? rawIsolation : undefined,
+				persist: request.persist,
+				notifyOnDone: request.notifyOnDone,
+			},
+		};
+	};
+
+	/** 单次启动：校验完的 spec → 真实子代理。错误以结果返回，不抛（扇出时其它项照常跑）。 */
+	const spawnSpec = async (
+		spec: NormalizedSpawnSpec,
+		cwd: string,
+		signal: AbortSignal | undefined,
+	): Promise<{ ok: true; convId: string; executionId?: string } | { ok: false; error: string }> => {
+		const matchedTemplate = spec.templateName
+			? host.listTemplates().find((t) => t.name === spec.templateName)
+			: undefined;
+		const securityMode = resolveSecurityMode(spec.type, matchedTemplate);
+		const extra: SubagentSpawnExtra | undefined = securityMode !== "normal" ? { securityMode } : undefined;
+		const spawnArgs: [
+			string,
+			string,
+			string,
+			string?,
+			string?,
+			string?,
+			boolean?,
+			string?,
+			(boolean | "manual")?,
+			string?,
+			SubagentSpawnExtra?,
+			AbortSignal?,
+		] = [
+			spec.prompt,
+			spec.type,
+			cwd,
+			spec.templateName,
+			spec.model,
+			undefined,
+			spec.persist,
+			spec.thinking,
+			spec.notifyOnDone,
+		];
+		if (spec.isolationMode === "worktree" || extra !== undefined || signal !== undefined) {
+			spawnArgs.push(spec.isolationMode === "worktree" ? "worktree" : undefined);
+		}
+		if (extra !== undefined || signal !== undefined) spawnArgs.push(extra);
+		if (signal !== undefined) spawnArgs.push(signal);
+		try {
+			signal?.throwIfAborted();
+			const convId = await host.spawnSubagent(...spawnArgs);
+			rememberRunKey(spec.key, convId);
+			return { ok: true, convId, executionId: host.getSubagent(convId)?.executionId };
+		} catch (err) {
+			return { ok: false, error: err instanceof Error ? err.message : String(err) };
+		}
+	};
+
+	/** 扇出时的有限并发：避免与并发上限抢名额，又不至于串行等每个子代理初始化完。 */
+	const SPAWN_FANOUT_CONCURRENCY = 4;
+	const mapLimited = async <T, R>(items: readonly T[], limit: number, fn: (item: T) => Promise<R>): Promise<R[]> => {
+		const out = new Array<R>(items.length);
+		let cursor = 0;
+		const worker = async (): Promise<void> => {
+			while (cursor < items.length) {
+				const index = cursor++;
+				out[index] = await fn(items[index]!);
+			}
+		};
+		await Promise.all(Array.from({ length: Math.min(limit, items.length) }, worker));
+		return out;
+	};
 
 	const expandDescendants = (roots: Set<string> | string[]): string[] => {
 		if (roots instanceof Set ? roots.size === 0 : (roots as string[]).length === 0) return [];
@@ -282,8 +547,34 @@ export function makeSubagentTool(
 				description: MANAGEMENT_ACTION_SIGNATURE,
 			}),
 			prompt: Type.Optional(Type.String()),
+			key: Type.Optional(Type.String()),
+			tasks: Type.Optional(
+				Type.Array(
+					Type.Object({
+						key: Type.Optional(Type.String()),
+						prompt: Type.Optional(Type.String()),
+						type: Type.Optional(Type.String()),
+						template: Type.Optional(Type.String()),
+						model: Type.Optional(Type.String()),
+						thinking: Type.Optional(Type.String({ enum: [...THINKING_LEVELS] })),
+						isolation: Type.Optional(Type.String({ enum: ["worktree", "none"] })),
+						persist: Type.Optional(Type.Boolean()),
+						notifyOnDone: Type.Optional(
+							Type.Unsafe<boolean | "manual">({ type: ["boolean", "string"], enum: [true, false, "manual"] }),
+						),
+					}),
+				),
+			),
 			message: Type.Optional(Type.String({ description: "Steer instruction, consult question, or answer text." })),
 			summary: Type.Optional(Type.String()),
+			evidence: Type.Optional(
+				Type.Object({
+					files: Type.Optional(Type.Array(Type.String())),
+					commands: Type.Optional(Type.Array(Type.String())),
+					none: Type.Optional(Type.Boolean()),
+					blocked: Type.Optional(Type.String()),
+				}),
+			),
 			payload: Type.Optional(Type.String()),
 			runId: Type.Optional(Type.String()),
 			runIds: Type.Optional(Type.Array(Type.String())),
@@ -317,8 +608,8 @@ export function makeSubagentTool(
 				return text(
 					pick(
 						getLang(),
-						`subagent 工具缺少 action 参数（可选：${SUBAGENT_ACTIONS.join(", ")}）。`,
-						`subagent tool requires an action parameter (one of: ${SUBAGENT_ACTIONS.join(", ")}).`,
+						`conversation 工具缺少 action 参数（可选：${SUBAGENT_ACTIONS.join(", ")}）。`,
+						`conversation tool requires an action parameter (one of: ${SUBAGENT_ACTIONS.join(", ")}).`,
 						"subagents.action.missing",
 					),
 				);
@@ -331,14 +622,49 @@ export function makeSubagentTool(
 					if (!selfId || !host.completeSubagent) throw new Error("Task completion is unavailable.");
 					const summary = (p.summary ?? p.message ?? "").trim();
 					if (!summary) throw new Error("complete requires a nonempty summary or message.");
-					const result = await host.completeSubagent(selfId, summary);
-					if (result && typeof result === "object" && "ok" in result && result.ok === false) {
-						throw new Error(String("error" in result ? result.error : "Completion request rejected."));
+					const normalized = normalizeEvidenceInput(p.evidence);
+					if (!normalized.ok) {
+						return text(
+							pick(
+								getLang(),
+								'evidence 形状不对：要么给 {files:[], commands:[]}，要么 {none:true}（只读任务），要么 {blocked:"原因"}；空对象不算证据。',
+								'Malformed evidence: pass {files:[], commands:[]}, {none:true} for read-only work, or {blocked:"reason"}. An empty object is not evidence.',
+								"subagents.complete.evidence.invalid",
+							),
+							{ status: "evidence_invalid" },
+						);
 					}
-					return text("Completion intent recorded; settlement waits for idle state and pending dependencies.", {
-						status: "completion_requested",
-						runId: selfId,
-					});
+					const result = await host.completeSubagent(selfId, summary, normalized.value);
+					if (result.ok === false) {
+						const issues = result.issues && result.issues.length > 0 ? result.issues : [result.error ?? "unspecified"];
+						throw new Error(
+							pick(
+								getLang(),
+								`完成被驳回：证据与本会话转录不符。\n- ${issues.join("\n- ")}\n先修正再 complete：声称跑过的命令必须真的在本会话里跑过且成功；没改文件就写 {none:true}；做不完就写 {blocked:"原因"}。不要把口供改成能过的样子。`,
+								`Completion rejected: the evidence does not match this session's transcript.\n- ${issues.join("\n- ")}\nFix the work, then complete again: commands must actually have run and succeeded; use {none:true} if you changed no files; use {blocked:"reason"} if you could not finish. Do not restate claims just to pass.`,
+								"subagents.complete.rejected",
+							),
+						);
+					}
+					const evidence = result.evidence;
+					const evidenceLine = evidence ? formatEvidenceSummary(evidence, getLang()) : "";
+					return text(
+						evidence
+							? pick(
+									getLang(),
+									`完成意图已登记。证据：${evidenceLine}\n结算会等空闲与依赖收口。`,
+									`Completion intent recorded. Evidence: ${evidenceLine}\nSettlement waits for idle state and pending dependencies.`,
+									"subagents.complete.recorded",
+									{ evidence: evidenceLine },
+								)
+							: "Completion intent recorded; settlement waits for idle state and pending dependencies.",
+						{
+							status: "completion_requested",
+							runId: selfId,
+							verdict: evidence?.verdict,
+							evidence,
+						},
+					);
 				}
 				case "consult": {
 					signal?.throwIfAborted();
@@ -417,58 +743,131 @@ export function makeSubagentTool(
 					return text(JSON.stringify(result) ?? `Consult ${action} submitted.`, result);
 				}
 				case "spawn": {
-					if (!p.prompt || typeof p.prompt !== "string" || !p.prompt.trim()) {
+					const batchTasks = Array.isArray(p.tasks) && p.tasks.length > 0 ? p.tasks : undefined;
+					if (!batchTasks && (!p.prompt || typeof p.prompt !== "string" || !p.prompt.trim())) {
 						return text(
 							pick(
 								getLang(),
-								'subagent(action="spawn") 缺少 prompt 参数。',
-								'subagent(action="spawn") requires prompt parameter.',
+								'conversation(action="spawn") 缺少 prompt 参数（也可用 tasks[] 一次派多个）。',
+								'conversation(action="spawn") requires prompt (or tasks[] for a fan-out).',
 								"subagents.spawn.missing.prompt",
 							),
 						);
 					}
-					let templateName: string | undefined;
-					if (legacy.template) {
-						if (!host.isTemplateUsable(legacy.template)) {
-							return text(
+					const requests: SubagentSpawnRequest[] = batchTasks
+						? batchTasks.map((task) => ({ ...(task as SubagentSpawnRequest) }))
+						: [
+								{
+									key: p.key,
+									prompt: p.prompt,
+									type: p.type,
+									template: legacy.template,
+									model: p.model,
+									thinking: p.thinking,
+									isolation: p.isolation,
+									persist: p.persist,
+									notifyOnDone: p.notifyOnDone,
+								},
+							];
+					if (requests.length > SUBAGENT_FANOUT_MAX) {
+						return text(
+							pick(
+								getLang(),
+								`一次最多派发 ${SUBAGENT_FANOUT_MAX} 个（收到 ${requests.length} 个）。分批调用或先等一批收口。`,
+								`At most ${SUBAGENT_FANOUT_MAX} tasks per call (got ${requests.length}). Split the batch or wait for a round to settle first.`,
+								"subagents.spawn.batch.too.many",
+								{ limit: SUBAGENT_FANOUT_MAX, count: requests.length },
+							),
+							{ status: "rejected", reason: "fanout_limit", limit: SUBAGENT_FANOUT_MAX },
+						);
+					}
+					// 整批先校验再启动：一个不合法就一个都不启动，避免半批运行后预算/工作树无法回收。
+					const prepared: NormalizedSpawnSpec[] = [];
+					const problems: string[] = [];
+					const usedKeys = new Set<string>();
+					requests.forEach((request, index) => {
+						const normalized = normalizeSpawnRequest(request, index + 1);
+						if ("error" in normalized) {
+							problems.push(normalized.error);
+							return;
+						}
+						const key = normalized.spec.key;
+						if (key && usedKeys.has(key)) {
+							problems.push(
 								pick(
 									getLang(),
-									`子代理模板不可用：${legacy.template}（不存在或已停用）。用 subagent(action="templates") 查看当前可用模板清单；不传 template 则按默认配置运行。`,
-									`Subagent template unavailable: ${legacy.template} (missing or disabled). Use subagent(action="templates") to list available templates; omit template to run with defaults.`,
-									"subagents.spawn.template.unavailable",
-									{ "p.template": legacy.template },
+									`key 重复：${key}（同一批里必须唯一）。`,
+									`Duplicate key: ${key} (keys must be unique within a batch).`,
+									"subagents.spawn.batch.duplicate.key",
+									{ key },
 								),
 							);
+							return;
 						}
-						templateName = legacy.template.trim();
-					} else if (p.type && typeof p.type === "string" && host.isTemplateUsable(p.type.trim())) {
-						templateName = p.type.trim();
-					}
-					if (p.thinking && !THINKING_LEVELS.includes(p.thinking as (typeof THINKING_LEVELS)[number])) {
-						return text(
-							pick(
-								getLang(),
-								`非法思考强度：${p.thinking}。可选档位：${THINKING_LEVELS.join(", ")}。`,
-								`Invalid thinking level: ${p.thinking}. Allowed levels: ${THINKING_LEVELS.join(", ")}.`,
-								"subagents.spawn.thinking.invalid",
-								{ thinking: p.thinking, levels: THINKING_LEVELS.join(", ") },
-							),
+						if (key) usedKeys.add(key);
+						prepared.push(normalized.spec);
+					});
+					if (problems.length > 0) {
+						const head = pick(
+							getLang(),
+							"派发被驳回（整批都未启动）：\n",
+							"Fan-out rejected (nothing launched):\n",
+							"subagents.spawn.batch.rejected",
 						);
+						return text(`${head}${problems.map((problem) => `- ${problem}`).join("\n")}`, {
+							status: "rejected",
+							problems,
+						});
 					}
-					const isolationMode = p.isolation?.trim().toLowerCase();
-					if (isolationMode && isolationMode !== "worktree" && isolationMode !== "none") {
-						return text(
-							pick(
-								getLang(),
-								`不支持的隔离模式：${p.isolation}。可选模式："worktree"（基于 Git 工作树物理隔离）或 "none"（默认共享工作区）。`,
-								`Unsupported isolation mode: ${p.isolation}. Supported modes: "worktree" (git worktree isolation) or "none" (shared workspace).`,
-								"subagents.spawn.isolation.invalid",
-								{ isolation: p.isolation },
-							),
+					if (batchTasks) {
+						const results = await mapLimited(prepared, SPAWN_FANOUT_CONCURRENCY, (spec) =>
+							spawnSpec(spec, p.cwd ?? ctx.cwd, signal),
 						);
+						const lines = results.map((result, index) => {
+							const spec = prepared[index]!;
+							const label = spec.key ?? `#${index + 1}`;
+							if (!result.ok) return `- ${label} ✗ ${result.error}`;
+							const address = result.executionId ? ` · runId: ${result.executionId}` : "";
+							const tpl = spec.templateName ? ` · ${spec.templateName}` : "";
+							return `- ${label} → ${result.convId}${address} · ${spec.type}${tpl}`;
+						});
+						const startedKeys = prepared
+							.filter((spec, index) => spec.key && results[index]?.ok)
+							.map((spec) => spec.key);
+						const okCount = results.filter((result) => result.ok).length;
+						const head = pick(
+							getLang(),
+							`已派发 ${okCount}/${results.length} 个（key → 运行）：\n`,
+							`Started ${okCount}/${results.length} task(s) (key → run):\n`,
+							"subagents.spawn.batch.started",
+							{ okCount, "results.length": results.length },
+						);
+						const keyHint =
+							startedKeys.length > 0
+								? pick(
+										getLang(),
+										`\n用 conversation(action="wait_all", runIds=${JSON.stringify(startedKeys)}) 一次等这批收口（key 与 runId 都接受）。`,
+										`\nUse conversation(action="wait_all", runIds=${JSON.stringify(startedKeys)}) to collect this batch (keys and runIds both work).`,
+										"subagents.spawn.batch.wait.hint",
+										{ keys: JSON.stringify(startedKeys) },
+									)
+								: "";
+						return text(`${head}${lines.join("\n")}${keyHint}`, {
+							status: "spawned",
+							tasks: results.map((result, index) => ({
+								key: prepared[index]!.key,
+								ok: result.ok,
+								convId: result.ok ? result.convId : undefined,
+								executionId: result.ok ? result.executionId : undefined,
+								error: result.ok ? undefined : result.error,
+							})),
+						});
 					}
+					const single = prepared[0]!;
+					const templateName = single.templateName;
+					const isolationMode = single.isolationMode;
 					let convId: string;
-					const subagentType = p.type ?? "general";
+					const subagentType = single.type;
 					const matchedTemplate = templateName ? host.listTemplates().find((t) => t.name === templateName) : undefined;
 					const securityMode = resolveSecurityMode(subagentType, matchedTemplate);
 					const extra: SubagentSpawnExtra | undefined = securityMode !== "normal" ? { securityMode } : undefined;
@@ -488,7 +887,7 @@ export function makeSubagentTool(
 							SubagentSpawnExtra?,
 							AbortSignal?,
 						] = [
-							p.prompt,
+							single.prompt,
 							subagentType,
 							p.cwd ?? ctx.cwd,
 							templateName,
@@ -515,9 +914,12 @@ export function makeSubagentTool(
 							}),
 						);
 					}
+					rememberRunKey(single.key, convId);
 					const executionId = host.getSubagent(convId)?.executionId;
+					const keyLineZh = single.key ? `\nkey：${single.key}` : "";
+					const keyLineEn = single.key ? `\nkey: ${single.key}` : "";
 					const addressLine = executionId ? `\nrunId: ${executionId}` : "";
-					const subagentTitleText = subagentTitle(p.prompt);
+					const subagentTitleText = subagentTitle(single.prompt);
 					const templateLineZh = templateName ? `\n模板：${templateName}` : "";
 					const templateLineEn = templateName ? `\nTemplate: ${templateName}` : "";
 					const modelLineZh = p.model ? `\n模型：${p.model}` : "";
@@ -534,10 +936,10 @@ export function makeSubagentTool(
 					return text(
 						pick(
 							getLang(),
-							`${kindLabelZh}已启动（运行列表可见）：${convId}\n类型：${subagentType} · 标题：${subagentTitleText}${templateLineZh}${modelLineZh}${thinkingLineZh}${notifyLineZh}${isolationLineZh}${addressLine}` +
-								`\n用 subagent(action="wait_all") 一次等全部完成（不用轮询），subagent(action="get_result") 取单个结果，subagent(action="list") 看运行态，subagent(action="steer") 改向，subagent(action="stop") 停止。`,
-							`${kindLabelEn} started (visible in the running list): ${convId}\nType: ${subagentType} · Title: ${subagentTitleText}${templateLineEn}${modelLineEn}${thinkingLineEn}${notifyLineEn}${isolationLineEn}${addressLine}` +
-								`\nUse subagent(action="wait_all") to wait for all at once (no polling), subagent(action="get_result") for a single result, subagent(action="list") for live status, subagent(action="steer") to redirect, subagent(action="stop") to stop.`,
+							`${kindLabelZh}已启动（运行列表可见）：${convId}\n类型：${subagentType} · 标题：${subagentTitleText}${keyLineZh}${templateLineZh}${modelLineZh}${thinkingLineZh}${notifyLineZh}${isolationLineZh}${addressLine}` +
+								`\n用 conversation(action="wait_all") 一次等全部完成（事件驱动，不再轮询），conversation(action="get_result") 取单个结果，conversation(action="list") 看运行态，conversation(action="steer") 改向，conversation(action="stop") 停止。`,
+							`${kindLabelEn} started (visible in the running list): ${convId}\nType: ${subagentType} · Title: ${subagentTitleText}${keyLineEn}${templateLineEn}${modelLineEn}${thinkingLineEn}${notifyLineEn}${isolationLineEn}${addressLine}` +
+								`\nUse conversation(action="wait_all") to wait for all at once (event-driven, no polling), conversation(action="get_result") for a single result, conversation(action="list") for live status, conversation(action="steer") to redirect, conversation(action="stop") to stop.`,
 							"subagents.spawn.started",
 							{
 								convId,
@@ -565,7 +967,8 @@ export function makeSubagentTool(
 						{
 							convId,
 							executionId,
-							template: legacy.template,
+							key: single.key,
+							template: templateName,
 							model: p.model,
 							thinking: p.thinking,
 							persisted: !!p.persist,
@@ -580,14 +983,24 @@ export function makeSubagentTool(
 						return text(
 							pick(
 								getLang(),
-								'subagent(action="get_result") 缺少 runId 参数。',
-								'subagent(action="get_result") requires runId parameter.',
+								'conversation(action="get_result") 缺少 runId 参数。',
+								'conversation(action="get_result") requires runId parameter.',
 								"subagents.get.missing.runId",
 							),
 						);
 					}
-					let r = host.getSubagent(p.runId);
+					const requestedRun = resolveRunRef(p.runId);
+					let r = host.getSubagent(requestedRun);
 					const missingId = shortId(p.runId);
+					if (!r && host.getLedgerRun) {
+						// 进程里没有 → 回落运行账本：重启/移出后仍能拿回结论、证据与工作树。
+						const recorded = await host.getLedgerRun(requestedRun).catch(() => undefined);
+						if (recorded) {
+							const timeline = (await host.getLedgerEvents?.(requestedRun, 8).catch(() => [])) ?? [];
+							const formatted = formatLedgerRunResult(recorded, getLang(), timeline);
+							return text(formatted, { ...recorded, timeline });
+						}
+					}
 					if (!r)
 						return text(
 							pick(
@@ -604,6 +1017,16 @@ export function makeSubagentTool(
 					const doneDetail = verdictText(r, getLang());
 					const doneOutput = r.output || (getLang() === "zh" ? "（无结果）" : "(no result)");
 					const modelTag = r.model ? ` · ${r.model}${r.thinkingLevel ? `:${r.thinkingLevel}` : ""}` : "";
+					const usageTag = formatUsageTag(r.usage, getLang());
+					const evidenceLine = r.evidence
+						? pick(
+								getLang(),
+								`\n证据：${formatEvidenceSummary(r.evidence, getLang())}`,
+								`\nEvidence: ${formatEvidenceSummary(r.evidence, getLang())}`,
+								"subagents.get.evidence",
+								{ evidence: formatEvidenceSummary(r.evidence, getLang()) },
+							)
+						: "";
 					if (!isSubagentTerminal(r)) {
 						const runningId = shortId(r.convId);
 						const runningOutput = r.output || (getLang() === "zh" ? "（暂无输出）" : "(no output yet)");
@@ -647,12 +1070,93 @@ export function makeSubagentTool(
 					return text(
 						pick(
 							getLang(),
-							`子代理 ${doneId}（${r.type}${modelTag}）状态：${verdict}\n${doneDetail}\n${doneOutput}${worktreeDetail}`,
-							`Subagent ${doneId} (${r.type}${modelTag}) status: ${verdict}\n${doneDetail}\n${doneOutput}${worktreeDetail}`,
+							`子代理 ${doneId}（${r.type}${modelTag}${usageTag}）状态：${verdict}\n${doneDetail}${evidenceLine}\n${doneOutput}${worktreeDetail}`,
+							`Subagent ${doneId} (${r.type}${modelTag}${usageTag}) status: ${verdict}\n${doneDetail}${evidenceLine}\n${doneOutput}${worktreeDetail}`,
 							"subagents.get.done",
-							{ doneId, "r.type": r.type, modelTag, verdict, doneDetail, doneOutput: `${doneOutput}${worktreeDetail}` },
+							{
+								doneId,
+								"r.type": r.type,
+								modelTag,
+								verdict,
+								doneDetail,
+								evidenceLine,
+								doneOutput: `${doneOutput}${worktreeDetail}`,
+							},
 						),
 						r,
+					);
+				}
+
+				case "resume": {
+					if (!host.resumeLedgerRun) throw new Error("Run resume is unavailable on this engine.");
+					if (!p.runId || typeof p.runId !== "string" || !p.runId.trim()) {
+						return text(
+							pick(
+								getLang(),
+								'conversation(action="resume") 缺少 runId 参数。',
+								'conversation(action="resume") requires runId parameter.',
+								"subagents.resume.missing.runId",
+							),
+						);
+					}
+					const resumeSelf = selfIdOf();
+					if (!resumeSelf) throw new Error("Resume requires a verified conversation identity.");
+					const resumeTarget = resolveRunRef(p.runId);
+					const resumeExtra = typeof p.message === "string" && p.message.trim() ? p.message.trim() : undefined;
+					const result = await host.resumeLedgerRun(resumeSelf, resumeTarget, resumeExtra);
+					if (!result.ok) {
+						const resumedId = result.runId ? shortId(result.runId) : "";
+						const reasons: Record<string, [string, string]> = {
+							not_found: [
+								'账本里没有这个运行（可能已被清理）。用 conversation(action="list") 看现有记录。',
+								'Not in the run ledger (it may have been pruned). Use conversation(action="list") to inspect records.',
+							],
+							running: [
+								"这个运行还在进程里跑着：先 wait_all / get_result，别重复派发。",
+								"This run is still live: use wait_all / get_result instead of relaunching it.",
+							],
+							already_resumed: [
+								`已经续跑过了${resumedId ? `（新运行 ${resumedId}）` : ""}，别重复续跑。`,
+								`It was already resumed${resumedId ? ` (new run ${resumedId})` : ""}; do not resume twice.`,
+							],
+							parent_missing: [
+								"原父对话已不可用，续跑挂不回去。请直接在当前对话里 spawn 一次。",
+								"The original parent is gone, so the relaunch cannot attach to it. Spawn from this conversation instead.",
+							],
+						};
+						const [zhReason, enReason] = reasons[result.error] ?? [
+							`续跑失败：${result.error}`,
+							`Resume failed: ${result.error}`,
+						];
+						return text(
+							pick(getLang(), zhReason, enReason, "subagents.resume.failed", { reason: result.error }),
+							result,
+						);
+					}
+					const newRunId = result.executionId ?? result.convId;
+					const transcript = result.sessionFile
+						? pick(
+								getLang(),
+								`旧会话记录 ${result.sessionFile} 可在历史对话里回看。`,
+								`The old transcript ${result.sessionFile} stays readable from History.`,
+								"subagents.resume.transcript",
+								{ file: result.sessionFile },
+							)
+						: pick(
+								getLang(),
+								"旧会话没有落盘，接不上原转录：这次是带上原任务与已知进度的重派。",
+								"The old in-memory session was never persisted, so this is a relaunch carrying the original task and known progress.",
+								"subagents.resume.no.transcript",
+							);
+					return text(
+						pick(
+							getLang(),
+							`已续跑：旧运行 ${shortId(result.runId)}（${result.previousState}）→ 新运行 ${newRunId}。${transcript}`,
+							`Resumed: ${shortId(result.runId)} (${result.previousState}) → new run ${newRunId}. ${transcript}`,
+							"subagents.resume.ok",
+							{ oldId: shortId(result.runId), state: result.previousState, newId: newRunId, transcript },
+						),
+						result,
 					);
 				}
 
@@ -661,8 +1165,8 @@ export function makeSubagentTool(
 						return text(
 							pick(
 								getLang(),
-								'subagent(action="steer") 缺少 runId 参数。',
-								'subagent(action="steer") requires runId parameter.',
+								'conversation(action="steer") 缺少 runId 参数。',
+								'conversation(action="steer") requires runId parameter.',
 								"subagents.steer.missing.runId",
 							),
 						);
@@ -671,49 +1175,113 @@ export function makeSubagentTool(
 						return text(
 							pick(
 								getLang(),
-								'subagent(action="steer") 缺少 message 参数。',
-								'subagent(action="steer") requires message parameter.',
+								'conversation(action="steer") 缺少 message 参数。',
+								'conversation(action="steer") requires message parameter.',
 								"subagents.steer.missing.message",
 							),
 						);
 					}
-					if (!host.getSubagent(p.runId)) {
+					const steerTarget = resolveRunRef(p.runId);
+					if (!host.getSubagent(steerTarget)) {
 						const missingSteerId = shortId(p.runId);
 						return text(
 							pick(
 								getLang(),
-								`未找到子代理 ${missingSteerId}（可能已移出），消息未注入。请用 subagent(action="list") 确认仍在运行的子代理。`,
-								`Subagent ${missingSteerId} not found (may have been dismissed); message not injected. Use subagent(action="list") to confirm running subagents.`,
+								`未找到子代理 ${missingSteerId}（可能已移出），消息未注入。请用 conversation(action="list") 确认仍在运行的子代理。`,
+								`Subagent ${missingSteerId} not found (may have been dismissed); message not injected. Use conversation(action="list") to confirm running subagents.`,
 								"subagents.steer.not.found",
 								{ missingSteerId },
 							),
 						);
 					}
-					await host.steerSubagent(executionOfId(p.runId), p.message);
+					const receipt = await host.steerSubagent(executionOfId(steerTarget), p.message);
+					const steerState: SubagentSteerState = receipt && "state" in receipt ? receipt.state : "delivered";
 					const steerId = shortId(p.runId);
+					const stateText =
+						steerState === "queued"
+							? pick(
+									getLang(),
+									"已排队，等当前回合结束再送。",
+									"Queued; delivered when the current turn ends.",
+									"subagents.steer.queued",
+								)
+							: steerState === "restarted"
+								? pick(
+										getLang(),
+										"它当时已空闲，已在同一会话里开新一轮。",
+										"It was idle; a new round started in the same session.",
+										"subagents.steer.restarted",
+									)
+								: steerState === "missed"
+									? pick(
+											getLang(),
+											"没能送达（运行已结束无可投递通道）。",
+											"Not delivered (the run ended with no live route).",
+											"subagents.steer.missed",
+										)
+									: pick(
+											getLang(),
+											"已送进当前回话上下文。",
+											"Delivered into the live turn.",
+											"subagents.steer.delivered",
+										);
 					return text(
 						pick(
 							getLang(),
-							`已向子代理 ${steerId} 注入消息。`,
-							`Message injected into subagent ${steerId}.`,
+							`已向子代理 ${steerId} 注入消息（${steerState}）：${stateText}`,
+							`Message injected into subagent ${steerId} (${steerState}): ${stateText}`,
 							"subagents.steer.injected",
-							{ steerId },
+							{ steerId, steerState, stateText },
 						),
+						{ steerId, state: steerState },
 					);
 				}
 
 				case "list": {
 					const list = host.listSubagents(p.kind as "all" | "subagent" | "persistent" | undefined, selfIdOf());
-					if (list.length === 0)
+					const tLang = getLang();
+					// 账本追加：活运行永远以内存快照为准，账本只补「已经不在进程里」的那些。
+					const ledgerLines: string[] = [];
+					if (host.listLedgerRuns) {
+						try {
+							const recorded = await host.listLedgerRuns({ limit: 32 });
+							for (const rec of recorded) {
+								if (rec.state === "dismissed") continue;
+								if (host.getSubagent(rec.runId)) continue;
+								const tag = rec.evidence ? ` · ${formatLedgerEvidence(rec, tLang)}` : "";
+								const resumed = rec.resumedBy
+									? pick(
+											tLang,
+											`，已续跑→${shortId(rec.resumedBy)}`,
+											`, resumed→${shortId(rec.resumedBy)}`,
+											"subagents.list.ledger.resumed",
+											{ id: shortId(rec.resumedBy) },
+										)
+									: "";
+								ledgerLines.push(
+									pick(
+										tLang,
+										`- 账本 ${shortId(rec.runId)} · ${rec.type} · ${rec.state} · ${rec.title}${tag}${resumed}`,
+										`- ledger ${shortId(rec.runId)} · ${rec.type} · ${rec.state} · ${rec.title}${tag}${resumed}`,
+										"subagents.list.ledger.item",
+										{ id: shortId(rec.runId), type: rec.type, state: rec.state, title: rec.title, tag, resumed },
+									),
+								);
+								if (ledgerLines.length >= 10) break;
+							}
+						} catch {
+							// 账本读失败不影响活运行列表。
+						}
+					}
+					if (list.length === 0 && ledgerLines.length === 0)
 						return text(
 							pick(
 								getLang(),
-								"当前没有运行中的对话/子代理。",
-								"No managed conversations or subagents running.",
+								"当前没有运行中的对话/子代理（运行账本里也没有记录）。",
+								"No managed conversations or subagents running (the run ledger is empty too).",
 								"subagents.list.empty",
 							),
 						);
-					const tLang = getLang();
 					const lines = list.map((r) => {
 						const tag = r.persisted
 							? tLang === "zh"
@@ -723,12 +1291,23 @@ export function makeSubagentTool(
 								? "子代理"
 								: "subagent";
 						const modelTag = r.model ? ` · ${r.model}${r.thinkingLevel ? `:${r.thinkingLevel}` : ""}` : "";
+						const evidenceTag = r.evidence ? ` · ${formatEvidenceSummary(r.evidence, tLang)}` : "";
 						return (
 							`- ${r.convId}${r.executionId ? ` (runId: ${r.executionId})` : ""} · ${r.type}${modelTag} · ${subagentVerdict(r, tLang)} · ${r.title}` +
-							(tLang === "zh" ? `（${tag} · msg: ${r.messageCount}）` : ` (${tag} · msg: ${r.messageCount})`)
+							(tLang === "zh" ? `（${tag} · msg: ${r.messageCount}）` : ` (${tag} · msg: ${r.messageCount})`) +
+							evidenceTag
 						);
 					});
-					return text(lines.join("\n"));
+					const ledgerHead =
+						ledgerLines.length > 0
+							? pick(
+									tLang,
+									"\n\n运行账本（不在进程里：get_result 取已产出的结论/证据，resume 续跑）：\n",
+									"\n\nRun ledger (no longer in-process; get_result for the recorded result, resume to relaunch):\n",
+									"subagents.list.ledger.head",
+								)
+							: "";
+					return text(`${lines.join("\n")}${ledgerHead}${ledgerLines.join("\n")}`);
 				}
 
 				case "stop": {
@@ -736,25 +1315,26 @@ export function makeSubagentTool(
 						return text(
 							pick(
 								getLang(),
-								'subagent(action="stop") 缺少 runId 参数。',
-								'subagent(action="stop") requires runId parameter.',
+								'conversation(action="stop") 缺少 runId 参数。',
+								'conversation(action="stop") requires runId parameter.',
 								"subagents.stop.missing.runId",
 							),
 						);
 					}
-					if (!host.getSubagent(p.runId)) {
+					const stopTarget = resolveRunRef(p.runId);
+					if (!host.getSubagent(stopTarget)) {
 						const missingStopId = shortId(p.runId);
 						return text(
 							pick(
 								getLang(),
-								`未找到子代理 ${missingStopId}（可能已移出或已结束），无需停止。请用 subagent(action="list") 确认仍在运行的子代理。`,
-								`Subagent ${missingStopId} not found (may have been dismissed or already finished); nothing to stop. Use subagent(action="list") to confirm running subagents.`,
+								`未找到子代理 ${missingStopId}（可能已移出或已结束），无需停止。请用 conversation(action="list") 确认仍在运行的子代理。`,
+								`Subagent ${missingStopId} not found (may have been dismissed or already finished); nothing to stop. Use conversation(action="list") to confirm running subagents.`,
 								"subagents.stop.not.found",
 								{ missingStopId },
 							),
 						);
 					}
-					await host.stopSubagent(p.runId);
+					await host.stopSubagent(stopTarget);
 					const stopId = shortId(p.runId);
 					return text(
 						pick(
@@ -791,7 +1371,7 @@ export function makeSubagentTool(
 					if (explicit) {
 						const seedRoots: string[] = [];
 						for (const requestedId of p.runIds!) {
-							const id = executionOfId(requestedId);
+							const id = executionOfId(resolveRunRef(requestedId));
 							if (selfId && id === selfId) continue;
 							if (selfAncestorIds.has(id)) continue;
 							wanted.add(id);
@@ -857,13 +1437,23 @@ export function makeSubagentTool(
 							: currentWaitCapMs;
 					const liveCapSeconds = Math.floor(liveWaitCapMs / 1000);
 					const timeoutMs = Math.min(Math.max(p.timeoutSeconds ?? liveCapSeconds, 1), liveCapSeconds) * 1000;
+					// 已收口单源：`getSubagent` 拿不到（已移出/已结束并回收）与显式终态都算收口，
+					// 等待与「还剩谁」必须用同一判据，否则会出现「全都完成了却报还有人在跑」。
+					const isSettled = (id: string): boolean => {
+						const r = host.getSubagent(id);
+						return r === undefined || isSubagentTerminal(r);
+					};
 					const startedAt = Date.now();
-					const POLL_INTERVAL_MS = 250;
+					// 单次等待切片：上游在真实事件上唤醒；到点只是重新算一遍（新派生的后代、问卷），
+					// 不再用固定轮询去抢快照。
+					const SETTLE_SLICE_MS = 30_000;
 
 					try {
 						const waitingParentId = selfIdOf();
 						if (waitingParentId) host.setConsultWaiting?.(waitingParentId, true);
-						while (!signal?.aborted && Date.now() - startedAt < timeoutMs) {
+						while (!signal?.aborted) {
+							const remainingMs = timeoutMs - (Date.now() - startedAt);
+							if (remainingMs <= 0) break;
 							for (const descId of expandDescendants(wanted)) {
 								if (selfId && descId === selfId) continue;
 								if (selfAncestorIds.has(descId)) continue;
@@ -871,12 +1461,13 @@ export function makeSubagentTool(
 							}
 							const consults = collectConsults();
 							if (consults) return consults;
-							const allDone = Array.from(wanted).every((id) => {
-								const r = host.getSubagent(id);
-								return r === undefined || isSubagentTerminal(r);
-							});
+							const allDone = Array.from(wanted).every(isSettled);
 							if (allDone) break;
-							await new Promise((resolve) => setTimeout(resolve, POLL_INTERVAL_MS));
+							const wake = await host.waitForSubagentSettle(Array.from(wanted), {
+								timeoutMs: Math.min(remainingMs, SETTLE_SLICE_MS),
+								signal,
+							});
+							if (wake === "aborted") break;
 						}
 					} finally {
 						const waitingParentId = selfIdOf();
@@ -887,10 +1478,7 @@ export function makeSubagentTool(
 					const waitedSecs = Math.max(1, Math.round((Date.now() - startedAt) / 1000));
 					const timeoutSecs = Math.round(timeoutMs / 1000);
 
-					const finishedIds = Array.from(wanted).filter((id) => {
-						const r = host.getSubagent(id);
-						return r === undefined || isSubagentTerminal(r);
-					});
+					const finishedIds = Array.from(wanted).filter(isSettled);
 					if (finishedIds.length > 0) {
 						host.markSubagentsConsumed?.(finishedIds);
 						if (host.finalizeSubagentWorktree) {
@@ -913,6 +1501,8 @@ export function makeSubagentTool(
 							}
 							const verdict = subagentVerdict(r, tLang);
 							const detail = verdictText(r, tLang);
+							const usageTag = formatUsageTag(r.usage, tLang);
+							const evidenceTag = r.evidence ? ` · ${formatEvidenceSummary(r.evidence, tLang)}` : "";
 							const out = clipSubagentOutput(r.output || (tLang === "zh" ? "（无输出）" : "(no output)"), tLang);
 							let wtTag = "";
 							let wtPathInfo = "";
@@ -928,14 +1518,11 @@ export function makeSubagentTool(
 										tLang === "zh" ? `\n  - 工作树路径：${r.worktree.path}` : `\n  - Worktree path: ${r.worktree.path}`;
 								}
 							}
-							return `- ${sId}（${r.type} · ${verdict} · ${r.title}${wtTag}）${detail ? ` · ${detail}` : ""}:\n${out}${wtPathInfo}`;
+							return `- ${sId}（${r.type} · ${verdict} · ${r.title}${wtTag}${usageTag}）${detail ? ` · ${detail}` : ""}${evidenceTag}:\n${out}${wtPathInfo}`;
 						})
 						.join("\n\n");
 
-					const remaining = Array.from(wanted).filter((id) => {
-						const r = host.getSubagent(id);
-						return !isSubagentTerminal(r);
-					});
+					const remaining = Array.from(wanted).filter((id) => !isSettled(id));
 
 					const head =
 						remaining.length === 0
@@ -1005,8 +1592,8 @@ export function makeSubagentTool(
 					return text(
 						pick(
 							getLang(),
-							`可用的子代理模板（subagent 的 template 参数传名字，如 subagent(action="spawn", template="${firstTemplateName}"))：\n${templateLines}`,
-							`Available subagent templates (pass the name as subagent's template param, e.g. subagent(action="spawn", template="${firstTemplateName}")):\n${templateLines}`,
+							`可用的子代理模板（subagent 的 template 参数传名字，如 conversation(action="spawn", template="${firstTemplateName}"))：\n${templateLines}`,
+							`Available subagent templates (pass the name as subagent's template param, e.g. conversation(action="spawn", template="${firstTemplateName}")):\n${templateLines}`,
 							"subagents.templates.list",
 							{ firstTemplateName, templateLines },
 						),
@@ -1024,8 +1611,8 @@ export function makeSubagentTool(
 						return text(
 							pick(
 								getLang(),
-								'subagent(action="handoff") 缺少 toRunId 参数。',
-								'subagent(action="handoff") requires toRunId parameter.',
+								'conversation(action="handoff") 缺少 toRunId 参数。',
+								'conversation(action="handoff") requires toRunId parameter.',
 								"subagents.handoff.missing.toRunId",
 							),
 						);
@@ -1034,8 +1621,8 @@ export function makeSubagentTool(
 						return text(
 							pick(
 								getLang(),
-								'subagent(action="handoff") 缺少 payload 参数。',
-								'subagent(action="handoff") requires payload parameter.',
+								'conversation(action="handoff") 缺少 payload 参数。',
+								'conversation(action="handoff") requires payload parameter.',
 								"subagents.handoff.missing.payload",
 							),
 						);
@@ -1057,8 +1644,8 @@ export function makeSubagentTool(
 						return text(
 							pick(
 								getLang(),
-								`未找到目标子代理 ${missingId}（可能已移出或不存在）。请用 subagent(action="list") 确认可用的子代理。`,
-								`Target subagent ${missingId} not found (may have been dismissed or non-existent). Use subagent(action="list") to check available subagents.`,
+								`未找到目标子代理 ${missingId}（可能已移出或不存在）。请用 conversation(action="list") 确认可用的子代理。`,
+								`Target subagent ${missingId} not found (may have been dismissed or non-existent). Use conversation(action="list") to check available subagents.`,
 								"subagents.handoff.not.found",
 								{ missingId },
 							),
@@ -1116,8 +1703,8 @@ export function makeSubagentTool(
 						return text(
 							pick(
 								getLang(),
-								'subagent(action="dismiss") 缺少目标参数：请指定 runId、runIds 或 scope="finished_all"。',
-								'subagent(action="dismiss") requires target parameter: specify runId, runIds, or scope="finished_all".',
+								'conversation(action="dismiss") 缺少目标参数：请指定 runId、runIds 或 scope="finished_all"。',
+								'conversation(action="dismiss") requires target parameter: specify runId, runIds, or scope="finished_all".',
 								"subagents.dismiss.missing.target",
 							),
 						);
@@ -1227,8 +1814,8 @@ export function makeSubagentTool(
 							return text(
 								pick(
 									getLang(),
-									`子代理 ${runningId} 仍在运行中（状态：${snapshot.state}）。请等待其完成、调用 subagent(action="stop")，或指定 force=true 强行中止并移出。`,
-									`Subagent ${runningId} is still running (state: ${snapshot.state}). Wait for it to finish, call subagent(action="stop"), or specify force=true to force abort and dismiss.`,
+									`子代理 ${runningId} 仍在运行中（状态：${snapshot.state}）。请等待其完成、调用 conversation(action="stop")，或指定 force=true 强行中止并移出。`,
+									`Subagent ${runningId} is still running (state: ${snapshot.state}). Wait for it to finish, call conversation(action="stop"), or specify force=true to force abort and dismiss.`,
 									"subagents.dismiss.running",
 									{ runningId, state: snapshot.state },
 								),
@@ -1281,8 +1868,8 @@ export function makeSubagentTool(
 						return text(
 							pick(
 								getLang(),
-								`已移出子代理 ${doneId}。移出后不可逆（会话已从左栏移除并释放运行时与临时数据）。提示：如需获取产物，请在移出前调用 subagent(action="get_result")。`,
-								`Dismissed subagent ${doneId}. Dismissal is irreversible (session removed from panel, runtime and temporary data released). Note: call subagent(action="get_result") before dismissal if you need its output.`,
+								`已移出子代理 ${doneId}。移出后不可逆（会话已从左栏移除并释放运行时与临时数据）。提示：如需获取产物，请在移出前调用 conversation(action="get_result")。`,
+								`Dismissed subagent ${doneId}. Dismissal is irreversible (session removed from panel, runtime and temporary data released). Note: call conversation(action="get_result") before dismissal if you need its output.`,
 								"subagents.dismiss.success.single",
 								{ doneId },
 							),
@@ -1370,8 +1957,8 @@ export function makeSubagentTool(
 					return text(
 						pick(
 							getLang(),
-							`已成功移出 ${dismissed.length} 个子代理${skippedZh}。移出后不可逆（会话已从左栏移除并释放运行时与临时数据）。提示：如需获取产物，请在移出前调用 subagent(action="get_result")。`,
-							`Successfully dismissed ${dismissed.length} subagent(s)${skippedEn}. Dismissal is irreversible (sessions removed from panel, runtimes and temporary data released). Note: call subagent(action="get_result") before dismissal if you need their outputs.`,
+							`已成功移出 ${dismissed.length} 个子代理${skippedZh}。移出后不可逆（会话已从左栏移除并释放运行时与临时数据）。提示：如需获取产物，请在移出前调用 conversation(action="get_result")。`,
+							`Successfully dismissed ${dismissed.length} subagent(s)${skippedEn}. Dismissal is irreversible (sessions removed from panel, runtimes and temporary data released). Note: call conversation(action="get_result") before dismissal if you need their outputs.`,
 							"subagents.dismiss.success.batch",
 							{ count: dismissed.length, skippedZh, skippedEn },
 						),
@@ -1457,13 +2044,94 @@ function verdictText(r: SubagentSnapshot, lang: ServerLang = "en"): string {
 	return "";
 }
 
+/** 账本证据摘要（记录里只有计数与裁决，没有原始 claims）。 */
+function formatLedgerEvidence(record: LedgerRunRecord, lang: ServerLang): string {
+	const ev = record.evidence;
+	if (!ev) return "";
+	const zh = lang === "zh";
+	const label = evidenceVerdictLabel(ev.verdict, lang);
+	const parts: string[] = [];
+	if (ev.files > 0) parts.push(zh ? `${ev.matchedFiles}/${ev.files} 文件` : `${ev.matchedFiles}/${ev.files} files`);
+	if (ev.commands > 0) {
+		parts.push(zh ? `${ev.matchedCommands}/${ev.commands} 命令` : `${ev.matchedCommands}/${ev.commands} commands`);
+	}
+	if (ev.none) parts.push(zh ? "声明无改动" : "declared no changes");
+	if (ev.blocked) parts.push(zh ? `受阻：${ev.blocked}` : `blocked: ${ev.blocked}`);
+	if (parts.length === 0) return label;
+	return `${label}${zh ? "（" : " ("}${parts.join(zh ? "、" : ", ")}${zh ? "）" : ")"}`;
+}
+
+/** `get_result` 的账本回落：进程里已经没有这个运行了，只能给出落盘的结论与证据。 */
+function formatLedgerRunResult(
+	record: LedgerRunRecord,
+	lang: ServerLang,
+	timeline: readonly LedgerEvent[] = [],
+): string {
+	const zh = lang === "zh";
+	const id = shortId(record.runId);
+	const lines: string[] = [
+		zh
+			? `运行 ${id}（${record.type}）已不在进程里；账本状态：${record.state}`
+			: `Run ${id} (${record.type}) is no longer in process; ledger state: ${record.state}`,
+	];
+	if (record.title) lines.push(zh ? `目标：${record.title}` : `Goal: ${record.title}`);
+	if (record.evidence)
+		lines.push(zh ? `证据：${formatLedgerEvidence(record, lang)}` : `Evidence: ${formatLedgerEvidence(record, lang)}`);
+	if (record.error) lines.push(zh ? `错误：${record.error}` : `Error: ${record.error}`);
+	if (record.worktree) {
+		const wt = record.worktree;
+		lines.push(
+			zh
+				? `工作树：${wt.path}（分支 ${wt.branch}${wt.cleanedUp ? " · 已清理" : ""}）`
+				: `Worktree: ${wt.path} (branch ${wt.branch}${wt.cleanedUp ? " · cleaned" : ""})`,
+		);
+	}
+	if (record.sessionFile) {
+		lines.push(
+			zh
+				? `会话记录：${record.sessionFile}（可在历史对话里打开回看）`
+				: `Session file: ${record.sessionFile} (openable from History)`,
+		);
+	}
+	if (record.outputTail) {
+		lines.push(zh ? `最后输出（尾部）：\n${record.outputTail}` : `Last output (tail):\n${record.outputTail}`);
+	}
+	if (timeline.length > 0) {
+		lines.push(zh ? `生命周期（最近 ${timeline.length} 条）：` : `Lifecycle (last ${timeline.length}):`);
+		for (const event of timeline) {
+			const at = new Date(event.ts);
+			const when = Number.isFinite(at.getTime()) ? at.toISOString().slice(11, 19) : "--:--:--";
+			lines.push(`- ${when} ${event.event}`);
+		}
+	}
+	if (record.resumedBy) {
+		lines.push(zh ? `已续跑为：${record.resumedBy}` : `Resumed as: ${record.resumedBy}`);
+	} else if (record.state === "running" || record.state === "interrupted") {
+		lines.push(
+			zh
+				? `继续：conversation(action="resume", runId="${record.runId}")（带已知进度重派；旧会话不落盘，接不上原转录）`
+				: `Continue: conversation(action="resume", runId="${record.runId}") (relaunch with known progress; the old in-memory session cannot be reattached)`,
+		);
+	}
+	return lines.join("\n");
+}
+
+function formatUsageTag(usage: SubagentSnapshot["usage"], lang: ServerLang): string {
+	if (!usage) return "";
+	const zh = lang === "zh";
+	const short = (n: number): string => (n >= 1000 ? `${(n / 1000).toFixed(1)}k` : String(n));
+	return zh
+		? ` · ${short(usage.input)}↓${short(usage.output)}↑`
+		: ` · ${short(usage.input)}in/${short(usage.output)}out`;
+}
+
 function promptRemaining(remaining: string[], lang: ServerLang = "en"): string {
 	if (remaining.length === 0) return "";
 	const pendingIds = remaining.map(shortId).join(", ");
 	return pick(
 		lang,
 		`\n未完成：${pendingIds}。可再次调用 subagent（action="wait_all"）继续等待耗时任务，或使用 steer 补充指令 / stop 中止。`,
-		`\nPending: ${pendingIds}. You may call subagent (action="wait_all") again to continue waiting for long tasks, or use steer to add instructions / stop to abort.`,
+		`\nPending: ${pendingIds}. You may call conversation(action="wait_all") again to continue waiting for long tasks, or use steer to add instructions / stop to abort.`,
 		"subagents.wait.pending",
 		{ pendingIds: pendingIds },
 	);

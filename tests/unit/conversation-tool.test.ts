@@ -55,8 +55,11 @@ describe("conversation compatibility", () => {
 		expect(Object.keys(schema.properties)).toEqual([
 			"action",
 			"prompt",
+			"key",
+			"tasks",
 			"message",
 			"summary",
+			"evidence",
 			"payload",
 			"runId",
 			"runIds",
@@ -84,9 +87,9 @@ describe("conversation compatibility", () => {
 			"timeoutSeconds",
 		]);
 		expect(schema.required).toEqual(["action"]);
-		expect(schema.properties.action.enum).toHaveLength(16);
+		expect(schema.properties.action.enum).toHaveLength(17);
 		expect(json).not.toMatch(/"(anyOf|oneOf|allOf|minLength|minItems|maxItems|minimum|maximum)"/);
-		expect(json.length).toBeLessThan(1900);
+		expect(json.length).toBeLessThan(2600);
 		// 纯文本问答：结构化问题/回答只留在 ask_user_question。
 		expect(schema.properties.questions).toBeUndefined();
 		expect(schema.properties.answers).toBeUndefined();

@@ -13,6 +13,7 @@ import { appUrl, appWsUrl } from "./base-url";
 import { isMobileRuntime } from "./mobile-runtime";
 import { handleNativeCliEvent, resolveNativeCliControlResult } from "./native-cli-events";
 import { notifySessionSwitch } from "./composer-bridge";
+import { phoneHost } from "./phone-control";
 import { syncKnownInlineMarkers } from "./components/Message";
 import type {
 	ClientMessage,
@@ -94,6 +95,7 @@ import { emitPluginData } from "./plugin-loader";
 import { ingestPluginLogsData } from "./plugin-logs";
 import { resolveCatalogSyncResult } from "./plugin-host";
 import { resolveNewChatResult } from "./new-chat-request";
+import { attachIntentCwd, noteSent, settleIntent, type PendingCwd } from "./pending-workspace";
 import { recordUserPrompt } from "./conversation-order";
 import { PROTOCOL_VERSION } from "./protocol-version";
 import { earlierPageNeedsResync, mergeEarlierPage } from "./history-window";
@@ -1121,7 +1123,7 @@ export function reducer(state: ChatState, action: Action): ChatState {
 			if (curCwd && curCwd !== "@root" && curCwd !== "machine-root") {
 				const curNorm = normalizeSessionPathKey(curCwd);
 				if (!nextProjects.some((p) => normalizeSessionPathKey(p.path) === curNorm)) {
-					nextProjects = [{ path: curCwd, lastUsed: Date.now() }, ...nextProjects];
+					nextProjects = [{ path: curCwd, lastUsed: 0 }, ...nextProjects];
 				}
 			}
 			writeCachedProjects(nextProjects);
@@ -1960,6 +1962,9 @@ export function useChat() {
 		return () => clearInterval(iv);
 	}, [chat.transition, chat.state, chat.ready]);
 
+	// 「已声明、还没确认」的目标工作目录：让「先切项目再新建对话」的意图跟着消息走（见 pending-workspace）。
+	const pendingCwdRef = useRef<PendingCwd>(null);
+
 	const send = useCallback((msg: ClientMessage, context?: AppSendContext) => {
 		const ws = wsRef.current;
 		if (!isWsOpen(ws)) {
@@ -1977,6 +1982,8 @@ export function useChat() {
 			msg = { ...msg, ownerKind: "client" };
 		}
 		const curState = currentChat.state;
+		pendingCwdRef.current = noteSent(pendingCwdRef.current, msg);
+		msg = attachIntentCwd(msg, pendingCwdRef.current, curState?.cwd);
 		if (
 			msg.type === "load_earlier_messages" &&
 			curState &&
@@ -2277,6 +2284,10 @@ export function useChat() {
 				}
 				case "snapshot":
 					lastDeltaSeqRef.current = new Map();
+					pendingCwdRef.current = settleIntent(pendingCwdRef.current, {
+						kind: "snapshot",
+						cwd: msg.state.cwd,
+					});
 					dispatch({ type: "snapshot", state: msg.state });
 					syncPendingQuestion(msg.state.pendingQuestion, msg.state.conversationId);
 					break;
@@ -2341,6 +2352,12 @@ export function useChat() {
 					break;
 				}
 				case "transition_progress":
+					pendingCwdRef.current = settleIntent(pendingCwdRef.current, {
+						kind: "transition",
+						transitionKind: msg.kind,
+						phase: msg.phase,
+						target: msg.target,
+					});
 					dispatch({ type: "transition_progress", msg });
 					break;
 				case "engines_status":
@@ -2737,6 +2754,39 @@ export function useChat() {
 					})();
 					break;
 				}
+				case "phone_request": {
+					void (async () => {
+						const call = phoneHost();
+						let res: { ok: boolean; result?: unknown; error?: string };
+						if (!call) {
+							res = {
+								ok: false,
+								error: "当前页面没有手机操控桥：请在 pi 手机端打开（浏览器/桌面端不支持）。",
+							};
+						} else {
+							try {
+								res = await call({
+									op: msg.op,
+									...(msg.args === undefined ? {} : { args: msg.args }),
+									timeoutMs: msg.timeoutMs,
+								});
+							} catch (err) {
+								res = { ok: false, error: err instanceof Error ? err.message : String(err) };
+							}
+						}
+						send({
+							type: "phone_response",
+							id: msg.id,
+							ok: res.ok === true,
+							...(res.ok === true
+								? res.result === undefined
+									? {}
+									: { result: res.result }
+								: { error: res.error ?? "手机操作失败" }),
+						});
+					})();
+					break;
+				}
 				case "native_cli_event":
 					handleNativeCliEvent(msg);
 					break;
@@ -3128,7 +3178,7 @@ export function useChat() {
 				const cached = readCachedProjects();
 				const normTarget = normalizeSessionPathKey(cwd);
 				const next = [
-					{ path: cwd, lastUsed: Date.now() },
+					{ path: cwd, lastUsed: 0 },
 					...cached.filter((p) => normalizeSessionPathKey(p.path) !== normTarget),
 				];
 				writeCachedProjects(next);

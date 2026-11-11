@@ -1,0 +1,1775 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="dark">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>pi-web-ui · 移动端设置界面重构方案（A/B/C 三套可交互原型）</title>
+<style>
+/* ==========================================================================
+   0. 设计令牌（对齐 web/src/styles.css :root 与 themes/*，light 为新增对照）
+   ========================================================================== */
+:root{
+  --font-sans:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Hiragino Sans GB","Microsoft YaHei",Roboto,sans-serif;
+  --mono:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+
+  /* 深色（= 宿主默认 :root） */
+  --bg:#0d0e12;
+  --bg-elev:#14161c;
+  --bg-elev2:#1a1d26;
+  --bg-sunk:#0a0b0f;
+  --border-soft:#1e2230;
+  --border:#262a35;
+  --text:#e6e8ef;
+  --text-dim:#9aa1b4;
+  --text-faint:#8b93a7;          /* AA: 5.8:1 on --bg-elev */
+  --accent:#8b5cf6;
+  --accent-text:#a78bfa;         /* AA: 6.5:1 on --bg-elev */
+  --accent-contrast:#ffffff;
+  --accent-soft:rgba(139,92,246,.16);
+  --red:#f87171;
+  --red-text:#fca5a5;
+  --red-soft:rgba(248,113,113,.12);
+  --on-red:#1a1a1a;
+  --green:#34d399;
+  --amber:#fbbf24;
+  --fill-press:rgba(255,255,255,.07);
+  --fill-hover:rgba(255,255,255,.04);
+  --knob:#ffffff;
+  --track-off:rgba(255,255,255,.14);
+  --shadow-card:0 1px 0 rgba(255,255,255,.03),0 8px 24px rgba(0,0,0,.28);
+  --scrim:rgba(0,0,0,.58);
+
+  /* 尺寸（移动端规范，非桌面值） */
+  --row-h:56px;          /* 列表项主高 */
+  --row-h-sm:48px;       /* 紧凑页（方案 C 全量页） */
+  --touch:44px;          /* 最小触控 */
+  --pad-x:16px;
+  --group-gap:16px;
+  --radius:12px;         /* 卡片圆角（需求指定） */
+  --radius-sm:8px;
+  --radius-lg:16px;
+  --icon-tile:28px;
+  --chev:16px;
+  --fs-title:30px;       /* 页面大标题 */
+  --fs-nav:17px;         /* 导航栏标题 */
+  --fs-group:13px;       /* 分组标题 */
+  --fs-label:16px;       /* 列表主文案 */
+  --fs-desc:12.5px;      /* 辅助说明 */
+  --fs-value:13px;       /* 右侧当前值 */
+
+  /* 设备安全区（原型内以变量模拟 env()） */
+  --screen-w:390px;
+  --screen-h:844px;
+  --safe-top:54px;
+  --safe-bottom:34px;
+}
+[data-theme="light"]{
+  --bg:#f1f2f6;
+  --bg-elev:#ffffff;
+  --bg-elev2:#ffffff;
+  --bg-sunk:#e9eaf0;
+  --border-soft:#e6e8ef;
+  --border:#d8dae4;
+  --text:#14161c;
+  --text-dim:#5b6270;            /* AA: 5.6:1 */
+  --text-faint:#666e7c;          /* AA: 5.1:1 */
+  --accent:#7c3aed;
+  --accent-text:#6d28d9;         /* AA: 6.9:1 */
+  --accent-soft:rgba(124,58,237,.10);
+  --red:#dc2626;
+  --red-text:#b91c1c;
+  --red-soft:rgba(220,38,38,.08);
+  --on-red:#ffffff;
+  --green:#0f9d68;
+  --amber:#b45309;
+  --fill-press:rgba(0,0,0,.06);
+  --fill-hover:rgba(0,0,0,.03);
+  --track-off:rgba(0,0,0,.18);
+  --shadow-card:0 1px 2px rgba(16,18,28,.06),0 6px 18px rgba(16,18,28,.05);
+  --scrim:rgba(20,22,30,.42);
+}
+
+*{box-sizing:border-box}
+html[data-theme="dark"]{color-scheme:dark}
+html[data-theme="light"]{color-scheme:light}
+html,body{margin:0;padding:0}
+body{
+  background:var(--bg-sunk);
+  color:var(--text);
+  font-family:var(--font-sans);
+  -webkit-font-smoothing:antialiased;
+  line-height:1.5;
+  background-image:radial-gradient(1200px 500px at 50% -18%,rgba(139,92,246,.14),transparent 70%);
+}
+[data-theme="light"] body{background-image:radial-gradient(1200px 500px at 50% -18%,rgba(124,58,237,.08),transparent 70%)}
+button{font:inherit;color:inherit}
+a{color:var(--accent-text)}
+
+/* ==========================================================================
+   1. 展示页外壳
+   ========================================================================== */
+.wrap{max-width:1180px;margin:0 auto;padding:28px 16px 80px}
+.sc-head{display:flex;flex-direction:column;gap:10px;align-items:center;text-align:center;margin-bottom:18px}
+.sc-kicker{font-size:11.5px;letter-spacing:.10em;text-transform:uppercase;color:var(--text-faint);font-weight:700}
+.sc-title{font-size:clamp(22px,3.4vw,30px);font-weight:800;letter-spacing:-.4px;margin:0}
+.sc-sub{color:var(--text-dim);font-size:13.5px;max-width:760px;margin:0}
+.sc-sub code{font-family:var(--mono);font-size:12px;background:var(--bg-elev);border:1px solid var(--border-soft);border-radius:6px;padding:1px 5px}
+
+.controls{display:flex;flex-wrap:wrap;gap:8px;justify-content:center;align-items:center;margin:6px 0 22px}
+.seg{display:inline-flex;padding:3px;gap:2px;background:var(--bg-elev);border:1px solid var(--border-soft);border-radius:999px}
+.seg button{
+  border:0;background:transparent;color:var(--text-dim);font-size:12.5px;font-weight:600;
+  padding:9px 14px;border-radius:999px;min-height:38px;cursor:pointer;display:inline-flex;align-items:center;gap:6px;
+  transition:background .16s,color .16s;
+}
+.seg button:hover{color:var(--text);background:var(--fill-hover)}
+.seg button[aria-pressed="true"]{background:var(--accent);color:var(--accent-contrast)}
+.seg.small button{padding:7px 11px;font-size:12px;min-height:34px}
+.seg .n{font-variant-numeric:tabular-nums;opacity:.75;font-weight:600}
+
+/* 舞台 */
+.stage{display:flex;gap:26px;align-items:flex-start;justify-content:center;flex-wrap:wrap}
+.stage-note{flex:1 1 320px;min-width:290px;max-width:420px;display:flex;flex-direction:column;gap:12px;position:sticky;top:18px}
+.note-card{background:var(--bg-elev);border:1px solid var(--border-soft);border-radius:var(--radius-lg);padding:16px 16px 14px}
+.note-card h3{margin:0 0 6px;font-size:15px}
+.note-card p{margin:0;color:var(--text-dim);font-size:13px;line-height:1.65}
+.note-card dl{display:grid;grid-template-columns:auto 1fr;gap:6px 10px;margin:10px 0 0;font-size:12.5px}
+.note-card dt{color:var(--text-faint);font-weight:600;white-space:nowrap}
+.note-card dd{margin:0;color:var(--text-dim)}
+.note-card.pros{border-left:3px solid var(--green)}
+.note-card.cons{border-left:3px solid var(--amber)}
+.note-card.rec{border-left:3px solid var(--accent)}
+
+/* ==========================================================================
+   2. 手机外壳 + 安全区
+   ========================================================================== */
+.device{
+  position:relative;flex:none;
+  width:calc(var(--screen-w) + 22px);
+  height:calc(var(--screen-h) + 22px);
+  padding:11px;
+  border-radius:calc(var(--radius-screen,46px) + 12px);
+  background:linear-gradient(160deg,#23262f,#0b0c10 55%);
+  box-shadow:0 1px 0 rgba(255,255,255,.10) inset,0 30px 70px rgba(0,0,0,.55),0 0 0 1px rgba(255,255,255,.05);
+}
+.screen{
+  position:relative;width:var(--screen-w);height:var(--screen-h);
+  border-radius:var(--radius-screen,46px);overflow:hidden;
+  background:var(--bg);display:flex;flex-direction:column;
+  isolation:isolate;
+}
+.device[data-device="punch"]{--screen-w:360px;--screen-h:780px;--safe-top:44px}
+.device[data-device="se"]{--screen-w:320px;--screen-h:568px;--safe-top:20px;--safe-bottom:8px;--radius-screen:26px}
+
+.island{position:absolute;z-index:60;left:50%;top:11px;transform:translateX(-50%);width:112px;height:30px;border-radius:18px;background:#000}
+.device[data-device="punch"] .island{width:11px;height:11px;border-radius:50%;top:14px}
+.device[data-device="se"] .island{display:none}
+
+.statusbar{
+  flex:none;height:var(--safe-top);display:flex;align-items:flex-end;justify-content:space-between;
+  padding:0 22px 6px;font-size:12px;font-weight:650;color:var(--text);letter-spacing:.02em;
+}
+.device[data-device="se"] .statusbar{align-items:center;padding-bottom:2px;font-size:11px}
+.statusbar .sb-r{display:flex;align-items:center;gap:5px;opacity:.9}
+.statusbar svg{width:15px;height:15px}
+.homebar{flex:none;height:var(--safe-bottom);display:flex;align-items:center;justify-content:center}
+.homebar i{display:block;width:120px;height:5px;border-radius:3px;background:var(--text);opacity:.35}
+.device[data-device="se"] .homebar i{width:90px;height:4px;opacity:.28}
+.device[data-device="se"] .row{padding-left:12px;padding-right:12px;gap:10px}
+.device[data-device="se"] .row-value{max-width:38%;font-size:12px}
+.device[data-device="se"] .row-desc{-webkit-line-clamp:1}
+.device[data-device="se"] .row-label{font-size:15px}
+.device[data-device="se"] .idcard{padding:12px;gap:10px}
+.device[data-device="se"] .idcard .avatar{width:40px;height:40px;border-radius:11px;font-size:15px}
+.device[data-device="se"] .idcard .id-action{padding:0 10px;font-size:12px;min-height:34px}
+.device[data-device="se"] .idcard .id-name{font-size:15px}
+.device[data-device="se"] .nav-large{padding-left:12px;padding-right:12px}
+.device[data-device="se"] .scroll-body{padding-left:12px;padding-right:12px}
+.device[data-device="se"] .tile{min-height:70px;padding:10px}
+.device[data-device="se"] .navbar h1{font-size:16px}
+.device[data-device="se"] .divider{margin-left:50px}
+.device[data-device="se"] .dense .divider{margin-left:46px}
+
+.app svg{width:16px;height:16px;flex:none}
+.app{position:relative;flex:1 1 auto;min-height:0;display:flex;flex-direction:column;background:var(--bg);overflow:hidden}
+.scroll{flex:1 1 auto;min-height:0;overflow-y:auto;overscroll-behavior:contain;scrollbar-width:none;-webkit-overflow-scrolling:touch}
+.scroll::-webkit-scrollbar{width:0;height:0}
+
+/* ==========================================================================
+   3. 移动端导航：大标题（首页）/ 紧凑导航栏（二级页）
+   ========================================================================== */
+.nav-large{flex:none;padding:2px var(--pad-x) 10px;background:var(--bg);position:relative;z-index:20}
+.nav-large .nl-top{display:flex;align-items:center;justify-content:space-between;gap:10px;min-height:34px}
+.nav-large h1{margin:0;font-size:var(--fs-title);font-weight:800;letter-spacing:-.5px;line-height:1.16}
+.device[data-device="se"] .nav-large h1{font-size:24px}
+
+.navbar{
+  flex:none;display:flex;align-items:center;gap:6px;padding:4px 8px 6px;background:var(--bg);
+  border-bottom:1px solid var(--border-soft);position:relative;z-index:20;min-height:48px;
+}
+.navbar h1{margin:0;font-size:var(--fs-nav);font-weight:650;letter-spacing:-.2px;flex:1 1 auto;min-width:0;
+  overflow:hidden;text-overflow:ellipsis;white-space:nowrap;text-align:center;padding:0 2px}
+.navbar .nav-spacer{width:var(--touch);flex:none}
+
+.icon-btn{
+  flex:none;width:var(--touch);height:var(--touch);display:grid;place-items:center;
+  border:0;background:transparent;border-radius:10px;color:var(--text);cursor:pointer;
+  transition:background .14s,transform .12s;
+}
+.icon-btn:hover{background:var(--fill-hover)}
+.icon-btn:active{background:var(--fill-press);transform:scale(.94)}
+.icon-btn svg{width:21px;height:21px}
+.icon-btn.brand{color:var(--accent-text)}
+
+/* 保存状态（宿主 settings-live-pill 的移动版） */
+.pill{
+  display:inline-flex;align-items:center;gap:6px;flex:none;
+  height:28px;padding:0 10px;border-radius:999px;
+  border:1px solid var(--border-soft);background:var(--bg-elev);
+  font-size:11.5px;font-weight:650;color:var(--text-dim);cursor:default;
+  transition:border-color .2s,color .2s,background .2s;
+}
+.pill i{width:6px;height:6px;border-radius:50%;background:var(--green);flex:none}
+.pill[data-state="saving"] i{background:var(--amber);animation:pulse 1s infinite}
+.pill[data-state="failed"]{color:var(--red-text);border-color:var(--red);background:var(--red-soft);cursor:pointer}
+.pill[data-state="failed"] i{background:var(--red)}
+@keyframes pulse{50%{opacity:.25}}
+.save-banner{
+  flex:none;display:flex;align-items:center;gap:8px;margin:0 var(--pad-x) 8px;padding:8px 10px;
+  border-radius:var(--radius-sm);background:var(--red-soft);border:1px solid var(--red);
+  color:var(--red-text);font-size:12.5px;font-weight:600;
+}
+.save-banner button{margin-left:auto;border:0;background:transparent;color:var(--red-text);font-weight:800;text-decoration:underline;cursor:pointer;padding:4px 2px}
+
+/* ==========================================================================
+   4. 搜索
+   ========================================================================== */
+.search{position:relative;display:flex;align-items:center;gap:8px;margin-top:8px;padding:0 10px;
+  min-height:var(--touch);background:var(--bg-elev2);border:1px solid var(--border-soft);border-radius:11px}
+.search svg{width:16px;height:16px;color:var(--text-faint);flex:none}
+.search input{
+  flex:1 1 auto;min-width:0;border:0;background:transparent;color:var(--text);
+  font:inherit;font-size:15px;padding:9px 0;outline:none;
+}
+.search input::placeholder{color:var(--text-faint)}
+.search input::-webkit-search-cancel-button,.search input::-webkit-search-decoration{-webkit-appearance:none;display:none}
+.search:focus-within{border-color:var(--accent);box-shadow:0 0 0 3px var(--accent-soft)}
+.search .clear{border:0;background:var(--fill-press);color:var(--text-dim);width:22px;height:22px;border-radius:50%;
+  display:grid;place-items:center;cursor:pointer;font-size:13px;line-height:1;flex:none}
+.search.hero{min-height:48px;border-radius:12px;margin-top:12px}
+.search.hero input{font-size:16px}
+
+/* ==========================================================================
+   5. 分组卡片与行（三套方案共用基元）
+   ========================================================================== */
+.scroll-body{padding:2px var(--pad-x) calc(var(--safe-bottom) + 24px);display:flex;flex-direction:column;gap:var(--group-gap)}
+.group{display:flex;flex-direction:column;gap:7px}
+.group-title{
+  margin:0;padding:0 4px;font-size:var(--fs-group);font-weight:700;letter-spacing:.02em;
+  color:var(--text-dim);display:flex;align-items:center;gap:6px;
+}
+.group-title .count{font-weight:600;color:var(--text-faint);font-variant-numeric:tabular-nums}
+.group-title .spacer{flex:1}
+.group-title .link{border:0;background:transparent;color:var(--accent-text);font-size:12px;font-weight:700;
+  min-height:32px;padding:0 4px;border-radius:6px;cursor:pointer}
+.card{
+  background:var(--bg-elev);border:1px solid var(--border-soft);border-radius:var(--radius);
+  overflow:hidden;box-shadow:var(--shadow-card);
+}
+.card.tight{border-radius:var(--radius)}
+.divider{height:1px;background:var(--border-soft);margin-left:calc(var(--pad-x) + var(--icon-tile) + 12px)}
+.card > .row + .divider{/* 首行上方无分隔线由渲染器控制 */}
+.divider.full{margin-left:0}
+
+/* 行：整行一个可点目标（>= 52px），右侧值 + chevron */
+.row{
+  display:flex;align-items:center;gap:12px;width:100%;
+  min-height:var(--row-h);padding:8px var(--pad-x);
+  border:0;background:transparent;color:var(--text);text-align:left;
+  cursor:pointer;transition:background .12s,transform .12s;
+  -webkit-tap-highlight-color:transparent;
+}
+.row:hover{background:var(--fill-hover)}
+.row:active{background:var(--fill-press)}
+.row:focus-visible{outline:2px solid var(--accent);outline-offset:-2px}
+.row[aria-disabled="true"]{cursor:not-allowed;color:var(--text-faint)}
+.row[aria-disabled="true"] .row-label{color:var(--text-faint)}
+.row[aria-disabled="true"] .row-ico{opacity:.45}
+.row[aria-disabled="true"]:hover{background:transparent}
+
+.row-ico{
+  flex:none;width:var(--icon-tile);height:var(--icon-tile);border-radius:8px;display:grid;place-items:center;
+  color:var(--tone,var(--text-dim));
+  background:color-mix(in srgb,var(--tone,var(--text-dim)) 16%,transparent);
+}
+[data-theme="light"] .row-ico{
+  color:var(--tone-l,var(--tone,var(--text-dim)));
+  background:color-mix(in srgb,var(--tone-l,var(--tone,var(--text-dim))) 12%,transparent);
+}
+.row-ico svg{width:16px;height:16px}
+.tone-blue{--tone:#60a5fa;--tone-l:#2563eb}
+.tone-violet{--tone:#a78bfa;--tone-l:#7c3aed}
+.tone-teal{--tone:#2dd4bf;--tone-l:#0d9488}
+.tone-amber{--tone:#fbbf24;--tone-l:#b45309}
+.tone-pink{--tone:#f472b6;--tone-l:#be185d}
+.tone-green{--tone:#34d399;--tone-l:#0f9d68}
+.tone-sky{--tone:#38bdf8;--tone-l:#0284c7}
+.tone-slate{--tone:#94a3b8;--tone-l:#556074}
+.tone-red{--tone:#f87171;--tone-l:#dc2626}
+
+.row-main{flex:1 1 auto;min-width:0;display:flex;flex-direction:column;gap:2px}
+.row-label{font-size:var(--fs-label);font-weight:500;line-height:1.28;
+  overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.row-desc{font-size:var(--fs-desc);color:var(--text-dim);line-height:1.35;
+  display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;overflow-wrap:anywhere}
+.row-value{
+  flex:none;max-width:42%;font-size:var(--fs-value);color:var(--text-dim);
+  overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-variant-numeric:tabular-nums;
+}
+.row-value.bad{color:var(--red-text);font-weight:650}
+.chev{flex:none;width:var(--chev);height:var(--chev);color:var(--text-faint);display:grid;place-items:center}
+.chev svg{width:15px;height:15px}
+.row-badge{flex:none;height:20px;min-width:20px;padding:0 6px;border-radius:10px;background:var(--accent-soft);
+  color:var(--accent-text);font-size:11.5px;font-weight:750;display:inline-grid;place-items:center;font-variant-numeric:tabular-nums}
+.row-badge.warn{background:var(--red-soft);color:var(--red-text)}
+.dot{width:7px;height:7px;border-radius:50%;background:var(--accent);flex:none}
+.dot.ok{background:var(--green)}
+.dot.err{background:var(--red)}
+
+/* 危险行：弱化但可识别（不靠颜色单一通道 → 文案 + 图标 + 分组标题） */
+.row.danger .row-label{color:var(--red-text);font-weight:600}
+.row.danger .row-ico{--tone:var(--red);--tone-l:var(--red)}
+
+/* 开关：视觉 50×30，命中区跟随整行 56 */
+.switch{
+  flex:none;position:relative;width:50px;height:30px;border-radius:15px;
+  background:var(--track-off);border:1px solid transparent;
+  transition:background .2s,border-color .2s;box-shadow:inset 0 1px 2px rgba(0,0,0,.18);
+}
+.switch .knob{
+  position:absolute;top:2px;left:2px;width:24px;height:24px;border-radius:50%;
+  background:var(--knob);box-shadow:0 2px 5px rgba(0,0,0,.35);
+  transition:transform .2s cubic-bezier(.2,.8,.3,1.1);
+}
+.row[aria-checked="true"] .switch{background:var(--accent);border-color:transparent}
+.row[aria-checked="true"] .switch .knob{transform:translateX(20px)}
+.row:active .switch .knob{width:26px}
+.row[aria-checked="false"]:active .switch .knob{left:2px}
+
+/* 分段控件（主题：窄/宽 等） */
+.segmented{display:flex;gap:2px;padding:3px;background:var(--bg-sunk);border-radius:10px;border:1px solid var(--border-soft)}
+.segmented button{
+  flex:1 1 0;min-height:36px;border:0;border-radius:8px;background:transparent;color:var(--text-dim);
+  font-size:13px;font-weight:600;cursor:pointer;transition:background .14s,color .14s;
+}
+.segmented button[aria-pressed="true"]{background:var(--bg-elev2);color:var(--text);box-shadow:0 1px 3px rgba(0,0,0,.18)}
+[data-theme="light"] .segmented button[aria-pressed="true"]{box-shadow:0 1px 3px rgba(16,18,28,.14);border:1px solid var(--border-soft)}
+
+/* 值预览行（不可点，仅展示当前值） */
+.row-static{cursor:default}
+
+/* ==========================================================================
+   6. 方案 A 专有：身份卡
+   ========================================================================== */
+.idcard{
+  display:flex;align-items:center;gap:12px;padding:14px;
+  background:var(--bg-elev);border:1px solid var(--border-soft);border-radius:var(--radius);
+  box-shadow:var(--shadow-card);
+}
+.idcard .avatar{
+  flex:none;width:46px;height:46px;border-radius:13px;display:grid;place-items:center;
+  background:linear-gradient(150deg,var(--accent),#6366f1);color:#fff;font-weight:800;font-size:17px;letter-spacing:-.5px;
+}
+.idcard .id-main{flex:1 1 auto;min-width:0;display:flex;flex-direction:column;gap:3px}
+.idcard .id-name{font-size:16px;font-weight:650;display:flex;align-items:center;gap:6px;min-width:0}
+.idcard .id-name span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.idcard .id-sub{font-size:12.5px;color:var(--text-dim);display:flex;align-items:center;gap:6px;flex-wrap:wrap}
+.idcard .id-sub .tag{
+  display:inline-flex;align-items:center;gap:4px;height:20px;padding:0 7px;border-radius:6px;
+  background:var(--accent-soft);color:var(--accent-text);font-weight:700;font-size:11px;
+}
+.idcard .id-action{
+  flex:none;min-height:36px;padding:0 12px;border-radius:9px;border:1px solid var(--border);
+  background:var(--bg-elev2);color:var(--text);font-size:12.5px;font-weight:650;cursor:pointer;
+}
+.idcard .id-action:active{background:var(--fill-press)}
+
+/* ==========================================================================
+   7. 方案 B 专有：高频磁贴 + 可折叠分组
+   ========================================================================== */
+.tiles{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.tile{
+  display:flex;flex-direction:column;gap:6px;align-items:flex-start;text-align:left;
+  min-height:78px;padding:12px;border-radius:var(--radius);border:1px solid var(--border-soft);
+  background:var(--bg-elev);color:var(--text);cursor:pointer;box-shadow:var(--shadow-card);
+  transition:transform .12s,background .12s,border-color .12s;
+}
+.tile:hover{border-color:var(--border)}
+.tile:active{transform:scale(.975);background:var(--fill-press)}
+.tile .tile-top{display:flex;align-items:center;gap:7px;width:100%}
+.tile .tile-ico{width:26px;height:26px;border-radius:8px;display:grid;place-items:center;flex:none;
+  color:var(--tone,var(--text-dim));background:color-mix(in srgb,var(--tone,var(--text-dim)) 16%,transparent)}
+[data-theme="light"] .tile .tile-ico{color:var(--tone-l,var(--tone));background:color-mix(in srgb,var(--tone-l,var(--tone)) 12%,transparent)}
+.tile .tile-ico svg{width:15px;height:15px}
+.tile .tile-name{font-size:13px;font-weight:650;line-height:1.2;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.tile .tile-val{font-size:12.5px;color:var(--text-dim);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;width:100%}
+.tile .tile-chev{margin-left:auto;color:var(--text-faint);display:grid;place-items:center}
+.tile .tile-chev svg{width:14px;height:14px}
+
+.group-head{
+  display:flex;align-items:center;gap:8px;width:100%;min-height:var(--touch);
+  padding:0 4px;border:0;background:transparent;color:var(--text-dim);cursor:pointer;
+  border-radius:8px;
+}
+.group-head:active{background:var(--fill-press)}
+.group-head .gh-title{font-size:var(--fs-group);font-weight:700;letter-spacing:.02em;color:var(--text-dim)}
+.group-head .gh-sum{font-size:11.5px;color:var(--text-faint);font-weight:600;
+  overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:52%}
+.group-head .spacer{flex:1}
+.group-head .gh-chev{width:18px;height:18px;color:var(--text-faint);transition:transform .2s;display:grid;place-items:center}
+.group-head .gh-chev svg{width:16px;height:16px}
+.group[data-open="true"] .gh-chev{transform:rotate(90deg)}
+.group[data-open="false"] .group-head{
+  border:1px solid var(--border-soft);background:var(--bg-elev);border-radius:var(--radius);
+  padding:0 14px;min-height:52px;box-shadow:var(--shadow-card);
+}
+.group[data-open="false"] .card{display:none}
+
+/* ==========================================================================
+   8. 方案 C 专有：场景卡 + 底部全量入口
+   ========================================================================== */
+.scene{
+  border:1px solid var(--border-soft);border-radius:var(--radius);background:var(--bg-elev);
+  box-shadow:var(--shadow-card);overflow:hidden;
+}
+.scene-head{
+  display:flex;align-items:center;gap:11px;width:100%;min-height:64px;padding:12px var(--pad-x);
+  border:0;background:transparent;color:var(--text);text-align:left;cursor:pointer;
+}
+.scene-head:active{background:var(--fill-press)}
+.scene-head .s-title{font-size:15px;font-weight:650;line-height:1.25}
+.scene-head .s-sub{font-size:12px;color:var(--text-dim);margin-top:2px}
+.scene-body{display:none;border-top:1px solid var(--border-soft)}
+.scene[data-open="true"] .scene-body{display:block}
+.scene[data-open="true"] .gh-chev{transform:rotate(90deg)}
+.scene-body .row{min-height:var(--row-h-sm)}
+.bottombar{
+  flex:none;padding:10px var(--pad-x) calc(8px + var(--safe-bottom) * .5);
+  background:color-mix(in srgb,var(--bg) 92%,transparent);
+  border-top:1px solid var(--border-soft);backdrop-filter:blur(10px);
+}
+.bottombar button{
+  width:100%;min-height:48px;border-radius:12px;border:1px solid var(--border);
+  background:var(--bg-elev);color:var(--text);font-size:14px;font-weight:650;
+  display:flex;align-items:center;justify-content:center;gap:8px;cursor:pointer;
+}
+.bottombar button:active{background:var(--fill-press)}
+.bottombar .bb-count{font-size:12px;color:var(--text-dim);font-weight:600}
+
+/* 全量页（C 的第三级：仍是列表页，不超三级） */
+.dense .row{min-height:var(--row-h-sm);padding-top:6px;padding-bottom:6px}
+.dense .row-label{font-size:15px}
+.dense .row-ico{width:24px;height:24px;border-radius:7px}
+.dense .row-ico svg{width:14px;height:14px}
+.dense .divider{margin-left:calc(var(--pad-x) + 24px + 12px)}
+
+/* 二级页内的分组间标题 */
+.sub-note{font-size:12px;color:var(--text-faint);line-height:1.6;padding:0 4px}
+.sub-note code{font-family:var(--mono);font-size:11.5px;background:var(--bg-elev);border:1px solid var(--border-soft);
+  border-radius:5px;padding:0 4px;overflow-wrap:anywhere}
+.text-btn{width:100%;min-height:var(--row-h-sm);border:0;background:transparent;color:var(--accent-text);
+  font-size:14px;font-weight:650;cursor:pointer;border-top:1px solid var(--border-soft)}
+.text-btn:active{background:var(--fill-press)}
+
+/* ==========================================================================
+   9. 状态：空 / 加载 / 禁用 / 底部确认面板
+   ========================================================================== */
+.empty{padding:40px 20px;display:flex;flex-direction:column;align-items:center;gap:10px;text-align:center}
+.empty .e-ico{width:44px;height:44px;border-radius:14px;display:grid;place-items:center;background:var(--bg-elev2);
+  border:1px solid var(--border-soft);color:var(--text-faint)}
+.empty .e-ico svg{width:20px;height:20px}
+.empty .e-t{font-size:14px;font-weight:650}
+.empty .e-d{font-size:12.5px;color:var(--text-dim);max-width:230px}
+.empty .e-btn{margin-top:4px;min-height:36px;padding:0 14px;border-radius:9px;border:1px solid var(--border);
+  background:var(--bg-elev);color:var(--text);font-size:12.5px;font-weight:650;cursor:pointer}
+
+.sk-row{display:flex;align-items:center;gap:12px;min-height:var(--row-h);padding:8px var(--pad-x)}
+.sk{background:linear-gradient(90deg,var(--bg-elev2) 25%,var(--border-soft) 37%,var(--bg-elev2) 63%);
+  background-size:400% 100%;animation:shine 1.4s ease-in-out infinite;border-radius:6px}
+@keyframes shine{0%{background-position:100% 0}100%{background-position:0 0}}
+.sk-ico{width:28px;height:28px;border-radius:8px;flex:none}
+.sk-l1{height:12px;width:38%}
+.sk-l2{height:10px;width:22%;margin-top:7px}
+.sk-v{height:11px;width:16%;margin-left:auto;flex:none}
+
+.sheet-layer{position:absolute;inset:0;z-index:80;display:flex;align-items:flex-end;justify-content:center}
+.sheet-scrim{position:absolute;inset:0;background:var(--scrim);backdrop-filter:blur(2px);animation:fadein .18s ease-out}
+.sheet{
+  position:relative;width:100%;background:var(--bg-elev);border-radius:18px 18px 0 0;
+  padding:18px var(--pad-x) calc(14px + var(--safe-bottom) * .6);
+  border-top:1px solid var(--border-soft);box-shadow:0 -18px 40px rgba(0,0,0,.35);
+  animation:slideup .22s cubic-bezier(.2,.9,.25,1);
+}
+@keyframes slideup{from{transform:translateY(18px);opacity:.6}to{transform:none;opacity:1}}
+@keyframes fadein{from{opacity:0}to{opacity:1}}
+.sheet h3{margin:0 0 6px;font-size:16px}
+.sheet p{margin:0 0 14px;font-size:13px;color:var(--text-dim);line-height:1.55}
+.sheet .sc-actions{display:flex;flex-direction:column;gap:8px}
+.sheet button{min-height:50px;border-radius:12px;border:1px solid var(--border);background:var(--bg-elev2);
+  color:var(--text);font-size:15px;font-weight:650;cursor:pointer}
+.sheet button.destructive{background:var(--red);border-color:var(--red);color:var(--on-red);font-weight:750}
+.sheet button.cancel{background:transparent;border-color:var(--border-soft);color:var(--text-dim)}
+.sheet button:active{transform:scale(.99)}
+
+/* ==========================================================================
+   10. 文档区
+   ========================================================================== */
+.docs{margin-top:44px;display:flex;flex-direction:column;gap:16px}
+.doc{
+  background:var(--bg-elev);border:1px solid var(--border-soft);border-radius:var(--radius-lg);
+  padding:20px 20px 18px;
+}
+.doc > h2{margin:0 0 4px;font-size:18px;letter-spacing:-.2px}
+.doc > h2 .idx{color:var(--accent-text);font-variant-numeric:tabular-nums;margin-right:8px}
+.doc > p.lead{margin:0 0 14px;color:var(--text-dim);font-size:13px}
+.doc h3{font-size:14px;margin:18px 0 8px}
+.doc h3:first-of-type{margin-top:6px}
+.doc ul,.doc ol{margin:0;padding-left:20px;color:var(--text-dim);font-size:13.5px;line-height:1.7}
+.doc li::marker{color:var(--text-faint)}
+.doc li b,.doc p b{color:var(--text)}
+.doc code{font-family:var(--mono);font-size:12px;background:var(--bg-sunk);border:1px solid var(--border-soft);
+  border-radius:5px;padding:1px 5px;overflow-wrap:anywhere}
+pre{
+  margin:10px 0 0;padding:14px;background:var(--bg-sunk);border:1px solid var(--border-soft);border-radius:10px;
+  overflow-x:auto;font-family:var(--mono);font-size:12px;line-height:1.6;color:var(--text-dim);
+}
+pre b{color:var(--text);font-weight:650}
+pre .c{color:var(--text-faint)}
+
+table{width:100%;border-collapse:collapse;margin-top:10px;font-size:13px;display:block;overflow-x:auto;white-space:normal}
+table > thead,table > tbody{display:table;width:100%}
+th,td{text-align:left;padding:8px 10px;border-bottom:1px solid var(--border-soft);vertical-align:top}
+th{color:var(--text-faint);font-size:11.5px;font-weight:750;letter-spacing:.04em;text-transform:uppercase}
+td{color:var(--text-dim)}
+td b{color:var(--text);font-weight:600}
+tr:last-child td{border-bottom:0}
+.tagx{display:inline-block;padding:1px 6px;border-radius:5px;font-size:11px;font-weight:700;
+  background:var(--accent-soft);color:var(--accent-text);font-family:var(--mono)}
+.tagx.red{background:var(--red-soft);color:var(--red-text)}
+.tagx.gray{background:var(--fill-press);color:var(--text-dim)}
+.grid2{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:12px;margin-top:10px}
+.mini{border:1px solid var(--border-soft);border-radius:10px;overflow:hidden;background:var(--bg)}
+.mini .m-head{padding:7px 12px;font-size:11px;font-weight:750;color:var(--text-faint);
+  border-bottom:1px solid var(--border-soft);letter-spacing:.04em;text-transform:uppercase}
+.mini .row{min-height:52px}
+.note{display:block;padding:11px 12px;border-radius:10px;background:var(--accent-soft);
+  color:var(--text-dim);font-size:12.5px;line-height:1.6;margin-top:12px;border:1px solid color-mix(in srgb,var(--accent) 34%,transparent)}
+.note.warn{background:var(--red-soft);border-color:color-mix(in srgb,var(--red) 34%,transparent);color:var(--text-dim)}
+.note b{color:var(--text)}
+.figma{
+  border:1px dashed color-mix(in srgb,var(--accent) 45%,transparent);border-radius:12px;padding:16px;
+  background:var(--bg-sunk);font-size:13px;line-height:1.75;color:var(--text-dim);
+}
+.figma b{color:var(--text)}
+
+/* 方案对比表 */
+.compare th:nth-child(1){width:130px}
+.compare td{white-space:normal}
+.best{color:var(--green);font-weight:700}
+
+/* 响应式：展示页自身 */
+@media (max-width:900px){
+  .stage{flex-direction:column;align-items:center}
+  .stage-note{position:static;max-width:none;width:100%;order:2}
+}
+@media (max-width:420px){
+  .wrap{padding:18px 10px 60px}
+  .device{transform:scale(.92);transform-origin:top center;margin-bottom:-40px}
+}
+@media (prefers-reduced-motion:reduce){
+  *{animation-duration:.001ms !important;animation-iteration-count:1 !important;transition-duration:.001ms !important}
+  .sheet,.sheet-scrim{animation:none}
+}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header class="sc-head">
+    <div class="sc-kicker">pi-web-ui · Mobile Settings · Redesign 2026</div>
+    <h1 class="sc-title">移动端「设置」重构 · 三套可交互方案</h1>
+    <p class="sc-sub">
+      现状：设置是一个 960px 宽的桌面弹窗，移动端把 <b>21+ 个页签</b>压进一条横向胶囊滚道（<code>@media (max-width:640px)</code> 里
+      <code>.settings-rail{flex-direction:row;overflow-x:auto}</code>），分组标题与搜索被 <code>display:none</code>。
+      三套方案都基于同一份真实页签清单（不新增业务），差异只在「首页如何降低跳转成本」。
+    </p>
+  </header>
+
+  <div class="controls" role="group" aria-label="原型控制">
+    <div class="seg" id="schemeSeg" role="group" aria-label="方案">
+      <button data-scheme="A" aria-pressed="true"><span class="n">A</span> 分组首页</button>
+      <button data-scheme="B" aria-pressed="false"><span class="n">B</span> 值预览</button>
+      <button data-scheme="C" aria-pressed="false"><span class="n">C</span> 搜索优先</button>
+    </div>
+    <div class="seg small" id="themeSeg" role="group" aria-label="主题">
+      <button data-theme-set="dark" aria-pressed="true">深色</button>
+      <button data-theme-set="light" aria-pressed="false">浅色</button>
+    </div>
+    <div class="seg small" id="deviceSeg" role="group" aria-label="机型">
+      <button data-device-set="island" aria-pressed="true">390 灵动岛</button>
+      <button data-device-set="punch" aria-pressed="false">360 打孔</button>
+      <button data-device-set="se" aria-pressed="false">320 小屏</button>
+    </div>
+    <div class="seg small" id="stateSeg" role="group" aria-label="状态演示">
+      <button data-state-set="default" aria-pressed="true">默认</button>
+      <button data-state-set="loading" aria-pressed="false">加载中</button>
+      <button data-state-set="failed" aria-pressed="false">保存失败</button>
+      <button data-state-set="empty" aria-pressed="false">空结果</button>
+    </div>
+  </div>
+
+  <div class="stage">
+    <div class="device" id="device" data-device="island">
+      <div class="island" aria-hidden="true"></div>
+      <div class="screen">
+        <div class="statusbar" aria-hidden="true">
+          <span>9:41</span>
+          <span class="sb-r">
+            <svg viewBox="0 0 24 24" fill="currentColor"><path d="M3 18h3v-5H3v5zm5 0h3V9H8v9zm5 0h3V6h-3v12zm5 0h3V3h-3v15z"/></svg>
+            <svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 20a1.6 1.6 0 1 0 0-3.2A1.6 1.6 0 0 0 12 20zm0-6.2c1.6 0 3 .6 4.1 1.7l1.6-1.6A8 8 0 0 0 12 11.4a8 8 0 0 0-5.7 2.5l1.6 1.6A5.8 5.8 0 0 1 12 13.8zm0-5.2c2.9 0 5.5 1.1 7.5 3l1.6-1.6A13.7 13.7 0 0 0 12 6.2c-3.7 0-7.1 1.4-9.6 4l1.6 1.6a11.7 11.7 0 0 1 8-3z"/></svg>
+            <svg viewBox="0 0 26 24" fill="none" stroke="currentColor" stroke-width="1.6"><rect x="2" y="8" width="17" height="9" rx="2.6"/><rect x="4" y="10" width="12" height="5" rx="1.4" fill="currentColor" stroke="none"/><path d="M22 11v3" stroke-linecap="round"/></svg>
+          </span>
+        </div>
+        <div class="app" id="app" data-scheme="A"><!--__APP__--></div>
+        <div class="homebar" aria-hidden="true"><i></i></div>
+      </div>
+    </div>
+
+    <aside class="stage-note">
+      <div class="note-card rec" id="noteMain">
+        <h3>方案 A · 分组首页 + 推入二级页</h3>
+        <p>iOS 设置的直接移植：大标题 → 身份卡 → 6 个分组卡（每组 3–6 行），行右侧用「当前值」替代纯箭头。二级页从右滑入，导航栏右侧承接保存状态。</p>
+      </div>
+      <div class="note-card pros" id="notePros">
+        <h3 style="font-size:13.5px">为什么推荐它</h3>
+        <dl>
+          <dt>扫读</dt><dd>一屏 7 行 + 5 个组标题，视线只在左侧标签上，符合「找功能」而非「读内容」</dd>
+          <dt>触控</dt><dd>行高 56px，整行一个 44px+ 命中区，开关不必点准 30px 圆点</dd>
+          <dt>心智</dt><dd>与 iOS 设置同构，零学习成本；返回手势天然</dd>
+          <dt>成本</dt><dd>最低：现有 <code>tab</code> 状态可直接映射为「栈」，样式表新增一段移动端规则即可</dd>
+        </dl>
+      </div>
+      <div class="note-card cons" id="noteCons">
+        <h3 style="font-size:13.5px">代价 / 取舍</h3>
+        <dl>
+          <dt>跳转</dt><dd>改一个值平均 2 跳；值预览只能救回「只读确认」</dd>
+          <dt>长尾</dt><dd>21 个页签仍要分组承载，新手可能找不到「审批规则」</dd>
+          <dt>缓解</dt><dd>搜索常驻吸顶 + 分组标题带计数 + 最近改动项上浮（本地记录，不采集）</dd>
+        </dl>
+      </div>
+      <div class="note-card">
+        <h3 style="font-size:13.5px">试用提示</h3>
+        <p>点行进入二级页（返回箭头可回）；开关可直接切；方案 A 的「重置与危险操作」在<b>关于</b>页底部或首页最后一行进入。切到「保存失败」看顶部红色回执与重试。</p>
+      </div>
+    </aside>
+  </div>
+
+  <section class="docs" id="docs">
+
+  <article class="doc" id="diagnosis">
+    <h2><span class="idx">0</span>现状诊断：不是「不好看」，是桌面 IA 直接压到 390px</h2>
+    <p class="lead">证据来自仓库当前代码（<code>web/src/styles.css</code> 的 <code>@media (max-width:640px)</code> 段、<code>web/src/components/SettingsModal.tsx</code> 的 <code>SettingsTab</code> 联合类型、<code>web/index.html</code>）。</p>
+    <table>
+      <thead><tr><th>现象</th><th>代码位置</th><th>对用户的影响</th></tr></thead>
+      <tbody>
+        <tr><td><b>21+ 个页签横排成一条胶囊滚道</b><br>没有分组、没有搜索、没有「还有更多」的暗示</td><td><code>.settings-rail{flex-direction:row;overflow-x:auto}</code><br><code>.settings-group-title{display:none}</code><br><code>.settings-search-wrap{display:none}</code></td><td>要滑 3–4 屏才能摸到「界面插件」「群组协作」；<b>新手根本不知道有这些页</b></td></tr>
+        <tr><td><b>页签 40px、子页签 36px</b></td><td><code>.settings-tab{min-height:40px}</code><br><code>.set-subtab{min-height:36px}</code></td><td>低于 44pt 建议，拇指误触</td></tr>
+        <tr><td><b>表单行 40px 且左右只有 2px 内衬</b></td><td><code>.settings-modal .set-row{min-height:40px;padding:10px 2px}</code></td><td>行与行贴在一起，滚动时容易点到隔壁开关</td></tr>
+        <tr><td><b>弹窗 92vh，没有安全区</b></td><td><code>.settings-modal{height:92vh}</code><br><code>web/index.html</code> 缺 <code>viewport-fit=cover</code></td><td>iOS 上 <code>env(safe-area-inset-*)</code> 恒为 0：灵动岛压标题、Home 条盖住最后一行</td></tr>
+        <tr><td><b><code>color-scheme: dark</code> 写死</b></td><td><code>web/index.html</code> 的 <code>meta name="color-scheme" content="dark"</code></td><td>浅色主题下滚动条 / 原生控件仍按深色绘制，割裂</td></tr>
+        <tr><td><b>无「当前值」预览</b></td><td>移动端沿用桌面 <code>set-row</code></td><td>只想知道「现在是宽屏还是窄屏」也要进二级页</td></tr>
+      </tbody>
+    </table>
+    <div class="note">
+      <b>设计目标（按优先级）</b>：① 首屏就能看到高频入口，横滑消失；② 一切可点区域 ≥ 44×44；③ 安全区 + 深浅色 + 动态字体是一等公民；④ 21 个页签必须有稳定的归属规则，不靠记位置。
+    </div>
+  </article>
+
+  <article class="doc" id="tree">
+    <h2><span class="idx">1</span>页面结构树（方案 A 为主轴，B/C 只换首页壳）</h2>
+    <p class="lead">信息层级严格三级：<b>设置首页 → 二级设置页 → （最多）页内分组</b>。确认面板是模态，不计层级。</p>
+<pre><b>设置</b>（首页）
+├─ 身份卡   本机 · pi ｜ 已连接 · 本地运行 ｜ 3 台设备 ｜ [切换引擎]
+├─ <b>通知</b>            <span class="c">// 能力门控：仅手机安装包（PiPush）存在，Web 端整组不渲染</span>
+│   ├─ 本机通知 ………………………… Switch（即时生效）
+│   ├─ 通知类型  4 / 5 类 › …………… 二级页：5 个类型开关 + 系统权限
+│   └─ 系统通知权限  已允许 › ………… 同一二级页，失败时给「打开系统设置」
+├─ <b>常用</b>
+│   ├─ 模型与服务商  pi · 12 个 ›
+│   ├─ 对话          宽屏 · 显示模型 ›
+│   ├─ 提示音        Switch
+│   ├─ 快捷短语      8 条 ›
+│   └─ 主题          flow-ink · 深色 ›
+├─ <b>智能体能力</b>
+│   ├─ 系统提示词    追加模式 ›
+│   ├─ 工具          3 项已关闭 ›
+│   ├─ 技能          12 个 ›
+│   ├─ 预设          4 个 ›
+│   ├─ 子代理模板    6 个 ›
+│   └─ 随手问        已开启 ›
+├─ <b>连接与自动化</b>
+│   ├─ MCP 服务器    2 个 · 1 异常 ›      <span class="c">// 「异常」＝文字 + 红点，双通道</span>
+│   ├─ 定时任务      3 个 ›
+│   ├─ 群组协作与执行 默认配额 ›
+│   ├─ 审批规则      5 条 ›
+│   └─ 视觉桥        未配置（禁用）     <span class="c">// 副文案说明「需先配置视觉模型」</span>
+├─ <b>外观与界面</b>
+│   ├─ 界面布局      默认 ›
+│   ├─ 界面插件      6 个 · 1 个有更新 ›
+│   ├─ 插件（扩展）  4 个 ›
+│   └─ 语言          简体中文 ›
+├─ <b>更多</b>
+│   ├─ 输入历史      238 条 ›
+│   ├─ 目标审查      3 个技能 ›
+│   └─ 关于与版本    v0.119.0 ›
+└─ <b>危险操作</b>        <span class="c">// 单独分组 + 置底 + 红色文字，进二级页才出现具体动作</span>
+    └─ 重置与危险操作  3 项 ›
+
+<b>二级页模板</b>（25 个，全部同构）
+├─ 导航栏：‹ 返回 ｜ 标题 ｜ 保存状态 pill
+├─ 分组卡 A：分段控件（如 对话：窄 / 宽）
+├─ 分组卡 B：开关行 / 值行 / 危险行
+└─ 页脚：改动即时生效，无需保存
+
+<b>三级</b>：二级页内的分组标题（如「接收这些通知」），不再往下钻。</pre>
+    <p class="lead" style="margin:12px 0 0">方案差异只发生在首页壳：</p>
+    <ul>
+      <li><b>A</b>：6 张分组卡 + 身份卡，全部默认展开（信息全暴露，扫读最快）。</li>
+      <li><b>B</b>：2×2 高频磁贴 + 分组默认折叠（首屏密度最高，但可发现性依赖展开）。</li>
+      <li><b>C</b>：搜索 hero + 常改 6 项 + 5 个场景折叠 + 底部「全部设置」（按意图找，最深路径最长）。</li>
+    </ul>
+  </article>
+
+  <article class="doc" id="inventory">
+    <h2><span class="idx">2</span>分组与列表项清单</h2>
+    <p class="lead">右侧「值」列的文案是设计的一部分：<b>它决定了用户是否需要点进去</b>。数字是排版示例，字段名与页签全部来自现有代码。</p>
+    <table>
+      <thead><tr><th>分组</th><th>列表项</th><th>控件</th><th>右侧值 / 副文案</th><th>去向与说明</th></tr></thead>
+      <tbody>
+        <tr><td rowspan="3"><b>通知</b><br><span class="tagx gray">仅 App</span></td><td>本机通知</td><td><span class="tagx">Switch</span></td><td>副：任务完成、需要回答、审批</td><td>即时开关推送；关闭时副文案改为「已关闭 · 点此重新开启」</td></tr>
+        <tr><td>通知类型</td><td>导航</td><td>4 / 5 类</td><td>二级页 5 个开关：任务完成 / 失败 / 需要回答 / 需要审批 / 子任务完成</td></tr>
+        <tr><td>系统通知权限</td><td>导航</td><td>已允许</td><td>未授权 → 行内出现「打开系统设置」动作（<code>PiPush.openSystemSettings()</code>）</td></tr>
+        <tr><td rowspan="5"><b>常用</b></td><td>模型与服务商</td><td>导航</td><td>pi · 12 个</td><td>二级页：引擎卡 / 服务商列表 / 清除密钥（危险）</td></tr>
+        <tr><td>对话</td><td>导航</td><td>宽屏 · 显示模型</td><td>二级页：窄/宽分段 + 4 个显示开关 + 上下文软上限</td></tr>
+        <tr><td>提示音</td><td><span class="tagx">Switch</span></td><td>副：任务完成、需要确认时</td><td>唯一被「上提」到首页的开关，避免为了静音进二级页</td></tr>
+        <tr><td>快捷短语</td><td>导航</td><td>8 条</td><td>二级页：列表（轻点编辑）+ 新增 + 恢复默认（危险）</td></tr>
+        <tr><td>主题</td><td>导航</td><td>flow-ink · 深色</td><td>二级页：主题单选（带预览色块）+ 跟随系统</td></tr>
+        <tr><td rowspan="6"><b>智能体能力</b></td><td>系统提示词</td><td>导航</td><td>追加模式</td><td>二级页：追加/替换分段 + 编辑器入口 + 恢复默认（危险）</td></tr>
+        <tr><td>工具</td><td>导航</td><td>3 项已关闭</td><td>计数取自 <code>disabledToolsCount + disabledMarkers.length</code>，一眼看出「被动过」</td></tr>
+        <tr><td>技能</td><td>导航</td><td>12 个</td><td>二级页：已安装 / 目录按需加载 / 技能市场</td></tr>
+        <tr><td>预设</td><td>导航</td><td>4 个</td><td>二级页：列表 + 导入导出 JSON</td></tr>
+        <tr><td>子代理模板</td><td>导航</td><td>6 个</td><td>二级页：模板 / 并发上限 / 自动唤醒</td></tr>
+        <tr><td>随手问</td><td>导航</td><td>已开启</td><td>二级页：启用开关 + 小窗提示词</td></tr>
+        <tr><td rowspan="5"><b>连接与自动化</b></td><td>MCP 服务器</td><td>导航</td><td><span class="tagx red">2 个 · 1 异常</span></td><td>异常值用 <code>--red-text</code> + 文案双通道；二级页每台带连接状态点</td></tr>
+        <tr><td>定时任务</td><td>导航</td><td>3 个</td><td>二级页：任务 + 启用开关 + 新建</td></tr>
+        <tr><td>群组协作与执行</td><td>导航</td><td>默认配额</td><td>二级页：并发上限 / 任务配额 / 黑板上下文</td></tr>
+        <tr><td>审批规则</td><td>导航</td><td>5 条</td><td>二级页：总开关 + 规则库 + 呈现方式（队列 / 全部）</td></tr>
+        <tr><td>视觉桥</td><td>导航（禁用）</td><td>未配置</td><td>禁用态：<code>aria-disabled</code>、图标 45% 透明、副文案给出修复路径</td></tr>
+        <tr><td rowspan="4"><b>外观与界面</b></td><td>界面布局</td><td>导航</td><td>默认</td><td>二级页：顶栏 / 底栏 / 输入框动作 + 恢复默认（危险）</td></tr>
+        <tr><td>界面插件</td><td>导航</td><td>6 个 · 1 个有更新</td><td>有更新时行首加 6px 圆点，同时用文案兜底</td></tr>
+        <tr><td>插件（扩展）</td><td>导航</td><td>4 个</td><td>二级页：已装扩展 + 市场</td></tr>
+        <tr><td>语言</td><td>导航</td><td>简体中文</td><td>二级页：单选（简中 / English / 繁中）</td></tr>
+        <tr><td rowspan="3"><b>更多</b></td><td>输入历史</td><td>导航</td><td>238 条</td><td>二级页：跨对话保留草稿 + 清空历史（危险）</td></tr>
+        <tr><td>目标审查</td><td>导航</td><td>3 个技能</td><td>二级页：审查技能 + 提交前必须通过</td></tr>
+        <tr><td>关于与版本</td><td>导航</td><td>v0.119.0</td><td>二级页：版本 / 引擎 / 许可证 / 仓库，底部再放一次危险入口</td></tr>
+        <tr><td><b>危险操作</b></td><td>重置与危险操作</td><td>导航</td><td>3 项</td><td>二级页：清空历史 / 清除全部密钥 / 恢复默认布局，<b>每项都走底部确认面板</b></td></tr>
+      </tbody>
+    </table>
+
+    <h3>2.1 需求分组 → 真实能力的映射（不虚构）</h3>
+    <table>
+      <thead><tr><th>需求模板里的分组</th><th>本产品对应</th><th>处理方式</th></tr></thead>
+      <tbody>
+        <tr><td>账号区：头像 / 昵称 / 账号状态</td><td><b>无账号体系</b>（本地 token 鉴权），只有「本机引擎 + 已授权设备」</td><td>换成<b>身份卡</b>：引擎徽标 + 连接状态 + 设备数 + 切换引擎；不画假头像昵称</td></tr>
+        <tr><td>通用：语言 / 主题 / <s>字体大小</s></td><td>语言 ✓（LocaleModal）、主题 ✓（themes/*.css）<br>字号 ✗</td><td>语言、主题保留；<b>不新增字号设置</b>，改为「跟随系统动态字体」（<code>rem</code> + 不锁缩放），这本身是缺陷修复而非新功能</td></tr>
+        <tr><td>通知：推送开关 / 免打扰</td><td>手机安装包有真实推送（<code>mobile/src/Settings.tsx</code>：5 类通知 + 权限 + 服务器配置）<br>免打扰 ✗</td><td>保留推送与类型，<b>不造免打扰</b>；Web 端整组隐藏（能力门控）</td></tr>
+        <tr><td>隐私与安全：权限管理 / 登录设备</td><td>审批规则 ✓（<code>tool-approval.ts</code>）、插件权限 ✓、服务商密钥 ✓</td><td>合并为「审批规则 + 密钥 + 设备」；设备授权入口在设备中心，设置页只做一行跳转</td></tr>
+        <tr><td>存储：缓存清理 / 占用空间</td><td>无磁盘缓存面板；有输入历史、会话缓存（内存）、服务商密钥</td><td>用「输入历史 238 条 + 清空」表达可清理项；<b>不编造「占用 1.2GB」</b></td></tr>
+        <tr><td>关于：版本 / 协议 / 隐私政策</td><td>版本 ✓、MIT 许可证 ✓、仓库 ✓</td><td>保留；<b>不放假链接</b>（无隐私政策页就不放）</td></tr>
+        <tr><td>危险：退出登录 / 注销</td><td>无登录</td><td>用真实不可逆动作替代：清空历史 / 清除全部密钥 / 恢复默认布局，全部二次确认</td></tr>
+      </tbody>
+    </table>
+  </article>
+
+
+  <article class="doc" id="tokens">
+    <h2><span class="idx">3</span>组件清单与尺寸 / 间距 / 颜色 token</h2>
+    <h3>3.1 尺寸与间距（移动端专用，与桌面脱钩）</h3>
+    <table>
+      <thead><tr><th>token</th><th>值</th><th>用途 / 依据</th></tr></thead>
+      <tbody>
+        <tr><td><code>--row-h</code></td><td><b>56px</b></td><td>列表行；副文案两行时允许 64–76，靠内容撑高</td></tr>
+        <tr><td><code>--row-h-sm</code></td><td>48px</td><td>紧凑页（方案 C 的「全部设置」）</td></tr>
+        <tr><td><code>--touch</code></td><td><b>44px</b></td><td>最小命中区；图标按钮、分组头、搜索框都 ≥ 44</td></tr>
+        <tr><td><code>--pad-x</code></td><td>16px</td><td>页面左右内衬（320px 屏降到 12px）</td></tr>
+        <tr><td><code>--group-gap</code></td><td><b>16px</b></td><td>分组卡片之间的距离</td></tr>
+        <tr><td><code>--radius</code></td><td><b>12px</b></td><td>卡片圆角（需求指定）；磁贴同 12，确认面板 18（仅上圆角）</td></tr>
+        <tr><td><code>--icon-tile</code></td><td>28px</td><td>行内图标底托（圆角 8），图标本体 16px / 线宽 1.6</td></tr>
+        <tr><td><code>--chev</code></td><td>16px</td><td>右箭头，颜色 <code>--text-faint</code></td></tr>
+        <tr><td>开关</td><td>50×30，圆点 24</td><td>视觉体积接近 iOS，命中区仍是整行 56</td></tr>
+        <tr><td>状态栏 / Home</td><td>44–54 / 34</td><td><code>env(safe-area-inset-top/bottom)</code>，小屏 20/8</td></tr>
+        <tr><td>导航栏</td><td>48px</td><td>返回键 44×44，标题居中 17px</td></tr>
+        <tr><td>字号阶梯</td><td>30（大标题）/ 17（导航）/ 16（行主文案）/ 13（值、分组标题）/ 12.5（副文案）/ 11.5（徽标）</td><td>全部 <code>rem</code>；行主文案 = 1rem，跟随系统字号</td></tr>
+      </tbody>
+    </table>
+
+    <h3>3.2 颜色 token（深/浅双套，括号内为实测对比度）</h3>
+    <table>
+      <thead><tr><th>token</th><th>深色</th><th>浅色</th><th>用途</th></tr></thead>
+      <tbody>
+        <tr><td><code>--bg</code></td><td>#0d0e12</td><td>#f1f2f6</td><td>页面底色（浅色＝需求里的「浅灰/白」）</td></tr>
+        <tr><td><code>--bg-elev</code></td><td>#14161c</td><td>#ffffff</td><td>卡片；浅色靠 1px 描边 + 极浅投影分层，不用大渐变</td></tr>
+        <tr><td><code>--border-soft</code></td><td>#1e2230</td><td>#e6e8ef</td><td>卡片描边、行分隔线（左缩进 56px）</td></tr>
+        <tr><td><code>--text</code></td><td>#e6e8ef（15.9:1）</td><td>#14161c（16.8:1）</td><td>行主文案、标题</td></tr>
+        <tr><td><code>--text-dim</code></td><td>#9aa1b4（6.8:1）</td><td>#5b6270（5.6:1）</td><td>副文案、右侧值、分组标题</td></tr>
+        <tr><td><code>--text-faint</code></td><td>#8b93a7（5.8:1）</td><td>#666e7c（5.1:1）</td><td>箭头、占位符、弱提示（仍 ≥4.5:1）</td></tr>
+        <tr><td><code>--accent</code></td><td>#8b5cf6</td><td>#7c3aed</td><td>开关开启、焦点环、选中态背景</td></tr>
+        <tr><td><code>--accent-text</code></td><td>#a78bfa（6.5:1）</td><td>#6d28d9（6.9:1）</td><td>强调<b>文字</b>单独一档——直接用 <code>--accent</code> 当文字在深色下只有 4.2:1，不合规</td></tr>
+        <tr><td><code>--accent-contrast</code></td><td>#ffffff</td><td>#ffffff</td><td>实底按钮/徽标上的文字</td></tr>
+        <tr><td><code>--red</code> / <code>--red-text</code></td><td>#f87171 / #fca5a5</td><td>#dc2626 / #b91c1c</td><td>危险行、失败回执；实底红按钮文字用 <code>--on-red</code>（深色下是深字，避免白字压浅红）</td></tr>
+        <tr><td><code>--green</code></td><td>#34d399</td><td>#0f9d68</td><td>连接状态点（永远与文字同时出现）</td></tr>
+      </tbody>
+    </table>
+
+    <h3>3.3 组件清单</h3>
+    <table>
+      <thead><tr><th>组件</th><th>结构</th><th>状态</th></tr></thead>
+      <tbody>
+        <tr><td><b>SettingsRow</b>（导航行）</td><td>图标托 28 + 主文案/副文案 + 右侧值 + 箭头</td><td>默认 / hover（仅指针设备）/ 按下 / 焦点 / 禁用</td></tr>
+        <tr><td><b>ToggleRow</b>（开关行）</td><td>同上，右端 50×30 开关；<b>整行一个 <code>role="switch"</code></b></td><td>开 / 关 / 保存中 / 保存失败 / 禁用</td></tr>
+        <tr><td><b>DangerRow</b></td><td>红色图标 + 红字主文案（弱化但不隐藏）</td><td>默认 / 按下 / 二次确认中</td></tr>
+        <tr><td><b>GroupCard</b></td><td>12px 圆角 + 1px 描边 + 内嵌行；行间分隔线左缩进到文字起点</td><td>默认 / 折叠（B）</td></tr>
+        <tr><td><b>Segmented</b></td><td>36px 高、内凹轨道、选中白底浮起</td><td>选中 / 未选 / 禁用</td></tr>
+        <tr><td><b>SearchField</b></td><td>44px 高、左图标、可清空；方案 C 用 48px hero 版</td><td>空闲 / 聚焦（accent 环）/ 有值 / 空结果</td></tr>
+        <tr><td><b>SavePill</b></td><td>28px 胶囊 + 状态点 + 文案</td><td>已保存 / 保存中（琥珀脉冲）/ 未保存（红 + 可点重试）</td></tr>
+        <tr><td><b>ConfirmSheet</b></td><td>底部面板：标题 + 说明 + 红底确认 + 取消</td><td>进入动画 220ms / 遮罩点击关闭 / Esc 关闭</td></tr>
+        <tr><td><b>EmptyState</b></td><td>44px 图标底托 + 一句原因 + 一句建议 + 清除按钮</td><td>搜索空 / 列表空</td></tr>
+        <tr><td><b>Skeleton</b></td><td>图标块 + 两行文字块 + 值块，1.4s 扫光</td><td>首次加载（<code>aria-busy</code>）</td></tr>
+      </tbody>
+    </table>
+  </article>
+
+  <article class="doc" id="states">
+    <h2><span class="idx">4</span>关键交互与状态</h2>
+
+    <div class="grid2">
+      <div class="mini"><div class="m-head">默认</div>
+        <div class="row"><span class="row-ico tone-blue"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><rect x="7" y="7" width="10" height="10" rx="2"/></svg></span><span class="row-main"><span class="row-label">模型与服务商</span><span class="row-desc">引擎、服务商与默认模型</span></span><span class="row-value">pi · 12 个</span></div>
+      </div>
+      <div class="mini"><div class="m-head">按下（整行）</div>
+        <div class="row" style="background:var(--fill-press)"><span class="row-ico tone-blue"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><rect x="7" y="7" width="10" height="10" rx="2"/></svg></span><span class="row-main"><span class="row-label">模型与服务商</span><span class="row-desc">引擎、服务商与默认模型</span></span><span class="row-value">pi · 12 个</span></div>
+      </div>
+      <div class="mini"><div class="m-head">禁用（附原因）</div>
+        <div class="row" aria-disabled="true"><span class="row-ico tone-slate" style="opacity:.45"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7-10-7-10-7z"/><circle cx="12" cy="12" r="3"/></svg></span><span class="row-main"><span class="row-label">视觉桥</span><span class="row-desc">需先在「模型与服务商」配置视觉模型</span></span><span class="row-value">未配置</span></div>
+      </div>
+      <div class="mini"><div class="m-head">加载中（骨架）</div>
+        <div class="sk-row"><span class="sk sk-ico"></span><div style="flex:1"><div class="sk sk-l1"></div><div class="sk sk-l2"></div></div><span class="sk sk-v"></span></div>
+      </div>
+    </div>
+
+    <h3>4.1 逐状态说明</h3>
+    <ul>
+      <li><b>默认</b>：行高 56，图标托 28，右值 13px <code>--text-dim</code>，箭头 16px；同一屏最多 1 个强调色（开关开启 / 选中），其余靠层级与留白。</li>
+      <li><b>按下</b>：<code>:active</code> → 背景 <code>--fill-press</code>（深色 7% 白 / 浅色 6% 黑）+ 磁贴 <code>scale(.975)</code>，120–160ms；<b>不做</b>涟漪、不做投影变化。</li>
+      <li><b>禁用</b>：<code>aria-disabled="true"</code> + 图标 45% 透明 + 主文案转 <code>--text-faint</code> + 保留箭头；<b>必须</b>在副文案写清「为什么禁用、去哪修」。</li>
+      <li><b>加载</b>：首次进入用骨架屏（不是转圈），<code>aria-busy="true"</code> + <code>aria-label="正在加载设置"</code>；已有内容时改值只更新局部，绝不整页闪。</li>
+      <li><b>空</b>：搜索无结果 → 图标 + 「没有匹配"XXX"的设置」+ 建议关键词 + 「清除搜索」按钮。<b>不写「暂无数据」</b>这种无信息文案。</li>
+      <li><b>开关</b>：开＝<code>--accent</code> 轨道 + 圆点右移 20px；关＝<code>--track-off</code>。文案层同时给出 <code>aria-checked</code>，不靠颜色单独表达。</li>
+      <li><b>进二级页</b>：220ms <code>translateX(16px)+fade</code> 推入；返回反向。Android 用系统返回键，iOS 建议同时开启边缘滑动返回（实现成本低，见落地清单）。</li>
+      <li><b>危险操作</b>：行本身只是入口 → 二级页 → 点动作弹底部面板（标题复述对象 + 后果 + 是否不可撤销），确认按钮实底红、取消在下且更高；<b>不用「确定/取消」并排的系统 Alert</b>，拇指更容易误触。</li>
+      <li><b>保存策略</b>：<b>全部即时生效，没有「保存」按钮</b>。顶部 28px 胶囊显示 <code>已保存 / 保存中… / 未保存·重试</code>，失败时同时出现红色横幅（<code>role="alert"</code>）+ 行级标红，点任意一处都可重试。这与现有 <code>useSettingsSync</code> 的回执语义一致。</li>
+      <li><b>搜索</b>：常驻首页（不折叠成图标）。匹配范围＝行标题 + 副文案 + 分组名 + 二级页标题 + 关键词别名（沿用 <code>TAB_KEYWORDS</code> 的中英别名）。输入 200ms 防抖，结果行带分组面包屑（「· 常用」），<b>可在结果里直接切开关</b>。</li>
+    </ul>
+  </article>
+
+  <article class="doc" id="figma">
+    <h2><span class="idx">5</span>给 Figma / AI 设计工具的视觉描述</h2>
+    <p class="lead">整段可直接粘贴到 Figma Make / v0 / Cursor 这类工具里。</p>
+    <div class="figma">
+      <b>画板</b>：iPhone 15（390×844，圆角 46），状态栏 54、Home 区 34，使用 SafeArea 自动布局；另出 320×568 与 360×780 两版做适配核对。
+      <br><br>
+      <b>风格</b>：现代、克制、可信赖；参照 iOS 设置的信息密度与 Material 3 的卡片留白。深色为默认（页面底 #0D0E12），浅色为 Light 变体（#F1F2F6 底 + 纯白卡片 + 1px #E6E8EF 描边 + 极浅投影）。<b>不使用大面积渐变</b>，只有身份卡品牌方块允许 150° 紫→靛渐变（#8B5CF6 → #6366F1）。
+      <br><br>
+      <b>首页自上而下</b>：① 大标题「设置」30px/700，右侧 28px 高状态胶囊（6px 绿点 + 「已保存」11.5px）；② 搜索框 44px 高，圆角 11，底色比页面亮一档，左侧 16px 线性放大镜；③ 身份卡 12 圆角，46×46 品牌方块 + 16px 主标题 + 12.5px 状态副行（状态点 7px）+ 右侧 36px 高的「切换引擎」描边按钮；④ 6 个分组，每组＝13px/700 分组标题（#9AA1B4，左右 4px 内衬）+ 卡片（12 圆角、1px 描边、行间 1px 分隔线且左缩进 56px）；⑤ 最后是单独一张「危险操作」卡，只有一行红字入口。
+      <br><br>
+      <b>行</b>：高 56，左右内衬 16；左端 28×28 圆角 8 图标托（底色＝该行色相 16% 透明，图标 16px 线性、色相 100%）；中间主文案 16px/500，可选副文案 12.5px（最多两行，颜色 #9AA1B4）；右端当前值 13px 同色，最多占 42% 宽、超出省略；最右 16px 右箭头 #8B93A7。开关行不放箭头。
+      <br><br>
+      <b>色相分配</b>（图标托，一套一致）：模型=蓝 #60A5FA、提示词=蓝、工具=紫 #A78BFA、技能=琥珀 #FBBF24、MCP=天蓝 #38BDF8、审批=绿 #34D399、通知=粉 #F472B6、危险=红 #F87171、其余=灰 #94A3B8。
+      <br><br>
+      <b>二级页</b>：48px 导航栏（左 44×44 返回、中 17px/650 标题、右同款状态胶囊），下方同样式分组卡；分段控件 36px 高、内凹轨道、选中项白底 8 圆角浮起。
+      <br><br>
+      <b>确认面板</b>：底部 sheet，上圆角 18，标题 16px/650，说明 13px，主按钮 50px 高实底红（深色主题下用深字 #1A1A1A 保证对比度），次按钮「取消」描边在下。遮罩 58% 黑 + 2px 模糊。
+      <br><br>
+      <b>禁止项</b>：无卡片阴影堆叠、无玻璃拟态、无彩虹图标、无 8pt 以下字、无 hover 才出现的操作、无 fixed 底部栏遮挡最后一行（列表底部留 safe-area + 24）。
+    </div>
+  </article>
+
+
+  <article class="doc" id="code">
+    <h2><span class="idx">6</span>React Native 伪代码（结构 / token / a11y 对齐）</h2>
+    <p class="lead">只写骨架，重点在「行是唯一可点目标」「分组数据驱动」「安全区与动态字体内建」。</p>
+<pre><b>// tokens.ts</b>
+export const T = {
+  rowH: 56, rowHSm: 48, touch: 44, padX: 16, gap: 16, radius: 12, iconTile: 28,
+  fs: { title: 30, nav: 17, label: 16, value: 13, desc: 12.5, badge: 11.5 },
+};
+
+<b>// SettingsHome.tsx</b>
+export function SettingsHome({ onOpen }: { onOpen: (page: PageId) =&gt; void }) {
+  return (
+    &lt;SafeAreaView edges={['top', 'bottom']} style={{ flex: 1, backgroundColor: c.bg }}&gt;
+      &lt;LargeTitle title="设置" accessory={&lt;SavePill /&gt;} /&gt;
+      &lt;SearchField placeholder="搜索设置项" onChange={setQuery} /&gt;
+      &lt;FlatList
+        data={groups}                      <span class="c">// 数据驱动：分组 → 行，顺序即优先级</span>
+        keyExtractor={(g) =&gt; g.id}
+        renderItem={({ item }) =&gt; (
+          &lt;Section title={item.title}&gt;
+            {item.rows.map((r) =&gt; r.kind === 'toggle'
+              ? &lt;ToggleRow key={r.id} row={r} /&gt;
+              : &lt;NavRow key={r.id} row={r} onPress={() =&gt; onOpen(r.page)} /&gt;)}
+          &lt;/Section&gt;
+        )}
+        ListFooterComponent={&lt;DangerSection /&gt;}
+        contentContainerStyle={{ paddingHorizontal: T.padX, paddingBottom: insets.bottom + 24 }}
+      /&gt;
+    &lt;/SafeAreaView&gt;
+  );
+}
+
+<b>// 行：整行一个可点目标，开关只是视觉</b>
+function ToggleRow({ row }: { row: Row }) {
+  const on = useSetting(row.key);
+  return (
+    &lt;Pressable
+      role="switch"                       <span class="c">// TalkBack / VoiceOver 播报「开关」</span>
+      aria-checked={on}
+      accessibilityLabel={row.label + (row.desc ? '，' + row.desc : '')}
+      onPress={() =&gt; setSetting(row.key, !on)}
+      style={({ pressed }) =&gt; [styles.row, pressed &amp;&amp; { backgroundColor: c.fillPress }]}
+    &gt;
+      &lt;RowIcon icon={row.icon} tone={row.tone} /&gt;
+      &lt;View style={{ flex: 1, minWidth: 0 }}&gt;
+        &lt;Text numberOfLines={1} style={styles.label}&gt;{row.label}&lt;/Text&gt;
+        {row.desc ? &lt;Text numberOfLines={2} style={styles.desc}&gt;{row.desc}&lt;/Text&gt; : null}
+      &lt;/View&gt;
+      &lt;Switch value={on} pointerEvents="none" accessible={false} /&gt;
+    &lt;/Pressable&gt;
+  );
+}
+
+<b>// 危险动作：入口 → 面板 → 确认</b>
+const askClearHistory = () =&gt; sheet.confirm({
+  title: '清空输入历史？',
+  body: '238 条输入记录将被永久删除，不影响对话内容。',
+  confirmLabel: '确认删除',
+  destructive: true,
+  onConfirm: () =&gt; api.clearPromptHistory(),
+});
+
+<b>// 无障碍与动态字体</b>
+&lt;Text maxFontSizeMultiplier={1.6} allowFontScaling style={{ fontSize: T.fs.label }} /&gt;
+<span class="c">// 行高用 minHeight 而非 height；字号翻倍时行自动变高，不裁字</span></pre>
+  </article>
+
+  <article class="doc" id="a11y">
+    <h2><span class="idx">7</span>无障碍与移动端硬指标</h2>
+    <table>
+      <thead><tr><th>项</th><th>要求</th><th>本方案怎么落地</th></tr></thead>
+      <tbody>
+        <tr><td>对比度</td><td>正文 ≥ 4.5:1，大字 ≥ 3:1</td><td>三档文字色实测 15.9 / 6.8 / 5.8（深色）与 16.8 / 5.6 / 5.1（浅色）；强调色文字单独一档 <code>--accent-text</code>，因为 <code>--accent</code> 直接当小字只有 4.2:1</td></tr>
+        <tr><td>动态字体</td><td>支持 200% 不失真</td><td>全部 <code>rem</code>；行用 <code>min-height</code>；副文案 2 行 <code>line-clamp</code>；保持页面可缩放（不锁 <code>user-scalable</code>）</td></tr>
+        <tr><td>触控</td><td>≥ 44×44pt / 48×48dp</td><td>行 56、图标按钮 44、分组头 44、开关行整行可点、磁贴 78</td></tr>
+        <tr><td>标签</td><td>图标/开关有可读名</td><td>开关行 <code>role="switch" aria-checked</code> + <code>aria-label="提示音，任务完成、需要确认时"</code>；纯图标按钮 <code>aria-label</code>；装饰性 SVG <code>aria-hidden</code>；值拼进标签（「模型与服务商，当前 pi · 12 个」）</td></tr>
+        <tr><td>不只靠颜色</td><td>状态需第二通道</td><td>异常＝红字 + 「1 异常」文案 + 圆点；开关＝位置 + <code>aria-checked</code>；禁用＝降透明度 + 原因文案；危险＝红色 + 「危险操作」标题 + 二次确认</td></tr>
+        <tr><td>焦点</td><td>外接键盘可完整操作</td><td><code>:focus-visible</code> 2px accent 环、<code>outline-offset:-2px</code>；锚点顺序＝视觉顺序；面板打开时焦点移入、Esc 关闭并归还焦点</td></tr>
+        <tr><td>动效</td><td>尊重减少动态</td><td><code>prefers-reduced-motion: reduce</code> 时禁用推入动画与骨架扫光（保留 150ms 淡入）</td></tr>
+        <tr><td>安全区</td><td>刘海 / 灵动岛 / 打孔 / Home 条</td><td><code>viewport-fit=cover</code> + <code>env(safe-area-inset-*)</code>；弹窗高度 <code>100dvh</code> 减安全区，不用 <code>92vh</code>；底部列表留 <code>inset-bottom + 24</code></td></tr>
+      </tbody>
+    </table>
+  </article>
+
+  <article class="doc" id="compare">
+    <h2><span class="idx">8</span>三方案对比、推荐与落地</h2>
+    <table class="compare">
+      <thead><tr><th></th><th>A 分组首页</th><th>B 值预览 + 折叠</th><th>C 搜索优先 + 场景</th></tr></thead>
+      <tbody>
+        <tr><td><b>心智模型</b></td><td>iOS 设置</td><td>Material 3 仪表盘</td><td>搜索 + 任务场景</td></tr>
+        <tr><td><b>首屏可见</b></td><td>8–9 行</td><td>4 磁贴 + 1 组（约 10 行）</td><td>6 行 + 5 个场景入口</td></tr>
+        <tr><td><b>改一个值中位跳转</b></td><td>2 跳</td><td class="best">1 跳（多数 0 跳确认）</td><td>2 跳（走底部全量页则 3 跳）</td></tr>
+        <tr><td><b>新手可发现性</b></td><td class="best">高（全暴露）</td><td>中（折叠藏内容）</td><td>中（要理解场景命名）</td></tr>
+        <tr><td><b>Power user 效率</b></td><td>中</td><td class="best">高</td><td class="best">高（搜索直达）</td></tr>
+        <tr><td><b>实现成本</b></td><td class="best">低</td><td>中</td><td>中高（要维护场景归属）</td></tr>
+        <tr><td><b>主要风险</b></td><td>页签多时首页变长</td><td>320px 上值被截断</td><td>分类争议、路径变长</td></tr>
+      </tbody>
+    </table>
+    <div class="note">
+      <b>推荐</b>：默认落地 <b>A</b>，把 <b>C 的搜索</b>（常驻 + 面包屑 + 结果内可直接开关）作为 A 的内建能力，<b>B 的「值预览」</b>直接并入 A 的行设计——三者其实是同一套组件，只是首页编排不同。等真实反馈证明「值预览」够用，再考虑 B 的折叠。
+    </div>
+
+    <h3>落地清单（改哪些文件）</h3>
+    <ul>
+      <li><b>已落地</b>（方案 A 第一版）：新增 <code>web/src/components/settings-mobile/</code> —— <code>SettingsMobileHome.tsx</code>（首页：标题 + 搜索 + 分组卡）、<code>mobile-ia.ts</code>（页签→分组纯函数，未知分组回落到最后一组，保证不丢项）、<code>use-narrow-layout.ts</code>（640px 断点）、<code>settings-mobile.css</code>（整屏 + 安全区 + 56px 行）。</li>
+      <li><b>已改</b> <code>web/src/components/SettingsModal.tsx</code>：窄屏时加 <code>is-mobile</code> / <code>is-mobile-home</code> 类，首页渲染 <code>SettingsMobileHome</code>，二级页复用原有 head（加返回键 + 当前页标题）与 body；桌面 DOM 与渲染路径<b>未变</b>。分组直接复用现有 <code>TAB_GROUPS</code> / <code>GROUP_LABELS</code>，<b>零新增文案与 i18n key</b>。</li>
+      <li><b>改</b> <code>web/src/styles.css</code>：删掉 <code>.settings-rail{overflow-x:auto}</code> 与 <code>.settings-search-wrap{display:none}</code> 这两条「移动端将就」规则，换成新组件样式 + 新 token（<code>--row-h</code> / <code>--touch</code> / <code>--group-gap</code>）。注意 <code>overlay-stack</code> / <code>accent-contrast</code> / <code>semantic-contrast</code> 等守卫：新色必须落 token，不能写死。</li>
+      <li><b>改</b> <code>web/index.html</code>：<code>viewport</code> 加 <code>viewport-fit=cover</code>；<code>color-scheme</code> 由固定的 <code>dark</code> 改为 <code>light dark</code>（或跟随主题动态设置）。</li>
+      <li><b>加守卫</b> <code>tests/unit/settings-mobile-ia.test.ts</code>：断言 <code>SettingsTab</code> 联合类型里每个 id 都出现在移动端分组表里 —— 否则新增页签会在手机上「消失」，这类回归最难发现。</li>
+      <li><b>不加</b>：任何新设置字段、新业务接口、新依赖（图标继续用 <code>react-icons/fi</code> 线性图标，与桌面一致）。</li>
+    </ul>
+    <p class="sub-note" style="margin-top:10px">原型数据来源：<code>web/src/components/SettingsModal.tsx</code>（SettingsTab / TAB_GROUPS / TAB_KEYWORDS）、<code>web/src/i18n/messages/core/zh.json</code>、<code>web/src/styles.css</code>（640px 断点、token）、<code>web/index.html</code>、<code>mobile/src/Settings.tsx</code>（NotificationSettings）。数值与计数为排版示例。</p>
+  </article>
+
+</section>
+
+</div>
+
+<script>
+/* ============================================================================
+   pi-web-ui 移动端设置原型引擎
+   数据只使用仓库里真实存在的设置页与字段（见 web/src/components/SettingsModal.tsx 的
+   SettingsTab 联合类型与 i18n settings* 键）；数字/字符串为排版示例值。
+   ========================================================================== */
+const ICONS = {
+  model:'<rect x="7" y="7" width="10" height="10" rx="2"/><path d="M10 3v3M14 3v3M10 18v3M14 18v3M3 10h3M3 14h3M18 10h3M18 14h3"/>',
+  file:'<path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/><path d="M14 3v5h5M9 13h6M9 17h4"/>',
+  wrench:'<path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.8-3.8a6 6 0 0 1-7.9 7.9l-6.9 6.9a2.1 2.1 0 0 1-3-3l6.9-6.9a6 6 0 0 1 7.9-7.9z"/>',
+  shield:'<path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><path d="M9 12l2 2 4-4"/>',
+  server:'<rect x="3" y="3" width="18" height="7" rx="2"/><rect x="3" y="14" width="18" height="7" rx="2"/><path d="M7 6.5h.01M7 17.5h.01"/>',
+  sparkles:'<path d="M12 3l1.9 4.6L18.5 9.5 13.9 11.4 12 16l-1.9-4.6L5.5 9.5 10.1 7.6z"/><path d="M18.5 15.5l.8 2 2 .8-2 .8-.8 2-.8-2-2-.8 2-.8z"/>',
+  box:'<path d="M21 16V8l-9-5-9 5v8l9 5 9-5z"/><path d="M3.3 7.3 12 12l8.7-4.7M12 22V12"/>',
+  sliders:'<path d="M4 7h10M18 7h2M4 17h4M12 17h8"/><circle cx="16" cy="7" r="2"/><circle cx="10" cy="17" r="2"/>',
+  chat:'<path d="M21 15a2 2 0 0 1-2 2H8l-5 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/><path d="M8 10h8M8 13h5"/>',
+  volume:'<path d="M11 5 6 9H2v6h4l5 4z"/><path d="M16 8.5a4.5 4.5 0 0 1 0 7M19 6a8 8 0 0 1 0 12"/>',
+  send:'<path d="M22 2 11 13"/><path d="M22 2l-7 20-4-9-9-4z"/>',
+  eye:'<path d="M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7-10-7-10-7z"/><circle cx="12" cy="12" r="3"/>',
+  clock:'<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3.5 2"/>',
+  calendar:'<rect x="3" y="5" width="18" height="16" rx="2"/><path d="M8 3v4M16 3v4M3 10h18"/>',
+  target:'<circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="5"/><circle cx="12" cy="12" r="1.4"/>',
+  users:'<circle cx="9" cy="8" r="3.4"/><path d="M2.5 21a6.5 6.5 0 0 1 13 0"/><path d="M16 5.2a3.4 3.4 0 0 1 0 6.6M17.5 21a6.5 6.5 0 0 0-3-5.5"/>',
+  layers:'<path d="M12 2 2.5 7 12 12l9.5-5z"/><path d="M2.5 12.5 12 17.5l9.5-5M2.5 17 12 22l9.5-5"/>',
+  bookmark:'<path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z"/>',
+  palette:'<circle cx="12" cy="12" r="9"/><circle cx="8.5" cy="10" r="1.2"/><circle cx="12" cy="8" r="1.2"/><circle cx="15.5" cy="10.5" r="1.2"/><path d="M12 21a3 3 0 0 1 0-6h2a2 2 0 0 0 0-4"/>',
+  globe:'<circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3a15 15 0 0 1 0 18 15 15 0 0 1 0-18z"/>',
+  info:'<circle cx="12" cy="12" r="9"/><path d="M12 11v5M12 8h.01"/>',
+  alert:'<path d="M10.3 3.9 2.5 17.4A2 2 0 0 0 4.2 20.4h15.6a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"/><path d="M12 9v4M12 17h.01"/>',
+  search:'<circle cx="11" cy="11" r="7"/><path d="m20 20-3.6-3.6"/>',
+  chev:'<path d="m9 5 7 7-7 7"/>',
+  back:'<path d="m15 5-7 7 7 7"/>',
+  check:'<path d="m4 12.5 5 5L20 6.5"/>',
+  message:'<path d="M21 12a8 8 0 0 1-8 8H8l-5 3 1.5-5.5A8 8 0 1 1 21 12z"/><path d="M9 12h6"/>',
+  plug:'<path d="M9 3v5M15 3v5M6 8h12v3a6 6 0 0 1-12 0z"/><path d="M12 17v4"/>',
+  bell:'<path d="M18 8a6 6 0 1 0-12 0c0 7-3 8-3 8h18s-3-1-3-8z"/><path d="M13.7 21a2 2 0 0 1-3.4 0"/>',
+  db:'<ellipse cx="12" cy="5.5" rx="8" ry="3"/><path d="M4 5.5v13c0 1.7 3.6 3 8 3s8-1.3 8-3v-13M4 12c0 1.7 3.6 3 8 3s8-1.3 8-3"/>'
+};
+const icon = (n, cls) => `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"${cls ? ` class="${cls}"` : ""}>${ICONS[n] || ""}</svg>`;
+
+/* ---------- 首页/二级页共用的行描述（真实设置项） ---------- */
+const ROWS = {
+  models:   { icon:'model',    tone:'blue',   label:'模型与服务商', desc:'引擎、服务商与默认模型', value:'pi · 12 个', page:'models' },
+  display:  { icon:'chat',     tone:'teal',   label:'对话',         value:'宽屏 · 显示模型', page:'display' },
+  theme:    { icon:'palette',  tone:'violet', label:'主题',         value:'flow-ink · 深色', page:'theme' },
+  locale:   { icon:'globe',    tone:'slate',  label:'语言',         value:'简体中文', page:'locale' },
+  quick:    { icon:'send',     tone:'sky',    label:'快捷短语',     value:'8 条', page:'quick' },
+  prompt:   { icon:'file',     tone:'blue',   label:'系统提示词',   value:'追加模式', page:'prompt' },
+  tools:    { icon:'wrench',   tone:'violet', label:'工具',         value:'3 项已关闭', page:'tools' },
+  skills:   { icon:'sparkles', tone:'amber',  label:'技能',         value:'12 个', page:'skills' },
+  presets:  { icon:'bookmark', tone:'green',  label:'预设',         value:'4 个', page:'presets' },
+  subagents:{ icon:'layers',   tone:'slate',  label:'子代理模板',   value:'6 个', page:'subagents' },
+  quickask: { icon:'message',  tone:'teal',   label:'随手问',       value:'已开启', page:'quickask' },
+  mcp:      { icon:'server',   tone:'sky',    label:'MCP 服务器',   value:'2 个 · 1 异常', bad:true, page:'mcp' },
+  scheduler:{ icon:'calendar', tone:'amber',  label:'定时任务',     value:'3 个', page:'scheduler' },
+  collab:   { icon:'users',    tone:'violet', label:'群组协作与执行', value:'默认配额', page:'collab' },
+  approval: { icon:'shield',   tone:'green',  label:'审批规则',     value:'5 条', page:'approval' },
+  vision:   { icon:'eye',      tone:'slate',  label:'视觉桥',       value:'未配置', page:'vision',
+              desc:'需先在「模型与服务商」里配置视觉模型', disabled:true },
+  extensions:{ icon:'plug',    tone:'slate',  label:'插件（扩展）', value:'4 个', page:'extensions' },
+  pluginui: { icon:'box',      tone:'sky',    label:'界面插件',     value:'6 个 · 1 个有更新', page:'pluginui' },
+  layout:   { icon:'sliders',  tone:'blue',   label:'界面布局',     value:'默认', page:'layout' },
+  history:  { icon:'clock',    tone:'slate',  label:'输入历史',     value:'238 条', page:'history' },
+  review:   { icon:'target',   tone:'amber',  label:'目标审查',     value:'3 个技能', page:'review' },
+  about:    { icon:'info',     tone:'slate',  label:'关于与版本',   value:'v0.119.0', page:'about' },
+  reset:    { icon:'alert',    tone:'red',    label:'重置与危险操作', value:'3 项', page:'reset' },
+
+  /* 通知（仅手机安装包：mobile/src/Settings.tsx · NotificationSettings，Web 端隐藏） */
+  pushOn:   { icon:'bell',     tone:'pink',   label:'本机通知', desc:'任务完成、需要回答、审批', type:'toggle', key:'pushOn', on:true },
+  pushKinds:{ icon:'sliders',  tone:'pink',   label:'通知类型',  value:'4 / 5 类', page:'notify' },
+  pushPerm: { icon:'shield',   tone:'green',  label:'系统通知权限', value:'已允许', page:'notify' },
+
+  /* 全局布尔项（只读展示 + 直接切换，无二级页） */
+  soundAlert:{ icon:'volume',  tone:'pink',   label:'提示音', desc:'任务完成、需要你确认时', type:'toggle', key:'soundAlert', on:true },
+  tts:      { icon:'volume',  tone:'pink',   label:'语音播报', desc:'朗读回复（随系统语音）', type:'toggle', key:'tts', on:false }
+};
+
+/* ---------- 方案 A / B / C 的首页分组 ---------- */
+const HOME = {
+  A: [
+    { title:'常用', rows:['models','display','soundAlert','quick','theme'] },
+    { title:'通知', rows:['pushOn','pushKinds','pushPerm'] },
+    { title:'智能体能力', rows:['prompt','tools','skills','presets','subagents','quickask'] },
+    { title:'连接与自动化', rows:['mcp','scheduler','collab','approval','vision'] },
+    { title:'外观与界面', rows:['layout','pluginui','extensions','locale'] },
+    { title:'更多', rows:['history','review','about'] }
+  ],
+  B: [
+    { key:'notify',  title:'通知', sum:'4 / 5 类', rows:['pushOn','pushKinds','pushPerm'] },
+    { key:'agent',   title:'智能体能力', sum:'6 项', rows:['prompt','tools','skills','presets','subagents','quickask'] },
+    { key:'connect', title:'连接与自动化', sum:'1 处异常', rows:['mcp','scheduler','collab','approval','vision'] },
+    { key:'ui',      title:'外观与界面', sum:'4 项', rows:['layout','pluginui','extensions','locale','history'] },
+    { key:'more',    title:'更多', sum:'', rows:['review','about'] }
+  ],
+  C: [
+    { key:'smart',   title:'让它更聪明', sub:'模型、提示词、技能与预设', icon:'sparkles', tone:'violet', rows:['models','prompt','skills','presets','subagents'] },
+    { key:'habit',   title:'更像你的习惯', sub:'对话排版、主题、语言、快捷短语', icon:'palette', tone:'teal', rows:['display','theme','locale','quick','quickask'] },
+    { key:'world',   title:'接上外部世界', sub:'MCP、插件与视觉桥', icon:'plug', tone:'sky', rows:['mcp','extensions','pluginui','vision'] },
+    { key:'auto',    title:'提醒与自动化', sub:'通知、定时任务、群组协作、审批门禁', icon:'bell', tone:'amber', rows:['pushOn','pushKinds','pushPerm','scheduler','collab','approval'] },
+    { key:'maint',   title:'界面与维护', sub:'布局、历史、审查与版本', icon:'sliders', tone:'slate', rows:['layout','history','review','about'] }
+  ]
+};
+
+/* ---------- 二级页内容（字段全部来自现有设置页） ---------- */
+const PAGES = {
+  models:{ title:'模型与服务商', sections:[
+    { title:'当前引擎', rows:[
+      { icon:'model', tone:'blue', label:'引擎', value:'pi', type:'static' },
+      { icon:'sliders', tone:'slate', label:'思考等级', value:'中', type:'static' }
+    ]},
+    { title:'服务商', rows:[
+      { icon:'model', tone:'green', label:'DeepSeek', desc:'已配置 · 3 个模型', type:'static' },
+      { icon:'model', tone:'green', label:'Anthropic', desc:'已配置 · 4 个模型', type:'static' },
+      { icon:'model', tone:'slate', label:'OpenAI', desc:'未配置密钥', value:'去配置', page:'models' }
+    ]},
+    { title:'密钥', rows:[
+      { icon:'alert', tone:'red', label:'清除全部服务商密钥', type:'danger', confirm:{ title:'清除全部服务商密钥？', body:'会删除服务端 auth.json 中保存的全部密钥，相关模型将从列表消失，直到重新配置。环境变量来源的密钥不受影响。', key:'keys' } }
+    ]}
+  ]},
+  tools:{ title:'工具', sections:[
+    { title:'启用的工具', rows:[
+      { icon:'wrench', tone:'violet', label:'bash（终端命令）', type:'toggle', key:'toolBash', on:true },
+      { icon:'file', tone:'blue', label:'read / write / edit', desc:'文件读写与编辑', type:'toggle', key:'toolFiles', on:true },
+      { icon:'search', tone:'slate', label:'grep / find', type:'toggle', key:'toolSearch', on:false },
+      { icon:'box', tone:'sky', label:'图片工具', type:'toggle', key:'toolImages', on:true }
+    ]},
+    { title:'进阶', rows:[
+      { icon:'sparkles', tone:'amber', label:'工具延迟加载', desc:'长尾工具按需注入，省上下文', type:'toggle', key:'toolLazy', on:true },
+      { icon:'file', tone:'slate', label:'工具提示词覆盖', value:'2 项', page:'tools' }
+    ]}
+  ]},
+  notify:{ title:'通知', sections:[
+    { title:'接收这些通知', rows:[
+      { icon:'bell', tone:'pink', label:'任务完成', type:'toggle', key:'kindDone', on:true },
+      { icon:'bell', tone:'pink', label:'任务失败', type:'toggle', key:'kindError', on:true },
+      { icon:'bell', tone:'pink', label:'需要回答', type:'toggle', key:'kindQuestion', on:true },
+      { icon:'bell', tone:'pink', label:'需要审批', type:'toggle', key:'kindApproval', on:true },
+      { icon:'bell', tone:'slate', label:'子任务完成', type:'toggle', key:'kindSub', on:false }
+    ]},
+    { title:'系统', rows:[
+      { icon:'shield', tone:'green', label:'系统通知权限', value:'已允许', type:'static' },
+      { icon:'sliders', tone:'slate', label:'打开系统设置', type:'static' },
+      { icon:'bell', tone:'slate', label:'重新检查推送配置', type:'static' }
+    ]}
+  ]},
+  approval:{ title:'审批规则', sections:[
+    { title:'门禁', rows:[
+      { icon:'shield', tone:'green', label:'工具审批总开关', desc:'高危命令执行前必须先确认', type:'toggle', key:'approvalOn', on:true },
+      { icon:'sliders', tone:'slate', label:'呈现方式', value:'队列', type:'static' },
+      { icon:'file', tone:'blue', label:'规则库', value:'5 条', page:'approval' }
+    ]}
+  ]},
+  mcp:{ title:'MCP 服务器', sections:[
+    { title:'已连接', rows:[
+      { icon:'db', tone:'green', label:'filesystem', desc:'stdio · 12 个工具 · 已连接', type:'static' },
+      { icon:'plug', tone:'red', label:'chrome-devtools', desc:'sse · 连接失败：ECONNREFUSED', value:'重试', type:'static' },
+      { icon:'server', tone:'slate', label:'添加服务器', value:'', type:'static' }
+    ]}
+  ]},
+  scheduler:{ title:'定时任务', sections:[
+    { title:'任务', rows:[
+      { icon:'calendar', tone:'amber', label:'每日依赖体检', desc:'每天 09:00 · 后台执行', type:'toggle', key:'sch1', on:true },
+      { icon:'calendar', tone:'slate', label:'仓库清理', desc:'每周日 22:00', type:'toggle', key:'sch2', on:false }
+    ]},
+    { title:'', rows:[ { icon:'calendar', tone:'slate', label:'新建定时任务', type:'static' } ]}
+  ]},
+  display:{ title:'对话', sections:[
+    { title:'排版', segment:{ key:'chatWidth', options:['窄','宽'] }, rows:[] },
+    { title:'显示', rows:[
+      { icon:'chat', tone:'teal', label:'显示模型名', type:'toggle', key:'showModel', on:true },
+      { icon:'eye', tone:'slate', label:'显示头像', type:'toggle', key:'showAvatar', on:true },
+      { icon:'file', tone:'blue', label:'折叠长消息', desc:'超过 12 行默认折叠', type:'toggle', key:'foldLong', on:true },
+      { icon:'db', tone:'amber', label:'上下文软上限', value:'120k tokens', type:'static' }
+    ]}
+  ]},
+  sound:{ title:'声音与语音', sections:[
+    { title:'提示', rows:[
+      { icon:'volume', tone:'pink', label:'提示音', desc:'任务完成、需要确认时', type:'toggle', key:'soundAlert', on:true },
+      { icon:'volume', tone:'violet', label:'语音播报（TTS）', type:'toggle', key:'tts', on:false }
+    ]},
+    { title:'语音', rows:[
+      { icon:'glob', tone:'slate', label:'音色', value:'系统默认', type:'static' },
+      { icon:'sliders', tone:'slate', label:'语速', type:'range' }
+    ]}
+  ]},
+  quick:{ title:'快捷短语', sections:[
+    { title:'已保存（轻点编辑）', rows:[
+      { icon:'send', tone:'sky', label:'继续', type:'static' },
+      { icon:'send', tone:'sky', label:'跑一下测试', type:'static' },
+      { icon:'send', tone:'sky', label:'先解释再改', type:'static' },
+      { icon:'send', tone:'sky', label:'总结这次改动', type:'static' }
+    ]},
+    { title:'', rows:[
+      { icon:'send', tone:'slate', label:'新增短语', type:'static' },
+      { icon:'alert', tone:'red', label:'恢复默认短语', desc:'会覆盖当前 8 条', type:'danger', confirm:{ title:'恢复默认短语？', body:'当前自定义的 8 条短语会被默认列表替换，无法撤销。', key:'phrases' } }
+    ]}
+  ]},
+  theme:{ title:'主题', sections:[
+    { title:'外观', rows:[
+      { icon:'palette', tone:'violet', label:'flow-ink', desc:'深色 · 青绿强调', type:'radio', key:'themeSel', value:'使用中' },
+      { icon:'palette', tone:'teal', label:'flow-light', desc:'浅色', type:'radio', key:'themeSel2' },
+      { icon:'palette', tone:'blue', label:'catppuccin', desc:'深色 · 柔和', type:'radio', key:'themeSel3' }
+    ]},
+    { title:'', rows:[ { icon:'sliders', tone:'slate', label:'跟随系统深浅色', type:'toggle', key:'followSystem', on:false } ]}
+  ]},
+  locale:{ title:'语言', sections:[
+    { title:'界面语言', rows:[
+      { icon:'globe', tone:'slate', label:'简体中文', value:'使用中', type:'static' },
+      { icon:'globe', tone:'slate', label:'English', type:'static' },
+      { icon:'globe', tone:'slate', label:'繁體中文', type:'static' }
+    ]}
+  ]},
+  history:{ title:'输入历史', sections:[
+    { title:'记录', rows:[
+      { icon:'clock', tone:'slate', label:'已保存 238 条', desc:'仅存本机，用于输入框 ↑ 回填', type:'static' },
+      { icon:'chat', tone:'teal', label:'跨对话保留草稿', type:'toggle', key:'keepDraft', on:true }
+    ]},
+    { title:'', rows:[
+      { icon:'alert', tone:'red', label:'清空历史', desc:'不可撤销', type:'danger', confirm:{ title:'清空输入历史？', body:'238 条输入记录将被永久删除，不影响对话内容。', key:'history' } }
+    ]}
+  ]},
+  prompt:{ title:'系统提示词', sections:[
+    { title:'模式', segment:{ key:'promptMode', options:['追加','替换'] }, rows:[] },
+    { title:'内容', rows:[
+      { icon:'file', tone:'blue', label:'自定义系统提示词', desc:'已自定义 1,240 字', type:'static', value:'编辑' },
+      { icon:'sliders', tone:'slate', label:'分块覆盖', value:'2 块', type:'static' }
+    ]},
+    { title:'', rows:[
+      { icon:'alert', tone:'red', label:'恢复默认模板', desc:'清除全部覆盖', type:'danger', confirm:{ title:'恢复默认提示词模板？', body:'自定义内容与分块覆盖都会被清除，恢复为内置模板。', key:'prompt' } }
+    ]}
+  ]},
+  layout:{ title:'界面布局', sections:[
+    { title:'区域', rows:[
+      { icon:'sliders', tone:'blue', label:'顶栏', value:'5 个入口', type:'static' },
+      { icon:'sliders', tone:'slate', label:'底栏', value:'3 个入口', type:'static' },
+      { icon:'chat', tone:'teal', label:'输入框动作', value:'默认', type:'static' }
+    ]},
+    { title:'', rows:[
+      { icon:'alert', tone:'red', label:'恢复默认布局', type:'danger', confirm:{ title:'恢复默认界面布局？', body:'隐藏与排序过的入口都会回到初始状态。', key:'layout' } }
+    ]}
+  ]},
+  skills:{ title:'技能', sections:[
+    { title:'已安装', rows:[
+      { icon:'sparkles', tone:'amber', label:'12 个技能', desc:'3 个仅手动触发', type:'static' },
+      { icon:'sparkles', tone:'slate', label:'目录按需加载', type:'toggle', key:'skillLazy', on:true },
+      { icon:'box', tone:'sky', label:'技能市场', type:'static' }
+    ]}
+  ]},
+  presets:{ title:'预设', sections:[
+    { title:'本地预设', rows:[
+      { icon:'bookmark', tone:'green', label:'4 个预设', desc:'含内置 1 个', type:'static' },
+      { icon:'layers', tone:'slate', label:'导入 / 导出 JSON', type:'static' }
+    ]}
+  ]},
+  subagents:{ title:'子代理模板', sections:[
+    { title:'模板', rows:[
+      { icon:'users', tone:'violet', label:'6 个模板', type:'static' },
+      { icon:'sliders', tone:'slate', label:'并发上限', value:'3', type:'static' },
+      { icon:'chat', tone:'teal', label:'自动唤醒', type:'toggle', key:'autoWake', on:true }
+    ]}
+  ]},
+  quickask:{ title:'随手问', sections:[
+    { title:'', rows:[
+      { icon:'message', tone:'teal', label:'启用随手问', desc:'选中文字后浮出小窗', type:'toggle', key:'quickaskOn', on:true },
+      { icon:'file', tone:'slate', label:'小窗提示词', value:'默认', type:'static' }
+    ]}
+  ]},
+  collab:{ title:'群组协作与执行', sections:[
+    { title:'执行', rows:[
+      { icon:'users', tone:'violet', label:'并发上限', value:'3', type:'static' },
+      { icon:'sliders', tone:'slate', label:'任务配额', value:'默认', type:'static' },
+      { icon:'chat', tone:'teal', label:'黑板上下文', value:'开启', type:'static' }
+    ]}
+  ]},
+  pluginui:{ title:'界面插件', sections:[
+    { title:'已启用', rows:[
+      { icon:'box', tone:'sky', label:'6 个插件', desc:'1 个可更新', value:'更新', type:'static' },
+      { icon:'sliders', tone:'slate', label:'插件市场', type:'static' }
+    ]}
+  ]},
+  extensions:{ title:'插件（扩展）', sections:[
+    { title:'', rows:[
+      { icon:'plug', tone:'slate', label:'4 个扩展', desc:'dsh 补丁 1 个', type:'static' },
+      { icon:'box', tone:'sky', label:'扩展市场', type:'static' }
+    ]}
+  ]},
+  review:{ title:'目标审查', sections:[
+    { title:'', rows:[
+      { icon:'target', tone:'amber', label:'审查技能', value:'3 个', type:'static' },
+      { icon:'shield', tone:'green', label:'提交前必须通过', type:'toggle', key:'reviewGate', on:true }
+    ]}
+  ]},
+  vision:{ title:'视觉桥', sections:[
+    { title:'', rows:[
+      { icon:'eye', tone:'slate', label:'视觉桥', desc:'把截图交给视觉模型理解', type:'toggle', key:'visionOn', on:false },
+      { icon:'model', tone:'blue', label:'视觉模型', desc:'需先配置服务商', value:'未设置', type:'static' }
+    ]}
+  ]},
+  about:{ title:'关于与版本', sections:[
+    { title:'', rows:[
+      { icon:'info', tone:'slate', label:'版本', value:'v0.119.0', type:'static' },
+      { icon:'model', tone:'blue', label:'引擎', value:'pi 0.52.1', type:'static' },
+      { icon:'file', tone:'slate', label:'许可证', value:'MIT', type:'static' },
+      { icon:'globe', tone:'slate', label:'仓库与更新日志', value:'GitHub', type:'static' }
+    ]},
+    { title:'危险操作', rows:[
+      { icon:'alert', tone:'red', label:'重置与危险操作', desc:'清空历史、清除密钥、恢复布局', type:'danger', page:'reset' }
+    ]}
+  ]},
+  reset:{ title:'重置与危险操作', sections:[
+    { title:'这些操作不可撤销，仅在本机执行', rows:[
+      { icon:'clock', tone:'red', label:'清空输入历史', desc:'238 条', type:'danger', confirm:{ title:'清空输入历史？', body:'238 条输入记录将被永久删除，不影响对话内容。', key:'history' } },
+      { icon:'alert', tone:'red', label:'清除全部服务商密钥', desc:'8 个服务商', type:'danger', confirm:{ title:'清除全部服务商密钥？', body:'会删除服务端 auth.json 中的密钥，相关模型将从列表消失，直到重新配置。', key:'keys' } },
+      { icon:'sliders', tone:'red', label:'恢复默认界面布局', type:'danger', confirm:{ title:'恢复默认界面布局？', body:'隐藏与排序过的入口都会回到初始状态。', key:'layout' } }
+    ]}
+  ]}
+};
+
+/* ---------- 状态 ---------- */
+const S = {
+  scheme:'A', demo:'default', query:'', stack:['home'], save:'saved', sheet:null,
+  fold:{ 'agent':true, 'connect':false, 'ui':false, 'more':false, smart:true, habit:false, world:false, auto:false, maint:false },
+  seg:{ chatWidth:1, promptMode:0 },
+  toggles:{ soundAlert:true, tts:false, toolBash:true, toolFiles:true, toolSearch:false, toolImages:true, toolLazy:true,
+    approvalOn:true, sch1:true, sch2:false, showModel:true, showAvatar:true, foldLong:true, keepDraft:true, skillLazy:true,
+    pushOn:true, kindDone:true, kindError:true, kindQuestion:true, kindApproval:true, kindSub:false,
+    autoWake:true, quickaskOn:true, reviewGate:true, visionOn:false, followSystem:false }
+};
+const ALL_PAGES = Object.keys(PAGES);
+const allCount = () => new Set(HOME.C.flatMap((g) => g.rows)).size;
+
+/* ---------- 渲染基元 ---------- */
+const esc = (s) => String(s == null ? '' : s).replace(/[&<>"]/g, (c) => ({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;' }[c]));
+
+function ico(r) {
+  return `<span class="row-ico tone-${r.tone || 'slate'}">${icon(r.icon || 'sliders')}</span>`;
+}
+
+function rowsHtml(rows, opts) {
+  const o = opts || {};
+  const list = rows.map((id) => (typeof id === 'string' ? ROWS[id] : id)).filter(Boolean);
+  return list.map((r, i) => `<div class="divider${o.fullDivider ? ' full' : ''}" ${i === 0 ? 'hidden' : ''}></div>` + rowHtml(r, o)).join('');
+}
+
+function rowHtml(r, opts) {
+  const o = opts || {};
+  const value = r.value ? `<span class="row-value${r.bad ? ' bad' : ''}">${esc(r.value)}</span>` : '';
+  const badge = r.badge ? `<span class="row-badge${r.badgeWarn ? ' warn' : ''}">${esc(r.badge)}</span>` : '';
+  const desc = r.desc ? `<span class="row-desc">${esc(r.desc)}</span>` : '';
+  const label = `<span class="row-main"><span class="row-label">${esc(r.label)}</span>${desc}</span>`;
+  const danger = r.type === 'danger' ? ' danger' : '';
+
+  if (r.type === 'toggle') {
+    const on = !!(S.toggles[r.key] ?? r.on);
+    return `<button class="row" role="switch" aria-checked="${on}" data-act="toggle" data-key="${esc(r.key)}"
+      aria-label="${esc(r.label)}${r.desc ? '，' + esc(r.desc) : ''}">${ico(r)}${label}<span class="switch" aria-hidden="true"><span class="knob"></span></span></button>`;
+  }
+  if (r.type === 'radio') {
+    const on = !!r.on;
+    return `<div class="row row-static">${ico(r)}${label}${value}${'<span class="chev" aria-hidden="true">' + (on ? icon('check') : '') + '</span>'}</div>`;
+  }
+  if (r.type === 'range') {
+    return `<div class="row row-static" style="flex-direction:column;align-items:stretch;gap:6px">
+      <div style="display:flex;align-items:center;gap:12px">${ico(r)}<span class="row-main"><span class="row-label">${esc(r.label)}</span></span><span class="row-value">1.0×</span></div>
+      <input class="range" type="range" min="5" max="20" value="11" aria-label="${esc(r.label)}"></div>`;
+  }
+  if (r.type === 'static') {
+    return `<div class="row row-static">${ico(r)}${label}${badge}${value}</div>`;
+  }
+  if (r.type === 'danger') {
+    const act = r.confirm ? `data-act="confirm" data-title="${esc(r.confirm.title)}" data-body="${esc(r.confirm.body)}"` : `data-act="nav" data-page="${esc(r.page)}"`;
+    return `<button class="row${danger}" ${act} aria-label="${esc(r.label)}${r.desc ? '，' + esc(r.desc) : ''}，危险操作，需二次确认">${ico(r)}${label}${value}<span class="chev" aria-hidden="true">${icon('chev')}</span></button>`;
+  }
+  const disabled = r.disabled ? ' aria-disabled="true"' : '';
+  return `<button class="row" data-act="nav" data-page="${esc(r.page || '')}"${disabled}
+    aria-label="${esc(r.label)}${r.value ? '，当前 ' + esc(r.value) : ''}${r.desc ? '，' + esc(r.desc) : ''}${r.disabled ? '，不可用' : ''}">${ico(r)}${label}${badge}${value}<span class="chev" aria-hidden="true">${icon('chev')}</span></button>`;
+}
+
+function savePill() {
+  const st = S.demo === 'failed' ? 'failed' : S.save;
+  const txt = st === 'saving' ? '保存中…' : st === 'failed' ? '未保存 · 重试' : '已保存';
+  const title = st === 'failed' ? '2 项未保存，点按重试' : '配置实时生效 · 本地已保存';
+  return `<button class="pill" data-state="${st}" data-act="save" title="${title}" aria-label="保存状态：${txt}" ${st === 'failed' ? '' : 'tabindex="-1"'}><i aria-hidden="true"></i>${txt}</button>`;
+}
+function saveBanner() {
+  if (S.demo !== 'failed') return '';
+  return `<div class="save-banner" role="alert"><span aria-hidden="true">!</span>2 项未能保存 <button data-act="retry">重试</button></div>`;
+}
+
+/* ---------- 首页 ---------- */
+function idCard() {
+  return `<div class="idcard">
+    <span class="avatar" aria-hidden="true">pi</span>
+    <div class="id-main">
+      <span class="id-name"><span>本机 · pi</span></span>
+      <span class="id-sub"><span class="dot ok" aria-hidden="true"></span>已连接 · 本地运行<span class="tag">3 台设备</span></span>
+    </div>
+    <button class="id-action" data-act="nav" data-page="models" aria-label="切换引擎，当前 pi">切换引擎</button>
+  </div>`;
+}
+
+function searchBox(hero) {
+  return `<div class="search${hero ? ' hero' : ''}" role="search">
+    ${icon('search')}
+    <input id="q" type="search" enterkeyhint="search" placeholder="搜索设置项" aria-label="搜索设置项" value="${esc(S.query)}" autocomplete="off">
+    ${S.query ? '<button class="clear" data-act="clearq" aria-label="清除搜索">✕</button>' : ''}
+  </div>`;
+}
+
+function homeView() {
+  if (S.demo === 'loading') return headerA() + loadingBody();
+  if (S.query.trim()) return headerA() + searchResults();
+  return S.scheme === 'A' ? homeA() : S.scheme === 'B' ? homeB() : homeC();
+}
+
+function headerA() {
+  return `<div class="nav-large"><div class="nl-top"><h1>设置</h1>${savePill()}</div>${searchBox(false)}</div>${saveBanner()}`;
+}
+
+function homeA() {
+  const groups = HOME.A.map((g, gi) => `
+    <section class="group" aria-labelledby="gA${gi}">
+      <h2 class="group-title" id="gA${gi}">${g.title}<span class="spacer"></span>${gi === 4 ? '<button class="link" data-act="nav" data-page="all">全部</button>' : ''}</h2>
+      <div class="card">${rowsHtml(g.rows)}</div>
+    </section>`).join('');
+  const danger = `<section class="group" aria-labelledby="gAdanger">
+      <h2 class="group-title" id="gAdanger">危险操作</h2>
+      <div class="card">${rowsHtml(['reset'])}</div>
+    </section>`;
+  return headerA() + `<div class="scroll" id="scroller" tabindex="0"><div class="scroll-body">${idCard()}${groups}${danger}
+    <p class="sub-note" style="text-align:center">pi-web-ui v0.119.0 · 配置改动实时生效</p>
+  </div></div>`;
+}
+
+function homeB() {
+  const tiles = [
+    ['models', 'model', 'blue'], ['theme', 'palette', 'violet'], ['display', 'chat', 'teal'], ['sound', 'volume', 'pink']
+  ].map(([id, ic, tone]) => {
+    const r = ROWS[id] || { label: '声音与语音', value: '提示音已开', page: 'sound' };
+    return `<button class="tile" data-act="nav" data-page="${r.page || id}" aria-label="${esc(r.label)}，当前 ${esc(r.value || '')}">
+      <span class="tile-top"><span class="tile-ico tone-${tone}">${icon(ic)}</span><span class="tile-name">${esc(r.label)}</span><span class="tile-chev" aria-hidden="true">${icon('chev')}</span></span>
+      <span class="tile-val">${esc(r.value || '')}</span></button>`;
+  }).join('');
+  const groups = HOME.B.map((g) => {
+    const open = !!S.fold[g.key];
+    return `<section class="group" data-open="${open}" data-group="${g.key}">
+      <button class="group-head" data-act="fold" data-key="${g.key}" aria-expanded="${open}">
+        <span class="gh-title">${g.title}</span><span class="gh-sum">${g.sum || ''}</span><span class="spacer"></span>
+        <span class="gh-chev" aria-hidden="true">${icon('chev')}</span></button>
+      <div class="card">${rowsHtml(g.rows)}</div></section>`;
+  }).join('');
+  const danger = `<section class="group" data-open="true"><div class="card">${rowsHtml(['reset'])}</div></section>`;
+  return `<div class="nav-large" style="padding-bottom:0"><div class="nl-top"><h1>设置</h1>${savePill()}</div>${searchBox(false)}</div>${saveBanner()}` +
+    `<div class="scroll" id="scroller" tabindex="0"><div class="scroll-body">
+      <h2 class="group-title" style="margin-top:2px">高频</h2>
+      <div class="tiles">${tiles}</div>
+      ${groups}${danger}
+      <p class="sub-note" style="text-align:center">分组默认折叠，点标题行展开 / 收起</p>
+    </div></div>`;
+}
+
+function homeC() {
+  const freq = `<div class="card">${rowsHtml(['models', 'display', 'theme', 'soundAlert', 'prompt', 'approval'])}</div>`;
+  const scenes = HOME.C.map((g) => {
+    const open = !!S.fold[g.key];
+    return `<section class="scene" data-open="${open}" data-group="${g.key}">
+      <button class="scene-head" data-act="fold" data-key="${g.key}" aria-expanded="${open}">
+        <span class="row-ico tone-${g.tone}">${icon(g.icon)}</span>
+        <span class="row-main"><span class="s-title">${g.title}</span><span class="s-sub">${g.sub}</span></span>
+        <span class="row-badge" aria-label="${g.rows.length} 项">${g.rows.length}</span>
+        <span class="gh-chev" aria-hidden="true" style="width:18px;height:18px;color:var(--text-faint);display:grid;place-items:center">${icon('chev')}</span>
+      </button>
+      <div class="scene-body">${rowsHtml(g.rows, { fullDivider: true })}</div></section>`;
+  }).join('');
+  return `<div class="nav-large" style="padding-bottom:0"><div class="nl-top"><h1>设置</h1>${savePill()}</div>${searchBox(true)}</div>${saveBanner()}` +
+    `<div class="scroll" id="scroller" tabindex="0"><div class="scroll-body">
+      <h2 class="group-title" style="margin-top:4px">常改的 6 项 <span class="count">按内置推荐顺序，不采集使用数据</span></h2>
+      ${freq}
+      <h2 class="group-title" style="margin-top:6px">按场景找</h2>
+      ${scenes}
+    </div></div>` +
+    `<div class="bottombar"><button data-act="nav" data-page="all">${icon('sliders')} 全部设置 <span class="bb-count">${allCount()} 项 · 含高级</span></button></div>`;
+}
+
+/* ---------- 搜索 ---------- */
+function searchResults() {
+  const q = S.query.trim().toLowerCase();
+  const hits = [];
+  for (const g of HOME.A) for (const id of g.rows) {
+    const r = ROWS[id];
+    if (!r) continue;
+    if ((r.label + ' ' + (r.desc || '') + ' ' + g.title).toLowerCase().includes(q)) hits.push({ r, crumb: g.title });
+  }
+  const seen = new Set(hits.map((h) => h.r.label));
+  for (const pid of ALL_PAGES) {
+    const p = PAGES[pid];
+    for (const sec of p.sections) for (const r of sec.rows) {
+      if (!r.label || seen.has(r.label)) continue;
+      if ((r.label + ' ' + (r.desc || '') + ' ' + p.title).toLowerCase().includes(q)) hits.push({ r, crumb: p.title, page: pid });
+    }
+  }
+  if (!hits.length) {
+    return `<div class="scroll"><div class="empty">
+      <span class="e-ico">${icon('search')}</span>
+      <span class="e-t">没有匹配「${esc(S.query)}」的设置</span>
+      <span class="e-d">试试更短的关键词，例如「模型」「主题」「审批」「语音」。</span>
+      <button class="e-btn" data-act="clearq">清除搜索</button></div></div>`;
+  }
+  const rows = hits.slice(0, 24).map(({ r, crumb, page }) => {
+    const clone = Object.assign({}, r);
+    if (page && !clone.page) clone.page = page;
+    if (!clone.type) clone.type = 'nav';
+    return `<div class="divider" hidden></div>` + rowHtml(Object.assign(clone, { desc: (r.desc ? r.desc + ' · ' : '') + crumb }));
+  }).join('');
+  return `<div class="scroll"><div class="scroll-body">
+    <h2 class="group-title" style="margin-top:4px">${hits.length} 个结果</h2>
+    <div class="card">${rows}</div></div></div>`;
+}
+
+/* ---------- 二级页 ---------- */
+function pageView(pid) {
+  if (pid === 'all') return allView();
+  const p = PAGES[pid];
+  if (!p) return homeView();
+  const body = p.sections.map((sec, si) => {
+    const head = sec.title && p.sections.length > 1 ? `<h2 class="group-title" style="margin-top:${si ? 6 : 0}px">${esc(sec.title)}</h2>` : '';
+    const seg = sec.segment ? `<div class="card"><div style="padding:10px 16px"><div class="segmented" role="group" aria-label="${esc(sec.title)}">` +
+      sec.segment.options.map((op, i) => `<button data-act="seg" data-key="${sec.segment.key}" data-idx="${i}" aria-pressed="${S.seg[sec.segment.key] === i}">${esc(op)}</button>`).join('') +
+      `</div></div></div>` : '';
+    const rows = sec.rows.length ? `<div class="card">${rowsHtml(sec.rows)}</div>` : '';
+    const note = si === 0 && p.sections[0].rows.some((r) => r.type === 'danger') ? '' : '';
+    return `<section style="display:flex;flex-direction:column;gap:7px">${head}${seg}${rows}${note}</section>`;
+  }).join('');
+  const foot = `<p class="sub-note" style="text-align:center;margin-top:2px">改动即时生效，无需保存</p>`;
+  return navbar(p.title) + `<div class="scroll" id="scroller" tabindex="0"><div class="scroll-body">${body}${foot}</div></div>`;
+}
+
+function allView() {
+  const groups = HOME.C.map((g) => `<section class="group">
+      <h2 class="group-title">${g.title}<span class="spacer"></span><span class="count">${g.rows.length}</span></h2>
+      <div class="card">${rowsHtml(g.rows, { fullDivider: true })}</div></section>`).join('');
+  return navbar('全部设置', true) + `<div class="scroll dense" id="scroller" tabindex="0"><div class="scroll-body">${groups}
+      <section class="group"><h2 class="group-title">危险操作</h2><div class="card">${rowsHtml(['reset'])}</div></section>
+    </div></div>`;
+}
+
+function navbar(title, root) {
+  return `<div class="navbar">
+    <button class="icon-btn" data-act="${root ? 'home' : 'back'}" aria-label="${root ? '返回设置首页' : '返回上一级'}">${icon(root ? 'back' : 'back')}</button>
+    <h1>${esc(title)}</h1>${savePill()}</div>${saveBanner()}`;
+}
+
+/* ---------- 状态：加载 / 空 ---------- */
+function loadingBody() {
+  const sk = (n) => Array.from({ length: n }, () => `<div class="sk-row"><span class="sk sk-ico"></span><div style="flex:1"><div class="sk sk-l1"></div><div class="sk sk-l2"></div></div><span class="sk sk-v"></span></div>`).join('');
+  return `<div class="scroll" aria-busy="true" aria-label="正在加载设置"><div class="scroll-body">
+    <div class="idcard"><span class="sk" style="width:46px;height:46px;border-radius:13px"></span><div style="flex:1"><div class="sk sk-l1" style="width:30%"></div><div class="sk sk-l2" style="width:45%"></div></div></div>
+    <div class="group"><div class="sk" style="height:12px;width:64px;margin:0 4px 7px"></div><div class="card">${sk(3)}</div></div>
+    <div class="group"><div class="sk" style="height:12px;width:88px;margin:0 4px 7px"></div><div class="card">${sk(3)}</div></div>
+  </div></div>`;
+}
+
+/* ---------- 二次确认面板 ---------- */
+function sheetHtml() {
+  if (!S.sheet) return '';
+  const sh = S.sheet;
+  return `<div class="sheet-layer" role="dialog" aria-modal="true" aria-labelledby="sheetTitle">
+    <div class="sheet-scrim" data-act="sheet-close"></div>
+    <div class="sheet">
+      <h3 id="sheetTitle">${esc(sh.title)}</h3>
+      <p>${esc(sh.body)}</p>
+      <div class="sc-actions">
+        <button class="destructive" data-act="sheet-ok">确认删除</button>
+        <button class="cancel" data-act="sheet-close">取消</button>
+      </div>
+    </div></div>`;
+}
+
+/* ---------- 主渲染 ---------- */
+const app = document.getElementById('app');
+const deviceEl = document.getElementById('device');
+
+function render(keepScroll) {
+  const pid = S.stack[S.stack.length - 1];
+  app.dataset.scheme = S.scheme;
+  app.innerHTML = (pid === 'home' ? homeView() : pageView(pid)) + sheetHtml();
+  if (!keepScroll) { const sc = app.querySelector('.scroll'); if (sc) sc.scrollTop = 0; }
+  app.classList.remove('push');
+  void app.offsetWidth;
+  if (S.stack.length > 1) app.classList.add('push');
+  updateNote();
+}
+
+function updateNote() {
+  const meta = {
+    A:{ t:'方案 A · 分组首页 + 推入二级页', d:'iOS 设置的直接移植：大标题 → 身份卡 → 6 个分组卡，行右侧用「当前值」替代纯箭头。二级页从右滑入，导航栏右侧承接保存状态。' },
+    B:{ t:'方案 B · 值预览 + 可折叠分组', d:'Material 3 取向：2×2 高频磁贴承担 80% 的跳转，其余分组默认折叠、只露标题与摘要；每行都带当前值，多数情况下不必进二级页就能确认。' },
+    C:{ t:'方案 C · 搜索优先 + 场景聚合', d:'面对 21 个页签的过载：搜索框做主角，下面「常改的 6 项」+ 5 个任务场景（默认只展开一个），底部常驻「全部设置」（Web 21 项 / 装了手机包 +通知共 24 项）。适合 Power user 与首次进入就直奔目标的人。' }
+  }[S.scheme];
+  document.querySelector('#noteMain h3').textContent = meta.t;
+  document.querySelector('#noteMain p').textContent = meta.d;
+  const pros = {
+    A:[['扫读','一屏 7–8 行 + 6 个组标题，视线只在左侧标签上，符合「找功能」而非「读内容」'],
+       ['触控','行高 56px，整行一个命中区，开关不必点准 30px 圆点'],
+       ['心智','与 iOS 设置同构，零学习成本；返回手势天然'],
+       ['成本','最低：现有 tab 状态可直接映射为栈，新增一段移动端样式即可']],
+    B:[['零跳转','每行带当前值，「只是确认一下」的场景 0 次跳转'],
+       ['首屏','磁贴 + 折叠分组把 20+ 项压进 1.3 屏，长列表不再淹没高频项'],
+       ['大触控','磁贴 78px 高、整块可点，拇指区命中率最高'],
+       ['渐进','折叠态只露标题与摘要，新手不被「高级」吓到']],
+    C:[['找得到','搜索是主角且常驻吸顶；中文关键词命中分组与说明'],
+       ['按意图','场景命名（让它更聪明 / 接上外部世界）比「工具与执行」更接近用户心里的问题'],
+       ['兜底','底部「全部设置」永远可达，长尾不缺'],
+       ['省空间','场景默认只展开一个，首屏即看到 6 个高频 + 5 个入口']]
+  }[S.scheme];
+  const cons = {
+    A:[['跳转','改一个值平均 2 跳；值预览只能救回「只读确认」'],
+       ['长尾','21 个页签仍靠分组承载，新手可能找不到「审批规则」'],
+       ['缓解','搜索吸顶 + 分组计数 + 「最近改动」上浮（本地记录，不采集）']],
+    B:[['密度','信息密度高，值预览在 320px 小屏会被截断成省略号'],
+       ['折叠','折叠会藏起可发现性，需要「全部展开」与搜索兜底'],
+       ['实现','磁贴顺序要人工维护，不能靠排序算法（不采集数据）']],
+    C:[['学习','场景分类需要用户理解产品心智，首次可能找不到「主题」在哪'],
+       ['层级','场景 → 场景内列表 → 二级页，最深仍是三级，但路径更长'],
+       ['维护','新增页签必须归入某个场景，需要一条 lint／单测守住归属']]
+  }[S.scheme];
+  document.querySelector('#notePros dl').innerHTML = pros.map(([k,v])=>`<dt>${k}</dt><dd>${v}</dd>`).join('');
+  document.querySelector('#noteCons dl').innerHTML = cons.map(([k,v])=>`<dt>${k}</dt><dd>${v}</dd>`).join('');
+}
+
+/* ---------- 交互 ---------- */
+function push(pid) { S.stack.push(pid); S.query = ''; render(); }
+function back() { if (S.stack.length > 1) S.stack.pop(); render(); }
+let saveTimer = null;
+function touchSave() {
+  S.save = 'saving'; render(true);
+  clearTimeout(saveTimer);
+  saveTimer = setTimeout(() => { S.save = 'saved'; render(true); }, 900);
+}
+
+app.addEventListener('click', (e) => {
+  const el = e.target.closest('[data-act]');
+  if (!el) return;
+  const act = el.dataset.act;
+  if (act === 'nav') {
+    if (el.getAttribute('aria-disabled') === 'true') return;
+    if (el.dataset.page) push(el.dataset.page);
+  } else if (act === 'back') back();
+  else if (act === 'home') { S.stack = ['home']; render(); }
+  else if (act === 'toggle') {
+    const k = el.dataset.key; S.toggles[k] = !S.toggles[k];
+    const on = S.toggles[k];
+    el.setAttribute('aria-checked', String(on));
+    touchSave();
+  } else if (act === 'fold') {
+    const k = el.dataset.key; S.fold[k] = !S.fold[k]; render(true);
+  } else if (act === 'seg') {
+    S.seg[el.dataset.key] = Number(el.dataset.idx); render(true);
+  } else if (act === 'clearq') {
+    S.query = ''; render();
+  } else if (act === 'confirm') {
+    S.sheet = { title: el.dataset.title, body: el.dataset.body }; render(true);
+  } else if (act === 'sheet-close') {
+    S.sheet = null; render(true);
+  } else if (act === 'sheet-ok') {
+    S.sheet = null; S.save = 'saved'; render(true);
+  } else if (act === 'save' || act === 'retry') {
+    S.demo = 'default'; document.querySelectorAll('#stateSeg button').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.stateSet === 'default')));
+    touchSave();
+  }
+});
+
+app.addEventListener('input', (e) => {
+  if (e.target.id !== 'q') return;
+  S.query = e.target.value;
+  const pos = e.target.selectionStart;
+  render();
+  const q = app.querySelector('#q');
+  if (q) { q.focus(); try { q.setSelectionRange(pos, pos); } catch (_) {} }
+});
+
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape') {
+    if (S.sheet) { S.sheet = null; render(true); }
+    else back();
+  }
+  if (e.key === 'Enter' && document.activeElement && document.activeElement.id === 'q') {
+    const first = app.querySelector('.scroll .row, .scroll .tile');
+    if (first) first.click();
+  }
+});
+
+/* 顶部控制条 */
+document.getElementById('schemeSeg').addEventListener('click', (e) => {
+  const b = e.target.closest('button[data-scheme]'); if (!b) return;
+  S.scheme = b.dataset.scheme; S.stack = ['home']; S.query = '';
+  document.querySelectorAll('#schemeSeg button').forEach((x) => x.setAttribute('aria-pressed', String(x === b)));
+  render();
+});
+document.getElementById('themeSeg').addEventListener('click', (e) => {
+  const b = e.target.closest('button[data-theme-set]'); if (!b) return;
+  document.documentElement.dataset.theme = b.dataset.themeSet;
+  document.querySelectorAll('#themeSeg button').forEach((x) => x.setAttribute('aria-pressed', String(x === b)));
+});
+document.getElementById('deviceSeg').addEventListener('click', (e) => {
+  const b = e.target.closest('button[data-device-set]'); if (!b) return;
+  deviceEl.dataset.device = b.dataset.deviceSet;
+  document.querySelectorAll('#deviceSeg button').forEach((x) => x.setAttribute('aria-pressed', String(x === b)));
+  render();
+});
+document.getElementById('stateSeg').addEventListener('click', (e) => {
+  const b = e.target.closest('button[data-state-set]'); if (!b) return;
+  S.demo = b.dataset.stateSet;
+  S.save = 'saved';
+  if (S.demo === 'empty') { S.query = '深色模式开关的字体大小'; S.stack = ['home']; }
+  else if (S.demo === 'failed') { S.query = ''; S.save = 'failed'; }
+  else if (S.demo === 'loading') { S.query = ''; S.stack = ['home']; }
+  else { S.query = ''; S.save = 'saved'; }
+  document.querySelectorAll('#stateSeg button').forEach((x) => x.setAttribute('aria-pressed', String(x === b)));
+  render();
+});
+
+render();
+</script>
+
+<style>
+/* 页内补充：推入动画、滑杆、方案 B/C 的展开过渡 */
+.app.push > .scroll{animation:pushIn .22s cubic-bezier(.2,.9,.25,1)}
+@keyframes pushIn{from{transform:translateX(16px);opacity:.5}to{transform:none;opacity:1}}
+.range{-webkit-appearance:none;appearance:none;width:100%;height:28px;background:transparent;margin:0}
+.range::-webkit-slider-runnable-track{height:4px;border-radius:2px;background:var(--border)}
+.range::-webkit-slider-thumb{-webkit-appearance:none;width:22px;height:22px;border-radius:50%;background:var(--knob);
+  border:1px solid var(--border);box-shadow:0 1px 4px rgba(0,0,0,.28);margin-top:-9px}
+.range::-moz-range-track{height:4px;border-radius:2px;background:var(--border)}
+.range::-moz-range-thumb{width:20px;height:20px;border-radius:50%;background:var(--knob);border:1px solid var(--border)}
+.card > .divider[hidden]{display:none}
+.row-static{cursor:default}
+.row-static:hover{background:transparent}
+</style>
+</body>
+</html>

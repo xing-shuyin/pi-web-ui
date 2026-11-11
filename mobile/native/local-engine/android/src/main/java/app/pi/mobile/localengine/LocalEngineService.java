@@ -101,6 +101,7 @@ public final class LocalEngineService extends Service {
 			if (!proot.isFile()) throw new IOException("运行环境不完整：缺少 proot，请重新安装运行环境。");
 			if (!node.isFile()) throw new IOException("运行环境不完整：缺少 node，请重新安装运行环境。");
 			if (!serverEntry.isFile()) throw new IOException("运行环境不完整：缺少 dist/server，请重新安装运行环境。");
+			RuntimeInstaller.requireDeviceAbi(RuntimeInstaller.readInstalledManifest(this));
 			RuntimeInstaller.ensureDataLayout(this);
 			installRenameCompat(rootfs);
 			warnWhenRenamePreloadMissing(rootfs);

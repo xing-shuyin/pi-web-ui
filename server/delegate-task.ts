@@ -52,8 +52,8 @@ export function validateDelegation(
 		const shown = usableNames.slice(0, 12).join(" · ") + (usableNames.length > 12 ? " · …" : "");
 		return pick(
 			lang,
-			`派单被驳回：模板 "${input.agent || "(空)"}" 不可用（不存在或已停用）。可用模板：${shown || "(无)"}。用 subagent(action="templates") 查简介再选；不要编造模板名。`,
-			`Delegation rejected: template "${input.agent || "(empty)"}" is unavailable (missing or disabled). Available templates: ${shown || "(none)"}. Use subagent(action="templates") for descriptions; do not invent template names.`,
+			`派单被驳回：模板 "${input.agent || "(空)"}" 不可用（不存在或已停用）。可用模板：${shown || "(无)"}。用 conversation(action="templates") 查简介再选；不要编造模板名。`,
+			`Delegation rejected: template "${input.agent || "(empty)"}" is unavailable (missing or disabled). Available templates: ${shown || "(none)"}. Use conversation(action="templates") for descriptions; do not invent template names.`,
 			"delegate.validate.agent",
 			{ agent: input.agent, available: shown },
 		);
@@ -70,8 +70,8 @@ export function validateDelegation(
 		if (c.text.trim().length < c.min) {
 			return pick(
 				lang,
-				`派单被驳回：${c.section} 段太短（至少 ${c.min} 字，当前 ${c.text.trim().length} 字）。六段缺一不可、含糊不得：补全后重试，不要改用 subagent(action="spawn") 绕过校验。`,
-				`Delegation rejected: section ${c.section} is too short (minimum ${c.min} chars, got ${c.text.trim().length}). All six sections are mandatory and vague prompts fail: complete it and retry; do not bypass validation via subagent(action="spawn").`,
+				`派单被驳回：${c.section} 段太短（至少 ${c.min} 字，当前 ${c.text.trim().length} 字）。六段缺一不可、含糊不得：补全后重试，不要改用 conversation(action="spawn") 绕过校验。`,
+				`Delegation rejected: section ${c.section} is too short (minimum ${c.min} chars, got ${c.text.trim().length}). All six sections are mandatory and vague prompts fail: complete it and retry; do not bypass validation via conversation(action="spawn").`,
 				"delegate.validate.short",
 				{ section: c.section, min: c.min },
 			);
@@ -113,7 +113,7 @@ export function buildDelegationPrompt(input: DelegationInput, lang: ServerLang =
 }
 
 const delegateSchema = Type.Object({
-	agent: Type.String({ description: "Template name from subagent(action='templates')" }),
+	agent: Type.String({ description: "Template name from conversation(action='templates')" }),
 	task: Type.String(),
 	expected_outcome: Type.String(),
 	required_tools: Type.String({ description: "Free text; 'read-only' switches the subagent to a readonly whitelist" }),
@@ -138,7 +138,7 @@ export function makeDelegateTaskTool(host: SubagentToolHost, lang?: () => Server
 		promptSnippet: "hand a well-scoped task to a specialist template",
 		promptGuidelines: [
 			"Fill every section concretely: one action, deliverables plus done criteria, explicit tool whitelist, exhaustive must_do/must_not_do, file paths and constraints",
-			"Prefer delegate_task over subagent(action='spawn'): it spawns a real subagent conversation and can be followed up in that SAME session instead of delegating again",
+			"Prefer delegate_task over conversation(action='spawn'): it spawns a real subagent conversation and can be followed up in that SAME session instead of delegating again",
 			"Before delegating, declare which template you chose and WHY its description matches the task",
 			"After delegation ALWAYS verify the result: " +
 				"does it work, does it follow codebase patterns, did it respect MUST DO / MUST NOT DO",
@@ -197,11 +197,11 @@ export function makeDelegateTaskTool(host: SubagentToolHost, lang?: () => Server
 				pick(
 					getLang(),
 					`已派单：${convId}\n模板：${input.agent} · 标题：${title}${modelLineZh}${toolsLineZh}${securityLineZh}` +
-						`\n子代理已在左栏运行列表中。用 subagent(action="wait_all") 一次等全部完成（不用轮询）、subagent(action="get_result") 取单个结果；` +
-						`追问请在同一子代理会话里继续（subagent(action="steer")），不要重复派单。拿到结果后必须验证再汇报。`,
+						`\n子代理已在左栏运行列表中。用 conversation(action="wait_all") 一次等全部完成（不用轮询）、conversation(action="get_result") 取单个结果；` +
+						`追问请在同一子代理会话里继续（conversation(action="steer")），不要重复派单。拿到结果后必须验证再汇报。`,
 					`Delegated: ${convId}\nTemplate: ${input.agent} · Title: ${title}${modelLineEn}${toolsLineEn}${securityLineEn}` +
-						`\nThe subagent is in the left running list. Use subagent(action="wait_all") to wait for all at once (no polling), ` +
-						`subagent(action="get_result") for a single result; continue follow-ups in the SAME subagent session (subagent(action="steer")), ` +
+						`\nThe subagent is in the left running list. Use conversation(action="wait_all") to wait for all at once (no polling), ` +
+						`conversation(action="get_result") for a single result; continue follow-ups in the SAME subagent session (conversation(action="steer")), ` +
 						`do not delegate again. Verify the result before reporting.`,
 					"delegate.started",
 					{

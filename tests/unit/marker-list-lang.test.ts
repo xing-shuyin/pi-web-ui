@@ -3,7 +3,7 @@ import type { ClientStateStore, MarkerSettings } from "../../server/client-state
 import { MarkerService, type MarkerHost } from "../../server/marker-service.js";
 import { getMarker } from "../../server/markers/index.js";
 
-const DEFAULT_SETTINGS: MarkerSettings = { markersEnabled: true, disabledMarkers: [] };
+const DEFAULT_SETTINGS: MarkerSettings = { disabledMarkers: [] };
 
 function makeService(lang: string | undefined): MarkerService {
 	const host = {

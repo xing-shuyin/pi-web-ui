@@ -4,8 +4,9 @@ import type { ToolDefinition } from "@earendil-works/pi-coding-agent";
 /** Compact action signature for the merged tool: the only place documenting parameters,
  * so every field schema stays flat and prose-free. */
 export const CONVERSATION_ACTION_SIGNATURE =
-	"spawn(prompt,type?) | steer/answer(runId,message,requestId?) | complete(summary) | consult(message) | " +
-	"escalate(runId,requestId) | get_result/stop/status(runId) | wait_all/dismiss(runIds?) | handoff(toRunId,payload) | " +
+	"spawn(prompt,type?,key? | tasks[{key,prompt,type?,template?,model?,thinking?,isolation?,persist?,notifyOnDone?}]) | " +
+	"steer/answer(runId,message,requestId?) | complete(summary,evidence{files[],commands[],none?,blocked?}) | consult(message) | " +
+	"escalate(runId,requestId) | get_result/stop/status/resume(runId,message?) | wait_all/dismiss(runIds? keys accepted) | handoff(toRunId,payload) | " +
 	"list(kind?,query?) | read/files(id|path,query?,last?)";
 
 export function mergeConversationTools(tools: ToolDefinition[]): ToolDefinition[] {

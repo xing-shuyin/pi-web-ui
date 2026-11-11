@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="pi_phone_control_label">pi 手机操控</string>
+    <string name="pi_phone_control_description">允许 pi 读取当前界面并执行点击、滑动、输入等操作。仅在你主动开启并让智能体调用时生效。</string>
+</resources>

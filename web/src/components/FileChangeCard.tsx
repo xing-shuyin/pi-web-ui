@@ -49,6 +49,8 @@ export const FileChangeCard = memo(function FileChangeCard({
 		if (!isFullscreen) return;
 		const onKey = (e: KeyboardEvent) => {
 			if (e.key === "Escape") {
+				// 消费标记：手机壳的返回键靠 defaultPrevented 判断“这一层已经关掉”。
+				e.preventDefault();
 				e.stopPropagation();
 				setIsFullscreen(false);
 			}

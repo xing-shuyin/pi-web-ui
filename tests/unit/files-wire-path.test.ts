@@ -145,3 +145,50 @@ describe("searchFiles 支持相对路径和绝对路径匹配", () => {
 		expect(res2.results.some((r: any) => r.name === "target.txt")).toBe(true);
 	});
 });
+
+// 回归：目录命中必须带 type="dir"，且路径不重复。
+// 曾经 walk 里的 `!isDir` 与直击分支的 `st.isFile()` 双层把目录滤掉，
+// `type: st.isDirectory() ? "dir" : "file"` 成了不可达代码 ——
+// 本地不跑 full smoke 时只能等 main 上的 global-search-test 才报红。
+describe("searchFiles 目录命中（type=dir）", () => {
+	async function search(query: string, reqId = 201) {
+		const cwd = tempRoot();
+		const deep = join(cwd, "nested", "deep");
+		mkdirSync(deep, { recursive: true });
+		writeFileSync(join(deep, "target.txt"), "content");
+		const { svc, seen } = makeService(cwd);
+		await svc.searchFiles(query, reqId);
+		const res = seen.find((m) => m.type === "search_files_result" && m.reqId === reqId) as any;
+		expect(res).toBeDefined();
+		expect(res.ok).toBe(true);
+		return { cwd, results: res.results as Array<{ path: string; name: string; type: string }> };
+	}
+
+	it("名字片段命中目录：返回 type=dir 且仍能下潜到文件", async () => {
+		const { results } = await search("deep");
+		const dirHit = results.find((r) => r.path === "nested/deep");
+		expect(dirHit).toMatchObject({ name: "deep", type: "dir" });
+		expect(results.some((r) => r.path === "nested/deep/target.txt" && r.type === "file")).toBe(true);
+	});
+
+	it("相对目录路径直击：目录本身进结果且不重复", async () => {
+		const { results } = await search("nested/deep");
+		const hits = results.filter((r) => r.path === "nested/deep");
+		expect(hits).toHaveLength(1);
+		expect(hits[0].type).toBe("dir");
+	});
+
+	it("绝对目录路径直击也按目录返回", async () => {
+		const cwd = tempRoot();
+		const deep = join(cwd, "nested", "deep");
+		mkdirSync(deep, { recursive: true });
+		const { svc, seen } = makeService(cwd);
+		const wireAbs = deep.split(/[\\/]/).join("/");
+		await svc.searchFiles(wireAbs, 202);
+		const res = seen.find((m) => m.type === "search_files_result" && m.reqId === 202) as any;
+		expect(res.ok).toBe(true);
+		expect(res.results.filter((r: any) => r.path.endsWith("nested/deep")).some((r: any) => r.type === "dir")).toBe(
+			true,
+		);
+	});
+});

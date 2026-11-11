@@ -5,6 +5,7 @@ import { getGlobalRemoteSshService, isRemoteWorkspaceUri, type RemoteSshService 
 import { prepareRemoteNativeCliPaste } from "./native-cli-remote-files.js";
 import { remoteNativeCliCleanupQueue } from "./native-cli-remote-cleanup.js";
 import { normalizePathKey } from "./client-state.js";
+import { runWorkspaceCommand } from "./workspace-queue.js";
 import { prepareNativeCliPaste, type NativeCliPasteContext } from "./native-cli.js";
 
 export function handleFileMessage(msg: ClientMessage, cs: DispatchSession): boolean {
@@ -46,10 +47,24 @@ export function handleFileMessage(msg: ClientMessage, cs: DispatchSession): bool
 			void cs.completePath(msg.path);
 			return true;
 		case "make_dir":
-			void cs.makeDir(msg.path, msg.setAsCwd === true);
+			// 新建目录并设为工作区 = 一次工作区绑定，入队保持与后续建会话/切会话的先后顺序。
+			if (msg.setAsCwd === true) {
+				void runWorkspaceCommand(cs, async () => {
+					try {
+						await cs.makeDir(msg.path, true);
+					} catch (err) {
+						cs.emitNotice(
+							"error",
+							`创建目录失败：${(err as Error).message}`,
+							`Failed to create directory: ${(err as Error).message}`,
+						);
+					}
+				});
+			} else void cs.makeDir(msg.path, false);
 			return true;
 		case "set_cwd":
-			void (async () => {
+			// 入队（见 workspace-queue）：后续工作区命令（建会话 / 切会话）会等它落定，不会拿旧 cwd 开工。
+			void runWorkspaceCommand(cs, async () => {
 				try {
 					await cs.setCwd(msg.path);
 				} catch (err) {
@@ -59,7 +74,7 @@ export function handleFileMessage(msg: ClientMessage, cs: DispatchSession): bool
 						`Failed to switch workspace: ${(err as Error).message}`,
 					);
 				}
-			})();
+			});
 			return true;
 		case "set_workspace_roots":
 			void (async () => {
@@ -75,7 +90,8 @@ export function handleFileMessage(msg: ClientMessage, cs: DispatchSession): bool
 			})();
 			return true;
 		case "create_sandbox":
-			void (async () => {
+			// 沙盒创建末尾会 setCwd（工作区换到沙盒里），所以它在队列里占位，后续建会话排在它之后。
+			void runWorkspaceCommand(cs, async () => {
 				try {
 					await cs.createSandbox?.({
 						name: msg.name,
@@ -89,16 +105,16 @@ export function handleFileMessage(msg: ClientMessage, cs: DispatchSession): bool
 						`Failed to create sandbox: ${(err as Error).message}`,
 					);
 				}
-			})();
+			});
 			return true;
 		case "reset_sandbox":
-			void cs.resetSandbox?.(msg.path);
+			void runWorkspaceCommand(cs, () => cs.resetSandbox?.(msg.path));
 			return true;
 		case "persist_sandbox":
-			void cs.persistSandbox?.(msg.path);
+			void runWorkspaceCommand(cs, () => cs.persistSandbox?.(msg.path));
 			return true;
 		case "promote_sandbox":
-			void cs.promoteSandbox?.(msg.targetPath, msg.path, msg.switchToTarget);
+			void runWorkspaceCommand(cs, () => cs.promoteSandbox?.(msg.targetPath, msg.path, msg.switchToTarget));
 			return true;
 		case "diff_sandbox":
 			void cs.diffSandbox?.(msg.path, msg.requestId);
@@ -633,13 +649,37 @@ export function handleSessionLifecycleMessage(
 				acknowledge();
 				return true;
 			}
-			const pending =
-				msg.type === "new_cli_chat"
-					? cs.newCliChat?.(msg.config, msg.cwd, acknowledge)
-					: cs.newChat(msg.preset, msg.ephemeral, acknowledge, msg.independent);
-			void Promise.resolve(pending)
-				.then(() => acknowledge())
-				.catch(() => acknowledge());
+			// 工作区绑定一律入队（顺序 = 到达顺序）：先切目录再建会话、或 client 直接声明 cwd，
+			// 都保证 newChat() 读到的是目标工作区。声明了 cwd 却切不过去就不建会话（#872）。
+			void runWorkspaceCommand(cs, async () => {
+				if (msg.type === "new_chat") {
+					const target = (msg.cwd ?? "").trim();
+					if (target && normalizePathKey(target) !== normalizePathKey(cs.cwd)) {
+						try {
+							await cs.setCwd(target);
+						} catch {
+							// 失败由下面的核验统一报：能切就是好，切不过去就不建会话、给出回执
+						}
+						if (normalizePathKey(target) !== normalizePathKey(cs.cwd)) {
+							send?.({
+								type: "notice",
+								level: "error",
+								text: `新建对话失败：没能切换到工作目录 ${target}`,
+								textEn: `Failed to create chat: could not switch the workspace to ${target}`,
+							});
+							return;
+						}
+					}
+				}
+				const pending =
+					msg.type === "new_cli_chat"
+						? cs.newCliChat?.(msg.config, msg.cwd, acknowledge)
+						: cs.newChat(msg.preset, msg.ephemeral, acknowledge, msg.independent);
+				await Promise.resolve(pending);
+			}).then(
+				() => acknowledge(),
+				() => acknowledge(),
+			);
 			return true;
 		}
 		case "delete_message":
@@ -656,10 +696,10 @@ export function handleSessionLifecycleMessage(
 			void cs.editMessage(msg.messageId, msg.text, msg.attachments);
 			return true;
 		case "fork_session":
-			void cs.forkSession?.(msg.messageId, msg.position, msg.conversationId);
+			void runWorkspaceCommand(cs, () => cs.forkSession?.(msg.messageId, msg.position, msg.conversationId));
 			return true;
 		case "rollback_session":
-			void cs.rollbackSession?.(msg.messageId, msg.conversationId, msg.restoreWorkspace);
+			void runWorkspaceCommand(cs, () => cs.rollbackSession?.(msg.messageId, msg.conversationId, msg.restoreWorkspace));
 			return true;
 		case "list_sessions":
 			if (typeof msg.limit === "number") cs.setSessionListLimit?.(msg.path ?? cs.cwd, msg.limit);
@@ -704,10 +744,10 @@ export function handleSessionLifecycleMessage(
 			void cs.dismissFinishedSubagents(msg.parentId);
 			return true;
 		case "switch_session":
-			void cs.switchSession(msg.path, msg.sessionId, msg.independent);
+			void runWorkspaceCommand(cs, () => cs.switchSession(msg.path, msg.sessionId, msg.independent));
 			return true;
 		case "switch_conversation":
-			void cs.switchConversation(msg.id);
+			void runWorkspaceCommand(cs, () => cs.switchConversation(msg.id));
 			return true;
 		case "search_sessions":
 			void cs.searchSessions(msg.query, msg.reqId);
@@ -939,7 +979,6 @@ export function handleSettingsMessage(
 				autoCompactionInstructions: (msg as { autoCompactionInstructions?: string }).autoCompactionInstructions,
 				reviewPrompt: msg.reviewPrompt,
 				reviewDisabledSkills: msg.reviewDisabledSkills,
-				markersEnabled: (msg as { markersEnabled?: boolean }).markersEnabled,
 				disabledMarkers: (msg as { disabledMarkers?: string[] }).disabledMarkers,
 				quickPhrases: (msg as { quickPhrases?: string[] }).quickPhrases,
 				quickPhrasesEnabled: (msg as { quickPhrasesEnabled?: boolean }).quickPhrasesEnabled,
@@ -1098,6 +1137,9 @@ export function handleInteractiveResponseMessage(
 			return true;
 		case "page_response":
 			cs.resolvePageCall?.(msg.id, msg.ok, msg.result, msg.error);
+			return true;
+		case "phone_response":
+			cs.resolvePhoneCall?.(msg.id, msg.ok, msg.result, msg.error);
 			return true;
 		default:
 			return false;

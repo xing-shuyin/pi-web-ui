@@ -1433,6 +1433,13 @@ export function App() {
 		return false;
 	}, zenMode);
 
+	// 手机端子抽屉是主导航：返回键/ESC 逐层退出的第一层就是它（联开后注册，所以优先于其他浮层被消费）。
+	useEscapeKey(() => {
+		if (!drawer) return false;
+		setDrawer(null);
+		return true;
+	}, drawer !== null);
+
 	useEffect(() => {
 		const onKey = (e: KeyboardEvent) => {
 			const isAltZ = e.altKey && !e.ctrlKey && !e.metaKey && e.key.toLowerCase() === "z";

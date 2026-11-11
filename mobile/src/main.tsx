@@ -3,9 +3,17 @@ import { createRoot } from "react-dom/client";
 import { Capacitor } from "@capacitor/core";
 import { App as NativeApp } from "@capacitor/app";
 import { Network } from "@capacitor/network";
+import { StatusBar } from "@capacitor/status-bar";
+import { PiPhoneControl } from "@pi-mobile/native-phone-control";
 import { PiCredentials } from "@pi-mobile/native-push";
 import { configureMobileRuntime, openMobileNotificationTarget } from "../../web/src/mobile-runtime";
-import { normalizeServerUrl, readServerStatus, type MobileConnection, type NotificationTarget } from "./connection";
+import {
+	normalizeServerUrl,
+	notificationTarget,
+	readServerStatus,
+	type MobileConnection,
+	type NotificationTarget,
+} from "./connection";
 import {
 	authenticateConnection,
 	notificationDestination,
@@ -19,6 +27,7 @@ import { ConnectionScreen } from "./ConnectionScreen";
 import { accessHubDevice, listHubDevices, type HubDevice } from "./hub";
 import { mobileRequest } from "./connection";
 import { PushController } from "./push-controller";
+import { showPushToast } from "./push-toast";
 import { NotificationSettings } from "./Settings";
 import "../../web/src/styles.css";
 import "./styles.css";
@@ -26,6 +35,26 @@ import "./styles.css";
 const onboardingRoot = createRoot(document.getElementById("root")!);
 const settingsRoot = createRoot(document.getElementById("mobile-settings")!);
 const native = Capacitor.isNativePlatform();
+/**
+ * 原生壳默认把状态栏盖在 WebView 上（overlaysWebView），而 Android WebView 的
+ * env(safe-area-inset-top) 拿不到真实高度 —— 这里用原生 StatusBar 读出来写进 CSS 变量，
+ * 让页面让出安全区（消费方：web/src/styles.css 的 --safe-top）。
+ */
+function applySafeAreaInsets(): void {
+	if (!native) return;
+	document.documentElement.classList.add("pi-native");
+	const write = () => {
+		void StatusBar.getInfo()
+			.then((info) =>
+				document.documentElement.style.setProperty("--pi-safe-top", `${Math.max(0, Math.round(info.height || 0))}px`),
+			)
+			.catch(() => {
+				/* 读不到就保持 0，宁可少让也不报错 */
+			});
+	};
+	write();
+	window.addEventListener("resize", write);
+}
 const PENDING_TARGET = "pi-mobile:notification-target";
 let settingsOpen = false;
 let controller: PushController | null = null;
@@ -228,7 +257,15 @@ async function enterConnection(connection: SavedConnection, options: { minted?: 
 	activeDevice = null;
 	pendingTarget = null;
 	if (controller) await controller.dispose();
-	controller = new PushController(connection, installationId, openTarget, openSettings);
+	controller = new PushController(connection, installationId, openTarget, openSettings, (extras) => {
+		const target = notificationTarget(extras, controller!.getDetails().instanceId);
+		showPushToast({
+			kind: typeof extras.kind === "string" ? extras.kind : undefined,
+			onClick: () => {
+				if (target) openTarget(target);
+			},
+		});
+	});
 	try {
 		await controller.initialize();
 	} catch {}
@@ -304,6 +341,103 @@ async function startSharedUi(connection: MobileConnection): Promise<void> {
 	installLifecycle();
 }
 
+/**
+ * 把“返回”交给 Web UI 自己消费：它用捕获阶段的 Escape 栈做 LIFO 关闭，
+ * 关掉一层时会 preventDefault，我们就知道这一按已经被接住，不该再最小化。
+ */
+function pressBack(): boolean {
+	const event = new KeyboardEvent("keydown", { key: "Escape", bubbles: true, cancelable: true });
+	document.dispatchEvent(event);
+	return event.defaultPrevented;
+}
+
+/** 服务端 `phone_request` 的落地端：把 op 映射到无障碍插件，结果原样回给 web 层的桥。 */
+function installPhoneBridge(): void {
+	if (!native) return;
+	const num = (value: unknown): number | undefined =>
+		typeof value === "number" && Number.isFinite(value) ? value : undefined;
+	const str = (value: unknown): string | undefined => (typeof value === "string" ? value : undefined);
+	(globalThis as unknown as { __piPhoneHost?: unknown }).__piPhoneHost = {
+		phoneCall: async ({ op, args }: { op: string; args?: Record<string, unknown> }) => {
+			const a = args ?? {};
+			try {
+				switch (op) {
+					case "status":
+						return { ok: true, result: await PiPhoneControl.getStatus() };
+					case "dump":
+						return {
+							ok: true,
+							result: await PiPhoneControl.dump({
+								maxNodes: num(a.maxNodes) ?? 400,
+								maxDepth: num(a.maxDepth) ?? 14,
+							}),
+						};
+					case "tap": {
+						const x = num(a.x);
+						const y = num(a.y);
+						if (x === undefined || y === undefined) return { ok: false, error: "tap 需要 x/y 坐标。" };
+						return { ok: true, result: await PiPhoneControl.tap({ x, y }) };
+					}
+					case "long_press": {
+						const x = num(a.x);
+						const y = num(a.y);
+						if (x === undefined || y === undefined) return { ok: false, error: "long_press 需要 x/y 坐标。" };
+						return {
+							ok: true,
+							result: await PiPhoneControl.longPress({ x, y, durationMs: num(a.durationMs) ?? 800 }),
+						};
+					}
+					case "swipe": {
+						const [x1, y1, x2, y2] = [num(a.x1), num(a.y1), num(a.x2), num(a.y2)];
+						if (x1 === undefined || y1 === undefined || x2 === undefined || y2 === undefined)
+							return { ok: false, error: "swipe 需要 x1/y1/x2/y2 坐标。" };
+						return {
+							ok: true,
+							result: await PiPhoneControl.swipe({ x1, y1, x2, y2, durationMs: num(a.durationMs) ?? 300 }),
+						};
+					}
+					case "input": {
+						const text = str(a.text);
+						if (text === undefined) return { ok: false, error: "input 需要 text。" };
+						await PiPhoneControl.setText({ text });
+						return { ok: true, result: { typed: text.length } };
+					}
+					case "key": {
+						const name = str(a.name) ?? str(a.key);
+						if (!name) return { ok: false, error: "key 需要 name（back/home/recents/notifications/quickSettings）。" };
+						await PiPhoneControl.key({ name: name as Parameters<typeof PiPhoneControl.key>[0]["name"] });
+						return { ok: true };
+					}
+					case "launch": {
+						const packageName = str(a.packageName);
+						if (!packageName) return { ok: false, error: "launch 需要 packageName。" };
+						await PiPhoneControl.launchApp({ packageName });
+						return { ok: true };
+					}
+					case "screenshot": {
+						const shot = await PiPhoneControl.screenshot({ maxWidth: num(a.maxWidth) ?? 720 });
+						return {
+							ok: true,
+							result: {
+								image: {
+									dataUrl: `data:image/png;base64,${shot.data}`,
+									mimeType: "image/png",
+									width: shot.width,
+									height: shot.height,
+								},
+							},
+						};
+					}
+					default:
+						return { ok: false, error: `不支持的手机动作：${op}` };
+				}
+			} catch (error) {
+				return { ok: false, error: error instanceof Error ? error.message : String(error) };
+			}
+		},
+	};
+}
+
 function installLifecycle(): void {
 	if (native) {
 		let refreshing: Promise<void> | null = null;
@@ -327,10 +461,17 @@ function installLifecycle(): void {
 			if (connected) resume();
 		});
 		if (Capacitor.getPlatform() === "android")
-			void NativeApp.addListener("backButton", ({ canGoBack }) => {
-				if (settingsOpen) closeSettings();
-				else if (canGoBack) window.history.back();
-				else void NativeApp.minimizeApp();
+			void NativeApp.addListener("backButton", () => {
+				// 逐层退出：手机设置面板 → Web UI 最上层浮层/抽屉 → 最小化。
+				// Web UI 只写 replaceState（同步 hash），没有 history 条目，所以 canGoBack 恒为 false，
+				// 不能拿它当“有没有上一层”。改成让 UI 的 Escape 栈自己消费：它有捕获阶段监听与 LIFO 语义，
+				// 关掉一层时会 preventDefault，我们就知道该停下。
+				if (settingsOpen) {
+					closeSettings();
+					return;
+				}
+				if (pressBack()) return;
+				void NativeApp.minimizeApp();
 			});
 	}
 	window.addEventListener("keydown", (event) => {
@@ -375,3 +516,5 @@ async function boot(): Promise<void> {
 	showConnectionScreen();
 }
 void boot();
+applySafeAreaInsets();
+installPhoneBridge();

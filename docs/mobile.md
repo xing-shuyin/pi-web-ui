@@ -118,6 +118,22 @@ npm --prefix mobile run native:add -- ios --packagemanager CocoaPods
 
 不要在已有平台目录直接重复执行 add；正常更新用 sync。`native:check` 检查 CocoaPods 名称、平台选择和 Android 插件自动注册，不能替代原生编译。
 
+### 一键出 APK
+
+产物落到仓库根目录，名字带 ABI 与运行时 revision（`pi-web-ui-mobile-<abi>-<revision>-debug.apk`）：
+
+```bash
+npm --prefix mobile run apk          # 只打 assets 里现成那套运行时（改 web/src 后最常用，约 30-40 秒）
+npm --prefix mobile run apk:all      # 真机 arm64 + 模拟器 x86_64 各打一个
+RUNTIME_REVISION=r8 npm --prefix mobile run apk:all:runtime   # 先用 Docker 重建全部运行时再打
+```
+
+`assets/localengine` 只能放一套运行时分卷，所以 `apk:all` 是「换一次 assets 打一次包」，结束会把 assets 恢复成默认 ABI（arm64）。前置条件是 `JAVA_HOME` 与 `mobile/android/local.properties` 里的 `sdk.dir`（该文件被 gitignore，换机器要重建）；缺了脚本会直接点名，不会丢给你一句 `SDK location not found`。
+
+`apk:all:runtime` 用 Docker + qemu 跑 `local-engine/runtime/build-runtime.sh`，需要 `RUNTIME_REVISION`（写进 `runtime.json`，手机端据此触发重装）；改 `web/src` 只需重打 APK，只有改原生层或换 rootfs 才需要它。
+
+发布：推 `v*` tag 会触发 `.github/workflows/mobile-release.yml`，在 CI 里构建 arm64 引擎运行时并打 APK，产物挂到同名 GitHub Release（`pi-web-ui-mobile-arm64-<版本>-debug.apk` + sha256）。签名与版本号注入见 [`release.md`](release.md) §8.6。
+
 开发预览：
 
 ```bash

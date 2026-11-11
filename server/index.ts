@@ -1567,6 +1567,7 @@ export interface DispatchSession {
 		cancelReason?: string,
 	): boolean;
 	resolvePageCall?(id: string, ok: boolean, result?: unknown, error?: string): void;
+	resolvePhoneCall?(id: string, ok: boolean, result?: unknown, error?: string): void;
 	forkSession?(messageId: string, position?: "before" | "at", conversationId?: string): Promise<void>;
 	rollbackSession?(messageId: string, conversationId?: string, restoreWorkspace?: boolean): Promise<void>;
 	resolveToolApproval?(
