@@ -135,7 +135,8 @@ describe("tool prompt hygiene（工具提示词纯英文精简）", () => {
 			for (const f of readdirSync(dir)) {
 				const p = join(dir, f);
 				if (statSync(p).isDirectory()) {
-					if (f !== "node_modules") walk(p);
+					// 只查插件正文（提示词/工具描述）；test/tests 里是中文样本数据（B 站标题、简介），不是提示词
+					if (f !== "node_modules" && f !== "test" && f !== "tests") walk(p);
 					continue;
 				}
 				if (!f.endsWith(".mjs")) continue;
