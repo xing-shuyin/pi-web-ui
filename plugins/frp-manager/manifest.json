@@ -1,0 +1,36 @@
+{
+	"id": "frp-manager",
+	"name": "内网穿透",
+	"nameEn": "FRP Manager",
+	"version": "0.1.0",
+	"icon": "🚇",
+	"iconSvg": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.8\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><path d=\"M4 17V7a1 1 0 0 1 1-1h14a1 1 0 0 1 1 1v10\"/><path d=\"M2 17h20\"/><circle cx=\"8.5\" cy=\"17.5\" r=\"1.5\"/><circle cx=\"15.5\" cy=\"17.5\" r=\"1.5\"/><path d=\"M9 6v3M15 6v3\"/></svg>",
+	"description": "frp 内网穿透一站式管理：自动下载 frpc/frps、本机穿透列表增删改查、TOML 可视化配置、启停与日志、本地 frps 联调、远端公网 frps 一键部署脚本。",
+	"descriptionEn": "One-stop frp management: auto-download frpc/frps, local proxy list CRUD, visual TOML config, start/stop/logs, local frps for debugging, one-click remote frps deploy script.",
+	"apiVersion": 2,
+	"permissions": ["ui", "tools", "http"],
+	"view": true,
+	"settings": [
+		{
+			"key": "frpVersion",
+			"type": "text",
+			"label": "frp 版本（留空=最新）",
+			"labelEn": "frp version (empty=latest)",
+			"default": "0.61.1"
+		},
+		{
+			"key": "frpcPath",
+			"type": "text",
+			"label": "frpc 路径（可选，留空自动找）",
+			"labelEn": "frpc path (optional)",
+			"default": ""
+		},
+		{
+			"key": "frpsPath",
+			"type": "text",
+			"label": "frps 路径（可选，留空自动找）",
+			"labelEn": "frps path (optional)",
+			"default": ""
+		}
+	]
+}

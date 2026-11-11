@@ -453,5 +453,16 @@
 		"descriptionEn": "The bottom bar shows only the quota of the provider behind your current model; click it and the host pops a small card right next to it: local Antigravity, Claude Code and Codex logins are read automatically (DeepSeek needs one API key), with remaining percentage, reset countdowns and balance — the refresh button doubles as an auto-refresh progress ring, the data's age is shown live, and one click updates the bar and the card in the same frame. The AI can query it too. Only that provider is queried; other subscriptions are left alone. Credentials stay on this machine; nothing is uploaded or persisted.",
 		"source": "xing-shuyin/pi-web-ui/plugins/quota-watch",
 		"homepage": "https://github.com/xing-shuyin/pi-web-ui/tree/main/plugins/quota-watch"
+	},
+	{
+		"id": "frp-manager",
+		"name": "内网穿透",
+		"nameEn": "FRP Manager",
+		"icon": "🚇",
+		"iconSvg": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.8\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><path d=\"M4 17V7a1 1 0 0 1 1-1h14a1 1 0 0 1 1 1v10\"/><path d=\"M2 17h20\"/><circle cx=\"8.5\" cy=\"17.5\" r=\"1.5\"/><circle cx=\"15.5\" cy=\"17.5\" r=\"1.5\"/><path d=\"M9 6v3M15 6v3\"/></svg>",
+		"description": "frp 内网穿透一站式管理：自动下载 frpc/frps、本机穿透列表增删改查、TOML 可视化配置、启停与日志、本地 frps 联调、远端公网 frps 一键部署脚本。",
+		"descriptionEn": "One-stop frp management: auto-download frpc/frps, local proxy list CRUD, visual TOML config, start/stop/logs, local frps for debugging, one-click remote frps deploy script.",
+		"source": "xing-shuyin/pi-web-ui/plugins/frp-manager",
+		"homepage": "https://github.com/xing-shuyin/pi-web-ui/tree/main/plugins/frp-manager"
 	}
 ]
