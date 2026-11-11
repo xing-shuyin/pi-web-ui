@@ -13519,9 +13519,9 @@
 
 	.thinking {
 		margin: 8px 0;
-		border: 1px solid var(--border-soft);
+		border: 1px solid transparent;
 		border-radius: 8px;
-		background: var(--card-bg, var(--glow-015));
+		background: var(--glow-05);
 	}
 
 	.thinking-icon {
@@ -13718,9 +13718,9 @@
 
 	.toolcall {
 		margin: 8px 0;
-		border: 1px solid var(--border);
+		border: 1px solid transparent;
 		border-radius: 8px;
-		background: var(--card-bg, var(--bg-elev));
+		background: var(--glow-05);
 		overflow: hidden;
 	}
 
@@ -13776,7 +13776,7 @@
 		}
 	}
 	.toolcall.err {
-		border-color: rgba(248, 113, 113, 0.35);
+		background: var(--red-soft);
 	}
 
 	.toolcall-spacer {
