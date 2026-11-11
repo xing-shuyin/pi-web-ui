@@ -81,7 +81,18 @@ Windows 上 `npx` / `npm` / `pnpm` / `yarn` 是 `.cmd` 垫片，直接 `spawn` �
 
 ## CI
 
-GitHub Actions ubuntu-latest（`.github/workflows/ci.yml`，push/PR → main 触发）：`format:check → lint → check:protocol → typecheck → build → build:extension → pack:extension → vitest → test:smoke`。
+GitHub Actions ubuntu-latest（`.github/workflows/ci.yml`，push/PR → main 触发）拆成四个并行 job：
+
+| job           | 内容                                                                                                                            | 说明                                                                                                                  |
+| ------------- | ------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------- |
+| `checks`      | `format:check → lint → check:protocol → i18n:check → typecheck → build → 插件 bundle 未漂移 → build:extension → pack:extension` | 全部秒级步骤，合成一个 job 避免反复装依赖                                                                             |
+| `unit`        | `vitest run --shard=i/4`（i=1..4）                                                                                              | 单测 1047 文件 / 12000+ 条，单机要 6.5 分钟，是整个流程的瓶颈，分片后壁钟降到约 1/4；`fail-fast: false`，一片红不连坐 |
+| `integration` | `npm run test:integration`                                                                                                      | 重型池（真 git / 真子进程 / 真 Hub）本来就是串行跑更稳                                                                |
+| `smoke`       | `node tests/run-smoke.mjs`                                                                                                      | PR 走 `--core`、push main 走全量，逻辑未变                                                                            |
+
+`unit` 与 `integration` 各自跑 `npm run build:server`（`tests/unit/atomic-file-generated.test.ts` 的逐字节比对需要 dist 在场）。`unit` 还要装 mobile 依赖（`npm --prefix mobile ci`）：`mobile-connections` / `mobile-push-controller` / `mobile-app` 三条用例 import `mobile/src/*`，缺 `@capacitor/core`、`@pi-mobile/native-local-engine` 会直接 `Cannot find package`。fork 数不再写死 8：`tests/lib/suite-partition.mjs` 的 `FAST_MAX_WORKERS` 按实际核数收口（`min(8, 核数)`）—— GitHub 的 runner 只有 4 vCPU，8 个 fork 抢 4 个核时并行系数只有 1.66×。
+
+同一分支的新推送会取消上一轮在跑的检查（`concurrency` + `cancel-in-progress`，只在 PR 上生效），连续 push 时不再排队跑过期提交。
 
 冒烟清单（tests/run-smoke.mjs 的 ALL，82 个）只收**自包含、零 token、跨平台**的测试；attach 型（需外部 server）、需真模型、平台相关的脚本不进 CI，本地手动跑（分类见 run-smoke.mjs 头部注释）。
 
