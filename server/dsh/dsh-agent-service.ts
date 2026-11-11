@@ -3038,6 +3038,10 @@ export class DshClientSession {
 		const sbx = this.sandboxes.get(path) ?? this.sandboxes.getByCwd(path);
 		if (sbx) {
 			await this.destroySandbox(sbx.path);
+			// Destroying a sandbox should still remove the project from the
+			// recent list and push the updated list.
+			this.stateStore.removeProject(this.clientId, path);
+			await this.pushProjects();
 			return;
 		}
 		this.stateStore.removeProject(this.clientId, path);

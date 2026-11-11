@@ -13037,6 +13037,12 @@ export class ClientSession {
 		const sbx = this.sandboxes.get(path) ?? this.sandboxes.getByCwd(path);
 		if (sbx) {
 			await this.destroySandbox(sbx.path);
+			// Destroying a sandbox should still remove the project from the
+			// recent list and push the updated list, otherwise the sidebar
+			// entry stays until a manual refresh.
+			this.stateStore.removeProject(this.clientId, path);
+			this.invalidateProjectsCache();
+			await this.pushProjects();
 			return;
 		}
 		this.stateStore.removeProject(this.clientId, path);
