@@ -13,7 +13,16 @@ afterEach(() => {
 function frame(path = "/device/dev/__relay/cap/index.html?token=auth", blocked = true) {
 	const fetch = vi.fn().mockResolvedValue({ ok: true });
 	const location = new URL(path, "http://hub:50001");
-	const target = { location, document: { baseURI: location.href }, fetch, parent: { postMessage: vi.fn() } };
+	const navigator = {};
+	Object.defineProperty(navigator, "serviceWorker", {
+		configurable: true,
+		get: blocked
+			? () => {
+					throw new DOMException("Sandboxed context", "SecurityError");
+				}
+			: () => undefined,
+	});
+	const target = { location, document: { baseURI: location.href }, fetch, parent: { postMessage: vi.fn() }, navigator };
 	for (const name of ["localStorage", "sessionStorage"]) {
 		Object.defineProperty(target, name, {
 			configurable: true,
@@ -66,6 +75,14 @@ describe("opaque portal environment", () => {
 		expect(storage.key(0)).toBe("b");
 		storage.clear();
 		expect(storage.length).toBe(0);
+	});
+
+	it("degrades a throwing serviceWorker getter instead of failing the portal boot", () => {
+		const { target } = frame();
+		expect(() => target.navigator.serviceWorker).toThrow();
+		expect(installPortalEnvironment(target)).toBe(true);
+		expect(() => target.navigator.serviceWorker).not.toThrow();
+		expect(target.navigator.serviceWorker).toBeUndefined();
 	});
 
 	it("replaces throwing getters before existing storage consumers run, with isolated stores", () => {

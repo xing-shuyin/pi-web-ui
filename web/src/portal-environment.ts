@@ -56,6 +56,21 @@ export function installPortalEnvironment(target: Window): boolean {
 	}
 	if (!opaque) return false;
 
+	// Sandboxed portals (CSP `sandbox` without `allow-same-origin`) throw a SecurityError
+	// on any read of navigator.serviceWorker. Notification code reads it while mounting,
+	// so an unguarded read rejects the render and trips the root error boundary instead of
+	// degrading to in-page notifications. Expose it as undefined so optional chaining works.
+	try {
+		void target.navigator.serviceWorker;
+	} catch {
+		try {
+			Object.defineProperty(target.navigator, "serviceWorker", {
+				configurable: true,
+				get: () => undefined,
+			});
+		} catch {}
+	}
+
 	const originalFetch = target.fetch;
 	target.fetch = (input, init) => {
 		const href = typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
