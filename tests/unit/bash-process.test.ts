@@ -130,6 +130,9 @@ describe("native bash lifecycle (#794)", () => {
 });
 
 describe("SDK compatibility patch", () => {
+	// 这条「新进程里打补丁」的用例，成本全在起 node + `--import tsx` 现场编译 TS，不在断言本身：
+	// 本机约 3s，GitHub runner 实测 6.7–8.2s 波动。原来 execFile 只给 8s、用例 10s，等于把 runner
+	// 快慢当成了断言，慢机就会把 main 偶发判红（断言一条没改，只是给启动成本留够余量）。
 	it("patches the known upstream lifecycle and leaves surrounding shell setup intact", () => {
 		const original = `import { waitForChildProcess } from "../../utils/child-process.js";
 export async function createLocalShellOperations() {
@@ -180,13 +183,13 @@ for(const mode of ['timeout','abort']) {
 		const result = await promisify(execFile)(
 			process.execPath,
 			["--import", "tsx", "--import", "./server/resolve-global-sdk.ts", "--input-type=module", "-e", code],
-			{ cwd: process.cwd(), timeout: 8000, env: { ...process.env, PI_WEB_SDK: "bundled" } },
+			{ cwd: process.cwd(), timeout: 20_000, env: { ...process.env, PI_WEB_SDK: "bundled" } },
 		);
 		expect(result.stdout).toContain("exit=1");
 		expect(result.stdout).toContain("timeout=ok");
 		expect(result.stdout).toContain("abort=ok");
 		expect(readFileSync(file, "utf8")).toBe(before);
-	}, 10000);
+	}, 30_000);
 
 	it("is applied to the resolved SDK and is idempotent", () => {
 		const entry = fileURLToPath(import.meta.resolve("@earendil-works/pi-coding-agent"));

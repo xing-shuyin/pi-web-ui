@@ -1,6 +1,8 @@
 import {
 	createBashToolDefinition,
 	createLocalBashOperations,
+	getAgentDir,
+	SettingsManager,
 	type ToolDefinition,
 } from "@earendil-works/pi-coding-agent";
 import { pick, type ServerLang } from "./i18n.js";
@@ -14,6 +16,20 @@ import {
 	restoreWorkspaceUriFromSessionDir,
 } from "./remote-ssh-service.js";
 
+/**
+ * pi CLI 的 bash 工具按 settings.json 的 `shellPath` 选解释器；这里以前直接
+ * `createLocalBashOperations()`，等于把这步丢了 —— Windows 上 Git 装在非默认路径的用户只有
+ * shellPath 这一条路，落地表现就是每次 bash 都 "No bash shell found"（issue #866）。
+ * 按 CLI 同一来源解析：全局 settings.json + 项目 .pi/settings.json；读不出来就交回 SDK 默认探测。
+ */
+function resolveShellPath(cwd: string): string | undefined {
+	try {
+		return SettingsManager.create(cwd, getAgentDir()).getShellPath();
+	} catch {
+		return undefined;
+	}
+}
+
 export function makeKillableBashTool(
 	cwd: string,
 	kills: Set<AbortController>,
@@ -21,7 +37,8 @@ export function makeKillableBashTool(
 	jobs?: JobRegistry,
 	origin?: () => string | undefined,
 ): ToolDefinition {
-	const base = createLocalBashOperations();
+	// shellPath 必须透传：不传时 SDK 只认 %ProgramFiles%\Git 和 PATH，配置被静默吞掉。
+	const base = createLocalBashOperations({ shellPath: resolveShellPath(cwd) });
 	const tool = createBashToolDefinition(cwd, {
 		operations: {
 			exec: async (command, c, opts) => {

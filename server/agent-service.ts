@@ -219,6 +219,38 @@ import {
 	parentConversationIdentity,
 } from "./conversation-identity.js";
 
+/**
+ * 会话文件 header 里的真实 cwd（跨机器 workspace URI 会先还原成本地路径）。
+ * 读不到时回落到 fallback —— 不能让一句读盘失败把置顶弄丢。
+ */
+export async function sessionOwnerCwd(sessionFile: string, fallback: string): Promise<string> {
+	try {
+		const headerCwd = restoreWorkspaceUriFromSessionDir((await readCwdFromSessionHeader(resolve(sessionFile))) ?? "");
+		return headerCwd || fallback;
+	} catch {
+		return fallback;
+	}
+}
+
+/**
+ * 过滤掉不属于当前 cwd 的置顶路径。
+ * 历史脏数据（在 A 视图下钉了 B 的会话）就靠这一层拦住，不必要求用户手工清理
+ * `client-state.json`。归属读不出来的路径保留原行为，宁多勿丢。
+ */
+export async function pinnedPathsOwnedBy(paths: string[], cwd: string): Promise<string[]> {
+	const owner = normalizePathKey(cwd);
+	const kept: string[] = [];
+	for (const path of paths) {
+		try {
+			const headerCwd = restoreWorkspaceUriFromSessionDir((await readCwdFromSessionHeader(resolve(path))) ?? "");
+			if (!headerCwd || normalizePathKey(headerCwd) === owner) kept.push(path);
+		} catch {
+			kept.push(path);
+		}
+	}
+	return kept;
+}
+
 const communicationAddress = conversationIdentity;
 import {
 	answersFromMessage,
@@ -4124,7 +4156,7 @@ export class ClientSession {
 			conv.listed = true;
 		}
 
-		const pinnedPaths = botExecution ? [] : (cs.stateStore?.getPinnedSessions(cwd) ?? []);
+		const pinnedPaths = botExecution ? [] : await pinnedPathsOwnedBy(cs.stateStore?.getPinnedSessions(cwd) ?? [], cwd);
 		const maxOpenConversations = getMaxOpenConversations();
 		for (const p of pinnedPaths) {
 			if (cs.convs.size >= maxOpenConversations) break;
@@ -13623,7 +13655,10 @@ export class ClientSession {
 
 	async pinSession(path: string, pinned: boolean): Promise<void> {
 		const targetPath = resolve(path);
-		this.stateStore?.setSessionPinned(this.cwd, targetPath, pinned);
+		// 置顶归属按会话自身 header 的 cwd 记账：在 A 项目里给 B 项目的会话点钉住，
+		// 记录必须落在 B 名下，否则刷新后它会被当成 A 的置顶会话预打开（跨项目串台）。
+		const pinCwd = await sessionOwnerCwd(targetPath, this.cwd);
+		this.stateStore?.setSessionPinned(pinCwd, targetPath, pinned);
 
 		for (const conv of this.convs.values()) {
 			if (conv.session.sessionFile && resolve(conv.session.sessionFile) === targetPath) {

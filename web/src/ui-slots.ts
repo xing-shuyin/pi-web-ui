@@ -1310,7 +1310,14 @@ export const PLUGIN_VIEW_ITEM_ID = "__view";
 
 export const REQUIRED_TOPBAR_ITEM_IDS: ReadonlySet<string> = new Set(["host:settings", "host:history", "host:files"]);
 
-export const HIDDEN_FROM_LAYOUT_ITEM_IDS: ReadonlySet<string> = new Set(["host:history", "host:files"]);
+export const HIDDEN_FROM_LAYOUT_ITEM_IDS: ReadonlySet<string> = new Set([
+	"host:history",
+	"host:files",
+	// 左栏「运行的对话 / 历史」两个分区自左栏改版后已并入「最近项目」树（LeftPanel 的 sectionNodes
+	// 里 convs / sessions 恒为 null），布局页再给它们开关只会让用户以为能控制，故不再展示。
+	"host:lp-running",
+	"host:lp-history",
+]);
 
 export function pluginViewItemId(pluginId: string): string {
 	return `${pluginId}:${PLUGIN_VIEW_ITEM_ID}`;

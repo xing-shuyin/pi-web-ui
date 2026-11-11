@@ -433,6 +433,21 @@ describe("LeftPanel P2：分区顺序 / 显隐 / 分隔条 / 行内槽位拆分"
 		expect(sectionOrder(container)).toEqual(["projects", "groups"]);
 	});
 
+	it("隐藏群组分区后不再渲染「群组」tab（tab 与布局开关不再脱节）", () => {
+		setAppGlobals({ cwd: "/test", ready: true, status: "open", workspaceRoots: [] });
+		const { container } = mountLeftPanel({
+			projects: oneProject,
+			conversations: runningConv,
+			uiSections: [
+				hostSection("host:lp-projects"),
+				hostSection("host:lp-groups", true),
+				hostSection("host:lp-running"),
+				hostSection("host:lp-history"),
+			],
+		});
+		expect(Array.from(container.querySelectorAll(".lp-conv-tab")).length).toBe(1);
+	});
+
 	it("会话行使用自己的行内槽位；leftpanel.sessions 在会话行中渲染", () => {
 		setAppGlobals({ cwd: "/test", ready: true, status: "open", workspaceRoots: [] });
 		const mk = (slot: string, id: string) => ({
