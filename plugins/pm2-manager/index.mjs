@@ -39,6 +39,31 @@ export function pm2EntryCandidates({ execPath, env = {} } = {}) {
 }
 
 export const INSTALL_COMMAND = "npm i -g pm2";
+export const UNINSTALL_COMMAND = "npm uninstall -g pm2";
+
+/**
+ * 拼出 `pm2 start` 的 argv（纯函数，可单测）。
+ * @param {{ name?: string, script?: string, args?: string[], cwd?: string, interpreter?: string }} [opts]
+ * @returns {{ argv: string[], appName: string } | { error: string }}
+ */
+export function buildPm2StartArgv({ name = "", script = "", args = [], cwd = "", interpreter = "" } = {}) {
+	const entry = String(script ?? "").trim();
+	if (!entry) return { error: "action=start 需要 script 参数（入口文件或可执行名，如 server.js / npm）。" };
+	const appName =
+		String(name ?? "").trim() ||
+		entry
+			.replace(/[\\/]+$/, "")
+			.split(/[\\/]/)
+			.pop()
+			?.replace(/\.[^.]+$/, "") ||
+		"app";
+	const argv = ["start", entry, "--name", appName];
+	if (String(interpreter ?? "").trim()) argv.push("--interpreter", String(interpreter).trim());
+	if (String(cwd ?? "").trim()) argv.push("--cwd", String(cwd).trim());
+	const extra = Array.isArray(args) ? args.map(String).filter((s) => s !== "") : [];
+	if (extra.length) argv.push("--", ...extra);
+	return { argv, appName };
+}
 
 const ANSI_RE = /\u001B\[[0-9;]*[A-Za-z]/g;
 
@@ -286,6 +311,31 @@ export default {
 			return { ok: true, output: clip(out || `pm2 ${st.pm2.version} 已安装`), error: "" };
 		}
 
+		async function uninstallPm2() {
+			// 先停掉 pm2 守护进程（best-effort：没装/没启动时忽略失败），再卸载全局包。
+			try {
+				if (st.pm2.installed) await pm2(["kill"]);
+			} catch {}
+			const npmCli = resolveNpmCli();
+			if (!npmCli) return { ok: false, output: "", error: "找不到 npm CLI，请手动执行：" + UNINSTALL_COMMAND };
+			const r = await run(process.execPath, [npmCli, "uninstall", "-g", "pm2"], {
+				timeoutMs: INSTALL_TIMEOUT_MS,
+			});
+			const out = stripAnsi(`${r.stdout}\n${r.stderr}`).trim();
+			lastNegativeAt = 0;
+			st.pm2 = { installed: false, bin: "", version: "", error: "" };
+			await detectPm2();
+			if (st.pm2.installed) {
+				return {
+					ok: false,
+					output: clip(out),
+					error: `卸载后仍能找到 pm2（${st.pm2.bin}），请手动执行：${UNINSTALL_COMMAND}`,
+				};
+			}
+			st.apps = [];
+			return { ok: true, output: clip(out || "pm2 已卸载"), error: "" };
+		}
+
 		let lastRefreshAt = 0;
 		const REFRESH_CACHE_TTL_MS = 2500;
 
@@ -304,8 +354,8 @@ export default {
 			label: "pm2 进程管家",
 			description:
 				"Run and supervise long-lived processes with pm2: list status, start a service under a name, " +
-				"stop/restart/delete it, read its logs, or install pm2 when missing. One pm2 record per process " +
-				"keeps every instance visible and stoppable after the shell exits.",
+				"stop/restart/delete it, read its logs, install pm2 when missing or uninstall it when unused. " +
+				"One pm2 record per process keeps every instance visible and stoppable after the shell exits.",
 			promptSnippet: "supervise long-lived services and background tasks",
 			promptGuidelines: [
 				"Use action=start for every background or long-lived process (dev server, watcher, debug instance); never detach one with nohup, a trailing &, Windows start, Start-Process or a detached spawn",
@@ -317,7 +367,7 @@ export default {
 				properties: {
 					action: {
 						type: "string",
-						enum: ["list", "start", "stop", "restart", "delete", "logs", "describe", "install", "version"],
+						enum: ["list", "start", "stop", "restart", "delete", "logs", "describe", "install", "uninstall", "version"],
 						description: "The pm2 action to perform.",
 					},
 					name: {
@@ -362,23 +412,21 @@ export default {
 					if (!apps.length) return "pm2 当前没有托管任何应用。";
 					return apps.map((a) => formatAppLine(a)).join("\n");
 				}
+				if (action === "uninstall") {
+					const r = await uninstallPm2();
+					await refreshApps(true);
+					return r.ok ? `pm2 已卸载。\n${clip(r.output, 1200)}` : `卸载失败：${r.error}\n${clip(r.output, 1200)}`;
+				}
 				if (action === "start") {
-					const script = typeof p.script === "string" ? p.script.trim() : "";
-					if (!script) return "action=start 需要 script 参数（入口文件或可执行名，如 server.js / npm）。";
-					const appName =
-						name ||
-						script
-							.replace(/[\\/]+$/, "")
-							.split(/[\\/]/)
-							.pop()
-							?.replace(/\.[^.]+$/, "") ||
-						"app";
-					const argv = ["start", script, "--name", appName];
-					if (typeof p.interpreter === "string" && p.interpreter.trim())
-						argv.push("--interpreter", p.interpreter.trim());
-					if (typeof p.cwd === "string" && p.cwd.trim()) argv.push("--cwd", p.cwd.trim());
-					const extra = Array.isArray(p.args) ? p.args.map(String).filter((s) => s !== "") : [];
-					if (extra.length) argv.push("--", ...extra);
+					const built = buildPm2StartArgv({
+						name,
+						script: typeof p.script === "string" ? p.script : "",
+						args: Array.isArray(p.args) ? p.args : [],
+						cwd: typeof p.cwd === "string" ? p.cwd : "",
+						interpreter: typeof p.interpreter === "string" ? p.interpreter : "",
+					});
+					if ("error" in built) return built.error;
+					const { argv, appName } = built;
 					const r = await pm2(argv);
 					await refreshApps(true);
 					return r.ok
@@ -405,7 +453,7 @@ export default {
 					await refreshApps(true);
 					return r.ok ? `已 ${action} ${name}：\n${clip(r.output, 800)}` : `操作失败：${r.error || r.output}`;
 				}
-				return `未知 action：${action || "(空)"}。可用：list/start/stop/restart/delete/logs/describe/install/version。`;
+				return `未知 action：${action || "(空)"}。可用：list/start/stop/restart/delete/logs/describe/install/uninstall/version。`;
 			},
 		});
 
@@ -419,6 +467,7 @@ export default {
 				bin: st.pm2.bin,
 				error: st.pm2.error,
 				installCommand: INSTALL_COMMAND,
+				uninstallCommand: UNINSTALL_COMMAND,
 				apps: st.apps,
 				platform: process.platform,
 			};
@@ -432,18 +481,53 @@ export default {
 				.then((payload) => res.json(payload))
 				.catch((err) => res.json({ ok: false, error: String(err?.message ?? err) }));
 		});
+		const offUninstall = host.route("POST", "/uninstall", (_req, res) => {
+			void uninstallPm2()
+				.then(() => statusPayload(true))
+				.then((payload) => res.json(payload))
+				.catch((err) => res.json({ ok: false, error: String(err?.message ?? err) }));
+		});
 		const offAction = host.route("POST", "/action", (req, res) => {
 			const body = req.body && typeof req.body === "object" ? req.body : {};
 			const action = String(body.action ?? "");
 			const name = String(body.name ?? "");
-			const argv = ["logs", "describe"].includes(action)
-				? [
-						action,
-						name,
-						...(action === "logs" ? ["--nostream", "--lines", String(Math.min(500, Number(body.lines) || 60))] : []),
-					]
-				: [action, name];
-			if (!["stop", "restart", "delete", "logs", "describe"].includes(action) || !name) {
+			let argv;
+			if (action === "logs" || action === "describe") {
+				if (!name) {
+					res.json({ ok: false, error: "非法操作" });
+					return;
+				}
+				argv =
+					action === "logs"
+						? [action, name, "--nostream", "--lines", String(Math.min(500, Number(body.lines) || 60))]
+						: [action, name];
+			} else if (action === "start") {
+				const built = buildPm2StartArgv({
+					name,
+					script: typeof body.script === "string" ? body.script : "",
+					args: Array.isArray(body.args)
+						? body.args
+						: typeof body.args === "string"
+							? body.args.split(/\s+/).filter(Boolean)
+							: [],
+					cwd: typeof body.cwd === "string" ? body.cwd : "",
+					interpreter: typeof body.interpreter === "string" ? body.interpreter : "",
+				});
+				if ("error" in built) {
+					res.json({ ok: false, error: built.error });
+					return;
+				}
+				argv = built.argv;
+			} else {
+				argv = [action, name];
+			}
+			const needName = ["stop", "restart", "delete", "logs", "describe"].includes(action);
+			const missingScript = action === "start" && !String(body.script ?? "").trim();
+			if (
+				!["stop", "restart", "delete", "logs", "describe", "start"].includes(action) ||
+				(needName && !name) ||
+				missingScript
+			) {
 				res.json({ ok: false, error: "非法操作" });
 				return;
 			}
@@ -463,7 +547,7 @@ export default {
 		})();
 
 		return () => {
-			for (const off of [offTool, offStatus, offInstall, offAction]) {
+			for (const off of [offTool, offStatus, offInstall, offUninstall, offAction]) {
 				try {
 					off?.();
 				} catch {}

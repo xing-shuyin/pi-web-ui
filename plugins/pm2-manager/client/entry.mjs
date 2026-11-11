@@ -33,6 +33,24 @@ const TEXT = {
 		logsEmpty: "（无输出）",
 		platform: "平台",
 		busy: "执行中…",
+		startToggle: "启动新应用",
+		startTitle: "安装到 pm2：一行起一个后台服务",
+		appName: "应用名（可选，默认取文件名）",
+		script: "启动入口（必填，如 server.js / npm / python）",
+		cwd: "工作目录（可选）",
+		args: "附加参数（可选，空格分隔，如 run dev）",
+		startBtn: "启动并托管",
+		starting: "正在启动…",
+		startNeedScript: "请先填启动入口（script），如 server.js。",
+		startHint: "等价于 pm2 start <入口> --name <应用名>，起好后出现在上表，可停可删可看日志。",
+		uninstall: "卸载 pm2",
+		uninstalling: "正在卸载…",
+		uninstallAsk: "确认卸载 pm2 本体？会先停掉所有托管应用（pm2 kill），再执行 npm uninstall -g pm2。",
+		uninstallYes: "确认卸载",
+		uninstallCancel: "取消",
+		uninstallHint: "不用 pm2 了点这里：删守护进程 + 卸全局包。删单个应用点表里的“删除”。",
+		cancel: "取消",
+		notice: "提示",
 	},
 	en: {
 		title: "Process Manager",
@@ -59,6 +77,25 @@ const TEXT = {
 		logsEmpty: "(no output)",
 		platform: "Platform",
 		busy: "working…",
+		startToggle: "Start a new app",
+		startTitle: "Install into pm2: one line starts one background service",
+		appName: "App name (optional, defaults to file name)",
+		script: "Entry (required, e.g. server.js / npm / python)",
+		cwd: "Working directory (optional)",
+		args: "Extra args (optional, space-separated, e.g. run dev)",
+		startBtn: "Start & supervise",
+		starting: "Starting…",
+		startNeedScript: "Please fill in the entry (script) first, e.g. server.js.",
+		startHint: "Same as pm2 start <entry> --name <app>; it shows up in the table above once started.",
+		uninstall: "Uninstall pm2",
+		uninstalling: "Uninstalling…",
+		uninstallAsk:
+			"Uninstall pm2 itself? This stops every supervised app first (pm2 kill), then runs npm uninstall -g pm2.",
+		uninstallYes: "Yes, uninstall",
+		uninstallCancel: "Cancel",
+		uninstallHint: "Done with pm2? This removes the daemon + global package. To drop one app use Delete in the table.",
+		cancel: "Cancel",
+		notice: "Notice",
 	},
 };
 
@@ -121,6 +158,19 @@ function ensureStyles() {
 .pm2m-tag.online{color:var(--green);border-color:var(--green-soft)}
 .pm2m-tag.stopped,.pm2m-tag.errored,.pm2m-tag.launching{color:var(--amber);border-color:rgba(251,191,36,.35)}
 .pm2m-tag.offline{color:var(--text-faint)}
+.pm2m-start{flex:none;border:1px solid var(--border-soft);border-radius:9px;padding:7px 10px}
+.pm2m-start summary{cursor:pointer;color:var(--text-dim);font-size:12px}
+.pm2m-form{display:grid;grid-template-columns:1fr 1fr;gap:7px;margin-top:8px}
+.pm2m-form .wide{grid-column:1/-1}
+.pm2m-input{width:100%;box-sizing:border-box;background:var(--bg-elev2);border:1px solid var(--border);
+ border-radius:7px;padding:5px 8px;font-size:12px;color:var(--text);font-family:inherit}
+.pm2m-input::placeholder{color:var(--text-faint)}
+.pm2m-row{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-top:8px}
+.pm2m-hint{color:var(--text-faint);font-size:11.5px}
+.pm2m-foot{display:flex;align-items:center;gap:8px;flex-wrap:wrap;flex:none;
+ border-top:1px dashed var(--border-soft);padding-top:8px}
+.pm2m-notice{flex:none;padding:7px 10px;border:1px solid var(--border);border-radius:9px;
+ background:var(--bg-elev2);white-space:pre-wrap;word-break:break-word;overflow-wrap:anywhere}
 `;
 	document.head.appendChild(style);
 }
@@ -149,6 +199,13 @@ function createApp(container) {
 	let logsFor = "";
 	let logsText = "";
 	let busy = false;
+	// 安装（启动新应用）表单与卸载二次确认都只活在闭包里：
+	// 3 秒轮询的 render() 会重建 innerHTML，表单打开期间 refresh() 只同步数据不重绘，
+	// 避免用户打字打到一半被轮询清空。
+	let showStart = false;
+	let draft = { name: "", script: "", cwd: "", args: "" };
+	let confirmUninstall = false;
+	let notice = "";
 	let timer = null;
 	let destroyed = false;
 
@@ -211,10 +268,38 @@ function createApp(container) {
 			}
 			parts.push("</tbody></table>");
 		}
+		if (state.loaded && state.installed) {
+			parts.push(`<details class="pm2m-start" ${showStart ? "open" : ""}>
+				<summary data-act="toggle-start" data-noop="1">➕ ${esc(t("startToggle"))} — ${esc(t("startTitle"))}</summary>
+				<div class="pm2m-form">
+					<input class="pm2m-input" data-field="name" placeholder="${esc(t("appName"))}" value="${esc(draft.name)}">
+					<input class="pm2m-input" data-field="script" placeholder="${esc(t("script"))}" value="${esc(draft.script)}">
+					<input class="pm2m-input" data-field="cwd" placeholder="${esc(t("cwd"))}" value="${esc(draft.cwd)}">
+					<input class="pm2m-input" data-field="args" placeholder="${esc(t("args"))}" value="${esc(draft.args)}">
+				</div>
+				<div class="pm2m-row">
+					<button class="pm2m-btn primary" data-act="start-new" ${busy ? "disabled" : ""}>${esc(busy ? t("starting") : t("startBtn"))}</button>
+					<span class="pm2m-hint">${esc(t("startHint"))}</span>
+				</div>
+			</details>`);
+			if (confirmUninstall) {
+				parts.push(`<div class="pm2m-foot">
+					<span>${esc(t("uninstallAsk"))}</span>
+					<button class="pm2m-btn danger" data-act="uninstall-yes" ${busy ? "disabled" : ""}>${esc(busy ? t("uninstalling") : t("uninstallYes"))}</button>
+					<button class="pm2m-btn" data-act="uninstall-no">${esc(t("uninstallCancel"))}</button>
+				</div>`);
+			} else {
+				parts.push(`<div class="pm2m-foot">
+					<button class="pm2m-btn danger" data-act="uninstall" ${busy ? "disabled" : ""}>${esc(t("uninstall"))}</button>
+					<span class="pm2m-hint">${esc(t("uninstallHint"))}</span>
+				</div>`);
+			}
+		}
 		if (logsFor) {
 			parts.push(`<div class="pm2m-sec">${esc(t("logs"))}: ${esc(logsFor)}</div>`);
 			parts.push(`<div class="pm2m-logs">${esc(logsText || t("logsEmpty"))}</div>`);
 		}
+		if (notice) parts.push(`<div class="pm2m-notice">${esc(notice)}</div>`);
 		if (state.error) parts.push(`<div class="pm2m-empty">${esc(state.error)}</div>`);
 		root.innerHTML = parts.join("");
 	}
@@ -234,7 +319,8 @@ function createApp(container) {
 		} catch (err) {
 			state = { ...state, error: String(err?.message ?? err) };
 		}
-		render();
+		// 启动表单打开时只同步数据不重绘：render() 重建 innerHTML 会吃掉正在输入的内容。
+		if (!showStart) render();
 	}
 
 	async function act(kind, data = {}) {
@@ -260,6 +346,21 @@ function createApp(container) {
 				logsFor = "";
 				logsText = "";
 			}
+			if (out && typeof out === "object" && out.ok === false && out.error) {
+				notice = "";
+			} else if (kind === "action" && data.action === "start") {
+				notice = String(out.output ?? "").slice(0, 800);
+				draft = { name: "", script: "", cwd: "", args: "" };
+				showStart = false;
+			} else if (kind === "uninstall") {
+				notice = "";
+				logsFor = "";
+				logsText = "";
+				showStart = false;
+				confirmUninstall = false;
+			} else if (kind === "install") {
+				notice = "";
+			}
 		} catch (err) {
 			state = { ...state, error: String(err?.message ?? err) };
 		}
@@ -268,20 +369,72 @@ function createApp(container) {
 	}
 
 	const onClick = (ev) => {
-		const btn = ev.target?.closest?.("button[data-act]");
-		if (!btn) return;
-		const kind = btn.getAttribute("data-act");
+		const el = ev.target?.closest?.("[data-act]");
+		if (!el || !root.contains(el)) return;
+		const kind = el.getAttribute("data-act");
+		if (kind === "toggle-start") {
+			// 拦住 <summary> 的原生展开/收起，由 showStart 单源控制，避免两者打架。
+			ev.preventDefault?.();
+			showStart = !showStart;
+			if (showStart) notice = "";
+			render();
+			return;
+		}
+		if (el.tagName !== "BUTTON") return;
 		if (kind === "refresh") {
-			void refresh();
+			void refresh().then(() => render());
 			return;
 		}
 		if (kind === "install") {
 			void act("install");
 			return;
 		}
-		void act("action", { action: kind, name: btn.getAttribute("data-name") ?? "", lines: 80 });
+		if (kind === "uninstall") {
+			confirmUninstall = true;
+			render();
+			return;
+		}
+		if (kind === "uninstall-no") {
+			confirmUninstall = false;
+			render();
+			return;
+		}
+		if (kind === "uninstall-yes") {
+			void act("uninstall");
+			return;
+		}
+		if (kind === "start-new") {
+			syncDraftFromDom();
+			if (!draft.script.trim()) {
+				state = { ...state, error: t("startNeedScript") };
+				render();
+				return;
+			}
+			void act("action", {
+				action: "start",
+				name: draft.name.trim(),
+				script: draft.script.trim(),
+				cwd: draft.cwd.trim(),
+				args: draft.args.trim(),
+			});
+			return;
+		}
+		void act("action", { action: kind, name: el.getAttribute("data-name") ?? "", lines: 80 });
+	};
+	function syncDraftFromDom() {
+		for (const input of root.querySelectorAll("input[data-field]")) {
+			const k = input.getAttribute("data-field");
+			if (k && k in draft) draft[k] = input.value;
+		}
+	}
+	const onInput = (ev) => {
+		const input = ev.target?.closest?.("input[data-field]");
+		if (!input || !root.contains(input)) return;
+		const k = input.getAttribute("data-field");
+		if (k && k in draft) draft[k] = input.value;
 	};
 	root.addEventListener("click", onClick);
+	root.addEventListener("input", onInput);
 
 	return {
 		start() {
@@ -294,6 +447,7 @@ function createApp(container) {
 			if (timer) clearInterval(timer);
 			timer = null;
 			root.removeEventListener("click", onClick);
+			root.removeEventListener("input", onInput);
 			root.remove();
 		},
 	};

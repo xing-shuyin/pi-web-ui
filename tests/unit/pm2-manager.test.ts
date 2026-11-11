@@ -5,6 +5,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { createMockHost } from "../../plugin-sdk/index.mjs";
 import { parseUiContributions } from "../../server/plugins.js";
 import pm2Plugin, {
+	buildPm2StartArgv,
 	formatAppLine,
 	formatAppStatus,
 	formatBytes,
@@ -13,6 +14,8 @@ import pm2Plugin, {
 	parsePm2ListOutput,
 	pm2EntryCandidates,
 	stripAnsi,
+	INSTALL_COMMAND,
+	UNINSTALL_COMMAND,
 } from "../../plugins/pm2-manager/index.mjs";
 
 const pluginDir = join(dirname(fileURLToPath(import.meta.url)), "..", "..", "plugins", "pm2-manager");
@@ -129,6 +132,26 @@ describe("pm2-manager pm2 入口候选与 jlist", () => {
 	});
 });
 
+describe("pm2-manager 安装/管理/卸载一体", () => {
+	it("安装与卸载命令常量分开：装走 i、卸走 uninstall", () => {
+		expect(INSTALL_COMMAND).toBe("npm i -g pm2");
+		expect(UNINSTALL_COMMAND).toBe("npm uninstall -g pm2");
+		expect(UNINSTALL_COMMAND).not.toBe(INSTALL_COMMAND);
+	});
+
+	it("buildPm2StartArgv：拼出 pm2 start 参数，缺 script 时报错", () => {
+		const ok = buildPm2StartArgv({ script: "server.js", args: ["--port", "8788"], cwd: "/srv" });
+		if (!("argv" in ok)) throw new Error("expected argv");
+		expect(ok.appName).toBe("server");
+		expect(ok.argv).toEqual(["start", "server.js", "--name", "server", "--cwd", "/srv", "--", "--port", "8788"]);
+		const named = buildPm2StartArgv({ name: "api", script: "npm", args: ["run", "dev"] });
+		if (!("argv" in named)) throw new Error("expected argv");
+		expect(named.argv).toEqual(["start", "npm", "--name", "api", "--", "run", "dev"]);
+		const miss = buildPm2StartArgv({ name: "api", script: "  " });
+		expect("error" in miss && miss.error).toBeTruthy();
+	});
+});
+
 describe("pm2-manager activate", () => {
 	function activate(settings: Record<string, unknown> = {}) {
 		const host = createMockHost({ settings });
@@ -152,6 +175,7 @@ describe("pm2-manager activate", () => {
 			expect(/[\u4e00-\u9fff]/.test(g)).toBe(false);
 		}
 		expect(tool.parameters.properties.action.enum).toContain("start");
+		expect(tool.parameters.properties.action.enum).toContain("uninstall");
 	});
 
 	it("不接管 bash：不订阅 onToolPre / onToolPost（也不注册后台任务）", () => {
@@ -161,12 +185,12 @@ describe("pm2-manager activate", () => {
 		expect((host.mock.handlers as Record<string, unknown[]>)["onToolPost"] ?? []).toHaveLength(0);
 	});
 
-	it("挂上三个 HTTP 路由（遗留实例扫描已交给宿主面板，不再自带）", () => {
+	it("挂上四个 HTTP 路由：安装/管理/卸载一体（/uninstall 新增，/action 支持 start）", () => {
 		const host = activate();
 		const keys = (host.mock.routes as Array<{ method: string; path: string }>)
 			.map((r) => `${r.method} ${r.path}`)
 			.sort();
-		expect(keys).toEqual(["GET /status", "POST /action", "POST /install"]);
+		expect(keys).toEqual(["GET /status", "POST /action", "POST /install", "POST /uninstall"]);
 	});
 
 	it("停用后注销工具与路由（不留悬挂项）", () => {
@@ -176,6 +200,56 @@ describe("pm2-manager activate", () => {
 		deactivate?.();
 		expect(host.mock.agentTools).toHaveLength(0);
 		expect(host.mock.routes).toHaveLength(0);
+	});
+});
+
+describe("pm2-manager /action start", () => {
+	it("无名 start 按文件名自动命名，不报非法操作（缺 pm2 时回 pm2 缺失而非拦截）", async () => {
+		vi.resetModules();
+		vi.doMock("node:child_process", () => ({
+			execFile: (
+				_cmd: string,
+				_args: string[],
+				_opts: unknown,
+				cb: (e: Error | null, stdout: string, stderr: string) => void,
+			) => {
+				setImmediate(() => cb(new Error("no pm2 in test"), "", ""));
+			},
+		}));
+		try {
+			const { createMockHost: freshHost } = await import("../../plugin-sdk/index.mjs");
+			const plugin = (await import("../../plugins/pm2-manager/index.mjs")).default;
+			const host = freshHost({ settings: {} });
+			const deactivate = plugin.activate(host as any);
+			try {
+				const route = (host.mock.routes as Array<{ method: string; path: string; handler: any }>).find(
+					(r) => r.method === "POST" && r.path === "/action",
+				);
+				expect(route).toBeDefined();
+				const payload = await new Promise<Record<string, unknown>>((resolve) => {
+					route!.handler(
+						{ body: { action: "start", name: "", script: "server.js", cwd: "", args: "" } },
+						{ json: (p: Record<string, unknown>) => resolve(p) },
+					);
+				});
+				// 空名字是合法的（buildPm2StartArgv 会取文件名）：守卫只拦缺 script。
+				expect(payload.error).not.toBe("非法操作");
+				const bad = await new Promise<Record<string, unknown>>((resolve) => {
+					route!.handler(
+						{ body: { action: "start", name: "", script: "   ", cwd: "", args: "" } },
+						{ json: (p: Record<string, unknown>) => resolve(p) },
+					);
+				});
+				// 空 script 被 buildPm2StartArgv 的具体提示拦下（同样 ok:false，不会走到 pm2）。
+				expect(bad.ok).toBe(false);
+				expect(String(bad.error)).toContain("script");
+			} finally {
+				deactivate?.();
+			}
+		} finally {
+			vi.doUnmock("node:child_process");
+			vi.resetModules();
+		}
 	});
 });
 

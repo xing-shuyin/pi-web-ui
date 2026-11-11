@@ -1,8 +1,9 @@
 # pm2-manager · 进程管家
 
-用 **pm2** 统一托管 AI 启动的后台任务。装了这个插件，AI 起的长期服务/调试实例有一个统一去处：
-pm2 —— 于是**有名字、有状态、有日志、能单独停**，宿主顶栏「后台任务」面板与插件面板
-看到的是同一份列表。
+pm2 **安装 / 管理 / 卸载一体**：没装 pm2 时面板一键安装；装好后面板直接起新应用
+（安装到 pm2），应用表看状态/日志、做停止/重启/删除；不用 pm2 时一键卸载本体。
+AI 起的长期服务/调试实例有一个统一去处：pm2 —— 于是**有名字、有状态、有日志、
+能单独停**，宿主顶栏「后台任务」面板与插件面板看到的是同一份列表。
 
 > 现场问题：AI 调试时后台起一堆实例（本机实测一次遗留 12 个 `dist/server/index.js`，
 > CPU 打满），既不在任何列表里也停不干净。这个插件提供治它的工具与面板。
@@ -13,10 +14,10 @@ pm2 —— 于是**有名字、有状态、有日志、能单独停**，宿主�
 
 ## 它做了两件事
 
-| #   | 做什么         | 怎么做的                                                                                                                                                                                                                                                                                                                   |
-| --- | -------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| 1   | **提示词引导** | 注册单个 action 式 `pm2` 工具，`description` / `promptSnippet` / `promptGuidelines` 三处告诉模型「长期任务走 pm2 更省心」，不必猜                                                                                                                                                                                          |
-| 2   | **内嵌面板**   | 宿主「后台任务」面板里就地嵌一块「pm2 托管的应用」（`view:false` + `ui["tasks.panel"]`）：应用表（状态/CPU/内存/重启/时长）、看日志、停止/重启/删除；pm2 缺失时一键安装。宿主自己 diff 出来的裸进程列表仍在上方 —— 同一个面板，各管一段，不重复列（**不给每个应用注册 `registerBackgroundTask`**，那会让同一个应用列两遍） |
+| #   | 做什么         | 怎么做的                                                                                                                                                                                                                                                                                                                                                                                                    |
+| --- | -------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 1   | **提示词引导** | 注册单个 action 式 `pm2` 工具，`description` / `promptSnippet` / `promptGuidelines` 三处告诉模型「长期任务走 pm2 更省心」，不必猜；`action=install/uninstall` 覆盖 pm2 本体的装卸                                                                                                                                                                                                                           |
+| 2   | **内嵌面板**   | 宿主「后台任务」面板里就地嵌一块「pm2 托管的应用」（`view:false` + `ui["tasks.panel"]`）：应用表（状态/CPU/内存/重启/时长）、看日志、停止/重启/删除；「➕ 启动新应用」表单直接起服务（安装到 pm2）；底部「卸载 pm2」二次确认后卸本体；pm2 缺失时一键安装。宿主自己 diff 出来的裸进程列表仍在上方 —— 同一个面板，各管一段，不重复列（**不给每个应用注册 `registerBackgroundTask`**，那会让同一个应用列两遍） |
 
 ## 给 AI 的用法（工具 `pm2`）
 
@@ -24,8 +25,9 @@ pm2 —— 于是**有名字、有状态、有日志、能单独停**，宿主�
 action=list                      # 列出托管的应用（含 CPU/内存/重启/时长）
 action=start name=api script=server.js args=["--port","8788"] cwd=/path
 action=logs  name=api lines=100  # 读输出（不用再留一个无人看管的进程）
-action=stop|restart|delete name=api      # name=all 可整批
+action=stop|restart|delete name=api      # name=all 可整批（delete=卸载单个应用，只删记录不卸本体）
 action=install                   # 一键 npm i -g pm2（未安装时）
+action=uninstall                 # 卸载 pm2 本体（先 pm2 kill，再 npm uninstall -g pm2）
 ```
 
 约定（写在工具提示词里，模型每轮都能看到）：
@@ -62,7 +64,7 @@ pm2 是 npm 全局包，**Windows / macOS / Linux 都能跑**，本插件在三�
 
 ## HTTP 路由（面板用）
 
-`/plugins-api/pm2-manager/*`：`GET /status`、`POST /install`、`POST /action`。
+`/plugins-api/pm2-manager/*`：`GET /status`、`POST /install`（装本体）、`POST /uninstall`（卸本体，先 `pm2 kill` 再 `npm uninstall -g pm2`）、`POST /action`（`stop`/`restart`/`delete`/`logs`/`describe`/`start`，start 需 `script`）。删单个应用走 `delete`（只删记录不卸本体），和卸本体是两回事。
 
 ## 权限
 
@@ -71,12 +73,12 @@ pm2 是 npm 全局包，**Windows / macOS / Linux 都能跑**，本插件在三�
 ## 文件
 
 - `manifest.json`：manifest（含 settings schema、`view:false` 与 `ui["tasks.panel"]` 条目）
-- `index.mjs`：服务端入口 —— 上半是**纯函数区**（pm2 入口候选 / jlist 解析 / 格式化，单测直接从本文件 import），下半是 activate（探测、AI 工具、HTTP 路由）
+- `index.mjs`：服务端入口 —— 上半是**纯函数区**（pm2 入口候选 / jlist 解析 / 格式化 / `buildPm2StartArgv` 拼 start 参数，单测直接从本文件 import），下半是 activate（探测、AI 工具、HTTP 路由：装本体 / 卸本体 / 管应用）
 - `client/entry.mjs`：内嵌面板（`mount(container)` → 返回 cleanup；面板关闭或插件重载时宿主调 cleanup 收摊）
 
 > 纯函数**刻意内联**在 `index.mjs` 而不是单独成文件：宿主的 `plugins_reload` 只给
 > `index.mjs` 的 import 加 `?e=<epoch>` 缓存击穿，被它静态 import 的兄弟模块会命中
 > Node ESM 模块缓存 —— 改了不随 reload 生效，必须重启服务（踩过一次）。
 
-- 单测：`tests/unit/pm2-manager.test.ts`（纯函数 + 假宿主 activate，零端口零子进程）、
-  `tests/unit/pm2-manager-panel.test.ts`（面板首帧：状态未回来前不闪「未检测到 pm2」）
+- 单测：`tests/unit/pm2-manager.test.ts`（纯函数 + 假宿主 activate，零端口零子进程，含装卸常量与 `buildPm2StartArgv`）、
+  `tests/unit/pm2-manager-panel.test.ts`（面板首帧不抢答、启动表单下发 start、卸载二次确认）
