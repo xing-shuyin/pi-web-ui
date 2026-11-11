@@ -1109,3 +1109,67 @@ describe("刷新后收起状态的项目里的钉住行", () => {
 		container.remove();
 	});
 });
+
+describe("刷新后保持项目收起状态", () => {
+	it("降低展开记录里没有当前项目时，渲染后它仍是收起的", () => {
+		stubZhStorage();
+		// 用户上一次把它收起来了：展开记录是空数组。
+		localStorage.setItem("pi-web-ui:lp-expanded-projects", JSON.stringify([]));
+		setAppGlobals({ cwd: "/project-a", ready: true, status: "open", workspaceRoots: [] });
+		const container = document.createElement("div");
+		document.body.appendChild(container);
+		root = createRoot(container);
+		act(() => {
+			root!.render(
+				createElement(
+					LanguageProvider,
+					null,
+					createElement(LeftPanel as any, {
+						active: true,
+						sessionFile: null,
+						conversations: [],
+						elsewhere: [],
+						sessions: [],
+						projects: [{ path: "/project-a", lastUsed: Date.now() }],
+						activeConversationId: "",
+						panelSend: () => true,
+					}),
+				),
+			);
+		});
+		// active 项目即使收起也会挂载子节点（过渡动画需要），但必须是收起态。
+		const children = container.querySelector(".lp-project-tree-children");
+		expect(children?.classList.contains("is-collapsed")).toBe(true);
+		expect(children?.classList.contains("is-expanded")).toBe(false);
+		container.remove();
+	});
+
+	it("首次使用（没有任何展开记录）时仍然展开当前项目", () => {
+		stubZhStorage();
+		setAppGlobals({ cwd: "/project-a", ready: true, status: "open", workspaceRoots: [] });
+		const container = document.createElement("div");
+		document.body.appendChild(container);
+		root = createRoot(container);
+		act(() => {
+			root!.render(
+				createElement(
+					LanguageProvider,
+					null,
+					createElement(LeftPanel as any, {
+						active: true,
+						sessionFile: null,
+						conversations: [],
+						elsewhere: [],
+						sessions: [],
+						projects: [{ path: "/project-a", lastUsed: Date.now() }],
+						activeConversationId: "",
+						panelSend: () => true,
+					}),
+				),
+			);
+		});
+		const children = container.querySelector(".lp-project-tree-children");
+		expect(children?.classList.contains("is-expanded")).toBe(true);
+		container.remove();
+	});
+});

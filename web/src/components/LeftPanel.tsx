@@ -773,12 +773,8 @@ export const LeftPanel = memo(function LeftPanel({
 			const raw = localStorage.getItem("pi-web-ui:lp-expanded-projects");
 			if (raw) {
 				const arr = JSON.parse(raw);
-				if (Array.isArray(arr)) {
-					const s = new Set<string>(arr);
-					const norm = normalizeSessionPathKey(currentCwd);
-					if (norm) s.add(norm);
-					return s;
-				}
+				// 尊重上一次的展开/收起状态：收起过的项目刷新后不该自己弹开。
+				if (Array.isArray(arr)) return new Set<string>(arr);
 			}
 		} catch {}
 		const s = new Set<string>();
@@ -825,9 +821,15 @@ export const LeftPanel = memo(function LeftPanel({
 		});
 	}, [projectSessions]);
 
+	const expandedSeededRef = useRef(false);
 	useEffect(() => {
 		const normCur = normalizeSessionPathKey(currentCwd);
 		if (normCur) {
+			// 首帧不强行展开：刷新页面要保留用户收起的状态；只有真的切换项目才自动展开。
+			if (!expandedSeededRef.current) {
+				expandedSeededRef.current = true;
+				return;
+			}
 			setExpandedProjects((prev) => {
 				if (prev.has(normCur)) return prev;
 				const next = new Set(prev);
