@@ -73,7 +73,9 @@ jobs:
         run: npm run pack:extension
 
   # 单测分片：1047 个文件 / 12000+ 条，单机跑要 6.5 分钟，是整条流水线的瓶颈。
-  # 4 片各跑一个 4 核 runner，壁钟降到 ~1/4；`--shard` 由 vitest 按文件切分。
+  # 8 片各跑一个 4 核 runner：一片只剩 130 来个文件（单测壁钟 ~110s → ~55s）。
+  # 不再往上拆：每个 job 都有 ~50s 固定开销（装依赖 + build:server），再拆只摊薄固定开销，
+  # 壁钟就到 2 分钟附近见底了。`--shard` 由 vitest 按文件哈希切分。
   unit:
     runs-on: ubuntu-latest
     timeout-minutes: 20
@@ -81,7 +83,7 @@ jobs:
       # 一片红不要连坐取消其他片：并行跑完才能一次看全所有失败。
       fail-fast: false
       matrix:
-        shard: [1, 2, 3, 4]
+        shard: [1, 2, 3, 4, 5, 6, 7, 8]
     steps:
       - uses: actions/checkout@v5
 
@@ -105,8 +107,8 @@ jobs:
       - name: Build server
         run: npm run build:server
 
-      - name: Unit tests (shard ${{ matrix.shard }}/4)
-        run: npx vitest run --shard=${{ matrix.shard }}/4
+      - name: Unit tests (shard ${{ matrix.shard }}/8)
+        run: npx vitest run --shard=${{ matrix.shard }}/8
 
   integration:
     runs-on: ubuntu-latest

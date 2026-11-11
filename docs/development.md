@@ -88,11 +88,11 @@ GitHub Actions ubuntu-latest（`.github/workflows/ci.yml`，push/PR → main 触
 | job           | 内容                                                                                                                            | 说明                                                                                                                  |
 | ------------- | ------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------- |
 | `checks`      | `format:check → lint → check:protocol → i18n:check → typecheck → build → 插件 bundle 未漂移 → build:extension → pack:extension` | 全部秒级步骤，合成一个 job 避免反复装依赖                                                                             |
-| `unit`        | `vitest run --shard=i/4`（i=1..4）                                                                                              | 单测 1047 文件 / 12000+ 条，单机要 6.5 分钟，是整个流程的瓶颈，分片后壁钟降到约 1/4；`fail-fast: false`，一片红不连坐 |
+| `unit`        | `vitest run --shard=i/8`（i=1..8）                                                                                              | 单测 1047 文件 / 12000+ 条，单机要 6.5 分钟，是整个流程的瓶颈，分片后壁钟降到约 1/8；`fail-fast: false`，一片红不连坐 |
 | `integration` | `npm run test:integration`                                                                                                      | 重型池（真 git / 真子进程 / 真 Hub）本来就是串行跑更稳                                                                |
 | `smoke`       | `node tests/run-smoke.mjs`                                                                                                      | PR 走 `--core`、push main 走全量，逻辑未变                                                                            |
 
-`unit` 与 `integration` 各自跑 `npm run build:server`（`tests/unit/atomic-file-generated.test.ts` 的逐字节比对需要 dist 在场）。`unit` 还要装 mobile 依赖（`npm --prefix mobile ci`）：`mobile-connections` / `mobile-push-controller` / `mobile-app` 三条用例 import `mobile/src/*`，缺 `@capacitor/core`、`@pi-mobile/native-local-engine` 会直接 `Cannot find package`。fork 数不再写死 8：`tests/lib/suite-partition.mjs` 的 `FAST_MAX_WORKERS` 按实际核数收口（`min(8, 核数)`）—— GitHub 的 runner 只有 4 vCPU，8 个 fork 抢 4 个核时并行系数只有 1.66×。
+`unit` 与 `integration` 各自跑 `npm run build:server`（`tests/unit/atomic-file-generated.test.ts` 的逐字节比对需要 dist 在场）。`unit` 还要装 mobile 依赖（`npm --prefix mobile ci`）：`mobile-connections` / `mobile-push-controller` / `mobile-app` 三条用例 import `mobile/src/*`，缺 `@capacitor/core`、`@pi-mobile/native-local-engine` 会直接 `Cannot find package`。fork 数不再写死 8：`tests/lib/suite-partition.mjs` 的 `FAST_MAX_WORKERS` 按实际核数收口（`min(8, 核数)`）—— GitHub 的 runner 只有 4 vCPU，8 个 fork 抢 4 个核时并行系数只有 1.66×。片数取 8 而不是 4：每个 job 有 ~50s 固定开销（装依赖 + `build:server`），4 片时单测壁钟 ~110s、固定开销 ~50s；8 片把单测压到 ~55s，再往上只摊薄固定开销。浏览器型用例的预算统一走 `tests/lib/chrome.mjs` 的 `BROWSER_TEST_TIMEOUT_MS`（60s，与 `vitest.config.ts` 的 `testTimeout` 对齐）：4 vCPU runner 上 4 个 fork 同时冷启 Chrome，写死 20s 会假红。
 
 同一分支的新推送会取消上一轮在跑的检查（`concurrency` + `cancel-in-progress`，只在 PR 上生效），连续 push 时不再排队跑过期提交。
 
@@ -106,11 +106,11 @@ GitHub Actions ubuntu-latest（`.github/workflows/ci.yml`，push/PR → main 触
 
 本地绿 ≠ 远程绿，多数时候不是环境玄学，而是**本地根本没跑 CI 跑的东西**（2026-11 的 6 次 main 红里，4 次挂在 `Protocol smoke tests (full)`——它 PR 不跑、本地也不跑，只能在 main 上发现）。`npm run ci:local` 按 `.github/workflows/ci.yml` 的步骤与顺序逐条复刻，每步经 `scripts/safe-exec.mjs`（硬超时 + 杀进程树），日志落 `.safe-exec/`：
 
-| 档位 | 覆盖 | 量级 |
-| --- | --- | --- |
-| `--profile static`（pre-push 默认档） | format:check → lint → check:protocol → i18n:check → typecheck（含 mobile） | 1~3 分钟 |
-| `--profile pr` | 静态 + build + 插件 bundle 重建 diff + 扩展打包 + vitest 两池 + smoke `--core` | ≈10 分钟 |
-| `--profile full`（默认档） | 上面全部 + smoke 全量（push main 才跑的那一步） | ≈16 分钟 |
+| 档位                                  | 覆盖                                                                           | 量级     |
+| ------------------------------------- | ------------------------------------------------------------------------------ | -------- |
+| `--profile static`（pre-push 默认档） | format:check → lint → check:protocol → i18n:check → typecheck（含 mobile）     | 1~3 分钟 |
+| `--profile pr`                        | 静态 + build + 插件 bundle 重建 diff + 扩展打包 + vitest 两池 + smoke `--core` | ≈10 分钟 |
+| `--profile full`（默认档）            | 上面全部 + smoke 全量（push main 才跑的那一步）                                | ≈16 分钟 |
 
 `--only <id>` / `--from <id>` 断点重跑，`--list` 看步骤与 id，`--install` 先 `npm ci`（会重装 node_modules，慢）。
 
