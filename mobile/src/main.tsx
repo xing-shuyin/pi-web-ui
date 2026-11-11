@@ -6,7 +6,13 @@ import { Network } from "@capacitor/network";
 import { StatusBar } from "@capacitor/status-bar";
 import { PiCredentials } from "@pi-mobile/native-push";
 import { configureMobileRuntime, openMobileNotificationTarget } from "../../web/src/mobile-runtime";
-import { normalizeServerUrl, readServerStatus, type MobileConnection, type NotificationTarget } from "./connection";
+import {
+	normalizeServerUrl,
+	notificationTarget,
+	readServerStatus,
+	type MobileConnection,
+	type NotificationTarget,
+} from "./connection";
 import {
 	authenticateConnection,
 	notificationDestination,
@@ -20,6 +26,7 @@ import { ConnectionScreen } from "./ConnectionScreen";
 import { accessHubDevice, listHubDevices, type HubDevice } from "./hub";
 import { mobileRequest } from "./connection";
 import { PushController } from "./push-controller";
+import { showPushToast } from "./push-toast";
 import { NotificationSettings } from "./Settings";
 import "../../web/src/styles.css";
 import "./styles.css";
@@ -249,7 +256,15 @@ async function enterConnection(connection: SavedConnection, options: { minted?: 
 	activeDevice = null;
 	pendingTarget = null;
 	if (controller) await controller.dispose();
-	controller = new PushController(connection, installationId, openTarget, openSettings);
+	controller = new PushController(connection, installationId, openTarget, openSettings, (extras) => {
+		const target = notificationTarget(extras, controller!.getDetails().instanceId);
+		showPushToast({
+			kind: typeof extras.kind === "string" ? extras.kind : undefined,
+			onClick: () => {
+				if (target) openTarget(target);
+			},
+		});
+	});
 	try {
 		await controller.initialize();
 	} catch {}
@@ -325,6 +340,16 @@ async function startSharedUi(connection: MobileConnection): Promise<void> {
 	installLifecycle();
 }
 
+/**
+ * 把“返回”交给 Web UI 自己消费：它用捕获阶段的 Escape 栈做 LIFO 关闭，
+ * 关掉一层时会 preventDefault，我们就知道这一按已经被接住，不该再最小化。
+ */
+function pressBack(): boolean {
+	const event = new KeyboardEvent("keydown", { key: "Escape", bubbles: true, cancelable: true });
+	document.dispatchEvent(event);
+	return event.defaultPrevented;
+}
+
 function installLifecycle(): void {
 	if (native) {
 		let refreshing: Promise<void> | null = null;
@@ -348,10 +373,17 @@ function installLifecycle(): void {
 			if (connected) resume();
 		});
 		if (Capacitor.getPlatform() === "android")
-			void NativeApp.addListener("backButton", ({ canGoBack }) => {
-				if (settingsOpen) closeSettings();
-				else if (canGoBack) window.history.back();
-				else void NativeApp.minimizeApp();
+			void NativeApp.addListener("backButton", () => {
+				// 逐层退出：手机设置面板 → Web UI 最上层浮层/抽屉 → 最小化。
+				// Web UI 只写 replaceState（同步 hash），没有 history 条目，所以 canGoBack 恒为 false，
+				// 不能拿它当“有没有上一层”。改成让 UI 的 Escape 栈自己消费：它有捕获阶段监听与 LIFO 语义，
+				// 关掉一层时会 preventDefault，我们就知道该停下。
+				if (settingsOpen) {
+					closeSettings();
+					return;
+				}
+				if (pressBack()) return;
+				void NativeApp.minimizeApp();
 			});
 	}
 	window.addEventListener("keydown", (event) => {
