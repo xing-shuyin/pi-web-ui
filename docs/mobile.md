@@ -132,6 +132,8 @@ RUNTIME_REVISION=r8 npm --prefix mobile run apk:all:runtime   # 先用 Docker �
 
 `apk:all:runtime` 用 Docker + qemu 跑 `local-engine/runtime/build-runtime.sh`，需要 `RUNTIME_REVISION`（写进 `runtime.json`，手机端据此触发重装）；改 `web/src` 只需重打 APK，只有改原生层或换 rootfs 才需要它。
 
+发布：推 `v*` tag 会触发 `.github/workflows/mobile-release.yml`，在 CI 里构建 arm64 引擎运行时并打 APK，产物挂到同名 GitHub Release（`pi-web-ui-mobile-arm64-<版本>-debug.apk` + sha256）。签名与版本号注入见 [`release.md`](release.md) §8.6。
+
 开发预览：
 
 ```bash

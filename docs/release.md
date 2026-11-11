@@ -71,6 +71,22 @@ npm publish
 #    签名（SignPath Foundation）以后加在这个 workflow 里——SignPath 只签 CI 产物，
 #    本地 npm run desktop:dist 永远签不上（本地打包只能验证 Windows）。
 
+# 8.6) 手机端 APK（自动，只需要一个 job）
+#    同一个 tag 也触发 .github/workflows/mobile-release.yml：
+#      ubuntu-latest → 构建 arm64 引擎运行时（qemu chroot）→ 打 APK → 挂到该 tag 的 Release
+#    产物：pi-web-ui-mobile-arm64-<版本>-debug.apk + pi-web-ui-mobile-arm64.sha256
+#      （x86_64 flavor 只给模拟器冒烟用，不发 Release）
+#    三条硬约束：
+#      - APK 里的引擎必须和前端同源：workflow 先 npm pack 本仓库，再把它喂给 build-runtime.sh
+#        （PI_WEB_UI_TGZ），否则协议版本错位，手机上会一直弹「页面版本与服务器不一致」
+#      - RUNTIME_REVISION 用发布版本号：手机端据此判断要不要重装运行时
+#      - 签名必须稳定：debug 包默认每次 CI 生成不同 debug keystore，装不上旧包（本地引擎数据
+#        也会跟着清掉）。要发可升级的包就先建一次固定 keystore，配成仓库 secrets：
+#          keytool -genkeypair -v -keystore pi-mobile.jks -alias pi -keyalg RSA #            -keysize 2048 -validity 10000 -storepass <密码> -keypass <密码>
+#          base64 -w0 pi-mobile.jks    → MOBILE_KEYSTORE_BASE64
+#          另配 MOBILE_KEYSTORE_PASSWORD / MOBILE_KEY_ALIAS / MOBILE_KEY_PASSWORD
+#        没配也照样出包，只是换包得先卸载（workflow 会打 ::warning 提示）。
+
 # 9) 验证
 npm view pi-web-ui version        # 应显示新版本（registry 有缓存延迟属正常）
 curl -s https://registry.npmjs.org/pi-web-ui/latest | jq .version
