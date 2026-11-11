@@ -386,7 +386,8 @@ export class FilesService {
 						: join(home, normQuery.slice(2))
 					: wireToAbs(normQuery);
 				const st = await fsp.stat(targetAbs).catch(() => null);
-				if (st && st.isFile()) {
+				// 目录也要收：输入框里敲一个目录路径时，结果表要能直接打开它（`type: "dir"` 曾经不可达）。
+				if (st && (st.isFile() || st.isDirectory())) {
 					const wp = workspacePath(root, targetAbs);
 					const wirePath = wp ? wp.rel : targetAbs.split(sep).join("/");
 					if (inScope(wirePath)) {
@@ -402,7 +403,7 @@ export class FilesService {
 				const directWp = workspacePath(root, normQuery);
 				if (directWp) {
 					const st = await fsp.stat(directWp.abs).catch(() => null);
-					if (st && st.isFile() && inScope(directWp.rel)) {
+					if (st && (st.isFile() || st.isDirectory()) && inScope(directWp.rel)) {
 						const baseName = directWp.abs.split(/[\\/]/).pop() || directWp.rel;
 						results.push({
 							path: directWp.rel,
@@ -444,11 +445,9 @@ export class FilesService {
 				}
 				const childRelLower = childRel.toLowerCase();
 				const nameLower = d.name.toLowerCase();
-				if (
-					!isDir &&
-					(nameLower.includes(q) || childRelLower.includes(q)) &&
-					!results.some((r) => r.path === childRel)
-				) {
+				// 目录命中同样要有结果（前端按树展开后可直达），只是不能吃掉 50 条预算：
+				// 目录照常入列，仍然继续下潜。
+				if ((nameLower.includes(q) || childRelLower.includes(q)) && !results.some((r) => r.path === childRel)) {
 					results.push({
 						path: childRel,
 						name: d.name,
