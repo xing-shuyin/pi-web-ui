@@ -48,6 +48,7 @@ import { getPluginComposerProvider, listPluginComposerProviders } from "../plugi
 import { detectTouchFirstDevice } from "../touch-device";
 import { resolveEnterAction, useEffectiveSendKey } from "../composer-keys";
 import { resolveBackspaceMention } from "../chat-input-backspace";
+import { projectNameFromCwd } from "../title-settings";
 import { copyTextToClipboard } from "../use-copy-feedback";
 import { useImeCompositionGuard } from "../use-ime-composition-guard";
 import { groupByAlign } from "../ui-slots";
@@ -220,6 +221,8 @@ export const ChatInput = memo(function ChatInput({
 	const { locale } = useI18n();
 	const effectiveSendKey = useEffectiveSendKey(IS_TOUCH);
 	const isModEnter = effectiveSendKey === "mod-enter";
+	const cwd = useAppField("cwd");
+	const idleProjectName = projectNameFromCwd(cwd || "") || "pi";
 	const { openPicker, templates } = useTemplates();
 	const commandTemplates = availableTemplateCommands(templates, slashCommands);
 	const allSlashCommands: SlashCommandInfo[] = [
@@ -1886,8 +1889,8 @@ export const ChatInput = memo(function ChatInput({
 									: effectivePlanMode
 										? t("placeholderPlanMode")
 										: isModEnter
-											? t("placeholderIdleMod")
-											: t("placeholderIdle")
+											? t("placeholderIdleMod", { name: idleProjectName })
+											: t("placeholderIdle", { name: idleProjectName })
 								: t("placeholderConnecting")
 					}
 					disabled={!connected}
