@@ -279,8 +279,11 @@
 	box-shadow:
 		inset 0 0.5px 0.5px color-mix(in srgb, var(--text) 22%, transparent),
 		0 2px 5px color-mix(in srgb, var(--flow-shadow) 35%, transparent);
-	backdrop-filter: blur(12px) saturate(140%);
-	-webkit-backdrop-filter: blur(12px) saturate(140%);
+	/* 不给胶囊上 backdrop-filter：带它的元素各自一个合成表面，胶囊是行内重复项，
+	   一个回合几十上百颗 = 几十上百个合成层（300 颗实测 310 层 vs 11 层）。
+	   何况 --bg-image: none 的纯色底上，模糊均匀色不产生任何毛玻璃信息。 */
+	backdrop-filter: none;
+	-webkit-backdrop-filter: none;
 	transition:
 		background 0.15s cubic-bezier(0.16, 1, 0.3, 1),
 		border-color 0.15s cubic-bezier(0.16, 1, 0.3, 1),

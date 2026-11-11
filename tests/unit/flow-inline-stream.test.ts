@@ -57,4 +57,21 @@ describe("极简行文字级输入流布局契约", () => {
 		expect(FLOW_MODE).toContain('"--flow-inline-stream"');
 		expect(FLOW_MODE).toContain("THEME_CHANGE_EVENT");
 	});
+
+	it("胶囊不带 backdrop-filter：行内重复项每颗各占一个合成表面（issue #858）", () => {
+		// 带 backdrop-filter 的元素无法与滚动内容共用光栅层。胶囊是 flex 行流里的重复项，
+		// 一个回合几十上百颗 ⇒ 几十上百个合成层（300 颗实测 310 层 vs 去掉后 11 层）。
+		// 而 flow 家族 --bg-image: none，模糊的是均匀中性色，本来就买不到任何毛玻璃信息。
+		const capsuleAt = FLOW_BASE.indexOf(".toolcall,\n.thinking {");
+		expect(capsuleAt, "缺少胶囊基座规则 .toolcall, .thinking").toBeGreaterThan(-1);
+		const capsule = FLOW_BASE.slice(capsuleAt, FLOW_BASE.indexOf("}", capsuleAt));
+		expect(capsule).toContain("backdrop-filter: none;");
+
+		const offenders: string[] = [];
+		for (const [, selector, body] of FLOW_BASE.matchAll(/([^{}]+)\{([^}]*)\}/g)) {
+			if (!/\.(toolcall|thinking)\b/.test(selector)) continue;
+			if (/backdrop-filter:\s*blur/.test(body)) offenders.push(selector.trim());
+		}
+		expect(offenders, "胶囊（.toolcall / .thinking）不得重新引入 backdrop-filter 模糊").toEqual([]);
+	});
 });

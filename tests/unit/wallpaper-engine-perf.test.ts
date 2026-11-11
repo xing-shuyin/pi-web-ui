@@ -76,6 +76,22 @@ describe("wallpaper-engine 性能优化与画质分级守卫测试", () => {
 		expect(styles).toContain("lightWallpaperMode");
 	});
 
+	it("胶囊不带 backdrop-filter：壁纸是每帧在变的画面，逐颗回读+卷积是最贵的用法（issue #858）", () => {
+		const styles = readFileSync(stylesPath, "utf8");
+		const at = styles.indexOf(".toolcall,\n.thinking {");
+		expect(at, "styles.mjs 里没有胶囊规则").toBeGreaterThanOrEqual(0);
+		const capsule = styles.slice(at, styles.indexOf("}", at));
+		expect(capsule).toContain("backdrop-filter: none !important;");
+		expect(styles).not.toContain("blur(12px) saturate(140%)");
+
+		const offenders: string[] = [];
+		for (const [, selector, body] of styles.matchAll(/([^{}]+)\{([^}]*)\}/g)) {
+			if (!/\.(toolcall|thinking)\b/.test(selector)) continue;
+			if (/backdrop-filter:\s*blur/.test(body)) offenders.push(selector.trim());
+		}
+		expect(offenders, "胶囊不得重新引入 backdrop-filter 模糊").toEqual([]);
+	});
+
 	it("黑曜冷月专属主题 CSS 去除了所有容器 box-shadow，顶栏底栏无多余大模糊，消息正文带方案 B 超轻微柔雾且工具调用彻底裸透无框", () => {
 		const css = readThemeCss(resolve(process.cwd(), "themes/wallpaper-obsidian.css"));
 		const blockOf = (selector: string): string => {

@@ -398,7 +398,9 @@ ${
 	word-break: break-word !important;
 }
 
-/* 2. 工具调用、思考、附件徽标：Apple Vision 液态毛玻璃亚克力呼吸晶体微胶囊 */
+/* 2. 工具调用、思考、附件徽标：Apple Vision 液态亚克力呼吸晶体微胶囊
+   胶囊不上 backdrop-filter：行内重复项每颗各占一个合成表面（300 颗 = 310 层），
+   而且壁纸底下是每帧都在变的视频/WebGL 画面，逐颗回读+12px 卷积是最贵的用法。 */
 .toolcall,
 .thinking {
 	display: inline-flex !important;
@@ -426,8 +428,8 @@ ${
 	box-shadow:
 		inset 0 0.5px 0.5px rgba(255, 255, 255, 0.22),
 		0 2px 5px rgba(0, 0, 0, 0.35) !important;
-	backdrop-filter: blur(12px) saturate(140%) !important;
-	-webkit-backdrop-filter: blur(12px) saturate(140%) !important;
+	backdrop-filter: none !important;
+	-webkit-backdrop-filter: none !important;
 	transition:
 		background 0.15s cubic-bezier(0.16, 1, 0.3, 1),
 		border-color 0.15s cubic-bezier(0.16, 1, 0.3, 1),
