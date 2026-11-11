@@ -4,7 +4,7 @@ import express from "express";
 import { JSDOM } from "jsdom";
 import { desktopPage } from "../../server/device-center/desktop-page.js";
 import { chromium } from "playwright-core";
-import { BROWSER_TEST_TIMEOUT_MS, CHROME_PATH } from "../lib/chrome.mjs";
+import { BROWSER_LAUNCH_TIMEOUT_MS, BROWSER_TEST_TIMEOUT_MS, CHROME_PATH } from "../lib/chrome.mjs";
 import http, { type Server } from "node:http";
 import { once } from "node:events";
 import { mkdtempSync, rmSync } from "node:fs";
@@ -249,7 +249,7 @@ describe("native desktop through device relay and connector", () => {
 			const browser = await chromium.launch({
 				executablePath: CHROME_PATH,
 				headless: true,
-				timeout: 15_000,
+				timeout: BROWSER_LAUNCH_TIMEOUT_MS,
 				args: ["--no-sandbox"],
 			});
 			cleanups.push(() => browser.close());

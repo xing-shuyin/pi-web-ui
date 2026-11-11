@@ -35,3 +35,10 @@ export const CHROME_PATH = process.env.PI_WEB_CHROME ?? CANDIDATES.find((p) => e
  * 真正的硬底是 CI job 的 `timeout-minutes` 与 `scripts/safe-exec.mjs`。
  */
 export const BROWSER_TEST_TIMEOUT_MS = 60_000;
+
+/**
+ * 起浏览器本身的预算：`chromium.launch({ timeout })` 管的是「Chrome 进程起不来之前等多久」。
+ * Playwright 默认 30s，但仓里有两处写死 15s —— 4 vCPU runner 上冷启（外加同片另外几个
+ * fork 也在启浏览器）实测会撞线（PR #876 的 device-center-desktop 用例就是这么红的）。
+ */
+export const BROWSER_LAUNCH_TIMEOUT_MS = 30_000;
