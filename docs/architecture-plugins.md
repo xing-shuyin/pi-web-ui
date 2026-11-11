@@ -313,6 +313,7 @@ HTTP MCP 卡片的 OAuth 登录通过 `mcp_oauth_start {reqId,name,scope}` 发�
 - `engines`（对象，如 `{"pi-web-ui": ">=1.2.0"}`）：引擎约束，不满足即拒绝激活；范围支持 `>=`/`^`/精确，非法 range 放行（语义见 `tests/unit/plugin-extensions.test.ts` 的 satisfiesEngines）
 - `peerPlugins`（字符串数组）：对等依赖的其它插件 id，缺失只警告不断活
 - `requires`（对象，P2-8 硬依赖）：`{ hostApi?, families?, plugins? }`，任一条不满足即拒绝激活+教学式错误——`hostApi` 是宿主 API 下限（超前请升级）、`families` 须是已知族且须同时在自家 `permissions` 里声明、`plugins` 须已安装且激活成功。`ensureLoaded` 按依赖拓扑排序激活（环直接拒），提供方被删/失败后消费方一并反激活+留占位（级联一轮收敛，reload 重算刷新）
+- `agentToolsDefaultOn`（布尔，缺省 `false` 即默认关）：插件 AI 工具是否默认进入对话。不写就是默认关（新用户出厂`disabledPluginTools`里自带，需手动打开；只影响新用户与恢复默认，存量配置不动）；设为 `true` 即 opt-in 默认开。新增插件工具必须同步加入出厂名单，否则守卫测试会红（见 `tests/unit/plugin-tools-default-off.test.ts`）
 
 ## 插件 AI 工具的可见性与开关
 

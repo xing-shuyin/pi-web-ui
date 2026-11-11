@@ -99,6 +99,17 @@ export function validatePluginManifest(raw: unknown, dirName: string): ManifestV
 		});
 	}
 
+	// agentToolsDefaultOn: 插件 AI 工具是否默认进入对话上下文。
+	// 缺省 false（默认关）—— 未声明的插件工具默认不进对话，需用户在设置里手动打开；
+	// 设为 true 即 opt-in（默认开），适用于希望开箱即用的插件。
+	if (o.agentToolsDefaultOn !== undefined && typeof o.agentToolsDefaultOn !== "boolean") {
+		warnings.push({
+			path: "agentToolsDefaultOn",
+			message: "agentToolsDefaultOn 必须是布尔值，已按 false（默认关）处理",
+			messageEn: '"agentToolsDefaultOn" must be a boolean; treated as false (default off)',
+		});
+	}
+
 	let permissions: string[] = [];
 	const perms = o.permissions;
 	if (perms === undefined) {
