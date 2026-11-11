@@ -1694,7 +1694,7 @@
 		"parallelReminderOffHint": "オフ：並行作業のリマインダーは表示されず、AIへの競合ヒントも送られません",
 		"browserPageEnabledDesc": "page-picker 拡張で許可したページをモデルが操作できるようにします（browser_page: 読み取り / クリック / 入力 / スクロール / 移動。eval は別スイッチ）。",
 		"browserPageOffHint": "無効: モデルはページをクリックしたりスクリプトを実行したりできません",
-		"phoneEnabledDesc": "Let the model read and drive this phone through its accessibility service (UI tree / tap / swipe / type / back-home keys / launch app / screenshots). Enable the \"pi 手机操控\" service in system settings first; password fields are never filled.",
+		"phoneEnabledDesc": "Let the model read and drive this phone through its accessibility service (UI tree / tap / swipe / type / back-home keys / launch app / screenshots). Enable the phone-control accessibility service in system settings first; password fields are never filled.",
 		"phoneOffHint": "Disabled: the model can neither read nor operate this phone",
 		"browserScriptEnabledDesc": "Let the model inject JavaScript or CSS into AI Browser pages, temporarily or permanently (browser_script tool: list / status / create / update / remove / enable / disable / run).",
 		"browserScriptOffHint": "Disabled: the model can no longer inject or manage page scripts",
