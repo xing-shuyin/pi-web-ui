@@ -3,7 +3,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { createElement } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { act } from "react-dom/test-utils";
-import { LeftPanel } from "../../web/src/components/LeftPanel.js";
+import { isPinnedRowVisible, LeftPanel } from "../../web/src/components/LeftPanel.js";
 import { joinProjectPath, isValidProjectName, parentOf, MACHINE_ROOT } from "../../web/src/components/ProjectPicker.js";
 import { LanguageProvider } from "../../web/src/i18n.js";
 import { conversationOrder } from "../../web/src/conversation-order.js";
@@ -1036,5 +1036,17 @@ describe("跨项目历史行的钉住菜单", () => {
 
 		closeContextMenu();
 		container.remove();
+	});
+});
+
+describe("钉住的历史行在项目收起时仍然可见", () => {
+	it("isPinnedRowVisible：只有收起状态 + 历史行 + pinned 才保持可见", () => {
+		const pinnedSession = { kind: "session" as const, target: { pinned: true } };
+		const plainSession = { kind: "session" as const, target: {} };
+		const pinnedConv = { kind: "conversation" as const, target: { pinned: true } };
+		expect(isPinnedRowVisible(true, pinnedSession)).toBe(true);
+		expect(isPinnedRowVisible(false, pinnedSession)).toBe(false);
+		expect(isPinnedRowVisible(true, plainSession)).toBe(false);
+		expect(isPinnedRowVisible(true, pinnedConv)).toBe(false);
 	});
 });

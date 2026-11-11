@@ -194,6 +194,17 @@ function formatModified(ts: number): string {
 	return `${d.getMonth() + 1}/${d.getDate()}`;
 }
 
+/**
+ * 项目收起时，钉住的历史行仍然保持展开：钉住就是让它常驻，
+ * 否则一收起项目它就从左栏消失，和没钉一样。
+ */
+export function isPinnedRowVisible(
+	isCollapsed: boolean,
+	block: { kind: "conversation" | "session"; target: { pinned?: boolean } },
+): boolean {
+	return isCollapsed && block.kind === "session" && Boolean(block.target.pinned);
+}
+
 type SessionMenuTarget = {
 	id: string;
 	kind: "running" | "history" | "section" | "elsewhere";
@@ -3151,19 +3162,26 @@ export const LeftPanel = memo(function LeftPanel({
 														className={`lp-project-tree-children${isCollapsed ? " is-collapsed" : " is-expanded"}${pRunningRows.length > 0 ? " has-running-rows" : ""}`}
 													>
 														{}
-														{orderedBlocks.map((block) => (
-															<Fragment key={block.key}>
-																{block.kind === "conversation" ? (
-																	block.rows.map((row) => renderSingleConvRow(row, p.path))
-																) : (
-																	<div className={`lp-history-collapsible${isCollapsed ? " collapsed" : " expanded"}`}>
-																		<div className="lp-history-collapsible-inner">
-																			{renderHistorySessionRow(block.target, p.path)}
+														{orderedBlocks.map((block) => {
+															// 钉住的历史行在项目收起时仍然显示 —— 钉住就是让它常驻，
+															// 否则一收起项目它就从左栏消失了，跟没钉一样。
+															const pinnedVisible = isPinnedRowVisible(isCollapsed, block);
+															return (
+																<Fragment key={block.key}>
+																	{block.kind === "conversation" ? (
+																		block.rows.map((row) => renderSingleConvRow(row, p.path))
+																	) : (
+																		<div
+																			className={`lp-history-collapsible${isCollapsed && !pinnedVisible ? " collapsed" : " expanded"}${pinnedVisible ? " is-pinned-visible" : ""}`}
+																		>
+																			<div className="lp-history-collapsible-inner">
+																				{renderHistorySessionRow(block.target, p.path)}
+																			</div>
 																		</div>
-																	</div>
-																)}
-															</Fragment>
-														))}
+																	)}
+																</Fragment>
+															);
+														})}
 
 														{}
 														<div className={`lp-history-collapsible${isCollapsed ? " collapsed" : " expanded"}`}>
