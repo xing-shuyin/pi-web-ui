@@ -200,6 +200,11 @@ type SessionMenuTarget = {
 	label: string;
 	owner?: string;
 	pseudo?: boolean;
+	/**
+	 * 该行自己的钉住状态。跨项目的历史行不在「当前项目的 sessions」里，
+	 * 菜单只能靠它判断该显示「钉住」还是「取消钉住」（否则永远显示「钉住」）。
+	 */
+	pinned?: boolean;
 };
 
 function isEditableTarget(el: EventTarget | null): boolean {
@@ -1016,7 +1021,7 @@ export const LeftPanel = memo(function LeftPanel({
 						: { ...entry, hidden: true };
 				if (entry.id === "host:conv-pin") {
 					if (target.kind === "history") {
-						const isPinned = sessions.find((s) => s.path === target.id)?.pinned;
+						const isPinned = target.pinned ?? sessions.find((s) => s.path === target.id)?.pinned;
 						return isPinned ? { ...entry, label: t("unpinConversation") } : entry;
 					}
 					if (!scopeId) return { ...entry, hidden: true };
@@ -1123,8 +1128,9 @@ export const LeftPanel = memo(function LeftPanel({
 			}
 			if (entry.id === "host:conv-pin") {
 				if (target.kind === "history") {
-					const cur = sessions.find((s) => s.path === target.id);
-					panelSend({ type: "pin_session", path: target.id, pinned: !cur?.pinned });
+					// 这里的 target 是右键系统的精简对象（没有 pinned），完整目标在 sessionMenuRef 里。
+					const pinned = sessionMenuRef.current?.target.pinned ?? sessions.find((s) => s.path === target.id)?.pinned;
+					panelSend({ type: "pin_session", path: target.id, pinned: !pinned });
 					return;
 				}
 				if (scopeId) {
@@ -1962,7 +1968,7 @@ export const LeftPanel = memo(function LeftPanel({
 				key={s.path}
 				data-session-key={sessionKey}
 				onMouseLeave={() => setConfirmDel((k) => (k === `sess:${s.path}` ? null : k))}
-				onContextMenu={(e) => openSessionMenu(e, { id: s.path, kind: "history", label: rawTitle })}
+				onContextMenu={(e) => openSessionMenu(e, { id: s.path, kind: "history", label: rawTitle, pinned: s.pinned })}
 			>
 				<RowMain
 					editing={renaming === s.path}

@@ -975,3 +975,66 @@ describe("LeftPanel 会话行删除确认与重命名按钮互斥", () => {
 		expect(siteChildren!.textContent).toContain("你好");
 	});
 });
+
+describe("跨项目历史行的钉住菜单", () => {
+	it("已钉住的跨项目会话：菜单显示「取消钉住」，点下去发 pinned=false", () => {
+		stubZhStorage();
+		localStorage.setItem("pi-web-ui:lp-expanded-projects", JSON.stringify(["/project-a"]));
+		setAppGlobals({ cwd: "/project-b", ready: true, status: "open", workspaceRoots: [] });
+		const container = document.createElement("div");
+		document.body.appendChild(container);
+		root = createRoot(container);
+		const sent: unknown[] = [];
+		const session = {
+			path: "/sessions/--C--desktop--/x.jsonl",
+			name: "串台测试",
+			firstMessage: "串台测试",
+			modified: Date.now(),
+			messageCount: 2,
+			pinned: true,
+			cwd: "/project-a",
+		};
+		act(() => {
+			root!.render(
+				createElement(
+					LanguageProvider,
+					null,
+					createElement(LeftPanel as any, {
+						active: false,
+						sessionFile: null,
+						conversations: [],
+						elsewhere: [],
+						// 当前项目（/project-b）的列表里没有它：这正是跨项目行拿不到 pinned 的场景。
+						sessions: [],
+						projectSessions: { "/project-a": [session] },
+						projects: [{ path: "/project-a", lastUsed: Date.now() }],
+						activeConversationId: "",
+						panelSend: (msg: unknown) => {
+							sent.push(msg);
+							return true;
+						},
+						uiContextSession: [{ id: "host:conv-pin", source: "host", label: "钉住" }],
+					}),
+				),
+			);
+		});
+
+		// 展开 /project-a：真实交互路径比直接塞 localStorage 更可靠（首帧与点击后的状态机不同）。
+		const header = [...container.querySelectorAll<HTMLElement>("[data-project-path]")].find(
+			(el) => el.getAttribute("data-project-path") === "/project-a",
+		);
+		expect(header).toBeTruthy();
+		act(() => header!.click());
+		const row = container.querySelector<HTMLElement>(`[data-session-key]`);
+		expect(row).toBeTruthy();
+		act(() => {
+			row!.dispatchEvent(new MouseEvent("contextmenu", { bubbles: true, cancelable: true, clientX: 10, clientY: 20 }));
+		});
+		const menu = getContextMenu();
+		expect(menu?.target).toMatchObject({ kind: "history", id: session.path, pinned: true });
+		expect(menu?.entries.map((e) => e.label)).toContain("取消钉住");
+
+		closeContextMenu();
+		container.remove();
+	});
+});
