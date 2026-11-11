@@ -253,7 +253,7 @@ function ThinkingInspectorDialog({
 						<span className="file-diff-path">{t("toolInspectorThinkingSection").replace(/^💭\s*/, "")}</span>
 						<span className="file-diff-lang">{t("toolInspectorStats", { chars, lines })}</span>
 						<span className={`file-diff-status-pill ${state.streaming ? "run" : "ok"}`}>
-							{state.streaming ? "⚡ 思考中..." : "✓ 完成"}
+							{state.streaming ? t("toolInspectorThinkingStatusRunning") : t("toolInspectorThinkingStatusDone")}
 						</span>
 					</div>
 
@@ -325,7 +325,9 @@ function ThinkingInspectorDialog({
 					<div className="file-diff-footer-status">
 						<span className="file-diff-status-icon">💭</span>
 						<span className="file-diff-status-text">
-							{state.streaming ? "思考分析链路生成中..." : `分析记录共 ${lines} 行`}
+							{state.streaming
+								? t("toolInspectorThinkingFooterRunning")
+								: t("toolInspectorThinkingFooterLines", { lines })}
 						</span>
 					</div>
 					<div className="file-diff-footer-meta">
@@ -603,7 +605,7 @@ function BashInspectorDialog({
 							{statusMeta.statusIcon}
 						</span>
 						<span className="file-diff-status-text">
-							{statusMeta.footerText} · {lines} 行输出 · {output.length} 字符
+							{statusMeta.footerText} · {t("toolInspectorOutputStats", { lines, chars: output.length })}
 						</span>
 					</div>
 					<div className="file-diff-footer-meta">
@@ -734,7 +736,10 @@ function ReadInspectorDialog({
 							<span className="file-diff-lang">{targetPath.split(".").pop()?.toUpperCase() || "FILE"}</span>
 						)}
 						{startLine > 1 && (
-							<span className="file-diff-lang" title={`起始偏移量: 第 ${startLine} 行`}>
+							<span
+								className="file-diff-lang"
+								title={isZh ? `起始偏移量: 第 ${startLine} 行` : `Start offset: line ${startLine}`}
+							>
 								L{startLine}~L{startLine + lines - 1}
 							</span>
 						)}
@@ -1374,7 +1379,7 @@ function GenericInspectorDialog({
 							{statusMeta.isRunning
 								? statusMeta.footerText
 								: output
-									? `${output.split("\n").length} 行输出 · ${output.length} 字符`
+									? t("toolInspectorOutputStats", { lines: output.split("\n").length, chars: output.length })
 									: statusMeta.footerText}
 						</span>
 					</div>
