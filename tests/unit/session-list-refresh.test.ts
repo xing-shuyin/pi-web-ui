@@ -47,11 +47,29 @@ describe("turn 结束后补推会话列表", () => {
 
 		schedule.call(cs, "E:\\work\\project-b");
 		schedule.call(cs, "e:/WORK/project-b");
-		schedule.call(cs, "E:\\work\\PROJECT-B");
+		schedule.call(cs, "e:/WORK/project-b/");
 		expect(pushSessionsForCwd).toHaveBeenCalledTimes(1); // 只有首轮那一次
 
 		await vi.advanceTimersByTimeAsync(700);
 		expect(pushSessionsForCwd).toHaveBeenCalledTimes(2); // 尾部只补一次
+	});
+
+	it("非 win32 下盘符路径的尾斜杠也算同一个 cwd（CI 跑 ubuntu，这条防回归）", async () => {
+		const platform = vi.spyOn(process, "platform", "get").mockReturnValue("linux");
+		try {
+			vi.useFakeTimers();
+			const { cs, pushSessionsForCwd } = fake();
+			expect(normalizePathKey("E:\\work\\project-b")).toBe(normalizePathKey("e:/WORK/project-b/"));
+
+			schedule.call(cs, "E:\\work\\project-b");
+			schedule.call(cs, "e:/WORK/project-b/");
+			expect(pushSessionsForCwd).toHaveBeenCalledTimes(1);
+
+			await vi.advanceTimersByTimeAsync(700);
+			expect(pushSessionsForCwd).toHaveBeenCalledTimes(2);
+		} finally {
+			platform.mockRestore();
+		}
 	});
 
 	it("推送前让该项目的列表缓存失效，避免推出去还是旧列表", async () => {
