@@ -28381,6 +28381,13 @@
 			border: none;
 		}
 
+		/* 抽屉是 fixed 定位（top:0/bottom:0），绕开了 .app 的安全区 padding：
+		   手机壳里单独让出状态栏和手势条，否则抽屉头部又压到状态栏上。 */
+		html.pi-native .panel-drawer {
+			padding-top: var(--safe-top);
+			padding-bottom: env(safe-area-inset-bottom, 0px);
+		}
+
 		.term-main {
 			position: relative;
 
@@ -28389,7 +28396,7 @@
 		.term-commands {
 			position: fixed;
 			left: 0;
-			top: 0;
+			top: var(--safe-top, 0px);
 			bottom: 0;
 			z-index: 60;
 			width: min(300px, 86vw);
