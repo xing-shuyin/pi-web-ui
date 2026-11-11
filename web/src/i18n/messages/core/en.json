@@ -1616,8 +1616,6 @@
 	"promptTok_append_desc": "APPEND_SYSTEM.md content; override = custom appended text",
 	"promptTok_persona": "Windows persona",
 	"promptTok_persona_desc": "win32-only safety rules (timeout / PTY / GBK)",
-	"promptTok_terminal": "Terminal guidance",
-	"promptTok_terminal_desc": "persistent-terminal usage guide (injected when terminal tools are on)",
 	"promptTok_markers": "Markers guidance",
 	"promptTok_markers_desc": "built-in marker tools usage (injected when markers are on)",
 	"promptTok_plugin_dev": "Plugin dev guide",

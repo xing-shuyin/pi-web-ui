@@ -1620,8 +1620,6 @@
 		"promptTok_append_desc": "Inhalt von APPEND_SYSTEM.md; Überschreibung = benutzerdefinierter angehängter Text",
 		"promptTok_persona": "Windows-Einschränkungen",
 		"promptTok_persona_desc": "Windows-Persona (nur win32; Hinweise zu Timeout/PTY/GBK)",
-		"promptTok_terminal": "Terminal-Anleitung",
-		"promptTok_terminal_desc": "Anleitung zur Nutzung persistenter Terminals (wird injiziert, wenn „Terminal-Werkzeuge“ aktiviert sind)",
 		"promptTok_markers": "Marker-Anleitung",
 		"promptTok_markers_desc": "Verwendung der eingebauten Marker-Werkzeuge (wird injiziert, wenn Marker aktiviert sind)",
 		"promptTok_plugin_dev": "Plugin dev guide",

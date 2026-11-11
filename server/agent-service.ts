@@ -264,13 +264,7 @@ import { goalReviewDenial, shouldDeferPromptForReview } from "./goal-review-gate
 import { readPlanModeFromSession, readPlanFromSession } from "./permission-preset.js";
 import { readDelegateModeFromSession } from "./permission-preset.js";
 
-import {
-	applyHeadTail,
-	makePersistentTerminalTools,
-	makeTerminalBashTool,
-	stripAnsi,
-	TERMINAL_TOOLS_GUIDANCE,
-} from "./terminals.js";
+import { applyHeadTail, makePersistentTerminalTools, makeTerminalBashTool, stripAnsi } from "./terminals.js";
 import {
 	applyAgentToolsGating,
 	ASK_USER_QUESTION_TOOL_NAME,
@@ -278,7 +272,6 @@ import {
 	filterToolsByPreset,
 	isAgentToolEnabled,
 	isNeverLazyTool,
-	isTerminalGuidanceOn,
 	LAZY_CORE_TOOL_NAMES,
 	lazyLoadingDisabledTools,
 	LOAD_TOOLS_TOOL_NAME,
@@ -3108,9 +3101,6 @@ export class ClientSession {
 				: process.platform === "win32"
 					? WINDOWS_PERSONA
 					: "",
-			terminalGuidance: isTerminalGuidanceOn(effectiveDisabledAgentTools(this.settingsSvc.current), preset)
-				? TERMINAL_TOOLS_GUIDANCE
-				: "",
 			markersGuidance: this.markerSvc.buildGuidance(),
 			lang: this.getLang(),
 			contextFiles: src.contextFiles,
@@ -4261,11 +4251,6 @@ export class ClientSession {
 							out.push(buildRemoteWorkspacePersona(realCwd));
 						} else if (process.platform === "win32") {
 							out.push(WINDOWS_PERSONA);
-						}
-						const presetForGuidance =
-							this.convs.get(ownerId ?? "")?.agentPreset ?? this.settingsSvc.current.defaultAgentPreset ?? "standard";
-						if (isTerminalGuidanceOn(effectiveDisabledAgentTools(this.settingsSvc.current), presetForGuidance)) {
-							out.push(TERMINAL_TOOLS_GUIDANCE);
 						}
 						const markerGuidance = this.markerSvc.buildGuidance();
 						if (markerGuidance) out.push(markerGuidance);

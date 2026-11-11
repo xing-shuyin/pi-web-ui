@@ -1616,8 +1616,6 @@
 	"promptTok_append_desc": "APPEND_SYSTEM.md 内容；覆盖 = 自定义追加文字",
 	"promptTok_persona": "Windows 约束",
 	"promptTok_persona_desc": "Windows persona（仅 win32；超时/PTY/GBK 注意事项）",
-	"promptTok_terminal": "终端工具引导",
-	"promptTok_terminal_desc": "持久终端使用引导（「终端工具」开时注入）",
 	"promptTok_markers": "标记工具引导",
 	"promptTok_markers_desc": "内置标记工具使用说明（markers 开时注入）",
 	"promptTok_plugin_dev": "插件开发指南",

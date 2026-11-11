@@ -1620,8 +1620,6 @@
 		"promptTok_append_desc": "Contenido de APPEND_SYSTEM.md; sobrescribir = texto añadido personalizado",
 		"promptTok_persona": "Restricciones de Windows",
 		"promptTok_persona_desc": "Persona de Windows (solo win32; notas sobre tiempo de espera/PTY/GBK)",
-		"promptTok_terminal": "Guía de herramientas de terminal",
-		"promptTok_terminal_desc": "Guía de uso del terminal persistente (se inyecta cuando «Herramientas de terminal» está activado)",
 		"promptTok_markers": "Guía de herramientas de marcado",
 		"promptTok_markers_desc": "Instrucciones de las herramientas de marcado integradas (se inyectan cuando markers está activado)",
 		"promptTok_plugin_dev": "Plugin dev guide",

@@ -789,10 +789,3 @@ export function effectiveDisabledAgentTools(s: LegacyToolSwitches): string[] {
 	// 常驻/禁用只由 `disabledAgentTools`、预设与模式闸门决定。这里不并入名单。
 	return [...next];
 }
-
-export function isTerminalGuidanceOn(disabled: readonly string[], preset?: string): boolean {
-	const on = TERMINAL_TOOL_NAMES.filter((n) => !disabled.includes(n));
-	if (on.length === 0) return false;
-	if (!preset || preset === "standard") return true;
-	return filterToolsByPreset(on, preset).length > 0;
-}

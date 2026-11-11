@@ -1620,8 +1620,6 @@
 		"promptTok_append_desc": "APPEND_SYSTEM.md 내용. 덮어쓰기 = 사용자 정의 추가 문구",
 		"promptTok_persona": "Windows 제약",
 		"promptTok_persona_desc": "Windows persona (win32 전용. 시간 초과/PTY/GBK 주의사항)",
-		"promptTok_terminal": "터미널 도구 안내",
-		"promptTok_terminal_desc": "지속 터미널 사용 안내 (“터미널 도구”가 켜져 있을 때 삽입돼요)",
 		"promptTok_markers": "마커 도구 안내",
 		"promptTok_markers_desc": "내장 마커 도구 사용 설명 (markers가 켜져 있을 때 삽입돼요)",
 		"promptTok_plugin_dev": "Plugin dev guide",

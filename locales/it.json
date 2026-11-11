@@ -1620,8 +1620,6 @@
 		"promptTok_append_desc": "contenuto di APPEND_SYSTEM.md; rimpiazzo = testo personalizzato accodato",
 		"promptTok_persona": "Persona Windows",
 		"promptTok_persona_desc": "regole di sicurezza solo win32 (timeout / PTY / GBK)",
-		"promptTok_terminal": "Indicazioni terminale",
-		"promptTok_terminal_desc": "guida all'uso del terminale persistente (iniettata quando gli strumenti terminale sono attivi)",
 		"promptTok_markers": "Indicazioni marker",
 		"promptTok_markers_desc": "uso degli strumenti marker integrati (iniettati quando i marker sono attivi)",
 		"promptTok_plugin_dev": "Plugin dev guide",

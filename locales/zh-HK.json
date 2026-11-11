@@ -1620,8 +1620,6 @@
 		"promptTok_append_desc": "APPEND_SYSTEM.md 內容；覆蓋 = 自定義追加文字",
 		"promptTok_persona": "Windows 約束",
 		"promptTok_persona_desc": "Windows persona（僅 win32；超時/PTY/GBK 注意事項）",
-		"promptTok_terminal": "終端機工具引導",
-		"promptTok_terminal_desc": "持久終端機使用引導（「終端機工具」開時注入）",
 		"promptTok_markers": "標記工具引導",
 		"promptTok_markers_desc": "內置標記工具使用説明（markers 開時注入）",
 		"promptTok_plugin_dev": "外掛开发指南",

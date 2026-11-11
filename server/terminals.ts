@@ -2586,8 +2586,6 @@ function backgroundResult(
 
 export { TERMINAL_TOOL_NAMES } from "./tool-manager.js";
 
-export const TERMINAL_TOOLS_GUIDANCE = `Use terminal(action) for interactive programs, REPLs, TUIs, persistent servers, or work in the visible terminal panel. Prefer bash for ordinary commands. Use create/list to select a terminal, input/key to drive it, and close when finished. read supports incremental cursors, output waiting, head/tail, and literal search. wait blocks for a tracked bash command's exit marker; commands submitted through input/key have no such marker, so observe them with read(waitMs). bash({persist:true}) uses terminalId='ai-bash' and may wait before returning. read/wait are read-only; other actions are write operations. When a liveness reminder arrives, read the terminal, answer its prompt, or close it.`;
-
 export interface TerminalSafetyCheckResult {
 	blocked?: boolean;
 	reason?: string;
