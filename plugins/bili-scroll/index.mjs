@@ -2,14 +2,20 @@ import { spawn } from "node:child_process";
 import { appendFileSync, existsSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { BilibiliApiClient } from "./bilibili-api.mjs?v=2.0.1";
+import { BilibiliApiClient } from "./bilibili-api.mjs?v=2.6.0";
 import { BiliCredentialManager } from "./credentials.mjs?v=2.0.1";
-import { BiliDutyEngine, todayStr } from "./duty.mjs?v=2.0.1";
-import { DmService } from "./lib/dm-service.mjs";
+import { BiliDutyEngine, todayStr } from "./duty.mjs?v=2.4.0";
+import { AskEngine } from "./lib/ask.mjs?v=2.4.0";
+import { DeliverySystem } from "./lib/delivery.mjs?v=2.4.0";
+import { ContentIndex } from "./lib/indexer.mjs?v=2.4.0";
+import { BiliStore } from "./lib/store.mjs?v=2.6.0";
+import { TasteEngine } from "./lib/taste.mjs?v=2.4.0";
+import { DmService } from "./lib/dm-service.mjs?v=2.4.0";
 import { readVideoContent } from "./lib/video-content.mjs";
-import { BiliFavOps } from "./lib/favops.mjs?v=2.0.1";
+import { BiliFavOps } from "./lib/favops.mjs?v=2.6.0";
 import { resolveUid } from "./lib/uid.mjs?v=2.0.1";
 import { ensureUv } from "./lib/uvfetch.mjs?v=2.0.1";
+import { describePrompts } from "./lib/prompts.mjs";
 import { appendVerifyToReport, verifyRecent } from "./lib/verify.mjs?v=2.0.1";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -43,37 +49,120 @@ export default {
 		const credManager = new BiliCredentialManager(storageDir);
 		const apiClient = new BilibiliApiClient(credManager);
 		const favOps = new BiliFavOps(storageDir);
+
+		// 智能层：状态库 + 品味账本 + 内容索引 + 意图问答 + 投递协议。
+		// 任何一步初始化失败都只降级、不影响插件主流程。
+		let intel = null;
+		try {
+			const store = new BiliStore(join(storageDir, "db"));
+			const taste = new TasteEngine({ store, log: (lvl, msg) => host.log?.(lvl, msg) });
+			const contentIndex = new ContentIndex({ store, api: apiClient, log: (m) => host.log?.("warn", m) });
+			const settingsFn = () => loadLocalCfg();
+			const ask = new AskEngine({
+				store,
+				api: apiClient,
+				host,
+				taste,
+				index: contentIndex,
+				settings: settingsFn,
+				readVideoContent: (bvid, options = {}) =>
+					readVideoContent({ api: apiClient, host, storageDir, bvid, settings: loadLocalCfg(), ...options }),
+				log: (lvl, msg) => host.log?.(lvl, msg),
+			});
+			const delivery = new DeliverySystem({
+				store,
+				api: apiClient,
+				favOps,
+				taste,
+				ask,
+				index: contentIndex,
+				settings: settingsFn,
+				log: (msg) => host.log?.("warn", msg),
+			});
+			intel = { store, taste, index: contentIndex, ask, delivery };
+			try {
+				const imported = store.importSeenMd(seenFile);
+				if (imported) host.log?.("info", `[bili-scroll] 已把 seen.md 的 ${imported} 条判重记录并入状态库`);
+			} catch {}
+			try {
+				store.prune();
+			} catch {}
+			host.log?.("info", `[bili-scroll] 状态库就绪 ${JSON.stringify(store.stats())}`);
+		} catch (err) {
+			host.log?.("warn", `[bili-scroll] 智能层初始化失败，降级为旧管线：${err.message}`);
+			intel = null;
+		}
+
 		const dutyEngine = new BiliDutyEngine({
 			storageDir,
 			apiClient,
 			host,
+			intel,
 			log: (lvl, msg) => host.log?.(lvl, msg),
 		});
 
 		const unregisterFns = [];
 
 		const cfgFile = join(storageDir, "config.json");
+		// 配置单源：host.getSettings() 是底座，config.json 只存显式改过的 patch，合并时文件优先。
+		const readFileCfg = () => {
+			try {
+				if (existsSync(cfgFile)) return JSON.parse(readFileSync(cfgFile, "utf8")) || {};
+			} catch {}
+			return {};
+		};
 		const loadLocalCfg = () => {
 			const s = host.getSettings?.() || {};
-			try {
-				if (existsSync(cfgFile)) {
-					const local = JSON.parse(readFileSync(cfgFile, "utf8"));
-					return { ...s, ...local };
-				}
-			} catch {}
-			return s;
+			return { ...s, ...readFileCfg() };
 		};
-
+		const NUM_KEYS = new Set([
+			"perDay",
+			"dmUid",
+			"favFolderId",
+			"dmWatchMinutes",
+			"dmReplyPerDay",
+			"commentPerRound",
+			"replyPerRound",
+		]);
+		const BOOL_KEYS = new Set([
+			"peakValley",
+			"noon",
+			"night",
+			"dmWatch",
+			"dmAutoReply",
+			"autoComment",
+			"replyToComments",
+			"transcribe",
+		]);
+		const normalizeCfgPatch = (patch) => {
+			const out = {};
+			for (const [k, v] of Object.entries(patch || {})) {
+				if (v === undefined) continue;
+				if (NUM_KEYS.has(k)) {
+					const n = Number(v);
+					if (Number.isFinite(n)) out[k] = n;
+					continue;
+				}
+				if (BOOL_KEYS.has(k)) {
+					out[k] = v === true || v === "true" || v === 1 || v === "1";
+					continue;
+				}
+				out[k] = v;
+			}
+			return out;
+		};
 		const saveLocalCfg = (patch) => {
 			try {
-				const cur = loadLocalCfg();
-				const next = { ...cur, ...patch };
-				writeFileSync(cfgFile, JSON.stringify(next, null, 2), "utf8");
-				return next;
+				const normalized = normalizeCfgPatch(patch);
+				const fileOnly = readFileCfg();
+				const nextFile = { ...fileOnly, ...normalized };
+				writeFileSync(cfgFile, JSON.stringify(nextFile, null, 2), "utf8");
+				return loadLocalCfg();
 			} catch {
 				return loadLocalCfg();
 			}
 		};
+		let restartDmWatcher = () => {};
 
 		const venvDir = join(storageDir, ".venv");
 		const venvPython = () =>
@@ -251,7 +340,7 @@ export default {
 						appendAsr(`检测到已存在的转写环境: ${asrDir}\n`);
 					}
 
-					const asrPkgs = ["faster-whisper", "yt-dlp", "av", "Pillow", "rapidocr-onnxruntime"];
+					const asrPkgs = ["faster-whisper", "yt-dlp", "av==12.3.0", "Pillow", "rapidocr-onnxruntime"];
 					const asrPy = asrPython();
 					let code = 1;
 
@@ -476,6 +565,18 @@ export default {
 				latestReport: reports[0] || null,
 				reports,
 				notesCount: notesSet.size,
+				intel: (() => {
+					if (!intel) return null;
+					try {
+						return {
+							store: intel.store.stats(),
+							taste: intel.taste.summary(),
+							delivery: intel.delivery.status(),
+						};
+					} catch (err) {
+						return { error: String(err?.message || err) };
+					}
+				})(),
 			};
 		};
 
@@ -491,8 +592,59 @@ export default {
 		route("POST", "/config", (req, res) => {
 			const patch = req.body || {};
 			const next = saveLocalCfg(patch);
+			try {
+				restartDmWatcher();
+			} catch {}
 			dutyEngine.appendLog(`配置已更新: ${JSON.stringify(patch)}`);
 			res.json({ ok: true, config: next });
+		});
+
+		route("GET", "/intel", (_req, res) => {
+			res.json({
+				ok: Boolean(intel),
+				intel: intel
+					? {
+							store: intel.store.stats(),
+							taste: intel.taste.summary(),
+							delivery: intel.delivery.status(),
+							latestAsk: (() => {
+								const a = intel.store.latestAsk();
+								return a ? { id: a.id, intent: a.intent, at: new Date(a.ts).toISOString() } : null;
+							})(),
+						}
+					: null,
+			});
+		});
+
+		route("POST", "/intel/signal", (req, res) => {
+			if (!intel) {
+				res.status(503).json({ ok: false, error: "状态库不可用" });
+				return;
+			}
+			const body = req.body || {};
+			const kind = String(body.kind || "");
+			if (!["pin", "like", "fav", "deep", "ignore", "ban", "ask"].includes(kind)) {
+				res.status(400).json({ ok: false, error: "不支持的信号类型" });
+				return;
+			}
+			const r = intel.taste.signal(kind, {
+				topic: body.topic,
+				bvid: body.bvid,
+				mid: body.mid,
+				reason: body.reason,
+				origin: "http",
+			});
+			res.json({ ok: true, signal: r, summary: intel.taste.summary() });
+		});
+
+		route("POST", "/intel/ask", async (req, res) => {
+			if (!intel) {
+				res.status(503).json({ ok: false, error: "状态库不可用" });
+				return;
+			}
+			const body = req.body || {};
+			const r = await intel.ask.run(String(body.intent || ""), { maxEvidence: body.maxEvidence });
+			res.json(r);
 		});
 
 		route("POST", "/duty/run", async (_req, res) => {
@@ -540,6 +692,82 @@ export default {
 			res.json({ ok: true, added, total: ids.length });
 		});
 
+		// v2.6 手动收藏兑底：偏好页没选目标收藏夹时，落到账号默认收藏夹（第一个），不影响自动收藏的显式配置语义。
+		let favFallbackCache = null;
+		const resolveFavFolderId = async (cfgFid) => {
+			if (cfgFid > 0) return cfgFid;
+			if (favFallbackCache && Date.now() - favFallbackCache.at < 10 * 60_000) return favFallbackCache.fid;
+			const folders = await favOps.getFolders();
+			const first = (folders && folders.ok && folders.folders?.[0]) || null;
+			if (!first) return 0;
+			favFallbackCache = { fid: Number(first.id) || 0, at: Date.now() };
+			return favFallbackCache.fid;
+		};
+
+		route("POST", "/fav-add", async (req, res) => {
+			const bvid = String(req.body?.bvid || "").trim();
+			if (!/^BV[0-9A-Za-z]{10}$/.test(bvid)) {
+				res.json({ ok: false, error: "bvid 非法" });
+				return;
+			}
+			const cfg = loadLocalCfg();
+			const fid = await resolveFavFolderId(Number(cfg.favFolderId) || 0);
+			if (!fid) {
+				res.json({ ok: false, error: "未登录或收藏夹列表拉不到（先扫码登录），或未设置目标收藏夹" });
+				return;
+			}
+			const r = await favOps.addVideo(bvid, fid);
+			if (r && r.ok) res.json({ ok: true, already: !!r.already });
+			else res.json({ ok: false, error: (r && r.error) || "收藏失败" });
+		});
+
+		// v2.6 手动点赞（公开社交动作，仅详情弹窗显式触发；AI 巡检不自动点赞）
+		route("POST", "/like-add", async (req, res) => {
+			const bvid = String(req.body?.bvid || "").trim();
+			if (!/^BV[0-9A-Za-z]{10}$/.test(bvid)) {
+				res.json({ ok: false, error: "bvid 非法" });
+				return;
+			}
+			const r = await favOps.likeVideo(bvid);
+			if (r && r.ok) res.json({ ok: true, already: !!r.already });
+			else res.json({ ok: false, error: (r && r.error) || "点赞失败" });
+		});
+
+		const videoStatCache = new Map();
+		route("GET", "/video-stat", async (req, res) => {
+			const bvid = String(req.query?.bvid || "").trim();
+			if (!/^BV[0-9A-Za-z]{10}$/.test(bvid)) {
+				res.json({ ok: false, error: "bvid 非法" });
+				return;
+			}
+			const hit = videoStatCache.get(bvid);
+			if (hit && Date.now() - hit.at < 600000) {
+				res.json({ ok: true, cached: true, stat: hit.stat });
+				return;
+			}
+			try {
+				const info = await apiClient.getVideoInfo(bvid);
+				if (!info) {
+					res.json({ ok: false, error: "获取失败" });
+					return;
+				}
+				const stat = {
+					view: info.stat?.view ?? null,
+					danmaku: info.stat?.danmaku ?? null,
+					reply: info.stat?.reply ?? null,
+					like: info.stat?.like ?? null,
+					favorite: info.stat?.favorite ?? null,
+					coin: info.stat?.coin ?? null,
+					duration: info.durationStr || "",
+					up: info.owner?.name || "",
+				};
+				videoStatCache.set(bvid, { at: Date.now(), stat });
+				res.json({ ok: true, stat });
+			} catch (e) {
+				res.json({ ok: false, error: String(e?.message || e) });
+			}
+		});
+
 		route("GET", "/watched", (req, res) => {
 			dutyEngine.syncSingleNotes(todayStr());
 			const all = parseSeenTable();
@@ -573,12 +801,20 @@ export default {
 			if (state === "picked") rows = rows.filter((x) => x.picked);
 			if (state === "skipped") rows = rows.filter((x) => !x.picked);
 			if (state === "commented") rows = rows.filter((x) => x.delivered || x.commented);
+			const day = String(req.query?.day || "");
+			if (/^\d{4}-\d{2}-\d{2}$/.test(day)) rows = rows.filter((x) => x.day === day);
+			const from = String(req.query?.from || "");
+			if (/^\d{4}-\d{2}-\d{2}$/.test(from)) rows = rows.filter((x) => x.day >= from);
+			const to = String(req.query?.to || "");
+			if (/^\d{4}-\d{2}-\d{2}$/.test(to)) rows = rows.filter((x) => x.day <= to);
+			const days = [...new Set(allRows.map((x) => x.day))].sort().reverse();
 
 			res.json({
 				ok: true,
 				total: rows.length,
 				offset,
 				limit,
+				days,
 				rows: rows.slice(offset, offset + limit),
 			});
 		});
@@ -628,6 +864,51 @@ export default {
 			} else {
 				res.status(404).json({ ok: false, error: "Note not found" });
 			}
+		});
+
+		// 详情弹窗「本账号动作台账」：点赞/收藏用只读查询，评论/私信用 deliveries 状态库。
+		// 查不到的一律 null，前端按「未能查询」展示，不编造。
+		route("GET", "/account-actions", async (req, res) => {
+			const bvid = String(req.query?.bvid || "").trim();
+			if (!/^BV[0-9A-Za-z]{10}$/.test(bvid)) {
+				res.json({ ok: false, error: "bvid 非法" });
+				return;
+			}
+			const out = { ok: true, like: null, fav: null, favPartial: false, comment: null, dm: null };
+			try {
+				const sent = store.deliveriesForVideo(bvid).filter((r) => r.state && r.state !== "drafted");
+				if (sent.length) {
+					const c = sent[0];
+					out.comment = {
+						text: c.text || "",
+						state: c.state || "",
+						rpid: c.rpid || 0,
+						day: c.day || "",
+						at: c.updated_at || c.created_at || 0,
+						error: c.error || "",
+					};
+				}
+				const dms = store.dmDigestsMentioning(bvid);
+				if (dms.length) {
+					const d = dms[0];
+					out.dm = { day: d.day || "", state: d.state || "", at: d.updated_at || d.created_at || 0, id: d.id || "" };
+				}
+			} catch {}
+			try {
+				out.like = await apiClient.hasLike(bvid);
+			} catch {}
+			try {
+				const fid = await resolveFavFolderId(Number(loadLocalCfg().favFolderId) || 0);
+				if (fid) {
+					out.favFolderId = fid;
+					const r = await favOps.isInFolder(bvid, fid);
+					if (r && r.ok) {
+						out.fav = r.value;
+						out.favPartial = Boolean(r.partial);
+					}
+				}
+			} catch {}
+			res.json(out);
 		});
 
 		route("POST", "/open", (req, res) => {
@@ -774,6 +1055,11 @@ export default {
 			res.json({ ok: true, reports: dutyEngine.listReports() });
 		});
 
+		// 提示词可看可改：默认、改写、生效、固定追加四份文本一起给客户端，避免界面显示与实际发送不一致。
+		route("GET", "/prompts", (_req, res) => {
+			res.json({ ok: true, ...describePrompts(loadLocalCfg()) });
+		});
+
 		route("GET", "/log", (_req, res) => {
 			res.json({ ok: true, log: dutyEngine.getRecentLog(100) });
 		});
@@ -794,6 +1080,9 @@ export default {
 						reply(payload);
 					} else if (type === "bili:save-config") {
 						const next = saveLocalCfg(msg.patch || {});
+						try {
+							restartDmWatcher();
+						} catch {}
 						reply({ ok: true, config: next });
 					} else if (type === "bili:login-start") {
 						const r = await apiClient.startLogin();
@@ -879,6 +1168,17 @@ export default {
 			loadConfig: () => ({ dmWatch: true, dmAutoReply: true, ...loadLocalCfg() }),
 			readVideoContent: (bvid, options = {}) =>
 				readVideoContent({ api: apiClient, host, storageDir, bvid, settings: loadLocalCfg(), ...options }),
+			onFresh: async ({ uid, fresh }) => {
+				if (!intel) return false;
+				try {
+					const r = await intel.delivery.handleIncoming({ uid, messages: fresh });
+					if (r.handled) dutyEngine.appendLog(`私信回执 ${r.action || ""}（UID ${uid}）已处理`);
+					return Boolean(r.handled);
+				} catch (err) {
+					dutyEngine.appendLog(`回执处理失败: ${err.message}`);
+					return false;
+				}
+			},
 		});
 		const lifetime = new AbortController();
 		let dmTimer = null;
@@ -891,11 +1191,22 @@ export default {
 		};
 		const startDmWatcher = () => {
 			if (dmTimer) clearInterval(dmTimer);
-			const mins = Math.max(1, Number(loadLocalCfg().dmWatchMinutes) || 1);
+			const cfg = loadLocalCfg();
+			if (cfg.dmWatch === false) {
+				dmTimer = null;
+				return;
+			}
+			const mins = Math.max(1, Number(cfg.dmWatchMinutes) || 1);
 			dmTimer = setInterval(() => void dmTick(), mins * 60000);
 			dmTimer.unref?.();
 		};
 		startDmWatcher();
+		restartDmWatcher = () => {
+			try {
+				startDmWatcher();
+			} catch {}
+		};
+		void dmTick();
 
 		const tickSchedule = () => {
 			const cfg = loadLocalCfg();
@@ -920,6 +1231,9 @@ export default {
 
 		const schedTimer = setInterval(tickSchedule, 60000);
 		if (typeof schedTimer?.unref === "function") schedTimer.unref();
+		try {
+			tickSchedule();
+		} catch {}
 
 		const registerTool = (spec) => {
 			const originalExec = spec.execute;
@@ -1206,6 +1520,18 @@ export default {
 					picked: st.picked,
 					quota: s.perDay || 5,
 					reportPath: dutyEngine.getReportPath(),
+					intel: (() => {
+						if (!intel) return null;
+						try {
+							return {
+								store: intel.store.stats(),
+								taste: intel.taste.summary({ top: 5 }),
+								delivery: intel.delivery.status(),
+							};
+						} catch (err) {
+							return { error: String(err?.message || err) };
+						}
+					})(),
 				};
 			},
 		});
@@ -1379,10 +1705,228 @@ export default {
 			},
 		});
 
+		registerTool({
+			name: "bili_ask",
+			label: "按目标找片（意图检索）",
+			description:
+				"Turn a natural-language goal into an evidence-backed Bilibili shortlist: compile a retrieval plan, search multiple sources, rank with the interest ledger, fetch real subtitle evidence with timestamps, and abstain when nothing is good enough.",
+			promptSnippet: "finding videos that match the user's goal, with real evidence and timestamps",
+			promptGuidelines: [
+				"Prefer this over keyword search when the user states a goal, a constraint (duration, recency) or asks what is worth watching.",
+				"Each item carries evidence.source/chars/limitations; never claim a video was fully watched.",
+				"Cite the returned quotes with their timestamps and links; when abstained=true, say so instead of padding the list.",
+			],
+			parameters: {
+				type: "object",
+				properties: {
+					intent: {
+						type: "string",
+						description:
+							"Natural-language goal, e.g. plugin tutorials you can start within 10 minutes, skip pure theory",
+					},
+					maxEvidence: { type: "number", description: "How many videos to fetch real evidence for (1-8)" },
+				},
+				required: ["intent"],
+			},
+			async execute(args, _id, signal) {
+				if (!intel) return { ok: false, error: "状态库不可用，插件已降级为旧管线" };
+				const sig = signal ? AbortSignal.any([signal, lifetime.signal]) : lifetime.signal;
+				return await intel.ask.run(String(args.intent || ""), { maxEvidence: args.maxEvidence, signal: sig });
+			},
+		});
+
+		registerTool({
+			name: "bili_deepen",
+			label: "深读一条（章节 + 引用）",
+			description:
+				"Expand one video from the last shortlist (or a given bvid) into 2-minute chapters and timestamped quotes taken from the indexed subtitle text.",
+			promptSnippet: "expanding a chosen video into timestamped chapters and quotes",
+			promptGuidelines: [
+				"Use after bili_ask when the user wants detail on one item; pass index (1-based) instead of re-searching.",
+				"Quotes are verbatim subtitle/ASR segments; if untimed=true, say the transcript has no timestamps.",
+			],
+			parameters: {
+				type: "object",
+				properties: {
+					askId: { type: "string", description: "Ask id returned by bili_ask (defaults to the latest ask)" },
+					index: { type: "number", description: "1-based position in that shortlist" },
+					bvid: { type: "string", description: "Direct video id instead of a shortlist position" },
+				},
+			},
+			async execute(args, _id, signal) {
+				if (!intel) return { ok: false, error: "状态库不可用" };
+				const sig = signal ? AbortSignal.any([signal, lifetime.signal]) : lifetime.signal;
+				return await intel.ask.deepen({ askId: args.askId, index: args.index, bvid: args.bvid, signal: sig });
+			},
+		});
+
+		registerTool({
+			name: "bili_taste",
+			label: "兴趣账本",
+			description:
+				"Read or update the interest ledger: weighted topics and creators built from explicit signals, with decay and reasons. Negative signals (ban/ignore) down-rank matching candidates.",
+			promptSnippet: "reading or updating the user's Bilibili interest ledger",
+			promptGuidelines: [
+				"Call with action=list before explaining recommendations, then cite the concrete weights it returns.",
+				"pin/ban/ignore require a topic (or a bvid whose pick topic is known); always pass a short reason.",
+			],
+			parameters: {
+				type: "object",
+				properties: {
+					action: { type: "string", enum: ["list", "pin", "like", "ban", "ignore"] },
+					topic: { type: "string", description: "Topic keyword, e.g. 大模型 / DSH / 剪辑" },
+					bvid: { type: "string", description: "Optional video the signal refers to" },
+					mid: { type: "number", description: "Optional creator mid" },
+					reason: { type: "string", description: "Short reason stored with the signal" },
+				},
+				required: ["action"],
+			},
+			async execute(args) {
+				if (!intel) return { ok: false, error: "状态库不可用" };
+				const action = String(args.action || "list");
+				if (action === "list") {
+					return {
+						ok: true,
+						summary: intel.taste.summary({ top: 10 }),
+						recent: intel.store.recentSignals({ sinceMs: 14 * 86_400_000, limit: 15 }).map((s) => ({
+							kind: s.kind,
+							topic: s.topic,
+							bvid: s.bvid,
+							weight: s.weight,
+							reason: s.reason,
+							at: new Date(s.ts).toISOString().slice(0, 10),
+						})),
+					};
+				}
+				const kind = action === "pin" ? "pin" : action === "like" ? "like" : action === "ban" ? "ban" : "ignore";
+				let topic = String(args.topic || "");
+				const bvid = /^BV[0-9A-Za-z]{10}$/.test(String(args.bvid || "")) ? args.bvid : "";
+				if (!topic && bvid) {
+					const pick = intel.store
+						.picksSince(Date.now() - 30 * 86_400_000, { limit: 300 })
+						.find((p) => p.bvid === bvid);
+					topic = pick?.topic || "";
+				}
+				if (!topic && !args.mid) return { ok: false, error: "需要 topic（或能给到已知 topic 的 bvid / mid）" };
+				const r = intel.taste.signal(kind, { topic, bvid, mid: args.mid, reason: args.reason, origin: "chat" });
+				return { ok: true, signal: r, summary: intel.taste.summary() };
+			},
+		});
+
+		registerTool({
+			name: "bili_index",
+			label: "内容索引",
+			description:
+				"Local content index of subtitle/ASR segments with timestamps: build it for a video, search it for exact moments, build a topic timeline, or cluster near-duplicate videos.",
+			promptSnippet: "searching indexed subtitle segments for exact moments and quotes",
+			promptGuidelines: [
+				"Use action=search to find where a topic is actually discussed, then quote the returned at/url.",
+				"Only subtitle tracks and ASR count as evidence; ai_conclusion/description entries are excluded from search results.",
+			],
+			parameters: {
+				type: "object",
+				properties: {
+					action: { type: "string", enum: ["search", "ingest", "timeline", "clusters", "stats"] },
+					query: { type: "string" },
+					bvid: { type: "string" },
+					bvids: { type: "array", items: { type: "string" } },
+					days: { type: "number" },
+					limit: { type: "number" },
+				},
+				required: ["action"],
+			},
+			async execute(args, _id, signal) {
+				if (!intel) return { ok: false, error: "状态库不可用" };
+				const action = String(args.action || "stats");
+				const sig = signal ? AbortSignal.any([signal, lifetime.signal]) : lifetime.signal;
+				if (action === "search") {
+					const hits = intel.index.search(String(args.query || ""), {
+						limit: args.limit || 8,
+						bvid: args.bvid || null,
+					});
+					return { ok: true, count: hits.length, hits };
+				}
+				if (action === "ingest") {
+					if (!args.bvid) return { ok: false, error: "需要 bvid" };
+					const r = await intel.index.ingest(args.bvid, { signal: sig, force: true });
+					return { ok: r.ok, ...r, text: undefined };
+				}
+				if (action === "timeline") {
+					return {
+						ok: true,
+						days: args.days || 30,
+						items: intel.index.timeline(String(args.query || ""), { days: args.days || 30, limit: args.limit || 20 }),
+					};
+				}
+				if (action === "clusters") {
+					const list = (args.bvids || []).map((bvid) => {
+						const meta = intel.store.getVideo(bvid) || { bvid };
+						return { ...meta, bvid, score: 0 };
+					});
+					const groups = intel.index.cluster(list);
+					return {
+						ok: true,
+						groups: groups.map((g) => ({
+							representative: { bvid: g.representative.bvid, title: g.representative.title },
+							others: g.others.map((o) => ({ bvid: o.bvid, title: o.title, similarity: o._sim })),
+						})),
+					};
+				}
+				return { ok: true, stats: intel.store.stats() };
+			},
+		});
+
+		registerTool({
+			name: "bili_delivery",
+			label: "投递状态与回执",
+			description:
+				"Inspect the outbound delivery state machine (drafted/sent/acted), the daily DM budget, why a video was recommended, or send one tracked message within budget.",
+			promptSnippet: "checking delivery states, daily DM budget and recommendation reasons",
+			promptGuidelines: [
+				"Use action=explain before defending a recommendation; it only replays reasons stored at pick time.",
+				"Sending is budgeted per day and idempotent; do not retry a failed send with a new message id.",
+			],
+			parameters: {
+				type: "object",
+				properties: {
+					action: { type: "string", enum: ["status", "explain", "send"] },
+					bvid: { type: "string" },
+					uid: { type: "number" },
+					text: { type: "string" },
+				},
+				required: ["action"],
+			},
+			async execute(args) {
+				if (!intel) return { ok: false, error: "状态库不可用" };
+				const action = String(args.action || "status");
+				if (action === "explain") return { ok: true, reasons: intel.delivery.explain({ bvid: args.bvid }) };
+				if (action === "send") {
+					const uid = Number(args.uid) || 0;
+					if (!uid) return { ok: false, error: "需要 uid" };
+					const b = intel.delivery.budget();
+					if (!b.allowed) return { ok: false, error: "今日私信额度已用尽", budget: b };
+					const id = `dm:manual:${Date.now().toString(36)}`;
+					intel.store.createDelivery({ id, kind: "dm_manual", uid, text: String(args.text || "") });
+					try {
+						await apiClient.sendMessage(uid, String(args.text || "").slice(0, 500));
+						intel.store.updateDelivery(id, { state: "sent" });
+						return { ok: true, id, budget: intel.delivery.budget() };
+					} catch (err) {
+						intel.store.updateDelivery(id, { state: "failed", error: err.message, attempts: 1 });
+						return { ok: false, error: err.message };
+					}
+				}
+				return { ok: true, ...intel.delivery.status() };
+			},
+		});
+
 		return () => {
 			lifetime.abort();
 			dmService.dispose();
 			dutyEngine.dispose();
+			try {
+				intel?.store?.close();
+			} catch {}
 			if (dmTimer) clearInterval(dmTimer);
 			if (schedTimer) clearInterval(schedTimer);
 			for (const unreg of unregisterFns) {

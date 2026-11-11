@@ -1,14 +1,16 @@
 {
 	"id": "bili-scroll",
 	"name": "bili-scroll",
-	"version": "2.1.1",
+	"version": "2.6.0",
 	"icon": "📺",
 	"iconSvg": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><rect x=\"2\" y=\"7\" width=\"20\" height=\"15\" rx=\"3\"/><polyline points=\"17 2 12 7 7 2\"/><line x1=\"8\" y1=\"12\" x2=\"8\" y2=\"12.01\"/><line x1=\"16\" y1=\"12\" x2=\"16\" y2=\"12.01\"/></svg>",
-	"description": "使用当前账号浏览 B 站，以字幕、音频和抽样画面理解视频，整理精选、发表评论、查询私信历史并自动交流，无需主人 UID。",
+	"description": "使用当前账号浏览 B 站，以字幕、音频和抽样画面理解视频；2.4 增加品味账本、内容索引、意图问答与带回执的投递，挑不出好东西会明确弃权。",
 	"descriptionEn": "Browse Bilibili with the current account, analyze subtitles, audio and sampled frames, curate videos, comment, query the inbox and reply to new DMs.",
 	"apiVersion": 2,
 	"permissions": ["tools", "http", "ui", "storage", "net", "chat", "llm"],
 	"view": true,
+	"alwaysOn": true,
+	"agentToolsDefaultOn": false,
 	"settings": [
 		{
 			"key": "perDay",
@@ -266,6 +268,57 @@
 			"default": "python",
 			"hint": "Python 执行路径，点击「装主依赖」后会自动指向插件独立环境 .venv",
 			"hintEn": "Path to Python interpreter, auto-configured after installing dependencies"
+		},
+		{
+			"key": "askMaxEvidence",
+			"type": "number",
+			"label": "按需找片默认取证几条",
+			"labelEn": "Default Evidence Budget",
+			"default": 4,
+			"min": 1,
+			"max": 8,
+			"hint": "bili_ask 每次最多为几条候选抓真实字幕证据；超额只比元数据，会标注 degraded",
+			"hintEn": "Max candidates to fetch real subtitle evidence for per ask"
+		},
+		{
+			"key": "diversityPerTopic",
+			"type": "number",
+			"label": "同一主题最多推几条",
+			"labelEn": "Max Per Topic",
+			"default": 2,
+			"min": 1,
+			"max": 3,
+			"hint": "避免一轮 5 条全是同一个话题；0 条主题分不够时也不会硬凑",
+			"hintEn": "Cap how many picks may share one topic"
+		},
+		{
+			"key": "indexEnabled",
+			"type": "boolean",
+			"label": "内容索引（字幕切片）",
+			"labelEn": "Content Index",
+			"default": true,
+			"hint": "把字幕按时间轴切片入库，重复读取同一视频时不再下载；关掉则每次现取",
+			"hintEn": "Index subtitle tracks into timestamped segments for reuse"
+		},
+		{
+			"key": "dmDailyLimit",
+			"type": "number",
+			"label": "每天最多几条私信",
+			"labelEn": "Daily DM Budget",
+			"default": 6,
+			"min": 1,
+			"max": 30,
+			"hint": "私信打扰预算；超了只写报告不发信，等你主动问",
+			"hintEn": "Outbound DM budget per day; over budget stays silent"
+		},
+		{
+			"key": "replyGrammar",
+			"type": "boolean",
+			"label": "私信回执菜单",
+			"labelEn": "Reply Grammar",
+			"default": true,
+			"hint": "在私信末尾加一行：1/2 深读 · f 收藏 · x 静音 · ? 为什么；回一个字符就能调偏好",
+			"hintEn": "Append a one-character reply menu to DMs so feedback costs one tap"
 		}
 	]
 }

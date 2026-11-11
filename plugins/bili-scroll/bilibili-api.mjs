@@ -617,4 +617,28 @@ export class BilibiliApiClient {
 			return null;
 		}
 	}
+
+	/**
+	 * 查询当前账号是否已给该视频点赞（只读，官方接口）。
+	 * 返回 true / false；未登录、风控或接口异常都返回 null——调用方不得据此编造状态。
+	 */
+	async hasLike(bvid) {
+		if (!/^BV[0-9A-Za-z]{10}$/.test(bvid)) return null;
+		try {
+			const res = await this._fetch(
+				`https://api.bilibili.com/x/web-interface/archive/has/like?bvid=${encodeURIComponent(bvid)}`,
+				{ headers: this.cred.getHeaders(), signal: AbortSignal.timeout(8000) },
+			);
+			const json = await res.json();
+			if (!json || (json.code !== undefined && json.code !== 0)) return null;
+			const d = json.data;
+			// 实测：data 为 0/1 数字（0=未赞，1=已赞），也可能 boolean / {like:…} 对象
+			if (typeof d === "boolean") return d;
+			if (typeof d === "number") return d !== 0;
+			if (d && typeof d === "object" && "like" in d) return Boolean(d.like);
+			return null;
+		} catch {
+			return null;
+		}
+	}
 }

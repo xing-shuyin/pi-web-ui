@@ -108,11 +108,26 @@ def main(options):
                     limits.append("One sampled frame could not be decoded.")
         if options.get("transcribe"):
             try:
-                downloader.params.update({"format": "bestaudio/worst", "outtmpl": str(root / "speech.%(ext)s")})
-                audio = downloader.extract_info(url, download=True)
-                if audio.get("entries"):
-                    audio = next(iter(audio["entries"]))
-                audio_path = Path(downloader.prepare_filename(audio))
+                audio_config = {
+                    "quiet": True, "no_warnings": True, "noplaylist": True,
+                    "socket_timeout": 15, "retries": 1, "fragment_retries": 1,
+                    "extractor_retries": 1, "concurrent_fragment_downloads": 1,
+                    "max_filesize": MAX_BYTES, "cachedir": False,
+                    "format": "bestaudio/worst",
+                    "outtmpl": {"default": str(root / "speech.%(ext)s")},
+                    "overwrites": True, "postprocessors": [],
+                }
+                with yt_dlp.YoutubeDL(audio_config) as audio_downloader:
+                    for pair in options.get("cookie", "").split(";"):
+                        name, sep, value = pair.strip().partition("=")
+                        if sep and name:
+                            audio_downloader.cookiejar.set_cookie(http.cookiejar.Cookie(
+                                0, name, value, None, False, ".bilibili.com", True, True,
+                                "/", True, True, None, True, None, None, {}, False))
+                    audio = audio_downloader.extract_info(url, download=True)
+                    if audio.get("entries"):
+                        audio = next(iter(audio["entries"]))
+                    audio_path = Path(audio_downloader.prepare_filename(audio))
                 if not audio_path.is_file() or audio_path.stat().st_size > MAX_BYTES:
                     raise RuntimeError("audio_unavailable")
                 local_script = root / "asr.py"
@@ -121,11 +136,11 @@ def main(options):
                 cache.mkdir(parents=True, exist_ok=True)
                 os.environ["HF_HOME"] = str(cache)
                 os.environ["HF_HUB_CACHE"] = str(cache / "hub")
-                output = io.StringIO()
+                transcript_path = root / "transcript.txt"
                 old_argv = sys.argv
-                sys.argv = [options["asrScript"], str(audio_path), "--model", str(options.get("model") or "small")]
+                sys.argv = [options["asrScript"], str(audio_path), "--model", str(options.get("model") or "small"), "-o", str(transcript_path)]
                 try:
-                    with contextlib.redirect_stdout(output), contextlib.redirect_stderr(io.StringIO()):
+                    with open(transcript_path, "w", encoding="utf-8") as out_f, contextlib.redirect_stdout(out_f), contextlib.redirect_stderr(io.StringIO()):
                         namespace = runpy.run_path(str(local_script), run_name="video_evidence_asr")
                         asr_main = namespace["main"]
                         asr_main.__globals__["_TMP"] = str(root)
@@ -135,7 +150,11 @@ def main(options):
                             raise RuntimeError("asr_failed")
                 finally:
                     sys.argv = old_argv
-                transcript = output.getvalue().strip()
+                transcript = ""
+                try:
+                    transcript = transcript_path.read_text(encoding="utf-8").strip()
+                except Exception:
+                    transcript = ""
                 if transcript:
                     result["transcript"] = transcript[:40_000]
                 else:
@@ -150,6 +169,10 @@ if __name__ == "__main__":
         request = json.loads(sys.stdin.read(64 * 1024))
         with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
             response = main(request)
+        try:
+            sys.stdout.reconfigure(encoding="utf-8")
+        except Exception:
+            pass
         print(json.dumps(response, ensure_ascii=False))
     except Exception:
         print(json.dumps({"limitations": ["Media extraction failed; verify yt-dlp, av and authenticated access."]}))
