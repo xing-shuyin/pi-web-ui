@@ -170,8 +170,8 @@ export function goalReviewDenial(toolName: string, params: unknown): GoalReviewD
 		}
 		return {
 			kind: "dispatch-tool",
-			reason: `目标审查回合：不能调用 subagent(action="${act || "spawn"}") —— 轮次由服务端控制。请只做本轮审查、只回 verdict JSON。`,
-			reasonEn: `Goal review round: subagent(action="${act || "spawn"}") is unavailable — the server owns the rounds. Just review this round and reply with only the verdict JSON.`,
+			reason: `目标审查回合：不能调用 conversation(action="${act || "spawn"}") —— 轮次由服务端控制。请只做本轮审查、只回 verdict JSON。`,
+			reasonEn: `Goal review round: conversation(action="${act || "spawn"}") is unavailable — the server owns the rounds. Just review this round and reply with only the verdict JSON.`,
 		};
 	}
 	if (DISPATCH_TOOLS.has(name)) {

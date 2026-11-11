@@ -85,6 +85,7 @@ import {
 	makeSubagentTools,
 	CONVERSATION_TOOL_NAME,
 } from "../subagents.js";
+import type { SettleWakeReason } from "../subagent-settle.js";
 import {
 	recordSubagentHandoff,
 	formatSubagentHandoffMessage,
@@ -252,7 +253,11 @@ export class UniversalSession implements DispatchSession {
 				return this.subagentToSnapshot(conv);
 			},
 			listSubagents: (scope?: "all" | "subagent" | "persistent") => this.listSubagents(scope),
-			steerSubagent: (convId: string, message: string) => this.steerSubagent(convId, message),
+			steerSubagent: async (convId: string, message: string) => {
+				await this.steerSubagent(convId, message);
+				return { state: "queued" as const };
+			},
+			waitForSubagentSettle: (ids, opts) => this.waitForSubagentChange(ids, opts),
 			stopSubagent: (convId: string) => this.stopSubagent(convId),
 			markSubagentsConsumed: (_runIds: string[]) => {},
 			listTemplates: () =>
@@ -3212,6 +3217,37 @@ export class UniversalSession implements DispatchSession {
 				listener();
 			} catch {}
 		}
+	}
+
+	/**
+	 * 通用引擎没有逐运行的结算边沿，只能借用「子代理状态变化」监听：
+	 * 唤醒后由等待循环自己重新判定，语义与 pi 引擎一致。
+	 */
+	private waitForSubagentChange(
+		ids: string[],
+		opts: { timeoutMs: number; signal?: AbortSignal },
+	): Promise<SettleWakeReason> {
+		void ids;
+		if (opts.signal?.aborted) return Promise.resolve("aborted");
+		if (opts.timeoutMs <= 0) return Promise.resolve("timeout");
+		return new Promise<SettleWakeReason>((resolve) => {
+			let done = false;
+			let timer: NodeJS.Timeout | undefined;
+			const finish = (reason: SettleWakeReason): void => {
+				if (done) return;
+				done = true;
+				if (timer) clearTimeout(timer);
+				this.subagentWaitListeners.delete(onChange);
+				opts.signal?.removeEventListener("abort", onAbort);
+				resolve(reason);
+			};
+			const onChange = (): void => finish("changed");
+			const onAbort = (): void => finish("aborted");
+			timer = setTimeout(() => finish("timeout"), Math.max(1, Math.floor(opts.timeoutMs)));
+			timer.unref?.();
+			this.subagentWaitListeners.add(onChange);
+			opts.signal?.addEventListener("abort", onAbort, { once: true });
+		});
 	}
 
 	listSubagents(scope: "all" | "subagent" | "persistent" = "all"): SubagentSnapshot[] {

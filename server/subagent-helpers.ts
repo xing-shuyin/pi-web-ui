@@ -76,6 +76,15 @@ export function toSubagentSnapshot(conv: Conversation): SubagentSnapshot {
 	const isPersisted = !conv.isSubagent || (typeof sm?.isPersisted === "function" && sm.isPersisted());
 	const m = conv.session.model;
 	const modelKey = m ? `${m.provider}/${m.id}` : (conv.subagentTemplate?.model ?? undefined);
+	let usage: SubagentSnapshot["usage"];
+	try {
+		const tokens = conv.session.getSessionStats()?.tokens;
+		if (tokens && Number.isFinite(tokens.input) && Number.isFinite(tokens.output)) {
+			usage = { input: tokens.input, output: tokens.output, total: tokens.input + tokens.output };
+		}
+	} catch {
+		usage = undefined;
+	}
 	return {
 		convId: conv.id,
 		executionId: conversationIdentity(conv),
@@ -97,6 +106,8 @@ export function toSubagentSnapshot(conv: Conversation): SubagentSnapshot {
 		output: conv.session.getLastAssistantText() ?? "",
 		parentId: (conversationParent(conv) as Conversation | undefined)?.id,
 		persisted: isPersisted,
+		evidence: conv.subagentEvidence,
+		usage,
 		handoffTo: conv.peerHandoffTo ? [...conv.peerHandoffTo] : undefined,
 		handoffFrom: conv.peerHandoffFrom ? [...conv.peerHandoffFrom] : undefined,
 		worktree: conv.subagentWorktree

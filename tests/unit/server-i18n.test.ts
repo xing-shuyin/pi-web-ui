@@ -65,8 +65,8 @@ describe("Russian server pack (PR #846)", () => {
 				toolsLineEn: "\nTools: read",
 				securityLineEn: "\nSecurity: readonly",
 			});
-			expect(delegated).toContain('subagent(action="wait_all")');
-			expect(delegated).toContain('subagent(action="steer")');
+			expect(delegated).toContain('conversation(action="wait_all")');
+			expect(delegated).toContain('conversation(action="steer")');
 			const spawned = pick("ru", "", "", "subagents.spawn.started", {
 				kindLabelEn: "Subagent",
 				convId: "c1",
@@ -79,12 +79,12 @@ describe("Russian server pack (PR #846)", () => {
 				isolationLineEn: "",
 				addressLine: "\naddress: exec-test",
 			});
-			expect(spawned).toContain('subagent(action="wait_all")');
+			expect(spawned).toContain('conversation(action="wait_all")');
 			expect(spawned).toContain("exec-test");
 			expect(spawned).not.toMatch(/\{[\w.]+\}/);
 			const limit = pick("ru", "", "", "agent.subagent.limit.reached", { limit: 3 });
-			expect(limit).toContain('subagent(action="wait_all")');
-			expect(limit).toContain('subagent(action="stop")');
+			expect(limit).toContain('conversation(action="wait_all")');
+			expect(limit).toContain('conversation(action="stop")');
 			const wait = pick("ru", "", "", "terminals.wait.no.pending", { "p.terminalId": "term-test" });
 			expect(wait).toContain("terminal(action='read', terminalId=\"term-test\"");
 			expect(pick("ru", "", "", "subagents.notify.footer")).toMatch(/^\n/);

@@ -6,6 +6,7 @@ import {
 	type SubagentSnapshot,
 	type SubagentToolHost,
 } from "../../server/subagents.js";
+import { testSettleWaiter } from "../helpers/subagent-settle.js";
 
 function setup() {
 	const snapshot = {
@@ -27,6 +28,7 @@ function setup() {
 		steerSubagent: vi.fn(async () => {}),
 		stopSubagent: vi.fn(async () => {}),
 		handoffSubagent: vi.fn(async () => {}),
+		waitForSubagentSettle: testSettleWaiter(),
 		listTemplates: () => [],
 		isTemplateUsable: () => false,
 		completeSubagent: vi.fn(() => ({ ok: true })),
@@ -65,7 +67,7 @@ describe("conversation completion", () => {
 		const { host, call, setSelf } = setup();
 		setSelf("remapped-child");
 		const result = await call({ action: "complete", message: " Done " });
-		expect(host.completeSubagent).toHaveBeenCalledWith("remapped-child", "Done");
+		expect(host.completeSubagent).toHaveBeenCalledWith("remapped-child", "Done", {});
 		expect(result.details).toMatchObject({ status: "completion_requested" });
 		expect(host.markSubagentsConsumed).not.toHaveBeenCalled();
 	});

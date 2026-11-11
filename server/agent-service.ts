@@ -184,6 +184,19 @@ import {
 	roleOutcomeOf,
 	countActiveSubagents,
 } from "./subagent-helpers.js";
+import { SubagentSettleRegistry } from "./subagent-settle.js";
+import { SubagentSpawnBudget } from "./subagent-budget.js";
+import { collectTranscriptFacts, verifyEvidence, type SubagentEvidenceInput } from "./subagent-evidence.js";
+import {
+	buildResumePrompt,
+	disabledSubagentLedger,
+	getSubagentLedger,
+	ledgerBootId,
+	toLedgerEvidence,
+	type LedgerRunRecord,
+	type LedgerRunState,
+	type SubagentLedger,
+} from "./subagent-ledger.js";
 import {
 	createSubagentTask,
 	restartSubagentTask,
@@ -340,10 +353,13 @@ import {
 } from "./tool-prompt-overrides.js";
 import {
 	collectSubagentDescendantIds,
+	isSubagentTerminal,
 	makeSubagentTools,
 	subagentTitle,
 	withSubagentOwner,
 	type SubagentSnapshot,
+	type SubagentSteerReceipt,
+	type SubagentResumeResult,
 	type SubagentToolHost,
 } from "./subagents.js";
 import { makeDelegateTaskTool } from "./delegate-task.js";
@@ -607,6 +623,8 @@ export interface Conversation {
 	peerHandoffFrom?: string[];
 	notifyOnDone?: SubagentNotifyMode;
 	subagentTask?: SubagentTaskState;
+	/** 子代理完成时自报并以转录核对过的证据（父代理与 UI 只读）。 */
+	subagentEvidence?: import("./subagent-evidence.js").SubagentEvidence;
 	subagentTaskPending?: () => boolean;
 	subagentTaskStopped?: boolean;
 	subagentDoneNotified?: boolean;
@@ -841,6 +859,120 @@ export class ClientSession {
 	private pluginModelKeys = new Map<string, string>();
 	private sharedModelRuntime: Awaited<ReturnType<typeof createAgentSessionServices>>["modelRuntime"] | undefined;
 	private turnEndWaiters = new Map<string, Set<(o: RoleWaitOutcome) => void>>();
+	private subagentSettleStore?: SubagentSettleRegistry;
+	private subagentSpawnBudgetStore?: SubagentSpawnBudget;
+
+	/**
+	 * 子代理结算边沿：回合结束 / 停止 / 移出 / 问卷变化 都从这里唤醒等待方。
+	 * 做成原型访问器 + 懒建，测试里的 fake ClientSession（Object.create(prototype)）也能拿到自己的注册表。
+	 */
+	private get subagentSettle(): SubagentSettleRegistry {
+		return (this.subagentSettleStore ??= new SubagentSettleRegistry());
+	}
+
+	/** 每棵运行树的累计派发预算（并发与深度之外的第三道闸）。 */
+	private get subagentSpawnBudget(): SubagentSpawnBudget {
+		return (this.subagentSpawnBudgetStore ??= new SubagentSpawnBudget());
+	}
+
+	private subagentLedgerStore?: SubagentLedger;
+
+	/** 运行账本：dataDir 级单例，同一进程的多个 ClientSession 共用。 */
+	private get subagentLedger(): SubagentLedger {
+		if (!this.subagentLedgerStore) {
+			const dataDir = (this.stateStore as ClientStateStore | undefined)?.dataDir;
+			this.subagentLedgerStore = dataDir ? getSubagentLedger(dataDir) : disabledSubagentLedger();
+		}
+		return this.subagentLedgerStore;
+	}
+
+	/** 派发时登记一条 running；进程死在这里，重启后它就是「被中断的运行」。 */
+	private recordSubagentRunStart(
+		conv: Conversation,
+		info: { prompt: string; template?: string; persist: boolean },
+	): void {
+		const ledger = this.subagentLedger;
+		if (!ledger.enabled) return;
+		const runId = conversationIdentity(conv);
+		const parent = this.parentExecution(conv)?.conv;
+		let sessionFile: string | undefined;
+		try {
+			sessionFile = conv.session.sessionFile ?? undefined;
+		} catch {
+			sessionFile = undefined;
+		}
+		let model: string | undefined;
+		try {
+			const m = conv.session.model;
+			model = m ? `${m.provider}/${m.id}` : undefined;
+		} catch {
+			model = undefined;
+		}
+		const worktree = conv.subagentWorktree;
+		ledger.upsert({
+			runId,
+			parentRunId: parent ? conversationIdentity(parent) : undefined,
+			parentSessionFile: parent ? this.sessionFileOfConversation(parent) : undefined,
+			cwd: conv.cwd,
+			type: conv.subagentType ?? "general",
+			title: conv.title,
+			template: info.template,
+			model,
+			thinking: conv.subagentThinking,
+			prompt: info.prompt,
+			state: "running",
+			bootId: ledgerBootId(),
+			createdAt: Date.now(),
+			updatedAt: Date.now(),
+			sessionFile,
+			persisted: info.persist,
+			worktree: worktree ? { path: worktree.worktreePath, branch: worktree.branch } : undefined,
+		});
+		ledger.event(runId, "spawned", { type: conv.subagentType ?? "general", persist: info.persist });
+	}
+
+	private sessionFileOfConversation(conv: Conversation): string | undefined {
+		try {
+			return conv.session.sessionFile ?? undefined;
+		} catch {
+			return undefined;
+		}
+	}
+
+	/** 把当前运行态同步进账本；没登记过的对话（普通对话）直接跳过。 */
+	private syncSubagentLedger(conv: Conversation, opts: { state?: LedgerRunState; event?: string } = {}): void {
+		const ledger = this.subagentLedger;
+		if (!ledger.enabled) return;
+		const runId = conversationIdentity(conv);
+		const previous = ledger.read(runId);
+		if (!previous) return;
+		const outcome = subagentRunOutcome(conv);
+		const state: LedgerRunState = opts.state ?? (outcome.error ? "failed" : outcome.canceled ? "canceled" : "running");
+		let outputTail: string | undefined;
+		try {
+			outputTail = conv.session.getLastAssistantText() ?? undefined;
+		} catch {
+			outputTail = undefined;
+		}
+		const worktree = conv.subagentWorktree;
+		ledger.upsert({
+			...previous,
+			runId,
+			cwd: conv.cwd,
+			type: conv.subagentType ?? previous.type,
+			title: conv.title || previous.title,
+			state,
+			updatedAt: Date.now(),
+			finishedAt: state === "running" ? previous.finishedAt : Date.now(),
+			error: outcome.error ?? previous.error,
+			outputTail: outputTail ?? previous.outputTail,
+			evidence: toLedgerEvidence(conv.subagentEvidence) ?? previous.evidence,
+			worktree: worktree
+				? { path: worktree.worktreePath, branch: worktree.branch, cleanedUp: Boolean(worktree.cleanedUp) }
+				: previous.worktree,
+		});
+		if (opts.event) ledger.event(runId, opts.event);
+	}
 	private pendingSubagentNotices = new Map<string, { timer: NodeJS.Timeout; subagents: Set<Conversation> }>();
 	private deliveringSubagentNotices = new Map<string, number>();
 	private pendingCliManagers = new Set<TerminalManager>();
@@ -1407,8 +1539,8 @@ export class ClientSession {
 				throw new Error(
 					pick(
 						this.getLang(),
-						`同时运行的子代理数量已达上限（${maxSubagents} 个），请先用 subagent(action="wait_all") 等一部分完成、或用 subagent(action="stop") 停掉不需要的再派发`,
-						`Active subagent limit reached (${maxSubagents} live). Wait for some with subagent(action="wait_all") or stop unneeded ones with subagent(action="stop") before spawning more`,
+						`同时运行的子代理数量已达上限（${maxSubagents} 个），请先用 conversation(action="wait_all") 等一部分完成、或用 conversation(action="stop") 停掉不需要的再派发`,
+						`Active subagent limit reached (${maxSubagents} live). Wait for some with conversation(action="wait_all") or stop unneeded ones with conversation(action="stop") before spawning more`,
 						"agent.subagent.limit.reached",
 						{ limit: maxSubagents },
 					),
@@ -1421,6 +1553,22 @@ export class ClientSession {
 		const isEphemeralSubagent = !persist;
 		if (isEphemeralSubagent) {
 			this.spawningSubagents++;
+		}
+		// 运行树累计预算：并发与深度之外再压一道，扇出→收口→再扇出也不会无限烧钱。
+		const budgetRoot = this.subagentRootId(parentId);
+		const budgetReservation = this.subagentSpawnBudget.reserve(budgetRoot);
+		if (!budgetReservation.ok) {
+			releaseSlot?.();
+			if (isEphemeralSubagent) this.spawningSubagents = Math.max(0, this.spawningSubagents - 1);
+			throw new Error(
+				pick(
+					this.getLang(),
+					`本次运行树累计已派发 ${budgetReservation.count} 个子代理（上限 ${budgetReservation.limit}），已拒绝继续派发。先收口已有结果；确实需要更多就把 PI_WEB_SUBAGENT_MAX_SPAWNS_PER_RUN 调大，或在新的顶层对话里开一批。`,
+					`This run tree already spawned ${budgetReservation.count} subagents (limit ${budgetReservation.limit}); further spawns are refused. Collect the results you have; raise PI_WEB_SUBAGENT_MAX_SPAWNS_PER_RUN or start a new top-level conversation for another batch.`,
+					"agent.subagent.budget.reached",
+					{ count: budgetReservation.count, limit: budgetReservation.limit },
+				),
+			);
 		}
 		let handedOffToConv = false;
 		let pendingRuntime: AgentSessionRuntime | undefined;
@@ -1636,6 +1784,7 @@ export class ClientSession {
 			};
 			signal?.addEventListener("abort", onSpawnAbort, { once: true });
 			holder.assertSubagentWorktreeAdmission(conv);
+			this.recordSubagentRunStart(conv, { prompt, template: apply?.name, persist: Boolean(persist) });
 			conv.kickoff = runtime.session
 				.sendUserMessage(prompt)
 				.catch((err) => {
@@ -1661,6 +1810,8 @@ export class ClientSession {
 			holder.emitConversations();
 			return conv.id;
 		} catch (error) {
+			this.subagentSpawnBudget.refund(budgetRoot);
+			if (registered) this.syncSubagentLedger(registered, { state: "failed", event: "spawn_failed" });
 			if (registered) {
 				const home = pendingRuntime && this.findConversationHome?.(pendingRuntime.session);
 				const holder = home?.session ?? this;
@@ -1786,6 +1937,25 @@ export class ClientSession {
 		return max > 0 && this.subagentDepthUnder(parentId) >= max;
 	}
 
+	/**
+	 * 运行树根：沿对话对象上的父子绑定走到最顶层会话；用作累计派发预算的记账键。
+	 * 刻意不投影快照（CLI / 临时对话没有 session，投影会抛）。
+	 */
+	private subagentRootId(parentId: string | undefined): string {
+		if (!parentId) return this.activeId || "session";
+		let conv = this.convs.get(parentId);
+		const seen = new Set<string>();
+		while (conv && !seen.has(conv.id)) {
+			seen.add(conv.id);
+			const parent =
+				(conversationParent(conv) as Conversation | undefined) ??
+				(conv.parentId ? this.convs.get(conv.parentId) : undefined);
+			if (!parent) return conversationIdentity(conv);
+			conv = parent;
+		}
+		return parentId;
+	}
+
 	private subagentOwnerOf(convId: string | undefined): ClientSession {
 		return convId ? (this.resolveExecution(convId)?.session ?? this) : this;
 	}
@@ -1823,6 +1993,84 @@ export class ClientSession {
 			if (cur === self) return true;
 		}
 		return false;
+	}
+
+	/**
+	 * 续跑一条账本运行：进程内子代理会话不落盘，接不上原转录，所以这是「带已知进度重派」。
+	 * 工作树若仍保留，就直接在旧工作树里跑（不新建），未提交的改动不丢。
+	 */
+	async resumeSubagentRun(selfId: string, runId: string, message?: string): Promise<SubagentResumeResult> {
+		const ledger = this.subagentLedger;
+		await ledger.ready();
+		const record = ledger.read(runId);
+		if (!record) return { ok: false, error: "not_found" };
+		const live = this.subagentSnapshotAnywhere(runId);
+		if (live && !isSubagentTerminal(live)) return { ok: false, error: "running", runId };
+		if (record.resumedBy) return { ok: false, error: "already_resumed", runId: record.resumedBy };
+		const parentId = this.subagentCurrentId(selfId);
+		if (!this.convs.get(parentId)) return { ok: false, error: "parent_missing" };
+		const recordedTemplate = record.template ? this.subagentTemplates.get(record.template) : undefined;
+		// 模板可能被删/停用：续跑不假装还带着原角色，明确降级并告知子代理。
+		const template = recordedTemplate && recordedTemplate.enabled !== false ? recordedTemplate : undefined;
+		const templateNote =
+			record.template && !template
+				? `\n\nNote: the original role template "${record.template}" is gone or disabled; you run with the default role.`
+				: "";
+		const cwd = record.worktree && !record.worktree.cleanedUp ? record.worktree.path : record.cwd;
+		const title = pick(
+			this.getLang(),
+			`续跑：${record.title}`,
+			`Resumed: ${record.title}`,
+			"agent.subagent.resume.title",
+			{ title: record.title },
+		);
+		const convId = await this.spawnSubagentConversation(
+			`${buildResumePrompt(record, message)}${templateNote}`,
+			record.type,
+			cwd,
+			template,
+			record.model ?? undefined,
+			parentId,
+			record.persisted,
+			title,
+			record.thinking,
+			true,
+			"none",
+		);
+		const conv = this.convs.get(convId);
+		const executionId = conv ? conversationIdentity(conv) : undefined;
+		const newRunId = executionId ?? convId;
+		const fresh = ledger.read(newRunId);
+		if (fresh) ledger.upsert({ ...fresh, resumedFrom: runId, updatedAt: Date.now() });
+		ledger.markResumed(runId, newRunId);
+		return {
+			ok: true,
+			runId,
+			convId,
+			executionId,
+			mode: "relaunch",
+			previousState: record.state,
+			sessionFile: record.sessionFile,
+		};
+	}
+
+	/** 启动对账：把上一次进程留下的 running 标成 interrupted，并提示可以续跑。 */
+	async recoverSubagentRuns(): Promise<void> {
+		const ledger = this.subagentLedger;
+		if (!ledger.enabled) return;
+		const recovered = await ledger.recover();
+		if (recovered.length === 0) return;
+		const shown = recovered
+			.slice(0, 5)
+			.map((record) => `${record.title || record.type}（${record.runId.slice(0, 8)}）`)
+			.join("、");
+		const more = recovered.length > 5 ? ` 等 ${recovered.length} 个` : "";
+		this.pendingNotices.push({
+			type: "notice",
+			level: "warning",
+			text: `上次服务重启中断了 ${recovered.length} 个子代理运行：${shown}${more}。用 conversation(action="resume", runId="…") 带已知进度续跑，或 get_result 取已产出的证据。`,
+			textEn: `${recovered.length} subagent run(s) were interrupted by the last restart: ${shown}${more}. Use conversation(action="resume", runId="…") to relaunch with the recorded progress, or get_result for the evidence already produced.`,
+		});
 	}
 
 	async spawnSubagentViaHost(
@@ -1909,6 +2157,7 @@ export class ClientSession {
 				conv.subagentWorktreePromise = undefined;
 			}
 		})();
+		void conv.subagentWorktreePromise.finally(() => this.syncSubagentLedger(conv, { event: "worktree_finalized" }));
 		return conv.subagentWorktreePromise;
 	}
 
@@ -1926,6 +2175,8 @@ export class ClientSession {
 			);
 		}
 		const currentOwner = this.resolveExecution(conversationIdentity(conv))?.session;
+		this.syncSubagentLedger(conv, { state: "canceled", event: "stopped" });
+		this.subagentSettle.notify(conv.id);
 		if (!currentOwner) return;
 		currentOwner.scheduleSubagentCompletionNotice(conv);
 		currentOwner.emitConversations();
@@ -1969,16 +2220,16 @@ export class ClientSession {
 		return false;
 	}
 
-	private async steerSubagentRound(conv: Conversation, message: string): Promise<void> {
+	private async steerSubagentRound(conv: Conversation, message: string): Promise<SubagentSteerReceipt> {
 		this.assertSubagentWorktreeAdmission(conv);
 		const session = conv.session;
 		if (session.isStreaming) {
 			await session.sendUserMessage(message, { deliverAs: "steer" });
-			return;
+			return { state: "delivered" };
 		}
 		if (conv.promptInFlight || !session.isIdle) {
 			await session.steer(message);
-			return;
+			return { state: "queued" };
 		}
 
 		const generation = (conv.subagentRunGeneration ?? 0) + 1;
@@ -1989,6 +2240,7 @@ export class ClientSession {
 		conv.subagentConsumedByParent = false;
 		conv.subagentError = undefined;
 		conv.subagentErrorNotified = undefined;
+		this.syncSubagentLedger(conv, { state: "running", event: "steer_restart" });
 		const parentKey = this.parentExecutionKey(conv);
 		if (parentKey) {
 			const pending = this.pendingSubagentNotices.get(parentKey);
@@ -2031,6 +2283,7 @@ export class ClientSession {
 			}
 		})();
 		this.emitConversations();
+		return { state: "restarted" };
 	}
 
 	scheduleSubagentCompletionNotice(conv: Conversation): void {
@@ -2058,6 +2311,7 @@ export class ClientSession {
 		const owner = this.subagentOwnerOf(parentId);
 		owner.emitConversations();
 		if (owner.activeId === (this.subagentCurrentId?.(parentId) ?? parentId)) owner.flushSnapshot();
+		owner.subagentSettle.notifyAll();
 	}
 
 	private drainSuspendedSubagents(conv: Conversation): Conversation[] {
@@ -2353,6 +2607,8 @@ export class ClientSession {
 	}
 
 	private notifyTurnEnd(conv: Conversation): void {
+		this.subagentSettle.notify(conv.id);
+		this.syncSubagentLedger(conv, { event: "turn_end" });
 		if (conv.session.isIdle && !conv.retryState) this.releaseConversationClaims(conv);
 		const set = this.turnEndWaiters.get(conv.id);
 		if (!set || set.size === 0) return;
@@ -3109,15 +3365,24 @@ export class ClientSession {
 				signal,
 			);
 		},
-		completeSubagent: (selfId, summary) => {
+		completeSubagent: (selfId, summary, evidenceInput) => {
 			const owner = this.subagentOwnerOf(selfId);
 			const conv = owner.convs.get(this.subagentCurrentId(selfId));
 			if (!conv?.parentId) throw new Error("Only a child task can complete itself.");
+			// 证据不采信自述：拿它自己的转录核对声称的文件与命令。
+			const facts = collectTranscriptFacts(sessionMessagesOf(conv.session));
+			const evidence = verifyEvidence(evidenceInput ?? {}, facts);
+			if (evidence.issues.length > 0) {
+				return { ok: false, error: evidence.issues[0], issues: evidence.issues, evidence };
+			}
+			conv.subagentEvidence = evidence;
+			owner.syncSubagentLedger(conv, { state: "running", event: "completion_requested" });
 			conv.subagentTask = requestSubagentCompletion(
 				conv.subagentTask ?? createSubagentTask(conv.notifyOnDone),
 				summary,
 			);
-			return { accepted: true, taskPending: owner.subagentTaskPending(conv) };
+			this.subagentSettle.notify(conv.id);
+			return { ok: true, taskPending: owner.subagentTaskPending(conv), evidence };
 		},
 		finalizeSubagentWorktree: async (convId: string) => {
 			const owner = this.subagentOwnerOf(convId);
@@ -3149,9 +3414,23 @@ export class ClientSession {
 			const owner = this.subagentOwnerOf(convId);
 			const curId = owner.convs.has(convId) ? convId : this.subagentCurrentId(convId);
 			const conv = owner.convs.get(curId);
-			if (!conv?.session) return;
-			await owner.steerSubagentRound(conv, message);
+			if (!conv?.session) return { state: "missed" as const };
+			return await owner.steerSubagentRound(conv, message);
 		},
+		waitForSubagentSettle: (ids, opts) => this.subagentSettle.waitFor(ids, opts),
+		listLedgerRuns: async (opts) => {
+			const ledger = this.subagentLedger;
+			await ledger.ready();
+			const limit = Math.max(1, Math.min(opts?.limit ?? 32, 100));
+			return ledger.list().slice(0, limit);
+		},
+		getLedgerRun: async (runId) => {
+			const ledger = this.subagentLedger;
+			await ledger.ready();
+			return ledger.read(runId);
+		},
+		getLedgerEvents: (runId, limit) => this.subagentLedger.events(runId, limit),
+		resumeLedgerRun: (selfId, runId, message) => this.resumeSubagentRun(selfId, runId, message),
 		stopSubagent: (convId) => this.stopSubagentTask(convId),
 		getActiveConversationId: () => this.activeId,
 		dismissSubagent: async (convId, opts) => {
@@ -3811,6 +4090,7 @@ export class ClientSession {
 			);
 		}
 		await cs.bindSession();
+		void cs.recoverSubagentRuns().catch(() => {});
 		const globalDefault = stateStore.getDefaultModel();
 		if (globalDefault) {
 			const slash = globalDefault.indexOf("/");
@@ -4765,6 +5045,8 @@ export class ClientSession {
 		const out: { title: string; cwd: string; sessionFile?: string }[] = [];
 		for (const conv of this.convs.values()) {
 			if (!conv.session.isStreaming) continue;
+			// 子代理/持久化子会话由运行账本负责重启对账与续跑，不能当成普通标签页重新打开。
+			if (conv.isSubagent || conv.parentId || conv.subagentPrompt) continue;
 			let sessionFile: string | undefined;
 			try {
 				sessionFile = conv.session.sessionFile ?? undefined;
@@ -6520,9 +6802,21 @@ export class ClientSession {
 				const home = current();
 				return home.session.answerConsult(conversationIdentity(home.session.convs.get(home.convId)!), runId, requestId);
 			},
-			completeSubagent: (_self, summary) => {
+			completeSubagent: (_self, summary, evidence) => {
 				const home = current();
-				return home.session.subagentHost.completeSubagent!(home.convId, summary);
+				return home.session.subagentHost.completeSubagent!(home.convId, summary, evidence);
+			},
+			waitForSubagentSettle: (ids, opts) => current().session.subagentSettle.waitFor(ids, opts),
+			listLedgerRuns: (opts) =>
+				current().session.subagentHost.listLedgerRuns?.(opts) ?? Promise.resolve([] as LedgerRunRecord[]),
+			getLedgerRun: (runId) => current().session.subagentHost.getLedgerRun?.(runId) ?? Promise.resolve(undefined),
+			getLedgerEvents: (runId, limit) =>
+				current().session.subagentHost.getLedgerEvents?.(runId, limit) ?? Promise.resolve([]),
+			resumeLedgerRun: (_self, runId, message) => {
+				const home = current();
+				const resume = home.session.subagentHost.resumeLedgerRun;
+				if (!resume) return Promise.resolve({ ok: false as const, error: "unsupported" });
+				return resume(home.convId, runId, message);
 			},
 			getPendingConsults: () => {
 				const home = current();
@@ -6801,6 +7095,7 @@ export class ClientSession {
 	}
 
 	private questionsChanged(): void {
+		this.subagentSettle.notifyAll();
 		for (const owner of new Set([this, ...(this.allSubagentSessions?.() ?? [])])) {
 			for (const request of owner.pendingQuestions.values()) owner.notifyUserQuestion(request);
 			owner.emitQuestionQueue();
@@ -12148,6 +12443,9 @@ export class ClientSession {
 			this.turnEndWaiters.delete(id);
 			for (const fn of waiters) fn("gone");
 		}
+		this.syncSubagentLedger(conv, { state: "dismissed", event: "dismissed" });
+		this.subagentSettle.notify(id);
+		this.subagentSpawnBudget.forget(this.subagentRootId(id));
 		try {
 			this.getClaimStore?.().releaseByOwner(id);
 		} catch {}
@@ -15641,6 +15939,8 @@ export class ClientSession {
 			waiters.clear();
 		}
 		this.turnEndWaiters.clear();
+		this.subagentSettle.shutdown();
+		void this.subagentLedger.flush().catch(() => {});
 		try {
 			for (const id of this.convs.keys()) {
 				this.getClaimStore?.().releaseByOwner(id);
