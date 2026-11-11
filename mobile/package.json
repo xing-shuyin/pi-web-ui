@@ -8,6 +8,7 @@
 		"build": "vite build",
 		"typecheck": "tsc --noEmit",
 		"sync": "npm run build && cap sync",
+		"icons": "node scripts/gen-app-icon.mjs",
 		"apk": "npm run sync && node scripts/build-apk.mjs",
 		"apk:all": "node scripts/package-all.mjs",
 		"apk:all:runtime": "node scripts/package-all.mjs --with-runtime",
