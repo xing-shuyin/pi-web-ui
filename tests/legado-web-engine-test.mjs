@@ -125,7 +125,10 @@ try {
 	const missing = want.filter((n) => !tools.has(n));
 	if (missing.length) fail(`缺工具：${missing.join(", ")}`);
 	else console.log(`✓ 注册 AI 工具：${want.join(", ")}`);
-	if (routes.size !== 4) fail(`HTTP 路由数不对：${[...routes.keys()].join(", ")}`);
+	const wantRoutes = ["GET /proxy", "POST /proxy", "GET /store", "POST /store", "GET /chromeinfo"];
+	const missingRoutes = wantRoutes.filter((key) => !routes.has(key));
+	if (missingRoutes.length) fail(`HTTP 路由缺失：${missingRoutes.join(", ")}`);
+	else console.log(`✓ 注册 HTTP 路由：${wantRoutes.join(", ")}`);
 
 	const run = (name, params) => tools.get(name).execute("t", params);
 
