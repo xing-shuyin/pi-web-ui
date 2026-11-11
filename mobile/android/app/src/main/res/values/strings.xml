@@ -1,7 +1,7 @@
 <?xml version='1.0' encoding='utf-8'?>
 <resources>
-    <string name="app_name">pi</string>
-    <string name="title_activity_main">pi</string>
+    <string name="app_name">π</string>
+    <string name="title_activity_main">π</string>
     <string name="package_name">com.piwebui.mobile</string>
     <string name="custom_url_scheme">com.piwebui.mobile</string>
 </resources>

@@ -250,7 +250,7 @@ describe("工具 schema 脱水（只留字段名与类型，说明归唯一归�
 			canvas: { action: expect.any(String), cwd: expect.any(String) } as never,
 			terminal: { action: expect.any(String), data: "Include newline to submit" } as never,
 			delegate_task: {
-				agent: "Template name from subagent(action='templates')",
+				agent: "Template name from conversation(action='templates')",
 				required_tools: "Free text; 'read-only' switches the subagent to a readonly whitelist",
 				model: "provider/id; omit to inherit the template and panel model",
 				persist: "Keep the session in history",

@@ -36,7 +36,15 @@ React + Capacitor 手机客户端、Hub 账号隔离推送与设备切换见 [`m
 
 界面 `appSend` 为 prompt 附带只在前端传递的 `userInitiated` 上下文；`useChat.send` 在 WebSocket 发送成功后更新顺序，插件直接调用发送器或显式关闭该上下文时不置顶，空白或未连接发送也不置顶。原生 CLI 只消费 `native_cli_prompt_submitted` 窄事件（Claude/Codex `UserPromptSubmit`、Pi `input(source=interactive)`），按 session 与 eventId 去重；终端输出、普通按键、粘贴和 working 状态都不能替代用户提交信号。
 
-会话 ID、sessionId 与文件路径关联到同一位置，保证活动/历史表示切换、重新打开或过户后保留顺序。子代理保持父子树（含工作树子代理），向子代理直接发送消息时整体提升所属父树。顺序只保存在页面内存，不写入存储；项目排位沿用独立规则。相邻项目节点之间使用主题边框色分隔线与间距，分隔范围覆盖整个会话子树。
+会话 ID、sessionId 与文件路径关联到同一位置，保证活动/历史表示切换、重新打开或过户后保留顺序。子代理保持父子树（含工作树子代理），向子代理直接发送消息时整体提升所属父树。顺序只保存在页面内存，不写入存储；项目排位见「项目（工作区）排序」。
+
+## 项目（工作区）排序
+
+项目顺序与「最近对话」时间解耦，事实源：`server/client-state.ts` 的 `remember(clientId, cwd, { promote })` 与 `web/src/project-order-settings.ts`。
+
+- **时间只认真实对话**：`promote`（默认）只在真的发消息时调用（pi `ClientSession.prompt`、`dsh` 与 `universal` 的 `prompt`），刷新该项目 `lastUsed` 并推 `projects`。浏览/切换/恢复（`set_cwd`、`switchConversation`、打开历史对话、连接时恢复 `lastCwd`）一律 `{ promote: false }`：只写 `lastCwd`、清 tombstone，未登记的补一条 `lastUsed: 0`，不动时间；`withCurrentCwd()` 也不再给当前项目打时间戳。否则「只是点开看看」会把项目顶到最新，下次加载顺序就变了。
+- **客户端两种模式**（localStorage）：自动模式（默认）按 `lastUsed` 降序，`lastUsed === 0`（从没对话过）回退到「本浏览器首次出现时间」，所以新添加的项目天然在最上方；手动模式（设置「项目顺序全靠手动」）只认持久化的拖拽/添加顺序，新出现的项目置顶，聊天不再重排。拖拽或 Alt+↑/↓ 会自动切到手动模式。切模式不跳变：自动模式持续把当前顺序镜像进存储，手动模式直接接手眼前排列。
+- 项目行右侧时间只在 `lastUsed > 0` 时显示；验证：`tests/unit/left-panel-stage-d.test.ts`、`tests/unit/left-panel-actions.test.ts`、`tests/unit/left-panel-open-conv-order.test.ts`、`tests/unit/client-state-recent-projects.test.ts`。相邻项目节点之间使用主题边框色分隔线与间距，分隔范围覆盖整个会话子树。
 
 「运行中对话」（`conversations`）和「历史会话」（`sessions`）是两个通道，但常常指向同一批会话，左栏必须把它们认成同一条，否则同一条会话会渲染成两行。分工：**行归属由引擎裁定、身份由客户端归一**。
 
@@ -148,7 +156,38 @@ pi 的 `schedule` 创建任务时单独持久化创建来源（稳定 SDK 会话
 
 `send` 返回投递或排队状态，不等待接收方处理任务；`read` 分页读取并消费自己的收件箱，熔断期间消息仍保留。`request` 等待回答，服务端限制消息字节、队列与请求数量并拒绝请求循环；参数只收纯文本 `message`（`questionsFromMessage()` 折成单个内部问题），结构化 `questions` 仍照收。`reply` 仅允许原接收对话，`message` 按待答问题展开成 `custom` 回答，旧 `answers` 结构仍照收；`escalate` 将同一 PendingQuestion 交给用户，沿用原始截止时间。`wait_all` 为待当前对话处理的请求提前返回。旧 `handoff/consult/answer/escalate` 作为兼容入口转接通信服务；历史挂起问卷保持可结算。
 
-任务完成通过 `conversation(action="complete", summary)` 登记，与发送消息分开。`spawn.notifyOnDone` 保留布尔兼容并支持 `"manual"`。manual 本轮退出但还有运行中下级、问卷、通信或待投递子结果时保持 taskPending，禁止提前通知、消费结果或结算工作树；完成登记不能绕过这些条件。所有依赖收口后使用显式 summary，未登记则以最终正文兜底。错误与取消继续通知，自动唤醒不清除手动完成意图。当前 manual 和通信宿主为 pi 引擎，Universal 明确拒绝不支持的 manual 模式。
+任务完成通过 `conversation(action="complete", summary, evidence)` 登记，与发送消息分开；证据与转录对账的规则见下一节。`spawn.notifyOnDone` 保留布尔兼容并支持 `"manual"`。manual 本轮退出但还有运行中下级、问卷、通信或待投递子结果时保持 taskPending，禁止提前通知、消费结果或结算工作树；完成登记不能绕过这些条件。所有依赖收口后使用显式 summary，未登记则以最终正文兜底。错误与取消继续通知，自动唤醒不清除手动完成意图。当前 manual 和通信宿主为 pi 引擎，Universal 明确拒绝不支持的 manual 模式。
+
+## 子代理完成证据、结算边沿与派发预算
+
+子代理自述「做完了」不算证据。`conversation(action="complete")` 除 `summary` 外要求同时给 `evidence`：`{files:[], commands:[]}`（改过的文件、跑过的验证命令）、`{none:true}`（只读任务，声明没有文件改动）或 `{blocked:"原因"}`（做不完，如实报）。归一只在 `server/subagent-evidence.ts`：路径按 `/` 归一、命令压空白、去重并限量（50 文件 / 20 命令 / 单条 400 字符），空对象判非法。
+
+对账不接受自述：`collectTranscriptFacts()` 从子代理自己的转录里抽**真改过的文件**（写入类工具调用的 path/file_path/paths/files，名单复用 `subagent-security-gate.ts` 的 `SUBAGENT_WRITE_TOOL_NAMES`）与**真跑过的命令**（bash/powershell 调用的 command、`bashExecution` 的 command+exitCode、`toolResult.isError` 回落标失败）。只有可证伪的冲突才驳回：声称跑过的命令在转录里找不到 / 那条命令在转录里失败 / 声称 `none` 但转录有写入；改过但未声明的文件、声称改过却找不到写入调用的文件只记疑点并降级 `partial`（bash 里 `sed`/`mv` 也会改文件，不能一票否决）。驳回时 `complete` 抛错并把矛盾列给子代理，让它先修正再登记；通过后证据存到 `conv.subagentEvidence`，裁决 `pass / partial / unverified / blocked` 随 `wait_all`、`get_result`、`list`、完成通知（`subagent-notify.ts`）一并呈现；同一裁决经 `ConversationSummary.subagentVerdict` 进左栏，`unverified / partial / blocked` 显示证据角标（`pass` 不占位），别让「没验证」看起来像「已验证」。缺证据不阻塞收口，但状态必须显示 `unverified`，父代理据此决定是否复核——宁可显式未验证，不要假成功。
+
+`wait_all` 不再轮询。`server/subagent-settle.ts` 的 `SubagentSettleRegistry` 只提供**边沿**：运行 id 变化即唤醒订阅者，等待方醒来重算是否真的收口（并重扫新派生的后代与待交付请示）。`agent-service` 在回合结束、停止、移出、问卷队列变化、完成通知投递状态变化处 `notify/notifyAll`，`dispose` 时 `shutdown`。单次等待切片 30s，等待上限仍由看门狗 cap 决定；通用引擎（`universal-session.ts`）用自身的子代理监听实现同一接口，语义一致。判定「已收口」只有一条：拿不到快照（已移出/已结束回收）或显式终态，等待与「还剩谁」共用 `isSettled`，避免出现「全都完成了却报还有人在跑」。
+
+一次调用可以扇出：`spawn` 的 `tasks[]` 一次派多个，先整批校验（prompt、key 形状与唯一性、模板可用、思考档位、隔离模式）再启动，一个不合法就一个都不启动；单批上限 `SUBAGENT_FANOUT_MAX = 16`，启动并发窗口 4（不与并发上限抢名额）。每个 task 可带 `key`（字母数字与 `_.-`，≤40），工具把 `key → 运行身份` 记在**本对话工具实例**的有界表（256 项）里，`wait_all / get_result / steer / stop` 的 `runIds` 接受 key 或真实 id。`steer` 回执区分 `delivered`（送进当前回合）/ `queued`（排队等回合结束）/ `restarted`（本来空闲，同会话开新一轮）/ `missed`（没有可投递通道），父代理不必猜。
+
+并发与深度挡不住累计成本，所以加了第三道闸：`server/subagent-budget.ts` 按**运行树根**（沿 parent 走到最顶层会话的稳定执行身份）累计派发次数，默认 64（`PI_WEB_SUBAGENT_MAX_SPAWNS_PER_RUN`，`0` 关闭）。预留在启动路径同步完成，失败退还，运行树根移出时 `forget`。子代理用量（`getSessionStats().tokens`）进快照的 `usage`，在列表与等待结果里以 `输入↓输出↑` 呈现，配合上下文软上限一起看成本。
+
+## 运行账本与重启续跑
+
+子代理的工作不能因为重启就消失。`server/subagent-ledger.ts` 把每次派发落到 `<dataDir>/subagent-runs/<runId>/`：
+
+```
+status.json     机器可读的当前状态（原子替换，最后写者胜）
+events.jsonl    追加式生命周期流水（有字节上限，截断后只留一条标记）
+```
+
+写入纪律：所有写操作进每个 run 的**串行队列**，调用方一律 fire-and-forget；`status.json` 走 `writeAtomic`，事件用 `appendFile`；任何 IO 失败只记 `lastError()`，绝不让账本问题打断派发或回合结束（`dispose` 时 `flush()`）。有界：run 目录数默认 200（`PI_WEB_SUBAGENT_LEDGER_MAX_RUNS`，`0` 关闭整本账）、单 run 事件 256KB、`prompt` 8KB、`outputTail` 4KB、证据条目各 5 条。淘汰只挑已结束的 run，且要等该 run 的写队列排空再删目录——否则排队中的 `mkdir` 会把目录又建回来。
+
+重启对账只认 `bootId`：每条记录带本进程随机身份，`recover()` 只把**别的 boot** 留下的 `running` 判成 `interrupted`，本进程的活运行一律不动；重复调用幂等。`ClientSession.create()` 里 fire-and-forget 调用一次，命中时推一条 notice（列出前 5 个标题与 id），告诉用户/模型可以 `get_result` 取已产出的证据或 `resume` 续跑。**主对话的重启恢复与子代理分开**：`streamingSummaries()`（daemon 记录「重启时正在流式」的入口）跳过子代理与持久化子会话，避免把 child 当成普通标签页重新打开、丢掉父子关系。
+
+账本由运行态在各收口点同步：派发登记 `running`；回合结束、完成登记（含证据）、停止、移出、`steer` 重开一轮、工作树收尾分别 `upsert` + `event`（`spawned / turn_end / completion_requested / stopped / dismissed / steer_restart / worktree_finalized`）。读侧：`conversation(action="list")` 在活运行之后追加账本行（跳过已移出与仍在内存里的），`get_result` 在内存查不到时回落到账本，给出状态、证据、错误、工作树、`sessionFile` 与输出尾部。
+
+`conversation(action="resume", runId, message?)` 的语义必须诚实：进程内子代理会话不落盘，**接不上原转录**，所以续跑是「带已知进度重派」（`mode: "relaunch"`）——提示词由 `buildResumePrompt()` 拼：原任务 + 中断前输出尾部 + 账本证据 + 保留的工作树 + 旧转录路径，并要求「别重做已完成的部分、守住已有结论、按证据收口」。工作树仍保留时直接以它为 `cwd` 重派（复用未提交改动，不新建工作树）；`persist=true` 的子代理转录仍在历史里可回看。`resumedBy` 标记新 run，重复续跑直接拒绝；还在进程里跑着的 run 也拒绝（先 `wait_all`/`get_result`）。
+
+验证：`tests/unit/subagent-ledger.test.ts`（写入/重启读回/bootId 对账/事件截断/淘汰/关闭/续跑关系/提示词）、`tests/unit/subagent-ledger-tool.test.ts`（list 追加/get_result 回落/resume 成功与四类失败/无账本引擎降级）。
 
 ## 问卷队列与父代理请示
 
@@ -299,6 +338,12 @@ pi 的 `schedule` 创建任务时单独持久化创建来源（稳定 SDK 会话
 
 - 每客户端 `convs: Map<convId, Conversation>`，**每个对话一个独立 `AgentSessionRuntime`**：`new_chat` 新建 runtime + 新 session 文件（旧对话继续在后台跑，不中断）；`switch_conversation` 只换 `activeId`（不碰其他 runtime）；`runtime`/`session` 访问器指向当前活动对话。**对话按项目归属**：`conv.cwd` 即所属项目，每个项目各自的活动对话互不干扰。
 - **`set_cwd` 不再重建当前对话**——改为切到目标项目自己的对话（该项目最近活动的那个；没有则新建一个并恢复该项目最近的持久会话）。
+- **工作区命令必须串行（#872）**：`cs.cwd`、活动对话、runtime 绑定是同一组可变状态，而改它们的命令（`set_cwd` / `new_chat` / `new_cli_chat` / `switch_session` / `switch_conversation` / `fork_session` / `rollback_session` / `make_dir(setAsCwd)` / 沙盒切换）都是异步重活（stat、恢复最近会话、挂载 runtime、复制沙盒）。ws 消息逐条派发，上一条还在 await，下一条已经在跑 —— 「先切项目再新建对话」抢跑时 `newChat()` 读到的还是旧 cwd，新对话就落进上一个项目（左栏里像「消失」了）。
+  - **唯一单源 `server/workspace-queue.ts`**：派发层对上述命令只做「同步认领 + 入队」，按会话实例 FIFO，后一条等前一条落定；空闲时只多一个微任务。新增工作区命令必须入队，且**不得**在 handler 里自己写「等一会儿再干」。
+  - **声明式目标目录**：`new_chat` 可带 `cwd`（`ClientMessage`），服务端在同一条队列任务里「切工作区 → 核验 → 建会话」；**切不过去就不建会话**（错误提示 + `new_chat_result ok:false`），绝不静默落到旧项目。`new_cli_chat` 自带 cwd，自验证、不受这条拦截。
+  - **客户端意图单源**：`web/src/pending-workspace.ts` 记住「已声明、未确认」的 `set_cwd` 目标，并自动挂到紧随其后的 `new_chat` 上（各入口不各自记一遍，禁逐处补 cwd）；快照落到目标目录或 cwd 过渡 `done`/`error` 即清理。
+  - **入队的命令必须自己是有界的**（自带超时 / 中止）：队列是 FIFO，一条永不落定的命令会堵住该客户端所有工作区操作。`prompt` 与文件类命令不进队（各走自己的路）。
+  - 回归：`tests/unit/workspace-queue.test.ts`、`tests/unit/pending-workspace.test.ts`。
 - **「运行的对话」列表生命周期**（每个对话 `listed` / `promptedSinceActive` / `lastActiveAt` 三字段）：
   - 入列：活动对话**正在流式输出时**被挤到后台（new_chat / switch_conversation / set_cwd，**跨项目切换同样入列**）→ `listed=true`；从历史显式恢复的会话在打开时即设 `listed=true` + `promptedSinceActive=true`，首次切走不发新消息也保留。
   - **临时对话防丢失（#793）**：已开始的 `isEphemeral` 对话切走时始终保留并设 `listed=true`，不依赖全局 `retainFinishedConversations`、原先的 `listed` 或本次是否发新消息；重复打开再切走同样保留。空白临时对话仍可自动回收，显式 ✕ 仍可销毁；保留不代表落盘，需「保存为正式对话」才能进入历史。

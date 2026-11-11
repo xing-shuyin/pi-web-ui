@@ -2,7 +2,7 @@ import type { CapacitorConfig } from "@capacitor/cli";
 
 const config: CapacitorConfig = {
 	appId: "com.piwebui.mobile",
-	appName: "pi",
+	appName: "π",
 	webDir: "dist",
 	server: {
 		hostname: "localhost",

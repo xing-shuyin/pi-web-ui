@@ -180,7 +180,7 @@ describe("禁用语义（会话同步层面）", () => {
 			applyCompactionOverrides: () => {},
 			applyToolGating,
 			promptSnapshot: () => ({ full: "", texts: {}, toolsSchema: "" }),
-			getMarkerState: () => ({ markersEnabled: true, disabledMarkers: [], markers: [] }),
+			getMarkerState: () => ({ disabledMarkers: [], markers: [] }),
 			getApprovalPolicy: () => ({ enabled: false }),
 			onGoalModeDisabled: () => {},
 		} as unknown as SettingsHost;

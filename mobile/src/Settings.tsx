@@ -1,4 +1,5 @@
-import { useState, useSyncExternalStore } from "react";
+import { useEffect, useState, useSyncExternalStore } from "react";
+import { PiPhoneControl } from "@pi-mobile/native-phone-control";
 import { PiPush } from "@pi-mobile/native-push";
 import type { PushController } from "./push-controller";
 import type { PushKind } from "./connection";
@@ -152,6 +153,7 @@ export function NotificationSettings({
 						{error || state.error}
 					</p>
 				)}
+				<PhoneControlSection />
 				<footer className="mobile-settings-footer">
 					<button className="btn" disabled={busy} onClick={() => void run(onDisconnect)}>
 						断开并更换连接方式
@@ -159,5 +161,118 @@ export function NotificationSettings({
 				</footer>
 			</section>
 		</div>
+	);
+}
+
+/**
+ * 手机操控：让智能体读写当前界面。无障碍权限只能由用户在系统设置里手动勾选，
+ * 所以这里只负责「状态 + 去开启 + 两个自检」，真正的工具调用由服务端下发。
+ */
+function PhoneControlSection() {
+	const [status, setStatus] = useState<{ enabled: boolean; canScreenshot: boolean } | null>(null);
+	const [probe, setProbe] = useState("");
+	const [shot, setShot] = useState("");
+	const [error, setError] = useState("");
+	const [busy, setBusy] = useState(false);
+
+	const refresh = async () => {
+		try {
+			setStatus(await PiPhoneControl.getStatus());
+			setError("");
+		} catch (cause) {
+			setStatus({ enabled: false, canScreenshot: false });
+			setError(cause instanceof Error ? cause.message : "读取手机操控状态失败。");
+		}
+	};
+
+	useEffect(() => {
+		void refresh();
+		// 用户去系统设置开完回来，状态会变：回到前台就重查一次。
+		const onVisible = () => {
+			if (document.visibilityState === "visible") void refresh();
+		};
+		document.addEventListener("visibilitychange", onVisible);
+		return () => document.removeEventListener("visibilitychange", onVisible);
+	}, []);
+
+	const run = async (action: () => Promise<unknown>) => {
+		setBusy(true);
+		setError("");
+		try {
+			await action();
+		} catch (cause) {
+			setError(cause instanceof Error ? cause.message : "操作未完成，请重试。");
+		} finally {
+			setBusy(false);
+		}
+	};
+
+	const enabled = status?.enabled ?? false;
+
+	return (
+		<section className="mobile-settings-section" aria-label="手机操控">
+			<h2 className="mobile-settings-section-title">手机操控</h2>
+			<div className="mobile-status-list">
+				<div>
+					<span>无障碍服务</span>
+					<strong>{enabled ? "已开启" : "未开启"}</strong>
+				</div>
+				<div>
+					<span>截图能力</span>
+					<strong>{status?.canScreenshot ? "可用" : "需要 Android 11+"}</strong>
+				</div>
+			</div>
+			<p className="mobile-hint">
+				开启后智能体可以读取当前界面并执行点击、滑动、输入。系统不允许应用自行授权，需要你在系统设置里手动勾选「pi
+				手机操控」。
+			</p>
+			<div className="mobile-settings-actions">
+				<button
+					className="btn"
+					disabled={busy}
+					onClick={() => void run(() => PiPhoneControl.openAccessibilitySettings())}
+				>
+					去系统设置开启
+				</button>
+				<button className="btn" disabled={busy} onClick={() => void run(refresh)}>
+					刷新状态
+				</button>
+				<button
+					className="btn"
+					disabled={busy || !enabled}
+					onClick={() =>
+						void run(async () => {
+							const dump = await PiPhoneControl.dump({ maxNodes: 200 });
+							setProbe(`${dump.packageName || "未知应用"} · ${dump.nodes.length} 个控件`);
+						})
+					}
+				>
+					读取界面自检
+				</button>
+				<button
+					className="btn"
+					disabled={busy || !enabled || !status?.canScreenshot}
+					onClick={() =>
+						void run(async () => {
+							const result = await PiPhoneControl.screenshot({ maxWidth: 360 });
+							setShot(`data:image/png;base64,${result.data}`);
+						})
+					}
+				>
+					截屏自检
+				</button>
+			</div>
+			{probe && (
+				<p className="mobile-hint" role="status">
+					{probe}
+				</p>
+			)}
+			{shot && <img className="mobile-shot-preview" src={shot} alt="当前屏幕缩略图" />}
+			{error && (
+				<p className="mobile-error" role="alert">
+					{error}
+				</p>
+			)}
+		</section>
 	);
 }

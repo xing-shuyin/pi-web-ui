@@ -504,7 +504,7 @@ describe("native CLI conversations", () => {
 		expect(cs.roots).toBe(roots);
 		expect(cs.files.unwatchGit).toHaveBeenCalledOnce();
 		expect(cs.onCwdChanged).toHaveBeenCalledWith(targetCwd, roots);
-		expect(cs.stateStore.remember).toHaveBeenCalledWith(cs.clientId, targetCwd);
+		expect(cs.stateStore.remember).toHaveBeenCalledWith(cs.clientId, targetCwd, { promote: false });
 		expect(cs.refreshSessionsOnSwitch).toHaveBeenCalledOnce();
 		expect(cs.pushProjects).toHaveBeenCalledOnce();
 		expect(cs.listFiles).toHaveBeenCalledWith(undefined);

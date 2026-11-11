@@ -44,7 +44,7 @@ export class DurableAgentService implements EngineService {
 				} catch {}
 			}
 			if (typeof this.stateStore?.remember === "function") {
-				this.stateStore.remember(clientId, effectiveCwd);
+				this.stateStore.remember(clientId, effectiveCwd, { promote: false });
 			}
 
 			const driver = new DurableAgentDriver(effectiveCwd, { dataDir: this.dataDir, agentDir: this.agentDir });

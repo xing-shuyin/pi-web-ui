@@ -440,8 +440,8 @@ export function planModeDenial(toolName: string, params: unknown): PlanModeDenia
 		if (!isReadOnlyConversationAction(act)) {
 			return {
 				kind: "bypass-tool",
-				reason: `计划模式：不能调用 subagent(action="${act || "spawn"}")（它会在别的会话里执行，绕过本会话的只读约束）。请在本对话内用只读工具完成调研。`,
-				reasonEn: `Plan mode: subagent(action="${act || "spawn"}") is unavailable (it runs outside this conversation and would bypass the read-only constraint). Research with read-only tools here.`,
+				reason: `计划模式：不能调用 conversation(action="${act || "spawn"}")（它会在别的会话里执行，绕过本会话的只读约束）。请在本对话内用只读工具完成调研。`,
+				reasonEn: `Plan mode: conversation(action="${act || "spawn"}") is unavailable (it runs outside this conversation and would bypass the read-only constraint). Research with read-only tools here.`,
 			};
 		}
 	}

@@ -525,7 +525,7 @@ describe("左栏会话位置与纯背景高亮守卫", () => {
 		expect(titles[1]).toBe("任务 2（较旧）");
 	});
 
-	it("用户发送只提升所属项目内的会话，常驻标记与项目最近使用时间不改变顺序", () => {
+	it("用户发送提升所属项目内的会话；项目按最近真实对话时间上浮", () => {
 		setAppGlobals({ cwd: "/first", ready: true, status: "open", workspaceRoots: [] });
 		const conversations = [
 			{ id: "first", cwd: "/first", title: "第一个项目的对话", messageCount: 1, modified: 2000 },
@@ -560,7 +560,7 @@ describe("左栏会话位置与纯背景高亮守卫", () => {
 			activeConversationId: "new",
 		});
 
-		expect(projectOrder()).toEqual(["/first", "/second"]);
+		expect(projectOrder()).toEqual(["/second", "/first"]);
 		const secondProject = container.querySelector('[data-project-path="/second"]')!.closest(".lp-project-node")!;
 		const titles = Array.from(secondProject.querySelectorAll(".conv-title-text")).map((node) =>
 			node.textContent?.trim(),
