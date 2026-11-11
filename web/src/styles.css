@@ -949,6 +949,9 @@
 		--wallpaper-panel-alpha: 62%;
 		--topbar-bg: color-mix(in srgb, var(--bg-elev) var(--wallpaper-panel-alpha, 62%), transparent);
 		--statusbar-bg: color-mix(in srgb, var(--bg-elev) var(--wallpaper-panel-alpha, 62%), transparent);
+		/* 原生壳（Capacitor/Android）把状态栏盖在 WebView 上，shell 写入 --pi-safe-top（dp = CSS px）；
+		   浏览器/桌面没有该变量，回落到 env()（iOS 生效，Android WebView 通常为 0）。 */
+		--safe-top: var(--pi-safe-top, env(safe-area-inset-top, 0px));
 		--panel-bg: color-mix(in srgb, var(--bg-elev) var(--wallpaper-panel-alpha, 62%), transparent);
 
 		--card-bg: color-mix(in srgb, var(--bg-elev) var(--wallpaper-panel-alpha, 62%), transparent);
@@ -989,6 +992,11 @@
 		overflow: hidden;
 	}
 
+	/* 状态栏那条留白跟顶栏同色，看起来是顶栏延伸上去而不是断带。 */
+	html.pi-native body {
+		background: var(--topbar-bg, var(--bg-elev));
+	}
+
 	button > svg {
 		min-width: 1em;
 		min-height: 1em;
@@ -1000,6 +1008,8 @@
 		flex-direction: column;
 		height: 100%;
 		overflow: hidden;
+		/* 手机壳的状态栏压在 WebView 上，让出这块安全区（浏览器里 --safe-top 为 0）。 */
+		padding-top: var(--safe-top);
 
 		position: relative;
 		z-index: 1;
@@ -11478,7 +11488,7 @@
 
 	.protocol-banner {
 		position: fixed;
-		top: 52px;
+		top: calc(52px + var(--safe-top));
 		left: 50%;
 		transform: translateX(-50%);
 		z-index: var(--z-notice);
@@ -11993,7 +12003,7 @@
 	.notices {
 		position: fixed;
 
-		top: 58px;
+		top: calc(58px + var(--safe-top));
 		left: 50%;
 		transform: translateX(-50%);
 		z-index: var(--z-notice);
@@ -27981,7 +27991,7 @@
 
 	@media (max-width: 768px) {
 		.notices {
-			top: 56px;
+			top: calc(56px + var(--safe-top));
 			left: 10px;
 			right: 10px;
 			transform: none;
@@ -28024,7 +28034,7 @@
 			}
 		}
 		.protocol-banner {
-			top: 56px;
+			top: calc(56px + var(--safe-top));
 			left: 10px;
 			right: 10px;
 			transform: none;
@@ -31527,7 +31537,7 @@
 
 	.zen-exit-pill {
 		position: fixed;
-		top: 14px;
+		top: calc(14px + var(--safe-top));
 		right: 18px;
 		z-index: 1000;
 		display: inline-flex;

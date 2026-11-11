@@ -3,6 +3,7 @@ import { createRoot } from "react-dom/client";
 import { Capacitor } from "@capacitor/core";
 import { App as NativeApp } from "@capacitor/app";
 import { Network } from "@capacitor/network";
+import { StatusBar } from "@capacitor/status-bar";
 import { PiCredentials } from "@pi-mobile/native-push";
 import { configureMobileRuntime, openMobileNotificationTarget } from "../../web/src/mobile-runtime";
 import { normalizeServerUrl, readServerStatus, type MobileConnection, type NotificationTarget } from "./connection";
@@ -26,6 +27,26 @@ import "./styles.css";
 const onboardingRoot = createRoot(document.getElementById("root")!);
 const settingsRoot = createRoot(document.getElementById("mobile-settings")!);
 const native = Capacitor.isNativePlatform();
+/**
+ * 原生壳默认把状态栏盖在 WebView 上（overlaysWebView），而 Android WebView 的
+ * env(safe-area-inset-top) 拿不到真实高度 —— 这里用原生 StatusBar 读出来写进 CSS 变量，
+ * 让页面让出安全区（消费方：web/src/styles.css 的 --safe-top）。
+ */
+function applySafeAreaInsets(): void {
+	if (!native) return;
+	document.documentElement.classList.add("pi-native");
+	const write = () => {
+		void StatusBar.getInfo()
+			.then((info) =>
+				document.documentElement.style.setProperty("--pi-safe-top", `${Math.max(0, Math.round(info.height || 0))}px`),
+			)
+			.catch(() => {
+				/* 读不到就保持 0，宁可少让也不报错 */
+			});
+	};
+	write();
+	window.addEventListener("resize", write);
+}
 const PENDING_TARGET = "pi-mobile:notification-target";
 let settingsOpen = false;
 let controller: PushController | null = null;
@@ -375,3 +396,4 @@ async function boot(): Promise<void> {
 	showConnectionScreen();
 }
 void boot();
+applySafeAreaInsets();
