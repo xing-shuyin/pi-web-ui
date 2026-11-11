@@ -73,6 +73,41 @@ describe("subagents tools", () => {
 		expect(subagent.parameters).toBeDefined();
 	});
 
+	it("notifyOnDone 不在联合类型上使用 enum，兼容 Moonshot schema 限制", () => {
+		const [tool] = makeSubagentTools(makeHostSpies());
+		const params = tool.parameters as any;
+		// 顶层与 tasks[] 扇出里的两份 schema 都要干净：供应商校验的是整份工具 schema。
+		const spawnFields = [params.properties.notifyOnDone, params.properties.tasks.items.properties.notifyOnDone];
+		for (const schema of spawnFields) {
+			expect(schema).toMatchObject({ type: ["boolean", "string"] });
+			expect(schema).not.toHaveProperty("enum");
+		}
+	});
+
+	it("notifyOnDone 去掉 schema enum 后由 handler 兜底：只有 false / manual 有意义", async () => {
+		const host = makeHostSpies();
+		const spawn = host.spawnSubagent as unknown as ReturnType<typeof vi.fn>;
+		const [subagent] = makeSubagentTools(host);
+		for (const [raw, expected] of [
+			[false, false],
+			["manual", "manual"],
+			[true, true],
+			// 非法值（模型乱填的字符串/数字）按默认「完成后通知」处理，不许漏进会话状态。
+			["yes", undefined],
+			[1, undefined],
+		] as const) {
+			spawn.mockClear();
+			await subagent.execute!(
+				"t1",
+				{ action: "spawn", prompt: "p", notifyOnDone: raw } as never,
+				undefined,
+				undefined,
+				{ cwd: "/root/proj" } as never,
+			);
+			expect(spawn.mock.calls[0][8]).toBe(expected);
+		}
+	});
+
 	it("缺少 action 或未知 action 时给出明确提示", async () => {
 		const host = makeHostSpies();
 		const tool = makeSubagentTool(host, () => "zh");
