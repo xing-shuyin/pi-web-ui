@@ -269,7 +269,7 @@
 	margin: 0;
 	padding: 0 8px;
 	background: color-mix(in srgb, var(--text) 5%, transparent);
-	border: 1px solid var(--border);
+	border: 1px solid transparent;
 	border-radius: 999px;
 	font-family: var(--mono, monospace);
 	font-size: 11px;
@@ -297,7 +297,6 @@
 .toolcall:hover,
 .thinking:hover {
 	background: var(--border);
-	border-color: color-mix(in srgb, var(--text) 22%, transparent);
 	box-shadow:
 		inset 0 1px 1px color-mix(in srgb, var(--text) 35%, transparent),
 		0 4px 10px color-mix(in srgb, var(--flow-shadow) 45%, transparent);
@@ -310,29 +309,18 @@
 }
 
 .toolcall.run {
-	border-color: rgba(245, 158, 11, 0.45);
 	box-shadow:
 		inset 0 0.5px 0.5px color-mix(in srgb, var(--text) 25%, transparent),
 		0 0 10px rgba(245, 158, 11, 0.25);
 }
-.toolcall.ok {
-	border-color: rgba(52, 211, 153, 0.25);
-}
 .toolcall.err {
-	border-color: rgba(248, 113, 113, 0.45);
+	background: color-mix(in srgb, var(--red) 12%, transparent);
 	box-shadow:
 		inset 0 0.5px 0.5px color-mix(in srgb, var(--text) 25%, transparent),
 		0 0 10px rgba(239, 68, 68, 0.25);
 }
 
-.thinking {
-	border-color: rgba(192, 132, 252, 0.25);
-}
-.thinking:hover {
-	border-color: rgba(192, 132, 252, 0.45);
-}
 .thinking.run {
-	border-color: rgba(192, 132, 252, 0.5);
 	box-shadow:
 		inset 0 0.5px 0.5px color-mix(in srgb, var(--text) 25%, transparent),
 		0 0 10px rgba(192, 132, 252, 0.25);

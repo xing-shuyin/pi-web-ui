@@ -14,6 +14,10 @@ const RUNTIME_TOKENS = new Map<string, string>([
 	["--scm-sidebar-w", "web/src/components/SCMPanel.tsx（inline style，Git 左栏拖拽宽度，issue #139）"],
 	["--msgs-gutter", "web/src/scrollbar-gutter.ts（style.setProperty）"],
 	["--quick-row-h", "web/src/components/ChatInput.tsx（style.setProperty，快捷短语行实高）"],
+	[
+		"--pi-safe-top",
+		"mobile/src/main.tsx（Capacitor StatusBar 读数 → documentElement.setProperty；web/src/styles.css 的 --safe-top 用它兜底）",
+	],
 ]);
 
 const GUEST_FALLBACK_TOKENS = new Set([

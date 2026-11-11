@@ -955,6 +955,8 @@
 		--panel-bg: color-mix(in srgb, var(--bg-elev) var(--wallpaper-panel-alpha, 62%), transparent);
 
 		--card-bg: color-mix(in srgb, var(--bg-elev) var(--wallpaper-panel-alpha, 62%), transparent);
+		/* 客座样式（移动端设置等）的按压填充：默认中性灰，主题要换色直接覆写这个令牌 */
+		--fill-press: rgba(127, 127, 127, 0.16);
 		--chip-bg: color-mix(in srgb, var(--bg-elev2) var(--wallpaper-panel-alpha, 62%), transparent);
 
 		--msgs-bg: color-mix(in srgb, var(--bg-elev) var(--wallpaper-panel-alpha, 62%), transparent);
@@ -38134,37 +38136,24 @@
 }
 .toolflow-chip .qbtn {
 	flex: none;
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
 	width: 15px;
 	height: 15px;
+	padding: 0;
+	background: transparent;
 	border-radius: 50%;
 	border: 1px solid var(--border-soft);
 	color: var(--text-faint);
+	font-family: inherit;
 	font-size: 9px;
-	line-height: 13px;
+	line-height: 1;
 	text-align: center;
 	cursor: help;
+	appearance: none;
 }
 .toolflow-chip .qbtn:hover {
 	color: var(--accent);
 	border-color: var(--accent);
-}
-.toolflow-chip .qbtn[data-tip]:hover::after {
-	content: attr(data-tip);
-	position: absolute;
-	right: -4px;
-	bottom: calc(100% + 8px);
-	width: max-content;
-	max-width: 250px;
-	white-space: normal;
-	line-height: 1.6;
-	background: #1c1f28;
-	border: 1px solid var(--accent);
-	color: var(--text);
-	font-size: 11px;
-	padding: 7px 10px;
-	border-radius: 8px;
-	z-index: 61;
-	pointer-events: none;
-	box-shadow: 0 8px 22px rgba(0, 0, 0, 0.55);
-	text-align: left;
 }
