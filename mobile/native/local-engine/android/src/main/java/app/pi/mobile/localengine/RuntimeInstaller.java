@@ -2,6 +2,8 @@ package app.pi.mobile.localengine;
 
 import android.content.Context;
 import android.content.res.AssetManager;
+import android.os.Build;
+import android.text.TextUtils;
 
 import org.apache.commons.compress.archivers.tar.TarArchiveEntry;
 import org.apache.commons.compress.archivers.tar.TarArchiveInputStream;
@@ -151,9 +153,24 @@ public final class RuntimeInstaller {
 		}
 	}
 
+	/**
+	 * Guards against shipping a runtime built for another CPU (e.g. the emulator x86_64 flavour
+	 * inside an arm64 phone APK): proot would die with exec-format error and the crash watcher
+	 * would only report "引擎反复崩溃". Fail once, with the two ABI names.
+	 */
+	public static void requireDeviceAbi(Manifest manifest) throws IOException {
+		if (manifest == null || TextUtils.isEmpty(manifest.abi)) return;
+		for (String abi : Build.SUPPORTED_ABIS) {
+			if (abi.equals(manifest.abi)) return;
+		}
+		throw new IOException("运行环境架构不匹配：包内为 " + manifest.abi + "，本机为 "
+			+ TextUtils.join("/", Build.SUPPORTED_ABIS) + "，需用匹配 ABI 的引擎包重新打包。");
+	}
+
 	/** Extracts the bundled runtime; safe to call again only after reset() or a failed install. */
 	public static void install(Context context, ProgressListener progress) throws IOException, InterruptedException {
 		Manifest manifest = readBuiltinManifest(context);
+		requireDeviceAbi(manifest);
 		File engineRoot = engineRoot(context);
 		File staging = new File(engineRoot, "staging");
 		File rootfs = rootfsDir(context);

@@ -389,3 +389,70 @@
 		border-radius: 24px;
 	}
 }
+
+/* 前台推送提示：应用可见时系统通知不弹，壳层在这里补一条可点的提示。
+   只有它压过 Web UI 的叠栈（100050）——它在原生壳这一侧，不属于页面浮层体系。 */
+.mobile-push-toast {
+	position: fixed;
+	top: calc(var(--pi-safe-top, env(safe-area-inset-top, 0px)) + 10px);
+	left: 50%;
+	z-index: 2147483000;
+	display: flex;
+	flex-direction: column;
+	gap: 2px;
+	max-width: min(440px, calc(100vw - 24px));
+	padding: 10px 14px;
+	border: 1px solid var(--border);
+	border-radius: 12px;
+	background: var(--bg-elev);
+	color: var(--text);
+	box-shadow: 0 8px 28px #0006;
+	opacity: 0;
+	transform: translate(-50%, -8px);
+	transition:
+		opacity 180ms ease,
+		transform 180ms ease;
+	cursor: pointer;
+}
+.mobile-push-toast.is-visible {
+	opacity: 1;
+	transform: translate(-50%, 0);
+}
+.mobile-push-toast.is-leaving {
+	opacity: 0;
+	transform: translate(-50%, -8px);
+}
+.mobile-push-toast-title {
+	margin: 0;
+	font-size: 13px;
+	font-weight: 600;
+	line-height: 1.35;
+}
+.mobile-push-toast-hint {
+	margin: 0;
+	color: var(--text-dim);
+	font-size: 11px;
+	line-height: 1.3;
+}
+
+/* 手机操控设置区块：与通知区块同风格，自检截图限宽避免撑破面板。 */
+.mobile-settings-section {
+	display: flex;
+	flex-direction: column;
+	gap: 10px;
+	padding-top: 14px;
+	border-top: 1px solid var(--border);
+}
+.mobile-settings-section-title {
+	margin: 0;
+	font-size: 13px;
+	font-weight: 600;
+	letter-spacing: 0.02em;
+}
+.mobile-shot-preview {
+	display: block;
+	width: 100%;
+	max-width: 320px;
+	border: 1px solid var(--border);
+	border-radius: 10px;
+}

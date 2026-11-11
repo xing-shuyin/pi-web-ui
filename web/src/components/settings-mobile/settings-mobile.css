@@ -1,0 +1,426 @@
+/* 移动端设置：窄屏下整屏化 + 「首页列表 → 推入二级页」。
+   与 styles.css 的 @media (max-width:640px) 并存：那条断点负责表单自身的重排，
+   这里只负责「外壳」（整屏、安全区、去掉左右分栏、首页列表）。 */
+
+.modal-backdrop.settings-mobile-backdrop {
+	padding: 0;
+	align-items: stretch;
+}
+
+.settings-modal.is-mobile {
+	height: 100%;
+	height: 100dvh;
+	max-height: none;
+	max-width: none;
+	gap: 0;
+	padding: 0;
+	padding-top: max(8px, var(--safe-top, env(safe-area-inset-top, 0px)));
+	border: 0;
+	border-radius: 0;
+	background: var(--bg);
+	box-shadow: none;
+	overflow: hidden;
+}
+
+/* 二级页：紧凑导航栏（返回 + 标题 + 保存回执 + 关闭），搜索框在移动端没有用武之地 */
+.settings-modal.is-mobile .modal-head.settings-cmd-head {
+	flex-wrap: nowrap;
+	gap: 6px;
+	padding: 4px 8px;
+	min-height: 48px;
+	border-bottom: 1px solid var(--border-soft);
+	background: var(--bg);
+	flex-shrink: 0;
+}
+.settings-modal.is-mobile .settings-head-brand {
+	flex: 1 1 auto;
+	min-width: 0;
+	gap: 2px;
+	overflow: hidden;
+}
+.settings-modal.is-mobile .settings-head-brand h2 {
+	font-size: 16px;
+	font-weight: 650;
+	letter-spacing: -0.2px;
+	white-space: nowrap;
+	overflow: hidden;
+	text-overflow: ellipsis;
+}
+.settings-modal.is-mobile .settings-head-brand .modal-head-icon,
+.settings-modal.is-mobile .settings-head-brand .set-tip {
+	display: none;
+}
+
+/* 随手问悬浮球位于弹窗层之外（相对 #root 的另一个层叠上下文），
+   整屏设置时它会盖住列表行，因此在移动端设置打开期间隐藏。 */
+body:has(.settings-modal.is-mobile) .quick-ask-launcher {
+	display: none;
+}
+.settings-modal.is-mobile .settings-cmd-wrap,
+.settings-modal.is-mobile .settings-kbd-chip {
+	display: none;
+}
+.settings-modal.is-mobile .settings-head-actions {
+	flex: none;
+	gap: 4px;
+	margin-left: auto;
+}
+
+.settings-mobile-back {
+	display: grid;
+	place-items: center;
+	flex: none;
+	width: 44px;
+	height: 44px;
+	margin-left: -6px;
+	border: 0;
+	border-radius: 12px;
+	background: transparent;
+	color: var(--text);
+	font-size: 21px;
+	cursor: pointer;
+	-webkit-tap-highlight-color: transparent;
+}
+.settings-mobile-back:active {
+	background: var(--fill-press, rgba(127, 127, 127, 0.16));
+}
+.settings-mobile-back:focus-visible {
+	outline: 2px solid var(--accent);
+	outline-offset: -2px;
+}
+
+.settings-modal.is-mobile .settings-layout {
+	flex-direction: column;
+	gap: 0;
+	margin: 0;
+	min-height: 0;
+}
+
+/* 窄屏不使用左右分栏：首页用 .sm-home 接管，二级页只留正文。 */
+.settings-modal.is-mobile .settings-rail {
+	display: none;
+}
+/* 首页自带标题栏，桌面头/正文隐藏（仍是 display:none，不进焦点顺序与朗读） */
+.settings-modal.is-mobile.is-mobile-home .modal-head,
+.settings-modal.is-mobile.is-mobile-home .modal-body {
+	display: none;
+}
+
+/* 二级页正文：与首页同一套 16px 内衬，底部让出 Home 条 */
+.settings-modal.is-mobile .modal-body {
+	padding: 12px 12px calc(20px + env(safe-area-inset-bottom, 0px));
+	gap: 16px;
+}
+.settings-modal.is-mobile .modal-body > .set-section {
+	border-radius: 12px;
+}
+.settings-modal.is-mobile .modal-body .set-row {
+	min-height: 52px;
+}
+
+/* ---------------- 首页 ---------------- */
+
+.sm-home {
+	flex: 1 1 auto;
+	min-height: 0;
+	display: flex;
+	flex-direction: column;
+	background: var(--bg);
+}
+
+.sm-head {
+	flex: none;
+	display: flex;
+	align-items: center;
+	gap: 10px;
+	padding: 4px 8px 2px 16px;
+}
+.sm-title {
+	flex: 1 1 auto;
+	min-width: 0;
+	margin: 0;
+	font-size: 28px;
+	font-weight: 800;
+	letter-spacing: -0.6px;
+	line-height: 1.2;
+	color: var(--text);
+}
+.sm-save {
+	flex: none;
+	height: 26px;
+	border-radius: 999px;
+}
+.sm-close {
+	flex: none;
+	display: grid;
+	place-items: center;
+	width: 44px;
+	height: 44px;
+	margin-right: -6px;
+	border: 0;
+	border-radius: 12px;
+	background: transparent;
+	color: var(--text-dim);
+	font-size: 20px;
+	cursor: pointer;
+	-webkit-tap-highlight-color: transparent;
+}
+.sm-close:active {
+	background: var(--fill-press, rgba(127, 127, 127, 0.16));
+}
+.sm-close:focus-visible {
+	outline: 2px solid var(--accent);
+	outline-offset: -2px;
+}
+
+.sm-search {
+	flex: none;
+	display: flex;
+	align-items: center;
+	gap: 8px;
+	min-height: 44px;
+	margin: 6px 16px 10px;
+	padding: 0 8px 0 10px;
+	background: var(--bg-elev2);
+	border: 1px solid var(--border-soft);
+	border-radius: 11px;
+	color: var(--text-faint);
+}
+.sm-search:focus-within {
+	border-color: var(--accent);
+	box-shadow: 0 0 0 3px var(--accent-soft);
+}
+.sm-search-icon {
+	flex: none;
+	font-size: 16px;
+}
+.sm-search-input {
+	flex: 1 1 auto;
+	min-width: 0;
+	border: 0;
+	background: transparent;
+	color: var(--text);
+	font: inherit;
+	font-size: 16px;
+	line-height: 1.4;
+	padding: 9px 0;
+	outline: none;
+}
+.sm-search-input::placeholder {
+	color: var(--text-faint);
+}
+.sm-search-input::-webkit-search-cancel-button,
+.sm-search-input::-webkit-search-decoration {
+	-webkit-appearance: none;
+	appearance: none;
+	display: none;
+}
+.sm-search-clear {
+	flex: none;
+	display: grid;
+	place-items: center;
+	width: 28px;
+	height: 28px;
+	border: 0;
+	border-radius: 50%;
+	background: var(--fill-press, rgba(127, 127, 127, 0.16));
+	color: var(--text-dim);
+	font-size: 14px;
+	cursor: pointer;
+}
+
+.sm-scroll {
+	flex: 1 1 auto;
+	min-height: 0;
+	overflow-y: auto;
+	overscroll-behavior: contain;
+	-webkit-overflow-scrolling: touch;
+	display: flex;
+	flex-direction: column;
+	gap: 16px;
+	padding: 2px 16px calc(24px + env(safe-area-inset-bottom, 0px));
+}
+
+.sm-group {
+	display: flex;
+	flex-direction: column;
+	gap: 7px;
+}
+.sm-group-title {
+	margin: 0;
+	padding: 0 4px;
+	font-size: 13px;
+	font-weight: 700;
+	letter-spacing: 0.02em;
+	color: var(--text-dim);
+}
+.sm-card {
+	background: var(--bg-elev);
+	border: 1px solid var(--border-soft);
+	border-radius: 12px;
+	overflow: hidden;
+}
+
+.sm-row {
+	position: relative;
+	display: flex;
+	align-items: center;
+	gap: 12px;
+	width: 100%;
+	min-height: 56px;
+	padding: 8px 14px;
+	border: 0;
+	background: transparent;
+	color: var(--text);
+	font: inherit;
+	text-align: left;
+	cursor: pointer;
+	-webkit-tap-highlight-color: transparent;
+	transition: background 0.12s ease;
+}
+.sm-row + .sm-row::before {
+	content: "";
+	position: absolute;
+	top: 0;
+	left: 54px;
+	right: 0;
+	height: 1px;
+	background: var(--border-soft);
+}
+.sm-row:active {
+	background: var(--fill-press, rgba(127, 127, 127, 0.16));
+}
+.sm-row:focus-visible {
+	outline: 2px solid var(--accent);
+	outline-offset: -2px;
+}
+
+/* 图标统一单色（克制、不靠颜色区分功能；语义由图标形状 + 文案承载） */
+.sm-row-icon {
+	flex: none;
+	display: grid;
+	place-items: center;
+	width: 28px;
+	height: 28px;
+	border-radius: 8px;
+	background: var(--accent-soft);
+	color: var(--accent);
+	font-size: 15px;
+}
+[data-theme="light"] .sm-row-icon {
+	color: var(--accent);
+	background: color-mix(in srgb, var(--accent) 12%, transparent);
+}
+
+.sm-row-main {
+	flex: 1 1 auto;
+	min-width: 0;
+	display: flex;
+	flex-direction: column;
+	gap: 2px;
+}
+.sm-row-label {
+	font-size: 16px;
+	font-weight: 500;
+	line-height: 1.3;
+	white-space: nowrap;
+	overflow: hidden;
+	text-overflow: ellipsis;
+}
+.sm-row-crumb {
+	font-size: 11.5px;
+	line-height: 1.3;
+	color: var(--text-faint);
+	white-space: nowrap;
+	overflow: hidden;
+	text-overflow: ellipsis;
+}
+.sm-row-value {
+	flex: none;
+	max-width: 40%;
+	font-size: 13px;
+	color: var(--text-dim);
+	white-space: nowrap;
+	overflow: hidden;
+	text-overflow: ellipsis;
+}
+.sm-count {
+	flex: none;
+	display: inline-grid;
+	place-items: center;
+	min-width: 20px;
+	height: 20px;
+	padding: 0 6px;
+	border-radius: 10px;
+	background: var(--bg-elev2);
+	border: 1px solid var(--border-soft);
+	color: var(--text-dim);
+	font-size: 11.5px;
+	font-weight: 700;
+	font-variant-numeric: tabular-nums;
+}
+.sm-dot {
+	flex: none;
+	width: 7px;
+	height: 7px;
+	border-radius: 50%;
+	background: var(--accent);
+}
+.sm-chev {
+	flex: none;
+	width: 16px;
+	height: 16px;
+	color: var(--text-faint);
+}
+
+.sm-empty {
+	display: flex;
+	flex-direction: column;
+	align-items: center;
+	gap: 10px;
+	padding: 40px 20px;
+	text-align: center;
+}
+.sm-empty-title {
+	font-size: 14px;
+	font-weight: 600;
+	color: var(--text);
+}
+.sm-empty-btn {
+	min-height: 44px;
+	padding: 0 16px;
+	border-radius: 10px;
+	border: 1px solid var(--border);
+	background: var(--bg-elev);
+	color: var(--text);
+	font: inherit;
+	font-size: 13px;
+	font-weight: 600;
+	cursor: pointer;
+}
+
+/* 320px 级小屏：收紧内衬，保证 56px 行内单行标题不折 */
+@media (max-width: 340px) {
+	.sm-head {
+		padding-left: 12px;
+	}
+	.sm-search {
+		margin-left: 12px;
+		margin-right: 12px;
+	}
+	.sm-scroll {
+		padding-left: 12px;
+		padding-right: 12px;
+	}
+	.sm-row {
+		padding-left: 12px;
+		padding-right: 12px;
+		gap: 10px;
+	}
+	.sm-row + .sm-row::before {
+		left: 50px;
+	}
+	.sm-row-label {
+		font-size: 15px;
+	}
+}

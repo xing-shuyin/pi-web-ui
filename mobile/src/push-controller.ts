@@ -55,6 +55,8 @@ export class PushController implements MobilePushAdapter {
 		readonly deviceId: string,
 		private onOpen: (target: NotificationTarget) => void,
 		readonly openSettings: () => void,
+		/** 前台收到推送时回调：JPush 只负责后台系统通知，前台得自己给应用内提示。 */
+		private onForeground?: (extras: Record<string, string>) => void,
 	) {
 		this.pendingKey = `pi-mobile:unsubscribe:${connection.serverUrl}:${deviceId}`;
 		this.kindsKey = `pi-mobile:notify-kinds:${connection.serverUrl}:${deviceId}`;
@@ -97,6 +99,7 @@ export class PushController implements MobilePushAdapter {
 					}
 				}),
 				PiPush.addListener("notificationOpened", ({ extras }) => this.open(extras)),
+				PiPush.addListener("notificationReceived", ({ extras }) => this.onForeground?.(extras)),
 			]);
 			this.applyNative(await PiPush.getStatus());
 			const pending = await PiPush.getPendingNotification();

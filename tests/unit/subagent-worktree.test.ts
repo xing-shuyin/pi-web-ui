@@ -5,6 +5,7 @@ import { tmpdir } from "node:os";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import { makeSubagentTool, type SubagentToolHost, type SubagentSnapshot } from "../../server/subagents.js";
+import { testSettleWaiter } from "../helpers/subagent-settle.js";
 import {
 	createSubagentWorktree,
 	finalizeSubagentWorktree,
@@ -19,6 +20,7 @@ describe("Subagent Worktree Isolation (Issue #728)", () => {
 		it("subagent 工具 schema 包含 isolation 参数，支持 worktree 与 none", () => {
 			const host: SubagentToolHost = {
 				spawnSubagent: vi.fn(async () => "sa-test-123"),
+				waitForSubagentSettle: testSettleWaiter(),
 				getSubagent: vi.fn(() => undefined),
 				listSubagents: vi.fn(() => []),
 				steerSubagent: vi.fn(async () => {}),
@@ -37,6 +39,7 @@ describe("Subagent Worktree Isolation (Issue #728)", () => {
 		it("传入不支持的 isolation 模式时返回明确错误提示", async () => {
 			const host: SubagentToolHost = {
 				spawnSubagent: vi.fn(async () => "sa-test-123"),
+				waitForSubagentSettle: testSettleWaiter(),
 				getSubagent: vi.fn(() => undefined),
 				listSubagents: vi.fn(() => []),
 				steerSubagent: vi.fn(async () => {}),
@@ -61,6 +64,7 @@ describe("Subagent Worktree Isolation (Issue #728)", () => {
 			const controller = new AbortController();
 			const host: SubagentToolHost = {
 				spawnSubagent: vi.fn(async () => "sa-test-123"),
+				waitForSubagentSettle: testSettleWaiter(),
 				getSubagent: vi.fn(() => undefined),
 				listSubagents: vi.fn(() => []),
 				steerSubagent: vi.fn(async () => {}),
@@ -115,6 +119,7 @@ describe("Subagent Worktree Isolation (Issue #728)", () => {
 			};
 			const host: SubagentToolHost = {
 				spawnSubagent: vi.fn(async () => "sa-clean-123"),
+				waitForSubagentSettle: testSettleWaiter(),
 				getSubagent: vi.fn(() => snapshot),
 				listSubagents: vi.fn(() => [snapshot]),
 				steerSubagent: vi.fn(async () => {}),
@@ -157,6 +162,7 @@ describe("Subagent Worktree Isolation (Issue #728)", () => {
 			};
 			const host: SubagentToolHost = {
 				spawnSubagent: vi.fn(async () => "sa-dirty-456"),
+				waitForSubagentSettle: testSettleWaiter(),
 				getSubagent: vi.fn(() => snapshot),
 				listSubagents: vi.fn(() => [snapshot]),
 				steerSubagent: vi.fn(async () => {}),

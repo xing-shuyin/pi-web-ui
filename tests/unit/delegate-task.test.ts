@@ -29,8 +29,8 @@ it("Russian delegation keeps tool restrictions, security mode and follow-up inst
 		expect(text).toContain("c-russian-delegate");
 		expect(text).toContain("read, grep");
 		expect(text).toContain("readonly");
-		expect(text).toContain('subagent(action="wait_all")');
-		expect(text).toContain('subagent(action="steer")');
+		expect(text).toContain('conversation(action="wait_all")');
+		expect(text).toContain('conversation(action="steer")');
 		expect(text).not.toMatch(/\{[\w.]+\}/);
 	} finally {
 		unregisterServerStrings("ru");

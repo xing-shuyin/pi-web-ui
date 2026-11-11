@@ -462,7 +462,7 @@ describe("通用底座与多引擎 / 和 @ 命令体系测试", () => {
 				getProjectModel: () => undefined,
 				getDefaultModel: () => undefined,
 				getQuickPhrasesSeeded: () => true,
-				getMarkerSettings: () => ({ markersEnabled: true, disabledMarkers: [] }),
+				getMarkerSettings: () => ({ disabledMarkers: [] }),
 				saveMarkerSettings: () => {},
 				getWorkspaceRoots: () => [],
 			};
@@ -621,7 +621,7 @@ describe("通用底座与多引擎 / 和 @ 命令体系测试", () => {
 				getProjectModel: () => undefined,
 				getDefaultModel: () => undefined,
 				getQuickPhrasesSeeded: () => true,
-				getMarkerSettings: () => ({ markersEnabled: true, disabledMarkers: [] }),
+				getMarkerSettings: () => ({ disabledMarkers: [] }),
 				saveMarkerSettings: () => {},
 				getWorkspaceRoots: () => [],
 			};

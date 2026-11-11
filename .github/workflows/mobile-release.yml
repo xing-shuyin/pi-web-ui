@@ -1,0 +1,145 @@
+name: Mobile APK
+
+# 真机 arm64 安装包：APK 里带一套 arm64 引擎运行时（Ubuntu + Node + pi-web-ui），
+# 所以这里先构建运行时再打包，两者同源同版（协议版本不会错位）。
+# x86_64 flavor 只给模拟器冒烟用，不发 Release。
+
+# 只在手动触发时跑：日常发版走本地 `npm run release:local -- vX.Y.Z`（快，且用本机固定
+# keystore 签名，包能覆盖升级）。CI 每次 runner 都会新生成 debug keystore，产物装不上旧包，
+# 所以不让它跟着 tag 自动发。需要云端兜底时在 Actions 里手点。
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: mobile-apk-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  android-arm64:
+    runs-on: ubuntu-latest
+    timeout-minutes: 150
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: |
+            package-lock.json
+            mobile/package-lock.json
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+
+      - uses: android-actions/setup-android@v3
+
+      - name: Install Android SDK packages
+        run: |
+          yes | sdkmanager --licenses > /dev/null || true
+          sdkmanager "platform-tools" "platforms;android-36" "build-tools;36.0.0"
+
+      - name: Resolve version
+        run: |
+          set -euo pipefail
+          VERSION="$(node -p "require('./package.json').version")"
+          IFS=. read -r MAJOR MINOR PATCH <<< "$VERSION"
+          {
+            echo "PI_MOBILE_VERSION=$VERSION"
+            echo "PI_MOBILE_VERSION_CODE=$(( MAJOR * 10000 + MINOR * 100 + PATCH ))"
+            echo "RUNTIME_REVISION=$VERSION"
+          } >> "$GITHUB_ENV"
+
+      - name: Install dependencies
+        run: |
+          npm ci
+          npm --prefix mobile ci
+
+      - name: Build web + server
+        run: npm run build
+
+      - name: Pack pi-web-ui for the engine
+        id: pack
+        shell: bash
+        run: echo "tgz=$(npm pack --silent)" >> "$GITHUB_OUTPUT"
+
+      - name: Build arm64 engine runtime
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo apt-get update -qq
+          sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -qq qemu-user-static
+          # arm64 base rootfs 用 docker export 取，不依赖镜像源上会漂移的 ubuntu-base 版本号
+          docker create --platform linux/arm64 --name pwu-base ubuntu:24.04 >/dev/null
+          mkdir -p mobile/local-engine/runtime/out
+          docker export pwu-base -o mobile/local-engine/runtime/out/ubuntu-rootfs-arm64.tar
+          docker rm pwu-base >/dev/null
+          cd mobile/local-engine/runtime
+          sudo RUNTIME_REVISION="$RUNTIME_REVISION" \
+               PI_WEB_UI_VERSION="$PI_MOBILE_VERSION" \
+               PI_WEB_UI_TGZ="$GITHUB_WORKSPACE/${{ steps.pack.outputs.tgz }}" \
+               UBUNTU_BASE_TAR="$PWD/out/ubuntu-rootfs-arm64.tar" \
+               ./build-runtime.sh arm64
+
+      - name: Prepare stable signing key (optional)
+        shell: bash
+        env:
+          KEYSTORE_BASE64: ${{ secrets.MOBILE_KEYSTORE_BASE64 }}
+          STORE_PASSWORD: ${{ secrets.MOBILE_KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.MOBILE_KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.MOBILE_KEY_PASSWORD }}
+        run: |
+          set -euo pipefail
+          if [ -z "${KEYSTORE_BASE64:-}" ]; then
+            echo "::warning::没有配置 MOBILE_KEYSTORE_BASE64，本次用 debug 签名：换包时需要先卸载旧版（本地引擎数据会一起清掉）"
+            exit 0
+          fi
+          echo "$KEYSTORE_BASE64" | base64 -d > "$RUNNER_TEMP/pi-mobile.jks"
+          {
+            echo "PI_ANDROID_KEYSTORE=$RUNNER_TEMP/pi-mobile.jks"
+            echo "PI_ANDROID_KEYSTORE_PASSWORD=$STORE_PASSWORD"
+            echo "PI_ANDROID_KEY_ALIAS=$KEY_ALIAS"
+            echo "PI_ANDROID_KEY_PASSWORD=$KEY_PASSWORD"
+          } >> "$GITHUB_ENV"
+
+      - name: Build APK
+        run: node mobile/scripts/package-all.mjs --abis arm64
+
+      - name: Write checksum
+        shell: bash
+        run: |
+          set -euo pipefail
+          sha256sum pi-web-ui-mobile-arm64-*.apk > pi-web-ui-mobile-arm64.sha256
+          cat pi-web-ui-mobile-arm64.sha256
+
+      - name: Upload workflow artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: pi-web-ui-mobile-android-arm64
+          path: |
+            pi-web-ui-mobile-arm64-*.apk
+            pi-web-ui-mobile-arm64.sha256
+          if-no-files-found: error
+
+      - name: Attach APK to GitHub Release
+        if: startsWith(github.ref, 'refs/tags/')
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          TAG="${GITHUB_REF_NAME}"
+          # release-notes.yml 并行跑，等 Release 建出来（最多 3 分钟）再挂资产
+          for _ in $(seq 1 36); do
+            if gh release view "$TAG" >/dev/null 2>&1; then break; fi
+            echo "waiting for release $TAG …"
+            sleep 5
+          done
+          gh release view "$TAG" >/dev/null
+          gh release upload "$TAG" pi-web-ui-mobile-arm64-*.apk pi-web-ui-mobile-arm64.sha256 --clobber
+          gh release view "$TAG" --json assets --jq '.assets[].name'

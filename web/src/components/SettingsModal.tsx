@@ -7,6 +7,7 @@ import {
 	FiBox,
 	FiCheck,
 	FiChevronDown,
+	FiChevronLeft,
 	FiChevronUp,
 	FiClock,
 	FiCpu,
@@ -46,7 +47,11 @@ import {
 import { CopyButton } from "./copy-button";
 import { PluginIcon } from "../plugin-icon";
 import { formatBytes } from "../format-bytes";
-import { HintTip } from "./HintTip";
+import { HintTip, TipButton } from "./HintTip";
+import { SettingsMobileHome, type MobileSettingsGroup } from "./settings-mobile/SettingsMobileHome";
+import { groupTabs } from "./settings-mobile/mobile-ia";
+import { useNarrowLayout } from "./settings-mobile/use-narrow-layout";
+import "./settings-mobile/settings-mobile.css";
 import { sortAgentPresets, presetText } from "./DshPresetBar";
 import { DSH_PERMISSION_ORDER, permDescKey, permLabelKey } from "./DshPermissionBar";
 import { PluginPage } from "./PluginPage";
@@ -101,6 +106,7 @@ import { formatTokenDraft, parseTokenInput } from "../token-input";
 import { useWideChat, saveChatWidthSettings, useHideModelRow, saveHideModelRowSettings } from "../chat-width-settings";
 import { usePresentAutoOpen, savePresentAutoOpen } from "../present-settings";
 import { useProjectClickSwitch, saveProjectClickSwitch } from "../project-click-settings";
+import { useProjectOrderManual, saveProjectOrderManual } from "../project-order-settings";
 import { type SendKey, saveSendKeyPref, useEffectiveSendKey } from "../composer-keys";
 import { useProjectTitle, saveTitleSettings } from "../title-settings";
 import {
@@ -631,7 +637,6 @@ interface SettingsPatch extends QuickAskPatch {
 	softCapByModel?: Record<string, number>;
 	reviewPrompt?: string;
 	reviewDisabledSkills?: string[];
-	markersEnabled?: boolean;
 	disabledMarkers?: string[];
 }
 
@@ -693,6 +698,17 @@ function LoadedSettingsModal({
 	const isPi = !isDsh && !isClaude && !isCodex;
 	const defaultTab: SettingsTab = isClaude || isCodex || isDsh ? "models" : "prompt";
 	const [tab, setTab] = useState<SettingsTab>(initialSection ?? defaultTab);
+	// 窄屏改为「首页列表 → 推入二级页」；桌面维持左右分栏。
+	const narrow = useNarrowLayout();
+	// 带 initialSection 打开（如「管理插件」）时直接落在该页，否则停在首页。
+	const [mobileHome, setMobileHome] = useState(() => !initialSection);
+	const wasNarrow = useRef(narrow);
+	useEffect(() => {
+		// 只在「变窄」这一下回首页（宽屏拖窄 / 横竖屏切换），避免停在一个无法返回的二级页；
+		// 首帧不触发，否则会覆盖 initialSection 的深链。
+		if (narrow && !wasNarrow.current) setMobileHome(true);
+		wasNarrow.current = narrow;
+	}, [narrow]);
 	const [pluginSub, setPluginSub] = useState<"official" | "community" | "installed">("official");
 	const bodyRef = useRef<HTMLDivElement>(null);
 	useEffect(() => {
@@ -865,6 +881,7 @@ function LoadedSettingsModal({
 	const effectiveSendKey = useEffectiveSendKey();
 	const presentAutoOpen = usePresentAutoOpen();
 	const projectClickSwitch = useProjectClickSwitch();
+	const projectOrderManual = useProjectOrderManual();
 	const projectTitle = useProjectTitle();
 	const faviconSettings = useFaviconSettings();
 	const wallpaper = useWallpaperSettings();
@@ -1471,6 +1488,29 @@ function LoadedSettingsModal({
 		}
 	}, [filteredTabs, tab, tabSearchQuery]);
 
+	// 移动端首页：复用页签清单与既有分组，不新增任何入口或文案。
+	const mobileTabOf = (tb: (typeof tabs)[number]) => ({
+		id: tb.id,
+		icon: tb.icon,
+		label: tb.label,
+		count: tb.count,
+		dot: tb.dot,
+		// 目前只有引擎是「不点进去也该看到」的稳定短值，其余留空，避免造文案。
+		value: tb.id === "models" ? engine : undefined,
+	});
+	const mobileGroups: MobileSettingsGroup[] = groupTabs(tabs, (id) => TAB_GROUPS[id] ?? "ui", GROUP_KEYS).map(
+		(group) => ({
+			key: group.key,
+			label: GROUP_LABELS[group.key as keyof typeof GROUP_LABELS] ?? "",
+			tabs: group.tabs.map(mobileTabOf),
+		}),
+	);
+	const mobileResults = filteredTabs.map((tb) => ({
+		...mobileTabOf(tb),
+		group: GROUP_LABELS[(TAB_GROUPS[tb.id] ?? "ui") as keyof typeof GROUP_LABELS] ?? "",
+	}));
+	const showMobileHome = narrow && mobileHome;
+
 	const handleSearchKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
 		if (e.key === "Escape") {
 			if (tabSearchQuery) {
@@ -1609,8 +1649,10 @@ function LoadedSettingsModal({
 	};
 	const disabledPluginTools = new Set(settings.disabledPluginTools ?? []);
 
-	const markersEnabled = settings.markersEnabled ?? true;
 	const disabledMarkers = new Set(settings.disabledMarkers ?? []);
+	// 标记没有独立的全局开关：只要还剩一个开着就是启用，全关 = 不再注入/解析标记。
+	const markersOn = (settings.markers ?? []).filter((m) => m.enabled).length;
+	const markersTotal = settings.markers?.length ?? 0;
 	const toggleMarker = (name: string) => {
 		const next = new Set(disabledMarkers);
 		const currentlyEnabled = !next.has(name);
@@ -2105,6 +2147,7 @@ function LoadedSettingsModal({
 	const handleTabChange = (nextTab: SettingsTab) => {
 		flushAllDrafts();
 		setTab(nextTab);
+		if (narrow) setMobileHome(false);
 	};
 
 	useEscapeKey(handleClose, !tplDraft && !ruleDraft && !editingToolPrompt && !presetShareFor && !inspectingSkill);
@@ -2121,12 +2164,26 @@ function LoadedSettingsModal({
 		Object.values(promptOverridesDraft).some((v) => v.trim());
 
 	return (
-		<div className="modal-backdrop" onClick={handleClose}>
-			<div className="modal settings-modal" onClick={(e) => e.stopPropagation()}>
+		<div className={`modal-backdrop${narrow ? " settings-mobile-backdrop" : ""}`} onClick={handleClose}>
+			<div
+				className={`modal settings-modal${narrow ? " is-mobile" : ""}${showMobileHome ? " is-mobile-home" : ""}`}
+				onClick={(e) => e.stopPropagation()}
+			>
 				<div className="modal-head settings-cmd-head">
 					<div className="settings-head-brand">
+						{narrow && (
+							<button
+								type="button"
+								className="settings-mobile-back"
+								onClick={() => setMobileHome(true)}
+								aria-label={t("settingsTitle")}
+								title={t("settingsTitle")}
+							>
+								<FiChevronLeft aria-hidden="true" />
+							</button>
+						)}
 						<FiSettings className="modal-head-icon" />
-						<h2>{t("settingsTitle")}</h2>
+						<h2>{narrow ? (tabs.find((item) => item.id === tab)?.label ?? t("settingsTitle")) : t("settingsTitle")}</h2>
 						<HintTip text={t("settingsDesc")} />
 					</div>
 
@@ -2243,6 +2300,18 @@ function LoadedSettingsModal({
 							})
 						)}
 					</nav>
+					{showMobileHome && (
+						<SettingsMobileHome
+							groups={mobileGroups}
+							results={mobileResults}
+							query={tabSearchQuery}
+							onQueryChange={setTabSearchQuery}
+							onOpen={(id) => handleTabChange(id as SettingsTab)}
+							onClose={handleClose}
+							saveStatus={saveStatus}
+							onRetrySave={retryFailedSave}
+						/>
+					)}
 					<div className="modal-body" ref={bodyRef}>
 						{tab === "models" && (
 							<div className="set-section">
@@ -3337,6 +3406,173 @@ function LoadedSettingsModal({
 										onToggle={() => setPartial({ toolLazyLoading: settings.toolLazyLoading !== true })}
 									/>
 								)}
+
+								<ToggleRow
+									title={t("toolApprovalEnabled")}
+									tip={isDsh ? t("toolApprovalDshNotice") : t("toolApprovalEnabledDesc")}
+									enabled={!isDsh && settings.toolApprovalEnabled !== false}
+									disabled={isDsh}
+									onToggle={() => {
+										if (isDsh) return;
+										setPartial({ toolApprovalEnabled: settings.toolApprovalEnabled === false });
+									}}
+									action={
+										!isDsh ? (
+											<button
+												type="button"
+												className="tpl-chip"
+												onClick={() => setTab("approval-rules")}
+												title={t("settingsApprovalRulesDesc")}
+											>
+												<FiShield /> {t("manageApprovalRules")}
+											</button>
+										) : undefined
+									}
+								/>
+								{isDsh && (
+									<p className="set-catalog-hint warn" style={{ marginTop: 4, marginBottom: 8 }}>
+										{t("toolApprovalDshNotice")}
+									</p>
+								)}
+								{chat.dshPermission && chat.dshPermission.options.length > 0 && (
+									<div className="set-mode-row" style={{ marginTop: 8, marginBottom: 8 }}>
+										<label className="set-field-label">
+											{t("dshPermDefault")}
+											<HintTip text={t("dshPermDefaultDesc")} />
+										</label>
+										<select
+											className="set-select"
+											value={chat.dshPermission.defaultPreset}
+											onChange={(e) => appSend({ type: "dsh_permission_default", preset: e.target.value })}
+										>
+											{DSH_PERMISSION_ORDER.filter((v) => chat.dshPermission!.options.some((o) => o.value === v)).map(
+												(v) => (
+													<option key={v} value={v}>
+														{t(permLabelKey(v))}
+													</option>
+												),
+											)}
+										</select>
+									</div>
+								)}
+								{approvalPolicy?.allowAll || (approvalPolicy?.categories.length ?? 0) > 0 ? (
+									<div className="set-field" style={{ marginTop: 8 }}>
+										<div className="set-field-label">
+											{t("toolApprovalPolicyTitle")}
+											<HintTip text={t("toolApprovalPolicyHint")} />
+										</div>
+										{approvalPolicy?.allowAll && (
+											<div className="set-row">
+												<span className="set-hint">{t("toolApprovalPolicyAllowAll")}</span>
+												<button
+													type="button"
+													className="btn"
+													onClick={() => appSend({ type: "set_approval_policy", allowAll: false })}
+												>
+													{t("toolApprovalPolicyRevoke")}
+												</button>
+											</div>
+										)}
+										{(approvalPolicy?.categories ?? []).map((c) => (
+											<div className="set-row" key={c.id}>
+												<span className="set-hint">{isZhLocale(locale) ? c.label : c.labelEn}</span>
+												<button
+													type="button"
+													className="btn"
+													onClick={() =>
+														appSend({
+															type: "set_approval_policy",
+															categories: (approvalPolicy?.categories ?? [])
+																.filter((x) => x.id !== c.id)
+																.map((x) => x.id),
+														})
+													}
+												>
+													{t("toolApprovalPolicyRevoke")}
+												</button>
+											</div>
+										))}
+									</div>
+								) : null}
+								<FieldRow
+									label={t("toolWatchdogTimeout")}
+									tip={t("toolWatchdogTimeoutDesc")}
+									htmlFor="tool-watchdog-timeout"
+								>
+									<input
+										id="tool-watchdog-timeout"
+										className="set-input"
+										type="number"
+										min={0}
+										step={1}
+										placeholder={t("toolWatchdogOff")}
+										value={watchdogMinDraft}
+										onChange={(e) => setWatchdogMinDraft(e.target.value)}
+										onBlur={() => {
+											const raw = watchdogMinDraft.trim();
+											const min = raw === "" ? 20 : Math.max(0, Math.floor(Number(raw) || 0));
+											setWatchdogMinDraft(String(min));
+											const ms = min * 60_000;
+											if (ms !== settings.toolWatchdogTimeoutMs) {
+												setPartial({ toolWatchdogTimeoutMs: ms });
+											}
+										}}
+										onKeyDown={(e) => {
+											if (e.key === "Enter") (e.target as HTMLInputElement).blur();
+										}}
+									/>
+								</FieldRow>
+								<ToggleRow
+									title={t("terminalBashTakeover")}
+									tip={t("terminalBashTakeoverDesc")}
+									enabled={settings.terminalBash}
+									onToggle={() => setPartial({ terminalBash: !settings.terminalBash })}
+								/>
+								{settings.terminalBash && (
+									<>
+										<FieldRow label={t("terminalBashIdleMs")} tip={t("terminalBashIdleMsDesc")} htmlFor="tb-idle-ms">
+											<input
+												id="tb-idle-ms"
+												className="set-input"
+												type="number"
+												min={0}
+												step={1000}
+												value={idleMsDraft}
+												onChange={(e) => setIdleMsDraft(e.target.value)}
+												onBlur={() => {
+													const n = Math.max(0, Math.floor(Number(idleMsDraft) || 0));
+													setIdleMsDraft(String(n));
+													if (n !== settings.terminalBashIdleMs) {
+														setPartial({ terminalBashIdleMs: n });
+													}
+												}}
+											/>
+										</FieldRow>
+										<FieldRow
+											label={t("terminalBashMaxForegroundMs")}
+											tip={t("terminalBashMaxForegroundMsDesc")}
+											htmlFor="tb-max-ms"
+										>
+											<input
+												id="tb-max-ms"
+												className="set-input"
+												type="number"
+												min={0}
+												step={1000}
+												value={maxMsDraft}
+												onChange={(e) => setMaxMsDraft(e.target.value)}
+												onBlur={() => {
+													const n = Math.max(0, Math.floor(Number(maxMsDraft) || 0));
+													setMaxMsDraft(String(n));
+													if (n !== settings.terminalBashMaxForegroundMs) {
+														setPartial({ terminalBashMaxForegroundMs: n });
+													}
+												}}
+											/>
+										</FieldRow>
+									</>
+								)}
+
 								{!isDsh && (
 									<div className="toolflow-top">
 										<div className="toolflow-counts">
@@ -3557,15 +3793,14 @@ function LoadedSettingsModal({
 																				<span className="st-text">
 																					{stateLabel} · {desc || item.group}
 																				</span>
-																				<span
+																				<TipButton
 																					className="qbtn"
-																					data-tip={
-																						n + " · " + stateLabel + (reason ? " · " + reason : "") + " — " + capped
-																					}
+																					tip={n + " · " + stateLabel + (reason ? " · " + reason : "") + " — " + capped}
 																					onClick={(e) => e.stopPropagation()}
+																					onKeyDown={(e) => e.stopPropagation()}
 																				>
 																					?
-																				</span>
+																				</TipButton>
 																			</div>
 																			{!isDsh && !blocked && !pluginOff ? (
 																				<button
@@ -3592,190 +3827,14 @@ function LoadedSettingsModal({
 											</div>
 										);
 									})}
-								<ToggleRow
-									title={t("toolApprovalEnabled")}
-									tip={isDsh ? t("toolApprovalDshNotice") : t("toolApprovalEnabledDesc")}
-									enabled={!isDsh && settings.toolApprovalEnabled !== false}
-									disabled={isDsh}
-									onToggle={() => {
-										if (isDsh) return;
-										setPartial({ toolApprovalEnabled: settings.toolApprovalEnabled === false });
-									}}
-									action={
-										!isDsh ? (
-											<button
-												type="button"
-												className="tpl-chip"
-												onClick={() => setTab("approval-rules")}
-												title={t("settingsApprovalRulesDesc")}
-											>
-												<FiShield /> {t("manageApprovalRules")}
-											</button>
-										) : undefined
-									}
-								/>
-								{isDsh && (
-									<p className="set-catalog-hint warn" style={{ marginTop: 4, marginBottom: 8 }}>
-										{t("toolApprovalDshNotice")}
-									</p>
-								)}
-								{chat.dshPermission && chat.dshPermission.options.length > 0 && (
-									<div className="set-mode-row" style={{ marginTop: 8, marginBottom: 8 }}>
-										<label className="set-field-label">
-											{t("dshPermDefault")}
-											<HintTip text={t("dshPermDefaultDesc")} />
-										</label>
-										<select
-											className="set-select"
-											value={chat.dshPermission.defaultPreset}
-											onChange={(e) => appSend({ type: "dsh_permission_default", preset: e.target.value })}
-										>
-											{DSH_PERMISSION_ORDER.filter((v) => chat.dshPermission!.options.some((o) => o.value === v)).map(
-												(v) => (
-													<option key={v} value={v}>
-														{t(permLabelKey(v))}
-													</option>
-												),
-											)}
-										</select>
-									</div>
-								)}
-								{approvalPolicy?.allowAll || (approvalPolicy?.categories.length ?? 0) > 0 ? (
-									<div className="set-field" style={{ marginTop: 8 }}>
-										<div className="set-field-label">
-											{t("toolApprovalPolicyTitle")}
-											<HintTip text={t("toolApprovalPolicyHint")} />
-										</div>
-										{approvalPolicy?.allowAll && (
-											<div className="set-row">
-												<span className="set-hint">{t("toolApprovalPolicyAllowAll")}</span>
-												<button
-													type="button"
-													className="btn"
-													onClick={() => appSend({ type: "set_approval_policy", allowAll: false })}
-												>
-													{t("toolApprovalPolicyRevoke")}
-												</button>
-											</div>
-										)}
-										{(approvalPolicy?.categories ?? []).map((c) => (
-											<div className="set-row" key={c.id}>
-												<span className="set-hint">{isZhLocale(locale) ? c.label : c.labelEn}</span>
-												<button
-													type="button"
-													className="btn"
-													onClick={() =>
-														appSend({
-															type: "set_approval_policy",
-															categories: (approvalPolicy?.categories ?? [])
-																.filter((x) => x.id !== c.id)
-																.map((x) => x.id),
-														})
-													}
-												>
-													{t("toolApprovalPolicyRevoke")}
-												</button>
-											</div>
-										))}
-									</div>
-								) : null}
-								<FieldRow
-									label={t("toolWatchdogTimeout")}
-									tip={t("toolWatchdogTimeoutDesc")}
-									htmlFor="tool-watchdog-timeout"
-								>
-									<input
-										id="tool-watchdog-timeout"
-										className="set-input"
-										type="number"
-										min={0}
-										step={1}
-										placeholder={t("toolWatchdogOff")}
-										value={watchdogMinDraft}
-										onChange={(e) => setWatchdogMinDraft(e.target.value)}
-										onBlur={() => {
-											const raw = watchdogMinDraft.trim();
-											const min = raw === "" ? 20 : Math.max(0, Math.floor(Number(raw) || 0));
-											setWatchdogMinDraft(String(min));
-											const ms = min * 60_000;
-											if (ms !== settings.toolWatchdogTimeoutMs) {
-												setPartial({ toolWatchdogTimeoutMs: ms });
-											}
-										}}
-										onKeyDown={(e) => {
-											if (e.key === "Enter") (e.target as HTMLInputElement).blur();
-										}}
-									/>
-								</FieldRow>
-								<ToggleRow
-									title={t("terminalBashTakeover")}
-									tip={t("terminalBashTakeoverDesc")}
-									enabled={settings.terminalBash}
-									onToggle={() => setPartial({ terminalBash: !settings.terminalBash })}
-								/>
-								{settings.terminalBash && (
-									<>
-										<FieldRow label={t("terminalBashIdleMs")} tip={t("terminalBashIdleMsDesc")} htmlFor="tb-idle-ms">
-											<input
-												id="tb-idle-ms"
-												className="set-input"
-												type="number"
-												min={0}
-												step={1000}
-												value={idleMsDraft}
-												onChange={(e) => setIdleMsDraft(e.target.value)}
-												onBlur={() => {
-													const n = Math.max(0, Math.floor(Number(idleMsDraft) || 0));
-													setIdleMsDraft(String(n));
-													if (n !== settings.terminalBashIdleMs) {
-														setPartial({ terminalBashIdleMs: n });
-													}
-												}}
-											/>
-										</FieldRow>
-										<FieldRow
-											label={t("terminalBashMaxForegroundMs")}
-											tip={t("terminalBashMaxForegroundMsDesc")}
-											htmlFor="tb-max-ms"
-										>
-											<input
-												id="tb-max-ms"
-												className="set-input"
-												type="number"
-												min={0}
-												step={1000}
-												value={maxMsDraft}
-												onChange={(e) => setMaxMsDraft(e.target.value)}
-												onBlur={() => {
-													const n = Math.max(0, Math.floor(Number(maxMsDraft) || 0));
-													setMaxMsDraft(String(n));
-													if (n !== settings.terminalBashMaxForegroundMs) {
-														setPartial({ terminalBashMaxForegroundMs: n });
-													}
-												}}
-											/>
-										</FieldRow>
-									</>
-								)}
-								<div className="set-field-label">
-									{t("settingsMarkers")}
-									<HintTip text={`${t("settingsMarkersDesc")}\n${t("markerRenameTip")}`} />
-								</div>
-								<ToggleRow
-									title={t("markersEnabled")}
-									tip={`${t("markersEnabledDesc")}\n${t("markersOffHint")}`}
-									enabled={markersEnabled}
-									onToggle={() => setPartial({ markersEnabled: !markersEnabled })}
-								/>
-								{markersEnabled && (settings.markers?.length ?? 0) === 0 && (
-									<p className="set-empty">{t("loading")}...</p>
-								)}
-								{markersEnabled && settings.markers && settings.markers.length > 0 && (
+								{markersTotal === 0 && <p className="set-empty">{t("loading")}...</p>}
+								{markersTotal > 0 && settings.markers && (
 									<div className="toolflow-cat">
 										<div className="toolflow-chead">
-											<b>全部标记</b>
+											<b>{t("settingsMarkers")}</b>
+											<HintTip text={`${t("settingsMarkersDesc")}\n${t("markerRenameTip")}`} />
 											<span className="sub">
-												{settings.markers.filter((m) => m.enabled).length} / {settings.markers.length} 已启用
+												{markersOn === 0 ? "已全部关闭" : `${markersOn} / ${markersTotal} 已启用`}
 											</span>
 											<span className="ops">
 												<button
@@ -3840,13 +3899,14 @@ function LoadedSettingsModal({
 															<span className="st-text">
 																{m.enabled ? "启用" : "关闭"} · {m.pluginId ?? m.name}
 															</span>
-															<span
+															<TipButton
 																className="qbtn"
-																data-tip={detail + (capped ? " — " + capped : "")}
+																tip={detail + (capped ? " — " + capped : "")}
 																onClick={(e) => e.stopPropagation()}
+																onKeyDown={(e) => e.stopPropagation()}
 															>
 																?
-															</span>
+															</TipButton>
 														</div>
 													</div>
 												);
@@ -3854,6 +3914,7 @@ function LoadedSettingsModal({
 										</div>
 									</div>
 								)}
+
 								<div className="set-field-label">{t("toolsSectionOther")}</div>
 								{(() => {
 									const blocked = isBlockedByPreset("codemode");
@@ -4138,7 +4199,9 @@ function LoadedSettingsModal({
 									tip={t("steeringDeliverAllDesc")}
 									enabled={settings.steeringMode !== "one-at-a-time"}
 									onToggle={() =>
-										setPartial({ steeringMode: settings.steeringMode === "one-at-a-time" ? "all" : "one-at-a-time" })
+										setPartial({
+											steeringMode: settings.steeringMode === "one-at-a-time" ? "all" : "one-at-a-time",
+										})
 									}
 								/>
 								<ToggleRow
@@ -4146,7 +4209,9 @@ function LoadedSettingsModal({
 									tip={t("followUpDeliverAllDesc")}
 									enabled={settings.followUpMode !== "one-at-a-time"}
 									onToggle={() =>
-										setPartial({ followUpMode: settings.followUpMode === "one-at-a-time" ? "all" : "one-at-a-time" })
+										setPartial({
+											followUpMode: settings.followUpMode === "one-at-a-time" ? "all" : "one-at-a-time",
+										})
 									}
 								/>
 								<ToggleRow
@@ -4228,6 +4293,12 @@ function LoadedSettingsModal({
 									tip={t("projectClickSwitchDesc")}
 									enabled={projectClickSwitch}
 									onToggle={() => saveProjectClickSwitch(!projectClickSwitch)}
+								/>{" "}
+								<ToggleRow
+									title={t("projectOrderManual")}
+									tip={t("projectOrderManualDesc")}
+									enabled={projectOrderManual}
+									onToggle={() => saveProjectOrderManual(!projectOrderManual)}
 								/>{" "}
 								<ToggleRow
 									title={t("minimalNewChat")}

@@ -33,7 +33,6 @@ import {
 	isHostManagedTool,
 	isConfigurableAgentTool,
 	lazyLoadingDisabledTools,
-	isTerminalGuidanceOn,
 	legacyToDisabled,
 	normalizeDisabledAgentTools,
 	normalizeLazyOnDemandList,
@@ -270,12 +269,6 @@ describe("legacy sync", () => {
 		expect(part.pending).toEqual(["sftp"]);
 		expect(part.loadedLazy).toEqual(["canvas"]);
 	});
-
-	it("终端引导只在组内有启用工具时注入", () => {
-		expect(isTerminalGuidanceOn([])).toBe(true);
-		expect(isTerminalGuidanceOn([...TERMINAL_TOOL_NAMES])).toBe(false);
-		expect(isTerminalGuidanceOn([TERMINAL_TOOL_NAMES[0]])).toBe(false);
-	});
 });
 
 describe("tool_manage 出入口", () => {
@@ -409,16 +402,5 @@ describe("预设语义总表（见 tool-manager.ts 语义注释）", () => {
 		expect(presetHasQuestionnaire("reader")).toBe(true);
 		for (const p of ["minimal", "code", "ask"]) expect(presetHasQuestionnaire(p)).toBe(false);
 		expect(presetHasQuestionnaire("nope")).toBe(true);
-	});
-
-	it("终端引导：开关全关不教；预设拿掉终端工具也不教（不教不存在的工具）", () => {
-		expect(isTerminalGuidanceOn([])).toBe(true);
-		expect(isTerminalGuidanceOn([], "minimal")).toBe(false);
-		expect(isTerminalGuidanceOn([], "code")).toBe(false);
-		expect(isTerminalGuidanceOn([], "ask")).toBe(false);
-		expect(isTerminalGuidanceOn([], "reader")).toBe(true);
-		expect(isTerminalGuidanceOn([...TERMINAL_TOOL_NAMES], "standard")).toBe(false);
-		expect(isTerminalGuidanceOn([...TERMINAL_TOOL_NAMES], "reader")).toBe(false);
-		expect(isTerminalGuidanceOn([TERMINAL_TOOL_NAMES[0]])).toBe(false);
 	});
 });

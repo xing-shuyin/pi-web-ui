@@ -5,6 +5,7 @@ import {
 	type SubagentSnapshot,
 	type SubagentToolHost,
 } from "../../server/subagents.js";
+import { testSettleWaiter } from "../helpers/subagent-settle.js";
 
 function makeMockHost(subagents: Record<string, SubagentSnapshot> = {}): SubagentToolHost {
 	return {
@@ -17,6 +18,7 @@ function makeMockHost(subagents: Record<string, SubagentSnapshot> = {}): Subagen
 		listTemplates: vi.fn(() => []),
 		isTemplateUsable: vi.fn(() => true),
 		lang: () => "zh",
+		waitForSubagentSettle: testSettleWaiter(),
 	};
 }
 

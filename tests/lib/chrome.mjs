@@ -25,3 +25,13 @@ const CANDIDATES = [
 ];
 
 export const CHROME_PATH = process.env.PI_WEB_CHROME ?? CANDIDATES.find((p) => existsSync(p)) ?? "";
+
+/**
+ * 浏览器型用例的预算：真起 Chrome + 真实导航，成本在进程冷启动与 fsync，不在断言。
+ *
+ * 写死 20s 在 CI 上会假红：4 vCPU runner 上 4 个 fork 同时冷启浏览器，实测
+ * `preview-security` 卡到 20.0s 整（PR #875 分片后 shard 2 的那条红）。与
+ * `vitest.config.ts` 的 `testTimeout` 对齐到 60s —— 这里只管「不要无限等」，
+ * 真正的硬底是 CI job 的 `timeout-minutes` 与 `scripts/safe-exec.mjs`。
+ */
+export const BROWSER_TEST_TIMEOUT_MS = 60_000;

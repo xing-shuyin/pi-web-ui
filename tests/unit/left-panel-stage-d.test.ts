@@ -7,6 +7,7 @@ import { LeftPanel } from "../../web/src/components/LeftPanel.js";
 import { LanguageProvider } from "../../web/src/i18n.js";
 import { resetAppGlobals, setAppGlobals } from "../../web/src/app-globals.js";
 import { closeContextMenu } from "../../web/src/context-menu-state.js";
+import { saveProjectOrderManual } from "../../web/src/project-order-settings.js";
 
 vi.mock("../../web/src/components/DeviceGroupSection.js", () => ({
 	DeviceGroupSection: () => createElement("div", { className: "lp-section dg-side-section" }),
@@ -91,7 +92,7 @@ afterEach(() => {
 });
 
 describe("项目排序", () => {
-	it("首次加载按最近使用排序；页面打开期间稳定，新项目追加到末尾", () => {
+	it("自动模式：按最近真实对话时间排序（发过话就上浮），新出现的项目置顶", () => {
 		setAppGlobals({ cwd: "", ready: true, status: "open", workspaceRoots: [] });
 		mount({
 			projects: [
@@ -102,6 +103,7 @@ describe("项目排序", () => {
 		});
 		expect(projectOrder()).toEqual(["/w/new", "/w/mid", "/w/old"]);
 
+		// 真聊过天：/w/old 被顶到最新，/w/added 是新项目（lastUsed 最高）也置顶
 		render({
 			projects: [
 				{ path: "/w/old", lastUsed: 9000 },
@@ -110,7 +112,71 @@ describe("项目排序", () => {
 				{ path: "/w/added", lastUsed: 99999 },
 			],
 		});
-		expect(projectOrder()).toEqual(["/w/new", "/w/mid", "/w/old", "/w/added"]);
+		expect(projectOrder()).toEqual(["/w/added", "/w/old", "/w/new", "/w/mid"]);
+
+		// 从没对话过的项目（lastUsed 为 0）按「本浏览器首次出现」排，同样置顶
+		render({
+			projects: [
+				{ path: "/w/old", lastUsed: 9000 },
+				{ path: "/w/new", lastUsed: 3000 },
+				{ path: "/w/mid", lastUsed: 2000 },
+				{ path: "/w/fresh", lastUsed: 0 },
+			],
+		});
+		expect(projectOrder()).toEqual(["/w/fresh", "/w/old", "/w/new", "/w/mid"]);
+	});
+
+	it("手动模式：顺序只按拖拽与添加顺序，新项目置顶，聊天不重排", () => {
+		setAppGlobals({ cwd: "", ready: true, status: "open", workspaceRoots: [] });
+		mount({
+			projects: [
+				{ path: "/w/a", lastUsed: 3 },
+				{ path: "/w/b", lastUsed: 2 },
+				{ path: "/w/c", lastUsed: 1 },
+			],
+		});
+		expect(projectOrder()).toEqual(["/w/a", "/w/b", "/w/c"]);
+
+		// 打开开关：沿用眼前的排列，不跳变
+		act(() => saveProjectOrderManual(true));
+		expect(projectOrder()).toEqual(["/w/a", "/w/b", "/w/c"]);
+
+		// 聊天把 /w/c 顶到最新：手动模式不重排
+		render({
+			projects: [
+				{ path: "/w/c", lastUsed: 9999 },
+				{ path: "/w/b", lastUsed: 2 },
+				{ path: "/w/a", lastUsed: 3 },
+			],
+		});
+		expect(projectOrder()).toEqual(["/w/a", "/w/b", "/w/c"]);
+
+		// 拖到 /w/c 之后：顺序写进 localStorage
+		const dt = { effectAllowed: "", dropEffect: "", setData: vi.fn() };
+		const fire = (el: Element, type: string, clientY = 100) => {
+			const ev = new Event(type, { bubbles: true, cancelable: true });
+			Object.assign(ev, { dataTransfer: dt, clientY });
+			act(() => {
+				el.dispatchEvent(ev);
+			});
+		};
+		fire(container.querySelector(".lp-project-head-row")!, "dragstart");
+		fire(container.querySelector('[data-project-path="/w/c"]')!.closest(".lp-project-node")!, "dragover");
+		fire(container.querySelector('[data-project-path="/w/c"]')!.closest(".lp-project-node")!, "drop");
+		expect(projectOrder()).toEqual(["/w/b", "/w/c", "/w/a"]);
+		const persisted = JSON.parse(localStorage.getItem("pi-web-ui:lp-project-order") ?? "{}") as { order?: string[] };
+		expect(persisted.order).toEqual(["/w/b", "/w/c", "/w/a"]);
+
+		// 新添加的项目放在最上面
+		render({
+			projects: [
+				{ path: "/w/b", lastUsed: 2 },
+				{ path: "/w/c", lastUsed: 9999 },
+				{ path: "/w/a", lastUsed: 3 },
+				{ path: "/w/new", lastUsed: 5 },
+			],
+		});
+		expect(projectOrder()).toEqual(["/w/new", "/w/b", "/w/c", "/w/a"]);
 	});
 
 	it("Alt+↓ / Alt+↑ 在项目头上调整顺序", () => {

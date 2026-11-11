@@ -104,7 +104,7 @@ describe("LeftPanel 标题栏操作与项目管理", () => {
 		expect(container.querySelector(".projects-scroll")).toBeNull();
 	});
 
-	it("项目行渲染新对话加号按钮，点击后发送 new_chat", () => {
+	it("项目行渲染新对话加号按钮，点击后带目标项目发 new_chat", () => {
 		setAppGlobals({ cwd: "/test", ready: true, status: "open", workspaceRoots: [] });
 		const { container, sent } = mountLeftPanel();
 
@@ -114,7 +114,8 @@ describe("LeftPanel 标题栏操作与项目管理", () => {
 
 		sent.length = 0;
 		act(() => newChatBtn!.click());
-		expect(sent).toEqual([{ type: "new_chat" }]);
+		// 项目行的「+」直接把目标项目写进 new_chat，服务端先切工作区再建会话（#872）
+		expect(sent).toEqual([{ type: "new_chat", cwd: "/test" }]);
 	});
 
 	it("标题行容器与折叠按钮不产生嵌套 button（无 button button）", () => {
@@ -640,7 +641,7 @@ describe("LeftPanel Tab 模式：一体化会话与拖动分割条 (Sash)", () =
 		expect(sash).not.toBeNull();
 	});
 
-	it("方案 A：会话内位置锁定（Deferred MRU），切换或操作时项目物理顺序保持稳定不跳变", () => {
+	it("自动模式：真聊过天的项目上浮，只看不动顺序", () => {
 		setAppGlobals({ cwd: "/test/p1", ready: true, status: "open", workspaceRoots: [] });
 		const p1 = { path: "/test/p1", lastUsed: 100 };
 		const p2 = { path: "/test/p2", lastUsed: 90 };
@@ -672,7 +673,7 @@ describe("LeftPanel Tab 模式：一体化会话与拖动分割条 (Sash)", () =
 			);
 		});
 
-		expect(getRenderedNames()).toEqual(["p1", "p2", "p3"]);
+		expect(getRenderedNames()).toEqual(["p3", "p1", "p2"]);
 	});
 });
 

@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { makeSubagentTools, type SubagentToolHost, type SubagentSnapshot } from "../../server/subagents.js";
+import { testSettleWaiter } from "../helpers/subagent-settle.js";
 
 const questions = [{ id: "decision", question: "Which approach?" }];
 const answers = [{ id: "decision", selected: [], custom: "Use A" }];
@@ -21,6 +22,7 @@ function setup() {
 	let selfId = "parent";
 	const host: SubagentToolHost = {
 		spawnSubagent: vi.fn(async () => "child"),
+		waitForSubagentSettle: testSettleWaiter(),
 		getSubagent: vi.fn((id) => children.find((c) => c.convId === id)),
 		listSubagents: vi.fn(() => children),
 		steerSubagent: vi.fn(async () => {}),

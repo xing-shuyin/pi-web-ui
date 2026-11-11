@@ -11,8 +11,9 @@ android {
         applicationId "com.piwebui.mobile"
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
-        versionCode 1
-        versionName "0.1.0"
+        // 版本号跟着 npm 包版本走（CI 注入 PI_MOBILE_VERSION / _CODE），本地默认值仅兜底。
+        versionCode = (System.getenv('PI_MOBILE_VERSION_CODE') ?: '1').toInteger()
+        versionName = System.getenv('PI_MOBILE_VERSION') ?: '0.1.0'
         manifestPlaceholders = [piJpushAppKey: System.getenv('PI_MOBILE_JPUSH_APP_KEY') ?: piPush.getProperty('piJpushAppKey', '')]
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
         aaptOptions {
@@ -21,10 +22,27 @@ android {
             ignoreAssetsPattern = '!.svn:!.git:!.ds_store:!*.scc:.*:!CVS:!thumbs.db:!picasa.ini:!*~'
         }
     }
+    // 稳定签名：debug 包默认用每台机器各生成一份的 debug keystore，CI 每次跑出来
+    // 的签名都不同 —— 那样发出去的新包装不上旧包，只能先卸载（本地引擎数据一起没）。
+    // 配了这四个环境变量就用固定 keystore（CI 从 secrets 注入），否则退回 debug 签名。
+    def stableStore = System.getenv('PI_ANDROID_KEYSTORE')
+    if (stableStore) {
+        signingConfigs {
+            stable {
+                storeFile file(stableStore)
+                storePassword System.getenv('PI_ANDROID_KEYSTORE_PASSWORD')
+                keyAlias System.getenv('PI_ANDROID_KEY_ALIAS')
+                keyPassword System.getenv('PI_ANDROID_KEY_PASSWORD')
+            }
+        }
+    }
     buildTypes {
         release {
             minifyEnabled false
             proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
+        }
+        debug {
+            if (stableStore) signingConfig signingConfigs.stable
         }
     }
 }

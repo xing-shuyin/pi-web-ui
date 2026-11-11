@@ -10,6 +10,14 @@ import {
 	type ReactNode,
 } from "react";
 import { loadProjectClickSwitch } from "../project-click-settings";
+import {
+	loadProjectOrder,
+	loadProjectOrderManual,
+	projectFirstSeen,
+	saveProjectOrder,
+	saveProjectOrderManual,
+	useProjectOrderManual,
+} from "../project-order-settings";
 import { DeviceGroupSection } from "./DeviceGroupSection";
 import { NativeCliCreateEntry } from "./NativeCliCreateModal";
 import {
@@ -90,7 +98,7 @@ interface LeftPanelProps {
 	unreadConvKeys?: ReadonlySet<string>;
 	panelSend: (
 		msg:
-			| { type: "new_chat" }
+			| { type: "new_chat"; cwd?: string }
 			| { type: "list_sessions"; path?: string; limit?: number }
 			| { type: "list_projects" }
 			| { type: "switch_session"; path: string }
@@ -405,6 +413,26 @@ function groupSessionsByTime(
 	return groups;
 }
 
+/**
+ * 完成证据角标：只标「没核对通过」的三种裁决，`pass` 不占位（免噪声）。
+ * 详情（哪些文件/命令没对上）在完成通知与 get_result 里，这里只负责别让未验证看起来像已验证。
+ */
+function subagentVerdictBadge(c: ConversationSummary, t: Translate) {
+	const verdict = c.subagentVerdict;
+	if (!verdict || verdict === "pass") return null;
+	const meta =
+		verdict === "blocked"
+			? { kind: "blocked", label: t("subagentVerdictBlocked") }
+			: verdict === "partial"
+				? { kind: "partial", label: t("subagentVerdictPartial") }
+				: { kind: "unverified", label: t("subagentVerdictUnverified") };
+	return (
+		<span className={`category-badge-pill evidence-${meta.kind}`} title={t("subagentVerdictHint")}>
+			{meta.label}
+		</span>
+	);
+}
+
 function ConversationRowIndicator({ children, time }: { children: ReactNode; time?: string }) {
 	if (children) return <span className="conv-indicator-slot">{children}</span>;
 	return time ? <span className="conv-time">{time}</span> : null;
@@ -694,7 +722,6 @@ export const LeftPanel = memo(function LeftPanel({
 	});
 
 	const deduplicatedProjects = useMemo(() => {
-		const discoveredAt = Date.now();
 		const seen = new Set<string>();
 		const list: ProjectSummary[] = [];
 		for (const p of projects) {
@@ -707,7 +734,7 @@ export const LeftPanel = memo(function LeftPanel({
 			const normCur = normalizeSessionPathKey(currentCwd);
 			if (!seen.has(normCur)) {
 				seen.add(normCur);
-				list.push({ path: currentCwd, lastUsed: discoveredAt });
+				list.push({ path: currentCwd, lastUsed: 0 });
 			}
 		}
 		for (const group of groupConversations(conversations, currentCwd, activeConversationId)) {
@@ -715,7 +742,7 @@ export const LeftPanel = memo(function LeftPanel({
 			const normC = normalizeSessionPathKey(group.cwd);
 			if (!seen.has(normC)) {
 				seen.add(normC);
-				list.push({ path: group.cwd, lastUsed: discoveredAt });
+				list.push({ path: group.cwd, lastUsed: 0 });
 			}
 		}
 		for (const e of elsewhere) {
@@ -723,28 +750,47 @@ export const LeftPanel = memo(function LeftPanel({
 			const normC = normalizeSessionPathKey(e.cwd);
 			if (!seen.has(normC)) {
 				seen.add(normC);
-				list.push({ path: e.cwd, lastUsed: discoveredAt });
+				list.push({ path: e.cwd, lastUsed: 0 });
 			}
 		}
 		return list;
 	}, [projects, currentCwd, conversations, elsewhere, activeConversationId]);
 
-	const projectRankMapRef = useRef<Map<string, number>>(new Map());
+	const projectOrderManual = useProjectOrderManual();
 	const [projectOrderVersion, setProjectOrderVersion] = useState(0);
 
+	/**
+	 * 项目排序两条路径：
+	 * - 手动模式：只认持久化的拖拽/添加顺序，新出现的项目置顶。
+	 * - 自动模式：按最近真实对话时间（`lastUsed`）降序；从没对话过的项目用「本浏览器首次出现时间」，
+	 *   所以新添加的项目同样在最上方，而查看/切换项目不会改变它们的时间（服务端不再在切项目时刷 lastUsed）。
+	 */
 	const stableProjects = useMemo(() => {
-		const rankMap = projectRankMapRef.current;
-		let maxRank = 0;
-		for (const r of rankMap.values()) if (r > maxRank) maxRank = r;
-		const newcomers = deduplicatedProjects.filter((p) => !rankMap.has(normalizeSessionPathKey(p.path)));
-		newcomers.sort((a, b) => (b.lastUsed ?? 0) - (a.lastUsed ?? 0));
-		for (const p of newcomers) rankMap.set(normalizeSessionPathKey(p.path), ++maxRank);
-		return [...deduplicatedProjects].sort(
-			(a, b) =>
-				(rankMap.get(normalizeSessionPathKey(a.path)) ?? 0) - (rankMap.get(normalizeSessionPathKey(b.path)) ?? 0),
-		);
+		const keyOf = (p: ProjectSummary) => normalizeSessionPathKey(p.path);
+		const firstSeen = projectFirstSeen(deduplicatedProjects.map(keyOf));
+		const sortKey = (p: ProjectSummary) => {
+			return p.lastUsed > 0 ? p.lastUsed : (firstSeen.get(keyOf(p)) ?? 0);
+		};
+		let ordered: ProjectSummary[];
+		if (projectOrderManual) {
+			const byKey = new Map(deduplicatedProjects.map((p) => [keyOf(p), p]));
+			const known: ProjectSummary[] = [];
+			for (const key of loadProjectOrder()) {
+				const project = byKey.get(key);
+				if (!project) continue;
+				known.push(project);
+				byKey.delete(key);
+			}
+			// 新出现的项目置顶，其余保持用户排列
+			ordered = [...byKey.values(), ...known];
+		} else {
+			ordered = [...deduplicatedProjects].sort((a, b) => sortKey(b) - sortKey(a) || keyOf(a).localeCompare(keyOf(b)));
+		}
+		// 镜像当前顺序：切到手动模式时沿用眼前看到的排列，不会突然重排
+		saveProjectOrder(ordered.map(keyOf));
+		return ordered;
 		// eslint-disable-next-line react-hooks/exhaustive-deps
-	}, [deduplicatedProjects, projectOrderVersion]);
+	}, [deduplicatedProjects, projectOrderManual, projectOrderVersion]);
 
 	const moveProject = useCallback(
 		(fromPath: string, toPath: string, after: boolean) => {
@@ -755,10 +801,9 @@ export const LeftPanel = memo(function LeftPanel({
 			const idx = keys.indexOf(to);
 			if (idx < 0) return;
 			keys.splice(after ? idx + 1 : idx, 0, from);
-			const rankMap = projectRankMapRef.current;
-			let r = 0;
-			for (const k of keys) rankMap.set(k, ++r);
-			for (const [k, v] of rankMap) if (!keys.includes(k)) rankMap.set(k, r + v);
+			saveProjectOrder(keys);
+			// 手动拖过就算要自己排：切到手动模式，别让下一次对话把顺序抢回去
+			if (!loadProjectOrderManual()) saveProjectOrderManual(true);
 			setProjectOrderVersion((v) => v + 1);
 		},
 		[stableProjects],
@@ -2314,6 +2359,8 @@ export const LeftPanel = memo(function LeftPanel({
 								</span>
 							)}
 
+							{subagentVerdictBadge(c, t)}
+
 							<ConversationRowIndicator time={convTime ? formatModified(convTime) : undefined}>
 								{c.hasQuestion ? (
 									<span
@@ -2510,6 +2557,8 @@ export const LeftPanel = memo(function LeftPanel({
 							</span>
 						)}
 
+						{subagentVerdictBadge(c, t)}
+
 						<ConversationRowIndicator time={convTime ? formatModified(convTime) : undefined}>
 							{hasQuestion || c.hasQuestion || isCliWaiting ? (
 								<span
@@ -2654,8 +2703,7 @@ export const LeftPanel = memo(function LeftPanel({
 							onContextMenu={(e) => openProjectMenu(e, { path: g.cwd, lastUsed: 0 })}
 							onDoubleClick={(e) => {
 								e.stopPropagation();
-								panelSend({ type: "set_cwd", path: g.cwd });
-								panelSend({ type: "new_chat" });
+								panelSend({ type: "new_chat", cwd: g.cwd });
 								focusComposer();
 							}}
 						>
@@ -3055,12 +3103,9 @@ export const LeftPanel = memo(function LeftPanel({
 														onDoubleClick={(e) => {
 															e.stopPropagation();
 															if (switching) return;
-															if (active) {
-																panelSend({ type: "new_chat" });
-															} else {
-																panelSend({ type: "set_cwd", path: p.path });
-																panelSend({ type: "new_chat" });
-															}
+															// 目标项目直接写在 new_chat 上：服务端先切工作区、核验后再建会话（#872），
+															// 不再发「set_cwd + new_chat」两条各自竞速的消息。
+															panelSend({ type: "new_chat", cwd: p.path });
 															focusComposer();
 														}}
 													>
@@ -3107,7 +3152,11 @@ export const LeftPanel = memo(function LeftPanel({
 																</span>
 															)}
 															<span className={`project-time ${switching ? "switching-pct" : ""}`}>
-																{switching ? `${transition?.progress ?? 0}%` : formatModified(p.lastUsed)}
+																{switching
+																	? `${transition?.progress ?? 0}%`
+																	: p.lastUsed > 0
+																		? formatModified(p.lastUsed)
+																		: ""}
 															</span>
 														</span>
 													</button>
@@ -3120,8 +3169,7 @@ export const LeftPanel = memo(function LeftPanel({
 																title={t("newChat") || "新建对话"}
 																onClick={(e) => {
 																	e.stopPropagation();
-																	if (!active) panelSend({ type: "set_cwd", path: p.path });
-																	panelSend({ type: "new_chat" });
+																	panelSend({ type: "new_chat", cwd: p.path });
 																	focusComposer();
 																}}
 															>
