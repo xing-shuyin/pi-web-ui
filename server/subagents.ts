@@ -395,6 +395,10 @@ export function makeSubagentTool(
 			};
 		}
 		const model = typeof request.model === "string" && request.model.trim() ? request.model.trim() : undefined;
+		// schema 里不再给 notifyOnDone 写 enum（联合类型 + enum 会被 Moonshot 等供应商判成非法 schema，
+		// 整轮请求 400），约束落到这里：只有 false / "manual" 有意义，其余一律按默认（通知）处理。
+		const rawNotify: unknown = request.notifyOnDone;
+		const notifyOnDone = typeof rawNotify === "boolean" ? rawNotify : rawNotify === "manual" ? "manual" : undefined;
 		return {
 			spec: {
 				key: rawKey || undefined,
@@ -405,7 +409,7 @@ export function makeSubagentTool(
 				thinking,
 				isolationMode: rawIsolation === "worktree" || rawIsolation === "none" ? rawIsolation : undefined,
 				persist: request.persist,
-				notifyOnDone: request.notifyOnDone,
+				notifyOnDone,
 			},
 		};
 	};
@@ -559,9 +563,7 @@ export function makeSubagentTool(
 						thinking: Type.Optional(Type.String({ enum: [...THINKING_LEVELS] })),
 						isolation: Type.Optional(Type.String({ enum: ["worktree", "none"] })),
 						persist: Type.Optional(Type.Boolean()),
-						notifyOnDone: Type.Optional(
-							Type.Unsafe<boolean | "manual">({ type: ["boolean", "string"], enum: [true, false, "manual"] }),
-						),
+						notifyOnDone: Type.Optional(Type.Unsafe<boolean | "manual">({ type: ["boolean", "string"] })),
 					}),
 				),
 			),
@@ -889,11 +891,11 @@ export function makeSubagentTool(
 							subagentType,
 							p.cwd ?? ctx.cwd,
 							templateName,
-							p.model,
+							single.model,
 							undefined,
-							p.persist,
-							p.thinking,
-							p.notifyOnDone,
+							single.persist,
+							single.thinking,
+							single.notifyOnDone,
 						];
 						if (isolationMode === "worktree" || extra !== undefined || signal !== undefined) {
 							spawnArgs.push(isolationMode === "worktree" ? "worktree" : undefined);
