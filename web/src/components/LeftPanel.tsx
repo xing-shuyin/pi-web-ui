@@ -813,19 +813,22 @@ export const LeftPanel = memo(function LeftPanel({
 
 	const effectiveProjects = stableProjects;
 
+	// 本地有没有「上次的展开/收起记录」：有就按记录恢复（刷新不该自己弹开），
+	// 没有就是首次使用（当前项目要展开）。这个判断必须在挂载时定下来 ——
+	// `cwd` 来自 websocket 快照，挂载那一刻通常还没到，不能拿它当判据。
+	const persistedExpandedRef = useRef<Set<string> | null>(null);
 	const [expandedProjects, setExpandedProjects] = useState<Set<string>>(() => {
 		try {
 			const raw = localStorage.getItem("pi-web-ui:lp-expanded-projects");
 			if (raw) {
 				const arr = JSON.parse(raw);
-				// 尊重上一次的展开/收起状态：收起过的项目刷新后不该自己弹开。
-				if (Array.isArray(arr)) return new Set<string>(arr);
+				if (Array.isArray(arr)) {
+					persistedExpandedRef.current = new Set<string>(arr);
+					return persistedExpandedRef.current;
+				}
 			}
 		} catch {}
-		const s = new Set<string>();
-		const norm = normalizeSessionPathKey(currentCwd);
-		if (norm) s.add(norm);
-		return s;
+		return new Set<string>();
 	});
 
 	useEffect(() => {
@@ -870,10 +873,11 @@ export const LeftPanel = memo(function LeftPanel({
 	useEffect(() => {
 		const normCur = normalizeSessionPathKey(currentCwd);
 		if (normCur) {
-			// 首帧不强行展开：刷新页面要保留用户收起的状态；只有真的切换项目才自动展开。
+			// 首个拿到的 cwd：刷新场景保留用户收起的状态（有记录就不动），
+			// 首次使用（没有记录）要展开当前项目；之后再切项目一律自动展开。
 			if (!expandedSeededRef.current) {
 				expandedSeededRef.current = true;
-				return;
+				if (persistedExpandedRef.current) return;
 			}
 			setExpandedProjects((prev) => {
 				if (prev.has(normCur)) return prev;
