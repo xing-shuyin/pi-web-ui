@@ -69,6 +69,25 @@ describe("ClientStateStore 最近项目删除全局持久化", () => {
 		expect(removed.some((p) => p.toLowerCase() === originalPath.toLowerCase())).toBe(true);
 	});
 
+	it("浏览/切换（promote: false）不刷新最近对话时间，只在未登记时以 lastUsed: 0 补位", () => {
+		const chatted = join(dir, "chatted");
+		mkdirSync(chatted);
+		store.remember("clientA", chatted);
+		const before = store.get("clientA").projects.find((p) => p.path === chatted)!;
+		expect(before.lastUsed).toBeGreaterThan(0);
+
+		store.remember("clientA", chatted, { promote: false });
+		expect(store.get("clientA").projects.find((p) => p.path === chatted)!.lastUsed).toBe(before.lastUsed);
+
+		const browsed = join(dir, "browsed");
+		mkdirSync(browsed);
+		store.remember("clientA", browsed, { promote: false });
+		const browsedEntry = store.get("clientA").projects.find((p) => p.path === browsed)!;
+		expect(browsedEntry.lastUsed).toBe(0);
+		// 没聊过天也不妨碍它成为「上次打开的项目」
+		expect(store.get("clientA").lastCwd).toBe(browsed);
+	});
+
 	it("启动/加载时自动将老 client 中的 removedProjects 迁移到全局 __settings__", () => {
 		const oldContent = {
 			clientOld: {

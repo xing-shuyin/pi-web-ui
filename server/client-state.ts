@@ -1075,23 +1075,43 @@ export class ClientStateStore {
 		return this.load()[clientId] ?? { projects: [] };
 	}
 
-	remember(clientId: string, cwd: string): void {
+	/**
+	 * 记录一个项目。
+	 * - `promote`（默认）= 真实对话活动，把 `lastUsed` 顶到当前时间；项目排序只认这个。
+	 * - `promote: false` = 浏览/切换/恢复，只记 `lastCwd`、清 tombstone、缺省登记（`lastUsed: 0`），
+	 *   不刷新时间，所以只是点开看看不会把项目顶到最新。
+	 */
+	remember(clientId: string, cwd: string, opts?: { promote?: boolean }): void {
 		const all = this.load();
 		const state = (all[clientId] ??= { projects: [] });
 		this.touchClient(all, clientId);
 		state.lastCwd = cwd;
 		const now = Date.now();
 		const targetKey = normalizePathKey(cwd);
-		state.projects = [
-			{ path: cwd, lastUsed: now },
-			...state.projects.filter((p) => normalizePathKey(p.path) !== targetKey),
-		].slice(0, RECENT_PROJECTS_MAX);
+		const promote = opts?.promote !== false;
 		// Also persist in global settings so new tabs and sessions inherit it immediately
 		const globalState = (all[ClientStateStore.GLOBAL_SETTINGS_KEY] ??= { projects: [] });
-		globalState.projects = [
-			{ path: cwd, lastUsed: now },
-			...(globalState.projects ?? []).filter((p) => normalizePathKey(p.path) !== targetKey),
-		].slice(0, RECENT_PROJECTS_MAX);
+		if (promote) {
+			state.projects = [
+				{ path: cwd, lastUsed: now },
+				...state.projects.filter((p) => normalizePathKey(p.path) !== targetKey),
+			].slice(0, RECENT_PROJECTS_MAX);
+			globalState.projects = [
+				{ path: cwd, lastUsed: now },
+				...(globalState.projects ?? []).filter((p) => normalizePathKey(p.path) !== targetKey),
+			].slice(0, RECENT_PROJECTS_MAX);
+		} else {
+			// 浏览不算「最近对话」：已登记的不动时间，没登记的补一条 lastUsed: 0 留着位置
+			if (!state.projects.some((p) => normalizePathKey(p.path) === targetKey)) {
+				state.projects = [{ path: cwd, lastUsed: 0 }, ...state.projects].slice(0, RECENT_PROJECTS_MAX);
+			}
+			if (!(globalState.projects ?? []).some((p) => normalizePathKey(p.path) === targetKey)) {
+				globalState.projects = [{ path: cwd, lastUsed: 0 }, ...(globalState.projects ?? [])].slice(
+					0,
+					RECENT_PROJECTS_MAX,
+				);
+			}
+		}
 		// Opening the workspace again clears its removal tombstone across all clients and global settings.
 		for (const cState of Object.values(all)) {
 			if (cState.removedProjects?.length) {

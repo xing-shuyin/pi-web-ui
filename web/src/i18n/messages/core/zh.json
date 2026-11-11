@@ -1789,6 +1789,8 @@
 	"openRecentSessionOnProjectSwitchDesc": "开启：切换工作区到其他项目时自动打开该项目最近的会话；关闭：切换项目时始终创建全新的空白对话",
 	"projectClickSwitch": "点击项目名切换项目",
 	"projectClickSwitchDesc": "开启：左栏点击其他项目即切换并展开（默认，老行为）；关闭：点击只折叠或展开该项目，切换改用双击（会在该项目开新对话）",
+	"projectOrderManual": "项目顺序全靠手动",
+	"projectOrderManualDesc": "开启：左栏项目顺序只按你的拖拽与添加顺序（新项目置顶），聊天不再自动重排；关闭：按最近真实对话时间自动排序，只是打开或切换项目不改变顺序（拖拽一次即自动转为手动）",
 	"toolImageZoom": "点击预览大图",
 	"imageAttach": "附加到输入框",
 	"imageAttached": "已附加到输入框",

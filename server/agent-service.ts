@@ -10660,6 +10660,8 @@ export class ClientSession {
 			return;
 		}
 
+		this.markProjectConversationActivity(conv.cwd);
+
 		const promptAc = new AbortController();
 		conv.activePromptAc = promptAc;
 		this.markerSvc.clearActions(conv.id);
@@ -12834,12 +12836,25 @@ export class ClientSession {
 		}
 	}
 
+	/**
+	 * 只有在真的往项目里发了消息时才算「最近对话」：刷新项目 `lastUsed` 并推给客户端，
+	 * 这样左栏项目顺序只会因为对话而变，浏览/切换不会。
+	 */
+	private markProjectConversationActivity(cwd: string): void {
+		if (!this.stateStore || !cwd) return;
+		try {
+			this.stateStore.remember(this.clientId, cwd);
+			// 推送失败不影响发消息本身（假体会话、断连、无工作区都会在这里抛）
+			void this.pushProjects().catch(() => {});
+		} catch {}
+	}
+
 	private applyCwdSideEffects(abs: string): void {
 		this.roots = this.stateStore.getWorkspaceRoots(this.clientId, abs);
 		try {
 			this.onCwdChanged?.(abs, this.roots);
 		} catch {}
-		this.stateStore.remember(this.clientId, abs);
+		this.stateStore.remember(this.clientId, abs, { promote: false });
 		this.invalidateProjectsCache();
 		void this.pushProjects();
 		this.refreshSessionsOnSwitch();
@@ -15007,7 +15022,7 @@ export class ClientSession {
 		await run;
 	}
 
-	private withCurrentCwd(projects: ProjectSummary[], now: number): ProjectSummary[] {
+	private withCurrentCwd(projects: ProjectSummary[], _now: number): ProjectSummary[] {
 		const currentKey = normalizePathKey(this.cwd);
 		const removedKeys = new Set(this.stateStore.getRemovedProjects(this.clientId).map(normalizePathKey));
 		const validProjects = projects.filter((p) => {
@@ -15021,11 +15036,10 @@ export class ClientSession {
 		if (removedKeys.has(currentKey)) {
 			list = validProjects;
 		} else if (validProjects.some((p) => normalizePathKey(p.path) === currentKey)) {
-			list = validProjects.map((p) =>
-				normalizePathKey(p.path) === currentKey ? { ...p, lastUsed: Math.max(p.lastUsed, now) } : p,
-			);
+			// 当前项目不刷时间：项目顺序只认真实对话，切过去看看不该把它顶到最新
+			list = validProjects;
 		} else {
-			list = [{ path: this.cwd, lastUsed: now }, ...validProjects].slice(0, RECENT_PROJECTS_MAX);
+			list = [{ path: this.cwd, lastUsed: 0 }, ...validProjects].slice(0, RECENT_PROJECTS_MAX);
 		}
 
 		const existingKeys = new Set(list.map((p) => normalizePathKey(p.path)));

@@ -1745,7 +1745,7 @@ export class AgentService {
 					cs = await creating;
 					this.clients.set(clientId, cs);
 					this.wireClient(cs, clientId);
-					this.stateStore.remember(clientId, cwd);
+					this.stateStore.remember(clientId, cwd, { promote: false });
 					if (cwd !== this.cwd) {
 						send({
 							type: "notice",

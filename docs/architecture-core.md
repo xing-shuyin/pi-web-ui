@@ -36,7 +36,15 @@ React + Capacitor 手机客户端、Hub 账号隔离推送与设备切换见 [`m
 
 界面 `appSend` 为 prompt 附带只在前端传递的 `userInitiated` 上下文；`useChat.send` 在 WebSocket 发送成功后更新顺序，插件直接调用发送器或显式关闭该上下文时不置顶，空白或未连接发送也不置顶。原生 CLI 只消费 `native_cli_prompt_submitted` 窄事件（Claude/Codex `UserPromptSubmit`、Pi `input(source=interactive)`），按 session 与 eventId 去重；终端输出、普通按键、粘贴和 working 状态都不能替代用户提交信号。
 
-会话 ID、sessionId 与文件路径关联到同一位置，保证活动/历史表示切换、重新打开或过户后保留顺序。子代理保持父子树（含工作树子代理），向子代理直接发送消息时整体提升所属父树。顺序只保存在页面内存，不写入存储；项目排位沿用独立规则。相邻项目节点之间使用主题边框色分隔线与间距，分隔范围覆盖整个会话子树。
+会话 ID、sessionId 与文件路径关联到同一位置，保证活动/历史表示切换、重新打开或过户后保留顺序。子代理保持父子树（含工作树子代理），向子代理直接发送消息时整体提升所属父树。顺序只保存在页面内存，不写入存储；项目排位见「项目（工作区）排序」。
+
+## 项目（工作区）排序
+
+项目顺序与「最近对话」时间解耦，事实源：`server/client-state.ts` 的 `remember(clientId, cwd, { promote })` 与 `web/src/project-order-settings.ts`。
+
+- **时间只认真实对话**：`promote`（默认）只在真的发消息时调用（pi `ClientSession.prompt`、`dsh` 与 `universal` 的 `prompt`），刷新该项目 `lastUsed` 并推 `projects`。浏览/切换/恢复（`set_cwd`、`switchConversation`、打开历史对话、连接时恢复 `lastCwd`）一律 `{ promote: false }`：只写 `lastCwd`、清 tombstone，未登记的补一条 `lastUsed: 0`，不动时间；`withCurrentCwd()` 也不再给当前项目打时间戳。否则「只是点开看看」会把项目顶到最新，下次加载顺序就变了。
+- **客户端两种模式**（localStorage）：自动模式（默认）按 `lastUsed` 降序，`lastUsed === 0`（从没对话过）回退到「本浏览器首次出现时间」，所以新添加的项目天然在最上方；手动模式（设置「项目顺序全靠手动」）只认持久化的拖拽/添加顺序，新出现的项目置顶，聊天不再重排。拖拽或 Alt+↑/↓ 会自动切到手动模式。切模式不跳变：自动模式持续把当前顺序镜像进存储，手动模式直接接手眼前排列。
+- 项目行右侧时间只在 `lastUsed > 0` 时显示；验证：`tests/unit/left-panel-stage-d.test.ts`、`tests/unit/left-panel-actions.test.ts`、`tests/unit/left-panel-open-conv-order.test.ts`、`tests/unit/client-state-recent-projects.test.ts`。相邻项目节点之间使用主题边框色分隔线与间距，分隔范围覆盖整个会话子树。
 
 「运行中对话」（`conversations`）和「历史会话」（`sessions`）是两个通道，但常常指向同一批会话，左栏必须把它们认成同一条，否则同一条会话会渲染成两行。分工：**行归属由引擎裁定、身份由客户端归一**。
 

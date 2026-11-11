@@ -1854,6 +1854,9 @@ export class DshClientSession {
 			}
 		}
 		if (this.conv !== conv || this.switchingWorkspace) return;
+		// 真的发消息才算「项目最近对话」：左栏项目排序只认这个，浏览/切换不刷新
+		this.stateStore.remember(this.clientId, conv.cwd);
+		void this.pushProjects().catch(() => {});
 		this.markerSvc.clearActions(conv.id);
 		const fileOwner = this.findSessionOwnerById?.(conv.sessionId);
 		if (fileOwner && fileOwner.isStreaming) {
@@ -5383,7 +5386,7 @@ export class DshClientSession {
 			}
 			this.cwd = abs;
 			this.roots = this.stateStore.getWorkspaceRoots(this.clientId, abs);
-			this.stateStore.remember(this.clientId, abs);
+			this.stateStore.remember(this.clientId, abs, { promote: false });
 			const prev = this.conv;
 			prev.listed = this.shouldRetainDshConversation(prev) || prev.messages.length > 0;
 			const openRecent = this.settings.openRecentSessionOnProjectSwitch ?? true;
@@ -5819,7 +5822,7 @@ export class DshAgentService {
 			}
 			cs = DshClientSession.create(clientId, cwd, this.stateStore, this.dataDir, this.agentDir);
 			this.clients.set(clientId, cs);
-			this.stateStore.remember(clientId, cwd);
+			this.stateStore.remember(clientId, cwd, { promote: false });
 			if (cwd !== this.cwd) {
 				send({
 					type: "notice",

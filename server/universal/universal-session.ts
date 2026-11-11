@@ -469,7 +469,7 @@ export class UniversalSession implements DispatchSession {
 		}
 
 		if (typeof this.stateStore?.remember === "function" && this.cwd) {
-			this.stateStore.remember(this.clientId, this.cwd);
+			this.stateStore.remember(this.clientId, this.cwd, { promote: false });
 		}
 
 		if (this.driver instanceof CodexDriver) {
@@ -813,6 +813,9 @@ export class UniversalSession implements DispatchSession {
 
 		if (this.switchingProject || this.disposed || this.abortPromise || generation !== this.projectGeneration) return;
 		if (this.activeConv !== targetConv) return;
+		// 真的发消息才算「项目最近对话」：左栏项目排序只认这个，浏览/切换不刷新
+		if (typeof this.stateStore?.remember === "function") this.stateStore.remember(this.clientId, this.cwd);
+		void this.pushProjects().catch(() => {});
 		this.isStreaming = true;
 		const conv = targetConv;
 		startTurnTiming(conv);
@@ -1869,7 +1872,7 @@ export class UniversalSession implements DispatchSession {
 			await this.refreshSessions();
 			await this.refreshWorktreeInfo();
 			if (typeof this.stateStore?.remember === "function") {
-				this.stateStore.remember(this.clientId, path);
+				this.stateStore.remember(this.clientId, path, { promote: false });
 			}
 			void this.pushProjects();
 			const savedModel =

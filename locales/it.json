@@ -1793,6 +1793,8 @@
 		"openRecentSessionOnProjectSwitchDesc": "Attivo: riprende automaticamente la sessione più recente quando si passa a un altro progetto; Disattivato: inizia sempre con una nuova chat vuota",
 		"projectClickSwitch": "Click project name to switch",
 		"projectClickSwitchDesc": "On: clicking another project in the sidebar switches to it and expands it (default, previous behaviour); Off: clicking only collapses or expands that project — switch with double-click instead (opens a new chat there)",
+		"projectOrderManual": "Manual project order",
+		"projectOrderManualDesc": "On: the sidebar order follows only your drags and the order projects were added (new projects go on top) — chatting no longer reorders them; Off: sorted by the most recent real conversation, and merely opening or switching projects never reorders them (dragging a project switches to manual)",
 		"toolImageZoom": "Clicca per ingrandire",
 		"imageAttach": "Attach to input",
 		"imageAttached": "Attached to input",

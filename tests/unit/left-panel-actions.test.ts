@@ -625,7 +625,7 @@ describe("LeftPanel Tab 模式：一体化会话与拖动分割条 (Sash)", () =
 		expect(sash).not.toBeNull();
 	});
 
-	it("方案 A：会话内位置锁定（Deferred MRU），切换或操作时项目物理顺序保持稳定不跳变", () => {
+	it("自动模式：真聊过天的项目上浮，只看不动顺序", () => {
 		setAppGlobals({ cwd: "/test/p1", ready: true, status: "open", workspaceRoots: [] });
 		const p1 = { path: "/test/p1", lastUsed: 100 };
 		const p2 = { path: "/test/p2", lastUsed: 90 };
@@ -657,7 +657,7 @@ describe("LeftPanel Tab 模式：一体化会话与拖动分割条 (Sash)", () =
 			);
 		});
 
-		expect(getRenderedNames()).toEqual(["p1", "p2", "p3"]);
+		expect(getRenderedNames()).toEqual(["p3", "p1", "p2"]);
 	});
 });
 

@@ -1122,7 +1122,7 @@ export function reducer(state: ChatState, action: Action): ChatState {
 			if (curCwd && curCwd !== "@root" && curCwd !== "machine-root") {
 				const curNorm = normalizeSessionPathKey(curCwd);
 				if (!nextProjects.some((p) => normalizeSessionPathKey(p.path) === curNorm)) {
-					nextProjects = [{ path: curCwd, lastUsed: Date.now() }, ...nextProjects];
+					nextProjects = [{ path: curCwd, lastUsed: 0 }, ...nextProjects];
 				}
 			}
 			writeCachedProjects(nextProjects);
@@ -3162,7 +3162,7 @@ export function useChat() {
 				const cached = readCachedProjects();
 				const normTarget = normalizeSessionPathKey(cwd);
 				const next = [
-					{ path: cwd, lastUsed: Date.now() },
+					{ path: cwd, lastUsed: 0 },
 					...cached.filter((p) => normalizeSessionPathKey(p.path) !== normTarget),
 				];
 				writeCachedProjects(next);

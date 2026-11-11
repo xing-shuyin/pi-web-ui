@@ -10,6 +10,14 @@ import {
 	type ReactNode,
 } from "react";
 import { loadProjectClickSwitch } from "../project-click-settings";
+import {
+	loadProjectOrder,
+	loadProjectOrderManual,
+	projectFirstSeen,
+	saveProjectOrder,
+	saveProjectOrderManual,
+	useProjectOrderManual,
+} from "../project-order-settings";
 import { DeviceGroupSection } from "./DeviceGroupSection";
 import { NativeCliCreateEntry } from "./NativeCliCreateModal";
 import {
@@ -698,7 +706,6 @@ export const LeftPanel = memo(function LeftPanel({
 	});
 
 	const deduplicatedProjects = useMemo(() => {
-		const discoveredAt = Date.now();
 		const seen = new Set<string>();
 		const list: ProjectSummary[] = [];
 		for (const p of projects) {
@@ -711,7 +718,7 @@ export const LeftPanel = memo(function LeftPanel({
 			const normCur = normalizeSessionPathKey(currentCwd);
 			if (!seen.has(normCur)) {
 				seen.add(normCur);
-				list.push({ path: currentCwd, lastUsed: discoveredAt });
+				list.push({ path: currentCwd, lastUsed: 0 });
 			}
 		}
 		for (const group of groupConversations(conversations, currentCwd, activeConversationId)) {
@@ -719,7 +726,7 @@ export const LeftPanel = memo(function LeftPanel({
 			const normC = normalizeSessionPathKey(group.cwd);
 			if (!seen.has(normC)) {
 				seen.add(normC);
-				list.push({ path: group.cwd, lastUsed: discoveredAt });
+				list.push({ path: group.cwd, lastUsed: 0 });
 			}
 		}
 		for (const e of elsewhere) {
@@ -727,28 +734,47 @@ export const LeftPanel = memo(function LeftPanel({
 			const normC = normalizeSessionPathKey(e.cwd);
 			if (!seen.has(normC)) {
 				seen.add(normC);
-				list.push({ path: e.cwd, lastUsed: discoveredAt });
+				list.push({ path: e.cwd, lastUsed: 0 });
 			}
 		}
 		return list;
 	}, [projects, currentCwd, conversations, elsewhere, activeConversationId]);
 
-	const projectRankMapRef = useRef<Map<string, number>>(new Map());
+	const projectOrderManual = useProjectOrderManual();
 	const [projectOrderVersion, setProjectOrderVersion] = useState(0);
 
+	/**
+	 * 项目排序两条路径：
+	 * - 手动模式：只认持久化的拖拽/添加顺序，新出现的项目置顶。
+	 * - 自动模式：按最近真实对话时间（`lastUsed`）降序；从没对话过的项目用「本浏览器首次出现时间」，
+	 *   所以新添加的项目同样在最上方，而查看/切换项目不会改变它们的时间（服务端不再在切项目时刷 lastUsed）。
+	 */
 	const stableProjects = useMemo(() => {
-		const rankMap = projectRankMapRef.current;
-		let maxRank = 0;
-		for (const r of rankMap.values()) if (r > maxRank) maxRank = r;
-		const newcomers = deduplicatedProjects.filter((p) => !rankMap.has(normalizeSessionPathKey(p.path)));
-		newcomers.sort((a, b) => (b.lastUsed ?? 0) - (a.lastUsed ?? 0));
-		for (const p of newcomers) rankMap.set(normalizeSessionPathKey(p.path), ++maxRank);
-		return [...deduplicatedProjects].sort(
-			(a, b) =>
-				(rankMap.get(normalizeSessionPathKey(a.path)) ?? 0) - (rankMap.get(normalizeSessionPathKey(b.path)) ?? 0),
-		);
+		const keyOf = (p: ProjectSummary) => normalizeSessionPathKey(p.path);
+		const firstSeen = projectFirstSeen(deduplicatedProjects.map(keyOf));
+		const sortKey = (p: ProjectSummary) => {
+			return p.lastUsed > 0 ? p.lastUsed : (firstSeen.get(keyOf(p)) ?? 0);
+		};
+		let ordered: ProjectSummary[];
+		if (projectOrderManual) {
+			const byKey = new Map(deduplicatedProjects.map((p) => [keyOf(p), p]));
+			const known: ProjectSummary[] = [];
+			for (const key of loadProjectOrder()) {
+				const project = byKey.get(key);
+				if (!project) continue;
+				known.push(project);
+				byKey.delete(key);
+			}
+			// 新出现的项目置顶，其余保持用户排列
+			ordered = [...byKey.values(), ...known];
+		} else {
+			ordered = [...deduplicatedProjects].sort((a, b) => sortKey(b) - sortKey(a) || keyOf(a).localeCompare(keyOf(b)));
+		}
+		// 镜像当前顺序：切到手动模式时沿用眼前看到的排列，不会突然重排
+		saveProjectOrder(ordered.map(keyOf));
+		return ordered;
 		// eslint-disable-next-line react-hooks/exhaustive-deps
-	}, [deduplicatedProjects, projectOrderVersion]);
+	}, [deduplicatedProjects, projectOrderManual, projectOrderVersion]);
 
 	const moveProject = useCallback(
 		(fromPath: string, toPath: string, after: boolean) => {
@@ -759,10 +785,9 @@ export const LeftPanel = memo(function LeftPanel({
 			const idx = keys.indexOf(to);
 			if (idx < 0) return;
 			keys.splice(after ? idx + 1 : idx, 0, from);
-			const rankMap = projectRankMapRef.current;
-			let r = 0;
-			for (const k of keys) rankMap.set(k, ++r);
-			for (const [k, v] of rankMap) if (!keys.includes(k)) rankMap.set(k, r + v);
+			saveProjectOrder(keys);
+			// 手动拖过就算要自己排：切到手动模式，别让下一次对话把顺序抢回去
+			if (!loadProjectOrderManual()) saveProjectOrderManual(true);
 			setProjectOrderVersion((v) => v + 1);
 		},
 		[stableProjects],
@@ -3095,7 +3120,11 @@ export const LeftPanel = memo(function LeftPanel({
 																</span>
 															)}
 															<span className={`project-time ${switching ? "switching-pct" : ""}`}>
-																{switching ? `${transition?.progress ?? 0}%` : formatModified(p.lastUsed)}
+																{switching
+																	? `${transition?.progress ?? 0}%`
+																	: p.lastUsed > 0
+																		? formatModified(p.lastUsed)
+																		: ""}
 															</span>
 														</span>
 													</button>

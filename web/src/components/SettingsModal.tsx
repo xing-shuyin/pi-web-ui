@@ -106,6 +106,7 @@ import { formatTokenDraft, parseTokenInput } from "../token-input";
 import { useWideChat, saveChatWidthSettings, useHideModelRow, saveHideModelRowSettings } from "../chat-width-settings";
 import { usePresentAutoOpen, savePresentAutoOpen } from "../present-settings";
 import { useProjectClickSwitch, saveProjectClickSwitch } from "../project-click-settings";
+import { useProjectOrderManual, saveProjectOrderManual } from "../project-order-settings";
 import { type SendKey, saveSendKeyPref, useEffectiveSendKey } from "../composer-keys";
 import { useProjectTitle, saveTitleSettings } from "../title-settings";
 import {
@@ -880,6 +881,7 @@ function LoadedSettingsModal({
 	const effectiveSendKey = useEffectiveSendKey();
 	const presentAutoOpen = usePresentAutoOpen();
 	const projectClickSwitch = useProjectClickSwitch();
+	const projectOrderManual = useProjectOrderManual();
 	const projectTitle = useProjectTitle();
 	const faviconSettings = useFaviconSettings();
 	const wallpaper = useWallpaperSettings();
@@ -4291,6 +4293,12 @@ function LoadedSettingsModal({
 									tip={t("projectClickSwitchDesc")}
 									enabled={projectClickSwitch}
 									onToggle={() => saveProjectClickSwitch(!projectClickSwitch)}
+								/>{" "}
+								<ToggleRow
+									title={t("projectOrderManual")}
+									tip={t("projectOrderManualDesc")}
+									enabled={projectOrderManual}
+									onToggle={() => saveProjectOrderManual(!projectOrderManual)}
 								/>{" "}
 								<ToggleRow
 									title={t("minimalNewChat")}

@@ -1793,6 +1793,8 @@
 		"openRecentSessionOnProjectSwitchDesc": "開啟：切換工作區到其他專案時自動開啟該專案最近的工作階段；關閉：切換專案時始終建立全新的空白對話",
 		"projectClickSwitch": "點選專案名切換專案",
 		"projectClickSwitchDesc": "開啟：左欄點選其他專案即切換並展開（預設，老行為）；關閉：點選只摺疊或展開該專案，切換改用按兩下（會在該專案開新對話）",
+		"projectOrderManual": "專案顺序全靠手动",
+		"projectOrderManualDesc": "开启：左栏專案顺序只按你的拖拽与添加顺序（新專案置顶），聊天不再自动重排；關閉：按最近真实對話时间自动排序，只是打开或切换專案不改变顺序（拖拽一次即自动转为手动）",
 		"toolImageZoom": "點選預覽大圖",
 		"imageAttach": "附加到輸入框",
 		"imageAttached": "已附加到輸入框",
