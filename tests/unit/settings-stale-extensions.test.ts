@@ -44,9 +44,12 @@ function makeSession(loadedExts: { sourceInfo?: { origin?: string; source?: stri
 	};
 }
 
-function lastSettingsState(): { extensions: { id: string; enabled: boolean }[] } | undefined {
+function lastSettingsState(): { extensions: { id: string; name: string; enabled: boolean }[] } | undefined {
 	for (let i = emitted.length - 1; i >= 0; i--) {
-		const m = emitted[i] as { type?: string; settings?: { extensions?: { id: string; enabled: boolean }[] } };
+		const m = emitted[i] as {
+			type?: string;
+			settings?: { extensions?: { id: string; name: string; enabled: boolean }[] };
+		};
 		if (m?.type === "settings_state") return { extensions: m.settings?.extensions ?? [] };
 	}
 	return undefined;
@@ -133,5 +136,21 @@ describe("disabledExtensions stale 剔除（issue #192）", () => {
 		expect(ids).not.toContain("<inline:1>");
 		expect(ids).not.toContain("<inline:2>");
 		expect(ids).not.toContain("<inline:pi-webui-persona>");
+	});
+
+	it("禁用的目录式扩展（loader 里已不存在）按目录名显示，而不是 index.ts", () => {
+		const extDir = join(agentDir, "extensions", "openviking");
+		mkdirSync(extDir, { recursive: true });
+		const entry = join(extDir, "index.ts");
+		writeFileSync(entry, "export {};\n");
+		store.saveSettings("test-client", { disabledExtensions: [entry] });
+		const svc = new SettingsService(makeHost(makeSession([])), new SubagentTemplatesStore(join(dir, "templates.json")));
+		svc.refreshResources();
+
+		// 禁用的扩展不会回到 loader，只能靠这条兜底记录；名字认不出来就没法重新启用它。
+		expect((lastSettingsState()?.extensions ?? []).find((e) => e.id === entry)).toMatchObject({
+			name: "openviking",
+			enabled: false,
+		});
 	});
 });
