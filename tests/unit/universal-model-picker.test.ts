@@ -5,7 +5,12 @@ import { createRoot, type Root } from "react-dom/client";
 import { act } from "react-dom/test-utils";
 import { LanguageProvider } from "../../web/src/i18n.js";
 import { setAppSend } from "../../web/src/app-globals.js";
-import { UniversalModelPicker, matchesModelId } from "../../web/src/components/UniversalModelPicker.js";
+import {
+	UniversalModelPicker,
+	matchesModelId,
+	providerLabel,
+	resolveCurrentModelRef,
+} from "../../web/src/components/UniversalModelPicker.js";
 import type { ModelInfo } from "../../web/src/types.js";
 
 let root: Root | null = null;
@@ -63,6 +68,63 @@ describe("matchesModelId", () => {
 		expect(matchesModelId(m, "anthropic/claude-sonnet")).toBe(true);
 		expect(matchesModelId(m, null)).toBe(false);
 		expect(matchesModelId(m, "openai/gpt-5")).toBe(false);
+	});
+});
+
+const providers = [
+	{ id: "anthropic", name: "Anthropic 官方" },
+	{ id: "openai", name: "OpenAI" },
+];
+
+describe("providerLabel / resolveCurrentModelRef", () => {
+	it("服务商显示名优先，缺失时回退到 provider id", () => {
+		expect(providerLabel("anthropic", providers)).toBe("Anthropic 官方");
+		expect(providerLabel("my-relay", providers)).toBe("my-relay");
+		expect(providerLabel("anthropic", undefined)).toBe("anthropic");
+		expect(providerLabel("", providers)).toBe("");
+	});
+
+	it("解析当前模型：名称 / 服务商显示名 / 多 key 下的激活 key", () => {
+		const ref = resolveCurrentModelRef("anthropic/claude-sonnet", models, providers, providerKeys);
+		expect(ref).toEqual({
+			modelName: "Claude Sonnet",
+			modelId: "claude-sonnet",
+			provider: "anthropic",
+			providerLabel: "Anthropic 官方",
+			keyName: "keyA",
+		});
+	});
+
+	it("无当前模型 / 模型不在列表时降级但不报错", () => {
+		expect(resolveCurrentModelRef(null, models, providers, providerKeys)).toBeNull();
+		expect(resolveCurrentModelRef("  ", models, providers, providerKeys)).toBeNull();
+		const missing = resolveCurrentModelRef("my-relay/ghost-1", models, providers, providerKeys);
+		expect(missing?.modelName).toBe("ghost-1");
+		expect(missing?.providerLabel).toBe("my-relay");
+		expect(missing?.keyName).toBeNull();
+	});
+
+	it("单 key 的服务商不占位居所（不显 key 名）", () => {
+		const ref = resolveCurrentModelRef("openai/gpt-5", models, providers, {
+			openai: [{ name: "唯一", active: true }],
+		});
+		expect(ref?.keyName).toBeNull();
+	});
+
+	it("模型 id 自带斜杠（如 openrouter）时仍归属到正确的服务商", () => {
+		const slashyModels: ModelInfo[] = [
+			{
+				id: "openrouter/anthropic/claude-3.5-sonnet",
+				name: "Claude 3.5 Sonnet",
+				provider: "openrouter",
+				reasoning: false,
+				vision: false,
+			},
+		];
+		const ref = resolveCurrentModelRef("openrouter/anthropic/claude-3.5-sonnet", slashyModels, providers, {});
+		expect(ref?.provider).toBe("openrouter");
+		expect(ref?.modelName).toBe("Claude 3.5 Sonnet");
+		expect(ref?.providerLabel).toBe("openrouter");
 	});
 });
 
@@ -196,5 +258,31 @@ describe("UniversalModelPicker 通用模型菜单", () => {
 		});
 		expect(rowNames()).toEqual(["Claude Sonnet", "Claude Opus"]);
 		expect(onEnsureModels).toHaveBeenCalledTimes(2);
+	});
+
+	it("顶部「当前使用」摘要显示模型名与服务商显示名，行内带「当前」徽标", () => {
+		renderPicker({ providers });
+		const summary = document.body.querySelector(".dd-current-row");
+		expect(summary).toBeTruthy();
+		expect(summary!.querySelector(".dd-current-name")?.textContent).toBe("Claude Sonnet");
+		expect(summary!.querySelector(".dd-current-provider")?.textContent).toBe("Anthropic 官方");
+		expect(summary!.querySelector(".dd-current-provider")?.getAttribute("title")).toBe("anthropic");
+		expect(summary!.querySelector(".dd-current-key")?.textContent).toBe("keyA");
+
+		const activeRow = rows()[0];
+		expect(activeRow.classList.contains("active")).toBe(true);
+		expect(activeRow.querySelector(".dd-model-current")?.textContent).toBeTruthy();
+		expect(activeRow.querySelector(".dd-model-provider")?.textContent).toBe("Anthropic 官方");
+		expect(rows()[1].querySelector(".dd-model-current")).toBeNull();
+	});
+
+	it("无当前模型时不渲染摘要行；服务商侧栏回退到 provider id", () => {
+		renderPicker({ currentModelId: null, providerKeys: {}, providers: [{ id: "anthropic", name: "" }] });
+		expect(document.body.querySelector(".dd-current-row")).toBeNull();
+		act(() => {
+			(document.body.querySelector(".dd-scope-toggle") as HTMLButtonElement).click();
+		});
+		const sidebar = Array.from(document.body.querySelectorAll(".dd-provider-name"));
+		expect(sidebar.map((n) => n.textContent)).toEqual(["anthropic", "openai"]);
 	});
 });

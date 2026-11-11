@@ -357,6 +357,18 @@ export function App() {
 	const { chat, send, dismissNotice, pushNotice, terminal } = useChat();
 	const sharedReadOnly = chat.state?.sharedConversation?.readOnly === true;
 	const quickSeedRef = useRef(false);
+	// 插件通用 toast：plugin-host 会在无 notifyAction 依赖时 dispatch "pi-web-ui:toast"，接到全局 NoticeToast
+	useEffect(() => {
+		const onPluginToast = (event: Event) => {
+			const detail = (event as CustomEvent).detail as { text?: unknown; level?: unknown } | undefined;
+			const text = typeof detail?.text === "string" ? detail.text.trim() : "";
+			if (!text) return;
+			const level = detail?.level === "warning" || detail?.level === "error" ? detail.level : "info";
+			pushNotice(level, text);
+		};
+		window.addEventListener("pi-web-ui:toast", onPluginToast);
+		return () => window.removeEventListener("pi-web-ui:toast", onPluginToast);
+	}, [pushNotice]);
 	useEffect(() => {
 		if (!chat.ready || !chat.settings) return;
 		if (quickSeedRef.current || chat.settings.quickPhrasesSeeded) return;
@@ -388,7 +400,9 @@ export function App() {
 		registerAttachmentSink((items) => setAttachments((prev) => appendDraftAttachments(prev, items)));
 		return () => registerAttachmentSink(null);
 	}, []);
-	const [previewFile, setPreviewFile] = useState<PreviewFile | null>(null);
+	const [previewFiles, setPreviewFiles] = useState<PreviewFile[] | null>(null);
+	const [previewIndex, setPreviewIndex] = useState(0);
+	const previewFile = previewFiles ? (previewFiles[previewIndex] ?? previewFiles[0] ?? null) : null;
 	const [pluginFile, setPluginFile] = useState<{
 		file: PreviewFile;
 		plugin: FileHandlerPlugin;
@@ -397,22 +411,43 @@ export function App() {
 	const previewOpenRef = useRef(false);
 	const pluginFileOpenRef = useRef<typeof pluginFile>(null);
 	useEffect(() => {
-		previewOpenRef.current = previewFile !== null;
+		previewOpenRef.current = previewFiles !== null;
 		pluginFileOpenRef.current = pluginFile;
-	}, [previewFile, pluginFile]);
+	}, [previewFiles, pluginFile]);
 	const openFile = useCallback((path: string, name: string) => {
 		const entry = findFileHandler(name);
 		if (entry) {
-			setPreviewFile(null);
+			setPreviewFiles(null);
 			setPluginFile({ file: { path, name }, plugin: entry.plugin, declaration: entry.declaration });
 			return;
 		}
 		setPluginFile(null);
-		setPreviewFile({ path, name });
+		setPreviewFiles([{ path, name }]);
+		setPreviewIndex(0);
+	}, []);
+	const openFileList = useCallback((files: PreviewFile[], initialIndex = 0) => {
+		const list = (Array.isArray(files) ? files : []).filter((f) => f && typeof f.path === "string" && f.path);
+		if (list.length === 0) return;
+		const clamped = Math.min(Math.max(0, initialIndex | 0), list.length - 1);
+		const first = list[clamped] ?? list[0];
+		const entry = first ? findFileHandler(first.name) : null;
+		if (entry && first) {
+			setPreviewFiles(null);
+			setPluginFile({
+				file: { path: first.path, name: first.name },
+				plugin: entry.plugin,
+				declaration: entry.declaration,
+			});
+			return;
+		}
+		setPluginFile(null);
+		setPreviewFiles(list.map((f) => ({ path: f.path, name: f.name })));
+		setPreviewIndex(clamped);
 	}, []);
 	useEffect(() => {
 		registerFilePreviewHost({
 			open: (f) => openFile(f.path, f.name),
+			openList: (files, initialIndex) => openFileList(files, initialIndex ?? 0),
 			isOpen: () => previewOpenRef.current || pluginFileOpenRef.current !== null,
 		});
 		return () => registerFilePreviewHost(null);
@@ -3006,6 +3041,7 @@ export function App() {
 													models={chat.models}
 													modelsLoading={chat.modelsLoading}
 													providerKeys={chat.providerKeys}
+													providers={chat.providers}
 													defaultModel={chat.defaultModel ?? undefined}
 													attachments={attachments}
 													onRemoveAttachment={removeAttachmentCb}
@@ -3201,15 +3237,18 @@ export function App() {
 				onOpenGlobalSearch={() => setGlobalSearchOpen(true)}
 				onOpenBgTasks={() => setBgTasksOpen(true)}
 			/>
-			{previewFile && (
+			{previewFile && previewFiles && (
 				<Suspense fallback={null}>
 					<FilePreview
 						file={previewFile}
+						files={previewFiles}
+						activeIndex={previewIndex}
+						onSelectFile={setPreviewIndex}
 						composerSessionId={chat.state?.sessionId}
 						content={chat.fileContent}
 						onAddLines={(path, name, start, end) => attach(path, name, "lines", false, { start, end })}
 						onAttach={(path, name, mode) => attach(path, name, mode)}
-						onClose={() => setPreviewFile(null)}
+						onClose={() => setPreviewFiles(null)}
 						uiFilePreviewToolbar={uiFilePreviewToolbar}
 						onUiAction={onUiAction}
 					/>
@@ -3225,7 +3264,8 @@ export function App() {
 					onClose={() => setPluginFile(null)}
 					onFallback={() => {
 						setPluginFile(null);
-						setPreviewFile(pluginFile.file);
+						setPreviewFiles([pluginFile.file]);
+						setPreviewIndex(0);
 					}}
 				/>
 			)}
@@ -3395,6 +3435,7 @@ export function App() {
 					models={chat.models}
 					modelsLoading={chat.modelsLoading}
 					providerKeys={chat.providerKeys}
+					providers={chat.providers}
 					onManageModels={() => setManageModelsOpen(true)}
 					defaultModel={chat.defaultModel}
 					onClose={() => {

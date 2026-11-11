@@ -1,7 +1,15 @@
 import { Fragment, memo, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { appResourceCrossOrigin } from "../base-url";
 import { FiList, FiSquare, FiPaperclip, FiArrowUp, FiBookOpen, FiMic, FiCamera } from "react-icons/fi";
-import type { FileSearchResult, ModelInfo, ProviderKeyInfo, SlashCommandInfo, UiMessage, UiState } from "../types";
+import type {
+	FileSearchResult,
+	ModelInfo,
+	ProviderKeyInfo,
+	ProviderStatus,
+	SlashCommandInfo,
+	UiMessage,
+	UiState,
+} from "../types";
 import { isZhLocale, useT, useI18n } from "../i18n";
 import { appSend, useAppField, useIsDsh, useEngineCapabilities } from "../app-globals";
 import { mapCanvasHits, searchCanvasMentions } from "../canvas-mentions";
@@ -138,6 +146,7 @@ interface ChatInputProps {
 	onManageModels: () => void;
 	recallDrafts?: { text: string; seq: number }[];
 	providerKeys: Record<string, ProviderKeyInfo[]>;
+	providers?: ProviderStatus[];
 	defaultModel?: string | null;
 	quickPhrases: string[];
 	quickPhrasesEnabled: boolean;
@@ -182,6 +191,7 @@ export const ChatInput = memo(function ChatInput({
 	onSent,
 	onManageModels,
 	providerKeys,
+	providers,
 	defaultModel,
 	quickPhrases,
 	quickPhrasesEnabled,
@@ -1500,6 +1510,7 @@ export const ChatInput = memo(function ChatInput({
 				modelsLoading={modelsLoading}
 				onManageModels={onManageModels}
 				providerKeys={providerKeys}
+				providers={providers}
 				defaultModel={defaultModel}
 				compact
 			/>
@@ -2011,6 +2022,7 @@ export const ChatInput = memo(function ChatInput({
 									modelsLoading={modelsLoading}
 									onManageModels={onManageModels}
 									providerKeys={providerKeys}
+									providers={providers}
 									defaultModel={defaultModel}
 									compact
 								/>

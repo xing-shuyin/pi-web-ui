@@ -1,6 +1,6 @@
 import { memo, useEffect } from "react";
 import { FiX } from "react-icons/fi";
-import type { ModelInfo, ProviderKeyInfo } from "../types";
+import type { ModelInfo, ProviderKeyInfo, ProviderStatus } from "../types";
 import { useT } from "../i18n";
 import { appSend } from "../app-globals";
 import { UniversalModelPicker, matchesModelId } from "./UniversalModelPicker";
@@ -11,6 +11,7 @@ export interface ModelPickerModalProps {
 	models: ModelInfo[];
 	modelsLoading?: boolean;
 	providerKeys?: Record<string, ProviderKeyInfo[]>;
+	providers?: ProviderStatus[];
 	defaultModel?: string | null;
 	onManageModels?: () => void;
 	onSelect: (modelId: string, model?: ModelInfo) => void;
@@ -24,6 +25,7 @@ export const ModelPickerModal = memo(function ModelPickerModal({
 	models,
 	modelsLoading = false,
 	providerKeys = {},
+	providers,
 	defaultModel,
 	onManageModels,
 	onSelect,
@@ -102,6 +104,7 @@ export const ModelPickerModal = memo(function ModelPickerModal({
 					models={models}
 					modelsLoading={modelsLoading}
 					providerKeys={providerKeys}
+					providers={providers}
 					defaultModel={defaultModel}
 					currentModelId={currentModelId}
 					active={open}

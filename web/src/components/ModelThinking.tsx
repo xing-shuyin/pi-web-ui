@@ -1,6 +1,6 @@
 import { memo, useEffect, useRef, useState } from "react";
 import { FiCpu, FiZap } from "react-icons/fi";
-import type { ModelInfo, ProviderKeyInfo, UiState } from "../types";
+import type { ModelInfo, ProviderKeyInfo, ProviderStatus, UiState } from "../types";
 import { Dropdown, DropdownItem } from "./Dropdown";
 import { useT } from "../i18n";
 import { THINKING_VALUES, formatThinkingLevelText } from "../thinking-levels";
@@ -13,6 +13,7 @@ interface Props {
 	modelsLoading?: boolean;
 	onManageModels?: () => void;
 	providerKeys?: Record<string, ProviderKeyInfo[]>;
+	providers?: ProviderStatus[];
 	defaultModel?: string | null;
 	compact?: boolean;
 	only?: "model" | "thinking";
@@ -27,6 +28,7 @@ export const ModelThinking = memo(function ModelThinking({
 	modelsLoading,
 	onManageModels,
 	providerKeys = {},
+	providers,
 	defaultModel,
 	compact = false,
 	only,
@@ -36,7 +38,11 @@ export const ModelThinking = memo(function ModelThinking({
 }: Props) {
 	const t = useT();
 	const model = state?.model;
-	const currentModelId = model ? (model.id.includes("/") ? model.id : `${model.provider}/${model.id}`) : null;
+	const currentModelId = model
+		? model.id.startsWith(`${model.provider}/`)
+			? model.id
+			: `${model.provider}/${model.id}`
+		: null;
 	const [modelOpen, setModelOpen] = useState(false);
 	const [thinkingOpen, setThinkingOpen] = useState(false);
 	const modelScrollRef = useRef<HTMLDivElement>(null);
@@ -144,6 +150,7 @@ export const ModelThinking = memo(function ModelThinking({
 			models={models}
 			modelsLoading={modelsLoading}
 			providerKeys={providerKeys}
+			providers={providers}
 			defaultModel={defaultModel}
 			currentModelId={currentModelId}
 			active={modelOpen}

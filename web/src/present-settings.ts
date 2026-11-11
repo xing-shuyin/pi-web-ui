@@ -71,11 +71,14 @@ function markAutoOpened(toolCallId: string): boolean {
 }
 
 export function takeAutoOpen(toolCallId: string, resultTimestamp: number | undefined, now = Date.now()): boolean {
+	// 放宽：服务端偶发缺时间戳时按“刚收到”处理；有时间戳仍走 30s 防翻旧账。
+	const effectiveTimestamp =
+		typeof resultTimestamp === "number" && Number.isFinite(resultTimestamp) ? resultTimestamp : now;
 	if (
 		!shouldAutoOpenPresent({
 			enabled: loadPresentAutoOpen(),
 			seen: false,
-			timestamp: resultTimestamp,
+			timestamp: effectiveTimestamp,
 			now,
 			maxAgeMs: PRESENT_AUTO_OPEN_MAX_AGE_MS,
 		})

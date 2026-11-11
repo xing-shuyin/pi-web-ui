@@ -4,10 +4,9 @@ import { useT } from "../i18n";
 import { appSend } from "../app-globals";
 import { appResourceCrossOrigin } from "../base-url";
 import { DOWNLOAD_FILE_NOT_FOUND, downloadFile, downloadUrl } from "../download";
-import { isFilePreviewOpen, openFilePreview } from "../file-preview-bridge";
+import { isFilePreviewOpen, openFilePreviewList } from "../file-preview-bridge";
 import { isLoopbackAccess, resolveWorkspaceFileUrl } from "../workspace-file-url";
 import {
-	focusPresentItem,
 	formatPresentSize,
 	inlineMediaKind,
 	presentCardItems,
@@ -15,6 +14,7 @@ import {
 	presentNote,
 	presentTitle,
 	previewablePresentKind,
+	primaryPreviewItem,
 	type PresentArgs,
 	type PresentCardItem,
 } from "../present-items";
@@ -40,14 +40,23 @@ export const PresentedFiles = memo(function PresentedFiles({
 	const items = useMemo(() => presentCardItems(args, details), [args, details]);
 	const title = presentTitle(args, details);
 	const note = presentNote(args, details);
-	const focus = useMemo(() => focusPresentItem(items), [items]);
+	const focus = useMemo(() => primaryPreviewItem(items), [items]);
+	const previewList = useMemo(
+		() => items.filter((i) => previewablePresentKind(i.kind)).map((i) => ({ path: i.target, name: i.name })),
+		[items],
+	);
+	const focusIndex = useMemo(() => {
+		if (!focus) return 0;
+		const idx = previewList.findIndex((f) => f.path === focus.target);
+		return idx >= 0 ? idx : 0;
+	}, [previewList, focus]);
 
 	useEffect(() => {
-		if (!autoOpen || !focus || !toolCallId) return;
+		if (!autoOpen || !focus || previewList.length === 0 || !toolCallId) return;
 		if (isFilePreviewOpen()) return;
 		if (!takeAutoOpen(toolCallId, resultTimestamp)) return;
-		openFilePreview({ path: focus.target, name: focus.name });
-	}, [autoOpen, focus, toolCallId, resultTimestamp]);
+		openFilePreviewList(previewList, focusIndex);
+	}, [autoOpen, focus, previewList, focusIndex, toolCallId, resultTimestamp]);
 
 	if (items.length === 0) {
 		return <div className="present-empty">{t("presentEmpty")}</div>;
@@ -62,8 +71,16 @@ export const PresentedFiles = memo(function PresentedFiles({
 				</div>
 			)}
 			<div className="present-items">
-				{items.map((item) => (
-					<PresentRow key={`${item.target}\u0000${item.path}`} item={item} />
+				{items.map((item, index) => (
+					<PresentRow
+						key={`${item.target}\u0000${item.path}`}
+						item={item}
+						previewList={previewList}
+						previewIndex={(() => {
+							const idx = previewList.findIndex((f) => f.path === item.target);
+							return idx >= 0 ? idx : index;
+						})()}
+					/>
 				))}
 			</div>
 		</div>
@@ -75,7 +92,15 @@ function itemTitle(item: PresentCardItem): string {
 	return `${item.path}\n${new Date(item.mtime).toLocaleString()}`;
 }
 
-function PresentRow({ item }: { item: PresentCardItem }) {
+function PresentRow({
+	item,
+	previewList,
+	previewIndex,
+}: {
+	item: PresentCardItem;
+	previewList: Array<{ path: string; name: string }>;
+	previewIndex: number;
+}) {
 	const t = useT();
 	const { copied, copy } = useCopyFeedback({ duration: 1200 });
 	const [mediaFailed, setMediaFailed] = useState(false);
@@ -84,7 +109,6 @@ function PresentRow({ item }: { item: PresentCardItem }) {
 	const media = mediaFailed ? null : inlineMediaKind(item.kind);
 	const size = formatPresentSize(item.size);
 	const missing = item.kind === "missing";
-	const target = { path: item.target, name: item.name };
 	const isRemote = !isLoopbackAccess();
 	const webFileUrl = resolveWorkspaceFileUrl(item.target);
 
@@ -120,7 +144,7 @@ function PresentRow({ item }: { item: PresentCardItem }) {
 								className="present-btn"
 								title={t("previewFile")}
 								aria-label={t("previewFile")}
-								onClick={() => openFilePreview(target)}
+								onClick={() => openFilePreviewList(previewList, previewIndex)}
 							>
 								<FiEye />
 							</button>
@@ -188,7 +212,7 @@ function PresentRow({ item }: { item: PresentCardItem }) {
 					type="button"
 					className="present-media"
 					title={t("previewFile")}
-					onClick={() => openFilePreview(target)}
+					onClick={() => openFilePreviewList(previewList, previewIndex)}
 				>
 					<img
 						crossOrigin={appResourceCrossOrigin(downloadUrl(item.target, false))}

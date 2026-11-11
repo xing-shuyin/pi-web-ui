@@ -42,6 +42,9 @@ export interface PreviewFile {
 
 interface FilePreviewProps {
 	file: PreviewFile;
+	files?: PreviewFile[];
+	activeIndex?: number;
+	onSelectFile?: (index: number) => void;
 	composerSessionId?: string;
 	content: FileContent | null;
 	onAddLines: (path: string, name: string, start: number, end: number) => void;
@@ -58,6 +61,9 @@ interface Range {
 
 export function FilePreview({
 	file,
+	files,
+	activeIndex,
+	onSelectFile,
 	composerSessionId,
 	content,
 	onAddLines,
@@ -480,7 +486,10 @@ export function FilePreview({
 				].map((id) => ({ id, source: "host" }) as UiSlotEntry)
 			: uiFilePreviewToolbar.filter((e) => !e.hidden && e.id !== "host:fp-close");
 
-	if (kind === "image" && !loading) {
+	const tabFiles = Array.isArray(files) && files.length > 1 ? files : null;
+	const tabActive = typeof activeIndex === "number" ? activeIndex : 0;
+
+	if (!tabFiles && kind === "image" && !loading) {
 		return (
 			<ImageLightbox
 				src={mediaUrl(file.path)}
@@ -525,6 +534,24 @@ export function FilePreview({
 						<FiX />
 					</button>
 				</div>
+				{tabFiles && (
+					<div className="fp-tabs" role="tablist" aria-label={file.path}>
+						{tabFiles.map((f, i) => (
+							<button
+								type="button"
+								key={`${f.path}\u0000${i}`}
+								role="tab"
+								aria-selected={i === tabActive}
+								className={`fp-tab${i === tabActive ? " on" : ""}`}
+								title={f.path}
+								onClick={() => onSelectFile?.(i)}
+							>
+								<span className="fp-tab-name">{f.name}</span>
+								<span className="fp-tab-index">{i + 1}</span>
+							</button>
+						))}
+					</div>
+				)}
 
 				{truncated && kind === "text" && !isBinary && (
 					<div className="fp-notice">
@@ -535,6 +562,12 @@ export function FilePreview({
 				{loading && !loaded && <div className="fp-empty">{t("loading")}</div>}
 
 				{!loading && kind === "none" && !isBinary && <div className="fp-empty">{t("previewNotSupported")}</div>}
+
+				{!loading && kind === "image" && loaded && tabFiles && (
+					<div className="fp-media-wrap">
+						<img className="fp-media" src={mediaUrl(file.path)} alt={file.name} />
+					</div>
+				)}
 
 				{!loading && kind === "video" && (
 					<div className="fp-media-wrap">

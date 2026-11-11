@@ -1,4 +1,13 @@
-import { useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode, type RefObject } from "react";
+import {
+	useCallback,
+	useEffect,
+	useMemo,
+	useRef,
+	useState,
+	type CSSProperties,
+	type ReactNode,
+	type RefObject,
+} from "react";
 import { FiRefreshCw, FiSearch, FiSettings } from "react-icons/fi";
 import type { ModelInfo, ProviderKeyInfo } from "../types";
 import { DropdownItem } from "./Dropdown";
@@ -15,10 +24,57 @@ export function matchesModelId(m: ModelInfo, currentModelId?: string | null): bo
 	);
 }
 
+/** 服务商显示名：优先用 providers 表里的 name（models.json 的 name / 内置名），回退到 provider id。 */
+export function providerLabel(
+	provider: string,
+	providers?: ReadonlyArray<{ id: string; name?: string | null }> | null,
+): string {
+	const name = provider ? providers?.find((p) => p.id === provider)?.name?.trim() : "";
+	return name || provider;
+}
+
+export interface CurrentModelRef {
+	modelName: string;
+	modelId: string;
+	provider: string;
+	providerLabel: string;
+	keyName: string | null;
+}
+
+/** 解析「本会话正在使用的模型」：模型名 + 服务商显示名 + 激活密钥，供菜单顶部摘要使用。 */
+export function resolveCurrentModelRef(
+	currentModelId: string | null | undefined,
+	models: ModelInfo[],
+	providers?: ReadonlyArray<{ id: string; name?: string | null }> | null,
+	providerKeys?: Record<string, ProviderKeyInfo[]>,
+): CurrentModelRef | null {
+	const ref = currentModelId?.trim();
+	if (!ref) return null;
+	const splitAt = ref.indexOf("/");
+	const rawProvider = splitAt > 0 ? ref.slice(0, splitAt) : "";
+	const rawModelId = splitAt > 0 ? ref.slice(splitAt + 1) : ref;
+	const bareId = (id: string) => (id.includes("/") ? id.slice(id.indexOf("/") + 1) : id);
+	const hit =
+		models.find((m) => m.id === ref) ??
+		models.find((m) => `${m.provider}/${bareId(m.id)}` === ref) ??
+		models.find((m) => m.provider === rawProvider && bareId(m.id) === rawModelId) ??
+		null;
+	const provider = hit?.provider || rawProvider;
+	const keys = provider ? providerKeys?.[provider] : undefined;
+	return {
+		modelName: hit?.name || rawModelId,
+		modelId: hit ? bareId(hit.id) : rawModelId,
+		provider,
+		providerLabel: providerLabel(provider, providers),
+		keyName: keys && keys.length > 1 ? (keys.find((k) => k.active)?.name ?? null) : null,
+	};
+}
+
 export interface UniversalModelPickerProps {
 	models: ModelInfo[];
 	modelsLoading?: boolean;
 	providerKeys?: Record<string, ProviderKeyInfo[]>;
+	providers?: ReadonlyArray<{ id: string; name?: string | null }>;
 	defaultModel?: string | null;
 	currentModelId?: string | null;
 	active: boolean;
@@ -41,6 +97,7 @@ export function UniversalModelPicker({
 	models,
 	modelsLoading = false,
 	providerKeys = {},
+	providers,
 	defaultModel,
 	currentModelId,
 	active,
@@ -65,6 +122,30 @@ export function UniversalModelPicker({
 	const [showAllModels, setShowAllModels] = useState(false);
 	const ensureRef = useRef(onEnsureModels);
 	ensureRef.current = onEnsureModels;
+
+	/** 列表滚动容器：内部选项"当前"定位 + 向外回填 listRef（调用方开窗时也会用到）。 */
+	const innerListRef = useRef<HTMLDivElement | null>(null);
+	const setListEl = useCallback(
+		(el: HTMLDivElement | null) => {
+			innerListRef.current = el;
+			if (listRef) (listRef as { current: HTMLDivElement | null }).current = el;
+		},
+		[listRef],
+	);
+
+	const currentRef = useMemo(
+		() => resolveCurrentModelRef(currentModelId, models, providers, providerKeys),
+		[currentModelId, models, providers, providerKeys],
+	);
+
+	const focusCurrentRow = () => {
+		setModelFilter("");
+		setProviderFilter(null);
+		requestAnimationFrame(() => {
+			const el = innerListRef.current?.querySelector<HTMLElement>(".dd-item.active");
+			if (el && typeof el.scrollIntoView === "function") el.scrollIntoView({ block: "nearest" });
+		});
+	};
 
 	useEffect(() => {
 		if (!active) {
@@ -209,6 +290,16 @@ export function UniversalModelPicker({
 					onChange={(e) => setModelFilter(e.target.value)}
 				/>
 			</div>
+			{currentRef && (
+				<button type="button" className="dd-current-row" title={t("currentModelHint")} onClick={focusCurrentRow}>
+					<span className="dd-current-tag">{t("currentModelLabel")}</span>
+					<span className="dd-current-name">{currentRef.modelName}</span>
+					<span className="dd-current-provider" title={currentRef.provider}>
+						{currentRef.providerLabel}
+					</span>
+					{currentRef.keyName && <span className="dd-current-key">{currentRef.keyName}</span>}
+				</button>
+			)}
 			<div className="dd-model-body" style={bodyStyle}>
 				{providerEntries.length > 1 && (
 					<div className="dd-provider-col">
@@ -230,10 +321,14 @@ export function UniversalModelPicker({
 									onClick={() =>
 										setProviderFilter(active ? null : { provider: entry.provider, keyName: entry.keyName })
 									}
-									title={entry.keyName ? `${entry.provider} · ${entry.keyName}` : `${entry.provider} · ${entry.count}`}
+									title={
+										entry.keyName
+											? `${providerLabel(entry.provider, providers)} (${entry.provider}) · ${entry.keyName}`
+											: `${providerLabel(entry.provider, providers)} (${entry.provider}) · ${entry.count}`
+									}
 								>
 									<span className="dd-provider-txt">
-										<span className="dd-provider-name">{entry.provider}</span>
+										<span className="dd-provider-name">{providerLabel(entry.provider, providers)}</span>
 										{entry.keyName && <span className="dd-provider-key">{entry.keyName}</span>}
 									</span>
 									<span className="dd-provider-count">{entry.count}</span>
@@ -242,7 +337,7 @@ export function UniversalModelPicker({
 						})}
 					</div>
 				)}
-				<div className="dd-model-scroll" ref={listRef} style={scrollStyle}>
+				<div className="dd-model-scroll" ref={setListEl} style={scrollStyle}>
 					{(loading || modelsLoading) && <div className="dd-loading">{t("loading")}</div>}
 					{models.length === 0 && !loading && !modelsLoading && <div className="dd-loading">{t("noModels")}</div>}
 					{extraTopRow}
@@ -266,9 +361,14 @@ export function UniversalModelPicker({
 								onClick={() => onPickModel(m, row.key)}
 							>
 								<span className="dd-model-cell">
-									<span className="dd-model-name">{m.name}</span>
+									<span className="dd-model-head">
+										<span className="dd-model-name">{m.name}</span>
+										{row.active && <span className="dd-model-current">{t("currentModelBadge")}</span>}
+									</span>
 									<span className="dd-model-meta">
-										<span className="dd-model-provider">{m.provider}</span>
+										<span className="dd-model-provider" title={m.provider}>
+											{providerLabel(m.provider, providers)}
+										</span>
 										<span className="dd-model-id">
 											{m.id.includes("/") ? m.id.split("/").slice(1).join("/") : m.id}
 										</span>
