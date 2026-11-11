@@ -451,6 +451,8 @@ export class AgentService {
 					: reject();
 			case "page_response":
 				return run(() => owner.resolvePageCall(message.id, message.ok, message.result, message.error, conv.id));
+			case "phone_response":
+				return run(() => owner.resolvePhoneCall(message.id, message.ok, message.result, message.error, conv.id));
 			case "dialog_response":
 			case "tui_overlay_input":
 			case "tui_overlay_resize":
@@ -1743,7 +1745,7 @@ export class AgentService {
 					cs = await creating;
 					this.clients.set(clientId, cs);
 					this.wireClient(cs, clientId);
-					this.stateStore.remember(clientId, cwd);
+					this.stateStore.remember(clientId, cwd, { promote: false });
 					if (cwd !== this.cwd) {
 						send({
 							type: "notice",

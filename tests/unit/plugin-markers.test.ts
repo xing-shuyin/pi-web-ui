@@ -16,7 +16,7 @@ import type { MarkerTool } from "../../server/markers/marker.js";
 import { stripInlineMarkers, syncKnownInlineMarkers } from "../../web/src/components/Message.js";
 import { PluginManager } from "../../server/plugins.js";
 
-const DEFAULT_SETTINGS: MarkerSettings = { markersEnabled: true, disabledMarkers: [] };
+const DEFAULT_SETTINGS: MarkerSettings = { disabledMarkers: [] };
 
 function makeMockHost(
 	settings: MarkerSettings = DEFAULT_SETTINGS,
@@ -31,7 +31,6 @@ function makeMockHost(
 	const store = {
 		getMarkerSettings: () => ({ ...settings, disabledMarkers: [...settings.disabledMarkers] }),
 		saveMarkerSettings: (_id: string, s: MarkerSettings) => {
-			settings.markersEnabled = s.markersEnabled;
 			settings.disabledMarkers = [...s.disabledMarkers];
 		},
 	} as unknown as ClientStateStore;

@@ -82,6 +82,4 @@ capsule-palettes.html
 
 # 手机调试包（构建产物，不入库）
 /pi-web-ui-mobile-debug.apk
-
-# 本地测试运行器生成的 JSON 报告
-/.vitest/
+/pi-web-ui-mobile-*.apk

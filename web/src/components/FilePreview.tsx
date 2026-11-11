@@ -142,6 +142,8 @@ export function FilePreview({
 	useEffect(() => {
 		const onKey = (e: KeyboardEvent) => {
 			if (e.key === "Escape") {
+				// 标一记 preventDefault：手机壳的返回键靠 defaultPrevented 判断“这层已经关掉”。
+				e.preventDefault();
 				handleClose();
 				return;
 			}

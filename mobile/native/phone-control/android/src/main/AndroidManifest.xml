@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <!-- 无障碍服务由系统绑定，用 BIND_ACCESSIBILITY_SERVICE 权限把入口限死给系统；
+         exported 必须为 true：绑定方是 system_server（不同 UID），false 会让它绑不上。 -->
+    <application>
+        <service
+            android:name="app.pi.mobile.phonecontrol.PiAccessibilityService"
+            android:exported="true"
+            android:label="@string/pi_phone_control_label"
+            android:permission="android.permission.BIND_ACCESSIBILITY_SERVICE">
+            <intent-filter>
+                <action android:name="android.accessibilityservice.AccessibilityService" />
+            </intent-filter>
+            <meta-data
+                android:name="android.accessibilityservice"
+                android:resource="@xml/pi_phone_control_service" />
+        </service>
+    </application>
+</manifest>

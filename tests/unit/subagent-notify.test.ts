@@ -1,3 +1,4 @@
+import { SubagentSettleRegistry } from "../../server/subagent-settle.js";
 import { describe, expect, it, vi, afterEach } from "vitest";
 import { extractSubagentConclusion, formatSubagentsCompletionNotice } from "../../server/subagent-notify.js";
 import { ClientSession, type Conversation } from "../../server/agent-service.js";
@@ -84,6 +85,25 @@ describe("subagent-notify (Issue #713)", () => {
 			expect(formatSubagentsCompletionNotice([conv])).toContain("Final assistant body");
 		});
 
+		it("完成通知带证据与裁决（未验证不假装成功）", () => {
+			const conv = makeMockConv({ id: "evidenced", output: "done" });
+			conv.subagentEvidence = {
+				files: ["src/a.ts"],
+				commands: ["npm test"],
+				none: false,
+				verdict: "partial",
+				issues: [],
+				warnings: ["declared file not seen in this run's edits: src/a.ts"],
+				matchedFiles: 0,
+				matchedCommands: 1,
+				reportedAt: 1,
+			};
+			const text = formatSubagentsCompletionNotice([conv]);
+			expect(text).toContain("Evidence");
+			expect(text).toContain("partially verified");
+			expect(text).toContain("0/1 files");
+		});
+
 		it.each([{ error: "Failed after complete" }, { canceled: true }])(
 			"preserves failure output after completion intent: %j",
 			(outcome) => {
@@ -108,7 +128,7 @@ describe("subagent-notify (Issue #713)", () => {
 			expect(text).toContain("- **sa-12345**（investigate · anthropic/claude-3-7-sonnet:high）— ✅ 正常完成");
 			expect(text).toContain("目标: 排查数据库死锁");
 			expect(text).toContain("已发现事务未提交导致死锁");
-			expect(text).toContain('subagent(action="get_result", runId="<id>")');
+			expect(text).toContain('conversation(action="get_result", runId="<id>")');
 		});
 
 		it("报错子代理显示运行失败标签（英文）", () => {
@@ -165,6 +185,7 @@ describe("subagent-notify (Issue #713)", () => {
 			};
 
 			const cs: any = {
+				subagentSettle: new SubagentSettleRegistry(),
 				refreshCompletionState: (ClientSession.prototype as any).refreshCompletionState,
 				deliverSubagentCompletionNotice: (ClientSession.prototype as any).deliverSubagentCompletionNotice,
 				emitConversations: vi.fn(),
@@ -233,6 +254,7 @@ describe("subagent-notify (Issue #713)", () => {
 			};
 
 			const cs: any = {
+				subagentSettle: new SubagentSettleRegistry(),
 				refreshCompletionState: (ClientSession.prototype as any).refreshCompletionState,
 				deliverSubagentCompletionNotice: (ClientSession.prototype as any).deliverSubagentCompletionNotice,
 				emitConversations: vi.fn(),
@@ -271,6 +293,7 @@ describe("subagent-notify (Issue #713)", () => {
 			};
 
 			const cs: any = {
+				subagentSettle: new SubagentSettleRegistry(),
 				refreshCompletionState: (ClientSession.prototype as any).refreshCompletionState,
 				deliverSubagentCompletionNotice: (ClientSession.prototype as any).deliverSubagentCompletionNotice,
 				emitConversations: vi.fn(),
@@ -344,6 +367,7 @@ describe("subagent-notify (Issue #713)", () => {
 
 			const emit = vi.fn();
 			const cs: any = {
+				subagentSettle: new SubagentSettleRegistry(),
 				refreshCompletionState: (ClientSession.prototype as any).refreshCompletionState,
 				deliverSubagentCompletionNotice: (ClientSession.prototype as any).deliverSubagentCompletionNotice,
 				emitConversations: vi.fn(),
@@ -419,6 +443,7 @@ describe("subagent-notify (Issue #713)", () => {
 			};
 
 			const cs: any = {
+				subagentSettle: new SubagentSettleRegistry(),
 				refreshCompletionState: (ClientSession.prototype as any).refreshCompletionState,
 				deliverSubagentCompletionNotice: (ClientSession.prototype as any).deliverSubagentCompletionNotice,
 				emitConversations: vi.fn(),
@@ -467,6 +492,7 @@ describe("subagent-notify (Issue #713)", () => {
 
 			const emit = vi.fn();
 			const cs: any = {
+				subagentSettle: new SubagentSettleRegistry(),
 				refreshCompletionState: (ClientSession.prototype as any).refreshCompletionState,
 				deliverSubagentCompletionNotice: (ClientSession.prototype as any).deliverSubagentCompletionNotice,
 				emitConversations: vi.fn(),
@@ -522,6 +548,7 @@ describe("subagent-notify (Issue #713)", () => {
 
 			const emit = vi.fn();
 			const cs: any = {
+				subagentSettle: new SubagentSettleRegistry(),
 				refreshCompletionState: (ClientSession.prototype as any).refreshCompletionState,
 				deliverSubagentCompletionNotice: (ClientSession.prototype as any).deliverSubagentCompletionNotice,
 				emitConversations: vi.fn(),
@@ -711,6 +738,7 @@ describe("subagent-notify (Issue #713)", () => {
 
 			let recordedDecision: any;
 			const cs: any = {
+				subagentSettle: new SubagentSettleRegistry(),
 				convs: new Map([["parent-c1", conv]]),
 				pendingApprovals: new Map([
 					[
@@ -751,6 +779,7 @@ describe("subagent-notify (Issue #713)", () => {
 			};
 
 			const cs: any = {
+				subagentSettle: new SubagentSettleRegistry(),
 				convs: new Map([
 					["parent-c1", conv],
 					["sa-consumed-1", sa1],

@@ -949,9 +949,14 @@
 		--wallpaper-panel-alpha: 62%;
 		--topbar-bg: color-mix(in srgb, var(--bg-elev) var(--wallpaper-panel-alpha, 62%), transparent);
 		--statusbar-bg: color-mix(in srgb, var(--bg-elev) var(--wallpaper-panel-alpha, 62%), transparent);
+		/* 原生壳（Capacitor/Android）把状态栏盖在 WebView 上，shell 写入 --pi-safe-top（dp = CSS px）；
+		   浏览器/桌面没有该变量，回落到 env()（iOS 生效，Android WebView 通常为 0）。 */
+		--safe-top: var(--pi-safe-top, env(safe-area-inset-top, 0px));
 		--panel-bg: color-mix(in srgb, var(--bg-elev) var(--wallpaper-panel-alpha, 62%), transparent);
 
 		--card-bg: color-mix(in srgb, var(--bg-elev) var(--wallpaper-panel-alpha, 62%), transparent);
+		/* 客座样式（移动端设置等）的按压填充：默认中性灰，主题要换色直接覆写这个令牌 */
+		--fill-press: rgba(127, 127, 127, 0.16);
 		--chip-bg: color-mix(in srgb, var(--bg-elev2) var(--wallpaper-panel-alpha, 62%), transparent);
 
 		--msgs-bg: color-mix(in srgb, var(--bg-elev) var(--wallpaper-panel-alpha, 62%), transparent);
@@ -989,6 +994,11 @@
 		overflow: hidden;
 	}
 
+	/* 状态栏那条留白跟顶栏同色，看起来是顶栏延伸上去而不是断带。 */
+	html.pi-native body {
+		background: var(--topbar-bg, var(--bg-elev));
+	}
+
 	button > svg {
 		min-width: 1em;
 		min-height: 1em;
@@ -1000,6 +1010,8 @@
 		flex-direction: column;
 		height: 100%;
 		overflow: hidden;
+		/* 手机壳的状态栏压在 WebView 上，让出这块安全区（浏览器里 --safe-top 为 0）。 */
+		padding-top: var(--safe-top);
 
 		position: relative;
 		z-index: 1;
@@ -11478,7 +11490,7 @@
 
 	.protocol-banner {
 		position: fixed;
-		top: 52px;
+		top: calc(52px + var(--safe-top));
 		left: 50%;
 		transform: translateX(-50%);
 		z-index: var(--z-notice);
@@ -11993,7 +12005,7 @@
 	.notices {
 		position: fixed;
 
-		top: 58px;
+		top: calc(58px + var(--safe-top));
 		left: 50%;
 		transform: translateX(-50%);
 		z-index: var(--z-notice);
@@ -27981,7 +27993,7 @@
 
 	@media (max-width: 768px) {
 		.notices {
-			top: 56px;
+			top: calc(56px + var(--safe-top));
 			left: 10px;
 			right: 10px;
 			transform: none;
@@ -28024,7 +28036,7 @@
 			}
 		}
 		.protocol-banner {
-			top: 56px;
+			top: calc(56px + var(--safe-top));
 			left: 10px;
 			right: 10px;
 			transform: none;
@@ -28369,6 +28381,13 @@
 			border: none;
 		}
 
+		/* 抽屉是 fixed 定位（top:0/bottom:0），绕开了 .app 的安全区 padding：
+		   手机壳里单独让出状态栏和手势条，否则抽屉头部又压到状态栏上。 */
+		html.pi-native .panel-drawer {
+			padding-top: var(--safe-top);
+			padding-bottom: env(safe-area-inset-bottom, 0px);
+		}
+
 		.term-main {
 			position: relative;
 
@@ -28377,7 +28396,7 @@
 		.term-commands {
 			position: fixed;
 			left: 0;
-			top: 0;
+			top: var(--safe-top, 0px);
 			bottom: 0;
 			z-index: 60;
 			width: min(300px, 86vw);
@@ -31527,7 +31546,7 @@
 
 	.zen-exit-pill {
 		position: fixed;
-		top: 14px;
+		top: calc(14px + var(--safe-top));
 		right: 18px;
 		z-index: 1000;
 		display: inline-flex;
@@ -38124,37 +38143,24 @@
 }
 .toolflow-chip .qbtn {
 	flex: none;
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
 	width: 15px;
 	height: 15px;
+	padding: 0;
+	background: transparent;
 	border-radius: 50%;
 	border: 1px solid var(--border-soft);
 	color: var(--text-faint);
+	font-family: inherit;
 	font-size: 9px;
-	line-height: 13px;
+	line-height: 1;
 	text-align: center;
 	cursor: help;
+	appearance: none;
 }
 .toolflow-chip .qbtn:hover {
 	color: var(--accent);
 	border-color: var(--accent);
-}
-.toolflow-chip .qbtn[data-tip]:hover::after {
-	content: attr(data-tip);
-	position: absolute;
-	right: -4px;
-	bottom: calc(100% + 8px);
-	width: max-content;
-	max-width: 250px;
-	white-space: normal;
-	line-height: 1.6;
-	background: #1c1f28;
-	border: 1px solid var(--accent);
-	color: var(--text);
-	font-size: 11px;
-	padding: 7px 10px;
-	border-radius: 8px;
-	z-index: 61;
-	pointer-events: none;
-	box-shadow: 0 8px 22px rgba(0, 0, 0, 0.55);
-	text-align: left;
 }

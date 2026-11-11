@@ -12,6 +12,7 @@ import {
 	collectTemplateTokens,
 	effectiveTemplate,
 	estimatePromptTokens,
+	isLegacyPromptToken,
 	isReadonlyPromptSource,
 	renderDefaultPrompt,
 	renderPromptTemplate,
@@ -41,7 +42,6 @@ function inputs(partial: Partial<PromptComposerInputs> = {}): PromptComposerInpu
 		piExamples: "E:/pi-web-ui/node_modules/@earendil-works/pi-coding-agent/examples",
 		appendFiles: [],
 		windowsPersona: "You are a coding agent running on Windows. Follow these rules to avoid hanging the session:",
-		terminalGuidance: "Persistent interactive terminal tools are available:",
 		markersGuidance: "",
 		contextFiles: [{ path: "E:\\pi-web-ui\\AGENTS.md", content: AGENTS_CONTENT }],
 		skills: [{ name: "mermaid", description: "render mermaid diagrams", filePath: "E:/pi-web-ui/plugins/mermaid" }],
@@ -69,6 +69,13 @@ describe("token 元数据", () => {
 		const tokens = collectTemplateTokens("{{soul}}\n{{typo_token}}");
 		expect(tokens).toContain("soul");
 		expect(tokens).toContain("typo_token");
+	});
+
+	it("已下线的 {{terminal}} 不再出现在 token 列表，且残留时渲染为空", () => {
+		expect(isKnown("terminal")).toBe(false);
+		expect(isLegacyPromptToken("terminal")).toBe(true);
+		const rendered = renderPromptTemplate("A{{terminal}}B", resolveSectionTexts(inputs()), undefined);
+		expect(rendered).toBe("AB");
 	});
 });
 
@@ -170,10 +177,9 @@ describe("resolveSectionTexts — 各来源自动内容", () => {
 		expect(resolveSectionTexts(inputs()).cwd).toBe("Current working directory: E:/pi-web-ui");
 	});
 
-	it("persona/terminal/markers 直接透传自动内容", () => {
+	it("persona/markers 直接透传自动内容", () => {
 		const auto = resolveSectionTexts(inputs());
 		expect(auto.persona).toContain("Windows");
-		expect(auto.terminal).toContain("terminal");
 		expect(auto.markers).toBe("");
 	});
 });
@@ -347,14 +353,13 @@ describe("buildSkillsText 全文/名单模式", () => {
 });
 
 describe("READONLY_PROMPT_SOURCES / isReadonlyPromptSource — 只读来源判定", () => {
-	it("只读集合为 9 个，且不含 soul / guidelines / append", () => {
-		expect(READONLY_PROMPT_SOURCES).toHaveLength(9);
+	it("只读集合为 8 个，且不含 soul / guidelines / append", () => {
+		expect(READONLY_PROMPT_SOURCES).toHaveLength(8);
 		expect(READONLY_PROMPT_SOURCES).toEqual([
 			"tools",
 			"pi_docs",
 			"plugin_dev",
 			"persona",
-			"terminal",
 			"markers",
 			"context",
 			"skills",

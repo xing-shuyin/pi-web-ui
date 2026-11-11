@@ -7,7 +7,6 @@ export const PROMPT_TOKENS = [
 	"pi_docs",
 	"append",
 	"persona",
-	"terminal",
 	"markers",
 	"plugin_dev",
 	"context",
@@ -20,7 +19,6 @@ export const READONLY_PROMPT_SOURCES = [
 	"pi_docs",
 	"plugin_dev",
 	"persona",
-	"terminal",
 	"markers",
 	"context",
 	"skills",
@@ -33,6 +31,16 @@ export const DEFAULT_PROMPT_DISABLED: string[] = ["plugin_dev"];
 
 export function isReadonlyPromptSource(token: string): boolean {
 	return (READONLY_PROMPT_SOURCES as readonly string[]).includes(token);
+}
+
+/**
+ * 已下线的历史来源：`{{terminal}}`（终端工具引导）。
+ * 老模板/老预设里残留该 token 时渲染为空——不留 `{{terminal}}` 字面量，也不复活该段文本。
+ */
+export const LEGACY_PROMPT_TOKENS: readonly string[] = ["terminal"];
+
+export function isLegacyPromptToken(token: string): boolean {
+	return LEGACY_PROMPT_TOKENS.includes(token);
 }
 
 export const DEFAULT_PROMPT_TEMPLATE = PROMPT_TOKENS.map((t) => `{{${t}}}`).join("\n\n");
@@ -75,7 +83,6 @@ export interface PromptComposerInputs {
 	pluginsDir?: string;
 	appendFiles: string[];
 	windowsPersona: string;
-	terminalGuidance: string;
 	markersGuidance: string;
 	contextFiles: { path: string; content: string }[];
 	skills: { name: string; description: string; filePath: string; content?: string }[];
@@ -356,7 +363,6 @@ export function resolveSectionTexts(inputs: PromptComposerInputs): Record<Prompt
 		pi_docs: buildPiDocsText(inputs.piReadme, inputs.piDocs, inputs.piExamples, lang),
 		append: inputs.appendFiles.join("\n\n"),
 		persona: inputs.windowsPersona,
-		terminal: inputs.terminalGuidance,
 		markers: inputs.markersGuidance,
 		plugin_dev: buildPluginDevText(inputs, lang),
 		context: buildContextText(inputs.contextFiles, lang),
@@ -378,6 +384,7 @@ export function renderPromptTemplate(
 	const dis = disabled instanceof Set ? disabled : new Set(disabled ?? []);
 	return effectiveTemplate(template).replace(TOKEN_RE, (full, name: string) => {
 		if (dis.has(name)) return "";
+		if (isLegacyPromptToken(name)) return "";
 		const ov = overrideOf(overrides, name);
 		if (ov) return ov;
 		return Object.prototype.hasOwnProperty.call(texts, name) ? (texts[name] ?? "") : full;

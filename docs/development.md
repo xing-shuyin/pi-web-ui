@@ -25,6 +25,8 @@ npm run dev          # 并行：node --watch --import tsx 后端(:8788，dev:ser
 #                     时会静默挂死（tsx 上游 bug），改用 Node 原生 --watch。
 npm run typecheck    # 双端 tsc --noEmit（提交前必跑）
 npm run check:protocol  # 守护协议单源 shim 机制（CI 必跑）
+npm run ci:local     # 本地按 ci.yml 逐条复刻 CI 门禁（见下文「本地复刻 CI」；--profile static 秒级）
+npm run hooks:install # 装 pre-push 钩子（默认跑 ci:local 的 static 档）
 npm run format       # prettier 全仓库格式化（.prettierrc.json：tabs + 宽 120；提交前必跑）
 npm run format:check # 只检查不改写（CI 跑这个）
 npm run build        # build:web (vite) + build:server (tsc) + build:dsh-runtime + build:mermaid-vendor + build:runtrace-vendor
@@ -99,6 +101,22 @@ GitHub Actions ubuntu-latest（`.github/workflows/ci.yml`，push/PR → main 触
 冒烟分层（CI 提速）：PR 跑 `--core` 快检子集（CORE，协议/安全/插件接线代表，2~4 分钟），push main + 每日 nightly（北京时间午夜）跑全量；`--retry-once` 让首轮失败重跑一次（标 FLAKY，重跑还挂才算真失败）。新测试默认进 ALL，跑得快（<20s）且稳才进 CORE（有 ALL↔CORE 同步守卫）。
 
 `dist/` 由跑器在开跑前**串行构建一次**（CI 已在 Build 步骤构建过，可用 `--no-build` 跳过）。用例侧一律走 `tests/lib/ensure-build.mjs`，**不要**自己 `execSync("npm run build")`：默认 4 worker 并行下，一个用例重写 `dist/` 时另一个正在 `spawn dist/server/index.js`，会出「测试插件没被激活」之类与被测逻辑无关的假红。
+
+### 本地复刻 CI（`npm run ci:local`）
+
+本地绿 ≠ 远程绿，多数时候不是环境玄学，而是**本地根本没跑 CI 跑的东西**（2026-11 的 6 次 main 红里，4 次挂在 `Protocol smoke tests (full)`——它 PR 不跑、本地也不跑，只能在 main 上发现）。`npm run ci:local` 按 `.github/workflows/ci.yml` 的步骤与顺序逐条复刻，每步经 `scripts/safe-exec.mjs`（硬超时 + 杀进程树），日志落 `.safe-exec/`：
+
+| 档位 | 覆盖 | 量级 |
+| --- | --- | --- |
+| `--profile static`（pre-push 默认档） | format:check → lint → check:protocol → i18n:check → typecheck（含 mobile） | 1~3 分钟 |
+| `--profile pr` | 静态 + build + 插件 bundle 重建 diff + 扩展打包 + vitest 两池 + smoke `--core` | ≈10 分钟 |
+| `--profile full`（默认档） | 上面全部 + smoke 全量（push main 才跑的那一步） | ≈16 分钟 |
+
+`--only <id>` / `--from <id>` 断点重跑，`--list` 看步骤与 id，`--install` 先 `npm ci`（会重装 node_modules，慢）。
+
+开跑前会打印「本地 ≠ CI 的已知偏差」：Node 大版本（CI 用 22）、非 Linux 平台（大小写敏感 import / 权限 / PTY）、工作区脏（CI 只看已提交内容）、改了 `web/src/i18n/messages/` 却没生成 12 个语言包。这几项 `ci:local` 治不了，只能靠容器或 CI 兜底——别把本地绿当万无一失。
+
+钩子：`npm run hooks:install` 装 `pre-push`（默认跑 static 档；`CI_LOCAL_PROFILE=pr|full git push` 加严，`SKIP_CI_LOCAL=1 git push` 跳过），`npm run hooks:install -- --uninstall|--list` 管理。钩子源文件在 `scripts/git-hooks/`，不用 `core.hooksPath`（避免静默盖掉别人已装的钩子）。
 
 ## 前端构建更新与旧页面
 

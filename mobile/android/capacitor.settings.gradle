@@ -20,5 +20,8 @@ project(':capacitor-status-bar').projectDir = new File('../node_modules/@capacit
 include ':pi-mobile-native-local-engine'
 project(':pi-mobile-native-local-engine').projectDir = new File('../node_modules/@pi-mobile/native-local-engine/android')
 
+include ':pi-mobile-native-phone-control'
+project(':pi-mobile-native-phone-control').projectDir = new File('../node_modules/@pi-mobile/native-phone-control/android')
+
 include ':pi-mobile-native-push'
 project(':pi-mobile-native-push').projectDir = new File('../node_modules/@pi-mobile/native-push/android')

@@ -1,6 +1,7 @@
 import type { Conversation } from "./agent-service.js";
 import { pick, type ServerLang } from "./i18n.js";
 import { subagentRunOutcome } from "./subagent-helpers.js";
+import { formatEvidenceSummary } from "./subagent-evidence.js";
 
 export function extractSubagentConclusion(output: string, lang: ServerLang = "en"): string {
 	const trimmed = (output ?? "").trim();
@@ -80,6 +81,9 @@ export function formatSubagentsCompletionNotice(
 			!outcome.error && !outcome.canceled && conv.subagentTask?.mode === "manual"
 				? conv.subagentTask.summary?.trim()
 				: undefined;
+		const evidenceLine = conv.subagentEvidence
+			? `  - ${pick(lang, "完成证据", "Evidence", "subagents.notify.evidence")}: ${formatEvidenceSummary(conv.subagentEvidence, lang)}\n`
+			: "";
 		const rawOutput = manualSummary || conv.session.getLastAssistantText() || "";
 		const conclusion = extractSubagentConclusion(rawOutput, lang);
 		const indentedConclusion = conclusion
@@ -108,13 +112,13 @@ export function formatSubagentsCompletionNotice(
 			}
 		}
 
-		return `- **${sId}**（${metaTag}）— ${statusLabel}\n${taskLine}${wtLine}  - ${pick(lang, "产出摘要", "Summary", "subagents.notify.summary")}:\n${indentedConclusion}`;
+		return `- **${sId}**（${metaTag}）— ${statusLabel}\n${taskLine}${wtLine}${evidenceLine}  - ${pick(lang, "产出摘要", "Summary", "subagents.notify.summary")}:\n${indentedConclusion}`;
 	});
 
 	const footer = pick(
 		lang,
-		'\n如需调取子代理完整对话转录与工具执行详情，可调用 subagent(action="get_result", runId="<id>")。',
-		'\nFor full transcripts or detailed tool logs, call subagent(action="get_result", runId="<id>").',
+		'\n如需调取子代理完整对话转录与工具执行详情，可调用 conversation(action="get_result", runId="<id>")。',
+		'\nFor full transcripts or detailed tool logs, call conversation(action="get_result", runId="<id>").',
 		"subagents.notify.footer",
 	);
 

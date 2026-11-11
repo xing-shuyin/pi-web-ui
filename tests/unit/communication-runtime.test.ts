@@ -316,7 +316,7 @@ describe("ClientSession communication runtime", () => {
 		expect(await pending).toEqual(answers);
 		b.subagentHost = { completeSubagent: vi.fn() };
 		legacy.completeSubagent(stale.id, "moved summary");
-		expect(b.subagentHost.completeSubagent).toHaveBeenCalledWith(moved.id, "moved summary");
+		expect(b.subagentHost.completeSubagent).toHaveBeenCalledWith(moved.id, "moved summary", undefined);
 		expect(stale.subagentTask).toBeUndefined();
 	});
 	it("spawns on the runtime holder after takeover renames into a source-local id", async () => {
