@@ -2,7 +2,7 @@ import type { BookSource } from "../types";
 import { ruleErrorStats } from "./analyzeRule";
 import { classifyError, detectPageProblem, isNetworkError } from "./pageProblem";
 import { fetchText } from "./request";
-import { getBookInfo, getChapterList, getContent, isTextSource, searchBooks } from "./webBook";
+import { getBookInfo, getChapterList, getContent, isTextSource, searchBooks, fetchOptions } from "./webBook";
 
 export type CheckMode = "reach" | "search" | "full";
 
@@ -100,7 +100,7 @@ export async function checkSource(source: BookSource, opts: CheckOptions = {}): 
 	}
 
 	const reachOnce = async () => {
-		const res = await fetchText(source.bookSourceUrl, { charset: undefined });
+		const res = await fetchText(source.bookSourceUrl, fetchOptions(source, { charset: undefined }));
 		const problem = res.body.trim().length > 0 ? detectPageProblem(res.body) : null;
 		if (res.status >= 400) throw new Error(`站点返回 HTTP ${res.status}`);
 		if (problem) throw new Error(problem);

@@ -25,8 +25,17 @@ engine.setProxyTransport(async (target, opts = {}) => {
 		headers: opts.headers,
 		body: opts.body,
 		charset: opts.charset,
+		browser: opts.browser,
 	});
-	return { url: res.url, body: res.body, headers: res.headers, status: res.status };
+	return {
+		url: res.url,
+		body: res.body,
+		headers: res.headers,
+		status: res.status,
+		viaBrowser: res.viaBrowser,
+		challenge: res.challenge,
+		browserError: res.browserError,
+	};
 });
 
 const syncHttp = createSyncHttp();

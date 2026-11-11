@@ -1,3 +1,8 @@
+import { execFile } from "node:child_process";
+import { existsSync, mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+
 export const DEFAULT_UA =
 	"Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120 Safari/537.36";
 
@@ -179,6 +184,146 @@ const HOP_BY_HOP = /^(connection|keep-alive|transfer-encoding|upgrade|proxy-conn
 
 const REDIRECT_STATUSES = new Set([301, 302, 303, 307, 308]);
 
+// ---- 可选真浏览器抓取（Chrome 仅检测、不捆绑；没装就不启用） ----
+
+const CHROME_ENV_VAR = "LEGADO_CHROME_PATH";
+const BROWSER_MAX_BYTES = 8 * 1024 * 1024;
+const BROWSER_TIMEOUT_MS = 30_000;
+
+let chromeCache = null;
+
+/** 按平台列出候选浏览器路径（纯函数，方便单测）。 */
+export function chromeCandidates(platform = process.platform, env = process.env) {
+	const fromEnv = String(env?.[CHROME_ENV_VAR] ?? "").trim();
+	const paths = fromEnv ? [fromEnv] : [];
+	const whichNames = [];
+	if (platform === "win32") {
+		const bases = [env?.ProgramFiles, env?.["ProgramFiles(x86)"], env?.LOCALAPPDATA].filter(Boolean);
+		for (const base of bases) {
+			paths.push(
+				join(base, "Google/Chrome/Application/chrome.exe"),
+				join(base, "Microsoft/Edge/Application/msedge.exe"),
+				join(base, "BraveSoftware/Brave-Browser/Application/brave.exe"),
+				join(base, "Vivaldi/Application/vivaldi.exe"),
+			);
+		}
+		whichNames.push("chrome.exe", "msedge.exe");
+	} else if (platform === "darwin") {
+		paths.push(
+			"/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
+			"/Applications/Microsoft Edge.app/Contents/MacOS/Microsoft Edge",
+			"/Applications/Brave Browser.app/Contents/MacOS/Brave Browser",
+			"/Applications/Vivaldi.app/Contents/MacOS/Vivaldi",
+		);
+		whichNames.push("google-chrome", "chromium", "chromium-browser", "microsoft-edge");
+	} else {
+		whichNames.push("google-chrome", "google-chrome-stable", "chromium", "chromium-browser", "microsoft-edge");
+	}
+	return { paths, whichNames };
+}
+
+function execFileAsync(file, args, opts) {
+	return new Promise((resolve, reject) => {
+		execFile(file, args, opts, (err, stdout, stderr) => {
+			if (err) reject(Object.assign(err, { stdout, stderr }));
+			else resolve({ stdout: String(stdout ?? ""), stderr: String(stderr ?? "") });
+		});
+	});
+}
+
+/** 探测本机 Chrome/Chromium（带缓存）。 @returns {Promise<{found:boolean,path:string|null}>} */
+export async function findChrome({ rescan = false } = {}) {
+	if (chromeCache && !rescan) return chromeCache;
+	const { paths, whichNames } = chromeCandidates();
+	for (const p of paths) {
+		try {
+			if (p && existsSync(p)) {
+				chromeCache = { found: true, path: p };
+				return chromeCache;
+			}
+		} catch {}
+	}
+	const lookup = process.platform === "win32" ? "where" : "which";
+	for (const name of whichNames) {
+		try {
+			const { stdout } = await execFileAsync(lookup, [name], { timeout: 8000 });
+			const hit = stdout
+				.split(/\r?\n/)
+				.map((s) => s.trim())
+				.find((s) => s && existsSync(s));
+			if (hit) {
+				chromeCache = { found: true, path: hit };
+				return chromeCache;
+			}
+		} catch {}
+	}
+	chromeCache = { found: false, path: null };
+	return chromeCache;
+}
+
+/** 盾页特征（服务端指纹/行为风控，直接换头也过不去的那种）。 */
+export function isChallengePage(status, body) {
+	if (status !== 403 && status !== 503) return false;
+	const s = String(body ?? "").slice(0, 20_000);
+	return (
+		s.includes("Just a moment") ||
+		s.includes("challenges.cloudflare.com") ||
+		s.includes("challenge_required") ||
+		s.includes("__gatekeeper_challenge") ||
+		s.includes("人人书云CDN") ||
+		/人机验证|安全验证|访问验证/.test(s)
+	);
+}
+
+/**
+ * 用本机真浏览器（headless --dump-dom）抓一页，返回渲染后 HTML。
+ * 需要本机装有 Chrome/Edge 等 Chromium 内核浏览器；没装则抛错（调用方负责降级）。
+ */
+export async function fetchViaBrowser({ url, chromePath, timeoutMs = BROWSER_TIMEOUT_MS } = {}) {
+	const target = String(url ?? "");
+	if (!/^https?:\/\//i.test(target)) throw new Error(`缺少合法 url（http(s)://…）`);
+	let hostname = "";
+	try {
+		hostname = new URL(target).hostname;
+	} catch {
+		throw new Error(`非法的目标地址：${target}`);
+	}
+	if (await resolveTargetPrivate(hostname)) {
+		throw new Error(`拒绝抓取内网/回环地址：${hostname}`);
+	}
+	const chrome = chromePath ?? (await findChrome()).path;
+	if (!chrome) throw new Error("未检测到本机 Chrome/Chromium，浏览器抓取不可用（装一个即可用，无需配置）");
+	const profile = mkdtempSync(join(tmpdir(), "legado-chrome-"));
+	try {
+		const args = [
+			"--headless=new",
+			"--disable-gpu",
+			"--no-first-run",
+			"--no-default-browser-check",
+			`--user-data-dir=${profile}`,
+			"--virtual-time-budget=12000",
+			`--timeout=${Math.max(5000, Math.min(Number(timeoutMs) || BROWSER_TIMEOUT_MS, 120_000))}`,
+			"--dump-dom",
+			target,
+		];
+		if (String(process.env.LEGADO_CHROME_NO_SANDBOX ?? "").trim() === "1") args.push("--no-sandbox");
+		const { stdout } = await execFileAsync(chrome, args, {
+			timeout: (Number(timeoutMs) || BROWSER_TIMEOUT_MS) + 10_000,
+			maxBuffer: BROWSER_MAX_BYTES,
+		});
+		const html = String(stdout ?? "");
+		if (!html.trim()) throw new Error("浏览器抓取返回空页面（可能仍被站点拦截）");
+		if (isChallengePage(200, html) || isChallengePage(403, html) || isChallengePage(503, html)) {
+			throw new Error("真浏览器仍被站点盾拦截（需人工过验证或换源）");
+		}
+		return { url: target, status: 200, headers: {}, body: html, bytes: Buffer.byteLength(html), viaBrowser: true };
+	} finally {
+		try {
+			rmSync(profile, { recursive: true, force: true });
+		} catch {}
+	}
+}
+
 /**
  * 抓一个书源站地址。
  * @param {object} req
@@ -187,6 +332,7 @@ const REDIRECT_STATUSES = new Set([301, 302, 303, 307, 308]);
  * @param {Record<string,string>} [req.headers] 书源声明的头（**不接受浏览器头**）
  * @param {string|Buffer} [req.body]
  * @param {string} [req.charset] 影响 URL 重编码与 body 编码
+ * @param {boolean} [req.browser] 命中盾页时是否回退到本机真浏览器抓取（需书源开启 allowBrowser）
  * @param {number} [req.timeoutMs]
  * @returns {Promise<{url:string,status:number,headers:Record<string,string>,body:string,bytes:number}>}
  */
@@ -266,13 +412,29 @@ export async function proxyFetch(req) {
 	resp.headers.forEach((v, k) => {
 		outHeaders[k] = v;
 	});
-	return {
+	const out = {
 		url: currentUrl || resp.url || target,
 		status: resp.status,
 		headers: outHeaders,
 		body: decodeBytes(buf, charset || detectCharset(contentType, buf.subarray(0, 4000))),
 		bytes: buf.length,
 	};
+	// 盾页 + 书源开了浏览器抓取 + 本机有 Chrome → 用真浏览器重抓一次
+	if (req?.browser && isChallengePage(out.status, out.body)) {
+		const chrome = await findChrome();
+		if (!chrome.found) {
+			out.challenge = true;
+			return out;
+		}
+		try {
+			return await fetchViaBrowser({ url: out.url, chromePath: chrome.path, timeoutMs: req?.timeoutMs });
+		} catch (err) {
+			out.challenge = true;
+			out.browserError = describeFetchError(err);
+			return out;
+		}
+	}
+	return out;
 }
 
 export function describeFetchError(err) {

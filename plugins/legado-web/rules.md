@@ -96,6 +96,11 @@
 ## 三、本引擎的已知差异（写规则时要避开）
 
 - **WebJS 不支持**：`ruleContent.webJs`、`<webjs>`/`@webjs:` 一律跳过（需要浏览器渲染的源取不到正文）。
+- **站点盾页（Cloudflare/网关质询/CDN 拦截）**：直连返回 403 + 盾页时，可给该源加 `allowBrowser: true`
+  （`legado_book_sources update` 深合并该字段即可），后端用本机 Chrome/Edge 无头渲染重抓一次；
+  本机没装浏览器时保持原行为。另一条路是 Cookie：让用户在电脑浏览器正常访问该站一次，
+  把 `document.cookie` 整串贴进源 `header` 的 `Cookie` 字段（书源页行内「🍪」按钮就是干这个的，导入后自动重检）。
+  无头也被识别 / 需要人工交互验证时，直说换源。
 - 图片型/音频源（`bookSourceType != 0`）不支持。
 - `java.t2s/s2t` 是占位（不做繁简转换）；`java.getCookie` 返回空串。
 - XPath 走 `@xmldom/xmldom`，容错清洗 HTML 后再解析；复杂 XPath 可能不如浏览器宽松。

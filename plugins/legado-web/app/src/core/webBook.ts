@@ -66,12 +66,27 @@ function mergeHeaders(source: BookSource, extra?: Record<string, string>) {
 	return { ...parseHeader(source.header as string | undefined), ...(extra ?? {}) };
 }
 
+/**
+ * 组装一次书源请求的参数：合并书源自带 header；书源开了 allowBrowser 时带上浏览器回退标记
+ * （命中站点盾页则后端用本机真浏览器重抓；本机没装 Chrome 时保持原行为）。
+ */
+export function fetchOptions(
+	source: BookSource,
+	options: { method?: string; headers?: Record<string, string>; body?: string; charset?: string },
+) {
+	return {
+		...options,
+		headers: mergeHeaders(source, options.headers),
+		...(source.allowBrowser ? { browser: true } : null),
+	};
+}
+
 export async function searchBooks(source: BookSource, key: string, page = 1): Promise<SearchBook[]> {
 	if (!isTextSource(source)) throw new Error("仅支持文本源（bookSourceType=0）");
 	if (!source.searchUrl?.trim()) throw new Error("该书源没有搜索 URL");
 	const scope = getScope(source.bookSourceUrl);
 	const { url, options } = parseCustomUrl(source.searchUrl, source.bookSourceUrl, key, page, scope, source);
-	const res = await fetchText(url, { ...options, headers: mergeHeaders(source, options.headers) });
+	const res = await fetchText(url, fetchOptions(source, options));
 	const ctx = ctxOf(source, res.url, { key, page });
 	const rule = source.ruleSearch;
 	const items = evalItemList(res.body, rule?.bookList, ctx);
@@ -100,7 +115,7 @@ export async function discoverBooks(source: BookSource, exploreUrl?: string, pag
 	const raw = exploreUrl ?? source.exploreUrl;
 	if (!raw?.trim()) throw new Error("该书源没有发现 URL");
 	const { url, options } = parseCustomUrl(raw, source.bookSourceUrl, "", page, getScope(source.bookSourceUrl), source);
-	const res = await fetchText(url, { ...options, headers: mergeHeaders(source, options.headers) });
+	const res = await fetchText(url, fetchOptions(source, options));
 	const ctx = ctxOf(source, res.url, { page });
 	const ex = source.ruleExplore as (typeof source.ruleExplore & { bookList?: string }) | undefined;
 	const rule = ex?.bookList?.trim() ? ex : (source.ruleSearch as typeof source.ruleExplore);
@@ -130,7 +145,7 @@ export async function getBookInfo(source: BookSource, bookUrl: string): Promise<
 		scope,
 		source,
 	);
-	const res = await fetchText(url, { ...options, headers: mergeHeaders(source, options.headers) });
+	const res = await fetchText(url, fetchOptions(source, options));
 	const ctx = ctxOf(source, res.url);
 	const rule = source.ruleBookInfo;
 	if (!rule) return { tocUrl: res.url };
@@ -161,7 +176,7 @@ export async function getChapterList(source: BookSource, tocUrl: string): Promis
 	while (next && !seen.has(next)) {
 		seen.add(next);
 		const { url, options } = parseCustomUrl(next, source.bookSourceUrl, "", 1, scope, source);
-		const res = await fetchText(url, { ...options, headers: mergeHeaders(source, options.headers) });
+		const res = await fetchText(url, fetchOptions(source, options));
 		const ctx = ctxOf(source, res.url);
 		const items = evalItemList(res.body, rule?.chapterList, ctx);
 		for (const item of items) {
@@ -194,7 +209,7 @@ export async function getContent(source: BookSource, contentUrl: string): Promis
 	while (next && !seen.has(next)) {
 		seen.add(next);
 		const { url, options } = parseCustomUrl(next, source.bookSourceUrl, "", 1, scope, source);
-		const res = await fetchText(url, { ...options, headers: mergeHeaders(source, options.headers) });
+		const res = await fetchText(url, fetchOptions(source, options));
 		lastBody = res.body;
 		lastUrl = res.url;
 		const ctx = ctxOf(source, res.url);

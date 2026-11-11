@@ -6,6 +6,11 @@ export interface ProxyResponse {
 	body: string;
 	headers: Record<string, string>;
 	status: number;
+	/** 本次是否走了本机真浏览器抓取 */
+	viaBrowser?: boolean;
+	/** 直连命中站点盾页（且未成功走浏览器回退） */
+	challenge?: boolean;
+	browserError?: string;
 }
 
 export type ProxyTransport = (target: string, opts: FetchOptions) => Promise<ProxyResponse>;
@@ -36,15 +41,15 @@ export function getSyncTransport(): SyncProxyTransport | null {
 	return injectedSync;
 }
 
-export function buildProxyUrl(target: string, charset?: string): string {
+export function buildProxyUrl(target: string, charset?: string, browser?: boolean): string {
 	const prefix = `${apiBase()}/proxy`;
 	const cs = charset?.trim();
-	return `${prefix}?url=${encodeURIComponent(target)}${cs ? `&charset=${encodeURIComponent(cs)}` : ""}`;
+	return `${prefix}?url=${encodeURIComponent(target)}${cs ? `&charset=${encodeURIComponent(cs)}` : ""}${browser ? "&browser=1" : ""}`;
 }
 
 export async function fetchText(target: string, opts: FetchOptions = {}): Promise<ProxyResponse> {
 	if (injected) return injected(target, opts);
-	const res = await fetch(buildProxyUrl(target, opts.charset), {
+	const res = await fetch(buildProxyUrl(target, opts.charset, opts.browser), {
 		method: opts.method ?? "GET",
 		headers: {
 			"Content-Type": "application/json",
@@ -52,8 +57,13 @@ export async function fetchText(target: string, opts: FetchOptions = {}): Promis
 		},
 		body:
 			opts.method && opts.method.toUpperCase() !== "GET"
-				? JSON.stringify({ headers: opts.headers ?? {}, body: opts.body ?? "", charset: opts.charset ?? "" })
-				: undefined,
+				? JSON.stringify({
+						headers: opts.headers ?? {},
+						body: opts.body ?? "",
+						charset: opts.charset ?? "",
+						browser: opts.browser ?? false,
+					})
+					: undefined,
 	});
 	if (!res.ok) {
 		let detail = "";

@@ -8,6 +8,8 @@ import { chapterNavState } from './core/chapnav'
 import { evalJsRule, getScope } from './core/js'
 import { hydrateFromBackend, prefsStore, remoteStoreChanged, shelfStore, sourceStore, checkStore, storageEvents, storageMode, type CheckRecord } from './store'
 import { storeGet } from './core/backend'
+import { apiBase } from './core/apiBase'
+import { mergeCookieIntoHeader } from './core/cookies'
 import {
   aiFixButton,
   checkFixContext,
@@ -51,6 +53,23 @@ document.querySelectorAll('nav button').forEach((b) => {
 let srcSearch = ''
 let srcOnlyPinned = false
 let srcSearchTimer: number | null = null
+
+// 本机 Chrome 探测（真浏览器抓取是可选能力：没装就不显示入口，不捆绑安装）
+const chromeState = { checked: false, found: false, path: null as string | null }
+async function refreshChromeState() {
+  try {
+    const res = await fetch(`${apiBase()}/chromeinfo`)
+    if (res.ok) {
+      const j = (await res.json()) as { found?: boolean; path?: string | null }
+      chromeState.found = !!j.found
+      chromeState.path = typeof j.path === 'string' ? j.path : null
+    }
+  } catch {
+  }
+  chromeState.checked = true
+  if (!document.getElementById('tab-sources')?.hidden) renderSources()
+}
+void refreshChromeState()
 
 function renderSources() {
   const el = $('#tab-sources')
@@ -120,16 +139,19 @@ function renderSources() {
         <button class="ghost" id="src-refresh" title="从数据目录文件重读书源/书架/检测记录，再重渲染（AI 改过源、别处改过文件时点它）">刷新</button>
       </div>
       <div class="meta" id="src-scanmsg" style="margin-bottom:6px">快速=只测站点连通+搜索；完整=再跟到详情/目录/正文（慢）。“书读不了”也算废源。当前显示 ${list.length} 个。</div>
+      <div class="meta" style="margin-bottom:6px">${chromeHint()}</div>
       ${hidden ? `<div class="meta" style="margin-bottom:6px">已隐藏 ${hidden} 个${dead && hideDead ? `（其中废源 ${dead}）` : ''}——取消上面的勾选可查看；单个源也可以直接点它那行的「标回可用」把它救回来。</div>` : ''}
       ${list.map((s) => {
         const rec = checkStore.get(s.bookSourceUrl)
-        return `<div class="book${pinnedSet.has(s.bookSourceUrl) ? ' pinned' : ''}"><div style="flex:1"><b>${esc(s.bookSourceName)}</b> ${checkBadge(rec)}
+        return `<div class="book${pinnedSet.has(s.bookSourceUrl) ? ' pinned' : ''}"><div style="flex:1"><b>${esc(s.bookSourceName)}</b> ${checkBadge(rec)}${s.allowBrowser ? ' <span class="meta" title="已启用真浏览器回退：命中盾页时用本机 Chrome 重抓">🌐</span>' : ''}
         <div class="meta">${esc(s.bookSourceUrl)} · 分组 ${esc(s.bookSourceGroup ?? '-')}</div>
         ${rec && !rec.ok ? `<div class="meta err">${esc(rec.reason)}</div>` : ''}</div>
         <button class="ghost star" data-pin="${esc(s.bookSourceUrl)}" title="${pinnedSet.has(s.bookSourceUrl) ? '取消置顶' : '置顶（排到列表最前）'}">${pinnedSet.has(s.bookSourceUrl) ? '⭐' : '☆'}</button>
         ${!rec?.ok ? aiFixButton(sourceFixContext(s)) : ''}
         ${rec && !rec.ok ? `<button class="ghost" data-unmark="${esc(s.bookSourceUrl)}" title="清掉它的废源/可疑标记（回到未检），不再被隐藏和跳过">标回可用</button>` : ''}
         <button class="ghost" data-check="${esc(s.bookSourceUrl)}">检测</button>
+        <button class="ghost" data-cookie="${esc(s.bookSourceUrl)}" title="从电脑浏览器粘贴 Cookie 并进该源（过盾/登录用），导入后自动重检">🍪</button>
+        <button class="ghost" data-browser="${esc(s.bookSourceUrl)}" title="${browserTitle(s)}">${s.allowBrowser ? '🌐开' : '🌐'}</button>
         <button class="ghost" data-del="${esc(s.bookSourceUrl)}">删除</button></div>`
       }).join('') || '<p>暂无（可能被搜索词/置顶筛选挡掉了，或全部被隐藏：清空搜索、取消「只看置顶」与「隐藏废源」试试）。</p>'}
     </div>`
@@ -291,6 +313,69 @@ function renderSources() {
       renderSources()
     })
   })
+  el.querySelectorAll('[data-cookie]').forEach((b) => {
+    b.addEventListener('click', async () => {
+      const url = (b as HTMLElement).dataset.cookie!
+      const s = sourceStore.all().find((x) => x.bookSourceUrl === url)
+      if (!s) return
+      const pasted = prompt(
+        `给「${s.bookSourceName}」导入 Cookie（过盾/登录用）\n\n在电脑浏览器里正常打开该站一次，按 F12 → 控制台输入 document.cookie 回车，把整串粘到这里：`,
+        '',
+      )
+      if (pasted === null) return
+      try {
+        const { header, count } = mergeCookieIntoHeader(s.header, pasted)
+        sourceStore.addMany([{ ...s, header }])
+        setStatus(`已给「${s.bookSourceName}」并进 ${count} 个 Cookie，正在重检…`)
+        renderSources()
+        const cur = sourceStore.all().find((x) => x.bookSourceUrl === url)!
+        const keyEl = document.getElementById('c-key') as HTMLInputElement | null
+        const modeEl = document.getElementById('c-mode') as HTMLSelectElement | null
+        const r = await checkSource(cur, { key: keyEl?.value.trim() || '剑', mode: (modeEl?.value as CheckMode) || 'search' })
+        checkStore.setMany({
+          [r.bookSourceUrl]: { ok: r.ok, ts: r.time, ms: r.ms, count: r.count, tocCount: r.tocCount, reason: r.reason },
+        })
+        const i = checkResults.findIndex((x) => x.bookSourceUrl === r.bookSourceUrl)
+        if (i >= 0) checkResults[i] = r
+        else checkResults.push(r)
+        paintCheck()
+        setStatus(`Cookie 已导入（${count} 个），重检结果：${r.reason}`)
+        renderSources()
+      } catch (e) {
+        setStatus(`Cookie 导入失败：${e instanceof Error ? e.message : String(e)}`)
+      }
+    })
+  })
+  el.querySelectorAll('[data-browser]').forEach((b) => {
+    b.addEventListener('click', () => {
+      const url = (b as HTMLElement).dataset.browser!
+      const s = sourceStore.all().find((x) => x.bookSourceUrl === url)
+      if (!s) return
+      const on = !s.allowBrowser
+      const next = { ...s } as BookSource
+      if (on) next.allowBrowser = true
+      else delete next.allowBrowser
+      sourceStore.addMany([next])
+      if (on && !chromeState.found)
+        setStatus(`已给「${s.bookSourceName}」打开浏览器回退，但本机没检测到 Chrome/Edge——先装一个，否则不会生效`)
+      else setStatus(on ? `已给「${s.bookSourceName}」打开浏览器回退：命中盾页时用本机 Chrome 重抓（较慢）` : `已给「${s.bookSourceName}」关闭浏览器回退`)
+      renderSources()
+    })
+  })
+}
+
+function chromeHint(): string {
+  if (!chromeState.checked) return '🌐 真浏览器抓取：正在检测本机 Chrome…'
+  if (chromeState.found)
+    return `🌐 真浏览器抓取：已检测到（${esc(chromeState.path ?? '')}）。被盾的源点行内「🌐」启用回退；「🍪」可导入浏览器 Cookie（两种都是可选能力）。`
+  return '🌐 真浏览器抓取：未检测到本机 Chrome/Edge（装一个就能对盾源点行内「🌐」启用回退；「🍪」Cookie 导入不受影响照常用）。'
+}
+
+function browserTitle(s: BookSource): string {
+  if (!chromeState.checked) return '正在检测本机 Chrome…'
+  if (s.allowBrowser) return '已启用真浏览器回退：命中盾页时用本机 Chrome 重抓（较慢），点我关闭'
+  if (!chromeState.found) return '未检测到本机 Chrome/Edge：可以先打开，但装好浏览器之前不会生效'
+  return '对该源启用真浏览器回退：命中站点盾页时，用本机 Chrome 渲染重抓一次'
 }
 
 let lastResults: SearchBook[] = []

@@ -1,7 +1,7 @@
 import { existsSync, readFileSync, statSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { describeFetchError, proxyFetch } from "./net.mjs";
+import { describeFetchError, findChrome, proxyFetch } from "./net.mjs";
 import { KEY_RE, createStore } from "./store.mjs";
 import { createEngineBridge } from "./engine-bridge.mjs";
 import { createTools } from "./tools.mjs";
@@ -119,6 +119,7 @@ export default {
 			let charset = urlCharset;
 			let method = "GET";
 			let body;
+			let browser = q.get("browser") !== null;
 			try {
 				const fromQuery = q.get("headers");
 				if (fromQuery) Object.assign(headers, JSON.parse(fromQuery));
@@ -131,6 +132,7 @@ export default {
 						Object.assign(headers, payload.headers ?? {});
 						if (typeof payload.body === "string" && payload.body) body = payload.body;
 						if (!charset && payload.charset) charset = String(payload.charset);
+						if (payload.browser) browser = true;
 					} else if (raw.length) {
 						body = raw;
 					}
@@ -138,8 +140,16 @@ export default {
 			} catch {}
 
 			try {
-				const r = await proxyFetch({ url: targetRaw, method, headers, body, charset });
-				json(res, 200, { url: r.url, body: r.body, headers: r.headers, status: r.status });
+				const r = await proxyFetch({ url: targetRaw, method, headers, body, charset, browser });
+				json(res, 200, {
+					url: r.url,
+					body: r.body,
+					headers: r.headers,
+					status: r.status,
+					...(r.viaBrowser ? { viaBrowser: true } : null),
+					...(r.challenge ? { challenge: true } : null),
+					...(r.browserError ? { browserError: r.browserError } : null),
+				});
 			} catch (err) {
 				const message = describeFetchError(err);
 				host.log(`proxy 失败 ${targetRaw}: ${message}`);
@@ -193,11 +203,21 @@ export default {
 			}
 		};
 
+		const chromeHandler = async (_req, res) => {
+			try {
+				const info = await findChrome();
+				json(res, 200, { found: info.found, path: info.path });
+			} catch (err) {
+				json(res, 200, { found: false, path: null, error: String(err?.message ?? err) });
+			}
+		};
+
 		const offs = [
 			host.route("GET", "/proxy", proxyHandler),
 			host.route("POST", "/proxy", proxyHandler),
 			host.route("GET", "/store", storeHandler),
 			host.route("POST", "/store", storeHandler),
+			host.route("GET", "/chromeinfo", chromeHandler),
 		];
 
 		const offMessage =

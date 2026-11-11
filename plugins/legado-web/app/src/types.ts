@@ -58,6 +58,8 @@ export interface BookSource {
 	bookUrlPattern?: string;
 	enabled?: boolean;
 	enabledExplore?: boolean;
+	/** 本插件扩展：命中站点盾页时，是否回退到本机真浏览器抓取（需本机装 Chrome/Edge） */
+	allowBrowser?: boolean;
 	jsLib?: string;
 	header?: string;
 	loginUrl?: string;
@@ -108,4 +110,6 @@ export interface FetchOptions {
 	headers?: Record<string, string>;
 	body?: string;
 	charset?: string;
+	/** 命中站点盾页时，是否回退到本机真浏览器抓取 */
+	browser?: boolean;
 }

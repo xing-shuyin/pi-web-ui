@@ -2,7 +2,7 @@ import type { BookSource, Chapter, SearchBook } from "../types";
 import { ruleErrors, ruleErrorStats, type RuleError } from "./analyzeRule";
 import { detectPageProblem } from "./pageProblem";
 import { fetchText, getProxyTransport, setProxyTransport, type ProxyResponse } from "./request";
-import { getBookInfo, getChapterList, getContent, isTextSource, searchBooks } from "./webBook";
+import { getBookInfo, getChapterList, getContent, isTextSource, searchBooks, fetchOptions } from "./webBook";
 
 export type ProbeMode = "reach" | "search" | "full";
 export type ProbeStepName = "reach" | "search" | "info" | "toc" | "content";
@@ -167,7 +167,7 @@ export async function probeSource(source: BookSource, opts: ProbeOptions = {}): 
 				enabledCookieJar: source.enabledCookieJar ?? null,
 			},
 			async () => {
-				const res = await fetchText(source.bookSourceUrl, { charset: undefined });
+				const res = await fetchText(source.bookSourceUrl, fetchOptions(source, { charset: undefined }));
 				const problem = res.body.trim() ? detectPageProblem(res.body) : null;
 				if (res.status >= 400) throw new Error(`站点返回 HTTP ${res.status}`);
 				if (problem) throw new Error(problem);
