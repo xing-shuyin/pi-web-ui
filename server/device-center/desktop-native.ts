@@ -248,9 +248,10 @@ export function startNativeDesktop(options: {
 	onError: (message: string) => void;
 	onClose: () => void;
 	readOnly?: boolean;
+	preview?: boolean;
 }): { input(event: NativeDesktopInput): void; close(): void } {
 	const status = nativeDesktopStatus();
-	const readOnly = options.readOnly !== false;
+	const readOnly = options.preview === true || options.readOnly !== false;
 	let child: ChildProcessWithoutNullStreams | undefined;
 	let directory: string | undefined;
 	let closing = false;
@@ -371,7 +372,7 @@ export function startNativeDesktop(options: {
 		const windows = process.platform === "win32";
 		const path = join(directory, windows ? "capture.ps1" : "capture.swift");
 		writeFileSync(path, windows ? "\ufeff" + windowsDesktopScript : macDesktopScript, { mode: 0o600 });
-		const mode = readOnly ? "view" : "control";
+		const mode = options.preview ? "preview" : readOnly ? "view" : "control";
 		child = spawn(
 			windows ? powershellPath() : "/usr/bin/swift",
 			windows

@@ -5,18 +5,29 @@ import {
 	getDesktopAccess,
 	openDeviceAccess,
 	subscribeDesktopAccess,
+	setDesktopMode,
 	type DesktopAccess,
 } from "../device-access";
 
+import { useDesktopTarget } from "../use-desktop-target";
+import { useOverlayZIndex } from "../overlay-stack";
+import { useT } from "../i18n";
+
 export function RemoteDesktopWindow() {
 	const access = useSyncExternalStore(subscribeDesktopAccess, getDesktopAccess);
-	return access ? <DesktopWindow key={access.url} access={access} /> : null;
+	return access?.mode === "live" ? <DesktopWindow key={access.revision} access={access} /> : null;
 }
 
 function DesktopWindow({ access }: { access: DesktopAccess }) {
 	const { zh } = access;
+	const t = useT();
+	const zIndex = useOverlayZIndex();
+	const { target, error: targetError, retry } = useDesktopTarget(access);
 	const frameRef = useRef<HTMLIFrameElement>(null);
-	const [transport, setTransport] = useState(access.transport);
+	const [transport, setTransport] = useState<"lan" | "hub">();
+	useEffect(() => {
+		setTransport(target?.transport);
+	}, [target]);
 	useEffect(() => {
 		const receive = (event: MessageEvent) => {
 			if (
@@ -36,9 +47,9 @@ function DesktopWindow({ access }: { access: DesktopAccess }) {
 		width: Math.min(960, window.innerWidth - 32),
 		height: Math.min(640, window.innerHeight - 88),
 	});
-	const [minimized, setMinimized] = useState(false);
-	const [fullscreen, setFullscreen] = useState(false);
+	const [fullscreen, setFullscreen] = useState(() => window.innerWidth <= 768);
 	const [busy, setBusy] = useState(false);
+	const [dragging, setDragging] = useState(false);
 	const [error, setError] = useState("");
 	useEffect(() => {
 		const resize = () =>
@@ -57,6 +68,7 @@ function DesktopWindow({ access }: { access: DesktopAccess }) {
 		event.preventDefault();
 		const element = event.currentTarget;
 		element.setPointerCapture(event.pointerId);
+		setDragging(true);
 		const initial = { ...box, px: event.clientX, py: event.clientY };
 		const move = (e: globalThis.PointerEvent) => {
 			const dx = e.clientX - initial.px,
@@ -82,10 +94,16 @@ function DesktopWindow({ access }: { access: DesktopAccess }) {
 			);
 		};
 		const end = () => {
+			setDragging(false);
 			element.removeEventListener("pointermove", move);
+			element.removeEventListener("pointerup", end);
+			element.removeEventListener("pointercancel", end);
 			element.removeEventListener("lostpointercapture", end);
+			if (element.hasPointerCapture(event.pointerId)) element.releasePointerCapture(event.pointerId);
 		};
 		element.addEventListener("pointermove", move);
+		element.addEventListener("pointerup", end);
+		element.addEventListener("pointercancel", end);
 		element.addEventListener("lostpointercapture", end);
 	}
 	async function detach() {
@@ -100,50 +118,47 @@ function DesktopWindow({ access }: { access: DesktopAccess }) {
 			setBusy(false);
 		}
 	}
-	const title = zh ? "远程桌面" : "Remote desktop";
+	const title = t("desktop.title");
 	const shell = !!(window as unknown as { piDesktop?: { openHub?: unknown } }).piDesktop?.openHub;
 	return createPortal(
 		<div
-			className={`remote-desktop-window${fullscreen ? " is-fullscreen" : ""}${minimized ? " is-minimized" : ""}`}
+			className={`remote-desktop-window${fullscreen ? " is-fullscreen" : ""}${dragging ? " is-dragging" : ""}`}
 			role="dialog"
 			aria-label={title}
 			style={
 				fullscreen
-					? undefined
+					? { zIndex }
 					: {
+							zIndex,
 							left: box.x,
 							top: box.y,
-							width: minimized ? Math.min(420, box.width) : box.width,
-							height: minimized ? "auto" : box.height,
+							width: box.width,
+							height: box.height,
 						}
 			}
 		>
 			<div className="remote-desktop-titlebar" onPointerDown={(e) => start(e, false)}>
 				<strong>
-					{title} · {access.id}
-					{transport === "lan" ? (zh ? " · 局域网" : " · LAN") : ""}
+					{title} · {access.name || access.id} ·{" "}
+					{transport ? t(transport === "lan" ? "desktop.lan" : "desktop.hub") : t("desktop.connecting")}
 				</strong>
 				<button type="button" className="btn" disabled={busy} onClick={() => void detach()}>
-					{shell ? (zh ? "独立窗口" : "Separate window") : zh ? "独立标签页" : "Separate tab"}
+					{t(shell ? "desktop.window" : "desktop.tab")}
 				</button>
 				<button
 					type="button"
 					className="btn"
-					aria-label={minimized ? (zh ? "还原" : "Restore") : zh ? "最小化" : "Minimize"}
-					onClick={() => {
-						setMinimized(!minimized);
-						setFullscreen(false);
-					}}
+					aria-label={t("desktop.back")}
+					onClick={() => setDesktopMode(access, "preview")}
 				>
-					{minimized ? "▢" : "−"}
+					{t("desktop.back")}
 				</button>
 				<button
 					type="button"
 					className="btn"
-					aria-label={fullscreen ? (zh ? "退出全屏" : "Exit fullscreen") : zh ? "全屏" : "Fullscreen"}
+					aria-label={t(fullscreen ? "desktop.exitFullscreen" : "desktop.fullscreen")}
 					onClick={() => {
 						setFullscreen(!fullscreen);
-						setMinimized(false);
 					}}
 				>
 					{fullscreen ? "⤡" : "⤢"}
@@ -151,27 +166,36 @@ function DesktopWindow({ access }: { access: DesktopAccess }) {
 				<button
 					type="button"
 					className="btn"
-					aria-label={zh ? "关闭" : "Close"}
+					aria-label={t("desktop.close")}
 					onClick={() => closeDesktopAccess(access)}
 				>
 					×
 				</button>
 			</div>
-			{error && (
+			{(error || targetError) && (
 				<div role="alert" className="remote-desktop-error">
-					{error}
+					{error || targetError}
+					<button className="btn" onClick={retry}>
+						{t("desktop.retry")}
+					</button>
 				</div>
 			)}
-			<iframe
-				ref={frameRef}
-				title={title}
-				src={access.url}
-				sandbox="allow-scripts allow-forms allow-pointer-lock"
-				allow="fullscreen"
-				allowFullScreen
-				hidden={minimized}
-			/>
-			{!fullscreen && !minimized && (
+			{!target && !targetError && (
+				<div role="status" className="remote-desktop-loading">
+					{t("desktop.connecting")}
+				</div>
+			)}
+			{target && (
+				<iframe
+					ref={frameRef}
+					title={title}
+					src={target.url}
+					sandbox="allow-scripts allow-forms allow-pointer-lock"
+					allow="fullscreen"
+					allowFullScreen
+				/>
+			)}
+			{!fullscreen && (
 				<div className="remote-desktop-resize" onPointerDown={(e) => start(e, true)} aria-hidden="true" />
 			)}
 		</div>,

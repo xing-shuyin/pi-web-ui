@@ -10,6 +10,29 @@
 
 ## [Unreleased]
 
+## [0.120.1-desktop-preview.1] — 2026-11-12
+
+基于 0.120.0 的跨机器测试版，通过 fork 的 GitHub Release 分发 npm 安装包。
+
+### Added
+
+- 聊天页右栏增加设备桌面缩略图，点击放大操作，支持全屏、返回预览及手机布局。
+- 独立只读低频预览接口，隐藏或收起时暂停请求，实时桌面启动时复用采集结果。
+- 展示 LAN / Hub 连接路径，以及实时画面的发送、替换、确认等待和浏览器绘制指标。
+
+### Fixed
+
+- 实时画面等待确认时只保留最新候选帧，收到确认立即发送，避免旧帧排队。
+- 拖动和调整桌面窗口尺寸时避免嵌入页面抢占指针事件；全屏切换保留连接。
+
+### Changed
+
+- 新预览需要控制端、被控端和 Hub 使用包含本次改动的测试包。Windows 桌面采集仍要求可用的图形会话；本版不改变系统锁屏限制，也未升级为 30 FPS 视频编码。
+
+### i18n
+
+- 前端新增 key（22）：`desktop.title`、`desktop.choose`、`desktop.expand`、`desktop.collapse`、`desktop.close`、`desktop.operating`、`desktop.back`、`desktop.resize`、`desktop.preview`、`desktop.open`、`desktop.lan`、`desktop.hub`、`desktop.connecting`、`desktop.paused`、`desktop.updated`、`desktop.waiting`、`desktop.previewUnavailable`、`desktop.retry`、`desktop.window`、`desktop.tab`、`desktop.exitFullscreen`、`desktop.fullscreen`
+
 ## [0.120.0] — 2026-11-12
 
 ### Added
@@ -77,6 +100,7 @@
 - **CI 单测并行**：单测按 shard 拆并行跑，浏览器型用例的启动预算收口到单一常量（4 vCPU runner 上不再随机撞线）。
 
 <!-- auto-i18n:start -->
+
 ### i18n
 
 - 前端新增 key（62）：`currentModelLabel`、`currentModelBadge`、`currentModelHint`、`bgTaskJobKind`、`bgTaskStopping`、`openLocalProject`、`openRemoteProject`、`filesFilterPlaceholder`、`settingsSaveSaving`、`settingsSaveSaved`、`settingsSaveFailed`、`phoneEnabledDesc`、`phoneOffHint`、`projectClickSwitch`、`projectClickSwitchDesc`、`projectOrderManual`、`projectOrderManualDesc`、`toolInspectorOutputStats`、`toolInspectorThinkingStatusRunning`、`toolInspectorThinkingStatusDone`、`toolInspectorThinkingFooterRunning`、`toolInspectorThinkingFooterLines`、`toolTimeRange`、`toolTimeRunning`、`tplStepIdentity`、`tplStepIdentitySub`、`tplStepBehavior`、`tplStepBehaviorSub`、`tplStepCapability`、`tplStepCapabilitySub`、`tplStepReview`、`tplStepReviewSub`、`tplIdentityHint`、`tplNameRequired`、`tplAdvanced`、`tplEnIntro`、`tplEnPrompt`、`tplEnFilled`、`tplEnEmpty`、`tplSearchWhitelist`、`tplNoMatch`、`tplLimited`、`tplFollowSession`、`tplSumName`、`tplSumIntro`、`tplSumMode`、`tplSumModel`、`tplSumThinking`、`tplSumSkills`、`tplSumExtensions`、`tplSpawnTitle`、`tplSpawnNote`、`tplStateOn`、`tplStateOff`、`bgTaskRestart`、`bgTaskStart`、`bgTaskRunning`、`bgTaskQuickStart`、`subagentVerdictUnverified`、`subagentVerdictPartial`、`subagentVerdictBlocked`、`subagentVerdictHint`
@@ -86,6 +110,7 @@
 - 服务端新增 key（29）：`agent.subagent.budget.reached`、`agent.subagent.resume.title`、`bash.bgTimeout`、`bash.bgNoTimeout`、`bash.bgStarted`、`subagents.notify.evidence`、`subagents.spawn.task.missing.prompt`、`subagents.spawn.task.bad.key`、`subagents.complete.evidence.invalid`、`subagents.complete.rejected`、`subagents.complete.recorded`、`subagents.spawn.batch.too.many`、`subagents.spawn.batch.duplicate.key`、`subagents.spawn.batch.rejected`、`subagents.spawn.batch.started`、`subagents.spawn.batch.wait.hint`、`subagents.get.evidence`、`subagents.resume.missing.runId`、`subagents.resume.failed`、`subagents.resume.transcript`、`subagents.resume.no.transcript`、`subagents.resume.ok`、`subagents.steer.queued`、`subagents.steer.restarted`、`subagents.steer.missed`、`subagents.steer.delivered`、`subagents.list.ledger.resumed`、`subagents.list.ledger.item`、`subagents.list.ledger.head`
 - 服务端文案变更（29）：`agent.subagent.limit.reached`、`delegate.validate.agent`、`delegate.validate.short`、`delegate.started`、`subagents.notify.footer`、`subagents.spawn.template.unavailable`、`subagents.spawn.thinking.invalid`、`subagents.spawn.isolation.invalid`、`subagents.action.missing`、`subagents.spawn.missing.prompt`、`subagents.spawn.started`、`subagents.get.missing.runId`、`subagents.get.done`、`subagents.steer.missing.runId`、`subagents.steer.missing.message`、`subagents.steer.not.found`、`subagents.steer.injected`、`subagents.list.empty`、`subagents.stop.missing.runId`、`subagents.stop.not.found`、`subagents.templates.list`、`subagents.handoff.missing.toRunId`、`subagents.handoff.missing.payload`、`subagents.handoff.not.found`、`subagents.dismiss.missing.target`、`subagents.dismiss.running`、`subagents.dismiss.success.single`、`subagents.dismiss.success.batch`、`subagents.wait.pending`
 - 服务端删除 key（1）：`prompt.tools.lazy`
+
 <!-- auto-i18n:end -->
 
 ## [0.119.0] — 2026-11-08
@@ -2437,6 +2462,7 @@ when?, children?}`，也收 `topbar` / `settings` 这类简写别名）；宿主
 [0.90.0]: https://github.com/xing-shuyin/pi-web-ui/releases/tag/v0.90.0
 [0.89.0]: https://github.com/xing-shuyin/pi-web-ui/releases/tag/v0.89.0
 [Unreleased]: https://github.com/xing-shuyin/pi-web-ui/compare/v0.119.0...main
+[0.120.1-desktop-preview.1]: https://github.com/xinzhihong-ship-it/pi-web-ui/releases/tag/desktop-preview-0.120.1-1
 [0.120.0]: https://github.com/xing-shuyin/pi-web-ui/releases/tag/v0.120.0
 [0.119.0]: https://github.com/xing-shuyin/pi-web-ui/releases/tag/v0.119.0
 [0.118.0]: https://github.com/xing-shuyin/pi-web-ui/releases/tag/v0.118.0

@@ -109,6 +109,7 @@ export function startLinuxDesktop(options: {
 	onError: (message: string) => void;
 	onClose: () => void;
 	readOnly?: boolean;
+	preview?: boolean;
 }): { input(event: NativeDesktopInput): void; close(): void } {
 	let closed = false;
 	let capture: ChildProcess | undefined;
@@ -196,7 +197,7 @@ export function startLinuxDesktop(options: {
 		}
 	};
 	const input = (event: NativeDesktopInput) => {
-		if (closed || options.readOnly !== false) return;
+		if (closed || options.preview || options.readOnly !== false) return;
 		if (!control) {
 			if (!missingControlReported) {
 				missingControlReported = true;
@@ -277,14 +278,16 @@ export function startLinuxDesktop(options: {
 				"-f",
 				"x11grab",
 				"-framerate",
-				"8",
+				options.preview ? "1/3" : "8",
 				"-video_size",
 				`${width}x${height}`,
 				"-i",
 				process.env.DISPLAY!,
 				"-an",
 				"-vf",
-				"scale=w='min(1600,iw)':h='min(1600,ih)':force_original_aspect_ratio=decrease",
+				options.preview
+					? "scale=w='min(640,iw)':h='min(640,ih)':force_original_aspect_ratio=decrease"
+					: "scale=w='min(1600,iw)':h='min(1600,ih)':force_original_aspect_ratio=decrease",
 				"-c:v",
 				"mjpeg",
 				"-q:v",

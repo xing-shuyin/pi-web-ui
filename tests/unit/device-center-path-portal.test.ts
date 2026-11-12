@@ -33,7 +33,7 @@ async function fixture(deviceName?: string) {
 	const received: http.IncomingHttpHeaders[] = [];
 	const local = http.createServer((req, res) => {
 		received.push(req.headers);
-		if (["/", "/desktop"].includes(req.url?.split("?")[0] ?? "")) {
+		if (["/", "/desktop", "/desktop-preview"].includes(req.url?.split("?")[0] ?? "")) {
 			res.writeHead(200, {
 				"content-type": "text/html",
 				"set-cookie": "device=bad; Path=/",
@@ -161,14 +161,14 @@ describe("single-port device path portal", () => {
 		expect((await f.request(ticketPath)).status).toBe(403);
 		expect((await f.request("/device/dev1/", { cookie: "hub=secret", origin: "null" })).status).toBe(401);
 	});
-	it("embeds a ticket desktop from another origin with both frames opaque", async () => {
+	it.each(["/desktop", "/desktop-preview"])("embeds %s from another origin with both frames opaque", async (path) => {
 		const chromeHelper = "../lib/chrome.mjs";
 		const { CHROME_PATH } = await import(chromeHelper);
 		if (!CHROME_PATH) throw new Error("Chrome required: set PI_WEB_CHROME");
 		const f = await fixture();
 		const ticket = await f.request("/open", { cookie: "hub=secret", origin: f.origin }, "POST");
 		const url = new URL(JSON.parse(ticket.body).url);
-		url.searchParams.set("next", "/desktop");
+		url.searchParams.set("next", path);
 		const parent = http.createServer((_req, res) => {
 			res.setHeader("content-type", "text/html");
 			res.end(

@@ -37,7 +37,7 @@ it("opens device pages through the desktop bridge and desktops in the shared win
 		await act(async () => links[1].click());
 		expect(popup).not.toHaveBeenCalled();
 		expect(openHub.mock.calls.map(([url]) => url)).toEqual(["https://hub.example.com/device/mac/__open?ticket=secret"]);
-		expect(getDesktopAccess()?.url).toBe("https://hub.example.com/device/mac/__open?ticket=secret&next=%2Fdesktop");
+		expect(getDesktopAccess()).toMatchObject({ id: "mac", mode: "preview" });
 		closeDesktopAccess(getDesktopAccess()!);
 		openHub.mockResolvedValue(false);
 		await act(async () => links[0].click());

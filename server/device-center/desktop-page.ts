@@ -3,12 +3,12 @@ export function desktopPage(): string {
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Remote desktop</title>
 <style>
 :root{color-scheme:dark;font-family:system-ui,sans-serif;background:#101827;color:#e5edf8}*{box-sizing:border-box}body{margin:0}main{display:flex;flex-direction:column;gap:0;min-width:0;min-height:0;max-width:100%;height:100dvh;padding:0;overflow:hidden}header,nav,form,.actions{display:flex;flex-wrap:wrap;align-items:center;gap:8px;min-width:0;max-width:100%}p{margin:0;font-size:13px;white-space:pre-wrap;overflow-wrap:anywhere;word-break:break-word}button,input{font:inherit;border:1px solid #657287;border-radius:5px;background:#202f45;color:#fff}button{padding:8px 12px;min-height:40px;cursor:pointer}button:disabled,input:disabled{opacity:.5;cursor:default}label{display:flex;align-items:center;gap:6px}input[type=checkbox]{width:18px;height:18px}input[type=text]{padding:8px;min-width:0;flex:1;width:160px}button:focus-visible,input:focus-visible,canvas:focus-visible{outline:2px solid #8cc8ff;outline-offset:2px}#setup{display:grid;gap:8px;border:1px solid #657287;border-radius:6px;padding:10px}#screen{flex:1;min-width:0;min-height:0;overflow:auto;background:#000;position:relative}main:fullscreen{width:100%;height:100%;background:#101827}canvas{display:block;width:100%;height:100%;object-fit:contain;touch-action:none;outline-offset:-3px}#screen.native canvas{width:auto;height:auto;max-width:none}#status[data-error=true]{color:#ffb4b4}#text-form label{font-size:13px}#text-form button{flex:none}
-#toolbar{flex:none;flex-wrap:nowrap;gap:6px;min-height:32px;padding:3px 6px;border-bottom:1px solid #35445a;font-size:12px;overflow-x:auto}#controls{flex:none;flex-wrap:nowrap;gap:6px}#toolbar button{min-height:24px;padding:2px 7px;font-size:12px}#toolbar label{gap:3px;white-space:nowrap}#toolbar input[type=checkbox]{width:14px;height:14px;margin:0}summary{cursor:pointer;white-space:nowrap;padding:3px 6px;border:1px solid #657287;border-radius:5px}details{flex:none}#setup,#text-form{position:absolute;z-index:2;top:36px;left:6px;width:min(640px,calc(100% - 12px));max-height:calc(100dvh - 44px);overflow:auto;overscroll-behavior:contain;background:#101827;border:1px solid #657287;border-radius:6px;padding:10px;box-shadow:0 8px 24px #0008}#text-form{display:flex}#text-form label{width:100%}#status{font-size:12px;white-space:nowrap;flex:1;min-width:120px}#status[data-error=true]{position:absolute;z-index:1;top:36px;right:6px;max-width:min(640px,calc(100% - 12px));white-space:pre-wrap;background:#101827;border:1px solid #ffb4b4;border-radius:5px;padding:8px}summary:focus-visible{outline:2px solid #8cc8ff;outline-offset:2px}
+#toolbar{flex:none;flex-wrap:nowrap;gap:6px;min-height:32px;padding:3px 6px;border-bottom:1px solid #35445a;font-size:12px;overflow-x:auto}#controls{flex:none;flex-wrap:nowrap;gap:6px}#toolbar button{min-height:24px;padding:2px 7px;font-size:12px}#toolbar label{gap:3px;white-space:nowrap}#toolbar input[type=checkbox]{width:14px;height:14px;margin:0}summary{cursor:pointer;white-space:nowrap;padding:3px 6px;border:1px solid #657287;border-radius:5px}details{flex:none}#setup,#text-form,#statistics{position:absolute;z-index:2;top:36px;left:6px;width:min(640px,calc(100% - 12px));max-height:calc(100dvh - 44px);overflow:auto;overscroll-behavior:contain;background:#101827;border:1px solid #657287;border-radius:6px;padding:10px;box-shadow:0 8px 24px #0008}#text-form{display:flex}#text-form label{width:100%}#status{font-size:12px;white-space:nowrap;flex:1;min-width:120px}#status[data-error=true]{position:absolute;z-index:1;top:36px;right:6px;max-width:min(640px,calc(100% - 12px));white-space:pre-wrap;background:#101827;border:1px solid #ffb4b4;border-radius:5px;padding:8px}summary:focus-visible{outline:2px solid #8cc8ff;outline-offset:2px}
 </style></head><body><main>
 <header id="toolbar"><nav id="controls"><button id="connect" disabled data-i18n="connect"></button><button id="disconnect" disabled data-i18n="disconnect"></button><label><input id="viewonly" type="checkbox"><span data-i18n="viewonly"></span></label><label><input id="scale" type="checkbox" checked><span data-i18n="scale"></span></label><button id="fullscreen" data-i18n="fullscreen"></button></nav>
 <details id="settings"><summary data-i18n="setup"></summary><section id="setup" aria-label="Desktop setup"><p id="setup-status" role="status" aria-live="polite"></p><div class="actions"><button id="check" data-i18n="check"></button><button id="enable" disabled data-i18n="enable"></button><button id="disable" disabled data-i18n="disable"></button></div><aside id="mac-permission-guide" hidden aria-label="macOS permissions"><p data-i18n="macGuide"></p></aside><p id="hint" data-i18n="hint"></p></section></details>
 <details id="text-panel"><summary data-i18n="textToggle"></summary><form id="text-form"><label for="text" data-i18n="text"></label><input id="text" type="text" disabled autocomplete="off" maxlength="2048"><button id="send-text" type="submit" disabled data-i18n="send"></button></form></details>
-<p id="status" role="status" aria-live="polite"></p></header>
+<details id="diagnostics"><summary data-i18n="diagnostics"></summary><p id="statistics"></p></details><p id="status" role="status" aria-live="polite"></p></header>
 <div id="screen"><canvas id="canvas" width="1" height="1" tabindex="0" aria-describedby="hint"></canvas></div>
 </main><script type="module">
 const appUrl = path => new URL(path, document.baseURI);
@@ -28,6 +28,7 @@ const messages = {
  environment:['环境变量强制启用；需在设备本机修改环境变量并重启才能停用。','Enabled by the environment; change the environment on the device and restart to disable.'],
  ready:['可以连接。','Ready to connect.'],connecting:['正在连接…','Connecting…'],waiting:['已连接，等待画面…','Connected; waiting for an image…'],
  viewing:['已连接 · 只读','Connected · view only'],controlling:['已连接 · 可控制','Connected · control enabled'],
+ diagnostics:['连接信息','Connection info'],stats:['采集/发送：{captured}/{sent} 帧 · 跳过旧帧：{replaced} · 确认等待：{ackMs} ms · 队列：{queued} B · 显示：{fps} FPS · 解码绘制：{decodeMs} ms','Captured/sent: {captured}/{sent} frames · Replaced: {replaced} · ACK: {ackMs} ms · Queue: {queued} B · Display: {fps} FPS · Decode/draw: {decodeMs} ms'],
  disconnected:['已断开。','Disconnected.'],closed:['连接已关闭','Connection closed'],connectionError:['桌面连接失败，请检查设备状态后重试。','Desktop connection failed. Check device status and retry.'],
  requestError:['状态或设置请求失败','Status or settings request failed'],decodeError:['画面解码失败','Image decoding failed'],
  fullscreenError:['无法进入全屏','Unable to enter fullscreen'],browserError:['浏览器不支持所需的桌面显示功能。','This browser does not support the required desktop display features.']
@@ -40,6 +41,7 @@ const canvas = $('canvas'), screen = $('screen'), context = canvas.getContext('2
 let config = null, busy = false, disposed = false, socket = null, generation = 0;
 let ready = false, hasFrame = false, connectionViewOnly = true, pendingFrame = null, decoding = false;
 let activePointer = null;
+let rendered = 0, sampleAt = performance.now(), decodeMs = 0;
 const browserSupported = !!context && typeof createImageBitmap === 'function' && typeof WebSocket === 'function';
 function status(message, error = false) { $('status').textContent = message; $('status').dataset.error = String(error); }
 function desktopError(message) {
@@ -74,6 +76,7 @@ function release() {
 function stop() {
  release(); const previous = socket; socket = null; generation++;
  ready = false; hasFrame = false; pendingFrame = null;
+ rendered = 0; sampleAt = performance.now(); $('statistics').textContent = '';
  if (previous) { previous.onmessage = previous.onopen = previous.onerror = previous.onclose = null; previous.close(); }
  context?.clearRect(0, 0, canvas.width, canvas.height); controls();
 }
@@ -85,12 +88,14 @@ async function decodeFrames() {
   while (pendingFrame) {
    const frame = pendingFrame; pendingFrame = null;
    let bitmap;
+   const decodeStarted = performance.now();
    try {
     bitmap = await createImageBitmap(frame.blob);
     if (disposed || frame.generation !== generation || frame.socket !== socket || socket.readyState !== WebSocket.OPEN) continue;
     if (!bitmap.width || !bitmap.height) throw new Error('Empty image');
     if (canvas.width !== bitmap.width || canvas.height !== bitmap.height) { canvas.width = bitmap.width; canvas.height = bitmap.height; }
     context.drawImage(bitmap, 0, 0); hasFrame = true;
+    rendered++; decodeMs = Math.round(performance.now() - decodeStarted);
     frame.socket.send(JSON.stringify({type:'ack'}));
     status(t(connectionViewOnly ? 'viewing' : 'controlling')); controls();
    } catch (error) {
@@ -120,6 +125,13 @@ function connect() {
     const message = JSON.parse(event.data);
     if (message.type === 'error') fail(desktopError(message.message));
     else if (message.type === 'ready') { ready = true; controls(); }
+    else if (message.type === 'stats') {
+     const now = performance.now(), values = {...message, fps:(rendered * 1000 / Math.max(1,now - sampleAt)).toFixed(1), decodeMs};
+     if (['captured','sent','replaced','ackMs','queued'].every(key => typeof message[key] === 'number' && Number.isFinite(message[key]))) {
+      $('statistics').textContent = t('stats').replace(/\\{(\\w+)\\}/g, (_,key) => String(values[key]));
+      rendered = 0; sampleAt = now;
+     }
+    }
    } catch { fail(t('connectionError')); }
   } else if (event.data instanceof Blob) {
    pendingFrame = {blob:event.data, generation:currentGeneration, socket:current}; void decodeFrames();

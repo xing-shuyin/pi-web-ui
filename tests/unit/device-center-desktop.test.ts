@@ -133,6 +133,28 @@ const tinyImage = Buffer.from(
 );
 
 describe("device desktop local authorization", () => {
+	it("authorizes lightweight previews, shares requests and reuses live capture", async () => {
+		const f = await fixture();
+		expect((await fetch(f.url + "/desktop-preview")).status).toBe(403);
+		expect((await fetch(f.url + "/api/device-desktop/preview")).status).toBe(403);
+		expect((await fetch(f.url + "/desktop-preview", { headers })).status).toBe(200);
+		const first = fetch(f.url + "/api/device-desktop/preview", { headers });
+		const second = fetch(f.url + "/api/device-desktop/preview", { headers });
+		await vi.waitFor(() => expect(f.sessions).toHaveLength(1));
+		expect(f.sessions[0].options).toMatchObject({ readOnly: true, preview: true });
+		f.sessions[0].options.onFrame(tinyImage);
+		for (const response of await Promise.all([first, second])) {
+			expect(response.headers.get("cache-control")).toBe("no-store");
+			expect(response.headers.get("content-type")).toContain("image/jpeg");
+			expect(Buffer.from(await response.arrayBuffer())).toEqual(tinyImage);
+		}
+		const { ws } = await connected(f.port);
+		expect(f.sessions[0].close).toHaveBeenCalledTimes(1);
+		f.sessions[1].options.onFrame(tinyImage);
+		expect((await fetch(f.url + "/api/device-desktop/preview", { headers })).status).toBe(200);
+		expect(f.sessions).toHaveLength(2);
+		ws.close();
+	});
 	it("reports desktop status and native permission support without requesting permissions", async () => {
 		const permissions = vi.fn<NonNullable<Native["permissions"]>>();
 		const f = await fixture({ permissions });
@@ -523,7 +545,7 @@ describe("device desktop native route", () => {
 		for (const session of f.sessions) expect(session.close).toHaveBeenCalledTimes(1);
 		await rejected(f.port, 503);
 	});
-	it("bounds frames and drops frames while a prior send is pending", async () => {
+	it("bounds frames and sends only the latest pending frame immediately after an ACK", async () => {
 		expect(DESKTOP_LIMITS.frame).toBe(4 * 1024 * 1024);
 		expect(DESKTOP_LIMITS.queue).toBe(4 * 1024 * 1024);
 		const f = await fixture();
@@ -547,16 +569,14 @@ describe("device desktop native route", () => {
 		const session = f.sessions[0];
 		session.options.onFrame(tinyImage);
 		session.options.onFrame(Buffer.from("dropped"));
+		const latest = Buffer.from("newest");
+		session.options.onFrame(latest);
 		expect(delivered).toEqual([tinyImage]);
 		expect(finish).toBeTypeOf("function");
 		finish!();
-		session.options.onFrame(tinyImage);
 		expect(delivered).toHaveLength(1);
 		ws.send(JSON.stringify({ type: "ack" }));
-		await vi.waitFor(() => {
-			session.options.onFrame(tinyImage);
-			expect(delivered).toHaveLength(2);
-		});
+		await vi.waitFor(() => expect(delivered).toEqual([tinyImage, latest]));
 		expect(delivered).toHaveLength(2);
 		expect(session.input).not.toHaveBeenCalled();
 		finish!();
@@ -576,6 +596,16 @@ describe("device desktop native route", () => {
 		await vi.waitFor(() => expect(messages.filter((message) => message.binary)).toHaveLength(1));
 		expect(messages.find((message) => message.binary)!.data).toEqual(tinyImage);
 	});
+	it("closes a stalled viewer instead of leaving a connected but frozen desktop", async () => {
+		const f = await fixture();
+		const { ws, messages } = await connected(f.port);
+		f.sessions[0].options.onFrame(tinyImage);
+		await once(ws, "close");
+		expect(
+			messages.filter((message) => !message.binary).map((message) => JSON.parse(message.data.toString())),
+		).toContainEqual({ type: "error", message: expect.stringContaining("acknowledging") });
+		expect(f.sessions[0].close).toHaveBeenCalledTimes(1);
+	}, 20000);
 	it("does not consume unrelated upgrade paths", async () => {
 		const f = await fixture();
 		const socket = {

@@ -3,6 +3,8 @@ import type { IncomingMessage } from "node:http";
 import type { Duplex } from "node:stream";
 import { WebSocket, WebSocketServer } from "ws";
 import { desktopPage } from "./desktop-page.js";
+import { desktopPreviewPage } from "./desktop-preview-page.js";
+import { createDesktopPreview } from "./desktop-preview.js";
 import { createDesktopSetup } from "./desktop-setup.js";
 import {
 	nativeDesktopStatus,
@@ -19,6 +21,7 @@ export const DESKTOP_LIMITS = Object.freeze({
 	connections: 4,
 	connectMs: 60_000,
 	idleMs: 30 * 60_000,
+	ackMs: 15_000,
 });
 const loopback = (host: string) => ["127.0.0.1", "::1", "[::1]", "localhost"].includes(host);
 
@@ -49,6 +52,7 @@ type CaptureOptions = {
 	onError: (message: string) => void;
 	onClose: () => void;
 	readOnly?: boolean;
+	preview?: boolean;
 };
 type Capture = { input: (event: NativeDesktopInput) => void; close: () => void };
 export interface DeviceDesktopOptions {
@@ -115,6 +119,7 @@ export function createDeviceDesktop({ app, authorize, env = process.env, dataDir
 		(process.platform === "linux"
 			? { status: linuxDesktopStatus, start: startLinuxDesktop }
 			: { status: nativeDesktopStatus, start: startNativeDesktop });
+	const preview = createDesktopPreview((options) => backend.start(options));
 	const requestPermissions = native?.permissions ?? requestNativeDesktopPermissions;
 	const permissionControllers = new Set<AbortController>();
 	const installation = {
@@ -131,6 +136,7 @@ export function createDeviceDesktop({ app, authorize, env = process.env, dataDir
 			available: setup.enabled && platform.supported,
 			readOnlyEnforcement: "server",
 			clientViewOnlyIsPermission: true,
+			preview: true,
 			installation,
 		};
 	};
@@ -145,7 +151,8 @@ export function createDeviceDesktop({ app, authorize, env = process.env, dataDir
 		}
 	};
 	app.use((req, res, next) => {
-		if (req.path !== "/desktop" && !req.path.startsWith("/api/device-desktop/")) return next();
+		if (!["/desktop", "/desktop-preview"].includes(req.path) && !req.path.startsWith("/api/device-desktop/"))
+			return next();
 		res.setHeader("Cache-Control", "no-store");
 		res.setHeader("X-Content-Type-Options", "nosniff");
 		res.setHeader("Referrer-Policy", "no-referrer");
@@ -163,12 +170,31 @@ export function createDeviceDesktop({ app, authorize, env = process.env, dataDir
 			res.json(status());
 			return;
 		}
-		if (req.path === "/desktop") {
+		if (req.path === "/api/device-desktop/preview") {
+			if (!setup.enabled || !backend.status().supported) {
+				res.status(503).json({ error: "Open the desktop to check sharing settings and system permissions." });
+				return;
+			}
+			const controller = new AbortController();
+			const abort = () => controller.abort();
+			res.once("close", abort);
+			void preview
+				.read(controller.signal)
+				.then(({ jpeg }) => {
+					if (!controller.signal.aborted) res.type("image/jpeg").send(jpeg);
+				})
+				.catch((error: Error) => {
+					if (!controller.signal.aborted) res.status(502).json({ error: error.message.slice(0, 2048) });
+				})
+				.finally(() => res.off("close", abort));
+			return;
+		}
+		if (req.path === "/desktop" || req.path === "/desktop-preview") {
 			res.setHeader(
 				"Content-Security-Policy",
 				"default-src 'none'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; connect-src 'self'; img-src 'self' data: blob:; frame-ancestors 'self'; base-uri 'none'; form-action 'none'",
 			);
-			res.type("html").send(desktopPage());
+			res.type("html").send(req.path === "/desktop-preview" ? desktopPreviewPage() : desktopPage());
 			return;
 		}
 		res.status(404).end();
@@ -236,6 +262,7 @@ export function createDeviceDesktop({ app, authorize, env = process.env, dataDir
 		}
 		try {
 			setup.setEnabled(req.body.enabled);
+			if (!setup.enabled) preview.reset();
 			if (!setup.enabled) for (const cleanup of bridges) cleanup();
 			res.json(status());
 		} catch {
@@ -250,6 +277,7 @@ export function createDeviceDesktop({ app, authorize, env = process.env, dataDir
 		}
 		try {
 			setup.setEnabled(req.body.enabled);
+			if (!setup.enabled) preview.reset();
 			if (!setup.enabled) for (const cleanup of bridges) cleanup();
 			res.json(status());
 		} catch {
@@ -257,6 +285,8 @@ export function createDeviceDesktop({ app, authorize, env = process.env, dataDir
 		}
 	});
 	function bridge(ws: WebSocket, readOnly: boolean) {
+		const previewKey = {};
+		preview.liveStarted(previewKey);
 		let ended = false;
 		let capture: Capture | undefined;
 		let alive = true;
@@ -264,6 +294,13 @@ export function createDeviceDesktop({ app, authorize, env = process.env, dataDir
 		let queued = 0;
 		let sending = false;
 		let awaitingAck = false;
+		let latestFrame: Buffer | undefined;
+		let ackTimer: ReturnType<typeof setTimeout> | undefined;
+		let sentAt = 0;
+		let ackMs = 0;
+		let captured = 0;
+		let sent = 0;
+		let replaced = 0;
 		let started = false;
 		let failing = false;
 		let closeTimer: ReturnType<typeof setTimeout> | undefined;
@@ -272,6 +309,7 @@ export function createDeviceDesktop({ app, authorize, env = process.env, dataDir
 			if (!capture || captureClosed) return;
 			captureClosed = true;
 			capture.close();
+			preview.liveStopped(previewKey);
 		};
 		const cleanup = () => {
 			if (ended) return;
@@ -279,13 +317,19 @@ export function createDeviceDesktop({ app, authorize, env = process.env, dataDir
 			clearTimeout(connectTimer);
 			clearInterval(heartbeat);
 			clearTimeout(closeTimer);
+			clearTimeout(ackTimer);
+			clearInterval(statsTimer);
+			latestFrame = undefined;
 			bridges.delete(cleanup);
 			stopCapture();
+			preview.liveStopped(previewKey);
 			ws.terminate();
 		};
 		const fail = (message: string) => {
 			if (ended || failing) return;
 			failing = true;
+			clearTimeout(ackTimer);
+			latestFrame = undefined;
 			stopCapture();
 			if (ws.readyState === WebSocket.OPEN) {
 				ws.send(JSON.stringify({ type: "error", message: message.slice(0, 2048) }));
@@ -294,6 +338,35 @@ export function createDeviceDesktop({ app, authorize, env = process.env, dataDir
 				closeTimer.unref();
 			} else cleanup();
 		};
+		const flushFrame = () => {
+			if (ended || failing || sending || awaitingAck || !latestFrame || ws.readyState !== WebSocket.OPEN) return;
+			if (ws.bufferedAmount + latestFrame.length > DESKTOP_LIMITS.queue) return;
+			const jpeg = latestFrame;
+			latestFrame = undefined;
+			sending = true;
+			awaitingAck = true;
+			sentAt = Date.now();
+			sent++;
+			queued += jpeg.length;
+			ackTimer = setTimeout(
+				() => fail("Desktop display stopped acknowledging frames. Reconnect to resume."),
+				DESKTOP_LIMITS.ackMs,
+			);
+			ackTimer.unref();
+			ws.send(jpeg, { binary: true }, (error) => {
+				sending = false;
+				queued -= jpeg.length;
+				if (error) cleanup();
+				else flushFrame();
+			});
+		};
+		const statsTimer = setInterval(() => {
+			if (ended || failing || !started || ws.readyState !== WebSocket.OPEN || ws.bufferedAmount > 65536) return;
+			ws.send(
+				JSON.stringify({ type: "stats", captured, sent, replaced, ackMs, queued: Math.max(queued, ws.bufferedAmount) }),
+			);
+		}, 2000);
+		statsTimer.unref();
 		const connectTimer = setTimeout(
 			() => fail("Desktop capture timed out. Check screen capture permissions and the active graphical session."),
 			DESKTOP_LIMITS.connectMs,
@@ -318,7 +391,11 @@ export function createDeviceDesktop({ app, authorize, env = process.env, dataDir
 			try {
 				const value = JSON.parse(raw.toString());
 				if (value?.type === "ack" && Object.keys(value).length === 1) {
+					if (!awaitingAck) return;
+					ackMs = Date.now() - sentAt;
+					clearTimeout(ackTimer);
 					awaitingAck = false;
+					flushFrame();
 					return;
 				}
 				input = parseDesktopInput(value);
@@ -340,26 +417,16 @@ export function createDeviceDesktop({ app, authorize, env = process.env, dataDir
 					if (ended || failing || ws.readyState !== WebSocket.OPEN) return;
 					if (!jpeg.length || jpeg.length > DESKTOP_LIMITS.frame)
 						return fail("Desktop frame exceeds the capture size limit.");
+					preview.liveFrame(previewKey, jpeg);
+					captured++;
 					if (!started) {
 						started = true;
 						clearTimeout(connectTimer);
 						ws.send(JSON.stringify({ type: "ready" }));
 					}
-					if (
-						sending ||
-						awaitingAck ||
-						queued + jpeg.length > DESKTOP_LIMITS.queue ||
-						ws.bufferedAmount + jpeg.length > DESKTOP_LIMITS.queue
-					)
-						return;
-					sending = true;
-					awaitingAck = true;
-					queued += jpeg.length;
-					ws.send(jpeg, { binary: true }, (error) => {
-						sending = false;
-						queued -= jpeg.length;
-						if (error) cleanup();
-					});
+					if (latestFrame) replaced++;
+					latestFrame = jpeg;
+					flushFrame();
 				},
 				onError: fail,
 				onClose: () => fail("Desktop capture stopped. Check the active desktop session and system permissions."),
@@ -392,6 +459,7 @@ export function createDeviceDesktop({ app, authorize, env = process.env, dataDir
 			setup.close();
 			for (const controller of permissionControllers) controller.abort();
 			for (const cleanup of bridges) cleanup();
+			preview.close();
 			wss.close();
 		},
 	};

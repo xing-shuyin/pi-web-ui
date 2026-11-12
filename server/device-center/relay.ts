@@ -819,7 +819,7 @@ export function createDeviceRelay(options: DeviceRelayOptions) {
 		const wrapper = wrapperHtml(
 			capabilityBase(id, token),
 			initialPath,
-			initialPath === "desktop" ? hub : undefined,
+			["desktop", "desktop-preview"].includes(initialPath) ? hub : undefined,
 			label,
 			JSON.stringify([accountId, id]),
 		);
@@ -886,6 +886,8 @@ export function createDeviceRelay(options: DeviceRelayOptions) {
 			return true;
 		}
 		if ((path && path.tail === "/__open") || (!path && url.pathname === "/__device/open")) {
+			const nextDesktop = url.searchParams.get("next") === "/desktop-preview" ? "/desktop-preview" : "/desktop";
+			const isDesktop = ["/desktop", "/desktop-preview"].includes(url.searchParams.get("next") ?? "");
 			const key = url.searchParams.get("ticket") || "";
 			const ticket = tickets.get(key);
 			if (
@@ -901,13 +903,13 @@ export function createDeviceRelay(options: DeviceRelayOptions) {
 				return true;
 			}
 			tickets.delete(key);
-			if (url.searchParams.get("next") === "/desktop" && !path) {
+			if (isDesktop && !path) {
 				// Exchange the one-use legacy ticket for a fresh one on the Hub origin.
 				const desktopTicket = randomBytes(32).toString("hex");
 				tickets.set(desktopTicket, ticket);
 				res
 					.writeHead(302, {
-						location: `${hub.origin}/device/${id}/__open?ticket=${desktopTicket}&next=/desktop`,
+						location: `${hub.origin}/device/${id}/__open?ticket=${desktopTicket}&next=${nextDesktop}`,
 						"cache-control": "no-store",
 						"referrer-policy": "no-referrer",
 					})
@@ -915,7 +917,7 @@ export function createDeviceRelay(options: DeviceRelayOptions) {
 				return true;
 			}
 			if (path) {
-				sendWrapper(res, id, ticket.accountId, url.searchParams.get("next") === "/desktop" ? "desktop" : "");
+				sendWrapper(res, id, ticket.accountId, isDesktop ? nextDesktop.slice(1) : "");
 				return true;
 			}
 			const token = randomBytes(32).toString("hex");
@@ -923,7 +925,7 @@ export function createDeviceRelay(options: DeviceRelayOptions) {
 			res
 				.writeHead(302, {
 					"set-cookie": `${deviceCookie(id)}=${token}; Path=/; Max-Age=900;${hub.protocol === "https:" ? " Secure;" : ""} HttpOnly; SameSite=Lax`,
-					location: url.searchParams.get("next") === "/desktop" ? "/desktop" : "/",
+					location: isDesktop ? nextDesktop : "/",
 				})
 				.end();
 			return true;
@@ -963,7 +965,7 @@ export function createDeviceRelay(options: DeviceRelayOptions) {
 			res.writeHead(400).end();
 			return true;
 		}
-		const rewriteHtml = !!path && ["/", "/desktop"].includes(path.path!.split("?")[0]);
+		const rewriteHtml = !!path && ["/", "/desktop", "/desktop-preview"].includes(path.path!.split("?")[0]);
 		const streamId = randomBytes(12).toString("hex");
 		addStream(entry, streamId, {
 			res,

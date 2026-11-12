@@ -64,6 +64,15 @@ afterEach(() => {
 });
 
 describe("native desktop lifecycle and framed capture", () => {
+	it("forces preview helpers to stay read-only even if control was requested", () => {
+		const { child, writes } = processFixture();
+		const session = startNativeDesktop({ ...options(false), preview: true });
+		expect(mocks.spawn.mock.calls[0][1]).toContain("preview");
+		session.input({ type: "text", text: "must not type" });
+		expect(writes).toEqual([]);
+		session.close();
+		child.emit("close", 0);
+	});
 	it("reports real runtime requirements and unsupported platforms", () => {
 		expect(nativeDesktopStatus()).toEqual({ supported: true, backend: "windows-gdi-sendinput" });
 		mocks.exists.mockReturnValue(false);

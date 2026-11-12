@@ -43,6 +43,7 @@ describe("i18n catalog", () => {
 			"core",
 			"canvas",
 			"canvas-runtime",
+			"desktop",
 			"native-cli-session",
 		]);
 		expect(Object.entries(zh)).toEqual([...catalog.zh.map]);

@@ -129,6 +129,20 @@ async function fixture(basePath = "/", desktop = false, browserScript = "") {
 }
 
 describe("local capability portal over authenticated LAN", () => {
+	it("keeps preview routing through ticket exchange and LAN-to-Hub fallback", async () => {
+		const f = await fixture("/pi/", true);
+		const ticket = await f.freshUrl();
+		const wrapper = await fetch(ticket + "&next=%2Fdesktop-preview");
+		const html = await wrapper.text();
+		expect(html).toContain("desktop-preview");
+		const base = html.match(/\/pi\/device-lan\/remote\/__relay\/[a-f0-9]{64}\//)![0];
+		f.setLanAvailable(false);
+		const fallback = await fetch(f.sourceOrigin + base + "__lan_fallback", {
+			method: "POST",
+			headers: { origin: "null" },
+		});
+		expect((await fallback.json()).url).toContain("next=%2Fdesktop-preview");
+	});
 	it(
 		"loads a prefixed LAN UI inside the real opaque desktop iframe and falls back after losing LAN",
 		async () => {

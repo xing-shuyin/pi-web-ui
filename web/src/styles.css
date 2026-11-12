@@ -3,9 +3,107 @@
 @layer guard, base, theme;
 
 @layer base {
+	.desktop-preview {
+		flex: none;
+		min-width: 0;
+		max-width: 100%;
+		border-bottom: 1px solid var(--border);
+		padding: 8px 10px 0;
+	}
+	.desktop-preview-heading,
+	.desktop-preview-status,
+	.desktop-preview-live {
+		display: flex;
+		align-items: center;
+		gap: 6px;
+		min-width: 0;
+		max-width: 100%;
+	}
+	.desktop-preview-heading {
+		padding: 0 24px 8px 0;
+	}
+	.desktop-preview-heading strong {
+		flex: 1;
+		min-width: 0;
+		overflow: hidden;
+		text-overflow: ellipsis;
+		white-space: nowrap;
+		font-size: 12px;
+	}
+	.desktop-preview-heading .btn {
+		flex: none;
+		font-size: 11px;
+		padding: 3px 6px;
+	}
+	.desktop-preview-screen {
+		position: relative;
+		min-height: 120px;
+		max-height: 40dvh;
+		background: var(--bg-elev2);
+		border: 1px solid var(--border);
+		border-radius: 6px;
+		overflow: hidden;
+	}
+	.desktop-preview-screen iframe {
+		width: 100%;
+		height: 100%;
+		border: 0;
+		pointer-events: none;
+	}
+	.desktop-preview-open {
+		position: absolute;
+		inset: 0;
+		width: 100%;
+		cursor: pointer;
+		display: grid;
+		place-items: end center;
+		padding: 10px;
+		border: 0;
+		background: transparent;
+		color: var(--text);
+	}
+	.desktop-preview-open span {
+		padding: 5px 9px;
+		border-radius: 5px;
+		background: var(--bg-elev2);
+		border: 1px solid var(--border);
+		font-size: 12px;
+	}
+	.desktop-preview-open:focus-visible {
+		outline: 2px solid var(--accent);
+		outline-offset: -3px;
+	}
+	.desktop-preview-status {
+		justify-content: space-between;
+		flex-wrap: wrap;
+		padding-top: 6px;
+		font-size: 11px;
+		color: var(--text-muted);
+	}
+	.desktop-preview-live {
+		flex-wrap: wrap;
+		padding-bottom: 8px;
+		font-size: 12px;
+	}
+	.desktop-preview-sash {
+		height: 8px;
+		cursor: row-resize;
+		touch-action: none;
+	}
+	.desktop-preview-sash:hover,
+	.desktop-preview-sash:focus-visible {
+		background: var(--border);
+	}
+	.desktop-preview .remote-desktop-error {
+		max-height: 100px;
+		overflow: auto;
+		font-size: 12px;
+	}
+	.remote-desktop-loading {
+		padding: 16px;
+	}
 	.remote-desktop-window {
 		position: fixed;
-		z-index: 1600;
 		display: flex;
 		flex-direction: column;
 		max-width: 100vw;
@@ -55,6 +153,9 @@
 	}
 	.remote-desktop-window iframe[hidden] {
 		display: none;
+	}
+	.remote-desktop-window.is-dragging iframe {
+		pointer-events: none;
 	}
 	.remote-desktop-resize {
 		position: absolute;

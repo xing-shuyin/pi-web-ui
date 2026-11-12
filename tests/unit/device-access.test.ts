@@ -1,9 +1,17 @@
 // @vitest-environment jsdom
-import { act, createElement } from "react";
+import { act, createElement, Fragment } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, expect, it, vi } from "vitest";
 import { RemoteDesktopWindow } from "../../web/src/components/RemoteDesktopWindow.js";
-import { closeDesktopAccess, getDesktopAccess, openDeviceAccess } from "../../web/src/device-access.js";
+import {
+	closeDesktopAccess,
+	getDesktopAccess,
+	openDeviceAccess,
+	requestDeviceAccessUrl,
+	setDesktopMode,
+} from "../../web/src/device-access.js";
+
+import { DesktopPreview } from "../../web/src/components/desktop-preview.js";
 
 let root: Root | undefined;
 let host: HTMLDivElement | undefined;
@@ -14,13 +22,21 @@ function ticket(url = `${hub}/device/mac/__open?ticket=fresh&next=/ignored`) {
 		vi.fn(async () => ({ ok: true, json: async () => ({ url }) })),
 	);
 }
-async function mount() {
+async function mount(mode: "preview" | "live" = "live") {
 	host = document.createElement("div");
 	document.body.append(host);
 	root = createRoot(host);
 	await act(async () => {
-		root!.render(createElement(RemoteDesktopWindow));
+		root!.render(
+			createElement(
+				Fragment,
+				null,
+				createElement(DesktopPreview, { visible: true }),
+				createElement(RemoteDesktopWindow),
+			),
+		);
 		await openDeviceAccess("mac", hub, true, false);
+		setDesktopMode(getDesktopAccess()!, mode);
 	});
 }
 async function click(label: string) {
@@ -39,7 +55,41 @@ afterEach(() => {
 	vi.restoreAllMocks();
 	vi.unstubAllGlobals();
 });
-it("keeps a sandboxed desktop alive through outside clicks, minimize, and fullscreen", async () => {
+it("opens a read-only preview first, pauses it when collapsed and obtains fresh tickets for control and return", async () => {
+	ticket();
+	await mount("preview");
+	expect(document.querySelector('[role="dialog"]')).toBeNull();
+	const preview = document.querySelector("iframe")!;
+	expect(preview.src).toContain("next=%2Fdesktop-preview");
+	expect(preview.getAttribute("sandbox")).not.toContain("allow-same-origin");
+	const post = vi.spyOn(preview.contentWindow!, "postMessage");
+	await click("Collapse preview");
+	expect(post).toHaveBeenLastCalledWith({ type: "desktop-preview-active", active: false }, "*");
+	await click("Expand preview");
+	expect(post).toHaveBeenLastCalledWith({ type: "desktop-preview-active", active: true }, "*");
+	await click("Expand and control");
+	expect(document.querySelector('[role="dialog"] iframe')).not.toBe(preview);
+	expect(document.querySelector<HTMLIFrameElement>('[role="dialog"] iframe')!.src).toContain("next=%2Fdesktop");
+	await act(async () =>
+		document.querySelector<HTMLButtonElement>('.remote-desktop-window button[aria-label="Back to preview"]')!.click(),
+	);
+	expect(document.querySelector('[role="dialog"]')).toBeNull();
+	expect(document.querySelector<HTMLIFrameElement>("iframe")!.src).toContain("next=%2Fdesktop-preview");
+	expect(fetch).toHaveBeenCalledTimes(3);
+});
+it("ignores preview status from unrelated frames", async () => {
+	ticket();
+	await mount("preview");
+	const frame = document.querySelector("iframe")!;
+	const data = { type: "desktop-preview-state", error: "remote-error" };
+	await act(async () => window.dispatchEvent(new MessageEvent("message", { source: window, origin: "null", data })));
+	expect(document.body.textContent).not.toContain("remote-error");
+	await act(async () =>
+		window.dispatchEvent(new MessageEvent("message", { source: frame.contentWindow, origin: "null", data })),
+	);
+	expect(document.body.textContent).toContain("remote-error");
+});
+it("keeps a sandboxed desktop alive through outside clicks and fullscreen without reconnecting", async () => {
 	ticket();
 	const popup = vi.spyOn(window, "open");
 	await mount();
@@ -49,16 +99,14 @@ it("keeps a sandboxed desktop alive through outside clicks, minimize, and fullsc
 	expect(popup).not.toHaveBeenCalled();
 	await act(async () => document.body.click());
 	expect(document.querySelector("iframe")).toBe(frame);
-	await click("Minimize");
-	expect(frame.hidden).toBe(true);
-	await click("Restore");
-	expect(frame.hidden).toBe(false);
 	await click("Fullscreen");
 	expect(document.querySelector(".is-fullscreen")).not.toBeNull();
 	await click("Exit fullscreen");
 	expect(document.querySelector(".is-fullscreen")).toBeNull();
 	expect(document.querySelector("iframe")).toBe(frame);
-	await click("Close");
+	await act(async () =>
+		document.querySelector<HTMLButtonElement>('.remote-desktop-window button[aria-label="Close desktop"]')!.click(),
+	);
 	expect(document.querySelector("iframe")).toBeNull();
 });
 it("retains the floating window on blocked popups and bridge failures, closes only after success", async () => {
@@ -109,7 +157,7 @@ it.each([
 	await mount();
 	const access = getDesktopAccess();
 	ticket(url);
-	await expect(openDeviceAccess("mac", hub, true, false)).rejects.toThrow("Invalid device access URL");
+	await expect(requestDeviceAccessUrl("mac", hub, true, false)).rejects.toThrow("Invalid device access URL");
 	expect(getDesktopAccess()).toBe(access);
 });
 it("does not let an old detach completion close a newer desktop", async () => {
@@ -136,7 +184,7 @@ it("requests LAN access and opens the local opaque desktop portal", async () => 
 		desktop: true,
 		basePath: "/",
 	});
-	expect(getDesktopAccess()?.transport).toBe("lan");
+	expect(document.querySelector(".remote-desktop-titlebar")?.textContent).toContain("LAN direct");
 	expect(document.querySelector("iframe")?.src).toBe(`${window.location.origin}${url}&next=%2Fdesktop`);
 	expect(document.querySelector("iframe")?.getAttribute("sandbox")).toBe(
 		"allow-scripts allow-forms allow-pointer-lock",
@@ -162,7 +210,7 @@ it("requests LAN access and opens the local opaque desktop portal", async () => 
 			}),
 		);
 	});
-	expect(document.querySelector(".remote-desktop-titlebar")?.textContent).not.toContain("LAN");
+	expect(document.querySelector(".remote-desktop-titlebar")?.textContent).toContain("Server relay");
 });
 it("opens the entire device UI through the same LAN portal", async () => {
 	const url = `/device-lan/mac/__open?ticket=${"a".repeat(64)}`;
@@ -190,5 +238,5 @@ it.each([
 		"fetch",
 		vi.fn(async () => ({ ok: true, json: async () => ({ url, transport: "lan" }) })),
 	);
-	await expect(openDeviceAccess("mac", hub, true, false)).rejects.toThrow("Invalid device access URL");
+	await expect(requestDeviceAccessUrl("mac", hub, true, false)).rejects.toThrow("Invalid device access URL");
 });

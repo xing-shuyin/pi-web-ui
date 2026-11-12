@@ -78,7 +78,7 @@ export function DeviceDirectory({
 	async function openDevice(event: React.MouseEvent<HTMLAnchorElement>, id: string, desktop = false) {
 		event.preventDefault();
 		try {
-			await openDeviceAccess(id, hubUrl, desktop, zh);
+			await openDeviceAccess(id, hubUrl, desktop, zh, false, devices.find((device) => device.id === id)?.name);
 			setError("");
 		} catch (cause) {
 			setError(cause instanceof Error ? cause.message : String(cause));

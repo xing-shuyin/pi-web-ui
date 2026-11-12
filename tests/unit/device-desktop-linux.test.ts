@@ -77,6 +77,15 @@ afterEach(() => {
 });
 
 describe("Linux X11 desktop", () => {
+	it("reduces capture work for previews and prevents input", () => {
+		const handle = startLinuxDesktop({ onFrame, onError, onClose, readOnly: false, preview: true });
+		const args = mocks.spawn.mock.calls[0][1];
+		expect(args).toContain("1/3");
+		expect(args.join(" ")).toContain("640");
+		handle.input({ type: "text", text: "no input" });
+		expect(commands).toHaveLength(0);
+		handle.close();
+	});
 	it("probes capture separately from optional control and rejects Wayland", () => {
 		expect(linuxDesktopStatus()).toEqual({ supported: true, backend: "x11" });
 		available.delete("xdotool");

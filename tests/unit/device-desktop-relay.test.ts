@@ -242,6 +242,17 @@ describe("desktop page macOS permission guidance", () => {
 });
 
 describe("native desktop through device relay and connector", () => {
+	it("serves preview JPEGs through the authenticated Hub and connector without enabling input", async () => {
+		const f = await fixture();
+		const response = request(f.port, f.host, "/api/device-desktop/preview", { cookie: f.cookie });
+		await vi.waitFor(() => expect(f.sessions).toHaveLength(1));
+		expect(f.sessions[0].options).toMatchObject({ readOnly: true, preview: true });
+		f.sessions[0].options.onFrame(jpeg);
+		const result = await response;
+		expect(result.status).toBe(200);
+		expect(result.headers["content-type"]).toContain("image/jpeg");
+		expect(f.sessions[0].input).not.toHaveBeenCalled();
+	});
 	it.skipIf(!CHROME_PATH)(
 		"keeps native control connected when browser pointer movement has button=-1",
 		async () => {

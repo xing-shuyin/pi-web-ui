@@ -31,6 +31,7 @@ interface Access {
 	touched: number;
 	ticket?: string;
 	ticketExpires: number;
+	preview?: boolean;
 	streams: Set<() => void>;
 }
 const PREFIX = "/device-lan/";
@@ -129,6 +130,8 @@ export function createDeviceLanAccess(options: { allowLoopback?: boolean } = {})
 				return true;
 			}
 			const [, access] = entry;
+			access.preview =
+				access.options.desktop && new URL(req.url!, "http://local").searchParams.get("next") === "/desktop-preview";
 			access.ticket = undefined;
 			access.touched = Date.now();
 			res.writeHead(302, { location: access.base + "__lan_view" }).end();
@@ -151,7 +154,7 @@ export function createDeviceLanAccess(options: { allowLoopback?: boolean } = {})
 			access.touched = Date.now();
 			const page = wrapperHtml(
 				access.base,
-				access.options.desktop ? "desktop" : "",
+				access.options.desktop ? (access.preview ? "desktop-preview" : "desktop") : "",
 				access.options.desktop ? access.origin : undefined,
 				`${access.options.deviceId} · LAN`,
 				JSON.stringify([access.options.hubUrl, access.options.deviceId]),
@@ -190,6 +193,11 @@ export function createDeviceLanAccess(options: { allowLoopback?: boolean } = {})
 			void fallback.recovering
 				.then((url) => {
 					if (!live(path.token!, fallback)) throw new Error("Device binding changed");
+					if (fallback.preview) {
+						const target = new URL(url);
+						target.searchParams.set("next", "/desktop-preview");
+						url = target.href;
+					}
 					res
 						.writeHead(200, { "content-type": "application/json", "access-control-allow-origin": "null" })
 						.end(JSON.stringify({ url }));
@@ -262,7 +270,7 @@ export function createDeviceLanAccess(options: { allowLoopback?: boolean } = {})
 						res,
 						access.origin,
 						access.base,
-						["/", "/index.html", "/desktop"].includes(path.split("?")[0]),
+						["/", "/index.html", "/desktop", "/desktop-preview"].includes(path.split("?")[0]),
 					);
 					try {
 						portal.start(response.statusCode ?? 502, cleanHeaders(response.headers));

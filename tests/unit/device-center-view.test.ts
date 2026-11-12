@@ -176,13 +176,13 @@ describe("native device workspace", () => {
 		)!;
 		expect(desktop.href).toBe("https://hub.example.com/device/mac/desktop");
 		await act(async () => desktop.click());
-		expect(fetch).toHaveBeenCalledWith(
+		expect(fetch).not.toHaveBeenCalledWith(
 			expect.stringContaining("/api/device-center/devices/mac/open"),
 			expect.objectContaining({ method: "POST" }),
 		);
 		expect(window.open).not.toHaveBeenCalled();
 		expect(replace).not.toHaveBeenCalled();
-		expect(getDesktopAccess()?.url).toBe("https://hub.example.com/device/mac/__open?ticket=access&next=%2Fdesktop");
+		expect(getDesktopAccess()).toMatchObject({ id: "mac", mode: "preview" });
 		closeDesktopAccess(getDesktopAccess()!);
 		expect(tab.close).not.toHaveBeenCalled();
 	});

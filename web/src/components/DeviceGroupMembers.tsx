@@ -53,7 +53,7 @@ export function DeviceGroupMembers({ botIds, roomId }: { botIds: string[]; roomI
 		if (!data || busy) return;
 		setBusy(true);
 		try {
-			await openDeviceAccess(member.deviceId, data.hubUrl, desktop, zh);
+			await openDeviceAccess(member.deviceId, data.hubUrl, desktop, zh, false, member.name);
 			setError("");
 		} catch (cause) {
 			setError(cause instanceof Error ? cause.message : String(cause));

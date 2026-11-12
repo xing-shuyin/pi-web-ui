@@ -23,6 +23,7 @@ public static class NativeDesktop {
   static readonly HashSet<int> buttons = new HashSet<int>();
   static readonly AutoResetEvent ack = new AutoResetEvent(false);
   static volatile bool stopped;
+  static bool preview;
   static void Send(INPUT i) { if(SendInput(1,new INPUT[]{i},Marshal.SizeOf(typeof(INPUT)))!=1) throw new Exception("SendInput failed; Windows blocks control of elevated apps and secure desktops."); }
   static void Key(int vk,bool down) { INPUT i=new INPUT(); i.type=1; i.u.k.vk=(ushort)vk; i.u.k.flags=down?0u:2u; if(vk==0xA3||vk==0xA5||vk==0x5B||vk==0x5C||(vk>=0x21&&vk<=0x2E)) i.u.k.flags|=1; Send(i); }
   static void Mouse(int b,bool down) { INPUT i=new INPUT(); i.u.m.dwFlags=b==0?(down?2u:4u):b==1?(down?32u:64u):(down?8u:16u); Send(i); }
@@ -77,7 +78,7 @@ public static class NativeDesktop {
         if(r.Width<1||r.Height<1||r.Width>32768||r.Height>32768||(long)r.Width*r.Height>64000000) throw new Exception("Unsupported display size.");
         using(var full=new Bitmap(r.Width,r.Height,PixelFormat.Format24bppRgb)) {
           using(var g=Graphics.FromImage(full)) g.CopyFromScreen(r.Left,r.Top,0,0,r.Size,CopyPixelOperation.SourceCopy);
-          double scale=Math.Min(1.0,1920.0/Math.Max(r.Width,r.Height));
+          double scale=Math.Min(1.0,(preview?640.0:1920.0)/Math.Max(r.Width,r.Height));
           using(var image=new Bitmap(full,new Size(Math.Max(1,(int)(r.Width*scale)),Math.Max(1,(int)(r.Height*scale)))))
           using(var data=new MemoryStream())
           using(var p=new EncoderParameters(1)) {
@@ -90,11 +91,12 @@ public static class NativeDesktop {
         }
         // One outstanding frame: pipe congestion never creates a growing frame queue.
         if(!ack.WaitOne(15000)) throw new Exception("Frame consumer stopped responding.");
-        Thread.Sleep(100);
+        Thread.Sleep(preview?3000:100);
       }
     } catch(Exception e) { if(!stopped) Console.Error.WriteLine(e.Message); stopped=true; Release(); Environment.Exit(1); }
   }
-  public static void Run(bool readOnly) {
+  public static void Run(bool readOnly, bool previewMode) {
+    preview=previewMode;
     SetProcessDPIAware();
     Thread capture=new Thread(Capture); capture.IsBackground=true; capture.Start();
     try {
@@ -113,5 +115,5 @@ public static class NativeDesktop {
   }
 }
 '@
-[NativeDesktop]::Run($args[0] -ne 'control')
+[NativeDesktop]::Run($args[0] -ne 'control', $args[0] -eq 'preview')
 `;

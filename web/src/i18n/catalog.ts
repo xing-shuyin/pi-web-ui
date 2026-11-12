@@ -7,6 +7,9 @@ import canvasRuntimeEn from "./messages/canvas-runtime/en.json";
 import nativeCliSessionZh from "./messages/native-cli-session/zh.json";
 import nativeCliSessionEn from "./messages/native-cli-session/en.json";
 
+import desktopZh from "./messages/desktop/zh.json";
+import desktopEn from "./messages/desktop/en.json";
+
 interface MessageModule {
 	name: string;
 	zh: Readonly<Record<string, string>>;
@@ -60,6 +63,7 @@ export const { zh, en } = createCatalog([
 	{ name: "core", zh: coreZh, en: coreEn },
 	{ name: "canvas", zh: canvasZh, en: canvasEn },
 	{ name: "canvas-runtime", zh: canvasRuntimeZh, en: canvasRuntimeEn },
+	{ name: "desktop", zh: desktopZh, en: desktopEn },
 	{ name: "native-cli-session", zh: nativeCliSessionZh, en: nativeCliSessionEn },
 ]);
 

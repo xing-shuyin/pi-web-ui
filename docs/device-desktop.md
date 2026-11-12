@@ -2,6 +2,39 @@
 
 设备中心参考 [krd](https://github.com/zzjcool/krd) 的原生捕获与输入方式，复用设备访问票据和连接器，在浏览器 canvas 显示 JPEG。从本机设备中心打开时，与「打开设备」的完整对话界面共用[局域网优先访问](device-center.md#局域网优先访问)：优先使用经过 TLS PSK 验证的私网通道，不可达时使用原 Hub WebSocket 中继。无需 VNC 服务、noVNC 或固定桌面端口。画面不进入聊天快照或模型上下文。
 
+## 聊天页预览与放大操作
+
+从本机设备中心或群成员打开远程桌面时，聊天页右栏上方显示一台选中设备的预览，文件与插件区域保留在下方。预览可收起、调整高度、切换设备或关闭。点击“放大并操作”创建实时桌面窗口，窗口与全屏之间只改变布局，不重新创建 iframe 或申请票据。返回预览释放实时连接和按住的键鼠，再申请新的预览票据。切换聊天会话保留选中设备；切换设备、关闭桌面时清理旧页面。手机浏览器放大后默认全屏；原生手机 App 仍使用自身设备适配器。
+
+`web/src/device-access.ts` 管理设备选择和 preview/live 状态，`use-desktop-target.ts` 在页面挂载时申请一次性票据；异步响应受 AbortSignal 和设备选择代次约束。`desktop-preview.tsx` 只在预览可见时通知沙箱页面启动请求。折叠、隐藏右栏或浏览器进入后台会取消请求和轮询。窗口沿用 `RemoteDesktopWindow.tsx`，使用统一浮层层号。两种模式均显示实际 LAN/Hub 路径，LAN 回退后更新标记。
+
+`/desktop-preview` 提供独立只读页面，通过现有授权通道请求 `/api/device-desktop/preview`，收到画面后间隔 3 秒再请求，最多一个请求在途；图片长边目标 640 像素。采集端使用 preview 模式，Windows/macOS 每轮等待 3 秒，Linux X11 使用 1/3 FPS。仅降低浏览器显示频率不算轻量采集。
+
+`desktop-preview.ts` 合并同设备并发请求，复用最近 2.5 秒内的帧，最多等待 8 个请求；没有请求后 6.5 秒关闭预览助手。实时桌面启动时停止专用预览助手，预览请求复用实时采集的最新帧（此时尺寸沿用实时画面）；实时桌面退出且仍有预览请求时恢复低频助手。预览始终只读，不请求 macOS 控制授权。停用桌面、退出服务、请求取消和迟到的采集回调均有独立清理。
+
+设备端、本机服务和 Hub 都需要支持新的预览入口。旧设备不支持时显示预览不可用，可继续打开原有实时桌面；不自动用全速桌面流伪装轻量预览。直接访问云端 Hub 的浏览器不具备本机 pi 服务的 LAN 探测能力，这次改动不增加浏览器 P2P。
+
+### 预览验证
+
+`tests/unit/device-desktop-preview.test.ts` 验证缓存、并发复用、取消和实时采集切换；原生/Linux 用例检查低频参数和只读约束。`node --import tsx tests/device-desktop-window-test.mjs` 使用 8997 端口和真实 Chrome，验证嵌套沙箱中的连续预览、折叠暂停、右栏隐藏暂停、放大操作、全屏不重载、返回预览、手机宽度及关闭清理，截图位于 `artifacts/device-center/`。该界面测试使用模拟桌面，不代表跨机器性能实测。
+
+### npm 跨机器测试包
+
+`0.120.1-desktop-preview.1` 基于正式版 `0.120.0`，通过 [fork 的测试发布](https://github.com/xinzhihong-ship-it/pi-web-ui/releases/tag/desktop-preview-0.120.1-1) 分发；下载页提供已构建的 `.tgz` 和 SHA-256。这是供跨机器验收的候选包，不是官方 npm `latest`。无需在其它机器编译前端；需要 Node.js ≥22.19.0。
+
+控制端、被控端及独立 Hub 都安装同一包：
+
+```sh
+npm install -g "https://github.com/xinzhihong-ship-it/pi-web-ui/releases/download/desktop-preview-0.120.1-1/pi-web-ui-0.120.1-desktop-preview.1.tgz"
+npm list -g pi-web-ui --depth=0
+```
+
+原来用全局 npm 包安装的 Web 服务，安装完成后执行 `pi-web-ui server restart`；有自定义服务名时补 `--name <原服务名>`。前台运行的服务应结束原进程，再用原来的工作目录、端口和数据目录参数运行 `pi-web-ui`。刷新浏览器，检查运行中的版本是否为 `0.120.1-desktop-preview.1`；只检查 npm 安装版本不足以确认服务已更新。
+
+通过全局包直接运行的 Hub 重启原进程；由 `hub install` 安装且仍指向全局包的服务执行 `pi-web-ui hub restart`。曾用 Hub 在线升级、旧 npx 缓存或源码路径启动的服务，入口可能仍指向旧包，必须核对并更新启动入口。Hub 的受管升级可通过 `PI_DEVICE_HUB_UPDATE_SOURCE` 指定上述下载 URL 后运行 `pi-web-ui hub update`，再用 `pi-web-ui hub status --json` 检查 `health.version`；如果服务配置已经固定了更新源，应先按原部署方式更新该配置，因为保存的源优先于临时环境变量。保留原数据目录、鉴权和设备绑定。
+
+先用两台电脑检查右栏预览持续更新、点击放大、控制输入、返回预览和隐藏暂停，再分别验证同局域网 LAN 标记及跨网 Hub 标记。Windows 被控电脑需要活动图形会话，macOS 需屏幕录制权限；只安装 Web 包不会绕过系统桌面权限。发布说明列出实际通过的检查与尚待验证的平台。
+
 ## 平台与启用
 
 默认关闭，在桌面页面点击启用；偏好原子保存至 `<dataDir>/desktop-settings.json`。`PI_DEVICE_DESKTOP=1` 强制启用，页面不能覆盖环境变量。运行时支持不代表已经获得系统授权，捕获启动失败会在页面显示原因。
@@ -24,6 +57,8 @@ HTTP/WS 独立检查物理回环来源、回环 Host、本机鉴权与存在时�
 | 路径                                       | 用途                               |
 | ------------------------------------------ | ---------------------------------- |
 | GET /desktop                               | 自包含浏览器页面                   |
+| GET /desktop-preview                       | 只读低频预览页面                   |
+| GET /api/device-desktop/preview            | 授权后的预览 JPEG，禁止缓存        |
 | GET /api/device-desktop/status             | 平台支持、启用状态和诊断原因       |
 | GET /api/device-desktop/setup/status       | 兼容状态入口                       |
 | GET /api/device-desktop/local/status       | 仅设备本机设置页的状态             |
@@ -39,7 +74,9 @@ HTTP/WS 独立检查物理回环来源、回环 Host、本机鉴权与存在时�
 
 ## 传输与清理
 
-输出为最大 4 MiB 的二进制 JPEG，文本帧报告 ready/error。浏览器完成绘制后回复 `{type:"ack"}`，每连接仅有一帧等待确认，期间丢弃新帧，防止跨设备慢连接积压。输入为最大 16 KiB 的 JSON，校验 normalized pointer、wheel、物理 key code、text 和 release。
+输出为最大 4 MiB 的二进制 JPEG，文本帧报告 ready/error/stats。浏览器完成绘制后回复 `{type:"ack"}`，每连接仅有一帧等待确认；等待期间只保留最新一张候选帧，ACK 到达且上次发送完成后立即发出，避免旧帧排队。15 秒未确认会报告错误并关闭采集，用户可重新连接。传输队列上限 4 MiB，另有最多 4 MiB 的最新候选帧。输入为最大 16 KiB 的 JSON，校验 normalized pointer、wheel、物理 key code、text 和 release。
+
+实时页的“连接信息”展示累计采集/发送/替换帧数、确认等待、发送队列，以及浏览器测得的显示 FPS 和解码绘制时间。确认等待包含网络、解码与浏览器调度，不等同于纯网络 RTT；此轮保留原实时采集频率，并未升级为 30 FPS 视频编码。
 
 每设备最多四个桌面连接；启动超时 60 秒，30 秒 ping/pong，30 分钟无用户输入释放。断开、关闭、禁用或错误清理捕获并释放按住的键鼠。原生进程输入队列、帧大小和错误日志均有界，取消先请求退出再终止特定子进程。捕获器本身不监听额外 TCP 端口；设备连接器按需提供共享的加密局域网端口，桌面与完整设备网页共用该通道。浏览器仍只连接本机能力入口，不直接处理私网地址或共享密钥。不保存录像或剪贴板历史。
 

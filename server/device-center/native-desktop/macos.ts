@@ -13,6 +13,8 @@ func fail(_ message: String) -> Never {
 guard #available(macOS 14.0, *) else { fail("Native capture requires macOS 14 or newer.") }
 let mode = CommandLine.arguments.last ?? "view"
 let readOnly = mode != "control"
+let preview = mode == "preview"
+let maxEdge = preview ? 640.0 : 1920.0
 // Only an explicit local permission action may trigger TCC or open Settings.
 // Use the same Swift process identity as capture and input injection.
 func openPrivacy(_ pane: String) {
@@ -157,7 +159,7 @@ func captureImage() -> CGImage {
             }
             let filter = SCContentFilter(display: display, excludingWindows: [])
             let config = SCStreamConfiguration()
-            let scale = min(1.0, 1920.0 / Double(max(display.width, display.height)))
+            let scale = min(1.0, maxEdge / Double(max(display.width, display.height)))
             config.width = max(1, Int(Double(display.width) * scale))
             config.height = max(1, Int(Double(display.height) * scale))
             config.showsCursor = true
@@ -173,7 +175,7 @@ func captureImage() -> CGImage {
 while true {
     autoreleasepool {
         let image = captureImage()
-        let scale = min(1.0, 1920.0 / Double(max(image.width, image.height)))
+        let scale = min(1.0, maxEdge / Double(max(image.width, image.height)))
         let width = max(1, Int(Double(image.width) * scale)), height = max(1, Int(Double(image.height) * scale))
         guard let context = CGContext(data: nil, width: width, height: height, bitsPerComponent: 8, bytesPerRow: 0, space: CGColorSpaceCreateDeviceRGB(), bitmapInfo: CGImageAlphaInfo.noneSkipLast.rawValue) else { release(); fail("Cannot allocate capture buffer.") }
         context.draw(image, in: CGRect(x: 0, y: 0, width: width, height: height))
@@ -186,6 +188,6 @@ while true {
         FileHandle.standardOutput.write(data as Data)
     }
     if acknowledged.wait(timeout: .now() + 15) == .timedOut { release(); fail("Frame consumer stopped responding.") }
-    Thread.sleep(forTimeInterval: 0.1)
+    Thread.sleep(forTimeInterval: preview ? 3.0 : 0.1)
 }
 `;
