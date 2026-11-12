@@ -248,6 +248,9 @@ try {
 				},
 			],
 		});
+		const listed = await call("passwords.list");
+		assert.equal("password" in listed[0], false, "the password list never ships plaintext");
+		assert.equal(listed[0].hasPassword, true);
 		await call("passwords.fill", { id: "fixture-login" });
 		assert.equal(await site.locator("#name").inputValue(), "fixture-user");
 		assert.equal(await site.locator("#secret").inputValue(), "fixture-value");

@@ -151,7 +151,10 @@ html[data-theme="light"] body.pb-internal {
 }
 
 .pb-shell [hidden],
-.pb-internal [hidden] {
+.pb-internal [hidden],
+/* 面板浮层视图（panel.html）是第三套根：漏了它，`.pb-form{display:flex}` 这类规则会把
+   `hidden=true` 的表单照样画出来（TOTP 的「添加」表单就栽在这） */
+body.pb-panel-layer [hidden] {
 	display: none;
 }
 
@@ -2556,74 +2559,260 @@ html[data-theme="light"] .flow-pill:hover {
 	}
 }
 
-/* ---- TOTP 验证器面板（browser/renderer/totp.ts） ---- */
-.pb-tool-btn-dot {
-	position: absolute;
-	top: 1px;
-	right: 1px;
-	width: 6px;
-	height: 6px;
-	border-radius: 999px;
-	background: var(--pb-accent);
-	box-shadow: 0 0 0 1px var(--pb-header-bg, #1c1d21);
+/* ---- 凭据保险库面板（browser/renderer/vault.ts） ----
+
+   一个面板两个标签（密码 / TOTP），共用一套「顶部图标工具条 + 先选中再操作」：
+   动作只在标题栏那一行，按钮纯图标 + `data-tip` 悬浮提示；条目里唯一可点的是右侧
+   「验证码 / 密码」，点它 = 复制（密码则是揭示）。 */
+
+/* 标题栏的动作槽：一行里排成「标题 — 图标工具条 — 关闭」 */
+.pb-dialog-actions {
+	display: flex;
+	align-items: center;
+	gap: 2px;
+	margin-left: auto;
+	margin-right: 6px;
 }
-.pb-totp-list {
+.pb-dialog-actions:empty {
+	display: none;
+}
+.pb-vault-tools,
+.pb-vault-group {
+	display: flex;
+	align-items: center;
+	gap: 2px;
+}
+.pb-vault-sep {
+	flex: none;
+	width: 1px;
+	height: 14px;
+	margin: 0 5px;
+	background: var(--pb-border-subtle);
+}
+/* 悬浮提示：图标按钮不用原生 title，避免和这层气泡叠出两个提示 */
+.pb-vault-tool {
+	position: relative;
+}
+.pb-vault-tool[data-tip]::after {
+	content: attr(data-tip);
+	position: absolute;
+	top: calc(100% + 7px);
+	left: 50%;
+	translate: -50% 0;
+	padding: 4px 8px;
+	border-radius: 6px;
+	border: 1px solid var(--pb-border-subtle);
+	background: var(--pb-modal-bg, #16171c);
+	color: var(--pb-fg, #e6e8ee);
+	font-size: 11px;
+	font-weight: 500;
+	line-height: 1.35;
+	white-space: nowrap;
+	box-shadow: 0 8px 20px -10px rgba(0, 0, 0, 0.7);
+	opacity: 0;
+	pointer-events: none;
+	transition: opacity 0.12s ease 0.07s;
+	z-index: 5;
+}
+/* 最右的两个图标贴右对齐，免得气泡被浮层圆角裁掉 */
+.pb-vault-tool[data-tip-end]::after {
+	left: auto;
+	right: -2px;
+	translate: 0 0;
+}
+.pb-vault-tool:hover::after,
+.pb-vault-tool:focus-visible::after {
+	opacity: 1;
+}
+.pb-vault-tool[disabled]::after {
+	opacity: 0;
+}
+
+/* 密码 / TOTP 分段标签（下划线式，和 C 版设计稿一致） */
+.pb-vault-tabs {
+	display: flex;
+	gap: 2px;
+	margin: 2px 0 6px;
+	border-bottom: 1px solid var(--pb-border-subtle);
+}
+.pb-vault-tabs[hidden] {
+	display: none;
+}
+.pb-vault-tab {
+	display: inline-flex;
+	align-items: center;
+	gap: 6px;
+	margin-bottom: -1px;
+	padding: 6px 10px;
+	border: 0;
+	border-bottom: 1.5px solid transparent;
+	background: transparent;
+	color: var(--pb-fg-dim);
+	font-size: 12.5px;
+	cursor: pointer;
+	transition:
+		color 0.15s ease,
+		border-color 0.15s ease;
+}
+.pb-vault-tab:hover {
+	color: var(--pb-fg);
+}
+.pb-vault-tab-on {
+	color: var(--pb-fg);
+	border-bottom-color: var(--pb-accent);
+}
+.pb-vault-count {
+	min-width: 16px;
+	padding: 0 5px;
+	border-radius: 999px;
+	background: var(--pb-tab-hover);
+	color: var(--pb-fg-dim);
+	font-size: 10.5px;
+	font-variant-numeric: tabular-nums;
+	text-align: center;
+}
+.pb-vault-tab-on .pb-vault-count {
+	background: color-mix(in srgb, var(--pb-accent) 18%, transparent);
+	color: var(--pb-accent);
+}
+
+.pb-vault-list {
 	display: flex;
 	flex-direction: column;
-	gap: 10px;
-	margin: 12px 0;
+	gap: 1px;
+	margin: 2px 0 10px;
 }
-.pb-totp-item {
+/* 两行栅格：① 名称+徽标 / 右侧主值（验证码或密码，跨两行）② 账号 · 站点 · 进度 · 秒数 */
+.pb-vault-item {
 	display: grid;
-	grid-template-columns: minmax(0, 1fr);
-	gap: 8px;
-	padding: 10px 12px;
-	border: 1px solid var(--pb-border-subtle, rgba(255, 255, 255, 0.08));
-	border-radius: 10px;
-	background: var(--pb-card-subtle, rgba(255, 255, 255, 0.03));
+	grid-template-columns: minmax(0, 1fr) auto;
+	align-items: center;
+	gap: 3px 14px;
+	padding: 9px 10px 9px 12px;
+	border: 1px solid transparent;
+	border-radius: 8px;
+	cursor: pointer;
+	transition:
+		background 0.15s ease,
+		border-color 0.15s ease;
 }
-.pb-totp-head {
+.pb-vault-item:hover {
+	background: var(--pb-tab-hover);
+	border-color: var(--pb-border-subtle);
+}
+.pb-vault-selected {
+	background: var(--pb-card-subtle);
+	border-color: var(--pb-border-subtle);
+	box-shadow: inset 2px 0 0 var(--pb-accent);
+}
+.pb-vault-selected:hover {
+	border-color: var(--pb-line);
+}
+.pb-vault-head {
 	display: flex;
-	align-items: baseline;
-	justify-content: space-between;
-	gap: 8px;
+	align-items: center;
+	gap: 7px;
 	min-width: 0;
 }
-.pb-totp-title {
+.pb-vault-title {
 	display: flex;
-	flex-wrap: wrap;
 	align-items: baseline;
-	gap: 6px;
+	gap: 7px;
 	min-width: 0;
 	overflow-wrap: anywhere;
 }
-.pb-totp-code {
-	align-self: start;
-	padding: 2px 10px;
-	border: 1px dashed var(--pb-border-subtle, rgba(255, 255, 255, 0.14));
-	border-radius: 8px;
-	background: transparent;
+.pb-vault-title strong {
+	font-size: 13px;
+	font-weight: 600;
+}
+/* 命中当前标签页的站点徽标（列表顶端那条） */
+.pb-vault-site {
+	flex: none;
+	padding: 1px 6px;
+	border-radius: 999px;
+	background: color-mix(in srgb, var(--pb-accent) 16%, transparent);
+	color: var(--pb-accent);
+	font-size: 10.5px;
+	font-weight: 600;
+	letter-spacing: 0.02em;
+}
+/* 行右侧的主值：TOTP 是验证码，密码是圆点/明文 */
+.pb-vault-main {
+	grid-column: 2;
+	grid-row: 1 / span 2;
+	justify-self: end;
+	padding: 2px 0;
+	border: 0;
+	background: none;
 	color: var(--pb-fg, #e6e8ee);
 	font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
-	font-size: 24px;
 	font-variant-numeric: tabular-nums;
-	letter-spacing: 0.16em;
 	cursor: pointer;
+	transition: color 0.15s ease;
 }
-.pb-totp-code:hover {
-	border-color: var(--pb-accent);
+.pb-vault-main:hover {
 	color: var(--pb-accent);
 }
-.pb-totp-error .pb-totp-code {
-	border-color: #e05252;
+.pb-totp-code {
+	font-size: 22px;
+	letter-spacing: 0.14em;
+}
+.pb-pw-secret {
+	font-size: 15px;
+	letter-spacing: 0.12em;
+}
+/* 明文的形态：字距收回、字号降一档，一眼能看出「现在是明文」 */
+.pb-vault-revealed {
+	font-size: 13px;
+	letter-spacing: 0;
+	max-width: 260px;
+	overflow-wrap: anywhere;
+}
+.pb-totp-error .pb-vault-main {
 	color: #e05252;
+}
+.pb-vault-meta {
+	grid-column: 1;
+	display: flex;
+	align-items: center;
+	gap: 10px;
+	min-width: 0;
+	font-size: 11.5px;
+}
+.pb-vault-account {
+	min-width: 0;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+.pb-vault-origin {
+	display: inline-flex;
+	align-items: center;
+	gap: 5px;
+	flex: none;
+	color: var(--pb-fg-dim);
+	font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+	font-size: 10.5px;
+	white-space: nowrap;
+}
+.pb-vault-origin::before {
+	content: "";
+	width: 5px;
+	height: 5px;
+	border-radius: 999px;
+	background: currentColor;
+}
+/* 与当前标签页同源：圆点跟着强调色亮起来（对齐设计稿的「命中」提示） */
+.pb-vault-origin-hit {
+	color: var(--pb-accent);
 }
 .pb-totp-bar {
 	position: relative;
-	display: block;
-	height: 3px;
-	border-radius: 999px;
-	background: var(--pb-border-subtle, rgba(255, 255, 255, 0.1));
+	flex: none;
+	width: 46px;
+	height: 2px;
+	margin-left: auto;
+	background: var(--pb-border-subtle);
 	overflow: hidden;
 }
 .pb-totp-bar::after {
@@ -2634,40 +2823,46 @@ html[data-theme="light"] .flow-pill:hover {
 	background: var(--pb-accent);
 	transition: width 1s linear;
 }
-.pb-totp-actions {
-	display: flex;
-	flex-wrap: wrap;
-	align-items: center;
-	gap: 6px;
+.pb-totp-secs {
+	flex: none;
+	min-width: 24px;
+	color: var(--pb-fg-dim);
+	font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+	font-size: 10.5px;
+	font-variant-numeric: tabular-nums;
+	text-align: right;
 }
-.pb-totp-actions .pb-button {
-	padding: 4px 10px;
-	font-size: 12px;
+.pb-vault-selected .pb-totp-secs {
+	color: var(--pb-fg);
 }
-.pb-totp-export {
+.pb-vault-export {
 	display: flex;
 	flex-direction: column;
 	gap: 6px;
 	margin-top: 8px;
 }
-.pb-totp-export textarea {
+.pb-vault-export[hidden] {
+	display: none;
+}
+.pb-vault-export textarea {
 	width: 100%;
 	font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
 	font-size: 11px;
 	resize: vertical;
 }
-
-/* 键盘选中行：↑↓ 在此移动，Enter 复制 / Shift+Enter 填入（见 totp.ts 的 onKeydown） */
-.pb-totp-selected {
-	border-color: var(--pb-accent);
-	box-shadow: 0 0 0 1px var(--pb-accent) inset;
+/* 行内表单（添加 / 改名）的按钮行 */
+.pb-vault-form-actions {
+	display: flex;
+	width: 100%;
+	gap: 8px;
+	justify-content: flex-end;
 }
-.pb-totp-keys {
-	margin-top: 8px;
+.pb-vault-keys {
+	margin-top: 4px;
 	font-size: 11px;
 	line-height: 1.5;
 }
-.pb-totp-item:focus-visible {
+.pb-vault-item:focus-visible {
 	outline: 1px solid var(--pb-accent);
 	outline-offset: 1px;
 }

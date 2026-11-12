@@ -118,17 +118,33 @@ Agent 可以给网页注入脚本：`browser_script` 工具（`server/browser-sc
 - **可观测**：`script.status` 按标签返回 `{ injected, skipped: [{scriptId, reason}], errors }`（`scripts-disabled` / `internal-page` / `not-matched:<url>`），注入代码带 `//# sourceURL=pi-script://<id>/<name>.js`，DevTools 里可单独断点。
 - **边界**：内部页（shell/newtab/workspace/office）从不注入；`allowScripts` 总开关关闭后全部跳过；普通网站无法通过任何入口管理脚本（`scripts.*` 只对外壳内部页开放）。设置面板「页面脚本」列出全部脚本（临时/永久徽标、来源、`document-start`/`isolated` 非默认徽标），可停用、查看代码、删除。
 
-## TOTP 验证器（扫码 / 保管库）
+## 凭据保险库（密码 + TOTP）
 
-工具栏钥匙图标 → `totp` 面板（`BROWSER_PANELS` 的一员，走同一套 `panel.html` 浮层视图）。给「网站上正在给我看一个 `otpauth://` 二维码」这类场景用：扫码 → 存进加密保管库 → 随时拿 6 位码并填进当前页。
+工具栏钥匙图标 → `vault` 面板（`BROWSER_PANELS` 的一员，走同一套 `panel.html` 浮层视图）。密码与 TOTP 在用户眼里是同一件事（"这个网站的凭据"），所以合并成一块面板、两个分段标签，共用一套交互。外壳可以用 `panel { open, panel: "vault", tab: "totp" }` 指定先开哪个标签（钥匙图标固定开 TOTP，设置里的「打开凭据保险库」开密码）。
+
+### 共同交互（设计 C：图标工具条）
+
+- **动作只在顶部一行**：面板不给条目挂按钮，动作统一收进标题栏的动作槽（`panels.ts` 的 `.pb-dialog-actions`）。按钮纯图标（无障碍名走 `aria-label`），名字靠 `data-tip` 的 CSS 悬浮气泡（`title` 留空，避免原生提示叠加）；最右两个图标用 `data-tip-end` 贴右对齐，免得被浮层圆角裁掉。工具条随标签切换：密码是 `添加 ｜ 填入 / 显示密码 / 编辑 / 删除`，TOTP 是 `扫码 / 导入图片 / 添加 ｜ 填入 / 导出此条 / 导出全部 / 改名 / 上移 / 下移 / 删除`。
+- **先选中再操作**：点条目或键盘 ↑↓ 选中，工具条作用于选中那条；没选中时动作图标 `disabled`（灰度、`::after` 气泡不弹），首尾两端的上/下移也置灰。命中当前标签页的条目打开即选中并置顶，所以「打开面板 → 点填入」两下就完事。`Enter` 填到页面；TOTP 标签的 `Shift+Enter` 复制验证码、密码标签的是显示/收起密码。
+- 设置面板里的「密码库」段只留一句说明和一个入口（`vaultSection`），真正的增删改都在这里，避免两处各维护一套列表。
+- 面板浮层视图（`panel.html`，`body.pb-panel-layer`）是第三套根：`[hidden]` 的全局豁免名单里必须带上它，否则 `.pb-form{display:flex}` 之类的规则会把 `hidden=true` 的表单照样画出来（「添加」表单默认展开的 bug 就出在这里）。
+
+### 密码
+
+- **列表不下发明文**：`passwords.list` 返回投影 `{ id, name, url, username, createdAt, hasPassword }`（主进程 `browser-host.ts` 里去掉 `password`），和 TOTP 的「secret 不出主进程」同一条口径。要明文只有两条口子：`passwords.reveal { id }`（用户点「显示密码」时取一次，界面 10 秒后自动盖回）和 `passwords.fill`（主进程内部取出来直接填页面，明文不经过渲染层）。
+- **写回只走细粒度动作**：`passwords.upsert { id?, name, url, username, password? }`（`id` 存在即更新，`password` 留空表示沿用旧密码）与 `passwords.remove { id }`。渲染层拿不到整份明文，所以不能让它 `save` 全量列表——旧的 `passwords.save` 只保留给冒烟测试/迁移用。
+- **填密码校验同源**：`passwords.fill` → `fillCredential()`，要求当前标签页与条目 `url` 的 **origin 完全相等**，且页面上只有一个可见密码框；填完只发 `input`/`change`，由用户自己点提交。
+- 加密仍然走 `BrowserStorage` 的 `enc:<safeStorage>`，`passwords.available`（= `isEncryptionAvailable()`）为假时面板显示保险库锁定。
+
+### TOTP
 
 - **扫码 = 截当前标签页，不读 DOM**（`totp.scan` → `WebContents.capturePage()` → `browser/runtime/qr.ts`）：页面里的二维码可能是 `<img>`、`<canvas>`、内联 SVG、CSS 背景或 canvas 动态绘制，逐种抓法都要对付 CORS 与跨域画布污染；截图对它们一视同仁，也不需要摄像头权限。代价是**二维码必须可见于视口**，否则报错让用户滚动。解码用 `jsqr`（纯 JS，唯一新增运行时依赖），`NativeImage.toBitmap()` 给的是 **BGRA**，`bgraToRgba()` 换序后再喂。图片导入（`totp.importImage`）走 `nativeImage.createFromDataURL()`，同一条解码路径。
 - **只收 `otpauth://totp`**：`parseOtpauth()`（`browser/runtime/totp.ts`）拒绝普通网址二维码与 `hotp`，报错而不是把乱码当密钥；算法/位数/周期都带白名单（SHA1/SHA256/SHA512、6–8 位、1–3600s）。
-- **secret 永不出主进程**：渲染层只拿 `PublicTotpEntry`（`publicTotp()` 投影，无 secret），要码就发 `totp.code { id }` 让主进程算（`totpCode()`，RFC 6238）。唯一会把 secret 带出来的是用户显式点击的 `totp.export`（otpauth URI）。和「provider headers 不下发浏览器」同一条口径。
-- **加密与密码同源**：`BrowserStorage.listTotp/saveTotp` 把 secret 存成 `enc:<safeStorage>`，落在 `userData/browser/totp.json`；`isEncryptionAvailable()` 为假时面板直接显示保险库锁定，不存明文（`totp.available` 先行探测）。
-- **按站点自动匹配**：条目带 `origin`（扫码时那个页面的 origin，只认 http/https 且只做精确相等——`https://github.com` 不覆盖 `https://gist.github.com`）。当前标签命中时工具栏图标带一个小圆点，面板把该条目置顶；命中判断在渲染层做（`shell.ts` 的 `refreshTotpMatch`，数据来自 `totp.list`），改动后靠 `pb-totp-changed` 面板事件回灌。
-- **填码不自动提交**：`totp.fill` → `browser/runtime/credentials.ts` 的 `fillTotpCode`，站位顺序是 `autocomplete="one-time-code"` → 一组 `maxlength=1` 的分格输入框 → 名称/占位符像验证码的单框 → 当前聚焦的框；填完只发 `input`/`change`，由用户自己点提交。
-- 面板右下的排序（`totp.reorder`）与改名/改绑定（`totp.update`）都写回同一份加密文件；列表顺序就是 `order` 字段，未列出的条目在重排后保留在尾部，不丢数据。
+- **secret 永不出主进程**：渲染层只拿 `PublicTotpEntry`（`publicTotp()` 投影，无 secret），要码就发 `totp.code { id }` 让主进程算（`totpCode()`，RFC 6238）。唯一会把 secret 带出来的是用户显式点击的 `totp.export`（otpauth URI）。
+- **加密**：`BrowserStorage.listTotp/saveTotp` 把 secret 存成 `enc:<safeStorage>`，落在 `userData/browser/totp.json`；`totp.available` 先行探测。
+- **按站点自动匹配**：条目带 `origin`（扫码时那个页面的 origin，只认 http/https 且只做精确相等——`https://github.com` 不覆盖 `https://gist.github.com`）。当前标签命中时工具栏图标带一个小圆点，面板把该条目置顶；命中判断在渲染层做（`shell.ts` 的 `refreshTotpMatch`，数据来自 `totp.list`），改动后靠 `pb-vault-changed` 面板事件回灌。
+- **填码不自动提交**：`totp.fill` → `browser/runtime/credentials.ts` 的 `fillTotpCode`，站位顺序是 `autocomplete="one-time-code"` → 一组 `maxlength=1` 的分格输入框 → 名称/占位符像验证码的单框 → 当前聚焦的框；填完只发 `input`/`change`。
+- 排序（`totp.reorder`）、改名/改绑定（`totp.update`）、删除（`totp.remove`）都在工具条上，写回同一份加密文件；列表顺序就是 `order` 字段，未列出的条目在重排后保留在尾部，不丢数据。
 - 纯逻辑（Base32/HOTP/TOTP 的 RFC 6238 向量、otpauth 各种变体、投影、排序、origin 匹配、二维码位图解码）全在 `tests/unit/totp.test.ts`，不依赖 Electron。
 
 ## 构建与验证

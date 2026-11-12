@@ -40,7 +40,7 @@ export interface BrowserState {
  * 外壳面板名单：宿主校验 `panel` 请求、渲染层 `Panel` 类型都取自这里。
  * 每个面板在自己的一块浮层视图里渲染（`panel.html`），页面在它周围照常可见。
  */
-export const BROWSER_PANELS = ["bookmarks", "history", "settings", "downloads", "extensions", "totp"] as const;
+export const BROWSER_PANELS = ["bookmarks", "history", "settings", "downloads", "extensions", "vault"] as const;
 export type BrowserPanel = (typeof BROWSER_PANELS)[number];
 
 /** 面板要告诉其他视图的改动：面板在自己的视图里，`window` 事件跨不过去，由宿主转发。 */
@@ -48,7 +48,7 @@ export const BROWSER_PANEL_EVENTS = [
 	"pb-bookmarks-changed",
 	"pb-settings-changed",
 	"pb-extensions-changed",
-	"pb-totp-changed",
+	"pb-vault-changed",
 ] as const;
 export type BrowserPanelEvent = (typeof BROWSER_PANEL_EVENTS)[number];
 
@@ -91,10 +91,14 @@ export type BrowserShellAction =
 	| "files.read"
 	| "files.save"
 	| "files.external"
+	/** 密码库：`passwords.list` 只下发投影（无明文密码），明文要按 id 走 `passwords.reveal` */
 	| "passwords.list"
 	| "passwords.save"
 	| "passwords.available"
 	| "passwords.fill"
+	| "passwords.reveal"
+	| "passwords.upsert"
+	| "passwords.remove"
 	/** TOTP 保管库：secret 永不出主进程，渲染层只要 6 位码（`totp.code`） */
 	| "totp.available"
 	| "totp.list"

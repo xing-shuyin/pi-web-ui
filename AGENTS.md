@@ -24,7 +24,7 @@ pi 编码智能体（`@earendil-works/pi-coding-agent` SDK）的 Web 聊天界�
 | 上下文预算 / 延迟加载 / 证据外置 | `server/soft-cap.ts` · `server/request-context.ts` · `server/evidence-tool-hooks.ts` | [`tool-context-budget.md`](docs/tool-context-budget.md) |
 | 工具审批门禁与规则库 | `server/tool-approval.ts` | [`architecture-core.md`](docs/architecture-core.md#审批队列与共享展示) |
 | 内置浏览器 / 桌面三模式 / Web 原生桥 | `browser/` · `desktop/browser-host.ts` · `web/src/browser-control.ts` | [`architecture-browser.md`](docs/architecture-browser.md) |
-| TOTP 验证器（扫码 / 加密保管库 / 填码） | `browser/runtime/totp.ts`★ · `browser/runtime/qr.ts` · `browser/renderer/totp.ts` · `browser/storage/index.ts` | [`architecture-browser.md`](docs/architecture-browser.md#totp-验证器扫码--保管库) |
+| 凭据保险库（密码 + TOTP，图标工具条 / 扫码 / 按站点匹配 / 填码） | `browser/renderer/vault.ts`★ · `browser/runtime/totp.ts`★ · `browser/runtime/qr.ts` · `browser/runtime/credentials.ts` · `desktop/browser-host.ts`（密码只下发投影） · `browser/storage/index.ts` | [`architecture-browser.md`](docs/architecture-browser.md#凭据保险库密码--totp) |
 | 页面脚本注入（临时 / 永久，`browser_script`） | `browser/runtime/scripts.ts` · `browser/automation/scripts.ts` · `server/browser-script-tool.ts` | [`architecture-browser.md`](docs/architecture-browser.md) |
 | 手机 App / 多设备切换 / 原生通知 | `mobile/` · `web/src/mobile-runtime.ts` · `server/mobile-push.ts` · `server/device-center/hub-mobile.ts` | [`mobile.md`](docs/mobile.md) |
 | 终端 PTY / 原生 CLI / bash 接管 / SCM | `server/terminals.ts` · `server/native-cli.ts` · `server/engine-catalog.ts`★ · `server/engine-cli.ts` · `web/src/components/NativeCliPanel.tsx` | [`architecture-terminal.md`](docs/architecture-terminal.md) |

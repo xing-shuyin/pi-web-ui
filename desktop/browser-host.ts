@@ -35,7 +35,7 @@ import {
 	type ExtensionEntry,
 	type InstalledExtension,
 } from "../browser/runtime/extension-state.js";
-import { fillCredential, fillTotpCode } from "../browser/runtime/credentials.js";
+import { fillCredential, fillTotpCode, publicCredential } from "../browser/runtime/credentials.js";
 import {
 	clampPopupSize,
 	placePopup,
@@ -710,7 +710,7 @@ export class DesktopBrowserHost {
 	}
 
 	/** 面板浮层：开到工具栏下沿、贴窗口右侧的一块矩形里，页面与 Agent 分栏照常可见 */
-	private async openPanelLayer(panel: string): Promise<boolean> {
+	private async openPanelLayer(panel: string, tab?: string): Promise<boolean> {
 		if (!(BROWSER_PANELS as readonly string[]).includes(panel)) throw new Error("Invalid panel");
 		// 工具栏上的按钮本身就是开关：同一个面板再点一次就是收起
 		if (this.panelView && this.panelName === panel) {
@@ -735,6 +735,8 @@ export class DesktopBrowserHost {
 		this.placePanelLayer();
 		const url = pathToFileURL(join(this.options.assetsDir, "panel.html"));
 		url.searchParams.set("panel", panel);
+		// 合并面板（vault）有两个标签，外壳可以指定先开哪个（工具栏钥匙图标 → totp）
+		if (tab) url.searchParams.set("tab", tab);
 		view.webContents.loadURL(url.href).catch((error: Error) => {
 			if (this.panelView !== view) return;
 			console.warn(`[desktop] [panel] 面板加载失败：${error.message}`);
@@ -931,7 +933,7 @@ export class DesktopBrowserHost {
 					this.closePanelLayer();
 					return true;
 				}
-				return this.openPanelLayer(text(args.panel));
+				return this.openPanelLayer(text(args.panel), text(args.tab) || undefined);
 			}
 			case "tabs.create": {
 				const id = this.browser.createTab(text(args.url) || undefined);
@@ -984,7 +986,46 @@ export class DesktopBrowserHost {
 				return true;
 			}
 			case "passwords.list":
-				return this.browser.storage.listPasswords();
+				// 只下发投影：明文密码借 `passwords.reveal` 按 id 取，和 TOTP 的「secret 不出主进程」同一条口径
+				return this.browser.storage.listPasswords().map(publicCredential);
+			case "passwords.reveal": {
+				const entry = this.browser.storage.listPasswords().find((item) => item.id === text(args.id));
+				if (!entry) throw new Error("This credential no longer exists");
+				return { password: entry.password };
+			}
+			case "passwords.upsert": {
+				const entries = this.browser.storage.listPasswords();
+				const id = text(args.id);
+				const name = text(args.name).trim();
+				const url = object(args) && typeof args.url === "string" ? args.url.trim() : "";
+				const username = text(args.username).trim();
+				const password = typeof args.password === "string" ? args.password : "";
+				if (!name || !url || !username) throw new Error("Name, URL and username are required");
+				if (id) {
+					const index = entries.findIndex((item) => item.id === id);
+					if (index < 0) throw new Error("This credential no longer exists");
+					// 没给新密码就沿用旧的：渲染层拿不到明文，不能让它把整份列表写回去
+					entries[index] = { ...entries[index], name, url, username, ...(password ? { password } : {}) };
+				} else {
+					if (!password) throw new Error("Password is required");
+					entries.push({
+						id: randomUUID(),
+						name,
+						url,
+						username,
+						password,
+						createdAt: new Date().toISOString(),
+					});
+				}
+				this.browser.storage.savePasswords(entries);
+				return this.browser.storage.listPasswords().map(publicCredential);
+			}
+			case "passwords.remove": {
+				const id = text(args.id);
+				const next = this.browser.storage.listPasswords().filter((item) => item.id !== id);
+				this.browser.storage.savePasswords(next);
+				return true;
+			}
 			case "passwords.save":
 				return this.browser.storage.savePasswords(args.entries ?? args.passwords);
 			case "passwords.available":
