@@ -1522,27 +1522,32 @@ export class AgentService {
 			return;
 		}
 		try {
-			const detached = await source.detachTakeoverConversations(moveIds);
-			if (!detached.ok) {
+			// 交接顺序：prepare（保留来源持有权）→ insert（目标接管）→ commit（摘掉来源）。
+			// 中间不得出现「两边都不持有」的真空：在飞工具调用靠 session→conversation 反查归属，
+			// 真空里会判「Calling conversation is no longer available」把整个工具调用弄死。
+			const prepared = await source.prepareTakeoverConversations(moveIds);
+			if (!prepared.ok) {
 				fail(
-					detached.reason === "empty"
+					prepared.reason === "empty"
 						? "对方会话只剩这一条对话且服务排空中，稍后再试"
 						: "对方已经没有这条对话（刚结束或被关闭），左栏稍后自动刷新",
-					detached.reason === "empty"
+					prepared.reason === "empty"
 						? "The source session only has this conversation and the server is draining; try later."
 						: "That conversation is gone on the other side; the list refreshes shortly.",
 				);
-				if (detached.reason === "missing") target.refreshExternalRunning();
+				if (prepared.reason === "missing") target.refreshExternalRunning();
 				return;
 			}
+			const payload = prepared.payload;
 			let newMainId: string;
 			try {
 				if (process.env.PI_WEB_TEST_TAKEOVER_FAIL_INSERT === "1") throw new Error("injected takeover insert failure");
-				newMainId = target.insertTakeoverConvs(detached.payload);
+				newMainId = target.insertTakeoverConvs(payload);
+				source.commitTakeoverRemoval(payload);
 				await target.switchConversation(newMainId);
 				await target.bindSession();
 			} catch (err) {
-				const where = await this.returnTakeoverPayload(source, target, detached.payload);
+				const where = await this.returnTakeoverPayload(source, target, payload);
 				console.error("[takeover] insert/activate failed, payload returned to", where, err);
 				if (where === "source") {
 					source.sendNotice({
@@ -1586,7 +1591,12 @@ export class AgentService {
 	): Promise<"source" | "target"> {
 		target.reclaimTakeoverConvs(payload);
 		try {
-			const mainId = source.insertTakeoverConvs(payload);
+			// 回退时来源可能仍持有原始的这几个 conv 对象（insert 失败、commit 未跑）——
+			// 那就直接切回去，别再 insert 一次：insert 遇到同 id 会重编 id，反而多出一条重复对话。
+			const stillOwned = payload.convs.every((conv) => source.ownsConversation(conv));
+			const mainId = stillOwned
+				? ((payload.convs.find((c) => !c.isSubagent) ?? payload.convs[0])?.id ?? "")
+				: source.insertTakeoverConvs(payload);
 			await source.switchConversation(mainId);
 			await source.bindSession();
 			return "source";

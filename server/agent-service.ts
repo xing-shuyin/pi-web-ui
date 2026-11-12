@@ -12592,6 +12592,11 @@ export class ClientSession {
 		return this.convs.has(convId);
 	}
 
+	/** 这个 conv 对象当前是不是本页持有的那一个（过户回退时用来判断要不要重新 insert）。 */
+	ownsConversation(conv: Conversation): boolean {
+		return this.convs.get(conv.id) === conv;
+	}
+
 	takeoverBriefs(): {
 		id: string;
 		title: string;
@@ -12618,7 +12623,16 @@ export class ClientSession {
 		});
 	}
 
-	async detachTakeoverConversations(
+	/**
+	 * 过户交接第一步：把要搬的对话从当前页的排队/订阅/看门狗里摘出来，组装 payload。
+	 *
+	 * 关键：**本步不动 `this.convs`**。持有权要等目标页 `insertTakeoverConvs` 完成之后，
+	 * 再由 `commitTakeoverRemoval` 摘掉——中间任何一帧都不能出现「两边都不持有」的真空：
+	 * 在飞的工具调用（wait_all 展开后代、subagent 查询）靠 session→conversation 身份反查
+	 * 归属，真空里会直接抛「Calling conversation is no longer available」把整个工具调用判死
+	 * （回归：tests/subagent-takeover-test.mjs）。
+	 */
+	async prepareTakeoverConversations(
 		ids: string[],
 	): Promise<{ ok: true; payload: TakeoverPayload } | { ok: false; reason: "missing" | "empty" }> {
 		if (this.botExecution) return { ok: false, reason: "missing" };
@@ -12642,7 +12656,6 @@ export class ClientSession {
 			for (const conv of convs) delete conv.transferring;
 		}
 		for (const conv of convs) {
-			this.convs.delete(conv.id);
 			this.pluginModelKeys?.delete(conv.id);
 			this.clearAllToolWatchdogs(conv);
 			conv.unsubscribe?.();
@@ -12653,14 +12666,6 @@ export class ClientSession {
 				for (const fn of waiters) fn("gone");
 			}
 			this.goalSvc.notifyTakeover(conv);
-		}
-		if (!this.convs.has(this.activeId)) {
-			const fallback = [...this.convs.values()].find((c) => !c.isSubagent) ?? [...this.convs.values()][0];
-			if (fallback) {
-				this.activeId = fallback.id;
-			} else {
-				await this.newChat();
-			}
 		}
 		const questions: TakeoverQuestion[] = [];
 		for (const [qid, p] of this.pendingQuestions) {
@@ -12690,6 +12695,29 @@ export class ClientSession {
 		}
 		this.questionsChanged();
 		return { ok: true, payload: { convs, questions, pageCalls, approvals } };
+	}
+
+	/**
+	 * 过户交接第二步：目标页接管后摘掉来源页的持有权。同步且必须紧跟在 `insertTakeoverConvs`
+	 * 之后调用（中间不许有 await）——先插入后移除，交接期间对话始终至少有且只有一个持有方。
+	 */
+	commitTakeoverRemoval(payload: TakeoverPayload): void {
+		// 按对象身份摘，不按 id：`insertTakeoverConvs` 在目标页撞号时会把 conv.id 重编，
+		// 那时来源页 map 的 key 还是旧 id，按 id 删会漏（留下一条「已搬走却还在」的幽灵行）。
+		const moved = new Set(payload.convs);
+		for (const [id, conv] of this.convs) if (moved.has(conv)) this.convs.delete(id);
+		if (!this.convs.has(this.activeId)) {
+			const fallback = [...this.convs.values()].find((c) => !c.isSubagent) ?? [...this.convs.values()][0];
+			if (fallback) this.activeId = fallback.id;
+		}
+	}
+
+	async detachTakeoverConversations(
+		ids: string[],
+	): Promise<{ ok: true; payload: TakeoverPayload } | { ok: false; reason: "missing" | "empty" }> {
+		const prepared = await this.prepareTakeoverConversations(ids);
+		if (prepared.ok) this.commitTakeoverRemoval(prepared.payload);
+		return prepared;
 	}
 
 	insertTakeoverConvs(payload: TakeoverPayload): string {
