@@ -1,5 +1,6 @@
 import type { ModelRuntime } from "@earendil-works/pi-coding-agent";
 import { getServerBlock, pick, type ServerLang } from "./i18n.js";
+import { modelSessionId } from "./model-session.js";
 
 type CompleteSimpleArgs = Parameters<ModelRuntime["completeSimple"]>;
 export type VisionModel = CompleteSimpleArgs[0];
@@ -159,6 +160,7 @@ export async function transcribeImages(
 		const msg = await runtime.completeSimple(model, context, {
 			signal: ac.signal,
 			maxTokens: MAX_TRANSCRIBE_TOKENS,
+			sessionId: modelSessionId(),
 		});
 		if (msg.stopReason === "error" || msg.stopReason === "aborted") {
 			throw new Error(

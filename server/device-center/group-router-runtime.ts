@@ -2,6 +2,7 @@ import type { ModelRuntime } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
 import { Check } from "typebox/value";
 import type { RouterAction, RouterJob } from "./group-router.js";
+import { modelSessionId } from "../model-session.js";
 
 export interface GroupRouterContext {
 	room: { id: string; name?: string };
@@ -157,6 +158,7 @@ export function createGroupRouterRuntime(options: GroupRouterRuntimeOptions) {
 				const requestOptions: ModelOptions = {
 					signal,
 					maxTokens: 4_096,
+					sessionId: modelSessionId(),
 					...(thinking === "off" ? {} : { reasoning: thinking as ModelOptions["reasoning"] }),
 				};
 				for (let round = 0; round < MAX_ROUNDS; round++) {

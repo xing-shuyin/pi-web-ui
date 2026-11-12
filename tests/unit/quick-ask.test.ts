@@ -307,6 +307,21 @@ describe("isolated quick ask HTTP completion", () => {
 		expect(context.messages).toHaveLength(1);
 		expect(context.messages[0].content[0].text).toBe(question.messages[0].content);
 	});
+	it("gives each popup topic a stable provider session for relay gateways", async () => {
+		await ask({ messages: [{ role: "user", content: "first" }] });
+		await ask({
+			messages: [
+				{ role: "user", content: "first" },
+				{ role: "assistant", content: "previous answer" },
+				{ role: "user", content: "followup" },
+			],
+		});
+		await ask({ messages: [{ role: "user", content: "another topic" }] });
+		const sessions = completeSimple.mock.calls.map((call) => call[2].sessionId);
+		expect(sessions[0]).toMatch(/^pi-web-[0-9a-f]{32}$/);
+		expect(sessions[1]).toBe(sessions[0]);
+		expect(sessions[2]).not.toBe(sessions[0]);
+	});
 	it("uses the fallback model when no dedicated model is configured", async () => {
 		await ask({ ...question, fallbackModel: "other/name" });
 		expect(runtime.getModel).toHaveBeenCalledWith("other", "name");

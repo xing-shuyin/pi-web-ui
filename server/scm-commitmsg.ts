@@ -1,5 +1,6 @@
 import { isNotRepoError, scmCommitContext, type ScmCommitContext } from "./scm.js";
 import { pick, type ServerLang } from "./i18n.js";
+import { modelSessionId } from "./model-session.js";
 
 export const SCM_COMMITMSG_TIMEOUT_MS = 60_000;
 
@@ -168,7 +169,7 @@ export async function generateScmCommitMessage(opts: {
 						},
 					],
 				},
-				{ signal: ac.signal, maxTokens: 400 },
+				{ signal: ac.signal, maxTokens: 400, sessionId: modelSessionId() },
 			);
 		} finally {
 			clearTimeout(timer);

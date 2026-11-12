@@ -3,6 +3,7 @@ import { ModelRuntime } from "@earendil-works/pi-coding-agent";
 import { join } from "node:path";
 import type { QuickAskMessage, QuickAskStreamEvent } from "./protocol.js";
 import { isQuickAskModel, normalizeQuickAskSettings, type QuickAskSettings } from "./quick-ask-settings.js";
+import { modelSessionId } from "./model-session.js";
 import {
 	MAX_QUICK_ASK_ATTACHMENTS,
 	MAX_QUICK_ASK_TOTAL_IMAGE_BYTES,
@@ -149,6 +150,8 @@ async function complete(
 		...(settings.quickAskThinking !== "off" ? { reasoning: settings.quickAskThinking } : {}),
 		signal,
 		maxTokens: 4096,
+		// Keep one provider session per popup topic: relay gateways reject requests without it.
+		sessionId: modelSessionId(request.messages[0]?.content),
 	};
 	let result: Awaited<ReturnType<ModelRuntime["completeSimple"]>> | undefined;
 	if (emit) {
