@@ -1,12 +1,12 @@
 # 已授权设备的原生远程桌面
 
-设备中心参考 [krd](https://github.com/zzjcool/krd) 的原生捕获与输入方式，复用设备访问票据和连接器，在浏览器 canvas 显示 JPEG。从本机设备中心打开时，与「打开设备」的完整对话界面共用[局域网优先访问](device-center.md#局域网优先访问)：优先使用经过 TLS PSK 验证的私网通道，不可达时使用原 Hub WebSocket 中继。无需 VNC 服务、noVNC 或固定桌面端口。画面不进入聊天快照或模型上下文。
+设备中心参考 [krd](https://github.com/zzjcool/krd) 的原生捕获与输入方式，复用设备访问票据和连接器，在浏览器 canvas 显示 JPEG。从本机设备中心打开时，与「打开设备」的完整对话界面共用[局域网优先访问](device-center.md#局域网优先访问)：优先使用经过 TLS PSK 验证的私网通道，不可达时尝试设备间 P2P，失败使用原 Hub WebSocket 中继。无需 VNC 服务、noVNC 或固定桌面端口。画面不进入聊天快照或模型上下文。
 
 ## 聊天页预览与放大操作
 
 从本机设备中心或群成员打开远程桌面时，聊天页右栏上方显示一台选中设备的预览，文件与插件区域保留在下方。预览可收起、调整高度、切换设备或关闭。点击“放大并操作”创建实时桌面窗口，窗口与全屏之间只改变布局，不重新创建 iframe 或申请票据。返回预览释放实时连接和按住的键鼠，再申请新的预览票据。切换聊天会话保留选中设备；切换设备、关闭桌面时清理旧页面。手机浏览器放大后默认全屏；原生手机 App 仍使用自身设备适配器。
 
-`web/src/device-access.ts` 管理设备选择和 preview/live 状态，`use-desktop-target.ts` 在页面挂载时申请一次性票据；异步响应受 AbortSignal 和设备选择代次约束。`desktop-preview.tsx` 只在预览可见时通知沙箱页面启动请求。折叠、隐藏右栏或浏览器进入后台会取消请求和轮询。窗口沿用 `RemoteDesktopWindow.tsx`，使用统一浮层层号。两种模式均显示实际 LAN/Hub 路径，LAN 回退后更新标记。
+`web/src/device-access.ts` 管理设备选择和 preview/live 状态，`use-desktop-target.ts` 在页面挂载时申请一次性票据；异步响应受 AbortSignal 和设备选择代次约束。`desktop-preview.tsx` 只在预览可见时通知沙箱页面启动请求。折叠、隐藏右栏或浏览器进入后台会取消请求和轮询。窗口沿用 `RemoteDesktopWindow.tsx`，使用统一浮层层号。两种模式均显示实际 LAN/P2P/Hub 路径，LAN 回退后更新标记。
 
 `/desktop-preview` 提供独立只读页面，通过现有授权通道请求 `/api/device-desktop/preview`，收到画面后间隔 3 秒再请求，最多一个请求在途；图片长边目标 640 像素。采集端使用 preview 模式，Windows/macOS 每轮等待 3 秒，Linux X11 使用 1/3 FPS。仅降低浏览器显示频率不算轻量采集。
 
@@ -17,6 +17,10 @@
 ### 预览验证
 
 `tests/unit/device-desktop-preview.test.ts` 验证缓存、并发复用、取消和实时采集切换；原生/Linux 用例检查低频参数和只读约束。`node --import tsx tests/device-desktop-window-test.mjs` 使用 8997 端口和真实 Chrome，验证嵌套沙箱中的连续预览、折叠暂停、右栏隐藏暂停、放大操作、全屏不重载、返回预览、手机宽度及关闭清理，截图位于 `artifacts/device-center/`。该界面测试使用模拟桌面，不代表跨机器性能实测。
+
+### P2P 候选版
+
+`0.120.1-p2p-preview.1` 延续预览布局，新增设备间 WebRTC 通道。安装、Hub 升级与跨网验证见[设备中心 P2P 访问](device-center.md#p2p-设备访问)。前一个 `desktop-preview.1` 包仍只有 LAN/Hub，不能通过刷新页面获得 P2P。三端都需升级新候选包并重启实际运行服务；旧版本可兼容回退中继。
 
 ### npm 跨机器测试包
 

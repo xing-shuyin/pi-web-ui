@@ -20,5 +20,6 @@
 	"desktop.window": "Отдельное окно",
 	"desktop.tab": "Отдельная вкладка",
 	"desktop.exitFullscreen": "Выйти из полноэкранного режима",
-	"desktop.fullscreen": "Полный экран"
+	"desktop.fullscreen": "Полный экран",
+	"desktop.p2p": "Прямое P2P-соединение"
 }

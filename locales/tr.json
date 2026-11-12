@@ -3430,6 +3430,7 @@
 		"desktop.tab": "Ayrı sekme",
 		"desktop.exitFullscreen": "Tam ekrandan çık",
 		"desktop.fullscreen": "Tam ekran",
+		"desktop.p2p": "Doğrudan P2P bağlantısı",
 		"nativeCliSession.starting": "Starting process",
 		"nativeCliSession.running": "Process running",
 		"nativeCliSession.working": "Working",

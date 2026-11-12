@@ -15,6 +15,9 @@ import type { TaskSchedulerSnapshot } from "./task-scheduler.js";
 import { hostWithoutPort, isLoopbackHost } from "../host-guard.js";
 import { MAX_CONTRACT_REQUEST_BYTES } from "./work-contract.js";
 import type { DeviceLanAccess } from "./device-lan-access.js";
+import { probeDeviceLan } from "./device-lan.js";
+import { connectDeviceP2P } from "./device-p2p.js";
+import type { DeviceP2PSignal } from "./device-p2p-protocol.js";
 import { INTEGRATION_HTTP_TIMEOUT_MS, VERIFICATION_HTTP_TIMEOUT_MS } from "./verification-limits.js";
 
 export interface LocalDeviceConfig {
@@ -773,46 +776,59 @@ export async function installLocalDeviceCenter(options: Options) {
 				const data = JSON.parse(Buffer.concat(chunks).toString("utf8"));
 				if (path === "devices/:id/open") {
 					const grant = data.deviceLan;
+					let p2pAvailable = data.deviceP2P === true;
 					delete data.deviceLan;
+					delete data.deviceP2P;
 					if (req.body?.preferLan === true) {
 						data.transport = "hub";
 						const id = String((req.params as Record<string, string>).id);
-						const valid = () => !closed && activeConfig() === captured && generation === capturedGeneration;
-						const open = (preferLan: boolean) =>
+						const valid = () =>
+							!closed && !controller.signal.aborted && activeConfig() === captured && generation === capturedGeneration;
+						const open = (preferLan: boolean, p2pOffer?: DeviceP2PSignal, signal?: AbortSignal) =>
 							requestDeviceHub(
 								captured,
 								`/api/device-user/devices/${encodeURIComponent(id)}/open`,
 								"POST",
-								{ preferLan },
-								{ user: true },
+								{ preferLan, ...(p2pOffer ? { p2pOffer } : {}) },
+								{ user: true, signal },
 							);
-						const direct =
-							grant &&
-							(await options.lanAccess?.open(grant, {
-								deviceId: id,
-								hubUrl: captured.hubUrl,
-								origin: String(req.headers.origin),
-								basePath: req.body?.basePath,
-								desktop: req.body?.desktop === true,
-								valid,
-								renew: async () => ((await open(true)) as { deviceLan?: unknown }).deviceLan,
-								fallback: async () => {
-									const result = (await open(false)) as { url?: unknown };
-									if (!valid() || typeof result.url !== "string") throw new Error("Device binding changed");
-									const url = new URL(result.url);
-									const hub = new URL(captured.hubUrl);
-									if (
-										!["http:", "https:"].includes(url.protocol) ||
-										url.username ||
-										Reflect.get(url, "pass" + "word") ||
-										(url.hostname !== hub.hostname && !url.hostname.endsWith("." + hub.hostname)) ||
-										![`/device/${id}/__open`, "/__device/open"].includes(url.pathname)
-									)
-										throw new Error("Invalid Hub ticket");
-									if (req.body?.desktop === true) url.searchParams.set("next", "/desktop");
-									return url.href;
-								},
-							}));
+						const direct = await options.lanAccess?.open(grant, {
+							deviceId: id,
+							hubUrl: captured.hubUrl,
+							origin: String(req.headers.origin),
+							basePath: req.body?.basePath,
+							desktop: req.body?.desktop === true,
+							valid,
+							connect: async (candidate) => {
+								if (!valid()) return null;
+								const connection = await probeDeviceLan(candidate, { signal: controller.signal });
+								if (connection)
+									return { connection, expiresAt: (candidate as { expiresAt: number }).expiresAt, transport: "lan" };
+								if (!p2pAvailable || !valid()) return null;
+								return connectDeviceP2P((offer, signal) => open(true, offer, signal), controller.signal);
+							},
+							renew: async () => {
+								const result = (await open(true)) as { deviceLan?: unknown; deviceP2P?: unknown };
+								p2pAvailable = result.deviceP2P === true;
+								return result.deviceLan;
+							},
+							fallback: async () => {
+								const result = (await open(false)) as { url?: unknown };
+								if (!valid() || typeof result.url !== "string") throw new Error("Device binding changed");
+								const url = new URL(result.url);
+								const hub = new URL(captured.hubUrl);
+								if (
+									!["http:", "https:"].includes(url.protocol) ||
+									url.username ||
+									Reflect.get(url, "pass" + "word") ||
+									(url.hostname !== hub.hostname && !url.hostname.endsWith("." + hub.hostname)) ||
+									![`/device/${id}/__open`, "/__device/open"].includes(url.pathname)
+								)
+									throw new Error("Invalid Hub ticket");
+								if (req.body?.desktop === true) url.searchParams.set("next", "/desktop");
+								return url.href;
+							},
+						});
 						if (!valid())
 							return res.status(409).json({ code: "DEVICE_CHANGED", error: "Device binding changed; refresh" });
 						if (direct) {

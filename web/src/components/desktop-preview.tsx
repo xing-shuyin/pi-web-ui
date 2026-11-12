@@ -103,7 +103,7 @@ function PreviewFrame({
 	const t = useT();
 	const { target, error: targetError, retry } = useDesktopTarget(access);
 	const frame = useRef<HTMLIFrameElement>(null);
-	const [transport, setTransport] = useState<"lan" | "hub">();
+	const [transport, setTransport] = useState<"lan" | "p2p" | "hub">();
 	const [error, setError] = useState("");
 	const [updatedAt, setUpdatedAt] = useState(0);
 	const [now, setNow] = useState(Date.now);
@@ -129,7 +129,7 @@ function PreviewFrame({
 		const receive = (event: MessageEvent) => {
 			if (event.source !== frame.current?.contentWindow || event.origin !== "null") return;
 			const data = event.data;
-			if (data?.type === "device-access-transport" && ["lan", "hub"].includes(data.transport))
+			if (data?.type === "device-access-transport" && ["lan", "p2p", "hub"].includes(data.transport))
 				setTransport(data.transport);
 			if (data?.type !== "desktop-preview-state") return;
 			clearTimeout(timeout);
@@ -175,7 +175,11 @@ function PreviewFrame({
 				</button>
 			</div>
 			<div className="desktop-preview-status">
-				<span>{transport ? t(transport === "lan" ? "desktop.lan" : "desktop.hub") : t("desktop.connecting")}</span>
+				<span>
+					{transport
+						? t(transport === "lan" ? "desktop.lan" : transport === "p2p" ? "desktop.p2p" : "desktop.hub")
+						: t("desktop.connecting")}
+				</span>
 				<span>
 					{!active
 						? t("desktop.paused")

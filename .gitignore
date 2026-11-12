@@ -79,6 +79,7 @@ capsule-palettes.html
 
 # safe-exec 命令执行器日志/pidfile
 /.safe-exec/
+/bin/device-p2p/
 
 # 手机调试包（构建产物，不入库）
 /pi-web-ui-mobile-debug.apk

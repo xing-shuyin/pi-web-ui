@@ -315,4 +315,29 @@ describe("local capability portal over authenticated LAN", () => {
 		expect((await fetch(url)).status).toBe(200);
 		expect(f.getFallbackCalls()).toBe(0);
 	});
+	it("releases a capability on wrapper unload but rejects unrelated origins and devices", async () => {
+		const f = await fixture("/", true);
+		expect(f.html).toContain("pagehide");
+		expect(f.html).toContain("keepalive:true");
+		expect(
+			(
+				await fetch(f.sourceOrigin + f.base + "__lan_close", {
+					method: "POST",
+					headers: { Origin: "https://unrelated.invalid" },
+				})
+			).status,
+		).toBe(403);
+		expect(
+			(
+				await fetch(f.sourceOrigin + f.base.replace("/remote/", "/other/") + "__lan_close", {
+					method: "POST",
+					headers: { Origin: "null" },
+				})
+			).status,
+		).toBe(403);
+		expect(
+			(await fetch(f.sourceOrigin + f.base + "__lan_close", { method: "POST", headers: { Origin: "null" } })).status,
+		).toBe(204);
+		expect((await fetch(f.sourceOrigin + f.base, { headers: { Origin: "null" } })).status).toBe(403);
+	});
 });

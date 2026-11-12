@@ -20,5 +20,6 @@
 	"desktop.window": "Separate window",
 	"desktop.tab": "Separate tab",
 	"desktop.exitFullscreen": "Exit fullscreen",
-	"desktop.fullscreen": "Fullscreen"
+	"desktop.fullscreen": "Fullscreen",
+	"desktop.p2p": "P2P direct"
 }

@@ -3430,6 +3430,7 @@
 		"desktop.tab": "獨立分頁",
 		"desktop.exitFullscreen": "退出全螢幕",
 		"desktop.fullscreen": "全螢幕",
+		"desktop.p2p": "P2P 直連",
 		"nativeCliSession.starting": "正在啟動程序",
 		"nativeCliSession.running": "程序執行中",
 		"nativeCliSession.working": "正在處理",

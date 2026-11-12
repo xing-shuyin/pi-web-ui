@@ -3430,6 +3430,7 @@
 		"desktop.tab": "別タブ",
 		"desktop.exitFullscreen": "全画面を終了",
 		"desktop.fullscreen": "全画面",
+		"desktop.p2p": "P2P 直接接続",
 		"nativeCliSession.starting": "Starting process",
 		"nativeCliSession.running": "Process running",
 		"nativeCliSession.working": "Working",

@@ -3430,6 +3430,7 @@
 		"desktop.tab": "Onglet séparé",
 		"desktop.exitFullscreen": "Quitter le plein écran",
 		"desktop.fullscreen": "Plein écran",
+		"desktop.p2p": "Connexion P2P directe",
 		"nativeCliSession.starting": "Starting process",
 		"nativeCliSession.running": "Process running",
 		"nativeCliSession.working": "Working",

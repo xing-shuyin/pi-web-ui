@@ -5,6 +5,7 @@ import type { Duplex } from "node:stream";
 import { WebSocket, WebSocketServer } from "ws";
 import { isLoopbackAddress } from "../server-config.js";
 import { probeDeviceLan } from "./device-lan.js";
+import type { DeviceDirectConnection } from "./device-p2p.js";
 import { cleanHeaders, RELAY_LIMITS, safePath, WS_MESSAGE_BYTES } from "./relay.js";
 import { createPortalResponse, parseDevicePath, portalHeaders, wrapperHtml } from "./path-portal.js";
 
@@ -18,26 +19,35 @@ export interface DeviceLanAccessOptions {
 	valid(): boolean;
 	renew(): Promise<unknown>;
 	fallback(): Promise<string>;
+	connect?(grant: unknown): Promise<DeviceDirectConnection | null>;
 }
 interface Access {
 	options: DeviceLanAccessOptions;
 	origin: URL;
 	base: string;
 	connection: LanConnection;
+	transport: "lan" | "p2p";
 	grantExpires: number;
 	renewing?: Promise<void>;
-	recovering?: Promise<string>;
+	recovering?: Promise<{ url: string; transport: "lan" | "p2p" | "hub" }>;
 	expires: number;
 	touched: number;
 	ticket?: string;
 	ticketExpires: number;
 	preview?: boolean;
+	view?: string;
+	releaseTimer?: ReturnType<typeof setTimeout>;
 	streams: Set<() => void>;
 }
 const PREFIX = "/device-lan/";
 const SESSION_IDLE = 30 * 60_000;
 
 export function createDeviceLanAccess(options: { allowLoopback?: boolean } = {}) {
+	async function dial(grant: unknown, accessOptions: DeviceLanAccessOptions): Promise<DeviceDirectConnection | null> {
+		if (accessOptions.connect) return accessOptions.connect(grant);
+		const connection = await probeDeviceLan(grant, { allowLoopback: options.allowLoopback });
+		return connection ? { connection, expiresAt: (grant as { expiresAt: number }).expiresAt, transport: "lan" } : null;
+	}
 	const sessions = new Map<string, Access>();
 	const browsers = new WebSocketServer({ noServer: true, maxPayload: WS_MESSAGE_BYTES, perMessageDeflate: false });
 	let closed = false;
@@ -45,6 +55,7 @@ export function createDeviceLanAccess(options: { allowLoopback?: boolean } = {})
 		const access = sessions.get(token);
 		if (!access) return;
 		sessions.delete(token);
+		clearTimeout(access.releaseTimer);
 		for (const stop of access.streams) stop();
 		access.connection.close();
 	}
@@ -94,15 +105,16 @@ export function createDeviceLanAccess(options: { allowLoopback?: boolean } = {})
 		if (access.grantExpires - Date.now() < 60_000) {
 			access.renewing ??= (async () => {
 				const grant = await access.options.renew();
-				const next = await probeDeviceLan(grant, { allowLoopback: options.allowLoopback });
+				const next = await dial(grant, access.options);
 				if (!next) throw new Error("Local network unavailable");
 				if (!live(token, access)) {
-					next.close();
+					next.connection.close();
 					throw new Error("Device binding changed");
 				}
 				access.connection.close();
-				access.connection = next;
-				access.grantExpires = (grant as { expiresAt: number }).expiresAt;
+				access.connection = next.connection;
+				access.transport = next.transport;
+				access.grantExpires = next.expiresAt;
 			})().finally(() => {
 				access.renewing = undefined;
 			});
@@ -138,6 +150,30 @@ export function createDeviceLanAccess(options: { allowLoopback?: boolean } = {})
 			return true;
 		}
 		const wrapper = path?.token ? sessions.get(path.token) : undefined;
+		if (path?.path?.split("?")[0] === "/__lan_close") {
+			if (
+				!wrapper ||
+				req.method !== "POST" ||
+				path.id !== wrapper.options.deviceId ||
+				!live(path.token!, wrapper) ||
+				!allowed(req, wrapper) ||
+				![wrapper.origin.origin, "null"].includes(req.headers.origin ?? "")
+			) {
+				res.writeHead(403).end();
+				return true;
+			}
+			const view = new URL(req.url!, wrapper.origin).searchParams.get("view");
+			if (!view) dispose(path.token!);
+			else if (view === wrapper.view) {
+				clearTimeout(wrapper.releaseTimer);
+				wrapper.releaseTimer = setTimeout(() => {
+					if (wrapper.view === view) dispose(path.token!);
+				}, 2000);
+				wrapper.releaseTimer.unref();
+			}
+			res.writeHead(204, { "access-control-allow-origin": "null" }).end();
+			return true;
+		}
 		if (path?.path === "/__lan_view") {
 			if (
 				!wrapper ||
@@ -151,14 +187,18 @@ export function createDeviceLanAccess(options: { allowLoopback?: boolean } = {})
 				return true;
 			}
 			const access = wrapper;
+			clearTimeout(access.releaseTimer);
+			access.view = randomBytes(12).toString("hex");
 			access.touched = Date.now();
 			const page = wrapperHtml(
 				access.base,
 				access.options.desktop ? (access.preview ? "desktop-preview" : "desktop") : "",
 				access.options.desktop ? access.origin : undefined,
-				`${access.options.deviceId} · LAN`,
+				`${access.options.deviceId} · ${access.transport.toUpperCase()}`,
 				JSON.stringify([access.options.hubUrl, access.options.deviceId]),
 				access.origin.origin + access.base + "__lan_fallback",
+				access.transport,
+				access.origin.origin + access.base + "__lan_close?view=" + access.view,
 			);
 			res
 				.writeHead(200, { "content-type": "text/html; charset=utf-8", "content-security-policy": page.csp })
@@ -185,13 +225,16 @@ export function createDeviceLanAccess(options: { allowLoopback?: boolean } = {})
 				} catch {}
 				if (!live(path.token!, fallback)) throw new Error("Device binding changed");
 				return direct
-					? new URL((fallback.options.basePath ?? "/") + direct.url.slice(1), fallback.origin).href
-					: await fallback.options.fallback();
+					? {
+							url: new URL((fallback.options.basePath ?? "/") + direct.url.slice(1), fallback.origin).href,
+							transport: direct.transport,
+						}
+					: { url: await fallback.options.fallback(), transport: "hub" as const };
 			})().finally(() => {
 				fallback.recovering = undefined;
 			});
 			void fallback.recovering
-				.then((url) => {
+				.then(({ url, transport }) => {
 					if (!live(path.token!, fallback)) throw new Error("Device binding changed");
 					if (fallback.preview) {
 						const target = new URL(url);
@@ -200,7 +243,7 @@ export function createDeviceLanAccess(options: { allowLoopback?: boolean } = {})
 					}
 					res
 						.writeHead(200, { "content-type": "application/json", "access-control-allow-origin": "null" })
-						.end(JSON.stringify({ url }));
+						.end(JSON.stringify({ url, transport }));
 					dispose(path.token!);
 				})
 				.catch(() => {
@@ -224,9 +267,13 @@ export function createDeviceLanAccess(options: { allowLoopback?: boolean } = {})
 			req.method === "GET" &&
 			["/api/device-center/chat-status", "/api/device-center/status"].includes(forward.split("?")[0])
 		) {
-			res
-				.writeHead(200, { ...headers, "content-type": "application/json" })
-				.end(JSON.stringify({ hubUrl: access.options.hubUrl, deviceId: access.options.deviceId, transport: "lan" }));
+			res.writeHead(200, { ...headers, "content-type": "application/json" }).end(
+				JSON.stringify({
+					hubUrl: access.options.hubUrl,
+					deviceId: access.options.deviceId,
+					transport: access.transport,
+				}),
+			);
 			return true;
 		}
 		if (!safePath(forward, req.method) || access.streams.size >= RELAY_LIMITS.streams) {
@@ -404,7 +451,8 @@ export function createDeviceLanAccess(options: { allowLoopback?: boolean } = {})
 			origin.origin !== accessOptions.origin
 		)
 			return null;
-		const peer = await probeDeviceLan(grant, { allowLoopback: options.allowLoopback });
+		const direct = await dial(grant, accessOptions);
+		const peer = direct?.connection;
 		if (!peer) return null;
 		if (closed || !accessOptions.valid() || sessions.size >= 16) {
 			peer.close();
@@ -417,14 +465,15 @@ export function createDeviceLanAccess(options: { allowLoopback?: boolean } = {})
 			origin,
 			base: `${basePath}device-lan/${accessOptions.deviceId}/__relay/${token}/`,
 			connection: peer,
-			grantExpires: (grant as { expiresAt: number }).expiresAt,
+			transport: direct!.transport,
+			grantExpires: direct!.expiresAt,
 			expires: Date.now() + 8 * 60 * 60_000,
 			touched: Date.now(),
 			ticket,
 			ticketExpires: Date.now() + 30_000,
 			streams: new Set(),
 		});
-		return { url: `/device-lan/${accessOptions.deviceId}/__open?ticket=${ticket}`, transport: "lan" as const };
+		return { url: `/device-lan/${accessOptions.deviceId}/__open?ticket=${ticket}`, transport: direct!.transport };
 	}
 	return {
 		open,

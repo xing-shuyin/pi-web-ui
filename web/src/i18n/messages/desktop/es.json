@@ -20,5 +20,6 @@
 	"desktop.window": "Ventana independiente",
 	"desktop.tab": "Pestaña independiente",
 	"desktop.exitFullscreen": "Salir de pantalla completa",
-	"desktop.fullscreen": "Pantalla completa"
+	"desktop.fullscreen": "Pantalla completa",
+	"desktop.p2p": "Conexión P2P directa"
 }

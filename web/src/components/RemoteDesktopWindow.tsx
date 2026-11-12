@@ -24,7 +24,7 @@ function DesktopWindow({ access }: { access: DesktopAccess }) {
 	const zIndex = useOverlayZIndex();
 	const { target, error: targetError, retry } = useDesktopTarget(access);
 	const frameRef = useRef<HTMLIFrameElement>(null);
-	const [transport, setTransport] = useState<"lan" | "hub">();
+	const [transport, setTransport] = useState<"lan" | "p2p" | "hub">();
 	useEffect(() => {
 		setTransport(target?.transport);
 	}, [target]);
@@ -36,7 +36,8 @@ function DesktopWindow({ access }: { access: DesktopAccess }) {
 				event.data?.type !== "device-access-transport"
 			)
 				return;
-			if (event.data.transport === "lan" || event.data.transport === "hub") setTransport(event.data.transport);
+			if (event.data.transport === "lan" || event.data.transport === "p2p" || event.data.transport === "hub")
+				setTransport(event.data.transport);
 		};
 		window.addEventListener("message", receive);
 		return () => window.removeEventListener("message", receive);
@@ -140,7 +141,9 @@ function DesktopWindow({ access }: { access: DesktopAccess }) {
 			<div className="remote-desktop-titlebar" onPointerDown={(e) => start(e, false)}>
 				<strong>
 					{title} · {access.name || access.id} ·{" "}
-					{transport ? t(transport === "lan" ? "desktop.lan" : "desktop.hub") : t("desktop.connecting")}
+					{transport
+						? t(transport === "lan" ? "desktop.lan" : transport === "p2p" ? "desktop.p2p" : "desktop.hub")
+						: t("desktop.connecting")}
 				</strong>
 				<button type="button" className="btn" disabled={busy} onClick={() => void detach()}>
 					{t(shell ? "desktop.window" : "desktop.tab")}

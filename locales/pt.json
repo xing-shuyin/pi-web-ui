@@ -3430,6 +3430,7 @@
 		"desktop.tab": "Aba separada",
 		"desktop.exitFullscreen": "Sair da tela cheia",
 		"desktop.fullscreen": "Tela cheia",
+		"desktop.p2p": "Conexão P2P direta",
 		"nativeCliSession.starting": "Starting process",
 		"nativeCliSession.running": "Process running",
 		"nativeCliSession.working": "Working",

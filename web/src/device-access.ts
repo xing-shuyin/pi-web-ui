@@ -45,7 +45,7 @@ export async function requestDeviceAccessUrl(
 		headers: { "Content-Type": "application/json" },
 		body: JSON.stringify({ preferLan: true, desktop, basePath: new URL(appUrl("/"), window.location.href).pathname }),
 		credentials: "same-origin",
-		signal: signal ? AbortSignal.any([signal, AbortSignal.timeout(15000)]) : AbortSignal.timeout(15000),
+		signal: signal ? AbortSignal.any([signal, AbortSignal.timeout(30000)]) : AbortSignal.timeout(30000),
 	});
 	if (!response.ok)
 		throw new Error(
@@ -54,7 +54,7 @@ export async function requestDeviceAccessUrl(
 				: "Could not open the device. Check connectivity and local pairing.",
 		);
 	const data = await response.json();
-	const direct = data.transport === "lan";
+	const direct = data.transport === "lan" || data.transport === "p2p";
 	const url = direct ? new URL(appUrl(data.url), window.location.href) : new URL(data.url);
 	const hub = new URL(hubUrl);
 	const directEndpoint = new URL(appUrl(`/device-lan/${id}/__open`), window.location.href);
@@ -72,7 +72,7 @@ export async function requestDeviceAccessUrl(
 	if (desktop) url.searchParams.set("next", preview ? "/desktop-preview" : "/desktop");
 	return {
 		url: url.href,
-		transport: direct ? ("lan" as const) : ("hub" as const),
+		transport: data.transport === "p2p" ? ("p2p" as const) : direct ? ("lan" as const) : ("hub" as const),
 		fallbackOrigin: data.fallbackOrigin,
 	};
 }
@@ -105,7 +105,7 @@ export async function openDeviceAccess(
 		const target = await requestDeviceAccessUrl(id, hubUrl, desktop, zh);
 		const url = new URL(target.url);
 		if (shell?.openHub) {
-			if (target.transport === "lan") {
+			if (target.transport !== "hub") {
 				url.searchParams.set("hub", new URL(hubUrl).origin);
 				if (typeof target.fallbackOrigin === "string") url.searchParams.set("portal", target.fallbackOrigin);
 			}

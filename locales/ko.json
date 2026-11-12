@@ -3430,6 +3430,7 @@
 		"desktop.tab": "별도 탭",
 		"desktop.exitFullscreen": "전체 화면 종료",
 		"desktop.fullscreen": "전체 화면",
+		"desktop.p2p": "P2P 직접 연결",
 		"nativeCliSession.starting": "Starting process",
 		"nativeCliSession.running": "Process running",
 		"nativeCliSession.working": "Working",

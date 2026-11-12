@@ -7,6 +7,7 @@ import { INTEGRATION_RPC_TIMEOUT_MS, VERIFICATION_RPC_TIMEOUT_MS } from "./verif
 import type { IncomingMessage, Server, ServerResponse } from "node:http";
 import type { Duplex } from "node:stream";
 import { WebSocket, WebSocketServer } from "ws";
+import { validDeviceP2PSignal } from "./device-p2p-protocol.js";
 
 import {
 	capabilityBase,
@@ -140,6 +141,7 @@ export function safePath(path: unknown, method = "GET"): path is string {
 
 export const COMMANDS = [
 	"device_lan",
+	"device_p2p",
 	"group_router_models",
 	"transfer_stage",
 	"transfer_preview",
@@ -747,6 +749,7 @@ export function createDeviceRelay(options: DeviceRelayOptions) {
 		id: string,
 		redirect = false,
 		preferLan = false,
+		p2pOffer?: unknown,
 	) {
 		const generation = revision;
 		const account = await options.getAccount(req);
@@ -779,11 +782,24 @@ export function createDeviceRelay(options: DeviceRelayOptions) {
 			res.writeHead(503).end();
 			return;
 		}
+		if (p2pOffer !== undefined && (!preferLan || !validDeviceP2PSignal(p2pOffer))) {
+			res.writeHead(400).end();
+			return;
+		}
 		let deviceLan: unknown;
+		let deviceP2P: unknown;
 		if (preferLan && !redirect) {
 			const entry = devices.get(id)!;
 			try {
-				deviceLan = await entry.rpc.call("device_lan", {}, { signal: AbortSignal.timeout(1500) });
+				if (p2pOffer !== undefined) {
+					deviceP2P = await entry.rpc.call("device_p2p", p2pOffer, { signal: AbortSignal.timeout(5000) });
+				} else {
+					const direct = await entry.rpc.call("device_lan", { p2p: 1 }, { signal: AbortSignal.timeout(1500) });
+					if (direct && typeof direct === "object" && typeof Reflect.get(direct, "deviceP2P") === "boolean") {
+						deviceLan = Reflect.get(direct, "deviceLan");
+						deviceP2P = Reflect.get(direct, "deviceP2P");
+					} else deviceLan = direct;
+				}
 			} catch {}
 			if (closed || generation !== revision || devices.get(id) !== entry || res.destroyed) {
 				res.writeHead(409).end();
@@ -801,7 +817,9 @@ export function createDeviceRelay(options: DeviceRelayOptions) {
 		else
 			res
 				.writeHead(200, { "content-type": "application/json", "cache-control": "no-store" })
-				.end(JSON.stringify({ url, expiresAt, ...(deviceLan ? { deviceLan } : {}) }));
+				.end(
+					JSON.stringify({ url, expiresAt, ...(deviceLan ? { deviceLan } : {}), ...(deviceP2P ? { deviceP2P } : {}) }),
+				);
 	}
 	function sendWrapper(res: ServerResponse, id: string, accountId: string, initialPath = "") {
 		if (closed || !devices.has(id)) {

@@ -20,5 +20,6 @@
 	"desktop.window": "獨立視窗",
 	"desktop.tab": "獨立分頁",
 	"desktop.exitFullscreen": "退出全螢幕",
-	"desktop.fullscreen": "全螢幕"
+	"desktop.fullscreen": "全螢幕",
+	"desktop.p2p": "P2P 直連"
 }

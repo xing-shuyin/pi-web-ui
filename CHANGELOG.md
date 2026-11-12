@@ -10,6 +10,34 @@
 
 ## [Unreleased]
 
+## [0.120.1-p2p-preview.1] — 2026-11-12
+
+基于最新正式版 0.120.0 的 P2P 测试候选包，延续桌面预览布局，通过 fork 的 GitHub Release 分发。
+
+### Added
+
+- 设备访问增加 LAN → WebRTC P2P → Hub 选择流程，群成员远程网页、对话与桌面共用通路。
+- 内置五个平台的 Go/Pion 助手与 SHA-256 清单；用户安装 npm 包即可使用，无需 Go。
+- 显示真实 P2P 连接状态；协商、授权、流队列与生命周期均设上限。
+
+### Fixed
+
+- 独立会话互不替换，关闭远程页面时释放直连资源；撤销设备连接会关闭通道。
+- 断线恢复后报告实际 LAN/P2P/Hub 状态，保持预览入口与隔离授权。
+
+### Changed
+
+- P2P 需要两端本机服务及 Hub 支持新协议；旧版本、缺失助手和打洞失败自动回退。纯云端浏览器仍中继，群组持久状态仍由 Hub 管理。
+- 已通过 Windows 本机双助手和真实 Hub RPC 联测；macOS/Linux 助手已交叉编译，跨网 NAT、实际桌面性能和这些平台实机尚待验收。
+
+<!-- auto-i18n:start -->
+
+### i18n
+
+- 前端新增 key（1）：`desktop.p2p`
+
+<!-- auto-i18n:end -->
+
 ## [0.120.1-desktop-preview.1] — 2026-11-12
 
 基于 0.120.0 的跨机器测试版，通过 fork 的 GitHub Release 分发 npm 安装包。
@@ -2518,3 +2546,4 @@ when?, children?}`，也收 `topbar` / `settings` 这类简写别名）；宿主
 [0.62.1]: https://github.com/xing-shuyin/pi-web-ui/releases/tag/v0.62.1
 [0.62.0]: https://github.com/xing-shuyin/pi-web-ui/releases/tag/v0.62.0
 [0.61.0]: https://github.com/xing-shuyin/pi-web-ui/releases/tag/v0.61.0
+[0.120.1-p2p-preview.1]: https://github.com/xinzhihong-ship-it/pi-web-ui/releases/tag/p2p-preview-0.120.1-1

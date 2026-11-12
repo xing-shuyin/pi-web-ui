@@ -212,11 +212,11 @@ it("requests LAN access and opens the local opaque desktop portal", async () => 
 	});
 	expect(document.querySelector(".remote-desktop-titlebar")?.textContent).toContain("Server relay");
 });
-it("opens the entire device UI through the same LAN portal", async () => {
+it.each(["lan", "p2p"])("opens the entire device UI through the same secure portal (%s)", async (transport) => {
 	const url = `/device-lan/mac/__open?ticket=${"a".repeat(64)}`;
 	const fetcher = vi.fn(async (_input: unknown, _options: RequestInit) => ({
 		ok: true,
-		json: async () => ({ url, transport: "lan" }),
+		json: async () => ({ url, transport }),
 	}));
 	vi.stubGlobal("fetch", fetcher);
 	const replace = vi.fn();
@@ -228,6 +228,28 @@ it("opens the entire device UI through the same LAN portal", async () => {
 	await openDeviceAccess("mac", hub, false, false);
 	expect(JSON.parse(String(fetcher.mock.calls[0][1].body))).toMatchObject({ preferLan: true, desktop: false });
 	expect(replace).toHaveBeenCalledWith(`${window.location.origin}${url}`);
+});
+it("displays P2P in the desktop window and accepts a verified Hub fallback", async () => {
+	vi.stubGlobal(
+		"fetch",
+		vi.fn(async () => ({
+			ok: true,
+			json: async () => ({ url: `/device-lan/mac/__open?ticket=${"a".repeat(64)}`, transport: "p2p" }),
+		})),
+	);
+	await mount();
+	expect(document.querySelector(".remote-desktop-titlebar")?.textContent).toContain("P2P direct");
+	const frame = document.querySelector("iframe")!;
+	await act(async () =>
+		window.dispatchEvent(
+			new MessageEvent("message", {
+				source: frame.contentWindow,
+				origin: "null",
+				data: { type: "device-access-transport", transport: "hub" },
+			}),
+		),
+	);
+	expect(document.querySelector(".remote-desktop-titlebar")?.textContent).toContain("Server relay");
 });
 it.each([
 	"https://evil.example/device-lan/mac/__open?ticket=" + "a".repeat(64),
