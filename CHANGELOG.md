@@ -10,9 +10,82 @@
 
 ## [Unreleased]
 
+## [0.120.0] — 2026-11-12
+
+### Added
+
+- **手机 App（π）**：Android 客户端接入无障碍服务，智能体可读手机界面、点击／滑动／输入、返回／Home、启动应用、截图；返回键逐层退出，前台消息在应用内提示；手机设置改为分组首页 + 二级页，顶栏让出状态栏。
+- **phone 工具**：智能体经宿主桥直接操作手机（与页面操作同款审批路径），出厂默认关闭并给出关闭说明。
+- **手机本机引擎**：内置引擎可在 Android 上直接运行（rename 兼容垫片、连接重试不再自环）；x86 包在 arm64 真机不再装成崩溃循环。
+- **一键出 APK**：`npm run apk` / `apk:all` / `apk:all:runtime`，产物带 ABI 与运行时版本；手机 CI 改为手动触发，云端兜底可用。
+- **frp-manager 插件**：面板内装／管／卸内网穿透，配置与进程状态集中展示。
+- **pm2-manager 插件**：装／管／卸一体，进程列表、日志与重启入口收在一处。
+- **legado-web 重构**：真浏览器回退抓取 + Cookie 合并，书源拉取失败时可换通道，客户端重建。
+- **bili-scroll 2.6.0**：意图问答／深读／内容索引／品味账本，投递带回执。
+- **文件预览多标签**、**模型选择器带服务商与当前模型**、**子代理模板向导**（四步产出模板，带搜索、白名单与预览）。
+- **子代理完成证据**：左栏显示完成证据角标（未验证／部分核对／受阻），运行账本跨重启续跑。
+- **内置浏览器接 Chrome 扩展**：侧栏面板改为独立浮层视图，扩展装好即可在浮层内使用。
+- **hongguo**：侧边全屏模式，清晰度可选并跨集记忆。
+- **额度看板新增 OpenCode（Go 订阅）来源**。
+- **文件树按目录搜索**：搜索结果按树展开，目录可直接打开。
+- **打开项目拆本地／远程**：两个入口分列，选择器记住上次页签。
+- **远程 SSH 主机密钥**：未知或变更的指纹必须先人工核对，不允许静默接受。
+- **插件装完即启用**：安装成功后直接启用，不再出现「装了却找不到」。
+- **工具／思考详情显示起止耗时**：行内复用弹窗排版，思考流式不再定格。
+- **会话分叉角标跨重启可见**。
+- **本地一键发版**（`npm run release:local`，桌面 + 手机）与**本地复刻 CI 门禁**（`npm run ci:local`）+ pre-push 钩子。
+
 ### Fixed
 
 - **Windows 上 Hub 在线升级偶发「回滚失败」**：升级记账（`hub-upgrade.json`）撞上杀毒 / 服务句柄的瞬时占用时，`rename` 报 `EPERM` 会直接把回滚流程打断，旧服务没被恢复起来。现在记账走带退避的原子写，且记账失败只记日志、不再阻断恢复旧服务。
+- **新建对话落进上一个项目**：工作区命令（set_cwd / new_chat / 切换项目 / 沙盒）统一走串行队列，`new_chat.cwd` 切不过去就不建会话（#872）。
+- **中转网关 400 MissingSessionID**：随手问、视觉桥、提交信息生成、群路由这些直接调 `ModelRuntime` 的路径补上 provider sessionId —— opencode 系网关缺 `x-opencode-session` 会直接 400。
+- **原子写撞瞬时占用**：`rename` 报 `EPERM` 时真退避重试，Hot Hub worker 共用同一份实现。
+- **随包插件物化**：改为回执自愈，代码目录与状态目录彻底分离（#856），插件更新后不再读到半旧副本。
+- **左栏行级操作被拦下**：共享视图下重命名／删除等操作恢复可用，跳端 dismiss 走 daemon 路由。
+- **思考弹窗定格**：极简行文下跟随流式增量，消息落地换壳后继续跟随到结束。
+- **断联重置主题**：`applyTheme` 幂等化，坏链重连才补拉。
+- **沙箱设备页白屏**：service worker 降级后正常渲染。
+- **legado-web 误判编码**：合法 UTF-8 自带 U+FFFD 时不再按 GBK 重解，书源拉取恢复正常。
+- **canvas 导入**：JSON 导入稳定建出画布（#859）。
+- **极简行文长回合卡顿**：胶囊去掉 backdrop-filter，合成层从 310 降到 11（#858）。
+- **目录扩展命名**：禁用的目录扩展同样按目录名显示，按文件夹而不是 `index.ts` 命名。
+- **手机端顶栏**：状态栏安全区适配，侧栏抽屉不再压住顶部按钮。
+- **文件搜索目录命中**：目录按 `type=dir` 返回，不再被双层过滤掉。
+- **钉住（置顶）会话**：刷新后项目保持收起，收起项目里的钉住行照常可见；取消钉住后 📌 立即刷新，右键菜单直接给出「取消钉住」；置顶行按自身 cwd 记账，不再跨项目串台。
+- **会话列表刷新**：一轮跑完立即补推会话列表，不再出现「跑完闪一下」。
+- **左栏首帧**：判据改成「有没有本地记录」，刷新不再先错位再回正；群组 tab 跟随分区显隐，去掉两个永不生效的分区开关。
+- **Moonshot 兼容**：`notifyOnDone` 的 enum 收到 handler 一层，schema 校验不再被拒。
+- **bash 透传 `shellPath`**：`settings.json` 里的 `shellPath` 现在真的生效，工具详情弹窗文案同步本地化。
+
+### Changed
+
+- **按需工具目录精简**：只列按需名单里的工具（常驻工具的 schema 已全量下发，不再重复列）；名单为空时整段不输出，`load_tools` 也不挂。
+- **提示词片段下线**：`{{terminal}}`（终端引导）与 `{{persona}}`（Windows 约束）不再作为可开关来源；老模板里残留的 token 渲染为空，Windows／远程工作区约束由宿主在追加段自动注入。
+- **标记工具**：去掉全局开关，任一标记启用即生效。
+- **工具／思考胶囊**：去边框改半透明填充（B2 方案），失败态红染底；弹窗页脚统一显示起止耗时。
+- **输入框占位**：显示当前工程名，回车语义与提示同步。
+- **提示词页**：去掉引擎切换，单列紧凑版式。
+- **长驻命令**：`bash({background:true})` 落到进程内后台任务，面板可停可重启；`safe-exec` 补空闲看门狗、守护进程托管与 `--wait` 轮询。
+- **会话列表首屏**：只解析 80 个文件，元信息落盘成索引。
+- **项目排序**：只认真实对话，新增「项目顺序全靠手动」开关。
+- **出厂禁用名单**：补齐新插件工具，`manifest` 支持 `agentToolsDefaultOn`。
+- **设置保存**：改为等回执，未确认时显式报警，不再假装已保存。
+- **git 探测缓存**：filter 探测与仓库身份查询按配置文件指纹缓存，管线少两个子进程。
+- **单测分池**：快池／重型集成池分开跑，并加逐条计时报告。
+- **CI 单测并行**：单测按 shard 拆并行跑，浏览器型用例的启动预算收口到单一常量（4 vCPU runner 上不再随机撞线）。
+
+<!-- auto-i18n:start -->
+### i18n
+
+- 前端新增 key（62）：`currentModelLabel`、`currentModelBadge`、`currentModelHint`、`bgTaskJobKind`、`bgTaskStopping`、`openLocalProject`、`openRemoteProject`、`filesFilterPlaceholder`、`settingsSaveSaving`、`settingsSaveSaved`、`settingsSaveFailed`、`phoneEnabledDesc`、`phoneOffHint`、`projectClickSwitch`、`projectClickSwitchDesc`、`projectOrderManual`、`projectOrderManualDesc`、`toolInspectorOutputStats`、`toolInspectorThinkingStatusRunning`、`toolInspectorThinkingStatusDone`、`toolInspectorThinkingFooterRunning`、`toolInspectorThinkingFooterLines`、`toolTimeRange`、`toolTimeRunning`、`tplStepIdentity`、`tplStepIdentitySub`、`tplStepBehavior`、`tplStepBehaviorSub`、`tplStepCapability`、`tplStepCapabilitySub`、`tplStepReview`、`tplStepReviewSub`、`tplIdentityHint`、`tplNameRequired`、`tplAdvanced`、`tplEnIntro`、`tplEnPrompt`、`tplEnFilled`、`tplEnEmpty`、`tplSearchWhitelist`、`tplNoMatch`、`tplLimited`、`tplFollowSession`、`tplSumName`、`tplSumIntro`、`tplSumMode`、`tplSumModel`、`tplSumThinking`、`tplSumSkills`、`tplSumExtensions`、`tplSpawnTitle`、`tplSpawnNote`、`tplStateOn`、`tplStateOff`、`bgTaskRestart`、`bgTaskStart`、`bgTaskRunning`、`bgTaskQuickStart`、`subagentVerdictUnverified`、`subagentVerdictPartial`、`subagentVerdictBlocked`、`subagentVerdictHint`
+- 前端删除 key（26）：`bgTaskPort`、`bgTaskCleanNow`、`bgTaskCleanNowHint`、`bgTaskCommand`、`promptTok_persona`、`promptTok_persona_desc`、`promptTok_terminal`、`promptTok_terminal_desc`、`markersEnabled`、`markersEnabledDesc`、`markersOffHint`、`settingsTerminalToolsDesc`、`toolsCoreHint`、`toolsPluginHint`、`pluginToolsEmpty`、`pluginDisabledInPlugins`、`toolsSubagentDepHint`、`toolDescSubagent`、`toolDescSubagentSpawn`、`toolDescSubagentGetResult`、`toolDescSubagentSteer`、`toolDescSubagentList`、`toolDescSubagentStop`、`toolDescSubagentWaitAll`、`toolDescSubagentTemplates`、`toolPromptEdited`
+- 前端中文变更（7）：`placeholderIdle`、`placeholderIdleMod`、`settingsMarkers`、`settingsMarkersDesc`、`toolLazyLoadingDesc`、`toolOnDemandToolsDesc`、`presentAutoOpenDesc`
+- 前端英文变更（6）：`placeholderIdle`、`placeholderIdleMod`、`settingsMarkersDesc`、`toolLazyLoadingDesc`、`toolOnDemandToolsDesc`、`presentAutoOpenDesc`
+- 服务端新增 key（29）：`agent.subagent.budget.reached`、`agent.subagent.resume.title`、`bash.bgTimeout`、`bash.bgNoTimeout`、`bash.bgStarted`、`subagents.notify.evidence`、`subagents.spawn.task.missing.prompt`、`subagents.spawn.task.bad.key`、`subagents.complete.evidence.invalid`、`subagents.complete.rejected`、`subagents.complete.recorded`、`subagents.spawn.batch.too.many`、`subagents.spawn.batch.duplicate.key`、`subagents.spawn.batch.rejected`、`subagents.spawn.batch.started`、`subagents.spawn.batch.wait.hint`、`subagents.get.evidence`、`subagents.resume.missing.runId`、`subagents.resume.failed`、`subagents.resume.transcript`、`subagents.resume.no.transcript`、`subagents.resume.ok`、`subagents.steer.queued`、`subagents.steer.restarted`、`subagents.steer.missed`、`subagents.steer.delivered`、`subagents.list.ledger.resumed`、`subagents.list.ledger.item`、`subagents.list.ledger.head`
+- 服务端文案变更（29）：`agent.subagent.limit.reached`、`delegate.validate.agent`、`delegate.validate.short`、`delegate.started`、`subagents.notify.footer`、`subagents.spawn.template.unavailable`、`subagents.spawn.thinking.invalid`、`subagents.spawn.isolation.invalid`、`subagents.action.missing`、`subagents.spawn.missing.prompt`、`subagents.spawn.started`、`subagents.get.missing.runId`、`subagents.get.done`、`subagents.steer.missing.runId`、`subagents.steer.missing.message`、`subagents.steer.not.found`、`subagents.steer.injected`、`subagents.list.empty`、`subagents.stop.missing.runId`、`subagents.stop.not.found`、`subagents.templates.list`、`subagents.handoff.missing.toRunId`、`subagents.handoff.missing.payload`、`subagents.handoff.not.found`、`subagents.dismiss.missing.target`、`subagents.dismiss.running`、`subagents.dismiss.success.single`、`subagents.dismiss.success.batch`、`subagents.wait.pending`
+- 服务端删除 key（1）：`prompt.tools.lazy`
+<!-- auto-i18n:end -->
 
 ## [0.119.0] — 2026-11-08
 
@@ -2363,6 +2436,7 @@ when?, children?}`，也收 `topbar` / `settings` 这类简写别名）；宿主
 [0.90.0]: https://github.com/xing-shuyin/pi-web-ui/releases/tag/v0.90.0
 [0.89.0]: https://github.com/xing-shuyin/pi-web-ui/releases/tag/v0.89.0
 [Unreleased]: https://github.com/xing-shuyin/pi-web-ui/compare/v0.119.0...main
+[0.120.0]: https://github.com/xing-shuyin/pi-web-ui/releases/tag/v0.120.0
 [0.119.0]: https://github.com/xing-shuyin/pi-web-ui/releases/tag/v0.119.0
 [0.118.0]: https://github.com/xing-shuyin/pi-web-ui/releases/tag/v0.118.0
 [0.117.0]: https://github.com/xing-shuyin/pi-web-ui/releases/tag/v0.117.0
