@@ -1257,6 +1257,26 @@ body.pb-panel-layer [hidden] {
 	gap: 12px;
 }
 
+/* 新标签页 / 主题编码框：等宽、可纵向拉高，正文不自动换行（HTML / CSS 看结构比看折行重要） */
+.pb-design {
+	display: flex;
+	flex-direction: column;
+	gap: 8px;
+	min-width: 0;
+}
+
+.pb-code {
+	width: 100%;
+	min-height: 140px;
+	resize: vertical;
+	font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+	font-size: 12px;
+	line-height: 1.55;
+	tab-size: 2;
+	white-space: pre;
+	overflow-wrap: normal;
+}
+
 .pb-section h3 {
 	margin: 0;
 	font-size: 14px;

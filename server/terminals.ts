@@ -25,6 +25,7 @@ import {
 import { resolveRemoteNativeCliLaunch } from "./remote-native-cli.js";
 import { BASH_DESCRIPTION, BASH_PARAMETERS, BASH_PROMPT_GUIDELINES, BASH_PROMPT_SNIPPET } from "./tool-prompts.js";
 import { withDefaultBashTimeout } from "./bash-timeout.js";
+import { splitConptyDa1, stripTerminalQueryRequests, isTerminalQueryResponse } from "./terminal-query.js";
 import { pick, type ServerLang } from "./i18n.js";
 import { armDelay } from "./plugin-schedule.js";
 import {
@@ -171,6 +172,9 @@ interface TermEntry {
 	used: boolean;
 	locale?: string;
 	agentPendingLine: string;
+	/** 本地 ConPTY：启动期的 DA1 由服务端自己回（一问一答），界面拿不到这条查询。 */
+	conptyHandshake?: boolean;
+	conptyHandshakePending?: string;
 }
 
 interface NativeCliRun {
@@ -187,6 +191,8 @@ interface NativeCliRun {
 const isWindows = process.platform === "win32";
 const MAX_TERMINALS = 16;
 const OUTPUT_FLUSH_MS = 16;
+/** ConPTY 启动期 DA1 一般随首包到达；等不到就说明没有这个握手，别把后续真实查询永远扣住。 */
+const CONPTY_HANDSHAKE_TIMEOUT_MS = 3_000;
 const MAX_TERMINAL_HISTORY = 32;
 const MAX_OUTPUT = 2_000_000;
 const MAX_INPUT = 64 * 1024;
@@ -787,12 +793,7 @@ export function parseTerminalLineStream(previousPending: string, inputChunk: str
 	};
 }
 
-export const TERMINAL_QUERY_RESPONSE_RE =
-	/^(?:\x1b\[(?:\??|>|<)?\d*(?:;\d+)*(?:\$?y|[cRnIOt])|\x1b\]\d+;[^\x07\x1b]*(?:\x07|\x1b\\))+$/;
-
-export function isTerminalQueryResponse(data: string): boolean {
-	return TERMINAL_QUERY_RESPONSE_RE.test(data);
-}
+export { TERMINAL_QUERY_RESPONSE_RE, isTerminalQueryResponse } from "./terminal-query.js";
 
 export class TerminalManager {
 	private terms = new Map<string, TermEntry>();
@@ -857,7 +858,7 @@ export class TerminalManager {
 			this.resize(id, cols, rows);
 		}
 		this.flushPending(entry);
-		this.emit({ type: "terminal_output", terminalId: id, data: entry.output, reset: true });
+		this.emit({ type: "terminal_output", terminalId: id, data: stripTerminalQueryRequests(entry.output), reset: true });
 		return true;
 	}
 
@@ -1433,6 +1434,8 @@ export class TerminalManager {
 
 		// (e.g. a global npm install replaced the helper while this server runs).
 		repairSpawnHelperPermissions();
+		const sshSvc = targetUri ? getGlobalRemoteSshService() : null;
+		const localConpty = process.platform === "win32" && !(targetUri && sshSvc);
 		let pty: IPty;
 		let env = { ...shellEnv(), ...nativeCliEnv } as Record<string, string>;
 		try {
@@ -1446,7 +1449,6 @@ export class TerminalManager {
 				shell = launch.file;
 				args = launch.args;
 			}
-			const sshSvc = targetUri ? getGlobalRemoteSshService() : null;
 			if (targetUri && sshSvc) {
 				pty = sshSvc.createVirtualPty(targetUri, cols, rows);
 			} else {
@@ -1472,7 +1474,7 @@ export class TerminalManager {
 			);
 			return false;
 		}
-		this.registerPty(id, pty, abs, cols, rows, title, command, agentBash, locale, nativeCli, nativeCliRun);
+		this.registerPty(id, pty, abs, cols, rows, title, command, agentBash, locale, nativeCli, nativeCliRun, localConpty);
 		return true;
 	}
 
@@ -1488,6 +1490,7 @@ export class TerminalManager {
 		locale?: string,
 		nativeCli?: NativeCliConfig,
 		nativeCliRun?: NativeCliRun,
+		conptyHandshake = false,
 	): void {
 		const entry: TermEntry = {
 			id,
@@ -1515,14 +1518,41 @@ export class TerminalManager {
 			used: agentBash || command !== undefined || nativeCli !== undefined,
 			locale,
 			agentPendingLine: "",
+			conptyHandshake: conptyHandshake || undefined,
 		};
 		this.terms.set(id, entry);
 		pty.onData((data) => {
 			if (this.terms.get(id) !== entry || entry.retired) return;
+			if (entry.conptyHandshake === false) {
+				const step = splitConptyDa1(entry.conptyHandshakePending ?? "", data);
+				entry.conptyHandshakePending = step.pending;
+				data = step.pass;
+				if (step.reply) {
+					entry.conptyHandshake = true;
+					entry.conptyHandshakePending = undefined;
+					try {
+						pty.write(step.reply);
+					} catch {}
+				}
+				if (!data) return;
+			}
 			this.appendOutput(entry, data);
 			if (entry.nativeCli) this.reportNativeCliActivity(id, entry);
 			this.queueOut(entry, data);
 		});
+		if (conptyHandshake) {
+			// ConPTY 没发 DA1（旧版 conhost / DLL 回退）：不能把后续的真实查询一直当握手扣住。
+			const timer = setTimeout(() => {
+				if (entry.conptyHandshake !== false) return;
+				entry.conptyHandshake = true;
+				const rest = entry.conptyHandshakePending ?? "";
+				entry.conptyHandshakePending = undefined;
+				if (!rest) return;
+				this.appendOutput(entry, rest);
+				this.queueOut(entry, rest);
+			}, CONPTY_HANDSHAKE_TIMEOUT_MS);
+			timer.unref?.();
+		}
 		pty.onExit(({ exitCode }) => {
 			if (this.terms.get(id) !== entry || entry.retired) return;
 			if (entry.nativeCliRun?.persistent) this.detachNativeCli(id);
@@ -1719,7 +1749,7 @@ export class TerminalManager {
 		for (const entry of this.terms.values()) this.flushPending(entry);
 		return [...this.terms.values(), ...this.history.values()]
 			.filter((entry) => entry.output.length > 0)
-			.map((entry) => ({ terminalId: entry.id, data: entry.output }));
+			.map((entry) => ({ terminalId: entry.id, data: stripTerminalQueryRequests(entry.output) }));
 	}
 
 	read(

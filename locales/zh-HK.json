@@ -1696,6 +1696,8 @@
 		"phoneOffHint": "已關閉：模型不能读取或操作这台手机",
 		"browserScriptEnabledDesc": "让模型给 AI 浏览器的网页注入 JavaScript 或 CSS，可临时也可长期生效（browser_script 工具：list / status / create / update / remove / enable / disable / run）。",
 		"browserScriptOffHint": "已關閉：模型不能再注入或管理页面脚本",
+		"browserDesignEnabledDesc": "让模型重写 AI 浏览器自己的新标签页（一份自包含 HTML）与主题覆盖 CSS（browser_design 工具：status / get / save / reset / preview，写完能直接截图预览）。",
+		"browserDesignOffHint": "已關閉：模型不能改浏览器的新标签页与主题",
 		"scheduleTaskEnabledDesc": "讓 AI 創建定時/延時喚醒（`schedule` 工具：action=create 建任務、action=list 查看、action=cancel 取消）：到期自動把指令投回發起對話執行並彙報；預設單次，用完即刪。",
 		"scheduleTaskOffHint": "已關閉：AI 無法再建定時任務（已建任務不受影響）",
 		"browserControl": "瀏覽器操作",

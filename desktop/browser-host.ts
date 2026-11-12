@@ -59,11 +59,15 @@ import {
 } from "../browser/runtime/totp.js";
 import { decodeQrNativeImage } from "../browser/runtime/qr.js";
 import { createBrowserExecutor } from "../browser/automation/executor.js";
+import { parseDesignKind } from "../browser/runtime/customize.js";
+import type { BrowserDesignHost, BrowserDesignPreview } from "../browser/automation/design.js";
 import { collectExtensionRules, DeclarativeNetworkRules } from "../browser/runtime/dnr.js";
 import { installExtensionBridge } from "../browser/runtime/extension-bridge.js";
 import {
 	BROWSER_PANEL_EVENTS,
 	BROWSER_PANELS,
+	type BrowserDesignKind,
+	type BrowserDesignStatus,
 	type BrowserMode,
 	type BrowserPageRequest,
 	type BrowserState,
@@ -213,6 +217,16 @@ export class DesktopBrowserHost {
 	private disposed = false;
 	private fileGrants = new Set<string>();
 	private shortcutContents = new WeakSet<WebContents>();
+	/** 主题覆盖在外壳 / 面板上的注入 key：换样式先撤旧的，不叠层 */
+	private readonly themeKeys = new WeakMap<WebContents, string>();
+	/** 自定义新标签页 / 主题的自动化入口（`browser_design` 工具经 page-call 走进来） */
+	private readonly designHost: BrowserDesignHost = {
+		designStatus: () => this.browser.designStatuses(),
+		designDocument: (kind) => this.browser.designDocument(kind),
+		saveDesign: (kind, content) => this.saveDesign(kind, content),
+		resetDesign: (kind) => this.resetDesign(kind),
+		previewDesign: (kind) => this.previewDesign(kind),
+	};
 	private readonly ipcChannels = [
 		"pi-browser:trust",
 		"pi-browser:shell",
@@ -264,6 +278,8 @@ export class DesktopBrowserHost {
 		window.on("enter-full-screen", () => this.layout());
 		window.on("leave-full-screen", () => this.layout());
 		window.webContents.on("did-finish-load", () => this.publish());
+		// 外壳也要盖自定义主题：每次新文档重新注入一次
+		window.webContents.on("dom-ready", () => this.applyChromeTheme());
 		this.attachShortcuts(window.webContents);
 		this.publish();
 		void this.restoreExtensions();
@@ -293,7 +309,8 @@ export class DesktopBrowserHost {
 			(event.sender === this.window.webContents ||
 				event.sender === this.panelView?.webContents ||
 				this.browser.isInternalContents(event.sender)) &&
-			isBrowserAssetUrl(event.sender.getURL(), this.options.assetsDir)
+			// 自定义新标签页和内置内部页同权（同样是本地文件），信任边界由宿主拼，不接受调用方传路径
+			isBrowserAssetUrl(event.sender.getURL(), this.options.assetsDir, [this.browser.customization.path("newtab")])
 		);
 	}
 
@@ -329,6 +346,7 @@ export class DesktopBrowserHost {
 				allowShot: this.browser.getSettings().allowShot !== false,
 				allowScripts: this.browser.getSettings().allowScripts !== false,
 				scripts: this.browser,
+				design: this.designHost,
 			})(req as BrowserPageRequest, event.sender.id);
 		});
 		ipcMain.handle("pi-desktop:browser-set-mode", (event, mode: unknown) => {
@@ -457,6 +475,95 @@ export class DesktopBrowserHost {
 			this.networkRuleCount = rules.length;
 			if (rules.length) console.log(`[desktop] [extensions] 已启用 ${rules.length} 条 declarativeNetRequest 静态规则`);
 		}
+	}
+
+	// ── 自定义新标签页 / 主题 ────────────────────────────────────────────
+	// 存储与「改完立刻生效」在 BrowserManager；宿主只负责三件事：
+	// 外壳 / 面板的主题注入、预览截图、以及写入后把外壳一并刷一遍。
+
+	private saveDesign(kind: BrowserDesignKind, content: unknown): BrowserDesignStatus {
+		const status = this.browser.saveDesign(kind, content);
+		this.applyChromeTheme();
+		return status;
+	}
+
+	private resetDesign(kind: BrowserDesignKind): BrowserDesignStatus {
+		const status = this.browser.resetDesign(kind);
+		this.applyChromeTheme();
+		return status;
+	}
+
+	/** 预览：开/激活一块新标签页并截图（Electron 藏起来的视图截不到图，所以必须先看得见）。 */
+	private async previewDesign(kind: BrowserDesignKind): Promise<BrowserDesignPreview> {
+		const newTab = this.browser.newTabUrl();
+		const existing = this.browser.getTabs().find((tab) => tab.internal && tab.url === newTab);
+		const id = existing?.id ?? this.browser.createTab("newtab");
+		this.browser.activateTab(id);
+		// 搜索浮层不在时才算真的看得见：先撤浮层，再把模式/布局推到「页面可见」
+		this.overlay = false;
+		if (this.mode === "agent") this.setMode("browser");
+		else this.layout();
+		await this.browser.navigate("newtab", id);
+		const contents = this.browser.getWebContents(id);
+		if (!contents) throw new Error("Preview tab disappeared before it could be captured");
+		// 刚加载完时合成器可能还没出第一帧：capturePage 会返回空图，甚至直接拒个 UnknownVizError。
+		// 两种都当成「再等等」，重试用尽才如实报「看不见」，不做假成功。
+		const capture = async (): Promise<Electron.NativeImage | undefined> => {
+			try {
+				return await contents.capturePage();
+			} catch {
+				return undefined;
+			}
+		};
+		let image = await capture();
+		for (let attempt = 0; (!image || image.isEmpty()) && attempt < 3; attempt++) {
+			await new Promise((done) => setTimeout(done, attempt === 0 ? 200 : 400));
+			image = await capture();
+		}
+		if (!image || image.isEmpty())
+			throw new Error(
+				"预览需要一块可见的页面：新标签页已打开，但截图是空的（窗口最小化或被遮盖时会出现）。切到浏览器模式后再试。",
+			);
+		const maxEdge = 1280;
+		const size = image.getSize();
+		const scale = Math.min(1, maxEdge / Math.max(size.width, size.height) || 1);
+		const width = Math.max(1, Math.round(size.width * scale));
+		const height = Math.max(1, Math.round(size.height * scale));
+		const shot = scale < 1 ? image.resize({ width, height }) : image;
+		return {
+			kind,
+			url: newTab,
+			image: {
+				dataUrl: `data:image/jpeg;base64,${shot.toJPEG(72).toString("base64")}`,
+				mimeType: "image/jpeg",
+				width,
+				height,
+			},
+		};
+	}
+
+	/** 外壳与（已打开的面板）各盖一份当前主题：新文档重建后重新注入。 */
+	private applyChromeTheme(): void {
+		if (this.disposed || this.window.isDestroyed()) return;
+		void this.injectChromeTheme(this.window.webContents).catch(() => {});
+		const panel = this.panelView?.webContents;
+		if (panel && !panel.isDestroyed()) void this.injectChromeTheme(panel).catch(() => {});
+	}
+
+	private async injectChromeTheme(contents: WebContents): Promise<void> {
+		const previous = this.themeKeys.get(contents);
+		this.themeKeys.delete(contents);
+		if (previous) {
+			try {
+				await contents.removeInsertedCSS(previous);
+			} catch {}
+		}
+		const css = this.browser.themeCss();
+		if (!css.trim() || contents.isDestroyed()) return;
+		try {
+			const key = await contents.insertCSS(css);
+			if (key) this.themeKeys.set(contents, key);
+		} catch {}
 	}
 
 	/** `chrome.tabs.captureVisibleTab`：截当前激活标签（Chrome 语义：只截可见区域）。 */
@@ -737,6 +844,9 @@ export class DesktopBrowserHost {
 		url.searchParams.set("panel", panel);
 		// 合并面板（vault）有两个标签，外壳可以指定先开哪个（工具栏钥匙图标 → totp）
 		if (tab) url.searchParams.set("tab", tab);
+		view.webContents.on("dom-ready", () => {
+			if (this.panelView === view) void this.injectChromeTheme(view.webContents).catch(() => {});
+		});
 		view.webContents.loadURL(url.href).catch((error: Error) => {
 			if (this.panelView !== view) return;
 			console.warn(`[desktop] [panel] 面板加载失败：${error.message}`);
@@ -975,6 +1085,14 @@ export class DesktopBrowserHost {
 				this.browser.saveBookmarks({ type: "folder", name: "Bookmarks", children: args.bookmarks });
 				this.publish();
 				return true;
+			case "design.status":
+				return this.browser.designStatuses();
+			case "design.get":
+				return this.browser.designDocument(parseDesignKind(args.kind));
+			case "design.save":
+				return this.saveDesign(parseDesignKind(args.kind), args.content);
+			case "design.reset":
+				return this.resetDesign(parseDesignKind(args.kind));
 			case "history.list":
 				return this.browser.listHistory();
 			case "settings.get":

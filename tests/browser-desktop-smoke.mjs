@@ -602,6 +602,65 @@ try {
 	await call("settings.save", { settings: { aiControl: false } });
 	assert.equal((await caller({ op: "click", target: tabId, args: { selector: "#submit" } })).ok, false);
 	await call("settings.save", { settings: { aiControl: true } });
+	// 自定义新标签页 / 主题：工具路径（page-call → design.*）改完立刻生效，预览必须真有截图
+	const designStatus = await caller({ op: "design.status" });
+	assert.deepEqual(
+		designStatus.result.map((entry) => entry.kind),
+		["newtab", "theme"],
+	);
+	assert.equal((await caller({ op: "design.get", args: { kind: "newtab" } })).result.starter, true);
+	const saveNewTab = await caller({
+		op: "design.save",
+		args: {
+			kind: "newtab",
+			content:
+				'<!doctype html><meta charset="utf-8"><title>Smoke new tab</title><body style="margin:0;background:rgb(3,4,5)"><h1 id="probe">custom newtab</h1></body>',
+		},
+		timeoutMs: 10000,
+	});
+	assert.equal(saveNewTab.ok, true, `design.save newtab: ${saveNewTab.error ?? ""}`);
+	const customTabId = await call("tabs.create", { url: "newtab" });
+	const customUrl = (await call("state")).tabs.find((tab) => tab.id === customTabId)?.url ?? "";
+	assert.ok(customUrl.endsWith("/custom/newtab.html"), `new tab opens the custom page: ${customUrl}`);
+	let customPage;
+	for (let attempt = 0; attempt < 100; attempt++) {
+		customPage = pages.pages().find((page) => page.url().includes("/custom/newtab.html"));
+		if (customPage) break;
+		await new Promise((done) => setTimeout(done, 50));
+	}
+	assert.ok(customPage, "custom new tab page is a real view");
+	await customPage.waitForFunction(() => !!window.piBrowserShell, { timeout: 5000 });
+	assert.equal(await customPage.textContent("#probe"), "custom newtab");
+	const preview = await caller({ op: "design.preview", args: { kind: "newtab" }, timeoutMs: 30000 });
+	assert.equal(preview.ok, true, `design.preview: ${preview.error ?? ""}`);
+	assert.ok(preview.result.image.dataUrl.startsWith("data:image/jpeg;base64,"));
+	assert.ok(preview.result.image.width >= 320, "preview returns a real screenshot");
+	const saveTheme = await caller({
+		op: "design.save",
+		args: { kind: "theme", content: ":root { --pb-smoke-probe: 7; }" },
+	});
+	assert.equal(saveTheme.ok, true, `design.save theme: ${saveTheme.error ?? ""}`);
+	await shell.waitForTimeout(300);
+	assert.equal(
+		await shell.evaluate(() => getComputedStyle(document.documentElement).getPropertyValue("--pb-smoke-probe").trim()),
+		"7",
+		"theme override reaches the shell",
+	);
+	assert.equal(
+		await customPage.evaluate(() =>
+			getComputedStyle(document.documentElement).getPropertyValue("--pb-smoke-probe").trim(),
+		),
+		"7",
+		"theme override reaches internal tabs",
+	);
+	assert.equal((await caller({ op: "design.reset", args: { kind: "newtab" } })).ok, true);
+	assert.equal((await caller({ op: "design.reset", args: { kind: "theme" } })).ok, true);
+	const resetStatus = await caller({ op: "design.status" });
+	assert.ok(
+		resetStatus.result.every((entry) => entry.custom === false),
+		"reset removes both custom files",
+	);
+	await call("tabs.activate", { id: tabId });
 	// Agent 页的 openOptions 走 pi-browser:open-options → 外壳开设置面板；
 	// 面板开在自己的浮层视图里（panel.html?panel=settings），不再是外壳文档里的 dialog
 	assert.equal((await caller({ op: "openOptions" })).ok, true);
@@ -613,6 +672,7 @@ try {
 	}
 	assert.ok(settingsPanel, "openOptions opens the settings panel in its own layer view");
 	await settingsPanel.waitForSelector("form", { timeout: 5000 });
+	await settingsPanel.waitForSelector(".pb-design textarea", { timeout: 5000 });
 	assert.deepEqual(rendererErrors, [], "the shell logs no renderer errors while panels open");
 	// Esc 由面板页自己接（视图不是模态 dialog，收不到 cancel）：收起时这块视图当场被销毁，
 	// 所以这一下不等回执——等回执本身就是竞态，页面先没了，promise 只会报 Target closed
@@ -654,6 +714,7 @@ try {
 					"text wait timeout",
 					"vision screenshot",
 					"AI control toggle",
+					"custom new tab + theme (save/preview/reset)",
 					"extension restore/list shape",
 					"extension action popup window",
 					"extension options window",

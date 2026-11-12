@@ -135,6 +135,21 @@ describe("terminal history bridge", () => {
 		expect(fresh.text).toBe("before+after");
 	});
 
+	it("replay 只负责画：历史里的终端查询不再交给终端回话", () => {
+		const bridge = makeTerminalBridge();
+		const screen = display();
+		bridge.register("a", "user", screen);
+		// 实时流原样送达（查询必须到终端，才会有人回话让它解锁）
+		bridge.write("a", "user", "\x1b[1t\x1b[cbanner\r\n");
+		expect(screen.text).toBe("\x1b[1t\x1b[cbanner\r\n");
+		// 重放历史（reset 帧）去掉查询：否则终端会再回一次，ConPTY 把它当按键打给 shell
+		bridge.write("a", "user", "\x1b[1t\x1b[cbanner\r\n", true);
+		expect(screen.text).toBe("\x1b[1tbanner\r\n");
+		const remount = display();
+		bridge.register("a", "user", remount);
+		expect(remount.text).toBe("\x1b[1tbanner\r\n");
+	});
+
 	it("caps history even for oversized individual frames and isolates failing writers", () => {
 		const bridge = makeTerminalBridge();
 		bridge.register("a", "user", {

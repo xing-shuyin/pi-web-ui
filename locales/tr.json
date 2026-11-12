@@ -1696,6 +1696,8 @@
 		"phoneOffHint": "Disabled: the model can neither read nor operate this phone",
 		"browserScriptEnabledDesc": "Let the model inject JavaScript or CSS into AI Browser pages, temporarily or permanently (browser_script tool: list / status / create / update / remove / enable / disable / run).",
 		"browserScriptOffHint": "Disabled: the model can no longer inject or manage page scripts",
+		"browserDesignEnabledDesc": "Let the model rewrite the AI Browser's own new tab page (one self-contained HTML file) and theme override CSS (browser_design tool: status / get / save / reset / preview, with a screenshot preview after saving).",
+		"browserDesignOffHint": "Disabled: the model can no longer change the browser's new tab page or theme",
 		"scheduleTaskEnabledDesc": "AI'nın zamanlanmış/gecikmeli uyandırmalar oluşturmasını sağlar (`schedule` aracı: action=create görev oluşturur, action=list görüntüler, action=cancel iptal eder): süre dolduğunda komut, yürütmek ve raporlamak için kaynak konuşmaya geri teslim edilir; varsayılan olarak tek seferliktir, çalıştıktan sonra otomatik silinir.",
 		"scheduleTaskOffHint": "Devre dışı: AI artık zamanlanmış görev oluşturamaz (mevcut görevler etkilenmez)",
 		"browserControl": "Tarayıcı kontrolü",

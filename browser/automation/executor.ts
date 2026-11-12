@@ -1,6 +1,7 @@
 import type { WebContents } from "electron";
 import type { BrowserPageRequest, BrowserPageResult, BrowserTab } from "../contracts.js";
 import { runPageOperation } from "./page-operation.js";
+import { runDesignOperation, type BrowserDesignHost } from "./design.js";
 import { runScriptOperation, type BrowserScriptHost } from "./scripts.js";
 
 export interface BrowserExecutorManager {
@@ -18,6 +19,8 @@ export interface BrowserExecutorOptions {
 	allowScripts?: boolean;
 	/** 页面脚本宿主（BrowserManager）；缺失时 script.* 一律报不可用 */
 	scripts?: BrowserScriptHost;
+	/** 自定义新标签页 / 主题宿主（桌面宿主）；缺失时 design.* 一律报不可用 */
+	design?: BrowserDesignHost;
 }
 
 const MAX_RESULT_CHARS = 512 * 1024;
@@ -54,6 +57,21 @@ export function createBrowserExecutor(
 					throw new Error("Browser page scripts are disabled in the native browser settings");
 				const scriptArgs = (req.args ?? {}) as Record<string, unknown>;
 				return bounded(await runScriptOperation(options.scripts, op.slice("script.".length), scriptArgs, req.target));
+			}
+			if (op.startsWith("design.")) {
+				if (!options.design) throw new Error("Browser customization is unavailable in this browser build");
+				// 改的是浏览器自己的页面：和「允许 AI 控制浏览器」同一道门，截图预览再叠一层 allowShot
+				if (options.aiControl === false)
+					throw new Error("Browser AI control is disabled in the native browser settings");
+				if (op === "design.preview" && options.allowShot === false)
+					throw new Error("Browser screenshots are disabled in the native browser settings");
+				return bounded(
+					await runDesignOperation(
+						options.design,
+						op.slice("design.".length),
+						(req.args ?? {}) as Record<string, unknown>,
+					),
+				);
 			}
 			if (
 				![

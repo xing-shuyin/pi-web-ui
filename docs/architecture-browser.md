@@ -147,6 +147,20 @@ Agent 可以给网页注入脚本：`browser_script` 工具（`server/browser-sc
 - 排序（`totp.reorder`）、改名/改绑定（`totp.update`）、删除（`totp.remove`）都在工具条上，写回同一份加密文件；列表顺序就是 `order` 字段，未列出的条目在重排后保留在尾部，不丢数据。
 - 纯逻辑（Base32/HOTP/TOTP 的 RFC 6238 向量、otpauth 各种变体、投影、排序、origin 匹配、二维码位图解码）全在 `tests/unit/totp.test.ts`，不依赖 Electron。
 
+## 自定义新标签页与主题覆盖（用户改 / Agent 设计）
+
+内置页（shell / panel / newtab / office / workspace）是构建产物，只读且打包后不可写；用户与 Agent 的自定义内容一律落在 **Electron `userData/browser/custom/`**：`newtab.html`（新标签页，自包含 HTML）与 `theme.css`（主题覆盖）。单源在 `browser/runtime/customize.ts`（`BrowserCustomization`：路径、大小上限、原子写、状态、回落规则）。
+
+- **一个 kind 一个文件**：新标签页就是一份完整 HTML（inline `<style>`/`<script>` 随便写，不引入模板语法或多文件工程）；主题就是一份 CSS。写空正文 = 恢复默认（不会留一个空白页把人困住）；超过 512KB 直接报错而不是截断（挡住「把 20MB base64 图片塞进新标签页」）。
+- **谁打开它**：`BrowserManager` 把 `newtab` / 空地址 / 旧的自定义地址统一换成 `customization.newTabUrl()`（`targetUrl()`），所以 Ctrl+T、工具栏 `+`、恢复上次标签、面板里的「预览」走的是同一条路。没有自定义文件时回落 `dist/browser/renderer/newtab.html`。自定义页在标签状态里仍算 `internal`：`browser_page` 不把它当可操作页面，页面脚本不注入，DNR 与导航护栏按内部页处理。
+- **与内置页同权**：`isBrowserAssetUrl()`（`desktop/browser-policy.ts`）多收一个由宿主拼出来的路径（`custom/newtab.html`），因此自定义页能拿到 `piBrowserShell` 桥（`settings.get` / `bookmarks.list` / `tabs.create` / `navigate` …）。这是有意的取舍：它终究是本地文件，且只有这样 AI 设计的页面才能有真能用的搜索框和书签胶囊。代价是**写进这份 HTML 的内容等于拿到本地文件与凭据桥的能力**，所以工具提示词明确禁止把远程脚本或不可信标记塞进去。
+- **改完立刻生效**：写/删新标签页 → 所有停在新标签页上的标签重载（内置 ↔ 自定义互相拨）；写/删主题 → 已打开的内部页标签先撤旧 key 再 `insertCSS`，**不整页刷新**（Office / 工作区里的未保存编辑不能因为换配色被刷掉）。外壳与面板不是标签，由 `DesktopBrowserHost.applyChromeTheme()` 在各自 `dom-ready` 与写入后注入。
+- **两条入口，一套实现**：设置面板「新标签页 / 主题」（`browser/renderer/panels.ts` 的 `designEditor`：正文框 + 保存 / 预览 / 恢复默认，显示文件绝对路径）与 Agent 工具 `browser_design`（`server/browser-design-tool.ts`）都只说 `design.status|get|save|reset`，落到 `desktop/browser-host.ts` 的 `call()` 与 `BrowserManager` 同一组方法上。
+- **预览必须有可见页面**：Electron 对隐藏 / 未挂载的 `WebContentsView` 调 `capturePage()` 会返回空图或挂住（实测），所以 `design.preview` 会开或激活一块新标签页、必要时把窗口切到 browser 模式，再截图（≤1280px、JPEG）；抓不到就如实报「需要可见页面」，不做假成功。
+- **自动化线上不加新字段**：工具仍走既有 `page_request`，`op` 为 `design.status|get|save|reset|preview`（`browser/automation/design.ts` 的 `BrowserDesignHost`），在 `createBrowserExecutor` 里先于「选目标标签」分支处理——浏览器只剩内部页时也照常可用。
+- **写坏了怎么退**：主题是一份任意 CSS，理论上能把外壳藏没。恢复路径只有一条且必须真实可用——删掉 `userData/browser/custom/theme.css`（或 `newtab.html`）后重启，或让 Agent 跑 `design.reset`；设置面板里也直接显示这两个文件的绝对路径，方便外部编辑器处理。
+- 回归：`tests/unit/browser-customize.test.ts`（存储 / 大小 / 原子写 / URL 识别）、`browser-design-tool.test.ts`（工具契约、kind 与 `browser/contracts.ts` 同构、`get` 截断）、`browser-design-ops.test.ts`（executor 分支）。
+
 ## 构建与验证
 
 `npm run build:desktop` 编译 desktop/browser TypeScript，再由 `scripts/build-browser.mjs` 独立构建浏览器页面到 dist/browser/renderer。现有 Agent Vite 入口不变。Electron 打包包含 dist/desktop、dist/browser、dist/server 和 web/dist。

@@ -1,3 +1,5 @@
+import { stripTerminalQueryRequests } from "../../server/terminal-query.js";
+
 export interface TerminalWriter {
 	write(data: string): void;
 	dispose(): void;
@@ -31,6 +33,10 @@ export function makeTerminalBridge() {
 			if (reset) {
 				if (!writer.reset) return;
 				writer.reset();
+				// 历史重放只负责「画」：里面的查询早就有过回话，再答一次就会被 PTY 当成按键
+				// 打进命令行（ConPTY 只认第一条回话，多出来的就是 `1;2c`）。
+				writer.write(stripTerminalQueryRequests(data));
+				return;
 			}
 			writer.write(data);
 		} catch {}

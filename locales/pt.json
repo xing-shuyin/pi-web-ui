@@ -1696,6 +1696,8 @@
 		"phoneOffHint": "Disabled: the model can neither read nor operate this phone",
 		"browserScriptEnabledDesc": "Let the model inject JavaScript or CSS into AI Browser pages, temporarily or permanently (browser_script tool: list / status / create / update / remove / enable / disable / run).",
 		"browserScriptOffHint": "Disabled: the model can no longer inject or manage page scripts",
+		"browserDesignEnabledDesc": "Let the model rewrite the AI Browser's own new tab page (one self-contained HTML file) and theme override CSS (browser_design tool: status / get / save / reset / preview, with a screenshot preview after saving).",
+		"browserDesignOffHint": "Disabled: the model can no longer change the browser's new tab page or theme",
 		"scheduleTaskEnabledDesc": "Permite à IA criar despertares agendados ou adiados (schedule(action=\"create\") cria, schedule(action=\"list\") lista, schedule(action=\"cancel\") cancela): ao disparar, a instrução volta para a conversa de origem para executar e relatar; único por padrão, excluído após disparar.",
 		"scheduleTaskOffHint": "Desativado: a IA não pode mais criar tarefas agendadas (as já criadas continuam ativas)",
 		"browserControl": "Navegador",

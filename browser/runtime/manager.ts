@@ -12,9 +12,10 @@ import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { randomUUID } from "node:crypto";
-import type { BrowserTab } from "../contracts.js";
+import type { BrowserTab, BrowserDesignDocument, BrowserDesignKind, BrowserDesignStatus } from "../contracts.js";
 import { BrowserStorage } from "../storage/index.js";
-import { isInternalUrl, isWebUrl, normalizeBrowserUrl, pickTabFavicon } from "./urls.js";
+import { isWebUrl, internalPageName, internalPageUrl, normalizeBrowserUrl, pickTabFavicon } from "./urls.js";
+import { BrowserCustomization } from "./customize.js";
 import { DOCK_SCRIPT, SCROLLBAR_CSS } from "./dock.js";
 import {
 	buildCleanupCode,
@@ -75,8 +76,12 @@ type Bounds = { x: number; y: number; width: number; height: number };
 
 export class BrowserManager {
 	readonly storage: BrowserStorage;
+	/** 自定义新标签页 / 主题（用户内容住在 `dataDir/custom/`，不进构建产物） */
+	readonly customization: BrowserCustomization;
 	readonly session: Session;
 	private readonly tabs = new Map<string, TabRecord>();
+	/** 每个标签当前注入的主题覆盖 CSS 的 key：换样式时先撤旧的，不叠层 */
+	private readonly themeKeys = new Map<string, string>();
 	private readonly downloads = new Map<string, { state: BrowserDownload; item?: DownloadItem }>();
 	private activeTabId: string | null = null;
 	private readonly sessionScripts = new Map<string, PageScript>();
@@ -90,6 +95,7 @@ export class BrowserManager {
 
 	constructor(private readonly options: BrowserManagerOptions) {
 		this.storage = new BrowserStorage(options.dataDir, safeStorage);
+		this.customization = new BrowserCustomization(options.dataDir);
 		this.session = session.fromPath(path.resolve(options.dataDir, "session"));
 		this.session.setPermissionRequestHandler((_wc, _permission, callback) => callback(false));
 		this.session.setPermissionCheckHandler(() => false);
@@ -115,7 +121,7 @@ export class BrowserManager {
 
 	createTab(url = ""): string {
 		this.ensureAlive();
-		const target = normalizeBrowserUrl(url, this.options.assetsDir);
+		const target = this.targetUrl(url);
 		const id = randomUUID();
 		const view = new WebContentsView({
 			webPreferences: {
@@ -136,7 +142,7 @@ export class BrowserManager {
 			loading: true,
 			canGoBack: false,
 			canGoForward: false,
-			internal: isInternalUrl(target, this.options.assetsDir),
+			internal: this.isInternalPage(target),
 		};
 		const record = { state, view };
 		this.tabs.set(id, record);
@@ -153,25 +159,25 @@ export class BrowserManager {
 		const update = () => {
 			if (this.disposed || this.tabs.get(id) !== record || wc.isDestroyed()) return;
 			state.url = wc.getURL() || state.url;
-			state.title = wc.getTitle() || state.title;
-			state.internal = isInternalUrl(state.url, this.options.assetsDir);
+			// 没有 <title> 的本地页，Chromium 会拿文件名当标题：新标签页这时退回固定文案，别让标题栏出现 newtab.html
+			const title = wc.getTitle();
+			state.title =
+				this.isNewTabPage(state.url) && (!title || /\.html?$/i.test(title)) ? "新标签页" : title || state.title;
+			state.internal = this.isInternalPage(state.url);
 			state.loading = wc.isLoading();
 			state.canGoBack = wc.navigationHistory.canGoBack();
 			state.canGoForward = wc.navigationHistory.canGoForward();
 			this.changed();
 		};
 		wc.setWindowOpenHandler(({ url: destination }) => {
-			if (
-				isWebUrl(destination) ||
-				(this.isInternalContents(wc) && isInternalUrl(destination, this.options.assetsDir))
-			) {
+			if (isWebUrl(destination) || (this.isInternalContents(wc) && this.isInternalPage(destination))) {
 				this.createTab(destination);
 			}
 			return { action: "deny" };
 		});
 		const guardNavigation = (event: Electron.Event, destination: string) => {
 			if (isWebUrl(destination)) return;
-			if (this.isInternalContents(wc) && isInternalUrl(destination, this.options.assetsDir)) return;
+			if (this.isInternalContents(wc) && this.isInternalPage(destination)) return;
 			if (this.options.onFileDrop && destination.startsWith("file:")) {
 				try {
 					const file = fileURLToPath(destination);
@@ -223,6 +229,8 @@ export class BrowserManager {
 		wc.on("dom-ready", () => {
 			if (wc.isDestroyed() || this.disposed) return;
 			const current = wc.getURL() || "";
+			// 自定义主题也盖内部页：外壳 / 面板在宿主那边注入，标签页归这里
+			if (this.isInternalPage(current)) void this.applyTheme(id, wc).catch(() => {});
 			if (!current.includes("shell.html") && !current.includes("newtab.html")) {
 				try {
 					if (this.storage.getSettings().customScrollbar !== false) {
@@ -283,6 +291,7 @@ export class BrowserManager {
 		const index = keys.indexOf(id);
 		this.tabs.delete(id);
 		this.scriptRuns.delete(id);
+		this.themeKeys.delete(id);
 		this.release(record.view);
 		if (this.activeTabId === id) this.activeTabId = keys[index + 1] ?? keys[index - 1] ?? null;
 		if (!this.tabs.size) {
@@ -294,11 +303,11 @@ export class BrowserManager {
 	}
 	async navigate(url: string, id = this.activeTabId ?? undefined): Promise<void> {
 		this.ensureAlive();
-		const target = normalizeBrowserUrl(url, this.options.assetsDir);
+		const target = this.targetUrl(url);
 		if (!id || !this.tabs.has(id)) throw new Error("Browser tab not found");
 		const record = this.tabs.get(id)!;
 		record.state.url = target;
-		record.state.internal = isInternalUrl(target, this.options.assetsDir);
+		record.state.internal = this.isInternalPage(target);
 		record.state.loading = true;
 		this.changed();
 		try {
@@ -335,7 +344,7 @@ export class BrowserManager {
 		return (
 			!wc.isDestroyed() &&
 			[...this.tabs.values()].some((record) => record.view.webContents === wc) &&
-			isInternalUrl(wc.getURL(), this.options.assetsDir)
+			this.isInternalPage(wc.getURL())
 		);
 	}
 	layout(bounds: Bounds): void {
@@ -378,6 +387,107 @@ export class BrowserManager {
 		const result = this.storage.importLegacyData(sourceDir);
 		this.changed();
 		return result;
+	}
+
+	// ── 自定义新标签页 / 主题 ──────────────────────────────────────
+	// 代码是缓存、状态独立：用户内容只住 customization.dir，读完即用、不参与构建。
+	// 改完当场生效：新标签页重载、主题重注入（不整页刷新，免得弄丢工作区/Office 的未保存编辑）。
+	/** 当前应该打开的新标签页地址（有自定义就是那个 file: URL）。 */
+	newTabUrl(): string {
+		return this.customization.newTabUrl(internalPageUrl("newtab", this.options.assetsDir));
+	}
+
+	designStatuses(): BrowserDesignStatus[] {
+		return this.customization.statuses();
+	}
+
+	designDocument(kind: BrowserDesignKind): BrowserDesignDocument {
+		return this.customization.document(kind);
+	}
+
+	saveDesign(kind: BrowserDesignKind, content: unknown): BrowserDesignStatus {
+		this.ensureAlive();
+		const status = this.customization.write(kind, content);
+		this.applyDesignChange(kind);
+		return status;
+	}
+
+	resetDesign(kind: BrowserDesignKind): BrowserDesignStatus {
+		this.ensureAlive();
+		const status = this.customization.reset(kind);
+		this.applyDesignChange(kind);
+		return status;
+	}
+
+	/** 主题覆盖 CSS 原文：外壳 / 面板的注入由宿主自己做（它们不是标签）。 */
+	themeCss(): string {
+		return this.customization.themeCss();
+	}
+
+	/** 重新把当前主题注入到所有内部页标签（外壳与面板由宿主另行处理）。 */
+	async refreshTheme(): Promise<void> {
+		for (const [id, record] of this.tabs) {
+			const wc = record.view.webContents;
+			if (wc.isDestroyed() || this.disposed) continue;
+			if (!this.isInternalPage(record.state.url)) continue;
+			await this.applyTheme(id, wc);
+		}
+	}
+
+	/** 把所有新标签页标签拨到当前版本（写/删自定义后立即看到效果）。 */
+	reloadNewTabPages(): void {
+		const target = this.newTabUrl();
+		for (const record of this.tabs.values()) {
+			if (this.disposed || record.view.webContents.isDestroyed()) continue;
+			if (!this.isNewTabPage(record.state.url)) continue;
+			// 已经在新地址上的标签要重载才拿得到新正文；还停在旧地址（内置 ↔ 自定义）的直接拨过去
+			if (record.state.url === target) record.view.webContents.reload();
+			else void record.view.webContents.loadURL(target).catch(() => {});
+		}
+	}
+
+	private applyDesignChange(kind: BrowserDesignKind): void {
+		if (kind === "theme") void this.refreshTheme().catch(() => {});
+		else this.reloadNewTabPages();
+		this.changed();
+	}
+
+	private async applyTheme(id: string, wc: WebContents): Promise<void> {
+		const previous = this.themeKeys.get(id);
+		this.themeKeys.delete(id);
+		if (previous) {
+			try {
+				await wc.removeInsertedCSS(previous);
+			} catch {}
+		}
+		const css = this.customization.themeCss();
+		if (!css.trim() || wc.isDestroyed()) return;
+		try {
+			const key = await wc.insertCSS(css);
+			if (key) this.themeKeys.set(id, key);
+		} catch {}
+	}
+
+	private internalPage(url: string): string | undefined {
+		return (
+			internalPageName(url, this.options.assetsDir) ?? (this.customization.isNewTabFile(url) ? "newtab" : undefined)
+		);
+	}
+
+	private isInternalPage(url: string): boolean {
+		return this.internalPage(url) !== undefined;
+	}
+
+	private isNewTabPage(url: string): boolean {
+		return this.internalPage(url) === "newtab";
+	}
+
+	/** 输入 URL → 实际打开的 URL：新建/打开 newtab 统一走自定义版本，旧的自定义地址专回 newtab。 */
+	private targetUrl(input: string): string {
+		const builtin = internalPageUrl("newtab", this.options.assetsDir);
+		if (this.customization.isCustomFile(input.trim())) return this.customization.newTabUrl(builtin);
+		const normalized = normalizeBrowserUrl(input, this.options.assetsDir);
+		return normalized === builtin ? this.customization.newTabUrl(builtin) : normalized;
 	}
 
 	// ── 页面脚本（Agent 注入的临时 / 永久脚本）──────────────────────────────

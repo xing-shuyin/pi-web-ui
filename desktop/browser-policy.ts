@@ -52,13 +52,20 @@ export function isTrustedAgentUrl(value: string, agentUrl: string): boolean {
 	}
 }
 
-export function isBrowserAssetUrl(value: string, assetsDir: string): boolean {
+/**
+ * 内部页信任边界：构建产物里的固定几页，外加用户自己的自定义新标签页（`dataDir/custom/newtab.html`）。
+ * 自定义页和内置页同权（它同样只会是本地文件），所以能拿 `piBrowserShell` 桥；
+ * 这个边界必须由寄主显式传进来，不能让调用方自己拼路径。
+ */
+export function isBrowserAssetUrl(value: string, assetsDir: string, extraPages: readonly string[] = []): boolean {
 	try {
 		const url = new URL(value);
 		if (url.protocol !== "file:") return false;
 		const path = resolve(fileURLToPath(url));
-		return ["shell.html", "panel.html", "newtab.html", "office.html", "workspace.html", "search.html"].some(
-			(name) => path === resolve(assetsDir, name),
+		const pages = ["shell.html", "panel.html", "newtab.html", "office.html", "workspace.html", "search.html"];
+		return (
+			pages.some((name) => path === resolve(assetsDir, name)) ||
+			extraPages.some((page) => !!page && path === resolve(page))
 		);
 	} catch {
 		return false;

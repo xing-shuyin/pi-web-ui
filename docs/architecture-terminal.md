@@ -77,6 +77,15 @@
 
 **终端输出微批合并**（`terminals.ts` 的 `queueOut`/`flushPending`，窗口 `OUTPUT_FLUSH_MS=16ms`）：`pty.onData` 每 chunk 先入 `pendingOut` 缓冲再统一 flush 一条 `terminal_output`——构建等场景每秒数百上千个小 chunk 的 WS 帧风暴降 10~50 倍；exit/kill/原地重启先 flush 再发退出事件保证顺序。
 
+## 终端查询回话必须一问一答（提示符里冒出 `1;2c`）
+
+终端里的程序会用 CSI/OSC 查询终端能力，终端（xterm.js / ConPTY 对端）会**自动回话**，而回话走的是 PTY **输入**通道。Windows 的 `useConptyDll` ConPTY 启动时会先发 `ESC [ c`（DA1）并**阻塞输入**直到收到回话，且**只认第一条**——多出来的回话没有查询与之配对，就直接落到 shell 提示符上，被 readline 当成普通按键：`ESC[?` 被吞掉，剩下 `1;2c` 打在命令行里（`ESC[12;40R`、`ESC]11;rgb:…` 同理）。
+
+- **单源**：`server/terminal-query.ts` 一处定义「查询请求」「回话形态」「ConPTY DA1 应答」。`TERMINAL_QUERY_RESPONSE_RE` / `isTerminalQueryResponse` 由 `terminals.ts` 再导出（判断「这段输入不是人敲的」用，不计入 `used`）。
+- **谁回答 ConPTY 的 DA1**：服务端。`registerPty` 的 `pty.onData` 在 `conptyHandshake === false` 期间用 `splitConptyDa1` 把 DA1 从输出里摘掉（含被切在两个 chunk 中间的半截前缀），并立刻 `pty.write("\x1b[?1;2c")` 回一次（与 xterm.js 的应答一致）。这条查询不再下发给任何界面：既不依赖浏览器此刻是否挂着 xterm，也不会因为「回放 + 实时流各回一次」而多出一句。只对本地 ConPTY 生效（远程虚拟 PTY / POSIX 无此握手）。
+- **历史回放只负责画**：`TerminalManager.attach()` / `replay()` 下发的是 `stripTerminalQueryRequests(entry.output)`，`web/src/terminal-bridge.ts` 的 reset 帧同样先剥再写。实时流保持原样——查询必须送到终端，否则没人回话。`server/bash-tool` 的 `read()` 仍返回原始历史（agent 看的是真实输出）。
+- **回归测试**：`tests/unit/terminal-query.test.ts`（剥查/切包/replay 与 attach 帧）、`tests/unit/terminal-bridge.test.ts`（实时原样、reset 剥查）。
+
 ## node-pty × Node `--watch` 兼容自愈
 
 `server/patch-node-pty.ts`（必须排在 node-pty 之前 import）：dev 脚本用 `node --watch`，watch 模式会向 node-pty 的 ConPTY worker / console-list agent 的 IPC 通道推 `watch:require`/`watch:import` 消息——node-pty 1.1.0 不识别，导致①每条都 `console.warn('Unexpected ConoutWorkerMessage')` 刷屏；②kill 路径把 watch 消息当 agent 回复，`message.consoleProcessList` 为 undefined 直接 `.forEach` 崩溃。补丁模块在启动时幂等地改写安装副本（仿 spawn-helper chmod 先例）；`terminals.ts` 里另有一层 console.warn 过滤兜底。生产（无 `--watch`）不受影响。

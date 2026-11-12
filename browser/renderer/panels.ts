@@ -24,7 +24,13 @@ import {
 } from "./common.js";
 import { t, type MessageKey } from "./i18n.js";
 import { vaultPanel, type VaultTab } from "./vault.js";
-import type { BrowserPanel, BrowserPanelEvent, BrowserState } from "../contracts.js";
+import type {
+	BrowserDesignDocument,
+	BrowserDesignKind,
+	BrowserPanel,
+	BrowserPanelEvent,
+	BrowserState,
+} from "../contracts.js";
 export type Panel = BrowserPanel;
 let dialog: HTMLDialogElement | undefined;
 let overlayOwned = false;
@@ -560,6 +566,13 @@ async function settingsPanel(container: HTMLElement): Promise<void> {
 		}),
 	);
 	const vault = element("section", "pb-section");
+	const design = element("section", "pb-section");
+	design.append(
+		element("h3", "", t("design")),
+		element("p", "pb-muted", t("designHelp")),
+		await designEditor("newtab"),
+		await designEditor("theme"),
+	);
 	const extensions = element("section", "pb-section");
 	extensions.append(
 		element("h3", "", t("extensions")),
@@ -570,6 +583,7 @@ async function settingsPanel(container: HTMLElement): Promise<void> {
 		form,
 		agentSection,
 		vault,
+		design,
 		extensions,
 		importing,
 		element("p", "pb-muted", t("shortcuts")),
@@ -577,8 +591,53 @@ async function settingsPanel(container: HTMLElement): Promise<void> {
 	);
 	await Promise.all([vaultSection(vault), pageScriptsSection(scriptList)]);
 }
-/** 页面脚本条目：字段与内核 scripts.list 的返回契约对齐。 */
-interface PageScript {
+/** 新标签页 / 主题的编辑器：一份正文 + 保存 / 预览 / 恢复默认。清空正文再保存等于恢复默认。 */
+async function designEditor(kind: BrowserDesignKind): Promise<HTMLElement> {
+	const wrap = element("div", "pb-design");
+	const title = kind === "newtab" ? t("designNewTab") : t("designTheme");
+	const status = element("p", "pb-muted");
+	const starterHint = element("p", "pb-muted", t("designStarterHint"));
+	const area = element("textarea", "pb-input pb-code");
+	area.spellcheck = false;
+	area.rows = kind === "newtab" ? 14 : 8;
+	area.setAttribute("aria-label", title);
+	const show = (doc: BrowserDesignDocument): void => {
+		area.value = doc.content;
+		starterHint.hidden = !doc.starter;
+		status.textContent = [
+			doc.status.custom ? t("designCustom") : t("designDefault"),
+			doc.status.custom ? `${Math.max(1, Math.round(doc.status.bytes / 1024))} KB` : "",
+			doc.status.path,
+		]
+			.filter(Boolean)
+			.join(" · ");
+	};
+	const refresh = async (): Promise<void> => show(await call<BrowserDesignDocument>("design.get", { kind }));
+	wrap.append(
+		element("strong", "", title),
+		status,
+		area,
+		toolbar(
+			button(t("save"), async () => {
+				await call("design.save", { kind, content: area.value });
+				await refresh();
+				notify(t("designSaved"));
+			}),
+			// 预览就是开一块新标签页：它就是最终效果，不需要另做一个预览视图
+			button(t("designPreview"), () => void openUrl("newtab", true)),
+			button(t("designReset"), async () => {
+				if (!window.confirm(t("designResetConfirm"))) return;
+				await call("design.reset", { kind });
+				await refresh();
+				notify(t("designResetDone"));
+			}),
+		),
+		starterHint,
+	);
+	await refresh();
+	return wrap;
+}
+/** 页面脚本条目：字段与内核 scripts.list 的返回契约对齐。 */ interface PageScript {
 	id: string;
 	name: string;
 	matches: string[];

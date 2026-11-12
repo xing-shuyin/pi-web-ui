@@ -52,6 +52,33 @@ export const BROWSER_PANEL_EVENTS = [
 ] as const;
 export type BrowserPanelEvent = (typeof BROWSER_PANEL_EVENTS)[number];
 
+/**
+ * 可自定义的浏览器资产：`newtab` 是新标签页 HTML（自包含），`theme` 是覆盖 CSS。
+ * 存储只有一份事实源 `browser/runtime/customize.ts`，这里只定形状。
+ */
+export const BROWSER_DESIGN_KINDS = ["newtab", "theme"] as const;
+export type BrowserDesignKind = (typeof BROWSER_DESIGN_KINDS)[number];
+
+export interface BrowserDesignStatus {
+	kind: BrowserDesignKind;
+	/** 文件名：newtab.html / theme.css */
+	file: string;
+	/** 绝对路径：想用编辑器手改时照这个找 */
+	path: string;
+	/** 用户是否已经写了自定义版本（false = 用内置默认） */
+	custom: boolean;
+	bytes: number;
+	updatedAt?: number;
+	maxBytes: number;
+}
+
+export interface BrowserDesignDocument {
+	status: BrowserDesignStatus;
+	content: string;
+	/** 内容来自内置起步模板（还没写过自定义版本） */
+	starter: boolean;
+}
+
 export interface BrowserHostBridge {
 	version: 1;
 	pageCall(request: BrowserPageRequest): Promise<BrowserPageResult>;
@@ -63,6 +90,11 @@ export type BrowserShellAction =
 	/** 面板浮层：`{ open, panel }` 开/收起，`{ size }` 由面板页回煲自己要多大的矩形 */
 	| "panel"
 	| "downloads.list"
+	/** 自定义新标签页 / 主题：status 列状态，get 取正文，save 写入，reset 回到内置默认 */
+	| "design.status"
+	| "design.get"
+	| "design.save"
+	| "design.reset"
 	| "extensions.list"
 	| "extensions.load"
 	| "extensions.installCrx"
