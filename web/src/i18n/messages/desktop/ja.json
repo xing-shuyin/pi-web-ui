@@ -26,5 +26,11 @@
 	"desktop.noDevices": "選択できるデバイスがありません。",
 	"desktop.currentDevice": "現在のデバイス",
 	"desktop.showCurrent": "このデバイスのデスクトップを表示",
-	"desktop.currentConnection": "現在の接続を使用"
+	"desktop.currentConnection": "現在の接続を使用",
+	"desktop.groupTitle": "グループのデスクトップ",
+	"desktop.groupAll": "すべてのメンバー",
+	"desktop.groupMembers": "グループメンバーを選択",
+	"desktop.groupNoDevice": "接続されたデバイスがありません",
+	"desktop.groupSelect": "{name} のデスクトップを表示",
+	"desktop.groupOpen": "{name} のデスクトップを開いて操作"
 }

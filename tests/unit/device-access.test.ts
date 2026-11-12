@@ -16,6 +16,20 @@ import { DesktopPreview } from "../../web/src/components/desktop-preview.js";
 let root: Root | undefined;
 let host: HTMLDivElement | undefined;
 const hub = "https://hub.example.com";
+it("uses the current app for a verified local group device without a self relay request", async () => {
+	const fetcher = vi.fn();
+	vi.stubGlobal("fetch", fetcher);
+	const preview = await requestDeviceAccessUrl("local-pc", hub, true, false, true, undefined, true);
+	expect(preview).toMatchObject({ transport: "current" });
+	expect(new URL(preview.url).pathname).toBe("/desktop-preview");
+	expect(fetcher).not.toHaveBeenCalled();
+	await openDeviceAccess("local-pc", hub, true, false, false, "Local PC", {
+		mode: "live",
+		local: true,
+		groupId: "team",
+	});
+	expect(getDesktopAccess()).toMatchObject({ id: "local-pc", groupId: "team", mode: "live", local: true });
+});
 function ticket(url = `${hub}/device/mac/__open?ticket=fresh&next=/ignored`) {
 	return vi.stubGlobal(
 		"fetch",
@@ -88,6 +102,25 @@ it("ignores preview status from unrelated frames", async () => {
 		window.dispatchEvent(new MessageEvent("message", { source: frame.contentWindow, origin: "null", data })),
 	);
 	expect(document.body.textContent).toContain("remote-error");
+});
+it("keeps origin only for the fixed local desktop and requires matching-origin status messages", async () => {
+	ticket();
+	await mount("preview");
+	await act(async () => openDeviceAccess("self", hub, true, false, false, "This PC", { local: true }));
+	const frame = document.querySelector("iframe")!;
+	expect(frame.getAttribute("sandbox")).toContain("allow-same-origin");
+	expect(new URL(frame.src).pathname).toBe("/desktop-preview");
+	const data = { type: "desktop-preview-state", error: "local-frame-error" };
+	await act(async () =>
+		window.dispatchEvent(new MessageEvent("message", { source: frame.contentWindow, origin: "null", data })),
+	);
+	expect(document.body.textContent).not.toContain("local-frame-error");
+	await act(async () =>
+		window.dispatchEvent(
+			new MessageEvent("message", { source: frame.contentWindow, origin: new URL(frame.src).origin, data }),
+		),
+	);
+	expect(document.body.textContent).toContain("local-frame-error");
 });
 it("switches desktop devices inside the preview picker without navigating or opening another tab", async () => {
 	const fetcher = vi.fn(async (input: unknown) => ({

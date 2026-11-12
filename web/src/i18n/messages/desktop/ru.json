@@ -26,5 +26,11 @@
 	"desktop.noDevices": "Нет доступных устройств.",
 	"desktop.currentDevice": "Текущее устройство",
 	"desktop.showCurrent": "Показать рабочий стол этого устройства",
-	"desktop.currentConnection": "Используется текущее соединение"
+	"desktop.currentConnection": "Используется текущее соединение",
+	"desktop.groupTitle": "Рабочие столы группы",
+	"desktop.groupAll": "Все участники",
+	"desktop.groupMembers": "Выбрать участника группы",
+	"desktop.groupNoDevice": "Нет связанного устройства",
+	"desktop.groupSelect": "Показать рабочий стол {name}",
+	"desktop.groupOpen": "Открыть рабочий стол {name} и управлять им"
 }

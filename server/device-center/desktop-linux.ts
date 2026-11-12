@@ -1,3 +1,4 @@
+import { parseDesktopProfile, type DesktopProfile } from "./desktop-quality.js";
 import { accessSync, constants, statSync } from "node:fs";
 import { delimiter, join } from "node:path";
 import { execFile, execFileSync, spawn, type ChildProcess } from "node:child_process";
@@ -120,9 +121,11 @@ export function startLinuxDesktop(options: {
 	onClose: () => void;
 	readOnly?: boolean;
 	preview?: boolean;
-}): { input(event: NativeDesktopInput): void; close(): void } {
+}): { input(event: NativeDesktopInput): void; configure?: (profile: DesktopProfile) => void; close(): void } {
 	let closed = false;
 	let capture: ChildProcess | undefined;
+	let profile: DesktopProfile = { maxEdge: 1600, quality: 65, fps: 15 };
+	let reconfigure: ReturnType<typeof setTimeout> | undefined;
 	let command: ChildProcess | undefined;
 	let killTimer: ReturnType<typeof setTimeout> | undefined;
 	let pending = Buffer.alloc(0);
@@ -153,6 +156,7 @@ export function startLinuxDesktop(options: {
 	const close = () => {
 		if (closed) return;
 		closed = true;
+		clearTimeout(reconfigure);
 		pending = Buffer.alloc(0);
 		queue = [];
 		if (capture && capture.exitCode === null && capture.signalCode === null) {
@@ -273,86 +277,123 @@ export function startLinuxDesktop(options: {
 		queue.push(args);
 		drain();
 	};
+	const startCapture = () => {
+		if (closed) return;
+		const previous = capture;
+		capture = undefined;
+		if (previous && previous.exitCode === null && previous.signalCode === null) {
+			previous.kill("SIGTERM");
+			const timer = setTimeout(() => previous.kill("SIGKILL"), 1000);
+			timer.unref();
+			previous.once("close", () => clearTimeout(timer));
+		}
+		pending = Buffer.alloc(0);
+		stderr = "";
+		try {
+			capture = spawn(
+				executable("ffmpeg")!,
+				[
+					"-nostdin",
+					"-hide_banner",
+					"-loglevel",
+					"error",
+					"-f",
+					"x11grab",
+					"-framerate",
+					options.preview ? "1/3" : String(profile.fps),
+					"-video_size",
+					`${width}x${height}`,
+					"-i",
+					process.env.DISPLAY!,
+					"-an",
+					"-vf",
+					options.preview
+						? "scale=w='min(640,iw)':h='min(640,ih)':force_original_aspect_ratio=decrease"
+						: `scale=w='min(${profile.maxEdge},iw)':h='min(${profile.maxEdge},ih)':force_original_aspect_ratio=decrease`,
+					"-c:v",
+					"mjpeg",
+					"-q:v",
+					String(Math.round(2 + (85 - profile.quality) / 5)),
+					"-f",
+					"image2pipe",
+					"pipe:1",
+				],
+				{ shell: false, stdio: ["ignore", "pipe", "pipe"], env: process.env },
+			);
+			const current = capture;
+			const active = () => !closed && capture === current;
+			capture.stdout!.on("data", (chunk: Buffer) => {
+				if (!active()) return;
+				for (let offset = 0; offset < chunk.length && !closed; offset += 65536) {
+					pending = Buffer.concat([pending, chunk.subarray(offset, offset + 65536)]);
+					while (pending.length && !closed) {
+						const start = pending.indexOf(Buffer.from([0xff, 0xd8]));
+						if (start < 0) {
+							pending = Buffer.from(pending.subarray(-1));
+							break;
+						}
+						if (start) pending = pending.subarray(start);
+						const end = pending.indexOf(Buffer.from([0xff, 0xd9]), 2);
+						if (end < 0) {
+							if (pending.length > MAX_FRAME) fail("ffmpeg JPEG frame exceeded 4 MiB.");
+							break;
+						}
+						if (end + 2 > MAX_FRAME) {
+							fail("ffmpeg JPEG frame exceeded 4 MiB.");
+							break;
+						}
+						const frame = Buffer.from(pending.subarray(0, end + 2));
+						pending = pending.subarray(end + 2);
+						try {
+							options.onFrame(frame);
+						} catch (error) {
+							fail(`Desktop frame callback failed: ${String(error)}`);
+						}
+					}
+				}
+			});
+			capture.stderr!.on("data", (chunk: Buffer) => {
+				if (active()) stderr = (stderr + chunk.toString()).slice(-4096);
+			});
+			capture.on("error", (error) => active() && fail(`ffmpeg capture failed: ${error.message}`));
+			capture.stdout!.on("error", (error) => active() && fail(`ffmpeg output failed: ${error.message}`));
+			capture.stderr!.on("error", (error) => active() && fail(`ffmpeg stderr failed: ${error.message}`));
+			capture.on("close", (code, signal) => {
+				if (capture !== current) return;
+				if (killTimer) clearTimeout(killTimer);
+				if (!closed)
+					fail(
+						`ffmpeg capture stopped (${signal ?? code}): ${stderr || "check X11 permissions and ffmpeg x11grab support"}`,
+					);
+			});
+		} catch (error) {
+			queueMicrotask(() => fail(String(error)));
+		}
+	};
 	try {
 		const status = linuxDesktopStatus();
 		if (!status.supported) throw new Error(status.reason);
 		control = executable("xdotool");
 		[width, height] = screenSize();
-		capture = spawn(
-			executable("ffmpeg")!,
-			[
-				"-nostdin",
-				"-hide_banner",
-				"-loglevel",
-				"error",
-				"-f",
-				"x11grab",
-				"-framerate",
-				options.preview ? "1/3" : "8",
-				"-video_size",
-				`${width}x${height}`,
-				"-i",
-				process.env.DISPLAY!,
-				"-an",
-				"-vf",
-				options.preview
-					? "scale=w='min(640,iw)':h='min(640,ih)':force_original_aspect_ratio=decrease"
-					: "scale=w='min(1600,iw)':h='min(1600,ih)':force_original_aspect_ratio=decrease",
-				"-c:v",
-				"mjpeg",
-				"-q:v",
-				"5",
-				"-f",
-				"image2pipe",
-				"pipe:1",
-			],
-			{ shell: false, stdio: ["ignore", "pipe", "pipe"], env: process.env },
-		);
-		capture.stdout!.on("data", (chunk: Buffer) => {
-			if (closed) return;
-			for (let offset = 0; offset < chunk.length && !closed; offset += 65536) {
-				pending = Buffer.concat([pending, chunk.subarray(offset, offset + 65536)]);
-				while (pending.length && !closed) {
-					const start = pending.indexOf(Buffer.from([0xff, 0xd8]));
-					if (start < 0) {
-						pending = Buffer.from(pending.subarray(-1));
-						break;
-					}
-					if (start) pending = pending.subarray(start);
-					const end = pending.indexOf(Buffer.from([0xff, 0xd9]), 2);
-					if (end < 0) {
-						if (pending.length > MAX_FRAME) fail("ffmpeg JPEG frame exceeded 4 MiB.");
-						break;
-					}
-					if (end + 2 > MAX_FRAME) {
-						fail("ffmpeg JPEG frame exceeded 4 MiB.");
-						break;
-					}
-					const frame = Buffer.from(pending.subarray(0, end + 2));
-					pending = pending.subarray(end + 2);
-					try {
-						options.onFrame(frame);
-					} catch (error) {
-						fail(`Desktop frame callback failed: ${String(error)}`);
-					}
-				}
-			}
-		});
-		capture.stderr!.on("data", (chunk: Buffer) => {
-			if (!closed) stderr = (stderr + chunk.toString()).slice(-4096);
-		});
-		capture.on("error", (error) => fail(`ffmpeg capture failed: ${error.message}`));
-		capture.stdout!.on("error", (error) => fail(`ffmpeg output failed: ${error.message}`));
-		capture.stderr!.on("error", (error) => fail(`ffmpeg stderr failed: ${error.message}`));
-		capture.on("close", (code, signal) => {
-			if (killTimer) clearTimeout(killTimer);
-			if (!closed)
-				fail(
-					`ffmpeg capture stopped (${signal ?? code}): ${stderr || "check X11 permissions and ffmpeg x11grab support"}`,
-				);
-		});
+		startCapture();
 	} catch (error) {
 		queueMicrotask(() => fail(String(error)));
 	}
-	return { input, close };
+	return {
+		input,
+		close,
+		...(!options.preview
+			? {
+					configure(next: DesktopProfile) {
+						const parsed = parseDesktopProfile(next);
+						if (!parsed || closed) return;
+						if (JSON.stringify(parsed) === JSON.stringify(profile)) return;
+						profile = parsed;
+						clearTimeout(reconfigure);
+						reconfigure = setTimeout(startCapture, 250);
+						reconfigure.unref();
+					},
+				}
+			: {}),
+	};
 }

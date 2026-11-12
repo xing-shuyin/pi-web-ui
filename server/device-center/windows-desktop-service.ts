@@ -1,4 +1,6 @@
-import { existsSync } from "node:fs";
+import { createHash } from "node:crypto";
+import type { DesktopProfile } from "./desktop-quality.js";
+import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import type { NativeDesktopHandle, NativeDesktopOptions } from "./desktop-native.js";
 
@@ -13,6 +15,19 @@ export function windowsDesktopServicePath(): string | undefined {
 	return existsSync(path) && existsSync(join(path, "..", "enabled")) ? path : undefined;
 }
 
+/** Bind capability to the installed binary, so an old/rolled-back service receives no new commands. */
+export function windowsDesktopServiceProfiles(path: string): boolean {
+	try {
+		return (
+			readFileSync(join(path, "..", "profile-v1"), "utf8")
+				.trim()
+				.toLowerCase() === createHash("sha256").update(readFileSync(path)).digest("hex")
+		);
+	} catch {
+		return false;
+	}
+}
+
 /** Session changes replace the SYSTEM worker, not the authenticated browser connection. */
 export function startWindowsServiceDesktop(
 	options: NativeDesktopOptions,
@@ -21,6 +36,7 @@ export function startWindowsServiceDesktop(
 	// Freeze the mode across retries; never replay input from the previous Windows desktop.
 	const mode = { readOnly: options.preview === true || options.readOnly !== false, preview: options.preview === true };
 	let current: NativeDesktopHandle | undefined;
+	let profile: DesktopProfile | undefined;
 	let closed = false;
 	let generation = 0;
 	let attempts = 0;
@@ -85,10 +101,21 @@ export function startWindowsServiceDesktop(
 			},
 		});
 		if (closed || failed || id !== generation) next.close();
-		else current = next;
+		else {
+			current = next;
+			if (profile) current.configure?.(profile);
+		}
 	}
 	connect();
 	return {
+		...(current?.configure
+			? {
+					configure(next: DesktopProfile) {
+						profile = next;
+						if (!closed) current?.configure?.(next);
+					},
+				}
+			: {}),
 		input(event) {
 			if (!closed && !mode.readOnly) current?.input(event);
 		},

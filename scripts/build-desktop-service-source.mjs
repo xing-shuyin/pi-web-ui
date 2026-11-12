@@ -6,6 +6,6 @@ if (start < 0 || end < 0) throw new Error("Windows capture source boundary missi
 await writeFile(
 	new URL("../bin/desktop-service/NativeDesktop.cs", import.meta.url),
 	"// Generated from server/device-center/native-desktop/windows.ts; do not edit.\n" +
-		source.slice(start, end).replaceAll("\r\n", "\n") +
+		source.slice(start, end).replaceAll("\r\n", "\n").trimEnd() +
 		"\n",
 );

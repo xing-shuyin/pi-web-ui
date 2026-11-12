@@ -77,6 +77,28 @@ afterEach(() => {
 });
 
 describe("Linux X11 desktop", () => {
+	it("reconfigures capture without closing input or accepting frames from the old process", () => {
+		const session = start(true);
+		const previous = capture;
+		capture = child();
+		mocks.spawn.mockReturnValue(capture);
+		session.configure?.({ maxEdge: 1280, quality: 50, fps: 30 });
+		vi.advanceTimersByTime(250);
+		expect(mocks.spawn).toHaveBeenCalledTimes(2);
+		expect(mocks.spawn.mock.calls[1][1]).toContain("30");
+		expect(mocks.spawn.mock.calls[1][1].join(" ")).toContain("min(1280,iw)");
+		const jpeg = Buffer.from([255, 216, 1, 2, 255, 217]);
+		previous.stdout.write(jpeg);
+		previous.emit("close", 0, null);
+		expect(onClose).not.toHaveBeenCalled();
+		expect(onFrame).not.toHaveBeenCalled();
+		capture.stdout.write(jpeg);
+		expect(onFrame).toHaveBeenCalledWith(jpeg);
+		session.input({ type: "text", text: "blocked" });
+		expect(mocks.execFile).not.toHaveBeenCalled();
+		session.close();
+		expect(capture.kill).toHaveBeenCalled();
+	});
 	it("preserves numeric keypad identity through xdotool press and release", () => {
 		const handle = start(false);
 		const keys = [
@@ -144,7 +166,7 @@ describe("Linux X11 desktop", () => {
 		const handle = start();
 		const [file, args, options] = mocks.spawn.mock.calls[0];
 		expect(file).toMatch(/ffmpeg$/);
-		expect(args).toEqual(expect.arrayContaining(["x11grab", "8", "1920x1080", ":0.0", "mjpeg", "image2pipe"]));
+		expect(args).toEqual(expect.arrayContaining(["x11grab", "15", "1920x1080", ":0.0", "mjpeg", "image2pipe"]));
 		expect(args.join(" ")).toContain("1600");
 		expect(options).toMatchObject({ shell: false, stdio: ["ignore", "pipe", "pipe"], env: process.env });
 		capture.stdout.emit("data", Buffer.from([1, 2, 255]));

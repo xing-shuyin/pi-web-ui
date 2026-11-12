@@ -2,6 +2,7 @@ import { useEffect, useRef, useState, useSyncExternalStore, type PointerEvent } 
 import { createPortal } from "react-dom";
 import {
 	getDesktopAccess,
+	isLocalDesktopAccess,
 	openDeviceAccess,
 	subscribeDesktopAccess,
 	setDesktopMode,
@@ -25,7 +26,8 @@ function DesktopWindow({ access }: { access: DesktopAccess }) {
 	const zIndex = useOverlayZIndex();
 	const { target, error: targetError, retry } = useDesktopTarget(access);
 	const frameRef = useRef<HTMLIFrameElement>(null);
-	useDesktopTheme(frameRef, target?.url);
+	const local = isLocalDesktopAccess(access);
+	useDesktopTheme(frameRef, target?.url, local);
 	const [transport, setTransport] = useState<DesktopTransport>();
 	useEffect(() => {
 		setTransport(target?.transport);
@@ -113,7 +115,7 @@ function DesktopWindow({ access }: { access: DesktopAccess }) {
 		setBusy(true);
 		setError("");
 		try {
-			await openDeviceAccess(access.id, access.hubUrl, true, zh, true);
+			await openDeviceAccess(access.id, access.hubUrl, true, zh, true, access.name, { local: access.local });
 			setDesktopMode(access, "preview");
 		} catch (e) {
 			setError(e instanceof Error ? e.message : String(e));
@@ -204,7 +206,11 @@ function DesktopWindow({ access }: { access: DesktopAccess }) {
 					ref={frameRef}
 					title={title}
 					src={target.url}
-					sandbox="allow-scripts allow-forms allow-pointer-lock"
+					sandbox={
+						local
+							? "allow-scripts allow-forms allow-pointer-lock allow-same-origin"
+							: "allow-scripts allow-forms allow-pointer-lock"
+					}
 					allow="fullscreen"
 					allowFullScreen
 				/>

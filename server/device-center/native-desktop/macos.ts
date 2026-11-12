@@ -15,7 +15,9 @@ guard #available(macOS 14.0, *) else { fail("Native capture requires macOS 14 or
 let mode = CommandLine.arguments.last ?? "view"
 let readOnly = mode != "control"
 let preview = mode == "preview"
-let maxEdge = preview ? 640.0 : 1920.0
+var maxEdge = preview ? 640.0 : 1920.0
+var jpegQuality = 0.65
+var captureFPS = 30.0
 // Only an explicit local permission action may trigger TCC or open Settings.
 // Use the same Swift process identity as capture and input injection.
 func openPrivacy(_ pane: String) {
@@ -107,6 +109,12 @@ DispatchQueue.global().async {
         guard let data = line.data(using: .utf8), let e = try? JSONSerialization.jsonObject(with: data) as? [String: Any], let type = e["type"] as? String else { continue }
         if type == "close" { return }
         if type == "ack" { acknowledged.signal(); continue }
+        if type == "configure" && !preview {
+            if let edge = e["maxEdge"] as? Int, let quality = e["quality"] as? Int, let fps = e["fps"] as? Int, (640...2560).contains(edge), (35...85).contains(quality), (5...30).contains(fps) {
+                lock.lock(); maxEdge = Double(edge); jpegQuality = Double(quality) / 100; captureFPS = Double(fps); lock.unlock()
+            }
+            continue
+        }
         if readOnly { continue }
         lock.lock()
         if stopped { lock.unlock(); return }
@@ -155,20 +163,28 @@ DispatchQueue.global().async {
 }
 // ScreenCaptureKit is also used by krd. SCScreenshotManager avoids deprecated
 // CGDisplayCreateImage on current macOS SDKs and never opens a network port.
+var cachedDisplay: SCDisplay?
+var cachedFilter: SCContentFilter?
+var contentCheckedAt = 0.0
 @available(macOS 14.0, *)
-func captureImage() -> CGImage {
+func captureImage(edge: Double) -> CGImage {
     let ready = DispatchSemaphore(value: 0)
     var result: CGImage?
     var failure: String?
     Task {
         do {
-            let content = try await SCShareableContent.excludingDesktopWindows(false, onScreenWindowsOnly: true)
-            guard let display = content.displays.first(where: { $0.displayID == CGMainDisplayID() }) else {
+            let now = ProcessInfo.processInfo.systemUptime
+            if cachedDisplay?.displayID != CGMainDisplayID() || now - contentCheckedAt >= 2 {
+                let content = try await SCShareableContent.excludingDesktopWindows(false, onScreenWindowsOnly: true)
+                cachedDisplay = content.displays.first(where: { $0.displayID == CGMainDisplayID() })
+                cachedFilter = cachedDisplay.map { SCContentFilter(display: $0, excludingWindows: []) }
+                contentCheckedAt = now
+            }
+            guard let display = cachedDisplay, let filter = cachedFilter else {
                 failure = "No active main display."; ready.signal(); return
             }
-            let filter = SCContentFilter(display: display, excludingWindows: [])
             let config = SCStreamConfiguration()
-            let scale = min(1.0, maxEdge / Double(max(display.width, display.height)))
+            let scale = min(1.0, edge / Double(max(display.width, display.height)))
             config.width = max(1, Int(Double(display.width) * scale))
             config.height = max(1, Int(Double(display.height) * scale))
             config.showsCursor = true
@@ -182,21 +198,21 @@ func captureImage() -> CGImage {
     return image
 }
 while true {
+    let started = ProcessInfo.processInfo.systemUptime
+    lock.lock(); let edge = maxEdge, quality = jpegQuality, fps = captureFPS; lock.unlock()
     autoreleasepool {
-        let image = captureImage()
-        let scale = min(1.0, maxEdge / Double(max(image.width, image.height)))
-        let width = max(1, Int(Double(image.width) * scale)), height = max(1, Int(Double(image.height) * scale))
-        guard let context = CGContext(data: nil, width: width, height: height, bitsPerComponent: 8, bytesPerRow: 0, space: CGColorSpaceCreateDeviceRGB(), bitmapInfo: CGImageAlphaInfo.noneSkipLast.rawValue) else { release(); fail("Cannot allocate capture buffer.") }
-        context.draw(image, in: CGRect(x: 0, y: 0, width: width, height: height))
+        let image = captureImage(edge: edge)
+        // ScreenCaptureKit already returns the requested dimensions; avoid a second full-frame copy.
         let data = NSMutableData()
-        guard let scaled = context.makeImage(), let destination = CGImageDestinationCreateWithData(data, "public.jpeg" as CFString, 1, nil) else { release(); fail("Cannot create JPEG encoder.") }
-        CGImageDestinationAddImage(destination, scaled, [kCGImageDestinationLossyCompressionQuality: 0.65] as CFDictionary)
+        guard let destination = CGImageDestinationCreateWithData(data, "public.jpeg" as CFString, 1, nil) else { release(); fail("Cannot create JPEG encoder.") }
+        CGImageDestinationAddImage(destination, image, [kCGImageDestinationLossyCompressionQuality: quality] as CFDictionary)
         guard CGImageDestinationFinalize(destination), data.length > 0, data.length <= 4194304 else { release(); fail("JPEG exceeds 4 MB or encoding failed.") }
         var size = UInt32(data.length).bigEndian
         FileHandle.standardOutput.write(Data(bytes: &size, count: 4))
         FileHandle.standardOutput.write(data as Data)
     }
     if acknowledged.wait(timeout: .now() + 15) == .timedOut { release(); fail("Frame consumer stopped responding.") }
-    Thread.sleep(forTimeInterval: preview ? 3.0 : 0.1)
+    let remaining = (preview ? 3.0 : 1.0 / fps) - (ProcessInfo.processInfo.systemUptime - started)
+    if remaining > 0 { Thread.sleep(forTimeInterval: remaining) }
 }
 `;

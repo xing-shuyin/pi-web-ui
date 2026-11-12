@@ -338,7 +338,7 @@ describe("native desktop through device relay and connector", () => {
 		expect(messages.find((message) => message.binary)!.data).toEqual(jpeg);
 		expect(
 			messages.filter((message) => !message.binary).map((message) => JSON.parse(message.data.toString())),
-		).toContainEqual({ type: "ready" });
+		).toContainEqual({ type: "ready", dynamicQuality: false });
 		session.options.onFrame(Buffer.from("must drop until ACK"));
 		ws.send(JSON.stringify({ type: "ack" }));
 		await vi.waitFor(() => {

@@ -1,4 +1,5 @@
 import { EventEmitter } from "node:events";
+import { createHash } from "node:crypto";
 import { PassThrough, Writable } from "node:stream";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -9,6 +10,7 @@ const mocks = vi.hoisted(() => ({
 	exists: vi.fn(),
 	write: vi.fn(),
 	remove: vi.fn(),
+	read: vi.fn(),
 }));
 vi.mock("node:child_process", () => ({ spawn: mocks.spawn, execFileSync: mocks.exec }));
 vi.mock("node:os", async (original) => ({ ...(await original<typeof import("node:os")>()), release: mocks.release }));
@@ -17,6 +19,7 @@ vi.mock("node:fs", () => ({
 	mkdtempSync: () => "/tmp/native-test",
 	writeFileSync: mocks.write,
 	rm: mocks.remove,
+	readFileSync: mocks.read,
 }));
 import {
 	nativeDesktopStatus,
@@ -56,6 +59,7 @@ beforeEach(() => {
 	mocks.exists.mockImplementation((path: string) => !path.endsWith("PiDesktopService.exe"));
 	mocks.release.mockReturnValue("23.0.0");
 	mocks.exec.mockReset();
+	mocks.read.mockReset();
 });
 afterEach(() => {
 	vi.useRealTimers();
@@ -234,6 +238,34 @@ describe("native desktop lifecycle and framed capture", () => {
 
 describe("Windows service session recovery", () => {
 	beforeEach(() => mocks.exists.mockReturnValue(true));
+	it("restores bounded quality after worker replacement without granting input to a viewer", () => {
+		const binary = Buffer.from("installed-service");
+		mocks.read.mockImplementation((path: string) =>
+			path.endsWith("profile-v1") ? createHash("sha256").update(binary).digest("hex") : binary,
+		);
+		const first = processFixture();
+		const session = startNativeDesktop(options());
+		const profile = { maxEdge: 1280, quality: 60, fps: 30 };
+		expect(session.configure).toBeTypeOf("function");
+		session.configure!(profile);
+		expect(JSON.parse(first.writes.at(-1)!)).toEqual({ type: "configure", ...profile });
+		first.child.emit("close", 1);
+		const next = processFixture();
+		vi.advanceTimersByTime(250);
+		expect(JSON.parse(next.writes[0])).toEqual({ type: "configure", ...profile });
+		session.input({ type: "text", text: "blocked" });
+		expect(next.writes).toHaveLength(1);
+		session.close();
+		next.child.emit("close", 0);
+	});
+	it("does not advertise configuration when the installed binary no longer matches its capability marker", () => {
+		mocks.read.mockReturnValue("stale-marker");
+		const { child } = processFixture();
+		const session = startNativeDesktop(options());
+		expect(session.configure).toBeUndefined();
+		session.close();
+		child.emit("close", 0);
+	});
 
 	it("resumes frames in the same session after the login worker exits, without replaying input", () => {
 		const first = processFixture();

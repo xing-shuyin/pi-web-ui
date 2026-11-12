@@ -26,5 +26,11 @@
 	"desktop.noDevices": "No devices available.",
 	"desktop.currentDevice": "Current device",
 	"desktop.showCurrent": "Show this device’s desktop",
-	"desktop.currentConnection": "Using current connection"
+	"desktop.currentConnection": "Using current connection",
+	"desktop.groupTitle": "Group desktops",
+	"desktop.groupAll": "All members",
+	"desktop.groupMembers": "Choose group member",
+	"desktop.groupNoDevice": "No linked device",
+	"desktop.groupSelect": "View {name}’s desktop",
+	"desktop.groupOpen": "Open and control {name}’s desktop"
 }

@@ -37,7 +37,13 @@ export type DesktopAccess = {
 	name?: string;
 	revision: number;
 	mode: "preview" | "live";
+	local?: boolean;
+	groupId?: string;
 };
+/** Only the app's own fixed desktop page may keep the host origin; relayed pages remain opaque. */
+export function isLocalDesktopAccess(access: DesktopAccess): boolean {
+	return access.local === true && !pageDeviceId();
+}
 let desktopAccess: DesktopAccess | null = null;
 let revision = 0;
 const listeners = new Set<() => void>();
@@ -67,8 +73,9 @@ export async function requestDeviceAccessUrl(
 	zh: boolean,
 	preview = false,
 	signal?: AbortSignal,
+	local = false,
 ) {
-	if (desktop && id === pageDeviceId()) {
+	if (desktop && (local || id === pageDeviceId())) {
 		return {
 			url: new URL(withToken(appUrl(preview ? "/desktop-preview" : "/desktop")), window.location.href).href,
 			transport: "current" as const,
@@ -119,6 +126,7 @@ export async function openDeviceAccess(
 	zh: boolean,
 	detached = false,
 	name?: string,
+	presentation?: { mode?: DesktopAccess["mode"]; local?: boolean; groupId?: string },
 ) {
 	const mobile = getMobileRuntime();
 	if (mobile) {
@@ -127,7 +135,15 @@ export async function openDeviceAccess(
 		return;
 	}
 	if (desktop && !detached) {
-		desktopAccess = { id, hubUrl, zh, name, revision: ++revision, mode: "preview" };
+		desktopAccess = {
+			id,
+			hubUrl,
+			zh,
+			name,
+			revision: ++revision,
+			...presentation,
+			mode: presentation?.mode ?? "preview",
+		};
 		notify();
 		window.dispatchEvent(new Event("pi:desktop-open"));
 		return;
@@ -141,7 +157,7 @@ export async function openDeviceAccess(
 	if (!shell?.openHub && !tab) throw new Error(zh ? "请允许弹出窗口后重试。" : "Allow popups and try again.");
 	if (tab) tab.opener = null;
 	try {
-		const target = await requestDeviceAccessUrl(id, hubUrl, desktop, zh);
+		const target = await requestDeviceAccessUrl(id, hubUrl, desktop, zh, false, undefined, presentation?.local);
 		const url = new URL(target.url);
 		if (shell?.openHub) {
 			if (target.transport !== "hub") {

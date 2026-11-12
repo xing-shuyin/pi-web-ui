@@ -1,3 +1,4 @@
+import { DesktopQuality, parseDesktopPreferences, type DesktopProfile } from "./desktop-quality.js";
 import express, { type Express } from "express";
 import type { IncomingMessage } from "node:http";
 import type { Duplex } from "node:stream";
@@ -54,7 +55,11 @@ type CaptureOptions = {
 	readOnly?: boolean;
 	preview?: boolean;
 };
-type Capture = { input: (event: NativeDesktopInput) => void; close: () => void };
+type Capture = {
+	input: (event: NativeDesktopInput) => void;
+	configure?: (profile: DesktopProfile) => void;
+	close: () => void;
+};
 export interface DeviceDesktopOptions {
 	app: Express;
 	authorize: (req: IncomingMessage) => boolean;
@@ -298,6 +303,21 @@ export function createDeviceDesktop({ app, authorize, env = process.env, dataDir
 		let ackTimer: ReturnType<typeof setTimeout> | undefined;
 		let sentAt = 0;
 		let ackMs = 0;
+		let freshAck = false;
+		const quality = new DesktopQuality();
+		let appliedProfile = "";
+		let lastConfigure = 0;
+		const applyProfile = (profile: DesktopProfile) => {
+			if (!capture?.configure || ended || failing) return;
+			const key = JSON.stringify(profile);
+			if (key === appliedProfile) return;
+			try {
+				capture.configure(profile);
+				appliedProfile = key;
+			} catch {
+				fail("Could not configure desktop capture.");
+			}
+		};
 		let captured = 0;
 		let sent = 0;
 		let replaced = 0;
@@ -362,8 +382,20 @@ export function createDeviceDesktop({ app, authorize, env = process.env, dataDir
 		};
 		const statsTimer = setInterval(() => {
 			if (ended || failing || !started || ws.readyState !== WebSocket.OPEN || ws.bufferedAmount > 65536) return;
+			if (freshAck) {
+				freshAck = false;
+				applyProfile(quality.sample(ackMs));
+			}
 			ws.send(
-				JSON.stringify({ type: "stats", captured, sent, replaced, ackMs, queued: Math.max(queued, ws.bufferedAmount) }),
+				JSON.stringify({
+					type: "stats",
+					captured,
+					sent,
+					replaced,
+					ackMs,
+					queued: Math.max(queued, ws.bufferedAmount),
+					profile: capture?.configure ? quality.profile : undefined,
+				}),
 			);
 		}, 2000);
 		statsTimer.unref();
@@ -393,9 +425,18 @@ export function createDeviceDesktop({ app, authorize, env = process.env, dataDir
 				if (value?.type === "ack" && Object.keys(value).length === 1) {
 					if (!awaitingAck) return;
 					ackMs = Date.now() - sentAt;
+					freshAck = true;
 					clearTimeout(ackTimer);
 					awaitingAck = false;
 					flushFrame();
+					return;
+				}
+				if (value?.type === "configure") {
+					const preferences = parseDesktopPreferences(value);
+					if (!preferences || Object.keys(value).length !== 5) return cleanup();
+					if (Date.now() - lastConfigure < 200) return;
+					lastConfigure = Date.now();
+					applyProfile(quality.set(preferences));
 					return;
 				}
 				input = parseDesktopInput(value);
@@ -422,7 +463,7 @@ export function createDeviceDesktop({ app, authorize, env = process.env, dataDir
 					if (!started) {
 						started = true;
 						clearTimeout(connectTimer);
-						ws.send(JSON.stringify({ type: "ready" }));
+						ws.send(JSON.stringify({ type: "ready", dynamicQuality: Boolean(capture?.configure) }));
 					}
 					if (latestFrame) replaced++;
 					latestFrame = jpeg;

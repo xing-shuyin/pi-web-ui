@@ -26,5 +26,11 @@
 	"desktop.noDevices": "Keine Geräte verfügbar.",
 	"desktop.currentDevice": "Aktuelles Gerät",
 	"desktop.showCurrent": "Desktop dieses Geräts anzeigen",
-	"desktop.currentConnection": "Aktuelle Verbindung wird verwendet"
+	"desktop.currentConnection": "Aktuelle Verbindung wird verwendet",
+	"desktop.groupTitle": "Gruppen-Desktops",
+	"desktop.groupAll": "Alle Mitglieder",
+	"desktop.groupMembers": "Gruppenmitglied auswählen",
+	"desktop.groupNoDevice": "Kein verknüpftes Gerät",
+	"desktop.groupSelect": "Desktop von {name} anzeigen",
+	"desktop.groupOpen": "Desktop von {name} öffnen und steuern"
 }

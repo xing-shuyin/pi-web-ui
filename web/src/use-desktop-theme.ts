@@ -2,7 +2,7 @@ import { useEffect, type RefObject } from "react";
 import { DESKTOP_THEME_TOKENS } from "../../server/device-center/desktop-theme";
 import { THEME_CHANGE_EVENT } from "./theme";
 
-export function useDesktopTheme(frame: RefObject<HTMLIFrameElement | null>, url?: string) {
+export function useDesktopTheme(frame: RefObject<HTMLIFrameElement | null>, url?: string, local = false) {
 	useEffect(() => {
 		const send = () => {
 			const style = getComputedStyle(document.documentElement);
@@ -12,7 +12,7 @@ export function useDesktopTheme(frame: RefObject<HTMLIFrameElement | null>, url?
 		const receive = (event: MessageEvent) => {
 			if (
 				event.source === frame.current?.contentWindow &&
-				event.origin === "null" &&
+				event.origin === (local && url ? new URL(url).origin : "null") &&
 				event.data?.type === "desktop-theme-request"
 			)
 				send();
@@ -24,5 +24,5 @@ export function useDesktopTheme(frame: RefObject<HTMLIFrameElement | null>, url?
 			window.removeEventListener("message", receive);
 			window.removeEventListener(THEME_CHANGE_EVENT, send);
 		};
-	}, [frame, url]);
+	}, [frame, url, local]);
 }

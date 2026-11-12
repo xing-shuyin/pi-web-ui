@@ -11,12 +11,13 @@ export function desktopPage(): string {
 button,input,summary{font:inherit;color:var(--text)}button,summary{display:inline-flex;align-items:center;justify-content:center;gap:5px;border:1px solid transparent;border-radius:7px;background:transparent;padding:6px 9px;min-height:30px;cursor:pointer;white-space:nowrap;transition:background .15s,border-color .15s}button:hover:not(:disabled),summary:hover{background:var(--bg-elev2);border-color:var(--border)}button:disabled,input:disabled{opacity:.4;cursor:default}button:focus-visible,input:focus-visible,summary:focus-visible,canvas:focus-visible{outline:2px solid var(--accent);outline-offset:2px}button svg,summary svg{width:14px;height:14px;flex:none;stroke:currentColor;fill:none;stroke-width:1.7;stroke-linecap:round;stroke-linejoin:round}
 #toolbar{display:flex;align-items:center;flex:none;gap:4px;padding:6px 8px;background:var(--bg-elev);border-bottom:1px solid var(--border);font-size:12px;min-width:0;max-width:100%;position:relative}#toolbar-scroll{display:flex;align-items:center;gap:4px;min-width:0;overflow-x:auto;scrollbar-width:thin}#controls{display:flex;align-items:center;gap:3px;flex:none}#connect:not(:disabled){background:var(--accent);color:var(--accent-contrast)}#connect:disabled{display:none}#disconnect:disabled{display:none}.view-options{display:flex;gap:2px;align-items:center;border-left:1px solid var(--border);border-right:1px solid var(--border);padding:0 5px;margin:0 3px}
 #toolbar label{display:flex;align-items:center;gap:5px;white-space:nowrap;cursor:pointer;border-radius:7px;padding:6px 7px;min-height:30px}#toolbar label:has(input:checked){background:color-mix(in srgb,var(--accent) 12%,transparent);color:var(--text)}#toolbar label:hover{background:var(--bg-elev2)}input[type=checkbox]{accent-color:var(--accent);width:13px;height:13px;margin:0}details{flex:none}summary{list-style:none}summary::-webkit-details-marker{display:none}details[open]>summary{background:var(--bg-elev2);border-color:var(--border)}
-#setup,#text-form,#statistics{position:absolute;z-index:2;top:calc(100% + 6px);left:8px;width:min(520px,calc(100vw - 16px));max-height:calc(100dvh - 64px);overflow:auto;overscroll-behavior:contain;background:var(--bg-elev);border:1px solid var(--border);border-radius:12px;padding:16px;box-shadow:0 12px 36px #0003;white-space:normal}#setup{display:grid;gap:12px}.actions{display:flex;gap:6px;flex-wrap:wrap}.actions button,#send-text{background:var(--bg-elev2);border-color:var(--border)}#hint,#statistics{color:var(--text-dim)}#text-form{display:flex;flex-wrap:wrap;gap:10px}#text-form label{width:100%;padding:0;min-height:0;cursor:default}input[type=text]{border:1px solid var(--border);border-radius:8px;background:var(--bg);padding:9px 10px;min-width:0;flex:1;width:160px}#send-text{flex:none}
+#quality-form,#setup,#text-form,#statistics{position:absolute;z-index:2;top:calc(100% + 6px);left:8px;width:min(520px,calc(100vw - 16px));max-height:calc(100dvh - 64px);overflow:auto;overscroll-behavior:contain;background:var(--bg-elev);border:1px solid var(--border);border-radius:12px;padding:16px;box-shadow:0 12px 36px #0003;white-space:normal}#setup{display:grid;gap:12px}#quality-form{display:grid;gap:12px;width:min(360px,calc(100vw - 16px))}#quality-form label{display:grid;grid-template-columns:90px minmax(0,1fr);padding:0;cursor:default}#quality-form select{min-width:0;width:100%;padding:7px;border:1px solid var(--border);border-radius:7px;background:var(--bg);color:var(--text)}#quality-note{color:var(--text-dim);font-size:12px;line-height:1.5;margin:0}.actions{display:flex;gap:6px;flex-wrap:wrap}.actions button,#send-text{background:var(--bg-elev2);border-color:var(--border)}#hint,#statistics{color:var(--text-dim)}#text-form{display:flex;flex-wrap:wrap;gap:10px}#text-form label{width:100%;padding:0;min-height:0;cursor:default}input[type=text]{border:1px solid var(--border);border-radius:8px;background:var(--bg);padding:9px 10px;min-width:0;flex:1;width:160px}#send-text{flex:none}
 #status{display:flex;align-items:center;gap:6px;margin-left:auto;padding:0 4px;font-size:11px;white-space:nowrap;flex:none;color:var(--text-dim)}#status:before{content:'';width:6px;height:6px;border-radius:50%;background:var(--text-dim);flex:none}#status[data-connected=true]:before{background:var(--green)}#status[data-error=true]{position:absolute;z-index:1;top:calc(100% + 6px);right:8px;max-width:min(520px,calc(100% - 16px));white-space:pre-wrap;background:var(--bg-elev);color:var(--red);border:1px solid var(--border);border-radius:10px;padding:10px 12px;box-shadow:0 8px 24px #0003}#status[data-error=true]:before{background:var(--red)}#status[data-error=true]{overflow-wrap:anywhere;word-break:break-word}
 #screen{flex:1;min-width:0;min-height:0;overflow:auto;background:#000;position:relative}main:fullscreen{width:100%;height:100%;background:var(--bg)}canvas{display:block;width:100%;height:100%;object-fit:contain;touch-action:none;outline-offset:-3px}#screen.native canvas{width:auto;height:auto;max-width:none}@media(max-width:700px){#toolbar{flex-wrap:wrap;gap:2px}#toolbar-scroll{width:100%}#status{margin-left:4px;min-height:18px}#toolbar button,#toolbar summary,#toolbar label{min-height:34px}}
 </style></head><body><main>
 <header id="toolbar"><div id="toolbar-scroll"><nav id="controls"><button id="connect" disabled data-i18n="connect"></button><button id="disconnect" disabled data-i18n="disconnect"></button><div class="view-options"><label><input id="viewonly" type="checkbox"><span data-i18n="viewonly"></span></label><label><input id="scale" type="checkbox" checked><span data-i18n="scale"></span></label></div><button id="fullscreen" data-i18n="fullscreen"></button></nav>
 <details id="settings"><summary data-i18n="setup"></summary><section id="setup" aria-label="Desktop setup"><p id="setup-status" role="status" aria-live="polite"></p><div class="actions"><button id="check" data-i18n="check"></button><button id="enable" disabled data-i18n="enable"></button><button id="disable" disabled data-i18n="disable"></button></div><aside id="mac-permission-guide" hidden aria-label="macOS permissions"><p data-i18n="macGuide"></p></aside><p id="hint" data-i18n="hint"></p></section></details>
+<details id="quality-panel"><summary data-i18n="quality"></summary><section id="quality-form"><label><span data-i18n="quality"></span><select id="quality-mode"><option value="auto" data-i18n="qualityAuto"></option><option value="smooth" data-i18n="qualitySmooth"></option><option value="balanced" data-i18n="qualityBalanced"></option><option value="sharp" data-i18n="qualitySharp"></option></select></label><label><span data-i18n="resolution"></span><select id="quality-edge"><option value="0" data-i18n="resolutionAuto"></option><option value="960">960 px</option><option value="1280">1280 px</option><option value="1920">1920 px</option><option value="2560">2560 px</option></select></label><label><span data-i18n="frameRate"></span><select id="quality-fps"><option value="10">10 FPS</option><option value="15">15 FPS</option><option value="30" selected>30 FPS</option></select></label><p id="quality-note" data-i18n="qualityNote"></p></section></details>
 <details id="text-panel"><summary data-i18n="textToggle"></summary><form id="text-form"><label for="text" data-i18n="text"></label><input id="text" type="text" disabled autocomplete="off" maxlength="2048"><button id="send-text" type="submit" disabled data-i18n="send"></button></form></details>
 <details id="diagnostics"><summary data-i18n="diagnostics"></summary><p id="statistics"></p></details></div><p id="status" role="status" aria-live="polite"></p></header>
 <div id="screen"><canvas id="canvas" width="1" height="1" tabindex="0" aria-describedby="hint"></canvas></div>
@@ -40,6 +41,7 @@ const messages = {
  environment:['环境变量强制启用；需在设备本机修改环境变量并重启才能停用。','Enabled by the environment; change the environment on the device and restart to disable.'],
  ready:['可以连接。','Ready to connect.'],connecting:['正在连接…','Connecting…'],waiting:['已连接，等待画面…','Connected; waiting for an image…'],
  viewing:['已连接 · 只读','Connected · view only'],controlling:['已连接 · 可控制','Connected · control enabled'],
+ quality:['画质','Quality'],qualityAuto:['自动','Automatic'],qualitySmooth:['流畅','Smooth'],qualityBalanced:['均衡','Balanced'],qualitySharp:['清晰','Sharp'],resolution:['分辨率上限','Resolution limit'],resolutionAuto:['跟随窗口','Match window'],frameRate:['帧率上限','Frame rate limit'],qualityNote:['调整传输画面长边，保持屏幕比例，不改变被控电脑的显示设置。自动模式会在网络变慢时降低画质。','Adjusts the transmitted image’s longest edge, preserving aspect ratio and the host’s display settings. Automatic mode reduces quality on slower connections.'],qualityUnsupported:['此设备暂不支持动态画质。请更新被控端；Windows 系统桌面服务也需要更新。','This device does not support dynamic quality yet. Update the host, including the Windows desktop service if installed.'],
  diagnostics:['连接信息','Connection info'],stats:['采集/发送：{captured}/{sent} 帧 · 跳过旧帧：{replaced} · 确认等待：{ackMs} ms · 队列：{queued} B · 显示：{fps} FPS · 解码绘制：{decodeMs} ms','Captured/sent: {captured}/{sent} frames · Replaced: {replaced} · ACK: {ackMs} ms · Queue: {queued} B · Display: {fps} FPS · Decode/draw: {decodeMs} ms'],
  disconnected:['已断开。','Disconnected.'],closed:['连接已关闭','Connection closed'],connectionError:['桌面连接失败，请检查设备状态后重试。','Desktop connection failed. Check device status and retry.'],
  requestError:['状态或设置请求失败','Status or settings request failed'],decodeError:['画面解码失败','Image decoding failed'],
@@ -47,14 +49,28 @@ const messages = {
 };
 const t = key => messages[key][zh ? 0 : 1];
 document.documentElement.lang = zh ? 'zh-CN' : 'en'; document.title = t('title');
-const icons = {"connect":"M8 5l10 7-10 7z","disconnect":"M7 7h10v10H7z","fullscreen":"M8 3H3v5m13-5h5v5M3 16v5h5m13-5v5h-5","setup":"M4 7h16M4 17h16M8 4v6m8 4v6","textToggle":"M4 5h16M12 5v15M8 20h8","diagnostics":"M5 20v-5m7 5V9m7 11V4"};
-for (const el of document.querySelectorAll('[data-i18n]')) { el.textContent = t(el.dataset.i18n); const path=icons[el.dataset.i18n];if(path){const svg=document.createElementNS('http://www.w3.org/2000/svg','svg'),shape=document.createElementNS(svg.namespaceURI,'path');svg.setAttribute('viewBox','0 0 24 24');svg.setAttribute('aria-hidden','true');shape.setAttribute('d',path);svg.append(shape);el.prepend(svg)} }
+const icons = {"quality":"M4 7h16M4 12h16M4 17h16M8 5v4m8 1v4m-5 1v4","connect":"M8 5l10 7-10 7z","disconnect":"M7 7h10v10H7z","fullscreen":"M8 3H3v5m13-5h5v5M3 16v5h5m13-5v5h-5","setup":"M4 7h16M4 17h16M8 4v6m8 4v6","textToggle":"M4 5h16M12 5v15M8 20h8","diagnostics":"M5 20v-5m7 5V9m7 11V4"};
+for (const el of document.querySelectorAll('[data-i18n]')) { el.textContent = t(el.dataset.i18n); const path=icons[el.dataset.i18n];if(path && el.matches('button,summary')){const svg=document.createElementNS('http://www.w3.org/2000/svg','svg'),shape=document.createElementNS(svg.namespaceURI,'path');svg.setAttribute('viewBox','0 0 24 24');svg.setAttribute('aria-hidden','true');shape.setAttribute('d',path);svg.append(shape);el.prepend(svg)} }
 $('setup').setAttribute('aria-label', t('setup')); $('controls').setAttribute('aria-label', t('title')); $('canvas').setAttribute('aria-label', t('title'));
 const canvas = $('canvas'), screen = $('screen'), context = canvas.getContext('2d');
 let config = null, busy = false, disposed = false, socket = null, generation = 0;
 let ready = false, hasFrame = false, connectionViewOnly = true, pendingFrame = null, decoding = false;
 let activePointer = null, retryTimer, awaitingDesktop = false;
 let rendered = 0, sampleAt = performance.now(), decodeMs = 0;
+let dynamicQuality = false, qualityTimer, lastQuality = '';
+function updateQuality() {
+ clearTimeout(qualityTimer);
+ qualityTimer = setTimeout(() => {
+  if (!dynamicQuality || !ready || socket?.readyState !== WebSocket.OPEN) return;
+  const viewportEdge = Math.max(640, Math.min(2560, Math.round(Math.max(screen.clientWidth, screen.clientHeight) * Math.min(devicePixelRatio || 1, 2))));
+  const message = {type:'configure', mode:$('quality-mode').value, maxEdge:Number($('quality-edge').value), viewportEdge, fps:Number($('quality-fps').value)};
+  const text = JSON.stringify(message); if(text === lastQuality) return;
+  try { socket.send(text); lastQuality = text; } catch { fail(t('connectionError')); }
+ }, 300);
+}
+const qualityObserver = typeof ResizeObserver === 'function' ? new ResizeObserver(updateQuality) : null; qualityObserver?.observe(screen);
+window.addEventListener('resize', updateQuality);
+for (const id of ['quality-mode','quality-edge','quality-fps']) $(id).addEventListener('change', updateQuality);
 const browserSupported = !!context && typeof createImageBitmap === 'function' && typeof WebSocket === 'function';
 function status(message, error = false) { $('status').textContent = message; $('status').dataset.error = String(error); $('status').dataset.connected = String(ready && hasFrame && !error); }
 function desktopError(message) {
@@ -70,6 +86,8 @@ function controls() {
  $('connect').disabled = busy || !canConnect() || !!socket;
  $('disconnect').disabled = !socket && !awaitingDesktop;
  $('check').disabled = busy;
+ for (const id of ['quality-mode','quality-edge','quality-fps']) $(id).disabled = !dynamicQuality;
+ $('quality-note').textContent = t(ready && !dynamicQuality ? 'qualityUnsupported' : 'qualityNote');
  $('enable').disabled = busy || !config || config.enabled || !config.supported;
  $('disable').disabled = busy || !config?.enabled || config.environmentEnabled;
  $('text').disabled = $('send-text').disabled = !canInput();
@@ -90,7 +108,7 @@ function release() {
 function stop() {
  clearTimeout(retryTimer); awaitingDesktop = false;
  release(); const previous = socket; socket = null; generation++;
- ready = false; hasFrame = false; pendingFrame = null;
+ ready = false; hasFrame = false; pendingFrame = null; dynamicQuality = false; lastQuality = ""; clearTimeout(qualityTimer);
  rendered = 0; sampleAt = performance.now(); $('statistics').textContent = '';
  if (previous) { previous.onmessage = previous.onopen = previous.onerror = previous.onclose = null; previous.close(); }
  context?.clearRect(0, 0, canvas.width, canvas.height); controls();
@@ -145,11 +163,11 @@ function connect() {
    try {
     const message = JSON.parse(event.data);
     if (message.type === 'error') fail(desktopError(message.message), typeof message.message === 'string' && desktopIssue(message.message, zh)?.retry === true);
-    else if (message.type === 'ready') { ready = true; controls(); }
+    else if (message.type === 'ready') { ready = true; dynamicQuality = message.dynamicQuality === true; controls(); updateQuality(); }
     else if (message.type === 'stats') {
      const now = performance.now(), values = {...message, fps:(rendered * 1000 / Math.max(1,now - sampleAt)).toFixed(1), decodeMs};
      if (['captured','sent','replaced','ackMs','queued'].every(key => typeof message[key] === 'number' && Number.isFinite(message[key]))) {
-      $('statistics').textContent = t('stats').replace(/\\{(\\w+)\\}/g, (_,key) => String(values[key]));
+      $('statistics').textContent = t('stats').replace(/\\{(\\w+)\\}/g, (_,key) => String(values[key])) + ' · ' + canvas.width + ' × ' + canvas.height;
       rendered = 0; sampleAt = now;
      }
     }
@@ -256,7 +274,7 @@ $('check').onclick = () => void update();
 $('enable').onclick = () => void update(true);
 $('disable').onclick = () => void update(false);
 $('viewonly').onchange = () => { if (socket) connect(); };
-const panels=['settings','text-panel','diagnostics'];
+const panels=['settings','quality-panel','text-panel','diagnostics'];
 for(const id of panels) $(id).addEventListener('toggle',()=>{if($(id).open)for(const other of panels)if(other!==id)$(other).open=false});
 document.addEventListener('keydown',event=>{if(event.key==='Escape')for(const id of panels)$(id).open=false});
 document.addEventListener('pointerdown',event=>{if(!event.target.closest('details'))for(const id of panels)$(id).open=false});
@@ -265,7 +283,7 @@ $('fullscreen').onclick = async () => {
  try { if (document.fullscreenElement) await document.exitFullscreen(); else await document.querySelector('main').requestFullscreen(); }
  catch (error) { status(t('fullscreenError') + ': ' + error.message, true); }
 };
-window.addEventListener('pagehide', () => { disposed = true; stop(); });
+window.addEventListener('pagehide', () => { disposed = true; qualityObserver?.disconnect(); window.removeEventListener('resize', updateQuality); clearTimeout(qualityTimer); stop(); });
 controls(); void update(undefined, true);
 </script></body></html>`;
 }

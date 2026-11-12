@@ -10,6 +10,27 @@
 
 ## [Unreleased]
 
+## [0.120.1-p2p-preview.8] — 2026-11-12
+
+### Added
+
+- 群聊右栏增加群组远程桌面，按电脑显示成员预览，下方成员按钮可切换为单人画面，点击画面放大操作并支持返回预览。
+- 同一电脑的多个 Bot 复用预览，本机成员复用当前连接；离线成员显示状态，可见卡片才加载画面，切群和成员移除释放对应控制窗口。
+- 远程桌面新增动态画质：自动、流畅、均衡、清晰，支持跟随窗口的传输分辨率及手动长边/帧率上限，连接中切换生效；自动模式根据画面确认耗时渐进调整。
+
+### Changed
+
+- Windows 复用截图缓冲区并按帧预算调度；Mac 减少显示器枚举和重复缩放。保持最新帧优先、队列上限及锁屏恢复。
+- Windows 系统桌面服务新增受限画质配置；旧服务继续可连接并提示更新，升级服务后启用动态调节。
+
+<!-- auto-i18n:start -->
+
+### i18n
+
+- 前端新增 key（6）：`desktop.groupTitle`、`desktop.groupAll`、`desktop.groupMembers`、`desktop.groupNoDevice`、`desktop.groupSelect`、`desktop.groupOpen`
+
+<!-- auto-i18n:end -->
+
 ## [0.120.1-p2p-preview.7] — 2026-11-12
 
 ### Added

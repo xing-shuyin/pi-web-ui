@@ -63,6 +63,7 @@ public static class NativeDesktop {
   static readonly AutoResetEvent ack = new AutoResetEvent(false);
   static volatile bool stopped;
   static bool preview;
+  static int maxEdge=1920, quality=65, fps=30;
   static void Send(INPUT i) { if(SendInput(1,new INPUT[]{i},Marshal.SizeOf(typeof(INPUT)))!=1) throw new Exception("SendInput failed; Windows blocks control of elevated apps and secure desktops."); }
   static INPUT KeyInput(int code,bool down) {
     int vk=code&0xffff;
@@ -124,23 +125,30 @@ public static class NativeDesktop {
     }
   }
   static void Capture() {
+    Bitmap full=null;
     try {
       Stream output=outputStream;
       ImageCodecInfo codec=Array.Find(ImageCodecInfo.GetImageEncoders(),c=>c.MimeType=="image/jpeg");
       DateTime checkedAt=DateTime.MinValue;
       while(!stopped) {
+        var clock=System.Diagnostics.Stopwatch.StartNew();
+        int edge, q, rate; lock(gate) { edge=preview?640:maxEdge; q=quality; rate=fps; }
         if((DateTime.UtcNow-checkedAt).TotalSeconds>=1) { RequireDesktop(); checkedAt=DateTime.UtcNow; }
         var r=Bounds();
         if(r.Width<1||r.Height<1||r.Width>32768||r.Height>32768||(long)r.Width*r.Height>64000000) throw new Exception("Unsupported display size.");
-        using(var full=new Bitmap(r.Width,r.Height,PixelFormat.Format24bppRgb)) {
+        if(full==null||full.Width!=r.Width||full.Height!=r.Height) {
+          if(full!=null) full.Dispose();
+          full=new Bitmap(r.Width,r.Height,PixelFormat.Format24bppRgb);
+        }
+        {
           try { using(var g=Graphics.FromImage(full)) g.CopyFromScreen(r.Left,r.Top,0,0,r.Size,CopyPixelOperation.SourceCopy); }
           catch { RequireDesktop(); throw; }
-          double scale=Math.Min(1.0,(preview?640.0:1920.0)/Math.Max(r.Width,r.Height));
-          using(var image=new Bitmap(full,new Size(Math.Max(1,(int)(r.Width*scale)),Math.Max(1,(int)(r.Height*scale)))))
+          double scale=Math.Min(1.0,(double)edge/Math.Max(r.Width,r.Height));
+          using(var scaled=scale<1 ? new Bitmap(full,new Size(Math.Max(1,(int)(r.Width*scale)),Math.Max(1,(int)(r.Height*scale)))) : null)
           using(var data=new MemoryStream())
           using(var p=new EncoderParameters(1)) {
-            p.Param[0]=new EncoderParameter(System.Drawing.Imaging.Encoder.Quality,65L);
-            image.Save(data,codec,p);
+            p.Param[0]=new EncoderParameter(System.Drawing.Imaging.Encoder.Quality,(long)q);
+            (scaled??full).Save(data,codec,p);
             if(data.Length>4194304) throw new Exception("JPEG exceeds 4 MB.");
             int n=(int)data.Length; byte[] h={(byte)(n>>24),(byte)(n>>16),(byte)(n>>8),(byte)n};
             output.Write(h,0,4); data.WriteTo(output); output.Flush();
@@ -148,9 +156,11 @@ public static class NativeDesktop {
         }
         // One outstanding frame: pipe congestion never creates a growing frame queue.
         if(!ack.WaitOne(15000)) throw new Exception("Frame consumer stopped responding.");
-        Thread.Sleep(preview?3000:100);
+        int remaining=(preview?3000:1000/rate)-(int)clock.ElapsedMilliseconds;
+        if(remaining>0) Thread.Sleep(remaining);
       }
     } catch(Exception e) { if(!stopped) reportError(e.Message); stopped=true; Release(); Environment.Exit(1); }
+    finally { if(full!=null) full.Dispose(); }
   }
   public static void Run(bool readOnly, bool previewMode) {
     Run(readOnly,previewMode,false,Console.OpenStandardInput(),Console.OpenStandardOutput(),message=>Console.Error.WriteLine(message));
@@ -170,6 +180,11 @@ public static class NativeDesktop {
           var e=json.Deserialize<Dictionary<string,object>>(line); string type=(string)e["type"];
           if(type=="close") break;
           if(type=="ack") { ack.Set(); continue; }
+          if(type=="configure"&&!preview) {
+            int edge=Convert.ToInt32(e["maxEdge"]), q=Convert.ToInt32(e["quality"]), rate=Convert.ToInt32(e["fps"]);
+            if(edge<640||edge>2560||q<35||q>85||rate<5||rate>30) throw new Exception("Invalid capture profile.");
+            lock(gate) { maxEdge=edge; quality=q; fps=rate; } continue;
+          }
           if(!readOnly) { if(type=="release") Release(); else Apply(e); }
         }
       }

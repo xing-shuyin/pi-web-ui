@@ -15,7 +15,8 @@ if (process.platform !== "win32") {
 		generated.endsWith(
 			windowsDesktopScript
 				.slice(windowsDesktopScript.indexOf("using System;"), windowsDesktopScript.indexOf("\n'@"))
-				.replaceAll("\r\n", "\n") + "\n",
+				.replaceAll("\r\n", "\n")
+				.trimEnd() + "\n",
 		),
 	);
 	function run(command, args) {
@@ -48,6 +49,9 @@ if (process.platform !== "win32") {
 	]);
 	const cases = [
 		['{"type":"ack"}', false, true],
+		['{"type":"configure","maxEdge":1280,"quality":60,"fps":30}', false, true],
+		['{"type":"configure","maxEdge":30000,"quality":60,"fps":30}', true, false],
+		['{"type":"configure","maxEdge":1280,"quality":60,"fps":30,"command":"calc"}', true, false],
 		['{"type":"close"}', false, true],
 		['{"type":"release"}', false, false],
 		['{"type":"text","text":"test"}', false, false],
@@ -72,7 +76,7 @@ foreach($case in $cases) { $actual=$method.Invoke($null,@([string]$case[0],[bool
 $errors=$null;$tokens=$null
 [System.Management.Automation.Language.Parser]::ParseFile('${resolve("bin/desktop-service/install.ps1").replaceAll("'", "''")}',[ref]$tokens,[ref]$errors) | Out-Null
 if($errors.Count) {throw $errors[0]}
-Write-Output 'compiled; 11 IPC validation cases; installer syntax valid; no service installed or input injected'
+Write-Output 'compiled; ${cases.length} IPC validation cases; installer syntax valid; no service installed or input injected'
 `,
 	);
 	console.log(

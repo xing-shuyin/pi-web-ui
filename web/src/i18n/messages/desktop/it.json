@@ -26,5 +26,11 @@
 	"desktop.noDevices": "Nessun dispositivo disponibile.",
 	"desktop.currentDevice": "Dispositivo attuale",
 	"desktop.showCurrent": "Mostra il desktop di questo dispositivo",
-	"desktop.currentConnection": "Connessione attuale in uso"
+	"desktop.currentConnection": "Connessione attuale in uso",
+	"desktop.groupTitle": "Desktop del gruppo",
+	"desktop.groupAll": "Tutti i membri",
+	"desktop.groupMembers": "Scegli membro del gruppo",
+	"desktop.groupNoDevice": "Nessun dispositivo collegato",
+	"desktop.groupSelect": "Visualizza il desktop di {name}",
+	"desktop.groupOpen": "Apri e controlla il desktop di {name}"
 }

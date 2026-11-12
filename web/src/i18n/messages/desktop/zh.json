@@ -26,5 +26,11 @@
 	"desktop.noDevices": "暂无可选设备。",
 	"desktop.currentDevice": "当前设备",
 	"desktop.showCurrent": "显示此设备的桌面",
-	"desktop.currentConnection": "复用当前连接"
+	"desktop.currentConnection": "复用当前连接",
+	"desktop.groupTitle": "群组远程桌面",
+	"desktop.groupAll": "全部成员",
+	"desktop.groupMembers": "选择群成员",
+	"desktop.groupNoDevice": "未关联设备",
+	"desktop.groupSelect": "查看 {name} 的桌面",
+	"desktop.groupOpen": "放大并操作 {name} 的桌面"
 }

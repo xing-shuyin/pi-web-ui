@@ -1,10 +1,15 @@
+import { parseDesktopProfile, type DesktopProfile } from "./desktop-quality.js";
 import { execFileSync, spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
 import { existsSync, mkdtempSync, rm, writeFileSync } from "node:fs";
 import { release, tmpdir } from "node:os";
 import { join } from "node:path";
 import { windowsDesktopScript } from "./native-desktop/windows.js";
 import { macDesktopScript } from "./native-desktop/macos.js";
-import { startWindowsServiceDesktop, windowsDesktopServicePath } from "./windows-desktop-service.js";
+import {
+	startWindowsServiceDesktop,
+	windowsDesktopServicePath,
+	windowsDesktopServiceProfiles,
+} from "./windows-desktop-service.js";
 
 export type NativeDesktopInput =
 	| { type: "pointer"; x: number; y: number; button?: 0 | 1 | 2; action: "move" | "down" | "up" }
@@ -262,7 +267,11 @@ export type NativeDesktopOptions = {
 	readOnly?: boolean;
 	preview?: boolean;
 };
-export type NativeDesktopHandle = { input(event: NativeDesktopInput): void; close(): void };
+export type NativeDesktopHandle = {
+	input(event: NativeDesktopInput): void;
+	configure?(profile: DesktopProfile): void;
+	close(): void;
+};
 
 export function startNativeDesktop(options: NativeDesktopOptions): NativeDesktopHandle {
 	const service = windowsDesktopServicePath();
@@ -380,7 +389,15 @@ function startNativeDesktopOnce(options: NativeDesktopOptions, service?: string)
 			}
 		}
 	}
-	const handle = {
+	const handle: NativeDesktopHandle = {
+		...(!options.preview && (!service || windowsDesktopServiceProfiles(service))
+			? {
+					configure(profile: DesktopProfile) {
+						const validated = parseDesktopProfile(profile);
+						if (validated) write({ type: "configure", ...validated });
+					},
+				}
+			: {}),
 		input(event: NativeDesktopInput) {
 			if (readOnly || closing) return;
 			const validated = validatedInput(event);

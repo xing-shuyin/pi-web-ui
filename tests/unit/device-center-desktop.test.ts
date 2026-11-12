@@ -436,7 +436,7 @@ describe("device desktop native route", () => {
 			);
 			expect(
 				messages.filter((message) => !message.binary).map((message) => JSON.parse(message.data.toString())),
-			).toContainEqual({ type: "ready" });
+			).toContainEqual({ type: "ready", dynamicQuality: false });
 			expect(session.input).not.toHaveBeenCalled();
 			const closed = once(ws, "close");
 			ws.close();

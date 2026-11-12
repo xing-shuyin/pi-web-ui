@@ -26,5 +26,11 @@
 	"desktop.noDevices": "暫無可選裝置。",
 	"desktop.currentDevice": "目前裝置",
 	"desktop.showCurrent": "顯示此裝置的桌面",
-	"desktop.currentConnection": "沿用目前連線"
+	"desktop.currentConnection": "沿用目前連線",
+	"desktop.groupTitle": "群組遠端桌面",
+	"desktop.groupAll": "所有成員",
+	"desktop.groupMembers": "選擇群組成員",
+	"desktop.groupNoDevice": "尚未連結裝置",
+	"desktop.groupSelect": "查看 {name} 的桌面",
+	"desktop.groupOpen": "放大並操作 {name} 的桌面"
 }
