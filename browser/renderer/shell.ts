@@ -15,6 +15,7 @@ import {
 	globeIcon,
 	iconButton,
 	input,
+	keyIcon,
 	listenPanelEvents,
 	listenState,
 	plusIcon,
@@ -115,6 +116,35 @@ async function refreshExtensionsCount(): Promise<void> {
 	}
 }
 
+// TOTP 验证器：当前站点有绑定的条目时，图标上带一个小圆点（不看面板也知道「这里有」）
+const totpBtn = iconButton(keyIcon(13), t("totp"), () => showShellPanel("totp"));
+totpBtn.classList.add("pb-tool-btn");
+const totpDot = element("span", "pb-tool-btn-dot");
+totpDot.hidden = true;
+totpBtn.append(totpDot);
+
+async function refreshTotpMatch(): Promise<void> {
+	try {
+		const active = state?.tabs.find((tab) => tab.id === state?.activeTabId)?.url;
+		if (!active) {
+			totpDot.hidden = true;
+			return;
+		}
+		let origin = "";
+		try {
+			origin = new URL(active).origin;
+		} catch {
+			totpDot.hidden = true;
+			return;
+		}
+		const entries = await call<{ origin: string }[]>("totp.list");
+		totpDot.hidden = !entries.some((entry) => entry.origin && entry.origin === origin);
+	} catch {
+		// 保管库锁定（系统加密不可用）或宿主未就绪：不亮圆点
+		totpDot.hidden = true;
+	}
+}
+
 const MIN_SPLIT_RATIO = 0.2;
 const MAX_SPLIT_RATIO = 0.8;
 const SNAP_THRESHOLD_PX = 60;
@@ -176,7 +206,7 @@ actionList.setAttribute("alignment", "bottom left");
 const items = element("div", "pb-tool-items");
 items.append(actionList);
 
-titlebar.append(tabs, create, dragArea, modeBtn, searchBtn, items, extensionsBtn, controls);
+titlebar.append(tabs, create, dragArea, modeBtn, searchBtn, items, totpBtn, extensionsBtn, controls);
 
 // 中间可拖拽分栏线 (Direct Draggable Split Divider)
 const divider = element("div", "pb-split-divider");
@@ -378,6 +408,7 @@ function updateProgress(next: BrowserState): void {
 function render(next: BrowserState): void {
 	const previous = state;
 	state = next;
+	void refreshTotpMatch();
 	tabs.replaceChildren();
 	for (const tab of next.tabs) {
 		const row = element("div", `pb-tab${tab.id === next.activeTabId ? " pb-active" : ""}`);
@@ -388,6 +419,17 @@ function render(next: BrowserState): void {
 		const mark = element("span", tab.loading ? "pb-tab-mark pb-spinning" : "pb-tab-mark");
 		if (tab.loading) {
 			mark.append(spinnerIcon(12));
+		} else if (tab.favicon) {
+			// 站点图标：http(s) 或 data:image，两类都在 shell 的 img-src 白名单里
+			const icon = element("img", "pb-tab-favicon");
+			icon.src = tab.favicon;
+			icon.alt = "";
+			icon.decoding = "async";
+			icon.addEventListener("error", () => {
+				// 站点图标 404 / 被拦：退回地球图标，别留一个空白框
+				icon.replaceWith(globeIcon(12));
+			});
+			mark.append(icon);
 		} else if (tab.internal) {
 			mark.textContent = "π";
 		} else {
@@ -403,6 +445,12 @@ function render(next: BrowserState): void {
 				event.preventDefault();
 				void call("tabs.close", { id: tab.id }).catch(reportError);
 			}
+		});
+		// 整块高亮区域都可点：激活按钮之外的左右留白（关闭键旁边那几像素）也算点标签
+		row.addEventListener("click", (event) => {
+			const target = event.target as Element | null;
+			if (target?.closest(".pb-tab-close, .pb-tab-activate")) return;
+			void browserAction("tabs.activate", { id: tab.id });
 		});
 		row.append(activate, close);
 		tabs.append(row);
@@ -444,7 +492,30 @@ function updateChromePosition(next: BrowserState): void {
 		chrome.style.borderLeft = "";
 		divider.style.display = "none";
 	}
+	nudgeDragRegion();
 	renderBoot(next, left);
+}
+
+/**
+ * 分栏模式用内联 left/width 挪 .pb-chrome：位置一动，原生拖拽区的几何就得重算。
+ * Electron 只在下一帧提交拖拽区信息时才重算，挪完位置不动它就可能留着旧矩形 ——
+ * 旧矩形是浏览器模式下的整条窗宽，正好压在移位后的标签上，表现就是「标签点不动」。
+ * 改一次 drag/no-drag 是成本最低的强制重算（拖拽区现在只有 .pb-drag-area 一块）。
+ * 只在几何真的变了才抖：状态推送很密，每帧都抖会让空白条忽强忽不拖。
+ */
+let dragNudgeFrame = 0;
+let lastChromeKey = "";
+function nudgeDragRegion(): void {
+	const key = `${chrome.style.display}|${chrome.style.left}|${chrome.style.width}`;
+	if (key === lastChromeKey) return;
+	lastChromeKey = key;
+	cancelAnimationFrame(dragNudgeFrame);
+	dragArea.style.setProperty("-webkit-app-region", "no-drag");
+	dragNudgeFrame = requestAnimationFrame(() => {
+		dragNudgeFrame = requestAnimationFrame(() => {
+			dragArea.style.removeProperty("-webkit-app-region");
+		});
+	});
 }
 
 window.addEventListener("resize", () => {
@@ -475,10 +546,12 @@ window.addEventListener("pb-settings-changed", () => {
 	void loadSettings().catch(reportError);
 });
 window.addEventListener("pb-extensions-changed", () => void refreshExtensionsCount());
+window.addEventListener("pb-totp-changed", () => void refreshTotpMatch());
 // 面板开在自己的视图里，那里的改动只能由宿主转发过来
 listenPanelEvents((name) => {
 	if (name === "pb-settings-changed") void loadSettings().catch(reportError);
 	if (name === "pb-extensions-changed") void refreshExtensionsCount();
+	if (name === "pb-totp-changed") void refreshTotpMatch();
 });
 window.addEventListener("focus", () => {
 	void loadSettings().catch(reportError);

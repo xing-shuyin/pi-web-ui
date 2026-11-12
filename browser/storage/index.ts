@@ -3,6 +3,7 @@ import path from "node:path";
 import { randomUUID } from "node:crypto";
 import type { BrowserMode } from "../contracts.js";
 import { readPageScripts, type PageScript } from "../runtime/scripts.js";
+import { normalizeTotpEntries, sortTotpEntries, type TotpEntry } from "../runtime/totp.js";
 import { isWebUrl } from "../runtime/urls.js";
 
 export interface Bookmark {
@@ -264,6 +265,46 @@ export class BrowserStorage {
 		});
 		this.write("passwords", encoded);
 		return true;
+	}
+	/** TOTP 保管库：与密码同一条加密口径（safeStorage，`enc:` 前缀），不可用则拒绝保存。 */
+	private decodeTotp(value: unknown): TotpEntry[] {
+		if (!Array.isArray(value)) throw new Error("Invalid TOTP data");
+		this.requireEncryption();
+		return normalizeTotpEntries(
+			value.map((item) => {
+				if (!object(item) || typeof item.secret !== "string") throw new Error("Invalid TOTP entry");
+				return {
+					...item,
+					secret: item.secret.startsWith("enc:")
+						? this.encryption.decryptString(Buffer.from(item.secret.slice(4), "base64"))
+						: item.secret,
+				};
+			}),
+		);
+	}
+	listTotp(): TotpEntry[] {
+		const value = this.read("totp");
+		if (value === undefined) return [];
+		const decoded = this.decodeTotp(value);
+		if (
+			(value as { secret?: unknown }[]).some(
+				(item) => typeof item?.secret === "string" && !item.secret.startsWith("enc:"),
+			)
+		)
+			this.saveTotp(decoded);
+		return decoded;
+	}
+	saveTotp(value: unknown): TotpEntry[] {
+		this.requireEncryption();
+		const entries = sortTotpEntries(normalizeTotpEntries(value));
+		this.write(
+			"totp",
+			entries.map((entry) => ({
+				...entry,
+				secret: `enc:${this.encryption.encryptString(entry.secret).toString("base64")}`,
+			})),
+		);
+		return entries;
 	}
 	importLegacyData(sourceDir: string): { imported: string[]; skipped: string[]; errors: string[] } {
 		const result = { imported: [] as string[], skipped: [] as string[], errors: [] as string[] };

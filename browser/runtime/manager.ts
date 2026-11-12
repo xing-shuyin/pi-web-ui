@@ -14,7 +14,7 @@ import { fileURLToPath } from "node:url";
 import { randomUUID } from "node:crypto";
 import type { BrowserTab } from "../contracts.js";
 import { BrowserStorage } from "../storage/index.js";
-import { isInternalUrl, isWebUrl, normalizeBrowserUrl } from "./urls.js";
+import { isInternalUrl, isWebUrl, normalizeBrowserUrl, pickTabFavicon } from "./urls.js";
 import { DOCK_SCRIPT, SCROLLBAR_CSS } from "./dock.js";
 import {
 	buildCleanupCode,
@@ -190,6 +190,14 @@ export class BrowserManager {
 			if (details.url.startsWith("file:") && !this.isInternalContents(wc)) details.preventDefault();
 		});
 		wc.on("will-attach-webview", (event) => event.preventDefault());
+		// 站点图标：favicon 是站点自己的文件（http(s)）或内联 data:，只认这两种
+		wc.on("page-favicon-updated", (_event, icons) => {
+			if (this.disposed || this.tabs.get(id) !== record) return;
+			const icon = pickTabFavicon(icons);
+			if (!icon || state.favicon === icon) return;
+			state.favicon = icon;
+			this.changed();
+		});
 		// 每份新文档重置一次脚本运行态：dom-ready 只会补注入本代还没跑过的脚本，
 		// 因此重复 dom-ready / 双通道注入都不会让同一脚本在一个文档里跑两遍。
 		wc.on("did-start-navigation", ((details: unknown, _url?: unknown, _inPlace?: unknown, mainFrame?: unknown) => {
@@ -197,6 +205,11 @@ export class BrowserManager {
 			const isMain = typeof params.isMainFrame === "boolean" ? params.isMainFrame : mainFrame !== false;
 			if (!isMain || params.isSameDocument === true) return;
 			this.resetScriptRun(id);
+			// 新文档的图标要等站点重新上报，先把上一个站点的带走
+			if (state.favicon) {
+				state.favicon = undefined;
+				this.changed();
+			}
 		}) as never);
 		wc.on("context-menu", (_event, params) => {
 			this.options.onContextMenu?.(wc, params);

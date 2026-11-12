@@ -49,4 +49,14 @@ describe("扩展工具栏弹窗：贴合内容尺寸与锚点定位", () => {
 		expect(script.endsWith(")()")).toBe(true);
 		expect(script).toContain("getBoundingClientRect");
 	});
+
+	it("量尺寸脚本取「内容盒」与「后代外接框」的较小者，不被视口外的浮层带偏", () => {
+		const script = POPUP_MEASURE_SCRIPT;
+		// 内容盒口径：固定宽度的弹窗（Dark Reader 这类 285px popup）就靠它
+		expect(script).toContain("body.scrollWidth");
+		expect(script).toContain("body.scrollHeight");
+		// 两个口径取小：绝对定位的 tooltip / 动画移出视口的折叠区会把外接框撑到远超内容
+		expect(script).toContain("Math.min(width,");
+		expect(script).toContain("Math.min(height,");
+	});
 });

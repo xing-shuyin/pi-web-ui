@@ -265,7 +265,7 @@ html[data-theme="light"] body.pb-internal {
 .pb-muted {
 	color: var(--pb-fg-dim);
 	overflow-wrap: anywhere;
-	word-break: break-word;
+	overflow-wrap: anywhere;
 	min-width: 0;
 }
 
@@ -315,7 +315,11 @@ html[data-theme="light"] body.pb-internal {
 .pb-tab-row {
 	background: var(--pb-header-bg, #1c1d21);
 	height: 40px;
-	-webkit-app-region: drag;
+	/* 整行不做窗口拖拽区：标签、新建、工具按钮全都嵌在这 40px 里，靠子元素 no-drag「挖洞」
+	   在原生命中测试里不可靠 —— 分栏模式会把 .pb-chrome 用内联 left/width 移位，移位后洞里洞外
+	   一旦不同步，整条工具栏就变成拖拽区，表现是标签/加号点不动、点一下像按在标题栏上。
+	   唯一拖拽区交给 .pb-drag-area（空白条）。 */
+	-webkit-app-region: no-drag;
 	padding-right: var(--pb-ctl-gap);
 }
 
@@ -476,6 +480,15 @@ html[data-theme="light"] body.pb-internal {
 	flex-shrink: 0;
 }
 
+.pb-tab-favicon {
+	width: 13px;
+	height: 13px;
+	border-radius: 3px;
+	object-fit: contain;
+	pointer-events: none;
+	flex-shrink: 0;
+}
+
 .pb-tab-mark.pb-spinning {
 	color: #60a5fa;
 	display: inline-flex;
@@ -521,6 +534,9 @@ html[data-theme="light"] body.pb-internal {
 	align-self: stretch;
 	flex: 1;
 	min-width: 10px;
+	/* 整窗唯一的拖拽区：标签与右侧按钮之间那块空白。
+	   不把整行设成 drag，就不再依赖 no-drag 挖洞，工具栏按钮永远不会被拖拽吞掉。 */
+	-webkit-app-region: drag;
 }
 
 /* 模式切换器药丸 */
@@ -1057,7 +1073,7 @@ html[data-theme="light"] body.pb-internal {
 	box-shadow: 0 16px 40px rgba(0, 0, 0, 0.5);
 	max-width: min(650px, 90vw);
 	overflow-wrap: anywhere;
-	word-break: break-word;
+	overflow-wrap: anywhere;
 	font-size: 13px;
 }
 
@@ -1327,7 +1343,7 @@ html[data-theme="light"] body.pb-internal {
 	gap: 3px;
 	min-width: 0;
 	overflow-wrap: anywhere;
-	word-break: break-word;
+	overflow-wrap: anywhere;
 }
 
 .pb-item-details strong {
@@ -1382,7 +1398,7 @@ html[data-theme="light"] body.pb-internal {
 	min-height: 26px;
 	max-width: 100%;
 	overflow-wrap: anywhere;
-	word-break: break-word;
+	overflow-wrap: anywhere;
 	white-space: normal;
 	background: var(--pb-card-subtle);
 	color: var(--pb-fg-dim);
@@ -2296,7 +2312,7 @@ html[data-theme="light"] .flow-pill:hover {
 	color: var(--pb-fg);
 	white-space: pre-wrap;
 	overflow-wrap: anywhere;
-	word-break: break-word;
+	overflow-wrap: anywhere;
 	max-width: 400px;
 }
 
@@ -2346,7 +2362,7 @@ html[data-theme="light"] .flow-pill:hover {
 	border-radius: 12px;
 	line-height: 1.9;
 	overflow-wrap: anywhere;
-	word-break: break-word;
+	overflow-wrap: anywhere;
 	min-width: 0;
 	box-shadow: 0 12px 36px rgba(0, 0, 0, 0.3);
 }
@@ -2368,7 +2384,7 @@ html[data-theme="light"] .flow-pill:hover {
 	border: 1px solid var(--pb-border-subtle);
 	border-radius: 14px;
 	overflow-wrap: anywhere;
-	word-break: break-word;
+	overflow-wrap: anywhere;
 	min-width: 0;
 	box-shadow: 0 8px 24px rgba(0, 0, 0, 0.25);
 }
@@ -2538,4 +2554,159 @@ html[data-theme="light"] .flow-pill:hover {
 	.pb-search {
 		transition: none;
 	}
+}
+
+/* ---- TOTP 验证器面板（browser/renderer/totp.ts） ---- */
+.pb-tool-btn-dot {
+	position: absolute;
+	top: 1px;
+	right: 1px;
+	width: 6px;
+	height: 6px;
+	border-radius: 999px;
+	background: var(--pb-accent);
+	box-shadow: 0 0 0 1px var(--pb-header-bg, #1c1d21);
+}
+.pb-totp-list {
+	display: flex;
+	flex-direction: column;
+	gap: 10px;
+	margin: 12px 0;
+}
+.pb-totp-item {
+	display: grid;
+	grid-template-columns: minmax(0, 1fr);
+	gap: 8px;
+	padding: 10px 12px;
+	border: 1px solid var(--pb-border-subtle, rgba(255, 255, 255, 0.08));
+	border-radius: 10px;
+	background: var(--pb-card-subtle, rgba(255, 255, 255, 0.03));
+}
+.pb-totp-head {
+	display: flex;
+	align-items: baseline;
+	justify-content: space-between;
+	gap: 8px;
+	min-width: 0;
+}
+.pb-totp-title {
+	display: flex;
+	flex-wrap: wrap;
+	align-items: baseline;
+	gap: 6px;
+	min-width: 0;
+	overflow-wrap: anywhere;
+}
+.pb-totp-code {
+	align-self: start;
+	padding: 2px 10px;
+	border: 1px dashed var(--pb-border-subtle, rgba(255, 255, 255, 0.14));
+	border-radius: 8px;
+	background: transparent;
+	color: var(--pb-fg, #e6e8ee);
+	font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+	font-size: 24px;
+	font-variant-numeric: tabular-nums;
+	letter-spacing: 0.16em;
+	cursor: pointer;
+}
+.pb-totp-code:hover {
+	border-color: var(--pb-accent);
+	color: var(--pb-accent);
+}
+.pb-totp-error .pb-totp-code {
+	border-color: #e05252;
+	color: #e05252;
+}
+.pb-totp-bar {
+	position: relative;
+	display: block;
+	height: 3px;
+	border-radius: 999px;
+	background: var(--pb-border-subtle, rgba(255, 255, 255, 0.1));
+	overflow: hidden;
+}
+.pb-totp-bar::after {
+	content: "";
+	position: absolute;
+	inset: 0 auto 0 0;
+	width: var(--pb-totp-left, 100%);
+	background: var(--pb-accent);
+	transition: width 1s linear;
+}
+.pb-totp-actions {
+	display: flex;
+	flex-wrap: wrap;
+	align-items: center;
+	gap: 6px;
+}
+.pb-totp-actions .pb-button {
+	padding: 4px 10px;
+	font-size: 12px;
+}
+.pb-totp-export {
+	display: flex;
+	flex-direction: column;
+	gap: 6px;
+	margin-top: 8px;
+}
+.pb-totp-export textarea {
+	width: 100%;
+	font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+	font-size: 11px;
+	resize: vertical;
+}
+
+/* 键盘选中行：↑↓ 在此移动，Enter 复制 / Shift+Enter 填入（见 totp.ts 的 onKeydown） */
+.pb-totp-selected {
+	border-color: var(--pb-accent);
+	box-shadow: 0 0 0 1px var(--pb-accent) inset;
+}
+.pb-totp-keys {
+	margin-top: 8px;
+	font-size: 11px;
+	line-height: 1.5;
+}
+.pb-totp-item:focus-visible {
+	outline: 1px solid var(--pb-accent);
+	outline-offset: 1px;
+}
+
+/* ---- 标签高亮填满槽位（宽度方向） ----
+   原来 `.pb-tabs` 用 gap: 3px 分隔标签：hover / active 的高亮只覆盖 `.pb-tab` 自身，
+   两块高亮之间露出 3px 栏底色，看起来"高亮比 tab 窄一圈"。
+   改成：缝隙归零（内边距从容器挪到激活按钮，内容位置不变），标签之间用一条 1px 竖线分隔；
+   高亮那块与它右邻的竖线一起隐藏，于是相邻高亮贴合、整条槽位都亮，且整块区域都可点击。 */
+.pb-tabs {
+	gap: 0;
+}
+
+/* 内边距从容器挪到激活按钮上：整块高亮区域都可点击（原来左右各 4–6px 的死区点了没反应） */
+.pb-tab {
+	padding: 0;
+}
+.pb-tab-activate {
+	padding: 0 2px 0 13.5px;
+}
+.pb-tab-close {
+	margin-right: 5.5px;
+}
+
+.pb-tab + .pb-tab::before {
+	content: "";
+	position: absolute;
+	left: 0;
+	top: 7px;
+	bottom: 7px;
+	width: 1px;
+	background: var(--pb-line, rgba(255, 255, 255, 0.08));
+	pointer-events: none;
+	transition: opacity 0.15s ease;
+}
+
+.pb-tab:hover::before,
+.pb-tab.pb-active::before,
+.pb-tab:hover + .pb-tab::before,
+.pb-tab.pb-active + .pb-tab::before {
+	opacity: 0;
 }

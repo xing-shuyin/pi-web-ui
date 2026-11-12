@@ -23,6 +23,7 @@ import {
 	type Settings,
 } from "./common.js";
 import { t, type MessageKey } from "./i18n.js";
+import { totpPanel } from "./totp.js";
 import type { BrowserPanel, BrowserPanelEvent, BrowserState } from "../contracts.js";
 export type Panel = BrowserPanel;
 let dialog: HTMLDialogElement | undefined;
@@ -131,6 +132,7 @@ async function fillDialog(panel: Panel, content: HTMLElement, node: HTMLDialogEl
 		if (panel === "settings") await settingsPanel(content);
 		if (panel === "downloads") await downloadsPanel(content);
 		if (panel === "extensions") await extensionsPanel(content);
+		if (panel === "totp") await totpPanel(content, () => panelEvent("pb-totp-changed"));
 	} catch (error) {
 		if (!node.isConnected) return;
 		content.replaceChildren(
@@ -929,6 +931,16 @@ function extensionRow(entry: ExtensionEntry, onChanged: () => Promise<void>): HT
 	});
 	const control = element("label", "pb-switch");
 	control.append(toggle);
+	// 弹窗跟着鼠标点：记下按下时的视口坐标，开窗拿它当锚点（键盘回车 / 鼠标点不在行内时回退到行右下角）
+	let pressed: { x: number; y: number } | null = null;
+	row.addEventListener("pointerdown", (event) => {
+		pressed = event.button === 0 ? { x: event.clientX, y: event.clientY } : null;
+	});
+	const takeAnchor = (fallback: { x: number; y: number }): { x: number; y: number } => {
+		const point = pressed;
+		pressed = null;
+		return point ? screenPoint(point.x, point.y) : fallback;
+	};
 	// 整行的主动作就是把这一行点开——和 Chrome 里点动作图标一样开它自己的页面
 	const opener = button(
 		[
@@ -937,7 +949,7 @@ function extensionRow(entry: ExtensionEntry, onChanged: () => Promise<void>): HT
 		],
 		() => {
 			const box = row.getBoundingClientRect();
-			return openExtensionEntry(entry, screenPoint(box.right, box.bottom + 4));
+			return openExtensionEntry(entry, takeAnchor(screenPoint(box.right, box.bottom + 4)));
 		},
 		"pb-extension-open",
 	);

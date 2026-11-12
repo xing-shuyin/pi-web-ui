@@ -5,7 +5,7 @@ import { EventEmitter } from "node:events";
 import { pathToFileURL } from "node:url";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { BrowserWindow, WebContents } from "electron";
-import { isInternalUrl, normalizeBrowserUrl } from "../../browser/runtime/urls.js";
+import { isInternalUrl, normalizeBrowserUrl, pickTabFavicon } from "../../browser/runtime/urls.js";
 
 const mock = vi.hoisted(() => ({ views: [] as any[], sessions: [] as any[], downloadsDir: "" }));
 vi.mock("electron", async () => {
@@ -140,6 +140,13 @@ describe("browser URL policy", () => {
 			expect(isInternalUrl(pathToFileURL(path.resolve(assetsDir, filename)).href, assetsDir)).toBe(false);
 		}
 		expect(isInternalUrl("https://example.com/newtab.html", assetsDir)).toBe(false);
+	});
+	it("标签图标只收 http(s) 与小尺寸 data:image，其余当没有", () => {
+		expect(pickTabFavicon(["https://example.com/favicon.ico"])).toBe("https://example.com/favicon.ico");
+		expect(pickTabFavicon(["javascript:alert(1)", "data:image/png;base64,AAAA"])).toBe("data:image/png;base64,AAAA");
+		expect(pickTabFavicon(["file:///etc/passwd", "chrome-extension://abc/icon.png"])).toBe("");
+		expect(pickTabFavicon([`data:image/png;base64,${"A".repeat(9000)}`])).toBe("");
+		expect(pickTabFavicon(undefined)).toBe("");
 	});
 });
 

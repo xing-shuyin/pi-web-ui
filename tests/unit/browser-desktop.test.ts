@@ -15,10 +15,15 @@ import {
 	PANEL_LAYER_TOP,
 	MIN_SPLIT_RATIO,
 	MAX_SPLIT_RATIO,
+	ACTION_POPUP_BLUR_GRACE_MS,
 } from "../../desktop/browser-policy.js";
 import { getDesktopWindowBridge, isDesktopShell } from "../../web/src/desktop.js";
 
 describe("desktop browser composition", () => {
+	it("动作弹窗的失焦宽限要盖住「开弹窗 → 收面板」这一轮，又不能长到让点外面关不掉", () => {
+		expect(ACTION_POPUP_BLUR_GRACE_MS).toBeGreaterThanOrEqual(150);
+		expect(ACTION_POPUP_BLUR_GRACE_MS).toBeLessThanOrEqual(600);
+	});
 	it("starts in Agent mode unless the saved startup mode says otherwise", () => {
 		expect(initialBrowserMode({ defaultMode: "agent" })).toBe("agent");
 		expect(initialBrowserMode({ defaultMode: "browser" })).toBe("browser");

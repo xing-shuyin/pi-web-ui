@@ -13,6 +13,11 @@ export const PANEL_LAYER_MIN_WIDTH = 240;
 export const PANEL_LAYER_MIN_HEIGHT = 120;
 /** 面板自己报尺寸前先藏着的兜底时长：量不出来也不能把面板卡成看不见 */
 export const PANEL_LAYER_SHOW_DELAY = 350;
+/**
+ * 扩展动作弹窗（`action.default_popup`）亮出来后的失焦宽限：开弹窗的同一轮里还要收掉
+ * 扩展面板，面板关闭会把焦点还给外壳，弹窗一闪就被 blur 关掉——这段时间内的 blur 不当失焦。
+ */
+export const ACTION_POPUP_BLUR_GRACE_MS = 300;
 
 /**
  * 窗口启动时该用哪个模式：读设置里的 defaultMode，非法/缺失时落到 agent。

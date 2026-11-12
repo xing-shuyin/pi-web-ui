@@ -55,23 +55,28 @@ export function placePopup(size: PopupSize, anchor: PopupPoint, area: PopupArea)
 }
 
 /**
+/**
  * 在弹窗页里量「内容自己要多大」。Chromium 的首选尺寸模式（`preferred-size-changed`）
- * 在 `chrome-extension://` 弹窗上实测收不到事件，所以这里按页面自己的布局量：
- * · 和视口一样宽 / 一样高的盒子只是被撑开的容器（body / 根容器常见），不算内容尺寸，真正的内容在子元素上；
- * · 内容比视口还高（要滚动的那类）反而是有效信号，必须算进去；
- * · 原点附近有少量内边距（默认 body margin 8px 这类）时按原点到右边缘量，别把内边距切掉；
- * · 明显缩进说明是居中 / 右对齐布局，改按外接框宽度量；
- * · 再加上滚动条实际占的宽度，否则出现滚动条时内容会被挤掉一列。
+ * 在 `chrome-extension://` 弹窗上实测收不到事件，所以这里按页面自己的布局量。两个口径取小者：
+ * · 内容盒（`body.scrollWidth/scrollHeight`）：固定宽度的弹窗（285px 那一类）在这里最准；
+ * · 后代盒子外接框：适配「body 被视口撑满、真正尺寸在子元素上」那一类；
+ * 取小者是为了不被视口外的浮层带偏——绝对定位的 tooltip、动画移出视口的折叠区（Dark Reader 就是这样）
+ * 会把外接框撑到远超内容，只在一边信它就会量出 550px 宽、右边留一大条黑边。
+ * 其余口径不变：和视口一样宽 / 一样高的盒子只是被撑开的容器；比视口高（要滚动）算有效信号；
+ * 原点附近的内边距（body margin 8px 这类）不切掉；明显缩进按外接框宽度量；竖向滚动条只会真的出现时才占宽度。
  */
 export const POPUP_MEASURE_SCRIPT = `(() => {
+	const POPUP_MAX_HEIGHT = ${POPUP_MAX_SIZE.height};
 	const doc = document.documentElement;
+	const body = document.body;
+	if (!body) return { width: innerWidth, height: innerHeight };
 	const scrollbar = Math.max(0, innerWidth - doc.clientWidth);
 	const viewport = { width: doc.clientWidth, height: doc.clientHeight };
 	const ORIGIN_GUTTER = 16;
 	let left = Infinity;
 	let right = 0;
 	let bottom = 0;
-	for (const node of document.body ? document.body.querySelectorAll("*") : []) {
+	for (const node of body.querySelectorAll("*")) {
 		if (!(node instanceof Element)) continue;
 		const box = node.getBoundingClientRect();
 		if (box.width > 0 && Math.abs(box.width - viewport.width) > 1) {
@@ -80,8 +85,14 @@ export const POPUP_MEASURE_SCRIPT = `(() => {
 		}
 		if (box.height > 0 && Math.abs(box.height - viewport.height) > 1) bottom = Math.max(bottom, box.bottom);
 	}
-	if (!right && !bottom) return { width: innerWidth, height: innerHeight };
-	const width = right ? Math.ceil(left <= ORIGIN_GUTTER ? right : right - left) + scrollbar : innerWidth;
-	const height = bottom ? Math.ceil(bottom) + 1 : innerHeight;
+	let width = Math.max(Math.ceil(body.scrollWidth), Math.ceil(body.getBoundingClientRect().width));
+	let height = Math.max(Math.ceil(body.scrollHeight), Math.ceil(body.getBoundingClientRect().height));
+	if (right) width = Math.min(width, Math.ceil(left <= ORIGIN_GUTTER ? right : right - left));
+	if (bottom) height = Math.min(height, Math.ceil(bottom) + 1);
+	// 窗口高度就是算出来的内容高度，竖滚动条只会在超过 Chrome 上限（要滚动）时才真的出现；
+	// 那时才给宽度让出滚动条，否则窗口会比内容宽出一条
+	if (height > POPUP_MAX_HEIGHT) width += scrollbar;
+	if (!(width > 0)) width = innerWidth;
+	if (!(height > 0)) height = innerHeight;
 	return { width, height };
 })()`;
