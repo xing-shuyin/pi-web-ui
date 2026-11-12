@@ -52,7 +52,12 @@ node scripts/release-notes.mjs X.Y.Z --base v<上个版本>   # 预览（输出�
 # node scripts/release-notes.mjs X.Y.Z --base v<上个版本> --out /tmp/notes.md --create
 
 # 8) 发布 npm（会自动跑 prepublishOnly 构建）
-npm publish
+#    账号开了 2FA：用「绕过 2FA 的 granular token」直接 npm publish 会被 registry 降级成
+#    staged 发布（版本几分钟后才落库，期间重试只会 409 Cannot publish over previously
+#    staged version；unpublish / 改 dist-tag 更是直接 403）。走带 OTP 的封装：
+NPM_OTP=123456 npm run release:npm     # 预检脏工作区/账号/tag + 带 OTP 发布 + staged 自愈
+#    等价手工命令：npm publish --otp=123456
+#    只想看会打出什么：npm run release:npm -- --dry-run
 
 # 8.5) 桌面安装包（自动，三平台并行，无需手写）
 #    同一个 tag 也触发 .github/workflows/desktop-release.yml，三个 job 同时跑
