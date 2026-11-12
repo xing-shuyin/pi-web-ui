@@ -103,6 +103,7 @@ npm run release:local -- vX.Y.Z --portable     # 额外出便携版（内置 Git
 #    它需要可选的 MOBILE_KEYSTORE_BASE64 等 secrets 才能发出可升级的包。
 
 # 9) 验证
+npm run release:check -- vX.Y.Z  # Release 资产是否齐全：桌面 3 平台 + 扩展 + 手机 APK + SHA256SUMS
 npm view pi-web-ui version        # 应显示新版本（registry 有缓存延迟属正常）
 curl -s https://registry.npmjs.org/pi-web-ui/latest | jq .version
 git ls-remote --tags origin       # 应能看到 vX.Y.Z

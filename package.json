@@ -80,6 +80,7 @@
 		"apk:all:runtime": "npm --prefix mobile run apk:all:runtime",
 		"release:local": "node scripts/release-local.mjs",
 		"release:npm": "node scripts/publish-npm.mjs",
+		"release:check": "node scripts/check-release-assets.mjs",
 		"typecheck": "tsc -p tsconfig.server.json --noEmit && tsc -p web/tsconfig.json --noEmit && tsc -p tsconfig.tests.json --noEmit && tsc -p desktop/tsconfig.json --noEmit && tsc -p plugins/page-picker/extension/tsconfig.json --noEmit",
 		"test": "vitest run",
 		"test:unit": "vitest run",
