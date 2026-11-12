@@ -77,6 +77,34 @@ afterEach(() => {
 });
 
 describe("Linux X11 desktop", () => {
+	it("preserves numeric keypad identity through xdotool press and release", () => {
+		const handle = start(false);
+		const keys = [
+			...Array.from({ length: 10 }, (_, i) => [`Numpad${i}`, `KP_${i}`]),
+			["NumpadEnter", "KP_Enter"],
+			["NumpadAdd", "KP_Add"],
+			["NumpadSubtract", "KP_Subtract"],
+			["NumpadMultiply", "KP_Multiply"],
+			["NumpadDivide", "KP_Divide"],
+			["NumpadDecimal", "KP_Decimal"],
+			["NumpadComma", "KP_Separator"],
+			["NumpadEqual", "KP_Equal"],
+			["NumpadClear", "Clear"],
+			["NumLock", "Num_Lock"],
+		];
+		for (const [code, symbol] of keys)
+			for (const action of ["down", "up"] as const) {
+				handle.input({ type: "key", code, action });
+				expect(mocks.execFile).toHaveBeenLastCalledWith(
+					expect.any(String),
+					[action === "down" ? "keydown" : "keyup", symbol],
+					expect.anything(),
+					expect.any(Function),
+				);
+				done();
+			}
+		handle.close();
+	});
 	it("reduces capture work for previews and prevents input", () => {
 		const handle = startLinuxDesktop({ onFrame, onError, onClose, readOnly: false, preview: true });
 		const args = mocks.spawn.mock.calls[0][1];

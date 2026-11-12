@@ -39,6 +39,16 @@ const specialKeys = new Set([
 	"Insert",
 	"Delete",
 	"CapsLock",
+	"NumLock",
+	"NumpadEnter",
+	"NumpadAdd",
+	"NumpadSubtract",
+	"NumpadMultiply",
+	"NumpadDivide",
+	"NumpadDecimal",
+	"NumpadComma",
+	"NumpadEqual",
+	"NumpadClear",
 	"Backquote",
 	"Minus",
 	"Equal",
@@ -79,7 +89,7 @@ function validatedInput(value: NativeDesktopInput): NativeDesktopInput | undefin
 		case "key":
 			if (
 				typeof value.code !== "string" ||
-				(!specialKeys.has(value.code) && !/^(Key[A-Z]|Digit[0-9]|F([1-9]|1[0-2]))$/.test(value.code))
+				(!specialKeys.has(value.code) && !/^(Key[A-Z]|Digit[0-9]|Numpad[0-9]|F([1-9]|1[0-2]))$/.test(value.code))
 			)
 				return;
 			if (value.action !== "down" && value.action !== "up") return;

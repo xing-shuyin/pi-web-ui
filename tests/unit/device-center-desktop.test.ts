@@ -654,6 +654,25 @@ describe("device desktop native route", () => {
 			}
 			expect(requests[0]).toContain("/nested/desktop-ws");
 			expect(f.sessions[0].options.readOnly).toBe(false);
+			await page.locator("#canvas").focus();
+			for (const code of [
+				"Numpad0",
+				"Numpad1",
+				"Numpad9",
+				"NumpadDecimal",
+				"NumpadAdd",
+				"NumpadSubtract",
+				"NumpadMultiply",
+				"NumpadDivide",
+				"NumpadEnter",
+				"NumLock",
+			]) {
+				await page.keyboard.press(code);
+				await vi.waitFor(() => {
+					expect(f.sessions[0].input).toHaveBeenCalledWith({ type: "key", code, action: "down" });
+					expect(f.sessions[0].input).toHaveBeenCalledWith({ type: "key", code, action: "up" });
+				});
+			}
 			expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
 			await page.locator("#disconnect").click();
 			await vi.waitFor(() => expect(f.sessions[0].close).toHaveBeenCalledTimes(1));

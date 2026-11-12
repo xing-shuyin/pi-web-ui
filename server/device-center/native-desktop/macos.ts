@@ -1,6 +1,7 @@
 export const macDesktopScript = String.raw`
 import Foundation
 import CoreGraphics
+import Carbon
 import ImageIO
 import ApplicationServices
 import ScreenCaptureKit
@@ -62,9 +63,16 @@ let keyMap: [String: CGKeyCode] = [
     "Backquote":50,"Backspace":51,"Escape":53,"MetaRight":54,"MetaLeft":55,"ShiftLeft":56,"CapsLock":57,
     "AltLeft":58,"ControlLeft":59,"ShiftRight":60,"AltRight":61,"ControlRight":62,"F1":122,"F2":120,"F3":99,
     "F4":118,"F5":96,"F6":97,"F7":98,"F8":100,"F9":101,"F10":109,"F11":103,"F12":111,"Insert":114,
-    "Home":115,"PageUp":116,"Delete":117,"End":119,"PageDown":121,"ArrowLeft":123,"ArrowRight":124,"ArrowDown":125,"ArrowUp":126
+    "Home":115,"PageUp":116,"Delete":117,"End":119,"PageDown":121,"ArrowLeft":123,"ArrowRight":124,"ArrowDown":125,"ArrowUp":126,
+    "Numpad0":CGKeyCode(kVK_ANSI_Keypad0),"Numpad1":CGKeyCode(kVK_ANSI_Keypad1),"Numpad2":CGKeyCode(kVK_ANSI_Keypad2),
+    "Numpad3":CGKeyCode(kVK_ANSI_Keypad3),"Numpad4":CGKeyCode(kVK_ANSI_Keypad4),"Numpad5":CGKeyCode(kVK_ANSI_Keypad5),
+    "Numpad6":CGKeyCode(kVK_ANSI_Keypad6),"Numpad7":CGKeyCode(kVK_ANSI_Keypad7),"Numpad8":CGKeyCode(kVK_ANSI_Keypad8),"Numpad9":CGKeyCode(kVK_ANSI_Keypad9),
+    "NumpadDecimal":CGKeyCode(kVK_ANSI_KeypadDecimal),"NumpadMultiply":CGKeyCode(kVK_ANSI_KeypadMultiply),"NumpadAdd":CGKeyCode(kVK_ANSI_KeypadPlus),
+    "NumpadDivide":CGKeyCode(kVK_ANSI_KeypadDivide),"NumpadEnter":CGKeyCode(kVK_ANSI_KeypadEnter),"NumpadSubtract":CGKeyCode(kVK_ANSI_KeypadMinus),
+    "NumpadEqual":CGKeyCode(kVK_ANSI_KeypadEquals),"NumpadComma":CGKeyCode(kVK_JIS_KeypadComma),"NumLock":CGKeyCode(kVK_ANSI_KeypadClear),"NumpadClear":CGKeyCode(kVK_ANSI_KeypadClear)
 ]
 let modifiers: [CGKeyCode: CGEventFlags] = [54:.maskCommand,55:.maskCommand,56:.maskShift,60:.maskShift,58:.maskAlternate,61:.maskAlternate,59:.maskControl,62:.maskControl]
+let keypadCodes = Set(keyMap.filter { $0.key.hasPrefix("Numpad") || $0.key == "NumLock" }.map { $0.value })
 func flags() -> CGEventFlags {
     var f = CGEventFlags()
     for k in keys { if let bit = modifiers[k] { f.formUnion(bit) } }
@@ -73,6 +81,7 @@ func flags() -> CGEventFlags {
 func key(_ code: CGKeyCode, _ down: Bool) {
     let event = CGEvent(keyboardEventSource: nil, virtualKey: code, keyDown: down)
     event?.flags = flags()
+    if keypadCodes.contains(code) { event?.flags.insert(.maskNumericPad) }
     event?.post(tap: .cghidEventTap)
 }
 func mouse(_ button: Int, _ down: Bool) {

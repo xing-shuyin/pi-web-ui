@@ -1,7 +1,6 @@
 import { useEffect, useRef, useState, useSyncExternalStore, type PointerEvent } from "react";
 import { createPortal } from "react-dom";
 import {
-	closeDesktopAccess,
 	getDesktopAccess,
 	openDeviceAccess,
 	subscribeDesktopAccess,
@@ -116,7 +115,7 @@ function DesktopWindow({ access }: { access: DesktopAccess }) {
 		setError("");
 		try {
 			await openDeviceAccess(access.id, access.hubUrl, true, zh, true);
-			closeDesktopAccess(access);
+			setDesktopMode(access, "preview");
 		} catch (e) {
 			setError(e instanceof Error ? e.message : String(e));
 		} finally {

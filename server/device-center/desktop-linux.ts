@@ -61,11 +61,21 @@ function screenSize(): [number, number] {
 function keySymbol(code: string): string | undefined {
 	if (/^Key[A-Z]$/.test(code)) return code.slice(3).toLowerCase();
 	if (/^Digit[0-9]$/.test(code)) return code.slice(5);
+	if (/^Numpad[0-9]$/.test(code)) return "KP_" + code.slice(6);
 	if (/^F([1-9]|1[0-9]|2[0-4])$/.test(code)) return code;
 	return (
 		{
 			Enter: "Return",
 			NumpadEnter: "KP_Enter",
+			NumpadAdd: "KP_Add",
+			NumpadSubtract: "KP_Subtract",
+			NumpadMultiply: "KP_Multiply",
+			NumpadDivide: "KP_Divide",
+			NumpadDecimal: "KP_Decimal",
+			NumpadComma: "KP_Separator",
+			NumpadEqual: "KP_Equal",
+			NumpadClear: "Clear",
+			NumLock: "Num_Lock",
 			Escape: "Escape",
 			Backspace: "BackSpace",
 			Tab: "Tab",

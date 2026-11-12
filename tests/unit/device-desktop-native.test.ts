@@ -369,6 +369,36 @@ describe("local macOS permission requests", () => {
 });
 
 describe("native desktop input validation", () => {
+	it("forwards keypad digits, operators, Enter and NumLock with balanced key releases", () => {
+		const { child, writes } = processFixture();
+		const session = startNativeDesktop(options(false));
+		const codes = [
+			...Array.from({ length: 10 }, (_, i) => `Numpad${i}`),
+			"NumpadEnter",
+			"NumpadAdd",
+			"NumpadSubtract",
+			"NumpadMultiply",
+			"NumpadDivide",
+			"NumpadDecimal",
+			"NumpadComma",
+			"NumpadEqual",
+			"NumpadClear",
+			"NumLock",
+		];
+		const events = codes.flatMap(
+			(code) =>
+				[
+					{ type: "key", code, action: "down" },
+					{ type: "key", code, action: "up" },
+				] as NativeDesktopInput[],
+		);
+		for (const event of events) session.input(event);
+		expect(writes.map((value) => JSON.parse(value))).toEqual(events);
+		for (const code of ["Numpad10", "Numpad-1", "NumpadUnknown"]) session.input({ type: "key", code, action: "down" });
+		expect(writes).toHaveLength(events.length);
+		session.close();
+		child.emit("close", 0);
+	});
 	it("defaults to immutable read-only and never forwards input", () => {
 		const { child, writes } = processFixture();
 		const config = options();

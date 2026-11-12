@@ -46,14 +46,27 @@ public static class NativeDesktop {
   static volatile bool stopped;
   static bool preview;
   static void Send(INPUT i) { if(SendInput(1,new INPUT[]{i},Marshal.SizeOf(typeof(INPUT)))!=1) throw new Exception("SendInput failed; Windows blocks control of elevated apps and secure desktops."); }
-  static void Key(int vk,bool down) { INPUT i=new INPUT(); i.type=1; i.u.k.vk=(ushort)vk; i.u.k.flags=down?0u:2u; if(vk==0xA3||vk==0xA5||vk==0x5B||vk==0x5C||(vk>=0x21&&vk<=0x2E)) i.u.k.flags|=1; Send(i); }
+  static INPUT KeyInput(int code,bool down) {
+    int vk=code&0xffff;
+    INPUT i=new INPUT(); i.type=1; i.u.k.vk=(ushort)vk; i.u.k.flags=down?0u:2u;
+    // Preserve numpad Enter as a distinct held key and emit its extended-key flag on release too.
+    if((code&0x10000)!=0||vk==0xA3||vk==0xA5||vk==0x5B||vk==0x5C||(vk>=0x21&&vk<=0x2E)) i.u.k.flags|=1;
+    if(vk==0x90) i.u.k.scan=0x45;
+    return i;
+  }
+  static void Key(int code,bool down) { Send(KeyInput(code,down)); }
   static void Mouse(int b,bool down) { INPUT i=new INPUT(); i.u.m.dwFlags=b==0?(down?2u:4u):b==1?(down?32u:64u):(down?8u:16u); Send(i); }
   static int Code(string c) {
     if(c.Length==4&&c.StartsWith("Key")&&c[3]>='A'&&c[3]<='Z') return c[3];
     if(c.Length==6&&c.StartsWith("Digit")&&c[5]>='0'&&c[5]<='9') return c[5];
+    if(c.Length==7&&c.StartsWith("Numpad")&&c[6]>='0'&&c[6]<='9') return 0x60+c[6]-'0';
     int f; if(c.StartsWith("F")&&int.TryParse(c.Substring(1),out f)&&f>=1&&f<=12) return 111+f;
     switch(c) {
       case "Enter":return 13; case "Escape":return 27; case "Backspace":return 8; case "Tab":return 9; case "Space":return 32;
+      case "NumpadEnter":return 0x1000D; case "NumLock":return 0x10090;
+      case "NumpadMultiply":return 0x6A; case "NumpadAdd":return 0x6B; case "NumpadComma":return 0x6C;
+      case "NumpadSubtract":return 0x6D; case "NumpadDecimal":return 0x6E; case "NumpadDivide":return 0x1006F;
+      case "NumpadEqual":return 0xBB; case "NumpadClear":return 0x0C;
       case "ShiftLeft":return 160; case "ShiftRight":return 161; case "ControlLeft":return 162; case "ControlRight":return 163;
       case "AltLeft":return 164; case "AltRight":return 165; case "MetaLeft":return 91; case "MetaRight":return 92;
       case "ArrowLeft":return 37; case "ArrowUp":return 38; case "ArrowRight":return 39; case "ArrowDown":return 40;

@@ -58,7 +58,7 @@ try {
 	let opens = 0,
 		snapshots = 0,
 		liveLoads = 0;
-	await page.route("**/api/device-center/devices", (route) =>
+	await page.context().route("**/api/device-center/devices", (route) =>
 		route.fulfill({
 			json: {
 				devices: [
@@ -73,14 +73,14 @@ try {
 			},
 		}),
 	);
-	await page.route("**/api/device-center/devices/*/open", (route) =>
+	await page.context().route("**/api/device-center/devices/*/open", (route) =>
 		route.fulfill({
 			json: {
 				url: `${origin}/device/${new URL(route.request().url()).pathname.split("/").at(-2)}/__open?ticket=${++opens}`,
 			},
 		}),
 	);
-	await page.route("**/device/*/__open?*", (route) => {
+	await page.context().route("**/device/*/__open?*", (route) => {
 		const initial = new URL(route.request().url()).searchParams.get("next").slice(1);
 		const wrapper = wrapperHtml("/fixture/", initial, new URL(origin), "Studio Mac");
 		return route.fulfill({
@@ -89,7 +89,7 @@ try {
 			body: wrapper.html,
 		});
 	});
-	await page.route("**/fixture/**", (route) => {
+	await page.context().route("**/fixture/**", (route) => {
 		const path = new URL(route.request().url()).pathname;
 		const headers = portalHeaders(new URL(origin), "/fixture/");
 		if (path.endsWith("/api/device-desktop/preview")) {
@@ -223,6 +223,18 @@ try {
 	await preview.getByText(/Updated \d+s ago/).waitFor();
 	assert.equal(await panel.count(), 0);
 	assert.equal(await preview.count(), 1);
+	await preview.getByRole("button", { name: "Expand and control" }).click();
+	const detachedPage = page.waitForEvent("popup");
+	await panel.getByRole("button", { name: "Separate tab", exact: true }).click();
+	const detached = await detachedPage;
+	await detached.frameLocator("iframe").getByRole("button", { name: "Click to operate" }).click();
+	assert.equal(await detached.evaluate(() => window.opener), null);
+	assert.equal(await panel.count(), 0);
+	assert.equal(await preview.count(), 1);
+	await detached.close();
+	await page.bringToFront();
+	await preview.getByText(/Updated \d+s ago/).waitFor();
+	assert((await preview.locator("iframe").getAttribute("src")).includes("/device/studio-mac/"));
 	await preview.getByRole("button", { name: "Close desktop" }).click();
 	assert.equal(await preview.count(), 0);
 	assert.equal(await page.locator("iframe").count(), 0);

@@ -20,6 +20,10 @@
 
 ### 预览验证
 
+打开独立标签页或桌面壳独立窗口成功后，主页面保留设备选择并回到小预览；关闭独立窗口后仍可直接查看预览。浏览器阻止弹窗或桌面壳打开失败时保留原操作窗口，不清除选择。新窗口没有 opener，关闭通知不跨来源传递；主页面可见时，预览在服务端复用独立窗口的实时帧，窗口关闭后恢复低频采集。
+
+数字小键盘的 `Numpad0`–`Numpad9`、加减乘除、小数点、回车及 NumLock 按独立物理键传递，不能当作未知键丢弃。Windows 小键盘回车和除号保留扩展键标志，回车与主键区回车分别记录并释放；macOS 使用系统 Carbon 键码，Linux 使用 X11 keypad keysyms。NumLock 的数字/导航状态取决于被控系统。`tests/device-desktop-windows-keys-test.mjs` 编译实际 C# 助手、验证 22 种按键描述及释放标志，不向用户桌面注入测试按键；浏览器测试覆盖真实键盘事件到 WebSocket 的传递。
+
 `tests/device-current-desktop-test.mjs` 在 8996 端口用真实 Chromium 验证 Hub/LAN 路径下的嵌套沙箱、持续预览、直接控制、中文输入、返回与重新打开，确认没有「再次打开自己」的请求；检查 one-dark、white、nord 主题即时同步且不重连，以及手机宽度。使用模拟采集帧，不代表跨机器帧率。
 
 `tests/unit/device-desktop-preview.test.ts` 验证缓存、并发复用、取消和实时采集切换；原生/Linux 用例检查低频参数和只读约束。`node --import tsx tests/device-desktop-window-test.mjs` 使用 8997 端口和真实 Chrome，验证嵌套沙箱中的连续预览、折叠暂停、右栏隐藏暂停、放大操作、全屏不重载、返回预览、手机宽度及关闭清理，截图位于 `artifacts/device-center/`。该界面测试使用模拟桌面，不代表跨机器性能实测。

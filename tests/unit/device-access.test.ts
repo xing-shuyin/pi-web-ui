@@ -184,7 +184,7 @@ it("keeps a sandboxed desktop alive through outside clicks and fullscreen withou
 	await click("Close desktop");
 	expect(document.querySelector("iframe")).toBeNull();
 });
-it("retains the floating window on blocked popups and bridge failures, closes only after success", async () => {
+it("retains the floating window on blocked popups and bridge failures, returns to preview after success", async () => {
 	ticket();
 	await mount();
 	const access = getDesktopAccess();
@@ -202,7 +202,9 @@ it("retains the floating window on blocked popups and bridge failures, closes on
 	expect(getDesktopAccess()).toBe(access);
 	openHub.mockResolvedValue(true);
 	await act(async () => detach().click());
-	expect(getDesktopAccess()).toBeNull();
+	expect(getDesktopAccess()).toMatchObject({ id: "mac", mode: "preview", revision: access!.revision });
+	expect(document.querySelector(".remote-desktop-window")).toBeNull();
+	expect(document.querySelector<HTMLIFrameElement>("iframe")!.src).toContain("next=%2Fdesktop-preview");
 	expect(openHub).toHaveBeenCalledWith(`${hub}/device/mac/__open?ticket=fresh&next=%2Fdesktop`);
 	expect(popup).toHaveBeenCalledTimes(1);
 });
@@ -220,7 +222,8 @@ it("obtains a fresh ticket for a separate tab and isolates its opener", async ()
 	expect(tab.opener).toBeNull();
 	expect(replace).toHaveBeenCalledWith(`${hub}/device/mac/__open?ticket=second&next=%2Fdesktop`);
 	expect(close).not.toHaveBeenCalled();
-	expect(getDesktopAccess()).toBeNull();
+	expect(getDesktopAccess()).toMatchObject({ id: "mac", mode: "preview" });
+	expect(document.querySelector(".desktop-preview")).not.toBeNull();
 });
 it.each([
 	"https://evil.example/device/mac/__open",
@@ -235,16 +238,17 @@ it.each([
 	await expect(requestDeviceAccessUrl("mac", hub, true, false)).rejects.toThrow("Invalid device access URL");
 	expect(getDesktopAccess()).toBe(access);
 });
-it("does not let an old detach completion close a newer desktop", async () => {
+it("does not let an old detach completion change a newer desktop", async () => {
 	ticket();
 	await mount();
 	const previous = getDesktopAccess()!;
 	await act(async () => {
 		await openDeviceAccess("mac", hub, true, false);
-		closeDesktopAccess(previous);
+		setDesktopMode(getDesktopAccess()!, "live");
+		setDesktopMode(previous, "preview");
 	});
 	expect(getDesktopAccess()).not.toBe(previous);
-	expect(getDesktopAccess()).not.toBeNull();
+	expect(getDesktopAccess()?.mode).toBe("live");
 });
 it("requests LAN access and opens the local opaque desktop portal", async () => {
 	const url = `/device-lan/mac/__open?ticket=${"a".repeat(64)}`;
