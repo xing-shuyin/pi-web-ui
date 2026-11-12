@@ -49,7 +49,17 @@ if (process.platform !== "win32") {
 	]);
 	const cases = [
 		['{"type":"ack"}', false, true],
+		['{"type":"displays"}', false, true],
+		['{"type":"displays","command":"calc"}', false, false],
+		['{"type":"display","id":"monitor-2"}', false, true],
+		[JSON.stringify({ type: "display", id: "x".repeat(129) }), true, false],
+		[JSON.stringify({ type: "display", id: "bad\0id" }), true, false],
+		['{"type":"display","id":"monitor-2","command":"calc"}', true, false],
 		['{"type":"configure","maxEdge":1280,"quality":60,"fps":30}', false, true],
+		['{"type":"configure","maxEdge":1280,"quality":60,"fps":60}', false, true],
+		['{"type":"configure","maxEdge":1280,"quality":60,"fps":120}', false, true],
+		['{"type":"configure","maxEdge":1280,"quality":60,"fps":240}', false, true],
+		['{"type":"configure","maxEdge":1280,"quality":60,"fps":241}', false, false],
 		['{"type":"configure","maxEdge":30000,"quality":60,"fps":30}', true, false],
 		['{"type":"configure","maxEdge":1280,"quality":60,"fps":30,"command":"calc"}', true, false],
 		['{"type":"close"}', false, true],

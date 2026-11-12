@@ -6,6 +6,7 @@ import {
 	openDeviceAccess,
 	subscribeDesktopAccess,
 	setDesktopMode,
+	pageDeviceId,
 	type DesktopAccess,
 	type DesktopTransport,
 } from "../device-access";
@@ -14,6 +15,8 @@ import { useDesktopTarget } from "../use-desktop-target";
 import { useDesktopTheme } from "../use-desktop-theme";
 import { useOverlayZIndex } from "../overlay-stack";
 import { useT } from "../i18n";
+import { DesktopClipboardControl } from "./desktop-clipboard-control";
+import { getDesktopDisplay, setDesktopDisplay } from "../desktop-display";
 
 export function RemoteDesktopWindow() {
 	const access = useSyncExternalStore(subscribeDesktopAccess, getDesktopAccess);
@@ -28,6 +31,48 @@ function DesktopWindow({ access }: { access: DesktopAccess }) {
 	const frameRef = useRef<HTMLIFrameElement>(null);
 	const local = isLocalDesktopAccess(access);
 	useDesktopTheme(frameRef, target?.url, local);
+	useEffect(() => {
+		const desired = getDesktopDisplay(access);
+		let initial = true,
+			waiting = false;
+		const receive = (event: MessageEvent) => {
+			if (
+				pageDeviceId() &&
+				parent !== window &&
+				event.source === parent &&
+				event.data?.type === "desktop-select-display"
+			) {
+				frameRef.current?.contentWindow?.postMessage(event.data, "*");
+				return;
+			}
+			if (
+				event.source !== frameRef.current?.contentWindow ||
+				event.origin !== (local && target ? new URL(target.url).origin : "null") ||
+				event.data?.type !== "desktop-displays"
+			)
+				return;
+			const { displays, selected } = event.data;
+			if (
+				!Array.isArray(displays) ||
+				displays.length > 32 ||
+				typeof selected !== "string" ||
+				!displays.some((d) => d?.id === selected)
+			)
+				return;
+			if (pageDeviceId() && parent !== window) parent.postMessage(event.data, "*");
+			if (initial && desired && selected !== desired && displays.some((d) => d?.id === desired)) {
+				if (!waiting) {
+					waiting = true;
+					frameRef.current?.contentWindow?.postMessage({ type: "desktop-select-display", display: desired }, "*");
+				}
+				return;
+			}
+			initial = false;
+			setDesktopDisplay(access, selected);
+		};
+		window.addEventListener("message", receive);
+		return () => window.removeEventListener("message", receive);
+	}, [access.id, access.hubUrl, local, target]);
 	const [transport, setTransport] = useState<DesktopTransport>();
 	useEffect(() => {
 		setTransport(target?.transport);
@@ -69,7 +114,7 @@ function DesktopWindow({ access }: { access: DesktopAccess }) {
 		return () => window.removeEventListener("resize", resize);
 	}, []);
 	function start(event: PointerEvent<HTMLElement>, resize: boolean) {
-		if (fullscreen || event.button !== 0 || (event.target as HTMLElement).closest("button")) return;
+		if (fullscreen || event.button !== 0 || (event.target as HTMLElement).closest("button,select,input,label")) return;
 		event.preventDefault();
 		const element = event.currentTarget;
 		element.setPointerCapture(event.pointerId);
@@ -188,6 +233,7 @@ function DesktopWindow({ access }: { access: DesktopAccess }) {
 					×
 				</button>
 			</div>
+			<DesktopClipboardControl frame={frameRef} url={target?.url} local={local} />
 			{(error || targetError) && (
 				<div role="alert" className="remote-desktop-error">
 					{error || targetError}
@@ -211,7 +257,7 @@ function DesktopWindow({ access }: { access: DesktopAccess }) {
 							? "allow-scripts allow-forms allow-pointer-lock allow-same-origin"
 							: "allow-scripts allow-forms allow-pointer-lock"
 					}
-					allow="fullscreen"
+					allow="fullscreen; local-network-access *; local-network *; loopback-network *"
 					allowFullScreen
 				/>
 			)}

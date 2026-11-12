@@ -545,7 +545,7 @@ describe("device desktop native route", () => {
 		for (const session of f.sessions) expect(session.close).toHaveBeenCalledTimes(1);
 		await rejected(f.port, 503);
 	});
-	it("bounds frames and sends only the latest pending frame immediately after an ACK", async () => {
+	it("pipelines two frames and keeps only the latest additional frame until an ACK", async () => {
 		expect(DESKTOP_LIMITS.frame).toBe(4 * 1024 * 1024);
 		expect(DESKTOP_LIMITS.queue).toBe(4 * 1024 * 1024);
 		const f = await fixture();
@@ -574,16 +574,20 @@ describe("device desktop native route", () => {
 		expect(delivered).toEqual([tinyImage]);
 		expect(finish).toBeTypeOf("function");
 		finish!();
-		expect(delivered).toHaveLength(1);
-		ws.send(JSON.stringify({ type: "ack" }));
-		await vi.waitFor(() => expect(delivered).toEqual([tinyImage, latest]));
+		expect(delivered).toEqual([tinyImage, latest]);
+		finish!();
+		session.options.onFrame(Buffer.from("superseded"));
+		const third = Buffer.from("third");
+		session.options.onFrame(third);
 		expect(delivered).toHaveLength(2);
+		ws.send(JSON.stringify({ type: "ack" }));
+		await vi.waitFor(() => expect(delivered).toEqual([tinyImage, latest, third]));
 		expect(session.input).not.toHaveBeenCalled();
 		finish!();
 		const closed = once(ws, "close");
 		session.options.onFrame(Buffer.alloc(DESKTOP_LIMITS.frame + 1));
 		await closed;
-		expect(delivered).toHaveLength(2);
+		expect(delivered).toHaveLength(3);
 		expect(session.close).toHaveBeenCalledTimes(1);
 	});
 	it("drops frames when the WebSocket output queue is full and resumes after draining", async () => {

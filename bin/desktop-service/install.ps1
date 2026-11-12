@@ -78,10 +78,10 @@ if(Test-Path -LiteralPath $markerStaged) { Remove-Item -LiteralPath $markerStage
 [IO.File]::WriteAllText($markerStaged,'1',[Text.Encoding]::ASCII)
 Move-Item -LiteralPath $markerStaged -Destination (Join-Path $installDir 'enabled') -Force
 # Capability is valid only for this binary, including after a rollback or downgrade.
-$profileStaged=Join-Path $installDir 'profile-v1.new'
+$profileStaged=Join-Path $installDir 'profile-v2.new'
 if(Test-Path -LiteralPath $profileStaged) { Remove-Item -LiteralPath $profileStaged -Force }
 [IO.File]::WriteAllText($profileStaged,(Get-FileHash -LiteralPath $target -Algorithm SHA256).Hash,[Text.Encoding]::ASCII)
-Move-Item -LiteralPath $profileStaged -Destination (Join-Path $installDir 'profile-v1') -Force
+Move-Item -LiteralPath $profileStaged -Destination (Join-Path $installDir 'profile-v2') -Force
 [ordered]@{installed=$true; running=$true; ownerSid=$owner; path=$target} | ConvertTo-Json -Compress
 } catch {
     $failure=$_

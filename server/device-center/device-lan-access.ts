@@ -202,6 +202,7 @@ export function createDeviceLanAccess(options: { allowLoopback?: boolean } = {})
 				access.transport,
 				access.origin.origin + access.base + "__lan_close?view=" + access.view,
 				access.origin.origin + access.base + "__desktop_open",
+				access.origin.origin + access.base.replace(/device-lan\/.*$/, "") + "api/device-desktop/local/clipboard-ws",
 			);
 			res
 				.writeHead(200, { "content-type": "text/html; charset=utf-8", "content-security-policy": page.csp })

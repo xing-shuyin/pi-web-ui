@@ -32,5 +32,14 @@
 	"desktop.groupMembers": "Elegir miembro del grupo",
 	"desktop.groupNoDevice": "Sin dispositivo vinculado",
 	"desktop.groupSelect": "Ver el escritorio de {name}",
-	"desktop.groupOpen": "Abrir y controlar el escritorio de {name}"
+	"desktop.groupOpen": "Abrir y controlar el escritorio de {name}",
+	"desktop.clipboard": "Portapapeles",
+	"desktop.clipboardOff": "Desactivado",
+	"desktop.clipboardSend": "Local → remoto",
+	"desktop.clipboardReceive": "Remoto → local",
+	"desktop.clipboardBoth": "Ambas direcciones",
+	"desktop.clipboardReady": "Texto, imágenes y archivos · copia para sincronizar",
+	"desktop.clipboardHint": "Sincroniza las nuevas copias. Hasta 32 archivos y 32 MB por copia.",
+	"desktop.clipboardLocal": "La sincronización automática requiere abrir el escritorio desde pi-web-ui en tu localhost.",
+	"desktop.clipboardError": "Sincronización detenida. Revisa versiones, permisos y tamaño, y selecciona de nuevo la dirección."
 }

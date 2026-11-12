@@ -68,6 +68,34 @@ afterEach(() => {
 });
 
 describe("native desktop lifecycle and framed capture", () => {
+	it("waits for the selected monitor, accepts bounded metadata without JPEG ACKs and keeps idle streams alive", () => {
+		const { child, writes } = processFixture(),
+			onDisplays = vi.fn();
+		const opts = { ...options(true), display: "secondary", onDisplays };
+		const session = startNativeDesktop(opts);
+		expect(writes.map((line) => JSON.parse(line))).toEqual([
+			{ type: "displays" },
+			{ type: "display", id: "secondary" },
+		]);
+		const displays = [
+			{ id: "primary", width: 1920, height: 1080, primary: true },
+			{ id: "secondary", width: 2560, height: 1440, primary: false },
+		];
+		child.stdout.write(packet(Buffer.from(JSON.stringify({ type: "displays", displays, selected: "primary" }))));
+		child.stdout.write(packet());
+		expect(opts.onFrame).not.toHaveBeenCalled();
+		child.stdout.write(packet(Buffer.from(JSON.stringify({ type: "displays", displays, selected: "secondary" }))));
+		child.stdout.write(packet());
+		expect(opts.onFrame).toHaveBeenCalledOnce();
+		expect(writes.filter((line) => JSON.parse(line).type === "ack")).toHaveLength(2);
+		vi.advanceTimersByTime(40_000);
+		child.stdout.write(packet(Buffer.from(JSON.stringify({ type: "displays", displays, selected: "secondary" }))));
+		vi.advanceTimersByTime(10_000);
+		expect(opts.onError).not.toHaveBeenCalled();
+		expect(onDisplays).toHaveBeenCalledTimes(3);
+		session.close();
+		child.emit("close", 0);
+	});
 	it("uses the protected installed service for capture without creating an elevated script", () => {
 		mocks.exists.mockReturnValue(true);
 		const { child, writes } = processFixture();
@@ -241,7 +269,7 @@ describe("Windows service session recovery", () => {
 	it("restores bounded quality after worker replacement without granting input to a viewer", () => {
 		const binary = Buffer.from("installed-service");
 		mocks.read.mockImplementation((path: string) =>
-			path.endsWith("profile-v1") ? createHash("sha256").update(binary).digest("hex") : binary,
+			path.endsWith("profile-v2") ? createHash("sha256").update(binary).digest("hex") : binary,
 		);
 		const first = processFixture();
 		const session = startNativeDesktop(options());

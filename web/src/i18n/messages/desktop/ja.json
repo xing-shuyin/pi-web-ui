@@ -32,5 +32,14 @@
 	"desktop.groupMembers": "グループメンバーを選択",
 	"desktop.groupNoDevice": "接続されたデバイスがありません",
 	"desktop.groupSelect": "{name} のデスクトップを表示",
-	"desktop.groupOpen": "{name} のデスクトップを開いて操作"
+	"desktop.groupOpen": "{name} のデスクトップを開いて操作",
+	"desktop.clipboard": "クリップボード",
+	"desktop.clipboardOff": "オフ",
+	"desktop.clipboardSend": "ローカル → リモート",
+	"desktop.clipboardReceive": "リモート → ローカル",
+	"desktop.clipboardBoth": "双方向",
+	"desktop.clipboardReady": "テキスト・画像・ファイル · コピーで同期",
+	"desktop.clipboardHint": "有効にした後のコピーを同期。1 回につき最大 32 ファイル、合計 32 MB。",
+	"desktop.clipboardLocal": "自動同期には手元の localhost の pi-web-ui から開く必要があります。",
+	"desktop.clipboardError": "同期が停止しました。両端のバージョン、権限、サイズを確認し、方向を選び直してください。"
 }

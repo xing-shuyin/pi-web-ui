@@ -7,6 +7,7 @@ const image = document.querySelector('img');
 ${desktopThemeScript()}
 ${desktopErrorScript()}
 const zh = (navigator.language || 'en').toLowerCase().startsWith('zh');
+let display = '';
 let active = parent === window, disposed = false, timer, controller, objectUrl;
 const report = data => parent.postMessage({type:'desktop-preview-state',...data}, '*');
 function cancel() { clearTimeout(timer); controller?.abort(); }
@@ -14,9 +15,11 @@ async function refresh() {
  if (!active || disposed || document.hidden || controller) return;
  const current = new AbortController(); controller = current;
  const timeout = setTimeout(() => current.abort(), 65000);
+ const requestedDisplay=display;
  let retry = 3000, receivedResponse = false;
  try {
-  const response = await fetch(new URL('api/device-desktop/preview', document.baseURI), {credentials:'same-origin', cache:'no-store', signal:current.signal});
+  const url = new URL('api/device-desktop/preview', document.baseURI); if(display) url.searchParams.set('display',display);
+  const response = await fetch(url, {credentials:'same-origin', cache:'no-store', signal:current.signal});
   receivedResponse = true;
   if (!response.ok) {
    const unsupported = response.status === 404;
@@ -31,7 +34,7 @@ async function refresh() {
   if (!response.headers.get('content-type')?.startsWith('image/jpeg')) throw new Error('Invalid desktop preview response');
   const blob = await response.blob();
   if (!blob.size || blob.size > 4194304) throw new Error('Invalid desktop preview size');
-  if (!active || disposed || current.signal.aborted) return;
+  if (!active || disposed || current.signal.aborted || requestedDisplay !== display) return;
   const next = URL.createObjectURL(blob), previous = objectUrl;
   image.src = next; objectUrl = next;
   if (previous) URL.revokeObjectURL(previous);
@@ -39,20 +42,21 @@ async function refresh() {
   if (!active || disposed || current.signal.aborted) return;
   report({updatedAt:Date.now()});
  } catch (error) {
-  if (active && !disposed) {
+  if (active && !disposed && requestedDisplay === display) {
    report({error:current.signal.aborted ? 'Desktop preview timed out.' : String(error.message).slice(0,2048)});
    if (!receivedResponse && !current.signal.aborted) parent.postMessage({type:'device-portal-disconnected'}, '*');
   }
   retry = 10000;
  } finally {
   clearTimeout(timeout); controller = null;
-  if (active && !disposed && !document.hidden) timer = setTimeout(refresh, retry);
+  if (active && !disposed && !document.hidden) timer = setTimeout(refresh, requestedDisplay === display ? retry : 0);
  }
 }
 addEventListener('message', event => {
  if (event.source !== parent || event.data?.type !== 'desktop-preview-active' || typeof event.data.active !== 'boolean') return;
- if (active === event.data.active) return;
- active = event.data.active; cancel(); if (active) void refresh();
+ const nextDisplay=typeof event.data.display==='string'&&event.data.display.length<=128?event.data.display:'';
+ if (active === event.data.active && display === nextDisplay) return;
+ display=nextDisplay;active = event.data.active;cancel();if(active&&!controller)void refresh();
 });
 document.addEventListener('visibilitychange', () => { cancel(); if (!document.hidden) void refresh(); });
 addEventListener('pagehide', () => { disposed = true; active = false; cancel(); if (objectUrl) URL.revokeObjectURL(objectUrl); });

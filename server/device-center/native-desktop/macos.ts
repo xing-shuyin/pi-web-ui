@@ -5,6 +5,9 @@ import Carbon
 import ImageIO
 import ApplicationServices
 import ScreenCaptureKit
+import CoreMedia
+import CoreVideo
+import CoreImage
 import Darwin
 
 func fail(_ message: String) -> Never {
@@ -18,6 +21,13 @@ let preview = mode == "preview"
 var maxEdge = preview ? 640.0 : 1920.0
 var jpegQuality = 0.65
 var captureFPS = 30.0
+var requestedDisplay: CGDirectDisplayID = 0
+var activeDisplay: CGDirectDisplayID = CGMainDisplayID()
+func displayIds() -> [CGDirectDisplayID] {
+    var ids = [CGDirectDisplayID](repeating: 0, count: 32), count: UInt32 = 0
+    guard CGGetActiveDisplayList(32, &ids, &count) == .success else { return [CGMainDisplayID()] }
+    return Array(ids.prefix(Int(count)))
+}
 // Only an explicit local permission action may trigger TCC or open Settings.
 // Use the same Swift process identity as capture and input injection.
 func openPrivacy(_ pane: String) {
@@ -109,8 +119,12 @@ DispatchQueue.global().async {
         guard let data = line.data(using: .utf8), let e = try? JSONSerialization.jsonObject(with: data) as? [String: Any], let type = e["type"] as? String else { continue }
         if type == "close" { return }
         if type == "ack" { acknowledged.signal(); continue }
+        if type == "display" {
+            if let id = e["id"] as? String, let display = UInt32(id) { lock.lock(); requestedDisplay = display; lock.unlock() }
+            continue
+        }
         if type == "configure" && !preview {
-            if let edge = e["maxEdge"] as? Int, let quality = e["quality"] as? Int, let fps = e["fps"] as? Int, (640...2560).contains(edge), (35...85).contains(quality), (5...30).contains(fps) {
+            if let edge = e["maxEdge"] as? Int, let quality = e["quality"] as? Int, let fps = e["fps"] as? Int, (640...2560).contains(edge), (35...85).contains(quality), (5...240).contains(fps) {
                 lock.lock(); maxEdge = Double(edge); jpegQuality = Double(quality) / 100; captureFPS = Double(fps); lock.unlock()
             }
             continue
@@ -126,7 +140,7 @@ DispatchQueue.global().async {
             buttons.removeAll()
         case "pointer":
             if let x = e["x"] as? Double, let y = e["y"] as? Double, let action = e["action"] as? String {
-                let bounds = CGDisplayBounds(CGMainDisplayID())
+                let bounds = CGDisplayBounds(activeDisplay)
                 lastPoint = CGPoint(x: bounds.minX + x * max(0, bounds.width - 1), y: bounds.minY + y * max(0, bounds.height - 1))
                 let b = e["button"] as? Int ?? 0
                 if action == "move" {
@@ -161,48 +175,100 @@ DispatchQueue.global().async {
         lock.unlock()
     }
 }
-// ScreenCaptureKit is also used by krd. SCScreenshotManager avoids deprecated
-// CGDisplayCreateImage on current macOS SDKs and never opens a network port.
-var cachedDisplay: SCDisplay?
-var cachedFilter: SCContentFilter?
-var contentCheckedAt = 0.0
-@available(macOS 14.0, *)
-func captureImage(edge: Double) -> CGImage {
-    let ready = DispatchSemaphore(value: 0)
-    var result: CGImage?
+// Keep a bounded, continuous ScreenCaptureKit stream instead of starting a screenshot for every frame.
+final class DesktopFrames: NSObject, SCStreamOutput, SCStreamDelegate {
+    let condition = NSCondition()
+    var latest: CVPixelBuffer?
+    var failure: String?
+    func stream(_ stream: SCStream, didStopWithError error: Error) {
+        condition.lock(); failure = String(describing: error); condition.broadcast(); condition.unlock()
+    }
+    func stream(_ stream: SCStream, didOutputSampleBuffer sample: CMSampleBuffer, of type: SCStreamOutputType) {
+        guard type == .screen, sample.isValid,
+              let attachments = CMSampleBufferGetSampleAttachmentsArray(sample, createIfNecessary: false) as? [[SCStreamFrameInfo: Any]],
+              let status = attachments.first?[.status] as? Int, status == SCFrameStatus.complete.rawValue,
+              let pixels = CMSampleBufferGetImageBuffer(sample) else { return }
+        condition.lock(); latest = pixels; condition.signal(); condition.unlock()
+    }
+    func take() -> CVPixelBuffer? {
+        condition.lock(); defer { condition.unlock() }
+        if latest == nil && failure == nil { _ = condition.wait(until: Date(timeIntervalSinceNow: 1)) }
+        if let message = failure { fail("ScreenCaptureKit stream stopped: " + message) }
+        let pixels = latest; latest = nil; return pixels
+    }
+}
+let frames = DesktopFrames()
+let captureQueue = DispatchQueue(label: "pi.desktop.capture", qos: .userInteractive)
+let imageContext = CIContext(options: [.cacheIntermediates: false])
+var stream: SCStream?
+var currentDisplay: SCDisplay?
+var configuredEdge = 0.0, configuredFPS = 0.0
+func configureStream(edge: Double, fps: Double, displayID: CGDirectDisplayID) {
+    let done = DispatchSemaphore(value: 0)
     var failure: String?
     Task {
         do {
-            let now = ProcessInfo.processInfo.systemUptime
-            if cachedDisplay?.displayID != CGMainDisplayID() || now - contentCheckedAt >= 2 {
+            if currentDisplay?.displayID != displayID {
+                if let old = stream { try await old.stopCapture(); stream = nil }
+                captureQueue.sync { frames.condition.lock(); frames.latest = nil; frames.condition.unlock() }
+                currentDisplay = nil
+            }
+            if stream == nil {
                 let content = try await SCShareableContent.excludingDesktopWindows(false, onScreenWindowsOnly: true)
-                cachedDisplay = content.displays.first(where: { $0.displayID == CGMainDisplayID() })
-                cachedFilter = cachedDisplay.map { SCContentFilter(display: $0, excludingWindows: []) }
-                contentCheckedAt = now
+                guard let display = content.displays.first(where: { $0.displayID == displayID }) else {
+                    failure = "No active main display."; done.signal(); return
+                }
+                currentDisplay = display
             }
-            guard let display = cachedDisplay, let filter = cachedFilter else {
-                failure = "No active main display."; ready.signal(); return
-            }
+            guard let display = currentDisplay else { done.signal(); return }
             let config = SCStreamConfiguration()
             let scale = min(1.0, edge / Double(max(display.width, display.height)))
             config.width = max(1, Int(Double(display.width) * scale))
             config.height = max(1, Int(Double(display.height) * scale))
             config.showsCursor = true
-            result = try await SCScreenshotManager.captureImage(contentFilter: filter, configuration: config)
+            config.pixelFormat = kCVPixelFormatType_32BGRA
+            config.queueDepth = 3
+            config.minimumFrameInterval = preview ? CMTime(value: 3, timescale: 1) : CMTime(value: 1, timescale: CMTimeScale(fps))
+            if let active = stream { try await active.updateConfiguration(config) }
+            else {
+                let active = SCStream(filter: SCContentFilter(display: display, excludingWindows: []), configuration: config, delegate: frames)
+                try active.addStreamOutput(frames, type: .screen, sampleHandlerQueue: captureQueue)
+                stream = active
+                try await active.startCapture()
+            }
         } catch { failure = String(describing: error) }
-        ready.signal()
+        done.signal()
     }
-    guard ready.wait(timeout: .now() + 15) == .success, let image = result else {
-        release(); fail("ScreenCaptureKit capture failed: " + (failure ?? "timeout; check Screen Recording permission and active desktop."))
+    guard done.wait(timeout: .now() + 15) == .success, failure == nil else {
+        release(); fail("ScreenCaptureKit stream failed: " + (failure ?? "timeout; check Screen Recording permission."))
     }
-    return image
+    configuredEdge = edge; configuredFPS = fps
+    lock.lock(); activeDisplay = displayID; lock.unlock()
 }
+var reportedAt = 0.0, lastFrameAt = 0.0
+var cachedPixels: CVPixelBuffer?
+var cachedDisplayID: CGDirectDisplayID = 0
 while true {
-    let started = ProcessInfo.processInfo.systemUptime
-    lock.lock(); let edge = maxEdge, quality = jpegQuality, fps = captureFPS; lock.unlock()
+    lock.lock(); let edge = maxEdge, quality = jpegQuality, fps = captureFPS, requested = requestedDisplay; lock.unlock()
+    let ids = displayIds(), chosen = ids.contains(requested) ? requested : CGMainDisplayID()
+    if edge != configuredEdge || fps != configuredFPS || currentDisplay?.displayID != chosen { configureStream(edge: edge, fps: fps, displayID: chosen) }
+    let now = ProcessInfo.processInfo.systemUptime
+    if now - reportedAt >= 2 {
+        let info: [String: Any] = ["type": "displays", "capture": "screencapturekit", "selected": String(chosen), "displays": ids.map { id in ["id": String(id), "width": CGDisplayPixelsWide(id), "height": CGDisplayPixelsHigh(id), "primary": id == CGMainDisplayID()] as [String: Any] }]
+        if let data = try? JSONSerialization.data(withJSONObject: info) {
+            var size = UInt32(data.count).bigEndian
+            FileHandle.standardOutput.write(Data(bytes: &size, count: 4)); FileHandle.standardOutput.write(data)
+        }
+        reportedAt = now
+    }
+    if cachedDisplayID != chosen { cachedPixels = nil; cachedDisplayID = chosen }
+    let fresh = frames.take()
+    if let latest = fresh { cachedPixels = latest }
+    if fresh == nil && ProcessInfo.processInfo.systemUptime - lastFrameAt < 3 { continue }
+    guard let pixels = cachedPixels else { continue }
     autoreleasepool {
-        let image = captureImage(edge: edge)
-        // ScreenCaptureKit already returns the requested dimensions; avoid a second full-frame copy.
+        let input = CIImage(cvPixelBuffer: pixels)
+        guard let image = imageContext.createCGImage(input, from: input.extent) else { fail("Cannot read captured image.") }
         let data = NSMutableData()
         guard let destination = CGImageDestinationCreateWithData(data, "public.jpeg" as CFString, 1, nil) else { release(); fail("Cannot create JPEG encoder.") }
         CGImageDestinationAddImage(destination, image, [kCGImageDestinationLossyCompressionQuality: quality] as CFDictionary)
@@ -210,9 +276,8 @@ while true {
         var size = UInt32(data.length).bigEndian
         FileHandle.standardOutput.write(Data(bytes: &size, count: 4))
         FileHandle.standardOutput.write(data as Data)
+        lastFrameAt = ProcessInfo.processInfo.systemUptime
     }
     if acknowledged.wait(timeout: .now() + 15) == .timedOut { release(); fail("Frame consumer stopped responding.") }
-    let remaining = (preview ? 3.0 : 1.0 / fps) - (ProcessInfo.processInfo.systemUptime - started)
-    if remaining > 0 { Thread.sleep(forTimeInterval: remaining) }
 }
 `;

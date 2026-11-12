@@ -10,6 +10,28 @@
 
 ## [Unreleased]
 
+## [0.120.1-p2p-preview.9] — 2026-11-12
+
+### Added
+
+- 剪贴板支持关闭、单向和双向同步文本、图片及文件。两端需更新，并从控制端本机 localhost 打开远程桌面；每次最多 32 个普通文件、合计 32 MiB，不含文件夹。
+- Windows / Mac 增加显示器选择，切换时同步调整鼠标位置和预览画面。
+- 新增 60 / 120 / 240 FPS 目标，默认 60；实际帧率取决于采集、编码、显示刷新及网络能力，尚未验证实际达到 120 / 240 FPS。
+
+### Changed
+
+- Windows 优先使用 DXGI GPU 采集并保留 GDI 回退；Mac 改为持续 SCStream 采集。Windows 系统桌面服务需随 npm 包升级。
+- 桌面传输最多保留两帧在途及一帧待发送画面，避免旧帧堆积。当前仍采用 JPEG，未加入硬件视频编码。
+- 剪贴板走独立连接，默认关闭，传输有方向、大小、完整性校验；只同步开启后的复制操作。
+
+<!-- auto-i18n:start -->
+
+### i18n
+
+- 前端新增 key（9）：`desktop.clipboard`、`desktop.clipboardOff`、`desktop.clipboardSend`、`desktop.clipboardReceive`、`desktop.clipboardBoth`、`desktop.clipboardReady`、`desktop.clipboardHint`、`desktop.clipboardLocal`、`desktop.clipboardError`
+
+<!-- auto-i18n:end -->
+
 ## [0.120.1-p2p-preview.8] — 2026-11-12
 
 ### Added
@@ -22,14 +44,6 @@
 
 - Windows 复用截图缓冲区并按帧预算调度；Mac 减少显示器枚举和重复缩放。保持最新帧优先、队列上限及锁屏恢复。
 - Windows 系统桌面服务新增受限画质配置；旧服务继续可连接并提示更新，升级服务后启用动态调节。
-
-<!-- auto-i18n:start -->
-
-### i18n
-
-- 前端新增 key（6）：`desktop.groupTitle`、`desktop.groupAll`、`desktop.groupMembers`、`desktop.groupNoDevice`、`desktop.groupSelect`、`desktop.groupOpen`
-
-<!-- auto-i18n:end -->
 
 ## [0.120.1-p2p-preview.7] — 2026-11-12
 
@@ -80,14 +94,6 @@
 
 - 桌面工具栏跟随聊天主题，分组展示连接与查看选项，设置、文字输入和连接信息使用互斥面板；主题切换保留桌面连接。
 
-<!-- auto-i18n:start -->
-
-### i18n
-
-- 前端新增 key（4）：`sessionsLoadFailed`、`desktop.currentDevice`、`desktop.showCurrent`、`desktop.currentConnection`
-
-<!-- auto-i18n:end -->
-
 ## [0.120.1-p2p-preview.2] — 2026-11-12
 
 ### Fixed
@@ -97,14 +103,6 @@
 ### Changed
 
 - 预览的“选择设备”直接展开设备列表，显示在线状态和当前选择，点击即可切换，不再跳转设备中心。
-
-<!-- auto-i18n:start -->
-
-### i18n
-
-- 前端新增 key（2）：`desktop.devicesUnavailable`、`desktop.noDevices`
-
-<!-- auto-i18n:end -->
 
 ## [0.120.1-p2p-preview.1] — 2026-11-12
 
@@ -125,14 +123,6 @@
 
 - P2P 需要两端本机服务及 Hub 支持新协议；旧版本、缺失助手和打洞失败自动回退。纯云端浏览器仍中继，群组持久状态仍由 Hub 管理。
 - 已通过 Windows 本机双助手和真实 Hub RPC 联测；macOS/Linux 助手已交叉编译，跨网 NAT、实际桌面性能和这些平台实机尚待验收。
-
-<!-- auto-i18n:start -->
-
-### i18n
-
-- 前端新增 key（1）：`desktop.p2p`
-
-<!-- auto-i18n:end -->
 
 ## [0.120.1-desktop-preview.1] — 2026-11-12
 
@@ -223,20 +213,6 @@
 - **单测分池**：快池／重型集成池分开跑，并加逐条计时报告。
 - **CI 单测并行**：单测按 shard 拆并行跑，浏览器型用例的启动预算收口到单一常量（4 vCPU runner 上不再随机撞线）。
 
-<!-- auto-i18n:start -->
-
-### i18n
-
-- 前端新增 key（62）：`currentModelLabel`、`currentModelBadge`、`currentModelHint`、`bgTaskJobKind`、`bgTaskStopping`、`openLocalProject`、`openRemoteProject`、`filesFilterPlaceholder`、`settingsSaveSaving`、`settingsSaveSaved`、`settingsSaveFailed`、`phoneEnabledDesc`、`phoneOffHint`、`projectClickSwitch`、`projectClickSwitchDesc`、`projectOrderManual`、`projectOrderManualDesc`、`toolInspectorOutputStats`、`toolInspectorThinkingStatusRunning`、`toolInspectorThinkingStatusDone`、`toolInspectorThinkingFooterRunning`、`toolInspectorThinkingFooterLines`、`toolTimeRange`、`toolTimeRunning`、`tplStepIdentity`、`tplStepIdentitySub`、`tplStepBehavior`、`tplStepBehaviorSub`、`tplStepCapability`、`tplStepCapabilitySub`、`tplStepReview`、`tplStepReviewSub`、`tplIdentityHint`、`tplNameRequired`、`tplAdvanced`、`tplEnIntro`、`tplEnPrompt`、`tplEnFilled`、`tplEnEmpty`、`tplSearchWhitelist`、`tplNoMatch`、`tplLimited`、`tplFollowSession`、`tplSumName`、`tplSumIntro`、`tplSumMode`、`tplSumModel`、`tplSumThinking`、`tplSumSkills`、`tplSumExtensions`、`tplSpawnTitle`、`tplSpawnNote`、`tplStateOn`、`tplStateOff`、`bgTaskRestart`、`bgTaskStart`、`bgTaskRunning`、`bgTaskQuickStart`、`subagentVerdictUnverified`、`subagentVerdictPartial`、`subagentVerdictBlocked`、`subagentVerdictHint`
-- 前端删除 key（26）：`bgTaskPort`、`bgTaskCleanNow`、`bgTaskCleanNowHint`、`bgTaskCommand`、`promptTok_persona`、`promptTok_persona_desc`、`promptTok_terminal`、`promptTok_terminal_desc`、`markersEnabled`、`markersEnabledDesc`、`markersOffHint`、`settingsTerminalToolsDesc`、`toolsCoreHint`、`toolsPluginHint`、`pluginToolsEmpty`、`pluginDisabledInPlugins`、`toolsSubagentDepHint`、`toolDescSubagent`、`toolDescSubagentSpawn`、`toolDescSubagentGetResult`、`toolDescSubagentSteer`、`toolDescSubagentList`、`toolDescSubagentStop`、`toolDescSubagentWaitAll`、`toolDescSubagentTemplates`、`toolPromptEdited`
-- 前端中文变更（7）：`placeholderIdle`、`placeholderIdleMod`、`settingsMarkers`、`settingsMarkersDesc`、`toolLazyLoadingDesc`、`toolOnDemandToolsDesc`、`presentAutoOpenDesc`
-- 前端英文变更（6）：`placeholderIdle`、`placeholderIdleMod`、`settingsMarkersDesc`、`toolLazyLoadingDesc`、`toolOnDemandToolsDesc`、`presentAutoOpenDesc`
-- 服务端新增 key（29）：`agent.subagent.budget.reached`、`agent.subagent.resume.title`、`bash.bgTimeout`、`bash.bgNoTimeout`、`bash.bgStarted`、`subagents.notify.evidence`、`subagents.spawn.task.missing.prompt`、`subagents.spawn.task.bad.key`、`subagents.complete.evidence.invalid`、`subagents.complete.rejected`、`subagents.complete.recorded`、`subagents.spawn.batch.too.many`、`subagents.spawn.batch.duplicate.key`、`subagents.spawn.batch.rejected`、`subagents.spawn.batch.started`、`subagents.spawn.batch.wait.hint`、`subagents.get.evidence`、`subagents.resume.missing.runId`、`subagents.resume.failed`、`subagents.resume.transcript`、`subagents.resume.no.transcript`、`subagents.resume.ok`、`subagents.steer.queued`、`subagents.steer.restarted`、`subagents.steer.missed`、`subagents.steer.delivered`、`subagents.list.ledger.resumed`、`subagents.list.ledger.item`、`subagents.list.ledger.head`
-- 服务端文案变更（29）：`agent.subagent.limit.reached`、`delegate.validate.agent`、`delegate.validate.short`、`delegate.started`、`subagents.notify.footer`、`subagents.spawn.template.unavailable`、`subagents.spawn.thinking.invalid`、`subagents.spawn.isolation.invalid`、`subagents.action.missing`、`subagents.spawn.missing.prompt`、`subagents.spawn.started`、`subagents.get.missing.runId`、`subagents.get.done`、`subagents.steer.missing.runId`、`subagents.steer.missing.message`、`subagents.steer.not.found`、`subagents.steer.injected`、`subagents.list.empty`、`subagents.stop.missing.runId`、`subagents.stop.not.found`、`subagents.templates.list`、`subagents.handoff.missing.toRunId`、`subagents.handoff.missing.payload`、`subagents.handoff.not.found`、`subagents.dismiss.missing.target`、`subagents.dismiss.running`、`subagents.dismiss.success.single`、`subagents.dismiss.success.batch`、`subagents.wait.pending`
-- 服务端删除 key（1）：`prompt.tools.lazy`
-
-<!-- auto-i18n:end -->
-
 ## [0.119.0] — 2026-11-08
 
 ### Added
@@ -285,20 +261,6 @@
 - **子代理工具改名**：`subagent` 别名下线，子代理统一走 `conversation`（旧设置里的 `subagent*` 关闭项会自动折算）。
 - **设置项下线**：`edit_soft` 开关与随手问「显示原文」移除，旧预设里这两个字段自动忽略。
 
-<!-- auto-i18n:start -->
-
-### i18n
-
-- 前端新增 key（21）：`nativeCliDetecting`、`nativeCliNotInstalled`、`nativeCliInstall`、`nativeCliInstallDocs`、`nativeCliDiscoveryFailed`、`settingsDesktopApp`、`settingsStartupMode`、`settingsStartupModeHint`、`settingsStartupModeAgent`、`settingsStartupModeBrowser`、`settingsStartupModeSplit`、`settingsStartupModeFailed`、`providerDetailEmptyHint`、`browserScriptEnabledDesc`、`browserScriptOffHint`、`toolOnDemandTools`、`toolOnDemandToolsDesc`、`quickAskEmptyAnswer`、`quickAskNetworkError`、`pluginCatalogCustomHint`、`pluginUninstall`
-- 前端删除 key（21）：`htmlJsOff`、`htmlJsOffTip`、`htmlJsOn`、`htmlJsOnTip`、`htmlEnableJs`、`htmlDisableJs`、`editSoftEnabled`、`editSoftEnabledDesc`、`editSoftOffHint`、`browserControlExamples`、`browserControlExample1`、`browserControlExample2`、`browserControlOpenPanel`、`browserControlSingleTip`、`quickAskShowOriginal`、`quickAskExpandSource`、`quickAskCollapseSource`、`quickAskExplainQuestion`、`selectionExplainEmpty`、`pluginInstalled`、`pluginCatalogBuiltin`
-- 前端中文变更（10）：`browserControl`、`toolsSubagentDepHint`、`delegateTaskOffHint`、`toolDescSubagent`、`pluginCatalogCustom`、`pluginCatalogTabBuiltin`、`pluginCatalogTabCustom`、`pluginCatalogRemoveHint`、`preset.codeDesc`、`subagentMaxDepthDesc`
-- 前端英文变更（10）：`browserControl`、`toolsSubagentDepHint`、`delegateTaskOffHint`、`toolDescSubagent`、`pluginCatalogCustom`、`pluginCatalogTabBuiltin`、`pluginCatalogTabCustom`、`pluginCatalogRemoveHint`、`preset.codeDesc`、`subagentMaxDepthDesc`
-- 服务端新增 key（12）：`edit.oldtext.empty`、`edit.exact.not.unique`、`edit.soft.oldtext.blank`、`edit.soft.fragment.not.supported`、`edit.soft.match.not.found`、`edit.soft.match.not.unique`、`edit.edits.overlap`、`edit.result.identical`、`edit.input.no.edits`、`edit.operation.aborted`、`edit.file.access.failed`、`edit.soft.replace.done`
-- 服务端文案变更（1）：`subagents.spawn.template.unavailable`
-- 服务端删除 key（12）：`editsoft.oldtext.empty`、`editsoft.exact.not.unique`、`editsoft.oldtext.blank`、`editsoft.fragment.not.supported`、`editsoft.match.not.found`、`editsoft.match.not.unique`、`editsoft.edits.overlap`、`editsoft.result.identical`、`editsoft.input.no.edits`、`editsoft.operation.aborted`、`editsoft.file.access.failed`、`editsoft.replace.done`
-
-<!-- auto-i18n:end -->
-
 ## [0.118.0] — 2026-11-07
 
 ### Added
@@ -331,19 +293,6 @@
 - **Canvas 多语言（#847）**：工具栏、节点配置、模板以及运行状态、日志和错误支持本地化，用户填写的标题和提示保留原文。
 - **渠道设置整合**：GitHub／飞书渠道统一在设备中心管理，并可进入群组配置；内置 Superagent 从普通插件启停列表移至渠道管理。
 - **分发信息与插件元数据**：脱敏测试夹具中的实际主机地址，补齐新插件线条图标，统一插件目录版本、名称与描述。
-
-<!-- auto-i18n:start -->
-
-### i18n
-
-- 前端新增 key（909）：`nativeCli`、`nativeCliRemoteLocation`、`nativeCliRemotePath`、`nativeCliRemoteDetecting`、`nativeCliRemoteUnavailable`、`nativeCliRemoteRetry`、`nativeCliRemoteConnectHint`、`nativeCliRemoteExecutable`、`nativeCliRemoteExecutableHint`、`nativeCliRemoteDiscoveryFailed`、`nativeCliModelSettings`、`nativeCliModelSettingsDesc`、`nativeCliInheritModel`、`nativeCliModelUnsupported`、`nativeCliTitle`、`nativeCliCreate`、`nativeCliChooseEngine`、`nativeCliConfigureArgs`、`nativeCliCreateFailed`、`nativeCliCustom`、`nativeCliExecutable`、`nativeCliArgs`、`nativeCliArgsHint`、`nativeCliStart`、`nativeCliExited`、`nativeCliDisconnected`、`nativeCliPasteFailed`、`screenshotCapture`、`screenshotKeepWindow`、`screenshotHideWindow`、`screenshotName`、`screenshotBusy`、`screenshotUnavailable`、`screenshotFocus`、`screenshotFailed`、`browserControlNativeLead`、`browserControlNativeDisabled`、`browserControlNativeEmpty`、`imageAttach`、`imageAttached`、`imageAttachFailed`、`imageCopy`、`imageCopied`、`imageCopyUnavailable`、`imageDownloaded`、`imageRestoreOriginal`、`imageAnnotApply`、`imageZoomIn`、`imageZoomOut`、`imageActualSize`、`imageFit`、`imageAnnotate`、`imageAnnotatePen`、`imageAnnotateArrow`、`imageAnnotateRectangle`、`imageAnnotateText`、`imageAnnotateColor`、`imageAnnotateUndo`、`imageAnnotateSave`、`imageAnnotateHint`、`imageAnnotateTextHint`、`imageAnnotateCanvas`、`imageAnnotateSaveFailed`、`imageOcr`、`imageOcrProvider`、`imageOcrInstall`、`imageOcrInstalling`、`imageOcrInstallFailed`、`imageOcrResult`、`imageOcrWorking`、`imageOcrDownload`、`imageOcrEmpty`、`imageOcrFailed`、`imagePreviewFailed`、`quickAskBasics`、`quickAskSelectionTranslation`、`quickAskTranslateEnabled`、`quickAskTranslateEnabledHint`、`quickAskTargetAuto`、`quickAskTranslateStyle`、`quickAskStyleNatural`、`quickAskStyleLiteral`、`quickAskStyleTechnical`、`quickAskShowOriginal`、`quickAskReferenceMenus`、`quickAskReferenceMenusHint`、`quickAskReferenceScope`、`quickAskReferenceScopeHint`、`quickAskConversationScope`、`quickAskConversationRecent`、`quickAskConversationFull`、`quickAskFolderScope`、`quickAskFolderListing`、`quickAskFolderContent`、`quickAskPrompts`、`quickAskPromptEmpty`、`quickAskResetSystemPrompt`、`quickAskTranslatePrompt`、`quickAskTranslatePromptHint`、`quickAskResetTranslatePrompt`、`quickAskTranslate`、`quickAskTranslation`、`quickAskAttach`、`quickAskAttachFiles`、`quickAskAttachFolder`、`quickAskAttachCurrent`、`quickAskReference`、`quickAskReferences`、`quickAskRemoveReference`、`quickAskExpandReferences`、`quickAskCollapseReferences`、`quickAskReferenceError`、`quickAskReferenceLoading`、`quickAskReferenceEmpty`、`quickAskTargetLanguage`、`quickAskTooManyReferences`、`quickAskFileTooLarge`、`quickAskUnsupportedFile`、`quickAskEmptySelection`、`quickAskImagesTooLarge`、`quickAskContextTooLarge`、`quickAskReady`、`quickAskExpandSource`、`quickAskCollapseSource`、`quickAskExplainQuestion`、`quickAskEmptyTitle`、`quickAskFollowUp`、`quickAskExample`、`quickAskSummarize`、`quickAskScope`、`quickAskMore`、`quickAskAsk`、`quickAskHideInput`、`canvas.aiBar.generateWorkflow`、`canvas.aiBar.generateSequentialStepsFromKeywordsReviewInstructionsBefore`、`canvas.aiBar.fromKeywords`、`canvas.aiBar.fromAI`、`canvas.aiBar.waitingForAI`、`canvas.aiBar.cancel`、`canvas.nodeCard.notImplementedRunDisabled`、`canvas.nodeCard.notImplementedNoExecutionOutput`、`canvas.nodeDrawer.fullscreenView`、`canvas.nodeDrawer.restoreWindowEsc`、`canvas.nodeDrawer.closeEsc`、`canvas.nodeDrawer.liveConsoleStream`、`canvas.nodeDrawer.running`、`canvas.nodeDrawer.promptsInstructions`、`canvas.nodeDrawer.contractsReview`、`canvas.nodeDrawer.needsReview`、`canvas.nodeDrawer.sandboxEnvironment`、`canvas.nodeDrawer.clear`、`canvas.nodeDrawer.readyStreamUpdatesLive`、`canvas.nodeDrawer.agentIsRunning`、`canvas.nodeDrawer.noEventsYetToolCallsErrorsSteerAnd`、`canvas.nodeDrawer.noMessagesYetAfterRunningChatFlowAnd`、`canvas.nodeDrawer.inputSteerInstructionToAdjustAgentBehavior`、`canvas.nodeDrawer.steer`、`canvas.nodeDrawer.systemPrompt`、`canvas.nodeDrawer.definesIdentity`、`canvas.nodeDrawer.enterSystemPromptIdentityForThisDigitalWorker`、`canvas.nodeDrawer.identityDefinesWhoItIsInstructionDefinesWhat`、`canvas.nodeDrawer.aIInstructionSavedWithGraph`、`canvas.nodeDrawer.definesTask`、`canvas.nodeDrawer.insertVariable`、`canvas.nodeDrawer.emptyUseUpstreamInputDirectlyOrEG`、`canvas.nodeDrawer.variablesSupportedInputUpstreamEmptyDirectPassThrough`、`canvas.nodeDrawer.nodeControlParameters`、`canvas.nodeDrawer.reviewGateDeliverable`、`canvas.nodeDrawer.copySummary`、`canvas.nodeDrawer.copied`、`canvas.nodeDrawer.noDeliverablesYetWaitingForNodeCompletion`、`canvas.nodeDrawer.nodeIsExecutingANewTaskAboveIs`、`canvas.nodeDrawer.approveMerge`、`canvas.nodeDrawer.rejectRevise`、`canvas.nodeDrawer.executionFailed`、`canvas.nodeDrawer.rerunNode`、`canvas.nodeDrawer.incomingContracts`、`canvas.nodeDrawer.source`、`canvas.nodeDrawer.port`、`canvas.nodeDrawer.waitingForUpstreamHandoff`、`canvas.nodeDrawer.rootNodeWithoutIncomingContracts`、`canvas.nodeDrawer.outgoingHandoffs`、`canvas.nodeDrawer.target`、`canvas.nodeDrawer.outPort`、`canvas.nodeDrawer.noOutgoingEdgesConnectedYet`、`canvas.nodeDrawer.modelThinkingBudget`、`canvas.nodeDrawer.bindASpecificLLMModelAndThinkingLevel`、`canvas.nodeDrawer.workspaceSandboxIsolation`、`canvas.nodeDrawer.baseWorkingDirectoryForBashAndFileOperations`、`canvas.nodeDrawer.runNode`、`canvas.nodeDrawer.stopTask`、`canvas.nodeDrawer.close`、`canvas.timeline.executionTimelineLatestAttemptEstimated`、`canvas.timeline.locateNode`、`canvas.timeline.retry`、`canvas.timeline.retryNode`、`canvas.timeline.noNodes`、`canvas.toolbar.addTeammate`、`canvas.toolbar.nodeLibrary`、`canvas.toolbar.availableNodesUnimplementedRolesAreHidden`、`canvas.toolbar.sequentialTemplates`、`canvas.toolbar.loadASequentialWorkflowReviewTasksAndAcceptance`、`canvas.toolbar.runWorkflow`、`canvas.toolbar.stopAll`、`canvas.draft.storageFailed`、`canvas.import.jsonTooLarge`、`canvas.import.incompleteGraph`、`canvas.import.unknownField`、`canvas.import.invalidSizeOrVersion`、`canvas.import.invalidGraphStatus`、`canvas.import.invalidRun`、`canvas.import.invalidNodeGeometry`、`canvas.import.invalidNodeText`、`canvas.import.invalidNodeStatus`、`canvas.import.invalidArtifact`、`canvas.import.invalidArtifactFile`、`canvas.import.invalidRuntimeText`、`canvas.import.invalidRoleOrTitle`、`canvas.import.invalidConfig`、`canvas.import.invalidEdgeEndpoints`、`canvas.import.invalidRetryConfig`、`canvas.import.invalidEdgeType`、`canvas.import.invalidPort`、`canvas.import.invalidEdgeText`、`canvas.import.portTypeMismatch`、`canvas.import.invalidViewport`、`canvas.defaults.startNode`、`canvas.defaults.aiWorkflow`、`canvas.aiBar.smartGenerateHint`、`canvas.skills.noneDetectedShort`、`canvas.node.roleParameters`、`canvas.node.renameHint`、`canvas.node.type`、`canvas.node.mainInputHint`、`canvas.node.input`、`canvas.node.disconnected`、`canvas.node.upstreamConnected`、`canvas.node.instructionLabel`、`canvas.node.instructionPlaceholder`、`canvas.node.instructionHint`、`canvas.node.persona`、`canvas.node.personaPlaceholder`、`canvas.node.personaHint`、`canvas.node.engine`、`canvas.engine.pi`、`canvas.engine.dsh`、`canvas.engine.durable`、`canvas.node.modelAndThinking`、`canvas.node.workspace`、`canvas.node.enableWorktree`、`canvas.node.remoteIsolationExempt`、`canvas.node.worktreeHint`、`canvas.node.remoteWorktreeHint`、`canvas.node.receivedOutput`、`canvas.node.noUpstreamInput`、`canvas.node.mainOutputHint`、`canvas.node.outputContent`、`canvas.node.start`、`canvas.node.startHint`、`canvas.node.stop`、`canvas.node.stopHint`、`canvas.node.reviewOrInterject`、`canvas.node.openDrawerHint`、`canvas.node.deleteHint`、`canvas.skills.noneDetected`、`canvas.common.close`、`canvas.drawer.conversation`、`canvas.drawer.conversationHint`、`canvas.drawer.events`、`canvas.drawer.eventsHint`、`canvas.drawer.clearTranscript`、`canvas.drawer.sendInterjection`、`canvas.drawer.insertInputHint`、`canvas.drawer.insertSummaryHint`、`canvas.drawer.insertUpstreamHint`、`canvas.drawer.copySummaryHint`、`canvas.common.expandDetails`、`canvas.common.collapse`、`canvas.drawer.skillPersona`、`canvas.drawer.selectSkillHint`、`canvas.skills.noneInstalled`、`canvas.node.worktreeSummary`、`canvas.studio.loading`、`canvas.studio.confirmationTimeoutHint`、`canvas.studio.confirmationTimeout`、`canvas.studio.disconnectedHint`、`canvas.studio.saved`、`canvas.studio.previousVersionSaved`、`canvas.studio.draftRestored`、`canvas.studio.reconnectedSaved`、`canvas.studio.reconnectedPreviousSaved`、`canvas.studio.reconnectedConflict`、`canvas.studio.missingProject`、`canvas.studio.waitBeforeTemplate`、`canvas.studio.unknownSaveResult`、`canvas.studio.resolveDraftConflict`、`canvas.studio.saving`、`canvas.studio.connectionUnavailable`、`canvas.studio.saveDisconnected`、`canvas.studio.waitBeforeCreate`、`canvas.studio.nodeUnavailable`、`canvas.studio.graphUnavailable`、`canvas.studio.draftConflictHint`、`canvas.studio.keepLocalDraft`、`canvas.studio.localDraftSelected`、`canvas.studio.useRemoteVersion`、`canvas.studio.remoteVersionSelected`、`canvas.studio.smartBuildHint`、`canvas.studio.putInChatDraft`、`canvas.studio.chatNotReady`、`canvas.studio.chatDraftReady`、`canvas.common.cancel`、`canvas.studio.smartBuildCancelled`、`canvas.studio.smartBuildTitle`、`canvas.studio.exportPng`、`canvas.studio.exportJson`、`canvas.studio.import`、`canvas.studio.importJson`、`canvas.studio.emptyTitle`、`canvas.studio.emptyHint`、`canvas.studio.addFirstTeammate`、`canvas.studio.loadTemplate`、`canvas.shortcuts.save`、`canvas.shortcuts.fitView`、`canvas.shortcuts.deleteSelected`、`canvas.shortcuts.clearSelection`、`canvas.studio.timeline`、`canvas.studio.collapseTimeline`、`canvas.studio.timelineHint`、`canvas.studio.minimap`、`canvas.edges.editHint`、`canvas.edges.notePlaceholder`、`canvas.edges.delete`、`canvas.edges.editDeleteHint`、`canvas.toolbar.switchProject`、`canvas.toolbar.projectName`、`canvas.toolbar.projectMenu`、`canvas.toolbar.newProject`、`canvas.toolbar.newProjectHint`、`canvas.toolbar.newProjectPlaceholder`、`canvas.toolbar.renameProject`、`canvas.toolbar.deleteProject`、`canvas.toolbar.cannotDeleteLastProject`、`canvas.toolbar.keepOneProject`、`canvas.toolbar.saveHint`、`canvas.toolbar.unsavedHint`、`canvas.toolbar.quickAddHint`、`canvas.toolbar.startSquad`、`canvas.toolbar.reset`、`canvas.toolbar.resetHint`、`canvas.toolbar.undo`、`canvas.toolbar.redo`、`canvas.toolbar.duplicateNode`、`canvas.toolbar.autoLayout`、`canvas.toolbar.zoomOut`、`canvas.toolbar.resetZoom`、`canvas.toolbar.zoomIn`、`canvas.toolbar.fitAllNodes`、`canvas.defaults.teammate`、`canvas.defaults.copyName`、`canvas.node.inputPort`、`canvas.node.outputPort`、`canvas.node.skillPersona`、`canvas.node.ioHelp`、`canvas.node.outputPreview`、`canvas.node.executionError`、`canvas.drawer.worktreePath`、`canvas.drawer.pstackGuidelines`、`canvas.drawer.eventSteer`、`canvas.drawer.eventHandoff`、`canvas.drawer.eventReview`、`canvas.drawer.eventTool`、`canvas.drawer.eventError`、`canvas.studio.runFailed`、`canvas.studio.operationFailed`、`canvas.studio.importFailed`、`canvas.timeline.summary`、`canvas.timeline.retryCount`、`canvas.timeline.logCount`、`canvas.toolbar.deleteProjectConfirm`、`canvas.toolbar.projectOption`、`canvas.toolbar.renameProjectHint`、`canvas.toolbar.deleteProjectHint`、`canvas.toolbar.customCardsCount`、`canvas.toolbar.deleteCard`、`canvas.dag.unknownField`、`canvas.dag.invalidText`、`canvas.dag.invalidLimits`、`canvas.dag.tooLarge`、`canvas.dag.invalidDag`、`canvas.dag.invalidNodesOrEdges`、`canvas.dag.invalidNode`、`canvas.dag.invalidRoleOrTitle`、`canvas.dag.invalidConfig`、`canvas.dag.invalidConfigValue`、`canvas.dag.invalidEdge`、`canvas.dag.invalidEdgeIndex`、`canvas.dag.invalidEdgeType`、`canvas.dag.branchRoleRequired`、`canvas.dag.reviewRoleRequired`、`canvas.dag.invalidSourcePort`、`canvas.dag.invalidTargetPort`、`canvas.dag.portTypeMismatch`、`canvas.dag.duplicateEdge`、`canvas.dag.cycle`、`canvas.metadata.engine.pi.name`、`canvas.metadata.engine.pi.badge`、`canvas.metadata.engine.pi.desc`、`canvas.metadata.engine.dsh.name`、`canvas.metadata.engine.dsh.badge`、`canvas.metadata.engine.dsh.desc`、`canvas.metadata.engine.codex.name`、`canvas.metadata.engine.codex.badge`、`canvas.metadata.engine.codex.desc`、`canvas.metadata.engine.claude.name`、`canvas.metadata.engine.claude.badge`、`canvas.metadata.engine.claude.desc`、`canvas.metadata.engine.durable.name`、`canvas.metadata.engine.durable.badge`、`canvas.metadata.engine.durable.desc`、`canvas.metadata.role.trigger.label`、`canvas.metadata.role.trigger.blurb`、`canvas.metadata.role.cron.label`、`canvas.metadata.role.cron.blurb`、`canvas.metadata.role.webhook.label`、`canvas.metadata.role.webhook.blurb`、`canvas.metadata.role.transform.label`、`canvas.metadata.role.transform.blurb`、`canvas.metadata.role.architect.label`、`canvas.metadata.role.architect.blurb`、`canvas.metadata.role.planner.label`、`canvas.metadata.role.planner.blurb`、`canvas.metadata.role.coder.label`、`canvas.metadata.role.coder.blurb`、`canvas.metadata.role.researcher.label`、`canvas.metadata.role.researcher.blurb`、`canvas.metadata.role.writer.label`、`canvas.metadata.role.writer.blurb`、`canvas.metadata.role.analyst.label`、`canvas.metadata.role.analyst.blurb`、`canvas.metadata.role.reviewer.label`、`canvas.metadata.role.reviewer.blurb`、`canvas.metadata.role.tester.label`、`canvas.metadata.role.tester.blurb`、`canvas.metadata.role.devops.label`、`canvas.metadata.role.devops.blurb`、`canvas.metadata.role.evaluator.label`、`canvas.metadata.role.evaluator.blurb`、`canvas.metadata.role.custom.label`、`canvas.metadata.role.custom.blurb`、`canvas.metadata.role.condition.label`、`canvas.metadata.role.condition.blurb`、`canvas.metadata.role.ai_judge.label`、`canvas.metadata.role.ai_judge.blurb`、`canvas.metadata.role.loop.label`、`canvas.metadata.role.loop.blurb`、`canvas.metadata.role.human.label`、`canvas.metadata.role.human.blurb`、`canvas.metadata.role.merge.label`、`canvas.metadata.role.merge.blurb`、`canvas.metadata.role.subflow.label`、`canvas.metadata.role.subflow.blurb`、`canvas.metadata.role.tool.label`、`canvas.metadata.role.tool.blurb`、`canvas.metadata.role.knowledge.label`、`canvas.metadata.role.knowledge.blurb`、`canvas.metadata.role.code.label`、`canvas.metadata.role.code.blurb`、`canvas.metadata.role.api.label`、`canvas.metadata.role.api.blurb`、`canvas.metadata.role.memory.label`、`canvas.metadata.role.memory.blurb`、`canvas.metadata.role.end.label`、`canvas.metadata.role.end.blurb`、`canvas.metadata.role.pstack.label`、`canvas.metadata.role.pstack.blurb`、`canvas.metadata.role.skill.label`、`canvas.metadata.role.skill.blurb`、`canvas.metadata.group.trigger`、`canvas.metadata.group.agent`、`canvas.metadata.group.logic`、`canvas.metadata.group.data`、`canvas.metadata.group.output`、`canvas.metadata.port.contract.label`、`canvas.metadata.port.contract.desc`、`canvas.metadata.port.instruction.label`、`canvas.metadata.port.instruction.desc`、`canvas.metadata.port.system.label`、`canvas.metadata.port.system.desc`、`canvas.metadata.port.config.label`、`canvas.metadata.port.config.desc`、`canvas.metadata.port.result.label`、`canvas.metadata.port.result.desc`、`canvas.metadata.field.trigger.payload.label`、`canvas.metadata.field.trigger.payload.placeholder`、`canvas.metadata.field.cron.cron.label`、`canvas.metadata.field.cron.cron.hint`、`canvas.metadata.field.cron.cron.placeholder`、`canvas.metadata.field.webhook.path.label`、`canvas.metadata.field.webhook.path.placeholder`、`canvas.metadata.field.webhook.method.label`、`canvas.metadata.field.webhook.method.hint`、`canvas.metadata.field.webhook.method.option0`、`canvas.metadata.field.webhook.method.option1`、`canvas.metadata.field.transform.mode.label`、`canvas.metadata.field.transform.mode.option0`、`canvas.metadata.field.transform.mode.option1`、`canvas.metadata.field.transform.mode.option2`、`canvas.metadata.field.transform.template.label`、`canvas.metadata.field.transform.template.placeholder`、`canvas.metadata.field.planner.maxSteps.label`、`canvas.metadata.field.researcher.depth.label`、`canvas.metadata.field.researcher.depth.option0`、`canvas.metadata.field.researcher.depth.option1`、`canvas.metadata.field.researcher.depth.option2`、`canvas.metadata.field.researcher.maxSources.label`、`canvas.metadata.field.reviewer.strictness.label`、`canvas.metadata.field.reviewer.strictness.option0`、`canvas.metadata.field.reviewer.strictness.option1`、`canvas.metadata.field.reviewer.strictness.option2`、`canvas.metadata.field.tester.testCommand.label`、`canvas.metadata.field.tester.testCommand.placeholder`、`canvas.metadata.field.devops.environment.label`、`canvas.metadata.field.devops.environment.option0`、`canvas.metadata.field.devops.environment.option1`、`canvas.metadata.field.evaluator.threshold.label`、`canvas.metadata.field.evaluator.threshold.hint`、`canvas.metadata.field.condition.condition.label`、`canvas.metadata.field.condition.condition.placeholder`、`canvas.metadata.field.ai_judge.judge.label`、`canvas.metadata.field.ai_judge.judge.hint`、`canvas.metadata.field.ai_judge.judge.placeholder`、`canvas.metadata.field.loop.loopCount.label`、`canvas.metadata.field.loop.loopCount.hint`、`canvas.metadata.field.human.approvalHint.label`、`canvas.metadata.field.human.approvalHint.placeholder`、`canvas.metadata.field.knowledge.topK.label`、`canvas.metadata.field.knowledge.baseId.label`、`canvas.metadata.field.knowledge.baseId.placeholder`、`canvas.metadata.field.tool.toolName.label`、`canvas.metadata.field.tool.toolName.placeholder`、`canvas.metadata.field.code.language.label`、`canvas.metadata.field.code.language.option0`、`canvas.metadata.field.code.language.option1`、`canvas.metadata.field.code.language.option2`、`canvas.metadata.field.code.entry.label`、`canvas.metadata.field.code.entry.placeholder`、`canvas.metadata.field.api.apiUrl.label`、`canvas.metadata.field.api.apiUrl.placeholder`、`canvas.metadata.field.api.apiMethod.label`、`canvas.metadata.field.api.apiMethod.option0`、`canvas.metadata.field.api.apiMethod.option1`、`canvas.metadata.field.api.apiMethod.option2`、`canvas.metadata.field.api.apiMethod.option3`、`canvas.metadata.field.memory.memoryKey.label`、`canvas.metadata.field.memory.memoryKey.placeholder`、`canvas.metadata.field.subflow.subflowId.label`、`canvas.metadata.field.subflow.subflowId.placeholder`、`canvas.metadata.field.pstack.skill.label`、`canvas.metadata.field.pstack.skill.hint`、`canvas.metadata.field.skill.skillName.label`、`canvas.metadata.field.skill.skillName.hint`、`canvas.metadata.field.skill.skillName.option0`、`canvas.metadata.io.trigger.input`、`canvas.metadata.io.trigger.output`、`canvas.metadata.io.trigger.usage`、`canvas.metadata.io.cron.input`、`canvas.metadata.io.cron.output`、`canvas.metadata.io.cron.usage`、`canvas.metadata.io.webhook.input`、`canvas.metadata.io.webhook.output`、`canvas.metadata.io.webhook.usage`、`canvas.metadata.io.transform.input`、`canvas.metadata.io.transform.output`、`canvas.metadata.io.transform.usage`、`canvas.metadata.io.architect.input`、`canvas.metadata.io.architect.output`、`canvas.metadata.io.architect.usage`、`canvas.metadata.io.planner.input`、`canvas.metadata.io.planner.output`、`canvas.metadata.io.planner.usage`、`canvas.metadata.io.coder.input`、`canvas.metadata.io.coder.output`、`canvas.metadata.io.coder.usage`、`canvas.metadata.io.researcher.input`、`canvas.metadata.io.researcher.output`、`canvas.metadata.io.researcher.usage`、`canvas.metadata.io.writer.input`、`canvas.metadata.io.writer.output`、`canvas.metadata.io.writer.usage`、`canvas.metadata.io.analyst.input`、`canvas.metadata.io.analyst.output`、`canvas.metadata.io.analyst.usage`、`canvas.metadata.io.reviewer.input`、`canvas.metadata.io.reviewer.output`、`canvas.metadata.io.reviewer.usage`、`canvas.metadata.io.tester.input`、`canvas.metadata.io.tester.output`、`canvas.metadata.io.tester.usage`、`canvas.metadata.io.devops.input`、`canvas.metadata.io.devops.output`、`canvas.metadata.io.devops.usage`、`canvas.metadata.io.evaluator.input`、`canvas.metadata.io.evaluator.output`、`canvas.metadata.io.evaluator.usage`、`canvas.metadata.io.custom.input`、`canvas.metadata.io.custom.output`、`canvas.metadata.io.custom.usage`、`canvas.metadata.io.condition.input`、`canvas.metadata.io.condition.output`、`canvas.metadata.io.condition.usage`、`canvas.metadata.io.ai_judge.input`、`canvas.metadata.io.ai_judge.output`、`canvas.metadata.io.ai_judge.usage`、`canvas.metadata.io.loop.input`、`canvas.metadata.io.loop.output`、`canvas.metadata.io.loop.usage`、`canvas.metadata.io.human.input`、`canvas.metadata.io.human.output`、`canvas.metadata.io.human.usage`、`canvas.metadata.io.merge.input`、`canvas.metadata.io.merge.output`、`canvas.metadata.io.merge.usage`、`canvas.metadata.io.subflow.input`、`canvas.metadata.io.subflow.output`、`canvas.metadata.io.subflow.usage`、`canvas.metadata.io.tool.input`、`canvas.metadata.io.tool.output`、`canvas.metadata.io.tool.usage`、`canvas.metadata.io.knowledge.input`、`canvas.metadata.io.knowledge.output`、`canvas.metadata.io.knowledge.usage`、`canvas.metadata.io.code.input`、`canvas.metadata.io.code.output`、`canvas.metadata.io.code.usage`、`canvas.metadata.io.api.input`、`canvas.metadata.io.api.output`、`canvas.metadata.io.api.usage`、`canvas.metadata.io.memory.input`、`canvas.metadata.io.memory.output`、`canvas.metadata.io.memory.usage`、`canvas.metadata.io.end.input`、`canvas.metadata.io.end.output`、`canvas.metadata.io.end.usage`、`canvas.metadata.io.pstack.input`、`canvas.metadata.io.pstack.output`、`canvas.metadata.io.pstack.usage`、`canvas.metadata.io.skill.input`、`canvas.metadata.io.skill.output`、`canvas.metadata.io.skill.usage`、`canvas.metadata.port.condition.true.label`、`canvas.metadata.port.condition.true.desc`、`canvas.metadata.port.condition.false.label`、`canvas.metadata.port.condition.false.desc`、`canvas.metadata.port.human.approve.label`、`canvas.metadata.port.human.approve.desc`、`canvas.metadata.port.human.reject.label`、`canvas.metadata.port.human.reject.desc`、`canvas.metadata.port.review.approve.label`、`canvas.metadata.port.review.approve.desc`、`canvas.metadata.port.review.reject.label`、`canvas.metadata.port.review.reject.desc`、`canvas.metadata.port.approve.label`、`canvas.metadata.capability.descriptionOnly`、`canvas.metadata.capability.agentInstruction`、`canvas.metadata.status.skipped`、`canvas.metadata.status.cancelled`、`canvas.metadata.status.idle`、`canvas.metadata.status.queued`、`canvas.metadata.status.running`、`canvas.metadata.status.waiting_approval`、`canvas.metadata.status.done`、`canvas.metadata.status.error`、`canvas.metadata.status.paused`、`canvas.pstack.category.core`、`canvas.pstack.category.architecture`、`canvas.pstack.category.principles`、`canvas.pstack.category.quality`、`canvas.pstack.category.verification`、`canvas.pstack.category.communication`、`canvas.pstack.skill.architect.name`、`canvas.pstack.skill.arena.name`、`canvas.pstack.skill.bro.name`、`canvas.pstack.skill.correct.name`、`canvas.pstack.skill.how.name`、`canvas.pstack.skill.interrogate.name`、`canvas.pstack.skill.ketchup.name`、`canvas.pstack.skill.recall.name`、`canvas.pstack.skill.reflect.name`、`canvas.pstack.skill.sharpen.name`、`canvas.pstack.skill.statechart.name`、`canvas.pstack.skill.swarm.name`、`canvas.pstack.skill.tdd.name`、`canvas.pstack.skill.teach.name`、`canvas.pstack.skill.unslop.name`、`canvas.pstack.skill.why.name`、`canvas.template.pstack_rigorous.title`、`canvas.template.pstack_rigorous.desc`、`canvas.template.pstack_rigorous.name`、`canvas.template.pstack_rigorous.step0.title`、`canvas.template.pstack_rigorous.step1.title`、`canvas.template.pstack_rigorous.step2.title`、`canvas.template.pstack_rigorous.step3.title`、`canvas.template.pstack_rigorous.step4.title`、`canvas.drawer.eventPrompt`、`canvas.drawer.eventDone`、`canvas.drawer.eventSystem`、`canvas.node.pstackSkill`、`canvas.timeline.noLogs`、`canvas.timeline.retryFailedCount`、`canvas.import.invalidJson`、`canvas.dag.invalidJson`、`canvas.pstack.skill.automate-me.name`、`canvas.pstack.skill.benchmark-checklist.name`、`canvas.pstack.skill.blast-radius.name`、`canvas.pstack.skill.create-formal-verification-skill.name`、`canvas.pstack.skill.create-verification-skill.name`、`canvas.pstack.skill.figure-it-out.name`、`canvas.pstack.skill.in-your-own-words.name`、`canvas.pstack.skill.ketchup-video.name`、`canvas.pstack.skill.maintain-formal-verification-skill.name`、`canvas.pstack.skill.maintain-verification-skill.name`、`canvas.pstack.skill.make-bot-ui.name`、`canvas.pstack.skill.no-comments.name`、`canvas.pstack.skill.poteto-help.name`、`canvas.pstack.skill.poteto-mode.name`、`canvas.pstack.skill.principle-attack-the-premise.name`、`canvas.pstack.skill.principle-boundary-discipline.name`、`canvas.pstack.skill.principle-build-the-lever.name`、`canvas.pstack.skill.principle-encode-lessons-in-structure.name`、`canvas.pstack.skill.principle-exhaust-the-design-space.name`、`canvas.pstack.skill.principle-experience-first.name`、`canvas.pstack.skill.principle-explain-the-number.name`、`canvas.pstack.skill.principle-fix-root-causes.name`、`canvas.pstack.skill.principle-foundational-thinking.name`、`canvas.pstack.skill.principle-guard-the-context-window.name`、`canvas.pstack.skill.principle-laziness-protocol.name`、`canvas.pstack.skill.principle-make-operations-idempotent.name`、`canvas.pstack.skill.principle-migrate-callers-then-delete-legacy-apis.name`、`canvas.pstack.skill.principle-minimize-reader-load.name`、`canvas.pstack.skill.principle-model-the-domain.name`、`canvas.pstack.skill.principle-never-block-on-the-human.name`、`canvas.pstack.skill.principle-outcome-oriented-execution.name`、`canvas.pstack.skill.principle-prove-it-works.name`、`canvas.pstack.skill.principle-redesign-from-first-principles.name`、`canvas.pstack.skill.principle-separate-before-serializing-shared-state.name`、`canvas.pstack.skill.principle-sequence-verifiable-units.name`、`canvas.pstack.skill.principle-subtract-before-you-add.name`、`canvas.pstack.skill.principle-test-behavior-not-implementation.name`、`canvas.pstack.skill.principle-type-system-discipline.name`、`canvas.pstack.skill.setup-pstack.name`、`canvas.pstack.skill.show-me-your-work.name`、`canvas.pstack.skill.technical-writing.name`、`canvas.pstack.skill.typescript-best-practices.name`、`canvas.template.sequential-delivery.title`、`canvas.template.sequential-delivery.desc`、`canvas.template.sequential-delivery.name`、`canvas.template.sequential-delivery.step0.title`、`canvas.template.sequential-delivery.step1.title`、`canvas.template.sequential-delivery.step2.title`、`canvas.template.sequential-delivery.step3.title`、`canvas.template.sequential-delivery.step4.title`、`canvas.template.sequential-delivery.step5.title`、`canvas.template.sequential-delivery.step6.title`、`canvas.template.research-qa.title`、`canvas.template.research-qa.desc`、`canvas.template.research-qa.name`、`canvas.template.research-qa.step0.title`、`canvas.template.research-qa.step1.title`、`canvas.template.research-qa.step2.title`、`canvas.template.research-qa.step3.title`、`canvas.template.research-qa.step4.title`、`canvas.template.research-qa.step5.title`、`canvas.edges.type.handoff`、`canvas.edges.type.review`、`canvas.edges.type.parallel`、`canvas.edges.type.loop_back`、`canvas.edges.type.condition_true`、`canvas.edges.type.condition_false`、`canvas.edges.type.approve`、`canvas.edges.type.reject`、`canvas.runtime.action.allocating`、`canvas.runtime.action.starting`、`canvas.runtime.action.transformCompleted`、`canvas.runtime.action.waitingApproval`、`canvas.runtime.action.waitingApprovalWithHint`、`canvas.runtime.action.passthrough`、`canvas.runtime.action.completed`、`canvas.runtime.action.failed`、`canvas.runtime.action.retryLimit`、`canvas.runtime.action.reworkEdgeRequired`、`canvas.runtime.action.stopped`、`canvas.runtime.action.reviewApproved`、`canvas.runtime.action.reviewApprovedComment`、`canvas.runtime.action.reviewRejected`、`canvas.runtime.action.reviewRejectedComment`、`canvas.runtime.action.steered`、`canvas.runtime.action.connecting`、`canvas.runtime.action.generating`、`canvas.runtime.action.tool`、`canvas.runtime.action.running`、`canvas.runtime.action.simulateAnalyze`、`canvas.runtime.action.simulatePlan`、`canvas.runtime.action.simulateApply`、`canvas.runtime.action.simulateVerify`、`canvas.runtime.action.interrupted`、`canvas.runtime.log.nodeStarted`、`canvas.runtime.log.judgeStarted`、`canvas.runtime.log.approvalReady`、`canvas.runtime.log.judgeInvalid`、`canvas.runtime.log.judgePassed`、`canvas.runtime.log.judgeRejected`、`canvas.runtime.log.handoff`、`canvas.runtime.log.stopped`、`canvas.runtime.log.reviewRejected`、`canvas.runtime.log.steerDelivered`、`canvas.runtime.log.steerFailed`、`canvas.runtime.log.tool`、`canvas.runtime.log.toolFailed`、`canvas.runtime.log.toolFailedDetail`、`canvas.runtime.error.invalidNodeId`、`canvas.runtime.error.nodeRunning`、`canvas.runtime.error.graphRunning`、`canvas.runtime.error.unsupportedExecutor`、`canvas.runtime.error.judgeNoDecision`、`canvas.runtime.error.engineProviderMissing`、`canvas.runtime.error.engineMissing`、`canvas.runtime.error.aborted`、`canvas.runtime.error.modelSelection`、`canvas.runtime.error.engineFailed`、`canvas.runtime.error.timeout`、`canvas.runtime.error.invalidGraph`、`canvas.runtime.error.invalidGraphIdentity`、`canvas.runtime.error.graphSize`、`canvas.runtime.error.invalidViewport`、`canvas.runtime.error.duplicateNodeId`、`canvas.runtime.error.invalidNode`、`canvas.runtime.error.invalidNodeConfig`、`canvas.runtime.error.invalidNodeParams`、`canvas.runtime.error.invalidNodeInstruction`、`canvas.runtime.error.invalidEdge`、`canvas.runtime.error.duplicateConnection`、`canvas.runtime.error.loopLimit`、`canvas.runtime.error.forwardCycle`、`canvas.runtime.error.invalidGraphId`、`canvas.runtime.error.graphNotFound`、`canvas.runtime.error.artifactIdentityConflict`、`canvas.runtime.error.untrustedArtifactPath`、`canvas.runtime.error.artifactLocationMismatch`、`canvas.runtime.error.worktreePathChanged`、`canvas.runtime.error.workspaceUnregistered`、`canvas.runtime.error.worktreeRepoChanged`、`canvas.runtime.error.remoteUnsupported`、`canvas.runtime.error.localGitRequired`、`canvas.runtime.error.cwdOutsideRepo`、`canvas.runtime.error.dataDirInsideRepo`、`canvas.runtime.error.dirtyBaseline`、`canvas.runtime.error.invalidBaseCommit`、`canvas.runtime.error.upstreamBaselineMismatch`、`canvas.runtime.error.untrustedArtifactRun`、`canvas.runtime.error.untrustedArtifactLayer`、`canvas.runtime.error.artifactChecksum`、`canvas.runtime.error.worktreeRedirected`、`canvas.runtime.error.artifactConflict`、`canvas.runtime.error.cwdEscapesWorktree`、`canvas.runtime.error.captureRequiresWorkspace`、`canvas.runtime.error.untrustedArtifactOutput`、`canvas.runtime.error.invalidCleanupPath`、`canvas.runtime.error.pendingArtifacts`、`canvas.runtime.error.duplicateNode`、`canvas.runtime.error.missingEdgeNode`、`canvas.runtime.error.reworkCycle`、`canvas.runtime.error.stale`、`nativeCliSession.starting`、`nativeCliSession.running`、`nativeCliSession.working`、`nativeCliSession.waitingInput`、`nativeCliSession.waitingApproval`、`nativeCliSession.disconnected`、`nativeCliSession.exited`、`nativeCliSession.error`、`nativeCliSession.processOnly`、`nativeCliSession.lastActivity`、`nativeCliSession.nativeId`、`nativeCliSession.copyId`、`nativeCliSession.copyFailed`、`nativeCliSession.resumable`、`nativeCliSession.persistent`、`nativeCliSession.detach`、`nativeCliSession.detachHint`、`nativeCliSession.reconnect`、`nativeCliSession.resume`、`nativeCliSession.stop`、`nativeCliSession.pending`、`nativeCliSession.controlFailed`、`nativeCliSession.timeout`、`nativeCliSession.unavailable`、`nativeCliSession.exitCode`、`nativeCliSession.keepAlive`、`nativeCliSession.keepAliveHint`、`nativeCliSession.persistenceUnavailable`、`nativeCliSession.doneTitle`、`nativeCliSession.doneBody`、`nativeCliSession.errorTitle`、`nativeCliSession.errorBody`、`nativeCliSession.questionTitle`、`nativeCliSession.questionBody`、`nativeCliSession.approvalTitle`、`nativeCliSession.approvalBody`
-- 前端删除 key（4）：`supplement`、`clickToCloseImage`、`ttsEngineBuiltin`、`ttsVoiceOnline`
-- 前端中文变更（5）：`ttsHeader`、`ttsVoiceAuto`、`ttsUnavailable`、`quickAskSettingsDesc`、`quickAskStopped`
-- 前端英文变更（5）：`ttsHeader`、`ttsVoiceAuto`、`ttsUnavailable`、`quickAskSettingsDesc`、`quickAskStopped`
-- 服务端新增 key（2）：`canvas.card.not_found`、`canvas.node.id_missing`
-- 服务端文案变更（1）：`agent.subagent.limit.reached`
-
-<!-- auto-i18n:end -->
 
 ## [0.117.0] — 2026-11-06
 
@@ -397,17 +346,6 @@
 
 - 设备中心协作策略配置升级：支持细粒度调整饿死防范时间、任务调度深度、工作区文件同步字节上限与资源锁默认 TTL。
 
-<!-- auto-i18n:start -->
-
-### i18n
-
-- 前端新增 key（76）：`runInTerminal`、`executedInTerminal`、`engineUninstall`、`engineUninstalling`、`engineUninstallConfirm`、`engineUninstallTip`、`engineActiveNoUninstall`、`scheduledTaskBadge`、`schedulerViewTip`、`waitingQuestionShort`、`tabRunning`、`completedUnreadBadge`、`completedUnreadTooltip`、`tabProjects`、`deviceGroups`、`createGroup`、`timeGroupToday`、`timeGroupYesterday`、`timeGroupPastWeek`、`timeGroupEarlier`、`questionQueuedOffline`、`thinkingConfigTitle`、`thinkingConfigBtn`、`thinkingCustomized`、`thinkingQuickApply`、`thinkingResetDefault`、`thinkingFixedNotice`、`thinkingFormatLabel`、`thinkingRawBodyLabel`、`thinkingCustomBudgetBtn`、`thinkingCustomBudgetPlaceholder`、`thinkingCustomBudgetTitle`、`tpl.sk.clarify`、`tpl.sk.clarify.desc`、`tpl.sk.clarify.prompt`、`tpl.sk.toplan`、`tpl.sk.toplan.desc`、`tpl.sk.toplan.prompt`、`loadingSessions`、`noSessionsYet`、`deviceExecSchedulingTitle`、`deviceExecStarvationMs`、`deviceExecStarvationMsHint`、`deviceExecMaxSkips`、`deviceExecMaxSkipsHint`、`deviceExecDispatchTitle`、`deviceExecMaxDepth`、`deviceExecMaxDepthHint`、`deviceExecMaxBudget`、`deviceExecMaxBudgetHint`、`deviceExecAllowBotMentions`、`deviceExecAllowBotMentionsHint`、`deviceExecContextTitle`、`deviceExecContextBytes`、`deviceExecContextBytesHint`、`deviceExecRetention`、`deviceExecRetentionHint`、`deviceExecFileSyncTitle`、`deviceExecFileSyncBytes`、`deviceExecFileSyncBytesHint`、`deviceExecFileSyncFiles`、`deviceExecFileSyncFilesHint`、`deviceExecFileSyncStagedBytes`、`deviceExecFileSyncStagedBytesHint`、`deviceExecLocksTitle`、`deviceExecLockTtl`、`deviceExecLockTtlHint`、`deviceExecBlackboardBytes`、`deviceExecBlackboardBytesHint`、`deviceExecResetDefaults`、`deviceExecResetDefaultsTip`、`promptTok_plugin_dev`、`promptTok_plugin_dev_desc`、`settingsDeviceCollab`、`settingsDeviceCollabHint`、`sandboxNewShort`
-- 前端删除 key（81）：`ephemeralBadge`、`thinkingUnsupported`、`manageProjects`、`elsewherePseudoTip`、`subagentBadgeCount`、`subagentsStreamingTip`、`subagentsQuestionTip`、`subagentsErrorTip`、`subagentsCountTip`、`convErrorBadge`、`tuiTip`、`forkedSessionBadge`、`forkedSessionTip`、`dismissFinishedOnly`、`forkBadge`、`forkBadgeTip`、`tpl.newTitle`、`tpl.editTitle`、`tpl.fieldTitle`、`tpl.sk.setup`、`tpl.sk.setup.desc`、`tpl.sk.setup.prompt`、`tpl.sk.ask`、`tpl.sk.ask.desc`、`tpl.sk.ask.prompt`、`tpl.sk.grilldocs`、`tpl.sk.grilldocs.desc`、`tpl.sk.grilldocs.prompt`、`tpl.sk.tospec`、`tpl.sk.tospec.desc`、`tpl.sk.tospec.prompt`、`tpl.sk.totickets`、`tpl.sk.wayfinder`、`tpl.sk.wayfinder.desc`、`tpl.sk.wayfinder.prompt`、`tpl.sk.arch`、`tpl.sk.arch.desc`、`tpl.sk.arch.prompt`、`tpl.sk.triage`、`tpl.sk.triage.desc`、`tpl.sk.triage.prompt`、`tpl.sk.wizard`、`tpl.sk.wizard.desc`、`tpl.sk.wizard.prompt`、`tpl.sk.grillme`、`tpl.sk.grillme.desc`、`tpl.sk.grillme.prompt`、`tpl.sk.handoff`、`tpl.sk.handoff.desc`、`tpl.sk.handoff.prompt`、`tpl.sk.questionnaire`、`tpl.sk.questionnaire.desc`、`tpl.sk.questionnaire.prompt`、`tpl.sk.teach`、`tpl.sk.teach.desc`、`tpl.sk.teach.prompt`、`tpl.sk.ww`、`tpl.sk.ww.desc`、`tpl.sk.ww.prompt`、`tpl.sk.wfa`、`tpl.sk.wfa.desc`、`tpl.sk.wfa.prompt`、`tpl.sk.codesign`、`tpl.sk.codesign.desc`、`tpl.sk.codesign.prompt`、`tpl.sk.domain`、`tpl.sk.domain.desc`、`tpl.sk.domain.prompt`、`tpl.sk.grilling`、`tpl.sk.grilling.desc`、`tpl.sk.grilling.prompt`、`tpl.sk.tdd`、`tpl.sk.tdd.desc`、`tpl.sk.tdd.prompt`、`deviceSetupNext`、`deviceSetupNextHint`、`deviceSetupManage`、`deviceHubOverview`、`deviceHubSettings`、`deviceHubGroups`、`sandboxNewBtn`
-- 前端中文变更（13）：`historySessions`、`openHistory`、`tpl.sk.implement`、`tpl.sk.implement.desc`、`tpl.sk.implement.prompt`、`tpl.sk.codeview.desc`、`tpl.sk.codeview.prompt`、`tpl.sk.prototype.prompt`、`tpl.sk.research.prompt`、`tpl.sk.debug.prompt`、`tpl.sk.merge.prompt`、`deviceExecMaxActive`、`deviceExecMaxWaiting`
-- 前端英文变更（12）：`tpl.sk.implement`、`tpl.sk.implement.desc`、`tpl.sk.implement.prompt`、`tpl.sk.codeview.desc`、`tpl.sk.codeview.prompt`、`tpl.sk.debug`、`tpl.sk.debug.desc`、`tpl.sk.debug.prompt`、`tpl.sk.merge.desc`、`tpl.sk.merge.prompt`、`deviceExecMaxActive`、`deviceExecMaxWaiting`
-
-<!-- auto-i18n:end -->
-
 ## [0.115.0] — 2026-11-02
 
 ### Added
@@ -428,18 +366,6 @@
 
 - 设备中心后台同步：无随包清单的旧插件首次升级不再清理旧文件（残留文件不会被加载，但也不会被删）。
 
-<!-- auto-i18n:start -->
-
-### i18n
-
-- 前端新增 key（55）：`leftPanelGroups`、`questionAutoSubmitLast`、`questionPickSubmits`、`localBotToolHighPrivilege`、`localBotToolUnsupportedPlatform`、`deviceExecTitle`、`deviceExecSubtitle`、`deviceExecRefresh`、`deviceExecRunning`、`deviceExecQueued`、`deviceExecBlocked`、`deviceExecQuotaTitle`、`deviceExecMaxActive`、`deviceExecMaxActiveHint`、`deviceExecMaxWaiting`、`deviceExecMaxWaitingHint`、`deviceExecReset`、`deviceExecSave`、`deviceExecSaving`、`deviceExecSavedNotice`、`deviceExecBlockedTitle`、`deviceExecBlockedDesc`、`deviceExecActiveTasks`、`deviceExecNoActive`、`deviceExecWaitingQueue`、`deviceExecNoWaiting`、`deviceExecPosition`、`deviceExecReason`、`deviceExecQueuedTime`、`deviceExecActions`、`deviceExecCancel`、`deviceExecCancelling`、`deviceExecTaskCancelled`、`deviceExecReasonMaxConcurrency`、`deviceExecReasonBotBusy`、`deviceExecReasonWorkspaceConflict`、`deviceExecReasonWorkspaceBlocked`、`deviceExecReasonFairness`、`skillsMaxFileBytes`、`skillsMaxFileBytesTip`、`skillsFullTextMaxBytes`、`skillsFullTextMaxBytesTip`、`worktreeViewTitle`、`worktreeEntryTip`、`worktreeBackToChat`、`worktreeRefresh`、`worktreeViewHint`、`worktreeEmpty`、`worktreeDetached`、`worktreeCurrent`、`worktreeMain`、`worktreeHasChanges`、`worktreeClean`、`worktreeSwitch`、`worktreeManage`
-- 前端删除 key（13）：`worktreeBadgeDirtyCount`、`worktreeBannerActiveTitle`、`worktreeBannerActiveDesc`、`worktreeBannerUncleanedTitle`、`worktreeBannerUncleanedDesc`、`worktreeActionSwitchMainTip`、`worktreeActionSwitchTo`、`worktreeActionSwitchToTip`、`worktreeActionRemoveTip`、`worktreeActionCollapse`、`worktreeActionMore`、`worktreeActionDismiss`、`worktreeActionDismissTip`
-- 前端中文变更（2）：`dismissFinishedOnly`、`dismissForceAll`
-- 前端英文变更（2）：`dismissFinishedOnly`、`dismissForceAll`
-- 服务端文案变更（1）：`subagents.spawn.started`
-
-<!-- auto-i18n:end -->
-
 ## [0.114.3] — 2026-10-31
 
 ### Added
@@ -453,14 +379,6 @@
 ### Changed
 
 - 分类明确标注为会话内容估算；实际请求的去重、证据外置和扩展转换可能改变比例。分类校准不改变上下文总量或压缩阈值。新增真实服务浏览器和请求变换回归，协议版本同步为 40。
-
-<!-- auto-i18n:start -->
-
-### i18n
-
-- 前端新增 key（14）：`contextPercent`、`contextTokens`、`contextTokensEstimated`、`contextMemoryFiles`、`contextTools`、`contextSkills`、`contextToolResults`、`contextOther`、`contextUsed`、`contextFree`、`contextBreakdownUnavailable`、`contextBreakdownEstimate`、`contextUsageUnavailable`、`contextSoftCap`
-
-<!-- auto-i18n:end -->
 
 ## [0.114.2] — 2026-10-31
 
@@ -495,17 +413,6 @@
 
 - **回归验证**：新增双真实进程的跨客户端取消检查，修正历史分页集成测试游标并验证无效锚点触发重新同步。
 
-<!-- auto-i18n:start -->
-
-### i18n
-
-- 前端新增 key（45）：`settingsEngineCodexTitle`、`settingsEngineCodexDesc`、`engineCodexModelDesc`、`tpl.fieldCommand`、`tpl.commandHint`、`tpl.commandInvalid`、`tpl.commandDuplicate`、`tpl.storageError`、`deviceSetupServer`、`deviceSetupSshPort`、`deviceSetupUsername`、`deviceSetupAuth`、`deviceSetupAuthPassword`、`deviceSetupAuthKey`、`deviceSetupAuthExisting`、`deviceSetupServicePort`、`deviceSetupCredentialHint`、`deviceSetupOptionalTls`、`deviceSetupDomain`、`deviceSetupEnableHttps`、`deviceSetupTlsHint`、`deviceSetupPreview`、`deviceSetupPreviewEmpty`、`deviceSetupUserActions`、`deviceSetupCloudPorts`、`deviceSetupSourceScope`、`deviceSetupAfterStart`、`deviceSetupGuide`、`deviceSetupRemoteInvalid`、`deviceSetupStartAi`、`pendingQueueDefer`、`toolApprovalPresentation`、`toolApprovalPresentationDesc`、`toolApprovalPresentationAll`、`communicateEnabledDesc`、`communicateOffHint`、`schedulerTargetLabel`、`schedulerTargetConversation`、`schedulerTargetCanvas`、`schedulerGraphLabel`、`schedulerGraphPlaceholder`、`schedulerGraphUnavailable`、`schedulerGraphHint`、`schedulerRunBaseLabel`、`schedulerCanvasPromptPlaceholder`
-- 前端删除 key（3）：`deviceSetupNoServer`、`deviceSetupNoServerHint`、`deviceSetupCliHint`
-- 前端中文变更（4）：`deviceSetupRemote`、`deviceSetupRemoteHint`、`questionPresentationDesc`、`toolDescSubagent`
-- 前端英文变更（4）：`deviceSetupRemote`、`deviceSetupRemoteHint`、`questionPresentationDesc`、`toolDescSubagent`
-
-<!-- auto-i18n:end -->
-
 ## [0.114.0] — 2026-10-30
 
 ### Added
@@ -529,19 +436,6 @@
 - **远程桌面传输**：替换 VNC 桥接，采用原生采集与输入控制；macOS 权限仅由设备本机设置发起。
 - **使用与安装文档**：精简多语言 README，补充设备中心、桌面权限与安装说明。
 
-<!-- auto-i18n:start -->
-
-### i18n
-
-- 前端新增 key（221）：`presetPluginsTitle`、`presetPluginsExportHint`、`presetPluginsLocal`、`presetPluginsInstallHint`、`presetPluginsConfirm`、`presetPluginsMissing`、`presetPluginsDisabled`、`presetPluginsInstalled`、`presetPluginsVersion`、`presetPluginsNoSource`、`presetPluginsInstalledCode`、`presetPluginsFailed`、`presetPluginsInstalling`、`presetPluginsRetry`、`presetPluginsInstall`、`presetImportName`、`presetImportTemplateWarning`、`presetImportClears`、`presetImportWorking`、`presetImportSaved`、`presetImportApplyDeferred`、`presetImportApplied`、`presetImportApplyFailed`、`presetShareManualSubmission`、`presetShareCreated`、`moreCopyOptions`、`mcpOAuthLogin`、`mcpOAuthStarting`、`mcpOAuthComplete`、`mcpOAuthError`、`mcpOAuthInstructions`、`mcpOAuthOpen`、`mcpOAuthWaiting`、`mcpOAuthFinishing`、`mcpOAuthRedirect`、`mcpOAuthFinish`、`mcpOAuthInvalidRedirect`、`mcpStatusOverridden`、`mcpStatusPreviousConfig`、`notifyEventSettings`、`notifyEventSettingsDesc`、`notifyEventFollow`、`notifyEventOn`、`notifyEventOff`、`notifyStartTitle`、`notifyStartBody`、`sound.subagentDone`、`sound.subagentDone.desc`、`steeringDeliverAll`、`steeringDeliverAllDesc`、`followUpDeliverAll`、`followUpDeliverAllDesc`、`deviceCenter`、`deviceCenterTip`、`deviceSetupBackground`、`deviceSetupRestored`、`deviceSetupUnhealthy`、`deviceSetupRecovery`、`deviceSetupAiCreating`、`deviceSetupAiFailed`、`deviceSetupWelcome`、`deviceSetupIntro`、`deviceSetupConnect`、`deviceSetupCreate`、`deviceSetupTarget`、`deviceSetupCurrent`、`deviceSetupRemote`、`deviceSetupNoServer`、`deviceSetupNoServerHint`、`deviceSetupCurrentHint`、`deviceSetupRemoteHint`、`deviceSetupPlan`、`deviceSetupPlanHint`、`deviceSetupEnvironment`、`deviceSetupDataDir`、`deviceSetupCli`、`deviceSetupLocalOnly`、`deviceSetupRetry`、`deviceSetupHost`、`deviceSetupPort`、`deviceSetupReachable`、`deviceSetupRegistration`、`deviceSetupInvalid`、`deviceSetupCliHint`、`deviceSetupInstalling`、`deviceSetupInstall`、`deviceSetupAi`、`deviceSetupAiHint`、`deviceSetupFailed`、`deviceSetupSuccess`、`deviceSetupPair`、`deviceSetupNext`、`deviceSetupNextHint`、`deviceSetupManage`、`deviceSetupBusy`、`deviceHubTitle`、`deviceHubSubtitle`、`deviceHubOverview`、`deviceHubSettings`、`deviceHubGroups`、`localBotSyncFailed`、`localBotSaved`、`localBotTitle`、`localBotCreate`、`localBotHint`、`localBotEnabled`、`localBotDisabled`、`localBotName`、`localBotDescription`、`localBotSystemPrompt`、`localBotCwd`、`localBotTools`、`localBotSkills`、`localBotMcpServers`、`localBotPermissions`、`localBotIdentityHint`、`localBotRuntimeHint`、`localBotPermissionsHint`、`localBotPrivatePrompt`、`localBotIdentity`、`localBotRuntime`、`localBotModel`、`localBotInheritModel`、`localBotSelected`、`localBotSearch`、`localBotSelectAll`、`localBotClear`、`localBotUnavailable`、`localBotUnverified`、`localBotOptionsLoading`、`localBotNoOptions`、`localBotMcpDisabled`、`localBotSelectVisible`、`localBotReload`、`localBotMcpNotLoaded`、`localBotOptionsInvalid`、`localBotEnable`、`localBotSave`、`localBotCancel`、`localBotDeleteConfirm`、`localBotDelete`、`deviceHubUnpaired`、`deviceHubOnline`、`deviceHubOffline`、`deviceHubLoading`、`deviceHubLocalOnly`、`deviceHubRetry`、`deviceHubPairTitle`、`deviceHubPairHint`、`deviceHubHubUrl`、`deviceHubHubPlaceholder`、`deviceHubName`、`deviceHubNamePlaceholder`、`deviceHubGetCode`、`deviceHubWorking`、`deviceHubStepDetails`、`deviceHubStepApprove`、`deviceHubStepWait`、`deviceHubCode`、`deviceHubCopy`、`deviceHubCopied`、`deviceHubCopyFailed`、`deviceHubOpenHub`、`deviceHubWaiting`、`deviceHubExpires`、`deviceHubExpired`、`deviceHubNewCode`、`deviceHubDeviceTitle`、`deviceHubDeviceId`、`deviceHubPermissions`、`deviceHubPermissionLabel`、`deviceHubPermissionHint`、`deviceHubSaving`、`deviceHubSaved`、`deviceHubReadOnly`、`deviceHubEnabled`、`deviceHubAdvanced`、`deviceHubDisconnect`、`deviceHubDisconnectHint`、`deviceHubDisconnectConfirm`、`deviceHubHelpTitle`、`deviceHubHelpText`、`deviceHubInvalidUrl`、`deviceHubInvalidName`、`deviceHubRequestFailed`、`deviceHubNetworkError`、`deviceHubStatusError`、`deviceHubPairError`、`deviceHubPollError`、`deviceHubPermissionError`、`deviceHubDisconnectError`、`questionQueueTitle`、`questionQueueOpen`、`questionQueueNavigate`、`questionQueueDefer`、`questionPresentation`、`questionPresentationDesc`、`questionPresentationQueue`、`questionPresentationAll`、`questionPresentationManual`、`questionTimeoutSeconds`、`questionTimeoutSecondsDesc`、`folderUploadWaiting`、`folderUploadSending`、`fileUploadReading`、`fileUploadWaiting`、`fileUploadFailed`、`fileUploadReadFailed`、`fileUploadSendFailed`、`fileUploadDismiss`、`fileUploadConfirmed`、`fileUploadOutcomeUnknown`、`uploadReading`、`uploadPreparing`、`chatUploadMaxMb`、`workspaceUploadMaxMb`、`folderUploadMaxMb`、`uploadMaxMbHint`、`toolsDeviceCollabDesc`、`toolsDeviceCollabOffHint`、`sandboxDiffRefresh`
-- 前端删除 key（6）：`mcpArgsPlaceholder`、`conversationReadEnabledDesc`、`conversationReadOffHint`、`presetSharePopupBlocked`、`presetShareBrowserCopied`、`presetImportImported`
-- 前端中文变更（21）：`reaskDirectly`、`reaskDirectlyTip`、`editReaskTip`、`forkSessionTip`、`rollbackSessionTip`、`mcpStatusStopped`、`sound.done.desc`、`toolsSectionSubagent`、`toolsSubagentDepHint`、`toolDescSubagent`、`sandboxModalSubtitle`、`sandboxModeBlankDesc`、`sandboxModeImportDesc`、`sandboxBannerSourceDesc`、`sandboxBannerBlankDesc`、`sandboxActionApplySourceTip`、`sandboxActionApplyConfirm`、`sandboxDiffStats`、`sandboxDiffEmpty`、`sandboxDiffDeletedNote`、`sandboxEnabledDesc`
-- 前端英文变更（19）：`reaskDirectlyTip`、`editReaskTip`、`forkSessionTip`、`rollbackSessionTip`、`sound.done.desc`、`toolsSectionSubagent`、`toolsSubagentDepHint`、`toolDescSubagent`、`sandboxModalSubtitle`、`sandboxModeBlankDesc`、`sandboxModeImportDesc`、`sandboxBannerSourceDesc`、`sandboxBannerBlankDesc`、`sandboxActionApplySourceTip`、`sandboxActionApplyConfirm`、`sandboxDiffStats`、`sandboxDiffEmpty`、`sandboxDiffDeletedNote`、`sandboxEnabledDesc`
-- 服务端文案变更（4）：`subagents.action.missing`、`subagents.action.unknown`、`terminals.wait.not.found`、`terminals.wait.no.pending`
-- 服务端删除 key（4）：`dsh.prompt.context.full`、`dsh.prompt.context.edit.reask`、`terminals.bash.aborted`、`terminals.bash.timeout`
-
-<!-- auto-i18n:end -->
-
 ## [0.113.1] — 2026-10-29
 
 ### Added
@@ -560,50 +454,6 @@
 
 - **全屏与移动端文件预览排版**：优化移动端/平板设备下的抽屉间距与安全区贴边，固定关闭按钮防止窄屏被挤出视窗。
 - **全局文件搜索与路径嗅探**：支持带波浪号（`~`）主目录路径与绝对路径的精确探测；修复长输出卡顿与控制台多余告警。
-
-<!-- auto-i18n:start -->
-
-### i18n
-
-- 本版无文案增量（相对 v0.113.0，已核查）。
-
-## [0.113.0] — 2026-10-28
-
-### Added
-
-- **QQ 通道富媒体双向（图片/语音/视频/文件）**：入站附件（`attachments`，腾讯 CDN）下载到工作区 `.pi-qq-media/` 并给 agent 本地路径（语音优先 `voice_wav_url` + 官方 ASR 文本），单件 25MB 上限、失败降级占位；出站给 `qq` 工具补 `image`/`file` 与 `user_openid`/`group_openid`，本地文件自动上传（≤5MB 走 base64 `file_data`，更大走 `upload_prepare` → 分片 PUT → `upload_part_finish` → 合并拿 `file_info`，再 `msg_type=7` 发送），超软限制降级为文件卡片；工作台新增媒体发送与「接收图片/文件落地」开关。频道（子频道）受官方限制只收公网 URL，本地文件明确报错。
-- **通道插件运行归属根治（`host.chat` 回执新增稳定 `runId`）**：微信/钉钉/QQ/Discord/飞书此前靠 `clientId + conversationId` 认领回包，而「过户」会把两者同时改掉（`clientId` 换成浏览器标签页、撞 id 时对话就地改名），导致整轮事件无人认领、只剩「还在执行」后再无下文。现在运行轨迹事件携带不随过户/改名变化的 `runId`，`chatWait` 亦按它唤醒；钉钉/Discord 顺带修复「忽略 `host.chat` 回执、用本地编造会话 id 当键」导致正文从来发不出去的老问题。
-- **画布工作室与技能/工具工作台升级**：P-Stack 技能包、节点抽屉与模板、审查卡点续跑；工具检查器（Tool Inspector）重构与文件差异可视化（统一/分屏/原始三视图、全屏、复制 patch）；设置面板重排与 MCP / 技能市场（分类、复制链接、空态引导）。
-- **远程工作台插件（remote-workbench）**：SSH 远程会话、xterm 终端、紧凑视图与工作区 URI，配套 sftp 插件增强。
-- **技能发现与维护**：`skill-discovery` 重写 + `universal-skill-scanner`（`.pi/skills`、`.claude/skills` 目录型/单文件型统一扫描）+ `skill-maintenance` 清理能力。
-- **用户终端持久化**：用户直接创建的交互式终端按客户端/工作区存活，不受单个对话切换与生命周期影响（快照、回放、退出广播都独立登记）。
-- **`subagent(action="dismiss")`**：批量/单个回收已结束的子代理（含 `finished_all`、worktree 脏检查、持久化子代理保护），并同步 UI 列表（#767, #768）。
-- **模型级 `thinkingLevelMap` 推导与保留**：候选采纳器默认勾选现有模型，切换/采纳后不丢思考强度映射（#771, #772）。
-
-### Changed
-
-- **工具门控改为声明式「管辖权分界」（Authority Boundary）**：`tool-manager` 重构门控合成，恢复会话与重放时保留扩展主动禁用的工具状态，避免重连后被悄悄打开（#777, #779）。
-- **Durable 引擎工具卡改由 `watchEvents` 事件流投影**：新增 `durable-event-projector`，工具卡入参与结果不再读 `pi.live` 私有槽位（原来为空并污染落盘会话），正文与工具卡按提交时间对齐（#774, #775）。
-- **官方插件体系**：browser-use 探测脚本与文档更新；QQ / 微信 / 钉钉 / Discord / 飞书 / sftp 版本号递增（随包热同步生效）。
-
-### Fixed
-
-- **微信通道连发丢答**：`bindActive`（投递到网页活跃会话）模式下第二条消息会把同一会话里**还在跑那一轮已产出的正文**一起清掉，最终只回「任务完成（无文本输出）」；改为只清没有在跑登记的残留文本（#770）。
-- **Claude Code 引擎 macOS 定位**：自动解析 CLI 可执行路径并完善全局检测与 PATH 扫描（含 nvm/homebrew 场景）。
-- **界面细节**：设置面板格式化、composer 高度自适应与拖拽手柄文案、文件差异卡在流式期间的渲染稳定性。
-
-<!-- auto-i18n:start -->
-
-### i18n
-
-- 前端新增 key（36）：`composerResizeFixed`、`mcpMarketVisit`、`mcpMarketCopyLink`、`mcpMarketCopied`、`mcpMarketEmpty`、`mcpMarketEmptyClear`、`mcpCatAll`、`mcpCatCn`、`mcpCatMarketplace`、`mcpCatCommunity`、`mcpCatOfficial`、`skillMarketNoticeTitle`、`skillMarketNoticeDesc`、`skillMarketVisit`、`skillMarketCopyLink`、`skillMarketCopied`、`skillMarketEmpty`、`skillMarketEmptyClear`、`skillCatOfficial`、`skillCatMarketplace`、`skillCatCommunity`、`skillCatDirectory`、`diffViewUnified`、`diffViewSplit`、`diffViewRaw`、`diffNewFile`、`diffOpenFile`、`diffCopyContent`、`diffCopyPatch`、`diffStreaming`、`diffEmptyHunks`、`diffFullscreen`、`diffRestoreScreen`、`skillClickToInspect`、`copySkillContent`、`copiedSkillContent`
-- 前端删除 key（34）：`mcpBadgeOfficial`、`mcpConfigured`、`mcpAddGlobal`、`mcpAddProject`、`mcpAddGlobalHint`、`mcpAddProjectHint`、`skillCatQuality`、`skillCatWorkflow`、`skillCatArchitecture`、`skillCatDevops`、`skillCatStack`、`skillInspectPrompt`、`skillInstalled`、`skillInstallGlobal`、`skillInstallProject`、`skillInstallGlobalHint`、`skillInstallProjectHint`、`mcpSourceSelectLabel`、`mcpSourceSmithery`、`mcpSourceGithub`、`mcpSourceCustom`、`mcpSourceCustomPlaceholder`、`mcpMarketLoading`、`mcpMarketRetry`、`skillRepoSelect`、`skillRepoDefault`、`skillRepoCustom`、`skillRepoCustomPlaceholder`、`skillMarketLoading`、`skillMarketRetry`、`toolInspectorOutput`、`toolInspectorError`、`toolInspectorToggleRaw`、`toolInspectorTogglePreview`
-- 前端中文变更（8）：`composerResize`、`mcpMarketSearchPlaceholder`、`skillEmptyDesc`、`skillMarketSearchPlaceholder`、`skillCatAll`、`skillFullTextShort`、`skillInspectModalTitle`、`skillContentLoading`
-- 前端英文变更（7）：`composerResize`、`mcpMarketSearchPlaceholder`、`skillEmptyDesc`、`skillMarketSearchPlaceholder`、`skillCatAll`、`skillFullTextShort`、`skillContentLoading`
-- 服务端新增 key（14）：`subagents.dismiss.unsupported`、`subagents.dismiss.missing.target`、`subagents.dismiss.finished_all.empty`、`subagents.dismiss.not_found`、`subagents.dismiss.self`、`subagents.dismiss.active`、`subagents.dismiss.not_descendant`、`subagents.dismiss.persisted`、`subagents.dismiss.running`、`subagents.dismiss.worktree.dirty`、`subagents.dismiss.failed`、`subagents.dismiss.success.single`、`subagents.dismiss.none`、`subagents.dismiss.success.batch`
-- 服务端文案变更（2）：`subagents.action.missing`、`subagents.action.unknown`
-
-<!-- auto-i18n:end -->
 
 ## [0.112.0] — 2026-10-26
 
@@ -629,20 +479,6 @@
 - **安全加固**：网络隧道（Tunnel）令牌脱敏、Mesh 未授权注入防护与生命周期泄漏修复（#724, #765）；审批归属门禁与部署姿态告警（#723, #752）；常驻终端补异步审批与跨调用行缓冲防拆行绕过（#721, #736）；统一审批流水线与命令防逃逸（#722）；patch 工具补权限预设与审批规则包装（#720）。
 - **跨平台与执行管道**：修复 Windows 环境下 Python eval 管道编码导致非 ASCII 字符传输中断（#757, #758）；bash 工具纳入 tool-overrides 覆盖管线，与第三方扩展同名 bash 叠加共存（#750）。
 - **界面与交互**：修复引擎切换死键、滚轮翻页闭包、问卷串台、断线过渡遮罩与 TTS 卡顿（#740, #744）；历史按需加载不可变锚点翻页与过渡期沙箱隔离（#719, #735）；工具文案覆盖 snippet 预览与实发对齐；会话目录兼收专属子目录与扁平旧会话（#711）。
-
-<!-- auto-i18n:start -->
-
-### i18n
-
-- 前端新增 key（27）：`dismissTerminalsConfirm`、`toolApprovalDshNotice`、`cmdInspectorTitle`、`cmdInspectorLines`、`cmdInspectorExpand`、`cmdInspectorCollapse`、`cmdInspectorRisk`、`cmdCopied`、`rejectWithNote`、`rejectWithNoteSubmit`、`rejectNotePlaceholder`、`rejectFeedbackPrefix`、`promptToggleEnabled`、`instanceName`、`instanceNameDesc`、`instanceNamePh`、`faviconColor`、`faviconColorDesc`、`faviconColorAuto`、`customColor`、`uiLayoutToolCardFooter`、`subagentMaxDepth`、`subagentMaxDepthDesc`、`subagentMaxDepthUnlimited`、`subagentAutoWakeMaxTurns`、`subagentAutoWakeMaxTurnsDesc`、`subagentAutoWakeMaxTurnsUnlimited`
-- 前端删除 key（3）：`earlierMessagesInfo`、`loadEarlier`、`loadAllEarlier`
-- 前端中文变更（3）：`promptTok_tools_desc`、`promptTok_guidelines_desc`、`reversePaginationDesc`
-- 前端英文变更（3）：`promptTok_tools_desc`、`promptTok_guidelines_desc`、`reversePaginationDesc`
-- 服务端新增 key（25）：`agent.subagent.worktree.remote_unsupported`、`agent.subagent.model.failed`、`agent.subagent.model.not.found`、`canvas.edge.self`、`canvas.edge.duplicate`、`subagents.notify.fallback`、`subagents.notify.header`、`subagents.notify.status.failed`、`subagents.notify.status.canceled`、`subagents.notify.status.done`、`subagents.notify.goal`、`subagents.notify.worktree`、`subagents.notify.worktree.cleaned`、`subagents.notify.worktree.preserved`、`subagents.notify.worktree.path`、`subagents.notify.summary`、`subagents.notify.footer`、`subagents.spawn.thinking.invalid`、`subagents.spawn.isolation.invalid`、`subagents.get.worktree.cleaned`、`subagents.get.worktree.preserved`、`terminals.operation.denied`、`terminals.input.edited_sent`、`terminals.key.edited_sent`、`worktree.isolation.not_git`
-- 服务端文案变更（5）：`delegate.started`、`subagents.spawn.started`、`subagents.get.running`、`subagents.get.done`、`terminals.command.blocked`
-- 服务端删除 key（2）：`prompt.guidelines.be.concise`、`prompt.guidelines.show.paths`
-
-<!-- auto-i18n:end -->
 
 ## [0.111.0] — 2026-10-24
 
@@ -729,14 +565,6 @@
 
 - 会话切换结转草稿时，仅在目标会话没有自己的草稿时才写入，避免覆盖该会话已保留的输入内容。
 
-<!-- auto-i18n:start -->
-
-### i18n
-
-- 前端新增 key（30）：`preserveDraftAcrossConversations`、`preserveDraftAcrossConversationsDesc`、`reversePagination`、`reversePaginationDesc`、`earlierMessagesInfo`、`loadEarlier`、`loadAllEarlier`、`pluginMenuSettings`、`pluginGroupViews`、`pluginGroupExtensions`、`pluginManagerTitle`、`pluginManagerDesc`、`pluginFilterAll`、`pluginFilterConfigurable`、`pluginFilterEnabled`、`pluginFilterDisabled`、`pluginSearchPlaceholder`、`pluginQuickSettings`、`pluginToggleEnable`、`pluginToggleDisable`、`pluginExpandAll`、`pluginCollapseAll`、`pluginGoMarket`、`pluginCountSummary`、`pluginBadgeConfig`、`pluginBadgeView`、`pluginBadgeBg`、`pluginBadgeTools`、`pluginOpenView`、`pluginEmptyFilter`
-
-<!-- auto-i18n:end -->
-
 ## [0.107.0] — 2026-10-18
 
 ### Added
@@ -768,19 +596,6 @@
   - 清理废弃的内置 Todo 标记与孤立工具定义，精简智能体系统提示词上下文预算；
   - 优化高并发测试环境下的引擎探测超时保护。
 
-<!-- auto-i18n:start -->
-
-### i18n
-
-- 前端新增 key（23）：`showAllModels`、`showEnabledModels`、`showAllModelsTitle`、`showEnabledModelsTitle`、`searchAllModelsHint`、`notInScopeBadge`、`settingsEngineDurableTitle`、`settingsEngineDurableDesc`、`engineTagDurable`、`engineUpdating`、`ttsStreamReplies`、`ttsStreamRepliesDesc`、`ttsEngine`、`ttsEngineBuiltin`、`settingsSearchPlaceholder`、`settingsSearchEmpty`、`settingsGroupCore`、`settingsGroupTools`、`settingsGroupUi`、`settingsGroupAdvanced`、`settingsAutoSavedTip`、`settingsContextSafeZone`、`settingsCacheReady`
-- 前端删除 key（4）：`updateEngineTabTitle`、`markerGroupTodo`、`todoListEnabledDesc`、`todoListOffHint`
-- 前端中文变更（2）：`ttsEnableDesc`、`settingsMarkersDesc`
-- 前端英文变更（2）：`ttsEnableDesc`、`settingsMarkersDesc`
-- 服务端文案变更（1）：`markers.service.guidance.frame`
-- 服务端删除 key（18）：`markers.service.describe.empty`、`markers.todo.guidance`、`markers.todo.new.requires.subject`、`markers.todo.new.created`、`markers.todo.set.invalid.id`、`markers.todo.set.invalid.status`、`markers.todo.set.task.missing`、`markers.todo.set.completed.no.pending`、`markers.todo.set.completed.no.inprogress`、`markers.todo.set.updated`、`markers.todo.remove.invalid.id`、`markers.todo.remove.task.missing`、`markers.todo.remove.deleted`、`markers.todo.dep.invalid.id`、`markers.todo.dep.task.missing`、`markers.todo.dep.invalid.dependencies`、`markers.todo.dep.blocks.updated`、`markers.todo.unknown.operation`
-
-<!-- auto-i18n:end -->
-
 ## [0.106.0] — 2026-10-16
 
 ### Added
@@ -809,19 +624,6 @@
 - **模型切换错误通知与问卷快照即时广播** —— 修复 `/model` 错误提示通知，同步优化问卷快照即时同步，消除极端场景下的请求测试超时 (#642)。
 - **跨平台便携打包盘符格式兼容** —— 修复 Windows 环境下 `make-portable` 脚本遇到 GNU tar 驱动器冒号格式报错的问题。
 - **文档与部署指引优化** —— 优化 README 演示视频展示为高兼容海报卡片与点击播放，补充多引擎、沙盒隔离与便携版特性截图；对齐 `PI_WEB_SDK` 默认值与 Nginx 子路径反代文档。
-
-<!-- auto-i18n:start -->
-
-### i18n
-
-- 前端新增 key（50）：`newSandbox`、`newSandboxTip`、`settingsEngineClaudeTitle`、`settingsEngineClaudeDesc`、`engineTagUniversal`、`engineNotInstalled`、`engineInstall`、`engineInstallTip`、`installEngineTabTitle`、`engineUpdate`、`engineUpdateAvailable`、`engineUpdateTip`、`updateEngineTabTitle`、`minimalNewChat`、`minimalNewChatDesc`、`kindEngine`、`openRecentSessionOnProjectSwitch`、`openRecentSessionOnProjectSwitchDesc`、`uiLayoutHide`、`dshPlugins`、`dshPluginsDesc`、`dshPatchSpecPlaceholder`、`dshPatchAdd`、`dshPatchActive`、`dshPatchDisabled`、`dshPatchToggleOn`、`dshPatchToggleOff`、`dshPatchDeleteConfirm`、`dshMarketTitle`、`dshMarketSubtitle`、`dshMarketSubmit`、`dshMarketTabDiscover`、`dshMarketTabInstalled`、`dshMarketSearchPlaceholder`、`dshMarketAll`、`dshMarketInstall`、`dshMarketInstalled`、`dshMarketRefresh`、`dshMarketDisclaimerTitle`、`dshMarketDisclaimerText`、`dshMarketWebuiTag`、`dshMarketWebuiWarn`、`dshMarketPrevPage`、`dshMarketNextPage`、`dshMarketPageInfo`、`settingsModelsAndProviders`、`settingsModelsDesc`、`manageModelsAndProviders`、`manageModelsAndProvidersHint`、`openModelManager`
-- 前端删除 key（3）：`dshExtensionsNote`、`dshPatches`、`dshPatchesDesc`
-- 前端中文变更（5）：`engineTagFull`、`engineTagFast`、`settingsEnginePiTitle`、`settingsEngineDshTitle`、`settingsEngineDshDesc`
-- 前端英文变更（5）：`engineTagFull`、`engineTagFast`、`settingsEnginePiTitle`、`settingsEngineDshTitle`、`settingsEngineDshDesc`
-- 服务端文案变更（10）：`claimfiles.claim.ok`、`convread.list.history.more`、`convread.status.claims`、`mcp_manage.install.tools`、`plugininstaller.timeout`、`present.files.result.head`、`sched.task.bad.schedule`、`scm.commitmsg.timeout`、`skill.file.unreadable`、`worktree.create.success`
-- 服务端删除 key（6）：`dsh.provider.deepseek.official`、`dsh.provider.probing.unsupported`、`dsh.provider.custom.unsupported`、`dsh.provider.builtin.refresh.unsupported`、`dsh.provider.clone.unsupported`、`goal.role.card.result`
-
-<!-- auto-i18n:end -->
 
 ## [0.105.1] — 2026-10-13
 
@@ -873,55 +675,6 @@
 - **远程工作区文件下载与软链接识别** —— 修复远程工作区文件下载/预览 404，增强目录浏览器对软链接的识别与路径输入同步。
 - **流式思考与长内容首字视口锁定** —— 思考折叠与长工具卡延迟挂载，平滑收尾排水节奏优化。
 
-<!-- auto-i18n:start -->
-
-### i18n
-
-- 前端新增 key（42）：`networkLatency`、`engineSwitchTip`、`engineTagFull`、`engineTagFast`、`enginePickerDesc`、`settingsEngineSection`、`settingsEngineHint`、`settingsEnginePiTitle`、`settingsEnginePiDesc`、`settingsEngineDshTitle`、`settingsEngineDshDesc`、`zenMode`、`zenModeTip`、`zenModeExit`、`zenModeExitTip`、`forkedSessionBadge`、`forkedSessionTip`、`piCoreUndetected`、`sessionInitializingNotice`、`showForkedParents`、`showForkedParentsDesc`、`retainFinishedConversations`、`retainFinishedConversationsDesc`、`hideModelRow`、`hideModelRowDesc`、`toolsWorktreeDesc`、`toolsWorktreeOffHint`、`worktreeBadgeLinked`、`worktreeBadgeDirtyCount`、`worktreeBannerActiveTitle`、`worktreeBannerActiveDesc`、`worktreeBannerUncleanedTitle`、`worktreeBannerUncleanedDesc`、`worktreeActionSwitchMain`、`worktreeActionSwitchMainTip`、`worktreeActionSwitchTo`、`worktreeActionSwitchToTip`、`worktreeActionRemove`、`worktreeActionRemoveTip`、`worktreeActionRemoveConfirm`、`worktreeActionCollapse`、`worktreeActionMore`
-- 前端中文变更（3）：`goalBarOpenExecTip`、`keepRecent`、`keepRecentDesc`
-- 前端英文变更（2）：`goalBarOpenExecTip`、`keepRecentDesc`
-- 服务端新增 key（16）：`worktree.not.git`、`worktree.remove.dirty`、`worktree.list.empty`、`worktree.list.header`、`worktree.tag.main`、`worktree.tag.current`、`worktree.tag.dirty`、`worktree.tag.ahead`、`worktree.create.missing_path`、`worktree.create.switched`、`worktree.create.success`、`worktree.switch.missing_path`、`worktree.switch.success`、`worktree.remove.missing_path`、`worktree.remove.success`、`worktree.op.failed`
-- 服务端文案变更（2）：`loadtools.always`、`prompt.tools.lazy`
-
-## [0.104.4] — 2026-10-12
-
-### Fixed
-
-- **流式输出跟手滚动与物理向上手势即时打断**：
-  - 重构 `MessageList` 滚动捕获与吸底总闸门：捕获用户滚轮向上、触控向上滑动、按住滚动条滑块拖动及 PageUp 物理手势时当场立即切断自动吸底并作废保护窗，绝不等异步 `onScroll` 事件，彻底避免浏览器平滑滚动第一帧被流式 MutationObserver 强行拉回底部；
-  - 流式渲染平滑收尾（`StreamMarkdown` draining）：流式结束到转为静态 Markdown 之间引入缓冲排水状态，避免 DOM 瞬间跳变导致高度突变或文字闪烁；加固思考折叠块（`ThinkingBlock`）与工具卡片（`ToolCallBlock`）展开收起时的视口锚定与高度补偿。
-- **内部基础设施扩展隔离与启停白名单保护** —— 将 codemode、tool-search、persona 等宿主注入的内部基础设施扩展标为 `hidden: true`，明确排除在扩展设置列表之外，避免污染设置项与幽灵扩展检测；在子代理白名单（`isExtensionEnabled`）及全局扩展禁用（`isExtensionDisabled`）判定中始终放行内部扩展，防止被意外拦截或被子代理模板白名单误剔除。
-
-## [0.104.3] — 2026-10-12
-
-### Added
-
-- **面包屑与帮助提示统一使用 SVG 图标并支持无延迟 TipButton** —— 全站统一采用基于 SVG 的提示图标与面包屑组件，新增支持零等待延迟的 `TipButton`，提升界面的视觉一致性与响应交互体验。
-
-### Fixed
-
-- **沙盒硬围栏强化与启发式命令拦截** —— 完善 bash 沙盒围栏规则，深度拦截越界 `cd`、重定向、系统特权命令以及越界写删行为；补齐 `[path#TAG]` / `[path]` hashline 段头解析，避免 patch 围栏空转；`sandbox` 工具的 `action=destroy` 接入强制审批保护，销毁后安全回退当前目录；完善沙盒重置容错与写回删除同步机制。
-- **IM 通道插件群聊触发收敛与稳定性修复**：
-  - **Telegram / Slack**：收敛群聊触发面，Telegram 仅响应针对机器人自身的精确 @mention 实体，Slack 频道内仅响应包含 `<@botId>` 的明确提及，彻底避免被动误触发与刷屏。
-  - **企业微信 (WeCom)**：AI 回复切块逻辑严格按 UTF-8 字节数（4096 字节限制）处理，消除纯中文超限被拒；回复链路补齐 `errcode` 校验，防止消息静默丢失。
-  - **飞书 (Feishu)**：移除空轮询假降级，WS 断开时如实报错并反馈真实原因，杜绝面板虚假“已连接”。
-  - **QQ 开放平台**：同一消息的多段分块回复补齐 `msg_seq` 自增序号，修复长回答分块被平台丢弃；新增 Access Token 惰性提前刷新机制，解决 Token 过期后 401 永久重试问题。
-  - **Matrix**：持久化 sync 游标到 `host.storage`，重启或热重载后不再重放历史消息；主动过滤 `m.notice` 类型机器人消息，避免死循环互聊。
-  - **iMessage**：非 macOS 环境不再返回假成功，如实反馈 unsupported 状态。
-- **MCP 服务重名保护与热重载口径对齐** —— `install` 操作对同名已有服务默认拒绝，提供显式 `spec.overwrite` 选项；放宽热重载 legacy 回退逻辑，确保与服务端启动阶段加载行为完全一致。
-- **项目列表多端派生视图缓存隔离** —— 静态 `projectsCache` 仅用于派生视图广播，不再跨客户端写回静态内存，杜绝客户端工作区视图相互污染；引入 TTL 后台续期机制，兼顾磁盘发现能力与切换性能。
-- **目标审查写闸门补拦 CodeMode** —— 目标审查回路严格禁止写操作，写工具拦截名单补齐 `codemode`，防止通过内嵌 QuickJS 沙箱绕过只读限制；附件存储遇到 EPERM 锁定故障时安全回退 Data URL，防止写入失效的死链记录。
-- **插件宿主控制面兼容 API 补齐** —— 扩展并兼容插件宿主常用控制面调用接口，提升外部插件运行与交互兼容性。
-
-<!-- auto-i18n:start -->
-
-### i18n
-
-- 前端中文变更（1）：`sandboxDiffDeletedNote`
-- 前端英文变更（1）：`sandboxDiffDeletedNote`
-
-<!-- auto-i18n:end -->
-
 ## [0.104.2] — 2026-10-11
 
 ### Added
@@ -943,15 +696,6 @@
 - **`todo_list` 工具 Schema 显式补齐 `action.type`（#590）** —— 为 `todo_list` 工具的 `action` 参数显式声明 `type: "string"`，修复 Moonshot / Kimi 等严格校验 JSON Schema 的端点每次请求返回 HTTP 400 的问题，并新增静态守卫单测拦截缺失 `type` 的 `Type.Unsafe` 定义。
 - **主对话执行中设定目标时自动中断旧运行并让位给执行者（#591）** —— 设目标首轮派发目标执行者前，若主对话仍有设目标前的旧运行在飞，服务端先通过 `interruptMainConv` 中断旧运行并弹出提示（同时豁免该次预期让位 abort 误清目标），避免主对话与目标执行者在同一工作区并行动工互相干扰；委托期间用户在主对话发起的新聊天不受影响。
 - **WebUI 主题代理保留单参数装饰器包裹的组件正文（#592）** —— 在 `mockThemeProxy` 中补齐 `italic`、`underline`、`inverse` 单参数装饰器并将通用兜底改为取最后一个字符串参数，修复扩展 widget 使用单参数主题装饰器时正文被清空的问题。
-
-<!-- auto-i18n:start -->
-
-### i18n
-
-- 服务端新增 key（1）：`agent.goal.preempt_main`
-- 服务端文案变更（1）：`agent.subagent.limit.reached`
-
-<!-- auto-i18n:end -->
 
 ## [0.103.2] — 2026-10-11
 
@@ -980,14 +724,6 @@
 - **会话物理路径与远程目录解析健壮性** —— 修复在部分未初始化或 mock 状态下 `stateStore` 访问异常的问题，并在非远程工作区场景提供零损耗快速回退。
 - **样式与 CSS 变量兼容性修复** —— 统一目录浏览器 SSH 相关面板的 Hover 高亮样式为系统标准 `--bg-elev2`，消除未定义变量告警。
 
-<!-- auto-i18n:start -->
-
-### i18n
-
-- 前端新增 key（21）：`workspaceModeLocal`、`workspaceModeRemote`、`sshHost`、`sshPort`、`sshUser`、`sshAuthType`、`sshPassword`、`sshKeyPath`、`sshAgent`、`sshSaveProfile`、`sshProfileName`、`sshConnectAndProbe`、`sshConnecting`、`sshSavedProfiles`、`sshInstallTool`、`sshInstalling`、`sshSkipAndBrowse`、`sshOpenRemoteWorkspace`、`sshDisconnect`、`sshDeleteProfileConfirm`、`tuiOverlayTitle`
-
-<!-- auto-i18n:end -->
-
 ## [0.102.0] — 2026-10-10
 
 ### Added
@@ -997,14 +733,6 @@
 - **插件升级自动保护凭据与持久化存储** —— CLI 在插件升级或强制重装时自动暂存并无损还原 `config.json`、`secrets.bin` 与 `storage.json`，防止插件升级导致凭据与私有状态丢失；新增内置插件版本变更守卫单测，保证插件代码更新时版本号严格递增。
 - **桌面端会话深度链接与打包流程增强（#583 #584 #587）** —— 桌面端支持会话深度链接拉起；优化打包健康探测与 Token 鉴权流程；支持提示词模板填入时二次确认覆盖或追加（#586）；CI 集成 SignPath Windows 安装包测试签名。
 - **SFTP 插件深度增强与引擎优化** —— 扩充默认 SSH 私钥探测路径与连接稳定性；优化客户端文件操作列表与动作响应机制。
-
-<!-- auto-i18n:start -->
-
-### i18n
-
-- 前端新增 key（28）：`modelQuestionRejectWithNote`、`modelQuestionRejectWithNoteTip`、`recommended`、`keyShortcutTip`、`questionCardWaiting`、`questionCardCancelled`、`questionCardRejectReason`、`questionCardUserCustom`、`questionCardNoSelection`、`tpl.confirmFillTitle`、`tpl.confirmFillDesc`、`tpl.confirmFillAppend`、`tpl.confirmFillOverwrite`、`pluginOfficialMarket`、`pluginOfficialMarketHint`、`pluginOfficialLink`、`pluginOfficialLinkHint`、`copyConversationLink`、`copyMessageLink`、`codemodeModeLabel`、`codemodeModeHint`、`codemodeModeOn`、`codemodeModeOnly`、`codemodeInlineBudgetLabel`、`codemodeInlineBudgetHint`、`codemodeNestedApprovalBadge`、`codemodeNestedApprovalDesc`、`codemodeSavedImages`
-
-<!-- auto-i18n:end -->
 
 ## [0.101.0] — 2026-10-10
 
@@ -1025,19 +753,6 @@
 - **显式移出会话不再受「刚聊过」保护误拦（#579）** —— 会话列表中点击 ✕ 显式移出会话时，准确识别用户明确意图，不再被「刚聊过」安全保护拦截，避免弹出误导性文案。
 - **会话置顶标记 📌 前置防截断（#568）** —— 左侧栏会话列表中将置顶图钉图标前置放置在会话标题前，避免因长标题发生 CSS 省略截断而将置顶标记完全隐藏。
 - **跨标签页会话运行时去重与分支校准（#567）** —— 消除跨客户端或多标签页打开同一会话时可能产生的重复运行时实例，并在分支切换后校准过期的叶子节点引用。
-
-<!-- auto-i18n:start -->
-
-### i18n
-
-- 前端新增 key（130）：`settingsMcp`、`settingsMcpDesc`、`mcpReload`、`mcpAddServer`、`mcpFilterAll`、`mcpFilterGlobal`、`mcpFilterProject`、`mcpGlobalPath`、`mcpProjectPath`、`mcpEmptyTitle`、`mcpEmptyDesc`、`mcpQuickAdd`、`mcpScopeGlobal`、`mcpScopeProject`、`mcpScopeGlobalHint`、`mcpScopeProjectHint`、`mcpStatusRunning`、`mcpStatusStopped`、`mcpStatusError`、`mcpEnableHint`、`mcpDisableHint`、`mcpToolsCount`、`mcpDeleteConfirmTitle`、`mcpDeleteConfirmDesc`、`mcpAddModalTitle`、`mcpEditModalTitle`、`mcpPresetSelect`、`mcpScopeLabel`、`mcpNameLabel`、`mcpNamePlaceholder`、`mcpTransportLabel`、`mcpTransportStdio`、`mcpTransportHttp`、`mcpCommandLabel`、`mcpCommandPlaceholder`、`mcpArgsLabel`、`mcpArgsPlaceholder`、`mcpCwdLabel`、`mcpCwdPlaceholder`、`mcpEnvLabel`、`mcpAddEnv`、`mcpEnvKeyPlaceholder`、`mcpEnvValuePlaceholder`、`mcpUrlLabel`、`mcpUrlPlaceholder`、`mcpHeadersLabel`、`mcpAddHeader`、`mcpHeaderKeyPlaceholder`、`mcpHeaderValuePlaceholder`、`mcpDescriptionLabel`、`mcpDescriptionPlaceholder`、`mcpEnabledLabel`、`mcpEnabledDesc`、`mcpPresetCustom`、`mcpPresetCustomDesc`、`mcpPresetFilesystem`、`mcpPresetFilesystemDesc`、`mcpPresetFetch`、`mcpPresetFetchDesc`、`mcpPresetMemory`、`mcpPresetMemoryDesc`、`mcpPresetGithub`、`mcpPresetGithubDesc`、`mcpPresetSqlite`、`mcpPresetSqliteDesc`、`mcpTabConfigured`、`mcpTabMarket`、`mcpBrowseMarket`、`mcpMarketSearchPlaceholder`、`mcpBadgeOfficial`、`mcpConfigured`、`mcpAddGlobal`、`mcpAddProject`、`mcpAddGlobalHint`、`mcpAddProjectHint`、`skillTabInstalled`、`skillTabMarket`、`skillEmptyDesc`、`skillBrowseMarket`、`skillMarketSearchPlaceholder`、`skillCatAll`、`skillCatQuality`、`skillCatWorkflow`、`skillCatArchitecture`、`skillCatDevops`、`skillCatStack`、`skillInspectPrompt`、`skillInstalled`、`skillInstallGlobal`、`skillInstallProject`、`skillInstallGlobalHint`、`skillInstallProjectHint`、`skillInspectModalTitle`、`mcpSourceSelectLabel`、`mcpSourceSmithery`、`mcpSourceGithub`、`mcpSourceCustom`、`mcpSourceCustomPlaceholder`、`mcpMarketLoading`、`mcpMarketRetry`、`skillRepoSelect`、`skillRepoDefault`、`skillRepoCustom`、`skillRepoCustomPlaceholder`、`skillMarketLoading`、`skillContentLoading`、`skillMarketRetry`、`turnStopped`、`keepRecent`、`keepRecentDesc`、`uiLayoutLeftProjectsActions`、`uiLayoutLeftProject`、`uiLayoutLeftRunningActions`、`uiLayoutLeftHistoryActions`、`uiLayoutLeftSections`、`uiLayoutLeftRunning`、`uiLayoutLeftHistory`、`leftPanelPluginGroup`、`pluginRunStatusRunning`、`pluginRunStatusDone`、`pluginRunStatusError`、`uiLayoutContextProject`、`codemodeEnabledDesc`、`codemodeOffHint`、`codemodeNestedCalls`、`codemodeScript`、`codemodeFullOutput`、`toolSearchEnabledDesc`、`toolSearchOffHint`、`toolSearchLoaded`
-- 前端中文变更（1）：`pluginTopbarMore`
-- 前端英文变更（1）：`pluginTopbarMore`
-- 服务端新增 key（1）：`terminals.bash.incomplete`
-- 服务端文案变更（2）：`scm.commitmsg.timeout`、`terminals.bash.timeout`
-- 服务端删除 key（1）：`terminals.bash.nosentinel.note`
-
-<!-- auto-i18n:end -->
 
 ## [0.100.0] — 2026-10-08
 
@@ -1081,18 +796,6 @@
 - **插件注册的守卫晚一步注入就不生效** —— 插件在服务启动之后才加载 / 重载时，此前已绑定的工具守卫读到的是空值，等于闸门静默失效。现在这类「可能晚一点才注入」的守卫包成**调用时解析**的代理（回归 `tests/unit/tool-guard-late-binding.test.ts`），启动顺序不再影响拦截。
 - **点开「后台任务」面板时，进程管家那块总会闪一下「未检测到 pm2」** —— 面板 bundle 原先的初始状态写死 `installed:false`，首帧先把黄条画出来，状态回来后再抹掉；且宿主升级后 `<dataDir>/plugins` 里的已安装官方插件未自动同步更新（停留在旧版本）。现在三个层面彻底根治：① 服务端新增**随包官方插件自动热同步机制**（启动/重载时若已装插件版本落后于随包 catalog 官方插件，自动备份并增量升级，不再滞留旧版代码）；② 客户端增加**模块级已知状态缓存与异常隔离**（同一会话内二次打开首帧直接复用已知结论秒开无闪烁；网络或接口异常绝不把环境误报为「未检测到」）；③ 服务端扩充 Windows 默认 npm 与 PATH 候选路径，启动时毫秒级命中，并为探测增加 Promise 并发防抖。回归：`tests/unit/pm2-manager-panel.test.ts`、`tests/unit/plugin-manager.test.ts`。插件版本 0.3.1 → 0.3.2。
 
-<!-- auto-i18n:start -->
-
-### i18n
-
-- 前端新增 key（97）：`bgTaskKeep`、`bgTaskKeepOn`、`bgTaskCleanup`、`bgTaskCleanupOff`、`bgTaskCleanupMinutes`、`bgTaskCleanupHint`、`bgTaskCleanNow`、`bgTaskCleanNowHint`、`collapseSubagents`、`expandSubagents`、`subagentBadgeCount`、`subagentsStreamingTip`、`subagentsQuestionTip`、`subagentsErrorTip`、`subagentsCountTip`、`toolApprovalHitsTitle`、`approvalHitPos`、`approvalCommandPreview`、`markerGroupAction`、`actionSuggestions`、`actionSuggestionsTip`、`toolLazyLoading`、`toolLazyLoadingDesc`、`uiLayoutTasksPanel`、`presetShare`、`presetShareShareBtn`、`presetShareImportBtn`、`presetShareBrowseBtn`、`presetShareTabExport`、`presetShareTabImport`、`presetShareTabBrowse`、`presetShareSource`、`presetShareSourceCurrent`、`presetShareDescription`、`presetShareDescriptionPlaceholder`、`presetShareTags`、`presetShareTagsPlaceholder`、`presetShareAuthor`、`presetExportJson`、`presetExportDownload`、`presetShareSubmit`、`presetShareHint`、`presetShareSubmitting`、`presetShareOpenWebTitle`、`presetShareOpenWebBtn`、`presetShareOpenIssueBtn`、`presetShareCopyJson`、`presetSharePopupBlocked`、`presetShareBrowserCopied`、`presetImportText`、`presetImportTextPlaceholder`、`presetImportPickFile`、`presetImportFromUrl`、`presetImportUrlPlaceholder`、`presetImportPreview`、`presetImportFields`、`presetImportIgnored`、`presetImportRejected`、`presetImportReplaces`、`presetImportApply`、`presetImportConfirm`、`presetImportPick`、`presetImportSelectAll`、`presetImportSelectNone`、`presetImportAllSelected`、`presetImportNoneSelected`、`presetImportPickHint`、`presetGroupPrompt`、`presetGroupTools`、`presetGroupTerminal`、`presetGroupSkills`、`presetGroupAi`、`presetGroupUi`、`presetGroupEngine`、`presetGroupOther`、`presetImportImported`、`presetBrowseEmpty`、`presetBrowseLoading`、`presetBrowseSearch`、`presetBrowseRefresh`、`presetBrowseCached`、`presetBrowseImport`、`presetBrowseIssue`、`presetBadgeTemplate`、`presetBadgeReview`、`toolPromptEdit`、`toolPromptEdited`、`toolPromptHint`、`toolPromptDescription`、`toolPromptSnippet`、`toolPromptGuidelines`、`toolPromptDefault`、`toolPromptReset`、`toolPromptSave`、`toolPromptUnavailable`、`elsewhereOfflineBadge`、`elsewhereOfflineTip`
-- 前端中文变更（2）：`settingsMarkersDesc`、`scheduleTaskEnabledDesc`
-- 前端英文变更（2）：`settingsMarkersDesc`、`scheduleTaskEnabledDesc`
-- 服务端新增 key（38）：`loadtools.notready`、`loadtools.unknown`、`loadtools.always`、`loadtools.already`、`loadtools.disabled`、`loadtools.preset`、`goal.role.review.feedback.pass`、`goal.role.review.feedback.prev`、`goal.role.review.feedback.empty`、`loadtools.names.empty`、`loadtools.loaded`、`loadtools.rejected`、`loadtools.none`、`markers.action.guidance`、`markers.action.cleared`、`markers.action.unknown.operation`、`markers.action.requires.text`、`markers.action.already.exists`、`markers.action.added`、`presets.catalog.disabled`、`presets.catalog.url`、`presets.catalog.failed`、`presets.share.currentName`、`presets.share.missing`、`presets.import.noneSelected`、`presets.import.url.host`、`presets.import.url.scheme`、`presets.import.fetch.failed`、`presets.share.apiTokenInvalid`、`presets.share.apiTokenPermission`、`presets.share.apiGeneralFailed`、`presets.share.ghMissingHint`、`presets.share.ghNotLoggedInHint`、`presets.share.fallbackHint`、`presets.share.disabled`、`prompt.tools.lazy`、`sched.action.missing`、`sched.action.unknown`
-- 服务端文案变更（4）：`goal.role.review`、`sched.list.empty`、`sched.cancel.empty.id`、`sched.cancel.not.found`
-
-<!-- auto-i18n:end -->
-
 ## [0.99.0] — 2026-10-03
 
 ### Added
@@ -1110,14 +813,6 @@
 
 - **抽出 CollapsibleHead 公共壳组件（#476、#539）** —— 提取统一的 `CollapsibleHead` 组件，将 `ThinkingBlock`、`ToolCallBlock` 及 `Message`（附件卡/压缩摘要/技能卡）五处内联的可折叠区块头骨架代码收敛统一，键控行为与 ARIA 规范保持一致。
 - **清理 memoizeWithTtl 死码并为手写 TTL 补充注释（#470、#538）** —— 移除全仓零消费的 `memoizeWithTtl` 死码，并为 `agent-service` 的 `piCliProbe`（安装后即时失效）与 `model-enrich` 的 `catalogCache`（双键异步 fetch）补充语义注释。
-
-<!-- auto-i18n:start -->
-
-### i18n
-
-- 前端新增 key（3）：`uiLayoutAlignTop`、`uiLayoutAlignMiddle`、`uiLayoutAlignBottom`
-
-<!-- auto-i18n:end -->
 
 ## [0.98.0] — 2026-10-03
 
@@ -1202,59 +897,6 @@
 - **CI 与 lint 覆盖补口（#479, #503）** —— `lint`/`lint:fix` 纳入 `bin/`（4400 行主入口不再零 lint 防护）；`check:protocol` 补 git 启发式：`protocol.ts` 相对上一个 tag 有 diff 而 `PROTOCOL_VERSION` 未 bump 即报错。
 - **`release-notes.mjs --write-changelog` 替换串改函数形式（#498, #515）** —— i18n 文案含 `$&`、`` $` `` 等替换模式时不再静默写坏 `CHANGELOG.md`。
 
-<!-- auto-i18n:start -->
-
-### i18n
-
-- 前端新增 key（26）：`openInNewTab`、`clickToCloseImage`、`compactedHistoryNotFound`、`uiLayoutSideDockFloat`、`uiIconEdit`、`uiIconEditTitle`、`uiIconEditHint`、`uiIconEditTray`、`uiIconEditDropHere`、`uiLayoutSidebarLeft`、`uiLayoutSidebarRight`、`uiLayoutPosition`、`uiLayoutPosTop`、`uiLayoutPosBottom`、`uiLayoutPosLeft`、`uiLayoutPosRight`、`moveToTop`、`moveToBottom`、`moveToLeft`、`moveToRight`、`sideDockCollapse`、`sideDockExpand`、`quoteSelection`、`quoteText`、`quoteSource`、`removeQuote`
-- 前端删除 key（103）：`langZh`、`langEn`、`langIt`、`langJa`、`langKo`、`langFr`、`langDe`、`langEs`、`langRu`、`langPt`、`manageModelsTitle`、`setGlobalDefault`、`clearGlobalDefault`、`globalDefaultBadge`、`slashHelpHint`、`renameSessionConfirm`、`dismissConversationWithSubagents`、`dismissConversationWithSubagentsMixed`、`toolApprovalCommand`、`toolApprovalReason`、`approvalRuleResetConfirm`、`approvalRuleDeleteConfirm`、`planBoardSteps`、`planBoardProgress`、`planBoardNoPlan`、`editHint`、`updateTip`、`pluginAllUpToDate`、`fileSaved`、`dshVisionHiddenNote`、`questionNavTip`、`planModeTipOn`、`scmQueryFailed`、`scmTooManyFailures`、`editProvider`、`builtinProviders`、`hintKeyOnly`、`providerAuthHint`、`keyReady`、`replaceKey`、`replaceKeyTitle`、`cloneProviderTitle`、`pasteKey`、`providerIdPlaceholder`、`baseUrlExamplePh`、`saveAllBatch`、`advancedEdit`、`batchCreateProviders`、`secondKeyTitle`、`noBaseUrlShort`、`providerNameLabel`、`providerNameHint`、`apiKeyLabel`、`secondKeyPlaceholder`、`batchDesc`、`batchKeyLabel`、`modelsCountShort`、`customProviders`、`customDesc`、`noCustomProviders`、`refreshBuiltinCatalog`、`appendModelTitle`、`appendModelIdPh`、`appendModelNamePh`、`appendModelAdd`、`appendModelBusy`、`appendModelCancel`、`appendModelApiTitle`、`appendModelApiAuto`、`appendModelBaseUrlPh`、`modelsCount`、`addProvider`、`modelsTitle`、`modelIdReq`、`textImage`、`maxOutput`、`removeModel`、`addModel`、`fetchModelsErr`、`antigravityTemplateTitle`、`antigravityTemplateDesc`、`antigravityFillOpenAI`、`antigravityFillAnthropic`、`enrichHintPh`、`enrichModelsCancelled`、`goalBarActive`、`goalBarStatusPending`、`goalWizardAnswer`、`promptHistoryCleared`、`settingsPromptMode`、`promptAppendHint`、`promptReplaceHint`、`promptPlaceholder`、`promptReadonlyLockedBadge`、`reviewPromptHint`、`settingsTerminalTools`、`terminalToolsOffHint`、`settingsEditTools`、`visionBridgePromptAppendHint`、`visionBridgePromptReplaceHint`、`dshPresetCurrent`、`schedulerNameLabel`、`schedulerPromptLabel`
-- 前端中文变更（3）：`planBoardTitle`、`planImplementBtn`、`planCleanHandoffBtn`
-- 前端英文变更（4）：`planBoardTitle`、`planImplementBtn`、`planCleanHandoffBtn`、`browserControlExample2`
-- 服务端新增 key（1）：`pluginupdate.subpath.manifest.failed`
-- 服务端文案变更（2）：`markers.todo.dep.blocks.updated`、`subagents.wait.pending`
-- 服务端删除 key（1）：`markers.todo.list.empty`
-
-## [0.97.0] — 2026-09-26
-
-### Added
-
-- **左侧边栏历史会话置顶（#388）** —— 支持置顶/取消置顶历史会话，置顶项目始终固定在会话历史列表顶端，配合本地客户端状态持久化，多窗口即时同步；优化磁盘扫描算法，仅按需快速探测头部读取元数据，大幅提升大历史会话加载响应速度。回归：`tests/unit/client-state-recent-projects.test.ts`。
-
-- **规划门禁与净室交接范式升级（#389）** —— 吸收主流规划与看板范式（DSH / narumitw / plannotator），全面升级「计划与目标」联动架构：
-  - **只读规划门禁（Plan Gate）与状态机**：开启计划模式后自动剥离写类工具及旁路工具，物理级杜绝代码倾倒；
-  - **净室新会话交接（Clean Handoff）**：支持一键将规划好的目标与步骤交接至全新隔离会话中施工，避免长推理上下文污染；
-  - **可视化编辑与导出**：任务看板支持 Markdown 一键复制/导出，步骤支持内联编辑、新增、删除与状态切换；
-  - **目标审查深度联动**：审查指令自动附带任务看板步骤推进状态，核验计划真实完成度。
-    回归：`tests/plan-mode-test.mjs`、`tests/unit/goal-delegated.test.ts`。
-
-- **对话可「钉住」常驻运行列表** —— 左栏「运行的对话」右键新增「钉住」：被钉的对话切到别的对话也不释放运行时（空闲、无存活终端、无后台任务时同样保留，优先级高于「打开未继续即移出」等所有自动规则），直到显式移出或强行关闭；取消钉住后立即恢复原有释放策略。进程内有效、不落盘。回归：`tests/unit/conv-pin.test.ts`、`tests/unit/wait-subscription-scan.test.ts`、`tests/conv-pin-browser-test.mjs`（真浏览器右键 → 钉住/取消钉住 → 切走仍留存 / 对照移出）。
-
-- **上下文压缩后支持展开/查看被折叠的历史对话（#398）** —— 严格解耦「UI 展示流」与「LLM 推理视窗」：触发压缩（Compaction）后，在 `CompactionCard` 底部提供「展开查看被折叠的历史」操作栏，按需（On-demand）从会话 DAG 祖先链中还原被该节点折叠的原始历史消息（含提问、回答与工具输出），并以只读流视窗呈现，不占用后续推理 Token，解决长对话截断后无法回溯方案与日志的痛点。回归：`tests/unit/compacted-history.test.ts`。
-
-- **粘贴任意文件直接附加** —— 在输入框粘贴从文件管理器复制的文件（文本、PDF、压缩包等）会像拖拽一样变成待发附件，不再只能贴图片：粘贴与拖拽现在共用同一条分流逻辑（图片走视觉管线并保留 text-only 模型的拦截，其余走 fileData 上传，20MB 上限同口径），纯文本粘贴完全不受影响。回归：`tests/unit/clipboard-files.test.ts` + `tests/file-paste-browser-test.mjs`。
-
-- **语音输入可主动选识别方式（#383）** —— 麦克风浮层新增常驻的「切换识别方式」面板（浏览器联网识别 / 本地 Whisper / 远端接口），选中即用并写回插件设置，下次点 🎤 直接走这一档；「转写引擎」设为本地或远端时，点 🎤 直接走对应引擎（本地没装就直接弹一键安装，不必再干等浏览器联网失败几秒）。
-
-### Fixed
-
-- **任务看板 / 目标条窄屏排版协调** — 手机宽度下任务看板的「任务看板」「0/6 (0%)」被当前步骤挤成逐字竖排（行内 flex 子项默认 `min-width: auto` 且允许收缩，CJK 逐字断行），目标条的「最大轮数」标签同样竖排、「锁定：应用到后续所有回合」被挤成两行。现改为：看板标题与计数钉死不收缩、当前步骤 chip 放不下就整块换到第二行（宽屏仍同行）；目标条输入框独占一行、按钮组换行右对齐，偏好行允许整块换行、模型长 id 断行不外溢，锁定说明与标签不再被压扁。回归：`tests/unit/text-wrap.test.ts`、`tests/unit/css-tokens.test.ts`、`tests/chat-column-align-test.mjs`。
-- **本地语音运行时「装成功却报没装上」（#383）** —— 修复安装本地 Whisper 后仍报「npm install 没跑通」：Node 的 CJS 解析会把 `package.json` 不存在的负结果缓存整个进程，装完复查永远命中它。依赖探测改为「解析失败再看文件是否已落盘」，插件侧也改为直接按 `package.json` 定位 transformers.js 入口，不再依赖被污染的解析缓存（非重启服务即可恢复）。
-- **模型下载源可配（#383）** —— 新增「模型下载源」设置（也认环境变量 `HF_ENDPOINT`），国内直连 huggingface.co 超时时可填 `https://hf-mirror.com`。
-- **语音浮层计时器泄漏** —— 切换识别方式时上一个浮层的计时器不再残留（此前每切一次泄一个 500ms 定时器）。
-
-<!-- auto-i18n:start -->
-
-### i18n
-
-- 前端新增 key（67）：`elsewherePseudoBadge`、`elsewherePseudoTip`、`pinConversation`、`unpinConversation`、`pinnedConversation`、`planImplementBtn`、`planImplementTip`、`planImplementRequest`、`planBoardExportMarkdown`、`planBoardExportSuccess`、`planCleanHandoffBtn`、`planCleanHandoffTip`、`planCleanHandoffPrompt`、`planBoardAddStep`、`planBoardEditStep`、`planBoardDeleteStep`、`planBoardStepTitlePlaceholder`、`planBoardStepDescPlaceholder`、`placeholderPlanMode`、`planModeBadge`、`viewCompactedHistory`、`hideCompactedHistory`、`compactedHistoryLoading`、`compactedHistoryEmpty`、`compactedHistoryBadge`、`compactedHistoryTurns`、`planMode`、`planActionBtn`、`planActionTip`、`planModeTip`、`planModeTipOn`、`goalBarExecModel`、`goalBarExecModelTip`、`goalBarOpenExec`、`goalBarOpenExecTip`、`goalBarStaleBackend`、`goalBarStop`、`goalBarExecuting`、`goalHistory`、`delegateMode`、`delegateModeDesc`、`delegateModeOffHint`、`delegateModeBadge`、`delegateModeBadgeTip`、`delegateModeOpenTip`、`toolCorePowershellDesc`、`toolCoreLsDesc`、`toolCoreGrepDesc`、`toolCoreFindDesc`、`pluginToolsDisabledByPlugin`、`pluginDisabledInPlugins`、`toolDescSubagent`、`planModePromptSettingsTitle`、`planModePromptSettingsDesc`、`planModePromptMode`、`planModePromptPlaceholder`、`planModePromptSettingsHint`、`preset.standard`、`preset.minimal`、`preset.code`、`preset.reader`、`preset.ask`、`preset.standardDesc`、`preset.minimalDesc`、`preset.codeDesc`、`preset.readerDesc`、`preset.askDesc`
-- 前端中文变更（9）：`planBoardTitle`、`goalBarPlaceholder`、`goalBarSet`、`goalBarReviewModel`、`goalBarMaxRoundsTip`、`goalWizardBtn`、`toolsCoreHint`、`toolsSubagentDepHint`、`delegateTaskOffHint`
-- 前端英文变更（9）：`planBoardTitle`、`goalBarPlaceholder`、`goalBarSet`、`goalBarReviewModel`、`goalBarMaxRoundsTip`、`goalWizardBtn`、`toolsCoreHint`、`toolsSubagentDepHint`、`delegateTaskOffHint`
-- 服务端新增 key（18）：`agent.role.stop`、`goal.role.blocked`、`goal.role.conv_title`、`goal.role.exec`、`goal.role.card.start`、`goal.role.card.result`、`goal.role.review`、`goal.role.review.retry`、`subagents.action.missing`、`subagents.spawn.missing.prompt`、`subagents.get.missing.runId`、`subagents.steer.missing.runId`、`subagents.steer.missing.message`、`subagents.stop.missing.runId`、`subagents.wait.item.missing`、`subagents.handoff.missing.toRunId`、`subagents.handoff.missing.payload`、`subagents.action.unknown`
-- 服务端文案变更（10）：`delegate.validate.agent`、`delegate.validate.short`、`delegate.started`、`subagents.spawn.template.unavailable`、`subagents.spawn.started`、`subagents.steer.not.found`、`subagents.stop.not.found`、`subagents.wait.empty`、`subagents.templates.list`、`subagents.handoff.not.found`
-- 服务端删除 key（9）：`goal.set.kick`、`goal.wizard.kick`、`goal.review.incomplete`、`goal.autonomous.pass`、`goal.review.blocked`、`goal.autonomous.continue`、`goal.review.error`、`goal.review.blocked_msg`、`goal.review.revise`
-
-<!-- auto-i18n:end -->
-
 ## [0.96.1] — 2026-09-26
 
 ### Fixed
@@ -1267,15 +909,6 @@
 
 - **朱批与朱批·夜主题界面精细化** —— 顶栏控件全面素色化（透明底、无边框，悬停现 hairline）；消息折叠条内边距清零，折叠指示三角光学对齐左侧墨线；输入框边框微调，发送/停止按钮微调为圆形；输入框底部模型选择、思考强度、预设等按钮去边框透明底，悬停显示细边框。
 - **输入框与顶栏控件排版微调** —— 顶栏 chip 统一幽灵化；输入框底部模型与思考强度 chip 尺寸微调收紧；思考强度 Chip 文案精简为 `{level}`，保留 tooltip 说明；预设选择器图标优化为 `FiSliders`。
-
-<!-- auto-i18n:start -->
-
-### i18n
-
-- 前端中文变更（1）：`thinkingChip`
-- 前端英文变更（1）：`thinkingChip`
-
-<!-- auto-i18n:end -->
 
 ## [0.96.0] — 2026-09-26
 
@@ -1300,19 +933,6 @@
 
 - **输入框 `@` 提及支持技能（skills）自动补全** —— 在消息文本任意位置键入 `@` 或 `@skill:` 即可弹出技能候选列表（名称匹配优先于描述匹配，支持中英文双语描述检索与 `@page` 页面置顶防挤占）；点选后自动在光标处插入 `@skill:<name>` 词元，与 Pi 运行时的技能提升扩展无缝联动。
 - **收敛型澄清提问与决策就绪型计划规范（#330）** —— `ask_user_question` 现在单次严格限制 1~~3 个问题（优先 1 个，超过 3 个直接报错阻断，防止问卷轰炸），选项 schema 收紧为 2~~4 个互斥选项且推荐方案置顶，选项 description 要求一句话说明影响与权衡；`plan_update` 提示词升级为「决策就绪型」规划：动代码前先在步骤中落实排查发现（Discovery）、受影响文件清单（File Touch List）与风险回滚预案（Rollback），并随执行实时流转步骤状态。目标向导（`goal_ask` / wizardPrompt）与 DSH 澄清提示词同步对齐收敛型交互。
-
-<!-- auto-i18n:start -->
-
-### i18n
-
-- 前端新增 key（49）：`reaskDirectly`、`reaskDirectlyTip`、`kindPlugin`、`pluginCheckUpdates`、`pluginCheckUpdatesHint`、`pluginUpdateAvailableBadge`、`pluginUpdateAvailableDetail`、`pluginAllUpToDate`、`piCoreSplitRun`、`piSdkSplitNote`、`piSdkBundledNote`、`installGlobalEngineBtn`、`installGlobalEngineTabTitle`、`saveResultUnknown`、`questionNoneAvailable`、`notifyApprovalTitle`、`notifyApprovalBody`、`notifyApprovalBodyTool`、`sound.approval`、`sound.approval.desc`、`settingsSoundVoice`、`ttsHeader`、`ttsEnable`、`ttsEnableDesc`、`ttsAnnounce`、`ttsAnnounceDesc`、`ttsReadReplies`、`ttsReadRepliesDesc`、`ttsRate`、`ttsVoice`、`ttsVoiceAuto`、`ttsVoiceOnline`、`ttsUnavailable`、`ttsPreviewLine`、`ttsAnnounceDone`、`ttsAnnounceQuestion`、`ttsAnnounceError`、`ttsAnnounceApproval`、`speakMsg`、`stopSpeakingMsg`、`apiKeySavedHint`、`settingsViewPromptTokens`、`settingsPromptContextTotal`、`toolsSectionCore`、`toolsCoreHint`、`toolCoreBashDesc`、`toolCoreReadDesc`、`toolCoreEditDesc`、`toolCoreWriteDesc`
-- 前端中文变更（2）：`settingsViewToolsSchema`、`lspToolEnabledDesc`
-- 前端英文变更（2）：`settingsViewToolsSchema`、`lspToolEnabledDesc`
-- 服务端新增 key（3）：`plugincatalog.sync.doc.invalid`、`terminals.bash.nosentinel.note`、`terminals.command.blocked`
-- 服务端文案变更（1）：`terminals.bash.timeout`
-- 服务端删除 key（2）：`plugincatalog.sync.source.invalid`、`plugincatalog.sync.read.failed`
-
-<!-- auto-i18n:end -->
 
 ## [0.95.0] — 2026-09-24
 
@@ -1350,20 +970,6 @@
 - **`edit_soft` 拒绝跨行未对齐的非法片段** — oldText 跨多行但首/尾未落在行边界（如 `a);\nfoo(`）时，旧的精确子串替换会吃掉行首/行尾残留、写出粘连内容（`foo(z();b);`）；现直接拒绝并提示按整行给出。另：宽松匹配整块对不上、且首/尾行只是某行一部分时，报针对性的「片段」错而非笼统的「找不到」。单行片段仍照旧支持。
 - **任务执行看板与对话列等宽** — Plan Mode 的任务执行看板（`PlanBoard`）此前写死左右各 16px 外边距，没走 `.main` 的列 token（`--chat-inset`）：桌面 / 宽屏聊天列下比消息列与输入框宽一截、手机上又比它们窄一点，左右边缘始终对不齐。现改为同一条列 token（`.plan-board` 落进 `styles.css`，与 `.goalbar` / 问卷面板同口径），任何视口宽度与「宽屏聊天列」开关下都与输入框严格齐平。回归：`tests/chat-column-align-test.mjs` 新增看板条目。
 
-<!-- auto-i18n:start -->
-
-### i18n
-
-- 前端新增 key（104）：`newChatEphemeral`、`newChatEphemeralTip`、`ephemeralBadge`、`ephemeralBannerText`、`elsewhereActions`、`takeoverConfirm`、`saveEphemeral`、`forkSession`、`forkSessionTip`、`rollbackSession`、`rollbackSessionTip`、`rollbackConfirm`、`rollbackRestoreWorkspace`、`rollbackRestoreWorkspaceTip`、`toolApprovalTitle`、`toolApprovalApprove`、`toolApprovalDeny`、`toolApprovalEditAndRun`、`toolApprovalRiskAlert`、`toolApprovalCommand`、`toolApprovalParams`、`toolApprovalEditPlaceholder`、`toolApprovalReason`、`toolApprovalCategory`、`toolApprovalAllowCategory`、`toolApprovalAllowCategoryHint`、`toolApprovalAllowConversation`、`toolApprovalAllowConversationHint`、`toolApprovalEnabled`、`toolApprovalEnabledDesc`、`toolApprovalPolicyTitle`、`toolApprovalPolicyAllowAll`、`toolApprovalPolicyRevoke`、`toolApprovalPolicyHint`、`settingsApprovalRules`、`settingsApprovalRulesDesc`、`manageApprovalRules`、`approvalRuleNew`、`approvalRuleEdit`、`approvalRuleDelete`、`approvalRuleReset`、`approvalRuleResetConfirm`、`approvalRuleDeleteConfirm`、`approvalRuleActionAsk`、`approvalRuleActionDeny`、`approvalRuleActionAllow`、`approvalRuleTools`、`approvalRuleToolsTip`、`approvalRuleField`、`approvalRuleFieldCommand`、`approvalRuleFieldPath`、`approvalRuleFieldParams`、`approvalRuleMatch`、`approvalRuleMatchRegex`、`approvalRuleMatchGlob`、`approvalRuleMatchContains`、`approvalRuleMatchPrefix`、`approvalRuleMatchOutsideWs`、`approvalRuleValue`、`approvalRuleValueTip`、`approvalRuleLabel`、`approvalRuleLabelEn`、`approvalRuleReason`、`approvalRuleReasonEn`、`approvalRuleEnabled`、`approvalRuleBuiltin`、`approvalRuleEmpty`、`approvalRuleMoveUp`、`approvalRuleMoveDown`、`planBoardTitle`、`planBoardSteps`、`planBoardProgress`、`planBoardNoPlan`、`planBoardCompleted`、`planBoardInProgress`、`planBoardPending`、`planBoardFailed`、`clear`、`confirm`、`forkBadge`、`forkBadgeTip`、`goalBarBlocked`、`toolsPresetBanner`、`toolsBackToStandard`、`toolsBlockedByPreset`、`skillsHiddenByPreset`、`terminalBashMaxForegroundMs`、`terminalBashMaxForegroundMsDesc`、`pluginInspectAlreadyInstalled`、`pluginInspectInvalid`、`pluginInspectNotPlugin`、`pluginInspectNetwork`、`uiLayoutDiagTitle`、`uiLayoutDiagHint`、`planUpdateEnabledDesc`、`planUpdateOffHint`、`compactContextEnabledDesc`、`compactContextOffHint`、`evalEnabledDesc`、`evalOffHint`、`patchToolEnabledDesc`、`patchToolOffHint`、`lspToolEnabledDesc`、`lspToolOffHint`
-- 前端删除 key（1）：`attachInlineTip`
-- 前端中文变更（2）：`hostResourcesTip`、`noPresets`
-- 前端英文变更（2）：`hostResourcesTip`、`noPresets`
-- 服务端新增 key（14）：`editsoft.fragment.not.supported`、`goal.wizard.draft.card`、`goal.autonomous.pass`、`goal.review.blocked`、`goal.autonomous.continue`、`goal.review.blocked_msg`、`plugins.requires.cycle`、`plugins.manifest.invalid`、`plugins.requires.cascade`、`subagents.handoff.self`、`subagents.handoff.not.found`、`subagents.handoff.success`、`subagents.handoff.failed`、`terminals.bash.background.elapsed`
-- 服务端文案变更（1）：`terminals.bash.background.running`
-- 服务端删除 key（2）：`dsh.attach.file.large`、`dsh.attach.file.ref.fallback`
-
-<!-- auto-i18n:end -->
-
 ## [0.94.1] — 2026-09-22
 
 ### Fixed
@@ -1391,16 +997,6 @@
 ### Fixed
 
 - **复制为图片浅色主题色差（#273）** — html-to-image 把 `color-mix(...)` / 半透明 `rgba` 画到默认黑画布上，浅色气泡变成深紫、深字叠黑底。导出前把计算色拍成不透明 rgb，画布底用主题 `--card-bg`/`--bg` 实底，并去掉 `backdrop-filter`（否则 SVG 里会变成黑罩）。
-
-<!-- auto-i18n:start -->
-
-### i18n
-
-- 前端新增 key（13）：`saveAsImage`、`copyImageBtn`、`savingImage`、`imageTitle`、`imageTitlePlaceholder`、`imageBorder`、`imageWatermark`、`imageWatermarkPlaceholder`、`exportSelectHint`、`exportTooLong`、`exportSelectedCount`、`exportIncludeTools`、`exportIncludeThinking`
-- 前端中文变更（2）：`softCapHint`、`softCapOff`
-- 前端英文变更（2）：`softCapHint`、`softCapOff`
-
-<!-- auto-i18n:end -->
 
 ## [0.93.0] — 2026-09-21
 
@@ -1435,18 +1031,6 @@
 
 - **文件行右键也能「上传文件到当前目录」** —— 上传入口原先只对**目录**行显示，右键一个文件时菜单里根本没有这一项（想往当前目录传文件只能去右键空白处）。现在文件行也给，落点是它所在的目录：当前目录里的文件显示「上传文件到当前目录」，子目录里的文件显示「上传文件到文件夹」；只有机器根（不能往盘符根写）仍然隐藏，文件树右键菜单的其余条目不变。
 
-<!-- auto-i18n:start -->
-
-### i18n
-
-- 前端新增 key（34）：`themeLight`、`themeDark`、`quickPhrasesSendTip`、`persistSubagent`、`toolImages`、`toolImagesDesc`、`toolImageZoom`、`toolWatchdogTimeout`、`toolWatchdogTimeoutDesc`、`toolWatchdogOff`、`uiLayoutContextToolcall`、`pluginSettingsTitle`、`pluginSettingsShow`、`pluginSettingsHide`、`claimFilesEnabledDesc`、`claimFilesOffHint`、`toolInfoMenuLabel`、`toolInfoTitle`、`toolInfoLoading`、`toolInfoUnsupported`、`toolInfoMissing`、`toolInfoActive`、`toolInfoInactive`、`toolInfoSource`、`toolInfoDescription`、`toolInfoNoDescription`、`toolInfoPromptSnippet`、`toolInfoGuidelines`、`toolInfoParams`、`toolInfoParamsNone`、`toolInfoSchemaDropped`、`toolInfoRawSchema`、`toolInfoRequired`、`toolInfoFootnote`
-- 前端中文变更（1）：`elsewhereTip`
-- 前端英文变更（1）：`elsewhereTip`
-- 服务端新增 key（1）：`agent.conv.limit.reached`
-- 服务端文案变更（2）：`subagents.spawn.started`、`subagents.list.empty`
-
-<!-- auto-i18n:end -->
-
 ## [0.92.0] — 2026-09-20
 
 ### Added
@@ -1470,16 +1054,6 @@
 
 - **笔记插件：去掉独立视图 tab，浮窗成为唯一界面（插件 0.2.0）** —— 以前它有两个入口：顶栏按钮开浮窗 + 🧩 插件面板里的「笔记」行开一个完整视图 tab（浮窗头部还多一个 `⤢` 按钮指向它），同一件事三个入口。现在只留一个：顶栏 **📌**（图标从「日历打勾」换成图钉，与浮窗头部同一枚）开合浮窗，浮窗里工作。同时修了浮窗里四处布局毛病：① 正文区不再按内容撑高（实测 440px 的窗口里列表高 600px，日历会画到底栏和设置层上去），现在自己收缩成可滚动的一块；② 设置从「挤在窗口底部的第三块」（一开就把正文压成一条缝、还套了两层容器）改成**盖在正文之上的覆盖层**（自带标题栏 + ✕，内部滚动，正文不被压缩）；③ 设置里「语言」标签不再被下拉框挤成竖排两个字；④ 底栏在窄窗里从三行压成一行（提醒那句长了给省略号），日历格子在窄窗里也矮了一档。**升级注意**：已装插件需要更新一次（`pi-web-ui install --name notes --force` 或重装），且改完 manifest 后要触发一次重扫（设置 → 插件 → 重新扫描，或重启服务）才会生效。
 - **插件声明式设置表单改成单列行式布局** —— 旧版是 `auto-fit` 网格 + `space-between`：窄列时长标签被逐字挤成**竖排**（如「允许的用户默认工作空间」一个字一行），勾选框被甩到行最右端、与标签断开，输入框/下拉/数字框宽度也各自为政。现在统一为「标签固定左列（不压缩、超长省略号 + 悬浮看全名）+ 控件右列（文本/下拉 420px、数字 120px、勾选框贴标签）」，行间细分隔线；`hint` 从只挂 `title` tooltip 改为**常显在标签下的小字**（最多两行）；窄窗口（≤720px）标签与控件上下堆叠。纯渲染层改动，manifest `settings` schema、`plugin_settings` 协议与既有 class 名（`.plugin-settings-field/-save/-reset/-form`）均未变。
-
-<!-- auto-i18n:start -->
-
-### i18n
-
-- 前端新增 key（45）：`setGlobalDefault`、`clearGlobalDefault`、`globalDefaultBadge`、`themeGroupClassics`、`themeGroupBuiltin`、`scmHistoryFilterPlaceholder`、`scmHistoryFilterTip`、`scmHistoryFilterEmpty`、`scmCommitHistoryTip`、`antigravityTemplateTitle`、`antigravityTemplateDesc`、`antigravityFillOpenAI`、`antigravityFillAnthropic`、`enrichModels`、`enrichModelsHint`、`enrichHintPh`、`enrichingModels`、`enrichModelsCancel`、`enrichModelsAbort`、`enrichCancelling`、`enrichModelsCancelled`、`enrichModelsOk`、`enrichModelsErr`、`enrichModelsNeedIds`、`readDirEnabled`、`readDirEnabledDesc`、`pluginMenuTitle`、`pluginMenuPin`、`pluginMenuUnpin`、`pluginMenuReorder`、`pluginMenuReorderHint`、`pluginMenuManage`、`pluginMenuEmpty`、`pluginMenuNoView`、`uiLayoutRequired`、`pluginSettingsInherit`、`presentOpenLocal`、`presentMissing`、`presentEmpty`、`presentAutoOpen`、`presentAutoOpenDesc`、`presentFilesEnabledDesc`、`presentFilesOffHint`、`skillEnabledDesc`、`skillOffHint`
-- 服务端新增 key（45）：`claimfiles.no.store`、`claimfiles.list.empty`、`claimfiles.list.ttl`、`claimfiles.list.head`、`claimfiles.release.all`、`claimfiles.bad.paths`、`claimfiles.bad.outside`、`claimfiles.claim.ok`、`claimfiles.claim.conflict`、`claimfiles.claim.noop`、`claimfiles.release.paths`、`claimfiles.bad.action`、`convread.read.query.head`、`convread.read.chat.note`、`convread.list.bad.kind`、`convread.list.running.more`、`convread.list.history.more`、`convread.list.head.running`、`convread.list.head.history`、`convread.list.head.all`、`convread.read.bad.view`、`convread.read.query.empty`、`convread.files.empty`、`convread.files.more`、`convread.files.head`、`convread.files.claims`、`convread.status.head`、`convread.status.last.tool`、`convread.status.no.tool`、`convread.status.last.say`、`convread.status.no.say`、`convread.status.touched`、`convread.status.touched.none`、`convread.status.waiting`、`convread.status.claims`、`models.enrich.empty`、`models.enrich.cancelled`、`present.files.result.head`、`present.files.result.kindDir`、`present.files.result.missing`、`present.files.result.tail`、`present.files.result.allMissing`、`present.files.result.disabled`、`present.files.result.noItems`、`read.dir.header`
-- 服务端文案变更（1）：`convread.bad.action`
-
-<!-- auto-i18n:end -->
 
 ## [0.91.0] — 2026-09-19
 
@@ -1508,18 +1082,6 @@
 - **重复压缩标记导致会话打不开**（#235）—— 多次上下文压缩后转录里攒下多个同名 `pi-web-ui-compaction-done` 标记；若标记恰为文件末行，重启后新消息的 parent 会记成该共享 id，SDK 的 last-wins 索引把它解析到最后一个标记（其 parent 前指同子树）→ 回溯成环，`getBranch` 死循环直到 `RangeError: Invalid array length`，整个会话报 `Failed to initialize session`。现标记 id 每次唯一（`clearCompactionPending` 改按 `customType` 定位本次 pending），四个会话打开点（首屏恢复/切项目/打开历史/强制重置）遇到坏转录自动修一次再试：残留 pending 移除（子节点旁路到 pending 的 parent，marker 对上下文零贡献，仍弹"可 /compact 重试"）、重复 id 改名＋引用改指最近的前序同名、残余环截断；改前同目录留 `.bak` 备份（已存在不覆盖，保最早现场）。
 - **插件子目录文件 404，插件面板白屏**（#225）—— 0.90.1 的 Express 4→5 迁移把通配路由改成命名 `*splat`，但多段路径在 Express 5 里是**数组**（`["a","b.mjs"]`），直接 `String()` 会拼成 `"a,b.mjs"`：插件 vendor 分包/CSS、嵌套文件 HTTP 预览、插件子路径 API（`/plugins/*`、`/plugins-api/*`、`/api/preview/*` 三处）全挂。已加 `splatParam` 统一拼回 `/`（下游越界/包含校验不变），回归进 `plugin-test`（vendor 嵌套）/`plugin-http-test`（多段 API）/新增 `preview-http-test`。另：切到 bundle 没加载出来的插件视图不再静默空白——给「加载中/失败原因 + 重试」占位（`PluginViewFallback`，重试带 `&r=` 击穿 ESM 模块表的失败缓存），真机 E2E 验证过。
 
-<!-- auto-i18n:start -->
-
-### i18n
-
-- 前端新增 key（36）：`brand`、`pluginViewLoading`、`pluginViewLoadFailed`、`pluginViewLoadFailedHint`、`pluginViewRetry`、`softCapTokens`、`softCapHint`、`softCapOff`、`softCapByModel`、`softCapByModelHint`、`softCapModelId`、`softCapAdd`、`softCapRemove`、`softCapMarker`、`copyText`、`copyMarkdown`、`copyImage`、`copyFailed`、`scmGenMsg`、`scmGenMsgRunning`、`scmGenMsgTip`、`scmGenMsgFail`、`parallelReminderEnabled`、`parallelReminderEnabledDesc`、`parallelReminderOffHint`、`scmCommitMsgSettingsTitle`、`scmCommitMsgSettingsDesc`、`scmCommitMsgPromptPlaceholder`、`scmCommitMsgSettingsHint`、`uiLayoutTopbarText`、`pluginPhaseActive`、`pluginPhaseDisabled`、`pluginPhaseFailed`、`pluginPhaseIdle`、`pluginRescan`、`pluginRescanHint`
-- 前端删除 key（2）：`brandLogo`、`brandName`
-- 服务端新增 key（21）：`agent.subagent.limit.reached`、`scm.commitmsg.no.model`、`scm.commitmsg.no.changes`、`scm.commitmsg.model.terminated`、`scm.commitmsg.empty`、`scm.commitmsg.not.repo`、`scm.commitmsg.timeout`、`delegate.start.failed`、`plugins.manifest.broken`、`prompt.skills.intro.use.skill`、`skill.catalog.empty`、`skill.catalog.title`、`skill.catalog.hint`、`skill.not.found`、`skill.no.filepath`、`skill.file.unreadable`、`skill.file.empty`、`skill.file.failed`、`subagents.spawn.failed`、`subagents.steer.not.found`、`subagents.stop.not.found`
-- 服务端文案变更（1）：`subagents.wait.empty`
-- 服务端删除 key（1）：`prompt.skills.intro.use.read`
-
-<!-- auto-i18n:end -->
-
 ## [0.90.1] — 2026-09-18
 
 ### Added
@@ -1537,16 +1099,6 @@
 
 - **手机端触摸拖动滚动**（#218）—— 触屏拖动内容滚动，兜底 xterm 6.0.0 的触摸滚动回归。
 - **Windows 关机跳过 `pty.kill`**（#215 跟进）—— 根治 ConPTY 关停死锁。
-
-<!-- auto-i18n:start -->
-
-### i18n
-
-- 前端新增 key（3）：`takeoverConversation`、`takeoverHasQuestion`、`waitingQuestionBadge`
-- 前端中文变更（1）：`elsewhereTip`
-- 前端英文变更（1）：`elsewhereTip`
-
-<!-- auto-i18n:end -->
 
 ## [0.90.0] — 2026-09-18
 
@@ -1566,17 +1118,6 @@
 ### Fixed
 
 - **git 源扩展更新命令补 `git:` 前缀**（P1 TODO 14）—— 更新面板为 git 源扩展生成的命令由 `pi update <host>/<path>` 改为 `pi update git:<host>/<path>`（裸路径会被 pi core 拒绝并提示 `Did you mean git:...?`）；已带 `git:` 前缀的输入不会重复加前缀。
-
-<!-- auto-i18n:start -->
-
-### i18n
-
-- 前端新增 key（27）：`brandLogo`、`brandName`、`manageProjects`、`projectPickerTitle`、`newProject`、`projectName`、`createAndOpenProject`、`invalidProjectName`、`openProject`、`fileCompress`、`fileExtract`、`fileCompressDownload`、`fileUploadFolder`、`fileChooseFolder`、`fileExtractDestination`、`fileConflictPolicy`、`fileConflictSkip`、`fileConflictOverwrite`、`fileConflictError`、`fileArchiveLimits`、`fileFolderUploadHint`、`fileTransferBusy`、`fileTransferFailed`、`conversationReadEnabledDesc`、`conversationReadOffHint`、`scheduleTaskEnabledDesc`、`scheduleTaskOffHint`
-- 服务端新增 key（9）：`sched.not.wired`、`sched.task.bad.schedule`、`sched.task.interval.too.short`、`sched.task.empty.prompt`、`sched.task.no.cwd`、`sched.list.empty`、`sched.cancel.empty.id`、`sched.cancel.not.found`、`sched.cancel.ok`
-
-- 前端新增 key（26）：`fileCompress`、`fileExtract`、`fileCompressDownload`、`fileUploadFolder`、`fileChooseFolder`、`fileExtractDestination`、`fileConflictPolicy`、`fileConflictSkip`、`fileConflictOverwrite`、`fileConflictError`、`fileArchiveLimits`、`fileFolderUploadHint`、`fileTransferBusy`、`fileTransferFailed`、`tmuxNewWindow`、`tmuxTakeControl`、`tmuxTakeControlShort`、`tmuxRelease`、`tmuxReleaseShort`、`tmuxReadonly`、`tmuxAdopted`、`tmuxDetach`、`tmuxDetachShort`、`tmuxAdoptGroup`、`tmuxAdopt`、`tmuxNoAdoptable`
-
-<!-- auto-i18n:end -->
 
 ## [0.89.0] — 2026-09-17
 
@@ -1610,15 +1151,6 @@
 - **残留 AI bash 不再把对话钉在列表里**（issue #181）—— 终端接管 bash 留下的 ai-bash 记录是 agent 的内部执行记录，随对话一起释放；以前它们被算成“存活终端”，移出/✕ 关对话时被拦截，会话永久赖在运行列表里。现在移出与关闭拦截只看用户亲手用过的终端，pi 与 DSH 双端同修。
 - **Windows 下 `/webui` 启动不再闪一下控制台窗口**（#176，社区）—— spawn 补 `windowsHide`，`detached` 只在非 Windows 下设；POSIX 行为不变。
 
-<!-- auto-i18n:start -->
-
-### i18n
-
-- 前端新增 key（89）：`composerResize`、`updateDesktopNote`、`updateDesktopCheck`、`updateDesktopChecking`、`updateDesktopAvailable`、`updateDesktopDownload`、`updateDesktopDownloading`、`updateDesktopDownloaded`、`updateDesktopInstall`、`updateDesktopManual`、`updateDesktopError`、`updateDesktopNoBridge`、`kindGitExtension`、`fileReveal`、`fileOpenDefault`、`refreshBuiltinCatalog`、`refreshBuiltinHint`、`refreshBuiltinBusy`、`refreshBuiltinOk`、`refreshBuiltinFail`、`appendModel`、`appendModelTitle`、`appendModelIdPh`、`appendModelNamePh`、`appendModelAdd`、`appendModelBusy`、`appendModelCancel`、`appendModelOk`、`appendModelFail`、`appendModelApiTitle`、`appendModelApiAuto`、`appendModelBaseUrlPh`、`toolsSectionPlugin`、`toolsPluginHint`、`pluginToolsSection`、`pluginToolsEmpty`、`pluginToolOffHint`、`pluginListTab`、`settingsScheduler`、`schedulerDesc`、`schedulerEmpty`、`schedulerNew`、`schedulerEdit`、`schedulerDelete`、`schedulerRunNow`、`schedulerRunning`、`schedulerEnable`、`schedulerDisable`、`schedulerEnabled`、`schedulerDisabled`、`schedulerNameLabel`、`schedulerNamePlaceholder`、`schedulerDescPlaceholder`、`schedulerCwdLabel`、`schedulerCwdPlaceholder`、`schedulerUseCurrentCwd`、`schedulerKindLabel`、`schedulerKindCron`、`schedulerKindInterval`、`schedulerCronPlaceholder`、`schedulerPresetDaily`、`schedulerPresetHourly`、`schedulerPresetHalfHour`、`schedulerPresetWorkday`、`schedulerPresetMonday`、`schedulerPresetCustom`、`schedulerIntervalMinutes`、`schedulerPromptLabel`、`schedulerPromptPlaceholder`、`schedulerModelLabel`、`schedulerThinkingLabel`、`schedulerCatchUp`、`schedulerCatchUpHint`、`schedulerNextFire`、`schedulerLastRun`、`schedulerNeverRun`、`schedulerHistory`、`schedulerManualBadge`、`schedulerRunOk`、`schedulerRunFail`、`schedulerConfirmDelete`、`schedulerSave`、`schedulerCancelEdit`、`copyConversationId`、`copyConversationPath`、`quoteConversation`、`quoteConversationShort`、`attachConversation`、`attachConversationShort`
-- 服务端新增 key（6）：`convread.list.bad.scope`、`convread.read.bad.args`、`convread.read.id.not.found`、`convread.read.path.not.found`、`convread.bad.action`、`dsh.provider.builtin.refresh.unsupported`
-
-<!-- auto-i18n:end -->
-
 ## [0.88.0] — 2026-09-16
 
 ### Added
@@ -1632,15 +1164,6 @@
 ### Changed
 
 - `slot-toolbar` 抽成独立模块，`TerminalPanel` 恢复 lazy / xterm 拆包（首屏包体积回落）。
-
-<!-- auto-i18n:start -->
-
-### i18n
-
-- 前端新增 key（46）：`hostResources`、`hostProcessor`、`hostMemory`、`hostResourcesTip`、`uiLayoutComposerLeading`、`uiLayoutModal`、`uiLayoutContextTopbar`、`uiLayoutContextMessage`、`uiLayoutContextSession`、`uiLayoutContextFile`、`uiLayoutLeftSessions`、`uiLayoutChatHeader`、`uiLayoutChatEmpty`、`uiLayoutFilePreview`、`uiLayoutTerminal`、`uiLayoutScm`、`uiLayoutGoalbar`、`uiLayoutNotice`、`uiLayoutSearch`、`uiLayoutMovedFrom`、`uiLayoutAlign`、`uiLayoutRename`、`pluginPermTitle`、`pluginPermBodyNet`、`pluginPermBodyLlm`、`pluginPermOnce`、`pluginPermAlways`、`pluginPermsTitle`、`pluginPermsHint`、`pluginPermsEmpty`、`pluginPermSession`、`pluginPermNet`、`pluginPermLlm`、`pluginPermUnscoped`、`pluginDiagTitle`、`pluginDiagShow`、`pluginDiagHide`、`pluginLogTitle`、`pluginLogShow`、`pluginLogHide`、`pluginLogLevel`、`pluginLogAll`、`pluginLogEmpty`、`pluginLogClear`、`pluginSecretSet`、`pluginSecretUnset`
-- 服务端新增 key（1）：`plugins.settings.too.long`
-
-<!-- auto-i18n:end -->
 
 ## [0.87.2] — 2026-09-16
 
@@ -1698,17 +1221,6 @@
 - **同 sessionId 重建抛 `already exists`** —— 运行时重启/优雅关闭后，磁盘已有的会话 id 走 `agents.create` 必撞；现在自动转 `agents.resume`（官方恢复路径，附带缝合被中断的 turn），预设按日志记录优先恢复。
 - **只有源码的插件不再装出“沉默的死插件”**（issue #165）—— `install` 在“有构建声明但无产物”时默认直接构建（以前只打印一行极易错过的提示，装完是个什么都不加载的空目录），构建前先打印解析出的 install/command；产物已提交的仓库行为不变。`--no-build` 保留旧的装空目录行为（明确打印跳过原因），与 `--build` 互斥。设置面板的「源码构建」勾选框语义相应变为“强制重编”（不勾选时源码插件也会自动构建）。
 - **顶栏「⋯」溢出菜单在 DOM 里但永远点不到**（issue #162）—— 菜单元件挂在 `.view-switch{overflow:hidden}`（桌面端圆角药丸容器的裁剪）/ `.topbar-actions` 横滑容器（窄屏 ≤768px）里面，往下展开的部分全被祖先裁掉，`z-index` 再高也出不来；藏进溢出菜单的条目实际不可达。现在菜单经 portal 到 `document.body` + `position: fixed`（与右键菜单同路），按触发按钮实测锚定、视口钳制（下方放不下翻到上方），并补上点外面 / Esc 关闭（滚动/缩放时重跟锚点，不关闭）。另修一个连带坑：关闭回调若是内联箭头，effect 每 render 解绑/重绑全套 document 监听，离散按键可能正好落在空窗里导致 Esc 丢键 —— 关闭走 ref，监听只装一次。回归：`tests/ui-layout-ui-test.mjs` 新增「真的可见可点」断言（`elementFromPoint` 落在菜单内）。
-
-<!-- auto-i18n:start -->
-
-### i18n
-
-- 前端新增 key（61）：`atMentions`、`atMenuHint`、`fileOpenPreview`、`fileEnterDir`、`fileNewFile`、`fileNewDir`、`fileRename`、`fileNamePlaceholder`、`fileDuplicate`、`fileCut`、`fileCopyEntry`、`filePaste`、`fileDelete`、`fileDeleteConfirm`、`fileCopyRelPath`、`fileRefresh`、`providerAuthHint`、`oauthLogin`、`oauthLogout`、`oauthConnected`、`oauthDeviceCode`、`oauthOpenVerification`、`oauthContinue`、`pluginCatalogSync`、`pluginCatalogSyncHint`、`pluginCatalogSyncSource`、`pluginCatalogSyncSubmit`、`pluginCatalogSyncInstall`、`pluginCatalogSyncReplace`、`pluginCatalogSyncRecent`、`pluginCatalogSyncOk`、`pluginCatalogSyncInstalled`、`dshPreset`、`dshPresetNewChat`、`dshPresetLocked`、`dshPresetBlankOnly`、`dshPresetBroken`、`dshPresetUser`、`dshPresetDefaultTag`、`dshPresetCurrent`、`dshPresetMinimalNote`、`dshDefaultPreset`、`dshDefaultPresetDesc`、`dshPresetUserNote`、`dshPerm`、`dshPermReadOnly`、`dshPermReadOnlyDesc`、`dshPermWorkspaceWrite`、`dshPermWorkspaceWriteDesc`、`dshPermFullAccess`、`dshPermFullAccessDesc`、`dshPermFullAccessTag`、`dshPermCustom`、`dshPermConfirmFull`、`dshPermDefault`、`dshPermDefaultDesc`、`pluginDomNeed`、`pluginDomDesc`、`pluginDomGrant`、`pluginDomRevoke`、`pluginDomGranted`
-- 前端中文变更（1）：`pluginBuildHint`
-- 前端英文变更（1）：`pluginBuildHint`
-- 服务端新增 key（2）：`plugininstaller.build.conflict`、`plugins.host.engines.mismatch`
-
-<!-- auto-i18n:end -->
 
 ## [0.86.2] — 2026-09-15
 
@@ -1813,17 +1325,6 @@ when?, children?}`，也收 `topbar` / `settings` 这类简写别名）；宿主
 - **刷新页面不再把已退出的 AI bash 终端复活成用户终端并反复弹「终端数量已达上限」**（issue #147）—— 开着「终端接管 bash」跑一批命令后，每个一次性 AI 终端都会在 history 里留一条记录；以前刷新/重连/切对话时前端会为其中每一条重发 `terminal_create`（还不带 `agentBash`），服务端于是把它们重建成普通用户终端：白白拉起几十个 shell 进程不说，攒到 16 个就触发上限报错、每条再各弹一次全局通知。现在三层修复：前端挂载时发现终端已退出（`running === false`）就只做展示（保留输出照旧由服务端 replay 推送），不再重建 PTY；`terminal_create` 消息新增 `agentBash` 字段并全链路透传；服务端 `create()` 在字段缺省（旧前端）时从 history 继承原有身份。已退出的**用户**终端在满额时重建仍被拒绝（history 不预留名额），`terminal_create` 工具建的常驻终端也照旧计入用户名额。回归测试 `tests/terminal-smoke-test.mjs`（WS 透传 + 继承/拒绝口径）。
 - **输入框里的一行 JSX 注释不再渲染成可见文本** —— `ChatInput.tsx` 里 `/* … */` 写在了 JSX 子节点位置，会被当成文本渲染出来；已改为 `{/* … */}`。
 
-<!-- auto-i18n:start -->
-
-### i18n
-
-- 前端新增 key（44）：`elsewhereBadge`、`elsewhereTip`、`workspaceRoots`、`workspaceRootsHint`、`addWorkspaceRoot`、`addWorkspaceRootHint`、`removeWorkspaceRoot`、`browserControlDesktop`、`browserControlDesktopLead`、`browserControlOpenInBrowser`、`devNoCache`、`devNoCacheDesc`、`autoReload`、`autoReloadDesc`、`pluginJobRunning`、`pluginJobDone`、`pluginJobFailed`、`pluginBuildSource`、`pluginBuildHint`、`uiLayoutTitle`、`uiLayoutHint`、`pluginTopbarMore`、`uiLayoutTopbar`、`uiLayoutTopbarOverflow`、`uiLayoutBottombar`、`uiLayoutComposer`、`uiLayoutMessage`、`uiLayoutRightPanel`、`uiLayoutSettingsPages`、`uiLayoutRestore`、`uiLayoutRestoreAll`、`uiLayoutArranged`、`uiLayoutEmpty`、`pluginGrantsTitle`、`pluginGrantsHint`、`pluginGrantsEmpty`、`pluginGrantsRevoke`、`pluginGrantRequestTitle`、`pluginGrantRequestBody`、`pluginGrantAllow`、`pluginGrantDeny`、`pluginUiNoHandler`、`pluginSessionGrantTitle`、`pluginSessionGrantBody`
-- 前端中文变更（3）：`pluginUpdateHint`、`pluginInstallHint`、`pluginUninstallHint`
-- 前端英文变更（3）：`pluginUpdateHint`、`pluginInstallHint`、`pluginUninstallHint`
-- 服务端新增 key（15）：`plugincatalog.sync.fetch.failed`、`plugincatalog.sync.http`、`plugincatalog.sync.too.large`、`plugincatalog.sync.source.invalid`、`plugincatalog.sync.read.failed`、`plugincatalog.sync.source.missing`、`plugincatalog.sync.parse.failed`、`plugincatalog.sync.shape`、`plugininstaller.id.invalid`、`plugininstaller.source.invalid`、`plugininstaller.managed`、`plugininstaller.busy`、`plugininstaller.cli.missing`、`plugininstaller.cancelled`、`plugininstaller.timeout`
-
-<!-- auto-i18n:end -->
-
 ## [0.85.0] — 2026-09-14
 
 ### Added
@@ -1846,14 +1347,6 @@ when?, children?}`，也收 `topbar` / `settings` 这类简写别名）；宿主
 - **Windows 上新终端偶发吃掉首字节** —— 刚 spawn 的 PTY 在 shell 还没开始读时就写入，ConPTY 会丢最前面的字节，经典症状是 `pi-web-ui` 到达时变成 `i-web-ui`。现在复用输出就绪信号（首包输出即 shell 可读，1.5s 超时兜底；重启/kill 掉的过期条目跳过），命令只在就绪后写入。
 - **目标（goal）展开时内容不再被挤扁**（issue #141）—— `.goalbar` 纵向容器原来是 `align-items: center`，展开态的两行被压成内容宽度，输入框缩成一小截。现在容器改 `align-items: stretch` 让展开的行铺满整列，只有折叠态（小药丸）保留居中。
 
-<!-- auto-i18n:start -->
-
-### i18n
-
-- 前端新增 key（7）：`browserControlInstall`、`browserControlInstallLead`、`browserControlInstallDownload`、`browserControlInstallStep1`、`browserControlInstallStep2`、`browserControlInstallStep3`、`browserControlInstallStep4`
-
-<!-- auto-i18n:end -->
-
 ## [0.84.0] — 2026-09-13
 
 ### Added
@@ -1871,14 +1364,6 @@ when?, children?}`，也收 `topbar` / `settings` 这类简写别名）；宿主
 - **切项目时左栏不再闪一下项目名**（#140 那个改动的回归）—— 切项目会自动切到该项目的对话；如果切过去时那个项目只有一条对话（就是这条当前对话），列表里只有一组，它顶上原来会闪出一行项目名再消失（实测约 8ms 一帧）。原因是两个信号不同时到达：`conversations` 推送先到（activeId 已是新项目的对话），带新 `cwd` 的快照后到，只按 `cwd` 分组的那一帧就把当前项目当成了「别的项目」。
   - 现在**只要当前对话在列表里，就认它所在的分组为当前项目**（`currentCwd` 只在它不在列表里时——空白新对话——作为回落），并直接置顶，顺带免掉随后的位置跳动；其他项目的后台运行照旧显示项目名。
   - 分组逻辑抽成纯函数 `web/src/conv-groups.ts` + 单测 `tests/unit/conv-groups.test.ts`，另有真浏览器逐帧回归 `tests/conv-group-flash-test.mjs`（MutationObserver 记录每一帧 DOM，两个方向都断言不再渲染项目名；改回只看 `cwd` 即变红）。
-
-<!-- auto-i18n:start -->
-
-### i18n
-
-- 服务端新增 key（1）：`terminals.cwd.outside.workspace`
-
-<!-- auto-i18n:end -->
 
 ## [0.83.0] — 2026-09-13
 
@@ -1966,16 +1451,6 @@ when?, children?}`，也收 `topbar` / `settings` 这类简写别名）；宿主
 
 暂无其他未发布内容。
 
-<!-- auto-i18n:start -->
-
-### i18n
-
-- 前端新增 key（28）：`browserPageEnabledDesc`、`browserPageOffHint`、`browserControl`、`browserControlTip`、`browserControlChecking`、`browserControlOffline`、`browserControlEmpty`、`browserControlDisabled`、`browserControlPages`、`browserControlPageOpen`、`browserControlPageClosed`、`browserControlExamples`、`browserControlExample1`、`browserControlExample2`、`browserControlOpenOptions`、`browserControlRefresh`、`browserControlCite`、`browserControlCiteTip`、`browserControlCiteNote`、`browserControlCited`、`browserControlCiteFailed`、`browserControlOpenPanel`、`browserControlSingleTip`、`attachPage`、`attachPageShort`、`tplThinkingLabel`、`tplThinkingFollowMain`、`tplThinkingHint`
-- 前端中文变更（2）：`settingsSubagentTemplatesDesc`、`noSubagentTemplates`
-- 前端英文变更（2）：`settingsSubagentTemplatesDesc`、`noSubagentTemplates`
-
-<!-- auto-i18n:end -->
-
 ## [0.82.0] — 2026-09-13
 
 ### Added
@@ -2021,14 +1496,6 @@ when?, children?}`，也收 `topbar` / `settings` 这类简写别名）；宿主
 
 - **命令行 `pi-web-ui install <插件> --force` 之后插件一直「不存在」**：CLI 装插件是先整目录删掉再拷新的（`install --force` 的 rm→cp 窗口），撞上这个窗口期的一次插件扫描会把插件当成「已卸载」反激活；而反激活时没把插件从 `attempted` 集合里摘掉，目录回来后永远不会再激活——插件的 HTTP 路由（如 legado-web 的 `/plugins-api/legado-web/proxy`）与 AI 工具在本进程内彻底消失，前端只报「代理请求失败 404 <url>」，CLI 承诺的「服务运行中刷新浏览器即可加载」失效，必须重启服务才恢复。现在反激活会摘掉 `attempted` 并推进 epoch（重新 `import` 拿到磁盘上的新代码、浏览器也重拉插件 client bundle），刷新浏览器即自愈。回归：`tests/unit/plugin-manager.test.ts`（目录消失→回来必须重新激活且用新代码）+ `tests/plugin-test.mjs`（真实 HTTP 路由的 rm→cp 窗口自愈）。
 
-<!-- auto-i18n:start -->
-
-### i18n
-
-- 本版无文案增量（相对 v0.80.2，已核查）。
-
-<!-- auto-i18n:end -->
-
 ## [0.80.2] — 2026-09-12
 
 ### Added
@@ -2047,14 +1514,6 @@ when?, children?}`，也收 `topbar` / `settings` 这类简写别名）；宿主
 
 - nginx 子路径示例配置删掉 `favicon-streaming.svg` 的那条 `location`：该图标早已不存在，留着只会让人以为得额外补一个文件。
 
-<!-- auto-i18n:start -->
-
-### i18n
-
-- 本版无文案增量（相对 v0.80.1，已核查）。
-
-<!-- auto-i18n:end -->
-
 ## [0.80.1] — 2026-09-12
 
 ### Added
@@ -2064,15 +1523,6 @@ when?, children?}`，也收 `topbar` / `settings` 这类简写别名）；宿主
 ### Fixed
 
 - **终端接管 bash 修复：没有尾部管道的命令不再报 `Cannot read properties of null (reading 'segment')`（issue #121）**：`date`、`ls | head -5` 这类命令没有「尾部限输出管道」，`detectTrailingLimiter()` 返回 `null`，而 #91 v2 的取值重构把原本的可选链写成了非空断言 `limiter!.segment` —— 结果几乎每条一次性 bash 命令都在取值处直接 TypeError（只有以 `| tail` / `| less` / `| more` / `| cat` 结尾的命令能跑）。现已改回可选链（这几个值只在真的拆掉管道时才被取用）。回归：`tests/unit/terminal-bash-limiter.test.ts`（桩终端钉住取值路径，CI 必跑）；`tests/terminal-bash-test.mjs` 同步恢复可跑（动态导入走 `pathToFileURL`，Windows 上也跑得起来；提示文案断言钉死中文；一次性终端退出改为轮询而非固定等待）。
-
-<!-- auto-i18n:start -->
-
-### i18n
-
-- 前端新增 key（3）：`restartService`、`restartingService`、`restartServiceTip`
-- 服务端新增 key（2）：`terminals.headtail.omitted.below`、`terminals.headtail.omitted.above`
-
-<!-- auto-i18n:end -->
 
 ## [0.80.0] — 2026-09-12
 
@@ -2099,14 +1549,6 @@ when?, children?}`，也收 `topbar` / `settings` 这类简写别名）；宿主
 - `vscode-editor` 插件跟随亮色主题：之前文件树/标签栏/弹窗底色引用了主应用不存在的 `--bg-elev0/1` 变量，亮色下永远回退到深色硬编码值；编辑器（CodeMirror `oneDark`）与底部 SSH 终端配色也是写死的深色。现在底色改走 `--bg/--bg-elev`，编辑器亮色用跟随 `--bg/--text/--accent` 的浅色壳（暗色仍是 `oneDark`，Compartment 热切换），终端读 `--term-*` 调色板；主应用切换主题时（`pi-web-ui:theme-change`）已打开的编辑器与存活终端一起换肤，无需重载。
 - `db-client` 插件跟随亮色主题：同上，文件树/主区/表头/弹窗输入框底色引用的 `--bg-elev0/1` 改走 `--bg/--bg-elev`（该插件无自绘深色组件，一次变量映射即完整跟随）。
 
-<!-- auto-i18n:start -->
-
-### i18n
-
-- 前端新增 key（1）：`queueRecallTip`
-
-<!-- auto-i18n:end -->
-
 ## [0.78.0] — 2026-09-11
 
 ### Added
@@ -2125,14 +1567,6 @@ when?, children?}`，也收 `topbar` / `settings` 这类简写别名）；宿主
 - 排队/插队消息改成和正式用户消息**同一套气泡**（`MessageList.tsx` 的 `QueuedMessage` 复用 `.msg-user` 结构）：Markdown 渲染（代码块/列表/链接等不再是一坨纯文本）、角色行显示「你」、状态 tag（插队/排队）与移除 ✕ 排在同一行；未发送仍用**虚线边框 + 0.75 透明度**区分，服务端真正下发后直接变成正常消息气泡（外观不再跳变）。`styles.css` 里旧的 `.queued-bubble` / `.queued-text` / `.queued-remove` 一套样式一并删除。
 - 官方插件做手机竖屏（≤640px）适配，桌面端表现不变：`db-client`（连接侧栏变左滑抽屉、库表树变可折叠面板、结果表格在容器内横滑、Redis 键列表改上下排、触摸目标加大、输入框提到 16px 防 iOS 聚焦缩放）、`vscode-editor`（文件树变抽屉 + 顶栏 ☰、选中文件自动收起）、`run-trace`（三段改上下堆叠、时间轴压到 200px、回放条允许换行、触屏色块热区加大）、`webmail`、`demo-mailbox`。
 - `docs/architecture-attachments.md` 的文件预览协议补一节「HTML 渲染走目录映射的 HTTP」（沙箱策略与相对引用语义）。
-
-<!-- auto-i18n:start -->
-
-### i18n
-
-- 前端新增 key（8）：`showHtmlSource`、`showHtmlPreview`、`htmlJsOff`、`htmlJsOffTip`、`htmlJsOn`、`htmlJsOnTip`、`htmlEnableJs`、`htmlDisableJs`
-
-<!-- auto-i18n:end -->
 
 ## [0.77.0] — 2026-09-11
 
@@ -2158,15 +1592,6 @@ when?, children?}`，也收 `topbar` / `settings` 这类简写别名）；宿主
 - 设置面板减负：常驻列表里的静态解释全部收进标题/开关旁的「?」悬浮提示（含 7 个「已关闭」后果说明、重试次数、子代理默认模型、全文注入说明等）；行内只保留计数、空状态、报错与动态状态（如当前转写模型）。文案 key 无增减。
 - 问卷（`ask_user_question`）不再被工具挂死看门狗剁掉：以前它跟普通工具一样被算作「一个工具跑了 20 分钟」（`PI_WEB_TOOL_TIMEOUT_MS`），到点就 abort 整轮对话并弹「工具执行超过…已自动终止」——把还在思考的用户连对话一起终止。现在按工具名豁免：问卷等的是人类回答，不是挂死的工具，收场只走用户回答/取消与会话 dispose，**不限时**。同理，问卷挂着也不再算「失联」（stall 告警默认 180s 无 SDK 事件，对该对话跳过）。同时补上「刷新/重连后问卷对话框不再消失」：`question_pending` 是即时通道，只推给提问那一刻在线的连接，刷新页面/新标签页都拿不到那条历史消息，而服务端还在阻塞等人回答；现在待答问卷同时挂在快照（`UiState.pendingQuestion`，标准引擎只带当前对话的那张，切回原对话会重推快照）上，两个引擎（标准 pi / DSH）重连后都会把面板恢复出来，由快照恢复的面板也能被快照收起（另一标签页答完/服务端取消），但即时通道弹出的面板不会被在途旧快照闪掉，已答过的问卷也不会被在途旧快照重新弹出。回归 `tests/question-bridge-test.mjs`（零 token，本地假模型驱动整条链路）+ `tests/unit/pending-question.test.ts`。
 
-<!-- auto-i18n:start -->
-
-### i18n
-
-- 前端新增 key（28）：`placeholderStreamingQueued`、`steerTip`、`settingsTools`、`toolsSectionTerminal`、`toolsSectionSubagent`、`toolsSectionOther`、`toolsSubagentDepHint`、`delegateTaskEnabledDesc`、`delegateTaskOffHint`、`todoListEnabledDesc`、`todoListOffHint`、`toolDescSubagentSpawn`、`toolDescSubagentGetResult`、`toolDescSubagentSteer`、`toolDescSubagentList`、`toolDescSubagentStop`、`toolDescSubagentWaitAll`、`toolDescSubagentTemplates`、`skillFullTextLabel`、`skillFullTextDesc`、`skillFullTextShort`、`delegateOpenSubagent`、`delegateSecTask`、`delegateSecExpected`、`delegateSecTools`、`delegateSecMustDo`、`delegateSecMustNotDo`、`delegateSecContext`
-- 服务端新增 key（3）：`delegate.validate.agent`、`delegate.validate.short`、`delegate.started`
-
-<!-- auto-i18n:end -->
-
 ## [0.76.0] — 2026-09-11
 
 ### Added
@@ -2178,16 +1603,6 @@ when?, children?}`，也收 `topbar` / `settings` 这类简写别名）；宿主
 - **Windows 上窗口最小化后依然收不到任何桌面通知**（v0.75.0 只修了一半）：Win11 实测，窗口最小化后 `document.hasFocus()` 仍是 `true`、`visibilityState` 仍是 `"visible"`，连 `blur`/`visibilitychange` 都不发 —— 「只看焦点」和「焦点 **且** 可见」两种条件都在这个场景下把通知全部静默掉。现在改用只有最小化会变的那组信号判定（原生窗口矩形：`screenX/screenY` 跳到屏幕外的「最小化坐标」，`outerWidth/Height` 塌成标题栏；`isCollapsedWindow`，有单测），并且在 Windows 上额外要求「最近 2 分钟内有过页面交互」才背静默 —— 这个平台的焦点/可见性都不可信，宁可多提醒一次也不漏。非 Windows 平台行为不变（其焦点/可见性可信）。
 - 通知发送路径不再因 service worker 抛错而彻底静默：注册存在但还没 active（首次加载 / 刚更新后）时 `showNotification` 会失败，现在会退回页面通知，两者都失败也会把原因带出来（诊断按钮里看得到）。
 - 修掉「只有第一次弹、之后怎么都不弹」：通知带固定 `tag` 时，Windows 把同 tag 的新通知当成**替掉旧条目**，而且是静默的 —— 没有横幅、没有提示音，只要系统通知中心里还躺着一条 pi-web-ui 通知，后续每一条都会被无声替换（页面上看 `showNotification` 明明成功了）。现在干脆不用 tag（也不依赖 `renotify` —— 实测它在 Windows toast 这层不起作用），每条都是全新 toast；代价是通知中心里会累积几条。
-
-<!-- auto-i18n:start -->
-
-### i18n
-
-- 前端新增 key（9）：`notifyTest`、`notifyTestBody`、`notifyTestSent`、`notifyTestFailed`、`notifyTestState`、`notifyTestHeld`、`notifyTestDropped`、`notifyTestGateSuppressed`、`notifyTestGateOpen`
-- 前端中文变更（1）：`notifyEnableDesc`
-- 前端英文变更（1）：`notifyEnableDesc`
-
-<!-- auto-i18n:end -->
 
 ## [0.75.0] — 2026-09-11
 
@@ -2213,16 +1628,6 @@ when?, children?}`，也收 `topbar` / `settings` 这类简写别名）；宿主
   - 顶栏所有控件（视图 tab / chip / 左右折叠按钮）统一高度；文件面板折叠按钮移出可横滑的 `.topbar-actions`、固定在右上角——之前窄屏上会被 tab/chip 挤出屏幕外。
   - 底栏手机端改为单行紧凑显示：上下文标签与进度条收起、只留「已用 / 窗口」数字；速率前加一个小转圈（窄屏省略「工作中」文案）；工作目录宽度不够时省略号截断。
   - 提示词模板选择器与编辑弹窗改为「头尾固定、中段滚动」：模板多、字段区高时标题与操作按钮不再被滚走。
-
-<!-- auto-i18n:start -->
-
-### i18n
-
-- 前端新增 key（2）：`notifyInsecure`、`notifyWindowsHint`
-- 前端中文变更（2）：`notifyEnableDesc`、`notifyDenied`
-- 前端英文变更（2）：`notifyEnableDesc`、`notifyDenied`
-
-<!-- auto-i18n:end -->
 
 ## [0.74.0] — 2026-09-10
 
@@ -2262,38 +1667,6 @@ when?, children?}`，也收 `topbar` / `settings` 这类简写别名）；宿主
 
 - 中英文 README 重构：截图换成新的对话 / 终端 / 轨迹 / Git / 设置五张，旧图删除，安装与配置说明重排。
 - 对话框内边距与粘性头（sticky）偏移微调。
-
-<!-- auto-i18n:start -->
-
-### i18n
-
-- 前端新增 key（13）：`dismissFinishedSubagents`、`dismissFinishedSubagentsScoped`、`dismissConversationWithSubagents`、`dismissConversationWithSubagentsMixed`、`dismissStreamingConfirm`、`dismissFinishedOnly`、`dismissForceAll`、`forceDismissTitle`、`forceDismissConversation`、`forceDismissConfirm`、`noFinishedSubagents`、`reloadModelsConfig`、`reloadModelsHint`
-- 服务端新增 key（1）：`subagents.wait.empty`
-
-## [0.72.0] — 2026-09-09
-
-### Added
-
-- 模型报错自动重试次数设置（`retryMaxAttempts`，对话设置）：大模型 API 出错时按次数自动重试；次数用完本轮停止并标红，最后一轮红色报错旁有「重试」按钮（`retry_last`，协议 v15），手动再跑一轮；设为 0 则失败即停。面板值覆盖注入 SDK 默认（含子代理与会话重建）。
-- 发布时翻译增量自动公示：`scripts/i18n-diff.mjs`（对比 base tag，统计前端 `zh/en` 与服务端 `pick` 新增/变更的 key）与 `scripts/release-notes.mjs`（拼 GitHub Release 说明，`### i18n` 现场生成；`npm run changelog:i18n` 自动维护本节）；打 tag 推送后 Action 自动创建/更新 Release。
-
-### Fixed
-
-- 多密钥按项目自愈：删除密钥时所有引用该密钥的项目跟随接管密钥（无剩余则解绑）；清空服务商密钥时清掉全部项目的残留引用；切换到不存在的密钥不再种下 stale 引用；切项目自动恢复改为静默 + 不存在即删引用，切项目不再刷屏报错。
-
-### Changed
-
-- 设置「消息显示」改名「对话」（中英 + 8 语言包同步）。
-
-<!-- auto-i18n:start -->
-
-### i18n
-
-- 前端新增 key（4）：`modelRetryAttempts`、`modelRetryHint`、`retryNow`、`retryLastTip`
-- 前端中文变更（1）：`settingsMessageDisplay`
-- 前端英文变更（1）：`settingsMessageDisplay`
-
-<!-- auto-i18n:end -->
 
 ## [0.71.0] — 2026-09-09
 
@@ -2644,3 +2017,4 @@ when?, children?}`，也收 `topbar` / `settings` 这类简写别名）；宿主
 [0.61.0]: https://github.com/xing-shuyin/pi-web-ui/releases/tag/v0.61.0
 [0.120.1-p2p-preview.1]: https://github.com/xinzhihong-ship-it/pi-web-ui/releases/tag/p2p-preview-0.120.1-1
 [0.120.1-p2p-preview.2]: https://github.com/xinzhihong-ship-it/pi-web-ui/releases/tag/p2p-preview-0.120.1-2
+[0.120.1-p2p-preview.9]: https://github.com/xinzhihong-ship-it/pi-web-ui/releases/tag/p2p-preview-0.120.1-9

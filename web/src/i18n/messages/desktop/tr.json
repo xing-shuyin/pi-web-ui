@@ -32,5 +32,14 @@
 	"desktop.groupMembers": "Grup üyesi seç",
 	"desktop.groupNoDevice": "Bağlı cihaz yok",
 	"desktop.groupSelect": "{name} adlı üyenin masaüstünü görüntüle",
-	"desktop.groupOpen": "{name} adlı üyenin masaüstünü aç ve kontrol et"
+	"desktop.groupOpen": "{name} adlı üyenin masaüstünü aç ve kontrol et",
+	"desktop.clipboard": "Pano",
+	"desktop.clipboardOff": "Kapalı",
+	"desktop.clipboardSend": "Yerel → uzak",
+	"desktop.clipboardReceive": "Uzak → yerel",
+	"desktop.clipboardBoth": "Çift yönlü",
+	"desktop.clipboardReady": "Metin, resim, dosya · eşitlemek için kopyalayın",
+	"desktop.clipboardHint": "Etkinleştirdikten sonraki kopyaları eşitler. En fazla 32 dosya ve 32 MB.",
+	"desktop.clipboardLocal": "Otomatik eşitleme kendi localhost adresinizde pi-web-ui gerektirir.",
+	"desktop.clipboardError": "Eşitleme durdu. Sürümleri, izinleri ve boyutu kontrol edip yönü yeniden seçin."
 }

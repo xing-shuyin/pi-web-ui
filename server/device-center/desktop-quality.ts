@@ -18,7 +18,7 @@ export function parseDesktopProfile(value: unknown): DesktopProfile | undefined 
 		p.quality > 85 ||
 		!Number.isInteger(p.fps) ||
 		p.fps < 5 ||
-		p.fps > 30
+		p.fps > 240
 	)
 		return;
 	return { maxEdge: p.maxEdge, quality: p.quality, fps: p.fps };
@@ -36,7 +36,7 @@ export function parseDesktopPreferences(value: unknown): DesktopPreferences | un
 		p.viewportEdge > 2560 ||
 		!Number.isInteger(p.fps) ||
 		p.fps < 5 ||
-		p.fps > 30
+		p.fps > 240
 	)
 		return;
 	return { mode: p.mode, maxEdge: p.maxEdge, viewportEdge: p.viewportEdge, fps: p.fps };
@@ -44,7 +44,7 @@ export function parseDesktopPreferences(value: unknown): DesktopPreferences | un
 
 /** Adapt only on fresh display acknowledgements, with separate slow/fast hysteresis. */
 export class DesktopQuality {
-	private preferences: DesktopPreferences = { mode: "auto", maxEdge: 0, viewportEdge: 1920, fps: 30 };
+	private preferences: DesktopPreferences = { mode: "auto", maxEdge: 0, viewportEdge: 1920, fps: 60 };
 	private scale = 1;
 	private bad = 0;
 	private good = 0;

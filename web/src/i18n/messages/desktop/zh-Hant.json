@@ -32,5 +32,14 @@
 	"desktop.groupMembers": "選擇群組成員",
 	"desktop.groupNoDevice": "尚未連結裝置",
 	"desktop.groupSelect": "查看 {name} 的桌面",
-	"desktop.groupOpen": "放大並操作 {name} 的桌面"
+	"desktop.groupOpen": "放大並操作 {name} 的桌面",
+	"desktop.clipboard": "剪貼板",
+	"desktop.clipboardOff": "關閉",
+	"desktop.clipboardSend": "我方 → 對方",
+	"desktop.clipboardReceive": "對方 → 我方",
+	"desktop.clipboardBoth": "雙向同步",
+	"desktop.clipboardReady": "文本、圖片、文件 · 複製後同步",
+	"desktop.clipboardHint": "同步開啓後的複製操作；每次最多 32 個文件、合計 32 MB。",
+	"desktop.clipboardLocal": "自動同步需要從本機 localhost 的 pi-web-ui 打開遠程桌面。",
+	"desktop.clipboardError": "同步已停止：請檢查兩端版本、剪貼板權限及文件大小，重新選擇方向再試。"
 }

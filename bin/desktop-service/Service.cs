@@ -110,7 +110,9 @@ public sealed class PiDesktopService : ServiceBase {
         if(e==null||!e.ContainsKey("type")||!(e["type"] is string)) return false;
         string type=(string)e["type"];
         if(type=="close"||type=="ack") return e.Count==1;
-        if(type=="configure") return e.Count==4&&Number(e,"maxEdge",640,2560)&&Number(e,"quality",35,85)&&Number(e,"fps",5,30);
+        if(type=="configure") return e.Count==4&&Number(e,"maxEdge",640,2560)&&Number(e,"quality",35,85)&&Number(e,"fps",5,240);
+        if(type=="display") return e.Count==2&&e.ContainsKey("id")&&e["id"] is string&&((string)e["id"]).Length<=128&&((string)e["id"]).IndexOf('\0')<0;
+        if(type=="displays") return e.Count==1;
         if(!control) return false;
         if(type=="release") return e.Count==1;
         if(type=="text") return e.Count==2&&e.ContainsKey("text")&&e["text"] is string&&((string)e["text"]).Length<=2048&&!((string)e["text"]).Contains("\0");

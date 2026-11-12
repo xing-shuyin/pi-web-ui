@@ -4,6 +4,8 @@ import type { IncomingMessage } from "node:http";
 import type { Duplex } from "node:stream";
 import { WebSocket, WebSocketServer } from "ws";
 import { desktopPage } from "./desktop-page.js";
+import { createDesktopClipboard } from "./desktop-clipboard.js";
+import type { DesktopDisplays } from "./desktop-displays.js";
 import { desktopPreviewPage } from "./desktop-preview-page.js";
 import { createDesktopPreview } from "./desktop-preview.js";
 import { createDesktopSetup } from "./desktop-setup.js";
@@ -49,6 +51,8 @@ export function desktopLocalRequest(req: IncomingMessage): boolean {
 }
 
 type CaptureOptions = {
+	display?: string;
+	onDisplays?: (displays: DesktopDisplays) => void;
 	onFrame: (jpeg: Buffer) => void;
 	onError: (message: string) => void;
 	onClose: () => void;
@@ -125,6 +129,27 @@ export function createDeviceDesktop({ app, authorize, env = process.env, dataDir
 			? { status: linuxDesktopStatus, start: startLinuxDesktop }
 			: { status: nativeDesktopStatus, start: startNativeDesktop });
 	const preview = createDesktopPreview((options) => backend.start(options));
+	let primaryDisplay: string | undefined;
+	const displayPreviews = new Map<string, ReturnType<typeof createDesktopPreview>>();
+	const previewFor = (display?: string) => {
+		if (!display || display === primaryDisplay) return preview;
+		let selected = displayPreviews.get(display);
+		if (!selected) {
+			if (displayPreviews.size >= 8) {
+				const first = displayPreviews.keys().next().value!;
+				displayPreviews.get(first)!.close();
+				displayPreviews.delete(first);
+			}
+			selected = createDesktopPreview((options) => backend.start({ ...options, display }));
+			displayPreviews.set(display, selected);
+		}
+		return selected;
+	};
+	const resetPreviews = () => {
+		preview.reset();
+		for (const selected of displayPreviews.values()) selected.close();
+		displayPreviews.clear();
+	};
 	const requestPermissions = native?.permissions ?? requestNativeDesktopPermissions;
 	const permissionControllers = new Set<AbortController>();
 	const installation = {
@@ -155,6 +180,7 @@ export function createDeviceDesktop({ app, authorize, env = process.env, dataDir
 			return false;
 		}
 	};
+	const clipboard = createDesktopClipboard({ allowed, enabled: () => setup.enabled && backend.status().supported });
 	app.use((req, res, next) => {
 		if (!["/desktop", "/desktop-preview"].includes(req.path) && !req.path.startsWith("/api/device-desktop/"))
 			return next();
@@ -176,6 +202,11 @@ export function createDeviceDesktop({ app, authorize, env = process.env, dataDir
 			return;
 		}
 		if (req.path === "/api/device-desktop/preview") {
+			const display = typeof req.query.display === "string" ? req.query.display : undefined;
+			if (display && (display.length > 128 || /[\x00-\x1f]/.test(display))) {
+				res.status(400).end();
+				return;
+			}
 			if (!setup.enabled || !backend.status().supported) {
 				res.status(503).json({ error: "Open the desktop to check sharing settings and system permissions." });
 				return;
@@ -183,7 +214,7 @@ export function createDeviceDesktop({ app, authorize, env = process.env, dataDir
 			const controller = new AbortController();
 			const abort = () => controller.abort();
 			res.once("close", abort);
-			void preview
+			void previewFor(display)
 				.read(controller.signal)
 				.then(({ jpeg }) => {
 					if (!controller.signal.aborted) res.type("image/jpeg").send(jpeg);
@@ -267,7 +298,10 @@ export function createDeviceDesktop({ app, authorize, env = process.env, dataDir
 		}
 		try {
 			setup.setEnabled(req.body.enabled);
-			if (!setup.enabled) preview.reset();
+			if (!setup.enabled) {
+				resetPreviews();
+				clipboard.reset();
+			}
 			if (!setup.enabled) for (const cleanup of bridges) cleanup();
 			res.json(status());
 		} catch {
@@ -282,14 +316,18 @@ export function createDeviceDesktop({ app, authorize, env = process.env, dataDir
 		}
 		try {
 			setup.setEnabled(req.body.enabled);
-			if (!setup.enabled) preview.reset();
+			if (!setup.enabled) {
+				resetPreviews();
+				clipboard.reset();
+			}
 			if (!setup.enabled) for (const cleanup of bridges) cleanup();
 			res.json(status());
 		} catch {
 			res.status(500).json({ error: "Could not save desktop settings" });
 		}
 	});
-	function bridge(ws: WebSocket, readOnly: boolean) {
+	function bridge(ws: WebSocket, readOnly: boolean, display?: string) {
+		const preview = previewFor(display);
 		const previewKey = {};
 		preview.liveStarted(previewKey);
 		let ended = false;
@@ -298,10 +336,9 @@ export function createDeviceDesktop({ app, authorize, env = process.env, dataDir
 		let lastActivity = Date.now();
 		let queued = 0;
 		let sending = false;
-		let awaitingAck = false;
+		const inFlight: number[] = [];
 		let latestFrame: Buffer | undefined;
 		let ackTimer: ReturnType<typeof setTimeout> | undefined;
-		let sentAt = 0;
 		let ackMs = 0;
 		let freshAck = false;
 		const quality = new DesktopQuality();
@@ -358,21 +395,27 @@ export function createDeviceDesktop({ app, authorize, env = process.env, dataDir
 				closeTimer.unref();
 			} else cleanup();
 		};
+		const armAck = () => {
+			clearTimeout(ackTimer);
+			if (inFlight.length) {
+				ackTimer = setTimeout(
+					() => fail("Desktop display stopped acknowledging frames. Reconnect to resume."),
+					Math.max(1, DESKTOP_LIMITS.ackMs - (Date.now() - inFlight[0])),
+				);
+				ackTimer.unref();
+			}
+		};
 		const flushFrame = () => {
-			if (ended || failing || sending || awaitingAck || !latestFrame || ws.readyState !== WebSocket.OPEN) return;
+			if (ended || failing || sending || inFlight.length >= 2 || !latestFrame || ws.readyState !== WebSocket.OPEN)
+				return;
 			if (ws.bufferedAmount + latestFrame.length > DESKTOP_LIMITS.queue) return;
 			const jpeg = latestFrame;
 			latestFrame = undefined;
 			sending = true;
-			awaitingAck = true;
-			sentAt = Date.now();
+			inFlight.push(Date.now());
 			sent++;
 			queued += jpeg.length;
-			ackTimer = setTimeout(
-				() => fail("Desktop display stopped acknowledging frames. Reconnect to resume."),
-				DESKTOP_LIMITS.ackMs,
-			);
-			ackTimer.unref();
+			armAck();
 			ws.send(jpeg, { binary: true }, (error) => {
 				sending = false;
 				queued -= jpeg.length;
@@ -423,11 +466,11 @@ export function createDeviceDesktop({ app, authorize, env = process.env, dataDir
 			try {
 				const value = JSON.parse(raw.toString());
 				if (value?.type === "ack" && Object.keys(value).length === 1) {
-					if (!awaitingAck) return;
+					const sentAt = inFlight.shift();
+					if (sentAt === undefined) return;
 					ackMs = Date.now() - sentAt;
 					freshAck = true;
-					clearTimeout(ackTimer);
-					awaitingAck = false;
+					armAck();
 					flushFrame();
 					return;
 				}
@@ -454,6 +497,12 @@ export function createDeviceDesktop({ app, authorize, env = process.env, dataDir
 		try {
 			capture = backend.start({
 				readOnly,
+				display,
+				onDisplays: (value) => {
+					primaryDisplay = value.displays.find((item) => item.primary)?.id;
+					if (!ended && !failing && ws.readyState === WebSocket.OPEN && ws.bufferedAmount < 65536)
+						ws.send(JSON.stringify(value));
+				},
 				onFrame: (jpeg) => {
 					if (ended || failing || ws.readyState !== WebSocket.OPEN) return;
 					if (!jpeg.length || jpeg.length > DESKTOP_LIMITS.frame)
@@ -479,6 +528,7 @@ export function createDeviceDesktop({ app, authorize, env = process.env, dataDir
 	}
 	return {
 		handleUpgrade(req: IncomingMessage, socket: Duplex, head: Buffer): boolean {
+			if (clipboard.handleUpgrade(req, socket, head)) return true;
 			let url: URL;
 			try {
 				url = new URL(req.url ?? "/", "http://local");
@@ -491,7 +541,15 @@ export function createDeviceDesktop({ app, authorize, env = process.env, dataDir
 			if (!allowed(req)) reject(403, "Forbidden");
 			else if (!setup.enabled || !backend.status().supported) reject(503, "Unavailable");
 			else if (bridges.size >= DESKTOP_LIMITS.connections) reject(429, "Too Many Requests");
-			else wss.handleUpgrade(req, socket, head, (ws) => bridge(ws, url.searchParams.get("viewOnly") !== "0"));
+			else if (
+				(url.searchParams.get("display")?.length ?? 0) > 128 ||
+				/[\x00-\x1f]/.test(url.searchParams.get("display") ?? "")
+			)
+				reject(400, "Invalid Display");
+			else
+				wss.handleUpgrade(req, socket, head, (ws) =>
+					bridge(ws, url.searchParams.get("viewOnly") !== "0", url.searchParams.get("display") || undefined),
+				);
 			return true;
 		},
 		close() {
@@ -501,6 +559,9 @@ export function createDeviceDesktop({ app, authorize, env = process.env, dataDir
 			for (const controller of permissionControllers) controller.abort();
 			for (const cleanup of bridges) cleanup();
 			preview.close();
+			for (const selected of displayPreviews.values()) selected.close();
+			displayPreviews.clear();
+			clipboard.close();
 			wss.close();
 		},
 	};

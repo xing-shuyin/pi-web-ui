@@ -15,11 +15,12 @@ describe("desktop quality", () => {
 			{ maxEdge: 1 },
 			{ quality: 100 },
 			{ quality: "65" },
-			{ fps: 31 },
+			{ fps: 241 },
 			{ fps: 1.2 },
 		])
 			expect(parseDesktopProfile({ ...p, ...change })).toBeUndefined();
 		const prefs = { mode: "auto", maxEdge: 0, viewportEdge: 1280, fps: 30 };
+		for (const fps of [60, 120, 240]) expect(parseDesktopProfile({ ...p, fps })?.fps).toBe(fps);
 		expect(parseDesktopPreferences(prefs)).toEqual(prefs);
 		for (const change of [{ mode: "unknown" }, { maxEdge: -1 }, { viewportEdge: 0 }, { fps: "30" }])
 			expect(parseDesktopPreferences({ ...prefs, ...change })).toBeUndefined();

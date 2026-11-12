@@ -339,13 +339,15 @@ describe("native desktop through device relay and connector", () => {
 		expect(
 			messages.filter((message) => !message.binary).map((message) => JSON.parse(message.data.toString())),
 		).toContainEqual({ type: "ready", dynamicQuality: false });
-		session.options.onFrame(Buffer.from("must drop until ACK"));
+		session.options.onFrame(jpeg);
+		await vi.waitFor(() => expect(messages.filter((message) => message.binary)).toHaveLength(2));
+		session.options.onFrame(Buffer.from("superseded while both frames await ACK"));
+		session.options.onFrame(jpeg);
 		ws.send(JSON.stringify({ type: "ack" }));
 		await vi.waitFor(() => {
-			session.options.onFrame(jpeg);
-			expect(messages.filter((message) => message.binary)).toHaveLength(2);
+			expect(messages.filter((message) => message.binary)).toHaveLength(3);
 		});
-		expect(messages.filter((message) => message.binary).map((message) => message.data)).toEqual([jpeg, jpeg]);
+		expect(messages.filter((message) => message.binary).map((message) => message.data)).toEqual([jpeg, jpeg, jpeg]);
 		expect(session.input).not.toHaveBeenCalled();
 		const closed = once(ws, "close");
 		ws.close();

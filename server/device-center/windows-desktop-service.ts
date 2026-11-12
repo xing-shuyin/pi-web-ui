@@ -19,7 +19,7 @@ export function windowsDesktopServicePath(): string | undefined {
 export function windowsDesktopServiceProfiles(path: string): boolean {
 	try {
 		return (
-			readFileSync(join(path, "..", "profile-v1"), "utf8")
+			readFileSync(join(path, "..", "profile-v2"), "utf8")
 				.trim()
 				.toLowerCase() === createHash("sha256").update(readFileSync(path)).digest("hex")
 		);
@@ -70,6 +70,14 @@ export function startWindowsServiceDesktop(
 		let failed = false;
 		const next = start({
 			...mode,
+			display: options.display,
+			...(options.onDisplays
+				? {
+						onDisplays(value: Parameters<NonNullable<NativeDesktopOptions["onDisplays"]>>[0]) {
+							if (!closed && id === generation) options.onDisplays?.(value);
+						},
+					}
+				: {}),
 			onFrame(jpeg) {
 				if (closed || failed || id !== generation) return;
 				clearTimeout(deadline);

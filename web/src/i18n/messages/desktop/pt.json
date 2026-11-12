@@ -32,5 +32,14 @@
 	"desktop.groupMembers": "Escolher membro do grupo",
 	"desktop.groupNoDevice": "Nenhum dispositivo associado",
 	"desktop.groupSelect": "Ver o ambiente de trabalho de {name}",
-	"desktop.groupOpen": "Abrir e controlar o ambiente de trabalho de {name}"
+	"desktop.groupOpen": "Abrir e controlar o ambiente de trabalho de {name}",
+	"desktop.clipboard": "Área de transferência",
+	"desktop.clipboardOff": "Desativada",
+	"desktop.clipboardSend": "Local → remoto",
+	"desktop.clipboardReceive": "Remoto → local",
+	"desktop.clipboardBoth": "Bidirecional",
+	"desktop.clipboardReady": "Texto, imagens, arquivos · copie para sincronizar",
+	"desktop.clipboardHint": "Sincroniza novas cópias. Até 32 arquivos e 32 MB por cópia.",
+	"desktop.clipboardLocal": "A sincronização automática requer pi-web-ui no seu próprio localhost.",
+	"desktop.clipboardError": "Sincronização interrompida. Verifique versões, permissões e tamanho e selecione a direção novamente."
 }

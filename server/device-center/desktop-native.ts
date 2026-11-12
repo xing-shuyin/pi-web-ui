@@ -1,4 +1,5 @@
 import { parseDesktopProfile, type DesktopProfile } from "./desktop-quality.js";
+import { parseDesktopDisplays, type DesktopDisplays } from "./desktop-displays.js";
 import { execFileSync, spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
 import { existsSync, mkdtempSync, rm, writeFileSync } from "node:fs";
 import { release, tmpdir } from "node:os";
@@ -261,6 +262,8 @@ export async function requestNativeDesktopPermissions(
 }
 
 export type NativeDesktopOptions = {
+	onDisplays?: (displays: DesktopDisplays) => void;
+	display?: string;
 	onFrame: (jpeg: Buffer) => void;
 	onError: (message: string) => void;
 	onClose: () => void;
@@ -295,6 +298,7 @@ function startNativeDesktopOnce(options: NativeDesktopOptions, service?: string)
 	let headerUsed = 0;
 	let frame: Buffer | undefined;
 	let frameUsed = 0;
+	let displayConfirmed = !options.display;
 
 	function finish() {
 		if (finished) return;
@@ -374,13 +378,30 @@ function startNativeDesktopOnce(options: NativeDesktopOptions, service?: string)
 			if (frameUsed === frame.length) {
 				const jpeg = frame;
 				frame = undefined;
+				if (jpeg[0] === 123 && jpeg.length <= 8192) {
+					let displays: DesktopDisplays | undefined;
+					try {
+						displays = parseDesktopDisplays(JSON.parse(jpeg.toString("utf8")));
+					} catch {}
+					if (!displays) {
+						fail("Invalid desktop display metadata.");
+						return;
+					}
+					displayConfirmed =
+						!options.display ||
+						displays.selected === options.display ||
+						!displays.displays.some((d) => d.id === options.display);
+					armWatchdog();
+					options.onDisplays?.(displays);
+					continue;
+				}
 				if (jpeg[0] !== 0xff || jpeg[1] !== 0xd8 || jpeg[jpeg.length - 2] !== 0xff || jpeg[jpeg.length - 1] !== 0xd9) {
 					fail("Native desktop helper returned an invalid JPEG.");
 					return;
 				}
 				armWatchdog();
 				try {
-					options.onFrame(jpeg);
+					if (displayConfirmed) options.onFrame(jpeg);
 				} catch {
 					fail("Native desktop frame consumer failed.");
 					return;
@@ -443,6 +464,10 @@ function startNativeDesktopOnce(options: NativeDesktopOptions, service?: string)
 				finish();
 			}
 		});
+		if ((options.onDisplays || options.display) && (!service || windowsDesktopServiceProfiles(service))) {
+			write({ type: "displays" });
+			if (options.display) write({ type: "display", id: options.display });
+		}
 		armWatchdog();
 	} catch (error) {
 		queueMicrotask(() => {

@@ -3,6 +3,7 @@ import { isLocalDesktopAccess, setDesktopMode, type DesktopAccess, type DesktopT
 import { useDesktopTarget } from "../use-desktop-target";
 import { useDesktopTheme } from "../use-desktop-theme";
 import { useT } from "../i18n";
+import { DESKTOP_DISPLAY_CHANGE, getDesktopDisplay } from "../desktop-display";
 
 export function DesktopPreviewFrame({
 	access,
@@ -32,14 +33,22 @@ export function DesktopPreviewFrame({
 	activeRef.current = active;
 	function sendActive() {
 		frame.current?.contentWindow?.postMessage(
-			{ type: "desktop-preview-active", active: activeRef.current && !document.hidden },
+			{
+				type: "desktop-preview-active",
+				active: activeRef.current && !document.hidden,
+				display: getDesktopDisplay(access),
+			},
 			"*",
 		);
 	}
 	useEffect(() => {
 		sendActive();
 		document.addEventListener("visibilitychange", sendActive);
-		return () => document.removeEventListener("visibilitychange", sendActive);
+		window.addEventListener(DESKTOP_DISPLAY_CHANGE, sendActive);
+		return () => {
+			document.removeEventListener("visibilitychange", sendActive);
+			window.removeEventListener(DESKTOP_DISPLAY_CHANGE, sendActive);
+		};
 	}, [active, target]);
 	useEffect(() => {
 		setTransport(target?.transport);

@@ -38425,3 +38425,30 @@
 	color: var(--accent);
 	border-color: var(--accent);
 }
+/* ---- Desktop clipboard ---- */
+.desktop-clipboard-control {
+	display: flex;
+	align-items: center;
+	gap: 8px;
+	padding: 5px 10px;
+	flex: none;
+	min-width: 0;
+	max-width: 100%;
+	font-size: 12px;
+	color: var(--text-dim);
+	background: var(--bg-elev);
+	border-bottom: 1px solid var(--border);
+}
+.desktop-clipboard-control select {
+	color: var(--text);
+	background: var(--bg);
+	border: 1px solid var(--border);
+	border-radius: 6px;
+	padding: 4px 8px;
+	min-width: 0;
+	max-width: 100%;
+}
+.desktop-clipboard-control [role="status"] {
+	overflow-wrap: anywhere;
+	word-break: break-word;
+}
