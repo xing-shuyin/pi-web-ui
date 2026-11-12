@@ -2081,6 +2081,8 @@
 		display: flex;
 		flex-direction: column;
 		margin-bottom: 2px;
+		/* 拖拽插入指示线是绝对定位的，需要节点当定位上下文 */
+		position: relative;
 	}
 	.lp-project-node + .lp-project-node {
 		margin-top: 6px;
@@ -2091,11 +2093,40 @@
 	.lp-project-node.dragging {
 		opacity: 0.45;
 	}
-	.lp-project-node.drop-before {
-		box-shadow: inset 0 2px 0 var(--accent);
+	/*
+	 * 插入指示线统一落在「节点之间的分割线」上。
+	 *
+	 * 不猜缝隙中心：缝隙高度随上一节点末行的 padding-bottom 在 13~17px 之间浮动，
+	 * 任何写死的偏移（旧版 -10px）都会在一半节点上越出缝隙、压到上一行文字。
+	 * 改用同一个几何锚点：drop-before 画在自身 border-top，drop-after 画在下一节点的
+	 * border-top —— 两者本来就是同一个落点，前后天然对称，且不可能越界到行内容上。
+	 */
+	.lp-project-node.drop-before::before,
+	.lp-project-node.drop-after + .lp-project-node::before {
+		content: "";
+		position: absolute;
+		left: 0;
+		right: 0;
+		top: -1px;
+		height: 2px;
+		border-radius: 1px;
+		background: var(--accent);
+		pointer-events: none;
 	}
-	.lp-project-node.drop-after {
-		box-shadow: inset 0 -2px 0 var(--accent);
+	/*
+	 * 列表末尾的 drop-after 没有下一个项目节点可以承载这条线，退回贴在自身底边，
+	 * 免得越界压到列表下方的历史会话行。
+	 */
+	.lp-project-node.drop-after:not(:has(+ .lp-project-node))::after {
+		content: "";
+		position: absolute;
+		left: 0;
+		right: 0;
+		bottom: 0;
+		height: 2px;
+		border-radius: 1px;
+		background: var(--accent);
+		pointer-events: none;
 	}
 	.lp-project-head-row[draggable="true"] {
 		cursor: default;
