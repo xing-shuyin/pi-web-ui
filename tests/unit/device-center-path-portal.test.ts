@@ -140,6 +140,29 @@ async function fixture(deviceName?: string, deviceRemark?: string) {
 }
 
 describe("single-port device path portal", () => {
+	it("issues separate desktop tickets only to the owning outer portal", async () => {
+		const f = await fixture();
+		const { base } = await f.open();
+		const endpoint = base + "__desktop_open";
+		for (const origin of ["null", "https://other.example", ""]) {
+			expect((await f.request(endpoint, { origin }, "POST")).status).toBe(403);
+		}
+		expect((await f.request(endpoint, { origin: f.origin })).status).toBe(403);
+		expect((await f.request(endpoint.replace("dev1", "dev2"), { origin: f.origin }, "POST")).status).toBe(403);
+		const opened = await f.request(endpoint, { origin: f.origin }, "POST");
+		expect(opened.status).toBe(200);
+		const url = new URL(JSON.parse(opened.body).url);
+		expect(url.pathname).toBe("/device/dev1/__open");
+		const child = await f.request(url.pathname + url.search + "&next=%2Fdesktop");
+		expect(child.status).toBe(200);
+		const childBase = /\/device\/dev1\/__relay\/[a-f0-9]{64}\//.exec(child.body)![0];
+		expect(childBase).not.toBe(base);
+		expect(child.body).toContain(childBase + "desktop");
+		expect((await f.request(url.pathname + url.search)).status).toBe(403);
+		expect((await f.request(base + "api/data", { origin: "null" })).status).toBe(200);
+		f.relay.revoke("dev1");
+		expect((await f.request(endpoint, { origin: f.origin }, "POST")).status).toBe(403);
+	});
 	it("uses the remark and computer name in the tab title and escapes HTML", async () => {
 		const f = await fixture("DESKTOP-TEST", '办公机 </title><script>alert("x")</script>&');
 		const expected =

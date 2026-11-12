@@ -817,17 +817,15 @@ export function createDeviceRelay(options: DeviceRelayOptions) {
 		if (redirect)
 			res.writeHead(302, { location: url, "cache-control": "no-store", "referrer-policy": "no-referrer" }).end();
 		else
-			res
-				.writeHead(200, { "content-type": "application/json", "cache-control": "no-store" })
-				.end(
-					JSON.stringify({
-						url,
-						expiresAt,
-						deviceLabel: deviceLabel(options.getDeviceName?.(id), options.getDeviceRemark?.(id), id),
-						...(deviceLan ? { deviceLan } : {}),
-						...(deviceP2P ? { deviceP2P } : {}),
-					}),
-				);
+			res.writeHead(200, { "content-type": "application/json", "cache-control": "no-store" }).end(
+				JSON.stringify({
+					url,
+					expiresAt,
+					deviceLabel: deviceLabel(options.getDeviceName?.(id), options.getDeviceRemark?.(id), id),
+					...(deviceLan ? { deviceLan } : {}),
+					...(deviceP2P ? { deviceP2P } : {}),
+				}),
+			);
 	}
 	function sendWrapper(res: ServerResponse, id: string, accountId: string, initialPath = "") {
 		if (closed || !devices.has(id)) {
@@ -847,6 +845,10 @@ export function createDeviceRelay(options: DeviceRelayOptions) {
 			["desktop", "desktop-preview"].includes(initialPath) ? hub : undefined,
 			label,
 			JSON.stringify([accountId, id]),
+			undefined,
+			"hub",
+			undefined,
+			hub.origin + capabilityBase(id, token) + "__desktop_open",
 		);
 		res
 			.writeHead(200, {
@@ -953,6 +955,35 @@ export function createDeviceRelay(options: DeviceRelayOptions) {
 					location: isDesktop ? nextDesktop : "/",
 				})
 				.end();
+			return true;
+		}
+		if (path?.path === "/__desktop_open") {
+			const generation = revision;
+			const grant = capabilities.get(path.token!);
+			if (
+				req.method !== "POST" ||
+				req.headers.origin !== hub.origin ||
+				!grant ||
+				grant.nativeOrigin ||
+				grant.deviceId !== id ||
+				grant.expiresAt <= Date.now() ||
+				!(await options.ownsDevice(grant.accountId, id)) ||
+				closed ||
+				revision !== generation ||
+				capabilities.get(path.token!) !== grant
+			) {
+				res.writeHead(403).end();
+				return true;
+			}
+			if (!devices.has(id) || tickets.size >= RELAY_LIMITS.sessions) {
+				res.writeHead(503).end();
+				return true;
+			}
+			const ticket = randomBytes(32).toString("hex");
+			tickets.set(ticket, { deviceId: id, accountId: grant.accountId, generation, expiresAt: Date.now() + 30_000 });
+			res
+				.writeHead(200, { "content-type": "application/json" })
+				.end(JSON.stringify({ url: `${hub.origin}/device/${id}/__open?ticket=${ticket}` }));
 			return true;
 		}
 		if (!(path ? await pathAuthorized(req, id) : authorized(req, id))) {

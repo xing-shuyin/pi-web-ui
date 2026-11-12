@@ -130,6 +130,29 @@ async function fixture(basePath = "/", desktop = false, browserScript = "") {
 }
 
 describe("local capability portal over authenticated LAN", () => {
+	it("opens an independent same-device desktop ticket without releasing the chat access", async () => {
+		const f = await fixture("/pi/");
+		const endpoint = f.sourceOrigin + f.base + "__desktop_open";
+		for (const origin of ["null", "https://other.example", ""]) {
+			expect((await fetch(endpoint, { method: "POST", headers: { origin } })).status).toBe(403);
+		}
+		expect((await fetch(endpoint, { headers: { origin: f.sourceOrigin } })).status).toBe(403);
+		const opened = await fetch(endpoint, { method: "POST", headers: { origin: f.sourceOrigin } });
+		expect(opened.status).toBe(200);
+		const { url } = await opened.json();
+		expect(new URL(url).pathname).toBe("/pi/device-lan/remote/__open");
+		const child = await fetch(url);
+		const html = await child.text();
+		const childBase = html.match(/\/pi\/device-lan\/remote\/__relay\/[a-f0-9]{64}\//)![0];
+		expect(childBase).not.toBe(f.base);
+		expect(html).toContain(childBase + "desktop");
+		expect((await fetch(url)).status).toBe(403);
+		await fetch(f.sourceOrigin + childBase + "__lan_close", { method: "POST", headers: { origin: f.sourceOrigin } });
+		expect((await fetch(f.sourceOrigin + childBase + "api/health", { headers: { origin: "null" } })).status).toBe(403);
+		expect((await fetch(f.sourceOrigin + f.base + "api/health", { headers: { origin: "null" } })).status).toBe(200);
+		f.setValid(false);
+		expect((await fetch(endpoint, { method: "POST", headers: { origin: f.sourceOrigin } })).status).toBe(403);
+	});
 	it("keeps preview routing through ticket exchange and LAN-to-Hub fallback", async () => {
 		const f = await fixture("/pi/", true);
 		const ticket = await f.freshUrl();

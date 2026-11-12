@@ -30,6 +30,7 @@ interface Access {
 	transport: "lan" | "p2p";
 	grantExpires: number;
 	renewing?: Promise<void>;
+	openingDesktop?: boolean;
 	recovering?: Promise<{ url: string; transport: "lan" | "p2p" | "hub" }>;
 	expires: number;
 	touched: number;
@@ -200,6 +201,7 @@ export function createDeviceLanAccess(options: { allowLoopback?: boolean } = {})
 				access.origin.origin + access.base + "__lan_fallback",
 				access.transport,
 				access.origin.origin + access.base + "__lan_close?view=" + access.view,
+				access.origin.origin + access.base + "__desktop_open",
 			);
 			res
 				.writeHead(200, { "content-type": "text/html; charset=utf-8", "content-security-policy": page.csp })
@@ -207,6 +209,39 @@ export function createDeviceLanAccess(options: { allowLoopback?: boolean } = {})
 			return true;
 		}
 		const fallback = path?.token ? sessions.get(path.token) : undefined;
+		if (path?.path === "/__desktop_open") {
+			if (
+				!fallback ||
+				path.id !== fallback.options.deviceId ||
+				req.method !== "POST" ||
+				!live(path.token!, fallback) ||
+				!allowed(req, fallback) ||
+				req.headers.origin !== fallback.origin.origin
+			) {
+				res.writeHead(403).end();
+				return true;
+			}
+			if (fallback.openingDesktop) {
+				res.writeHead(409).end();
+				return true;
+			}
+			fallback.openingDesktop = true;
+			void (async () => {
+				try {
+					const grant = await fallback.options.renew();
+					if (!live(path.token!, fallback)) throw new Error("Device access expired");
+					const opened = await open(grant, { ...fallback.options, desktop: true });
+					if (!opened || !live(path.token!, fallback)) throw new Error("Device access unavailable");
+					const url = new URL((fallback.options.basePath ?? "/") + opened.url.slice(1), fallback.origin).href;
+					res.writeHead(200, { "content-type": "application/json" }).end(JSON.stringify({ url }));
+				} catch {
+					if (!res.destroyed && !res.headersSent) res.writeHead(502).end();
+				} finally {
+					fallback.openingDesktop = false;
+				}
+			})();
+			return true;
+		}
 		if (path?.path === "/__lan_fallback") {
 			if (
 				!fallback ||

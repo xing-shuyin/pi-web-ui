@@ -5,7 +5,6 @@ import {
 	openDeviceAccess,
 	subscribeDesktopAccess,
 	setDesktopMode,
-	pageDeviceId,
 	type DesktopAccess,
 	type DesktopTransport,
 } from "../device-access";
@@ -156,11 +155,9 @@ function DesktopWindow({ access }: { access: DesktopAccess }) {
 							)
 						: t("desktop.connecting")}
 				</strong>
-				{!pageDeviceId() && (
-					<button type="button" className="btn" disabled={busy} onClick={() => void detach()}>
-						{t(shell ? "desktop.window" : "desktop.tab")}
-					</button>
-				)}
+				<button type="button" className="btn" disabled={busy} onClick={() => void detach()}>
+					{t(shell ? "desktop.window" : "desktop.tab")}
+				</button>
 				<button
 					type="button"
 					className="btn"

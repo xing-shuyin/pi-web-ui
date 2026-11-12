@@ -2,6 +2,7 @@ import { deviceLabel } from "../../server/device-center/device-label";
 import { appBase, appUrl } from "./base-url";
 import { withToken } from "./auth-token";
 import { getMobileRuntime } from "./mobile-runtime";
+import { randomUuid } from "./uuid";
 
 export type DesktopTransport = "lan" | "p2p" | "hub" | "current";
 
@@ -131,6 +132,10 @@ export async function openDeviceAccess(
 		window.dispatchEvent(new Event("pi:desktop-open"));
 		return;
 	}
+	if (desktop && detached && id === pageDeviceId() && window.parent !== window) {
+		await openPortalDesktop(zh);
+		return;
+	}
 	const shell = (window as unknown as { piDesktop?: { openHub?: (url: string) => Promise<boolean> } }).piDesktop;
 	const tab = shell?.openHub ? null : window.open("about:blank", "_blank");
 	if (!shell?.openHub && !tab) throw new Error(zh ? "请允许弹出窗口后重试。" : "Allow popups and try again.");
@@ -150,4 +155,41 @@ export async function openDeviceAccess(
 		tab?.close();
 		throw error;
 	}
+}
+
+function openPortalDesktop(zh: boolean): Promise<void> {
+	const requestId = randomUuid();
+	const origin = new URL(appUrl("/"), window.location.href).origin;
+	return new Promise((resolve, reject) => {
+		const finish = (error?: string) => {
+			clearTimeout(timer);
+			window.removeEventListener("message", receive);
+			if (error) reject(new Error(error));
+			else resolve();
+		};
+		const unavailable = zh
+			? "无法打开独立标签，请更新本机和 Hub 后重试。"
+			: "Could not open a tab. Update this computer and the Hub, then retry.";
+		const receive = (event: MessageEvent) => {
+			if (
+				event.source !== window.parent ||
+				event.origin !== origin ||
+				event.data?.type !== "device-desktop-open-result" ||
+				event.data.requestId !== requestId
+			)
+				return;
+			finish(
+				event.data.ok === true
+					? undefined
+					: event.data.error === "popup"
+						? zh
+							? "请允许弹出窗口后重试。"
+							: "Allow popups and try again."
+						: unavailable,
+			);
+		};
+		const timer = setTimeout(() => finish(unavailable), 30000);
+		window.addEventListener("message", receive);
+		window.parent.postMessage({ type: "device-desktop-open", requestId }, origin);
+	});
 }

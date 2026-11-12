@@ -36,19 +36,43 @@ const server = createServer(async (req, res) => {
 	try {
 		const path = new URL(req.url, origin).pathname;
 		if (path === "/remote") {
-			const wrapper = wrapperHtml(base);
+			const wrapper = wrapperHtml(
+				base,
+				"",
+				undefined,
+				"Studio Mac",
+				undefined,
+				undefined,
+				"hub",
+				undefined,
+				origin + base + "__desktop_open",
+			);
 			res.writeHead(200, { "content-type": "text/html", "content-security-policy": wrapper.csp });
 			return res.end(wrapper.html);
 		}
-		if (!path.startsWith(base)) {
+		const childBase = base.replace("a".repeat(64), "b".repeat(64));
+		const openPath = base.replace(/\/__relay\/[a-f0-9]{64}\/$/, "/__open");
+		if (path === base + "__desktop_open") {
+			assert.equal(req.method, "POST");
+			assert.equal(req.headers.origin, origin);
+			res.writeHead(200, { "content-type": "application/json" });
+			return res.end(JSON.stringify({ url: origin + openPath + "?ticket=" + "c".repeat(64) }));
+		}
+		if (path === openPath) {
+			const wrapper = wrapperHtml(childBase, "desktop", new URL(origin), "Studio Mac");
+			res.writeHead(200, { "content-type": "text/html", "content-security-policy": wrapper.csp });
+			return res.end(wrapper.html);
+		}
+		const routeBase = path.startsWith(childBase) ? childBase : base;
+		if (!path.startsWith(routeBase)) {
 			res.writeHead(404);
 			return res.end();
 		}
-		const tail = path.slice(base.length);
-		const headers = portalHeaders(new URL(origin), base);
+		const tail = path.slice(routeBase.length);
+		const headers = portalHeaders(new URL(origin), routeBase);
 		const html = (body) => {
 			res.writeHead(200, { ...headers, "content-type": "text/html" });
-			res.end(transformPortalHtml(body, base));
+			res.end(transformPortalHtml(body, routeBase));
 		};
 		if (!tail)
 			return html(
@@ -104,6 +128,7 @@ try {
 	for (const prefix of ["/device", "/pi/device-lan"]) {
 		base = `${prefix}/studio-mac/__relay/${"a".repeat(64)}/`;
 		const page = await browser.newPage({ viewport: { width: 1280, height: 820 } });
+		await page.addInitScript(() => Object.defineProperty(crypto, "randomUUID", { value: undefined }));
 		const errors = [];
 		page.on("pageerror", (error) => errors.push(error.message));
 		await page.goto(`${origin}/remote`);
@@ -152,6 +177,18 @@ try {
 		await app.getByRole("button", { name: "Close desktop", exact: true }).click();
 		await app.getByRole("button", { name: "Show this device’s desktop" }).click();
 		await app.getByText(/Updated \d+s ago/).waitFor();
+		await app.getByRole("button", { name: "Expand and control" }).click();
+		const popupPromise = page.waitForEvent("popup");
+		await app.getByRole("button", { name: "Separate tab", exact: true }).click();
+		const popup = await popupPromise;
+		popup.on("pageerror", (error) => errors.push(error.message));
+		await popup.frameLocator("iframe").getByText("Connected · control enabled", { exact: true }).waitFor();
+		await app.getByText(/Updated \d+s ago/).waitFor();
+		assert.equal(await app.locator(".remote-desktop-window").count(), 0);
+		await popup.close();
+		const afterPopup = frames;
+		await page.waitForTimeout(3300);
+		assert(frames > afterPopup, "closing detached desktop retains updating preview");
 		assert.equal(opens, 0, "current desktop never requests another connection");
 		assert.deepEqual(errors, []);
 		await page.close();
