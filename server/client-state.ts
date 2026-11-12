@@ -552,7 +552,7 @@ export const DEFAULT_DARK_MINIMAL_SETTINGS: ClientSettings = Object.freeze({
 		append:
 			"使用gh fnm uv\npr和issue处理完要回复 并且关闭, 分支合并之后就删除\n处理问题时 跳出“修补表象、头痛医头”的打地鼠视角 寻找根本的解决办法",
 	},
-	promptDisabled: ["persona", "plugin_dev"],
+	promptDisabled: ["plugin_dev"],
 	_promptPluginDevConfigured: false,
 	toolPromptOverrides: {},
 	disabledSkills: [],

@@ -49,7 +49,6 @@ function soulOf(loader: object | undefined): string {
 		piDocs: "",
 		piExamples: "",
 		appendFiles: [...base.append],
-		windowsPersona: "",
 		markersGuidance: "",
 		contextFiles: [],
 		skills: [],

@@ -6,7 +6,6 @@ export const PROMPT_TOKENS = [
 	"guidelines",
 	"pi_docs",
 	"append",
-	"persona",
 	"markers",
 	"plugin_dev",
 	"context",
@@ -18,7 +17,6 @@ export const READONLY_PROMPT_SOURCES = [
 	"tools",
 	"pi_docs",
 	"plugin_dev",
-	"persona",
 	"markers",
 	"context",
 	"skills",
@@ -34,10 +32,13 @@ export function isReadonlyPromptSource(token: string): boolean {
 }
 
 /**
- * 已下线的历史来源：`{{terminal}}`（终端工具引导）。
- * 老模板/老预设里残留该 token 时渲染为空——不留 `{{terminal}}` 字面量，也不复活该段文本。
+ * 已下线的历史来源：`{{terminal}}`（终端工具引导）、`{{persona}}`（Windows 约束）。
+ * 老模板/老预设里残留该 token 时渲染为空——不留 `{{terminal}}` / `{{persona}}` 字面量，也不复活该段文本。
+ *
+ * `{{persona}}` 下线理由：Windows / 远程工作区约束由宿主在 append 段无条件注入（`WINDOWS_PERSONA`），
+ * 再挂一个可开关 token 只会让同一段文字注入两遍；设置面板也不该让用户去「启用」平台安全约束。
  */
-export const LEGACY_PROMPT_TOKENS: readonly string[] = ["terminal"];
+export const LEGACY_PROMPT_TOKENS: readonly string[] = ["terminal", "persona"];
 
 export function isLegacyPromptToken(token: string): boolean {
 	return LEGACY_PROMPT_TOKENS.includes(token);
@@ -82,7 +83,6 @@ export interface PromptComposerInputs {
 	pluginSdk?: string;
 	pluginsDir?: string;
 	appendFiles: string[];
-	windowsPersona: string;
 	markersGuidance: string;
 	contextFiles: { path: string; content: string }[];
 	skills: { name: string; description: string; filePath: string; content?: string }[];
@@ -301,32 +301,37 @@ function buildContextText(files: PromptComposerInputs["contextFiles"], lang: Ser
 	].join("\n");
 }
 
-function buildToolsText(inputs: PromptComposerInputs, lang: ServerLang): string {
+const TOOLS_TAIL =
+	"In addition to the tools above, you may have access to other custom tools depending on the project.";
+
+function buildToolsText(inputs: PromptComposerInputs): string {
 	const listed = inputs.catalogTools ?? inputs.selectedTools;
-	const visible = listed.filter((n) => !!inputs.toolSnippets[n]);
-	if (!inputs.lazy && visible.length === 0) return "";
-	const toolsList =
-		visible.length > 0
-			? visible
-					.map((n) => {
-						const sig = inputs.toolSignatures?.[n] ? ` ${inputs.toolSignatures[n]}` : "";
-						return `- ${n}:${sig} ${inputs.toolSnippets[n]}`;
-					})
-					.join("\n")
-			: "(none)";
-	const parts = [`Available tools:\n${toolsList}`];
 	if (inputs.lazy) {
-		parts.push(
-			pick(
-				lang,
-				"核心工具（bash, read, edit, write）及 `load_tools` 始终常驻可用，无需加载；不在按需名单里的其余工具同样常驻、可直接调用。上表中除核心工具外的按需名单工具尚未附加参数 schema，调用前先用 `load_tools` 附加上完整参数（本对话后续轮次持续有效）。",
-				"Core tools (bash, read, edit, write) and `load_tools` are always active and ready to use. Other resident tools NOT in the on-demand list are also active and callable directly. On-demand tools above (other than core) do NOT have their parameter schema attached yet: pass their names to `load_tools` before calling them to attach full schemas for the rest of this conversation.",
-				"prompt.tools.lazy",
-			),
-		);
+		// 按需目录：只列名单工具（常驻工具 schema 已全量下发，不重复列）。
+		// 名单为空 = 没有任何工具可加载，整段（目录 + load_tools 说明 + 尾巴）都不输出。
+		if (listed.length === 0) return "";
+		const onDemandList = listed
+			.map((n) => {
+				const sig = inputs.toolSignatures?.[n] ? ` ${inputs.toolSignatures[n]}` : "";
+				const snippet = inputs.toolSnippets[n];
+				return `- ${n}:${sig}${snippet ? ` ${snippet}` : ""}`;
+			})
+			.join("\n");
+		// 纯英文精简：工具段不进双语（与工具提示词口径一致）。
+		return [
+			`On-demand tools (schema not attached — call \`load_tools\` with the names first):\n${onDemandList}`,
+			TOOLS_TAIL,
+		].join("\n\n");
 	}
-	parts.push("In addition to the tools above, you may have access to other custom tools depending on the project.");
-	return parts.join("\n\n");
+	const visible = listed.filter((n) => !!inputs.toolSnippets[n]);
+	if (visible.length === 0) return "";
+	const toolsList = visible
+		.map((n) => {
+			const sig = inputs.toolSignatures?.[n] ? ` ${inputs.toolSignatures[n]}` : "";
+			return `- ${n}:${sig} ${inputs.toolSnippets[n]}`;
+		})
+		.join("\n");
+	return [`Available tools:\n${toolsList}`, TOOLS_TAIL].join("\n\n");
 }
 
 export interface ToolSchemaEntry {
@@ -358,11 +363,10 @@ export function resolveSectionTexts(inputs: PromptComposerInputs): Record<Prompt
 	soul = `${soul}\nBe concise in your responses\nShow file paths clearly when working with files`;
 	return {
 		soul,
-		tools: buildToolsText(inputs, lang),
+		tools: buildToolsText(inputs),
 		guidelines: buildGuidelinesText(inputs),
 		pi_docs: buildPiDocsText(inputs.piReadme, inputs.piDocs, inputs.piExamples, lang),
 		append: inputs.appendFiles.join("\n\n"),
-		persona: inputs.windowsPersona,
 		markers: inputs.markersGuidance,
 		plugin_dev: buildPluginDevText(inputs, lang),
 		context: buildContextText(inputs.contextFiles, lang),

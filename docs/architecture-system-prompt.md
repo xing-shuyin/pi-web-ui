@@ -12,7 +12,7 @@
 
     最终提示词 = 基础提示词(soul) + 工具列表(tools) + 行为准则(guidelines)
               + Pi 文档指引(pi_docs) + 追加段(append) + pi-web-ui 引导
-              (persona/markers) + 项目上下文(context) + 技能段(skills)
+              (markers) + 项目上下文(context) + 技能段(skills)
               + 工作目录行(cwd)
     主会话启用「组合模板」后，以上每一层都是一个 {{token}}：模板里写哪些 token、
     按什么顺序、穿插什么自己的话，决定最终提示词；每层未覆盖时用**自动内容**
@@ -26,7 +26,6 @@
         {{guidelines}}  Guidelines：文件探索引导 + 各工具 promptGuidelines + 固定两行
         {{pi_docs}}     Pi documentation 指引（指向已安装 pi 包路径）
         {{append}}      追加段 = APPEND_SYSTEM.md 内容；覆盖 = 自定义追加文字
-        {{persona}}     Windows persona（仅 win32）
         {{markers}}     内置标记工具引导（markers 开启时）
         {{context}}     <project_context>（AGENTS.md / CLAUDE.md 收集结果）
         {{skills}}      <available_skills> 技能清单
@@ -77,7 +76,7 @@
     renderPromptTemplate(template, texts, overrides) → {{token}} 替换
         - 覆盖优先：overrides[token] 非空白 → 用之；否则 texts[token]
         - 未知 token 保留原文（UI 可提示 typo）
-        - 自动内容为空的 token（如非 win32 的 {{persona}}）展开为空串
+        - 自动内容为空的 token（如没有 APPEND_SYSTEM.md 时的 {{append}}）展开为空串
     DEFAULT_PROMPT_TEMPLATE / PROMPT_TOKENS 供设置 UI（token 插入、恢复默认）。
     单测：tests/unit/prompt-composer.test.ts。
 

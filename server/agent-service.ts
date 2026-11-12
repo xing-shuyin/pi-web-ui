@@ -2712,6 +2712,11 @@ export class ClientSession {
 		return this.settingsSvc?.current.toolLazyLoading === true;
 	}
 
+	/** 按需加载实际生效？开关开 + 名单非空。名单为空 = 无工具可加载，等同关闭（不挂 load_tools、不出目录段）。 */
+	private lazyEffectiveOn(): boolean {
+		return this.lazyLoadingOn() && this.lazyOnDemandSet().size > 0;
+	}
+
 	private sessionHasTranscript(session: AgentSession): boolean {
 		try {
 			return (session.state?.messages?.length ?? 0) > 0;
@@ -2796,28 +2801,13 @@ export class ClientSession {
 					)
 					.map((t) => t.name),
 			);
-			const { resident, pending, loadedLazy } = this.lazyPartition(session, conv);
+			const { pending, loadedLazy } = this.lazyPartition(session, conv);
 			if (pending.length === 0 && loadedLazy.length === 0) {
-				// 名单为空：目录只剩核心，模型无 load 需求；工具 schema 本就携带全部常驻。
-				const coreOnly = new Set<string>([...LAZY_CORE_TOOL_NAMES]);
-				const names = this.allowedToolNames(session, conv).filter(
-					(n) => n !== LOAD_TOOLS_TOOL_NAME && !mcpDeferred.has(n) && coreOnly.has(n),
-				);
-				const snippets: Record<string, string> = {};
-				const signatures: Record<string, string> = {};
-				for (const name of names) {
-					const def = session.getToolDefinition(name);
-					const snippet = this.toolSnippetOf(def);
-					if (snippet) snippets[name] = snippet;
-					if (def?.parameters) {
-						const sig = formatCompactSignature(def.parameters);
-						if (sig) signatures[name] = sig;
-					}
-				}
-				return { names, snippets, signatures };
+				// 名单为空：没有可加载的工具，目录段整段不输出（常驻工具的 schema 已全量下发）。
+				return empty;
 			}
-			const core = new Set<string>([...LAZY_CORE_TOOL_NAMES]);
-			const stableSet = new Set([...resident.filter((n) => core.has(n)), ...pending, ...loadedLazy]);
+			// 目录 = 按需名单（不过滤已加载，保证加载前后 system 逐字节相同）；核心/常驻不重复列。
+			const stableSet = new Set([...pending, ...loadedLazy]);
 			const names = this.allowedToolNames(session, conv).filter(
 				(n) => n !== LOAD_TOOLS_TOOL_NAME && !mcpDeferred.has(n) && stableSet.has(n),
 			);
@@ -3110,7 +3100,6 @@ export class ClientSession {
 		const showSkills = presetShowsSkillCatalog(preset);
 		const effectiveSkills = showSkills ? this.fillSkillContents(src.skills) : [];
 		const realCwd = restoreWorkspaceUriFromSessionDir(src.cwd);
-		const isRemote = isRemoteWorkspaceUri(realCwd);
 		return {
 			cwd: formatCwdForPrompt(realCwd),
 			systemPromptFile: promptBase.system || undefined,
@@ -3128,11 +3117,6 @@ export class ClientSession {
 			pluginSdk: join(getPkgRoot(), "plugin-sdk"),
 			pluginsDir: join(this.stateStore.dataDir, "plugins"),
 			appendFiles: [...promptBase.append],
-			windowsPersona: isRemote
-				? buildRemoteWorkspacePersona(realCwd)
-				: process.platform === "win32"
-					? WINDOWS_PERSONA
-					: "",
 			markersGuidance: this.markerSvc.buildGuidance(),
 			lang: this.getLang(),
 			contextFiles: src.contextFiles,
@@ -3207,7 +3191,7 @@ export class ClientSession {
 			}
 			const loader = sess.resourceLoader;
 			const preset = conv?.agentPreset ?? this.settingsSvc.current.defaultAgentPreset ?? "standard";
-			const lazyOn = this.lazyLoadingOn();
+			const lazyOn = this.lazyEffectiveOn();
 			const catalog = lazyOn
 				? this.promptToolCatalog(sess, conv)
 				: {
@@ -3215,7 +3199,7 @@ export class ClientSession {
 						snippets: {} as Record<string, string>,
 						signatures: {} as Record<string, string>,
 					};
-			// 名单制：基线 = 常驻（允许集 - 名单，含核心 + load_tools），目录 = 核心 + 名单。
+			// 名单制：基线 = 常驻（允许集 - 名单，含核心 + load_tools），目录 = 名单（不重复列常驻）。
 			const baseNames = lazyOn ? this.lazyResidentNames(sess, conv) : active;
 			const snippets: Record<string, string> = {};
 			const signatures: Record<string, string> = catalog.signatures ?? {};
@@ -4402,7 +4386,7 @@ export class ClientSession {
 										const conv = this.convs.get(ownerId ?? this.activeId) ?? this.conv;
 										const sess = conv?.session;
 										const activeToolNames = sess ? sess.getActiveToolNames() : [];
-										const lazyOn = this.lazyLoadingOn();
+										const lazyOn = this.lazyEffectiveOn();
 										const catalog =
 											lazyOn && sess
 												? this.promptToolCatalog(sess, conv)
@@ -9718,7 +9702,7 @@ export class ClientSession {
 			}
 		}
 		let loadedNames: string[] = [];
-		const lazy = this.lazyLoadingOn();
+		const lazy = this.lazyEffectiveOn();
 		if (lazy) {
 			try {
 				const loaded = this.lazyLoadedFor(session, this.sessionHasTranscript(session));

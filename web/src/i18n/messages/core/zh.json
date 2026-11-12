@@ -1614,8 +1614,6 @@
 	"promptTok_pi_docs_desc": "指向 pi 包文档的提示段",
 	"promptTok_append": "追加段",
 	"promptTok_append_desc": "APPEND_SYSTEM.md 内容；覆盖 = 自定义追加文字",
-	"promptTok_persona": "Windows 约束",
-	"promptTok_persona_desc": "Windows persona（仅 win32；超时/PTY/GBK 注意事项）",
 	"promptTok_markers": "标记工具引导",
 	"promptTok_markers_desc": "内置标记工具使用说明（markers 开时注入）",
 	"promptTok_plugin_dev": "插件开发指南",

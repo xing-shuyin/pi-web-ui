@@ -1618,8 +1618,6 @@
 		"promptTok_pi_docs_desc": "Block mit Verweis auf die pi-Paketdokumentation",
 		"promptTok_append": "Anhangsblock",
 		"promptTok_append_desc": "Inhalt von APPEND_SYSTEM.md; Überschreibung = benutzerdefinierter angehängter Text",
-		"promptTok_persona": "Windows-Einschränkungen",
-		"promptTok_persona_desc": "Windows-Persona (nur win32; Hinweise zu Timeout/PTY/GBK)",
 		"promptTok_markers": "Marker-Anleitung",
 		"promptTok_markers_desc": "Verwendung der eingebauten Marker-Werkzeuge (wird injiziert, wenn Marker aktiviert sind)",
 		"promptTok_plugin_dev": "Plugin dev guide",

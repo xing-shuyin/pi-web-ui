@@ -1614,8 +1614,6 @@
 	"promptTok_pi_docs_desc": "the block pointing at the pi package docs",
 	"promptTok_append": "Append block",
 	"promptTok_append_desc": "APPEND_SYSTEM.md content; override = custom appended text",
-	"promptTok_persona": "Windows persona",
-	"promptTok_persona_desc": "win32-only safety rules (timeout / PTY / GBK)",
 	"promptTok_markers": "Markers guidance",
 	"promptTok_markers_desc": "built-in marker tools usage (injected when markers are on)",
 	"promptTok_plugin_dev": "Plugin dev guide",

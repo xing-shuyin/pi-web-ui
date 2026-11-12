@@ -41,7 +41,6 @@ function inputs(partial: Partial<PromptComposerInputs> = {}): PromptComposerInpu
 		piDocs: "E:/pi-web-ui/node_modules/@earendil-works/pi-coding-agent/docs",
 		piExamples: "E:/pi-web-ui/node_modules/@earendil-works/pi-coding-agent/examples",
 		appendFiles: [],
-		windowsPersona: "You are a coding agent running on Windows. Follow these rules to avoid hanging the session:",
 		markersGuidance: "",
 		contextFiles: [{ path: "E:\\pi-web-ui\\AGENTS.md", content: AGENTS_CONTENT }],
 		skills: [{ name: "mermaid", description: "render mermaid diagrams", filePath: "E:/pi-web-ui/plugins/mermaid" }],
@@ -71,11 +70,13 @@ describe("token 元数据", () => {
 		expect(tokens).toContain("typo_token");
 	});
 
-	it("已下线的 {{terminal}} 不再出现在 token 列表，且残留时渲染为空", () => {
-		expect(isKnown("terminal")).toBe(false);
-		expect(isLegacyPromptToken("terminal")).toBe(true);
-		const rendered = renderPromptTemplate("A{{terminal}}B", resolveSectionTexts(inputs()), undefined);
-		expect(rendered).toBe("AB");
+	it("已下线的 {{terminal}} / {{persona}} 不再出现在 token 列表，且残留时渲染为空", () => {
+		for (const token of ["terminal", "persona"]) {
+			expect(isKnown(token)).toBe(false);
+			expect(isLegacyPromptToken(token)).toBe(true);
+			const rendered = renderPromptTemplate(`A{{${token}}}B`, resolveSectionTexts(inputs()), undefined);
+			expect(rendered).toBe("AB");
+		}
 	});
 });
 
@@ -108,26 +109,48 @@ describe("resolveSectionTexts — 各来源自动内容", () => {
 		expect(auto.tools).toBe("");
 	});
 
-	it("tools（lazy 模式）：声明核心工具常驻且其他工具按需 load_tools", () => {
-		const enAuto = resolveSectionTexts(
-			inputs({
-				lazy: true,
-				catalogTools: ["bash", "read", "edit", "write", "patch"],
-				lang: "en",
-			}),
-		);
-		expect(enAuto.tools).toContain("Core tools (bash, read, edit, write) and `load_tools` are always active");
-		expect(enAuto.tools).toContain("pass their names to `load_tools` before calling them");
-
+	it("tools（lazy 模式）：纯英文精简标题，只列名单、不重复列常驻工具", () => {
 		const zhAuto = resolveSectionTexts(
 			inputs({
 				lazy: true,
-				catalogTools: ["bash", "read", "edit", "write", "patch"],
+				catalogTools: ["patch", "lsp"],
 				lang: "zh",
 			}),
 		);
-		expect(zhAuto.tools).toContain("核心工具（bash, read, edit, write）及 `load_tools` 始终常驻可用，无需加载");
-		expect(zhAuto.tools).toContain("调用前先用 `load_tools` 附加上完整参数");
+		expect(
+			zhAuto.tools.startsWith("On-demand tools (schema not attached — call `load_tools` with the names first):"),
+		).toBe(true);
+		expect(zhAuto.tools).toContain("- patch:");
+		expect(zhAuto.tools).not.toContain("Available tools:");
+		expect(zhAuto.tools).not.toContain("bash");
+		// 工具段不进双语：中英文设置下逐字相同，且无汉字
+		expect(/[\u4e00-\u9fff]/.test(zhAuto.tools)).toBe(false);
+		const enAuto = resolveSectionTexts(
+			inputs({
+				lazy: true,
+				catalogTools: ["patch", "lsp"],
+				lang: "en",
+			}),
+		);
+		expect(enAuto.tools).toBe(zhAuto.tools);
+	});
+
+	it("tools（lazy 模式）：名单为空时整段不输出（没有工具可加载）", () => {
+		const out = resolveSectionTexts(inputs({ lazy: true, catalogTools: [], lang: "zh" }));
+		expect(out.tools).toBe("");
+	});
+
+	it("tools（lazy 模式）：名单工具缺 snippet 时仍按名字列出（不静默丢工具）", () => {
+		const out = resolveSectionTexts(
+			inputs({
+				lazy: true,
+				catalogTools: ["mystery"],
+				toolSnippets: {},
+				toolSignatures: { mystery: "{x: string}" },
+				lang: "en",
+			}),
+		);
+		expect(out.tools).toContain("- mystery: {x: string}");
 	});
 
 	it("guidelines：探索引导 + 工具引导去重（无固定文案，固定文案已移 soul）", () => {
@@ -177,9 +200,8 @@ describe("resolveSectionTexts — 各来源自动内容", () => {
 		expect(resolveSectionTexts(inputs()).cwd).toBe("Current working directory: E:/pi-web-ui");
 	});
 
-	it("persona/markers 直接透传自动内容", () => {
+	it("markers 直接透传自动内容", () => {
 		const auto = resolveSectionTexts(inputs());
-		expect(auto.persona).toContain("Windows");
 		expect(auto.markers).toBe("");
 	});
 });
@@ -205,7 +227,6 @@ describe("renderPromptTemplate — 组合与覆盖", () => {
 		expect(RENDERED).toContain("<project_context>");
 		expect(RENDERED).toContain(AGENTS_CONTENT);
 		expect(RENDERED).toContain("<available_skills>");
-		expect(RENDERED).toContain("Windows");
 	});
 
 	it("覆盖 soul：整体模板中灵魂被替换、其他自动段原样", () => {
@@ -353,18 +374,9 @@ describe("buildSkillsText 全文/名单模式", () => {
 });
 
 describe("READONLY_PROMPT_SOURCES / isReadonlyPromptSource — 只读来源判定", () => {
-	it("只读集合为 8 个，且不含 soul / guidelines / append", () => {
-		expect(READONLY_PROMPT_SOURCES).toHaveLength(8);
-		expect(READONLY_PROMPT_SOURCES).toEqual([
-			"tools",
-			"pi_docs",
-			"plugin_dev",
-			"persona",
-			"markers",
-			"context",
-			"skills",
-			"cwd",
-		]);
+	it("只读集合为 7 个，且不含 soul / guidelines / append", () => {
+		expect(READONLY_PROMPT_SOURCES).toHaveLength(7);
+		expect(READONLY_PROMPT_SOURCES).toEqual(["tools", "pi_docs", "plugin_dev", "markers", "context", "skills", "cwd"]);
 		for (const s of ["soul", "guidelines", "append"]) {
 			expect(READONLY_PROMPT_SOURCES).not.toContain(s);
 		}

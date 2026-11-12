@@ -1618,8 +1618,6 @@
 		"promptTok_pi_docs_desc": "pi paketi dokümanlarına işaret eden prompt bloğu",
 		"promptTok_append": "Ekleme bloğu",
 		"promptTok_append_desc": "APPEND_SYSTEM.md içeriği; üzerine yazma = özel ek metin",
-		"promptTok_persona": "Windows kısıtları",
-		"promptTok_persona_desc": "Windows persona (yalnızca win32; zaman aşımı / PTY / GBK uyarıları)",
 		"promptTok_markers": "İşaretleyici araç yönergesi",
 		"promptTok_markers_desc": "yerleşik işaretleyici araçlarının kullanım açıklaması (markers açıkken eklenir)",
 		"promptTok_plugin_dev": "Plugin dev guide",

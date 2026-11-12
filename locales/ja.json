@@ -1618,8 +1618,6 @@
 		"promptTok_pi_docs_desc": "piパッケージのドキュメントを指す案内段です",
 		"promptTok_append": "追加段",
 		"promptTok_append_desc": "APPEND_SYSTEM.md の内容です。上書き = カスタム追加テキストになります",
-		"promptTok_persona": "Windows制約",
-		"promptTok_persona_desc": "Windows persona です（win32のみ。タイムアウト・PTY・GBKの注意事項です）",
 		"promptTok_markers": "マーカーツール案内",
 		"promptTok_markers_desc": "内蔵マーカーツールの使用説明です（markersがオンのときに挿入されます）",
 		"promptTok_plugin_dev": "Plugin dev guide",

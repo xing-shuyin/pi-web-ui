@@ -1618,8 +1618,6 @@
 		"promptTok_pi_docs_desc": "Раздел с указанием на документацию пакета pi",
 		"promptTok_append": "Добавляемый блок",
 		"promptTok_append_desc": "Содержимое APPEND_SYSTEM.md; переопределение = собственный добавляемый текст",
-		"promptTok_persona": "Ограничения Windows",
-		"promptTok_persona_desc": "Персона Windows (только win32; замечания о таймауте/PTY/GBK)",
 		"promptTok_markers": "Руководство по маркерам",
 		"promptTok_markers_desc": "Описание использования встроенных инструментов-маркеров (вставляется, когда включены markers)",
 		"promptTok_plugin_dev": "Руководство по разработке плагинов",

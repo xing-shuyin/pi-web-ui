@@ -193,6 +193,13 @@ check(
 ws.send(JSON.stringify({ type: "set_settings", toolLazyLoading: true }));
 for (let i = 0; i < 50 && settings?.toolLazyLoading !== true; i++) await sleep(50);
 check("默认关：显式打开按需加载后设置生效", settings?.toolLazyLoading === true, `value=${settings?.toolLazyLoading}`);
+// 名单为空 = 没有工具可加载：等同关闭（不挂 load_tools、提示词不出按需段）。
+for (let i = 0; i < 50 && state?.tools?.includes("load_tools"); i++) await sleep(50);
+check(
+	"名单为空：load_tools 不挂载、提示词不提按需加载",
+	!state?.tools?.includes("load_tools") && !/load_tools/.test(settings?.effectiveSystemPrompt ?? ""),
+	`tools=${state?.tools?.join(",")} prompt=${(settings?.effectiveSystemPrompt ?? "").slice(0, 120)}`,
+);
 // 名单制：只有名单里的才延迟；本用例用 patch / find 验证延迟与 JIT。
 ws.send(JSON.stringify({ type: "set_settings", toolOnDemandTools: ["patch", "find"] }));
 await sleep(800);
@@ -223,6 +230,11 @@ check(
 	`system len=${firstSystem.length}`,
 );
 check("系统提示词带「先 load_tools」的说明", /load_tools/.test(firstSystem));
+check(
+	"按需目录只列名单工具（不重复列核心/常驻工具）",
+	!/(^|\n)- (bash|read|edit|write):/.test(firstSystem) && !/Available tools:/.test(firstSystem),
+	`system has core line=${/(^|\n)- (bash|read|edit|write):/.test(firstSystem)}`,
+);
 
 const second = await waitRequest(1);
 check("load_tools 执行后又发了一次请求", Boolean(second), `requests=${requests.length}`);

@@ -1618,8 +1618,6 @@
 		"promptTok_pi_docs_desc": "o bloco que aponta para a documentação do pacote pi",
 		"promptTok_append": "Bloco de acréscimo",
 		"promptTok_append_desc": "Conteúdo do APPEND_SYSTEM.md; substituição = texto personalizado acrescentado",
-		"promptTok_persona": "Persona Windows",
-		"promptTok_persona_desc": "regras de segurança somente para win32 (timeout / PTY / GBK)",
 		"promptTok_markers": "Orientação de marcadores",
 		"promptTok_markers_desc": "uso das ferramentas de marcadores integradas (injetado quando marcadores estão ativados)",
 		"promptTok_plugin_dev": "Plugin dev guide",
