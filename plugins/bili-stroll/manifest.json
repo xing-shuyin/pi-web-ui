@@ -1,0 +1,352 @@
+{
+	"id": "bili-stroll",
+	"name": "漫步B站",
+	"nameEn": "Bilibili Stroll",
+	"version": "0.3.0",
+	"icon": "📺",
+	"iconSvg": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><rect x=\"2\" y=\"7\" width=\"20\" height=\"15\" rx=\"3\"/><polyline points=\"17 2 12 7 7 2\"/><line x1=\"8\" y1=\"12\" x2=\"8\" y2=\"12.01\"/><line x1=\"16\" y1=\"12\" x2=\"16\" y2=\"12.01\"/></svg>",
+	"description": "像人一样逛 B 站：三秒印象→试看两分钟→深看，全程留下观看手记；系列追踪与好奇心队列让记忆跨轮连续。旧版巡检逻辑不动，另起的新版本。",
+	"descriptionEn": "Browse Bilibili like a human: impression, preview, deep watch, with watch notes, series tracking and a curiosity queue. A fresh start alongside bili-scroll.",
+	"apiVersion": 2,
+	"permissions": ["tools", "http", "ui", "storage", "net", "chat", "llm"],
+	"view": true,
+	"alwaysOn": true,
+	"agentToolsDefaultOn": false,
+	"settings": [
+		{
+			"key": "perDay",
+			"type": "number",
+			"label": "定量刷：每天最多挑几条",
+			"labelEn": "Daily Curation Quota",
+			"default": 5,
+			"min": 1,
+			"max": 30,
+			"hint": "每天挑出值得精读的视频数量上限，挑够后当日自动停刷",
+			"hintEn": "Maximum number of high-quality videos to curate per day"
+		},
+		{
+			"key": "peakValley",
+			"type": "boolean",
+			"label": "峰谷自动刷（总开关）",
+			"labelEn": "Peak-Valley Auto Schedule",
+			"default": true,
+			"hint": "在优惠谷时时段自动巡检（中午 12:00-14:00、夜间 00:30-08:30）",
+			"hintEn": "Enable automated curation rounds during off-peak hours"
+		},
+		{
+			"key": "noon",
+			"type": "boolean",
+			"label": "午间巡检窗口 (12:00–14:00)",
+			"labelEn": "Noon Window (12:00-14:00)",
+			"default": true,
+			"hint": "中午时段自动执行一轮巡检",
+			"hintEn": "Automatically run one curation round at noon"
+		},
+		{
+			"key": "night",
+			"type": "boolean",
+			"label": "夜间/早间巡检窗口 (00:30–08:30)",
+			"labelEn": "Night Window (00:30-08:30)",
+			"default": true,
+			"hint": "夜间至清晨时段自动执行一轮巡检",
+			"hintEn": "Automatically run one curation round at night/early morning"
+		},
+		{
+			"key": "dmMode",
+			"type": "select",
+			"label": "投递方式（2.0 默认私信）",
+			"labelEn": "Delivery Mode",
+			"default": "only",
+			"options": ["only", "off", "both"],
+			"hint": "only=只私信（完全不公开发评论，不打扰别人）；off=只发公开评论；both=公评与私信兼有",
+			"hintEn": "only: send DM only (silent & private); off: public comment only; both: both comment and DM"
+		},
+		{
+			"key": "dmUid",
+			"type": "number",
+			"label": "速报收件人 UID（可选）",
+			"labelEn": "Target Receiver UID for DM",
+			"default": 0,
+			"hint": "仅用于投递速报，可留空；与当前账号私信查询和自动回复无关",
+			"hintEn": "Target Bilibili user UID; leave empty to resolve from username automatically"
+		},
+		{
+			"key": "mentionName",
+			"type": "string",
+			"label": "要 @ 谁 / 私信接收人昵称",
+			"labelEn": "Target Username / Mention",
+			"default": "",
+			"hint": "你的 B站 昵称。私信模式留空 UID 时会按此昵称自动查询 UID；开启公评时会在评论中 @ 该昵称",
+			"hintEn": "Bilibili username used for @ mention and resolving UID"
+		},
+		{
+			"key": "dmWatch",
+			"type": "boolean",
+			"label": "私信双向对话（看片与回信）",
+			"labelEn": "Bidirectional DM Watcher",
+			"default": true,
+			"hint": "监听当前登录账号的收件箱，无需主人 UID。自动回复独立控制，仅新消息调用模型并产生费用。",
+			"hintEn": "Monitor the logged-in account inbox without an owner UID. Automatic replies use model tokens for new messages."
+		},
+		{
+			"key": "dmAutoReply",
+			"type": "boolean",
+			"label": "自动回复新私信",
+			"labelEn": "Automatically reply to new DMs",
+			"default": true,
+			"hint": "使用当前账号与新消息发送者交流；首次启用只建立基线，不补发旧消息。",
+			"hintEn": "Reply using the current account. Initial activation baselines the inbox without replying to old messages."
+		},
+		{
+			"key": "visionModel",
+			"type": "string",
+			"label": "画面理解模型（须支持图片）",
+			"labelEn": "Vision model (image support required)",
+			"default": "",
+			"hint": "留空跟随研读模型；抽样分析视频画面，无法覆盖所有瞬间。",
+			"hintEn": "Defaults to the analysis model. Sampled frames do not cover every moment."
+		},
+		{
+			"key": "dmWatchMinutes",
+			"type": "number",
+			"label": "私信监听轮询间隔（分钟）",
+			"labelEn": "DM Watch Interval (min)",
+			"default": 1,
+			"min": 1,
+			"max": 60,
+			"hint": "默认每分钟检查当前账号的新私信",
+			"hintEn": "Frequency to poll the current account inbox"
+		},
+		{
+			"key": "dmReplyPerDay",
+			"type": "number",
+			"label": "私信回复每日上限（条）",
+			"labelEn": "Daily DM Reply Limit",
+			"default": 20,
+			"min": 0,
+			"max": 100,
+			"hint": "每天最多自动回复 1–100 条，0 按默认 20 条处理",
+			"hintEn": "Daily automatic reply budget, 1–100; zero uses the default of 20"
+		},
+		{
+			"key": "model",
+			"type": "string",
+			"label": "指定研读模型 (provider/model)",
+			"labelEn": "Designated AI Model",
+			"default": "",
+			"hint": "留空跟随当前对话模型；支持填入如 deepseek/deepseek-chat, openai/gpt-4o 等",
+			"hintEn": "Specific model override (e.g. deepseek/deepseek-chat); leave empty to follow active conversation"
+		},
+		{
+			"key": "reasoningEffort",
+			"type": "select",
+			"label": "思考强度 (Reasoning Effort)",
+			"labelEn": "Reasoning / Thinking Effort",
+			"default": "medium",
+			"options": ["off", "low", "medium", "high"],
+			"hint": "控制 AI 研读字幕排雷时的思考深度：off=关闭思考，low=轻度快速，medium=中等深度，high=深度推演",
+			"hintEn": "Thinking depth when analyzing video subtitles: off, low, medium, or high"
+		},
+		{
+			"key": "workspace",
+			"type": "string",
+			"label": "指定工作区目录 (Workspace)",
+			"labelEn": "Custom Workspace Directory",
+			"default": "",
+			"hint": "指定工作区绝对路径（如 Obsidian 库）。挑中的视频笔记会自动同步投递到该目录的 bili-notes/ 下",
+			"hintEn": "Custom directory path (e.g. Obsidian vault); curated notes will be mirrored to <workspace>/bili-notes/"
+		},
+		{
+			"key": "personaPrompt",
+			"type": "string",
+			"label": "它按什么说话（人设提示词）",
+			"labelEn": "Assistant Persona Prompt",
+			"default": "",
+			"hint": "留空按中性说话；支持一键从当前工作区导入 AGENTS.md",
+			"hintEn": "Custom persona prompt; leave empty for neutral tone or import from workspace AGENTS.md"
+		},
+		{
+			"key": "keywords",
+			"type": "string",
+			"label": "关注关键词列表",
+			"labelEn": "Target Keywords",
+			"default": "DeepSeek,大模型,AI智能体,开源项目",
+			"hint": "刷视频时重点检索的主题或关键词，逗号分隔或每行一个",
+			"hintEn": "Comma or newline separated keywords to prioritize"
+		},
+		{
+			"key": "excludeKeywords",
+			"type": "string",
+			"label": "排除/黑名单关键词",
+			"labelEn": "Excluded Keywords",
+			"default": "短剧,八卦,引流",
+			"hint": "命中这些词的视频将被直接跳过不予精选",
+			"hintEn": "Excluded keywords to filter out"
+		},
+		{
+			"key": "favFolderId",
+			"type": "number",
+			"label": "自动收藏到（收藏夹 fid）",
+			"labelEn": "Auto-Favorite Folder ID",
+			"default": 0,
+			"hint": "0 为不收藏；大于 0 时每轮挑中的视频自动存入该收藏夹（可在设置页下拉选择）",
+			"hintEn": "Target favorite folder ID (0 to disable)"
+		},
+		{
+			"key": "reportLevel",
+			"type": "select",
+			"label": "日报写多细",
+			"labelEn": "Report Detail Level",
+			"default": "full",
+			"options": ["full", "brief", "off"],
+			"hint": "full=完整详尽；brief=每条一两行；off=不写报告（只私信/评论）",
+			"hintEn": "full: complete digest; brief: one-liners; off: do not write markdown report"
+		},
+		{
+			"key": "autoComment",
+			"type": "boolean",
+			"label": "允许自动评论并 @ 用户（安全闸）",
+			"labelEn": "Allow Auto-Comment (Safety Gate)",
+			"default": false,
+			"hint": "默认关闭。开启且投递方式非 only 时，每轮向特别推荐的视频公开发布评论并 @ 昵称",
+			"hintEn": "Disabled by default. Post public comments when enabled"
+		},
+		{
+			"key": "commentPerRound",
+			"type": "number",
+			"label": "每轮最多发几条公开评论",
+			"labelEn": "Max Comments Per Round",
+			"default": 1,
+			"min": 0,
+			"max": 20,
+			"hint": "每轮最多发几条公开评论，0 为不发",
+			"hintEn": "Maximum comments posted per round"
+		},
+		{
+			"key": "replyToComments",
+			"type": "boolean",
+			"label": "回复评论（楼中楼互动）",
+			"labelEn": "Reply to Comment Replies",
+			"default": false,
+			"hint": "默认关闭。开启后仅回复自己评论下方的楼中楼提问与轻互动",
+			"hintEn": "Reply to sub-replies under our comments"
+		},
+		{
+			"key": "replyPerRound",
+			"type": "number",
+			"label": "每轮最多回几条评论",
+			"labelEn": "Max Replies Per Round",
+			"default": 1,
+			"min": 1,
+			"max": 10,
+			"hint": "每轮最多回复楼中楼的条数",
+			"hintEn": "Max replies to sub-comments per round"
+		},
+		{
+			"key": "humanFunnel",
+			"type": "boolean",
+			"label": "漫步三层漏斗（印象→试看→深看）",
+			"labelEn": "Human Funnel",
+			"default": true,
+			"hint": "先凭标题/章节/热评做三秒印象决策，再看前两分钟决定去留，都通过才深看；关掉则回到旧版直判流程",
+			"hintEn": "Impression, preview, then deep watch; off falls back to direct judgment"
+		},
+		{
+			"key": "memoryEnabled",
+			"type": "boolean",
+			"label": "记忆系统（手记/系列/好奇心）",
+			"labelEn": "Memory System",
+			"default": true,
+			"hint": "每条深看完写观看手记，系列自动追更，好奇心队列在下一轮补回候选",
+			"hintEn": "Watch notes, series tracking and curiosity queue across rounds"
+		},
+		{
+			"key": "crowdDigest",
+			"type": "boolean",
+			"label": "群众怎么看（热评浓缩）",
+			"labelEn": "Crowd Digest",
+			"default": true,
+			"hint": "深看前先浓缩热评：夸什么、骂什么、补了什么信息；多 1 次请求加 1 次小模型调用",
+			"hintEn": "Summarize hot comments before deep watch"
+		},
+		{
+			"key": "transcribe",
+			"type": "boolean",
+			"label": "本地 Whisper 转写（无字幕备选）",
+			"labelEn": "Local Whisper Transcription",
+			"default": true,
+			"hint": "对无字幕视频使用本地 Whisper 提取音频并转写；需在高级页安装转写依赖",
+			"hintEn": "Use local Whisper to transcribe videos without subtitles"
+		},
+		{
+			"key": "asrModel",
+			"type": "select",
+			"label": "Whisper 模型规格",
+			"labelEn": "Whisper Model Size",
+			"default": "small",
+			"options": ["tiny", "base", "small", "medium"],
+			"hint": "Whisper 模型尺寸：tiny(~75MB), base(~145MB), small(~538MB), medium(~1.5GB)",
+			"hintEn": "Whisper model size: tiny, base, small, medium"
+		},
+		{
+			"key": "pythonPath",
+			"type": "string",
+			"label": "Python 解释器路径",
+			"labelEn": "Python Path",
+			"default": "python",
+			"hint": "Python 执行路径，点击「装主依赖」后会自动指向插件独立环境 .venv",
+			"hintEn": "Path to Python interpreter, auto-configured after installing dependencies"
+		},
+		{
+			"key": "askMaxEvidence",
+			"type": "number",
+			"label": "按需找片默认取证几条",
+			"labelEn": "Default Evidence Budget",
+			"default": 4,
+			"min": 1,
+			"max": 8,
+			"hint": "bili_ask 每次最多为几条候选抓真实字幕证据；超额只比元数据，会标注 degraded",
+			"hintEn": "Max candidates to fetch real subtitle evidence for per ask"
+		},
+		{
+			"key": "diversityPerTopic",
+			"type": "number",
+			"label": "同一主题最多推几条",
+			"labelEn": "Max Per Topic",
+			"default": 2,
+			"min": 1,
+			"max": 3,
+			"hint": "避免一轮 5 条全是同一个话题；0 条主题分不够时也不会硬凑",
+			"hintEn": "Cap how many picks may share one topic"
+		},
+		{
+			"key": "indexEnabled",
+			"type": "boolean",
+			"label": "内容索引（字幕切片）",
+			"labelEn": "Content Index",
+			"default": true,
+			"hint": "把字幕按时间轴切片入库，重复读取同一视频时不再下载；关掉则每次现取",
+			"hintEn": "Index subtitle tracks into timestamped segments for reuse"
+		},
+		{
+			"key": "dmDailyLimit",
+			"type": "number",
+			"label": "每天最多几条私信",
+			"labelEn": "Daily DM Budget",
+			"default": 6,
+			"min": 1,
+			"max": 30,
+			"hint": "私信打扰预算；超了只写报告不发信，等你主动问",
+			"hintEn": "Outbound DM budget per day; over budget stays silent"
+		},
+		{
+			"key": "replyGrammar",
+			"type": "boolean",
+			"label": "私信回执菜单",
+			"labelEn": "Reply Grammar",
+			"default": true,
+			"hint": "在私信末尾加一行：1/2 深读 · f 收藏 · x 静音 · ? 为什么；回一个字符就能调偏好",
+			"hintEn": "Append a one-character reply menu to DMs so feedback costs one tap"
+		}
+	]
+}

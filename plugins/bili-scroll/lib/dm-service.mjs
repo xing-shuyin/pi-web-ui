@@ -1,7 +1,7 @@
 import { mkdirSync, readFileSync, writeFileSync, renameSync, existsSync } from "node:fs";
 import { join } from "node:path";
 import { listSessionPage, fetchMessagePage, sendDm, validUid, myUid } from "./dm.mjs";
-import { composeDmSystem } from "./prompts.mjs";
+import { composeDmSystem } from "./prompts.mjs?v=2.10.0";
 
 const MAX_PAGES = 20;
 function clipJsonText(value, budget) {
@@ -230,7 +230,7 @@ export class DmService {
 					else evidence.push({ bvid, unavailable: true });
 				}
 				const result = await this.host.llm.complete({
-					system: composeDmSystem(cfg.dmPrompt),
+					system: composeDmSystem(cfg.dmPrompt, cfg.dmFixed),
 					prompt: replyPrompt(recent, evidence),
 					maxChars: 500,
 					timeoutMs: 45000,

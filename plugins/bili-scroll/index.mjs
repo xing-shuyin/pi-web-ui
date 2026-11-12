@@ -4,26 +4,43 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { BilibiliApiClient } from "./bilibili-api.mjs?v=2.6.0";
 import { BiliCredentialManager } from "./credentials.mjs?v=2.0.1";
-import { BiliDutyEngine, todayStr } from "./duty.mjs?v=2.4.0";
+import { BiliDutyEngine, todayStr } from "./duty.mjs?v=2.10.0";
 import { AskEngine } from "./lib/ask.mjs?v=2.4.0";
 import { DeliverySystem } from "./lib/delivery.mjs?v=2.4.0";
 import { ContentIndex } from "./lib/indexer.mjs?v=2.4.0";
 import { BiliStore } from "./lib/store.mjs?v=2.6.0";
 import { TasteEngine } from "./lib/taste.mjs?v=2.4.0";
 import { DmService } from "./lib/dm-service.mjs?v=2.4.0";
-import { readVideoContent } from "./lib/video-content.mjs";
+import { readVideoContent } from "./lib/video-content.mjs?v=2.8.0";
 import { BiliFavOps } from "./lib/favops.mjs?v=2.6.0";
 import { resolveUid } from "./lib/uid.mjs?v=2.0.1";
 import { ensureUv } from "./lib/uvfetch.mjs?v=2.0.1";
-import { describePrompts } from "./lib/prompts.mjs";
+import { describePrompts, validateFixed } from "./lib/prompts.mjs?v=2.10.0";
+import { normalizeModelId } from "./lib/model-id.mjs?v=2.8.0";
 import { appendVerifyToReport, verifyRecent } from "./lib/verify.mjs?v=2.0.1";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
+
+/** 插件版本：从自己的 manifest 读，不在前端硬编码（发版时界面自动跟着变） */
+function readPluginVersion() {
+	try {
+		const raw = JSON.parse(readFileSync(join(__dirname, "manifest.json"), "utf8"));
+		return typeof raw.version === "string" ? raw.version.trim() : "";
+	} catch {
+		return "";
+	}
+}
 
 const DEFAULT_WINDOWS = {
 	noon: { label: "中午 (12:00–14:00)", start: "12:00", end: "14:00" },
 	night: { label: "夜间 (00:30–08:30)", start: "00:30", end: "08:30" },
 };
+
+/** 秒 → mm:ss（总结文档里的回看锚点格式） */
+function fmtStamp(sec) {
+	const s = Math.max(0, Math.floor(Number(sec) || 0));
+	return `${String(Math.floor(s / 60)).padStart(2, "0")}:${String(s % 60).padStart(2, "0")}`;
+}
 
 function inWindow(now, w) {
 	const cur = `${String(now.getHours()).padStart(2, "0")}:${String(now.getMinutes()).padStart(2, "0")}`;
@@ -113,7 +130,11 @@ export default {
 		};
 		const loadLocalCfg = () => {
 			const s = host.getSettings?.() || {};
-			return { ...s, ...readFileCfg() };
+			const merged = { ...s, ...readFileCfg() };
+			// 历史脏值：provider/provider/id 会被模型接口直接判为未知模型，这里统一收敛
+			if (merged.model) merged.model = normalizeModelId(merged.model);
+			if (merged.visionModel) merged.visionModel = normalizeModelId(merged.visionModel);
+			return merged;
 		};
 		const NUM_KEYS = new Set([
 			"perDay",
@@ -147,9 +168,29 @@ export default {
 					out[k] = v === true || v === "true" || v === 1 || v === "1";
 					continue;
 				}
+				if (k === "model" || k === "visionModel") {
+					out[k] = normalizeModelId(v);
+					continue;
+				}
 				out[k] = v;
 			}
 			return out;
+		};
+		// 固定追加保存前先过格式校验：缺契约键或删掉不可信条款直接拒绝，不落盘
+		const FIXED_KEY_KINDS = { analyzeFixed: "analyze", summaryFixed: "summary", dmFixed: "dm" };
+		const checkFixedPatch = (patch) => {
+			for (const [key, kind] of Object.entries(FIXED_KEY_KINDS)) {
+				if (!(key in (patch || {}))) continue;
+				const text = String(patch[key] ?? "").trim();
+				if (!text) {
+					patch[key] = "";
+					continue;
+				}
+				const r = validateFixed(kind, text);
+				if (!r.ok) return r.error;
+				patch[key] = r.fixed;
+			}
+			return null;
 		};
 		const saveLocalCfg = (patch) => {
 			try {
@@ -163,6 +204,24 @@ export default {
 			}
 		};
 		let restartDmWatcher = () => {};
+
+		// 一次性搬迁：历史上被拼成 provider/provider/id 的模型名会把模型接口直接打死，
+		// 只收敛内存不够 —— 设置页会显示一个列表里不存在的值，所以顺手写回文件。
+		try {
+			const fileOnly = readFileCfg();
+			let dirty = false;
+			for (const k of ["model", "visionModel"]) {
+				const fixed = normalizeModelId(fileOnly[k]);
+				if (fixed && fixed !== fileOnly[k]) {
+					fileOnly[k] = fixed;
+					dirty = true;
+				}
+			}
+			if (dirty) {
+				writeFileSync(cfgFile, JSON.stringify(fileOnly, null, 2), "utf8");
+				host.log?.("info", "[bili-scroll] 已修正配置里重复的 provider 前缀");
+			}
+		} catch {}
 
 		const venvDir = join(storageDir, ".venv");
 		const venvPython = () =>
@@ -527,6 +586,7 @@ export default {
 
 			return {
 				ok: true,
+				version: readPluginVersion(),
 				home: storageDir,
 				config: cfg,
 				user,
@@ -591,6 +651,11 @@ export default {
 
 		route("POST", "/config", (req, res) => {
 			const patch = req.body || {};
+			const fixedErr = checkFixedPatch(patch);
+			if (fixedErr) {
+				res.json({ ok: false, error: fixedErr });
+				return;
+			}
 			const next = saveLocalCfg(patch);
 			try {
 				restartDmWatcher();
@@ -789,6 +854,7 @@ export default {
 					tier: m.tier || "",
 					why: m.why || "",
 					note: notesSet.has(x.bvid),
+					summary: Boolean(dutyEngine.readSummary(x.bvid, x.day)),
 				};
 			});
 
@@ -855,15 +921,150 @@ export default {
 			res.json({ ok: true, day, exists: true, text: content });
 		});
 
+		// 详情右栏的数据源：优先 AI 一次性写好的整篇总结，其次回退旧的单篇笔记（kind 区分）。
 		route("GET", "/note", (req, res) => {
-			const bvid = String(req.query?.bvid || "");
-			const day = String(req.query?.day || todayStr()).replace(/[^0-9-]/g, "");
+			const bvid = String(req.query?.bvid || "").trim();
+			const day = String(req.query?.day || todayStr()).replace(/[^0-9-]/g, "") || todayStr();
+			// kind=report 强制要原始笔记（首页「载入单条笔记」用），默认先给 AI 总结
+			const wantReport = String(req.query?.kind || "") === "report";
+			if (!/^BV[0-9A-Za-z]{10}$/.test(bvid)) {
+				res.status(400).json({ ok: false, error: "bvid 非法" });
+				return;
+			}
+			if (!wantReport) {
+				const summary = dutyEngine.readSummary(bvid, day);
+				if (summary && summary.text) {
+					res.json({ ok: true, kind: "summary", bvid, day, text: summary.text, meta: summary.meta || {} });
+					return;
+				}
+				if (dutyEngine.summaryInFlight.has(bvid)) {
+					res.json({ ok: true, kind: "pending", bvid, day });
+					return;
+				}
+			}
 			const p = join(reportsDir, `${bvid}-${day}.md`);
 			if (existsSync(p)) {
-				res.json({ ok: true, bvid, day, text: readFileSync(p, "utf8") });
-			} else {
-				res.status(404).json({ ok: false, error: "Note not found" });
+				res.json({ ok: true, kind: "report", bvid, day, text: readFileSync(p, "utf8"), meta: {} });
+				return;
 			}
+			res.status(404).json({ ok: false, kind: "none", error: "Note not found" });
+		});
+
+		// 按需生成 / 重生 AI 内容总结。
+		// 写一篇完整文档动辄 1-2 分钟，所以 POST 只负责起后台任务，前端轮询 /summary-status。
+		const summaryJobs = new Map(); // `${bvid}-${day}` → { state: running|done|error, error? }
+		const summaryJobKey = (bvid, day) => `${bvid}-${day}`;
+
+		const runSummaryJob = async (params) => {
+			const { bvid, day, settings } = params;
+			const key = summaryJobKey(bvid, day);
+			try {
+				const video = intel?.store?.getVideo?.(bvid) || null;
+				// 快路径一：巡检已把字幕入索引 —— 直接拼回带时间戳的正文，秒回
+				let subText = "";
+				let evidenceSource = "";
+				let limitations = [];
+				try {
+					const segs = intel?.store?.segmentsFor?.(bvid) || [];
+					if (segs.length) {
+						subText = segs
+							.map((s) => (Number.isFinite(s.t0) ? `[${fmtStamp(s.t0)}] ${s.text}` : s.text))
+							.join("\n")
+							.slice(0, 40_000);
+						evidenceSource = String(segs[0].kind || "index");
+					}
+				} catch {}
+				// 快路径二：只拉字幕轨，不下载媒体、不抽帧、不跑 ASR
+				if (subText.length < 20) {
+					const content = await readVideoContent({
+						api: apiClient,
+						host,
+						storageDir,
+						bvid,
+						settings,
+						subtitleOnly: true,
+					});
+					subText = String(content?.fullText || "");
+					evidenceSource = String(content?.source || "");
+					limitations = content?.limitations || [];
+				}
+				if (subText.length < 20) {
+					summaryJobs.set(key, {
+						state: "error",
+						error: "这条没有字幕轨，写不了总结（无字幕的音频转写请在巡检里跑，详情页不临时下载媒体）",
+					});
+					return;
+				}
+				const r = await dutyEngine.generateSummary(
+					{
+						bvid,
+						title: video?.title || "",
+						author: video?.author || "",
+						duration: video?.duration || "",
+						evidenceSource,
+						limitations,
+						subText,
+					},
+					{ settings, force: true, day },
+				);
+				summaryJobs.set(key, r.ok ? { state: "done" } : { state: "error", error: r.error });
+			} catch (err) {
+				summaryJobs.set(key, { state: "error", error: err instanceof Error ? err.message : String(err) });
+			}
+		};
+
+		route("POST", "/summary", (req, res) => {
+			const body = req.body || {};
+			const bvid = String(body.bvid || "").trim();
+			const day = String(body.day || todayStr()).replace(/[^0-9-]/g, "") || todayStr();
+			const force = body.force === true;
+			if (!/^BV[0-9A-Za-z]{10}$/.test(bvid)) {
+				res.json({ ok: false, error: "bvid 非法" });
+				return;
+			}
+			if (!force) {
+				const cached = dutyEngine.readSummary(bvid, day);
+				if (cached && cached.text) {
+					res.json({
+						ok: true,
+						kind: "summary",
+						state: "done",
+						cached: true,
+						text: cached.text,
+						meta: cached.meta || {},
+					});
+					return;
+				}
+			}
+			const key = summaryJobKey(bvid, day);
+			if (summaryJobs.get(key)?.state === "running") {
+				res.json({ ok: true, state: "running" });
+				return;
+			}
+			summaryJobs.set(key, { state: "running" });
+			const settings = loadLocalCfg();
+			void runSummaryJob({ bvid, day, settings });
+			res.json({ ok: true, state: "running" });
+		});
+
+		route("GET", "/summary-status", (req, res) => {
+			const bvid = String(req.query?.bvid || "").trim();
+			const day = String(req.query?.day || todayStr()).replace(/[^0-9-]/g, "") || todayStr();
+			if (!/^BV[0-9A-Za-z]{10}$/.test(bvid)) {
+				res.json({ ok: false, error: "bvid 非法" });
+				return;
+			}
+			const cached = dutyEngine.readSummary(bvid, day);
+			if (cached && cached.text) {
+				res.json({ ok: true, state: "done", kind: "summary", text: cached.text, meta: cached.meta || {} });
+				return;
+			}
+			const job = summaryJobs.get(summaryJobKey(bvid, day));
+			if (!job) {
+				res.json({ ok: true, state: "idle" });
+				return;
+			}
+			res.json({ ok: true, state: job.state, error: job.error || "" });
 		});
 
 		// 详情弹窗「本账号动作台账」：点赞/收藏用只读查询，评论/私信用 deliveries 状态库。
@@ -876,7 +1077,7 @@ export default {
 			}
 			const out = { ok: true, like: null, fav: null, favPartial: false, comment: null, dm: null };
 			try {
-				const sent = store.deliveriesForVideo(bvid).filter((r) => r.state && r.state !== "drafted");
+				const sent = (intel?.store?.deliveriesForVideo?.(bvid) || []).filter((r) => r.state && r.state !== "drafted");
 				if (sent.length) {
 					const c = sent[0];
 					out.comment = {
@@ -888,7 +1089,7 @@ export default {
 						error: c.error || "",
 					};
 				}
-				const dms = store.dmDigestsMentioning(bvid);
+				const dms = intel?.store?.dmDigestsMentioning?.(bvid) || [];
 				if (dms.length) {
 					const d = dms[0];
 					out.dm = { day: d.day || "", state: d.state || "", at: d.updated_at || d.created_at || 0, id: d.id || "" };
@@ -1064,6 +1265,38 @@ export default {
 			res.json({ ok: true, log: dutyEngine.getRecentLog(100) });
 		});
 
+		// v2.9 轮次状态：顶栏「运行状态」弹窗数据源（列表给摘要 下拉切轮后调 /run 看该轮 AI 动作流水）
+		route("GET", "/runs", (req, res) => {
+			const limit = Math.max(1, Math.min(100, Number(req.query?.limit) || 30));
+			res.json({ ok: true, runs: dutyEngine.listRuns(limit), total: dutyEngine.countRuns() });
+		});
+
+		route("GET", "/run", (req, res) => {
+			const r = dutyEngine.getRun(String(req.query?.id || ""));
+			if (!r) {
+				res.json({ ok: false, error: "找不到该轮记录" });
+				return;
+			}
+			res.json({ ok: true, run: r });
+		});
+
+		// 清空：默认连日报/笔记/总结 + 判重表 + 状态库视频一起清；已发评论/私信记录保留
+		route("POST", "/clear", (req, res) => {
+			if (dutyEngine.running) {
+				res.json({ ok: false, error: "巡检正在跑，等这一轮结束再清空（否则刚写的文件会被一起删）" });
+				return;
+			}
+			const keepDeliveries = req.body?.keepDeliveries !== false;
+			let removed;
+			try {
+				removed = dutyEngine.clearHistory({ keepDeliveries });
+			} catch (err) {
+				res.json({ ok: false, error: err instanceof Error ? err.message : String(err) });
+				return;
+			}
+			res.json({ ok: true, removed });
+		});
+
 		if (typeof host.onClientMessage === "function") {
 			const offMsg = host.onClientMessage(async (msg, replyRaw) => {
 				const __rid = msg && msg.__rid;
@@ -1079,7 +1312,13 @@ export default {
 						const payload = await buildStatusPayload();
 						reply(payload);
 					} else if (type === "bili:save-config") {
-						const next = saveLocalCfg(msg.patch || {});
+						const patch = msg.patch || {};
+						const fixedErr = checkFixedPatch(patch);
+						if (fixedErr) {
+							reply({ ok: false, error: fixedErr });
+							return;
+						}
+						const next = saveLocalCfg(patch);
 						try {
 							restartDmWatcher();
 						} catch {}
@@ -1127,6 +1366,11 @@ export default {
 						const r = await verifyRecent(storageDir, { log: (m) => dutyEngine.appendLog(m) });
 						if (r.ok && r.text) appendVerifyToReport(storageDir, r.text);
 						reply(r);
+					} else if (type === "bili:get-runs") {
+						reply({ ok: true, runs: dutyEngine.listRuns(Number(msg.limit) || 30), total: dutyEngine.countRuns() });
+					} else if (type === "bili:get-run") {
+						const r = dutyEngine.getRun(String(msg.id || ""));
+						reply(r ? { ok: true, run: r } : { ok: false, error: "找不到该轮记录" });
 					} else if (type === "bili:get-report") {
 						const content = dutyEngine.readReport(String(msg.day || todayStr()));
 						reply({ ok: true, text: content });

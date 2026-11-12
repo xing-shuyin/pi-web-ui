@@ -1,4 +1,4 @@
-import { readVideoContent } from "./lib/video-content.mjs";
+import { readVideoContent } from "./lib/video-content.mjs?v=2.8.0";
 import {
 	appendFileSync,
 	copyFileSync,
@@ -13,10 +13,10 @@ import {
 } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { BiliFavOps } from "./lib/favops.mjs";
-import { composeAnalyzeSystem } from "./lib/prompts.mjs";
+import { BiliFavOps } from "./lib/favops.mjs?v=2.8.0";
+import { composeAnalyzeSystem, composeSummarySystem } from "./lib/prompts.mjs?v=2.10.0";
 import { tokens } from "./lib/taste.mjs?v=2.4.0";
-import { resolveUid } from "./lib/uid.mjs";
+import { resolveUid } from "./lib/uid.mjs?v=2.8.0";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
@@ -42,10 +42,16 @@ export class BiliDutyEngine {
 		this.outDir = join(storageDir, "out");
 		this.reportsDir = join(storageDir, "reports");
 		this.digestDir = join(storageDir, "digest");
+		// AI 内容总结单篇（详情页右栏只展示这一份文档，与报告里的模板字段无关）
+		this.summaryDir = join(storageDir, "summaries");
+		// 正在写的总结（详情页据此显示「AI 正在写…」而不是「还没总结」）
+		this.summaryInFlight = new Set();
 		this.stateFile = join(storageDir, "state.json");
 		this.seenFile = join(storageDir, "seen.md");
 		this.logFile = join(storageDir, "duty.log");
 		this.charterFile = join(storageDir, "duty.md");
+		// v2.9 每次跑一轮的状态记录（顶栏「运行状态」弹窗的数据源，最多保留 100 条）
+		this.runsFile = join(storageDir, "runs.json");
 		this.api = apiClient;
 		this.host = host;
 		this.log = log;
@@ -53,10 +59,15 @@ export class BiliDutyEngine {
 		this.running = false;
 		this.abortController = new AbortController();
 		this.actionListeners = new Set();
+		// v2.9 正在跑的那一轮 id + 动作流水（finish 时落盘到 runs.json）
+		this._currentRunId = null;
+		this._currentRunActions = [];
+		this._currentRunStartMs = 0;
 
 		mkdirSync(this.outDir, { recursive: true });
 		mkdirSync(this.reportsDir, { recursive: true });
 		mkdirSync(this.digestDir, { recursive: true });
+		mkdirSync(this.summaryDir, { recursive: true });
 		this.ensureCharter();
 		this.ensureSeenFile();
 	}
@@ -82,6 +93,37 @@ export class BiliDutyEngine {
 			} catch {}
 		}
 		this.appendLog(`[${payload.step || "ACTION"}] ${payload.message || ""}`);
+		// v2.9 正在跑的那一轮：把每一步 AI 动作攒进轮次记录（看过哪条视频/转写/点赞/评论/私信都在里面）
+		if (this._currentRunId) {
+			try {
+				this._currentRunActions.push({
+					t: new Date().toISOString(),
+					clock: payload.time,
+					step: String(payload.step || "action"),
+					message: String(payload.message || ""),
+					...(payload.bvid ? { bvid: String(payload.bvid) } : {}),
+					...(payload.status ? { status: String(payload.status) } : {}),
+				});
+				if (this._currentRunActions.length > 200) {
+					this._currentRunActions = this._currentRunActions.slice(-200);
+				}
+				// 每攒 5 步同步一次 runs.json，顶栏弹窗点开 running 那轮也能看到实时动作
+				const _shouldSync =
+					this._currentRunActions.length % 5 === 0 || payload.step === "done" || payload.step === "error";
+				if (_shouldSync) {
+					try {
+						const _cur = this.getRun ? this.getRun(this._currentRunId) : null;
+						if (_cur && _cur.status && _cur.status !== "running") return;
+					} catch {}
+					this._finishRun(this._currentRunId, {
+						status: "running",
+						lastMessage: String(payload.message || "").slice(0, 200),
+						actions: [...this._currentRunActions],
+						actionCount: this._currentRunActions.length,
+					});
+				}
+			} catch {}
+		}
 	}
 
 	ensureCharter() {
@@ -241,6 +283,69 @@ export class BiliDutyEngine {
 		}
 	}
 
+	// ═══ v2.9 轮次状态记录：每次跑一轮都记一条（顶栏「运行状态」弹窗展示） ═══
+	_readRuns() {
+		if (!existsSync(this.runsFile)) return [];
+		try {
+			const arr = JSON.parse(readFileSync(this.runsFile, "utf8"));
+			return Array.isArray(arr) ? arr : [];
+		} catch {
+			return [];
+		}
+	}
+
+	_writeRuns(runs) {
+		try {
+			// 只保留最近 100 条，文件很小（每条约几百字节）
+			const kept = (Array.isArray(runs) ? runs : []).slice(-100);
+			writeFileSync(this.runsFile, JSON.stringify(kept, null, 2), "utf8");
+		} catch (err) {
+			this.log("warn", `保存轮次记录失败: ${err.message}`);
+		}
+	}
+
+	listRuns(limit = 30) {
+		const n = Math.max(1, Math.min(100, Number(limit) || 30));
+		// 列表只给摘要（动作流水走 getRun 按需取，避免状态接口变大）
+		return this._readRuns()
+			.slice(-n)
+			.reverse()
+			.map((r) => {
+				if (!r || typeof r !== "object") return r;
+				const { actions, ...rest } = r;
+				return { ...rest, actionCount: r.actionCount ?? (Array.isArray(actions) ? actions.length : 0) };
+			});
+	}
+
+	getRun(id) {
+		if (!id) return null;
+		return this._readRuns().find((r) => r && r.id === String(id)) || null;
+	}
+
+	countRuns() {
+		return this._readRuns().length;
+	}
+
+	_appendRun(entry) {
+		const runs = this._readRuns();
+		runs.push(entry);
+		this._writeRuns(runs);
+		return entry;
+	}
+
+	_finishRun(id, patch = {}) {
+		try {
+			const runs = this._readRuns();
+			const idx = runs.findIndex((r) => r && r.id === id);
+			if (idx < 0) return null;
+			runs[idx] = { ...runs[idx], ...patch };
+			this._writeRuns(runs);
+			return runs[idx];
+		} catch {
+			return null;
+		}
+	}
+
 	getReportPath(date = todayStr()) {
 		return join(this.outDir, `${date}.md`);
 	}
@@ -363,6 +468,193 @@ export class BiliDutyEngine {
 		}
 	}
 
+	summaryPath(bvid, day = todayStr()) {
+		const safe = String(bvid || "").replace(/[^0-9A-Za-z]/g, "");
+		return join(this.summaryDir, `${safe}-${day}.md`);
+	}
+
+	readSummary(bvid, day = todayStr()) {
+		try {
+			const file = this.summaryPath(bvid, day);
+			if (!existsSync(file)) return null;
+			let meta = {};
+			try {
+				meta = JSON.parse(readFileSync(file.replace(/\.md$/, ".meta.json"), "utf8"));
+			} catch {}
+			return { text: readFileSync(file, "utf8"), meta };
+		} catch {
+			return null;
+		}
+	}
+
+	/**
+	 * 生成/复用一份 AI 内容总结文档（Markdown）。
+	 * 详情右栏只展示这一份文档：它是一次性写完的整篇总结，不是报告模板字段的拼接。
+	 * `timeoutMs`：详情页单条可以等（150s），巡检批量要省时间（90s）。
+	 * 失败只返回 { ok:false, error }，从不抛。
+	 */
+	async generateSummary(p, { settings = {}, force = false, day = todayStr(), timeoutMs = 150000 } = {}) {
+		const bvid = String(p?.bvid || "");
+		if (!/^BV[0-9A-Za-z]{10}$/.test(bvid)) return { ok: false, error: "bvid 非法" };
+		if (!force) {
+			const cached = this.readSummary(bvid, day);
+			if (cached && cached.text) return { ok: true, cached: true, text: cached.text, meta: cached.meta };
+		}
+		if (!this.host?.llm || typeof this.host.llm.complete !== "function") {
+			return { ok: false, error: "当前宿主没有可用的模型接口，无法生成总结" };
+		}
+		const sub = String(p?.subText || "").trim();
+		if (sub.length < 20) return { ok: false, error: "没有可用的字幕或转写证据" };
+		this.summaryInFlight.add(bvid);
+		try {
+			return await this.#writeSummary(p, { settings, day, bvid, sub, timeoutMs });
+		} finally {
+			this.summaryInFlight.delete(bvid);
+		}
+	}
+
+	/** 真正调模型并落盘的那一半（进口从这里出，方便 finally 统一清理在飞标记） */
+	async #writeSummary(p, { settings, day, bvid, sub, timeoutMs }) {
+		// 保留 [mm:ss] 时间戳（总结要靠它做回看锚点）。
+		// 宿主 plugin-llm 的 prompt 上限是 8000 字（含下方抬头），超了直接报「prompt 超长」，所以这里留足余量。
+		const EVIDENCE_MAX = 6200;
+		const evidence =
+			sub.length <= EVIDENCE_MAX
+				? sub
+				: `${sub.slice(0, 2400)}\n[中段节选]\n${sub.slice(Math.floor(sub.length / 2) - 800, Math.floor(sub.length / 2) + 800)}\n[末段节选]\n${sub.slice(-2400)}`;
+		const effort = String(settings.reasoningEffort || "medium").trim();
+		const effortGuide =
+			effort === "high"
+				? "【思考强度：高】逐段核对证据，把可疑说法、未证实的数字挑出来写进局限。"
+				: effort === "low"
+					? "【思考强度：轻度】只抓最核心的结论与 2-3 个要点，短而准。"
+					: effort === "off"
+						? "【思考强度：关闭】直接按证据归纳，不做额外推演。"
+						: "【思考强度：中等】通读证据，梳理论证骱架与可复用细节。";
+		const system = composeSummarySystem({
+			override: settings.summaryPrompt,
+			effortGuide,
+			persona: settings.personaPrompt,
+			fixed: settings.summaryFixed,
+		});
+		const userPrompt = [
+			`视频标题：《${p.title || bvid}》`,
+			`UP主：${p.author || "未知"}`,
+			`时长：${p.duration || "未知"}`,
+			`证据来源：${p.evidenceSource || "subtitle_track"}`,
+			`已知局限：${(p.limitations || []).join("；") || "无"}`,
+			"",
+			"字幕/转写证据（[mm:ss] 为时间戳）：",
+			evidence,
+		].join("\n");
+
+		const payload = {
+			signal: this.abortController.signal,
+			prompt: userPrompt,
+			system,
+			maxChars: 3200,
+			// 写一篇完整文档比判档位慢得多；宿主上限 300s，这里留一档给网络抖动
+			timeoutMs,
+		};
+		const model = String(settings.model || "").trim();
+		if (model) payload.model = model;
+
+		try {
+			const r = await this.host.llm.complete(payload);
+			const raw = String(r?.text || "").trim();
+			if (!r?.ok || raw.length < 40) return { ok: false, error: r?.error || "模型没有返回可用的总结" };
+			const text = raw
+				.replace(/^```(?:markdown|md)?\s*\n?/i, "")
+				.replace(/\n?```\s*$/, "")
+				.trim();
+			const file = this.summaryPath(bvid, day);
+			writeFileSync(file, `${text}\n`, "utf8");
+			const meta = {
+				bvid,
+				day,
+				title: p.title || "",
+				author: p.author || "",
+				model: r.model || model || "LLM",
+				source: p.evidenceSource || "",
+				limitations: p.limitations || [],
+				at: Date.now(),
+			};
+			try {
+				writeFileSync(file.replace(/\.md$/, ".meta.json"), JSON.stringify(meta, null, 2), "utf8");
+			} catch {}
+			return { ok: true, text, meta };
+		} catch (err) {
+			return { ok: false, error: err instanceof Error ? err.message : String(err) };
+		}
+	}
+
+	/**
+	 * 彻底清空刷过的东西：日报、单篇笔记、月度清单、AI 总结、判重表 + 状态库里的视频/字幕/挑中记录。
+	 * 已发评论/私信记录默认保留（防止对同一视频重复打扰），需要连它们一起删就传 keepDeliveries:false。
+	 */
+	clearHistory({ keepDeliveries = true } = {}) {
+		const removed = { reports: 0, notes: 0, digest: 0, summaries: 0, seen: 0, db: {} };
+		const wipe = (dir, key) => {
+			if (!existsSync(dir)) return;
+			try {
+				for (const f of readdirSync(dir)) {
+					if (!/\.(md|json)$/.test(f)) continue;
+					try {
+						rmSync(join(dir, f), { force: true });
+						removed[key] += 1;
+					} catch {}
+				}
+			} catch {}
+		};
+		wipe(this.outDir, "reports");
+		wipe(this.reportsDir, "notes");
+		wipe(this.digestDir, "digest");
+		wipe(this.summaryDir, "summaries");
+		for (const f of [this.seenFile, `${this.seenFile}.1`]) {
+			if (!existsSync(f)) continue;
+			try {
+				rmSync(f, { force: true });
+				removed.seen += 1;
+			} catch {}
+		}
+		this.ensureSeenFile();
+		try {
+			removed.db = this.intel?.store?.clearHistory?.({ keepDeliveries }) || {};
+		} catch {}
+		this.saveState({ day: todayStr(), count: 0, picked: 0, running: this.running, lastWhy: "", lastRun: null });
+		this.emitAction({ step: "clear", message: "🧹 已清空刷过的视频、日报、单篇笔记与 AI 总结" });
+		return removed;
+	}
+
+	/** 巡检收尾批量生成；任一条失败只跳过，不影响主流程 */
+	async generateSummaries(items, settings = {}, { limit = 4 } = {}) {
+		let done = 0;
+		const list = (items || []).slice(0, limit);
+		if (list.length) {
+			this.emitAction({
+				step: "summary_batch",
+				message: `📝 报告已归档，开始在后台写 ${list.length} 份 AI 内容总结（不急，写完就能在详情页读到）`,
+			});
+		}
+		for (const p of list) {
+			if (this.abortController.signal.aborted) break;
+			this.emitAction({ step: "summary", bvid: p.bvid, message: `  └─ 📝 正在写 [${p.bvid}] 的 AI 内容总结…` });
+			// 巡检是批量串行，单条等太久会把整轮拖长，所以卡到 90s
+			const r = await this.generateSummary(p, { settings, timeoutMs: 90000 });
+			if (r.ok) {
+				done++;
+				this.emitAction({
+					step: "summary_ok",
+					bvid: p.bvid,
+					message: `  └─ ✅ 内容总结已就绪（${r.meta?.model || "LLM"}）`,
+				});
+			} else {
+				this.emitAction({ step: "summary_err", bvid: p.bvid, message: `  └─ ⚠️ 内容总结跳过：${r.error}` });
+			}
+		}
+		return done;
+	}
+
 	dispose() {
 		this.abortController.abort();
 	}
@@ -370,7 +662,7 @@ export class BiliDutyEngine {
 	async _aiAnalyzeVideo(
 		item,
 		subText,
-		{ persona = "", modelOverride = "", reasoningEffort = "medium", promptOverride = "" } = {},
+		{ persona = "", modelOverride = "", reasoningEffort = "medium", promptOverride = "", fixedOverride = "" } = {},
 	) {
 		if (this.host.llm && typeof this.host.llm.complete === "function") {
 			try {
@@ -389,8 +681,13 @@ export class BiliDutyEngine {
 								? "【思考强度：关闭】直接提取核心观点，无需冗长推演。"
 								: "【思考强度：中等】认真通读字幕，梳理逻辑框架与工程实操点。";
 
-				// 提示词单源在 lib/prompts.mjs：可改的是默认文本，JSON 契约与不可信内容条款由代码固定追加。
-				const sysPrompt = composeAnalyzeSystem({ override: promptOverride, effortGuide, persona });
+				// 提示词单源在 lib/prompts.mjs：默认文本与固定追加都能改，固定追加保存时过格式校验。
+				const sysPrompt = composeAnalyzeSystem({
+					override: promptOverride,
+					effortGuide,
+					persona,
+					fixed: fixedOverride,
+				});
 
 				const userPrompt = `视频标题：《${item.title}》\nUP主：${item.author}\n时长：${item.duration}\n\n实际内容证据节选：\n${cleanSub}`;
 
@@ -475,6 +772,31 @@ export class BiliDutyEngine {
 
 		if (!force && already >= quota) {
 			const msg = `今日精选额度已达成 (${already}/${quota} 条)，无需重复刷。`;
+			try {
+				const st0 = this.getState();
+				this._appendRun({
+					id: `${today}-quota-${Date.now().toString(36)}`,
+					day: today,
+					round: st0.count || 0,
+					trigger: String(trigger || "manual"),
+					status: "quota_reached",
+					startedAt: new Date().toISOString(),
+					endedAt: new Date().toISOString(),
+					durationMs: 0,
+					quota,
+					batchQuota: 0,
+					pickedDelta: 0,
+					pickedToday: already,
+					skippedNoSubtitle: 0,
+					candidates: 0,
+					picks: [],
+					actionCount: 0,
+					actions: [],
+					message: msg,
+					lastMessage: msg,
+					reportPath: this.getReportPath(today),
+				});
+			} catch {}
 			this.emitAction({ step: "check", status: "finished", message: msg });
 			return {
 				ok: true,
@@ -493,22 +815,70 @@ export class BiliDutyEngine {
 
 		this.running = true;
 		const st = this.getState();
-		this.saveState({ ...st, count: (st.count || 0) + 1, running: true, lastRun: new Date().toISOString() });
+		const roundNo = (st.count || 0) + 1;
+		this.saveState({ ...st, count: roundNo, running: true, lastRun: new Date().toISOString() });
+		const startedAt = new Date().toISOString();
+		const runId = `${today}-r${String(roundNo).padStart(2, "0")}-${Date.now().toString(36)}`;
+		this._currentRunId = runId;
+		this._currentRunActions = [];
+		this._currentRunStartMs = Date.now();
+		this._appendRun({
+			id: runId,
+			day: today,
+			round: roundNo,
+			trigger: String(trigger || "manual"),
+			status: "running",
+			startedAt,
+			endedAt: null,
+			durationMs: 0,
+			quota,
+			batchQuota: 0,
+			pickedDelta: 0,
+			pickedToday: already,
+			skippedNoSubtitle: 0,
+			candidates: 0,
+			picks: [],
+			actionCount: 0,
+			actions: [],
+			message: `第 ${roundNo} 轮启动（触发: ${trigger}）`,
+			lastMessage: "启动中…",
+			reportPath: this.getReportPath(today),
+		});
 
 		const batchQuota = force && quota - already <= 0 ? Math.max(1, Math.min(quota, 5)) : Math.max(1, quota - already);
 
 		this.emitAction({
 			step: "start",
 			status: "running",
-			message: `🚀 启动第 ${(st.count || 0) + 1} 轮巡检 (触发: ${trigger})，本轮目标挑选 ${batchQuota} 条干货视频...`,
+			message: `🚀 启动第 ${roundNo} 轮巡检 (触发: ${trigger})，本轮目标挑选 ${batchQuota} 条干货视频...`,
 		});
 
-		this._executeLiveLoop(settings, batchQuota, today)
+		this._finishRun(runId, { batchQuota, message: `第 ${roundNo} 轮启动（触发: ${trigger}），目标 ${batchQuota} 条` });
+		this._executeLiveLoop(settings, batchQuota, today, {
+			runId,
+			round: roundNo,
+			trigger: String(trigger || "manual"),
+			quota,
+			startedMs: this._currentRunStartMs,
+		})
 			.catch((err) => {
+				const aborted = err && (err.name === "AbortError" || /abort/i.test(String((err && err.message) || "")));
 				this.emitAction({ step: "error", message: `巡检过程异常: ${err.message}` });
+				this._finishRun(runId, {
+					status: aborted ? "aborted" : "error",
+					endedAt: new Date().toISOString(),
+					durationMs: Date.now() - this._currentRunStartMs,
+					pickedToday: this.countPickedToday(today),
+					message: `第 ${roundNo} 轮${aborted ? "已中断" : "出错"}：${err.message}`.slice(0, 300),
+					lastMessage: String((err && err.message) || "").slice(0, 200),
+					actions: [...this._currentRunActions],
+					actionCount: this._currentRunActions.length,
+				});
 			})
 			.finally(() => {
 				this.running = false;
+				this._currentRunId = null;
+				this._currentRunActions = [];
 				const finalPicked = this.countPickedToday(today);
 				this.saveState({ ...this.getState(), picked: finalPicked, running: false });
 				this.syncSingleNotes(today);
@@ -521,7 +891,7 @@ export class BiliDutyEngine {
 		};
 	}
 
-	async _executeLiveLoop(settings, remainingQuota, today) {
+	async _executeLiveLoop(settings, remainingQuota, today, runCtx = {}) {
 		const rawKeywords = String(settings.keywords || "DeepSeek,大模型,AI智能体,开源项目");
 		const kws = rawKeywords
 			.split(/[,，\n]/)
@@ -752,6 +1122,7 @@ export class BiliDutyEngine {
 					modelOverride: modelName,
 					reasoningEffort: effort,
 					promptOverride: settings.analyzePrompt,
+					fixedOverride: settings.analyzeFixed,
 				});
 
 				if (aiAnalysis.tier === "不值当") {
@@ -795,6 +1166,8 @@ export class BiliDutyEngine {
 					topic: item.topic || "",
 					reasons: item.reasons || [],
 					quotes,
+					// 只在内存里留着，给总结文档当证据（不写入报告/笔记）
+					subText: rawSubtitleText,
 				});
 
 				this.emitAction({
@@ -930,6 +1303,9 @@ export class BiliDutyEngine {
 				message: `📁 已将 ${syncedCount} 篇笔记同步镜像至工作目录: ${join(settings.workspace, "bili-notes")}`,
 			});
 		}
+
+		// AI 内容总结（详情右栏的数据源）：巡检流程不等它，后台慢慢补，失败也不影响投递
+		void this.generateSummaries(pickedThisRound, settings);
 
 		const digestFile = join(this.digestDir, `${monthStr()}.md`);
 		let digestChunk = "";
@@ -1069,5 +1445,31 @@ export class BiliDutyEngine {
 			status: "success",
 			message: `🎉 巡检圆满完成！本轮挑中 ${pickedThisRound.length} 条干货视频，跳过无字幕 ${skippedNoSubtitle} 条，已归档至 out/${today}.md。任务已正常结束，若想继续挑可选「现在跑一轮」或调大额度。`,
 		});
+		try {
+			const _runId = runCtx.runId || this._currentRunId;
+			const _startedMs = runCtx.startedMs || this._currentRunStartMs || Date.now();
+			const _picks = (pickedThisRound || []).slice(0, 10).map((p) => ({
+				bvid: p.bvid,
+				title: String(p.title || "").slice(0, 60),
+				tier: p.tier || "",
+				url: p.url || `https://www.bilibili.com/video/${p.bvid}`,
+			}));
+			if (_runId) {
+				this._finishRun(_runId, {
+					status: "success",
+					endedAt: new Date().toISOString(),
+					durationMs: Date.now() - _startedMs,
+					pickedDelta: (pickedThisRound || []).length,
+					pickedToday: this.countPickedToday(today),
+					skippedNoSubtitle: skippedNoSubtitle || 0,
+					candidates: typeof candidates !== "undefined" && candidates ? candidates.length : 0,
+					picks: _picks,
+					message: `第 ${runCtx.round || ""} 轮完成：挑中 ${(pickedThisRound || []).length} 条，跳过无字幕 ${skippedNoSubtitle || 0} 条`,
+					lastMessage: `挑中 ${(pickedThisRound || []).length} 条，跳过无字幕 ${skippedNoSubtitle || 0} 条`,
+					actions: [...this._currentRunActions],
+					actionCount: this._currentRunActions.length,
+				});
+			}
+		} catch {}
 	}
 }

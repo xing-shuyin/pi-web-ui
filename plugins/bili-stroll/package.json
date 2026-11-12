@@ -1,0 +1,7 @@
+{
+	"name": "bili-stroll",
+	"version": "0.3.0",
+	"description": "像人一样逛 B 站：三层漏斗 + 观看手记 + 系列追踪 + 好奇心队列（与 bili-scroll 并存的新版本）",
+	"type": "module",
+	"main": "index.mjs"
+}

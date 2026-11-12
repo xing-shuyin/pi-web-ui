@@ -1,7 +1,7 @@
 {
 	"name": "bili-scroll",
-	"version": "2.6.0",
-	"description": "每天替你刷一轮 B站：品味账本 + 内容索引 + 意图问答 + 带回执的投递；挑不出好东西会明确弃权",
+	"version": "2.10.0",
+	"description": "每天替你刷一轮 B站：一份 AI 写成的视频内容总结 + 品味账本 + 内容索引 + 意图问答 + 带回执的投递；挑不出好东西会明确弃权",
 	"type": "module",
 	"main": "index.mjs"
 }

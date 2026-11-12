@@ -77,7 +77,21 @@ function extract(python, payload, signal) {
 	});
 }
 
-export async function readVideoContent({ api, host, storageDir, bvid, settings = {}, signal = undefined }) {
+/**
+ * 读取视频内容证据。
+ *
+ * `subtitleOnly: true` 是详情页「现写总结」的快路径：拿到字幕轨就返回，
+ * 不下载媒体、不抽帧、不跑 ASR —— 否则一次交互要等几分钟。
+ */
+export async function readVideoContent({
+	api,
+	host,
+	storageDir,
+	bvid,
+	settings = {},
+	signal = undefined,
+	subtitleOnly = false,
+}) {
 	const evidence = [];
 	const limitations = [
 		"Frame OCR reads visible text only; it cannot understand scenes, actions, or silent visual meaning.",
@@ -144,6 +158,12 @@ export async function readVideoContent({ api, host, storageDir, bvid, settings =
 		} else limitations.push("No actual subtitle track available; metadata and AI summaries excluded.");
 	} catch {
 		limitations.push(signal?.aborted ? "cancelled" : "subtitle_unavailable");
+	}
+	// 快路径：有字幕轨就够了；没字幕时也不回退到抽帧/ASR（耗时不可控）
+	if (subtitleOnly) {
+		if (coverage.speech !== "subtitle_track")
+			limitations.push("subtitle_only_mode: no subtitle track, media extraction skipped");
+		return result();
 	}
 	if (signal?.aborted) return result();
 	let workDir;

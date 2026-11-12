@@ -1,4 +1,5 @@
 import qrcode from "./vendor/qrcode.js";
+import { renderMiniMd, stripNoteScaffold } from "./md.mjs?v=2.8.0";
 import { esc } from "@pi-web-ui/plugin-sdk/client";
 
 export default {
@@ -20,6 +21,8 @@ export default {
 				}
 				if (payload?.type === "bili:action" && payload?.action) {
 					appendActionTerminal(payload.action);
+					const _st = payload.action.step;
+					if (_st === "done" || _st === "error") void refreshAfterRun();
 				}
 			});
 		}
@@ -163,7 +166,7 @@ export default {
 <div class="bili-brand-text">
 <div class="bili-brand-row">
 <span class="bili-brand-title">刷 B 站</span>
-<span class="bili-badge-ver">v2.6.0</span>
+<span class="bili-badge-ver" hidden>v—</span>
 <span class="bili-badge-always" title="无界面也自动跑：服务器启动即常驻，峰谷窗口+私信监听都在后台">● 常驻自跑</span>
 <span class="bili-pill-stat" title="今日挑中 / 每日额度上限（挑够自动停刷）">挑 <b class="bili-hp-quota">—</b></span>
 <span class="bili-pill-stat" title="今日巡检轮次（峰谷窗口自动跑）"><b class="bili-hp-rounds">—</b></span>
@@ -176,6 +179,7 @@ export default {
 					</div>
 <div class="bili-topbar-actions">
 <button class="bili-btn-run-top" type="button" title="立刻跑一轮巡检（峰谷窗口之外也可以手动触发）">🚀 跑一轮</button>
+<button class="bili-btn-runs" type="button" title="查看每次跑一轮的状态记录：下拉切轮次，看 AI 看了哪条视频、转写/点赞/评论/私信每一步">📊 运行状态</button>
 <button class="bili-btn-settings" type="button" title="打开设置：常用 / 偏好 / 互动 / 高级">⚙️ 设置</button>
 <button class="bili-btn-refresh" type="button" title="刷新状态与视频卡片">🔄 刷新</button>
 </div>
@@ -238,9 +242,24 @@ export default {
 					.bili-switch-wrap input:checked + .bili-toggle-slider::before { transform: translateX(20px); background-color: var(--accent-contrast, #fff); }
 					/* 顶栏动作区 */
 					.bili-topbar-actions { display: flex; align-items: center; gap: 8px; flex: none; }
-					.bili-btn-refresh, .bili-btn-settings { padding: 7px 12px; border: 1px solid var(--border); border-radius: 10px; background: var(--bg); color: var(--text); font-size: 12px; font-weight: 600; cursor: pointer; flex: none; white-space: nowrap; }
-					.bili-btn-settings { border-color: color-mix(in srgb, var(--accent) 45%, var(--border)); background: color-mix(in srgb, var(--accent) 12%, var(--bg)); }
-					.bili-btn-refresh:hover, .bili-btn-settings:hover { border-color: var(--accent); }
+/* 顶栏四个按钮同一套（v2.9）：同内边距/圆角/字号字重，hover 才露 accent */
+					.bili-topbar-actions .bili-btn-run-top, .bili-topbar-actions .bili-btn-refresh, .bili-topbar-actions .bili-btn-settings, .bili-topbar-actions .bili-btn-runs { padding: 7px 12px; border: 1px solid var(--border); border-radius: 10px; background: var(--bg); color: var(--text); font-size: 12px; font-weight: 600; line-height: 1.5; cursor: pointer; flex: none; white-space: nowrap; }
+					.bili-topbar-actions .bili-btn-run-top:hover, .bili-topbar-actions .bili-btn-refresh:hover, .bili-topbar-actions .bili-btn-settings:hover, .bili-topbar-actions .bili-btn-runs:hover { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 10%, var(--bg)); }
+					.bili-topbar-actions button:active { transform: translateY(1px); }
+					.bili-runs-summary { display: flex; flex-wrap: wrap; gap: 8px 14px; font-size: 12px; color: var(--text-dim); margin: 8px 0 10px; }
+					.bili-runs-summary b { color: var(--text); }
+					.bili-runs-select { width: 100%; box-sizing: border-box; padding: 8px 10px; border-radius: 8px; border: 1px solid var(--border); background: var(--bg); color: var(--text); font-size: 12px; }
+					.bili-runs-timeline { margin-top: 10px; max-height: 380px; overflow: auto; overscroll-behavior: contain; display: flex; flex-direction: column; gap: 4px; font-size: 12px; }
+					.bili-runs-step { display: flex; gap: 8px; align-items: baseline; padding: 5px 8px; border: 1px solid var(--border); border-radius: 8px; background: var(--bg); overflow-wrap: anywhere; }
+					.bili-runs-clock { color: var(--text-dim); font-size: 11px; flex: none; }
+					.bili-runs-tag { flex: none; font-size: 11px; padding: 0 6px; border-radius: 999px; border: 1px solid var(--border); color: var(--text-dim); }
+					.bili-runs-msg { min-width: 0; overflow-wrap: anywhere; word-break: break-word; }
+					.bili-runs-msg a { color: var(--accent); }
+					.bili-runs-badge { font-size: 11px; padding: 1px 8px; border-radius: 999px; border: 1px solid var(--border); }
+					.bili-runs-badge.ok { color: var(--green, #22c55e); border-color: color-mix(in srgb, var(--green, #22c55e) 40%, var(--border)); }
+					.bili-runs-badge.run { color: var(--accent); border-color: color-mix(in srgb, var(--accent) 50%, var(--border)); }
+					.bili-runs-badge.warn { color: #faad14; border-color: color-mix(in srgb, #faad14 45%, var(--border)); }
+					.bili-runs-badge.err { color: #ff4d4f; border-color: color-mix(in srgb, #ff4d4f 45%, var(--border)); }
 					/* 设置弹窗：绝对定位在插件面板内，不 fixed、不写死层级，避免盖住宿主 UI */
 					.bili-modal { position: absolute; inset: 0; z-index: 50; display: flex; align-items: center; justify-content: center; padding: 16px; }
 					.bili-modal[hidden] { display: none; }
@@ -260,7 +279,8 @@ export default {
 					/* 提示词：能看见的默认值 + 固定追加部分 */
 					.bili-prompt-area { width: 100%; box-sizing: border-box; margin-top: 10px; padding: 10px; border: 1px solid var(--border); border-radius: 8px; background: var(--bg); color: var(--text); font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace; font-size: 12px; line-height: 1.55; resize: vertical; overflow-wrap: anywhere; }
 					.bili-prompt-fixed { margin-top: 8px; padding: 10px; border-radius: 8px; border: 1px dashed var(--border); background: color-mix(in srgb, var(--accent) 6%, transparent); font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace; font-size: 11px; line-height: 1.5; color: var(--text-dim); white-space: pre-wrap; overflow-wrap: anywhere; }
-					.bili-prompt-fixed::before { content: "🔒 固定追加（不可编辑）"; display: block; margin-bottom: 6px; font-family: inherit; font-weight: 700; color: var(--text); }
+					.bili-prompt-fixed::before { content: "✏️ 固定追加（可改，保存时校验格式）"; display: block; margin-bottom: 6px; font-family: inherit; font-weight: 700; color: var(--text); }
+					textarea.bili-prompt-fixed { width: 100%; box-sizing: border-box; resize: vertical; color: var(--text); }
 					.bili-prompt-actions { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin-top: 10px; }
 					.bili-prompt-state { font-weight: 400; }
 					@media (max-width: 620px) { .bili-brand-sub { display: none; } .bili-modal { padding: 8px; } }
@@ -306,7 +326,23 @@ export default {
 					.bili-detail-sub em { font-style: normal; background: var(--bg); border: 1px solid var(--border); padding: 0 8px; border-radius: 999px; }
 					.bili-detail-body { flex: 1; min-height: 0; display: grid; grid-template-columns: 1fr 1fr; overflow: hidden; }
 					.bili-detail-left { min-height: 0; overflow-y: auto; overscroll-behavior: contain; padding: 12px; border-right: 1px solid var(--border); }
-					.bili-detail-right { min-height: 0; overflow-y: auto; overscroll-behavior: contain; padding: 12px 14px; }
+					.bili-detail-right { min-height: 0; overflow-y: auto; overscroll-behavior: contain; padding: 12px 14px; display: flex; flex-direction: column; gap: 8px; }
+					.bili-sum-bar { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; font-size: 11px; color: var(--text-dim); flex: none; }
+					.bili-sum-label { font-weight: 700; font-size: 11.5px; color: var(--text); }
+					.bili-sum-meta { min-width: 0; overflow-wrap: anywhere; }
+					.bili-sum-regen { margin-left: auto; font-size: 10.5px; padding: 3px 9px; border-radius: 999px; border: 1px solid var(--border); background: var(--bg); color: var(--text-dim); cursor: pointer; }
+					.bili-sum-regen:hover { border-color: color-mix(in srgb, var(--accent) 55%, var(--border)); color: var(--accent); }
+					.bili-sum-body { min-width: 0; }
+					.bili-sum-empty { border: 1px dashed color-mix(in srgb, var(--accent) 40%, transparent); border-radius: 12px; padding: 12px; background: color-mix(in srgb, var(--accent) 6%, transparent); font-size: 12px; color: var(--text-dim); display: flex; flex-direction: column; gap: 8px; line-height: 1.6; }
+					.bili-sum-empty b { color: var(--text); }
+					.bili-sum-cta { align-self: flex-start; font-size: 11.5px; padding: 6px 12px; border-radius: 999px; border: 1px solid color-mix(in srgb, var(--accent) 45%, transparent); background: color-mix(in srgb, var(--accent) 14%, transparent); color: var(--accent); cursor: pointer; font-weight: 700; }
+					.bili-sum-cta:disabled { opacity: .6; cursor: default; }
+					.bili-sum-busy { display: flex; flex-direction: column; gap: 7px; font-size: 12px; color: var(--text-dim); line-height: 1.6; }
+					.bili-sum-busy .skel { height: 10px; border-radius: 999px; background: linear-gradient(90deg, var(--border), color-mix(in srgb, var(--border) 40%, transparent), var(--border)); background-size: 200% 100%; animation: biliShimmer 1.4s linear infinite; }
+					@keyframes biliShimmer { to { background-position: -200% 0; } }
+					.bili-sum-raw { margin-top: 2px; }
+					.bili-sum-raw > summary { cursor: pointer; font-size: 11px; color: var(--text-dim); }
+					.bili-sum-raw-body { margin-top: 8px; border-top: 1px dashed var(--border); padding-top: 8px; }
 					.bili-detail-player { border-radius: 12px; overflow: hidden; position: relative; aspect-ratio: 16/9; background: #000; border: 1px solid var(--border); }
 					.bili-detail-player img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; opacity: .55; }
 					.bili-detail-play { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; }
@@ -317,10 +353,18 @@ export default {
 					.bili-detail-acts .chip.on { color: var(--accent); border-color: color-mix(in srgb, var(--accent) 50%, transparent); background: color-mix(in srgb, var(--accent) 12%, transparent); }
 					.bili-detail-cmt { border: 1px solid var(--border); background: var(--bg); border-radius: 10px; padding: 8px 10px; margin-top: 8px; font-size: 12px; }
 					.bili-detail-cmt .who { font-size: 11px; color: var(--text-dim); margin-bottom: 3px; display: flex; justify-content: space-between; }
-					.bili-md blockquote { margin: 0 0 10px; padding: 9px 12px; border-radius: 0 10px 10px 0; border-left: 3px solid var(--accent); background: color-mix(in srgb, var(--accent) 9%, transparent); font-size: 12.5px; }
+					.bili-md blockquote { margin: 0 0 10px; padding: 9px 12px; border-radius: 0 10px 10px 0; border-left: 3px solid var(--accent); background: color-mix(in srgb, var(--accent) 9%, transparent); font-size: 12.5px; line-height: 1.7; }
 					.bili-md h4 { margin: 12px 0 6px; font-size: 12px; color: var(--text-dim); letter-spacing: .05em; }
+					.bili-md h5 { margin: 10px 0 4px; font-size: 11.5px; color: var(--text-dim); }
+					.bili-md hr { border: 0; border-top: 1px dashed var(--border); margin: 10px 0; }
 					.bili-md ul { margin: 6px 0; padding-left: 18px; font-size: 12.5px; }
-					.bili-md p { margin: 6px 0; font-size: 12.5px; }
+					.bili-md ol { margin: 6px 0; padding-left: 20px; font-size: 12.5px; }
+					.bili-md li { margin: 3px 0; line-height: 1.65; }
+					.bili-md p { margin: 6px 0; font-size: 12.5px; line-height: 1.7; }
+					.bili-md code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 11.5px; padding: 1px 5px; border-radius: 5px; background: color-mix(in srgb, var(--border) 55%, transparent); }
+					.bili-md a { color: var(--accent); }
+					.bili-md .bili-ts { font-variant-numeric: tabular-nums; font-size: 11px; padding: 1px 7px; border-radius: 999px; border: 1px solid color-mix(in srgb, var(--accent) 40%, transparent); color: var(--accent); text-decoration: none; white-space: nowrap; }
+					.bili-md p.bili-row { color: var(--text-dim); }
 @media (max-width: 720px) { .bili-detail-body { grid-template-columns: 1fr; } .bili-detail-left { border-right: 0; border-bottom: 1px solid var(--border); } }
 
 /* ═══ v2.6 顶栏状态 pills ═══ */
@@ -353,8 +397,6 @@ export default {
 .bili-detail-sub em.detail-stat-sub { color: var(--text-dim); }
 .bili-detail-acts .chip.skel { opacity: .55; }
 .bili-detail-acts .chip[data-act='fav'] { cursor: pointer; }
-.bili-why-block { margin: 0 0 10px; padding: 9px 12px; border-radius: 10px; border: 1px dashed color-mix(in srgb, var(--accent) 40%, transparent); background: color-mix(in srgb, var(--accent) 6%, transparent); font-size: 12px; color: var(--text-dim); overflow-wrap: anywhere; }
-.bili-why-block b { color: var(--accent); }
 
 /* ═══ v2.6 视频列表：网格 / 列表双视图 ═══ */
 .bili-wall-toggle { display: inline-flex; overflow: hidden; border: 1px solid var(--border); border-radius: 10px; flex: none; }
@@ -377,9 +419,17 @@ export default {
 .bili-btn-save-foot { flex: none; padding: 8px 22px; border: none; border-radius: 10px; background: var(--accent); color: var(--accent-contrast, #fff); font-weight: 700; font-size: 13px; cursor: pointer; }
 .bili-btn-save-foot:disabled { opacity: 0.55; cursor: not-allowed; }
 
-/* ═══ v2.6 顶栏动作按钮 ═══ */
-.bili-btn-run-top { flex: none; padding: 6px 14px; border: none; border-radius: 10px; background: linear-gradient(135deg, var(--accent), color-mix(in srgb, var(--accent) 55%, #fff)); color: var(--accent-contrast, #fff); font-weight: 700; font-size: 12px; cursor: pointer; box-shadow: 0 6px 18px color-mix(in srgb, var(--accent) 30%, transparent); }
-.bili-btn-run-top:active { transform: translateY(1px); }
+/* ═══ 清空：列表头部按钮 + 确认弹层 ═══ */
+.bili-btn-clear-history { flex: none; font-size: 11px; padding: 4px 10px; border-radius: 999px; border: 1px solid var(--border); background: var(--bg); color: var(--text-dim); cursor: pointer; }
+.bili-btn-clear-history:hover { border-color: color-mix(in srgb, var(--red, #ef4444) 55%, var(--border)); color: var(--red, #ef4444); }
+.bili-clear-warn { font-size: 12.5px; color: var(--text); }
+.bili-clear-list { margin: 8px 0 0; padding-left: 18px; font-size: 12.5px; line-height: 1.7; color: var(--text); }
+.bili-clear-list li { margin: 3px 0; }
+.bili-clear-keep { margin-top: 12px; padding: 8px 10px; border-radius: 8px; background: color-mix(in srgb, var(--green, #22c55e) 10%, transparent); border: 1px solid color-mix(in srgb, var(--green, #22c55e) 30%, transparent); font-size: 12px; line-height: 1.6; color: var(--text); }
+.bili-btn-clear-ok { flex: none; padding: 8px 18px; border: 1px solid color-mix(in srgb, var(--red, #ef4444) 60%, transparent); border-radius: 10px; background: color-mix(in srgb, var(--red, #ef4444) 16%, transparent); color: var(--red, #ef4444); font-weight: 700; font-size: 13px; cursor: pointer; }
+.bili-btn-clear-ok:disabled { opacity: 0.55; cursor: not-allowed; }
+
+/* 跑一轮已并入顶栏统一按钮（一套 padding/圆角/字重，见顶栏动作区） */
 </style>
 
 
@@ -397,6 +447,7 @@ export default {
 								<div>
 <div class="bili-card-title">🎞️ 它刷过的视频 <span class="bili-card-title-hint">封面由宿主代理转发 · 点封面出详情弹窗</span></div>
 								</div>
+								<button class="bili-btn-clear-history" type="button" title="清空刷过的视频、日报、笔记与 AI 总结">🧹 清空</button>
 								<!-- 筛选 Chips -->
 								<div class="bili-watched-filters" style="display: flex; gap: 6px; flex-wrap: wrap; align-items: center;">
 									<button class="bili-chip-state" data-state="" style="padding: 3px 8px; border-radius: 12px; border: 1px solid var(--border); background: var(--accent); color: var(--accent-contrast, #fff); font-size: 11px; cursor: pointer;">全部</button>
@@ -518,13 +569,70 @@ export default {
 </div>
 <div class="bili-detail-comments"></div>
 </div>
-<div class="bili-detail-right bili-md"></div>
+<div class="bili-detail-right">
+<div class="bili-sum-bar">
+<span class="bili-sum-label">📄 AI 内容总结</span>
+<span class="bili-sum-meta"></span>
+<button class="bili-sum-regen" type="button" hidden>重新生成</button>
+</div>
+<div class="bili-sum-body bili-md"></div>
+</div>
+</div>
+</div>
+</div>
+
+<!-- ═══════════ 清空确认 ═══════════ -->
+<div class="bili-modal bili-clear-modal" hidden>
+<div class="bili-modal-backdrop bili-clear-backdrop"></div>
+<div class="bili-modal-panel" role="dialog" aria-modal="true" aria-label="清空刷过的视频">
+<div class="bili-modal-head">
+<div class="bili-modal-title">🧹 清空刷过的视频</div>
+<button class="bili-modal-close bili-clear-close" type="button" aria-label="关闭">✕</button>
+</div>
+<div class="bili-modal-body">
+<div class="bili-clear-warn">这一步不可撤销，会删掉：</div>
+<ul class="bili-clear-list">
+<li>刷过的视频列表与判重表（之后这些视频能重新被刷到）</li>
+<li>日报、单篇笔记、月度清单、AI 内容总结</li>
+<li>内容索引、品味账本里的挑中与信号记录</li>
+</ul>
+<div class="bili-clear-keep">✅ 保留：已发评论 / 私信记录（避免对同一视频重复打扰）、登录凭证、所有设置</div>
+</div>
+<div class="bili-modal-foot">
+<span class="bili-modal-foot-hint">清完后下一轮巡检从零开始</span>
+<button class="bili-btn-clear-cancel bili-btn-ghost" type="button">取消</button>
+<button class="bili-btn-clear-ok" type="button">确认清空</button>
+</div>
+</div>
+</div>
+
+<!-- ═══════════ 「📊 运行状态」弹窗：每次跑一轮的状态记录，下拉切轮次看 AI 每一步 ═══════════ -->
+<div class="bili-modal bili-runs-modal" hidden>
+<div class="bili-modal-backdrop bili-runs-backdrop"></div>
+<div class="bili-modal-panel" role="dialog" aria-modal="true" aria-label="运行状态">
+<div class="bili-modal-head">
+<div class="bili-modal-title">📊 运行状态 <span class="bili-modal-sub">每轮挑了几条 · AI 看了啥 · 转写/点赞/评论/私信</span></div>
+<button class="bili-modal-close bili-runs-close" type="button" aria-label="关闭运行状态">✕</button>
+</div>
+<div class="bili-modal-body">
+<div style="display: flex; gap: 8px; align-items: center; margin-bottom: 8px;">
+<select class="bili-runs-select" aria-label="切换轮次"></select>
+<button class="bili-btn-refresh bili-runs-reload" type="button" title="重新拉取轮次记录">🔄</button>
+</div>
+<div class="bili-runs-head" style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap;"></div>
+<div class="bili-runs-summary"></div>
+<div class="bili-runs-picks" style="display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 4px;"></div>
+<div class="bili-runs-timeline"><div style="color: var(--text-dim);">正在加载轮次记录…</div></div>
+</div>
+<div class="bili-modal-foot">
+<span class="bili-modal-foot-hint">running 是正在跑的那轮，每 5 秒自动刷一次动作流水</span>
+<button class="bili-btn-clear-cancel bili-runs-close2 bili-btn-ghost" type="button">关闭</button>
 </div>
 </div>
 </div>
 
 <!-- ═══════════ 「⚙️ 设置」弹窗：所有配置都收在这里 ═══════════ -->
-				<div class="bili-modal" hidden>
+				<div class="bili-modal bili-settings-modal" hidden>
 					<div class="bili-modal-backdrop"></div>
 					<div class="bili-modal-panel" role="dialog" aria-modal="true" aria-label="bili-scroll 设置">
 						<div class="bili-modal-head">
@@ -561,20 +669,32 @@ export default {
 								<div class="bili-card">
 									<div class="bili-card-title">🧠 研读提示词 <span class="bili-card-title-hint bili-prompt-state">当前：默认</span></div>
 									<div class="bili-card-sub">
-										巡检逐条判断视频质量时发给模型的系统提示词。框里就是当前生效的文本——直接改就改掉默认值，「恢复默认」回到内置版本。下面的 JSON 契约与不可信内容条款由插件固定追加，改不掉。
+										巡检逐条判断视频质量时发给模型的系统提示词。框里就是当前生效的文本——直接改就改掉默认值，「恢复默认」回到内置版本。下面的 JSON 契约与不可信内容条款同样可改，保存时校验格式（四键 + 不可信条款缺一不可）。清空=用默认。
 									</div>
 									<textarea class="bili-cfg-analyze-prompt bili-prompt-area" rows="12" spellcheck="false"></textarea>
-									<div class="bili-prompt-fixed bili-prompt-fixed-analyze"></div>
+									<textarea class="bili-prompt-fixed bili-prompt-fixed-analyze bili-prompt-area" rows="8" spellcheck="false"></textarea>
 									<div class="bili-prompt-actions">
 						<button class="bili-btn-save-prompts bili-btn-save" type="button" hidden></button>
 						<button class="bili-btn-reset-analyze bili-btn-ghost" type="button">♻️ 恢复默认研读提示词</button>
 									</div>
 								</div>
 								<div class="bili-card">
+									<div class="bili-card-title">📄 内容总结提示词</div>
+									<div class="bili-card-sub">
+										详情页右栏那份「AI 内容总结」就是用它写的：一次读完字幕、写成一篇带结论与要点的文档。下面固定追加的小节结构与不可信内容条款同样可改，保存时校验格式（结论/要点/局限 + 不可信条款缺一不可）。清空=用默认。
+									</div>
+									<textarea class="bili-cfg-summary-prompt bili-prompt-area" rows="9" spellcheck="false"></textarea>
+									<textarea class="bili-prompt-fixed bili-prompt-fixed-summary bili-prompt-area" rows="6" spellcheck="false"></textarea>
+									<div class="bili-prompt-actions">
+						<button class="bili-btn-save-prompts bili-btn-save" type="button" hidden></button>
+						<button class="bili-btn-reset-summary bili-btn-ghost" type="button">♻️ 恢复默认总结提示词</button>
+									</div>
+								</div>
+								<div class="bili-card">
 									<div class="bili-card-title">💬 私信回复提示词</div>
-									<div class="bili-card-sub">自动回复新私信时的系统提示词（英文）。安全条款同样固定追加。</div>
+									<div class="bili-card-sub">自动回复新私信时的系统提示词（英文）。安全条款同样可改，保存时必须保留不可信条款。清空=用默认。</div>
 									<textarea class="bili-cfg-dm-prompt bili-prompt-area" rows="6" spellcheck="false"></textarea>
-									<div class="bili-prompt-fixed bili-prompt-fixed-dm"></div>
+									<textarea class="bili-prompt-fixed bili-prompt-fixed-dm bili-prompt-area" rows="4" spellcheck="false"></textarea>
 								</div>
 								<div class="bili-note">人设提示词在「🎨 偏好」里，会接在研读提示词之后一起发出。</div>
 							</div>
@@ -834,34 +954,108 @@ export default {
 								<div class="bili-diag-result" style="margin-top: 10px; display: none; padding: 10px; border-radius: 6px; background: var(--bg); border: 1px solid var(--border); font-size: 12px; line-height: 1.5; white-space: pre-wrap; font-family: monospace;"></div>
 							</div>
 						</div>
-						<!-- v2.6 常驻底栏：按当前页签分派保存，不随内容滚动 -->
-						<div class="bili-modal-foot">
-							<span class="bili-modal-foot-hint">补丁式保存 · 只提交改过的项 · 高级页为即时工具，无需保存</span>
-							<button class="bili-btn-save-foot" type="button">💾 保存</button>
-						</div>
 					</div>
+					<!-- 常驻底栏：在滚动区之外，所有页签共用，不随内容滚动 -->
+					<div class="bili-modal-foot">
+						<span class="bili-modal-foot-hint">补丁式保存 · 只提交改过的项 · 高级页为即时工具，无需保存</span>
+						<button class="bili-btn-save-foot" type="button">💾 保存</button>
+					</div>
+				</div>
 				</div>
 				</div>
 			</div>
 		`;
 
 		const btnSettings = el.querySelector(".bili-btn-settings");
-		const settingsModal = el.querySelector(".bili-modal");
-		const btnCloseSettings = el.querySelector(".bili-modal .bili-modal-close");
-		const settingsBackdrop = el.querySelector(".bili-modal-backdrop");
+		const settingsModal = el.querySelector(".bili-settings-modal");
+		const btnCloseSettings = el.querySelector(
+			".bili-settings-modal > .bili-modal-panel > .bili-modal-head .bili-modal-close",
+		);
+		const settingsBackdrop = el.querySelector(".bili-settings-modal > .bili-modal-backdrop");
 		const modalTabs = [...el.querySelectorAll(".bili-modal-tab")];
 		const modalPanes = [...el.querySelectorAll(".bili-pane")];
 		const cfgAnalyzePrompt = el.querySelector(".bili-cfg-analyze-prompt");
+		const cfgSummaryPrompt = el.querySelector(".bili-cfg-summary-prompt");
 		const cfgDmPrompt = el.querySelector(".bili-cfg-dm-prompt");
 		const promptFixedAnalyze = el.querySelector(".bili-prompt-fixed-analyze");
+		const promptFixedSummary = el.querySelector(".bili-prompt-fixed-summary");
 		const promptFixedDm = el.querySelector(".bili-prompt-fixed-dm");
 		const promptState = el.querySelector(".bili-prompt-state");
 		const btnSavePrompts = el.querySelector(".bili-btn-save-prompts");
 		const btnResetAnalyze = el.querySelector(".bili-btn-reset-analyze");
-		const promptDefaults = { analyze: "", dm: "" };
+		const btnResetSummary = el.querySelector(".bili-btn-reset-summary");
+		const promptDefaults = { analyze: "", summary: "", dm: "" };
+		const promptFixedDefaults = { analyze: "", summary: "", dm: "" };
+		// 固定追加前端预校验（与服务端 validateFixed 同规则，最终以服务端为准）
+		const FIXED_KIND_KEYS = {
+			analyze: ["tier", "whyWorth", "insights", "comment"],
+			summary: ["结论", "要点", "局限"],
+			dm: [],
+		};
+		const checkFixedClient = (kind, text) => {
+			const t = String(text || "").trim();
+			if (!t) return null;
+			if (t.length > 4000) return `固定追加太长（${t.length}/4000字）精简后再保存`;
+			const miss = (FIXED_KIND_KEYS[kind] || []).filter((k) => !t.includes(k));
+			if (miss.length) return `固定追加缺了 ${miss.join("、")}补上才能保存`;
+			const safe =
+				(t.includes("不可信") && (t.includes("不执行") || t.includes("不得执行"))) ||
+				(/untrusted/i.test(t) && /never\s+execute/i.test(t));
+			if (!safe) return "固定追加必须保留不可信内容条款（“不可信…不执行”）删了不能保存";
+			return null;
+		};
 		const feedbackBar = el.querySelector(".bili-feedback-bar");
 		const btnRefresh = el.querySelector(".bili-btn-refresh");
 
+		// 清空：列表头部按钮 → 确认弹层 → POST /clear → 刷新列表与状态
+		const clearModal = el.querySelector(".bili-clear-modal");
+		const btnClearOpen = el.querySelector(".bili-btn-clear-history");
+		const btnClearCancel = el.querySelector(".bili-btn-clear-cancel");
+		const btnClearOk = el.querySelector(".bili-btn-clear-ok");
+		const btnClearClose = el.querySelector(".bili-clear-close");
+		const clearBackdrop = el.querySelector(".bili-clear-backdrop");
+		const closeClear = () => {
+			if (!clearModal || clearModal.hidden) return;
+			clearModal.hidden = true;
+			document.removeEventListener("keydown", onClearKey);
+		};
+		function onClearKey(event) {
+			if (event.key === "Escape") closeClear();
+		}
+		const openClear = () => {
+			if (!clearModal) return;
+			clearModal.hidden = false;
+			btnClearOk && (btnClearOk.disabled = false);
+			if (btnClearOk) btnClearOk.textContent = "确认清空";
+			document.addEventListener("keydown", onClearKey);
+		};
+		if (btnClearOpen) btnClearOpen.addEventListener("click", openClear);
+		if (btnClearCancel) btnClearCancel.addEventListener("click", closeClear);
+		if (btnClearClose) btnClearClose.addEventListener("click", closeClear);
+		if (clearBackdrop) clearBackdrop.addEventListener("click", closeClear);
+		if (btnClearOk)
+			btnClearOk.addEventListener("click", async () => {
+				btnClearOk.disabled = true;
+				btnClearOk.textContent = "清空中…";
+				const res = await httpPost("clear", {});
+				if (res && res.ok) {
+					closeClear();
+					const r = res.removed || {};
+					notify(
+						`已清空：视频列表/判重表 · 日报 ${r.reports || 0} · 笔记 ${r.notes || 0} · 总结 ${r.summaries || 0}`,
+						"good",
+					);
+					currentOffset = 0;
+					await loadWatchedCards();
+					refreshStatus(true);
+				} else {
+					btnClearOk.disabled = false;
+					btnClearOk.textContent = "确认清空";
+					notify(`清空失败：${res?.error || "未知错误"}`, "warn");
+				}
+			});
+
+		const badgeVer = el.querySelector(".bili-badge-ver");
 		const statQuota = el.querySelector(".bili-stat-quota");
 		const statRounds = el.querySelector(".bili-stat-rounds");
 		const statDmMode = el.querySelector(".bili-stat-dm-mode");
@@ -1104,71 +1298,6 @@ export default {
 			'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 3h12v18l-6-4-6 4z"/></svg>';
 		const SVG_CMT =
 			'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12a8 8 0 0 1-8 8H5l-2 2V12a8 8 0 0 1 8-8h2a8 8 0 0 1 8 8z"/></svg>';
-		// 极简 markdown 渲染（单条笔记/总结展示用先转义再还原常用标记）
-		const renderMiniMd = (src) => {
-			const t = String(src || "");
-			const lines = t.split(/\r?\n/);
-			let html = "";
-			let inList = false;
-			const inline = (s) =>
-				esc(s)
-					.replace(/\*\*(.+?)\*\*/g, "<b>$1</b>")
-					.replace(
-						/\[([^\]]+)\]\((https?:[^)]+)\)/g,
-						'<a href="$2" target="_blank" style="color: var(--accent);">$1</a>',
-					);
-			for (const raw of lines) {
-				const line = raw.trim();
-				if (/^#{2,4}\s+/.test(line)) {
-					if (inList) {
-						html += "</ul>";
-						inList = false;
-					}
-					html += `<h4>${inline(line.replace(/^#{2,4}\s+/, ""))}</h4>`;
-					continue;
-				}
-				if (/^>\s?/.test(line)) {
-					if (inList) {
-						html += "</ul>";
-						inList = false;
-					}
-					html += `<blockquote>${inline(line.replace(/^>\s?/, ""))}</blockquote>`;
-					continue;
-				}
-				if (/^[-*]\s+/.test(line)) {
-					if (!inList) {
-						html += "<ul>";
-						inList = true;
-					}
-					html += `<li>${inline(line.replace(/^[-*]\s+/, ""))}</li>`;
-					continue;
-				}
-				if (/^\|.*\|$/.test(line) && /---/.test(line)) continue;
-				if (/^\|.*\|$/.test(line)) {
-					if (inList) {
-						html += "</ul>";
-						inList = false;
-					}
-					html += `<p>${inline(line.replace(/\|/g, " / ").replace(/^\s*\/\s*|\s*\/\s*$/g, ""))}</p>`;
-					continue;
-				}
-				if (!line) {
-					if (inList) {
-						html += "</ul>";
-						inList = false;
-					}
-					continue;
-				}
-				if (inList) {
-					html += "</ul>";
-					inList = false;
-				}
-				html += `<p>${inline(raw)}</p>`;
-			}
-			if (inList) html += "</ul>";
-			return html || '<p style="color: var(--text-dim);">暂无内容</p>';
-		};
-
 		const notify = (msg, tone = "info") => {
 			feedbackBar.style.display = "block";
 			feedbackBar.textContent = msg;
@@ -1235,6 +1364,195 @@ export default {
 		if (btnSettings) btnSettings.addEventListener("click", () => openSettings());
 		if (btnCloseSettings) btnCloseSettings.addEventListener("click", () => closeSettings());
 		if (settingsBackdrop) settingsBackdrop.addEventListener("click", () => closeSettings());
+
+		// ═══ v2.9 运行状态弹窗：顶栏按钮点开，下拉切轮次，看该轮 AI 每一步动作 ═══
+		const btnRuns = el.querySelector(".bili-btn-runs");
+		const runsModal = el.querySelector(".bili-runs-modal");
+		const runsBackdrop = el.querySelector(".bili-runs-backdrop");
+		const runsSelect = el.querySelector(".bili-runs-select");
+		const runsHead = el.querySelector(".bili-runs-head");
+		const runsSummary = el.querySelector(".bili-runs-summary");
+		const runsPicks = el.querySelector(".bili-runs-picks");
+		const runsTimeline = el.querySelector(".bili-runs-timeline");
+		const runsReload = el.querySelector(".bili-runs-reload");
+		let runsCache = [];
+		let runsPollTimer = null;
+		const RUN_STEP_LABEL = {
+			start: "启动",
+			status: "配额核查",
+			search: "检索",
+			search_result: "检索结果",
+			read_subtitle: "取证据",
+			index_hit: "命中索引",
+			index_err: "索引失败",
+			analyze: "模型研读",
+			skip_badword: "跳过(黑名单)",
+			skip_unworthy: "排雷跳过",
+			no_subtitle: "跳过(无字幕)",
+			picked: "挑中",
+			taste: "品味排序",
+			filter: "候选过滤",
+			cluster: "内容去重",
+			quota_reached: "触顶",
+			check: "额度检查",
+			summary_batch: "写总结",
+			summary: "写总结",
+			summary_ok: "总结就绪",
+			summary_err: "总结跳过",
+			sync_workspace: "同步笔记",
+			dm_sent: "私信已发",
+			dm_dup: "私信去重",
+			dm_skip: "私信跳过",
+			dm_fail: "私信失败",
+			comment_sent: "评论已发",
+			comment_dup: "评论去重",
+			comment_err: "评论失败",
+			fav_done: "收藏",
+			done: "完成",
+			error: "出错",
+		};
+		const runStatusMeta = (s) => {
+			if (s === "running") return { text: "跑步中", cls: "run" };
+			if (s === "success") return { text: "已完成", cls: "ok" };
+			if (s === "quota_reached") return { text: "额度已满", cls: "warn" };
+			if (s === "aborted") return { text: "已中断", cls: "warn" };
+			if (s === "error") return { text: "出错", cls: "err" };
+			return { text: String(s || "未知"), cls: "" };
+		};
+		const fmtDur = (ms) => {
+			const s = Math.max(0, Math.round((Number(ms) || 0) / 1000));
+			if (s < 60) return `${s} 秒`;
+			return `${Math.floor(s / 60)} 分 ${s % 60} 秒`;
+		};
+		const fmtTime = (iso) => {
+			try {
+				return new Date(iso).toLocaleString("zh-CN", { hour12: false });
+			} catch {
+				return String(iso || "—");
+			}
+		};
+		const linkBvid = (html) =>
+			esc(html).replace(
+				/BV[0-9A-Za-z]{10}/g,
+				(m) => `<a href="https://www.bilibili.com/video/${m}" target="_blank" rel="noreferrer">${m}</a>`,
+			);
+		function renderRunDetail(run) {
+			if (!run) {
+				runsHead.innerHTML = "";
+				runsSummary.innerHTML = "";
+				runsPicks.innerHTML = "";
+				runsTimeline.innerHTML = `<div style="color: var(--text-dim);">暂无轮次记录，先点「🚀 跑一轮」。跑完每一轮的状态（挑中几条、AI 看了啥、点赞/评论/私信）都会记在这里。</div>`;
+				return;
+			}
+			const meta = runStatusMeta(run.status);
+			runsHead.innerHTML = `<span class="bili-runs-badge ${meta.cls}">${meta.text}</span><b>第 ${esc(String(run.round ?? "—"))} 轮</b><span style="color: var(--text-dim); font-size: 12px;">${esc(run.trigger || "")} · ${esc(fmtTime(run.startedAt))}</span>`;
+			runsSummary.innerHTML = `<span>挑中 <b>${run.pickedDelta ?? 0}</b> 条</span><span>候选 <b>${run.candidates ?? 0}</b> 条</span><span>跳过无字幕 <b>${run.skippedNoSubtitle ?? 0}</b></span><span>当日累计 <b>${run.pickedToday ?? 0}/${run.quota ?? "—"}</b></span><span>用时 <b>${fmtDur(run.durationMs)}</b></span>`;
+			const picks = Array.isArray(run.picks) ? run.picks : [];
+			runsPicks.innerHTML = picks
+				.map(
+					(p) =>
+						`<a href="${esc(p.url || `https://www.bilibili.com/video/${p.bvid}`)}" target="_blank" rel="noreferrer" style="font-size: 11px; padding: 2px 8px; border-radius: 999px; border: 1px solid var(--border); color: var(--accent); text-decoration: none; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;" title="${esc(p.title || p.bvid)}">⭐ ${esc(String(p.title || p.bvid).slice(0, 22))}</a>`,
+				)
+				.join("");
+			const acts = Array.isArray(run.actions) ? run.actions : [];
+			if (!acts.length) {
+				runsTimeline.innerHTML = `<div style="color: var(--text-dim);">${run.status === "running" ? "本轮刚启动，AI 动作正在产生…稍等几秒点右上 🔄 刷新。" : esc(run.lastMessage || run.message || "本轮暂无动作明细")}</div>`;
+				return;
+			}
+			runsTimeline.innerHTML = acts
+				.map((a) => {
+					const label = RUN_STEP_LABEL[a.step] || a.step || "动作";
+					return `<div class="bili-runs-step"><span class="bili-runs-clock">${esc(a.clock || "")}</span><span class="bili-runs-tag">${esc(label)}</span><span class="bili-runs-msg">${linkBvid(a.message || "")}</span></div>`;
+				})
+				.join("");
+			runsTimeline.scrollTop = runsTimeline.scrollHeight;
+		}
+		async function loadRunsList(preferId) {
+			runsTimeline.innerHTML = `<div style="color: var(--text-dim);">正在加载轮次记录…</div>`;
+			const res = await httpGet("runs", { limit: 30 });
+			if (!res || !res.ok) {
+				runsTimeline.innerHTML = `<div style="color: var(--text-dim);">拉取失败：${esc(res?.error || "未知错误")}</div>`;
+				return;
+			}
+			runsCache = Array.isArray(res.runs) ? res.runs : [];
+			if (!runsCache.length) {
+				runsSelect.innerHTML = "";
+				renderRunDetail(null);
+				return;
+			}
+			runsSelect.innerHTML = runsCache
+				.map((r) => {
+					const meta = runStatusMeta(r.status);
+					return `<option value="${esc(r.id)}">第 ${esc(String(r.round ?? "—"))} 轮 · ${esc(r.trigger || "")} · ${meta.text} · 挑中 ${r.pickedDelta ?? 0} 条 · ${esc(fmtTime(r.startedAt))}</option>`;
+				})
+				.join("");
+			const target = runsCache.find((r) => r.id === preferId) || runsCache[0];
+			runsSelect.value = target.id;
+			await loadRunDetail(target.id);
+		}
+		async function loadRunDetail(id) {
+			const lite = runsCache.find((r) => r.id === id);
+			if (lite && Array.isArray(lite.actions) && lite.actions.length) {
+				renderRunDetail(lite);
+				return;
+			}
+			const res = await httpGet("run", { id });
+			if (res && res.ok && res.run) {
+				const idx = runsCache.findIndex((r) => r.id === id);
+				if (idx >= 0) runsCache[idx] = { ...runsCache[idx], ...res.run };
+				renderRunDetail(res.run);
+			} else if (lite) {
+				renderRunDetail(lite);
+			} else {
+				runsTimeline.innerHTML = `<div style="color: var(--text-dim);">找不到该轮记录</div>`;
+			}
+		}
+		function stopRunsPoll() {
+			if (runsPollTimer) {
+				clearInterval(runsPollTimer);
+				runsPollTimer = null;
+			}
+		}
+		function closeRuns() {
+			if (!runsModal || runsModal.hidden) return;
+			runsModal.hidden = true;
+			stopRunsPoll();
+			document.removeEventListener("keydown", onRunsKey);
+		}
+		function onRunsKey(event) {
+			if (event.key === "Escape") closeRuns();
+		}
+		async function openRuns() {
+			runsModal.hidden = false;
+			document.addEventListener("keydown", onRunsKey);
+			await loadRunsList(runsSelect.value || undefined);
+			stopRunsPoll();
+			runsPollTimer = setInterval(async () => {
+				if (runsModal.hidden) {
+					stopRunsPoll();
+					return;
+				}
+				const cur = runsCache.find((r) => r.id === runsSelect.value);
+				if (cur && cur.status === "running") await loadRunDetail(cur.id);
+				else {
+					const res = await httpGet("runs", { limit: 30 });
+					if (
+						res &&
+						res.ok &&
+						Array.isArray(res.runs) &&
+						res.runs.length &&
+						res.runs[0].id !== (runsCache[0] && runsCache[0].id)
+					) {
+						await loadRunsList(runsSelect.value);
+					}
+				}
+			}, 5000);
+		}
+		if (btnRuns) btnRuns.addEventListener("click", openRuns);
+		for (const b of el.querySelectorAll(".bili-runs-close, .bili-runs-close2")) b.addEventListener("click", closeRuns);
+		if (runsBackdrop) runsBackdrop.addEventListener("click", closeRuns);
+		if (runsSelect) runsSelect.addEventListener("change", () => loadRunDetail(runsSelect.value));
+		if (runsReload) runsReload.addEventListener("click", () => loadRunsList(runsSelect.value || undefined));
 		for (const tab of modalTabs) tab.addEventListener("click", () => showSettingsPane(tab.dataset.pane));
 		// KPI 卡片兼作入口：点「额度」去常用页、点「投递方式」去互动页，单界面也能改到关键项。
 		for (const card of el.querySelectorAll(".bili-kpi-link")) {
@@ -1246,47 +1564,111 @@ export default {
 			const res = await httpGet("prompts");
 			if (!res || !res.ok) return;
 			promptDefaults.analyze = String(res.analyze?.default || "");
+			promptDefaults.summary = String(res.summary?.default || "");
 			promptDefaults.dm = String(res.dm?.default || "");
+			promptFixedDefaults.analyze = String(res.analyze?.fixedDefault || "");
+			promptFixedDefaults.summary = String(res.summary?.fixedDefault || "");
+			promptFixedDefaults.dm = String(res.dm?.fixedDefault || "");
 			if (force || !cfgAnalyzePrompt.dataset.dirty) cfgAnalyzePrompt.value = res.analyze?.effective || "";
+			if (force || !cfgSummaryPrompt.dataset.dirty) cfgSummaryPrompt.value = res.summary?.effective || "";
 			if (force || !cfgDmPrompt.dataset.dirty) cfgDmPrompt.value = res.dm?.effective || "";
-			if (promptFixedAnalyze) promptFixedAnalyze.textContent = res.analyze?.fixed || "";
-			if (promptFixedDm) promptFixedDm.textContent = res.dm?.fixed || "";
+			if (promptFixedAnalyze && (force || !promptFixedAnalyze.dataset.dirty))
+				promptFixedAnalyze.value = res.analyze?.fixedEffective ?? res.analyze?.fixed ?? "";
+			if (promptFixedSummary && (force || !promptFixedSummary.dataset.dirty))
+				promptFixedSummary.value = res.summary?.fixedEffective ?? res.summary?.fixed ?? "";
+			if (promptFixedDm && (force || !promptFixedDm.dataset.dirty))
+				promptFixedDm.value = res.dm?.fixedEffective ?? res.dm?.fixed ?? "";
 			if (promptState) promptState.textContent = res.analyze?.override ? "当前：你改过的版本" : "当前：默认";
 		}
 
-		for (const area of [cfgAnalyzePrompt, cfgDmPrompt]) {
+		for (const area of [
+			cfgAnalyzePrompt,
+			cfgSummaryPrompt,
+			cfgDmPrompt,
+			promptFixedAnalyze,
+			promptFixedSummary,
+			promptFixedDm,
+		]) {
+			if (!area) continue;
 			area.addEventListener("input", () => {
 				area.dataset.dirty = "true";
 			});
 		}
 
 		if (btnSavePrompts) {
-			btnSavePrompts.addEventListener("click", async () => {
+			const savePrompts = async () => {
 				const analyze = cfgAnalyzePrompt.value.trim();
+				const summary = cfgSummaryPrompt.value.trim();
 				const dm = cfgDmPrompt.value.trim();
+				const fixedAnalyze = (promptFixedAnalyze?.value || "").trim();
+				const fixedSummary = (promptFixedSummary?.value || "").trim();
+				const fixedDm = (promptFixedDm?.value || "").trim();
+				for (const [kind, text] of [
+					["analyze", fixedAnalyze],
+					["summary", fixedSummary],
+					["dm", fixedDm],
+				]) {
+					const err = checkFixedClient(kind, text);
+					if (err) {
+						notify(`固定追加格式不对：${err}`, "warn");
+						return;
+					}
+				}
 				const res = await httpPost("config", {
 					analyzePrompt: analyze === promptDefaults.analyze.trim() ? "" : analyze,
+					summaryPrompt: summary === promptDefaults.summary.trim() ? "" : summary,
 					dmPrompt: dm === promptDefaults.dm.trim() ? "" : dm,
+					analyzeFixed: fixedAnalyze === promptFixedDefaults.analyze.trim() ? "" : fixedAnalyze,
+					summaryFixed: fixedSummary === promptFixedDefaults.summary.trim() ? "" : fixedSummary,
+					dmFixed: fixedDm === promptFixedDefaults.dm.trim() ? "" : fixedDm,
 				});
 				if (res && res.ok) {
 					delete cfgAnalyzePrompt.dataset.dirty;
+					delete cfgSummaryPrompt.dataset.dirty;
 					delete cfgDmPrompt.dataset.dirty;
+					if (promptFixedAnalyze) delete promptFixedAnalyze.dataset.dirty;
+					if (promptFixedSummary) delete promptFixedSummary.dataset.dirty;
+					if (promptFixedDm) delete promptFixedDm.dataset.dirty;
 					await loadPrompts(true);
 					notify("提示词已保存，下一轮巡检起生效", "good");
 				} else {
 					notify(`保存失败: ${res?.error || "未知异常"}`, "warn");
 				}
-			});
+			};
+			// 每张提示词卡片各自一个保存键，都写同一份配置
+			for (const b of el.querySelectorAll(".bili-btn-save-prompts")) b.addEventListener("click", savePrompts);
 		}
 
 		if (btnResetAnalyze) {
 			btnResetAnalyze.addEventListener("click", async () => {
 				cfgAnalyzePrompt.value = promptDefaults.analyze;
 				delete cfgAnalyzePrompt.dataset.dirty;
-				const res = await httpPost("config", { analyzePrompt: "" });
+				if (promptFixedAnalyze) {
+					promptFixedAnalyze.value = promptFixedDefaults.analyze;
+					delete promptFixedAnalyze.dataset.dirty;
+				}
+				const res = await httpPost("config", { analyzePrompt: "", analyzeFixed: "" });
 				if (res && res.ok) {
 					await loadPrompts(true);
 					notify("研读提示词已恢复默认", "good");
+				} else {
+					notify(`恢复失败: ${res?.error || "未知异常"}`, "warn");
+				}
+			});
+		}
+
+		if (btnResetSummary) {
+			btnResetSummary.addEventListener("click", async () => {
+				cfgSummaryPrompt.value = promptDefaults.summary;
+				delete cfgSummaryPrompt.dataset.dirty;
+				if (promptFixedSummary) {
+					promptFixedSummary.value = promptFixedDefaults.summary;
+					delete promptFixedSummary.dataset.dirty;
+				}
+				const res = await httpPost("config", { summaryPrompt: "", summaryFixed: "" });
+				if (res && res.ok) {
+					await loadPrompts(true);
+					notify("内容总结提示词已恢复默认", "good");
 				} else {
 					notify(`恢复失败: ${res?.error || "未知异常"}`, "warn");
 				}
@@ -1324,6 +1706,20 @@ export default {
 			} catch {}
 		}
 
+		// 跑完一轮（done/error）自动刷新：回到第一页拉新列表 + 顶栏状态 + 开着的运行状态弹窗
+		async function refreshAfterRun() {
+			try {
+				currentOffset = 0;
+				await loadWatchedCards();
+			} catch {}
+			try {
+				await refreshStatus(true);
+			} catch {}
+			try {
+				if (runsModal && !runsModal.hidden) await loadRunsList(runsSelect.value || undefined);
+			} catch {}
+		}
+
 		if (btnRunTop) btnRunTop.addEventListener("click", () => btnRunDuty.click());
 
 		btnClearTerminal.addEventListener("click", () => {
@@ -1334,6 +1730,15 @@ export default {
 			const res = await httpGet("status");
 			if (!res || !res.ok) return;
 			currentStatus = res;
+
+			if (badgeVer) {
+				if (res.version) {
+					badgeVer.textContent = `v${res.version}`;
+					badgeVer.hidden = false;
+				} else {
+					badgeVer.hidden = true;
+				}
+			}
 
 			const quota = res.config?.perDay || 5;
 			if (statQuota) statQuota.textContent = `${res.pickedToday || 0} / ${quota} 条`;
@@ -1498,7 +1903,7 @@ export default {
 			const statsRow = (item) =>
 				`<span class="stat-like" data-bv="${esc(item.bvid)}">${SVG_LIKE} …</span><span class="stat-fav" data-bv="${esc(item.bvid)}">${SVG_FAV} …</span><span class="stat-reply" data-bv="${esc(item.bvid)}">${SVG_CMT} …</span><span style="margin-left:auto;font-family:ui-monospace,Menlo,Consolas,monospace;">${esc(item.bvid.slice(0, 7))}…</span>`;
 			const coverBox = (item) =>
-				`<div class="bili-b-cover"><img src="/plugins-api/bili-scroll/cover?bv=${esc(item.bvid)}" loading="lazy" alt="" onerror="this.style.display='none'" /><div class="bili-b-flags">${item.tier ? `<i class="f-like">${esc(item.tier)}</i>` : ""}${item.picked && !item.tier ? '<i class="f-like">入选</i>' : ""}${item.delivered || item.commented ? '<i class="f-cmt">已投递</i>' : ""}${item.note ? '<i class="f-cmt">有笔记</i>' : ""}</div><div class="bili-b-meta"><span class="m stat-play" data-bv="${esc(item.bvid)}">${SVG_PLAY} …</span><span class="m stat-dm" data-bv="${esc(item.bvid)}">${SVG_DM} …</span><span class="bili-b-dur stat-dur" data-bv="${esc(item.bvid)}">${esc(item.day)}</span></div></div>`;
+				`<div class="bili-b-cover"><img src="/plugins-api/bili-scroll/cover?bv=${esc(item.bvid)}" loading="lazy" alt="" onerror="this.style.display='none'" /><div class="bili-b-flags">${item.tier ? `<i class="f-like">${esc(item.tier)}</i>` : ""}${item.picked && !item.tier ? '<i class="f-like">入选</i>' : ""}${item.delivered || item.commented ? '<i class="f-cmt">已投递</i>' : ""}${item.summary ? '<i class="f-cmt">有总结</i>' : item.note ? '<i class="f-cmt">有笔记</i>' : ""}</div><div class="bili-b-meta"><span class="m stat-play" data-bv="${esc(item.bvid)}">${SVG_PLAY} …</span><span class="m stat-dm" data-bv="${esc(item.bvid)}">${SVG_DM} …</span><span class="bili-b-dur stat-dur" data-bv="${esc(item.bvid)}">${esc(item.day)}</span></div></div>`;
 			const bodyBox = (item) =>
 				`<div class="bili-b-body"><p class="bili-b-title">${esc(item.title || item.bvid)}</p><div class="bili-b-up"><span class="bili-b-ava"><b>${esc((item.up || "?").slice(0, 1))}</b></span><span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${esc(item.up || "未知")} · ${esc(item.day)}</span></div><div class="bili-b-acts">${statsRow(item)}</div>${item.why ? `<div class="whyline" style="font-size:11px;color:var(--text-dim);margin-top:4px;">💡 ${esc(item.why)}</div>` : ""}</div>`;
 			cardsGrid.innerHTML = rows
@@ -1543,7 +1948,7 @@ export default {
 					e.stopPropagation();
 					const bv = btn.dataset.bv;
 					const day = btn.dataset.day;
-					const res = await httpGet("note", { bvid: bv, day });
+					const res = await httpGet("note", { bvid: bv, day, kind: "report" });
 					if (res && res.ok && res.text) {
 						reportContent.textContent = res.text;
 						notify(`已在下方日报视窗载入 ${bv} 的单条笔记`, "good");
@@ -1754,8 +2159,10 @@ export default {
 			el.querySelector(".bili-detail-sub").innerHTML =
 				`<em>${esc(item.bvid)}</em><em>${esc(item.up || "未知")}</em><em>${esc(item.day)}</em><em class="detail-stat-sub">加载统计…</em>`;
 			el.querySelector(".bili-detail-cover").src = `/plugins-api/bili-scroll/cover?bv=${item.bvid}`;
-			el.querySelector(".bili-detail-right").innerHTML =
-				'<p style="color: var(--text-dim); font-size: 12px;">正在加载内容总结…</p>';
+			el.querySelector(".bili-sum-meta").textContent = "";
+			el.querySelector(".bili-sum-regen").hidden = true;
+			el.querySelector(".bili-sum-body").innerHTML =
+				'<p style="color: var(--text-dim); font-size: 12px;">正在读取 AI 总结…</p>';
 			el.querySelector(".bili-detail-acts").innerHTML =
 				'<span class="chip skel">播放…</span><span class="chip skel">弹幕…</span><span class="chip on" data-act="fav">⭐ 收藏到目标夹</span>';
 			el.querySelector(".bili-detail-comments").innerHTML = "";
@@ -1782,6 +2189,7 @@ export default {
 				window.open(item.url || `https://www.bilibili.com/video/${item.bvid}`, "_blank"),
 			);
 			bindDetailActs(item);
+			loadDetailSummary(item);
 			httpGet("video-stat", { bvid: item.bvid })
 				.then((sr) => {
 					if (sr && sr.ok && sr.stat) {
@@ -1801,23 +2209,179 @@ export default {
 					}
 				})
 				.catch(() => {});
-			httpGet("note", { bvid: item.bvid, day: item.day })
-				.then((nr) => {
-					if (currentDetailBv !== item.bvid) return;
-					const right = el.querySelector(".bili-detail-right");
-					const whyBlock = item.why ? `<div class="bili-why-block"><b>为什么挑这条</b><br/>${esc(item.why)}</div>` : "";
-					if (nr && nr.ok && nr.text) {
-						right.innerHTML = `<div class="bili-why-block" style="border-style: none; padding-left: 0; background: transparent;">💡 内容总结 <span style="color: var(--text-dim); font-weight: 400;">· 单篇笔记 · ${esc(item.day)}</span></div>${whyBlock}${renderMiniMd(nr.text)}`;
-					} else if (item.why) {
-						right.innerHTML = `${whyBlock}<blockquote style="font-size: 12px; color: var(--text-dim);">这篇还没有独立笔记，跑完研读后这里会出内容总结（含 [mm:ss] 证据）。</blockquote>`;
-					} else {
-						right.innerHTML =
-							'<p style="color: var(--text-dim); font-size: 12px;">这篇还没有内容总结，跑完研读后这里会出。</p>';
-					}
-				})
-				.catch(() => {});
 			const cmtBox = el.querySelector(".bili-detail-comments");
 			if (cmtBox) cmtBox.innerHTML = "";
+		}
+
+		// ── 右栏：只展示一份 AI 一次性写好的内容总结文档 ──
+		function summaryMetaText(meta) {
+			const m = meta || {};
+			const bits = [];
+			if (m.model) bits.push(String(m.model));
+			if (m.at) {
+				try {
+					bits.push(
+						new Date(m.at).toLocaleString("zh-CN", {
+							month: "2-digit",
+							day: "2-digit",
+							hour: "2-digit",
+							minute: "2-digit",
+						}),
+					);
+				} catch {}
+			}
+			return bits.join(" · ");
+		}
+
+		async function loadDetailSummary(item) {
+			const body = el.querySelector(".bili-sum-body");
+			if (!body) return;
+			const metaEl = el.querySelector(".bili-sum-meta");
+			const regen = el.querySelector(".bili-sum-regen");
+			metaEl.textContent = "";
+			regen.hidden = true;
+			const r = await httpGet("note", { bvid: item.bvid, day: item.day });
+			if (currentDetailBv !== item.bvid) return;
+			// 巡检后台正在写这条：不催、不重复起任务，直接等文件出来
+			if (r && r.ok && r.kind === "pending") {
+				metaEl.textContent = "后台正在写…";
+				await pollDetailSummary(item, {
+					busy: (msg) => {
+						body.innerHTML = `<div class="bili-sum-busy"><div>${msg}</div><div class="skel" style="width: 92%"></div><div class="skel" style="width: 78%"></div></div>`;
+					},
+					metaEl,
+					regen,
+				});
+				return;
+			}
+			if (r && r.ok && r.kind === "summary" && r.text) {
+				body.innerHTML = renderMiniMd(r.text, { url: item.url });
+				metaEl.textContent = summaryMetaText(r.meta);
+				regen.hidden = false;
+				regen.onclick = () => generateDetailSummary(item, regen);
+				return;
+			}
+			// 没有总结：不直接铺旧报告原文，先提示 + 生成 + 可选折叠原文
+			const hasReport = Boolean(r && r.ok && r.text);
+			body.innerHTML = `
+				<div class="bili-sum-empty">
+					<div><b>这条还没有 AI 内容总结。</b><br/>点下面按钮，AI 会通读字幕证据，一次写成一份完整总结（约 10–40 秒）。</div>
+					<button class="bili-sum-cta" type="button">✨ 生成内容总结</button>
+					${hasReport ? '<details class="bili-sum-raw"><summary>查看原始笔记（报告字段拼接）</summary><div class="bili-md bili-sum-raw-body"></div></details>' : ""}
+				</div>`;
+			if (hasReport) {
+				body.querySelector(".bili-sum-raw-body").innerHTML = renderMiniMd(stripNoteScaffold(r.text), {
+					url: item.url,
+				});
+			}
+			body.querySelector(".bili-sum-cta").onclick = (e) => generateDetailSummary(item, e.currentTarget);
+		}
+
+		async function generateDetailSummary(item, btn) {
+			const body = el.querySelector(".bili-sum-body");
+			if (!body) return;
+			const metaEl = el.querySelector(".bili-sum-meta");
+			const regen = el.querySelector(".bili-sum-regen");
+			if (btn) {
+				btn.disabled = true;
+				btn.textContent = "生成中…";
+			}
+			metaEl.textContent = "生成中…";
+			regen.hidden = true;
+			const busy = (msg) => {
+				body.innerHTML = `<div class="bili-sum-busy">
+				<div>${msg}</div>
+				<div class="skel" style="width: 92%"></div>
+				<div class="skel" style="width: 78%"></div>
+				<div class="skel" style="width: 86%"></div>
+				</div>`;
+			};
+			busy("AI 正在通读字幕证据，一次写成整篇总结…（1-2 分钟，可以继续看左侧）");
+			const r = await httpPost("summary", { bvid: item.bvid, day: item.day, force: true });
+			if (currentDetailBv !== item.bvid) return;
+			// 后台任务模式：轮询状态直到出文档或报错（最多 4 分钟）
+			if (r && r.ok && r.state === "running") {
+				await pollDetailSummary(item, { busy, metaEl, regen });
+				return;
+			}
+			if (r && r.ok && r.text) {
+				showDetailSummary(item, r);
+				return;
+			}
+			showSummaryError(item, r?.error || "未知错误");
+		}
+
+		async function pollDetailSummary(item, { busy, metaEl, regen }) {
+			let idleStreak = 0;
+			for (let i = 0; i < 80; i++) {
+				await new Promise((resolve) => setTimeout(resolve, 3000));
+				if (currentDetailBv !== item.bvid) return;
+				const s = await httpGet("summary-status", { bvid: item.bvid, day: item.day });
+				if (currentDetailBv !== item.bvid) return;
+				if (s && s.state === "done" && s.text) {
+					showDetailSummary(item, s);
+					return;
+				}
+				if (s && s.state === "error") {
+					showSummaryError(item, s.error || "生成失败");
+					return;
+				}
+				// idle 有两种：后台巡检在写（/note 会报 pending），或任务真的丢了
+				if (s && s.state === "idle") {
+					idleStreak += 1;
+					if (idleStreak >= 2) {
+						const note = await httpGet("note", { bvid: item.bvid, day: item.day });
+						if (currentDetailBv !== item.bvid) return;
+						if (note && note.ok && note.kind === "summary" && note.text) {
+							showDetailSummary(item, note);
+							return;
+						}
+						if (!(note && note.ok && note.kind === "pending")) {
+							showSummaryError(item, "任务已中断（插件重载或其他操作），请重试");
+							return;
+						}
+					}
+				} else {
+					idleStreak = 0;
+				}
+				if (i === 12) busy("模型还在写（大视频字幕长时会慢一点），已经等 40 多秒……");
+			}
+			metaEl.textContent = "";
+			regen.hidden = true;
+			showSummaryError(item, "等了 4 分钟还没写完，稍后再点一次重新生成");
+		}
+
+		function showDetailSummary(item, res) {
+			const body = el.querySelector(".bili-sum-body");
+			if (!body) return;
+			body.innerHTML = renderMiniMd(res.text || "", { url: item.url });
+			const metaEl = el.querySelector(".bili-sum-meta");
+			if (metaEl) metaEl.textContent = summaryMetaText(res.meta);
+			const regen = el.querySelector(".bili-sum-regen");
+			if (regen) {
+				regen.hidden = false;
+				regen.disabled = false;
+				regen.textContent = "重新生成";
+				regen.onclick = () => generateDetailSummary(item, regen);
+			}
+			notify("AI 内容总结已就绪", "good");
+		}
+
+		function showSummaryError(item, message) {
+			const body = el.querySelector(".bili-sum-body");
+			if (!body) return;
+			const regen = el.querySelector(".bili-sum-regen");
+			if (regen) {
+				regen.hidden = true;
+				regen.disabled = false;
+			}
+			const metaEl = el.querySelector(".bili-sum-meta");
+			if (metaEl) metaEl.textContent = "";
+			body.innerHTML = `<div class="bili-sum-empty">
+				<div><b>总结生成失败。</b><br/>${esc(message)}</div>
+				<button class="bili-sum-cta" type="button">重试</button>
+			</div>`;
+			body.querySelector(".bili-sum-cta").onclick = (e) => generateDetailSummary(item, e.currentTarget);
 		}
 
 		function bindDetailActs(item) {
@@ -1898,7 +2462,10 @@ export default {
 			cfgModel.innerHTML = '<option value="">跟随当前会话模型</option>';
 			let hasSelected = !selectedModel;
 			for (const m of hostModels) {
-				const fullId = m.provider ? `${m.provider}/${m.id}` : m.id;
+				// 宿主给的 id 已带 provider 前缀，再拼一次就会变成 provider/provider/id（模型接口不认）
+				const mid = String(m.id || "");
+				const fullId = mid.includes("/") || !m.provider ? mid : `${m.provider}/${mid}`;
+				if (!fullId) continue;
 				const opt = document.createElement("option");
 				opt.value = fullId;
 				opt.textContent = `${m.name || m.id} (${m.provider || "default"})`;
