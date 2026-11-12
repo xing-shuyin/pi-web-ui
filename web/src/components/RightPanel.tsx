@@ -164,7 +164,6 @@ interface FileUploadProgress {
 
 interface RightPanelProps {
 	desktopVisible?: boolean;
-	onChooseDesktop?: () => void;
 	files: FileListing | null;
 	fileChanged: { path: string } | null;
 	widgets: { key: string; lines: string[] }[];
@@ -186,7 +185,6 @@ interface RightPanelProps {
 
 export const RightPanel = memo(function RightPanel({
 	desktopVisible = true,
-	onChooseDesktop,
 	files,
 	fileSearch,
 	fileChanged,
@@ -1037,7 +1035,7 @@ export const RightPanel = memo(function RightPanel({
 					<FiChevronRight />
 				</button>
 			)}
-			<DesktopPreview visible={desktopVisible} onChoose={onChooseDesktop} />
+			<DesktopPreview visible={desktopVisible} />
 			<div
 				ref={splitRef}
 				style={{

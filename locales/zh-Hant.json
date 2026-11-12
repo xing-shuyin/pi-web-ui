@@ -3431,6 +3431,8 @@
 		"desktop.exitFullscreen": "結束全螢幕",
 		"desktop.fullscreen": "全螢幕",
 		"desktop.p2p": "P2P 直連",
+		"desktop.devicesUnavailable": "無法讀取裝置清單，請檢查連線後重試。",
+		"desktop.noDevices": "暫無可選裝置。",
 		"nativeCliSession.starting": "正在啟動程序",
 		"nativeCliSession.running": "程序執行中",
 		"nativeCliSession.working": "正在處理",

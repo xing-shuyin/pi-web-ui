@@ -3431,6 +3431,8 @@
 		"desktop.exitFullscreen": "Выйти из полноэкранного режима",
 		"desktop.fullscreen": "Полный экран",
 		"desktop.p2p": "Прямое P2P-соединение",
+		"desktop.devicesUnavailable": "Не удалось загрузить устройства. Проверьте подключение и повторите попытку.",
+		"desktop.noDevices": "Нет доступных устройств.",
 		"nativeCliSession.starting": "Starting process",
 		"nativeCliSession.running": "Process running",
 		"nativeCliSession.working": "Working",

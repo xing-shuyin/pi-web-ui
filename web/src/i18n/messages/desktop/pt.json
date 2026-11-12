@@ -21,5 +21,7 @@
 	"desktop.tab": "Aba separada",
 	"desktop.exitFullscreen": "Sair da tela cheia",
 	"desktop.fullscreen": "Tela cheia",
-	"desktop.p2p": "Conexão P2P direta"
+	"desktop.p2p": "Conexão P2P direta",
+	"desktop.devicesUnavailable": "Não foi possível carregar os dispositivos. Verifique a conexão e tente novamente.",
+	"desktop.noDevices": "Nenhum dispositivo disponível."
 }

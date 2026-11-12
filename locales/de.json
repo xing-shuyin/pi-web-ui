@@ -3431,6 +3431,8 @@
 		"desktop.exitFullscreen": "Vollbild verlassen",
 		"desktop.fullscreen": "Vollbild",
 		"desktop.p2p": "P2P-Direktverbindung",
+		"desktop.devicesUnavailable": "Geräte konnten nicht geladen werden. Prüfe die Verbindung und versuche es erneut.",
+		"desktop.noDevices": "Keine Geräte verfügbar.",
 		"nativeCliSession.starting": "Starting process",
 		"nativeCliSession.running": "Process running",
 		"nativeCliSession.working": "Working",

@@ -3431,6 +3431,8 @@
 		"desktop.exitFullscreen": "全画面を終了",
 		"desktop.fullscreen": "全画面",
 		"desktop.p2p": "P2P 直接接続",
+		"desktop.devicesUnavailable": "デバイス一覧を取得できませんでした。接続を確認して再試行してください。",
+		"desktop.noDevices": "選択できるデバイスがありません。",
 		"nativeCliSession.starting": "Starting process",
 		"nativeCliSession.running": "Process running",
 		"nativeCliSession.working": "Working",

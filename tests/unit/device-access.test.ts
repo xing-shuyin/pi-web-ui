@@ -89,6 +89,77 @@ it("ignores preview status from unrelated frames", async () => {
 	);
 	expect(document.body.textContent).toContain("remote-error");
 });
+it("switches desktop devices inside the preview picker without navigating or opening another tab", async () => {
+	const fetcher = vi.fn(async (input: unknown) => ({
+		ok: true,
+		json: async () =>
+			String(input).endsWith("/devices")
+				? {
+						devices: [
+							{ id: "mac", name: "Mac", online: true },
+							{ id: "win", name: "Windows", remark: "Office", online: true },
+							{ id: "offline", name: "Offline PC", online: false },
+						],
+					}
+				: { url: `${hub}/device/${String(input).includes("/win/") ? "win" : "mac"}/__open?ticket=fresh` },
+	}));
+	vi.stubGlobal("fetch", fetcher);
+	const popup = vi.spyOn(window, "open");
+	await mount("preview");
+	const previous = getDesktopAccess()!;
+	const frame = document.querySelector("iframe")!;
+	const url = window.location.href;
+	await click("Choose device");
+	const picker = document.querySelector<HTMLDivElement>(".desktop-device-picker")!;
+	expect(picker.parentElement).toBe(document.body);
+	expect(picker.querySelector('[aria-pressed="true"]')?.textContent).toContain("Mac");
+	const rows = [...picker.querySelectorAll<HTMLButtonElement>(".desktop-device-option")];
+	expect(rows.find((row) => row.textContent?.includes("Offline PC"))!.disabled).toBe(true);
+	await act(async () => rows.find((row) => row.textContent?.includes("Office"))!.click());
+	expect(getDesktopAccess()).toMatchObject({ id: "win", name: "Office", mode: "preview" });
+	expect(getDesktopAccess()!.revision).toBeGreaterThan(previous.revision);
+	expect(document.querySelector(".desktop-device-picker")).toBeNull();
+	expect(frame.isConnected).toBe(false);
+	expect(document.querySelector<HTMLIFrameElement>("iframe")!.src).toContain("/device/win/__open");
+	expect(window.location.href).toBe(url);
+	expect(popup).not.toHaveBeenCalled();
+});
+it("cancels a dismissed device picker and retries a failed list without losing the preview", async () => {
+	let listSignal: AbortSignal | undefined;
+	let finish: ((value: unknown) => void) | undefined;
+	let attempts = 0;
+	vi.stubGlobal(
+		"fetch",
+		vi.fn(async (input: unknown, options?: RequestInit) => {
+			if (!String(input).endsWith("/devices"))
+				return { ok: true, json: async () => ({ url: `${hub}/device/mac/__open?ticket=fresh` }) };
+			attempts++;
+			if (attempts === 1) {
+				listSignal = options?.signal as AbortSignal;
+				return new Promise((resolve) => {
+					finish = resolve;
+				});
+			}
+			return { ok: attempts > 2, json: async () => ({ devices: [] }) };
+		}),
+	);
+	await mount("preview");
+	const access = getDesktopAccess();
+	const frame = document.querySelector("iframe");
+	await click("Choose device");
+	await click("Choose device");
+	expect(listSignal?.aborted).toBe(true);
+	await act(async () =>
+		finish!({ ok: true, json: async () => ({ devices: [{ id: "old", name: "Stale", online: true }] }) }),
+	);
+	expect(document.querySelector(".desktop-device-picker")).toBeNull();
+	await click("Choose device");
+	expect(document.querySelector('.desktop-device-picker [role="alert"]')).not.toBeNull();
+	await act(async () => document.querySelector<HTMLButtonElement>(".desktop-device-picker button")!.click());
+	expect(document.querySelector(".desktop-device-picker")?.textContent).toContain("No devices available");
+	expect(getDesktopAccess()).toBe(access);
+	expect(document.querySelector("iframe")).toBe(frame);
+});
 it("keeps a sandboxed desktop alive through outside clicks and fullscreen without reconnecting", async () => {
 	ticket();
 	const popup = vi.spyOn(window, "open");
@@ -105,8 +176,12 @@ it("keeps a sandboxed desktop alive through outside clicks and fullscreen withou
 	expect(document.querySelector(".is-fullscreen")).toBeNull();
 	expect(document.querySelector("iframe")).toBe(frame);
 	await act(async () =>
-		document.querySelector<HTMLButtonElement>('.remote-desktop-window button[aria-label="Close desktop"]')!.click(),
+		document.querySelector<HTMLButtonElement>(".remote-desktop-titlebar button:last-child")!.click(),
 	);
+	expect(document.querySelector(".remote-desktop-window")).toBeNull();
+	expect(getDesktopAccess()).toMatchObject({ id: "mac", mode: "preview" });
+	expect(document.querySelector<HTMLIFrameElement>("iframe")!.src).toContain("next=%2Fdesktop-preview");
+	await click("Close desktop");
 	expect(document.querySelector("iframe")).toBeNull();
 });
 it("retains the floating window on blocked popups and bridge failures, closes only after success", async () => {

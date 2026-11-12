@@ -169,8 +169,9 @@ function DesktopWindow({ access }: { access: DesktopAccess }) {
 				<button
 					type="button"
 					className="btn"
-					aria-label={t("desktop.close")}
-					onClick={() => closeDesktopAccess(access)}
+					aria-label={t("desktop.back")}
+					title={t("desktop.back")}
+					onClick={() => setDesktopMode(access, "preview")}
 				>
 					×
 				</button>

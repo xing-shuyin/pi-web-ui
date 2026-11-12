@@ -3106,10 +3106,6 @@ export function App() {
 						>
 							<RightPanel
 								desktopVisible={view === "chat" && (isMobile ? drawer === "right" : !rightCollapsed)}
-								onChooseDesktop={() => {
-									setDrawer(null);
-									setView("devices");
-								}}
 								quickAskReferenceMenus={chat.settings?.quickAskReferenceMenus !== false}
 								collapsible={!isMobile}
 								onToggleCollapse={toggleRight}

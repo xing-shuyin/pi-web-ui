@@ -3431,6 +3431,8 @@
 		"desktop.exitFullscreen": "Esci da schermo intero",
 		"desktop.fullscreen": "Schermo intero",
 		"desktop.p2p": "Connessione P2P diretta",
+		"desktop.devicesUnavailable": "Impossibile caricare i dispositivi. Controlla la connessione e riprova.",
+		"desktop.noDevices": "Nessun dispositivo disponibile.",
 		"nativeCliSession.starting": "Starting process",
 		"nativeCliSession.running": "Process running",
 		"nativeCliSession.working": "Working",

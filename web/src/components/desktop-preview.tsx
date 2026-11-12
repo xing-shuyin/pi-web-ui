@@ -8,15 +8,14 @@ import {
 } from "../device-access";
 import { useDesktopTarget } from "../use-desktop-target";
 import { useT } from "../i18n";
+import { DesktopDevicePicker } from "./DesktopDevicePicker";
 
-export function DesktopPreview({ visible, onChoose }: { visible: boolean; onChoose?: () => void }) {
+export function DesktopPreview({ visible }: { visible: boolean }) {
 	const access = useSyncExternalStore(subscribeDesktopAccess, getDesktopAccess);
-	return access ? (
-		<Preview key={`${access.revision}:${access.mode}`} access={access} visible={visible} onChoose={onChoose} />
-	) : null;
+	return access ? <Preview key={`${access.revision}:${access.mode}`} access={access} visible={visible} /> : null;
 }
 
-function Preview({ access, visible, onChoose }: { access: DesktopAccess; visible: boolean; onChoose?: () => void }) {
+function Preview({ access, visible }: { access: DesktopAccess; visible: boolean }) {
 	const t = useT();
 	const [collapsed, setCollapsed] = useState(false);
 	const [height, setHeight] = useState(200);
@@ -33,11 +32,7 @@ function Preview({ access, visible, onChoose }: { access: DesktopAccess; visible
 				<strong title={access.name || access.id}>
 					{t("desktop.title")} · {access.name || access.id}
 				</strong>
-				{onChoose && (
-					<button className="btn" onClick={onChoose}>
-						{t("desktop.choose")}
-					</button>
-				)}
+				<DesktopDevicePicker access={access} visible={visible} />
 				<button
 					className="btn"
 					aria-label={t(collapsed ? "desktop.expand" : "desktop.collapse")}

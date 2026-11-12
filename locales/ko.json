@@ -3431,6 +3431,8 @@
 		"desktop.exitFullscreen": "전체 화면 종료",
 		"desktop.fullscreen": "전체 화면",
 		"desktop.p2p": "P2P 직접 연결",
+		"desktop.devicesUnavailable": "기기 목록을 불러오지 못했습니다. 연결을 확인하고 다시 시도하세요.",
+		"desktop.noDevices": "선택할 수 있는 기기가 없습니다.",
 		"nativeCliSession.starting": "Starting process",
 		"nativeCliSession.running": "Process running",
 		"nativeCliSession.working": "Working",

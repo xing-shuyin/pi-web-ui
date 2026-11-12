@@ -58,10 +58,29 @@ try {
 	let opens = 0,
 		snapshots = 0,
 		liveLoads = 0;
-	await page.route("**/api/device-center/devices/*/open", (route) =>
-		route.fulfill({ json: { url: `${origin}/device/studio-mac/__open?ticket=${++opens}` } }),
+	await page.route("**/api/device-center/devices", (route) =>
+		route.fulfill({
+			json: {
+				devices: [
+					{ id: "studio-mac", name: "Studio Mac", online: true },
+					{
+						id: "office-win",
+						name: "Office Windows with a very long device name that still fits the menu",
+						online: true,
+					},
+					{ id: "offline", name: "Offline computer", online: false },
+				],
+			},
+		}),
 	);
-	await page.route("**/device/studio-mac/__open?*", (route) => {
+	await page.route("**/api/device-center/devices/*/open", (route) =>
+		route.fulfill({
+			json: {
+				url: `${origin}/device/${new URL(route.request().url()).pathname.split("/").at(-2)}/__open?ticket=${++opens}`,
+			},
+		}),
+	);
+	await page.route("**/device/*/__open?*", (route) => {
 		const initial = new URL(route.request().url()).searchParams.get("next").slice(1);
 		const wrapper = wrapperHtml("/fixture/", initial, new URL(origin), "Studio Mac");
 		return route.fulfill({
@@ -116,6 +135,19 @@ try {
 	const screenshot = (name) =>
 		page.screenshot({ path: fileURLToPath(new URL(`../artifacts/device-center/${name}.png`, import.meta.url)) });
 	await screenshot("desktop-sidebar-preview");
+	const beforePicker = page.url();
+	await preview.getByRole("button", { name: "Choose device" }).click();
+	const picker = page.getByRole("dialog", { name: "Choose device", exact: true });
+	const deviceOption = picker.getByRole("button", { name: /Office Windows/ });
+	await deviceOption.waitFor();
+	assert(await picker.getByRole("button", { name: /Offline computer/ }).isDisabled());
+	assert((await picker.boundingBox()).x + (await picker.boundingBox()).width <= 1360);
+	await screenshot("desktop-device-picker");
+	await deviceOption.click();
+	await preview.getByText(/Updated \d+s ago/).waitFor();
+	assert.equal(await picker.count(), 0);
+	assert.equal(page.url(), beforePicker);
+	assert((await preview.locator("iframe").getAttribute("src")).includes("/device/office-win/"));
 	await page.getByRole("button", { name: "Expand and control" }).click();
 	const panel = page.getByRole("dialog");
 	await panel.locator("iframe").waitFor();
@@ -160,7 +192,7 @@ try {
 	await page.waitForTimeout(3400);
 	assert.equal(snapshots, duringLive, "live desktop does not keep a second preview running");
 	await screenshot("remote-desktop-floating");
-	await panel.getByRole("button", { name: "Back to preview", exact: true }).click();
+	await panel.getByRole("button", { name: "Back to preview", exact: true }).first().click();
 	await preview.getByText(/Updated \d+s ago/).waitFor();
 	assert.equal(await panel.count(), 0);
 	await page.evaluate(() => window.setPreviewVisible(false));
@@ -170,11 +202,21 @@ try {
 	await page.evaluate(() => window.setPreviewVisible(true));
 	await page.setViewportSize({ width: 390, height: 844 });
 	await screenshot("desktop-sidebar-mobile");
+	await preview.getByRole("button", { name: "Choose device" }).click();
+	await picker.getByRole("button", { name: /Studio Mac/ }).waitFor();
+	assert((await picker.boundingBox()).x + (await picker.boundingBox()).width <= 390);
+	assert.equal(await page.evaluate(() => document.documentElement.scrollWidth), 390);
+	await screenshot("desktop-device-picker-mobile");
+	await picker.getByRole("button", { name: /Studio Mac/ }).click();
 	await preview.getByRole("button", { name: "Expand and control" }).click();
 	await panel.locator("iframe").waitFor();
 	assert.equal((await panel.boundingBox()).width, 390);
 	assert.equal(await page.evaluate(() => document.documentElement.scrollWidth), 390);
-	await panel.getByRole("button", { name: "Close desktop" }).click();
+	await panel.getByRole("button", { name: "Back to preview" }).last().click();
+	await preview.getByText(/Updated \d+s ago/).waitFor();
+	assert.equal(await panel.count(), 0);
+	assert.equal(await preview.count(), 1);
+	await preview.getByRole("button", { name: "Close desktop" }).click();
 	assert.equal(await preview.count(), 0);
 	assert.equal(await page.locator("iframe").count(), 0);
 	assert.deepEqual(errors, []);

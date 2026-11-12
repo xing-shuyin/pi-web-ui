@@ -21,5 +21,7 @@
 	"desktop.tab": "Separate tab",
 	"desktop.exitFullscreen": "Exit fullscreen",
 	"desktop.fullscreen": "Fullscreen",
-	"desktop.p2p": "P2P direct"
+	"desktop.p2p": "P2P direct",
+	"desktop.devicesUnavailable": "Could not load devices. Check the connection and try again.",
+	"desktop.noDevices": "No devices available."
 }

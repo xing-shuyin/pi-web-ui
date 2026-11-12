@@ -10,6 +10,24 @@
 
 ## [Unreleased]
 
+## [0.120.1-p2p-preview.2] — 2026-11-12
+
+### Fixed
+
+- 放大远程桌面后点击 × 返回右侧预览，保留选中设备；预览自身的 × 仍可关闭桌面。
+
+### Changed
+
+- 预览的“选择设备”直接展开设备列表，显示在线状态和当前选择，点击即可切换，不再跳转设备中心。
+
+<!-- auto-i18n:start -->
+
+### i18n
+
+- 前端新增 key（2）：`desktop.devicesUnavailable`、`desktop.noDevices`
+
+<!-- auto-i18n:end -->
+
 ## [0.120.1-p2p-preview.1] — 2026-11-12
 
 基于最新正式版 0.120.0 的 P2P 测试候选包，延续桌面预览布局，通过 fork 的 GitHub Release 分发。
@@ -2547,3 +2565,4 @@ when?, children?}`，也收 `topbar` / `settings` 这类简写别名）；宿主
 [0.62.0]: https://github.com/xing-shuyin/pi-web-ui/releases/tag/v0.62.0
 [0.61.0]: https://github.com/xing-shuyin/pi-web-ui/releases/tag/v0.61.0
 [0.120.1-p2p-preview.1]: https://github.com/xinzhihong-ship-it/pi-web-ui/releases/tag/p2p-preview-0.120.1-1
+[0.120.1-p2p-preview.2]: https://github.com/xinzhihong-ship-it/pi-web-ui/releases/tag/p2p-preview-0.120.1-2

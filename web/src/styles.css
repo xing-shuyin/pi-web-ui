@@ -35,6 +35,65 @@
 		font-size: 11px;
 		padding: 3px 6px;
 	}
+	.desktop-device-picker {
+		width: min(320px, calc(100vw - 16px));
+		max-height: min(360px, calc(100dvh - 16px));
+		overflow: auto;
+		overscroll-behavior: contain;
+		padding: 6px;
+		border: 1px solid var(--border);
+		border-radius: 8px;
+		background: var(--bg-elev);
+		color: var(--text);
+		box-shadow: 0 8px 24px #0003;
+		font-size: 12.5px;
+	}
+	.desktop-device-picker p {
+		margin: 6px;
+		overflow-wrap: anywhere;
+		word-break: break-word;
+	}
+	.desktop-device-option {
+		display: flex;
+		align-items: center;
+		gap: 8px;
+		width: 100%;
+		min-width: 0;
+		padding: 9px 8px;
+		border: 1px solid transparent;
+		border-radius: 5px;
+		background: transparent;
+		color: inherit;
+		font: inherit;
+		text-align: left;
+		cursor: pointer;
+	}
+	.desktop-device-option:hover:not(:disabled),
+	.desktop-device-option[aria-pressed="true"] {
+		background: var(--bg-elev2);
+	}
+	.desktop-device-option:focus-visible {
+		outline: 2px solid var(--accent);
+		outline-offset: -2px;
+	}
+	.desktop-device-option:disabled {
+		opacity: 0.55;
+		cursor: default;
+	}
+	.desktop-device-option svg,
+	.desktop-device-status {
+		flex: none;
+	}
+	.desktop-device-name {
+		flex: 1;
+		min-width: 0;
+		overflow-wrap: anywhere;
+		word-break: break-word;
+	}
+	.desktop-device-status {
+		color: var(--text-muted);
+		font-size: 11px;
+	}
 	.desktop-preview-screen {
 		position: relative;
 		min-height: 120px;
