@@ -84,6 +84,11 @@ npm run release:local -- vX.Y.Z --skip-desktop # 只打手机
 npm run release:local -- vX.Y.Z --skip-desktop --reuse-runtime  # 只打手机且不重建运行时（引擎没变时首选，几分钟）
 npm run release:local -- vX.Y.Z --no-upload    # 只打包，不碰 Release
 npm run release:local -- vX.Y.Z --portable     # 额外出便携版（内置 Git/Node，较慢）
+#    注意：手机包不会跟着 tag 自动出。tag 只触发 desktop-release / release-notes / 扩展；
+#    mobile-release 是手动 workflow（CI 每次新生成 debug keystore，装不上旧包还会清引擎数据），
+#    所以每个版本的 APK 都得本地跑一次上面的命令。
+#    --reuse-runtime 只在「服务端代码没变、只动了外壳/插件」时成立：运行时里装的就是本仓库
+#    npm pack 的服务端包，piWebUi 版本对不上时脚本会直接拦下（确认真没改可加 --allow-stale-engine）。
 #    脚本会先校验 tag 与 package.json 版本一致，然后：npm run build → 桌面打包 → （可选）构建
 #    arm64 运行时并打 APK → 生成 SHA256SUMS.txt → gh release upload --clobber。
 #    为什么本地优先：手机 APK 里带 280 MB 引擎运行时，CI 那份 qemu 又慢又每次换 debug 签名

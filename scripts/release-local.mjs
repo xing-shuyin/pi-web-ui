@@ -8,7 +8,7 @@
 // 用法：
 //   npm run release:local -- v0.120.0                          # 桌面 + 手机，打包并上传
 //   npm run release:local -- v0.120.0 --skip-mobile             # 只打桌面
-//   npm run release:local -- v0.120.0 --skip-desktop --reuse-runtime  # 只打手机，复用现有运行时（引擎没变时首选）
+//   npm run release:local -- v0.120.0 --skip-desktop --reuse-runtime  # 只打手机，复用现有运行时（服务端代码没变时才能用）
 //   npm run release:local -- v0.120.0 --no-upload               # 只打包，不碰 Release
 //   npm run release:local -- v0.120.0 --portable                # 额外出便携版 zip（要内置 Git/Node，较慢）
 import { spawn } from "node:child_process";
@@ -28,16 +28,24 @@ const skipDesktop = flags.has("--skip-desktop");
 const noUpload = flags.has("--no-upload");
 const withPortable = flags.has("--portable");
 
-/** 现有运时行的 revision（runtime.json 的 version），给 --reuse-runtime 用。 */
-function readRuntimeRevision() {
+/**
+ * 现有运行时清单，给 --reuse-runtime 用。
+ *
+ * 注意 `piWebUi`：运行时里装的就是本仓库当前的服务端包（build-runtime.sh 把 `npm pack` 的
+ * tgz 装进 rootfs），所以复用的运行时版本与本版不一致时，手机跑的是旧服务端代码——
+ * 外壳是新的、后端是旧的，最坑的那种错位。
+ */
+function readRuntimeManifest() {
 	for (const path of [
 		join(repoRoot, "mobile/local-engine/runtime/out/arm64/runtime.json"),
 		join(repoRoot, "mobile/native/local-engine/android/src/main/assets/localengine/runtime.json"),
 	]) {
 		if (!existsSync(path)) continue;
 		try {
-			const revision = JSON.parse(readFileSync(path, "utf8")).version;
-			if (typeof revision === "string" && revision.trim()) return revision;
+			const json = JSON.parse(readFileSync(path, "utf8"));
+			if (typeof json?.version === "string" && json.version.trim()) {
+				return { revision: json.version, piWebUi: String(json.piWebUi ?? "(未知)") };
+			}
 		} catch {}
 	}
 	return fail(
@@ -153,7 +161,16 @@ if (!skipMobile) {
 	// 引擎没变时没必要重建运行时（qemu 那步 15–25 分钟，而且会换 revision → 手机重装引擎）。
 	// --reuse-runtime 直接用 mobile/local-engine/runtime/out/arm64 里现成的那份。
 	const reuseRuntime = flags.has("--reuse-runtime");
-	const mobileRevision = reuseRuntime ? readRuntimeRevision() : version;
+	const runtimeManifest = reuseRuntime ? readRuntimeManifest() : undefined;
+	if (runtimeManifest && runtimeManifest.piWebUi !== version && !flags.has("--allow-stale-engine")) {
+		// 运行时里嵌的是服务端包：版本对不上就是「新外壳 + 旧后端」，必须先重建。
+		fail(
+			`复用的运行时装的是 pi-web-ui@${runtimeManifest.piWebUi}，本版是 ${version}——` +
+				`手机上会跑旧服务端代码。去掉 --reuse-runtime 重建运行时（15–25 分钟）；` +
+				`若确定本版只改了外壳/插件、服务端未变，加 --allow-stale-engine。`,
+		);
+	}
+	const mobileRevision = runtimeManifest?.revision ?? version;
 	step(
 		reuseRuntime
 			? `复用现有运行时（${mobileRevision}）打 arm64 APK`
