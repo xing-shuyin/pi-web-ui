@@ -70,7 +70,7 @@ try {
 		addEventListener("message", (event) => window.received.push(event.data));
 	});
 	await page.goto(origin + "/desktop-preview");
-	await page.waitForFunction(() => window.received.some((event) => event.error?.includes("Windows 桌面会话已断开")));
+	await page.waitForFunction(() => window.received.some((event) => event.error?.includes("Windows 会话已断开")));
 	assert.equal(requests, 1);
 	assert.equal(
 		await page.evaluate(() => window.received.some((event) => event.type === "device-portal-disconnected")),
@@ -83,13 +83,13 @@ try {
 	assert(requests >= 2, "preview retries after the desktop recovers");
 	failing = true;
 	await page.goto(origin + "/desktop");
-	await page.getByText(/Windows 桌面会话已断开/).waitFor();
+	await page.getByText(/Windows 会话已断开/).waitFor();
 	await page.getByRole("button", { name: "断开", exact: true }).click();
 	const stoppedAt = connections;
 	await page.clock.fastForward(20000);
 	assert.equal(connections, stoppedAt, "manual disconnect cancels recovery");
 	await page.getByRole("button", { name: "连接", exact: true }).click();
-	await page.getByText(/Windows 桌面会话已断开/).waitFor();
+	await page.getByText(/Windows 会话已断开/).waitFor();
 	failing = false;
 	await page.clock.fastForward(10001);
 	await page.getByText("已连接 · 可控制", { exact: true }).waitFor();

@@ -4,6 +4,7 @@ import { release, tmpdir } from "node:os";
 import { join } from "node:path";
 import { windowsDesktopScript } from "./native-desktop/windows.js";
 import { macDesktopScript } from "./native-desktop/macos.js";
+import { startWindowsServiceDesktop, windowsDesktopServicePath } from "./windows-desktop-service.js";
 
 export type NativeDesktopInput =
 	| { type: "pointer"; x: number; y: number; button?: 0 | 1 | 2; action: "move" | "down" | "up" }
@@ -106,6 +107,7 @@ function powershellPath(): string {
 
 export function nativeDesktopStatus(): { supported: boolean; backend: string; reason?: string } {
 	if (process.platform === "win32") {
+		if (windowsDesktopServicePath()) return { supported: true, backend: "windows-system-desktop" };
 		return existsSync(powershellPath())
 			? { supported: true, backend: "windows-gdi-sendinput" }
 			: {
@@ -253,13 +255,23 @@ export async function requestNativeDesktopPermissions(
 	});
 }
 
-export function startNativeDesktop(options: {
+export type NativeDesktopOptions = {
 	onFrame: (jpeg: Buffer) => void;
 	onError: (message: string) => void;
 	onClose: () => void;
 	readOnly?: boolean;
 	preview?: boolean;
-}): { input(event: NativeDesktopInput): void; close(): void } {
+};
+export type NativeDesktopHandle = { input(event: NativeDesktopInput): void; close(): void };
+
+export function startNativeDesktop(options: NativeDesktopOptions): NativeDesktopHandle {
+	const service = windowsDesktopServicePath();
+	return service
+		? startWindowsServiceDesktop(options, (next) => startNativeDesktopOnce(next, service))
+		: startNativeDesktopOnce(options);
+}
+
+function startNativeDesktopOnce(options: NativeDesktopOptions, service?: string): NativeDesktopHandle {
 	const status = nativeDesktopStatus();
 	const readOnly = options.preview === true || options.readOnly !== false;
 	let child: ChildProcessWithoutNullStreams | undefined;
@@ -378,16 +390,21 @@ export function startNativeDesktop(options: {
 	};
 	try {
 		if (!status.supported) throw new Error(status.reason);
-		directory = mkdtempSync(join(tmpdir(), "pi-native-desktop-"));
 		const windows = process.platform === "win32";
-		const path = join(directory, windows ? "capture.ps1" : "capture.swift");
-		writeFileSync(path, windows ? "\ufeff" + windowsDesktopScript : macDesktopScript, { mode: 0o600 });
+		let path = "";
+		if (!service) {
+			directory = mkdtempSync(join(tmpdir(), "pi-native-desktop-"));
+			path = join(directory, windows ? "capture.ps1" : "capture.swift");
+			writeFileSync(path, windows ? "\ufeff" + windowsDesktopScript : macDesktopScript, { mode: 0o600 });
+		}
 		const mode = options.preview ? "preview" : readOnly ? "view" : "control";
 		child = spawn(
-			windows ? powershellPath() : "/usr/bin/swift",
-			windows
-				? ["-NoLogo", "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-File", path, mode]
-				: [path, mode],
+			service ?? (windows ? powershellPath() : "/usr/bin/swift"),
+			service
+				? ["--client", mode]
+				: windows
+					? ["-NoLogo", "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-File", path, mode]
+					: [path, mode],
 			{ stdio: ["pipe", "pipe", "pipe"], windowsHide: true },
 		);
 		child.stdout.on("data", receive);

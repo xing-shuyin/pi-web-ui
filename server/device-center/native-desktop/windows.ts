@@ -22,8 +22,26 @@ public static class NativeDesktop {
   [DllImport("wtsapi32.dll")] static extern void WTSFreeMemory(IntPtr data);
   [DllImport("user32.dll", SetLastError=true)] static extern IntPtr OpenInputDesktop(uint flags,bool inherit,uint access);
   [DllImport("user32.dll")] static extern bool CloseDesktop(IntPtr desktop);
+  [DllImport("user32.dll", SetLastError=true)] static extern bool SetThreadDesktop(IntPtr desktop);
+  [DllImport("user32.dll")] static extern int GetSystemMetrics(int index);
+  [ThreadStatic] static IntPtr attachedDesktop;
+  [ThreadStatic] static string attachedName;
+  static bool systemDesktop;
+  static Stream inputStream, outputStream;
+  static Action<string> reportError;
+  static Rectangle Bounds() { return new Rectangle(0,0,GetSystemMetrics(0),GetSystemMetrics(1)); }
   [DllImport("user32.dll", CharSet=CharSet.Unicode, SetLastError=true)] static extern bool GetUserObjectInformation(IntPtr handle,int index,StringBuilder value,int size,out int needed);
   static void RequireDesktop() {
+    if(systemDesktop) {
+      IntPtr current=OpenInputDesktop(0,false,0x01ff);
+      if(current==IntPtr.Zero) throw new Exception("WINDOWS_DESKTOP_UNAVAILABLE: Input desktop is switching.");
+      var currentName=new StringBuilder(256); int length;
+      if(!GetUserObjectInformation(current,2,currentName,512,out length)) { CloseDesktop(current); throw new Exception("Cannot identify input desktop."); }
+      if(attachedName==currentName.ToString()) { CloseDesktop(current); return; }
+      if(!SetThreadDesktop(current)) { CloseDesktop(current); throw new Exception("Cannot attach input desktop: "+Marshal.GetLastWin32Error()); }
+      if(attachedDesktop!=IntPtr.Zero) CloseDesktop(attachedDesktop);
+      attachedDesktop=current; attachedName=currentName.ToString(); return;
+    }
     int session; using(var process=System.Diagnostics.Process.GetCurrentProcess()) session=process.SessionId;
     if(session==0) throw new Exception("WINDOWS_SESSION_ZERO: No interactive user desktop.");
     IntPtr data; int size;
@@ -79,6 +97,7 @@ public static class NativeDesktop {
   }
   static void Release() {
     lock(gate) {
+      if(systemDesktop) { try { RequireDesktop(); } catch { keys.Clear(); buttons.Clear(); return; } }
       foreach(int k in keys) { try { Key(k,false); } catch {} } keys.Clear();
       foreach(int b in buttons) { try { Mouse(b,false); } catch {} } buttons.Clear();
     }
@@ -87,8 +106,9 @@ public static class NativeDesktop {
     string type=(string)e["type"];
     lock(gate) {
       if(stopped) return;
+      if(systemDesktop) RequireDesktop();
       if(type=="pointer") {
-        var r=System.Windows.Forms.Screen.PrimaryScreen.Bounds;
+        var r=Bounds();
         if(!SetCursorPos(r.Left+(int)Math.Round(Convert.ToDouble(e["x"])*(r.Width-1)),r.Top+(int)Math.Round(Convert.ToDouble(e["y"])*(r.Height-1)))) throw new Exception("Cannot move pointer on the current desktop.");
         string action=(string)e["action"]; if(action=="move") return;
         int b=Convert.ToInt32(e["button"]); bool down=action=="down";
@@ -105,12 +125,12 @@ public static class NativeDesktop {
   }
   static void Capture() {
     try {
-      Stream output=Console.OpenStandardOutput();
+      Stream output=outputStream;
       ImageCodecInfo codec=Array.Find(ImageCodecInfo.GetImageEncoders(),c=>c.MimeType=="image/jpeg");
       DateTime checkedAt=DateTime.MinValue;
       while(!stopped) {
         if((DateTime.UtcNow-checkedAt).TotalSeconds>=1) { RequireDesktop(); checkedAt=DateTime.UtcNow; }
-        var r=System.Windows.Forms.Screen.PrimaryScreen.Bounds;
+        var r=Bounds();
         if(r.Width<1||r.Height<1||r.Width>32768||r.Height>32768||(long)r.Width*r.Height>64000000) throw new Exception("Unsupported display size.");
         using(var full=new Bitmap(r.Width,r.Height,PixelFormat.Format24bppRgb)) {
           try { using(var g=Graphics.FromImage(full)) g.CopyFromScreen(r.Left,r.Top,0,0,r.Size,CopyPixelOperation.SourceCopy); }
@@ -130,17 +150,22 @@ public static class NativeDesktop {
         if(!ack.WaitOne(15000)) throw new Exception("Frame consumer stopped responding.");
         Thread.Sleep(preview?3000:100);
       }
-    } catch(Exception e) { if(!stopped) Console.Error.WriteLine(e.Message); stopped=true; Release(); Environment.Exit(1); }
+    } catch(Exception e) { if(!stopped) reportError(e.Message); stopped=true; Release(); Environment.Exit(1); }
   }
   public static void Run(bool readOnly, bool previewMode) {
+    Run(readOnly,previewMode,false,Console.OpenStandardInput(),Console.OpenStandardOutput(),message=>Console.Error.WriteLine(message));
+  }
+  public static void Run(bool readOnly, bool previewMode, bool secure, Stream input, Stream output, Action<string> error) {
+    if(secure&&!System.Security.Principal.WindowsIdentity.GetCurrent().IsSystem) throw new Exception("System desktop requires the installed service.");
+    systemDesktop=secure; inputStream=input; outputStream=output; reportError=error;
     preview=previewMode;
     SetProcessDPIAware();
     Thread capture=new Thread(Capture); capture.IsBackground=true; capture.Start();
     try {
-      using(var input=new StreamReader(Console.OpenStandardInput(),new UTF8Encoding(false))) {
+      using(var reader=new StreamReader(inputStream,new UTF8Encoding(false))) {
         var json=new JavaScriptSerializer(); json.MaxJsonLength=32768;
         string line;
-        while(!stopped&&(line=input.ReadLine())!=null) {
+        while(!stopped&&(line=reader.ReadLine())!=null) {
           if(line.Length>32768) throw new Exception("Input exceeds limit.");
           var e=json.Deserialize<Dictionary<string,object>>(line); string type=(string)e["type"];
           if(type=="close") break;

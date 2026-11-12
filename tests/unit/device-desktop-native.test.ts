@@ -53,7 +53,7 @@ function options(readOnly?: boolean) {
 beforeEach(() => {
 	vi.useFakeTimers();
 	vi.spyOn(process, "platform", "get").mockReturnValue("win32");
-	mocks.exists.mockReturnValue(true);
+	mocks.exists.mockImplementation((path: string) => !path.endsWith("PiDesktopService.exe"));
 	mocks.release.mockReturnValue("23.0.0");
 	mocks.exec.mockReset();
 });
@@ -64,6 +64,19 @@ afterEach(() => {
 });
 
 describe("native desktop lifecycle and framed capture", () => {
+	it("uses the protected installed service for capture without creating an elevated script", () => {
+		mocks.exists.mockReturnValue(true);
+		const { child, writes } = processFixture();
+		expect(nativeDesktopStatus().backend).toBe("windows-system-desktop");
+		const session = startNativeDesktop({ ...options(false), preview: true });
+		expect(mocks.spawn.mock.calls[0][0]).toContain("PiDesktopService.exe");
+		expect(mocks.spawn.mock.calls[0][1]).toEqual(["--client", "preview"]);
+		expect(mocks.write).not.toHaveBeenCalled();
+		session.input({ type: "text", text: "not allowed" });
+		expect(writes).toEqual([]);
+		session.close();
+		child.emit("close", 0);
+	});
 	it("forces preview helpers to stay read-only even if control was requested", () => {
 		const { child, writes } = processFixture();
 		const session = startNativeDesktop({ ...options(false), preview: true });
@@ -216,6 +229,114 @@ describe("native desktop lifecycle and framed capture", () => {
 		child.emit("close", 0);
 		vi.advanceTimersByTime(60000);
 		expect(o.onError).toHaveBeenCalledTimes(1);
+	});
+});
+
+describe("Windows service session recovery", () => {
+	beforeEach(() => mocks.exists.mockReturnValue(true));
+
+	it("resumes frames in the same session after the login worker exits, without replaying input", () => {
+		const first = processFixture();
+		const o = options(false);
+		const session = startNativeDesktop(o);
+		first.child.stdout.write(packet());
+		first.child.stderr.write("WINDOWS_DESKTOP_UNAVAILABLE: Windows session changed");
+		first.child.emit("close", 1);
+		session.input({ type: "text", text: "must not replay" });
+		expect(o.onError).not.toHaveBeenCalled();
+		expect(o.onClose).not.toHaveBeenCalled();
+		const second = processFixture();
+		vi.advanceTimersByTime(250);
+		expect(mocks.spawn).toHaveBeenCalledTimes(2);
+		first.child.stdout.write(packet());
+		second.child.stdout.write(packet());
+		expect(o.onFrame).toHaveBeenCalledTimes(2);
+		expect(second.writes).toEqual(['{"type":"ack"}\n']);
+		session.input({ type: "key", code: "KeyA", action: "down" });
+		expect(second.writes.at(-1)).toContain('"KeyA"');
+		session.close();
+		second.child.emit("close", 0);
+		vi.advanceTimersByTime(60000);
+		expect(o.onError).not.toHaveBeenCalled();
+		expect(o.onClose).toHaveBeenCalledTimes(1);
+		expect(vi.getTimerCount()).toBe(0);
+	});
+
+	it("does not reconnect after an explicit disconnect during the recovery delay", () => {
+		const { child } = processFixture();
+		const o = options();
+		const session = startNativeDesktop(o);
+		child.emit("close", 0);
+		session.close();
+		vi.advanceTimersByTime(60000);
+		expect(mocks.spawn).toHaveBeenCalledTimes(1);
+		expect(o.onError).not.toHaveBeenCalled();
+		expect(o.onClose).toHaveBeenCalledTimes(1);
+		expect(vi.getTimerCount()).toBe(0);
+	});
+
+	it("keeps the original read-only mode across replacement workers", () => {
+		const first = processFixture();
+		const o = options();
+		const session = startNativeDesktop(o);
+		o.readOnly = false;
+		first.child.emit("close", 1);
+		const second = processFixture();
+		vi.advanceTimersByTime(250);
+		expect(mocks.spawn.mock.calls[1][1]).toEqual(["--client", "view"]);
+		session.input({ type: "text", text: "forbidden" });
+		expect(second.writes).toEqual([]);
+		session.close();
+		second.child.emit("close", 0);
+	});
+
+	it("bounds recovery even if the replacement worker hangs without producing a frame", () => {
+		const first = processFixture();
+		const o = options();
+		startNativeDesktop(o);
+		first.child.stderr.write("WINDOWS_DESKTOP_UNAVAILABLE: WINDOWS_DESKTOP_UNAVAILABLE: Session changed");
+		first.child.emit("close", 1);
+		const second = processFixture();
+		vi.advanceTimersByTime(30000);
+		expect(o.onError).toHaveBeenCalledWith("WINDOWS_DESKTOP_UNAVAILABLE: Session changed");
+		expect(o.onClose).toHaveBeenCalledTimes(1);
+		expect(second.writes).toContain('{"type":"close"}\n');
+		vi.advanceTimersByTime(1500);
+		expect(second.child.kill).toHaveBeenCalledOnce();
+		second.child.emit("close", 0);
+		vi.advanceTimersByTime(60000);
+		expect(mocks.spawn).toHaveBeenCalledTimes(2);
+		expect(o.onError).toHaveBeenCalledTimes(1);
+		expect(vi.getTimerCount()).toBe(0);
+	});
+
+	it("does not retry malformed frames or other non-session failures", () => {
+		const { child } = processFixture();
+		const o = options();
+		startNativeDesktop(o);
+		child.stdout.write(packet(Buffer.from([0, 0, 0, 0])));
+		child.emit("close", 1);
+		vi.advanceTimersByTime(60000);
+		expect(o.onError).toHaveBeenCalledWith(expect.stringContaining("invalid JPEG"));
+		expect(o.onClose).toHaveBeenCalledTimes(1);
+		expect(mocks.spawn).toHaveBeenCalledTimes(1);
+		expect(vi.getTimerCount()).toBe(0);
+	});
+
+	it("restarts only once when stream failure is followed by process close", () => {
+		const first = processFixture();
+		const o = options();
+		const session = startNativeDesktop(o);
+		first.child.stdin.emit("error", new Error("EPIPE"));
+		first.child.emit("close", 1);
+		first.child.emit("close", 1);
+		const second = processFixture();
+		vi.advanceTimersByTime(250);
+		second.child.stdout.write(packet());
+		expect(mocks.spawn).toHaveBeenCalledTimes(2);
+		expect(o.onError).not.toHaveBeenCalled();
+		session.close();
+		second.child.emit("close", 0);
 	});
 });
 

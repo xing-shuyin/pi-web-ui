@@ -1,6 +1,6 @@
 {
 	"name": "pi-web-ui",
-	"version": "0.120.1-p2p-preview.6",
+	"version": "0.120.1-p2p-preview.7",
 	"description": "Just open your browser to get all your work done — browser cockpit for AI coding agents (chat, code, files, terminal, Git in one tab)",
 	"license": "MIT",
 	"author": {
@@ -72,7 +72,7 @@
 		"dev:web": "vite --config web/vite.config.ts",
 		"build": "npm run build:web && npm run build:server && npm run build:dsh-runtime && npm run build:mermaid-vendor && npm run build:runtrace-vendor",
 		"build:web": "vite build --config web/vite.config.ts",
-		"build:server": "node scripts/build-server.mjs && node scripts/gen-bin-atomic-file.mjs",
+		"build:server": "node scripts/build-server.mjs && node scripts/gen-bin-atomic-file.mjs && node scripts/build-desktop-service-source.mjs",
 		"build:dsh-runtime": "node scripts/copy-dsh-runtime.mjs",
 		"build:mermaid-vendor": "node scripts/build-mermaid-vendor.mjs",
 		"build:extension": "node plugins/page-picker/extension/build.mjs",
