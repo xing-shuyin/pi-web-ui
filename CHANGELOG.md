@@ -10,6 +10,26 @@
 
 ## [Unreleased]
 
+## [0.120.1-p2p-preview.3] — 2026-11-12
+
+### Fixed
+
+- 远程聊天页直接预览当前设备桌面，复用已授权的远程通道，不再由设备重新连接自己。
+- 修复 Claude/Codex 引擎不返回其他项目历史列表的问题，补齐项目归属和分页回执；历史读取支持超时重试、引擎切换和断线恢复。
+- 修复远程桌面窗口缩到手机宽度后超出右边界。
+
+### Changed
+
+- 桌面工具栏跟随聊天主题，分组展示连接与查看选项，设置、文字输入和连接信息使用互斥面板；主题切换保留桌面连接。
+
+<!-- auto-i18n:start -->
+
+### i18n
+
+- 前端新增 key（4）：`sessionsLoadFailed`、`desktop.currentDevice`、`desktop.showCurrent`、`desktop.currentConnection`
+
+<!-- auto-i18n:end -->
+
 ## [0.120.1-p2p-preview.2] — 2026-11-12
 
 ### Fixed

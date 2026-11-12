@@ -1,6 +1,9 @@
+import { desktopThemeScript } from "./desktop-theme.js";
+
 export function desktopPreviewPage(): string {
-	return `<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Desktop preview</title><style>html,body{margin:0;width:100%;height:100%;background:#101827}img{display:block;width:100%;height:100%;object-fit:contain}img:not([src]){visibility:hidden}</style></head><body><img alt=""><script type="module">
+	return `<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Desktop preview</title><style>html,body{margin:0;width:100%;height:100%;background:var(--bg,#101827)}img{display:block;width:100%;height:100%;object-fit:contain}img:not([src]){visibility:hidden}</style></head><body><img alt=""><script type="module">
 const image = document.querySelector('img');
+${desktopThemeScript()}
 let active = parent === window, disposed = false, timer, controller, objectUrl;
 const report = data => parent.postMessage({type:'desktop-preview-state',...data}, '*');
 function cancel() { clearTimeout(timer); controller?.abort(); }

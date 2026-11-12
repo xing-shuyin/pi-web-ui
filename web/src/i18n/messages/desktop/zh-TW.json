@@ -23,5 +23,8 @@
 	"desktop.fullscreen": "全螢幕",
 	"desktop.p2p": "P2P 直連",
 	"desktop.devicesUnavailable": "無法讀取裝置清單，請檢查連線後重試。",
-	"desktop.noDevices": "暫無可選裝置。"
+	"desktop.noDevices": "暫無可選裝置。",
+	"desktop.currentDevice": "目前裝置",
+	"desktop.showCurrent": "顯示此裝置的桌面",
+	"desktop.currentConnection": "沿用目前連線"
 }

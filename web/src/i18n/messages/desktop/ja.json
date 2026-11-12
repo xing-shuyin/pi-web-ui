@@ -23,5 +23,8 @@
 	"desktop.fullscreen": "全画面",
 	"desktop.p2p": "P2P 直接接続",
 	"desktop.devicesUnavailable": "デバイス一覧を取得できませんでした。接続を確認して再試行してください。",
-	"desktop.noDevices": "選択できるデバイスがありません。"
+	"desktop.noDevices": "選択できるデバイスがありません。",
+	"desktop.currentDevice": "現在のデバイス",
+	"desktop.showCurrent": "このデバイスのデスクトップを表示",
+	"desktop.currentConnection": "現在の接続を使用"
 }

@@ -23,5 +23,8 @@
 	"desktop.fullscreen": "Tam ekran",
 	"desktop.p2p": "Doğrudan P2P bağlantısı",
 	"desktop.devicesUnavailable": "Cihazlar yüklenemedi. Bağlantıyı kontrol edip yeniden deneyin.",
-	"desktop.noDevices": "Kullanılabilir cihaz yok."
+	"desktop.noDevices": "Kullanılabilir cihaz yok.",
+	"desktop.currentDevice": "Geçerli cihaz",
+	"desktop.showCurrent": "Bu cihazın masaüstünü göster",
+	"desktop.currentConnection": "Geçerli bağlantı kullanılıyor"
 }

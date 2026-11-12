@@ -63,9 +63,38 @@ beforeEach(() => {
 afterEach(() => {
 	act(() => root.unmount());
 	container.remove();
+	vi.useRealTimers();
 });
 
 describe("restored project session loading", () => {
+	it("stops waiting after a timeout, retries on click, and accepts the response", () => {
+		vi.useFakeTimers();
+		connect();
+		render(true);
+		act(() => vi.advanceTimersByTime(20001));
+		expect(container.textContent).not.toContain("正在读取会话");
+		const retry = [...container.querySelectorAll<HTMLButtonElement>("button")].find((button) =>
+			button.textContent?.includes("点击重试"),
+		);
+		expect(retry).toBeTruthy();
+		act(() => retry!.click());
+		expect(historyRequests()).toHaveLength(2);
+		expect(container.textContent).toContain("正在读取会话");
+		props = { ...props, projectSessions: { "/archive": [] } };
+		render();
+		expect(container.textContent).not.toContain("点击重试");
+		expect(container.textContent).not.toContain("正在读取会话");
+	});
+	it("requests expanded projects again when the engine changes", () => {
+		connect();
+		render();
+		props = { ...props, engine: "codex", projectSessions: {} };
+		render();
+		expect(historyRequests()).toHaveLength(2);
+		props = { ...props, projectSessions: { "/archive": [] } };
+		render();
+		expect(container.textContent).not.toContain("正在读取会话");
+	});
 	it("waits for connection and resolves an empty response without a click", () => {
 		render();
 		expect(historyRequests()).toHaveLength(0);

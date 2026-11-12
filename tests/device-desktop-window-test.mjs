@@ -120,6 +120,13 @@ try {
 	await page.evaluate(() => window.showDesktop());
 	const preview = page.locator(".desktop-preview");
 	await preview.getByText(/Updated \d+s ago/).waitFor();
+	const previewPage = page.frames().find((frame) => frame.url().endsWith("/fixture/desktop-preview"));
+	assert(previewPage);
+	await page.evaluate(() => {
+		document.documentElement.style.setProperty("--bg", "#203040");
+		window.dispatchEvent(new Event("pi-web-ui:theme-change"));
+	});
+	await previewPage.waitForFunction(() => document.documentElement.style.getPropertyValue("--bg") === "#203040");
 	assert.equal(await page.getByRole("dialog").count(), 0);
 	assert.equal(snapshots, 1);
 	await page.waitForTimeout(3400);

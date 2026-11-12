@@ -23,5 +23,8 @@
 	"desktop.fullscreen": "Plein écran",
 	"desktop.p2p": "Connexion P2P directe",
 	"desktop.devicesUnavailable": "Impossible de charger les appareils. Vérifiez la connexion et réessayez.",
-	"desktop.noDevices": "Aucun appareil disponible."
+	"desktop.noDevices": "Aucun appareil disponible.",
+	"desktop.currentDevice": "Appareil actuel",
+	"desktop.showCurrent": "Afficher le bureau de cet appareil",
+	"desktop.currentConnection": "Connexion actuelle utilisée"
 }

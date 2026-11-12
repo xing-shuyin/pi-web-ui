@@ -2668,6 +2668,7 @@
 		"subagentVerdictPartial": "partial",
 		"subagentVerdictBlocked": "blocked",
 		"subagentVerdictHint": "The subagent's completion evidence did not fully match its own transcript: see the completion notice or get_result",
+		"sessionsLoadFailed": "Session loading timed out. Click to retry.",
 		"canvas.aiBar.generateWorkflow": "✨ ワークフローを生成",
 		"canvas.aiBar.generateSequentialStepsFromKeywordsReviewInstructionsBefore": "キーワードから順次実行するステップを生成します。実行前に指示を確認してください",
 		"canvas.aiBar.fromKeywords": "キーワードから生成",
@@ -3433,6 +3434,9 @@
 		"desktop.p2p": "P2P 直接接続",
 		"desktop.devicesUnavailable": "デバイス一覧を取得できませんでした。接続を確認して再試行してください。",
 		"desktop.noDevices": "選択できるデバイスがありません。",
+		"desktop.currentDevice": "現在のデバイス",
+		"desktop.showCurrent": "このデバイスのデスクトップを表示",
+		"desktop.currentConnection": "現在の接続を使用",
 		"nativeCliSession.starting": "Starting process",
 		"nativeCliSession.running": "Process running",
 		"nativeCliSession.working": "Working",
@@ -3635,5 +3639,6 @@
 		"vision.transcribe.batch": "画像の順番に（Image 1 から Image {count} まで）各画像の内容を書き起こし、上記のルールに従って構造化されたテキスト証拠を出力してください。",
 		"vision.transcribe.single": "この画像の内容を逐字的に書き起こし、上記のルールに従って構造化されたテキスト証拠を出力してください。",
 		"vision.transcript.empty": "ビジョン モデルが空の書き起こし結果を返しました"
-	}
+	},
+	"sessionsLoadFailed": "セッションの読み込みがタイムアウトしました。クリックして再試行。"
 }

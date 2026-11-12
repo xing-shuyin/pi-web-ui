@@ -2668,6 +2668,7 @@
 		"subagentVerdictPartial": "partial",
 		"subagentVerdictBlocked": "blocked",
 		"subagentVerdictHint": "The subagent's completion evidence did not fully match its own transcript: see the completion notice or get_result",
+		"sessionsLoadFailed": "Session loading timed out. Click to retry.",
 		"canvas.aiBar.generateWorkflow": "✨ Gerar fluxo de trabalho",
 		"canvas.aiBar.generateSequentialStepsFromKeywordsReviewInstructionsBefore": "Gerar etapas sequenciais a partir de palavras-chave; reveja as instruções antes de executar",
 		"canvas.aiBar.fromKeywords": "Gerar a partir de palavras-chave",
@@ -3433,6 +3434,9 @@
 		"desktop.p2p": "Conexão P2P direta",
 		"desktop.devicesUnavailable": "Não foi possível carregar os dispositivos. Verifique a conexão e tente novamente.",
 		"desktop.noDevices": "Nenhum dispositivo disponível.",
+		"desktop.currentDevice": "Dispositivo atual",
+		"desktop.showCurrent": "Mostrar a área de trabalho deste dispositivo",
+		"desktop.currentConnection": "Usando a conexão atual",
 		"nativeCliSession.starting": "Starting process",
 		"nativeCliSession.running": "Process running",
 		"nativeCliSession.working": "Working",
@@ -3842,5 +3846,6 @@
 		"worktree.tag.current": "ativo",
 		"worktree.tag.dirty": "{n} arquivo(s) com alterações não confirmadas",
 		"worktree.tag.main": "principal"
-	}
+	},
+	"sessionsLoadFailed": "O carregamento das sessões expirou. Clique para tentar novamente."
 }

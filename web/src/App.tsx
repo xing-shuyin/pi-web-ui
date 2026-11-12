@@ -137,6 +137,7 @@ import type {
 	UiMessage,
 	UiTextBlock,
 } from "./types";
+import { openPageDesktop, pageDeviceId } from "./device-access";
 import { isZhLocale, useT, useI18n } from "./i18n";
 import { QUICK_PHRASE_DEFAULTS } from "./quick-phrases";
 import {
@@ -1101,6 +1102,12 @@ export function App() {
 		window.addEventListener("pi:desktop-open", open);
 		return () => window.removeEventListener("pi:desktop-open", open);
 	}, [isMobile]);
+	useEffect(() => {
+		if (!pageDeviceId()) return;
+		const controller = new AbortController();
+		void openPageDesktop(isZhLocale(locale), t("desktop.currentDevice"), controller.signal).catch(() => {});
+		return () => controller.abort();
+	}, []);
 	useEffect(() => {
 		const mq = window.matchMedia("(max-width: 768px)");
 		const onChange = (e: MediaQueryListEvent) => setIsMobile(e.matches);

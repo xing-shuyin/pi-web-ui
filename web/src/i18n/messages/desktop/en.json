@@ -23,5 +23,8 @@
 	"desktop.fullscreen": "Fullscreen",
 	"desktop.p2p": "P2P direct",
 	"desktop.devicesUnavailable": "Could not load devices. Check the connection and try again.",
-	"desktop.noDevices": "No devices available."
+	"desktop.noDevices": "No devices available.",
+	"desktop.currentDevice": "Current device",
+	"desktop.showCurrent": "Show this device’s desktop",
+	"desktop.currentConnection": "Using current connection"
 }

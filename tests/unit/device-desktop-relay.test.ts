@@ -297,8 +297,9 @@ describe("native desktop through device relay and connector", () => {
 				await page.setViewportSize(viewport);
 				const toolbar = await page.locator("#toolbar").boundingBox();
 				const screen = await page.locator("#screen").boundingBox();
-				expect(toolbar!.height).toBeLessThanOrEqual(48);
-				expect(screen!.height).toBeGreaterThanOrEqual(viewport.height - 48);
+				const maxToolbarHeight = viewport.width <= 700 ? 72 : 48;
+				expect(toolbar!.height).toBeLessThanOrEqual(maxToolbarHeight);
+				expect(screen!.height).toBeGreaterThanOrEqual(viewport.height - maxToolbarHeight);
 			}
 			await page.locator("#viewonly").check();
 			await vi.waitFor(() => expect(f.sessions).toHaveLength(2));

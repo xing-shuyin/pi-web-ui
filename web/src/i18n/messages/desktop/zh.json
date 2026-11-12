@@ -23,5 +23,8 @@
 	"desktop.fullscreen": "全屏",
 	"desktop.p2p": "P2P 直连",
 	"desktop.devicesUnavailable": "无法读取设备列表，请检查连接后重试。",
-	"desktop.noDevices": "暂无可选设备。"
+	"desktop.noDevices": "暂无可选设备。",
+	"desktop.currentDevice": "当前设备",
+	"desktop.showCurrent": "显示此设备的桌面",
+	"desktop.currentConnection": "复用当前连接"
 }

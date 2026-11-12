@@ -3,16 +3,38 @@ import {
 	closeDesktopAccess,
 	getDesktopAccess,
 	setDesktopMode,
+	openPageDesktop,
+	pageDeviceId,
 	subscribeDesktopAccess,
 	type DesktopAccess,
+	type DesktopTransport,
 } from "../device-access";
 import { useDesktopTarget } from "../use-desktop-target";
-import { useT } from "../i18n";
+import { useDesktopTheme } from "../use-desktop-theme";
+import { isZhLocale, useI18n, useT } from "../i18n";
 import { DesktopDevicePicker } from "./DesktopDevicePicker";
 
 export function DesktopPreview({ visible }: { visible: boolean }) {
 	const access = useSyncExternalStore(subscribeDesktopAccess, getDesktopAccess);
-	return access ? <Preview key={`${access.revision}:${access.mode}`} access={access} visible={visible} /> : null;
+	const t = useT();
+	const { locale } = useI18n();
+	const [error, setError] = useState(false);
+	return access ? (
+		<Preview key={`${access.revision}:${access.mode}`} access={access} visible={visible} />
+	) : pageDeviceId() ? (
+		<section className="desktop-preview">
+			<button
+				className="btn"
+				onClick={() => {
+					setError(false);
+					void openPageDesktop(isZhLocale(locale), t("desktop.currentDevice")).catch(() => setError(true));
+				}}
+			>
+				{t("desktop.showCurrent")}
+			</button>
+			{error && <p role="alert">{t("desktop.devicesUnavailable")}</p>}
+		</section>
+	) : null;
 }
 
 function Preview({ access, visible }: { access: DesktopAccess; visible: boolean }) {
@@ -98,7 +120,8 @@ function PreviewFrame({
 	const t = useT();
 	const { target, error: targetError, retry } = useDesktopTarget(access);
 	const frame = useRef<HTMLIFrameElement>(null);
-	const [transport, setTransport] = useState<"lan" | "p2p" | "hub">();
+	useDesktopTheme(frame, target?.url);
+	const [transport, setTransport] = useState<DesktopTransport>();
 	const [error, setError] = useState("");
 	const [updatedAt, setUpdatedAt] = useState(0);
 	const [now, setNow] = useState(Date.now);
@@ -172,7 +195,15 @@ function PreviewFrame({
 			<div className="desktop-preview-status">
 				<span>
 					{transport
-						? t(transport === "lan" ? "desktop.lan" : transport === "p2p" ? "desktop.p2p" : "desktop.hub")
+						? t(
+								transport === "current"
+									? "desktop.currentConnection"
+									: transport === "lan"
+										? "desktop.lan"
+										: transport === "p2p"
+											? "desktop.p2p"
+											: "desktop.hub",
+							)
 						: t("desktop.connecting")}
 				</span>
 				<span>

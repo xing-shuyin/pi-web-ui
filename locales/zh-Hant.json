@@ -2668,6 +2668,7 @@
 		"subagentVerdictPartial": "部分核对",
 		"subagentVerdictBlocked": "受阻",
 		"subagentVerdictHint": "子代理的完成证据没有完全对上它自己的转录：详见完成通知或 get_result",
+		"sessionsLoadFailed": "歷史会话读取超时，点击重试。",
 		"canvas.aiBar.generateWorkflow": "✨ 產生流程",
 		"canvas.aiBar.generateSequentialStepsFromKeywordsReviewInstructionsBefore": "依關鍵字產生循序步驟，執行前請檢查指令",
 		"canvas.aiBar.fromKeywords": "依關鍵字產生",
@@ -3433,6 +3434,9 @@
 		"desktop.p2p": "P2P 直連",
 		"desktop.devicesUnavailable": "無法讀取裝置清單，請檢查連線後重試。",
 		"desktop.noDevices": "暫無可選裝置。",
+		"desktop.currentDevice": "目前裝置",
+		"desktop.showCurrent": "顯示此裝置的桌面",
+		"desktop.currentConnection": "沿用目前連線",
 		"nativeCliSession.starting": "正在啟動程序",
 		"nativeCliSession.running": "程序執行中",
 		"nativeCliSession.working": "正在處理",
@@ -3469,5 +3473,6 @@
 		"nativeCliSession.questionBody": "請開啟 CLI 對話進行回覆。",
 		"nativeCliSession.approvalTitle": "CLI 需要授權",
 		"nativeCliSession.approvalBody": "請開啟 CLI 對話檢查授權請求。"
-	}
+	},
+	"sessionsLoadFailed": "歷史對話讀取逾時，點擊重試。"
 }

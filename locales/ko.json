@@ -2668,6 +2668,7 @@
 		"subagentVerdictPartial": "partial",
 		"subagentVerdictBlocked": "blocked",
 		"subagentVerdictHint": "The subagent's completion evidence did not fully match its own transcript: see the completion notice or get_result",
+		"sessionsLoadFailed": "Session loading timed out. Click to retry.",
 		"canvas.aiBar.generateWorkflow": "✨ 워크플로 생성",
 		"canvas.aiBar.generateSequentialStepsFromKeywordsReviewInstructionsBefore": "키워드로 순차 실행 단계를 생성합니다. 실행 전에 지시 내용을 확인하세요",
 		"canvas.aiBar.fromKeywords": "키워드로 생성",
@@ -3433,6 +3434,9 @@
 		"desktop.p2p": "P2P 직접 연결",
 		"desktop.devicesUnavailable": "기기 목록을 불러오지 못했습니다. 연결을 확인하고 다시 시도하세요.",
 		"desktop.noDevices": "선택할 수 있는 기기가 없습니다.",
+		"desktop.currentDevice": "현재 기기",
+		"desktop.showCurrent": "이 기기의 데스크톱 표시",
+		"desktop.currentConnection": "현재 연결 사용 중",
 		"nativeCliSession.starting": "Starting process",
 		"nativeCliSession.running": "Process running",
 		"nativeCliSession.working": "Working",
@@ -3469,5 +3473,6 @@
 		"nativeCliSession.questionBody": "Open the CLI conversation to respond.",
 		"nativeCliSession.approvalTitle": "CLI needs approval",
 		"nativeCliSession.approvalBody": "Open the CLI conversation to review the approval request."
-	}
+	},
+	"sessionsLoadFailed": "세션 로딩 시간이 초과되었습니다. 클릭하여 다시 시도하세요."
 }

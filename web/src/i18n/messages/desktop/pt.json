@@ -23,5 +23,8 @@
 	"desktop.fullscreen": "Tela cheia",
 	"desktop.p2p": "Conexão P2P direta",
 	"desktop.devicesUnavailable": "Não foi possível carregar os dispositivos. Verifique a conexão e tente novamente.",
-	"desktop.noDevices": "Nenhum dispositivo disponível."
+	"desktop.noDevices": "Nenhum dispositivo disponível.",
+	"desktop.currentDevice": "Dispositivo atual",
+	"desktop.showCurrent": "Mostrar a área de trabalho deste dispositivo",
+	"desktop.currentConnection": "Usando a conexão atual"
 }

@@ -1,6 +1,25 @@
-import { appUrl } from "./base-url";
+import { appBase, appUrl } from "./base-url";
 import { withToken } from "./auth-token";
 import { getMobileRuntime } from "./mobile-runtime";
+
+export type DesktopTransport = "lan" | "p2p" | "hub" | "current";
+
+export function pageDeviceId(): string | undefined {
+	return appBase().match(/\/(?:device|device-lan)\/([a-z0-9][a-z0-9-]{0,62})\/__relay\/[a-f0-9]{64}\/$/)?.[1];
+}
+
+export async function openPageDesktop(zh: boolean, name: string, signal?: AbortSignal) {
+	const id = pageDeviceId();
+	if (!id) return;
+	const response = await fetch(withToken(appUrl("/api/device-center/chat-status")), {
+		credentials: "same-origin",
+		signal: signal ? AbortSignal.any([signal, AbortSignal.timeout(15000)]) : AbortSignal.timeout(15000),
+	});
+	if (!response.ok) throw new Error("Device status unavailable");
+	const status = await response.json();
+	if (signal?.aborted) return;
+	await openDeviceAccess(id, typeof status.hubUrl === "string" ? status.hubUrl : "", true, zh, false, name);
+}
 
 export type DesktopAccess = {
 	id: string;
@@ -40,6 +59,13 @@ export async function requestDeviceAccessUrl(
 	preview = false,
 	signal?: AbortSignal,
 ) {
+	if (desktop && id === pageDeviceId()) {
+		return {
+			url: new URL(withToken(appUrl(preview ? "/desktop-preview" : "/desktop")), window.location.href).href,
+			transport: "current" as const,
+			fallbackOrigin: undefined,
+		};
+	}
 	const response = await fetch(withToken(appUrl(`/api/device-center/devices/${encodeURIComponent(id)}/open`)), {
 		method: "POST",
 		headers: { "Content-Type": "application/json" },

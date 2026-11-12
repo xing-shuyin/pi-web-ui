@@ -6,10 +6,13 @@ import {
 	openDeviceAccess,
 	subscribeDesktopAccess,
 	setDesktopMode,
+	pageDeviceId,
 	type DesktopAccess,
+	type DesktopTransport,
 } from "../device-access";
 
 import { useDesktopTarget } from "../use-desktop-target";
+import { useDesktopTheme } from "../use-desktop-theme";
 import { useOverlayZIndex } from "../overlay-stack";
 import { useT } from "../i18n";
 
@@ -24,7 +27,8 @@ function DesktopWindow({ access }: { access: DesktopAccess }) {
 	const zIndex = useOverlayZIndex();
 	const { target, error: targetError, retry } = useDesktopTarget(access);
 	const frameRef = useRef<HTMLIFrameElement>(null);
-	const [transport, setTransport] = useState<"lan" | "p2p" | "hub">();
+	useDesktopTheme(frameRef, target?.url);
+	const [transport, setTransport] = useState<DesktopTransport>();
 	useEffect(() => {
 		setTransport(target?.transport);
 	}, [target]);
@@ -56,8 +60,8 @@ function DesktopWindow({ access }: { access: DesktopAccess }) {
 		const resize = () =>
 			setBox((b) => ({
 				...b,
-				x: Math.max(0, Math.min(b.x, window.innerWidth - 240)),
-				y: Math.max(0, Math.min(b.y, window.innerHeight - 40)),
+				x: Math.max(0, Math.min(b.x, window.innerWidth - Math.min(b.width, window.innerWidth))),
+				y: Math.max(0, Math.min(b.y, window.innerHeight - Math.min(b.height, window.innerHeight))),
 				width: Math.min(b.width, window.innerWidth),
 				height: Math.min(b.height, window.innerHeight),
 			}));
@@ -142,12 +146,22 @@ function DesktopWindow({ access }: { access: DesktopAccess }) {
 				<strong>
 					{title} · {access.name || access.id} ·{" "}
 					{transport
-						? t(transport === "lan" ? "desktop.lan" : transport === "p2p" ? "desktop.p2p" : "desktop.hub")
+						? t(
+								transport === "current"
+									? "desktop.currentConnection"
+									: transport === "lan"
+										? "desktop.lan"
+										: transport === "p2p"
+											? "desktop.p2p"
+											: "desktop.hub",
+							)
 						: t("desktop.connecting")}
 				</strong>
-				<button type="button" className="btn" disabled={busy} onClick={() => void detach()}>
-					{t(shell ? "desktop.window" : "desktop.tab")}
-				</button>
+				{!pageDeviceId() && (
+					<button type="button" className="btn" disabled={busy} onClick={() => void detach()}>
+						{t(shell ? "desktop.window" : "desktop.tab")}
+					</button>
+				)}
 				<button
 					type="button"
 					className="btn"

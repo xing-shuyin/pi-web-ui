@@ -1,8 +1,8 @@
 import { useEffect, useState } from "react";
-import { requestDeviceAccessUrl, type DesktopAccess } from "./device-access";
+import { requestDeviceAccessUrl, type DesktopAccess, type DesktopTransport } from "./device-access";
 
 export function useDesktopTarget(access: DesktopAccess) {
-	const [target, setTarget] = useState<{ url: string; transport: "lan" | "p2p" | "hub" }>();
+	const [target, setTarget] = useState<{ url: string; transport: DesktopTransport }>();
 	const [error, setError] = useState("");
 	const [attempt, setAttempt] = useState(0);
 	useEffect(() => {

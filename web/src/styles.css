@@ -91,7 +91,7 @@
 		word-break: break-word;
 	}
 	.desktop-device-status {
-		color: var(--text-muted);
+		color: var(--text-dim);
 		font-size: 11px;
 	}
 	.desktop-preview-screen {
@@ -137,7 +137,7 @@
 		flex-wrap: wrap;
 		padding-top: 6px;
 		font-size: 11px;
-		color: var(--text-muted);
+		color: var(--text-dim);
 	}
 	.desktop-preview-live {
 		flex-wrap: wrap;
@@ -170,6 +170,7 @@
 		min-width: 0;
 		background: var(--bg-elev2);
 		color: var(--text);
+		font-family: system-ui, sans-serif;
 		border: 1px solid var(--border);
 		border-radius: 10px;
 		box-shadow: 0 12px 48px #0006;
@@ -183,8 +184,10 @@
 	.remote-desktop-titlebar {
 		display: flex;
 		align-items: center;
-		gap: 4px;
-		padding: 6px;
+		gap: 6px;
+		padding: 6px 10px;
+		background: var(--bg-elev);
+		border-bottom: 1px solid var(--border);
 		min-width: 0;
 		max-width: 100%;
 		cursor: move;
@@ -201,7 +204,18 @@
 	}
 	.remote-desktop-titlebar .btn {
 		flex: none;
-		padding: 4px 7px;
+		padding: 4px 8px;
+		min-height: 28px;
+		font: inherit;
+		font-size: 12px;
+		border: 1px solid transparent;
+		border-radius: 7px;
+		background: transparent;
+		color: var(--text);
+	}
+	.remote-desktop-titlebar .btn:hover {
+		background: var(--bg-elev2);
+		border-color: var(--border);
 	}
 	.remote-desktop-window iframe {
 		flex: 1;

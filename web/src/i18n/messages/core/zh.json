@@ -2663,5 +2663,6 @@
 	"subagentVerdictUnverified": "未验证",
 	"subagentVerdictPartial": "部分核对",
 	"subagentVerdictBlocked": "受阻",
-	"subagentVerdictHint": "子代理的完成证据没有完全对上它自己的转录：详见完成通知或 get_result"
+	"subagentVerdictHint": "子代理的完成证据没有完全对上它自己的转录：详见完成通知或 get_result",
+	"sessionsLoadFailed": "历史会话读取超时，点击重试。"
 }

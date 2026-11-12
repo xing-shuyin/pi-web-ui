@@ -2668,6 +2668,7 @@
 		"subagentVerdictPartial": "partial",
 		"subagentVerdictBlocked": "blocked",
 		"subagentVerdictHint": "The subagent's completion evidence did not fully match its own transcript: see the completion notice or get_result",
+		"sessionsLoadFailed": "Session loading timed out. Click to retry.",
 		"canvas.aiBar.generateWorkflow": "✨ Workflow erstellen",
 		"canvas.aiBar.generateSequentialStepsFromKeywordsReviewInstructionsBefore": "Aufeinanderfolgende Schritte aus Stichwörtern erstellen; Anweisungen vor der Ausführung prüfen",
 		"canvas.aiBar.fromKeywords": "Aus Stichwörtern",
@@ -3433,6 +3434,9 @@
 		"desktop.p2p": "P2P-Direktverbindung",
 		"desktop.devicesUnavailable": "Geräte konnten nicht geladen werden. Prüfe die Verbindung und versuche es erneut.",
 		"desktop.noDevices": "Keine Geräte verfügbar.",
+		"desktop.currentDevice": "Aktuelles Gerät",
+		"desktop.showCurrent": "Desktop dieses Geräts anzeigen",
+		"desktop.currentConnection": "Aktuelle Verbindung wird verwendet",
 		"nativeCliSession.starting": "Starting process",
 		"nativeCliSession.running": "Process running",
 		"nativeCliSession.working": "Working",
@@ -3469,5 +3473,6 @@
 		"nativeCliSession.questionBody": "Open the CLI conversation to respond.",
 		"nativeCliSession.approvalTitle": "CLI needs approval",
 		"nativeCliSession.approvalBody": "Open the CLI conversation to review the approval request."
-	}
+	},
+	"sessionsLoadFailed": "Zeitüberschreitung beim Laden der Sitzungen. Zum Wiederholen klicken."
 }

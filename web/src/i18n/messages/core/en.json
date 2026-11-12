@@ -2663,5 +2663,6 @@
 	"subagentVerdictUnverified": "unverified",
 	"subagentVerdictPartial": "partial",
 	"subagentVerdictBlocked": "blocked",
-	"subagentVerdictHint": "The subagent's completion evidence did not fully match its own transcript: see the completion notice or get_result"
+	"subagentVerdictHint": "The subagent's completion evidence did not fully match its own transcript: see the completion notice or get_result",
+	"sessionsLoadFailed": "Session loading timed out. Click to retry."
 }
