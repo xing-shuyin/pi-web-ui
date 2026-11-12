@@ -139,6 +139,7 @@ export interface HubRelay {
 		deviceId: string,
 		redirect?: boolean,
 		preferLan?: boolean,
+		p2pOffer?: unknown,
 	) => Promise<void>;
 	handleRequest?: (req: IncomingMessage, res: ServerResponse) => boolean;
 	handleAliasOpen?: (req: IncomingMessage, res: ServerResponse, deviceId: string) => Promise<void>;
@@ -3342,6 +3343,7 @@ export async function createDeviceHub(options: DeviceHubOptions) {
 			String(req.params.id),
 			false,
 			users.has(req) && req.body?.preferLan === true,
+			users.has(req) ? req.body?.p2pOffer : undefined,
 		);
 	});
 	app.use((error: Error & { status?: number; code?: string }, _req: Request, res: Response, _next: NextFunction) => {

@@ -1,0 +1,1530 @@
+<!doctype html>
+<html lang="zh-CN">
+	<head>
+		<meta charset="UTF-8" />
+		<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+		<title>TOTP 验证器 · 界面方案 A/B/C/D — pi-web-ui</title>
+		<style>
+			/* ===================== 预览壳（不属于方案本身） ===================== */
+			* {
+				box-sizing: border-box;
+				margin: 0;
+				padding: 0;
+			}
+			:root {
+				--mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+				--sans: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", Roboto, sans-serif;
+			}
+			body {
+				font-family: var(--sans);
+				background: #14161a;
+				color: #e7e9ee;
+				-webkit-font-smoothing: antialiased;
+			}
+			.topbar {
+				position: sticky;
+				top: 0;
+				z-index: 20;
+				display: flex;
+				align-items: center;
+				gap: 18px;
+				flex-wrap: wrap;
+				padding: 12px 24px;
+				background: rgba(16, 18, 22, 0.86);
+				backdrop-filter: blur(18px) saturate(160%);
+				border-bottom: 1px solid rgba(255, 255, 255, 0.07);
+			}
+			.brand {
+				font-size: 13px;
+				font-weight: 650;
+				letter-spacing: 0.01em;
+			}
+			.brand span {
+				color: #8b93a7;
+				font-weight: 500;
+			}
+			.tabs {
+				display: flex;
+				gap: 4px;
+				padding: 3px;
+				background: rgba(255, 255, 255, 0.05);
+				border-radius: 10px;
+			}
+			.tabs button {
+				border: 0;
+				background: transparent;
+				color: #9aa3b6;
+				font: inherit;
+				font-size: 12.5px;
+				cursor: pointer;
+				padding: 5px 11px;
+				border-radius: 7px;
+				transition: 140ms ease;
+				white-space: nowrap;
+			}
+			.tabs button:hover {
+				color: #e7e9ee;
+			}
+			.tabs button.on {
+				background: rgba(255, 255, 255, 0.12);
+				color: #fff;
+			}
+			.tip {
+				margin-left: auto;
+				font-size: 12px;
+				color: #7c8698;
+			}
+			.stage {
+				display: grid;
+				grid-template-columns: repeat(2, minmax(0, 1fr));
+				gap: 34px 30px;
+				padding: 28px;
+				align-items: start;
+				justify-items: center;
+			}
+			@media (max-width: 920px) {
+				.stage {
+					grid-template-columns: minmax(0, 1fr);
+					padding: 16px;
+					gap: 26px;
+				}
+			}
+			.stage[data-view="a"] .wrap:not([data-design="a"]),
+			.stage[data-view="b"] .wrap:not([data-design="b"]),
+			.stage[data-view="c"] .wrap:not([data-design="c"]),
+			.stage[data-view="d"] .wrap:not([data-design="d"]) {
+				display: none;
+			}
+			.stage[data-view="a"],
+			.stage[data-view="b"],
+			.stage[data-view="c"],
+			.stage[data-view="d"] {
+				grid-template-columns: minmax(0, 680px);
+			}
+			.caption {
+				font-size: 12.5px;
+				color: #98a1b3;
+				margin: 0 0 12px;
+				line-height: 1.75;
+			}
+			.caption b {
+				display: block;
+				font-size: 14px;
+				color: #eef0f5;
+				letter-spacing: 0.01em;
+				margin-bottom: 2px;
+			}
+			.caption em {
+				font-style: normal;
+				color: #7c8698;
+			}
+			.toast {
+				position: fixed;
+				left: 50%;
+				bottom: 32px;
+				transform: translate(-50%, 14px);
+				opacity: 0;
+				pointer-events: none;
+				background: rgba(28, 31, 38, 0.96);
+				color: #fff;
+				font-size: 12.5px;
+				padding: 8px 16px;
+				border-radius: 999px;
+				border: 1px solid rgba(255, 255, 255, 0.12);
+				transition: 180ms ease;
+				z-index: 50;
+			}
+			.toast.on {
+				opacity: 1;
+				transform: translate(-50%, 0);
+			}
+
+			/* ---------------- 共用结构（视觉由 .d-* 覆盖） ---------------- */
+			.panel {
+				width: 100%;
+				max-width: 660px;
+				padding: 14px 16px 16px;
+				position: relative;
+			}
+			.p-icon {
+				width: 15px;
+				height: 15px;
+				stroke: currentColor;
+				fill: none;
+				stroke-width: 1.6;
+				stroke-linecap: round;
+				stroke-linejoin: round;
+				flex: none;
+			}
+			.p-head {
+				display: flex;
+				align-items: center;
+				gap: 10px;
+			}
+			.p-title {
+				display: flex;
+				align-items: center;
+				gap: 8px;
+				font-size: 14px;
+				font-weight: 600;
+				letter-spacing: 0.01em;
+				white-space: nowrap;
+			}
+			.p-tools {
+				display: flex;
+				align-items: center;
+				gap: 2px;
+				margin-left: auto;
+			}
+			.p-sep {
+				width: 1px;
+				height: 16px;
+				margin: 0 5px;
+				flex: none;
+			}
+			.ico {
+				position: relative;
+				width: 28px;
+				height: 28px;
+				display: grid;
+				place-items: center;
+				flex: none;
+				border: 0;
+				background: transparent;
+				color: inherit;
+				cursor: pointer;
+				border-radius: 8px;
+				transition:
+					background 140ms ease,
+					color 140ms ease,
+					opacity 140ms ease,
+					border-color 140ms ease;
+			}
+			.ico[disabled] {
+				opacity: 0.3;
+				cursor: default;
+			}
+			.ico:focus-visible {
+				outline: 2px solid currentColor;
+				outline-offset: 1px;
+			}
+			/* 悬浮提示：所有按钮都用 data-tip，不用原生 title，避免双提示 */
+			[data-tip] {
+				position: relative;
+			}
+			[data-tip]::after {
+				content: attr(data-tip);
+				position: absolute;
+				left: 50%;
+				top: calc(100% + 7px);
+				translate: -50% 0;
+				padding: 4px 8px;
+				border-radius: 6px;
+				font: 500 11px/1.35 var(--sans);
+				white-space: nowrap;
+				letter-spacing: 0;
+				background: #1b1e26;
+				color: #f4f6fb;
+				border: 1px solid rgba(255, 255, 255, 0.09);
+				box-shadow: 0 8px 20px -10px rgba(0, 0, 0, 0.7);
+				opacity: 0;
+				pointer-events: none;
+				transition: opacity 120ms ease 70ms;
+				z-index: 30;
+			}
+			[data-tip]:hover::after,
+			[data-tip]:focus-visible::after {
+				opacity: 1;
+			}
+			[data-tip][disabled]:hover::after {
+				opacity: 0;
+			}
+			[data-tip-end]::after {
+				left: auto;
+				right: -4px;
+				translate: 0 0;
+			}
+			.p-list {
+				display: grid;
+			}
+			.p-item {
+				position: relative;
+				cursor: pointer;
+				transition: 160ms ease;
+			}
+			.p-meta {
+				display: flex;
+				align-items: baseline;
+				gap: 8px;
+				min-width: 0;
+			}
+			.p-label {
+				font-size: 13.5px;
+				font-weight: 600;
+				white-space: nowrap;
+				overflow: hidden;
+				text-overflow: ellipsis;
+			}
+			.p-account {
+				font-size: 12px;
+				white-space: nowrap;
+				overflow: hidden;
+				text-overflow: ellipsis;
+			}
+			.p-origin {
+				display: inline-flex;
+				align-items: center;
+				gap: 5px;
+				font-family: var(--mono);
+				font-size: 11px;
+				white-space: nowrap;
+			}
+			.p-origin::before {
+				content: "";
+				width: 5px;
+				height: 5px;
+				border-radius: 50%;
+				background: currentColor;
+				flex: none;
+			}
+			.p-code {
+				font-family: var(--mono);
+				font-variant-numeric: tabular-nums;
+				cursor: pointer;
+				border: 0;
+				background: none;
+				color: inherit;
+				letter-spacing: 0.16em;
+				padding: 0;
+				transition: 140ms ease;
+				text-align: left;
+			}
+			.p-bar {
+				height: 3px;
+				border-radius: 999px;
+				overflow: hidden;
+			}
+			.p-bar > i {
+				display: block;
+				height: 100%;
+				border-radius: 999px;
+				transform-origin: left center;
+				transform: scaleX(var(--p, 1));
+				transition: transform 900ms linear;
+			}
+			.p-badge {
+				font-size: 10.5px;
+				font-weight: 600;
+				letter-spacing: 0.04em;
+				padding: 2px 7px;
+				border-radius: 999px;
+				white-space: nowrap;
+			}
+			.p-editor {
+				display: grid;
+				gap: 10px;
+			}
+			.p-editor[hidden] {
+				display: none;
+			}
+			.p-field {
+				display: grid;
+				gap: 5px;
+			}
+			.p-field > span {
+				font-size: 11.5px;
+			}
+			.p-field input,
+			.p-field textarea {
+				width: 100%;
+				font: inherit;
+				font-size: 13px;
+				color: inherit;
+				font-family: var(--mono);
+				resize: none;
+				padding: 9px 11px;
+				transition: 140ms ease;
+			}
+			.p-field input {
+				font-family: var(--sans);
+			}
+			.p-editor-actions {
+				display: flex;
+				gap: 8px;
+				justify-content: flex-end;
+				margin-top: 2px;
+			}
+			.p-editor-actions button {
+				font: inherit;
+				font-size: 12.5px;
+				font-weight: 550;
+				cursor: pointer;
+				border: 0;
+				padding: 7px 14px;
+				transition: 140ms ease;
+			}
+			.p-ring {
+				--size: 26px;
+				width: var(--size);
+				height: var(--size);
+				border-radius: 50%;
+				display: grid;
+				place-items: center;
+				flex: none;
+				background: conic-gradient(var(--ring-accent) calc(var(--p, 1) * 360deg), var(--ring-track) 0);
+			}
+			.p-ring b {
+				font: 550 9.5px/1 var(--mono);
+				font-variant-numeric: tabular-nums;
+				display: grid;
+				place-items: center;
+				width: calc(var(--size) - 5px);
+				height: calc(var(--size) - 5px);
+				border-radius: 50%;
+				background: var(--ring-hole);
+			}
+
+			/* ========================= A · 极光玻璃（暗） ========================= */
+			.d-a {
+				--ring-accent: #7c86ff;
+				--ring-track: rgba(255, 255, 255, 0.1);
+				--ring-hole: #151824;
+				border-radius: 22px;
+				color: #f2f4fa;
+				background:
+					radial-gradient(120% 130% at 8% -10%, rgba(99, 102, 241, 0.34), transparent 60%),
+					radial-gradient(110% 120% at 100% 0%, rgba(34, 211, 238, 0.18), transparent 55%),
+					linear-gradient(180deg, rgba(24, 27, 38, 0.86), rgba(14, 16, 23, 0.92));
+				border: 1px solid rgba(255, 255, 255, 0.1);
+				box-shadow:
+					0 1px 0 rgba(255, 255, 255, 0.09) inset,
+					0 28px 70px -26px rgba(0, 0, 0, 0.9);
+				backdrop-filter: blur(26px) saturate(160%);
+			}
+			.d-a .p-head {
+				padding: 2px 2px 12px;
+			}
+			.d-a .p-title {
+				color: #f6f7fc;
+			}
+			.d-a .p-title .p-icon {
+				color: #a5b0ff;
+			}
+			.d-a .p-tools {
+				gap: 2px;
+				padding: 3px;
+				background: rgba(255, 255, 255, 0.05);
+				border: 1px solid rgba(255, 255, 255, 0.07);
+				border-radius: 12px;
+			}
+			.d-a .ico {
+				color: #aeb7ca;
+				border-radius: 9px;
+			}
+			.d-a .ico:hover:not([disabled]) {
+				background: rgba(255, 255, 255, 0.1);
+				color: #fff;
+			}
+			.d-a .p-sep {
+				background: rgba(255, 255, 255, 0.1);
+			}
+			.d-a .p-close {
+				color: #8d97ad;
+			}
+			.d-a .p-close:hover {
+				background: rgba(255, 255, 255, 0.09);
+				color: #fff;
+			}
+			.d-a .p-editor {
+				margin: 12px 0 14px;
+				padding: 14px;
+				border-radius: 16px;
+				background: rgba(255, 255, 255, 0.04);
+				border: 1px solid rgba(255, 255, 255, 0.08);
+			}
+			.d-a .p-field > span {
+				color: #96a0b8;
+			}
+			.d-a .p-field input,
+			.d-a .p-field textarea {
+				background: rgba(8, 10, 16, 0.6);
+				border: 1px solid rgba(255, 255, 255, 0.1);
+				border-radius: 10px;
+			}
+			.d-a .p-field input:focus,
+			.d-a .p-field textarea:focus {
+				outline: none;
+				border-color: rgba(124, 134, 255, 0.75);
+				box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.18);
+			}
+			.d-a .p-editor-actions button:first-of-type {
+				background: linear-gradient(135deg, #6366f1, #8b5cf6);
+				color: #fff;
+				border-radius: 9px;
+			}
+			.d-a .p-editor-actions button:last-of-type {
+				background: transparent;
+				color: #aeb7ca;
+			}
+			.d-a .p-editor-actions button:last-of-type:hover {
+				background: rgba(255, 255, 255, 0.07);
+				color: #fff;
+			}
+			.d-a .p-list {
+				display: grid;
+				gap: 10px;
+				margin-top: 2px;
+			}
+			.d-a .p-item {
+				display: grid;
+				gap: 12px;
+				padding: 14px 16px;
+				border-radius: 16px;
+				border: 1px solid rgba(255, 255, 255, 0.07);
+				background: rgba(255, 255, 255, 0.03);
+			}
+			.d-a .p-item:hover {
+				background: rgba(255, 255, 255, 0.055);
+				border-color: rgba(255, 255, 255, 0.13);
+			}
+			.d-a .p-item.selected {
+				border-color: rgba(124, 134, 255, 0.42);
+				background: linear-gradient(180deg, rgba(99, 102, 241, 0.16), rgba(99, 102, 241, 0.05));
+				box-shadow:
+					0 0 0 1px rgba(124, 134, 255, 0.1) inset,
+					0 16px 40px -24px rgba(99, 102, 241, 0.9);
+			}
+			.d-a .p-row {
+				display: flex;
+				align-items: center;
+				justify-content: space-between;
+				gap: 12px;
+			}
+			.d-a .p-label {
+				color: #f4f6fd;
+			}
+			.d-a .p-account {
+				color: #8d97ad;
+			}
+			.d-a .p-origin {
+				color: #8d97ad;
+				background: rgba(255, 255, 255, 0.06);
+				padding: 3px 8px;
+				border-radius: 999px;
+			}
+			.d-a .p-code {
+				font-size: 34px;
+				font-weight: 600;
+				color: #fff;
+				text-shadow: 0 0 22px rgba(124, 134, 255, 0.45);
+			}
+			.d-a .p-code:hover {
+				color: #c9cfff;
+			}
+			.d-a .p-bar {
+				background: rgba(255, 255, 255, 0.09);
+			}
+			.d-a .p-bar > i {
+				background: linear-gradient(90deg, #6366f1, #22d3ee);
+			}
+			.d-a .p-badge {
+				color: #c3caff;
+				background: rgba(124, 134, 255, 0.18);
+			}
+
+			/* ========================= B · 留白编辑（亮） ========================= */
+			.d-b {
+				--ring-accent: #111318;
+				--ring-track: #e6e6e1;
+				--ring-hole: #fdfdfc;
+				background: #fdfdfc;
+				color: #14161a;
+				border-radius: 16px;
+				border: 1px solid #e8e8e3;
+				box-shadow: 0 20px 50px -34px rgba(20, 22, 26, 0.5);
+				padding: 16px 24px 8px;
+			}
+			.d-b .p-head {
+				padding: 2px 0 0;
+			}
+			.d-b .p-title {
+				font-size: 14.5px;
+				letter-spacing: 0.005em;
+			}
+			.d-b .p-tools {
+				gap: 4px;
+			}
+			.d-b .ico {
+				color: #6f6f68;
+				border-radius: 999px;
+			}
+			.d-b .ico:hover:not([disabled]) {
+				background: #f1f1ec;
+				color: #14161a;
+			}
+			.d-b .p-sep {
+				background: #e8e8e3;
+				height: 14px;
+			}
+			.d-b .p-close {
+				color: #14161a;
+			}
+			.d-b .p-editor {
+				margin: 18px 0 10px;
+				gap: 16px;
+			}
+			.d-b .p-field {
+				gap: 7px;
+			}
+			.d-b .p-field > span {
+				font-size: 10.5px;
+				letter-spacing: 0.13em;
+				text-transform: uppercase;
+				color: #8a8a83;
+			}
+			.d-b .p-field input,
+			.d-b .p-field textarea {
+				padding: 7px 0;
+				border: 0;
+				border-bottom: 1px solid #dcdcd6;
+				border-radius: 0;
+				background: transparent;
+			}
+			.d-b .p-field input:focus,
+			.d-b .p-field textarea:focus {
+				outline: none;
+				border-bottom-color: #14161a;
+			}
+			.d-b .p-editor-actions {
+				justify-content: flex-start;
+				gap: 14px;
+				margin-top: 6px;
+			}
+			.d-b .p-editor-actions button {
+				border-radius: 999px;
+				padding: 7px 16px;
+			}
+			.d-b .p-editor-actions button:first-of-type {
+				background: #14161a;
+				color: #fdfdfc;
+			}
+			.d-b .p-editor-actions button:last-of-type {
+				background: transparent;
+				color: #6f6f68;
+				padding: 7px 4px;
+			}
+			.d-b .p-editor-actions button:last-of-type:hover {
+				color: #14161a;
+			}
+			.d-b .p-list {
+				margin-top: 4px;
+			}
+			.d-b .p-item {
+				display: grid;
+				gap: 10px;
+				padding: 18px 0 16px;
+				border-top: 1px solid #ecece7;
+			}
+			.d-b .p-item:first-child {
+				border-top: 0;
+			}
+			.d-b .p-item.selected .p-label {
+				font-weight: 650;
+			}
+			.d-b .p-item.selected .p-label::before {
+				content: "";
+				display: inline-block;
+				width: 6px;
+				height: 6px;
+				border-radius: 50%;
+				background: #14161a;
+				margin-right: 7px;
+				vertical-align: 2px;
+			}
+			.d-b .p-row {
+				display: flex;
+				align-items: flex-end;
+				justify-content: space-between;
+				gap: 14px;
+			}
+			.d-b .p-label {
+				font-size: 13px;
+			}
+			.d-b .p-account {
+				color: #8a8a83;
+				font-size: 11.5px;
+			}
+			.d-b .p-origin {
+				color: #8a8a83;
+				font-size: 10.5px;
+				letter-spacing: 0.04em;
+			}
+			.d-b .p-origin::before {
+				background: #b4b4ac;
+			}
+			.d-b .p-item.selected .p-origin {
+				color: #14161a;
+			}
+			.d-b .p-item.selected .p-origin::before {
+				background: #111318;
+			}
+			.d-b .p-code {
+				font-size: 33px;
+				font-weight: 550;
+				letter-spacing: 0.2em;
+				color: #14161a;
+			}
+			.d-b .p-code:hover {
+				color: #6b6bff;
+			}
+			.d-b .p-bar {
+				display: none;
+			}
+			.d-b .p-badge {
+				color: #14161a;
+				background: #efefa9;
+				letter-spacing: 0.06em;
+			}
+
+			/* ========================= C · 紧凑专业（暗） ========================= */
+			.d-c {
+				--ring-accent: #4ade80;
+				--ring-track: #1c1f26;
+				--ring-hole: #0e1013;
+				background: #0e1013;
+				color: #e8eaf0;
+				border-radius: 12px;
+				border: 1px solid #1e222a;
+				box-shadow: 0 24px 60px -34px rgba(0, 0, 0, 0.95);
+				padding: 10px 12px 12px;
+			}
+			.d-c .p-head {
+				gap: 8px;
+				padding: 2px 2px 9px;
+				border-bottom: 1px solid #1b1f26;
+			}
+			.d-c .p-title {
+				font-size: 13px;
+				letter-spacing: 0.02em;
+			}
+			.d-c .p-title .p-icon {
+				color: #7c8598;
+			}
+			.d-c .p-tools {
+				gap: 1px;
+			}
+			.d-c .ico {
+				width: 26px;
+				height: 26px;
+				border-radius: 6px;
+				color: #98a1b3;
+			}
+			.d-c .ico:hover:not([disabled]) {
+				background: #1b2029;
+				color: #fff;
+			}
+			.d-c .p-sep {
+				height: 14px;
+				background: #242a33;
+				margin: 0 4px;
+			}
+			.d-c .p-editor {
+				margin: 10px 0 8px;
+				padding: 12px;
+				border-radius: 9px;
+				background: #12151a;
+				border: 1px solid #222831;
+				gap: 9px;
+			}
+			.d-c .p-field {
+				gap: 4px;
+			}
+			.d-c .p-field > span {
+				color: #7c8598;
+				font-size: 11px;
+			}
+			.d-c .p-field input,
+			.d-c .p-field textarea {
+				background: #0b0d11;
+				border: 1px solid #252b34;
+				border-radius: 6px;
+				font-size: 12.5px;
+				padding: 7px 9px;
+			}
+			.d-c .p-field input:focus,
+			.d-c .p-field textarea:focus {
+				outline: none;
+				border-color: #4c5566;
+			}
+			.d-c .p-editor-actions button {
+				border-radius: 6px;
+				font-size: 12px;
+				padding: 6px 12px;
+			}
+			.d-c .p-editor-actions button:first-of-type {
+				background: #e8eaf0;
+				color: #0e1013;
+			}
+			.d-c .p-editor-actions button:last-of-type {
+				background: transparent;
+				color: #8b93a7;
+				border: 1px solid #262d37;
+			}
+			.d-c .p-list {
+				margin-top: 6px;
+			}
+			.d-c .p-item {
+				display: grid;
+				grid-template-columns: minmax(0, 1fr) auto;
+				gap: 4px 14px;
+				padding: 10px 10px 10px 12px;
+				border-radius: 8px;
+				border: 1px solid transparent;
+			}
+			.d-c .p-item + .p-item {
+				margin-top: 1px;
+			}
+			.d-c .p-item:hover {
+				background: #11151a;
+				border-color: #1b2028;
+			}
+			.d-c .p-item.selected {
+				background: #12161c;
+				border-color: #232b36;
+				box-shadow: inset 2px 0 0 #6366f1;
+			}
+			.d-c .p-item.selected:hover {
+				background: #13181f;
+				border-color: #262e3a;
+			}
+			.d-c .p-item .p-code {
+				justify-self: end;
+				align-self: center;
+				font-size: 22px;
+				letter-spacing: 0.14em;
+				color: #f2f4f8;
+			}
+			.d-c .p-meta {
+				gap: 7px;
+			}
+			.d-c .p-label {
+				font-size: 12.5px;
+				color: #e4e7ee;
+			}
+			.d-c .p-account {
+				font-size: 11.5px;
+				color: #7c8598;
+			}
+			.d-c .p-origin {
+				color: #7c8598;
+				font-size: 10.5px;
+			}
+			.d-c .p-origin::before {
+				background: #4b5364;
+			}
+			.d-c .p-item.selected .p-origin::before {
+				background: #4ade80;
+				box-shadow: 0 0 6px #4ade80;
+			}
+			.d-c .p-badge {
+				color: #9be8b4;
+				background: rgba(74, 222, 128, 0.12);
+				font-size: 10px;
+				padding: 1px 6px;
+			}
+			.d-c .p-sub-row {
+				display: flex;
+				align-items: center;
+				gap: 10px;
+				min-width: 0;
+			}
+			.d-c .p-bar {
+				width: 46px;
+				height: 2px;
+				border-radius: 0;
+				background: #232a34;
+				flex: none;
+				margin-left: auto;
+			}
+			.d-c .p-bar > i {
+				background: #7c86ff;
+				border-radius: 0;
+			}
+			.d-c .p-item.selected .p-bar > i {
+				background: #4ade80;
+			}
+			.d-c .p-ring {
+				background: none;
+				width: auto;
+				height: auto;
+			}
+			.d-c .p-ring b {
+				background: none;
+				width: auto;
+				height: auto;
+				font: 500 10.5px/1 var(--mono);
+				color: #6f7889;
+			}
+			.d-c .p-item.selected .p-ring b {
+				color: #9be8b4;
+			}
+
+			/* ========================= D · 柔和拟真（亮） ========================= */
+			.d-d {
+				--ring-accent: #7c6cf6;
+				--ring-track: #eceaff;
+				--ring-hole: #ffffff;
+				background: linear-gradient(170deg, #f2efff, #fbf9ff 42%, #eef4ff);
+				color: #1a1b22;
+				border-radius: 26px;
+				border: 1px solid rgba(124, 108, 246, 0.18);
+				box-shadow:
+					0 30px 70px -34px rgba(80, 66, 180, 0.55),
+					0 2px 0 #fff inset;
+				padding: 16px 16px 16px;
+			}
+			.d-d .p-head {
+				gap: 8px;
+				padding: 2px 4px 12px;
+			}
+			.d-d .p-title {
+				font-size: 15px;
+				letter-spacing: 0.005em;
+			}
+			.d-d .p-title .p-icon {
+				color: #7c6cf6;
+			}
+			.d-d .p-tools {
+				gap: 2px;
+				padding: 4px;
+				background: #f1eff9;
+				border-radius: 14px;
+			}
+			.d-d .ico {
+				color: #6a6880;
+				border-radius: 10px;
+			}
+			.d-d .ico:hover:not([disabled]) {
+				background: #fff;
+				color: #2a2a3d;
+				box-shadow: 0 2px 8px -3px rgba(80, 66, 180, 0.35);
+			}
+			.d-d .p-sep {
+				background: #ded9f2;
+			}
+			.d-d .p-close {
+				background: #f2f0ff;
+				border-radius: 50%;
+			}
+			.d-d .p-close:hover {
+				background: #e8e4ff;
+			}
+			.d-d .p-editor {
+				margin: 12px 0;
+				padding: 14px;
+				border-radius: 16px;
+				background: #fff;
+				box-shadow: 0 8px 24px -14px rgba(80, 66, 180, 0.4);
+				border: 1px solid #efecff;
+				gap: 11px;
+			}
+			.d-d .p-field > span {
+				color: #6a6880;
+				font-size: 11.5px;
+			}
+			.d-d .p-field input,
+			.d-d .p-field textarea {
+				background: #f8f7fe;
+				border: 1px solid #e9e5ff;
+				border-radius: 11px;
+			}
+			.d-d .p-field input:focus,
+			.d-d .p-field textarea:focus {
+				outline: none;
+				border-color: #b9adff;
+				background: #fff;
+				box-shadow: 0 0 0 3px rgba(124, 108, 246, 0.14);
+			}
+			.d-d .p-editor-actions button {
+				border-radius: 10px;
+				padding: 7px 16px;
+			}
+			.d-d .p-editor-actions button:first-of-type {
+				background: linear-gradient(135deg, #8b7bff, #6d5df0);
+				color: #fff;
+				box-shadow: 0 8px 18px -10px rgba(109, 93, 240, 0.9);
+			}
+			.d-d .p-editor-actions button:last-of-type {
+				background: #f2f0fb;
+				color: #6a6880;
+			}
+			.d-d .p-list {
+				display: grid;
+				gap: 10px;
+			}
+			.d-d .p-item {
+				display: grid;
+				gap: 12px;
+				padding: 14px 16px;
+				border-radius: 18px;
+				background: #fff;
+				border: 1px solid #f0eefb;
+				box-shadow: 0 8px 22px -18px rgba(80, 66, 180, 0.6);
+			}
+			.d-d .p-item:hover {
+				box-shadow: 0 14px 30px -20px rgba(80, 66, 180, 0.7);
+				transform: translateY(-1px);
+			}
+			.d-d .p-item.selected {
+				border-color: rgba(124, 108, 246, 0.42);
+				background: linear-gradient(175deg, #f8f5ff, #ffffff 55%);
+				box-shadow:
+					0 14px 30px -20px rgba(80, 66, 180, 0.75),
+					0 0 0 1px rgba(124, 108, 246, 0.12);
+			}
+			.d-d .p-row {
+				display: flex;
+				align-items: flex-start;
+				justify-content: space-between;
+				gap: 12px;
+			}
+			.d-d .p-label {
+				font-size: 13.5px;
+				color: #23212e;
+			}
+			.d-d .p-account {
+				color: #8b89a0;
+				font-size: 11.5px;
+			}
+			.d-d .p-origin {
+				color: #8b89a0;
+				font-size: 10.5px;
+			}
+			.d-d .p-origin::before {
+				background: #c3c0d6;
+			}
+			.d-d .p-item.selected .p-origin::before {
+				background: #7c6cf6;
+			}
+			.d-d .p-code {
+				font-size: 32px;
+				font-weight: 600;
+				letter-spacing: 0.2em;
+				color: #1a1b22;
+			}
+			.d-d .p-code:hover {
+				color: #6d5df0;
+			}
+			.d-d .p-bar {
+				background: #efedfb;
+				height: 4px;
+			}
+			.d-d .p-bar > i {
+				background: linear-gradient(90deg, #8b7bff, #56c8ff);
+			}
+			.d-d .p-badge {
+				color: #6d5df0;
+				background: #efeaff;
+			}
+		</style>
+	</head>
+	<body>
+		<svg width="0" height="0" style="position: absolute" aria-hidden="true">
+			<symbol id="i-key" viewBox="0 0 24 24">
+				<path d="M15.5 9.5a3.6 3.6 0 1 1-5.1-3.3" />
+				<path
+					d="M14.4 8.6 8.2 14.8a1.9 1.9 0 0 0-.55 1.1l-.13 1.4a1 1 0 0 0 1.1 1.1l1.4-.13a1.9 1.9 0 0 0 1.1-.55l6.2-6.2"
+				/>
+			</symbol>
+			<symbol id="i-scan" viewBox="0 0 24 24">
+				<path
+					d="M4 9V6a2 2 0 0 1 2-2h3M15 4h3a2 2 0 0 1 2 2v3M20 15v3a2 2 0 0 1-2 2h-3M9 20H6a2 2 0 0 1-2-2v-3M3.5 12h17"
+				/>
+			</symbol>
+			<symbol id="i-image" viewBox="0 0 24 24">
+				<rect x="3" y="4" width="18" height="16" rx="2.5" />
+				<circle cx="8.5" cy="9.5" r="1.6" />
+				<path d="M4 17l4.6-4.2a1.6 1.6 0 0 1 2.1 0L16 18" />
+			</symbol>
+			<symbol id="i-plus" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14" /></symbol>
+			<symbol id="i-x" viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18" /></symbol>
+			<symbol id="i-up" viewBox="0 0 24 24"><path d="M12 19V5M6 11l6-6 6 6" /></symbol>
+			<symbol id="i-down" viewBox="0 0 24 24"><path d="M12 5v14M6 13l6 6 6-6" /></symbol>
+			<symbol id="i-fill" viewBox="0 0 24 24"><path d="M4 12h11M11 7l5 5-5 5M19 5v14" /></symbol>
+			<symbol id="i-export" viewBox="0 0 24 24">
+				<path d="M12 15V4M8 7.5 12 3.5l4 4M5 14v4.5A1.5 1.5 0 0 0 6.5 20h11a1.5 1.5 0 0 0 1.5-1.5V14" />
+			</symbol>
+			<symbol id="i-trash" viewBox="0 0 24 24">
+				<path
+					d="M4 7h16M9.5 7V5.5A1.5 1.5 0 0 1 11 4h2a1.5 1.5 0 0 1 1.5 1.5V7M6.5 7l.8 12a1.6 1.6 0 0 0 1.6 1.5h6.2a1.6 1.6 0 0 0 1.6-1.5l.8-12"
+				/>
+			</symbol>
+		</svg>
+
+		<header class="topbar">
+			<div class="brand">TOTP 验证器 · 界面方案 <span>A / B / C / D</span></div>
+			<nav class="tabs" id="tabs">
+				<button data-view="all" class="on">全部对比</button>
+				<button data-view="a">A 极光玻璃</button>
+				<button data-view="b">B 留白编辑</button>
+				<button data-view="c">C 紧凑专业</button>
+				<button data-view="d">D 柔和拟真</button>
+			</nav>
+			<div class="tip">工具全部收进顶部一行、纯图标、悬浮出名字 · 点条目选中后再用右侧图标操作 · 点验证码复制</div>
+		</header>
+
+		<main class="stage" id="stage" data-view="all">
+			<!-- ============================ A · 极光玻璃 ============================ -->
+			<section class="wrap" data-design="a">
+				<p class="caption">
+					<b>A · 极光玻璃（Aurora Glass）</b>
+					暗色毛玻璃 +
+					极光渐变，九个图标挤进一条玻璃工具栏，三个「新增」与五个「对选中条目操作」用一道细线分开。悬浮即出名字。
+					<em>最贴合当前暗色壳，改动量最小。</em>
+				</p>
+				<div class="panel d-a">
+					<header class="p-head">
+						<div class="p-title">
+							<svg class="p-icon"><use href="#i-key" /></svg>TOTP 验证器
+						</div>
+						<div class="p-tools">
+							<button class="ico" data-tip="扫码当前网页" aria-label="扫码当前网页">
+								<svg class="p-icon"><use href="#i-scan" /></svg>
+							</button>
+							<button class="ico" data-tip="导入二维码图片" aria-label="导入二维码图片">
+								<svg class="p-icon"><use href="#i-image" /></svg>
+							</button>
+							<button class="ico" data-tip="添加凭据" aria-label="添加凭据" data-toggle="editor">
+								<svg class="p-icon"><use href="#i-plus" /></svg>
+							</button>
+							<span class="p-sep"></span>
+							<button class="ico act" data-tip="填入当前网页" aria-label="填入当前网页" data-act="填入">
+								<svg class="p-icon"><use href="#i-fill" /></svg>
+							</button>
+							<button class="ico act" data-tip="导出此条" aria-label="导出此条" data-act="导出">
+								<svg class="p-icon"><use href="#i-export" /></svg>
+							</button>
+							<button class="ico act" data-tip="上移" aria-label="上移" data-act="上移">
+								<svg class="p-icon"><use href="#i-up" /></svg>
+							</button>
+							<button class="ico act" data-tip="下移" aria-label="下移" data-act="下移">
+								<svg class="p-icon"><use href="#i-down" /></svg>
+							</button>
+							<button class="ico act" data-tip="删除此条" aria-label="删除此条" data-act="删除">
+								<svg class="p-icon"><use href="#i-trash" /></svg>
+							</button>
+						</div>
+						<button class="ico p-close" data-tip="关闭" data-tip-end aria-label="关闭">
+							<svg class="p-icon"><use href="#i-x" /></svg>
+						</button>
+					</header>
+					<form class="p-editor" hidden>
+						<label class="p-field"
+							><span>otpauth:// 链接</span
+							><textarea rows="2" spellcheck="false">
+otpauth://totp/Pi%20Web%20Demo:demo@pi-web-ui.local?secret=JBSWY3DPEHPK3PXP</textarea>
+						</label>
+						<label class="p-field"><span>名称</span><input value="深爱的" /></label>
+						<label class="p-field"><span>绑定站点</span><input value="http://127.0.0.1:8791" /></label>
+						<div class="p-editor-actions">
+							<button type="button">添加</button><button type="button" data-toggle="editor">取消</button>
+						</div>
+					</form>
+					<div class="p-list">
+						<article class="p-item selected">
+							<div class="p-row">
+								<div class="p-meta">
+									<span class="p-label">深爱的</span><span class="p-account">Pi Web Demo · demo@pi-web-ui.local</span
+									><span class="p-badge">当前站点</span>
+								</div>
+								<span class="p-origin">127.0.0.1:8791</span>
+							</div>
+							<div class="p-row">
+								<button class="p-code" data-copy data-seed="7">023438</button>
+								<span class="p-ring" data-progress><b data-secs>30</b></span>
+							</div>
+							<div class="p-bar" data-progress><i></i></div>
+						</article>
+						<article class="p-item">
+							<div class="p-row">
+								<div class="p-meta">
+									<span class="p-label">工作邮箱</span><span class="p-account">Google · me@example.com</span>
+								</div>
+								<span class="p-origin">github.com</span>
+							</div>
+							<div class="p-row">
+								<button class="p-code" data-copy data-seed="31">512907</button>
+								<span class="p-ring" data-progress><b data-secs>30</b></span>
+							</div>
+							<div class="p-bar" data-progress><i></i></div>
+						</article>
+						<article class="p-item">
+							<div class="p-row">
+								<div class="p-meta"><span class="p-label">Steam</span><span class="p-account">Valve · st_77</span></div>
+								<span class="p-origin">store.steampowered.com</span>
+							</div>
+							<div class="p-row">
+								<button class="p-code" data-copy data-seed="53">884102</button>
+								<span class="p-ring" data-progress><b data-secs>30</b></span>
+							</div>
+							<div class="p-bar" data-progress><i></i></div>
+						</article>
+					</div>
+				</div>
+			</section>
+
+			<!-- ============================ B · 留白编辑 ============================ -->
+			<section class="wrap" data-design="b">
+				<p class="caption">
+					<b>B · 留白编辑（Editorial Light）</b>
+					图标没有底板，只靠字重与留白分层；选中条目用前置实心圆点 + 加粗标记，工具栏仍是顶部一行。
+					<em>最安静：没有边框、没有色块，一眼只看到数字。</em>
+				</p>
+				<div class="panel d-b">
+					<header class="p-head">
+						<div class="p-title">
+							<svg class="p-icon"><use href="#i-key" /></svg>TOTP 验证器
+						</div>
+						<div class="p-tools">
+							<button class="ico" data-tip="扫码当前网页" aria-label="扫码当前网页">
+								<svg class="p-icon"><use href="#i-scan" /></svg>
+							</button>
+							<button class="ico" data-tip="导入二维码图片" aria-label="导入二维码图片">
+								<svg class="p-icon"><use href="#i-image" /></svg>
+							</button>
+							<button class="ico" data-tip="手工添加" aria-label="手工添加" data-toggle="editor">
+								<svg class="p-icon"><use href="#i-plus" /></svg>
+							</button>
+							<span class="p-sep"></span>
+							<button class="ico act" data-tip="填入当前网页" aria-label="填入当前网页" data-act="填入">
+								<svg class="p-icon"><use href="#i-fill" /></svg>
+							</button>
+							<button class="ico act" data-tip="导出此条" aria-label="导出此条" data-act="导出">
+								<svg class="p-icon"><use href="#i-export" /></svg>
+							</button>
+							<button class="ico act" data-tip="上移" aria-label="上移" data-act="上移">
+								<svg class="p-icon"><use href="#i-up" /></svg>
+							</button>
+							<button class="ico act" data-tip="下移" aria-label="下移" data-act="下移">
+								<svg class="p-icon"><use href="#i-down" /></svg>
+							</button>
+							<button class="ico act" data-tip="删除此条" aria-label="删除此条" data-act="删除">
+								<svg class="p-icon"><use href="#i-trash" /></svg>
+							</button>
+						</div>
+						<button class="ico p-close" data-tip="关闭" data-tip-end aria-label="关闭">
+							<svg class="p-icon"><use href="#i-x" /></svg>
+						</button>
+					</header>
+					<form class="p-editor" hidden>
+						<label class="p-field"
+							><span>otpauth:// 链接</span
+							><textarea rows="2" spellcheck="false">
+otpauth://totp/Pi%20Web%20Demo:demo@pi-web-ui.local?secret=JBSWY3DPEHPK3PXP</textarea>
+						</label>
+						<label class="p-field"><span>名称</span><input value="深爱的" /></label>
+						<label class="p-field"><span>绑定站点</span><input value="http://127.0.0.1:8791" /></label>
+						<div class="p-editor-actions">
+							<button type="button">添加凭据</button><button type="button" data-toggle="editor">取消</button>
+						</div>
+					</form>
+					<div class="p-list">
+						<article class="p-item selected">
+							<div class="p-row">
+								<div class="p-meta">
+									<span class="p-label">深爱的</span><span class="p-account">Pi Web Demo · demo@pi-web-ui.local</span
+									><span class="p-badge">当前站点</span>
+								</div>
+								<span class="p-origin">127.0.0.1:8791</span>
+							</div>
+							<div class="p-row">
+								<button class="p-code" data-copy data-seed="7">023438</button>
+								<span class="p-ring" data-progress><b data-secs>30</b></span>
+							</div>
+							<div class="p-bar" data-progress><i></i></div>
+						</article>
+						<article class="p-item">
+							<div class="p-row">
+								<div class="p-meta">
+									<span class="p-label">工作邮箱</span><span class="p-account">Google · me@example.com</span>
+								</div>
+								<span class="p-origin">github.com</span>
+							</div>
+							<div class="p-row">
+								<button class="p-code" data-copy data-seed="31">512907</button>
+								<span class="p-ring" data-progress><b data-secs>30</b></span>
+							</div>
+							<div class="p-bar" data-progress><i></i></div>
+						</article>
+					</div>
+				</div>
+			</section>
+
+			<!-- ============================ C · 紧凑专业 ============================ -->
+			<section class="wrap" data-design="c">
+				<p class="caption">
+					<b>C · 紧凑专业（Compact Pro）</b>
+					26px 图标、1px 分隔线，顶部一行装完九个动作；条目压成两行，码右对齐，选中行只留一条 2px 左线 + 绿点。
+					<em>凭据多、面板窄时最省地方。</em>
+				</p>
+				<div class="panel d-c">
+					<header class="p-head">
+						<div class="p-title">
+							<svg class="p-icon"><use href="#i-key" /></svg>TOTP 验证器
+						</div>
+						<div class="p-tools">
+							<button class="ico" data-tip="扫码当前网页" aria-label="扫码当前网页">
+								<svg class="p-icon"><use href="#i-scan" /></svg>
+							</button>
+							<button class="ico" data-tip="导入二维码图片" aria-label="导入二维码图片">
+								<svg class="p-icon"><use href="#i-image" /></svg>
+							</button>
+							<button class="ico" data-tip="添加凭据" aria-label="添加凭据" data-toggle="editor">
+								<svg class="p-icon"><use href="#i-plus" /></svg>
+							</button>
+							<span class="p-sep"></span>
+							<button class="ico act" data-tip="填入当前网页" aria-label="填入当前网页" data-act="填入">
+								<svg class="p-icon"><use href="#i-fill" /></svg>
+							</button>
+							<button class="ico act" data-tip="导出此条" aria-label="导出此条" data-act="导出">
+								<svg class="p-icon"><use href="#i-export" /></svg>
+							</button>
+							<button class="ico act" data-tip="上移" aria-label="上移" data-act="上移">
+								<svg class="p-icon"><use href="#i-up" /></svg>
+							</button>
+							<button class="ico act" data-tip="下移" aria-label="下移" data-act="下移">
+								<svg class="p-icon"><use href="#i-down" /></svg>
+							</button>
+							<button class="ico act" data-tip="删除此条" aria-label="删除此条" data-act="删除">
+								<svg class="p-icon"><use href="#i-trash" /></svg>
+							</button>
+						</div>
+						<button class="ico p-close" data-tip="关闭" data-tip-end aria-label="关闭">
+							<svg class="p-icon"><use href="#i-x" /></svg>
+						</button>
+					</header>
+					<form class="p-editor" hidden>
+						<label class="p-field"
+							><span>otpauth:// 链接</span
+							><textarea rows="2" spellcheck="false">
+otpauth://totp/Pi%20Web%20Demo:demo@pi-web-ui.local?secret=JBSWY3DPEHPK3PXP</textarea>
+						</label>
+						<label class="p-field"><span>名称</span><input value="深爱的" /></label>
+						<label class="p-field"><span>绑定站点</span><input value="http://127.0.0.1:8791" /></label>
+						<div class="p-editor-actions">
+							<button type="button">添加</button><button type="button" data-toggle="editor">取消</button>
+						</div>
+					</form>
+					<div class="p-list">
+						<article class="p-item selected">
+							<div class="p-meta"><span class="p-label">深爱的</span><span class="p-badge">当前站点</span></div>
+							<button class="p-code" data-copy data-seed="7">023438</button>
+							<div class="p-sub-row">
+								<span class="p-account">Pi Web Demo · demo@pi-web-ui.local</span>
+								<span class="p-origin">127.0.0.1:8791</span>
+								<span class="p-bar" data-progress><i></i></span>
+								<span class="p-ring" data-progress><b data-secs>30</b></span>
+							</div>
+						</article>
+						<article class="p-item">
+							<div class="p-meta"><span class="p-label">工作邮箱</span></div>
+							<button class="p-code" data-copy data-seed="31">512907</button>
+							<div class="p-sub-row">
+								<span class="p-account">Google · me@example.com</span>
+								<span class="p-origin">github.com</span>
+								<span class="p-bar" data-progress><i></i></span>
+								<span class="p-ring" data-progress><b data-secs>30</b></span>
+							</div>
+						</article>
+						<article class="p-item">
+							<div class="p-meta"><span class="p-label">Steam</span></div>
+							<button class="p-code" data-copy data-seed="53">884102</button>
+							<div class="p-sub-row">
+								<span class="p-account">Valve · st_77</span>
+								<span class="p-origin">store.steampowered.com</span>
+								<span class="p-bar" data-progress><i></i></span>
+								<span class="p-ring" data-progress><b data-secs>30</b></span>
+							</div>
+						</article>
+					</div>
+				</div>
+			</section>
+
+			<!-- ============================ D · 柔和拟真 ============================ -->
+			<section class="wrap" data-design="d">
+				<p class="caption">
+					<b>D · 柔和拟真（Soft Tactile）</b>
+					图标装进一枚淡紫软轨道，悬浮时浮起白色小方片；卡片大圆角、紫调柔光，主操作也变成图标后整块更「轻」。
+					<em>手机与触屏观感最好，接近 iOS 工具条。</em>
+				</p>
+				<div class="panel d-d">
+					<header class="p-head">
+						<div class="p-title">
+							<svg class="p-icon"><use href="#i-key" /></svg>TOTP 验证器
+						</div>
+						<div class="p-tools">
+							<button class="ico" data-tip="扫码当前网页" aria-label="扫码当前网页">
+								<svg class="p-icon"><use href="#i-scan" /></svg>
+							</button>
+							<button class="ico" data-tip="导入图片" aria-label="导入图片">
+								<svg class="p-icon"><use href="#i-image" /></svg>
+							</button>
+							<button class="ico" data-tip="添加凭据" aria-label="添加凭据" data-toggle="editor">
+								<svg class="p-icon"><use href="#i-plus" /></svg>
+							</button>
+							<span class="p-sep"></span>
+							<button class="ico act" data-tip="填入当前网页" aria-label="填入当前网页" data-act="填入">
+								<svg class="p-icon"><use href="#i-fill" /></svg>
+							</button>
+							<button class="ico act" data-tip="导出此条" aria-label="导出此条" data-act="导出">
+								<svg class="p-icon"><use href="#i-export" /></svg>
+							</button>
+							<button class="ico act" data-tip="上移" aria-label="上移" data-act="上移">
+								<svg class="p-icon"><use href="#i-up" /></svg>
+							</button>
+							<button class="ico act" data-tip="下移" aria-label="下移" data-act="下移">
+								<svg class="p-icon"><use href="#i-down" /></svg>
+							</button>
+							<button class="ico act" data-tip="删除此条" aria-label="删除此条" data-act="删除">
+								<svg class="p-icon"><use href="#i-trash" /></svg>
+							</button>
+						</div>
+						<button class="ico p-close" data-tip="关闭" data-tip-end aria-label="关闭">
+							<svg class="p-icon"><use href="#i-x" /></svg>
+						</button>
+					</header>
+					<form class="p-editor" hidden>
+						<label class="p-field"
+							><span>otpauth:// 链接</span
+							><textarea rows="2" spellcheck="false">
+otpauth://totp/Pi%20Web%20Demo:demo@pi-web-ui.local?secret=JBSWY3DPEHPK3PXP</textarea>
+						</label>
+						<label class="p-field"><span>名称</span><input value="深爱的" /></label>
+						<label class="p-field"><span>绑定站点</span><input value="http://127.0.0.1:8791" /></label>
+						<div class="p-editor-actions">
+							<button type="button">添加</button><button type="button" data-toggle="editor">取消</button>
+						</div>
+					</form>
+					<div class="p-list">
+						<article class="p-item selected">
+							<div class="p-row">
+								<div class="p-meta">
+									<span class="p-label">深爱的</span><span class="p-account">Pi Web Demo · demo@pi-web-ui.local</span
+									><span class="p-badge">当前站点</span>
+								</div>
+								<span class="p-ring" data-progress style="--size: 30px"><b data-secs>30</b></span>
+							</div>
+							<button class="p-code" data-copy data-seed="7">023438</button>
+							<div class="p-bar" data-progress><i></i></div>
+						</article>
+						<article class="p-item">
+							<div class="p-row">
+								<div class="p-meta">
+									<span class="p-label">工作邮箱</span><span class="p-account">Google · me@example.com</span>
+								</div>
+								<span class="p-origin">github.com</span>
+							</div>
+							<button class="p-code" data-copy data-seed="31">512907</button>
+							<div class="p-bar" data-progress><i></i></div>
+						</article>
+					</div>
+				</div>
+			</section>
+		</main>
+
+		<div class="toast" id="toast">已复制</div>
+
+		<script>
+			/* ---- 方案切换 ---- */
+			const stage = document.getElementById("stage");
+			const tabs = document.getElementById("tabs");
+			tabs.addEventListener("click", (event) => {
+				const button = event.target.closest("button[data-view]");
+				if (!button) return;
+				stage.dataset.view = button.dataset.view;
+				for (const item of tabs.children) item.classList.toggle("on", item === button);
+			});
+
+			/* ---- 添加表单展开 / 收起 ---- */
+			document.addEventListener("click", (event) => {
+				const toggle = event.target.closest("[data-toggle='editor']");
+				if (!toggle) return;
+				const panel = toggle.closest(".panel");
+				const editor = panel.querySelector(".p-editor");
+				editor.hidden = !editor.hidden;
+				if (!editor.hidden) editor.querySelector("textarea, input")?.focus();
+			});
+
+			/* ---- 复制验证码 ---- */
+			const toast = document.getElementById("toast");
+			let toastTimer = 0;
+			const notify = (text) => {
+				toast.textContent = text;
+				toast.classList.add("on");
+				clearTimeout(toastTimer);
+				toastTimer = setTimeout(() => toast.classList.remove("on"), 1500);
+			};
+			document.addEventListener("click", async (event) => {
+				const code = event.target.closest("[data-copy]");
+				if (!code) return;
+				event.stopPropagation();
+				const text = code.textContent.trim();
+				try {
+					await navigator.clipboard.writeText(text);
+				} catch {
+					/* file:// 下没有剪贴板权限，仍然给反馈 */
+				}
+				notify("已复制 " + text);
+			});
+
+			/* ---- 选中条目：顶部图标作用于选中项，未选中时动作图标置灰 ---- */
+			const syncActions = (panel) => {
+				const selected = panel.querySelector(".p-item.selected");
+				for (const button of panel.querySelectorAll("[data-act]")) button.disabled = !selected;
+			};
+			for (const panel of document.querySelectorAll(".panel")) syncActions(panel);
+
+			document.addEventListener("click", (event) => {
+				const item = event.target.closest(".p-item");
+				if (item) {
+					const panel = item.closest(".panel");
+					for (const other of panel.querySelectorAll(".p-item")) other.classList.toggle("selected", other === item);
+					syncActions(panel);
+					return;
+				}
+				const action = event.target.closest("[data-act]");
+				if (!action) return;
+				const panel = action.closest(".panel");
+				const selected = panel.querySelector(".p-item.selected");
+				if (!selected) return;
+				const label = selected.querySelector(".p-label").textContent.trim();
+				notify(`${action.dataset.act}「${label}」`);
+			});
+
+			/* ---- 倒计时：每 200ms 刷新环形 / 细线 / 剩余秒数 ---- */
+			const PERIOD = 30_000;
+			const shown = new Map();
+			const randomCode = (seed, counter) => String((seed * 7919 + counter * 104729) % 1_000_000).padStart(6, "0");
+
+			function tick() {
+				const now = Date.now();
+				const remaining = PERIOD - (now % PERIOD);
+				const progress = remaining / PERIOD;
+				const counter = Math.floor(now / PERIOD);
+				for (const node of document.querySelectorAll("[data-progress]"))
+					node.style.setProperty("--p", progress.toFixed(4));
+				for (const node of document.querySelectorAll("[data-secs]"))
+					node.textContent = String(Math.ceil(remaining / 1000));
+				for (const node of document.querySelectorAll("[data-seed]")) {
+					const code = randomCode(Number(node.dataset.seed), counter);
+					if (shown.get(node) !== code) {
+						shown.set(node, code);
+						node.textContent = code;
+					}
+				}
+			}
+			tick();
+			setInterval(tick, 200);
+		</script>
+	</body>
+</html>

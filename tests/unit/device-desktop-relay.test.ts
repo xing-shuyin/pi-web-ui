@@ -242,6 +242,17 @@ describe("desktop page macOS permission guidance", () => {
 });
 
 describe("native desktop through device relay and connector", () => {
+	it("serves preview JPEGs through the authenticated Hub and connector without enabling input", async () => {
+		const f = await fixture();
+		const response = request(f.port, f.host, "/api/device-desktop/preview", { cookie: f.cookie });
+		await vi.waitFor(() => expect(f.sessions).toHaveLength(1));
+		expect(f.sessions[0].options).toMatchObject({ readOnly: true, preview: true });
+		f.sessions[0].options.onFrame(jpeg);
+		const result = await response;
+		expect(result.status).toBe(200);
+		expect(result.headers["content-type"]).toContain("image/jpeg");
+		expect(f.sessions[0].input).not.toHaveBeenCalled();
+	});
 	it.skipIf(!CHROME_PATH)(
 		"keeps native control connected when browser pointer movement has button=-1",
 		async () => {
@@ -286,8 +297,9 @@ describe("native desktop through device relay and connector", () => {
 				await page.setViewportSize(viewport);
 				const toolbar = await page.locator("#toolbar").boundingBox();
 				const screen = await page.locator("#screen").boundingBox();
-				expect(toolbar!.height).toBeLessThanOrEqual(48);
-				expect(screen!.height).toBeGreaterThanOrEqual(viewport.height - 48);
+				const maxToolbarHeight = viewport.width <= 700 ? 72 : 48;
+				expect(toolbar!.height).toBeLessThanOrEqual(maxToolbarHeight);
+				expect(screen!.height).toBeGreaterThanOrEqual(viewport.height - maxToolbarHeight);
 			}
 			await page.locator("#viewonly").check();
 			await vi.waitFor(() => expect(f.sessions).toHaveLength(2));
@@ -326,14 +338,16 @@ describe("native desktop through device relay and connector", () => {
 		expect(messages.find((message) => message.binary)!.data).toEqual(jpeg);
 		expect(
 			messages.filter((message) => !message.binary).map((message) => JSON.parse(message.data.toString())),
-		).toContainEqual({ type: "ready" });
-		session.options.onFrame(Buffer.from("must drop until ACK"));
+		).toContainEqual({ type: "ready", dynamicQuality: false });
+		session.options.onFrame(jpeg);
+		await vi.waitFor(() => expect(messages.filter((message) => message.binary)).toHaveLength(2));
+		session.options.onFrame(Buffer.from("superseded while both frames await ACK"));
+		session.options.onFrame(jpeg);
 		ws.send(JSON.stringify({ type: "ack" }));
 		await vi.waitFor(() => {
-			session.options.onFrame(jpeg);
-			expect(messages.filter((message) => message.binary)).toHaveLength(2);
+			expect(messages.filter((message) => message.binary)).toHaveLength(3);
 		});
-		expect(messages.filter((message) => message.binary).map((message) => message.data)).toEqual([jpeg, jpeg]);
+		expect(messages.filter((message) => message.binary).map((message) => message.data)).toEqual([jpeg, jpeg, jpeg]);
 		expect(session.input).not.toHaveBeenCalled();
 		const closed = once(ws, "close");
 		ws.close();

@@ -1,4 +1,5 @@
 import { EventEmitter } from "node:events";
+import { createHash } from "node:crypto";
 import { PassThrough, Writable } from "node:stream";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -9,6 +10,7 @@ const mocks = vi.hoisted(() => ({
 	exists: vi.fn(),
 	write: vi.fn(),
 	remove: vi.fn(),
+	read: vi.fn(),
 }));
 vi.mock("node:child_process", () => ({ spawn: mocks.spawn, execFileSync: mocks.exec }));
 vi.mock("node:os", async (original) => ({ ...(await original<typeof import("node:os")>()), release: mocks.release }));
@@ -17,6 +19,7 @@ vi.mock("node:fs", () => ({
 	mkdtempSync: () => "/tmp/native-test",
 	writeFileSync: mocks.write,
 	rm: mocks.remove,
+	readFileSync: mocks.read,
 }));
 import {
 	nativeDesktopStatus,
@@ -53,9 +56,10 @@ function options(readOnly?: boolean) {
 beforeEach(() => {
 	vi.useFakeTimers();
 	vi.spyOn(process, "platform", "get").mockReturnValue("win32");
-	mocks.exists.mockReturnValue(true);
+	mocks.exists.mockImplementation((path: string) => !path.endsWith("PiDesktopService.exe"));
 	mocks.release.mockReturnValue("23.0.0");
 	mocks.exec.mockReset();
+	mocks.read.mockReset();
 });
 afterEach(() => {
 	vi.useRealTimers();
@@ -64,6 +68,56 @@ afterEach(() => {
 });
 
 describe("native desktop lifecycle and framed capture", () => {
+	it("waits for the selected monitor, accepts bounded metadata without JPEG ACKs and keeps idle streams alive", () => {
+		const { child, writes } = processFixture(),
+			onDisplays = vi.fn();
+		const opts = { ...options(true), display: "secondary", onDisplays };
+		const session = startNativeDesktop(opts);
+		expect(writes.map((line) => JSON.parse(line))).toEqual([
+			{ type: "displays" },
+			{ type: "display", id: "secondary" },
+		]);
+		const displays = [
+			{ id: "primary", width: 1920, height: 1080, primary: true },
+			{ id: "secondary", width: 2560, height: 1440, primary: false },
+		];
+		child.stdout.write(packet(Buffer.from(JSON.stringify({ type: "displays", displays, selected: "primary" }))));
+		child.stdout.write(packet());
+		expect(opts.onFrame).not.toHaveBeenCalled();
+		child.stdout.write(packet(Buffer.from(JSON.stringify({ type: "displays", displays, selected: "secondary" }))));
+		child.stdout.write(packet());
+		expect(opts.onFrame).toHaveBeenCalledOnce();
+		expect(writes.filter((line) => JSON.parse(line).type === "ack")).toHaveLength(2);
+		vi.advanceTimersByTime(40_000);
+		child.stdout.write(packet(Buffer.from(JSON.stringify({ type: "displays", displays, selected: "secondary" }))));
+		vi.advanceTimersByTime(10_000);
+		expect(opts.onError).not.toHaveBeenCalled();
+		expect(onDisplays).toHaveBeenCalledTimes(3);
+		session.close();
+		child.emit("close", 0);
+	});
+	it("uses the protected installed service for capture without creating an elevated script", () => {
+		mocks.exists.mockReturnValue(true);
+		const { child, writes } = processFixture();
+		expect(nativeDesktopStatus().backend).toBe("windows-system-desktop");
+		const session = startNativeDesktop({ ...options(false), preview: true });
+		expect(mocks.spawn.mock.calls[0][0]).toContain("PiDesktopService.exe");
+		expect(mocks.spawn.mock.calls[0][1]).toEqual(["--client", "preview"]);
+		expect(mocks.write).not.toHaveBeenCalled();
+		session.input({ type: "text", text: "not allowed" });
+		expect(writes).toEqual([]);
+		session.close();
+		child.emit("close", 0);
+	});
+	it("forces preview helpers to stay read-only even if control was requested", () => {
+		const { child, writes } = processFixture();
+		const session = startNativeDesktop({ ...options(false), preview: true });
+		expect(mocks.spawn.mock.calls[0][1]).toContain("preview");
+		session.input({ type: "text", text: "must not type" });
+		expect(writes).toEqual([]);
+		session.close();
+		child.emit("close", 0);
+	});
 	it("reports real runtime requirements and unsupported platforms", () => {
 		expect(nativeDesktopStatus()).toEqual({ supported: true, backend: "windows-gdi-sendinput" });
 		mocks.exists.mockReturnValue(false);
@@ -207,6 +261,142 @@ describe("native desktop lifecycle and framed capture", () => {
 		child.emit("close", 0);
 		vi.advanceTimersByTime(60000);
 		expect(o.onError).toHaveBeenCalledTimes(1);
+	});
+});
+
+describe("Windows service session recovery", () => {
+	beforeEach(() => mocks.exists.mockReturnValue(true));
+	it("restores bounded quality after worker replacement without granting input to a viewer", () => {
+		const binary = Buffer.from("installed-service");
+		mocks.read.mockImplementation((path: string) =>
+			path.endsWith("profile-v2") ? createHash("sha256").update(binary).digest("hex") : binary,
+		);
+		const first = processFixture();
+		const session = startNativeDesktop(options());
+		const profile = { maxEdge: 1280, quality: 60, fps: 30 };
+		expect(session.configure).toBeTypeOf("function");
+		session.configure!(profile);
+		expect(JSON.parse(first.writes.at(-1)!)).toEqual({ type: "configure", ...profile });
+		first.child.emit("close", 1);
+		const next = processFixture();
+		vi.advanceTimersByTime(250);
+		expect(JSON.parse(next.writes[0])).toEqual({ type: "configure", ...profile });
+		session.input({ type: "text", text: "blocked" });
+		expect(next.writes).toHaveLength(1);
+		session.close();
+		next.child.emit("close", 0);
+	});
+	it("does not advertise configuration when the installed binary no longer matches its capability marker", () => {
+		mocks.read.mockReturnValue("stale-marker");
+		const { child } = processFixture();
+		const session = startNativeDesktop(options());
+		expect(session.configure).toBeUndefined();
+		session.close();
+		child.emit("close", 0);
+	});
+
+	it("resumes frames in the same session after the login worker exits, without replaying input", () => {
+		const first = processFixture();
+		const o = options(false);
+		const session = startNativeDesktop(o);
+		first.child.stdout.write(packet());
+		first.child.stderr.write("WINDOWS_DESKTOP_UNAVAILABLE: Windows session changed");
+		first.child.emit("close", 1);
+		session.input({ type: "text", text: "must not replay" });
+		expect(o.onError).not.toHaveBeenCalled();
+		expect(o.onClose).not.toHaveBeenCalled();
+		const second = processFixture();
+		vi.advanceTimersByTime(250);
+		expect(mocks.spawn).toHaveBeenCalledTimes(2);
+		first.child.stdout.write(packet());
+		second.child.stdout.write(packet());
+		expect(o.onFrame).toHaveBeenCalledTimes(2);
+		expect(second.writes).toEqual(['{"type":"ack"}\n']);
+		session.input({ type: "key", code: "KeyA", action: "down" });
+		expect(second.writes.at(-1)).toContain('"KeyA"');
+		session.close();
+		second.child.emit("close", 0);
+		vi.advanceTimersByTime(60000);
+		expect(o.onError).not.toHaveBeenCalled();
+		expect(o.onClose).toHaveBeenCalledTimes(1);
+		expect(vi.getTimerCount()).toBe(0);
+	});
+
+	it("does not reconnect after an explicit disconnect during the recovery delay", () => {
+		const { child } = processFixture();
+		const o = options();
+		const session = startNativeDesktop(o);
+		child.emit("close", 0);
+		session.close();
+		vi.advanceTimersByTime(60000);
+		expect(mocks.spawn).toHaveBeenCalledTimes(1);
+		expect(o.onError).not.toHaveBeenCalled();
+		expect(o.onClose).toHaveBeenCalledTimes(1);
+		expect(vi.getTimerCount()).toBe(0);
+	});
+
+	it("keeps the original read-only mode across replacement workers", () => {
+		const first = processFixture();
+		const o = options();
+		const session = startNativeDesktop(o);
+		o.readOnly = false;
+		first.child.emit("close", 1);
+		const second = processFixture();
+		vi.advanceTimersByTime(250);
+		expect(mocks.spawn.mock.calls[1][1]).toEqual(["--client", "view"]);
+		session.input({ type: "text", text: "forbidden" });
+		expect(second.writes).toEqual([]);
+		session.close();
+		second.child.emit("close", 0);
+	});
+
+	it("bounds recovery even if the replacement worker hangs without producing a frame", () => {
+		const first = processFixture();
+		const o = options();
+		startNativeDesktop(o);
+		first.child.stderr.write("WINDOWS_DESKTOP_UNAVAILABLE: WINDOWS_DESKTOP_UNAVAILABLE: Session changed");
+		first.child.emit("close", 1);
+		const second = processFixture();
+		vi.advanceTimersByTime(30000);
+		expect(o.onError).toHaveBeenCalledWith("WINDOWS_DESKTOP_UNAVAILABLE: Session changed");
+		expect(o.onClose).toHaveBeenCalledTimes(1);
+		expect(second.writes).toContain('{"type":"close"}\n');
+		vi.advanceTimersByTime(1500);
+		expect(second.child.kill).toHaveBeenCalledOnce();
+		second.child.emit("close", 0);
+		vi.advanceTimersByTime(60000);
+		expect(mocks.spawn).toHaveBeenCalledTimes(2);
+		expect(o.onError).toHaveBeenCalledTimes(1);
+		expect(vi.getTimerCount()).toBe(0);
+	});
+
+	it("does not retry malformed frames or other non-session failures", () => {
+		const { child } = processFixture();
+		const o = options();
+		startNativeDesktop(o);
+		child.stdout.write(packet(Buffer.from([0, 0, 0, 0])));
+		child.emit("close", 1);
+		vi.advanceTimersByTime(60000);
+		expect(o.onError).toHaveBeenCalledWith(expect.stringContaining("invalid JPEG"));
+		expect(o.onClose).toHaveBeenCalledTimes(1);
+		expect(mocks.spawn).toHaveBeenCalledTimes(1);
+		expect(vi.getTimerCount()).toBe(0);
+	});
+
+	it("restarts only once when stream failure is followed by process close", () => {
+		const first = processFixture();
+		const o = options();
+		const session = startNativeDesktop(o);
+		first.child.stdin.emit("error", new Error("EPIPE"));
+		first.child.emit("close", 1);
+		first.child.emit("close", 1);
+		const second = processFixture();
+		vi.advanceTimersByTime(250);
+		second.child.stdout.write(packet());
+		expect(mocks.spawn).toHaveBeenCalledTimes(2);
+		expect(o.onError).not.toHaveBeenCalled();
+		session.close();
+		second.child.emit("close", 0);
 	});
 });
 
@@ -360,6 +550,36 @@ describe("local macOS permission requests", () => {
 });
 
 describe("native desktop input validation", () => {
+	it("forwards keypad digits, operators, Enter and NumLock with balanced key releases", () => {
+		const { child, writes } = processFixture();
+		const session = startNativeDesktop(options(false));
+		const codes = [
+			...Array.from({ length: 10 }, (_, i) => `Numpad${i}`),
+			"NumpadEnter",
+			"NumpadAdd",
+			"NumpadSubtract",
+			"NumpadMultiply",
+			"NumpadDivide",
+			"NumpadDecimal",
+			"NumpadComma",
+			"NumpadEqual",
+			"NumpadClear",
+			"NumLock",
+		];
+		const events = codes.flatMap(
+			(code) =>
+				[
+					{ type: "key", code, action: "down" },
+					{ type: "key", code, action: "up" },
+				] as NativeDesktopInput[],
+		);
+		for (const event of events) session.input(event);
+		expect(writes.map((value) => JSON.parse(value))).toEqual(events);
+		for (const code of ["Numpad10", "Numpad-1", "NumpadUnknown"]) session.input({ type: "key", code, action: "down" });
+		expect(writes).toHaveLength(events.length);
+		session.close();
+		child.emit("close", 0);
+	});
 	it("defaults to immutable read-only and never forwards input", () => {
 		const { child, writes } = processFixture();
 		const config = options();

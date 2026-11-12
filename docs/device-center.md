@@ -248,7 +248,23 @@ Hub 等待绑定当前设备 WS 的 executor ACK 才移除交互；拒绝或 5 �
 
 浏览器打开的是本机 `/device-lan/<设备ID>/__open` 一次性票据包装页，远端内容仍处于不含 `allow-same-origin` 的沙箱，通过随机能力路径加载；复用 Hub 路径入口的 HTML 重写、CORS、CSP 和头部净化，支持本机反代路径前缀。授权到期按需续签，连接器断开或解除绑定时撤销相关通道和连接；取消单次授权只撤销该次密钥，不影响其他连接。浏览器独立标签页与 Electron 独立窗口也使用相同选择逻辑。
 
-没有可达私网地址、端口受阻或对端版本尚不支持时，自动使用原 Hub 票据。已打开页面断线后先重新协商局域网，仍不可达才申请新 Hub 票据并回退。直接在独立 Hub 页面打开的固定设备入口仍沿用 Hub 中继；局域网探测由已配对的本机 pi-web-ui 服务发起。事实源为 `server/device-center/device-lan.ts`（设备加密通道与并行探测）、`device-lan-access.ts`（本机隔离入口）和 `web/src/device-access.ts`（统一打开入口）。
+没有可达私网地址或端口受阻时，尝试下述 P2P；对端不支持或打洞失败时使用原 Hub 票据。已打开页面断线后先重新协商局域网，仍不可达则尝试 P2P，失败才申请新 Hub 票据并回退。直接在独立 Hub 页面打开的固定设备入口仍沿用 Hub 中继；局域网探测由已配对的本机 pi-web-ui 服务发起。事实源为 `server/device-center/device-lan.ts`（设备加密通道与并行探测）、`device-lan-access.ts`（本机隔离入口）和 `web/src/device-access.ts`（统一打开入口）。
+
+## P2P 设备访问
+
+在局域网探测失败后，自动尝试设备间 WebRTC P2P，失败再使用 Hub 中继。群成员的「打开设备」和「远程桌面」共用该流程。第一阶段要求两端都运行本机 pi-web-ui；只访问云端 Hub 网页的浏览器仍使用中继。群组持久记录、排序、审批、任务租约与设备授权继续由 Hub 管理。
+
+Hub 通过已认证的 `device_lan` RPC 协商能力（兼容旧响应），通过 `device_p2p` RPC 定向转发有界 SDP。只有现有人工设备凭据接口可提交协商，仍先验证账号与设备归属；浏览器接口不接受 SDP。每次会话拥有独立 ICE/DTLS 身份与短期 TLS-PSK 授权，SDP、地址与密钥不会返回浏览器。目标助手只连接本次授权的固定回环网关，不接收任意 TCP 目标。
+
+Go/Pion 助手通过 stdio 受 Node 管理，使用 UDP IPv4/IPv6 ICE、STUN 和可靠 DataChannel；一条 HTTP/TLS 或 WebSocket 连接对应一条数据通道。发送分块 16 KiB、单流高水位 256 KiB、SCTP 接收上限 1 MiB；没有假数据预热。每个助手最多 32 条活跃流和 32 条待建立流，Node 全局最多 16 个助手、每个目标连接器最多 8 个会话。总协商时限 10 秒；队列持续阻塞 5 秒关闭该流。绑定代次改变、连接器断开、授权撤销、助手退出和关闭页面均清理相关连接。
+
+直连页继续使用 `/device-lan/` 隔离能力 URL，保留现有 CSP、路径白名单、Origin 和凭据净化。显示通路由实际完成连接的结果决定：`lan` / `p2p` / `hub`。包装页卸载时发送有能力校验、按页面代次区分的释放请求，保留 2 秒刷新宽限，重新加载不会误撤销新页面；恢复连接时申请新票据并报告新通路。未确认的上传、键鼠和任务命令不会由传输层自动重放。
+
+完整 npm P2P 包附带 Windows x64、macOS arm64/x64、Linux arm64/x64 助手及 SHA-256 清单，使用时校验；macOS/Linux 使用私有临时目录中的可执行副本，避免 Windows 制作的 npm 包丢失执行权限。用户无需安装 Go；不支持的平台、旧 Hub/设备、缺失助手或打洞失败均回退 Hub。源码构建的完整分发入口是 `npm run pack:p2p`，需要 Go ≥1.24；普通 Web 构建不强制安装 Go，也不保证包含助手。
+
+设备侧设置：`PI_DEVICE_P2P=0` 禁用；`PI_DEVICE_P2P_STUN` 为最多 4 个逗号分隔的 `stun:host:port`，默认 `stun:stun.cloudflare.com:3478`。可使用自建 coturn 的 STUN 服务；本版不使用 TURN，无法直连时走原 Hub。服务器只升级 Hub 就能承担信令，无需安装桌面环境。`PI_DEVICE_P2P_HELPER` 是受信任管理员/开发测试用的绝对路径覆盖，绕过随包校验；浏览器与 Hub 信令不能设置它。
+
+`node --import tsx tests/device-p2p-test.mjs` 使用临时数据目录、两份独立助手进程和实际 Hub RPC/本机访问 API，验证 LAN 不可达时选择 P2P、HTTP/桌面/聊天并发、密钥不进入浏览器、并发会话、回退和撤销。本机回环验证不代表跨网打洞或实际桌面帧率。完整实机验收仍需 Mac/Windows 不同网络、UDP 禁止、设备重连和平台权限检查。P2P 不解除桌面采集和编码的帧率限制。
 
 ## 浏览器远程桌面
 

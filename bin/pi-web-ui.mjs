@@ -12,6 +12,15 @@ if (process.argv[2] === "hub") {
 		process.exitCode = 1;
 	}
 }
+if (process.argv[2] === "desktop") {
+	try {
+		const { runDesktopCli } = await import("./desktop-cli.mjs");
+		await runDesktopCli(process.argv.slice(3));
+	} catch (error) {
+		console.error(`[desktop] ${error.message}`);
+		process.exitCode = 1;
+	}
+}
 
 import {
 	chmodSync,
@@ -33,7 +42,7 @@ import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { pathToFileURL } from "node:url";
 import { fileURLToPath } from "node:url";
 
-const isHubCommand = process.argv[2] === "hub";
+const isHubCommand = ["hub", "desktop"].includes(process.argv[2]);
 const { frpCmd } = isHubCommand ? {} : await import("./frp-manager.mjs");
 const {
 	ensureBackup: ensurePluginBackup,

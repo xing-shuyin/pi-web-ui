@@ -42,6 +42,7 @@ it.each([true, false])(
 			res.json({
 				url: `${hubOrigin}/device/target/__open?ticket=fresh`,
 				expiresAt: Date.now() + 30000,
+				deviceLabel: "办公室 · DESKTOP-TEST",
 				deviceLan: grant,
 			});
 		});
@@ -90,6 +91,7 @@ it.each([true, false])(
 		);
 		expect(requests[0]).toEqual({ preferLan: true, desktop: true, basePath: "/pi/" });
 		expect(accessOptions!.valid()).toBe(true);
+		expect(accessOptions!.deviceLabel).toBe("办公室 · DESKTOP-TEST");
 		expect(await accessOptions!.renew()).toEqual(grant);
 		expect(await accessOptions!.fallback()).toBe(`${hubOrigin}/device/target/__open?ticket=fresh&next=%2Fdesktop`);
 		const disconnected = await fetch(origin + "/api/device-center/disconnect", {

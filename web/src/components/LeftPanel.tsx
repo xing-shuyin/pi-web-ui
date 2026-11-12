@@ -9,6 +9,7 @@ import {
 	Fragment,
 	type ReactNode,
 } from "react";
+import { useSessionListRequests } from "../use-session-list-requests";
 import { loadProjectClickSwitch } from "../project-click-settings";
 import {
 	loadProjectOrder,
@@ -847,27 +848,20 @@ export const LeftPanel = memo(function LeftPanel({
 		},
 		[projectVisibleCounts],
 	);
-	const [loadingMore, setLoadingMore] = useState<Set<string>>(() => new Set());
-	useEffect(() => {
-		setLoadingMore((prev) => (prev.size === 0 ? prev : new Set()));
-	}, [projectSessions, sessions]);
-	const [loadingProjects, setLoadingProjects] = useState<Set<string>>(() => new Set());
-
-	useEffect(() => {
-		if (!projectSessions) return;
-		setLoadingProjects((prev) => {
-			if (prev.size === 0) return prev;
-			let changed = false;
-			const next = new Set(prev);
-			for (const key of prev) {
-				if (projectSessions[key] !== undefined) {
-					next.delete(key);
-					changed = true;
-				}
-			}
-			return changed ? next : prev;
-		});
-	}, [projectSessions]);
+	const {
+		request: requestSessions,
+		pending: loadingProjects,
+		failed: failedProjects,
+	} = useSessionListRequests({
+		send: panelSend,
+		ready,
+		status,
+		engine,
+		cwd: currentCwd,
+		sessions,
+		projectSessions,
+	});
+	const loadingMore = loadingProjects;
 
 	const expandedSeededRef = useRef(false);
 	useEffect(() => {
@@ -885,16 +879,15 @@ export const LeftPanel = memo(function LeftPanel({
 				next.add(normCur);
 				return next;
 			});
-			setLoadingProjects((prev) => {
-				if (!prev.has(normCur)) return prev;
-				const next = new Set(prev);
-				next.delete(normCur);
-				return next;
-			});
 		}
 	}, [currentCwd]);
 
 	const initialRequestedRef = useRef<Set<string>>(new Set());
+	const requestedEngine = useRef(engine);
+	useEffect(() => {
+		if (requestedEngine.current !== engine) initialRequestedRef.current.clear();
+		requestedEngine.current = engine;
+	}, [engine]);
 	const toggleProjectExpand = useCallback(
 		(projectPath: string) => {
 			const normP = normalizeSessionPathKey(projectPath);
@@ -907,20 +900,12 @@ export const LeftPanel = memo(function LeftPanel({
 			});
 			if (willExpand) {
 				const limit = serverListLimit(projectPath);
-				if (ready && status === "open" && panelSend({ type: "list_sessions", path: projectPath, limit })) {
+				if (requestSessions({ type: "list_sessions", path: projectPath, limit })) {
 					initialRequestedRef.current.add(normP);
-					setLoadingProjects((lp) => new Set(lp).add(normP));
 				}
-			} else {
-				setLoadingProjects((lp) => {
-					if (!lp.has(normP)) return lp;
-					const copy = new Set(lp);
-					copy.delete(normP);
-					return copy;
-				});
 			}
 		},
-		[panelSend, expandedProjects, serverListLimit, ready, status],
+		[requestSessions, expandedProjects, serverListLimit],
 	);
 
 	useEffect(() => {
@@ -935,14 +920,13 @@ export const LeftPanel = memo(function LeftPanel({
 			if (pNorm === curNorm) continue;
 			if (expandedProjects.has(pNorm) && !initialRequestedRef.current.has(pNorm)) {
 				const limit = serverListLimit(p.path);
-				const sent = panelSend({ type: "list_sessions", path: p.path, limit });
+				const sent = requestSessions({ type: "list_sessions", path: p.path, limit });
 				if (sent) {
 					initialRequestedRef.current.add(pNorm);
-					setLoadingProjects((lp) => (lp.has(pNorm) ? lp : new Set(lp).add(pNorm)));
 				}
 			}
 		}
-	}, [effectiveProjects, expandedProjects, currentCwd, panelSend, serverListLimit, ready, status]);
+	}, [effectiveProjects, expandedProjects, currentCwd, requestSessions, serverListLimit, ready, status, engine]);
 
 	const activeRunningFiles = useMemo(() => {
 		if (convTab !== "split" || collapseConvs || conversations.length === 0) return new Set<string>();
@@ -3249,17 +3233,35 @@ export const LeftPanel = memo(function LeftPanel({
 														<div className={`lp-history-collapsible${isCollapsed ? " collapsed" : " expanded"}`}>
 															<div className="lp-history-collapsible-inner">
 																{}
-																{pRunningRows.length === 0 && idleSessions.length === 0 && (
-																	<div className="lp-project-empty-tip">
-																		{isLoadingSessions ? (
-																			<span>{t("loadingSessions") || "正在读取会话…"}</span>
-																		) : (
-																			<span>{t("noSessionsYet") || "暂无历史会话"}</span>
-																		)}
-																	</div>
-																)}
+																{pRunningRows.length === 0 &&
+																	idleSessions.length === 0 &&
+																	!failedProjects.has(pNorm) && (
+																		<div className="lp-project-empty-tip">
+																			{isLoadingSessions ? (
+																				<span>{t("loadingSessions") || "正在读取会话…"}</span>
+																			) : (
+																				<span>{t("noSessionsYet") || "暂无历史会话"}</span>
+																			)}
+																		</div>
+																	)}
 
 																{}
+																{failedProjects.has(pNorm) && (
+																	<button
+																		type="button"
+																		className="lp-show-more-row"
+																		disabled={!ready || status !== "open"}
+																		onClick={() =>
+																			requestSessions({
+																				type: "list_sessions",
+																				path: p.path,
+																				limit: serverListLimit(p.path),
+																			})
+																		}
+																	>
+																		{t("sessionsLoadFailed")}
+																	</button>
+																)}
 																{hasMore && (
 																	<button
 																		type="button"
@@ -3279,8 +3281,7 @@ export const LeftPanel = memo(function LeftPanel({
 																					SESSION_LIST_FIRST_PAGE,
 																					nextVisible + SESSION_ROWS_STEP,
 																				);
-																				panelSend({ type: "list_sessions", path: p.path, limit });
-																				setLoadingMore((prev) => new Set(prev).add(pNorm));
+																				requestSessions({ type: "list_sessions", path: p.path, limit });
 																			}
 																		}}
 																	>

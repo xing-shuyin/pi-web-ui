@@ -29,11 +29,11 @@ async function listen(server: Server) {
 	});
 	return (server.address() as { port: number }).port;
 }
-async function fixture(deviceName?: string) {
+async function fixture(deviceName?: string, deviceRemark?: string) {
 	const received: http.IncomingHttpHeaders[] = [];
 	const local = http.createServer((req, res) => {
 		received.push(req.headers);
-		if (["/", "/desktop"].includes(req.url?.split("?")[0] ?? "")) {
+		if (["/", "/desktop", "/desktop-preview"].includes(req.url?.split("?")[0] ?? "")) {
 			res.writeHead(200, {
 				"content-type": "text/html",
 				"set-cookie": "device=bad; Path=/",
@@ -110,6 +110,7 @@ async function fixture(deviceName?: string) {
 		getAccount: (req) => (req.headers.cookie?.includes("hub=secret") ? "account" : null),
 		ownsDevice: (account, id) => account === "account" && id === "dev1",
 		getDeviceName: () => deviceName,
+		getDeviceRemark: () => deviceRemark,
 	});
 	cleanup.push(() => relay.close());
 	const connector = createDeviceConnector({
@@ -130,6 +131,7 @@ async function fixture(deviceName?: string) {
 		const ticket = await request("/open", { cookie: "hub=secret", origin }, "POST");
 		expect(ticket.status).toBe(200);
 		const url = new URL(JSON.parse(ticket.body).url);
+		if (deviceName && deviceRemark) expect(JSON.parse(ticket.body).deviceLabel).toBe(`${deviceRemark} · ${deviceName}`);
 		const wrapper = await request(url.pathname + url.search);
 		const base = /\/device\/dev1\/__relay\/[a-f0-9]{64}\//.exec(wrapper.body)![0];
 		return { wrapper, base, ticketPath: url.pathname + url.search };
@@ -138,10 +140,33 @@ async function fixture(deviceName?: string) {
 }
 
 describe("single-port device path portal", () => {
-	it("uses the device name and ID in the tab title and escapes HTML", async () => {
-		const f = await fixture('办公机 </title><script>alert("x")</script>&');
+	it("issues separate desktop tickets only to the owning outer portal", async () => {
+		const f = await fixture();
+		const { base } = await f.open();
+		const endpoint = base + "__desktop_open";
+		for (const origin of ["null", "https://other.example", ""]) {
+			expect((await f.request(endpoint, { origin }, "POST")).status).toBe(403);
+		}
+		expect((await f.request(endpoint, { origin: f.origin })).status).toBe(403);
+		expect((await f.request(endpoint.replace("dev1", "dev2"), { origin: f.origin }, "POST")).status).toBe(403);
+		const opened = await f.request(endpoint, { origin: f.origin }, "POST");
+		expect(opened.status).toBe(200);
+		const url = new URL(JSON.parse(opened.body).url);
+		expect(url.pathname).toBe("/device/dev1/__open");
+		const child = await f.request(url.pathname + url.search + "&next=%2Fdesktop");
+		expect(child.status).toBe(200);
+		const childBase = /\/device\/dev1\/__relay\/[a-f0-9]{64}\//.exec(child.body)![0];
+		expect(childBase).not.toBe(base);
+		expect(child.body).toContain(childBase + "desktop");
+		expect((await f.request(url.pathname + url.search)).status).toBe(403);
+		expect((await f.request(base + "api/data", { origin: "null" })).status).toBe(200);
+		f.relay.revoke("dev1");
+		expect((await f.request(endpoint, { origin: f.origin }, "POST")).status).toBe(403);
+	});
+	it("uses the remark and computer name in the tab title and escapes HTML", async () => {
+		const f = await fixture("DESKTOP-TEST", '办公机 </title><script>alert("x")</script>&');
 		const expected =
-			"<title>办公机 &lt;/title&gt;&lt;script&gt;alert(&quot;x&quot;)&lt;/script&gt;&amp; (dev1) · pi-web-ui</title>";
+			"<title>办公机 &lt;/title&gt;&lt;script&gt;alert(&quot;x&quot;)&lt;/script&gt;&amp; · DESKTOP-TEST · pi-web-ui</title>";
 		expect((await f.request("/device/dev1/", { cookie: "hub=secret" })).body).toContain(expected);
 		expect((await f.open()).wrapper.body).toContain(expected);
 	});
@@ -161,14 +186,14 @@ describe("single-port device path portal", () => {
 		expect((await f.request(ticketPath)).status).toBe(403);
 		expect((await f.request("/device/dev1/", { cookie: "hub=secret", origin: "null" })).status).toBe(401);
 	});
-	it("embeds a ticket desktop from another origin with both frames opaque", async () => {
+	it.each(["/desktop", "/desktop-preview"])("embeds %s from another origin with both frames opaque", async (path) => {
 		const chromeHelper = "../lib/chrome.mjs";
 		const { CHROME_PATH } = await import(chromeHelper);
 		if (!CHROME_PATH) throw new Error("Chrome required: set PI_WEB_CHROME");
 		const f = await fixture();
 		const ticket = await f.request("/open", { cookie: "hub=secret", origin: f.origin }, "POST");
 		const url = new URL(JSON.parse(ticket.body).url);
-		url.searchParams.set("next", "/desktop");
+		url.searchParams.set("next", path);
 		const parent = http.createServer((_req, res) => {
 			res.setHeader("content-type", "text/html");
 			res.end(

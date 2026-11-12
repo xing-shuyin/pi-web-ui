@@ -41,6 +41,8 @@ describe("桌面壳标题栏让位（macOS 红黄绿按钮）", () => {
 
 		const termCommands = ruleBodies(CSS, ".term-commands {").find((b) => /position:\s*fixed/.test(b)) ?? "";
 		expect(termCommands).toMatch(/top:\s*calc\([\s\S]*?--desktop-titlebar-h/);
+		const remoteDesktop = ruleBodies(CSS, ".remote-desktop-window.is-fullscreen {")[0] ?? "";
+		expect(remoteDesktop).toMatch(/inset:\s*var\(--desktop-titlebar-h/);
 	});
 
 	it("抽屉的拖窗带只在 .open 时存在（关着的抽屉飘在视口外，拖拽矩形会把别处吃掉）", () => {

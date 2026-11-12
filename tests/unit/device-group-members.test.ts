@@ -89,7 +89,7 @@ it("opens member devices by hosting device ID and selects the requested view", a
 		await act(async () => buttons[0].click());
 		await act(async () => buttons[1].click());
 		expect(openHub.mock.calls.map(([url]) => url)).toEqual(["https://hub.example.com/device/mac/__open?ticket=one"]);
-		expect(getDesktopAccess()?.url).toBe("https://hub.example.com/device/mac/__open?ticket=one&next=%2Fdesktop");
+		expect(getDesktopAccess()).toMatchObject({ id: "mac", mode: "preview" });
 		closeDesktopAccess(getDesktopAccess()!);
 		expect(
 			fetchMock.mock.calls

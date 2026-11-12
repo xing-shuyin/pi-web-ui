@@ -186,7 +186,11 @@ function portal(storage: Storage, scope = ["account", "dev"], capability = "cap"
 	});
 	const iframe = { contentWindow: child, addEventListener: vi.fn(), src: "" };
 	const { html } = wrapperHtml(base, "", undefined, "Device", JSON.stringify(scope));
+	const wrapperWindow = {};
 	runInNewContext(html.match(/<script\b[^>]*>([\s\S]*?)<\/script>/)![1], {
+		window: wrapperWindow,
+		parent: wrapperWindow,
+		navigator: { language: "en" },
 		document: { querySelector: () => iframe, getElementById: () => ({}) },
 		addEventListener: (_type: string, listener: typeof receiveWrapper) => (receiveWrapper = listener),
 		localStorage: storage,

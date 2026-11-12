@@ -96,3 +96,14 @@
 可配：访问口令 token、监听地址 host、端口 port、Host 白名单、额外 Origin 白名单。
 落盘 `<dataDir>/server-config.json`，优先级：命令行旗标 > 环境变量 > 本文件 > 默认值。
 token 修改立即生效（含 WS）；host/port/白名单需 `pi-web-ui server restart` 后生效。
+
+## 设备间 P2P
+
+| 变量                   | 默认值                          | 用途                                                   |
+| ---------------------- | ------------------------------- | ------------------------------------------------------ |
+| `PI_DEVICE_P2P`        | 启用可用助手                    | `0` 禁用 P2P，保留 LAN 和 Hub 回退                     |
+| `PI_DEVICE_P2P_STUN`   | `stun:stun.cloudflare.com:3478` | 最多四个逗号分隔的 STUN 地址；可配置自建 coturn        |
+| `PI_DEVICE_P2P_HELPER` | 随包助手                        | 受信任管理员/开发用的绝对路径覆盖；绕过随包哈希校验    |
+| `PI_DEVICE_P2P_GO`     | `go`                            | 仅编译脚本使用的 Go 可执行程序路径；使用 npm 包无需 Go |
+
+`PI_DEVICE_P2P_TEST_LOOPBACK=1` 仅用于隔离集成测试，限制 ICE 为回环候选且禁用 STUN，不能用于跨机器部署。协议与分发见 [P2P 设备访问](device-center.md#p2p-设备访问)。

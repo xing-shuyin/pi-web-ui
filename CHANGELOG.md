@@ -10,6 +10,27 @@
 
 ## [Unreleased]
 
+### Added
+
+- 设备访问增加已鉴权的 WebRTC P2P 通道，按局域网、P2P、Hub 顺序连接；桌面、聊天和设备网页共用现有授权与回退边界。
+- 聊天右栏增加远程桌面预览、设备切换和群组成员桌面；放大、独立窗口关闭后返回预览，远程聊天页复用当前设备连接。
+- Windows 增加可选系统桌面服务，支持锁屏登录界面采集及会话切换后的自动恢复；Windows / Mac 增加显示器选择与鼠标坐标映射。
+- 远程桌面增加动态画质、传输分辨率和 60 / 120 / 240 FPS 目标；Windows 优先 DXGI、Mac 使用持续 SCStream，实际帧率受设备与网络限制。
+- 剪贴板支持文本、图片和普通文件的单向或双向同步，默认关闭；从控制端 localhost 打开，接收文件有大小与数量限额。
+
+### Fixed
+
+- 补齐数字小键盘输入、桌面主题与设备标签；断线、返回预览及切屏时释放旧输入和采集资源。
+- 修复远程历史会话持续加载及跨项目会话列表读取，增加超时、重试和按项目分页。
+
+<!-- auto-i18n:start -->
+
+### i18n
+
+- 前端新增 key（44）：`sessionsLoadFailed`、`desktop.title`、`desktop.choose`、`desktop.expand`、`desktop.collapse`、`desktop.close`、`desktop.operating`、`desktop.back`、`desktop.resize`、`desktop.preview`、`desktop.open`、`desktop.lan`、`desktop.hub`、`desktop.connecting`、`desktop.paused`、`desktop.updated`、`desktop.waiting`、`desktop.previewUnavailable`、`desktop.retry`、`desktop.window`、`desktop.tab`、`desktop.exitFullscreen`、`desktop.fullscreen`、`desktop.p2p`、`desktop.devicesUnavailable`、`desktop.noDevices`、`desktop.currentDevice`、`desktop.showCurrent`、`desktop.currentConnection`、`desktop.groupTitle`、`desktop.groupAll`、`desktop.groupMembers`、`desktop.groupNoDevice`、`desktop.groupSelect`、`desktop.groupOpen`、`desktop.clipboard`、`desktop.clipboardOff`、`desktop.clipboardSend`、`desktop.clipboardReceive`、`desktop.clipboardBoth`、`desktop.clipboardReady`、`desktop.clipboardHint`、`desktop.clipboardLocal`、`desktop.clipboardError`
+
+<!-- auto-i18n:end -->
+
 ## [0.120.0] — 2026-11-12
 
 ### Added
@@ -77,6 +98,7 @@
 - **CI 单测并行**：单测按 shard 拆并行跑，浏览器型用例的启动预算收口到单一常量（4 vCPU runner 上不再随机撞线）。
 
 <!-- auto-i18n:start -->
+
 ### i18n
 
 - 前端新增 key（62）：`currentModelLabel`、`currentModelBadge`、`currentModelHint`、`bgTaskJobKind`、`bgTaskStopping`、`openLocalProject`、`openRemoteProject`、`filesFilterPlaceholder`、`settingsSaveSaving`、`settingsSaveSaved`、`settingsSaveFailed`、`phoneEnabledDesc`、`phoneOffHint`、`projectClickSwitch`、`projectClickSwitchDesc`、`projectOrderManual`、`projectOrderManualDesc`、`toolInspectorOutputStats`、`toolInspectorThinkingStatusRunning`、`toolInspectorThinkingStatusDone`、`toolInspectorThinkingFooterRunning`、`toolInspectorThinkingFooterLines`、`toolTimeRange`、`toolTimeRunning`、`tplStepIdentity`、`tplStepIdentitySub`、`tplStepBehavior`、`tplStepBehaviorSub`、`tplStepCapability`、`tplStepCapabilitySub`、`tplStepReview`、`tplStepReviewSub`、`tplIdentityHint`、`tplNameRequired`、`tplAdvanced`、`tplEnIntro`、`tplEnPrompt`、`tplEnFilled`、`tplEnEmpty`、`tplSearchWhitelist`、`tplNoMatch`、`tplLimited`、`tplFollowSession`、`tplSumName`、`tplSumIntro`、`tplSumMode`、`tplSumModel`、`tplSumThinking`、`tplSumSkills`、`tplSumExtensions`、`tplSpawnTitle`、`tplSpawnNote`、`tplStateOn`、`tplStateOff`、`bgTaskRestart`、`bgTaskStart`、`bgTaskRunning`、`bgTaskQuickStart`、`subagentVerdictUnverified`、`subagentVerdictPartial`、`subagentVerdictBlocked`、`subagentVerdictHint`
@@ -86,6 +108,7 @@
 - 服务端新增 key（29）：`agent.subagent.budget.reached`、`agent.subagent.resume.title`、`bash.bgTimeout`、`bash.bgNoTimeout`、`bash.bgStarted`、`subagents.notify.evidence`、`subagents.spawn.task.missing.prompt`、`subagents.spawn.task.bad.key`、`subagents.complete.evidence.invalid`、`subagents.complete.rejected`、`subagents.complete.recorded`、`subagents.spawn.batch.too.many`、`subagents.spawn.batch.duplicate.key`、`subagents.spawn.batch.rejected`、`subagents.spawn.batch.started`、`subagents.spawn.batch.wait.hint`、`subagents.get.evidence`、`subagents.resume.missing.runId`、`subagents.resume.failed`、`subagents.resume.transcript`、`subagents.resume.no.transcript`、`subagents.resume.ok`、`subagents.steer.queued`、`subagents.steer.restarted`、`subagents.steer.missed`、`subagents.steer.delivered`、`subagents.list.ledger.resumed`、`subagents.list.ledger.item`、`subagents.list.ledger.head`
 - 服务端文案变更（29）：`agent.subagent.limit.reached`、`delegate.validate.agent`、`delegate.validate.short`、`delegate.started`、`subagents.notify.footer`、`subagents.spawn.template.unavailable`、`subagents.spawn.thinking.invalid`、`subagents.spawn.isolation.invalid`、`subagents.action.missing`、`subagents.spawn.missing.prompt`、`subagents.spawn.started`、`subagents.get.missing.runId`、`subagents.get.done`、`subagents.steer.missing.runId`、`subagents.steer.missing.message`、`subagents.steer.not.found`、`subagents.steer.injected`、`subagents.list.empty`、`subagents.stop.missing.runId`、`subagents.stop.not.found`、`subagents.templates.list`、`subagents.handoff.missing.toRunId`、`subagents.handoff.missing.payload`、`subagents.handoff.not.found`、`subagents.dismiss.missing.target`、`subagents.dismiss.running`、`subagents.dismiss.success.single`、`subagents.dismiss.success.batch`、`subagents.wait.pending`
 - 服务端删除 key（1）：`prompt.tools.lazy`
+
 <!-- auto-i18n:end -->
 
 ## [0.119.0] — 2026-11-08

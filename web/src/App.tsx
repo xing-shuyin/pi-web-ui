@@ -137,6 +137,7 @@ import type {
 	UiMessage,
 	UiTextBlock,
 } from "./types";
+import { openPageDesktop, pageDeviceId } from "./device-access";
 import { isZhLocale, useT, useI18n } from "./i18n";
 import { QUICK_PHRASE_DEFAULTS } from "./quick-phrases";
 import {
@@ -1092,6 +1093,21 @@ export function App() {
 	const unreadConvKeys = useUnreadConversationKeys();
 	const layoutRef = useRef<HTMLDivElement | null>(null);
 	const [isMobile, setIsMobile] = useState(() => window.matchMedia("(max-width: 768px)").matches);
+	useEffect(() => {
+		const open = () => {
+			setView("chat");
+			setRightCollapsed(false);
+			if (isMobile) setDrawer("right");
+		};
+		window.addEventListener("pi:desktop-open", open);
+		return () => window.removeEventListener("pi:desktop-open", open);
+	}, [isMobile]);
+	useEffect(() => {
+		if (!pageDeviceId()) return;
+		const controller = new AbortController();
+		void openPageDesktop(isZhLocale(locale), t("desktop.currentDevice"), controller.signal).catch(() => {});
+		return () => controller.abort();
+	}, []);
 	useEffect(() => {
 		const mq = window.matchMedia("(max-width: 768px)");
 		const onChange = (e: MediaQueryListEvent) => setIsMobile(e.matches);
@@ -3096,6 +3112,7 @@ export function App() {
 							}`}
 						>
 							<RightPanel
+								desktopVisible={view === "chat" && (isMobile ? drawer === "right" : !rightCollapsed)}
 								quickAskReferenceMenus={chat.settings?.quickAskReferenceMenus !== false}
 								collapsible={!isMobile}
 								onToggleCollapse={toggleRight}

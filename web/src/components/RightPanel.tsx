@@ -33,6 +33,7 @@ import { openQuickAsk, type QuickAskReferenceSource } from "../quick-ask";
 import { SlotTabs, type SlotTab } from "./SlotTabs";
 import { copyTextToClipboard } from "../use-copy-feedback";
 import { isRemoteWorkspaceUri, parseRemoteWorkspaceUri } from "../remote-ssh-client";
+import { DesktopPreview } from "./desktop-preview";
 
 const MACHINE_ROOT = "@root";
 
@@ -162,6 +163,7 @@ interface FileUploadProgress {
 }
 
 interface RightPanelProps {
+	desktopVisible?: boolean;
 	files: FileListing | null;
 	fileChanged: { path: string } | null;
 	widgets: { key: string; lines: string[] }[];
@@ -182,6 +184,7 @@ interface RightPanelProps {
 }
 
 export const RightPanel = memo(function RightPanel({
+	desktopVisible = true,
 	files,
 	fileSearch,
 	fileChanged,
@@ -1032,6 +1035,7 @@ export const RightPanel = memo(function RightPanel({
 					<FiChevronRight />
 				</button>
 			)}
+			<DesktopPreview visible={desktopVisible} />
 			<div
 				ref={splitRef}
 				style={{

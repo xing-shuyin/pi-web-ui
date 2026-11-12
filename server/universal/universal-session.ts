@@ -42,7 +42,13 @@ import {
 import { CodexDriver, probeCodex } from "./drivers/codex.js";
 import type { UniversalSessionStore } from "./session-store.js";
 import type { UniversalConversation } from "./universal-types.js";
-import { type ClientStateStore, normalizeUiLayout, type ClientSettings, settingsPresetToUi } from "../client-state.js";
+import {
+	type ClientStateStore,
+	normalizePathKey,
+	normalizeUiLayout,
+	type ClientSettings,
+	settingsPresetToUi,
+} from "../client-state.js";
 import { messageTextWithQuotes } from "../text-quote.js";
 import {
 	readModelsJson,
@@ -1475,9 +1481,10 @@ export class UniversalSession implements DispatchSession {
 		await this.prompt(text, attachments, undefined, conv, context ? `Previous conversation context:\n${context}` : "");
 	}
 
-	async refreshSessions(): Promise<void> {
-		const memoryConvs = Array.from(this.conversations.values());
-		const diskConvs = this.store.listConversations(this.cwd);
+	private sessionConversations(targetCwd: string): UniversalConversation[] {
+		const memoryConvs =
+			normalizePathKey(targetCwd) === normalizePathKey(this.cwd) ? Array.from(this.conversations.values()) : [];
+		const diskConvs = this.store.listConversations(targetCwd);
 		const convMap = new Map<string, UniversalConversation>();
 		for (const c of diskConvs) {
 			convMap.set(c.id, c);
@@ -1486,13 +1493,16 @@ export class UniversalSession implements DispatchSession {
 			convMap.set(c.id, c);
 		}
 		for (const c of convMap.values()) {
-			const savedTitle = this.stateStore?.getSessionTitle(this.cwd, c.id);
+			const savedTitle = this.stateStore?.getSessionTitle(targetCwd, c.id);
 			if (savedTitle && !UniversalSession.isDefaultTitle(savedTitle)) {
 				c.title = savedTitle;
 			}
 		}
-		const allList = Array.from(convMap.values()).sort((a, b) => b.updatedAt - a.updatedAt);
+		return Array.from(convMap.values()).sort((a, b) => b.updatedAt - a.updatedAt);
+	}
 
+	async refreshSessions(): Promise<void> {
+		const allList = this.sessionConversations(this.cwd);
 		// ConversationSummary 是单源协议；会话身份（sessionId=会话 id）必须带上，
 		// 否则客户端无法把「运行中对话」和「历史会话」认成同一条，左栏会重复一遍。
 		// rowKind：universal 底座的会话全部已落盘（sessions 里都有一条），所以只有需要自占一行的
@@ -1524,6 +1534,30 @@ export class UniversalSession implements DispatchSession {
 		}));
 		this.send({ type: "conversations", conversations: convs, activeId: this.activeConvId });
 
+		this.sendSessionList(this.cwd, allList);
+	}
+
+	private readonly sessionListLimits = new Map<string, number>();
+	setSessionListLimit(cwd: string, limit?: number): number {
+		const key = normalizePathKey(cwd);
+		if (typeof limit === "number" && Number.isFinite(limit))
+			this.sessionListLimits.set(key, Math.max(20, Math.min(5000, Math.floor(limit))));
+		return this.sessionListLimits.get(key) ?? 200;
+	}
+
+	async pushSessionsForCwd(targetCwd: string): Promise<void> {
+		try {
+			this.sendSessionList(targetCwd, this.sessionConversations(targetCwd));
+		} catch {
+			this.emitNotice(
+				"error",
+				"无法读取项目历史会话，请检查目录权限后重试。",
+				"Could not read project sessions. Check directory permissions and retry.",
+			);
+		}
+	}
+
+	private sendSessionList(targetCwd: string, allList: UniversalConversation[]) {
 		const sessionSummaries: SessionSummary[] = allList
 			.filter((c) => !c.isSubagent || !c.isEphemeral)
 			.map((c) => {
@@ -1538,7 +1572,7 @@ export class UniversalSession implements DispatchSession {
 					path: c.id,
 					sessionId: c.id,
 					// Ids carry no project slug; without cwd the left panel attaches them to every project.
-					cwd: this.cwd,
+					cwd: targetCwd,
 					name: c.title,
 					displayName,
 					firstMessage: firstMsg,
@@ -1547,7 +1581,13 @@ export class UniversalSession implements DispatchSession {
 					pinned: Boolean(c.pinned),
 				};
 			});
-		this.send({ type: "sessions", sessions: sessionSummaries, cwd: this.cwd });
+		const limit = this.setSessionListLimit(targetCwd);
+		this.send({
+			type: "sessions",
+			sessions: sessionSummaries.slice(0, limit),
+			cwd: targetCwd,
+			hasMore: sessionSummaries.length > limit,
+		});
 	}
 
 	resolveSessionDisplayName(conv: UniversalConversation, firstMsg: string): string {

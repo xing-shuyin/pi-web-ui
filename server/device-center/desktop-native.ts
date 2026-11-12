@@ -1,9 +1,16 @@
+import { parseDesktopProfile, type DesktopProfile } from "./desktop-quality.js";
+import { parseDesktopDisplays, type DesktopDisplays } from "./desktop-displays.js";
 import { execFileSync, spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
 import { existsSync, mkdtempSync, rm, writeFileSync } from "node:fs";
 import { release, tmpdir } from "node:os";
 import { join } from "node:path";
 import { windowsDesktopScript } from "./native-desktop/windows.js";
 import { macDesktopScript } from "./native-desktop/macos.js";
+import {
+	startWindowsServiceDesktop,
+	windowsDesktopServicePath,
+	windowsDesktopServiceProfiles,
+} from "./windows-desktop-service.js";
 
 export type NativeDesktopInput =
 	| { type: "pointer"; x: number; y: number; button?: 0 | 1 | 2; action: "move" | "down" | "up" }
@@ -39,6 +46,16 @@ const specialKeys = new Set([
 	"Insert",
 	"Delete",
 	"CapsLock",
+	"NumLock",
+	"NumpadEnter",
+	"NumpadAdd",
+	"NumpadSubtract",
+	"NumpadMultiply",
+	"NumpadDivide",
+	"NumpadDecimal",
+	"NumpadComma",
+	"NumpadEqual",
+	"NumpadClear",
 	"Backquote",
 	"Minus",
 	"Equal",
@@ -79,7 +96,7 @@ function validatedInput(value: NativeDesktopInput): NativeDesktopInput | undefin
 		case "key":
 			if (
 				typeof value.code !== "string" ||
-				(!specialKeys.has(value.code) && !/^(Key[A-Z]|Digit[0-9]|F([1-9]|1[0-2]))$/.test(value.code))
+				(!specialKeys.has(value.code) && !/^(Key[A-Z]|Digit[0-9]|Numpad[0-9]|F([1-9]|1[0-2]))$/.test(value.code))
 			)
 				return;
 			if (value.action !== "down" && value.action !== "up") return;
@@ -96,6 +113,7 @@ function powershellPath(): string {
 
 export function nativeDesktopStatus(): { supported: boolean; backend: string; reason?: string } {
 	if (process.platform === "win32") {
+		if (windowsDesktopServicePath()) return { supported: true, backend: "windows-system-desktop" };
 		return existsSync(powershellPath())
 			? { supported: true, backend: "windows-gdi-sendinput" }
 			: {
@@ -243,14 +261,31 @@ export async function requestNativeDesktopPermissions(
 	});
 }
 
-export function startNativeDesktop(options: {
+export type NativeDesktopOptions = {
+	onDisplays?: (displays: DesktopDisplays) => void;
+	display?: string;
 	onFrame: (jpeg: Buffer) => void;
 	onError: (message: string) => void;
 	onClose: () => void;
 	readOnly?: boolean;
-}): { input(event: NativeDesktopInput): void; close(): void } {
+	preview?: boolean;
+};
+export type NativeDesktopHandle = {
+	input(event: NativeDesktopInput): void;
+	configure?(profile: DesktopProfile): void;
+	close(): void;
+};
+
+export function startNativeDesktop(options: NativeDesktopOptions): NativeDesktopHandle {
+	const service = windowsDesktopServicePath();
+	return service
+		? startWindowsServiceDesktop(options, (next) => startNativeDesktopOnce(next, service))
+		: startNativeDesktopOnce(options);
+}
+
+function startNativeDesktopOnce(options: NativeDesktopOptions, service?: string): NativeDesktopHandle {
 	const status = nativeDesktopStatus();
-	const readOnly = options.readOnly !== false;
+	const readOnly = options.preview === true || options.readOnly !== false;
 	let child: ChildProcessWithoutNullStreams | undefined;
 	let directory: string | undefined;
 	let closing = false;
@@ -263,6 +298,7 @@ export function startNativeDesktop(options: {
 	let headerUsed = 0;
 	let frame: Buffer | undefined;
 	let frameUsed = 0;
+	let displayConfirmed = !options.display;
 
 	function finish() {
 		if (finished) return;
@@ -342,13 +378,30 @@ export function startNativeDesktop(options: {
 			if (frameUsed === frame.length) {
 				const jpeg = frame;
 				frame = undefined;
+				if (jpeg[0] === 123 && jpeg.length <= 8192) {
+					let displays: DesktopDisplays | undefined;
+					try {
+						displays = parseDesktopDisplays(JSON.parse(jpeg.toString("utf8")));
+					} catch {}
+					if (!displays) {
+						fail("Invalid desktop display metadata.");
+						return;
+					}
+					displayConfirmed =
+						!options.display ||
+						displays.selected === options.display ||
+						!displays.displays.some((d) => d.id === options.display);
+					armWatchdog();
+					options.onDisplays?.(displays);
+					continue;
+				}
 				if (jpeg[0] !== 0xff || jpeg[1] !== 0xd8 || jpeg[jpeg.length - 2] !== 0xff || jpeg[jpeg.length - 1] !== 0xd9) {
 					fail("Native desktop helper returned an invalid JPEG.");
 					return;
 				}
 				armWatchdog();
 				try {
-					options.onFrame(jpeg);
+					if (displayConfirmed) options.onFrame(jpeg);
 				} catch {
 					fail("Native desktop frame consumer failed.");
 					return;
@@ -357,7 +410,15 @@ export function startNativeDesktop(options: {
 			}
 		}
 	}
-	const handle = {
+	const handle: NativeDesktopHandle = {
+		...(!options.preview && (!service || windowsDesktopServiceProfiles(service))
+			? {
+					configure(profile: DesktopProfile) {
+						const validated = parseDesktopProfile(profile);
+						if (validated) write({ type: "configure", ...validated });
+					},
+				}
+			: {}),
 		input(event: NativeDesktopInput) {
 			if (readOnly || closing) return;
 			const validated = validatedInput(event);
@@ -367,16 +428,21 @@ export function startNativeDesktop(options: {
 	};
 	try {
 		if (!status.supported) throw new Error(status.reason);
-		directory = mkdtempSync(join(tmpdir(), "pi-native-desktop-"));
 		const windows = process.platform === "win32";
-		const path = join(directory, windows ? "capture.ps1" : "capture.swift");
-		writeFileSync(path, windows ? "\ufeff" + windowsDesktopScript : macDesktopScript, { mode: 0o600 });
-		const mode = readOnly ? "view" : "control";
+		let path = "";
+		if (!service) {
+			directory = mkdtempSync(join(tmpdir(), "pi-native-desktop-"));
+			path = join(directory, windows ? "capture.ps1" : "capture.swift");
+			writeFileSync(path, windows ? "\ufeff" + windowsDesktopScript : macDesktopScript, { mode: 0o600 });
+		}
+		const mode = options.preview ? "preview" : readOnly ? "view" : "control";
 		child = spawn(
-			windows ? powershellPath() : "/usr/bin/swift",
-			windows
-				? ["-NoLogo", "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-File", path, mode]
-				: [path, mode],
+			service ?? (windows ? powershellPath() : "/usr/bin/swift"),
+			service
+				? ["--client", mode]
+				: windows
+					? ["-NoLogo", "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-File", path, mode]
+					: [path, mode],
 			{ stdio: ["pipe", "pipe", "pipe"], windowsHide: true },
 		);
 		child.stdout.on("data", receive);
@@ -398,6 +464,10 @@ export function startNativeDesktop(options: {
 				finish();
 			}
 		});
+		if ((options.onDisplays || options.display) && (!service || windowsDesktopServiceProfiles(service))) {
+			write({ type: "displays" });
+			if (options.display) write({ type: "display", id: options.display });
+		}
 		armWatchdog();
 	} catch (error) {
 		queueMicrotask(() => {

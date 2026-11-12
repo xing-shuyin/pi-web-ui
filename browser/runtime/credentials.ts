@@ -2,6 +2,20 @@ import type { WebContents } from "electron";
 import type { PasswordEntry } from "../storage/index.js";
 import { isWebUrl } from "./urls.js";
 
+/** 发给渲染层的密码条目形态：**没有明文 password**，只留一个「有没有存密码」的布尔。 */
+export type PublicCredential = Omit<PasswordEntry, "password"> & { hasPassword: boolean };
+
+/**
+ * 投影成不含明文的形态。
+ *
+ * `passwords.list` 必须走这里：明文只允许从 `passwords.reveal { id }`（用户点「显示密码」）和
+ * `passwords.fill`（主进程内部直接填页面）两个口子出去，和 TOTP「secret 永不出主进程」同一条口径。
+ */
+export function publicCredential(entry: PasswordEntry): PublicCredential {
+	const { password, ...rest } = entry;
+	return { ...rest, hasPassword: Boolean(password) };
+}
+
 export async function fillCredential(contents: WebContents, entry: PasswordEntry): Promise<void> {
 	const url = contents.getURL();
 	if (!isWebUrl(url) || !isWebUrl(entry.url) || new URL(url).origin !== new URL(entry.url).origin)

@@ -1,3 +1,4 @@
+import { deviceLabel } from "./device-label.js";
 import { randomBytes, randomUUID } from "node:crypto";
 import { parseReportMetadata } from "./report-metadata.js";
 import { computeLegacyOutcomeFingerprint } from "./task-outcome.js";
@@ -7,6 +8,7 @@ import { INTEGRATION_RPC_TIMEOUT_MS, VERIFICATION_RPC_TIMEOUT_MS } from "./verif
 import type { IncomingMessage, Server, ServerResponse } from "node:http";
 import type { Duplex } from "node:stream";
 import { WebSocket, WebSocketServer } from "ws";
+import { validDeviceP2PSignal } from "./device-p2p-protocol.js";
 
 import {
 	capabilityBase,
@@ -140,6 +142,7 @@ export function safePath(path: unknown, method = "GET"): path is string {
 
 export const COMMANDS = [
 	"device_lan",
+	"device_p2p",
 	"group_router_models",
 	"transfer_stage",
 	"transfer_preview",
@@ -516,6 +519,7 @@ export interface DeviceRelayOptions {
 	) => string | { id: string } | null | undefined | Promise<string | { id: string } | null | undefined>;
 	ownsDevice: (accountId: string, deviceId: string) => boolean | Promise<boolean>;
 	getDeviceName?: (deviceId: string) => string | undefined;
+	getDeviceRemark?: (deviceId: string) => string | undefined;
 	onTaskEvent?: (
 		deviceId: string,
 		event: any,
@@ -747,6 +751,7 @@ export function createDeviceRelay(options: DeviceRelayOptions) {
 		id: string,
 		redirect = false,
 		preferLan = false,
+		p2pOffer?: unknown,
 	) {
 		const generation = revision;
 		const account = await options.getAccount(req);
@@ -779,11 +784,24 @@ export function createDeviceRelay(options: DeviceRelayOptions) {
 			res.writeHead(503).end();
 			return;
 		}
+		if (p2pOffer !== undefined && (!preferLan || !validDeviceP2PSignal(p2pOffer))) {
+			res.writeHead(400).end();
+			return;
+		}
 		let deviceLan: unknown;
+		let deviceP2P: unknown;
 		if (preferLan && !redirect) {
 			const entry = devices.get(id)!;
 			try {
-				deviceLan = await entry.rpc.call("device_lan", {}, { signal: AbortSignal.timeout(1500) });
+				if (p2pOffer !== undefined) {
+					deviceP2P = await entry.rpc.call("device_p2p", p2pOffer, { signal: AbortSignal.timeout(5000) });
+				} else {
+					const direct = await entry.rpc.call("device_lan", { p2p: 1 }, { signal: AbortSignal.timeout(1500) });
+					if (direct && typeof direct === "object" && typeof Reflect.get(direct, "deviceP2P") === "boolean") {
+						deviceLan = Reflect.get(direct, "deviceLan");
+						deviceP2P = Reflect.get(direct, "deviceP2P");
+					} else deviceLan = direct;
+				}
 			} catch {}
 			if (closed || generation !== revision || devices.get(id) !== entry || res.destroyed) {
 				res.writeHead(409).end();
@@ -799,9 +817,15 @@ export function createDeviceRelay(options: DeviceRelayOptions) {
 		if (redirect)
 			res.writeHead(302, { location: url, "cache-control": "no-store", "referrer-policy": "no-referrer" }).end();
 		else
-			res
-				.writeHead(200, { "content-type": "application/json", "cache-control": "no-store" })
-				.end(JSON.stringify({ url, expiresAt, ...(deviceLan ? { deviceLan } : {}) }));
+			res.writeHead(200, { "content-type": "application/json", "cache-control": "no-store" }).end(
+				JSON.stringify({
+					url,
+					expiresAt,
+					deviceLabel: deviceLabel(options.getDeviceName?.(id), options.getDeviceRemark?.(id), id),
+					...(deviceLan ? { deviceLan } : {}),
+					...(deviceP2P ? { deviceP2P } : {}),
+				}),
+			);
 	}
 	function sendWrapper(res: ServerResponse, id: string, accountId: string, initialPath = "") {
 		if (closed || !devices.has(id)) {
@@ -814,14 +838,17 @@ export function createDeviceRelay(options: DeviceRelayOptions) {
 		}
 		const token = randomBytes(32).toString("hex");
 		capabilities.set(token, { deviceId: id, accountId, expiresAt: Date.now() + 8 * 60 * 60_000 });
-		const name = options.getDeviceName?.(id)?.trim();
-		const label = name && name !== id ? `${name} (${id})` : id;
+		const label = deviceLabel(options.getDeviceName?.(id), options.getDeviceRemark?.(id), id);
 		const wrapper = wrapperHtml(
 			capabilityBase(id, token),
 			initialPath,
-			initialPath === "desktop" ? hub : undefined,
+			["desktop", "desktop-preview"].includes(initialPath) ? hub : undefined,
 			label,
 			JSON.stringify([accountId, id]),
+			undefined,
+			"hub",
+			undefined,
+			hub.origin + capabilityBase(id, token) + "__desktop_open",
 		);
 		res
 			.writeHead(200, {
@@ -886,6 +913,8 @@ export function createDeviceRelay(options: DeviceRelayOptions) {
 			return true;
 		}
 		if ((path && path.tail === "/__open") || (!path && url.pathname === "/__device/open")) {
+			const nextDesktop = url.searchParams.get("next") === "/desktop-preview" ? "/desktop-preview" : "/desktop";
+			const isDesktop = ["/desktop", "/desktop-preview"].includes(url.searchParams.get("next") ?? "");
 			const key = url.searchParams.get("ticket") || "";
 			const ticket = tickets.get(key);
 			if (
@@ -901,13 +930,13 @@ export function createDeviceRelay(options: DeviceRelayOptions) {
 				return true;
 			}
 			tickets.delete(key);
-			if (url.searchParams.get("next") === "/desktop" && !path) {
+			if (isDesktop && !path) {
 				// Exchange the one-use legacy ticket for a fresh one on the Hub origin.
 				const desktopTicket = randomBytes(32).toString("hex");
 				tickets.set(desktopTicket, ticket);
 				res
 					.writeHead(302, {
-						location: `${hub.origin}/device/${id}/__open?ticket=${desktopTicket}&next=/desktop`,
+						location: `${hub.origin}/device/${id}/__open?ticket=${desktopTicket}&next=${nextDesktop}`,
 						"cache-control": "no-store",
 						"referrer-policy": "no-referrer",
 					})
@@ -915,7 +944,7 @@ export function createDeviceRelay(options: DeviceRelayOptions) {
 				return true;
 			}
 			if (path) {
-				sendWrapper(res, id, ticket.accountId, url.searchParams.get("next") === "/desktop" ? "desktop" : "");
+				sendWrapper(res, id, ticket.accountId, isDesktop ? nextDesktop.slice(1) : "");
 				return true;
 			}
 			const token = randomBytes(32).toString("hex");
@@ -923,9 +952,38 @@ export function createDeviceRelay(options: DeviceRelayOptions) {
 			res
 				.writeHead(302, {
 					"set-cookie": `${deviceCookie(id)}=${token}; Path=/; Max-Age=900;${hub.protocol === "https:" ? " Secure;" : ""} HttpOnly; SameSite=Lax`,
-					location: url.searchParams.get("next") === "/desktop" ? "/desktop" : "/",
+					location: isDesktop ? nextDesktop : "/",
 				})
 				.end();
+			return true;
+		}
+		if (path?.path === "/__desktop_open") {
+			const generation = revision;
+			const grant = capabilities.get(path.token!);
+			if (
+				req.method !== "POST" ||
+				req.headers.origin !== hub.origin ||
+				!grant ||
+				grant.nativeOrigin ||
+				grant.deviceId !== id ||
+				grant.expiresAt <= Date.now() ||
+				!(await options.ownsDevice(grant.accountId, id)) ||
+				closed ||
+				revision !== generation ||
+				capabilities.get(path.token!) !== grant
+			) {
+				res.writeHead(403).end();
+				return true;
+			}
+			if (!devices.has(id) || tickets.size >= RELAY_LIMITS.sessions) {
+				res.writeHead(503).end();
+				return true;
+			}
+			const ticket = randomBytes(32).toString("hex");
+			tickets.set(ticket, { deviceId: id, accountId: grant.accountId, generation, expiresAt: Date.now() + 30_000 });
+			res
+				.writeHead(200, { "content-type": "application/json" })
+				.end(JSON.stringify({ url: `${hub.origin}/device/${id}/__open?ticket=${ticket}` }));
 			return true;
 		}
 		if (!(path ? await pathAuthorized(req, id) : authorized(req, id))) {
@@ -963,7 +1021,7 @@ export function createDeviceRelay(options: DeviceRelayOptions) {
 			res.writeHead(400).end();
 			return true;
 		}
-		const rewriteHtml = !!path && ["/", "/desktop"].includes(path.path!.split("?")[0]);
+		const rewriteHtml = !!path && ["/", "/desktop", "/desktop-preview"].includes(path.path!.split("?")[0]);
 		const streamId = randomBytes(12).toString("hex");
 		addStream(entry, streamId, {
 			res,

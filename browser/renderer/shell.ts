@@ -117,7 +117,7 @@ async function refreshExtensionsCount(): Promise<void> {
 }
 
 // TOTP 验证器：当前站点有绑定的条目时，图标上带一个小圆点（不看面板也知道「这里有」）
-const totpBtn = iconButton(keyIcon(13), t("totp"), () => showShellPanel("totp"));
+const totpBtn = iconButton(keyIcon(13), t("vault"), () => showShellPanel("vault", "totp"));
 totpBtn.classList.add("pb-tool-btn");
 const totpDot = element("span", "pb-tool-btn-dot");
 totpDot.hidden = true;
@@ -546,12 +546,12 @@ window.addEventListener("pb-settings-changed", () => {
 	void loadSettings().catch(reportError);
 });
 window.addEventListener("pb-extensions-changed", () => void refreshExtensionsCount());
-window.addEventListener("pb-totp-changed", () => void refreshTotpMatch());
+window.addEventListener("pb-vault-changed", () => void refreshTotpMatch());
 // 面板开在自己的视图里，那里的改动只能由宿主转发过来
 listenPanelEvents((name) => {
 	if (name === "pb-settings-changed") void loadSettings().catch(reportError);
 	if (name === "pb-extensions-changed") void refreshExtensionsCount();
-	if (name === "pb-totp-changed") void refreshTotpMatch();
+	if (name === "pb-vault-changed") void refreshTotpMatch();
 });
 window.addEventListener("focus", () => {
 	void loadSettings().catch(reportError);
