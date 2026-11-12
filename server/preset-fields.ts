@@ -136,6 +136,30 @@ export function normalizePresetFieldSelection(v: unknown): string[] | undefined 
 	return PRESET_FIELD_NAMES.filter((f) => wanted.has(f));
 }
 
+/**
+ * 把预设快照裁剪到指定字段组（不传 = 保留全量浅拷贝）。
+ * 「提示词模板」用 groups=["prompt"] 只捕获提示词组字段，应用/分享时就不会携带其它设置。
+ */
+export function narrowPresetToGroups(preset: { name: string }, groups?: readonly string[]): Record<string, unknown> {
+	if (!groups || groups.length === 0) return { ...preset };
+	const allow = new Set<string>(groups);
+	const out: Record<string, unknown> = { name: preset.name };
+	for (const [key, value] of Object.entries(preset)) {
+		if (key === "name") continue;
+		const group = presetFieldGroup(key);
+		if (group && allow.has(group)) out[key] = value;
+	}
+	return out;
+}
+
+/**
+ * 预设是否只含 prompt 字段组（设置面板「提示词模板」库的判定依据）。
+ * 全量快照的预设必然携带其它组字段 → false；未知字段也按非模板处理。
+ */
+export function isPromptOnlyPreset(preset: object): boolean {
+	return Object.keys(preset).every((key) => key === "name" || presetFieldGroup(key) === "prompt");
+}
+
 export interface PresetFieldInfo {
 	labelZh: string;
 	labelEn: string;

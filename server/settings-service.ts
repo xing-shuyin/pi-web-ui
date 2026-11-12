@@ -40,6 +40,7 @@ import {
 	type PromptMode,
 } from "./client-state.js";
 import { normalizeAutoCompactionInstructions, normalizeSoftCapByModel, normalizeSoftCapTokens } from "./soft-cap.js";
+import { narrowPresetToGroups } from "./preset-fields.js";
 import { findVisionModels, SYSTEM_PROMPT } from "./vision-bridge.js";
 import { COMMITMSG_SYSTEM_PROMPT } from "./scm-commitmsg.js";
 import { PLAN_MODE_SYSTEM_PROMPT } from "./plan-mode.js";
@@ -1035,7 +1036,7 @@ export class SettingsService {
 		if (needsReload) await this.applyRuntime();
 	}
 
-	async savePreset(name: string): Promise<void> {
+	async savePreset(name: string, groups?: readonly string[]): Promise<void> {
 		const n = name.trim();
 		if (!n) {
 			this.host.emit({
@@ -1047,7 +1048,7 @@ export class SettingsService {
 			return;
 		}
 		this.presets = this.host.stateStore.getPresets(this.host.clientId);
-		const preset = this.snapshotPreset(n);
+		const preset = narrowPresetToGroups(this.snapshotPreset(n), groups) as unknown as SettingsPreset;
 		const existing = this.presets.findIndex((p) => p.name === n);
 		if (existing >= 0) this.presets[existing] = preset;
 		else this.presets.push(preset);

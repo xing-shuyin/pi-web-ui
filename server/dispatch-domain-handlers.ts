@@ -238,7 +238,7 @@ export function handlePresetAndDshMessage(msg: ClientMessage, cs: DispatchSessio
 			void cs.fetchDshMarket?.(msg.force);
 			return true;
 		case "save_preset":
-			void cs.savePreset(msg.name);
+			void cs.savePreset(msg.name, msg.groups);
 			return true;
 		case "preset_export":
 			void cs.exportPreset(msg);

@@ -1605,7 +1605,7 @@ export interface DispatchSession {
 	updatePlan?(steps: import("./protocol.js").PlanStep[], activeStepId?: string | null, conversationId?: string): void;
 	setPlanMode?(enabled: boolean, conversationId?: string): Promise<void>;
 	setDelegateMode?(enabled: boolean, conversationId?: string): Promise<void>;
-	savePreset(name: string): Promise<void>;
+	savePreset(name: string, groups?: readonly string[]): Promise<void>;
 	applyPreset(name: string): Promise<void>;
 	deletePreset(name: string): Promise<void>;
 	saveMcpServer?(

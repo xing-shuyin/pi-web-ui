@@ -595,6 +595,7 @@ import {
 	extractShotImage,
 } from "./browser-page-tool.js";
 import { makeBrowserScriptTool } from "./browser-script-tool.js";
+import { makeBrowserDesignTool } from "./browser-design-tool.js";
 import {
 	normalizePhoneCallTimeoutMs,
 	collectPhoneArgs,
@@ -603,7 +604,7 @@ import {
 	makePhoneTool,
 	type PhoneCallResult,
 } from "./phone-tool.js";
-export { makeBrowserScriptTool };
+export { makeBrowserScriptTool, makeBrowserDesignTool };
 export {
 	makeAskUserQuestionTool,
 	shouldPopQuestion,
@@ -4688,6 +4689,7 @@ export class ClientSession {
 						makeBrowserPageTool(bridge, ownerId),
 						makePhoneTool(bridge, ownerId),
 						makeBrowserScriptTool(bridge, ownerId),
+						makeBrowserDesignTool(bridge, ownerId),
 						makeConversationReadTool(this.conversationReadHost(), () => this.getLang(), {
 							listClaims: (cwd) =>
 								(this.getClaimStore?.().list(cwd) ?? []).map((c) => ({
@@ -8883,8 +8885,8 @@ export class ClientSession {
 		return true;
 	}
 
-	async savePreset(name: string): Promise<void> {
-		return this.settingsSvc.savePreset(name);
+	async savePreset(name: string, groups?: readonly string[]): Promise<void> {
+		return this.settingsSvc.savePreset(name, groups);
 	}
 
 	private readonly conversationSettingsTargets = new WeakMap<

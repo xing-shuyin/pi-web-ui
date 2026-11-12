@@ -1629,7 +1629,7 @@ export type ClientMessage =
 	| { type: "plugins_reload" }
 	| { type: "plugin_dom_consent"; pluginId: string; granted: boolean }
 	| { type: "plugin_dom_consent_response"; id: string; ok: boolean }
-	| { type: "save_preset"; name: string }
+	| { type: "save_preset"; name: string; groups?: string[] }
 	| { type: "save_subagent_template"; template: UiSubagentTemplate }
 	| { type: "delete_subagent_template"; name: string }
 	| { type: "save_approval_rule"; rule: UiApprovalRule }
@@ -2840,6 +2840,8 @@ export interface UiExtensionInfo {
 
 export interface UiSettingsPreset {
 	name: string;
+	/** 预设字段组范围："prompt" = 只捕获提示词组（设置面板按模板展示）；缺省 = 全量快照 */
+	scope?: "prompt";
 	plugins?: UiPresetPluginDependency[];
 	promptMode: "append" | "replace";
 	customSystemPrompt: string;

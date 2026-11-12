@@ -14,6 +14,7 @@ import {
 import { normalizeToolPromptOverrides, type ToolPromptOverrideMap } from "./tool-prompt-overrides.js";
 import { UI_SLOTS } from "./plugin-ui-slots.js";
 import { DEFAULT_PROMPT_DISABLED } from "./prompt-composer.js";
+import { isPromptOnlyPreset } from "./preset-fields.js";
 import type { EngineId, QueueMode, ThinkingLevel, UiAlign, UiLayoutPrefs, UiSlotId } from "./protocol.js";
 import { mergeQuickAskSettings, normalizeQuickAskSettings, type QuickAskSettings } from "./quick-ask-settings.js";
 
@@ -801,6 +802,7 @@ export interface SettingsPreset extends Partial<ClientSettings> {
 export function settingsPresetToUi(p: SettingsPreset): import("./protocol.js").UiSettingsPreset {
 	return {
 		name: p.name,
+		...(isPromptOnlyPreset(p) ? { scope: "prompt" as const } : {}),
 		...(p.plugins ? { plugins: p.plugins } : {}),
 		promptMode: p.promptMode === "replace" ? "replace" : "append",
 		customSystemPrompt: p.customSystemPrompt ?? "",
