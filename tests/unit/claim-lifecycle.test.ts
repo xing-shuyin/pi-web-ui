@@ -29,9 +29,6 @@ function setup() {
 			getSessionStats: () => ({ tokens: { total: 0 }, cost: { total: 0 } }),
 		} as any,
 		runtime: { dispose: vi.fn(async () => {}) } as any,
-		// ClientSession 的 snapshot 定时器会在用例结束后才回调，回调链要读这几个
-		// 会话级缓存（agent-service.ts pruneMessageCache / uiMessageKey）；缺一个就是
-		// 「Unhandled Errors: Cannot read properties of undefined (reading 'size')」整轮判红。
 		msgIds: new Map(),
 		nextMsgId: 0,
 		userSeqByTs: new Map(),
@@ -48,6 +45,7 @@ function setup() {
 		goalSvc: { onAgentEnd: vi.fn() },
 		emit: vi.fn(),
 		flushSnapshot: vi.fn(),
+		scheduleSnapshot: vi.fn(),
 		emitConversations: vi.fn(),
 		scheduleTranscriptFlush: vi.fn(),
 		clearConversationToolStates: vi.fn(),
