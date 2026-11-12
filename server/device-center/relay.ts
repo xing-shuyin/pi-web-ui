@@ -1,3 +1,4 @@
+import { deviceLabel } from "./device-label.js";
 import { randomBytes, randomUUID } from "node:crypto";
 import { parseReportMetadata } from "./report-metadata.js";
 import { computeLegacyOutcomeFingerprint } from "./task-outcome.js";
@@ -518,6 +519,7 @@ export interface DeviceRelayOptions {
 	) => string | { id: string } | null | undefined | Promise<string | { id: string } | null | undefined>;
 	ownsDevice: (accountId: string, deviceId: string) => boolean | Promise<boolean>;
 	getDeviceName?: (deviceId: string) => string | undefined;
+	getDeviceRemark?: (deviceId: string) => string | undefined;
 	onTaskEvent?: (
 		deviceId: string,
 		event: any,
@@ -818,7 +820,13 @@ export function createDeviceRelay(options: DeviceRelayOptions) {
 			res
 				.writeHead(200, { "content-type": "application/json", "cache-control": "no-store" })
 				.end(
-					JSON.stringify({ url, expiresAt, ...(deviceLan ? { deviceLan } : {}), ...(deviceP2P ? { deviceP2P } : {}) }),
+					JSON.stringify({
+						url,
+						expiresAt,
+						deviceLabel: deviceLabel(options.getDeviceName?.(id), options.getDeviceRemark?.(id), id),
+						...(deviceLan ? { deviceLan } : {}),
+						...(deviceP2P ? { deviceP2P } : {}),
+					}),
 				);
 	}
 	function sendWrapper(res: ServerResponse, id: string, accountId: string, initialPath = "") {
@@ -832,8 +840,7 @@ export function createDeviceRelay(options: DeviceRelayOptions) {
 		}
 		const token = randomBytes(32).toString("hex");
 		capabilities.set(token, { deviceId: id, accountId, expiresAt: Date.now() + 8 * 60 * 60_000 });
-		const name = options.getDeviceName?.(id)?.trim();
-		const label = name && name !== id ? `${name} (${id})` : id;
+		const label = deviceLabel(options.getDeviceName?.(id), options.getDeviceRemark?.(id), id);
 		const wrapper = wrapperHtml(
 			capabilityBase(id, token),
 			initialPath,

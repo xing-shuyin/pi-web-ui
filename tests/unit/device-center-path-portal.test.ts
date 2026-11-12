@@ -29,7 +29,7 @@ async function listen(server: Server) {
 	});
 	return (server.address() as { port: number }).port;
 }
-async function fixture(deviceName?: string) {
+async function fixture(deviceName?: string, deviceRemark?: string) {
 	const received: http.IncomingHttpHeaders[] = [];
 	const local = http.createServer((req, res) => {
 		received.push(req.headers);
@@ -110,6 +110,7 @@ async function fixture(deviceName?: string) {
 		getAccount: (req) => (req.headers.cookie?.includes("hub=secret") ? "account" : null),
 		ownsDevice: (account, id) => account === "account" && id === "dev1",
 		getDeviceName: () => deviceName,
+		getDeviceRemark: () => deviceRemark,
 	});
 	cleanup.push(() => relay.close());
 	const connector = createDeviceConnector({
@@ -130,6 +131,7 @@ async function fixture(deviceName?: string) {
 		const ticket = await request("/open", { cookie: "hub=secret", origin }, "POST");
 		expect(ticket.status).toBe(200);
 		const url = new URL(JSON.parse(ticket.body).url);
+		if (deviceName && deviceRemark) expect(JSON.parse(ticket.body).deviceLabel).toBe(`${deviceRemark} · ${deviceName}`);
 		const wrapper = await request(url.pathname + url.search);
 		const base = /\/device\/dev1\/__relay\/[a-f0-9]{64}\//.exec(wrapper.body)![0];
 		return { wrapper, base, ticketPath: url.pathname + url.search };
@@ -138,10 +140,10 @@ async function fixture(deviceName?: string) {
 }
 
 describe("single-port device path portal", () => {
-	it("uses the device name and ID in the tab title and escapes HTML", async () => {
-		const f = await fixture('办公机 </title><script>alert("x")</script>&');
+	it("uses the remark and computer name in the tab title and escapes HTML", async () => {
+		const f = await fixture("DESKTOP-TEST", '办公机 </title><script>alert("x")</script>&');
 		const expected =
-			"<title>办公机 &lt;/title&gt;&lt;script&gt;alert(&quot;x&quot;)&lt;/script&gt;&amp; (dev1) · pi-web-ui</title>";
+			"<title>办公机 &lt;/title&gt;&lt;script&gt;alert(&quot;x&quot;)&lt;/script&gt;&amp; · DESKTOP-TEST · pi-web-ui</title>";
 		expect((await f.request("/device/dev1/", { cookie: "hub=secret" })).body).toContain(expected);
 		expect((await f.open()).wrapper.body).toContain(expected);
 	});

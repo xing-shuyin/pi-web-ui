@@ -1,3 +1,4 @@
+import { desktopErrorScript } from "./desktop-errors.js";
 import { desktopThemeScript } from "./desktop-theme.js";
 
 export function desktopPage(): string {
@@ -11,7 +12,7 @@ button,input,summary{font:inherit;color:var(--text)}button,summary{display:inlin
 #toolbar{display:flex;align-items:center;flex:none;gap:4px;padding:6px 8px;background:var(--bg-elev);border-bottom:1px solid var(--border);font-size:12px;min-width:0;max-width:100%;position:relative}#toolbar-scroll{display:flex;align-items:center;gap:4px;min-width:0;overflow-x:auto;scrollbar-width:thin}#controls{display:flex;align-items:center;gap:3px;flex:none}#connect:not(:disabled){background:var(--accent);color:var(--accent-contrast)}#connect:disabled{display:none}#disconnect:disabled{display:none}.view-options{display:flex;gap:2px;align-items:center;border-left:1px solid var(--border);border-right:1px solid var(--border);padding:0 5px;margin:0 3px}
 #toolbar label{display:flex;align-items:center;gap:5px;white-space:nowrap;cursor:pointer;border-radius:7px;padding:6px 7px;min-height:30px}#toolbar label:has(input:checked){background:color-mix(in srgb,var(--accent) 12%,transparent);color:var(--text)}#toolbar label:hover{background:var(--bg-elev2)}input[type=checkbox]{accent-color:var(--accent);width:13px;height:13px;margin:0}details{flex:none}summary{list-style:none}summary::-webkit-details-marker{display:none}details[open]>summary{background:var(--bg-elev2);border-color:var(--border)}
 #setup,#text-form,#statistics{position:absolute;z-index:2;top:calc(100% + 6px);left:8px;width:min(520px,calc(100vw - 16px));max-height:calc(100dvh - 64px);overflow:auto;overscroll-behavior:contain;background:var(--bg-elev);border:1px solid var(--border);border-radius:12px;padding:16px;box-shadow:0 12px 36px #0003;white-space:normal}#setup{display:grid;gap:12px}.actions{display:flex;gap:6px;flex-wrap:wrap}.actions button,#send-text{background:var(--bg-elev2);border-color:var(--border)}#hint,#statistics{color:var(--text-dim)}#text-form{display:flex;flex-wrap:wrap;gap:10px}#text-form label{width:100%;padding:0;min-height:0;cursor:default}input[type=text]{border:1px solid var(--border);border-radius:8px;background:var(--bg);padding:9px 10px;min-width:0;flex:1;width:160px}#send-text{flex:none}
-#status{display:flex;align-items:center;gap:6px;margin-left:auto;padding:0 4px;font-size:11px;white-space:nowrap;flex:none;color:var(--text-dim)}#status:before{content:'';width:6px;height:6px;border-radius:50%;background:var(--text-dim);flex:none}#status[data-connected=true]:before{background:var(--green)}#status[data-error=true]{position:absolute;z-index:1;top:calc(100% + 6px);right:8px;max-width:min(520px,calc(100% - 16px));white-space:pre-wrap;background:var(--bg-elev);color:var(--red);border:1px solid var(--border);border-radius:10px;padding:10px 12px;box-shadow:0 8px 24px #0003}#status[data-error=true]:before{background:var(--red)}
+#status{display:flex;align-items:center;gap:6px;margin-left:auto;padding:0 4px;font-size:11px;white-space:nowrap;flex:none;color:var(--text-dim)}#status:before{content:'';width:6px;height:6px;border-radius:50%;background:var(--text-dim);flex:none}#status[data-connected=true]:before{background:var(--green)}#status[data-error=true]{position:absolute;z-index:1;top:calc(100% + 6px);right:8px;max-width:min(520px,calc(100% - 16px));white-space:pre-wrap;background:var(--bg-elev);color:var(--red);border:1px solid var(--border);border-radius:10px;padding:10px 12px;box-shadow:0 8px 24px #0003}#status[data-error=true]:before{background:var(--red)}#status[data-error=true]{overflow-wrap:anywhere;word-break:break-word}
 #screen{flex:1;min-width:0;min-height:0;overflow:auto;background:#000;position:relative}main:fullscreen{width:100%;height:100%;background:var(--bg)}canvas{display:block;width:100%;height:100%;object-fit:contain;touch-action:none;outline-offset:-3px}#screen.native canvas{width:auto;height:auto;max-width:none}@media(max-width:700px){#toolbar{flex-wrap:wrap;gap:2px}#toolbar-scroll{width:100%}#status{margin-left:4px;min-height:18px}#toolbar button,#toolbar summary,#toolbar label{min-height:34px}}
 </style></head><body><main>
 <header id="toolbar"><div id="toolbar-scroll"><nav id="controls"><button id="connect" disabled data-i18n="connect"></button><button id="disconnect" disabled data-i18n="disconnect"></button><div class="view-options"><label><input id="viewonly" type="checkbox"><span data-i18n="viewonly"></span></label><label><input id="scale" type="checkbox" checked><span data-i18n="scale"></span></label></div><button id="fullscreen" data-i18n="fullscreen"></button></nav>
@@ -22,6 +23,7 @@ button,input,summary{font:inherit;color:var(--text)}button,summary{display:inlin
 </main><script type="module">
 const appUrl = path => new URL(path, document.baseURI);
 ${desktopThemeScript()}
+${desktopErrorScript()}
 const $ = id => document.getElementById(id);
 const zh = (navigator.language || 'en').toLowerCase().startsWith('zh');
 const messages = {
@@ -51,12 +53,13 @@ $('setup').setAttribute('aria-label', t('setup')); $('controls').setAttribute('a
 const canvas = $('canvas'), screen = $('screen'), context = canvas.getContext('2d');
 let config = null, busy = false, disposed = false, socket = null, generation = 0;
 let ready = false, hasFrame = false, connectionViewOnly = true, pendingFrame = null, decoding = false;
-let activePointer = null;
+let activePointer = null, retryTimer, awaitingDesktop = false;
 let rendered = 0, sampleAt = performance.now(), decodeMs = 0;
 const browserSupported = !!context && typeof createImageBitmap === 'function' && typeof WebSocket === 'function';
 function status(message, error = false) { $('status').textContent = message; $('status').dataset.error = String(error); $('status').dataset.connected = String(ready && hasFrame && !error); }
 function desktopError(message) {
  if (typeof message !== 'string') return t('connectionError');
+ const issue = desktopIssue(message, zh); if (issue) return issue.message;
  if (message.startsWith('MAC_SCREEN_PERMISSION_REQUIRED')) return t('macScreenPermission');
  if (message.startsWith('MAC_ACCESSIBILITY_PERMISSION_REQUIRED')) return t('macAccessibilityPermission');
  return message;
@@ -65,7 +68,7 @@ function canConnect() { return browserSupported && config?.enabled === true && c
 function canInput() { return ready && hasFrame && !connectionViewOnly && socket?.readyState === WebSocket.OPEN; }
 function controls() {
  $('connect').disabled = busy || !canConnect() || !!socket;
- $('disconnect').disabled = !socket;
+ $('disconnect').disabled = !socket && !awaitingDesktop;
  $('check').disabled = busy;
  $('enable').disabled = busy || !config || config.enabled || !config.supported;
  $('disable').disabled = busy || !config?.enabled || config.environmentEnabled;
@@ -85,13 +88,20 @@ function release() {
  if (previous !== null && canvas.hasPointerCapture(previous)) canvas.releasePointerCapture(previous);
 }
 function stop() {
+ clearTimeout(retryTimer); awaitingDesktop = false;
  release(); const previous = socket; socket = null; generation++;
  ready = false; hasFrame = false; pendingFrame = null;
  rendered = 0; sampleAt = performance.now(); $('statistics').textContent = '';
  if (previous) { previous.onmessage = previous.onopen = previous.onerror = previous.onclose = null; previous.close(); }
  context?.clearRect(0, 0, canvas.width, canvas.height); controls();
 }
-function fail(message) { stop(); status(message, true); }
+function scheduleRecovery() {
+ clearTimeout(retryTimer);
+ if (awaitingDesktop && !disposed && !document.hidden) retryTimer = setTimeout(() => { if (awaitingDesktop) connect(); }, 10000);
+}
+function fail(message, retry = false) {
+ stop(); awaitingDesktop = retry; status(message, true); controls(); scheduleRecovery();
+}
 async function decodeFrames() {
  if (decoding) return;
  decoding = true;
@@ -134,7 +144,7 @@ function connect() {
   if (typeof event.data === 'string') {
    try {
     const message = JSON.parse(event.data);
-    if (message.type === 'error') fail(desktopError(message.message));
+    if (message.type === 'error') fail(desktopError(message.message), typeof message.message === 'string' && desktopIssue(message.message, zh)?.retry === true);
     else if (message.type === 'ready') { ready = true; controls(); }
     else if (message.type === 'stats') {
      const now = performance.now(), values = {...message, fps:(rendered * 1000 / Math.max(1,now - sampleAt)).toFixed(1), decodeMs};
@@ -167,7 +177,7 @@ function applyConfig(next) {
  if (next.environmentEnabled) details.push(t('environment'));
  $('setup-status').textContent = details.join(' · ');
  if (!canConnect() && socket) stop();
- if (!socket) status(t(!browserSupported ? 'browserError' : canConnect() ? 'ready' : 'unavailable'), !browserSupported);
+ if (!socket && !awaitingDesktop) status(t(!browserSupported ? 'browserError' : canConnect() ? 'ready' : 'unavailable'), !browserSupported);
 }
 async function update(enabled, autoConnect = false) {
  if (busy || disposed) return;
@@ -234,7 +244,7 @@ for (const action of ['down','up']) canvas.addEventListener('key' + action, even
 });
 canvas.addEventListener('blur', release);
 window.addEventListener('blur', release);
-document.addEventListener('visibilitychange', () => { if (document.hidden) release(); });
+document.addEventListener('visibilitychange', () => { if (document.hidden) { release(); clearTimeout(retryTimer); } else scheduleRecovery(); });
 $('text-form').addEventListener('submit', event => {
  event.preventDefault(); const input = $('text');
  if (input.value && send({type:'text', text:input.value})) input.value = '';

@@ -439,7 +439,13 @@ export async function installLocalDeviceCenter(options: Options) {
 		try {
 			await serialize(ensureLocalHub);
 			const current = activeConfig();
-			res.json({ hubUrl: current?.hubUrl, deviceId: current?.deviceId, ...(!config ? { local: true } : {}) });
+			res.json({
+				hubUrl: current?.hubUrl,
+				deviceId: current?.deviceId,
+				name: current?.name,
+				remark: current?.remark,
+				...(!config ? { local: true } : {}),
+			});
 		} catch {
 			res.status(503).json({ code: "LOCAL_HUB_UNAVAILABLE", error: "Local collaboration could not start" });
 		}
@@ -794,6 +800,7 @@ export async function installLocalDeviceCenter(options: Options) {
 							);
 						const direct = await options.lanAccess?.open(grant, {
 							deviceId: id,
+							deviceLabel: typeof data.deviceLabel === "string" ? data.deviceLabel.trim().slice(0, 515) : undefined,
 							hubUrl: captured.hubUrl,
 							origin: String(req.headers.origin),
 							basePath: req.body?.basePath,

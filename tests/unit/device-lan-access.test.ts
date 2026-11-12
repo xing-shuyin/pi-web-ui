@@ -87,6 +87,7 @@ async function fixture(basePath = "/", desktop = false, browserScript = "") {
 	const grant = await transport.issueGrant();
 	const accessOptions: Parameters<typeof access.open>[1] = {
 		deviceId: "remote",
+		deviceLabel: "办公室 · DESKTOP-TEST",
 		hubUrl: "https://hub.example",
 		origin: sourceOrigin,
 		basePath,
@@ -214,7 +215,8 @@ describe("local capability portal over authenticated LAN", () => {
 		const f = await fixture();
 		expect(f.wrapper.status).toBe(200);
 		expect(f.html).toContain('sandbox="allow-scripts allow-forms allow-downloads"');
-		expect(f.html).toContain("LAN");
+		expect(f.html).toContain("<title>办公室 · DESKTOP-TEST · pi-web-ui</title>");
+		expect(f.html).toContain(`href="${f.base}favicon.svg"`);
 		expect((await fetch(f.wrapperUrl)).status).toBe(403);
 		expect((await fetch(f.wrapper.url)).status).toBe(200);
 		const page = await fetch(f.sourceOrigin + f.base, { headers: { Origin: "null", Cookie: "source-private=secret" } });

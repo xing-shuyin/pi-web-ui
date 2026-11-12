@@ -209,9 +209,11 @@ function PreviewFrame({
 				<span>
 					{!active
 						? t("desktop.paused")
-						: updatedAt
-							? t("desktop.updated", { seconds: Math.max(0, Math.floor((now - updatedAt) / 1000)) })
-							: t("desktop.waiting")}
+						: error || targetError
+							? t("desktop.previewUnavailable")
+							: updatedAt
+								? t("desktop.updated", { seconds: Math.max(0, Math.floor((now - updatedAt) / 1000)) })
+								: t("desktop.waiting")}
 				</span>
 			</div>
 			{(error || targetError) && (

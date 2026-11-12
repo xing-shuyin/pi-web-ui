@@ -1,3 +1,4 @@
+import { deviceLabel } from "../../server/device-center/device-label";
 import { appBase, appUrl } from "./base-url";
 import { withToken } from "./auth-token";
 import { getMobileRuntime } from "./mobile-runtime";
@@ -18,7 +19,14 @@ export async function openPageDesktop(zh: boolean, name: string, signal?: AbortS
 	if (!response.ok) throw new Error("Device status unavailable");
 	const status = await response.json();
 	if (signal?.aborted) return;
-	await openDeviceAccess(id, typeof status.hubUrl === "string" ? status.hubUrl : "", true, zh, false, name);
+	await openDeviceAccess(
+		id,
+		typeof status.hubUrl === "string" ? status.hubUrl : "",
+		true,
+		zh,
+		false,
+		deviceLabel(status.name, status.remark, name),
+	);
 }
 
 export type DesktopAccess = {

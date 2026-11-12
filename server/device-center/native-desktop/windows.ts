@@ -18,6 +18,27 @@ public static class NativeDesktop {
   [DllImport("user32.dll", SetLastError=true)] static extern uint SendInput(uint n, INPUT[] input, int size);
   [DllImport("user32.dll")] static extern bool SetCursorPos(int x,int y);
   [DllImport("user32.dll")] static extern bool SetProcessDPIAware();
+  [DllImport("wtsapi32.dll")] static extern bool WTSQuerySessionInformation(IntPtr server,int session,int info,out IntPtr data,out int size);
+  [DllImport("wtsapi32.dll")] static extern void WTSFreeMemory(IntPtr data);
+  [DllImport("user32.dll", SetLastError=true)] static extern IntPtr OpenInputDesktop(uint flags,bool inherit,uint access);
+  [DllImport("user32.dll")] static extern bool CloseDesktop(IntPtr desktop);
+  [DllImport("user32.dll", CharSet=CharSet.Unicode, SetLastError=true)] static extern bool GetUserObjectInformation(IntPtr handle,int index,StringBuilder value,int size,out int needed);
+  static void RequireDesktop() {
+    int session; using(var process=System.Diagnostics.Process.GetCurrentProcess()) session=process.SessionId;
+    if(session==0) throw new Exception("WINDOWS_SESSION_ZERO: No interactive user desktop.");
+    IntPtr data; int size;
+    if(WTSQuerySessionInformation(IntPtr.Zero,session,8,out data,out size)) {
+      try { if(size>=4 && Marshal.ReadInt32(data)==4) throw new Exception("WINDOWS_SESSION_DISCONNECTED: The Windows user session is disconnected."); }
+      finally { WTSFreeMemory(data); }
+    }
+    IntPtr desktop=OpenInputDesktop(0,false,1);
+    if(desktop==IntPtr.Zero) throw new Exception("WINDOWS_DESKTOP_UNAVAILABLE: Cannot access the input desktop.");
+    try {
+      var name=new StringBuilder(256); int needed;
+      if(!GetUserObjectInformation(desktop,2,name,name.Capacity*2,out needed) || !String.Equals(name.ToString(),"Default",StringComparison.OrdinalIgnoreCase))
+        throw new Exception("WINDOWS_DESKTOP_UNAVAILABLE: The interactive desktop is locked or protected.");
+    } finally { CloseDesktop(desktop); }
+  }
   static readonly object gate = new object();
   static readonly HashSet<int> keys = new HashSet<int>();
   static readonly HashSet<int> buttons = new HashSet<int>();
@@ -73,11 +94,14 @@ public static class NativeDesktop {
     try {
       Stream output=Console.OpenStandardOutput();
       ImageCodecInfo codec=Array.Find(ImageCodecInfo.GetImageEncoders(),c=>c.MimeType=="image/jpeg");
+      DateTime checkedAt=DateTime.MinValue;
       while(!stopped) {
+        if((DateTime.UtcNow-checkedAt).TotalSeconds>=1) { RequireDesktop(); checkedAt=DateTime.UtcNow; }
         var r=System.Windows.Forms.Screen.PrimaryScreen.Bounds;
         if(r.Width<1||r.Height<1||r.Width>32768||r.Height>32768||(long)r.Width*r.Height>64000000) throw new Exception("Unsupported display size.");
         using(var full=new Bitmap(r.Width,r.Height,PixelFormat.Format24bppRgb)) {
-          using(var g=Graphics.FromImage(full)) g.CopyFromScreen(r.Left,r.Top,0,0,r.Size,CopyPixelOperation.SourceCopy);
+          try { using(var g=Graphics.FromImage(full)) g.CopyFromScreen(r.Left,r.Top,0,0,r.Size,CopyPixelOperation.SourceCopy); }
+          catch { RequireDesktop(); throw; }
           double scale=Math.Min(1.0,(preview?640.0:1920.0)/Math.Max(r.Width,r.Height));
           using(var image=new Bitmap(full,new Size(Math.Max(1,(int)(r.Width*scale)),Math.Max(1,(int)(r.Height*scale)))))
           using(var data=new MemoryStream())

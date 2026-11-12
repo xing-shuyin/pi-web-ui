@@ -1,9 +1,12 @@
+import { desktopErrorScript } from "./desktop-errors.js";
 import { desktopThemeScript } from "./desktop-theme.js";
 
 export function desktopPreviewPage(): string {
 	return `<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Desktop preview</title><style>html,body{margin:0;width:100%;height:100%;background:var(--bg,#101827)}img{display:block;width:100%;height:100%;object-fit:contain}img:not([src]){visibility:hidden}</style></head><body><img alt=""><script type="module">
 const image = document.querySelector('img');
 ${desktopThemeScript()}
+${desktopErrorScript()}
+const zh = (navigator.language || 'en').toLowerCase().startsWith('zh');
 let active = parent === window, disposed = false, timer, controller, objectUrl;
 const report = data => parent.postMessage({type:'desktop-preview-state',...data}, '*');
 function cancel() { clearTimeout(timer); controller?.abort(); }
@@ -11,14 +14,17 @@ async function refresh() {
  if (!active || disposed || document.hidden || controller) return;
  const current = new AbortController(); controller = current;
  const timeout = setTimeout(() => current.abort(), 65000);
- let retry = 3000;
+ let retry = 3000, receivedResponse = false;
  try {
   const response = await fetch(new URL('api/device-desktop/preview', document.baseURI), {credentials:'same-origin', cache:'no-store', signal:current.signal});
+  receivedResponse = true;
   if (!response.ok) {
    const unsupported = response.status === 404;
    let error = 'Desktop preview unavailable (HTTP ' + response.status + ')';
    try { const data = await response.json(); if (typeof data.error === 'string') error = data.error.slice(0,2048); } catch {}
-   report({error,unsupported});
+   const issue = desktopIssue(error, zh);
+   report({error:issue?.message || error,unsupported});
+   if (issue) { retry = 10000; if (!issue.retry) active = false; return; }
    if (unsupported || response.status === 403 || response.status === 503) { active = false; return; }
    throw new Error(error);
   }
@@ -35,7 +41,7 @@ async function refresh() {
  } catch (error) {
   if (active && !disposed) {
    report({error:current.signal.aborted ? 'Desktop preview timed out.' : String(error.message).slice(0,2048)});
-   if (!current.signal.aborted) parent.postMessage({type:'device-portal-disconnected'}, '*');
+   if (!receivedResponse && !current.signal.aborted) parent.postMessage({type:'device-portal-disconnected'}, '*');
   }
   retry = 10000;
  } finally {

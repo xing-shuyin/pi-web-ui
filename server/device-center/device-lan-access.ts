@@ -12,6 +12,7 @@ import { createPortalResponse, parseDevicePath, portalHeaders, wrapperHtml } fro
 type LanConnection = NonNullable<Awaited<ReturnType<typeof probeDeviceLan>>>;
 export interface DeviceLanAccessOptions {
 	deviceId: string;
+	deviceLabel?: string;
 	hubUrl: string;
 	origin: string;
 	basePath?: string;
@@ -194,7 +195,7 @@ export function createDeviceLanAccess(options: { allowLoopback?: boolean } = {})
 				access.base,
 				access.options.desktop ? (access.preview ? "desktop-preview" : "desktop") : "",
 				access.options.desktop ? access.origin : undefined,
-				`${access.options.deviceId} · ${access.transport.toUpperCase()}`,
+				access.options.deviceLabel || access.options.deviceId,
 				JSON.stringify([access.options.hubUrl, access.options.deviceId]),
 				access.origin.origin + access.base + "__lan_fallback",
 				access.transport,

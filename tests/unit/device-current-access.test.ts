@@ -55,3 +55,15 @@ it("loads the host binding before showing its desktop and respects cancellation"
 	await openPageDesktop(false, "Mac", controller.signal);
 	expect(getDesktopAccess()).toBeNull();
 });
+it("labels the host desktop with its remark and computer name", async () => {
+	state.base = `/device/mac/__relay/${"b".repeat(64)}/`;
+	vi.stubGlobal(
+		"fetch",
+		vi.fn(async () => ({
+			ok: true,
+			json: async () => ({ hubUrl: "https://hub.example", name: "Studio-Mac", remark: "剪辑机" }),
+		})),
+	);
+	await openPageDesktop(true, "当前设备");
+	expect(getDesktopAccess()?.name).toBe("剪辑机 · Studio-Mac");
+});
