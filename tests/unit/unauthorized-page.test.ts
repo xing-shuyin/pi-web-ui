@@ -11,6 +11,36 @@ describe("unauthorized-page: 401 页面渲染与自愈", () => {
 		expect(html).toContain('id="auth-form"');
 	});
 
+	it("表单走原生 POST，带账号域与 current-password，浏览器才会提示保存密码", () => {
+		const html = renderUnauthorizedHtml({ isLoopback: false, isStaleCookie: false, port: 8787 });
+		expect(html).toContain('method="post" action="/__pi/auth"');
+		expect(html).toContain('name="username"');
+		expect(html).toContain('autocomplete="username"');
+		expect(html).toContain('name="token"');
+		expect(html).toContain('autocomplete="current-password"');
+		expect(html).not.toContain('autocomplete="off"');
+		// 禁止回到 JS preventDefault + ?token= 跳转的提交方式：那样密码管理器永远不弹保存提示
+		expect(html).not.toContain("e.preventDefault()");
+	});
+
+	it("回跳目标写进隐藏域并做属性转义", () => {
+		const html = renderUnauthorizedHtml({
+			isLoopback: false,
+			isStaleCookie: false,
+			port: 8787,
+			nextPath: '/device/a"&b?tab=x',
+		});
+		expect(html).toContain('name="next"');
+		expect(html).toContain("/device/a&quot;&amp;b?tab=x");
+	});
+
+	it("口令错误时展示错误提示", () => {
+		const ok = renderUnauthorizedHtml({ isLoopback: false, isStaleCookie: false, port: 8787 });
+		expect(ok).not.toContain("口令不正确");
+		const bad = renderUnauthorizedHtml({ isLoopback: false, isStaleCookie: false, port: 8787, authFailed: true });
+		expect(bad).toContain("口令不正确");
+	});
+
 	it("本机回环访问展示前往 /setup 的快捷入口", () => {
 		const html = renderUnauthorizedHtml({ isLoopback: true, isStaleCookie: false, port: 8787 });
 		expect(html).toContain('href="/setup"');

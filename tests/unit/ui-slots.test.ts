@@ -192,8 +192,8 @@ describe("buildUiSlots / 第 1 层：宿主默认", () => {
 		expect(slots["composer.leading"]).toEqual([]);
 		expect(ids(slots["composer.actions"])).toEqual([
 			"host:composer-upload",
-			"host:composer-screenshot",
 			"host:composer-templates",
+			"host:composer-screenshot",
 			"host:composer-model",
 			"host:composer-thinking",
 			"host:composer-dsh-perm",
@@ -313,8 +313,8 @@ describe("buildUiSlots / 第 1 层：宿主默认", () => {
 		expect(ids(slots["composer.leading"])).toEqual(["third:a", "third:b"]);
 		expect(ids(slots["composer.actions"])).toEqual([
 			"host:composer-upload",
-			"host:composer-screenshot",
 			"host:composer-templates",
+			"host:composer-screenshot",
 			"host:composer-model",
 			"host:composer-thinking",
 			"host:composer-dsh-perm",
@@ -332,9 +332,9 @@ describe("buildUiSlots / 第 1 层：宿主默认", () => {
 		]);
 		expect(ids(slots["composer.actions"])).toEqual([
 			"host:composer-upload",
-			"host:composer-screenshot",
 			"p:x",
 			"host:composer-templates",
+			"host:composer-screenshot",
 			"host:composer-model",
 			"host:composer-thinking",
 			"host:composer-dsh-perm",
@@ -1384,5 +1384,53 @@ describe("左栏插件自定义分区（P4 · leftpanel.sections 接受 kind=vie
 		expect(entry.userOverrides).toEqual([]);
 		expect(entry.arrangedBy).toEqual([]);
 		expect(entry.when).toEqual(["disabled"]);
+	});
+});
+
+describe("输入框动作栏：截图按钮的位置", () => {
+	it("默认排在附件与模板之后（左侧第三个位）", () => {
+		const slots = build([]);
+		expect(ids(slots["composer.actions"])).toEqual([
+			"host:composer-upload",
+			"host:composer-templates",
+			"host:composer-screenshot",
+			"host:composer-model",
+			"host:composer-thinking",
+			"host:composer-dsh-perm",
+			"host:composer-dsh-preset",
+			"host:composer-send",
+		]);
+	});
+	it("老布局的 order 未登记截图时，锚定到模板之后", () => {
+		const slots = build([], {
+			layout: {
+				order: [
+					"host:composer-upload",
+					"voice-input:mic",
+					"host:composer-templates",
+					"host:composer-model",
+					"host:composer-thinking",
+				],
+			},
+		});
+		expect(ids(slots["composer.actions"]).slice(0, 5)).toEqual([
+			"host:composer-upload",
+			"host:composer-templates",
+			"host:composer-screenshot",
+			"host:composer-model",
+			"host:composer-thinking",
+		]);
+	});
+	it("没有模板按钮时锚定到附件之后，已有排序保持不变", () => {
+		const slots = build([], { layout: { order: ["host:composer-upload", "host:composer-model"] } });
+		expect(ids(slots["composer.actions"]).slice(0, 3)).toEqual([
+			"host:composer-upload",
+			"host:composer-screenshot",
+			"host:composer-model",
+		]);
+		const ranked = build([], {
+			layout: { order: ["host:composer-screenshot", "host:composer-upload", "host:composer-model"] },
+		});
+		expect(ids(ranked["composer.actions"]).slice(0, 2)).toEqual(["host:composer-screenshot", "host:composer-upload"]);
 	});
 });

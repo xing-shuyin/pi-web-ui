@@ -91,6 +91,56 @@ describe("system screenshot boundaries", () => {
 	});
 });
 
+describe("system screenshot platforms", () => {
+	const servers: Server[] = [];
+	const start = async (platform: NodeJS.Platform, native: ReturnType<typeof vi.fn>) => {
+		const app = express();
+		app.use(express.json());
+		registerSystemScreenshotRoutes(app, { platform, capture: native as any });
+		const instance = await new Promise<Server>((resolve, reject) => {
+			const created = app.listen(0, "127.0.0.1", () => resolve(created));
+			created.once("error", reject);
+		});
+		servers.push(instance);
+		const address = instance.address();
+		if (!address || typeof address === "string") throw new Error("Missing test server address");
+		return `http://127.0.0.1:${address.port}`;
+	};
+	const captureAt = (origin: string, body: unknown) =>
+		fetch(`${origin}/api/system-screenshot`, {
+			method: "POST",
+			headers: { "Content-Type": "application/json", Origin: origin },
+			body: JSON.stringify(body),
+		});
+	afterEach(async () => {
+		for (const instance of servers.splice(0)) {
+			instance.closeAllConnections();
+			await new Promise<void>((resolve) => instance.close(() => resolve()));
+		}
+	});
+	it("offers local capture on macOS and forwards both modes to the native helper", async () => {
+		const native = vi.fn().mockResolvedValue("data:image/png;base64,mac");
+		const origin = await start("darwin", native);
+		expect(await (await fetch(`${origin}/api/system-screenshot`)).json()).toEqual({ available: true });
+		const remote = await fetch(`${origin}/api/system-screenshot`, { headers: { "x-forwarded-for": "10.0.0.1" } });
+		expect(await remote.json()).toEqual({ available: false });
+		expect(await (await captureAt(origin, { token, locale: "zh", hideWindow: false })).json()).toEqual({
+			cancelled: false,
+			dataUrl: "data:image/png;base64,mac",
+		});
+		expect(native).toHaveBeenCalledWith(token, "zh", expect.any(AbortSignal), false);
+	});
+	it("keeps unsupported platforms unavailable and rejects capture without native calls", async () => {
+		const native = vi.fn();
+		const origin = await start("linux", native);
+		expect(await (await fetch(`${origin}/api/system-screenshot`)).json()).toEqual({ available: false });
+		const response = await captureAt(origin, { token, locale: "zh", hideWindow: true });
+		expect(response.status).toBe(501);
+		expect(await response.json()).toEqual({ error: "unsupported" });
+		expect(native).not.toHaveBeenCalled();
+	});
+});
+
 describe("system screenshot lifecycle", () => {
 	it("returns only the chosen image and treats cancellation as success", async () => {
 		const response = await post();

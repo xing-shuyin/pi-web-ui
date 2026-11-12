@@ -1,11 +1,27 @@
+/**
+ * 未授权（401）页：口令表单。
+ *
+ * 表单必须是**原生 POST** + 账号域(`autocomplete="username"`) + 密码域
+ * (`autocomplete="current-password"`)，提交后由 `server/auth-login.ts` 的
+ * `POST /__pi/auth` 校验并 303 回跳——只有这样浏览器密码管理器才会提示保存密码。
+ * 不要再改成 JS `preventDefault()` + `?token=` 跳转（那样永远不弹保存提示）。
+ */
 export interface UnauthorizedPageOptions {
 	isLoopback: boolean;
 	isStaleCookie: boolean;
 	port: number;
+	/** 上一次表单提交的口令错误（`?auth_error=1`）。 */
+	authFailed?: boolean;
+	/** 登录成功后的回跳路径（已由 `sanitizeNextPath` 清洗）。 */
+	nextPath?: string;
+}
+
+function escapeAttr(value: string): string {
+	return value.replace(/&/g, "&amp;").replace(/"/g, "&quot;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 }
 
 export function renderUnauthorizedHtml(options: UnauthorizedPageOptions): string {
-	const { isLoopback, isStaleCookie } = options;
+	const { isLoopback, isStaleCookie, authFailed = false, nextPath = "/" } = options;
 	const title = isStaleCookie ? "访问口令已失效" : "需要访问口令";
 	const desc = isStaleCookie
 		? "服务端口令已变更，浏览器中保存的旧凭证已失效并已自动清除。请输入当前有效口令以重新进入系统。"
@@ -111,6 +127,16 @@ body {
 	flex-shrink: 0;
 	margin-top: 2px;
 }
+.auth-error {
+	background: rgba(239, 68, 68, 0.12);
+	border: 1px solid rgba(239, 68, 68, 0.35);
+	border-radius: var(--radius);
+	padding: 12px 14px;
+	margin-bottom: 20px;
+	font-size: 13px;
+	color: #fecaca;
+	line-height: 1.5;
+}
 .input-row {
 	display: flex;
 	flex-direction: column;
@@ -127,19 +153,20 @@ body {
 	display: flex;
 	align-items: center;
 }
-.input-wrapper input {
+.input-row input {
 	width: 100%;
 	background: var(--input-bg);
 	border: 1px solid var(--input-border);
 	color: var(--text);
 	border-radius: var(--radius);
-	padding: 10px 42px 10px 14px;
+	padding: 10px 14px;
 	font-size: 14px;
 	outline: none;
 	font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
 	transition: border-color 0.15s, box-shadow 0.15s;
 }
-.input-wrapper input:focus {
+.input-wrapper input { padding-right: 42px; }
+.input-row input:focus {
 	border-color: var(--input-focus);
 	box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.25);
 }
@@ -248,13 +275,20 @@ body {
 			: ""
 	}
 
+	${authFailed ? `<div class="auth-error"><strong>口令不正确</strong>：请核对终端或服务端配置里当前的 PI_WEB_TOKEN 后重试。</div>` : ""}
+
 	<p class="desc">${desc}</p>
 
-	<form id="auth-form">
+	<form id="auth-form" method="post" action="/__pi/auth">
+		<input type="hidden" name="next" value="${escapeAttr(nextPath)}">
+		<div class="input-row">
+			<label for="username-input">账户</label>
+			<input id="username-input" name="username" type="text" autocomplete="username" value="pi-web-ui" spellcheck="false" autocapitalize="off">
+		</div>
 		<div class="input-row">
 			<label for="token-input">访问口令 (Token)</label>
 			<div class="input-wrapper">
-				<input id="token-input" type="password" autofocus autocomplete="off" placeholder="请输入口令或从终端复制">
+				<input id="token-input" name="token" type="password" autofocus autocomplete="current-password" placeholder="请输入口令或从终端复制">
 				<button type="button" id="btn-toggle-eye" class="btn-toggle" title="显示/隐藏口令">
 					<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
 						<path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/>
@@ -301,20 +335,16 @@ if (eyeBtn && input) {
 	};
 }
 
+// 原生 POST 提交（不 preventDefault）：浏览器才能识别为一次真实登录并询问是否保存密码。
 var form = document.getElementById("auth-form");
 if (form && input) {
-	form.onsubmit = function(e) {
-		e.preventDefault();
-		var val = input.value.trim();
-		if (!val) {
-			input.focus();
-			return;
+	form.addEventListener("submit", function() {
+		input.value = input.value.trim();
+		if (input.type === "text") {
+			isPwd = true;
+			input.type = "password";
 		}
-		var u = new URL(window.location.href);
-		u.searchParams.set("token", val);
-		u.searchParams.delete("__tried_cached_token");
-		window.location.href = u.toString();
-	};
+	});
 }
 </script>
 </body>

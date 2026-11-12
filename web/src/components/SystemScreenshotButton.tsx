@@ -6,6 +6,10 @@ import { isZhLocale, useI18n, useT } from "../i18n";
 import { openImageLightbox } from "../image-lightbox-bridge";
 import { useFloatingPanel } from "../use-floating-panel";
 
+/**
+ * 剪刀按钮：点击直接「保留当前窗口」截图；鼠标悬停在其上方展开「隐藏当前窗口截图」。
+ * 悬停面板只为加速入口，触屏与键盘用户仍有可用的默认点击行为。
+ */
 export function SystemScreenshotButton({
 	onNotice,
 }: {
@@ -15,15 +19,16 @@ export function SystemScreenshotButton({
 	const { locale } = useI18n();
 	const [available, setAvailable] = useState(false);
 	const [busy, setBusy] = useState(false);
-	const [menuOpen, setMenuOpen] = useState(false);
+	const [hoverOpen, setHoverOpen] = useState(false);
 	const triggerRef = useRef<HTMLButtonElement>(null);
 	const active = useRef(false);
+	const closeTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 	const { panelRef, style } = useFloatingPanel({
-		open: menuOpen,
+		open: hoverOpen,
 		anchor: triggerRef,
 		side: "top",
 		align: "left",
-		onClose: () => setMenuOpen(false),
+		onClose: () => setHoverOpen(false),
 	});
 
 	useEffect(() => {
@@ -39,10 +44,32 @@ export function SystemScreenshotButton({
 		return () => controller.abort();
 	}, []);
 
+	const cancelClose = () => {
+		if (closeTimer.current === null) return;
+		clearTimeout(closeTimer.current);
+		closeTimer.current = null;
+	};
+	useEffect(() => cancelClose, []);
+
+	const openOnHover = () => {
+		if (!available || busy || active.current) return;
+		cancelClose();
+		setHoverOpen(true);
+	};
+	// 面板是 portal 出来的，指针跨过间隙时给一点缓冲再收起。
+	const closeAfterHover = () => {
+		cancelClose();
+		closeTimer.current = setTimeout(() => {
+			closeTimer.current = null;
+			setHoverOpen(false);
+		}, 180);
+	};
+
 	const capture = async (hideWindow: boolean) => {
 		if (!available || active.current) return;
 		active.current = true;
-		setMenuOpen(false);
+		cancelClose();
+		setHoverOpen(false);
 		setBusy(true);
 		const token = Array.from(crypto.getRandomValues(new Uint8Array(16)), (n) => n.toString(16).padStart(2, "0")).join(
 			"",
@@ -85,22 +112,29 @@ export function SystemScreenshotButton({
 				ref={triggerRef}
 				type="button"
 				className="btn attach-img"
-				title={!available ? t("screenshotUnavailable") : busy ? t("screenshotBusy") : t("screenshotCapture")}
+				title={!available ? t("screenshotUnavailable") : busy ? t("screenshotBusy") : t("screenshotKeepWindow")}
 				aria-label={t("screenshotCapture")}
 				aria-busy={busy}
-				aria-haspopup="menu"
-				aria-expanded={menuOpen}
+				aria-expanded={hoverOpen}
 				disabled={!available || busy}
-				onClick={() => setMenuOpen((open) => !open)}
+				onClick={() => void capture(false)}
+				onMouseEnter={openOnHover}
+				onMouseMove={openOnHover}
+				onMouseLeave={closeAfterHover}
 			>
 				<FiScissors />
 			</button>
-			{menuOpen &&
+			{hoverOpen &&
 				createPortal(
-					<div ref={panelRef} className="ctx-menu" style={style} role="menu" aria-label={t("screenshotCapture")}>
-						<button type="button" role="menuitem" className="ctx-item" onClick={() => void capture(false)}>
-							{t("screenshotKeepWindow")}
-						</button>
+					<div
+						ref={panelRef}
+						className="ctx-menu"
+						style={style}
+						role="menu"
+						aria-label={t("screenshotCapture")}
+						onMouseEnter={cancelClose}
+						onMouseLeave={closeAfterHover}
+					>
 						<button type="button" role="menuitem" className="ctx-item" onClick={() => void capture(true)}>
 							{t("screenshotHideWindow")}
 						</button>

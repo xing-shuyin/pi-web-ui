@@ -208,9 +208,10 @@ try {
 	const keepWindow = page.getByRole("menuitem", { name: "保留当前窗口截图", exact: true });
 	const hideWindow = page.getByRole("menuitem", { name: "隐藏当前窗口截图", exact: true });
 	const originalTitle = await page.title();
-	await screenshot.click();
-	await keepWindow.waitFor();
-	assert.equal(await hideWindow.count(), 1);
+	// 点击本身就是「保留当前窗口截图」；悬停才展开唯一的「隐藏当前窗口截图」
+	await screenshot.hover();
+	await hideWindow.waitFor();
+	assert.equal(await keepWindow.count(), 0);
 	assert.equal(await screenshot.getAttribute("aria-expanded"), "true");
 	assert.equal(screenshotRequests.length, 0);
 	const menuBounds = await screenshotMenu.boundingBox();
@@ -225,12 +226,14 @@ try {
 	});
 	await page.keyboard.press("Escape");
 	await screenshotMenu.waitFor({ state: "hidden" });
-	await screenshot.click();
-	await page.mouse.click(700, 800);
+	// 指针离开按钮，才会重新触发悬停
+	await page.mouse.move(700, 800);
+	await screenshot.hover();
+	await hideWindow.waitFor();
+	await page.mouse.move(700, 800);
 	await screenshotMenu.waitFor({ state: "hidden" });
 	assert.equal(screenshotRequests.length, 0);
 	await screenshot.click();
-	await keepWindow.click();
 	await page.getByRole("dialog").waitFor();
 	assert.equal(screenshotRequests[0].hideWindow, false);
 	assert.equal(screenshotRequests[0].title, originalTitle);
@@ -239,14 +242,14 @@ try {
 	await page.getByRole("button", { name: "关闭", exact: true }).click();
 	screenshotResult = { cancelled: true };
 	await screenshot.click();
-	await keepWindow.click();
 	await page.waitForFunction(
 		() => document.querySelector('[aria-label="系统截图"]').getAttribute("aria-busy") === "false",
 	);
 	assert.equal(await page.getByRole("dialog").count(), 0);
 	assert.equal(await page.evaluate(() => window.screenshotNotice), undefined);
 	screenshotGate = new Promise((resolve) => (finishScreenshot = resolve));
-	await screenshot.click();
+	await page.mouse.move(700, 800);
+	await screenshot.hover();
 	await hideWindow.click();
 	await page.waitForFunction(() => document.title.includes("["));
 	assert.equal(await screenshot.isDisabled(), true);
