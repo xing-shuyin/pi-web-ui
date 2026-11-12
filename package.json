@@ -67,6 +67,8 @@
 		"dev": "concurrently -k -n server,web -c blue,green \"npm:dev:server\" \"npm:dev:web\"",
 		"dev:server": "cross-env PI_WEB_PORT=8788 PI_WEB_ALLOW_ORIGINS=http://localhost:5173,http://127.0.0.1:5173 node --watch --import tsx --import ./server/resolve-global-sdk.ts server/index.ts",
 		"dev:web": "vite --config web/vite.config.ts",
+		"dev:totp": "node dev/totp-demo.mjs",
+		"app:update": "node scripts/update-local-app.mjs",
 		"build": "npm run build:web && npm run build:server && npm run build:dsh-runtime && npm run build:mermaid-vendor && npm run build:runtrace-vendor",
 		"build:web": "vite build --config web/vite.config.ts",
 		"build:server": "node scripts/build-server.mjs && node scripts/gen-bin-atomic-file.mjs",
