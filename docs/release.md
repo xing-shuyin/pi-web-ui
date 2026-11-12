@@ -81,6 +81,7 @@ NPM_OTP=123456 npm run release:npm     # 预检脏工作区/账号/tag + 带 OTP
 npm run release:local -- vX.Y.Z                # 全量：桌面 + 手机（手机那步 qemu 构建 15–25 分钟）
 npm run release:local -- vX.Y.Z --skip-mobile  # 只打桌面
 npm run release:local -- vX.Y.Z --skip-desktop # 只打手机
+npm run release:local -- vX.Y.Z --skip-desktop --reuse-runtime  # 只打手机且不重建运行时（引擎没变时首选，几分钟）
 npm run release:local -- vX.Y.Z --no-upload    # 只打包，不碰 Release
 npm run release:local -- vX.Y.Z --portable     # 额外出便携版（内置 Git/Node，较慢）
 #    脚本会先校验 tag 与 package.json 版本一致，然后：npm run build → 桌面打包 → （可选）构建
