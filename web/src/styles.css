@@ -265,7 +265,7 @@
 		overscroll-behavior: contain;
 	}
 	.remote-desktop-window.is-fullscreen {
-		inset: 0;
+		inset: var(--desktop-titlebar-h, 0px) 0 0;
 		border-radius: 0;
 	}
 	.remote-desktop-titlebar {
@@ -1213,6 +1213,9 @@
 		/* 原生壳（Capacitor/Android）把状态栏盖在 WebView 上，shell 写入 --pi-safe-top（dp = CSS px）；
 		   浏览器/桌面没有该变量，回落到 env()（iOS 生效，Android WebView 通常为 0）。 */
 		--safe-top: var(--pi-safe-top, env(safe-area-inset-top, 0px));
+		/* 桌面壳（macOS）的红黄绿按钮浮在 WebView 上、不占布局：顶栏自己用 padding-left 让位，
+		   贴顶的 fixed 浮层（窄分栏抽屉）用这个高度往下让，否则抽屉头压住按钮。非桌面壳为 0。 */
+		--desktop-titlebar-h: 0px;
 		--panel-bg: color-mix(in srgb, var(--bg-elev) var(--wallpaper-panel-alpha, 62%), transparent);
 
 		--card-bg: color-mix(in srgb, var(--bg-elev) var(--wallpaper-panel-alpha, 62%), transparent);
@@ -9652,6 +9655,12 @@
 	body.is-desktop .topbar .topbar-flow > *:not(.tb-spacer),
 	body.is-desktop .topbar .brand {
 		-webkit-app-region: no-drag;
+	}
+
+	/* 红黄绿按钮位置由 desktop/main.ts 的 trafficLightPosition（x:12 y:15）决定，
+	   按钮底边约在 21px，38px 是留出一点余量后的标题栏高度。 */
+	body.is-desktop-mac:not(.is-desktop-fullscreen) {
+		--desktop-titlebar-h: 38px;
 	}
 
 	body.is-desktop-mac:not(.is-desktop-fullscreen) .topbar {
@@ -28620,6 +28629,20 @@
 			width: min(300px, 86vw);
 			background: var(--bg-elev);
 			transition: transform 0.25s ease;
+			/* 抽屉是 fixed 定位（top:0），盖住了顶栏：桌面壳（macOS）让出红黄绿按钮的
+			   标题栏高度，否则窄分栏（自动进手机布局）时项目列表头部正好压在关闭按钮上。 */
+			padding-top: var(--desktop-titlebar-h, 0px);
+		}
+		/* 抽屉盖住顶栏后，顶部留白那块继续当拖窗区，不然开着列表时窗口拖不动。
+		   只在 .open 时给：`-webkit-app-region` 的矩形不跟视口裁剪，而关着的抽屉是
+		   transform: translateX(±105%) 推到视口外的 —— 右抽屉（文件列表）关着时拖拽带会落到
+		   右边 611…911、y 0…38，正好盖住浏览器窗格条的标签（能拖窗但点不动标签）。 */
+		body.is-desktop .panel-drawer.open::before {
+			content: "";
+			position: absolute;
+			inset: 0 0 auto 0;
+			height: var(--desktop-titlebar-h, 0px);
+			-webkit-app-region: drag;
 		}
 		.panel-drawer.drawer-left {
 			left: 0;
@@ -28645,7 +28668,7 @@
 		/* 抽屉是 fixed 定位（top:0/bottom:0），绕开了 .app 的安全区 padding：
 		   手机壳里单独让出状态栏和手势条，否则抽屉头部又压到状态栏上。 */
 		html.pi-native .panel-drawer {
-			padding-top: var(--safe-top);
+			padding-top: calc(var(--safe-top) + var(--desktop-titlebar-h, 0px));
 			padding-bottom: env(safe-area-inset-bottom, 0px);
 		}
 
@@ -28657,7 +28680,8 @@
 		.term-commands {
 			position: fixed;
 			left: 0;
-			top: var(--safe-top, 0px);
+			/* 同 .panel-drawer：贴顶抽屉要让出手机壳状态栏和桌面壳（macOS）的红黄绿按钮 */
+			top: calc(var(--safe-top, 0px) + var(--desktop-titlebar-h, 0px));
 			bottom: 0;
 			z-index: 60;
 			width: min(300px, 86vw);

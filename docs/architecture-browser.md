@@ -21,6 +21,7 @@
 BrowserWindow 的 webContents 加载本地 shell.html，标签与专用 Agent 使用 WebContentsView。
 
 - **browser 模式**：全宽完整浏览器，顶部 88px 浏览器外壳（标签栏与地址栏），下方为网页视图；右上角提供模式切换回 Agent / 分栏；
+  标签栏的每页图标跟站点走：主进程监听 `page-favicon-updated`，只收 http(s) 与小尺寸 `data:image`（`pickTabFavicon`，超长 data URL 与 `javascript:`/`file:` 一律丢掉），主框架导航开始时先清空；外壳渲染成 `<img class="pb-tab-favicon">`，加载失败或没有图标回退地球图标，内部页仍是 `π`。
 - **agent 模式**：Agent 全尺寸全高占据整个视口（y: 0 开始），不显示任何浏览器标签与地址栏，保持与无结合时一致的纯净桌面体验与窗口控制/拖拽，并在顶栏提供浏览器切换按钮；
 - **split 模式**：左右独立并列。左侧为完整的 Agent 视图（从顶到底 y: 0），右侧为独立的浏览器（右侧上方为局部的浏览器外壳，下方为网页视图），效果类似在桌面并列开了 Agent 窗口与浏览器窗口。
 
@@ -71,7 +72,7 @@ Agent 服务 → 页面已有 WebSocket → page_request
 - **口令框的值不出页面**：两条通道同一口径 —— `read what=query` 不返回 `value`、`text` 置空，`read what=html` 克隆后清掉 `value` 属性，`type` 回显也不带值。原生侧事实源 `browser/automation/page-operation.ts` 的 `isPassword`；page-picker 侧 `plugins/page-picker/extension/src/content/bridge-page.ts` 的 `isPassword`/`outerHtmlMasked`。改任何一侧都要同步：口令框能照常 `type` 填写，只是不再回显。回归见 `tests/unit/page-picker-password-mask.test.ts` 与 `tests/page-picker-bridge-test.mjs`。
 - 扩展安装与「加载已解压扩展」同信任级：只接受用户手动选择的目录或 `.crx` 文件。`.crx` 由主进程剥掉 `Cr24` 签名头后解包（条目数/体积上限，禁止越界路径与链接，`manifest.json` 必须存在），**不校验签名**；解包目标 `userData/extensions/crx-<内容哈希>`，同一文件重装不换路径。装过的目录记入 `userData/extensions/installed.json`（`{ path, enabled }[]`，旧版纯字符串数组仍可读），重启时只恢复 `enabled` 的那些（Electron 的 `loadExtension` 本身不持久）。
 - 扩展面板由浏览器工具栏的扩展图标（`shell.ts` 的拼图按钮，徽标=已启用数量）打开，和 Chrome 的扩展菜单同一个入口语义：**一行一个扩展，点整行就开它自己的页面**（`default_popup`，没有就退到选项页），启停开关在行首，重载/选项/移除在行尾 `⋯`（与右键同一张原生菜单）。面板是小浮层（`pb-dialog-compact`，360px 宽、高矮跟着列表走），不是整屏大窗。`extensions.list` 把「会话里真正加载的」（`session.extensions.getAllExtensions()`）与「`installed.json` 记住的」合并，停用项的名字/版本回磁盘读 manifest 补，已加载项带上 `popup`（manifest 的 `action`/`browser_action`/`page_action` 的 `default_popup`，规则单源在 `browser/runtime/extension-state.ts`）。`extensions.toggle` 停用= `removeExtension`，启用=重新 `loadExtension`；`extensions.reload` 先卸再装同一目录（改完扩展代码不用重启应用）；`extensions.remove` 只卸载 + 从清单里忘掉，**不删磁盘目录**（用户选的解压目录不该被浏览器删）。设置面板只留一个「管理扩展」入口，不再重复列出扩展。
-- 工具栏上的扩展图标由 `electron-chrome-extensions` 的 `<browser-action-list>` 渲染（见下节「扩展能力边界」），点击开的就是 Chrome 语义的 `default_popup` / `onClicked`。扩展**面板**行是同一个语义：点整行走 `extensions.openPopup { path, anchor }`，用**同一 session 的独立无边框小窗**加载 `chrome-extension://<id>/<default_popup>`，定位在面板行右下角（按屏幕工作区收边）、失焦即关——同一扩展的页面只保留一个窗口；开之前先收起面板（浮层不盖在刚打开的网页上，网页随之还回来），停用行则提示先启用。弹窗窗口**按扩展页自己要的尺寸开**（Chrome 的 popup 就是内容多大开多大，不是固定 400×560，否则窄页面上两侧会空出一大条）：开窗前在页面里量内容外接框（和视口一样宽/高的盒子只算被撑开的容器，内容比视口还高的那类算进去，再加上滚动条实际占的宽度），夹到 Chrome 的 800×600 上限内，量两趟（宽度一变文字会重新折行），量不到就退回兜底尺寸；纯函数与量尺寸脚本在 `browser/runtime/extension-popup.ts`（单测 `tests/unit/extension-popup.test.ts`）。两条路径同一个口径：Chromium 的首选尺寸模式（`preferred-size-changed`）对 `chrome-extension://` 页面实测不发事件，所以工具栏动作图标那条（库的 `PopupView`）也被接管——宿主监听 `browser-action-popup-created`，先给窗口一个正常视口、用同一套量法量出内容尺寸，再调库自己的 `updatePosition()`（锚点与对齐在库手里）并 `show()`；不接管的话窗口会卡在 25×25 且一直藏着（点图标没反应）。选项页走 `extensions.openOptions { path, anchor }`（`options_ui.page` 优先，其次旧式 `options_page`）：开了普通可调大小的窗口、失焦不关——Chrome 的「标签页 / 嵌在 chrome://extensions 里」两种展示在这里统一成一个正常窗口，`open_in_tab` 不参与建模。浏览器导航策略不变——只有「已加载扩展自己声明的页面」能开，`extensionPageUrl` 会校验 id 形状并拒绝 `..`/绝对路径/带协议的路径，不接受任意 `chrome-extension://` 地址；扩展页里的外部链接走系统浏览器（`setWindowOpenHandler` deny + `shell.openExternal`）。原生回归见 `tests/browser-desktop-smoke.mjs`（预置已解压扩展 → 启动恢复 → 弹窗 + 选项页 → 停用/启用/重载/移除）。
+- 工具栏上的扩展图标由 `electron-chrome-extensions` 的 `<browser-action-list>` 渲染（见下节「扩展能力边界」），点击开的就是 Chrome 语义的 `default_popup` / `onClicked`。扩展**面板**行是同一个语义：点整行走 `extensions.openPopup { path, anchor }`，用**同一 session 的独立无边框小窗**加载 `chrome-extension://<id>/<default_popup>`，定位在**鼠标点下去的位置**（面板行记 `pointerdown` 的视口坐标→屏幕坐标；键盘或点在行外时回退到行右下角；按屏幕工作区收边）、窗口是**直角**的（`roundedCorners: false`，macOS 默认圆角会把扩展页四角切掉一块）、失焦即关——同一扩展的页面只保留一个窗口；开之前先收起面板（浮层不盖在刚打开的网页上，网页随之还回来），但收面板不能把焦点抢回外壳——动作弹窗此刻正握着焦点，抢一下它就 blur 自关（mac 上实测「弹窗一闪而逝」）：`closePanelLayer()` 见到聚焦的动作弹窗就不还焦点，弹窗亮出后 300ms 内的失焦也不算关闭（`ACTION_POPUP_BLUR_GRACE_MS`），停用行则提示先启用。弹窗窗口**按扩展页自己要的尺寸开**（Chrome 的 popup 就是内容多大开多大，不是固定 400×560，否则窄页面上两侧会空出一大条）：开窗前在页面里量尺寸，两个口径取小者：内容盒（`body.scrollWidth/scrollHeight`，固定宽度的弹窗——Dark Reader 那种 285px popup——在这里最准）与后代盒子外接框（`body` 被视口撑满时真正的尺寸在子元素上；和视口一样宽/高的盒子只算被撑开的容器，比视口还高的算有效信号；滚动条只在内容高度超过 Chrome 上限、真的会出竖滚动时才占宽度）。取小者是必须的：绝对定位的 tooltip、动画移出视口的折叠区会把外接框撑到远超内容，只信外接框就会量出 550px 宽、右边留一条黑边；随后夹到 Chrome 的 800×600 上限内，量两趟（宽度一变文字会重新折行），量不到就退回兜底尺寸；纯函数与量尺寸脚本在 `browser/runtime/extension-popup.ts`（单测 `tests/unit/extension-popup.test.ts`）。两条路径同一个口径：Chromium 的首选尺寸模式（`preferred-size-changed`）对 `chrome-extension://` 页面实测不发事件，所以工具栏动作图标那条（库的 `PopupView`）也被接管——宿主监听 `browser-action-popup-created`，先给窗口一个正常视口、用同一套量法量出内容尺寸，再调库自己的 `updatePosition()`（锚点与对齐在库手里）并 `show()`；不接管的话窗口会卡在 25×25 且一直藏着（点图标没反应）。选项页走 `extensions.openOptions { path, anchor }`（`options_ui.page` 优先，其次旧式 `options_page`）：开了普通可调大小的窗口、失焦不关——Chrome 的「标签页 / 嵌在 chrome://extensions 里」两种展示在这里统一成一个正常窗口，`open_in_tab` 不参与建模。浏览器导航策略不变——只有「已加载扩展自己声明的页面」能开，`extensionPageUrl` 会校验 id 形状并拒绝 `..`/绝对路径/带协议的路径，不接受任意 `chrome-extension://` 地址；扩展页里的外部链接走系统浏览器（`setWindowOpenHandler` deny + `shell.openExternal`）。原生回归见 `tests/browser-desktop-smoke.mjs`（预置已解压扩展 → 启动恢复 → 弹窗 + 选项页 → 停用/启用/重载/移除）。
 - 扩展行的 `⋯` 与右键是**同一张原生菜单**（`extensions.menu { items, anchor }`）：菜单项的文案、勾选态、可用态由渲染层拼（跟界面语言走），主进程只负责 `Menu.popup` 并把选中项 id 回传，关掉菜单返回 `null`；未加载的扩展不出现「弹窗 / 选项」。不再另写一行用法提示——菜单按钮本身就是入口。
 - 拖入 `.crx` 也走同一条安装路径：内部页由 preload 的 `webUtils.getPathForFile` 取路径后调 `extensions.installCrx { path }`；拖到网页上的话由 `BrowserManager` 的导航守卫拦住 file:// 导航并交给 `onFileDrop`，主进程装完用系统弹窗回报。
 
@@ -116,6 +117,35 @@ Agent 可以给网页注入脚本：`browser_script` 工具（`server/browser-sc
 - **可撤销**：脚本顶层 `return function () {...}` 即是清理钩子，重跑/停用/删除前先调用它；页面里的注册表 `window.__piPageScripts` 可直接在 DevTools 里查。
 - **可观测**：`script.status` 按标签返回 `{ injected, skipped: [{scriptId, reason}], errors }`（`scripts-disabled` / `internal-page` / `not-matched:<url>`），注入代码带 `//# sourceURL=pi-script://<id>/<name>.js`，DevTools 里可单独断点。
 - **边界**：内部页（shell/newtab/workspace/office）从不注入；`allowScripts` 总开关关闭后全部跳过；普通网站无法通过任何入口管理脚本（`scripts.*` 只对外壳内部页开放）。设置面板「页面脚本」列出全部脚本（临时/永久徽标、来源、`document-start`/`isolated` 非默认徽标），可停用、查看代码、删除。
+
+## 凭据保险库（密码 + TOTP）
+
+工具栏钥匙图标 → `vault` 面板（`BROWSER_PANELS` 的一员，走同一套 `panel.html` 浮层视图）。密码与 TOTP 在用户眼里是同一件事（"这个网站的凭据"），所以合并成一块面板、两个分段标签，共用一套交互。外壳可以用 `panel { open, panel: "vault", tab: "totp" }` 指定先开哪个标签（钥匙图标固定开 TOTP，设置里的「打开凭据保险库」开密码）。
+
+### 共同交互（设计 C：图标工具条）
+
+- **动作只在顶部一行**：面板不给条目挂按钮，动作统一收进标题栏的动作槽（`panels.ts` 的 `.pb-dialog-actions`）。按钮纯图标（无障碍名走 `aria-label`），名字靠 `data-tip` 的 CSS 悬浮气泡（`title` 留空，避免原生提示叠加）；最右两个图标用 `data-tip-end` 贴右对齐，免得被浮层圆角裁掉。工具条随标签切换：密码是 `添加 ｜ 填入 / 显示密码 / 编辑 / 删除`，TOTP 是 `扫码 / 导入图片 / 添加 ｜ 填入 / 导出此条 / 导出全部 / 改名 / 上移 / 下移 / 删除`。
+- **先选中再操作**：点条目或键盘 ↑↓ 选中，工具条作用于选中那条；没选中时动作图标 `disabled`（灰度、`::after` 气泡不弹），首尾两端的上/下移也置灰。命中当前标签页的条目打开即选中并置顶，所以「打开面板 → 点填入」两下就完事。`Enter` 填到页面；TOTP 标签的 `Shift+Enter` 复制验证码、密码标签的是显示/收起密码。
+- 设置面板里的「密码库」段只留一句说明和一个入口（`vaultSection`），真正的增删改都在这里，避免两处各维护一套列表。
+- 面板浮层视图（`panel.html`，`body.pb-panel-layer`）是第三套根：`[hidden]` 的全局豁免名单里必须带上它，否则 `.pb-form{display:flex}` 之类的规则会把 `hidden=true` 的表单照样画出来（「添加」表单默认展开的 bug 就出在这里）。
+
+### 密码
+
+- **列表不下发明文**：`passwords.list` 返回投影 `{ id, name, url, username, createdAt, hasPassword }`（主进程 `browser-host.ts` 里去掉 `password`），和 TOTP 的「secret 不出主进程」同一条口径。要明文只有两条口子：`passwords.reveal { id }`（用户点「显示密码」时取一次，界面 10 秒后自动盖回）和 `passwords.fill`（主进程内部取出来直接填页面，明文不经过渲染层）。
+- **写回只走细粒度动作**：`passwords.upsert { id?, name, url, username, password? }`（`id` 存在即更新，`password` 留空表示沿用旧密码）与 `passwords.remove { id }`。渲染层拿不到整份明文，所以不能让它 `save` 全量列表——旧的 `passwords.save` 只保留给冒烟测试/迁移用。
+- **填密码校验同源**：`passwords.fill` → `fillCredential()`，要求当前标签页与条目 `url` 的 **origin 完全相等**，且页面上只有一个可见密码框；填完只发 `input`/`change`，由用户自己点提交。
+- 加密仍然走 `BrowserStorage` 的 `enc:<safeStorage>`，`passwords.available`（= `isEncryptionAvailable()`）为假时面板显示保险库锁定。
+
+### TOTP
+
+- **扫码 = 截当前标签页，不读 DOM**（`totp.scan` → `WebContents.capturePage()` → `browser/runtime/qr.ts`）：页面里的二维码可能是 `<img>`、`<canvas>`、内联 SVG、CSS 背景或 canvas 动态绘制，逐种抓法都要对付 CORS 与跨域画布污染；截图对它们一视同仁，也不需要摄像头权限。代价是**二维码必须可见于视口**，否则报错让用户滚动。解码用 `jsqr`（纯 JS，唯一新增运行时依赖），`NativeImage.toBitmap()` 给的是 **BGRA**，`bgraToRgba()` 换序后再喂。图片导入（`totp.importImage`）走 `nativeImage.createFromDataURL()`，同一条解码路径。
+- **只收 `otpauth://totp`**：`parseOtpauth()`（`browser/runtime/totp.ts`）拒绝普通网址二维码与 `hotp`，报错而不是把乱码当密钥；算法/位数/周期都带白名单（SHA1/SHA256/SHA512、6–8 位、1–3600s）。
+- **secret 永不出主进程**：渲染层只拿 `PublicTotpEntry`（`publicTotp()` 投影，无 secret），要码就发 `totp.code { id }` 让主进程算（`totpCode()`，RFC 6238）。唯一会把 secret 带出来的是用户显式点击的 `totp.export`（otpauth URI）。
+- **加密**：`BrowserStorage.listTotp/saveTotp` 把 secret 存成 `enc:<safeStorage>`，落在 `userData/browser/totp.json`；`totp.available` 先行探测。
+- **按站点自动匹配**：条目带 `origin`（扫码时那个页面的 origin，只认 http/https 且只做精确相等——`https://github.com` 不覆盖 `https://gist.github.com`）。当前标签命中时工具栏图标带一个小圆点，面板把该条目置顶；命中判断在渲染层做（`shell.ts` 的 `refreshTotpMatch`，数据来自 `totp.list`），改动后靠 `pb-vault-changed` 面板事件回灌。
+- **填码不自动提交**：`totp.fill` → `browser/runtime/credentials.ts` 的 `fillTotpCode`，站位顺序是 `autocomplete="one-time-code"` → 一组 `maxlength=1` 的分格输入框 → 名称/占位符像验证码的单框 → 当前聚焦的框；填完只发 `input`/`change`。
+- 排序（`totp.reorder`）、改名/改绑定（`totp.update`）、删除（`totp.remove`）都在工具条上，写回同一份加密文件；列表顺序就是 `order` 字段，未列出的条目在重排后保留在尾部，不丢数据。
+- 纯逻辑（Base32/HOTP/TOTP 的 RFC 6238 向量、otpauth 各种变体、投影、排序、origin 匹配、二维码位图解码）全在 `tests/unit/totp.test.ts`，不依赖 Electron。
 
 ## 构建与验证
 

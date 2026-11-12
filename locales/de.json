@@ -40,7 +40,7 @@
 		"screenshotHideWindow": "Dieses Fenster ausblenden und aufnehmen",
 		"screenshotName": "Screenshot",
 		"screenshotBusy": "Capturing: drag to select; Esc or right click to cancel",
-		"screenshotUnavailable": "System screenshots require local Windows access. Open this app using localhost.",
+		"screenshotUnavailable": "System screenshots require local Windows or macOS access. Open this app using localhost.",
 		"screenshotFocus": "Window focus changed before capture. Return to this window and try again.",
 		"screenshotFailed": "System screenshot failed. Check that the Windows desktop is available and try again.",
 		"presetPluginsTitle": "Plugin dependencies",

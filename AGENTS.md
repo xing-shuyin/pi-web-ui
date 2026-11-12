@@ -24,11 +24,12 @@ pi 编码智能体（`@earendil-works/pi-coding-agent` SDK）的 Web 聊天界�
 | 上下文预算 / 延迟加载 / 证据外置 | `server/soft-cap.ts` · `server/request-context.ts` · `server/evidence-tool-hooks.ts` | [`tool-context-budget.md`](docs/tool-context-budget.md) |
 | 工具审批门禁与规则库 | `server/tool-approval.ts` | [`architecture-core.md`](docs/architecture-core.md#审批队列与共享展示) |
 | 内置浏览器 / 桌面三模式 / Web 原生桥 | `browser/` · `desktop/browser-host.ts` · `web/src/browser-control.ts` | [`architecture-browser.md`](docs/architecture-browser.md) |
+| 凭据保险库（密码 + TOTP，图标工具条 / 扫码 / 按站点匹配 / 填码） | `browser/renderer/vault.ts`★ · `browser/runtime/totp.ts`★ · `browser/runtime/qr.ts` · `browser/runtime/credentials.ts` · `desktop/browser-host.ts`（密码只下发投影） · `browser/storage/index.ts` | [`architecture-browser.md`](docs/architecture-browser.md#凭据保险库密码--totp) |
 | 页面脚本注入（临时 / 永久，`browser_script`） | `browser/runtime/scripts.ts` · `browser/automation/scripts.ts` · `server/browser-script-tool.ts` | [`architecture-browser.md`](docs/architecture-browser.md) |
 | 手机 App / 多设备切换 / 原生通知 | `mobile/` · `web/src/mobile-runtime.ts` · `server/mobile-push.ts` · `server/device-center/hub-mobile.ts` | [`mobile.md`](docs/mobile.md) |
 | 终端 PTY / 原生 CLI / bash 接管 / SCM | `server/terminals.ts` · `server/native-cli.ts` · `server/engine-catalog.ts`★ · `server/engine-cli.ts` · `web/src/components/NativeCliPanel.tsx` | [`architecture-terminal.md`](docs/architecture-terminal.md) |
 | 命令执行防卡死 / 硬超时 / 后台托管 | `server/job-runner.ts`★（`bash({background:true})` 进程内 job）· `scripts/safe-exec.mjs`（源码仓库 / CI 执行器）· `server/process-utils.ts`（`killPidTree` 单源） | [`development.md`](docs/development.md#命令执行防卡死) · [`agent-rules.md`](docs/agent-rules.md#七终端命令执行防卡死) |
-| 附件 / 图片预览 / OCR / 标注 / 系统截图 | `server/file-save.ts` · `web/src/components/ImageLightbox.tsx` · `plugins/image-ocr/` · `server/system-screenshot.ts` | [`architecture-attachments.md`](docs/architecture-attachments.md) |
+| 附件 / 图片预览 / OCR / 标注 / 系统截图 | `server/file-save.ts` · `web/src/components/ImageLightbox.tsx` · `plugins/image-ocr/` · `server/system-screenshot.ts` · `server/system-screenshot-macos.ts` | [`architecture-attachments.md`](docs/architecture-attachments.md) |
 | 插件体系 / UI 插槽 / MCP 项目运行态 | `server/plugins.ts` · `web/src/ui-slots.ts`★ · `server/mcp-project-runtime.ts` | [`architecture-plugins.md`](docs/architecture-plugins.md) |
 | 插件物化（代码纯缓存）/ 状态目录 | `server/plugin-paths.ts`★ · `server/plugin-materialize.ts`★ · `server/fs-copy.ts`★ | [`architecture-plugins.md`](docs/architecture-plugins.md#插件目录代码是纯缓存状态独立存放plugin-pathsts--plugin-materializets) |
 | 统一 TTS / 系统语音 / 插件音色 / QQ 语音回复 | `server/tts-service.ts`★ · `server/tts-system.ts` · `server/tts-routes.ts` · `web/src/tts-client.ts` · `plugins/qq/voice.mjs` | [`architecture-tts.md`](docs/architecture-tts.md) |
@@ -51,7 +52,7 @@ pi 编码智能体（`@earendil-works/pi-coding-agent` SDK）的 Web 聊天界�
 | --- | --- | --- |
 | 开发工作流 / CI | [`development.md`](docs/development.md) | `npm run dev` · `npm run typecheck` · `npm run lint` · `npm test` · `npm run test:smoke` · `npm run ci:local`（本地复刻 CI 门禁） |
 | 测试规范 | [`development.md`](docs/development.md) | 端口 ≥8900、data-dir `mkdtemp`、禁 `pkill -f`、冒烟禁用 `ensure-build.mjs` |
-| 发布 | [`release.md`](docs/release.md) | `npm run changelog:i18n` → commit → tag `vX.Y.Z` → `npm publish` |
+| 发布 | [`release.md`](docs/release.md) | `npm run changelog:i18n` → commit → tag `vX.Y.Z`（自动桌面/说明）→ 手机包 `npm run release:local -- vX.Y.Z --skip-desktop` → `npm run release:npm` → `npm run release:check` |
 | 部署 | [`deployment.md`](docs/deployment.md) | `pi-web-ui server install` · `docker compose up -d` |
 | 环境变量全表 | [`env-vars.md`](docs/env-vars.md) | `PI_WEB_PORT` · `PI_WEB_HOST` · `PI_WEB_CWD` · `PI_WEB_DATA_DIR` · `PI_WEB_TOKEN` · `PI_WEB_SDK` |
 
@@ -59,7 +60,7 @@ pi 编码智能体（`@earendil-works/pi-coding-agent` SDK）的 Web 聊天界�
 
 | 域 | 一句话禁令 | 守卫 |
 | --- | --- | --- |
-| **安全/协议** | `details` ≤64KB；服务端 URL 必包 `appUrl()`；Cookie 校验前先解码 | — |
+| **安全/协议** | `details` ≤64KB；服务端 URL 必包 `appUrl()`；Cookie 校验前先解码；未登录页口令表单必须原生 `POST /__pi/auth`（禁 JS 拼 `?token=`） | `auth-login` |
 | **提示词/工具** | 工具提示词三处职责分离、纯英文精简；导出 schema 只留字段名/类型（装饰约束与自解释字段说明不写） | `tool-prompt-hygiene` · `tool-schema-slim` · `lazy-tools-test` |
 | **提示词/工具** | 新增可开关工具三处联动（catalog / customTools / 注册单测） | `tool-registration` |
 | **提示词/工具** | 提示词 base（SYSTEM.md / APPEND_SYSTEM.md）归属 session 的 loader，禁客户端级「最近一次」字段 | `prompt-base-scope` |

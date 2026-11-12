@@ -147,6 +147,7 @@ server/
 ├── host-metrics.ts         # 见文件头注释
 ├── http-proxy.ts           # 代理设置透传（~/.pi/agent/settings.json + 环境变量）
 ├── auth-cookie.ts          # pi_web_token cookie 编解码（decodeCookieToken；脏值原样返回）
+├── auth-login.ts           # 未登录页表单登录契约（POST /__pi/auth 回跳清洗 sanitizeNextPath）
 ├── vision-bridge.ts        # 视觉桥：纯文本主模型看图转写
 ├── files-service.ts        # 文件服务（readDirForUI/readFile/searchFiles/watcher）
 ├── workspace-snapshot.ts   # 工作区版本影子快照（Workspace Snapshot / Dual-State Rollback）

@@ -449,7 +449,7 @@ describe("device user group authority", () => {
 				...(body === undefined ? {} : { body: JSON.stringify(body) }),
 			});
 		}
-		expect(await (await request("chat-status")).json()).toEqual({ hubUrl, deviceId: "one" });
+		expect(await (await request("chat-status")).json()).toEqual({ hubUrl, deviceId: "one", name: "one" });
 		expect((await request("rooms")).status).toBe(200);
 		expect((await request("rooms", { name: "team", botIds: [] })).status).toBe(201);
 		expect(calls[0]).toEqual({ path: "/api/device-user/rooms", auth: "Bearer ui-secret" });

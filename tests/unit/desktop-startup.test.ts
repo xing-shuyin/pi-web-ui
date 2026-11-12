@@ -38,6 +38,12 @@ describe("desktop/electron-builder.yml 打包清单守卫 (issue #583)", () => {
 	it("extraMetadata.main 仍指向 dist/desktop/main.js（避免以 CLI 当 Electron 主入口）", () => {
 		expect(yml).toMatch(/extraMetadata:\s*\n\s*main:\s*dist\/desktop\/main\.js/);
 	});
+
+	it("主进程 import 的运行时依赖都在名单里（jsqr：TOTP 扫码）", () => {
+		for (const pkg of ["jsqr", "electron-chrome-extensions", "debug", "ms"]) {
+			expect(yml).toContain(`node_modules/${pkg}/**`);
+		}
+	});
 });
 
 describe("desktop/startup.ts 启动纯逻辑 (issue #584)", () => {

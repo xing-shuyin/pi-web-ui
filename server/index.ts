@@ -108,6 +108,7 @@ import { BackgroundExecutorRegistry } from "./background-executors.js";
 import { initHttpProxy } from "./http-proxy.js";
 import { globalLspPool } from "./lsp-tool.js";
 import { buildPiWebTokenCookie, decodeCookieToken, isTlsRequest } from "./auth-cookie.js";
+import { AUTH_ERROR_PARAM, AUTH_LOGIN_PATH, loginFailureLocation, sanitizeNextPath } from "./auth-login.js";
 import { isLoopbackAddress, loadServerFileConfig, saveServerFileConfig, tokenWarning } from "./server-config.js";
 import { renderSetupHtml } from "./setup-page.js";
 import { renderUnauthorizedHtml } from "./unauthorized-page.js";
@@ -490,6 +491,21 @@ app.use((req, res, next) => {
 	pluginMgr.handleHttp("superagent", "POST", `/webhooks/${provider}`, req, res);
 });
 
+// 口令登录表单：原生 POST → 303 → GET，浏览器密码管理器才愿意询问「是否保存密码」
+// （JS preventDefault + `?token=` 跳转不满足条件）。安全约束见 server/auth-login.ts。
+// 必须注册在下面的鉴权中间件之前。
+app.post(AUTH_LOGIN_PATH, express.urlencoded({ extended: false, limit: "8kb" }), (req, res) => {
+	const body = (req.body ?? {}) as Record<string, unknown>;
+	const submitted = typeof body.token === "string" ? body.token.trim() : "";
+	const next = sanitizeNextPath(body.next);
+	if (AUTH_TOKEN && submitted && sameSecret(submitted)) {
+		res.setHeader("Set-Cookie", buildPiWebTokenCookie(encodeURIComponent(AUTH_TOKEN), 31536000, isTlsRequest(req)));
+		res.redirect(303, next);
+		return;
+	}
+	res.redirect(303, loginFailureLocation(next));
+});
+
 app.use((req, res, next) => {
 	const preview = livePreviewCapability(req);
 	if (preview) {
@@ -520,7 +536,15 @@ app.use((req, res, next) => {
 		res.status(401);
 		res.setHeader("Content-Type", "text/html; charset=utf-8");
 		res.setHeader("Cache-Control", "no-store, no-cache, must-revalidate");
-		res.send(renderUnauthorizedHtml({ isLoopback, isStaleCookie: Boolean(cookie), port: PORT }));
+		res.send(
+			renderUnauthorizedHtml({
+				isLoopback,
+				isStaleCookie: Boolean(cookie),
+				port: PORT,
+				authFailed: req.query?.[AUTH_ERROR_PARAM] !== undefined,
+				nextPath: sanitizeNextPath(req.originalUrl ?? "/"),
+			}),
+		);
 		return;
 	}
 	res

@@ -126,13 +126,15 @@
 - 压缩并下载使用私有临时目录，HTTP 下载完成、断开或处理失败后清理；浏览器通过已有 blob 保存逻辑保存，不进行第二次下载请求。临时下载限 200 MiB，以控制浏览器内存；更大文件可先原地压缩再用原有流式下载。
 - 回归：`tests/unit/file-archives.test.ts`、`tests/unit/file-transfer-routes.test.ts`、`tests/file-archives-ui-test.mjs`（构建后运行，独立端口/数据目录，零模型调用）。
 
-### 系统截图（Windows 本机）
+### 系统截图（Windows / macOS 本机）
 
-- 输入框动作栏的 `host:composer-screenshot`（剪刀图标，上传按钮之后）由 `SystemScreenshotButton.tsx` 渲染，沿用栏位排序、显隐及图标编辑。点击后弹出「保留当前窗口截图」与「隐藏当前窗口截图」菜单：前者直接截取包含当前浏览器或 Electron 窗口的桌面，后者先最小化当前窗口。选择后拖动框选并松开完成；Esc / 右键取消，90 秒超时自动取消。菜单复用 `useFloatingPanel` 与 `ctx-menu`，支持点击外部 / Esc 关闭。
-- `server/system-screenshot.ts` 在正常鉴权后注册 `/api/system-screenshot`：GET 查询能力，POST 发起截图；`hideWindow` 仅接受布尔值，省略时默认 `true`，兼容原有客户端。同一服务同时只允许一张截图；仅限 Windows、回环 TCP 与回环 Host，拒绝代理转发头和跨源请求。远程客户端不能截取服务端桌面。
+- 输入框动作栏的 `host:composer-screenshot`（剪刀图标，默认排在附件、模板之后，即左侧第三个位）由 `SystemScreenshotButton.tsx` 渲染，沿用栏位排序、显隐及图标编辑。**点击即直接「保留当前窗口截图」**（不弹菜单、不隐藏窗口）；**鼠标悬停**时在其上方展开悬浮面板，里面只有一个入口「隐藏当前窗口截图」。选择后拖动框选并松开完成；Esc（macOS 亦可用）取消，Windows 可右键取消，超时自动取消。悬浮面板复用 `useFloatingPanel` 与 `ctx-menu`，指针离开按钮/面板 180ms 后收起，支持点击外部 / Esc 关闭；触屏与键盘用户仍有可用的默认点击行为。
+- 位置迁移：`web/src/ui-slots.ts` 的 `migrateScreenshotOrder` 把早期布局快照中尚未登记进 `order` 的截图按钮锚定在模板（无模板时附件）之后——否则未排序条目会排到所有已排序条目之后而飘到右侧；新布局直接按 `order: 115` 落位。
+- `server/system-screenshot.ts` 在正常鉴权后注册 `/api/system-screenshot`：GET 查询能力，POST 发起截图；`hideWindow` 仅接受布尔值，省略时默认 `true`，兼容原有客户端。同一服务同时只允许一张截图；仅限 Windows / macOS、回环 TCP 与回环 Host，拒绝代理转发头和跨源请求；其他平台 GET 返回 `available:false`、POST 返回 501。远程客户端不能截取服务端桌面。
 - `server/system-screenshot-windows.ts` 通过异步 PowerShell STA 辅助进程调用 Win32 / WinForms。隐藏模式下前端临时给窗口标题附加随机 nonce，辅助进程仅在前台窗口标题匹配时最小化，避免焦点切换后误操作其他窗口；成功、取消和异常均恢复原窗口（含最大化状态）。保留模式不改标题、不最小化或恢复窗口，也不登记窗口恢复信息。断连通过 stdin 取消；辅助进程监测父进程退出，超时强制结束时服务端另行恢复隐藏的窗口。
-- 截取全部显示器构成的虚拟桌面后再框选，支持负坐标与混合 DPI；只返回所选 PNG，不落临时图片、不修改剪贴板。结果通过 `image-lightbox-bridge.ts` 的 `openImageLightbox` 打开通用预览，可标注、附加到输入框、复制、下载与缩放；取消无弹窗，不自动加入对话附件。非 Windows / 远程访问禁用按钮并说明原因。
-- 回归：`tests/unit/system-screenshot.test.ts`、`tests/unit/system-screenshot-windows.test.ts`、`tests/image-preview-ui-test.mjs`；覆盖两种模式、旧请求默认值、参数校验与菜单交互；原生 C# 编译验证不触发桌面截图。
+- `server/system-screenshot-macos.ts` 异步调用原生 `/usr/sbin/screencapture -i -x -t png <私有临时文件>`：原生浮层内拖动框选（空格切换窗口模式），Esc 取消且不写文件，空文件即视为取消。隐藏模式先用 `osascript` 读取前台应用名 / `unix id` / 前台窗口标题，两个信号任一命中才把该应用 `visible` 置 false：① 窗口标题包含前端设置的 nonce（浏览器会把 `document.title` 写进窗口标题）；② 前台应用的 pid 属于承载本服务端的宿主进程祖先链（`ancestorPids()` 用一次 `ps -A -o pid=,ppid=` 向上推导）。② 是必需的：桌面端前台窗口常是内嵌浏览器面板的固定标题「pi Browser」，nonce 永远进不了标题，只靠 ① 会把正常的隐藏请求误判成焦点变化。两个都不命中（用户已切到无关应用）才返回 `window-not-focused`。随后 `screencapture`，最后恢复 `visible` + `frontmost`。未授予自动化 / 辅助功能权限时探测脚本失败，降级为「保留窗口截图」而不断言失败。macOS 首次使用还需在「系统设置 → 隐私与安全性 → 屏幕录制」中授权实际执行进程（Node / 终端 / Electron 应用），否则截到的是空白桌面。临时文件读取后连同私有临时目录一起删除，不修改剪贴板。
+- 截取全部显示器构成的虚拟桌面后再框选，支持负坐标与混合 DPI；只返回所选 PNG，不落临时图片、不修改剪贴板。结果通过 `image-lightbox-bridge.ts` 的 `openImageLightbox` 打开通用预览，可标注、附加到输入框、复制、下载与缩放；取消无弹窗，不自动加入对话附件。非 Windows / macOS 或远程访问禁用按钮并说明原因。
+- 回归：`tests/unit/system-screenshot.test.ts`、`tests/unit/system-screenshot-windows.test.ts`、`tests/unit/system-screenshot-macos.test.ts`、`tests/unit/ui-slots.test.ts`（截图位置与老布局迁移）、`tests/image-preview-ui-test.mjs`（悬停展开 / 点击即截图）；覆盖两种模式、平台能力、旧请求默认值、参数校验、nonce 校验、降级路径与悬浮面板交互；原生 C# 编译验证与 macOS 脚本编译验证都不触发真实桌面截图。
 
 ### 下载
 

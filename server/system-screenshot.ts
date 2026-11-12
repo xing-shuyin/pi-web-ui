@@ -1,9 +1,19 @@
 import type { Express, Request } from "express";
 import { hostWithoutPort, isLoopbackHost } from "./host-guard.js";
 import { isLoopbackAddress } from "./server-config.js";
+import { captureMacScreenshot } from "./system-screenshot-macos.js";
 import { captureWindowsScreenshot } from "./system-screenshot-windows.js";
 
 type Capture = (token: string, locale: "zh" | "en", signal: AbortSignal, hideWindow: boolean) => Promise<string | null>;
+
+/** Native desktop capture exists for Windows (WinForms helper) and macOS (`screencapture`). */
+function supportsSystemScreenshot(platform: NodeJS.Platform): boolean {
+	return platform === "win32" || platform === "darwin";
+}
+
+function defaultCapture(platform: NodeJS.Platform): Capture {
+	return platform === "darwin" ? captureMacScreenshot : captureWindowsScreenshot;
+}
 
 export function isLocalScreenshotRequest(req: Pick<Request, "headers" | "socket">): boolean {
 	if (!isLoopbackAddress(req.socket.remoteAddress)) return false;
@@ -26,11 +36,12 @@ export function registerSystemScreenshotRoutes(
 	options: { platform?: NodeJS.Platform; capture?: Capture } = {},
 ): void {
 	const platform = options.platform ?? process.platform;
-	const capture = options.capture ?? captureWindowsScreenshot;
+	const supported = supportsSystemScreenshot(platform);
+	const capture = options.capture ?? defaultCapture(platform);
 	let busy = false;
 	app.get("/api/system-screenshot", (req, res) => {
 		res.setHeader("Cache-Control", "no-store");
-		res.json({ available: platform === "win32" && isLocalScreenshotRequest(req) });
+		res.json({ available: supported && isLocalScreenshotRequest(req) });
 	});
 	app.post("/api/system-screenshot", async (req, res) => {
 		res.setHeader("Cache-Control", "no-store");
@@ -38,7 +49,7 @@ export function registerSystemScreenshotRoutes(
 			res.status(403).json({ error: "local-only" });
 			return;
 		}
-		if (platform !== "win32") {
+		if (!supported) {
 			res.status(501).json({ error: "unsupported" });
 			return;
 		}

@@ -23,6 +23,7 @@ import {
 	type Settings,
 } from "./common.js";
 import { t, type MessageKey } from "./i18n.js";
+import { vaultPanel, type VaultTab } from "./vault.js";
 import type { BrowserPanel, BrowserPanelEvent, BrowserState } from "../contracts.js";
 export type Panel = BrowserPanel;
 let dialog: HTMLDialogElement | undefined;
@@ -89,14 +90,14 @@ function handlePanelEscape(event: KeyboardEvent): void {
 	void closePanel().catch(reportError);
 }
 let pendingPanel: Promise<void> = Promise.resolve();
-export function showPanel(panel: Panel): Promise<void> {
-	const opening = pendingPanel.then(() => (layered ? renderLayer(panel) : openPanel(panel)));
+export function showPanel(panel: Panel, options?: { tab?: VaultTab }): Promise<void> {
+	const opening = pendingPanel.then(() => (layered ? renderLayer(panel, options) : openPanel(panel, options)));
 	pendingPanel = opening.catch(() => {});
 	return opening;
 }
 /** 外壳窗口：面板开在宿主的面板浮层里（`panel.html`），内容区不再被隐藏。 */
-export function showShellPanel(panel: Panel): Promise<void> {
-	return call("panel", { open: true, panel });
+export function showShellPanel(panel: Panel, tab?: VaultTab): Promise<void> {
+	return call("panel", { open: true, panel, tab });
 }
 export function closeShellPanel(): Promise<void> {
 	return call("panel", { open: false }).then(() => undefined);
@@ -109,8 +110,10 @@ function panelEvent(name: BrowserPanelEvent): void {
 	window.dispatchEvent(new Event(name));
 	if (layered) void call("panel", { event: name }).catch(() => undefined);
 }
-/** 面板骨架：标题栏（带关闭键）+ 内容区；外壳浮层与内部页共用。 */
-function createDialog(panel: Panel): { node: HTMLDialogElement; content: HTMLElement } {
+/** 面板骨架：标题栏（带关闭键）+ 内容区；外壳浮层与内部页共用。
+ * 标题栏还预留一个动作槽（`.pb-dialog-actions`）：面板把工具图标挂到这里，
+ * 于是一行里就是「标题 — 图标工具条 — 关闭」（TOTP 面板即此形态）。 */
+function createDialog(panel: Panel): { node: HTMLDialogElement; content: HTMLElement; actions: HTMLElement } {
 	const compact = panel === "extensions";
 	const node = element("dialog", `pb-dialog${compact ? " pb-dialog-compact" : ""}${layered ? " pb-dialog-layer" : ""}`);
 	node.tabIndex = -1;
@@ -118,19 +121,29 @@ function createDialog(panel: Panel): { node: HTMLDialogElement; content: HTMLEle
 	const header = element("header", "pb-dialog-header");
 	const title = element("h2", "", t(panel));
 	title.id = "pb-panel-heading";
-	header.append(title, iconButton(closeIcon(10), t("close"), closePanel));
+	const actions = element("div", "pb-dialog-actions");
+	header.append(title, actions, iconButton(closeIcon(10), t("close"), closePanel));
 	const content = element("div", "pb-dialog-content");
 	content.append(empty(t("loading")));
 	node.append(header, content);
-	return { node, content };
+	return { node, content, actions };
 }
-async function fillDialog(panel: Panel, content: HTMLElement, node: HTMLDialogElement): Promise<void> {
+async function fillDialog(
+	panel: Panel,
+	content: HTMLElement,
+	node: HTMLDialogElement,
+	actions: HTMLElement,
+	tab?: VaultTab,
+): Promise<void> {
+	// 动作槽跟着面板走：切面板先清空，避免上一个面板的工具图标留下来
+	actions.replaceChildren();
 	try {
 		if (panel === "bookmarks") await bookmarksPanel(content);
 		if (panel === "history") await historyPanel(content);
 		if (panel === "settings") await settingsPanel(content);
 		if (panel === "downloads") await downloadsPanel(content);
 		if (panel === "extensions") await extensionsPanel(content);
+		if (panel === "vault") await vaultPanel(content, () => panelEvent("pb-vault-changed"), actions, { tab });
 	} catch (error) {
 		if (!node.isConnected) return;
 		content.replaceChildren(
@@ -155,13 +168,13 @@ function reportLayerSize(): void {
 	void call("panel", { size: layerSize }).catch(() => undefined);
 }
 /** 浮层视图里画一块面板：换面板只换本页这块，不通知宿主销毁视图。 */
-async function renderLayer(panel: Panel): Promise<void> {
+async function renderLayer(panel: Panel, options?: { tab?: VaultTab }): Promise<void> {
 	layerObserver?.disconnect();
 	layerObserver = undefined;
 	dialog?.close();
 	dialog?.remove();
 	activePanel = panel;
-	const { node, content } = createDialog(panel);
+	const { node, content, actions } = createDialog(panel);
 	dialog = node;
 	node.addEventListener("cancel", (event) => {
 		event.preventDefault();
@@ -174,9 +187,9 @@ async function renderLayer(panel: Panel): Promise<void> {
 	node.focus({ preventScroll: true });
 	layerObserver = new ResizeObserver(() => reportLayerSize());
 	layerObserver.observe(node);
-	await fillDialog(panel, content, node);
+	await fillDialog(panel, content, node, actions, options?.tab);
 }
-async function openPanel(panel: Panel): Promise<void> {
+async function openPanel(panel: Panel, options?: { tab?: VaultTab }): Promise<void> {
 	if (dialog?.open && activePanel === panel) {
 		await closePanel();
 		return;
@@ -191,7 +204,7 @@ async function openPanel(panel: Panel): Promise<void> {
 	}
 	overlayOwned = true;
 	activePanel = panel;
-	const { node, content } = createDialog(panel);
+	const { node, content, actions } = createDialog(panel);
 	dialog = node;
 	node.addEventListener("cancel", (event) => {
 		event.preventDefault();
@@ -203,7 +216,7 @@ async function openPanel(panel: Panel): Promise<void> {
 	// show() 而不是 showModal()：不要遮罩，也不把整窗变成 inert
 	node.show();
 	node.focus({ preventScroll: true });
-	await fillDialog(panel, content, node);
+	await fillDialog(panel, content, node, actions, options?.tab);
 }
 async function showPanelAgain(panel: Panel): Promise<void> {
 	await closePanel();
@@ -656,105 +669,16 @@ interface Credential {
 	password: string;
 	createdAt: string;
 }
+/**
+ * 设置里的「密码库」段：真正的增删改查已经搬进 `vault` 面板（密码 + TOTP 同一块）。
+ * 这里只留一句说明和一个入口，免得两处各维护一套列表。
+ */
 async function vaultSection(container: HTMLElement): Promise<void> {
-	container.replaceChildren(element("h3", "", t("vault")));
-	try {
-		if (!(await call<boolean>("passwords.available"))) {
-			container.append(element("p", "pb-muted", t("vaultUnavailable")));
-			return;
-		}
-		let entries = await call<Credential[]>("passwords.list");
-		const list = element("div", "pb-list");
-		const editor = element("form", "pb-form pb-editor-inline");
-		editor.hidden = true;
-		const name = input();
-		const url = input("", "url");
-		const username = input();
-		const secret = input("", "password");
-		secret.autocomplete = "new-password";
-		username.autocomplete = "off";
-		const submit = button(t("save"), () => {}, "pb-primary");
-		submit.type = "submit";
-		const showSecret = button(t("showPassword"), () => {
-			secret.type = secret.type === "password" ? "text" : "password";
-			showSecret.textContent = t(secret.type === "password" ? "showPassword" : "hidePassword");
-		});
-		editor.append(
-			label(t("name"), name),
-			label(t("url"), url),
-			label(t("username"), username),
-			label(t("password"), secret),
-			toolbar(
-				showSecret,
-				submit,
-				button(t("cancel"), () => {
-					editor.reset();
-					secret.value = "";
-					editor.hidden = true;
-				}),
-			),
-		);
-		function render(): void {
-			list.replaceChildren();
-			for (const entry of entries) {
-				const row = element("div", "pb-list-item");
-				row.append(
-					details(entry.name, `${entry.username} · ${hostName(entry.url)}`),
-					button(t("fillCredential"), async () => {
-						await call("passwords.fill", { id: entry.id });
-						// 提示落在面板里：面板是页面旁边的一块浮层，关不关留给用户
-						notify(t("credentialFilled"));
-					}),
-					iconButton(closeIcon(8), t("removeCredential"), async () => {
-						const next = entries.filter((value) => value.id !== entry.id);
-						await call("passwords.save", { entries: next });
-						entries = next;
-						render();
-					}),
-				);
-				list.append(row);
-			}
-			if (!entries.length) list.append(empty(t("noCredentials")));
-		}
-		editor.addEventListener("submit", (event) => {
-			event.preventDefault();
-			void (async () => {
-				const valid = webUrl(url.value.trim());
-				if (!name.value.trim() || !valid || !username.value.trim() || !secret.value)
-					throw new Error(t("credentialRequired"));
-				const next = [
-					...entries,
-					{
-						id: crypto.randomUUID(),
-						name: name.value.trim(),
-						url: valid,
-						username: username.value.trim(),
-						password: secret.value,
-						createdAt: new Date().toISOString(),
-					},
-				];
-				await call("passwords.save", { entries: next });
-				entries = next;
-				editor.reset();
-				secret.value = "";
-				editor.hidden = true;
-				render();
-				notify(t("saved"));
-			})().catch(reportError);
-		});
-		container.append(
-			element("p", "pb-muted", t("security")),
-			button(t("addCredential"), () => {
-				editor.hidden = false;
-				name.focus();
-			}),
-			editor,
-			list,
-		);
-		render();
-	} catch (error) {
-		container.append(element("p", "pb-muted", error instanceof Error ? error.message : t("vaultUnavailable")));
-	}
+	container.replaceChildren(
+		element("h3", "", t("vault")),
+		element("p", "pb-muted", t("vaultMovedHint")),
+		button(t("openVault"), () => void showPanel("vault", { tab: "passwords" })),
+	);
 }
 /** 扩展管理项：与内核 extensions.list 的返回契约对齐（停用未加载的项没有 id/name/version）。 */
 interface ExtensionEntry {
@@ -929,6 +853,16 @@ function extensionRow(entry: ExtensionEntry, onChanged: () => Promise<void>): HT
 	});
 	const control = element("label", "pb-switch");
 	control.append(toggle);
+	// 弹窗跟着鼠标点：记下按下时的视口坐标，开窗拿它当锚点（键盘回车 / 鼠标点不在行内时回退到行右下角）
+	let pressed: { x: number; y: number } | null = null;
+	row.addEventListener("pointerdown", (event) => {
+		pressed = event.button === 0 ? { x: event.clientX, y: event.clientY } : null;
+	});
+	const takeAnchor = (fallback: { x: number; y: number }): { x: number; y: number } => {
+		const point = pressed;
+		pressed = null;
+		return point ? screenPoint(point.x, point.y) : fallback;
+	};
 	// 整行的主动作就是把这一行点开——和 Chrome 里点动作图标一样开它自己的页面
 	const opener = button(
 		[
@@ -937,7 +871,7 @@ function extensionRow(entry: ExtensionEntry, onChanged: () => Promise<void>): HT
 		],
 		() => {
 			const box = row.getBoundingClientRect();
-			return openExtensionEntry(entry, screenPoint(box.right, box.bottom + 4));
+			return openExtensionEntry(entry, takeAnchor(screenPoint(box.right, box.bottom + 4)));
 		},
 		"pb-extension-open",
 	);

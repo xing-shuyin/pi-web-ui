@@ -41,3 +41,25 @@ export function isWebUrl(value: string): boolean {
 		return false;
 	}
 }
+
+/** 标签图标（favicon）的 data: URL 上限：再长的直接当没有，别把每次状态推送撑大。 */
+export const TAB_FAVICON_MAX_DATA_URL = 8192;
+
+/**
+ * 从 `page-favicon-updated` 给的候选里挑一个能用的：
+ * 只认 http(s) 与小尺寸 `data:image/…`（内联图标常见），`javascript:` / `file:` 之类一律丢掉，
+ * 拿到空串就回退地球图标。
+ */
+export function pickTabFavicon(icons: unknown): string {
+	if (!Array.isArray(icons)) return "";
+	for (const raw of icons) {
+		if (typeof raw !== "string") continue;
+		const value = raw.trim();
+		if (!value) continue;
+		if (isWebUrl(value)) return value;
+		if (/^data:image\/[a-z0-9.+-]+[;,]/.test(value.toLowerCase()) && value.length <= TAB_FAVICON_MAX_DATA_URL) {
+			return value;
+		}
+	}
+	return "";
+}

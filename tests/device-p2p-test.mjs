@@ -194,7 +194,7 @@ async function main() {
 	assert.equal(opened.deviceLan, undefined);
 	const wrapper = await fetch(origin + opened.url + "&next=%2Fdesktop-preview", { signal: deadline() });
 	const html = await wrapper.text();
-	assert(html.includes("P2P"));
+	assert.match(html, /type:'device-access-transport',transport:"p2p"/);
 	assert(!html.includes("allow-same-origin"));
 	const base = html.match(/\/device-lan\/target\/__relay\/[a-f0-9]{64}\//)[0];
 	const status = await fetch(origin + base + "api/device-center/chat-status", {

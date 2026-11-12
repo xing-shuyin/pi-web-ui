@@ -252,7 +252,7 @@ Hub 等待绑定当前设备 WS 的 executor ACK 才移除交互；拒绝或 5 �
 
 ## P2P 设备访问
 
-版本 `0.120.1-p2p-preview.1` 在局域网探测失败后，自动尝试设备间 WebRTC P2P，失败再使用 Hub 中继。群成员的「打开设备」和「远程桌面」共用该流程。第一阶段要求两端都运行本机 pi-web-ui；只访问云端 Hub 网页的浏览器仍使用中继。群组持久记录、排序、审批、任务租约与设备授权继续由 Hub 管理。
+在局域网探测失败后，自动尝试设备间 WebRTC P2P，失败再使用 Hub 中继。群成员的「打开设备」和「远程桌面」共用该流程。第一阶段要求两端都运行本机 pi-web-ui；只访问云端 Hub 网页的浏览器仍使用中继。群组持久记录、排序、审批、任务租约与设备授权继续由 Hub 管理。
 
 Hub 通过已认证的 `device_lan` RPC 协商能力（兼容旧响应），通过 `device_p2p` RPC 定向转发有界 SDP。只有现有人工设备凭据接口可提交协商，仍先验证账号与设备归属；浏览器接口不接受 SDP。每次会话拥有独立 ICE/DTLS 身份与短期 TLS-PSK 授权，SDP、地址与密钥不会返回浏览器。目标助手只连接本次授权的固定回环网关，不接收任意 TCP 目标。
 
@@ -260,7 +260,7 @@ Go/Pion 助手通过 stdio 受 Node 管理，使用 UDP IPv4/IPv6 ICE、STUN 和
 
 直连页继续使用 `/device-lan/` 隔离能力 URL，保留现有 CSP、路径白名单、Origin 和凭据净化。显示通路由实际完成连接的结果决定：`lan` / `p2p` / `hub`。包装页卸载时发送有能力校验、按页面代次区分的释放请求，保留 2 秒刷新宽限，重新加载不会误撤销新页面；恢复连接时申请新票据并报告新通路。未确认的上传、键鼠和任务命令不会由传输层自动重放。
 
-npm P2P 候选包附带 Windows x64、macOS arm64/x64、Linux arm64/x64 助手及 SHA-256 清单，使用时校验；macOS/Linux 使用私有临时目录中的可执行副本，避免 Windows 制作的 npm 包丢失执行权限。用户无需安装 Go；不支持的平台、旧 Hub/设备、缺失助手或打洞失败均回退 Hub。源码构建的完整分发入口是 `npm run pack:p2p`，需要 Go ≥1.24；普通 Web 构建不强制安装 Go，也不保证包含助手。
+完整 npm P2P 包附带 Windows x64、macOS arm64/x64、Linux arm64/x64 助手及 SHA-256 清单，使用时校验；macOS/Linux 使用私有临时目录中的可执行副本，避免 Windows 制作的 npm 包丢失执行权限。用户无需安装 Go；不支持的平台、旧 Hub/设备、缺失助手或打洞失败均回退 Hub。源码构建的完整分发入口是 `npm run pack:p2p`，需要 Go ≥1.24；普通 Web 构建不强制安装 Go，也不保证包含助手。
 
 设备侧设置：`PI_DEVICE_P2P=0` 禁用；`PI_DEVICE_P2P_STUN` 为最多 4 个逗号分隔的 `stun:host:port`，默认 `stun:stun.cloudflare.com:3478`。可使用自建 coturn 的 STUN 服务；本版不使用 TURN，无法直连时走原 Hub。服务器只升级 Hub 就能承担信令，无需安装桌面环境。`PI_DEVICE_P2P_HELPER` 是受信任管理员/开发测试用的绝对路径覆盖，绕过随包校验；浏览器与 Hub 信令不能设置它。
 

@@ -11,8 +11,12 @@ import { t } from "./i18n.js";
 document.body.classList.add("pb-panel-layer");
 usePanelLayer();
 
-const requested = new URLSearchParams(location.search).get("panel");
+const params = new URLSearchParams(location.search);
+const requested = params.get("panel");
 const panel = BROWSER_PANELS.find((name) => name === requested);
+// 合并面板（vault）有两个标签：由宿主决定先开哪个（工具栏钥匙图标 → totp）
+const tabParam = params.get("tab");
+const tab = tabParam === "passwords" || tabParam === "totp" ? tabParam : undefined;
 
 if (!panel) {
 	document.body.textContent = t("error");
@@ -22,7 +26,7 @@ if (!panel) {
 		const [state, settings] = await Promise.all([call<BrowserState>("state"), call<Settings>("settings.get")]);
 		applySettings(settings);
 		setPanelState(state);
-		await showPanel(panel);
+		await showPanel(panel, { tab });
 	})().catch((error: Error) => {
 		// 起不来也要留一行字：宿主会在兜底耗时后把这块视图亮出来
 		document.body.textContent = error.message;

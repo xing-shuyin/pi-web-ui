@@ -35,7 +35,7 @@ import { buildUpdateCommand } from "../update-command";
 import { randomUuid } from "../uuid";
 import { Dropdown, DropdownItem } from "./Dropdown";
 import type { ViewName } from "./BarItem";
-import { BrowserControl } from "./BrowserControl";
+import { BrowserControl, BrowserControlModal } from "./BrowserControl";
 import { BROWSER_PAGE_TOOL_NAME } from "../../../server/tool-manager.js";
 import { PluginIcon } from "../plugin-icon";
 import { formatCostDisplay } from "../cost-format";
@@ -220,6 +220,7 @@ export function TopBar({
 }: TopBarProps) {
 	const { locale, setLocale, t, packs } = useI18n();
 	const [topbarMenuOpen, setTopbarMenuOpen] = useState(false);
+	const [browserPanelOpen, setBrowserPanelOpen] = useState(false);
 	const [projectPickerOpen, setProjectPickerOpen] = useState(false);
 	const [pluginMenuAnchor, setPluginMenuAnchor] = useState<{ rect: DOMRect; el: HTMLElement } | null>(null);
 	const [pluginManagerOpen, setPluginManagerOpen] = useState(false);
@@ -1059,7 +1060,7 @@ export function TopBar({
 		),
 		"host:browser":
 			isDesktopShell() || !(chat.settings?.disabledAgentTools?.includes(BROWSER_PAGE_TOOL_NAME) ?? false) ? (
-				<BrowserControl />
+				<BrowserControl onActivate={() => setTopbarMenuOpen(false)} onOpenPanel={() => setBrowserPanelOpen(true)} />
 			) : null,
 		"host:tasks": (
 			<button type="button" className="chip bg-task-chip" data-tip={t("bgTasksTip")} onClick={onOpenBgTasks}>
@@ -1662,6 +1663,8 @@ export function TopBar({
 			<WindowControls />
 
 			{localeModalOpen && <LocaleModal onClose={() => setLocaleModalOpen(false)} />}
+			{browserPanelOpen &&
+				createPortal(<BrowserControlModal onClose={() => setBrowserPanelOpen(false)} />, document.body)}
 			{pluginMenuAnchor && (
 				<PluginMenu
 					anchorRect={pluginMenuAnchor.rect}

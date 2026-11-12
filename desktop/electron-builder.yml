@@ -17,6 +17,8 @@ files:
   - node_modules/electron-chrome-extensions/**
   - node_modules/debug/**
   - node_modules/ms/**
+  # TOTP 验证器的扫码解码（browser/runtime/qr.ts 顶层 import）：漏了安装版主进程直接 MODULE_NOT_FOUND
+  - node_modules/jsqr/**
 extraMetadata:
   main: dist/desktop/main.js
 asar: false

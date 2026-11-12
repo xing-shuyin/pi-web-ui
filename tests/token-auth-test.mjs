@@ -93,6 +93,15 @@ function httpGet(path, headers = {}) {
 	});
 }
 
+function postForm(path, fields) {
+	return fetch(`http://127.0.0.1:${PORT}${path}`, {
+		method: "POST",
+		redirect: "manual",
+		headers: { "content-type": "application/x-www-form-urlencoded", ...(jar ? { cookie: jar } : {}) },
+		body: new URLSearchParams(fields).toString(),
+	});
+}
+
 function wsTry(path, headers = {}) {
 	return new Promise((resolve, reject) => {
 		const ws = new WebSocket(`ws://127.0.0.1:${PORT}${path}`, headers && { headers });
@@ -170,6 +179,50 @@ try {
 	check("Authorization: Bearer accepted", r4.status === 200);
 	const r5 = await httpGet("/", { "x-pi-token": TOKEN });
 	check("X-PI-Token header accepted", r5.status === 200);
+
+	// 登录表单（原生 POST）：浏览器密码管理器提示保存密码依赖这条链路
+	const loginOk = await postForm("/__pi/auth", { username: "pi-web-ui", token: TOKEN, next: "/device/x?tab=1" });
+	check(
+		"POST /__pi/auth 正确口令 → 303 回跳深链接",
+		loginOk.status === 303 && loginOk.headers.get("location") === "/device/x?tab=1",
+		`${loginOk.status} ${loginOk.headers.get("location")}`,
+	);
+	const scLogin = jarHeader(loginOk);
+	check(
+		"POST /__pi/auth 下发 HttpOnly pi_web_token",
+		scLogin.includes(`pi_web_token=${encodeURIComponent(TOKEN)}`) && scLogin.toLowerCase().includes("httponly"),
+		scLogin || "<no set-cookie>",
+	);
+
+	const loginBad = await postForm("/__pi/auth", { username: "pi-web-ui", token: "nope", next: "/chat" });
+	check(
+		"POST /__pi/auth 错误口令 → 303 回 ?auth_error=1 且不发 cookie",
+		loginBad.status === 303 && loginBad.headers.get("location") === "/chat?auth_error=1" && jarHeader(loginBad) === "",
+		`${loginBad.status} ${loginBad.headers.get("location")} ${jarHeader(loginBad)}`,
+	);
+
+	const loginOpenRedirect = await postForm("/__pi/auth", { token: TOKEN, next: "//evil.com/x" });
+	check(
+		"POST /__pi/auth 拒绝开放重定向",
+		loginOpenRedirect.headers.get("location") === "/",
+		loginOpenRedirect.headers.get("location"),
+	);
+
+	const loginTokenLeak = await postForm("/__pi/auth", { token: TOKEN, next: "/chat?token=leaked" });
+	check(
+		"POST /__pi/auth 回跳剔除 token 参数",
+		loginTokenLeak.headers.get("location") === "/chat",
+		loginTokenLeak.headers.get("location"),
+	);
+
+	const errPage = await fetch(`http://127.0.0.1:${PORT}/chat?auth_error=1`, { headers: { accept: "text/html" } });
+	const errHtml = await errPage.text();
+	check(
+		"失败回跳后未登录页展示口令错误提示",
+		errPage.status === 401 && errHtml.includes("口令不正确"),
+		String(errPage.status),
+	);
+	check("未登录页表单是原生 POST", errHtml.includes('method="post" action="/__pi/auth"'), errHtml.slice(0, 120));
 
 	const wsNoToken = await wsTry("/ws");
 	check("WS without token rejected", typeof wsNoToken === "object", JSON.stringify(wsNoToken));

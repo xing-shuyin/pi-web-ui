@@ -52,7 +52,12 @@ node scripts/release-notes.mjs X.Y.Z --base v<上个版本>   # 预览（输出�
 # node scripts/release-notes.mjs X.Y.Z --base v<上个版本> --out /tmp/notes.md --create
 
 # 8) 发布 npm（会自动跑 prepublishOnly 构建）
-npm publish
+#    账号开了 2FA：用「绕过 2FA 的 granular token」直接 npm publish 会被 registry 降级成
+#    staged 发布（版本几分钟后才落库，期间重试只会 409 Cannot publish over previously
+#    staged version；unpublish / 改 dist-tag 更是直接 403）。走带 OTP 的封装：
+NPM_OTP=123456 npm run release:npm     # 预检脏工作区/账号/tag + 带 OTP 发布 + staged 自愈
+#    等价手工命令：npm publish --otp=123456
+#    只想看会打出什么：npm run release:npm -- --dry-run
 
 # 8.5) 桌面安装包（自动，三平台并行，无需手写）
 #    同一个 tag 也触发 .github/workflows/desktop-release.yml，三个 job 同时跑
@@ -76,8 +81,14 @@ npm publish
 npm run release:local -- vX.Y.Z                # 全量：桌面 + 手机（手机那步 qemu 构建 15–25 分钟）
 npm run release:local -- vX.Y.Z --skip-mobile  # 只打桌面
 npm run release:local -- vX.Y.Z --skip-desktop # 只打手机
+npm run release:local -- vX.Y.Z --skip-desktop --reuse-runtime  # 只打手机且不重建运行时（引擎没变时首选，几分钟）
 npm run release:local -- vX.Y.Z --no-upload    # 只打包，不碰 Release
 npm run release:local -- vX.Y.Z --portable     # 额外出便携版（内置 Git/Node，较慢）
+#    注意：手机包不会跟着 tag 自动出。tag 只触发 desktop-release / release-notes / 扩展；
+#    mobile-release 是手动 workflow（CI 每次新生成 debug keystore，装不上旧包还会清引擎数据），
+#    所以每个版本的 APK 都得本地跑一次上面的命令。
+#    --reuse-runtime 只在「服务端代码没变、只动了外壳/插件」时成立：运行时里装的就是本仓库
+#    npm pack 的服务端包，piWebUi 版本对不上时脚本会直接拦下（确认真没改可加 --allow-stale-engine）。
 #    脚本会先校验 tag 与 package.json 版本一致，然后：npm run build → 桌面打包 → （可选）构建
 #    arm64 运行时并打 APK → 生成 SHA256SUMS.txt → gh release upload --clobber。
 #    为什么本地优先：手机 APK 里带 280 MB 引擎运行时，CI 那份 qemu 又慢又每次换 debug 签名
@@ -92,6 +103,7 @@ npm run release:local -- vX.Y.Z --portable     # 额外出便携版（内置 Git
 #    它需要可选的 MOBILE_KEYSTORE_BASE64 等 secrets 才能发出可升级的包。
 
 # 9) 验证
+npm run release:check -- vX.Y.Z  # Release 资产是否齐全：桌面 3 平台 + 扩展 + 手机 APK + SHA256SUMS
 npm view pi-web-ui version        # 应显示新版本（registry 有缓存延迟属正常）
 curl -s https://registry.npmjs.org/pi-web-ui/latest | jq .version
 git ls-remote --tags origin       # 应能看到 vX.Y.Z

@@ -579,7 +579,8 @@ export const BUILTIN_UI_ITEMS: BuiltinUiItem[] = [
 		labelKey: "screenshotCapture",
 		icon: "cut",
 		kind: "action",
-		order: 20,
+		// 排在附件与模板之后，输入框工具栏左侧第三个位。
+		order: 115,
 		align: "start",
 	},
 	{
@@ -1348,6 +1349,24 @@ export function setPluginViewOrder(layout: UiLayoutPrefs | undefined, pluginIds:
 	return { ...layout, order: [...order, ...pluginItemIds] };
 }
 
+const SCREENSHOT_ITEM_ID = "host:composer-screenshot";
+
+/**
+ * 早期布局快照里没有截图按钮，未登记进 `order` 的条目会排在所有已排序条目之后。
+ * 把截图按钮锚定在模板（无模板时锚定附件）之后，老用户也能直接拿到左侧第三个位。
+ */
+function migrateScreenshotOrder<T extends UiLayoutPrefs>(src: T): T {
+	const order = src.order ?? [];
+	if (order.length === 0 || order.includes(SCREENSHOT_ITEM_ID)) return src;
+	const anchor = ["host:composer-templates", "host:composer-upload"]
+		.map((id) => order.indexOf(id))
+		.find((index) => index >= 0);
+	if (anchor === undefined) return src;
+	const next = [...order];
+	next.splice(anchor + 1, 0, SCREENSHOT_ITEM_ID);
+	return { ...src, order: next };
+}
+
 const BRAND_ITEM_ID = "host:brand";
 const BRAND_OLD_IDS: readonly string[] = ["host:brand-logo", "host:brand-name"];
 
@@ -1674,7 +1693,7 @@ export function buildUiSlots(
 ): Record<UiSlotId, UiSlotEntry[]> {
 	const zh = isZhLocale(opts.locale);
 	const disabled = new Set(opts.disabledPlugins ?? []);
-	const layout = migrateBrandLayout(opts.layout ?? {});
+	const layout = migrateScreenshotOrder(migrateBrandLayout(opts.layout ?? {}));
 	const diag = (d: Omit<UiDiagnostic, "level"> & { level?: UiDiagnosticLevel }): void => {
 		opts.diagnostics?.push({ level: d.level ?? "warn", ...d });
 	};

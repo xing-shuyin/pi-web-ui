@@ -28,26 +28,13 @@
 
 `tests/unit/device-desktop-preview.test.ts` 验证缓存、并发复用、取消和实时采集切换；原生/Linux 用例检查低频参数和只读约束。`node --import tsx tests/device-desktop-window-test.mjs` 使用 8997 端口和真实 Chrome，验证嵌套沙箱中的连续预览、折叠暂停、右栏隐藏暂停、放大操作、全屏不重载、返回预览、手机宽度及关闭清理，截图位于 `artifacts/device-center/`。该界面测试使用模拟桌面，不代表跨机器性能实测。
 
-### P2P 候选版
+### 版本升级
 
-`0.120.1-p2p-preview.1` 延续预览布局，新增设备间 WebRTC 通道。安装、Hub 升级与跨网验证见[设备中心 P2P 访问](device-center.md#p2p-设备访问)。前一个 `desktop-preview.1` 包仍只有 LAN/Hub，不能通过刷新页面获得 P2P。三端都需升级新候选包并重启实际运行服务；旧版本可兼容回退中继。
+控制端、被控端和 Hub 需更新并重启实际运行进程，才能使用对应的新能力。只更新 npm 包后刷新页面不会替换仍在运行的旧后端。已安装服务可执行 `pi-web-ui server restart`，有自定义名称时附加 `--name <原服务名>`；前台运行按原工作目录、端口和数据目录参数重启。Hub 服务按原安装方式执行 `pi-web-ui hub update` / `hub restart`，再用 `pi-web-ui hub status --json` 检查实际版本。保留原数据目录、鉴权和设备绑定。
 
-### npm 跨机器测试包
+Windows 已安装系统桌面服务时，还需运行 `pi-web-ui desktop service install` 更新受保护的采集程序。Mac 需要屏幕录制及辅助功能权限。旧设备缺少能力时保留中继或提示升级，不自动安装系统组件。
 
-`0.120.1-desktop-preview.1` 基于正式版 `0.120.0`，通过 [fork 的测试发布](https://github.com/xinzhihong-ship-it/pi-web-ui/releases/tag/desktop-preview-0.120.1-1) 分发；下载页提供已构建的 `.tgz` 和 SHA-256。这是供跨机器验收的候选包，不是官方 npm `latest`。无需在其它机器编译前端；需要 Node.js ≥22.19.0。
-
-控制端、被控端及独立 Hub 都安装同一包：
-
-```sh
-npm install -g "https://github.com/xinzhihong-ship-it/pi-web-ui/releases/download/desktop-preview-0.120.1-1/pi-web-ui-0.120.1-desktop-preview.1.tgz"
-npm list -g pi-web-ui --depth=0
-```
-
-原来用全局 npm 包安装的 Web 服务，安装完成后执行 `pi-web-ui server restart`；有自定义服务名时补 `--name <原服务名>`。前台运行的服务应结束原进程，再用原来的工作目录、端口和数据目录参数运行 `pi-web-ui`。刷新浏览器，检查运行中的版本是否为 `0.120.1-desktop-preview.1`；只检查 npm 安装版本不足以确认服务已更新。
-
-通过全局包直接运行的 Hub 重启原进程；由 `hub install` 安装且仍指向全局包的服务执行 `pi-web-ui hub restart`。曾用 Hub 在线升级、旧 npx 缓存或源码路径启动的服务，入口可能仍指向旧包，必须核对并更新启动入口。Hub 的受管升级可通过 `PI_DEVICE_HUB_UPDATE_SOURCE` 指定上述下载 URL 后运行 `pi-web-ui hub update`，再用 `pi-web-ui hub status --json` 检查 `health.version`；如果服务配置已经固定了更新源，应先按原部署方式更新该配置，因为保存的源优先于临时环境变量。保留原数据目录、鉴权和设备绑定。
-
-先用两台电脑检查右栏预览持续更新、点击放大、控制输入、返回预览和隐藏暂停，再分别验证同局域网 LAN 标记及跨网 Hub 标记。Windows 被控电脑需要活动图形会话，macOS 需屏幕录制权限；只安装 Web 包不会绕过系统桌面权限。发布说明列出实际通过的检查与尚待验证的平台。
+先验证双机预览持续更新、放大操作、返回预览和隐藏暂停，再验证局域网和跨网通路。测试发布与实机验证范围见对应 PR；原生平台、显示器刷新率和不同 NAT 环境需分别验证。
 
 ## 群组成员桌面
 

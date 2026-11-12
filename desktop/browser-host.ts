@@ -3,6 +3,7 @@ import {
 	dialog,
 	ipcMain,
 	Menu,
+	nativeImage,
 	screen,
 	shell,
 	WebContentsView,
@@ -34,7 +35,7 @@ import {
 	type ExtensionEntry,
 	type InstalledExtension,
 } from "../browser/runtime/extension-state.js";
-import { fillCredential } from "../browser/runtime/credentials.js";
+import { fillCredential, fillTotpCode, publicCredential } from "../browser/runtime/credentials.js";
 import {
 	clampPopupSize,
 	placePopup,
@@ -45,6 +46,18 @@ import {
 	type PopupSize,
 } from "../browser/runtime/extension-popup.js";
 import { isWebUrl } from "../browser/runtime/urls.js";
+import {
+	createTotpEntry,
+	normalizeOrigin,
+	parseOtpauth,
+	publicTotp,
+	reorderTotpEntries,
+	totpCode,
+	toOtpauthUri,
+	type PublicTotpEntry,
+	type TotpEntry,
+} from "../browser/runtime/totp.js";
+import { decodeQrNativeImage } from "../browser/runtime/qr.js";
 import { createBrowserExecutor } from "../browser/automation/executor.js";
 import { collectExtensionRules, DeclarativeNetworkRules } from "../browser/runtime/dnr.js";
 import { installExtensionBridge } from "../browser/runtime/extension-bridge.js";
@@ -63,6 +76,7 @@ import {
 	normalizeAgentUrl,
 	panelLayerBounds,
 	panelLayerDefaultSize,
+	ACTION_POPUP_BLUR_GRACE_MS,
 	PANEL_LAYER_SHOW_DELAY,
 	MIN_SPLIT_RATIO,
 	MAX_SPLIT_RATIO,
@@ -169,6 +183,8 @@ export class DesktopBrowserHost {
 	private agent: WebContentsView | null = null;
 	/** 扩展自己的页面窗口（动作弹窗 / 选项页）：同一种窗口同一扩展只开一个。 */
 	private extensionWindows = new Map<string, BrowserWindow>();
+	/** 动作弹窗最近一次亮出的时刻：算失焦宽限用（面板关闭会把焦点还给外壳）。 */
+	private readonly actionPopupShownAt = new WeakMap<BrowserWindow, number>();
 	/** `chrome.windows.create` 开出的窗口：扩展可以自己关掉。 */
 	private readonly extensionWins = new Set<BrowserWindow>();
 	/** chrome.* 语义层（tabs/windows/contextMenus/notifications…）：全部落回本类与 BrowserManager。 */
@@ -694,7 +710,7 @@ export class DesktopBrowserHost {
 	}
 
 	/** 面板浮层：开到工具栏下沿、贴窗口右侧的一块矩形里，页面与 Agent 分栏照常可见 */
-	private async openPanelLayer(panel: string): Promise<boolean> {
+	private async openPanelLayer(panel: string, tab?: string): Promise<boolean> {
 		if (!(BROWSER_PANELS as readonly string[]).includes(panel)) throw new Error("Invalid panel");
 		// 工具栏上的按钮本身就是开关：同一个面板再点一次就是收起
 		if (this.panelView && this.panelName === panel) {
@@ -719,6 +735,8 @@ export class DesktopBrowserHost {
 		this.placePanelLayer();
 		const url = pathToFileURL(join(this.options.assetsDir, "panel.html"));
 		url.searchParams.set("panel", panel);
+		// 合并面板（vault）有两个标签，外壳可以指定先开哪个（工具栏钥匙图标 → totp）
+		if (tab) url.searchParams.set("tab", tab);
 		view.webContents.loadURL(url.href).catch((error: Error) => {
 			if (this.panelView !== view) return;
 			console.warn(`[desktop] [panel] 面板加载失败：${error.message}`);
@@ -772,8 +790,19 @@ export class DesktopBrowserHost {
 		if (!view) return;
 		if (!this.window.isDestroyed()) this.window.contentView.removeChildView(view);
 		if (!view.webContents.isDestroyed()) view.webContents.close({ waitForBeforeUnload: false });
-		// 焦点还给外壳：面板没了，Ctrl+L / Ctrl+T 这些外壳快捷键得接着好用
-		if (!this.window.isDestroyed()) this.window.webContents.focus();
+		// 焦点还给外壳：面板没了，Ctrl+L / Ctrl+T 这些外壳快捷键得接着好用。
+		// 但动作弹窗（失焦即关）正占着焦点时得让开：扩展面板行是「先开弹窗、再收面板」，
+		// 这里一抢焦点，弹窗立刻 blur 自关，用户看到的就是弹窗一闪而逝。
+		if (!this.window.isDestroyed() && !this.focusedActionPopup()) this.window.webContents.focus();
+	}
+
+	/** 焦点是否正被某个扩展动作弹窗（`action.default_popup`，失焦即关）占着。 */
+	private focusedActionPopup(): boolean {
+		for (const [key, win] of this.extensionWindows) {
+			if (!key.startsWith("popup:") || win.isDestroyed()) continue;
+			if (win.isFocused()) return true;
+		}
+		return false;
 	}
 
 	private attachShortcuts(contents: WebContents): void {
@@ -904,7 +933,7 @@ export class DesktopBrowserHost {
 					this.closePanelLayer();
 					return true;
 				}
-				return this.openPanelLayer(text(args.panel));
+				return this.openPanelLayer(text(args.panel), text(args.tab) || undefined);
 			}
 			case "tabs.create": {
 				const id = this.browser.createTab(text(args.url) || undefined);
@@ -957,7 +986,46 @@ export class DesktopBrowserHost {
 				return true;
 			}
 			case "passwords.list":
-				return this.browser.storage.listPasswords();
+				// 只下发投影：明文密码借 `passwords.reveal` 按 id 取，和 TOTP 的「secret 不出主进程」同一条口径
+				return this.browser.storage.listPasswords().map(publicCredential);
+			case "passwords.reveal": {
+				const entry = this.browser.storage.listPasswords().find((item) => item.id === text(args.id));
+				if (!entry) throw new Error("This credential no longer exists");
+				return { password: entry.password };
+			}
+			case "passwords.upsert": {
+				const entries = this.browser.storage.listPasswords();
+				const id = text(args.id);
+				const name = text(args.name).trim();
+				const url = object(args) && typeof args.url === "string" ? args.url.trim() : "";
+				const username = text(args.username).trim();
+				const password = typeof args.password === "string" ? args.password : "";
+				if (!name || !url || !username) throw new Error("Name, URL and username are required");
+				if (id) {
+					const index = entries.findIndex((item) => item.id === id);
+					if (index < 0) throw new Error("This credential no longer exists");
+					// 没给新密码就沿用旧的：渲染层拿不到明文，不能让它把整份列表写回去
+					entries[index] = { ...entries[index], name, url, username, ...(password ? { password } : {}) };
+				} else {
+					if (!password) throw new Error("Password is required");
+					entries.push({
+						id: randomUUID(),
+						name,
+						url,
+						username,
+						password,
+						createdAt: new Date().toISOString(),
+					});
+				}
+				this.browser.storage.savePasswords(entries);
+				return this.browser.storage.listPasswords().map(publicCredential);
+			}
+			case "passwords.remove": {
+				const id = text(args.id);
+				const next = this.browser.storage.listPasswords().filter((item) => item.id !== id);
+				this.browser.storage.savePasswords(next);
+				return true;
+			}
 			case "passwords.save":
 				return this.browser.storage.savePasswords(args.entries ?? args.passwords);
 			case "passwords.available":
@@ -967,6 +1035,41 @@ export class DesktopBrowserHost {
 				const contents = this.browser.getWebContents(this.browser.getActiveTabId() ?? "");
 				if (!entry || !contents) throw new Error("Select a saved credential and open its website first");
 				await fillCredential(contents, entry);
+				this.setMode("browser");
+				return true;
+			}
+			case "totp.available":
+				return this.browser.storage.isEncryptionAvailable();
+			case "totp.list":
+				return this.totpEntries();
+			case "totp.scan":
+				return this.scanTotp();
+			case "totp.importImage":
+				return this.importTotpImage(text(args.dataUrl));
+			case "totp.add":
+				return this.addTotp(text(args.uri), args);
+			case "totp.update":
+				return this.updateTotp(text(args.id), args);
+			case "totp.reorder":
+				return this.browser.storage
+					.saveTotp(reorderTotpEntries(this.browser.storage.listTotp(), args.ids))
+					.map(publicTotp);
+			case "totp.remove": {
+				const id = text(args.id);
+				if (!id) throw new Error("totp.remove requires an id");
+				return this.browser.storage
+					.saveTotp(this.browser.storage.listTotp().filter((entry) => entry.id !== id))
+					.map(publicTotp);
+			}
+			case "totp.code":
+				return totpCode(this.requireTotp(args.id));
+			case "totp.export":
+				return { uris: this.browser.storage.listTotp().map(toOtpauthUri) };
+			case "totp.fill": {
+				const entry = this.requireTotp(args.id);
+				const contents = this.browser.getWebContents(this.browser.getActiveTabId() ?? "");
+				if (!contents) throw new Error("Open the website you want to fill first");
+				await fillTotpCode(contents, totpCode(entry).code);
 				this.setMode("browser");
 				return true;
 			}
@@ -1183,6 +1286,7 @@ export class DesktopBrowserHost {
 		const key = `${kind}:${extension.id}`;
 		const existing = this.extensionWindows.get(key);
 		if (existing && !existing.isDestroyed()) {
+			this.actionPopupShownAt.set(existing, Date.now());
 			existing.show();
 			existing.focus();
 			return true;
@@ -1217,6 +1321,8 @@ export class DesktopBrowserHost {
 			maximizable: !action,
 			fullscreenable: false,
 			hasShadow: true,
+			// 动作弹窗贴着内容方方正正：macOS 默认的窗口圆角会把扩展页四角切掉一块
+			roundedCorners: action ? false : undefined,
 			webPreferences: {
 				session: this.browser.session,
 				sandbox: true,
@@ -1233,8 +1339,13 @@ export class DesktopBrowserHost {
 			closing = true;
 			if (!win.isDestroyed()) win.close();
 		};
-		// 动作弹窗挂在工具栏上，点别处就该关；选项页是正常窗口，失焦不关
-		if (action) win.on("blur", close);
+		// 动作弹窗挂在工具栏上，点别处就该关；选项页是正常窗口，失焦不关。
+		// 刚亮出来的那一小段不算失焦：显示前后的焦点抖动（收面板、量尺寸）不能把弹窗吞掉。
+		if (action)
+			win.on("blur", () => {
+				if (Date.now() - (this.actionPopupShownAt.get(win) ?? 0) < ACTION_POPUP_BLUR_GRACE_MS) return;
+				close();
+			});
 		win.on("closed", () => {
 			this.extensionWindows.delete(key);
 			if (!this.disposed && !this.window.isDestroyed()) this.window.focus();
@@ -1267,6 +1378,7 @@ export class DesktopBrowserHost {
 			// 量一遍扩展页内容的尺寸再摆位显示；量不到就保持兜底尺寸，不能把弹窗卡成看不见
 			applyPopupSize(win, await measurePopupContent(win), point, area);
 			if (!win.isDestroyed()) {
+				this.actionPopupShownAt.set(win, Date.now());
 				win.show();
 				win.focus();
 			}
@@ -1393,6 +1505,63 @@ export class DesktopBrowserHost {
 		}
 		// 启动恢复的扩展一次刷新网络规则（拦截层必须在用户开始浏览前就位）
 		this.scheduleNetworkRulesRefresh();
+	}
+
+	private totpEntries(): PublicTotpEntry[] {
+		return this.browser.storage.listTotp().map(publicTotp);
+	}
+
+	private requireTotp(id: unknown): TotpEntry {
+		const wanted = text(id);
+		const entry = this.browser.storage.listTotp().find((item) => item.id === wanted);
+		if (!entry) throw new Error("TOTP entry not found");
+		return entry;
+	}
+
+	/** 截当前标签页找二维码：不读 DOM，图片/画布/内联 SVG 一视同仁（需二维码在视口内）。 */
+	private async scanTotp(): Promise<{ url: string; uri: string }> {
+		const contents = this.browser.getWebContents(this.browser.getActiveTabId() ?? "");
+		if (!contents) throw new Error("Open the page showing the QR code first");
+		const url = contents.getURL();
+		const data = decodeQrNativeImage(await contents.capturePage());
+		if (!data) throw new Error("No QR code found on this page (scroll it into view and retry)");
+		// 只接受 otpauth://：普通网址二维码要明确报错，不能被当成密钥存进去
+		parseOtpauth(data);
+		return { url, uri: data };
+	}
+
+	private async importTotpImage(dataUrl: string): Promise<{ uri: string }> {
+		if (!dataUrl.startsWith("data:image/")) throw new Error("Choose a QR code image file");
+		const data = decodeQrNativeImage(nativeImage.createFromDataURL(dataUrl));
+		if (!data) throw new Error("No QR code found in this image");
+		parseOtpauth(data);
+		return { uri: data };
+	}
+
+	private addTotp(uri: string, args: Record<string, unknown>): PublicTotpEntry[] {
+		const storage = this.browser.storage;
+		const entries = storage.listTotp();
+		const entry = createTotpEntry(uri, {
+			origin: typeof args.origin === "string" ? args.origin : "",
+			order: entries.length,
+		});
+		if (typeof args.label === "string" && args.label.trim()) entry.label = args.label.trim();
+		// 同一 issuer/account/secret 重复扫码不堆重复项
+		const duplicate = entries.find(
+			(item) => item.secret === entry.secret && item.account === entry.account && item.issuer === entry.issuer,
+		);
+		if (duplicate) return entries.map(publicTotp);
+		return storage.saveTotp([...entries, entry]).map(publicTotp);
+	}
+
+	private updateTotp(id: string, args: Record<string, unknown>): PublicTotpEntry[] {
+		const storage = this.browser.storage;
+		const entries = storage.listTotp();
+		const entry = entries.find((item) => item.id === id);
+		if (!entry) throw new Error("TOTP entry not found");
+		if (typeof args.label === "string" && args.label.trim()) entry.label = args.label.trim();
+		if (typeof args.origin === "string") entry.origin = normalizeOrigin(args.origin);
+		return storage.saveTotp(entries).map(publicTotp);
 	}
 
 	private async openFile(args: Record<string, unknown>): Promise<unknown> {

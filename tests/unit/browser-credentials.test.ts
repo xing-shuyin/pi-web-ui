@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { fillCredential } from "../../browser/runtime/credentials.js";
+import { fillCredential, publicCredential } from "../../browser/runtime/credentials.js";
 
 const credential = {
 	id: "fixture",
@@ -27,5 +27,18 @@ describe("explicit browser credential fill", () => {
 		await fillCredential({ getURL: () => "https://login.example/account", executeJavaScript } as any, credential);
 		expect(executeJavaScript).toHaveBeenCalledOnce();
 		expect(executeJavaScript.mock.calls[0]?.[0]).toContain("location.origin !== origin");
+	});
+});
+
+describe("password list projection", () => {
+	it("drops the plaintext password but keeps the rest of the record", () => {
+		const projected = publicCredential(credential);
+		expect(projected).not.toHaveProperty("password");
+		expect(JSON.stringify(projected)).not.toContain(credential.password);
+		expect(projected).toMatchObject({ id: "fixture", name: "Fixture", url: credential.url, hasPassword: true });
+	});
+
+	it("marks entries without a stored secret", () => {
+		expect(publicCredential({ ...credential, password: "" }).hasPassword).toBe(false);
 	});
 });

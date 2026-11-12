@@ -19,10 +19,14 @@ describe("桌面窗口拖拽区与 Agent 可见性（启动点不动的回归守
 		expect(boot).not.toMatch(/app-region:\s*drag/);
 	});
 
-	it("整窗级别的拖拽区只允许出现在 40px 浏览器窗格条上", () => {
+	it("窗口拖拽区只允许是 40px 窗格条里的空白条，且不得压在可点的工具栏上", () => {
 		const dragRules = [...css.matchAll(/([^\n{}]+)\{[^}]*app-region:\s*drag/g)].map((m) => m[1].trim());
-		// .pb-tab-row 是全仓唯一的窗口级拖拽区（高度 40px）；其余拖拽区在 web 侧顶栏里
-		expect(dragRules).toEqual([".pb-tab-row"]);
+		// .pb-drag-area 是浏览器窗格条里的空白段；整行（.pb-tab-row）一律 no-drag，
+		// 标签/新建/工具按钮就不靠「挖洞」活命（分栏移位后挖洞会不同步，整条工具栏变拖拽区）
+		expect(dragRules).toEqual([".pb-drag-area"]);
+		const row = ruleBody(".pb-tab-row");
+		expect(row).toMatch(/app-region:\s*no-drag/);
+		expect(row).not.toMatch(/app-region:\s*drag/);
 	});
 
 	it("Agent 视图的可见性不得以首帧就绪（agentReady）作为门槛", () => {

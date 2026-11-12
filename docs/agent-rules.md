@@ -19,6 +19,7 @@
 - **`details` 字段硬限制 ≤64KB**：下发与持久化会超限整包丢弃。新工具严禁塞入大块原始数据（参照 `present-files-tool.ts` 做摘录预算）；前端渲染必须支持无 details 降级（`present-items.ts`）。
 - **服务端 URL 必须包裹 `appUrl()`**：包括 `/ws`、`/api/*`、`/plugins/*`、`/themes/*`，杜绝反向代理子路径部署时 404。
 - **Token Cookie 校验前必须解码**：`pi_web_token` 经 `encodeURIComponent` 存储，服务端读取必须先 `decodeCookieToken` 再校验（`server/auth-cookie.ts`）。
+- **未登录页口令表单必须原生 POST**（`POST /__pi/auth`，`server/auth-login.ts`）：账号域 `autocomplete="username"` + 密码域 `autocomplete="current-password"` + 真实表单提交（禁 JS `preventDefault()` 拼 `?token=` 跳转），否则浏览器密码管理器不会询问保存密码；回跳地址一律过 `sanitizeNextPath`（禁开放重定向、剔 `token`）（守卫：`tests/unit/auth-login.test.ts` · `tests/unit/unauthorized-page.test.ts`）。
 - **工作区严禁使用家目录根**：禁止设置 `$HOME` 为工作区根，防止递归扫描坏挂载造成事件循环卡死。
 - **远期定时器必须使用 `armDelay` 分片**：Node.js 中 `setTimeout` 超过 2^31-1 毫秒（约 24.8 天）会整型溢出被截断为 1ms 从而引发死循环。超过 6 小时任务必须分片（守卫：`plugin-cron-overflow-test.mjs`）。
 - **文本解码与行号统计规范**：预览与附件统一使用 `decodeText`（UTF-8 → GBK → latin1）；`countLines` 不计末尾空行，前端需 pop 末尾空串。详见 [`architecture-attachments.md`](architecture-attachments.md)。
@@ -49,6 +50,7 @@
 - **项目选中态只跟随当前打开的项目**：运行中、未读状态通过项目徽标表达，不得为其他项目标题添加状态底色；保留普通悬停反馈。
 
 - **CSS 变量必须先定义后引用**：未定义的 `var(--x)` 会导致整条 CSS 声明失效；内联代码的 `--link-soft` 在 `--bg` 上须满足文字令牌的 ≥4:1 对比度门槛（守卫：`tests/unit/css-tokens.test.ts`、`theme-text-contrast.test.ts`；行内代码检查已并入文字令牌守卫）。
+- **桌面壳（Electron）的贴顶浮层必须让出 macOS 红黄绿按钮**：按钮由原生绘制、浮在 WebView 上不占布局（`desktop/main.ts` 的 `trafficLightPosition`），顶栏靠 `padding-left` 让位；任何 `position: fixed; top: 0` 的贴顶浮层（手机/窄分栏布局下的 `.panel-drawer`、`.term-commands`）必须用 `var(--desktop-titlebar-h, 0px)` 往下让（`padding-top` 或 `top: calc(...)`），否则窄分栏时项目列表头正好压住关闭按钮。该令牌只在 `body.is-desktop-mac:not(.is-desktop-fullscreen)` 下为 38px，其他环境为 0。
 - **强调色实底上的文字必须走 `--accent-contrast`**：`background: var(--accent)` 配 `color: #fff` 会在浅色强调主题（`flow`/`wallpaper-flow` 的纯白、`wallpaper-obsidian` 的 `#e2e8f0`、`aetheris`/`cyberpunk`/`nord` 等）变成白底白字，按钮直接隐形。前景一律写 `var(--accent-contrast, #fff)`；插件同理：若私设前缀别名（如 `--xxx-accent: var(--accent)`）**必须成对声明** `--xxx-accent-contrast: var(--accent-contrast, #fff)`，推荐直接复用宿主全局 `.btn.primary`，严禁私设单向底色别名而硬编码白字；半透明 `color-mix(… var(--accent) 30% …)` 染色底则用 `var(--text)`；主题若把 `--accent` 定成浅色，必须同时声明反色的 `--accent-contrast`（守卫：`tests/unit/accent-contrast.test.ts`、`semantic-contrast.test.ts` 动态符号追踪别名）。
 - **语义色实底同理走 `--on-*`**：`background: var(--green|--red|--amber|--blue|--send-blue|--stop-red)` 配 `color: #fff` 同样会隐形（默认主题 `--amber` 白字 1.67:1、`--green` 1.92:1、`--red` 2.77:1）。前景写 `var(--on-green|--on-red|--on-amber|--on-blue|--on-send-blue|--on-stop-red)`；状态色按「白/深取对比更高者」派生、动作色（blue/send/stop）白字 ≥3:1 就保留白字，主题侧由 `make-light-theme.mjs` 自动派生（守卫：`tests/unit/semantic-contrast.test.ts`）。
 - **主题的「文字令牌」必须有明暗下限**：`--text-faint`（3.05:1）、`--accent`（3.5:1）、`--amber/--green/--red/--blue/--link/--link-soft/--info-blue/--skill-blue/--auth-green/--plugin-purple/--amber-text/--red-text/--err-text/--md-strong/--code-text`（4.5:1）在 `--bg` 与 `--bg-elev2` 上必须够对比——亮色主题照抄深色默认值会让警告文字、状态 chip、链接整体糊掉（曾出现 `--plugin-purple` 1.50:1）。`make-light-theme.mjs` 的 `TEXT_FLOORS` 会自动保持色相压暗，手写主题自行声明（守卫：`tests/unit/theme-text-contrast.test.ts`）。

@@ -319,6 +319,14 @@ export function extensionIcon(size = 13): SVGSVGElement {
 		svgPath("M1.5 1.5h2.7a1.2 1.2 0 0 1 2.4 0H9v2.7a1.2 1.2 0 0 1 0 2.4V9H1.5z", "1.1", "round", "round"),
 	]);
 }
+/** 钥匙：TOTP 验证器入口（工具栏）。 */
+export function keyIcon(size = 13): SVGSVGElement {
+	return createSvg(size, size, "0 0 16 16", [
+		svgCircle(5.5, 5.5, 3, "1.3"),
+		svgPath("M7.8 7.8L13.5 13.5", "1.3", "round"),
+		svgPath("M11.2 11.2l1.6-1.6", "1.3", "round"),
+	]);
+}
 export function reloadIcon(size = 12): SVGSVGElement {
 	return createSvg(size, size, "0 0 16 16", [
 		svgPath("M13 8a5 5 0 1 1-1.7-3.7", "1.4", "round"),

@@ -78,9 +78,9 @@ it("opens a read-only preview first, pauses it when collapsed and obtains fresh 
 	expect(preview.getAttribute("sandbox")).not.toContain("allow-same-origin");
 	const post = vi.spyOn(preview.contentWindow!, "postMessage");
 	await click("Collapse preview");
-	expect(post).toHaveBeenLastCalledWith({ type: "desktop-preview-active", active: false }, "*");
+	expect(post).toHaveBeenLastCalledWith({ type: "desktop-preview-active", active: false, display: "" }, "*");
 	await click("Expand preview");
-	expect(post).toHaveBeenLastCalledWith({ type: "desktop-preview-active", active: true }, "*");
+	expect(post).toHaveBeenLastCalledWith({ type: "desktop-preview-active", active: true, display: "" }, "*");
 	await click("Expand and control");
 	expect(document.querySelector('[role="dialog"] iframe')).not.toBe(preview);
 	expect(document.querySelector<HTMLIFrameElement>('[role="dialog"] iframe')!.src).toContain("next=%2Fdesktop");

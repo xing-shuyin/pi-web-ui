@@ -36,7 +36,7 @@
 	"screenshotHideWindow": "隐藏当前窗口截图",
 	"screenshotName": "系统截图",
 	"screenshotBusy": "正在截图，拖动框选；Esc 或右键取消",
-	"screenshotUnavailable": "系统截图仅支持 Windows 本机访问，请使用 localhost 打开",
+	"screenshotUnavailable": "系统截图仅支持 Windows / macOS 本机访问，请使用 localhost 打开",
 	"screenshotFocus": "截图前窗口焦点发生变化，请回到本窗口后重试",
 	"screenshotFailed": "系统截图失败，请确认 Windows 桌面可用后重试",
 	"presetPluginsTitle": "插件依赖",

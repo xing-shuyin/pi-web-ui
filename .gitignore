@@ -35,6 +35,7 @@ plugins/*/*_token*
 plugins/*/*_cookie*
 plugins/*/*_session*
 plugins/*/artifacts/
+/.artifacts/
 plugins/*/*.tar.gz
 
 tests/scratch/

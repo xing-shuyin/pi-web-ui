@@ -23,6 +23,7 @@ npm run dev          # 并行：node --watch --import tsx 后端(:8788，dev:ser
 #                     避开全局 pi-web-ui 的默认 :8787) + vite 前端(:5173，代理 /ws 到 :8788)。
 #                     注意：不要用 `tsx watch` 起后端——它在 Windows 下、stdio 为管道（concurrently 的 spawn 方式）
 #                     时会静默挂死（tsx 上游 bug），改用 Node 原生 --watch。
+npm run dev:totp     # 本地 TOTP 测试站（http://127.0.0.1:8791，测内置浏览器「TOTP 验证器」的扫码/自动匹配/填码，见下文「TOTP 测试站」）
 npm run typecheck    # 双端 tsc --noEmit（提交前必跑）
 npm run check:protocol  # 守护协议单源 shim 机制（CI 必跑）
 npm run ci:local     # 本地按 ci.yml 逐条复刻 CI 门禁（见下文「本地复刻 CI」；--profile static 秒级）
@@ -40,6 +41,23 @@ npm run test:freeze  # 冻结/重连回归测试（Playwright，需要本机 chr
 ```
 
 Electron 相关依赖（`electron` / `electron-builder` 的二进制）走 npmmirror：打包命令（`desktop:dist`、`desktop:portable*`）已由 `scripts/run-electron-builder.mjs` 自动注入 `ELECTRON_MIRROR` / `ELECTRON_BUILDER_BINARIES_MIRROR`（默认值见 `scripts/lib/electron-mirror.mjs`）。这些镜像**禁止**写进 `.npmrc`——npm 11 会对自定义键告警，npm 12 起不再透传。首次 `npm install` 要下载 Electron 二进制，国内网络请先自带 `ELECTRON_MIRROR` 环境变量。
+
+## 更新本地桌面 app（macOS）
+
+改完浏览器/服务端代码，要让 `/Applications/pi-web-ui-desktop.app` 用上新包：
+
+```bash
+npm run build && npm run build:desktop
+node scripts/run-electron-builder.mjs -c desktop/electron-builder.yml --dir   # 只出 release/mac-arm64/*.app
+node scripts/update-local-app.mjs --dry-run   # 体检：产物在不在、已装的是不是同一份
+node scripts/update-local-app.mjs            # 退出 app → 备份 → 替换 → 重新打开
+```
+
+- 安装包用 `--dir` 就够，不必走 `desktop:dist`（那会额外做 dmg + zip，几分钟起步）。
+- 脚本幂等：已装包与产物指纹一致就直接退出；有锁/有别的实例在跑也退出。
+- 备份只留一份（`/tmp/pi-web-ui-desktop.app.bak`），替换失败自动回滚；日志追加到 `/tmp/pi-app-update.log`。
+- **不要**把它挂到 `launchctl`/守护进程下：launchd 会在脚本退出后重新拉起，形成「退出 app → 替换 → 重开」的无限循环（真实踩过）。要延后用 `--delay 30` 或 `nohup … &`，日志里不要用 `>` 截断。
+- 会话服务端跑在 app 里（`:8790` 那个子进程），所以替换会中断当前对话的运行，历史已落盘、重开后继续。
 
 ## 命令执行防卡死
 
@@ -123,6 +141,17 @@ GitHub Actions ubuntu-latest（`.github/workflows/ci.yml`，push/PR → main 触
 `web/vite.config.ts` 不清空整个输出目录；`web/build-assets.ts` 在构建成功后保留当前与上一轮的 assets，并清理更早的文件，避免已打开页面在首次打开文件预览、设置等面板时请求已删除的懒加载模块。`.build-assets.json` 记录当前一轮资源；首次迁移时把已有 assets 作为上一轮保留。完整替换安装目录仍可能失去旧资源。
 
 `web/src/chunk-recovery.ts` 统一处理 Vite preload 错误与根错误边界中的模块加载失败，通过 sessionStorage 记录恢复次数：同一构建最多自动刷新一次，跨构建至少间隔一分钟；持久错误或存储不可用时保留手动重试界面，避免循环刷新。一般应用异常不会触发自动刷新。
+
+## TOTP 测试站（内置浏览器「TOTP 验证器」）
+
+`npm run dev:totp`（`dev/totp-demo.mjs`，仅回环地址，无第三方依赖）起一个本地 2FA 站，用来跑通浏览器的完整链路：**扫码绑定 → 按 origin 自动匹配 → 一键填码 → 服务端校验**。
+
+- `/setup/demo`：二维码页（`totp.scan` 截当前标签页找码，所以码要在视口内）；同源的登录页才能自动匹配。
+- `/login/demo`：标准登录页，验证码框 `autocomplete="one-time-code"`（`fillTotpCode` 的第一优先级）。
+- `/login-cells/demo`：6 个 `maxlength=1` 格子（逐格填码路径）。
+- `/login-plain/demo`：无任何 otp/code 提示的单框（需先点输入框再填，测兜底路径）。
+- `/api/code/:key`、`/api/account/:key`：当前码 / 密钥 + otpauth URI，方便 curl 对答案或手工导入。
+- 三个账号分别覆盖 `SHA1/6位/30s`、`SHA256`、`8位/60s`，用于确认 otpauth 参数解析；密钥每次启动随机（`PI_TOTP_SECRET` 可固定 demo 账号）。
 
 ## 编码约定
 
