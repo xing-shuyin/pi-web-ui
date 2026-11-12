@@ -15,6 +15,10 @@ const ALLOWED: Record<string, { count: number; reason: string }> = {
 	"server/device-center/desktop-linux.ts": { count: 2, reason: "`xrandr` / `xdpyinfo` 探测，LAN 客户端可触发" },
 	"server/device-center/desktop-native.ts": { count: 1, reason: "`xcrun` 探测，仅 macOS" },
 	"plugins/bili-scroll/lib/uvfetch.mjs": { count: 6, reason: "插件里探测 `uv` 版本，迁移到异步 spawn 待办" },
+	"plugins/bili-stroll/lib/uvfetch.mjs": {
+		count: 6,
+		reason: "bili-scroll 的同源副本（探测 `uv` 版本），两份一起迁到异步 spawn",
+	},
 };
 
 const OUT_OF_SCOPE = [/\/bin\//, /\/assets\//, /\/build\.mjs$/, /\/scripts?\//, /\/web\//];
