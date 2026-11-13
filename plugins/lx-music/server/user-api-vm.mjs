@@ -5,7 +5,7 @@ import zlib from "node:zlib";
 const DEFAULT_UA =
 	"Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36";
 
-function createLxRequest(activeTimers) {
+function createLxRequest(activeTimers, wrapAbort, revive) {
 	return function lxRequest(url, options = {}, callback) {
 		const method = (options.method || "GET").toUpperCase();
 		const headers = {
@@ -53,22 +53,26 @@ function createLxRequest(activeTimers) {
 					body: parsedBody,
 				};
 				if (typeof callback === "function") {
-					callback(null, resp, parsedBody);
+					// resp.body/raw 是宿主对象（Buffer/JSON.parse 产物），跨界前必须重建为沙箱对象。
+					callback(null, revive(resp), revive(parsedBody));
 				}
 			})
 			.catch((err) => {
 				clearTimeout(timer);
 				if (activeTimers) activeTimers.delete(timer);
 				if (typeof callback === "function") {
-					callback(err, null, null);
+					// 宿主 Error 实例同样携带宿主 realm，降级为纯数据对象。
+					callback(revive({ message: err?.message ?? String(err), name: "Error" }), null, null);
 				}
 			});
 
-		return () => {
+		// 返回值必须经沙箱 realm 包装：裸宿主闭包一旦进入沙箱，脚本即可经
+		// `.constructor` 拿到宿主 Function 构造器完成逃逸（见 SANDBOX_BOOTSTRAP）。
+		return wrapAbort(() => {
 			clearTimeout(timer);
 			if (activeTimers) activeTimers.delete(timer);
 			controller.abort();
-		};
+		});
 	};
 }
 
@@ -160,6 +164,45 @@ async function verifyAudioPlayable(url, source = "", timeoutMs = 2000) {
 	}
 }
 
+// node:vm 的 context 不是安全边界：任何宿主 realm 的函数/构造器/类实例一旦进入沙箱，
+// 脚本即可沿 `.constructor` 拿到宿主 Function 构造器，进而触达宿主 process/require 完成逃逸。
+// 因此宿主函数一律先在沙箱内跑这段 bootstrap、用「沙箱 realm 创建的包装函数」包一层再暴露；
+// 跨界数据统一由 __revive 重建为沙箱对象（Buffer/TypedArray → 沙箱 Uint8Array 拷贝，
+// 宿主类实例如 Timeout/Response 拒绝透传）。脚本侧因此拿不到宿主 realm 的任何引用。
+const SANDBOX_BOOTSTRAP = `
+globalThis.__revive = (value, seen) => {
+	if (value === null || typeof value !== "object") return value;
+	seen = seen || new WeakSet();
+	if (seen.has(value)) return undefined;
+	seen.add(value);
+	if (Array.isArray(value)) return value.map((item) => globalThis.__revive(item, seen));
+	const tag = Object.prototype.toString.call(value);
+	if (tag === "[object ArrayBuffer]" || (tag.endsWith("Array]") && tag !== "[object Array]")) {
+		try {
+			return new Uint8Array(value);
+		} catch {
+			return undefined;
+		}
+	}
+	if (tag !== "[object Object]") return undefined;
+	const out = {};
+	for (const key of Object.keys(value)) {
+		const item = value[key];
+		out[key] = typeof item === "function" ? item : globalThis.__revive(item, seen);
+	}
+	return out;
+};
+globalThis.__wrapHost = (fn) => (...args) => {
+	const result = fn(...args);
+	if (result && typeof result.then === "function") {
+		return Promise.resolve(result).then((value) => globalThis.__revive(value));
+	}
+	return globalThis.__revive(result);
+};
+globalThis.__wrapIn = (fn) => (...args) => fn(...args.map((arg) => globalThis.__revive(arg)));
+globalThis.__wrapCallback = (fn) => (...args) => fn(...args);
+`;
+
 export class UserApiEngine {
 	constructor(options = {}) {
 		this.apis = new Map();
@@ -188,61 +231,60 @@ export class UserApiEngine {
 			author: authorMatch ? authorMatch[1].trim() : "",
 		};
 
-		const lx = {
+		// lx 对象在沙箱 bootstrap 之后组装（见 try 块）：所有暴露给脚本的函数都经
+		// 沙箱 realm 的 __wrapHost/__wrapIn 包装，杜绝宿主函数引用直接进入沙箱。
+		const buildLx = (wrapHost, wrapIn, wrapCallback, revive) => ({
 			EVENT_NAMES: {
 				request: "request",
 				inited: "inited",
 				updateAlert: "updateAlert",
 			},
-			on: (eventName, handler) => {
+			on: wrapHost((eventName, handler) => {
 				if (eventName === "request") {
-					requestHandler = handler;
+					// handler 是脚本定义的沙箱函数；宿主稍后调用它时参数也要先重建为沙箱对象。
+					requestHandler = wrapIn(handler);
 				}
-			},
-			send: (eventName, data) => {
+			}),
+			send: wrapHost((eventName, data) => {
 				if (eventName === "inited") {
 					if (data?.name) apiMeta.name = data.name;
 					if (data?.version) apiMeta.version = data.version;
 					if (data?.description) apiMeta.description = data.description;
 				}
-			},
-			request: createLxRequest(timers),
+			}),
+			request: wrapHost(createLxRequest(timers, wrapCallback, revive)),
 			utils: {
 				crypto: {
-					aesEncrypt(buffer, mode, key, iv) {
-						const cipher = crypto.createCipheriv(mode, key, iv);
-						return Buffer.concat([cipher.update(buffer), cipher.final()]);
-					},
-					rsaEncrypt(buffer, key) {
-						buffer = Buffer.concat([Buffer.alloc(128 - buffer.length), buffer]);
-						return crypto.publicEncrypt({ key, padding: crypto.constants.RSA_NO_PADDING }, buffer);
-					},
-					randomBytes(size) {
-						return crypto.randomBytes(size);
-					},
-					md5(str) {
-						return crypto.createHash("md5").update(str).digest("hex");
-					},
+					// 沙箱传入的 Uint8Array 来自另一个 V8 realm，先拷贝成宿主 Buffer 再交给 Node API；
+					// 返回的宿主 Buffer 由 __wrapHost 的 __revive 重建为沙箱 Uint8Array。
+					aesEncrypt: wrapHost((buffer, mode, key, iv) => {
+						const cipher = crypto.createCipheriv(mode, Buffer.from(key), Buffer.from(iv));
+						return Buffer.concat([cipher.update(Buffer.from(buffer)), cipher.final()]);
+					}),
+					rsaEncrypt: wrapHost((buffer, key) => {
+						const padded = Buffer.concat([Buffer.alloc(128 - buffer.length), Buffer.from(buffer)]);
+						return crypto.publicEncrypt({ key, padding: crypto.constants.RSA_NO_PADDING }, padded);
+					}),
+					randomBytes: wrapHost((size) => crypto.randomBytes(size)),
+					md5: wrapHost((str) => crypto.createHash("md5").update(str).digest("hex")),
 				},
 				buffer: {
-					from(...args) {
-						return Buffer.from(...args);
-					},
-					bufToString(buf, format) {
-						return Buffer.from(buf, "binary").toString(format);
-					},
+					from: wrapHost((...args) => Buffer.from(...args)),
+					bufToString: wrapHost((buf, format) => Buffer.from(Buffer.from(buf), "binary").toString(format)),
 				},
 				zlib: {
-					inflate(buf) {
-						return new Promise((resolve, reject) => {
-							zlib.inflate(buf, (err, data) => (err ? reject(err) : resolve(data)));
-						});
-					},
-					deflate(data) {
-						return new Promise((resolve, reject) => {
-							zlib.deflate(data, (err, buf) => (err ? reject(err) : resolve(buf)));
-						});
-					},
+					inflate: wrapHost(
+						(buf) =>
+							new Promise((resolve, reject) => {
+								zlib.inflate(Buffer.from(buf), (err, data) => (err ? reject(err) : resolve(data)));
+							}),
+					),
+					deflate: wrapHost(
+						(data) =>
+							new Promise((resolve, reject) => {
+								zlib.deflate(Buffer.from(data), (err, buf) => (err ? reject(err) : resolve(buf)));
+							}),
+					),
 				},
 			},
 			currentScriptInfo: {
@@ -251,63 +293,73 @@ export class UserApiEngine {
 			},
 			version: "2.0.0",
 			env: "desktop",
-		};
+		});
 
+		// 定时器句柄整数化：宿主 Timeout 对象不进入沙箱。
+		let timerSeq = 0;
+		const timerMap = new Map();
 		const sandboxSetTimeout = (fn, delay, ...args) => {
+			const timerId = ++timerSeq;
 			const t = setTimeout(() => {
+				timerMap.delete(timerId);
 				timers.delete(t);
 				fn(...args);
 			}, delay);
 			timers.add(t);
-			return t;
+			timerMap.set(timerId, t);
+			return timerId;
 		};
-		const sandboxClearTimeout = (t) => {
+		const sandboxClearTimeout = (timerId) => {
+			const t = timerMap.get(Number(timerId));
+			if (!t) return;
+			timerMap.delete(Number(timerId));
 			timers.delete(t);
 			clearTimeout(t);
 		};
 		const sandboxSetInterval = (fn, delay, ...args) => {
+			const timerId = ++timerSeq;
 			const t = setInterval(fn, delay, ...args);
 			timers.add(t);
-			return t;
+			timerMap.set(timerId, t);
+			return timerId;
 		};
-		const sandboxClearInterval = (t) => {
+		const sandboxClearInterval = (timerId) => {
+			const t = timerMap.get(Number(timerId));
+			if (!t) return;
+			timerMap.delete(Number(timerId));
 			timers.delete(t);
 			clearInterval(t);
 		};
 
+		// 只有纯数据先入 context；宿主函数在 bootstrap 之后经沙箱包装逐个挂载。
+		// Math/Date/JSON/RegExp 等脚本环境自带（V8 context 内建），不再注入宿主版本。
 		const context = {
-			console: {
-				log: (...args) => this.log(`[UserApi:${id}]`, ...args),
-				error: (...args) => console.error(`[UserApi:${id}]`, ...args),
-				warn: (...args) => console.warn(`[UserApi:${id}]`, ...args),
-			},
-			setTimeout: sandboxSetTimeout,
-			clearTimeout: sandboxClearTimeout,
-			setInterval: sandboxSetInterval,
-			clearInterval: sandboxClearInterval,
-			Buffer,
-			fetch: globalThis.fetch,
-			URL,
-			URLSearchParams,
-			Math,
-			Date,
-			JSON,
-			RegExp,
-			encodeURIComponent,
-			decodeURIComponent,
-			atob: (s) => Buffer.from(s, "base64").toString("binary"),
-			btoa: (s) => Buffer.from(s, "binary").toString("base64"),
-			TextEncoder,
-			TextDecoder,
 			process: { env: {} },
-			lx,
 		};
-
 		context.globalThis = context;
 		context.window = context;
 
 		try {
 			vm.createContext(context);
+			vm.runInContext(SANDBOX_BOOTSTRAP, context);
+			const wrapHost = context.__wrapHost;
+			const wrapIn = context.__wrapIn;
+			const wrapCallback = context.__wrapCallback;
+
+			context.lx = context.__revive(buildLx(wrapHost, wrapIn, wrapCallback, context.__revive));
+			context.console = context.__revive({
+				log: wrapHost((...args) => this.log(`[UserApi:${id}]`, ...args)),
+				error: wrapHost((...args) => console.error(`[UserApi:${id}]`, ...args)),
+				warn: wrapHost((...args) => console.warn(`[UserApi:${id}]`, ...args)),
+			});
+			context.setTimeout = wrapHost(sandboxSetTimeout);
+			context.clearTimeout = wrapHost(sandboxClearTimeout);
+			context.setInterval = wrapHost(sandboxSetInterval);
+			context.clearInterval = wrapHost(sandboxClearInterval);
+			context.atob = wrapHost((s) => Buffer.from(s, "base64").toString("binary"));
+			context.btoa = wrapHost((s) => Buffer.from(s, "binary").toString("base64"));
+			context.process = context.__revive({ env: {} });
+
 			vm.runInContext(cleanScript, context, { timeout: 8000 });
 
 			if (this.apis.has(id)) {
