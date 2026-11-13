@@ -326,11 +326,11 @@ export const ChatInput = memo(function ChatInput({
 			{
 				const core = textToInsert.trim();
 				const specials = new Set([".", "*", "+", "?", "^", "$", "{", "}", "(", ")", "|", "[", "]", "\\"]);
-				const esc = core
+				const escapedCore = core
 					.split("")
 					.map((ch) => (specials.has(ch) ? "\\" + ch : ch))
 					.join("");
-				const re = new RegExp("(^|[\\s(（\"'“‘[【])" + esc + "(?=[\\s,.;:!?，。！？)\\]】」]|$)");
+				const re = new RegExp("(^|[\\s(（\"'“‘[【])" + escapedCore + "(?=[\\s,.;:!?，。！？)\\]】」]|$)");
 				if (core && re.test(textRef.current)) return;
 			}
 			const ta = taRef.current;

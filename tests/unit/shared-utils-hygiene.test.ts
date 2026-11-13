@@ -39,7 +39,7 @@ function checkFiles(files: string[], violates: (source: string) => boolean, mess
 }
 
 describe("共享工具收敛与防回潮守卫 (Issue #730)", () => {
-	it("1. HTML 转义守卫：插件 client 与 web 组件严禁内联手写 esc/escapeHtml", () => {
+	it("1. HTML 转义守卫：插件与 web 严禁内联手写 esc/escapeHtml（函数与箭头/赋值都算）", () => {
 		const exclusions = [
 			"plugin-sdk",
 			"vendor",
@@ -48,14 +48,12 @@ describe("共享工具收敛与防回潮守卫 (Issue #730)", () => {
 			join("vscode-editor", "client", "entry.mjs"),
 			join("db-client", "client", "entry.mjs"),
 		];
-		const files = [...pluginFiles, ...webFiles].filter(
-			(file) =>
-				!exclusions.some((part) => file.includes(part)) && (file.includes("client") || file.startsWith(WEB_ROOT + sep)),
-		);
+		// 不再按路径含 "client" 收窄：服务端渲染 HTML 的插件主文件同样会抄出第 N 份 esc
+		const files = [...pluginFiles, ...webFiles].filter((file) => !exclusions.some((part) => file.includes(part)));
 		checkFiles(
 			files,
-			(source) => /function\s+(?:esc|escapeHtml)\s*\(/.test(source),
-			'发现插件客户端或前端内联手写 esc/escapeHtml，请统一改为 import { esc } from "@pi-web-ui/plugin-sdk/client"',
+			(source) => /(?:function|const|let|var)\s+(?:esc|escapeHtml)\s*[=(]/.test(source),
+			'发现插件或前端内联手写 esc/escapeHtml，请统一改为 import { esc } from "@pi-web-ui/plugin-sdk/client"',
 		);
 	});
 

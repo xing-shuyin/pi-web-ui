@@ -1,4 +1,6 @@
 // frp-manager 面板：穿透列表 / 客户端 / 本地 frps / 远端部署 / 日志
+import { esc } from "../../plugin-sdk/client-utils.mjs";
+
 function resolveApiBase(importMetaUrl) {
 	const base = String(importMetaUrl);
 	const idx = base.indexOf("/plugins/");
@@ -46,12 +48,6 @@ async function api(path, opts = {}) {
 	const r = await fetch(`${API}${path}`, { headers: { "Content-Type": "application/json" }, ...opts });
 	return r.json();
 }
-
-const esc = (s) =>
-	String(s ?? "").replace(
-		/[&<>"']/g,
-		(c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c],
-	);
 
 function createApp(root) {
 	let st = null;

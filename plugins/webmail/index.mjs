@@ -3,6 +3,7 @@ import { existsSync } from "node:fs";
 import { join } from "node:path";
 import { spawn } from "node:child_process";
 import { createRequire } from "node:module";
+import { esc } from "../plugin-sdk/client-utils.mjs";
 
 const CONFIG_FILE = "config.json";
 const BODY_LIMIT = 16000;
@@ -22,13 +23,6 @@ const DEFAULT_CONFIG = {
 	notifyEnabled: true,
 	transModel: "",
 };
-
-function esc(s) {
-	return String(s ?? "").replace(
-		/[&<>"']/g,
-		(c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c],
-	);
-}
 
 async function loadConfig(dir) {
 	const raw = join(dir, CONFIG_FILE);
