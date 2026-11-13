@@ -21,7 +21,7 @@
 	"desktop.tab": "Отдельная вкладка",
 	"desktop.exitFullscreen": "Выйти из полноэкранного режима",
 	"desktop.fullscreen": "Полный экран",
-	"desktop.p2p": "Прямое P2P-соединение",
+	"desktop.p2p": "P2P",
 	"desktop.devicesUnavailable": "Не удалось загрузить устройства. Проверьте подключение и повторите попытку.",
 	"desktop.noDevices": "Нет доступных устройств.",
 	"desktop.currentDevice": "Текущее устройство",

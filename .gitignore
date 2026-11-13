@@ -18,6 +18,8 @@ update_out.txt
 
 .worktrees/
 
+bin/ffmpeg/
+
 plugins/*/node_modules/
 plugins/*/package-lock.json
 plugins/voice-input/package*.json

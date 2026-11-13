@@ -16,7 +16,7 @@ import { hostWithoutPort, isLoopbackHost } from "../host-guard.js";
 import { MAX_CONTRACT_REQUEST_BYTES } from "./work-contract.js";
 import type { DeviceLanAccess } from "./device-lan-access.js";
 import { probeDeviceLan } from "./device-lan.js";
-import { connectDeviceP2P } from "./device-p2p.js";
+import { connectDeviceP2P, deviceP2PAvailable } from "./device-p2p.js";
 import type { DeviceP2PSignal } from "./device-p2p-protocol.js";
 import { INTEGRATION_HTTP_TIMEOUT_MS, VERIFICATION_HTTP_TIMEOUT_MS } from "./verification-limits.js";
 
@@ -832,8 +832,26 @@ export async function installLocalDeviceCenter(options: Options) {
 								const connection = await probeDeviceLan(candidate, { signal: controller.signal });
 								if (connection)
 									return { connection, expiresAt: (candidate as { expiresAt: number }).expiresAt, transport: "lan" };
-								if (!p2pAvailable || !valid()) return null;
-								return connectDeviceP2P((offer, signal) => open(true, offer, signal), controller.signal);
+								if (!valid()) return null;
+								if (!p2pAvailable) {
+									console.warn(
+										`[DeviceCenter] Device ${id} P2P unavailable: target reports no helper (update the device)`,
+									);
+									return null;
+								}
+								if (!(await deviceP2PAvailable())) {
+									console.warn(
+										`[DeviceCenter] Device ${id} P2P unavailable: no usable helper here (run npm run build:device-p2p, check PI_DEVICE_P2P, or 16 sessions are already open)`,
+									);
+									return null;
+								}
+								const result = await connectDeviceP2P(
+									(offer, signal) => open(true, offer, signal),
+									controller.signal,
+									(reason) => console.warn(`[DeviceCenter] Device ${id} P2P failed: ${reason}; using Hub relay`),
+								);
+								if (result?.relayed) console.warn(`[DeviceCenter] Device ${id} P2P is relayed through TURN`);
+								return result;
 							},
 							renew: async () => {
 								const result = (await open(true)) as { deviceLan?: unknown; deviceP2P?: unknown };

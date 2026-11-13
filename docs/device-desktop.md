@@ -2,6 +2,8 @@
 
 设备中心参考 [krd](https://github.com/zzjcool/krd) 的原生捕获与输入方式，复用设备访问票据和连接器，在浏览器 canvas 显示 JPEG。从本机设备中心打开时，与「打开设备」的完整对话界面共用[局域网优先访问](device-center.md#局域网优先访问)：优先使用经过 TLS PSK 验证的私网通道，不可达时尝试设备间 P2P，失败使用原 Hub WebSocket 中继。无需 VNC 服务、noVNC 或固定桌面端口。画面不进入聊天快照或模型上下文。
 
+Windows 支持 H.264 硬件编码通道（见下文「H.264 硬件编码通道」），浏览器支持 WebCodecs 时自动启用，否则保持 JPEG。
+
 ## 聊天页预览与放大操作
 
 从设备通道进入远程聊天页后，右栏自动显示该页所属设备的桌面。当前设备身份取自已授权的 portal capability 路径，预览、实时画面与输入均复用该路径，不再由被控机向自己申请 LAN/P2P/Hub 票据。关闭预览后可点「显示此设备的桌面」恢复；选择设备列表中的当前设备也走同一入口。连接标记显示「复用当前连接」，不猜测底层是 LAN 还是 P2P。独立标签由可信外层代为打开，不放宽远程沙箱权限。
@@ -53,6 +55,18 @@ Windows 已安装系统桌面服务时，还需运行 `pi-web-ui desktop service
 - Windows 服务通过保护目录中的 `profile-v2` 校验值与已安装二进制绑定，防止回滚后错误声明能力。升级 npm 后需再运行 `pi-web-ui desktop service install` 更新系统服务。会话切换恢复时保留画质，仍不重放键鼠。
 - Windows 优先使用 DXGI Desktop Duplication，复用 GPU staging texture 及 Bitmap；不可用时回退 GDI，锁屏和会话恢复仍走现有系统服务。Mac 使用持续 SCStream、复用 CIContext，只保留最新待编码帧。传输最多两帧在途加一帧最新待发送画面。Linux X11 调节时替换 ffmpeg 采集进程，保留 WebSocket 和输入状态，旧采集帧不会进入新流；调整期间可能短暂等待首帧。
 - 预览仍使用低频、低分辨率只读采集；后台不可见卡片不占持续采集。只有本机固定 `/desktop` / `/desktop-preview` 内置页保留同源，远程票据页始终保持 opaque sandbox，消息同时校验来源窗口与 origin。
+
+## H.264 硬件编码通道
+
+JPEG 在 1920×1080@60 实测约 100 Mbps、2560×1440@60 约 162 Mbps（单帧 200–330 KB，GDI+ 软件编码 10–15 ms），中继和大多数跨网链路都喂不起，帧率选项形同虚设。Windows 因此增加 H.264 通道：优先用 `ffmpeg` 的 `ddagrab`（DXGI 零拷贝）采集，NVENC 硬编码为 Annex-B，Node 切成访问单元逐帧下发，浏览器用 WebCodecs `VideoDecoder` 硬解。
+
+- 实测（RTX 4060 Laptop，2560×1440）：@60 稳定 55 fps / 12.6 Mbps；@120 稳定 111 fps / 17.7 Mbps。首帧约 310–350 ms（ffmpeg 启动 + NVENC 初始化）。同画质下带宽约为 JPEG 的 1/10，编码不占 CPU。
+- 启用条件：Windows + 客户端 `hello{video:true}`（页面加载时用 `VideoDecoder.isConfigSupported` 探测 `avc1.640033`）+ 本机有 ffmpeg 与 NVENC + 未安装系统桌面服务（服务模式继续走 JPEG，避免双采集）。任一不满足自动回退 JPEG，旧采集端与旧浏览器不受影响。
+- 编码参数：`-preset p1 -tune ll -rc cbr -g <fps> -bf 0`，码率由 `desktop-video.ts` 的 `videoBitrate()` 按分辨率/画质/帧率推导（1080p 约 5–9 Mbps，1440p 约 9–14 Mbps，120 fps ×1.4）。改画质或帧率会重启 ffmpeg（重开 IDR），浏览器在下一个关键帧重新同步。
+- 分包与丢帧：`createH264Splitter` 按 Annex-B 起始码与 VCL 首片（`first_mb_in_slice==0`）切出访问单元，参数集随关键帧下发，比 JPEG 多一帧延迟。H.264 帧不能像 JPEG 那样用新的覆盖旧的，积压超阈值时丢弃直到下一个关键帧。
+- 采显分离：ffmpeg 只负责画面；键鼠仍由 Windows 原生助手 `input` 模式注入（无采集线程），保证控制可用。
+- 分发：发布包自带 `bin/ffmpeg/<platform>-<arch>/ffmpeg.exe`（`npm run build:ffmpeg` 下载，`PI_DESKTOP_FFMPEG` 可覆盖，见 [环境变量](env-vars.md)）。缺失时不影响 JPEG 通道。
+- 不改变输入权限、只读连接、剪贴板和显示选择：视频模式只替换画面编码，控制与授权校验仍由服务端强制。
 
 参考 RustDesk 的 [视频质量控制](https://github.com/rustdesk/rustdesk/blob/master/src/server/video_qos.rs) 与 [视频采集/编码循环](https://github.com/rustdesk/rustdesk/blob/master/src/server/video_service.rs) 的设计思路，独立实现当前 JPEG 通道的自适应与节奏控制。当前仍非硬件视频编码链路，帧率选项是上限，不保证跨网达到该帧率或与原生远程软件等效。
 

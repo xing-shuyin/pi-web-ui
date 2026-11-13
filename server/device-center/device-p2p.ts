@@ -16,12 +16,32 @@ type Event = {
 	localCandidate?: string;
 	remoteCandidate?: string;
 	protocol?: string;
+	relayed?: boolean;
 };
 export type DeviceDirectConnection = {
 	connection: DeviceLanConnection;
 	expiresAt: number;
 	transport: "lan" | "p2p";
+	/** True when ICE selected a TURN allocation instead of a direct path. */
+	relayed?: boolean;
 };
+/** Why a P2P attempt fell back to the Hub; surfaced as one log line so the path is not silently "hub". */
+export type DeviceP2PFailure =
+	| "helper-missing"
+	| "ice-config"
+	| "cancelled"
+	| "gather-failed"
+	| "signal-failed"
+	| "signal-rejected"
+	| "ice-failed"
+	| "tunnel-failed"
+	| "unexpected";
+// A single STUN server is a single point of failure: when it is blocked or blackholed (observed with
+// stun.cloudflare.com:3478 on a mainland network) the helper gathers no srflx candidate, and a host-only
+// SDP can never punch a hole. Gathering probes every entry in parallel, so extra servers cost nothing
+// when one of them is down.
+export const DEVICE_P2P_DEFAULT_STUN =
+	"stun:stun.l.google.com:19302,stun:stun.miwifi.com:3478,stun:stun.cloudflare.com:3478";
 const running = new Set<() => void>();
 const verified = new Map<string, Promise<string | undefined>>();
 
@@ -72,7 +92,10 @@ export async function deviceP2PAvailable() {
 async function startHelper() {
 	const path = await binaryPath();
 	if (!path || running.size >= 16) throw new Error("P2P helper unavailable");
-	const child = spawn(path, [], { stdio: ["pipe", "pipe", "ignore"], windowsHide: true });
+	const child = spawn(path, [], { stdio: ["pipe", "pipe", "pipe"], windowsHide: true });
+	let stderr = "";
+	child.stderr.setEncoding("utf8");
+	child.stderr.on("data", (text: string) => (stderr = (stderr + text).slice(-2048)));
 	const events = new Map<string, Event>();
 	const waiters = new Set<{ type: string; resolve(event: Event): void; reject(error: Error): void }>();
 	const listeners = new Set<() => void>();
@@ -96,8 +119,9 @@ async function startHelper() {
 	};
 	running.add(close);
 	child.once("error", close);
-	child.once("exit", () => {
+	child.once("exit", (code) => {
 		exited = true;
+		if (stderr.trim()) console.warn("[device-p2p] helper exit", code, stderr.trim().slice(0, 500));
 		close();
 	});
 	child.stdin.on("error", close);
@@ -118,8 +142,9 @@ async function startHelper() {
 					(!Number.isInteger(event.port) ||
 						event.port! < 0 ||
 						event.port! > 65535 ||
-						!["host", "srflx", "prflx"].includes(event.localCandidate ?? "") ||
-						!["host", "srflx", "prflx"].includes(event.remoteCandidate ?? ""))
+						!["host", "srflx", "prflx", "relay"].includes(event.localCandidate ?? "") ||
+						!["host", "srflx", "prflx", "relay"].includes(event.remoteCandidate ?? "") ||
+						(event.relayed !== undefined && typeof event.relayed !== "boolean"))
 				)
 					return close();
 				events.set(event.type, event);
@@ -167,41 +192,86 @@ async function startHelper() {
 	};
 }
 
+/**
+ * TURN relay for symmetric NAT / CGNAT. Both devices must point at the same server and credentials.
+ * Off unless `PI_DEVICE_TURN` is set; a malformed or half-configured entry fails loudly instead of
+ * silently degrading to "no relay".
+ */
+export function parseTurn(
+	env: NodeJS.ProcessEnv = process.env,
+): { urls: string[]; username: string; credential: string } | undefined {
+	const raw = env.PI_DEVICE_TURN?.trim();
+	if (!raw) return undefined;
+	const urls = raw
+		.split(",")
+		.map((value) => value.trim())
+		.filter(Boolean);
+	if (urls.length === 0 || urls.length > 3) throw new Error("Invalid TURN configuration");
+	if (urls.some((url) => url.length > 256 || !/^turns?:[a-zA-Z0-9.\-[\]:]+$/.test(url)))
+		throw new Error("Invalid TURN server URL");
+	const username = env.PI_DEVICE_TURN_USERNAME ?? "";
+	const credential = env.PI_DEVICE_TURN_CREDENTIAL ?? "";
+	if (!username || !credential) throw new Error("TURN requires PI_DEVICE_TURN_USERNAME and PI_DEVICE_TURN_CREDENTIAL");
+	if (username.length > 256 || credential.length > 256) throw new Error("TURN credentials are too long");
+	if (/[\u0000-\u001f\u007f]/.test(username + credential)) throw new Error("Invalid TURN credentials");
+	return { urls, username, credential };
+}
+
 function settings() {
 	const loopback = process.env.PI_DEVICE_P2P_TEST_LOOPBACK === "1";
 	const stun = loopback
 		? []
-		: (process.env.PI_DEVICE_P2P_STUN ?? "stun:stun.cloudflare.com:3478")
+		: (process.env.PI_DEVICE_P2P_STUN ?? DEVICE_P2P_DEFAULT_STUN)
 				.split(",")
 				.map((x) => x.trim())
 				.filter(Boolean);
 	if (stun.length > 4 || stun.some((x) => x.length > 256 || !/^stun:[a-zA-Z0-9.\-[\]:]+$/.test(x)))
 		throw new Error("Invalid P2P STUN configuration");
-	return { stun, loopback };
+	const turn = loopback ? undefined : parseTurn();
+	return { stun, turn, loopback };
 }
 
 export async function connectDeviceP2P(
 	exchange: (offer: DeviceP2PSignal, signal: AbortSignal) => Promise<unknown>,
 	signal?: AbortSignal,
+	onFailure?: (reason: DeviceP2PFailure) => void,
 ): Promise<DeviceDirectConnection | null> {
 	let helper: Awaited<ReturnType<typeof startHelper>> | undefined;
 	let connection: DeviceLanConnection | null = null;
 	let retained = false;
+	const fail = (reason: DeviceP2PFailure) => {
+		onFailure?.(reason);
+		return null;
+	};
+	let config: ReturnType<typeof settings>;
+	try {
+		config = settings();
+	} catch {
+		return fail("ice-config");
+	}
 	const deadline = AbortSignal.any([AbortSignal.timeout(DEVICE_P2P_TIMEOUT_MS), ...(signal ? [signal] : [])]);
 	try {
-		helper = await startHelper();
-		helper.send({ type: "start", role: "source", ...settings() });
-		const offer = await helper.wait("sdp", deadline);
-		const response = (await exchange({ version: 1, sdp: offer.sdp! }, deadline)) as {
-			deviceP2P?: { signal?: unknown; grant?: unknown };
-		};
+		try {
+			helper = await startHelper();
+		} catch {
+			return fail("helper-missing");
+		}
+		helper.send({ type: "start", role: "source", ...config });
+		const offer = await helper.wait("sdp", deadline).catch(() => undefined);
+		if (!offer?.sdp) return fail(deadline.aborted ? "cancelled" : "gather-failed");
+		let response: { deviceP2P?: { signal?: unknown; grant?: unknown } } | undefined;
+		try {
+			response = (await exchange({ version: 1, sdp: offer.sdp }, deadline)) as typeof response;
+		} catch {
+			return fail(deadline.aborted ? "cancelled" : "signal-failed");
+		}
 		const answer = response?.deviceP2P;
-		if (!answer || !validDeviceP2PSignal(answer.signal)) return null;
+		if (!answer || !validDeviceP2PSignal(answer.signal)) return fail("signal-rejected");
 		helper.send({ type: "answer", sdp: answer.signal.sdp });
-		const ready = await helper.wait("ready", deadline);
-		if (!ready.port) return null;
+		const ready = await helper.wait("ready", deadline).catch(() => undefined);
+		if (!ready?.port) return fail(deadline.aborted ? "cancelled" : "ice-failed");
 		connection = await probeDeviceTunnel(answer.grant, ready.port, { signal: deadline, timeoutMs: 2000 });
-		if (!connection || deadline.aborted) return null;
+		if (!connection || deadline.aborted) return fail(deadline.aborted ? "cancelled" : "tunnel-failed");
 		const peer = connection;
 		const worker = helper;
 		helper.onClose(() => peer.close());
@@ -216,9 +286,10 @@ export async function connectDeviceP2P(
 			},
 			expiresAt: (answer.grant as { expiresAt: number }).expiresAt,
 			transport: "p2p",
+			...(ready.relayed === true ? { relayed: true } : {}),
 		};
 	} catch {
-		return null;
+		return fail(deadline.aborted ? "cancelled" : "unexpected");
 	} finally {
 		if (!retained) {
 			connection?.close();

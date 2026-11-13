@@ -56,6 +56,15 @@ $('setup').setAttribute('aria-label', t('setup')); $('controls').setAttribute('a
 const canvas = $('canvas'), screen = $('screen'), context = canvas.getContext('2d');
 let config = null, busy = false, disposed = false, socket = null, generation = 0;
 let ready = false, hasFrame = false, connectionViewOnly = true, pendingFrame = null, decoding = false;
+let videoMode = false, videoDecoder = null, videoTime = 0, videoDecodeAt = 0;
+const videoSupported = typeof VideoDecoder === 'function' && typeof EncodedVideoChunk === 'function';
+let videoProbe = false;
+if (videoSupported) {
+ // Windows 用 High、macOS 用 Baseline：任一支持即可，具体 codec 由服务端下发。
+ for (const codec of ['avc1.640033', 'avc1.42E01F', 'avc1.4D4028']) {
+  try { VideoDecoder.isConfigSupported({codec, avc:{format:'annexb'}}).then(result => { if (result.supported === true) videoProbe = true; }).catch(() => {}); } catch { /* Older builds throw on isConfigSupported. */ }
+ }
+}
 let activePointer = null, retryTimer, awaitingDesktop = false;
 let rendered = 0, sampleAt = performance.now(), decodeMs = 0, lastCaptured = 0, lastSent = 0;
 let selectedDisplay = '', captureBackend = '';
@@ -124,6 +133,7 @@ function stop() {
  clearTimeout(retryTimer); awaitingDesktop = false;
  release(); const previous = socket; socket = null; generation++;
  ready = false; hasFrame = false; pendingFrame = null; dynamicQuality = false; lastQuality = ""; clearTimeout(qualityTimer);
+ videoMode = false; try { videoDecoder?.close(); } catch { /* Already closed. */ } videoDecoder = null; videoDecodeAt = 0;
  rendered = 0; lastCaptured = lastSent = 0; sampleAt = performance.now(); $('statistics').textContent = '';
  if (previous) { previous.onmessage = previous.onopen = previous.onerror = previous.onclose = null; previous.close(); }
  context?.clearRect(0, 0, canvas.width, canvas.height); controls(); clipboardAvailable();
@@ -164,11 +174,41 @@ async function decodeFrames() {
   }
  } finally { decoding = false; }
 }
+function startVideo(codec) {
+ if (videoMode) return true;
+ if (!videoSupported || typeof codec !== 'string' || !/^avc1[.][0-9a-f]{6}$/i.test(codec)) return false;
+ try {
+  videoDecoder = new VideoDecoder({
+   output: frame => {
+    if (disposed || !videoMode) { frame.close(); return; }
+    if (canvas.width !== frame.displayWidth || canvas.height !== frame.displayHeight) { canvas.width = frame.displayWidth; canvas.height = frame.displayHeight; }
+    const firstFrame = !hasFrame;
+    context.drawImage(frame, 0, 0);
+    frame.close();
+    hasFrame = true; rendered++;
+    if (videoDecodeAt) decodeMs = Math.round(performance.now() - videoDecodeAt);
+    if (firstFrame) { status(t(connectionViewOnly ? 'viewing' : 'controlling')); controls(); }
+   },
+   error: () => { fail(t('decodeError')); }
+  });
+  videoDecoder.configure({codec, avc:{format:'annexb'}, optimizeForLatency:true, hardwareAcceleration:'prefer-hardware'});
+  videoMode = true; videoTime = 0;
+  return true;
+ } catch { videoMode = false; videoDecoder = null; return false; }
+}
+async function decodeVideo(blob) {
+ if (!videoDecoder || videoDecoder.state !== 'configured') return;
+ const bytes = new Uint8Array(await blob.arrayBuffer());
+ let key = false;
+ for (let i=0;i+4<bytes.length;i++) if (bytes[i]===0&&bytes[i+1]===0&&bytes[i+2]===1&&(bytes[i+3]&0x1f)===5) { key = true; break; }
+ try { videoDecoder.decode(new EncodedVideoChunk({type:key?'key':'delta', timestamp:(videoTime += 16666), data:bytes})); videoDecodeAt = performance.now(); } catch { /* Decoder recovers on the next keyframe. */ }
+}
 function connect() {
  stop(); if (!canConnect() || disposed) return;
  connectionViewOnly = $('viewonly').checked;
  const url = appUrl('desktop-ws'); url.protocol = url.protocol === 'https:' ? 'wss:' : 'ws:';
  url.searchParams.set('viewOnly', connectionViewOnly ? '1' : '0');
+ url.searchParams.set('video', videoProbe ? '1' : '0');
  if(selectedDisplay) url.searchParams.set('display',selectedDisplay);
  const currentGeneration = generation;
  let current;
@@ -182,6 +222,7 @@ function connect() {
    try {
     const message = JSON.parse(event.data);
     if (message.type === 'error') fail(desktopError(message.message), typeof message.message === 'string' && desktopIssue(message.message, zh)?.retry === true);
+    else if (message.type === 'video') { if (!startVideo(message.codec)) fail(t('decodeError')); }
     else if (message.type === 'ready') { ready = true; dynamicQuality = message.dynamicQuality === true; controls(); updateQuality(); clipboardAvailable(); }
     else if (message.type === 'displays') updateDisplays(message);
     else if (message.type === 'stats') {
@@ -193,6 +234,7 @@ function connect() {
     }
    } catch { fail(t('connectionError')); }
   } else if (event.data instanceof Blob) {
+   if (videoMode) { void decodeVideo(event.data); return; }
    pendingFrame = {blob:event.data, generation:currentGeneration, socket:current}; void decodeFrames();
   }
  };

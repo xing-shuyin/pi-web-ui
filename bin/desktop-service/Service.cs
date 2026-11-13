@@ -166,7 +166,7 @@ public sealed class PiDesktopService : ServiceBase {
         if(!WindowsIdentity.GetCurrent().IsSystem||!System.Text.RegularExpressions.Regex.IsMatch(pipeName,"^pi-web-ui-capture-[a-f0-9]{32}$")) throw new UnauthorizedAccessException();
         using(var pipe=new NamedPipeClientStream(".",pipeName,PipeDirection.InOut,PipeOptions.Asynchronous)) {
             pipe.Connect(10000);
-            NativeDesktop.Run(mode!="control",mode=="preview",true,pipe,pipe,message=>ErrorPacket(pipe,message));
+            NativeDesktop.Run(mode!="control",mode=="preview",true,true,pipe,pipe,message=>ErrorPacket(pipe,message));
         }
     }
     public static int Main(string[] args) {

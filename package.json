@@ -67,6 +67,7 @@
 		"verify:device-p2p": "node scripts/verify-device-p2p.mjs",
 		"pack:p2p": "npm run build:device-p2p && npm run build && npm run verify:device-p2p && npm pack",
 		"build:device-p2p": "node scripts/build-device-p2p.mjs",
+		"build:ffmpeg": "node scripts/fetch-ffmpeg.mjs",
 		"dev": "concurrently -k -n server,web -c blue,green \"npm:dev:server\" \"npm:dev:web\"",
 		"dev:server": "cross-env PI_WEB_PORT=8788 PI_WEB_ALLOW_ORIGINS=http://localhost:5173,http://127.0.0.1:5173 node --watch --import tsx --import ./server/resolve-global-sdk.ts server/index.ts",
 		"dev:web": "vite --config web/vite.config.ts",

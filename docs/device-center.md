@@ -260,9 +260,19 @@ Go/Pion 助手通过 stdio 受 Node 管理，使用 UDP IPv4/IPv6 ICE、STUN 和
 
 直连页继续使用 `/device-lan/` 隔离能力 URL，保留现有 CSP、路径白名单、Origin 和凭据净化。显示通路由实际完成连接的结果决定：`lan` / `p2p` / `hub`。包装页卸载时发送有能力校验、按页面代次区分的释放请求，保留 2 秒刷新宽限，重新加载不会误撤销新页面；恢复连接时申请新票据并报告新通路。未确认的上传、键鼠和任务命令不会由传输层自动重放。
 
-完整 npm P2P 包附带 Windows x64、macOS arm64/x64、Linux arm64/x64 助手及 SHA-256 清单，使用时校验；macOS/Linux 使用私有临时目录中的可执行副本，避免 Windows 制作的 npm 包丢失执行权限。用户无需安装 Go；不支持的平台、旧 Hub/设备、缺失助手或打洞失败均回退 Hub。源码构建的完整分发入口是 `npm run pack:p2p`，需要 Go ≥1.24；普通 Web 构建不强制安装 Go，也不保证包含助手。
+完整 npm P2P 包附带 Windows x64、macOS arm64/x64、Linux arm64/x64 助手及 SHA-256 清单，使用时校验；macOS/Linux 使用私有临时目录中的可执行副本，避免 Windows 制作的 npm 包丢失执行权限。用户无需安装 Go；不支持的平台、旧 Hub/设备、缺失助手或打洞失败均回退 Hub。源码构建的完整分发入口是 `npm run pack:p2p`，需要 Go ≥1.24；普通 Web 构建不强制安装 Go，也不保证包含助手。桌面安装包由 `.github/workflows/desktop-release.yml` 的三个平台 job 各自 `npm run build:device-p2p -- --host` 后再打包（`bin/` 在 electron-builder 白名单内），测试 `tests/unit/p2p-helper-release.test.ts` 守卫这条链路。源码目录直接 `npm start` 时必须先跑一次 `npm run build:device-p2p -- --host`，否则本机没有助手、P2P 永远退回 Hub，日志为 `helper-missing`。
 
-设备侧设置：`PI_DEVICE_P2P=0` 禁用；`PI_DEVICE_P2P_STUN` 为最多 4 个逗号分隔的 `stun:host:port`，默认 `stun:stun.cloudflare.com:3478`。可使用自建 coturn 的 STUN 服务；本版不使用 TURN，无法直连时走原 Hub。服务器只升级 Hub 就能承担信令，无需安装桌面环境。`PI_DEVICE_P2P_HELPER` 是受信任管理员/开发测试用的绝对路径覆盖，绕过随包校验；浏览器与 Hub 信令不能设置它。
+设备侧设置：`PI_DEVICE_P2P=0` 禁用；`PI_DEVICE_P2P_STUN` 为最多 4 个逗号分隔的 `stun:host:port`，默认 `stun:stun.l.google.com:19302,stun:stun.miwifi.com:3478,stun:stun.cloudflare.com:3478`，助手并行探测。默认值给多个服务器的原因：只写一个 STUN 时，该服务器被墙或黑洞（曾在国内网络实测 `stun.cloudflare.com:3478` 超时）就收集不到 srflx 候选，打洞必然失败且界面上只显示中继。打洞失败按阶段记录一行日志（`helper-missing` / `ice-config` / `gather-failed` / `signal-rejected` / `ice-failed` / `tunnel-failed` / `cancelled`），前缀 `[DeviceCenter] Device <id> P2P failed: <reason>; using Hub relay`；目标端不报能力时记录 `target reports no helper`。你已打开的设备来自 Hub 浏览器页面时不会尝试 P2P。可使用自建 coturn 的 STUN 服务；无法直连时走原 Hub。
+
+### TURN 中继
+
+对称 NAT、CGNAT、UDP 被封的网络里打洞在数学上不可能成功（同一本地端口对不同目的地映射出不同公网端口）。这类环境的唯一解是 TURN：两端都配置 `PI_DEVICE_TURN`（最多三个地址）、`PI_DEVICE_TURN_USERNAME`、`PI_DEVICE_TURN_CREDENTIAL`，助手会把 TURN 作为额外 ICE 服务器，分配 relay 候选；选定中继路径时连接照样建立，只是流量经你的 coturn 转发。
+
+- 只有配置了 TURN 才允许 relay 候选：没配时助手看到 relay 对直接判定失败，避免流量莫名绕第三方。
+- 中继生效时日志写一行 `[DeviceCenter] Device <id> P2P is relayed through TURN`；界面通路仍显示 `p2p`（它确实不是 Hub 中继，只是经你自己的服务器转发）。
+- 只配地址不配凭据会直接报 `ice-config`，不会静默降级成"没有中继"。
+- 带宽：H.264 通道 1440p60 约 12 Mbps、1440p120 约 18 Mbps，coturn 只需按这个量级准备带宽与 UDP 端口段（`min-port`/`max-port`）；TURN over TLS（`turns:`）需要额外证书，且延迟更高，优先 `turn:` + UDP。
+- 部署示例见 [设备中心部署](device-center-deployment.md#turncoturn)。服务器只升级 Hub 就能承担信令，无需安装桌面环境。`PI_DEVICE_P2P_HELPER` 是受信任管理员/开发测试用的绝对路径覆盖，绕过随包校验；浏览器与 Hub 信令不能设置它。
 
 `node --import tsx tests/device-p2p-test.mjs` 使用临时数据目录、两份独立助手进程和实际 Hub RPC/本机访问 API，验证 LAN 不可达时选择 P2P、HTTP/桌面/聊天并发、密钥不进入浏览器、并发会话、回退和撤销。本机回环验证不代表跨网打洞或实际桌面帧率。完整实机验收仍需 Mac/Windows 不同网络、UDP 禁止、设备重连和平台权限检查。P2P 不解除桌面采集和编码的帧率限制。
 

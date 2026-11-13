@@ -289,15 +289,16 @@ public static class NativeDesktop {
     } catch(Exception e) { if(!stopped) reportError(e.Message); stopped=true; Release(); Environment.Exit(1); }
     finally { if(duplicate!=null) duplicate.Dispose(); if(full!=null) full.Dispose(); }
   }
-  public static void Run(bool readOnly, bool previewMode) {
-    Run(readOnly,previewMode,false,Console.OpenStandardInput(),Console.OpenStandardOutput(),message=>Console.Error.WriteLine(message));
+  public static void Run(bool readOnly, bool previewMode, bool captureEnabled) {
+    Run(readOnly,previewMode,captureEnabled,false,Console.OpenStandardInput(),Console.OpenStandardOutput(),message=>Console.Error.WriteLine(message));
   }
-  public static void Run(bool readOnly, bool previewMode, bool secure, Stream input, Stream output, Action<string> error) {
+  public static void Run(bool readOnly, bool previewMode, bool captureEnabled, bool secure, Stream input, Stream output, Action<string> error) {
     if(secure&&!System.Security.Principal.WindowsIdentity.GetCurrent().IsSystem) throw new Exception("System desktop requires the installed service.");
     systemDesktop=secure; inputStream=input; outputStream=output; reportError=error;
     preview=previewMode;
     SetProcessDPIAware();
-    Thread capture=new Thread(Capture); capture.IsBackground=true; capture.Start();
+    // Input-only helpers drive the H.264 capture backend: no frames, no display probing.
+    if(captureEnabled) { Thread capture=new Thread(Capture); capture.IsBackground=true; capture.Start(); }
     try {
       using(var reader=new StreamReader(inputStream,new UTF8Encoding(false))) {
         var json=new JavaScriptSerializer(); json.MaxJsonLength=32768;
@@ -324,5 +325,5 @@ public static class NativeDesktop {
   }
 }
 '@
-[NativeDesktop]::Run($args[0] -ne 'control', $args[0] -eq 'preview')
+[NativeDesktop]::Run($args[0] -ne 'control', $args[0] -eq 'preview', $args[0] -ne 'input')
 `;

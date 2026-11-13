@@ -21,7 +21,7 @@
 	"desktop.tab": "Ayrı sekme",
 	"desktop.exitFullscreen": "Tam ekrandan çık",
 	"desktop.fullscreen": "Tam ekran",
-	"desktop.p2p": "Doğrudan P2P bağlantısı",
+	"desktop.p2p": "P2P",
 	"desktop.devicesUnavailable": "Cihazlar yüklenemedi. Bağlantıyı kontrol edip yeniden deneyin.",
 	"desktop.noDevices": "Kullanılabilir cihaz yok.",
 	"desktop.currentDevice": "Geçerli cihaz",

@@ -269,6 +269,10 @@ export type NativeDesktopOptions = {
 	onClose: () => void;
 	readOnly?: boolean;
 	preview?: boolean;
+	/** 原生 H.264 通道（macOS VideoToolbox）：帧走 onVideo，不按 JPEG 校验。 */
+	video?: boolean;
+	/** H.264 访问单元；只有 video 模式会调用。 */
+	onVideo?: (frame: { data: Uint8Array; key: boolean }) => void;
 };
 export type NativeDesktopHandle = {
 	input(event: NativeDesktopInput): void;
@@ -283,7 +287,16 @@ export function startNativeDesktop(options: NativeDesktopOptions): NativeDesktop
 		: startNativeDesktopOnce(options);
 }
 
-function startNativeDesktopOnce(options: NativeDesktopOptions, service?: string): NativeDesktopHandle {
+/** Input-only helper for the H.264 backend: same SendInput path, no screen capture thread. */
+export function startNativeDesktopInput(options: NativeDesktopOptions): NativeDesktopHandle {
+	return startNativeDesktopOnce(options, undefined, true);
+}
+
+function startNativeDesktopOnce(
+	options: NativeDesktopOptions,
+	service?: string,
+	inputOnly = false,
+): NativeDesktopHandle {
 	const status = nativeDesktopStatus();
 	const readOnly = options.preview === true || options.readOnly !== false;
 	let child: ChildProcessWithoutNullStreams | undefined;
@@ -378,6 +391,16 @@ function startNativeDesktopOnce(options: NativeDesktopOptions, service?: string)
 			if (frameUsed === frame.length) {
 				const jpeg = frame;
 				frame = undefined;
+				if (jpeg[0] === 0x02 && options.onVideo) {
+					armWatchdog();
+					try {
+						options.onVideo({ data: jpeg.subarray(2), key: (jpeg[1] & 1) === 1 });
+					} catch {
+						fail("Native desktop video consumer failed.");
+						return;
+					}
+					continue;
+				}
 				if (jpeg[0] === 123 && jpeg.length <= 8192) {
 					let displays: DesktopDisplays | undefined;
 					try {
@@ -435,7 +458,15 @@ function startNativeDesktopOnce(options: NativeDesktopOptions, service?: string)
 			path = join(directory, windows ? "capture.ps1" : "capture.swift");
 			writeFileSync(path, windows ? "\ufeff" + windowsDesktopScript : macDesktopScript, { mode: 0o600 });
 		}
-		const mode = options.preview ? "preview" : readOnly ? "view" : "control";
+		const mode = inputOnly
+			? "input"
+			: options.video
+				? "video"
+				: options.preview
+					? "preview"
+					: readOnly
+						? "view"
+						: "control";
 		child = spawn(
 			service ?? (windows ? powershellPath() : "/usr/bin/swift"),
 			service
@@ -464,7 +495,7 @@ function startNativeDesktopOnce(options: NativeDesktopOptions, service?: string)
 				finish();
 			}
 		});
-		if ((options.onDisplays || options.display) && (!service || windowsDesktopServiceProfiles(service))) {
+		if (!inputOnly && (options.onDisplays || options.display) && (!service || windowsDesktopServiceProfiles(service))) {
 			write({ type: "displays" });
 			if (options.display) write({ type: "display", id: options.display });
 		}

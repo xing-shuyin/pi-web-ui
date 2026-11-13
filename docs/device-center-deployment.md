@@ -299,3 +299,47 @@ HTTPS：不启用
 后续若提供直接连接能力，连接凭据应交给后端连接模块，AI 仅获得连接句柄及检测结果，并按连接、检查、安装、启动、验证展示真实进度。
 
 本文提供的公网链接需要文档合并到仓库 `main` 后才能访问。未发布的工作区改动不会自动出现在 GitHub。已安装软件若需要严格对应某一版本，应改读实际存在的版本 tag 下同路径文档；新文档出现以前的历史 tag 不包含此文件。
+
+## TURN（coturn）
+
+对称 NAT / CGNAT 下 UDP 打洞必然失败，需要 TURN 中继。Hub 只做信令，TURN 是另一份独立服务（可与 Hub 同机）。最小可用配置（Ubuntu/Debian，安全组放行 3478/udp 与 relay 端口段）：
+
+```bash
+apt-get install -y coturn
+cat >/etc/turnserver.conf <<"EOF"
+listening-port=3478
+fingerprint
+lt-cred-mech
+realm=pi-web-ui
+external-ip=<服务器公网 IP>
+min-port=49160
+max-port=49200
+no-multicast-peers
+no-cli
+# 长期凭据：与设备端 PI_DEVICE_TURN_USERNAME / PI_DEVICE_TURN_CREDENTIAL 一致
+user=pi:<强密码>
+EOF
+sed -i "s/^#TURNSERVER_ENABLED=1/TURNSERVER_ENABLED=1/" /etc/default/coturn
+systemctl enable --now coturn
+```
+
+验证：
+
+```bash
+# 应当返回 XOR-MAPPED-ADDRESS（同一端口打两个 STUN 地址映射一致 = 锥形 NAT，可打洞）
+turnutils_uclient -u pi -w <密码> -p 3478 <服务器IP>
+```
+
+设备端（两端都要）：
+
+```bash
+PI_DEVICE_TURN=turn:<服务器IP>:3478 \nPI_DEVICE_TURN_USERNAME=pi \nPI_DEVICE_TURN_CREDENTIAL=<强密码> \npi-web-ui server restart
+```
+
+要点：
+
+- 只需要 `turn:` + UDP；`turns:`（TLS）要证书且延迟更高，非必需。
+- `external-ip` 必须写公网 IP，否则 coturn 会分配内网映射，客户端拿到不可达候选。
+- 带宽按 H.264 通道估算：1440p60 约 12 Mbps、1080p60 约 6 Mbps、1440p120 约 18 Mbps/路。
+- 只想验证链路时先把 `min-port`/`max-port` 收窄到 40 个端口即可，正式使用再按并发数放宽。
+- 中继生效时服务端日志出现 `P2P is relayed through TURN`；界面通路仍显示 `p2p`。
