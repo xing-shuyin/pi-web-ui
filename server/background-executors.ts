@@ -59,6 +59,8 @@ export interface BackgroundExecutorRegistryOptions {
 	restartCooldownMs?: number;
 	/** 单个执行者自动重启次数上限；超过后只报告不再拉。 */
 	maxRestarts?: number;
+	/** probe 里单次自动重启允许占用的时间上限；超时后本轮继续检查其余执行者。 */
+	restartTimeoutMs?: number;
 }
 
 interface Entry {
@@ -75,6 +77,7 @@ interface Entry {
 const DEFAULT_PROBE_MS = 60_000;
 const DEFAULT_RESTART_COOLDOWN_MS = 5 * 60_000;
 const DEFAULT_MAX_RESTARTS = 3;
+const DEFAULT_RESTART_TIMEOUT_MS = 30_000;
 
 export class BackgroundExecutorRegistry {
 	private readonly entries = new Map<string, Entry>();
@@ -82,6 +85,7 @@ export class BackgroundExecutorRegistry {
 	private readonly log: NonNullable<BackgroundExecutorRegistryOptions["log"]>;
 	private readonly restartCooldownMs: number;
 	private readonly maxRestarts: number;
+	private readonly restartTimeoutMs: number;
 	private timer: ReturnType<typeof setInterval> | null = null;
 	private booted = false;
 
@@ -90,6 +94,7 @@ export class BackgroundExecutorRegistry {
 		this.log = opts.log ?? (() => {});
 		this.restartCooldownMs = opts.restartCooldownMs ?? DEFAULT_RESTART_COOLDOWN_MS;
 		this.maxRestarts = opts.maxRestarts ?? DEFAULT_MAX_RESTARTS;
+		this.restartTimeoutMs = Math.max(1_000, opts.restartTimeoutMs ?? DEFAULT_RESTART_TIMEOUT_MS);
 	}
 
 	register(executor: BackgroundExecutor): void {
@@ -148,7 +153,16 @@ export class BackgroundExecutorRegistry {
 			if (at - since < this.restartCooldownMs) continue;
 			entry.restarts += 1;
 			this.log("warning", `background executor "${entry.executor.id}" unhealthy, restarting`);
-			await this.runStart(entry, "restart");
+			// start() 里可能有网络/token 请求且未必带超时：一个挂起的执行者不能拖死本轮
+			// 其余执行者的健康检查与重启（60s 后下一轮 probe 也会叠在同一个 await 上）。
+			// 超时只放弃等待，runStart 自身在后台继续跑完。
+			await Promise.race([
+				this.runStart(entry, "restart"),
+				new Promise<void>((resolve) => {
+					const timer = setTimeout(resolve, this.restartTimeoutMs);
+					timer.unref?.();
+				}),
+			]);
 		}
 	}
 
