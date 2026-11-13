@@ -459,6 +459,61 @@ export default {
 
 		const shQuote = (s) => `'${String(s ?? "").replace(/'/g, "'\\''")}'`;
 
+		// 本地文件夹打包下载：与远端 tar.gz 对称，优先用系统 tar，不引入新 npm 依赖。
+		function tarGzLocal(abs) {
+			return new Promise((resolve, reject) => {
+				let child;
+				try {
+					child = spawn("tar", ["-czf", "-", "-C", path.dirname(abs), path.basename(abs)], {
+						stdio: ["ignore", "pipe", "pipe"],
+					});
+				} catch (err) {
+					return void reject(new Error(`本地打包需要系统 tar，打包失败：${err?.message ?? err}`));
+				}
+				const chunks = [];
+				let size = 0;
+				let failed = false;
+				const fail = (err) => {
+					if (failed) return;
+					failed = true;
+					try {
+						child.kill();
+					} catch {}
+					reject(err);
+				};
+				child.stdout.on("data", (d) => {
+					size += d.length;
+					if (size > MAX_DOWNLOAD_BYTES) {
+						fail(new Error(`文件夹打包后超过 ${Math.round(MAX_DOWNLOAD_BYTES / 1024 / 1024)}MB 上限`));
+						return;
+					}
+					chunks.push(d);
+				});
+				let errText = "";
+				child.stderr.on("data", (d) => {
+					errText += String(d).slice(0, 500);
+				});
+				child.on("error", (err) => fail(new Error(`本地打包需要系统 tar，打包失败：${err?.message ?? err}`)));
+				child.on("close", (code) => {
+					if (failed) return;
+					if (code !== 0) {
+						fail(
+							new Error(
+								`本地打包失败（tar exit ${code}${errText.trim() ? `：${errText.trim()}` : ""}），请确认系统已安装 tar`,
+							),
+						);
+						return;
+					}
+					const buf = Buffer.concat(chunks);
+					if (!buf.length) {
+						fail(new Error("打包结果为空，可能目录不可读"));
+						return;
+					}
+					resolve(buf);
+				});
+			});
+		}
+
 		function safeRemotePath(p) {
 			p = String(p ?? "");
 			if (!p.startsWith("/") || p.split("/").includes("..")) throw new Error("非法路径");
@@ -1520,11 +1575,32 @@ export default {
 							const abs = safeResolve(String(msg.path ?? ""));
 							if (!abs || abs === root) throw new Error("非法路径");
 							const st = await fs.stat(abs);
+							if (st.isDirectory()) {
+								const buf = await tarGzLocal(abs);
+								host.sendTo(clientId, {
+									res: true,
+									reqId,
+									ok: true,
+									action,
+									b64: buf.toString("base64"),
+									size: buf.length,
+									name: `${path.basename(abs)}.tar.gz`,
+								});
+								break;
+							}
 							if (!st.isFile()) throw new Error("不是普通文件");
 							if (st.size > MAX_DOWNLOAD_BYTES)
 								throw new Error(`文件超过 ${Math.round(MAX_DOWNLOAD_BYTES / 1024 / 1024)}MB 上限`);
 							const buf = await fs.readFile(abs);
-							host.sendTo(clientId, { res: true, reqId, ok: true, action, b64: buf.toString("base64"), size: st.size });
+							host.sendTo(clientId, {
+								res: true,
+								reqId,
+								ok: true,
+								action,
+								b64: buf.toString("base64"),
+								size: st.size,
+								name: path.basename(abs),
+							});
 							break;
 						}
 						const c = getSshConn(msg.connId);

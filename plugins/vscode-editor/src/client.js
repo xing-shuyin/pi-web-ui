@@ -258,8 +258,16 @@ export default {
 		.vsc-deps button:hover { background: var(--bg-elev2, #20202b); }
 		/* ---- 右侧主区 ---- */
 		.vsc-main { flex: 1; display: flex; flex-direction: column; min-width: 0; }
-		.vsc-tabs { display: flex; overflow-x: auto; border-bottom: 1px solid var(--border, #333);
-			background: var(--bg-elev, #16161d); scrollbar-width: thin; }
+		.vsc-tabbar { display: flex; align-items: stretch; border-bottom: 1px solid var(--border, #333);
+			background: var(--bg-elev, #16161d); }
+		.vsc-tabs { flex: 1; display: flex; overflow-x: auto; min-width: 0;
+			background: transparent; scrollbar-width: thin; }
+		.vsc-savebtn { all: unset; display: inline-flex; align-items: center; gap: 4px; cursor: pointer;
+			padding: 4px 10px; font-size: 12px; white-space: nowrap; color: var(--text-dim, #9a9ab0);
+			border-left: 1px solid var(--border, #333); }
+		.vsc-savebtn:hover { background: var(--bg-elev2, #20202b); color: var(--text, #eee); }
+		.vsc-savebtn.is-dirty { color: var(--amber, #fbbf24); font-weight: 700; }
+		.vsc-savebtn:disabled { opacity: .35; cursor: default; }
 		.vsc-tab { display: inline-flex; align-items: center; gap: 6px; padding: 6px 8px 6px 12px;
 			cursor: pointer; border-right: 1px solid var(--border, #333); white-space: nowrap;
 			color: var(--text-dim, #9a9ab0); max-width: 200px; }
@@ -422,7 +430,7 @@ export default {
 			<button class="vsc-burger" title="文件树">☰</button>
 			<span class="vsc-mtitle">文件</span>
 		</div>
-		<div class="vsc-tabs"></div>
+		<div class="vsc-tabbar"><div class="vsc-tabs"></div><button class="vsc-savebtn" title="保存 Save (Ctrl+S / Cmd+S)">💾 保存 Save</button></div>
 		<div class="vsc-edwrap">
 			<div class="vsc-empty">从左侧打开一个文件开始编辑<br><small>Ctrl+P 快速打开 · Ctrl+S 保存</small></div>
 			<div class="vsc-editor vsc-hidden"></div>
@@ -480,6 +488,7 @@ export default {
 		const hostsEl = root.querySelector(".vsc-hosts");
 		const sshTreeEl = root.querySelector(".vsc-sshtree");
 		const tabsEl = root.querySelector(".vsc-tabs");
+		const saveBtnEl = root.querySelector(".vsc-savebtn");
 		const edHost = root.querySelector(".vsc-editor");
 		const emptyEl = root.querySelector(".vsc-empty");
 		const stScope = root.querySelector(".vsc-scope");
@@ -626,6 +635,15 @@ export default {
 		const flatFiles = new Set();
 		const tabs = new Map();
 		let activeTk = null;
+		function refreshSaveBtn() {
+			if (!saveBtnEl) return;
+			const t = activeTk ? tabs.get(activeTk) : null;
+			const dirty = !!t?.dirty && !t?.binary;
+			saveBtnEl.classList.toggle("is-dirty", dirty);
+			saveBtnEl.disabled = !t || !!t.binary;
+			saveBtnEl.title = dirty ? "有未保存的修改 — 保存 Save (Ctrl+S / Cmd+S)" : "保存 Save (Ctrl+S / Cmd+S)";
+		}
+		if (saveBtnEl) saveBtnEl.addEventListener("click", () => void saveActive());
 		let selNode = null;
 		let clipboard = null;
 
@@ -739,6 +757,7 @@ export default {
 				stState.textContent = t?.binary ? "二进制（只读）" : t?.dirty ? "未保存 ●" : "已保存";
 				stState.classList.toggle("dirty", !!t?.dirty);
 			}
+			refreshSaveBtn();
 		}
 
 		async function ensureDir(scope, dirWire) {
@@ -1136,6 +1155,7 @@ export default {
 				el.querySelector(".x").addEventListener("click", () => void closeTab(k));
 				tabsEl.appendChild(el);
 			}
+			refreshSaveBtn();
 		}
 
 		async function openFile(scope, p) {
@@ -1492,6 +1512,7 @@ export default {
 							if (files.length) void uploadFilesTo(scope, pathW, files);
 						},
 					],
+					["下载到电脑（.tar.gz 打包）", () => void downloadToPC(scope, pathW, true)],
 				);
 			} else {
 				items.push([
