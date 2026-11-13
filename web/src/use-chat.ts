@@ -47,6 +47,7 @@ import type {
 	UiPendingQuestion,
 	UiQueuedQuestion,
 	UiPluginCatalogEntry,
+	UiExtensionInventoryEntry,
 	UiPluginInfo,
 	UiPluginUpdateInfo,
 	UiPresetCatalogEntry,
@@ -391,6 +392,7 @@ export interface ChatState {
 	} | null;
 	plugins: UiPluginInfo[];
 	pluginsEpoch: number;
+	extensionInventory: UiExtensionInventoryEntry[] | null;
 	pluginUpdates: Record<string, UiPluginUpdateInfo> | null;
 	checkingPluginUpdates: boolean;
 	pluginCatalog: UiPluginCatalogEntry[];
@@ -698,6 +700,7 @@ type Action =
 	| { type: "scheduler_tasks"; tasks: SchedulerTaskView[] }
 	| { type: "plugin_panel_items"; groups: PluginPanelGroup[] }
 	| { type: "plugins"; plugins: UiPluginInfo[]; epoch: number }
+	| { type: "extension_inventory"; entries: UiExtensionInventoryEntry[] }
 	| { type: "plugin_updates"; updates: UiPluginUpdateInfo[] }
 	| { type: "plugin_updates_check_started" }
 	| { type: "plugin_catalog"; entries: UiPluginCatalogEntry[]; epoch: number }
@@ -1281,6 +1284,8 @@ export function reducer(state: ChatState, action: Action): ChatState {
 			return { ...state, pluginPanelGroups: action.groups };
 		case "plugins":
 			return { ...state, plugins: action.plugins, pluginsEpoch: action.epoch };
+		case "extension_inventory":
+			return { ...state, extensionInventory: action.entries };
 		case "plugin_updates_check_started":
 			return { ...state, checkingPluginUpdates: true };
 		case "plugin_updates": {
@@ -1855,6 +1860,7 @@ export function useChat() {
 		scmDirty: 0,
 		plugins: [],
 		pluginsEpoch: 0,
+		extensionInventory: null,
 		pluginUpdates: null,
 		checkingPluginUpdates: false,
 		pluginCatalog: [],
@@ -2878,6 +2884,9 @@ export function useChat() {
 					break;
 				case "plugins":
 					dispatch({ type: "plugins", plugins: msg.plugins, epoch: msg.epoch });
+					break;
+				case "extension_inventory_data":
+					dispatch({ type: "extension_inventory", entries: msg.entries ?? [] });
 					break;
 				case "plugin_updates":
 					dispatch({ type: "plugin_updates", updates: msg.updates });

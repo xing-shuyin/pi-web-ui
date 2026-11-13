@@ -1371,6 +1371,7 @@ export type ClientMessage =
 			conversationId?: string;
 	  }
 	| { type: "extensions_reload" }
+	| { type: "extension_inventory"; reqId: number }
 	| { type: "list_commands" }
 	| { type: "save_commands"; commands: CommandDef[] }
 	| { type: "abort" }
@@ -2838,6 +2839,20 @@ export interface UiExtensionInfo {
 	enabled: boolean;
 }
 
+/** #885 T1：扩展统一清单条目（三类来源统一 shape，只读）。 */
+export type UiExtensionInventorySource = "cli" | "webui" | "external";
+
+export interface UiExtensionInventoryEntry {
+	name: string;
+	source: UiExtensionInventorySource;
+	enabled: boolean;
+	version?: string;
+	description?: string;
+	error?: string;
+	/** cli 内置隐藏扩展不可单独启停时为 false，前端置灰（T3，绝不静默跳过）。 */
+	switchable?: boolean;
+}
+
 export interface UiSettingsPreset {
 	name: string;
 	/** 预设字段组范围："prompt" = 只捕获提示词组（设置面板按模板展示）；缺省 = 全量快照 */
@@ -3521,6 +3536,14 @@ export type ServerMessage =
 			error?: string;
 	  }
 	| { type: "install_result"; ok: boolean; detail: string }
+	| {
+			/** #885 T1：扩展统一清单只读查询结果（不改运行时）。 */
+			type: "extension_inventory_data";
+			reqId: number;
+			ok: boolean;
+			entries: UiExtensionInventoryEntry[];
+			error?: string;
+	  }
 	| {
 			type: "scm_data";
 			reqId: number;

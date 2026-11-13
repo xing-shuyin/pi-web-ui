@@ -7,6 +7,8 @@ import type { PluginManager } from "./plugins.js";
 import { buildPluginJobArgs, inspectInstallSpec, type PluginInstaller } from "./plugin-installer.js";
 import { syncPluginCatalog } from "./plugin-catalog-sync.js";
 import type { ServerLang } from "./i18n.js";
+import { collectExtensionInventory, mcpServersToInput } from "./extension-inventory.js";
+import { getSdkBuiltinExtensionFactories } from "./sdk-builtin-extensions.js";
 
 export interface PluginDispatchContext {
 	pluginMgr: PluginManager;
@@ -314,6 +316,73 @@ export function handlePluginMessage(msg: ClientMessage, ctx: PluginDispatchConte
 			);
 			cs?.emitNotice?.("info", `已撤销 ${removed} 条能力授权`, `Revoked ${removed} permission grant(s)`);
 			pushPluginPermissions();
+			return true;
+		}
+		case "extension_inventory": {
+			// #885 T1：只读聚合三类来源，不改运行时、不触发重载。
+			const reqId = typeof msg.reqId === "number" ? msg.reqId : 0;
+			void (async () => {
+				try {
+					const [sdkBuiltins, plugins] = await Promise.all([
+						getSdkBuiltinExtensionFactories().catch((error) => {
+							throw error;
+						}),
+						pluginMgr.list(() => cs?.getLang?.() ?? "en").catch(() => []),
+					]);
+					const settingsLike = (
+						cs as unknown as {
+							settingsSvc?: { current: { disabledExtensions?: unknown; disabledPlugins?: unknown } };
+							listMcpServers?: () => { servers: import("./protocol.js").UiMcpServer[] };
+						}
+					)?.settingsSvc?.current;
+					const disabledExtensions = Array.isArray(settingsLike?.disabledExtensions)
+						? (settingsLike.disabledExtensions as string[])
+						: [];
+					const disabledPlugins = Array.isArray(settingsLike?.disabledPlugins)
+						? (settingsLike.disabledPlugins as string[])
+						: [];
+					let mcpServers: import("./protocol.js").UiMcpServer[] = [];
+					try {
+						const maybeList = (
+							cs as unknown as { listMcpServers?: () => { servers: import("./protocol.js").UiMcpServer[] } }
+						)?.listMcpServers;
+						if (typeof maybeList === "function") mcpServers = maybeList.call(cs).servers ?? [];
+					} catch {
+						mcpServers = [];
+					}
+					const { entries, errors } = await collectExtensionInventory({
+						getSdkBuiltins: () =>
+							sdkBuiltins.map((b) => ({ name: b.name, replaceable: b.replaceable, hidden: b.hidden })),
+						getDisabledExtensions: () => disabledExtensions,
+						getPlugins: () =>
+							plugins.map((p) => ({
+								id: p.id,
+								name: p.name,
+								version: p.version,
+								description: p.description,
+								error: p.error,
+								active: p.active,
+							})),
+						getDisabledPlugins: () => disabledPlugins,
+						getMcpServers: () => mcpServersToInput(mcpServers),
+					});
+					send({
+						type: "extension_inventory_data",
+						reqId,
+						ok: errors.length === 0,
+						entries,
+						...(errors.length > 0 ? { error: errors.join("; ") } : {}),
+					});
+				} catch (error) {
+					send({
+						type: "extension_inventory_data",
+						reqId,
+						ok: false,
+						entries: [],
+						error: error instanceof Error ? error.message : String(error),
+					});
+				}
+			})();
 			return true;
 		}
 		case "plugin_catalog_sync": {

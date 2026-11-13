@@ -101,6 +101,8 @@ import {
 } from "../prompt-history";
 import { randomUuid } from "../uuid";
 import { QuickAskSettings, type QuickAskPatch } from "./QuickAskSettings";
+import ExtensionInventory from "./ExtensionInventory";
+import type { UiExtensionInventoryEntry } from "../types";
 import { SubagentTemplateWizard } from "./SubagentTemplateWizard";
 import { formatTokenDraft, parseTokenInput } from "../token-input";
 import { useWideChat, saveChatWidthSettings, useHideModelRow, saveHideModelRowSettings } from "../chat-width-settings";
@@ -1594,6 +1596,96 @@ function LoadedSettingsModal({
 		if (next.has(e.id)) next.delete(e.id);
 		else next.add(e.id);
 		setPartial({ disabledExtensions: [...next] });
+	};
+
+	// #885 T2/T3/T6：扩展统一清单（只读聚合，同一 agentDir，不断链）。
+	// 服务端 inventory 优先（extension_inventory_data），缺席时用本地快照兜底聚合。
+	const inventoryEntries: UiExtensionInventoryEntry[] = useMemo(() => {
+		const server = (chat as { extensionInventory?: UiExtensionInventoryEntry[] | null }).extensionInventory;
+		if (Array.isArray(server) && server.length > 0) return server;
+		const out: UiExtensionInventoryEntry[] = [];
+		for (const e of settings.extensions ?? []) {
+			out.push({
+				name: e.id,
+				source: "cli",
+				enabled: e.enabled,
+				description: e.path
+					? `CLI 扩展（随 agentDir 继承） ${e.path} / CLI extension (inherited via agentDir) ${e.path}`
+					: "CLI 扩展（随 agentDir 继承） / CLI extension (inherited via agentDir)",
+			});
+		}
+		for (const p of chat.plugins ?? []) {
+			out.push({
+				name: p.id,
+				source: "webui",
+				enabled: !(settings.disabledPlugins ?? []).includes(p.id),
+				version: p.version,
+				description: p.description?.trim()
+					? p.description.trim()
+					: "WebUI 专属插件（可写） / WebUI-specific plugin (writable)",
+				...(p.error?.trim() ? { error: p.error.trim() } : {}),
+			});
+		}
+		for (const s of settings.mcpServers ?? []) {
+			out.push({
+				name: `mcp:${s.scope}:${s.name}`,
+				source: "external",
+				enabled: s.enabled !== false,
+				description:
+					typeof (s as { description?: unknown }).description === "string" &&
+					((s as { description?: string }).description ?? "").trim()
+						? ((s as { description?: string }).description ?? "").trim()
+						: `MCP 服务器（${s.scope}，随 agentDir/cwd 继承） / MCP server (${s.scope}, inherited via agentDir/cwd)`,
+				...(typeof (s as { error?: unknown }).error === "string" && ((s as { error?: string }).error ?? "").trim()
+					? { error: ((s as { error?: string }).error ?? "").trim() }
+					: {}),
+			});
+		}
+		out.sort((a, b) => a.source.localeCompare(b.source) || a.name.localeCompare(b.name));
+		return out;
+	}, [chat, settings]);
+
+	useEffect(() => {
+		if (tab === "extensions") {
+			try {
+				appSend({ type: "extension_inventory", reqId: Date.now() % 1_000_000_000 } as never);
+			} catch {}
+		}
+	}, [tab]);
+
+	const toggleInventoryCli = (entry: UiExtensionInventoryEntry) => {
+		if (entry.switchable === false) return;
+		const next = new Set(disabledExts);
+		if (next.has(entry.name)) next.delete(entry.name);
+		else next.add(entry.name);
+		setPartial({ disabledExtensions: [...next] });
+	};
+	const toggleInventoryWebui = (entry: UiExtensionInventoryEntry) => {
+		const next = new Set(disabledPlugins);
+		if (next.has(entry.name)) next.delete(entry.name);
+		else next.add(entry.name);
+		setPartial({ disabledPlugins: [...next] });
+	};
+	const toggleInventoryExternal = (entry: UiExtensionInventoryEntry) => {
+		const m = /^mcp:(global|project):(.+)$/.exec(entry.name);
+		if (!m) return;
+		const scope = m[1] as "global" | "project";
+		const base = m[2];
+		appSend({ type: "toggle_mcp_server", name: base, scope, enabled: !entry.enabled } as never);
+	};
+	const refreshInventoryAll = () => {
+		try {
+			appSend({ type: "extensions_reload" } as never);
+		} catch {}
+		try {
+			appSend({ type: "plugins_reload" } as never);
+		} catch {}
+		try {
+			appSend({ type: "reload_mcp" } as never);
+		} catch {}
+		try {
+			appSend({ type: "extension_inventory", reqId: Date.now() % 1_000_000_000 } as never);
+		} catch {}
 	};
 
 	const onDemandTools = settings.toolOnDemandTools ?? [];
@@ -5628,55 +5720,64 @@ function LoadedSettingsModal({
 						)}
 
 						{tab === "extensions" && !isDsh && (
-							<div className="set-section">
-								<div className="set-section-title">
-									<FiPackage className="set-section-icon" />
-									{t("settingsExtensions")}
-									<span className="set-count">{settings.extensions.length}</span>
-								</div>
-								{settings.extensions.length === 0 ? (
-									<p className="set-empty">{t("noExtensions")}</p>
-								) : (
-									<div className="set-list">
-										{settings.extensions.map((e) => {
-											const pkgName = e.id.startsWith("npm:") ? e.id.slice(4) : null;
-											return (
-												<ToggleRow
-													key={e.id}
-													title={e.name}
-													subtitle={e.path}
-													enabled={e.enabled}
-													onToggle={() => toggleExtension(e)}
-													action={
-														pkgName ? (
-															confirmUninstall === e.id ? (
-																<button
-																	type="button"
-																	className="set-uninstall confirm"
-																	title={t("uninstallConfirmHint")}
-																	onClick={() => runUninstall(pkgName)}
-																>
-																	{t("uninstallConfirm")}
-																</button>
-															) : (
-																<button
-																	type="button"
-																	className="set-uninstall"
-																	title={t("uninstallHint")}
-																	onClick={() => setConfirmUninstall(e.id)}
-																>
-																	<FiTrash2 />
-																	{t("uninstallExt")}
-																</button>
-															)
-														) : undefined
-													}
-												/>
-											);
-										})}
+							<>
+								<ExtensionInventory
+									entries={inventoryEntries}
+									onToggleCli={toggleInventoryCli}
+									onToggleWebui={toggleInventoryWebui}
+									onToggleExternal={toggleInventoryExternal}
+									onRefreshAll={refreshInventoryAll}
+								/>
+								<div className="set-section">
+									<div className="set-section-title">
+										<FiPackage className="set-section-icon" />
+										{t("settingsExtensions")}
+										<span className="set-count">{settings.extensions.length}</span>
 									</div>
-								)}
-							</div>
+									{settings.extensions.length === 0 ? (
+										<p className="set-empty">{t("noExtensions")}</p>
+									) : (
+										<div className="set-list">
+											{settings.extensions.map((e) => {
+												const pkgName = e.id.startsWith("npm:") ? e.id.slice(4) : null;
+												return (
+													<ToggleRow
+														key={e.id}
+														title={e.name}
+														subtitle={e.path}
+														enabled={e.enabled}
+														onToggle={() => toggleExtension(e)}
+														action={
+															pkgName ? (
+																confirmUninstall === e.id ? (
+																	<button
+																		type="button"
+																		className="set-uninstall confirm"
+																		title={t("uninstallConfirmHint")}
+																		onClick={() => runUninstall(pkgName)}
+																	>
+																		{t("uninstallConfirm")}
+																	</button>
+																) : (
+																	<button
+																		type="button"
+																		className="set-uninstall"
+																		title={t("uninstallHint")}
+																		onClick={() => setConfirmUninstall(e.id)}
+																	>
+																		<FiTrash2 />
+																		{t("uninstallExt")}
+																	</button>
+																)
+															) : undefined
+														}
+													/>
+												);
+											})}
+										</div>
+									)}
+								</div>
+							</>
 						)}
 
 						{tab === "layout" && (

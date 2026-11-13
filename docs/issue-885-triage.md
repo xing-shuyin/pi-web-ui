@@ -109,3 +109,61 @@
 ## 附：给维护者的一句话
 
 Pi CLI 的东西 WebUI 本来就继承着，别再传“完全不继承”；真正的债是“看不见、关不掉、坏了不知道找谁”。先把清单（T1）和来源展示（T2）补上，#885 就完成了一半。
+
+## 8. 落地记录（2026-11-13，T1~T6 全量收尾）
+
+> 本节为收尾 PR 追加：只改本地，不自动提交；并行 PR 仍在跑，已避开 plugins/vscode-editor 与 SCMPanel.tsx；新 UI 文案中英双语直写，未碰 en.json/zh.json（避开 #884）。
+
+### 8.1 改了什么（文件清单）
+
+| 任务          | 文件                                              | 说明                                                                                                                                                   |
+| ------------- | ------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| T1 只读清单   | server/extension-inventory.ts（新增）             | 纯函数 buildExtensionInventory + 只读采集 collectExtensionInventory，三类来源统一 shape；失败只记 error 原文，不抛错、不改运行时                       |
+| T1 查询通道   | server/protocol.ts                                | 新增 UiExtensionInventoryEntry/Source + ClientMessage extension_inventory + ServerMessage extension_inventory_data                                     |
+| T1 只读分支   | server/dispatch-plugin-handlers.ts                | case extension_inventory：SDK 内置 + WebUI 插件 + MCP + disabled 集合，只读聚合后 send                                                                 |
+| T2 来源展示   | web/src/components/ExtensionInventory.tsx（新增） | 来源徽标 CLI/WebUI/外部 + 启用状态 + 描述，纯展示；错误原文红框 + 一键刷新；底部防覆盖小字                                                             |
+| T2 挂载       | web/src/components/SettingsModal.tsx              | extensions tab 顶部挂载，无新路由；服务端数据优先、本地快照兜底；进 tab 主动 appSend                                                                   |
+| T2/T3/T4 状态 | web/src/use-chat.ts                               | 新增 extensionInventory + extension_inventory_data 接收入库                                                                                            |
+| T3 统一启停   | SettingsModal + ExtensionInventory                | WebUI 走 disabledPlugins；CLI 走 disabledExtensions（内置隐藏 switchable:false 置灰+原因）；MCP 解析 mcp:scope:name 走 toggle_mcp_server；绝不静默跳过 |
+| T4 刷新       | 同上                                              | error 原文 + 一键刷新（extensions_reload + plugins_reload + reload_mcp + extension_inventory），无需重装                                               |
+| T5 防覆盖     | 本文档 8.2 + 设置页小字                           | 对照表 + 继承只读、Web 专属可写、覆盖须显式可逆                                                                                                        |
+| T6 一致性     | 本文档 8.3                                        | 会话/模型共用 agentDir，不断链；缺口只补文档，不另起进程                                                                                               |
+| 护栏          | tests/unit/extension-inventory.test.ts（新增）    | 4 用例：三类拼装 / disabled+error 透出 / 排序稳定 / 单源失败不抛错                                                                                     |
+
+### 8.2 继承 vs 专属对照表（T5 防覆盖声明）
+
+| 能力              | 继承（只读展示）                                                                                           | 专属（可写）                                                                      | 覆盖语义（显式可逆）                                                                                    |
+| ----------------- | ---------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------- |
+| 身份目录 agentDir | PI_CODING_AGENT_DIR ?? getAgentDir()，auth.json / models.json / mcp.json / skills / sessions 全会话共用    | 无（WebUI 不另起目录）                                                            | 改环境变量即换身份，需重启会话；文档显式说明，不静默                                                    |
+| SDK 内置扩展      | codemode / tool-search（hidden:true，isInternalExtension 豁免 disabledExtensions），来源 CLI，不可单独启停 | 无                                                                                | 置灰 + SDK 不支持单独启停，仅展示；不提供假开关                                                         |
+| Pi CLI 第三方扩展 | resourceLoader.getExtensions() → settings.extensions，走 disabledExtensions 启停，来源 CLI                 | 无（继承项）                                                                      | 关了可再开，落盘 disabledExtensions + session.reload() 生效，可逆                                       |
+| WebUI UI 插件     | 无                                                                                                         | pluginMgr.list() → chat.plugins，走 disabledPlugins + alwaysOn/懒激活，来源 WebUI | 安装即启用；停用常驻插件需显式确认，可逆                                                                |
+| MCP 全局          | agentDir/mcp.json，随 agentDir 继承，来源 外部                                                             | 可写（全局页）                                                                    | 项目 .pi/mcp.json 按名覆盖全局同名（overriddenBy:project），UI 显示 scope；改全局影响全部项目，可逆确认 |
+| MCP 项目          | cwd/.pi/mcp.json，随 cwd 继承                                                                              | 可写（仅影响本项目）                                                              | 只写项目文件，不碰全局；reload(cwd, scope) 即时生效，可逆                                               |
+| Skills            | SDK 自带 + discoverDiskSkills(cwd, agentDir) 合并，走 disabledSkills                                       | 项目/全局 skill 文件可增删                                                        | 预设 + disabled 门禁叠加，文档显式优先级，可逆                                                          |
+| 模型/会话选择     | 同一 agentDir 下 models.json / auth.json，切模型不断链、不另起进程                                         | 会话内切换模型（setModel）                                                        | 缺口只补文档 + 架构说明，不另起重复进程（T6）                                                           |
+
+设置页小字（已进 ExtensionInventory.tsx，中英直写）：
+
+> 继承的只读展示，Web 专属才可写；必须覆盖时显式标注可逆 / Inherited entries are read-only; only WebUI-specific entries are writable. Overrides must be explicitly marked reversible.
+
+### 8.3 T6 一致性核实（会话/模型共用 agentDir，不断链）
+
+- 会话：agent-service.ts ClientSession 构造 new ClientSession(clientId, cwd, agentDir)，agentDir = PI_CODING_AGENT_DIR ?? getAgentDir() 单源；settingsSvc / mcpProjects / SessionManager 全挂同一目录。
+- 模型：auth.json / models.json 同目录；setModel / setDefaultModel 只换会话内模型引用，不重建 agentDir、不另起 SDK 进程。
+- MCP：listAllMcpServers({agentDir, cwd, dataDir, bridge}) 同一份全局+项目合并；toggle/save/reload 后 mcpProjects.reload(cwd, scope) + broadcastMcpServers + pushSettings，不断链。
+- 结论：无缺口需补进程；本 PR 缺口只补文档 + 显式架构说明，符合 T6 不另起重复进程。
+
+### 8.4 11 条验收逐条（本 PR 口径）
+
+1. T1-清单三源齐全：SDK 内置 + WebUI 插件 + MCP global/project，三类 source 非空 —— extension-inventory.ts + dispatch-plugin-handlers.ts，单测覆盖。
+2. T1-统一 shape 只读：name/source/enabled/version/description/error，采集失败只记 error，不改运行时 —— 同上 + protocol.ts 类型。
+3. T2-来源徽标+状态+描述纯展示：CLI/WebUI/外部徽标 + 已启用/已停用 + 描述 —— ExtensionInventory.tsx。
+4. T2-现有入口挂载无新路由：SettingsModal extensions tab 顶部挂载 —— 同上。
+5. T3-WebUI 开关走现有：disabledPlugins —— toggleInventoryWebui。
+6. T3-CLI/MCP 直通或置灰：CLI 内置隐藏 switchable:false 置灰 + 原因文案；MCP toggle_mcp_server；绝不静默跳过 —— ExtensionInventory + SettingsModal。
+7. T4-错误原文+一键刷新免重装：error 原文红框 + extensions_reload/plugins_reload/reload_mcp —— 同上。
+8. T5-对照表+小字：本节 8.2 + 组件底部小字 —— 文档 + 组件。
+9. T5-覆盖显式可逆：项目覆盖全局显式 scope + 可逆 reload/落盘 —— 文档声明 + 现有 mcp-manager 语义复用。
+10. T6-共用 agentDir 不断链：会话/模型/MCP 同目录 —— 8.3 核实。
+11. T6-缺口只补文档不另起进程：无新进程/守护 —— 本 PR 未新增运行时进程，单测 + typecheck 为证。
