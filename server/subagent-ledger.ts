@@ -309,7 +309,10 @@ export class SubagentLedger {
 		if (record?.eventsTruncated) return;
 		const bytes = this.eventBytes.get(runId) ?? 0;
 		if (bytes >= this.eventBytesCap) {
-			this.records.set(runId, { ...(record as LedgerRunRecord), eventsTruncated: true, runId });
+			// 只对已建档（upsert 过）的 run 打截断标记：record 不存在说明事件先于建档到来，
+			// 此时 set 一条缺 state 的 stub 会污染 list()/read() 与后续 upsert 的合并基底。
+			if (!record) return;
+			this.records.set(runId, { ...record, eventsTruncated: true, runId });
 			this.enqueue(runId, async () => {
 				await mkdir(this.runDir(runId), { recursive: true });
 				await appendFile(this.eventsPath(runId), `${JSON.stringify({ ts: this.now(), event: "events_truncated" })}\n`);

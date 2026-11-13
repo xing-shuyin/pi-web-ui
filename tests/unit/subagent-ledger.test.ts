@@ -142,6 +142,15 @@ describe("SubagentLedger", () => {
 		expect(ledger.list({ live: true }).map((r) => r.runId)).toEqual(["exec-c", "exec-b", "exec-a"]);
 		rmSync(dir, { recursive: true, force: true });
 	});
+
+	it("event 先于 upsert 且事件超限时，不产生缺 state 的幽灵记录", async () => {
+		const dir = dataDir();
+		const ledger = new SubagentLedger(dir, { now: () => 1000, eventBytesCap: 0 });
+		ledger.event("exec-ghost", "spawned"); // bytes(0) >= cap(0) → 命中超限分支，但 record 未建档
+		expect(ledger.list()).toEqual([]); // 修复前：一条 {runId, eventsTruncated:true} 的缺 state stub
+		expect(ledger.read("exec-ghost")).toBeUndefined();
+		rmSync(dir, { recursive: true, force: true });
+	});
 });
 
 describe("buildResumePrompt", () => {
