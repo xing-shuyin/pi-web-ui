@@ -10,6 +10,8 @@ import {
 	resolveProviderCredential,
 	listCustomModelsFromConfig,
 	isModelProtocolSupportedByEngine,
+	anthropicBaseUrlFromOpenAi,
+	resolveModelProtocol,
 } from "../../model-resolver.js";
 import { discoverDiskSkills } from "../../skill-discovery.js";
 import { decodeInlineImage, describeCliAttachment } from "../universal-attachments.js";
@@ -445,7 +447,7 @@ export class ClaudeCodeDriver extends BaseAgentDriver {
 				: { providerId: targetProvider };
 
 			if (cred.baseUrl) {
-				spawnEnv.ANTHROPIC_BASE_URL = cred.baseUrl;
+				spawnEnv.ANTHROPIC_BASE_URL = anthropicBaseUrlFromOpenAi(cred.baseUrl);
 			}
 			if (cred.apiKey) {
 				spawnEnv.ANTHROPIC_API_KEY = cred.apiKey;
@@ -485,9 +487,12 @@ export class ClaudeCodeDriver extends BaseAgentDriver {
 		const official = [...CLAUDE_CODE_MODELS];
 		if (!this.agentDir) return official;
 
-		const custom = listCustomModelsFromConfig(this.agentDir, (entry) =>
-			isModelProtocolSupportedByEngine("claude", entry),
-		);
+		const custom = listCustomModelsFromConfig(this.agentDir, (entry) => {
+			// 回环网关（Magpie 等）单端口做协议转换：OpenAI 条目按 claude-gateway 收进来；
+			// 非回环严格只认 anthropic-messages。
+			const nativeAnthropic = resolveModelProtocol(entry.api, entry.providerId, entry.modelId) === "anthropic-messages";
+			return isModelProtocolSupportedByEngine(nativeAnthropic ? "claude" : "claude-gateway", entry, entry.baseUrl);
+		});
 		const customRows = custom.map((c) => ({
 			id: `${c.providerId}/${c.modelId}`,
 			name: c.name,

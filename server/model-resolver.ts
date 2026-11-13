@@ -248,11 +248,32 @@ export function resolveModelProtocol(api?: string, providerId?: string, modelId?
 	return "openai-completions";
 }
 
+/** 回环主机名（`URL.hostname` 对 IPv6 保留方括号，故只列 `[::1]`）。 */
+const LOOPBACK_HOSTNAMES = new Set(["localhost", "127.0.0.1", "[::1]", "host.docker.internal"]);
+
+/** 本机回环网关（Magpie / oneapi 等普遍在单端口上做协议转换，Anthropic 端点同源可用）。 */
+export function isLoopbackGatewayUrl(baseUrl?: string): boolean {
+	const raw = (baseUrl ?? "").trim().toLowerCase();
+	if (!raw) return false;
+	try {
+		return LOOPBACK_HOSTNAMES.has(new URL(raw).hostname);
+	} catch {
+		return false;
+	}
+}
+
+/** OpenAI 风格基地址（`…/v1`）换算成 Anthropic 基地址：剥掉尾部 `/v1`，其余原样返回。 */
+export function anthropicBaseUrlFromOpenAi(baseUrl: string): string {
+	const trimmed = baseUrl.trim();
+	return trimmed.replace(/\/v1\/?$/i, "").replace(/\/+$/, "") || trimmed;
+}
+
 export function isProtocolSupportedByEngine(
 	engine: string,
 	api?: string,
 	providerId?: string,
 	modelId?: string,
+	gatewayBaseUrl?: string,
 ): boolean {
 	const normEngine = engine.toLowerCase().trim();
 	const protocol = resolveModelProtocol(api, providerId, modelId);
@@ -266,7 +287,12 @@ export function isProtocolSupportedByEngine(
 	}
 
 	if (normEngine === "claude") {
+		// 回环网关的 OpenAI 条目由调用方改投 claude-gateway；此处只认原生 Anthropic 协议。
 		return protocol === "anthropic-messages";
+	}
+
+	if (normEngine === "claude-gateway") {
+		return isLoopbackGatewayUrl(gatewayBaseUrl) && protocol !== "google-generative-ai" && protocol !== "google-vertex";
 	}
 
 	if (normEngine === "durable") {
@@ -346,7 +372,9 @@ export function isModelProtocolSupportedByEngine(
 		api?: string;
 		providerId: string;
 		modelId?: string;
+		baseUrl?: string;
 	},
+	gatewayBaseUrl?: string,
 ): boolean {
-	return isProtocolSupportedByEngine(engine, meta.api, meta.providerId, meta.modelId);
+	return isProtocolSupportedByEngine(engine, meta.api, meta.providerId, meta.modelId, gatewayBaseUrl ?? meta.baseUrl);
 }

@@ -3,6 +3,7 @@ import {
 	resolveModelProtocol,
 	isProtocolSupportedByEngine,
 	isModelProtocolSupportedByEngine,
+	anthropicBaseUrlFromOpenAi,
 } from "../../server/model-resolver.js";
 
 describe("多引擎实际协议类型（Protocol-Based）针对性过滤规范", () => {
@@ -68,6 +69,46 @@ describe("多引擎实际协议类型（Protocol-Based）针对性过滤规范",
 		).toBe(false);
 
 		expect(isProtocolSupportedByEngine("claude", undefined, "anthropic")).toBe(true);
+	});
+
+	it("Claude Code 引擎 + loopback 网关：OpenAI 协议条目放行（网关单端口协议转换）", () => {
+		expect(
+			isModelProtocolSupportedByEngine(
+				"claude-gateway",
+				{ api: "openai-completions", providerId: "magpie", baseUrl: "http://127.0.0.1:3425/v1" },
+				"http://127.0.0.1:3425/v1",
+			),
+		).toBe(true);
+		expect(
+			isModelProtocolSupportedByEngine(
+				"claude-gateway",
+				{ providerId: "magpie", modelId: "group/router-group-use", baseUrl: "http://localhost:3425/v1" },
+				"http://localhost:3425/v1",
+			),
+		).toBe(true);
+		// 远程网关不做协议转换假设，OpenAI 协议不放行
+		expect(
+			isModelProtocolSupportedByEngine(
+				"claude-gateway",
+				{ api: "openai-completions", providerId: "oneapi", baseUrl: "https://api.example.com/v1" },
+				"https://api.example.com/v1",
+			),
+		).toBe(false);
+		// Google 协议即使 loopback 也不放行
+		expect(
+			isModelProtocolSupportedByEngine(
+				"claude-gateway",
+				{ api: "google-generative-ai", providerId: "gemini-proxy", baseUrl: "http://127.0.0.1:8080/v1" },
+				"http://127.0.0.1:8080/v1",
+			),
+		).toBe(false);
+	});
+
+	it("OpenAI 基地址换算 Anthropic 基地址：剥掉尾部 /v1", () => {
+		expect(anthropicBaseUrlFromOpenAi("http://127.0.0.1:3425/v1")).toBe("http://127.0.0.1:3425");
+		expect(anthropicBaseUrlFromOpenAi("http://127.0.0.1:3425/v1/")).toBe("http://127.0.0.1:3425");
+		expect(anthropicBaseUrlFromOpenAi("http://127.0.0.1:3425")).toBe("http://127.0.0.1:3425");
+		expect(anthropicBaseUrlFromOpenAi("https://api.anthropic.com")).toBe("https://api.anthropic.com");
 	});
 
 	it("Pi Durable 引擎与 Pi 原生引擎支持主流标准协议全集", () => {
