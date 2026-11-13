@@ -423,6 +423,31 @@ export function ScmPanel({ chat, terminal, active, onSwitchToTerminal, uiScmTool
 		[notRepo, runGitCommand],
 	);
 
+	const handleStageAll = useCallback(() => {
+		if (notRepo) return;
+		runGitCommand("git add", "git add -A");
+	}, [notRepo, runGitCommand]);
+
+	const handleUnstageAll = useCallback(() => {
+		if (notRepo) return;
+		runGitCommand("git reset", "git reset HEAD");
+	}, [notRepo, runGitCommand]);
+
+	const handleDiscard = useCallback(
+		(f: ScmFile) => {
+			if (notRepo) return;
+			const untracked = fileKind(f) === "untracked";
+			const ok = window.confirm(t(untracked ? "scmDiscardUntrackedConfirm" : "scmDiscardConfirm", { path: f.path }));
+			if (!ok) return;
+			if (untracked) {
+				runGitCommand("rm", `rm -rf -- ${quotePath(f.path)}`);
+			} else {
+				runGitCommand("git restore", `git restore --source=HEAD -- ${quotePath(f.path)}`);
+			}
+		},
+		[notRepo, runGitCommand, t],
+	);
+
 	const handleSwitch = useCallback(() => {
 		if (!branchSel || notRepo) return;
 		const entry = branches.find((x) => x.name === branchSel);
@@ -481,7 +506,7 @@ export function ScmPanel({ chat, terminal, active, onSwitchToTerminal, uiScmTool
 		const finishedGitWrite = chat.terminals.some((tm) => {
 			if (tm.running !== false) return false;
 			const wasRunning = prev.find((p) => p.id === tm.id)?.running === true;
-			return wasRunning && tm.title.startsWith("git ");
+			return wasRunning && (tm.title.startsWith("git ") || tm.title === "rm");
 		});
 		if (finishedGitWrite && chat.ready && chat.status === "open") {
 			refresh(false, true);
@@ -849,7 +874,29 @@ export function ScmPanel({ chat, terminal, active, onSwitchToTerminal, uiScmTool
 					<div className="scm-files">
 						<div className="scm-files-header">
 							<span>{t("scmChanges")}</span>
-							{status && status.files.length > 0 && <span className="scm-files-count">{status.files.length}</span>}
+							<span style={{ display: "inline-flex", alignItems: "center", gap: "4px" }}>
+								{status && status.files.length > 0 && <span className="scm-files-count">{status.files.length}</span>}
+								<button
+									type="button"
+									className="scm-act"
+									style={{ width: "auto", padding: "0 6px", fontSize: "11px" }}
+									title={t("scmStageAllTip")}
+									disabled={notRepo || !status || !status.files.some((f) => fileKind(f) !== "staged")}
+									onClick={handleStageAll}
+								>
+									{t("scmStageAll")}
+								</button>
+								<button
+									type="button"
+									className="scm-act"
+									style={{ width: "auto", padding: "0 6px", fontSize: "11px" }}
+									title={t("scmUnstageAllTip")}
+									disabled={notRepo || !status || !status.files.some((f) => f.x !== " " && f.x !== "?")}
+									onClick={handleUnstageAll}
+								>
+									{t("scmUnstageAll")}
+								</button>
+							</span>
 						</div>
 						<div className="scm-files-list">
 							{notRepo ? (
@@ -909,6 +956,21 @@ export function ScmPanel({ chat, terminal, active, onSwitchToTerminal, uiScmTool
 														−
 													</button>
 												) : null}
+												<button
+													type="button"
+													className="scm-act"
+													title={
+														kind === "untracked"
+															? t("scmDiscardUntrackedTip", { path: f.path })
+															: t("scmDiscardTip", { path: f.path })
+													}
+													onClick={(e) => {
+														e.stopPropagation();
+														handleDiscard(f);
+													}}
+												>
+													×
+												</button>
 											</span>
 										</div>
 									);
