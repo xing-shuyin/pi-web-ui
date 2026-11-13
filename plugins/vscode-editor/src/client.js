@@ -51,6 +51,374 @@ const b64 = {
 
 const shQuote = (s) => `'${String(s ?? "").replace(/'/g, "'\\''")}'`;
 
+// ---- i18n（插件内自包含 ZH/EN 字典；注释可保留中文，用户可见字符串一律走 t()） ----
+const VSC_LANG_KEY = "vsc-editor-lang";
+let lang = "zh";
+try {
+	const saved = localStorage.getItem(VSC_LANG_KEY);
+	if (saved === "zh" || saved === "en") lang = saved;
+	else if ((navigator.language || "").toLowerCase().startsWith("en")) lang = "en";
+} catch {}
+const STR = {
+	zh: {
+		filesTab: "📁 文件",
+		sshTab: "🖥 SSH",
+		mobileTitle: "文件",
+		newFileT: "新建文件（当前选中的目录）",
+		newDirT: "新建文件夹（当前选中的目录）",
+		uploadT: "上传文件到工作区根目录（也可拖拽到文件树）",
+		searchLocalT: "按文件名搜索（本地工作区）",
+		searchRemoteT: "按文件名搜索（远端）",
+		uploadRemoteT: "上传文件到当前选中目录",
+		refreshT: "刷新",
+		refreshRemoteT: "刷新远端目录",
+		zipT: "下载为 ZIP（多选：按住 Ctrl/Cmd 点选）",
+		extractT: "解压 ZIP 到当前目录…",
+		addHostT: "添加主机",
+		depsT: "安装 ssh2 依赖",
+		depsBusyT: "依赖安装中…",
+		depsBusy: "依赖安装中…",
+		newTermT: "新建远程终端",
+		newTermBtnT: "新建终端",
+		hidePanelT: "收起面板",
+		burgerT: "文件树",
+		saveBtn: "💾 保存",
+		saveTitle: "保存 (Ctrl+S / Cmd+S)",
+		saveDirtyTitle: "有未保存的修改 — 保存 (Ctrl+S / Cmd+S)",
+		saveReadonlyTitle: "大文件只读，不可保存",
+		saveAsTitle: "另存为 (Ctrl+Shift+S / Cmd+Shift+S)",
+		langBtnT: "切换语言 / Switch language",
+		emptyMain: "从左侧打开一个文件开始编辑",
+		emptyHint: "Ctrl+P 快速打开 · Ctrl+S 保存",
+		termTitle: "终端",
+		quickPh: "输入文件名筛选…（Esc 关闭）",
+		noMatch: "无匹配文件",
+		localRoot: "📁 本地工作区",
+		remoteEmpty: "连接主机后，远程文件列表显示在这里",
+		sshConfigSec: "⚙ ssh config（自动加载）",
+		manualSec: "🏠 手动主机",
+		noHost: "还没有主机，点击添加",
+		loadingDir: "加载中…",
+		localScope: "本地",
+		binarySt: "二进制（只读）",
+		unsavedSt: "未保存 ●",
+		savedSt: "已保存",
+		conflictSt: "⚠ 外部已变更（草稿保留）",
+		bigReadonlySt: "大文件只读",
+		lineCol: "第 {line} 行 · 第 {col} 列",
+		closeT: "关闭",
+		connT: "连接",
+		disT: "断开",
+		editT: "编辑",
+		delT: "删除",
+		timeoutErr: "请求超时",
+		copiedPath: "已复制路径",
+		copyFail: "复制失败",
+		pasteEmpty: "剪贴板为空（先右键复制/剪切一个文件）",
+		sameSrcDst: "源与目标相同",
+		dupTooMany: "创建副本失败：重名次数过多",
+		uploading: "正在上传，请稍候…",
+		folderUploadNo: "文件夹上传暂不支持，请选择文件",
+		noSsh: "请先连接一台 SSH 主机",
+		noSshLeft: "请先连接一台 SSH 主机（左侧点主机名）",
+		truncated: "文件较多，列表已截断",
+		noResult: "无匹配",
+		searchMany: "结果较多，只显示前 50 项",
+		promptSearch: "搜索文件名：",
+		promptNewName: "新名称：",
+		promptNewFile: "新文件名称（可带子路径 a/b.js）：",
+		promptNewDir: "新文件夹名称：",
+		promptZipName: "要解压的 ZIP 文件名（位于当前目录）：",
+		promptSaveAs: "另存为（新文件路径）：",
+		saveAsRemoteNo: "另存为暂仅支持本地文件",
+		readOnlyNo: "只读文件不可保存",
+		mNewFile: "新建文件",
+		mNewDir: "新建文件夹",
+		mUploadHere: "上传文件到此处…",
+		mDownload: "下载到电脑",
+		mDownloadZip: "下载为 ZIP（.zip）",
+		mDownloadTar: "下载到电脑（.tar.gz 打包）",
+		mExtractHere: "解压 ZIP 到此处",
+		mCut: "剪切",
+		mCopy: "复制",
+		mPaste: "粘贴到此处",
+		mPasteMove: "粘贴（移动到此处）",
+		mDuplicate: "创建副本",
+		mCopyPath: "复制路径",
+		mRename: "重命名",
+		mDelete: "删除",
+		mRefresh: "刷新",
+		mOpenTermHere: "在此打开终端",
+		mOpenTermInDir: "在所在文件夹打开终端",
+		cutToast: "已剪切「{name}」（在目标目录右键粘贴）",
+		copyToast: "已复制「{name}」（在目标目录右键粘贴）",
+		confirmDelDir: "确定删除「{path}」？（目录将递归删除，不可撤销）",
+		confirmDelFile: "确定删除「{path}」？（不可撤销）",
+		confirmDelHost: "删除主机「{name}」？",
+		confirmClose: "「{name}」有未保存的修改，确定关闭？",
+		confirmSwitch: "「{name}」有未保存的修改（草稿会保留），仍要切换？",
+		confirmRefresh: "{n} 个标签有未保存修改，刷新将重新读取磁盘（草稿保留并标记冲突）。继续？",
+		confirmWorkspace: "工作区即将切换，{n} 个本地标签有未保存修改，切换将关闭它们。继续？",
+		workspaceSwitched: "工作区已切换",
+		wsSep: "：",
+		workspaceDirtyTail: "（关闭了 {n} 个未保存的本地标签）",
+		pickForZip: "请先点选要打包的文件/文件夹（可按住 Ctrl 多选）",
+		needZip: "请选择 .zip 文件",
+		connClosedDrop: "连接已关闭",
+		hostDeletedT: "主机已删除",
+		manualDiscT: "手动断开",
+		downloadingFile: "正在下载 {name}…",
+		downloadingPack: "正在下载 {name}（打包中）…",
+		downloadFail: "下载失败：{error}",
+		zipFallbackTar: "远端无 zip，已改用 tar.gz",
+		zipFallbackNode: "系统无 zip，已用内置打包",
+		unzipping: "正在解压 {name}…",
+		unzipOk: "解压完成",
+		unzipOkCount: "解压完成（{count} 个文件）",
+		unzipFail: "解压失败：{error}",
+		openFail: "打开失败：{error}",
+		saveFail: "保存失败：{error}",
+		readFail: "读取失败：{error}",
+		readDirFail: "读取目录失败：{error}",
+		delFail: "删除失败：{error}",
+		renameFail: "重命名失败：{error}",
+		createFail: "创建失败：{error}",
+		dupFail: "创建副本失败：{error}",
+		searchFail: "搜索失败：{error}",
+		pasteFail: "粘贴失败：{error}",
+		uploadFail: "上传失败：{error}",
+		connFail: "连接失败：{error}",
+		termFail: "打开终端失败：{error}",
+		importFail: "导入失败：{error}",
+		savedAs: "{name} 已保存",
+		openingBig: "正在打开大文件（{size}）…",
+		bigReadonly: "大文件已只读打开（>1MB），编辑已禁用",
+		binaryNo: "二进制文件暂不支持编辑",
+		connClosed: "连接断开：{label} {reason}",
+		shellExited: "〔shell 已退出〕",
+		tooBigSkip: "「{name}」超过 100MB 上限，已跳过",
+		coverConfirm: "「{name}」已存在，是否覆盖？",
+		uploadOneFail: "上传「{name}」失败：{error}",
+		uploadDoneAll: "已上传 {ok} 个文件{dest}",
+		uploadToDir: " 到 {dir}",
+		uploadToRoot: "（工作区根目录）",
+		uploadDonePart: "上传完成：{ok}/{total} 成功",
+		hostNew: "新建主机",
+		hostEdit: "编辑主机",
+		hostNameL: "名称（可选）",
+		hostHostL: "主机地址 *",
+		hostPortL: "端口",
+		hostUserL: "用户名",
+		hostPassL: "密码（编辑时留空 = 保持不变）",
+		hostKeyL: "私钥（PEM，可选）",
+		hostKeyPathL: "私钥路径（可选，支持 ~ 展开如 ~/.ssh/id_rsa；填写则优先使用，不必粘贴私钥全文）",
+		hostPpL: "私钥口令 passphrase（可选，带口令的私钥用）",
+		hostAgentL: "SSH agent socket（可选，如 $SSH_AUTH_SOCK；与密码/私钥二选一）",
+		hostHint:
+			"凭据只保存在本机插件目录（ssh-hosts.json），不会上传。密码 / 私钥 / 私钥路径 / agent 四选一即可。<br>已有 ~/.ssh/config 的无需导入——SSH 面板「⚙ ssh config」自动加载（与 VSCode Remote-SSH 同源，支持 Include / ProxyJump / ProxyCommand），点别名直连。",
+		cancelB: "取消",
+		importCfgB: "从 ssh config 导入",
+		importCfgT: "从 ~/.ssh/config 批量导入主机",
+		saveB: "保存",
+		keptPh: "已保存（留空保持不变）",
+		readingCfg: "读取 ~/.ssh/config 中…",
+		allImported: "共 {n} 台，均已导入。",
+		importSelected: "导入选中",
+		pickHosts: "请先勾选要导入的主机",
+		imported: "已导入 {added} 台{skip}",
+		importedSkip: "（跳过 {n} 台）",
+		configSaved: "ssh config 已保存（旧版已备份 .bak），列表已刷新",
+		sshCfgPrompt:
+			"编辑 {path}（与 VSCode 写法完全一样）：\nHost 别名\n  HostName 主机\n  User 用户\n  Port 端口\n  IdentityFile 私钥路径\n  ProxyJump 跳板",
+		editCfgT: "编辑 {path}（与 VSCode 写法完全一样）",
+	},
+	en: {
+		filesTab: "📁 Files",
+		sshTab: "🖥 SSH",
+		mobileTitle: "Files",
+		newFileT: "New file (in selected directory)",
+		newDirT: "New folder (in selected directory)",
+		uploadT: "Upload files to workspace root (or drag into the tree)",
+		searchLocalT: "Search file names (local workspace)",
+		searchRemoteT: "Search file names (remote)",
+		uploadRemoteT: "Upload files to selected directory",
+		refreshT: "Refresh",
+		refreshRemoteT: "Refresh remote directory",
+		zipT: "Download as ZIP (multi-select with Ctrl/Cmd+click)",
+		extractT: "Extract a ZIP file into the current directory…",
+		addHostT: "Add host",
+		depsT: "Install ssh2 dependency",
+		depsBusyT: "Installing dependency…",
+		depsBusy: "Installing dependency…",
+		newTermT: "New remote terminal",
+		newTermBtnT: "New terminal",
+		hidePanelT: "Collapse panel",
+		burgerT: "File tree",
+		saveBtn: "💾 Save",
+		saveTitle: "Save (Ctrl+S / Cmd+S)",
+		saveDirtyTitle: "Unsaved changes — save (Ctrl+S / Cmd+S)",
+		saveReadonlyTitle: "Large file is read-only",
+		saveAsTitle: "Save as (Ctrl+Shift+S / Cmd+Shift+S)",
+		langBtnT: "切换语言 / Switch language",
+		emptyMain: "Open a file from the left to start editing",
+		emptyHint: "Ctrl+P quick open · Ctrl+S save",
+		termTitle: "Terminal",
+		quickPh: "Filter by file name… (Esc to close)",
+		noMatch: "No matching files",
+		localRoot: "📁 Local workspace",
+		remoteEmpty: "Remote files appear here after connecting",
+		sshConfigSec: "⚙ ssh config (auto-loaded)",
+		manualSec: "🏠 Manual hosts",
+		noHost: "No hosts yet — click to add",
+		loadingDir: "Loading…",
+		localScope: "Local",
+		binarySt: "Binary (read-only)",
+		unsavedSt: "Unsaved ●",
+		savedSt: "Saved",
+		conflictSt: "⚠ Changed on disk (draft kept)",
+		bigReadonlySt: "Large file read-only",
+		lineCol: "Ln {line}, Col {col}",
+		closeT: "Close",
+		connT: "Connect",
+		disT: "Disconnect",
+		editT: "Edit",
+		delT: "Delete",
+		timeoutErr: "Request timed out",
+		copiedPath: "Path copied",
+		copyFail: "Copy failed",
+		pasteEmpty: "Clipboard is empty (right-click a file to copy/cut first)",
+		sameSrcDst: "Source and destination are the same",
+		dupTooMany: "Duplicate failed: too many name clashes",
+		uploading: "Uploading, please wait…",
+		folderUploadNo: "Folder upload is not supported, please choose files",
+		noSsh: "Please connect an SSH host first",
+		noSshLeft: "Please connect an SSH host first (click a host on the left)",
+		truncated: "Too many files, list truncated",
+		noResult: "No matches",
+		searchMany: "Too many results, showing first 50",
+		promptSearch: "Search file name:",
+		promptNewName: "New name:",
+		promptNewFile: "New file name (subpath allowed, e.g. a/b.js):",
+		promptNewDir: "New folder name:",
+		promptZipName: "ZIP file name to extract (in current directory):",
+		promptSaveAs: "Save as (new file path):",
+		saveAsRemoteNo: "Save As supports local files only",
+		readOnlyNo: "Read-only file cannot be saved",
+		mNewFile: "New file",
+		mNewDir: "New folder",
+		mUploadHere: "Upload files here…",
+		mDownload: "Download to PC",
+		mDownloadZip: "Download as ZIP (.zip)",
+		mDownloadTar: "Download to PC (.tar.gz)",
+		mExtractHere: "Extract ZIP here",
+		mCut: "Cut",
+		mCopy: "Copy",
+		mPaste: "Paste here",
+		mPasteMove: "Paste (move here)",
+		mDuplicate: "Duplicate",
+		mCopyPath: "Copy path",
+		mRename: "Rename",
+		mDelete: "Delete",
+		mRefresh: "Refresh",
+		mOpenTermHere: "Open terminal here",
+		mOpenTermInDir: "Open terminal in containing folder",
+		cutToast: 'Cut "{name}" (right-click target directory to paste)',
+		copyToast: 'Copied "{name}" (right-click target directory to paste)',
+		confirmDelDir: 'Delete "{path}"? (directory deletes recursively, irreversible)',
+		confirmDelFile: 'Delete "{path}"? (irreversible)',
+		confirmDelHost: 'Delete host "{name}"?',
+		confirmClose: '"{name}" has unsaved changes. Close anyway?',
+		confirmSwitch: '"{name}" has unsaved changes (draft is kept). Switch anyway?',
+		confirmRefresh: "{n} tab(s) have unsaved changes. Refresh re-reads from disk (drafts kept & flagged). Continue?",
+		confirmWorkspace:
+			"Workspace is about to switch. {n} local tab(s) have unsaved changes and will be closed. Continue?",
+		workspaceSwitched: "Workspace switched",
+		wsSep: ": ",
+		workspaceDirtyTail: " (closed {n} unsaved local tab(s))",
+		pickForZip: "Please select files/folders to pack (Ctrl+click for multi-select)",
+		needZip: "Please choose a .zip file",
+		connClosedDrop: "Connection closed",
+		hostDeletedT: "Host deleted",
+		manualDiscT: "Disconnected manually",
+		downloadingFile: "Downloading {name}…",
+		downloadingPack: "Packing & downloading {name}…",
+		downloadFail: "Download failed: {error}",
+		zipFallbackTar: "Remote host has no zip, fell back to tar.gz",
+		zipFallbackNode: "No system zip, used built-in packer",
+		unzipping: "Extracting {name}…",
+		unzipOk: "Extraction done",
+		unzipOkCount: "Extracted {count} file(s)",
+		unzipFail: "Extraction failed: {error}",
+		openFail: "Open failed: {error}",
+		saveFail: "Save failed: {error}",
+		readFail: "Read failed: {error}",
+		readDirFail: "Read directory failed: {error}",
+		delFail: "Delete failed: {error}",
+		renameFail: "Rename failed: {error}",
+		createFail: "Create failed: {error}",
+		dupFail: "Duplicate failed: {error}",
+		searchFail: "Search failed: {error}",
+		pasteFail: "Paste failed: {error}",
+		uploadFail: "Upload failed: {error}",
+		connFail: "Connect failed: {error}",
+		termFail: "Open terminal failed: {error}",
+		importFail: "Import failed: {error}",
+		savedAs: "{name} saved",
+		openingBig: "Opening large file ({size})…",
+		bigReadonly: "Large file opened read-only (>1MB); editing disabled",
+		binaryNo: "Binary files cannot be edited",
+		connClosed: "Connection closed: {label} {reason}",
+		shellExited: "[shell exited]",
+		tooBigSkip: '"{name}" exceeds the 100MB limit, skipped',
+		coverConfirm: '"{name}" already exists. Overwrite?',
+		uploadOneFail: 'Upload "{name}" failed: {error}',
+		uploadDoneAll: "Uploaded {ok} file(s){dest}",
+		uploadToDir: " to {dir}",
+		uploadToRoot: " (workspace root)",
+		uploadDonePart: "Upload done: {ok}/{total} succeeded",
+		hostNew: "New host",
+		hostEdit: "Edit host",
+		hostNameL: "Name (optional)",
+		hostHostL: "Host *",
+		hostPortL: "Port",
+		hostUserL: "Username",
+		hostPassL: "Password (blank = keep)",
+		hostKeyL: "Private key (PEM, optional)",
+		hostKeyPathL: "Key path (optional, ~ expands, e.g. ~/.ssh/id_rsa; preferred over pasting the key)",
+		hostPpL: "Key passphrase (optional, for protected keys)",
+		hostAgentL: "SSH agent socket (optional, e.g. $SSH_AUTH_SOCK; use instead of password/key)",
+		hostHint:
+			'Credentials stay in this plugin directory (ssh-hosts.json) and are never uploaded. Use one of password / private key / key path / agent.<br>If you already have ~/.ssh/config, no import needed — the SSH panel\'s "⚙ ssh config" loads it automatically (same source as VSCode Remote-SSH: Include / ProxyJump / ProxyCommand supported). Click an alias to connect.',
+		cancelB: "Cancel",
+		importCfgB: "Import from ssh config",
+		importCfgT: "Bulk import hosts from ~/.ssh/config",
+		saveB: "Save",
+		keptPh: "Saved (blank = keep)",
+		readingCfg: "Reading ~/.ssh/config…",
+		allImported: "{n} host(s), all imported.",
+		importSelected: "Import selected",
+		pickHosts: "Please tick the hosts to import first",
+		imported: "Imported {added} host(s){skip}",
+		importedSkip: " ({n} skipped)",
+		configSaved: "ssh config saved (previous version backed up as .bak), list refreshed",
+		sshCfgPrompt:
+			"Edit {path} (same syntax as VSCode):\nHost alias\n  HostName host\n  User user\n  Port port\n  IdentityFile key path\n  ProxyJump jump",
+		editCfgT: "Edit {path} (same syntax as VSCode)",
+	},
+};
+function tr(key, vars) {
+	let s = (STR[lang] && STR[lang][key]) ?? STR.zh[key] ?? key;
+	if (vars) for (const [k, v] of Object.entries(vars)) s = s.split(`{${k}}`).join(String(v));
+	return s;
+}
+function setLang(next) {
+	lang = next === "en" ? "en" : "zh";
+	try {
+		localStorage.setItem(VSC_LANG_KEY, lang);
+	} catch {}
+	applyI18n();
+}
+
 const THEME_CHANGE_EVENT = "pi-web-ui:theme-change";
 function isLightTheme() {
 	try {
@@ -262,12 +630,12 @@ export default {
 			background: var(--bg-elev, #16161d); }
 		.vsc-tabs { flex: 1; display: flex; overflow-x: auto; min-width: 0;
 			background: transparent; scrollbar-width: thin; }
-		.vsc-savebtn { all: unset; display: inline-flex; align-items: center; gap: 4px; cursor: pointer;
+		.vsc-savebtn, .vsc-saveasbtn, .vsc-langbtn { all: unset; display: inline-flex; align-items: center; gap: 4px; cursor: pointer;
 			padding: 4px 10px; font-size: 12px; white-space: nowrap; color: var(--text-dim, #9a9ab0);
 			border-left: 1px solid var(--border, #333); }
-		.vsc-savebtn:hover { background: var(--bg-elev2, #20202b); color: var(--text, #eee); }
+		.vsc-savebtn:hover, .vsc-saveasbtn:hover, .vsc-langbtn:hover { background: var(--bg-elev2, #20202b); color: var(--text, #eee); }
 		.vsc-savebtn.is-dirty { color: var(--amber, #fbbf24); font-weight: 700; }
-		.vsc-savebtn:disabled { opacity: .35; cursor: default; }
+		.vsc-savebtn:disabled, .vsc-saveasbtn:disabled { opacity: .35; cursor: default; }
 		.vsc-tab { display: inline-flex; align-items: center; gap: 6px; padding: 6px 8px 6px 12px;
 			cursor: pointer; border-right: 1px solid var(--border, #333); white-space: nowrap;
 			color: var(--text-dim, #9a9ab0); max-width: 200px; }
@@ -403,6 +771,8 @@ export default {
 				<button data-act="new-file" title="新建文件（当前选中的目录）">📄</button>
 				<button data-act="new-dir" title="新建文件夹（当前选中的目录）">📁</button>
 				<button data-act="upload" title="上传文件到工作区根目录（也可拖拽到文件树）">⬆</button>
+				<button data-act="zip" title="下载为 ZIP（多选：按住 Ctrl/Cmd 点选）">🗜</button>
+				<button data-act="extract" title="解压 ZIP 到当前目录…">📦</button>
 				<button data-act="search" title="按文件名搜索（本地工作区）">🔍</button>
 				<button data-act="refresh" title="刷新">⟳</button>
 			</div>
@@ -417,6 +787,8 @@ export default {
 				<button data-act="r-new-file" title="新建文件（当前选中的目录）">📄</button>
 				<button data-act="r-new-dir" title="新建文件夹（当前选中的目录）">📁</button>
 				<button data-act="r-upload" title="上传文件到当前选中目录">⬆</button>
+				<button data-act="r-zip" title="下载为 ZIP（多选：按住 Ctrl/Cmd 点选）">🗜</button>
+				<button data-act="r-extract" title="解压 ZIP 到当前目录…">📦</button>
 				<button data-act="r-search" title="按文件名搜索（远端）">🔍</button>
 				<button data-act="r-refresh" title="刷新远端目录">⟳</button>
 			</div>
@@ -430,7 +802,7 @@ export default {
 			<button class="vsc-burger" title="文件树">☰</button>
 			<span class="vsc-mtitle">文件</span>
 		</div>
-		<div class="vsc-tabbar"><div class="vsc-tabs"></div><button class="vsc-savebtn" title="保存 Save (Ctrl+S / Cmd+S)">💾 保存 Save</button></div>
+		<div class="vsc-tabbar"><div class="vsc-tabs"></div><button class="vsc-saveasbtn" title="另存为 (Ctrl+Shift+S / Cmd+Shift+S)">💾+</button><button class="vsc-savebtn" title="保存 (Ctrl+S / Cmd+S)">💾 保存</button><button class="vsc-langbtn" title="切换语言 / Switch language">EN</button></div>
 		<div class="vsc-edwrap">
 			<div class="vsc-empty">从左侧打开一个文件开始编辑<br><small>Ctrl+P 快速打开 · Ctrl+S 保存</small></div>
 			<div class="vsc-editor vsc-hidden"></div>
@@ -489,6 +861,8 @@ export default {
 		const sshTreeEl = root.querySelector(".vsc-sshtree");
 		const tabsEl = root.querySelector(".vsc-tabs");
 		const saveBtnEl = root.querySelector(".vsc-savebtn");
+		const saveAsBtnEl = root.querySelector(".vsc-saveasbtn");
+		const langBtnEl = root.querySelector(".vsc-langbtn");
 		const edHost = root.querySelector(".vsc-editor");
 		const emptyEl = root.querySelector(".vsc-empty");
 		const stScope = root.querySelector(".vsc-scope");
@@ -521,9 +895,9 @@ export default {
 			const reqId = `r${++reqSeq}`;
 			return new Promise((resolve) => {
 				pending.set(reqId, resolve);
-				ctx.send({ ...payload, reqId });
+				ctx.send({ ...payload, reqId, lang });
 				setTimeout(() => {
-					if (pending.delete(reqId)) resolve({ ok: false, error: "请求超时" });
+					if (pending.delete(reqId)) resolve({ ok: false, error: tr("timeoutErr") });
 				}, 60000);
 			});
 		}
@@ -542,7 +916,7 @@ export default {
 		}
 
 		function copyText(text) {
-			const done = () => toast("已复制路径");
+			const done = () => toast(tr("copiedPath"));
 			const fallback = () => {
 				try {
 					const ta = document.createElement("textarea");
@@ -553,7 +927,7 @@ export default {
 					document.body.removeChild(ta);
 					done();
 				} catch {
-					toast("复制失败");
+					toast(tr("copyFail"));
 				}
 			};
 			try {
@@ -566,19 +940,19 @@ export default {
 
 		async function pasteClipboardTo(scope, dir) {
 			if (!clipboard || clipboard.scope !== scope) {
-				toast("剪贴板为空（先右键复制/剪切一个文件）");
+				toast(tr("pasteEmpty"));
 				return;
 			}
 			const dest = dir ? `${dir.replace(/\/$/, "")}/${clipboard.src.split("/").pop()}` : clipboard.src.split("/").pop();
 			if (dest === clipboard.src) {
-				toast("源与目标相同");
+				toast(tr("sameSrcDst"));
 				return;
 			}
 			const wasCut = clipboard.cut;
 			const src = clipboard.src;
 			const r = await req(scope, { action: "copy", src, dest, move: wasCut });
 			if (!r.ok) {
-				toast(`粘贴失败：${r.error}`);
+				toast(tr("pasteFail", { error: r.error }));
 				return;
 			}
 			if (wasCut) {
@@ -612,12 +986,12 @@ export default {
 					await invalidateScope(scope);
 					return;
 				}
-				if (!String(r.error ?? "").includes("已存在")) {
-					toast(`创建副本失败：${r.error}`);
+				if (r && r.code !== "VSC_TARGET_EXISTS" && !/已存在|already exists/i.test(String(r.error ?? ""))) {
+					toast(tr("dupFail", { error: r.error }));
 					return;
 				}
 			}
-			toast("创建副本失败：重名次数过多");
+			toast(tr("dupTooMany"));
 		}
 
 		let S = {
@@ -635,17 +1009,116 @@ export default {
 		const flatFiles = new Set();
 		const tabs = new Map();
 		let activeTk = null;
+		const multiSel = new Set();
 		function refreshSaveBtn() {
 			if (!saveBtnEl) return;
-			const t = activeTk ? tabs.get(activeTk) : null;
-			const dirty = !!t?.dirty && !t?.binary;
+			const tb = activeTk ? tabs.get(activeTk) : null;
+			const dirty = !!tb?.dirty && !tb?.binary;
+			const ro = !!tb?.readonly;
 			saveBtnEl.classList.toggle("is-dirty", dirty);
-			saveBtnEl.disabled = !t || !!t.binary;
-			saveBtnEl.title = dirty ? "有未保存的修改 — 保存 Save (Ctrl+S / Cmd+S)" : "保存 Save (Ctrl+S / Cmd+S)";
+			saveBtnEl.disabled = !tb || !!tb.binary || ro;
+			saveBtnEl.textContent = tr("saveBtn");
+			saveBtnEl.title = ro ? tr("saveReadonlyTitle") : dirty ? tr("saveDirtyTitle") : tr("saveTitle");
+			if (saveAsBtnEl) {
+				saveAsBtnEl.disabled = !tb || !!tb.binary || ro || tb.scope !== "local";
+				saveAsBtnEl.title = tr("saveAsTitle");
+			}
+			if (langBtnEl) {
+				langBtnEl.textContent = lang === "zh" ? "EN" : "中文";
+				langBtnEl.title = tr("langBtnT");
+			}
 		}
 		if (saveBtnEl) saveBtnEl.addEventListener("click", () => void saveActive());
+		if (saveAsBtnEl) saveAsBtnEl.addEventListener("click", () => void saveAsActive());
+		if (langBtnEl) langBtnEl.addEventListener("click", () => setLang(lang === "zh" ? "en" : "zh"));
 		let selNode = null;
 		let clipboard = null;
+
+		const TITLE_BY_ACT = {
+			"new-file": "newFileT",
+			"new-dir": "newDirT",
+			upload: "uploadT",
+			search: "searchLocalT",
+			refresh: "refreshT",
+			zip: "zipT",
+			extract: "extractT",
+			"add-host": "addHostT",
+			deps: "depsT",
+			"new-term": "newTermT",
+			"r-new-file": "newFileT",
+			"r-new-dir": "newDirT",
+			"r-upload": "uploadRemoteT",
+			"r-search": "searchRemoteT",
+			"r-refresh": "refreshRemoteT",
+			"r-zip": "zipT",
+			"r-extract": "extractT",
+		};
+		const LABEL_BY_NAME = {
+			"h-name": "hostNameL",
+			"h-host": "hostHostL",
+			"h-port": "hostPortL",
+			"h-user": "hostUserL",
+			"h-pass": "hostPassL",
+			"h-key": "hostKeyL",
+			"h-keypath": "hostKeyPathL",
+			"h-pp": "hostPpL",
+			"h-agent": "hostAgentL",
+		};
+		function fmtSize(n) {
+			if (!Number.isFinite(n)) return "";
+			if (n >= 1048576) return `${(n / 1048576).toFixed(1)} MB`;
+			if (n >= 1024) return `${(n / 1024).toFixed(1)} KB`;
+			return `${n} B`;
+		}
+		function applyI18n() {
+			const stabFiles = root.querySelector('.stab[data-pane="files"]');
+			if (stabFiles) stabFiles.textContent = tr("filesTab");
+			const stabSsh = root.querySelector('.stab[data-pane="ssh"]');
+			if (stabSsh) stabSsh.textContent = tr("sshTab");
+			root.querySelectorAll(".vsc-side-head button[data-act]").forEach((b) => {
+				const k = TITLE_BY_ACT[b.dataset.act];
+				if (k) b.title = tr(k);
+			});
+			const burger = root.querySelector(".vsc-burger");
+			if (burger) burger.title = tr("burgerT");
+			const mtitle = root.querySelector(".vsc-mtitle");
+			if (mtitle) mtitle.textContent = tr("mobileTitle");
+			if (emptyEl) emptyEl.innerHTML = `${esc(tr("emptyMain"))}<br><small>${esc(tr("emptyHint"))}</small>`;
+			const tt = root.querySelector(".vsc-termbar .tt");
+			if (tt) tt.textContent = tr("termTitle");
+			const tAdd = root.querySelector(".vsc-termbar .t-add");
+			if (tAdd) tAdd.title = tr("newTermBtnT");
+			const tHide = root.querySelector(".vsc-termbar .t-hide");
+			if (tHide) tHide.title = tr("hidePanelT");
+			if (quickInput) quickInput.placeholder = tr("quickPh");
+			hostBg.querySelectorAll("input[name], textarea[name]").forEach((el) => {
+				const k = LABEL_BY_NAME[el.getAttribute("name")];
+				if (!k) return;
+				const wrap = el.closest("span");
+				const lab = wrap ? wrap.querySelector("label") : el.previousElementSibling;
+				if (lab && lab.tagName === "LABEL") lab.textContent = tr(k);
+			});
+			const hintEl = hostBg.querySelector(".vsc-modal > .hint");
+			if (hintEl) hintEl.innerHTML = tr("hostHint");
+			const cancelEl = hostBg.querySelector(".cancel");
+			if (cancelEl) cancelEl.textContent = tr("cancelB");
+			const saveHostEl = hostBg.querySelector(".save-host");
+			if (saveHostEl) saveHostEl.textContent = tr("saveB");
+			const importCfgEl = hostBg.querySelector(".import-cfg");
+			if (importCfgEl) {
+				importCfgEl.textContent = tr("importCfgB");
+				importCfgEl.title = tr("importCfgT");
+			}
+			refreshSaveBtn();
+			renderTabs();
+			renderHosts();
+			void renderTree();
+			if (activeTk && tabs.has(activeTk)) {
+				try {
+					updateStatus(view.state);
+				} catch {}
+			}
+		}
 
 		const tkey = (scope, p) => `${scope}:${p}`;
 		function parseTk(k) {
@@ -689,6 +1162,7 @@ export default {
 				drawSelection(),
 				dropCursor(),
 				EditorState.allowMultipleSelections.of(true),
+				EditorState.readOnly.of(!!tabs.get(activeTk)?.readonly),
 				indentOnInput(),
 				indentUnit.of("    "),
 				syntaxHighlighting(defaultHighlightStyle, { fallback: true }),
@@ -714,6 +1188,13 @@ export default {
 								key: "Mod-s",
 								run: () => {
 									void saveActive();
+									return true;
+								},
+							},
+							{
+								key: "Mod-Shift-s",
+								run: () => {
+									void saveAsActive();
 									return true;
 								},
 							},
@@ -751,11 +1232,19 @@ export default {
 		function updateStatus(state) {
 			const head = state.selection.main.head;
 			const line = state.doc.lineAt(head);
-			stPos.textContent = `第 ${line.number} 行 · 第 ${head - line.from + 1} 列`;
+			stPos.textContent = tr("lineCol", { line: line.number, col: head - line.from + 1 });
 			if (activeTk) {
-				const t = tabs.get(activeTk);
-				stState.textContent = t?.binary ? "二进制（只读）" : t?.dirty ? "未保存 ●" : "已保存";
-				stState.classList.toggle("dirty", !!t?.dirty);
+				const tb = tabs.get(activeTk);
+				stState.textContent = tb?.binary
+					? tr("binarySt")
+					: tb?.readonly
+						? tr("bigReadonlySt")
+						: tb?.conflict
+							? tr("conflictSt")
+							: tb?.dirty
+								? tr("unsavedSt")
+								: tr("savedSt");
+				stState.classList.toggle("dirty", !!tb?.dirty || !!tb?.conflict);
 			}
 			refreshSaveBtn();
 		}
@@ -765,7 +1254,7 @@ export default {
 			if (!dirCache.has(key)) {
 				const r = await req(scope, { action: "list", dir: dirWire ?? "" });
 				if (!r.ok) {
-					toast(`读取目录失败：${r.error}`);
+					toast(tr("readDirFail", { error: r.error }));
 					return [];
 				}
 				dirCache.set(key, r.entries);
@@ -799,7 +1288,7 @@ export default {
 				treeEl.innerHTML = "";
 				const lh = document.createElement("div");
 				lh.className = "vsc-sect";
-				lh.innerHTML = `<b>📁 本地工作区</b>`;
+				lh.innerHTML = `<b>${tr("localRoot")}</b>`;
 				treeEl.appendChild(lh);
 				await renderDir("local", "", treeEl, 0);
 				renderTreeHighlight();
@@ -813,18 +1302,18 @@ export default {
 			hostsEl.innerHTML = "";
 			const depsBtn = root.querySelector('.vsc-pane[data-pane="ssh"] button[data-act="deps"]');
 			depsBtn.classList.toggle("vsc-hidden", Boolean(S.depsReady));
-			depsBtn.title = S.depsInstalling ? "依赖安装中…" : "安装 ssh2 依赖";
+			depsBtn.title = S.depsInstalling ? tr("depsBusyT") : tr("depsT");
 			if (!S.depsReady && S.depsInstalling) {
 				const d = document.createElement("div");
 				d.className = "vsc-deps";
-				d.textContent = "依赖安装中…";
+				d.textContent = tr("depsBusy");
 				hostsEl.appendChild(d);
 			}
 			if (!S.hosts.length && !(S.configHosts ?? []).length) {
 				const d = document.createElement("div");
 				d.className = "vsc-deps";
 				const btn = document.createElement("button");
-				btn.textContent = "还没有主机，点击添加";
+				btn.textContent = tr("noHost");
 				btn.addEventListener("click", () => openHostModal(null));
 				d.appendChild(btn);
 				hostsEl.appendChild(d);
@@ -832,10 +1321,10 @@ export default {
 			if ((S.configHosts ?? []).length) {
 				const sec = document.createElement("div");
 				sec.className = "vsc-sect";
-				sec.innerHTML = `<b>⚙ ssh config（自动加载）</b>`;
+				sec.innerHTML = `<b>${tr("sshConfigSec")}</b>`;
 				const edit = document.createElement("button");
 				edit.textContent = "✎";
-				edit.title = `编辑 ${S.configPath ?? "~/.ssh/config"}（与 VSCode 写法完全一样）`;
+				edit.title = tr("editCfgT", { path: S.configPath ?? "~/.ssh/config" });
 				edit.addEventListener("click", () => void openSshConfigEditor());
 				sec.appendChild(edit);
 				hostsEl.appendChild(sec);
@@ -844,7 +1333,7 @@ export default {
 			if ((S.configHosts ?? []).length && S.hosts.length) {
 				const sec = document.createElement("div");
 				sec.className = "vsc-sect";
-				sec.innerHTML = `<b>🏠 手动主机</b>`;
+				sec.innerHTML = `<b>${tr("manualSec")}</b>`;
 				hostsEl.appendChild(sec);
 			}
 			for (const h of S.hosts) renderHostRow(h);
@@ -868,7 +1357,7 @@ export default {
 				if (!conns.size) {
 					const d = document.createElement("div");
 					d.className = "vsc-deps";
-					d.textContent = "连接主机后，远程文件列表显示在这里";
+					d.textContent = tr("remoteEmpty");
 					sshTreeEl.appendChild(d);
 				}
 				sshTreeEl.scrollTop = st;
@@ -889,8 +1378,8 @@ export default {
 				`<span class="nm" title="${esc(c.username)}@${esc(c.host)}:${c.port}${c.privateKeyPath ? ` · ${esc(c.privateKeyPath)}` : ""}">${esc(c.alias)}<span style="opacity:.5"> ${esc(c.username)}@${esc(c.host)}${via}</span></span>` +
 				`<span class="ops">` +
 				(live
-					? '<button data-hop="term" title="新建终端">🖥</button>'
-					: '<button data-hop="conn" title="连接">⇄</button>') +
+					? `<button data-hop="term" title="${tr("newTermBtnT")}">🖥</button>`
+					: `<button data-hop="conn" title="${tr("connT")}">⇄</button>`) +
 				`</span>`;
 			row.addEventListener("click", async (ev) => {
 				const btn = ev.target.closest("button[data-hop]");
@@ -922,19 +1411,19 @@ export default {
 				`<span class="nm" title="${esc(h.username)}@${esc(h.host)}:${h.port}">${esc(h.name || h.host)}</span>` +
 				`<span class="ops">` +
 				(connId
-					? '<button data-hop="term" title="新建终端">🖥</button><button data-hop="dis" title="断开">⏏</button>'
-					: '<button data-hop="conn" title="连接">⇄</button>') +
-				'<button data-hop="edit" title="编辑">✎</button>' +
-				'<button data-hop="del" title="删除">🗑</button></span>';
+					? `<button data-hop="term" title="${tr("newTermBtnT")}">🖥</button><button data-hop="dis" title="${tr("disT")}">⏏</button>`
+					: `<button data-hop="conn" title="${tr("connT")}">⇄</button>`) +
+				`<button data-hop="edit" title="${tr("editT")}">✎</button>` +
+				`<button data-hop="del" title="${tr("delT")}">🗑</button></span>`;
 			row.addEventListener("click", async (ev) => {
 				const btn = ev.target.closest("button[data-hop]");
 				if (btn) {
 					ev.stopPropagation();
 					if (btn.dataset.hop === "edit") openHostModal(h);
 					else if (btn.dataset.hop === "del") {
-						if (confirm(`删除主机「${h.name || h.host}」？`)) {
+						if (confirm(tr("confirmDelHost", { name: h.name || h.host }))) {
 							const r = await request({ action: "hosts_delete", id: h.id });
-							if (!r.ok) toast(`删除失败：${r.error}`);
+							if (!r.ok) toast(tr("delFail", { error: r.error }));
 							else renderHosts();
 						}
 					} else if (btn.dataset.hop === "term" && connId) {
@@ -995,7 +1484,16 @@ export default {
 				row.innerHTML =
 					`<span class="caret">${e.type === "dir" ? (isOpen ? "▾" : "▸") : ""}</span>` +
 					`<span>${iconFor(e.name, e.type)}</span><span class="nm">${esc(e.name)}</span>`;
-				row.addEventListener("click", async () => {
+				row.addEventListener("click", async (ev) => {
+					if (ev.ctrlKey || ev.metaKey) {
+						const k = tkey(scope, p);
+						if (multiSel.has(k)) multiSel.delete(k);
+						else multiSel.add(k);
+						selectNode(scope, p, e.type);
+						applySelHighlight();
+						return;
+					}
+					multiSel.clear();
 					selectNode(scope, p, e.type);
 					if (e.type !== "dir") {
 						void openFile(scope, p);
@@ -1053,7 +1551,7 @@ export default {
 			}
 			sub.innerHTML =
 				`<div class="vsc-row loading" style="padding-left:${8 + (depth + 1) * 14}px">` +
-				`<span class="caret"></span><span>⏳</span><span class="nm">加载中…</span></div>`;
+				`<span class="caret"></span><span>⏳</span><span class="nm">${tr("loadingDir")}</span></div>`;
 			const entries = await ensureDir(scope, p);
 			if (!expanded.has(ek)) {
 				sub.remove();
@@ -1072,12 +1570,12 @@ export default {
 
 		async function downloadToPC(scope, pathW, isDir = false) {
 			const name = pathW.split("/").filter(Boolean).pop() || pathW;
-			toast(`正在下载 ${name}${isDir ? "（打包中）" : ""}…`);
+			toast(isDir ? tr("downloadingPack", { name }) : tr("downloadingFile", { name }));
 			const payload =
 				scope === "local" ? { action: "download", path: pathW } : { action: "download", connId: scope, path: pathW };
 			const r = await request(payload);
 			if (!r.ok) {
-				toast(`下载失败：${r.error}`);
+				toast(tr("downloadFail", { error: r.error }));
 				return;
 			}
 			const bin = atob(r.b64);
@@ -1094,7 +1592,7 @@ export default {
 						const w = await fh.createWritable();
 						await w.write(blob);
 						await w.close();
-						stState.textContent = `${suggestedName} 已保存`;
+						stState.textContent = tr("savedAs", { name: suggestedName });
 						setTimeout(() => {
 							stState.textContent = "";
 						}, 3000);
@@ -1116,13 +1614,68 @@ export default {
 			}
 		}
 
+		function zipSelection(scope) {
+			const keys = [...multiSel].filter((k) => parseTk(k).scope === scope);
+			if (keys.length > 1) return keys.map((k) => parseTk(k).path);
+			if (selNode && selNode.scope === scope) return [selNode.path];
+			return [];
+		}
+
+		async function downloadZipFor(scope, paths) {
+			const list = (paths ?? []).filter(Boolean);
+			if (!list.length) {
+				toast(tr("pickForZip"));
+				return;
+			}
+			const label = list.length === 1 ? list[0].split("/").filter(Boolean).pop() : `${list.length} items`;
+			toast(tr("downloadingPack", { name: label }));
+			const payload =
+				scope === "local"
+					? { action: "download_zip", paths: list }
+					: { action: "download_zip", connId: scope, paths: list };
+			const r = await request(payload);
+			if (!r.ok) {
+				toast(tr("downloadFail", { error: r.error }));
+				return;
+			}
+			if (r.fallback === "tar.gz") toast(tr("zipFallbackTar"));
+			else if (r.fallback === "node") toast(tr("zipFallbackNode"));
+			const bin = atob(r.b64);
+			const bytes = new Uint8Array(bin.length);
+			for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+			saveBlob(new Blob([bytes]), r.name || "files.zip");
+		}
+
+		async function unzipToHere(scope, dir, suggested) {
+			let zipName = suggested;
+			if (!zipName) {
+				zipName = prompt(tr("promptZipName"));
+				if (!zipName) return;
+			}
+			if (!zipName.toLowerCase().endsWith(".zip")) {
+				toast(tr("needZip"));
+				return;
+			}
+			const zipPath = dir ? `${dir.replace(/\/$/, "")}/${zipName}` : zipName;
+			toast(tr("unzipping", { name: zipName }));
+			const dest = dir || (scope === "local" ? "" : "/");
+			const r = await req(scope, { action: "unzip", zip: zipPath, dest });
+			if (!r.ok) {
+				toast(tr("unzipFail", { error: r.error }));
+				return;
+			}
+			toast(r.count >= 0 ? tr("unzipOkCount", { count: r.count }) : tr("unzipOk"));
+			await invalidateScope(scope);
+		}
+
 		function applySelHighlight() {
 			root
 				.querySelectorAll(".vsc-row[data-scope]")
 				.forEach((el) =>
 					el.classList.toggle(
 						"sel",
-						!!selNode && el.dataset.scope === selNode.scope && el.dataset.path === selNode.path,
+						multiSel.has(tkey(el.dataset.scope, el.dataset.path)) ||
+							(!!selNode && el.dataset.scope === selNode.scope && el.dataset.path === selNode.path),
 					),
 				);
 		}
@@ -1146,8 +1699,9 @@ export default {
 				el.innerHTML =
 					`<span>${t.scope !== "local" ? "🖥" : iconFor(t.name, "file")}</span>` +
 					`<span class="tn">${esc(t.name)}</span>` +
+					(t.conflict ? '<span class="dot">⚠</span>' : "") +
 					(t.dirty ? '<span class="dot">●</span>' : "") +
-					`<button class="x" title="关闭">✕</button>`;
+					`<button class="x" title="${tr("closeT")}">✕</button>`;
 				el.addEventListener("click", (ev) => {
 					if (ev.target.closest(".x")) return;
 					void activateTab(k);
@@ -1162,11 +1716,18 @@ export default {
 			closeDrawer();
 			const k = tkey(scope, p);
 			if (!tabs.has(k)) {
+				let stSize = 0;
+				try {
+					const s0 = await req(scope, { action: "stat", path: p });
+					if (s0.ok) stSize = s0.size ?? 0;
+				} catch {}
+				if (stSize > 1024 * 1024) toast(tr("openingBig", { size: fmtSize(stSize) }));
 				const r = await req(scope, { action: "read", path: p });
 				if (!r.ok) {
-					toast(`打开失败：${r.error}`);
+					toast(tr("openFail", { error: r.error }));
 					return;
 				}
+				const readonly = !r.binary && (stSize || r.size || 0) > 1024 * 1024;
 				tabs.set(k, {
 					scope,
 					path: p,
@@ -1174,9 +1735,14 @@ export default {
 					savedText: r.text ?? "",
 					binary: !!r.binary,
 					dirty: false,
+					conflict: false,
+					readonly,
+					savedSize: r.size ?? stSize,
+					savedMtime: r.mtimeMs ?? 0,
 					crlf: (r.text ?? "").includes("\r\n"),
 				});
-				if (r.binary) toast("二进制文件暂不支持编辑");
+				if (r.binary) toast(tr("binaryNo"));
+				else if (readonly) toast(tr("bigReadonly"));
 			}
 			await activateTab(k);
 		}
@@ -1184,6 +1750,10 @@ export default {
 		async function activateTab(k) {
 			const t = tabs.get(k);
 			if (!t) return;
+			if (activeTk && activeTk !== k) {
+				const cur = tabs.get(activeTk);
+				if (cur && cur.dirty && !confirm(tr("confirmSwitch", { name: cur.name }))) return;
+			}
 			activeTk = k;
 			emptyEl.classList.add("vsc-hidden");
 			edHost.classList.remove("vsc-hidden");
@@ -1195,7 +1765,7 @@ export default {
 			);
 			t.dirty = false;
 			view.dispatch({ effects: langComp.reconfigure(langFor(t.path) ?? []) });
-			stScope.textContent = t.scope !== "local" ? `🖥 ${connLabel(t.scope)}` : "本地";
+			stScope.textContent = t.scope !== "local" ? `🖥 ${connLabel(t.scope)}` : tr("localScope");
 			stScope.classList.toggle("remote", t.scope !== "local");
 			stPath.textContent = t.path;
 			stLang.textContent = langName(t.path);
@@ -1206,25 +1776,71 @@ export default {
 		}
 
 		async function saveActive() {
-			const t = tabs.get(activeTk);
-			if (!activeTk || !t || t.binary) return false;
+			const tb = tabs.get(activeTk);
+			if (!activeTk || !tb || tb.binary || tb.readonly) {
+				if (tb?.readonly) toast(tr("readOnlyNo"));
+				return false;
+			}
 			const text = currentDoc();
-			const wire = t.crlf ? text.replace(/\n/g, "\r\n") : text;
-			const r = await req(t.scope, { action: "write", path: t.path, text: wire });
+			const wire = tb.crlf ? text.replace(/\n/g, "\r\n") : text;
+			const r = await req(tb.scope, { action: "write", path: tb.path, text: wire });
 			if (!r.ok) {
-				toast(`保存失败：${r.error}`);
+				toast(tr("saveFail", { error: r.error }));
 				return true;
 			}
-			t.savedText = text;
-			t.dirty = false;
+			try {
+				const back = await req(tb.scope, { action: "read", path: tb.path });
+				if (!back.ok) throw new Error(back.error);
+				if ((back.text ?? "") !== wire) {
+					tb.conflict = true;
+					toast(tr("conflictSt"));
+					renderTabs();
+					updateStatus(view.state);
+					return true;
+				}
+				tb.savedSize = back.size ?? r.bytes ?? wire.length;
+				tb.savedMtime = back.mtimeMs ?? 0;
+			} catch (err) {
+				toast(tr("saveFail", { error: err?.message ?? err }));
+				return true;
+			}
+			tb.savedText = text;
+			tb.dirty = false;
+			tb.conflict = false;
 			renderTabs();
 			updateStatus(view.state);
 			return true;
 		}
 
+		async function saveAsActive() {
+			const tb = tabs.get(activeTk);
+			if (!activeTk || !tb || tb.binary || tb.readonly) {
+				if (tb?.readonly) toast(tr("readOnlyNo"));
+				return false;
+			}
+			if (tb.scope !== "local") {
+				toast(tr("saveAsRemoteNo"));
+				return false;
+			}
+			const text = currentDoc();
+			const wire = tb.crlf ? text.replace(/\n/g, "\r\n") : text;
+			const np = prompt(tr("promptSaveAs"), tb.path);
+			if (!np || !np.trim() || np.trim() === tb.path) return false;
+			const r = await req("local", { action: "write", path: np.trim(), text: wire });
+			if (!r.ok) {
+				toast(tr("saveFail", { error: r.error }));
+				return false;
+			}
+			selNode = { scope: "local", path: np.trim(), type: "file" };
+			multiSel.clear();
+			await invalidateScope("local");
+			await openFile("local", np.trim());
+			return true;
+		}
+
 		async function closeTab(k) {
 			const t = tabs.get(k);
-			if (t && t.dirty && !confirm(`「${t.name}」有未保存的修改，确定关闭？`)) return;
+			if (t && t.dirty && !confirm(tr("confirmClose", { name: t.name }))) return;
 			tabs.delete(k);
 			if (activeTk === k) {
 				activeTk = null;
@@ -1274,13 +1890,14 @@ export default {
 			for (const [k, t] of tabs.entries()) {
 				if (parseTk(k).scope === "local" && t.dirty) dirtyLost++;
 			}
+			if (dirtyLost) {
+				multiSel.clear();
+				confirm(tr("confirmWorkspace", { n: dirtyLost }));
+			}
 			closeTabsOfScope("local");
 			await renderTree();
-			toast(
-				dirtyLost
-					? `工作区已切换${newRoot ? `：${newRoot}` : ""}（关闭了 ${dirtyLost} 个未保存的本地标签）`
-					: `工作区已切换${newRoot ? `：${newRoot}` : ""}`,
-			);
+			const rootSuffix = newRoot ? tr("wsSep") + newRoot : "";
+			toast(tr("workspaceSwitched") + rootSuffix + (dirtyLost ? tr("workspaceDirtyTail", { n: dirtyLost }) : ""));
 		}
 
 		let flatLoaded = false;
@@ -1290,7 +1907,7 @@ export default {
 			if (r.ok) {
 				flatLoaded = true;
 				for (const f of r.files) flatFiles.add(f);
-				if (r.truncated) toast("文件较多，列表已截断");
+				if (r.truncated) toast(tr("truncated"));
 			}
 		}
 
@@ -1324,7 +1941,7 @@ export default {
 							`<li data-s="${esc(x.scope)}" data-p="${esc(x.path)}" class="${i === quickSel ? "sel" : ""}">` +
 							`${iconFor(x.path.split("/").pop(), x.type)} ${esc(x.path.split("/").pop())}${x.scope !== "local" ? " 🌐" : ""}<small>${esc(x.path)}</small></li>`,
 					)
-					.join("") || `<li style="opacity:.5;cursor:default">无匹配文件</li>`;
+					.join("") || `<li style="opacity:.5;cursor:default">${tr("noMatch")}</li>`;
 		}
 
 		function openQuickOpen() {
@@ -1385,22 +2002,22 @@ export default {
 				scope = t.connId;
 				base = t.dir;
 			}
-			const q = prompt("搜索文件名：");
+			const q = prompt(tr("promptSearch"));
 			if (!q || !q.trim()) return;
 			const r =
 				scope === "local"
 					? await request({ action: "search", query: q.trim(), base })
 					: await request({ action: "search", connId: scope, query: q.trim(), baseDir: base || "/" });
 			if (!r.ok) {
-				toast(`搜索失败：${r.error}`);
+				toast(tr("searchFail", { error: r.error }));
 				return;
 			}
 			const list = r.results ?? [];
 			if (!list.length) {
-				toast("无匹配");
+				toast(tr("noResult"));
 				return;
 			}
-			if (r.truncated) toast("结果较多，只显示前 50 项");
+			if (r.truncated) toast(tr("searchMany"));
 			quickOverride = list.map((x) => ({ scope, path: x.path, type: x.type }));
 			quickSel = 0;
 			quickInput.value = q.trim();
@@ -1422,11 +2039,11 @@ export default {
 					return true;
 				case "host:file-rename":
 					void (async () => {
-						const nn = prompt("新名称：", _base);
+						const nn = prompt(tr("promptNewName"), _base);
 						if (!nn || nn === _base) return;
 						const r = await req("local", { action: "rename", path: pathW, newName: nn });
 						if (!r.ok) {
-							toast(`重命名失败：${r.error}`);
+							toast(tr("renameFail", { error: r.error }));
 							return;
 						}
 						await invalidateScope("local");
@@ -1434,11 +2051,10 @@ export default {
 					return true;
 				case "host:file-delete":
 					void (async () => {
-						if (!confirm(`确定删除「${pathW}」？${type === "dir" ? "（目录将递归删除，不可撤销）" : "（不可撤销）"}`))
-							return;
+						if (!confirm(tr(type === "dir" ? "confirmDelDir" : "confirmDelFile", { path: pathW }))) return;
 						const r = await req("local", { action: "delete", path: pathW, isDir: type === "dir" });
 						if (!r.ok) {
-							toast(`删除失败：${r.error}`);
+							toast(tr("delFail", { error: r.error }));
 							return;
 						}
 						for (const k of [...tabs.keys()]) {
@@ -1453,11 +2069,11 @@ export default {
 					return true;
 				case "host:file-cut":
 					clipboard = { scope: "local", src: pathW, cut: true };
-					toast(`已剪切「${_base}」（在目标目录右键粘贴）`);
+					toast(tr("cutToast", { name: _base }));
 					return true;
 				case "host:file-copy":
 					clipboard = { scope: "local", src: pathW, cut: false };
-					toast(`已复制「${_base}」（在目标目录右键粘贴）`);
+					toast(tr("copyToast", { name: _base }));
 					return true;
 				case "host:file-paste":
 					void pasteClipboardTo("local", _dir);
@@ -1491,36 +2107,41 @@ export default {
 		function showMenu(x, y, scope, pathW, type) {
 			menuEl.innerHTML = "";
 			const items = [];
+			const rowDir = type === "dir" ? pathW : scope === "local" ? localParentOf(pathW) : parentOf(pathW);
+			const fileName = pathW.split("/").pop();
 			if (type === "dir") {
 				items.push(
 					[
-						"新建文件",
+						tr("mNewFile"),
 						async () => {
 							await promptCreate(scope, pathW, "file");
 						},
 					],
 					[
-						"新建文件夹",
+						tr("mNewDir"),
 						async () => {
 							await promptCreate(scope, pathW, "dir");
 						},
 					],
 					[
-						"上传文件到此处…",
+						tr("mUploadHere"),
 						async () => {
 							const files = await pickFiles();
 							if (files.length) void uploadFilesTo(scope, pathW, files);
 						},
 					],
-					["下载到电脑（.tar.gz 打包）", () => void downloadToPC(scope, pathW, true)],
+					[tr("mDownloadZip"), () => void downloadZipFor(scope, [pathW])],
 				);
+				if (scope === "local") {
+					items.push([tr("mDownloadTar"), () => void downloadToPC(scope, pathW, true)]);
+				}
 			} else {
+				items.push([tr("mDownload"), () => void downloadToPC(scope, pathW, false)]);
+				if (pathW.toLowerCase().endsWith(".zip")) {
+					items.push([tr("mExtractHere"), () => void unzipToHere(scope, rowDir, fileName)]);
+				}
 				items.push([
-					type === "dir" ? "下载到电脑（压缩包）" : "下载到电脑",
-					() => void downloadToPC(scope, pathW, type === "dir"),
-				]);
-				items.push([
-					"上传文件到此处…",
+					tr("mUploadHere"),
 					async () => {
 						const files = await pickFiles();
 						const dir = scope === "local" ? localParentOf(pathW) : parentOf(pathW);
@@ -1528,50 +2149,52 @@ export default {
 					},
 				]);
 			}
-			const _base = pathW.split("/").pop();
-			const _rowDir = type === "dir" ? pathW : scope === "local" ? localParentOf(pathW) : parentOf(pathW);
+			const _base = fileName;
+			const _rowDir = rowDir;
 			items.push(
 				[
-					"剪切",
+					tr("mCut"),
 					() => {
 						clipboard = { scope, src: pathW, cut: true };
-						toast(`已剪切「${_base}」（在目标目录右键粘贴）`);
+						toast(tr("cutToast", { name: _base }));
 					},
 				],
 				[
-					"复制",
+					tr("mCopy"),
 					() => {
 						clipboard = { scope, src: pathW, cut: false };
-						toast(`已复制「${_base}」（在目标目录右键粘贴）`);
+						toast(tr("copyToast", { name: _base }));
 					},
 				],
 			);
 			if (clipboard && clipboard.scope === scope) {
-				items.push([clipboard.cut ? "粘贴（移动到此处）" : "粘贴到此处", () => void pasteClipboardTo(scope, _rowDir)]);
+				items.push([clipboard.cut ? tr("mPasteMove") : tr("mPaste"), () => void pasteClipboardTo(scope, _rowDir)]);
 			}
-			items.push(["创建副本", () => void duplicateEntry(scope, pathW, type)], ["复制路径", () => copyText(pathW)]);
+			items.push(
+				[tr("mDuplicate"), () => void duplicateEntry(scope, pathW, type)],
+				[tr("mCopyPath"), () => copyText(pathW)],
+			);
 			items.push(
 				[
-					"重命名",
+					tr("mRename"),
 					async () => {
-						const nn = prompt("新名称：", pathW.split("/").pop());
+						const nn = prompt(tr("promptNewName"), pathW.split("/").pop());
 						if (!nn || nn === pathW.split("/").pop()) return;
 						const r = await req(scope, { action: "rename", path: pathW, newName: nn });
 						if (!r.ok) {
-							toast(`重命名失败：${r.error}`);
+							toast(tr("renameFail", { error: r.error }));
 							return;
 						}
 						await invalidateScope(scope);
 					},
 				],
 				[
-					"删除",
+					tr("mDelete"),
 					async () => {
-						if (!confirm(`确定删除「${pathW}」？${type === "dir" ? "（目录将递归删除，不可撤销）" : "（不可撤销）"}`))
-							return;
+						if (!confirm(tr(type === "dir" ? "confirmDelDir" : "confirmDelFile", { path: pathW }))) return;
 						const r = await req(scope, { action: "delete", path: pathW, isDir: type === "dir" });
 						if (!r.ok) {
-							toast(`删除失败：${r.error}`);
+							toast(tr("delFail", { error: r.error }));
 							return;
 						}
 						for (const k of [...tabs.keys()]) {
@@ -1584,7 +2207,7 @@ export default {
 			);
 			if (scope !== "local") {
 				items.push([
-					type === "dir" ? "在此打开终端" : "在所在文件夹打开终端",
+					tr(type === "dir" ? "mOpenTermHere" : "mOpenTermInDir"),
 					async () => {
 						const dir = type === "dir" ? pathW : parentOf(pathW);
 						conns.get(scope).cwd = dir;
@@ -1627,12 +2250,12 @@ export default {
 		}
 
 		async function promptCreate(scope, dirWire, kind) {
-			const name = prompt(kind === "dir" ? "新文件夹名称：" : "新文件名称（可带子路径 a/b.js）：");
+			const name = prompt(kind === "dir" ? tr("promptNewDir") : tr("promptNewFile"));
 			if (!name) return;
 			const p = dirWire ? `${dirWire.replace(/\/$/, "")}/${name.trim()}` : name.trim();
 			const r = await req(scope, { action: "create", path: p, kind });
 			if (!r.ok) {
-				toast(`创建失败：${r.error}`);
+				toast(tr("createFail", { error: r.error }));
 				return;
 			}
 			expanded.add(tkey(scope, dirWire));
@@ -1642,6 +2265,9 @@ export default {
 		}
 
 		async function refreshAll() {
+			let dirtyCount = 0;
+			for (const [, tb] of tabs.entries()) if (!tb.binary && tb.dirty) dirtyCount++;
+			if (dirtyCount && !confirm(tr("confirmRefresh", { n: dirtyCount }))) return;
 			dirCache.clear();
 			flatFiles.clear();
 			flatLoaded = false;
@@ -1649,9 +2275,17 @@ export default {
 				if (t.binary) continue;
 				const r = await req(t.scope, { action: "read", path: t.path });
 				if (r.ok && r.text != null) {
-					t.savedText = r.text;
-					t.crlf = r.text.includes("\r\n");
-					t.dirty = false;
+					if (t.dirty && r.text !== t.savedText) {
+						t.conflict = true;
+						toast(tr("conflictSt"));
+					} else {
+						t.savedText = r.text;
+						t.crlf = r.text.includes("\r\n");
+						t.dirty = false;
+						t.conflict = false;
+					}
+					t.savedSize = r.size;
+					t.savedMtime = r.mtimeMs;
 				}
 			}
 			if (activeTk && tabs.has(activeTk)) await activateTab(activeTk);
@@ -1689,15 +2323,15 @@ export default {
 		async function uploadOne(scope, dir, file) {
 			const name = file.name;
 			if (file.size > 100 * 1024 * 1024) {
-				toast(`「${name}」超过 100MB 上限，已跳过`);
+				toast(tr("tooBigSkip", { name }));
 				return false;
 			}
 			const begin = await req(scope, { action: "upload_begin", dir, name, size: file.size });
 			if (!begin.ok) {
-				toast(`上传失败：${begin.error}`);
+				toast(tr("uploadFail", { error: begin.error }));
 				return false;
 			}
-			if (begin.exists && !confirm(`「${name}」已存在，是否覆盖？`)) {
+			if (begin.exists && !confirm(tr("coverConfirm", { name }))) {
 				void request({ action: "upload_abort", uploadId: begin.uploadId });
 				return false;
 			}
@@ -1713,7 +2347,7 @@ export default {
 				return true;
 			} catch (err) {
 				void request({ action: "upload_abort", uploadId: begin.uploadId });
-				toast(`上传「${name}」失败：${err?.message ?? err}`);
+				toast(tr("uploadOneFail", { name, error: err?.message ?? err }));
 				return false;
 			}
 		}
@@ -1721,7 +2355,7 @@ export default {
 		async function uploadFilesTo(scope, dir, files) {
 			if (!files?.length) return;
 			if (uploading) {
-				toast("正在上传，请稍候…");
+				toast(tr("uploading"));
 				return;
 			}
 			uploading = true;
@@ -1730,8 +2364,9 @@ export default {
 				for (const f of files) if (await uploadOne(scope, dir, f)) ok++;
 				if (ok) await invalidateScope(scope);
 				setUploadProgress("");
-				if (ok === files.length) toast(`已上传 ${ok} 个文件${dir ? ` 到 ${dir}` : "（工作区根目录）"}`);
-				else toast(`上传完成：${ok}/${files.length} 成功`);
+				if (ok === files.length)
+					toast(tr("uploadDoneAll", { ok, dest: dir ? tr("uploadToDir", { dir }) : tr("uploadToRoot") }));
+				else toast(tr("uploadDonePart", { ok, total: files.length }));
 			} finally {
 				uploading = false;
 			}
@@ -1811,12 +2446,12 @@ export default {
 				clearAppDropOverlay();
 				const files = [...(ev.dataTransfer?.files ?? [])];
 				if (!files.length) {
-					toast("文件夹上传暂不支持，请选择文件");
+					toast(tr("folderUploadNo"));
 					return;
 				}
 				const t = dropTargetFrom(ev, containerScope);
 				if (!t) {
-					toast("请先连接一台 SSH 主机");
+					toast(tr("noSsh"));
 					return;
 				}
 				void uploadFilesTo(t.scope, t.dir, files);
@@ -1845,26 +2480,24 @@ export default {
 				}
 				const t = dropTargetFrom(ev, containerScope);
 				if (!t) {
-					toast("请先连接一台 SSH 主机");
+					toast(tr("noSsh"));
 					return;
 				}
 				hideMenu();
 				const items = [];
 				items.push([
-					"上传文件到此处…",
+					tr("mUploadHere"),
 					async () => {
 						const files = await pickFiles();
 						if (files.length) void uploadFilesTo(t.scope, t.dir, files);
 					},
 				]);
+				items.push([tr("mExtractHere"), () => void unzipToHere(t.scope, t.dir)]);
 				if (clipboard && clipboard.scope === t.scope) {
-					items.push([
-						clipboard.cut ? "粘贴（移动到此处）" : "粘贴到此处",
-						() => void pasteClipboardTo(t.scope, t.dir),
-					]);
+					items.push([clipboard.cut ? tr("mPasteMove") : tr("mPaste"), () => void pasteClipboardTo(t.scope, t.dir)]);
 				}
 				if (containerScope === "local" && t.dir === "") {
-					items.push(["刷新", () => void refreshAll()]);
+					items.push([tr("mRefresh"), () => void refreshAll()]);
 				}
 				menuEl.innerHTML = "";
 				for (const [label, fn] of items) {
@@ -1895,6 +2528,10 @@ export default {
 				void promptCreate("local", pickLocalDir(), "file");
 			} else if (act === "new-dir") {
 				void promptCreate("local", pickLocalDir(), "dir");
+			} else if (act === "zip") {
+				void downloadZipFor("local", zipSelection("local"));
+			} else if (act === "extract") {
+				void unzipToHere("local", pickLocalDir());
 			} else if (act === "upload") {
 				void pickFiles().then((files) => uploadFilesTo("local", "", files));
 			}
@@ -1903,7 +2540,7 @@ export default {
 		let modalEditId = null;
 		function openHostModal(h) {
 			modalEditId = h?.id ?? null;
-			hostBg.querySelector(".h-title").textContent = h ? "编辑主机" : "新建主机";
+			hostBg.querySelector(".h-title").textContent = h ? tr("hostEdit") : tr("hostNew");
 			const q = (n) => hostBg.querySelector(`[name="${n}"]`);
 			q("h-name").value = h?.name ?? "";
 			q("h-host").value = h?.host ?? "";
@@ -1914,9 +2551,9 @@ export default {
 			q("h-keypath").value = h?.privateKeyPath ?? "";
 			q("h-pp").value = "";
 			q("h-agent").value = h?.agent ?? "";
-			q("h-pass").placeholder = h?.hasPass ? "已保存（留空保持不变）" : "";
-			q("h-key").placeholder = h?.hasKey ? "已保存（留空保持不变）" : "-----BEGIN OPENSSH PRIVATE KEY-----";
-			q("h-pp").placeholder = h?.hasPassphrase ? "已保存（留空保持不变）" : "";
+			q("h-pass").placeholder = h?.hasPass ? tr("keptPh") : "";
+			q("h-key").placeholder = h?.hasKey ? tr("keptPh") : "-----BEGIN OPENSSH PRIVATE KEY-----";
+			q("h-pp").placeholder = h?.hasPassphrase ? tr("keptPh") : "";
 			const panel = hostBg.querySelector(".sshcfg-import");
 			panel.classList.add("vsc-hidden");
 			panel.innerHTML = "";
@@ -1943,23 +2580,23 @@ export default {
 			if (modalEditId) body.id = modalEditId;
 			const r = await request({ action: "hosts_save", host: body });
 			if (!r.ok) {
-				toast(`保存失败：${r.error}`);
+				toast(tr("saveFail", { error: r.error }));
 				return;
 			}
 			hostBg.classList.add("vsc-hidden");
 		});
 		hostBg.querySelector(".import-cfg").addEventListener("click", async () => {
 			const panel = hostBg.querySelector(".sshcfg-import");
-			panel.innerHTML = `<div class="hint">读取 ~/.ssh/config 中…</div>`;
+			panel.innerHTML = `<div class="hint">${tr("readingCfg")}</div>`;
 			panel.classList.remove("vsc-hidden");
 			const r = await request({ action: "sshconfig_list" });
 			if (!r.ok) {
-				panel.innerHTML = `<div class="hint">读取失败：${esc(r.error)}</div>`;
+				panel.innerHTML = `<div class="hint">${tr("readFail", { error: esc(r.error) })}</div>`;
 				return;
 			}
 			const fresh = (r.hosts ?? []).filter((x) => !x.imported);
 			if (!fresh.length) {
-				panel.innerHTML = `<div class="hint">共 ${(r.hosts ?? []).length} 台，均已导入。</div>`;
+				panel.innerHTML = `<div class="hint">${tr("allImported", { n: (r.hosts ?? []).length })}</div>`;
 				return;
 			}
 			panel.innerHTML = "";
@@ -1980,22 +2617,22 @@ export default {
 			}
 			const btn = document.createElement("button");
 			btn.className = "primary";
-			btn.textContent = `导入选中`;
+			btn.textContent = tr("importSelected");
 			btn.addEventListener("click", async () => {
 				const aliases = [...panel.querySelectorAll("input[type=checkbox]:checked")].map((c) => c.value);
 				if (!aliases.length) {
-					toast("请先勾选要导入的主机");
+					toast(tr("pickHosts"));
 					return;
 				}
 				const r2 = await request({ action: "sshconfig_import", aliases });
 				if (!r2.ok) {
-					toast(`导入失败：${r2.error}`);
+					toast(tr("importFail", { error: r2.error }));
 					return;
 				}
 				panel.classList.add("vsc-hidden");
 				panel.innerHTML = "";
 				hostBg.classList.add("vsc-hidden");
-				toast(`已导入 ${r2.added} 台${r2.skipped ? `（跳过 ${r2.skipped} 台）` : ""}`);
+				toast(tr("imported", { added: r2.added, skip: r2.skipped ? tr("importedSkip", { n: r2.skipped }) : "" }));
 			});
 			panel.appendChild(btn);
 		});
@@ -2011,7 +2648,7 @@ export default {
 			const r = await request({ action: "config_connect", alias });
 			connecting.delete(key);
 			if (!r.ok) {
-				toast(`连接失败：${r.error}`);
+				toast(tr("connFail", { error: r.error }));
 				renderHosts();
 				return null;
 			}
@@ -2032,17 +2669,14 @@ export default {
 		async function openSshConfigEditor() {
 			const r = await request({ action: "sshconfig_get" });
 			if (!r.ok) {
-				toast(`读取失败：${r.error}`);
+				toast(tr("readFail", { error: r.error }));
 				return;
 			}
-			const text = prompt(
-				`编辑 ${S.configPath ?? "~/.ssh/config"}（与 VSCode 写法完全一样）：\nHost 别名\n  HostName 主机\n  User 用户\n  Port 端口\n  IdentityFile 私钥路径\n  ProxyJump 跳板`,
-				r.text ?? "",
-			);
+			const text = prompt(tr("sshCfgPrompt", { path: S.configPath ?? "~/.ssh/config" }), r.text ?? "");
 			if (text === null) return;
 			const r2 = await request({ action: "sshconfig_save", text });
-			if (!r2.ok) toast(`保存失败：${r2.error}`);
-			else toast("ssh config 已保存（旧版已备份 .bak），列表已刷新");
+			if (!r2.ok) toast(tr("saveFail", { error: r2.error }));
+			else toast(tr("configSaved"));
 		}
 
 		async function connectHost(h) {
@@ -2052,7 +2686,7 @@ export default {
 			const r = await request({ action: "connect", id: h.id });
 			connecting.delete(h.id);
 			if (!r.ok) {
-				toast(`连接失败：${r.error}`);
+				toast(tr("connFail", { error: r.error }));
 				renderTree();
 				return;
 			}
@@ -2084,7 +2718,17 @@ export default {
 			syncPanelVisibility();
 			void renderTree();
 			renderHosts();
-			if (reason) toast(`连接断开：${connLabel(connId)} ${reason}`);
+			if (reason) {
+				const why =
+					reason === "连接已关闭"
+						? tr("connClosedDrop")
+						: reason === "主机已删除"
+							? tr("hostDeletedT")
+							: reason === "手动断开"
+								? tr("manualDiscT")
+								: reason;
+				toast(tr("connClosed", { label: connLabel(connId), reason: why }));
+			}
 		}
 
 		const terms = new Map();
@@ -2130,7 +2774,7 @@ export default {
 		async function newTerm(connId, startCwd) {
 			connId = connId ?? pickConnId();
 			if (!connId || !conns.has(connId)) {
-				toast("请先连接一台 SSH 主机（左侧点主机名）");
+				toast(tr("noSshLeft"));
 				return;
 			}
 			const sameConn = [...terms.values()].filter((t) => t.connId === connId).length;
@@ -2181,7 +2825,7 @@ export default {
 				rows: term.rows,
 			});
 			if (!r.ok) {
-				toast(`打开终端失败：${r.error}`);
+				toast(tr("termFail", { error: r.error }));
 				disposeTerm(t);
 				renderTermTabs();
 				syncPanelVisibility();
@@ -2224,7 +2868,7 @@ export default {
 			for (const [tid, t] of terms.entries()) {
 				const el = document.createElement("span");
 				el.className = "vsc-ttab" + (tid === activeTermId ? " active" : "");
-				el.innerHTML = `<span class="tn">🖥 ${esc(t.label)}${t.n > 1 ? ` ${t.n}` : ""}</span><button class="x" title="关闭">✕</button>`;
+				el.innerHTML = `<span class="tn">🖥 ${esc(t.label)}${t.n > 1 ? ` ${t.n}` : ""}</span><button class="x" title="${tr("closeT")}">✕</button>`;
 				el.addEventListener("click", (ev) => {
 					if (ev.target.closest(".x")) {
 						killTerm(t);
@@ -2319,7 +2963,7 @@ export default {
 				case "shell_exit": {
 					for (const [, t] of terms.entries()) {
 						if (t.connId === payload.connId && t.shellId === payload.shellId) {
-							t.term?.write("\r\n\x1b[90m〔shell 已退出〕\x1b[0m\r\n");
+							t.term?.write("\r\n\x1b[90m" + tr("shellExited") + "\x1b[0m\r\n");
 							break;
 						}
 					}
@@ -2332,10 +2976,14 @@ export default {
 		});
 
 		function onGlobalKey(ev) {
-			if ((ev.ctrlKey || ev.metaKey) && ev.key.toLowerCase() === "p") {
+			const mod = ev.ctrlKey || ev.metaKey;
+			if (mod && ev.key.toLowerCase() === "p") {
 				ev.preventDefault();
 				openQuickOpen();
-			} else if ((ev.ctrlKey || ev.metaKey) && ev.key.toLowerCase() === "s") {
+			} else if (mod && ev.shiftKey && ev.key.toLowerCase() === "s") {
+				ev.preventDefault();
+				void saveAsActive();
+			} else if (mod && ev.key.toLowerCase() === "s") {
 				ev.preventDefault();
 				void saveActive();
 			} else if (ev.key === "Escape") {
@@ -2344,6 +2992,15 @@ export default {
 			}
 		}
 		container.ownerDocument.addEventListener("keydown", onGlobalKey, true);
+		const onBeforeUnload = (ev) => {
+			let dirty = 0;
+			for (const [, tb] of tabs) if (!tb.binary && tb.dirty) dirty++;
+			if (dirty) {
+				ev.preventDefault();
+				ev.returnValue = "";
+			}
+		};
+		window.addEventListener("beforeunload", onBeforeUnload);
 
 		root.querySelector('.vsc-pane[data-pane="ssh"] .vsc-side-head').addEventListener("click", (ev) => {
 			const btn = ev.target.closest("button[data-act]");
@@ -2360,6 +3017,12 @@ export default {
 			} else if (btn.dataset.act === "r-upload") {
 				const t = pickRemoteDir();
 				if (t) void pickFiles().then((files) => uploadFilesTo(t.connId, t.dir, files));
+			} else if (btn.dataset.act === "r-zip") {
+				const t = pickRemoteDir();
+				if (t) void downloadZipFor(t.connId, zipSelection(t.connId));
+			} else if (btn.dataset.act === "r-extract") {
+				const t = pickRemoteDir();
+				if (t) void unzipToHere(t.connId, t.dir);
 			} else if (btn.dataset.act === "r-search") {
 				const t = pickRemoteDir();
 				if (t) void runSearch(t.connId, t.dir);
@@ -2381,7 +3044,7 @@ export default {
 			}
 			const first = [...conns.keys()][0];
 			if (!first) {
-				toast("请先连接一台 SSH 主机");
+				toast(tr("noSsh"));
 				return null;
 			}
 			return { connId: first, dir: conns.get(first).cwd };
@@ -2391,11 +3054,11 @@ export default {
 		void request({ action: "state" }).then((r) => {
 			if (r.ok && r.state) applyState(r.state);
 		});
-		void renderTree();
-		renderHosts();
+		applyI18n();
 
 		return () => {
 			container.ownerDocument.removeEventListener("keydown", onGlobalKey, true);
+			window.removeEventListener("beforeunload", onBeforeUnload);
 			document.removeEventListener("click", hideMenu);
 			window.removeEventListener(THEME_CHANGE_EVENT, onThemeChange);
 			for (const [, t] of terms.entries()) {

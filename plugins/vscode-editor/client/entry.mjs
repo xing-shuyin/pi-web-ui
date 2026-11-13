@@ -1581,8 +1581,8 @@ var FacetProvider = class {
         state.values[idx] = getter(state);
         return 1;
       },
-      update(state, tr2) {
-        if (depDoc && tr2.docChanged || depSel && (tr2.docChanged || tr2.selection) || ensureAll(state, depAddrs)) {
+      update(state, tr3) {
+        if (depDoc && tr3.docChanged || depSel && (tr3.docChanged || tr3.selection) || ensureAll(state, depAddrs)) {
           let newVal = getter(state);
           if (multi ? !compareArray(newVal, state.values[idx], compare2) : !compare2(newVal, state.values[idx])) {
             state.values[idx] = newVal;
@@ -1652,7 +1652,7 @@ function dynamicFacetSlot(addresses, facet, providers) {
       state.values[idx] = get(state);
       return 1;
     },
-    update(state, tr2) {
+    update(state, tr3) {
       if (!ensureAll(state, dynamic))
         return 0;
       let value = get(state);
@@ -1711,9 +1711,9 @@ var StateField = class _StateField {
         state.values[idx] = this.create(state);
         return 1;
       },
-      update: (state, tr2) => {
+      update: (state, tr3) => {
         let oldVal = state.values[idx];
-        let value = this.updateF(oldVal, tr2);
+        let value = this.updateF(oldVal, tr3);
         if (this.compareF(oldVal, value))
           return 0;
         state.values[idx] = value;
@@ -2208,14 +2208,14 @@ function resolveTransaction(state, specs, filter) {
     let seq = !!specs[i].sequential;
     s15 = mergeTransaction(s15, resolveTransactionInner(state, specs[i], seq ? s15.changes.newLength : state.doc.length), seq);
   }
-  let tr2 = Transaction.create(state, s15.changes, s15.selection, s15.effects, s15.annotations, s15.scrollIntoView);
-  return extendTransaction(filter ? filterTransaction(tr2) : tr2);
+  let tr3 = Transaction.create(state, s15.changes, s15.selection, s15.effects, s15.annotations, s15.scrollIntoView);
+  return extendTransaction(filter ? filterTransaction(tr3) : tr3);
 }
-function filterTransaction(tr2) {
-  let state = tr2.startState;
+function filterTransaction(tr3) {
+  let state = tr3.startState;
   let result = true;
   for (let filter of state.facet(changeFilter)) {
-    let value = filter(tr2);
+    let value = filter(tr3);
     if (value === false) {
       result = false;
       break;
@@ -2226,35 +2226,35 @@ function filterTransaction(tr2) {
   if (result !== true) {
     let changes, back;
     if (result === false) {
-      back = tr2.changes.invertedDesc;
+      back = tr3.changes.invertedDesc;
       changes = ChangeSet.empty(state.doc.length);
     } else {
-      let filtered = tr2.changes.filter(result);
+      let filtered = tr3.changes.filter(result);
       changes = filtered.changes;
       back = filtered.filtered.mapDesc(filtered.changes).invertedDesc;
     }
-    tr2 = Transaction.create(state, changes, tr2.selection && tr2.selection.map(back), StateEffect.mapEffects(tr2.effects, back), tr2.annotations, tr2.scrollIntoView);
+    tr3 = Transaction.create(state, changes, tr3.selection && tr3.selection.map(back), StateEffect.mapEffects(tr3.effects, back), tr3.annotations, tr3.scrollIntoView);
   }
   let filters = state.facet(transactionFilter);
   for (let i = filters.length - 1; i >= 0; i--) {
-    let filtered = filters[i](tr2);
+    let filtered = filters[i](tr3);
     if (filtered instanceof Transaction)
-      tr2 = filtered;
+      tr3 = filtered;
     else if (Array.isArray(filtered) && filtered.length == 1 && filtered[0] instanceof Transaction)
-      tr2 = filtered[0];
+      tr3 = filtered[0];
     else
-      tr2 = resolveTransaction(state, asArray(filtered), false);
+      tr3 = resolveTransaction(state, asArray(filtered), false);
   }
-  return tr2;
+  return tr3;
 }
-function extendTransaction(tr2) {
-  let state = tr2.startState, extenders = state.facet(transactionExtender), spec = tr2;
+function extendTransaction(tr3) {
+  let state = tr3.startState, extenders = state.facet(transactionExtender), spec = tr3;
   for (let i = extenders.length - 1; i >= 0; i--) {
-    let extension = extenders[i](tr2);
+    let extension = extenders[i](tr3);
     if (extension && Object.keys(extension).length)
-      spec = mergeTransaction(spec, resolveTransactionInner(state, extension, tr2.changes.newLength), true);
+      spec = mergeTransaction(spec, resolveTransactionInner(state, extension, tr3.changes.newLength), true);
   }
-  return spec == tr2 ? tr2 : Transaction.create(state, tr2.changes, tr2.selection, spec.effects, spec.annotations, spec.scrollIntoView);
+  return spec == tr3 ? tr3 : Transaction.create(state, tr3.changes, tr3.selection, spec.effects, spec.annotations, spec.scrollIntoView);
 }
 var none = [];
 function asArray(value) {
@@ -2295,15 +2295,15 @@ function makeCategorizer(wordChars) {
   };
 }
 var EditorState = class _EditorState {
-  constructor(config2, doc2, selection2, values2, computeSlot, tr2) {
+  constructor(config2, doc2, selection2, values2, computeSlot, tr3) {
     this.config = config2;
     this.doc = doc2;
     this.selection = selection2;
     this.values = values2;
     this.status = config2.statusTemplate.slice();
     this.computeSlot = computeSlot;
-    if (tr2)
-      tr2._state = this;
+    if (tr3)
+      tr3._state = this;
     for (let i = 0; i < this.config.dynamicSlots.length; i++)
       ensureAddr(this, i << 1);
     this.computeSlot = null;
@@ -2339,9 +2339,9 @@ var EditorState = class _EditorState {
   /**
   @internal
   */
-  applyTransaction(tr2) {
+  applyTransaction(tr3) {
     let conf = this.config, { base: base2, compartments } = conf;
-    for (let effect of tr2.effects) {
+    for (let effect of tr3.effects) {
       if (effect.is(Compartment.reconfigure)) {
         if (conf) {
           compartments = /* @__PURE__ */ new Map();
@@ -2363,10 +2363,10 @@ var EditorState = class _EditorState {
       let intermediateState = new _EditorState(conf, this.doc, this.selection, conf.dynamicSlots.map(() => null), (state, slot) => slot.reconfigure(state, this), null);
       startValues = intermediateState.values;
     } else {
-      startValues = tr2.startState.values.slice();
+      startValues = tr3.startState.values.slice();
     }
-    let selection2 = tr2.startState.facet(allowMultipleSelections) ? tr2.newSelection : tr2.newSelection.asSingle();
-    new _EditorState(conf, tr2.newDoc, selection2, startValues, (state, slot) => slot.update(state, tr2), tr2);
+    let selection2 = tr3.startState.facet(allowMultipleSelections) ? tr3.newSelection : tr3.newSelection.asSingle();
+    new _EditorState(conf, tr3.newDoc, selection2, startValues, (state, slot) => slot.update(state, tr3), tr3);
   }
   /**
   Create a [transaction spec](https://codemirror.net/6/docs/ref/#state.TransactionSpec) that
@@ -5098,8 +5098,8 @@ var ViewUpdate = class _ViewUpdate {
     this.flags = 0;
     this.startState = view.state;
     this.changes = ChangeSet.empty(this.startState.doc.length);
-    for (let tr2 of transactions)
-      this.changes = this.changes.compose(tr2.changes);
+    for (let tr3 of transactions)
+      this.changes = this.changes.compose(tr3.changes);
     let changedRanges = [];
     this.changes.iterChangedRanges((fromA, toA, fromB, toB) => changedRanges.push(new ChangedRange(fromA, toA, fromB, toB)));
     this.changedRanges = changedRanges;
@@ -5157,7 +5157,7 @@ var ViewUpdate = class _ViewUpdate {
   Whether the selection was explicitly set in this update.
   */
   get selectionSet() {
-    return this.transactions.some((tr2) => tr2.selection);
+    return this.transactions.some((tr3) => tr3.selection);
   }
   /**
   @internal
@@ -6483,8 +6483,8 @@ var DocView = class {
   }
   updateEditContextFormatting(update) {
     this.editContextFormatting = this.editContextFormatting.map(update.changes);
-    for (let tr2 of update.transactions)
-      for (let effect of tr2.effects)
+    for (let tr3 of update.transactions)
+      for (let effect of tr3.effects)
         if (effect.is(setEditContextFormatting)) {
           this.editContextFormatting = effect.value;
         }
@@ -7698,7 +7698,7 @@ function applyDOMChangeInner(view, change, newSel, lastKey = -1) {
   return true;
 }
 function applyDefaultInsert(view, change, newSel) {
-  let tr2, startState = view.state, sel = startState.selection.main, inAtomic = -1;
+  let tr3, startState = view.state, sel = startState.selection.main, inAtomic = -1;
   if (change.from == change.to && change.from < sel.from || change.from > sel.to) {
     let side = change.from < sel.from ? -1 : 1, pos = side < 0 ? sel.from : sel.to;
     let moved = skipAtomicRanges(startState.facet(atomicRanges).map((f) => f(view)), pos, side);
@@ -7706,14 +7706,14 @@ function applyDefaultInsert(view, change, newSel) {
       inAtomic = moved;
   }
   if (inAtomic > -1) {
-    tr2 = {
+    tr3 = {
       changes: change,
       selection: EditorSelection.cursor(change.from + change.insert.length, -1)
     };
   } else if (change.from >= sel.from && change.to <= sel.to && change.to - change.from >= (sel.to - sel.from) / 3 && (!newSel || newSel.main.empty && newSel.main.from == change.from + change.insert.length) && view.inputState.composing < 0) {
     let before = sel.from < change.from ? startState.sliceDoc(sel.from, change.from) : "";
     let after = sel.to > change.to ? startState.sliceDoc(change.to, sel.to) : "";
-    tr2 = startState.replaceSelection(view.state.toText(before + change.insert.sliceString(0, void 0, view.state.lineBreak) + after));
+    tr3 = startState.replaceSelection(view.state.toText(before + change.insert.sliceString(0, void 0, view.state.lineBreak) + after));
   } else {
     let changes = startState.changes(change);
     let mainSel = newSel && newSel.main.to <= changes.newLength ? newSel.main : void 0;
@@ -7727,7 +7727,7 @@ function applyDefaultInsert(view, change, newSel) {
         compositionRange = view.state.doc.lineAt(sel.head);
       }
       let offset = sel.to - change.to;
-      tr2 = startState.changeByRange((range) => {
+      tr3 = startState.changeByRange((range) => {
         if (range.from == sel.from && range.to == sel.to)
           return { changes, range: mainSel || range.map(changes) };
         let to = range.to - offset, from = to - replaced.length;
@@ -7744,7 +7744,7 @@ function applyDefaultInsert(view, change, newSel) {
         };
       });
     } else {
-      tr2 = {
+      tr3 = {
         changes,
         selection: mainSel && startState.selection.replaceRange(mainSel)
       };
@@ -7759,7 +7759,7 @@ function applyDefaultInsert(view, change, newSel) {
       view.inputState.compositionFirstChange = false;
     }
   }
-  return startState.update(tr2, { userEvent, scrollIntoView: true });
+  return startState.update(tr3, { userEvent, scrollIntoView: true });
 }
 function findDiff(a, b2, preferredPos, preferredSide) {
   let minLen = Math.min(a.length, b2.length);
@@ -8106,7 +8106,7 @@ var MouseSelection = class {
     this.mustSelect = false;
   }
   update(update) {
-    if (update.transactions.some((tr2) => tr2.isUserEvent("input.type")))
+    if (update.transactions.some((tr3) => tr3.isUserEvent("input.type")))
       this.destroy();
     else if (this.style.update(update))
       setTimeout(() => this.select(this.lastEvent), 20);
@@ -8486,9 +8486,9 @@ function updateForFocusChange(view) {
   setTimeout(() => {
     let focus = view.hasFocus;
     if (focus != view.inputState.notifiedFocused) {
-      let tr2 = focusChangeTransaction(view.state, focus);
-      if (tr2)
-        view.dispatch(tr2);
+      let tr3 = focusChangeTransaction(view.state, focus);
+      if (tr3)
+        view.dispatch(tr3);
       else
         view.update([]);
     }
@@ -10828,7 +10828,7 @@ var EditContextManager = class {
   }
   update(update) {
     let reverted = this.pendingContextChange, startSel = update.startState.selection.main;
-    if (this.composing && (this.composing.drifted || !update.changes.touchesRange(startSel.from, startSel.to) && update.transactions.some((tr2) => !tr2.isUserEvent("input.type") && tr2.changes.touchesRange(this.from, this.to)))) {
+    if (this.composing && (this.composing.drifted || !update.changes.touchesRange(startSel.from, startSel.to) && update.transactions.some((tr3) => !tr3.isUserEvent("input.type") && tr3.changes.touchesRange(this.from, this.to)))) {
       this.composing.drifted = true;
       this.composing.editorBase = update.changes.mapPos(this.composing.editorBase);
     } else if (!this.applyEdits(update) || !this.rangeIsValid(update.state)) {
@@ -10982,7 +10982,7 @@ var EditorView = class _EditorView {
     if (config2.parent)
       config2.parent.appendChild(this.dom);
     let { dispatch } = config2;
-    this.dispatchTransactions = config2.dispatchTransactions || dispatch && ((trs) => trs.forEach((tr2) => dispatch(tr2, this))) || ((trs) => this.update(trs));
+    this.dispatchTransactions = config2.dispatchTransactions || dispatch && ((trs) => trs.forEach((tr3) => dispatch(tr3, this))) || ((trs) => this.update(trs));
     this.dispatch = this.dispatch.bind(this);
     this._root = config2.root || getRoot(config2.parent) || document;
     this.viewState = new ViewState(this, config2.state || EditorState.create(config2));
@@ -11022,17 +11022,17 @@ var EditorView = class _EditorView {
       throw new Error("Calls to EditorView.update are not allowed while an update is in progress");
     let redrawn = false, attrsChanged = false, update;
     let state = this.state;
-    for (let tr2 of transactions) {
-      if (tr2.startState != state)
+    for (let tr3 of transactions) {
+      if (tr3.startState != state)
         throw new RangeError("Trying to update state with a transaction that doesn't start from the previous state.");
-      state = tr2.state;
+      state = tr3.state;
     }
     if (this.destroyed) {
       this.viewState.state = state;
       return;
     }
     let focus = this.hasFocus, focusFlag = 0, dispatchFocus = null;
-    if (transactions.some((tr2) => tr2.annotation(isFocusChange))) {
+    if (transactions.some((tr3) => tr3.annotation(isFocusChange))) {
       this.inputState.notifiedFocused = focus;
       focusFlag = 1;
     } else if (focus != this.inputState.notifiedFocused) {
@@ -11057,15 +11057,15 @@ var EditorView = class _EditorView {
     let scrollTarget = this.viewState.scrollTarget;
     try {
       this.updateState = 2;
-      for (let tr2 of transactions) {
+      for (let tr3 of transactions) {
         if (scrollTarget)
-          scrollTarget = scrollTarget.map(tr2.changes);
-        if (tr2.scrollIntoView) {
-          let { main } = tr2.state.selection;
+          scrollTarget = scrollTarget.map(tr3.changes);
+        if (tr3.scrollIntoView) {
+          let { main } = tr3.state.selection;
           let { x, y } = this.state.facet(_EditorView.cursorScrollMargin);
           scrollTarget = new ScrollTarget(main.empty ? main : EditorSelection.cursor(main.head, main.head > main.anchor ? -1 : 1), "nearest", "nearest", y, x);
         }
-        for (let e of tr2.effects)
+        for (let e of tr3.effects)
           if (e.is(scrollIntoView))
             scrollTarget = e.value.clip(this.state);
       }
@@ -11080,7 +11080,7 @@ var EditorView = class _EditorView {
         this.mountStyles();
       attrsChanged = this.updateAttrs();
       this.showAnnouncements(transactions);
-      this.docView.updateSelection(redrawn, transactions.some((tr2) => tr2.isUserEvent("select.pointer")));
+      this.docView.updateSelection(redrawn, transactions.some((tr3) => tr3.isUserEvent("select.pointer")));
     } finally {
       this.updateState = 0;
     }
@@ -11335,8 +11335,8 @@ var EditorView = class _EditorView {
   }
   showAnnouncements(trs) {
     let first = true;
-    for (let tr2 of trs)
-      for (let effect of tr2.effects)
+    for (let tr3 of trs)
+      for (let effect of tr3.effects)
         if (effect.is(_EditorView.announce)) {
           if (first)
             this.announceDOM.textContent = "";
@@ -12350,7 +12350,7 @@ var cursorLayer = /* @__PURE__ */ layer({
     return cursors;
   },
   update(update, dom) {
-    if (update.transactions.some((tr2) => tr2.selection))
+    if (update.transactions.some((tr3) => tr3.selection))
       dom.style.animationName = dom.style.animationName == "cm-blink" ? "cm-blink2" : "cm-blink";
     let confChange = configChanged(update);
     if (confChange)
@@ -12412,10 +12412,10 @@ var dropCursorPos = /* @__PURE__ */ StateField.define({
   create() {
     return null;
   },
-  update(pos, tr2) {
+  update(pos, tr3) {
     if (pos != null)
-      pos = tr2.changes.mapPos(pos);
-    return tr2.effects.reduce((pos2, e) => e.is(setDropCursorPos) ? e.value : pos2, pos);
+      pos = tr3.changes.mapPos(pos);
+    return tr3.effects.reduce((pos2, e) => e.is(setDropCursorPos) ? e.value : pos2, pos);
   }
 });
 var drawDropCursor = /* @__PURE__ */ ViewPlugin.fromClass(class {
@@ -13505,31 +13505,31 @@ function hoverTooltip(source, options = {}) {
     create() {
       return [];
     },
-    update(value, tr2) {
+    update(value, tr3) {
       let lock = locked.get(value);
       if (value.length) {
-        if (options.hideOnChange && (tr2.docChanged || tr2.selection))
+        if (options.hideOnChange && (tr3.docChanged || tr3.selection))
           value = [];
-        else if (lock && lock(tr2))
+        else if (lock && lock(tr3))
           value = [];
         else if (options.hideOn)
-          value = value.filter((v2) => !options.hideOn(tr2, v2));
+          value = value.filter((v2) => !options.hideOn(tr3, v2));
       }
-      if (tr2.docChanged && value.length) {
+      if (tr3.docChanged && value.length) {
         let mapped = [];
         for (let tooltip of value) {
-          let newPos = tr2.changes.mapPos(tooltip.pos, -1, MapMode.TrackDel);
+          let newPos = tr3.changes.mapPos(tooltip.pos, -1, MapMode.TrackDel);
           if (newPos != null) {
             let copy = Object.assign(/* @__PURE__ */ Object.create(null), tooltip);
             copy.pos = newPos;
             if (copy.end != null)
-              copy.end = tr2.changes.mapPos(copy.end);
+              copy.end = tr3.changes.mapPos(copy.end);
             mapped.push(copy);
           }
         }
         value = mapped;
       }
-      for (let effect of tr2.effects) {
+      for (let effect of tr3.effects) {
         if (effect.is(setHover)) {
           value = effect.value;
           lock = void 0;
@@ -13755,8 +13755,8 @@ var dialogField = /* @__PURE__ */ StateField.define({
   create() {
     return [];
   },
-  update(dialogs, tr2) {
-    for (let e of tr2.effects) {
+  update(dialogs, tr3) {
+    for (let e of tr3.effects) {
       if (e.is(openDialogEffect))
         dialogs = [e.value].concat(dialogs);
       else if (e.is(closeDialogEffect))
@@ -17141,10 +17141,10 @@ var Language = class {
   in this language, when those exist.
   */
   findRegions(state) {
-    let lang = state.facet(language);
-    if ((lang === null || lang === void 0 ? void 0 : lang.data) == this.data)
+    let lang2 = state.facet(language);
+    if ((lang2 === null || lang2 === void 0 ? void 0 : lang2.data) == this.data)
       return [{ from: 0, to: state.doc.length }];
-    if (!lang || !lang.allowsNesting)
+    if (!lang2 || !lang2.allowsNesting)
       return [];
     let result = [];
     let explore = (tree, from) => {
@@ -17468,11 +17468,11 @@ var LanguageState = class _LanguageState {
     this.context = context;
     this.tree = context.tree;
   }
-  apply(tr2) {
-    if (!tr2.docChanged && this.tree == this.context.tree)
+  apply(tr3) {
+    if (!tr3.docChanged && this.tree == this.context.tree)
       return this;
-    let newCx = this.context.changes(tr2.changes, tr2.state);
-    let upto = this.context.treeLen == tr2.startState.doc.length ? void 0 : Math.max(tr2.changes.mapPos(this.context.treeLen), newCx.viewport.to);
+    let newCx = this.context.changes(tr3.changes, tr3.state);
+    let upto = this.context.treeLen == tr3.startState.doc.length ? void 0 : Math.max(tr3.changes.mapPos(this.context.treeLen), newCx.viewport.to);
     if (!newCx.work(20, upto))
       newCx.takeTree();
     return new _LanguageState(newCx);
@@ -17487,13 +17487,13 @@ var LanguageState = class _LanguageState {
 };
 Language.state = /* @__PURE__ */ StateField.define({
   create: LanguageState.init,
-  update(value, tr2) {
-    for (let e of tr2.effects)
+  update(value, tr3) {
+    for (let e of tr3.effects)
       if (e.is(Language.setState))
         return e.value;
-    if (tr2.startState.facet(language) != tr2.state.facet(language))
-      return LanguageState.init(tr2.state);
-    return value.apply(tr2);
+    if (tr3.startState.facet(language) != tr3.state.facet(language))
+      return LanguageState.init(tr3.state);
+    return value.apply(tr3);
   }
 });
 var requestIdle = (callback) => {
@@ -17603,8 +17603,8 @@ var language = /* @__PURE__ */ Facet.define({
     Language.state,
     parseWorker,
     EditorView.contentAttributes.compute([language2], (state) => {
-      let lang = state.facet(language2);
-      return lang && lang.name ? { "data-language": lang.name } : {};
+      let lang2 = state.facet(language2);
+      return lang2 && lang2.name ? { "data-language": lang2.name } : {};
     })
   ]
 });
@@ -17957,19 +17957,19 @@ function continuedIndent({ except, units = 1 } = {}) {
 }
 var DontIndentBeyond = 200;
 function indentOnInput() {
-  return EditorState.transactionFilter.of((tr2) => {
-    if (!tr2.docChanged || !tr2.isUserEvent("input.type") && !tr2.isUserEvent("input.complete"))
-      return tr2;
-    let rules = tr2.startState.languageDataAt("indentOnInput", tr2.startState.selection.main.head);
+  return EditorState.transactionFilter.of((tr3) => {
+    if (!tr3.docChanged || !tr3.isUserEvent("input.type") && !tr3.isUserEvent("input.complete"))
+      return tr3;
+    let rules = tr3.startState.languageDataAt("indentOnInput", tr3.startState.selection.main.head);
     if (!rules.length)
-      return tr2;
-    let doc2 = tr2.newDoc, { head } = tr2.newSelection.main, line = doc2.lineAt(head);
+      return tr3;
+    let doc2 = tr3.newDoc, { head } = tr3.newSelection.main, line = doc2.lineAt(head);
     if (head > line.from + DontIndentBeyond)
-      return tr2;
+      return tr3;
     let lineStart = doc2.sliceString(line.from, head);
     if (!rules.some((r) => r.test(lineStart)))
-      return tr2;
-    let { state } = tr2, last = -1, changes = [];
+      return tr3;
+    let { state } = tr3, last = -1, changes = [];
     for (let { head: head2 } of state.selection.ranges) {
       let line2 = state.doc.lineAt(head2);
       if (line2.from == last)
@@ -17983,7 +17983,7 @@ function indentOnInput() {
       if (cur2 != norm)
         changes.push({ from: line2.from, to: line2.from + cur2.length, insert: norm });
     }
-    return changes.length ? [tr2, { changes, sequential: true }] : tr2;
+    return changes.length ? [tr3, { changes, sequential: true }] : tr3;
   });
 }
 var foldService = /* @__PURE__ */ Facet.define();
@@ -18044,12 +18044,12 @@ var foldState = /* @__PURE__ */ StateField.define({
   create() {
     return Decoration.none;
   },
-  update(folded, tr2) {
-    if (tr2.isUserEvent("delete"))
-      tr2.changes.iterChangedRanges((fromA, toA) => folded = clearTouchedFolds(folded, fromA, toA));
-    folded = folded.map(tr2.changes);
+  update(folded, tr3) {
+    if (tr3.isUserEvent("delete"))
+      tr3.changes.iterChangedRanges((fromA, toA) => folded = clearTouchedFolds(folded, fromA, toA));
+    folded = folded.map(tr3.changes);
     let rangesToFold = [];
-    for (let e of tr2.effects) {
+    for (let e of tr3.effects) {
       if (e.is(foldEffect) && !foldExists(folded, e.value.from, e.value.to)) {
         rangesToFold.push(e.value);
       } else if (e.is(unfoldEffect)) {
@@ -18061,15 +18061,15 @@ var foldState = /* @__PURE__ */ StateField.define({
       }
     }
     if (rangesToFold.length) {
-      let { preparePlaceholder } = tr2.state.facet(foldConfig);
+      let { preparePlaceholder } = tr3.state.facet(foldConfig);
       let decorations2 = rangesToFold.map((value) => {
-        let widget = !preparePlaceholder ? foldWidget : Decoration.replace({ widget: new PreparedFoldWidget(preparePlaceholder(tr2.state, value)) });
+        let widget = !preparePlaceholder ? foldWidget : Decoration.replace({ widget: new PreparedFoldWidget(preparePlaceholder(tr3.state, value)) });
         return widget.range(value.from, value.to);
       });
       folded = folded.update({ add: decorations2 });
     }
-    if (tr2.selection)
-      folded = clearTouchedFolds(folded, tr2.selection.main.head);
+    if (tr3.selection)
+      folded = clearTouchedFolds(folded, tr3.selection.main.head);
     return folded;
   },
   provide: (f) => EditorView.decorations.from(f),
@@ -18738,10 +18738,10 @@ function command(f, option) {
   return ({ state, dispatch }) => {
     if (state.readOnly)
       return false;
-    let tr2 = f(option, state);
-    if (!tr2)
+    let tr3 = f(option, state);
+    if (!tr3)
       return false;
-    dispatch(state.update(tr2));
+    dispatch(state.update(tr3));
     return true;
   };
 }
@@ -18899,7 +18899,7 @@ var historyConfig = /* @__PURE__ */ Facet.define({
     }, {
       minDepth: Math.max,
       newGroupDelay: Math.min,
-      joinToEvent: (a, b2) => (tr2, adj) => a(tr2, adj) || b2(tr2, adj)
+      joinToEvent: (a, b2) => (tr3, adj) => a(tr3, adj) || b2(tr3, adj)
     });
   }
 });
@@ -18907,29 +18907,29 @@ var historyField_ = /* @__PURE__ */ StateField.define({
   create() {
     return HistoryState.empty;
   },
-  update(state, tr2) {
-    let config2 = tr2.state.facet(historyConfig);
-    let fromHist = tr2.annotation(fromHistory);
+  update(state, tr3) {
+    let config2 = tr3.state.facet(historyConfig);
+    let fromHist = tr3.annotation(fromHistory);
     if (fromHist) {
-      let item = HistEvent.fromTransaction(tr2, fromHist.selection), from = fromHist.side;
+      let item = HistEvent.fromTransaction(tr3, fromHist.selection), from = fromHist.side;
       let other = from == 0 ? state.undone : state.done;
       if (item)
         other = updateBranch(other, other.length, config2.minDepth, item);
       else
-        other = addSelection(other, tr2.startState.selection);
+        other = addSelection(other, tr3.startState.selection);
       return new HistoryState(from == 0 ? fromHist.rest : other, from == 0 ? other : fromHist.rest);
     }
-    let isolate = tr2.annotation(isolateHistory);
+    let isolate = tr3.annotation(isolateHistory);
     if (isolate == "full" || isolate == "before")
       state = state.isolate();
-    if (tr2.annotation(Transaction.addToHistory) === false)
-      return !tr2.changes.empty ? state.addMapping(tr2.changes.desc) : state;
-    let event = HistEvent.fromTransaction(tr2);
-    let time = tr2.annotation(Transaction.time), userEvent = tr2.annotation(Transaction.userEvent);
+    if (tr3.annotation(Transaction.addToHistory) === false)
+      return !tr3.changes.empty ? state.addMapping(tr3.changes.desc) : state;
+    let event = HistEvent.fromTransaction(tr3);
+    let time = tr3.annotation(Transaction.time), userEvent = tr3.annotation(Transaction.userEvent);
     if (event)
-      state = state.addChanges(event, time, userEvent, config2, tr2);
-    else if (tr2.selection)
-      state = state.addSelection(tr2.startState.selection, time, userEvent, config2.newGroupDelay);
+      state = state.addChanges(event, time, userEvent, config2, tr3);
+    else if (tr3.selection)
+      state = state.addSelection(tr3.startState.selection, time, userEvent, config2.newGroupDelay);
     if (isolate == "full" || isolate == "after")
       state = state.isolate();
     return state;
@@ -18963,10 +18963,10 @@ function cmd(side, selection2) {
     let historyState = state.field(historyField_, false);
     if (!historyState)
       return false;
-    let tr2 = historyState.pop(side, state, selection2);
-    if (!tr2)
+    let tr3 = historyState.pop(side, state, selection2);
+    if (!tr3)
       return false;
-    dispatch(tr2);
+    dispatch(tr3);
     return true;
   };
 }
@@ -19000,16 +19000,16 @@ var HistEvent = class _HistEvent {
   // This does not check `addToHistory` and such, it assumes the
   // transaction needs to be converted to an item. Returns null when
   // there are no changes or effects in the transaction.
-  static fromTransaction(tr2, selection2) {
+  static fromTransaction(tr3, selection2) {
     let effects = none2;
-    for (let invert of tr2.startState.facet(invertedEffects)) {
-      let result = invert(tr2);
+    for (let invert of tr3.startState.facet(invertedEffects)) {
+      let result = invert(tr3);
       if (result.length)
         effects = effects.concat(result);
     }
-    if (!effects.length && tr2.changes.empty)
+    if (!effects.length && tr3.changes.empty)
       return null;
-    return new _HistEvent(tr2.changes.invert(tr2.startState.doc), effects, void 0, selection2 || tr2.startState.selection, none2);
+    return new _HistEvent(tr3.changes.invert(tr3.startState.doc), effects, void 0, selection2 || tr3.startState.selection, none2);
   }
   static selection(selections) {
     return new _HistEvent(void 0, none2, void 0, void 0, selections);
@@ -19096,9 +19096,9 @@ var HistoryState = class _HistoryState {
   isolate() {
     return this.prevTime ? new _HistoryState(this.done, this.undone) : this;
   }
-  addChanges(event, time, userEvent, config2, tr2) {
+  addChanges(event, time, userEvent, config2, tr3) {
     let done = this.done, lastEvent = done[done.length - 1];
-    if (lastEvent && lastEvent.changes && !lastEvent.changes.empty && event.changes && (!userEvent || joinableUserEvent.test(userEvent)) && (!lastEvent.selectionsAfter.length && time - this.prevTime < config2.newGroupDelay && config2.joinToEvent(tr2, isAdjacent(lastEvent.changes, event.changes)) || // For compose (but not compose.start) events, always join with previous event
+    if (lastEvent && lastEvent.changes && !lastEvent.changes.empty && event.changes && (!userEvent || joinableUserEvent.test(userEvent)) && (!lastEvent.selectionsAfter.length && time - this.prevTime < config2.newGroupDelay && config2.joinToEvent(tr3, isAdjacent(lastEvent.changes, event.changes)) || // For compose (but not compose.start) events, always join with previous event
     userEvent == "input.type.compose")) {
       done = updateBranch(done, done.length - 1, config2.minDepth, new HistEvent(event.changes.compose(lastEvent.changes), conc(StateEffect.mapEffects(event.effects, lastEvent.changes), lastEvent.effects), lastEvent.mapped, lastEvent.startSelection, none2));
     } else {
@@ -20609,8 +20609,8 @@ var CompletionState = class _CompletionState {
   static start() {
     return new _CompletionState(none3, "cm-ac-" + Math.floor(Math.random() * 2e6).toString(36), null);
   }
-  update(tr2) {
-    let { state } = tr2, conf = state.facet(completionConfig);
+  update(tr3) {
+    let { state } = tr3, conf = state.facet(completionConfig);
     let sources = conf.override || state.languageDataAt("autocomplete", cur(state)).map(asSource);
     let active = sources.map((source) => {
       let value = this.active.find((s15) => s15.source == source) || new ActiveSource(
@@ -20621,14 +20621,14 @@ var CompletionState = class _CompletionState {
         ) ? 1 : 0
         /* State.Inactive */
       );
-      return value.update(tr2, conf);
+      return value.update(tr3, conf);
     });
     if (active.length == this.active.length && active.every((a, i) => a == this.active[i]))
       active = this.active;
-    let open = this.open, didSet = tr2.effects.some((e) => e.is(setActiveEffect));
-    if (open && tr2.docChanged)
-      open = open.map(tr2.changes);
-    if (tr2.selection || active.some((a) => a.hasResult() && tr2.changes.touchesRange(a.from, a.to)) || !sameResults(active, this.active) || didSet)
+    let open = this.open, didSet = tr3.effects.some((e) => e.is(setActiveEffect));
+    if (open && tr3.docChanged)
+      open = open.map(tr3.changes);
+    if (tr3.selection || active.some((a) => a.hasResult() && tr3.changes.touchesRange(a.from, a.to)) || !sameResults(active, this.active) || didSet)
       open = CompletionDialog.build(active, state, this.id, open, conf, didSet);
     else if (open && open.disabled && !active.some((a) => a.isPending))
       open = null;
@@ -20638,7 +20638,7 @@ var CompletionState = class _CompletionState {
         0
         /* State.Inactive */
       ) : a);
-    for (let effect of tr2.effects)
+    for (let effect of tr3.effects)
       if (effect.is(setSelectedEffect))
         open = open && open.setSelected(effect.value, this.id);
     return active == this.active && open == this.open ? this : new _CompletionState(active, this.id, open);
@@ -20680,14 +20680,14 @@ function makeAttrs(id2, selected) {
   return result;
 }
 var none3 = [];
-function getUpdateType(tr2, conf) {
-  if (tr2.isUserEvent("input.complete")) {
-    let completion = tr2.annotation(pickedCompletion);
+function getUpdateType(tr3, conf) {
+  if (tr3.isUserEvent("input.complete")) {
+    let completion = tr3.annotation(pickedCompletion);
     if (completion && conf.activateOnCompletion(completion))
       return 4 | 8;
   }
-  let typing = tr2.isUserEvent("input.type");
-  return typing && conf.activateOnTyping ? 4 | 1 : typing ? 1 : tr2.isUserEvent("delete.backward") ? 2 : tr2.selection ? 8 : tr2.docChanged ? 16 : 0;
+  let typing = tr3.isUserEvent("input.type");
+  return typing && conf.activateOnTyping ? 4 | 1 : typing ? 1 : tr3.isUserEvent("delete.backward") ? 2 : tr3.selection ? 8 : tr3.docChanged ? 16 : 0;
 }
 var ActiveSource = class _ActiveSource {
   constructor(source, state, explicit = false) {
@@ -20701,9 +20701,9 @@ var ActiveSource = class _ActiveSource {
   get isPending() {
     return this.state == 1;
   }
-  update(tr2, conf) {
-    let type = getUpdateType(tr2, conf), value = this;
-    if (type & 8 || type & 16 && this.touches(tr2))
+  update(tr3, conf) {
+    let type = getUpdateType(tr3, conf), value = this;
+    if (type & 8 || type & 16 && this.touches(tr3))
       value = new _ActiveSource(
         value.source,
         0
@@ -20715,8 +20715,8 @@ var ActiveSource = class _ActiveSource {
         1
         /* State.Pending */
       );
-    value = value.updateFor(tr2, type);
-    for (let effect of tr2.effects) {
+    value = value.updateFor(tr3, type);
+    for (let effect of tr3.effects) {
       if (effect.is(startCompletionEffect))
         value = new _ActiveSource(value.source, 1, effect.value);
       else if (effect.is(closeCompletionEffect))
@@ -20733,14 +20733,14 @@ var ActiveSource = class _ActiveSource {
     }
     return value;
   }
-  updateFor(tr2, type) {
-    return this.map(tr2.changes);
+  updateFor(tr3, type) {
+    return this.map(tr3.changes);
   }
   map(changes) {
     return this;
   }
-  touches(tr2) {
-    return tr2.changes.touchesRange(cur(tr2.state));
+  touches(tr3) {
+    return tr3.changes.touchesRange(cur(tr3.state));
   }
 };
 var ActiveResult = class _ActiveResult extends ActiveSource {
@@ -20754,26 +20754,26 @@ var ActiveResult = class _ActiveResult extends ActiveSource {
   hasResult() {
     return true;
   }
-  updateFor(tr2, type) {
+  updateFor(tr3, type) {
     var _a3;
     if (!(type & 3))
-      return this.map(tr2.changes);
+      return this.map(tr3.changes);
     let result = this.result;
-    if (result.map && !tr2.changes.empty)
-      result = result.map(result, tr2.changes);
-    let from = tr2.changes.mapPos(this.from), to = tr2.changes.mapPos(this.to, 1);
-    let pos = cur(tr2.state);
-    if (pos > to || !result || type & 2 && (cur(tr2.startState) == this.from || pos < this.limit))
+    if (result.map && !tr3.changes.empty)
+      result = result.map(result, tr3.changes);
+    let from = tr3.changes.mapPos(this.from), to = tr3.changes.mapPos(this.to, 1);
+    let pos = cur(tr3.state);
+    if (pos > to || !result || type & 2 && (cur(tr3.startState) == this.from || pos < this.limit))
       return new ActiveSource(
         this.source,
         type & 4 ? 1 : 0
         /* State.Inactive */
       );
-    let limit = tr2.changes.mapPos(this.limit);
-    if (checkValid(result.validFor, tr2.state, from, to))
+    let limit = tr3.changes.mapPos(this.limit);
+    if (checkValid(result.validFor, tr3.state, from, to))
       return new _ActiveResult(this.source, this.explicit, limit, result, from, to);
-    if (result.update && (result = result.update(result, from, to, new CompletionContext(tr2.state, pos, false))))
-      return new _ActiveResult(this.source, this.explicit, limit, result, result.from, (_a3 = result.to) !== null && _a3 !== void 0 ? _a3 : cur(tr2.state));
+    if (result.update && (result = result.update(result, from, to, new CompletionContext(tr3.state, pos, false))))
+      return new _ActiveResult(this.source, this.explicit, limit, result, result.from, (_a3 = result.to) !== null && _a3 !== void 0 ? _a3 : cur(tr3.state));
     return new ActiveSource(this.source, 1, this.explicit);
   }
   map(mapping) {
@@ -20788,8 +20788,8 @@ var ActiveResult = class _ActiveResult extends ActiveSource {
       );
     return new _ActiveResult(this.source, this.explicit, mapping.mapPos(this.limit), result, mapping.mapPos(this.from), mapping.mapPos(this.to, 1));
   }
-  touches(tr2) {
-    return tr2.changes.touchesRange(this.from, this.to);
+  touches(tr3) {
+    return tr3.changes.touchesRange(this.from, this.to);
   }
 };
 function checkValid(validFor, state, from, to) {
@@ -20807,8 +20807,8 @@ var completionState = /* @__PURE__ */ StateField.define({
   create() {
     return CompletionState.start();
   },
-  update(value, tr2) {
-    return value.update(tr2);
+  update(value, tr3) {
+    return value.update(tr3);
   },
   provide: (f) => [
     showTooltip.from(f, (val) => val.tooltip),
@@ -20899,9 +20899,9 @@ var completionPlugin = /* @__PURE__ */ ViewPlugin.fromClass(class {
     let conf = update.state.facet(completionConfig);
     if (!update.selectionSet && !update.docChanged && update.startState.field(completionState) == cState)
       return;
-    let doesReset = update.transactions.some((tr2) => {
-      let type = getUpdateType(tr2, conf);
-      return type & 8 || (tr2.selection || tr2.docChanged) && !(type & 3);
+    let doesReset = update.transactions.some((tr3) => {
+      let type = getUpdateType(tr3, conf);
+      return type & 8 || (tr3.selection || tr3.docChanged) && !(type & 3);
     });
     for (let i = 0; i < this.running.length; i++) {
       let query = this.running[i];
@@ -20921,15 +20921,15 @@ var completionPlugin = /* @__PURE__ */ ViewPlugin.fromClass(class {
     }
     if (this.debounceUpdate > -1)
       clearTimeout(this.debounceUpdate);
-    if (update.transactions.some((tr2) => tr2.effects.some((e) => e.is(startCompletionEffect))))
+    if (update.transactions.some((tr3) => tr3.effects.some((e) => e.is(startCompletionEffect))))
       this.pendingStart = true;
     let delay = this.pendingStart ? 50 : conf.activateOnTypingDelay;
     this.debounceUpdate = cState.active.some((a) => a.isPending && !this.running.some((q2) => q2.active.source == a.source)) ? setTimeout(() => this.startUpdate(), delay) : -1;
     if (this.composing != 0)
-      for (let tr2 of update.transactions) {
-        if (tr2.isUserEvent("input.type"))
+      for (let tr3 of update.transactions) {
+        if (tr3.isUserEvent("input.type"))
           this.composing = 2;
-        else if (this.composing == 2 && tr2.selection)
+        else if (this.composing == 2 && tr3.selection)
           this.composing = 3;
       }
   }
@@ -20983,8 +20983,8 @@ var completionPlugin = /* @__PURE__ */ ViewPlugin.fromClass(class {
         let pos = cur(query.updates.length ? query.updates[0].startState : this.view.state);
         let limit = Math.min(pos, query.done.from + (query.active.explicit ? 0 : 1));
         let active = new ActiveResult(query.active.source, query.active.explicit, limit, query.done, query.done.from, (_a3 = query.done.to) !== null && _a3 !== void 0 ? _a3 : pos);
-        for (let tr2 of query.updates)
-          active = active.update(tr2, conf);
+        for (let tr3 of query.updates)
+          active = active.update(tr3, conf);
         if (active.hasResult()) {
           updated.push(active);
           continue;
@@ -20998,8 +20998,8 @@ var completionPlugin = /* @__PURE__ */ ViewPlugin.fromClass(class {
             0
             /* State.Inactive */
           );
-          for (let tr2 of query.updates)
-            active = active.update(tr2, conf);
+          for (let tr3 of query.updates)
+            active = active.update(tr3, conf);
           if (!active.isPending)
             updated.push(active);
         } else {
@@ -21298,16 +21298,16 @@ var snippetState = /* @__PURE__ */ StateField.define({
   create() {
     return null;
   },
-  update(value, tr2) {
-    for (let effect of tr2.effects) {
+  update(value, tr3) {
+    for (let effect of tr3.effects) {
       if (effect.is(setActive))
         return effect.value;
       if (effect.is(moveToField) && value)
         return new ActiveSnippet(value.ranges, effect.value);
     }
-    if (value && tr2.docChanged)
-      value = value.map(tr2.changes);
-    if (value && tr2.selection && !value.selectionInsideField(tr2.selection))
+    if (value && tr3.docChanged)
+      value = value.map(tr3.changes);
+    if (value && tr3.selection && !value.selectionInsideField(tr3.selection))
       value = null;
     return value;
   },
@@ -21408,13 +21408,13 @@ var bracketState = /* @__PURE__ */ StateField.define({
   create() {
     return RangeSet.empty;
   },
-  update(value, tr2) {
-    value = value.map(tr2.changes);
-    if (tr2.selection) {
-      let line = tr2.state.doc.lineAt(tr2.selection.main.head);
+  update(value, tr3) {
+    value = value.map(tr3.changes);
+    if (tr3.selection) {
+      let line = tr3.state.doc.lineAt(tr3.selection.main.head);
       value = value.update({ filter: (from) => from >= line.from && from <= line.to });
     }
-    for (let effect of tr2.effects)
+    for (let effect of tr3.effects)
       if (effect.is(closeBracketEffect))
         value = value.update({ add: [closedBracket.range(effect.value, effect.value + 1)] });
     return value;
@@ -21440,10 +21440,10 @@ var inputHandler2 = /* @__PURE__ */ EditorView.inputHandler.of((view, from, to, 
   let sel = view.state.selection.main;
   if (insert2.length > 2 || insert2.length == 2 && codePointSize2(codePointAt2(insert2, 0)) == 1 || from != sel.from || to != sel.to)
     return false;
-  let tr2 = insertBracket(view.state, insert2);
-  if (!tr2)
+  let tr3 = insertBracket(view.state, insert2);
+  if (!tr3)
     return false;
-  view.dispatch(tr2);
+  view.dispatch(tr3);
   return true;
 });
 var deleteBracketPair = ({ state, dispatch }) => {
@@ -22312,8 +22312,8 @@ var searchState = /* @__PURE__ */ StateField.define({
   create(state) {
     return new SearchState(defaultQuery(state).create(), null);
   },
-  update(value, tr2) {
-    for (let effect of tr2.effects) {
+  update(value, tr3) {
+    for (let effect of tr3.effects) {
       if (effect.is(setSearchQuery))
         value = new SearchState(effect.value.create(), value.panel);
       else if (effect.is(togglePanel))
@@ -22638,8 +22638,8 @@ var SearchPanel = class {
     }
   }
   update(update) {
-    for (let tr2 of update.transactions)
-      for (let effect of tr2.effects) {
+    for (let tr3 of update.transactions)
+      for (let effect of tr3.effects) {
         if (effect.is(setSearchQuery) && !effect.value.eq(this.query))
           this.setQuery(effect.value);
       }
@@ -22833,13 +22833,13 @@ function findDiagnostic(diagnostics, diagnostic = null, after = 0) {
   });
   return found;
 }
-function hideTooltip(tr2, tooltip) {
+function hideTooltip(tr3, tooltip) {
   let from = tooltip.pos, to = tooltip.end || from;
-  let result = tr2.state.facet(lintConfig).hideOn(tr2, from, to);
+  let result = tr3.state.facet(lintConfig).hideOn(tr3, from, to);
   if (result != null)
     return result;
-  let line = tr2.startState.doc.lineAt(tooltip.pos);
-  return !!(tr2.effects.some((e) => e.is(setDiagnosticsEffect)) || tr2.changes.touchesRange(line.from, Math.max(line.to, to)));
+  let line = tr3.startState.doc.lineAt(tooltip.pos);
+  return !!(tr3.effects.some((e) => e.is(setDiagnosticsEffect)) || tr3.changes.touchesRange(line.from, Math.max(line.to, to)));
 }
 function maybeEnableLint(state, effects) {
   return state.field(lintState, false) ? effects : effects.concat(StateEffect.appendConfig.of(lintExtensions));
@@ -22851,21 +22851,21 @@ var lintState = /* @__PURE__ */ StateField.define({
   create() {
     return new LintState(Decoration.none, null, null);
   },
-  update(value, tr2) {
-    if (tr2.docChanged && value.diagnostics.size) {
-      let mapped = value.diagnostics.map(tr2.changes), selected = null, panel = value.panel;
+  update(value, tr3) {
+    if (tr3.docChanged && value.diagnostics.size) {
+      let mapped = value.diagnostics.map(tr3.changes), selected = null, panel = value.panel;
       if (value.selected) {
-        let selPos = tr2.changes.mapPos(value.selected.from, 1);
+        let selPos = tr3.changes.mapPos(value.selected.from, 1);
         selected = findDiagnostic(mapped, value.selected.diagnostic, selPos) || findDiagnostic(mapped, null, selPos);
       }
-      if (!mapped.size && panel && tr2.state.facet(lintConfig).autoPanel)
+      if (!mapped.size && panel && tr3.state.facet(lintConfig).autoPanel)
         panel = null;
       value = new LintState(mapped, panel, selected);
     }
-    for (let effect of tr2.effects) {
+    for (let effect of tr3.effects) {
       if (effect.is(setDiagnosticsEffect)) {
-        let panel = !tr2.state.facet(lintConfig).autoPanel ? value.panel : effect.value.length ? LintPanel.open : null;
-        value = LintState.init(effect.value, panel, tr2.state);
+        let panel = !tr3.state.facet(lintConfig).autoPanel ? value.panel : effect.value.length ? LintPanel.open : null;
+        value = LintState.init(effect.value, panel, tr3.state);
       } else if (effect.is(togglePanel2)) {
         value = new LintState(value.diagnostics, effect.value ? LintPanel.open : null, value.selected);
       } else if (effect.is(movePanelSelection)) {
@@ -22937,7 +22937,7 @@ var nextDiagnostic = (view) => {
   view.dispatch({ selection: { anchor: next.from, head: next.to }, scrollIntoView: true });
   activateHover(view, next.from, 1, {
     tooltip: lintHover,
-    until: (tr2) => tr2.docChanged || tr2.newSelection.main.head < next.from || tr2.newSelection.main.head > next.to
+    until: (tr3) => tr3.docChanged || tr3.newSelection.main.head < next.from || tr3.newSelection.main.head > next.to
   });
   return true;
 };
@@ -25699,9 +25699,9 @@ var kwCompletion = (name2) => ({ label: name2, type: "keyword" });
 var keywords = /* @__PURE__ */ "break case const continue default delete export extends false finally in instanceof let new return static super switch this throw true typeof var yield".split(" ").map(kwCompletion);
 var typescriptKeywords = /* @__PURE__ */ keywords.concat(/* @__PURE__ */ ["declare", "implements", "private", "protected", "public"].map(kwCompletion));
 function javascript(config2 = {}) {
-  let lang = config2.jsx ? config2.typescript ? tsxLanguage : jsxLanguage : config2.typescript ? typescriptLanguage : javascriptLanguage;
+  let lang2 = config2.jsx ? config2.typescript ? tsxLanguage : jsxLanguage : config2.typescript ? typescriptLanguage : javascriptLanguage;
   let completions = config2.typescript ? typescriptSnippets.concat(typescriptKeywords) : snippets.concat(keywords);
-  return new LanguageSupport(lang, [
+  return new LanguageSupport(lang2, [
     javascriptLanguage.data.of({
       autocomplete: ifNotIn(dontComplete, completeFromList(completions))
     }),
@@ -27877,8 +27877,8 @@ function html(config2 = {}) {
     dialect = (dialect ? dialect + " " : "") + "selfClosing";
   if (config2.nestedLanguages && config2.nestedLanguages.length || config2.nestedAttributes && config2.nestedAttributes.length)
     wrap = configureNesting((config2.nestedLanguages || []).concat(defaultNesting), (config2.nestedAttributes || []).concat(defaultAttrs));
-  let lang = wrap ? htmlPlain.configure({ wrap, dialect }) : dialect ? htmlLanguage.configure({ dialect }) : htmlLanguage;
-  return new LanguageSupport(lang, [
+  let lang2 = wrap ? htmlPlain.configure({ wrap, dialect }) : dialect ? htmlLanguage.configure({ dialect }) : htmlLanguage;
+  return new LanguageSupport(lang2, [
     htmlLanguage.data.of({ autocomplete: htmlCompletionSourceWith(config2) }),
     config2.autoCloseTags !== false ? autoCloseTags2 : [],
     javascript().support,
@@ -30355,10 +30355,10 @@ function markdown(config2 = {}) {
   extensions.push(parseCode({ codeParser, htmlParser: htmlTagLanguage.language.parser }));
   if (addKeymap)
     support.push(Prec.high(keymap.of(markdownKeymap)));
-  let lang = mkLang(parser7.configure(extensions));
+  let lang2 = mkLang(parser7.configure(extensions));
   if (completeHTMLTags)
-    support.push(lang.data.of({ autocomplete: htmlTagCompletion }));
-  return new LanguageSupport(lang, support);
+    support.push(lang2.data.of({ autocomplete: htmlTagCompletion }));
+  return new LanguageSupport(lang2, support);
 }
 function htmlTagCompletion(context) {
   let { state, pos } = context, m = /<[:\-\.\w\u00b7-\uffff]*$/.exec(state.sliceDoc(pos - 25, pos));
@@ -40618,6 +40618,369 @@ var b64 = {
   bytes: (b64s) => Uint8Array.from(atob(b64s), (c) => c.charCodeAt(0))
 };
 var shQuote = (s15) => `'${String(s15 ?? "").replace(/'/g, "'\\''")}'`;
+var VSC_LANG_KEY = "vsc-editor-lang";
+var lang = "zh";
+try {
+  const saved = localStorage.getItem(VSC_LANG_KEY);
+  if (saved === "zh" || saved === "en") lang = saved;
+  else if ((navigator.language || "").toLowerCase().startsWith("en")) lang = "en";
+} catch {
+}
+var STR = {
+  zh: {
+    filesTab: "📁 文件",
+    sshTab: "🖥 SSH",
+    mobileTitle: "文件",
+    newFileT: "新建文件（当前选中的目录）",
+    newDirT: "新建文件夹（当前选中的目录）",
+    uploadT: "上传文件到工作区根目录（也可拖拽到文件树）",
+    searchLocalT: "按文件名搜索（本地工作区）",
+    searchRemoteT: "按文件名搜索（远端）",
+    uploadRemoteT: "上传文件到当前选中目录",
+    refreshT: "刷新",
+    refreshRemoteT: "刷新远端目录",
+    zipT: "下载为 ZIP（多选：按住 Ctrl/Cmd 点选）",
+    extractT: "解压 ZIP 到当前目录…",
+    addHostT: "添加主机",
+    depsT: "安装 ssh2 依赖",
+    depsBusyT: "依赖安装中…",
+    depsBusy: "依赖安装中…",
+    newTermT: "新建远程终端",
+    newTermBtnT: "新建终端",
+    hidePanelT: "收起面板",
+    burgerT: "文件树",
+    saveBtn: "💾 保存",
+    saveTitle: "保存 (Ctrl+S / Cmd+S)",
+    saveDirtyTitle: "有未保存的修改 — 保存 (Ctrl+S / Cmd+S)",
+    saveReadonlyTitle: "大文件只读，不可保存",
+    saveAsTitle: "另存为 (Ctrl+Shift+S / Cmd+Shift+S)",
+    langBtnT: "切换语言 / Switch language",
+    emptyMain: "从左侧打开一个文件开始编辑",
+    emptyHint: "Ctrl+P 快速打开 · Ctrl+S 保存",
+    termTitle: "终端",
+    quickPh: "输入文件名筛选…（Esc 关闭）",
+    noMatch: "无匹配文件",
+    localRoot: "📁 本地工作区",
+    remoteEmpty: "连接主机后，远程文件列表显示在这里",
+    sshConfigSec: "⚙ ssh config（自动加载）",
+    manualSec: "🏠 手动主机",
+    noHost: "还没有主机，点击添加",
+    loadingDir: "加载中…",
+    localScope: "本地",
+    binarySt: "二进制（只读）",
+    unsavedSt: "未保存 ●",
+    savedSt: "已保存",
+    conflictSt: "⚠ 外部已变更（草稿保留）",
+    bigReadonlySt: "大文件只读",
+    lineCol: "第 {line} 行 · 第 {col} 列",
+    closeT: "关闭",
+    connT: "连接",
+    disT: "断开",
+    editT: "编辑",
+    delT: "删除",
+    timeoutErr: "请求超时",
+    copiedPath: "已复制路径",
+    copyFail: "复制失败",
+    pasteEmpty: "剪贴板为空（先右键复制/剪切一个文件）",
+    sameSrcDst: "源与目标相同",
+    dupTooMany: "创建副本失败：重名次数过多",
+    uploading: "正在上传，请稍候…",
+    folderUploadNo: "文件夹上传暂不支持，请选择文件",
+    noSsh: "请先连接一台 SSH 主机",
+    noSshLeft: "请先连接一台 SSH 主机（左侧点主机名）",
+    truncated: "文件较多，列表已截断",
+    noResult: "无匹配",
+    searchMany: "结果较多，只显示前 50 项",
+    promptSearch: "搜索文件名：",
+    promptNewName: "新名称：",
+    promptNewFile: "新文件名称（可带子路径 a/b.js）：",
+    promptNewDir: "新文件夹名称：",
+    promptZipName: "要解压的 ZIP 文件名（位于当前目录）：",
+    promptSaveAs: "另存为（新文件路径）：",
+    saveAsRemoteNo: "另存为暂仅支持本地文件",
+    readOnlyNo: "只读文件不可保存",
+    mNewFile: "新建文件",
+    mNewDir: "新建文件夹",
+    mUploadHere: "上传文件到此处…",
+    mDownload: "下载到电脑",
+    mDownloadZip: "下载为 ZIP（.zip）",
+    mDownloadTar: "下载到电脑（.tar.gz 打包）",
+    mExtractHere: "解压 ZIP 到此处",
+    mCut: "剪切",
+    mCopy: "复制",
+    mPaste: "粘贴到此处",
+    mPasteMove: "粘贴（移动到此处）",
+    mDuplicate: "创建副本",
+    mCopyPath: "复制路径",
+    mRename: "重命名",
+    mDelete: "删除",
+    mRefresh: "刷新",
+    mOpenTermHere: "在此打开终端",
+    mOpenTermInDir: "在所在文件夹打开终端",
+    cutToast: "已剪切「{name}」（在目标目录右键粘贴）",
+    copyToast: "已复制「{name}」（在目标目录右键粘贴）",
+    confirmDelDir: "确定删除「{path}」？（目录将递归删除，不可撤销）",
+    confirmDelFile: "确定删除「{path}」？（不可撤销）",
+    confirmDelHost: "删除主机「{name}」？",
+    confirmClose: "「{name}」有未保存的修改，确定关闭？",
+    confirmSwitch: "「{name}」有未保存的修改（草稿会保留），仍要切换？",
+    confirmRefresh: "{n} 个标签有未保存修改，刷新将重新读取磁盘（草稿保留并标记冲突）。继续？",
+    confirmWorkspace: "工作区即将切换，{n} 个本地标签有未保存修改，切换将关闭它们。继续？",
+    workspaceSwitched: "工作区已切换",
+    wsSep: "：",
+    workspaceDirtyTail: "（关闭了 {n} 个未保存的本地标签）",
+    pickForZip: "请先点选要打包的文件/文件夹（可按住 Ctrl 多选）",
+    needZip: "请选择 .zip 文件",
+    connClosedDrop: "连接已关闭",
+    hostDeletedT: "主机已删除",
+    manualDiscT: "手动断开",
+    downloadingFile: "正在下载 {name}…",
+    downloadingPack: "正在下载 {name}（打包中）…",
+    downloadFail: "下载失败：{error}",
+    zipFallbackTar: "远端无 zip，已改用 tar.gz",
+    zipFallbackNode: "系统无 zip，已用内置打包",
+    unzipping: "正在解压 {name}…",
+    unzipOk: "解压完成",
+    unzipOkCount: "解压完成（{count} 个文件）",
+    unzipFail: "解压失败：{error}",
+    openFail: "打开失败：{error}",
+    saveFail: "保存失败：{error}",
+    readFail: "读取失败：{error}",
+    readDirFail: "读取目录失败：{error}",
+    delFail: "删除失败：{error}",
+    renameFail: "重命名失败：{error}",
+    createFail: "创建失败：{error}",
+    dupFail: "创建副本失败：{error}",
+    searchFail: "搜索失败：{error}",
+    pasteFail: "粘贴失败：{error}",
+    uploadFail: "上传失败：{error}",
+    connFail: "连接失败：{error}",
+    termFail: "打开终端失败：{error}",
+    importFail: "导入失败：{error}",
+    savedAs: "{name} 已保存",
+    openingBig: "正在打开大文件（{size}）…",
+    bigReadonly: "大文件已只读打开（>1MB），编辑已禁用",
+    binaryNo: "二进制文件暂不支持编辑",
+    connClosed: "连接断开：{label} {reason}",
+    shellExited: "〔shell 已退出〕",
+    tooBigSkip: "「{name}」超过 100MB 上限，已跳过",
+    coverConfirm: "「{name}」已存在，是否覆盖？",
+    uploadOneFail: "上传「{name}」失败：{error}",
+    uploadDoneAll: "已上传 {ok} 个文件{dest}",
+    uploadToDir: " 到 {dir}",
+    uploadToRoot: "（工作区根目录）",
+    uploadDonePart: "上传完成：{ok}/{total} 成功",
+    hostNew: "新建主机",
+    hostEdit: "编辑主机",
+    hostNameL: "名称（可选）",
+    hostHostL: "主机地址 *",
+    hostPortL: "端口",
+    hostUserL: "用户名",
+    hostPassL: "密码（编辑时留空 = 保持不变）",
+    hostKeyL: "私钥（PEM，可选）",
+    hostKeyPathL: "私钥路径（可选，支持 ~ 展开如 ~/.ssh/id_rsa；填写则优先使用，不必粘贴私钥全文）",
+    hostPpL: "私钥口令 passphrase（可选，带口令的私钥用）",
+    hostAgentL: "SSH agent socket（可选，如 $SSH_AUTH_SOCK；与密码/私钥二选一）",
+    hostHint: "凭据只保存在本机插件目录（ssh-hosts.json），不会上传。密码 / 私钥 / 私钥路径 / agent 四选一即可。<br>已有 ~/.ssh/config 的无需导入——SSH 面板「⚙ ssh config」自动加载（与 VSCode Remote-SSH 同源，支持 Include / ProxyJump / ProxyCommand），点别名直连。",
+    cancelB: "取消",
+    importCfgB: "从 ssh config 导入",
+    importCfgT: "从 ~/.ssh/config 批量导入主机",
+    saveB: "保存",
+    keptPh: "已保存（留空保持不变）",
+    readingCfg: "读取 ~/.ssh/config 中…",
+    allImported: "共 {n} 台，均已导入。",
+    importSelected: "导入选中",
+    pickHosts: "请先勾选要导入的主机",
+    imported: "已导入 {added} 台{skip}",
+    importedSkip: "（跳过 {n} 台）",
+    configSaved: "ssh config 已保存（旧版已备份 .bak），列表已刷新",
+    sshCfgPrompt: "编辑 {path}（与 VSCode 写法完全一样）：\nHost 别名\n  HostName 主机\n  User 用户\n  Port 端口\n  IdentityFile 私钥路径\n  ProxyJump 跳板",
+    editCfgT: "编辑 {path}（与 VSCode 写法完全一样）"
+  },
+  en: {
+    filesTab: "📁 Files",
+    sshTab: "🖥 SSH",
+    mobileTitle: "Files",
+    newFileT: "New file (in selected directory)",
+    newDirT: "New folder (in selected directory)",
+    uploadT: "Upload files to workspace root (or drag into the tree)",
+    searchLocalT: "Search file names (local workspace)",
+    searchRemoteT: "Search file names (remote)",
+    uploadRemoteT: "Upload files to selected directory",
+    refreshT: "Refresh",
+    refreshRemoteT: "Refresh remote directory",
+    zipT: "Download as ZIP (multi-select with Ctrl/Cmd+click)",
+    extractT: "Extract a ZIP file into the current directory…",
+    addHostT: "Add host",
+    depsT: "Install ssh2 dependency",
+    depsBusyT: "Installing dependency…",
+    depsBusy: "Installing dependency…",
+    newTermT: "New remote terminal",
+    newTermBtnT: "New terminal",
+    hidePanelT: "Collapse panel",
+    burgerT: "File tree",
+    saveBtn: "💾 Save",
+    saveTitle: "Save (Ctrl+S / Cmd+S)",
+    saveDirtyTitle: "Unsaved changes — save (Ctrl+S / Cmd+S)",
+    saveReadonlyTitle: "Large file is read-only",
+    saveAsTitle: "Save as (Ctrl+Shift+S / Cmd+Shift+S)",
+    langBtnT: "切换语言 / Switch language",
+    emptyMain: "Open a file from the left to start editing",
+    emptyHint: "Ctrl+P quick open · Ctrl+S save",
+    termTitle: "Terminal",
+    quickPh: "Filter by file name… (Esc to close)",
+    noMatch: "No matching files",
+    localRoot: "📁 Local workspace",
+    remoteEmpty: "Remote files appear here after connecting",
+    sshConfigSec: "⚙ ssh config (auto-loaded)",
+    manualSec: "🏠 Manual hosts",
+    noHost: "No hosts yet — click to add",
+    loadingDir: "Loading…",
+    localScope: "Local",
+    binarySt: "Binary (read-only)",
+    unsavedSt: "Unsaved ●",
+    savedSt: "Saved",
+    conflictSt: "⚠ Changed on disk (draft kept)",
+    bigReadonlySt: "Large file read-only",
+    lineCol: "Ln {line}, Col {col}",
+    closeT: "Close",
+    connT: "Connect",
+    disT: "Disconnect",
+    editT: "Edit",
+    delT: "Delete",
+    timeoutErr: "Request timed out",
+    copiedPath: "Path copied",
+    copyFail: "Copy failed",
+    pasteEmpty: "Clipboard is empty (right-click a file to copy/cut first)",
+    sameSrcDst: "Source and destination are the same",
+    dupTooMany: "Duplicate failed: too many name clashes",
+    uploading: "Uploading, please wait…",
+    folderUploadNo: "Folder upload is not supported, please choose files",
+    noSsh: "Please connect an SSH host first",
+    noSshLeft: "Please connect an SSH host first (click a host on the left)",
+    truncated: "Too many files, list truncated",
+    noResult: "No matches",
+    searchMany: "Too many results, showing first 50",
+    promptSearch: "Search file name:",
+    promptNewName: "New name:",
+    promptNewFile: "New file name (subpath allowed, e.g. a/b.js):",
+    promptNewDir: "New folder name:",
+    promptZipName: "ZIP file name to extract (in current directory):",
+    promptSaveAs: "Save as (new file path):",
+    saveAsRemoteNo: "Save As supports local files only",
+    readOnlyNo: "Read-only file cannot be saved",
+    mNewFile: "New file",
+    mNewDir: "New folder",
+    mUploadHere: "Upload files here…",
+    mDownload: "Download to PC",
+    mDownloadZip: "Download as ZIP (.zip)",
+    mDownloadTar: "Download to PC (.tar.gz)",
+    mExtractHere: "Extract ZIP here",
+    mCut: "Cut",
+    mCopy: "Copy",
+    mPaste: "Paste here",
+    mPasteMove: "Paste (move here)",
+    mDuplicate: "Duplicate",
+    mCopyPath: "Copy path",
+    mRename: "Rename",
+    mDelete: "Delete",
+    mRefresh: "Refresh",
+    mOpenTermHere: "Open terminal here",
+    mOpenTermInDir: "Open terminal in containing folder",
+    cutToast: 'Cut "{name}" (right-click target directory to paste)',
+    copyToast: 'Copied "{name}" (right-click target directory to paste)',
+    confirmDelDir: 'Delete "{path}"? (directory deletes recursively, irreversible)',
+    confirmDelFile: 'Delete "{path}"? (irreversible)',
+    confirmDelHost: 'Delete host "{name}"?',
+    confirmClose: '"{name}" has unsaved changes. Close anyway?',
+    confirmSwitch: '"{name}" has unsaved changes (draft is kept). Switch anyway?',
+    confirmRefresh: "{n} tab(s) have unsaved changes. Refresh re-reads from disk (drafts kept & flagged). Continue?",
+    confirmWorkspace: "Workspace is about to switch. {n} local tab(s) have unsaved changes and will be closed. Continue?",
+    workspaceSwitched: "Workspace switched",
+    wsSep: ": ",
+    workspaceDirtyTail: " (closed {n} unsaved local tab(s))",
+    pickForZip: "Please select files/folders to pack (Ctrl+click for multi-select)",
+    needZip: "Please choose a .zip file",
+    connClosedDrop: "Connection closed",
+    hostDeletedT: "Host deleted",
+    manualDiscT: "Disconnected manually",
+    downloadingFile: "Downloading {name}…",
+    downloadingPack: "Packing & downloading {name}…",
+    downloadFail: "Download failed: {error}",
+    zipFallbackTar: "Remote host has no zip, fell back to tar.gz",
+    zipFallbackNode: "No system zip, used built-in packer",
+    unzipping: "Extracting {name}…",
+    unzipOk: "Extraction done",
+    unzipOkCount: "Extracted {count} file(s)",
+    unzipFail: "Extraction failed: {error}",
+    openFail: "Open failed: {error}",
+    saveFail: "Save failed: {error}",
+    readFail: "Read failed: {error}",
+    readDirFail: "Read directory failed: {error}",
+    delFail: "Delete failed: {error}",
+    renameFail: "Rename failed: {error}",
+    createFail: "Create failed: {error}",
+    dupFail: "Duplicate failed: {error}",
+    searchFail: "Search failed: {error}",
+    pasteFail: "Paste failed: {error}",
+    uploadFail: "Upload failed: {error}",
+    connFail: "Connect failed: {error}",
+    termFail: "Open terminal failed: {error}",
+    importFail: "Import failed: {error}",
+    savedAs: "{name} saved",
+    openingBig: "Opening large file ({size})…",
+    bigReadonly: "Large file opened read-only (>1MB); editing disabled",
+    binaryNo: "Binary files cannot be edited",
+    connClosed: "Connection closed: {label} {reason}",
+    shellExited: "[shell exited]",
+    tooBigSkip: '"{name}" exceeds the 100MB limit, skipped',
+    coverConfirm: '"{name}" already exists. Overwrite?',
+    uploadOneFail: 'Upload "{name}" failed: {error}',
+    uploadDoneAll: "Uploaded {ok} file(s){dest}",
+    uploadToDir: " to {dir}",
+    uploadToRoot: " (workspace root)",
+    uploadDonePart: "Upload done: {ok}/{total} succeeded",
+    hostNew: "New host",
+    hostEdit: "Edit host",
+    hostNameL: "Name (optional)",
+    hostHostL: "Host *",
+    hostPortL: "Port",
+    hostUserL: "Username",
+    hostPassL: "Password (blank = keep)",
+    hostKeyL: "Private key (PEM, optional)",
+    hostKeyPathL: "Key path (optional, ~ expands, e.g. ~/.ssh/id_rsa; preferred over pasting the key)",
+    hostPpL: "Key passphrase (optional, for protected keys)",
+    hostAgentL: "SSH agent socket (optional, e.g. $SSH_AUTH_SOCK; use instead of password/key)",
+    hostHint: `Credentials stay in this plugin directory (ssh-hosts.json) and are never uploaded. Use one of password / private key / key path / agent.<br>If you already have ~/.ssh/config, no import needed — the SSH panel's "⚙ ssh config" loads it automatically (same source as VSCode Remote-SSH: Include / ProxyJump / ProxyCommand supported). Click an alias to connect.`,
+    cancelB: "Cancel",
+    importCfgB: "Import from ssh config",
+    importCfgT: "Bulk import hosts from ~/.ssh/config",
+    saveB: "Save",
+    keptPh: "Saved (blank = keep)",
+    readingCfg: "Reading ~/.ssh/config…",
+    allImported: "{n} host(s), all imported.",
+    importSelected: "Import selected",
+    pickHosts: "Please tick the hosts to import first",
+    imported: "Imported {added} host(s){skip}",
+    importedSkip: " ({n} skipped)",
+    configSaved: "ssh config saved (previous version backed up as .bak), list refreshed",
+    sshCfgPrompt: "Edit {path} (same syntax as VSCode):\nHost alias\n  HostName host\n  User user\n  Port port\n  IdentityFile key path\n  ProxyJump jump",
+    editCfgT: "Edit {path} (same syntax as VSCode)"
+  }
+};
+function tr2(key, vars) {
+  let s15 = (STR[lang] && STR[lang][key]) ?? STR.zh[key] ?? key;
+  if (vars) for (const [k, v2] of Object.entries(vars)) s15 = s15.split(`{${k}}`).join(String(v2));
+  return s15;
+}
+function setLang(next) {
+  lang = next === "en" ? "en" : "zh";
+  try {
+    localStorage.setItem(VSC_LANG_KEY, lang);
+  } catch {
+  }
+  applyI18n();
+}
 var THEME_CHANGE_EVENT = "pi-web-ui:theme-change";
 function isLightTheme() {
   try {
@@ -40821,12 +41184,12 @@ var client_default = {
 			background: var(--bg-elev, #16161d); }
 		.vsc-tabs { flex: 1; display: flex; overflow-x: auto; min-width: 0;
 			background: transparent; scrollbar-width: thin; }
-		.vsc-savebtn { all: unset; display: inline-flex; align-items: center; gap: 4px; cursor: pointer;
+		.vsc-savebtn, .vsc-saveasbtn, .vsc-langbtn { all: unset; display: inline-flex; align-items: center; gap: 4px; cursor: pointer;
 			padding: 4px 10px; font-size: 12px; white-space: nowrap; color: var(--text-dim, #9a9ab0);
 			border-left: 1px solid var(--border, #333); }
-		.vsc-savebtn:hover { background: var(--bg-elev2, #20202b); color: var(--text, #eee); }
+		.vsc-savebtn:hover, .vsc-saveasbtn:hover, .vsc-langbtn:hover { background: var(--bg-elev2, #20202b); color: var(--text, #eee); }
 		.vsc-savebtn.is-dirty { color: var(--amber, #fbbf24); font-weight: 700; }
-		.vsc-savebtn:disabled { opacity: .35; cursor: default; }
+		.vsc-savebtn:disabled, .vsc-saveasbtn:disabled { opacity: .35; cursor: default; }
 		.vsc-tab { display: inline-flex; align-items: center; gap: 6px; padding: 6px 8px 6px 12px;
 			cursor: pointer; border-right: 1px solid var(--border, #333); white-space: nowrap;
 			color: var(--text-dim, #9a9ab0); max-width: 200px; }
@@ -40962,6 +41325,8 @@ var client_default = {
 				<button data-act="new-file" title="新建文件（当前选中的目录）">📄</button>
 				<button data-act="new-dir" title="新建文件夹（当前选中的目录）">📁</button>
 				<button data-act="upload" title="上传文件到工作区根目录（也可拖拽到文件树）">⬆</button>
+				<button data-act="zip" title="下载为 ZIP（多选：按住 Ctrl/Cmd 点选）">🗜</button>
+				<button data-act="extract" title="解压 ZIP 到当前目录…">📦</button>
 				<button data-act="search" title="按文件名搜索（本地工作区）">🔍</button>
 				<button data-act="refresh" title="刷新">⟳</button>
 			</div>
@@ -40976,6 +41341,8 @@ var client_default = {
 				<button data-act="r-new-file" title="新建文件（当前选中的目录）">📄</button>
 				<button data-act="r-new-dir" title="新建文件夹（当前选中的目录）">📁</button>
 				<button data-act="r-upload" title="上传文件到当前选中目录">⬆</button>
+				<button data-act="r-zip" title="下载为 ZIP（多选：按住 Ctrl/Cmd 点选）">🗜</button>
+				<button data-act="r-extract" title="解压 ZIP 到当前目录…">📦</button>
 				<button data-act="r-search" title="按文件名搜索（远端）">🔍</button>
 				<button data-act="r-refresh" title="刷新远端目录">⟳</button>
 			</div>
@@ -40989,7 +41356,7 @@ var client_default = {
 			<button class="vsc-burger" title="文件树">☰</button>
 			<span class="vsc-mtitle">文件</span>
 		</div>
-		<div class="vsc-tabbar"><div class="vsc-tabs"></div><button class="vsc-savebtn" title="保存 Save (Ctrl+S / Cmd+S)">💾 保存 Save</button></div>
+		<div class="vsc-tabbar"><div class="vsc-tabs"></div><button class="vsc-saveasbtn" title="另存为 (Ctrl+Shift+S / Cmd+Shift+S)">💾+</button><button class="vsc-savebtn" title="保存 (Ctrl+S / Cmd+S)">💾 保存</button><button class="vsc-langbtn" title="切换语言 / Switch language">EN</button></div>
 		<div class="vsc-edwrap">
 			<div class="vsc-empty">从左侧打开一个文件开始编辑<br><small>Ctrl+P 快速打开 · Ctrl+S 保存</small></div>
 			<div class="vsc-editor vsc-hidden"></div>
@@ -41047,6 +41414,8 @@ var client_default = {
     const sshTreeEl = root.querySelector(".vsc-sshtree");
     const tabsEl = root.querySelector(".vsc-tabs");
     const saveBtnEl = root.querySelector(".vsc-savebtn");
+    const saveAsBtnEl = root.querySelector(".vsc-saveasbtn");
+    const langBtnEl = root.querySelector(".vsc-langbtn");
     const edHost = root.querySelector(".vsc-editor");
     const emptyEl = root.querySelector(".vsc-empty");
     const stScope = root.querySelector(".vsc-scope");
@@ -41077,9 +41446,9 @@ var client_default = {
       const reqId = `r${++reqSeq}`;
       return new Promise((resolve) => {
         pending.set(reqId, resolve);
-        ctx.send({ ...payload, reqId });
+        ctx.send({ ...payload, reqId, lang });
         setTimeout(() => {
-          if (pending.delete(reqId)) resolve({ ok: false, error: "请求超时" });
+          if (pending.delete(reqId)) resolve({ ok: false, error: tr2("timeoutErr") });
         }, 6e4);
       });
     }
@@ -41096,7 +41465,7 @@ var client_default = {
       }, 4e3);
     }
     function copyText(text) {
-      const done = () => toast("已复制路径");
+      const done = () => toast(tr2("copiedPath"));
       const fallback = () => {
         try {
           const ta2 = document.createElement("textarea");
@@ -41107,7 +41476,7 @@ var client_default = {
           document.body.removeChild(ta2);
           done();
         } catch {
-          toast("复制失败");
+          toast(tr2("copyFail"));
         }
       };
       try {
@@ -41119,19 +41488,19 @@ var client_default = {
     }
     async function pasteClipboardTo(scope, dir) {
       if (!clipboard || clipboard.scope !== scope) {
-        toast("剪贴板为空（先右键复制/剪切一个文件）");
+        toast(tr2("pasteEmpty"));
         return;
       }
       const dest = dir ? `${dir.replace(/\/$/, "")}/${clipboard.src.split("/").pop()}` : clipboard.src.split("/").pop();
       if (dest === clipboard.src) {
-        toast("源与目标相同");
+        toast(tr2("sameSrcDst"));
         return;
       }
       const wasCut = clipboard.cut;
       const src = clipboard.src;
       const r = await req(scope, { action: "copy", src, dest, move: wasCut });
       if (!r.ok) {
-        toast(`粘贴失败：${r.error}`);
+        toast(tr2("pasteFail", { error: r.error }));
         return;
       }
       if (wasCut) {
@@ -41165,12 +41534,12 @@ var client_default = {
           await invalidateScope(scope);
           return;
         }
-        if (!String(r.error ?? "").includes("已存在")) {
-          toast(`创建副本失败：${r.error}`);
+        if (r && r.code !== "VSC_TARGET_EXISTS" && !/已存在|already exists/i.test(String(r.error ?? ""))) {
+          toast(tr2("dupFail", { error: r.error }));
           return;
         }
       }
-      toast("创建副本失败：重名次数过多");
+      toast(tr2("dupTooMany"));
     }
     let S3 = {
       depsReady: true,
@@ -41187,17 +41556,116 @@ var client_default = {
     const flatFiles = /* @__PURE__ */ new Set();
     const tabs = /* @__PURE__ */ new Map();
     let activeTk = null;
+    const multiSel = /* @__PURE__ */ new Set();
     function refreshSaveBtn() {
       if (!saveBtnEl) return;
-      const t2 = activeTk ? tabs.get(activeTk) : null;
-      const dirty = !!t2?.dirty && !t2?.binary;
+      const tb = activeTk ? tabs.get(activeTk) : null;
+      const dirty = !!tb?.dirty && !tb?.binary;
+      const ro2 = !!tb?.readonly;
       saveBtnEl.classList.toggle("is-dirty", dirty);
-      saveBtnEl.disabled = !t2 || !!t2.binary;
-      saveBtnEl.title = dirty ? "有未保存的修改 — 保存 Save (Ctrl+S / Cmd+S)" : "保存 Save (Ctrl+S / Cmd+S)";
+      saveBtnEl.disabled = !tb || !!tb.binary || ro2;
+      saveBtnEl.textContent = tr2("saveBtn");
+      saveBtnEl.title = ro2 ? tr2("saveReadonlyTitle") : dirty ? tr2("saveDirtyTitle") : tr2("saveTitle");
+      if (saveAsBtnEl) {
+        saveAsBtnEl.disabled = !tb || !!tb.binary || ro2 || tb.scope !== "local";
+        saveAsBtnEl.title = tr2("saveAsTitle");
+      }
+      if (langBtnEl) {
+        langBtnEl.textContent = lang === "zh" ? "EN" : "中文";
+        langBtnEl.title = tr2("langBtnT");
+      }
     }
     if (saveBtnEl) saveBtnEl.addEventListener("click", () => void saveActive());
+    if (saveAsBtnEl) saveAsBtnEl.addEventListener("click", () => void saveAsActive());
+    if (langBtnEl) langBtnEl.addEventListener("click", () => setLang(lang === "zh" ? "en" : "zh"));
     let selNode = null;
     let clipboard = null;
+    const TITLE_BY_ACT = {
+      "new-file": "newFileT",
+      "new-dir": "newDirT",
+      upload: "uploadT",
+      search: "searchLocalT",
+      refresh: "refreshT",
+      zip: "zipT",
+      extract: "extractT",
+      "add-host": "addHostT",
+      deps: "depsT",
+      "new-term": "newTermT",
+      "r-new-file": "newFileT",
+      "r-new-dir": "newDirT",
+      "r-upload": "uploadRemoteT",
+      "r-search": "searchRemoteT",
+      "r-refresh": "refreshRemoteT",
+      "r-zip": "zipT",
+      "r-extract": "extractT"
+    };
+    const LABEL_BY_NAME = {
+      "h-name": "hostNameL",
+      "h-host": "hostHostL",
+      "h-port": "hostPortL",
+      "h-user": "hostUserL",
+      "h-pass": "hostPassL",
+      "h-key": "hostKeyL",
+      "h-keypath": "hostKeyPathL",
+      "h-pp": "hostPpL",
+      "h-agent": "hostAgentL"
+    };
+    function fmtSize(n) {
+      if (!Number.isFinite(n)) return "";
+      if (n >= 1048576) return `${(n / 1048576).toFixed(1)} MB`;
+      if (n >= 1024) return `${(n / 1024).toFixed(1)} KB`;
+      return `${n} B`;
+    }
+    function applyI18n2() {
+      const stabFiles = root.querySelector('.stab[data-pane="files"]');
+      if (stabFiles) stabFiles.textContent = tr2("filesTab");
+      const stabSsh = root.querySelector('.stab[data-pane="ssh"]');
+      if (stabSsh) stabSsh.textContent = tr2("sshTab");
+      root.querySelectorAll(".vsc-side-head button[data-act]").forEach((b2) => {
+        const k = TITLE_BY_ACT[b2.dataset.act];
+        if (k) b2.title = tr2(k);
+      });
+      const burger2 = root.querySelector(".vsc-burger");
+      if (burger2) burger2.title = tr2("burgerT");
+      const mtitle = root.querySelector(".vsc-mtitle");
+      if (mtitle) mtitle.textContent = tr2("mobileTitle");
+      if (emptyEl) emptyEl.innerHTML = `${esc(tr2("emptyMain"))}<br><small>${esc(tr2("emptyHint"))}</small>`;
+      const tt = root.querySelector(".vsc-termbar .tt");
+      if (tt) tt.textContent = tr2("termTitle");
+      const tAdd = root.querySelector(".vsc-termbar .t-add");
+      if (tAdd) tAdd.title = tr2("newTermBtnT");
+      const tHide = root.querySelector(".vsc-termbar .t-hide");
+      if (tHide) tHide.title = tr2("hidePanelT");
+      if (quickInput) quickInput.placeholder = tr2("quickPh");
+      hostBg.querySelectorAll("input[name], textarea[name]").forEach((el2) => {
+        const k = LABEL_BY_NAME[el2.getAttribute("name")];
+        if (!k) return;
+        const wrap = el2.closest("span");
+        const lab = wrap ? wrap.querySelector("label") : el2.previousElementSibling;
+        if (lab && lab.tagName === "LABEL") lab.textContent = tr2(k);
+      });
+      const hintEl = hostBg.querySelector(".vsc-modal > .hint");
+      if (hintEl) hintEl.innerHTML = tr2("hostHint");
+      const cancelEl = hostBg.querySelector(".cancel");
+      if (cancelEl) cancelEl.textContent = tr2("cancelB");
+      const saveHostEl = hostBg.querySelector(".save-host");
+      if (saveHostEl) saveHostEl.textContent = tr2("saveB");
+      const importCfgEl = hostBg.querySelector(".import-cfg");
+      if (importCfgEl) {
+        importCfgEl.textContent = tr2("importCfgB");
+        importCfgEl.title = tr2("importCfgT");
+      }
+      refreshSaveBtn();
+      renderTabs();
+      renderHosts();
+      void renderTree();
+      if (activeTk && tabs.has(activeTk)) {
+        try {
+          updateStatus(view.state);
+        } catch {
+        }
+      }
+    }
     const tkey = (scope, p) => `${scope}:${p}`;
     function parseTk(k) {
       const i = k.indexOf(":");
@@ -41237,6 +41705,7 @@ var client_default = {
         drawSelection(),
         dropCursor(),
         EditorState.allowMultipleSelections.of(true),
+        EditorState.readOnly.of(!!tabs.get(activeTk)?.readonly),
         indentOnInput(),
         indentUnit.of("    "),
         syntaxHighlighting(defaultHighlightStyle, { fallback: true }),
@@ -41262,6 +41731,13 @@ var client_default = {
                 key: "Mod-s",
                 run: () => {
                   void saveActive();
+                  return true;
+                }
+              },
+              {
+                key: "Mod-Shift-s",
+                run: () => {
+                  void saveAsActive();
                   return true;
                 }
               },
@@ -41296,11 +41772,11 @@ var client_default = {
     function updateStatus(state) {
       const head = state.selection.main.head;
       const line = state.doc.lineAt(head);
-      stPos.textContent = `第 ${line.number} 行 · 第 ${head - line.from + 1} 列`;
+      stPos.textContent = tr2("lineCol", { line: line.number, col: head - line.from + 1 });
       if (activeTk) {
-        const t2 = tabs.get(activeTk);
-        stState.textContent = t2?.binary ? "二进制（只读）" : t2?.dirty ? "未保存 ●" : "已保存";
-        stState.classList.toggle("dirty", !!t2?.dirty);
+        const tb = tabs.get(activeTk);
+        stState.textContent = tb?.binary ? tr2("binarySt") : tb?.readonly ? tr2("bigReadonlySt") : tb?.conflict ? tr2("conflictSt") : tb?.dirty ? tr2("unsavedSt") : tr2("savedSt");
+        stState.classList.toggle("dirty", !!tb?.dirty || !!tb?.conflict);
       }
       refreshSaveBtn();
     }
@@ -41309,7 +41785,7 @@ var client_default = {
       if (!dirCache.has(key)) {
         const r = await req(scope, { action: "list", dir: dirWire ?? "" });
         if (!r.ok) {
-          toast(`读取目录失败：${r.error}`);
+          toast(tr2("readDirFail", { error: r.error }));
           return [];
         }
         dirCache.set(key, r.entries);
@@ -41340,7 +41816,7 @@ var client_default = {
         treeEl.innerHTML = "";
         const lh = document.createElement("div");
         lh.className = "vsc-sect";
-        lh.innerHTML = `<b>📁 本地工作区</b>`;
+        lh.innerHTML = `<b>${tr2("localRoot")}</b>`;
         treeEl.appendChild(lh);
         await renderDir("local", "", treeEl, 0);
         renderTreeHighlight();
@@ -41353,18 +41829,18 @@ var client_default = {
       hostsEl.innerHTML = "";
       const depsBtn = root.querySelector('.vsc-pane[data-pane="ssh"] button[data-act="deps"]');
       depsBtn.classList.toggle("vsc-hidden", Boolean(S3.depsReady));
-      depsBtn.title = S3.depsInstalling ? "依赖安装中…" : "安装 ssh2 依赖";
+      depsBtn.title = S3.depsInstalling ? tr2("depsBusyT") : tr2("depsT");
       if (!S3.depsReady && S3.depsInstalling) {
         const d = document.createElement("div");
         d.className = "vsc-deps";
-        d.textContent = "依赖安装中…";
+        d.textContent = tr2("depsBusy");
         hostsEl.appendChild(d);
       }
       if (!S3.hosts.length && !(S3.configHosts ?? []).length) {
         const d = document.createElement("div");
         d.className = "vsc-deps";
         const btn = document.createElement("button");
-        btn.textContent = "还没有主机，点击添加";
+        btn.textContent = tr2("noHost");
         btn.addEventListener("click", () => openHostModal(null));
         d.appendChild(btn);
         hostsEl.appendChild(d);
@@ -41372,10 +41848,10 @@ var client_default = {
       if ((S3.configHosts ?? []).length) {
         const sec = document.createElement("div");
         sec.className = "vsc-sect";
-        sec.innerHTML = `<b>⚙ ssh config（自动加载）</b>`;
+        sec.innerHTML = `<b>${tr2("sshConfigSec")}</b>`;
         const edit = document.createElement("button");
         edit.textContent = "✎";
-        edit.title = `编辑 ${S3.configPath ?? "~/.ssh/config"}（与 VSCode 写法完全一样）`;
+        edit.title = tr2("editCfgT", { path: S3.configPath ?? "~/.ssh/config" });
         edit.addEventListener("click", () => void openSshConfigEditor());
         sec.appendChild(edit);
         hostsEl.appendChild(sec);
@@ -41384,7 +41860,7 @@ var client_default = {
       if ((S3.configHosts ?? []).length && S3.hosts.length) {
         const sec = document.createElement("div");
         sec.className = "vsc-sect";
-        sec.innerHTML = `<b>🏠 手动主机</b>`;
+        sec.innerHTML = `<b>${tr2("manualSec")}</b>`;
         hostsEl.appendChild(sec);
       }
       for (const h2 of S3.hosts) renderHostRow(h2);
@@ -41407,7 +41883,7 @@ var client_default = {
         if (!conns.size) {
           const d = document.createElement("div");
           d.className = "vsc-deps";
-          d.textContent = "连接主机后，远程文件列表显示在这里";
+          d.textContent = tr2("remoteEmpty");
           sshTreeEl.appendChild(d);
         }
         sshTreeEl.scrollTop = st2;
@@ -41422,7 +41898,7 @@ var client_default = {
       const live = [...conns.keys()].find((id2) => (conns.get(id2)?.label ?? "").startsWith(`${c.alias}（`));
       const dotCls = busy ? "busy" : live ? "on" : "";
       const via = c.proxyJump ? ` ⇢ ${esc(c.proxyJump)}` : c.proxyCommand ? " ⇢ ⬢" : "";
-      row.innerHTML = `<span class="dot ${dotCls}"></span><span class="nm" title="${esc(c.username)}@${esc(c.host)}:${c.port}${c.privateKeyPath ? ` · ${esc(c.privateKeyPath)}` : ""}">${esc(c.alias)}<span style="opacity:.5"> ${esc(c.username)}@${esc(c.host)}${via}</span></span><span class="ops">` + (live ? '<button data-hop="term" title="新建终端">🖥</button>' : '<button data-hop="conn" title="连接">⇄</button>') + `</span>`;
+      row.innerHTML = `<span class="dot ${dotCls}"></span><span class="nm" title="${esc(c.username)}@${esc(c.host)}:${c.port}${c.privateKeyPath ? ` · ${esc(c.privateKeyPath)}` : ""}">${esc(c.alias)}<span style="opacity:.5"> ${esc(c.username)}@${esc(c.host)}${via}</span></span><span class="ops">` + (live ? `<button data-hop="term" title="${tr2("newTermBtnT")}">🖥</button>` : `<button data-hop="conn" title="${tr2("connT")}">⇄</button>`) + `</span>`;
       row.addEventListener("click", async (ev) => {
         const btn = ev.target.closest("button[data-hop]");
         if (btn?.dataset.hop === "term" && live) {
@@ -41447,16 +41923,16 @@ var client_default = {
       row.dataset.host = h2.id;
       const busy = connecting.has(h2.id) || connMeta(connId)?.status === "connecting";
       const dotCls = busy ? "busy" : connId ? "on" : "";
-      row.innerHTML = `<span class="dot ${dotCls}"></span><span class="nm" title="${esc(h2.username)}@${esc(h2.host)}:${h2.port}">${esc(h2.name || h2.host)}</span><span class="ops">` + (connId ? '<button data-hop="term" title="新建终端">🖥</button><button data-hop="dis" title="断开">⏏</button>' : '<button data-hop="conn" title="连接">⇄</button>') + '<button data-hop="edit" title="编辑">✎</button><button data-hop="del" title="删除">🗑</button></span>';
+      row.innerHTML = `<span class="dot ${dotCls}"></span><span class="nm" title="${esc(h2.username)}@${esc(h2.host)}:${h2.port}">${esc(h2.name || h2.host)}</span><span class="ops">` + (connId ? `<button data-hop="term" title="${tr2("newTermBtnT")}">🖥</button><button data-hop="dis" title="${tr2("disT")}">⏏</button>` : `<button data-hop="conn" title="${tr2("connT")}">⇄</button>`) + `<button data-hop="edit" title="${tr2("editT")}">✎</button><button data-hop="del" title="${tr2("delT")}">🗑</button></span>`;
       row.addEventListener("click", async (ev) => {
         const btn = ev.target.closest("button[data-hop]");
         if (btn) {
           ev.stopPropagation();
           if (btn.dataset.hop === "edit") openHostModal(h2);
           else if (btn.dataset.hop === "del") {
-            if (confirm(`删除主机「${h2.name || h2.host}」？`)) {
+            if (confirm(tr2("confirmDelHost", { name: h2.name || h2.host }))) {
               const r = await request({ action: "hosts_delete", id: h2.id });
-              if (!r.ok) toast(`删除失败：${r.error}`);
+              if (!r.ok) toast(tr2("delFail", { error: r.error }));
               else renderHosts();
             }
           } else if (btn.dataset.hop === "term" && connId) {
@@ -41512,7 +41988,16 @@ var client_default = {
         const ek = tkey(scope, p);
         const isOpen = expanded.has(ek);
         row.innerHTML = `<span class="caret">${e.type === "dir" ? isOpen ? "▾" : "▸" : ""}</span><span>${iconFor(e.name, e.type)}</span><span class="nm">${esc(e.name)}</span>`;
-        row.addEventListener("click", async () => {
+        row.addEventListener("click", async (ev) => {
+          if (ev.ctrlKey || ev.metaKey) {
+            const k = tkey(scope, p);
+            if (multiSel.has(k)) multiSel.delete(k);
+            else multiSel.add(k);
+            selectNode(scope, p, e.type);
+            applySelHighlight();
+            return;
+          }
+          multiSel.clear();
           selectNode(scope, p, e.type);
           if (e.type !== "dir") {
             void openFile(scope, p);
@@ -41567,7 +42052,7 @@ var client_default = {
         sub.dataset.loaded = "0";
         row.insertAdjacentElement("afterend", sub);
       }
-      sub.innerHTML = `<div class="vsc-row loading" style="padding-left:${8 + (depth + 1) * 14}px"><span class="caret"></span><span>⏳</span><span class="nm">加载中…</span></div>`;
+      sub.innerHTML = `<div class="vsc-row loading" style="padding-left:${8 + (depth + 1) * 14}px"><span class="caret"></span><span>⏳</span><span class="nm">${tr2("loadingDir")}</span></div>`;
       const entries = await ensureDir(scope, p);
       if (!expanded.has(ek)) {
         sub.remove();
@@ -41584,11 +42069,11 @@ var client_default = {
     }
     async function downloadToPC(scope, pathW, isDir = false) {
       const name2 = pathW.split("/").filter(Boolean).pop() || pathW;
-      toast(`正在下载 ${name2}${isDir ? "（打包中）" : ""}…`);
+      toast(isDir ? tr2("downloadingPack", { name: name2 }) : tr2("downloadingFile", { name: name2 }));
       const payload = scope === "local" ? { action: "download", path: pathW } : { action: "download", connId: scope, path: pathW };
       const r = await request(payload);
       if (!r.ok) {
-        toast(`下载失败：${r.error}`);
+        toast(tr2("downloadFail", { error: r.error }));
         return;
       }
       const bin = atob(r.b64);
@@ -41602,7 +42087,7 @@ var client_default = {
           const w = await fh.createWritable();
           await w.write(blob);
           await w.close();
-          stState.textContent = `${suggestedName} 已保存`;
+          stState.textContent = tr2("savedAs", { name: suggestedName });
           setTimeout(() => {
             stState.textContent = "";
           }, 3e3);
@@ -41622,11 +42107,59 @@ var client_default = {
         setTimeout(() => URL.revokeObjectURL(url), 3e4);
       }
     }
+    function zipSelection(scope) {
+      const keys2 = [...multiSel].filter((k) => parseTk(k).scope === scope);
+      if (keys2.length > 1) return keys2.map((k) => parseTk(k).path);
+      if (selNode && selNode.scope === scope) return [selNode.path];
+      return [];
+    }
+    async function downloadZipFor(scope, paths) {
+      const list = (paths ?? []).filter(Boolean);
+      if (!list.length) {
+        toast(tr2("pickForZip"));
+        return;
+      }
+      const label = list.length === 1 ? list[0].split("/").filter(Boolean).pop() : `${list.length} items`;
+      toast(tr2("downloadingPack", { name: label }));
+      const payload = scope === "local" ? { action: "download_zip", paths: list } : { action: "download_zip", connId: scope, paths: list };
+      const r = await request(payload);
+      if (!r.ok) {
+        toast(tr2("downloadFail", { error: r.error }));
+        return;
+      }
+      if (r.fallback === "tar.gz") toast(tr2("zipFallbackTar"));
+      else if (r.fallback === "node") toast(tr2("zipFallbackNode"));
+      const bin = atob(r.b64);
+      const bytes = new Uint8Array(bin.length);
+      for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+      saveBlob(new Blob([bytes]), r.name || "files.zip");
+    }
+    async function unzipToHere(scope, dir, suggested) {
+      let zipName = suggested;
+      if (!zipName) {
+        zipName = prompt(tr2("promptZipName"));
+        if (!zipName) return;
+      }
+      if (!zipName.toLowerCase().endsWith(".zip")) {
+        toast(tr2("needZip"));
+        return;
+      }
+      const zipPath = dir ? `${dir.replace(/\/$/, "")}/${zipName}` : zipName;
+      toast(tr2("unzipping", { name: zipName }));
+      const dest = dir || (scope === "local" ? "" : "/");
+      const r = await req(scope, { action: "unzip", zip: zipPath, dest });
+      if (!r.ok) {
+        toast(tr2("unzipFail", { error: r.error }));
+        return;
+      }
+      toast(r.count >= 0 ? tr2("unzipOkCount", { count: r.count }) : tr2("unzipOk"));
+      await invalidateScope(scope);
+    }
     function applySelHighlight() {
       root.querySelectorAll(".vsc-row[data-scope]").forEach(
         (el2) => el2.classList.toggle(
           "sel",
-          !!selNode && el2.dataset.scope === selNode.scope && el2.dataset.path === selNode.path
+          multiSel.has(tkey(el2.dataset.scope, el2.dataset.path)) || !!selNode && el2.dataset.scope === selNode.scope && el2.dataset.path === selNode.path
         )
       );
     }
@@ -41643,7 +42176,7 @@ var client_default = {
       for (const [k, t2] of tabs.entries()) {
         const el2 = document.createElement("div");
         el2.className = "vsc-tab" + (k === activeTk ? " active" : "");
-        el2.innerHTML = `<span>${t2.scope !== "local" ? "🖥" : iconFor(t2.name, "file")}</span><span class="tn">${esc(t2.name)}</span>` + (t2.dirty ? '<span class="dot">●</span>' : "") + `<button class="x" title="关闭">✕</button>`;
+        el2.innerHTML = `<span>${t2.scope !== "local" ? "🖥" : iconFor(t2.name, "file")}</span><span class="tn">${esc(t2.name)}</span>` + (t2.conflict ? '<span class="dot">⚠</span>' : "") + (t2.dirty ? '<span class="dot">●</span>' : "") + `<button class="x" title="${tr2("closeT")}">✕</button>`;
         el2.addEventListener("click", (ev) => {
           if (ev.target.closest(".x")) return;
           void activateTab(k);
@@ -41657,11 +42190,19 @@ var client_default = {
       closeDrawer();
       const k = tkey(scope, p);
       if (!tabs.has(k)) {
+        let stSize = 0;
+        try {
+          const s0 = await req(scope, { action: "stat", path: p });
+          if (s0.ok) stSize = s0.size ?? 0;
+        } catch {
+        }
+        if (stSize > 1024 * 1024) toast(tr2("openingBig", { size: fmtSize(stSize) }));
         const r = await req(scope, { action: "read", path: p });
         if (!r.ok) {
-          toast(`打开失败：${r.error}`);
+          toast(tr2("openFail", { error: r.error }));
           return;
         }
+        const readonly = !r.binary && (stSize || r.size || 0) > 1024 * 1024;
         tabs.set(k, {
           scope,
           path: p,
@@ -41669,15 +42210,24 @@ var client_default = {
           savedText: r.text ?? "",
           binary: !!r.binary,
           dirty: false,
+          conflict: false,
+          readonly,
+          savedSize: r.size ?? stSize,
+          savedMtime: r.mtimeMs ?? 0,
           crlf: (r.text ?? "").includes("\r\n")
         });
-        if (r.binary) toast("二进制文件暂不支持编辑");
+        if (r.binary) toast(tr2("binaryNo"));
+        else if (readonly) toast(tr2("bigReadonly"));
       }
       await activateTab(k);
     }
     async function activateTab(k) {
       const t2 = tabs.get(k);
       if (!t2) return;
+      if (activeTk && activeTk !== k) {
+        const cur2 = tabs.get(activeTk);
+        if (cur2 && cur2.dirty && !confirm(tr2("confirmSwitch", { name: cur2.name }))) return;
+      }
       activeTk = k;
       emptyEl.classList.add("vsc-hidden");
       edHost.classList.remove("vsc-hidden");
@@ -41689,7 +42239,7 @@ var client_default = {
       );
       t2.dirty = false;
       view.dispatch({ effects: langComp.reconfigure(langFor(t2.path) ?? []) });
-      stScope.textContent = t2.scope !== "local" ? `🖥 ${connLabel(t2.scope)}` : "本地";
+      stScope.textContent = t2.scope !== "local" ? `🖥 ${connLabel(t2.scope)}` : tr2("localScope");
       stScope.classList.toggle("remote", t2.scope !== "local");
       stPath.textContent = t2.path;
       stLang.textContent = langName(t2.path);
@@ -41699,24 +42249,69 @@ var client_default = {
       view.focus();
     }
     async function saveActive() {
-      const t2 = tabs.get(activeTk);
-      if (!activeTk || !t2 || t2.binary) return false;
+      const tb = tabs.get(activeTk);
+      if (!activeTk || !tb || tb.binary || tb.readonly) {
+        if (tb?.readonly) toast(tr2("readOnlyNo"));
+        return false;
+      }
       const text = currentDoc();
-      const wire = t2.crlf ? text.replace(/\n/g, "\r\n") : text;
-      const r = await req(t2.scope, { action: "write", path: t2.path, text: wire });
+      const wire = tb.crlf ? text.replace(/\n/g, "\r\n") : text;
+      const r = await req(tb.scope, { action: "write", path: tb.path, text: wire });
       if (!r.ok) {
-        toast(`保存失败：${r.error}`);
+        toast(tr2("saveFail", { error: r.error }));
         return true;
       }
-      t2.savedText = text;
-      t2.dirty = false;
+      try {
+        const back = await req(tb.scope, { action: "read", path: tb.path });
+        if (!back.ok) throw new Error(back.error);
+        if ((back.text ?? "") !== wire) {
+          tb.conflict = true;
+          toast(tr2("conflictSt"));
+          renderTabs();
+          updateStatus(view.state);
+          return true;
+        }
+        tb.savedSize = back.size ?? r.bytes ?? wire.length;
+        tb.savedMtime = back.mtimeMs ?? 0;
+      } catch (err) {
+        toast(tr2("saveFail", { error: err?.message ?? err }));
+        return true;
+      }
+      tb.savedText = text;
+      tb.dirty = false;
+      tb.conflict = false;
       renderTabs();
       updateStatus(view.state);
       return true;
     }
+    async function saveAsActive() {
+      const tb = tabs.get(activeTk);
+      if (!activeTk || !tb || tb.binary || tb.readonly) {
+        if (tb?.readonly) toast(tr2("readOnlyNo"));
+        return false;
+      }
+      if (tb.scope !== "local") {
+        toast(tr2("saveAsRemoteNo"));
+        return false;
+      }
+      const text = currentDoc();
+      const wire = tb.crlf ? text.replace(/\n/g, "\r\n") : text;
+      const np = prompt(tr2("promptSaveAs"), tb.path);
+      if (!np || !np.trim() || np.trim() === tb.path) return false;
+      const r = await req("local", { action: "write", path: np.trim(), text: wire });
+      if (!r.ok) {
+        toast(tr2("saveFail", { error: r.error }));
+        return false;
+      }
+      selNode = { scope: "local", path: np.trim(), type: "file" };
+      multiSel.clear();
+      await invalidateScope("local");
+      await openFile("local", np.trim());
+      return true;
+    }
     async function closeTab(k) {
       const t2 = tabs.get(k);
-      if (t2 && t2.dirty && !confirm(`「${t2.name}」有未保存的修改，确定关闭？`)) return;
+      if (t2 && t2.dirty && !confirm(tr2("confirmClose", { name: t2.name }))) return;
       tabs.delete(k);
       if (activeTk === k) {
         activeTk = null;
@@ -41764,11 +42359,14 @@ var client_default = {
       for (const [k, t2] of tabs.entries()) {
         if (parseTk(k).scope === "local" && t2.dirty) dirtyLost++;
       }
+      if (dirtyLost) {
+        multiSel.clear();
+        confirm(tr2("confirmWorkspace", { n: dirtyLost }));
+      }
       closeTabsOfScope("local");
       await renderTree();
-      toast(
-        dirtyLost ? `工作区已切换${newRoot ? `：${newRoot}` : ""}（关闭了 ${dirtyLost} 个未保存的本地标签）` : `工作区已切换${newRoot ? `：${newRoot}` : ""}`
-      );
+      const rootSuffix = newRoot ? tr2("wsSep") + newRoot : "";
+      toast(tr2("workspaceSwitched") + rootSuffix + (dirtyLost ? tr2("workspaceDirtyTail", { n: dirtyLost }) : ""));
     }
     let flatLoaded = false;
     async function loadFlat() {
@@ -41777,7 +42375,7 @@ var client_default = {
       if (r.ok) {
         flatLoaded = true;
         for (const f of r.files) flatFiles.add(f);
-        if (r.truncated) toast("文件较多，列表已截断");
+        if (r.truncated) toast(tr2("truncated"));
       }
     }
     let quickSel = 0;
@@ -41799,7 +42397,7 @@ var client_default = {
       quickSel = Math.min(quickSel, Math.max(0, ms2.length - 1));
       quickList.innerHTML = ms2.map(
         (x, i) => `<li data-s="${esc(x.scope)}" data-p="${esc(x.path)}" class="${i === quickSel ? "sel" : ""}">${iconFor(x.path.split("/").pop(), x.type)} ${esc(x.path.split("/").pop())}${x.scope !== "local" ? " 🌐" : ""}<small>${esc(x.path)}</small></li>`
-      ).join("") || `<li style="opacity:.5;cursor:default">无匹配文件</li>`;
+      ).join("") || `<li style="opacity:.5;cursor:default">${tr2("noMatch")}</li>`;
     }
     function openQuickOpen() {
       quickOverride = null;
@@ -41856,19 +42454,19 @@ var client_default = {
         scope = t2.connId;
         base2 = t2.dir;
       }
-      const q2 = prompt("搜索文件名：");
+      const q2 = prompt(tr2("promptSearch"));
       if (!q2 || !q2.trim()) return;
       const r = scope === "local" ? await request({ action: "search", query: q2.trim(), base: base2 }) : await request({ action: "search", connId: scope, query: q2.trim(), baseDir: base2 || "/" });
       if (!r.ok) {
-        toast(`搜索失败：${r.error}`);
+        toast(tr2("searchFail", { error: r.error }));
         return;
       }
       const list = r.results ?? [];
       if (!list.length) {
-        toast("无匹配");
+        toast(tr2("noResult"));
         return;
       }
-      if (r.truncated) toast("结果较多，只显示前 50 项");
+      if (r.truncated) toast(tr2("searchMany"));
       quickOverride = list.map((x) => ({ scope, path: x.path, type: x.type }));
       quickSel = 0;
       quickInput.value = q2.trim();
@@ -41889,11 +42487,11 @@ var client_default = {
           return true;
         case "host:file-rename":
           void (async () => {
-            const nn2 = prompt("新名称：", _base);
+            const nn2 = prompt(tr2("promptNewName"), _base);
             if (!nn2 || nn2 === _base) return;
             const r = await req("local", { action: "rename", path: pathW, newName: nn2 });
             if (!r.ok) {
-              toast(`重命名失败：${r.error}`);
+              toast(tr2("renameFail", { error: r.error }));
               return;
             }
             await invalidateScope("local");
@@ -41901,11 +42499,10 @@ var client_default = {
           return true;
         case "host:file-delete":
           void (async () => {
-            if (!confirm(`确定删除「${pathW}」？${type === "dir" ? "（目录将递归删除，不可撤销）" : "（不可撤销）"}`))
-              return;
+            if (!confirm(tr2(type === "dir" ? "confirmDelDir" : "confirmDelFile", { path: pathW }))) return;
             const r = await req("local", { action: "delete", path: pathW, isDir: type === "dir" });
             if (!r.ok) {
-              toast(`删除失败：${r.error}`);
+              toast(tr2("delFail", { error: r.error }));
               return;
             }
             for (const k of [...tabs.keys()]) {
@@ -41920,11 +42517,11 @@ var client_default = {
           return true;
         case "host:file-cut":
           clipboard = { scope: "local", src: pathW, cut: true };
-          toast(`已剪切「${_base}」（在目标目录右键粘贴）`);
+          toast(tr2("cutToast", { name: _base }));
           return true;
         case "host:file-copy":
           clipboard = { scope: "local", src: pathW, cut: false };
-          toast(`已复制「${_base}」（在目标目录右键粘贴）`);
+          toast(tr2("copyToast", { name: _base }));
           return true;
         case "host:file-paste":
           void pasteClipboardTo("local", _dir);
@@ -41956,36 +42553,41 @@ var client_default = {
     function showMenu(x, y, scope, pathW, type) {
       menuEl.innerHTML = "";
       const items = [];
+      const rowDir = type === "dir" ? pathW : scope === "local" ? localParentOf(pathW) : parentOf(pathW);
+      const fileName = pathW.split("/").pop();
       if (type === "dir") {
         items.push(
           [
-            "新建文件",
+            tr2("mNewFile"),
             async () => {
               await promptCreate(scope, pathW, "file");
             }
           ],
           [
-            "新建文件夹",
+            tr2("mNewDir"),
             async () => {
               await promptCreate(scope, pathW, "dir");
             }
           ],
           [
-            "上传文件到此处…",
+            tr2("mUploadHere"),
             async () => {
               const files = await pickFiles();
               if (files.length) void uploadFilesTo(scope, pathW, files);
             }
           ],
-          ["下载到电脑（.tar.gz 打包）", () => void downloadToPC(scope, pathW, true)]
+          [tr2("mDownloadZip"), () => void downloadZipFor(scope, [pathW])]
         );
+        if (scope === "local") {
+          items.push([tr2("mDownloadTar"), () => void downloadToPC(scope, pathW, true)]);
+        }
       } else {
+        items.push([tr2("mDownload"), () => void downloadToPC(scope, pathW, false)]);
+        if (pathW.toLowerCase().endsWith(".zip")) {
+          items.push([tr2("mExtractHere"), () => void unzipToHere(scope, rowDir, fileName)]);
+        }
         items.push([
-          type === "dir" ? "下载到电脑（压缩包）" : "下载到电脑",
-          () => void downloadToPC(scope, pathW, type === "dir")
-        ]);
-        items.push([
-          "上传文件到此处…",
+          tr2("mUploadHere"),
           async () => {
             const files = await pickFiles();
             const dir = scope === "local" ? localParentOf(pathW) : parentOf(pathW);
@@ -41993,50 +42595,52 @@ var client_default = {
           }
         ]);
       }
-      const _base = pathW.split("/").pop();
-      const _rowDir = type === "dir" ? pathW : scope === "local" ? localParentOf(pathW) : parentOf(pathW);
+      const _base = fileName;
+      const _rowDir = rowDir;
       items.push(
         [
-          "剪切",
+          tr2("mCut"),
           () => {
             clipboard = { scope, src: pathW, cut: true };
-            toast(`已剪切「${_base}」（在目标目录右键粘贴）`);
+            toast(tr2("cutToast", { name: _base }));
           }
         ],
         [
-          "复制",
+          tr2("mCopy"),
           () => {
             clipboard = { scope, src: pathW, cut: false };
-            toast(`已复制「${_base}」（在目标目录右键粘贴）`);
+            toast(tr2("copyToast", { name: _base }));
           }
         ]
       );
       if (clipboard && clipboard.scope === scope) {
-        items.push([clipboard.cut ? "粘贴（移动到此处）" : "粘贴到此处", () => void pasteClipboardTo(scope, _rowDir)]);
+        items.push([clipboard.cut ? tr2("mPasteMove") : tr2("mPaste"), () => void pasteClipboardTo(scope, _rowDir)]);
       }
-      items.push(["创建副本", () => void duplicateEntry(scope, pathW, type)], ["复制路径", () => copyText(pathW)]);
+      items.push(
+        [tr2("mDuplicate"), () => void duplicateEntry(scope, pathW, type)],
+        [tr2("mCopyPath"), () => copyText(pathW)]
+      );
       items.push(
         [
-          "重命名",
+          tr2("mRename"),
           async () => {
-            const nn2 = prompt("新名称：", pathW.split("/").pop());
+            const nn2 = prompt(tr2("promptNewName"), pathW.split("/").pop());
             if (!nn2 || nn2 === pathW.split("/").pop()) return;
             const r = await req(scope, { action: "rename", path: pathW, newName: nn2 });
             if (!r.ok) {
-              toast(`重命名失败：${r.error}`);
+              toast(tr2("renameFail", { error: r.error }));
               return;
             }
             await invalidateScope(scope);
           }
         ],
         [
-          "删除",
+          tr2("mDelete"),
           async () => {
-            if (!confirm(`确定删除「${pathW}」？${type === "dir" ? "（目录将递归删除，不可撤销）" : "（不可撤销）"}`))
-              return;
+            if (!confirm(tr2(type === "dir" ? "confirmDelDir" : "confirmDelFile", { path: pathW }))) return;
             const r = await req(scope, { action: "delete", path: pathW, isDir: type === "dir" });
             if (!r.ok) {
-              toast(`删除失败：${r.error}`);
+              toast(tr2("delFail", { error: r.error }));
               return;
             }
             for (const k of [...tabs.keys()]) {
@@ -42049,7 +42653,7 @@ var client_default = {
       );
       if (scope !== "local") {
         items.push([
-          type === "dir" ? "在此打开终端" : "在所在文件夹打开终端",
+          tr2(type === "dir" ? "mOpenTermHere" : "mOpenTermInDir"),
           async () => {
             const dir = type === "dir" ? pathW : parentOf(pathW);
             conns.get(scope).cwd = dir;
@@ -42090,12 +42694,12 @@ var client_default = {
       renderHosts();
     }
     async function promptCreate(scope, dirWire, kind) {
-      const name2 = prompt(kind === "dir" ? "新文件夹名称：" : "新文件名称（可带子路径 a/b.js）：");
+      const name2 = prompt(kind === "dir" ? tr2("promptNewDir") : tr2("promptNewFile"));
       if (!name2) return;
       const p = dirWire ? `${dirWire.replace(/\/$/, "")}/${name2.trim()}` : name2.trim();
       const r = await req(scope, { action: "create", path: p, kind });
       if (!r.ok) {
-        toast(`创建失败：${r.error}`);
+        toast(tr2("createFail", { error: r.error }));
         return;
       }
       expanded.add(tkey(scope, dirWire));
@@ -42104,6 +42708,9 @@ var client_default = {
       await invalidateScope(scope);
     }
     async function refreshAll() {
+      let dirtyCount = 0;
+      for (const [, tb] of tabs.entries()) if (!tb.binary && tb.dirty) dirtyCount++;
+      if (dirtyCount && !confirm(tr2("confirmRefresh", { n: dirtyCount }))) return;
       dirCache.clear();
       flatFiles.clear();
       flatLoaded = false;
@@ -42111,9 +42718,17 @@ var client_default = {
         if (t2.binary) continue;
         const r = await req(t2.scope, { action: "read", path: t2.path });
         if (r.ok && r.text != null) {
-          t2.savedText = r.text;
-          t2.crlf = r.text.includes("\r\n");
-          t2.dirty = false;
+          if (t2.dirty && r.text !== t2.savedText) {
+            t2.conflict = true;
+            toast(tr2("conflictSt"));
+          } else {
+            t2.savedText = r.text;
+            t2.crlf = r.text.includes("\r\n");
+            t2.dirty = false;
+            t2.conflict = false;
+          }
+          t2.savedSize = r.size;
+          t2.savedMtime = r.mtimeMs;
         }
       }
       if (activeTk && tabs.has(activeTk)) await activateTab(activeTk);
@@ -42146,15 +42761,15 @@ var client_default = {
     async function uploadOne(scope, dir, file) {
       const name2 = file.name;
       if (file.size > 100 * 1024 * 1024) {
-        toast(`「${name2}」超过 100MB 上限，已跳过`);
+        toast(tr2("tooBigSkip", { name: name2 }));
         return false;
       }
       const begin = await req(scope, { action: "upload_begin", dir, name: name2, size: file.size });
       if (!begin.ok) {
-        toast(`上传失败：${begin.error}`);
+        toast(tr2("uploadFail", { error: begin.error }));
         return false;
       }
-      if (begin.exists && !confirm(`「${name2}」已存在，是否覆盖？`)) {
+      if (begin.exists && !confirm(tr2("coverConfirm", { name: name2 }))) {
         void request({ action: "upload_abort", uploadId: begin.uploadId });
         return false;
       }
@@ -42170,14 +42785,14 @@ var client_default = {
         return true;
       } catch (err) {
         void request({ action: "upload_abort", uploadId: begin.uploadId });
-        toast(`上传「${name2}」失败：${err?.message ?? err}`);
+        toast(tr2("uploadOneFail", { name: name2, error: err?.message ?? err }));
         return false;
       }
     }
     async function uploadFilesTo(scope, dir, files) {
       if (!files?.length) return;
       if (uploading) {
-        toast("正在上传，请稍候…");
+        toast(tr2("uploading"));
         return;
       }
       uploading = true;
@@ -42186,8 +42801,9 @@ var client_default = {
         for (const f of files) if (await uploadOne(scope, dir, f)) ok++;
         if (ok) await invalidateScope(scope);
         setUploadProgress("");
-        if (ok === files.length) toast(`已上传 ${ok} 个文件${dir ? ` 到 ${dir}` : "（工作区根目录）"}`);
-        else toast(`上传完成：${ok}/${files.length} 成功`);
+        if (ok === files.length)
+          toast(tr2("uploadDoneAll", { ok, dest: dir ? tr2("uploadToDir", { dir }) : tr2("uploadToRoot") }));
+        else toast(tr2("uploadDonePart", { ok, total: files.length }));
       } finally {
         uploading = false;
       }
@@ -42253,12 +42869,12 @@ var client_default = {
         clearAppDropOverlay();
         const files = [...ev.dataTransfer?.files ?? []];
         if (!files.length) {
-          toast("文件夹上传暂不支持，请选择文件");
+          toast(tr2("folderUploadNo"));
           return;
         }
         const t2 = dropTargetFrom(ev, containerScope);
         if (!t2) {
-          toast("请先连接一台 SSH 主机");
+          toast(tr2("noSsh"));
           return;
         }
         void uploadFilesTo(t2.scope, t2.dir, files);
@@ -42286,26 +42902,24 @@ var client_default = {
         }
         const t2 = dropTargetFrom(ev, containerScope);
         if (!t2) {
-          toast("请先连接一台 SSH 主机");
+          toast(tr2("noSsh"));
           return;
         }
         hideMenu();
         const items = [];
         items.push([
-          "上传文件到此处…",
+          tr2("mUploadHere"),
           async () => {
             const files = await pickFiles();
             if (files.length) void uploadFilesTo(t2.scope, t2.dir, files);
           }
         ]);
+        items.push([tr2("mExtractHere"), () => void unzipToHere(t2.scope, t2.dir)]);
         if (clipboard && clipboard.scope === t2.scope) {
-          items.push([
-            clipboard.cut ? "粘贴（移动到此处）" : "粘贴到此处",
-            () => void pasteClipboardTo(t2.scope, t2.dir)
-          ]);
+          items.push([clipboard.cut ? tr2("mPasteMove") : tr2("mPaste"), () => void pasteClipboardTo(t2.scope, t2.dir)]);
         }
         if (containerScope === "local" && t2.dir === "") {
-          items.push(["刷新", () => void refreshAll()]);
+          items.push([tr2("mRefresh"), () => void refreshAll()]);
         }
         menuEl.innerHTML = "";
         for (const [label, fn2] of items) {
@@ -42336,6 +42950,10 @@ var client_default = {
         void promptCreate("local", pickLocalDir(), "file");
       } else if (act === "new-dir") {
         void promptCreate("local", pickLocalDir(), "dir");
+      } else if (act === "zip") {
+        void downloadZipFor("local", zipSelection("local"));
+      } else if (act === "extract") {
+        void unzipToHere("local", pickLocalDir());
       } else if (act === "upload") {
         void pickFiles().then((files) => uploadFilesTo("local", "", files));
       }
@@ -42343,7 +42961,7 @@ var client_default = {
     let modalEditId = null;
     function openHostModal(h2) {
       modalEditId = h2?.id ?? null;
-      hostBg.querySelector(".h-title").textContent = h2 ? "编辑主机" : "新建主机";
+      hostBg.querySelector(".h-title").textContent = h2 ? tr2("hostEdit") : tr2("hostNew");
       const q2 = (n) => hostBg.querySelector(`[name="${n}"]`);
       q2("h-name").value = h2?.name ?? "";
       q2("h-host").value = h2?.host ?? "";
@@ -42354,9 +42972,9 @@ var client_default = {
       q2("h-keypath").value = h2?.privateKeyPath ?? "";
       q2("h-pp").value = "";
       q2("h-agent").value = h2?.agent ?? "";
-      q2("h-pass").placeholder = h2?.hasPass ? "已保存（留空保持不变）" : "";
-      q2("h-key").placeholder = h2?.hasKey ? "已保存（留空保持不变）" : "-----BEGIN OPENSSH PRIVATE KEY-----";
-      q2("h-pp").placeholder = h2?.hasPassphrase ? "已保存（留空保持不变）" : "";
+      q2("h-pass").placeholder = h2?.hasPass ? tr2("keptPh") : "";
+      q2("h-key").placeholder = h2?.hasKey ? tr2("keptPh") : "-----BEGIN OPENSSH PRIVATE KEY-----";
+      q2("h-pp").placeholder = h2?.hasPassphrase ? tr2("keptPh") : "";
       const panel = hostBg.querySelector(".sshcfg-import");
       panel.classList.add("vsc-hidden");
       panel.innerHTML = "";
@@ -42383,23 +43001,23 @@ var client_default = {
       if (modalEditId) body.id = modalEditId;
       const r = await request({ action: "hosts_save", host: body });
       if (!r.ok) {
-        toast(`保存失败：${r.error}`);
+        toast(tr2("saveFail", { error: r.error }));
         return;
       }
       hostBg.classList.add("vsc-hidden");
     });
     hostBg.querySelector(".import-cfg").addEventListener("click", async () => {
       const panel = hostBg.querySelector(".sshcfg-import");
-      panel.innerHTML = `<div class="hint">读取 ~/.ssh/config 中…</div>`;
+      panel.innerHTML = `<div class="hint">${tr2("readingCfg")}</div>`;
       panel.classList.remove("vsc-hidden");
       const r = await request({ action: "sshconfig_list" });
       if (!r.ok) {
-        panel.innerHTML = `<div class="hint">读取失败：${esc(r.error)}</div>`;
+        panel.innerHTML = `<div class="hint">${tr2("readFail", { error: esc(r.error) })}</div>`;
         return;
       }
       const fresh = (r.hosts ?? []).filter((x) => !x.imported);
       if (!fresh.length) {
-        panel.innerHTML = `<div class="hint">共 ${(r.hosts ?? []).length} 台，均已导入。</div>`;
+        panel.innerHTML = `<div class="hint">${tr2("allImported", { n: (r.hosts ?? []).length })}</div>`;
         return;
       }
       panel.innerHTML = "";
@@ -42419,22 +43037,22 @@ var client_default = {
       }
       const btn = document.createElement("button");
       btn.className = "primary";
-      btn.textContent = `导入选中`;
+      btn.textContent = tr2("importSelected");
       btn.addEventListener("click", async () => {
         const aliases = [...panel.querySelectorAll("input[type=checkbox]:checked")].map((c) => c.value);
         if (!aliases.length) {
-          toast("请先勾选要导入的主机");
+          toast(tr2("pickHosts"));
           return;
         }
         const r2 = await request({ action: "sshconfig_import", aliases });
         if (!r2.ok) {
-          toast(`导入失败：${r2.error}`);
+          toast(tr2("importFail", { error: r2.error }));
           return;
         }
         panel.classList.add("vsc-hidden");
         panel.innerHTML = "";
         hostBg.classList.add("vsc-hidden");
-        toast(`已导入 ${r2.added} 台${r2.skipped ? `（跳过 ${r2.skipped} 台）` : ""}`);
+        toast(tr2("imported", { added: r2.added, skip: r2.skipped ? tr2("importedSkip", { n: r2.skipped }) : "" }));
       });
       panel.appendChild(btn);
     });
@@ -42449,7 +43067,7 @@ var client_default = {
       const r = await request({ action: "config_connect", alias });
       connecting.delete(key);
       if (!r.ok) {
-        toast(`连接失败：${r.error}`);
+        toast(tr2("connFail", { error: r.error }));
         renderHosts();
         return null;
       }
@@ -42469,23 +43087,14 @@ var client_default = {
     async function openSshConfigEditor() {
       const r = await request({ action: "sshconfig_get" });
       if (!r.ok) {
-        toast(`读取失败：${r.error}`);
+        toast(tr2("readFail", { error: r.error }));
         return;
       }
-      const text = prompt(
-        `编辑 ${S3.configPath ?? "~/.ssh/config"}（与 VSCode 写法完全一样）：
-Host 别名
-  HostName 主机
-  User 用户
-  Port 端口
-  IdentityFile 私钥路径
-  ProxyJump 跳板`,
-        r.text ?? ""
-      );
+      const text = prompt(tr2("sshCfgPrompt", { path: S3.configPath ?? "~/.ssh/config" }), r.text ?? "");
       if (text === null) return;
       const r2 = await request({ action: "sshconfig_save", text });
-      if (!r2.ok) toast(`保存失败：${r2.error}`);
-      else toast("ssh config 已保存（旧版已备份 .bak），列表已刷新");
+      if (!r2.ok) toast(tr2("saveFail", { error: r2.error }));
+      else toast(tr2("configSaved"));
     }
     async function connectHost(h2) {
       if (connecting.has(h2.id) || connOfHost(h2.id)) return;
@@ -42494,7 +43103,7 @@ Host 别名
       const r = await request({ action: "connect", id: h2.id });
       connecting.delete(h2.id);
       if (!r.ok) {
-        toast(`连接失败：${r.error}`);
+        toast(tr2("connFail", { error: r.error }));
         renderTree();
         return;
       }
@@ -42525,7 +43134,10 @@ Host 别名
       syncPanelVisibility();
       void renderTree();
       renderHosts();
-      if (reason) toast(`连接断开：${connLabel(connId)} ${reason}`);
+      if (reason) {
+        const why = reason === "连接已关闭" ? tr2("connClosedDrop") : reason === "主机已删除" ? tr2("hostDeletedT") : reason === "手动断开" ? tr2("manualDiscT") : reason;
+        toast(tr2("connClosed", { label: connLabel(connId), reason: why }));
+      }
     }
     const terms = /* @__PURE__ */ new Map();
     let termSeq = 0;
@@ -42569,7 +43181,7 @@ Host 别名
     async function newTerm(connId, startCwd) {
       connId = connId ?? pickConnId();
       if (!connId || !conns.has(connId)) {
-        toast("请先连接一台 SSH 主机（左侧点主机名）");
+        toast(tr2("noSshLeft"));
         return;
       }
       const sameConn = [...terms.values()].filter((t3) => t3.connId === connId).length;
@@ -42621,7 +43233,7 @@ Host 别名
         rows: term.rows
       });
       if (!r.ok) {
-        toast(`打开终端失败：${r.error}`);
+        toast(tr2("termFail", { error: r.error }));
         disposeTerm(t2);
         renderTermTabs();
         syncPanelVisibility();
@@ -42664,7 +43276,7 @@ Host 别名
       for (const [tid, t2] of terms.entries()) {
         const el2 = document.createElement("span");
         el2.className = "vsc-ttab" + (tid === activeTermId ? " active" : "");
-        el2.innerHTML = `<span class="tn">🖥 ${esc(t2.label)}${t2.n > 1 ? ` ${t2.n}` : ""}</span><button class="x" title="关闭">✕</button>`;
+        el2.innerHTML = `<span class="tn">🖥 ${esc(t2.label)}${t2.n > 1 ? ` ${t2.n}` : ""}</span><button class="x" title="${tr2("closeT")}">✕</button>`;
         el2.addEventListener("click", (ev) => {
           if (ev.target.closest(".x")) {
             killTerm(t2);
@@ -42758,7 +43370,7 @@ Host 别名
         case "shell_exit": {
           for (const [, t2] of terms.entries()) {
             if (t2.connId === payload.connId && t2.shellId === payload.shellId) {
-              t2.term?.write("\r\n\x1B[90m〔shell 已退出〕\x1B[0m\r\n");
+              t2.term?.write("\r\n\x1B[90m" + tr2("shellExited") + "\x1B[0m\r\n");
               break;
             }
           }
@@ -42770,10 +43382,14 @@ Host 别名
       }
     });
     function onGlobalKey(ev) {
-      if ((ev.ctrlKey || ev.metaKey) && ev.key.toLowerCase() === "p") {
+      const mod = ev.ctrlKey || ev.metaKey;
+      if (mod && ev.key.toLowerCase() === "p") {
         ev.preventDefault();
         openQuickOpen();
-      } else if ((ev.ctrlKey || ev.metaKey) && ev.key.toLowerCase() === "s") {
+      } else if (mod && ev.shiftKey && ev.key.toLowerCase() === "s") {
+        ev.preventDefault();
+        void saveAsActive();
+      } else if (mod && ev.key.toLowerCase() === "s") {
         ev.preventDefault();
         void saveActive();
       } else if (ev.key === "Escape") {
@@ -42782,6 +43398,15 @@ Host 别名
       }
     }
     container.ownerDocument.addEventListener("keydown", onGlobalKey, true);
+    const onBeforeUnload = (ev) => {
+      let dirty = 0;
+      for (const [, tb] of tabs) if (!tb.binary && tb.dirty) dirty++;
+      if (dirty) {
+        ev.preventDefault();
+        ev.returnValue = "";
+      }
+    };
+    window.addEventListener("beforeunload", onBeforeUnload);
     root.querySelector('.vsc-pane[data-pane="ssh"] .vsc-side-head').addEventListener("click", (ev) => {
       const btn = ev.target.closest("button[data-act]");
       if (!btn) return;
@@ -42797,6 +43422,12 @@ Host 别名
       } else if (btn.dataset.act === "r-upload") {
         const t2 = pickRemoteDir();
         if (t2) void pickFiles().then((files) => uploadFilesTo(t2.connId, t2.dir, files));
+      } else if (btn.dataset.act === "r-zip") {
+        const t2 = pickRemoteDir();
+        if (t2) void downloadZipFor(t2.connId, zipSelection(t2.connId));
+      } else if (btn.dataset.act === "r-extract") {
+        const t2 = pickRemoteDir();
+        if (t2) void unzipToHere(t2.connId, t2.dir);
       } else if (btn.dataset.act === "r-search") {
         const t2 = pickRemoteDir();
         if (t2) void runSearch(t2.connId, t2.dir);
@@ -42817,7 +43448,7 @@ Host 别名
       }
       const first = [...conns.keys()][0];
       if (!first) {
-        toast("请先连接一台 SSH 主机");
+        toast(tr2("noSsh"));
         return null;
       }
       return { connId: first, dir: conns.get(first).cwd };
@@ -42826,10 +43457,10 @@ Host 别名
     void request({ action: "state" }).then((r) => {
       if (r.ok && r.state) applyState(r.state);
     });
-    void renderTree();
-    renderHosts();
+    applyI18n2();
     return () => {
       container.ownerDocument.removeEventListener("keydown", onGlobalKey, true);
+      window.removeEventListener("beforeunload", onBeforeUnload);
       document.removeEventListener("click", hideMenu);
       window.removeEventListener(THEME_CHANGE_EVENT, onThemeChange);
       for (const [, t2] of terms.entries()) {

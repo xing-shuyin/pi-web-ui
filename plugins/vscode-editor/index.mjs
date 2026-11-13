@@ -4,6 +4,8 @@ import path from "node:path";
 import { spawn } from "node:child_process";
 import { Duplex } from "node:stream";
 import { createRequire } from "node:module";
+import { inflateRawSync } from "node:zlib";
+import { AsyncLocalStorage } from "node:async_hooks";
 
 const IGNORED = new Set([
 	"node_modules",
@@ -32,6 +34,165 @@ const MAX_EXEC_OUTPUT = 256 * 1024;
 const MAX_DOWNLOAD_BYTES = 100 * 1024 * 1024;
 const MAX_UPLOAD_BYTES = 100 * 1024 * 1024;
 const UPLOAD_STALE_MS = 30 * 60 * 1000;
+
+// ---- 服务端报错双语（随每条消息的 lang 切换；AsyncLocalStorage 透传，热路径无签名改动） ----
+const vscAls = new AsyncLocalStorage();
+const LS = {
+	zh: {
+		pathOutside: "路径越界",
+		invalidPath: "非法路径",
+		notFile: "不是普通文件",
+		fileOverMB: "文件超过 {n}MB 上限",
+		packOverMB: "文件夹打包后超过 {n}MB 上限",
+		packTooBig: "打包内容超过 {n}MB 上限",
+		symlinkDeny: "路径含符号链接或越界，拒绝写入",
+		symlinkDenyCreate: "路径含符号链接或越界，拒绝创建",
+		existsSame: "已存在同名文件/文件夹",
+		invalidNewName: "非法新名称",
+		denyDelRoot: "拒绝删除根目录",
+		tarNeeded: "本地打包需要系统 tar，打包失败：{e}",
+		packEmpty: "打包结果为空",
+		packFail: "本地打包失败（tar exit {code}{detail}），请确认系统已安装 tar",
+		remotePackFail: "打包失败（远端无 tar 或目录不可读）",
+		zipNoSys: "系统 zip 不可用",
+		zipPackFail: "系统 zip 打包失败（exit {code}{detail}）",
+		unzipNoSys: "系统 unzip 不可用",
+		unzipFail: "解压失败（unzip exit {code}{detail}）",
+		unzipListFail: "unzip 列表读取失败",
+		unzipNolist: "unzip 列表不支持，转纯 Node 解压",
+		symlinkPack: "符号链接拒绝打包",
+		invalidZip: "不是有效的 ZIP 文件",
+		noEocd: "不是有效的 ZIP 文件（找不到 EOCD）",
+		badCentral: "ZIP 中央目录损坏",
+		badLocal: "ZIP 本地文件头损坏",
+		unsupMethod: "不支持的 ZIP 压缩方法：{m}",
+		badCrc: "ZIP 校验失败：{name}",
+		zipIllegal: "ZIP 条目非法已拒绝：{name}",
+		zipSlip: "ZIP 条目越界已拒绝（ZipSlip）：{name}",
+		pickPaths: "请选择 1~100 个文件/文件夹",
+		remoteNoZipTar: "远端打包失败（远端无 zip 也无 tar）",
+		remoteZipFail: "远端 zip 打包失败{detail}",
+		remoteNoUnzip: "远端缺少 unzip，请先安装 unzip 后重试",
+		remoteUnzipFail: "远端解压失败{detail}",
+		needZip: "请选择 .zip 文件",
+		badName: "非法文件名",
+		badSize: "非法文件大小",
+		uploadGone: "上传会话不存在或已超时，请重新上传",
+		chunkOrder: "分片乱序",
+		emptyChunk: "空分片",
+		hostAddrNeed: "主机地址不能为空",
+		hostMissing: "主机不存在",
+		hostLimit: "最多保存 {n} 台主机",
+		hostAuthNeed: "请填写密码、私钥（可填私钥路径）或 agent",
+		needAlias: "缺少 alias",
+		pickAliases: "请先勾选要导入的主机",
+		cfgTooBig: "config 过大（512KB 上限），拒绝写入",
+		pathMissing: "路径不存在",
+		illegalTargetSelf: "目标不能是源本身或其子目录",
+		targetExists: "目标已存在",
+		srcMissing: "源不存在",
+		denyCoverRoot: "拒绝覆盖根目录",
+		emptyQuery: "搜索关键词不能为空",
+		installingDeps: "📝 编辑器：开始安装依赖（ssh2）…",
+		depsOk: "📝 编辑器依赖安装完成",
+		depsFail: "📝 编辑器依赖安装失败——请在插件目录手动执行 npm install ssh2",
+		colonSep: "：",
+		invalidPathAt: "非法路径：{p}",
+		hostLimitAdded: "最多保存 {n} 台主机（已导入 {added} 台）",
+		packEmptyDir: "打包结果为空，可能目录不可读",
+		connGone: "连接不存在或已断开",
+		sshCfgReadFail: "读取 ~/.ssh/config 失败：{error}",
+		sshCfgEmpty: "~/.ssh/config 里没有可导入的主机",
+		sshCfgNoAlias: "~/.ssh/config 里没有主机「{alias}」（VSCode 侧改完 config 刷新即生效）",
+		keyReadFail: "私钥文件读取失败：{path}",
+		authNeedShort: "请填写密码、私钥或 agent（主机编辑里可填私钥路径 / agent）",
+		ssh2NotReady: "ssh2 依赖未就绪，稍候再试",
+		noAuthForAlias:
+			"主机「{alias}」没有可用认证：config 未配 IdentityFile，本机也没有默认私钥/~/.ssh 下的 key 与 ssh-agent（VSCode 里能连通常是因为 agent 或 key，服务端没跑 agent 时请先配 IdentityFile）",
+		proxyJumpFail: "ProxyJump 解析失败：{jump}",
+	},
+	en: {
+		pathOutside: "Path outside workspace",
+		invalidPath: "Invalid path",
+		notFile: "Not a regular file",
+		fileOverMB: "File exceeds the {n}MB limit",
+		packOverMB: "Archive exceeds the {n}MB limit",
+		packTooBig: "Pack content exceeds the {n}MB limit",
+		symlinkDeny: "Symlink or out-of-workspace write denied",
+		symlinkDenyCreate: "Symlink or out-of-workspace create denied",
+		existsSame: "A file/folder with the same name exists",
+		invalidNewName: "Invalid new name",
+		denyDelRoot: "Refusing to delete the root directory",
+		tarNeeded: "Local packing needs system tar, failed: {e}",
+		packEmpty: "Pack result is empty",
+		packFail: "Local pack failed (tar exit {code}{detail}); make sure tar is installed",
+		remotePackFail: "Pack failed (no tar on remote host or directory unreadable)",
+		zipNoSys: "System zip unavailable",
+		zipPackFail: "System zip pack failed (exit {code}{detail})",
+		unzipNoSys: "System unzip unavailable",
+		unzipFail: "Extract failed (unzip exit {code}{detail})",
+		unzipListFail: "unzip listing failed",
+		unzipNolist: "unzip listing unsupported, using built-in extractor",
+		symlinkPack: "Symlinks are not packed",
+		invalidZip: "Not a valid ZIP file",
+		noEocd: "Not a valid ZIP file (EOCD not found)",
+		badCentral: "ZIP central directory is corrupt",
+		badLocal: "ZIP local file header is corrupt",
+		unsupMethod: "Unsupported ZIP compression method: {m}",
+		badCrc: "ZIP checksum mismatch: {name}",
+		zipIllegal: "ZIP entry rejected (illegal): {name}",
+		zipSlip: "ZIP entry rejected (ZipSlip): {name}",
+		pickPaths: "Please select 1–100 files/folders",
+		remoteNoZipTar: "Remote pack failed (no zip and no tar on host)",
+		remoteZipFail: "Remote zip pack failed{detail}",
+		remoteNoUnzip: "No unzip on remote host; please install unzip first",
+		remoteUnzipFail: "Remote extract failed{detail}",
+		needZip: "Please choose a .zip file",
+		badName: "Invalid file name",
+		badSize: "Invalid file size",
+		uploadGone: "Upload session expired or missing; please re-upload",
+		chunkOrder: "Chunks out of order",
+		emptyChunk: "Empty chunk",
+		hostAddrNeed: "Host address is required",
+		hostMissing: "Host does not exist",
+		hostLimit: "At most {n} hosts",
+		hostAuthNeed: "Fill in a password, private key (or key path) or agent",
+		needAlias: "Missing alias",
+		pickAliases: "Please tick the hosts to import first",
+		cfgTooBig: "config too large (512KB cap), write denied",
+		pathMissing: "Path does not exist",
+		illegalTargetSelf: "Target cannot be the source itself or its subdirectory",
+		targetExists: "Target already exists",
+		srcMissing: "Source does not exist",
+		denyCoverRoot: "Refusing to overwrite the root",
+		emptyQuery: "Search keyword is required",
+		installingDeps: "📝 Editor: installing dependency (ssh2)…",
+		depsOk: "📝 Editor dependency installed",
+		depsFail: "📝 Editor dependency install failed — run npm install ssh2 in the plugin directory manually",
+		colonSep: ": ",
+		invalidPathAt: "Invalid path: {p}",
+		hostLimitAdded: "At most {n} hosts ({added} imported)",
+		packEmptyDir: "Pack result is empty; directory may be unreadable",
+		connGone: "Connection is gone or disconnected",
+		sshCfgReadFail: "Failed to read ~/.ssh/config: {error}",
+		sshCfgEmpty: "No importable hosts in ~/.ssh/config",
+		sshCfgNoAlias: 'No host "{alias}" in ~/.ssh/config (refresh after editing on the VSCode side)',
+		keyReadFail: "Failed to read key file: {path}",
+		authNeedShort: "Fill in a password, private key or agent (key path / agent available in host editing)",
+		ssh2NotReady: "ssh2 dependency is not ready, try again in a moment",
+		noAuthForAlias:
+			'Host "{alias}" has no usable auth: config has no IdentityFile, and there is no default key under ~/.ssh nor ssh-agent locally (when VSCode can connect it is usually via agent or a key; configure IdentityFile when no agent runs on the server)',
+		proxyJumpFail: "ProxyJump parse failed: {jump}",
+	},
+};
+function SLX(lang, key, vars) {
+	let s = (lang === "en" ? LS.en[key] : null) ?? LS.zh[key] ?? key;
+	if (vars) for (const [k, v] of Object.entries(vars)) s = s.split(`{${k}}`).join(String(v));
+	return s;
+}
+function SL(key, vars) {
+	return SLX(vscAls.getStore() ?? "zh", key, vars);
+}
 
 function toWire(p) {
 	return p.split(path.sep).join("/");
@@ -257,6 +418,7 @@ export async function loadSshConfigBlocks(options = {}) {
 export default {
 	activate(host) {
 		let root = path.resolve(host.cwd);
+		let uiLang = "zh";
 
 		function safeResolve(rel) {
 			if (typeof rel !== "string") return null;
@@ -265,13 +427,13 @@ export default {
 			return abs;
 		}
 
-		function fail(reqId, error) {
-			return { res: true, reqId, ok: false, error };
+		function fail(reqId, error, code) {
+			return { res: true, reqId, ok: false, error, code };
 		}
 
 		async function listDir(relDir) {
 			const abs = safeResolve(relDir ?? "");
-			if (!abs) throw new Error("路径越界");
+			if (!abs) throw new Error(SL("pathOutside"));
 			const dirents = await fs.readdir(abs === root ? root : abs, { withFileTypes: true });
 			const entries = [];
 			for (const d of dirents) {
@@ -339,13 +501,13 @@ export default {
 
 		async function readFile(rel) {
 			const abs = safeResolve(rel);
-			if (!abs) throw new Error("路径越界");
+			if (!abs) throw new Error(SL("pathOutside"));
 			const stat = await fs.stat(abs);
-			if (!stat.isFile()) throw new Error("不是普通文件");
-			if (stat.size > MAX_READ_BYTES) throw new Error(`文件超过 ${MAX_READ_BYTES / 1024 / 1024}MB 上限`);
+			if (!stat.isFile()) throw new Error(SL("notFile"));
+			if (stat.size > MAX_READ_BYTES) throw new Error(SL("fileOverMB", { n: MAX_READ_BYTES / 1024 / 1024 }));
 			const buf = await fs.readFile(abs);
-			if (!looksLikeText(buf)) return { binary: true, size: stat.size };
-			return { text: decodeBuf(buf), encoding: "utf-8", size: stat.size };
+			if (!looksLikeText(buf)) return { binary: true, size: stat.size, mtimeMs: stat.mtimeMs };
+			return { text: decodeBuf(buf), encoding: "utf-8", size: stat.size, mtimeMs: stat.mtimeMs };
 		}
 
 		async function safeWriteTarget(abs) {
@@ -376,18 +538,20 @@ export default {
 
 		async function writeFile(rel, text) {
 			const abs = safeResolve(rel);
-			if (!abs || abs === root) throw new Error("非法路径");
-			if (!(await safeWriteTarget(abs))) throw new Error("路径含符号链接或越界，拒绝写入");
+			if (!abs || abs === root) throw new Error(SL("invalidPath"));
+			if (!(await safeWriteTarget(abs))) throw new Error(SL("symlinkDeny"));
 			await fs.mkdir(path.dirname(abs), { recursive: true });
 			const tmp = abs + ".vsc-tmp-" + process.pid;
 			await fs.writeFile(tmp, String(text ?? ""), "utf-8");
 			await fs.rename(tmp, abs);
+			const st = await fs.stat(abs);
+			return { bytes: st.size, mtimeMs: st.mtimeMs };
 		}
 
 		async function createEntry(rel, kind) {
 			const abs = safeResolve(rel);
-			if (!abs || abs === root) throw new Error("非法路径");
-			if (!(await safeWriteTarget(abs))) throw new Error("路径含符号链接或越界，拒绝创建");
+			if (!abs || abs === root) throw new Error(SL("invalidPath"));
+			if (!(await safeWriteTarget(abs))) throw new Error(SL("symlinkDenyCreate"));
 			try {
 				if (kind === "dir") await fs.mkdir(abs);
 				else {
@@ -395,7 +559,7 @@ export default {
 					await fs.writeFile(abs, "", { flag: "wx" });
 				}
 			} catch (err) {
-				if (err.code === "EEXIST") throw new Error("已存在同名文件/文件夹");
+				if (err.code === "EEXIST") throw Object.assign(new Error(SL("existsSame")), { code: "VSC_EXISTS" });
 				throw err;
 			}
 		}
@@ -408,17 +572,17 @@ export default {
 				newName.includes("\\") ||
 				newName.includes("..")
 			) {
-				throw new Error("非法新名称");
+				throw new Error(SL("invalidNewName"));
 			}
 			const abs = safeResolve(rel);
-			if (!abs || abs === root) throw new Error("非法路径");
+			if (!abs || abs === root) throw new Error(SL("invalidPath"));
 			await fs.access(abs);
 			await fs.rename(abs, path.join(path.dirname(abs), newName));
 		}
 
 		async function deleteEntry(rel) {
 			const abs = safeResolve(rel);
-			if (!abs || abs === root) throw new Error("拒绝删除根目录");
+			if (!abs || abs === root) throw new Error(SL("denyDelRoot"));
 			await fs.rm(abs, { recursive: true, force: false });
 		}
 
@@ -436,6 +600,7 @@ export default {
 		}
 
 		function sshExecBuffer(c, cmd) {
+			const fxLang = vscAls.getStore() ?? "zh";
 			return new Promise((resolve, reject) => {
 				c.client.exec(cmd, (err, stream) => {
 					if (err) return void reject(err);
@@ -447,7 +612,9 @@ export default {
 							try {
 								stream.close();
 							} catch {}
-							return void reject(new Error(`压缩包超过 ${Math.round(MAX_DOWNLOAD_BYTES / 1024 / 1024)}MB 上限`));
+							return void reject(
+								new Error(SLX(fxLang, "packOverMB", { n: Math.round(MAX_DOWNLOAD_BYTES / 1024 / 1024) })),
+							);
 						}
 						chunks.push(d);
 					});
@@ -461,6 +628,7 @@ export default {
 
 		// 本地文件夹打包下载：与远端 tar.gz 对称，优先用系统 tar，不引入新 npm 依赖。
 		function tarGzLocal(abs) {
+			const fxLang = vscAls.getStore() ?? "zh";
 			return new Promise((resolve, reject) => {
 				let child;
 				try {
@@ -468,7 +636,7 @@ export default {
 						stdio: ["ignore", "pipe", "pipe"],
 					});
 				} catch (err) {
-					return void reject(new Error(`本地打包需要系统 tar，打包失败：${err?.message ?? err}`));
+					return void reject(new Error(SLX(fxLang, "tarNeeded", { e: err?.message ?? err })));
 				}
 				const chunks = [];
 				let size = 0;
@@ -484,7 +652,7 @@ export default {
 				child.stdout.on("data", (d) => {
 					size += d.length;
 					if (size > MAX_DOWNLOAD_BYTES) {
-						fail(new Error(`文件夹打包后超过 ${Math.round(MAX_DOWNLOAD_BYTES / 1024 / 1024)}MB 上限`));
+						fail(new Error(SLX(fxLang, "packOverMB", { n: Math.round(MAX_DOWNLOAD_BYTES / 1024 / 1024) })));
 						return;
 					}
 					chunks.push(d);
@@ -493,20 +661,23 @@ export default {
 				child.stderr.on("data", (d) => {
 					errText += String(d).slice(0, 500);
 				});
-				child.on("error", (err) => fail(new Error(`本地打包需要系统 tar，打包失败：${err?.message ?? err}`)));
+				child.on("error", (err) => fail(new Error(SLX(fxLang, "tarNeeded", { e: err?.message ?? err }))));
 				child.on("close", (code) => {
 					if (failed) return;
 					if (code !== 0) {
 						fail(
 							new Error(
-								`本地打包失败（tar exit ${code}${errText.trim() ? `：${errText.trim()}` : ""}），请确认系统已安装 tar`,
+								SLX(fxLang, "packFail", {
+									code,
+									detail: errText.trim() ? SLX(fxLang, "colonSep") + errText.trim() : "",
+								}),
 							),
 						);
 						return;
 					}
 					const buf = Buffer.concat(chunks);
 					if (!buf.length) {
-						fail(new Error("打包结果为空，可能目录不可读"));
+						fail(new Error(SLX(fxLang, "packEmptyDir")));
 						return;
 					}
 					resolve(buf);
@@ -514,9 +685,409 @@ export default {
 			});
 		}
 
+		// ---- ZIP（零新依赖）：优先系统 zip/unzip，不可用则纯 Node 最小实现 ----
+		// 写入仅 stored（不压缩，各解压工具均可读）；读取支持 stored/deflate，附 ZipSlip 防护。
+		const ZIP_CRC_TABLE = (() => {
+			const t = new Uint32Array(256);
+			for (let n = 0; n < 256; n++) {
+				let c = n;
+				for (let k = 0; k < 8; k++) c = c & 1 ? 0xedb88320 ^ (c >>> 1) : c >>> 1;
+				t[n] = c >>> 0;
+			}
+			return t;
+		})();
+
+		function zipCrc32(buf) {
+			let c = 0xffffffff;
+			for (let i = 0; i < buf.length; i++) c = ZIP_CRC_TABLE[(c ^ buf[i]) & 0xff] ^ (c >>> 8);
+			return (c ^ 0xffffffff) >>> 0;
+		}
+
+		function zipStoreFiles(files) {
+			const enc = new TextEncoder();
+			const chunks = [];
+			const central = [];
+			let offset = 0;
+			for (const f of files) {
+				const nameBuf = Buffer.from(enc.encode(f.name));
+				const data = f.dir ? Buffer.alloc(0) : Buffer.from(f.data);
+				const crc = zipCrc32(data);
+				const head = Buffer.alloc(30);
+				head.writeUInt32LE(0x04034b50, 0);
+				head.writeUInt16LE(20, 4);
+				head.writeUInt16LE(0x0800, 6);
+				head.writeUInt16LE(0, 8);
+				head.writeUInt16LE(0, 10);
+				head.writeUInt16LE(0, 12);
+				head.writeUInt32LE(crc, 14);
+				head.writeUInt32LE(data.length, 18);
+				head.writeUInt32LE(data.length, 22);
+				head.writeUInt16LE(nameBuf.length, 26);
+				head.writeUInt16LE(0, 28);
+				chunks.push(head, nameBuf, data);
+				central.push({ nameBuf, crc, size: data.length, offset, dir: !!f.dir });
+				offset += head.length + nameBuf.length + data.length;
+			}
+			const centralStart = offset;
+			let centralSize = 0;
+			for (const c of central) {
+				const h = Buffer.alloc(46);
+				h.writeUInt32LE(0x02014b50, 0);
+				h.writeUInt16LE(20, 4);
+				h.writeUInt16LE(20, 6);
+				h.writeUInt16LE(0x0800, 8);
+				h.writeUInt16LE(0, 10);
+				h.writeUInt16LE(0, 12);
+				h.writeUInt16LE(0, 14);
+				h.writeUInt32LE(c.crc, 16);
+				h.writeUInt32LE(c.size, 20);
+				h.writeUInt32LE(c.size, 24);
+				h.writeUInt16LE(c.nameBuf.length, 28);
+				h.writeUInt16LE(0, 30);
+				h.writeUInt16LE(0, 32);
+				h.writeUInt16LE(0, 34);
+				h.writeUInt16LE(0, 36);
+				h.writeUInt32LE(c.dir ? 0x10 : 0, 38);
+				h.writeUInt32LE(c.offset, 42);
+				chunks.push(h, c.nameBuf);
+				centralSize += h.length + c.nameBuf.length;
+			}
+			const end = Buffer.alloc(22);
+			end.writeUInt32LE(0x06054b50, 0);
+			end.writeUInt16LE(central.length, 8);
+			end.writeUInt16LE(central.length, 10);
+			end.writeUInt32LE(centralSize, 12);
+			end.writeUInt32LE(centralStart, 16);
+			end.writeUInt16LE(0, 20);
+			chunks.push(end);
+			return Buffer.concat(chunks);
+		}
+
+		function parseZipEntries(buf) {
+			if (buf.length < 22) throw new Error(SL("invalidZip"));
+			let eocd = -1;
+			const maxComment = Math.min(buf.length - 22, 65535);
+			for (let i = buf.length - 22; i >= buf.length - 22 - maxComment; i--) {
+				if (buf.readUInt32LE(i) === 0x06054b50) {
+					eocd = i;
+					break;
+				}
+			}
+			if (eocd < 0) throw new Error(SL("noEocd"));
+			const count = buf.readUInt16LE(eocd + 10);
+			let ptr = buf.readUInt32LE(eocd + 16);
+			const out = [];
+			for (let i = 0; i < count; i++) {
+				if (buf.readUInt32LE(ptr) !== 0x02014b50) throw new Error(SL("badCentral"));
+				const method = buf.readUInt16LE(ptr + 10);
+				const crc = buf.readUInt32LE(ptr + 16);
+				const compSize = buf.readUInt32LE(ptr + 20);
+				const nameLen = buf.readUInt16LE(ptr + 28);
+				const extraLen = buf.readUInt16LE(ptr + 30);
+				const commentLen = buf.readUInt16LE(ptr + 32);
+				const localOff = buf.readUInt32LE(ptr + 42);
+				const name = buf.toString("utf8", ptr + 46, ptr + 46 + nameLen);
+				ptr += 46 + nameLen + extraLen + commentLen;
+				if (buf.readUInt32LE(localOff) !== 0x04034b50) throw new Error(SL("badLocal"));
+				const lhNameLen = buf.readUInt16LE(localOff + 26);
+				const lhExtraLen = buf.readUInt16LE(localOff + 28);
+				const dataStart = localOff + 30 + lhNameLen + lhExtraLen;
+				const comp = buf.subarray(dataStart, dataStart + compSize);
+				let data;
+				if (method === 0) data = Buffer.from(comp);
+				else if (method === 8) data = inflateRawSync(comp);
+				else throw new Error(SL("unsupMethod", { m: method }));
+				if (zipCrc32(data) !== crc) throw new Error(SL("badCrc", { name }));
+				out.push({ name, data, isDir: name.endsWith("/") });
+			}
+			return out;
+		}
+
+		function assertZipEntrySafe(name) {
+			const norm = String(name ?? "").replace(/\\/g, "/");
+			if (!norm || norm.startsWith("/") || /^[a-zA-Z]:/.test(norm))
+				throw Object.assign(new Error(SL("zipIllegal", { name })), { code: "VSC_ZIP_PATH" });
+			for (const s of norm.split("/")) {
+				if (s === "..") throw Object.assign(new Error(SL("zipSlip", { name })), { code: "VSC_ZIP_PATH" });
+			}
+			return norm;
+		}
+
+		async function collectLocalZipEntries(absPaths) {
+			const files = [];
+			let rawTotal = 0;
+			const pushFile = async (entryName, abs) => {
+				const data = await fs.readFile(abs);
+				rawTotal += data.length;
+				if (rawTotal > MAX_DOWNLOAD_BYTES * 4)
+					throw new Error(SL("packTooBig", { n: Math.round((MAX_DOWNLOAD_BYTES * 4) / 1024 / 1024) }));
+				files.push({ name: entryName, data });
+			};
+			const walkDir = async (absDir, entryBase) => {
+				files.push({ name: `${entryBase}/`, dir: true, data: Buffer.alloc(0) });
+				const dirents = await fs.readdir(absDir, { withFileTypes: true });
+				for (const d of dirents) {
+					if (IGNORED.has(d.name)) continue;
+					if (d.isSymbolicLink()) continue;
+					const full = path.join(absDir, d.name);
+					const entryName = `${entryBase}/${d.name}`;
+					if (d.isDirectory()) await walkDir(full, entryName);
+					else if (d.isFile()) await pushFile(entryName, full);
+				}
+			};
+			for (const abs of absPaths) {
+				const st = await fs.lstat(abs);
+				if (st.isSymbolicLink()) throw new Error(SL("symlinkPack"));
+				const base = path.basename(abs);
+				if (st.isFile()) await pushFile(base, abs);
+				else if (st.isDirectory()) await walkDir(abs, base);
+				else throw new Error(SL("notFile"));
+			}
+			return files;
+		}
+
+		async function unzipBufferToDir(buf, destAbs) {
+			const entries = parseZipEntries(buf);
+			const destReal = path.resolve(destAbs);
+			let count = 0;
+			for (const e of entries) {
+				const norm = assertZipEntrySafe(e.name);
+				const target = path.resolve(path.join(destReal, norm));
+				if (target !== destReal && !target.startsWith(destReal + path.sep))
+					throw Object.assign(new Error(SL("zipSlip", { name: e.name })), { code: "VSC_ZIP_PATH" });
+				if (e.isDir || !norm.split("/").pop()) {
+					await fs.mkdir(target, { recursive: true });
+					continue;
+				}
+				await fs.mkdir(path.dirname(target), { recursive: true });
+				await fs.writeFile(target, e.data);
+				count++;
+			}
+			return count;
+		}
+
+		function zipLocalViaSystem(relPaths, cwd) {
+			const fxLang = vscAls.getStore() ?? "zh";
+			return new Promise((resolve, reject) => {
+				let child;
+				try {
+					child = spawn("zip", ["-r", "-", "--", ...relPaths], {
+						cwd,
+						stdio: ["ignore", "pipe", "pipe"],
+					});
+				} catch (err) {
+					return void reject(Object.assign(new Error(SLX(fxLang, "zipNoSys")), { code: "ENOENT" }));
+				}
+				const chunks = [];
+				let size = 0;
+				let failed = false;
+				const fail = (err) => {
+					if (failed) return;
+					failed = true;
+					try {
+						child.kill();
+					} catch {}
+					reject(err);
+				};
+				child.stdout.on("data", (d) => {
+					size += d.length;
+					if (size > MAX_DOWNLOAD_BYTES) {
+						fail(new Error(SLX(fxLang, "packOverMB", { n: Math.round(MAX_DOWNLOAD_BYTES / 1024 / 1024) })));
+						return;
+					}
+					chunks.push(d);
+				});
+				let errText = "";
+				child.stderr.on("data", (d) => {
+					errText += String(d).slice(0, 500);
+				});
+				child.on("error", (err) =>
+					fail(err?.code === "ENOENT" ? Object.assign(new Error(SLX(fxLang, "zipNoSys")), { code: "ENOENT" }) : err),
+				);
+				child.on("close", (code) => {
+					if (failed) return;
+					if (code !== 0) {
+						fail(
+							new Error(
+								SLX(fxLang, "zipPackFail", {
+									code,
+									detail: errText.trim() ? SLX(fxLang, "colonSep") + errText.trim() : "",
+								}),
+							),
+						);
+						return;
+					}
+					const out = Buffer.concat(chunks);
+					if (!out.length) {
+						fail(new Error(SL("packEmpty")));
+						return;
+					}
+					resolve(out);
+				});
+			});
+		}
+
+		function unzipListNames(zipAbs) {
+			const fxLang = vscAls.getStore() ?? "zh";
+			return new Promise((resolve, reject) => {
+				let child;
+				try {
+					child = spawn("unzip", ["-Z1", zipAbs], { stdio: ["ignore", "pipe", "pipe"] });
+				} catch (err) {
+					return void reject(Object.assign(new Error(SLX(fxLang, "unzipNoSys")), { code: "ENOENT" }));
+				}
+				const chunks = [];
+				child.stdout.on("data", (d) => chunks.push(d));
+				child.stderr?.on("data", () => {});
+				child.on("error", (err) =>
+					reject(
+						err?.code === "ENOENT" ? Object.assign(new Error(SLX(fxLang, "unzipNoSys")), { code: "ENOENT" }) : err,
+					),
+				);
+				child.on("close", (code) => {
+					if (code !== 0)
+						return void reject(Object.assign(new Error(SLX(fxLang, "unzipListFail")), { code: "NOLIST" }));
+					resolve(
+						Buffer.concat(chunks)
+							.toString("utf8")
+							.split("\n")
+							.map((s) => s.replace(/\r$/, ""))
+							.filter((s) => s.length),
+					);
+				});
+			});
+		}
+
+		function unzipLocalViaSystem(zipAbs, destAbs) {
+			const fxLang = vscAls.getStore() ?? "zh";
+			return new Promise((resolve, reject) => {
+				let child;
+				try {
+					child = spawn("unzip", ["-o", "-q", zipAbs, "-d", destAbs], {
+						stdio: ["ignore", "ignore", "pipe"],
+					});
+				} catch (err) {
+					return void reject(Object.assign(new Error(SLX(fxLang, "unzipNoSys")), { code: "ENOENT" }));
+				}
+				let errText = "";
+				child.stderr?.on("data", (d) => {
+					errText += String(d).slice(0, 500);
+				});
+				child.on("error", (err) =>
+					reject(
+						err?.code === "ENOENT" ? Object.assign(new Error(SLX(fxLang, "unzipNoSys")), { code: "ENOENT" }) : err,
+					),
+				);
+				child.on("close", (code) => {
+					if (code !== 0)
+						reject(
+							new Error(
+								SLX(fxLang, "unzipFail", {
+									code,
+									detail: errText.trim() ? SLX(fxLang, "colonSep") + errText.trim() : "",
+								}),
+							),
+						);
+					else resolve(-1);
+				});
+			});
+		}
+
+		function sshExecCapture(c, cmd) {
+			const fxLang = vscAls.getStore() ?? "zh";
+			return new Promise((resolve, reject) => {
+				c.client.exec(cmd, (err, stream) => {
+					if (err) return void reject(err);
+					const out = [];
+					const er = [];
+					let size = 0;
+					let failed = false;
+					stream.on("data", (d) => {
+						size += d.length;
+						if (size > MAX_DOWNLOAD_BYTES) {
+							failed = true;
+							try {
+								stream.close();
+							} catch {}
+							reject(new Error(SLX(fxLang, "packOverMB", { n: Math.round(MAX_DOWNLOAD_BYTES / 1024 / 1024) })));
+							return;
+						}
+						out.push(d);
+					});
+					stream.stderr.on("data", (d) => {
+						er.push(d);
+					});
+					stream.on("close", (code) => {
+						if (failed) return;
+						resolve({
+							code: Number(code),
+							stdout: Buffer.concat(out),
+							stderr: Buffer.concat(er).toString("utf8").slice(0, 500),
+						});
+					});
+				});
+			});
+		}
+
+		function remoteCommonParent(paths) {
+			const segs = paths.map((p) => String(p).split("/").filter(Boolean));
+			let common = segs[0] ?? [];
+			for (const s of segs.slice(1)) {
+				let i = 0;
+				while (i < common.length && i < s.length && common[i] === s[i]) i++;
+				common = common.slice(0, i);
+			}
+			return `/${common.join("/")}`;
+		}
+
+		async function remoteDownloadZip(c, paths) {
+			for (const p of paths) safeRemotePath(p);
+			const common = remoteCommonParent(paths);
+			const rels = paths.map((p) => (p === common ? "." : p.slice(common === "/" ? 1 : common.length + 1)));
+			const base =
+				paths.length === 1
+					? paths[0].split("/").filter(Boolean).pop()
+					: common.split("/").filter(Boolean).pop() || "files";
+			const zipCmd = `cd ${shQuote(common)} && zip -r - ${rels.map((r) => shQuote(r)).join(" ")}`;
+			const r = await sshExecCapture(c, zipCmd);
+			if (r.code === 0 && r.stdout.length) return { buf: r.stdout, name: `${base}.zip`, fallback: null };
+			const errLower = `${r.stderr}`.toLowerCase();
+			if (r.code === 127 || errLower.includes("not found")) {
+				const t = await sshExecCapture(`cd ${shQuote(common)} && tar -czf - ${rels.map((x) => shQuote(x)).join(" ")}`);
+				if (t.code !== 0 || !t.stdout.length) throw new Error(SL("remoteNoZipTar"));
+				return { buf: t.stdout, name: `${base}.tar.gz`, fallback: "tar.gz" };
+			}
+			throw new Error(SL("remoteZipFail", { detail: r.stderr ? SL("colonSep") + r.stderr : "" }));
+		}
+
+		async function remoteUnzip(c, zipPath, destDir) {
+			const zp = safeRemotePath(zipPath);
+			const dp = safeRemotePath(destDir);
+			try {
+				const l = await sshExecCapture(c, `unzip -Z1 ${shQuote(zp)}`);
+				if (l.code === 0) {
+					for (const nm of l.stdout
+						.toString("utf8")
+						.split("\n")
+						.map((s) => s.replace(/\r$/, ""))
+						.filter((s) => s.length)) {
+						assertZipEntrySafe(nm);
+					}
+				}
+			} catch (err) {
+				if (err?.code === "VSC_ZIP_PATH") throw err;
+			}
+			const r = await sshExecCapture(c, `unzip -o -q ${shQuote(zp)} -d ${shQuote(dp)}`);
+			if (r.code !== 0) {
+				const errLower = `${r.stderr}`.toLowerCase();
+				if (r.code === 127 || errLower.includes("not found")) throw new Error(SL("remoteNoUnzip"));
+				throw new Error(SL("remoteUnzipFail", { detail: r.stderr ? SL("colonSep") + r.stderr : "" }));
+			}
+		}
+
 		function safeRemotePath(p) {
 			p = String(p ?? "");
-			if (!p.startsWith("/") || p.split("/").includes("..")) throw new Error("非法路径");
+			if (!p.startsWith("/") || p.split("/").includes("..")) throw new Error(SL("invalidPath"));
 			return p;
 		}
 
@@ -536,7 +1107,7 @@ export default {
 					sshDeps.mod = m.default ?? m;
 					sshDeps.ok = true;
 				} catch {
-					host.notify("info", "📝 编辑器：开始安装依赖（ssh2）…");
+					host.notify("info", SLX(uiLang, "installingDeps"));
 					let cli = null;
 					try {
 						cli = createRequire(import.meta.url).resolve("npm/bin/npm-cli.js");
@@ -557,10 +1128,7 @@ export default {
 								sshDeps.ok = true;
 							} catch {}
 						}
-						host.notify(
-							sshDeps.ok ? "success" : "error",
-							sshDeps.ok ? "📝 编辑器依赖安装完成" : "📝 编辑器依赖安装失败——请在插件目录手动执行 npm install ssh2",
-						);
+						host.notify(sshDeps.ok ? "success" : "error", sshDeps.ok ? SLX(uiLang, "depsOk") : SLX(uiLang, "depsFail"));
 						for (const w of sshDeps.waiters.splice(0)) w(sshDeps.ok ? sshDeps.mod : null);
 						broadcastSshState();
 						res(sshDeps.ok ? sshDeps.mod : null);
@@ -734,7 +1302,7 @@ export default {
 
 		function getSshConn(connId) {
 			const c = sshConns.get(connId);
-			if (!c) throw new Error("连接不存在或已断开");
+			if (!c) throw new Error(SL("connGone"));
 			return c;
 		}
 
@@ -766,8 +1334,8 @@ export default {
 
 		async function readSshConfigCandidates() {
 			const { list, error } = await refreshSshConfigCache();
-			if (error) throw new Error(`读取 ~/.ssh/config 失败：${error}`);
-			if (!list.length) throw new Error("~/.ssh/config 里没有可导入的主机");
+			if (error) throw new Error(SL("sshCfgReadFail", { error }));
+			if (!list.length) throw new Error(SL("sshCfgEmpty"));
 			await ensureSshCfgs();
 			const exists = new Set();
 			for (const h of sshCfgs.hosts) {
@@ -782,9 +1350,9 @@ export default {
 
 		async function resolveConfigAlias(alias) {
 			const { list, error } = await refreshSshConfigCache();
-			if (error) throw new Error(`读取 ~/.ssh/config 失败：${error}`);
+			if (error) throw new Error(SL("sshCfgReadFail", { error }));
 			const c = list.find((x) => x.alias === String(alias ?? ""));
-			if (!c) throw new Error(`~/.ssh/config 里没有主机「${alias}」（VSCode 侧改完 config 刷新即生效）`);
+			if (!c) throw new Error(SL("sshCfgNoAlias", { alias }));
 			return c;
 		}
 
@@ -798,7 +1366,7 @@ export default {
 
 		async function writeSshConfigRaw(text) {
 			const t = String(text ?? "");
-			if (t.length > 512 * 1024) throw new Error("config 过大（512KB 上限），拒绝写入");
+			if (t.length > 512 * 1024) throw new Error(SL("cfgTooBig"));
 			await fs.mkdir(path.dirname(SSH_CONFIG_FILE), { recursive: true, mode: 0o700 });
 			try {
 				const prev = await fs.readFile(SSH_CONFIG_FILE, "utf8");
@@ -829,13 +1397,13 @@ export default {
 				try {
 					key = await fs.readFile(keyPath, "utf8");
 				} catch {
-					throw new Error(`私钥文件读取失败：${cfg.privateKeyPath}`);
+					throw new Error(SL("keyReadFail", { path: cfg.privateKeyPath }));
 				}
 			} else if (cfg.privateKey) key = cfg.privateKey;
 			if (key) opts.privateKey = key;
 			if (cfg.passphrase) opts.passphrase = cfg.passphrase;
 			if (!opts.password && !opts.privateKey && !opts.agent) {
-				throw new Error("请填写密码、私钥或 agent（主机编辑里可填私钥路径 / agent）");
+				throw new Error(SL("authNeedShort"));
 			}
 			return opts;
 		}
@@ -952,7 +1520,7 @@ export default {
 		async function connectSshHost(cfg, clientId, reqId) {
 			try {
 				const mod = await ensureSshMod();
-				if (!mod?.Client) throw new Error("ssh2 依赖未就绪，稍候再试");
+				if (!mod?.Client) throw new Error(SL("ssh2NotReady"));
 				const connId = `c${nextSshConn++}`;
 				const c = {
 					connId,
@@ -999,13 +1567,11 @@ export default {
 		async function connectConfigAlias(alias, clientId, reqId, action = "config_connect") {
 			try {
 				const mod = await ensureSshMod();
-				if (!mod?.Client) throw new Error("ssh2 依赖未就绪，稍候再试");
+				if (!mod?.Client) throw new Error(SL("ssh2NotReady"));
 				const candidate = await resolveConfigAlias(alias);
 				const { keys, agentSock } = await buildConfigAuth(candidate);
 				if (!keys.length && !agentSock) {
-					throw new Error(
-						`主机「${alias}」没有可用认证：config 未配 IdentityFile，本机也没有默认私钥/~/.ssh 下的 key 与 ssh-agent（VSCode 里能连通常是因为 agent 或 key，服务端没跑 agent 时请先配 IdentityFile）`,
-					);
+					throw new Error(SL("noAuthForAlias", { alias }));
 				}
 				const connId = `c${nextSshConn++}`;
 				const c = {
@@ -1039,7 +1605,7 @@ export default {
 					c.procs.push(...via.procs);
 				} else if (candidate.proxyJump) {
 					const hops = parseProxyJump(candidate.proxyJump, sshConfigCache.blocks);
-					if (!hops.length) throw new Error(`ProxyJump 解析失败：${candidate.proxyJump}`);
+					if (!hops.length) throw new Error(SL("proxyJumpFail", { jump: candidate.proxyJump }));
 					const via = await dialViaJumps(mod, hops, candidate.host, candidate.port);
 					opts.sock = via.sock;
 					c.jumps.push(...via.jumps);
@@ -1129,10 +1695,11 @@ export default {
 		async function remoteRead(c, p) {
 			const sftp = await getSftp(c);
 			const stat = await sftpCall(sftp, "stat", p);
-			if (stat.size > MAX_READ_BYTES) throw new Error(`文件超过 ${MAX_READ_BYTES / 1024 / 1024}MB 上限`);
+			if (stat.size > MAX_READ_BYTES) throw new Error(SL("fileOverMB", { n: MAX_READ_BYTES / 1024 / 1024 }));
 			const buf = await sftpCall(sftp, "readFile", p);
-			if (buf.includes(0)) return { binary: true, size: buf.length };
-			return { text: decodeBuf(buf), encoding: "utf-8", size: buf.length };
+			const mtimeMs = Number(stat.mtime ?? 0) * 1000;
+			if (buf.includes(0)) return { binary: true, size: buf.length, mtimeMs };
+			return { text: decodeBuf(buf), encoding: "utf-8", size: buf.length, mtimeMs };
 		}
 
 		async function remoteWrite(c, p, text) {
@@ -1140,6 +1707,8 @@ export default {
 			const parent = String(p).split("/").slice(0, -1).join("/");
 			if (parent) await mkdirpRemote(sftp, parent);
 			await sftpCall(sftp, "writeFile", p, Buffer.from(String(text ?? ""), "utf8"));
+			const st = await sftpCall(sftp, "stat", p);
+			return { bytes: Number(st.size ?? 0) };
 		}
 
 		async function remoteCreate(c, p, kind) {
@@ -1150,9 +1719,9 @@ export default {
 				if (parent) await mkdirpRemote(sftp, parent);
 				try {
 					await sftpCall(sftp, "stat", p);
-					throw new Error("已存在同名文件/文件夹");
+					throw Object.assign(new Error(SL("existsSame")), { code: "VSC_EXISTS" });
 				} catch (err) {
-					if (err?.message === "已存在同名文件/文件夹") throw err;
+					if (err?.code === "VSC_EXISTS") throw err;
 				}
 				await sftpCall(sftp, "writeFile", p, Buffer.alloc(0));
 			}
@@ -1166,7 +1735,7 @@ export default {
 				newName.includes("\\") ||
 				newName.includes("..")
 			) {
-				throw new Error("非法新名称");
+				throw new Error(SL("invalidNewName"));
 			}
 			const idx = p.lastIndexOf("/");
 			const parent = idx >= 0 ? p.slice(0, idx) : "";
@@ -1200,14 +1769,14 @@ export default {
 			src = safeRemotePath(src);
 			dest = safeRemotePath(dest);
 			if (dest === src || dest.startsWith(src.endsWith("/") ? src : `${src}/`)) {
-				throw new Error("目标不能是源本身或其子目录");
+				throw new Error(SL("illegalTargetSelf"));
 			}
 			const sftp = await getSftp(c);
 			try {
 				await sftpCall(sftp, "stat", dest);
-				throw new Error("目标已存在");
+				throw Object.assign(new Error(SL("targetExists")), { code: "VSC_TARGET_EXISTS" });
 			} catch (err) {
-				if (err?.message === "目标已存在") throw err;
+				if (err?.code === "VSC_TARGET_EXISTS") throw err;
 			}
 			const destParent = dest.split("/").slice(0, -1).join("/");
 			if (move) {
@@ -1219,7 +1788,7 @@ export default {
 			try {
 				st = await sftpCall(sftp, "stat", src);
 			} catch {
-				throw new Error("源不存在");
+				throw new Error(SL("srcMissing"));
 			}
 			if (st.isDirectory()) {
 				await mkdirpRemote(sftp, dest);
@@ -1246,17 +1815,17 @@ export default {
 		async function localCopy(srcRel, destRel, move) {
 			const srcAbs = safeResolve(srcRel);
 			const destAbs = safeResolve(destRel);
-			if (!srcAbs || !destAbs || srcAbs === root) throw new Error("非法路径");
-			if (destAbs === root) throw new Error("拒绝覆盖根目录");
+			if (!srcAbs || !destAbs || srcAbs === root) throw new Error(SL("invalidPath"));
+			if (destAbs === root) throw new Error(SL("denyCoverRoot"));
 			if (destAbs === srcAbs || destAbs.startsWith(srcAbs + path.sep)) {
-				throw new Error("目标不能是源本身或其子目录");
+				throw new Error(SL("illegalTargetSelf"));
 			}
 			await fs.access(srcAbs);
 			try {
 				await fs.access(destAbs);
-				throw new Error("目标已存在");
+				throw Object.assign(new Error(SL("targetExists")), { code: "VSC_TARGET_EXISTS" });
 			} catch (err) {
-				if (err?.message === "目标已存在") throw err;
+				if (err?.code === "VSC_TARGET_EXISTS") throw err;
 			}
 			await fs.mkdir(path.dirname(destAbs), { recursive: true });
 			if (move) await fs.rename(srcAbs, destAbs);
@@ -1269,9 +1838,9 @@ export default {
 			const q = String(query ?? "")
 				.trim()
 				.toLowerCase();
-			if (!q) throw new Error("搜索关键词不能为空");
+			if (!q) throw new Error(SL("emptyQuery"));
 			const baseAbs = safeResolve(baseRel ?? "");
-			if (!baseAbs) throw new Error("路径越界");
+			if (!baseAbs) throw new Error(SL("pathOutside"));
 			const out = [];
 			const queue = [baseAbs];
 			let visited = 0;
@@ -1304,7 +1873,7 @@ export default {
 			const q = String(query ?? "")
 				.trim()
 				.toLowerCase();
-			if (!q) throw new Error("搜索关键词不能为空");
+			if (!q) throw new Error(SL("emptyQuery"));
 			const base = safeRemotePath(baseDir || "/");
 			const sftp = await getSftp(c);
 			const out = [];
@@ -1402,11 +1971,11 @@ export default {
 		async function beginUpload(clientId, msg) {
 			const name = String(msg.name ?? "");
 			if (!name || name.includes("/") || name.includes("\\") || name.includes("..")) {
-				throw new Error("非法文件名");
+				throw new Error(SL("badName"));
 			}
 			const size = Number(msg.size);
-			if (!Number.isFinite(size) || size <= 0) throw new Error("非法文件大小");
-			if (size > MAX_UPLOAD_BYTES) throw new Error(`文件超过 ${Math.round(MAX_UPLOAD_BYTES / 1024 / 1024)}MB 上限`);
+			if (!Number.isFinite(size) || size <= 0) throw new Error(SL("badSize"));
+			if (size > MAX_UPLOAD_BYTES) throw new Error(SL("fileOverMB", { n: Math.round(MAX_UPLOAD_BYTES / 1024 / 1024) }));
 			sweepUploads();
 			const uploadId = `u${Date.now().toString(36)}${Math.random().toString(36).slice(2, 8)}`;
 			const key = `${clientId}:${uploadId}`;
@@ -1433,7 +2002,7 @@ export default {
 				return { uploadId, exists };
 			}
 			const absDir = safeResolve(String(msg.dir ?? ""));
-			if (!absDir) throw new Error("路径越界");
+			if (!absDir) throw new Error(SL("pathOutside"));
 			const finalAbs = path.join(absDir, name);
 			let exists = false;
 			try {
@@ -1460,14 +2029,15 @@ export default {
 
 		async function chunkUpload(clientId, msg) {
 			const u = uploads.get(`${clientId}:${msg.uploadId}`);
-			if (!u) throw new Error("上传会话不存在或已超时，请重新上传");
-			if (Number(msg.i) !== u.next) throw new Error("分片乱序");
+			if (!u) throw new Error(SL("uploadGone"));
+			if (Number(msg.i) !== u.next) throw new Error(SL("chunkOrder"));
 			u.last = Date.now();
 			sweepUploads();
 			const buf = Buffer.from(String(msg.b64 ?? ""), "base64");
-			if (!buf.length) throw new Error("空分片");
+			if (!buf.length) throw new Error(SL("emptyChunk"));
 			u.bytes += buf.length;
-			if (u.bytes > MAX_UPLOAD_BYTES) throw new Error(`文件超过 ${Math.round(MAX_UPLOAD_BYTES / 1024 / 1024)}MB 上限`);
+			if (u.bytes > MAX_UPLOAD_BYTES)
+				throw new Error(SL("fileOverMB", { n: Math.round(MAX_UPLOAD_BYTES / 1024 / 1024) }));
 			if (u.scope === "local") await u.fh.write(buf, 0, buf.length, null);
 			else u.bufs.push(buf);
 			if (Number(msg.i) !== Number(msg.total) - 1) {
@@ -1490,11 +2060,11 @@ export default {
 		async function upsertSshHost(h) {
 			await ensureSshCfgs();
 			h = h && typeof h === "object" ? h : {};
-			if (!h.host || !String(h.host).trim()) throw new Error("主机地址不能为空");
+			if (!h.host || !String(h.host).trim()) throw new Error(SL("hostAddrNeed"));
 			let id;
 			if (h.id) {
 				const i = sshCfgs.hosts.findIndex((x) => x.id === h.id);
-				if (i < 0) throw new Error("主机不存在");
+				if (i < 0) throw new Error(SL("hostMissing"));
 				const old = sshCfgs.hosts[i];
 				storeHostSecret(h.id, "password", h.password === null ? null : h.password || undefined);
 				storeHostSecret(h.id, "privateKey", h.privateKey === null ? null : h.privateKey || undefined);
@@ -1516,9 +2086,8 @@ export default {
 				};
 				id = h.id;
 			} else {
-				if (!h.password && !h.privateKey && !h.privateKeyPath && !h.agent)
-					throw new Error("请填写密码、私钥（可填私钥路径）或 agent");
-				if (sshCfgs.hosts.length >= MAX_SSH_HOSTS) throw new Error(`最多保存 ${MAX_SSH_HOSTS} 台主机`);
+				if (!h.password && !h.privateKey && !h.privateKeyPath && !h.agent) throw new Error(SL("hostAuthNeed"));
+				if (sshCfgs.hosts.length >= MAX_SSH_HOSTS) throw new Error(SL("hostLimit", { n: MAX_SSH_HOSTS }));
 				id = `h${Date.now().toString(36)}${Math.random().toString(36).slice(2, 5)}`;
 				storeHostSecret(id, "password", h.password || undefined);
 				storeHostSecret(id, "privateKey", h.privateKey || undefined);
@@ -1544,6 +2113,8 @@ export default {
 		const off = host.onMessage(async (payload, clientId) => {
 			const msg = payload ?? {};
 			const { action, reqId } = msg;
+			uiLang = msg.lang === "en" ? "en" : "zh";
+			vscAls.enterWith(uiLang);
 			try {
 				switch (action) {
 					case "list":
@@ -1573,7 +2144,7 @@ export default {
 					case "download": {
 						if (!msg.connId) {
 							const abs = safeResolve(String(msg.path ?? ""));
-							if (!abs || abs === root) throw new Error("非法路径");
+							if (!abs || abs === root) throw new Error(SL("invalidPath"));
 							const st = await fs.stat(abs);
 							if (st.isDirectory()) {
 								const buf = await tarGzLocal(abs);
@@ -1588,9 +2159,9 @@ export default {
 								});
 								break;
 							}
-							if (!st.isFile()) throw new Error("不是普通文件");
+							if (!st.isFile()) throw new Error(SL("notFile"));
 							if (st.size > MAX_DOWNLOAD_BYTES)
-								throw new Error(`文件超过 ${Math.round(MAX_DOWNLOAD_BYTES / 1024 / 1024)}MB 上限`);
+								throw new Error(SL("fileOverMB", { n: Math.round(MAX_DOWNLOAD_BYTES / 1024 / 1024) }));
 							const buf = await fs.readFile(abs);
 							host.sendTo(clientId, {
 								res: true,
@@ -1610,14 +2181,14 @@ export default {
 						try {
 							st = await sftpCall(sftp, "stat", p);
 						} catch {
-							throw new Error("路径不存在");
+							throw new Error(SL("pathMissing"));
 						}
 						if (st.isDirectory()) {
 							const clean = p.replace(/\/+$/, "");
 							const name = clean.split("/").pop();
 							const parent = clean.split("/").slice(0, -1).join("/") || "/";
 							const buf = await sshExecBuffer(c, `cd ${shQuote(parent)} && tar -czf - ${shQuote(name)}`);
-							if (!buf.length) throw new Error("打包失败（远端无 tar 或目录不可读）");
+							if (!buf.length) throw new Error(SL("remotePackFail"));
 							host.sendTo(clientId, {
 								res: true,
 								reqId,
@@ -1629,7 +2200,7 @@ export default {
 							});
 						} else {
 							if (Number(st.size) > MAX_DOWNLOAD_BYTES)
-								throw new Error(`文件超过 ${Math.round(MAX_DOWNLOAD_BYTES / 1024 / 1024)}MB 上限`);
+								throw new Error(SL("fileOverMB", { n: Math.round(MAX_DOWNLOAD_BYTES / 1024 / 1024) }));
 							const buf = await sftpCall(sftp, "readFile", p);
 							host.sendTo(clientId, {
 								res: true,
@@ -1643,6 +2214,103 @@ export default {
 						}
 						break;
 					}
+					case "download_zip": {
+						const paths = Array.isArray(msg.paths) ? msg.paths.map(String) : [String(msg.path ?? "")];
+						if (!paths.length || paths.length > 100) throw new Error(SL("pickPaths"));
+						if (!msg.connId) {
+							const absList = paths.map((pp) => {
+								const a = safeResolve(pp);
+								if (!a || a === root) throw new Error(SL("invalidPathAt", { p: pp }));
+								return a;
+							});
+							const relList = absList.map((a) => toWire(path.relative(root, a)));
+							let zbuf = null;
+							let zfallback = null;
+							try {
+								zbuf = await zipLocalViaSystem(relList, root);
+							} catch (err) {
+								if (err?.code !== "ENOENT") throw err;
+							}
+							if (!zbuf) {
+								const entries = await collectLocalZipEntries(absList);
+								zbuf = zipStoreFiles(entries);
+								zfallback = "node";
+							}
+							if (zbuf.length > MAX_DOWNLOAD_BYTES)
+								throw new Error(SL("packOverMB", { n: Math.round(MAX_DOWNLOAD_BYTES / 1024 / 1024) }));
+							const zdirs = relList.map((rr) => (rr.includes("/") ? rr.split("/").slice(0, -1).join("/") : ""));
+							const zsameDir = zdirs.every((dd) => dd === zdirs[0]);
+							const zbase =
+								absList.length === 1
+									? path.basename(absList[0])
+									: zsameDir && zdirs[0]
+										? path.basename(zdirs[0])
+										: "files";
+							host.sendTo(clientId, {
+								res: true,
+								reqId,
+								ok: true,
+								action,
+								b64: zbuf.toString("base64"),
+								size: zbuf.length,
+								name: `${zbase}.zip`,
+								fallback: zfallback,
+							});
+							break;
+						}
+						const zc = getSshConn(msg.connId);
+						const rpaths = paths.map((pp) => safeRemotePath(pp));
+						const zr = await remoteDownloadZip(zc, rpaths);
+						host.sendTo(clientId, {
+							res: true,
+							reqId,
+							ok: true,
+							action,
+							b64: zr.buf.toString("base64"),
+							size: zr.buf.length,
+							name: zr.name,
+							fallback: zr.fallback,
+						});
+						break;
+					}
+					case "unzip": {
+						const zipWire = String(msg.zip ?? msg.path ?? "");
+						const destWire = String(msg.dest ?? msg.dir ?? "");
+						if (!zipWire.toLowerCase().endsWith(".zip")) throw new Error(SL("needZip"));
+						if (!msg.connId) {
+							const zipAbs = safeResolve(zipWire);
+							const destAbs = safeResolve(destWire);
+							if (!zipAbs || !destAbs) throw new Error(SL("invalidPath"));
+							const zst = await fs.stat(zipAbs);
+							if (!zst.isFile()) throw new Error(SL("notFile"));
+							if (zst.size > MAX_DOWNLOAD_BYTES)
+								throw new Error(SL("fileOverMB", { n: Math.round(MAX_DOWNLOAD_BYTES / 1024 / 1024) }));
+							await fs.mkdir(destAbs, { recursive: true });
+							let ucount = -1;
+							let ufallback = null;
+							try {
+								let unames = null;
+								try {
+									unames = await unzipListNames(zipAbs);
+								} catch (le) {
+									if (le?.code !== "ENOENT") throw Object.assign(new Error(SL("unzipNolist")), { code: "NOLIST" });
+									throw le;
+								}
+								for (const nm of unames) assertZipEntrySafe(nm);
+								await unzipLocalViaSystem(zipAbs, destAbs);
+							} catch (err) {
+								if (err?.code !== "ENOENT" && err?.code !== "NOLIST") throw err;
+								ufallback = "node";
+								ucount = await unzipBufferToDir(await fs.readFile(zipAbs), destAbs);
+							}
+							host.sendTo(clientId, { res: true, reqId, ok: true, action, count: ucount, fallback: ufallback });
+							break;
+						}
+						const uc = getSshConn(msg.connId);
+						await remoteUnzip(uc, zipWire, destWire || "/");
+						host.sendTo(clientId, { res: true, reqId, ok: true, action, count: -1, fallback: null });
+						break;
+					}
 					case "read": {
 						const r = msg.connId
 							? await remoteRead(getSshConn(msg.connId), String(msg.path ?? ""))
@@ -1650,11 +2318,45 @@ export default {
 						host.sendTo(clientId, { res: true, reqId, ok: true, action, path: msg.path, ...r });
 						break;
 					}
-					case "write":
-						if (msg.connId) await remoteWrite(getSshConn(msg.connId), String(msg.path ?? ""), msg.text);
-						else await writeFile(msg.path, msg.text);
-						host.sendTo(clientId, { res: true, reqId, ok: true, action, path: msg.path });
+					case "write": {
+						const info = msg.connId
+							? await remoteWrite(getSshConn(msg.connId), String(msg.path ?? ""), msg.text)
+							: await writeFile(msg.path, msg.text);
+						host.sendTo(clientId, { res: true, reqId, ok: true, action, path: msg.path, ...info });
 						break;
+					}
+					case "stat": {
+						if (msg.connId) {
+							const sc = getSshConn(msg.connId);
+							const sp = safeRemotePath(String(msg.path ?? "/"));
+							const sst = await sftpCall(await getSftp(sc), "stat", sp);
+							host.sendTo(clientId, {
+								res: true,
+								reqId,
+								ok: true,
+								action,
+								path: msg.path,
+								size: Number(sst.size ?? 0),
+								isDir: sst.isDirectory(),
+								mtimeMs: Number(sst.mtime ?? 0) * 1000,
+							});
+						} else {
+							const sabs = safeResolve(String(msg.path ?? ""));
+							if (!sabs) throw new Error(SL("pathOutside"));
+							const sst = await fs.stat(sabs);
+							host.sendTo(clientId, {
+								res: true,
+								reqId,
+								ok: true,
+								action,
+								path: msg.path,
+								size: sst.size,
+								isDir: sst.isDirectory(),
+								mtimeMs: sst.mtimeMs,
+							});
+						}
+						break;
+					}
 					case "create":
 						if (msg.connId) await remoteCreate(getSshConn(msg.connId), String(msg.path ?? ""), msg.kind);
 						else await createEntry(msg.path, msg.kind);
@@ -1727,7 +2429,7 @@ export default {
 						break;
 					}
 					case "config_connect": {
-						if (!msg.alias) throw new Error("缺少 alias");
+						if (!msg.alias) throw new Error(SL("needAlias"));
 						void connectConfigAlias(String(msg.alias), clientId, reqId);
 						return;
 					}
@@ -1750,7 +2452,7 @@ export default {
 					case "sshconfig_import": {
 						await ensureSshCfgs();
 						const aliases = Array.isArray(msg.aliases) ? msg.aliases.map(String) : [];
-						if (!aliases.length) throw new Error("请先勾选要导入的主机");
+						if (!aliases.length) throw new Error(SL("pickAliases"));
 						const wanted = new Map((await readSshConfigCandidates()).map((c) => [c.alias, c]));
 						let added = 0,
 							skipped = 0;
@@ -1761,7 +2463,7 @@ export default {
 								continue;
 							}
 							if (sshCfgs.hosts.length >= MAX_SSH_HOSTS)
-								throw new Error(`最多保存 ${MAX_SSH_HOSTS} 台主机（已导入 ${added} 台）`);
+								throw new Error(SL("hostLimitAdded", { n: MAX_SSH_HOSTS, added }));
 							const id = `h${Date.now().toString(36)}${Math.random().toString(36).slice(2, 5)}${added}`;
 							sshCfgs.hosts.push({
 								id,
@@ -1785,7 +2487,7 @@ export default {
 							if (x.id === msg.id) for (const [field] of SECRET_FIELDS) storeHostSecret(x.id, field, null);
 						}
 						sshCfgs.hosts = sshCfgs.hosts.filter((x) => x.id !== msg.id);
-						if (sshCfgs.hosts.length === before) throw new Error("主机不存在");
+						if (sshCfgs.hosts.length === before) throw new Error(SL("hostMissing"));
 						await saveSshCfgs();
 						for (const c of [...sshConns.values()]) if (c.hostId === msg.id) dropSshConn(c, "主机已删除");
 						broadcastSshState();
@@ -1795,7 +2497,7 @@ export default {
 					case "connect": {
 						await ensureSshCfgs();
 						const cfg = sshCfgs.hosts.find((x) => x.id === msg.id);
-						if (!cfg) throw new Error("主机不存在");
+						if (!cfg) throw new Error(SL("hostMissing"));
 						void connectSshHost(cfg, clientId, reqId);
 						return;
 					}
@@ -1833,7 +2535,7 @@ export default {
 						host.sendTo(clientId, fail(reqId, `未知操作 ${action}`));
 				}
 			} catch (err) {
-				host.sendTo(clientId, fail(reqId, err?.message ?? String(err)));
+				host.sendTo(clientId, fail(reqId, err?.message ?? String(err), err?.code));
 			}
 		});
 
