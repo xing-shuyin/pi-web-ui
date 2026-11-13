@@ -1598,8 +1598,9 @@ function LoadedSettingsModal({
 		setPartial({ disabledExtensions: [...next] });
 	};
 
-	// #885 T2/T3/T6：扩展统一清单（只读聚合，同一 agentDir，不断链）。
-	// 服务端 inventory 优先（extension_inventory_data），缺席时用本地快照兜底聚合。
+	// #885 统一清单：服务端 inventory 优先（extension_inventory_data，含健康），缺席时用本地快照兜底聚合。
+	// 自动刷新：extension_inventory_changed（mcp.json 监听 + broadcastMcpServers）触发重拉，前端防抖由服务端 600ms 承担。
+	const inventoryDirty = (chat as { extensionInventoryDirty?: number }).extensionInventoryDirty ?? 0;
 	const inventoryEntries: UiExtensionInventoryEntry[] = useMemo(() => {
 		const server = (chat as { extensionInventory?: UiExtensionInventoryEntry[] | null }).extensionInventory;
 		if (Array.isArray(server) && server.length > 0) return server;
@@ -1627,6 +1628,26 @@ function LoadedSettingsModal({
 			});
 		}
 		for (const s of settings.mcpServers ?? []) {
+			const err =
+				typeof (s as { error?: unknown }).error === "string" && ((s as { error?: string }).error ?? "").trim()
+					? ((s as { error?: string }).error ?? "").trim()
+					: undefined;
+			const status =
+				typeof (s as { status?: unknown }).status === "string" ? ((s as { status?: string }).status ?? "") : "";
+			const health = err
+				? ("error" as const)
+				: s.enabled === false
+					? ("stopped" as const)
+					: status === "running"
+						? ("online" as const)
+						: status === "error"
+							? ("error" as const)
+							: status === "stopped"
+								? ("offline" as const)
+								: undefined;
+			const tools = Array.isArray((s as { tools?: unknown }).tools)
+				? ((s as { tools?: unknown[] }).tools ?? [])
+				: undefined;
 			out.push({
 				name: `mcp:${s.scope}:${s.name}`,
 				source: "external",
@@ -1636,9 +1657,9 @@ function LoadedSettingsModal({
 					((s as { description?: string }).description ?? "").trim()
 						? ((s as { description?: string }).description ?? "").trim()
 						: `MCP 服务器（${s.scope}，随 agentDir/cwd 继承） / MCP server (${s.scope}, inherited via agentDir/cwd)`,
-				...(typeof (s as { error?: unknown }).error === "string" && ((s as { error?: string }).error ?? "").trim()
-					? { error: ((s as { error?: string }).error ?? "").trim() }
-					: {}),
+				...(err ? { error: err } : {}),
+				...(health ? { health } : {}),
+				...(typeof tools?.length === "number" ? { toolCount: tools.length } : {}),
 			});
 		}
 		out.sort((a, b) => a.source.localeCompare(b.source) || a.name.localeCompare(b.name));
@@ -1652,6 +1673,13 @@ function LoadedSettingsModal({
 			} catch {}
 		}
 	}, [tab]);
+
+	useEffect(() => {
+		if (tab !== "extensions" || inventoryDirty === 0) return;
+		try {
+			appSend({ type: "extension_inventory", reqId: Date.now() % 1_000_000_000 } as never);
+		} catch {}
+	}, [tab, inventoryDirty]);
 
 	const toggleInventoryCli = (entry: UiExtensionInventoryEntry) => {
 		if (entry.switchable === false) return;

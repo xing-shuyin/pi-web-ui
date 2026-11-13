@@ -319,7 +319,9 @@ export function handlePluginMessage(msg: ClientMessage, ctx: PluginDispatchConte
 			return true;
 		}
 		case "extension_inventory": {
-			// #885 T1：只读聚合三类来源，不改运行时、不触发重载。
+			// #885 T1/健康/自动刷新：只读聚合三类来源，不改运行时、不触发重载。
+			// 健康来自 listMcpServers 已有 status/error/tools（bridge 连接结果，只读，不新建连接）。
+			// 首次查询即启动 mcp.json 监听（gitWatch 式防抖），变化发 extension_inventory_changed，前端自动重拉。
 			const reqId = typeof msg.reqId === "number" ? msg.reqId : 0;
 			void (async () => {
 				try {
@@ -350,6 +352,9 @@ export function handlePluginMessage(msg: ClientMessage, ctx: PluginDispatchConte
 					} catch {
 						mcpServers = [];
 					}
+					try {
+						(cs as unknown as { watchMcpInventory?: () => void })?.watchMcpInventory?.();
+					} catch {}
 					const { entries, errors } = await collectExtensionInventory({
 						getSdkBuiltins: () =>
 							sdkBuiltins.map((b) => ({ name: b.name, replaceable: b.replaceable, hidden: b.hidden })),
@@ -365,6 +370,7 @@ export function handlePluginMessage(msg: ClientMessage, ctx: PluginDispatchConte
 							})),
 						getDisabledPlugins: () => disabledPlugins,
 						getMcpServers: () => mcpServersToInput(mcpServers),
+						// 只读 probe 预留：生产直接用 list 信息，不新建连接；单测注入失败 probe 验证 error 不抛。
 					});
 					send({
 						type: "extension_inventory_data",

@@ -2842,6 +2842,9 @@ export interface UiExtensionInfo {
 /** #885 T1：扩展统一清单条目（三类来源统一 shape，只读）。 */
 export type UiExtensionInventorySource = "cli" | "webui" | "external";
 
+/** #885 健康探测：仅读聚合，不建新连接。online=运行中，offline=离线，error=异常，stopped=已停用，unknown=未知。 */
+export type UiExtensionInventoryHealth = "online" | "offline" | "error" | "stopped" | "unknown";
+
 export interface UiExtensionInventoryEntry {
 	name: string;
 	source: UiExtensionInventorySource;
@@ -2851,6 +2854,10 @@ export interface UiExtensionInventoryEntry {
 	error?: string;
 	/** cli 内置隐藏扩展不可单独启停时为 false，前端置灰（T3，绝不静默跳过）。 */
 	switchable?: boolean;
+	/** #885 健康状态：external 由 listMcpServers status/error/enabled 只读映射；cli/webui 缺席为 undefined。 */
+	health?: UiExtensionInventoryHealth;
+	/** #885 MCP 工具数（listMcpServers tools.length 只读透出）。 */
+	toolCount?: number;
 }
 
 export interface UiSettingsPreset {
@@ -3381,6 +3388,7 @@ export type ServerMessage =
 	| { type: "slash_commands"; commands: SlashCommandInfo[] }
 	| { type: "notice"; level: "info" | "warning" | "error"; text: string; textEn?: string }
 	| { type: "scm_changed" }
+	| { type: "extension_inventory_changed" }
 	| { type: "heartbeat"; hostMetrics?: UiHostMetrics; latencyMs?: number }
 	| { type: "sessions"; sessions: SessionSummary[]; cwd?: string; hasMore?: boolean }
 	/** Filename matches for the global search panel (reqId echo). Always sent

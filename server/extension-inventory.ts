@@ -3,13 +3,15 @@
 //  - cli：Pi CLI SDK 内置扩展（getSdkBuiltinExtensionFactories）
 //  - webui：WebUI 插件（PluginManager.list → UiPluginInfo）
 //  - external：MCP 服务器（global + project，listAllMcpServers）
-// 统一 shape：{ name, source, enabled, version?, description?, error? }
+// 统一 shape：{ name, source, enabled, version?, description?, error?, health?, toolCount? }
 // 失败只记录 error 原文，不抛错、不触发重装、不写运行时。
+// 健康探测为只读：直接用 listMcpServers 已有 status/error/tools，不新建连接、不 reload；
+// 可选 probeMcp 亦只读（失败只记 entry.error，不抛）。
 
-import type { UiMcpServer } from "./protocol.js";
+import type { UiExtensionInventoryHealth, UiMcpServer } from "./protocol.js";
 import type { UiExtensionInventoryEntry, UiExtensionInventorySource } from "./protocol.js";
 
-export type { UiExtensionInventoryEntry, UiExtensionInventorySource };
+export type { UiExtensionInventoryEntry, UiExtensionInventorySource, UiExtensionInventoryHealth };
 
 export interface SdkBuiltinInput {
 	name: string;
@@ -33,6 +35,7 @@ export interface McpServerInput {
 	description?: string;
 	status?: string;
 	error?: string;
+	tools?: Array<{ name: string; description?: string }>;
 }
 
 export interface ExtensionInventoryInput {
@@ -49,6 +52,21 @@ function isCliSwitchable(builtin: SdkBuiltinInput): boolean {
 	// 这里显式标记，前端按钮置灰 + 说明原因，绝不静默跳过（T3）。
 	if (builtin.hidden) return false;
 	return true;
+}
+
+/** #885 健康聚合（纯函数，只读）：status/error/enabled → health。 */
+export function resolveMcpHealth(s: Pick<McpServerInput, "enabled" | "status" | "error">): {
+	health: UiExtensionInventoryHealth;
+	error?: string;
+} {
+	const err = typeof s.error === "string" && s.error.trim() ? s.error.trim() : undefined;
+	if (err) return { health: "error", error: err };
+	if (s.enabled === false) return { health: "stopped" };
+	const status = typeof s.status === "string" ? s.status.trim() : "";
+	if (status === "running") return { health: "online" };
+	if (status === "error") return { health: "error" };
+	if (status === "stopped") return { health: "offline" };
+	return { health: "unknown" };
 }
 
 export function buildExtensionInventory(input: ExtensionInventoryInput): UiExtensionInventoryEntry[] {
@@ -86,7 +104,7 @@ export function buildExtensionInventory(input: ExtensionInventoryInput): UiExten
 					: typeof p.name === "string" && p.name.trim() && p.name.trim() !== id
 						? p.name.trim()
 						: `WebUI 专属插件（可写） / WebUI-specific plugin (writable)`,
-			...(err ? { error: err } : {}),
+			...(err ? { error: err, health: "error" as const } : {}),
 		});
 	}
 
@@ -95,7 +113,8 @@ export function buildExtensionInventory(input: ExtensionInventoryInput): UiExten
 		if (!rawName) continue;
 		// 配置缺失的错误行（readMcpConfigFile 把 path 当 name 推入）同样透出，error 原文保留。
 		const scope = s.scope === "project" ? "project" : "global";
-		const err = typeof s.error === "string" && s.error.trim() ? s.error.trim() : undefined;
+		const { health, error: healthError } = resolveMcpHealth(s);
+		const toolCount = Array.isArray(s.tools) ? s.tools.length : undefined;
 		out.push({
 			name: `mcp:${scope}:${rawName}`,
 			source: "external",
@@ -104,7 +123,9 @@ export function buildExtensionInventory(input: ExtensionInventoryInput): UiExten
 				typeof s.description === "string" && s.description.trim()
 					? s.description.trim()
 					: `MCP 服务器（${scope}，随 agentDir/cwd 继承） / MCP server (${scope}, inherited via agentDir/cwd)`,
-			...(err ? { error: err } : {}),
+			health,
+			...(typeof toolCount === "number" ? { toolCount } : {}),
+			...(healthError ? { error: healthError } : {}),
 		});
 	}
 
@@ -120,6 +141,12 @@ export interface ExtensionInventoryDeps {
 	getPlugins: () => Promise<WebuiPluginInput[]> | WebuiPluginInput[];
 	getDisabledPlugins: () => readonly string[] | Promise<readonly string[]>;
 	getMcpServers: () => Promise<McpServerInput[]> | McpServerInput[];
+	/**
+	 * #885 只读 connect probe（可选）：对单个 MCP 条目做非变更检查，
+	 * 返回要合并的局部字段；抛错只记 entry.error，不抛到外层、不触发重装。
+	 * 生产默认不传（直接用 listMcpServers 的 status/error/tools，已经是 bridge 连接结果）。
+	 */
+	probeMcp?: (server: McpServerInput) => Promise<Partial<McpServerInput> | void> | Partial<McpServerInput> | void;
 }
 
 /** 只读采集：每类来源独立 try/catch，失败只在条目里记 error，不抛错（T1/T4）。 */
@@ -166,6 +193,24 @@ export async function collectExtensionInventory(
 		mcpServers = [];
 	}
 
+	// #885 只读 probe：逐条 try/catch，失败只记该条 error，不抛错（connect probe 只读）。
+	if (typeof deps.probeMcp === "function" && mcpServers.length > 0) {
+		const probed: McpServerInput[] = [];
+		for (const s of mcpServers) {
+			try {
+				const patch = (await deps.probeMcp(s)) as Partial<McpServerInput> | void;
+				if (patch && typeof patch === "object") probed.push({ ...s, ...patch });
+				else probed.push(s);
+			} catch (error) {
+				const msg = error instanceof Error ? error.message : String(error);
+				const prev =
+					typeof s.error === "string" && s.error.trim() ? `${s.error.trim()}; probe: ${msg}` : `probe: ${msg}`;
+				probed.push({ ...s, error: prev });
+			}
+		}
+		mcpServers = probed;
+	}
+
 	const entries = buildExtensionInventory({
 		sdkBuiltins,
 		disabledExtensions,
@@ -183,12 +228,13 @@ export async function collectExtensionInventory(
 			enabled: false,
 			description: "加载失败（只读展示，无需重装应用） / Load failed (read-only, no reinstall needed)",
 			error: e,
+			health: "error",
 		});
 	}
 	return { entries, errors };
 }
 
-/** UiMcpServer → McpServerInput 适配（透传 error 原文）。 */
+/** UiMcpServer → McpServerInput 适配（透传 error/status/tools 原文，只读）。 */
 export function mcpServersToInput(servers: UiMcpServer[]): McpServerInput[] {
 	return (servers ?? []).map((s) => ({
 		name: s.name,
@@ -197,5 +243,11 @@ export function mcpServersToInput(servers: UiMcpServer[]): McpServerInput[] {
 		description: (s as { description?: unknown }).description as string | undefined,
 		status: (s as { status?: unknown }).status as string | undefined,
 		error: (s as { error?: unknown }).error as string | undefined,
+		tools: Array.isArray((s as { tools?: unknown }).tools)
+			? ((s as { tools?: Array<{ name?: unknown; description?: unknown }> }).tools ?? []).map((t) => ({
+					name: String(t?.name ?? ""),
+					...(typeof t?.description === "string" ? { description: t.description } : {}),
+				}))
+			: undefined,
 	}));
 }

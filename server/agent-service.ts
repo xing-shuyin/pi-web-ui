@@ -16,7 +16,7 @@ import * as fsPromises from "node:fs/promises";
 import { DEFAULT_PI_CAPABILITIES } from "./engine-capabilities.js";
 import { existsSync, readFileSync, readdirSync, rmSync, mkdirSync, statSync, watch, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
-import { basename, delimiter, join, resolve } from "node:path";
+import { basename, delimiter, dirname, join, resolve } from "node:path";
 import {
 	createAgentSessionFromServices,
 	createAgentSessionRuntime,
@@ -494,6 +494,8 @@ import {
 	saveMcpServer as saveMcpServerFile,
 	deleteMcpServer as deleteMcpServerFile,
 	toggleMcpServer as toggleMcpServerFile,
+	getGlobalMcpPath,
+	getProjectMcpPath,
 } from "./mcp-manager.js";
 import { fetchRemoteMcpMarket, fetchRemoteSkillMarket, fetchRemoteSkillContent } from "./market-service.js";
 import type { McpProjectRuntimeRegistry } from "./mcp-project-runtime.js";
@@ -3691,6 +3693,9 @@ export class ClientSession {
 	private gitWatchCwd: string | null = null;
 	private gitDirtyTimer: ReturnType<typeof setTimeout> | null = null;
 	private watchTimer: ReturnType<typeof setTimeout> | null = null;
+	private mcpInventoryWatchers: ReturnType<typeof watch>[] = [];
+	private mcpInventoryWatchKey: string | null = null;
+	private mcpInventoryDirtyTimer: ReturnType<typeof setTimeout> | null = null;
 
 	private readonly subagentTemplates: SubagentTemplatesStore;
 	private readonly approvalRules: ApprovalRulesStore;
@@ -9094,6 +9099,57 @@ export class ClientSession {
 			globalConfigPath: data.globalPath,
 			projectConfigPath: data.projectPath,
 		});
+		// #885 自动刷新：MCP 配置增删改（经 save/delete/toggle/reload 或热加载）后通知前端重拉统一清单。
+		this.emit({ type: "extension_inventory_changed" });
+	}
+
+	/** #885 自动刷新：监听 global/project mcp.json（gitWatch 式防抖），变化发 extension_inventory_changed。只读，不触发 reload。 */
+	watchMcpInventory(): void {
+		try {
+			const globalPath = getGlobalMcpPath(this.agentDir, this.stateStore.dataDir);
+			const projectPath = getProjectMcpPath(this.cwd);
+			const key = `${globalPath}\n${projectPath}`;
+			if (this.mcpInventoryWatchKey === key && this.mcpInventoryWatchers.length > 0) return;
+			this.unwatchMcpInventory();
+			this.mcpInventoryWatchKey = key;
+			const dirs = new Set<string>();
+			try {
+				dirs.add(dirname(globalPath));
+			} catch {}
+			try {
+				dirs.add(dirname(projectPath));
+			} catch {}
+			for (const dir of dirs) {
+				try {
+					const w = watch(dir, { persistent: false }, (_event, filename) => {
+						if (typeof filename === "string" && filename !== "mcp.json") return;
+						if (this.disposed || this.mcpInventoryDirtyTimer) return;
+						this.mcpInventoryDirtyTimer = setTimeout(() => {
+							this.mcpInventoryDirtyTimer = null;
+							if (!this.disposed) this.emit({ type: "extension_inventory_changed" });
+						}, 600);
+					});
+					w.on("error", () => this.unwatchMcpInventory());
+					this.mcpInventoryWatchers.push(w);
+				} catch {}
+			}
+		} catch {
+			this.unwatchMcpInventory();
+		}
+	}
+
+	unwatchMcpInventory(): void {
+		for (const w of this.mcpInventoryWatchers) {
+			try {
+				w.close();
+			} catch {}
+		}
+		this.mcpInventoryWatchers = [];
+		this.mcpInventoryWatchKey = null;
+		if (this.mcpInventoryDirtyTimer) {
+			clearTimeout(this.mcpInventoryDirtyTimer);
+			this.mcpInventoryDirtyTimer = null;
+		}
 	}
 
 	private mcpManageToolHost(cwd: string): McpManageToolHost {
@@ -16096,6 +16152,7 @@ export class ClientSession {
 		}
 		this.files.unwatchDir();
 		this.files.unwatchGit();
+		this.unwatchMcpInventory();
 		this.webUi.dispose();
 		for (const entry of this.pendingSubagentNotices.values()) {
 			clearTimeout(entry.timer);

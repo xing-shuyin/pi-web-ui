@@ -434,6 +434,7 @@ export interface ChatState {
 	dshPresets: { presets: UiAgentPreset[]; defaultPreset: string } | null;
 	dshPermission: { options: DshPermissionOption[]; defaultPreset: string } | null;
 	scmDirty: number;
+	extensionInventoryDirty: number;
 	protocolMismatch: boolean;
 	mcpOAuthResult: Extract<ServerMessage, { type: "mcp_oauth_result" }> | null;
 	mcpMarketResult: {
@@ -573,6 +574,7 @@ type Action =
 			};
 	  }
 	| { type: "scm_changed" }
+	| { type: "extension_inventory_changed" }
 	| { type: "install_result"; result: { ok: boolean; detail: string } }
 	| {
 			type: "path_completions";
@@ -1183,6 +1185,8 @@ export function reducer(state: ChatState, action: Action): ChatState {
 			return { ...state, sessionSearch: action.result };
 		case "scm_changed":
 			return { ...state, scmDirty: state.scmDirty + 1 };
+		case "extension_inventory_changed":
+			return { ...state, extensionInventoryDirty: state.extensionInventoryDirty + 1 };
 		case "path_completions":
 			return { ...state, pathCompletions: action.completions };
 		case "update_status":
@@ -1858,6 +1862,7 @@ export function useChat() {
 		fileSearch: null,
 		sessionSearch: null,
 		scmDirty: 0,
+		extensionInventoryDirty: 0,
 		plugins: [],
 		pluginsEpoch: 0,
 		extensionInventory: null,
@@ -2560,6 +2565,9 @@ export function useChat() {
 					break;
 				case "scm_changed":
 					dispatch({ type: "scm_changed" });
+					break;
+				case "extension_inventory_changed":
+					dispatch({ type: "extension_inventory_changed" });
 					break;
 				case "tool_info":
 					receiveToolInfo(msg);
