@@ -8,6 +8,7 @@ import ScreenCaptureKit
 import CoreMedia
 import CoreVideo
 import CoreImage
+import VideoToolbox
 import Darwin
 
 func fail(_ message: String) -> Never {
@@ -16,8 +17,118 @@ func fail(_ message: String) -> Never {
 }
 guard #available(macOS 14.0, *) else { fail("Native capture requires macOS 14 or newer.") }
 let mode = CommandLine.arguments.last ?? "view"
-let readOnly = mode != "control"
+let readOnly = mode != "control" && mode != "video"
 let preview = mode == "preview"
+let videoMode = mode == "video"
+
+// H.264 硬编码（VideoToolbox）：供浏览器 WebCodecs 解码，码率仅为 JPEG 的十分之一。
+// 输出帧格式：[4 字节大端长度][0x02][标志位: 1=关键帧][Annex-B 数据]
+final class VideoEncoder {
+    private let session: VTCompressionSession
+    private var sps: Data?
+    private var pps: Data?
+    init(width: Int, height: Int, fps: Double, bitrate: Int) {
+        var created: VTCompressionSession?
+        let status = VTCompressionSessionCreate(
+            allocator: kCFAllocatorDefault,
+            width: Int32(width), height: Int32(height),
+            codecType: kCMVideoCodecType_H264,
+            encoderSpecification: [kVTVideoEncoderSpecification_EnableHardwareAcceleratedVideoEncoder: true] as CFDictionary,
+            imageBufferAttributes: nil,
+            compressedDataAllocator: nil,
+            outputCallback: nil,
+            refcon: nil,
+            compressionSessionOut: &created)
+        guard status == noErr, let session = created else { fail("Cannot create H.264 encoder (\(status)).") }
+        self.session = session
+        VTSessionSetProperty(session, key: kVTCompressionPropertyKey_RealTime, value: kCFBooleanTrue)
+        VTSessionSetProperty(session, key: kVTCompressionPropertyKey_AllowFrameReordering, value: kCFBooleanFalse)
+        VTSessionSetProperty(session, key: kVTCompressionPropertyKey_ProfileLevel, value: kVTProfileLevel_H264_Baseline_AutoLevel)
+        VTSessionSetProperty(session, key: kVTCompressionPropertyKey_MaxKeyFrameInterval, value: NSNumber(value: Int(fps)))
+        VTSessionSetProperty(session, key: kVTCompressionPropertyKey_ExpectedFrameRate, value: NSNumber(value: fps))
+        VTSessionSetProperty(session, key: kVTCompressionPropertyKey_AverageBitRate, value: NSNumber(value: bitrate))
+        VTSessionSetProperty(session, key: kVTCompressionPropertyKey_DataRateLimits, value: [NSNumber(value: bitrate / 4), NSNumber(value: 1)] as CFArray)
+        VTCompressionSessionPrepareToEncodeFrames(session)
+    }
+    private func parameterSets(_ sample: CMSampleBuffer) {
+        guard let format = CMSampleBufferGetFormatDescription(sample) else { return }
+        var count = 0
+        guard CMVideoFormatDescriptionGetH264ParameterSetAtIndex(format, parameterSetIndex: 0, parameterSetPointerOut: nil, parameterSetSizeOut: nil, parameterSetCountOut: &count, nalUnitHeaderLengthOut: nil) == noErr, count >= 2 else { return }
+        var sets: [Data] = []
+        for index in 0..<count {
+            var pointer: UnsafePointer<UInt8>?
+            var size = 0
+            guard CMVideoFormatDescriptionGetH264ParameterSetAtIndex(format, parameterSetIndex: index, parameterSetPointerOut: &pointer, parameterSetSizeOut: &size, parameterSetCountOut: nil, nalUnitHeaderLengthOut: nil) == noErr, let base = pointer else { continue }
+            sets.append(Data(bytes: base, count: size))
+        }
+        if sets.count >= 2 { sps = sets[0]; pps = sets[1] }
+    }
+    /// AVCC（长度前缀）转 Annex-B，关键帧前插入 SPS/PPS。
+    private func annexB(_ sample: CMSampleBuffer) -> (Data, Bool)? {
+        let attachments = CMSampleBufferGetSampleAttachmentsArray(sample, createIfNecessary: false) as? [[CFString: Any]]
+        let keyframe = !(attachments?.first?[kCMSampleAttachmentKey_NotSync] as? Bool ?? false)
+        guard let block = CMSampleBufferGetDataBuffer(sample) else { return nil }
+        var length = 0
+        var pointer: UnsafeMutablePointer<Int8>?
+        guard CMBlockBufferGetDataPointer(block, atOffset: 0, lengthAtOffsetOut: nil, totalLengthOut: &length, dataPointerOut: &pointer) == noErr, let base = pointer else { return nil }
+        var out = Data()
+        if keyframe { parameterSets(sample) }
+        if keyframe, let s = sps, let p = pps {
+            out.append(contentsOf: [0, 0, 0, 1]); out.append(s)
+            out.append(contentsOf: [0, 0, 0, 1]); out.append(p)
+        }
+        var offset = 0
+        while offset + 4 <= length {
+            var size: UInt32 = 0
+            memcpy(&size, base + offset, 4)
+            let n = Int(UInt32(bigEndian: size))
+            offset += 4
+            guard n > 0, offset + n <= length else { break }
+            out.append(contentsOf: [0, 0, 0, 1])
+            out.append(Data(bytes: base + offset, count: n))
+            offset += n
+        }
+        return out.isEmpty ? nil : (out, keyframe)
+    }
+    func encode(_ pixels: CVPixelBuffer) {
+        var flags = VTEncodeInfoFlags()
+        VTCompressionSessionEncodeFrame(session, imageBuffer: pixels, presentationTimeStamp: CMClockGetTime(CMClockGetHostTimeClock()), duration: .invalid, frameProperties: nil, infoFlagsOut: &flags) { [weak self] status, _, sample in
+            guard status == noErr, let self, let sample, let (data, key) = self.annexB(sample) else { return }
+            var payload = Data([0x02, key ? 1 : 0])
+            payload.append(data)
+            var size = UInt32(payload.count).bigEndian
+            FileHandle.standardOutput.write(Data(bytes: &size, count: 4))
+            FileHandle.standardOutput.write(payload)
+        }
+    }
+}
+
+// 无屏幕权限也能验证编码器：合成帧走完整 VT → Annex-B 通路。
+if mode == "video-selftest" {
+    let width = 640, height = 360
+    let encoder = VideoEncoder(width: width, height: height, fps: 30, bitrate: 1_500_000)
+    var buffer: CVPixelBuffer?
+    CVPixelBufferCreate(kCFAllocatorDefault, width, height, kCVPixelFormatType_32BGRA, nil, &buffer)
+    guard let pixels = buffer else { fail("Cannot allocate test buffer.") }
+    for frame in 0..<30 {
+        CVPixelBufferLockBaseAddress(pixels, [])
+        if let base = CVPixelBufferGetBaseAddress(pixels) {
+            let stride = CVPixelBufferGetBytesPerRow(pixels)
+            for y in 0..<height {
+                let row = base.advanced(by: y * stride).assumingMemoryBound(to: UInt8.self)
+                for x in 0..<width {
+                    let p = row + x * 4
+                    p[0] = UInt8((x + frame * 4) % 256); p[1] = UInt8(y % 256); p[2] = UInt8((x + y) % 256); p[3] = 255
+                }
+            }
+        }
+        CVPixelBufferUnlockBaseAddress(pixels, [])
+        encoder.encode(pixels)
+        usleep(33_000)
+    }
+    sleep(1)
+    exit(0)
+}
 var maxEdge = preview ? 640.0 : 1920.0
 var jpegQuality = 0.65
 var captureFPS = 30.0
@@ -248,10 +359,28 @@ func configureStream(edge: Double, fps: Double, displayID: CGDirectDisplayID) {
 var reportedAt = 0.0, lastFrameAt = 0.0
 var cachedPixels: CVPixelBuffer?
 var cachedDisplayID: CGDirectDisplayID = 0
+var videoEncoder: VideoEncoder?
+var encoderEdge = 0.0, encoderFPS = 0.0
+func videoBitrate(edge: Double, quality: Double, fps: Double) -> Int {
+    let base: Double = edge >= 2400 ? 14_000_000 : edge >= 1700 ? 9_000_000 : edge >= 1200 ? 5_000_000 : 2_500_000
+    let q = min(1.25, max(0.6, quality / 0.7))
+    return Int(base * q * (fps >= 90 ? 1.4 : 1))
+}
 while true {
     lock.lock(); let edge = maxEdge, quality = jpegQuality, fps = captureFPS, requested = requestedDisplay; lock.unlock()
     let ids = displayIds(), chosen = ids.contains(requested) ? requested : CGMainDisplayID()
     if edge != configuredEdge || fps != configuredFPS || currentDisplay?.displayID != chosen { configureStream(edge: edge, fps: fps, displayID: chosen) }
+    if videoMode {
+        if videoEncoder == nil || encoderEdge != edge || encoderFPS != fps {
+            let scale = min(1.0, edge / Double(max(CGDisplayPixelsWide(chosen), CGDisplayPixelsHigh(chosen))))
+            let w = max(2, Int(Double(CGDisplayPixelsWide(chosen)) * scale) & ~1)
+            let h = max(2, Int(Double(CGDisplayPixelsHigh(chosen)) * scale) & ~1)
+            videoEncoder = VideoEncoder(width: w, height: h, fps: fps, bitrate: videoBitrate(edge: edge, quality: quality, fps: fps))
+            encoderEdge = edge; encoderFPS = fps
+        }
+        if let fresh = frames.take() { videoEncoder?.encode(fresh) }
+        continue
+    }
     let now = ProcessInfo.processInfo.systemUptime
     if now - reportedAt >= 2 {
         let info: [String: Any] = ["type": "displays", "capture": "screencapturekit", "selected": String(chosen), "displays": ids.map { id in ["id": String(id), "width": CGDisplayPixelsWide(id), "height": CGDisplayPixelsHigh(id), "primary": id == CGMainDisplayID()] as [String: Any] }]

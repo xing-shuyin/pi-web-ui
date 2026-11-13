@@ -11,6 +11,7 @@ import (
 	"os"
 	"regexp"
 	"sync"
+	"strings"
 	"sync/atomic"
 	"time"
 
@@ -21,13 +22,20 @@ const chunkSize = 16 * 1024
 const highWater = 256 * 1024
 const maxStreams = 32
 
+type turnConfig struct {
+	URLs       []string `json:"urls"`
+	Username   string   `json:"username"`
+	Credential string   `json:"credential"`
+}
+
 type command struct {
-	Type     string   `json:"type"`
-	Role     string   `json:"role"`
-	SDP      string   `json:"sdp"`
-	Port     int      `json:"port"`
-	STUN     []string `json:"stun"`
-	Loopback bool     `json:"loopback"`
+	Type     string      `json:"type"`
+	Role     string      `json:"role"`
+	SDP      string      `json:"sdp"`
+	Port     int         `json:"port"`
+	STUN     []string    `json:"stun"`
+	Turn     *turnConfig `json:"turn"`
+	Loopback bool        `json:"loopback"`
 }
 
 type helper struct {
@@ -42,6 +50,7 @@ type helper struct {
 	sequence atomic.Uint64
 	bytes    atomic.Uint64
 	ready    sync.Once
+	relay    bool
 }
 
 func (h *helper) emit(value any) {
@@ -133,12 +142,30 @@ func (h *helper) bridge(dc *webrtc.DataChannel, tcp net.Conn) {
 
 func (h *helper) connected(port int) {
 	h.ready.Do(func() {
-		pair, err := h.pc.SCTP().Transport().ICETransport().GetSelectedCandidatePair()
-		if err != nil || pair == nil || pair.Local.Typ == webrtc.ICECandidateTypeRelay || pair.Remote.Typ == webrtc.ICECandidateTypeRelay {
+		// 数据通道先于候选对就绪是常见竞态：给 ICE 一点时间结算，别把刚建好的连接掐掉。
+		var pair *webrtc.ICECandidatePair
+		for attempt := 0; attempt < 40; attempt++ {
+			selected, err := h.pc.SCTP().Transport().ICETransport().GetSelectedCandidatePair()
+			if err == nil && selected != nil {
+				pair = selected
+				break
+			}
+			time.Sleep(25 * time.Millisecond)
+		}
+		if pair == nil {
+			fmt.Fprintln(os.Stderr, "device-p2p: data channel opened without a selected candidate pair")
 			h.cancel()
 			return
 		}
-		h.emit(map[string]any{"type": "ready", "port": port, "localCandidate": pair.Local.Typ.String(), "remoteCandidate": pair.Remote.Typ.String(), "protocol": pair.Local.Protocol.String()})
+		// Without TURN a relayed pair cannot be reached intentionally: it means the media would
+		// bounce through a third party the operator did not configure.
+		relayed := pair.Local.Typ == webrtc.ICECandidateTypeRelay || pair.Remote.Typ == webrtc.ICECandidateTypeRelay
+		if relayed && !h.relay {
+			fmt.Fprintln(os.Stderr, "device-p2p: ICE selected a relay pair but no TURN server is configured")
+			h.cancel()
+			return
+		}
+		h.emit(map[string]any{"type": "ready", "port": port, "localCandidate": pair.Local.Typ.String(), "remoteCandidate": pair.Remote.Typ.String(), "protocol": pair.Local.Protocol.String(), "relayed": relayed})
 	})
 }
 
@@ -149,11 +176,23 @@ func (h *helper) start(c command) error {
 	if len(c.STUN) > 4 || len(c.SDP) > 32768 {
 		return errors.New("request exceeds limit")
 	}
+	if c.Turn != nil {
+		if len(c.Turn.URLs) == 0 || len(c.Turn.URLs) > 3 || len(c.Turn.Username) > 256 || len(c.Turn.Credential) > 256 {
+			return errors.New("invalid TURN configuration")
+		}
+		if c.Turn.Username == "" || c.Turn.Credential == "" || strings.ContainsRune(c.Turn.Username+c.Turn.Credential, 0) {
+			return errors.New("invalid TURN credentials")
+		}
+	}
 	settings := webrtc.SettingEngine{}
 	settings.DetachDataChannels()
 	settings.SetNetworkTypes([]webrtc.NetworkType{webrtc.NetworkTypeUDP4, webrtc.NetworkTypeUDP6})
 	settings.SetSCTPMaxReceiveBufferSize(1024 * 1024)
 	settings.SetICETimeouts(8*time.Second, 15*time.Second, 2*time.Second)
+	// 固定本地端口段，使对称 NAT 的公网映射呈线性递增，端口预测才有意义。
+	if err := settings.SetEphemeralUDPPortRange(50000, 50100); err != nil {
+		return err
+	}
 	settings.SetSTUNGatherTimeout(1500 * time.Millisecond)
 	if c.Loopback {
 		settings.SetIncludeLoopbackCandidate(true)
@@ -165,6 +204,15 @@ func (h *helper) start(c command) error {
 			return errors.New("invalid STUN server")
 		}
 		servers = append(servers, webrtc.ICEServer{URLs: []string{url}})
+	}
+	if c.Turn != nil {
+		for _, url := range c.Turn.URLs {
+			if !regexp.MustCompile(`^turns?:[a-zA-Z0-9.\-\[\]:]+$`).MatchString(url) || len(url) > 256 {
+				return errors.New("invalid TURN server")
+			}
+		}
+		servers = append(servers, webrtc.ICEServer{URLs: c.Turn.URLs, Username: c.Turn.Username, Credential: c.Turn.Credential})
+		h.relay = true
 	}
 	api := webrtc.NewAPI(webrtc.WithSettingEngine(settings))
 	pc, err := api.NewPeerConnection(webrtc.Configuration{ICEServers: servers})
@@ -302,9 +350,10 @@ func (h *helper) start(c command) error {
 	case <-h.ctx.Done():
 		return h.ctx.Err()
 	case <-time.After(3 * time.Second):
-		return errors.New("gathering timeout")
+		// A slow or unreachable TURN server must not abort the whole attempt (it would turn any
+		// broken relay config into "no P2P at all"). Send the candidates gathered so far.
 	}
-	sdp := pc.LocalDescription().SDP
+	sdp := predictCandidates(pc.LocalDescription().SDP)
 	if len(sdp) > 32768 {
 		return errors.New("SDP exceeds limit")
 	}

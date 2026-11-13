@@ -8,6 +8,9 @@ import { createDesktopClipboard } from "./desktop-clipboard.js";
 import type { DesktopDisplays } from "./desktop-displays.js";
 import { desktopPreviewPage } from "./desktop-preview-page.js";
 import { createDesktopPreview } from "./desktop-preview.js";
+import { startVideoDesktop, videoDesktopAvailable, type VideoFrame } from "./desktop-video.js";
+import { windowsDesktopServicePath } from "./windows-desktop-service.js";
+import { startNativeDesktopInput } from "./desktop-native.js";
 import { createDesktopSetup } from "./desktop-setup.js";
 import {
 	nativeDesktopStatus,
@@ -54,11 +57,15 @@ type CaptureOptions = {
 	display?: string;
 	onDisplays?: (displays: DesktopDisplays) => void;
 	onFrame: (jpeg: Buffer) => void;
+	/** H.264 access units; only the video backend calls this instead of `onFrame`. */
+	onVideo?: (frame: VideoFrame) => void;
 	onError: (message: string) => void;
 	onClose: () => void;
 	readOnly?: boolean;
 	preview?: boolean;
 };
+/** Video session shape handed to the viewer in the `video` control message. */
+const VIDEO_CODEC = process.platform === "darwin" ? "avc1.42E01F" : "avc1.640033";
 type Capture = {
 	input: (event: NativeDesktopInput) => void;
 	configure?: (profile: DesktopProfile) => void;
@@ -326,12 +333,13 @@ export function createDeviceDesktop({ app, authorize, env = process.env, dataDir
 			res.status(500).json({ error: "Could not save desktop settings" });
 		}
 	});
-	function bridge(ws: WebSocket, readOnly: boolean, display?: string) {
+	function bridge(ws: WebSocket, readOnly: boolean, display?: string, videoRequested = false) {
 		const preview = previewFor(display);
 		const previewKey = {};
 		preview.liveStarted(previewKey);
 		let ended = false;
 		let capture: Capture | undefined;
+		let inputCapture: Capture | undefined;
 		let alive = true;
 		let lastActivity = Date.now();
 		let queued = 0;
@@ -344,6 +352,39 @@ export function createDeviceDesktop({ app, authorize, env = process.env, dataDir
 		const quality = new DesktopQuality();
 		let appliedProfile = "";
 		let lastConfigure = 0;
+		let videoDeclared = false;
+		let videoDropping = false;
+		let videoStall: ReturnType<typeof setTimeout> | undefined;
+		const armVideoStall = () => {
+			clearTimeout(videoStall);
+			videoStall = setTimeout(() => fail("Desktop video stream stalled. Reconnect to resume."), 15000);
+			videoStall.unref();
+		};
+		const sendVideo = (frame: VideoFrame) => {
+			if (ended || failing || ws.readyState !== WebSocket.OPEN) return;
+			if (!videoDeclared) {
+				videoDeclared = true;
+				ws.send(JSON.stringify({ type: "video", codec: VIDEO_CODEC }));
+			}
+			if (frame.data.length > DESKTOP_LIMITS.frame) return fail("Desktop frame exceeds the capture size limit.");
+			if (ws.bufferedAmount > DESKTOP_LIMITS.queue) videoDropping = true;
+			// H.264 frames cannot be replaced like JPEG: skip ahead to the next keyframe instead.
+			if (videoDropping) {
+				if (!frame.key) return;
+				videoDropping = false;
+			}
+			captured++;
+			sent++;
+			armVideoStall();
+			if (!started) {
+				started = true;
+				clearTimeout(connectTimer);
+				ws.send(JSON.stringify({ type: "ready", dynamicQuality: Boolean(capture?.configure), video: true }));
+			}
+			ws.send(frame.data, { binary: true }, (error) => {
+				if (error) cleanup();
+			});
+		};
 		const applyProfile = (profile: DesktopProfile) => {
 			if (!capture?.configure || ended || failing) return;
 			const key = JSON.stringify(profile);
@@ -366,12 +407,14 @@ export function createDeviceDesktop({ app, authorize, env = process.env, dataDir
 			if (!capture || captureClosed) return;
 			captureClosed = true;
 			capture.close();
+			inputCapture?.close();
 			preview.liveStopped(previewKey);
 		};
 		const cleanup = () => {
 			if (ended) return;
 			ended = true;
 			clearTimeout(connectTimer);
+			clearTimeout(videoStall);
 			clearInterval(heartbeat);
 			clearTimeout(closeTimer);
 			clearTimeout(ackTimer);
@@ -386,6 +429,7 @@ export function createDeviceDesktop({ app, authorize, env = process.env, dataDir
 			if (ended || failing) return;
 			failing = true;
 			clearTimeout(ackTimer);
+			clearTimeout(videoStall);
 			latestFrame = undefined;
 			stopCapture();
 			if (ws.readyState === WebSocket.OPEN) {
@@ -488,43 +532,76 @@ export function createDeviceDesktop({ app, authorize, env = process.env, dataDir
 			lastActivity = Date.now();
 			if (!readOnly) {
 				try {
-					capture?.input(input);
+					(inputCapture ?? capture)?.input(input);
 				} catch {
 					fail("Could not send desktop input.");
 				}
 			}
 		});
-		try {
-			capture = backend.start({
-				readOnly,
-				display,
-				onDisplays: (value) => {
-					primaryDisplay = value.displays.find((item) => item.primary)?.id;
-					if (!ended && !failing && ws.readyState === WebSocket.OPEN && ws.bufferedAmount < 65536)
-						ws.send(JSON.stringify(value));
-				},
-				onFrame: (jpeg) => {
-					if (ended || failing || ws.readyState !== WebSocket.OPEN) return;
-					if (!jpeg.length || jpeg.length > DESKTOP_LIMITS.frame)
-						return fail("Desktop frame exceeds the capture size limit.");
-					preview.liveFrame(previewKey, jpeg);
-					captured++;
-					if (!started) {
-						started = true;
-						clearTimeout(connectTimer);
-						ws.send(JSON.stringify({ type: "ready", dynamicQuality: Boolean(capture?.configure) }));
+		// Wait briefly for the viewer hello so a WebCodecs-capable client can open an H.264 session
+		// instead of the JPEG one; fall back to JPEG when the first message never arrives.
+		const startCapture = () => {
+			if (ended || failing) return;
+			// win32 走 ffmpeg/NVENC；darwin 走 ScreenCaptureKit + VideoToolbox（同一个原生助手，输入仍由其 input 模式处理）。
+			const useVideo = videoRequested && !native && !ended && !failing && process.platform === "win32";
+			const useNativeVideo = videoRequested && !native && !ended && !failing && process.platform === "darwin";
+			try {
+				if (useVideo && !windowsDesktopServicePath() && videoDesktopAvailable()) {
+					const video = startVideoDesktop({
+						display,
+						profile: quality.profile,
+						onFrame: sendVideo,
+						onError: fail,
+						onClose: () => fail("Desktop video capture stopped. Check the active desktop session and GPU encoder."),
+					});
+					if (video) {
+						capture = video;
+						appliedProfile = JSON.stringify(quality.profile);
+						// Pointer/keyboard events still travel through the Windows helper; ffmpeg captures only.
+						if (!readOnly)
+							inputCapture = startNativeDesktopInput({
+								display,
+								onFrame: () => {},
+								onError: () => {},
+								onClose: () => {},
+							});
+						if (ended || failing) stopCapture();
+						return;
 					}
-					if (latestFrame) replaced++;
-					latestFrame = jpeg;
-					flushFrame();
-				},
-				onError: fail,
-				onClose: () => fail("Desktop capture stopped. Check the active desktop session and system permissions."),
-			});
-			if (ended || failing) stopCapture();
-		} catch (error) {
-			fail(error instanceof Error ? error.message : "Could not start desktop capture.");
-		}
+				}
+				capture = backend.start({
+					readOnly,
+					display,
+					...(useNativeVideo ? { video: true, onVideo: sendVideo } : {}),
+					onDisplays: (value) => {
+						primaryDisplay = value.displays.find((item) => item.primary)?.id;
+						if (!ended && !failing && ws.readyState === WebSocket.OPEN && ws.bufferedAmount < 65536)
+							ws.send(JSON.stringify(value));
+					},
+					onFrame: (jpeg) => {
+						if (ended || failing || ws.readyState !== WebSocket.OPEN) return;
+						if (!jpeg.length || jpeg.length > DESKTOP_LIMITS.frame)
+							return fail("Desktop frame exceeds the capture size limit.");
+						preview.liveFrame(previewKey, jpeg);
+						captured++;
+						if (!started) {
+							started = true;
+							clearTimeout(connectTimer);
+							ws.send(JSON.stringify({ type: "ready", dynamicQuality: Boolean(capture?.configure) }));
+						}
+						if (latestFrame) replaced++;
+						latestFrame = jpeg;
+						flushFrame();
+					},
+					onError: fail,
+					onClose: () => fail("Desktop capture stopped. Check the active desktop session and system permissions."),
+				});
+				if (ended || failing) stopCapture();
+			} catch (error) {
+				fail(error instanceof Error ? error.message : "Could not start desktop capture.");
+			}
+		};
+		startCapture();
 	}
 	return {
 		handleUpgrade(req: IncomingMessage, socket: Duplex, head: Buffer): boolean {
@@ -548,7 +625,12 @@ export function createDeviceDesktop({ app, authorize, env = process.env, dataDir
 				reject(400, "Invalid Display");
 			else
 				wss.handleUpgrade(req, socket, head, (ws) =>
-					bridge(ws, url.searchParams.get("viewOnly") !== "0", url.searchParams.get("display") || undefined),
+					bridge(
+						ws,
+						url.searchParams.get("viewOnly") !== "0",
+						url.searchParams.get("display") || undefined,
+						url.searchParams.get("video") === "1",
+					),
 				);
 			return true;
 		},

@@ -76,9 +76,10 @@
 
 ## 设备中心远程桌面
 
-| 变量                | 默认       | 作用                                                                                                                                      |
-| ------------------- | ---------- | ----------------------------------------------------------------------------------------------------------------------------------------- |
-| `PI_DEVICE_DESKTOP` | 空（关闭） | `1` 强制启用本机原生远程桌面；未设置时读取 `<dataDir>/desktop-settings.json` 的启用偏好，默认关闭。本机关闭偏好不能覆盖环境变量强制启用。 |
+| 变量                | 默认                                               | 作用                                                                                                                                      |
+| ------------------- | -------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------- |
+| `PI_DEVICE_DESKTOP` | 空（关闭）                                         | `1` 强制启用本机原生远程桌面；未设置时读取 `<dataDir>/desktop-settings.json` 的启用偏好，默认关闭。本机关闭偏好不能覆盖环境变量强制启用。 |
+| `PI_DESKTOP_FFMPEG` | `bin/ffmpeg/<platform>-<arch>/ffmpeg(.exe)` → PATH | H.264 桌面通道使用的 ffmpeg 绝对路径；只接受绝对路径，用于开发调试或自备带 NVENC 的构建。缺失时自动退回 JPEG。                            |
 
 远程桌面参考 [krd](https://github.com/zzjcool/krd) 的原生捕获与键鼠注入方式，画面和输入复用既有 WebSocket 中继，无需 noVNC、VNC 服务或额外桌面端口。Windows 使用 GDI + SendInput；macOS 使用 Swift 原生助手，通过 ScreenCaptureKit `SCScreenshotManager` 捕获、CoreGraphics 注入输入，需要 macOS 14+、Swift CLI 和屏幕录制权限，控制时还需辅助功能权限；Linux X11 使用 ffmpeg + xdotool，仅查看时可不安装 xdotool。Wayland 暂不支持，后续需接入 Desktop Portal。只读权限由后端强制执行。
 
@@ -99,11 +100,14 @@ token 修改立即生效（含 WS）；host/port/白名单需 `pi-web-ui server 
 
 ## 设备间 P2P
 
-| 变量                   | 默认值                          | 用途                                                   |
-| ---------------------- | ------------------------------- | ------------------------------------------------------ |
-| `PI_DEVICE_P2P`        | 启用可用助手                    | `0` 禁用 P2P，保留 LAN 和 Hub 回退                     |
-| `PI_DEVICE_P2P_STUN`   | `stun:stun.cloudflare.com:3478` | 最多四个逗号分隔的 STUN 地址；可配置自建 coturn        |
-| `PI_DEVICE_P2P_HELPER` | 随包助手                        | 受信任管理员/开发用的绝对路径覆盖；绕过随包哈希校验    |
-| `PI_DEVICE_P2P_GO`     | `go`                            | 仅编译脚本使用的 Go 可执行程序路径；使用 npm 包无需 Go |
+| 变量                        | 默认值                                                                                 | 用途                                                                                  |
+| --------------------------- | -------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------- |
+| `PI_DEVICE_P2P`             | 启用可用助手                                                                           | `0` 禁用 P2P，保留 LAN 和 Hub 回退                                                    |
+| `PI_DEVICE_P2P_STUN`        | `stun:stun.l.google.com:19302,stun:stun.miwifi.com:3478,stun:stun.cloudflare.com:3478` | 最多四个逗号分隔的 STUN 地址，并行探测；可配置自建 coturn                             |
+| `PI_DEVICE_TURN`            | 空（关闭）                                                                             | 最多三个逗号分隔的 `turn:` / `turns:` 地址；两端都要配置。对称 NAT 下唯一能直连的办法 |
+| `PI_DEVICE_TURN_USERNAME`   | 空                                                                                     | TURN 长期凭据用户名；与 `PI_DEVICE_TURN_CREDENTIAL` 必须成对出现                      |
+| `PI_DEVICE_TURN_CREDENTIAL` | 空                                                                                     | TURN 凭据密码；配了地址但缺凭据会直接报配置错误，不会静默退回无中继                   |
+| `PI_DEVICE_P2P_HELPER`      | 随包助手                                                                               | 受信任管理员/开发用的绝对路径覆盖；绕过随包哈希校验                                   |
+| `PI_DEVICE_P2P_GO`          | `go`                                                                                   | 仅编译脚本使用的 Go 可执行程序路径；使用 npm 包无需 Go                                |
 
-`PI_DEVICE_P2P_TEST_LOOPBACK=1` 仅用于隔离集成测试，限制 ICE 为回环候选且禁用 STUN，不能用于跨机器部署。协议与分发见 [P2P 设备访问](device-center.md#p2p-设备访问)。
+`PI_DEVICE_P2P_TEST_LOOPBACK=1` 仅用于隔离集成测试，限制 ICE 为回环候选且禁用 STUN/TURN，不能用于跨机器部署。协议与分发见 [P2P 设备访问](device-center.md#p2p-设备访问)。

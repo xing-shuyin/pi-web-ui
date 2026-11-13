@@ -21,7 +21,7 @@
 	"desktop.tab": "Pestaña independiente",
 	"desktop.exitFullscreen": "Salir de pantalla completa",
 	"desktop.fullscreen": "Pantalla completa",
-	"desktop.p2p": "Conexión P2P directa",
+	"desktop.p2p": "P2P",
 	"desktop.devicesUnavailable": "No se pudieron cargar los dispositivos. Comprueba la conexión e inténtalo de nuevo.",
 	"desktop.noDevices": "No hay dispositivos disponibles.",
 	"desktop.currentDevice": "Dispositivo actual",
