@@ -1974,7 +1974,7 @@ export default {
 				throw new Error(SL("badName"));
 			}
 			const size = Number(msg.size);
-			if (!Number.isFinite(size) || size <= 0) throw new Error(SL("badSize"));
+			if (!Number.isFinite(size) || size < 0) throw new Error(SL("badSize"));
 			if (size > MAX_UPLOAD_BYTES) throw new Error(SL("fileOverMB", { n: Math.round(MAX_UPLOAD_BYTES / 1024 / 1024) }));
 			sweepUploads();
 			const uploadId = `u${Date.now().toString(36)}${Math.random().toString(36).slice(2, 8)}`;
@@ -2033,6 +2033,21 @@ export default {
 			if (Number(msg.i) !== u.next) throw new Error(SL("chunkOrder"));
 			u.last = Date.now();
 			sweepUploads();
+			// 空文件（文件夹上传里的 .gitkeep 等）：首包即终包，直接落盘，无需分片。
+			if (u.total === 0) {
+				if (Number(msg.i) !== 0) throw new Error(SL("chunkOrder"));
+				if (u.scope === "local") {
+					await u.fh.close().catch(() => {});
+					u.fh = null;
+					await fs.rename(u.tmp, u.finalAbs);
+				} else {
+					const sftp0 = await getSftp(getSshConn(u.connId));
+					await mkdirpRemote(sftp0, u.rpath.split("/").slice(0, -1).join("/"));
+					await sftpCall(sftp0, "writeFile", u.rpath, Buffer.alloc(0));
+				}
+				uploads.delete(u.key);
+				return { done: true, size: 0 };
+			}
 			const buf = Buffer.from(String(msg.b64 ?? ""), "base64");
 			if (!buf.length) throw new Error(SL("emptyChunk"));
 			u.bytes += buf.length;

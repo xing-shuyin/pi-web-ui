@@ -40619,13 +40619,50 @@ var b64 = {
 };
 var shQuote = (s15) => `'${String(s15 ?? "").replace(/'/g, "'\\''")}'`;
 var VSC_LANG_KEY = "vsc-editor-lang";
-var lang = "zh";
-try {
-  const saved = localStorage.getItem(VSC_LANG_KEY);
-  if (saved === "zh" || saved === "en") lang = saved;
-  else if ((navigator.language || "").toLowerCase().startsWith("en")) lang = "en";
-} catch {
+var HOST_LANG_KEY = "pi-web-ui:lang";
+var UI_LOCALE_EVENT = "pi-web-ui:locale";
+function normalizeLangTag(v2) {
+  const s15 = String(v2 ?? "").trim().toLowerCase().replace(/_/g, "-");
+  if (!s15) return null;
+  if (s15 === "zh" || s15.startsWith("zh-")) return "zh";
+  if (s15 === "en" || s15.startsWith("en-")) return "en";
+  return null;
 }
+function readHostLang() {
+  try {
+    return normalizeLangTag(localStorage.getItem(HOST_LANG_KEY));
+  } catch {
+    return null;
+  }
+}
+function hasPluginLangOverride() {
+  try {
+    const v2 = localStorage.getItem(VSC_LANG_KEY);
+    return v2 === "zh" || v2 === "en";
+  } catch {
+    return false;
+  }
+}
+function resolveInitialLang() {
+  try {
+    const saved = localStorage.getItem(VSC_LANG_KEY);
+    if (saved === "zh" || saved === "en") return saved;
+  } catch {
+  }
+  const hostLang = readHostLang();
+  if (hostLang) return hostLang;
+  try {
+    const rawHost = localStorage.getItem(HOST_LANG_KEY);
+    if (rawHost && String(rawHost).trim()) return "en";
+  } catch {
+  }
+  try {
+    if ((navigator.language || "").toLowerCase().startsWith("en")) return "en";
+  } catch {
+  }
+  return "zh";
+}
+var lang = resolveInitialLang();
 var STR = {
   zh: {
     filesTab: "📁 文件",
@@ -40685,7 +40722,17 @@ var STR = {
     sameSrcDst: "源与目标相同",
     dupTooMany: "创建副本失败：重名次数过多",
     uploading: "正在上传，请稍候…",
+    uploadFolderT: "上传文件夹（含子目录结构）",
+    uploadFolderRemoteT: "上传文件夹到当前选中目录（含子目录结构）",
+    mUploadFolderHere: "上传文件夹到此处…",
     folderUploadNo: "文件夹上传暂不支持，请选择文件",
+    dropEmpty: "拖放为空，未找到可上传的文件",
+    uploadProg: "⬆ {done}/{total} · {name}（{chunk}/{chunks}）",
+    retryHint: "（点击状态栏重试）",
+    retrying: "正在重试 {label}…",
+    taskRetry: "❌ {label}失败：{error} — 点击此处重试",
+    dropZipDoing: "已上传 {name}，正在解压到 {dir}…",
+    dropZipOneFail: "拖拽的 ZIP「{name}」解压失败：{error}（文件已保留，可右键手动解压）",
     noSsh: "请先连接一台 SSH 主机",
     noSshLeft: "请先连接一台 SSH 主机（左侧点主机名）",
     truncated: "文件较多，列表已截断",
@@ -40855,7 +40902,17 @@ var STR = {
     sameSrcDst: "Source and destination are the same",
     dupTooMany: "Duplicate failed: too many name clashes",
     uploading: "Uploading, please wait…",
+    uploadFolderT: "Upload folder (keep structure)",
+    uploadFolderRemoteT: "Upload folder to selected directory (keep structure)",
+    mUploadFolderHere: "Upload folder here…",
     folderUploadNo: "Folder upload is not supported, please choose files",
+    dropEmpty: "Drop is empty, no uploadable files found",
+    uploadProg: "⬆ {done}/{total} · {name} ({chunk}/{chunks})",
+    retryHint: " (click status bar to retry)",
+    retrying: "Retrying {label}…",
+    taskRetry: "❌ {label} failed: {error} — click here to retry",
+    dropZipDoing: "Uploaded {name}, extracting to {dir}…",
+    dropZipOneFail: 'Dropped ZIP "{name}" failed to extract: {error} (file kept, right-click to extract manually)',
     noSsh: "Please connect an SSH host first",
     noSshLeft: "Please connect an SSH host first (click a host on the left)",
     truncated: "Too many files, list truncated",
@@ -40979,7 +41036,6 @@ function setLang(next) {
     localStorage.setItem(VSC_LANG_KEY, lang);
   } catch {
   }
-  applyI18n();
 }
 var THEME_CHANGE_EVENT = "pi-web-ui:theme-change";
 function isLightTheme() {
@@ -41309,6 +41365,7 @@ var client_default = {
 			.vsc-status { gap: 8px; overflow-x: auto; white-space: nowrap; }
 			.vsc-status .vsc-path { max-width: 40vw; overflow: hidden; text-overflow: ellipsis; }
 		}
+		.vsc-status .vsc-up.retry { cursor: pointer; text-decoration: underline; }
 		/* 触屏无 hover：行操作按钮常显 */
 		@media (hover: none) {
 			.vsc-hrow .ops { display: flex; }
@@ -41325,6 +41382,7 @@ var client_default = {
 				<button data-act="new-file" title="新建文件（当前选中的目录）">📄</button>
 				<button data-act="new-dir" title="新建文件夹（当前选中的目录）">📁</button>
 				<button data-act="upload" title="上传文件到工作区根目录（也可拖拽到文件树）">⬆</button>
+				<button data-act="upload-folder" title="上传文件夹（含子目录结构）">📂</button>
 				<button data-act="zip" title="下载为 ZIP（多选：按住 Ctrl/Cmd 点选）">🗜</button>
 				<button data-act="extract" title="解压 ZIP 到当前目录…">📦</button>
 				<button data-act="search" title="按文件名搜索（本地工作区）">🔍</button>
@@ -41341,6 +41399,7 @@ var client_default = {
 				<button data-act="r-new-file" title="新建文件（当前选中的目录）">📄</button>
 				<button data-act="r-new-dir" title="新建文件夹（当前选中的目录）">📁</button>
 				<button data-act="r-upload" title="上传文件到当前选中目录">⬆</button>
+				<button data-act="r-upload-folder" title="上传文件夹到当前选中目录（含子目录结构）">📂</button>
 				<button data-act="r-zip" title="下载为 ZIP（多选：按住 Ctrl/Cmd 点选）">🗜</button>
 				<button data-act="r-extract" title="解压 ZIP 到当前目录…">📦</button>
 				<button data-act="r-search" title="按文件名搜索（远端）">🔍</button>
@@ -41387,6 +41446,7 @@ var client_default = {
 		<ul></ul>
 	</div>
 	<input type="file" multiple class="vsc-filepick vsc-hidden" />
+	<input type="file" multiple webkitdirectory class="vsc-folderpick vsc-hidden" />
 	<div class="vsc-menu vsc-hidden"></div>
 	<div class="vsc-modal-bg vsc-host-bg vsc-hidden">
 		<div class="vsc-modal">
@@ -41429,6 +41489,11 @@ var client_default = {
     const quickList = quick.querySelector("ul");
     const menuEl = root.querySelector(".vsc-menu");
     const filePick = root.querySelector(".vsc-filepick");
+    const folderPick = root.querySelector(".vsc-folderpick");
+    try {
+      folderPick?.setAttribute("webkitdirectory", "");
+    } catch {
+    }
     const hostBg = root.querySelector(".vsc-host-bg");
     const dragEl = root.querySelector(".vsc-termdrag");
     const panelEl = root.querySelector(".vsc-termpanel");
@@ -41577,13 +41642,35 @@ var client_default = {
     }
     if (saveBtnEl) saveBtnEl.addEventListener("click", () => void saveActive());
     if (saveAsBtnEl) saveAsBtnEl.addEventListener("click", () => void saveAsActive());
-    if (langBtnEl) langBtnEl.addEventListener("click", () => setLang(lang === "zh" ? "en" : "zh"));
+    if (langBtnEl)
+      langBtnEl.addEventListener("click", () => {
+        setLang(lang === "zh" ? "en" : "zh");
+        applyI18n();
+      });
+    const followHostLang = (raw) => {
+      if (hasPluginLangOverride()) return;
+      const mapped = normalizeLangTag(raw);
+      if (!mapped || mapped === lang) return;
+      lang = mapped;
+      applyI18n();
+    };
+    try {
+      window.addEventListener("storage", (ev) => {
+        if (ev.key === HOST_LANG_KEY) followHostLang(ev.newValue);
+      });
+    } catch {
+    }
+    try {
+      window.addEventListener(UI_LOCALE_EVENT, (ev) => followHostLang(ev.detail));
+    } catch {
+    }
     let selNode = null;
     let clipboard = null;
     const TITLE_BY_ACT = {
       "new-file": "newFileT",
       "new-dir": "newDirT",
       upload: "uploadT",
+      "upload-folder": "uploadFolderT",
       search: "searchLocalT",
       refresh: "refreshT",
       zip: "zipT",
@@ -41594,6 +41681,7 @@ var client_default = {
       "r-new-file": "newFileT",
       "r-new-dir": "newDirT",
       "r-upload": "uploadRemoteT",
+      "r-upload-folder": "uploadFolderRemoteT",
       "r-search": "searchRemoteT",
       "r-refresh": "refreshRemoteT",
       "r-zip": "zipT",
@@ -41616,7 +41704,7 @@ var client_default = {
       if (n >= 1024) return `${(n / 1024).toFixed(1)} KB`;
       return `${n} B`;
     }
-    function applyI18n2() {
+    function applyI18n() {
       const stabFiles = root.querySelector('.stab[data-pane="files"]');
       if (stabFiles) stabFiles.textContent = tr2("filesTab");
       const stabSsh = root.querySelector('.stab[data-pane="ssh"]');
@@ -42121,10 +42209,11 @@ var client_default = {
       }
       const label = list.length === 1 ? list[0].split("/").filter(Boolean).pop() : `${list.length} items`;
       toast(tr2("downloadingPack", { name: label }));
+      setTask(tr2("downloadingPack", { name: label }));
       const payload = scope === "local" ? { action: "download_zip", paths: list } : { action: "download_zip", connId: scope, paths: list };
       const r = await request(payload);
       if (!r.ok) {
-        toast(tr2("downloadFail", { error: r.error }));
+        failTask(label, r.error, () => void downloadZipFor(scope, paths));
         return;
       }
       if (r.fallback === "tar.gz") toast(tr2("zipFallbackTar"));
@@ -42133,6 +42222,7 @@ var client_default = {
       const bytes = new Uint8Array(bin.length);
       for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
       saveBlob(new Blob([bytes]), r.name || "files.zip");
+      setTask("");
     }
     async function unzipToHere(scope, dir, suggested) {
       let zipName = suggested;
@@ -42145,15 +42235,8 @@ var client_default = {
         return;
       }
       const zipPath = dir ? `${dir.replace(/\/$/, "")}/${zipName}` : zipName;
-      toast(tr2("unzipping", { name: zipName }));
       const dest = dir || (scope === "local" ? "" : "/");
-      const r = await req(scope, { action: "unzip", zip: zipPath, dest });
-      if (!r.ok) {
-        toast(tr2("unzipFail", { error: r.error }));
-        return;
-      }
-      toast(r.count >= 0 ? tr2("unzipOkCount", { count: r.count }) : tr2("unzipOk"));
-      await invalidateScope(scope);
+      await doUnzipPath(scope, zipPath, dest, zipName);
     }
     function applySelHighlight() {
       root.querySelectorAll(".vsc-row[data-scope]").forEach(
@@ -42576,6 +42659,13 @@ var client_default = {
               if (files.length) void uploadFilesTo(scope, pathW, files);
             }
           ],
+          [
+            tr2("mUploadFolderHere"),
+            async () => {
+              const files = await pickFolder();
+              if (files.length) void uploadFilesTo(scope, pathW, files);
+            }
+          ],
           [tr2("mDownloadZip"), () => void downloadZipFor(scope, [pathW])]
         );
         if (scope === "local") {
@@ -42590,6 +42680,14 @@ var client_default = {
           tr2("mUploadHere"),
           async () => {
             const files = await pickFiles();
+            const dir = scope === "local" ? localParentOf(pathW) : parentOf(pathW);
+            if (files.length) void uploadFilesTo(scope, dir, files);
+          }
+        ]);
+        items.push([
+          tr2("mUploadFolderHere"),
+          async () => {
+            const files = await pickFolder();
             const dir = scope === "local" ? localParentOf(pathW) : parentOf(pathW);
             if (files.length) void uploadFilesTo(scope, dir, files);
           }
@@ -42738,6 +42836,32 @@ var client_default = {
     }
     const UPLOAD_CHUNK = 512 * 1024;
     let uploading = false;
+    let taskRetry = null;
+    function setTask(text, retry) {
+      taskRetry = typeof retry === "function" ? retry : null;
+      stUp.textContent = text ?? "";
+      stUp.classList.toggle("retry", !!taskRetry);
+      try {
+        stUp.title = taskRetry ? tr2("retryHint") : "";
+      } catch {
+      }
+    }
+    function failTask(label, error, retry) {
+      const msg = tr2("taskRetry", { label, error: error ?? "" });
+      setTask(msg, retry);
+      toast(msg + tr2("retryHint"));
+    }
+    if (!stUp.dataset.retryBound) {
+      stUp.dataset.retryBound = "1";
+      stUp.addEventListener("click", () => {
+        const fn2 = taskRetry;
+        if (!fn2) return;
+        taskRetry = null;
+        stUp.classList.remove("retry");
+        toast(tr2("retrying", { label: "" }).replace(/\s*[…\.]+\s*$/, "…"));
+        void fn2();
+      });
+    }
     function pickFiles() {
       return new Promise((resolve) => {
         filePick.onchange = () => {
@@ -42748,6 +42872,40 @@ var client_default = {
         filePick.click();
       });
     }
+    function pickFolder() {
+      return new Promise((resolve) => {
+        if (!folderPick) {
+          resolve([]);
+          return;
+        }
+        folderPick.onchange = () => {
+          const files = [...folderPick.files ?? []];
+          folderPick.value = "";
+          resolve(files);
+        };
+        folderPick.click();
+      });
+    }
+    function isZipName(name2) {
+      return String(name2 ?? "").toLowerCase().endsWith(".zip");
+    }
+    function joinUploadDir(scope, baseDir, sub) {
+      const b2 = String(baseDir ?? "");
+      const s15 = String(sub ?? "").replace(/^\/+/, "");
+      if (!s15) return b2;
+      if (!b2) return scope === "local" ? s15 : `/${s15}`;
+      return `${b2.replace(/\/+$/, "")}/${s15}`;
+    }
+    function targetDirFor(scope, baseDir, file) {
+      const raw = String(file?._relPath || file?.webkitRelativePath || file?.name || "").replace(/\\/g, "/");
+      const parts = raw.split("/").filter(Boolean);
+      if (parts.length <= 1) return baseDir;
+      if (parts.includes("..") || parts.includes(".")) return baseDir;
+      return joinUploadDir(scope, baseDir, parts.slice(0, -1).join("/"));
+    }
+    function fileDisplayRel(file) {
+      return String(file?._relPath || file?.webkitRelativePath || file?.name || "");
+    }
     function bufToB64(u8) {
       let bin = "";
       for (let i = 0; i < u8.length; i += 32768) {
@@ -42756,12 +42914,15 @@ var client_default = {
       return btoa(bin);
     }
     function setUploadProgress(text) {
-      stUp.textContent = text;
+      setTask(text);
     }
-    async function uploadOne(scope, dir, file) {
-      const name2 = file.name;
+    async function uploadOne(scope, baseDir, file, prog) {
+      const rel = fileDisplayRel(file);
+      const leaf = String(rel).split("/").filter(Boolean).pop() || file.name;
+      const name2 = leaf;
+      const dir = targetDirFor(scope, baseDir, file);
       if (file.size > 100 * 1024 * 1024) {
-        toast(tr2("tooBigSkip", { name: name2 }));
+        toast(tr2("tooBigSkip", { name: rel || name2 }));
         return false;
       }
       const begin = await req(scope, { action: "upload_begin", dir, name: name2, size: file.size });
@@ -42769,7 +42930,7 @@ var client_default = {
         toast(tr2("uploadFail", { error: begin.error }));
         return false;
       }
-      if (begin.exists && !confirm(tr2("coverConfirm", { name: name2 }))) {
+      if (begin.exists && !confirm(tr2("coverConfirm", { name: rel || name2 }))) {
         void request({ action: "upload_abort", uploadId: begin.uploadId });
         return false;
       }
@@ -42780,14 +42941,34 @@ var client_default = {
           const u8 = new Uint8Array(await slice.arrayBuffer());
           const r = await req(scope, { action: "upload", uploadId: begin.uploadId, i, total, b64: bufToB64(u8) });
           if (!r.ok) throw new Error(r.error);
-          setUploadProgress(`⬆ ${name2}（${i + 1}/${total}）`);
+          if (prog)
+            setTask(
+              tr2("uploadProg", { done: prog.done, total: prog.total, name: rel || name2, chunk: i + 1, chunks: total })
+            );
+          else setTask(`⬆ ${rel || name2}（${i + 1}/${total}）`);
         }
         return true;
       } catch (err) {
         void request({ action: "upload_abort", uploadId: begin.uploadId });
-        toast(tr2("uploadOneFail", { name: name2, error: err?.message ?? err }));
+        toast(tr2("uploadOneFail", { name: rel || name2, error: err?.message ?? err }));
         return false;
       }
+    }
+    async function doUnzipPath(scope, zipWire, destWire, label) {
+      setTask(tr2("unzipping", { name: label }));
+      const r = await req(scope, { action: "unzip", zip: zipWire, dest: destWire });
+      if (!r.ok) {
+        failTask(
+          label,
+          r.error,
+          () => void doUnzipPath(scope, zipWire, destWire, label).then(() => invalidateScope(scope))
+        );
+        return r;
+      }
+      toast(r.count >= 0 ? tr2("unzipOkCount", { count: r.count }) : tr2("unzipOk"));
+      setTask("");
+      await invalidateScope(scope);
+      return r;
     }
     async function uploadFilesTo(scope, dir, files) {
       if (!files?.length) return;
@@ -42797,13 +42978,101 @@ var client_default = {
       }
       uploading = true;
       let ok = 0;
+      const label = `${scope === "local" ? dir || "/" : dir}`;
       try {
-        for (const f of files) if (await uploadOne(scope, dir, f)) ok++;
+        for (let idx = 0; idx < files.length; idx++) {
+          const f = files[idx];
+          if (await uploadOne(scope, dir, f, { done: idx + 1, total: files.length })) ok++;
+        }
         if (ok) await invalidateScope(scope);
-        setUploadProgress("");
+        setTask("");
         if (ok === files.length)
           toast(tr2("uploadDoneAll", { ok, dest: dir ? tr2("uploadToDir", { dir }) : tr2("uploadToRoot") }));
-        else toast(tr2("uploadDonePart", { ok, total: files.length }));
+        else {
+          const msg = tr2("uploadDonePart", { ok, total: files.length });
+          failTask(label, msg, () => void uploadFilesTo(scope, dir, files));
+        }
+      } finally {
+        uploading = false;
+      }
+    }
+    async function collectDropEntries(dt2) {
+      const items = [...dt2?.items ?? []].filter((it) => it && it.kind === "file");
+      if (items.length && typeof items[0].webkitGetAsEntry === "function") {
+        try {
+          const roots = items.map((it) => it.webkitGetAsEntry()).filter(Boolean);
+          const out = [];
+          const walk = async (entry) => {
+            if (entry.isFile) {
+              const file = await new Promise((resolve, reject) => entry.file(resolve, reject));
+              const relPath = String(entry.fullPath || `/${file.name}`).replace(/^\/+/, "");
+              if (relPath.split("/").includes("..")) return;
+              file._relPath = relPath;
+              out.push({ file, relPath });
+            } else if (entry.isDirectory) {
+              const reader = entry.createReader();
+              let batch;
+              do {
+                batch = await new Promise((resolve, reject) => reader.readEntries(resolve, reject));
+                for (const child of batch) await walk(child);
+              } while (batch && batch.length);
+            }
+          };
+          for (const r of roots) await walk(r);
+          if (out.length) return out;
+        } catch {
+        }
+      }
+      const files = [...dt2?.files ?? []];
+      return files.map((f) => ({ file: f, relPath: String(f.webkitRelativePath || f.name || "") }));
+    }
+    async function uploadEntriesTo(scope, baseDir, entries) {
+      if (!entries?.length) {
+        toast(tr2("dropEmpty"));
+        return;
+      }
+      if (uploading) {
+        toast(tr2("uploading"));
+        return;
+      }
+      uploading = true;
+      let ok = 0;
+      try {
+        for (let idx = 0; idx < entries.length; idx++) {
+          const { file, relPath } = entries[idx];
+          if (relPath && !file._relPath) file._relPath = relPath;
+          const uploaded = await uploadOne(scope, baseDir, file, { done: idx + 1, total: entries.length });
+          if (!uploaded) continue;
+          ok++;
+          if (isZipName(file.name)) {
+            const dir = targetDirFor(scope, baseDir, file);
+            const leaf = String(fileDisplayRel(file)).split("/").filter(Boolean).pop() || file.name;
+            const zipWire = dir ? `${String(dir).replace(/\/+$/, "")}/${leaf}` : leaf;
+            const destWire = dir || (scope === "local" ? "" : "/");
+            const showDir = destWire || (scope === "local" ? "/" : "/");
+            setTask(tr2("dropZipDoing", { name: leaf, dir: showDir }));
+            toast(tr2("dropZipDoing", { name: leaf, dir: showDir }));
+            const r = await req(scope, { action: "unzip", zip: zipWire, dest: destWire });
+            if (!r.ok) {
+              toast(tr2("dropZipOneFail", { name: leaf, error: r.error }));
+              failTask(
+                leaf,
+                r.error,
+                () => void doUnzipPath(scope, zipWire, destWire, leaf).then(() => invalidateScope(scope))
+              );
+            } else {
+              toast(r.count >= 0 ? tr2("unzipOkCount", { count: r.count }) : tr2("unzipOk"));
+            }
+          }
+        }
+        if (ok) await invalidateScope(scope);
+        setTask("");
+        if (ok === entries.length) {
+          toast(tr2("uploadDoneAll", { ok, dest: baseDir ? tr2("uploadToDir", { dir: baseDir }) : tr2("uploadToRoot") }));
+        } else {
+          const msg = tr2("uploadDonePart", { ok, total: entries.length });
+          failTask(baseDir || "/", msg, () => void uploadEntriesTo(scope, baseDir, entries));
+        }
       } finally {
         uploading = false;
       }
@@ -42867,17 +43136,12 @@ var client_default = {
         ev.stopPropagation();
         clearDropTargets();
         clearAppDropOverlay();
-        const files = [...ev.dataTransfer?.files ?? []];
-        if (!files.length) {
-          toast(tr2("folderUploadNo"));
-          return;
-        }
         const t2 = dropTargetFrom(ev, containerScope);
         if (!t2) {
           toast(tr2("noSsh"));
           return;
         }
-        void uploadFilesTo(t2.scope, t2.dir, files);
+        void collectDropEntries(ev.dataTransfer).then((entries) => uploadEntriesTo(t2.scope, t2.dir, entries));
       });
     }
     for (const [el2, containerScope] of [
@@ -42911,6 +43175,13 @@ var client_default = {
           tr2("mUploadHere"),
           async () => {
             const files = await pickFiles();
+            if (files.length) void uploadFilesTo(t2.scope, t2.dir, files);
+          }
+        ]);
+        items.push([
+          tr2("mUploadFolderHere"),
+          async () => {
+            const files = await pickFolder();
             if (files.length) void uploadFilesTo(t2.scope, t2.dir, files);
           }
         ]);
@@ -42956,6 +43227,8 @@ var client_default = {
         void unzipToHere("local", pickLocalDir());
       } else if (act === "upload") {
         void pickFiles().then((files) => uploadFilesTo("local", "", files));
+      } else if (act === "upload-folder") {
+        void pickFolder().then((files) => uploadFilesTo("local", "", files));
       }
     });
     let modalEditId = null;
@@ -43422,6 +43695,9 @@ var client_default = {
       } else if (btn.dataset.act === "r-upload") {
         const t2 = pickRemoteDir();
         if (t2) void pickFiles().then((files) => uploadFilesTo(t2.connId, t2.dir, files));
+      } else if (btn.dataset.act === "r-upload-folder") {
+        const t2 = pickRemoteDir();
+        if (t2) void pickFolder().then((files) => uploadFilesTo(t2.connId, t2.dir, files));
       } else if (btn.dataset.act === "r-zip") {
         const t2 = pickRemoteDir();
         if (t2) void downloadZipFor(t2.connId, zipSelection(t2.connId));
@@ -43457,7 +43733,7 @@ var client_default = {
     void request({ action: "state" }).then((r) => {
       if (r.ok && r.state) applyState(r.state);
     });
-    applyI18n2();
+    applyI18n();
     return () => {
       container.ownerDocument.removeEventListener("keydown", onGlobalKey, true);
       window.removeEventListener("beforeunload", onBeforeUnload);
