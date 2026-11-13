@@ -1,8 +1,9 @@
 import { randomUUID } from "node:crypto";
-import { mkdir, readFile, rename, rm, writeFile } from "node:fs/promises";
+import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 import type { Express, Request, Response } from "express";
 import type { MobileNotificationEvent } from "./mobile-notification-events.js";
+import { writeAtomic } from "./atomic-file.js";
 
 const KINDS = ["done", "error", "question", "approval", "subagentDone"] as const;
 const DAY = 86_400_000;
@@ -281,14 +282,9 @@ export function createMobilePushService(options: MobilePushOptions): MobilePushS
 		);
 	}
 	async function save(draft: State) {
-		await mkdir(options.dataDir, { recursive: true });
-		const temporary = `${file}.${randomUUID()}.tmp`;
-		try {
-			await writeFile(temporary, JSON.stringify(draft), { mode: 0o600, flag: "wx" });
-			await rename(temporary, file);
-		} finally {
-			await rm(temporary, { force: true }).catch(() => {});
-		}
+		// 推送状态文件常驻用户数据目录：Windows 上杀毒/索引器会瞬时占用目标文件，
+		// 手写 tmp+rename 撞 EPERM 直接失败会丢状态，统一走 atomic-file 的带退避重试。
+		await writeAtomic(file, JSON.stringify(draft), { mode: 0o600 });
 	}
 	function transaction<T>(action: (draft: State) => T): Promise<T> {
 		const result = tail.then(async () => {
