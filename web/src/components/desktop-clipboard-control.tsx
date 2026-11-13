@@ -4,7 +4,7 @@ import { withToken } from "../auth-token";
 import { pageDeviceId } from "../device-access";
 import { createClipboardBridge } from "../desktop-clipboard-bridge";
 import type { ClipboardMode } from "../../../server/device-center/desktop-clipboard-protocol";
-import { useT } from "../i18n";
+import { isZhLocale, useI18n, useT } from "../i18n";
 import { manualClipboardControls, manualClipboardCss } from "../../../server/device-center/desktop-clipboard-manual";
 
 export function DesktopClipboardControl({
@@ -17,6 +17,7 @@ export function DesktopClipboardControl({
 	local: boolean;
 }) {
 	const t = useT();
+	const zh = isZhLocale(useI18n().locale);
 	const [mode, setMode] = useState<ClipboardMode>("off");
 	const [connected, setConnected] = useState(false);
 	const [readOnly, setReadOnly] = useState(true);
@@ -35,7 +36,7 @@ export function DesktopClipboardControl({
 				? manualClipboardControls({
 						host: manualHost.current,
 						post: (data) => frame.current?.contentWindow?.postMessage(data, "*"),
-						zh: t("desktop.clipboard") === "剪贴板",
+						zh,
 					})
 				: undefined;
 		const receive = (event: MessageEvent) => {
@@ -76,7 +77,7 @@ export function DesktopClipboardControl({
 			bridge.current = undefined;
 			if (nested) parent.postMessage({ type: "desktop-clipboard-available", connected: false, viewOnly: true }, "*");
 		};
-	}, [frame, url, local, nested, native]);
+	}, [frame, url, local, nested, native, zh]);
 	if (nested || local) return null;
 	if (!native)
 		return (

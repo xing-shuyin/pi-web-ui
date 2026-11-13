@@ -350,7 +350,7 @@ it("displays P2P in the desktop window and accepts a verified Hub fallback", asy
 		})),
 	);
 	await mount();
-	expect(document.querySelector(".remote-desktop-titlebar")?.textContent).toContain("P2P direct");
+	expect(document.querySelector(".remote-desktop-titlebar")?.textContent).toContain("mac · P2P");
 	const frame = document.querySelector("iframe")!;
 	await act(async () =>
 		window.dispatchEvent(
