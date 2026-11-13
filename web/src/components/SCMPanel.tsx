@@ -74,6 +74,128 @@ function fileKind(f: ScmFile): FileKind {
 	return "unstaged";
 }
 
+function isDiffMetaLine(ln: string): boolean {
+	return (
+		ln.startsWith("diff --git") ||
+		ln.startsWith("index ") ||
+		ln.startsWith("new file") ||
+		ln.startsWith("deleted file") ||
+		ln.startsWith("old mode") ||
+		ln.startsWith("new mode") ||
+		ln.startsWith("similarity index") ||
+		ln.startsWith("rename ") ||
+		ln.startsWith("copy ") ||
+		ln.startsWith("Binary files") ||
+		ln.startsWith("---") ||
+		ln.startsWith("+++")
+	);
+}
+
+function estimateDiffStats(text: string): { add: number; del: number; hunks: number } {
+	let add = 0;
+	let del = 0;
+	let hunks = 0;
+	for (const ln of text.split("\n")) {
+		if (ln.startsWith("@@")) {
+			hunks += 1;
+		} else if (ln.startsWith("+++") || ln.startsWith("---")) {
+			continue;
+		} else if (ln.startsWith("+")) {
+			add += 1;
+		} else if (ln.startsWith("-")) {
+			del += 1;
+		}
+	}
+	return { add, del, hunks };
+}
+
+function estimateMultiDiffStats(texts: string[]): { add: number; del: number; hunks: number } {
+	let add = 0;
+	let del = 0;
+	let hunks = 0;
+	for (const text of texts) {
+		if (!text) continue;
+		const s = estimateDiffStats(text);
+		add += s.add;
+		del += s.del;
+		hunks += s.hunks;
+	}
+	return { add, del, hunks };
+}
+
+function parseHunkHeader(ln: string): { oldStart: number; newStart: number } | null {
+	const m = /^@@ -(\d+)(?:,\d+)? \+(\d+)(?:,\d+)? @@/.exec(ln);
+	if (!m) return null;
+	return { oldStart: Number(m[1]), newStart: Number(m[2]) };
+}
+
+type SideCell = { no: number | null; text: string; kind: "ctx" | "add" | "del" | "empty" };
+type SideRow = { kind: "hdr" | "hunk"; text: string } | { kind: "pair"; left: SideCell; right: SideCell };
+
+function buildSideRows(text: string): SideRow[] {
+	const rows: SideRow[] = [];
+	let oldLine = 0;
+	let newLine = 0;
+	let haveNos = false;
+	let pendingDel: { no: number | null; text: string }[] = [];
+	let pendingAdd: { no: number | null; text: string }[] = [];
+	const flush = () => {
+		const n = Math.max(pendingDel.length, pendingAdd.length);
+		for (let i = 0; i < n; i++) {
+			const d = pendingDel[i];
+			const a = pendingAdd[i];
+			rows.push({
+				kind: "pair",
+				left: d ? { no: d.no, text: d.text, kind: "del" } : { no: null, text: "", kind: "empty" },
+				right: a ? { no: a.no, text: a.text, kind: "add" } : { no: null, text: "", kind: "empty" },
+			});
+		}
+		pendingDel = [];
+		pendingAdd = [];
+	};
+	for (const ln of text.split("\n")) {
+		if (ln.startsWith("@@")) {
+			flush();
+			const p = parseHunkHeader(ln);
+			if (p) {
+				oldLine = p.oldStart;
+				newLine = p.newStart;
+				haveNos = true;
+			}
+			rows.push({ kind: "hunk", text: ln });
+			continue;
+		}
+		if (isDiffMetaLine(ln) || ln.startsWith("\\ ")) {
+			flush();
+			rows.push({ kind: "hdr", text: ln });
+			continue;
+		}
+		if (ln.startsWith("+")) {
+			pendingAdd.push({ no: haveNos ? newLine : null, text: ln.slice(1) });
+			if (haveNos) newLine += 1;
+			continue;
+		}
+		if (ln.startsWith("-")) {
+			pendingDel.push({ no: haveNos ? oldLine : null, text: ln.slice(1) });
+			if (haveNos) oldLine += 1;
+			continue;
+		}
+		flush();
+		const ctx = ln.startsWith(" ") ? ln.slice(1) : ln;
+		rows.push({
+			kind: "pair",
+			left: { no: haveNos ? oldLine : null, text: ctx, kind: "ctx" },
+			right: { no: haveNos ? newLine : null, text: ctx, kind: "ctx" },
+		});
+		if (haveNos) {
+			oldLine += 1;
+			newLine += 1;
+		}
+	}
+	flush();
+	return rows;
+}
+
 interface ScmTerminalBridge {
 	create: (meta: TerminalMeta) => void;
 	close: (id: string) => void;
@@ -120,6 +242,9 @@ export function ScmPanel({ chat, terminal, active, onSwitchToTerminal, uiScmTool
 		parseScmSidebarWidth(localStorage.getItem(SCM_SIDEBAR_WIDTH_KEY)),
 	);
 	const [commitMsg, setCommitMsg] = useState("");
+	const [diffView, setDiffView] = useState<"inline" | "side">("inline");
+	const [showLineNos, setShowLineNos] = useState(true);
+	const [isNarrow, setIsNarrow] = useState(false);
 	const [historyFilter, setHistoryFilter] = useState("");
 	const [commitHistory, setCommitHistory] = useState<string[]>(() => loadCommitHistory());
 	const recallRef = useRef<CommitRecallState>(COMMIT_RECALL_INITIAL);
@@ -483,6 +608,14 @@ export function ScmPanel({ chat, terminal, active, onSwitchToTerminal, uiScmTool
 	}, [active, refresh]);
 
 	useEffect(() => {
+		const mq = window.matchMedia("(max-width: 768px)");
+		const update = () => setIsNarrow(mq.matches);
+		update();
+		mq.addEventListener("change", update);
+		return () => mq.removeEventListener("change", update);
+	}, []);
+
+	useEffect(() => {
 		if (viewMode === "history" && status) loadHistory();
 	}, [viewMode, status, loadHistory]);
 
@@ -522,6 +655,20 @@ export function ScmPanel({ chat, terminal, active, onSwitchToTerminal, uiScmTool
 	};
 
 	const filteredHistory = filterScmCommits(history, historyFilter);
+	const effectiveDiffView = isNarrow ? "inline" : diffView;
+	const allFiles = status?.files ?? [];
+	const selIdx = selected ? allFiles.findIndex((f) => f.path === selected.path) : -1;
+	const prevFile = selIdx > 0 ? allFiles[selIdx - 1] : null;
+	const nextFile = selIdx >= 0 && selIdx < allFiles.length - 1 ? allFiles[selIdx + 1] : null;
+	const fileEstimate =
+		fileDiff && !fileDiff.untracked ? estimateMultiDiffStats([fileDiff.staged, fileDiff.worktree]) : null;
+	const fileStatEntry = selected ? statMap.get(selected.path) : undefined;
+	const fileAdd = fileStatEntry?.add ?? fileEstimate?.add ?? 0;
+	const fileDel = fileStatEntry?.del ?? fileEstimate?.del ?? 0;
+	const fileHunks = fileEstimate?.hunks ?? 0;
+	const commitStats = commitDetail ? estimateDiffStats(commitDetail) : null;
+	const renderText = (text: string) =>
+		effectiveDiffView === "side" ? renderSideBySide(text, showLineNos) : renderDiff(text);
 
 	const renderDiff = (text: string) => {
 		const lines = text.split("\n");
@@ -529,20 +676,7 @@ export function ScmPanel({ chat, terminal, active, onSwitchToTerminal, uiScmTool
 			<pre className="scm-diff-pre">
 				{lines.map((ln, i) => {
 					let cls = "";
-					if (
-						ln.startsWith("diff --git") ||
-						ln.startsWith("index ") ||
-						ln.startsWith("new file") ||
-						ln.startsWith("deleted file") ||
-						ln.startsWith("old mode") ||
-						ln.startsWith("new mode") ||
-						ln.startsWith("similarity index") ||
-						ln.startsWith("rename ") ||
-						ln.startsWith("copy ") ||
-						ln.startsWith("Binary files") ||
-						ln.startsWith("---") ||
-						ln.startsWith("+++")
-					) {
+					if (isDiffMetaLine(ln)) {
 						cls = "hdr";
 					} else if (ln.startsWith("@@")) {
 						cls = "hunk";
@@ -558,6 +692,73 @@ export function ScmPanel({ chat, terminal, active, onSwitchToTerminal, uiScmTool
 					);
 				})}
 			</pre>
+		);
+	};
+
+	const renderSideCell = (cell: SideCell, showNos: boolean, key: string | number) => {
+		if (cell.kind === "empty") {
+			return <div key={key} style={{ flex: 1, minWidth: 0 }} />;
+		}
+		const bg = cell.kind === "del" ? "var(--red-soft)" : cell.kind === "add" ? "var(--green-soft)" : "transparent";
+		const fg = cell.kind === "del" ? "var(--red)" : cell.kind === "add" ? "var(--green)" : "var(--text-dim)";
+		const sign = cell.kind === "del" ? "-" : cell.kind === "add" ? "+" : " ";
+		return (
+			<div
+				key={key}
+				style={{
+					flex: 1,
+					minWidth: 0,
+					display: "flex",
+					gap: 6,
+					padding: "0 6px",
+					borderRadius: 4,
+					background: bg,
+					color: fg,
+					fontFamily: "var(--mono)",
+					fontSize: "12.5px",
+					lineHeight: 1.55,
+				}}
+			>
+				{showNos && (
+					<span
+						style={{
+							flexShrink: 0,
+							width: 30,
+							textAlign: "right",
+							color: "var(--text-faint)",
+							userSelect: "none",
+						}}
+					>
+						{cell.no ?? ""}
+					</span>
+				)}
+				<span style={{ flex: 1, minWidth: 0, whiteSpace: "pre-wrap", wordBreak: "break-word" }}>
+					{`${sign}${cell.text}` || " "}
+				</span>
+			</div>
+		);
+	};
+
+	const renderSideBySide = (text: string, showNos: boolean) => {
+		const rows = buildSideRows(text);
+		return (
+			<div style={{ display: "flex", flexDirection: "column", gap: 2, paddingBottom: 8 }}>
+				{rows.map((row, i) => {
+					if (row.kind !== "pair") {
+						return (
+							<div key={i} className={`scm-diff-line ${row.kind === "hunk" ? "hunk" : "hdr"}`}>
+								{row.text || " "}
+							</div>
+						);
+					}
+					return (
+						<div key={i} style={{ display: "flex", gap: 8, padding: "0 14px" }}>
+							{renderSideCell(row.left, showNos, `l${i}`)}
+							{renderSideCell(row.right, showNos, `r${i}`)}
+						</div>
+					);
+				})}
+			</div>
 		);
 	};
 
@@ -991,7 +1192,7 @@ export function ScmPanel({ chat, terminal, active, onSwitchToTerminal, uiScmTool
 
 				<div className="scm-diff">
 					<div className="scm-diff-header">
-						<span>
+						<span style={{ flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis" }}>
 							{viewMode === "history"
 								? selectedCommit
 									? `${selectedCommit.shortHash} ${selectedCommit.subject}`
@@ -1003,6 +1204,103 @@ export function ScmPanel({ chat, terminal, active, onSwitchToTerminal, uiScmTool
 						{(viewMode === "history" ? commitLoading : diffLoading) && (
 							<span className="scm-diff-loading">{t("scmLoading")}</span>
 						)}
+						{viewMode === "history"
+							? selectedCommit &&
+								!commitLoading &&
+								commitStats &&
+								(commitStats.add > 0 || commitStats.del > 0) && (
+									<span className="scm-file-stat" style={{ flexShrink: 0 }}>
+										{commitStats.add > 0 && <span className="add">+{commitStats.add}</span>}{" "}
+										{commitStats.del > 0 && <span className="del">-{commitStats.del}</span>}{" "}
+										{commitStats.hunks > 0 && <span>{t("scmDiffHunks", { n: commitStats.hunks })}</span>}
+									</span>
+								)
+							: selected &&
+								fileDiff &&
+								!fileDiff.untracked &&
+								(fileAdd > 0 || fileDel > 0 || fileHunks > 0) && (
+									<span className="scm-file-stat" style={{ flexShrink: 0 }}>
+										{fileAdd > 0 && <span className="add">+{fileAdd}</span>}{" "}
+										{fileDel > 0 && <span className="del">-{fileDel}</span>}{" "}
+										{fileHunks > 0 && <span>{t("scmDiffHunks", { n: fileHunks })}</span>}
+									</span>
+								)}
+						{viewMode !== "history" && selected && (
+							<span style={{ display: "inline-flex", alignItems: "center", gap: 4, flexShrink: 0 }}>
+								<button
+									type="button"
+									className="scm-act"
+									style={{ width: "auto", padding: "0 6px", fontSize: 11 }}
+									title={t("scmDiffPrevTip")}
+									aria-label={t("scmDiffPrev")}
+									disabled={!prevFile}
+									onClick={() => prevFile && showFileDiff(prevFile)}
+								>
+									↑
+								</button>
+								<button
+									type="button"
+									className="scm-act"
+									style={{ width: "auto", padding: "0 6px", fontSize: 11 }}
+									title={t("scmDiffNextTip")}
+									aria-label={t("scmDiffNext")}
+									disabled={!nextFile}
+									onClick={() => nextFile && showFileDiff(nextFile)}
+								>
+									↓
+								</button>
+							</span>
+						)}
+						<span style={{ display: "inline-flex", alignItems: "center", gap: 4, flexShrink: 0 }}>
+							<button
+								type="button"
+								className="scm-act"
+								style={{
+									width: "auto",
+									padding: "0 6px",
+									fontSize: 11,
+									...(effectiveDiffView === "inline"
+										? { background: "var(--accent-soft)", borderColor: "var(--accent)" }
+										: {}),
+								}}
+								title={t("scmDiffInlineTip")}
+								onClick={() => setDiffView("inline")}
+							>
+								{t("scmDiffInline")}
+							</button>
+							<button
+								type="button"
+								className="scm-act"
+								style={{
+									width: "auto",
+									padding: "0 6px",
+									fontSize: 11,
+									...(effectiveDiffView === "side"
+										? { background: "var(--accent-soft)", borderColor: "var(--accent)" }
+										: {}),
+								}}
+								title={t("scmDiffSideBySideTip")}
+								disabled={isNarrow}
+								onClick={() => setDiffView("side")}
+							>
+								{t("scmDiffSideBySide")}
+							</button>
+							{effectiveDiffView === "side" && (
+								<label
+									style={{
+										display: "inline-flex",
+										alignItems: "center",
+										gap: 4,
+										fontSize: 11,
+										fontWeight: 400,
+										cursor: "pointer",
+									}}
+								>
+									<input type="checkbox" checked={showLineNos} onChange={(e) => setShowLineNos(e.target.checked)} />
+									{t("scmDiffLineNumbers")}
+								</label>
+							)}
+						</span>
 					</div>
 					<div className="scm-diff-body">
 						{viewMode === "history" ? (
@@ -1010,7 +1308,7 @@ export function ScmPanel({ chat, terminal, active, onSwitchToTerminal, uiScmTool
 								{error && <div className="scm-error">{error}</div>}
 								{!selectedCommit && !error && <div className="scm-empty">{t("scmSelectCommitHint")}</div>}
 								{selectedCommit && commitLoading && !error && <div className="scm-empty">{t("scmLoading")}</div>}
-								{selectedCommit && !commitLoading && !error && commitDetail ? renderDiff(commitDetail) : null}
+								{selectedCommit && !commitLoading && !error && commitDetail ? renderText(commitDetail) : null}
 							</>
 						) : (
 							<>
@@ -1023,13 +1321,13 @@ export function ScmPanel({ chat, terminal, active, onSwitchToTerminal, uiScmTool
 										{fileDiff.staged && (
 											<>
 												<div className="scm-diff-section">{t("scmStaged")}</div>
-												{renderDiff(fileDiff.staged)}
+												{renderText(fileDiff.staged)}
 											</>
 										)}
 										{fileDiff.worktree && (
 											<>
 												<div className="scm-diff-section">{t("scmUnstaged")}</div>
-												{renderDiff(fileDiff.worktree)}
+												{renderText(fileDiff.worktree)}
 											</>
 										)}
 										{!fileDiff.staged && !fileDiff.worktree && <div className="scm-empty">{t("scmNoDiff")}</div>}
