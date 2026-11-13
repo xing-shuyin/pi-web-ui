@@ -262,6 +262,9 @@ export function isLoopbackGatewayUrl(baseUrl?: string): boolean {
 	}
 }
 
+/** 本机网关也接不住的协议：这些条目没有 Anthropic 端点，放进 Claude Code 只会多一个选不动的模型项。 */
+const CLAUDE_GATEWAY_UNSUPPORTED = new Set(["ollama", "bedrock", "google-generative-ai", "google-vertex"]);
+
 /** OpenAI 风格基地址（`…/v1`）换算成 Anthropic 基地址：剥掉尾部 `/v1`，其余原样返回。 */
 export function anthropicBaseUrlFromOpenAi(baseUrl: string): string {
 	const trimmed = baseUrl.trim();
@@ -292,7 +295,7 @@ export function isProtocolSupportedByEngine(
 	}
 
 	if (normEngine === "claude-gateway") {
-		return isLoopbackGatewayUrl(gatewayBaseUrl) && protocol !== "google-generative-ai" && protocol !== "google-vertex";
+		return isLoopbackGatewayUrl(gatewayBaseUrl) && !CLAUDE_GATEWAY_UNSUPPORTED.has(protocol);
 	}
 
 	if (normEngine === "durable") {
