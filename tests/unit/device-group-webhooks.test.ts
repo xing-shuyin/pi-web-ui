@@ -74,6 +74,54 @@ describe("group webhook validation and security", () => {
 	});
 });
 
+describe("outgoing webhook SSRF guard", () => {
+	it("拒绝云元数据端点（发送前拦截，不发起请求）", async () => {
+		const fetchSpy = vi.spyOn(globalThis, "fetch");
+		try {
+			for (const url of [
+				"http://169.254.169.254/latest/meta-data/",
+				"http://metadata.google.internal/computeMetadata/v1/",
+				"http://0.0.0.0/x",
+			]) {
+				const res = await testOutgoingWebhook({ url });
+				expect(res.success).toBe(false);
+				expect(res.error).toContain("metadata");
+			}
+			expect(fetchSpy).not.toHaveBeenCalled();
+		} finally {
+			fetchSpy.mockRestore();
+		}
+	});
+
+	it("301/302/303 重定向不跟随（原样上报状态，防公网入口跳内网）", async () => {
+		const targetServer = createServer((req, res) => {
+			res.writeHead(302, { Location: "http://169.254.169.254/latest/meta-data/" });
+			res.end();
+		});
+		await new Promise<void>((resolve) => targetServer.listen(0, "127.0.0.1", resolve));
+		const port = (targetServer.address() as { port: number }).port;
+		cleanups.push(() => new Promise<void>((resolve) => targetServer.close(() => resolve())));
+
+		const res = await testOutgoingWebhook({ url: `http://127.0.0.1:${port}/redirect` });
+		expect(res.success).toBe(false);
+		expect(res.status).toBe(302);
+	});
+
+	it("307 重定向逐跳复检：跳向元数据端点时被拦下", async () => {
+		const targetServer = createServer((req, res) => {
+			res.writeHead(307, { Location: "http://169.254.169.254/latest/meta-data/" });
+			res.end();
+		});
+		await new Promise<void>((resolve) => targetServer.listen(0, "127.0.0.1", resolve));
+		const port = (targetServer.address() as { port: number }).port;
+		cleanups.push(() => new Promise<void>((resolve) => targetServer.close(() => resolve())));
+
+		const res = await testOutgoingWebhook({ url: `http://127.0.0.1:${port}/redirect` });
+		expect(res.success).toBe(false);
+		expect(res.error).toContain("metadata");
+	});
+});
+
 describe("outgoing webhook dispatching", () => {
 	it("dispatches webhook events with signature and handles ping test", async () => {
 		const receivedRequests: { event: string; signature?: string; body: any }[] = [];
