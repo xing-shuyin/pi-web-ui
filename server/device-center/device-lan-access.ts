@@ -20,6 +20,7 @@ export interface DeviceLanAccessOptions {
 	valid(): boolean;
 	renew(): Promise<unknown>;
 	fallback(): Promise<string>;
+	openDevice?(id: string): Promise<string>;
 	connect?(grant: unknown): Promise<DeviceDirectConnection | null>;
 }
 interface Access {
@@ -203,6 +204,7 @@ export function createDeviceLanAccess(options: { allowLoopback?: boolean } = {})
 				access.origin.origin + access.base + "__lan_close?view=" + access.view,
 				access.origin.origin + access.base + "__desktop_open",
 				access.origin.origin + access.base.replace(/device-lan\/.*$/, "") + "api/device-desktop/local/clipboard-ws",
+				new URL(access.options.hubUrl).origin,
 			);
 			res
 				.writeHead(200, { "content-type": "text/html; charset=utf-8", "content-security-policy": page.csp })
@@ -210,7 +212,35 @@ export function createDeviceLanAccess(options: { allowLoopback?: boolean } = {})
 			return true;
 		}
 		const fallback = path?.token ? sessions.get(path.token) : undefined;
-		if (path?.path === "/__desktop_open") {
+		if (path?.path?.split("?")[0] === "/__desktop_target") {
+			const found = lookup(req);
+			const query = new URL(req.url!, "http://local").searchParams;
+			const target = query.get("device") ?? "";
+			if (
+				!found ||
+				req.method !== "GET" ||
+				!/^[a-z0-9][a-z0-9-]{0,62}$/.test(target) ||
+				!found.access.options.openDevice
+			) {
+				res.writeHead(403).end();
+				return true;
+			}
+			void (async () => {
+				try {
+					const url = new URL(await found.access.options.openDevice!(target));
+					if (!live(found.token, found.access)) throw new Error("Device binding changed");
+					url.searchParams.set("next", query.get("preview") === "1" ? "/desktop-preview" : "/desktop");
+					const page = wrapperHtml(`/device/${target}/`, "__open" + url.search, new URL(url.origin), target);
+					res
+						.writeHead(200, { "content-type": "text/html; charset=utf-8", "content-security-policy": page.csp })
+						.end(page.html);
+				} catch {
+					if (!res.destroyed && !res.headersSent) res.writeHead(502).end();
+				}
+			})();
+			return true;
+		}
+		if (path?.path?.split("?")[0] === "/__desktop_open") {
 			if (
 				!fallback ||
 				path.id !== fallback.options.deviceId ||
@@ -229,6 +259,15 @@ export function createDeviceLanAccess(options: { allowLoopback?: boolean } = {})
 			fallback.openingDesktop = true;
 			void (async () => {
 				try {
+					const target = new URL(req.url!, "http://local").searchParams.get("device") ?? path.id;
+					if (!/^[a-z0-9][a-z0-9-]{0,62}$/.test(target)) throw new Error("Invalid device");
+					if (target !== path.id) {
+						if (!fallback.options.openDevice) throw new Error("Device access unavailable");
+						const url = await fallback.options.openDevice(target);
+						if (!live(path.token!, fallback)) throw new Error("Device access expired");
+						res.writeHead(200, { "content-type": "application/json" }).end(JSON.stringify({ url }));
+						return;
+					}
 					const grant = await fallback.options.renew();
 					if (!live(path.token!, fallback)) throw new Error("Device access expired");
 					const opened = await open(grant, { ...fallback.options, desktop: true });

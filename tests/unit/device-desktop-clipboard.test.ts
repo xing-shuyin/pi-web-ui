@@ -73,6 +73,31 @@ function offer(data = Buffer.from("clipboard"), name = "text.txt") {
 	};
 }
 describe("native clipboard protocol", () => {
+	it("supports explicit browser text transfer without a clipboard watcher", async () => {
+		const source = memory(),
+			ep = await endpoint(source.backend);
+		source.copy(text("existing remote text"));
+		ep.send({ type: "start", read: true, write: true, manual: true });
+		ep.send({ type: "text-read" });
+		await vi.waitFor(() => expect(ep.packets).toContainEqual({ type: "text-result", text: "existing remote text" }));
+		expect(source.listeners.size).toBe(0);
+		ep.send({ type: "text-write", text: "从浏览器粘贴" });
+		await vi.waitFor(() => expect(ep.packets).toContainEqual({ type: "text-result", written: true }));
+		expect(await source.backend.read()).toEqual(text("从浏览器粘贴"));
+		source.copy({ kind: "image", items: [{ name: "image.png", data: Buffer.from([1]) }] });
+		ep.send({ type: "text-read" });
+		await vi.waitFor(() => expect(ep.packets).toContainEqual({ type: "text-result", error: "clipboard-not-text" }));
+		ep.send({ type: "text-write", text: "x".repeat(16385) });
+		await vi.waitFor(() => expect(ep.packets).toContainEqual({ type: "clipboard-error", code: "clipboard-size" }));
+	});
+	it("refuses browser text writes on read-only connections", async () => {
+		const source = memory(),
+			ep = await endpoint(source.backend, false);
+		ep.send({ type: "start", read: true, write: false, manual: true });
+		ep.send({ type: "text-write", text: "must not write" });
+		await vi.waitFor(() => expect(ep.packets).toContainEqual({ type: "clipboard-error", code: "clipboard-direction" }));
+		expect(source.backend.write).not.toHaveBeenCalled();
+	});
 	it("copies text, images and multi-chunk files both ways without echoes; stops watching on disconnect", async () => {
 		const a = memory(),
 			b = memory(),

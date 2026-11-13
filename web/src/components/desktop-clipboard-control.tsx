@@ -5,6 +5,7 @@ import { pageDeviceId } from "../device-access";
 import { createClipboardBridge } from "../desktop-clipboard-bridge";
 import type { ClipboardMode } from "../../../server/device-center/desktop-clipboard-protocol";
 import { useT } from "../i18n";
+import { manualClipboardControls, manualClipboardCss } from "../../../server/device-center/desktop-clipboard-manual";
 
 export function DesktopClipboardControl({
 	frame,
@@ -21,6 +22,7 @@ export function DesktopClipboardControl({
 	const [readOnly, setReadOnly] = useState(true);
 	const [status, setStatus] = useState("clipboard-off");
 	const bridge = useRef<ReturnType<typeof createClipboardBridge> | undefined>(undefined);
+	const manualHost = useRef<HTMLDivElement>(null);
 	const nested = Boolean(pageDeviceId());
 	const native = !nested && ["localhost", "127.0.0.1", "[::1]"].includes(location.hostname) && !local;
 	useEffect(() => {
@@ -28,6 +30,14 @@ export function DesktopClipboardControl({
 		setConnected(false);
 		setMode("off");
 		setStatus("clipboard-off");
+		const manual =
+			!native && !nested && !local && manualHost.current
+				? manualClipboardControls({
+						host: manualHost.current,
+						post: (data) => frame.current?.contentWindow?.postMessage(data, "*"),
+						zh: t("desktop.clipboard") === "剪贴板",
+					})
+				: undefined;
 		const receive = (event: MessageEvent) => {
 			if (nested && event.source === parent && parent !== window && event.data?.type === "desktop-clipboard") {
 				frame.current?.contentWindow?.postMessage(event.data, "*");
@@ -38,6 +48,7 @@ export function DesktopClipboardControl({
 				parent.postMessage(event.data, "*");
 				return;
 			}
+			manual?.receive(event.data);
 			if (event.data?.type === "desktop-clipboard-available") {
 				setConnected(event.data.connected === true);
 				setReadOnly(event.data.viewOnly !== false);
@@ -61,11 +72,18 @@ export function DesktopClipboardControl({
 		return () => {
 			window.removeEventListener("message", receive);
 			bridge.current?.close();
+			manual?.close();
 			bridge.current = undefined;
 			if (nested) parent.postMessage({ type: "desktop-clipboard-available", connected: false, viewOnly: true }, "*");
 		};
 	}, [frame, url, local, nested, native]);
 	if (nested || local) return null;
+	if (!native)
+		return (
+			<div ref={manualHost}>
+				<style>{manualClipboardCss}</style>
+			</div>
+		);
 	const label = t("desktop.clipboard");
 	const note = !native
 		? t("desktop.clipboardLocal")

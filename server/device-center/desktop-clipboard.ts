@@ -16,6 +16,7 @@ export function clipboardConnection(ws: WebSocket, backend: ClipboardBackend, wr
 		started = false,
 		canRead = false,
 		canWrite = false,
+		manual = false,
 		reading = false,
 		dirty = false;
 	let stopWatch: (() => void) | undefined,
@@ -140,13 +141,41 @@ export function clipboardConnection(ws: WebSocket, backend: ClipboardBackend, wr
 			return;
 		}
 		if (processing) return fail("clipboard-protocol");
+		if (started && manual && (v.type === "text-read" || v.type === "text-write")) {
+			if ((v.type === "text-read" && !canRead) || (v.type === "text-write" && !canWrite))
+				return fail("clipboard-direction");
+			if (v.type === "text-write" && (typeof v.text !== "string" || Buffer.byteLength(v.text) > 16384))
+				return fail("clipboard-size");
+			processing = true;
+			void (async () => {
+				try {
+					if (v.type === "text-write") {
+						await backend.write({ kind: "text", items: [{ name: "text.txt", data: Buffer.from(v.text as string) }] });
+						send({ type: "text-result", written: true });
+					} else {
+						const content = await backend.read();
+						if (closed) return;
+						if (content && content.kind !== "text") return send({ type: "text-result", error: "clipboard-not-text" });
+						const data = content?.items[0]?.data;
+						if (data && data.length > 16384) return send({ type: "text-result", error: "clipboard-size" });
+						send({ type: "text-result", text: data?.toString("utf8") ?? "" });
+					}
+				} catch {
+					send({ type: "text-result", error: "clipboard-unavailable" });
+				} finally {
+					processing = false;
+				}
+			})();
+			return;
+		}
 		if (v.type === "start" && !started && typeof v.read === "boolean" && typeof v.write === "boolean") {
 			started = true;
+			manual = v.manual === true;
 			canRead = v.read;
 			canWrite = v.write && writable;
 			if (v.write && !writable) return fail("clipboard-readonly");
 			send({ type: "clipboard-ready", read: canRead, write: canWrite });
-			if (canRead) {
+			if (canRead && !manual) {
 				try {
 					stopWatch = backend.watch(() => {
 						dirty = true;
@@ -238,6 +267,7 @@ export function clipboardConnection(ws: WebSocket, backend: ClipboardBackend, wr
 	ws.once("error", close);
 	send({
 		type: "clipboard-capabilities",
+		manualText: true,
 		kinds: ["text", "image", "files"],
 		maxBytes: CLIPBOARD_LIMITS.bytes,
 		maxFiles: CLIPBOARD_LIMITS.files,

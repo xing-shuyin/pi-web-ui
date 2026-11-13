@@ -29,7 +29,7 @@ async function listen(server: Server) {
 	});
 	return (server.address() as { port: number }).port;
 }
-async function fixture(deviceName?: string, deviceRemark?: string) {
+async function fixture(deviceName?: string, deviceRemark?: string, secondDevice = false) {
 	const received: http.IncomingHttpHeaders[] = [];
 	const local = http.createServer((req, res) => {
 		received.push(req.headers);
@@ -106,9 +106,9 @@ async function fixture(deviceName?: string, deviceRemark?: string) {
 		server,
 		publicUrl: origin,
 		pathAccess: true,
-		authenticateDevice: (id, key) => id === "dev1" && key === "credential",
+		authenticateDevice: (id, key) => (id === "dev1" || (secondDevice && id === "dev2")) && key === "credential",
 		getAccount: (req) => (req.headers.cookie?.includes("hub=secret") ? "account" : null),
-		ownsDevice: (account, id) => account === "account" && id === "dev1",
+		ownsDevice: (account, id) => account === "account" && (id === "dev1" || (secondDevice && id === "dev2")),
 		getDeviceName: () => deviceName,
 		getDeviceRemark: () => deviceRemark,
 	});
@@ -123,6 +123,18 @@ async function fixture(deviceName?: string, deviceRemark?: string) {
 	});
 	cleanup.push(() => connector.close());
 	await vi.waitFor(() => expect(relay.isOnline("dev1")).toBe(true));
+	if (secondDevice) {
+		const other = createDeviceConnector({
+			hubUrl: origin,
+			deviceId: "dev2",
+			credential: "credential",
+			localOrigin: `http://127.0.0.1:${localPort}`,
+			localAuthToken: "local-token",
+			onTask: async () => "done",
+		});
+		cleanup.push(() => other.close());
+		await vi.waitFor(() => expect(relay.isOnline("dev2")).toBe(true));
+	}
 	const request = async (path: string, headers: Record<string, string> = {}, method = "GET") => {
 		const response = await fetch(origin + path, { headers, method, redirect: "manual" });
 		return { status: response.status, headers: response.headers, body: await response.text() };
@@ -140,6 +152,35 @@ async function fixture(deviceName?: string, deviceRemark?: string) {
 }
 
 describe("single-port device path portal", () => {
+	it("opens another owned desktop inside a remote page without forwarding privileged device-center requests", async () => {
+		const f = await fixture(undefined, undefined, true);
+		const { base } = await f.open();
+		for (const target of ["outsider", "../dev2", "https://evil.example"]) {
+			expect(
+				(await f.request(base + "__desktop_target?device=" + encodeURIComponent(target), { origin: "null" })).status,
+			).toBe(403);
+			expect(
+				(await f.request(base + "__desktop_open?device=" + encodeURIComponent(target), { origin: f.origin }, "POST"))
+					.status,
+			).toBe(403);
+		}
+		expect((await f.request(base + "__desktop_target?device=dev2", { origin: "https://evil.example" })).status).toBe(
+			403,
+		);
+		const preview = await f.request(base + "__desktop_target?device=dev2&preview=1", { origin: "null" });
+		expect(preview.status).toBe(200);
+		const childBase = /\/device\/dev2\/__relay\/[a-f0-9]{64}\//.exec(preview.body)![0];
+		expect(preview.body).toContain(childBase + "desktop-preview");
+		expect(preview.headers.get("content-security-policy")).toContain("frame-src " + f.origin + childBase);
+		expect((await f.request(childBase + "desktop", { origin: "null" })).status).toBe(200);
+		const opened = await f.request(base + "__desktop_open?device=dev2", { origin: f.origin }, "POST");
+		expect(opened.status).toBe(200);
+		expect(new URL(JSON.parse(opened.body).url).pathname).toBe("/device/dev2/__open");
+		f.relay.revoke("dev2");
+		expect((await f.request(childBase + "desktop", { origin: "null" })).status).toBe(403);
+		f.relay.revoke("dev1");
+		expect((await f.request(base + "__desktop_target?device=dev2", { origin: "null" })).status).toBe(403);
+	});
 	it("issues separate desktop tickets only to the owning outer portal", async () => {
 		const f = await fixture();
 		const { base } = await f.open();

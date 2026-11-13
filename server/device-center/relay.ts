@@ -957,9 +957,38 @@ export function createDeviceRelay(options: DeviceRelayOptions) {
 				.end();
 			return true;
 		}
-		if (path?.path === "/__desktop_open") {
+		if (path?.path?.split("?")[0] === "/__desktop_target") {
 			const generation = revision;
 			const grant = capabilities.get(path.token!);
+			const target = url.searchParams.get("device") ?? "";
+			if (
+				req.method !== "GET" ||
+				!grant ||
+				grant.nativeOrigin ||
+				!/^[a-z0-9][a-z0-9-]{0,62}$/.test(target) ||
+				!(await pathAuthorized(req, id)) ||
+				!(await options.ownsDevice(grant.accountId, id)) ||
+				!(await options.ownsDevice(grant.accountId, target)) ||
+				closed ||
+				revision !== generation ||
+				capabilities.get(path.token!) !== grant ||
+				grant.expiresAt <= Date.now()
+			) {
+				res.writeHead(403).end();
+				return true;
+			}
+			sendWrapper(
+				res,
+				target,
+				grant.accountId,
+				url.searchParams.get("preview") === "1" ? "desktop-preview" : "desktop",
+			);
+			return true;
+		}
+		if (path?.path?.split("?")[0] === "/__desktop_open") {
+			const generation = revision;
+			const grant = capabilities.get(path.token!);
+			const target = url.searchParams.get("device") ?? id;
 			if (
 				req.method !== "POST" ||
 				req.headers.origin !== hub.origin ||
@@ -968,6 +997,8 @@ export function createDeviceRelay(options: DeviceRelayOptions) {
 				grant.deviceId !== id ||
 				grant.expiresAt <= Date.now() ||
 				!(await options.ownsDevice(grant.accountId, id)) ||
+				!/^[a-z0-9][a-z0-9-]{0,62}$/.test(target) ||
+				!(await options.ownsDevice(grant.accountId, target)) ||
 				closed ||
 				revision !== generation ||
 				capabilities.get(path.token!) !== grant
@@ -975,15 +1006,15 @@ export function createDeviceRelay(options: DeviceRelayOptions) {
 				res.writeHead(403).end();
 				return true;
 			}
-			if (!devices.has(id) || tickets.size >= RELAY_LIMITS.sessions) {
+			if (!devices.has(target) || tickets.size >= RELAY_LIMITS.sessions) {
 				res.writeHead(503).end();
 				return true;
 			}
 			const ticket = randomBytes(32).toString("hex");
-			tickets.set(ticket, { deviceId: id, accountId: grant.accountId, generation, expiresAt: Date.now() + 30_000 });
+			tickets.set(ticket, { deviceId: target, accountId: grant.accountId, generation, expiresAt: Date.now() + 30_000 });
 			res
 				.writeHead(200, { "content-type": "application/json" })
-				.end(JSON.stringify({ url: `${hub.origin}/device/${id}/__open?ticket=${ticket}` }));
+				.end(JSON.stringify({ url: `${hub.origin}/device/${target}/__open?ticket=${ticket}` }));
 			return true;
 		}
 		if (!(path ? await pathAuthorized(req, id) : authorized(req, id))) {

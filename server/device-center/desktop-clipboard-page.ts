@@ -10,18 +10,18 @@ addEventListener('message',event=>{
  const data=event.data;
  if(data?.type!=='desktop-clipboard'||typeof data.channel!=='string'||!/^[a-f0-9-]{36}$/.test(data.channel))return;
  const value=data.payload;if(!value||typeof value!=='object')return;
- if(value.type==='bridge-start'){
+ if(value.type==='bridge-start'||value.type==='bridge-text-start'){
   stopClipboard();if(!ready||!['send','receive','both'].includes(value.mode))return;
   clipboardChannel=data.channel;clipboardActive=true;
   if(connectionViewOnly&&value.mode!=='receive'){clipboardPost({type:'clipboard-error',code:'clipboard-readonly'});return}
   const url=appUrl('desktop-clipboard-ws');url.protocol=url.protocol==='https:'?'wss:':'ws:';url.searchParams.set('viewOnly',connectionViewOnly?'1':'0');
   const current=new WebSocket(url);clipboardSocket=current;
-  current.onmessage=event=>{if(current!==clipboardSocket||typeof event.data!=='string'||event.data.length>49152)return;try{const packet=JSON.parse(event.data);if(packet.type==='clipboard-capabilities'){current.send(JSON.stringify({type:'start',read:value.mode!=='send',write:value.mode!=='receive'}));return}clipboardPost(packet)}catch{stopClipboard()}};
+  current.onmessage=event=>{if(current!==clipboardSocket||typeof event.data!=='string'||event.data.length>49152)return;try{const packet=JSON.parse(event.data);if(packet.type==='clipboard-capabilities'){if(value.type==='bridge-text-start'&&packet.manualText!==true){clipboardPost({type:'clipboard-error',code:'clipboard-update'});stopClipboard();return}current.send(JSON.stringify({type:'start',read:value.mode!=='send',write:value.mode!=='receive',...(value.type==='bridge-text-start'?{manual:true}:{})}));return}clipboardPost(packet)}catch{stopClipboard()}};
   current.onclose=()=>{if(current===clipboardSocket)stopClipboard()};current.onerror=()=>{if(current===clipboardSocket){clipboardPost({type:'clipboard-error',code:'clipboard-unavailable'});stopClipboard()}};return;
  }
  if(data.channel!==clipboardChannel)return;
  if(value.type==='bridge-stop'){stopClipboard();return}
- if(!['offer','chunk','commit','ack'].includes(value.type))return;
+ if(!['offer','chunk','commit','ack','text-read','text-write'].includes(value.type))return;
  const packet=JSON.stringify(value);if(packet.length<=49152&&clipboardSocket?.readyState===WebSocket.OPEN)clipboardSocket.send(packet);
 });
 `;

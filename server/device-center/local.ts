@@ -806,6 +806,27 @@ export async function installLocalDeviceCenter(options: Options) {
 							basePath: req.body?.basePath,
 							desktop: req.body?.desktop === true,
 							valid,
+							openDevice: async (target) => {
+								if (!valid() || !/^[a-z0-9][a-z0-9-]{0,62}$/.test(target)) throw new Error("Device binding changed");
+								const result = (await requestDeviceHub(
+									captured,
+									`/api/device-user/devices/${target}/open`,
+									"POST",
+									{ preferLan: false },
+									{ user: true },
+								)) as { url?: string };
+								const url = new URL(result.url ?? "");
+								if (
+									!valid() ||
+									url.origin !== new URL(captured.hubUrl).origin ||
+									url.pathname !== `/device/${target}/__open` ||
+									url.username ||
+									url.password ||
+									!/^[a-f0-9]{64}$/.test(url.searchParams.get("ticket") ?? "")
+								)
+									throw new Error("Invalid Hub ticket");
+								return url.href;
+							},
 							connect: async (candidate) => {
 								if (!valid()) return null;
 								const connection = await probeDeviceLan(candidate, { signal: controller.signal });
