@@ -33,7 +33,7 @@ function fixture(chat?: any) {
 		chat: chat || vi.fn(async () => ({ conversationId: "c1", runId: "r1" })),
 		abortRun: vi.fn(async () => ({ ok: true })),
 	};
-	return { bridge: new DingtalkBotBridge({ host, getConfig: () => ({}) }), host, fetch };
+	return { bridge: new DingtalkBotBridge({ host, getConfig: () => ({ allowAllSenders: true }) }), host, fetch };
 }
 afterEach(() => {
 	vi.unstubAllGlobals();
@@ -43,7 +43,7 @@ afterEach(() => {
 describe("DingTalk command and ownership behavior", () => {
 	it("DEFAULT setters suppress configured model and thinking preferences", async () => {
 		const { bridge, host } = fixture();
-		bridge.getConfig = () => ({ model: "configured/model", thinkingLevel: "high" });
+		bridge.getConfig = () => ({ allowAllSenders: true, model: "configured/model", thinkingLevel: "high" });
 		await bridge.onInboundMessage(event("／ＭＯＤＥＬ DEFAULT"));
 		await bridge.onInboundMessage(event("／ＴＨＩＮＫＩＮＧ DEFAULT"));
 		await bridge.onInboundMessage(event("/reset /stop  ＡＢＣ\nnext line  "));
@@ -433,7 +433,7 @@ function mediaFetch(bytes = png) {
 		return json({ errcode: 0 });
 	});
 }
-const config = { appKey: "key", appSecret: "secret", robotCode: "robot" };
+const config = { allowAllSenders: true, appKey: "key", appSecret: "secret", robotCode: "robot" };
 describe("DingTalk real media transport", () => {
 	it("sends image bytes via actual host.chat attachments instead of URL text", async () => {
 		const { bridge, host } = fixture();

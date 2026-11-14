@@ -8,7 +8,7 @@ const message = (channel = "a", text = "hello") => ({
 });
 const assistant = (text: string) => ({ role: "assistant", content: [{ type: "text", text }] });
 function harness(saved = new Map<string, any>()) {
-	let config = { botToken: "test-token", botEnabled: true };
+	let config = { allowAllSenders: true, botToken: "test-token", botEnabled: true };
 	const sent: { channel: string; text: string }[] = [];
 	const storage = {
 		get: vi.fn(async (key: string) => structuredClone(saved.get(key))),

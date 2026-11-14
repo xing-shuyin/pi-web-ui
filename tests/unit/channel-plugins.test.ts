@@ -5,6 +5,7 @@ import { SlackBotBridge } from "../../plugins/slack/index.mjs";
 import { MatrixBotBridge } from "../../plugins/matrix/index.mjs";
 
 const cfg = {
+	allowAllSenders: true,
 	botToken: "test-token",
 	appToken: "test-app",
 	accessToken: "test-matrix",

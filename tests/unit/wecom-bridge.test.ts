@@ -9,7 +9,11 @@ function setup(chat?: any) {
 		chat: chat || vi.fn().mockResolvedValue({ conversationId: "real", runId: "run" }),
 		abortRun: vi.fn().mockResolvedValue({ ok: true }),
 	};
-	const bridge = new WecomBotBridge({ host, getConfig: () => ({ webhookKey: "key" }), log: () => {} });
+	const bridge = new WecomBotBridge({
+		host,
+		getConfig: () => ({ allowAllSenders: true, webhookKey: "key" }),
+		log: () => {},
+	});
 	const send = (content: string, extra: any = {}) => bridge.onInboundMessage({ fromUserName: "u", content, ...extra });
 	return { host, bridge, fetch, send };
 }

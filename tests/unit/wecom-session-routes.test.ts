@@ -5,7 +5,7 @@ afterEach(() => vi.unstubAllGlobals());
 function setup() {
 	const disk = new Map();
 	const secrets = new Map();
-	let config = { corpId: "corp", webhookKey: "default" };
+	let config = { allowAllSenders: true, corpId: "corp", webhookKey: "default" };
 	let handler: any;
 	let sequence = 0;
 	const fetch = vi.fn().mockResolvedValue({ ok: true, json: async () => ({ errcode: 0 }) });

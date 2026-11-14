@@ -3,7 +3,7 @@ import { DingtalkBotBridge } from "../../plugins/dingtalk/bridge.mjs";
 
 function fixture(legacy = false) {
 	let callback: any;
-	let config: any = { appKey: "app", robotCode: "robot" };
+	let config: any = { allowAllSenders: true, appKey: "app", robotCode: "robot" };
 	const storage = new Map();
 	const deliveries: any[] = [];
 	vi.stubGlobal(

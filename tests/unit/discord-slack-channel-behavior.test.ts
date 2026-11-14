@@ -21,7 +21,7 @@ for (const platform of ["discord", "slack"] as const) {
 			notify: vi.fn(),
 		};
 		const Bridge = platform === "discord" ? DiscordBotBridge : SlackBotBridge;
-		const bridge: any = new Bridge({ host, getConfig: () => ({ botToken: "secret" }) });
+		const bridge: any = new Bridge({ host, getConfig: () => ({ allowAllSenders: true, botToken: "secret" }) });
 		bridge.botUser = platform === "discord" ? { id: "bot" } : { user_id: "bot" };
 		const reply = vi.fn<(route: any, text: string) => Promise<void>>().mockResolvedValue(undefined);
 		bridge.reply = reply;

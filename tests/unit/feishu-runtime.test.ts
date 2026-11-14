@@ -21,7 +21,7 @@ function setup() {
 		.mockResolvedValue({ data: Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]), mimeType: "image/png" });
 	const bridge = new FeishuBotBridge({
 		host,
-		getConfig: () => ({ groupResponseMode: "all" }),
+		getConfig: () => ({ allowAllSenders: true, groupResponseMode: "all" }),
 		replyMessage: reply,
 		sendMessage: vi.fn(),
 		reactMessage: vi.fn(),
@@ -143,6 +143,7 @@ describe("Feishu runtime contracts", () => {
 	it("DEFAULT restores configured defaults and delayed model validation cannot override reset", async () => {
 		const { host, inbound, bridge } = setup();
 		bridge.getConfig = () => ({
+			allowAllSenders: true,
 			groupResponseMode: "all",
 			model: "configured/model",
 			thinkingLevel: "low",

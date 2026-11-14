@@ -30,7 +30,7 @@ function setup(config: Record<string, unknown> = {}) {
 	};
 	const bridge = new WecomBotBridge({
 		host,
-		getConfig: () => ({ webhookKey: "key", ...config }),
+		getConfig: () => ({ allowAllSenders: true, webhookKey: "key", ...config }),
 		log: () => {},
 	});
 	const send = (content: string, extra: any = {}) =>

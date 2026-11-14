@@ -10,7 +10,7 @@ function setup() {
 		abortRun: vi.fn(async () => ({ ok: true })),
 		fs: { statPath: vi.fn<any>(async () => ({ type: "dir" })) },
 	};
-	const bridge: any = new SlackBotBridge({ host, getConfig: () => ({}) });
+	const bridge: any = new SlackBotBridge({ host, getConfig: () => ({ allowAllSenders: true }) });
 	bridge.reply = vi.fn(async () => {});
 	const send = (text: string) => bridge.onInboundEvent({ user: "u", channel: "c", channel_type: "im", text });
 	const state = () => [...bridge.channelStates.values()][0] as any;
@@ -21,7 +21,7 @@ describe("Slack reset command lifecycle", () => {
 	it("stops old reply chunks after reset during the first send", async () => {
 		const { bridge, send } = setup();
 		const sent: any[] = [];
-		bridge.getConfig = () => ({ botToken: "test-token" });
+		bridge.getConfig = () => ({ allowAllSenders: true, botToken: "test-token" });
 		vi.stubGlobal(
 			"fetch",
 			vi.fn(async (_url: any, init: any) => {

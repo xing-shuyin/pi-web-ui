@@ -7,7 +7,7 @@ async function harness(saved = new Map<string, any>()) {
 	const sent: any[] = [];
 	const calls: any[] = [];
 	const abortRun = vi.fn(async () => ({ ok: true }));
-	const cfg = { botEnabled: true, botToken: "bot", appToken: "app" };
+	const cfg = { allowAllSenders: true, botEnabled: true, botToken: "bot", appToken: "app" };
 	if (!saved.has("config")) saved.set("config", cfg);
 	vi.stubGlobal(
 		"fetch",

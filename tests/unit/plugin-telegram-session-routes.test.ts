@@ -1,7 +1,7 @@
 import { expect, it, vi } from "vitest";
 import { TelegramBotBridge } from "../../plugins/telegram/index.mjs";
 
-function setup(saved = new Map(), config = { botToken: "bot" }) {
+function setup(saved = new Map(), config: Record<string, unknown> = { allowAllSenders: true, botToken: "bot" }) {
 	let seq = 0;
 	const host = {
 		cwd: process.cwd(),
