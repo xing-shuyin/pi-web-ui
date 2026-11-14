@@ -1,4 +1,4 @@
-import { esc } from "../plugin-sdk/client-utils.mjs";
+import { esc } from "../../plugin-sdk/client-utils.mjs";
 
 const appRoot = new URL("../../../", import.meta.url);
 const appUrl = (path) => new URL(path.replace(/^\//, ""), appRoot).href;

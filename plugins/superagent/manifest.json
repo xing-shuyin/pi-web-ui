@@ -2,7 +2,7 @@
 	"apiVersion": 2,
 	"id": "superagent",
 	"name": "Superagent",
-	"version": "0.1.6",
+	"version": "0.1.7",
 	"description": "GitHub / 飞书渠道工单适配、群组映射与原渠道回写；默认仅观察，由群组独立 AI Router 分配给 Bot 执行。",
 	"descriptionEn": "GitHub and Feishu work item adapters, group mapping, and durable channel replies. Observe by default; group AI Router delegates execution to Bots.",
 	"author": "pi-web-ui",

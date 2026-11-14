@@ -6,7 +6,7 @@
  * 粗体、链接，以及 `[mm:ss]` 时间戳 → 可点回看锚点。
  * 先转义再还原标记，任何视频字幕里的 HTML 都只能当文本。
  */
-import { esc as escapeHtml } from "../../plugin-sdk/client-utils.mjs";
+import { esc as escapeHtml } from "@pi-web-ui/plugin-sdk/client";
 
 const tsToSec = (label) =>
 	String(label)

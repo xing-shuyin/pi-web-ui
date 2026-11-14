@@ -3,7 +3,7 @@ import { existsSync } from "node:fs";
 import { join } from "node:path";
 import { spawn } from "node:child_process";
 import { createRequire } from "node:module";
-import { esc } from "../plugin-sdk/client-utils.mjs";
+import { esc } from "../../plugin-sdk/client-utils.mjs";
 
 const CONFIG_FILE = "config.json";
 const BODY_LIMIT = 16000;

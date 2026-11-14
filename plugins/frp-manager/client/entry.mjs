@@ -1,5 +1,5 @@
 // frp-manager 面板：穿透列表 / 客户端 / 本地 frps / 远端部署 / 日志
-import { esc } from "../../plugin-sdk/client-utils.mjs";
+import { esc } from "@pi-web-ui/plugin-sdk/client";
 
 function resolveApiBase(importMetaUrl) {
 	const base = String(importMetaUrl);
