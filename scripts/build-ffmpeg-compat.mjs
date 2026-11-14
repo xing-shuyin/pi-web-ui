@@ -115,7 +115,11 @@ for (const [archive, directory] of [
 			),
 		);
 	} catch {
-		await run("tar", ["-xf", join(work, archive), "-C", work]);
+		// w64devkit 的 bin 在 PATH 最前面，它的 tar 是 busybox：读 .tar.gz 没问题，读 zip 会
+		// 报 `invalid tar magic`（CI 上就是这么红过一次）。zip 交给同一套工具链的 unzip。
+		await (archive.endsWith(".zip")
+			? run(join(bin, "unzip.exe"), ["-q", "-o", "-d", work, join(work, archive)])
+			: run("tar", ["-xf", join(work, archive), "-C", work]));
 	}
 }
 const cmake = join(work, "cmake-4.5.0-windows-x86_64/bin/cmake.exe");
