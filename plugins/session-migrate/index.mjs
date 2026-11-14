@@ -1,12 +1,30 @@
-import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readdirSync, readFileSync, realpathSync, statSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
-import { basename, isAbsolute, join } from "node:path";
+import { basename, dirname, isAbsolute, join, relative, resolve } from "node:path";
 import { randomUUID } from "node:crypto";
 import { createRequire } from "node:module";
 
 const require = createRequire(import.meta.url);
 
-const PI_DIR = join(homedir(), ".pi", "agent", "sessions");
+/**
+ * 与 SDK `getAgentDir()` 同口径：认 `PI_CODING_AGENT_DIR`（含 `~`），否则 `~/.pi/agent`。
+ * 写错库的代价是导入的会话在左栏历史里根本看不到。
+ */
+function resolveAgentDir() {
+	const env = (process.env.PI_CODING_AGENT_DIR || "").trim();
+	if (!env) return join(homedir(), ".pi", "agent");
+	if (env === "~" || env === "~/" || env === "~\\") return homedir();
+	if (env.startsWith("~/") || env.startsWith("~\\")) return join(homedir(), env.slice(2));
+	return isAbsolute(env) ? env : resolve(process.cwd(), env);
+}
+
+const PI_DIR = join(resolveAgentDir(), "sessions");
+const OMP_DIR = join(homedir(), ".omp", "agent", "sessions");
+
+/** 导出只认这两个会话库：插件路由不能变成任意文件下载器（issue #887）。 */
+const EXPORT_ROOTS = [PI_DIR, OMP_DIR];
+/** 上传导入的硬上限：超过就请用户走磁盘目录导入（`session_migrate_import`）。 */
+const MAX_IMPORT_BYTES = 64 * 1024 * 1024;
 
 const OPENCODE_DB = join(homedir(), ".local", "share", "opencode", "opencode.db");
 
@@ -30,8 +48,19 @@ const SOURCES = [
 	{ id: "opencode", dir: OPENCODE_DB, kind: "opencode" },
 ];
 
+/**
+ * 会话目录名必须与 SDK `getDefaultSessionDir` 逐字一致：`--<cwd 去掉前导斜杠、/ \ : 换 ->--`。
+ * 否则文件落在 SDK 不扫的目录里，导入完在左栏历史里根本看不到。
+ */
 function escapeCwd(cwd) {
-	return String(cwd || "").replace(/[^a-zA-Z0-9]/g, "-");
+	return `--${String(cwd || "")
+		.replace(/^[/\\]/, "")
+		.replace(/[/\\:]/g, "-")}--`;
+}
+
+/** 文件名与 SDK 同格式：`<ISO 时间，: 与 . 换成 ->_<sessionId>.jsonl`。 */
+function sessionFileName(id) {
+	return `${new Date().toISOString().replace(/[:.]/g, "-")}_${id}.jsonl`;
 }
 
 function readLines(file) {
@@ -748,6 +777,197 @@ function importSessions(files, targetCwd) {
 
 export { scanSources, importSessions };
 
+// ---------------------------------------------------------------------------
+// issue #887：导出会话 / 导入上传的 .jsonl
+// ---------------------------------------------------------------------------
+
+function escapeRe(s) {
+	return String(s).replace(/[.*+?^${}()|[\]\\]/g, (m) => `\\${m}`);
+}
+
+function isInsideRoot(root, target) {
+	const rel = relative(resolve(root), resolve(target));
+	return rel === "" || (!rel.startsWith("..") && !isAbsolute(rel));
+}
+
+/**
+ * 只放行会话库里的 .jsonl/.json，否则返回 null（路由层不做其它文件服务）。
+ * @param {unknown} file
+ * @param {string[]} [roots]
+ * @returns {string | null}
+ */
+export function exportableSessionPath(file, roots = EXPORT_ROOTS) {
+	const raw = String(file || "").trim();
+	if (!raw) return null;
+	const abs = resolve(raw);
+	if (!/\.(jsonl|json)$/i.test(abs)) return null;
+	let real;
+	try {
+		// 软链接可能把会话目录里的文件名指向外部，先解实路径再判越界
+		real = realpathSync(abs);
+	} catch {
+		return null;
+	}
+	const realRoots = roots.map((root) => {
+		try {
+			return realpathSync(root);
+		} catch {
+			return resolve(root);
+		}
+	});
+	if (!realRoots.some((root) => isInsideRoot(root, real))) return null;
+	try {
+		if (!statSync(real).isFile()) return null;
+	} catch {
+		return null;
+	}
+	return abs;
+}
+
+/**
+ * 按 session id 在会话库里找回已存在的文件（pi 文件名可能是 `<ts>_<id>.jsonl` 或 `<id>.jsonl`）。
+ * @param {string} id
+ * @param {string} [root]
+ * @returns {string[]}
+ */
+export function findSessionsById(id, root = PI_DIR) {
+	const needle = new RegExp(`(^|_)${escapeRe(id)}\\.jsonl$`, "i");
+	const hits = [];
+	let dirs = [];
+	try {
+		dirs = readdirSync(root, { withFileTypes: true }).filter((d) => d.isDirectory());
+	} catch {
+		return hits;
+	}
+	for (const d of dirs) {
+		const dir = join(root, d.name);
+		let files = [];
+		try {
+			files = readdirSync(dir);
+		} catch {
+			continue;
+		}
+		for (const f of files) if (needle.test(f)) hits.push(join(dir, f));
+	}
+	return hits;
+}
+
+/**
+ * 首行必须是 pi 会话头；其余行宽容保留（历史版本可能有插件私有事件）。
+ * @param {unknown} text
+ * @returns {any}
+ */
+export function parsePiSessionText(text) {
+	const raw = String(text ?? "").replace(/^\uFEFF/, "");
+	const lines = raw.split(/\r?\n/).filter((l) => l.trim());
+	if (lines.length === 0) return { ok: false, error: "空文件" };
+	const header = parseJson(lines[0]);
+	if (header?.type !== "session" || typeof header.id !== "string" || !header.id.trim()) {
+		return { ok: false, error: '第一行不是 pi 会话头（需要 type:"session" 与 id）' };
+	}
+	let bad = 0;
+	let messages = 0;
+	for (let i = 1; i < lines.length; i++) {
+		const obj = parseJson(lines[i]);
+		if (!obj) bad++;
+		else if (obj.type === "message") messages++;
+	}
+	return { ok: true, lines, header, bad, messages };
+}
+
+/**
+ * 导入一份 pi 会话文本。mode：`copy` 换 id 另存 / `overwrite` 覆盖同 id 的旧文件 / 缺省先问。
+ * 重名时返回 `{ ok:false, duplicate:true, existing }`，由前端弹「覆盖 / 另存 / 取消」。
+ * @param {{ text?: unknown, targetCwd?: string, mode?: string, root?: string }} [opts]
+ * @returns {any}
+ */
+export function importSessionText({ text, targetCwd, mode, root = PI_DIR } = {}) {
+	const parsed = parsePiSessionText(text);
+	if (!parsed.ok) return { ok: false, error: parsed.error };
+	const { header, lines } = parsed;
+	const cwd = String(targetCwd || "").trim() || String(header.cwd || "").trim();
+	if (!cwd) return { ok: false, error: "会话头没有 cwd，请指定目标 cwd" };
+
+	const existing = findSessionsById(header.id, root);
+	const wantCopy = mode === "copy";
+	const wantOverwrite = mode === "overwrite";
+	if (existing.length > 0 && !wantCopy && !wantOverwrite) {
+		return { ok: false, duplicate: true, sessionId: header.id, cwd, existing };
+	}
+
+	const out = [...lines];
+	let id = header.id;
+	if (wantCopy) {
+		id = randomUUID();
+		out[0] = JSON.stringify({ ...header, id, cwd });
+	} else {
+		out[0] = JSON.stringify({ ...header, cwd });
+	}
+
+	// 覆盖已有同 id 文件时就地写回原路径（不另造文件名，不产生平行会话）
+	const dest = wantOverwrite && existing.length > 0 ? existing[0] : join(root, escapeCwd(cwd), sessionFileName(id));
+	try {
+		mkdirSync(dirname(dest), { recursive: true });
+		writeFileSync(dest, `${out.join("\n")}\n`, "utf8");
+	} catch (err) {
+		return { ok: false, error: String(err?.message || err) };
+	}
+	return {
+		ok: true,
+		sessionId: id,
+		cwd,
+		dest,
+		messages: parsed.messages,
+		badLines: parsed.bad,
+		mode: wantCopy ? "copy" : wantOverwrite ? "overwrite" : "new",
+	};
+}
+
+function readImportPayload(req) {
+	const body = req.body && typeof req.body === "object" ? req.body : null;
+	if (body && typeof body.text === "string") {
+		return Promise.resolve({ text: body.text, targetCwd: body.targetCwd, mode: body.mode });
+	}
+	if (body) return Promise.resolve({ text: "", targetCwd: body.targetCwd, mode: body.mode });
+	// 非 JSON 请求体（application/octet-stream）：直接流式收文本，突破 express.json 的 10MB 上限
+	const header = (key) => {
+		const v = req.headers?.[key];
+		return typeof v === "string" && v ? safeDecode(v) : undefined;
+	};
+	return new Promise((done, fail) => {
+		const chunks = [];
+		let size = 0;
+		let aborted = false;
+		req.on("data", (chunk) => {
+			if (aborted) return;
+			size += chunk.length;
+			if (size > MAX_IMPORT_BYTES) {
+				aborted = true;
+				fail(new Error(`文件超过 ${Math.round(MAX_IMPORT_BYTES / 1024 / 1024)}MB 上限`));
+				return;
+			}
+			chunks.push(Buffer.from(chunk));
+		});
+		req.on("end", () => {
+			if (aborted) return;
+			done({
+				text: Buffer.concat(chunks).toString("utf8"),
+				targetCwd: header("x-target-cwd"),
+				mode: header("x-session-mode"),
+			});
+		});
+		req.on("error", (err) => fail(err));
+	});
+}
+
+function safeDecode(v) {
+	try {
+		return decodeURIComponent(v);
+	} catch {
+		return v;
+	}
+}
+
 export default {
 	activate(host) {
 		host.registerAgentTool({
@@ -779,10 +999,75 @@ export default {
 				return JSON.stringify(importSessions(params.files ?? [], params.targetCwd), null, 2);
 			},
 		});
+		host.registerAgentTool({
+			name: "session_migrate_export",
+			label: "导出会话文件",
+			description:
+				"Copy a pi/omp session .jsonl into the workspace so the user can download or archive it. The source store is only read, never modified.",
+			promptSnippet: "copy a session jsonl into the workspace for backup",
+			parameters: {
+				type: "object",
+				properties: {
+					file: { type: "string" },
+					dest: { type: "string" },
+				},
+				required: ["file"],
+			},
+			async execute(_id, params) {
+				const abs = exportableSessionPath(params.file);
+				if (!abs) return JSON.stringify({ ok: false, error: "只能导出 pi / omp 会话库里的 .jsonl 文件" });
+				const dest = host.resolveInWorkspace(params.dest || `session-${basename(abs)}`);
+				mkdirSync(dirname(dest), { recursive: true });
+				writeFileSync(dest, readFileSync(abs));
+				return JSON.stringify({ ok: true, from: abs, dest });
+			},
+		});
+		host.registerAgentTool({
+			name: "session_migrate_from_jsonl",
+			label: "从 JSONL 导入会话",
+			description:
+				"Import one pi session .jsonl given as text (e.g. exported from another machine). mode omitted returns duplicate info when the session id exists; copy imports with a fresh id; overwrite replaces the existing file.",
+			promptSnippet: "import a pasted/uploaded pi session jsonl (duplicate modes)",
+			parameters: {
+				type: "object",
+				properties: {
+					text: { type: "string" },
+					targetCwd: { type: "string" },
+					mode: { type: "string" },
+				},
+				required: ["text"],
+			},
+			async execute(_id, params) {
+				return JSON.stringify(importSessionText(params ?? {}), null, 2);
+			},
+		});
 		host.route("GET", "/scan", (_req, res) => res.json(scanSources()));
 		host.route("POST", "/import", (req, res) => {
 			const body = req.body ?? {};
 			res.json({ results: importSessions(body.files ?? [], body.targetCwd) });
+		});
+		// issue #887：导出单个会话文件（浏览器直接下载）
+		host.route("GET", "/export", (req, res) => {
+			const abs = exportableSessionPath(req.query?.file);
+			if (!abs) {
+				res.status(400).json({ ok: false, error: "只能导出 pi / omp 会话库里的 .jsonl 文件" });
+				return;
+			}
+			const name = basename(abs).replace(/["\\\r\n]/g, "");
+			res.setHeader("Content-Type", "application/x-ndjson; charset=utf-8");
+			res.setHeader("Content-Disposition", `attachment; filename="${name}"`);
+			res.setHeader("Cache-Control", "no-store");
+			res.end(readFileSync(abs));
+		});
+		// issue #887：导入用户上传的 .jsonl（JSON 小文件 / octet-stream 大文件两种投递）
+		host.route("POST", "/import-file", async (req, res) => {
+			try {
+				const payload = await readImportPayload(req);
+				const result = importSessionText(payload);
+				res.status(result.ok ? 200 : result.duplicate ? 409 : 400).json(result);
+			} catch (err) {
+				res.status(400).json({ ok: false, error: String(err?.message || err) });
+			}
 		});
 	},
 };

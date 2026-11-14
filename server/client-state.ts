@@ -611,6 +611,8 @@ export const DEFAULT_DARK_MINIMAL_SETTINGS: ClientSettings = Object.freeze({
 		"pm2",
 		"qq",
 		"quota_status",
+		"session_migrate_export",
+		"session_migrate_from_jsonl",
 		"session_migrate_import",
 		"session_migrate_scan",
 		"slack",
