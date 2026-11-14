@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { chunkMarkdownText } from "../../plugins/qq/markdown-chunks.mjs";
 import activate, {
 	checkCwdValid,
@@ -1582,6 +1582,29 @@ describe("QQ Gateway 连接韧性（限流根因）", () => {
 		} finally {
 			first.releaseInstanceLock();
 			second.releaseInstanceLock();
+			rmSync(dir, { recursive: true, force: true });
+		}
+	});
+
+	it("陈旧锁（持锁进程已死）可被接管，接管后锁内容是接管者身份", () => {
+		const dir = mkdtempSync(join(tmpdir(), "qq-lock-"));
+		const bridge = makeBridge({ dataDir: dir });
+		try {
+			const lockPath = (bridge as any).instanceLockFile();
+			expect(lockPath).toBeTruthy();
+			mkdirSync(dirname(lockPath), { recursive: true });
+			writeFileSync(
+				lockPath,
+				JSON.stringify({ pid: 2_000_000_000, instanceId: "ghost-instance", appId: "102030", port: "", at: 1 }),
+			);
+			const res = bridge.acquireInstanceLock() as any;
+			expect(res.ok).toBe(true);
+			expect(bridge.instanceLockPath).toBe(lockPath);
+			const owner = JSON.parse(readFileSync(lockPath, "utf8"));
+			expect(owner.instanceId).toBe((bridge as any).instanceId);
+			expect(owner.pid).toBe(process.pid);
+		} finally {
+			bridge.releaseInstanceLock();
 			rmSync(dir, { recursive: true, force: true });
 		}
 	});

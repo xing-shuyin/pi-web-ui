@@ -487,17 +487,46 @@ export class QqBotBridge {
 				this.log("warn", `QQ instance lock write failed: ${err.message}`);
 				return { ok: true };
 			}
-			// 抢锁竞争：再确认一次，仍被别人持有就让步，陈旧锁直接覆盖。
+			// 抢锁竞争：再确认一次，仍被别人持有就让步，陈旧锁删掉后重新申领。
+			// 不能直接覆盖写：两个宿主在持锁者死后同时进来，各自读到同一份陈旧内容、
+			// 又各自裸写覆盖，会双双认为自己持锁并互踢重连（正是本锁要消灭的 100017 风暴）。
+			// EEXIST 后必须重读并验活：谁先写成功谁就是活 owner，其余一律重新裁决。
 			const again = readOwner();
 			if (again?.instanceId === this.instanceId) {
 				this.instanceLockPath = file;
 				return { ok: true };
 			}
 			if (again && alive(Number(again.pid))) return refuse(again);
-			try {
-				writeFileSync(file, payload);
-			} catch (writeErr) {
-				this.log("warn", `QQ instance lock write failed: ${writeErr.message}`);
+			let claimed = false;
+			for (let attempt = 0; attempt < 3 && !claimed; attempt++) {
+				// 删之前必须重读：从上面的 again 到这里的 rm 之间，另的宿主可能已经申领成功；
+				// 直接 rm 会把对方刚写的活锁删掉，双方各自认为持锁（互踢风暴的老病根）。
+				const current = readOwner();
+				if (current?.instanceId === this.instanceId) {
+					claimed = true;
+					break;
+				}
+				if (current && alive(Number(current.pid))) return refuse(current);
+				rmSync(file, { force: true });
+				try {
+					writeFileSync(file, payload, { flag: "wx" });
+					claimed = true;
+				} catch (claimErr) {
+					if (claimErr?.code !== "EEXIST") {
+						this.log("warn", `QQ instance lock write failed: ${claimErr.message}`);
+						return { ok: true };
+					}
+					const winner = readOwner();
+					if (winner?.instanceId === this.instanceId) {
+						claimed = true;
+					} else if (winner && alive(Number(winner.pid))) {
+						return refuse(winner);
+					}
+					// winner 是陈旧锁（读不到或已死）：删掉进入下一轮重新申领
+				}
+			}
+			if (!claimed) {
+				this.log("warn", "QQ instance lock contention did not settle; skipping gateway connect guard");
 				return { ok: true };
 			}
 		}
