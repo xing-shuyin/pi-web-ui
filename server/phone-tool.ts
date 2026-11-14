@@ -28,8 +28,52 @@ export const PHONE_KEYS = ["back", "home", "recents", "notifications", "quickSet
 /** 只读档：读屏与控件树，不会改变手机状态。 */
 export const PHONE_READ_OPS = ["status", "dump", "screenshot"] as const;
 
-/** 操控档：会改变手机状态（点击/滑动/输入/按键/启动应用）。逐操作审批 UI 落地前，启用即授权整机操控。 */
+/** 操控档：会改变手机状态（点击/滑动/输入/按键/启动应用），每次都要用户审批（按 `PHONE_APPROVAL_GROUPS` 分档）。 */
 export const PHONE_CONTROL_OPS = ["tap", "long_press", "swipe", "input", "key", "launch"] as const;
+
+/** 操控档按风险拆档（#902）：每档一条内置审批规则，用户可独立开关、同意时可选「记住本类」。
+ *  读屏档（PHONE_READ_OPS）不拦截，直接执行。 */
+export const PHONE_APPROVAL_GROUPS = [
+	{
+		id: "phone.gesture",
+		ops: ["tap", "long_press", "swipe"],
+		label: "手机操控：点击 / 长按 / 滑动",
+		labelEn: "Phone control: tap / long-press / swipe",
+		reason: "模型要在你的手机屏幕上点击或滑动",
+		reasonEn: "The model wants to tap or swipe on your phone screen",
+	},
+	{
+		id: "phone.input",
+		ops: ["input"],
+		label: "手机操控：输入文本",
+		labelEn: "Phone control: type text",
+		reason: "模型要向手机当前输入框打字（聊天、短信、搜索框等）",
+		reasonEn: "The model wants to type into the focused input on your phone (chat, SMS, search field)",
+	},
+	{
+		id: "phone.key",
+		ops: ["key"],
+		label: "手机操控：系统按键",
+		labelEn: "Phone control: system keys",
+		reason: "模型要按返回 / 主页 / 最近任务等系统按键",
+		reasonEn: "The model wants to press system keys (back / home / recents)",
+	},
+	{
+		id: "phone.launch",
+		ops: ["launch"],
+		label: "手机操控：启动应用",
+		labelEn: "Phone control: launch app",
+		reason: "模型要启动手机上的某个应用",
+		reasonEn: "The model wants to launch an app on your phone",
+	},
+] as const;
+
+/** 审批规则的 `params` 正则（规则按 `JSON.stringify(params)` 匹配，见 `server/approval-rules.ts`）。
+ *  工具会对 `op` 做 `trim()`，因此正则也容得下引号内外的空白，不留 `" launch"` 绕过口子。 */
+export function phoneOpRulePattern(ops: readonly string[]): string {
+	const escaped = ops.map((op) => op.replace(/[.*+?^${}()|[\]\\]/g, (m) => `\\${m}`));
+	return `"op"\\s*:\\s*"\\s*(?:${escaped.join("|")})\\s*"`;
+}
 
 type PhoneKey = (typeof PHONE_KEYS)[number];
 
@@ -124,13 +168,13 @@ export function makePhoneTool(
 		name: PHONE_TOOL_NAME,
 		label: "Phone",
 		description:
-			"Read the phone screen and drive it through the accessibility service. Enabling this tool grants full control of the phone (tap / swipe / type / keys / launch / screenshots); per-op approval UI is pending, enable only for trusted sessions.",
+			"Read the phone screen and drive it through the accessibility service. Read ops (status/dump/screenshot) run freely; control ops (tap/swipe/input/key/launch) each prompt the user for approval first.",
 		promptSnippet: "read and drive this Android phone: UI tree, tap, swipe, type, keys, shots",
 		promptGuidelines: [
 			"Use phone only when the user asked you to operate their phone; never tap, type or navigate their apps on your own initiative",
 			'Start with op:"dump" and act on the returned nodes: bounds are screen pixels already, so tap the centre of a node instead of guessing coordinates. Take a screenshot when the tree is not enough.',
 			"Typing text goes to the focused input only. If the user must enter a password, payment or system setting, stop and ask them to do it themselves.",
-			"Control ops (tap/swipe/input/key/launch) have no per-op approval yet: confirm in chat before first control action; prefer read ops when control is unneeded.",
+			"Control ops need the user's approval per op (tap/swipe, type, keys, launch). If the user denies or nobody answers, stop and ask in chat; prefer read ops when control is unneeded.",
 			"After each action, dump again to confirm the screen changed instead of firing several actions blindly.",
 		],
 		parameters: Type.Object({

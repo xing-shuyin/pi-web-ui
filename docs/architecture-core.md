@@ -415,7 +415,9 @@ events.jsonl    追加式生命周期流水（有字节上限，截断后只留�
 
 1. **全局关**：设置 →「工具」页的「工具执行审批」总开关（`ClientSettings.toolApprovalEnabled`，默认开，纯运行开关不进预设）。关掉后一切审批都不弹——内置高危检测直接放行、插件 pre guard 的 `ask` 也按放行处理（`withToolGuard` 的 `ask` 分支只改 `needApproval`，最终都经 `askApproval` 定夺）；开关被关掉的那一刻，挂着的待审批项由 `autoApprovePendingApprovals` 全部按批准放行（不让人对着弹窗干等）。
 2. **本对话全部允许**（弹窗按钮，`tool_approval_response.scope = "all"`）：该对话后续任何高危操作都不再询问。
-3. **本对话允许同类**（弹窗按钮，`scope = "category"`，仅在本次命中规则档位时出现）：只放行同一档位。档位 = `UiApprovalCategory{ id, label, labelEn }`，id 稳定不许改名：`bash.rm-rf` / `bash.win-del` / `bash.disk` / `bash.git-destructive` / `bash.chmod` / `bash.system-redirect` / `file.sensitive.env` / `file.sensitive.ssh` / `file.sensitive.shell` / `file.outside-workspace` / `plugin:<pluginId>`（插件 pre guard 的 `ask` 按插件分档）。无档位的拦截（自定义 reason）只受前两档影响。
+3. **本对话允许同类**（弹窗按钮，`scope = "category"`，仅在本次命中规则档位时出现）：只放行同一档位。档位 = `UiApprovalCategory{ id, label, labelEn }`，id 稳定不许改名：`bash.rm-rf` / `bash.win-del` / `bash.disk` / `bash.git-destructive` / `bash.chmod` / `bash.system-redirect` / `file.sensitive.env` / `file.sensitive.ssh` / `file.sensitive.shell` / `file.outside-workspace` / `phone.gesture` / `phone.input` / `phone.key` / `phone.launch` / `plugin:<pluginId>`（插件 pre guard 的 `ask` 按插件分档）。无档位的拦截（自定义 reason）只受前两档影响。
+
+**手机操控档（#902）**：`phone` 工具的 `op` 分读屏档（`status`/`dump`/`screenshot`）与操控档（`tap`/`long_press`/`swipe`/`input`/`key`/`launch`，单源 `server/phone-tool.ts` 的 `PHONE_READ_OPS` / `PHONE_CONTROL_OPS`）。**读屏档不建规则**（默认不拦截）；操控档由 `PHONE_APPROVAL_GROUPS` 派生出 4 条内置 `ask` 规则（`builtin.phone.*`，`field: "params"` 匹配 `op`，容空白/大小写），因此每档既能单独停用（等价于「只允许读屏」「launch 才问」这类粒度），也能按档「记住本类」。工具描述与设置文案必须写明「开启即授权整机操控，但每个操控 op 先问」，不要退回到「无逐操作审批」的旧口径。回归：`tests/unit/phone-tool-ops.test.ts`。
 
 **策略挂在哪**：`Conversation.approvalPolicy = { allowAll, categories: Map<id, UiApprovalCategory> }`，**仅内存**（不落 client-state），且挂在对话对象上而不是 ClientSession——手动过户搬的就是对话本体，策略跟着走；重启服务 / 新对话即恢复询问。记住后同对话内**已被新策略覆盖的其它待审批项一并放行**（`approveCoveredPending`），并给一句回执 notice。
 

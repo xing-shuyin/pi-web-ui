@@ -1,4 +1,23 @@
 import type { ApprovalRule } from "./approval-rules.js";
+import { PHONE_APPROVAL_GROUPS, phoneOpRulePattern } from "./phone-tool.js";
+import { PHONE_TOOL_NAME } from "./tool-manager.js";
+
+/** 手机操控档（#902）：按 `PHONE_APPROVAL_GROUPS` 逐档生成 ask 规则；读屏档不建规则（默认不拦截）。 */
+const PHONE_CONTROL_RULES: ApprovalRule[] = PHONE_APPROVAL_GROUPS.map((group) => ({
+	id: `builtin.${group.id}`,
+	enabled: true,
+	tools: [PHONE_TOOL_NAME],
+	field: "params",
+	match: "regex",
+	value: phoneOpRulePattern(group.ops),
+	action: "ask",
+	label: group.label,
+	labelEn: group.labelEn,
+	reason: group.reason,
+	reasonEn: group.reasonEn,
+	categoryId: group.id,
+	builtin: true,
+}));
 
 export const DEFAULT_APPROVAL_RULES: ApprovalRule[] = [
 	{
@@ -170,4 +189,5 @@ export const DEFAULT_APPROVAL_RULES: ApprovalRule[] = [
 		categoryId: "file.outside-workspace",
 		builtin: true,
 	},
+	...PHONE_CONTROL_RULES,
 ];
