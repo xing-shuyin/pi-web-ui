@@ -5,7 +5,7 @@ import zlib from "node:zlib";
 const DEFAULT_UA =
 	"Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36";
 
-function createLxRequest(activeTimers, wrapAbort, revive) {
+function createLxRequest(activeTimers, wrapAbort, revive, toError) {
 	return function lxRequest(url, options = {}, callback) {
 		const method = (options.method || "GET").toUpperCase();
 		const headers = {
@@ -61,8 +61,8 @@ function createLxRequest(activeTimers, wrapAbort, revive) {
 				clearTimeout(timer);
 				if (activeTimers) activeTimers.delete(timer);
 				if (typeof callback === "function") {
-					// 宿主 Error 实例同样携带宿主 realm，降级为纯数据对象。
-					callback(revive({ message: err?.message ?? String(err), name: "Error" }), null, null);
+					// 宿主 Error 实例同样携带宿主 realm：在沙箱内重建，`err.message` 用法不变。
+					callback(toError(err), null, null);
 				}
 			});
 
@@ -164,43 +164,113 @@ async function verifyAudioPlayable(url, source = "", timeoutMs = 2000) {
 	}
 }
 
-// node:vm 的 context 不是安全边界：任何宿主 realm 的函数/构造器/类实例一旦进入沙箱，
-// 脚本即可沿 `.constructor` 拿到宿主 Function 构造器，进而触达宿主 process/require 完成逃逸。
-// 因此宿主函数一律先在沙箱内跑这段 bootstrap、用「沙箱 realm 创建的包装函数」包一层再暴露；
-// 跨界数据统一由 __revive 重建为沙箱对象（Buffer/TypedArray → 沙箱 Uint8Array 拷贝，
-// 宿主类实例如 Timeout/Response 拒绝透传）。脚本侧因此拿不到宿主 realm 的任何引用。
+// node:vm 的 context 不是安全边界（Node 官方文档明示）：任何宿主 realm 的函数/构造器/类实例
+// 一旦进入沙箱，脚本即可沿 `.constructor` 拿到宿主 Function 构造器，进而触达宿主 process/require。
+// 本文件的目标是「不把宿主 realm 引用递进沙箱」，而不是宣称 vm 能抵御刻意攻击；真要执行不可信
+// 代码仍需 OS 级隔离（独立进程 / 权限收敛）。为此的约定：
+//   1. 宿主函数一律先在沙箱内跑这段 bootstrap、用「沙箱 realm 创建的包装函数」包一层再暴露；
+//   2. 跨界数据统一由 revive 重建为沙箱对象（数组/TypedArray/Buffer → 沙箱新对象，宿主类实例拒绝透传）；
+//   3. 宿主抛错/拒绝也必须重建为沙箱 Error —— 直接透传宿主 Error 实例同样是一条逃逸通道；
+//   4. 内建与桥接函数在 bootstrap 时捕获到闭包里：脚本改写 globalThis.Uint8Array / Object.keys
+//      之类不再影响桥接层行为；桥接对象交给宿主后立刻从全局删除，脚本看不到也改不了。
 const SANDBOX_BOOTSTRAP = `
-globalThis.__revive = (value, seen) => {
-	if (value === null || typeof value !== "object") return value;
-	seen = seen || new WeakSet();
-	if (seen.has(value)) return undefined;
-	seen.add(value);
-	if (Array.isArray(value)) return value.map((item) => globalThis.__revive(item, seen));
-	const tag = Object.prototype.toString.call(value);
-	if (tag === "[object ArrayBuffer]" || (tag.endsWith("Array]") && tag !== "[object Array]")) {
-		try {
-			return new Uint8Array(value);
-		} catch {
-			return undefined;
+(() => {
+	const SandboxUint8Array = Uint8Array;
+	const SandboxFunction = Function;
+	const SandboxWeakSet = WeakSet;
+	const SandboxPromise = Promise;
+	const objectKeys = Object.keys;
+	const isArray = Array.isArray;
+	const objectToString = Object.prototype.toString;
+	const reflectApply = Reflect.apply;
+
+	const tagOf = (value) => reflectApply(objectToString, value, []);
+	const isTypedArrayTag = (tag) =>
+		typeof tag === "string" && tag.length > 6 && tag.slice(-6) === "Array]" && tag !== "[object Array]";
+
+	const revive = (value, seen) => {
+		if (value === null || typeof value !== "object") return value;
+		seen = seen || new SandboxWeakSet();
+		if (seen.has(value)) return undefined;
+		seen.add(value);
+		if (isArray(value)) {
+			// 必须自己建沙箱数组：value.map(...) 由宿主 Array.prototype 执行，会吐回宿主数组。
+			const out = [];
+			for (let i = 0; i < value.length; i++) out.push(revive(value[i], seen));
+			return out;
 		}
-	}
-	if (tag !== "[object Object]") return undefined;
-	const out = {};
-	for (const key of Object.keys(value)) {
-		const item = value[key];
-		out[key] = typeof item === "function" ? item : globalThis.__revive(item, seen);
-	}
-	return out;
-};
-globalThis.__wrapHost = (fn) => (...args) => {
-	const result = fn(...args);
-	if (result && typeof result.then === "function") {
-		return Promise.resolve(result).then((value) => globalThis.__revive(value));
-	}
-	return globalThis.__revive(result);
-};
-globalThis.__wrapIn = (fn) => (...args) => fn(...args.map((arg) => globalThis.__revive(arg)));
-globalThis.__wrapCallback = (fn) => (...args) => fn(...args);
+		const tag = tagOf(value);
+		if (tag === "[object ArrayBuffer]" || isTypedArrayTag(tag)) {
+			try {
+				return new SandboxUint8Array(value);
+			} catch {
+				return undefined;
+			}
+		}
+		if (tag !== "[object Object]") return undefined;
+		const out = {};
+		for (const key of objectKeys(value)) {
+			const item = value[key];
+			// 只有沙箱 realm 的函数可以留在返回值里；宿主函数一律丢弃。
+			out[key] = typeof item === "function" ? (item instanceof SandboxFunction ? item : undefined) : revive(item, seen);
+		}
+		return out;
+	};
+
+	// 宿主 throw/reject 的实例同样携带宿主 realm：只取 name/message/code 这些纯数据，
+	// 在沙箱内重建 Error，脚本侧 err.message / err instanceof Error 语义不变。
+	const toError = (reason) => {
+		let name = "Error";
+		let message;
+		let code;
+		if (reason !== null && typeof reason === "object") {
+			try {
+				if (typeof reason.name === "string" && reason.name) name = reason.name;
+				if (typeof reason.message === "string") message = reason.message;
+				if (typeof reason.code === "string") code = reason.code;
+			} catch {}
+		}
+		if (message === undefined) {
+			try {
+				message = String(reason);
+			} catch {
+				message = "宿主调用失败";
+			}
+		}
+		const ctor =
+			name === "TypeError" ? TypeError : name === "RangeError" ? RangeError : name === "SyntaxError" ? SyntaxError : Error;
+		const err = new ctor(message);
+		if (name !== "Error" && err.name !== name) err.name = name;
+		if (code !== undefined) err.code = code;
+		return err;
+	};
+
+	const wrapHost = (fn) => (...args) => {
+		try {
+			const result = fn(...args);
+			if (result && typeof result.then === "function") {
+				return SandboxPromise.resolve(result).then(
+					(value) => revive(value),
+					(reason) => {
+						throw toError(reason);
+					},
+				);
+			}
+			return revive(result);
+		} catch (reason) {
+			throw toError(reason);
+		}
+	};
+	const wrapIn = (fn) => (...args) => fn(...args.map((arg) => revive(arg)));
+	const wrapCallback = (fn) => (...args) => fn(...args);
+
+	Object.defineProperty(globalThis, "__piUserApiBridge", {
+		value: { revive, toError, wrapHost, wrapIn, wrapCallback },
+		writable: false,
+		configurable: true,
+		enumerable: false,
+	});
+})();
 `;
 
 export class UserApiEngine {
@@ -233,7 +303,7 @@ export class UserApiEngine {
 
 		// lx 对象在沙箱 bootstrap 之后组装（见 try 块）：所有暴露给脚本的函数都经
 		// 沙箱 realm 的 __wrapHost/__wrapIn 包装，杜绝宿主函数引用直接进入沙箱。
-		const buildLx = (wrapHost, wrapIn, wrapCallback, revive) => ({
+		const buildLx = (wrapHost, wrapIn, wrapCallback, revive, toError) => ({
 			EVENT_NAMES: {
 				request: "request",
 				inited: "inited",
@@ -252,7 +322,7 @@ export class UserApiEngine {
 					if (data?.description) apiMeta.description = data.description;
 				}
 			}),
-			request: wrapHost(createLxRequest(timers, wrapCallback, revive)),
+			request: wrapHost(createLxRequest(timers, wrapCallback, revive, toError)),
 			utils: {
 				crypto: {
 					// 沙箱传入的 Uint8Array 来自另一个 V8 realm，先拷贝成宿主 Buffer 再交给 Node API；
@@ -342,12 +412,17 @@ export class UserApiEngine {
 		try {
 			vm.createContext(context);
 			vm.runInContext(SANDBOX_BOOTSTRAP, context);
-			const wrapHost = context.__wrapHost;
-			const wrapIn = context.__wrapIn;
-			const wrapCallback = context.__wrapCallback;
+			// 桥接对象只给宿主用：读完立即从全局删除，脚本侧拿不到也改不了。
+			const bridge = vm.runInContext("globalThis.__piUserApiBridge", context);
+			vm.runInContext("delete globalThis.__piUserApiBridge", context);
+			const wrapHost = bridge.wrapHost;
+			const wrapIn = bridge.wrapIn;
+			const wrapCallback = bridge.wrapCallback;
+			const revive = bridge.revive;
+			const toError = bridge.toError;
 
-			context.lx = context.__revive(buildLx(wrapHost, wrapIn, wrapCallback, context.__revive));
-			context.console = context.__revive({
+			context.lx = revive(buildLx(wrapHost, wrapIn, wrapCallback, revive, toError));
+			context.console = revive({
 				log: wrapHost((...args) => this.log(`[UserApi:${id}]`, ...args)),
 				error: wrapHost((...args) => console.error(`[UserApi:${id}]`, ...args)),
 				warn: wrapHost((...args) => console.warn(`[UserApi:${id}]`, ...args)),
@@ -358,7 +433,7 @@ export class UserApiEngine {
 			context.clearInterval = wrapHost(sandboxClearInterval);
 			context.atob = wrapHost((s) => Buffer.from(s, "base64").toString("binary"));
 			context.btoa = wrapHost((s) => Buffer.from(s, "binary").toString("base64"));
-			context.process = context.__revive({ env: {} });
+			context.process = revive({ env: {} });
 
 			vm.runInContext(cleanScript, context, { timeout: 8000 });
 
