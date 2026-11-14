@@ -1,8 +1,5 @@
-const esc = (value) =>
-	String(value ?? "").replace(
-		/[&<>"']/g,
-		(c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c],
-	);
+import { esc } from "../plugin-sdk/client-utils.mjs";
+
 const appRoot = new URL("../../../", import.meta.url);
 const appUrl = (path) => new URL(path.replace(/^\//, ""), appRoot).href;
 const api = async (path, body, method = "POST") => {
