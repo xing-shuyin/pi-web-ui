@@ -206,11 +206,6 @@ export function handlePluginMessage(msg: ClientMessage, ctx: PluginDispatchConte
 		case "plugin_job_cancel":
 			pluginInstaller.cancel(String(msg.jobId ?? ""));
 			return true;
-		case "plugin_api_catalog": {
-			const requestId = String(msg.requestId ?? "");
-			send({ type: "plugin_api_catalog_result", requestId, catalog: pluginMgr.getApiCatalog() });
-			return true;
-		}
 		case "plugin_install_inspect": {
 			const requestId = String(msg.requestId ?? "");
 			const source = String(msg.source ?? "");

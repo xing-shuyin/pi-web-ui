@@ -120,16 +120,13 @@ async function main() {
 			: "未出现在 plugins 列表",
 	);
 
-	sock.send(JSON.stringify({ type: "plugin_api_catalog", requestId: "cat-1" }));
-	const catMsg = await waitMsg(
-		(m) => m.type === "plugin_api_catalog_result" && m.requestId === "cat-1",
-		"plugin_api_catalog_result",
-	).catch(() => null);
-	const tasksSlot = catMsg?.catalog?.slots?.find((s) => s.slot === "tasks.panel");
-	const occupant = tasksSlot?.occupants?.find((o) => o.pluginId === PLUGIN_ID);
 	const panelItem = info?.ui?.items?.find((it) => it.slot === "tasks.panel");
 	check("没有独立面板（view:false）", info?.view === false);
-	check("占住 tasks.panel 槽位", Boolean(occupant) && occupant.items >= 1, JSON.stringify(occupant ?? null));
+	check(
+		"占住 tasks.panel 槽位（经 plugins 列表 UI 条目确认，协议目录消息已下线）",
+		Boolean(panelItem) && panelItem.slot === "tasks.panel",
+		JSON.stringify(panelItem ? { slot: panelItem.slot, kind: panelItem.kind } : null),
+	);
 	check(
 		"槽位条目是 kind=view（面板内嵌渲染本插件）",
 		panelItem?.kind === "view" && panelItem?.view === `plugin:${PLUGIN_ID}`,
