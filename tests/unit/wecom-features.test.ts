@@ -55,9 +55,7 @@ describe("WecomBotBridge 双工逻辑测试", () => {
 		const chatSpy = vi.fn();
 		const bridge = new WecomBotBridge({
 			host: { chat: chatSpy },
-			getConfig: () => ({
-				webhookKey: "mock-key",
-			}),
+			getConfig: () => ({ allowAllSenders: true, webhookKey: "mock-key" }),
 		});
 
 		await bridge.onInboundMessage({
@@ -96,9 +94,7 @@ describe("WecomBotBridge 双工逻辑测试", () => {
 					return () => {};
 				},
 			},
-			getConfig: () => ({
-				webhookKey: "mock-key",
-			}),
+			getConfig: () => ({ allowAllSenders: true, webhookKey: "mock-key" }),
 		});
 
 		await bridge.start();
@@ -163,7 +159,7 @@ describe("WecomBotBridge 双工逻辑测试", () => {
 					return () => {};
 				},
 			},
-			getConfig: () => ({ webhookKey: "mock-key" }),
+			getConfig: () => ({ allowAllSenders: true, webhookKey: "mock-key" }),
 		});
 
 		await bridge.start();
@@ -198,5 +194,14 @@ describe("WecomBotBridge 双工逻辑测试", () => {
 
 		await bridge.stop();
 		vi.unstubAllGlobals();
+	});
+});
+
+describe("企业微信空白名单安全默认", () => {
+	it("空名单且未显式放行时拒绝所有人", async () => {
+		const chatSpy = vi.fn();
+		const bridge = new WecomBotBridge({ host: { chat: chatSpy }, getConfig: () => ({}) });
+		await bridge.onInboundMessage({ msgId: "m1", fromUserName: "anyone", content: "hi" });
+		expect(chatSpy).not.toHaveBeenCalled();
 	});
 });

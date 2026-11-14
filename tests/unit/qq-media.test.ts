@@ -234,7 +234,7 @@ describe("qq 媒体：入站落地", () => {
 		};
 		const bridge = new QqBotBridge({
 			host,
-			getConfig: () => ({ allowedUsers: [], inboundMedia: true, ...configExtra }),
+			getConfig: () => ({ allowedUsers: [], allowAllSenders: true, inboundMedia: true, ...configExtra }),
 		});
 		return { bridge, host, chats };
 	}

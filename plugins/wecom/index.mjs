@@ -155,7 +155,8 @@ export class WecomBotBridge {
 		const sender = String(event.fromUserName || event.FromUserName || event.userId || "");
 		if (!sender) return;
 		const allowed = (cfg.allowedUsers || []).map(String);
-		if (allowed.length && !allowed.includes(sender)) return;
+		// 安全默认：白名单为空=拒绝所有发送者（需显式 allowAllSenders:true 才放行）。
+		if (allowed.length > 0 ? !allowed.includes(sender) : cfg.allowAllSenders !== true) return;
 		const webhookKey = event.webhookKey || cfg.webhookKey || "";
 		const scope = scopeKey(event, sender, webhookKey, cfg);
 		this.epochs.set(scope, this.sessionRoutes.state(scope).epoch);

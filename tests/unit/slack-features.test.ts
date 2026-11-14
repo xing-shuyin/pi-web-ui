@@ -71,10 +71,7 @@ describe("SlackBotBridge 双工逻辑测试", () => {
 		const chatSpy = vi.fn();
 		const bridge: any = new SlackBotBridge({
 			host: { chat: chatSpy },
-			getConfig: () => ({
-				botToken: "xoxb-mock",
-				appToken: "xapp-mock",
-			}),
+			getConfig: () => ({ allowAllSenders: true, botToken: "xoxb-mock", appToken: "xapp-mock" }),
 		});
 
 		await bridge.onInboundEvent({
@@ -115,10 +112,7 @@ describe("SlackBotBridge 双工逻辑测试", () => {
 					return () => {};
 				},
 			},
-			getConfig: () => ({
-				botToken: "xoxb-mock",
-				appToken: "xapp-mock",
-			}),
+			getConfig: () => ({ allowAllSenders: true, botToken: "xoxb-mock", appToken: "xapp-mock" }),
 		});
 
 		await bridge.start();
@@ -171,7 +165,7 @@ describe("SlackBotBridge 双工逻辑测试", () => {
 		const chatSpy = vi.fn().mockResolvedValue({ conversationId: "conv_sl_channel", runId: "channel-run" });
 		const bridge: any = new SlackBotBridge({
 			host: { chat: chatSpy },
-			getConfig: () => ({ botToken: "xoxb-mock", appToken: "xapp-mock" }),
+			getConfig: () => ({ allowAllSenders: true, botToken: "xoxb-mock", appToken: "xapp-mock" }),
 		});
 		(bridge as any).botUser = { user_id: "B_BOT_999" };
 
@@ -201,5 +195,20 @@ describe("SlackBotBridge 双工逻辑测试", () => {
 			ts: "123.458",
 		});
 		expect(chatSpy).toHaveBeenCalledTimes(2);
+	});
+});
+
+describe("Slack 空白名单安全默认", () => {
+	it("空名单且未显式放行时拒绝所有人", async () => {
+		const fetchMock = vi.fn().mockResolvedValue({ ok: true, json: async () => ({ ok: true }) });
+		vi.stubGlobal("fetch", fetchMock);
+		const chatSpy = vi.fn();
+		const bridge: any = new SlackBotBridge({
+			host: { chat: chatSpy },
+			getConfig: () => ({ botToken: "xoxb-mock", appToken: "xapp-mock" }),
+		});
+		await bridge.onInboundEvent({ user: "U1", channel: "C1", channel_type: "im", text: "hi", ts: "1.1" });
+		expect(chatSpy).not.toHaveBeenCalled();
+		vi.unstubAllGlobals();
 	});
 });

@@ -297,8 +297,12 @@ export function installChannelBehavior(Bridge, platform, api, extract, chunk, st
 				.map(String)
 				.map((s) => s.trim())
 				.filter(Boolean);
-			if (allowed.length && !allowed.includes(String(userId))) {
-				await this.reply(route, "Access restricted: user not in whitelist.");
+			// 安全默认：白名单为空=拒绝所有发送者（需显式 allowAllSenders:true 才放行）。
+			if (allowed.length > 0 ? !allowed.includes(String(userId)) : cfg.allowAllSenders !== true) {
+				await this.reply(
+					route,
+					"Access restricted: no whitelist configured, denying by default. Ask the admin to add your ID or enable allowAllSenders.",
+				);
 				return;
 			}
 			let text = extract(discord ? event : event.text, botId);

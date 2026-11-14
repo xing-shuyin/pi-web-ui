@@ -90,7 +90,7 @@ describe("DingtalkBotBridge 双工逻辑测试", () => {
 		const chatSpy = vi.fn();
 		const bridge = new DingtalkBotBridge({
 			host: { chat: chatSpy },
-			getConfig: () => ({}),
+			getConfig: () => ({ allowAllSenders: true }),
 		});
 
 		await bridge.onInboundMessage({
@@ -128,7 +128,7 @@ describe("DingtalkBotBridge 双工逻辑测试", () => {
 					return () => {};
 				},
 			},
-			getConfig: () => ({}),
+			getConfig: () => ({ allowAllSenders: true }),
 		});
 
 		await bridge.start();
@@ -196,7 +196,7 @@ describe("钉钉：对话被过户（改名 + 换客户端）后仍按 runId 回
 					return () => {};
 				},
 			},
-			getConfig: () => ({}),
+			getConfig: () => ({ allowAllSenders: true }),
 		});
 
 		await bridge.start();
@@ -247,7 +247,7 @@ describe("钉钉：对话被过户（改名 + 换客户端）后仍按 runId 回
 					return () => {};
 				},
 			},
-			getConfig: () => ({}),
+			getConfig: () => ({ allowAllSenders: true }),
 		});
 
 		await bridge.start();
@@ -279,6 +279,23 @@ describe("钉钉：对话被过户（改名 + 换客户端）后仍按 runId 回
 		);
 
 		await bridge.stop();
+		vi.unstubAllGlobals();
+	});
+});
+
+describe("钉钉空白名单安全默认", () => {
+	it("空名单且未显式放行时拒绝所有人", async () => {
+		const fetchMock = vi.fn().mockResolvedValue({ ok: true, json: async () => ({ errcode: 0 }) });
+		vi.stubGlobal("fetch", fetchMock);
+		const chatSpy = vi.fn();
+		const bridge = new DingtalkBotBridge({ host: { chat: chatSpy }, getConfig: () => ({}) });
+		await bridge.onInboundMessage({
+			msgId: "msg_empty",
+			senderStaffId: "anyone",
+			sessionWebhook: "https://oapi.dingtalk.com/robot/sendBySession?session=123",
+			text: { content: "hi" },
+		});
+		expect(chatSpy).not.toHaveBeenCalled();
 		vi.unstubAllGlobals();
 	});
 });

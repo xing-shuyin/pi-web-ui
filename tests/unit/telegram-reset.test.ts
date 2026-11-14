@@ -22,7 +22,7 @@ function setup() {
 		abortRun: vi.fn(async (_id: string) => ({ ok: true })),
 		models: { list: vi.fn(async () => [{ provider: "p", id: "m" }]) },
 	};
-	const bridge = new TelegramBotBridge({ host, getConfig: () => ({}), log: vi.fn() });
+	const bridge = new TelegramBotBridge({ host, getConfig: () => ({ allowAllSenders: true }), log: vi.fn() });
 	bridge.status.botUsername = "mybot";
 	bridge.send = vi.fn(async () => {});
 	return { bridge, host };

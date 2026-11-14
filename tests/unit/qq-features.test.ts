@@ -26,7 +26,7 @@ describe("QQ 运行归属行为", () => {
 				identities.set(req.accountId, identity);
 				return { ...identity, runId: `run:${req.accountId}:${round}` };
 			});
-			const bridge = new QqBotBridge({ host: { chat }, getConfig: () => ({}) });
+			const bridge = new QqBotBridge({ host: { chat }, getConfig: () => ({ allowAllSenders: true }) });
 			const reply = vi.fn(async () => {});
 			bridge.replyMessage = reply;
 			const peers = ["a", "b"];
@@ -90,7 +90,7 @@ describe("QQ 运行归属行为", () => {
 		const abortRun = vi.fn(async () => ({ ok: true }));
 		const bridge = new QqBotBridge({
 			host: { chat: vi.fn(async () => ({ ...identity, runId: "initial" })), abortRun },
-			getConfig: () => ({}),
+			getConfig: () => ({ allowAllSenders: true }),
 		});
 		const reply = vi.fn(async () => {});
 		bridge.replyMessage = reply;
@@ -195,7 +195,7 @@ describe("QQ 运行归属行为", () => {
 			await bridge.handleRunEvent({ type: "run_end", conversationId: `real-${n}`, runId: `r-${n}` });
 			return { conversationId: `real-${n}`, runId: `r-${n}` };
 		});
-		bridge = new QqBotBridge({ host: { chat }, getConfig: () => ({}) });
+		bridge = new QqBotBridge({ host: { chat }, getConfig: () => ({ allowAllSenders: true }) });
 		bridge.replyMessage = vi.fn(async () => {});
 		for (const group of ["a", "b", "a"]) {
 			await bridge.onInboundMessage(
@@ -220,7 +220,7 @@ describe("QQ 运行归属行为", () => {
 			conversationId: `real-${chat.mock.calls.length}`,
 			runId: `run-${chat.mock.calls.length}`,
 		}));
-		const bridge = new QqBotBridge({ host: { chat }, getConfig: () => ({}) });
+		const bridge = new QqBotBridge({ host: { chat }, getConfig: () => ({ allowAllSenders: true }) });
 		bridge.replyMessage = vi.fn(async () => {});
 		await bridge.driveAuthor("u", "first", { userOpenid: "u" });
 		await bridge.handleRunEvent({ type: "run_end", conversationId: "real-1", runId: "run-1" });
@@ -273,7 +273,7 @@ describe("QQ 运行归属行为", () => {
 			contexts.set(id, [...(contexts.get(id) || []), req.text]);
 			return { conversationId: id, clientId: "plugin:qq:reset", sessionId: `session-${id}` };
 		});
-		const cfg = { bindActive, workspace: process.cwd() };
+		const cfg = { bindActive, workspace: process.cwd(), allowAllSenders: true };
 		const bridge = new QqBotBridge({
 			host: { chat, getActiveConversation: () => ({ conversationId: "canonical-0" }) },
 			getConfig: () => cfg,
@@ -348,7 +348,7 @@ describe("QQ 运行归属行为", () => {
 	])("%s preserves workspace and bindings when abort fails", async (command) => {
 		const bridge = new QqBotBridge({
 			host: { abortRun: vi.fn().mockResolvedValue({ ok: false }) },
-			getConfig: () => ({}),
+			getConfig: () => ({ allowAllSenders: true }),
 		});
 		bridge.replyMessage = vi.fn().mockResolvedValue(undefined);
 		bridge.userWorkspaces.set("u", "old-workspace");
@@ -500,7 +500,7 @@ describe("QQ 运行归属行为", () => {
 	);
 
 	it("/stop 在附件下载前执行", async () => {
-		const bridge = new QqBotBridge({ host: {}, getConfig: () => ({}) });
+		const bridge = new QqBotBridge({ host: {}, getConfig: () => ({ allowAllSenders: true }) });
 		bridge.replyMessage = vi.fn(async () => {});
 		const collect = vi.spyOn(bridge, "collectInboundMedia");
 		await bridge.onInboundMessage(
@@ -512,7 +512,7 @@ describe("QQ 运行归属行为", () => {
 	});
 
 	it("同用户不同 thread 使用不同会话键", () => {
-		const bridge = new QqBotBridge({ host: {}, getConfig: () => ({}) });
+		const bridge = new QqBotBridge({ host: {}, getConfig: () => ({ allowAllSenders: true }) });
 		expect(bridge.sessionPeer("u", { channelId: "c", threadId: "a" })).not.toBe(
 			bridge.sessionPeer("u", { channelId: "c", threadId: "b" }),
 		);
@@ -522,7 +522,7 @@ describe("QQ 运行归属行为", () => {
 		const abortRun = vi.fn(async (_id: string) => ({ ok: true }));
 		const bridge = new QqBotBridge({
 			host: { chat: vi.fn(async () => ({ conversationId: "legacy-real" })), abortRun },
-			getConfig: () => ({}),
+			getConfig: () => ({ allowAllSenders: true }),
 		});
 		bridge.replyMessage = vi.fn(async () => {});
 		await bridge.driveAuthor("u", "work", { userOpenid: "u" });
@@ -535,7 +535,7 @@ describe("QQ 运行归属行为", () => {
 		const abortRun = vi.fn().mockResolvedValue({ ok: false, error: "拒绝" });
 		const bridge = new QqBotBridge({
 			host: { chat: vi.fn(async () => ({ conversationId: "real", runId: "pr-qq-stable" })), abortRun },
-			getConfig: () => ({}),
+			getConfig: () => ({ allowAllSenders: true }),
 		});
 		bridge.replyMessage = vi.fn(async () => {});
 		await bridge.driveAuthor("u", "work", { userOpenid: "u" });
@@ -613,10 +613,7 @@ describe("QqBotBridge 双工逻辑测试", () => {
 		const chatSpy = vi.fn();
 		const bridge = new QqBotBridge({
 			host: { chat: chatSpy },
-			getConfig: () => ({
-				appId: "102030",
-				clientSecret: "mock_secret",
-			}),
+			getConfig: () => ({ allowAllSenders: true, appId: "102030", clientSecret: "mock_secret" }),
 		});
 
 		await bridge.onInboundMessage(
@@ -662,10 +659,7 @@ describe("QqBotBridge 双工逻辑测试", () => {
 					return () => {};
 				},
 			},
-			getConfig: () => ({
-				appId: "102030",
-				clientSecret: "mock_secret",
-			}),
+			getConfig: () => ({ allowAllSenders: true, appId: "102030", clientSecret: "mock_secret" }),
 		});
 
 		await bridge.start();
@@ -735,10 +729,7 @@ describe("QqBotBridge 双工逻辑测试", () => {
 					return () => {};
 				},
 			},
-			getConfig: () => ({
-				appId: "102030",
-				clientSecret: "mock_secret",
-			}),
+			getConfig: () => ({ allowAllSenders: true, appId: "102030", clientSecret: "mock_secret" }),
 		});
 
 		bridge.replyMessage = replySpy;
@@ -788,7 +779,7 @@ describe("QqBotBridge 双工逻辑测试", () => {
 
 		const bridge = new QqBotBridge({
 			host: { chat: vi.fn() },
-			getConfig: () => ({ appId: "102030", clientSecret: "mock_secret" }),
+			getConfig: () => ({ allowAllSenders: true, appId: "102030", clientSecret: "mock_secret" }),
 		});
 
 		bridge.accessToken = "token_v1";
@@ -980,7 +971,7 @@ describe("QqBotBridge 双工逻辑测试", () => {
 		const chatSpy = vi.fn().mockResolvedValue({ conversationId: "conv_qq_m" });
 		const bridge = new QqBotBridge({
 			host: { chat: chatSpy },
-			getConfig: () => ({ appId: "102030", clientSecret: "mock_secret" }),
+			getConfig: () => ({ allowAllSenders: true, appId: "102030", clientSecret: "mock_secret" }),
 		});
 
 		await bridge.onInboundMessage(
@@ -1049,11 +1040,7 @@ describe("QqBotBridge 双工逻辑测试", () => {
 					return () => {};
 				},
 			},
-			getConfig: () => ({
-				appId: "102030",
-				clientSecret: "mock_secret",
-				bindActive: true,
-			}),
+			getConfig: () => ({ allowAllSenders: true, appId: "102030", clientSecret: "mock_secret", bindActive: true }),
 		});
 
 		await bridge.start();
@@ -1109,7 +1096,7 @@ describe("QqBotBridge 双工逻辑测试", () => {
 		const chatSpy = vi.fn();
 		const bridge = new QqBotBridge({
 			host: { chat: chatSpy },
-			getConfig: () => ({ appId: "102030", clientSecret: "mock_secret" }),
+			getConfig: () => ({ allowAllSenders: true, appId: "102030", clientSecret: "mock_secret" }),
 		});
 
 		await bridge.onInboundMessage(
@@ -1145,7 +1132,7 @@ describe("QqBotBridge 双工逻辑测试", () => {
 					return () => {};
 				},
 			},
-			getConfig: () => ({ appId: "102030", clientSecret: "mock_secret" }),
+			getConfig: () => ({ allowAllSenders: true, appId: "102030", clientSecret: "mock_secret" }),
 		});
 
 		await bridge.start();
@@ -1183,7 +1170,7 @@ describe("QqBotBridge 双工逻辑测试", () => {
 				},
 				broadcast: vi.fn(),
 			},
-			getConfig: () => ({ appId: "102030", clientSecret: "mock_secret" }),
+			getConfig: () => ({ allowAllSenders: true, appId: "102030", clientSecret: "mock_secret" }),
 		});
 
 		await bridge.start();
@@ -1233,6 +1220,7 @@ describe("QqBotBridge 双工逻辑测试", () => {
 				broadcast: vi.fn(),
 			},
 			getConfig: () => ({
+				allowAllSenders: true,
 				appId: "102030",
 				clientSecret: "mock_secret",
 				defaultChannelId: "channel_broad_123",
@@ -1298,6 +1286,7 @@ describe("QqBotBridge 双工逻辑测试", () => {
 				broadcast: vi.fn(),
 			},
 			getConfig: () => ({
+				allowAllSenders: true,
 				appId: "102030",
 				clientSecret: "mock_secret",
 				broadcastChannelId: "channel_custom_999",
@@ -1364,7 +1353,7 @@ describe("QQ：对话被过户（改名 + 换客户端）后仍按 runId 回包"
 					return () => {};
 				},
 			},
-			getConfig: () => ({ appId: "102030", clientSecret: "mock_secret" }),
+			getConfig: () => ({ allowAllSenders: true, appId: "102030", clientSecret: "mock_secret" }),
 		});
 
 		await bridge.start();
@@ -1429,7 +1418,7 @@ describe("QQ 入站投递账本（host.inbox）", () => {
 	it("同一 message id 只投递一次，成功后 complete 记账（带 conversationId/runId）", async () => {
 		const { inbox, completed } = makeInbox();
 		const chatSpy = vi.fn(async () => ({ conversationId: "c9", clientId: "plugin:qq:d", runId: "pr-1" }));
-		const bridge = new QqBotBridge({ host: { chat: chatSpy, inbox }, getConfig: () => ({}) });
+		const bridge = new QqBotBridge({ host: { chat: chatSpy, inbox }, getConfig: () => ({ allowAllSenders: true }) });
 		bridge.replyMessage = vi.fn(async () => {});
 		const msg = { id: "m1", channel_id: "c1", author: { id: "u1", bot: false }, content: "你好" };
 
@@ -1443,7 +1432,7 @@ describe("QQ 入站投递账本（host.inbox）", () => {
 	it("账本判定 duplicate（在处理/已死信）时完全跳过处理", async () => {
 		const { inbox } = makeInbox({ duplicateReason: "in-flight" });
 		const chatSpy = vi.fn();
-		const bridge = new QqBotBridge({ host: { chat: chatSpy, inbox }, getConfig: () => ({}) });
+		const bridge = new QqBotBridge({ host: { chat: chatSpy, inbox }, getConfig: () => ({ allowAllSenders: true }) });
 		await bridge.onInboundMessage(
 			{ id: "m2", channel_id: "c1", author: { id: "u1", bot: false }, content: "hi" },
 			"AT_MESSAGE_CREATE",
@@ -1453,7 +1442,7 @@ describe("QQ 入站投递账本（host.inbox）", () => {
 
 	it("老宿主（无 host.inbox）回退到内存去重，同一 id 仍只处理一次", async () => {
 		const chatSpy = vi.fn(async () => ({ conversationId: "c9", clientId: "plugin:qq:d", runId: "pr-2" }));
-		const bridge = new QqBotBridge({ host: { chat: chatSpy }, getConfig: () => ({}) });
+		const bridge = new QqBotBridge({ host: { chat: chatSpy }, getConfig: () => ({ allowAllSenders: true }) });
 		bridge.replyMessage = vi.fn(async () => {});
 		const msg = { id: "m3", channel_id: "c1", author: { id: "u1", bot: false }, content: "hi" };
 		await bridge.onInboundMessage(msg, "AT_MESSAGE_CREATE");
@@ -1486,7 +1475,7 @@ describe("QQ Gateway 连接韧性（限流根因）", () => {
 	function makeBridge(extraHost: Record<string, any> = {}) {
 		const bridge = new QqBotBridge({
 			host: { ...extraHost } as any,
-			getConfig: () => ({ appId: "102030", clientSecret: "mock_secret" }),
+			getConfig: () => ({ allowAllSenders: true, appId: "102030", clientSecret: "mock_secret" }),
 			log: () => {},
 		});
 		bridge.accessToken = "token_cached";
@@ -1528,7 +1517,7 @@ describe("QQ Gateway 连接韧性（限流根因）", () => {
 		const logs: string[] = [];
 		const bridge = new QqBotBridge({
 			host: {} as any,
-			getConfig: () => ({ appId: "1", clientSecret: "s" }),
+			getConfig: () => ({ allowAllSenders: true, appId: "1", clientSecret: "s" }),
 			log: (_level: string, msg: string) => logs.push(msg),
 		});
 		try {
@@ -1607,5 +1596,15 @@ describe("QQ Gateway 连接韧性（限流根因）", () => {
 			bridge.releaseInstanceLock();
 			rmSync(dir, { recursive: true, force: true });
 		}
+	});
+});
+
+describe("QQ 空白名单安全默认", () => {
+	it("空名单且未显式放行时拒绝所有人", async () => {
+		const chat = vi.fn();
+		const bridge = new QqBotBridge({ host: { chat }, getConfig: () => ({}) });
+		bridge.replyMessage = vi.fn().mockResolvedValue(undefined);
+		await bridge.onInboundMessage({ id: "m1", author: { id: "u1" }, content: "hi" }, "C2C_MESSAGE_CREATE");
+		expect(chat).not.toHaveBeenCalled();
 	});
 });

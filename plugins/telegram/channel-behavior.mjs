@@ -142,8 +142,13 @@ export class ChannelBehavior {
 		const cfg = this.getConfig();
 		if (!msg?.chat?.id || !msg.from?.id || msg.from.is_bot) return;
 		const user = String(msg.from.id);
-		if (Array.isArray(cfg.allowedUsers) && cfg.allowedUsers.length && !cfg.allowedUsers.map(String).includes(user)) {
-			await this.send(msg, "访问受限：你的账号不在允许列表中。");
+		const tgAllowed = Array.isArray(cfg.allowedUsers) ? cfg.allowedUsers.map(String) : [];
+		// 安全默认：白名单为空=拒绝所有发送者（需显式 allowAllSenders:true 才放行，公开场景用）。
+		if (tgAllowed.length > 0 ? !tgAllowed.includes(user) : cfg.allowAllSenders !== true) {
+			await this.send(
+				msg,
+				"访问受限：该机器人未配置白名单，默认拒绝所有人。请管理员配置白名单或显式开启 allowAllSenders 后再试。",
+			);
 			return;
 		}
 		let text = String(promptOverride ?? (msg.text || msg.caption || "")).trim();

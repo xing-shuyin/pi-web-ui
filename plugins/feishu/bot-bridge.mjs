@@ -320,11 +320,22 @@ export class FeishuBotBridge {
 		const allowedSenders = Array.isArray(cfg.allowedSenders)
 			? cfg.allowedSenders.map((s) => String(s).trim()).filter(Boolean)
 			: [];
-		if (allowedSenders.length > 0 && openId && !allowedSenders.includes(openId)) {
+		// 安全默认：白名单为空=拒绝所有发送者（需显式 allowAllSenders:true 才放行，公开场景用）。
+		const allowAllSenders = cfg.allowAllSenders === true;
+		if (allowedSenders.length > 0) {
+			if (openId && !allowedSenders.includes(openId)) {
+				this.replyMessage(cfg, {
+					messageId,
+					msgType: "text",
+					text: "【访问受限】您当前不在该机器人的白名单中。请联系管理员在 Web 控制台「飞书配置 → 白名单」中添加您的 Open ID 即可开始对话。",
+				}).catch(() => {});
+				return;
+			}
+		} else if (!allowAllSenders) {
 			this.replyMessage(cfg, {
 				messageId,
 				msgType: "text",
-				text: "【访问受限】您当前不在该机器人的白名单中。请联系管理员在 Web 控制台「飞书配置 → 白名单」中添加您的 Open ID 即可开始对话。",
+				text: "【访问受限】该机器人未配置发送者白名单，默认拒绝所有人。请管理员在配置中添加白名单，或显式开启 allowAllSenders 后再试。",
 			}).catch(() => {});
 			return;
 		}
