@@ -227,6 +227,26 @@ describe("Global Resource Locks", () => {
 			expect(info.activeLocks[0].taskId).toBe("task2");
 			expect(info.waitingQueue).toHaveLength(0);
 		});
+
+		it("renewLocks extends TTL for running task; expired lock with alive holder is renewed not promoted", () => {
+			const manager = new HubLockManager({ defaultTtlMs: 1000 });
+			const now = Date.now();
+			manager.acquireLocks({ roomId: "room1", taskId: "task1", botId: "bot1", resourceLocks: ["repo:main"], now });
+			manager.acquireLocks({ roomId: "room1", taskId: "task2", botId: "bot2", resourceLocks: ["repo:main"], now });
+			// 心跳续期：task1 在 900ms 时续一次，锁到期点延到 1900ms
+			expect(manager.renewLocks("room1", "task1", now + 900)).toEqual(["repo:main"]);
+			// 1500ms 时 task1 的锁尚未到期（1900），task2 仍需等待，不晋升
+			expect(manager.cleanupExpiredLocks("room1", now + 1500)).toEqual([]);
+			expect(manager.getRoomLockInfo("room1", now + 1500).activeLocks[0]?.taskId).toBe("task1");
+			// 2000ms 时锁到期，但持锁任务仍存活 → 续期而非摘锁晋升
+			expect(manager.cleanupExpiredLocks("room1", now + 2000, (id) => id === "task1")).toEqual([]);
+			const info = manager.getRoomLockInfo("room1", now + 2000);
+			expect(info.activeLocks).toHaveLength(1);
+			expect(info.activeLocks[0]?.taskId).toBe("task1");
+			expect(info.waitingQueue).toHaveLength(1);
+			// 持锁任务已死 → 正常摘锁并晋升等待者
+			expect(manager.cleanupExpiredLocks("room1", now + 3500, () => false)).toEqual(["task2"]);
+		});
 	});
 
 	describe("Hub HTTP and Task Scheduling Integration", () => {
