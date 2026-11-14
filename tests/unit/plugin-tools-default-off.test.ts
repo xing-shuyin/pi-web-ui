@@ -99,4 +99,29 @@ describe("插件工具默认关（不声明即关）", () => {
 			expect(off.has(t), t).toBe(true);
 		}
 	});
+
+	it("示例预设不得含已下线字段（editSoftEnabled 已随 edit_soft 下线）", () => {
+		const dir = join(ROOT, "docs/examples/presets");
+		const retiredKeys = ["editSoftEnabled"];
+		const violations: string[] = [];
+		for (const file of readdirSync(dir)) {
+			if (!file.endsWith(".json")) continue;
+			const full = join(dir, file);
+			let data: Record<string, unknown>;
+			try {
+				data = JSON.parse(readFileSync(full, "utf8")) as Record<string, unknown>;
+			} catch {
+				violations.push(`${file}: JSON 解析失败`);
+				continue;
+			}
+			const payload = (data as { settings?: Record<string, unknown> }).settings ?? data;
+			for (const key of retiredKeys) {
+				if (Object.hasOwn(payload, key)) violations.push(`${file}: 含已下线字段 ${key}`);
+			}
+		}
+		expect(
+			violations,
+			`示例预设含已下线字段（服务端已无对应文案/逻辑，全靠未知字段忽略才无害）：\n${violations.join("\n")}`,
+		).toEqual([]);
+	});
 });

@@ -1,8 +1,8 @@
 import { describe, expect, it } from "vitest";
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
-import { dirname } from "node:path";
+import { mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { dirname, join } from "node:path";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { fileURLToPath } from "node:url";
 import {
 	installPack,
 	isKnownPack,
@@ -139,5 +139,29 @@ describe("locales", () => {
 		} finally {
 			rmSync(dir, { recursive: true, force: true });
 		}
+	});
+
+	it("语言包不得残留已下线 edit_soft 文案（strings/serverStrings）", () => {
+		const localesDir = join(dirname(fileURLToPath(import.meta.url)), "..", "..", "locales");
+		const violations: string[] = [];
+		for (const file of readdirSync(localesDir)) {
+			if (!file.endsWith(".json")) continue;
+			const full = join(localesDir, file);
+			const pack = JSON.parse(readFileSync(full, "utf8")) as {
+				strings?: Record<string, string>;
+				serverStrings?: Record<string, string>;
+			};
+			for (const key of Object.keys(pack.strings ?? {})) {
+				if (key.startsWith("editsoft.")) violations.push(`${file}: strings 残留死 key ${key}`);
+			}
+			for (const key of Object.keys(pack.serverStrings ?? {})) {
+				if (key.startsWith("editsoft.")) violations.push(`${file}: serverStrings 残留死 key ${key}`);
+			}
+			const codeDesc = pack.strings?.["preset.codeDesc"];
+			if (typeof codeDesc === "string" && codeDesc.includes("edit_soft")) {
+				violations.push(`${file}: preset.codeDesc 仍展示已下线工具名 edit_soft`);
+			}
+		}
+		expect(violations, `语言包残留已下线 edit_soft 文案：\n${violations.join("\n")}`).toEqual([]);
 	});
 });

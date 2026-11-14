@@ -2316,7 +2316,7 @@
 		"preset.ask": "純對話",
 		"preset.standardDesc": "提供全部可用工具與擴充套件能力（預設）",
 		"preset.minimalDesc": "僅保留 bash 與 read；外掛工具、技能目錄與終端機引導同步隱藏",
-		"preset.codeDesc": "專注於程式碼讀寫與執行（bash, read, edit, write, edit_soft）；外掛工具與技能目錄同步隱藏",
+		"preset.codeDesc": "專注於程式碼讀寫與執行（bash, read, edit, write）；外掛工具與技能目錄同步隱藏",
 		"preset.readerDesc": "僅保留唯讀工具，禁止寫操作；外掛工具同步隱藏（讀寫未知，保守處理）",
 		"preset.askDesc": "無工具問答模式，模型不呼叫任何工具；外掛工具與技能目錄同步隱藏",
 		"dshPerm": "權限",
