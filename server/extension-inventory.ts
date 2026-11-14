@@ -219,6 +219,7 @@ export async function collectExtensionInventory(
 		mcpServers: mcpServers as McpServerInput[],
 	});
 	// 来源整体加载失败时追加一条 error 占位，保证“坏了不知道找谁”可定位（T4）。
+	// 标题由前端 ExtensionInventory 按语言渲染，这里不再挂中文文案（服务端字符串必须是纯英文）。
 	for (const e of errors) {
 		const [source] = e.split(":");
 		const src = source.trim() === "cli" ? "cli" : source.trim() === "webui" ? "webui" : "external";
@@ -226,7 +227,6 @@ export async function collectExtensionInventory(
 			name: `__load_error__:${source.trim()}`,
 			source: src as UiExtensionInventorySource,
 			enabled: false,
-			description: "加载失败（只读展示，无需重装应用） / Load failed (read-only, no reinstall needed)",
 			error: e,
 			health: "error",
 		});
