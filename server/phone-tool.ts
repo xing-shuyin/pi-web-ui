@@ -25,6 +25,12 @@ type PhoneOp = (typeof PHONE_OPS)[number];
 
 export const PHONE_KEYS = ["back", "home", "recents", "notifications", "quickSettings"] as const;
 
+/** 只读档：读屏与控件树，不会改变手机状态。 */
+export const PHONE_READ_OPS = ["status", "dump", "screenshot"] as const;
+
+/** 操控档：会改变手机状态（点击/滑动/输入/按键/启动应用）。逐操作审批 UI 落地前，启用即授权整机操控。 */
+export const PHONE_CONTROL_OPS = ["tap", "long_press", "swipe", "input", "key", "launch"] as const;
+
 type PhoneKey = (typeof PHONE_KEYS)[number];
 
 /** 每 op 的签名是参数文档的唯一归属地，字段本身不再写说明。 */
@@ -117,12 +123,14 @@ export function makePhoneTool(
 	return {
 		name: PHONE_TOOL_NAME,
 		label: "Phone",
-		description: "Read the phone screen and drive it through the accessibility service.",
+		description:
+			"Read the phone screen and drive it through the accessibility service. Enabling this tool grants full control of the phone (tap / swipe / type / keys / launch / screenshots); per-op approval UI is pending, enable only for trusted sessions.",
 		promptSnippet: "read and drive this Android phone: UI tree, tap, swipe, type, keys, shots",
 		promptGuidelines: [
 			"Use phone only when the user asked you to operate their phone; never tap, type or navigate their apps on your own initiative",
 			'Start with op:"dump" and act on the returned nodes: bounds are screen pixels already, so tap the centre of a node instead of guessing coordinates. Take a screenshot when the tree is not enough.',
 			"Typing text goes to the focused input only. If the user must enter a password, payment or system setting, stop and ask them to do it themselves.",
+			"Control ops (tap / swipe / input / key / launch) have no per-op approval yet: confirm with the user in chat before the first control action, and prefer read ops (status / dump / screenshot) when control is not needed.",
 			"After each action, dump again to confirm the screen changed instead of firing several actions blindly.",
 		],
 		parameters: Type.Object({

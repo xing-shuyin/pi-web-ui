@@ -1779,7 +1779,7 @@
 		"parallelReminderOffHint": "已關閉：平行時不再提醒，AI 也收不到衝突提示",
 		"browserPageEnabledDesc": "讓模型操作瀏覽器裡被授權的頁面（page-picker 擴充套件的 browser_page 工具：讀內容 / 點選 / 輸入 / 捲動 / 跳轉，eval 另有單獨開關）。需要先在擴充套件選項頁授權目標頁面。",
 		"browserPageOffHint": "已關閉：模型不能再點你的頁面、也不能在頁面裡執行腳本",
-		"phoneEnabledDesc": "让模型读写这台手机的屏幕并操作它（无障碍服务：读控件树 / 点击 / 滑动 / 输入 / 返回等键 / 启动应用 / 截图）。需要先在系统設定里开启「pi 手机操控」无障碍服务；密码输入框不会被代填。",
+		"phoneEnabledDesc": "让模型读写这台手机的屏幕并操作它（无障碍服务：读控件树 / 点击 / 滑动 / 输入 / 返回等键 / 启动应用 / 截图）。开启即授予整机操控权限，逐操作审批 UI 尚未上线，仅在可信场景开启。需要先在系统設定里开启「pi 手机操控」无障碍服务；密码输入框不会被代填。",
 		"phoneOffHint": "已關閉：模型不能读取或操作这台手机",
 		"browserScriptEnabledDesc": "让模型给 AI 浏览器的网页注入 JavaScript 或 CSS，可临时也可长期生效（browser_script 工具：list / status / create / update / remove / enable / disable / run）。",
 		"browserScriptOffHint": "已關閉：模型不能再注入或管理页面脚本",

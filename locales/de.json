@@ -1779,7 +1779,7 @@
 		"parallelReminderOffHint": "Deaktiviert: keine Hinweise bei paralleler Arbeit; die KI erhält ebenfalls keinen Konflikthinweis",
 		"browserPageEnabledDesc": "Lass das Modell auf Seiten arbeiten, die du in der page-picker-Erweiterung freigegeben hast (browser_page: lesen / klicken / tippen / scrollen / navigieren; eval hat einen eigenen Schalter).",
 		"browserPageOffHint": "Deaktiviert: das Modell kann deine Seiten nicht mehr anklicken oder Skripte darin ausführen",
-		"phoneEnabledDesc": "Let the model read and drive this phone through its accessibility service (UI tree / tap / swipe / type / back-home keys / launch app / screenshots). Enable the phone-control accessibility service in system settings first; password fields are never filled.",
+		"phoneEnabledDesc": "Let the model read and drive this phone through its accessibility service (UI tree / tap / swipe / type / back-home keys / launch app / screenshots). Enabling grants full control of the phone; per-op approval UI is pending. Enable the phone-control accessibility service in system settings first; password fields are never filled.",
 		"phoneOffHint": "Disabled: the model can neither read nor operate this phone",
 		"browserScriptEnabledDesc": "Let the model inject JavaScript or CSS into AI Browser pages, temporarily or permanently (browser_script tool: list / status / create / update / remove / enable / disable / run).",
 		"browserScriptOffHint": "Disabled: the model can no longer inject or manage page scripts",
