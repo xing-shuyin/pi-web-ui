@@ -83,8 +83,8 @@ export class PluginInbox {
 			// 没有消息 id 的入站事件无法去重，只能放行。
 			return { id: `${this.ledger.pluginId}:`, status: "new", attempts: 1 };
 		}
-		const existing = this.ledger.get(k);
-		if (existing && existing.direction === "in") {
+		const existing = this.ledger.get(k, "in");
+		if (existing) {
 			if (existing.state === "done") {
 				return { id: existing.id, status: "duplicate", attempts: existing.attempts, reason: "done" };
 			}
@@ -126,8 +126,8 @@ export class PluginInbox {
 	complete(key: unknown, opts: InboxCompleteOptions = {}): void {
 		const k = normalizeLedgerKey(key);
 		if (!k) return;
-		const record = this.ledger.get(k);
-		if (!record || record.direction !== "in") return;
+		const record = this.ledger.get(k, "in");
+		if (!record) return;
 		record.state = "done";
 		record.updatedAt = this.now;
 		delete record.error;
@@ -140,8 +140,8 @@ export class PluginInbox {
 	fail(key: unknown, error: unknown): void {
 		const k = normalizeLedgerKey(key);
 		if (!k) return;
-		const record = this.ledger.get(k);
-		if (!record || record.direction !== "in") return;
+		const record = this.ledger.get(k, "in");
+		if (!record) return;
 		record.state = "failed";
 		record.updatedAt = this.now;
 		record.error = errorText(error);

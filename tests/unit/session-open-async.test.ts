@@ -127,6 +127,29 @@ describe("openSessionManagerAsync ≡ SessionManager.open", () => {
 			else process.env.PI_WEB_ASYNC_SESSION_OPEN = prev;
 		}
 	});
+
+	it("并发写入者已补全半行时不插 \n 破坏行（stat 发现变长则回退 SDK 重读）", async () => {
+		const { promises: fsP } = await import("node:fs");
+		const dir = mkdtempSync(join(tmpdir(), "session-open-race-"));
+		const file = join(dir, "s.jsonl");
+		// 磁盘真实内容：头部 + 完整一行（并发者已写完）；stale 快照：只读到半行
+		const full = [header(), msg("a", null, "user", "hi"), ""].join("\n");
+		const stale = full.slice(0, full.length - 10); // 截断出一个不完整尾巴
+		writeFileSync(file, full);
+		const before = readFileSync(file, "utf8");
+		const readSpy = vi.spyOn(fsP, "readFile").mockResolvedValue(stale as never);
+		const openSpy = vi.spyOn(SessionManager, "open");
+		try {
+			await openSessionManagerAsync(file);
+			// 回退到 SDK 原路径重读新鲜文件
+			expect(openSpy).toHaveBeenCalledWith(file);
+			// 未在行中间插入 \n 破坏：文件原样不动
+			expect(readFileSync(file, "utf8")).toBe(before);
+		} finally {
+			readSpy.mockRestore();
+			openSpy.mockRestore();
+		}
+	});
 });
 
 describe("parseJsonlSliced", () => {

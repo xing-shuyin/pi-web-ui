@@ -147,13 +147,13 @@ export class DeliveryQueue {
 		// inflight 检查必须在账本查询之前：done 记录要到发送成功后才落账，
 		// 同一 tick 内并发两次同 key sendNow 时，后到的不能因为 existing 为空而绕过幂等。
 		if (this.inflight.has(key)) return { status: "duplicate" };
-		const existing = this.ledger.get(key);
-		if (existing && existing.direction === "out") {
+		const existing = this.ledger.get(key, "out");
+		if (existing) {
 			if (existing.state === "done") return { status: "duplicate" };
 			if (existing.state === "claimed" && !this.ledger.isTerminal(existing)) return { status: "duplicate" };
 		}
 
-		const attempts = (existing && existing.direction === "out" ? existing.attempts : 0) + 1;
+		const attempts = (existing ? existing.attempts : 0) + 1;
 		const item = toItem(channel, key, req, existing, attempts, now);
 
 		this.inflight.add(key);
@@ -344,7 +344,7 @@ function recordToItem(record: LedgerRecord): DeliveryItem {
 }
 
 function doneRecord(ledger: PluginLedgerStore, item: DeliveryItem, now: number): LedgerRecord {
-	const existing = ledger.get(item.key);
+	const existing = ledger.get(item.key, "out");
 	return {
 		id: existing?.id ?? item.id,
 		key: item.key,
@@ -368,7 +368,7 @@ function queuedRecord(
 	now: number,
 	nextAttemptAt: number,
 ): LedgerRecord {
-	const existing = ledger.get(item.key);
+	const existing = ledger.get(item.key, "out");
 	return {
 		id: existing?.id ?? item.id,
 		key: item.key,
@@ -394,7 +394,7 @@ function failedRecord(
 	err: unknown,
 	now: number,
 ): LedgerRecord {
-	const existing = ledger.get(item.key);
+	const existing = ledger.get(item.key, "out");
 	return {
 		id: existing?.id ?? item.id,
 		key: item.key,

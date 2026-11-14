@@ -79,6 +79,10 @@ export function normalizeLedgerKey(key: unknown): string | null {
 /**
  * 账本存储：唯一负责「读一次、写一次」的地方。
  * 入站/出站两个视图共享同一个实例，才能真正做到「一条消息只有一个状态」。
+ *
+ * 内部索引按方向隔离（`${direction}:${key}`）：入站幂等键由插件自选（如消息 id），
+ * 出站默认 `out:<uuid>` 但允许调用方传自定义 key。同一 key 先后用于两个方向时
+ * 必须互不覆盖（否则 done/死信状态无声丢失 → 重复投递/重复处理）。
  */
 export class PluginLedgerStore {
 	readonly pluginId: string;
@@ -104,6 +108,10 @@ export class PluginLedgerStore {
 		this.load();
 	}
 
+	private mapKey(direction: LedgerDirection, key: string): string {
+		return `${direction}:${key}`;
+	}
+
 	private load(): void {
 		if (!existsSync(this.file)) return;
 		try {
@@ -113,7 +121,9 @@ export class PluginLedgerStore {
 				if (!r || typeof r.key !== "string" || typeof r.state !== "string") continue;
 				if (!["claimed", "done", "failed"].includes(r.state)) continue;
 				const direction: LedgerDirection = r.direction === "out" ? "out" : "in";
-				this.records.set(r.key, {
+				const key = typeof r.key === "string" ? r.key : "";
+				if (!key) continue;
+				this.records.set(this.mapKey(direction, key), {
 					...r,
 					direction,
 					id: typeof r.id === "string" ? r.id : `${this.pluginId}:${r.key}`,
@@ -127,18 +137,18 @@ export class PluginLedgerStore {
 		}
 	}
 
-	get(key: string): LedgerRecord | undefined {
-		return this.records.get(key);
+	get(key: string, direction: LedgerDirection): LedgerRecord | undefined {
+		return this.records.get(this.mapKey(direction, key));
 	}
 
-	/** 写入/更新记录并安排落盘。 */
+	/** 写入/更新记录并安排落盘（按记录自带 direction 落到对应命名空间）。 */
 	put(record: LedgerRecord): void {
-		this.records.set(record.key, record);
+		this.records.set(this.mapKey(record.direction, record.key), record);
 		this.touch();
 	}
 
-	delete(key: string): void {
-		if (!this.records.delete(key)) return;
+	delete(key: string, direction: LedgerDirection): void {
+		if (!this.records.delete(this.mapKey(direction, key))) return;
 		this.touch();
 	}
 
@@ -197,8 +207,8 @@ export class PluginLedgerStore {
 	prune(): void {
 		const now = this.now();
 		if (this.keepMs > 0) {
-			for (const [key, r] of this.records) {
-				if (this.isTerminal(r) && now - r.updatedAt > this.keepMs) this.records.delete(key);
+			for (const [mapKey, r] of this.records) {
+				if (this.isTerminal(r) && now - r.updatedAt > this.keepMs) this.records.delete(mapKey);
 			}
 		}
 		if (this.records.size <= this.maxEntries) return;
@@ -206,7 +216,7 @@ export class PluginLedgerStore {
 		const drop = this.records.size - this.maxEntries;
 		for (let i = 0; i < drop; i++) {
 			const r = sorted[i];
-			if (r) this.records.delete(r.key);
+			if (r) this.records.delete(this.mapKey(r.direction, r.key));
 		}
 	}
 

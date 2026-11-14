@@ -60,7 +60,21 @@ export async function openSessionManagerAsync(path: string): Promise<SessionMana
 		return SessionManager.open(resolvedPath);
 	}
 	try {
-		if (tail) await fsPromises.appendFile(resolvedPath, "\n");
+		if (tail) {
+			// 半行补 `\n` 的交错窗口：若半行其实是另一个写入者 append 中途，
+			// 此时补 `\n` 会插进它的行中间，把一条本会完整的记录截成两段坏 JSON。
+			// 单机单实例概率极低，多宿主/远端盘存在。补写前校验文件自本次读取后未变动；
+			// 若已变动则不补，直接回退 SDK 原路径重读新鲜文件（残余 stat→append 间隙极小，接受）。
+			let unchanged = false;
+			try {
+				const st = await fsPromises.stat(resolvedPath);
+				unchanged = st.size === Buffer.byteLength(raw);
+			} catch {
+				unchanged = false;
+			}
+			if (!unchanged) return SessionManager.open(resolvedPath);
+			await fsPromises.appendFile(resolvedPath, "\n");
+		}
 		const cwd = typeof header.cwd === "string" ? header.cwd : process.cwd();
 		const Ctor = SessionManager as unknown as SessionManagerCtor;
 		const manager = new Ctor(cwd, dirname(resolvedPath), resolvedPath, true, undefined, entries);
