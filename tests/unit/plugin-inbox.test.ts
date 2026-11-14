@@ -36,6 +36,20 @@ describe("PluginInbox（至少一次 + 幂等键）", () => {
 		expect(inbox.pending()).toHaveLength(0); // 刚被重新认领，仍在处理窗口内
 	});
 
+	it("claimed 态反复 stall 到 attempts 上限也进死信，不再无限重投", () => {
+		let now = 1_000;
+		const inbox = makeInbox({ stallMs: 1_000, maxAttempts: 2, now: () => now });
+		inbox.claim("m1"); // attempts=1：宿主处理到一半崩死，永远到不了 complete/fail
+		now += 2_000;
+		expect(inbox.claim("m1")).toMatchObject({ status: "new", attempts: 2 }); // stalled 重投
+		now += 2_000;
+		// 再次 stall：attempts 已达上限 → 死信，而不是第 3 次 new
+		expect(inbox.claim("m1")).toMatchObject({ status: "duplicate", reason: "dead", attempts: 2 });
+		expect(inbox.dead()).toEqual([
+			expect.objectContaining({ key: "m1", error: "repeatedly stalled before completion" }),
+		]);
+	});
+
 	it("失败会累加 attempts，到上限后变死信且不再重投", () => {
 		let now = 1_000;
 		const inbox = makeInbox({ stallMs: 1_000, maxAttempts: 2, now: () => now });

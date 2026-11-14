@@ -95,6 +95,15 @@ export class PluginInbox {
 			if (existing.state === "claimed" && !stalled) {
 				return { id: existing.id, status: "duplicate", attempts: existing.attempts, reason: "in-flight" };
 			}
+			// claimed 态的 stalled 重投同样计入上限：宿主处理到一半崩死（永远到不了
+			// complete/fail）的毒消息不能每个 stall 周期被无限重投、永不进死信。
+			if (existing.state === "claimed" && existing.attempts >= this.ledger.maxAttempts) {
+				existing.state = "failed";
+				existing.error = "repeatedly stalled before completion";
+				existing.updatedAt = now;
+				this.ledger.put(existing);
+				return { id: existing.id, status: "duplicate", attempts: existing.attempts, reason: "dead" };
+			}
 			existing.state = "claimed";
 			existing.attempts += 1;
 			existing.updatedAt = now;
