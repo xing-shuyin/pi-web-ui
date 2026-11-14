@@ -77,9 +77,7 @@ describe("DiscordBotBridge 双工逻辑测试", () => {
 		const chatSpy = vi.fn();
 		const bridge: any = new DiscordBotBridge({
 			host: { chat: chatSpy },
-			getConfig: () => ({
-				botToken: "test_bot_token",
-			}),
+			getConfig: () => ({ allowAllSenders: true, botToken: "test_bot_token" }),
 		});
 
 		await bridge.onInboundMessage({
@@ -119,9 +117,7 @@ describe("DiscordBotBridge 双工逻辑测试", () => {
 					return () => {};
 				},
 			},
-			getConfig: () => ({
-				botToken: "test_bot_token",
-			}),
+			getConfig: () => ({ allowAllSenders: true, botToken: "test_bot_token" }),
 		});
 
 		await bridge.start();
@@ -186,7 +182,7 @@ describe("Discord：对话被过户（改名 + 换客户端）后仍按 runId �
 					return () => {};
 				},
 			},
-			getConfig: () => ({ botToken: "test_bot_token" }),
+			getConfig: () => ({ allowAllSenders: true, botToken: "test_bot_token" }),
 		});
 
 		await bridge.start();
@@ -217,6 +213,18 @@ describe("Discord：对话被过户（改名 + 换客户端）后仍按 runId �
 		);
 
 		await bridge.stop();
+		vi.unstubAllGlobals();
+	});
+});
+
+describe("Discord 空白名单安全默认", () => {
+	it("空名单且未显式放行时拒绝所有人", async () => {
+		const fetchMock = vi.fn().mockResolvedValue({ ok: true, status: 200, json: async () => ({ id: "m1" }) });
+		vi.stubGlobal("fetch", fetchMock);
+		const chatSpy = vi.fn();
+		const bridge: any = new DiscordBotBridge({ host: { chat: chatSpy }, getConfig: () => ({ botToken: "t" }) });
+		await bridge.onInboundMessage({ id: "m2", channel_id: "c1", author: { id: "u1", bot: false }, content: "hi" });
+		expect(chatSpy).not.toHaveBeenCalled();
 		vi.unstubAllGlobals();
 	});
 });

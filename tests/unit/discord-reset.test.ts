@@ -23,7 +23,7 @@ function setup() {
 			readPath: vi.fn(async () => Buffer.from("image")),
 		},
 	};
-	const bridge: any = new DiscordBotBridge({ host, getConfig: () => ({ botToken: "test" }) });
+	const bridge: any = new DiscordBotBridge({ host, getConfig: () => ({ allowAllSenders: true, botToken: "test" }) });
 	bridge.botUser = { id: "bot" };
 	bridge.reply = vi.fn(async (_route: any, _text: string) => {});
 	const send = (text: string, attachments: any[] = [], channel = "channel") =>

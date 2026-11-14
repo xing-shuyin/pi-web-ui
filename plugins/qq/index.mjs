@@ -900,8 +900,9 @@ export class QqBotBridge {
 		const allowedUsers = Array.isArray(cfg.allowedUsers)
 			? cfg.allowedUsers.map((u) => String(u).trim()).filter(Boolean)
 			: [];
-		if (allowedUsers.length > 0 && authorId && !allowedUsers.includes(String(authorId))) {
-			this.log("info", `QQ user ${authorId} blocked by whitelist`);
+		// 安全默认：白名单为空=拒绝所有发送者（需显式 allowAllSenders:true 才放行）。
+		if (allowedUsers.length > 0 ? authorId && !allowedUsers.includes(String(authorId)) : cfg.allowAllSenders !== true) {
+			this.log("info", `QQ user ${authorId || "(unknown)"} blocked (empty whitelist denies by default)`);
 			return;
 		}
 

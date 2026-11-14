@@ -1,6 +1,6 @@
 # Telegram
 
-Telegram Bot API long polling integration. Configure a BotFather token in the plugin settings and enable the bot. Tokens are stored through the host secret store; `allowedUsers` accepts numeric Telegram sender IDs. Leave it empty only when all senders should be allowed. The bot requires outbound HTTPS; no public webhook is needed.
+Telegram Bot API long polling integration. Configure a BotFather token in the plugin settings and enable the bot. Tokens are stored through the host secret store; `allowedUsers` accepts numeric Telegram sender IDs. Empty whitelist denies everyone by default; set `allowAllSenders: true` explicitly only for public bots. The bot requires outbound HTTPS; no public webhook is needed.
 
 Private chats accept messages directly. In groups, mention `@yourbot`, use `/command@yourbot`, or reply to the bot. Commands addressed to other bots are ignored. Sessions, model, thinking and workspace preferences are isolated by chat ID, forum topic ID and sender ID. Replies retain the originating topic and message. Preferences are in memory and reset when the plugin restarts. Active runs are tracked by the host's stable `runId`, including events arriving before the chat receipt and conversation renames.
 

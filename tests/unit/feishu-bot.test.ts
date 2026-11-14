@@ -51,7 +51,7 @@ describe("FeishuBotBridge 双工通信流程测试", () => {
 
 		const bridge = new FeishuBotBridge({
 			host: { chat: chatSpy },
-			getConfig: () => ({ appId: "cli_123", appSecret: "sec_123" }),
+			getConfig: () => ({ allowAllSenders: true, appId: "cli_123", appSecret: "sec_123" }),
 			sendMessage: vi.fn(),
 			replyMessage: replySpy,
 			reactMessage: vi.fn(),
@@ -134,7 +134,7 @@ describe("FeishuBotBridge 双工通信流程测试", () => {
 					return () => {};
 				},
 			},
-			getConfig: () => ({ appId: "cli_123", appSecret: "sec_123" }),
+			getConfig: () => ({ allowAllSenders: true, appId: "cli_123", appSecret: "sec_123" }),
 			sendMessage: vi.fn(),
 			replyMessage: replySpy,
 			reactMessage: reactSpy,
@@ -205,6 +205,7 @@ describe("FeishuBotBridge 双工通信流程测试", () => {
 				onRunEvent: () => () => {},
 			},
 			getConfig: () => ({
+				allowAllSenders: true,
 				appId: "cli_123",
 				appSecret: "sec_123",
 				workspace: configuredWorkspace,
@@ -282,7 +283,7 @@ describe("FeishuBotBridge 双工通信流程测试", () => {
 	it("飞书 WS 双工失败时如实置 state: error，不再假装已连接空转", async () => {
 		const bridge = new FeishuBotBridge({
 			host: { chat: vi.fn(), ensureDeps: vi.fn() },
-			getConfig: () => ({ appId: "cli_123", appSecret: "sec_123" }),
+			getConfig: () => ({ allowAllSenders: true, appId: "cli_123", appSecret: "sec_123" }),
 		} as any);
 
 		await bridge.start();
@@ -311,7 +312,7 @@ describe("飞书：对话被过户（改名 + 换客户端）后仍按 runId 回
 					return () => {};
 				},
 			},
-			getConfig: () => ({ appId: "cli_123", appSecret: "sec_123" }),
+			getConfig: () => ({ allowAllSenders: true, appId: "cli_123", appSecret: "sec_123" }),
 			sendMessage: vi.fn(),
 			replyMessage: replySpy,
 			reactMessage: reactSpy,
@@ -348,5 +349,25 @@ describe("飞书：对话被过户（改名 + 换客户端）后仍按 runId 回
 		);
 
 		await bridge.stop();
+	});
+});
+
+describe("飞书空白名单安全默认", () => {
+	it("空名单且未显式放行时拒绝所有人", async () => {
+		const chatSpy = vi.fn();
+		const replySpy = vi.fn().mockResolvedValue({ success: true });
+		const bridge = new FeishuBotBridge({
+			host: { chat: chatSpy },
+			getConfig: () => ({ appId: "cli_123", appSecret: "sec_123" }),
+			sendMessage: vi.fn(),
+			replyMessage: replySpy,
+			reactMessage: vi.fn(),
+		} as any);
+		await bridge.onInboundMessage({
+			message: { message_id: "om_9", chat_id: "oc_1", message_type: "text", content: JSON.stringify({ text: "hi" }) },
+			sender: { sender_type: "user", sender_id: { open_id: "ou_anyone" } },
+		});
+		expect(chatSpy).not.toHaveBeenCalled();
+		expect(replySpy).toHaveBeenCalled();
 	});
 });

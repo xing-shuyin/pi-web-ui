@@ -2,7 +2,7 @@
 	"apiVersion": 2,
 	"name": "qq",
 	"nameEn": "QQ",
-	"version": "0.2.3",
+	"version": "0.2.4",
 	"alwaysOn": true,
 	"description": "QQ 机器人：官方出站 WebSocket 双向对话、富媒体收发、用户白名单与 AI qq 工具；支持系统或插件 TTS 语音自动回复，可选择引擎、音色及语音和文字组合。密钥加密存储。",
 	"descriptionEn": "QQ Bot with outbound WebSocket chat, rich media, access control, and an AI qq tool. Automatic voice replies use the shared TTS center with selectable engines and voices, optional text, and encrypted credentials.",

@@ -73,9 +73,7 @@ describe("TelegramBotBridge 双工通信流程测试", () => {
 		const chatSpy = vi.fn();
 		const bridge = new TelegramBotBridge({
 			host: { chat: chatSpy },
-			getConfig: () => ({
-				botToken: "123:test_token",
-			}),
+			getConfig: () => ({ allowAllSenders: true, botToken: "123:test_token" }),
 		});
 
 		await bridge.onInboundMessage({
@@ -114,9 +112,7 @@ describe("TelegramBotBridge 双工通信流程测试", () => {
 					return () => {};
 				},
 			},
-			getConfig: () => ({
-				botToken: "123:test_token",
-			}),
+			getConfig: () => ({ allowAllSenders: true, botToken: "123:test_token" }),
 		});
 
 		await bridge.start();
@@ -168,7 +164,7 @@ describe("TelegramBotBridge 双工通信流程测试", () => {
 		const chatSpy = vi.fn().mockResolvedValue({ conversationId: "conv_tg_group", runId: "run_tg_group" });
 		const bridge = new TelegramBotBridge({
 			host: { chat: chatSpy },
-			getConfig: () => ({ botToken: "123:test_token" }),
+			getConfig: () => ({ allowAllSenders: true, botToken: "123:test_token" }),
 		});
 		bridge.status.botUsername = "MyAwesomeBot";
 
@@ -197,5 +193,48 @@ describe("TelegramBotBridge 双工通信流程测试", () => {
 			text: "私聊直接提问",
 		});
 		expect(chatSpy).toHaveBeenCalledTimes(2);
+	});
+});
+
+describe("Telegram 空白名单安全默认", () => {
+	it("空名单且未显式放行时拒绝所有人", async () => {
+		const fetchMock = vi.fn().mockResolvedValue({ ok: true, json: async () => ({ ok: true, result: {} }) });
+		vi.stubGlobal("fetch", fetchMock);
+		const chatSpy = vi.fn();
+		const bridge = new TelegramBotBridge({
+			host: { chat: chatSpy },
+			getConfig: () => ({ botToken: "123:test_token" }),
+		});
+		await bridge.onInboundMessage({
+			message_id: 99,
+			chat: { id: 8888, type: "private" },
+			from: { id: 10001, is_bot: false },
+			text: "hi",
+		});
+		expect(chatSpy).not.toHaveBeenCalled();
+		expect(fetchMock).toHaveBeenCalledWith(
+			expect.stringContaining("/sendMessage"),
+			expect.objectContaining({ body: expect.stringContaining("访问受限") }),
+		);
+		vi.unstubAllGlobals();
+	});
+
+	it("显式 allowAllSenders:true 时空名单放行", async () => {
+		const fetchMock = vi.fn().mockResolvedValue({ ok: true, json: async () => ({ ok: true, result: {} }) });
+		vi.stubGlobal("fetch", fetchMock);
+		const chatSpy = vi.fn().mockResolvedValue({ conversationId: "c1", runId: "r1" });
+		const bridge = new TelegramBotBridge({
+			host: { chat: chatSpy, onRunEvent: () => () => {} },
+			getConfig: () => ({ botToken: "123:test_token", allowAllSenders: true }),
+		});
+		await bridge.start();
+		await bridge.onInboundMessage({
+			message_id: 100,
+			chat: { id: 8888, type: "private" },
+			from: { id: 10001, is_bot: false },
+			text: "hi",
+		});
+		expect(chatSpy).toHaveBeenCalled();
+		vi.unstubAllGlobals();
 	});
 });

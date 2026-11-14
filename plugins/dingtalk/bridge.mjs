@@ -110,8 +110,13 @@ export class DingtalkBotBridge {
 		}
 		try {
 			const allowed = (cfg.allowedSenders || []).map(String).filter(Boolean);
-			if (!sender || (allowed.length && !allowed.includes(sender))) {
-				await this.reply(url, "【访问受限】您当前不在该机器人的白名单中，或消息缺少发送者标识。");
+			// 安全默认：白名单为空=拒绝所有发送者（需显式 allowAllSenders:true 才放行）。
+			const allowAllSenders = cfg.allowAllSenders === true;
+			if (!sender || (allowed.length > 0 ? !allowed.includes(sender) : !allowAllSenders)) {
+				await this.reply(
+					url,
+					"【访问受限】您当前不在该机器人的白名单中，或消息缺少发送者标识。未配置白名单时默认拒绝所有人，需显式开启 allowAllSenders 后再试。",
+				);
 				return;
 			}
 			if (!url) throw new Error("缺少 sessionWebhook，已拒绝投递以防结果无法回送");

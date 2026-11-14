@@ -22,7 +22,11 @@ function setup(chat?: any) {
 		abortRun: vi.fn(async () => ({ ok: true })),
 		models: { list: async () => [{ provider: "p", id: "m" }] },
 	};
-	const bridge = new TelegramBotBridge({ host, getConfig: () => ({ botToken: "token" }), log: vi.fn() });
+	const bridge = new TelegramBotBridge({
+		host,
+		getConfig: () => ({ allowAllSenders: true, botToken: "token" }),
+		log: vi.fn(),
+	});
 	bridge.status.botUsername = "mybot";
 	return { bridge, host };
 }
