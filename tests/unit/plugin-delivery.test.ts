@@ -139,6 +139,52 @@ describe("DeliveryQueue（出站投递：快路径 + 退避 + 死信）", () => 
 		expect(send).toHaveBeenCalledTimes(1);
 	});
 
+	it("pump 重入：慢发送跨轮时，重叠 pump 空手而归，不双发不乱序", async () => {
+		const { queue } = make();
+		let release!: () => void;
+		const gate = new Promise<void>((resolve) => (release = resolve));
+		// 入队阶段用立即失败的 sender（network → queued），不靠 5s 发送超时抬表：
+		// 否则这条用例要真等 sendTimeoutMs×2，既慢又依赖计时器精度。
+		let slow = false;
+		const send = vi.fn(async () => {
+			if (!slow) throw Object.assign(new Error("socket hang up"), { deliveryClass: "network" });
+			await gate;
+		});
+		queue.registerSender("qq", send);
+		await queue.sendNow({ channel: "qq", target: {}, payload: {}, key: "out:r1" });
+		await queue.sendNow({ channel: "qq", target: {}, payload: {}, key: "out:r2" });
+		expect(send).toHaveBeenCalledTimes(2);
+		now += 1_000;
+		slow = true;
+		// 第一轮 pump：快照 [r1, r2]，在 r1 的慢发送上挂住
+		const first = queue.pump();
+		await new Promise((resolve) => setTimeout(resolve, 10));
+		// 第二轮 pump 到点（模拟 5s 定时器）：必须整轮跳过
+		const second = await queue.pump();
+		expect(second).toMatchObject({ sent: 0, retried: 0, dead: 0 });
+		release();
+		expect(await first).toMatchObject({ sent: 2, retried: 0, dead: 0 });
+		expect(queue.stats()).toMatchObject({ queued: 0, done: 2 });
+		expect(send).toHaveBeenCalledTimes(4); // sendNow×2（失败）+ 第一轮 pump 的 r1、r2 各一次
+	});
+
+	it("sendNow 并发同 key：第一笔在途时第二笔立即 duplicate（不依赖账本记录已存在）", async () => {
+		const { queue } = make();
+		let release!: () => void;
+		const gate = new Promise<void>((resolve) => (release = resolve));
+		const send = vi.fn(async () => {
+			await gate;
+		});
+		queue.registerSender("qq", send);
+		const first = queue.sendNow({ channel: "qq", target: {}, payload: {}, key: "out:race" });
+		await new Promise((resolve) => setTimeout(resolve, 10));
+		const second = await queue.sendNow({ channel: "qq", target: {}, payload: {}, key: "out:race" });
+		expect(second).toMatchObject({ status: "duplicate" });
+		release();
+		expect(await first).toMatchObject({ status: "sent" });
+		expect(send).toHaveBeenCalledTimes(1);
+	});
+
 	it("与入站共用同一个账本：两个方向的记录互不干扰", async () => {
 		const { queue, inbox } = make();
 		queue.registerSender("qq", async () => {});

@@ -88,6 +88,7 @@ export class DeliveryQueue {
 	private readonly ownsLedger: boolean;
 	private readonly senders = new Map<string, (item: DeliveryItem) => Promise<void>>();
 	private readonly inflight = new Set<string>();
+	private pumping = false;
 	private readonly backoffMs: readonly number[];
 	private readonly ttlMs: number;
 	private readonly sendTimeoutMs: number;
@@ -141,11 +142,14 @@ export class DeliveryQueue {
 		const key = normalizeLedgerKey(req.key ?? `out:${randomUUID()}`);
 		if (!key) throw new Error("delivery: 幂等键非法");
 		const now = this.now();
-		const existing = this.ledger.get(key);
 
-		// 幂等：已经发成功 / 正在发 / 排着队，都不重复发。
+		// 幂等：正在发（账本此刻可能还没有记录）/ 已经发成功 / 排着队，都不重复发。
+		// inflight 检查必须在账本查询之前：done 记录要到发送成功后才落账，
+		// 同一 tick 内并发两次同 key sendNow 时，后到的不能因为 existing 为空而绕过幂等。
+		if (this.inflight.has(key)) return { status: "duplicate" };
+		const existing = this.ledger.get(key);
 		if (existing && existing.direction === "out") {
-			if (existing.state === "done" || this.inflight.has(key)) return { status: "duplicate" };
+			if (existing.state === "done") return { status: "duplicate" };
 			if (existing.state === "claimed" && !this.ledger.isTerminal(existing)) return { status: "duplicate" };
 		}
 
@@ -175,6 +179,19 @@ export class DeliveryQueue {
 
 	/** 后台重试：把到期项逐条发出去（并发 1，保证同渠道顺序）。 */
 	async pump(now = this.now()): Promise<{ sent: number; retried: number; dead: number }> {
+		// 重入守卫：pump 默认每 5s 一轮，而单条 send 最长可等 sendTimeoutMs（默认 30s），
+		// 慢发送必然跨轮。due 是循环前对账本的快照，重叠的下一轮会拿到「本轮尚未 add 进
+		// inflight」的记录造成双发、并打破「并发 1、同渠道顺序」的承诺——直接让重叠轮空手而归。
+		if (this.pumping) return { sent: 0, retried: 0, dead: 0 };
+		this.pumping = true;
+		try {
+			return await this.pumpOnce(now);
+		} finally {
+			this.pumping = false;
+		}
+	}
+
+	private async pumpOnce(now: number): Promise<{ sent: number; retried: number; dead: number }> {
 		let sent = 0;
 		let retried = 0;
 		let dead = 0;
@@ -198,6 +215,9 @@ export class DeliveryQueue {
 				dead += 1;
 				continue;
 			}
+			// sendNow 与 pump 共用 inflight 集合：处理到这条之前再复查一次，
+			// 防止与并发进来的 sendNow（或下一轮已在途的同 key）对同一条双发。
+			if (this.inflight.has(record.key)) continue;
 			this.inflight.add(record.key);
 			try {
 				await withTimeout(sender(item), this.sendTimeoutMs);
