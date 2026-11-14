@@ -1,7 +1,7 @@
 {
 	"id": "bili-scroll",
 	"name": "bili-scroll",
-	"version": "2.10.0",
+	"version": "2.10.1",
 	"icon": "📺",
 	"iconSvg": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><rect x=\"2\" y=\"7\" width=\"20\" height=\"15\" rx=\"3\"/><polyline points=\"17 2 12 7 7 2\"/><line x1=\"8\" y1=\"12\" x2=\"8\" y2=\"12.01\"/><line x1=\"16\" y1=\"12\" x2=\"16\" y2=\"12.01\"/></svg>",
 	"description": "使用当前账号浏览 B 站，以字幕、音频和抽样画面理解视频；2.8 详情页一份 AI 写成的完整内容总结，主页可一键清空刷过的记录。",
