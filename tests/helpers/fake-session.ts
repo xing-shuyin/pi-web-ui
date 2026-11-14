@@ -171,7 +171,7 @@ function cloneDefault(value: unknown): unknown {
 	if (value instanceof Set) return new Set(value);
 	if (value instanceof WeakMap) return new WeakMap();
 	if (value instanceof WeakSet) return new WeakSet();
-	if (Array.isArray(value)) return [];
+	if (Array.isArray(value)) return [...value];
 	if (value !== null && typeof value === "object") return {};
 	return value;
 }
@@ -198,8 +198,20 @@ function isPrototypeAccessor(proto: object, key: string): boolean {
 	return false;
 }
 
+/**
+ * 自动装「每实例独立可变容器」：Map/WeakMap/Set/WeakSet **以及数组**。
+ * 数组必须算进来——`for (const w of this.someArray)` 这类生产代码一旦新增数组字段，
+ * 假体就会以 `xxx is not iterable` 打红（正是本 helper 要消灭的漂移失败模式）。
+ * 原始值仍不装（`disposed=false` / `seq=0` 会静默改写被测分支）。
+ */
 function isSafeDefault(value: unknown): boolean {
-	return value instanceof Map || value instanceof WeakMap || value instanceof Set || value instanceof WeakSet;
+	return (
+		value instanceof Map ||
+		value instanceof WeakMap ||
+		value instanceof Set ||
+		value instanceof WeakSet ||
+		Array.isArray(value)
+	);
 }
 
 function buildFake(proto: object, defaults: Record<string, unknown>, overrides: Loose): Loose {
