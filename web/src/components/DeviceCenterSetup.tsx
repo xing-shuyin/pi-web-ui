@@ -47,7 +47,7 @@ export function DeviceCenterSetup({
 		auth: "password",
 		port: 8790,
 		domain: "",
-		https: false,
+		https: true,
 	});
 	const remoteInput = remoteHubSetup(remote);
 	const [busy, setBusy] = useState(false);

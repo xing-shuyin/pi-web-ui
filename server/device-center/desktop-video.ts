@@ -134,7 +134,7 @@ function args(profile: DesktopProfile, display?: string) {
 		"-maxrate",
 		String(bitrate),
 		"-bufsize",
-		String(Math.round(bitrate / 2)),
+		String(Math.round(bitrate / 10)),
 		"-g",
 		String(fps),
 		"-bf",

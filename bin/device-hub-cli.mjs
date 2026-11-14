@@ -18,10 +18,13 @@ import { setTimeout as delay, setImmediate as yieldImmediate } from "node:timers
 import { basename, dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
-export const HUB_HELP = `Usage: pi-web-ui hub [install|start|stop|restart|status|uninstall|update] [options]
+export const HUB_HELP = `Usage: pi-web-ui hub [install|start|stop|restart|status|uninstall|update|https] [options]
 Without a command, run in the foreground (Ctrl+C to stop).
 Options: --host HOST --port PORT --public-url URL --data-dir PATH
-         --allow-registration[=true|false] --help
+         --allow-registration[=true|false] --https[=auto|off|external] --help
+Public Linux installs configure trusted HTTPS and certificate renewal automatically.
+Use --https=external with your own HTTPS proxy, or --https=off to retain HTTP.
+hub https [--public-url https://ADDRESS] upgrades an existing Hub without re-pairing devices.
 install saves configuration, enables login autostart and starts the Hub.
 update installs the latest Hub package in a managed release directory, restarts and verifies it.
 If the new release cannot start, the previous service definition is restored.
@@ -36,21 +39,38 @@ const ENTRY = fileURLToPath(new URL("./pi-device-hub.mjs", import.meta.url));
 const TASK = "pi-device-hub";
 const UNIT = "pi-device-hub.service";
 const flags = { "--host": "HOST", "--port": "PORT", "--public-url": "PUBLIC_URL", "--data-dir": "DATA_DIR" };
-const optionalEnv = ["DEVICE_DOMAIN", "PATH_ACCESS", "PORTAL_PORTS", "UPDATE_SOURCE", "SERVICE_NAME"];
+const optionalEnv = [
+	"DEVICE_DOMAIN",
+	"PATH_ACCESS",
+	"PORTAL_PORTS",
+	"UPDATE_SOURCE",
+	"SERVICE_NAME",
+	"LEGACY_ORIGINS",
+	"HTTPS",
+];
 
 export function parseHubArgs(argv, env = process.env) {
 	const args = [...argv];
 	const command = args[0] && !args[0].startsWith("-") ? args.shift() : "foreground";
-	if (!["foreground", "install", "start", "stop", "restart", "status", "uninstall", "update"].includes(command))
+	if (
+		!["foreground", "install", "start", "stop", "restart", "status", "uninstall", "update", "https"].includes(command)
+	)
 		throw new Error(`Unknown Hub command: ${command}`);
 	const values = {};
+	let https;
 	if (command === "status" && args.length === 1 && args[0] === "--json") return { command, json: true };
 	if (command === "restart" && args.length === 1 && /^--allow-registration=(true|false)$/.test(args[0]))
 		return { command, registration: args[0].endsWith("=true") ? "1" : "0" };
 	for (let i = 0; i < args.length; i++) {
 		const [key, ...rest] = args[i].split("=");
 		if (key === "--help" || key === "-h") return { command, help: true };
-		if (!["foreground", "install"].includes(command)) throw new Error(`${command} accepts no options`);
+		if (key === "--https" && command === "install") {
+			https = rest.length ? rest.join("=") : "auto";
+			if (!["auto", "off", "external"].includes(https)) throw new Error("--https expects auto, off or external");
+			continue;
+		}
+		if (!["foreground", "install"].includes(command) && !(command === "https" && key === "--public-url"))
+			throw new Error(`${command} accepts no options`);
 		if (key === "--allow-registration") {
 			const value = rest.length ? rest.join("=") : "true";
 			if (!["true", "false"].includes(value)) throw new Error("--allow-registration expects true or false");
@@ -62,19 +82,24 @@ export function parseHubArgs(argv, env = process.env) {
 		if (!value || value.startsWith("--") || /[\x00-\x1f]/.test(value)) throw new Error(`Invalid value for ${key}`);
 		values[flags[key]] = value;
 	}
+	if (command === "https") return { command, publicUrl: values.PUBLIC_URL };
 	if (!["foreground", "install"].includes(command)) return { command };
 	const settings = {};
+	https ??= env.PI_DEVICE_HUB_HTTPS;
+	if (https !== undefined && !["auto", "off", "external", "managed"].includes(https))
+		throw new Error("Invalid PI_DEVICE_HUB_HTTPS setting");
 	for (const key of [...Object.values(flags), ...optionalEnv]) {
 		const value = values[key] ?? env[`PI_DEVICE_HUB_${key}`];
 		if (value !== undefined) settings[`PI_DEVICE_HUB_${key}`] = value;
 	}
 	settings.PI_DEVICE_HUB_HOST ??= "127.0.0.1";
+	if (https) settings.PI_DEVICE_HUB_HTTPS = https;
 	settings.PI_DEVICE_HUB_PORT ??= "8790";
 	settings.PI_DEVICE_HUB_DATA_DIR = resolve(settings.PI_DEVICE_HUB_DATA_DIR ?? join(homedir(), ".pi-device-hub"));
 	settings.PI_DEVICE_HUB_ALLOW_REGISTRATION =
 		values.ALLOW_REGISTRATION ?? (command === "foreground" && env.PI_DEVICE_HUB_ALLOW_REGISTRATION === "1" ? "1" : "0");
 	validateSettings(settings);
-	return { command, settings };
+	return { command, settings, ...(https ? { https } : {}) };
 }
 
 function validateSettings(settings) {
@@ -487,6 +512,7 @@ export async function runHubCli(
 		log = console.log,
 		foreground = runForeground,
 		upgrade,
+		httpsSetup,
 		signal,
 	} = {},
 ) {
@@ -571,6 +597,26 @@ export async function runHubCli(
 	if (parsed.command === "foreground") return foreground(parsed.settings);
 	const plan = suppliedPlan ?? hubServicePlan({ env });
 	const command = parsed.command;
+	const configureHttps = async () => {
+		const { enableHubHttps } = await import("./hub-https.mjs");
+		return (httpsSetup ?? enableHubHttps)({
+			plan,
+			publicUrl: parsed.publicUrl,
+			run,
+			probe: (settings) => probeHub(settings, signal),
+			wait: (settings, restoring) => waitForHub(settings, restoring ? undefined : signal),
+			signal,
+			log,
+		});
+	};
+	if (command === "https") {
+		const release = acquireHubLock(plan.root);
+		try {
+			return await configureHttps();
+		} finally {
+			release();
+		}
+	}
 	if (command === "update") {
 		const performUpgrade = upgrade ?? (await import("./hub-upgrade.mjs")).updateInstalledHub;
 		return performUpgrade({ plan, env, log, signal });
@@ -653,6 +699,10 @@ export async function runHubCli(
 		if (["install", "start", "restart", "update"].includes(command)) {
 			const settings = JSON.parse(readFileSync(plan.config, "utf8"));
 			await waitForHub(settings, signal);
+		}
+		if (command === "install" && !["off", "external"].includes(parsed.https)) {
+			const { automaticHttps } = await import("./hub-https.mjs");
+			if (parsed.https === "auto" || automaticHttps(parsed.settings.PI_DEVICE_HUB_PUBLIC_URL)) await configureHttps();
 		}
 		log(`Hub ${command} completed.${command === "uninstall" ? " Account/device data retained." : ""}`);
 	} catch (error) {

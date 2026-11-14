@@ -50,12 +50,17 @@ describe("device center first-run setup", () => {
 			port: 9000,
 			publicUrl: "https://hub.example.com",
 		});
+		expect(remoteHubSetup({ ...remote, https: true })).toEqual({
+			host: "127.0.0.1",
+			port: 9000,
+			publicUrl: "https://203.0.113.10",
+		});
+		expect(prompt).toContain("Explicit HTTP: use --https=off");
 		for (const patch of [
 			{ server: "bad;echo" },
 			{ username: "root;echo" },
 			{ sshPort: 0 },
 			{ port: 80 },
-			{ https: true },
 			{ domain: "user:secret@example.com" },
 		])
 			expect(remoteHubSetup({ ...remote, ...patch })).toBeNull();
@@ -87,11 +92,11 @@ describe("device center first-run setup", () => {
 		expect(prompt).toContain(HUB_DEPLOYMENT_GUIDE_URL);
 		expect(prompt).toContain(HUB_DEPLOYMENT_GUIDE_PAGE_URL);
 		expect(prompt).toContain("If unavailable");
-		expect(prompt).toContain("Domain and HTTPS are optional");
+		expect(prompt).toContain("Domain is optional");
 		expect(prompt).toContain("OS firewall from cloud security groups");
 		expect(prompt).toContain("actual TCP port, source scope and destination rule");
 		expect(prompt).toContain("mark external access pending, then recheck");
-		expect(HUB_INSTALL_EXAMPLE).toContain("--public-url http://SERVER_IP:8790");
+		expect(HUB_INSTALL_EXAMPLE).toContain("--public-url https://SERVER_IP");
 		expect(() => buildHubDeploymentPrompt({ ...input, host: ";echo" }, null, "current")).toThrow();
 	});
 	it("retains group data on request failure and discovers local or remote collaboration", () => {

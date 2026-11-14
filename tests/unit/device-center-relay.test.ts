@@ -126,6 +126,38 @@ async function fixture(onCommand?: Parameters<typeof createDeviceConnector>[0]["
 	};
 }
 describe("device reverse relay", () => {
+	it("keeps credential-based device connectors on an explicit pre-HTTPS origin and rejects browsers there", async () => {
+		const server = http.createServer();
+		const port = await listen(server);
+		const relay = createDeviceRelay({
+			server,
+			publicUrl: "https://hub.example.com",
+			legacyOrigins: ["http://hub.example.com:8790"],
+			authenticateDevice: (id, key) => id === "dev1" && key === "credential",
+			getAccount: () => null,
+			ownsDevice: () => false,
+		});
+		cleanup.push(() => relay.close());
+		const connect = (headers: Record<string, string>) =>
+			new WebSocket(`ws://127.0.0.1:${port}/device-connect?deviceId=dev1`, { headers });
+		const device = connect({ Host: "hub.example.com:8790", Authorization: "Bearer credential" });
+		cleanup.push(() => device.terminate());
+		await once(device, "open");
+		expect(relay.isOnline("dev1")).toBe(true);
+		for (const headers of [
+			{ Host: "evil.test", Authorization: "Bearer credential" },
+			{ Host: "hub.example.com:8790", Authorization: "Bearer wrong" },
+			{ Host: "hub.example.com:8790", Authorization: "Bearer credential", Origin: "http://hub.example.com:8790" },
+		]) {
+			const denied = connect(headers as Record<string, string>);
+			cleanup.push(() => denied.terminate());
+			await new Promise<void>((resolve, reject) => {
+				denied.once("open", () => reject(Error("Unexpected authenticated upgrade")));
+				denied.once("error", () => resolve());
+			});
+		}
+		expect(relay.isOnline("dev1")).toBe(true);
+	});
 	it("keeps connector tasks and RPC working without a device domain and refuses web opens", async () => {
 		let relay: ReturnType<typeof createDeviceRelay>;
 		const server = http.createServer((req, res) => {

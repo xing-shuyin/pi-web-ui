@@ -644,7 +644,7 @@ describe("device desktop native route", () => {
 		expect(delivered).toHaveLength(3);
 		expect(session.close).toHaveBeenCalledTimes(1);
 	});
-	it("negotiates cumulative JPEG feedback and expands the window for a 105 ms round trip", async () => {
+	it("negotiates cumulative JPEG feedback without treating one slow ACK as bandwidth", async () => {
 		const f = await fixture();
 		const { ws, messages } = await connected(f.port, "/desktop-ws?jpegFeedback=1");
 		let now = 0;
@@ -666,15 +666,15 @@ describe("device desktop native route", () => {
 		).toContainEqual({ type: "ready", dynamicQuality: false, jpegFeedback: 1 });
 		now = 105;
 		await ack(1);
-		for (let i = 0; i < 8; i++) await send(`frame-${i}`, i + 2);
+		for (let i = 0; i < 2; i++) await send(`frame-${i}`, i + 2);
 		f.sessions[0].options.onFrame(Buffer.from("superseded"));
 		f.sessions[0].options.onFrame(Buffer.from("latest"));
 		await ack(1000);
 		await ack(1);
-		expect(frames()).toHaveLength(9);
+		expect(frames()).toHaveLength(3);
 		now = 210;
-		await ack(9);
-		await vi.waitFor(() => expect(frames()).toHaveLength(10));
+		await ack(3);
+		await vi.waitFor(() => expect(frames()).toHaveLength(4));
 		expect(frames().at(-1)!.data.toString()).toBe("latest");
 		expect(f.sessions[0].input).not.toHaveBeenCalled();
 	});

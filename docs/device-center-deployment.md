@@ -12,9 +12,9 @@ pi-web-ui 是编码智能体的 Web 界面。设备中心（Hub）是它的独�
 
 本指南部署的是 Hub，不是聊天主服务。Hub 默认端口为 **8790**，聊天主服务默认端口为 8787。运行 Hub 不需要配置模型 API Key，也不需要启动聊天主服务。
 
-最小可用方案：一台可访问的服务器、SSH 登录方式、一个服务端口。**默认使用 HTTP，通过服务器 IP 和端口访问；域名、HTTPS、反向代理均为可选项。**
+公网 Linux 默认使用自动 HTTPS，域名不是必需项，公网 IPv4 也可申请可信证书。新部署运行 `pi-web-ui hub install --public-url https://实际公网IPv4或域名 --allow-registration`；已有 Hub 更新后运行 `pi-web-ui hub https`。安装器管理证书、HTTPS/WebSocket 网关及自动续期，不依赖固定服务器。前置条件及兼容迁移见 [公网 HTTPS 自动部署](device-center.md#公网-https-自动部署)。
 
-HTTP 会明文传输账号及会话数据，适合可信内网或临时验证；公网长期使用建议配置 HTTPS。这不构成 HTTP 部署的前置要求。
+HTTP 仍适用于可信内网或临时验证，显式使用 `--https=off`；已有 TLS 代理使用 `--https=external`，安装器不会覆盖它。以下第 4 节保留显式 HTTP 的完整排查步骤。
 
 ## 2. 部署前需要的信息
 
@@ -27,7 +27,7 @@ HTTP 会明文传输账号及会话数据，适合可信内网或临时验证；
 | 认证方式      | 密码 / SSH 密钥 / 已有 SSH 配置 | 在安全连接通道中使用，不写入聊天消息                     |
 | Hub 访问端口  | `8790`                          | HTTP 默认直接访问此端口；建议选 1024–65535               |
 | 域名（可选）  | `hub.example.com`               | 用户拥有并能修改 DNS 的域名                              |
-| HTTPS（可选） | 默认关闭                        | 启用时需要证书及 TLS 入口                                |
+| HTTPS（可选） | 公网 Linux 默认开启             | 自动申请并续期证书，需公网 TCP 80/443                    |
 
 本文的 `203.0.113.10` 和 `hub.example.com` 均为示例，必须替换成真实值。示例命令适用于 Linux/macOS shell；Windows 使用 PowerShell 对应的路径和环境变量语法。
 
@@ -57,7 +57,7 @@ HTTP 会明文传输账号及会话数据，适合可信内网或临时验证；
 
 安装依赖时优先复用合适的 Node.js；需要新装时可使用 fnm 安装受支持的 LTS 版本，并确保后续服务使用的 Node 可执行文件长期存在。不要卸载其他服务依赖的运行时。
 
-## 4. 默认方案：IP + HTTP
+## 4. 显式 HTTP：内网或临时验证
 
 以下以 Linux 远程服务器、访问端口 8790 为例。
 
@@ -77,7 +77,7 @@ npm 全局目录不可写时，优先使用该账号的 fnm 或用户级 npm 前
 ### 4.2 安装并启动 Hub
 
 ```bash
-pi-web-ui hub install --host 0.0.0.0 --port 8790 --public-url http://203.0.113.10:8790 --allow-registration
+pi-web-ui hub install --https=off --host 0.0.0.0 --port 8790 --public-url http://203.0.113.10:8790 --allow-registration
 pi-web-ui hub status --json
 ```
 
@@ -175,16 +175,16 @@ curl --fail --show-error http://203.0.113.10:8790/health
 
 将域名 A 记录指向服务器公网 IPv4。仅在服务器和网络支持 IPv6 时设置 AAAA 记录。设备访问地址可以是 `http://hub.example.com:8790`，仍需开放 8790。
 
-使用域名并不自动启用 HTTPS，也不会自动移除非默认端口。首次安装时，把命令中的 `--public-url` 换成这一地址即可。
+要显式保留 HTTP，安装时同时传 `--https=off`；否则公网 Linux 安装会自动启用 HTTPS。
 
 ### 5.2 域名 + HTTPS
 
-推荐由 Caddy 或已有 Nginx 终止 TLS，再反向代理到 Hub。Hub 本身继续监听 HTTP，`--public-url` 指向用户访问的 HTTPS 地址。
+默认由安装器配置内置 TLS 网关。已有 Caddy/Nginx 时使用 `--https=external`，保留现有代理；下面是外部代理方式。Hub 本身继续监听内部 HTTP。
 
 首次安装示例：
 
 ```bash
-pi-web-ui hub install --host 127.0.0.1 --port 8790 --public-url https://hub.example.com --allow-registration
+pi-web-ui hub install --https=external --host 127.0.0.1 --port 8790 --public-url https://hub.example.com --allow-registration
 ```
 
 Caddy 与 Hub 位于同一机器、已有域名且没有其他服务占用 80/443 时，站点配置示例：
@@ -205,7 +205,7 @@ Hub 的 `--public-url` 必须是根 origin，例如 `https://hub.example.com`；
 
 先记录 `status --json`、运行账号、数据目录和注册策略，并备份数据及代理配置。当前 CLI 的 `restart` 除注册开关外不接受部署参数，不能编造 `restart --public-url ...`。
 
-需要改变监听地址或公开地址时，应先停服，再以相同账号、相同数据目录运行带新参数的 `hub install`，显式保留所需注册策略。验证 HTTPS 和设备重连后再关闭旧的公网 HTTP 端口；失败时恢复原配置。安排停机窗口，不能迁移到新的空数据目录。
+更新到支持自动 HTTPS 的版本后，运行 `pi-web-ui hub https`，或用 `--public-url https://实际域名` 指定新地址。它会验证 HTTPS 并保留旧设备凭据连接；验证失败恢复原配置。不要卸载重装或切换数据目录。待全部设备改用 HTTPS 地址后再关闭旧 HTTP 端口。
 
 ## 6. 创建账号并连接设备
 
@@ -257,7 +257,7 @@ pi-web-ui hub uninstall
 
 收到部署任务时，先读取本文，再把用户提供的字段作为数据处理，不把字段拼成任意 shell 片段。缺少信息时集中询问最小必要项，已有答案不重复询问。
 
-1. 明确部署目标；默认 HTTP、端口 8790，域名和 HTTPS 仅在用户选择时配置。旧表单中的 HTTPS 示例不代表用户主动选择 HTTPS，应确认实际意图。
+1. 明确部署目标；公网 Linux 默认自动 HTTPS，域名可选，内部端口 8790；用户显式选择 HTTP 时使用 `--https=off`。
 2. 远程部署需要真实服务器地址、SSH 端口、账号和可用认证通道。本机平台信息只代表本机；`0.0.0.0` 是监听地址，不是 SSH 地址或公开地址。
 3. 先执行已授权的只读检测，再给出将使用的账号、端口、数据目录、访问地址及服务方式。用户已授权部署时推进安装；遇到覆盖已有配置、冲突或确需决策的事项再询问。
 4. 没有安全 SSH 工具时，提供由用户在目标服务器执行的分步命令；有工具且已获授权时，校验主机身份后执行。不得索要聊天明文密码，不编造工具能力或执行结果。
@@ -292,7 +292,7 @@ HTTPS：不启用
 
 ## 9. 当前 AI 入口的能力边界
 
-当前 pi-web-ui 的远程部署入口提供服务器地址、SSH 端口、登录账号、认证方式和中心访问端口，默认生成 `http://服务器地址:端口`。域名和 HTTPS 收在可选设置中，页面展示云安全组、来源范围、账号创建和外部验证等用户操作提示。
+当前 pi-web-ui 的远程部署入口提供服务器地址、SSH 端口、登录账号、认证方式和中心内部端口，默认生成 `https://服务器地址`，支持公网 IPv4 无域名部署。HTTPS 开关与可选域名在连接设置中，页面展示云安全组、来源范围、账号创建和外部验证等用户操作提示。
 
 点击“开始 AI 辅助部署”会新建部署对话，传入公开指南链接、选定连接信息、部署配置与当前服务的有限环境信息，保留原对话。页面不收集密码或私钥，也不会仅因点击按钮而自动建立 SSH 连接；密码认证在后续安全 SSH 终端中进行。
 

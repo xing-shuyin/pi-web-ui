@@ -1,4 +1,5 @@
 import { join } from "node:path";
+import { legacyHubHosts } from "./hub-origins.js";
 import express from "express";
 import { validInteractionAnswer, validInteractionProjection } from "./human-interaction.js";
 import type { DeviceTaskInteraction } from "../protocol.js";
@@ -150,6 +151,7 @@ export interface DeviceHubOptions {
 	server?: Server;
 	dataDir: string;
 	publicUrl: string;
+	legacyOrigins?: string[];
 	deviceDomain?: string;
 	pathAccess?: boolean;
 	portals?: DevicePortals;
@@ -208,6 +210,7 @@ export async function createDeviceHub(options: DeviceHubOptions) {
 	}
 	const getHistoryLimit = () => currentSettings().groupRetentionLimit ?? GROUP_RETENTION_LIMIT;
 	const origin = new URL(options.publicUrl);
+	const legacyHosts = legacyHubHosts(options.legacyOrigins);
 	if (
 		!["http:", "https:"].includes(origin.protocol) ||
 		origin.pathname !== "/" ||
@@ -374,6 +377,12 @@ export async function createDeviceHub(options: DeviceHubOptions) {
 		next();
 	});
 	app.use((req, res, next) => {
+		if (req.headers.host && legacyHosts.has(req.headers.host) && req.headers.host !== origin.host) {
+			if (users.has(req) || agents.has(req) || (req.method === "GET" && req.path === "/health"))
+				req.headers.host = origin.host;
+			else if (["GET", "HEAD"].includes(req.method))
+				return res.redirect(308, origin.origin + (req.originalUrl.startsWith("/") ? req.originalUrl : "/"));
+		}
 		if (!isIncomingWebhookRequest(req) && req.headers.host !== origin.host)
 			return res.status(421).json({ error: "Host rejected" });
 		if (

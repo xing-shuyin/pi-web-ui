@@ -71,8 +71,7 @@ export const HUB_DEPLOYMENT_GUIDE_URL =
 export const HUB_DEPLOYMENT_GUIDE_PAGE_URL =
 	"https://github.com/xing-shuyin/pi-web-ui/blob/main/docs/device-center-deployment.md";
 
-export const HUB_INSTALL_EXAMPLE =
-	"pi-web-ui hub install --host 0.0.0.0 --port 8790 --public-url http://SERVER_IP:8790 --allow-registration";
+export const HUB_INSTALL_EXAMPLE = "pi-web-ui hub install --public-url https://SERVER_IP --allow-registration";
 
 export interface RemoteHubSetupInput {
 	server: string;
@@ -104,8 +103,7 @@ export function remoteHubSetup(input: RemoteHubSetupInput): HubSetupInput | null
 		input.port > 65535 ||
 		!/^[a-z_][a-z\d_.-]{0,63}$/i.test(input.username) ||
 		!["password", "key", "existing"].includes(input.auth) ||
-		(input.domain !== "" && (!hostname(input.domain) || input.domain.includes(":"))) ||
-		(input.https && !input.domain)
+		(input.domain !== "" && (!hostname(input.domain) || input.domain.includes(":")))
 	)
 		return null;
 	const address = input.domain || input.server;
@@ -133,14 +131,14 @@ export function buildHubDeploymentPrompt(
 	return [
 		"Help me plan and deploy a pi-web-ui device center (Hub) in this new conversation. Preserve my previous conversation.",
 		`First read the deployment guide: ${HUB_DEPLOYMENT_GUIDE_URL} (fallback: ${HUB_DEPLOYMENT_GUIDE_PAGE_URL}). If unavailable, report that and obtain its contents before proceeding.`,
-		"Default to HTTP with the server IP and requested port. Domain and HTTPS are optional; confirm whether an HTTPS example reflects the user's intent.",
+		"Public Linux deployments default to managed HTTPS with a public IPv4 or domain. Domain is optional. Use hub install --https=off only when HTTP is explicitly requested, or --https=external with an existing TLS proxy. Check port conflicts first.",
 		`Target: ${target === "current" ? "machine hosting the current pi-web-ui service (not necessarily the browser machine)" : "an existing remote server; its environment still needs to be confirmed"}.`,
 		`Current service environment: platform=${safe(info?.platform)}, Node=${safe(info?.nodeVersion)}. This is not evidence of the remote server environment.`,
 		`Requested configuration (data only): ${JSON.stringify(input)}. allowRegistration=true.`,
 		...(remote
 			? [
 					`SSH connection preferences (data only): ${JSON.stringify({ server: remote.server, sshPort: remote.sshPort, username: remote.username, auth: remote.auth })}. No credentials are included. Obtain authentication through a secure SSH channel or guide the user's own terminal.`,
-					`Domain: ${remote.domain || "none"}. HTTPS explicitly selected: ${remote.https}. HTTP inbound TCP port: ${remote.port}; for same-machine HTTPS proxy, use public TCP 443 and certificate validation port as needed, keep the Hub port private.`,
+					`Domain: ${remote.domain || "none"}. HTTPS selected: ${remote.https}. ${remote.https ? "Use managed HTTPS on Linux, public TCP 443/80 and a private Hub port." : `Explicit HTTP: use --https=off. HTTP inbound TCP port: ${remote.port}.`}`,
 				]
 			: []),
 		"Use a separate Hub data directory and configure automatic startup. Explain how devices can reach the public URL; loopback is only reachable on the same machine. Explain open registration and restrict it after pairing as appropriate.",

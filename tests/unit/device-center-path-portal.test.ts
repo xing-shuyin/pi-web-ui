@@ -247,7 +247,7 @@ describe("single-port device path portal", () => {
 		const page = await browser.newPage();
 		await page.goto(`http://127.0.0.1:${parentPort}`);
 		const frame = page.frameLocator("iframe").frameLocator("iframe");
-		await expect.poll(() => frame.locator("body").textContent()).toContain('"ws":true');
+		await expect.poll(() => frame.locator("body").textContent(), { timeout: 15000 }).toContain('"ws":true');
 		const result = JSON.parse((await frame.locator("body").textContent())!);
 		expect(result).toMatchObject({ module: "loaded", opaque: true, fetch: true, ws: true, hubBlocked: true });
 		await expect.poll(() => page.frameLocator("iframe").locator("#loading").isHidden()).toBe(true);

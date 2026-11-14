@@ -8,6 +8,7 @@ import { fileURLToPath } from "node:url";
 import { isIP } from "node:net";
 import { killPidTree } from "../process-utils.js";
 import { probeDeviceTunnel, type DeviceLanConnection, type createDeviceLanServer } from "./device-lan.js";
+import { createBrowserPeerGateway } from "./browser-peer-gateway.js";
 import {
 	DEVICE_P2P_TIMEOUT_MS,
 	DEVICE_P2P_GATHER_TIMEOUT_MS,
@@ -103,6 +104,87 @@ export async function deviceP2PAvailable() {
 	return !!(await binaryPath()) && running.size < 16;
 }
 
+/** Browser peers use DTLS plus an expiring gateway key; native PSK sessions are unchanged. */
+export function createDeviceBrowserP2PTarget(lan: ReturnType<typeof createDeviceLanServer>) {
+	const sessions = new Map<string, () => void>();
+	let generation = 0,
+		pending = 0;
+	return {
+		async accept(value: unknown, signal: AbortSignal) {
+			if (value && typeof value === "object" && Reflect.get(value, "op") === "close") {
+				const id = Reflect.get(value, "session");
+				if (typeof id === "string") sessions.get(id)?.();
+				return null;
+			}
+			if (!validDeviceP2PSignal(value) || signal.aborted || sessions.size + pending >= 8) return null;
+			pending++;
+			const captured = generation;
+			let grant: Awaited<ReturnType<typeof lan.issueGrant>>,
+				gateway: Awaited<ReturnType<typeof createBrowserPeerGateway>> | undefined;
+			let helper: Awaited<ReturnType<typeof startHelper>> | undefined, timer: ReturnType<typeof setTimeout> | undefined;
+			let stopped = false;
+			const stop = () => {
+				if (stopped) return;
+				stopped = true;
+				clearTimeout(timer);
+				if (gateway) sessions.delete(gateway.key);
+				gateway?.close();
+				helper?.close();
+				if (grant) lan.revoke(grant.identity);
+			};
+			const valid = () => !stopped && !signal.aborted && captured === generation;
+			try {
+				if (!(await deviceP2PAvailable()) || !valid()) return null;
+				const config = settings();
+				grant = await lan.issueGrant({ loopbackOnly: true });
+				if (!grant || !valid()) {
+					stop();
+					return null;
+				}
+				const connection = await probeDeviceTunnel(grant, grant.port, { signal, timeoutMs: 3000 });
+				if (!connection || !valid()) {
+					connection?.close();
+					stop();
+					return null;
+				}
+				connection.agent.maxSockets = 32;
+				gateway = await createBrowserPeerGateway(connection);
+				if (!valid()) {
+					stop();
+					return null;
+				}
+				helper = await startHelper();
+				helper.onClose(stop);
+				if (!valid()) {
+					stop();
+					return null;
+				}
+				helper.send({ type: "start", role: "target", port: gateway.port, sdp: value.sdp, ...config });
+				const answer = await helper.wait("sdp", AbortSignal.any([signal, AbortSignal.timeout(8000)]));
+				if (!valid()) {
+					stop();
+					return null;
+				}
+				sessions.set(gateway.key, stop);
+				timer = setTimeout(stop, Math.max(1, grant.expiresAt - Date.now()));
+				timer.unref();
+				void helper.wait("ready", AbortSignal.timeout(25000)).catch(stop);
+				return { version: 1, signal: { version: 1, sdp: answer.sdp }, key: gateway.key, expiresAt: grant.expiresAt };
+			} catch {
+				stop();
+				return null;
+			} finally {
+				pending--;
+			}
+		},
+		reset() {
+			generation++;
+			for (const stop of sessions.values()) stop();
+			sessions.clear();
+		},
+	};
+}
+
 export async function diagnoseDeviceP2P() {
 	const started = Date.now();
 	const report = {
@@ -113,8 +195,7 @@ export async function diagnoseDeviceP2P() {
 		candidates: { host: 0, srflx: 0, relay: 0 },
 		status: "helper-missing",
 		elapsedMs: 0,
-		scope:
-			"Local ICE gathering only; remote reachability is not tested. Cloud Hub browser access currently uses Hub relay.",
+		scope: "Local helper ICE gathering only; remote reachability and the separate browser WebRTC path are not tested.",
 	};
 	let helper: Awaited<ReturnType<typeof startHelper>> | undefined;
 	try {

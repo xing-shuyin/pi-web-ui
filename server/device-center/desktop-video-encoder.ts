@@ -139,7 +139,7 @@ export function rawVideoArguments(
 		"-maxrate",
 		String(bitrate),
 		"-bufsize",
-		String(Math.round(bitrate / 4)),
+		String(Math.round(bitrate / 10)),
 		"-g",
 		String(profile.fps),
 		"-bf",

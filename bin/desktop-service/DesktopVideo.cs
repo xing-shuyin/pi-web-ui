@@ -129,7 +129,9 @@ internal static class DesktopVideo {
         string metadata="h264_metadata=aud=insert";
         if(c.Output!=null&&c.Build==DesktopEncoderBuild.NvidiaCompatible&&!c.DirectTexture&&!c.Readback&&c.Codec!="libx264")
             metadata+=":matrix_coefficients=1:video_full_range_flag=0";
-        return args+"-b:v "+bitrate+" -maxrate "+bitrate+" -bufsize "+(bitrate/2)+" -g "+s.Fps+" -bf 0 -bsf:v "+metadata+" -flush_packets 1 -f h264 pipe:1";
+        // A half-second VBV permits large periodic IDRs that block the ordered WAN
+        // stream. Budget 100 ms, retaining the requested average bitrate and FPS.
+        return args+"-b:v "+bitrate+" -maxrate "+bitrate+" -bufsize "+(bitrate/10)+" -g "+s.Fps+" -bf 0 -bsf:v "+metadata+" -flush_packets 1 -f h264 pipe:1";
     }
     static IntPtr ClientHandle(AnonymousPipeServerStream pipe) { return new IntPtr(Int64.Parse(pipe.GetClientHandleAsString())); }
     sealed class StreamState { public long LastOutput; public volatile bool Ended; public string Error=""; }

@@ -111,7 +111,7 @@ export function installHubSetupRoutes(app: Express, dataDir: string, runner?: Ru
 				signal.addEventListener("abort", abort, { once: true });
 				const timeout = setTimeout(
 					() => terminate("Hub operation timed out; check hub status before retrying"),
-					120_000,
+					args.includes("install") ? 15 * 60_000 : 120_000,
 				);
 				const collect = (chunk: Buffer) => {
 					bytes += chunk.byteLength;
@@ -232,7 +232,8 @@ export function installHubSetupRoutes(app: Express, dataDir: string, runner?: Ru
 			.then((output) => {
 				if (closed || controller.signal.aborted)
 					throw new Error("Installation interrupted; check hub status before retrying");
-				res.json({ publicUrl: input.publicUrl, output });
+				const httpsUrl = /^HTTPS ready: (https:\/\/\S+)$/m.exec(output)?.[1];
+				res.json({ publicUrl: httpsUrl ?? input.publicUrl, output });
 			})
 			.catch((error: unknown) => {
 				res.status(500).json({ error: error instanceof Error ? error.message : "Hub installation failed" });

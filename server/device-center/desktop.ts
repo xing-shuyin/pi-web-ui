@@ -394,7 +394,7 @@ export function createDeviceDesktop({
 		let hasDisplayAck = false;
 		const quality = new DesktopQuality();
 		const videoFlow = new DesktopVideoFlow();
-		const jpegFlow = new DesktopVideoFlow();
+		const jpegFlow = new DesktopVideoFlow({ deliveryBudgetMs: 100 });
 		let automatic = true,
 			flowPaused = false,
 			recoveryAt = -Infinity;
@@ -529,10 +529,10 @@ export function createDeviceDesktop({
 		};
 		const armAck = () => {
 			clearTimeout(ackTimer);
-			if (jpegFlow.oldest !== undefined) {
+			if (jpegFlow.progressAt !== undefined) {
 				ackTimer = setTimeout(
 					() => fail("Desktop display stopped acknowledging frames. Reconnect to resume."),
-					Math.max(1, DESKTOP_LIMITS.ackMs - (performance.now() - jpegFlow.oldest)),
+					Math.max(1, DESKTOP_LIMITS.ackMs - (performance.now() - jpegFlow.progressAt)),
 				);
 				ackTimer.unref();
 			}
@@ -542,7 +542,7 @@ export function createDeviceDesktop({
 				ended ||
 				failing ||
 				sending ||
-				(jpegFeedback ? jpegFlow.blocked(currentProfile.fps) : inFlight.size >= 2) ||
+				(jpegFeedback ? jpegFlow.blocked(currentProfile.fps, latestFrame?.length) : inFlight.size >= 2) ||
 				!latestFrame ||
 				ws.readyState !== WebSocket.OPEN
 			)
@@ -552,7 +552,7 @@ export function createDeviceDesktop({
 			const jpeg = latestFrame;
 			latestFrame = undefined;
 			sending = true;
-			inFlight.set(jpegFlow.frame(performance.now()), jpeg.length);
+			inFlight.set(jpegFlow.frame(performance.now(), jpeg.length), jpeg.length);
 			inFlightBytes += jpeg.length;
 			sent++;
 			queued += jpeg.length;
