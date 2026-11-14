@@ -199,4 +199,25 @@ describe("DeliveryQueue（出站投递：快路径 + 退避 + 死信）", () => 
 		expect(reopened.byDirection("in")).toHaveLength(1);
 		expect(reopened.byDirection("out")).toHaveLength(1);
 	});
+
+	it("同 key 分属两个方向时互不覆盖（in/out 命名空间隔离）", async () => {
+		const { queue, inbox, ledger } = make();
+		queue.registerSender("qq", async () => {});
+		// 入站先占同 key 并完结
+		expect(inbox.claim("shared:1")).toMatchObject({ status: "new" });
+		inbox.complete("shared:1");
+		// 出站同 key 必须走自己的记录，不被入站 done 判重吞掉
+		const sent = await queue.sendNow({ channel: "qq", target: {}, payload: {}, key: "shared:1" });
+		expect(sent).toEqual({ status: "sent" });
+		// 入站视角仍是 done，出站视角是 done，两条记录并存
+		expect(inbox.claim("shared:1")).toMatchObject({ status: "duplicate", reason: "done" });
+		expect(ledger.get("shared:1", "in")?.state).toBe("done");
+		expect(ledger.get("shared:1", "out")?.state).toBe("done");
+		expect(ledger.all()).toHaveLength(2);
+		// 跨重启：同一文件里同 key 的两个方向都能读回
+		ledger.flush();
+		const reopened = new PluginLedgerStore({ dataDir: dir, pluginId: "qq", flushDelayMs: 0, now: () => now });
+		expect(reopened.get("shared:1", "in")?.state).toBe("done");
+		expect(reopened.get("shared:1", "out")?.state).toBe("done");
+	});
 });
