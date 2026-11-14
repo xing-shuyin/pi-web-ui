@@ -40,6 +40,5 @@
 	"desktop.clipboardBoth": "Bidirectionnel",
 	"desktop.clipboardReady": "Texte, images, fichiers · copier pour synchroniser",
 	"desktop.clipboardHint": "Synchronise les nouvelles copies. Maximum 32 fichiers et 32 Mo par copie.",
-	"desktop.clipboardLocal": "La synchronisation automatique nécessite pi-web-ui sur votre propre localhost.",
-	"desktop.clipboardError": "Synchronisation arrêtée. Vérifiez les versions, autorisations et tailles, puis choisissez de nouveau le sens."
+	"desktop.clipboardLocal": "La synchronisation automatique nécessite pi-web-ui sur votre propre localhost."
 }

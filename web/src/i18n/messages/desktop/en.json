@@ -40,6 +40,5 @@
 	"desktop.clipboardBoth": "Both directions",
 	"desktop.clipboardReady": "Text, images, files · copy to sync",
 	"desktop.clipboardHint": "Syncs copies made after enabling. Up to 32 files and 32 MB per copy.",
-	"desktop.clipboardLocal": "Automatic sync requires opening the remote desktop from pi-web-ui on your own localhost.",
-	"desktop.clipboardError": "Sync stopped. Check both versions, clipboard permissions and file size, then select a direction again."
+	"desktop.clipboardLocal": "Automatic sync requires opening the remote desktop from pi-web-ui on your own localhost."
 }

@@ -40,6 +40,5 @@
 	"desktop.clipboardBoth": "Ambas direcciones",
 	"desktop.clipboardReady": "Texto, imágenes y archivos · copia para sincronizar",
 	"desktop.clipboardHint": "Sincroniza las nuevas copias. Hasta 32 archivos y 32 MB por copia.",
-	"desktop.clipboardLocal": "La sincronización automática requiere abrir el escritorio desde pi-web-ui en tu localhost.",
-	"desktop.clipboardError": "Sincronización detenida. Revisa versiones, permisos y tamaño, y selecciona de nuevo la dirección."
+	"desktop.clipboardLocal": "La sincronización automática requiere abrir el escritorio desde pi-web-ui en tu localhost."
 }

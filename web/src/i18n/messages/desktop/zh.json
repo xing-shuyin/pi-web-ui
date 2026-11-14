@@ -40,6 +40,5 @@
 	"desktop.clipboardBoth": "双向同步",
 	"desktop.clipboardReady": "文本、图片、文件 · 复制后同步",
 	"desktop.clipboardHint": "同步开启后的复制操作；每次最多 32 个文件、合计 32 MB。",
-	"desktop.clipboardLocal": "自动同步需要从本机 localhost 的 pi-web-ui 打开远程桌面。",
-	"desktop.clipboardError": "同步已停止：请检查两端版本、剪贴板权限及文件大小，重新选择方向再试。"
+	"desktop.clipboardLocal": "自动同步需要从本机 localhost 的 pi-web-ui 打开远程桌面。"
 }
