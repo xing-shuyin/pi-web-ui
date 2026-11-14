@@ -21,6 +21,24 @@ function walkFiles(dir: string, accept: (name: string) => boolean, out: string[]
 const pluginFiles = walkFiles(join(ROOT, "plugins"), (n) => n.endsWith(".mjs") && !n.includes(".test."));
 const serverFiles = walkFiles(join(ROOT, "server"), (n) => n.endsWith(".ts"));
 const webFiles = walkFiles(WEB_ROOT, (n) => n.endsWith(".ts") || n.endsWith(".tsx"));
+
+// 存量手写异步 tmp+rename（fs/promises 形态）。守卫 3 从「同步 API 组合」扩到两种形态时
+// 一次性豁免的历史文件：**这份名单只许变短**，改到这些文件时请顺手换成 writeAtomic。
+const ASYNC_ATOMIC_LEGACY = new Set([
+	"server/attachment-store.ts",
+	"server/device-center/bots.ts",
+	"server/device-center/device-integration.ts",
+	"server/device-center/device-portals.ts",
+	"server/device-center/file-sync.ts",
+	"server/device-center/local.ts",
+	"server/device-center/mobile-notification-forwarder.ts",
+	"server/device-center/partition-log.ts",
+	"server/device-center/publication-journal.ts",
+	"server/device-center/store.ts",
+	"server/device-center/task-journal.ts",
+	"server/device-center/transfer-stream.ts",
+	"server/device-center/transfers.ts",
+]);
 const sourceCache = new Map<string, string>();
 
 function checkFiles(files: string[], violates: (source: string) => boolean, message: string): void {
@@ -65,12 +83,27 @@ describe("共享工具收敛与防回潮守卫 (Issue #730)", () => {
 		);
 	});
 
-	it("3. 原子写盘守卫：服务端严禁裸写 writeFileSync(tmp) + renameSync，必须使用 atomic-file", () => {
-		checkFiles(
-			serverFiles.filter((file) => !file.endsWith("atomic-file.ts")),
-			(source) => source.includes("renameSync") && source.includes("writeFileSync") && /\.tmp/i.test(source),
-			"发现服务端存在裸写 tmp+renameSync，请改用 server/atomic-file.js 的 writeAtomicSync / writeJsonAtomicSync",
+	it("3. 原子写盘守卫：服务端严禁手写 tmp+rename（同步与 fs/promises 两种形态），必须使用 atomic-file", () => {
+		const tempWriteCall = /(?:writeFile|writeFileSync|open)\s*\(\s*([^,)]+)/g;
+		const writesTempPath = (source: string): boolean => {
+			for (const match of source.matchAll(tempWriteCall)) if (/tmp|temp/i.test(match[1]!)) return true;
+			return false;
+		};
+		const isAtomicViolation = (source: string): boolean =>
+			/\brename(?:Sync)?\s*\(/.test(source) && writesTempPath(source);
+		const files = serverFiles.filter(
+			(file) =>
+				!file.endsWith("atomic-file.ts") && !ASYNC_ATOMIC_LEGACY.has(relative(ROOT, file).replaceAll("\\", "/")),
 		);
+		checkFiles(
+			files,
+			isAtomicViolation,
+			"发现服务端手写 tmp+rename，请改用 server/atomic-file.js 的 writeAtomic / writeAtomicSync / writeJsonAtomicSync",
+		);
+		// 存量名单只许变短：某条已改成 writeAtomic 后，这里会因为「名单条目不再违规」而红，
+		// 提醒把该条从 ASYNC_ATOMIC_LEGACY 删掉（而不是放任名单腐化成永久豁免）。
+		const stale = [...ASYNC_ATOMIC_LEGACY].filter((file) => !isAtomicViolation(readFileSync(join(ROOT, file), "utf8")));
+		expect(stale, `以下文件已不再手写 tmp+rename，请从 ASYNC_ATOMIC_LEGACY 删除：\n${stale.join("\n")}`).toEqual([]);
 	});
 
 	it("4. Markdown Chunks 守卫：官方插件 markdown-chunks.mjs 必须是委托转发（行数 ≤ 10）", () => {
