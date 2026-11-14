@@ -5,12 +5,36 @@ import {
 	DEVICE_P2P_DEFAULT_STUN,
 	deviceP2PAvailable,
 	parseTurn,
+	validIceServerUrl,
 } from "../../server/device-center/device-p2p.js";
 import { probeDeviceTunnel } from "../../server/device-center/device-lan.js";
 
 afterEach(() => vi.unstubAllEnvs());
 const sdp = "v=0\r\nm=application 9 UDP/DTLS/SCTP webrtc-datachannel\r\n";
 describe("P2P negotiation boundaries", () => {
+	it("accepts TURN TCP/TLS transports and rejects invalid ICE destinations", () => {
+		for (const url of [
+			"turn:relay.example:3478?transport=tcp",
+			"turns:relay.example:5349?transport=tcp",
+			"turn:[::1]:3478",
+			"turn:relay.example?transport=udp",
+		])
+			expect(
+				parseTurn({ PI_DEVICE_TURN: url, PI_DEVICE_TURN_USERNAME: "u", PI_DEVICE_TURN_CREDENTIAL: "c" })?.urls,
+			).toEqual([url]);
+		for (const url of [
+			"turn:host:0",
+			"turn:host:65536",
+			"turn:user@host:3478",
+			"turn:host:3478/path",
+			"turn:host:3478#fragment",
+			"turn:host?transport=http",
+			"turn:[not-ip]:3478",
+		])
+			expect(validIceServerUrl(url, "turn")).toBe(false);
+		expect(validIceServerUrl("stun:[::1]:3478", "stun")).toBe(true);
+		expect(validIceServerUrl("stun:host:3478?transport=tcp", "stun")).toBe(false);
+	});
 	it("accepts a bounded versioned application SDP and rejects malformed or oversized signals", () => {
 		expect(validDeviceP2PSignal({ version: 1, sdp })).toBe(true);
 		for (const value of [

@@ -1,6 +1,8 @@
 /** Shared by the native endpoints and the trusted browser bridge. */
 export const CLIPBOARD_LIMITS = Object.freeze({
 	bytes: 32 * 1024 * 1024,
+	fileBytes: 16 * 1024 * 1024 * 1024,
+	window: 32,
 	text: 1024 * 1024,
 	image: 16 * 1024 * 1024,
 	files: 32,
@@ -27,7 +29,10 @@ export function clipboardName(name: unknown): name is string {
 export function clipboardId(id: unknown): id is string {
 	return typeof id === "string" && /^[a-f0-9-]{36}$/.test(id);
 }
-export function parseClipboardOffer(value: unknown): ClipboardOffer | undefined {
+export function parseClipboardOffer(
+	value: unknown,
+	maxFileBytes: number = CLIPBOARD_LIMITS.bytes,
+): ClipboardOffer | undefined {
 	if (!value || typeof value !== "object") return;
 	const v = value as ClipboardOffer;
 	if (
@@ -57,7 +62,7 @@ export function parseClipboardOffer(value: unknown): ClipboardOffer | undefined 
 		names.add(item.name.toLowerCase());
 	}
 	if (
-		bytes > CLIPBOARD_LIMITS.bytes ||
+		bytes > (v.kind === "files" ? Math.min(maxFileBytes, CLIPBOARD_LIMITS.fileBytes) : CLIPBOARD_LIMITS.bytes) ||
 		(v.kind === "text" && bytes > CLIPBOARD_LIMITS.text) ||
 		(v.kind === "image" && bytes > CLIPBOARD_LIMITS.image)
 	)

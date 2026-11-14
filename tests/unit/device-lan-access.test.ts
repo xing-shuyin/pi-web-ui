@@ -115,6 +115,12 @@ async function fixture(basePath = "/", desktop = false, browserScript = "") {
 		wrapper,
 		wrapperUrl,
 		base,
+		setOpenDevice(open: NonNullable<typeof accessOptions.openDevice>) {
+			accessOptions.openDevice = open;
+		},
+		setListDevices(list: NonNullable<typeof accessOptions.listDevices>) {
+			accessOptions.listDevices = list;
+		},
 		setValid(value: boolean) {
 			valid = value;
 		},
@@ -130,6 +136,36 @@ async function fixture(basePath = "/", desktop = false, browserScript = "") {
 }
 
 describe("local capability portal over authenticated LAN", () => {
+	it("uses the access owner's projected device list and rejects stale or foreign access", async () => {
+		const f = await fixture();
+		const list = vi.fn(async () => [{ id: "other", name: "Other", online: true, credential: "must-not-be-exposed" }]);
+		f.setListDevices(list);
+		const endpoint = f.sourceOrigin + f.base + "__desktop_devices";
+		expect((await fetch(endpoint, { headers: { origin: "https://evil.example" } })).status).toBe(403);
+		expect(list).not.toHaveBeenCalled();
+		const response = await fetch(endpoint, { headers: { origin: "null" } });
+		expect(await response.json()).toEqual({ devices: [{ id: "other", name: "Other", online: true }] });
+		expect(f.received.some((request) => request.path.includes("devices"))).toBe(false);
+		f.setValid(false);
+		expect((await fetch(endpoint, { headers: { origin: "null" } })).status).toBe(403);
+	});
+	it("wraps nested desktops through a scoped Hub ticket and rejects foreign ticket origins", async () => {
+		const f = await fixture("/pi/");
+		const open = vi.fn(async () => `https://hub.example/device/other/__open?ticket=${"a".repeat(64)}`);
+		f.setOpenDevice(open);
+		const endpoint = f.sourceOrigin + f.base + "__desktop_target?device=other&preview=1";
+		expect((await fetch(endpoint, { headers: { origin: "https://evil.example" } })).status).toBe(403);
+		expect(open).not.toHaveBeenCalled();
+		const preview = await fetch(endpoint, { headers: { origin: "null" } });
+		expect(preview.status).toBe(200);
+		expect(await preview.text()).toContain("next=%2Fdesktop-preview");
+		expect(preview.headers.get("content-security-policy")).toContain("frame-src https://hub.example/device/other/");
+		expect(open).toHaveBeenCalledWith("other");
+		f.setOpenDevice(async () => `https://evil.example/device/other/__open?ticket=${"a".repeat(64)}`);
+		expect((await fetch(endpoint, { headers: { origin: "null" } })).status).toBe(502);
+		f.setValid(false);
+		expect((await fetch(endpoint, { headers: { origin: "null" } })).status).toBe(403);
+	});
 	it("opens an independent same-device desktop ticket without releasing the chat access", async () => {
 		const f = await fixture("/pi/");
 		const endpoint = f.sourceOrigin + f.base + "__desktop_open";

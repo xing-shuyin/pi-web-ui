@@ -3,7 +3,7 @@ import { createPortal } from "react-dom";
 import { FiCheck, FiMonitor } from "react-icons/fi";
 import { appUrl } from "../base-url";
 import { withToken } from "../auth-token";
-import { openDeviceAccess, type DesktopAccess } from "../device-access";
+import { openDeviceAccess, pageDeviceId, type DesktopAccess } from "../device-access";
 import { useT } from "../i18n";
 import { useFloatingPanel } from "../use-floating-panel";
 import { useOverlayZIndex } from "../overlay-stack";
@@ -38,10 +38,33 @@ export function DesktopDevicePicker({ access, visible }: { access: DesktopAccess
 		setDevices([]);
 		void (async () => {
 			try {
-				const response = await fetch(withToken(appUrl("/api/device-center/devices")), {
-					credentials: "same-origin",
-					signal: AbortSignal.any([controller.signal, AbortSignal.timeout(15000)]),
-				});
+				const signal = AbortSignal.any([controller.signal, AbortSignal.timeout(15000)]);
+				const request = () =>
+					fetch(withToken(appUrl(pageDeviceId() ? "/__desktop_devices" : "/api/device-center/devices")), {
+						credentials: "same-origin",
+						signal,
+					});
+				let response = await request();
+				for (let retry = 0; retry < 2 && [502, 503, 504].includes(response.status); retry++) {
+					await response.body?.cancel();
+					await new Promise<void>((resolve, reject) => {
+						const abort = () => {
+							clearTimeout(timer);
+							signal.removeEventListener("abort", abort);
+							reject(signal.reason);
+						};
+						const timer = setTimeout(
+							() => {
+								signal.removeEventListener("abort", abort);
+								resolve();
+							},
+							750 * (retry + 1),
+						);
+						signal.addEventListener("abort", abort, { once: true });
+						if (signal.aborted) abort();
+					});
+					response = await request();
+				}
 				if (!response.ok) throw new Error("Device list unavailable");
 				const data = await response.json();
 				if (!Array.isArray(data.devices)) throw new Error("Invalid device list");
@@ -78,7 +101,9 @@ export function DesktopDevicePicker({ access, visible }: { access: DesktopAccess
 			return;
 		}
 		try {
-			await openDeviceAccess(device.id, access.hubUrl, true, access.zh, false, device.remark?.trim() || device.name);
+			await openDeviceAccess(device.id, access.hubUrl, true, access.zh, false, device.remark?.trim() || device.name, {
+				mode: access.mode,
+			});
 			setOpen(false);
 		} catch {
 			setError(true);

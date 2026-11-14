@@ -418,6 +418,7 @@ function resolveCliAuthToken(opts) {
 }
 
 async function startForeground(opts) {
+	await (await import("./desktop-bootstrap.mjs")).ensureDesktopService();
 	if (opts.port) process.env.PI_WEB_PORT = opts.port;
 	if (opts.cwd) process.env.PI_WEB_CWD = resolve(opts.cwd);
 	if (opts.dataDir) process.env.PI_WEB_DATA_DIR = resolve(opts.dataDir);
@@ -3684,6 +3685,8 @@ async function serverCmd(argv) {
 		return;
 	}
 	const action = positionals[0];
+	if (["install", "start", "restart"].includes(action) && !opts.print)
+		await (await import("./desktop-bootstrap.mjs")).ensureDesktopService();
 	if (positionals.length > 1)
 		fail(
 			ZH ? `多余的参数: ${positionals.slice(1).join(" ")}` : `Unexpected argument: ${positionals.slice(1).join(" ")}`,

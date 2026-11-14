@@ -4,7 +4,7 @@ import { chromium } from "playwright-core";
 import { BROWSER_LAUNCH_TIMEOUT_MS, BROWSER_TEST_TIMEOUT_MS, CHROME_PATH } from "../lib/chrome.mjs";
 import { createServer, request, type Server } from "node:http";
 import { once } from "node:events";
-import { existsSync, mkdtempSync, mkdirSync, readFileSync, rmSync } from "node:fs";
+import { existsSync, mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { WebSocket } from "ws";
@@ -49,6 +49,7 @@ async function fixture(
 	};
 	const desktop = createDeviceDesktop({
 		dataDir,
+		fileHome: dataDir,
 		app,
 		authorize: (req) => req.headers.authorization === "Bearer test",
 		env: options.env ?? { PI_DEVICE_DESKTOP: "1" },
@@ -444,6 +445,48 @@ describe("device desktop native route", () => {
 			await vi.waitFor(() => expect(session.close).toHaveBeenCalledTimes(1));
 		}
 	});
+	it("binds remote file writes to the current authorized control session", async () => {
+		const f = await fixture();
+		const key = "a".repeat(32),
+			other = "b".repeat(32);
+		const requestFiles = (path: string, session?: string, method = "GET", body?: unknown) =>
+			fetch(f.url + "/api/device-desktop/files/" + path, {
+				method,
+				headers: {
+					...headers,
+					...(session ? { "x-pi-desktop-file-session": session } : {}),
+					...(body ? { "content-type": "application/json" } : {}),
+				},
+				body: body ? JSON.stringify(body) : undefined,
+			});
+		expect((await requestFiles("info")).status).toBe(403);
+		const { ws } = await connected(f.port, "/desktop-ws?viewOnly=1");
+		const acknowledged = once(ws, "message");
+		ws.send(JSON.stringify({ type: "files_session", key }));
+		expect(JSON.parse(String((await acknowledged)[0])).type).toBe("files_session_ready");
+		expect((await (await requestFiles("info", key)).json()).readOnly).toBe(true);
+		expect((await requestFiles("info", other)).status).toBe(403);
+		expect((await requestFiles("mkdir", key, "POST", { path: f.dataDir, name: "forbidden" })).status).toBe(403);
+		expect(
+			(await requestFiles("jobs", key, "POST", { key: other, entries: [{ path: "test.txt", size: 0 }] })).status,
+		).toBe(403);
+		const readable = join(f.dataDir, "readable.txt");
+		await import("node:fs/promises").then((fs) => fs.writeFile(readable, "safe to read"));
+		const download = await (await requestFiles("downloads", key, "POST", { path: readable })).json();
+		expect(await (await requestFiles("download/" + download.id)).text()).toBe("safe to read");
+		const closed = once(ws, "close");
+		ws.close();
+		await closed;
+		expect((await requestFiles("info", key)).status).toBe(403);
+		const control = await connected(f.port, "/desktop-ws?viewOnly=0"),
+			controlAck = once(control.ws, "message");
+		control.ws.send(JSON.stringify({ type: "files_session", key: other }));
+		await controlAck;
+		expect((await (await requestFiles("info", other)).json()).readOnly).toBe(false);
+		expect((await requestFiles("mkdir", other, "POST", { path: f.dataDir, name: "permitted" })).status).toBe(200);
+		expect(existsSync(join(f.dataDir, "permitted"))).toBe(true);
+		control.ws.close();
+	});
 	it("forwards validated JSON inputs only after explicit control permission", async () => {
 		const f = await fixture();
 		const { ws } = await connected(f.port, "/nested/desktop-ws?viewOnly=0");
@@ -630,7 +673,12 @@ describe("device desktop native route", () => {
 				args: ["--no-sandbox"],
 			});
 			cleanups.push(() => browser.close());
-			const page = await browser.newPage({ extraHTTPHeaders: headers, viewport: { width: 390, height: 740 } });
+			// 页面与文件管理器的语言取 navigator.language：断言写的是英文，必须钉住 locale。
+			const page = await browser.newPage({
+				locale: "en-US",
+				extraHTTPHeaders: headers,
+				viewport: { width: 390, height: 740 },
+			});
 			const errors: string[] = [];
 			const requests: string[] = [];
 			page.on("pageerror", (error) => errors.push(error.message));
@@ -678,6 +726,28 @@ describe("device desktop native route", () => {
 				});
 			}
 			expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+			writeFileSync(join(f.dataDir, "file-for-session.txt"), "test");
+			await page.locator("#file-transfer").click();
+			const fileDialog = page.locator("#file-transfer-dialog"),
+				localFiles = fileDialog.locator(".fm-pane").first();
+			await localFiles.getByRole("checkbox", { name: "file-for-session.txt", exact: true }).check();
+			const send = localFiles.getByRole("button", { name: "Send →", exact: true });
+			await expect.poll(() => send.isEnabled()).toBe(true);
+			await fileDialog.locator(".fm-head button").click();
+			await page.locator("#viewonly").check();
+			await vi.waitFor(() => expect(f.sessions).toHaveLength(2));
+			f.sessions[1].options.onFrame(tinyImage);
+			await page.getByText("Connected · view only", { exact: true }).waitFor();
+			await page.locator("#file-transfer").click();
+			await expect.poll(() => send.isDisabled()).toBe(true);
+			await fileDialog.locator(".fm-head button").click();
+			await page.locator("#viewonly").uncheck();
+			await vi.waitFor(() => expect(f.sessions).toHaveLength(3));
+			f.sessions[2].options.onFrame(tinyImage);
+			await page.getByText("Connected · control enabled", { exact: true }).waitFor();
+			await page.locator("#file-transfer").click();
+			await expect.poll(() => send.isEnabled()).toBe(true);
+			await fileDialog.locator(".fm-head button").click();
 			await page.locator("#disconnect").click();
 			await vi.waitFor(() => expect(f.sessions[0].close).toHaveBeenCalledTimes(1));
 			expect(await page.locator("#connect").isEnabled()).toBe(true);

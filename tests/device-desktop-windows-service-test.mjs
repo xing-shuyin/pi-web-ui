@@ -45,9 +45,23 @@ if (process.platform !== "win32") {
 		"/r:System.Windows.Forms.dll",
 		"/r:System.Web.Extensions.dll",
 		"/r:System.ServiceProcess.dll",
-		...["NativeDesktop.cs", "Native.cs", "Service.cs"].map((file) => resolve("bin/desktop-service", file)),
+		...[
+			"NativeDesktop.cs",
+			"Native.cs",
+			"DesktopVideo.cs",
+			"DesktopEncoder.cs",
+			"DesktopHardware.cs",
+			"DesktopWgc.cs",
+			"DesktopUserVideo.cs",
+			"Service.cs",
+		].map((file) => resolve("bin/desktop-service", file)),
 	]);
 	const cases = [
+		['{"type":"video_flow","paused":true}', false, true],
+		['{"type":"video_flow","paused":"true"}', false, false],
+		['{"type":"video_flow","paused":false,"command":"calc"}', true, false],
+		['{"type":"video_keyframe"}', false, true],
+		['{"type":"video_keyframe","command":"calc"}', true, false],
 		['{"type":"ack"}', false, true],
 		['{"type":"displays"}', false, true],
 		['{"type":"displays","command":"calc"}', false, false],
@@ -83,10 +97,33 @@ $cases=ConvertFrom-Json @'
 ${JSON.stringify(cases)}
 '@
 foreach($case in $cases) { $actual=$method.Invoke($null,@([string]$case[0],[bool]$case[1])); if($actual -ne [bool]$case[2]) {throw 'Input validation mismatch'} }
+$forward=$assembly.GetType('DesktopUserVideo').GetMethod('Forward',[Reflection.BindingFlags]'Static,NonPublic')
+$output=[IO.MemoryStream]::new()
+$assembly.GetType('NativeDesktop').GetField('outputStream',[Reflection.BindingFlags]'Static,NonPublic').SetValue($null,$output)
+$forward.Invoke($null,@(,[byte[]]@(5)))
+$forward.Invoke($null,@(,[byte[]]@(6,3,0,0,0,0,0,0,0,7,101)))
+$expected=[byte[]]@(0,0,0,1,5,0,0,0,11,6,3,0,0,0,0,0,0,0,7,101)
+if([Convert]::ToBase64String($output.ToArray()) -ne [Convert]::ToBase64String($expected)){throw 'User video relay changed framing, flags or timestamp'}
+$invalid=@(
+    [byte[]]@(),[byte[]]@(0),[byte[]]@(4,1),[byte[]]@(5,1),
+    [byte[]]@(6,4,0,0,0,0,0,0,0,7,101),
+    [byte[]]@(6,1,128,0,0,0,0,0,0,7,101),
+    [byte[]]::new(4194315),
+    [Text.Encoding]::UTF8.GetBytes('{"type":"key","code":"Enter","action":"down"}'),
+    [Text.Encoding]::UTF8.GetBytes('{"type":"displays","capture":"wgc","encoder":"libx264","encoderRuntime":"native-d3d11"}'),
+    [Text.Encoding]::UTF8.GetBytes('{"type":"displays","capture":"wgc","encoder":"h264_amf","encoderRuntime":"untrusted"}')
+)
+foreach($packet in $invalid){
+    $rejected=$false
+    try{$forward.Invoke($null,@(,[byte[]]$packet))}catch{$rejected=$true}
+    if(!$rejected){throw 'Untrusted user video packet was accepted'}
+}
+if($output.Length -ne $expected.Length){throw 'Rejected user video packets wrote to the stream'}
+$output.Dispose()
 $errors=$null;$tokens=$null
 [System.Management.Automation.Language.Parser]::ParseFile('${resolve("bin/desktop-service/install.ps1").replaceAll("'", "''")}',[ref]$tokens,[ref]$errors) | Out-Null
 if($errors.Count) {throw $errors[0]}
-Write-Output 'compiled; ${cases.length} IPC validation cases; installer syntax valid; no service installed or input injected'
+Write-Output 'compiled; ${cases.length} IPC validation cases; user video framing and 10 hostile packets checked; installer syntax valid; no service installed or input injected'
 `,
 	);
 	console.log(

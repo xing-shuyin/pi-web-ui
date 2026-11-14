@@ -4,7 +4,7 @@ import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..", "..");
-const read = (relative: string) => readFileSync(join(root, relative), "utf8");
+const read = (relative: string) => readFileSync(join(root, relative), "utf8").replace(/\r\n/g, "\n");
 
 describe("P2P 助手必须随桌面安装包分发", () => {
 	const workflow = read(".github/workflows/desktop-release.yml");

@@ -1,6 +1,11 @@
+import { manualClipboardCss } from "./desktop-clipboard-manual.js";
+import { clipboardDialogCss } from "./desktop-clipboard-dialog.js";
 import { desktopErrorScript } from "./desktop-errors.js";
 import { desktopThemeScript } from "./desktop-theme.js";
 import { desktopClipboardPageScript } from "./desktop-clipboard-page.js";
+import { desktopFilesPageScript } from "./desktop-files-page.js";
+
+import { desktopPreferencesPageScript } from "./desktop-preferences.js";
 
 export function desktopPage(): string {
 	return `<!doctype html>
@@ -15,8 +20,9 @@ button,input,summary{font:inherit;color:var(--text)}button,summary{display:inlin
 #quality-form,#setup,#text-form,#statistics{position:absolute;z-index:2;top:calc(100% + 6px);left:8px;width:min(520px,calc(100vw - 16px));max-height:calc(100dvh - 64px);overflow:auto;overscroll-behavior:contain;background:var(--bg-elev);border:1px solid var(--border);border-radius:12px;padding:16px;box-shadow:0 12px 36px #0003;white-space:normal}#setup{display:grid;gap:12px}#quality-form{display:grid;gap:12px;width:min(360px,calc(100vw - 16px))}#quality-form label{display:grid;grid-template-columns:90px minmax(0,1fr);padding:0;cursor:default}#quality-form select{min-width:0;width:100%;padding:7px;border:1px solid var(--border);border-radius:7px;background:var(--bg);color:var(--text)}#quality-note{color:var(--text-dim);font-size:12px;line-height:1.5;margin:0}.actions{display:flex;gap:6px;flex-wrap:wrap}.actions button,#send-text{background:var(--bg-elev2);border-color:var(--border)}#hint,#statistics{color:var(--text-dim)}#text-form{display:flex;flex-wrap:wrap;gap:10px}#text-form label{width:100%;padding:0;min-height:0;cursor:default}input[type=text]{border:1px solid var(--border);border-radius:8px;background:var(--bg);padding:9px 10px;min-width:0;flex:1;width:160px}#send-text{flex:none}
 #status{display:flex;align-items:center;gap:6px;margin-left:auto;padding:0 4px;font-size:11px;white-space:nowrap;flex:none;color:var(--text-dim)}#status:before{content:'';width:6px;height:6px;border-radius:50%;background:var(--text-dim);flex:none}#status[data-connected=true]:before{background:var(--green)}#status[data-error=true]{position:absolute;z-index:1;top:calc(100% + 6px);right:8px;max-width:min(520px,calc(100% - 16px));white-space:pre-wrap;background:var(--bg-elev);color:var(--red);border:1px solid var(--border);border-radius:10px;padding:10px 12px;box-shadow:0 8px 24px #0003}#status[data-error=true]:before{background:var(--red)}#status[data-error=true]{overflow-wrap:anywhere;word-break:break-word}
 #screen{flex:1;min-width:0;min-height:0;overflow:auto;background:#000;position:relative}main:fullscreen{width:100%;height:100%;background:var(--bg)}canvas{display:block;width:100%;height:100%;object-fit:contain;touch-action:none;outline-offset:-3px}#screen.native canvas{width:auto;height:auto;max-width:none}@media(max-width:700px){#toolbar{flex-wrap:wrap;gap:2px}#toolbar-scroll{width:100%}#status{margin-left:4px;min-height:18px}#toolbar button,#toolbar summary,#toolbar label{min-height:34px}}
+${manualClipboardCss}${clipboardDialogCss}
 </style></head><body><main>
-<header id="toolbar"><div id="toolbar-scroll"><nav id="controls"><button id="connect" disabled data-i18n="connect"></button><button id="disconnect" disabled data-i18n="disconnect"></button><div class="view-options"><label><input id="viewonly" type="checkbox"><span data-i18n="viewonly"></span></label><label><input id="scale" type="checkbox" checked><span data-i18n="scale"></span></label></div><label><span data-i18n="display"></span><select id="display-source" disabled><option value="" data-i18n="primaryDisplay"></option></select></label><button id="fullscreen" data-i18n="fullscreen"></button></nav>
+<header id="toolbar"><div id="toolbar-scroll"><nav id="controls"><button id="connect" disabled data-i18n="connect"></button><button id="disconnect" disabled data-i18n="disconnect"></button><button id="clipboard" type="button" aria-haspopup="dialog" data-i18n="clipboard"></button><div class="view-options"><label><input id="viewonly" type="checkbox"><span data-i18n="viewonly"></span></label><label><input id="scale" type="checkbox" checked><span data-i18n="scale"></span></label></div><label><span data-i18n="display"></span><select id="display-source" disabled><option value="" data-i18n="primaryDisplay"></option></select></label><button id="fullscreen" data-i18n="fullscreen"></button></nav>
 <details id="settings"><summary data-i18n="setup"></summary><section id="setup" aria-label="Desktop setup"><p id="setup-status" role="status" aria-live="polite"></p><div class="actions"><button id="check" data-i18n="check"></button><button id="enable" disabled data-i18n="enable"></button><button id="disable" disabled data-i18n="disable"></button></div><aside id="mac-permission-guide" hidden aria-label="macOS permissions"><p data-i18n="macGuide"></p></aside><p id="hint" data-i18n="hint"></p></section></details>
 <details id="quality-panel"><summary data-i18n="quality"></summary><section id="quality-form"><label><span data-i18n="quality"></span><select id="quality-mode"><option value="auto" data-i18n="qualityAuto"></option><option value="smooth" data-i18n="qualitySmooth"></option><option value="balanced" data-i18n="qualityBalanced"></option><option value="sharp" data-i18n="qualitySharp"></option></select></label><label><span data-i18n="resolution"></span><select id="quality-edge"><option value="0" data-i18n="resolutionAuto"></option><option value="960">960 px</option><option value="1280">1280 px</option><option value="1920">1920 px</option><option value="2560">2560 px</option></select></label><label><span data-i18n="frameRate"></span><select id="quality-fps"><option value="10">10 FPS</option><option value="15">15 FPS</option><option value="30">30 FPS</option><option value="60" selected>60 FPS</option><option value="120">120 FPS</option><option value="240">240 FPS</option></select></label><p id="quality-note" data-i18n="qualityNote"></p></section></details>
 <details id="text-panel"><summary data-i18n="textToggle"></summary><form id="text-form"><label for="text" data-i18n="text"></label><input id="text" type="text" disabled autocomplete="off" maxlength="2048"><button id="send-text" type="submit" disabled data-i18n="send"></button></form></details>
@@ -32,6 +38,7 @@ const messages = {
  title:['设备远程桌面','Remote desktop'],connect:['连接','Connect'],disconnect:['断开','Disconnect'],
  check:['检查状态','Check status'],enable:['启用','Enable'],disable:['停用','Disable'],setup:['桌面设置','Desktop setup'],
  display:['显示器','Display'],primaryDisplay:['主屏','Primary display'],viewonly:['只读','View only'],scale:['适应窗口','Fit to window'],fullscreen:['全屏','Fullscreen'],
+ clipboard:['剪贴板','Clipboard'],
  textToggle:['文字输入','Text input'],text:['文字输入（支持中文）','Text input (including Chinese)'],send:['发送','Send'],
  hint:['控制模式：点击画面后使用键盘；触屏可拖动，中文请用顶部文字输入发送。只读模式由服务端强制执行。','Control mode: focus the image to use the keyboard; drag with touch. Use Text input in the toolbar for composed text. View only is enforced by the server.'],
  checking:['正在检查…','Checking…'],saving:['正在保存…','Saving…'],enabled:['已启用','Enabled'],disabled:['已停用','Disabled'],
@@ -43,20 +50,21 @@ const messages = {
  ready:['可以连接。','Ready to connect.'],connecting:['正在连接…','Connecting…'],waiting:['已连接，等待画面…','Connected; waiting for an image…'],
  viewing:['已连接 · 只读','Connected · view only'],controlling:['已连接 · 可控制','Connected · control enabled'],
  quality:['画质','Quality'],qualityAuto:['自动','Automatic'],qualitySmooth:['流畅','Smooth'],qualityBalanced:['均衡','Balanced'],qualitySharp:['清晰','Sharp'],resolution:['分辨率上限','Resolution limit'],resolutionAuto:['跟随窗口','Match window'],frameRate:['帧率上限','Frame rate limit'],qualityNote:['调整传输画面长边，保持屏幕比例，不改变被控电脑的显示设置。自动模式会在网络变慢时降低画质。60 / 120 / 240 是目标，实际帧率取决于两端设备、画面变化及网络；降低分辨率有助于提高帧率。','Adjusts the transmitted image’s longest edge, preserving aspect ratio and the host’s display settings. Automatic mode reduces quality on slower connections. 60/120/240 are targets; actual FPS depends on both devices, screen changes and the connection. Lower resolution can help at high frame rates.'],qualityUnsupported:['此设备暂不支持动态画质。请更新被控端；Windows 系统桌面服务也需要更新。','This device does not support dynamic quality yet. Update the host, including the Windows desktop service if installed.'],
- diagnostics:['连接信息','Connection info'],stats:['目标：{target} FPS · 采集/发送：{captureFps}/{sendFps} FPS · 跳过旧帧：{replaced} · 确认等待：{ackMs} ms · 队列：{queued} B · 显示：{fps} FPS · 解码绘制：{decodeMs} ms','Target: {target} FPS · Capture/send: {captureFps}/{sendFps} FPS · Replaced: {replaced} · ACK: {ackMs} ms · Queue: {queued} B · Display: {fps} FPS · Decode/draw: {decodeMs} ms'],
+ diagnostics:['连接信息','Connection info'],stats:['目标上限：{target} FPS · 当前采集配置：{configured} FPS · 采集器：{backend} · 输出/发送：{captureFps}/{sendFps} FPS · 跳过旧帧：{replaced} · 确认等待：{ackMs} ms · 队列：{queued} B · 绘制：{fps} FPS · 解码绘制：{decodeMs} ms','Target limit: {target} FPS · Capture configuration: {configured} FPS · Backend: {backend} · Output/send: {captureFps}/{sendFps} FPS · Replaced: {replaced} · ACK: {ackMs} ms · Queue: {queued} B · Drawn: {fps} FPS · Decode/draw: {decodeMs} ms'],
  disconnected:['已断开。','Disconnected.'],closed:['连接已关闭','Connection closed'],connectionError:['桌面连接失败，请检查设备状态后重试。','Desktop connection failed. Check device status and retry.'],
  requestError:['状态或设置请求失败','Status or settings request failed'],decodeError:['画面解码失败','Image decoding failed'],
  fullscreenError:['无法进入全屏','Unable to enter fullscreen'],browserError:['浏览器不支持所需的桌面显示功能。','This browser does not support the required desktop display features.']
 };
 const t = key => messages[key][zh ? 0 : 1];
 document.documentElement.lang = zh ? 'zh-CN' : 'en'; document.title = t('title');
-const icons = {"quality":"M4 7h16M4 12h16M4 17h16M8 5v4m8 1v4m-5 1v4","connect":"M8 5l10 7-10 7z","disconnect":"M7 7h10v10H7z","fullscreen":"M8 3H3v5m13-5h5v5M3 16v5h5m13-5v5h-5","setup":"M4 7h16M4 17h16M8 4v6m8 4v6","textToggle":"M4 5h16M12 5v15M8 20h8","diagnostics":"M5 20v-5m7 5V9m7 11V4"};
+const icons = {"clipboard":"M9 5H6v16h12V5h-3M9 3h6v4H9zM9 12h6m-6 4h6","quality":"M4 7h16M4 12h16M4 17h16M8 5v4m8 1v4m-5 1v4","connect":"M8 5l10 7-10 7z","disconnect":"M7 7h10v10H7z","fullscreen":"M8 3H3v5m13-5h5v5M3 16v5h5m13-5v5h-5","setup":"M4 7h16M4 17h16M8 4v6m8 4v6","textToggle":"M4 5h16M12 5v15M8 20h8","diagnostics":"M5 20v-5m7 5V9m7 11V4"};
 for (const el of document.querySelectorAll('[data-i18n]')) { el.textContent = t(el.dataset.i18n); const path=icons[el.dataset.i18n];if(path && el.matches('button,summary')){const svg=document.createElementNS('http://www.w3.org/2000/svg','svg'),shape=document.createElementNS(svg.namespaceURI,'path');svg.setAttribute('viewBox','0 0 24 24');svg.setAttribute('aria-hidden','true');shape.setAttribute('d',path);svg.append(shape);el.prepend(svg)} }
 $('setup').setAttribute('aria-label', t('setup')); $('controls').setAttribute('aria-label', t('title')); $('canvas').setAttribute('aria-label', t('title'));
 const canvas = $('canvas'), screen = $('screen'), context = canvas.getContext('2d');
 let config = null, busy = false, disposed = false, socket = null, generation = 0;
 let ready = false, hasFrame = false, connectionViewOnly = true, pendingFrame = null, decoding = false;
-let videoMode = false, videoDecoder = null, videoTime = 0, videoDecodeAt = 0;
+let filesSession = '';
+let videoMode = false, videoDecoder = null, videoTime = 0, videoDecodeAt = 0, videoCodec = '', videoState = null, videoAcceleration = '';
 const videoSupported = typeof VideoDecoder === 'function' && typeof EncodedVideoChunk === 'function';
 let videoProbe = false;
 if (videoSupported) {
@@ -66,14 +74,16 @@ if (videoSupported) {
  }
 }
 let activePointer = null, retryTimer, awaitingDesktop = false;
-let rendered = 0, sampleAt = performance.now(), decodeMs = 0, lastCaptured = 0, lastSent = 0;
+let rendered = 0, sampleAt = performance.now(), decodeMs = 0, lastCaptured = 0, lastSent = 0, lastStatsElapsed = 0;
 let selectedDisplay = '', captureBackend = '';
 let dynamicQuality = false, qualityTimer, lastQuality = '';
 ${desktopClipboardPageScript()}
+${desktopFilesPageScript()}
 $('display-source').addEventListener('change',()=>{selectedDisplay=$('display-source').value;connect()});
 addEventListener('message',event=>{if(event.source===parent&&event.data?.type==='desktop-select-display'&&typeof event.data.display==='string'&&event.data.display.length<=128&&[...$('display-source').options].some(option=>option.value===event.data.display)&&selectedDisplay!==event.data.display){selectedDisplay=event.data.display;$('display-source').value=selectedDisplay;connect()}});
 function updateDisplays(message){
- if(['dxgi','gdi','screencapturekit'].includes(message.capture))captureBackend=message.capture;
+ if(['dxgi','wgc','gdi','screencapturekit'].includes(message.capture))captureBackend=message.capture + (['h264_nvenc','h264_qsv','h264_amf','h264_mf','libx264'].includes(message.encoder) ? ' / ' + message.encoder : '') + (message.encoderRuntime==='native-d3d11' ? ' / Native D3D11' : message.encoderRuntime==='rustdesk-hwcodec' ? ' / RustDesk hwcodec' : message.encoderRuntime==='nvenc-12.1' ? ' / NVENC 12.1' : message.encoderRuntime==='desktop-timing-v2' ? ' / timing-v2' : '');
+ $('statistics').title = typeof message.fallback === 'string' && message.fallback.length <= 1024 ? message.fallback : '';
  if(!Array.isArray(message.displays)||!message.displays.length||message.displays.length>32||typeof message.selected!=='string')return;
  const select=$('display-source'),signature=JSON.stringify(message.displays);
  if(select.dataset.displays!==signature){select.replaceChildren();message.displays.forEach((display,index)=>{const option=document.createElement('option');option.value=display.id;option.textContent=t('display')+' '+(index+1)+' · '+display.width+' × '+display.height+(display.primary?' · '+t('primaryDisplay'):'');select.append(option)});select.dataset.displays=signature}
@@ -132,9 +142,10 @@ function stop() {
  stopClipboard();
  clearTimeout(retryTimer); awaitingDesktop = false;
  release(); const previous = socket; socket = null; generation++;
+ filesSession = '';
  ready = false; hasFrame = false; pendingFrame = null; dynamicQuality = false; lastQuality = ""; clearTimeout(qualityTimer);
- videoMode = false; try { videoDecoder?.close(); } catch { /* Already closed. */ } videoDecoder = null; videoDecodeAt = 0;
- rendered = 0; lastCaptured = lastSent = 0; sampleAt = performance.now(); $('statistics').textContent = '';
+ videoMode = false; videoState = null; videoAcceleration = ''; try { videoDecoder?.close(); } catch { /* Already closed. */ } videoDecoder = null; videoDecodeAt = 0;
+ rendered = 0; lastCaptured = lastSent = lastStatsElapsed = 0; sampleAt = performance.now(); $('statistics').textContent = '';
  if (previous) { previous.onmessage = previous.onopen = previous.onerror = previous.onclose = null; previous.close(); }
  context?.clearRect(0, 0, canvas.width, canvas.height); controls(); clipboardAvailable();
 }
@@ -157,10 +168,11 @@ async function decodeFrames() {
     bitmap = await createImageBitmap(frame.blob);
     if (disposed || frame.generation !== generation || frame.socket !== socket || socket.readyState !== WebSocket.OPEN) continue;
     if (!bitmap.width || !bitmap.height) throw new Error('Empty image');
-    if (canvas.width !== bitmap.width || canvas.height !== bitmap.height) { canvas.width = bitmap.width; canvas.height = bitmap.height; }
     await new Promise(resolve => { if(document.hidden) setTimeout(resolve,100); else requestAnimationFrame(resolve); });
     if(disposed || frame.generation !== generation || frame.socket !== socket) continue;
     const firstFrame = !hasFrame;
+    // Resizing clears the bitmap: resize and paint in the same animation tick.
+    if (canvas.width !== bitmap.width || canvas.height !== bitmap.height) { canvas.width = bitmap.width; canvas.height = bitmap.height; }
     context.drawImage(bitmap, 0, 0); hasFrame = true;
     rendered++; decodeMs = Math.round(performance.now() - decodeStarted);
     frame.socket.send(JSON.stringify({type:'ack'}));
@@ -174,64 +186,141 @@ async function decodeFrames() {
   }
  } finally { decoding = false; }
 }
-function startVideo(codec) {
- if (videoMode) return true;
+function startVideo(codec, reset = false, framed = false) {
+ if (!reset && videoMode && videoCodec === codec) return true;
  if (!videoSupported || typeof codec !== 'string' || !/^avc1[.][0-9a-f]{6}$/i.test(codec)) return false;
- try {
-  videoDecoder = new VideoDecoder({
+ try { videoDecoder?.close(); } catch {}
+ videoDecoder = null; videoMode = true; videoCodec = codec; videoTime = 0;
+ const state = {ready:null, queue:Promise.resolve(), pending:0, bytes:0, sequence:0, discardBefore:0, waitingKey:true, software:false, framed, frames:new Map(), socket:framed?socket:null, recoveryAt:-Infinity};
+ videoState = state;
+ const current = () => !disposed && videoMode && videoState === state;
+ state.recover = () => {
+  state.waitingKey = true; state.frames.clear();
+  if (current() && state.framed && state.socket?.readyState === 1 && performance.now()-state.recoveryAt >= 1000) {
+   state.recoveryAt = performance.now(); state.socket.send(JSON.stringify({type:'video_recover'}));
+  }
+ };
+ async function configure(hardware) {
+  const preference = hardware ? 'prefer-hardware' : 'prefer-software';
+  const configuration = {codec, avc:{format:'annexb'}, optimizeForLatency:true, hardwareAcceleration:preference};
+  try {
+   const supported = await VideoDecoder.isConfigSupported(configuration);
+   if (!current()) return false;
+   if (!supported.supported) {
+    if (hardware) return configure(false);
+    fail(t('decodeError')); return false;
+   }
+   state.software = !hardware;
+   const decoder = new VideoDecoder({
    output: frame => {
-    if (disposed || !videoMode) { frame.close(); return; }
+    if (!current() || videoDecoder !== decoder) { frame.close(); return; }
     if (canvas.width !== frame.displayWidth || canvas.height !== frame.displayHeight) { canvas.width = frame.displayWidth; canvas.height = frame.displayHeight; }
     const firstFrame = !hasFrame;
+    const received = state.frames.get(frame.timestamp);
+    state.frames.delete(frame.timestamp);
     context.drawImage(frame, 0, 0);
     frame.close();
     hasFrame = true; rendered++;
-    if (videoDecodeAt) decodeMs = Math.round(performance.now() - videoDecodeAt);
+    if (received) {
+     decodeMs = Math.round(performance.now() - received.at);
+     if (state.socket?.readyState === 1) state.socket.send(JSON.stringify({type:'video_ack',id:received.id,queue:Math.min(128,decoder.decodeQueueSize)}));
+    } else if (videoDecodeAt) decodeMs = Math.round(performance.now() - videoDecodeAt);
     if (firstFrame) { status(t(connectionViewOnly ? 'viewing' : 'controlling')); controls(); }
    },
-   error: () => { fail(t('decodeError')); }
-  });
-  videoDecoder.configure({codec, avc:{format:'annexb'}, optimizeForLatency:true, hardwareAcceleration:'prefer-hardware'});
-  videoMode = true; videoTime = 0;
-  return true;
- } catch { videoMode = false; videoDecoder = null; return false; }
+    error: () => {
+     if (!current() || videoDecoder !== decoder) return;
+     if (hardware && !state.software) {
+      state.software = true; state.waitingKey = true; state.discardBefore = ++state.sequence;
+      try { decoder.close(); } catch {} videoDecoder = null;
+      state.ready = configure(false);
+      state.recover();
+     } else fail(t('decodeError'));
+    }
+   });
+   videoDecoder = decoder;
+   decoder.configure(configuration);
+   videoAcceleration = hardware ? (zh ? '硬件解码' : 'hardware decode') : (zh ? '软件解码' : 'software decode');
+   return true;
+  } catch {
+   if (!current()) return false;
+   try { videoDecoder?.close(); } catch {} videoDecoder = null;
+   if (hardware) return configure(false);
+   fail(t('decodeError')); return false;
+  }
+ }
+ // Match RustDesk's capability-first selection: try hardware before any software decoder.
+ state.ready = configure(true);
+ return true;
 }
-async function decodeVideo(blob) {
- if (!videoDecoder || videoDecoder.state !== 'configured') return;
- const bytes = new Uint8Array(await blob.arrayBuffer());
- let key = false;
- for (let i=0;i+4<bytes.length;i++) if (bytes[i]===0&&bytes[i+1]===0&&bytes[i+2]===1&&(bytes[i+3]&0x1f)===5) { key = true; break; }
- try { videoDecoder.decode(new EncodedVideoChunk({type:key?'key':'delta', timestamp:(videoTime += 16666), data:bytes})); videoDecodeAt = performance.now(); } catch { /* Decoder recovers on the next keyframe. */ }
+function decodeVideo(blob) {
+ const state = videoState; if (!state) return;
+ const sequence = ++state.sequence;
+ if (state.pending >= 32 || state.bytes + blob.size > 16 * 1024 * 1024) { state.discardBefore = sequence; state.recover(); return; }
+ state.pending++; state.bytes += blob.size;
+ state.queue = state.queue.then(async () => {
+  if (!await state.ready || videoState !== state || sequence < state.discardBefore) return;
+  const decoder = videoDecoder;
+  if (!decoder || decoder.state !== 'configured') return;
+  let bytes = new Uint8Array(await blob.arrayBuffer());
+  if (decoder !== videoDecoder || videoState !== state || sequence < state.discardBefore) return;
+  let key = false, id = 0, timestamp = Math.round(performance.now()*1000);
+  if (state.framed) {
+   if(bytes.length<21 || bytes[0]!==80 || bytes[1]!==73 || bytes[2]!==86 || bytes[3]!==49) throw new Error('Invalid video envelope');
+   const view = new DataView(bytes.buffer,bytes.byteOffset,20);
+   id = view.getUint32(4); const pts = view.getFloat64(8); key = (view.getUint32(16)&1)!==0;
+   if(!id || !Number.isFinite(pts) || pts<0 || pts>Number.MAX_SAFE_INTEGER/1000) throw new Error('Invalid video timestamp');
+   timestamp = Math.round(pts*1000); bytes = bytes.subarray(20);
+  }
+  for (let i=0;i+4<bytes.length;i++) if (bytes[i]===0&&bytes[i+1]===0&&bytes[i+2]===1&&(bytes[i+3]&0x1f)===5) { key = true; break; }
+  if (state.waitingKey && !key) { state.recover(); return; }
+  if (decoder.decodeQueueSize > 8 || state.frames.size >= 96) { state.recover(); return; }
+  videoTime = Math.max(videoTime+1,timestamp);
+  if (id) state.frames.set(videoTime,{id,at:performance.now()});
+  try { decoder.decode(new EncodedVideoChunk({type:key?'key':'delta', timestamp:videoTime, data:bytes})); state.waitingKey = false; videoDecodeAt = performance.now(); }
+  catch { state.recover(); }
+ }).catch(() => { if (videoState === state) fail(t('decodeError')); }).finally(() => { state.pending--; state.bytes -= blob.size; });
+}
+function updateStatistics(message) {
+ if (!['captured','sent','replaced','ackMs','queued'].every(key => typeof message[key] === 'number' && Number.isFinite(message[key]))) return;
+ const now = performance.now(), elapsed = now - sampleAt;
+ const sourceClock = Number.isFinite(message.elapsedMs) && message.elapsedMs > lastStatsElapsed;
+ const sourceElapsed = sourceClock ? message.elapsedMs - lastStatsElapsed : elapsed;
+ const values = {...message,
+  fps:(rendered * 1000 / Math.max(1,elapsed)).toFixed(1), decodeMs,
+  ackMs: (videoMode && message.ackMeasured !== true) || message.ackMeasured === false ? '—' : message.ackMs,
+  target:$('quality-fps').value, configured:message.profile?.fps ?? '—',
+  backend:[captureBackend,videoAcceleration].filter(Boolean).join(' / ') || '—',
+  captureFps:((message.captured-lastCaptured)*1000/Math.max(1,sourceElapsed)).toFixed(1),
+  sendFps:((message.sent-lastSent)*1000/Math.max(1,sourceElapsed)).toFixed(1)};
+ $('statistics').textContent = t('stats').replace(/\\{(\\w+)\\}/g, (_,key) => String(values[key])) + ' · ' + canvas.width + ' × ' + canvas.height + (videoMode ? ((captureBackend.includes('Native D3D11')||captureBackend.includes('RustDesk hwcodec')) ? (zh ? ' · 按画面变化发送' : ' · Desktop updates only') : (zh ? ' · 视频帧数含重复画面' : ' · Video counts include duplicate frames')) : '');
+ rendered = 0; sampleAt = now; lastCaptured = message.captured; lastSent = message.sent;
+ lastStatsElapsed = sourceClock ? message.elapsedMs : 0;
 }
 function connect() {
  stop(); if (!canConnect() || disposed) return;
  connectionViewOnly = $('viewonly').checked;
+ filesSession = Array.from(crypto.getRandomValues(new Uint8Array(16)), x => x.toString(16).padStart(2,'0')).join('');
  const url = appUrl('desktop-ws'); url.protocol = url.protocol === 'https:' ? 'wss:' : 'ws:';
  url.searchParams.set('viewOnly', connectionViewOnly ? '1' : '0');
  url.searchParams.set('video', videoProbe ? '1' : '0');
+ url.searchParams.set('videoFeedback', '1');
  if(selectedDisplay) url.searchParams.set('display',selectedDisplay);
  const currentGeneration = generation;
  let current;
  try { current = new WebSocket(url); } catch (error) { fail(t('connectionError') + ': ' + error.message); return; }
  socket = current; current.binaryType = 'blob'; status(t('connecting')); controls();
  const isCurrent = () => !disposed && socket === current && generation === currentGeneration;
- current.onopen = () => { if (isCurrent()) status(t('waiting')); };
+ current.onopen = () => { if (isCurrent()) { current.send(JSON.stringify({type:'files_session',key:filesSession})); status(t('waiting')); } };
  current.onmessage = event => {
   if (!isCurrent()) return;
   if (typeof event.data === 'string') {
    try {
     const message = JSON.parse(event.data);
     if (message.type === 'error') fail(desktopError(message.message), typeof message.message === 'string' && desktopIssue(message.message, zh)?.retry === true);
-    else if (message.type === 'video') { if (!startVideo(message.codec)) fail(t('decodeError')); }
+    else if (message.type === 'video') { if (!startVideo(message.codec, message.reset === true, message.framed === 1)) fail(t('decodeError')); }
     else if (message.type === 'ready') { ready = true; dynamicQuality = message.dynamicQuality === true; controls(); updateQuality(); clipboardAvailable(); }
     else if (message.type === 'displays') updateDisplays(message);
-    else if (message.type === 'stats') {
-     const now = performance.now(), values = {...message, fps:(rendered * 1000 / Math.max(1,now - sampleAt)).toFixed(1), decodeMs, target:$('quality-fps').value, captureFps:((message.captured-lastCaptured)*1000/Math.max(1,now-sampleAt)).toFixed(1), sendFps:((message.sent-lastSent)*1000/Math.max(1,now-sampleAt)).toFixed(1)};
-     if (['captured','sent','replaced','ackMs','queued'].every(key => typeof message[key] === 'number' && Number.isFinite(message[key]))) {
-      $('statistics').textContent = t('stats').replace(/\\{(\\w+)\\}/g, (_,key) => String(values[key])) + ' · ' + canvas.width + ' × ' + canvas.height;
-      rendered = 0; sampleAt = now; lastCaptured = message.captured; lastSent = message.sent;
-     }
-    }
+    else if (message.type === 'stats') updateStatistics(message);
    } catch { fail(t('connectionError')); }
   } else if (event.data instanceof Blob) {
    if (videoMode) { void decodeVideo(event.data); return; }
@@ -346,6 +435,7 @@ $('fullscreen').onclick = async () => {
  catch (error) { status(t('fullscreenError') + ': ' + error.message, true); }
 };
 window.addEventListener('pagehide', () => { disposed = true; qualityObserver?.disconnect(); window.removeEventListener('resize', updateQuality); clearTimeout(qualityTimer); stop(); });
+${desktopPreferencesPageScript()}
 controls(); void update(undefined, true);
 </script></body></html>`;
 }

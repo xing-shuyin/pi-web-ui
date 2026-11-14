@@ -62,6 +62,11 @@ export async function startDeviceHub(env: NodeJS.ProcessEnv = process.env) {
 		authenticateDevice: (id, credential) => hub.store.authenticateDevice(id, credential),
 		getAccount: (req) => hub.getRelayAccount(req),
 		ownsDevice: (accountId, id) => hub.store.getDeviceOwner(id) === accountId,
+		getDeviceIds: (accountId) =>
+			hub.store
+				.snapshot()
+				.devices.filter((device) => device.accountId === accountId)
+				.map((device) => device.id),
 		getDeviceName: (id) => hub.store.getDevice(id)?.name,
 		getDeviceRemark: (id) => hub.store.getDevice(id)?.remark,
 		onTaskEvent: (id, event) => hub.acceptTaskEvent(id, event),

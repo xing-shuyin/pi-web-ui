@@ -3,7 +3,10 @@ export type DesktopDisplays = {
 	type: "displays";
 	displays: DesktopDisplay[];
 	selected: string;
-	capture?: "dxgi" | "gdi" | "screencapturekit";
+	capture?: "dxgi" | "wgc" | "gdi" | "screencapturekit";
+	encoder?: "h264_nvenc" | "h264_qsv" | "h264_amf" | "h264_mf" | "libx264";
+	encoderRuntime?: "default" | "nvenc-12.1" | "desktop-timing-v2" | "rustdesk-hwcodec" | "native-d3d11";
+	fallback?: string;
 };
 export function parseDesktopDisplays(value: unknown): DesktopDisplays | undefined {
 	if (!value || typeof value !== "object") return;
@@ -41,6 +44,15 @@ export function parseDesktopDisplays(value: unknown): DesktopDisplays | undefine
 		type: "displays",
 		displays: v.displays.map(({ id, width, height, primary }) => ({ id, width, height, primary })),
 		selected: v.selected,
-		...(["dxgi", "gdi", "screencapturekit"].includes(v.capture ?? "") ? { capture: v.capture } : {}),
+		...(["dxgi", "wgc", "gdi", "screencapturekit"].includes(v.capture ?? "") ? { capture: v.capture } : {}),
+		...(["h264_nvenc", "h264_qsv", "h264_amf", "h264_mf", "libx264"].includes(v.encoder ?? "")
+			? { encoder: v.encoder }
+			: {}),
+		...(["default", "nvenc-12.1", "desktop-timing-v2", "rustdesk-hwcodec", "native-d3d11"].includes(
+			v.encoderRuntime ?? "",
+		)
+			? { encoderRuntime: v.encoderRuntime }
+			: {}),
+		...(typeof v.fallback === "string" && v.fallback.length <= 1024 ? { fallback: v.fallback } : {}),
 	};
 }

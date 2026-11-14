@@ -68,6 +68,7 @@ afterEach(() => {
 	host?.remove();
 	vi.restoreAllMocks();
 	vi.unstubAllGlobals();
+	vi.useRealTimers();
 });
 it("opens a read-only preview first, pauses it when collapsed and obtains fresh tickets for control and return", async () => {
 	ticket();
@@ -193,13 +194,39 @@ it("cancels a dismissed device picker and retries a failed list without losing t
 	expect(getDesktopAccess()).toBe(access);
 	expect(document.querySelector("iframe")).toBe(frame);
 });
+it.each([false, true])("retries a busy device directory and cancels retries when dismissed (%s)", async (dismiss) => {
+	vi.useFakeTimers();
+	let requests = 0;
+	vi.stubGlobal(
+		"fetch",
+		vi.fn(async (input: unknown) => {
+			if (!String(input).endsWith("/devices"))
+				return { ok: true, json: async () => ({ url: `${hub}/device/mac/__open?ticket=fresh` }) };
+			requests++;
+			return requests === 1
+				? { ok: false, status: 503 }
+				: { ok: true, status: 200, json: async () => ({ devices: [{ id: "mac", name: "Mac", online: true }] }) };
+		}),
+	);
+	await mount("preview");
+	const preview = document.querySelector("iframe");
+	await click("Choose device");
+	expect(document.querySelector('.desktop-device-picker [role="alert"]')).toBeNull();
+	if (dismiss) await click("Choose device");
+	await act(async () => {
+		await vi.advanceTimersByTimeAsync(3000);
+	});
+	expect(requests).toBe(dismiss ? 1 : 2);
+	expect(document.querySelectorAll(".desktop-device-option")).toHaveLength(dismiss ? 0 : 1);
+	expect(document.querySelector("iframe")).toBe(preview);
+});
 it("keeps a sandboxed desktop alive through outside clicks and fullscreen without reconnecting", async () => {
 	ticket();
 	const popup = vi.spyOn(window, "open");
 	await mount();
 	const frame = document.querySelector("iframe")!;
 	expect(frame.src).toBe(`${hub}/device/mac/__open?ticket=fresh&next=%2Fdesktop`);
-	expect(frame.getAttribute("sandbox")).toBe("allow-scripts allow-forms allow-pointer-lock");
+	expect(frame.getAttribute("sandbox")).toBe("allow-scripts allow-forms allow-pointer-lock allow-downloads");
 	expect(popup).not.toHaveBeenCalled();
 	await act(async () => document.body.click());
 	expect(document.querySelector("iframe")).toBe(frame);
@@ -299,7 +326,7 @@ it("requests LAN access and opens the local opaque desktop portal", async () => 
 	expect(document.querySelector(".remote-desktop-titlebar")?.textContent).toContain("LAN direct");
 	expect(document.querySelector("iframe")?.src).toBe(`${window.location.origin}${url}&next=%2Fdesktop`);
 	expect(document.querySelector("iframe")?.getAttribute("sandbox")).toBe(
-		"allow-scripts allow-forms allow-pointer-lock",
+		"allow-scripts allow-forms allow-pointer-lock allow-downloads",
 	);
 	expect(document.querySelector(".remote-desktop-titlebar")?.textContent).toContain("LAN");
 	const frame = document.querySelector("iframe")!;
@@ -351,7 +378,7 @@ it("displays P2P in the desktop window and accepts a verified Hub fallback", asy
 	);
 	await mount();
 	// 通路文案有意去掉「直连/direct」（TURN 中继时并不直连，111b561bb），只断言标识到 P2P 通路
-	expect(document.querySelector(".remote-desktop-titlebar")?.textContent).toContain("P2P");
+	expect(document.querySelector(".remote-desktop-titlebar")?.textContent).toContain("mac · P2P");
 	expect(document.querySelector(".remote-desktop-titlebar")?.textContent).not.toContain("Server relay");
 	const frame = document.querySelector("iframe")!;
 	await act(async () =>

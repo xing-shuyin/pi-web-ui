@@ -9,6 +9,44 @@ using System.Collections.Generic;
 using System.Threading;
 using System.Web.Script.Serialization;
 public static class NativeDesktop {
+  // A persistent top-down DIB avoids GDI+ creating/copying a device bitmap on every frame.
+  sealed class CaptureSurface : IDisposable {
+    [StructLayout(LayoutKind.Sequential)] struct BitmapInfo { public uint Size; public int Width,Height; public ushort Planes,Bits; public uint Compression,ImageSize; public int X,Y; public uint Used,Important,Color; }
+    [DllImport("user32.dll")] static extern IntPtr GetDC(IntPtr window);
+    [DllImport("user32.dll")] static extern int ReleaseDC(IntPtr window,IntPtr dc);
+    [DllImport("gdi32.dll")] static extern IntPtr CreateCompatibleDC(IntPtr dc);
+    [DllImport("gdi32.dll")] static extern IntPtr CreateDIBSection(IntPtr dc,ref BitmapInfo info,uint usage,out IntPtr bits,IntPtr section,uint offset);
+    [DllImport("gdi32.dll")] static extern IntPtr SelectObject(IntPtr dc,IntPtr value);
+    [DllImport("gdi32.dll")] static extern bool DeleteObject(IntPtr value);
+    [DllImport("gdi32.dll")] static extern bool DeleteDC(IntPtr dc);
+    [DllImport("gdi32.dll",SetLastError=true)] static extern bool BitBlt(IntPtr target,int x,int y,int width,int height,IntPtr source,int sourceX,int sourceY,uint operation);
+    [DllImport("gdi32.dll")] static extern bool GdiFlush();
+    IntPtr screen,dc,bitmap,previous;
+    public Bitmap Picture;
+    public CaptureSurface(int width,int height) {
+      try {
+        screen=GetDC(IntPtr.Zero); dc=CreateCompatibleDC(screen);
+        if(screen==IntPtr.Zero||dc==IntPtr.Zero) throw new Exception("Cannot create desktop surface.");
+        var info=new BitmapInfo {Size=40,Width=width,Height=-height,Planes=1,Bits=32}; IntPtr pixels;
+        bitmap=CreateDIBSection(screen,ref info,0,out pixels,IntPtr.Zero,0);
+        if(bitmap==IntPtr.Zero||pixels==IntPtr.Zero) throw new Exception("Cannot allocate desktop surface.");
+        previous=SelectObject(dc,bitmap);
+        if(previous==IntPtr.Zero||previous==new IntPtr(-1)) throw new Exception("Cannot select desktop surface.");
+        Picture=new Bitmap(width,height,width*4,PixelFormat.Format32bppRgb,pixels);
+      } catch { Dispose(); throw; }
+    }
+    public void Read(int x,int y) {
+      if(!BitBlt(dc,0,0,Picture.Width,Picture.Height,screen,x,y,0x40CC0020)) throw new Exception("Cannot copy desktop pixels: "+Marshal.GetLastWin32Error());
+      // Required before the encoder or DXGI accesses DIB memory outside GDI.
+      GdiFlush();
+    }
+    public void Dispose() {
+      if(dc!=IntPtr.Zero&&previous!=IntPtr.Zero&&previous!=new IntPtr(-1)) SelectObject(dc,previous);
+      if(bitmap!=IntPtr.Zero) { DeleteObject(bitmap); bitmap=IntPtr.Zero; }
+      if(dc!=IntPtr.Zero) { DeleteDC(dc); dc=IntPtr.Zero; }
+      if(screen!=IntPtr.Zero) { ReleaseDC(IntPtr.Zero,screen); screen=IntPtr.Zero; }
+    }
+  }
   // Desktop Duplication supplies fresh GPU frames; secure/unsupported desktops retain GDI fallback.
   sealed class Duplication : IDisposable {
     [StructLayout(LayoutKind.Sequential)] struct Rect { public int Left,Top,Right,Bottom; }
@@ -87,6 +125,8 @@ public static class NativeDesktop {
   [StructLayout(LayoutKind.Explicit)] struct UNION { [FieldOffset(0)] public MOUSEINPUT m; [FieldOffset(0)] public KEYBDINPUT k; }
   [StructLayout(LayoutKind.Sequential)] struct INPUT { public uint type; public UNION u; }
   [DllImport("user32.dll", SetLastError=true)] static extern uint SendInput(uint n, INPUT[] input, int size);
+  [DllImport("winmm.dll")] static extern uint timeBeginPeriod(uint period);
+  [DllImport("winmm.dll")] static extern uint timeEndPeriod(uint period);
   [DllImport("user32.dll")] static extern bool SetCursorPos(int x,int y);
   [DllImport("user32.dll")] static extern bool SetProcessDPIAware();
   [DllImport("wtsapi32.dll")] static extern bool WTSQuerySessionInformation(IntPtr server,int session,int info,out IntPtr data,out int size);
@@ -109,13 +149,48 @@ public static class NativeDesktop {
   static string selectedDisplay="";
   static volatile bool reportDisplayMetadata=false;
   static string captureBackend="gdi";
+  static string videoEncoder="";
+  static string videoEncoderRuntime="default";
+  static string videoFallback="";
   static Display CurrentDisplay() {
     foreach(var display in displays) if(display.Id==selectedDisplay) return display;
     foreach(var display in displays) if(display.Primary) return display;
     return displays.Length>0?displays[0]:new Display{Id="primary",Bounds=new Rectangle(0,0,GetSystemMetrics(0),GetSystemMetrics(1)),Primary=true};
   }
   static Rectangle Bounds() { lock(gate) return CurrentDisplay().Bounds; }
-  static void SendPacket(byte[] bytes) { int n=bytes.Length; byte[] h={(byte)(n>>24),(byte)(n>>16),(byte)(n>>8),(byte)n}; outputStream.Write(h,0,4); outputStream.Write(bytes,0,n); outputStream.Flush(); }
+  static readonly object outputGate=new object();
+  static void SendPacket(byte[] bytes) { lock(outputGate) { int n=bytes.Length; byte[] h={(byte)(n>>24),(byte)(n>>16),(byte)(n>>8),(byte)n}; outputStream.Write(h,0,4); outputStream.Write(bytes,0,n); outputStream.Flush(); } }
+  public sealed class VideoSettings {
+    public Rectangle Bounds; public int Edge,Quality,Fps; public string Desktop,DisplayId;
+    public string Identity { get { return Bounds.ToString()+":"+Edge+":"+Quality+":"+Fps+":"+Desktop; } }
+  }
+  public static bool VideoStopped { get { return stopped; } }
+  static DateTime videoDisplaysAt=DateTime.MinValue;
+  public static VideoSettings ReadVideoSettings() {
+    RequireDesktop(); if((DateTime.UtcNow-videoDisplaysAt).TotalSeconds>=1) { ReportDisplays(); videoDisplaysAt=DateTime.UtcNow; }
+    lock(gate) return new VideoSettings{Bounds=Bounds(),Edge=maxEdge,Quality=quality,Fps=fps,Desktop=attachedName,DisplayId=selectedDisplay};
+  }
+  public static void InitializeVideo(string display,int edge,int q,int rate) {
+    if(display==null||display.Length>128||display.IndexOf('\0')>=0||edge<640||edge>2560||q<35||q>85||rate<5||rate>240) throw new Exception("Invalid initial video profile.");
+    lock(gate) { selectedDisplay=display;maxEdge=edge;quality=q;fps=rate;reportDisplayMetadata=true; }
+  }
+  public static void VideoBackend(string backend,string encoder,string runtime="default") { captureBackend=backend; videoEncoder=encoder; videoEncoderRuntime=runtime; ReportDisplays(); }
+  public static void VideoFallback(string reason,bool append=false) { int line=reason.IndexOfAny(new char[]{'\r','\n'}); if(line>=0) reason=reason.Substring(0,line); if(reason.Length>160) reason=reason.Substring(0,160); videoFallback=append&&videoFallback.Length>0?videoFallback+"\n"+reason:reason; if(videoFallback.Length>1024) videoFallback=videoFallback.Substring(0,1024); ReportDisplays(); }
+  public static void VideoChunk(byte[] bytes,int size,bool reset) {
+    if(size<1||size>65536) throw new Exception("Invalid encoded desktop chunk.");
+    byte[] packet=new byte[size+2]; packet[0]=4; packet[1]=reset?(byte)1:(byte)0; Buffer.BlockCopy(bytes,0,packet,2,size); SendPacket(packet);
+  }
+  public static void VideoFrame(byte[] bytes,bool key,bool reset,long pts) {
+    if(bytes.Length<1||bytes.Length>4*1024*1024||pts<0) throw new Exception("Invalid native video frame.");
+    byte[] packet=new byte[bytes.Length+10]; packet[0]=6; packet[1]=(byte)((key?1:0)|(reset?2:0));
+    for(int i=0;i<8;i++) packet[2+i]=(byte)((ulong)pts>>(56-8*i));
+    Buffer.BlockCopy(bytes,0,packet,10,bytes.Length); SendPacket(packet);
+  }
+  public static void VideoAlive() { SendPacket(new byte[]{5}); }
+  static volatile bool videoPaused;
+  public static bool VideoPaused { get { return videoPaused; } }
+  static int videoGeneration;
+  public static int VideoGeneration { get { return Interlocked.CompareExchange(ref videoGeneration,0,0); } }
   static void ReportDisplays() {
     var items=new List<Display>();
     EnumDisplayMonitors(IntPtr.Zero,IntPtr.Zero,(monitor,dc,rect,data)=>{var info=new MonitorInfo();info.Size=Marshal.SizeOf(info);if(GetMonitorInfo(monitor,ref info)&&info.Right>info.Left&&info.Bottom>info.Top)items.Add(new Display{Id=info.Device,Bounds=Rectangle.FromLTRB(info.Left,info.Top,info.Right,info.Bottom),Primary=(info.Flags&1)!=0});return items.Count<32;},IntPtr.Zero);
@@ -123,7 +198,7 @@ public static class NativeDesktop {
       displays=items.ToArray(); var selected=CurrentDisplay(); selectedDisplay=selected.Id;
       if(displays.Length==0) displays=new Display[]{selected};
       var values=new List<object>(); foreach(var display in displays) values.Add(new {id=display.Id,width=display.Bounds.Width,height=display.Bounds.Height,primary=display.Primary});
-      if(reportDisplayMetadata) SendPacket(Encoding.UTF8.GetBytes(new JavaScriptSerializer().Serialize(new {type="displays",displays=values,selected=selected.Id,capture=captureBackend})));
+      if(reportDisplayMetadata) SendPacket(Encoding.UTF8.GetBytes(new JavaScriptSerializer().Serialize(new {type="displays",displays=values,selected=selected.Id,capture=captureBackend,encoder=videoEncoder,encoderRuntime=videoEncoderRuntime,fallback=videoFallback})));
     }
   }
   [DllImport("user32.dll", CharSet=CharSet.Unicode, SetLastError=true)] static extern bool GetUserObjectInformation(IntPtr handle,int index,StringBuilder value,int size,out int needed);
@@ -151,6 +226,7 @@ public static class NativeDesktop {
       var name=new StringBuilder(256); int needed;
       if(!GetUserObjectInformation(desktop,2,name,name.Capacity*2,out needed) || !String.Equals(name.ToString(),"Default",StringComparison.OrdinalIgnoreCase))
         throw new Exception("WINDOWS_DESKTOP_UNAVAILABLE: The interactive desktop is locked or protected.");
+      attachedName=name.ToString();
     } finally { CloseDesktop(desktop); }
   }
   static readonly object gate = new object();
@@ -158,7 +234,7 @@ public static class NativeDesktop {
   static readonly HashSet<int> buttons = new HashSet<int>();
   static readonly AutoResetEvent ack = new AutoResetEvent(false);
   static volatile bool stopped;
-  static bool preview;
+  static bool preview,rawFrames;
   static int maxEdge=1920, quality=65, fps=30;
   static void Send(INPUT i) { if(SendInput(1,new INPUT[]{i},Marshal.SizeOf(typeof(INPUT)))!=1) throw new Exception("SendInput failed; Windows blocks control of elevated apps and secure desktops."); }
   static INPUT KeyInput(int code,bool down) {
@@ -222,6 +298,9 @@ public static class NativeDesktop {
   }
   static void Capture() {
     Bitmap full=null;
+    CaptureSurface surface=null;
+    byte[] rawPacket=null;
+    bool preciseTimer=!preview&&timeBeginPeriod(1)==0;
     int lastEdge=-1,lastQuality=-1,lastRate=-1;
     bool populated=false;
     bool gpuHasFrame=false;
@@ -237,12 +316,18 @@ public static class NativeDesktop {
       while(!stopped) {
         var clock=System.Diagnostics.Stopwatch.StartNew();
         int edge, q, rate; lock(gate) { edge=preview?640:maxEdge; q=quality; rate=fps; }
-        if((DateTime.UtcNow-checkedAt).TotalSeconds>=1) { RequireDesktop(); ReportDisplays(); checkedAt=DateTime.UtcNow; }
+        if((DateTime.UtcNow-checkedAt).TotalSeconds>=1) {
+          string previousDesktop=attachedName;
+          RequireDesktop(); ReportDisplays(); checkedAt=DateTime.UtcNow;
+          if(previousDesktop!=attachedName&&full!=null) { full.Dispose(); full=null; if(surface!=null) {surface.Dispose();surface=null;} }
+        }
         var r=Bounds();
         if(r.Width<1||r.Height<1||r.Width>32768||r.Height>32768||(long)r.Width*r.Height>64000000) throw new Exception("Unsupported display size.");
         if(full==null||capturedBounds!=r) {
           if(full!=null) full.Dispose();
-          full=new Bitmap(r.Width,r.Height,PixelFormat.Format32bppRgb);
+          if(surface!=null) {surface.Dispose();surface=null;}
+          try {surface=new CaptureSurface(r.Width,r.Height);full=surface.Picture;}
+          catch {full=new Bitmap(r.Width,r.Height,PixelFormat.Format32bppRgb);}
           populated=false;
           capturedBounds=r;
           if(duplicate!=null) { duplicate.Dispose(); duplicate=null; } retryGpu=DateTime.MinValue;
@@ -257,25 +342,42 @@ public static class NativeDesktop {
                 if(duplicate.Read(full)) gpuHasFrame=true;
                 else {
                   if(!gpuHasFrame && (DateTime.UtcNow-gpuStarted).TotalSeconds>2) throw new Exception("No GPU desktop frames.");
-                  if(gpuHasFrame && populated && lastEdge==edge && lastQuality==q && lastRate==rate && (DateTime.UtcNow-lastFrameAt).TotalSeconds<2) { Thread.Sleep(2); continue; }
+                  if(gpuHasFrame && populated && lastEdge==edge && lastQuality==q && lastRate==rate && (DateTime.UtcNow-lastFrameAt).TotalSeconds<(rawFrames?0.1:2)) { Thread.Sleep(2); continue; }
                 }
               }
               catch { duplicate.Dispose(); duplicate=null; gpuHasFrame=false; retryGpu=DateTime.UtcNow.AddSeconds(10); }
             }
-            if(duplicate==null||!gpuHasFrame) { using(var g=Graphics.FromImage(full)) g.CopyFromScreen(r.Left,r.Top,0,0,r.Size,CopyPixelOperation.SourceCopy); captureBackend="gdi"; }
+            if(duplicate==null||!gpuHasFrame) {
+              if(surface!=null) surface.Read(r.Left,r.Top);
+              else using(var g=Graphics.FromImage(full)) g.CopyFromScreen(r.Left,r.Top,0,0,r.Size,CopyPixelOperation.SourceCopy);
+              captureBackend="gdi";
+            }
             else captureBackend="dxgi";
             populated=true; lastEdge=edge; lastQuality=q; lastRate=rate;
           }
           catch { RequireDesktop(); throw; }
           double scale=Math.Min(1.0,(double)edge/Math.Max(r.Width,r.Height));
           using(var scaled=scale<1 ? new Bitmap(full,new Size(Math.Max(1,(int)(r.Width*scale)),Math.Max(1,(int)(r.Height*scale)))) : null)
-          using(var data=new MemoryStream())
-          using(var p=new EncoderParameters(1)) {
-            p.Param[0]=new EncoderParameter(System.Drawing.Imaging.Encoder.Quality,(long)q);
-            (scaled??full).Save(data,codec,p);
-            if(data.Length>4194304) throw new Exception("JPEG exceeds 4 MB.");
-            int n=(int)data.Length; byte[] h={(byte)(n>>24),(byte)(n>>16),(byte)(n>>8),(byte)n};
-            output.Write(h,0,4); data.WriteTo(output); output.Flush();
+          {
+            var picture=scaled??full;
+            if(rawFrames) {
+              int width=picture.Width,height=picture.Height,n=checked(width*height*4+9);
+              if(n>33554432) throw new Exception("Raw desktop frame exceeds limit.");
+              if(rawPacket==null||rawPacket.Length!=n) rawPacket=new byte[n];
+              var packet=rawPacket; packet[0]=3;
+              packet[1]=(byte)(width>>24); packet[2]=(byte)(width>>16); packet[3]=(byte)(width>>8); packet[4]=(byte)width;
+              packet[5]=(byte)(height>>24); packet[6]=(byte)(height>>16); packet[7]=(byte)(height>>8); packet[8]=(byte)height;
+              var bits=picture.LockBits(new Rectangle(0,0,width,height),ImageLockMode.ReadOnly,PixelFormat.Format32bppRgb);
+              try { for(int row=0;row<height;row++) Marshal.Copy(IntPtr.Add(bits.Scan0,row*bits.Stride),packet,9+row*width*4,width*4); }
+              finally { picture.UnlockBits(bits); }
+              SendPacket(packet);
+            } else using(var data=new MemoryStream()) using(var p=new EncoderParameters(1)) {
+              p.Param[0]=new EncoderParameter(System.Drawing.Imaging.Encoder.Quality,(long)q);
+              picture.Save(data,codec,p);
+              if(data.Length>4194304) throw new Exception("JPEG exceeds 4 MB.");
+              int n=(int)data.Length; byte[] h={(byte)(n>>24),(byte)(n>>16),(byte)(n>>8),(byte)n};
+              output.Write(h,0,4); data.WriteTo(output); output.Flush();
+            }
             lastFrameAt=DateTime.UtcNow;
           }
         }
@@ -285,18 +387,21 @@ public static class NativeDesktop {
         if(remaining>0) Thread.Sleep(remaining);
       }
     } catch(Exception e) { if(!stopped) reportError(e.Message); stopped=true; Release(); Environment.Exit(1); }
-    finally { if(duplicate!=null) duplicate.Dispose(); if(full!=null) full.Dispose(); }
+    finally { if(duplicate!=null) duplicate.Dispose(); if(full!=null) full.Dispose(); if(surface!=null) surface.Dispose(); if(preciseTimer) timeEndPeriod(1); }
   }
-  public static void Run(bool readOnly, bool previewMode, bool captureEnabled) {
-    Run(readOnly,previewMode,captureEnabled,false,Console.OpenStandardInput(),Console.OpenStandardOutput(),message=>Console.Error.WriteLine(message));
+  public static void Run(bool readOnly, bool previewMode, bool captureEnabled, bool raw=false) {
+    Run(readOnly,previewMode,captureEnabled,false,Console.OpenStandardInput(),Console.OpenStandardOutput(),message=>Console.Error.WriteLine(message),raw);
   }
-  public static void Run(bool readOnly, bool previewMode, bool captureEnabled, bool secure, Stream input, Stream output, Action<string> error) {
+  public static void Run(bool readOnly, bool previewMode, bool captureEnabled, bool secure, Stream input, Stream output, Action<string> error, bool raw=false, Action videoCapture=null) {
     if(secure&&!System.Security.Principal.WindowsIdentity.GetCurrent().IsSystem) throw new Exception("System desktop requires the installed service.");
     systemDesktop=secure; inputStream=input; outputStream=output; reportError=error;
-    preview=previewMode;
+    preview=previewMode; rawFrames=raw&&!preview;
     SetProcessDPIAware();
     // Input-only helpers drive the H.264 capture backend: no frames, no display probing.
-    if(captureEnabled) { Thread capture=new Thread(Capture); capture.IsBackground=true; capture.Start(); }
+    if(captureEnabled) { Thread capture=new Thread(()=>{
+      if(videoCapture==null) { Capture(); return; }
+      try { videoCapture(); } catch(Exception e) { if(!stopped) { lock(outputGate) reportError("WINDOWS_DESKTOP_UNAVAILABLE: "+e.Message); } stopped=true; Release(); Environment.Exit(1); }
+    }); capture.IsBackground=true; capture.Start(); }
     try {
       using(var reader=new StreamReader(inputStream,new UTF8Encoding(false))) {
         var json=new JavaScriptSerializer(); json.MaxJsonLength=32768;
@@ -306,6 +411,8 @@ public static class NativeDesktop {
           var e=json.Deserialize<Dictionary<string,object>>(line); string type=(string)e["type"];
           if(type=="close") break;
           if(type=="ack") { ack.Set(); continue; }
+          if(type=="video_flow") { videoPaused=Convert.ToBoolean(e["paused"]); continue; }
+          if(type=="video_keyframe") { Interlocked.Increment(ref videoGeneration); continue; }
           if(type=="displays") { reportDisplayMetadata=true; continue; }
           if(type=="display") {
             var id=e["id"] as string; if(id==null||id.Length>128||id.IndexOf('\0')>=0) throw new Exception("Invalid display.");

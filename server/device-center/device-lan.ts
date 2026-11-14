@@ -1,4 +1,5 @@
 import { randomBytes, constants } from "node:crypto";
+import { desktopDownloadLimit } from "./desktop-files-protocol.js";
 import http, { type IncomingHttpHeaders, type IncomingMessage } from "node:http";
 import https from "node:https";
 import { isIPv4, type Socket } from "node:net";
@@ -186,7 +187,8 @@ export function createDeviceLanServer(options: Options): {
 					req.resume();
 					return;
 				}
-				const desktop = req.url?.startsWith("/api/device-desktop/");
+				const desktop =
+					req.url?.startsWith("/api/device-desktop/") && !req.url.startsWith("/api/device-desktop/files/");
 				const limit = desktop ? INPUT : RELAY_LIMITS.body;
 				if (s.tasks.size >= RELAY_LIMITS.streams || Number(req.headers["content-length"] ?? 0) > limit) {
 					res.setHeader("Connection", "close");
@@ -195,9 +197,9 @@ export function createDeviceLanServer(options: Options): {
 					return;
 				}
 				const input = bodyLimit(limit);
-				const output = bodyLimit(RELAY_LIMITS.body);
+				const output = bodyLimit(desktopDownloadLimit(req.url, req.method) ?? RELAY_LIMITS.body);
 				let stopped = false;
-				const timer = setTimeout(() => cleanup(), 60_000);
+				const timer = setTimeout(() => cleanup(), desktopDownloadLimit(req.url, req.method) ? 30 * 60_000 : 60_000);
 				const upstream = localRequest(
 					{
 						protocol: local.protocol,

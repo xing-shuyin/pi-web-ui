@@ -34,8 +34,14 @@ jobs:
       - name: Build P2P helper for this platform
         run: npm run build:device-p2p -- --host
 
+      - name: Build native desktop encoder and relink materials
+        run: npm run build:desktop-codec
+
       - name: Fetch ffmpeg for the H.264 desktop channel (Windows only)
         run: npm run build:ffmpeg
+
+      - name: Verify native desktop package assets
+        run: npm run verify:desktop-codec
 
       - name: Build (web + server)
         run: npm run build

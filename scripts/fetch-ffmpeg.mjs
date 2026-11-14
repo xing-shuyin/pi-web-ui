@@ -1,93 +1,90 @@
-// 把 ffmpeg 静态构建放进 bin/ffmpeg/<platform>-<arch>/，供 H.264 桌面通道使用。
-//
-// 为什么需要它：JPEG 帧在 1080p60 要 ~100 Mbps，2560×1440 要 ~160 Mbps，中继根本喂不起；
-// NVENC 硬编码同样的画面只要 9–18 Mbps。发布包必须自带 ffmpeg，不能指望用户 PATH 里有。
-//
-// 用法：
-//   node scripts/fetch-ffmpeg.mjs                    # 当前平台
-//   node scripts/fetch-ffmpeg.mjs --url=… --sha256=… # 固定 URL 与哈希（发布前务必固定）
-//   node scripts/fetch-ffmpeg.mjs --force            # 已存在也重新下载
-//
-// 只支持 Windows：macOS/Linux 的桌面采集走各自的系统后端（ScreenCaptureKit / ffmpeg on PATH）。
+// Prepare the embedded Windows encoder on any build host. Users never download it separately.
 import { createHash } from "node:crypto";
 import { spawn } from "node:child_process";
-import { mkdir, mkdtemp, readFile, rm, writeFile, stat } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, readdir, rm, writeFile, copyFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { ensureCompatibleFfmpeg } from "./fetch-ffmpeg-compat.mjs";
 
 const root = dirname(dirname(fileURLToPath(import.meta.url)));
-const platform = `${process.platform}-${process.arch}`;
-const target = join(root, "bin/ffmpeg", platform, process.platform === "win32" ? "ffmpeg.exe" : "ffmpeg");
-const DEFAULT_URL = "https://github.com/BtbN/FFmpeg-Builds/releases/download/latest/ffmpeg-master-latest-win64-gpl.zip";
 const args = process.argv.slice(2);
 const arg = (name) => args.find((value) => value.startsWith(`--${name}=`))?.slice(name.length + 3);
-const url = arg("url") ?? process.env.PI_FFMPEG_URL ?? DEFAULT_URL;
-const sha256 = arg("sha256") ?? process.env.PI_FFMPEG_SHA256 ?? "";
-const force = args.includes("--force");
-
-if (process.platform !== "win32") {
-	console.log(`[ffmpeg] ${platform} 不需要随包 ffmpeg（桌面通道只在 Windows 使用 NVENC），跳过。`);
+const platform = arg("platform") ?? `${process.platform}-${process.arch}`;
+const pinned = JSON.parse(await readFile(new URL("./ffmpeg-build.json", import.meta.url), "utf8"));
+if (platform !== "win32-x64") {
+	console.log(`[ffmpeg] ${platform}: no bundled encoder required`);
 	process.exit(0);
 }
-
-async function exists(path) {
-	try {
-		await stat(path);
-		return true;
-	} catch {
-		return false;
+const url = arg("url") ?? process.env.PI_FFMPEG_URL ?? pinned.url;
+const sha256 = arg("sha256") ?? process.env.PI_FFMPEG_SHA256 ?? (url === pinned.url ? pinned.sha256 : "");
+if (!/^[a-f0-9]{64}$/.test(sha256)) throw new Error("A pinned --sha256 is required for the encoder archive");
+const directory = join(root, "bin/ffmpeg", platform);
+const target = join(directory, "ffmpeg.exe");
+const digest = (bytes) => createHash("sha256").update(bytes).digest("hex");
+let current = false;
+try {
+	const manifest = JSON.parse(await readFile(join(directory, "build.json"), "utf8"));
+	if (
+		!args.includes("--force") &&
+		manifest.archiveSha256 === sha256 &&
+		manifest.binarySha256 === digest(await readFile(target))
+	) {
+		await readFile(join(directory, "LICENSE.txt"));
+		await readFile(join(directory, "THIRD_PARTY_NOTICES.txt"));
+		current = true;
 	}
-}
-
-if (!force && (await exists(target))) {
-	console.log(`[ffmpeg] 已存在：${target}`);
+} catch {}
+if (current) {
+	console.log(`[ffmpeg] Verified embedded encoder: ${target}`);
+	await ensureCompatibleFfmpeg(directory);
 	process.exit(0);
 }
 
-function run(command, argv, cwd) {
+function run(command, argv) {
 	return new Promise((resolve, reject) => {
-		const child = spawn(command, argv, { cwd, stdio: "inherit", windowsHide: true });
+		const child = spawn(command, argv, { stdio: "inherit", windowsHide: true });
 		child.once("error", reject);
-		child.once("exit", (code) => (code === 0 ? resolve() : reject(new Error(`${command} 退出码 ${code}`))));
+		child.once("exit", (code) => (code === 0 ? resolve() : reject(new Error(`${command} exited ${code}`))));
 	});
 }
-
-const directory = await mkdtemp(join(tmpdir(), "pi-ffmpeg-"));
-try {
-	const archive = join(directory, "ffmpeg.zip");
-	console.log(`[ffmpeg] 下载 ${url}`);
-	const response = await fetch(url, { redirect: "follow", signal: AbortSignal.timeout(600_000) });
-	if (!response.ok) throw new Error(`下载失败：HTTP ${response.status}`);
-	const bytes = Buffer.from(await response.arrayBuffer());
-	if (sha256) {
-		const digest = createHash("sha256").update(bytes).digest("hex");
-		if (digest !== sha256) throw new Error(`SHA-256 不匹配：期望 ${sha256}，实际 ${digest}`);
-	} else {
-		console.warn(
-			`[ffmpeg] 未提供 --sha256，本次未校验下载内容（发布前必须固定哈希）。实际：${createHash("sha256").update(bytes).digest("hex")}`,
-		);
-	}
-	await writeFile(archive, bytes);
-	// Windows 10+ 与 macOS 都自带 bsdtar，可以解 zip，不必引入第三方解压依赖。
-	await run("tar", ["-xf", archive, "-C", directory]);
-	const found = await findBinary(directory);
-	if (!found) throw new Error("压缩包里没有找到 ffmpeg 可执行文件");
-	await mkdir(dirname(target), { recursive: true });
-	await writeFile(target, await readFile(found), { mode: 0o755 });
-	console.log(`[ffmpeg] 已就绪：${target}`);
-} finally {
-	await rm(directory, { recursive: true, force: true, maxRetries: 2 });
-}
-
-async function findBinary(directory) {
-	const { readdir } = await import("node:fs/promises");
+async function find(directory, name) {
 	for (const entry of await readdir(directory, { withFileTypes: true })) {
 		const full = join(directory, entry.name);
 		if (entry.isDirectory()) {
-			const nested = await findBinary(full);
+			const nested = await find(full, name);
 			if (nested) return nested;
-		} else if (entry.name === "ffmpeg.exe") return full;
+		} else if (entry.name.toLowerCase() === name.toLowerCase()) return full;
 	}
-	return undefined;
+}
+const temporary = await mkdtemp(join(tmpdir(), "pi-ffmpeg-"));
+try {
+	console.log(`[ffmpeg] Downloading pinned build: ${url}`);
+	const response = await fetch(url, { signal: AbortSignal.timeout(600_000) });
+	if (!response.ok) throw new Error(`Encoder download failed: HTTP ${response.status}`);
+	const bytes = Buffer.from(await response.arrayBuffer());
+	if (digest(bytes) !== sha256) throw new Error("Encoder archive SHA-256 mismatch");
+	const archive = join(temporary, "ffmpeg.zip");
+	await writeFile(archive, bytes);
+	if (process.platform === "linux") await run("unzip", ["-q", archive, "-d", temporary]);
+	else await run("tar", ["-xf", archive, "-C", temporary]);
+	const binary = await find(temporary, "ffmpeg.exe");
+	const license = await find(temporary, "LICENSE.txt");
+	if (!binary || !license) throw new Error("Encoder archive is missing binary or license");
+	await mkdir(directory, { recursive: true });
+	await copyFile(binary, target);
+	await copyFile(license, join(directory, "LICENSE.txt"));
+	await writeFile(
+		join(directory, "THIRD_PARTY_NOTICES.txt"),
+		`FFmpeg standalone encoder, GPL v3 or later. See LICENSE.txt.\nDistributed as a separate process, without changes.\nBuild: ${url}\nBuild recipes and dependencies: https://github.com/FFmpeg-Builds/FFmpeg-Builds\nFFmpeg source: https://github.com/FFmpeg/FFmpeg/tree/${pinned.sourceRevision}\nSource and build details: ${pinned.sourceUrl}\n`,
+	);
+	await writeFile(
+		join(directory, "build.json"),
+		JSON.stringify({ url, archiveSha256: sha256, binarySha256: digest(await readFile(target)) }, null, 2) + "\n",
+	);
+	console.log(`[ffmpeg] Embedded encoder ready: ${target}`);
+	await ensureCompatibleFfmpeg(directory);
+} finally {
+	// temporary is the exact directory returned by mkdtemp, never a caller-supplied path.
+	await rm(temporary, { recursive: true, force: true, maxRetries: 2 });
 }

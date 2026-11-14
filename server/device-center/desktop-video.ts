@@ -3,7 +3,13 @@ import type { Readable } from "node:stream";
 import { resolveFfmpeg } from "./ffmpeg-path.js";
 import type { DesktopProfile } from "./desktop-quality.js";
 
-export type VideoFrame = { data: Uint8Array; key: boolean };
+export type VideoFrame = { data: Uint8Array; key: boolean; codec?: string; reset?: boolean; timestampMs?: number };
+
+export function h264Codec(bytes: Uint8Array): string | undefined {
+	for (let i = 0; i + 6 < bytes.length; i++)
+		if (bytes[i] === 0 && bytes[i + 1] === 0 && bytes[i + 2] === 1 && (bytes[i + 3] & 31) === 7)
+			return "avc1." + Buffer.from(bytes.subarray(i + 4, i + 7)).toString("hex");
+}
 
 /**
  * Split a raw Annex-B H.264 stream into access units (one per picture).
@@ -24,6 +30,14 @@ export function createH264Splitter(emit: (frame: VideoFrame) => void) {
 		key = false;
 	};
 	return (chunk: Buffer) => {
+		if (
+			buffer.length +
+				chunk.length +
+				pending.reduce((n, b) => n + b.length, 0) +
+				(current?.reduce((n, b) => n + b.length, 0) ?? 0) >
+			16 * 1024 * 1024
+		)
+			throw new Error("Video access unit exceeds limit");
 		buffer = buffer.length ? Buffer.concat([buffer as Uint8Array, chunk as Uint8Array]) : chunk;
 		let offset = 0;
 		for (;;) {
@@ -32,6 +46,8 @@ export function createH264Splitter(emit: (frame: VideoFrame) => void) {
 			const header = at + 3;
 			if (header >= buffer.length) break;
 			const type = buffer[header] & 0x1f;
+			// An AUD already proves the preceding picture is complete, even if this NAL is partial.
+			if (type === 9 && current?.length) finish();
 			const next = buffer.indexOf(Buffer.from([0, 0, 1]), header + 1);
 			if (next < 0) break;
 			// A previous 4-byte start code leaves a trailing zero inside this NAL; drop padding.

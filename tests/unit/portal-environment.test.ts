@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { webcrypto } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { runInNewContext } from "node:vm";
 import { wrapperHtml } from "../../server/device-center/path-portal.js";
@@ -169,7 +170,16 @@ function portal(storage: Storage, scope = ["account", "dev"], capability = "cap"
 	const base = `/device/${scope[1]}/__relay/${capability}/`;
 	const { target } = frame(`${base}index.html`);
 	const listeners = new Set<(event: MessageEvent) => void>();
-	let receiveWrapper: (event: Partial<MessageEvent>) => void;
+	const wrapperMessages = new Set<(event: Partial<MessageEvent>) => void>();
+	const receiveWrapper = (event: Partial<MessageEvent>) => {
+		for (const listener of wrapperMessages) listener(event);
+	};
+	const addWrapperListener = (type: string, listener: (event: Partial<MessageEvent>) => void) => {
+		if (type === "message") wrapperMessages.add(listener);
+	};
+	const removeWrapperListener = (type: string, listener: (event: Partial<MessageEvent>) => void) => {
+		if (type === "message") wrapperMessages.delete(listener);
+	};
 	const sendToChild = (data: unknown, source = target.parent, origin = target.location.origin) => {
 		for (const listener of listeners) listener({ data, source, origin } as MessageEvent);
 	};
@@ -186,13 +196,18 @@ function portal(storage: Storage, scope = ["account", "dev"], capability = "cap"
 	});
 	const iframe = { contentWindow: child, addEventListener: vi.fn(), src: "" };
 	const { html } = wrapperHtml(base, "", undefined, "Device", JSON.stringify(scope));
-	const wrapperWindow = {};
+	const wrapperWindow = {
+		crypto: webcrypto,
+		addEventListener: addWrapperListener,
+		removeEventListener: removeWrapperListener,
+	};
 	runInNewContext(html.match(/<script\b[^>]*>([\s\S]*?)<\/script>/)![1], {
 		window: wrapperWindow,
 		parent: wrapperWindow,
 		navigator: { language: "en" },
 		document: { querySelector: () => iframe, getElementById: () => ({}) },
-		addEventListener: (_type: string, listener: typeof receiveWrapper) => (receiveWrapper = listener),
+		addEventListener: addWrapperListener,
+		removeEventListener: removeWrapperListener,
 		localStorage: storage,
 		location: target.location,
 		setTimeout: vi.fn(() => 1),

@@ -10,8 +10,8 @@ import (
 	"net"
 	"os"
 	"regexp"
-	"sync"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"time"
 
@@ -21,6 +21,57 @@ import (
 const chunkSize = 16 * 1024
 const highWater = 256 * 1024
 const maxStreams = 32
+const bufferStallTimeout = 30 * time.Second
+const bufferPollInterval = 100 * time.Millisecond
+
+// Wait for actual send-buffer progress. ICE may be healthy while a slow or lossy
+// path needs more than one RTT to acknowledge queued chunks. Polling also covers
+// a low-water notification that arrived just before the caller started waiting.
+func waitForBuffer(ctx context.Context, amount func() uint64, low, done <-chan struct{}, stall, poll time.Duration) bool {
+	last := amount()
+	if last <= highWater {
+		return true
+	}
+	timer := time.NewTimer(stall)
+	ticker := time.NewTicker(poll)
+	defer timer.Stop()
+	defer ticker.Stop()
+	for {
+		select {
+		case <-low:
+		case <-ticker.C:
+		case <-timer.C:
+			current := amount()
+			if current <= highWater {
+				return true
+			}
+			if current < last {
+				last = current
+				timer.Reset(stall)
+				continue
+			}
+			return false
+		case <-done:
+			return false
+		case <-ctx.Done():
+			return false
+		}
+		current := amount()
+		if current <= highWater {
+			return true
+		}
+		if current < last {
+			if !timer.Stop() {
+				select {
+				case <-timer.C:
+				default:
+				}
+			}
+			timer.Reset(stall)
+		}
+		last = current
+	}
+}
 
 type turnConfig struct {
 	URLs       []string `json:"urls"`
@@ -115,17 +166,8 @@ func (h *helper) bridge(dc *webrtc.DataChannel, tcp net.Conn) {
 		for {
 			n, readErr := tcp.Read(buf)
 			if n > 0 {
-				for dc.BufferedAmount() > highWater {
-					timer := time.NewTimer(5 * time.Second)
-					select {
-					case <-low:
-						timer.Stop()
-					case <-timer.C:
-						return
-					case <-done:
-						timer.Stop()
-						return
-					}
+				if !waitForBuffer(h.ctx, dc.BufferedAmount, low, done, bufferStallTimeout, bufferPollInterval) {
+					return
 				}
 				written, writeErr := rw.Write(buf[:n])
 				h.bytes.Add(uint64(written))
@@ -189,10 +231,6 @@ func (h *helper) start(c command) error {
 	settings.SetNetworkTypes([]webrtc.NetworkType{webrtc.NetworkTypeUDP4, webrtc.NetworkTypeUDP6})
 	settings.SetSCTPMaxReceiveBufferSize(1024 * 1024)
 	settings.SetICETimeouts(8*time.Second, 15*time.Second, 2*time.Second)
-	// 固定本地端口段，使对称 NAT 的公网映射呈线性递增，端口预测才有意义。
-	if err := settings.SetEphemeralUDPPortRange(50000, 50100); err != nil {
-		return err
-	}
 	settings.SetSTUNGatherTimeout(1500 * time.Millisecond)
 	if c.Loopback {
 		settings.SetIncludeLoopbackCandidate(true)
@@ -200,14 +238,14 @@ func (h *helper) start(c command) error {
 	}
 	servers := []webrtc.ICEServer{}
 	for _, url := range c.STUN {
-		if !regexp.MustCompile(`^stun:[a-zA-Z0-9.\-\[\]:]+$`).MatchString(url) || len(url) > 256 {
+		if !validICEServerURL(url, false) {
 			return errors.New("invalid STUN server")
 		}
 		servers = append(servers, webrtc.ICEServer{URLs: []string{url}})
 	}
 	if c.Turn != nil {
 		for _, url := range c.Turn.URLs {
-			if !regexp.MustCompile(`^turns?:[a-zA-Z0-9.\-\[\]:]+$`).MatchString(url) || len(url) > 256 {
+			if !validICEServerURL(url, true) {
 				return errors.New("invalid TURN server")
 			}
 		}

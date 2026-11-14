@@ -5,6 +5,7 @@ import { unlinkSync, rmdirSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, isAbsolute, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { isIP } from "node:net";
 import { killPidTree } from "../process-utils.js";
 import { probeDeviceTunnel, type DeviceLanConnection, type createDeviceLanServer } from "./device-lan.js";
 import { DEVICE_P2P_TIMEOUT_MS, validDeviceP2PSignal, type DeviceP2PSignal } from "./device-p2p-protocol.js";
@@ -30,6 +31,10 @@ export type DeviceP2PFailure =
 	| "helper-missing"
 	| "ice-config"
 	| "cancelled"
+	| "gather-timeout"
+	| "signal-timeout"
+	| "ice-timeout"
+	| "tunnel-timeout"
 	| "gather-failed"
 	| "signal-failed"
 	| "signal-rejected"
@@ -87,6 +92,49 @@ async function binaryPath(): Promise<string | undefined> {
 
 export async function deviceP2PAvailable() {
 	return !!(await binaryPath()) && running.size < 16;
+}
+
+export async function diagnoseDeviceP2P() {
+	const started = Date.now();
+	const report = {
+		version: 1,
+		enabled: process.env.PI_DEVICE_P2P !== "0",
+		helper: false,
+		turnConfigured: false,
+		candidates: { host: 0, srflx: 0, relay: 0 },
+		status: "helper-missing",
+		elapsedMs: 0,
+		scope:
+			"Local ICE gathering only; remote reachability is not tested. Cloud Hub browser access currently uses Hub relay.",
+	};
+	let helper: Awaited<ReturnType<typeof startHelper>> | undefined;
+	try {
+		if (!report.enabled) {
+			report.status = "disabled";
+			return report;
+		}
+		const config = settings();
+		report.turnConfigured = Boolean(config.turn);
+		report.helper = await deviceP2PAvailable();
+		if (!report.helper) return report;
+		helper = await startHelper();
+		helper.send({ type: "start", role: "source", ...config });
+		const event = await helper.wait("sdp", AbortSignal.timeout(5000));
+		for (const type of event.sdp?.matchAll(/^a=candidate:.* typ (host|srflx|relay)(?: |\r?$)/gm) ?? [])
+			report.candidates[type[1] as keyof typeof report.candidates]++;
+		report.status =
+			report.candidates.srflx || report.candidates.relay
+				? "gathered-public-candidates"
+				: report.candidates.host
+					? "host-candidates-only"
+					: "no-candidates";
+	} catch {
+		report.status = helper ? "gather-failed" : "ice-config";
+	} finally {
+		helper?.close();
+		report.elapsedMs = Date.now() - started;
+	}
+	return report;
 }
 
 async function startHelper() {
@@ -207,14 +255,22 @@ export function parseTurn(
 		.map((value) => value.trim())
 		.filter(Boolean);
 	if (urls.length === 0 || urls.length > 3) throw new Error("Invalid TURN configuration");
-	if (urls.some((url) => url.length > 256 || !/^turns?:[a-zA-Z0-9.\-[\]:]+$/.test(url)))
-		throw new Error("Invalid TURN server URL");
+	if (urls.some((url) => !validIceServerUrl(url, "turn"))) throw new Error("Invalid TURN server URL");
 	const username = env.PI_DEVICE_TURN_USERNAME ?? "";
 	const credential = env.PI_DEVICE_TURN_CREDENTIAL ?? "";
 	if (!username || !credential) throw new Error("TURN requires PI_DEVICE_TURN_USERNAME and PI_DEVICE_TURN_CREDENTIAL");
 	if (username.length > 256 || credential.length > 256) throw new Error("TURN credentials are too long");
 	if (/[\u0000-\u001f\u007f]/.test(username + credential)) throw new Error("Invalid TURN credentials");
 	return { urls, username, credential };
+}
+
+export function validIceServerUrl(value: string, kind: "stun" | "turn"): boolean {
+	if (value.length > 256) return false;
+	const match =
+		/^(stun|turn|turns):(\[[0-9a-fA-F:.]+\]|[a-zA-Z0-9.-]+)(?::([0-9]{1,5}))?(?:\?transport=(udp|tcp))?$/.exec(value);
+	if (!match || (kind === "stun" ? match[1] !== "stun" || !!match[4] : match[1] === "stun")) return false;
+	if (match[2].startsWith("[") && isIP(match[2].slice(1, -1)) !== 6) return false;
+	return !match[3] || (Number(match[3]) > 0 && Number(match[3]) <= 65535);
 }
 
 function settings() {
@@ -225,7 +281,7 @@ function settings() {
 				.split(",")
 				.map((x) => x.trim())
 				.filter(Boolean);
-	if (stun.length > 4 || stun.some((x) => x.length > 256 || !/^stun:[a-zA-Z0-9.\-[\]:]+$/.test(x)))
+	if (stun.length > 4 || stun.some((x) => !validIceServerUrl(x, "stun")))
 		throw new Error("Invalid P2P STUN configuration");
 	const turn = loopback ? undefined : parseTurn();
 	return { stun, turn, loopback };
@@ -250,6 +306,9 @@ export async function connectDeviceP2P(
 		return fail("ice-config");
 	}
 	const deadline = AbortSignal.any([AbortSignal.timeout(DEVICE_P2P_TIMEOUT_MS), ...(signal ? [signal] : [])]);
+	let phase: "gather" | "signal" | "ice" | "tunnel" = "gather";
+	const failure = (reason: DeviceP2PFailure) =>
+		fail(signal?.aborted ? "cancelled" : deadline.aborted ? `${phase}-timeout` : reason);
 	try {
 		try {
 			helper = await startHelper();
@@ -258,20 +317,23 @@ export async function connectDeviceP2P(
 		}
 		helper.send({ type: "start", role: "source", ...config });
 		const offer = await helper.wait("sdp", deadline).catch(() => undefined);
-		if (!offer?.sdp) return fail(deadline.aborted ? "cancelled" : "gather-failed");
+		if (!offer?.sdp) return failure("gather-failed");
+		phase = "signal";
 		let response: { deviceP2P?: { signal?: unknown; grant?: unknown } } | undefined;
 		try {
 			response = (await exchange({ version: 1, sdp: offer.sdp }, deadline)) as typeof response;
 		} catch {
-			return fail(deadline.aborted ? "cancelled" : "signal-failed");
+			return failure("signal-failed");
 		}
 		const answer = response?.deviceP2P;
 		if (!answer || !validDeviceP2PSignal(answer.signal)) return fail("signal-rejected");
+		phase = "ice";
 		helper.send({ type: "answer", sdp: answer.signal.sdp });
 		const ready = await helper.wait("ready", deadline).catch(() => undefined);
-		if (!ready?.port) return fail(deadline.aborted ? "cancelled" : "ice-failed");
+		if (!ready?.port) return failure("ice-failed");
+		phase = "tunnel";
 		connection = await probeDeviceTunnel(answer.grant, ready.port, { signal: deadline, timeoutMs: 2000 });
-		if (!connection || deadline.aborted) return fail(deadline.aborted ? "cancelled" : "tunnel-failed");
+		if (!connection || deadline.aborted) return failure("tunnel-failed");
 		const peer = connection;
 		const worker = helper;
 		helper.onClose(() => peer.close());
@@ -289,7 +351,7 @@ export async function connectDeviceP2P(
 			...(ready.relayed === true ? { relayed: true } : {}),
 		};
 	} catch {
-		return fail(deadline.aborted ? "cancelled" : "unexpected");
+		return failure("unexpected");
 	} finally {
 		if (!retained) {
 			connection?.close();

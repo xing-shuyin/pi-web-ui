@@ -73,6 +73,51 @@ function offer(data = Buffer.from("clipboard"), name = "text.txt") {
 	};
 }
 describe("native clipboard protocol", () => {
+	it("keeps synchronization enabled after an oversized copy and accepts the next copy", async () => {
+		const source = memory();
+		let oversized = true;
+		const read = source.backend.read;
+		source.backend.read = async () => {
+			if (oversized) throw new Error("clipboard-size");
+			return read();
+		};
+		const ep = await endpoint(source.backend);
+		ep.send({ type: "start", read: true, write: false });
+		await vi.waitFor(() => expect(source.listeners.size).toBe(1));
+		source.copy(text("too big"));
+		await vi.waitFor(() =>
+			expect(ep.packets).toContainEqual({ type: "clipboard-error", code: "clipboard-size", recoverable: true }),
+		);
+		expect(ep.client.readyState).toBe(WebSocket.OPEN);
+		oversized = false;
+		source.copy(text("next copy"));
+		await vi.waitFor(() => expect(ep.packets.some((p) => p.type === "offer")).toBe(true));
+	});
+	it("supports explicit browser text transfer without a clipboard watcher", async () => {
+		const source = memory(),
+			ep = await endpoint(source.backend);
+		source.copy(text("existing remote text"));
+		ep.send({ type: "start", read: true, write: true, manual: true });
+		ep.send({ type: "text-read" });
+		await vi.waitFor(() => expect(ep.packets).toContainEqual({ type: "text-result", text: "existing remote text" }));
+		expect(source.listeners.size).toBe(0);
+		ep.send({ type: "text-write", text: "从浏览器粘贴" });
+		await vi.waitFor(() => expect(ep.packets).toContainEqual({ type: "text-result", written: true }));
+		expect(await source.backend.read()).toEqual(text("从浏览器粘贴"));
+		source.copy({ kind: "image", items: [{ name: "image.png", data: Buffer.from([1]) }] });
+		ep.send({ type: "text-read" });
+		await vi.waitFor(() => expect(ep.packets).toContainEqual({ type: "text-result", error: "clipboard-not-text" }));
+		ep.send({ type: "text-write", text: "x".repeat(16385) });
+		await vi.waitFor(() => expect(ep.packets).toContainEqual({ type: "clipboard-error", code: "clipboard-size" }));
+	});
+	it("refuses browser text writes on read-only connections", async () => {
+		const source = memory(),
+			ep = await endpoint(source.backend, false);
+		ep.send({ type: "start", read: true, write: false, manual: true });
+		ep.send({ type: "text-write", text: "must not write" });
+		await vi.waitFor(() => expect(ep.packets).toContainEqual({ type: "clipboard-error", code: "clipboard-direction" }));
+		expect(source.backend.write).not.toHaveBeenCalled();
+	});
 	it("copies text, images and multi-chunk files both ways without echoes; stops watching on disconnect", async () => {
 		const a = memory(),
 			b = memory(),
@@ -183,6 +228,8 @@ describe("native clipboard protocol", () => {
 		expect(open).not.toHaveBeenCalled();
 		bridge.set("send");
 		socket.onmessage!({ data: JSON.stringify({ type: "clipboard-capabilities" }) });
+		expect(socket.send).not.toHaveBeenCalled();
+		bridge.receive({ type: "desktop-clipboard", channel: id, payload: { type: "clipboard-capabilities" } });
 		expect(socket.send).toHaveBeenCalledWith(JSON.stringify({ type: "start", read: true, write: false }));
 		socket.onmessage!({ data: JSON.stringify({ type: "clipboard-ready" }) });
 		const pending = offer();
@@ -190,6 +237,13 @@ describe("native clipboard protocol", () => {
 		expect(post).not.toHaveBeenCalledWith(expect.objectContaining({ payload: pending }));
 		bridge.receive({ type: "desktop-clipboard", channel: id, payload: { type: "clipboard-ready" } });
 		expect(post).toHaveBeenCalledWith(expect.objectContaining({ payload: pending }));
+		bridge.receive({
+			type: "desktop-clipboard",
+			channel: id,
+			payload: { type: "clipboard-error", code: "clipboard-space", recoverable: true },
+		});
+		expect(socket.close).not.toHaveBeenCalled();
+		expect(state).toHaveBeenLastCalledWith("warning:clipboard-space");
 		bridge.receive({ type: "desktop-clipboard", channel: id, payload: offer() });
 		expect(state).toHaveBeenLastCalledWith("clipboard-direction");
 		expect(socket.close).toHaveBeenCalled();

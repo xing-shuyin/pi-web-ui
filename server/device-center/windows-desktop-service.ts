@@ -16,10 +16,13 @@ export function windowsDesktopServicePath(): string | undefined {
 }
 
 /** Bind capability to the installed binary, so an old/rolled-back service receives no new commands. */
-export function windowsDesktopServiceProfiles(path: string): boolean {
+export function windowsDesktopServiceProfiles(
+	path: string,
+	capability: "profile-v2" | "raw-v1" | "video-v1" | "video-flow-v1" = "profile-v2",
+): boolean {
 	try {
 		return (
-			readFileSync(join(path, "..", "profile-v2"), "utf8")
+			readFileSync(join(path, "..", capability), "utf8")
 				.trim()
 				.toLowerCase() === createHash("sha256").update(readFileSync(path)).digest("hex")
 		);
@@ -37,6 +40,7 @@ export function startWindowsServiceDesktop(
 	const mode = { readOnly: options.preview === true || options.readOnly !== false, preview: options.preview === true };
 	let current: NativeDesktopHandle | undefined;
 	let profile: DesktopProfile | undefined;
+	let paused = false;
 	let closed = false;
 	let generation = 0;
 	let attempts = 0;
@@ -69,7 +73,29 @@ export function startWindowsServiceDesktop(
 		const id = ++generation;
 		let failed = false;
 		const next = start({
+			onVideoAlive: () => {
+				if (!closed && !failed && id === generation) options.onVideoAlive?.();
+			},
 			...mode,
+			video: !mode.preview && options.video,
+			onVideo: options.onVideo
+				? (value) => {
+						if (closed || failed || id !== generation) return;
+						clearTimeout(deadline);
+						deadline = undefined;
+						attempts = 0;
+						options.onVideo?.(value);
+					}
+				: undefined,
+			onRawFrame: options.onRawFrame
+				? (value, ack) => {
+						if (closed || failed || id !== generation) return;
+						clearTimeout(deadline);
+						deadline = undefined;
+						attempts = 0;
+						options.onRawFrame?.(value, ack);
+					}
+				: undefined,
 			display: options.display,
 			...(options.onDisplays
 				? {
@@ -112,10 +138,26 @@ export function startWindowsServiceDesktop(
 		else {
 			current = next;
 			if (profile) current.configure?.(profile);
+			current.videoFeedback?.(paused);
 		}
 	}
 	connect();
 	return {
+		...(current?.requestKeyframe
+			? {
+					requestKeyframe() {
+						if (!closed) current?.requestKeyframe?.();
+					},
+				}
+			: {}),
+		...(current?.videoFeedback
+			? {
+					videoFeedback(value: boolean) {
+						paused = value;
+						if (!closed) current?.videoFeedback?.(value);
+					},
+				}
+			: {}),
 		...(current?.configure
 			? {
 					configure(next: DesktopProfile) {
