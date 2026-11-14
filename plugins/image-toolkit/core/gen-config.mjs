@@ -228,7 +228,9 @@ export const PRESETS = [
 			shape: "openrouter-chat",
 			baseUrl: "https://openrouter.ai/api/v1",
 			models: [
+				"black-forest-labs/flux.2-pro",
 				"black-forest-labs/flux.2-flex",
+				"black-forest-labs/flux.2-klein",
 				"black-forest-labs/flux-1-schnell",
 				"google/gemini-2.5-flash-image",
 				"recraft-ai/recraft-v3",

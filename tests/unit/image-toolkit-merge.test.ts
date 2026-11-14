@@ -96,7 +96,7 @@ describe("image-toolkit manifest 与插件注册", () => {
 	it("manifest 过校验且 catalog 记录同步，图标沿用 AI 生图图标（🎨）", () => {
 		const v = validatePluginManifest(manifest, "image-toolkit");
 		expect(v.errors).toEqual([]);
-		expect(manifest.version).toBe("0.2.5");
+		expect(manifest.version).toBe("0.2.6");
 		expect(manifest.icon).toBe("🎨");
 		expect(manifest.iconSvg).toContain('path d="M12 3l1.9 4.6L18.5 9.5l-4.6 1.9L12 16l-1.9-4.6L5.5 9.5l4.6-1.9z"');
 		expect(manifest.permissions).toContain("tools");

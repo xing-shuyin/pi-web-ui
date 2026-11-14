@@ -3,7 +3,7 @@
 	"id": "image-toolkit",
 	"name": "图片工作台",
 	"nameEn": "Image Studio & Toolkit",
-	"version": "0.2.5",
+	"version": "0.2.6",
 	"view": true,
 	"icon": "🎨",
 	"iconSvg": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><path d=\"M12 3l1.9 4.6L18.5 9.5l-4.6 1.9L12 16l-1.9-4.6L5.5 9.5l4.6-1.9z\"/><path d=\"M18 15l.9 2.1L21 18l-2.1.9L18 21l-.9-2.1L15 18l2.1-.9z\"/><path d=\"M4.5 19.5l2.5-2.5\"/></svg>",

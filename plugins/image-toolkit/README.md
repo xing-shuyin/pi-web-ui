@@ -161,6 +161,20 @@ AI 可以在无需用户打开设置表单的情况下配置、切换生图环�
 
 ---
 
+## 与「web-ui 内置生图模型选择器」的关系（issue #886）
+
+issue #886 想要的是「模型选择器里出现 image 模型 → 提示词直出图 → 在对话里内联渲染 → 支持自定义 `/v1/images/generations` 端点」。这些能力**全部由本插件提供**，而不是改核心会话链路：
+
+| issue 诉求                                     | 本插件对应能力                                                                        |
+| ---------------------------------------------- | ------------------------------------------------------------------------------------- |
+| image 模型出现在选择器、单独标记               | `image_services` 列出已配置服务 / 模型 / 默认值 + 顶栏「AI 生图」视图自带模型下拉     |
+| 提示词（+可选参考图）直接出图                  | `image_generate`（文生图 / 图生图，`references` 传工作区图片）                        |
+| 结果在对话里内联渲染、可下载                   | `image_generate` 返回 image content block，客户端直接内联显示；产物落在工作区可取可下 |
+| 自定义 OpenAI 兼容端点（本地 ComfyUI / vLLM…） | `openai-images` shape 可换任意 `baseUrl`；`comfyui` shape 直连本地工作流              |
+| size / steps / seed / 张数参数                 | size / quality / n / seed 按 shape 能力表透传，剩余参数走「额外请求体」               |
+
+预置里 OpenRouter 已带 FLUX.2 全系（`flux.2-pro` / `flux.2-flex` / `flux.2-klein`），模型清单也能一键从端点重新拉取，不必等核心发版。
+
 ## 测试套件
 
 ```bash
