@@ -13,15 +13,42 @@ export function createWebhookToken(): string {
 	return randomBytes(24).toString("hex");
 }
 
-// 出站 webhook 不允许指向云厂商的元数据服务：这类地址没有任何合法 webhook 用例，
-// 却是 SSRF 的头号目标（窃取实例凭据/节点身份）。
-const METADATA_HOSTS = new Set(["169.254.169.254", "metadata.google.internal", "100.100.100.200"]);
+// 出站 webhook 不允许指向云厂商的元数据 / 链路本地地址：这类地址没有任何合法 webhook 用例，
+// 却是 SSRF 的头号目标（窃取实例凭据/节点身份）。判定前先把宿主名归一化：
+// 去掉 IPv6 方括号与结尾的点（`metadata.google.internal.` 与不带点等价）、
+// 把 IPv4-mapped IPv6（`[::ffff:169.254.169.254]`）折回点分 IPv4。
+const METADATA_HOSTS = new Set(["100.100.100.200", "0.0.0.0", "::"]);
+// AWS IMDS / GCP metadata 的 IPv6 端点（以及它们所在的 /64）。
+const METADATA_V6_HOSTS = new Set(["fd00:ec2::254", "fd20:ce::254"]);
+const METADATA_V6_PREFIXES = ["fd00:ec2:", "fd20:ce:"];
+
+function normalizeWebhookHost(hostname: string): string {
+	const host = hostname
+		.replace(/^\[|\]$/g, "")
+		.toLowerCase()
+		.replace(/\.+$/, "");
+	const mapped = /^::ffff:([0-9a-f]{1,4}):([0-9a-f]{1,4})$/.exec(host);
+	if (!mapped) return host;
+	const high = Number.parseInt(mapped[1]!, 16);
+	const low = Number.parseInt(mapped[2]!, 16);
+	return `${high >> 8}.${high & 0xff}.${low >> 8}.${low & 0xff}`;
+}
+
+function isMetadataHost(host: string): boolean {
+	if (METADATA_HOSTS.has(host)) return true;
+	if (host === "metadata.google.internal" || host.endsWith(".metadata.google.internal")) return true;
+	if (METADATA_V6_HOSTS.has(host) || METADATA_V6_PREFIXES.some((prefix) => host.startsWith(prefix))) return true;
+	// 169.254.0.0/16 是链路本地：云元数据 169.254.169.254 与 ECS 任务凭据 169.254.170.2 都在里面，
+	// 可路由环境下没有合法 webhook 用途。
+	return /^169\.254\.\d{1,3}\.\d{1,3}$/.test(host);
+}
 
 function assertNotMetadataTarget(parsed: URL): void {
-	const host = parsed.hostname.replace(/^\[|\]$/g, "").toLowerCase();
-	if (METADATA_HOSTS.has(host) || host.endsWith(".metadata.google.internal") || host === "0.0.0.0" || host === "::") {
-		throw new Error(`Webhook target must not point at a metadata endpoint (${host})`);
+	if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
+		throw new Error(`Webhook target must be an http(s) URL (${parsed.protocol})`);
 	}
+	const host = normalizeWebhookHost(parsed.hostname);
+	if (isMetadataHost(host)) throw new Error(`Webhook target must not point at a metadata endpoint (${host})`);
 }
 
 export function validateWebhookInput(
@@ -85,9 +112,12 @@ export function validateWebhookInput(
 			if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
 				throw new Error();
 			}
-			assertNotMetadataTarget(parsed);
 			result.url = parsed.href;
-		} catch {
+			// 元数据端点拒绝要抛出自己的原因：包进上面的 catch 会变成
+			// 「must be a valid http or https URL」——URL 本身是合法的，运维会看不明白。
+			assertNotMetadataTarget(parsed);
+		} catch (err) {
+			if (err instanceof Error && err.message.includes("metadata")) throw err;
 			throw new Error("Target URL must be a valid http or https URL");
 		}
 	} else if (!isUpdate && result.type === "outgoing") {
