@@ -1779,7 +1779,7 @@
 		"parallelReminderOffHint": "끔: 병렬 작업 알림이 표시되지 않으며 AI에게도 충돌 힌트가 전달되지 않습니다",
 		"browserPageEnabledDesc": "page-picker 확장에서 허용한 페이지를 모델이 조작할 수 있게 합니다(browser_page: 읽기 / 클릭 / 입력 / 스크롤 / 이동. eval은 별도 스위치).",
 		"browserPageOffHint": "사용 중지: 모델이 페이지를 클릭하거나 스크립트를 실행할 수 없습니다",
-		"phoneEnabledDesc": "Let the model read and drive this phone through its accessibility service (UI tree / tap / swipe / type / back-home keys / launch app / screenshots). Enable the phone-control accessibility service in system settings first; password fields are never filled.",
+		"phoneEnabledDesc": "Let the model read and drive this phone through its accessibility service (UI tree / tap / swipe / type / back-home keys / launch app / screenshots). Enabling grants full control of the phone; per-op approval UI is pending. Enable the phone-control accessibility service in system settings first; password fields are never filled.",
 		"phoneOffHint": "Disabled: the model can neither read nor operate this phone",
 		"browserScriptEnabledDesc": "Let the model inject JavaScript or CSS into AI Browser pages, temporarily or permanently (browser_script tool: list / status / create / update / remove / enable / disable / run).",
 		"browserScriptOffHint": "Disabled: the model can no longer inject or manage page scripts",
