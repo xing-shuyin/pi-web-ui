@@ -13,9 +13,12 @@ import {
 
 import { useDesktopTarget } from "../use-desktop-target";
 import { useDesktopTheme } from "../use-desktop-theme";
+import { useDesktopPreferences } from "../use-desktop-preferences";
 import { useOverlayZIndex } from "../overlay-stack";
 import { useT } from "../i18n";
 import { DesktopClipboardControl } from "./desktop-clipboard-control";
+import { DesktopFilesControl } from "./desktop-files-control";
+import { DesktopDevicePicker } from "./DesktopDevicePicker";
 import { getDesktopDisplay, setDesktopDisplay } from "../desktop-display";
 
 export function RemoteDesktopWindow() {
@@ -31,6 +34,7 @@ function DesktopWindow({ access }: { access: DesktopAccess }) {
 	const frameRef = useRef<HTMLIFrameElement>(null);
 	const local = isLocalDesktopAccess(access);
 	useDesktopTheme(frameRef, target?.url, local);
+	useDesktopPreferences(frameRef, access, target?.url, local);
 	useEffect(() => {
 		const desired = getDesktopDisplay(access);
 		let initial = true,
@@ -202,6 +206,7 @@ function DesktopWindow({ access }: { access: DesktopAccess }) {
 							)
 						: t("desktop.connecting")}
 				</strong>
+				<DesktopDevicePicker access={access} visible />
 				<button type="button" className="btn" disabled={busy} onClick={() => void detach()}>
 					{t(shell ? "desktop.window" : "desktop.tab")}
 				</button>
@@ -233,7 +238,13 @@ function DesktopWindow({ access }: { access: DesktopAccess }) {
 					×
 				</button>
 			</div>
-			<DesktopClipboardControl frame={frameRef} url={target?.url} local={local} />
+			<DesktopFilesControl frame={frameRef} url={target?.url} local={local} />
+			<DesktopClipboardControl
+				frame={frameRef}
+				url={target?.url}
+				local={local}
+				scope={JSON.stringify([access.hubUrl, access.id])}
+			/>
 			{(error || targetError) && (
 				<div role="alert" className="remote-desktop-error">
 					{error || targetError}
@@ -254,8 +265,8 @@ function DesktopWindow({ access }: { access: DesktopAccess }) {
 					src={target.url}
 					sandbox={
 						local
-							? "allow-scripts allow-forms allow-pointer-lock allow-same-origin"
-							: "allow-scripts allow-forms allow-pointer-lock"
+							? "allow-scripts allow-forms allow-pointer-lock allow-same-origin allow-downloads"
+							: "allow-scripts allow-forms allow-pointer-lock allow-downloads"
 					}
 					allow="fullscreen; local-network-access *; local-network *; loopback-network *"
 					allowFullScreen

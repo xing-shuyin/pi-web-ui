@@ -19,6 +19,9 @@ update_out.txt
 .worktrees/
 
 bin/ffmpeg/
+/bin/desktop-codec/**/*.dll
+/bin/desktop-codec/**/build.json
+/bin/desktop-codec/**/relink/
 
 plugins/*/node_modules/
 plugins/*/package-lock.json

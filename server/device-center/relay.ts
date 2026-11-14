@@ -9,6 +9,8 @@ import type { IncomingMessage, Server, ServerResponse } from "node:http";
 import type { Duplex } from "node:stream";
 import { WebSocket, WebSocketServer } from "ws";
 import { validDeviceP2PSignal } from "./device-p2p-protocol.js";
+import { desktopDownloadLimit } from "./desktop-files-protocol.js";
+import { desktopDeviceChoices } from "./desktop-device-choices.js";
 
 import {
 	capabilityBase,
@@ -519,6 +521,7 @@ export interface DeviceRelayOptions {
 	) => string | { id: string } | null | undefined | Promise<string | { id: string } | null | undefined>;
 	ownsDevice: (accountId: string, deviceId: string) => boolean | Promise<boolean>;
 	getDeviceName?: (deviceId: string) => string | undefined;
+	getDeviceIds?: (accountId: string) => string[];
 	getDeviceRemark?: (deviceId: string) => string | undefined;
 	onTaskEvent?: (
 		deviceId: string,
@@ -584,6 +587,7 @@ export function createDeviceRelay(options: DeviceRelayOptions) {
 					ws?: WebSocket;
 					portal?: ReturnType<typeof createPortalResponse>;
 					bytes: number;
+					responseLimit?: number;
 					timer: NodeJS.Timeout;
 				}
 			>;
@@ -732,7 +736,12 @@ export function createDeviceRelay(options: DeviceRelayOptions) {
 	function addStream(
 		entry: typeof devices extends Map<string, infer T> ? T : never,
 		id: string,
-		stream: { res?: ServerResponse; ws?: WebSocket; portal?: ReturnType<typeof createPortalResponse> },
+		stream: {
+			res?: ServerResponse;
+			ws?: WebSocket;
+			portal?: ReturnType<typeof createPortalResponse>;
+			responseLimit?: number;
+		},
 	) {
 		const timer = setTimeout(() => {
 			stream.res?.destroy();
@@ -957,9 +966,78 @@ export function createDeviceRelay(options: DeviceRelayOptions) {
 				.end();
 			return true;
 		}
-		if (path?.path === "/__desktop_open") {
+		if (path?.path === "/__desktop_devices") {
+			const generation = revision,
+				grant = capabilities.get(path.token!);
+			if (
+				req.method !== "GET" ||
+				!grant ||
+				grant.nativeOrigin ||
+				!(await pathAuthorized(req, id)) ||
+				!(await options.ownsDevice(grant.accountId, id))
+			) {
+				res.writeHead(403).end();
+				return true;
+			}
+			const candidates = (options.getDeviceIds?.(grant.accountId) ?? [...devices.keys()]).slice(0, 2048);
+			const choices = await Promise.all(
+				candidates.map(async (target) =>
+					(await options.ownsDevice(grant.accountId, target))
+						? {
+								id: target,
+								name: options.getDeviceName?.(target) || target,
+								remark: options.getDeviceRemark?.(target),
+								online: devices.get(target)?.ws.readyState === WebSocket.OPEN,
+							}
+						: null,
+				),
+			);
+			if (
+				closed ||
+				revision !== generation ||
+				capabilities.get(path.token!) !== grant ||
+				grant.expiresAt <= Date.now()
+			) {
+				res.writeHead(403).end();
+				return true;
+			}
+			res
+				.writeHead(200, { ...portalHeaders(hub, capabilityBase(id, path.token!)), "content-type": "application/json" })
+				.end(JSON.stringify({ devices: desktopDeviceChoices(choices) }));
+			return true;
+		}
+		if (path?.path?.split("?")[0] === "/__desktop_target") {
 			const generation = revision;
 			const grant = capabilities.get(path.token!);
+			const target = url.searchParams.get("device") ?? "";
+			if (
+				req.method !== "GET" ||
+				!grant ||
+				grant.nativeOrigin ||
+				!/^[a-z0-9][a-z0-9-]{0,62}$/.test(target) ||
+				!(await pathAuthorized(req, id)) ||
+				!(await options.ownsDevice(grant.accountId, id)) ||
+				!(await options.ownsDevice(grant.accountId, target)) ||
+				closed ||
+				revision !== generation ||
+				capabilities.get(path.token!) !== grant ||
+				grant.expiresAt <= Date.now()
+			) {
+				res.writeHead(403).end();
+				return true;
+			}
+			sendWrapper(
+				res,
+				target,
+				grant.accountId,
+				url.searchParams.get("preview") === "1" ? "desktop-preview" : "desktop",
+			);
+			return true;
+		}
+		if (path?.path?.split("?")[0] === "/__desktop_open") {
+			const generation = revision;
+			const grant = capabilities.get(path.token!);
+			const target = url.searchParams.get("device") ?? id;
 			if (
 				req.method !== "POST" ||
 				req.headers.origin !== hub.origin ||
@@ -968,6 +1046,8 @@ export function createDeviceRelay(options: DeviceRelayOptions) {
 				grant.deviceId !== id ||
 				grant.expiresAt <= Date.now() ||
 				!(await options.ownsDevice(grant.accountId, id)) ||
+				!/^[a-z0-9][a-z0-9-]{0,62}$/.test(target) ||
+				!(await options.ownsDevice(grant.accountId, target)) ||
 				closed ||
 				revision !== generation ||
 				capabilities.get(path.token!) !== grant
@@ -975,15 +1055,15 @@ export function createDeviceRelay(options: DeviceRelayOptions) {
 				res.writeHead(403).end();
 				return true;
 			}
-			if (!devices.has(id) || tickets.size >= RELAY_LIMITS.sessions) {
+			if (!devices.has(target) || tickets.size >= RELAY_LIMITS.sessions) {
 				res.writeHead(503).end();
 				return true;
 			}
 			const ticket = randomBytes(32).toString("hex");
-			tickets.set(ticket, { deviceId: id, accountId: grant.accountId, generation, expiresAt: Date.now() + 30_000 });
+			tickets.set(ticket, { deviceId: target, accountId: grant.accountId, generation, expiresAt: Date.now() + 30_000 });
 			res
 				.writeHead(200, { "content-type": "application/json" })
-				.end(JSON.stringify({ url: `${hub.origin}/device/${id}/__open?ticket=${ticket}` }));
+				.end(JSON.stringify({ url: `${hub.origin}/device/${target}/__open?ticket=${ticket}` }));
 			return true;
 		}
 		if (!(path ? await pathAuthorized(req, id) : authorized(req, id))) {
@@ -1025,6 +1105,7 @@ export function createDeviceRelay(options: DeviceRelayOptions) {
 		const streamId = randomBytes(12).toString("hex");
 		addStream(entry, streamId, {
 			res,
+			responseLimit: desktopDownloadLimit(forwardPath, req.method),
 			...(path
 				? {
 						portal: createPortalResponse(
@@ -1446,11 +1527,11 @@ export function createDeviceRelay(options: DeviceRelayOptions) {
 						} else if (frame.type === "response_body") {
 							const data = decodeChunk(frame.data);
 							item.bytes += data.length;
-							if (item.bytes <= RELAY_LIMITS.body) {
+							if (item.bytes <= (item.responseLimit ?? RELAY_LIMITS.body)) {
 								if (item.portal) item.portal.write(data);
 								else if (item.res?.headersSent) item.res.write(data);
 							}
-							if (item.bytes > RELAY_LIMITS.body || (!item.portal && !item.res?.headersSent)) {
+							if (item.bytes > (item.responseLimit ?? RELAY_LIMITS.body) || (!item.portal && !item.res?.headersSent)) {
 								item.res?.destroy();
 								sendFrame(ws, { type: "cancel", id: frame.id });
 							} else if (item.res && item.res.writableLength > RELAY_LIMITS.queue / 2) {

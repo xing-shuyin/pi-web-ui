@@ -38628,10 +38628,16 @@
 	border-color: var(--accent);
 }
 /* ---- Desktop clipboard ---- */
+.desktop-clipboard-launcher {
+	align-self: flex-start;
+	flex: none;
+	margin: 4px 8px;
+}
 .desktop-clipboard-control {
 	display: flex;
 	align-items: center;
 	gap: 8px;
+	flex-wrap: wrap;
 	padding: 5px 10px;
 	flex: none;
 	min-width: 0;

@@ -36,7 +36,7 @@ public sealed class PiDesktopService : ServiceBase {
     }
     void Track(IDisposable stream) { lock(gate) { if(stopping) { stream.Dispose(); throw new IOException("Service stopped"); } connections.Add(stream); } }
     void Untrack(IDisposable stream) { lock(gate) connections.Remove(stream); }
-    static NamedPipeServerStream ServerPipe(string name,string allowed,int instances) {
+    internal static NamedPipeServerStream ServerPipe(string name,string allowed,int instances) {
         var acl=new PipeSecurity(); acl.SetAccessRuleProtection(true,false);
         acl.AddAccessRule(new PipeAccessRule(new SecurityIdentifier(WellKnownSidType.NetworkSid,null),PipeAccessRights.FullControl,AccessControlType.Deny));
         acl.AddAccessRule(new PipeAccessRule(new SecurityIdentifier(WellKnownSidType.LocalSystemSid,null),PipeAccessRights.FullControl,AccessControlType.Allow));
@@ -64,7 +64,7 @@ public sealed class PiDesktopService : ServiceBase {
             acquired=slots.Wait(0); if(!acquired) throw new IOException("Desktop connection limit reached");
             string mode;
             using(var deadline=new Timer(_=>client.Dispose(),null,10000,Timeout.Infinite)) mode=ReadLine(client,32);
-            if(mode!="view"&&mode!="control"&&mode!="preview") throw new IOException("Invalid desktop mode");
+            if(!ValidMode(mode)) throw new IOException("Invalid desktop mode");
             int callerSession=Process.GetProcessById((int)pid).SessionId;
             int session=SelectSession(callerSession,owner);
             var pipeName="pi-web-ui-capture-"+Guid.NewGuid().ToString("N");
@@ -81,7 +81,7 @@ public sealed class PiDesktopService : ServiceBase {
                             try {
                                 string line;
                                 while((line=ReadLine(client,16384))!=null) {
-                                    if(Allowed(line,mode=="control")) WriteLine(worker,line);
+                                    if(Allowed(line,mode=="control"||mode=="raw-control"||mode=="video-control"||mode=="video-flow-control")) WriteLine(worker,line);
                                     else throw new IOException("Invalid desktop input");
                                 }
                             } catch {} finally { try { worker.Dispose(); } catch {} try { client.Dispose(); } catch {} }
@@ -104,12 +104,14 @@ public sealed class PiDesktopService : ServiceBase {
         if(user.Length>0&&new NTAccount(domain,user).Translate(typeof(SecurityIdentifier)).Value!=owner) throw new UnauthorizedAccessException("A different user owns the active desktop");
         return session;
     }
-    static bool Allowed(string line,bool control) {
+    internal static bool Allowed(string line,bool control) {
         var json=new JavaScriptSerializer(){MaxJsonLength=16384,RecursionLimit=8};
         var e=json.Deserialize<Dictionary<string,object>>(line);
         if(e==null||!e.ContainsKey("type")||!(e["type"] is string)) return false;
         string type=(string)e["type"];
         if(type=="close"||type=="ack") return e.Count==1;
+        if(type=="video_keyframe") return e.Count==1;
+        if(type=="video_flow") return e.Count==2&&e.ContainsKey("paused")&&e["paused"] is bool;
         if(type=="configure") return e.Count==4&&Number(e,"maxEdge",640,2560)&&Number(e,"quality",35,85)&&Number(e,"fps",5,240);
         if(type=="display") return e.Count==2&&e.ContainsKey("id")&&e["id"] is string&&((string)e["id"]).Length<=128&&((string)e["id"]).IndexOf('\0')<0;
         if(type=="displays") return e.Count==1;
@@ -125,26 +127,29 @@ public sealed class PiDesktopService : ServiceBase {
         double n; try { n=Convert.ToDouble(e[key]); } catch { return false; }
         return !Double.IsNaN(n)&&!Double.IsInfinity(n)&&n>=min&&n<=max;
     }
-    static string ReadLine(Stream stream,int max) {
+    internal static string ReadLine(Stream stream,int max) {
         using(var data=new MemoryStream()) {
             int value; while((value=stream.ReadByte())!=-1) { if(value==10) return Encoding.UTF8.GetString(data.ToArray()); if(data.Length>=max) throw new IOException("Input exceeds limit"); data.WriteByte((byte)value); }
             return null;
         }
     }
-    static void WriteLine(Stream stream,string line) { var bytes=Encoding.UTF8.GetBytes(line+"\n"); stream.Write(bytes,0,bytes.Length); stream.Flush(); }
-    static byte[] ReadExact(Stream stream,int size) {
-        var bytes=new byte[size]; int offset=0,count;
+    internal static void WriteLine(Stream stream,string line) { var bytes=Encoding.UTF8.GetBytes(line+"\n"); stream.Write(bytes,0,bytes.Length); stream.Flush(); }
+    internal static byte[] ReadExact(Stream stream,int size) {
+        var bytes=new byte[size]; ReadInto(stream,bytes,size); return bytes;
+    }
+    static void ReadInto(Stream stream,byte[] bytes,int size) {
+        int offset=0,count;
         while(offset<size&&(count=stream.Read(bytes,offset,size-offset))>0) offset+=count;
         if(offset!=size) throw new IOException("Desktop service connection closed; retrying after session change");
-        return bytes;
     }
-    static int Length(byte[] bytes) { return (bytes[0]<<24)|(bytes[1]<<16)|(bytes[2]<<8)|bytes[3]; }
-    static void ErrorPacket(Stream stream,string message) {
+    internal static int Length(byte[] bytes) { return (bytes[0]<<24)|(bytes[1]<<16)|(bytes[2]<<8)|bytes[3]; }
+    internal static void ErrorPacket(Stream stream,string message) {
         var bytes=Encoding.UTF8.GetBytes(message); int n=Math.Min(bytes.Length,8192);
         stream.Write(new byte[]{0,0,0,0,0,0,(byte)(n>>8),(byte)n},0,8); stream.Write(bytes,0,n); stream.Flush();
     }
+    static bool ValidMode(string mode) { return mode=="view"||mode=="control"||mode=="preview"||mode=="raw-view"||mode=="raw-control"||mode=="video-view"||mode=="video-control"||mode=="video-flow-view"||mode=="video-flow-control"; }
     static void Client(string mode) {
-        if(mode!="view"&&mode!="control"&&mode!="preview") throw new IOException("Invalid mode");
+        if(!ValidMode(mode)) throw new IOException("Invalid mode");
         using(var pipe=new NamedPipeClientStream(".",PipeName(WindowsIdentity.GetCurrent().User.Value),PipeDirection.InOut,PipeOptions.Asynchronous,TokenImpersonationLevel.Identification)) {
             pipe.Connect(5000); uint server;
             if(!Native.GetNamedPipeServerProcessId(pipe.SafePipeHandle.DangerousGetHandle(),out server)||server!=Native.ServiceProcessId(ServiceId)) throw new IOException("Invalid desktop service");
@@ -154,11 +159,14 @@ public sealed class PiDesktopService : ServiceBase {
                 catch {} finally { pipe.Dispose(); }
             }){IsBackground=true}.Start();
             var output=Console.OpenStandardOutput();
+            byte[] frame=null;
             while(true) {
                 var header=ReadExact(pipe,4); int n=Length(header);
                 if(n==0) { int size=Length(ReadExact(pipe,4)); if(size<1||size>8192) throw new IOException("Invalid service error"); throw new IOException(Encoding.UTF8.GetString(ReadExact(pipe,size))); }
-                if(n<4||n>4194304) throw new IOException("Invalid desktop frame");
-                var frame=ReadExact(pipe,n); output.Write(header,0,4); output.Write(frame,0,n); output.Flush();
+                if(n<(mode.StartsWith("video-flow-")?1:mode.StartsWith("video-")?2:4)||n>(mode.StartsWith("raw-")?33554432:mode.StartsWith("video-flow-")?4194314:4194304)) throw new IOException("Invalid desktop frame");
+                // Reuse the pixel buffer: raw 1080p frames would otherwise allocate MBs every frame.
+                if(frame==null||frame.Length<n) frame=new byte[n];
+                ReadInto(pipe,frame,n); output.Write(header,0,4); output.Write(frame,0,n); output.Flush();
             }
         }
     }
@@ -166,7 +174,8 @@ public sealed class PiDesktopService : ServiceBase {
         if(!WindowsIdentity.GetCurrent().IsSystem||!System.Text.RegularExpressions.Regex.IsMatch(pipeName,"^pi-web-ui-capture-[a-f0-9]{32}$")) throw new UnauthorizedAccessException();
         using(var pipe=new NamedPipeClientStream(".",pipeName,PipeDirection.InOut,PipeOptions.Asynchronous)) {
             pipe.Connect(10000);
-            NativeDesktop.Run(mode!="control",mode=="preview",true,true,pipe,pipe,message=>ErrorPacket(pipe,message));
+            if(!ValidMode(mode)) throw new IOException("Invalid mode");
+            NativeDesktop.Run(mode!="control"&&mode!="raw-control"&&mode!="video-control"&&mode!="video-flow-control",mode=="preview",true,true,pipe,pipe,message=>ErrorPacket(pipe,message),mode.StartsWith("raw-"),mode.StartsWith("video-")?(Action)(()=>DesktopVideo.Run(mode.StartsWith("video-flow-"))):null);
         }
     }
     public static int Main(string[] args) {
@@ -174,6 +183,7 @@ public sealed class PiDesktopService : ServiceBase {
             if(args.Length==1&&args[0]=="--service") { ServiceBase.Run(new PiDesktopService()); return 0; }
             if(args.Length==2&&args[0]=="--client") { Client(args[1]); return 0; }
             if(args.Length==3&&args[0]=="--worker") { Worker(args[1],args[2]); return 0; }
+            if(args.Length==3&&args[0]=="--user-video") { DesktopUserVideo.Worker(args[1],args[2]); return 0; }
             throw new IOException("Invalid desktop helper command");
         } catch(Exception e) { Console.Error.WriteLine("WINDOWS_DESKTOP_UNAVAILABLE: "+e.Message); return 1; }
     }

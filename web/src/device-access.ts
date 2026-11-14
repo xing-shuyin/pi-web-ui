@@ -13,13 +13,15 @@ export function pageDeviceId(): string | undefined {
 export async function openPageDesktop(zh: boolean, name: string, signal?: AbortSignal) {
 	const id = pageDeviceId();
 	if (!id) return;
+	const initialRevision = revision;
+	if (desktopAccess) return;
 	const response = await fetch(withToken(appUrl("/api/device-center/chat-status")), {
 		credentials: "same-origin",
 		signal: signal ? AbortSignal.any([signal, AbortSignal.timeout(15000)]) : AbortSignal.timeout(15000),
 	});
 	if (!response.ok) throw new Error("Device status unavailable");
 	const status = await response.json();
-	if (signal?.aborted) return;
+	if (signal?.aborted || revision !== initialRevision || desktopAccess) return;
 	await openDeviceAccess(
 		id,
 		typeof status.hubUrl === "string" ? status.hubUrl : "",
@@ -81,6 +83,12 @@ export async function requestDeviceAccessUrl(
 			transport: "current" as const,
 			fallbackOrigin: undefined,
 		};
+	}
+	if (desktop && pageDeviceId()) {
+		const url = new URL(appUrl("/__desktop_target"), window.location.href);
+		url.searchParams.set("device", id);
+		url.searchParams.set("preview", preview ? "1" : "0");
+		return { url: url.href, transport: "hub" as const, fallbackOrigin: undefined };
 	}
 	const response = await fetch(withToken(appUrl(`/api/device-center/devices/${encodeURIComponent(id)}/open`)), {
 		method: "POST",
@@ -148,8 +156,8 @@ export async function openDeviceAccess(
 		window.dispatchEvent(new Event("pi:desktop-open"));
 		return;
 	}
-	if (desktop && detached && id === pageDeviceId() && window.parent !== window) {
-		await openPortalDesktop(zh);
+	if (desktop && detached && pageDeviceId() && window.parent !== window) {
+		await openPortalDesktop(zh, id);
 		return;
 	}
 	const shell = (window as unknown as { piDesktop?: { openHub?: (url: string) => Promise<boolean> } }).piDesktop;
@@ -173,7 +181,7 @@ export async function openDeviceAccess(
 	}
 }
 
-function openPortalDesktop(zh: boolean): Promise<void> {
+function openPortalDesktop(zh: boolean, deviceId: string): Promise<void> {
 	const requestId = randomUuid();
 	const origin = new URL(appUrl("/"), window.location.href).origin;
 	return new Promise((resolve, reject) => {
@@ -206,6 +214,6 @@ function openPortalDesktop(zh: boolean): Promise<void> {
 		};
 		const timer = setTimeout(() => finish(unavailable), 30000);
 		window.addEventListener("message", receive);
-		window.parent.postMessage({ type: "device-desktop-open", requestId }, origin);
+		window.parent.postMessage({ type: "device-desktop-open", requestId, deviceId }, origin);
 	});
 }

@@ -1,3 +1,7 @@
+import { macDesktopScript } from "../../server/device-center/native-desktop/macos.js";
+vi.mock("../../server/device-center/native-desktop/macos-helper.js", () => ({
+	macDesktopHelper: async () => "/test/pi-web-ui/PiWebDesktop",
+}));
 import { EventEmitter } from "node:events";
 import { createHash } from "node:crypto";
 import { PassThrough, Writable } from "node:stream";
@@ -45,6 +49,175 @@ function processFixture(blockInput = false) {
 	return { child, writes };
 }
 const jpeg = Buffer.from([0xff, 0xd8, 1, 2, 0xff, 0xd9]);
+describe("native service compressed video", () => {
+	function installed(flow = false) {
+		const binary = Buffer.from("verified service"),
+			digest = createHash("sha256").update(binary).digest("hex");
+		mocks.exists.mockReturnValue(true);
+		mocks.read.mockImplementation((path: string) =>
+			path.endsWith("PiDesktopService.exe") ? binary : path.endsWith("video-flow-v1") && !flow ? "old" : digest,
+		);
+	}
+	function stream(profile = 66) {
+		return Buffer.from([
+			0,
+			0,
+			1,
+			7,
+			profile,
+			0,
+			31,
+			128,
+			0,
+			0,
+			1,
+			8,
+			128,
+			0,
+			0,
+			1,
+			5,
+			128,
+			0,
+			0,
+			1,
+			9,
+			240,
+			0,
+			0,
+			1,
+			1,
+			128,
+			0,
+			0,
+			1,
+			9,
+			240,
+		]);
+	}
+	it("delivers a complete idle frame immediately, passes heartbeats, and scopes flow control to verified services", () => {
+		installed(true);
+		const { child, writes } = processFixture();
+		const opts = { ...options(true), video: true, onVideo: vi.fn(), onVideoAlive: vi.fn() };
+		const handle = startNativeDesktop(opts);
+		expect(mocks.spawn.mock.calls[0][1]).toEqual(["--client", "video-flow-view"]);
+		const header = Buffer.alloc(10);
+		header[0] = 6;
+		header[1] = 3;
+		header.writeBigUInt64BE(123n, 2);
+		child.stdout.write(packet(Buffer.concat([header, stream().subarray(0, 14)])));
+		expect(opts.onVideo).toHaveBeenCalledOnce();
+		expect(opts.onVideo.mock.calls[0][0]).toMatchObject({
+			key: true,
+			reset: true,
+			timestampMs: 123,
+			codec: "avc1.42001f",
+		});
+		child.stdout.write(packet(Buffer.from([5])));
+		expect(opts.onVideoAlive).toHaveBeenCalledOnce();
+		handle.videoFeedback?.(true);
+		handle.requestKeyframe?.();
+		expect(writes.some((line) => line.includes('"paused":true'))).toBe(true);
+		expect(writes.some((line) => line.includes('"type":"video_keyframe"'))).toBe(true);
+		handle.input({ type: "text", text: "must not type" });
+		expect(writes.some((line) => line.includes('"type":"text"'))).toBe(false);
+		handle.close();
+		child.emit("close", 0);
+	});
+	it("receives compressed chunks without a raw-pixel process and resets codec on encoder replacement", () => {
+		installed();
+		const { child, writes } = processFixture();
+		const opts = { ...options(true), video: true, onVideo: vi.fn() };
+		const handle = startNativeDesktop(opts);
+		expect(mocks.spawn.mock.calls[0][1]).toEqual(["--client", "video-view"]);
+		const bytes = stream();
+		child.stdout.write(packet(Buffer.concat([Buffer.from([4, 1]), bytes.subarray(0, 7)])));
+		child.stdout.write(packet(Buffer.concat([Buffer.from([4, 0]), bytes.subarray(7)])));
+		expect(opts.onVideo.mock.calls[0][0]).toMatchObject({ key: true, codec: "avc1.42001f", reset: true });
+		child.stdout.write(packet(Buffer.concat([Buffer.from([4, 1]), stream(100)])));
+		expect(opts.onVideo.mock.calls.at(-2)?.[0]).toMatchObject({ key: true, codec: "avc1.64001f", reset: true });
+		expect(opts.onFrame).not.toHaveBeenCalled();
+		expect(mocks.spawn).toHaveBeenCalledTimes(1);
+		handle.input({ type: "text", text: "must not type" });
+		expect(writes.some((line) => /"(ack|text)"/.test(line))).toBe(false);
+		handle.close();
+		child.emit("close", 0);
+	});
+	it("restores native video and quality across a Windows session change", () => {
+		installed();
+		const first = processFixture();
+		const opts = { ...options(false), video: true, onVideo: vi.fn() };
+		const handle = startNativeDesktop(opts);
+		handle.configure?.({ maxEdge: 1280, quality: 65, fps: 120 });
+		first.child.stderr.write("WINDOWS_DESKTOP_UNAVAILABLE: Input desktop is switching.");
+		first.child.emit("close", 1);
+		const second = processFixture();
+		vi.advanceTimersByTime(250);
+		expect(mocks.spawn.mock.calls.at(-1)?.[1]).toEqual(["--client", "video-control"]);
+		expect(second.writes.some((line) => line.includes('"fps":120'))).toBe(true);
+		second.child.stdout.write(packet(Buffer.concat([Buffer.from([4, 1]), stream()])));
+		vi.advanceTimersByTime(31000);
+		expect(opts.onError).not.toHaveBeenCalled();
+		expect(opts.onVideo).toHaveBeenCalled();
+		handle.close();
+		second.child.emit("close", 0);
+	});
+	it("rejects video mode on an unverified service before spawning it", async () => {
+		mocks.exists.mockReturnValue(true);
+		mocks.read.mockReturnValue("old service");
+		const opts = { ...options(true), video: true, onVideo: vi.fn() };
+		startNativeDesktop(opts);
+		await Promise.resolve();
+		expect(mocks.spawn).not.toHaveBeenCalled();
+		expect(opts.onError).toHaveBeenCalledWith(expect.stringContaining("Update the built-in Windows desktop service"));
+	});
+});
+itRawFrameTests();
+function itRawFrameTests() {
+	it("keeps raw frames local to the verified service and acknowledges after the encoder consumes them", () => {
+		const binary = Buffer.from("verified service"),
+			digest = createHash("sha256").update(binary).digest("hex");
+		mocks.exists.mockReturnValue(true);
+		mocks.read.mockImplementation((path: string) => (path.endsWith("PiDesktopService.exe") ? binary : digest));
+		const { child, writes } = processFixture();
+		const onRawFrame = vi.fn(),
+			opts = { ...options(true), onRawFrame };
+		const handle = startNativeDesktop(opts);
+		expect(mocks.spawn.mock.calls.at(-1)?.[1]).toEqual(["--client", "raw-view"]);
+		const raw = Buffer.alloc(25);
+		raw[0] = 3;
+		raw.writeUInt32BE(2, 1);
+		raw.writeUInt32BE(2, 5);
+		child.stdout.write(packet(raw));
+		expect(onRawFrame).toHaveBeenCalledTimes(1);
+		expect(opts.onFrame).not.toHaveBeenCalled();
+		expect(writes.filter((s) => s.includes('"ack"'))).toHaveLength(0);
+		onRawFrame.mock.calls[0][1]();
+		onRawFrame.mock.calls[0][1]();
+		expect(writes.filter((s) => s.includes('"ack"'))).toHaveLength(1);
+		handle.input({ type: "key", code: "KeyA", action: "down" });
+		expect(writes.some((s) => s.includes('"key"'))).toBe(false);
+		handle.close();
+	});
+	it("rejects raw pixel geometry before it reaches the encoder", () => {
+		const binary = Buffer.from("verified service"),
+			digest = createHash("sha256").update(binary).digest("hex");
+		mocks.exists.mockReturnValue(true);
+		mocks.read.mockImplementation((path: string) => (path.endsWith("PiDesktopService.exe") ? binary : digest));
+		const { child } = processFixture();
+		const onRawFrame = vi.fn(),
+			opts = { ...options(true), onRawFrame };
+		const handle = startNativeDesktop(opts);
+		const raw = Buffer.alloc(25);
+		raw[0] = 3;
+		raw.writeUInt32BE(2561, 1);
+		raw.writeUInt32BE(2, 5);
+		child.stdout.write(packet(raw));
+		expect(onRawFrame).not.toHaveBeenCalled();
+		expect(opts.onError).toHaveBeenCalledWith("Invalid raw desktop frame.");
+		handle.close();
+	});
+}
 function packet(payload = jpeg) {
 	const header = Buffer.alloc(4);
 	header.writeUInt32BE(payload.length);
@@ -148,12 +321,13 @@ describe("native desktop lifecycle and framed capture", () => {
 		expect(mocks.exec).not.toHaveBeenCalled();
 	});
 
-	it("preserves macOS permission guidance from the actual capture host and releases its process", () => {
+	it("preserves macOS permission guidance from the actual capture host and releases its process", async () => {
 		vi.spyOn(process, "platform", "get").mockReturnValue("darwin");
 		mocks.exec.mockReturnValue("/usr/bin/swift\n");
 		const { child } = processFixture();
 		const o = options();
 		startNativeDesktop(o);
+		await Promise.resolve();
 		const message = "MAC_SCREEN_PERMISSION_REQUIRED: Authorize the responsible host on the controlled Mac.";
 		child.stderr.write(message);
 		child.emit("close", 1);
@@ -411,34 +585,28 @@ describe("local macOS permission requests", () => {
 		async (kind) => {
 			const { child } = processFixture();
 			const result = requestNativeDesktopPermissions(kind);
+			await Promise.resolve();
 			expect(mocks.spawn).toHaveBeenCalledWith(
-				"/usr/bin/swift",
-				[expect.stringContaining("capture.swift"), `permissions-${kind}`],
+				"/test/pi-web-ui/PiWebDesktop",
+				[`permissions-${kind}`],
 				expect.objectContaining({ stdio: ["pipe", "pipe", "pipe"] }),
 			);
-			expect(mocks.write).toHaveBeenCalledWith(
-				expect.any(String),
-				expect.stringContaining('mode == "permissions-screen" || mode == "permissions-control"'),
-				{ mode: 0o600 },
-			);
+			expect(mocks.write).not.toHaveBeenCalled();
 			child.stdout.write('{"screen":false,');
 			child.stdout.write('"accessibility":true}');
 			expect(mocks.remove).not.toHaveBeenCalled();
 			child.emit("close", 0);
 			await expect(result).resolves.toEqual({ screen: false, accessibility: true });
-			expect(mocks.remove).toHaveBeenCalledWith(
-				"/tmp/native-test",
-				expect.objectContaining({ recursive: true }),
-				expect.any(Function),
-			);
+			expect(mocks.remove).not.toHaveBeenCalled();
 			expect(vi.getTimerCount()).toBe(0);
 		},
 	);
 
-	it("keeps all prompting inside permission modes and checks capture permissions without prompting", () => {
+	it("keeps all prompting inside permission modes and checks capture permissions without prompting", async () => {
 		const { child } = processFixture();
 		startNativeDesktop(options(false));
-		const script = mocks.write.mock.calls[0][1] as string;
+		await Promise.resolve();
+		const script = macDesktopScript;
 		const branch = script.indexOf('if mode == "permissions-screen" || mode == "permissions-control"');
 		const end = script.indexOf("exit(0)", branch);
 		for (const call of [
@@ -463,6 +631,7 @@ describe("local macOS permission requests", () => {
 		async (json) => {
 			const { child } = processFixture();
 			const result = requestNativeDesktopPermissions("screen");
+			await Promise.resolve();
 			child.stdout.write(json);
 			child.emit("close", 0);
 			await expect(result).rejects.toThrow("Invalid native desktop permission response");
@@ -472,6 +641,7 @@ describe("local macOS permission requests", () => {
 	it("rejects exit errors with bounded stderr", async () => {
 		const { child } = processFixture();
 		const result = requestNativeDesktopPermissions("control");
+		await Promise.resolve();
 		child.stderr.write("x".repeat(20000) + "DENIED");
 		child.emit("close", 1);
 		const error = await result.catch((error: Error) => error);
@@ -483,6 +653,7 @@ describe("local macOS permission requests", () => {
 	it("bounds stdout and kills only its helper, cleaning up after close", async () => {
 		const { child } = processFixture();
 		const result = requestNativeDesktopPermissions("screen");
+		await Promise.resolve();
 		child.stdout.write(Buffer.alloc(4097));
 		await expect(result).rejects.toThrow("exceeds 4 KB");
 		expect(child.kill).toHaveBeenCalledWith("SIGTERM");
@@ -490,7 +661,7 @@ describe("local macOS permission requests", () => {
 		vi.advanceTimersByTime(1500);
 		expect(child.kill).toHaveBeenLastCalledWith("SIGKILL");
 		child.emit("close", null, "SIGKILL");
-		expect(mocks.remove).toHaveBeenCalledTimes(1);
+		expect(mocks.remove).not.toHaveBeenCalled();
 		expect(vi.getTimerCount()).toBe(0);
 	});
 
@@ -498,19 +669,21 @@ describe("local macOS permission requests", () => {
 		const { child } = processFixture();
 		const controller = new AbortController();
 		const result = requestNativeDesktopPermissions("control", controller.signal);
+		await Promise.resolve();
 		controller.abort();
 		await expect(result).rejects.toThrow("aborted");
 		expect(child.kill).toHaveBeenCalledWith("SIGTERM");
 		expect(mocks.remove).not.toHaveBeenCalled();
 		child.stdout.write('{"screen":true,"accessibility":true}');
 		child.emit("close", 0);
-		expect(mocks.remove).toHaveBeenCalledTimes(1);
+		expect(mocks.remove).not.toHaveBeenCalled();
 		expect(vi.getTimerCount()).toBe(0);
 	});
 
 	it("allows system prompts 120 seconds then times out", async () => {
 		const { child } = processFixture();
 		const result = requestNativeDesktopPermissions("screen");
+		await Promise.resolve();
 		vi.advanceTimersByTime(119999);
 		expect(child.kill).not.toHaveBeenCalled();
 		vi.advanceTimersByTime(1);
@@ -523,11 +696,12 @@ describe("local macOS permission requests", () => {
 	it("handles asynchronous spawn failure and waits for close before cleanup", async () => {
 		const { child } = processFixture();
 		const result = requestNativeDesktopPermissions("screen");
+		await Promise.resolve();
 		child.emit("error", new Error("spawn failed"));
 		await expect(result).rejects.toThrow("spawn failed");
 		expect(mocks.remove).not.toHaveBeenCalled();
 		child.emit("close", -1);
-		expect(mocks.remove).toHaveBeenCalledTimes(1);
+		expect(mocks.remove).not.toHaveBeenCalled();
 	});
 
 	it("cleans up if spawning throws synchronously", async () => {
@@ -535,7 +709,7 @@ describe("local macOS permission requests", () => {
 			throw new Error("cannot spawn");
 		});
 		await expect(requestNativeDesktopPermissions("screen")).rejects.toThrow("cannot spawn");
-		expect(mocks.remove).toHaveBeenCalledTimes(1);
+		expect(mocks.remove).not.toHaveBeenCalled();
 	});
 
 	it("does not spawn for pre-aborted requests or other platforms", async () => {

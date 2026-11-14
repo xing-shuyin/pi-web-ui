@@ -5,7 +5,8 @@ import { existsSync, mkdtempSync, rm, writeFileSync } from "node:fs";
 import { release, tmpdir } from "node:os";
 import { join } from "node:path";
 import { windowsDesktopScript } from "./native-desktop/windows.js";
-import { macDesktopScript } from "./native-desktop/macos.js";
+import { macDesktopHelper } from "./native-desktop/macos-helper.js";
+import { createH264Splitter, h264Codec, type VideoFrame } from "./desktop-video.js";
 import {
 	startWindowsServiceDesktop,
 	windowsDesktopServicePath,
@@ -163,6 +164,8 @@ export async function requestNativeDesktopPermissions(
 	if (signal?.aborted) throw new Error("Native desktop permission request aborted.");
 	if (process.platform !== "darwin") throw new Error("Native desktop permission requests require macOS.");
 	if (kind !== "screen" && kind !== "control") throw new Error("Invalid native desktop permission kind.");
+	const helper = await macDesktopHelper();
+	if (signal?.aborted) throw new Error("Native desktop permission request aborted.");
 	const status = nativeDesktopStatus();
 	if (!status.supported) throw new Error(status.reason);
 	return new Promise((resolve, reject) => {
@@ -199,10 +202,7 @@ export async function requestNativeDesktopPermissions(
 			fail(new Error("Native desktop permission request aborted."));
 		}
 		try {
-			directory = mkdtempSync(join(tmpdir(), "pi-native-desktop-"));
-			const path = join(directory, "capture.swift");
-			writeFileSync(path, macDesktopScript, { mode: 0o600 });
-			child = spawn("/usr/bin/swift", [path, `permissions-${kind}`], {
+			child = spawn(helper, [`permissions-${kind}`], {
 				stdio: ["pipe", "pipe", "pipe"],
 				windowsHide: true,
 			});
@@ -262,6 +262,8 @@ export async function requestNativeDesktopPermissions(
 }
 
 export type NativeDesktopOptions = {
+	onVideoAlive?: () => void;
+	onRawFrame?: (frame: { data: Buffer; width: number; height: number }, ack: () => void) => void;
 	onDisplays?: (displays: DesktopDisplays) => void;
 	display?: string;
 	onFrame: (jpeg: Buffer) => void;
@@ -269,12 +271,14 @@ export type NativeDesktopOptions = {
 	onClose: () => void;
 	readOnly?: boolean;
 	preview?: boolean;
-	/** 原生 H.264 通道（macOS VideoToolbox）：帧走 onVideo，不按 JPEG 校验。 */
+	/** 原生采集编码通道：帧走 onVideo，不传输原始像素。 */
 	video?: boolean;
 	/** H.264 访问单元；只有 video 模式会调用。 */
-	onVideo?: (frame: { data: Uint8Array; key: boolean }) => void;
+	onVideo?: (frame: VideoFrame) => void;
 };
 export type NativeDesktopHandle = {
+	requestKeyframe?(): void;
+	videoFeedback?(paused: boolean): void;
 	input(event: NativeDesktopInput): void;
 	configure?(profile: DesktopProfile): void;
 	close(): void;
@@ -310,8 +314,22 @@ function startNativeDesktopOnce(
 	const header = Buffer.alloc(4);
 	let headerUsed = 0;
 	let frame: Buffer | undefined;
+	let rawBuffer: Buffer | undefined;
 	let frameUsed = 0;
 	let displayConfirmed = !options.display;
+	let videoCodec: string | undefined;
+	let videoReset = true;
+	let pendingConfiguration: object | undefined;
+	const splitVideo = () =>
+		createH264Splitter((value) => {
+			if (value.data.length > MAX_FRAME) throw new Error("Encoded desktop frame exceeds limit.");
+			videoCodec = h264Codec(value.data) ?? videoCodec;
+			if (displayConfirmed && (!videoReset || value.key)) {
+				options.onVideo?.({ ...value, codec: videoCodec, reset: videoReset });
+				videoReset = false;
+			}
+		});
+	let videoChunks = splitVideo();
 
 	function finish() {
 		if (finished) return;
@@ -327,6 +345,7 @@ function startNativeDesktopOnce(
 		closing = true;
 		clearTimeout(watchdog);
 		frame = undefined;
+		rawBuffer = undefined;
 		if (!child) {
 			finish();
 			return;
@@ -349,7 +368,12 @@ function startNativeDesktopOnce(
 		}
 	}
 	function write(message: object) {
-		if (!child || closing || child.stdin.destroyed) return;
+		if (closing) return;
+		if (!child) {
+			if ((message as { type?: string }).type === "configure") pendingConfiguration = message;
+			return;
+		}
+		if (child.stdin.destroyed) return;
 		const line = JSON.stringify(message) + "\n";
 		if (child.stdin.writableLength + Buffer.byteLength(line) > MAX_INPUT_QUEUE) {
 			fail("Native desktop input consumer stalled; connection closed to release held input.");
@@ -377,11 +401,15 @@ function startNativeDesktopOnce(
 				if (headerUsed < 4) continue;
 				headerUsed = 0;
 				const length = header.readUInt32BE();
-				if (length < 4 || length > MAX_FRAME) {
+				if (
+					length < (options.video ? (service ? 1 : 3) : 4) ||
+					length > (options.onRawFrame ? 32 * 1024 * 1024 : MAX_FRAME + (service && options.video ? 10 : 0))
+				) {
 					fail("Invalid native desktop frame length (maximum 4 MB).");
 					return;
 				}
-				frame = Buffer.allocUnsafe(length);
+				frame = rawBuffer?.length === length ? rawBuffer : Buffer.allocUnsafe(length);
+				rawBuffer = undefined;
 				frameUsed = 0;
 			}
 			const n = Math.min(frame.length - frameUsed, chunk.length - offset);
@@ -391,6 +419,71 @@ function startNativeDesktopOnce(
 			if (frameUsed === frame.length) {
 				const jpeg = frame;
 				frame = undefined;
+				if (jpeg[0] === 5 && jpeg.length === 1 && service && options.video) {
+					armWatchdog();
+					options.onVideoAlive?.();
+					continue;
+				}
+				if (jpeg[0] === 6 && service && options.video && options.onVideo) {
+					if (jpeg.length < 11 || jpeg[1] > 3) return fail("Invalid native video frame.");
+					const pts = Number(jpeg.readBigUInt64BE(2));
+					if (!Number.isSafeInteger(pts)) return fail("Invalid native video timestamp.");
+					armWatchdog();
+					const data = jpeg.subarray(10),
+						key = Boolean(jpeg[1] & 1),
+						reset = Boolean(jpeg[1] & 2);
+					if (reset) {
+						videoCodec = undefined;
+						videoReset = true;
+					}
+					videoCodec = h264Codec(data) ?? videoCodec;
+					if (displayConfirmed && (!videoReset || key)) {
+						try {
+							options.onVideo({ data, key, reset: videoReset, codec: videoCodec, timestampMs: pts });
+							videoReset = false;
+						} catch {
+							return fail("Native desktop video consumer failed.");
+						}
+					}
+					continue;
+				}
+				if (jpeg[0] === 4 && options.video && options.onVideo && service) {
+					if (jpeg.length > 65538 || jpeg[1] > 1) return fail("Invalid encoded desktop chunk.");
+					armWatchdog();
+					try {
+						if (jpeg[1] === 1) {
+							videoCodec = undefined;
+							videoReset = true;
+							videoChunks = splitVideo();
+						}
+						videoChunks(jpeg.subarray(2));
+					} catch {
+						fail("Native desktop video stream failed.");
+					}
+					continue;
+				}
+				if (jpeg[0] === 3 && options.onRawFrame && jpeg.length >= 9) {
+					const width = jpeg.readUInt32BE(1),
+						height = jpeg.readUInt32BE(5);
+					if (!width || !height || width > 2560 || height > 2560 || width * height * 4 !== jpeg.length - 9)
+						return fail("Invalid raw desktop frame.");
+					armWatchdog();
+					let acknowledged = false;
+					const ack = () => {
+						if (!acknowledged && !closing) {
+							acknowledged = true;
+							rawBuffer = jpeg;
+							write({ type: "ack" });
+						}
+					};
+					try {
+						if (displayConfirmed) options.onRawFrame({ data: jpeg.subarray(9), width, height }, ack);
+						else ack();
+					} catch {
+						fail("Native desktop raw frame consumer failed.");
+					}
+					continue;
+				}
 				if (jpeg[0] === 0x02 && options.onVideo) {
 					armWatchdog();
 					try {
@@ -434,6 +527,16 @@ function startNativeDesktopOnce(
 		}
 	}
 	const handle: NativeDesktopHandle = {
+		...(service && options.video && windowsDesktopServiceProfiles(service, "video-flow-v1")
+			? {
+					videoFeedback(paused: boolean) {
+						if (!closing) write({ type: "video_flow", paused });
+					},
+					requestKeyframe() {
+						if (!closing) write({ type: "video_keyframe" });
+					},
+				}
+			: {}),
 		...(!options.preview && (!service || windowsDesktopServiceProfiles(service))
 			? {
 					configure(profile: DesktopProfile) {
@@ -449,66 +552,96 @@ function startNativeDesktopOnce(
 		},
 		close,
 	};
-	try {
-		if (!status.supported) throw new Error(status.reason);
-		const windows = process.platform === "win32";
-		let path = "";
-		if (!service) {
-			directory = mkdtempSync(join(tmpdir(), "pi-native-desktop-"));
-			path = join(directory, windows ? "capture.ps1" : "capture.swift");
-			writeFileSync(path, windows ? "\ufeff" + windowsDesktopScript : macDesktopScript, { mode: 0o600 });
-		}
-		const mode = inputOnly
-			? "input"
-			: options.video
-				? "video"
-				: options.preview
-					? "preview"
-					: readOnly
-						? "view"
-						: "control";
-		child = spawn(
-			service ?? (windows ? powershellPath() : "/usr/bin/swift"),
-			service
-				? ["--client", mode]
-				: windows
-					? ["-NoLogo", "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-File", path, mode]
-					: [path, mode],
-			{ stdio: ["pipe", "pipe", "pipe"], windowsHide: true },
-		);
-		child.stdout.on("data", receive);
-		child.stdout.on("error", () => fail("Native desktop capture stream failed."));
-		child.stdin.on("error", () => fail("Native desktop input stream closed."));
-		child.stderr.on("data", (chunk: Buffer) => {
-			stderr = (stderr + chunk.toString("utf8")).slice(-8192);
-		});
-		child.on("error", (error) => {
-			fail(`Native desktop helper failed: ${error.message}`);
-		});
-		child.on("close", (code, signal) => {
-			try {
-				if (!closing) {
-					reported = true;
-					options.onError(stderr.trim() || `Native desktop helper exited (${signal || code || "EOF"}).`);
+	void (async () => {
+		try {
+			if (!status.supported) throw new Error(status.reason);
+			const windows = process.platform === "win32";
+			let path = "";
+			if (!service && windows) {
+				directory = mkdtempSync(join(tmpdir(), "pi-native-desktop-"));
+				path = join(directory, "capture.ps1");
+				writeFileSync(path, "\ufeff" + windowsDesktopScript, { mode: 0o600 });
+			} else if (!windows) {
+				path = await macDesktopHelper();
+				if (closing) return;
+			}
+			if (options.onRawFrame && (!windows || (service && !windowsDesktopServiceProfiles(service, "raw-v1"))))
+				throw new Error("Update the built-in Windows desktop service to enable video encoding.");
+			if (options.video && service && !windowsDesktopServiceProfiles(service, "video-v1"))
+				throw new Error("Update the built-in Windows desktop service to enable native video.");
+			const mode =
+				options.video && service && !options.preview
+					? readOnly
+						? windowsDesktopServiceProfiles(service, "video-flow-v1")
+							? "video-flow-view"
+							: "video-view"
+						: windowsDesktopServiceProfiles(service, "video-flow-v1")
+							? "video-flow-control"
+							: "video-control"
+					: options.onRawFrame
+						? readOnly
+							? "raw-view"
+							: "raw-control"
+						: inputOnly
+							? "input"
+							: options.video
+								? "video"
+								: options.preview
+									? "preview"
+									: readOnly
+										? "view"
+										: "control";
+			child = spawn(
+				service ?? (windows ? powershellPath() : path),
+				service
+					? ["--client", mode]
+					: windows
+						? ["-NoLogo", "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-File", path, mode]
+						: [mode],
+				{ stdio: ["pipe", "pipe", "pipe"], windowsHide: true },
+			);
+			child.stdout.on("data", receive);
+			child.stdout.on("error", () => fail("Native desktop capture stream failed."));
+			child.stdin.on("error", () => fail("Native desktop input stream closed."));
+			child.stderr.on("data", (chunk: Buffer) => {
+				stderr = (stderr + chunk.toString("utf8")).slice(-8192);
+			});
+			child.on("error", (error) => {
+				fail(`Native desktop helper failed: ${error.message}`);
+			});
+			child.on("close", (code, signal) => {
+				try {
+					if (!closing) {
+						reported = true;
+						options.onError(stderr.trim() || `Native desktop helper exited (${signal || code || "EOF"}).`);
+					}
+				} finally {
+					finish();
 				}
-			} finally {
-				finish();
+			});
+			if (
+				!inputOnly &&
+				(options.onDisplays || options.display) &&
+				(!service || windowsDesktopServiceProfiles(service))
+			) {
+				write({ type: "displays" });
+				if (options.display) write({ type: "display", id: options.display });
 			}
-		});
-		if (!inputOnly && (options.onDisplays || options.display) && (!service || windowsDesktopServiceProfiles(service))) {
-			write({ type: "displays" });
-			if (options.display) write({ type: "display", id: options.display });
+			if (pendingConfiguration) {
+				write(pendingConfiguration);
+				pendingConfiguration = undefined;
+			}
+			armWatchdog();
+		} catch (error) {
+			queueMicrotask(() => {
+				if (finished) return;
+				try {
+					fail(error instanceof Error ? error.message : String(error));
+				} finally {
+					finish();
+				}
+			});
 		}
-		armWatchdog();
-	} catch (error) {
-		queueMicrotask(() => {
-			if (finished) return;
-			try {
-				fail(error instanceof Error ? error.message : String(error));
-			} finally {
-				finish();
-			}
-		});
-	}
+	})();
 	return handle;
 }

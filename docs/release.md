@@ -1,6 +1,6 @@
 # 发布流程
 
-> npm 发布者账号是 `xingshuyin`（`npm whoami` 验证）。`dist/server/`、`web/dist/` 被 gitignore 不进 git，但 `package.json` 的 `files` 白名单会把它们打进 npm 包；`dist/` 根目录的本地测试文件与桌面产物不进入 npm 包；`prepublishOnly` 会在发布前编译 P2P 助手并执行 `npm run build`；服务端构建先清理 `dist/server/`，再编译，避免已删除源码的旧输出留在发布包。
+> npm 发布者账号是 `xingshuyin`（`npm whoami` 验证）。`dist/server/`、`web/dist/` 被 gitignore 不进 git，但 `package.json` 的 `files` 白名单会把它们打进 npm 包；`dist/` 根目录的本地测试文件与桌面产物不进入 npm 包。`prepublishOnly` 会编译 P2P 助手、检查 Windows 桌面编码组件及其源码和重链接材料，再执行 `npm run build`；服务端构建先清理 `dist/server/`，避免已删除源码的旧输出留在发布包。发布前必须先准备下文所述的 Windows 构建产物。
 
 ## 步骤
 
@@ -124,6 +124,8 @@ git ls-remote --tags origin       # 应能看到 vX.Y.Z
 
 ## P2P npm 候选包
 
-完整候选包通过 `npm run pack:p2p` 生成，需要 Node.js 与 Go ≥1.24。它交叉编译五个平台助手、构建 Web/服务端、校验助手 SHA-256，再执行 npm pack。`bin/device-p2p/` 生成物不提交 Git，由 npm 的 `bin/` 文件白名单收录。仅执行 `npm run build` 或 `npm pack --ignore-scripts` 不保证包含助手；此类包能力协商回退 Hub，不应标为已启用 P2P 的候选包。
+完整候选包通过 `npm run pack:p2p` 生成，需要 Node.js 与 Go ≥1.24。发布者先在 Windows x64 构建机运行 `npm run build:desktop-codec`；如果在 macOS/Linux 打包，须先将该构建机的 `bin/desktop-codec/win32-x64/` 和 `bin/ffmpeg/win32-x64/nvenc-compat/` 一同复制到发布工作区。命令会交叉编译五个平台助手、准备默认 Windows FFmpeg、校验原生组件和材料、构建 Web/服务端并打包。发布前也可单独运行 `npm run verify:desktop-codec`。缺少或篡改必需产物时，`pack:p2p` 和 npm 发布前检查会失败；不要用 `npm pack --ignore-scripts` 绕过检查发布。
+
+`bin/device-p2p/` 助手以及 Windows 编码器和重链接材料是生成物，不提交 Git，由 npm 的 `bin/` 文件白名单收录。Windows 桌面安装包的 release workflow 会从源码构建这些组件。源码、许可证与重链接材料随包提供，正式发布前由维护者检查第三方依赖的适用许可要求。
 
 发布前执行 `node --import tsx tests/device-p2p-test.mjs` 和相关设备权限/访问单测；从打出的 tarball 安装并检查五份助手及清单，验证包内而非工作区的连接助手。Go 交叉编译通过不等于 macOS/Linux 实机通过，发布说明必须区分。

@@ -12,7 +12,7 @@ Windows 支持 H.264 硬件编码通道（见下文「H.264 硬件编码通道�
 
 从本机设备中心或群成员打开远程桌面时，聊天页右栏上方显示一台选中设备的预览，文件与插件区域保留在下方。预览可收起、调整高度、切换设备或关闭。“选择设备”在按钮旁直接打开设备列表，显示当前设备和在线状态，点击在线设备即切换预览，不跳转设备中心；关闭列表会取消未完成的读取。点击“放大并操作”创建实时桌面窗口，窗口与全屏之间只改变布局，不重新创建 iframe 或申请票据。放大窗口的 × 和“返回预览”均保留选中设备、恢复右栏预览；右栏预览自身的 × 才关闭整个桌面。返回预览释放实时连接和按住的键鼠，再申请新的预览票据。切换聊天会话保留选中设备；切换设备、关闭桌面时清理旧页面。手机浏览器放大后默认全屏；原生手机 App 仍使用自身设备适配器。
 
-`web/src/device-access.ts` 管理设备选择和 preview/live 状态，`use-desktop-target.ts` 在页面挂载时申请一次性票据；异步响应受 AbortSignal 和设备选择代次约束。`desktop-preview.tsx` 只在预览可见时通知沙箱页面启动请求。折叠、隐藏右栏或浏览器进入后台会取消请求和轮询。窗口沿用 `RemoteDesktopWindow.tsx`，使用统一浮层层号。两种模式均显示实际 LAN/P2P/Hub 路径，LAN 回退后更新标记。
+`web/src/device-access.ts` 管理设备选择和 preview/live 状态，`use-desktop-target.ts` 在页面挂载时申请一次性票据；异步响应受 AbortSignal 和设备选择代次约束。设备列表遇到临时 502/503/504 时在同一 15 秒期限内最多自动重试两次，关闭列表会取消请求和等待，不重建已有预览。`desktop-preview.tsx` 只在预览可见时通知沙箱页面启动请求。折叠、隐藏右栏或浏览器进入后台会取消请求和轮询。窗口沿用 `RemoteDesktopWindow.tsx`，使用统一浮层层号。两种模式均显示实际 LAN/P2P/Hub 路径，LAN 回退后更新标记。
 
 `/desktop-preview` 提供独立只读页面，通过现有授权通道请求 `/api/device-desktop/preview`，收到画面后间隔 3 秒再请求，最多一个请求在途；图片长边目标 640 像素。采集端使用 preview 模式，Windows/macOS 每轮等待 3 秒，Linux X11 使用 1/3 FPS。仅降低浏览器显示频率不算轻量采集。
 
@@ -36,6 +36,8 @@ Windows 支持 H.264 硬件编码通道（见下文「H.264 硬件编码通道�
 
 Windows 已安装系统桌面服务时，还需运行 `pi-web-ui desktop service install` 更新受保护的采集程序。Mac 需要屏幕录制及辅助功能权限。旧设备缺少能力时保留中继或提示升级，不自动安装系统组件。
 
+从 Hub 打开远程聊天页后，如果剪贴板入口消失，或切换设备时预览内出现整张聊天页，先核对 Hub `/health` 返回的实际版本。旧 Hub 可能将不认识的 `__desktop_target` 地址转发到设备的聊天首页；更新被控端 npm 包不能替换 Hub 的包装页和转发逻辑。更新 Hub 服务后，需要从设备列表重新打开入口，不能沿用升级前的短期访问地址。
+
 先验证双机预览持续更新、放大操作、返回预览和隐藏暂停，再验证局域网和跨网通路。测试发布与实机验证范围见对应 PR；原生平台、显示器刷新率和不同 NAT 环境需分别验证。
 
 ## 群组成员桌面
@@ -52,7 +54,7 @@ Windows 已安装系统桌面服务时，还需运行 `pi-web-ui desktop service
 
 - 自动模式以容器尺寸及最高 2 倍像素密度为分辨率上限。服务端每 2 秒根据新收到的画面 ACK 采样：连续慢样本降低传输尺寸、JPEG 质量及帧率，连续快样本逐步恢复；单次普通抖动不触发降级。手动画质固定对应 JPEG 质量，手动分辨率固定长边上限。
 - `desktop-quality.ts` 负责配置校验及调整策略。`ready.dynamicQuality` 声明能力；旧采集端不接收新配置。画质消息独立于键鼠授权，数字有范围限制，不能触发本机安装、显示设置或其他命令。
-- Windows 服务通过保护目录中的 `profile-v2` 校验值与已安装二进制绑定，防止回滚后错误声明能力。升级 npm 后需再运行 `pi-web-ui desktop service install` 更新系统服务。会话切换恢复时保留画质，仍不重放键鼠。
+- Windows 服务通过保护目录中的 `profile-v2` 校验值与已安装二进制绑定，防止回滚后错误声明能力。全局 npm 安装/升级通过安装脚本自动更新系统服务；脚本被禁用时，终端中的首次启动会补装，取消后可用 `pi-web-ui desktop service install` 手动重试。会话切换恢复时保留画质，仍不重放键鼠。
 - Windows 优先使用 DXGI Desktop Duplication，复用 GPU staging texture 及 Bitmap；不可用时回退 GDI，锁屏和会话恢复仍走现有系统服务。Mac 使用持续 SCStream、复用 CIContext，只保留最新待编码帧。传输最多两帧在途加一帧最新待发送画面。Linux X11 调节时替换 ffmpeg 采集进程，保留 WebSocket 和输入状态，旧采集帧不会进入新流；调整期间可能短暂等待首帧。
 - 预览仍使用低频、低分辨率只读采集；后台不可见卡片不占持续采集。只有本机固定 `/desktop` / `/desktop-preview` 内置页保留同源，远程票据页始终保持 opaque sandbox，消息同时校验来源窗口与 origin。
 
@@ -61,14 +63,32 @@ Windows 已安装系统桌面服务时，还需运行 `pi-web-ui desktop service
 JPEG 在 1920×1080@60 实测约 100 Mbps、2560×1440@60 约 162 Mbps（单帧 200–330 KB，GDI+ 软件编码 10–15 ms），中继和大多数跨网链路都喂不起，帧率选项形同虚设。Windows 因此增加 H.264 通道：优先用 `ffmpeg` 的 `ddagrab`（DXGI 零拷贝）采集，NVENC 硬编码为 Annex-B，Node 切成访问单元逐帧下发，浏览器用 WebCodecs `VideoDecoder` 硬解。
 
 - 实测（RTX 4060 Laptop，2560×1440）：@60 稳定 55 fps / 12.6 Mbps；@120 稳定 111 fps / 17.7 Mbps。首帧约 310–350 ms（ffmpeg 启动 + NVENC 初始化）。同画质下带宽约为 JPEG 的 1/10，编码不占 CPU。
-- 启用条件：Windows + 客户端 `hello{video:true}`（页面加载时用 `VideoDecoder.isConfigSupported` 探测 `avc1.640033`）+ 本机有 ffmpeg 与 NVENC + 未安装系统桌面服务（服务模式继续走 JPEG，避免双采集）。任一不满足自动回退 JPEG，旧采集端与旧浏览器不受影响。
+- 启用条件：浏览器支持 WebCodecs（HTTPS 或 localhost）并在 `desktop-ws?video=1` 协商视频。未安装系统桌面服务时沿用 ddagrab/NVENC 通道；服务具有与二进制哈希绑定的 `video-v1` 能力时，走下面的内置原生采集编码通道。只有 `raw-v1` 的旧服务仍可使用上一版 Node 编码桥；更旧服务和不支持 WebCodecs 的浏览器继续使用 JPEG。
 - 编码参数：`-preset p1 -tune ll -rc cbr -g <fps> -bf 0`，码率由 `desktop-video.ts` 的 `videoBitrate()` 按分辨率/画质/帧率推导（1080p 约 5–9 Mbps，1440p 约 9–14 Mbps，120 fps ×1.4）。改画质或帧率会重启 ffmpeg（重开 IDR），浏览器在下一个关键帧重新同步。
 - 分包与丢帧：`createH264Splitter` 按 Annex-B 起始码与 VCL 首片（`first_mb_in_slice==0`）切出访问单元，参数集随关键帧下发，比 JPEG 多一帧延迟。H.264 帧不能像 JPEG 那样用新的覆盖旧的，积压超阈值时丢弃直到下一个关键帧。
 - 采显分离：ffmpeg 只负责画面；键鼠仍由 Windows 原生助手 `input` 模式注入（无采集线程），保证控制可用。
 - 分发：发布包自带 `bin/ffmpeg/<platform>-<arch>/ffmpeg.exe`（`npm run build:ffmpeg` 下载，`PI_DESKTOP_FFMPEG` 可覆盖，见 [环境变量](env-vars.md)）。缺失时不影响 JPEG 通道。
 - 不改变输入权限、只读连接、剪贴板和显示选择：视频模式只替换画面编码，控制与授权校验仍由服务端强制。
 
-参考 RustDesk 的 [视频质量控制](https://github.com/rustdesk/rustdesk/blob/master/src/server/video_qos.rs) 与 [视频采集/编码循环](https://github.com/rustdesk/rustdesk/blob/master/src/server/video_service.rs) 的设计思路，独立实现当前 JPEG 通道的自适应与节奏控制。当前仍非硬件视频编码链路，帧率选项是上限，不保证跨网达到该帧率或与原生远程软件等效。
+### 随 pi-web-ui 内置的服务视频通道
+
+DXGI 采集源必须放在 FFmpeg 的 `-filter_complex` 中，与 `-filter_hw_device` 绑定到所选显示器的显卡。`-f lavfi -i ddagrab` 会建立独立的默认设备，不能保证多显卡选择生效。NVIDIA 原生分辨率优先直接提交 BGRA 纹理，避免不必要的缩放与颜色转换；调整为较低分辨率后重新选择缩放路径。GPU 视频处理器不可用时，保留 DXGI 采集，回读缩放后上传 NV12 纹理再交给硬件编码器；不能向 D3D11 NVENC 会话提交普通 CPU 帧，也不能因缩放失败就立即改用 GDI。Intel 纹理经同一显卡派生的 QSV 上下文映射。所有 DXGI 路径失败后才尝试 GDI，输出仍使用 passthrough，不靠补帧提高统计数字。
+
+参考 RustDesk 的[视频采集/编码循环](https://github.com/rustdesk/rustdesk/blob/master/src/server/video_service.rs)设计，独立实现采集、编码与浏览器显示的分层。此实现没有启动 RustDesk 应用，也未移植其完整引擎或协议。用户只安装 pi-web-ui；Windows 首次启用锁屏控制仍须授予本应用桌面服务管理员权限。
+
+`PiWebDesktop` 继续负责当前桌面、锁屏桌面及键鼠输入。`video-view` / `video-control` 在选定 Windows 会话、实际输入桌面内启动受保护的原生编码组件；FFmpeg 在同一进程里完成采集、缩放和 H.264 编码，原始像素不经过 C# 管道或 Node。按显示器实际边界匹配 DXGI 适配器及输出，支持多显卡，不能把 `DISPLAY2` 当成某个适配器的第二个输出。编码选择对应 RustDesk `video_service.rs::get_encoder_cfg` 的 VRAM → HWRAM → 软件顺序：先 GPU 纹理直接硬件编码，再尝试 DXGI 读回或 GDI 采集搭配硬件编码器，所有硬件路径失败才用 libx264。NVENC/AMF 纹理路径使用 D3D11 缩放，QSV 使用硬件帧映射。显卡枚举独立于显示输出，RDP/锁屏缺少 DXGI 输出时仍检查硬件编码能力。旋转或不支持的输出走 GDI。连接信息显示实际采集、编码、解码后端，并通过详情提示保留有界回退原因。
+
+编码组件只允许来自 `Program Files\pi-web-ui-desktop\ffmpeg.exe`，安装时检查包内构建清单 SHA-256，复制到管理员保护目录，启动时再次比对保护目录内的哈希；SYSTEM 采集器不使用 PATH、`PI_DESKTOP_FFMPEG`、调用者提供的路径或脚本。输入桌面来自本机 `OpenInputDesktop`，连接不能指定任意会话或桌面。编码进程纳入 kill-on-close Job；客户端关闭、服务退出或更换桌面后清理。
+
+画质、帧率、画面尺寸或输入桌面变化会重开编码器。每段新流通过复位标记清空旧分帧状态，重新发送参数集和 IDR；SPS 决定 codec，浏览器在流复位时重建解码器，即使 codec 字符串相同也不沿用上一编码会话的参考帧。解码选择参考 RustDesk `codec.rs::Decoder::new`：先用实际 codec 检查 `prefer-hardware`，支持即明确启用硬件；仅能力检查不支持或运行初始化失败才使用 `prefer-software`。异步探测和流切换丢弃旧代回调，恢复时等待关键帧；等待解码的输入最多 32 帧/16 MiB，避免延迟积累。协议为最多 64 KiB 的编码块，H.264 组帧上限 16 MiB、单帧上限 4 MiB；管道、错误日志和启动/停滞等待均有界。采集频率由采集器控制，输入和编码时间基准明确，输出禁用 CFR 自动补帧，不能用补出的重复图像充当性能提升。
+
+仅有 `raw-v1` 的已安装旧服务继续由 `desktop-video-encoder.ts` 在普通用户进程探测/运行编码器；保留原始帧 32 MiB 限额和消费确认。JPEG 预览仍复用 GDI DIB surface 或 DXGI 采集，不受视频组件启动影响。
+
+默认 Windows FFmpeg 可由 `npm run build:ffmpeg -- --platform=win32-x64` 在 Windows、macOS 或 Linux 上准备；兼容编码器与原生组件必须先在 Windows x64 构建机运行 `npm run build:desktop-codec`，或将该机的构建产物复制到打包环境。`scripts/ffmpeg-build.json` 固定默认构建 URL 和 SHA-256；包内包含可执行文件、许可证和构建来源。`pack:p2p` 与 npm 发布前步骤会校验这些组件，用户无需另外下载 FFmpeg 或 RustDesk。旧桌面服务未能自动更新时，可执行 `pi-web-ui desktop service install` 重试。
+
+`node --import tsx tests/device-desktop-video-test.mjs` 用真实编码器和 Chrome 验证 60/120/240 配置及同一窗口内的分辨率变化；输入是合成像素，不是实际桌面 FPS。Windows 本机已验证服务视频到浏览器与动态分辨率；当前控制台的 GDI/libx264 静态画面约 30 FPS，上一版 raw 管道同条件约 18 FPS。该数据不是动态桌面或高刷显示器验收。GPU 路径、不同显卡、锁屏→登录和跨网高刷仍需在目标机器实测；目标帧率是上限，不能把历史 ddagrab/NVENC 结果套用到新服务路径。
+
+连接信息中的 `libx264` 表示被控端正在软件编码，即使同一行显示浏览器硬件解码，也不代表采集与编码已经使用显卡。实际服务测试会记录 `fallback` 原因；Windows 上同时检查显示适配器的 `ConfigManagerErrorCode`。设备管理器 Code 31/43、独立硬件编码探测失败属于显卡或驱动异常，调高 FPS 上限不能修复；应先恢复显卡，再重新连接测试硬件后端和实际帧率。
 
 ## 多显示器
 
@@ -80,11 +100,17 @@ Windows / Mac 原生采集器枚举当前会话可见的显示器，工具栏显
 
 ## 剪贴板同步
 
+浏览器直接访问 Hub 时，可信外层提供「剪贴板 · 浏览器文本传递」：手动粘贴并发送、读取远程当前文本、复制到本机，单次最多 16 KiB。HTTP 页面可使用选中文本后 Ctrl/Cmd+C，安全上下文下可点击复制按钮；不自动读取控制端剪贴板。图片、文件和后台自动同步仍需从控制端本机 localhost 客户端打开设备。只读连接允许读取，拒绝写入；关闭面板或断开立即停止本次传递。手动连接不注册剪贴板监听器。
+
+本机直连、远程会话内和独立标签页统一在桌面工具栏左上方「连接／断开」旁显示「剪贴板」入口，使用同一套 dialog 面板。点击通过 `desktop-clipboard-show` 沿已验证的 iframe 链通知最外层控制页面；该消息仅打开 UI，不携带同步方向，也不能启用本机剪贴板。本机的原生同步方向也在面板内选择，关闭面板保留已选的自动同步方向。播放器通过 `desktop-clipboard-available.toolbar` 声明内置入口，外层不再重复显示按钮；旧版被控端仅保留外层顶部左侧的兼容入口。切换设备或断开会停止传递并清空旧文本。独立桌面页也提供手动文本面板。
+
 可信外层工具栏提供关闭 / 我方到对方 / 对方到我方 / 双向同步，默认关闭，只同步开启后的复制操作。两端更新后，从控制端本机 localhost 的 pi-web-ui 打开远程设备；纯浏览器直连 Hub 尚不提供系统剪贴板自动同步。原生依赖 `@crosscopy/clipboard` 可用于 Windows x64、Mac x64/arm64、Linux x64，平台或权限不支持时只停止剪贴板功能。只读桌面禁止向被控端写剪贴板。
 
-支持文本（1 MiB）、PNG 图片（16 MiB、最大 32M 像素）、最多 32 个普通文件，总大小最多 32 MiB，不支持文件夹或符号链接。文件发送实际内容；接收端写入自己的临时目录再设置系统文件剪贴板，之后可在文件管理器粘贴。每个进程最多保留 16 批、128 MiB 接收文件供断开后粘贴，原文件不修改。文本和图片不保存历史；临时文件不保证跨进程自动清理。
+支持文本（1 MiB）、PNG 图片（16 MiB、最大 32M 像素）、最多 32 个普通文件。新版两端协商流式能力后，一批文件总大小最多 16 GiB；旧端仍限制 32 MiB，不支持文件夹或符号链接。文件从已验证的原始文件句柄分块读取，接收端分块写入自己的临时目录，校验完成后才设置系统文件剪贴板。接收前检查可用磁盘空间；每个进程同时传输的保留配额为 32 GiB，完成的文件最多保留 16 批、32 GiB，当前批次不会因旧的 128 MiB 限制被立即删除。断开清理未完成文件；原文件不修改。文本和图片不保存历史；已完成的临时文件不保证跨进程自动清理。
 
-`desktop-clipboard-protocol.ts` 定义限额与消息，`desktop-clipboard-native.ts` 封装原生读写、回声抑制及文件暂存，`desktop-clipboard.ts` 处理鉴权、方向和分块校验。独立 WebSocket 避免文件内容占用桌面帧队列；每块确认、最终 SHA-256 校验，断开即停止监听。浏览器桥只接受用户选定方向和对应窗口的消息，远程页面不能主动开启我方剪贴板。本机 viewer 端点位于禁止远程中继的 `/api/device-desktop/local/` 下，远程端点沿用桌面鉴权。opaque iframe 的本地网络权限仅用于已有能力入口，不改变来源隔离。
+`desktop-clipboard-protocol.ts` 定义限额与消息，`desktop-clipboard-native.ts` 封装原生读写、回声抑制及文件暂存，`desktop-clipboard-transfer.ts` 负责有界文件读写与 SHA-256，`desktop-clipboard-connection.ts` 处理方向、分块和确认窗口，`desktop-clipboard.ts` 处理端点鉴权。独立 WebSocket 避免文件内容占用桌面帧队列；新版最多 32 个 24 KiB 分块等待确认，旧端仍逐块确认。超时、磁盘不足和源文件变化只取消本次传输并保留同步方向，可重新复制；协议或完整性异常仍断开连接。浏览器显示传输进度。浏览器桥只接受用户选定方向和对应窗口的消息，远程页面不能主动开启我方剪贴板。本机 viewer 端点位于禁止远程中继的 `/api/device-desktop/local/` 下，远程端点沿用桌面鉴权。opaque iframe 的本地网络权限仅用于已有能力入口，不改变来源隔离。
+
+`desktop-preferences.ts` 按设备身份保存画质、分辨率上限、帧率、适应窗口、只读和用户明确选择的剪贴板方向。可信外层负责持久化，opaque 页面通过验证来源的消息桥读写画面偏好，不能写剪贴板方向。票据更新不会清空偏好；独立标签、缩放返回和重连会恢复配置。只读连接临时限制同步方向，保留原选择；恢复监听不会发送开启前已有的剪贴板内容。
 
 ## 平台与启用
 
@@ -92,16 +118,28 @@ Windows 未安装桌面后台服务时，采集依赖 pi-web-ui 所在的交互�
 
 ### Windows 锁屏桌面服务
 
-在被控 Windows 上，用**运行 pi-web-ui 的同一账户的管理员 PowerShell**安装一次：
+Windows x64 全局安装 npm 包时自动安装或更新内置桌面服务，只需确认 Windows 管理员授权。npm 禁用 lifecycle 脚本时，在终端启动 pi-web-ui 或执行原有的 `server install/start/restart` 会自动补装，不再要求单独运行桌面安装命令。后台启动、CI、Linux 和 macOS 不弹出 Windows 授权。
+
+安装器按原生源文件和编码器清单指纹判断是否需要更新；同一指纹取消或失败后不反复弹窗。手动卸载会关闭自动补装，`PI_DESKTOP_SERVICE_AUTO=0` 也可禁用。需要主动重试或检查时才使用以下维护命令（install 会自行申请管理员授权）：
 
 ```powershell
 pi-web-ui desktop service install
 pi-web-ui desktop service status
 ```
 
-安装器使用 Windows 的 .NET Framework 编译器生成固定的采集程序，放在管理员/SYSTEM 可写、绑定账户只读的 `Program Files\pi-web-ui-desktop` 下，注册自动启动的 `PiWebDesktop` 服务。更新 npm 包后重新执行 install 以更新服务二进制；服务编译失败不替换已有程序，启动失败尝试恢复上版。卸载用 `pi-web-ui desktop service uninstall`，移除服务启用标记并恢复普通用户采集器选择，保留受保护安装文件。
+安装器使用 Windows 的 .NET Framework 编译器生成固定的采集程序，放在管理员/SYSTEM 可写、绑定账户只读的 `Program Files\pi-web-ui-desktop` 下，注册自动启动的 `PiWebDesktop` 服务。提权前记录原始账户 SID，使用其他管理员凭据授权也不会误绑定到管理员。服务编译失败不替换已有程序，启动失败尝试恢复上版。卸载用 `pi-web-ui desktop service uninstall`，移除服务启用标记并恢复普通用户采集器选择，保留受保护安装文件。自动安装不改变远程桌面的启用偏好或已有访问鉴权。
 
-Web 后端通过同一用户的本机命名管道调用服务；管道拒绝网络登录账户，服务检查客户端账户，客户端检查管道服务进程与 SCM 登记的 PID 一致。服务不接受脚本、可执行路径、任意会话号或外部命令，只接受预览、只读、控制三种模式及有界桌面输入。控制端已有的 HTTP/WS 鉴权、设备归属校验和只读限制继续生效。
+Windows 视频路径按显示器实际 DXGI 适配器选择 NVENC（NVIDIA）、AMF（AMD）、QSV（Intel，包括核显），首先尝试 GPU 纹理编码，再尝试内存画面硬件编码，最后才使用 libx264。Media Foundation 只在强制硬件模式下作为系统兼容后端。实际启动并产生视频才算成功，失败会切换候选后端，诊断显示后端与失败原因。
+
+默认 FFmpeg 与桌面硬件兼容编码器随 npm 包分发。兼容构建保留 NVENC 12.1 ABI，并包含 AMF、QSV/oneVPL、Media Foundation；优先试用兼容构建的硬件路径，失败后保留默认构建和软件回退。NVIDIA 仍先检查驱动实际支持的 API。两个程序均校验 SHA-256 后复制到受保护目录，服务只接受固定枚举选择，不接受外部可执行路径。受保护文件沿用 `ffmpeg-nvenc-compat.exe` 名称以兼容旧安装。构建来源与许可证随包提供；兼容构建入口为 `scripts/build-ffmpeg-compat.mjs`，发布端用 `scripts/fetch-ffmpeg.mjs` 准备两套二进制，终端用户不另装 FFmpeg 或 RustDesk。
+
+`scripts/patch-ffmpeg-desktop.mjs` 保存固定 FFmpeg 源码补丁（`desktop-timing-v2`）：Windows 高精度 waitable timer、DXGI 非阻塞取帧、无更新时的有界休眠、落后时重置采样时钟，以及 D3D11 视频处理器的纹理与色彩转换兼容。高精度计时不可用时保留原有休眠回退，不全局调整系统时钟、不忙循环。GPU BGRA→NV12 使用 BT.709 limited，并在原生编码命令的 H.264 VUI 中写入匹配的色彩矩阵/范围；原始 BGRA、CPU 转换和默认编码器不套用此标记。修改这些补丁后必须重建二进制、更新归档与二进制摘要，并提供匹配源码和第三方许可证。
+
+信息面板的输出/发送 FPS 是视频帧计数，包含 `ddagrab` 为固定输出频率复制的帧，不是显示器刷新率或独立画面更新率。60 Hz 显示器不能用此计数验证真实 120/240 Hz。服务端统计附带单调时钟 `elapsedMs`，前端用它计算输出/发送 FPS，避免把中转统计消息的到达抖动当成采集掉帧；本地绘制率仍按浏览器时钟计算。H.264 没有 JPEG 的逐帧 ACK，确认等待显示 `—`，不得将默认的 0 当作零延迟证据。诊断时可用兼容 FFmpeg 的 debug 日志 `Desktop update`、`Duplicated output frame` 区分桌面更新与重复帧（关闭日志合并：`-loglevel repeat+debug`）。
+
+未安装系统服务时，普通用户采集也会探测全部厂商和系统硬编码，兼容 NVIDIA 驱动；能力缓存一分钟且失败失效。该路径仍不提供安全桌面能力。60/120/240 是采集目标上限，实际受显示输出、驱动、编码能力、网络和浏览器影响。浏览器 H.264 WebCodecs 需要安全上下文（HTTPS 或 localhost）；公网 HTTP Hub 会使用 JPEG，不能把编码器测试帧率当作该入口的显示帧率。
+
+Web 后端通过同一用户的本机命名管道调用服务；管道拒绝网络登录账户，服务检查客户端账户，客户端检查管道服务进程与 SCM 登记的 PID 一致。服务不接受脚本、可执行路径、任意会话号或外部命令，只接受预览、只读、控制及对应的原始像素/压缩视频模式和有界桌面输入。控制端已有的 HTTP/WS 鉴权、设备归属校验和只读限制继续生效。
 
 服务在调用账户的活动会话或当前控制台启动独立的 SYSTEM 采集进程，通过 `OpenInputDesktop`/`SetThreadDesktop` 跟随普通桌面与登录桌面；遇到其他已登录账户的桌面时拒绝访问。采集进程通过 SYSTEM 专用随机管道传输，并用 Windows Job 保证断连和服务退出后终止。输入验证和只读限制在 Node、服务及采集器分别执行。窗口句柄/图像/输入不经过聊天或模型；没有新增监听端口，不保存登录密码，不配置自动登录、不自动解锁。
 
@@ -110,6 +148,10 @@ Web 后端通过同一用户的本机命名管道调用服务；管道拒绝网�
 远程设备标签页显示「备注 · 计算机名 · pi-web-ui」，无备注时只显示计算机名，只有旧 Hub 未提供名称时才回退设备 ID。Hub 和本机 LAN/P2P 入口共用名称规则，图标从当前授权通道加载应用原有 favicon，不额外开放设备资源。更新后重新打开远程标签页生效。
 
 远程聊天页面内也可以点击桌面的“独立标签页”。远程 iframe 只发送带请求 ID 的消息；可信外层验证消息来源后申请同一设备的新一次性票据并打开窗口。新窗口与原预览各有独立入口，不开放 iframe 的 popup/same-origin 权限，也不接受远程页面指定跳转 URL。需要更新控制端、被控端和 Hub，重新打开旧标签。
+
+远程页面内选择另一台电脑时，通过当前能力根下的 `__desktop_target?device=<id>` 请求独立桌面入口。Hub 同时验证来源设备与目标设备归属，生成目标设备自己的 capability；LAN 入口由本机连接器向已绑定 Hub 申请目标票据。普通远程页面不能调用本机 `devices/:id/open` 管理接口。嵌套预览、实时桌面和独立标签使用明确目标 ID，剪贴板消息沿对应桌面窗口传递，不读写中间那台电脑的剪贴板。嵌套跨设备桌面目前走 Hub 中继。
+
+仅持有桌面票据的 wrapper 允许 opaque 祖先（不设置 `frame-ancestors`，因为 `http: https:` 也无法匹配 opaque origin）；普通设备入口仍限制同源祖先。所有远程内容仍在不含 `allow-same-origin` 的沙箱内，`frame-src` 限于该设备能力路径，消息校验来源窗口和 origin。`tests/device-nested-desktop-test.mjs` 使用真实 Hub、两个连接器及 Chrome 验证切换目标、剪贴板归属、预览恢复和独立标签；画面与剪贴板使用测试后端。
 
 ### Windows：关闭 RDP 后继续使用当前桌面
 
@@ -135,6 +177,8 @@ pi-web-ui desktop console --confirm
 | Linux Wayland | 暂不支持                                                                  | 后续需接入 Portal/PipeWire，不能把 XWayland 当完整桌面                     |
 
 旧 `PI_DEVICE_VNC_*` 配置不再读取。macOS 权限申请由被控 Mac 本机的「设备中心 → 本机远程桌面」发起：点击“授予屏幕录制权限”或“授予远程控制权限”，再在 macOS 弹窗或设置中确认。仅查看需要屏幕录制，控制还需辅助功能。远端连接仅检查权限，不请求授权或打开系统设置。本机申请会尝试打开未获授权的对应设置页；系统可能不重复弹窗，授权对象以 macOS 识别的实际宿主为准。请勿在“＋”文件选择器中猜选程序。系统要求重启时，重启实际服务再连接。当前 Windows 已实机验证，macOS/Linux 尚需目标机器实机验证。
+
+macOS 采集和授权统一使用 `~/Library/Application Support/pi-web-ui/native-desktop/PiWebDesktop`。首次使用由 Apple `swiftc` 异步编译，源码不变时跨连接、重启和 Node 升级复用同一二进制，避免每次临时解释 Swift。升级导致组件改变仍可能需要重新授权，固定路径不绕过 macOS TCC，也不保证签名变化后保留权限。预览与操作窗口统一解释权限错误，权限或服务恢复后定时重连；真实 TCC 授权与 Swift 编译仍须在 Mac 实机验证。
 
 ## 宿主接入和权限
 
@@ -170,4 +214,51 @@ HTTP/WS 独立检查物理回环来源、回环 Host、本机鉴权与存在时�
 
 ## 验证
 
+### 原生 GPU 编码通道预览
+
+Windows x64 新通道由本项目独立实现 D3D11 / FFmpeg 硬件编码适配，参考 GPU 优先架构，不包含 RustDesk `hwcodec` 源码，详情和固定依赖版本见
+[`native/desktop-codec/README.md`](../native/desktop-codec/README.md)。它按真实桌面更新发送完整 H.264 帧，
+静止时发送独立心跳；浏览器绘制后反馈帧编号，采集端按未确认窗口暂停获取下一帧，避免持续积压。
+自动模式依据相对最低确认时间的增长和解码队列，先降码率，再降帧率；手动画质仍保持用户选项。
+帧率和码率通过原生接口动态更新；本版 FFmpeg 的 AMF 需在参数变化时重建编码器，仍保留浏览器连接。
+分辨率、显示器或 Windows 桌面切换同样重建编码器。
+DXGI 无首帧或无法建立复制时，普通已登录桌面优先尝试 WGC GPU 采集，直接将纹理交给原生硬件编码器；
+安装器在支持的 Windows 上用系统自带 WinRT 元数据编译此适配，不另装程序或驱动。
+部分 Windows 无法在 SYSTEM 进程中激活 WGC（可能返回 `E_OUTOFMEMORY`）。此时由受保护服务启动
+同一可执行文件的只读用户采集进程，验证登录用户 SID、管道对端 PID 和有限视频包；输入继续由 SYSTEM
+处理。进入锁屏等安全桌面时关闭用户采集，恢复系统采集。子进程随连接退出，由 Job 统一回收。
+不支持 WGC 的系统或安全桌面仍可回退为复用 GDI 像素缓冲，再上传 GPU，继续使用硬件编码；
+相同像素不会重复发送。此路径保留 GPU 缩放、颜色转换和编码，但不能消除 GDI 采集本身的耗时。
+
+新二进制协议通过 `video-flow-v1` 能力指纹和独立服务模式协商，旧客户端继续使用原通道。
+`PIV1` 浏览器帧头只在 URL 显式协商后发送，设备中继仍透传 WebSocket。
+预览包的实际运行时标识为 `native-d3d11`。尚未完成 Intel、其他驱动以及 120/240 Hz 显示器实机验收；
+浏览器统计中的低静态 FPS 是正常按需采集行为，不能用重复静止画面作为高刷验收。
+
+正式打包前，在 Windows x64 构建机运行 `npm run build:desktop-codec`，再运行 `npm run pack:p2p`；
+CI 的 Windows 安装包流程执行相同的构建与校验。源码、补丁、许可说明和可重链接库随原生组件打包，
+缺少原生组件或重链接材料时发布会失败并给出构建命令，不会静默生成缺少硬件编码能力的包。
+如从其他系统发布 npm 包，需先从 Windows 构建机复制对应的原生组件和兼容编码器输出；
+维护者还应核对自身发行渠道的许可证要求。详见 [`native/desktop-codec/README.md`](../native/desktop-codec/README.md)。
+
 相关测试在 `tests/unit/device-center-desktop*.test.ts`、`device-desktop-native.test.ts`、`device-desktop-linux.test.ts`、`device-desktop-relay.test.ts` 和 `device-lan*.test.ts`。LAN 测试使用真实 TLS PSK、HTTP/WS 和 Chrome 嵌套沙箱，验证聊天与画面直连、授权隔离、路径前缀及断线回退。覆盖权限、启用持久化、原生进程清理、输入边界、只读、帧确认以及真实 Hub/connector 中继。可用 Chrome 时验证代理前缀下的画布解码、控制模式鼠标移动与输入长度；浏览器模拟画面测试不等于各平台实机验证。
+
+## 显式文件传输
+
+远程桌面工具栏的“文件传输”打开双栏文件管理器：左侧是控制者本机，右侧是当前被控设备。两侧支持路径输入、主目录/磁盘快捷访问、上一级、刷新、新建目录、多选；双击目录进入，选好接收目录后按“发送 →”或“← 接收”。下方任务列表分别显示名称、方向、状态、进度、发送路径及接收路径，可暂停、继续、取消和清除已完成记录。收起不取消传输；关闭桌面或切换设备会取消未完成任务。
+
+文件传输独立于系统剪贴板。分块为 1 MiB，单任务上限 16 GiB / 10000 项；原生接收端先写选定目录内的临时目录，检查字节数和增量 CRC32 后发布文件，遇到同名文件/目录自动添加编号，保留原文件。旧客户端不提供目的目录时仍使用 `~/Downloads/pi-web-ui-Received/<日期-任务ID>`。CRC32 用于检测传输损坏，不承担身份认证；请求沿用桌面授权。重复原生分块按偏移和 SHA-256 判重，同窗口可继续传输，暂停超过 30 分钟可能过期，需重新选择。发布过程中磁盘失败可能留下部分已发布文件；重试复用已发布项，不覆盖其他文件。
+
+压缩包按原字节传输，不二次压缩；原生双向传输保留目录层级和空目录。原生路径限定在本机磁盘或 POSIX 根目录内、受当前服务用户系统权限限制，拒绝 UNC、符号链接、设备路径及路径穿越。单目录列表最多展示 2000 项；导出目录会遍历完整目录并检查总数/大小。源文件修改会中止该任务，防止把不同版本混为一个文件。
+
+文件管理器运行在最外层控制者文档。远程页面只能请求打开界面，或响应控制者发起的远程文件请求；不能发起本机磁盘操作。`/api/device-desktop/local/files` 要求 loopback、宿主认证、同源校验及自定义请求头，且被 Hub/LAN 转发器明确禁止。它不需要开启控制者的桌面共享。嵌套设备页面只转发经过窗口身份校验的消息，不会把中间设备当作“本机”。
+
+远程文件操作绑定到当前已认证的桌面 WebSocket；断开后能力立即失效。只读连接可以查看和下载文件，但服务端拒绝发送文件和新建远程目录；切回可控制模式后方可写入。
+
+浏览器直接打开 Hub 时无法任意访问本机磁盘：支持目录授权的安全上下文可用“选择本机目录”授予读写权限；其他浏览器可选择文件/文件夹发送，接收通过浏览器下载管理器保存，目录为 `.tar`。`webkitdirectory` 回退不含空目录；浏览器目录写入取消后可能留下已完成的部分文件。浏览器下载由浏览器管理进度，任务列表只显示已交给浏览器，不宣称校验完成。要使用完整的双侧磁盘浏览，请从本机 `pi-web-ui` 打开远程设备。下载响应的大文件额度只针对 `/api/device-desktop/files/download/<任务ID>`，其他 HTTP/WS 限额保持原值。控制端、被控端和 Hub 均需更新。
+
+图像回退通道在同一次 animation frame 中调整画布大小并绘制，避免先清空画布再等待刷新产生短暂黑帧；断开连接、锁屏等安全状态的清理行为保持原样。
+
+剪贴板文件同步在准备、传输、完成或失败时向桌面页面展示状态。失败不会清除用户原有剪贴板；文件夹被明确提示改用文件传输。系统文件事件之外增加活动同步期间的文件清单检查，防止漏掉复制事件。大文件完成提示出现前粘贴仍可能得到原来的文件。
+
+嵌套远程桌面的设备选择器从当前访问授权所属账号获取列表（`__desktop_devices`），不读取被打开设备自己的配对账号；切换仍逐设备校验访问权限。预览和放大窗口均可选设备，切换保持当前模式。自动打开当前桌面的延迟响应不能覆盖用户已经选择的新目标。

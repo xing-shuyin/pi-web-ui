@@ -23,7 +23,10 @@ function memory() {
 			for (const fn of listeners) fn();
 		},
 		backend: {
-			read: async () => value,
+			read: async () => {
+				if (value?.error) throw new Error(value.error);
+				return value;
+			},
 			write: async (next) => {
 				value = next;
 				writes.push(next);
@@ -150,7 +153,7 @@ try {
 	await page.waitForFunction(() => !!window.show);
 	await page.evaluate(() => window.show());
 	const select = page.getByRole("combobox", { name: "Clipboard" });
-	await select.waitFor();
+	await page.locator(".desktop-clipboard-control select").waitFor({ state: "attached" });
 	await page
 		.waitForFunction(() => !document.querySelector(".desktop-clipboard-control select")?.disabled, undefined, {
 			timeout: 8000,
@@ -172,13 +175,49 @@ try {
 			);
 			throw error;
 		});
-	assert.equal(await select.inputValue(), "off");
 	let desktop = page.frames().find((f) => f.url().endsWith("/fixture/desktop"));
+	await desktop.waitForFunction(() => document.querySelector("#display-source")?.value === "right");
+	assert.equal(await page.locator(".desktop-clipboard-launcher:visible").count(), 0);
+	assert.ok(
+		await desktop
+			.locator("#clipboard")
+			.evaluate((el) => el.getBoundingClientRect().left < 160 && el.getBoundingClientRect().top < 60),
+	);
+	await desktop.getByRole("button", { name: "Clipboard", exact: true }).click();
+	await page.getByRole("dialog", { name: "Clipboard", exact: true }).waitFor();
+	await select.waitFor();
+	assert.equal(await select.inputValue(), "off", "Opening clipboard UI must not enable sync");
 	await desktop.waitForFunction(() => document.querySelector("#display-source")?.value === "right");
 	await select.selectOption("both");
 	await page.waitForFunction(() =>
 		document.querySelector(".desktop-clipboard-control")?.title.includes("copy to sync"),
 	);
+	await page.getByRole("button", { name: "Close", exact: true }).click();
+	await desktop.locator("#quality-panel").evaluate((el) => {
+		el.open = true;
+	});
+	await desktop.locator("#quality-mode").selectOption("sharp");
+	await desktop.locator("#quality-fps").selectOption("120");
+	await desktop.locator("#quality-edge").selectOption("1280");
+	await desktop.locator("#scale").uncheck();
+	await page.waitForFunction(() =>
+		Object.keys(localStorage)
+			.filter((key) => key.startsWith("pi-web-ui:desktop-preferences:"))
+			.some((key) => JSON.parse(localStorage.getItem(key)).scale === false),
+	);
+	await page.reload();
+	await page.waitForFunction(() => !!window.show);
+	await page.evaluate(() => window.show());
+	await page.waitForFunction(() =>
+		document.querySelector(".desktop-clipboard-control")?.title.includes("copy to sync"),
+	);
+	desktop = page.frames().find((f) => f.url().endsWith("/fixture/desktop"));
+	await desktop.waitForFunction(() => document.querySelector("#quality-fps").value === "120");
+	assert.equal(await desktop.locator("#quality-mode").inputValue(), "sharp");
+	assert.equal(await desktop.locator("#quality-edge").inputValue(), "1280");
+	assert.equal(await desktop.locator("#scale").isChecked(), false);
+	await desktop.getByRole("button", { name: "Clipboard", exact: true }).click();
+	assert.equal(await select.inputValue(), "both");
 	const text = { kind: "text", items: [{ name: "text.txt", data: Buffer.from("跨平台 clipboard") }] };
 	local.copy(text);
 	await wait(() => remote.writes.length === 1);
@@ -193,6 +232,20 @@ try {
 	remote.copy(files);
 	await wait(() => local.writes.length === 1);
 	assert.equal(clipboardDigest(local.writes[0]), clipboardDigest(files));
+	await page.getByRole("button", { name: "Close", exact: true }).click();
+	assert.equal(local.listeners.size + remote.listeners.size, 2, "Closing settings keeps selected sync enabled");
+	local.copy({ error: "clipboard-folder" });
+	await desktop
+		.locator("#clipboard-transfer-status")
+		.getByText(/Folder not synced/)
+		.waitFor();
+	assert.equal(
+		remote.writes.length,
+		1,
+		"Failed copy must retain the previous clipboard without silently claiming success",
+	);
+	await desktop.getByRole("button", { name: "Clipboard", exact: true }).click();
+	assert.equal(await select.inputValue(), "both");
 	await select.selectOption("send");
 	await wait(() => local.listeners.size === 1 && remote.listeners.size === 0);
 	remote.copy(text);
@@ -201,6 +254,8 @@ try {
 	await select.selectOption("off");
 	await wait(() => !local.listeners.size && !remote.listeners.size);
 	await mkdir(new URL("../artifacts/device-center/", import.meta.url), { recursive: true });
+	await page.getByRole("button", { name: "Close", exact: true }).click();
+	await desktop.locator("#toolbar").screenshot({ path: "artifacts/device-center/clipboard-direct-toolbar.png" });
 	await page.screenshot({
 		path: fileURLToPath(new URL("../artifacts/device-center/desktop-clipboard.png", import.meta.url)),
 	});
@@ -214,9 +269,22 @@ try {
 	await desktop.locator("#display-source").selectOption("left");
 	await page.waitForFunction((key) => localStorage.getItem(key) === "left", displayKey);
 	const standalone = page.getByRole("combobox", { name: "Clipboard" });
+	assert.equal(await page.locator("#clipboard-launcher:visible").count(), 0);
+	await desktop.getByRole("button", { name: "Clipboard", exact: true }).click();
 	await standalone.waitFor();
+	assert.equal(await standalone.inputValue(), "off");
+	assert.equal(local.listeners.size + remote.listeners.size, 0);
 	await standalone.selectOption("receive");
 	await wait(() => remote.listeners.size === 1);
+	await page.reload();
+	await wait(() => remote.listeners.size === 1);
+	await page
+		.frameLocator("iframe")
+		.locator("#quality-fps")
+		.evaluate((el) => el.value)
+		.then((value) => assert.equal(value, "120"));
+	await page.frameLocator("iframe").getByRole("button", { name: "Clipboard", exact: true }).click();
+	assert.equal(await standalone.inputValue(), "receive");
 	remote.copy(files);
 	await wait(() => local.writes.length === 2);
 	await page.close();

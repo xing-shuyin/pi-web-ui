@@ -76,10 +76,11 @@
 
 ## 设备中心远程桌面
 
-| 变量                | 默认                                               | 作用                                                                                                                                      |
-| ------------------- | -------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------- |
-| `PI_DEVICE_DESKTOP` | 空（关闭）                                         | `1` 强制启用本机原生远程桌面；未设置时读取 `<dataDir>/desktop-settings.json` 的启用偏好，默认关闭。本机关闭偏好不能覆盖环境变量强制启用。 |
-| `PI_DESKTOP_FFMPEG` | `bin/ffmpeg/<platform>-<arch>/ffmpeg(.exe)` → PATH | H.264 桌面通道使用的 ffmpeg 绝对路径；只接受绝对路径，用于开发调试或自备带 NVENC 的构建。缺失时自动退回 JPEG。                            |
+| 变量                      | 默认                                               | 作用                                                                                                                                      |
+| ------------------------- | -------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------- |
+| `PI_DEVICE_DESKTOP`       | 空（关闭）                                         | `1` 强制启用本机原生远程桌面；未设置时读取 `<dataDir>/desktop-settings.json` 的启用偏好，默认关闭。本机关闭偏好不能覆盖环境变量强制启用。 |
+| `PI_DESKTOP_SERVICE_AUTO` | 空（自动）                                         | Windows x64 全局安装与交互启动时自动安装/更新内置桌面组件；`0` 禁用自动安装。需要管理员授权，不改变远程访问开关。                         |
+| `PI_DESKTOP_FFMPEG`       | `bin/ffmpeg/<platform>-<arch>/ffmpeg(.exe)` → PATH | H.264 桌面通道使用的 ffmpeg 绝对路径；只接受绝对路径，用于开发调试或自备带 NVENC 的构建。缺失时自动退回 JPEG。                            |
 
 远程桌面参考 [krd](https://github.com/zzjcool/krd) 的原生捕获与键鼠注入方式，画面和输入复用既有 WebSocket 中继，无需 noVNC、VNC 服务或额外桌面端口。Windows 使用 GDI + SendInput；macOS 使用 Swift 原生助手，通过 ScreenCaptureKit `SCScreenshotManager` 捕获、CoreGraphics 注入输入，需要 macOS 14+、Swift CLI 和屏幕录制权限，控制时还需辅助功能权限；Linux X11 使用 ffmpeg + xdotool，仅查看时可不安装 xdotool。Wayland 暂不支持，后续需接入 Desktop Portal。只读权限由后端强制执行。
 

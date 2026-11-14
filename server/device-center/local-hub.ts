@@ -56,6 +56,11 @@ export async function createLocalDeviceHub(dataDir: string, getSettings?: () => 
 			getAccount: hub.getRelayAccount,
 			authenticateDevice: (id, token) => hub!.store.authenticateDevice(id, token),
 			ownsDevice: (owner, id) => hub!.store.getDeviceOwner(id) === owner,
+			getDeviceIds: (owner) =>
+				hub!.store
+					.snapshot()
+					.devices.filter((device) => device.accountId === owner)
+					.map((device) => device.id),
 			getDeviceName: (id) => hub!.store.getDevice(id)?.name,
 			getDeviceRemark: (id) => hub!.store.getDevice(id)?.remark,
 			onTaskProgress: (id, event) => hub!.acceptTaskProgress(id, event),

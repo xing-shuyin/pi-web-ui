@@ -14,11 +14,20 @@ export function consoleArguments(args) {
 }
 
 export async function runDesktopCli(args) {
+	if (args[0] === "diagnose" && args[1] === "--p2p" && args.length === 2) {
+		const { diagnoseDeviceP2P } = await import("../dist/server/device-center/device-p2p.js");
+		console.log(JSON.stringify(await diagnoseDeviceP2P(), null, 2));
+		return;
+	}
 	const service = args[0] === "service";
 	if (service && (args.length !== 2 || !["install", "uninstall", "status"].includes(args[1])))
 		throw new Error("Usage: pi-web-ui desktop service install|uninstall|status");
 	const flags = service ? ["-Action", args[1]] : consoleArguments(args);
 	if (process.platform !== "win32") throw new Error("This command is only for Windows desktops.");
+	if (service && args[1] !== "status") {
+		await (await import("./desktop-bootstrap.mjs")).runDesktopServiceInstaller(args[1]);
+		return;
+	}
 	if (!service && flags.length)
 		console.error(
 			"Moving this RDP session to the physical console. RDP will disconnect; the local desktop will remain logged in and accessible.",

@@ -24,6 +24,9 @@ internal static class Native {
     [DllImport("advapi32.dll",CharSet=CharSet.Unicode,SetLastError=true)] static extern bool CreateProcessAsUser(IntPtr token,string app,StringBuilder command,IntPtr processAttributes,IntPtr threadAttributes,bool inherit,uint flags,IntPtr environment,string cwd,ref STARTUP startup,out PROCESS process);
     [DllImport("wtsapi32.dll",CharSet=CharSet.Unicode,SetLastError=true)] static extern bool WTSQuerySessionInformation(IntPtr server,int session,int info,out IntPtr buffer,out int bytes);
     [DllImport("wtsapi32.dll")] static extern void WTSFreeMemory(IntPtr buffer);
+    [DllImport("wtsapi32.dll",SetLastError=true)] static extern bool WTSQueryUserToken(uint session,out IntPtr token);
+    [DllImport("userenv.dll",SetLastError=true)] static extern bool CreateEnvironmentBlock(out IntPtr environment,IntPtr token,bool inherit);
+    [DllImport("userenv.dll")] static extern bool DestroyEnvironmentBlock(IntPtr environment);
     [DllImport("advapi32.dll",CharSet=CharSet.Unicode)] static extern IntPtr OpenSCManager(string machine,string database,uint access);
     [DllImport("advapi32.dll",CharSet=CharSet.Unicode)] static extern IntPtr OpenService(IntPtr manager,string name,uint access);
     [DllImport("advapi32.dll")] static extern bool QueryServiceStatusEx(IntPtr service,int info,byte[] buffer,int size,out int needed);
@@ -63,16 +66,55 @@ internal static class Native {
         public Child(IntPtr handle,Process child) { job=handle; process=child; }
         public void Dispose() { if(job!=IntPtr.Zero) { try { process.WaitForExit(250); } catch {} CloseHandle(job); job=IntPtr.Zero; } process.Dispose(); }
     }
-    internal static Child Launch(int session,string exe,string args) {
-        IntPtr token=IntPtr.Zero,primary=IntPtr.Zero,job=IntPtr.Zero; PROCESS child=new PROCESS(); bool launched=false;
+    // Only the protected, installer-verified encoder can run with desktop-service privileges.
+    static readonly System.Collections.Generic.Dictionary<DesktopEncoderBuild,string> verifiedEncoders=new System.Collections.Generic.Dictionary<DesktopEncoderBuild,string>();
+    internal static bool HasCompatibleEncoder() {
+        string directory=Path.GetDirectoryName(System.Reflection.Assembly.GetExecutingAssembly().Location);
+        return File.Exists(Path.Combine(directory,"ffmpeg-nvenc-compat.exe"))&&File.Exists(Path.Combine(directory,"encoder-nvenc-compat.sha256"));
+    }
+    internal static Child LaunchEncoder(string args,string desktop,IntPtr input,IntPtr output,IntPtr error,DesktopEncoderBuild build=DesktopEncoderBuild.Default) {
+        string directory=Path.GetDirectoryName(System.Reflection.Assembly.GetExecutingAssembly().Location);
+        if(build!=DesktopEncoderBuild.Default&&build!=DesktopEncoderBuild.NvidiaCompatible) throw new IOException("Invalid embedded encoder selection");
+        string exe=Path.Combine(directory,build==DesktopEncoderBuild.NvidiaCompatible?"ffmpeg-nvenc-compat.exe":"ffmpeg.exe");
+        string checksum=Path.Combine(directory,build==DesktopEncoderBuild.NvidiaCompatible?"encoder-nvenc-compat.sha256":"encoder.sha256");
+        if(!verifiedEncoders.ContainsKey(build)) {
+            using(var hash=System.Security.Cryptography.SHA256.Create())
+            using(var file=File.OpenRead(exe)) {
+                string actual=BitConverter.ToString(hash.ComputeHash(file)).Replace("-","");
+                if(!String.Equals(actual,File.ReadAllText(checksum).Trim(),StringComparison.OrdinalIgnoreCase)) throw new IOException("Installed desktop encoder integrity check failed");
+            }
+            verifiedEncoders[build]=exe;
+        }
+        if(String.IsNullOrEmpty(desktop)||desktop.Length>128||desktop.IndexOfAny(new char[]{'\\','/','\0','"'})>=0) throw new IOException("Invalid input desktop");
+        return Launch(Process.GetCurrentProcess().SessionId,verifiedEncoders[build],args,"winsta0\\"+desktop,input,output,error);
+    }
+    internal static Child Launch(int session,string exe,string args,string desktop="winsta0\\default",IntPtr input=default(IntPtr),IntPtr output=default(IntPtr),IntPtr error=default(IntPtr)) {
+        return LaunchCore(session,exe,args,desktop,input,output,error,false);
+    }
+    internal static Child LaunchUserVideo(int session,string pipeName) {
+        if(!System.Text.RegularExpressions.Regex.IsMatch(pipeName,"^pi-web-ui-user-video-[a-f0-9]{32}$")) throw new IOException("Invalid user video pipe");
+        return LaunchCore(session,System.Reflection.Assembly.GetExecutingAssembly().Location,"--user-video "+pipeName+" "+Process.GetCurrentProcess().Id,"winsta0\\default",IntPtr.Zero,IntPtr.Zero,IntPtr.Zero,true);
+    }
+    static Child LaunchCore(int session,string exe,string args,string desktop,IntPtr input,IntPtr output,IntPtr error,bool asOwner) {
+        IntPtr token=IntPtr.Zero,primary=IntPtr.Zero,job=IntPtr.Zero,environment=IntPtr.Zero; PROCESS child=new PROCESS(); bool launched=false;
         try {
-            Check(OpenProcessToken(Process.GetCurrentProcess().Handle,0xF01FF,out token));
-            Check(DuplicateTokenEx(token,0x02000000,IntPtr.Zero,2,1,out primary));
-            Check(SetTokenInformation(primary,12,ref session,4));
+            if(asOwner) {
+                Check(WTSQueryUserToken((uint)session,out primary));
+                using(var identity=new System.Security.Principal.WindowsIdentity(primary)) {
+                    string owner=File.ReadAllText(Path.Combine(Path.GetDirectoryName(exe),"owner.sid")).Trim();
+                    if(identity.User.Value!=owner) throw new UnauthorizedAccessException("User video desktop owner mismatch");
+                }
+                Check(CreateEnvironmentBlock(out environment,primary,false));
+            } else {
+                Check(OpenProcessToken(Process.GetCurrentProcess().Handle,0xF01FF,out token));
+                Check(DuplicateTokenEx(token,0x02000000,IntPtr.Zero,2,1,out primary));
+                Check(SetTokenInformation(primary,12,ref session,4));
+            }
             job=CreateJobObject(IntPtr.Zero,null); if(job==IntPtr.Zero) throw new IOException("Cannot create worker job");
             var limits=new JOB(); limits.basic.flags=0x2000; Check(SetInformationJobObject(job,9,ref limits,Marshal.SizeOf(typeof(JOB))));
-            var startup=new STARTUP{cb=Marshal.SizeOf(typeof(STARTUP)),desktop="winsta0\\default"};
-            Check(CreateProcessAsUser(primary,exe,new StringBuilder("\""+exe+"\" "+args),IntPtr.Zero,IntPtr.Zero,false,0x08000004,IntPtr.Zero,Path.GetDirectoryName(exe),ref startup,out child));
+            bool redirected=output!=IntPtr.Zero;
+            var startup=new STARTUP{cb=Marshal.SizeOf(typeof(STARTUP)),desktop=desktop,flags=redirected?0x100:0,input=input,output=output,error=error};
+            Check(CreateProcessAsUser(primary,exe,new StringBuilder("\""+exe+"\" "+args),IntPtr.Zero,IntPtr.Zero,redirected,0x08000004|(asOwner?0x400u:0u),environment,Path.GetDirectoryName(exe),ref startup,out child));
             Check(AssignProcessToJobObject(job,child.process));
             if(ResumeThread(child.thread)==uint.MaxValue) throw new IOException("Cannot start desktop worker");
             var result=new Child(job,Process.GetProcessById((int)child.pid)); job=IntPtr.Zero; launched=true; return result;
@@ -83,6 +125,7 @@ internal static class Native {
             if(child.process!=IntPtr.Zero) CloseHandle(child.process);
             if(primary!=IntPtr.Zero) CloseHandle(primary);
             if(token!=IntPtr.Zero) CloseHandle(token);
+            if(environment!=IntPtr.Zero) DestroyEnvironmentBlock(environment);
         }
     }
 }

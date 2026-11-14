@@ -1,4 +1,4 @@
-export const DEVICE_P2P_TIMEOUT_MS = 10_000;
+export const DEVICE_P2P_TIMEOUT_MS = 20_000;
 export type DeviceP2PSignal = { version: 1; sdp: string };
 
 export function validDeviceP2PSignal(value: unknown): value is DeviceP2PSignal {

@@ -1,4 +1,5 @@
 import http, { type ClientRequest } from "node:http";
+import { desktopDownloadLimit } from "./desktop-files-protocol.js";
 import type { DeviceTaskActivity, DeviceTaskClaim } from "../protocol.js";
 import { projectTaskActivity } from "./task-progress.js";
 import https from "node:https";
@@ -708,7 +709,8 @@ export function createDeviceConnector(options: DeviceConnectorOptions) {
 										for await (const data of res) {
 											const chunk = Buffer.from(data);
 											bytes += chunk.length;
-											if (bytes > RELAY_LIMITS.body) throw new Error("Response too large");
+											if (bytes > (desktopDownloadLimit(frame.path, frame.method as string) ?? RELAY_LIMITS.body))
+												throw new Error("Response too large");
 											for (let offset = 0; offset < chunk.length; offset += RELAY_LIMITS.chunk) {
 												while (ws.bufferedAmount > RELAY_LIMITS.queue / 2) {
 													if (!streams.has(id) || ws.readyState !== WebSocket.OPEN) throw new Error("Cancelled");
