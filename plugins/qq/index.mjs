@@ -499,6 +499,14 @@ export class QqBotBridge {
 			if (again && alive(Number(again.pid))) return refuse(again);
 			let claimed = false;
 			for (let attempt = 0; attempt < 3 && !claimed; attempt++) {
+				// 删之前必须重读：从上面的 again 到这里的 rm 之间，另的宿主可能已经申领成功；
+				// 直接 rm 会把对方刚写的活锁删掉，双方各自认为持锁（互踢风暴的老病根）。
+				const current = readOwner();
+				if (current?.instanceId === this.instanceId) {
+					claimed = true;
+					break;
+				}
+				if (current && alive(Number(current.pid))) return refuse(current);
 				rmSync(file, { force: true });
 				try {
 					writeFileSync(file, payload, { flag: "wx" });
