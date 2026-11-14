@@ -1,7 +1,8 @@
 import { randomUUID } from "node:crypto";
-import { chmod, glob, lstat, mkdir, open, readdir, rename, writeFile } from "node:fs/promises";
+import { chmod, glob, lstat, mkdir, open, readdir } from "node:fs/promises";
 import { homedir } from "node:os";
 import path from "node:path";
+import { writeAtomic } from "./atomic-file.js";
 import type { NativeCliConfig } from "./protocol.js";
 import type { RemoteSshService } from "./remote-ssh-service.js";
 import {
@@ -218,8 +219,8 @@ export async function prepareNativeCliSessionLaunch(
 			} catch (error) {
 				if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
 			}
-			await writeFile(temporary, content, { mode: 0o600, flag: "wx" });
-			await rename(temporary, file);
+			// 本地分支与远端语义对齐（原子替换），且不吃 Windows 瞬时占用的 EPERM。
+			await writeAtomic(file, content, { mode: 0o600 });
 		}
 		return file.replace(/\\/g, "/");
 	};
