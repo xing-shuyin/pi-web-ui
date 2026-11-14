@@ -1,7 +1,8 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { validDeviceP2PSignal } from "../../server/device-center/device-p2p-protocol.js";
+import { deviceP2PRemoteFailure, validDeviceP2PSignal } from "../../server/device-center/device-p2p-protocol.js";
 import {
 	connectDeviceP2P,
+	createDeviceP2PTarget,
 	DEVICE_P2P_DEFAULT_STUN,
 	deviceP2PAvailable,
 	parseTurn,
@@ -12,6 +13,21 @@ import { probeDeviceTunnel } from "../../server/device-center/device-lan.js";
 afterEach(() => vi.unstubAllEnvs());
 const sdp = "v=0\r\nm=application 9 UDP/DTLS/SCTP webrtc-datachannel\r\n";
 describe("P2P negotiation boundaries", () => {
+	it("reports bounded target failure reasons without exposing arbitrary remote data", async () => {
+		expect(deviceP2PRemoteFailure("target-unavailable")).toBe("target-unavailable");
+		for (const invalid of [{ failure: "target-unavailable" }, "secret credentials", null, 42])
+			expect(deviceP2PRemoteFailure(invalid)).toBeUndefined();
+		const lan = { issueGrant: vi.fn(), revoke: vi.fn(), close: vi.fn() };
+		const target = createDeviceP2PTarget(lan);
+		vi.stubEnv("PI_DEVICE_P2P", "0");
+		expect(await target.accept({ version: 1, sdp }, new AbortController().signal)).toEqual({
+			failure: "target-helper-missing",
+		});
+		expect(await target.accept({ version: 1, sdp }, AbortSignal.abort())).toEqual({ failure: "target-cancelled" });
+		expect(await target.accept({ version: 2, sdp }, new AbortController().signal)).toBeNull();
+		expect(lan.issueGrant).not.toHaveBeenCalled();
+		target.reset();
+	});
 	it("accepts TURN TCP/TLS transports and rejects invalid ICE destinations", () => {
 		for (const url of [
 			"turn:relay.example:3478?transport=tcp",

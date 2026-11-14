@@ -28,7 +28,13 @@ async function listen(server: Server) {
 	return (server.address() as { port: number }).port;
 }
 async function fixture(
-	options: { env?: NodeJS.ProcessEnv; supported?: boolean; dataDir?: string; permissions?: Native["permissions"] } = {},
+	options: {
+		env?: NodeJS.ProcessEnv;
+		supported?: boolean;
+		dataDir?: string;
+		permissions?: Native["permissions"];
+		legacyJpeg?: boolean;
+	} = {},
 ) {
 	const app = express();
 	const dataDir = options.dataDir ?? mkdtempSync(join(tmpdir(), "desktop-route-"));
@@ -61,6 +67,11 @@ async function fixture(
 	const http = createServer(parent);
 	http.on("upgrade", (req, socket, head) => {
 		if (req.url?.startsWith("/nested/")) req.url = req.url.slice("/nested".length);
+		if (options.legacyJpeg) {
+			const url = new URL(req.url!, "http://localhost");
+			url.searchParams.delete("jpegFeedback");
+			req.url = url.pathname + url.search;
+		}
 		if (!desktop.handleUpgrade(req, socket, head)) socket.end("HTTP/1.1 404 Not Found\r\n\r\n");
 	});
 	const port = await listen(http);
@@ -633,6 +644,57 @@ describe("device desktop native route", () => {
 		expect(delivered).toHaveLength(3);
 		expect(session.close).toHaveBeenCalledTimes(1);
 	});
+	it("negotiates cumulative JPEG feedback and expands the window for a 105 ms round trip", async () => {
+		const f = await fixture();
+		const { ws, messages } = await connected(f.port, "/desktop-ws?jpegFeedback=1");
+		let now = 0;
+		vi.spyOn(performance, "now").mockImplementation(() => now);
+		const frames = () => messages.filter((message) => message.binary);
+		const send = async (text: string, count: number) => {
+			f.sessions[0].options.onFrame(Buffer.from(text));
+			await vi.waitFor(() => expect(frames()).toHaveLength(count));
+		};
+		const ack = async (id: number) => {
+			ws.send(JSON.stringify({ type: "jpeg_ack", id }));
+			const pong = once(ws, "pong");
+			ws.ping();
+			await pong;
+		};
+		await send("first", 1);
+		expect(
+			messages.filter((message) => !message.binary).map((message) => JSON.parse(message.data.toString())),
+		).toContainEqual({ type: "ready", dynamicQuality: false, jpegFeedback: 1 });
+		now = 105;
+		await ack(1);
+		for (let i = 0; i < 8; i++) await send(`frame-${i}`, i + 2);
+		f.sessions[0].options.onFrame(Buffer.from("superseded"));
+		f.sessions[0].options.onFrame(Buffer.from("latest"));
+		await ack(1000);
+		await ack(1);
+		expect(frames()).toHaveLength(9);
+		now = 210;
+		await ack(9);
+		await vi.waitFor(() => expect(frames()).toHaveLength(10));
+		expect(frames().at(-1)!.data.toString()).toBe("latest");
+		expect(f.sessions[0].input).not.toHaveBeenCalled();
+	});
+	it("caps unacknowledged JPEG bytes even with a large latency window", async () => {
+		const f = await fixture();
+		const { ws, messages } = await connected(f.port, "/desktop-ws?jpegFeedback=1");
+		const frame = Buffer.alloc(DESKTOP_LIMITS.queue / 2, 1);
+		const frames = () => messages.filter((message) => message.binary);
+		for (let i = 1; i <= 2; i++) {
+			f.sessions[0].options.onFrame(frame);
+			await vi.waitFor(() => expect(frames()).toHaveLength(i));
+		}
+		f.sessions[0].options.onFrame(frame);
+		const pong = once(ws, "pong");
+		ws.ping();
+		await pong;
+		expect(frames()).toHaveLength(2);
+		ws.send(JSON.stringify({ type: "jpeg_ack", id: 2 }));
+		await vi.waitFor(() => expect(frames()).toHaveLength(3));
+	});
 	it("drops frames when the WebSocket output queue is full and resumes after draining", async () => {
 		const f = await fixture();
 		const { messages } = await connected(f.port);
@@ -662,10 +724,10 @@ describe("device desktop native route", () => {
 		} as any;
 		expect(f.desktop.handleUpgrade({ url: "/other" } as any, socket, Buffer.alloc(0))).toBe(false);
 	});
-	it.skipIf(!CHROME_PATH)(
-		"decodes native frames onto the canvas through a nested proxy path",
-		async () => {
-			const f = await fixture();
+	it.skipIf(!CHROME_PATH).each([false, true])(
+		"decodes native frames onto the canvas through a nested proxy path (legacy JPEG: %s)",
+		async (legacyJpeg) => {
+			const f = await fixture({ legacyJpeg });
 			const browser = await chromium.launch({
 				executablePath: CHROME_PATH,
 				headless: true,
@@ -681,8 +743,15 @@ describe("device desktop native route", () => {
 			});
 			const errors: string[] = [];
 			const requests: string[] = [];
+			const acknowledgements: any[] = [];
 			page.on("pageerror", (error) => errors.push(error.message));
-			page.on("websocket", (socket) => requests.push(socket.url()));
+			page.on("websocket", (socket) => {
+				requests.push(socket.url());
+				socket.on("framesent", ({ payload }) => {
+					const value = JSON.parse(String(payload));
+					if (value.type === "ack" || value.type === "jpeg_ack") acknowledgements.push(value);
+				});
+			});
 			page.on("response", (response) => {
 				if (response.status() >= 400) errors.push(response.url() + ":" + response.status());
 			});
@@ -705,6 +774,11 @@ describe("device desktop native route", () => {
 				await page.screenshot({ path: "artifacts/device-center/desktop-native.png", fullPage: true });
 			}
 			expect(requests[0]).toContain("/nested/desktop-ws");
+			for (let i = 1; i <= 9; i++) {
+				f.sessions[0].options.onFrame(tinyImage);
+				await vi.waitFor(() => expect(acknowledgements.length).toBeGreaterThanOrEqual(i + 1));
+			}
+			expect(acknowledgements.at(-1)).toEqual(legacyJpeg ? { type: "ack" } : { type: "jpeg_ack", id: 10 });
 			expect(f.sessions[0].options.readOnly).toBe(false);
 			await page.locator("#canvas").focus();
 			for (const code of [

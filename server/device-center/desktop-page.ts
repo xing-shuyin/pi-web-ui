@@ -63,6 +63,7 @@ $('setup').setAttribute('aria-label', t('setup')); $('controls').setAttribute('a
 const canvas = $('canvas'), screen = $('screen'), context = canvas.getContext('2d');
 let config = null, busy = false, disposed = false, socket = null, generation = 0;
 let ready = false, hasFrame = false, connectionViewOnly = true, pendingFrame = null, decoding = false;
+let jpegFeedback = false, jpegSequence = 0;
 let filesSession = '';
 let videoMode = false, videoDecoder = null, videoTime = 0, videoDecodeAt = 0, videoCodec = '', videoState = null, videoAcceleration = '';
 const videoSupported = typeof VideoDecoder === 'function' && typeof EncodedVideoChunk === 'function';
@@ -144,6 +145,7 @@ function stop() {
  release(); const previous = socket; socket = null; generation++;
  filesSession = '';
  ready = false; hasFrame = false; pendingFrame = null; dynamicQuality = false; lastQuality = ""; clearTimeout(qualityTimer);
+ jpegFeedback = false; jpegSequence = 0;
  videoMode = false; videoState = null; videoAcceleration = ''; try { videoDecoder?.close(); } catch { /* Already closed. */ } videoDecoder = null; videoDecodeAt = 0;
  rendered = 0; lastCaptured = lastSent = lastStatsElapsed = 0; sampleAt = performance.now(); $('statistics').textContent = '';
  if (previous) { previous.onmessage = previous.onopen = previous.onerror = previous.onclose = null; previous.close(); }
@@ -175,11 +177,11 @@ async function decodeFrames() {
     if (canvas.width !== bitmap.width || canvas.height !== bitmap.height) { canvas.width = bitmap.width; canvas.height = bitmap.height; }
     context.drawImage(bitmap, 0, 0); hasFrame = true;
     rendered++; decodeMs = Math.round(performance.now() - decodeStarted);
-    frame.socket.send(JSON.stringify({type:'ack'}));
+    frame.socket.send(JSON.stringify(frame.ack || {type:'ack'}));
     if(firstFrame) { status(t(connectionViewOnly ? 'viewing' : 'controlling')); controls(); }
    } catch (error) {
     if (!disposed && frame.generation === generation && frame.socket === socket && socket.readyState === WebSocket.OPEN) {
-     try { frame.socket.send(JSON.stringify({type:'ack'})); } catch { /* Close below if the acknowledgement cannot be sent. */ }
+     try { frame.socket.send(JSON.stringify(frame.ack || {type:'ack'})); } catch { /* Close below if the acknowledgement cannot be sent. */ }
      fail(t('decodeError') + ': ' + error.message);
     }
    } finally { bitmap?.close(); }
@@ -304,6 +306,7 @@ function connect() {
  url.searchParams.set('viewOnly', connectionViewOnly ? '1' : '0');
  url.searchParams.set('video', videoProbe ? '1' : '0');
  url.searchParams.set('videoFeedback', '1');
+ url.searchParams.set('jpegFeedback', '1');
  if(selectedDisplay) url.searchParams.set('display',selectedDisplay);
  const currentGeneration = generation;
  let current;
@@ -318,13 +321,14 @@ function connect() {
     const message = JSON.parse(event.data);
     if (message.type === 'error') fail(desktopError(message.message), typeof message.message === 'string' && desktopIssue(message.message, zh)?.retry === true);
     else if (message.type === 'video') { if (!startVideo(message.codec, message.reset === true, message.framed === 1)) fail(t('decodeError')); }
-    else if (message.type === 'ready') { ready = true; dynamicQuality = message.dynamicQuality === true; controls(); updateQuality(); clipboardAvailable(); }
+    else if (message.type === 'ready') { ready = true; jpegFeedback = message.jpegFeedback === 1; dynamicQuality = message.dynamicQuality === true; controls(); updateQuality(); clipboardAvailable(); }
     else if (message.type === 'displays') updateDisplays(message);
     else if (message.type === 'stats') updateStatistics(message);
    } catch { fail(t('connectionError')); }
   } else if (event.data instanceof Blob) {
    if (videoMode) { void decodeVideo(event.data); return; }
-   pendingFrame = {blob:event.data, generation:currentGeneration, socket:current}; void decodeFrames();
+   const id = ++jpegSequence;
+   pendingFrame = {blob:event.data, generation:currentGeneration, socket:current, ack:jpegFeedback ? {type:'jpeg_ack',id} : {type:'ack'}}; void decodeFrames();
   }
  };
  current.onerror = () => { if (isCurrent()) { fail(t('connectionError')); parent.postMessage({type:'device-portal-disconnected'}, '*'); } };

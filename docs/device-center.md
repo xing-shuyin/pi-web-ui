@@ -256,7 +256,7 @@ Hub 等待绑定当前设备 WS 的 executor ACK 才移除交互；拒绝或 5 �
 
 Hub 通过已认证的 `device_lan` RPC 协商能力（兼容旧响应），通过 `device_p2p` RPC 定向转发有界 SDP。只有现有人工设备凭据接口可提交协商，仍先验证账号与设备归属；浏览器接口不接受 SDP。每次会话拥有独立 ICE/DTLS 身份与短期 TLS-PSK 授权，SDP、地址与密钥不会返回浏览器。目标助手只连接本次授权的固定回环网关，不接收任意 TCP 目标。
 
-Go/Pion 助手通过 stdio 受 Node 管理，使用 UDP IPv4/IPv6 ICE、STUN 和可靠 DataChannel；一条 HTTP/TLS 或 WebSocket 连接对应一条数据通道。发送分块 16 KiB、单流高水位 256 KiB、SCTP 接收上限 1 MiB；没有假数据预热。每个助手最多 32 条活跃流和 32 条待建立流，Node 全局最多 16 个助手、每个目标连接器最多 8 个会话。总协商时限 20 秒；队列达到高水位后等待排空，发送量仍在下降时继续等待，连续 30 秒没有进展才关闭该流；轮询同时覆盖低水位通知丢失的情况。UDP 使用系统分配的临时端口，避免狭窄固定端口段冲突。绑定代次改变、连接器断开、授权撤销、助手退出和关闭页面均清理相关连接。
+Go/Pion 助手通过 stdio 受 Node 管理，使用 UDP IPv4/IPv6 ICE、STUN 和可靠 DataChannel；一条 HTTP/TLS 或 WebSocket 连接对应一条数据通道。发送分块 16 KiB、单流高水位 256 KiB、SCTP 接收上限 1 MiB；没有假数据预热。每个助手最多 32 条活跃流和 32 条待建立流，Node 全局最多 16 个助手、每个目标连接器最多 8 个会话。总协商时限 25 秒，Hub 信令 10 秒，目标候选收集 8 秒，加密隧道验证 8 秒；各阶段仍受总时限及调用方取消约束。ICE connected 只表示底层连接，必须随后通过实际 DataChannel 上的 TLS-PSK 握手及 HTTP 健康请求才宣布 P2P 可用。队列达到高水位后等待排空，发送量仍在下降时继续等待，连续 30 秒没有进展才关闭该流；轮询同时覆盖低水位通知丢失的情况。UDP 使用系统分配的临时端口，避免狭窄固定端口段冲突。绑定代次改变、连接器断开、授权撤销、助手退出和关闭页面均清理相关连接。
 
 直连页继续使用 `/device-lan/` 隔离能力 URL，保留现有 CSP、路径白名单、Origin 和凭据净化。显示通路由实际完成连接的结果决定：`lan` / `p2p` / `hub`。包装页卸载时发送有能力校验、按页面代次区分的释放请求，保留 2 秒刷新宽限，重新加载不会误撤销新页面；恢复连接时申请新票据并报告新通路。未确认的上传、键鼠和任务命令不会由传输层自动重放。
 
@@ -271,6 +271,8 @@ Go/Pion 助手通过 stdio 受 Node 管理，使用 UDP IPv4/IPv6 ICE、STUN 和
 TURN 地址支持 `turn:host:3478?transport=udp`、`turn:host:3478?transport=tcp` 和 `turns:host:5349?transport=tcp`，Node 与原生助手采用一致的协议、IPv6、端口及凭据验证。`native/device-p2p/ice_tcp_test.go` 使用只监听 TCP 的真实本地 TURN 服务验证候选获取。
 
 运行 `pi-web-ui desktop diagnose --p2p` 可获得不含 SDP、IP、凭据的诊断：助手可用性、TURN 配置状态、host/srflx/relay 候选数量。它只验证本机候选收集，不代表对端可达；纯云端 Hub 浏览器入口仍使用 Hub 中继。协商超时按 `gather-timeout`、`signal-timeout`、`ice-timeout`、`tunnel-timeout` 区分，只有调用方取消才报告 `cancelled`。
+
+新版目标可返回白名单故障码，如 `target-busy`、`target-helper-missing`、`target-unavailable`、`target-gather-timeout`；Hub RPC 失败区分 `signal-timeout` 与 `signal-failed`。不回传异常堆栈、凭据或任意错误文本。旧目标空响应仍记为 `signal-rejected`。`node --import tsx tests/device-p2p-latency-test.mjs` 在真实 DataChannel 与 TLS 握手间注入双向延迟，覆盖超过原 2 秒验证窗口的正常连接和错误密钥拒绝；运行前需构建本平台 P2P 助手。
 
 - 只有配置了 TURN 才允许 relay 候选：没配时助手看到 relay 对直接判定失败，避免流量莫名绕第三方。
 - 中继生效时日志写一行 `[DeviceCenter] Device <id> P2P is relayed through TURN`；界面通路仍显示 `p2p`（它确实不是 Hub 中继，只是经你自己的服务器转发）。

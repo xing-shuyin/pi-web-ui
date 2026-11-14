@@ -8,7 +8,15 @@ import { fileURLToPath } from "node:url";
 import { isIP } from "node:net";
 import { killPidTree } from "../process-utils.js";
 import { probeDeviceTunnel, type DeviceLanConnection, type createDeviceLanServer } from "./device-lan.js";
-import { DEVICE_P2P_TIMEOUT_MS, validDeviceP2PSignal, type DeviceP2PSignal } from "./device-p2p-protocol.js";
+import {
+	DEVICE_P2P_TIMEOUT_MS,
+	DEVICE_P2P_GATHER_TIMEOUT_MS,
+	DEVICE_P2P_TUNNEL_TIMEOUT_MS,
+	deviceP2PRemoteFailure,
+	validDeviceP2PSignal,
+	type DeviceP2PSignal,
+	type DeviceP2PRemoteFailure,
+} from "./device-p2p-protocol.js";
 
 type Event = {
 	type: string;
@@ -28,6 +36,7 @@ export type DeviceDirectConnection = {
 };
 /** Why a P2P attempt fell back to the Hub; surfaced as one log line so the path is not silently "hub". */
 export type DeviceP2PFailure =
+	| DeviceP2PRemoteFailure
 	| "helper-missing"
 	| "ice-config"
 	| "cancelled"
@@ -169,7 +178,7 @@ async function startHelper() {
 	child.once("error", close);
 	child.once("exit", (code) => {
 		exited = true;
-		if (stderr.trim()) console.warn("[device-p2p] helper exit", code, stderr.trim().slice(0, 500));
+		if (!stopped && stderr.trim()) console.warn("[device-p2p] helper exit", code, stderr.trim().slice(0, 500));
 		close();
 	});
 	child.stdin.on("error", close);
@@ -319,20 +328,27 @@ export async function connectDeviceP2P(
 		const offer = await helper.wait("sdp", deadline).catch(() => undefined);
 		if (!offer?.sdp) return failure("gather-failed");
 		phase = "signal";
-		let response: { deviceP2P?: { signal?: unknown; grant?: unknown } } | undefined;
+		let response: { deviceP2P?: { signal?: unknown; grant?: unknown; failure?: unknown } } | undefined;
 		try {
 			response = (await exchange({ version: 1, sdp: offer.sdp }, deadline)) as typeof response;
 		} catch {
 			return failure("signal-failed");
 		}
 		const answer = response?.deviceP2P;
-		if (!answer || !validDeviceP2PSignal(answer.signal)) return fail("signal-rejected");
+		const remoteFailure = deviceP2PRemoteFailure(answer?.failure);
+		if (remoteFailure) return failure(remoteFailure);
+		if (!answer || !validDeviceP2PSignal(answer.signal)) return failure("signal-rejected");
 		phase = "ice";
 		helper.send({ type: "answer", sdp: answer.signal.sdp });
 		const ready = await helper.wait("ready", deadline).catch(() => undefined);
 		if (!ready?.port) return failure("ice-failed");
 		phase = "tunnel";
-		connection = await probeDeviceTunnel(answer.grant, ready.port, { signal: deadline, timeoutMs: 2000 });
+		const tunnelDeadline = AbortSignal.any([deadline, AbortSignal.timeout(DEVICE_P2P_TUNNEL_TIMEOUT_MS)]);
+		connection = await probeDeviceTunnel(answer.grant, ready.port, {
+			signal: tunnelDeadline,
+			timeoutMs: DEVICE_P2P_TUNNEL_TIMEOUT_MS,
+		});
+		if (!connection && tunnelDeadline.aborted && !deadline.aborted) return fail("tunnel-timeout");
 		if (!connection || deadline.aborted) return failure("tunnel-failed");
 		const peer = connection;
 		const worker = helper;
@@ -366,10 +382,24 @@ export function createDeviceP2PTarget(lan: ReturnType<typeof createDeviceLanServ
 	let generation = 0;
 	return {
 		async accept(value: unknown, signal: AbortSignal) {
-			if (!validDeviceP2PSignal(value) || signal.aborted || sessions.size >= 8) return null;
+			const fail = (failure: DeviceP2PRemoteFailure) => ({ failure });
+			if (!validDeviceP2PSignal(value)) return null;
+			if (signal.aborted) return fail("target-cancelled");
+			if (sessions.size >= 8) return fail("target-busy");
+			let config: ReturnType<typeof settings>;
+			try {
+				config = settings();
+			} catch {
+				return fail("target-ice-config");
+			}
 			const captured = generation;
-			const helper = await startHelper();
-			const grant = await lan.issueGrant({ loopbackOnly: true });
+			let helper: Awaited<ReturnType<typeof startHelper>>;
+			try {
+				helper = await startHelper();
+			} catch {
+				return fail("target-helper-missing");
+			}
+			let grant: Awaited<ReturnType<typeof lan.issueGrant>> = null;
 			let timer: ReturnType<typeof setTimeout> | undefined;
 			let stopped = false;
 			const stop = () => {
@@ -383,27 +413,45 @@ export function createDeviceP2PTarget(lan: ReturnType<typeof createDeviceLanServ
 				}
 				helper.close();
 			};
-			helper.onClose(stop);
 			sessions.add(stop);
+			helper.onClose(stop);
+			const gatherDeadline = AbortSignal.any([signal, AbortSignal.timeout(DEVICE_P2P_GATHER_TIMEOUT_MS)]);
 			try {
+				grant = await lan.issueGrant({ loopbackOnly: true });
+				if (stopped) {
+					if (grant) lan.revoke(grant.identity);
+					return fail("target-cancelled");
+				}
 				if (!grant || signal.aborted || captured !== generation || sessions.size > 8) {
 					stop();
-					return null;
+					return fail(
+						signal.aborted || captured !== generation
+							? "target-cancelled"
+							: !grant
+								? "target-unavailable"
+								: "target-busy",
+					);
 				}
 				grants.set(grant.identity, stop);
 				timer = setTimeout(stop, Math.max(1, grant.expiresAt - Date.now()));
 				timer.unref();
-				helper.send({ type: "start", role: "target", port: grant.port, sdp: value.sdp, ...settings() });
-				const answer = await helper.wait("sdp", AbortSignal.any([signal, AbortSignal.timeout(4000)]));
+				helper.send({ type: "start", role: "target", port: grant.port, sdp: value.sdp, ...config });
+				const answer = await helper.wait("sdp", gatherDeadline);
 				if (signal.aborted || captured !== generation || stopped) {
 					stop();
-					return null;
+					return fail("target-cancelled");
 				}
 				void helper.wait("ready", AbortSignal.timeout(DEVICE_P2P_TIMEOUT_MS)).catch(stop);
 				return { signal: { version: 1, sdp: answer.sdp } as DeviceP2PSignal, grant };
 			} catch {
 				stop();
-				return null;
+				return fail(
+					signal.aborted
+						? "target-cancelled"
+						: gatherDeadline.aborted
+							? "target-gather-timeout"
+							: "target-gather-failed",
+				);
 			}
 		},
 		reset() {

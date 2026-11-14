@@ -8,7 +8,7 @@ import { INTEGRATION_RPC_TIMEOUT_MS, VERIFICATION_RPC_TIMEOUT_MS } from "./verif
 import type { IncomingMessage, Server, ServerResponse } from "node:http";
 import type { Duplex } from "node:stream";
 import { WebSocket, WebSocketServer } from "ws";
-import { validDeviceP2PSignal } from "./device-p2p-protocol.js";
+import { DEVICE_P2P_SIGNAL_TIMEOUT_MS, validDeviceP2PSignal } from "./device-p2p-protocol.js";
 import { desktopDownloadLimit } from "./desktop-files-protocol.js";
 import { desktopDeviceChoices } from "./desktop-device-choices.js";
 
@@ -801,9 +801,10 @@ export function createDeviceRelay(options: DeviceRelayOptions) {
 		let deviceP2P: unknown;
 		if (preferLan && !redirect) {
 			const entry = devices.get(id)!;
+			const signalDeadline = AbortSignal.timeout(DEVICE_P2P_SIGNAL_TIMEOUT_MS);
 			try {
 				if (p2pOffer !== undefined) {
-					deviceP2P = await entry.rpc.call("device_p2p", p2pOffer, { signal: AbortSignal.timeout(5000) });
+					deviceP2P = await entry.rpc.call("device_p2p", p2pOffer, { signal: signalDeadline });
 				} else {
 					const direct = await entry.rpc.call("device_lan", { p2p: 1 }, { signal: AbortSignal.timeout(1500) });
 					if (direct && typeof direct === "object" && typeof Reflect.get(direct, "deviceP2P") === "boolean") {
@@ -811,7 +812,10 @@ export function createDeviceRelay(options: DeviceRelayOptions) {
 						deviceP2P = Reflect.get(direct, "deviceP2P");
 					} else deviceLan = direct;
 				}
-			} catch {}
+			} catch {
+				if (p2pOffer !== undefined)
+					deviceP2P = { failure: signalDeadline.aborted ? "signal-timeout" : "signal-failed" };
+			}
 			if (closed || generation !== revision || devices.get(id) !== entry || res.destroyed) {
 				res.writeHead(409).end();
 				return;

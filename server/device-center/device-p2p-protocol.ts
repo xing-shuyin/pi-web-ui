@@ -1,4 +1,24 @@
-export const DEVICE_P2P_TIMEOUT_MS = 20_000;
+export const DEVICE_P2P_TIMEOUT_MS = 25_000;
+export const DEVICE_P2P_SIGNAL_TIMEOUT_MS = 10_000;
+export const DEVICE_P2P_GATHER_TIMEOUT_MS = 8_000;
+export const DEVICE_P2P_TUNNEL_TIMEOUT_MS = 8_000;
+export const DEVICE_P2P_REMOTE_FAILURES = [
+	"target-busy",
+	"target-cancelled",
+	"target-helper-missing",
+	"target-unavailable",
+	"target-ice-config",
+	"target-gather-timeout",
+	"target-gather-failed",
+	"signal-timeout",
+	"signal-failed",
+] as const;
+export type DeviceP2PRemoteFailure = (typeof DEVICE_P2P_REMOTE_FAILURES)[number];
+export function deviceP2PRemoteFailure(value: unknown): DeviceP2PRemoteFailure | undefined {
+	return typeof value === "string" && DEVICE_P2P_REMOTE_FAILURES.includes(value as DeviceP2PRemoteFailure)
+		? (value as DeviceP2PRemoteFailure)
+		: undefined;
+}
 export type DeviceP2PSignal = { version: 1; sdp: string };
 
 export function validDeviceP2PSignal(value: unknown): value is DeviceP2PSignal {

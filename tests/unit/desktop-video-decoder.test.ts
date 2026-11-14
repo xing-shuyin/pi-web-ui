@@ -76,6 +76,48 @@ function viewer(hardware = true, runtimeFailure = false, wait?: Promise<boolean>
 	return { context, probes, configured, instances };
 }
 const key = new Blob([new Uint8Array([0, 0, 1, 5, 128])]);
+it("acknowledges the newest JPEG cumulatively after replacing pending frames", async () => {
+	const socket = { readyState: 1, send: vi.fn() },
+		paints: (() => void)[] = [];
+	const c: any = {
+		decoding: false,
+		pendingFrame: null,
+		disposed: false,
+		generation: 1,
+		socket,
+		WebSocket: { OPEN: 1 },
+		canvas: { width: 1280, height: 720 },
+		context: { drawImage: vi.fn() },
+		hasFrame: true,
+		rendered: 0,
+		performance,
+		document: { hidden: false },
+		createImageBitmap: async () => ({ width: 1280, height: 720, close: vi.fn() }),
+		requestAnimationFrame: (paint: () => void) => paints.push(paint),
+		fail: vi.fn(),
+	};
+	const page = desktopPage(),
+		start = page.indexOf("async function decodeFrames()"),
+		end = page.indexOf("function startVideo(", start);
+	runInNewContext(page.slice(start, end), c);
+	const frame = (id: number) => ({ blob: new Blob(), generation: 1, socket, ack: { type: "jpeg_ack", id } });
+	c.pendingFrame = frame(1);
+	const decoding = c.decodeFrames();
+	await vi.waitFor(() => expect(paints).toHaveLength(1));
+	c.pendingFrame = frame(2);
+	c.pendingFrame = frame(3);
+	c.pendingFrame = frame(4);
+	paints.shift()!();
+	await vi.waitFor(() => expect(paints).toHaveLength(1));
+	paints.shift()!();
+	await decoding;
+	expect(socket.send.mock.calls.map((call) => JSON.parse(call[0]))).toEqual([
+		{ type: "jpeg_ack", id: 1 },
+		{ type: "jpeg_ack", id: 4 },
+	]);
+	expect(c.rendered).toBe(2);
+	expect(c.fail).not.toHaveBeenCalled();
+});
 it("keeps the previous desktop visible until the resized JPEG can be painted, and ignores stale frames", async () => {
 	for (const stale of [false, true]) {
 		let paint: (() => void) | undefined;

@@ -368,7 +368,14 @@ export function createDeviceDesktop({
 			res.status(500).json({ error: "Could not save desktop settings" });
 		}
 	});
-	function bridge(ws: WebSocket, readOnly: boolean, display?: string, videoRequested = false, videoFeedback = false) {
+	function bridge(
+		ws: WebSocket,
+		readOnly: boolean,
+		display?: string,
+		videoRequested = false,
+		videoFeedback = false,
+		jpegFeedback = false,
+	) {
 		let fileSession: string | undefined;
 		const preview = previewFor(display);
 		const previewKey = {};
@@ -379,14 +386,15 @@ export function createDeviceDesktop({
 		let lastActivity = Date.now();
 		let queued = 0;
 		let sending = false;
-		const inFlight: number[] = [];
+		const inFlight = new Map<number, number>();
+		let inFlightBytes = 0;
 		let latestFrame: Buffer | undefined;
 		let ackTimer: ReturnType<typeof setTimeout> | undefined;
 		let ackMs = 0;
-		let freshAck = false;
 		let hasDisplayAck = false;
 		const quality = new DesktopQuality();
 		const videoFlow = new DesktopVideoFlow();
+		const jpegFlow = new DesktopVideoFlow();
 		let automatic = true,
 			flowPaused = false,
 			recoveryAt = -Infinity;
@@ -521,22 +529,31 @@ export function createDeviceDesktop({
 		};
 		const armAck = () => {
 			clearTimeout(ackTimer);
-			if (inFlight.length) {
+			if (jpegFlow.oldest !== undefined) {
 				ackTimer = setTimeout(
 					() => fail("Desktop display stopped acknowledging frames. Reconnect to resume."),
-					Math.max(1, DESKTOP_LIMITS.ackMs - (Date.now() - inFlight[0])),
+					Math.max(1, DESKTOP_LIMITS.ackMs - (performance.now() - jpegFlow.oldest)),
 				);
 				ackTimer.unref();
 			}
 		};
 		const flushFrame = () => {
-			if (ended || failing || sending || inFlight.length >= 2 || !latestFrame || ws.readyState !== WebSocket.OPEN)
+			if (
+				ended ||
+				failing ||
+				sending ||
+				(jpegFeedback ? jpegFlow.blocked(currentProfile.fps) : inFlight.size >= 2) ||
+				!latestFrame ||
+				ws.readyState !== WebSocket.OPEN
+			)
 				return;
 			if (ws.bufferedAmount + latestFrame.length > DESKTOP_LIMITS.queue) return;
+			if (jpegFeedback && inFlightBytes + latestFrame.length > DESKTOP_LIMITS.queue) return;
 			const jpeg = latestFrame;
 			latestFrame = undefined;
 			sending = true;
-			inFlight.push(Date.now());
+			inFlight.set(jpegFlow.frame(performance.now()), jpeg.length);
+			inFlightBytes += jpeg.length;
 			sent++;
 			queued += jpeg.length;
 			armAck();
@@ -556,7 +573,13 @@ export function createDeviceDesktop({
 			if (!started) {
 				started = true;
 				clearTimeout(connectTimer);
-				ws.send(JSON.stringify({ type: "ready", dynamicQuality: Boolean(capture?.configure) }));
+				ws.send(
+					JSON.stringify({
+						type: "ready",
+						dynamicQuality: Boolean(capture?.configure),
+						...(jpegFeedback ? { jpegFeedback: 1 } : {}),
+					}),
+				);
 			}
 			if (latestFrame) replaced++;
 			latestFrame = jpeg;
@@ -570,10 +593,6 @@ export function createDeviceDesktop({
 			)
 				return fail("Desktop video receiver stopped responding. Reconnect to resume.");
 			if (ended || failing || !started || ws.readyState !== WebSocket.OPEN || ws.bufferedAmount > 65536) return;
-			if (freshAck) {
-				freshAck = false;
-				applyProfile(quality.sample(ackMs));
-			}
 			ws.send(
 				JSON.stringify({
 					type: "stats",
@@ -585,6 +604,8 @@ export function createDeviceDesktop({
 					ackMs: videoDeclared ? Math.round(videoFlow.ackMs) : ackMs,
 					videoQueueMs: videoFlow.queueMs,
 					videoInFlight: videoFlow.count,
+					jpegInFlight: jpegFlow.count,
+					jpegInFlightBytes: inFlightBytes,
 					queued: Math.max(queued, ws.bufferedAmount),
 					profile: capture?.configure ? currentProfile : undefined,
 				}),
@@ -652,12 +673,22 @@ export function createDeviceDesktop({
 					}
 					return;
 				}
-				if (value?.type === "ack" && Object.keys(value).length === 1) {
-					const sentAt = inFlight.shift();
-					if (sentAt === undefined) return;
-					ackMs = Date.now() - sentAt;
+				if (
+					(!jpegFeedback && value?.type === "ack" && Object.keys(value).length === 1) ||
+					(jpegFeedback && value?.type === "jpeg_ack")
+				) {
+					if (jpegFeedback && (Object.keys(value).length !== 2 || !Number.isSafeInteger(value.id))) return cleanup();
+					const id = jpegFeedback ? value.id : inFlight.keys().next().value;
+					if (id === undefined || !jpegFlow.ack(id, 0, performance.now())) return;
+					for (const [key, bytes] of inFlight) {
+						if (key <= id) {
+							inFlight.delete(key);
+							inFlightBytes -= bytes;
+						}
+					}
+					ackMs = Math.round(jpegFlow.ackMs);
 					hasDisplayAck = true;
-					freshAck = true;
+					applyProfile(jpegFlow.profile(quality.profile, automatic));
 					armAck();
 					flushFrame();
 					return;
@@ -669,7 +700,7 @@ export function createDeviceDesktop({
 					lastConfigure = Date.now();
 					automatic = preferences.mode === "auto";
 					const profile = quality.set(preferences);
-					applyProfile(videoFeedback ? videoFlow.profile(profile, automatic) : profile);
+					applyProfile((videoDeclared ? videoFlow : jpegFlow).profile(profile, automatic));
 					paceVideo();
 					return;
 				}
@@ -765,6 +796,7 @@ export function createDeviceDesktop({
 						url.searchParams.get("display") || undefined,
 						url.searchParams.get("video") === "1",
 						url.searchParams.get("videoFeedback") === "1",
+						url.searchParams.get("jpegFeedback") === "1",
 					),
 				);
 			return true;

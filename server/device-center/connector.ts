@@ -219,7 +219,7 @@ export function createDeviceConnector(options: DeviceConnectorOptions) {
 			if (action === "device_p2p") {
 				const result = await deviceP2P.accept(payload, signal);
 				if (signal.aborted || closed || socket !== ws || ws.readyState !== WebSocket.OPEN) {
-					if (result) deviceP2P.revoke(result.grant.identity);
+					if (result && "grant" in result) deviceP2P.revoke(result.grant.identity);
 					return null;
 				}
 				return result;

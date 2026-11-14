@@ -33,25 +33,15 @@ describe("desktop quality", () => {
 			fps: 15,
 		});
 		expect(q.set({ mode: "sharp", maxEdge: 2560, viewportEdge: 960, fps: 30 }).maxEdge).toBe(2560);
-		for (let i = 0; i < 20; i++) q.sample(1000);
 		expect(q.profile).toEqual({ maxEdge: 2560, quality: 85, fps: 30 });
 	});
-	it("ignores one jitter sample, lowers on confirmed congestion, and restores gradually", () => {
+	it("keeps auto resolution at the viewport or explicit choice", () => {
 		const q = new DesktopQuality();
-		const initial = q.profile;
-		q.sample(200);
-		expect(q.profile).toEqual(initial);
-		q.sample(200);
-		expect(q.profile.maxEdge).toBeLessThan(initial.maxEdge);
-		const lower = q.profile;
-		for (let i = 0; i < 3; i++) q.sample(20);
-		expect(q.profile).toEqual(lower);
-		q.sample(20);
-		expect(q.profile.maxEdge).toBeGreaterThan(lower.maxEdge);
-		for (let i = 0; i < 50; i++) q.sample(2000);
-		expect(q.profile.maxEdge).toBeGreaterThanOrEqual(640);
-		expect(q.profile.quality).toBeGreaterThanOrEqual(35);
-		for (let i = 0; i < 100; i++) q.sample(10);
-		expect(q.profile).toEqual(initial);
+		expect(q.set({ mode: "auto", maxEdge: 0, viewportEdge: 1920, fps: 60 })).toEqual({
+			maxEdge: 1920,
+			quality: 70,
+			fps: 60,
+		});
+		expect(q.set({ mode: "auto", maxEdge: 2560, viewportEdge: 960, fps: 120 }).maxEdge).toBe(2560);
 	});
 });
