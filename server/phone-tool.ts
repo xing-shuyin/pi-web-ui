@@ -130,7 +130,7 @@ export function makePhoneTool(
 			"Use phone only when the user asked you to operate their phone; never tap, type or navigate their apps on your own initiative",
 			'Start with op:"dump" and act on the returned nodes: bounds are screen pixels already, so tap the centre of a node instead of guessing coordinates. Take a screenshot when the tree is not enough.',
 			"Typing text goes to the focused input only. If the user must enter a password, payment or system setting, stop and ask them to do it themselves.",
-			"Control ops (tap / swipe / input / key / launch) have no per-op approval yet: confirm with the user in chat before the first control action, and prefer read ops (status / dump / screenshot) when control is not needed.",
+			"Control ops (tap/swipe/input/key/launch) have no per-op approval yet: confirm in chat before first control action; prefer read ops when control is unneeded.",
 			"After each action, dump again to confirm the screen changed instead of firing several actions blindly.",
 		],
 		parameters: Type.Object({
