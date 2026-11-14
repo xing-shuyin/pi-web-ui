@@ -74,6 +74,85 @@ describe("group webhook validation and security", () => {
 	});
 });
 
+describe("outgoing webhook SSRF guard", () => {
+	it("拒绝云元数据端点（发送前拦截，不发起请求）", async () => {
+		const fetchSpy = vi.spyOn(globalThis, "fetch");
+		try {
+			for (const url of [
+				"http://169.254.169.254/latest/meta-data/",
+				"http://metadata.google.internal/computeMetadata/v1/",
+				"http://0.0.0.0/x",
+			]) {
+				const res = await testOutgoingWebhook({ url });
+				expect(res.success).toBe(false);
+				expect(res.error).toContain("metadata");
+			}
+			expect(fetchSpy).not.toHaveBeenCalled();
+		} finally {
+			fetchSpy.mockRestore();
+		}
+	});
+
+	it("元数据端点的等价变形同样拦得住（尾点/大写/IPv4-mapped/IPv6/链路本地凭据端点）", async () => {
+		const fetchSpy = vi.spyOn(globalThis, "fetch");
+		try {
+			for (const url of [
+				"http://metadata.google.internal./computeMetadata/v1/",
+				"http://METADATA.GOOGLE.INTERNAL/x",
+				"http://[::ffff:169.254.169.254]/latest/meta-data/",
+				"http://[fd00:ec2::254]/latest/meta-data/",
+				"http://[fd20:ce::254]/computeMetadata/v1/",
+				"http://169.254.170.2/v2/credentials",
+			]) {
+				const res = await testOutgoingWebhook({ url });
+				expect(res.success, url).toBe(false);
+				expect(res.error, url).toContain("metadata");
+			}
+			expect(fetchSpy).not.toHaveBeenCalled();
+		} finally {
+			fetchSpy.mockRestore();
+		}
+	});
+
+	it("创建/更新路径同样拦元数据端点与前两者以外的非 http(s) 协议", () => {
+		for (const url of [
+			"http://169.254.169.254/latest/meta-data/",
+			"http://metadata.google.internal./x",
+			"http://[::ffff:a9fe:a9fe]/x",
+		]) {
+			expect(() => validateWebhookInput({ name: "A", type: "outgoing", url }), url).toThrow(/metadata/i);
+		}
+	});
+
+	it("301/302/303 重定向不跟随（原样上报状态，防公网入口跳内网）", async () => {
+		const targetServer = createServer((req, res) => {
+			res.writeHead(302, { Location: "http://169.254.169.254/latest/meta-data/" });
+			res.end();
+		});
+		await new Promise<void>((resolve) => targetServer.listen(0, "127.0.0.1", resolve));
+		const port = (targetServer.address() as { port: number }).port;
+		cleanups.push(() => new Promise<void>((resolve) => targetServer.close(() => resolve())));
+
+		const res = await testOutgoingWebhook({ url: `http://127.0.0.1:${port}/redirect` });
+		expect(res.success).toBe(false);
+		expect(res.status).toBe(302);
+	});
+
+	it("307 重定向逐跳复检：跳向元数据端点时被拦下", async () => {
+		const targetServer = createServer((req, res) => {
+			res.writeHead(307, { Location: "http://169.254.169.254/latest/meta-data/" });
+			res.end();
+		});
+		await new Promise<void>((resolve) => targetServer.listen(0, "127.0.0.1", resolve));
+		const port = (targetServer.address() as { port: number }).port;
+		cleanups.push(() => new Promise<void>((resolve) => targetServer.close(() => resolve())));
+
+		const res = await testOutgoingWebhook({ url: `http://127.0.0.1:${port}/redirect` });
+		expect(res.success).toBe(false);
+		expect(res.error).toContain("metadata");
+	});
+});
+
 describe("outgoing webhook dispatching", () => {
 	it("dispatches webhook events with signature and handles ping test", async () => {
 		const receivedRequests: { event: string; signature?: string; body: any }[] = [];
