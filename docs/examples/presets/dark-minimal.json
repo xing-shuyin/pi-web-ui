@@ -162,7 +162,6 @@
 		"toolApprovalEnabled": false,
 		"toolWatchdogTimeoutMs": 2400000,
 		"questionnaireEnabled": true,
-		"editSoftEnabled": true,
 		"terminalToolsEnabled": false,
 		"terminalBash": false,
 		"terminalBashIdleMs": 0,
