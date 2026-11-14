@@ -653,6 +653,54 @@ describe("Hub release updater", () => {
 		expect(existsSync(current)).toBe(true);
 	});
 
+	it("探活成功后的记账写失败只降级记日志，不把健康的新版回滚掉", async () => {
+		const f = fixture();
+		const logs: string[] = [];
+		// 模拟 Windows 上碰杀毒/服务句柄 EPERM：成功态的记账写抛错。
+		const writeJob = (path: string, job: { state?: string }) => {
+			if (job.state === "succeeded")
+				throw Object.assign(new Error("EPERM: operation not permitted"), { code: "EPERM" });
+			runtime.writeUpgradeJob(path, job);
+		};
+		const wait = vi.fn(async () => {
+			verified = true;
+			return { ...f.health, version: "2.0.0", bootId: "new" };
+		});
+		let verified = false;
+		// 探活成功之后任何一次 service 操作都是回滚重启，直接计数。
+		const restartsAfterHealth: unknown[][] = [];
+		const run = vi.fn(async (...args: unknown[]) => {
+			if (verified) restartsAfterHealth.push(args);
+		});
+		await runtime.runUpgradeJob(f.path, { ...f, run, writeJob, wait, log: (line: string) => logs.push(line) });
+		// 服务定义必须还是新版：一旦落进回滚分支就会换回 previousFile（original service）。
+		expect(readFileSync(f.plan.file, "utf8")).not.toBe("original service");
+		expect(restartsAfterHealth).toEqual([]);
+		expect(logs.some((line) => line.includes("state write deferred"))).toBe(true);
+		expect(logs.some((line) => line.includes("skipping rollback"))).toBe(false);
+	});
+
+	it("win32 提交成功但 worker 没起来时删除计划任务，不留残留", async () => {
+		vi.useFakeTimers();
+		try {
+			const f = fixture("win32");
+			const launch = runtime.independentWorkerPlan(f.path, { platform: "win32", id: f.job.id });
+			const run = vi.fn(async () => {});
+			const operation = runtime.launchUpgradeJob(f.path, {
+				...f,
+				platform: "win32",
+				run,
+				sleep: (ms: number) => new Promise((resolve) => setTimeout(resolve, ms)),
+			});
+			const assertion = expect(operation).rejects.toThrow("did not start");
+			await vi.advanceTimersByTimeAsync(11_000);
+			await assertion;
+			expect(run).toHaveBeenLastCalledWith("schtasks.exe", ["/Delete", "/TN", launch.task, "/F"], { timeout: 10_000 });
+		} finally {
+			vi.useRealTimers();
+		}
+	});
+
 	it("reports worker submission failure instead of acknowledging success", async () => {
 		const f = fixture();
 		await expect(

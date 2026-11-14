@@ -189,9 +189,15 @@ export async function launchUpgradeJob(
 		}
 		throw new Error("Hub upgrade worker did not start; inspect the system service manager");
 	} catch (error) {
-		if (submissionAttempted && launch.target) {
+		if (submissionAttempted) {
 			try {
-				await run(launch.file, ["bootout", launch.target], { timeout: 30_000 });
+				if (launch.target) {
+					await run(launch.file, ["bootout", launch.target], { timeout: 30_000 });
+				} else if (launch.task) {
+					// Windows 分支没有 launch.target：Register-ScheduledTask 成功但 Start/worker
+					// 没起来时，worker 不会执行 cleanupUpgradeWorker，计划任务会永久残留。
+					await run("schtasks.exe", ["/Delete", "/TN", launch.task, "/F"], { timeout: 10_000 });
+				}
 			} catch {}
 		}
 		throw error;
@@ -421,6 +427,7 @@ export async function runUpgradeJob(
 	let releaseLock;
 	let previousFile;
 	let changed = false;
+	let verifiedHealthy = false;
 	let candidate;
 	const logPath = join(dirname(path), "hub-upgrade.log");
 	const restart = async (settings, signal) => {
@@ -468,12 +475,20 @@ export async function runUpgradeJob(
 		changed = true;
 		await restart(settings, signal);
 		const health = await wait(settings, { version: candidate.version, fromBootId: job.fromBootId, probe });
+		// 新版本已经探活成功：从这一刻起任何异常都不允许再触发回滚（见 catch 里的 verifiedHealthy 分支）。
+		verifiedHealthy = true;
 		try {
 			retainWorkingReleases(plan, candidate, previousFile);
 		} catch (error) {
 			log(`Hub release cleanup deferred: ${error.message}`);
 		}
-		update({ state: "succeeded", phase: "completed", version: health.version, bootId: health.bootId });
+		try {
+			update({ state: "succeeded", phase: "completed", version: health.version, bootId: health.bootId });
+		} catch (ledgerError) {
+			// 成功路径的记账写失败（Windows 撞杀毒/服务句柄 EPERM）只降级记日志——
+			// 让它抛出去会落进回滚分支，把刚验证健康的新版服务换回旧版。
+			log(`Hub upgraded, but state write deferred (${ledgerError?.message ?? ledgerError})`);
+		}
 		log(`Hub upgraded to ${health.version}`);
 		return job;
 	} catch (error) {
@@ -487,6 +502,12 @@ export async function runUpgradeJob(
 				log(`Hub upgrade state write deferred (${metadataError?.message ?? metadataError})`);
 			}
 		};
+		if (verifiedHealthy) {
+			// 升级已被探活验证：此时无论是记账还是收尾出错，都不该把健康的新版回滚掉。
+			record({ state: "succeeded", phase: "completed", error: undefined });
+			log(`Hub upgrade verified healthy; skipping rollback after late failure: ${reason}`);
+			throw new Error(reason);
+		}
 		if (changed && previousFile) {
 			recordWindowsServiceFailure(plan, candidate, logPath, run);
 			record({ phase: "rolling-back" });
