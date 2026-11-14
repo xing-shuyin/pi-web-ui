@@ -143,15 +143,19 @@ describe("DeliveryQueue（出站投递：快路径 + 退避 + 死信）", () => 
 		const { queue } = make();
 		let release!: () => void;
 		const gate = new Promise<void>((resolve) => (release = resolve));
+		// 入队阶段用立即失败的 sender（network → queued），不靠 5s 发送超时抬表：
+		// 否则这条用例要真等 sendTimeoutMs×2，既慢又依赖计时器精度。
+		let slow = false;
 		const send = vi.fn(async () => {
+			if (!slow) throw Object.assign(new Error("socket hang up"), { deliveryClass: "network" });
 			await gate;
 		});
 		queue.registerSender("qq", send);
-		// 两条记录先走快路径失败入队（network → queued）
-		await queue.sendNow({ channel: "qq", target: {}, payload: {}, key: "out:r1" }).catch(() => {});
-		await queue.sendNow({ channel: "qq", target: {}, payload: {}, key: "out:r2" }).catch(() => {});
+		await queue.sendNow({ channel: "qq", target: {}, payload: {}, key: "out:r1" });
+		await queue.sendNow({ channel: "qq", target: {}, payload: {}, key: "out:r2" });
 		expect(send).toHaveBeenCalledTimes(2);
 		now += 1_000;
+		slow = true;
 		// 第一轮 pump：快照 [r1, r2]，在 r1 的慢发送上挂住
 		const first = queue.pump();
 		await new Promise((resolve) => setTimeout(resolve, 10));
