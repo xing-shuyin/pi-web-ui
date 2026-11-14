@@ -350,7 +350,9 @@ it("displays P2P in the desktop window and accepts a verified Hub fallback", asy
 		})),
 	);
 	await mount();
-	expect(document.querySelector(".remote-desktop-titlebar")?.textContent).toContain("P2P direct");
+	// 通路文案有意去掉「直连/direct」（TURN 中继时并不直连，111b561bb），只断言标识到 P2P 通路
+	expect(document.querySelector(".remote-desktop-titlebar")?.textContent).toContain("P2P");
+	expect(document.querySelector(".remote-desktop-titlebar")?.textContent).not.toContain("Server relay");
 	const frame = document.querySelector("iframe")!;
 	await act(async () =>
 		window.dispatchEvent(

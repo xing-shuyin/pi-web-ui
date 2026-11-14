@@ -97,8 +97,21 @@ async function main() {
 	await c1.next((m) => m.type === "snapshot", "initial snapshot", 25000);
 	const s1 = await c1.next((m) => m.type === "settings_state", "initial settings_state", 25000);
 	check("settings_state 携带 approvalRules 数组", Array.isArray(s1.settings.approvalRules));
-	check("默认包含 11 条内置规则", s1.settings.approvalRules.length === 11);
-	const rmRf = s1.settings.approvalRules.find((r) => r.id === "builtin.bash.rm-rf");
+	// 不锁死条数（新增内置规则不该打红冒烟）：改为校验关键档位都在，且内置规则都带 builtin 标记
+	const builtin = s1.settings.approvalRules.filter((r) => r.builtin === true);
+	const requiredIds = [
+		"builtin.bash.rm-rf",
+		"builtin.bash.git-destructive",
+		"builtin.file.outside-workspace",
+		"builtin.phone.gesture",
+		"builtin.phone.input",
+		"builtin.phone.key",
+		"builtin.phone.launch",
+	];
+	const missing = requiredIds.filter((id) => !builtin.some((r) => r.id === id));
+	check(`内置规则覆盖关键档位（当前 ${builtin.length} 条）`, missing.length === 0 && builtin.length > 0);
+	if (missing.length) console.log("  缺少：", missing.join(", "));
+	const rmRf = builtin.find((r) => r.id === "builtin.bash.rm-rf");
 	check("内置 rm -rf 规则存在且 builtin=true", rmRf && rmRf.builtin === true);
 
 	const customRule = {

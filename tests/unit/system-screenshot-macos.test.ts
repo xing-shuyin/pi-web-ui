@@ -1,4 +1,6 @@
 import { EventEmitter } from "node:events";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { PassThrough } from "node:stream";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -40,10 +42,15 @@ function fakeChild() {
 	});
 }
 
+// 夹具目录用宿主的 tmpdir + join 拼，别写死 /tmp：macOS 模块本身跨平台可测，
+// 断言里出现字面量 POSIX 路径只会在 Windows 上炸（分隔符不同），与逻辑无关。
+const shotDir = join(tmpdir(), "pi-web-ui-shot-test");
+const shotFile = join(shotDir, "capture.png");
+
 beforeEach(() => {
 	replies.clear();
 	spawn.mockReset();
-	mkdtemp.mockReset().mockResolvedValue("/tmp/pi-web-ui-shot-test");
+	mkdtemp.mockReset().mockResolvedValue(shotDir);
 	rm.mockReset().mockResolvedValue(undefined);
 	readFile.mockReset().mockResolvedValue(png);
 	spawn.mockImplementation((command: string) => {
@@ -69,11 +76,11 @@ describe("macOS screenshot helper", () => {
 		const result = await captureMacScreenshot(token, "zh", new AbortController().signal, false);
 		expect(result).toBe(`data:image/png;base64,${png.toString("base64")}`);
 		expect(captureArgs()).toHaveLength(1);
-		expect(spawn.mock.calls[0][1]).toEqual(macScreenshotArgs("/tmp/pi-web-ui-shot-test/capture.png"));
-		expect(spawn.mock.calls[0][1]).toEqual(["-i", "-x", "-t", "png", "/tmp/pi-web-ui-shot-test/capture.png"]);
+		expect(spawn.mock.calls[0][1]).toEqual(macScreenshotArgs(shotFile));
+		expect(spawn.mock.calls[0][1]).toEqual(["-i", "-x", "-t", "png", shotFile]);
 		// Keeping the window visible never touches other applications.
 		expect(scriptArgs()).toHaveLength(0);
-		expect(rm).toHaveBeenCalledWith("/tmp/pi-web-ui-shot-test", { recursive: true, force: true });
+		expect(rm).toHaveBeenCalledWith(shotDir, { recursive: true, force: true });
 	});
 	it("hides and restores the frontmost app when its window title carries the nonce", async () => {
 		reply(MAC_OSASCRIPT, { code: 0, stdout: `Google Chrome\n4242\npi web ui [${token}]\n` }, { code: 0 }, { code: 0 });
