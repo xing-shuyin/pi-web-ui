@@ -65,17 +65,21 @@ export interface HubLockManagerOptions {
 	defaultTtlMs?: number;
 	autoCleanupIntervalMs?: number;
 	persistPath?: string;
+	/** 运行中任务判定：清理过期锁时跳过仍存活的持锁任务（防长任务被静默摘锁）。 */
+	isAlive?: (taskId: string) => boolean;
 }
 
 export class HubLockManager {
 	private readonly rooms = new Map<string, RoomLockState>();
 	private readonly defaultTtlMs: number;
 	private readonly persistPath?: string;
+	private readonly isAlive?: (taskId: string) => boolean;
 	private timer?: NodeJS.Timeout;
 
 	constructor(options: HubLockManagerOptions = {}) {
 		this.defaultTtlMs = options.defaultTtlMs ?? DEFAULT_RESOURCE_LOCK_TTL_MS;
 		this.persistPath = options.persistPath;
+		this.isAlive = options.isAlive;
 		if (this.persistPath) {
 			this.loadFromDisk();
 		}
@@ -251,6 +255,25 @@ export class HubLockManager {
 		return promoted;
 	}
 
+	/** 心跳续期：运行中任务的锁到期前延长，避免长任务被静默摘锁。 */
+	renewLocks(roomId: string, taskId: string, now = Date.now(), ttlMs?: number): string[] {
+		const roomState = this.rooms.get(roomId);
+		if (!roomState) return [];
+		const held = roomState.taskLocks.get(taskId);
+		if (!held || held.size === 0) return [];
+		const ttl = ttlMs ?? this.defaultTtlMs;
+		const renewed: string[] = [];
+		for (const key of held) {
+			const current = roomState.activeLocks.get(key);
+			if (current?.taskId === taskId) {
+				current.expiresAt = now + ttl;
+				renewed.push(key);
+			}
+		}
+		if (renewed.length > 0) this.saveToDisk();
+		return renewed;
+	}
+
 	removeWaiter(roomId: string, taskId: string): boolean {
 		const roomState = this.rooms.get(roomId);
 		if (!roomState) return false;
@@ -262,7 +285,8 @@ export class HubLockManager {
 		return false;
 	}
 
-	cleanupExpiredLocks(roomId?: string, now = Date.now()): string[] {
+	cleanupExpiredLocks(roomId?: string, now = Date.now(), isAlive?: (taskId: string) => boolean): string[] {
+		const alive = isAlive ?? this.isAlive;
 		const promotedAll: string[] = [];
 		const roomIds = roomId ? [roomId] : Array.from(this.rooms.keys());
 
@@ -271,8 +295,15 @@ export class HubLockManager {
 			if (!roomState) continue;
 
 			let expiredAny = false;
+			let renewedAny = false;
 			for (const [key, lock] of Array.from(roomState.activeLocks.entries())) {
 				if (lock.expiresAt <= now) {
+					// 持锁任务仍存活（running 且心跳/租约有效）时续期而非摘锁，互斥不中断。
+					if (alive?.(lock.taskId)) {
+						lock.expiresAt = now + this.defaultTtlMs;
+						renewedAny = true;
+						continue;
+					}
 					roomState.activeLocks.delete(key);
 					const taskHeld = roomState.taskLocks.get(lock.taskId);
 					if (taskHeld) {
@@ -288,6 +319,8 @@ export class HubLockManager {
 			if (expiredAny) {
 				const promoted = this.promoteWaitingTasks(rId, now);
 				promotedAll.push(...promoted);
+			} else if (renewedAny) {
+				this.saveToDisk();
 			}
 		}
 
