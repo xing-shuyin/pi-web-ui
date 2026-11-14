@@ -28,7 +28,7 @@ export const MAX_DESIGN_BYTES = 512 * 1024;
 
 /**
  * 新标签页起步模板：一份能直接跑的设计稿，同时把宿主桥的用法演示清楚。
- * `piBrowserShell.call` 只在浏览器内部页里存在（自定义新标签页与内置页同权），
+ * `piBrowserShell.call` 只在浏览器内部页里存在；自定义页可调只读子集，凭据类仅限内置页。
  * 里面的注释就是给模型与用户的 API 说明。
  */
 export const NEWTAB_STARTER = `<!doctype html>
@@ -72,7 +72,7 @@ export const NEWTAB_STARTER = `<!doctype html>
 </main>
 <footer>自定义新标签页 · 在浏览器设置的「新标签页 / 主题」里随时改回默认</footer>
 <script>
-  // 宿主桥：只在 AI Browser 的内部页里存在（自定义新标签页与内置页同权）。
+  // 宿主桥：只在 AI Browser 的内部页里存在；自定义页可调只读子集，凭据类仅限内置页。
   // 常用动作：settings.get / bookmarks.list / tabs.create({url}) / navigate({url})
   const shell = window.piBrowserShell;
   const call = (action, args) => (shell ? shell.call(action, args) : Promise.reject(new Error("no bridge")));
