@@ -54,7 +54,9 @@ export function isTrustedAgentUrl(value: string, agentUrl: string): boolean {
 
 /**
  * 内部页信任边界：构建产物里的固定几页，外加用户自己的自定义新标签页（`dataDir/custom/newtab.html`）。
- * 自定义页和内置页同权（它同样只会是本地文件），所以能拿 `piBrowserShell` 桥；
+ * 自定义页能拿 `piBrowserShell` 桥（同样只会是本地文件），但与内置页不再同权：
+ * 凭据类高危动作仅限内置 vault 与 panel 页，自定义页一律拒绝。
+ * 自定义页是持久化的用户与 Agent 可写 HTML，一旦被提示注入即成批量取明文密码的跳板。
  * 这个边界必须由寄主显式传进来，不能让调用方自己拼路径。
  */
 export function isBrowserAssetUrl(value: string, assetsDir: string, extraPages: readonly string[] = []): boolean {
@@ -70,6 +72,15 @@ export function isBrowserAssetUrl(value: string, assetsDir: string, extraPages: 
 	} catch {
 		return false;
 	}
+}
+
+/**
+ * 自定义新标签页禁用的凭据类高危动作：passwords 系列与 totp 系列。
+ * 只读子集不受影响，起始模板的用法保持可用。
+ */
+export function isCustomCredentialAction(action: unknown): boolean {
+	if (typeof action !== "string" || action.length === 0) return false;
+	return action === "passwords.list" || action.startsWith("passwords.") || action.startsWith("totp.");
 }
 
 /**

@@ -5,6 +5,7 @@ import {
 	browserLayout,
 	initialBrowserMode,
 	isBrowserAssetUrl,
+	isCustomCredentialAction,
 	isTrustedAgentUrl,
 	normalizeAgentUrl,
 	panelLayerBounds,
@@ -75,6 +76,23 @@ describe("desktop browser composition", () => {
 		expect(isBrowserAssetUrl(pathToFileURL(resolve(dir, "arbitrary.html")).href, dir)).toBe(false);
 		expect(isBrowserAssetUrl(pathToFileURL(resolve(dir, "child", "newtab.html")).href, dir)).toBe(false);
 		expect(isBrowserAssetUrl("https://example.test/newtab.html", dir)).toBe(false);
+	});
+	it("blocks credential bridge actions on custom newtab pages", () => {
+		for (const action of [
+			"passwords.list",
+			"passwords.reveal",
+			"passwords.upsert",
+			"totp.list",
+			"totp.code",
+			"totp.export",
+		]) {
+			expect(isCustomCredentialAction(action)).toBe(true);
+		}
+		for (const action of ["tabs.create", "navigate", "settings.get", "bookmarks.list", "design.status", "state"]) {
+			expect(isCustomCredentialAction(action)).toBe(false);
+		}
+		expect(isCustomCredentialAction("")).toBe(false);
+		expect(isCustomCredentialAction(undefined)).toBe(false);
 	});
 	it("keeps the panel layer inside the window, under the toolbar and clear of the edges", () => {
 		const area = { width: 1200, height: 800 };

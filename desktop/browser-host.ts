@@ -76,6 +76,7 @@ import {
 	browserLayout,
 	initialBrowserMode,
 	isBrowserAssetUrl,
+	isCustomCredentialAction,
 	isTrustedAgentUrl,
 	normalizeAgentUrl,
 	panelLayerBounds,
@@ -309,7 +310,8 @@ export class DesktopBrowserHost {
 			(event.sender === this.window.webContents ||
 				event.sender === this.panelView?.webContents ||
 				this.browser.isInternalContents(event.sender)) &&
-			// 自定义新标签页和内置内部页同权（同样是本地文件），信任边界由宿主拼，不接受调用方传路径
+			// 自定义新标签页同样是本地文件故能拿桥，但与内置页不再同权（凭据类动作在 call 里另行拒绝），
+			// 信任边界由宿主拼，不接受调用方传路径
 			isBrowserAssetUrl(event.sender.getURL(), this.options.assetsDir, [this.browser.customization.path("newtab")])
 		);
 	}
@@ -1014,6 +1016,20 @@ export class DesktopBrowserHost {
 	}
 
 	private async call(action: string, args: Record<string, unknown>, sender: WebContents): Promise<unknown> {
+		// 自定义新标签页与内置页不再同权：它是持久化的用户与 Agent 可写 HTML，
+		// 一旦被提示注入写入恶意 JS，就能经桥批量取明文密码并外传。
+		// 内置 vault 与 panel 页保留完整桥；自定义页拒绝凭据类高危动作。
+		if (isCustomCredentialAction(action)) {
+			try {
+				const url = sender.getURL();
+				if (this.browser.customization.isNewTabFile(url)) {
+					throw new Error("Custom newtab pages cannot access credentials");
+				}
+			} catch (e) {
+				if (e instanceof Error && e.message === "Custom newtab pages cannot access credentials") throw e;
+				throw new Error("Custom newtab pages cannot access credentials");
+			}
+		}
 		switch (action) {
 			case "state":
 				return this.getState();
