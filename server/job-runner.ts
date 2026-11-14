@@ -213,23 +213,29 @@ export class JobRegistry {
 			readCursor: 0,
 		};
 		this.jobs.set(id, record);
+		// WriteStream 的 error 事件（磁盘满/权限回收等）没有默认处理会变成 uncaughtException；
+		// 打一行日志即可，后续写入由 writeToLog 的 destroyed 守卫拦下。
+		stream.on("error", (error) => {
+			console.error(`[job] log stream error (${id}): ${error.message}`);
+		});
 		stream.write(
 			`[job] ${new Date(now).toISOString()} cwd=${record.cwd} timeout=${record.timeoutSec}s idle=${record.idleTimeoutSec}s\n$ ${command}\n`,
 		);
 		const onData = (chunk: Buffer | string) => {
 			const text = String(chunk);
 			record.lastOutputAt = Date.now();
-			stream.write(text);
+			this.writeToLog(record, text);
 		};
 		child.stdout?.on("data", onData);
 		child.stderr?.on("data", onData);
 		child.once("error", (error) => {
-			stream.write(`\n[job] SPAWN_ERROR ${error.message}\n`);
+			this.writeToLog(record, `\n[job] SPAWN_ERROR ${error.message}\n`);
 			this.finish(record, null, "spawn-error");
 		});
 		child.once("close", (code) => {
+			// spawn error 先走 finish（流已 end）时 close 仍会到达，此时 tail 已含错误行，不再补写。
 			const tailText = readTail(record.logPath, 40);
-			if (tailText) stream.write(`${tailText.endsWith("\n") ? "" : "\n"}`);
+			if (tailText) this.writeToLog(record, `${tailText.endsWith("\n") ? "" : "\n"}`);
 			this.finish(record, code, record.reason ?? "exit");
 		});
 		if (record.timeoutSec > 0 || record.idleTimeoutSec > 0) {
@@ -268,6 +274,16 @@ export class JobRegistry {
 			exitCode: record.exitCode,
 			...(record.reason ? { reason: record.reason } : {}),
 		};
+	}
+
+	/**
+	 * 往日志流写入的一律走这里：finish 之后到达的 stdout/stderr（kill 兜底 timer
+	 * 已强制收场、子进程输出仍在飞）或 spawn error 先收场后的 close 补写，都会在
+	 * 已 end/destroyed 的流上抛 ERR_STREAM_WRITE_AFTER_END 且无监听变 uncaughtException。
+	 */
+	private writeToLog(record: JobRecord, text: string): void {
+		if (record.state === "exited" || record.stream.writableEnded || record.stream.destroyed) return;
+		record.stream.write(text);
 	}
 
 	private finish(record: JobRecord, exitCode: number | null, reason: JobExitReason): void {
