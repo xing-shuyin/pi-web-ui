@@ -22,7 +22,6 @@ import {
 	type UiPluginAgentTool,
 	type UiPluginInfo,
 	type PluginRequires,
-	type PluginApiCatalog,
 	type UiContribution,
 	type UiAlign,
 	type UiArrangeOp,
@@ -70,8 +69,6 @@ import { DeliveryQueue } from "./plugin-delivery.js";
 import type { PluginDeliveryItem, PluginDeliveryRequest } from "../plugin-sdk/index.js";
 import { PluginDomConsent, declarationWantsDom } from "./plugin-dom.js";
 import { validatePluginManifest, formatManifestIssue, isKnownPermission } from "./plugin-manifest-validate.js";
-import { buildPluginApiCatalog } from "./plugin-api-catalog.js";
-import { AGENT_TOOL_CATALOG } from "./tool-manager.js";
 import {
 	applyPostEdit,
 	denialText,
@@ -2529,33 +2526,6 @@ export class PluginManager {
 
 	async list(lang?: () => ServerLang): Promise<UiPluginInfo[]> {
 		return this.scan(lang);
-	}
-
-	getApiCatalog(): PluginApiCatalog {
-		const counts = new Map<string, Map<string, number>>();
-		const add = (pluginId: string, slot: string): void => {
-			let m = counts.get(slot);
-			if (!m) counts.set(slot, (m = new Map()));
-			m.set(pluginId, (m.get(pluginId) ?? 0) + 1);
-		};
-		for (const [pid, base] of this.uiBase) for (const it of base.items ?? []) add(pid, it.slot);
-		for (const [pid, rt] of this.uiRuntime) for (const it of rt.items.values()) add(pid, it.slot);
-		return buildPluginApiCatalog({
-			slots: [...UI_SLOTS],
-			aliases: { ...UI_SLOT_ALIASES },
-			kinds: [...UI_KINDS],
-			agentTools: AGENT_TOOL_CATALOG.map((t) => ({
-				name: t.name,
-				group: t.group,
-				defaultOn: t.defaultOn,
-				dshVisible: t.dshVisible,
-			})),
-			occupantsOf: (slot) => {
-				const m = counts.get(slot);
-				if (!m) return [];
-				return [...m].map(([pluginId, items]) => ({ pluginId, items }));
-			},
-		});
 	}
 
 	ensureLoaded(lang?: () => ServerLang, opts?: { scope?: PluginLoadScope }): Promise<UiPluginInfo[]> {

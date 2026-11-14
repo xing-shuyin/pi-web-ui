@@ -1999,6 +1999,7 @@ export class ClientStateStore {
 	/**
 	 * 【一次性迁移】旧版独立的「启用标记工具（全局）」开关是否被关掉。
 	 * `undefined` = 旧数据里没有这个字段。新语义「全关即全局关闭」由 MarkerService 从 disabledMarkers 派生。
+	 *  sunset 计划：v0.123 移除该兼容分支（旧数据普及后，与「全关即全局关闭」长期并存会造成语义模糊）。
 	 */
 	getLegacyMarkersGlobalOff(): boolean | undefined {
 		const markers = this.load()[ClientStateStore.GLOBAL_SETTINGS_KEY]?.markers as unknown as

@@ -17,7 +17,6 @@ const CJK_ALLOW = new Set([
 	"slash-commands.ts",
 	"subagent-templates.ts",
 	"subagent-templates-hant.ts",
-	"plugin-api-catalog.ts",
 	"tool-manager.ts",
 ]);
 

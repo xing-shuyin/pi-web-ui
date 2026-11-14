@@ -1695,7 +1695,6 @@ export type ClientMessage =
 	  }
 	| { type: "plugin_job_cancel"; jobId: string }
 	| { type: "plugin_install_inspect"; requestId: string; source: string; explicitId?: string; force?: boolean }
-	| { type: "plugin_api_catalog"; requestId: string }
 	| { type: "plugin_path_response"; id: string; ok: boolean; remember?: boolean }
 	| { type: "plugin_path_revoke"; pluginId?: string; path?: string }
 	| { type: "plugin_permission_response"; id: string; ok: boolean; remember?: boolean }
@@ -2429,37 +2428,6 @@ export interface PluginRequires {
 	hostApi?: number;
 	families?: string[];
 	plugins?: string[];
-}
-
-export interface CatalogSlotOccupant {
-	pluginId: string;
-	items: number;
-}
-export interface CatalogSlotEntry {
-	slot: string;
-	aliases: string[];
-	kinds: string[];
-	occupants: CatalogSlotOccupant[];
-	replaceRisk: string;
-	example: string;
-}
-export interface CatalogAgentTool {
-	name: string;
-	group: string;
-	defaultOn: boolean;
-	dshVisible: boolean;
-}
-export interface CatalogHostMethod {
-	name: string;
-	needs: string;
-	summary: string;
-	example: string;
-}
-export interface PluginApiCatalog {
-	version: 1;
-	slots: CatalogSlotEntry[];
-	agentTools: CatalogAgentTool[];
-	hostMethods: CatalogHostMethod[];
 }
 
 export interface UiPluginFileHandler {
@@ -3696,11 +3664,6 @@ export type ServerMessage =
 				"invalid-spec" | "already-installed" | "not-found" | "not-a-package" | "not-a-bundle" | "network" | "unknown";
 			detail?: string;
 			manifest?: { id?: string; name?: string; version?: string; description?: string; permissions?: string[] };
-	  }
-	| {
-			type: "plugin_api_catalog_result";
-			requestId: string;
-			catalog: PluginApiCatalog;
 	  }
 	| { type: "plugin_path_request"; id: string; pluginId: string; path: string; reason?: string }
 	| { type: "plugin_dom_consent_request"; id: string; pluginId: string; from: string }
