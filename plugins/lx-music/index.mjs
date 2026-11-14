@@ -41,13 +41,9 @@ async function getRequestBody(req) {
 }
 
 async function fetchRemoteScript(url) {
+	// 只从用户给的原始 URL 拉取。此前会自动改走 ghproxy.net/ghfast.top 等第三方镜像：
+	// 脚本内容是要执行的代码，镜像被劫持等于供应链投毒，不再自动回退。
 	const urlsToTry = [url];
-	if (url.includes("raw.githubusercontent.com")) {
-		urlsToTry.unshift(
-			url.replace("https://raw.githubusercontent.com", "https://ghproxy.net/raw.githubusercontent.com"),
-		);
-		urlsToTry.unshift(`https://ghfast.top/${url}`);
-	}
 
 	for (const targetUrl of urlsToTry) {
 		try {
