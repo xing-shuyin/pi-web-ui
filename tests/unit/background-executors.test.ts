@@ -119,6 +119,33 @@ describe("BackgroundExecutorRegistry", () => {
 		expect(reg.unhealthy()).toEqual([{ id: "quiet", state: "running", detail: "unhealthy" }]);
 	});
 
+	it("probe 里重启挂起不拖死其余执行者（restartTimeoutMs 兜底）", async () => {
+		const reg = new BackgroundExecutorRegistry({ now: () => 0, restartCooldownMs: 0, restartTimeoutMs: 1_000 });
+		let secondStarts = 0;
+		reg.register({
+			id: "hung",
+			kind: "boot",
+			restart: "on-failure",
+			health: () => ({ ok: false }),
+			start: () => new Promise<void>(() => {}), // 永不 resolve（socket 半开/无内部超时）
+		});
+		reg.register({
+			id: "second",
+			kind: "boot",
+			restart: "on-failure",
+			health: () => ({ ok: false }),
+			start: async () => {
+				secondStarts += 1;
+			},
+		});
+		const t0 = Date.now();
+		await reg.probe(); // 无守卫时会永远卡在 hung 的 start 上，second 永远等不到重启
+		expect(Date.now() - t0).toBeLessThan(5_000);
+		expect(secondStarts).toBe(1);
+		expect(reg.snapshot().find((s) => s.id === "hung")?.restarts).toBe(1);
+		expect(reg.snapshot().find((s) => s.id === "second")?.restarts).toBe(1);
+	});
+
 	it("health() 抛错等价于 unhealthy，不影响 snapshot", async () => {
 		const reg = new BackgroundExecutorRegistry();
 		reg.register({
