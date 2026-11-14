@@ -159,6 +159,44 @@ describe("JobRegistry（bash background 的进程内托管）", () => {
 		}
 	}, 30_000);
 
+	it("收场后迟到的 stdout 写入不再抛 ERR_STREAM_WRITE_AFTER_END", async () => {
+		// kill 的兜底 timer 会强制 finish（end 流），而子进程输出此刻仍在飞：
+		// 无监听的 write-after-end 会变成 uncaughtException，把收尾摘要和日志尾一起废掉。
+		const registry = makeRegistry();
+		const job = registry.start({
+			command: `${node} -e "console.log('ready');setInterval(()=>{},1000)"`,
+			cwd: process.cwd(),
+			timeoutSec: 0,
+		});
+		const uncaught: Error[] = [];
+		const onUncaught = (error: Error) => uncaught.push(error);
+		try {
+			await waitFor(() => registry.tail(job.id).includes("ready"));
+			const record = (
+				registry as unknown as { jobs: Map<string, { child: { stdout: NodeJS.ReadableStream } }> }
+			).jobs.get(job.id);
+			expect(record).toBeTruthy();
+			// 模拟兜底 timer 强制收场
+			(registry as unknown as { finish: (r: unknown, code: number | null, reason: string) => void }).finish(
+				record,
+				null,
+				"killed",
+			);
+			process.on("uncaughtException", onUncaught);
+			try {
+				record!.child.stdout.emit("data", Buffer.from("late-line" + String.fromCharCode(10)));
+				await new Promise((resolve) => setTimeout(resolve, 100));
+			} finally {
+				process.off("uncaughtException", onUncaught);
+			}
+			expect(uncaught).toEqual([]);
+			expect(readFileSync(job.logPath, "utf8")).not.toContain("late-line");
+		} finally {
+			registry.kill(job.id);
+			registry.dispose();
+		}
+	}, 30_000);
+
 	it("空命令拒绝启动", () => {
 		const registry = makeRegistry();
 		expect(() => registry.start({ command: "   ", cwd: process.cwd() })).toThrow();
