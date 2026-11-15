@@ -1,6 +1,10 @@
 import { describe, expect, it } from "vitest";
 import {
 	activeTaskForBot,
+	BOT_QUEUE_MAX_PENDING,
+	estimateBotTaskMs,
+	estimateQueueWaitMs,
+	formatEta,
 	botQueuePriority,
 	queuePositionOf,
 	queuePriorityForCreation,
@@ -78,6 +82,29 @@ describe("每 Bot 串行队列", () => {
 		expect(activeTaskForBot([task({ id: "done", status: "completed" })], BOT, none)).toBeUndefined();
 		// 自己不算自己
 		expect(activeTaskForBot([running], BOT, none, "run")).toBeUndefined();
+	});
+
+	it("ETA：用最近完成任务耗时的中位数，夹在 5s~10min，默认 30s", () => {
+		const completed = (id: string, ms: number, status: HubTask["status"] = "completed") =>
+			task({ id, status, createdAt: 1000, updatedAt: 1000 + ms });
+		expect(estimateBotTaskMs([], BOT)).toBe(30_000);
+		expect(estimateBotTaskMs([completed("a", 1000), completed("b", 8_000)], BOT)).toBe(8_000);
+		// 中位数抗离群：一条 10 分钟的构建不会把其他任务都算成 10 分钟
+		expect(estimateBotTaskMs([completed("a", 4_000), completed("b", 6_000), completed("c", 600_000)], BOT)).toBe(6_000);
+		// 夹紧边界
+		expect(estimateBotTaskMs([completed("fast", 200)], BOT)).toBe(5_000);
+		expect(estimateBotTaskMs([completed("slow", 30 * 60_000)], BOT)).toBe(600_000);
+		// 失败任务不参与估计
+		expect(estimateBotTaskMs([completed("bad", 120_000, "failed")], BOT)).toBe(30_000);
+		expect(estimateQueueWaitMs([completed("a", 8_000)], BOT, 2)).toBe(24_000);
+		expect(formatEta(8_000)).toBe("8s");
+		expect(formatEta(180_000)).toBe("3min");
+	});
+
+	it("排队上限是硬常量（12），提示文案带预计等待", () => {
+		expect(BOT_QUEUE_MAX_PENDING).toBe(12);
+		expect(queuedReasonText(1, "abcdefgh", 25_000)).toContain("约 25s");
+		expect(queuedReasonText(1, "abcdefgh", 25_000)).toContain("~25s");
 	});
 
 	it("排队位置与文案：第一个排队的人拿到'正在收尾'，后续给出确切数量", () => {

@@ -15,6 +15,48 @@ import type { HubTask } from "./store.js";
  */
 
 export const BOT_QUEUE_PRIORITIES = [0, 1, 2] as const;
+
+/** 单个 Bot 的排队上限：超过后新的派活直接拒绝（429），而不是让它无限堆积。 */
+export const BOT_QUEUE_MAX_PENDING = 12;
+
+/** ETA 采样窗口与兜底：最近 20 条已完成任务的中位数，夹在 5s ~ 10min，默认 30s。 */
+const ETA_SAMPLE = 20;
+const ETA_FLOOR_MS = 5_000;
+const ETA_CEIL_MS = 10 * 60_000;
+const ETA_DEFAULT_MS = 30_000;
+
+/**
+ * 用该 Bot 最近完成任务的耗时中位数估计单个任务要多久。
+ * 中位数比平均值抗离群值（一次 10 分钟的构建不该毁掉接下来所有估计）。
+ */
+export function estimateBotTaskMs(tasks: readonly HubTask[], botId: string): number {
+	const durations = tasks
+		.filter(
+			(task) =>
+				task.botId === botId &&
+				task.status === "completed" &&
+				typeof task.updatedAt === "number" &&
+				task.updatedAt > task.createdAt,
+		)
+		.map((task) => task.updatedAt - task.createdAt)
+		.sort((a, b) => a - b)
+		.slice(-ETA_SAMPLE);
+	if (!durations.length) return ETA_DEFAULT_MS;
+	const median = durations[Math.floor(durations.length / 2)];
+	return Math.min(ETA_CEIL_MS, Math.max(ETA_FLOOR_MS, median));
+}
+
+/** 排队还需多久（第 position+1 位要等 position+1 个任务）。 */
+export function estimateQueueWaitMs(tasks: readonly HubTask[], botId: string, position: number): number {
+	return estimateBotTaskMs(tasks, botId) * (Math.max(0, position) + 1);
+}
+
+export function formatEta(ms: number): string {
+	const seconds = Math.max(1, Math.round(ms / 1000));
+	if (seconds < 60) return `${seconds}s`;
+	const minutes = Math.round(seconds / 60);
+	return `${minutes}min`;
+}
 export type BotQueuePriority = (typeof BOT_QUEUE_PRIORITIES)[number];
 
 /** 排队任务的优先级：直聊 0、非人工触发 2、其余 1。 */
@@ -87,12 +129,14 @@ export function queuePositionOf(
 }
 
 /** 排队原因文案：同时给出"前面还有几个"和"为什么"，两端都能直接展示。 */
-export function queuedReasonText(position: number, runningTaskId: string | undefined): string {
+export function queuedReasonText(position: number, runningTaskId: string | undefined, etaMs?: number): string {
 	const ahead = position + 1;
 	const running = runningTaskId ? runningTaskId.slice(0, 8) : "—";
+	const eta = etaMs === undefined ? "" : `，约 ${formatEta(etaMs)}`;
+	const etaEn = etaMs === undefined ? "" : `, ~${formatEta(etaMs)}`;
 	return ahead <= 1
-		? `Bot 正在执行上一个任务（${running}）/ Bot is finishing the previous task`
-		: `前面还有 ${ahead} 个任务（当前 ${running}）/ queued behind ${ahead} task(s)`;
+		? `Bot 正在执行上一个任务（${running}${eta}）/ Bot is finishing the previous task${etaEn}`
+		: `前面还有 ${ahead} 个任务（当前 ${running}${eta}）/ queued behind ${ahead} task(s)${etaEn}`;
 }
 
 /** 从任务自身推导优先级（创建时写死，避免唤醒顺序随实现变化）。 */

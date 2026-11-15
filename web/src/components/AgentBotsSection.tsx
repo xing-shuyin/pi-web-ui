@@ -67,6 +67,10 @@ const words = {
 		tools: "工具",
 		workspace: "工作目录",
 		bootstrap: "创建后先让它自我介绍并写入记忆",
+		importBot: "导入 Bot 包",
+		importing: "导入中…",
+		importFailed: "迁移包导入失败",
+		importDone: "已导入 {name}（记忆 {imported} 条，跳过 {skipped} 条）",
 	},
 	en: {
 		title: "Agents",
@@ -88,6 +92,10 @@ const words = {
 		tools: "Tools",
 		workspace: "Workspace",
 		bootstrap: "Let it introduce itself and write memory on creation",
+		importBot: "Import Bot bundle",
+		importing: "Importing…",
+		importFailed: "Bundle import failed",
+		importDone: "Imported {name} (memories {imported}, skipped {skipped})",
 	},
 };
 
@@ -107,6 +115,9 @@ export function AgentBotsSection({
 	const [grants, setGrants] = useState<Record<string, string[]>>({});
 	const [approving, setApproving] = useState<string | null>(null);
 	const [memoryBot, setMemoryBot] = useState<BotRow | null>(null);
+	const [importing, setImporting] = useState(false);
+	const [notice, setNotice] = useState("");
+	const importInput = useRef<HTMLInputElement | null>(null);
 	const [error, setError] = useState("");
 	const [collapsed, setCollapsed] = useState(false);
 	const [pending, setPending] = useState<string | null>(null);
@@ -221,6 +232,34 @@ export function AgentBotsSection({
 		[load],
 	);
 
+	const importBundle = useCallback(
+		async (file: File) => {
+			setImporting(true);
+			setError("");
+			try {
+				const bundle = JSON.parse(await file.text()) as unknown;
+				const result = await deviceGroupRequest<{ bot: BotRow; imported: number; skipped: number; roomId?: string }>(
+					"bot-import",
+					new AbortController().signal,
+					{ bundle },
+				);
+				setNotice(
+					t.importDone
+						.replace("{name}", result.bot.name)
+						.replace("{imported}", String(result.imported))
+						.replace("{skipped}", String(result.skipped)),
+				);
+				await load();
+				if (result.roomId) openRoom(result.roomId);
+			} catch (cause) {
+				setError(cause instanceof Error ? cause.message : t.importFailed);
+			} finally {
+				setImporting(false);
+			}
+		},
+		[load, openRoom, t],
+	);
+
 	if (!bots && !error) {
 		return (
 			<section className="lp-bots-section" aria-busy="true">
@@ -250,9 +289,30 @@ export function AgentBotsSection({
 					<span className="lp-bots-title">{t.title}</span>
 					{botCount(bots) > 0 && <span className="lp-bots-count">{botCount(bots)}</span>}
 				</button>
+				<button
+					type="button"
+					className="lp-bots-import"
+					title={t.importBot}
+					disabled={importing}
+					onClick={() => importInput.current?.click()}
+				>
+					{importing ? "…" : "＋"}
+				</button>
+				<input
+					ref={importInput}
+					type="file"
+					accept="application/json,.json"
+					hidden
+					onChange={(event) => {
+						const file = event.target.files?.[0];
+						event.target.value = "";
+						if (file) void importBundle(file);
+					}}
+				/>
 			</div>
 			{!collapsed && (
 				<div className="lp-bots-body">
+					{notice && <p className="lp-bots-notice">{notice}</p>}
 					{error && (
 						<div className="lp-bots-error">
 							<span>{t.failed}</span>

@@ -714,12 +714,96 @@ export function createBotMemory(options: BotMemoryOptions) {
 		return lines.join("\n");
 	}
 
+	/**
+	 * 从迁移包导入条目：仍然走同一套校验（scope / 长度 / 机密 / 指令式内容 / 容量），
+	 * 非法条目跳过并计数，不让一个坏包把整份记忆弄脏。
+	 * `resident` 只在 `confidence === "confirmed"` 时保留，避免借导入把猜测塞进常驻区。
+	 */
+	async function importEntries(raw: unknown): Promise<{ imported: number; skipped: number }> {
+		return enqueue(async () => {
+			if (!Array.isArray(raw)) throw new MemoryError("MEMORY_IMPORT", "Memory import must be an array");
+			const entries = await readIndex();
+			const active = entries.filter((entry) => !entry.archived);
+			let imported = 0;
+			let skipped = 0;
+			let residentBytes = entries
+				.filter((entry) => entry.resident && !entry.archived)
+				.reduce((sum, entry) => sum + Buffer.byteLength(entry.text, "utf8") + 32, 0);
+			const seen = new Set(active.map((entry) => `${entry.scope}\u0000${normalizeText(entry.text)}`));
+			for (const item of raw.slice(0, MEMORY_TOTAL_MAX_ENTRIES)) {
+				const candidate = item as Partial<MemoryEntry> | null;
+				try {
+					if (!candidate || typeof candidate !== "object") throw new MemoryError("MEMORY_IMPORT", "bad entry");
+					const scope = String(candidate.scope ?? "");
+					parseMemoryScope(scope);
+					const text = typeof candidate.text === "string" ? candidate.text.trim() : "";
+					if (!text || text.length > MEMORY_ENTRY_MAX_CHARS || findSecret(text))
+						throw new MemoryError("MEMORY_IMPORT", "invalid text");
+					const dedupeKey = `${scope}\u0000${normalizeText(text)}`;
+					if (seen.has(dedupeKey)) {
+						skipped += 1;
+						continue;
+					}
+					if (active.filter((entry) => entry.scope === scope).length >= MEMORY_FILE_MAX_ENTRIES) {
+						skipped += 1;
+						continue;
+					}
+					if (entries.filter((entry) => !entry.archived).length >= MEMORY_TOTAL_MAX_ENTRIES) {
+						skipped += 1;
+						continue;
+					}
+					const kind = MEMORY_KINDS.includes(candidate.kind as MemoryKind) ? (candidate.kind as MemoryKind) : "fact";
+					const confidence = candidate.confidence === "confirmed" ? "confirmed" : "unverified";
+					const createdAt =
+						typeof candidate.createdAt === "number" && Number.isFinite(candidate.createdAt)
+							? Math.min(candidate.createdAt, now())
+							: now();
+					const resident = candidate.resident === true && confidence === "confirmed";
+					if (resident) {
+						const size = Buffer.byteLength(text, "utf8") + 32;
+						if (residentBytes + size > MEMORY_RESIDENT_MAX_BYTES) {
+							skipped += 1;
+							continue;
+						}
+						residentBytes += size;
+					}
+					const source =
+						candidate.source && MEMORY_SOURCE_TYPES.includes(candidate.source.type)
+							? {
+									type: candidate.source.type,
+									id: typeof candidate.source.id === "string" ? candidate.source.id.slice(0, 128) : "import",
+									at: typeof candidate.source.at === "number" ? candidate.source.at : createdAt,
+								}
+							: { type: "tool" as const, id: "import", at: createdAt };
+					entries.push({
+						id: typeof candidate.id === "string" && candidate.id ? candidate.id : randomUUID(),
+						scope,
+						text,
+						kind,
+						confidence,
+						source,
+						createdAt,
+						updatedAt: createdAt,
+						hits: 0,
+						...(resident ? { resident: true } : {}),
+					});
+					seen.add(dedupeKey);
+					imported += 1;
+				} catch {
+					skipped += 1;
+				}
+			}
+			if (imported) await commit(entries, { op: "import", imported, skipped }, new Set(entries.map((e) => e.scope)));
+			return { imported, skipped };
+		});
+	}
+
 	async function snapshot(): Promise<{ entries: MemoryRecord[]; audit: Record<string, unknown>[] }> {
 		const entries = (await readIndex()).filter((entry) => !entry.archived).map(withSummary);
 		return { entries, audit: (await readAudit()).slice(-100) };
 	}
 
-	return { root, write, search, read, list, promote, forget, compact, snapshot, exportMarkdown };
+	return { root, write, search, read, list, promote, forget, compact, snapshot, exportMarkdown, importEntries };
 }
 
 export type BotMemory = ReturnType<typeof createBotMemory>;

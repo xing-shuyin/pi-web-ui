@@ -52,6 +52,8 @@ import type { GroupWebhook, Room, RoomMessage } from "./store.js";
 import { createDirectRoom, directRoomViolation, groupRoomsOf, isDirectRoom } from "./direct-rooms.js";
 import {
 	activeTaskForBot,
+	BOT_QUEUE_MAX_PENDING,
+	estimateQueueWaitMs,
 	queuePositionOf,
 	queuePriorityForCreation,
 	queuedReasonText,
@@ -3168,6 +3170,23 @@ export async function createDeviceHub(options: DeviceHubOptions) {
 			if (targets.length && (root?.dispatchCount ?? 0) + targets.length > settings.maxDispatchBudget)
 				fail(409, "Dispatch budget exhausted");
 			if (root && targets.length) root.dispatchCount = (root.dispatchCount ?? 0) + targets.length;
+			// 队列上限：targets 到这里才最终确定（含主 Bot 兜底与 @ 提及），积压太多就先拒绝。
+			for (const botId of targets) {
+				const pending = draft.tasks.filter(
+					(task) =>
+						task.botId === botId &&
+						task.status === "queued" &&
+						task.blockReason === "bot_busy" &&
+						!task.leaseToken &&
+						!deliveredTasks.has(task.id),
+				).length;
+				if (pending >= BOT_QUEUE_MAX_PENDING)
+					fail(
+						429,
+						`这个 Bot 的排队已满（${BOT_QUEUE_MAX_PENDING} 个任务在等），等前面的跑完再派 / Bot queue is full (${BOT_QUEUE_MAX_PENDING} pending)`,
+						"BOT_QUEUE_FULL",
+					);
+			}
 			if (draft.tasks.filter((t) => t.roomId === room.id && taskPending(t)).length + targets.length > getHistoryLimit())
 				fail(409, "Too many active tasks");
 			if (
@@ -3691,11 +3710,12 @@ export async function createDeviceHub(options: DeviceHubOptions) {
 		});
 	}
 	async function queueBehindBusyBot(task: HubTask, active: HubTask): Promise<void> {
-		const position = queuePositionOf(store.snapshot().tasks, deliveredTasks, task);
+		const tasks = store.snapshot().tasks;
+		const position = queuePositionOf(tasks, deliveredTasks, task);
 		await markTaskQueued(task, {
 			blockReason: "bot_busy",
 			detail: `Bot ${task.botId} is running ${active.id}`,
-			text: queuedReasonText(position, active.id),
+			text: queuedReasonText(position, active.id, estimateQueueWaitMs(tasks, task.botId, position)),
 		});
 	}
 	async function queueBehindConversationTurn(task: HubTask, aheadTaskId: string): Promise<void> {

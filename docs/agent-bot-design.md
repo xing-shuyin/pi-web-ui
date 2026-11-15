@@ -508,18 +508,20 @@ type Priority = 0 | 1 | 2; // 0 人私聊 / 1 群内 @ / 2 定时与广播
 | 记忆查看 / 整理 / 导出（人侧） | `local.ts`（`/local-bots/:id/memory*`）· `BotMemoryDialog.tsx` ★ · `agent-bots.css` | `tsc -p web/tsconfig.json` |
 | 身份变更台账（diff + 10 次/天限速） | `server/device-center/bot-identity.ts` ★ · `local.ts`（写入时记账） | `tests/unit/bot-identity.test.ts` |
 
+| Bot 家迁移（导出/导入身份 + 记忆） | `server/device-center/bot-home.ts` ★ · `bot-memory.ts`（`importEntries`）· `local.ts`（`/local-bots/:id/home`、`/bot-import`）· `BotMemoryDialog` / `AgentBotsSection` | `tests/unit/bot-home.test.ts` |
+| 队列上限与 ETA | `bot-queue.ts`（`BOT_QUEUE_MAX_PENDING=12`、`estimateBotTaskMs` 中位数、`formatEta`）· `hub.ts`（429 `BOT_QUEUE_FULL`、`queuedReason` 带 "约 Xs"） | `bot-queue.test.ts` · `agent-bot-direct-room-hub.test.ts` |
+
 ### 未实现（下一步，按序）
 
-1. **换承载设备迁移**：`bot-agents/<botId>/` 目录搬迁（走 `fs-copy` 单源；记忆已可导出 Markdown，但设备间迁移未接）。
-2. **队列上限与 ETA**：目前不设队列长度上限（按任务状态天然有界），也没有预计耗时估算。
-3. **`agent_bot` 的 i18n descKey**：设置页里它暂时回落成分组名 "other"（功能无影响）。
+1. **`agent_bot` 的 i18n descKey**：设置页里它暂时回落成分组名 "other"（功能无影响）。之所以压到最后：加一条 zh/en key 必须同步 12 个 `locales/*.json`（`i18n:check` 门禁），而同期有多个窗口在改这批语言包，等它们落地后一次补齐更安全。
+2. **迁移包跨设备自动传输**：目前是"导出 JSON → 另一台导入"，还没接 `device-file-sync` 的自动投递。
 
 ### 验收命令
 
 ```bash
 npx vitest run tests/unit/agent-bot-direct-room.test.ts tests/unit/agent-bot-direct-room-hub.test.ts \
   tests/unit/agent-memory.test.ts tests/unit/bot-queue.test.ts tests/unit/bot-drafts.test.ts \
-  tests/unit/bot-identity.test.ts tests/unit/bot-memory-scheduler.test.ts \
+  tests/unit/bot-identity.test.ts tests/unit/bot-memory-scheduler.test.ts tests/unit/bot-home.test.ts \
   tests/unit/tool-registration.test.ts tests/unit/tool-prompt-hygiene.test.ts \
   tests/unit/docs-index.test.ts tests/unit/agents-md.test.ts
 npm run typecheck

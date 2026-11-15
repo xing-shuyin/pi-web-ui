@@ -6,7 +6,7 @@ import { tmpdir } from "node:os";
 import { createDeviceHub } from "../../server/device-center/hub.js";
 import { directRoomId } from "../../server/device-center/direct-rooms.js";
 import { readPersistedHub } from "../../server/device-center/store.js";
-import { rankBotQueue } from "../../server/device-center/bot-queue.js";
+import { BOT_QUEUE_MAX_PENDING, rankBotQueue } from "../../server/device-center/bot-queue.js";
 
 /**
  * 直聊房间的 HTTP 契约：幂等开启、群组列表隔离、群能力拒绝、消息默认投给唯一 Bot。
@@ -475,6 +475,62 @@ describe("直聊房间 HTTP 契约", () => {
 		expect(shared.status).toBe(200);
 		expect(shared.body.message.sender).toMatchObject({ type: "bot", id: bot.botId });
 		expect(shared.body.message.sharedFrom.mode).toBe("as_bot");
+	});
+
+	it("排队提示带预计等待（没有历史耗时时用 30s 兜底）", async () => {
+		const f = await fixture();
+		const account = await login(f);
+		const bot = await f.pair(account.cookie, "Atlas");
+		const direct = (await f.request(`/api/bots/${bot.botId}/direct-room`, {}, account.cookie)).body.room;
+		await f.request(`/api/rooms/${direct.id}/messages`, { text: "第一条", idempotencyKey: "e-1" }, account.cookie);
+		const group = await f.request(
+			"/api/rooms",
+			{ name: "Team", botIds: [bot.botId], primaryBotId: bot.botId },
+			account.cookie,
+		);
+		const queued = await f.request(
+			`/api/rooms/${group.body.room.id}/messages`,
+			{ text: "群里的第二条", idempotencyKey: "e-2" },
+			account.cookie,
+		);
+		expect(queued.body.tasks[0].blockReason).toBe("bot_busy");
+		expect(String(queued.body.tasks[0].queuedReason)).toMatch(/约 \d+(s|min)/);
+	});
+
+	it("排队满 12 个后新的派活直接 429", async () => {
+		const f = await fixture();
+		const account = await login(f);
+		const bot = await f.pair(account.cookie, "Atlas");
+		const direct = (await f.request(`/api/bots/${bot.botId}/direct-room`, {}, account.cookie)).body.room;
+		// 造一个"正在执行"的任务 + 12 个已停放的排队任务，占满队列。
+		await f.hub.store.transact((draft) => {
+			const base = {
+				roomId: direct.id,
+				accountId: draft.accounts[0].id,
+				botId: bot.botId,
+				deviceId: bot.deviceId,
+				botRevision: 1,
+				text: "seeded",
+				createdAt: Date.now(),
+				updatedAt: Date.now(),
+			};
+			draft.tasks.push({ ...base, id: "seed-running", attemptId: "seed-running", status: "running" });
+			for (let i = 0; i < BOT_QUEUE_MAX_PENDING; i++)
+				draft.tasks.push({
+					...base,
+					id: `seed-${i}`,
+					attemptId: `seed-${i}`,
+					status: "queued",
+					blockReason: "bot_busy",
+				});
+		});
+		const denied = await f.request(
+			`/api/rooms/${direct.id}/messages`,
+			{ text: "再派一个", idempotencyKey: "full-1" },
+			account.cookie,
+		);
+		expect(denied.status).toBe(429);
+		expect(denied.body.code).toBe("BOT_QUEUE_FULL");
 	});
 
 	it("直聊消息真的落盘：分区日志里有，重开 store 能读回来", async () => {

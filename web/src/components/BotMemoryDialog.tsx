@@ -84,6 +84,29 @@ export function BotMemoryDialog({ botId, botName, onClose }: { botId: string; bo
 		[load],
 	);
 
+	const exportBundle = useCallback(async () => {
+		setBusy(true);
+		try {
+			const data = await call<{ bundle: unknown }>(`${encodeURIComponent(botId)}/home`);
+			const blob = new Blob([JSON.stringify(data.bundle, null, 2)], { type: "application/json;charset=utf-8" });
+			const url = URL.createObjectURL(blob);
+			const anchor = document.createElement("a");
+			anchor.href = url;
+			const slug = botName
+				.replace(/[^\w.-]+/g, "-")
+				.replace(/^-+|-+$/g, "")
+				.slice(0, 40);
+			anchor.download = `${slug || "bot"}-home.json`;
+			anchor.click();
+			URL.revokeObjectURL(url);
+			setNotice(zh ? "已导出迁移包（身份 + 记忆）；在另一台设备用「导入 Bot 包」接收" : "Bundle exported");
+		} catch (cause) {
+			setError(cause instanceof Error ? cause.message : String(cause));
+		} finally {
+			setBusy(false);
+		}
+	}, [botId, botName, zh]);
+
 	const exportMemory = useCallback(async () => {
 		setBusy(true);
 		try {
@@ -137,6 +160,9 @@ export function BotMemoryDialog({ botId, botName, onClose }: { botId: string; bo
 						</button>
 						<button type="button" disabled={busy} onClick={() => void exportMemory()}>
 							{zh ? "导出" : "Export"}
+						</button>
+						<button type="button" disabled={busy} onClick={() => void exportBundle()}>
+							{zh ? "迁移包" : "Bundle"}
 						</button>
 						<button type="button" onClick={onClose}>
 							{zh ? "关闭" : "Close"}

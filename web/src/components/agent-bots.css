@@ -479,3 +479,37 @@
 	display: flex;
 	gap: 6px;
 }
+
+/* 导入迁移包：紧凑的「＋」按钮，与折叠键同一行 */
+.lp-bots-import {
+	flex: none;
+	border: 1px solid var(--border-soft, var(--border));
+	background: transparent;
+	color: var(--text-dim);
+	font-size: 12px;
+	line-height: 1;
+	padding: 3px 7px;
+	border-radius: 6px;
+	cursor: pointer;
+}
+
+.lp-bots-import:hover:not(:disabled) {
+	color: var(--text);
+	border-color: var(--border);
+}
+
+.lp-bots-import:disabled {
+	opacity: 0.55;
+	cursor: default;
+}
+
+.lp-bots-notice {
+	margin: 2px 4px 4px;
+	font-size: 11px;
+	line-height: 1.45;
+	color: var(--text);
+	background: var(--accent-soft, rgba(120, 160, 255, 0.14));
+	border-radius: 6px;
+	padding: 4px 7px;
+	overflow-wrap: anywhere;
+}
