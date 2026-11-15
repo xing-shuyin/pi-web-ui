@@ -7,6 +7,7 @@ import { VerificationStopUnconfirmedError } from "./local-verification.js";
 import { canonicalPath, computeCanonicalRepositoryId, git, verifyRepoRoot } from "../workspace-handle.js";
 import type { LocalBotRegistry } from "./bots.js";
 import { createDeviceCollabService } from "./collab-service.js";
+import { botMemoryRoot, buildBotMemoryInjection, createBotMemory } from "./bot-memory.js";
 import type { DeviceCollabExecutionContext } from "./collab-tool.js";
 import {
 	deviceCancelIntegration,
@@ -657,6 +658,14 @@ export function createDeviceRuntime(options: {
 						resumePath = stored.path;
 					} else if (stored) throw new DeviceTaskError("Conversation already exists; explicit resume required");
 				}
+				const memoryRoot = options.dataDir ? botMemoryRoot(options.dataDir, task.botId) : undefined;
+				const memoryBlock = memoryRoot
+					? (
+							await buildBotMemoryInjection(createBotMemory({ root: memoryRoot }), {
+								cwd: executionCwd,
+							})
+						)?.text
+					: undefined;
 				owner.executor = (options.executorFactory ?? createDeviceTaskExecutor)({
 					...callbacks,
 					onActivity() {
@@ -694,6 +703,8 @@ export function createDeviceRuntime(options: {
 					localAuthToken: options.localAuthToken,
 					cwd: lease.root,
 					executionCwd,
+					memoryRoot,
+					memoryBlock,
 					executionMode: isCode ? "code" : "chat",
 					workspaceHandleId: workspaceHandle?.handleId,
 					workspaceCapability,

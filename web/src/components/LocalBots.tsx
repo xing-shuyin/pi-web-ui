@@ -183,6 +183,8 @@ export function LocalBots({
 			setModelOpen(false);
 			setNotice(data.synced === false ? t("localBotSyncFailed") : t("localBotSaved"));
 			if (!remove) onCreated?.(data.bot, data.synced !== false);
+			// 左栏「智能体」区据此重新拉取：Bot 增删改后无需刷新页面就能直接对话。
+			window.dispatchEvent(new CustomEvent("pi-web-ui:device-bots-changed"));
 		} catch (cause) {
 			if (!current.signal.aborted) setError(cause instanceof Error ? cause.message : String(cause));
 		} finally {

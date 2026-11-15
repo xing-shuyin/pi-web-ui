@@ -112,6 +112,10 @@ export interface HubTask {
 	status: TaskStatus;
 	createdAt: number;
 	updatedAt: number;
+	/** 队列优先级：0 人私聊 / 1 群内人消息 / 2 路由·Webhook·定时。缺省按 1。 */
+	queuePriority?: number;
+	/** 触发源（用于优先级与调度审计）；不影响权限。 */
+	origin?: "human" | "router" | "webhook" | "schedule" | "work_item";
 	parentTaskId?: string;
 	rootTaskId?: string;
 	dispatchDepth?: number;
@@ -128,6 +132,8 @@ export interface HubTask {
 	resourceLocks?: string[];
 	blockReason?: import("../protocol.js").DeviceTaskBlockReason;
 	blockReasonDetail?: string;
+	/** 排队说明（如"前面还有 N 个任务"），与 blockReason 一起展示给用户。 */
+	queuedReason?: string;
 	attenuatedTools?: string[];
 	dependsOnTaskId?: string;
 	outcomeFingerprint?: string;
@@ -170,6 +176,8 @@ export interface GroupWebhook {
 export interface Room {
 	id: string;
 	accountId: string;
+	/** 缺省 `group`（存量数据零迁移）；`direct` = 与单个 Bot 的私聊容器，见 `direct-rooms.ts`。 */
+	kind?: "group" | "direct";
 	name: string;
 	botIds: string[];
 	primaryBotId?: string;
@@ -194,6 +202,13 @@ export interface RoomMessage {
 	replyToMessageId?: string;
 	conversationId?: string;
 	conversationIds?: string[];
+	/** 从私聊投递到群的消息：保留来源，供 UI 标注"来自与 X 的私聊"。 */
+	sharedFrom?: {
+		mode: "as_bot" | "as_forward";
+		sourceRoomId: string;
+		botId: string;
+		messageIds: string[];
+	};
 }
 export interface HubState {
 	version: 2;

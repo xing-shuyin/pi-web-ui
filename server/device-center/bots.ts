@@ -15,6 +15,10 @@ export interface LocalBot {
 	mcpServers: string[];
 	enabled: boolean;
 	revision: number;
+	/** 运行形态：只响应（默认，零成本）/ 常驻 / 定时。 */
+	trigger?: "on_demand" | "always_on" | "scheduled";
+	/** 身份来源与修订：谁写的 systemPrompt、被改写几次。 */
+	identity?: { authoredBy: "human" | "model"; authoredAt: number; modelRevision: number };
 }
 export type LocalBotInput = Omit<LocalBot, "id" | "revision"> & { id?: string; revision?: number };
 export interface LocalBotLease {
@@ -68,6 +72,17 @@ function validate(input: LocalBot): LocalBot {
 		)
 			fail(400, "BOT_INVALID", `Invalid Bot ${key}`);
 	}
+	if (input.trigger !== undefined && !["on_demand", "always_on", "scheduled"].includes(input.trigger))
+		fail(400, "BOT_INVALID", "Invalid Bot trigger");
+	if (
+		input.identity !== undefined &&
+		(!input.identity ||
+			(input.identity.authoredBy !== "human" && input.identity.authoredBy !== "model") ||
+			!Number.isSafeInteger(input.identity.authoredAt) ||
+			!Number.isSafeInteger(input.identity.modelRevision) ||
+			input.identity.modelRevision < 0)
+	)
+		fail(400, "BOT_INVALID", "Invalid Bot identity block");
 	return {
 		id: input.id,
 		name: input.name.trim(),
@@ -80,6 +95,16 @@ function validate(input: LocalBot): LocalBot {
 		mcpServers: [...input.mcpServers],
 		enabled: input.enabled,
 		revision: input.revision,
+		...(input.trigger ? { trigger: input.trigger } : {}),
+		...(input.identity
+			? {
+					identity: {
+						authoredBy: input.identity.authoredBy,
+						authoredAt: input.identity.authoredAt,
+						modelRevision: input.identity.modelRevision,
+					},
+				}
+			: {}),
 	};
 }
 

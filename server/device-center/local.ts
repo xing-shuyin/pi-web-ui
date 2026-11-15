@@ -6,6 +6,10 @@ import { randomUUID } from "node:crypto";
 import { createMobileNotificationForwarder } from "./mobile-notification-forwarder.js";
 import { getLocalBotOptions, type BotCatalogSources } from "./bot-catalog.js";
 import { applyLocalBotPreset } from "./bot-presets.js";
+import type { BotDraft, BotDraftStore } from "./bot-drafts.js";
+import { botMemoryRoot, createBotMemory, type BotMemory } from "./bot-memory.js";
+import { appendIdentityChange } from "./bot-identity.js";
+import { writeAtomic } from "../atomic-file.js";
 import { installHubSetupRoutes } from "./hub-setup.js";
 import { DeviceWorkspaceError } from "./workspaces.js";
 import { createLocalDeviceHub } from "./local-hub.js";
@@ -45,6 +49,7 @@ interface Options {
 	dataDir: string;
 	connect(config: LocalDeviceConfig, syncBots: () => Promise<void>): Connection | Promise<Connection>;
 	bots?: LocalBotRegistry;
+	botDrafts?: BotDraftStore;
 	botCatalog?: BotCatalogSources;
 	allowHosts?: readonly string[];
 	lanAccess?: DeviceLanAccess;
@@ -1008,9 +1013,19 @@ export async function installLocalDeviceCenter(options: Options) {
 					Buffer.byteLength(JSON.stringify(input)) > 128 * 1024
 				)
 					throw new DeviceWorkspaceError(400, "BOT_INVALID", "Invalid Bot configuration");
-				const result = remove
-					? (await bots.remove(String(req.params.id), input.revision), { removed: true })
-					: { bot: await bots.upsert(input as LocalBotInput) };
+				const previous =
+					!remove && typeof (input as { id?: unknown }).id === "string"
+						? bots.get(String((input as { id: string }).id))
+						: undefined;
+				let saved: Awaited<ReturnType<LocalBotRegistry["upsert"]>> | undefined;
+				if (remove) await bots.remove(String(req.params.id), input.revision);
+				else saved = await bots.upsert(input as LocalBotInput);
+				if (saved) {
+					try {
+						await appendIdentityChange(options.dataDir, saved, previous);
+					} catch {}
+				}
+				const result = remove ? { removed: true } : { bot: saved! };
 				try {
 					await syncBots();
 					return { ...result, synced: true };
@@ -1065,9 +1080,217 @@ export async function installLocalDeviceCenter(options: Options) {
 			res.off("close", cancel);
 		}
 	});
+	if (options.botDrafts) {
+		const botDrafts = options.botDrafts;
+		/** 首轮自举：让 Bot 自己写 profile / 记忆，而不是服务端替它编一份身份。 */
+		function bootstrapText(name: string): string {
+			return [
+				`你是刚创建出来的智能体「${name}」。请完成首轮自举：`,
+				"1) 用一两句话介绍你自己（你是谁、负责什么、你打算怎么工作）；",
+				"2) 把职责与工作约定写进你的个人记忆（profile / MEMORY.md 允许的方式），并确认你的工作目录可读、记忆可写；",
+				"3) 如果缺少必要信息，只问最关键的一个问题，别罗列清单。",
+			].join("\n");
+		}
+		async function scaffoldBotHome(bot: { id: string; name: string; description: string }, draft: BotDraft) {
+			const memoryRoot = botMemoryRoot(options.dataDir, bot.id);
+			await mkdir(join(options.dataDir, "bot-agents", bot.id, "identity"), { recursive: true });
+			await mkdir(memoryRoot, { recursive: true });
+			await writeAtomic(
+				join(options.dataDir, "bot-agents", bot.id, "identity", "profile.md"),
+				[
+					"<!-- 由创建流程写入；后续可以被人或 Bot 自己改写（改动会记入 changes.jsonl）。 -->",
+					"",
+					`# ${bot.name}`,
+					"",
+					bot.description,
+					"",
+					`- created: ${new Date(draft.createdAt).toISOString()}`,
+					`- authoredBy: ${draft.createdBy}`,
+					`- trigger: ${draft.trigger}`,
+					"",
+				].join("\n"),
+			);
+			await writeAtomic(
+				join(memoryRoot, "MEMORY.md"),
+				[
+					"<!-- Resident memory: promoted entries only. Injected every session; keep it short. -->",
+					"",
+					`- [${new Date(draft.createdAt).toISOString().slice(0, 10)}] ${bot.description}`,
+					"",
+					"<!-- 0 resident · 0 scoped · index: index.jsonl -->",
+					"",
+				].join("\n"),
+			);
+			await writeAtomic(join(memoryRoot, "index.jsonl"), "");
+		}
+		function draftFailure(error: unknown) {
+			const known = error as { status?: number; code?: string; message?: string };
+			return {
+				status: known?.status ?? 500,
+				code: known?.code ?? "BOT_DRAFT_FAILED",
+				message: known?.message ?? "Bot draft operation failed",
+			};
+		}
+		options.app.get("/api/device-center/bot-drafts", (req: Request, res: Response) => {
+			void botDrafts.list().then(
+				(drafts) => res.json({ drafts }),
+				(error) => {
+					const failure = draftFailure(error);
+					res.status(failure.status).json({ code: failure.code, error: failure.message });
+				},
+			);
+		});
+		options.app.post("/api/device-center/bot-drafts/:id/discard", (req: Request, res: Response) => {
+			void botDrafts.discard(String(req.params.id)).then(
+				() => res.json({ discarded: true }),
+				(error) => {
+					const failure = draftFailure(error);
+					res.status(failure.status).json({ code: failure.code, error: failure.message });
+				},
+			);
+		});
+		options.app.post("/api/device-center/bot-drafts/:id/approve", (req: Request, res: Response) => {
+			void serialize(async () => {
+				if (closed) throw new DeviceWorkspaceError(409, "CLOSED", "Device center is shutting down");
+				const draft = await botDrafts.get(String(req.params.id));
+				if (!draft) throw new DeviceWorkspaceError(404, "DRAFT_MISSING", "Bot draft not found or expired");
+				const rawApproved = (req.body as { approvedTools?: unknown } | undefined)?.approvedTools;
+				const approved = Array.isArray(rawApproved)
+					? rawApproved.filter((tool): tool is string => typeof tool === "string" && Boolean(tool))
+					: draft.tools.filter((tool) => !draft.highPrivilegeTools.includes(tool));
+				// 人只能勾选草案里已有的工具：不允许借确认之手塞进新工具。
+				const smuggled = approved.filter((tool) => !draft.tools.includes(tool));
+				if (smuggled.length)
+					throw new DeviceWorkspaceError(400, "DRAFT_TOOLS_INVALID", `Unknown tools: ${smuggled.join(", ")}`);
+				const confirmed = await botDrafts.approve(draft.id, approved);
+				const bot = await bots.upsert({
+					name: confirmed.name,
+					description: confirmed.description,
+					systemPrompt: confirmed.systemPrompt,
+					cwd: confirmed.cwd,
+					...(confirmed.model ? { model: confirmed.model } : {}),
+					tools: approved,
+					skills: confirmed.skills,
+					mcpServers: confirmed.mcpServers,
+					enabled: true,
+					trigger: confirmed.trigger,
+					identity: { authoredBy: confirmed.createdBy, authoredAt: confirmed.createdAt, modelRevision: 1 },
+				} as LocalBotInput);
+				await botDrafts.markCreated(draft.id, bot.id);
+				await scaffoldBotHome(bot, confirmed);
+				let synced = true;
+				try {
+					await syncBots();
+				} catch {
+					synced = false;
+				}
+				const captured = activeConfig();
+				let roomId: string | undefined;
+				let bootstrapped = false;
+				if (captured && synced) {
+					try {
+						const room = (await requestDeviceHub(
+							captured,
+							`/api/device-user/bots/${encodeURIComponent(bot.id)}/direct-room`,
+							"POST",
+							{},
+							{ user: true },
+						)) as { room?: { id?: string } };
+						roomId = room.room?.id;
+					} catch {}
+					if (roomId && confirmed.bootstrap) {
+						try {
+							await requestDeviceHub(
+								captured,
+								`/api/device-user/rooms/${encodeURIComponent(roomId)}/messages`,
+								"POST",
+								{ text: bootstrapText(bot.name), idempotencyKey: `bootstrap:${bot.id}` },
+								{ user: true },
+							);
+							bootstrapped = true;
+						} catch {}
+					}
+				}
+				return { bot, synced, roomId, bootstrapped };
+			}).then(
+				(data) => res.json(data),
+				(error) => {
+					const failure = draftFailure(error);
+					res.status(failure.status).json({ code: failure.code, error: failure.message });
+				},
+			);
+		});
+	}
+	// 记忆查看/整理（人侧）：与 Bot 自己的 memory 工具共用同一套存储与校验。
+	const memoryStores = new Map<string, BotMemory>();
+	const memoryOf = (botId: string): BotMemory => {
+		const existing = memoryStores.get(botId);
+		if (existing) return existing;
+		const created = createBotMemory({ root: botMemoryRoot(options.dataDir, botId) });
+		memoryStores.set(botId, created);
+		return created;
+	};
+	function memoryRoute(
+		method: "get" | "post",
+		suffix: string,
+		handler: (memory: BotMemory, req: Request) => Promise<unknown>,
+	) {
+		options.app[method](`/api/device-center/local-bots/:id/memory${suffix}`, (req: Request, res: Response) => {
+			const botId = String(req.params.id);
+			if (!bots.get(botId)) return res.status(404).json({ code: "BOT_NOT_FOUND", error: "Bot not found" });
+			void handler(memoryOf(botId), req).then(
+				(data) => res.json(data),
+				(error: unknown) => {
+					const known = error as { status?: number; code?: string; message?: string };
+					res
+						.status(known?.status ?? 500)
+						.json({ code: known?.code ?? "MEMORY_FAILED", error: known?.message ?? "Memory operation failed" });
+				},
+			);
+		});
+	}
+	memoryRoute("get", "", async (memory) => {
+		const { entries } = await memory.snapshot();
+		return {
+			scopes: await memory.list(),
+			entries: entries.slice(-200).map((entry) => ({
+				id: entry.id,
+				scope: entry.scope,
+				summary: entry.summary,
+				text: entry.text.slice(0, 500),
+				kind: entry.kind,
+				confidence: entry.confidence,
+				resident: entry.resident === true,
+				source: entry.source.type,
+				sourceId: entry.source.id.slice(0, 64),
+				hits: entry.hits,
+				createdAt: entry.createdAt,
+				lastUsedAt: entry.lastUsedAt,
+			})),
+		};
+	});
+	memoryRoute("get", "/export", async (memory, req) => {
+		const bot = bots.get(String(req.params.id));
+		return { markdown: await memory.exportMarkdown(bot?.name) };
+	});
+	memoryRoute("post", "/forget", async (memory, req) => {
+		const id = typeof req.body?.id === "string" ? req.body.id : undefined;
+		const query = typeof req.body?.query === "string" ? req.body.query : undefined;
+		if (!id && !query) throw new DeviceWorkspaceError(400, "MEMORY_FORGET", "Pass an entry id or a query");
+		return memory.forget({ ...(id ? { id } : {}), ...(query ? { query } : {}) });
+	});
+	memoryRoute("post", "/promote", async (memory, req) => {
+		const id = typeof req.body?.id === "string" ? req.body.id : "";
+		if (!id) throw new DeviceWorkspaceError(400, "MEMORY_PROMOTE", "Pass an entry id");
+		return { entry: await memory.promote(id) };
+	});
+	memoryRoute("post", "/compact", async (memory) => memory.compact());
 	options.app.post("/api/device-center/local-bots", botMutation(false));
 	options.app.post("/api/device-center/local-bots/:id/delete", botMutation(true));
 	userRoute("get", "bots", []);
+	userRoute("post", "bots/:id/direct-room", []);
+	userRoute("post", "bots/:id/share", ["sourceRoomId", "targetRoomId", "mode", "messageIds", "note", "idempotencyKey"]);
+	userRoute("get", "direct-rooms", []);
 	userRoute("get", "devices", []);
 	userRoute("post", "devices/:id/open", ["preferLan", "desktop", "basePath"]);
 	userRoute("post", "devices/:id/remark", ["remark"]);

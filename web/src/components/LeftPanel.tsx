@@ -20,6 +20,7 @@ import {
 	useProjectOrderManual,
 } from "../project-order-settings";
 import { DeviceGroupSection } from "./DeviceGroupSection";
+import { AgentBotsSection } from "./AgentBotsSection";
 import { NativeCliCreateEntry } from "./NativeCliCreateModal";
 import {
 	FiAlertCircle,
@@ -2882,13 +2883,17 @@ export const LeftPanel = memo(function LeftPanel({
 					</div>
 					{!collapseProjects &&
 						(workspaceTab === "groups" && hasGroupsSection ? (
-							<DeviceGroupSection
-								entry={uiSections?.find((entry) => entry.id === "host:lp-groups")}
-								active={active}
-								selectedRoomId={activeGroupId}
-								hideHeader={true}
-								onRoomCountChange={setGroupCount}
-							/>
+							<>
+								{/* 智能体（直聊）在群组同层：两者都是“协作对象”，不需要再开一个 tab。 */}
+								<AgentBotsSection active={active} selectedRoomId={activeGroupId} />
+								<DeviceGroupSection
+									entry={uiSections?.find((entry) => entry.id === "host:lp-groups")}
+									active={active}
+									selectedRoomId={activeGroupId}
+									hideHeader={true}
+									onRoomCountChange={setGroupCount}
+								/>
+							</>
 						) : effectiveProjects.length > 0 ? (
 							<div
 								className="lp-section-body projects-scroll"

@@ -41,6 +41,7 @@ pi 编码智能体（`@earendil-works/pi-coding-agent` SDK）的 Web 聊天界�
 | DSH 预设 / 问卷 / 底栏统计 | `server/dsh-*.ts` · `server/dsh/dsh-usage.ts` | [`dsh-engine.md`](docs/dsh-engine.md) |
 | 沙盒工作区 | `docs/architecture-sandbox.md` 列出的执行会话身份链 | [`architecture-sandbox.md`](docs/architecture-sandbox.md) |
 | 设备中心 / 群组 Bot / 远程桌面 / 文件同步 | `server/device-center/`（`hub-conversations.ts` · `task-recovery.ts` · `desktop*.ts`） | [`device-center.md`](docs/device-center.md) · [`device-collaboration.md`](docs/device-collaboration.md) · [`device-desktop.md`](docs/device-desktop.md) · [`device-file-sync.md`](docs/device-file-sync.md) |
+| **Bot 独立化 / 直聊 / 独立记忆** | `server/device-center/direct-rooms.ts`★ · `server/device-center/bot-memory.ts`★ · `server/bot-memory-tool.ts` · `web/src/components/AgentBotsSection.tsx` | [`agent-bot-design.md`](docs/agent-bot-design.md) |
 | Hub 在线升级 / 发布包验收 | `bin/hub-upgrade.mjs`★ · `server/device-center/hub-upgrade.ts` · `tests/hub-upgrade-release-test.mjs` | [`device-center.md`](docs/device-center.md#hub-在线升级) · [`hub-upgrade-release-testing.md`](docs/hub-upgrade-release-testing.md) |
 | 画布协同（版本 / 运行 / 产物） | `server/canvas/` · `server/workspace-handle.ts`（共享工作树原语） | [`architecture-canvas.md`](docs/architecture-canvas.md) |
 | 预设导入导出 / 社区分享 | `server/preset-share.ts` · `server/preset-fields.ts` | [`preset-sharing.md`](docs/preset-sharing.md) |

@@ -53,6 +53,10 @@ export interface DeviceTaskExecutorOptions {
 	localAuthToken?: string;
 	cwd: string;
 	executionCwd?: string;
+	/** Bot 记忆目录：由承载设备的 dataDir 派生，使记忆工具与本轮执行绑定。 */
+	memoryRoot?: string;
+	/** 启动时预读的记忆块（常驻 + 目录 + 预取），单独注入为 device_memory 节。 */
+	memoryBlock?: string;
 	workspaceHandleId?: string;
 	workspaceCapability?: import("./task-workspace.js").TaskWorkspaceCapability;
 	executionMode?: "chat" | "code";
@@ -218,6 +222,8 @@ export function createDeviceTaskExecutor(options: DeviceTaskExecutorOptions) {
 				deviceId: task.deviceId,
 				taskId: task.id,
 				attemptId: task.attemptId,
+				memoryRoot: options.memoryRoot,
+				memoryBlock: options.memoryBlock,
 			});
 			attempted.add(key);
 			const lock = { origin: origin.origin, botId: task.botId, root };

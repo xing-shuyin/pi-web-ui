@@ -9,6 +9,8 @@ import { GroupWorkspaceActions } from "./GroupWorkspaceActions";
 import { GroupCanvasBinding } from "./GroupCanvasBinding";
 import { GroupBotPresets } from "./GroupBotPresets";
 import { GroupDrawer, type GroupDrawerTab } from "./GroupDrawer";
+import { useOverlayZIndex } from "../overlay-stack";
+import "./group-share.css";
 import type { GroupRouterConfig } from "./GroupRouterSettings";
 import { GroupSteerModal } from "./GroupSteerModal";
 import { appUrl } from "../base-url";
@@ -28,7 +30,7 @@ import {
 import { setActiveGroupRoomData } from "../group-active-context";
 
 type PersistentConversation = import("../device-group-messages").GroupBotConversation;
-type RouterGroupDetail = GroupDetail & { room: { router?: GroupRouterConfig } };
+type RouterGroupDetail = GroupDetail & { room: { router?: GroupRouterConfig; kind?: "group" | "direct" } };
 
 class GroupRequestError extends Error {
 	constructor(
@@ -103,6 +105,30 @@ function GroupRoom({
 	const [conversationError, setConversationError] = useState("");
 	const [drawerOpen, setDrawerOpen] = useState(false);
 	const [drawerTab, setDrawerTab] = useState<GroupDrawerTab>("deliveries");
+	/** 直聊房间（kind==="direct"）：没有黑板/路由/成员/画布，对应的头部入口与抽屉全部隐藏。 */
+	const direct = detail?.room.kind === "direct";
+	const [shareOpen, setShareOpen] = useState(false);
+	const [shareGroups, setShareGroups] = useState<{ id: string; name: string; botIds: string[] }[]>([]);
+	const [shareTarget, setShareTarget] = useState("");
+	const [shareMode, setShareMode] = useState<"as_forward" | "as_bot">("as_forward");
+	const [shareNote, setShareNote] = useState("");
+	const [shareBusy, setShareBusy] = useState(false);
+	const [shareNotice, setShareNotice] = useState("");
+	const shareKey = useRef<string>("");
+	const shareZIndex = useOverlayZIndex(shareOpen);
+	const openShare = useCallback(() => {
+		setShareOpen(true);
+		setShareNotice("");
+		shareKey.current = `share:${roomId}:${Date.now().toString(36)}`;
+		const controller = new AbortController();
+		void request<{ rooms: { id: string; name: string; botIds: string[] }[] }>("rooms", controller.signal)
+			.then((data) => {
+				const groups = (data.rooms ?? []).filter((room) => room.id !== roomId);
+				setShareGroups(groups);
+				setShareTarget((current) => current || groups[0]?.id || "");
+			})
+			.catch((cause) => setError(explain(cause)));
+	}, [roomId]);
 	const handleOpenDrawer = useCallback((tab: GroupDrawerTab) => {
 		setDrawerTab(tab);
 		setDrawerOpen(true);
@@ -292,6 +318,7 @@ function GroupRoom({
 		[uiActionSlots, uiSlots],
 	);
 	const members = devices.filter((d) => d.enabled !== false && detail?.room.botIds.includes(d.id));
+	const directBot = detail?.room.kind === "direct" ? members[0] : undefined;
 	const attentionCount = useMemo(
 		() => conversations.filter((conversation) => Boolean(groupAttention(conversation))).length,
 		[conversations],
@@ -456,7 +483,7 @@ function GroupRoom({
 						<span className="dg-brand-icon">⚡</span>
 						<strong className="dg-head-title">{detail?.room.name ?? (zh ? "联合开发群" : "Group Chat")}</strong>
 					</div>
-					{members.length > 0 && (
+					{members.length > 0 && !direct && (
 						<button
 							type="button"
 							className="dg-head-pill"
@@ -470,114 +497,126 @@ function GroupRoom({
 						</button>
 					)}
 				</div>
-				<div className="dg-head-nav">
-					<button
-						type="button"
-						className={`dg-nav-tab ${drawerOpen && drawerTab === "router" ? "active" : ""}`}
-						onClick={() => handleOpenDrawer("router")}
-						title={
-							detail?.room.router?.enabled
-								? `${detail.room.router.deviceId} · ${detail.room.router.model} · ${detail.room.router.thinkingLevel}`
-								: zh
-									? "未启用 · 沿用原主 Bot 协作"
-									: "Disabled · legacy primary Bot routing"
-						}
-					>
-						<span className="dg-nav-icon">🧭</span>
-						<span className="dg-nav-text">
-							AI Router · {detail?.room.router?.enabled ? (zh ? "已启用" : "On") : zh ? "未启用" : "Off"}
-						</span>
-					</button>
-					<button
-						type="button"
-						className={`dg-nav-tab ${drawerOpen && drawerTab === "work-items" ? "active" : ""}`}
-						onClick={() => handleOpenDrawer("work-items")}
-					>
-						<span className="dg-nav-icon">🗂</span>
-						<span className="dg-nav-text">{zh ? "工单与运行" : "Work items & runs"}</span>
-					</button>
-					<button
-						type="button"
-						className={`dg-nav-tab ${drawerOpen && drawerTab === "blackboard" ? "active" : ""}`}
-						onClick={() => handleOpenDrawer("blackboard")}
-						title={zh ? "打开群组共享共识黑板" : "Open Group Blackboard"}
-					>
-						<span className="dg-nav-icon">📋</span>
-						<span className="dg-nav-text">{zh ? "群黑板" : "Blackboard"}</span>
-						{detail?.room.blackboard?.version ? (
-							<span className="dg-nav-badge">v{detail.room.blackboard.version}</span>
-						) : null}
-					</button>
-					<button
-						type="button"
-						className={`dg-nav-tab ${drawerOpen && drawerTab === "deliveries" ? "active" : ""} ${attentionCount > 0 ? "has-attention" : ""}`}
-						onClick={() => handleOpenDrawer("deliveries")}
-						title={zh ? "打开交付与待办审查抽屉" : "Open Deliveries & Reviews"}
-					>
-						<span className="dg-nav-icon">📦</span>
-						<span className="dg-nav-text">{zh ? "交付与待办" : "Deliveries"}</span>
-						{attentionCount > 0 ? (
-							<span className="dg-nav-badge attention">{attentionCount}</span>
-						) : conversations.length > 0 ? (
-							<span className="dg-nav-badge">{conversations.length}</span>
-						) : null}
-					</button>
-					<button
-						type="button"
-						className={`dg-nav-tab ${drawerOpen && drawerTab === "transfers" ? "active" : ""}`}
-						onClick={() => handleOpenDrawer("transfers")}
-						title={zh ? "打开跨机大文件传输抽屉" : "Open Cross-Device File Transfers"}
-					>
-						<span className="dg-nav-icon">📁</span>
-						<span className="dg-nav-text">{zh ? "文件传输" : "Transfers"}</span>
-					</button>
-					<button
-						type="button"
-						className={`dg-nav-tab ${drawerOpen && drawerTab === "canvas" ? "active" : ""}`}
-						onClick={() => handleOpenDrawer("canvas")}
-						title={zh ? "打开群画布工作流抽屉" : "Open Group Canvas"}
-					>
-						<span className="dg-nav-icon">🎨</span>
-						<span className="dg-nav-text">{zh ? "群画布" : "Canvas"}</span>
-						{detail?.room.canvasBinding && <span className="dg-nav-dot active" />}
-					</button>
-					<button
-						type="button"
-						className={`dg-nav-tab ${drawerOpen && drawerTab === "presets" ? "active" : ""}`}
-						onClick={() => handleOpenDrawer("presets")}
-						title={zh ? "打开 Bot 预设与规则配置抽屉" : "Open Bot Presets"}
-					>
-						<span className="dg-nav-icon">🤖</span>
-						<span className="dg-nav-text">{zh ? "Bot 预设" : "Presets"}</span>
-					</button>
-					<button
-						type="button"
-						className={`dg-nav-tab ${drawerOpen && drawerTab === "bots" ? "active" : ""}`}
-						onClick={() => handleOpenDrawer("bots")}
-						title={zh ? "查看成员运行状态与授权工具" : "View Bot Status"}
-					>
-						<span className="dg-nav-icon">👥</span>
-						<span className="dg-nav-text">{zh ? "成员状态" : "Bots"}</span>
-					</button>
-					<button
-						type="button"
-						className={`dg-nav-tab ${drawerOpen && drawerTab === "webhooks" ? "active" : ""}`}
-						onClick={() => handleOpenDrawer("webhooks")}
-						title={zh ? "配置入站与出站 Webhook" : "Configure Incoming and Outgoing Webhooks"}
-					>
-						<span className="dg-nav-icon">🔗</span>
-						<span className="dg-nav-text">{zh ? "Webhook" : "Webhooks"}</span>
-						{detail?.room.webhooks && detail.room.webhooks.filter((w) => w.enabled).length > 0 && (
-							<span className="dg-nav-badge">{detail.room.webhooks.filter((w) => w.enabled).length}</span>
-						)}
-					</button>
-				</div>
+				{!direct && (
+					<div className="dg-head-nav">
+						<button
+							type="button"
+							className={`dg-nav-tab ${drawerOpen && drawerTab === "router" ? "active" : ""}`}
+							onClick={() => handleOpenDrawer("router")}
+							title={
+								detail?.room.router?.enabled
+									? `${detail.room.router.deviceId} · ${detail.room.router.model} · ${detail.room.router.thinkingLevel}`
+									: zh
+										? "未启用 · 沿用原主 Bot 协作"
+										: "Disabled · legacy primary Bot routing"
+							}
+						>
+							<span className="dg-nav-icon">🧭</span>
+							<span className="dg-nav-text">
+								AI Router · {detail?.room.router?.enabled ? (zh ? "已启用" : "On") : zh ? "未启用" : "Off"}
+							</span>
+						</button>
+						<button
+							type="button"
+							className={`dg-nav-tab ${drawerOpen && drawerTab === "work-items" ? "active" : ""}`}
+							onClick={() => handleOpenDrawer("work-items")}
+						>
+							<span className="dg-nav-icon">🗂</span>
+							<span className="dg-nav-text">{zh ? "工单与运行" : "Work items & runs"}</span>
+						</button>
+						<button
+							type="button"
+							className={`dg-nav-tab ${drawerOpen && drawerTab === "blackboard" ? "active" : ""}`}
+							onClick={() => handleOpenDrawer("blackboard")}
+							title={zh ? "打开群组共享共识黑板" : "Open Group Blackboard"}
+						>
+							<span className="dg-nav-icon">📋</span>
+							<span className="dg-nav-text">{zh ? "群黑板" : "Blackboard"}</span>
+							{detail?.room.blackboard?.version ? (
+								<span className="dg-nav-badge">v{detail.room.blackboard.version}</span>
+							) : null}
+						</button>
+						<button
+							type="button"
+							className={`dg-nav-tab ${drawerOpen && drawerTab === "deliveries" ? "active" : ""} ${attentionCount > 0 ? "has-attention" : ""}`}
+							onClick={() => handleOpenDrawer("deliveries")}
+							title={zh ? "打开交付与待办审查抽屉" : "Open Deliveries & Reviews"}
+						>
+							<span className="dg-nav-icon">📦</span>
+							<span className="dg-nav-text">{zh ? "交付与待办" : "Deliveries"}</span>
+							{attentionCount > 0 ? (
+								<span className="dg-nav-badge attention">{attentionCount}</span>
+							) : conversations.length > 0 ? (
+								<span className="dg-nav-badge">{conversations.length}</span>
+							) : null}
+						</button>
+						<button
+							type="button"
+							className={`dg-nav-tab ${drawerOpen && drawerTab === "transfers" ? "active" : ""}`}
+							onClick={() => handleOpenDrawer("transfers")}
+							title={zh ? "打开跨机大文件传输抽屉" : "Open Cross-Device File Transfers"}
+						>
+							<span className="dg-nav-icon">📁</span>
+							<span className="dg-nav-text">{zh ? "文件传输" : "Transfers"}</span>
+						</button>
+						<button
+							type="button"
+							className={`dg-nav-tab ${drawerOpen && drawerTab === "canvas" ? "active" : ""}`}
+							onClick={() => handleOpenDrawer("canvas")}
+							title={zh ? "打开群画布工作流抽屉" : "Open Group Canvas"}
+						>
+							<span className="dg-nav-icon">🎨</span>
+							<span className="dg-nav-text">{zh ? "群画布" : "Canvas"}</span>
+							{detail?.room.canvasBinding && <span className="dg-nav-dot active" />}
+						</button>
+						<button
+							type="button"
+							className={`dg-nav-tab ${drawerOpen && drawerTab === "presets" ? "active" : ""}`}
+							onClick={() => handleOpenDrawer("presets")}
+							title={zh ? "打开 Bot 预设与规则配置抽屉" : "Open Bot Presets"}
+						>
+							<span className="dg-nav-icon">🤖</span>
+							<span className="dg-nav-text">{zh ? "Bot 预设" : "Presets"}</span>
+						</button>
+						<button
+							type="button"
+							className={`dg-nav-tab ${drawerOpen && drawerTab === "bots" ? "active" : ""}`}
+							onClick={() => handleOpenDrawer("bots")}
+							title={zh ? "查看成员运行状态与授权工具" : "View Bot Status"}
+						>
+							<span className="dg-nav-icon">👥</span>
+							<span className="dg-nav-text">{zh ? "成员状态" : "Bots"}</span>
+						</button>
+						<button
+							type="button"
+							className={`dg-nav-tab ${drawerOpen && drawerTab === "webhooks" ? "active" : ""}`}
+							onClick={() => handleOpenDrawer("webhooks")}
+							title={zh ? "配置入站与出站 Webhook" : "Configure Incoming and Outgoing Webhooks"}
+						>
+							<span className="dg-nav-icon">🔗</span>
+							<span className="dg-nav-text">{zh ? "Webhook" : "Webhooks"}</span>
+							{detail?.room.webhooks && detail.room.webhooks.filter((w) => w.enabled).length > 0 && (
+								<span className="dg-nav-badge">{detail.room.webhooks.filter((w) => w.enabled).length}</span>
+							)}
+						</button>
+					</div>
+				)}
 				<div className="dg-head-actions">
 					{headerSlots.map((entry: UiSlotEntry) => (
 						<button key={entry.id} type="button" className="btn secondary" title={entry.label}>
 							{entry.label}
 						</button>
 					))}
+					{direct && directBot && (
+						<button
+							type="button"
+							className="btn dg-share-open"
+							title={zh ? "把这段私聊内容投递到群" : "Share this private chat into a group"}
+							onClick={openShare}
+						>
+							{zh ? "转发到群" : "Share to group"}
+						</button>
+					)}
 					{onBack && (
 						<button
 							type="button"
@@ -590,6 +629,11 @@ function GroupRoom({
 					)}
 				</div>
 			</div>
+			{shareNotice && (
+				<div className="dg-share-notice" role="status">
+					{shareNotice}
+				</div>
+			)}
 			{error && (
 				<div className="dg-error-banner" role="alert">
 					{error}
@@ -688,6 +732,17 @@ function GroupRoom({
 										{task.status === "waiting" && (
 											<span className="dg-task-waiting-badge">{zh ? "⏳ 等待中" : "⏳ Waiting"}</span>
 										)}
+										{task.status === "queued" && task.queuedReason && (
+											<span className="dg-task-waiting-badge" title={task.queuedReason}>
+												{task.blockReason === "bot_busy"
+													? zh
+														? "⏳ 排队"
+														: "⏳ Queued"
+													: zh
+														? "⏳ 等上一轮"
+														: "⏳ Behind turn"}
+											</span>
+										)}
 										{botPrefix && <strong className="dg-task-bot-prefix">{botPrefix}</strong>}
 										<span className="dg-task-title" title={task.text}>
 											{summary.length > 24 ? summary.slice(0, 24) + "..." : summary}
@@ -756,6 +811,124 @@ function GroupRoom({
 				);
 			})()}
 			<MessageList state={state} liveOutputs={emptyMap} toolStatuses={emptyMap} messageLabels={labels} readOnly />
+			{shareOpen && direct && directBot && (
+				<div
+					className="dg-share-backdrop"
+					role="dialog"
+					aria-modal="true"
+					aria-label={zh ? "转发到群" : "Share to group"}
+				>
+					<div className="dg-share-dialog">
+						<h3>{zh ? "转发到群" : "Share to group"}</h3>
+						{(() => {
+							const picked =
+								[...(detail?.messages ?? [])].reverse().find((message) => String(message.sender.type) === "bot") ??
+								detail?.messages?.at(-1);
+							const target = shareGroups.find((group) => group.id === shareTarget);
+							const canAsBot = Boolean(target?.botIds.includes(directBot.id));
+							return (
+								<>
+									<p className="dg-share-hint">
+										{zh
+											? `会把最近一条 ${directBot.name} 的回复（含来源标记）投递到群，不会触发群里的 Bot。`
+											: `Sends ${directBot.name}'s latest reply (with provenance) into a group; no Bot is triggered.`}
+									</p>
+									<label className="dg-share-field">
+										<span>{zh ? "目标群" : "Target group"}</span>
+										<select
+											value={shareTarget}
+											onChange={(event) => {
+												setShareTarget(event.target.value);
+												setShareMode("as_forward");
+											}}
+										>
+											{shareGroups.length === 0 && <option value="">{zh ? "还没有群组" : "No groups yet"}</option>}
+											{shareGroups.map((group) => (
+												<option key={group.id} value={group.id}>
+													{group.name}
+												</option>
+											))}
+										</select>
+									</label>
+									<fieldset className="dg-share-modes">
+										<label>
+											<input
+												type="radio"
+												name="share-mode"
+												checked={shareMode === "as_forward"}
+												onChange={() => setShareMode("as_forward")}
+											/>
+											<span>{zh ? "以我本人转发" : "Forward as me"}</span>
+										</label>
+										<label className={canAsBot ? "" : "is-disabled"}>
+											<input
+												type="radio"
+												name="share-mode"
+												disabled={!canAsBot}
+												checked={shareMode === "as_bot" && canAsBot}
+												onChange={() => setShareMode("as_bot")}
+											/>
+											<span>
+												{canAsBot
+													? zh
+														? `以 ${directBot.name} 身份发言`
+														: `Send as ${directBot.name}`
+													: zh
+														? "该群没有这个 Bot"
+														: "Bot is not in that group"}
+											</span>
+										</label>
+									</fieldset>
+									<label className="dg-share-field">
+										<span>{zh ? "附言（可选）" : "Note (optional)"}</span>
+										<textarea
+											value={shareNote}
+											maxLength={500}
+											rows={3}
+											placeholder={zh ? "为什么同步到群里" : "Why the group should see this"}
+											onChange={(event) => setShareNote(event.target.value)}
+										/>
+									</label>
+									<div className="dg-share-actions">
+										<button
+											type="button"
+											className="btn"
+											disabled={shareBusy}
+											onClick={() => {
+												if (!picked || !shareTarget) {
+													setError(zh ? "没有可投递的内容或目标群" : "Nothing to share or no target group");
+													return;
+												}
+												setShareBusy(true);
+												void request(`bots/${encodeURIComponent(directBot.id)}/share`, new AbortController().signal, {
+													sourceRoomId: roomId,
+													targetRoomId: shareTarget,
+													mode: shareMode === "as_bot" && canAsBot ? "as_bot" : "as_forward",
+													messageIds: [picked.id],
+													...(shareNote.trim() ? { note: shareNote.trim() } : {}),
+													idempotencyKey: shareKey.current,
+												})
+													.then(() => {
+														setShareOpen(false);
+														setShareNote("");
+														setShareNotice(zh ? "已投递到群" : "Shared to the group");
+													})
+													.catch((cause) => setError(explain(cause)))
+													.finally(() => setShareBusy(false));
+											}}
+										>
+											{shareBusy ? (zh ? "投递中…" : "Sharing…") : zh ? "投递" : "Share"}
+										</button>
+										<button type="button" className="btn secondary" onClick={() => setShareOpen(false)}>
+											{zh ? "取消" : "Cancel"}
+										</button>
+									</div>
+								</>
+							);
+						})()}
+					</div>
+				</div>
+			)}
 			{viewTaskId && <GroupTaskDetails roomId={roomId} taskId={viewTaskId} onClose={handleCloseDetails} />}
 			{steerTask && (
 				<GroupSteerModal
@@ -773,22 +946,24 @@ function GroupRoom({
 					}}
 				/>
 			)}
-			<GroupDrawer
-				isOpen={drawerOpen}
-				activeTab={drawerTab}
-				onClose={handleCloseDrawer}
-				onSelectTab={setDrawerTab}
-				roomId={roomId}
-				detail={detail}
-				devices={devices}
-				members={members}
-				conversations={conversations}
-				attentionCount={attentionCount}
-				disabled={!active || unavailable}
-				conversationError={conversationError}
-				onRefreshGroup={() => setRefresh((n) => n + 1)}
-				onRefreshConversations={() => setRefresh((n) => n + 1)}
-			/>
+			{!direct && (
+				<GroupDrawer
+					isOpen={drawerOpen}
+					activeTab={drawerTab}
+					onClose={handleCloseDrawer}
+					onSelectTab={setDrawerTab}
+					roomId={roomId}
+					detail={detail}
+					devices={devices}
+					members={members}
+					conversations={conversations}
+					attentionCount={attentionCount}
+					disabled={!active || unavailable}
+					conversationError={conversationError}
+					onRefreshGroup={() => setRefresh((n) => n + 1)}
+					onRefreshConversations={() => setRefresh((n) => n + 1)}
+				/>
+			)}
 			<ChatInput
 				groupDevices={members}
 				groupPrimaryBotName={

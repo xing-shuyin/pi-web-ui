@@ -17,6 +17,9 @@
  *   PI_CODING_AGENT_DIR  pi config dir (auth/models/skills) — passed to the SDK
  */
 import { botExecutionMessageAllowed } from "./device-center/bot-execution.js";
+import { createBotDraftStore, normalizeBotDraft } from "./device-center/bot-drafts.js";
+import { setAgentBotHost } from "./device-center/bot-creation-tool.js";
+import { startBotMemoryMaintenance } from "./device-center/bot-memory-scheduler.js";
 import { ALL_AGENT_TOOL_ENTRIES, effectiveDisabledAgentTools, isToolSupportedOnPlatform } from "./tool-manager.js";
 import "./patch-remote-catalog.js";
 import { existsSync, mkdirSync, readFileSync, readdirSync, statSync } from "node:fs";
@@ -995,10 +998,12 @@ app.get("/plugins-shared/*splat", (req, res) => {
 const RESTART_CHILD_ENV = "PI_WEB_RESTART_CHILD";
 const deviceDesktop = createDeviceDesktop({ app, dataDir: DATA_DIR, authorize: (req) => !AUTH_TOKEN || tokenOk(req) });
 const deviceBots = await createLocalBotRegistry(DATA_DIR);
+const deviceBotDrafts = createBotDraftStore(DATA_DIR);
 const deviceCenter = await installLocalDeviceCenter({
 	app,
 	dataDir: DATA_DIR,
 	bots: deviceBots,
+	botDrafts: deviceBotDrafts,
 	allowHosts: ALLOW_HOSTS,
 	lanAccess: deviceLanAccess,
 	botCatalog: {
@@ -1083,6 +1088,24 @@ const deviceCenter = await installLocalDeviceCenter({
 			},
 		};
 	},
+});
+
+// Bot 记忆的日常维护：24h 一轮，定时器按 ≤6h 分片（红线），进程退出不阻塞。
+const botMemoryMaintenance = startBotMemoryMaintenance({
+	dataDir: DATA_DIR,
+	bots: deviceBots,
+	onError: (botId, error) => console.warn(`[agent-bot] memory maintenance failed for ${botId}`, error),
+});
+void botMemoryMaintenance;
+
+// 一句话创建：模型只能写草案，落库由人在界面确认（见 bot-drafts.ts 的批准语义）。
+setAgentBotHost({
+	draft: async (input) => {
+		const allowed = new Set(ALL_AGENT_TOOL_ENTRIES.map((tool) => tool.name));
+		return deviceBotDrafts.create(normalizeBotDraft(input, allowed, "model"), "model");
+	},
+	list: () => deviceBotDrafts.list(),
+	cancel: (id) => deviceBotDrafts.discard(id),
 });
 const webDist = join(pkgRoot, "web", "dist");
 function webDistPath(): string {

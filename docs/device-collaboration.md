@@ -3,6 +3,7 @@
 > 服务端架构与部署链路见 [`device-center.md`](device-center.md)（Hub 与本机连接器、绑定与配对、部署）
 > 与 [`device-center-deployment.md`](device-center-deployment.md)；远程桌面实现细节见 [`device-desktop.md`](device-desktop.md)；
 > 分块文件同步细节见 [`device-file-sync.md`](device-file-sync.md)。
+> 与单个 Bot 的私聊（`kind: "direct"` 的房间）与 Bot 独立记忆见 [`agent-bot-design.md`](agent-bot-design.md)。
 > **本文只收录「改代码时必须遵守」的硬约束**（原 `AGENTS.md`「设备中心与跨设备协作」整段迁入）。
 
 ## 1. 设备中心入口与本机 Hub

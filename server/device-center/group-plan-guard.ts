@@ -81,6 +81,17 @@ export function checkGroupTaskPlanGuard(
 		};
 	}
 
+	if (name === "memory") {
+		const p = params && typeof params === "object" ? (params as Record<string, unknown>) : {};
+		const op = typeof p.op === "string" ? p.op.trim().toLowerCase() : "";
+		if (["search", "read", "list"].includes(op)) return undefined;
+		return {
+			kind: "write-tool",
+			reason: `群计划模式：禁止 memory(op="${op || "unknown"}")。计划阶段只能检索记忆，不能写入。`,
+			reasonEn: `Group plan mode: memory(op="${op || "unknown"}") is prohibited. Planning may only read memory.`,
+		};
+	}
+
 	if (BASH_TOOL_NAMES.has(name)) {
 		const p = params && typeof params === "object" ? (params as Record<string, unknown>) : {};
 		const cmd = typeof p.command === "string" ? p.command : typeof p.cmd === "string" ? p.cmd : "";

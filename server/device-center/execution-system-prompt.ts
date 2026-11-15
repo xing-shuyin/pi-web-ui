@@ -11,9 +11,11 @@ interface PromptEvent {
 interface ExecutionPrompt {
 	readonly bot: { readonly systemPrompt?: string };
 	readonly instructions: string;
+	/** 启动时装载的记忆块（常驻 + 目录 + 预取），单独成节，与平台规则分开。 */
+	readonly memoryBlock?: string;
 }
 
-const ownedSections = ["device_bot", "device_execution"] as const;
+const ownedSections = ["device_bot", "device_execution", "device_memory"] as const;
 
 export function prepareBotExecutionSystemPrompt(event: PromptEvent, execution?: ExecutionPrompt) {
 	const { pre, core, post } = splitAgentStartPrompt(event);
@@ -21,6 +23,7 @@ export function prepareBotExecutionSystemPrompt(event: PromptEvent, execution?: 
 	const sections: Record<string, string> = {};
 	if (execution.bot.systemPrompt?.trim()) sections.device_bot = execution.bot.systemPrompt.trim();
 	if (execution.instructions.trim()) sections.device_execution = execution.instructions.trim();
+	if (execution.memoryBlock?.trim()) sections.device_memory = execution.memoryBlock.trim();
 	if (event.systemPromptOptions) {
 		const target = (event.systemPromptOptions.sections ??= {});
 		for (const name of ownedSections) delete target[name];

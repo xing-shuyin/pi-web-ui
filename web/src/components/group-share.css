@@ -1,0 +1,103 @@
+/* 私聊 → 群 的投递对话框（只在直聊房间出现）。独立文件避免与主题基线 styles.css 并行改动冲突。 */
+
+.dg-share-open {
+	font-size: 12px;
+}
+
+.dg-share-notice {
+	margin: 0 12px 6px;
+	padding: 6px 10px;
+	border-radius: 8px;
+	font-size: 12px;
+	color: var(--accent-contrast, #0b0d12);
+	background: var(--accent-soft, rgba(120, 160, 255, 0.18));
+	border: 1px solid var(--accent, transparent);
+	overflow-wrap: anywhere;
+}
+
+.dg-share-backdrop {
+	position: fixed;
+	inset: 0;
+	background: rgba(0, 0, 0, 0.45);
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	padding: 16px;
+}
+
+.dg-share-dialog {
+	width: min(440px, 100%);
+	max-height: min(80vh, 620px);
+	overflow: auto;
+	background: var(--bg-elev, var(--card-bg, #171a21));
+	color: var(--text);
+	border: 1px solid var(--border);
+	border-radius: 12px;
+	padding: 16px;
+	display: flex;
+	flex-direction: column;
+	gap: 10px;
+	box-shadow: 0 18px 48px rgba(0, 0, 0, 0.38);
+}
+
+.dg-share-dialog h3 {
+	margin: 0;
+	font-size: 15px;
+}
+
+.dg-share-hint {
+	margin: 0;
+	font-size: 12px;
+	line-height: 1.5;
+	color: var(--text-dim);
+	overflow-wrap: anywhere;
+}
+
+.dg-share-field {
+	display: flex;
+	flex-direction: column;
+	gap: 4px;
+	font-size: 12px;
+	color: var(--text-dim);
+}
+
+.dg-share-field select,
+.dg-share-field textarea {
+	width: 100%;
+	background: var(--bg-elev2, rgba(127, 127, 127, 0.1));
+	color: var(--text);
+	border: 1px solid var(--border);
+	border-radius: 8px;
+	padding: 6px 8px;
+	font-size: 12.5px;
+	font-family: inherit;
+	resize: vertical;
+}
+
+.dg-share-modes {
+	border: none;
+	padding: 0;
+	margin: 0;
+	display: flex;
+	flex-direction: column;
+	gap: 4px;
+}
+
+.dg-share-modes label {
+	display: inline-flex;
+	align-items: center;
+	gap: 6px;
+	font-size: 12.5px;
+	color: var(--text);
+}
+
+.dg-share-modes label.is-disabled {
+	color: var(--text-dim);
+}
+
+.dg-share-actions {
+	display: flex;
+	gap: 8px;
+	justify-content: flex-end;
+	margin-top: 2px;
+}
