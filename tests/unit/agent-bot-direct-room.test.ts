@@ -30,7 +30,7 @@ describe("直聊房间 = 退化群组（单 Bot、无群能力、id 幂等）", 
 	it("id 由 (账号, Bot) 确定性派生：重复开启不会长出两个房间", () => {
 		expect(directRoomId(ACCOUNT, BOT)).toBe(directRoomId(ACCOUNT, BOT));
 		expect(directRoomId(ACCOUNT, BOT)).not.toBe(directRoomId(ACCOUNT, "bot-2"));
-		expect(directRoomId(ACCOUNT, BOT).startsWith("direct:")).toBe(true);
+		expect(directRoomId(ACCOUNT, BOT).startsWith("direct-")).toBe(true);
 		const draft = { rooms: [] as Room[] };
 		const first = createDirectRoom(draft, { accountId: ACCOUNT, botId: BOT, botName: "Atlas" });
 		const second = createDirectRoom(draft, { accountId: ACCOUNT, botId: BOT, botName: "Atlas" });
@@ -53,7 +53,7 @@ describe("直聊房间 = 退化群组（单 Bot、无群能力、id 幂等）", 
 		const codeOf = (patch: Partial<Room>) => directRoomViolation({ ...base, ...patch })?.code;
 		expect(codeOf({ botIds: [BOT, "bot-2"] })).toBe("DIRECT_ROOM_MEMBERS");
 		expect(codeOf({ primaryBotId: undefined })).toBe("DIRECT_ROOM_PRIMARY");
-		expect(codeOf({ id: "direct:deadbeef" })).toBe("DIRECT_ROOM_ID");
+		expect(codeOf({ id: "direct-deadbeef" })).toBe("DIRECT_ROOM_ID");
 		expect(codeOf({ router: { enabled: true } as Room["router"] })).toBe("DIRECT_ROOM_ROUTER");
 		expect(codeOf({ blackboard: { version: 1 } as Room["blackboard"] })).toBe("DIRECT_ROOM_BLACKBOARD");
 		expect(codeOf({ webhooks: [{}] as Room["webhooks"] })).toBe("DIRECT_ROOM_WEBHOOKS");

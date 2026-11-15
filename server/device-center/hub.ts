@@ -335,7 +335,7 @@ export async function createDeviceHub(options: DeviceHubOptions) {
 					suffix === "/system/upgrade" ||
 					conversationRoute ||
 					webhookRoute ||
-					/^\/bots\/[^/]+\/direct-room$/.test(suffix) ||
+					/^\/bots\/[^/]+\/(?:direct-room|share)$/.test(suffix) ||
 					/^\/rooms\/[^/]+\/(messages|rename|members|clear|delete|interactions|canvas|blackboard(?:\/sections\/[^/]+)?)$/.test(
 						suffix,
 					) ||

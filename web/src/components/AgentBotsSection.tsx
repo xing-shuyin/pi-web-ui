@@ -138,9 +138,13 @@ export function AgentBotsSection({
 		const refresh = () => void load();
 		window.addEventListener(DEVICE_GROUPS_CHANGED, refresh);
 		window.addEventListener("pi-web-ui:device-bots-changed", refresh);
+		// 草案由主对话里的 agent_bot 工具产生（没有前端事件），这里低频轮询兜底：
+		// 5s 一次只读本地文件，比让用户"刷新页面才看到确认卡"更合理。
+		const timer = window.setInterval(refresh, 5000);
 		return () => {
 			window.removeEventListener(DEVICE_GROUPS_CHANGED, refresh);
 			window.removeEventListener("pi-web-ui:device-bots-changed", refresh);
+			window.clearInterval(timer);
 		};
 	}, [active, load]);
 

@@ -1,10 +1,11 @@
 import { afterEach, describe, expect, it } from "vitest";
-import { mkdtemp, rm } from "node:fs/promises";
+import { mkdtemp, readFile, rm } from "node:fs/promises";
 import { request as httpRequest } from "node:http";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { createDeviceHub } from "../../server/device-center/hub.js";
 import { directRoomId } from "../../server/device-center/direct-rooms.js";
+import { readPersistedHub } from "../../server/device-center/store.js";
 import { rankBotQueue } from "../../server/device-center/bot-queue.js";
 
 /**
@@ -101,10 +102,15 @@ async function fixture(publicUrl = "https://hub.test") {
 			"PUT",
 		);
 		expect(registered.status).toBe(200);
-		return { botId, deviceId: result.body.deviceId as string, credential: result.body.credential as string };
+		return {
+			botId,
+			deviceId: result.body.deviceId as string,
+			credential: result.body.credential as string,
+			uiCredential: result.body.uiCredential as string,
+		};
 	}
 
-	return { hub, request, pair, delivered };
+	return { hub, request, pair, delivered, dataDir };
 }
 
 async function login(f: Awaited<ReturnType<typeof fixture>>, username = "alice") {
@@ -128,7 +134,7 @@ describe("直聊房间 HTTP 契约", () => {
 
 		const again = await f.request(`/api/bots/${bot.botId}/direct-room`, {}, account.cookie);
 		expect(again.body.room.id).toBe(created.body.room.id);
-		expect(created.body.room.id).toContain("direct:");
+		expect(created.body.room.id).toContain("direct-");
 
 		const groups = await f.request("/api/rooms", undefined, account.cookie);
 		expect(groups.body.rooms).toHaveLength(0);
@@ -429,6 +435,64 @@ describe("直聊房间 HTTP 契约", () => {
 			{ Authorization: `Bearer ${bot.credential}`, "X-Device-Id": bot.deviceId },
 		);
 		expect(asDevice.status).toBe(404);
+	});
+
+	it("浏览器侧走 device-user 代理：开直聊、发私聊消息、再投递到群", async () => {
+		const f = await fixture();
+		const account = await login(f);
+		const bot = await f.pair(account.cookie, "Atlas");
+		// 浏览器用的是 device-user 前缀 + UI 凭证 + X-Device-Id，不是账号 Cookie。
+		const uiHeaders = { Authorization: `Bearer ${bot.uiCredential}`, "X-Device-Id": bot.deviceId };
+		const room = await f.request(`/api/device-user/bots/${bot.botId}/direct-room`, {}, "", uiHeaders);
+		expect(room.status).toBe(201);
+		const direct = room.body.room.id;
+
+		const message = await f.request(
+			`/api/device-user/rooms/${direct}/messages`,
+			{ text: "私聊里的结论", idempotencyKey: "ui-1" },
+			"",
+			uiHeaders,
+		);
+		expect(message.status).toBe(200);
+
+		const group = await f.request(
+			"/api/rooms",
+			{ name: "Team", botIds: [bot.botId], primaryBotId: bot.botId },
+			account.cookie,
+		);
+		const shared = await f.request(
+			`/api/device-user/bots/${bot.botId}/share`,
+			{
+				sourceRoomId: direct,
+				targetRoomId: group.body.room.id,
+				mode: "as_bot",
+				messageIds: [message.body.message.id],
+				idempotencyKey: "ui-share-1",
+			},
+			"",
+			uiHeaders,
+		);
+		expect(shared.status).toBe(200);
+		expect(shared.body.message.sender).toMatchObject({ type: "bot", id: bot.botId });
+		expect(shared.body.message.sharedFrom.mode).toBe("as_bot");
+	});
+
+	it("直聊消息真的落盘：分区日志里有，重开 store 能读回来", async () => {
+		const f = await fixture();
+		const account = await login(f);
+		const bot = await f.pair(account.cookie, "Atlas");
+		const room = (await f.request(`/api/bots/${bot.botId}/direct-room`, {}, account.cookie)).body.room;
+		await f.request(
+			`/api/rooms/${room.id}/messages`,
+			{ text: "持久化检查", idempotencyKey: "persist-1" },
+			account.cookie,
+		);
+
+		// 房间 id 必须是合法分区名，日志文件才会真的存在（冒号会让写入被静默跳过）。
+		const partition = join(f.dataDir, "hub-log", "messages", `${room.id}.jsonl`);
+		expect(await readFile(partition, "utf8")).toContain("持久化检查");
+		const persisted = await readPersistedHub(f.dataDir);
+		expect(persisted.messages.some((message) => message.text === "持久化检查")).toBe(true);
 	});
 
 	it("不存在的 Bot 不会建出房间", async () => {

@@ -14,7 +14,14 @@ import type { Room } from "./store.js";
  * id 由 (accountId, botId) 确定性派生：重复"开始私聊"天然幂等，不会长出两个房间。
  */
 
-export const DIRECT_ROOM_ID_PREFIX = "direct:";
+/**
+ * 直聊房间 id 前缀。
+ *
+ * 用 `direct-` 而不是 `direct:`：房间 id 会直接成为 Hub 分区日志的文件名
+ * （`server/device-center/partition-log.ts` 只接受 `[A-Za-z0-9_-]`，且 Windows 不允许 `:`），
+ * 带冒号的 id 会让直聊的消息/任务**写不进分区日志**，重启后丢失。
+ */
+export const DIRECT_ROOM_ID_PREFIX = "direct-";
 
 const DIRECT_ROOM_HASH_LENGTH = 24;
 

@@ -92,7 +92,11 @@ export function BotMemoryDialog({ botId, botName, onClose }: { botId: string; bo
 			const url = URL.createObjectURL(blob);
 			const anchor = document.createElement("a");
 			anchor.href = url;
-			anchor.download = `${botName.replace(/[^\w.-]+/g, "-") || "bot"}-memory.md`;
+			const slug = botName
+				.replace(/[^\w.-]+/g, "-")
+				.replace(/^-+|-+$/g, "")
+				.slice(0, 40);
+			anchor.download = `${slug || "bot"}-memory.md`;
 			anchor.click();
 			URL.revokeObjectURL(url);
 			setNotice(zh ? "已导出 Markdown" : "Exported Markdown");
