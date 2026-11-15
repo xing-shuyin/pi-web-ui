@@ -1,3 +1,5 @@
+[English](./deployment.en.md) · **简体中文** · [繁體中文](./deployment.zh-TW.md)
+
 # 部署
 
 pi-web-ui 是纯 Web 服务（Node + Express + WebSocket）；另有 **Electron 桌面壳**（`desktop/`，见 `desktop/README.md`）—— 随机空闲口起同一个 server + BrowserWindow，网页版零改动，三平台安装包（Windows/macOS/Linux）随 GitHub Release 发布（CI 出包，当前未签名）。

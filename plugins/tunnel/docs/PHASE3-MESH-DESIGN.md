@@ -1,3 +1,5 @@
+[English](./PHASE3-MESH-DESIGN.en.md) · **简体中文** · [繁體中文](./PHASE3-MESH-DESIGN.zh-TW.md)
+
 # pi-tunnel Phase 3 设计：pi_messenger 真 mesh 接入
 
 > 状态：**设计稿待拍板**（先设计后动工，2026-10-24）

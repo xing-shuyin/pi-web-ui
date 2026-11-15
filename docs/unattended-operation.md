@@ -1,3 +1,5 @@
+[English](./unattended-operation.en.md) · **简体中文** · [繁體中文](./unattended-operation.zh-TW.md)
+
 # 无人值守运行（Headless / Always-On）
 
 面向「**不打开 Web 界面也要能干活**」的场景：机房、容器、树莓派、开机自启的 systemd/launchd 服务，

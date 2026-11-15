@@ -1,3 +1,5 @@
+[English](./architecture-system-prompt.en.md) · **简体中文** · [繁體中文](./architecture-system-prompt.zh-TW.md)
+
 # 系统提示词组成与组合模板（compose）
 
 > 本文档说明 SDK（`@earendil-works/pi-coding-agent`）如何组装最终发给模型的系统提示词，

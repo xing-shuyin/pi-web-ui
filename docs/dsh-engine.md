@@ -1,3 +1,5 @@
+[English](./dsh-engine.en.md) · **简体中文** · [繁體中文](./dsh-engine.zh-TW.md)
+
 # pi-web-ui × DeepSeek Harness（dsh）双引擎改造 —— 工作交接文档
 
 > 本文档是**跨对话交接**用：记录已定决策、已完成工作、进行中/受阻状态、剩余计划与所有环境事实。

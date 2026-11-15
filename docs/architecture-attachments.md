@@ -1,3 +1,5 @@
+[English](./architecture-attachments.en.md) · **简体中文** · [繁體中文](./architecture-attachments.zh-TW.md)
+
 # 附件、图片与文件处理
 
 > 覆盖附件模式、图片问答、视觉桥、文件上传/下载/预览协议。

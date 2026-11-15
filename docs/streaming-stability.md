@@ -1,3 +1,5 @@
+[English](./streaming-stability.en.md) · **简体中文** · [繁體中文](./streaming-stability.zh-TW.md)
+
 # 流式消息稳定性约束
 
 流式内容变化需要重新渲染；稳定性要求是已有内容不因身份交接而卸载、重置状态或移动用户阅读位置。

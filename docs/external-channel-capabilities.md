@@ -1,3 +1,5 @@
+[English](./external-channel-capabilities.en.md) · **简体中文** · [繁體中文](./external-channel-capabilities.zh-TW.md)
+
 # 外部消息渠道能力与使用说明
 
 覆盖微信 iLink、QQ、企业微信、飞书、钉钉、Telegram、Discord、Slack、Matrix、WhatsApp、iMessage 共 11 个渠道。各平台的 API 权限、账号资格与格式限制仍然适用。

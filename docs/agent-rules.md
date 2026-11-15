@@ -1,3 +1,5 @@
+[English](./agent-rules.en.md) · **简体中文** · [繁體中文](./agent-rules.zh-TW.md)
+
 # 编码红线细则（原 AGENTS.md §9 全文）
 
 > `AGENTS.md` 只保留「功能 → 事实源文件 → 文档」的映射与一行红线索引；**细则全在这里**。

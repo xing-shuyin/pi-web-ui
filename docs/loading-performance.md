@@ -1,3 +1,5 @@
+[English](./loading-performance.en.md) · **简体中文** · [繁體中文](./loading-performance.zh-TW.md)
+
 # 资源与历史对话加载优化
 
 ## 首屏按需加载

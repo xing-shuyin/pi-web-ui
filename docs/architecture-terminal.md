@@ -1,3 +1,5 @@
+[English](./architecture-terminal.en.md) · **简体中文** · [繁體中文](./architecture-terminal.zh-TW.md)
+
 # 终端架构
 
 > 覆盖 PTY 管理、原生 CLI 工作台、按键编码、输出合并、SCM git 查询、活力检测、终端接管 bash 等。

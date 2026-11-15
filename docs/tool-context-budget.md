@@ -1,3 +1,5 @@
+[English](./tool-context-budget.en.md) · **简体中文** · [繁體中文](./tool-context-budget.zh-TW.md)
+
 # 工具上下文预算（tool context budget）
 
 > 模型每轮都要吞下「全部活跃工具」的名字 + 完整参数 schema。工具一多，这是几万字符的

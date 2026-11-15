@@ -1,3 +1,5 @@
+[English](./README.en.md) · **简体中文** · [繁體中文](./README.zh-TW.md)
+
 # 繁體中文語言包產生工具（zh-TW / zh-Hant / zh-HK）
 
 `locales/zh-TW.json`、`locales/zh-Hant.json` 與 `locales/zh-HK.json` 由 `web/src/i18n/messages/<module>/zh.json` 合併後轉換產生。所有工具透過 `scripts/lib/i18n-catalog.mjs` 讀取來源，不載入 React 或執行 TSX。`core` 在先，其餘模組依名稱排序；同模組已翻譯的 `<locale>.json` 優先覆蓋產生結果的同名 key：

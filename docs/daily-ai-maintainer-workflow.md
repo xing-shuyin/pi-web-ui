@@ -1,3 +1,5 @@
+[English](./daily-ai-maintainer-workflow.en.md) · **简体中文** · [繁體中文](./daily-ai-maintainer-workflow.zh-TW.md)
+
 # 每日 AI 仓库维护工作流
 
 每天运行只能处理运行期间获取到的反馈；需要接近实时的响应时，应另配事件触发或提高调度频率，并共用同一把执行锁。

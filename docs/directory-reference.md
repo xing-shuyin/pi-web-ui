@@ -1,3 +1,5 @@
+[English](./directory-reference.en.md) · **简体中文** · [繁體中文](./directory-reference.zh-TW.md)
+
 # 目录树参考（directory-reference）
 
 > 来源：2026-09 精简前的 `AGENTS.md` §3 全文（备份见 `AGENTS.md.bak`）＋ 之后新增文件的补齐。

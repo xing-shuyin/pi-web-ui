@@ -1,3 +1,5 @@
+[English](./README.en.md) · **简体中文** · [繁體中文](./README.zh-TW.md)
+
 # pm2-manager · 进程管家
 
 pm2 **安装 / 管理 / 卸载一体**：没装 pm2 时面板一键安装；装好后面板直接起新应用

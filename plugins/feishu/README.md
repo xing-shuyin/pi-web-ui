@@ -1,3 +1,5 @@
+[English](./README.en.md) · **简体中文** · [繁體中文](./README.zh-TW.md)
+
 # 🐦 feishu —— pi-web-ui 飞书工作台插件
 
 在 pi-web-ui 界面里提供一个完整的飞书 / Lark 工作台（顶栏 🐦 飞书 标签页）：

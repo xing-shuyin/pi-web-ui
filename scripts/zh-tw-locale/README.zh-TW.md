@@ -1,0 +1,54 @@
+[English](./README.en.md) · [简体中文](./README.md) · **繁體中文**
+
+# 繁體中文語言包產生工具（zh-TW / zh-Hant / zh-HK）
+
+`locales/zh-TW.json`、`locales/zh-Hant.json` 與 `locales/zh-HK.json` 由 `web/src/i18n/messages/<module>/zh.json` 合併後轉換產生。所有工具透過 `scripts/lib/i18n-catalog.mjs` 讀取來源，不載入 React 或執行 TSX。`core` 在先，其餘模組依名稱排序；同模組已翻譯的 `<locale>.json` 優先覆蓋產生結果的同名 key：
+
+- **zh-TW（臺灣繁體）**：OpenCC `cn → twp`（臺灣詞彙）→ `glossary.mjs` 臺灣用語規則 → `manual.json` 逐 key 修正。
+- **zh-Hant（通用繁體）**：OpenCC `cn → t`（通用字形）→ 標點符號正規化。
+- **zh-HK（香港繁體）**：OpenCC `cn → hk`（香港字形）→ 香港常見用語對齊（如伺服器、終端機、登入、滑鼠等）→ 標點符號正規化。
+
+| 檔案             | 用途                                                                       |
+| ---------------- | -------------------------------------------------------------------------- |
+| `build-all.mjs`  | **一鍵產生全部三個繁中語言包**（`zh-TW`、`zh-Hant`、`zh-HK`）              |
+| `dump-zh.mjs`    | 傾印 `zh` / `en` 字典（保留 key 順序）                                     |
+| `convert.mjs`    | 簡中 → 臺灣繁中（OpenCC + 詞彙規則 + 手動修正）                            |
+| `glossary.mjs`   | 臺灣用語規則：`pre`（OpenCC 前）、`post`（OpenCC 後）、`punct`（標點）     |
+| `manual.json`    | 逐 key 覆寫：字串＝整句取代；`[[from, to], …]`＝區域性取代（找不到會報錯） |
+| `verify.mjs`     | 驗證 key 順序、佔位符、殘留簡體字、重複詞、停用詞                          |
+| `build-pack.mjs` | 寫出 `locales/<code>.json`（version 預設取 `package.json`）                |
+| `opencc.mjs`     | 從 `OPENCC_DIR` 載入 `opencc-js`                                           |
+
+## 用法
+
+推薦直接使用專案統一指令：
+
+```bash
+npm run i18n:sync
+```
+
+`npm run i18n:sync`（`scripts/sync-locales.mjs`）是專案唯一標準的語言包同步器，會呼叫本目錄的 `opencc.mjs`、`glossary.mjs` 與 `manual.json`，並同步全量 12 個語言包。
+
+若需要 OpenCC 高精度轉換（避免純規則回退），可先安裝 `opencc-js`（若全域或環境中未安裝）：
+
+macOS／Linux：
+
+```bash
+export OPENCC_DIR="${TMPDIR:-/tmp}/zhtw-deps"
+npm i --prefix "$OPENCC_DIR" opencc-js
+npm run i18n:sync
+```
+
+Windows（PowerShell）：
+
+```powershell
+$env:OPENCC_DIR = Join-Path $env:TEMP "zhtw-deps"
+npm i --prefix $env:OPENCC_DIR opencc-js
+npm run i18n:sync
+```
+
+`verify.mjs` 的「可能殘留簡體」是提示，不是錯誤：`核准`（準）、`幹擾`（幹）、`侷限`（局）在臺灣都是正確用法。
+
+簡中新增 key 後，重跑 `npm run i18n:sync` 即可同步；已有平鋪譯文會保留，已翻譯的模組來源則會覆蓋同名 key。個別修正可寫進模組 `<locale>.json`、`manual.json` 或 `glossary.mjs`。模組譯文的 key 集合與佔位符必須和 zh 一致，zh/en 順序也須一致；重複 key 會在合併前報錯。
+
+單獨轉換流程可用 `node scripts/zh-tw-locale/dump-zh.mjs <repo> <zh.json> <en.json>` 匯出合併字典，再執行 `convert.mjs` 與 `build-pack.mjs`。`build-pack.mjs` 也會套用模組譯文並保留現有 `serverStrings`。

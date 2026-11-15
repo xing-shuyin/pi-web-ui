@@ -35,7 +35,9 @@ function relativeLinks(markdown: string): { target: string; anchor?: string }[] 
 	return out;
 }
 
-const docFiles = readdirSync(docsDir).filter((name) => name.endsWith(".md"));
+// 语言版本（文件名.en.md / .zh-CN.md / .zh-TW.md）由原稿顶部的语言切换器互相链接，不进总索引。
+const LANG_VARIANT = /\.(en|zh-CN|zh-TW)\.md$/;
+const docFiles = readdirSync(docsDir).filter((name) => name.endsWith(".md") && !LANG_VARIANT.test(name));
 
 describe("docs/README.md 是完整的文档总索引", () => {
 	it("覆盖 docs/ 下所有 Markdown 文档", () => {

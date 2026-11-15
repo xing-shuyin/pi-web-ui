@@ -1,3 +1,5 @@
+[English](./README.en.md) · **简体中文** · [繁體中文](./README.zh-TW.md)
+
 # 📝 vscode-editor —— pi-web-ui 编辑器 + SSH 插件（Remote-SSH）
 
 在 pi-web-ui 界面里提供一个类 VSCode 的工作台视图：

@@ -1,3 +1,5 @@
+[English](./README.en.md) · **简体中文** · [繁體中文](./README.zh-TW.md)
+
 # 📬 demo-mailbox —— 插件开发示例
 
 pi-web-ui 可选界面组件的**最小可运行示例**：演示「服务端入口 index.mjs +

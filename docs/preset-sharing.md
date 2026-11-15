@@ -1,3 +1,5 @@
+[English](./preset-sharing.en.md) · **简体中文** · [繁體中文](./preset-sharing.zh-TW.md)
+
 # 预设分享（导入 / 导出 / 社区共享仓库）
 
 > 代码：`server/preset-share.ts`（纯逻辑 + 编排）、`server/settings-service.ts`（port 适配）、

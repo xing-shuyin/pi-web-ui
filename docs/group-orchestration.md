@@ -1,3 +1,5 @@
+[English](./group-orchestration.en.md) · **简体中文** · [繁體中文](./group-orchestration.zh-TW.md)
+
 # 群组独立 AI Router 与 Superagent
 
 群组 AI Router 负责理解消息、选择成员 Bot 和维护工单；Bot 负责在自己的设备、工作区和执行约束下完成任务。Superagent 0.1.3 是 GitHub / 飞书的内置渠道模块：验签、转换事件和回写原线程，模型推理、任务执行和持久调度均由宿主提供。

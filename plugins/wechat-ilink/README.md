@@ -1,3 +1,5 @@
+[English](./README.en.md) · **简体中文** · [繁體中文](./README.zh-TW.md)
+
 # 微信通道（wechat-ilink）
 
 微信扫码登录，直连微信 ilink 后端（`https://ilinkai.weixin.qq.com`），协议与

@@ -1,3 +1,5 @@
+[English](./README.en.md) · **简体中文** · [繁體中文](./README.zh-TW.md)
+
 # Discord 机器人与工作台 (Discord Plugin)
 
 > Discord Bot 官方 Gateway WebSocket 出站长连接双工对话插件，支持双向会话对话（零公网 IP / 免反代）、结构感知 Markdown 智能分块、白名单安全准入与消息推送。零外部依赖（Node 内建 fetch + node:crypto + 全局 WebSocket）。

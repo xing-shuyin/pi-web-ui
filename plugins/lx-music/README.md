@@ -1,3 +1,5 @@
+[English](./README.en.md) · **简体中文** · [繁體中文](./README.zh-TW.md)
+
 # 洛雪音乐 (LX Music) 界面插件
 
 一个无缝嵌入 `pi-web-ui` 的全功能专业音乐播放器插件。

@@ -1,3 +1,5 @@
+[English](./AGENTS.en.md) · **简体中文** · [繁體中文](./AGENTS.zh-TW.md)
+
 <!-- prettier-ignore-start -->
 # AGENTS.md — pi-web-ui 关键功能 → 事实源 → 文档
 

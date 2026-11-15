@@ -1,3 +1,5 @@
+[English](./goal-conversation-design.en.md) · **简体中文** · [繁體中文](./goal-conversation-design.zh-TW.md)
+
 # 目标模式 2.0 设计：把「目标审查」变成对话
 
 > **状态**：**已实施，且只剩一条路径**。目标模式 2.0 = 服务端驱动 + 执行对话干活 + **当前对话当审查者**（本文的 Plan A，下文简称「执行对话模式」）。v1 的隐藏隔离审查会话与自治标记路径（`runGoalReview` / `isAutonomous` / `GOAL_COMPLETION_RE`）已按产品决策**删除**；Plan B（审查者=角色子代理）与 `reviewMode` 开关**不再实现**。实施细节与偏差见 §11。
