@@ -7,11 +7,15 @@ import { LanguageProvider } from "../../web/src/i18n";
 import type { GroupBotConversation } from "../../web/src/device-group-messages";
 import type { DeviceDelivery, DeviceReview } from "../../web/src/types";
 
-vi.mock("../../web/src/i18n", () => ({
-	LanguageProvider: ({ children }: { children: import("react").ReactNode }) => children,
-	useI18n: () => ({ locale: "en" }),
-	isZhLocale: (locale: string) => locale.startsWith("zh"),
-}));
+vi.mock("../../web/src/i18n", async (importOriginal) => {
+	const actual = await importOriginal<typeof import("../../web/src/i18n")>();
+	return {
+		...actual,
+		LanguageProvider: ({ children }: { children: import("react").ReactNode }) => children,
+		useI18n: () => ({ locale: "en" }),
+		isZhLocale: (locale: string) => locale.startsWith("zh"),
+	};
+});
 
 const delivery: DeviceDelivery = {
 	id: "delivery-v2",

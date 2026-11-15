@@ -1,7 +1,8 @@
 import { useEffect, useRef, useState } from "react";
 import { appUrl } from "../base-url";
 import { withToken } from "../auth-token";
-import { isZhLocale, useI18n } from "../i18n";
+import { useT } from "../i18n";
+import type { MessageKey } from "../i18n/catalog";
 import type { GroupTask } from "../device-group-messages";
 
 type WorkStatus = "open" | "running" | "waiting" | "blocked" | "completed" | "cancelled";
@@ -42,6 +43,17 @@ function mergeWorkItems(previous: WorkItem[], incoming: WorkItem[]) {
 	}
 	return [...merged.values()].sort((a, b) => (b.createdAt ?? 0) - (a.createdAt ?? 0) || b.id.localeCompare(a.id));
 }
+const WORK_ITEM_STATUS_KEYS: Record<string, MessageKey> = {
+	open: "groupWorkItemsStatusOpen",
+	queued: "groupWorkItemsStatusQueued",
+	running: "groupWorkItemsStatusRunning",
+	waiting: "groupWorkItemsStatusWaiting",
+	blocked: "groupWorkItemsStatusBlocked",
+	completed: "groupWorkItemsStatusCompleted",
+	cancelled: "groupWorkItemsStatusCancelled",
+	failed: "groupWorkItemsStatusFailed",
+	interrupted: "groupWorkItemsStatusInterrupted",
+};
 interface RouterJob {
 	id: string;
 	status: "queued" | "running" | "completed" | "failed";
@@ -78,7 +90,7 @@ export function GroupWorkItems({
 	disabled?: boolean;
 	onChanged?: () => void;
 }) {
-	const zh = isZhLocale(useI18n().locale);
+	const t = useT();
 	const [items, setItems] = useState<WorkItem[]>([]);
 	const [jobs, setJobs] = useState<RouterJob[]>([]);
 	const [error, setError] = useState("");
@@ -122,7 +134,7 @@ export function GroupWorkItems({
 					controller.signal,
 				);
 				if (controller.signal.aborted) return;
-				if (!Array.isArray(data.workItems)) throw new Error(zh ? "工单列表响应无效" : "Invalid work item response");
+				if (!Array.isArray(data.workItems)) throw new Error(t("groupWorkItemsInvalidResponse"));
 				setItems((previous) => mergeWorkItems(previous, data.workItems));
 				if (!loadedOlder.current) setNextCursor(data.nextCursor ?? null);
 				setJobs(data.routerJobs ?? []);
@@ -141,7 +153,7 @@ export function GroupWorkItems({
 			controller.abort();
 			clearTimeout(timer);
 		};
-	}, [roomId, refresh, zh]);
+	}, [roomId, refresh, t]);
 	async function loadMore() {
 		if (!nextCursor || olderRequest.current || !operation.current || operation.current.signal.aborted) return;
 		const controller = new AbortController();
@@ -154,7 +166,7 @@ export function GroupWorkItems({
 				controller.signal,
 			);
 			if (controller.signal.aborted) return;
-			if (!Array.isArray(data.workItems)) throw new Error(zh ? "工单列表响应无效" : "Invalid work item response");
+			if (!Array.isArray(data.workItems)) throw new Error(t("groupWorkItemsInvalidResponse"));
 			loadedOlder.current = true;
 			setItems((previous) => mergeWorkItems(previous, data.workItems));
 			setNextCursor(data.nextCursor ?? null);
@@ -222,58 +234,32 @@ export function GroupWorkItems({
 		}
 	}
 	const statusLabel = (status: string) => {
-		const labels: Record<string, string> = zh
-			? {
-					open: "待处理",
-					queued: "排队中",
-					running: "执行中",
-					waiting: "等待中",
-					blocked: "已暂停",
-					completed: "已完成",
-					cancelled: "已取消",
-					failed: "失败",
-					interrupted: "已中断",
-				}
-			: {
-					open: "Open",
-					queued: "Queued",
-					running: "Running",
-					waiting: "Waiting",
-					blocked: "Paused",
-					completed: "Completed",
-					cancelled: "Cancelled",
-					failed: "Failed",
-					interrupted: "Interrupted",
-				};
-		return labels[status] ?? status;
+		const key = WORK_ITEM_STATUS_KEYS[status];
+		return key ? t(key) : status;
 	};
 	const sortedJobs = [...jobs].sort((a, b) => b.updatedAt - a.updatedAt);
 	return (
 		<section
 			className="group-members-overview"
 			style={{ minWidth: 0, maxWidth: "100%", overflowWrap: "anywhere" }}
-			aria-label={zh ? "群组工单" : "Group work items"}
+			aria-label={t("groupWorkItemsAriaLabel")}
 		>
 			<div className="grp-section-title">
 				<span>
-					{zh ? "工单" : "Work items"} ({items.length})
+					{t("groupWorkItemsTitle")} ({items.length})
 				</span>
 				<button type="button" className="btn" disabled={!!pending} onClick={() => setRefresh((n) => n + 1)}>
-					{zh ? "刷新" : "Refresh"}
+					{t("groupWorkItemsRefresh")}
 				</button>
 			</div>
-			<p>
-				{zh
-					? "工单保留外部来源与授权，持续关联多次执行。单次任务结束后，工单仍可继续处理。"
-					: "Work items retain their source and authorization across multiple executions. A finished task does not close the work item."}
-			</p>
+			<p>{t("groupWorkItemsDescription")}</p>
 			{(actionError || error) && (
 				<p className="dc-bot-error" role="alert">
 					{actionError || error}
 				</p>
 			)}
-			{loading && <p role="status">{zh ? "正在加载工单…" : "Loading work items…"}</p>}
-			{!loading && !items.length && <p>{zh ? "暂无工单" : "No work items yet"}</p>}
+			{loading && <p role="status">{t("groupWorkItemsLoading")}</p>}
+			{!loading && !items.length && <p>{t("groupWorkItemsEmpty")}</p>}
 			<div className="grp-bot-list">
 				{items.map((item) => {
 					const authorized = item.authorized ?? item.authorization?.mode === "auto";
@@ -291,46 +277,28 @@ export function GroupWorkItems({
 							</div>
 							<div className="grp-bot-info">
 								<p>
-									{zh ? "来源" : "Source"}:{" "}
+									{t("groupWorkItemsSource")}:{" "}
 									<code>
 										{item.source.provider} / {item.source.channelId} / {item.source.threadId}
 									</code>
 								</p>
 								{item.author && (
 									<p>
-										{zh ? "发起人" : "Author"}: {item.author.name ?? item.author.id}
+										{t("groupWorkItemsAuthor")}: {item.author.name ?? item.author.id}
 									</p>
 								)}
 								<p>
-									{zh ? "授权" : "Authorization"}:{" "}
-									{authorized
-										? zh
-											? "auto · 允许自动执行"
-											: "auto · automatic execution authorized"
-										: zh
-											? "observe · 仅观察"
-											: "observe · observation only"}
-									{item.manualAuthorized ? (zh ? " · 手动授权" : " · Manually authorized") : ""}
+									{t("groupWorkItemsAuthorization")}:{" "}
+									{authorized ? t("groupWorkItemsModeAuto") : t("groupWorkItemsModeObserve")}
+									{item.manualAuthorized ? t("groupWorkItemsManualAuthorized") : ""}
 									{item.authorization?.authorizedBy ? ` · ${item.authorization.authorizedBy}` : ""}
 								</p>
-								{item.sourceTrust?.verified === false && (
-									<p>
-										{zh
-											? "来源未经验证，无法授权自动执行。"
-											: "The source is unverified and cannot be authorized for automatic execution."}
-									</p>
-								)}
-								{item.pendingAuthorization && (
-									<p role="status">
-										{zh
-											? "最新事件尚未授权；已有工单授权不会自动覆盖这条留言。"
-											: "The latest event needs authorization; earlier approval does not cover this message."}
-									</p>
-								)}
+								{item.sourceTrust?.verified === false && <p>{t("groupWorkItemsUnverifiedSource")}</p>}
+								{item.pendingAuthorization && <p role="status">{t("groupWorkItemsPendingAuthorization")}</p>}
 								{item.latestEvent && (
 									<details open={item.pendingAuthorization}>
 										<summary>
-											{zh ? "最新外部事件" : "Latest external event"}
+											{t("groupWorkItemsLatestEvent")}
 											{item.latestEvent.kind ? ` · ${item.latestEvent.kind}` : ""}
 										</summary>
 										<p>{item.latestEvent.author?.name ?? item.latestEvent.author?.id}</p>
@@ -339,17 +307,17 @@ export function GroupWorkItems({
 								)}
 								{item.summary && <p>{item.summary}</p>}
 								<details>
-									<summary>{zh ? "工单内容与标识" : "Content and identifiers"}</summary>
+									<summary>{t("groupWorkItemsContentAndIds")}</summary>
 									<p>{item.text}</p>
 									<p>
-										<code>{item.id}</code> · {zh ? "版本" : "Revision"} {item.revision}
+										<code>{item.id}</code> · {t("groupWorkItemsRevision")} {item.revision}
 									</p>
 								</details>
 								<details open={item.taskIds.length > 0}>
 									<summary>
-										{zh ? "关联执行" : "Linked executions"} ({item.taskIds.length})
+										{t("groupWorkItemsLinkedExecutions")} ({item.taskIds.length})
 									</summary>
-									{!item.taskIds.length && <p>{zh ? "尚未执行" : "No executions yet"}</p>}
+									{!item.taskIds.length && <p>{t("groupWorkItemsNoExecutions")}</p>}
 									<ul>
 										{item.taskIds.map((id, index) => {
 											const task = tasks.find((candidate) => candidate.id === id);
@@ -384,16 +352,10 @@ export function GroupWorkItems({
 										onClick={() => void update(item, item.status, true)}
 									>
 										{pending === item.id
-											? zh
-												? "处理中…"
-												: "Updating…"
+											? t("groupWorkItemsUpdating")
 											: authorized && item.pendingAuthorization
-												? zh
-													? "授权最新事件"
-													: "Authorize latest event"
-												: zh
-													? "手动授权"
-													: "Authorize"}
+												? t("groupWorkItemsAuthorizeLatest")
+												: t("groupWorkItemsAuthorize")}
 									</button>
 								)}
 								{!settled && item.status !== "blocked" && (
@@ -403,7 +365,7 @@ export function GroupWorkItems({
 										disabled={disabled || !!pending}
 										onClick={() => void update(item, "blocked")}
 									>
-										{zh ? "暂停" : "Pause"}
+										{t("groupWorkItemsPause")}
 									</button>
 								)}
 								{(item.status === "blocked" || settled) && (
@@ -413,7 +375,7 @@ export function GroupWorkItems({
 										disabled={disabled || !!pending}
 										onClick={() => void update(item, "open")}
 									>
-										{settled ? (zh ? "重新打开" : "Reopen") : zh ? "恢复" : "Resume"}
+										{settled ? t("groupWorkItemsReopen") : t("groupWorkItemsResume")}
 									</button>
 								)}
 								{!settled && (
@@ -423,7 +385,7 @@ export function GroupWorkItems({
 										disabled={disabled || !!pending}
 										onClick={() => void update(item, "completed")}
 									>
-										{zh ? "完成工单" : "Complete"}
+										{t("groupWorkItemsComplete")}
 									</button>
 								)}
 							</div>
@@ -433,19 +395,19 @@ export function GroupWorkItems({
 			</div>
 			{nextCursor && (
 				<button type="button" className="btn" disabled={loadingMore || !!pending} onClick={() => void loadMore()}>
-					{loadingMore ? (zh ? "加载中…" : "Loading…") : zh ? "加载更多工单" : "Load more work items"}
+					{loadingMore ? t("loading") : t("groupWorkItemsLoadMore")}
 				</button>
 			)}
 			<details className="group-ecosystem-panel" open={sortedJobs.some((job) => job.status === "failed")}>
 				<summary>
-					{zh ? "Router 最近运行与失败" : "Recent Router runs and failures"} ({jobs.length})
+					{t("groupWorkItemsRouterRecent")} ({jobs.length})
 				</summary>
-				{!jobs.length && <p>{zh ? "暂无 Router 运行记录" : "No Router runs yet"}</p>}
+				{!jobs.length && <p>{t("groupWorkItemsRouterEmpty")}</p>}
 				{sortedJobs.map((job) => (
 					<div key={job.id} className="grp-bot-card">
 						<strong>{statusLabel(job.status)}</strong> · <code>{job.id}</code>
 						<p>
-							{job.trigger?.type} · {zh ? "尝试次数" : "Attempts"}: {job.attempts ?? 0}
+							{job.trigger?.type} · {t("groupWorkItemsAttempts")}: {job.attempts ?? 0}
 						</p>
 						{job.error && (
 							<p className="dc-bot-error" role="alert">
@@ -454,7 +416,7 @@ export function GroupWorkItems({
 						)}
 						{job.status === "failed" && (
 							<button type="button" className="btn" disabled={disabled || !!pending} onClick={() => void retryJob(job)}>
-								{pending === job.id ? (zh ? "重试中…" : "Retrying…") : zh ? "重试 Router 运行" : "Retry Router run"}
+								{pending === job.id ? t("groupWorkItemsRetrying") : t("groupWorkItemsRetryRouter")}
 							</button>
 						)}
 					</div>

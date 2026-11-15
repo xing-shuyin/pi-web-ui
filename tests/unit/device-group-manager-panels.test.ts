@@ -5,7 +5,10 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { DeviceGroupManager } from "../../web/src/components/DeviceGroupManager";
 import type { GroupRouterConfig } from "../../web/src/components/GroupRouterSettings";
 
-vi.mock("../../web/src/i18n", () => ({ useI18n: () => ({ locale: "en" }), isZhLocale: () => false }));
+vi.mock("../../web/src/i18n", async (importOriginal) => {
+	const actual = await importOriginal<typeof import("../../web/src/i18n")>();
+	return { ...actual, useI18n: () => ({ locale: "en" }), isZhLocale: () => false };
+});
 vi.mock("../../web/src/auth-token", () => ({
 	withToken: (url: string) => `${url}${url.includes("?") ? "&" : "?"}token=manager-test`,
 }));

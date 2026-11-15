@@ -1719,26 +1719,14 @@
 		},
 		{
 			"file": "web/src/components/GroupBlackboardView.tsx",
-			"text": "# 群组共享共识\\n\\n## 架构设计\\n- 统一事件模型\\n- 接口规范定义\\n\\n## 任务分工\\n- [ ] BotA: 调研接口\\n- [ ] BotB: 实现测试",
-			"count": 1,
-			"reason": "pending"
-		},
-		{
-			"file": "web/src/components/GroupBlackboardView.tsx",
 			"text": "api规范",
 			"count": 1,
 			"reason": "pending"
 		},
 		{
 			"file": "web/src/components/GroupBlackboardView.tsx",
-			"text": "人工",
-			"count": 1,
-			"reason": "pending"
-		},
-		{
-			"file": "web/src/components/GroupBlackboardView.tsx",
 			"text": "任务分工",
-			"count": 2,
+			"count": 1,
 			"reason": "pending"
 		},
 		{
@@ -1749,49 +1737,7 @@
 		},
 		{
 			"file": "web/src/components/GroupBlackboardView.tsx",
-			"text": "任务流水线分工与进度追踪\\n\\n例如：\\n- [ ] @BotA: 数据层适配与测试\\n- [ ] @BotB: 业务层实现\\n- [ ] @BotC: 验证与交付物汇总",
-			"count": 1,
-			"reason": "pending"
-		},
-		{
-			"file": "web/src/components/GroupBlackboardView.tsx",
-			"text": "例如：系统统一重构规范 (RFC-089)",
-			"count": 1,
-			"reason": "pending"
-		},
-		{
-			"file": "web/src/components/GroupBlackboardView.tsx",
-			"text": "保存中...",
-			"count": 1,
-			"reason": "pending"
-		},
-		{
-			"file": "web/src/components/GroupBlackboardView.tsx",
-			"text": "保存黑板失败",
-			"count": 1,
-			"reason": "pending"
-		},
-		{
-			"file": "web/src/components/GroupBlackboardView.tsx",
-			"text": "全量共识",
-			"count": 1,
-			"reason": "pending"
-		},
-		{
-			"file": "web/src/components/GroupBlackboardView.tsx",
-			"text": "共识主题 / 标题 (可选)",
-			"count": 1,
-			"reason": "pending"
-		},
-		{
-			"file": "web/src/components/GroupBlackboardView.tsx",
 			"text": "关键技术决策",
-			"count": 1,
-			"reason": "pending"
-		},
-		{
-			"file": "web/src/components/GroupBlackboardView.tsx",
-			"text": "最后更新者",
 			"count": 1,
 			"reason": "pending"
 		},
@@ -1815,42 +1761,6 @@
 		},
 		{
 			"file": "web/src/components/GroupBlackboardView.tsx",
-			"text": "取消",
-			"count": 1,
-			"reason": "pending"
-		},
-		{
-			"file": "web/src/components/GroupBlackboardView.tsx",
-			"text": "在此输入该分区的 Markdown 格式内容...",
-			"count": 1,
-			"reason": "pending"
-		},
-		{
-			"file": "web/src/components/GroupBlackboardView.tsx",
-			"text": "复制",
-			"count": 1,
-			"reason": "pending"
-		},
-		{
-			"file": "web/src/components/GroupBlackboardView.tsx",
-			"text": "复制当前查看的黑板内容",
-			"count": 1,
-			"reason": "pending"
-		},
-		{
-			"file": "web/src/components/GroupBlackboardView.tsx",
-			"text": "已复制",
-			"count": 1,
-			"reason": "pending"
-		},
-		{
-			"file": "web/src/components/GroupBlackboardView.tsx",
-			"text": "当前群组黑板为空。点击右上角“编辑共识”为所有协作 Bot 确立技术架构契约与长期记忆。",
-			"count": 1,
-			"reason": "pending"
-		},
-		{
-			"file": "web/src/components/GroupBlackboardView.tsx",
 			"text": "技术方案",
 			"count": 1,
 			"reason": "pending"
@@ -1858,12 +1768,6 @@
 		{
 			"file": "web/src/components/GroupBlackboardView.tsx",
 			"text": "接口契约",
-			"count": 2,
-			"reason": "pending"
-		},
-		{
-			"file": "web/src/components/GroupBlackboardView.tsx",
-			"text": "接口契约与数据模型定义\\n\\n例如：\\n- REST / RPC 接口路由与方法\\n- 请求入参和响应出参 JSON Schema\\n- 错误码与异常契约",
 			"count": 1,
 			"reason": "pending"
 		},
@@ -1875,25 +1779,7 @@
 		},
 		{
 			"file": "web/src/components/GroupBlackboardView.tsx",
-			"text": "提交保存",
-			"count": 1,
-			"reason": "pending"
-		},
-		{
-			"file": "web/src/components/GroupBlackboardView.tsx",
 			"text": "数据契约",
-			"count": 1,
-			"reason": "pending"
-		},
-		{
-			"file": "web/src/components/GroupBlackboardView.tsx",
-			"text": "更新时间",
-			"count": 1,
-			"reason": "pending"
-		},
-		{
-			"file": "web/src/components/GroupBlackboardView.tsx",
-			"text": "未初始化",
 			"count": 1,
 			"reason": "pending"
 		},
@@ -1906,12 +1792,6 @@
 		{
 			"file": "web/src/components/GroupBlackboardView.tsx",
 			"text": "架构设计",
-			"count": 2,
-			"reason": "pending"
-		},
-		{
-			"file": "web/src/components/GroupBlackboardView.tsx",
-			"text": "架构设计与技术栈决策规范\\n\\n例如：\\n- 系统分层与目录拓扑\\n- 事件模型与状态机规范\\n- 核心数据流驱动方式",
 			"count": 1,
 			"reason": "pending"
 		},
@@ -1929,49 +1809,7 @@
 		},
 		{
 			"file": "web/src/components/GroupBlackboardView.tsx",
-			"text": "结构化 Markdown 全量内容",
-			"count": 1,
-			"reason": "pending"
-		},
-		{
-			"file": "web/src/components/GroupBlackboardView.tsx",
-			"text": "编辑共识",
-			"count": 1,
-			"reason": "pending"
-		},
-		{
-			"file": "web/src/components/GroupBlackboardView.tsx",
-			"text": "编辑分区：${activePresetDef ? activePresetDef.titleZh : activeSection?.title || activeTab}",
-			"count": 1,
-			"reason": "pending"
-		},
-		{
-			"file": "web/src/components/GroupBlackboardView.tsx",
-			"text": "编辑此分区",
-			"count": 1,
-			"reason": "pending"
-		},
-		{
-			"file": "web/src/components/GroupBlackboardView.tsx",
-			"text": "编辑黑板内容",
-			"count": 1,
-			"reason": "pending"
-		},
-		{
-			"file": "web/src/components/GroupBlackboardView.tsx",
-			"text": "该分区当前尚无记录内容。点击右上角“编辑此分区”快速添加共识与规则。",
-			"count": 1,
-			"reason": "pending"
-		},
-		{
-			"file": "web/src/components/GroupBlackboardView.tsx",
 			"text": "阻塞与决策",
-			"count": 2,
-			"reason": "pending"
-		},
-		{
-			"file": "web/src/components/GroupBlackboardView.tsx",
-			"text": "阻塞卡点与关键技术决策记录 (ADR)\\n\\n例如：\\n- 决策：采用 SSE 替代长轮询\\n- 阻塞：依赖的设备驱动尚未注册",
 			"count": 1,
 			"reason": "pending"
 		},
@@ -1979,24 +1817,6 @@
 			"file": "web/src/components/GroupBlackboardView.tsx",
 			"text": "风险与阻塞",
 			"count": 1,
-			"reason": "pending"
-		},
-		{
-			"file": "web/src/components/GroupBlackboardView.tsx",
-			"text": "黑板内容不能为空",
-			"count": 1,
-			"reason": "pending"
-		},
-		{
-			"file": "web/src/components/GroupBlackboardView.tsx",
-			"text": "黑板协议版本",
-			"count": 1,
-			"reason": "pending"
-		},
-		{
-			"file": "web/src/components/GroupBlackboardView.tsx",
-			"text": "黑板已被其他成员更新，版本发生冲突，请刷新后重试。",
-			"count": 2,
 			"reason": "pending"
 		},
 		{
@@ -2393,276 +2213,6 @@
 			"file": "web/src/components/GroupConversation.tsx",
 			"text": "飞行中实时注入转向纠偏",
 			"count": 1,
-			"reason": "pending"
-		},
-		{
-			"file": "web/src/components/GroupDeliveries.tsx",
-			"text": "Bot 未报告检查",
-			"count": 1,
-			"reason": "pending"
-		},
-		{
-			"file": "web/src/components/GroupDeliveries.tsx",
-			"text": "Bot 未报告限制",
-			"count": 1,
-			"reason": "pending"
-		},
-		{
-			"file": "web/src/components/GroupDeliveries.tsx",
-			"text": "Bot 配置已变更（revision/设备/成员），此会话无法继续；请新建对话。",
-			"count": 1,
-			"reason": "pending"
-		},
-		{
-			"file": "web/src/components/GroupDeliveries.tsx",
-			"text": "交付摘要",
-			"count": 1,
-			"reason": "pending"
-		},
-		{
-			"file": "web/src/components/GroupDeliveries.tsx",
-			"text": "交付版本 ID",
-			"count": 1,
-			"reason": "pending"
-		},
-		{
-			"file": "web/src/components/GroupDeliveries.tsx",
-			"text": "产物",
-			"count": 1,
-			"reason": "pending"
-		},
-		{
-			"file": "web/src/components/GroupDeliveries.tsx",
-			"text": "人工",
-			"count": 1,
-			"reason": "pending"
-		},
-		{
-			"file": "web/src/components/GroupDeliveries.tsx",
-			"text": "人工验收意见（对应以上交付版本）",
-			"count": 1,
-			"reason": "pending"
-		},
-		{
-			"file": "web/src/components/GroupDeliveries.tsx",
-			"text": "仅显示需要处理的事项",
-			"count": 1,
-			"reason": "pending"
-		},
-		{
-			"file": "web/src/components/GroupDeliveries.tsx",
-			"text": "仓库",
-			"count": 1,
-			"reason": "pending"
-		},
-		{
-			"file": "web/src/components/GroupDeliveries.tsx",
-			"text": "你的答复",
-			"count": 1,
-			"reason": "pending"
-		},
-		{
-			"file": "web/src/components/GroupDeliveries.tsx",
-			"text": "全部对话",
-			"count": 1,
-			"reason": "pending"
-		},
-		{
-			"file": "web/src/components/GroupDeliveries.tsx",
-			"text": "关闭会话",
-			"count": 1,
-			"reason": "pending"
-		},
-		{
-			"file": "web/src/components/GroupDeliveries.tsx",
-			"text": "内容摘要",
-			"count": 1,
-			"reason": "pending"
-		},
-		{
-			"file": "web/src/components/GroupDeliveries.tsx",
-			"text": "分支",
-			"count": 1,
-			"reason": "pending"
-		},
-		{
-			"file": "web/src/components/GroupDeliveries.tsx",
-			"text": "删除会话（释放容量）",
-			"count": 1,
-			"reason": "pending"
-		},
-		{
-			"file": "web/src/components/GroupDeliveries.tsx",
-			"text": "加载中…",
-			"count": 1,
-			"reason": "pending"
-		},
-		{
-			"file": "web/src/components/GroupDeliveries.tsx",
-			"text": "回复并继续",
-			"count": 1,
-			"reason": "pending"
-		},
-		{
-			"file": "web/src/components/GroupDeliveries.tsx",
-			"text": "在输入框输入 @，选择此 Bot 的原对话补充要求或继续处理。",
-			"count": 1,
-			"reason": "pending"
-		},
-		{
-			"file": "web/src/components/GroupDeliveries.tsx",
-			"text": "基线 SHA",
-			"count": 1,
-			"reason": "pending"
-		},
-		{
-			"file": "web/src/components/GroupDeliveries.tsx",
-			"text": "完整交付与历史",
-			"count": 1,
-			"reason": "pending"
-		},
-		{
-			"file": "web/src/components/GroupDeliveries.tsx",
-			"text": "对应验证：",
-			"count": 1,
-			"reason": "pending"
-		},
-		{
-			"file": "web/src/components/GroupDeliveries.tsx",
-			"text": "已交付 · 待验收",
-			"count": 1,
-			"reason": "pending"
-		},
-		{
-			"file": "web/src/components/GroupDeliveries.tsx",
-			"text": "已回复，原会话将继续。",
-			"count": 1,
-			"reason": "pending"
-		},
-		{
-			"file": "web/src/components/GroupDeliveries.tsx",
-			"text": "当前为摘要，请展开完整交付后验收。",
-			"count": 1,
-			"reason": "pending"
-		},
-		{
-			"file": "web/src/components/GroupDeliveries.tsx",
-			"text": "当前没有需要处理的事项。",
-			"count": 1,
-			"reason": "pending"
-		},
-		{
-			"file": "web/src/components/GroupDeliveries.tsx",
-			"text": "执行状态",
-			"count": 1,
-			"reason": "pending"
-		},
-		{
-			"file": "web/src/components/GroupDeliveries.tsx",
-			"text": "承载 Bot 的设备已解绑，此会话已停止。",
-			"count": 1,
-			"reason": "pending"
-		},
-		{
-			"file": "web/src/components/GroupDeliveries.tsx",
-			"text": "提交中…",
-			"count": 1,
-			"reason": "pending"
-		},
-		{
-			"file": "web/src/components/GroupDeliveries.tsx",
-			"text": "文件树版本",
-			"count": 1,
-			"reason": "pending"
-		},
-		{
-			"file": "web/src/components/GroupDeliveries.tsx",
-			"text": "暂无 Bot 对话。",
-			"count": 1,
-			"reason": "pending"
-		},
-		{
-			"file": "web/src/components/GroupDeliveries.tsx",
-			"text": "未交付（执行结束不代表已交付）",
-			"count": 1,
-			"reason": "pending"
-		},
-		{
-			"file": "web/src/components/GroupDeliveries.tsx",
-			"text": "未命名对话",
-			"count": 1,
-			"reason": "pending"
-		},
-		{
-			"file": "web/src/components/GroupDeliveries.tsx",
-			"text": "检查来源：Bot 自报，未经宿主或 CI 验证。",
-			"count": 1,
-			"reason": "pending"
-		},
-		{
-			"file": "web/src/components/GroupDeliveries.tsx",
-			"text": "此会话已停止。",
-			"count": 1,
-			"reason": "pending"
-		},
-		{
-			"file": "web/src/components/GroupDeliveries.tsx",
-			"text": "源码任务",
-			"count": 1,
-			"reason": "pending"
-		},
-		{
-			"file": "web/src/components/GroupDeliveries.tsx",
-			"text": "请先展开验证与合并，完成验证后填写验收证据。",
-			"count": 1,
-			"reason": "pending"
-		},
-		{
-			"file": "web/src/components/GroupDeliveries.tsx",
-			"text": "逐项验收",
-			"count": 1,
-			"reason": "pending"
-		},
-		{
-			"file": "web/src/components/GroupDeliveries.tsx",
-			"text": "重试",
-			"count": 1,
-			"reason": "pending"
-		},
-		{
-			"file": "web/src/components/GroupDeliveries.tsx",
-			"text": "限制与未完成项",
-			"count": 1,
-			"reason": "pending"
-		},
-		{
-			"file": "web/src/components/GroupDeliveries.tsx",
-			"text": "需要我处理",
-			"count": 1,
-			"reason": "pending"
-		},
-		{
-			"file": "web/src/components/GroupDeliveries.tsx",
-			"text": "需返工",
-			"count": 2,
-			"reason": "pending"
-		},
-		{
-			"file": "web/src/components/GroupDeliveries.tsx",
-			"text": "验收意见",
-			"count": 1,
-			"reason": "pending"
-		},
-		{
-			"file": "web/src/components/GroupDeliveries.tsx",
-			"text": "验收证据",
-			"count": 1,
-			"reason": "pending"
-		},
-		{
-			"file": "web/src/components/GroupDeliveries.tsx",
-			"text": "验收通过",
-			"count": 2,
 			"reason": "pending"
 		},
 		{
@@ -3124,264 +2674,6 @@
 		{
 			"file": "web/src/components/GroupSteerModal.tsx",
 			"text": "阶段",
-			"count": 1,
-			"reason": "pending"
-		},
-		{
-			"file": "web/src/components/GroupWorkItems.tsx",
-			"text": " · 手动授权",
-			"count": 1,
-			"reason": "pending"
-		},
-		{
-			"file": "web/src/components/GroupWorkItems.tsx",
-			"text": "auto · 允许自动执行",
-			"count": 1,
-			"reason": "pending"
-		},
-		{
-			"file": "web/src/components/GroupWorkItems.tsx",
-			"text": "observe · 仅观察",
-			"count": 1,
-			"reason": "pending"
-		},
-		{
-			"file": "web/src/components/GroupWorkItems.tsx",
-			"text": "Router 最近运行与失败",
-			"count": 1,
-			"reason": "pending"
-		},
-		{
-			"file": "web/src/components/GroupWorkItems.tsx",
-			"text": "关联执行",
-			"count": 1,
-			"reason": "pending"
-		},
-		{
-			"file": "web/src/components/GroupWorkItems.tsx",
-			"text": "最新事件尚未授权；已有工单授权不会自动覆盖这条留言。",
-			"count": 1,
-			"reason": "pending"
-		},
-		{
-			"file": "web/src/components/GroupWorkItems.tsx",
-			"text": "最新外部事件",
-			"count": 1,
-			"reason": "pending"
-		},
-		{
-			"file": "web/src/components/GroupWorkItems.tsx",
-			"text": "刷新",
-			"count": 1,
-			"reason": "pending"
-		},
-		{
-			"file": "web/src/components/GroupWorkItems.tsx",
-			"text": "加载中…",
-			"count": 1,
-			"reason": "pending"
-		},
-		{
-			"file": "web/src/components/GroupWorkItems.tsx",
-			"text": "加载更多工单",
-			"count": 1,
-			"reason": "pending"
-		},
-		{
-			"file": "web/src/components/GroupWorkItems.tsx",
-			"text": "发起人",
-			"count": 1,
-			"reason": "pending"
-		},
-		{
-			"file": "web/src/components/GroupWorkItems.tsx",
-			"text": "处理中…",
-			"count": 1,
-			"reason": "pending"
-		},
-		{
-			"file": "web/src/components/GroupWorkItems.tsx",
-			"text": "失败",
-			"count": 1,
-			"reason": "pending"
-		},
-		{
-			"file": "web/src/components/GroupWorkItems.tsx",
-			"text": "完成工单",
-			"count": 1,
-			"reason": "pending"
-		},
-		{
-			"file": "web/src/components/GroupWorkItems.tsx",
-			"text": "尚未执行",
-			"count": 1,
-			"reason": "pending"
-		},
-		{
-			"file": "web/src/components/GroupWorkItems.tsx",
-			"text": "尝试次数",
-			"count": 1,
-			"reason": "pending"
-		},
-		{
-			"file": "web/src/components/GroupWorkItems.tsx",
-			"text": "工单",
-			"count": 1,
-			"reason": "pending"
-		},
-		{
-			"file": "web/src/components/GroupWorkItems.tsx",
-			"text": "工单保留外部来源与授权，持续关联多次执行。单次任务结束后，工单仍可继续处理。",
-			"count": 1,
-			"reason": "pending"
-		},
-		{
-			"file": "web/src/components/GroupWorkItems.tsx",
-			"text": "工单内容与标识",
-			"count": 1,
-			"reason": "pending"
-		},
-		{
-			"file": "web/src/components/GroupWorkItems.tsx",
-			"text": "工单列表响应无效",
-			"count": 2,
-			"reason": "pending"
-		},
-		{
-			"file": "web/src/components/GroupWorkItems.tsx",
-			"text": "已中断",
-			"count": 1,
-			"reason": "pending"
-		},
-		{
-			"file": "web/src/components/GroupWorkItems.tsx",
-			"text": "已取消",
-			"count": 1,
-			"reason": "pending"
-		},
-		{
-			"file": "web/src/components/GroupWorkItems.tsx",
-			"text": "已完成",
-			"count": 1,
-			"reason": "pending"
-		},
-		{
-			"file": "web/src/components/GroupWorkItems.tsx",
-			"text": "已暂停",
-			"count": 1,
-			"reason": "pending"
-		},
-		{
-			"file": "web/src/components/GroupWorkItems.tsx",
-			"text": "待处理",
-			"count": 1,
-			"reason": "pending"
-		},
-		{
-			"file": "web/src/components/GroupWorkItems.tsx",
-			"text": "恢复",
-			"count": 1,
-			"reason": "pending"
-		},
-		{
-			"file": "web/src/components/GroupWorkItems.tsx",
-			"text": "手动授权",
-			"count": 1,
-			"reason": "pending"
-		},
-		{
-			"file": "web/src/components/GroupWorkItems.tsx",
-			"text": "执行中",
-			"count": 1,
-			"reason": "pending"
-		},
-		{
-			"file": "web/src/components/GroupWorkItems.tsx",
-			"text": "授权",
-			"count": 1,
-			"reason": "pending"
-		},
-		{
-			"file": "web/src/components/GroupWorkItems.tsx",
-			"text": "授权最新事件",
-			"count": 1,
-			"reason": "pending"
-		},
-		{
-			"file": "web/src/components/GroupWorkItems.tsx",
-			"text": "排队中",
-			"count": 1,
-			"reason": "pending"
-		},
-		{
-			"file": "web/src/components/GroupWorkItems.tsx",
-			"text": "暂停",
-			"count": 1,
-			"reason": "pending"
-		},
-		{
-			"file": "web/src/components/GroupWorkItems.tsx",
-			"text": "暂无 Router 运行记录",
-			"count": 1,
-			"reason": "pending"
-		},
-		{
-			"file": "web/src/components/GroupWorkItems.tsx",
-			"text": "暂无工单",
-			"count": 1,
-			"reason": "pending"
-		},
-		{
-			"file": "web/src/components/GroupWorkItems.tsx",
-			"text": "来源",
-			"count": 1,
-			"reason": "pending"
-		},
-		{
-			"file": "web/src/components/GroupWorkItems.tsx",
-			"text": "来源未经验证，无法授权自动执行。",
-			"count": 1,
-			"reason": "pending"
-		},
-		{
-			"file": "web/src/components/GroupWorkItems.tsx",
-			"text": "正在加载工单…",
-			"count": 1,
-			"reason": "pending"
-		},
-		{
-			"file": "web/src/components/GroupWorkItems.tsx",
-			"text": "版本",
-			"count": 1,
-			"reason": "pending"
-		},
-		{
-			"file": "web/src/components/GroupWorkItems.tsx",
-			"text": "等待中",
-			"count": 1,
-			"reason": "pending"
-		},
-		{
-			"file": "web/src/components/GroupWorkItems.tsx",
-			"text": "群组工单",
-			"count": 1,
-			"reason": "pending"
-		},
-		{
-			"file": "web/src/components/GroupWorkItems.tsx",
-			"text": "重新打开",
-			"count": 1,
-			"reason": "pending"
-		},
-		{
-			"file": "web/src/components/GroupWorkItems.tsx",
-			"text": "重试 Router 运行",
-			"count": 1,
-			"reason": "pending"
-		},
-		{
-			"file": "web/src/components/GroupWorkItems.tsx",
-			"text": "重试中…",
 			"count": 1,
 			"reason": "pending"
 		},

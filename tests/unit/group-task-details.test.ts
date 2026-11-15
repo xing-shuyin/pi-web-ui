@@ -5,7 +5,10 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { GroupTaskDetails } from "../../web/src/components/GroupTaskDetails";
 import type { DeviceTaskDetails } from "../../server/protocol";
 
-vi.mock("../../web/src/i18n", () => ({ useI18n: () => ({ locale: "en" }), isZhLocale: () => false }));
+vi.mock("../../web/src/i18n", async (importOriginal) => {
+	const actual = await importOriginal<typeof import("../../web/src/i18n")>();
+	return { ...actual, useI18n: () => ({ locale: "en" }), isZhLocale: () => false };
+});
 
 const details: DeviceTaskDetails = {
 	task: {

@@ -12,7 +12,14 @@ import {
 } from "../../server/device-center/verification-limits";
 import type { DeviceDelivery, DeviceIntegration, DeviceReview } from "../../web/src/types";
 
-vi.mock("../../web/src/i18n", () => ({ useI18n: () => ({ locale: "en" }), isZhLocale: () => false }));
+vi.mock("../../web/src/i18n", async (importOriginal) => {
+	const actual = await importOriginal<typeof import("../../web/src/i18n")>();
+	return {
+		...actual,
+		useI18n: () => ({ locale: "en" }),
+		isZhLocale: () => false,
+	};
+});
 
 const delivery: DeviceDelivery = {
 	id: "delivery",
