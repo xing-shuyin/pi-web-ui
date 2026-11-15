@@ -133,18 +133,14 @@ function LocalDesktopSettings() {
 	}, []);
 
 	return (
-		<section className="dc-card" aria-label={zh ? "本机远程桌面" : "Local remote desktop"} aria-busy={busy}>
+		<section className="dc-card" aria-label={t("deviceCenterLocalDesktopTitle")} aria-busy={busy}>
 			<div className="dc-card-header">
 				<span className="dc-icon">
 					<FiMonitor aria-hidden />
 				</span>
 				<div>
-					<h2>{zh ? "本机远程桌面" : "Local remote desktop"}</h2>
-					<p>
-						{zh
-							? "管理这台设备的远程桌面与系统权限，无需连接设备中心。"
-							: "Manage remote desktop and system permissions on this device, even while the device center is offline."}
-					</p>
+					<h2>{t("deviceCenterLocalDesktopTitle")}</h2>
+					<p>{t("deviceCenterLocalDesktopHint")}</p>
 				</div>
 			</div>
 			{localOnly ? (
@@ -596,22 +592,10 @@ export function DeviceCenter({
 					)}
 					{section !== "devices" && (!bound || localOnly) && (
 						<section className="dc-card">
-							<h2>
-								{section === "groups"
-									? zh
-										? "群组与工单"
-										: "Groups & work items"
-									: zh
-										? "外部渠道"
-										: "External channels"}
-							</h2>
-							<p>
-								{zh
-									? "先连接设备中心，再创建群组、配置群组 AI 并接入外部渠道。"
-									: "Connect to a device hub before creating groups, configuring group AI, and connecting external channels."}
-							</p>
+							<h2>{section === "groups" ? t("deviceCenterGroupsTitle") : t("deviceCenterExternalChannelsTitle")}</h2>
+							<p>{t("deviceCenterConnectFirstHint")}</p>
 							<button type="button" className="dc-button is-primary" onClick={() => setSection("devices")}>
-								{zh ? "前往设备连接" : "Connect a device"}
+								{t("deviceCenterGoConnectDevice")}
 							</button>
 						</section>
 					)}

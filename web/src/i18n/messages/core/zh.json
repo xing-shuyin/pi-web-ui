@@ -2751,5 +2751,11 @@
 	"subagentVerdictPartial": "部分核对",
 	"subagentVerdictBlocked": "受阻",
 	"subagentVerdictHint": "子代理的完成证据没有完全对上它自己的转录：详见完成通知或 get_result",
-	"sessionsLoadFailed": "历史会话读取超时，点击重试。"
+	"sessionsLoadFailed": "历史会话读取超时，点击重试。",
+	"deviceCenterLocalDesktopTitle": "本机远程桌面",
+	"deviceCenterLocalDesktopHint": "管理这台设备的远程桌面与系统权限，无需连接设备中心。",
+	"deviceCenterExternalChannelsTitle": "外部渠道",
+	"deviceCenterConnectFirstHint": "先连接设备中心，再创建群组、配置群组 AI 并接入外部渠道。",
+	"deviceCenterGroupsTitle": "群组与工单",
+	"deviceCenterGoConnectDevice": "前往设备连接"
 }

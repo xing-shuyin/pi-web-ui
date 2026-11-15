@@ -369,19 +369,7 @@
 		},
 		{
 			"file": "web/src/components/DeviceCenter.tsx",
-			"text": "先连接设备中心，再创建群组、配置群组 AI 并接入外部渠道。",
-			"count": 1,
-			"reason": "pending"
-		},
-		{
-			"file": "web/src/components/DeviceCenter.tsx",
 			"text": "刷新远程桌面状态",
-			"count": 1,
-			"reason": "pending"
-		},
-		{
-			"file": "web/src/components/DeviceCenter.tsx",
-			"text": "前往设备连接",
 			"count": 1,
 			"reason": "pending"
 		},
@@ -394,7 +382,7 @@
 		{
 			"file": "web/src/components/DeviceCenter.tsx",
 			"text": "外部渠道",
-			"count": 2,
+			"count": 1,
 			"reason": "pending"
 		},
 		{
@@ -441,26 +429,14 @@
 		},
 		{
 			"file": "web/src/components/DeviceCenter.tsx",
-			"text": "本机远程桌面",
-			"count": 2,
-			"reason": "pending"
-		},
-		{
-			"file": "web/src/components/DeviceCenter.tsx",
 			"text": "点击下方按钮发起系统授权，请在这台 Mac 的系统设置中确认。授权后可能需要重启服务。",
 			"count": 1,
 			"reason": "pending"
 		},
 		{
 			"file": "web/src/components/DeviceCenter.tsx",
-			"text": "管理这台设备的远程桌面与系统权限，无需连接设备中心。",
-			"count": 1,
-			"reason": "pending"
-		},
-		{
-			"file": "web/src/components/DeviceCenter.tsx",
 			"text": "群组与工单",
-			"count": 2,
+			"count": 1,
 			"reason": "pending"
 		},
 		{
