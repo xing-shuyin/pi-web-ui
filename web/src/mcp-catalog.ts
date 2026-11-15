@@ -1,3 +1,10 @@
+/**
+ * Catalog of MCP markets and bundled servers.
+ * `nameZh` / `descriptionZh` / `badgeZh` and the Chinese tags are *content* fields
+ * (localized descriptions of third-party servers), not UI chrome: the UI picks a
+ * field by locale, so they stay in the data and are excluded from the hardcoded-string
+ * guard via reason `data`.
+ */
 export type McpMarketCategory = "official" | "marketplace" | "community" | "directory";
 
 export interface McpMarketItem {

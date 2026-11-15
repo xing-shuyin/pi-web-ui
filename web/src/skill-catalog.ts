@@ -1,3 +1,8 @@
+/**
+ * Bundled skill catalog. Chinese titles/descriptions are *content* fields mirrored by
+ * their English counterparts; the UI picks one by locale, so they are excluded from the
+ * hardcoded-string guard via reason `data` rather than migrated into dictionaries.
+ */
 export type SkillMarketCategory = "official" | "marketplace" | "community" | "directory";
 
 export interface SkillMarketItem {
