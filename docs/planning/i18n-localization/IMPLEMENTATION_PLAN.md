@@ -270,3 +270,14 @@ node tests/i18n-browser-test.mjs
 ## Out-of-plan (parked, per SPEC non-goals)
 
 - Translation quality review of existing packs; new languages; operator/AI prompt strings; `locales/*.json` format changes; CI restructuring.
+
+## Measured findings while executing (2026-11-15)
+
+The remaining literals are **not** predominantly the mechanical `zh ? "中文" : "…"` form, so no codemod is used:
+
+| Pattern                                                                                                                      | Occurrences      |
+| ---------------------------------------------------------------------------------------------------------------------------- | ---------------- |
+| `zh ? "中文" : "English"` inside a file that already has `useT()` (mechanical)                                               | 62 (3 files)     |
+| Everything else: inline label objects, `isZhLocale(...)` branches, JSX text nodes, thrown error strings, standalone literals | 1,139 (71 files) |
+
+Consequence: Task 4 proceeds per file, reusing an existing `core` key whenever the Chinese text already exists, and the shrink-only allowlist measures each slice. Files are ordered by count (currently `GroupTaskDetails` 56, `GroupIntegration` 54, `DeviceGroupManager` 53, `GroupBlackboardView` 52, `GroupDeliveries` 47, `GroupWorkItems` 44 …).
