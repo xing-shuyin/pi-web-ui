@@ -131,7 +131,7 @@ import {
 	type UiDiagnostic,
 	type UiSlotEntry,
 } from "../ui-slots";
-import { ICON_EDIT_ALIGNS, sideAlignLabel } from "../ui-layout-edit";
+import { ICON_EDIT_ALIGNS, alignLabel } from "../ui-layout-edit";
 import type {
 	CatalogSyncState,
 	PluginInstallInspectState,
@@ -5952,19 +5952,11 @@ function LoadedSettingsModal({
 																onChange={(e) => setUiAlign(it.id, e.target.value)}
 																aria-label={t("uiLayoutAlign")}
 															>
-																{verticalAlignSlot(slot) ? (
-																	ICON_EDIT_ALIGNS.map((al) => (
-																		<option key={al} value={al}>
-																			{sideAlignLabel(t, al)}
-																		</option>
-																	))
-																) : (
-																	<>
-																		<option value="start">start</option>
-																		<option value="center">center</option>
-																		<option value="end">end</option>
-																	</>
-																)}
+																{ICON_EDIT_ALIGNS.map((al) => (
+																	<option key={al} value={al}>
+																		{alignLabel(t, al, verticalAlignSlot(slot))}
+																	</option>
+																))}
 															</select>
 														</label>
 													)}
@@ -6028,7 +6020,7 @@ function LoadedSettingsModal({
 													<Fragment key={seg.align ?? "all"}>
 														{seg.align && (
 															<div className="set-ui-slot-title set-ui-seg">
-																{verticalAlignSlot(slot) ? sideAlignLabel(t, seg.align as UiAlign) : seg.align}
+																{alignLabel(t, seg.align as UiAlign, verticalAlignSlot(slot))}
 															</div>
 														)}
 														{seg.items.map((it) => renderRow(it, seg.items))}

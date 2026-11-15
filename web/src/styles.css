@@ -30632,9 +30632,9 @@
 		display: flex;
 		flex-wrap: wrap;
 		align-items: center;
-		gap: 6px;
+		gap: 10px 8px;
 		min-height: 42px;
-		padding: 5px 6px;
+		padding: 7px 8px;
 		border: 1px dashed var(--border);
 		border-radius: 8px;
 		background: var(--bg-elev2);
@@ -30654,6 +30654,16 @@
 		color: var(--text-faint);
 		letter-spacing: 0.5px;
 		text-transform: uppercase;
+	}
+
+	.icon-editor-chip-wrap {
+		position: relative;
+		display: inline-flex;
+		max-width: 100%;
+	}
+
+	.icon-editor-chip-wrap.dragging {
+		opacity: 0.4;
 	}
 
 	.icon-editor-chip {
@@ -30679,9 +30689,41 @@
 		border-color: var(--accent);
 	}
 
-	.icon-editor-chip.dragging {
-		opacity: 0.4;
+	.icon-editor-chip-wrap.dragging .icon-editor-chip {
 		cursor: grabbing;
+	}
+
+	/* 右上角一键隐藏：拖到最下面的隐藏区不再必需。 */
+	.icon-editor-chip-hide {
+		position: absolute;
+		top: -5px;
+		right: -5px;
+		display: inline-flex;
+		align-items: center;
+		justify-content: center;
+		width: 16px;
+		height: 16px;
+		padding: 0;
+		border: 1px solid var(--border);
+		border-radius: 50%;
+		background: var(--bg-elev2);
+		color: var(--text-faint);
+		font-size: 11px;
+		line-height: 1;
+		cursor: pointer;
+		opacity: 0.8;
+		z-index: 2;
+	}
+
+	.icon-editor-chip-hide:hover,
+	.icon-editor-chip-wrap:hover .icon-editor-chip-hide {
+		opacity: 1;
+	}
+
+	.icon-editor-chip-hide:hover {
+		border-color: var(--accent);
+		background: var(--accent);
+		color: var(--accent-contrast);
 	}
 
 	.icon-editor-chip-icon {
@@ -30713,11 +30755,43 @@
 		color: var(--text-faint);
 	}
 
-	.icon-editor-zone-tray .icon-editor-strip {
-		opacity: 0.9;
+	/* 隐藏区：常驻面板底部，不跟滚动区一起滚。 */
+	.icon-editor-tray {
+		flex: none;
+		display: flex;
+		flex-direction: column;
+		gap: 6px;
+		padding: 8px 12px 10px;
+		border-top: 1px solid var(--border-soft);
+		background: var(--bg-elev);
+		box-shadow: 0 -8px 18px rgba(0, 0, 0, 0.16);
 	}
 
-	.icon-editor-zone-tray .icon-editor-chip {
+	.icon-editor-tray-head {
+		display: flex;
+		align-items: center;
+		gap: 8px;
+	}
+
+	.icon-editor-tray-hint {
+		flex: 1;
+		min-width: 0;
+		font-size: 11px;
+		color: var(--text-faint);
+		overflow: hidden;
+		text-overflow: ellipsis;
+		white-space: nowrap;
+	}
+
+	.icon-editor-tray .icon-editor-strip {
+		max-height: 116px;
+		overflow-y: auto;
+		overflow-x: hidden;
+		overscroll-behavior: contain;
+		opacity: 0.95;
+	}
+
+	.icon-editor-tray .icon-editor-chip {
 		border-style: dashed;
 	}
 
