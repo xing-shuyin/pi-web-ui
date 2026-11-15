@@ -1,6 +1,7 @@
 @import "./model-management.css" layer(base);
+@import "./drawer.css" layer(drawer);
 
-@layer guard, base, theme;
+@layer guard, base, theme, drawer;
 
 @layer base {
 	.desktop-preview {

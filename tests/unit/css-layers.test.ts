@@ -34,12 +34,13 @@ function listCssFiles(dir: string): string[] {
 }
 
 describe("CSS 分层契约（@layer guard, base, theme）", () => {
-	it("styles.css 声明三层顺序：@layer guard, base, theme;", () => {
+	it("styles.css 声明层序：guard < base < theme，可在末尾追加组件层", () => {
 		const css = readText(STYLES_CSS);
-		const order = css.match(/@layer\s+guard\s*,\s*base\s*,\s*theme\s*;/);
+		// 前三个是契约层序；`drawer` 这类组件层只能追加到最后（优先级最高）。
+		const order = css.match(/@layer\s+guard\s*,\s*base\s*,\s*theme(?:\s*,\s*[a-z-]+)*\s*;/);
 		expect(
 			order,
-			"web/src/styles.css 必须显式声明层序 `@layer guard, base, theme;`（顺序即优先级：普通声明 theme > base > guard）",
+			"web/src/styles.css 必须显式声明层序 `@layer guard, base, theme[, <component>];`（顺序即优先级：普通声明后层 > 前层）",
 		).not.toBeNull();
 		expect(css.indexOf(order![0])).toBeLessThan(css.indexOf("@layer base {"));
 	});
@@ -104,6 +105,6 @@ describe("CSS 分层契约（@layer guard, base, theme）", () => {
 		for (const keyword of ["guard", "base", "theme", "!important"]) {
 			expect(doc, `docs/architecture-core.md 的分层说明缺少关键字 \`${keyword}\``).toContain(keyword);
 		}
-		expect(doc).toMatch(/@layer guard, base, theme;/);
+		expect(doc).toMatch(/@layer guard, base, theme(?:, [a-z-]+)*;/);
 	});
 });

@@ -31,12 +31,12 @@ import { Dialog } from "./components/Dialog";
 import { QuestionQueue } from "./components/QuestionQueue";
 import { resolveQuestionQueue, mergeOwnedPending } from "./question-queue";
 import { presetText } from "./components/DshPresetBar";
-const TerminalPanel = lazy(() => import("./components/TerminalPanel").then((m) => ({ default: m.TerminalPanel })));
+const TerminalDrawer = lazy(() => import("./components/TerminalDrawer").then((m) => ({ default: m.TerminalDrawer })));
 const NativeCliPanel = lazy(() => import("./components/NativeCliPanel").then((m) => ({ default: m.NativeCliPanel })));
 import "./native-cli.css";
 import { NativeCliCreateModal } from "./components/NativeCliCreateModal";
 import { requestNativeCliChat } from "./new-chat-request";
-const ScmPanel = lazy(() => import("./components/SCMPanel").then((m) => ({ default: m.ScmPanel })));
+const GitDrawer = lazy(() => import("./components/GitDrawer").then((m) => ({ default: m.GitDrawer })));
 const DeviceCenter = lazy(() => import("./components/DeviceCenter").then((m) => ({ default: m.DeviceCenter })));
 const DeviceGroupCreateDialog = lazy(() =>
 	import("./components/DeviceGroups").then((m) => ({ default: m.DeviceGroupCreateDialog })),
@@ -475,6 +475,9 @@ export function App() {
 	const [viewChosen, setView] = useState<ViewName>(() =>
 		new URLSearchParams(window.location.search).get("view") === "devices" ? "devices" : "chat",
 	);
+	// 终端 / Git 不再是一个“页面”，而是两个可以并存的抽屉。
+	const [termDrawerOpen, setTermDrawerOpen] = useState(false);
+	const [gitDrawerOpen, setGitDrawerOpen] = useState(false);
 	const [nativeCliCreateCwd, setNativeCliCreateCwd] = useState<string | null>(null);
 	const [nativeCliCreating, setNativeCliCreating] = useState(false);
 	const [activeGroupId, setActiveGroupId] = useState<string | null>(null);
@@ -1073,6 +1076,16 @@ export function App() {
 	const resizeRight = useCallback((w: number) => setRightWidth(w), []);
 	const [leftCollapsed, setLeftCollapsed] = useState(() => readPanelCollapsed("left"));
 	const [rightCollapsed, setRightCollapsed] = useState(() => readPanelCollapsed("right"));
+	// Git 抽屉需要宽度：打开时先把右栏折叠，关闭后再恢复它原来的状态。
+	const rightBeforeGit = useRef(false);
+	useEffect(() => {
+		if (gitDrawerOpen) {
+			rightBeforeGit.current = rightCollapsed;
+			if (!rightCollapsed) setRightCollapsed(true);
+		} else if (!rightBeforeGit.current && rightCollapsed) {
+			setRightCollapsed(false);
+		}
+	}, [gitDrawerOpen, rightCollapsed]);
 	const toggleLeft = useCallback(() => {
 		setLeftCollapsed((v) => {
 			try {
@@ -1382,7 +1395,8 @@ export function App() {
 				});
 			}
 			terminal.select(targetId);
-			setView("terminal");
+			setTermDrawerOpen(true);
+			setView("chat");
 		};
 		window.addEventListener("pi-web-ui:plugin-run-command", onPluginRunCommand);
 		window.addEventListener("pi-web-ui:run-command", onPluginRunCommand);
@@ -1403,72 +1417,6 @@ export function App() {
 	}, [chat, terminal, send]);
 
 	// Ctrl+K / Cmd+K opens global search (also reachable via the topbar button).
-	useEffect(() => {
-		const onKey = (e: KeyboardEvent) => {
-			if (!(e.ctrlKey || e.metaKey) || e.key.toLowerCase() !== "k") return;
-			e.preventDefault();
-			setGlobalSearchOpen((v) => !v);
-		};
-		window.addEventListener("keydown", onKey);
-		return () => window.removeEventListener("keydown", onKey);
-	}, []);
-
-	const [zenMode, setZenMode] = useState<boolean>(() => {
-		try {
-			return localStorage.getItem("pi_zen_mode") === "1";
-		} catch {
-			return false;
-		}
-	});
-
-	useEffect(() => {
-		try {
-			if (zenMode) {
-				localStorage.setItem("pi_zen_mode", "1");
-			} else {
-				localStorage.removeItem("pi_zen_mode");
-			}
-		} catch {}
-	}, [zenMode]);
-
-	const toggleZenMode = useCallback(() => {
-		setZenMode((prev) => {
-			const next = !prev;
-			if (next && view !== "chat") {
-				setView("chat");
-			}
-			return next;
-		});
-	}, [view]);
-
-	useEscapeKey(() => {
-		if (zenMode) {
-			setZenMode(false);
-			return true;
-		}
-		return false;
-	}, zenMode);
-
-	// 手机端子抽屉是主导航：返回键/ESC 逐层退出的第一层就是它（联开后注册，所以优先于其他浮层被消费）。
-	useEscapeKey(() => {
-		if (!drawer) return false;
-		setDrawer(null);
-		return true;
-	}, drawer !== null);
-
-	useEffect(() => {
-		const onKey = (e: KeyboardEvent) => {
-			const isAltZ = e.altKey && !e.ctrlKey && !e.metaKey && e.key.toLowerCase() === "z";
-			const isCtrlShiftF = (e.ctrlKey || e.metaKey) && e.shiftKey && e.key.toLowerCase() === "f";
-			if (isAltZ || isCtrlShiftF) {
-				e.preventDefault();
-				toggleZenMode();
-			}
-		};
-		window.addEventListener("keydown", onKey);
-		return () => window.removeEventListener("keydown", onKey);
-	}, [toggleZenMode]);
-
 	const [sound, setSound] = useState<SoundSettings>(loadSoundSettings);
 	const [tts, setTts] = useState<TtsSettings>(loadTtsSettings);
 	const { themes, theme, switchTheme, reloadThemes } = useTheme();
@@ -2285,6 +2233,19 @@ export function App() {
 		if (createShell()) terminalOpenRequested.current = false;
 	}, [shellTerminalCount, createShell, view]);
 
+	/** 打开终端抽屉：从其他全页视图回到聊天，否则抽屉里看不到对话。 */
+	const openTerminalDrawer = useCallback(() => {
+		terminalOpenRequested.current = shellTerminalCount === 0;
+		if (terminalOpenRequested.current && createShell()) terminalOpenRequested.current = false;
+		setTermDrawerOpen(true);
+		setDrawer(null);
+	}, [shellTerminalCount, createShell]);
+
+	const openGitDrawer = useCallback(() => {
+		setGitDrawerOpen(true);
+		setDrawer(null);
+	}, []);
+
 	const handleViewChange = useCallback(
 		(v: ViewName, opts?: { skipAutoCreate?: boolean }) => {
 			if (sharedReadOnly && v !== "chat" && v !== "devices") {
@@ -2295,19 +2256,109 @@ export function App() {
 				setNativeCliCreateCwd(cwd);
 				return;
 			}
-			if (opts?.skipAutoCreate) {
-				terminalOpenRequested.current = false;
-			} else {
-				terminalOpenRequested.current = v === "terminal" && shellTerminalCount === 0;
-				if (terminalOpenRequested.current && createShell()) {
-					terminalOpenRequested.current = false;
+			// 终端 / Git 不再是一个“页面”，而是可以并存的抽屉：不再 setView 切页。
+			if (v === "terminal" || v === "git") {
+				setView("chat");
+				if (v === "terminal") {
+					if (opts?.skipAutoCreate) {
+						terminalOpenRequested.current = false;
+						setTermDrawerOpen(true);
+					} else {
+						openTerminalDrawer();
+					}
+				} else {
+					openGitDrawer();
 				}
+				setDrawer(null);
+				return;
 			}
 			setView(v);
 			setDrawer(null);
 		},
-		[shellTerminalCount, createShell, cwd, sharedReadOnly, pushNotice],
+		[sharedReadOnly, pushNotice, cwd, openTerminalDrawer, openGitDrawer],
 	);
+
+	useEffect(() => {
+		const onKey = (e: KeyboardEvent) => {
+			if (!(e.ctrlKey || e.metaKey) || e.key.toLowerCase() !== "k") return;
+			e.preventDefault();
+			setGlobalSearchOpen((v) => !v);
+		};
+		window.addEventListener("keydown", onKey);
+		return () => window.removeEventListener("keydown", onKey);
+	}, []);
+
+	const [zenMode, setZenMode] = useState<boolean>(() => {
+		try {
+			return localStorage.getItem("pi_zen_mode") === "1";
+		} catch {
+			return false;
+		}
+	});
+
+	useEffect(() => {
+		try {
+			if (zenMode) {
+				localStorage.setItem("pi_zen_mode", "1");
+			} else {
+				localStorage.removeItem("pi_zen_mode");
+			}
+		} catch {}
+	}, [zenMode]);
+
+	const toggleZenMode = useCallback(() => {
+		setZenMode((prev) => {
+			const next = !prev;
+			if (next && view !== "chat") {
+				setView("chat");
+			}
+			return next;
+		});
+	}, [view]);
+
+	useEscapeKey(() => {
+		if (zenMode) {
+			setZenMode(false);
+			return true;
+		}
+		return false;
+	}, zenMode);
+
+	// 手机端子抽屉是主导航：返回键/ESC 逐层退出的第一层就是它（联开后注册，所以优先于其他浮层被消费）。
+	useEscapeKey(() => {
+		if (!drawer) return false;
+		setDrawer(null);
+		return true;
+	}, drawer !== null);
+
+	useEffect(() => {
+		const onKey = (e: KeyboardEvent) => {
+			const isAltZ = e.altKey && !e.ctrlKey && !e.metaKey && e.key.toLowerCase() === "z";
+			const isCtrlShiftF = (e.ctrlKey || e.metaKey) && e.shiftKey && e.key.toLowerCase() === "f";
+			if (isAltZ || isCtrlShiftF) {
+				e.preventDefault();
+				toggleZenMode();
+				return;
+			}
+			// 抽屉开关：Ctrl+` 终端，Ctrl+Shift+G Git（Ctrl+G 被浏览器查找占用）。
+			const isTermToggle = (e.ctrlKey || e.metaKey) && !e.shiftKey && !e.altKey && (e.key === "`" || e.key === "~");
+			const isGitToggle = (e.ctrlKey || e.metaKey) && e.shiftKey && !e.altKey && e.key.toLowerCase() === "g";
+			if (isTermToggle) {
+				e.preventDefault();
+				if (termDrawerOpen) setTermDrawerOpen(false);
+				else openTerminalDrawer();
+				return;
+			}
+			if (isGitToggle) {
+				e.preventDefault();
+				if (gitDrawerOpen) setGitDrawerOpen(false);
+				else openGitDrawer();
+			}
+		};
+		window.addEventListener("keydown", onKey);
+		return () => window.removeEventListener("keydown", onKey);
+	}, [toggleZenMode, termDrawerOpen, gitDrawerOpen, openTerminalDrawer, openGitDrawer]);
+
 	const openNativeCliCreate = useCallback(
 		(projectCwd?: string) => {
 			if (sharedReadOnly) return;
@@ -2543,7 +2594,7 @@ export function App() {
 						zenMode={zenMode}
 						onToggleZenMode={toggleZenMode}
 					/>
-					<div className={`view-pane ${view === "chat" ? "" : "hidden"}`}>
+					<div className={`view-pane ${view === "chat" || view === "terminal" || view === "git" ? "" : "hidden"}`}>
 						{!isMobile && leftCollapsed && <PanelRail side="left" onClick={toggleLeft} />}
 						<div
 							className={`panel-drawer drawer-left ${drawer === "left" ? "open" : ""}${
@@ -2593,7 +2644,7 @@ export function App() {
 						<main
 							className={`${wide ? "main wide-chat" : "main"}${hideModelRow ? " hide-model-row" : ""}${
 								chat.transition && !chat.transition.previewMessages?.length ? " main-transitioning" : ""
-							}${isMinimalEmpty ? " main-minimal-empty" : ""}`}
+							}${isMinimalEmpty ? " main-minimal-empty" : ""}${gitDrawerOpen ? " git-open" : ""}`}
 						>
 							{Object.entries(cachedNativeClis).map(([id, info]) => {
 								const isCurrent = isNativeCliConversation && chat.state?.conversationId === id;
@@ -3104,6 +3155,31 @@ export function App() {
 									)}
 								</div>
 							)}
+							<Suspense fallback={null}>
+								<TerminalDrawer
+									open={termDrawerOpen}
+									onToggle={() => setTermDrawerOpen((v) => !v)}
+									chat={chat}
+									terminal={terminal}
+									uiTerminalToolbar={uiTerminalToolbar}
+									onUiAction={onUiAction}
+								/>
+							</Suspense>
+							<Suspense fallback={null}>
+								<GitDrawer
+									open={gitDrawerOpen}
+									onClose={() => setGitDrawerOpen(false)}
+									chat={chat}
+									terminal={terminal}
+									active={gitDrawerOpen && view === "chat"}
+									onSwitchToTerminal={() => {
+										setGitDrawerOpen(false);
+										openTerminalDrawer();
+									}}
+									uiScmToolbar={uiScmToolbar}
+									onUiAction={onUiAction}
+								/>
+							</Suspense>
 						</main>
 						{!isMobile && !rightCollapsed && <ResizeHandle side="right" width={rightWidth} onResize={resizeRight} />}
 						<div
@@ -3138,28 +3214,6 @@ export function App() {
 							/>
 						</div>
 						{!isMobile && rightCollapsed && <PanelRail side="right" onClick={toggleRight} />}
-					</div>
-					<div className={`view-pane ${view === "terminal" ? "" : "hidden"}`}>
-						<DeferredMount active={view === "terminal"}>
-							<TerminalPanel
-								chat={chat}
-								terminal={terminal}
-								uiTerminalToolbar={uiTerminalToolbar}
-								onUiAction={onUiAction}
-							/>
-						</DeferredMount>
-					</div>
-					<div className={`view-pane ${view === "git" ? "" : "hidden"}`}>
-						<DeferredMount active={view === "git"}>
-							<ScmPanel
-								chat={chat}
-								terminal={terminal}
-								active={view === "git"}
-								onSwitchToTerminal={() => setView("terminal")}
-								uiScmToolbar={uiScmToolbar}
-								onUiAction={onUiAction}
-							/>
-						</DeferredMount>
 					</div>
 					<div className={`view-pane ${view === "canvas" ? "" : "hidden"}`}>
 						<DeferredMount active={view === "canvas"}>
@@ -3346,7 +3400,10 @@ export function App() {
 						chat={chat}
 						terminal={terminal}
 						initialSection={settingsInitialSection}
-						onSwitchToTerminal={() => setView("terminal")}
+						onSwitchToTerminal={() => {
+							setSettingsOpen(false);
+							openTerminalDrawer();
+						}}
 						onClose={() => setSettingsOpen(false)}
 						onOpenIconEdit={() => setIconEditOpen(true)}
 						onOpenManageModels={() => {

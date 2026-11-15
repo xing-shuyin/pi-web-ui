@@ -1,6 +1,17 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { randomUuid } from "../uuid";
-import { FiEdit2, FiMenu, FiPlay, FiPlus, FiRefreshCw, FiTerminal, FiTrash2, FiX } from "react-icons/fi";
+import {
+	FiChevronDown,
+	FiChevronUp,
+	FiEdit2,
+	FiMenu,
+	FiPlay,
+	FiPlus,
+	FiRefreshCw,
+	FiTerminal,
+	FiTrash2,
+	FiX,
+} from "react-icons/fi";
 import type { ChatState, TerminalMeta } from "../use-chat";
 import type { CommandDef } from "../types";
 import { TermXterm } from "./TermXterm";
@@ -30,6 +41,8 @@ interface TerminalPanelProps {
 	};
 	uiTerminalToolbar?: UiSlotEntry[];
 	onUiAction?: (item: UiSlotEntry) => void;
+	collapsed?: boolean;
+	onToggleCollapse?: () => void;
 }
 
 interface Draft {
@@ -40,7 +53,14 @@ interface Draft {
 
 const EMPTY_DRAFT: Draft = { name: "", command: "", cwd: "${pwd}" };
 
-export function TerminalPanel({ chat: allChat, terminal, uiTerminalToolbar, onUiAction }: TerminalPanelProps) {
+export function TerminalPanel({
+	chat: allChat,
+	terminal,
+	uiTerminalToolbar,
+	onUiAction,
+	collapsed = false,
+	onToggleCollapse,
+}: TerminalPanelProps) {
 	const activeConversationId = allChat.activeConversationId || allChat.state?.conversationId || "";
 	const shellTerminals = useMemo(
 		() =>
@@ -312,8 +332,74 @@ export function TerminalPanel({ chat: allChat, terminal, uiTerminalToolbar, onUi
 		),
 	};
 
+	const runningCount = chat.terminals.filter((item) => item.running).length;
+
+	const closeAllTabs = () => {
+		for (const tab of chat.terminals) {
+			appSend({
+				type: "terminal_kill",
+				terminalId: tab.id,
+				conversationId: tab.conversationId,
+				ownerKind: tab.ownerKind ?? "client",
+			});
+			terminal.close(tab.id, tab.ownerKind ?? "client", tab.conversationId);
+		}
+		setActiveId(null);
+	};
+
 	return (
 		<div className="terminal-view">
+			<div className="td-head">
+				<div className="td-tabs">
+					{userTabs.map(renderTab)}
+					{agentTabs.length > 0 && (
+						<>
+							<button
+								type="button"
+								className={`td-group ${aiBashOpen ? "" : "closed"}`}
+								title={t("aiBashGroup")}
+								onClick={() => setAiBashOpen((v) => !v)}
+							>
+								<span className="td-caret">▾</span>
+								<span>{t("aiBashGroup")}</span>
+								<span className="td-count">{agentTabs.length}</span>
+							</button>
+							{aiBashOpen && agentTabs.map(renderTab)}
+						</>
+					)}
+					{chat.terminals.length === 0 && <span className="td-empty-hint">{t("noTerminal")}</span>}
+				</div>
+				<div className="td-sep" />
+				{renderMergedToolbar(termZone(["host:term-tab-new"], true), termHostNodes, onUiAction)}
+				<div className="td-actions">
+					{runningCount > 0 && (
+						<span className="td-badge">
+							<span className="td-tab-dot run" />
+							{runningCount}
+						</span>
+					)}
+					<button type="button" className="icon-btn" title={t("commands")} onClick={() => setSideOpen((v) => !v)}>
+						<FiMenu />
+					</button>
+					<button
+						type="button"
+						className="icon-btn"
+						title={collapsed ? t("termDrawerExpand") : t("termDrawerCollapse")}
+						onClick={onToggleCollapse}
+					>
+						{collapsed ? <FiChevronUp /> : <FiChevronDown />}
+					</button>
+					<button
+						type="button"
+						className="icon-btn danger"
+						title={t("closeAllTerminals")}
+						disabled={chat.terminals.length === 0}
+						onClick={closeAllTabs}
+					>
+						<FiX />
+					</button>
+				</div>
+			</div>
 			<aside className={`term-side term-commands ${sideOpen ? "open" : ""}`}>
 				<div className="panel-header">
 					<span className="panel-title">{t("commands")}</span>

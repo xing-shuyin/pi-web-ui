@@ -314,12 +314,13 @@ events.jsonl    追加式生命周期流水（有字节上限，截断后只留�
 - **按钮状态契约**：普通按钮统一用 `--button-bg/fg/border`、`--button-hover-bg/fg/border`；实底主按钮统一用 `--button-primary-bg/fg` 与 `--button-primary-hover-bg/fg`；危险按钮用 `--button-danger-bg/fg` 与 `--button-danger-hover-bg/fg`。主题优先覆盖成对变量，避免重复复制组件选择器。主按钮默认保持悬浮文字/底色配对，以外圈提示悬浮，禁止整体 brightness 滤镜同时改字与底。发送/停止的悬浮底色分别配 `--on-send-blue-hover` / `--on-stop-red-hover`，不能假设普通状态前景仍可读。`node tests/theme-buttons-test.mjs` 无需构建或启动服务，在真实 Chrome 中逐主题验证十类按钮普通/悬浮态的最终层叠与透明背景合成，对比度下限 3:1；无 Chrome 明确 SKIP，已加入全量冒烟。
 - **回归**：`theme-test.mjs`（端口 8937，隔离 data-dir）：列表/内置/用户主题、注入 link、浅色生效、刷新持久、用户主题可应用、回默认移除 link。
 
-## CSS 分层（`@layer guard, base, theme;`）
+## CSS 分层（`@layer guard, base, theme, drawer;`）
 
 - **为什么分层**：`web/src/styles.css` 是共享基线、主题是后加载的完整样式表，两者在同一份文档里争权重。分层重构前，能跨文件夺权的唯一手段就是 `!important`（叹号 important）：基线 218 处、主题侧 613 处（`bases/obsidian-base.css` 220、`bases/zhujian-base.css` 143、`bases/zhupi-base.css` 132、`aetheris.css` 118），主题要压住基线只能继续加码，越改越沉——典型的军备竞赛。改成显式分层 + 无层覆盖区后基线只剩 1 处（mermaid 运行时内联 style，见下），胜负由**层序**决定，叹号 important 不再是夺权工具。
-- **三层职责**（顺序声明只有一处：`web/src/styles.css` 顶部的 `@layer guard, base, theme;`，早于所有层块，层序按此固定）：
+- **四层职责**（顺序声明只有一处：`web/src/styles.css` 顶部的 `@layer guard, base, theme, drawer;`，早于所有层块，层序按此固定）：
   - `@layer base`：整份基线样式（`web/src/styles.css` 内容）。默认层，正常写选择器，不加 `!important`。
   - `@layer theme`：主题样式。**服务端统一下发**——`server/themes.ts` 的 `readThemeCss()` 内联展开 `@import` 后把整份文本包进 `@layer theme { … }`（只包最外层一次；递归内联的子文件原样返回，否则会变成嵌套层）。`themes/**/*.css` 源文件因此**不需要**自己写 `@layer`，也不需要 `!important`：只要写在主题里就天然压过 base。
+  - `@layer drawer`：终端底部抽屉与 Git 检阅抽屉（`web/src/drawer.css`，经 `@import … layer(drawer)` 引入）。它排在最后，因此能压过 base 里的同名规则，**不必靠复合类提权**；新增组件层只能追加到这个位置之后。
   - `@layer guard`：唯一活口是 mermaid——它用 d3 `.style()` 把字号写成 SVG 内联 `style`，任何普通声明都压不住，只能留这一处叹号 important（`styles.css` 末尾，写明原因）。guard 先声明，层序反转后它的 important 恒胜。别把普通样式挪进来偷懒。
 - **无层覆盖区**（`styles.css` 末尾、所有层块之后）：需要盖过主题或未分层三方库（highlight.js `github-dark.css`，bundle 里后加载）的结构性复位放这里——代码行清零（同为无层后靠更高权重盖过 `pre code.hljs`）、折叠态 `.goalbar.goalbar-collapsed` 抹皮（无层一句盖住 theme 层面板皮）。**未分层的普通声明永远胜过任何层内的普通声明**，所以这里不需要叹号 important。分包引入的 CSS（如 `web/src/model-management.css` 经 `@import … layer(base)`）与插件样式同样必须进层，不能裸奔成无层。
 - **层序规则（两个方向相反，最容易踩）**：普通声明按**层声明顺序**后者胜（`theme` > `base` > `guard`）；带叹号 important 的声明**反向**——先声明的层胜（`guard` > `base` > `theme`）。所以 guard 层的价值恰在于它**先**声明：mermaid 那一处例外放进去就能盖住运行时内联；而 base/theme 里写叹号 important 只会把自己钉死，越写越糟。另注：**未分层的样式永远胜过任何层内的普通声明**——这正是「无层覆盖区」能零提权盖住主题与 highlight.js 的原因。

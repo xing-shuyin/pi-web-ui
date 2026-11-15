@@ -7,7 +7,18 @@ import {
 	useRef,
 	useState,
 } from "react";
-import { FiArrowDown, FiArrowUp, FiCheck, FiCpu, FiGitBranch, FiRefreshCw, FiTerminal } from "react-icons/fi";
+import {
+	FiArrowDown,
+	FiArrowUp,
+	FiCheck,
+	FiChevronLeft,
+	FiCpu,
+	FiGitBranch,
+	FiMoreHorizontal,
+	FiRefreshCw,
+	FiTerminal,
+	FiX,
+} from "react-icons/fi";
 import type { ChatState, TerminalMeta } from "../use-chat";
 import type { ClientMessage, CommandDef, ServerMessage } from "../types";
 import { randomUuid } from "../uuid";
@@ -328,15 +339,25 @@ interface ScmPanelProps {
 	onSwitchToTerminal: () => void;
 	uiScmToolbar?: UiSlotEntry[];
 	onUiAction?: (item: UiSlotEntry) => void;
+	onClose?: () => void;
 }
 
-export function ScmPanel({ chat, terminal, active, onSwitchToTerminal, uiScmToolbar, onUiAction }: ScmPanelProps) {
+export function ScmPanel({
+	chat,
+	terminal,
+	active,
+	onSwitchToTerminal,
+	uiScmToolbar,
+	onUiAction,
+	onClose,
+}: ScmPanelProps) {
 	const t = useT();
 	const [status, setStatus] = useState<ScmStatus | null>(null);
 	const [branches, setBranches] = useState<ScmBranch[]>([]);
 	const [branchSel, setBranchSel] = useState("");
 	const [statMap, setStatMap] = useState<Map<string, StatInfo>>(new Map());
-	const [viewMode, setViewMode] = useState<"changes" | "history">("changes");
+	const [viewMode, setViewMode] = useState<"changes" | "history" | "stash">("changes");
+	const [moreOpen, setMoreOpen] = useState(false);
 	const [history, setHistory] = useState<ScmCommit[]>([]);
 	const [selectedCommit, setSelectedCommit] = useState<ScmCommit | null>(null);
 	const [commitDetail, setCommitDetail] = useState("");
@@ -1391,219 +1412,198 @@ export function ScmPanel({ chat, terminal, active, onSwitchToTerminal, uiScmTool
 	return (
 		<div className="scm-view">
 			<div className="scm-header">
-				<div className="scm-title-row">
-					<span className="scm-title">
+				<div className="gd-titlebar">
+					<span className="gd-title">
 						<FiGitBranch />
 						{t("scmTitle")}
 					</span>
-					<div className="scm-view-tabs" role="tablist">
-						{renderMergedToolbar(scmZone(["host:scm-changes", "host:scm-history"], false), scmHostNodes, onUiAction)}
-					</div>
-					{renderMergedToolbar(scmZone(["host:scm-refresh"], true), scmHostNodes, onUiAction)}
-				</div>
-
-				<div className="scm-row">
-					<span className="scm-branch-current" title={t("scmCurrentBranch")}>
-						<FiGitBranch />
-						{status ? (status.detached ? t("scmDetached") : status.branch) : "…"}
-						{status?.upstream && (
-							<span className="scm-upstream">
-								{status.upstreamGone
-									? t("scmUpstreamGone")
-									: status.ahead > 0 || status.behind > 0
-										? t("scmAheadBehind", {
-												ahead: status.ahead,
-												behind: status.behind,
-											})
-										: status.upstream}
-							</span>
+					<span className="gd-branch" title={t("scmCurrentBranch")}>
+						{renderMergedToolbar(scmZone(["host:scm-branch"], false), scmHostNodes, onUiAction)}
+					</span>
+					{status?.upstream && (
+						<span className={`gd-ab${status.upstreamGone ? " gone" : ""}`}>
+							{status.upstreamGone ? (
+								<span className="gone">{t("scmUpstreamGone")}</span>
+							) : (
+								<>
+									<span className="up">↑{status.ahead}</span>
+									<span className="dn">↓{status.behind}</span>
+								</>
+							)}
+						</span>
+					)}
+					<div className="gd-actions">
+						{renderMergedToolbar(scmZone(["host:scm-refresh"], true), scmHostNodes, onUiAction)}
+						{renderMergedToolbar(scmZone(["host:scm-push", "host:scm-pull"], false), scmHostNodes, onUiAction)}
+						<button
+							type="button"
+							className="icon-btn"
+							title={t("scmMoreActions")}
+							aria-expanded={moreOpen}
+							onClick={() => setMoreOpen((v) => !v)}
+						>
+							<FiMoreHorizontal />
+						</button>
+						{onClose && (
+							<button type="button" className="icon-btn" title={t("close")} onClick={onClose}>
+								<FiX />
+							</button>
 						)}
-					</span>
-					{renderMergedToolbar(scmZone(SCM_ROW_IDS, false), scmHostNodes, onUiAction)}
+					</div>
 				</div>
 
-				<div className="scm-row">
-					<span className="scm-files-count" title={t("scmStashListTip")}>
-						{t("scmStash")}
-					</span>
+				<div className="gd-seg">
+					{renderMergedToolbar(scmZone(["host:scm-changes", "host:scm-history"], false), scmHostNodes, onUiAction)}
 					<button
 						type="button"
-						className="btn"
-						disabled={notRepo}
-						title={t("scmStashListTip")}
-						onClick={handleStashList}
-					>
-						{t("scmStashList")}
-					</button>
-					<button
-						type="button"
-						className="btn"
-						disabled={notRepo}
-						title={t("scmStashSaveTip")}
-						onClick={handleStashSave}
-					>
-						{t("scmStashSave")}
-					</button>
-					<label
-						style={{
-							display: "inline-flex",
-							alignItems: "center",
-							gap: 4,
-							fontSize: 12,
-							fontWeight: 400,
-							cursor: "pointer",
+						className={viewMode === "stash" ? "on" : ""}
+						aria-selected={viewMode === "stash"}
+						onClick={() => {
+							setViewMode("stash");
+							setError(null);
+							void handleStashList();
 						}}
-						title={t("scmStashUntrackedTip")}
 					>
-						<input
-							type="checkbox"
-							checked={stashUntracked}
-							onChange={(e) => setStashUntracked(e.target.checked)}
-							disabled={notRepo}
-						/>
-						{t("scmStashUntracked")}
-					</label>
-					<input
-						className="scm-commit-input"
-						value={stashRefInput}
-						placeholder={t("scmStashRefPlaceholder")}
-						title={t("scmStashRefLabel")}
-						disabled={notRepo}
-						style={{ flex: "0 1 auto", minWidth: 90, maxWidth: 130 }}
-						onChange={(e) => setStashRefInput(e.target.value)}
-					/>
-					<button type="button" className="btn" disabled={notRepo} title={t("scmStashPopTip")} onClick={handleStashPop}>
-						{t("scmStashPop")}
+						{t("scmStash")}
+						{stashList && stashList.length > 0 && <span className="n">{stashList.length}</span>}
 					</button>
-					<button
-						type="button"
-						className="btn"
-						disabled={notRepo}
-						title={t("scmStashApplyTip")}
-						onClick={handleStashApply}
-					>
-						{t("scmStashApply")}
-					</button>
-					<button
-						type="button"
-						className="btn"
-						disabled={notRepo}
-						title={t("scmStashDropTip")}
-						onClick={handleStashDrop}
-					>
-						{t("scmStashDrop")}
-					</button>
-					{stashLoading && <span style={{ fontSize: 12, color: "var(--text-faint)" }}>{t("scmStashLoading")}</span>}
 				</div>
 
-				{stashList && stashList.length > 0 && (
-					<div style={{ display: "flex", flexDirection: "column", gap: 4, maxHeight: 120, overflowY: "auto" }}>
-						{stashList.map((entry) => (
-							<div key={entry.ref} style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12, minWidth: 0 }}>
-								<span
-									style={{
-										flexShrink: 0,
-										fontFamily: "var(--mono)",
-										color: "var(--accent)",
-										cursor: "pointer",
-									}}
-									title={entry.ref}
-									onClick={() => setStashRefInput(entry.ref)}
-								>
-									{entry.ref}
-								</span>
-								<span
-									style={{ flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}
-									title={entry.message}
-								>
-									{entry.message || "—"}
-								</span>
+				{moreOpen && (
+					<>
+						<button
+							type="button"
+							className="gd-more-scrim"
+							aria-label={t("close")}
+							onClick={() => setMoreOpen(false)}
+						/>
+						<div className="gd-more">
+							<div className="gd-more-title">{t("scmSwitchBranch")}</div>
+							<div className="gd-more-row">
+								{renderMergedToolbar(scmZone(["host:scm-switch"], false), scmHostNodes, onUiAction)}
+							</div>
+							<div className="gd-more-title">{t("scmBranchNew")}</div>
+							<div className="gd-more-row">
 								<button
 									type="button"
-									className="scm-act"
-									style={{ width: "auto", padding: "0 6px", fontSize: 11 }}
+									className="btn"
+									disabled={notRepo}
+									title={t("scmBranchNewTip")}
+									onClick={handleBranchCreate}
+								>
+									{t("scmBranchNew")}
+								</button>
+								<button
+									type="button"
+									className="btn"
+									disabled={notRepo || !branchSel}
+									title={t("scmBranchDeleteTip")}
+									onClick={handleBranchDelete}
+								>
+									{t("scmBranchDelete")}
+								</button>
+								<button
+									type="button"
+									className="btn"
+									disabled={notRepo || !branchSel}
+									title={t("scmBranchForceDeleteTip")}
+									onClick={handleBranchForceDelete}
+								>
+									{t("scmBranchForceDelete")}
+								</button>
+								<button
+									type="button"
+									className="btn"
+									disabled={notRepo || !status || status.detached}
+									title={t("scmBranchRenameTip")}
+									onClick={handleBranchRename}
+								>
+									{t("scmBranchRename")}
+								</button>
+								<button type="button" className="btn" disabled={notRepo} title={t("scmAmendTip")} onClick={handleAmend}>
+									{t("scmAmend")}
+								</button>
+								<button
+									type="button"
+									className="btn"
+									disabled={notRepo || !selected}
+									title={t("scmBlameTip")}
+									onClick={handleBlameToggle}
+									style={showBlame ? { background: "var(--accent-soft)", borderColor: "var(--accent)" } : {}}
+								>
+									{showBlame ? t("scmBlameHide") : t("scmBlameShow")}
+								</button>
+							</div>
+							<div className="gd-more-title">{t("scmStash")}</div>
+							<div className="gd-more-row">
+								<button
+									type="button"
+									className="btn"
+									disabled={notRepo}
+									title={t("scmStashSaveTip")}
+									onClick={handleStashSave}
+								>
+									{t("scmStashSave")}
+								</button>
+								<button
+									type="button"
+									className="btn"
+									disabled={notRepo}
 									title={t("scmStashPopTip")}
-									onClick={() => handleStashPopWithRef(entry.ref)}
+									onClick={handleStashPop}
 								>
 									{t("scmStashPop")}
 								</button>
 								<button
 									type="button"
-									className="scm-act"
-									style={{ width: "auto", padding: "0 6px", fontSize: 11 }}
+									className="btn"
+									disabled={notRepo}
 									title={t("scmStashApplyTip")}
-									onClick={() => handleStashApplyWithRef(entry.ref)}
+									onClick={handleStashApply}
 								>
 									{t("scmStashApply")}
 								</button>
 								<button
 									type="button"
-									className="scm-act"
-									style={{ width: "auto", padding: "0 6px", fontSize: 11 }}
+									className="btn"
+									disabled={notRepo}
 									title={t("scmStashDropTip")}
-									onClick={() => handleStashDropWithRef(entry.ref)}
+									onClick={handleStashDrop}
 								>
 									{t("scmStashDrop")}
 								</button>
+								<label
+									style={{
+										display: "inline-flex",
+										alignItems: "center",
+										gap: 4,
+										fontSize: 12,
+										fontWeight: 400,
+										cursor: "pointer",
+									}}
+									title={t("scmStashUntrackedTip")}
+								>
+									<input
+										type="checkbox"
+										checked={stashUntracked}
+										onChange={(e) => setStashUntracked(e.target.checked)}
+										disabled={notRepo}
+									/>
+									{t("scmStashUntracked")}
+								</label>
+								<input
+									className="scm-commit-input"
+									value={stashRefInput}
+									placeholder={t("scmStashRefPlaceholder")}
+									title={t("scmStashRefLabel")}
+									disabled={notRepo}
+									style={{ flex: "0 1 auto", minWidth: 90 }}
+									onChange={(e) => setStashRefInput(e.target.value)}
+								/>
 							</div>
-						))}
-					</div>
+						</div>
+					</>
 				)}
-				{stashList && stashList.length === 0 && !stashLoading && (
-					<div style={{ fontSize: 12, color: "var(--text-faint)" }}>{t("scmStashEmpty")}</div>
-				)}
-
-				<div className="scm-row">
-					<button
-						type="button"
-						className="btn"
-						disabled={notRepo}
-						title={t("scmBranchNewTip")}
-						onClick={handleBranchCreate}
-					>
-						{t("scmBranchNew")}
-					</button>
-					<button
-						type="button"
-						className="btn"
-						disabled={notRepo || !branchSel}
-						title={t("scmBranchDeleteTip")}
-						onClick={handleBranchDelete}
-					>
-						{t("scmBranchDelete")}
-					</button>
-					<button
-						type="button"
-						className="btn"
-						disabled={notRepo || !branchSel}
-						title={t("scmBranchForceDeleteTip")}
-						onClick={handleBranchForceDelete}
-					>
-						{t("scmBranchForceDelete")}
-					</button>
-					<button
-						type="button"
-						className="btn"
-						disabled={notRepo || !status || status.detached}
-						title={t("scmBranchRenameTip")}
-						onClick={handleBranchRename}
-					>
-						{t("scmBranchRename")}
-					</button>
-					<button type="button" className="btn" disabled={notRepo} title={t("scmAmendTip")} onClick={handleAmend}>
-						{t("scmAmend")}
-					</button>
-					<button
-						type="button"
-						className="btn"
-						disabled={notRepo || !selected}
-						title={t("scmBlameTip")}
-						onClick={handleBlameToggle}
-						style={showBlame ? { background: "var(--accent-soft)", borderColor: "var(--accent)" } : {}}
-					>
-						{showBlame ? t("scmBlameHide") : t("scmBlameShow")}
-					</button>
-				</div>
 
 				{genError && (
 					<div className="scm-gen-error" role="alert" title={t("close")} onClick={() => setGenError(null)}>
@@ -1612,8 +1612,81 @@ export function ScmPanel({ chat, terminal, active, onSwitchToTerminal, uiScmTool
 				)}
 			</div>
 
-			<div className="scm-body" ref={bodyRef} style={{ "--scm-sidebar-w": `${sidebarWidth}px` } as CSSProperties}>
-				{viewMode === "history" ? (
+			<div
+				className={`scm-body${viewMode === "stash" ? " stash-mode" : ""}${selected || selectedCommit ? " detail-mode" : ""}`}
+				ref={bodyRef}
+				style={{ "--scm-sidebar-w": `${sidebarWidth}px` } as CSSProperties}
+			>
+				{viewMode === "stash" ? (
+					<div className="scm-stash">
+						<div className="scm-files-header">
+							<span>{t("scmStash")}</span>
+							<button
+								type="button"
+								className="scm-act"
+								style={{ width: "auto", padding: "0 6px", fontSize: 11 }}
+								title={t("scmStashListTip")}
+								disabled={notRepo || stashLoading}
+								onClick={handleStashList}
+							>
+								{stashLoading ? t("scmStashLoading") : t("scmStashList")}
+							</button>
+						</div>
+						<div className="scm-files-list">
+							{notRepo ? (
+								<div className="scm-empty">{t("scmNotGitRepo")}</div>
+							) : stashLoading ? (
+								<div className="scm-empty">{t("scmStashLoading")}</div>
+							) : !stashList || stashList.length === 0 ? (
+								<div className="scm-empty">{t("scmStashEmpty")}</div>
+							) : (
+								stashList.map((entry) => (
+									<div key={entry.ref} className="scm-file" style={{ cursor: "default" }}>
+										<span
+											className="scm-file-path"
+											style={{ cursor: "pointer" }}
+											title={entry.ref}
+											onClick={() => setStashRefInput(entry.ref)}
+										>
+											<span style={{ color: "var(--accent)", fontFamily: "var(--mono)" }}>{entry.ref}</span>
+											{"  "}
+											{entry.message || "—"}
+										</span>
+										<span className="scm-file-actions">
+											<button
+												type="button"
+												className="scm-act"
+												style={{ width: "auto", padding: "0 5px", fontSize: 10.5 }}
+												title={t("scmStashPopTip")}
+												onClick={() => handleStashPopWithRef(entry.ref)}
+											>
+												{t("scmStashPop")}
+											</button>
+											<button
+												type="button"
+												className="scm-act"
+												style={{ width: "auto", padding: "0 5px", fontSize: 10.5 }}
+												title={t("scmStashApplyTip")}
+												onClick={() => handleStashApplyWithRef(entry.ref)}
+											>
+												{t("scmStashApply")}
+											</button>
+											<button
+												type="button"
+												className="scm-act"
+												style={{ width: "auto", padding: "0 5px", fontSize: 10.5 }}
+												title={t("scmStashDropTip")}
+												onClick={() => handleStashDropWithRef(entry.ref)}
+											>
+												{t("scmStashDrop")}
+											</button>
+										</span>
+									</div>
+								))
+							)}
+						</div>
+					</div>
+				) : viewMode === "history" ? (
 					<div className="scm-history">
 						<div className="scm-files-header">
 							<span>{t("scmHistory")}</span>
@@ -1786,6 +1859,17 @@ export function ScmPanel({ chat, terminal, active, onSwitchToTerminal, uiScmTool
 
 				<div className="scm-diff">
 					<div className="scm-diff-header">
+						<button
+							type="button"
+							className="scm-back"
+							title={t("scmBackToList")}
+							onClick={() => {
+								setSelected(null);
+								setSelectedCommit(null);
+							}}
+						>
+							<FiChevronLeft />
+						</button>
 						<span style={{ flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis" }}>
 							{viewMode === "history"
 								? selectedCommit
@@ -2010,6 +2094,36 @@ export function ScmPanel({ chat, terminal, active, onSwitchToTerminal, uiScmTool
 							</>
 						)}
 					</div>
+				</div>
+			</div>
+
+			<div className="gd-commit-bar">
+				<div className="commit-box">
+					{renderMergedToolbar(scmZone(["host:scm-input"], false), scmHostNodes, onUiAction)}
+					<div className="commit-row">
+						{renderMergedToolbar(scmZone(["host:scm-genmsg"], false), scmHostNodes, onUiAction)}
+						<span style={{ marginLeft: "auto", display: "inline-flex", gap: 4 }}>
+							{renderMergedToolbar(scmZone(["host:scm-commit-all"], false), scmHostNodes, onUiAction)}
+							{renderMergedToolbar(scmZone(["host:scm-commit"], false), scmHostNodes, onUiAction)}
+						</span>
+					</div>
+				</div>
+				<div className="gd-foot">
+					<button type="button" className="link" onClick={onSwitchToTerminal}>
+						<FiTerminal />
+						{scmLabel("host:scm-term", t("scmViewTerminal"))}
+					</button>
+					<span
+						style={{
+							marginLeft: "auto",
+							minWidth: 0,
+							overflow: "hidden",
+							textOverflow: "ellipsis",
+							whiteSpace: "nowrap",
+						}}
+					>
+						{status?.upstream ?? ""}
+					</span>
 				</div>
 			</div>
 
