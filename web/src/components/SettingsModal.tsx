@@ -1377,103 +1377,38 @@ function LoadedSettingsModal({
 		"device-collab": "advanced",
 	};
 
-	const TAB_KEYWORDS: Record<string, string[]> = {
-		models: [
-			"模型",
-			"服务商",
-			"baseurl",
-			"api key",
-			"provider",
-			"token",
-			"deepseek",
-			"claude",
-			"openai",
-			"gemini",
-			"ollama",
-			"glm",
-			"minimax",
-			"qwen",
-			"中转",
-			"自定义模型",
-			"推理",
-			"r1",
-		],
-		prompt: ["系统提示词", "system prompt", "前缀", "角色", "instructions", "设定", "提示词", "自定义提示词"],
-		"quick-ask": ["随手问", "解释", "选中文字", "小窗", "quick ask", "explain", "popup"],
-		"prompt-history": ["历史", "输入历史", "prompt history", "记录", "清除历史", "对话历史"],
-		scheduler: ["定时", "定时任务", "cron", "scheduler", "自动化", "后台", "排期", "计划任务"],
-		tools: [
-			"工具",
-			"bash",
-			"终端",
-			"read",
-			"edit",
-			"write",
-			"延迟加载",
-			"lazy",
-			"只读",
-			"powershell",
-			"grep",
-			"find",
-			"目录",
-			"工具开关",
-			"prompt cache",
-			"前缀缓存",
-		],
-		"approval-rules": [
-			"审批",
-			"安全",
-			"规则",
-			"approval",
-			"deny",
-			"allow",
-			"二次确认",
-			"白名单",
-			"权限",
-			"拦截",
-			"高危",
-		],
-		question: ["问卷", "提问", "questionnaire", "dsh"],
-		display: ["显示", "排版", "宽屏", "wide", "隐藏模型", "avatar", "头像", "折叠", "紧凑", "样式", "气泡", "字号"],
-		sound: ["声音", "音效", "语音", "tts", "朗读", "音量", "提示音", "静音", "播报"],
-		quick: ["快捷", "短语", "quick phrase", "常用语", "快捷短语", "快捷回复"],
-		skills: ["技能", "skills", "slash", "斜杠", "技能库", "市场"],
-		extensions: ["扩展", "extensions", "补丁", "patches", "dsh"],
-		plugins: ["插件", "ui plugins", "市场", "catalog", "更新", "组件"],
-		mcp: ["mcp", "servers", "stdio", "sse", "协议", "服务器", "外部工具"],
-		layout: ["布局", "layout", "顶栏", "底栏", "图标", "icons", "排列", "按钮", "侧栏", "dock"],
-		review: ["审查", "review", "目标", "gate", "审阅"],
-		vision: ["视觉", "vision", "截图", "图片", "视觉桥", "屏幕"],
-		presets: ["预设", "presets", "分享", "导出", "导入", "社区预设"],
-		"dsh-presets": ["dsh", "预设", "权限", "ptc", "极简模式"],
-		"subagent-templates": ["子代理", "subagent", "templates", "模板", "并发", "角色模板"],
-		"device-collab": [
-			"群组",
-			"群任务",
-			"设备",
-			"协作",
-			"并发",
-			"调度",
-			"派发",
-			"配额",
-			"限制",
-			"文件同步",
-			"上下文",
-			"黑板",
-			"锁",
-			"bot",
-			"mention",
-			"device",
-			"group",
-			"collaboration",
-			"scheduler",
-			"dispatch",
-			"quota",
-			"sync",
-			"blackboard",
-			"lock",
-		],
-	};
+	// 页签搜索同义词：译文随界面语言切换，每条 key 用逗号分隔（中英文逗号都认）。
+	const tabKeywords = useMemo<Record<string, string[]>>(() => {
+		const split = (value: string) =>
+			value
+				.split(/[,，]/)
+				.map((word) => word.trim())
+				.filter(Boolean);
+		return {
+			models: split(t("settingsSearchKeywordsModels")),
+			prompt: split(t("settingsSearchKeywordsPrompt")),
+			"quick-ask": split(t("settingsSearchKeywordsQuickAsk")),
+			"prompt-history": split(t("settingsSearchKeywordsPromptHistory")),
+			scheduler: split(t("settingsSearchKeywordsScheduler")),
+			tools: split(t("settingsSearchKeywordsTools")),
+			"approval-rules": split(t("settingsSearchKeywordsApprovalRules")),
+			question: split(t("settingsSearchKeywordsQuestion")),
+			display: split(t("settingsSearchKeywordsDisplay")),
+			sound: split(t("settingsSearchKeywordsSound")),
+			quick: split(t("settingsSearchKeywordsQuick")),
+			skills: split(t("settingsSearchKeywordsSkills")),
+			extensions: split(t("settingsSearchKeywordsExtensions")),
+			plugins: split(t("settingsSearchKeywordsPlugins")),
+			mcp: split(t("settingsSearchKeywordsMcp")),
+			layout: split(t("settingsSearchKeywordsLayout")),
+			review: split(t("settingsSearchKeywordsReview")),
+			vision: split(t("settingsSearchKeywordsVision")),
+			presets: split(t("settingsSearchKeywordsPresets")),
+			"dsh-presets": split(t("settingsSearchKeywordsDshPresets")),
+			"subagent-templates": split(t("settingsSearchKeywordsSubagentTemplates")),
+			"device-collab": split(t("settingsSearchKeywordsDeviceCollab")),
+		};
+	}, [t]);
 
 	const GROUP_LABELS = {
 		core: t("settingsGroupCore"),
@@ -1489,11 +1424,11 @@ function LoadedSettingsModal({
 		if (!q) return tabs;
 		return tabs.filter((t) => {
 			if (t.label.toLowerCase().includes(q) || t.id.toLowerCase().includes(q)) return true;
-			const kw = TAB_KEYWORDS[t.id];
+			const kw = tabKeywords[t.id];
 			if (kw && kw.some((k) => k.toLowerCase().includes(q) || q.includes(k.toLowerCase()))) return true;
 			return false;
 		});
-	}, [tabs, tabSearchQuery]);
+	}, [tabs, tabKeywords, tabSearchQuery]);
 
 	useEffect(() => {
 		if (!tabSearchQuery.trim()) return;
@@ -1610,9 +1545,7 @@ function LoadedSettingsModal({
 				name: e.id,
 				source: "cli",
 				enabled: e.enabled,
-				description: e.path
-					? `CLI 扩展（随 agentDir 继承） ${e.path} / CLI extension (inherited via agentDir) ${e.path}`
-					: "CLI 扩展（随 agentDir 继承） / CLI extension (inherited via agentDir)",
+				description: e.path ? `${t("settingsInventoryCliDesc")} ${e.path}` : t("settingsInventoryCliDesc"),
 			});
 		}
 		for (const p of chat.plugins ?? []) {
@@ -1621,9 +1554,7 @@ function LoadedSettingsModal({
 				source: "webui",
 				enabled: !(settings.disabledPlugins ?? []).includes(p.id),
 				version: p.version,
-				description: p.description?.trim()
-					? p.description.trim()
-					: "WebUI 专属插件（可写） / WebUI-specific plugin (writable)",
+				description: p.description?.trim() ? p.description.trim() : t("settingsInventoryWebuiDesc"),
 				...(p.error?.trim() ? { error: p.error.trim() } : {}),
 			});
 		}
@@ -1656,7 +1587,7 @@ function LoadedSettingsModal({
 					typeof (s as { description?: unknown }).description === "string" &&
 					((s as { description?: string }).description ?? "").trim()
 						? ((s as { description?: string }).description ?? "").trim()
-						: `MCP 服务器（${s.scope}，随 agentDir/cwd 继承） / MCP server (${s.scope}, inherited via agentDir/cwd)`,
+						: t("settingsInventoryMcpDesc", { scope: s.scope }),
 				...(err ? { error: err } : {}),
 				...(health ? { health } : {}),
 				...(typeof tools?.length === "number" ? { toolCount: tools.length } : {}),
@@ -1664,7 +1595,7 @@ function LoadedSettingsModal({
 		}
 		out.sort((a, b) => a.source.localeCompare(b.source) || a.name.localeCompare(b.name));
 		return out;
-	}, [chat, settings]);
+	}, [chat, settings, t]);
 
 	useEffect(() => {
 		if (tab === "extensions") {
@@ -3877,13 +3808,16 @@ function LoadedSettingsModal({
 															{t("toolOnDemandTools")} · {onDemandEffectiveCount}
 														</span>
 														<span className="toolflow-count">
-															常驻<b>{rs}</b>
+															{t("settingsToolFlowStateResident")}
+															<b>{rs}</b>
 														</span>
 														<span className="toolflow-count">
-															按需<b>{lz}</b>
+															{t("settingsToolFlowStateLazy")}
+															<b>{lz}</b>
 														</span>
 														<span className="toolflow-count">
-															关闭<b>{of}</b>
+															{t("settingsToolFlowStateOff")}
+															<b>{of}</b>
 														</span>
 													</>
 												);
@@ -3895,7 +3829,7 @@ function LoadedSettingsModal({
 											<input
 												value={toolFlowQuery}
 												onChange={(e) => setToolFlowQuery(e.target.value)}
-												placeholder="搜索工具名 / 描述 / 插件…"
+												placeholder={t("settingsToolFlowSearch")}
 											/>
 											{toolFlowQuery && (
 												<button type="button" className="tpl-chip" onClick={() => setToolFlowQuery("")}>
@@ -3958,7 +3892,7 @@ function LoadedSettingsModal({
 															const first = list[0];
 															return {
 																key: pid || "__unknown__",
-																label: first.pluginName ?? pid ?? "未知插件",
+																label: first.pluginName ?? pid ?? t("settingsToolFlowUnknownPlugin"),
 																sub: pid,
 																list,
 															};
@@ -3983,21 +3917,27 @@ function LoadedSettingsModal({
 															}
 															return (
 																<>
-																	<span>常驻 {rs}</span>
-																	<span>按需 {lz}</span>
-																	<span>关闭 {of}</span>
+																	<span>
+																		{t("settingsToolFlowStateResident")} {rs}
+																	</span>
+																	<span>
+																		{t("settingsToolFlowStateLazy")} {lz}
+																	</span>
+																	<span>
+																		{t("settingsToolFlowStateOff")} {of}
+																	</span>
 																</>
 															);
 														})()}
 													</span>
 													<button type="button" className="tpl-chip" onClick={() => bulk("resident")}>
-														全常驻
+														{t("settingsBulkAllResident")}
 													</button>
 													<button type="button" className="tpl-chip" onClick={() => bulk("lazy")}>
-														全按需
+														{t("settingsBulkAllLazy")}
 													</button>
 													<button type="button" className="tpl-chip" onClick={() => bulk("off")}>
-														全关
+														{t("settingsBulkAllOff")}
 													</button>
 												</div>
 												{groups.map((g) => {
@@ -4015,13 +3955,13 @@ function LoadedSettingsModal({
 																	<span className="sub">{g.sub}</span>
 																	<span className="ops">
 																		<button type="button" className="tpl-chip" onClick={() => gBulk("resident")}>
-																			全常驻
+																			{t("settingsBulkAllResident")}
 																		</button>
 																		<button type="button" className="tpl-chip" onClick={() => gBulk("lazy")}>
-																			全按需
+																			{t("settingsBulkAllLazy")}
 																		</button>
 																		<button type="button" className="tpl-chip" onClick={() => gBulk("off")}>
-																			全关
+																			{t("settingsBulkAllOff")}
 																		</button>
 																	</span>
 																</div>
@@ -4041,9 +3981,14 @@ function LoadedSettingsModal({
 																			: item.descKey
 																				? String(t(item.descKey as never) ?? "")
 																				: item.group;
-																	const stateLabel = st === "resident" ? "常驻" : st === "lazy" ? "按需" : "关闭";
+																	const stateLabel =
+																		st === "resident"
+																			? t("settingsToolFlowStateResident")
+																			: st === "lazy"
+																				? t("settingsToolFlowStateLazy")
+																				: t("settingsToolFlowStateOff");
 																	const reason = neverLazy
-																		? "核心常驻"
+																		? t("settingsToolFlowStateCoreResident")
 																		: blocked
 																			? t("toolsBlockedByPreset", { name: piPresetName })
 																			: pluginOff
@@ -4091,7 +4036,9 @@ function LoadedSettingsModal({
 																					type="button"
 																					className={"editbtn" + (editedToolNames.has(n) ? " has-edit" : "")}
 																					title={
-																						editedToolNames.has(n) ? "文案已自定义，点一下继续改" : "改这个工具的提示词"
+																						editedToolNames.has(n)
+																							? t("settingsToolPromptCustomizedAction")
+																							: t("settingsToolPromptEditAction")
 																					}
 																					onClick={(e) => {
 																						e.stopPropagation();
@@ -4118,7 +4065,9 @@ function LoadedSettingsModal({
 											<b>{t("settingsMarkers")}</b>
 											<HintTip text={`${t("settingsMarkersDesc")}\n${t("markerRenameTip")}`} />
 											<span className="sub">
-												{markersOn === 0 ? "已全部关闭" : `${markersOn} / ${markersTotal} 已启用`}
+												{markersOn === 0
+													? t("settingsMarkersAllOff")
+													: t("settingsMarkersEnabledCount", { on: markersOn, total: markersTotal })}
 											</span>
 											<span className="ops">
 												<button
@@ -4130,7 +4079,7 @@ function LoadedSettingsModal({
 														setPartial({ disabledMarkers: [...keep] });
 													}}
 												>
-													全开
+													{t("settingsBulkAllOn")}
 												</button>
 												<button
 													type="button"
@@ -4141,7 +4090,7 @@ function LoadedSettingsModal({
 														setPartial({ disabledMarkers: [...keep] });
 													}}
 												>
-													全关
+													{t("settingsBulkAllOff")}
 												</button>
 											</span>
 										</div>
@@ -4156,7 +4105,8 @@ function LoadedSettingsModal({
 															: m.name === "action"
 																? t("markerGroupAction")
 																: m.name;
-												const detail = displayName + " · " + (m.enabled ? "启用" : "关闭");
+												const detail =
+													displayName + " · " + (m.enabled ? t("settingsMarkerStateOn") : t("settingsMarkerStateOff"));
 												const guide = (m.guidance ?? []).join(" ");
 												const capped = guide.length > 60 ? guide.slice(0, 60) + "…" : guide;
 												return (
@@ -4181,7 +4131,8 @@ function LoadedSettingsModal({
 														</div>
 														<div className="st">
 															<span className="st-text">
-																{m.enabled ? "启用" : "关闭"} · {m.pluginId ?? m.name}
+																{m.enabled ? t("settingsMarkerStateOn") : t("settingsMarkerStateOff")} ·{" "}
+																{m.pluginId ?? m.name}
 															</span>
 															<TipButton
 																className="qbtn"
@@ -7937,7 +7888,9 @@ function LoadedSettingsModal({
 									<Markdown text={inspectingSkill.content} />
 								</div>
 							) : (
-								<div style={{ textAlign: "center", padding: "48px 0", color: "var(--text-faint)" }}>暂无指令内容</div>
+								<div style={{ textAlign: "center", padding: "48px 0", color: "var(--text-faint)" }}>
+									{t("settingsSkillInspectEmpty")}
+								</div>
 							)}
 						</div>
 						<div className="skill-inspect-footer">
