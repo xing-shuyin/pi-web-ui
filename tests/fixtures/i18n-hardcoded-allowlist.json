@@ -1,0 +1,8297 @@
+{
+	"note": "Shrink-only allowlist of hardcoded UI literals in web/src (see scripts/i18n-literal-inventory.mjs). reason=pending: migrate to i18n keys; reason=data: third-party catalog content, notUI chrome.",
+	"entries": [
+		{
+			"file": "web/src/App.tsx",
+			"text": "未找到会话",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/at-mention.ts",
+			"text": "网页",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/at-mention.ts",
+			"text": "页面",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/bash-danger.tsx",
+			"text": "高危命令片段",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/browser-control.ts",
+			"text": "宿主页面桥不可用：这个 pi-web-ui 页面还没装上扩展桥（装/启用 page-picker 后刷新本页）",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/browser-control.ts",
+			"text": "扩展没有返回状态",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/browser-control.ts",
+			"text": "此桌面版尚未提供原生浏览器桥：请升级到支持 AI Browser 的桌面版，或在系统浏览器中使用 page-picker 扩展",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/canvas-mentions.ts",
+			"text": "工作流",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/canvas-mentions.ts",
+			"text": "画布",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/BrandDeviceMenu.tsx",
+			"text": "设备列表",
+			"count": 3,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/BrowserControl.tsx",
+			"text": "仅 Agent 模式",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/BrowserControl.tsx",
+			"text": "完整浏览器 (Browser)",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/BrowserControl.tsx",
+			"text": "已打开的网页标签",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/BrowserControl.tsx",
+			"text": "并列分栏 (Split)",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/BrowserControl.tsx",
+			"text": "打开浏览器分栏 (Ctrl+Shift+3) · 右键打开选项",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/BrowserControl.tsx",
+			"text": "收起浏览器分栏 (Ctrl+Shift+2) · 右键打开选项",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/BrowserControl.tsx",
+			"text": "新建网页标签",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/BrowserControl.tsx",
+			"text": "新标签页",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/BrowserControl.tsx",
+			"text": "桌面内置浏览器已就绪，可在右侧并列分栏浏览网页，或切换到独立浏览器。",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/BrowserControl.tsx",
+			"text": "视图模式",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/BrowserControl.tsx",
+			"text": "跳转",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/canvas/CanvasAiBar.tsx",
+			"text": "人工",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/canvas/CanvasAiBar.tsx",
+			"text": "合并",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/canvas/CanvasAiBar.tsx",
+			"text": "合规",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/canvas/CanvasAiBar.tsx",
+			"text": "实现",
+			"count": 2,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/canvas/CanvasAiBar.tsx",
+			"text": "审批",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/canvas/CanvasAiBar.tsx",
+			"text": "审查",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/canvas/CanvasAiBar.tsx",
+			"text": "开发",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/canvas/CanvasAiBar.tsx",
+			"text": "打分",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/canvas/CanvasAiBar.tsx",
+			"text": "拆解",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/canvas/CanvasAiBar.tsx",
+			"text": "搜索",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/canvas/CanvasAiBar.tsx",
+			"text": "文档",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/canvas/CanvasAiBar.tsx",
+			"text": "架构",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/canvas/CanvasAiBar.tsx",
+			"text": "汇总",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/canvas/CanvasAiBar.tsx",
+			"text": "测试",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/canvas/CanvasAiBar.tsx",
+			"text": "编码",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/canvas/CanvasAiBar.tsx",
+			"text": "规划",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/canvas/CanvasAiBar.tsx",
+			"text": "评估",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/canvas/CanvasAiBar.tsx",
+			"text": "调研",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/canvas/CanvasAiBar.tsx",
+			"text": "选型",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/canvas/CanvasAiBar.tsx",
+			"text": "重构",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/canvas/CanvasTypes.ts",
+			"text": "严格",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/canvas/CanvasTypes.ts",
+			"text": "宽松",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/canvas/CanvasTypes.ts",
+			"text": "快速",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/canvas/CanvasTypes.ts",
+			"text": "标准",
+			"count": 4,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/canvas/CanvasTypes.ts",
+			"text": "深度",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/canvas/CanvasTypes.ts",
+			"text": "生产",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/canvas/CanvasTypes.ts",
+			"text": "预发",
+			"count": 2,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/ChatInput.tsx",
+			"text": "只规划",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/ChatInput.tsx",
+			"text": "当前底层智能体不支持跨对话引用（缺少 conversation_read 工具），请移除会话引用后再发送。",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/ChatInput.tsx",
+			"text": "直接发送给 ${groupPrimaryBotName}，或 @ 其他 Bot",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/ChatInput.tsx",
+			"text": "群任务计划模式（只规划不实施）",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/ChatInput.tsx",
+			"text": "群计划模式",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/ChatInput.tsx",
+			"text": "群计划模式（只规划，不实施写操作）",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/ChatInput.tsx",
+			"text": "输入 @，选择 Bot 开始新对话或继续之前的对话",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/ChatInput.tsx",
+			"text": "选择或 @ 群成员 Bot",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/desktop-clipboard-control.tsx",
+			"text": "连接暂不可用，已保留同步方向。请重新连接或重试。",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/desktop-clipboard-control.tsx",
+			"text": "重试",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/DesktopSplitResizer.tsx",
+			"text": "按住拖动调整分栏比例，拖至边缘可隐藏",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/DesktopSplitResizer.tsx",
+			"text": "释放隐藏智能体",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/DesktopSplitResizer.tsx",
+			"text": "释放隐藏浏览器",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/DeviceCenter.tsx",
+			"text": "先连接设备中心，再创建群组、配置群组 AI 并接入外部渠道。",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/DeviceCenter.tsx",
+			"text": "刷新远程桌面状态",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/DeviceCenter.tsx",
+			"text": "前往设备连接",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/DeviceCenter.tsx",
+			"text": "启用远程桌面",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/DeviceCenter.tsx",
+			"text": "外部渠道",
+			"count": 2,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/DeviceCenter.tsx",
+			"text": "屏幕录制：已授权",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/DeviceCenter.tsx",
+			"text": "已发起授权请求，请确认系统设置后刷新状态。",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/DeviceCenter.tsx",
+			"text": "已启用",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/DeviceCenter.tsx",
+			"text": "授予屏幕录制权限",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/DeviceCenter.tsx",
+			"text": "授予远程控制权限",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/DeviceCenter.tsx",
+			"text": "无法更新本机远程桌面设置，请重试。",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/DeviceCenter.tsx",
+			"text": "未启用",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/DeviceCenter.tsx",
+			"text": "本机远程桌面",
+			"count": 2,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/DeviceCenter.tsx",
+			"text": "点击下方按钮发起系统授权，请在这台 Mac 的系统设置中确认。授权后可能需要重启服务。",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/DeviceCenter.tsx",
+			"text": "管理这台设备的远程桌面与系统权限，无需连接设备中心。",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/DeviceCenter.tsx",
+			"text": "群组与工单",
+			"count": 2,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/DeviceCenter.tsx",
+			"text": "设备与协作导航",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/DeviceCenter.tsx",
+			"text": "设备与连接",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/DeviceCenter.tsx",
+			"text": "请在设备本机打开此页面以管理远程桌面权限。",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/DeviceCenter.tsx",
+			"text": "这台设备暂不支持远程桌面。",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/DeviceCenter.tsx",
+			"text": "远程控制：已授权",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/DeviceCenter.tsx",
+			"text": "远程桌面由本机服务设置保持启用。",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/DeviceChannels.tsx",
+			"text": "GitHub / 飞书渠道",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/DeviceChannels.tsx",
+			"text": "内置渠道模块暂不可用，请重新加载页面或重启主程序。",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/DeviceChannels.tsx",
+			"text": "外部渠道配置",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/DeviceChannels.tsx",
+			"text": "将外部事件映射到群组，由群组 AI 分派任务并跟进工单。",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/DeviceChannels.tsx",
+			"text": "正在加载渠道配置…",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/DeviceChannels.tsx",
+			"text": "渠道配置界面加载失败。",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/DeviceChannels.tsx",
+			"text": "管理群组与 AI",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/DeviceChannels.tsx",
+			"text": "重试",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/DeviceDirectory.tsx",
+			"text": "保存",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/DeviceDirectory.tsx",
+			"text": "保存中…",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/DeviceDirectory.tsx",
+			"text": "保存备注失败",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/DeviceDirectory.tsx",
+			"text": "修改备注",
+			"count": 2,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/DeviceDirectory.tsx",
+			"text": "刷新设备",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/DeviceDirectory.tsx",
+			"text": "取消",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/DeviceDirectory.tsx",
+			"text": "同一账号下的设备，使用本机绑定授权直接访问。",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/DeviceDirectory.tsx",
+			"text": "在线",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/DeviceDirectory.tsx",
+			"text": "所有设备",
+			"count": 2,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/DeviceDirectory.tsx",
+			"text": "打开设备",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/DeviceDirectory.tsx",
+			"text": "无法读取设备列表，请重试。",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/DeviceDirectory.tsx",
+			"text": "本机",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/DeviceDirectory.tsx",
+			"text": "离线",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/DeviceDirectory.tsx",
+			"text": "设备列表格式异常。",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/DeviceDirectory.tsx",
+			"text": "设置备注",
+			"count": 2,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/DeviceDirectory.tsx",
+			"text": "请重新绑定本机以读取设备列表。",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/DeviceDirectory.tsx",
+			"text": "输入设备备注（留空清除）",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/DeviceDirectory.tsx",
+			"text": "远程桌面",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/DeviceFileTransfer.tsx",
+			"text": "+ 发起新文件/目录传输",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/DeviceFileTransfer.tsx",
+			"text": "✓ SHA256 完整校验通过",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/DeviceFileTransfer.tsx",
+			"text": "${stagedCount} 个待导入",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/DeviceFileTransfer.tsx",
+			"text": "${stagingCount} 个传输中",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/DeviceFileTransfer.tsx",
+			"text": "32KiB 有界分块传输与断点校验中",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/DeviceFileTransfer.tsx",
+			"text": "传输任务已成功启动 (ID: ${result.transferId?.slice(0, 8) ?? \"\"})，正在后台分块传输中。",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/DeviceFileTransfer.tsx",
+			"text": "传输失败",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/DeviceFileTransfer.tsx",
+			"text": "传输已中断",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/DeviceFileTransfer.tsx",
+			"text": "传输已取消",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/DeviceFileTransfer.tsx",
+			"text": "传输已取消，暂存文件与配额已物理释放",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/DeviceFileTransfer.tsx",
+			"text": "分块: ",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/DeviceFileTransfer.tsx",
+			"text": "分块传输中",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/DeviceFileTransfer.tsx",
+			"text": "取消中",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/DeviceFileTransfer.tsx",
+			"text": "取消传输",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/DeviceFileTransfer.tsx",
+			"text": "变更差异预览：",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/DeviceFileTransfer.tsx",
+			"text": "启动中...",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/DeviceFileTransfer.tsx",
+			"text": "大小: ",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/DeviceFileTransfer.tsx",
+			"text": "失败",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/DeviceFileTransfer.tsx",
+			"text": "如: src/ 或 large-asset.bin",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/DeviceFileTransfer.tsx",
+			"text": "导入中",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/DeviceFileTransfer.tsx",
+			"text": "导入中...",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/DeviceFileTransfer.tsx",
+			"text": "导入成功：已应用 ${result.applied?.length ?? 0} 个文件，未变 ${result.unchanged?.length ?? 0} 个",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/DeviceFileTransfer.tsx",
+			"text": "已中断",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/DeviceFileTransfer.tsx",
+			"text": "已取消",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/DeviceFileTransfer.tsx",
+			"text": "已导入",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/DeviceFileTransfer.tsx",
+			"text": "开始分块传输",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/DeviceFileTransfer.tsx",
+			"text": "当前群暂无文件传输记录。",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/DeviceFileTransfer.tsx",
+			"text": "待确认导入",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/DeviceFileTransfer.tsx",
+			"text": "按原版本续传",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/DeviceFileTransfer.tsx",
+			"text": "排队中",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/DeviceFileTransfer.tsx",
+			"text": "支持突破 8MiB 限制的大文件及 >128 文件的目录分块传输。发起后将在此实时展示进度与断点续传状态。",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/DeviceFileTransfer.tsx",
+			"text": "收起传输表单",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/DeviceFileTransfer.tsx",
+			"text": "文件: ",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/DeviceFileTransfer.tsx",
+			"text": "显式覆盖",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/DeviceFileTransfer.tsx",
+			"text": "正在创建并启动文件传输...",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/DeviceFileTransfer.tsx",
+			"text": "正在导入文件变更...",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/DeviceFileTransfer.tsx",
+			"text": "源机器人 (发送端)",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/DeviceFileTransfer.tsx",
+			"text": "源机器人与目标机器人不能相同",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/DeviceFileTransfer.tsx",
+			"text": "目标机器人 (接收端)",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/DeviceFileTransfer.tsx",
+			"text": "相对路径（文件或目录，每行一个）",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/DeviceFileTransfer.tsx",
+			"text": "确认导入变更 (Apply)",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/DeviceFileTransfer.tsx",
+			"text": "跨机大文件传输与断点续传",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/DeviceFileTransfer.tsx",
+			"text": "递归包含子目录 (recursive)",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/DeviceGroupBotDialog.tsx",
+			"text": "Bot 已保存；请启用并同步到中心后，再添加到群组。",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/DeviceGroupBotDialog.tsx",
+			"text": "关闭",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/DeviceGroupBotDialog.tsx",
+			"text": "加载中…",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/DeviceGroupBotDialog.tsx",
+			"text": "新建 Bot",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/DeviceGroupBotDialog.tsx",
+			"text": "正在添加…",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/DeviceGroupBotDialog.tsx",
+			"text": "没有可添加的 Bot，可以新建一个。",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/DeviceGroupBotDialog.tsx",
+			"text": "添加 Bot",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/DeviceGroupBotDialog.tsx",
+			"text": "添加到群组",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/DeviceGroupBotDialog.tsx",
+			"text": "添加或新建 Bot",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/DeviceGroupBotDialog.tsx",
+			"text": "选择已有 Bot 加入群组，或在本机新建 Bot。",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/DeviceGroupManager.tsx",
+			"text": " · 已禁用",
+			"count": 2,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/DeviceGroupManager.tsx",
+			"text": "[主 Bot: ${primaryBot.name}]",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/DeviceGroupManager.tsx",
+			"text": "不设置（需 @ Bot）",
+			"count": 2,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/DeviceGroupManager.tsx",
+			"text": "保存",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/DeviceGroupManager.tsx",
+			"text": "保存中…",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/DeviceGroupManager.tsx",
+			"text": "保存成员设置",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/DeviceGroupManager.tsx",
+			"text": "关闭",
+			"count": 3,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/DeviceGroupManager.tsx",
+			"text": "创建中…",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/DeviceGroupManager.tsx",
+			"text": "创建群聊",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/DeviceGroupManager.tsx",
+			"text": "删除群聊",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/DeviceGroupManager.tsx",
+			"text": "刷新群聊",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/DeviceGroupManager.tsx",
+			"text": "加载中…",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/DeviceGroupManager.tsx",
+			"text": "原主 Bot（Router 未启用时）",
+			"count": 2,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/DeviceGroupManager.tsx",
+			"text": "取消",
+			"count": 3,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/DeviceGroupManager.tsx",
+			"text": "在线",
+			"count": 2,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/DeviceGroupManager.tsx",
+			"text": "工单与运行",
+			"count": 2,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/DeviceGroupManager.tsx",
+			"text": "成员设置已保存",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/DeviceGroupManager.tsx",
+			"text": "打开聊天",
+			"count": 2,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/DeviceGroupManager.tsx",
+			"text": "新建群聊",
+			"count": 2,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/DeviceGroupManager.tsx",
+			"text": "暂无可用 Bot",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/DeviceGroupManager.tsx",
+			"text": "暂无可用 Bot，请先创建 Bot。",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/DeviceGroupManager.tsx",
+			"text": "确定删除群聊“${room.name}”？",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/DeviceGroupManager.tsx",
+			"text": "离线",
+			"count": 2,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/DeviceGroupManager.tsx",
+			"text": "管理成员",
+			"count": 3,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/DeviceGroupManager.tsx",
+			"text": "管理群聊与成员 Bot，在此配置协作群组或直接进入聊天。",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/DeviceGroupManager.tsx",
+			"text": "群名称",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/DeviceGroupManager.tsx",
+			"text": "群组设置",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/DeviceGroupManager.tsx",
+			"text": "群聊列表",
+			"count": 2,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/DeviceGroupManager.tsx",
+			"text": "群聊创建成功",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/DeviceGroupManager.tsx",
+			"text": "群聊名称已更新",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/DeviceGroupManager.tsx",
+			"text": "群聊已删除",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/DeviceGroupManager.tsx",
+			"text": "输入新群名称",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/DeviceGroupManager.tsx",
+			"text": "输入群名称，如：研发协作群",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/DeviceGroupManager.tsx",
+			"text": "还没有群聊，点击上方“新建群聊”开始协作。",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/DeviceGroupManager.tsx",
+			"text": "选择成员 Bot",
+			"count": 2,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/DeviceGroupManager.tsx",
+			"text": "重命名",
+			"count": 2,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/DeviceGroupMembers.tsx",
+			"text": "${zh ? \"引用成员\" : \"Reference member\"} · ${member.name}",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/DeviceGroupMembers.tsx",
+			"text": "加载中…",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/DeviceGroupMembers.tsx",
+			"text": "在线",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/DeviceGroupMembers.tsx",
+			"text": "引用成员",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/DeviceGroupMembers.tsx",
+			"text": "无法加载群成员，请重试。",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/DeviceGroupMembers.tsx",
+			"text": "暂无成员",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/DeviceGroupMembers.tsx",
+			"text": "离线",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/DeviceGroupMembers.tsx",
+			"text": "设备绑定无效。",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/DeviceGroupMembers.tsx",
+			"text": "访问设备",
+			"count": 2,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/DeviceGroupMembers.tsx",
+			"text": "远程桌面",
+			"count": 2,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/DeviceGroups.tsx",
+			"text": "Bot 已保存；请启用并同步到中心后，再加入群组。",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/DeviceGroups.tsx",
+			"text": "不设置（需 @ Bot）",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/DeviceGroups.tsx",
+			"text": "中心未保存主 Bot 设置，请更新群组所属的设备中心（Hub）后重试。",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/DeviceGroups.tsx",
+			"text": "任务: ",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/DeviceGroups.tsx",
+			"text": "保存设置",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/DeviceGroups.tsx",
+			"text": "加载中…",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/DeviceGroups.tsx",
+			"text": "原主 Bot（Router 未启用时）",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/DeviceGroups.tsx",
+			"text": "取消",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/DeviceGroups.tsx",
+			"text": "在线",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/DeviceGroups.tsx",
+			"text": "已保存成员和主 Bot 设置。",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/DeviceGroups.tsx",
+			"text": "建群",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/DeviceGroups.tsx",
+			"text": "打开聊天",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/DeviceGroups.tsx",
+			"text": "搜索群或任务…",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/DeviceGroups.tsx",
+			"text": "新建 Bot",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/DeviceGroups.tsx",
+			"text": "未启用 Router 时，未 @ Bot 的消息发送给原主 Bot。独立 AI Router 请在群聊顶部配置。",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/DeviceGroups.tsx",
+			"text": "本机访问被拒绝，请检查本机登录状态与访问权限。",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/DeviceGroups.tsx",
+			"text": "离线",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/DeviceGroups.tsx",
+			"text": "管理成员",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/DeviceGroups.tsx",
+			"text": "群名称",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/DeviceGroups.tsx",
+			"text": "群聊",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/DeviceGroups.tsx",
+			"text": "设备绑定已失效或已解除，请在设备设置中重新绑定。",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/DeviceGroups.tsx",
+			"text": "请求失败",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/DeviceGroups.tsx",
+			"text": "还没有群聊，创建一个群开始协作。",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/DeviceGroups.tsx",
+			"text": "选择 Bot（设备仅承载 Bot）",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/DeviceGroups.tsx",
+			"text": "选择一个群聊",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/DeviceGroupSection.tsx",
+			"text": "${room.name} · ${isZhLocale(locale) ? \"成员\" : \"Members\"}",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/DeviceGroupSection.tsx",
+			"text": "${room.name} · ${isZhLocale(locale) ? \"添加 Bot\" : \"Add Bot\"}",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/DeviceGroupSection.tsx",
+			"text": "保存",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/DeviceGroupSection.tsx",
+			"text": "删除群组",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/DeviceGroupSection.tsx",
+			"text": "加载中…",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/DeviceGroupSection.tsx",
+			"text": "取消",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/DeviceGroupSection.tsx",
+			"text": "展开群组",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/DeviceGroupSection.tsx",
+			"text": "建群",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/DeviceGroupSection.tsx",
+			"text": "打开设备中心",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/DeviceGroupSection.tsx",
+			"text": "折叠群组",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/DeviceGroupSection.tsx",
+			"text": "无法访问群组，请检查本机访问权限。",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/DeviceGroupSection.tsx",
+			"text": "添加或新建 Bot",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/DeviceGroupSection.tsx",
+			"text": "清空消息",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/DeviceGroupSection.tsx",
+			"text": "确定删除群组“{name}”？",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/DeviceGroupSection.tsx",
+			"text": "确定清空群组“{name}”的全部消息和历史任务记录？此操作无法撤销，群组和成员将保留。",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/DeviceGroupSection.tsx",
+			"text": "管理成员",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/DeviceGroupSection.tsx",
+			"text": "群内仍有排队或运行中的任务，请等待任务结束后再操作。",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/DeviceGroupSection.tsx",
+			"text": "群名称",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/DeviceGroupSection.tsx",
+			"text": "群组",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/DeviceGroupSection.tsx",
+			"text": "群组请求失败，请重试。",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/DeviceGroupSection.tsx",
+			"text": "请先在设备设置中绑定本机，旧版绑定请重新绑定。",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/DeviceGroupSection.tsx",
+			"text": "还没有群组",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/DeviceGroupSection.tsx",
+			"text": "重命名",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/DeviceGroupSection.tsx",
+			"text": "重试",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/DirectoryBrowser.tsx",
+			"text": "${t(\"addWorkspaceRoot\")} · ${isZh ? \"已在工作区根中\" : \"Already a workspace root\"}",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/DirectoryBrowser.tsx",
+			"text": "${t(\"addWorkspaceRoot\")} · ${isZh ? \"已是当前项目目录\" : \"Already the current project\"}",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/DirectoryBrowser.tsx",
+			"text": "${t(\"addWorkspaceRoot\")} · ${isZh ? \"此电脑本身不是目录\" : \"This PC is not a directory\"}",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/DirectoryBrowser.tsx",
+			"text": "${t(\"cwdGoUp\")} · ${isZh ? \"已在顶层\" : \"already at top\"}",
+			"count": 2,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/DirectoryBrowser.tsx",
+			"text": "${t(\"cwdNewFolder\")} · ${isZh ? \"此电脑下不能新建\" : \"Cannot create here\"}",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/DirectoryBrowser.tsx",
+			"text": "${t(\"cwdPickCurrent\")} · ${isZh ? \"此电脑不能作为工作目录\" : \"This PC cannot be a workspace\"}",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/DirectoryBrowser.tsx",
+			"text": "主机密钥已变更",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/DirectoryBrowser.tsx",
+			"text": "信任并重试",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/DirectoryBrowser.tsx",
+			"text": "取消",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/DirectoryBrowser.tsx",
+			"text": "安装 ${tool} 失败，可能需要远端 sudo 权限",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/DirectoryBrowser.tsx",
+			"text": "已安装",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/DirectoryBrowser.tsx",
+			"text": "我已核对过，该指纹正确",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/DirectoryBrowser.tsx",
+			"text": "新主机密钥待确认",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/DirectoryBrowser.tsx",
+			"text": "正在加载远程目录…",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/DirectoryBrowser.tsx",
+			"text": "请先去服务器控制台核对指纹，确认一致再勾选。",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/DirectoryBrowser.tsx",
+			"text": "请填写主机地址和用户名",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/DirectoryBrowser.tsx",
+			"text": "读取远程目录失败",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/DirectoryBrowser.tsx",
+			"text": "远端环境未检测到 Git / 基础工具，SCM 与执行功能可能受限。",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/DirectoryBrowser.tsx",
+			"text": "连接远程服务器失败",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/ExtensionInventory.tsx",
+			"text": "SDK 不支持单独启停，仅展示 / Not switchable via SDK, display only",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/ExtensionInventory.tsx",
+			"text": "一键刷新 Refresh all",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/ExtensionInventory.tsx",
+			"text": "停用 Disable",
+			"count": 2,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/ExtensionInventory.tsx",
+			"text": "启用 Enable",
+			"count": 2,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/ExtensionInventory.tsx",
+			"text": "在线 Online",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/ExtensionInventory.tsx",
+			"text": "外部 External",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/ExtensionInventory.tsx",
+			"text": "已停用 Disabled",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/ExtensionInventory.tsx",
+			"text": "已停用 Stopped",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/ExtensionInventory.tsx",
+			"text": "已启用 Enabled",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/ExtensionInventory.tsx",
+			"text": "异常 Error",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/ExtensionInventory.tsx",
+			"text": "搜索名称 / 描述 / 错误 Search name, description, error",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/ExtensionInventory.tsx",
+			"text": "未知 Unknown",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/ExtensionInventory.tsx",
+			"text": "离线 Offline",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/FileChangeCard.tsx",
+			"text": "(无入参参数 / No arguments)",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/GroupBlackboardView.tsx",
+			"text": "# 群组共享共识\\n\\n## 架构设计\\n- 统一事件模型\\n- 接口规范定义\\n\\n## 任务分工\\n- [ ] BotA: 调研接口\\n- [ ] BotB: 实现测试",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/GroupBlackboardView.tsx",
+			"text": "api规范",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/GroupBlackboardView.tsx",
+			"text": "人工",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/GroupBlackboardView.tsx",
+			"text": "任务分工",
+			"count": 2,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/GroupBlackboardView.tsx",
+			"text": "任务流水线",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/GroupBlackboardView.tsx",
+			"text": "任务流水线分工与进度追踪\\n\\n例如：\\n- [ ] @BotA: 数据层适配与测试\\n- [ ] @BotB: 业务层实现\\n- [ ] @BotC: 验证与交付物汇总",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/GroupBlackboardView.tsx",
+			"text": "例如：系统统一重构规范 (RFC-089)",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/GroupBlackboardView.tsx",
+			"text": "保存中...",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/GroupBlackboardView.tsx",
+			"text": "保存黑板失败",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/GroupBlackboardView.tsx",
+			"text": "全量共识",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/GroupBlackboardView.tsx",
+			"text": "共识主题 / 标题 (可选)",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/GroupBlackboardView.tsx",
+			"text": "关键技术决策",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/GroupBlackboardView.tsx",
+			"text": "最后更新者",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/GroupBlackboardView.tsx",
+			"text": "决策记录",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/GroupBlackboardView.tsx",
+			"text": "分工与进度",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/GroupBlackboardView.tsx",
+			"text": "协议契约",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/GroupBlackboardView.tsx",
+			"text": "取消",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/GroupBlackboardView.tsx",
+			"text": "在此输入该分区的 Markdown 格式内容...",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/GroupBlackboardView.tsx",
+			"text": "复制",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/GroupBlackboardView.tsx",
+			"text": "复制当前查看的黑板内容",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/GroupBlackboardView.tsx",
+			"text": "已复制",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/GroupBlackboardView.tsx",
+			"text": "当前群组黑板为空。点击右上角“编辑共识”为所有协作 Bot 确立技术架构契约与长期记忆。",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/GroupBlackboardView.tsx",
+			"text": "技术方案",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/GroupBlackboardView.tsx",
+			"text": "接口契约",
+			"count": 2,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/GroupBlackboardView.tsx",
+			"text": "接口契约与数据模型定义\\n\\n例如：\\n- REST / RPC 接口路由与方法\\n- 请求入参和响应出参 JSON Schema\\n- 错误码与异常契约",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/GroupBlackboardView.tsx",
+			"text": "接口规范",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/GroupBlackboardView.tsx",
+			"text": "提交保存",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/GroupBlackboardView.tsx",
+			"text": "数据契约",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/GroupBlackboardView.tsx",
+			"text": "更新时间",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/GroupBlackboardView.tsx",
+			"text": "未初始化",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/GroupBlackboardView.tsx",
+			"text": "架构契约",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/GroupBlackboardView.tsx",
+			"text": "架构设计",
+			"count": 2,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/GroupBlackboardView.tsx",
+			"text": "架构设计与技术栈决策规范\\n\\n例如：\\n- 系统分层与目录拓扑\\n- 事件模型与状态机规范\\n- 核心数据流驱动方式",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/GroupBlackboardView.tsx",
+			"text": "流水线分工",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/GroupBlackboardView.tsx",
+			"text": "系统架构",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/GroupBlackboardView.tsx",
+			"text": "结构化 Markdown 全量内容",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/GroupBlackboardView.tsx",
+			"text": "编辑共识",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/GroupBlackboardView.tsx",
+			"text": "编辑分区：${activePresetDef ? activePresetDef.titleZh : activeSection?.title || activeTab}",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/GroupBlackboardView.tsx",
+			"text": "编辑此分区",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/GroupBlackboardView.tsx",
+			"text": "编辑黑板内容",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/GroupBlackboardView.tsx",
+			"text": "该分区当前尚无记录内容。点击右上角“编辑此分区”快速添加共识与规则。",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/GroupBlackboardView.tsx",
+			"text": "阻塞与决策",
+			"count": 2,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/GroupBlackboardView.tsx",
+			"text": "阻塞卡点与关键技术决策记录 (ADR)\\n\\n例如：\\n- 决策：采用 SSE 替代长轮询\\n- 阻塞：依赖的设备驱动尚未注册",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/GroupBlackboardView.tsx",
+			"text": "风险与阻塞",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/GroupBlackboardView.tsx",
+			"text": "黑板内容不能为空",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/GroupBlackboardView.tsx",
+			"text": "黑板协议版本",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/GroupBlackboardView.tsx",
+			"text": "黑板已被其他成员更新，版本发生冲突，请刷新后重试。",
+			"count": 2,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/GroupBotPresets.tsx",
+			"text": "${zh ? \"已保存新版本\" : \"Saved revision\"} v${data.bot.revision}${data.synced ? \"\" : zh ? \"；Hub同步待重试\" : \"; Hub sync pending\"}",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/GroupBotPresets.tsx",
+			"text": "Bot 配置与预设",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/GroupBotPresets.tsx",
+			"text": "仅编辑本机 Bot。保存创建新 revision；忙碌的 Bot 会拒绝修改，在途任务不热改。",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/GroupBotPresets.tsx",
+			"text": "保存为新 revision（基于 v${bot.revision}）",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/GroupBotPresets.tsx",
+			"text": "允许字段：model、tools、skills、mcpServers、systemPrompt。省略字段保留当前值；工具、技能、MCP及模型须在本机目录中可用。",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/GroupBotPresets.tsx",
+			"text": "可选预设 JSON（仅填写要修改的字段）",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/GroupBotPresets.tsx",
+			"text": "已授权工具",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/GroupBotPresets.tsx",
+			"text": "无",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/GroupBotPresets.tsx",
+			"text": "模型",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/GroupBotPresets.tsx",
+			"text": "此 Bot 在远程设备。请在该设备的本机界面读取和保存配置。",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/GroupBotPresets.tsx",
+			"text": "跟随设备默认",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/GroupBotPresets.tsx",
+			"text": "选择 Bot",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/GroupBotPresets.tsx",
+			"text": "重新读取配置",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/GroupCanvasBinding.tsx",
+			"text": "保存群引用",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/GroupCanvasBinding.tsx",
+			"text": "启动绑定画布",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/GroupCanvasBinding.tsx",
+			"text": "已请求启动，等待画布运行状态。",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/GroupCanvasBinding.tsx",
+			"text": "引用保存在群组中。运行发生在绑定设备，使用下方工作目录；保存引用不会运行。",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/GroupCanvasBinding.tsx",
+			"text": "本机工作目录",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/GroupCanvasBinding.tsx",
+			"text": "本机工程",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/GroupCanvasBinding.tsx",
+			"text": "此画布属于另一台设备，请在该设备打开群组后运行。可选择本机画布重新绑定。",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/GroupCanvasBinding.tsx",
+			"text": "画布连接已断开。",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/GroupCanvasBinding.tsx",
+			"text": "群画布",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/GroupCanvasBinding.tsx",
+			"text": "群画布引用已保存；点击启动才会执行。",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/GroupCanvasBinding.tsx",
+			"text": "解除引用",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/GroupCanvasBinding.tsx",
+			"text": "选择画布",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/GroupConversation.tsx",
+			"text": "⏳ 等待中",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/GroupConversation.tsx",
+			"text": "${attentionCount} 项待处理",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/GroupConversation.tsx",
+			"text": "Bot 预设",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/GroupConversation.tsx",
+			"text": "中止",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/GroupConversation.tsx",
+			"text": "中止任务失败",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/GroupConversation.tsx",
+			"text": "中止此任务",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/GroupConversation.tsx",
+			"text": "交付与待办",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/GroupConversation.tsx",
+			"text": "位协作 Bot",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/GroupConversation.tsx",
+			"text": "工单与运行",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/GroupConversation.tsx",
+			"text": "已启用",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/GroupConversation.tsx",
+			"text": "成员状态",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/GroupConversation.tsx",
+			"text": "所选 Bot 未授权 plan_update，请先在 Bot 工具白名单中启用。",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/GroupConversation.tsx",
+			"text": "所选对话不可用，请重新选择对话或新建任务。",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/GroupConversation.tsx",
+			"text": "打开 Bot 预设与规则配置抽屉",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/GroupConversation.tsx",
+			"text": "打开交付与待办审查抽屉",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/GroupConversation.tsx",
+			"text": "打开群画布工作流抽屉",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/GroupConversation.tsx",
+			"text": "打开群组共享共识黑板",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/GroupConversation.tsx",
+			"text": "打开跨机大文件传输抽屉",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/GroupConversation.tsx",
+			"text": "文件传输",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/GroupConversation.tsx",
+			"text": "无法更新对话列表，请稍后重试。",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/GroupConversation.tsx",
+			"text": "未启用",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/GroupConversation.tsx",
+			"text": "未启用 · 沿用原主 Bot 协作",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/GroupConversation.tsx",
+			"text": "查看成员运行状态与授权工具",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/GroupConversation.tsx",
+			"text": "此群聊已删除或你已不在群中，请返回。",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/GroupConversation.tsx",
+			"text": "流水线流转依赖",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/GroupConversation.tsx",
+			"text": "点击在协同抽屉中查看需要处理的交付与事项",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/GroupConversation.tsx",
+			"text": "点击查看协作 Bot 成员详情",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/GroupConversation.tsx",
+			"text": "等待前序任务",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/GroupConversation.tsx",
+			"text": "继续对话只能发送给原 Bot，请移除其他目标。",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/GroupConversation.tsx",
+			"text": "继续对话失败，请重试或重新选择目标。",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/GroupConversation.tsx",
+			"text": "群画布",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/GroupConversation.tsx",
+			"text": "群组 AI Router",
+			"count": 2,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/GroupConversation.tsx",
+			"text": "群黑板",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/GroupConversation.tsx",
+			"text": "联合开发群",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/GroupConversation.tsx",
+			"text": "设备绑定已失效，请返回设备设置重新绑定。",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/GroupConversation.tsx",
+			"text": "详情",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/GroupConversation.tsx",
+			"text": "转向",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/GroupConversation.tsx",
+			"text": "返回对话",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/GroupConversation.tsx",
+			"text": "返回普通对话",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/GroupConversation.tsx",
+			"text": "配置入站与出站 Webhook",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/GroupConversation.tsx",
+			"text": "飞行中实时注入转向纠偏",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/GroupDeliveries.tsx",
+			"text": "Bot 未报告检查",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/GroupDeliveries.tsx",
+			"text": "Bot 未报告限制",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/GroupDeliveries.tsx",
+			"text": "Bot 配置已变更（revision/设备/成员），此会话无法继续；请新建对话。",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/GroupDeliveries.tsx",
+			"text": "交付摘要",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/GroupDeliveries.tsx",
+			"text": "交付版本 ID",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/GroupDeliveries.tsx",
+			"text": "产物",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/GroupDeliveries.tsx",
+			"text": "人工",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/GroupDeliveries.tsx",
+			"text": "人工验收意见（对应以上交付版本）",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/GroupDeliveries.tsx",
+			"text": "仅显示需要处理的事项",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/GroupDeliveries.tsx",
+			"text": "仓库",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/GroupDeliveries.tsx",
+			"text": "你的答复",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/GroupDeliveries.tsx",
+			"text": "全部对话",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/GroupDeliveries.tsx",
+			"text": "关闭会话",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/GroupDeliveries.tsx",
+			"text": "内容摘要",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/GroupDeliveries.tsx",
+			"text": "分支",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/GroupDeliveries.tsx",
+			"text": "删除会话（释放容量）",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/GroupDeliveries.tsx",
+			"text": "加载中…",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/GroupDeliveries.tsx",
+			"text": "回复并继续",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/GroupDeliveries.tsx",
+			"text": "在输入框输入 @，选择此 Bot 的原对话补充要求或继续处理。",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/GroupDeliveries.tsx",
+			"text": "基线 SHA",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/GroupDeliveries.tsx",
+			"text": "完整交付与历史",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/GroupDeliveries.tsx",
+			"text": "对应验证：",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/GroupDeliveries.tsx",
+			"text": "已交付 · 待验收",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/GroupDeliveries.tsx",
+			"text": "已回复，原会话将继续。",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/GroupDeliveries.tsx",
+			"text": "当前为摘要，请展开完整交付后验收。",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/GroupDeliveries.tsx",
+			"text": "当前没有需要处理的事项。",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/GroupDeliveries.tsx",
+			"text": "执行状态",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/GroupDeliveries.tsx",
+			"text": "承载 Bot 的设备已解绑，此会话已停止。",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/GroupDeliveries.tsx",
+			"text": "提交中…",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/GroupDeliveries.tsx",
+			"text": "文件树版本",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/GroupDeliveries.tsx",
+			"text": "暂无 Bot 对话。",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/GroupDeliveries.tsx",
+			"text": "未交付（执行结束不代表已交付）",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/GroupDeliveries.tsx",
+			"text": "未命名对话",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/GroupDeliveries.tsx",
+			"text": "检查来源：Bot 自报，未经宿主或 CI 验证。",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/GroupDeliveries.tsx",
+			"text": "此会话已停止。",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/GroupDeliveries.tsx",
+			"text": "源码任务",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/GroupDeliveries.tsx",
+			"text": "请先展开验证与合并，完成验证后填写验收证据。",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/GroupDeliveries.tsx",
+			"text": "逐项验收",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/GroupDeliveries.tsx",
+			"text": "重试",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/GroupDeliveries.tsx",
+			"text": "限制与未完成项",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/GroupDeliveries.tsx",
+			"text": "需要我处理",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/GroupDeliveries.tsx",
+			"text": "需返工",
+			"count": 2,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/GroupDeliveries.tsx",
+			"text": "验收意见",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/GroupDeliveries.tsx",
+			"text": "验收证据",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/GroupDeliveries.tsx",
+			"text": "验收通过",
+			"count": 2,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/GroupDrawer.tsx",
+			"text": "Bot 预设与规则配置",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/GroupDrawer.tsx",
+			"text": "主协调",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/GroupDrawer.tsx",
+			"text": "交付与待办事项",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/GroupDrawer.tsx",
+			"text": "关闭",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/GroupDrawer.tsx",
+			"text": "关闭抽屉 (Esc)",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/GroupDrawer.tsx",
+			"text": "在线就绪",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/GroupDrawer.tsx",
+			"text": "授权工具: ",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/GroupDrawer.tsx",
+			"text": "离线",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/GroupDrawer.tsx",
+			"text": "群协作 Bot 成员清单",
+			"count": 2,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/GroupDrawer.tsx",
+			"text": "群协同",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/GroupDrawer.tsx",
+			"text": "群画布工作流",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/GroupDrawer.tsx",
+			"text": "群组 AI Router",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/GroupDrawer.tsx",
+			"text": "群组 Webhook 集成",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/GroupDrawer.tsx",
+			"text": "群组共享共识黑板",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/GroupDrawer.tsx",
+			"text": "群组工单与 Router 运行",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/GroupDrawer.tsx",
+			"text": "设备: ",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/GroupDrawer.tsx",
+			"text": "跨机大文件传输与断点续传",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/GroupIntegration.tsx",
+			"text": " : \"\"}，验收通过并确认后才写入目标分支。",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/GroupIntegration.tsx",
+			"text": "（点击即确认合并，绝不强制覆盖或自动推送）",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/GroupIntegration.tsx",
+			"text": "Bot 自述结果:",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/GroupIntegration.tsx",
+			"text": "候选提交：",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/GroupIntegration.tsx",
+			"text": "先在独立工作区验证此交付${delivery.commit ? ",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/GroupIntegration.tsx",
+			"text": "准备中…",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/GroupIntegration.tsx",
+			"text": "准备隔离集成",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/GroupIntegration.tsx",
+			"text": "发布意图：",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/GroupIntegration.tsx",
+			"text": "发布结果仍未知。稍后手动回查；不会自动重发写入。",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/GroupIntegration.tsx",
+			"text": "发布结果未知",
+			"count": 2,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/GroupIntegration.tsx",
+			"text": "发布结果未知。回查只读取证据，不会自动重新写入分支。",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/GroupIntegration.tsx",
+			"text": "取消集成",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/GroupIntegration.tsx",
+			"text": "命令已锁定。重试会运行相同命令；更换命令需要新建验证。",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/GroupIntegration.tsx",
+			"text": "回查发布证据",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/GroupIntegration.tsx",
+			"text": "基线 SHA: ",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/GroupIntegration.tsx",
+			"text": "封闭写入并确认进程停止",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/GroupIntegration.tsx",
+			"text": "已合并",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/GroupIntegration.tsx",
+			"text": "已封闭写入并确认进程停止；历史发布结果仍未知。",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/GroupIntegration.tsx",
+			"text": "已封闭未来写入；原发布进程停止尚未确认，仍保持隔离。",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/GroupIntegration.tsx",
+			"text": "已确认在发布前取消。",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/GroupIntegration.tsx",
+			"text": "已确认封闭并停止发布操作。",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/GroupIntegration.tsx",
+			"text": "已记录分支 ${activeIntegration.targetBranch} 的历史发布结果；当前分支状态以上方观察为准。",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/GroupIntegration.tsx",
+			"text": "已记录发布效果，原进程停止仍未确认。请稍后回查。",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/GroupIntegration.tsx",
+			"text": "已记录发布效果（证据：${activeIntegration.publishReceipt?.proof ?? \"legacy\"}）。",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/GroupIntegration.tsx",
+			"text": "当前目标观察：",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/GroupIntegration.tsx",
+			"text": "待集成",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/GroupIntegration.tsx",
+			"text": "恢复同一发布意图",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/GroupIntegration.tsx",
+			"text": "新建整合与验证",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/GroupIntegration.tsx",
+			"text": "新提交 SHA: ",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/GroupIntegration.tsx",
+			"text": "旧发布记录缺少持久意图，历史结果未知。需本机核查；不会自动重试。",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/GroupIntegration.tsx",
+			"text": "旧记录标记已应用；没有持久发布回执。",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/GroupIntegration.tsx",
+			"text": "未知（尚未观察）",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/GroupIntegration.tsx",
+			"text": "查看冲突 Diff",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/GroupIntegration.tsx",
+			"text": "检测到合并冲突！无法自动合并：",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/GroupIntegration.tsx",
+			"text": "正在写入目标分支…",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/GroupIntegration.tsx",
+			"text": "目标分支:",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/GroupIntegration.tsx",
+			"text": "目标分支: ",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/GroupIntegration.tsx",
+			"text": "目标工作区 (Bot):",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/GroupIntegration.tsx",
+			"text": "确认合并写入 ${activeIntegration.targetBranch}",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/GroupIntegration.tsx",
+			"text": "自定义验证命令，如 npm test",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/GroupIntegration.tsx",
+			"text": "请勾选或输入至少一条验证命令",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/GroupIntegration.tsx",
+			"text": "请完成与本次验证对应的独立验收，再确认合并。",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/GroupIntegration.tsx",
+			"text": "请由账户所有者选择或填写命令。点击验证即授权执行并锁定这些命令。",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/GroupIntegration.tsx",
+			"text": "集成 Diff 预览",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/GroupIntegration.tsx",
+			"text": "集成状态: ",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/GroupIntegration.tsx",
+			"text": "验证",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/GroupIntegration.tsx",
+			"text": "验证与合并",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/GroupIntegration.tsx",
+			"text": "验证中…",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/GroupIntegration.tsx",
+			"text": "验证仍在运行，稍后关闭并重新打开此面板以刷新状态。",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/GroupIntegration.tsx",
+			"text": "验证命令",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/GroupIntegration.tsx",
+			"text": "验证已成功并锁定。重新验证请新建整合。",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/GroupIntegration.tsx",
+			"text": "验证结果",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/GroupIntegration.tsx",
+			"text": "验证结果：",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/GroupNativeInteractions.tsx",
+			"text": "取消问卷",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/GroupNativeInteractions.tsx",
+			"text": "工具审批 · 仅本次",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/GroupNativeInteractions.tsx",
+			"text": "截止时间：",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/GroupNativeInteractions.tsx",
+			"text": "批准本次",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/GroupNativeInteractions.tsx",
+			"text": "拒绝",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/GroupNativeInteractions.tsx",
+			"text": "提交回答",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/GroupNativeInteractions.tsx",
+			"text": "模型提问",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/GroupRouterSettings.tsx",
+			"text": " · 本机",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/GroupRouterSettings.tsx",
+			"text": " · 离线",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/GroupRouterSettings.tsx",
+			"text": " · 远程",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/GroupRouterSettings.tsx",
+			"text": "Router 工具（独立于 Bot 执行工具）",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/GroupRouterSettings.tsx",
+			"text": "中",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/GroupRouterSettings.tsx",
+			"text": "低",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/GroupRouterSettings.tsx",
+			"text": "保存 Router 配置",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/GroupRouterSettings.tsx",
+			"text": "保存中…",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/GroupRouterSettings.tsx",
+			"text": "关闭",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/GroupRouterSettings.tsx",
+			"text": "最少",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/GroupRouterSettings.tsx",
+			"text": "启用群组 AI Router",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/GroupRouterSettings.tsx",
+			"text": "回复群聊",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/GroupRouterSettings.tsx",
+			"text": "已启用",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/GroupRouterSettings.tsx",
+			"text": "思考级别",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/GroupRouterSettings.tsx",
+			"text": "或输入完整模型 ID（需在所选设备验证）",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/GroupRouterSettings.tsx",
+			"text": "所选设备必须在线，且模型须存在于该设备目录中，才能启用。不会自动选择其他模型。",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/GroupRouterSettings.tsx",
+			"text": "未启用 · 沿用原主 Bot 协作",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/GroupRouterSettings.tsx",
+			"text": "极高",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/GroupRouterSettings.tsx",
+			"text": "模型已在所选设备验证",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/GroupRouterSettings.tsx",
+			"text": "模型目录与所选设备不匹配",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/GroupRouterSettings.tsx",
+			"text": "正在验证设备模型…",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/GroupRouterSettings.tsx",
+			"text": "派发任务",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/GroupRouterSettings.tsx",
+			"text": "独立 Router 配置",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/GroupRouterSettings.tsx",
+			"text": "管理工单",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/GroupRouterSettings.tsx",
+			"text": "群组 AI Router",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/GroupRouterSettings.tsx",
+			"text": "群组 AI 是独立的中心 Router，负责理解消息与调度；Bot 只执行任务。Router 的模型、思考与工具独立配置。",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/GroupRouterSettings.tsx",
+			"text": "群组 Router 配置已保存",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/GroupRouterSettings.tsx",
+			"text": "该设备的模型",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/GroupRouterSettings.tsx",
+			"text": "运行设备",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/GroupRouterSettings.tsx",
+			"text": "选择模型",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/GroupRouterSettings.tsx",
+			"text": "选择设备",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/GroupRouterSettings.tsx",
+			"text": "重新验证模型目录",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/GroupRouterSettings.tsx",
+			"text": "高",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/GroupSteerModal.tsx",
+			"text": "任务飞行中实时转向 (In-flight Steering)",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/GroupSteerModal.tsx",
+			"text": "优先检查并补充类型声明",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/GroupSteerModal.tsx",
+			"text": "优先检查并补充缺失的类型声明，确保 strict typecheck 零错误。",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/GroupSteerModal.tsx",
+			"text": "例如：当前步骤已通过，请直接进行单元测试并汇报覆盖率；或者跳过重构，保持既有接口契约。",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/GroupSteerModal.tsx",
+			"text": "先进行自测并展示通过证据",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/GroupSteerModal.tsx",
+			"text": "先进行自测并展示通过证据，包括具体的测试用例与终端运行输出。",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/GroupSteerModal.tsx",
+			"text": "发送转向指令",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/GroupSteerModal.tsx",
+			"text": "取消",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/GroupSteerModal.tsx",
+			"text": "常用纠偏预设（点击快速填入）",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/GroupSteerModal.tsx",
+			"text": "当前目标：",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/GroupSteerModal.tsx",
+			"text": "注入中...",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/GroupSteerModal.tsx",
+			"text": "注入转向指令失败",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/GroupSteerModal.tsx",
+			"text": "目标设备",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/GroupSteerModal.tsx",
+			"text": "直接汇总当前阶段产物并结束",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/GroupSteerModal.tsx",
+			"text": "直接汇总当前阶段产物并结束，保留关键交付物与验证结论。",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/GroupSteerModal.tsx",
+			"text": "精简后续输出，跳过冗余细节，仅汇报核心变更、未决风险与阻碍项。",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/GroupSteerModal.tsx",
+			"text": "精简输出与风险",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/GroupSteerModal.tsx",
+			"text": "请输入转向纠偏指令",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/GroupSteerModal.tsx",
+			"text": "转向指令 (Ctrl+Enter 提交)",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/GroupSteerModal.tsx",
+			"text": "阶段",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/GroupTaskDetails.tsx",
+			"text": "中断原因:",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/GroupTaskDetails.tsx",
+			"text": "事件与审计流",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/GroupTaskDetails.tsx",
+			"text": "事件日志写入失败或被降级，审计流可能不完整。",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/GroupTaskDetails.tsx",
+			"text": "交付版本 ID:",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/GroupTaskDetails.tsx",
+			"text": "产物:",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/GroupTaskDetails.tsx",
+			"text": "任务完整报告",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/GroupTaskDetails.tsx",
+			"text": "任务详情",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/GroupTaskDetails.tsx",
+			"text": "关联人工审批与问卷",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/GroupTaskDetails.tsx",
+			"text": "关联代码交付",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/GroupTaskDetails.tsx",
+			"text": "内容摘要:",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/GroupTaskDetails.tsx",
+			"text": "分页加载日志失败",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/GroupTaskDetails.tsx",
+			"text": "创建时间:",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/GroupTaskDetails.tsx",
+			"text": "加载中...",
+			"count": 2,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/GroupTaskDetails.tsx",
+			"text": "加载事件流失败",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/GroupTaskDetails.tsx",
+			"text": "加载任务详情中...",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/GroupTaskDetails.tsx",
+			"text": "加载报告分片失败: ${cause.message}",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/GroupTaskDetails.tsx",
+			"text": "加载更多历史事件",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/GroupTaskDetails.tsx",
+			"text": "加载更多报告内容",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/GroupTaskDetails.tsx",
+			"text": "增量安全输出:",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/GroupTaskDetails.tsx",
+			"text": "复制报告全文",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/GroupTaskDetails.tsx",
+			"text": "复制报告失败，请手动选择复制",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/GroupTaskDetails.tsx",
+			"text": "失败",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/GroupTaskDetails.tsx",
+			"text": "存储位置:",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/GroupTaskDetails.tsx",
+			"text": "安全参数摘要:",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/GroupTaskDetails.tsx",
+			"text": "完整性 SHA256:",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/GroupTaskDetails.tsx",
+			"text": "完整报告正在由执行设备分块同步中...",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/GroupTaskDetails.tsx",
+			"text": "工具调用卡片",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/GroupTaskDetails.tsx",
+			"text": "已中断",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/GroupTaskDetails.tsx",
+			"text": "已复制",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/GroupTaskDetails.tsx",
+			"text": "已完成",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/GroupTaskDetails.tsx",
+			"text": "已裁决",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/GroupTaskDetails.tsx",
+			"text": "当前已加载:",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/GroupTaskDetails.tsx",
+			"text": "待处理",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/GroupTaskDetails.tsx",
+			"text": "执行 Bot:",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/GroupTaskDetails.tsx",
+			"text": "执行设备尚未上传完整报告原文。",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/GroupTaskDetails.tsx",
+			"text": "报告总大小:",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/GroupTaskDetails.tsx",
+			"text": "报告超过配额硬限制 (${reportMeta.quotaLimit} bytes)，系统明确拒绝接收超额部分，绝不伪装完整。",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/GroupTaskDetails.tsx",
+			"text": "排队中",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/GroupTaskDetails.tsx",
+			"text": "排队原因:",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/GroupTaskDetails.tsx",
+			"text": "文件树版本:",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/GroupTaskDetails.tsx",
+			"text": "暂无事件记录",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/GroupTaskDetails.tsx",
+			"text": "未自报检查",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/GroupTaskDetails.tsx",
+			"text": "本任务暂无工具调用记录",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/GroupTaskDetails.tsx",
+			"text": "正在读取报告文件...",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/GroupTaskDetails.tsx",
+			"text": "游标所在的分段已淘汰，显示当前保留的最旧事件。",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/GroupTaskDetails.tsx",
+			"text": "源码任务:",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/GroupTaskDetails.tsx",
+			"text": "由于日志保留配额，最早的 ${journalPage.droppedCount} 条事件已自动淘汰。系统明确标记并不伪装历史完整。",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/GroupTaskDetails.tsx",
+			"text": "目标内容:",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/GroupTaskDetails.tsx",
+			"text": "群任务详情与操作审计",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/GroupTaskDetails.tsx",
+			"text": "自报检查未通过",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/GroupTaskDetails.tsx",
+			"text": "自报检查通过",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/GroupTaskDetails.tsx",
+			"text": "裁决结论: ",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/GroupTaskDetails.tsx",
+			"text": "运行中",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/GroupTaskDetails.tsx",
+			"text": "运行设备:",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/GroupTaskDetails.tsx",
+			"text": "部分分段可能存在损坏行，已保留损坏证据。",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/GroupWebhooks.tsx",
+			"text": " [Hub中转]",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/GroupWebhooks.tsx",
+			"text": "🌐 Hub中转",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/GroupWebhooks.tsx",
+			"text": "🌐 Hub中转代发",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/GroupWebhooks.tsx",
+			"text": "💻 本地直连外发",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/GroupWebhooks.tsx",
+			"text": "💻 本机直连",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/GroupWebhooks.tsx",
+			"text": "Bot 代码交付提交",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/GroupWebhooks.tsx",
+			"text": "Bot 任务成功完成",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/GroupWebhooks.tsx",
+			"text": "Bot 任务执行失败",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/GroupWebhooks.tsx",
+			"text": "Hub 中转地址",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/GroupWebhooks.tsx",
+			"text": "Hub 中转基准地址：",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/GroupWebhooks.tsx",
+			"text": "Webhook 入站地址：",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/GroupWebhooks.tsx",
+			"text": "Webhook 名称",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/GroupWebhooks.tsx",
+			"text": "事件触发时，系统将以 HTTP POST 发送 JSON 格式载荷至此地址。",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/GroupWebhooks.tsx",
+			"text": "例如：GitHub Actions CI、监控告警、飞书群通知",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/GroupWebhooks.tsx",
+			"text": "保存中…",
+			"count": 2,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/GroupWebhooks.tsx",
+			"text": "保存中转地址",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/GroupWebhooks.tsx",
+			"text": "保存修改",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/GroupWebhooks.tsx",
+			"text": "入站 Webhook",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/GroupWebhooks.tsx",
+			"text": "入站 Webhook (Incoming)",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/GroupWebhooks.tsx",
+			"text": "关闭",
+			"count": 2,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/GroupWebhooks.tsx",
+			"text": "出站 Webhook",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/GroupWebhooks.tsx",
+			"text": "出站 Webhook (Outgoing)",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/GroupWebhooks.tsx",
+			"text": "创建 Webhook",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/GroupWebhooks.tsx",
+			"text": "创建完成后立即生效并接受/分发事件",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/GroupWebhooks.tsx",
+			"text": "删除",
+			"count": 2,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/GroupWebhooks.tsx",
+			"text": "加载 Webhooks 失败",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/GroupWebhooks.tsx",
+			"text": "取消",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/GroupWebhooks.tsx",
+			"text": "可唤醒 Bot",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/GroupWebhooks.tsx",
+			"text": "可选密钥，用于生成 X-Pi-Signature 请求头防篡改校验",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/GroupWebhooks.tsx",
+			"text": "向目标地址发送一条测试 Ping",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/GroupWebhooks.tsx",
+			"text": "启用/禁用切换",
+			"count": 2,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/GroupWebhooks.tsx",
+			"text": "复制",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/GroupWebhooks.tsx",
+			"text": "复制 cURL",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/GroupWebhooks.tsx",
+			"text": "复制 URL",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/GroupWebhooks.tsx",
+			"text": "外部系统推送消息进群，可自动指派或唤醒群内 Bot 执行任务",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/GroupWebhooks.tsx",
+			"text": "外部经 Hub 中转打入",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/GroupWebhooks.tsx",
+			"text": "将新消息、任务完成、失败或交付等事件实时推送至外部服务",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/GroupWebhooks.tsx",
+			"text": "已启用",
+			"count": 2,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/GroupWebhooks.tsx",
+			"text": "已复制",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/GroupWebhooks.tsx",
+			"text": "已暂停",
+			"count": 2,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/GroupWebhooks.tsx",
+			"text": "已配置 HMAC-SHA256 签名校验密钥",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/GroupWebhooks.tsx",
+			"text": "带签名",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/GroupWebhooks.tsx",
+			"text": "推送成功${relayNotice} (HTTP ${data.status ?? 200})",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/GroupWebhooks.tsx",
+			"text": "推送测试失败",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/GroupWebhooks.tsx",
+			"text": "收到外部推送时唤醒 Bot 执行任务",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/GroupWebhooks.tsx",
+			"text": "收到外部消息时自动触发群主管或被 @ 的 Bot",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/GroupWebhooks.tsx",
+			"text": "新建 Webhook",
+			"count": 2,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/GroupWebhooks.tsx",
+			"text": "新群聊消息",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/GroupWebhooks.tsx",
+			"text": "暂未配置群组 Webhook",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/GroupWebhooks.tsx",
+			"text": "本地直连地址",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/GroupWebhooks.tsx",
+			"text": "本地端口直通",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/GroupWebhooks.tsx",
+			"text": "检测到消息包含 @Bot 或群组设有群主管时，自动生成任务派发",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/GroupWebhooks.tsx",
+			"text": "正在加载 Webhook 列表…",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/GroupWebhooks.tsx",
+			"text": "测试",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/GroupWebhooks.tsx",
+			"text": "测试中…",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/GroupWebhooks.tsx",
+			"text": "点击上方「新建 Webhook」创建入站或出站自动化集成。",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/GroupWebhooks.tsx",
+			"text": "由 Hub 服务器统一代理出网外发",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/GroupWebhooks.tsx",
+			"text": "由 Hub 服务器统一作为代理外发通知（固定出口 IP）；若目标是局域网私有地址请关闭",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/GroupWebhooks.tsx",
+			"text": "由本地设备节点直连外发",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/GroupWebhooks.tsx",
+			"text": "目标推送 URL",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/GroupWebhooks.tsx",
+			"text": "目标推送 URL：",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/GroupWebhooks.tsx",
+			"text": "确定要删除该 Webhook 吗？",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/GroupWebhooks.tsx",
+			"text": "立即启用该 Webhook",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/GroupWebhooks.tsx",
+			"text": "签名密钥 Secret（可选）",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/GroupWebhooks.tsx",
+			"text": "编辑",
+			"count": 2,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/GroupWebhooks.tsx",
+			"text": "编辑 Webhook",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/GroupWebhooks.tsx",
+			"text": "群组 Webhook 支持双向通信与可选 Hub 中转：入站可使用公网 Hub 中转地址接收外部事件唤醒 Bot；出站通知可选由 Hub 服务端中转代发。",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/GroupWebhooks.tsx",
+			"text": "自定义",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/GroupWebhooks.tsx",
+			"text": "若 Hub 位于公网反向代理或具有独立域名，请输入对外公开的完整基准地址（如 https://hub.example.com）：",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/GroupWebhooks.tsx",
+			"text": "订阅事件",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/GroupWebhooks.tsx",
+			"text": "订阅事件：",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/GroupWebhooks.tsx",
+			"text": "设置中转域名",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/GroupWebhooks.tsx",
+			"text": "请输入 Webhook 名称",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/GroupWebhooks.tsx",
+			"text": "请输入有效的 http:// 或 https:// 目标地址",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/GroupWebhooks.tsx",
+			"text": "调用示例 (cURL)：",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/GroupWebhooks.tsx",
+			"text": "选择生成中转还是直连地址",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/GroupWebhooks.tsx",
+			"text": "通过 Hub 服务端中转代发 (Relay via Hub)",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/GroupWebhooks.tsx",
+			"text": "配置入站自动化触发或出站事件广播通知",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/GroupWebhooks.tsx",
+			"text": "配置自定义 Hub 中转基准域名",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/GroupWebhooks.tsx",
+			"text": "重新生成 Token 将使旧 Token 立即失效，依赖此 URL 的外部服务需要同步更新。确定重新生成？",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/GroupWebhooks.tsx",
+			"text": "重新生成安全凭证 Token",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/GroupWebhooks.tsx",
+			"text": "重置",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/GroupWebhooks.tsx",
+			"text": "集成类型",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/GroupWorkItems.tsx",
+			"text": " · 手动授权",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/GroupWorkItems.tsx",
+			"text": "auto · 允许自动执行",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/GroupWorkItems.tsx",
+			"text": "observe · 仅观察",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/GroupWorkItems.tsx",
+			"text": "Router 最近运行与失败",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/GroupWorkItems.tsx",
+			"text": "关联执行",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/GroupWorkItems.tsx",
+			"text": "最新事件尚未授权；已有工单授权不会自动覆盖这条留言。",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/GroupWorkItems.tsx",
+			"text": "最新外部事件",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/GroupWorkItems.tsx",
+			"text": "刷新",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/GroupWorkItems.tsx",
+			"text": "加载中…",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/GroupWorkItems.tsx",
+			"text": "加载更多工单",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/GroupWorkItems.tsx",
+			"text": "发起人",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/GroupWorkItems.tsx",
+			"text": "处理中…",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/GroupWorkItems.tsx",
+			"text": "失败",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/GroupWorkItems.tsx",
+			"text": "完成工单",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/GroupWorkItems.tsx",
+			"text": "尚未执行",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/GroupWorkItems.tsx",
+			"text": "尝试次数",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/GroupWorkItems.tsx",
+			"text": "工单",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/GroupWorkItems.tsx",
+			"text": "工单保留外部来源与授权，持续关联多次执行。单次任务结束后，工单仍可继续处理。",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/GroupWorkItems.tsx",
+			"text": "工单内容与标识",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/GroupWorkItems.tsx",
+			"text": "工单列表响应无效",
+			"count": 2,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/GroupWorkItems.tsx",
+			"text": "已中断",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/GroupWorkItems.tsx",
+			"text": "已取消",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/GroupWorkItems.tsx",
+			"text": "已完成",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/GroupWorkItems.tsx",
+			"text": "已暂停",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/GroupWorkItems.tsx",
+			"text": "待处理",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/GroupWorkItems.tsx",
+			"text": "恢复",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/GroupWorkItems.tsx",
+			"text": "手动授权",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/GroupWorkItems.tsx",
+			"text": "执行中",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/GroupWorkItems.tsx",
+			"text": "授权",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/GroupWorkItems.tsx",
+			"text": "授权最新事件",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/GroupWorkItems.tsx",
+			"text": "排队中",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/GroupWorkItems.tsx",
+			"text": "暂停",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/GroupWorkItems.tsx",
+			"text": "暂无 Router 运行记录",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/GroupWorkItems.tsx",
+			"text": "暂无工单",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/GroupWorkItems.tsx",
+			"text": "来源",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/GroupWorkItems.tsx",
+			"text": "来源未经验证，无法授权自动执行。",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/GroupWorkItems.tsx",
+			"text": "正在加载工单…",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/GroupWorkItems.tsx",
+			"text": "版本",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/GroupWorkItems.tsx",
+			"text": "等待中",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/GroupWorkItems.tsx",
+			"text": "群组工单",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/GroupWorkItems.tsx",
+			"text": "重新打开",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/GroupWorkItems.tsx",
+			"text": "重试 Router 运行",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/GroupWorkItems.tsx",
+			"text": "重试中…",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/GroupWorkspaceActions.tsx",
+			"text": "Bot 运行快照",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/GroupWorkspaceActions.tsx",
+			"text": "关联画布工作流",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/GroupWorkspaceActions.tsx",
+			"text": "启动画布",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/GroupWorkspaceActions.tsx",
+			"text": "在途任务快照已锁定（v{rev}）",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/GroupWorkspaceActions.tsx",
+			"text": "在途任务禁止热改预设",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/GroupWorkspaceActions.tsx",
+			"text": "已授权 {count} 个工具",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/GroupWorkspaceActions.tsx",
+			"text": "应用中…",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/GroupWorkspaceActions.tsx",
+			"text": "应用最新快照",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/GroupWorkspaceActions.tsx",
+			"text": "开始实施",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/GroupWorkspaceActions.tsx",
+			"text": "扩展操作",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/GroupWorkspaceActions.tsx",
+			"text": "正在启动…",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/GroupWorkspaceActions.tsx",
+			"text": "正在启动画布…",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/GroupWorkspaceActions.tsx",
+			"text": "独立隔离运行，未共享主会话私有配置",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/GroupWorkspaceActions.tsx",
+			"text": "画布已就绪。引用不会自动运行，点击按钮显式启动。",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/GroupWorkspaceActions.tsx",
+			"text": "群任务计划",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/GroupWorkspaceActions.tsx",
+			"text": "计划已就绪（需确认后开始）",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/GroupWorkspaceActions.tsx",
+			"text": "计划已批准实施",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/GroupWorkspaceActions.tsx",
+			"text": "计划草稿编制中",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/LeftPanel.tsx",
+			"text": "临时",
+			"count": 3,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/LeftPanel.tsx",
+			"text": "微信",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/LeftPanel.tsx",
+			"text": "新建对话",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/LeftPanel.tsx",
+			"text": "暂无历史会话",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/LeftPanel.tsx",
+			"text": "正在读取会话…",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/LeftPanel.tsx",
+			"text": "钉钉",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/LeftPanel.tsx",
+			"text": "飞书",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/Markdown.tsx",
+			"text": "[plugin-widget:${type}] 渲染失败:",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/Markdown.tsx",
+			"text": "点击预览: ",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/Markdown.tsx",
+			"text": "点击预览文件: ",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/Message.tsx",
+			"text": "[子代理执行完成通知]",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/Message.tsx",
+			"text": "${t(\"subagentBadge\")} · 完成通知",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/ModelConfigModal.tsx",
+			"text": "✓ JSON语法有效（保存后自动无损合入请求 body）",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/ModelConfigModal.tsx",
+			"text": "云端",
+			"count": 2,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/ModelConfigModal.tsx",
+			"text": "删除此预设",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/ModelConfigModal.tsx",
+			"text": "反代",
+			"count": 3,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/ModelConfigModal.tsx",
+			"text": "套用自定义预设：${preset.name}",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/ModelConfigModal.tsx",
+			"text": "官方",
+			"count": 14,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/ModelConfigModal.tsx",
+			"text": "将当前模型的思考配置、协议与 JSON 存为一个命名的预设模板",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/ModelConfigModal.tsx",
+			"text": "必须是 JSON 对象 (以 { 开头)",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/ModelConfigModal.tsx",
+			"text": "思考配置",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/ModelConfigModal.tsx",
+			"text": "智谱 GLM",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/ModelConfigModal.tsx",
+			"text": "本地",
+			"count": 3,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/ModelConfigModal.tsx",
+			"text": "硅基流动",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/ModelConfigModal.tsx",
+			"text": "聚合",
+			"count": 2,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/ModelConfigModal.tsx",
+			"text": "自定义发送给模型/网关的字面量或 Token 数（留空为默认）",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/ModelConfigModal.tsx",
+			"text": "预设名称 (如: 16K模版)",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/ModelPickerModal.tsx",
+			"text": "关闭",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/PlanBoard.tsx",
+			"text": "点击切换状态 (pending / in_progress / done / failed)",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/PlanBoard.tsx",
+			"text": "确定要清空当前任务计划看板吗？",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/PluginFilePreview.tsx",
+			"text": "插件没有提供可用的文件查看器",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/PluginPage.tsx",
+			"text": "[plugin:${plugin.id}] cleanup 失败:",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/PluginPage.tsx",
+			"text": "[plugin:${plugin.id}] 页面${mounting ? \"挂载\" : \"加载\"}失败:",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/PluginPage.tsx",
+			"text": "client/entry.mjs 没有导出 default.mount()",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/PluginPage.tsx",
+			"text": "插件 ${name} 没有客户端脚本（client/entry.mjs），无法显示这一页。",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/PluginPage.tsx",
+			"text": "插件 ${name} 的页面脚本加载失败：${failure.detail}",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/PresetShareModal.tsx",
+			"text": "收起 ▲",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/PresetShareModal.tsx",
+			"text": "查看详情 ▼",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/QuickAskSettings.tsx",
+			"text": "将以下文字翻译成{{targetLanguage}}，只输出译文，保留代码与专有名词。\\n{{input}}",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/QuickAskSettings.tsx",
+			"text": "日本語",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/QuickAskSettings.tsx",
+			"text": "简体中文",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/QuickAskSettings.tsx",
+			"text": "繁體中文",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/QuickAskSettings.tsx",
+			"text": "解释下: {{input}}",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/SchedulerPanel.tsx",
+			"text": "🌿 Git 分支与状态审计",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/SchedulerPanel.tsx",
+			"text": "🔍 依赖与健康巡检",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/SchedulerPanel.tsx",
+			"text": "🧪 测试套件与排查",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/SchedulerPanel.tsx",
+			"text": "🧹 缓存与日志清理",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/SchedulerPanel.tsx",
+			"text": "${draft.prompt.length} 字",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/SchedulerPanel.tsx",
+			"text": "${label}（周一至周五 09:00 执行）",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/SchedulerPanel.tsx",
+			"text": "${label}（整点执行）",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/SchedulerPanel.tsx",
+			"text": "${label}（每 30 分钟执行）",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/SchedulerPanel.tsx",
+			"text": "${label}（每周一 09:00 执行）",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/SchedulerPanel.tsx",
+			"text": "${label}（每天 09:00 执行）",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/SchedulerPanel.tsx",
+			"text": "${tr(\"schedulerKindInterval\")} · 每隔 ${min} 分钟执行一次",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/SchedulerPanel.tsx",
+			"text": "Cron 规则: ${spec}",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/SchedulerPanel.tsx",
+			"text": "下个工作日 09:00",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/SchedulerPanel.tsx",
+			"text": "下个整点",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/SchedulerPanel.tsx",
+			"text": "下周一 09:00",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/SchedulerPanel.tsx",
+			"text": "尚未填写 Cron 表达式",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/SchedulerPanel.tsx",
+			"text": "执行测试套件与异常排查：\\n1. 运行当前项目的自动化测试套件；\\n2. 若有失败用例，读取相关代码并定位根因；\\n3. 生成测试失败报告并提出修复补丁建议。",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/SchedulerPanel.tsx",
+			"text": "按 Cron 规则自动触发",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/SchedulerPanel.tsx",
+			"text": "按设定周期自动触发",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/SchedulerPanel.tsx",
+			"text": "支持多步骤与 Markdown",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/SchedulerPanel.tsx",
+			"text": "日常 Git 仓库状态审计：\\n1. 检查是否存在未提交的代码修改或冲突标记；\\n2. 查看近 3 天本地分支与远程 main 的差异；\\n3. 提示需要清理的废弃分支或待合代码。",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/SchedulerPanel.tsx",
+			"text": "明天 09:00",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/SchedulerPanel.tsx",
+			"text": "约 ${min} 分钟后",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/SchedulerPanel.tsx",
+			"text": "约 30 分钟后",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/SchedulerPanel.tsx",
+			"text": "给 Agent 的具体任务指令",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/SchedulerPanel.tsx",
+			"text": "维护与清理任务：\\n1. 检查 dist、.cache、临时日志等目录大小；\\n2. 清理过期的构建缓存与临时文件；\\n3. 报告清理后节省的磁盘空间。",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/SchedulerPanel.tsx",
+			"text": "请对当前项目进行健康与安全性巡检：\\n1. 检查 package.json 依赖是否有可升级项或高危安全漏洞；\\n2. 检查是否有未解决的构建告警；\\n3. 输出一份简洁的健康总结并给出升级建议。",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/SchedulerPanel.tsx",
+			"text": "附加输入（Prompt）",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/SettingsModal.tsx",
+			"text": "${markersOn} / ${markersTotal} 已启用",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/SettingsModal.tsx",
+			"text": "CLI 扩展（随 agentDir 继承） / CLI extension (inherited via agentDir)",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/SettingsModal.tsx",
+			"text": "CLI 扩展（随 agentDir 继承） ${e.path} / CLI extension (inherited via agentDir) ${e.path}",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/SettingsModal.tsx",
+			"text": "MCP 服务器（${s.scope}，随 agentDir/cwd 继承） / MCP server (${s.scope}, inherited via agentDir/cwd)",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/SettingsModal.tsx",
+			"text": "WebUI 专属插件（可写） / WebUI-specific plugin (writable)",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/SettingsModal.tsx",
+			"text": "上下文",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/SettingsModal.tsx",
+			"text": "中转",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/SettingsModal.tsx",
+			"text": "二次确认",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/SettingsModal.tsx",
+			"text": "侧栏",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/SettingsModal.tsx",
+			"text": "关闭",
+			"count": 3,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/SettingsModal.tsx",
+			"text": "分享",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/SettingsModal.tsx",
+			"text": "前缀",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/SettingsModal.tsx",
+			"text": "前缀缓存",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/SettingsModal.tsx",
+			"text": "协作",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/SettingsModal.tsx",
+			"text": "协议",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/SettingsModal.tsx",
+			"text": "历史",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/SettingsModal.tsx",
+			"text": "只读",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/SettingsModal.tsx",
+			"text": "后台",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/SettingsModal.tsx",
+			"text": "启用",
+			"count": 2,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/SettingsModal.tsx",
+			"text": "图标",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/SettingsModal.tsx",
+			"text": "图片",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/SettingsModal.tsx",
+			"text": "声音",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/SettingsModal.tsx",
+			"text": "外部工具",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/SettingsModal.tsx",
+			"text": "头像",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/SettingsModal.tsx",
+			"text": "子代理",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/SettingsModal.tsx",
+			"text": "字号",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/SettingsModal.tsx",
+			"text": "安全",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/SettingsModal.tsx",
+			"text": "定时",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/SettingsModal.tsx",
+			"text": "定时任务",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/SettingsModal.tsx",
+			"text": "审批",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/SettingsModal.tsx",
+			"text": "审查",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/SettingsModal.tsx",
+			"text": "审阅",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/SettingsModal.tsx",
+			"text": "宽屏",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/SettingsModal.tsx",
+			"text": "对话历史",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/SettingsModal.tsx",
+			"text": "导入",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/SettingsModal.tsx",
+			"text": "导出",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/SettingsModal.tsx",
+			"text": "小窗",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/SettingsModal.tsx",
+			"text": "屏幕",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/SettingsModal.tsx",
+			"text": "工具",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/SettingsModal.tsx",
+			"text": "工具开关",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/SettingsModal.tsx",
+			"text": "已全部关闭",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/SettingsModal.tsx",
+			"text": "市场",
+			"count": 2,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/SettingsModal.tsx",
+			"text": "布局",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/SettingsModal.tsx",
+			"text": "常用语",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/SettingsModal.tsx",
+			"text": "常驻",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/SettingsModal.tsx",
+			"text": "并发",
+			"count": 2,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/SettingsModal.tsx",
+			"text": "底栏",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/SettingsModal.tsx",
+			"text": "延迟加载",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/SettingsModal.tsx",
+			"text": "快捷",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/SettingsModal.tsx",
+			"text": "快捷回复",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/SettingsModal.tsx",
+			"text": "快捷短语",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/SettingsModal.tsx",
+			"text": "截图",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/SettingsModal.tsx",
+			"text": "扩展",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/SettingsModal.tsx",
+			"text": "技能",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/SettingsModal.tsx",
+			"text": "技能库",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/SettingsModal.tsx",
+			"text": "折叠",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/SettingsModal.tsx",
+			"text": "拦截",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/SettingsModal.tsx",
+			"text": "按钮",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/SettingsModal.tsx",
+			"text": "按需",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/SettingsModal.tsx",
+			"text": "排列",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/SettingsModal.tsx",
+			"text": "排期",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/SettingsModal.tsx",
+			"text": "排版",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/SettingsModal.tsx",
+			"text": "推理",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/SettingsModal.tsx",
+			"text": "提示词",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/SettingsModal.tsx",
+			"text": "提示音",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/SettingsModal.tsx",
+			"text": "提问",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/SettingsModal.tsx",
+			"text": "插件",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/SettingsModal.tsx",
+			"text": "搜索工具名 / 描述 / 插件…",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/SettingsModal.tsx",
+			"text": "播报",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/SettingsModal.tsx",
+			"text": "改这个工具的提示词",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/SettingsModal.tsx",
+			"text": "文件同步",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/SettingsModal.tsx",
+			"text": "文案已自定义，点一下继续改",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/SettingsModal.tsx",
+			"text": "斜杠",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/SettingsModal.tsx",
+			"text": "显示",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/SettingsModal.tsx",
+			"text": "更新",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/SettingsModal.tsx",
+			"text": "服务商",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/SettingsModal.tsx",
+			"text": "服务器",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/SettingsModal.tsx",
+			"text": "朗读",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/SettingsModal.tsx",
+			"text": "未知插件",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/SettingsModal.tsx",
+			"text": "权限",
+			"count": 2,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/SettingsModal.tsx",
+			"text": "极简模式",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/SettingsModal.tsx",
+			"text": "样式",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/SettingsModal.tsx",
+			"text": "核心常驻",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/SettingsModal.tsx",
+			"text": "模型",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/SettingsModal.tsx",
+			"text": "模板",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/SettingsModal.tsx",
+			"text": "气泡",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/SettingsModal.tsx",
+			"text": "派发",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/SettingsModal.tsx",
+			"text": "清除历史",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/SettingsModal.tsx",
+			"text": "白名单",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/SettingsModal.tsx",
+			"text": "目录",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/SettingsModal.tsx",
+			"text": "目标",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/SettingsModal.tsx",
+			"text": "短语",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/SettingsModal.tsx",
+			"text": "社区预设",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/SettingsModal.tsx",
+			"text": "视觉",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/SettingsModal.tsx",
+			"text": "视觉桥",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/SettingsModal.tsx",
+			"text": "系统提示词",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/SettingsModal.tsx",
+			"text": "紧凑",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/SettingsModal.tsx",
+			"text": "组件",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/SettingsModal.tsx",
+			"text": "终端",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/SettingsModal.tsx",
+			"text": "群任务",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/SettingsModal.tsx",
+			"text": "群组",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/SettingsModal.tsx",
+			"text": "自动化",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/SettingsModal.tsx",
+			"text": "自定义提示词",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/SettingsModal.tsx",
+			"text": "自定义模型",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/SettingsModal.tsx",
+			"text": "补丁",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/SettingsModal.tsx",
+			"text": "规则",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/SettingsModal.tsx",
+			"text": "角色",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/SettingsModal.tsx",
+			"text": "角色模板",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/SettingsModal.tsx",
+			"text": "解释",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/SettingsModal.tsx",
+			"text": "计划任务",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/SettingsModal.tsx",
+			"text": "记录",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/SettingsModal.tsx",
+			"text": "设备",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/SettingsModal.tsx",
+			"text": "设定",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/SettingsModal.tsx",
+			"text": "语音",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/SettingsModal.tsx",
+			"text": "调度",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/SettingsModal.tsx",
+			"text": "输入历史",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/SettingsModal.tsx",
+			"text": "选中文字",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/SettingsModal.tsx",
+			"text": "配额",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/SettingsModal.tsx",
+			"text": "锁",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/SettingsModal.tsx",
+			"text": "问卷",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/SettingsModal.tsx",
+			"text": "限制",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/SettingsModal.tsx",
+			"text": "隐藏模型",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/SettingsModal.tsx",
+			"text": "随手问",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/SettingsModal.tsx",
+			"text": "静音",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/SettingsModal.tsx",
+			"text": "音效",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/SettingsModal.tsx",
+			"text": "音量",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/SettingsModal.tsx",
+			"text": "顶栏",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/SettingsModal.tsx",
+			"text": "预设",
+			"count": 2,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/SettingsModal.tsx",
+			"text": "高危",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/SettingsModal.tsx",
+			"text": "黑板",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/SubagentInspectorView.tsx",
+			"text": "(无明确 prompt，或通过 steer/消息派发)",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/SubagentInspectorView.tsx",
+			"text": "（暂无产出文本）",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/SubagentInspectorView.tsx",
+			"text": "（继承主项目路径）",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/SubagentInspectorView.tsx",
+			"text": "⟳ 子代理正在后台执行并流式生成结果中...",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/SubagentInspectorView.tsx",
+			"text": "⟳ 执行中...",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/SubagentInspectorView.tsx",
+			"text": "🌿 Git Worktree 独立分支隔离",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/SubagentInspectorView.tsx",
+			"text": "🎯 关联指派 Prompt",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/SubagentInspectorView.tsx",
+			"text": "🎯 指派任务使命 (Mission Prompt)",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/SubagentInspectorView.tsx",
+			"text": "📋 任务执行交付报告 (Deliverables)",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/SubagentInspectorView.tsx",
+			"text": "🛡️ 运行环境与调度配置",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/SubagentInspectorView.tsx",
+			"text": "${isZh ? \"交互\" : \"turns\"}: ${data.messageCount} ${isZh ? \"轮\" : \"\"}",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/SubagentInspectorView.tsx",
+			"text": "${isZh ? \"变更文件\" : \"files\"}: ${data.worktree.uncommittedCount}",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/SubagentInspectorView.tsx",
+			"text": "${isZh ? \"思考\" : \"thinking\"}: ${data.thinking}",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/SubagentInspectorView.tsx",
+			"text": "Git Worktree 物理隔离",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/SubagentInspectorView.tsx",
+			"text": "交付成果与产出 (Result)",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/SubagentInspectorView.tsx",
+			"text": "任务使命与指派 (Prompt)",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/SubagentInspectorView.tsx",
+			"text": "共享主工作区",
+			"count": 2,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/SubagentInspectorView.tsx",
+			"text": "切换到该子会话 ➔",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/SubagentInspectorView.tsx",
+			"text": "只读审查代码与架构",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/SubagentInspectorView.tsx",
+			"text": "可直接切换至子代理会话查看完整上下文交互与各轮工具调用。",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/SubagentInspectorView.tsx",
+			"text": "复制产出",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/SubagentInspectorView.tsx",
+			"text": "复制指令",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/SubagentInspectorView.tsx",
+			"text": "子代理",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/SubagentInspectorView.tsx",
+			"text": "子代理未绑定有效会话 ID。",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/SubagentInspectorView.tsx",
+			"text": "实施者 (Implement)",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/SubagentInspectorView.tsx",
+			"text": "审查者 (Review)",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/SubagentInspectorView.tsx",
+			"text": "展开 ▼",
+			"count": 2,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/SubagentInspectorView.tsx",
+			"text": "工作树路径",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/SubagentInspectorView.tsx",
+			"text": "工作目录",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/SubagentInspectorView.tsx",
+			"text": "已复制",
+			"count": 2,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/SubagentInspectorView.tsx",
+			"text": "已完成",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/SubagentInspectorView.tsx",
+			"text": "已禁用自动通知 (静默)",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/SubagentInspectorView.tsx",
+			"text": "执行模型",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/SubagentInspectorView.tsx",
+			"text": "执行验证套件",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/SubagentInspectorView.tsx",
+			"text": "探索者 (Explore)",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/SubagentInspectorView.tsx",
+			"text": "收起 ▲",
+			"count": 2,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/SubagentInspectorView.tsx",
+			"text": "无分支隔离",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/SubagentInspectorView.tsx",
+			"text": "未绑定",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/SubagentInspectorView.tsx",
+			"text": "标准思考档位",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/SubagentInspectorView.tsx",
+			"text": "模板: ${data.template}",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/SubagentInspectorView.tsx",
+			"text": "测试者 (Test)",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/SubagentInspectorView.tsx",
+			"text": "独立分支隔离",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/SubagentInspectorView.tsx",
+			"text": "终态自动通知唤醒父级 (notifyOnDone: true)",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/SubagentInspectorView.tsx",
+			"text": "编写与重构代码",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/SubagentInspectorView.tsx",
+			"text": "自动唤醒",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/SubagentInspectorView.tsx",
+			"text": "角色与类型",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/SubagentInspectorView.tsx",
+			"text": "调查依赖与路径",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/SubagentInspectorView.tsx",
+			"text": "跟随宿主",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/SubagentInspectorView.tsx",
+			"text": "运行指标",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/SubagentInspectorView.tsx",
+			"text": "通用助手 (General)",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/SubagentInspectorView.tsx",
+			"text": "通用协同智能体",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/SubagentInspectorView.tsx",
+			"text": "隔离工作区",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/SubagentInspectorView.tsx",
+			"text": "隔离策略",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/ThinkingBlock.tsx",
+			"text": "思考",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/ThinkingBlock.tsx",
+			"text": "思考过程",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/ThinkingBlock.tsx",
+			"text": "思考过程：",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/ThinkingBlock.tsx",
+			"text": "思路",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/ThinkingBlock.tsx",
+			"text": "思路：",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/ToolApprovalDialog.tsx",
+			"text": "JSON 格式错误：${(err as Error).message}",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/ToolCallBlock.tsx",
+			"text": "包含 Markdown 输出",
+			"count": 2,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/ToolCallBlock.tsx",
+			"text": "结束此 bash 命令",
+			"count": 2,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/ToolInspectorModal.tsx",
+			"text": "(无入参参数 / No arguments)",
+			"count": 4,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/ToolInspectorModal.tsx",
+			"text": "内容查看",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/ToolInspectorModal.tsx",
+			"text": "命令执行失败",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/ToolInspectorModal.tsx",
+			"text": "复制执行命令",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/ToolInspectorModal.tsx",
+			"text": "复制终端输出",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/ToolInspectorModal.tsx",
+			"text": "工具详细信息",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/ToolInspectorModal.tsx",
+			"text": "执行中...",
+			"count": 2,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/ToolInspectorModal.tsx",
+			"text": "执行完成",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/ToolInspectorModal.tsx",
+			"text": "搜索表达式: ${targetQuery}",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/ToolInspectorModal.tsx",
+			"text": "文件已写入",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/ToolInspectorModal.tsx",
+			"text": "查看完整参数",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/ToolInspectorModal.tsx",
+			"text": "查看完整参数与详情",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/ToolInspectorModal.tsx",
+			"text": "查看完整日志",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/ToolInspectorModal.tsx",
+			"text": "查看完整日志与详情",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/ToolInspectorModal.tsx",
+			"text": "视图",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/ToolInspectorModal.tsx",
+			"text": "终端输出",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/ToolInspectorModal.tsx",
+			"text": "结束",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/ToolInspectorModal.tsx",
+			"text": "结束此 bash 命令",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/ToolInspectorModal.tsx",
+			"text": "结束此 bash 命令 (Stop)",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/ToolInspectorModal.tsx",
+			"text": "补丁已应用",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/ToolInspectorModal.tsx",
+			"text": "起始偏移量: 第 ${startLine} 行",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/ToolInspectorModal.tsx",
+			"text": "返回内容",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/ToolInspectorModal.tsx",
+			"text": "返回差异对比",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/ToolInspectorModal.tsx",
+			"text": "返回视图",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/ToolInspectorModal.tsx",
+			"text": "返回终端输出",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/UniversalModelPicker.tsx",
+			"text": "当前全局默认模型（点击取消默认）",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/UniversalModelPicker.tsx",
+			"text": "清除全局默认模型",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/UniversalModelPicker.tsx",
+			"text": "设为全局默认模型",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/UniversalModelPicker.tsx",
+			"text": "默认模型: ${defaultModel}",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/UniversalPathPicker.tsx",
+			"text": ". (当前项目根目录)",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/UniversalPathPicker.tsx",
+			"text": "docs (文档目录)",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/UniversalPathPicker.tsx",
+			"text": "server (后端服务)",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/UniversalPathPicker.tsx",
+			"text": "src (源码目录)",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/UniversalPathPicker.tsx",
+			"text": "tests (测试套件)",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/UniversalPathPicker.tsx",
+			"text": "web (前端目录)",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/UniversalPathPicker.tsx",
+			"text": "如 . 或 web 或绝对路径",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/UniversalPathPicker.tsx",
+			"text": "工作目录: ${cwd || \".\"}",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/UniversalPathPicker.tsx",
+			"text": "选择推荐子目录或最近项目",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/WindowControls.tsx",
+			"text": "关闭",
+			"count": 2,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/WindowControls.tsx",
+			"text": "最大化",
+			"count": 2,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/WindowControls.tsx",
+			"text": "最小化",
+			"count": 2,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/components/WindowControls.tsx",
+			"text": "向下还原",
+			"count": 2,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/device-access.ts",
+			"text": "无法打开独立标签，请更新本机和 Hub 后重试。",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/device-access.ts",
+			"text": "无法打开设备，请确认设备在线且本机绑定有效。",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/device-access.ts",
+			"text": "无法打开设备窗口。",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/device-access.ts",
+			"text": "请允许弹出窗口后重试。",
+			"count": 2,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/device-group-messages.ts",
+			"text": " [${zh ? \"群组主管\" : \"Coordinator\"}]",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/device-group-messages.ts",
+			"text": "@${bot.name} · ${zh ? \"新对话\" : \"New conversation\"}",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/device-group-messages.ts",
+			"text": "@${bot.name} · ${zh ? \"继续：\" : \"Continue: \"}${c.name || (zh ? \"未命名对话\" : \"Untitled conversation\")}",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/device-group-messages.ts",
+			"text": "> **执行阶段**：\\`${phase}\\` · **错误类型**：\\`${category}\\`",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/device-group-messages.ts",
+			"text": "> ⚠️ **任务执行中断 · ${phaseLabel}**",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/device-group-messages.ts",
+			"text": "> ${cleanDetail || \"远端设备执行异常，现场任务会话已完整保留在目标设备上，可前往排查或重新提交。\"}",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/device-group-messages.ts",
+			"text": "⏳ 等待前序任务交付中",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/device-group-messages.ts",
+			"text": "⚙️ **${zh ? \"执行阶段\" : \"Phase\"}**：\\`${progressPhase}\\`${toolName ? ",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/device-group-messages.ts",
+			"text": "❌ **${zh ? \"协同子代理执行失败\" : \"Worker Subagent Failed\"}** · \\`@${bot?.name ?? task.botId}\\`",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/device-group-messages.ts",
+			"text": "🎯 **${zh ? \"分配指令\" : \"Instruction\"}**：${taskText}",
+			"count": 2,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/device-group-messages.ts",
+			"text": "🎯 **${zh ? (isSubagentTask ? \"分配指令\" : \"目标指令\") : \"Instruction\"}**：${taskText}",
+			"count": 3,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/device-group-messages.ts",
+			"text": "📋 展开查看工作内容与交付详情",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/device-group-messages.ts",
+			"text": "🔗 **${zh ? \"依赖任务\" : \"Depends on\"}**：${depBot ? ",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/device-group-messages.ts",
+			"text": "🤖 **${zh ? \"协同子代理交付完成\" : \"Worker Subagent Completed\"}** · \\`@${bot?.name ?? task.botId}\\`",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/device-group-messages.ts",
+			"text": "${bot.name} · ${c.name || (zh ? \"未命名对话\" : \"Untitled conversation\")}",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/device-group-messages.ts",
+			"text": "任务执行中",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/device-group-messages.ts",
+			"text": "任务排队等待调度",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/device-group-messages.ts",
+			"text": "会话切换",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/device-group-messages.ts",
+			"text": "协同子代理",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/device-group-messages.ts",
+			"text": "协同子代理执行中",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/device-group-messages.ts",
+			"text": "协同子代理排队等待调度",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/device-group-messages.ts",
+			"text": "失败",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/device-group-messages.ts",
+			"text": "工具调用阶段",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/device-group-messages.ts",
+			"text": "已中断",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/device-group-messages.ts",
+			"text": "已完成",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/device-group-messages.ts",
+			"text": "排队中",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/device-group-messages.ts",
+			"text": "新对话",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/device-group-messages.ts",
+			"text": "新建会话",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/device-group-messages.ts",
+			"text": "权限审批阶段",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/device-group-messages.ts",
+			"text": "模型推理阶段",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/device-group-messages.ts",
+			"text": "环境初始化",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/device-group-messages.ts",
+			"text": "等待依赖",
+			"count": 2,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/device-group-messages.ts",
+			"text": "等待前序任务",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/device-group-messages.ts",
+			"text": "继续对话",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/device-group-messages.ts",
+			"text": "网络连接",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/device-group-messages.ts",
+			"text": "设备握手",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/device-group-messages.ts",
+			"text": "运行中",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/group-attention.ts",
+			"text": "审查要求修改",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/group-attention.ts",
+			"text": "已交付，待验收",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/group-attention.ts",
+			"text": "执行中断，需处理",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/group-attention.ts",
+			"text": "执行失败，需处理",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/group-attention.ts",
+			"text": "等待决策",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/group-attention.ts",
+			"text": "等待回答",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/group-member-reference.ts",
+			"text": "同一条消息只能继续一个对话，请移除其他 @ 目标。 / Continue one conversation per message. Remove other @ targets.",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/i18n.tsx",
+			"text": "中文",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/i18n.tsx",
+			"text": "台繁",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/i18n.tsx",
+			"text": "港繁",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/i18n.tsx",
+			"text": "简体中文",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/i18n.tsx",
+			"text": "繁中",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/mcp-catalog.ts",
+			"text": "1.6万星合集",
+			"count": 1,
+			"reason": "data"
+		},
+		{
+			"file": "web/src/mcp-catalog.ts",
+			"text": "3000+插件",
+			"count": 1,
+			"reason": "data"
+		},
+		{
+			"file": "web/src/mcp-catalog.ts",
+			"text": "4,300+ 星标的经典精选合集，系统化整理了全球与中文优秀 MCP 服务实现、适配客户端与开发库。",
+			"count": 1,
+			"reason": "data"
+		},
+		{
+			"file": "web/src/mcp-catalog.ts",
+			"text": "4300星精选",
+			"count": 1,
+			"reason": "data"
+		},
+		{
+			"file": "web/src/mcp-catalog.ts",
+			"text": "7,700+ 星标的中文最全 MCP 精选合集：涵盖高德、飞书、微信、音视频、知识库等各类国内 MCP 插件列表与配置教程。",
+			"count": 1,
+			"reason": "data"
+		},
+		{
+			"file": "web/src/mcp-catalog.ts",
+			"text": "7700+星",
+			"count": 1,
+			"reason": "data"
+		},
+		{
+			"file": "web/src/mcp-catalog.ts",
+			"text": "7700星推荐",
+			"count": 1,
+			"reason": "data"
+		},
+		{
+			"file": "web/src/mcp-catalog.ts",
+			"text": "9800+插件",
+			"count": 1,
+			"reason": "data"
+		},
+		{
+			"file": "web/src/mcp-catalog.ts",
+			"text": "AMap (高德地图)",
+			"count": 1,
+			"reason": "data"
+		},
+		{
+			"file": "web/src/mcp-catalog.ts",
+			"text": "Anthropic 官方 GitHub 工具，支持检索代码、列出与修改 Issue、检查 PR 变更与提交评审意见。",
+			"count": 1,
+			"reason": "data"
+		},
+		{
+			"file": "web/src/mcp-catalog.ts",
+			"text": "Anthropic 官方开源的核心参考服务仓库目录：文件系统、网页抓取、持久记忆图谱、SQLite、Git、GitHub 等官方服务清单。",
+			"count": 1,
+			"reason": "data"
+		},
+		{
+			"file": "web/src/mcp-catalog.ts",
+			"text": "Anthropic 官方核心参考服务集目录",
+			"count": 1,
+			"reason": "data"
+		},
+		{
+			"file": "web/src/mcp-catalog.ts",
+			"text": "Anthropic 官方核心文件系统工具，支持受限目录下的安全文件读写、创建与遍历。",
+			"count": 1,
+			"reason": "data"
+		},
+		{
+			"file": "web/src/mcp-catalog.ts",
+			"text": "Anthropic 官方知识图谱记忆服务，将实体与关联关系持久化于本地，赋予 AI 跨会话长期记忆。",
+			"count": 1,
+			"reason": "data"
+		},
+		{
+			"file": "web/src/mcp-catalog.ts",
+			"text": "Anthropic 官方网页抓取工具，抓取指定 URL 页面并提取为结构化净室 Markdown。",
+			"count": 1,
+			"reason": "data"
+		},
+		{
+			"file": "web/src/mcp-catalog.ts",
+			"text": "Awesome China MCP (国内常用应用市场)",
+			"count": 1,
+			"reason": "data"
+		},
+		{
+			"file": "web/src/mcp-catalog.ts",
+			"text": "Awesome MCP ZH (中文精选合集)",
+			"count": 1,
+			"reason": "data"
+		},
+		{
+			"file": "web/src/mcp-catalog.ts",
+			"text": "Awesome MCP 中文精选市场与资源列表",
+			"count": 1,
+			"reason": "data"
+		},
+		{
+			"file": "web/src/mcp-catalog.ts",
+			"text": "Feishu / Lark (飞书)",
+			"count": 1,
+			"reason": "data"
+		},
+		{
+			"file": "web/src/mcp-catalog.ts",
+			"text": "GitHub #mcp-server 实时开源服务列表",
+			"count": 1,
+			"reason": "data"
+		},
+		{
+			"file": "web/src/mcp-catalog.ts",
+			"text": "GitHub 上 16,000+ 星标的最权威开源 MCP 清单，按开发、数据库、文件、搜索等数十个能力分类列出。",
+			"count": 1,
+			"reason": "data"
+		},
+		{
+			"file": "web/src/mcp-catalog.ts",
+			"text": "GitHub 仓库协作与代码管理",
+			"count": 1,
+			"reason": "data"
+		},
+		{
+			"file": "web/src/mcp-catalog.ts",
+			"text": "GitHub 全球开源 MCP 仓库实时列表",
+			"count": 1,
+			"reason": "data"
+		},
+		{
+			"file": "web/src/mcp-catalog.ts",
+			"text": "GitHub 官方 #mcp-server 标签实时聚合，直达全球开发者开源的具体 MCP Server 代码仓库列表。",
+			"count": 1,
+			"reason": "data"
+		},
+		{
+			"file": "web/src/mcp-catalog.ts",
+			"text": "GitHub 官方标签直达，全球开源智能体 MCP 仓库实时列表，可按 Star 数和最新活跃度在线浏览。",
+			"count": 1,
+			"reason": "data"
+		},
+		{
+			"file": "web/src/mcp-catalog.ts",
+			"text": "Glama 开发者 MCP 市场",
+			"count": 1,
+			"reason": "data"
+		},
+		{
+			"file": "web/src/mcp-catalog.ts",
+			"text": "mcp-get 发现与包管理平台",
+			"count": 1,
+			"reason": "data"
+		},
+		{
+			"file": "web/src/mcp-catalog.ts",
+			"text": "MCP.so 综合分类导航目录",
+			"count": 1,
+			"reason": "data"
+		},
+		{
+			"file": "web/src/mcp-catalog.ts",
+			"text": "mcpservers.org 综合插件市场",
+			"count": 1,
+			"reason": "data"
+		},
+		{
+			"file": "web/src/mcp-catalog.ts",
+			"text": "Playwright 浏览器自动化 (微软)",
+			"count": 1,
+			"reason": "data"
+		},
+		{
+			"file": "web/src/mcp-catalog.ts",
+			"text": "PostgreSQL 数据库管理",
+			"count": 1,
+			"reason": "data"
+		},
+		{
+			"file": "web/src/mcp-catalog.ts",
+			"text": "PulseMCP 实时生态与趋势雷达",
+			"count": 1,
+			"reason": "data"
+		},
+		{
+			"file": "web/src/mcp-catalog.ts",
+			"text": "Punkpeye 1.6万星全球开源合集",
+			"count": 1,
+			"reason": "data"
+		},
+		{
+			"file": "web/src/mcp-catalog.ts",
+			"text": "Smithery 3,000+ 在线插件市场",
+			"count": 1,
+			"reason": "data"
+		},
+		{
+			"file": "web/src/mcp-catalog.ts",
+			"text": "SQLite 数据库查询与分析",
+			"count": 1,
+			"reason": "data"
+		},
+		{
+			"file": "web/src/mcp-catalog.ts",
+			"text": "Tavily 智能体深度搜索引擎",
+			"count": 1,
+			"reason": "data"
+		},
+		{
+			"file": "web/src/mcp-catalog.ts",
+			"text": "wong2 精选 MCP 服务与客户端合集",
+			"count": 1,
+			"reason": "data"
+		},
+		{
+			"file": "web/src/mcp-catalog.ts",
+			"text": "专为 AI 智能体设计的搜索引擎，提供实时、高相关度、结构化且包含引文出处的互联网检索结果。",
+			"count": 1,
+			"reason": "data"
+		},
+		{
+			"file": "web/src/mcp-catalog.ts",
+			"text": "专为国内生态打造的 MCP 列表专区：收录高德地图、12306 查票、小红书、飞书、语雀文档、A股量化等常用国内服务。",
+			"count": 1,
+			"reason": "data"
+		},
+		{
+			"file": "web/src/mcp-catalog.ts",
+			"text": "中文精选",
+			"count": 2,
+			"reason": "data"
+		},
+		{
+			"file": "web/src/mcp-catalog.ts",
+			"text": "主流的 MCP 服务器发现与注册市场，收录 3,000+ 个可在线检索与一键配置的 MCP 服务及连接命令。",
+			"count": 1,
+			"reason": "data"
+		},
+		{
+			"file": "web/src/mcp-catalog.ts",
+			"text": "全球开源",
+			"count": 1,
+			"reason": "data"
+		},
+		{
+			"file": "web/src/mcp-catalog.ts",
+			"text": "全面的 MCP 服务器目录索引，支持按业务分类、协议类型、部署依赖与集成目标精准筛选检索。",
+			"count": 1,
+			"reason": "data"
+		},
+		{
+			"file": "web/src/mcp-catalog.ts",
+			"text": "关系型数据库",
+			"count": 1,
+			"reason": "data"
+		},
+		{
+			"file": "web/src/mcp-catalog.ts",
+			"text": "分类导航",
+			"count": 1,
+			"reason": "data"
+		},
+		{
+			"file": "web/src/mcp-catalog.ts",
+			"text": "包检索",
+			"count": 1,
+			"reason": "data"
+		},
+		{
+			"file": "web/src/mcp-catalog.ts",
+			"text": "协同办公",
+			"count": 1,
+			"reason": "data"
+		},
+		{
+			"file": "web/src/mcp-catalog.ts",
+			"text": "发现经过检验的社区 MCP 服务器，支持在线服务状态监测、开发者评分、配置代码与安全合规提示。",
+			"count": 1,
+			"reason": "data"
+		},
+		{
+			"file": "web/src/mcp-catalog.ts",
+			"text": "国内常用",
+			"count": 1,
+			"reason": "data"
+		},
+		{
+			"file": "web/src/mcp-catalog.ts",
+			"text": "国内常用应用 MCP 专区列表",
+			"count": 1,
+			"reason": "data"
+		},
+		{
+			"file": "web/src/mcp-catalog.ts",
+			"text": "国内应用专区",
+			"count": 1,
+			"reason": "data"
+		},
+		{
+			"file": "web/src/mcp-catalog.ts",
+			"text": "国内生态",
+			"count": 3,
+			"reason": "data"
+		},
+		{
+			"file": "web/src/mcp-catalog.ts",
+			"text": "地理位置",
+			"count": 1,
+			"reason": "data"
+		},
+		{
+			"file": "web/src/mcp-catalog.ts",
+			"text": "多维表格",
+			"count": 1,
+			"reason": "data"
+		},
+		{
+			"file": "web/src/mcp-catalog.ts",
+			"text": "多语言库",
+			"count": 1,
+			"reason": "data"
+		},
+		{
+			"file": "web/src/mcp-catalog.ts",
+			"text": "官方参考",
+			"count": 1,
+			"reason": "data"
+		},
+		{
+			"file": "web/src/mcp-catalog.ts",
+			"text": "官方工具",
+			"count": 1,
+			"reason": "data"
+		},
+		{
+			"file": "web/src/mcp-catalog.ts",
+			"text": "官方核心",
+			"count": 1,
+			"reason": "data"
+		},
+		{
+			"file": "web/src/mcp-catalog.ts",
+			"text": "实时趋势",
+			"count": 1,
+			"reason": "data"
+		},
+		{
+			"file": "web/src/mcp-catalog.ts",
+			"text": "客户端",
+			"count": 1,
+			"reason": "data"
+		},
+		{
+			"file": "web/src/mcp-catalog.ts",
+			"text": "小红书",
+			"count": 1,
+			"reason": "data"
+		},
+		{
+			"file": "web/src/mcp-catalog.ts",
+			"text": "开发指南",
+			"count": 1,
+			"reason": "data"
+		},
+		{
+			"file": "web/src/mcp-catalog.ts",
+			"text": "开发者市场",
+			"count": 1,
+			"reason": "data"
+		},
+		{
+			"file": "web/src/mcp-catalog.ts",
+			"text": "微软官方",
+			"count": 1,
+			"reason": "data"
+		},
+		{
+			"file": "web/src/mcp-catalog.ts",
+			"text": "微软官方维护的 Playwright 自动化工具：驱动无头/有头浏览器交互、全页截长图与复杂动态页面操作。",
+			"count": 1,
+			"reason": "data"
+		},
+		{
+			"file": "web/src/mcp-catalog.ts",
+			"text": "持久化知识记忆图谱",
+			"count": 1,
+			"reason": "data"
+		},
+		{
+			"file": "web/src/mcp-catalog.ts",
+			"text": "教程指南",
+			"count": 1,
+			"reason": "data"
+		},
+		{
+			"file": "web/src/mcp-catalog.ts",
+			"text": "数据库",
+			"count": 1,
+			"reason": "data"
+		},
+		{
+			"file": "web/src/mcp-catalog.ts",
+			"text": "智能体搜索",
+			"count": 1,
+			"reason": "data"
+		},
+		{
+			"file": "web/src/mcp-catalog.ts",
+			"text": "服务实现",
+			"count": 1,
+			"reason": "data"
+		},
+		{
+			"file": "web/src/mcp-catalog.ts",
+			"text": "本地安全文件系统",
+			"count": 1,
+			"reason": "data"
+		},
+		{
+			"file": "web/src/mcp-catalog.ts",
+			"text": "每周动态更新的 MCP 趋势雷达与目录，汇集每周热门服务器、实用开发工具、适配客户端与生态快讯。",
+			"count": 1,
+			"reason": "data"
+		},
+		{
+			"file": "web/src/mcp-catalog.ts",
+			"text": "汇聚 9,800+ 款开源 MCP 服务器的大型在线市场，支持按分类检索、星标排行与一键复制配置命令。",
+			"count": 1,
+			"reason": "data"
+		},
+		{
+			"file": "web/src/mcp-catalog.ts",
+			"text": "研发协同",
+			"count": 1,
+			"reason": "data"
+		},
+		{
+			"file": "web/src/mcp-catalog.ts",
+			"text": "网页抓取与 Markdown 提取",
+			"count": 1,
+			"reason": "data"
+		},
+		{
+			"file": "web/src/mcp-catalog.ts",
+			"text": "路线规划",
+			"count": 1,
+			"reason": "data"
+		},
+		{
+			"file": "web/src/mcp-catalog.ts",
+			"text": "连接 PostgreSQL 数据库，支持执行安全参数化查询、表与索引分析及数据检索。",
+			"count": 1,
+			"reason": "data"
+		},
+		{
+			"file": "web/src/mcp-catalog.ts",
+			"text": "连接并查询本地 SQLite 数据库文件，支持执行 SQL 语句、表结构探查与业务数据分析。",
+			"count": 1,
+			"reason": "data"
+		},
+		{
+			"file": "web/src/mcp-catalog.ts",
+			"text": "长期记忆",
+			"count": 1,
+			"reason": "data"
+		},
+		{
+			"file": "web/src/mcp-catalog.ts",
+			"text": "面向开发者打造的 MCP 服务发现与命令行管理平台，便于快速定位并执行跨环境 MCP 服务。",
+			"count": 1,
+			"reason": "data"
+		},
+		{
+			"file": "web/src/mcp-catalog.ts",
+			"text": "飞书",
+			"count": 2,
+			"reason": "data"
+		},
+		{
+			"file": "web/src/mcp-catalog.ts",
+			"text": "飞书办公协同与多维表格",
+			"count": 1,
+			"reason": "data"
+		},
+		{
+			"file": "web/src/mcp-catalog.ts",
+			"text": "飞书官方",
+			"count": 1,
+			"reason": "data"
+		},
+		{
+			"file": "web/src/mcp-catalog.ts",
+			"text": "飞书官方开放平台 OpenAPI 集成：支持多维表格增删改查、发送机器人卡片消息、读取飞书云文档与日程管理。",
+			"count": 1,
+			"reason": "data"
+		},
+		{
+			"file": "web/src/mcp-catalog.ts",
+			"text": "飞书自建应用 Secret",
+			"count": 1,
+			"reason": "data"
+		},
+		{
+			"file": "web/src/mcp-catalog.ts",
+			"text": "高德地图",
+			"count": 2,
+			"reason": "data"
+		},
+		{
+			"file": "web/src/mcp-catalog.ts",
+			"text": "高德地图位置服务",
+			"count": 1,
+			"reason": "data"
+		},
+		{
+			"file": "web/src/mcp-catalog.ts",
+			"text": "高德地图官方开放平台位置服务，提供地址解析编码、周边 POI 检索、驾车与公交路线规划及实时天气。",
+			"count": 1,
+			"reason": "data"
+		},
+		{
+			"file": "web/src/mcp-catalog.ts",
+			"text": "高德官方",
+			"count": 1,
+			"reason": "data"
+		},
+		{
+			"file": "web/src/mcp-catalog.ts",
+			"text": "高德开放平台 Web 服务 Key",
+			"count": 1,
+			"reason": "data"
+		},
+		{
+			"file": "web/src/plugin-fence.ts",
+			"text": "[plugin:${entry.pluginId}] renderer(\"${lang}\") 执行失败:",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/plugin-fence.ts",
+			"text": "[plugin:${pluginId}] entry.mjs 未提供 messageWidgets[\"${type}\"]",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/plugin-fence.ts",
+			"text": "[plugin:${pluginId}] entry.mjs 未提供 renderers[\"${lang}\"]",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/plugin-fence.ts",
+			"text": "[plugin:${pluginId}] messageWidget 加载失败（${type}）:",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/plugin-fence.ts",
+			"text": "[plugin:${pluginId}] renderer 加载失败（${lang}）:",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/plugin-host.ts",
+			"text": "[plugin-host] onLocale 处理器抛错:",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/plugin-host.ts",
+			"text": "[plugin-host] onModelChange 处理器抛错:",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/plugin-host.ts",
+			"text": "[plugin-host] onTheme 处理器抛错:",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/plugin-host.ts",
+			"text": "[plugin-host] onViewChange 处理器抛错:",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/plugin-host.ts",
+			"text": "[plugin-host] 快捷键处理器抛错:",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/plugin-host.ts",
+			"text": "[plugin:${pluginId}] 顶栏动作 ${action} 抛错:",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/plugin-host.ts",
+			"text": "openSession 需要 cwd / folders / roots（绝对路径）",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/plugin-host.ts",
+			"text": "pageCall 需要一个动作名（op）",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/plugin-host.ts",
+			"text": "reloadCatalog 需要一个目录来源（http(s) URL 或本地文件路径）",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/plugin-host.ts",
+			"text": "sessions.open 需要一个会话 id（先调 list）",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/plugin-host.ts",
+			"text": "切换会话超时：${info.title}",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/plugin-host.ts",
+			"text": "切换工作目录失败或超时：${info.cwd}",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/plugin-host.ts",
+			"text": "切换工作目录失败或超时：${target}",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/plugin-host.ts",
+			"text": "尚未连接到服务器（还没有快照）",
+			"count": 3,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/plugin-host.ts",
+			"text": "打开并接入会话超时：${info.title}",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/plugin-host.ts",
+			"text": "找不到会话：${targetId}",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/plugin-host.ts",
+			"text": "未知模型：${model}（先调 models.list() 取可用列表）",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/plugin-host.ts",
+			"text": "此桌面版尚未提供原生浏览器桥；请升级到支持 AI Browser 的桌面版，或在系统浏览器中使用 page-picker 扩展。/ Native browser bridge unavailable; upgrade the desktop app or use page-picker in a regular browser.",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/plugin-host.ts",
+			"text": "浏览器扩展的页面桥没就绪：确认已安装并启用 page-picker 扩展、本页地址已绑定，然后刷新本页",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/plugin-host.ts",
+			"text": "用户拒绝了该目录的访问：${info.cwd}",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/plugin-host.ts",
+			"text": "用户拒绝了该目录的访问：${p}",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/plugin-host.ts",
+			"text": "目录同步失败",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/plugin-host.ts",
+			"text": "目录同步超时（服务端未在等待窗口内回执）",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/plugin-loader.ts",
+			"text": "[plugin:${p.id}] entry.mjs 缺少 default.mount",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/plugin-loader.ts",
+			"text": "[plugin:${p.id}] 客户端 bundle 加载失败:",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/plugin-loader.ts",
+			"text": "[plugin:${p.id}] 客户端加载失败:",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/preview-toc.ts",
+			"text": "未命名章节",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/quick-ask.ts",
+			"text": "将以下文字翻译成{{targetLanguage}}，只输出译文，保留代码与专有名词。\\n{{input}}",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/quick-ask.ts",
+			"text": "日本語",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/quick-ask.ts",
+			"text": "简体中文",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/quick-ask.ts",
+			"text": "繁體中文",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/quick-ask.ts",
+			"text": "解释下: {{input}}",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/quick-phrases.ts",
+			"text": "テストカバレッジを追加",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/quick-phrases.ts",
+			"text": "上传github",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/quick-phrases.ts",
+			"text": "上传发布",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/quick-phrases.ts",
+			"text": "公開・リリース",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/quick-phrases.ts",
+			"text": "关闭回复issue",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/quick-phrases.ts",
+			"text": "問題を確認して修正",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/quick-phrases.ts",
+			"text": "处理issue",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/quick-phrases.ts",
+			"text": "处理pr",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/quick-phrases.ts",
+			"text": "続ける",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/quick-phrases.ts",
+			"text": "继续",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/quick-phrases.ts",
+			"text": "要約して",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/quick-phrases.ts",
+			"text": "詳しく説明して",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/quick-phrases.ts",
+			"text": "还有更好的方式吗",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/remote-ssh-client.ts",
+			"text": "WebSocket 连接不可用",
+			"count": 3,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/remote-ssh-client.ts",
+			"text": "WebSocket 连接不可用，请稍候重试",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/skill-catalog.ts",
+			"text": "11万星推荐",
+			"count": 1,
+			"reason": "data"
+		},
+		{
+			"file": "web/src/skill-catalog.ts",
+			"text": "3.8万开源库",
+			"count": 1,
+			"reason": "data"
+		},
+		{
+			"file": "web/src/skill-catalog.ts",
+			"text": "Addy Osmani 生产级工程技能库",
+			"count": 1,
+			"reason": "data"
+		},
+		{
+			"file": "web/src/skill-catalog.ts",
+			"text": "AgentSkills 开放技能市场",
+			"count": 1,
+			"reason": "data"
+		},
+		{
+			"file": "web/src/skill-catalog.ts",
+			"text": "AgentSkills 技能发现市场",
+			"count": 1,
+			"reason": "data"
+		},
+		{
+			"file": "web/src/skill-catalog.ts",
+			"text": "Anthropic 官方技能目录",
+			"count": 1,
+			"reason": "data"
+		},
+		{
+			"file": "web/src/skill-catalog.ts",
+			"text": "Anthropic 官方核心 skills 目录，直达 docx, pptx, xlsx, canvas-design, mcp-builder 等数十个官方技能。",
+			"count": 1,
+			"reason": "data"
+		},
+		{
+			"file": "web/src/skill-catalog.ts",
+			"text": "Awesome Claude Code 技能聚合",
+			"count": 1,
+			"reason": "data"
+		},
+		{
+			"file": "web/src/skill-catalog.ts",
+			"text": "Composio Claude 技能精选合集",
+			"count": 1,
+			"reason": "data"
+		},
+		{
+			"file": "web/src/skill-catalog.ts",
+			"text": "Docker 与轻量容器化部署",
+			"count": 1,
+			"reason": "data"
+		},
+		{
+			"file": "web/src/skill-catalog.ts",
+			"text": "GitHub #agent-skills 全球仓库列表",
+			"count": 1,
+			"reason": "data"
+		},
+		{
+			"file": "web/src/skill-catalog.ts",
+			"text": "GitHub 官方标签直达，全球 38,000+ 开源智能体技能与工具仓库实时列表，可按活跃度与星标浏览。",
+			"count": 1,
+			"reason": "data"
+		},
+		{
+			"file": "web/src/skill-catalog.ts",
+			"text": "Google 技术总监维护的 25+ 个生产级工程技能目录：架构设计、性能优化、安全加固与测试驱动。",
+			"count": 1,
+			"reason": "data"
+		},
+		{
+			"file": "web/src/skill-catalog.ts",
+			"text": "RESTful / RPC 接口设计规范",
+			"count": 1,
+			"reason": "data"
+		},
+		{
+			"file": "web/src/skill-catalog.ts",
+			"text": "SQL 与数据库索引优化",
+			"count": 1,
+			"reason": "data"
+		},
+		{
+			"file": "web/src/skill-catalog.ts",
+			"text": "Superpowers 实战技能合集",
+			"count": 1,
+			"reason": "data"
+		},
+		{
+			"file": "web/src/skill-catalog.ts",
+			"text": "TypeScript 严格类型强化",
+			"count": 1,
+			"reason": "data"
+		},
+		{
+			"file": "web/src/skill-catalog.ts",
+			"text": "业务与增长",
+			"count": 1,
+			"reason": "data"
+		},
+		{
+			"file": "web/src/skill-catalog.ts",
+			"text": "业务营销与产品增长技能库",
+			"count": 1,
+			"reason": "data"
+		},
+		{
+			"file": "web/src/skill-catalog.ts",
+			"text": "从异常日志与堆栈跟踪中逆向推导故障根本原因，构造最小可复现步骤并设计杜绝二次回归的根治方案。",
+			"count": 1,
+			"reason": "data"
+		},
+		{
+			"file": "web/src/skill-catalog.ts",
+			"text": "代码审查与质量把关",
+			"count": 1,
+			"reason": "data"
+		},
+		{
+			"file": "web/src/skill-catalog.ts",
+			"text": "代码重构与坏味道治理",
+			"count": 1,
+			"reason": "data"
+		},
+		{
+			"file": "web/src/skill-catalog.ts",
+			"text": "依据 OWASP Top 10 安全标准审计代码：防御 SQL/命令注入、未授权越权、反序列化攻击及敏感信息泄露。",
+			"count": 1,
+			"reason": "data"
+		},
+		{
+			"file": "web/src/skill-catalog.ts",
+			"text": "全方位代码审查：深度排查安全漏洞、并发竞争隐患、边界异常以及性能退化。",
+			"count": 1,
+			"reason": "data"
+		},
+		{
+			"file": "web/src/skill-catalog.ts",
+			"text": "分析慢查询与执行计划，设计精准复合索引，治理全表扫描与 N+1 级联查询，保障高并发下的数据吞吐。",
+			"count": 1,
+			"reason": "data"
+		},
+		{
+			"file": "web/src/skill-catalog.ts",
+			"text": "前端性能与渲染优化",
+			"count": 1,
+			"reason": "data"
+		},
+		{
+			"file": "web/src/skill-catalog.ts",
+			"text": "名声斐然的实战技能目录：子代理编排驱动、系统化调试诊断、计划编写与 Git Worktree 高效协同。",
+			"count": 1,
+			"reason": "data"
+		},
+		{
+			"file": "web/src/skill-catalog.ts",
+			"text": "在线市场",
+			"count": 1,
+			"reason": "data"
+		},
+		{
+			"file": "web/src/skill-catalog.ts",
+			"text": "在线浏览与检索 500+ 个实测 Agent Skills，支持搜索筛选、多平台一键安装命令与中文标签。",
+			"count": 1,
+			"reason": "data"
+		},
+		{
+			"file": "web/src/skill-catalog.ts",
+			"text": "安全审计与漏洞排查",
+			"count": 1,
+			"reason": "data"
+		},
+		{
+			"file": "web/src/skill-catalog.ts",
+			"text": "完备单元测试设计",
+			"count": 1,
+			"reason": "data"
+		},
+		{
+			"file": "web/src/skill-catalog.ts",
+			"text": "官方规范",
+			"count": 1,
+			"reason": "data"
+		},
+		{
+			"file": "web/src/skill-catalog.ts",
+			"text": "开放市场",
+			"count": 1,
+			"reason": "data"
+		},
+		{
+			"file": "web/src/skill-catalog.ts",
+			"text": "技术文档与 API 规范生成",
+			"count": 1,
+			"reason": "data"
+		},
+		{
+			"file": "web/src/skill-catalog.ts",
+			"text": "故障定位与根因分析",
+			"count": 1,
+			"reason": "data"
+		},
+		{
+			"file": "web/src/skill-catalog.ts",
+			"text": "汇聚 4,000+ 开发者 Agent 技能的开放市场，首页直展 Trending 与最新实战技能卡片。",
+			"count": 1,
+			"reason": "data"
+		},
+		{
+			"file": "web/src/skill-catalog.ts",
+			"text": "消除 any 与盲目类型断言，运用可辨识联合类型、模板字面量类型、精细泛型约束与类型守卫提升代码健壮度。",
+			"count": 1,
+			"reason": "data"
+		},
+		{
+			"file": "web/src/skill-catalog.ts",
+			"text": "深度工作流",
+			"count": 1,
+			"reason": "data"
+		},
+		{
+			"file": "web/src/skill-catalog.ts",
+			"text": "直接直达技能列表锚点，汇集社区贡献的思考规约、架构绘图、思维链强化与自动化脚本。",
+			"count": 1,
+			"reason": "data"
+		},
+		{
+			"file": "web/src/skill-catalog.ts",
+			"text": "直接锚定直达 #skills 章节，收录涵盖办公、分析、多工具调用等数十个分类的上百个现成技能清单。",
+			"count": 1,
+			"reason": "data"
+		},
+		{
+			"file": "web/src/skill-catalog.ts",
+			"text": "直达 150+ 个面向生物计算、化学建模、学术研读与量化数据分析的专业领域 Agent Skills 目录。",
+			"count": 1,
+			"reason": "data"
+		},
+		{
+			"file": "web/src/skill-catalog.ts",
+			"text": "社区精选",
+			"count": 1,
+			"reason": "data"
+		},
+		{
+			"file": "web/src/skill-catalog.ts",
+			"text": "科研与科学计算技能库",
+			"count": 1,
+			"reason": "data"
+		},
+		{
+			"file": "web/src/skill-catalog.ts",
+			"text": "科研专区",
+			"count": 1,
+			"reason": "data"
+		},
+		{
+			"file": "web/src/skill-catalog.ts",
+			"text": "精准提炼代码架构与接口语义，生成清晰专业的技术文档、REST/RPC 接口规范与部署快速上手手册。",
+			"count": 1,
+			"reason": "data"
+		},
+		{
+			"file": "web/src/skill-catalog.ts",
+			"text": "精准识别代码坏味道，运用 SOLID 原则治理超长函数、上帝类与深层嵌套，保证行为等价的同时提升内聚。",
+			"count": 1,
+			"reason": "data"
+		},
+		{
+			"file": "web/src/skill-catalog.ts",
+			"text": "编写轻量安全的多阶段 Dockerfile、精简镜像层级、强制非 root 用户运行，并构建标准的 Docker Compose 编排。",
+			"count": 1,
+			"reason": "data"
+		},
+		{
+			"file": "web/src/skill-catalog.ts",
+			"text": "自动设计高覆盖度、结构清晰的单元与集成测试：覆盖正常流程、边界条件、异常分支与合理 Mock。",
+			"count": 1,
+			"reason": "data"
+		},
+		{
+			"file": "web/src/skill-catalog.ts",
+			"text": "规范化 Git 提交与 PR",
+			"count": 1,
+			"reason": "data"
+		},
+		{
+			"file": "web/src/skill-catalog.ts",
+			"text": "规范化设计 RESTful 与 RPC 接口：统一资源路径命名、幂等性语义、结构化错误码与游标分页机制。",
+			"count": 1,
+			"reason": "data"
+		},
+		{
+			"file": "web/src/skill-catalog.ts",
+			"text": "诊断前端渲染瓶颈、组件多余重绘、打包体积膨胀、首屏加载慢与 Core Web Vitals 核心指标优化。",
+			"count": 1,
+			"reason": "data"
+		},
+		{
+			"file": "web/src/skill-catalog.ts",
+			"text": "遵循 Conventional Commits 规范，编写清晰、原子化且具解释力的语义化提交信息与 PR 说明。",
+			"count": 1,
+			"reason": "data"
+		},
+		{
+			"file": "web/src/skill-catalog.ts",
+			"text": "面向商业增长的技能目录：涵盖产品发布策略、转化率优化、自动化邮件序列与文案撰写规约。",
+			"count": 1,
+			"reason": "data"
+		},
+		{
+			"file": "web/src/skill-catalog.ts",
+			"text": "高星榜单",
+			"count": 1,
+			"reason": "data"
+		},
+		{
+			"file": "web/src/template-commands.ts",
+			"text": "{{clipboard}} 剪贴板",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/template-commands.ts",
+			"text": "{{date}} 日期",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/template-commands.ts",
+			"text": "{{datetime}} 日期时间",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/template-commands.ts",
+			"text": "{{input}} 参数",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/template-commands.ts",
+			"text": "{{selection}} 选中文本",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/template-commands.ts",
+			"text": "{{time}} 时间",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/template-commands.ts",
+			"text": "当前完整日期时间",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/template-commands.ts",
+			"text": "当前日期 (YYYY-MM-DD)",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/template-commands.ts",
+			"text": "当前时间 (HH:mm:ss)",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/template-commands.ts",
+			"text": "当前编辑器中选中的文本",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/template-commands.ts",
+			"text": "快捷命令传入的参数，如 /pr 798 中的 798",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/template-commands.ts",
+			"text": "自动提取剪贴板文本",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/thinking-levels.ts",
+			"text": "⚡ Claude 3.7+ 预算型 (1K~64K)",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/thinking-levels.ts",
+			"text": "⚡ DeepSeek 兼容协议",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/thinking-levels.ts",
+			"text": "⚡ Gemini 2.0+ 预算型 (0~32K)",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/thinking-levels.ts",
+			"text": "⚡ OpenAI o 系列档位 (低/中/高)",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/thinking-levels.ts",
+			"text": "⚡ OpenRouter 规范",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/thinking-levels.ts",
+			"text": "⚡ Qwen 通义千问协议",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/thinking-levels.ts",
+			"text": "⚡ 全开模式 (全部 7 档)",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/thinking-levels.ts",
+			"text": "⚡ 固定深度推理 (不可调)",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/thinking-levels.ts",
+			"text": "DeepSeek 协议 (thinking: {type: enabled})",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/thinking-levels.ts",
+			"text": "Gemini Flash Thinking 预算控制",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/thinking-levels.ts",
+			"text": "OpenAI 档位 (reasoning_effort: low/med/high)",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/thinking-levels.ts",
+			"text": "OpenRouter 协议 (reasoning: {effort})",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/thinking-levels.ts",
+			"text": "包含极高与最大，全量开放供自由选择",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/thinking-levels.ts",
+			"text": "发送 enable_thinking: true 专属参数",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/thinking-levels.ts",
+			"text": "发送 reasoning: { effort } 跨端归一格式",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/thinking-levels.ts",
+			"text": "发送 thinking: { type: 'enabled' } 协议对象",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/thinking-levels.ts",
+			"text": "支持关/开，按 Token 精准预算（1024~64000 tokens）",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/thinking-levels.ts",
+			"text": "智谱 GLM (zai thinking 对象)",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/thinking-levels.ts",
+			"text": "标准 effort 档位，不可关闭思考",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/thinking-levels.ts",
+			"text": "自动检测 (Auto / Default)",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/thinking-levels.ts",
+			"text": "适用于 DeepSeek R1 / QwQ 等不可控模型",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/thinking-levels.ts",
+			"text": "通义千问 Qwen (enable_thinking: true)",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/tool-inventory.ts",
+			"text": "已存档",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/tool-inventory.ts",
+			"text": "插件",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/tool-inventory.ts",
+			"text": "插件已卸载/跨设备",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/tool-inventory.ts",
+			"text": "效率工具",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/tool-inventory.ts",
+			"text": "核心",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/tool-inventory.ts",
+			"text": "永不延迟",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/tool-inventory.ts",
+			"text": "终端协作",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/tool-inventory.ts",
+			"text": "自动合并",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/tts-client.ts",
+			"text": "系统语音",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/tts-client.ts",
+			"text": "语音播放失败",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/use-chat.ts",
+			"text": "宿主页面桥不可用（页面版本过旧？）—— 刷新本页后再试",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/use-chat.ts",
+			"text": "当前页面没有手机操控桥：请在 pi 手机端打开（浏览器/桌面端不支持）。",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/use-chat.ts",
+			"text": "手机操作失败",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/use-chat.ts",
+			"text": "正在切换到工作目录：${msg.path}",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/use-chat.ts",
+			"text": "正在切换对话…",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/use-chat.ts",
+			"text": "正在初始化新对话…",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/use-chat.ts",
+			"text": "正在流式载入历史会话…",
+			"count": 1,
+			"reason": "pending"
+		},
+		{
+			"file": "web/src/use-chat.ts",
+			"text": "页面操作失败",
+			"count": 1,
+			"reason": "pending"
+		}
+	]
+}
