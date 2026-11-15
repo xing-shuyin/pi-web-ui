@@ -1,7 +1,7 @@
 import { useEffect, useState, useRef } from "react";
 import { appUrl } from "../base-url";
 import { withToken } from "../auth-token";
-import { isZhLocale, useI18n } from "../i18n";
+import { useT } from "../i18n";
 import type {
 	DeviceTaskDetails,
 	DeviceTaskJournalEntry,
@@ -29,8 +29,7 @@ async function fetchJson<T>(path: string, signal: AbortSignal): Promise<T> {
 }
 
 export function GroupTaskDetails({ roomId, taskId, onClose }: GroupTaskDetailsProps) {
-	const { locale } = useI18n();
-	const zh = isZhLocale(locale);
+	const t = useT();
 
 	const [details, setDetails] = useState<DeviceTaskDetails | null>(null);
 	const [journal, setJournal] = useState<DeviceTaskJournalEntry[]>([]);
@@ -102,13 +101,13 @@ export function GroupTaskDetails({ roomId, taskId, onClose }: GroupTaskDetailsPr
 				setDetails(detailsData);
 				if (detailsData.reportMeta) setReportMeta(detailsData.reportMeta);
 			} else {
-				setError((detailsResult.reason as any)?.message || "Failed to load task details");
+				setError((detailsResult.reason as any)?.message || t("groupTaskDetails.loadFailed"));
 			}
 			if (journalResult.status === "fulfilled") {
 				setJournal(journalResult.value.items);
 				setJournalPage(journalResult.value);
 			} else {
-				setJournalError((journalResult.reason as any)?.message || (zh ? "加载事件流失败" : "Failed to load journal"));
+				setJournalError((journalResult.reason as any)?.message || t("groupTaskDetails.journalLoadFailed"));
 			}
 			setLoading(false);
 		}
@@ -138,7 +137,7 @@ export function GroupTaskDetails({ roomId, taskId, onClose }: GroupTaskDetailsPr
 			setJournalPage(nextData);
 		} catch (cause: any) {
 			if (!controller.signal.aborted) {
-				setJournalError(cause?.message || (zh ? "分页加载日志失败" : "Failed to load more journal events"));
+				setJournalError(cause?.message || t("groupTaskDetails.journalMoreFailed"));
 			}
 		} finally {
 			if (!controller.signal.aborted) setLoadingMore(false);
@@ -164,7 +163,7 @@ export function GroupTaskDetails({ roomId, taskId, onClose }: GroupTaskDetailsPr
 			setReportNextOffset(res.nextOffset ?? undefined);
 		} catch (cause: any) {
 			if (!controller.signal.aborted) {
-				setError(zh ? `加载报告分片失败: ${cause.message}` : `Failed to load report slice: ${cause.message}`);
+				setError(t("groupTaskDetails.reportSliceFailed", { error: cause?.message ?? "" }));
 			}
 		} finally {
 			if (!controller.signal.aborted) setLoadingReport(false);
@@ -184,7 +183,7 @@ export function GroupTaskDetails({ roomId, taskId, onClose }: GroupTaskDetailsPr
 				}, 2000);
 			})
 			.catch(() => {
-				setError(zh ? "复制报告失败，请手动选择复制" : "Failed to copy report to clipboard");
+				setError(t("groupTaskDetails.copyFailed"));
 			});
 	}
 
@@ -197,23 +196,23 @@ export function GroupTaskDetails({ roomId, taskId, onClose }: GroupTaskDetailsPr
 
 	function statusBadge(status?: string) {
 		const s = status || "queued";
-		const labels: Record<string, { zh: string; en: string; cls: string }> = {
-			queued: { zh: "排队中", en: "Queued", cls: "gtd-badge-queued" },
-			running: { zh: "运行中", en: "Running", cls: "gtd-badge-running" },
-			completed: { zh: "已完成", en: "Completed", cls: "gtd-badge-completed" },
-			failed: { zh: "失败", en: "Failed", cls: "gtd-badge-failed" },
-			interrupted: { zh: "已中断", en: "Interrupted", cls: "gtd-badge-interrupted" },
+		const labels: Record<string, { label: string; cls: string }> = {
+			queued: { label: t("toolQueued"), cls: "gtd-badge-queued" },
+			running: { label: t("tabRunning"), cls: "gtd-badge-running" },
+			completed: { label: t("planBoardCompleted"), cls: "gtd-badge-completed" },
+			failed: { label: t("planBoardFailed"), cls: "gtd-badge-failed" },
+			interrupted: { label: t("groupTaskDetails.statusInterrupted"), cls: "gtd-badge-interrupted" },
 		};
-		const info = labels[s] || { zh: s, en: s, cls: "gtd-badge-queued" };
-		return <span className={`gtd-badge ${info.cls}`}>{zh ? info.zh : info.en}</span>;
+		const info = labels[s] || { label: s, cls: "gtd-badge-queued" };
+		return <span className={`gtd-badge ${info.cls}`}>{info.label}</span>;
 	}
 
 	return (
-		<div className="gtd-overlay" role="dialog" aria-modal="true" aria-label={zh ? "任务详情" : "Task Details"}>
+		<div className="gtd-overlay" role="dialog" aria-modal="true" aria-label={t("groupTaskDetails.dialogLabel")}>
 			<div className="gtd-panel" ref={panelRef} tabIndex={-1}>
 				<div className="gtd-header">
 					<div className="gtd-header-title">
-						<h3>{zh ? "群任务详情与操作审计" : "Group Task Details & Audit Log"}</h3>
+						<h3>{t("groupTaskDetails.heading")}</h3>
 						{task && <span className="gtd-task-id">#{task.id.slice(0, 8)}</span>}
 						{task && statusBadge(task.status)}
 					</div>
@@ -229,40 +228,40 @@ export function GroupTaskDetails({ roomId, taskId, onClose }: GroupTaskDetailsPr
 				)}
 
 				{loading ? (
-					<div className="gtd-loading">{zh ? "加载任务详情中..." : "Loading task details..."}</div>
+					<div className="gtd-loading">{t("groupTaskDetails.loading")}</div>
 				) : (
 					<div className="gtd-body">
 						{task && (
 							<div className="gtd-overview-card">
 								<div className="gtd-field">
-									<span className="gtd-label">{zh ? "目标内容:" : "Objective:"}</span>
+									<span className="gtd-label">{t("groupTaskDetails.objective")}</span>
 									<span className="gtd-value gtd-task-text">{task.text}</span>
 								</div>
 								<div className="gtd-meta-row">
 									<div className="gtd-field">
-										<span className="gtd-label">{zh ? "执行 Bot:" : "Bot:"}</span>
+										<span className="gtd-label">{t("groupTaskDetails.bot")}</span>
 										<span className="gtd-value">{task.botName || task.botId}</span>
 									</div>
 									{task.deviceName && (
 										<div className="gtd-field">
-											<span className="gtd-label">{zh ? "运行设备:" : "Device:"}</span>
+											<span className="gtd-label">{t("groupTaskDetails.device")}</span>
 											<span className="gtd-value">{task.deviceName}</span>
 										</div>
 									)}
 									<div className="gtd-field">
-										<span className="gtd-label">{zh ? "创建时间:" : "Created:"}</span>
+										<span className="gtd-label">{t("groupTaskDetails.createdAt")}</span>
 										<span className="gtd-value">{new Date(task.createdAt).toLocaleTimeString()}</span>
 									</div>
 								</div>
 
 								{task.queuedReason && (
 									<div className="gtd-callout gtd-callout-info">
-										<strong>{zh ? "排队原因:" : "Queued Reason:"}</strong> {task.queuedReason}
+										<strong>{t("groupTaskDetails.queuedReason")}</strong> {task.queuedReason}
 									</div>
 								)}
 								{task.interruptedReason && (
 									<div className="gtd-callout gtd-callout-warning">
-										<strong>{zh ? "中断原因:" : "Interruption Reason:"}</strong> {task.interruptedReason}
+										<strong>{t("groupTaskDetails.interruptedReason")}</strong> {task.interruptedReason}
 									</div>
 								)}
 							</div>
@@ -270,20 +269,20 @@ export function GroupTaskDetails({ roomId, taskId, onClose }: GroupTaskDetailsPr
 
 						{details && details.interactions.length > 0 && (
 							<div className="gtd-section">
-								<h4>{zh ? "关联人工审批与问卷" : "Associated Human Interactions"}</h4>
+								<h4>{t("groupTaskDetails.interactions")}</h4>
 								<div className="gtd-interaction-list">
 									{details.interactions.map((it) => (
 										<div key={it.id} className="gtd-interaction-item">
 											<div className="gtd-interaction-header">
 												<span className="gtd-interaction-kind">{it.kind}</span>
 												<span className={it.resolved ? "gtd-badge-completed" : "gtd-badge-queued"}>
-													{it.resolved ? (zh ? "已裁决" : "Resolved") : zh ? "待处理" : "Pending"}
+													{it.resolved ? t("groupTaskDetails.resolved") : t("groupTaskDetails.pending")}
 												</span>
 											</div>
 											{it.question && <div className="gtd-interaction-q">{it.question}</div>}
 											{it.decision && (
 												<div className="gtd-interaction-ans">
-													{zh ? "裁决结论: " : "Decision: "} {it.decision}
+													{t("groupTaskDetails.decision")} {it.decision}
 												</div>
 											)}
 										</div>
@@ -294,7 +293,7 @@ export function GroupTaskDetails({ roomId, taskId, onClose }: GroupTaskDetailsPr
 
 						{details && details.deliveries.length > 0 && (
 							<div className="gtd-section">
-								<h4>{zh ? "关联代码交付" : "Associated Code Deliveries"}</h4>
+								<h4>{t("groupTaskDetails.deliveries")}</h4>
 								<div className="gtd-delivery-list">
 									{details.deliveries.map((del) => (
 										<div key={del.id} className="gtd-delivery-item">
@@ -311,39 +310,33 @@ export function GroupTaskDetails({ roomId, taskId, onClose }: GroupTaskDetailsPr
 													}
 												>
 													{del.reportedCheckCount === 0
-														? zh
-															? "未自报检查"
-															: "No reported checks"
+														? t("groupTaskDetails.noReportedChecks")
 														: del.passed
-															? zh
-																? "自报检查通过"
-																: "Reported checks passed"
-															: zh
-																? "自报检查未通过"
-																: "Reported checks not passed"}
+															? t("groupTaskDetails.checksPassed")
+															: t("groupTaskDetails.checksFailed")}
 												</span>
 											</div>
 											<div className="gtd-delivery-summary">{del.summary}</div>
 											{del.artifactRef && (
 												<>
 													<div className="gtd-field">
-														<span className="gtd-label">{zh ? "交付版本 ID:" : "Delivery version ID:"}</span>
+														<span className="gtd-label">{t("groupTaskDetails.deliveryVersionId")}</span>
 														<span className="gtd-value">{del.id}</span>
 													</div>
 													<div className="gtd-field">
-														<span className="gtd-label">{zh ? "产物:" : "Artifact:"}</span>
+														<span className="gtd-label">{t("groupTaskDetails.artifact")}</span>
 														<span className="gtd-value">{del.artifactRef.artifactId}</span>
 													</div>
 													<div className="gtd-field">
-														<span className="gtd-label">{zh ? "源码任务:" : "Source task:"}</span>
+														<span className="gtd-label">{t("groupTaskDetails.sourceTask")}</span>
 														<span className="gtd-value">{del.artifactRef.artifactTaskId}</span>
 													</div>
 													<div className="gtd-field">
-														<span className="gtd-label">{zh ? "内容摘要:" : "Content digest:"}</span>
+														<span className="gtd-label">{t("groupTaskDetails.contentDigest")}</span>
 														<span className="gtd-value">{del.artifactRef.artifactDigest}</span>
 													</div>
 													<div className="gtd-field">
-														<span className="gtd-label">{zh ? "文件树版本:" : "File tree version:"}</span>
+														<span className="gtd-label">{t("groupTaskDetails.fileTreeVersion")}</span>
 														<span className="gtd-value">{del.artifactRef.outputTree}</span>
 													</div>
 												</>
@@ -360,14 +353,14 @@ export function GroupTaskDetails({ roomId, taskId, onClose }: GroupTaskDetailsPr
 								className={`gtd-tab ${activeTab === "journal" ? "active" : ""}`}
 								onClick={() => setActiveTab("journal")}
 							>
-								{zh ? "事件与审计流" : "Journal Events"} ({journal.length})
+								{t("groupTaskDetails.tabJournal")} ({journal.length})
 							</button>
 							<button
 								type="button"
 								className={`gtd-tab ${activeTab === "tools" ? "active" : ""}`}
 								onClick={() => setActiveTab("tools")}
 							>
-								{zh ? "工具调用卡片" : "Tool Lifecycles"} ({toolEntries.length})
+								{t("groupTaskDetails.tabTools")} ({toolEntries.length})
 							</button>
 							<button
 								type="button"
@@ -380,7 +373,7 @@ export function GroupTaskDetails({ roomId, taskId, onClose }: GroupTaskDetailsPr
 									}
 								}}
 							>
-								{zh ? "任务完整报告" : "Full Report Log"}
+								{t("groupTaskDetails.tabReport")}
 							</button>
 						</div>
 
@@ -388,25 +381,16 @@ export function GroupTaskDetails({ roomId, taskId, onClose }: GroupTaskDetailsPr
 							<div className="gtd-tab-content">
 								{journalPage?.truncated && (
 									<div className="gtd-truncation-notice">
-										⚠️{" "}
-										{zh
-											? `由于日志保留配额，最早的 ${journalPage.droppedCount} 条事件已自动淘汰。系统明确标记并不伪装历史完整。`
-											: `The earliest ${journalPage.droppedCount} events were pruned due to journal retention quota. History is not disguised as complete.`}
+										⚠️ {t("groupTaskDetails.journalTruncated", { count: journalPage.droppedCount })}
 									</div>
 								)}
 
 								{journalPage?.cursorExpired && (
-									<div className="gtd-callout gtd-callout-warning">
-										{zh
-											? "游标所在的分段已淘汰，显示当前保留的最旧事件。"
-											: "The requested cursor was pruned from disk; showing oldest retained segments."}
-									</div>
+									<div className="gtd-callout gtd-callout-warning">{t("groupTaskDetails.cursorExpired")}</div>
 								)}
 
 								{journalPage?.corrupted && (
-									<div className="gtd-callout gtd-callout-warning">
-										{zh ? "部分分段可能存在损坏行，已保留损坏证据。" : "Corrupted lines detected and flagged."}
-									</div>
+									<div className="gtd-callout gtd-callout-warning">{t("groupTaskDetails.corrupted")}</div>
 								)}
 
 								{journalError && (
@@ -416,15 +400,11 @@ export function GroupTaskDetails({ roomId, taskId, onClose }: GroupTaskDetailsPr
 								)}
 
 								{journalPage?.journalUnavailable && (
-									<div className="gtd-callout gtd-callout-warning">
-										{zh
-											? "事件日志写入失败或被降级，审计流可能不完整。"
-											: "Journal persistence failed or degraded; the audit trail may be incomplete."}
-									</div>
+									<div className="gtd-callout gtd-callout-warning">{t("groupTaskDetails.journalUnavailable")}</div>
 								)}
 
 								{journal.length === 0 ? (
-									<div className="gtd-empty">{zh ? "暂无事件记录" : "No journal events recorded."}</div>
+									<div className="gtd-empty">{t("groupTaskDetails.journalEmpty")}</div>
 								) : (
 									<div className="gtd-journal-list">
 										{journal.map((entry) => (
@@ -445,13 +425,7 @@ export function GroupTaskDetails({ roomId, taskId, onClose }: GroupTaskDetailsPr
 								{journalPage?.hasMore && (
 									<div className="gtd-load-more-row">
 										<button type="button" className="btn gtd-load-more-btn" disabled={loadingMore} onClick={loadMore}>
-											{loadingMore
-												? zh
-													? "加载中..."
-													: "Loading..."
-												: zh
-													? "加载更多历史事件"
-													: "Load more journal events"}
+											{loadingMore ? t("loading") : t("groupTaskDetails.loadMoreJournal")}
 										</button>
 									</div>
 								)}
@@ -466,7 +440,7 @@ export function GroupTaskDetails({ roomId, taskId, onClose }: GroupTaskDetailsPr
 									</div>
 								)}
 								{toolEntries.length === 0 ? (
-									<div className="gtd-empty">{zh ? "本任务暂无工具调用记录" : "No tool invocations recorded."}</div>
+									<div className="gtd-empty">{t("groupTaskDetails.toolsEmpty")}</div>
 								) : (
 									<div className="gtd-tool-cards">
 										{toolEntries.map((tool) => (
@@ -477,13 +451,13 @@ export function GroupTaskDetails({ roomId, taskId, onClose }: GroupTaskDetailsPr
 												</div>
 												{tool.parametersPreview && (
 													<div className="gtd-tool-params">
-														<span className="gtd-label">{zh ? "安全参数摘要:" : "Parameters:"}</span>
+														<span className="gtd-label">{t("groupTaskDetails.parameters")}</span>
 														<pre>{JSON.stringify(tool.parametersPreview, null, 2)}</pre>
 													</div>
 												)}
 												{tool.output && (
 													<div className="gtd-tool-output">
-														<span className="gtd-label">{zh ? "增量安全输出:" : "Output Snippet:"}</span>
+														<span className="gtd-label">{t("groupTaskDetails.output")}</span>
 														<pre>{tool.output}</pre>
 													</div>
 												)}
@@ -499,42 +473,35 @@ export function GroupTaskDetails({ roomId, taskId, onClose }: GroupTaskDetailsPr
 								{reportMeta && (
 									<div className="gtd-report-meta-box">
 										<div>
-											<span className="gtd-label">{zh ? "存储位置:" : "Storage:"}</span>{" "}
+											<span className="gtd-label">{t("groupTaskDetails.storage")}</span>{" "}
 											<code>
 												{reportMeta.storageLocation.role}::{reportMeta.storageLocation.reportRef}
 											</code>
 										</div>
 										<div>
-											<span className="gtd-label">{zh ? "报告总大小:" : "Total Size:"}</span>{" "}
+											<span className="gtd-label">{t("groupTaskDetails.totalSize")}</span>{" "}
 											<span>{reportMeta.totalBytes} bytes</span>
 										</div>
 										{reportMeta.sha256 && (
 											<div>
-												<span className="gtd-label">{zh ? "完整性 SHA256:" : "SHA256:"}</span>{" "}
+												<span className="gtd-label">{t("groupTaskDetails.sha256")}</span>{" "}
 												<code>{reportMeta.sha256.slice(0, 16)}...</code>
 											</div>
 										)}
 										<div>
-											<span className="gtd-label">{zh ? "当前已加载:" : "Loaded Size:"}</span>{" "}
+											<span className="gtd-label">{t("groupTaskDetails.loadedSize")}</span>{" "}
 											<span>{new TextEncoder().encode(fullReportText).length} bytes</span>
 										</div>
 										{reportMeta.quotaExceeded && (
 											<div className="gtd-callout gtd-callout-warning">
-												⚠️{" "}
-												{zh
-													? `报告超过配额硬限制 (${reportMeta.quotaLimit} bytes)，系统明确拒绝接收超额部分，绝不伪装完整。`
-													: `Report exceeded quota limit (${reportMeta.quotaLimit} bytes) and was rejected without partial truncation disguise.`}
+												⚠️ {t("groupTaskDetails.quotaExceeded", { limit: reportMeta.quotaLimit })}
 											</div>
 										)}
 										{reportMeta.uploadPending && (
-											<div className="gtd-callout gtd-callout-info">
-												⏳ {zh ? "完整报告正在由执行设备分块同步中..." : "Full report chunk sync in progress..."}
-											</div>
+											<div className="gtd-callout gtd-callout-info">⏳ {t("groupTaskDetails.uploadPending")}</div>
 										)}
 										{reportMeta.missing && !reportMeta.uploadPending && (
-											<div className="gtd-callout gtd-callout-warning">
-												⚠️ {zh ? "执行设备尚未上传完整报告原文。" : "Full report has not yet been uploaded by device."}
-											</div>
+											<div className="gtd-callout gtd-callout-warning">⚠️ {t("groupTaskDetails.missing")}</div>
 										)}
 									</div>
 								)}
@@ -547,7 +514,7 @@ export function GroupTaskDetails({ roomId, taskId, onClose }: GroupTaskDetailsPr
 											disabled={loadingReport}
 											onClick={() => loadReportSlice(reportNextOffset)}
 										>
-											{loadingReport ? (zh ? "加载中..." : "Loading...") : zh ? "加载更多报告内容" : "Load more report"}
+											{loadingReport ? t("loading") : t("groupTaskDetails.loadMoreReport")}
 										</button>
 									)}
 									<button
@@ -556,12 +523,12 @@ export function GroupTaskDetails({ roomId, taskId, onClose }: GroupTaskDetailsPr
 										disabled={loadingReport || !fullReportText}
 										onClick={copyReport}
 									>
-										{copied ? (zh ? "已复制" : "Copied!") : zh ? "复制报告全文" : "Copy Report"}
+										{copied ? t("copied") : t("groupTaskDetails.copyReport")}
 									</button>
 								</div>
 
 								{loadingReport && !fullReportText ? (
-									<div className="gtd-loading">{zh ? "正在读取报告文件..." : "Loading report file..."}</div>
+									<div className="gtd-loading">{t("groupTaskDetails.reportLoading")}</div>
 								) : (
 									<pre className="gtd-report-viewer gtd-report-text">{fullReportText}</pre>
 								)}
