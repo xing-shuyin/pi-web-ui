@@ -294,11 +294,6 @@ function rememberCatalogSyncUrl(url: string): string[] {
 	return next;
 }
 
-function rankPromptToken(tk: string): number {
-	if (tk === "append") return 0;
-	return isReadonlyPromptSource(tk) ? 2 : 1;
-}
-
 function ToggleRow({
 	title,
 	subtitle,
@@ -808,8 +803,8 @@ function LoadedSettingsModal({
 	const overrideCommitTimers = useRef(new Map<string, ReturnType<typeof setTimeout>>());
 	const templateFocus = useRef(false);
 	const overrideFocus = useRef<string | null>(null);
-	const orderedPromptTokens = [...PROMPT_TOKENS].sort((a, b) => rankPromptToken(a) - rankPromptToken(b));
 	const [editingSource, setEditingSource] = useState<string | null>(null);
+	const [openSource, setOpenSource] = useState<string | null>(null);
 	const [defaultOpen, setDefaultOpen] = useState<Record<string, boolean>>({});
 	const [dshCustomPromptDraft, setDshCustomPromptDraft] = useState("");
 	const [dshPromptMode, setDshPromptMode] = useState<"append" | "replace">("append");
@@ -2889,84 +2884,91 @@ function LoadedSettingsModal({
 								)}
 								{!isDsh ? (
 									<>
-										<div className="set-field prompt-templates">
-											<div className="prompt-templates-head">
-												<label className="set-field-label">{t("promptTemplateLibLabel")}</label>
+										<details className="set-field prompt-templates set-fold">
+											<summary className="prompt-templates-head">
+												<span className="set-field-label">{t("promptTemplateLibLabel")}</span>
 												<HintTip text={t("promptTemplateLibHint")} />
 												<span className="set-count">{promptTemplates.length}</span>
-												<button
-													type="button"
-													className="set-btn-mini"
-													onClick={() => setPresetShareFor({ name: "", tab: "import" })}
-												>
-													{t("presetShareImportBtn")}
-												</button>
-											</div>
-											{promptTemplates.length === 0 ? (
-												<p className="set-hint">{t("promptTemplateEmpty")}</p>
-											) : (
-												<div className="prompt-template-list">
-													{promptTemplates.map((p) => {
-														const active = templateActive(p);
-														return (
-															<div className={`prompt-template-row${active ? " active" : ""}`} key={p.name}>
-																<span className="prompt-template-name">{p.name}</span>
-																{active && <span className="prompt-template-badge">{t("promptTemplateActive")}</span>}
-																<span className="set-muted prompt-template-meta">{templateMeta(p)}</span>
-																<span className="prompt-template-actions">
-																	{!active && (
+												<span className="set-fold-chev" aria-hidden="true">
+													▾
+												</span>
+											</summary>
+											<div className="prompt-templates-body">
+												<div className="prompt-templates-actions">
+													<button
+														type="button"
+														className="set-btn-mini"
+														onClick={() => setPresetShareFor({ name: "", tab: "import" })}
+													>
+														{t("presetShareImportBtn")}
+													</button>
+												</div>
+												{promptTemplates.length === 0 ? (
+													<p className="set-hint">{t("promptTemplateEmpty")}</p>
+												) : (
+													<div className="prompt-template-list">
+														{promptTemplates.map((p) => {
+															const active = templateActive(p);
+															return (
+																<div className={`prompt-template-row${active ? " active" : ""}`} key={p.name}>
+																	<span className="prompt-template-name">{p.name}</span>
+																	{active && <span className="prompt-template-badge">{t("promptTemplateActive")}</span>}
+																	<span className="set-muted prompt-template-meta">{templateMeta(p)}</span>
+																	<span className="prompt-template-actions">
+																		{!active && (
+																			<button
+																				type="button"
+																				className="set-btn-mini"
+																				onClick={() => appSend({ type: "apply_preset", name: p.name })}
+																			>
+																				{t("promptTemplateApply")}
+																			</button>
+																		)}
 																		<button
 																			type="button"
-																			className="set-btn-mini"
-																			onClick={() => appSend({ type: "apply_preset", name: p.name })}
+																			className="set-icon-btn"
+																			title={t("presetShare")}
+																			onClick={() => setPresetShareFor({ name: p.name, tab: "export" })}
 																		>
-																			{t("promptTemplateApply")}
+																			<FiShare2 />
 																		</button>
-																	)}
-																	<button
-																		type="button"
-																		className="set-icon-btn"
-																		title={t("presetShare")}
-																		onClick={() => setPresetShareFor({ name: p.name, tab: "export" })}
-																	>
-																		<FiShare2 />
-																	</button>
-																	<button
-																		type="button"
-																		className="set-icon-btn danger"
-																		title={t("deletePreset")}
-																		onClick={() => appSend({ type: "delete_preset", name: p.name })}
-																	>
-																		<FiTrash2 />
-																	</button>
-																</span>
-															</div>
-														);
-													})}
+																		<button
+																			type="button"
+																			className="set-icon-btn danger"
+																			title={t("deletePreset")}
+																			onClick={() => appSend({ type: "delete_preset", name: p.name })}
+																		>
+																			<FiTrash2 />
+																		</button>
+																	</span>
+																</div>
+															);
+														})}
+													</div>
+												)}
+												<div className="set-preset-save">
+													<input
+														className="set-input"
+														placeholder={t("promptTemplateSaveNamePh")}
+														value={promptTemplateName}
+														onChange={(e) => setPromptTemplateName(e.target.value)}
+														onKeyDown={(e) => {
+															if (e.key === "Enter") savePromptTemplate();
+														}}
+													/>
+													<button
+														type="button"
+														className="set-save-btn"
+														disabled={!promptTemplateName.trim()}
+														onClick={savePromptTemplate}
+													>
+														<FiPlus /> {t("promptTemplateSaveBtn")}
+													</button>
 												</div>
-											)}
-											<div className="set-preset-save">
-												<input
-													className="set-input"
-													placeholder={t("promptTemplateSaveNamePh")}
-													value={promptTemplateName}
-													onChange={(e) => setPromptTemplateName(e.target.value)}
-													onKeyDown={(e) => {
-														if (e.key === "Enter") savePromptTemplate();
-													}}
-												/>
-												<button
-													type="button"
-													className="set-save-btn"
-													disabled={!promptTemplateName.trim()}
-													onClick={savePromptTemplate}
-												>
-													<FiPlus /> {t("promptTemplateSaveBtn")}
-												</button>
 											</div>
-										</div>
-										<div className="set-field prompt-assembly">
-											<div className="prompt-assembly-head">
+										</details>
+										<div className="set-field prompt-sources">
+											<div className="prompt-sources-head">
 												<label className="set-field-label">{t("promptAssemblyLabel")}</label>
 												<HintTip text={t("promptAssemblyHint")} />
 												<span className="set-muted prompt-assembly-count">
@@ -2976,44 +2978,210 @@ function LoadedSettingsModal({
 											{templateCustom?.hasExtras && (
 												<p className="prompt-assembly-warn">{t("promptAssemblyLegacyWarn")}</p>
 											)}
-											<div className="prompt-assembly-list">
+											<div className="prompt-src-list" role="group" aria-label={t("promptSourcesLabel")}>
 												{assemblyRows.map((tk, idx) => {
+													const v = promptOverridesDraft[tk] ?? "";
+													const def = settings.promptSourceDefaults?.[tk] ?? "";
 													const on = sourceEnabled(tk);
+													const open = openSource === tk;
+													const edited = Boolean(v.trim());
+													const readonly = isReadonlyPromptSource(tk);
+													const isLong = def.split("\n").length > 6 || def.length > 480;
+													const effTokens = on ? estimatePromptTokens(v.trim() ? v : def) : 0;
+													const shownDef = readonly && edited ? v : def;
 													return (
-														<div className={`prompt-assembly-row${on ? "" : " off"}`} key={tk}>
-															<button
-																type="button"
-																role="switch"
-																aria-checked={on}
-																className={`set-switch${on ? " on" : ""}`}
-																title={t("promptToggleEnabled")}
-																onClick={() => toggleSource(tk, !on)}
-															>
-																<span className="set-switch-knob" />
-															</button>
-															<span className="override-token">{`{{${tk}}}`}</span>
-															<span className="prompt-assembly-name">{tt(`promptTok_${tk}`)}</span>
-															<span className="prompt-assembly-desc">{tt(`promptTok_${tk}_desc`)}</span>
-															<span className="prompt-assembly-move">
+														<div
+															className={`prompt-src${on ? "" : " off"}${open ? " open" : ""}`}
+															data-token={tk}
+															key={tk}
+														>
+															<div className="prompt-src-row">
 																<button
 																	type="button"
-																	className="set-btn-mini"
-																	disabled={idx === 0}
-																	title={t("promptMoveUp")}
-																	onClick={() => moveSource(idx, -1)}
+																	role="switch"
+																	aria-checked={on}
+																	className={`set-switch${on ? " on" : ""}`}
+																	title={t("promptToggleEnabled")}
+																	onClick={() => toggleSource(tk, !on)}
 																>
-																	↑
+																	<span className="set-switch-knob" />
 																</button>
 																<button
 																	type="button"
-																	className="set-btn-mini"
-																	disabled={idx === assemblyRows.length - 1}
-																	title={t("promptMoveDown")}
-																	onClick={() => moveSource(idx, 1)}
+																	className="prompt-src-main"
+																	aria-expanded={open}
+																	onClick={() => {
+																		const next = open ? null : tk;
+																		setOpenSource(next);
+																		if (next) setEditingSource(next);
+																	}}
 																>
-																	↓
+																	<span className="prompt-src-name">{tt(`promptTok_${tk}`)}</span>
+																	<span className="prompt-src-desc">{tt(`promptTok_${tk}_desc`)}</span>
 																</button>
-															</span>
+																{edited ? (
+																	<span className="prompt-src-flag edited">{t("promptSecEdited")}</span>
+																) : (
+																	<span
+																		className="prompt-src-flag"
+																		title={readonly ? t("promptReadonlyBadge") : undefined}
+																	>
+																		{t("promptAutoBadge")}
+																	</span>
+																)}
+																<span className="prompt-src-meta">≈{effTokens.toLocaleString()}</span>
+																<span className="prompt-src-move">
+																	<button
+																		type="button"
+																		className="set-btn-mini"
+																		disabled={idx === 0}
+																		title={t("promptMoveUp")}
+																		onClick={() => moveSource(idx, -1)}
+																	>
+																		↑
+																	</button>
+																	<button
+																		type="button"
+																		className="set-btn-mini"
+																		disabled={idx === assemblyRows.length - 1}
+																		title={t("promptMoveDown")}
+																		onClick={() => moveSource(idx, 1)}
+																	>
+																		↓
+																	</button>
+																</span>
+																<span className={`prompt-src-chev${open ? " open" : ""}`} aria-hidden="true">
+																	▾
+																</span>
+															</div>
+															{open && (
+																<div className="prompt-src-body">
+																	<div className="prompt-src-label">
+																		<span>{tt(`promptSec_${tk}_edit`)}</span>
+																		<em>{tt(`promptSec_${tk}_hint`)}</em>
+																	</div>
+																	{readonly ? (
+																		<>
+																			<div
+																				className={`source-default readonly${shownDef.trim() ? "" : " empty"}`}
+																				title={t("promptReadonlyTitle")}
+																			>
+																				{shownDef.trim() ? (
+																					<>
+																						<pre
+																							className={`source-default-text${
+																								isLong ? (defaultOpen[tk] ? " expanded" : " clamped") : ""
+																							}`}
+																						>
+																							{shownDef}
+																						</pre>
+																						{isLong && (
+																							<button
+																								type="button"
+																								className="source-default-toggle"
+																								onClick={() => toggleDefault(tk)}
+																							>
+																								{defaultOpen[tk] ? t("promptSourceCollapse") : t("promptSourceExpand")}
+																							</button>
+																						)}
+																					</>
+																				) : (
+																					<span className="source-default-empty">{t("promptSourceDefaultEmpty")}</span>
+																				)}
+																			</div>
+																			{edited && (
+																				<div className="prompt-src-foot">
+																					<button
+																						type="button"
+																						className="set-btn-mini"
+																						title={t("promptReadonlyLockedHint")}
+																						onClick={() => resetOverride(tk)}
+																					>
+																						{t("promptResetSource")}
+																					</button>
+																				</div>
+																			)}
+																		</>
+																	) : (
+																		<>
+																			<textarea
+																				className="set-prompt-input override-input"
+																				rows={Math.min(10, Math.max(1, v.split("\n").length))}
+																				autoFocus={editingSource === tk}
+																				placeholder={t("promptOverridePlaceholder")}
+																				value={v}
+																				onFocus={(e) => {
+																					overrideFocus.current = tk;
+																					setEditingSource(tk);
+																					const el = e.currentTarget as HTMLTextAreaElement;
+																					if (el.value && el.value === def)
+																						el.setSelectionRange(el.value.length, el.value.length);
+																				}}
+																				onBlur={() => {
+																					if (overrideFocus.current === tk) overrideFocus.current = null;
+																					const val = promptOverridesDraftRef.current[tk] ?? "";
+																					if (val.trim() && val === def) {
+																						resetOverride(tk);
+																						return;
+																					}
+																					commitOverride(tk);
+																				}}
+																				onChange={(e) => {
+																					const val = e.target.value;
+																					overridesDirtyRef.current.add(tk);
+																					setPromptOverridesDraft((p) => {
+																						const next = { ...p, [tk]: val };
+																						promptOverridesDraftRef.current = next;
+																						return next;
+																					});
+																					scheduleOverrideCommit(tk);
+																				}}
+																			/>
+																			<div className="prompt-src-foot">
+																				{def.trim() ? (
+																					<button
+																						type="button"
+																						className="source-default-toggle"
+																						onClick={() => toggleDefault(tk)}
+																					>
+																						{defaultOpen[tk] ? t("promptSourceCollapse") : t("promptSecShowDefault")}
+																					</button>
+																				) : (
+																					<span className="set-muted">{t("promptSourceDefaultEmpty")}</span>
+																				)}
+																				<span className="prompt-src-foot-spacer" />
+																				{edited && (
+																					<button
+																						type="button"
+																						className="set-btn-mini"
+																						onClick={() => resetOverride(tk)}
+																					>
+																						{t("promptResetSource")}
+																					</button>
+																				)}
+																			</div>
+																			{defaultOpen[tk] && def.trim() && (
+																				<div className="prompt-src-ref" title={t("promptSourceDefaultEditHint")}>
+																					<div className="prompt-src-ref-head">
+																						<span className="set-muted">{t("promptSourceRefLabel")}</span>
+																					</div>
+																					<pre className="source-default-text expanded">{def}</pre>
+																					{!edited && (
+																						<button
+																							type="button"
+																							className="override-seed-btn"
+																							title={t("promptSourceSeedTip")}
+																							onClick={() => seedFromDefault(tk, def)}
+																						>
+																							{t("promptSourceSeedButton")}
+																						</button>
+																					)}
+																				</div>
+																			)}
+																		</>
+																	)}
+																</div>
+															)}
 														</div>
 													);
 												})}
@@ -3029,225 +3197,11 @@ function LoadedSettingsModal({
 															title={t("promptAssemblyAddHint")}
 															onClick={() => toggleSource(tk, true)}
 														>
-															{`{{${tk}}}`}
+															{tt(`promptTok_${tk}`)}
 														</button>
 													))}
 												</div>
 											)}
-										</div>
-										<div className="set-field">
-											<label className="set-field-label">{t("promptSourcesLabel")}</label>
-											{orderedPromptTokens.map((tk) => {
-												const v = promptOverridesDraft[tk] ?? "";
-												const def = settings.promptSourceDefaults?.[tk] ?? "";
-												const editing = editingSource === tk;
-												const isLong = def.split("\n").length > 6 || def.length > 480;
-												const tkOff = !sourceEnabled(tk);
-												const tkEffTokens = tkOff ? 0 : estimatePromptTokens(v.trim() ? v : def);
-												if (isReadonlyPromptSource(tk)) {
-													const shown = v.trim() ? v : def;
-													return (
-														<div className={`override-row readonly${tkOff ? " src-off" : ""}`} key={tk}>
-															<div className="override-row-head">
-																{`{{${tk}}}`}
-																<span className="set-muted">
-																	{tt(`promptTok_${tk}`)} <HintTip text={tt(`promptTok_${tk}_desc`)} /> · ≈
-																	{tkEffTokens.toLocaleString()}
-																</span>
-																{v.trim() ? (
-																	<button
-																		type="button"
-																		className="set-btn-mini"
-																		title={t("promptReadonlyLockedHint")}
-																		onClick={() => resetOverride(tk)}
-																	>
-																		{t("promptResetSource")}
-																	</button>
-																) : (
-																	<span className="set-muted">{t("promptReadonlyBadge")}</span>
-																)}
-															</div>
-															<div
-																className={`source-default readonly${shown.trim() ? "" : " empty"}`}
-																title={t("promptReadonlyTitle")}
-															>
-																{shown.trim() ? (
-																	<>
-																		<pre
-																			className={`source-default-text${
-																				isLong ? (defaultOpen[tk] ? " expanded" : " clamped") : ""
-																			}`}
-																		>
-																			{shown}
-																		</pre>
-																		{isLong && (
-																			<span
-																				className="source-default-toggle"
-																				role="button"
-																				tabIndex={0}
-																				onClick={(e) => {
-																					e.stopPropagation();
-																					toggleDefault(tk);
-																				}}
-																				onKeyDown={(e) => {
-																					if (e.key === "Enter" || e.key === " ") {
-																						e.preventDefault();
-																						e.stopPropagation();
-																						toggleDefault(tk);
-																					}
-																				}}
-																			>
-																				{defaultOpen[tk] ? t("promptSourceCollapse") : t("promptSourceExpand")}
-																			</span>
-																		)}
-																	</>
-																) : (
-																	<span className="source-default-empty">{t("promptSourceDefaultEmpty")}</span>
-																)}
-															</div>
-														</div>
-													);
-												}
-												return (
-													<div className={`override-row${tkOff ? " src-off" : ""}`} key={tk}>
-														<div className="override-row-head">
-															{`{{${tk}}}`}
-															<span className="set-muted">
-																{tt(`promptTok_${tk}`)} <HintTip text={tt(`promptTok_${tk}_desc`)} /> · ≈
-																{tkEffTokens.toLocaleString()}
-															</span>
-															{v.trim() ? (
-																<button type="button" className="set-btn-mini" onClick={() => resetOverride(tk)}>
-																	{t("promptResetSource")}
-																</button>
-															) : (
-																<span className="set-muted">{t("promptAutoBadge")}</span>
-															)}
-														</div>
-														{v.trim() || editing ? (
-															<>
-																<textarea
-																	className="set-prompt-input override-input"
-																	rows={Math.min(10, Math.max(1, v.split("\n").length))}
-																	autoFocus={editing}
-																	placeholder={t("promptOverridePlaceholder")}
-																	value={v}
-																	onFocus={(e) => {
-																		overrideFocus.current = tk;
-																		setEditingSource(tk);
-																		const el = e.currentTarget as HTMLTextAreaElement;
-																		if (el.value && el.value === def)
-																			el.setSelectionRange(el.value.length, el.value.length);
-																	}}
-																	onBlur={() => {
-																		if (overrideFocus.current === tk) overrideFocus.current = null;
-																		const val = promptOverridesDraftRef.current[tk] ?? "";
-																		if (val.trim() && val === def) {
-																			resetOverride(tk);
-																			return;
-																		}
-																		commitOverride(tk);
-																		if (!val.trim()) setEditingSource(null);
-																	}}
-																	onChange={(e) => {
-																		const val = e.target.value;
-																		overridesDirtyRef.current.add(tk);
-																		setPromptOverridesDraft((p) => {
-																			const next = { ...p, [tk]: val };
-																			promptOverridesDraftRef.current = next;
-																			return next;
-																		});
-																		scheduleOverrideCommit(tk);
-																	}}
-																/>
-																<div className="override-edit-foot">
-																	<div className="override-edit-foot-head">
-																		<span className="set-muted">{t("promptSourceRefLabel")}</span>
-																		{isLong && (
-																			<button
-																				type="button"
-																				className="source-default-toggle"
-																				onClick={() => toggleDefault(tk)}
-																			>
-																				{defaultOpen[tk] ? t("promptSourceCollapse") : t("promptSourceExpand")}
-																			</button>
-																		)}
-																	</div>
-																	{def.trim() ? (
-																		<pre
-																			className={`source-default-text${
-																				isLong ? (defaultOpen[tk] ? " expanded" : " clamped") : ""
-																			}`}
-																		>
-																			{def}
-																		</pre>
-																	) : (
-																		<span className="source-default-empty">{t("promptSourceDefaultEmpty")}</span>
-																	)}
-																	{!v.trim() && def.trim() && (
-																		<button
-																			type="button"
-																			className="override-seed-btn"
-																			title={t("promptSourceSeedTip")}
-																			onClick={() => seedFromDefault(tk, def)}
-																		>
-																			{t("promptSourceSeedButton")}
-																		</button>
-																	)}
-																</div>
-															</>
-														) : (
-															<div
-																className="source-default"
-																title={t("promptSourceDefaultEditHint")}
-																role="button"
-																tabIndex={0}
-																onClick={() => seedFromDefault(tk, def)}
-																onKeyDown={(e) => {
-																	if (e.key === "Enter" || e.key === " ") {
-																		e.preventDefault();
-																		seedFromDefault(tk, def);
-																	}
-																}}
-															>
-																{def.trim() ? (
-																	<>
-																		<pre
-																			className={`source-default-text${
-																				isLong ? (defaultOpen[tk] ? " expanded" : " clamped") : ""
-																			}`}
-																		>
-																			{def}
-																		</pre>
-																		{isLong && (
-																			<span
-																				className="source-default-toggle"
-																				role="button"
-																				tabIndex={0}
-																				onClick={(e) => {
-																					e.stopPropagation();
-																					toggleDefault(tk);
-																				}}
-																				onKeyDown={(e) => {
-																					if (e.key === "Enter" || e.key === " ") {
-																						e.preventDefault();
-																						e.stopPropagation();
-																						toggleDefault(tk);
-																					}
-																				}}
-																			>
-																				{defaultOpen[tk] ? t("promptSourceCollapse") : t("promptSourceExpand")}
-																			</span>
-																		)}
-																	</>
-																) : (
-																	<span className="source-default-empty">{t("promptSourceDefaultEmpty")}</span>
-																)}
-															</div>
-														)}
-													</div>
-												);
-											})}
 											<div className="compose-toolbar">
 												<button type="button" className="set-btn" onClick={resetAllPrompt} disabled={!hasPromptCustom}>
 													{t("promptResetAll")}
