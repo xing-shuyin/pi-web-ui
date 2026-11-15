@@ -1,3 +1,5 @@
+import { createPluginI18n } from "@pi-web-ui/plugin-sdk/client";
+
 const DICT = {
 	zh: {
 		"topbar.toggle": "显示/隐藏看板娘 (Alt+L)",
@@ -172,26 +174,12 @@ const DICT = {
 	},
 };
 
+/** 当前界面语言（词典里存在的那一个）；解析与回退由 SDK 统一实现。 */
 export function detectLang() {
-	try {
-		const docLang = document.documentElement.lang;
-		if (docLang && docLang.toLowerCase().startsWith("zh")) return "zh";
-		const navLang = navigator.language;
-		if (navLang && navLang.toLowerCase().startsWith("zh")) return "zh";
-	} catch {}
-	return "en";
+	return createPluginI18n(DICT).locale;
 }
 
+/** 取文案函数：显式 lang 优先（插件设置可选），否则跟随界面语言。 */
 export function makeT(lang = "zh") {
-	const current = DICT[lang] || DICT.zh;
-	const fallback = DICT.en;
-	return (key, params) => {
-		let text = current[key] || fallback[key] || key;
-		if (params && typeof params === "object") {
-			for (const [k, v] of Object.entries(params)) {
-				text = text.replace(new RegExp(`{${k}}`, "g"), String(v));
-			}
-		}
-		return text;
-	};
+	return createPluginI18n(DICT, { locale: lang }).t;
 }

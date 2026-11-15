@@ -809,3 +809,21 @@ export declare function mountIsolated(
 export declare function safeSliceIndex(value: string, limit: number): number;
 
 export declare function chunkMarkdownText(text: string, limit?: number): string[];
+
+/** 插件词典：语言 → { key: 文案 }。 */
+export type PluginDict = Record<string, Record<string, string>>;
+
+export interface PluginI18n {
+	/** 解析后的当前语言（词典里的 key）。 */
+	locale: string;
+	/** 插件提供的语言列表。 */
+	available: string[];
+	/** 取文案；回退当前语言 → 主语言 → en → key，占位符 {name} 单次插值。 */
+	t(key: string, params?: Record<string, string | number>): string;
+}
+
+/**
+ * 建立插件本地化：解析当前界面语言并返回 `t`。
+ * 语言来源优先级：`options.locale` → `localStorage["pi-web-ui:lang"]` → `<html lang>` → `navigator.languages`。
+ */
+export declare function createPluginI18n(dicts: PluginDict, options?: { locale?: string | null }): PluginI18n;
