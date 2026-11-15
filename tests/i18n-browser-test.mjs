@@ -7,7 +7,7 @@
  * 因此 zh-TW 通过即证明 locales/zh-TW.json 被真正加载且已完成繁中转换。
  */
 import assert from "node:assert/strict";
-import { closeSync, mkdirSync, mkdtempSync, openSync, readFileSync, rmSync } from "node:fs";
+import { closeSync, copyFileSync, mkdirSync, mkdtempSync, openSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { spawn } from "node:child_process";
@@ -43,6 +43,12 @@ ensureBuild(root);
 const port = 8989;
 const dataDir = mkdtempSync(join(tmpdir(), "i18n-browser-test-"));
 const log = openSync(join(dataDir, "server.log"), "a");
+// 语言包装在 <dataDir>/locales（server/locales.ts 的 listPacks）：不装就只有内建 zh/en，
+// zh-TW 会静静退回英文 —— 测试必须自己装包才能真的验到下载包加载路径。
+mkdirSync(join(dataDir, "locales"), { recursive: true });
+for (const code of ["zh-TW", "zh-Hant", "zh-HK"]) {
+	copyFileSync(join(root, "locales", `${code}.json`), join(dataDir, "locales", `${code}.json`));
+}
 const server = spawn(process.execPath, ["dist/server/index.js", "--port", String(port), "--data-dir", dataDir], {
 	cwd: root,
 	env: {
@@ -50,6 +56,9 @@ const server = spawn(process.execPath, ["dist/server/index.js", "--port", String
 		PI_WEB_HOST: "127.0.0.1",
 		PI_WEB_PORT: String(port),
 		PI_WEB_DATA_DIR: dataDir,
+		// 会话存于 <agentDir>/sessions：指到临时目录，否则会加载使用者真实对话，
+		// 恢复的视图会盖住首屏标签，让断言变成随机失败。
+		PI_CODING_AGENT_DIR: mkdtempSync(join(dataDir, "agent-")),
 		PI_WEB_PLUGIN_CATALOG_URL: "off",
 		PI_WEB_SDK: "bundled",
 	},
