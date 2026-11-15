@@ -1,7 +1,8 @@
 import { useEffect, useRef, useState } from "react";
 import { appUrl } from "../base-url";
 import { withToken } from "../auth-token";
-import { isZhLocale, useI18n } from "../i18n";
+import { useT } from "../i18n";
+import type { MessageKey } from "../i18n/catalog";
 
 export interface GroupRouterConfig {
 	enabled: boolean;
@@ -21,6 +22,12 @@ interface RouterModel {
 	name?: string;
 	reasoning?: boolean;
 }
+const ROUTER_TOOL_KEYS = {
+	reply: "groupRouterToolReply",
+	dispatch: "groupRouterToolDispatch",
+	work_items: "groupRouterToolWorkItems",
+} as const satisfies Record<GroupRouterConfig["tools"][number], MessageKey>;
+
 const emptyConfig: GroupRouterConfig = {
 	enabled: false,
 	deviceId: "",
@@ -52,7 +59,7 @@ export function GroupRouterSettings({
 	disabled?: boolean;
 	onSaved(): void;
 }) {
-	const zh = isZhLocale(useI18n().locale);
+	const t = useT();
 	const [draft, setDraft] = useState<GroupRouterConfig>(router ?? emptyConfig);
 	const [devices, setDevices] = useState<RouterDevice[]>([]);
 	const [localDeviceId, setLocalDeviceId] = useState("");
@@ -105,7 +112,7 @@ export function GroupRouterSettings({
 				.then((data) => {
 					if (controller.signal.aborted) return;
 					if (data.deviceId !== draft.deviceId || !Array.isArray(data.models))
-						throw new Error(zh ? "模型目录与所选设备不匹配" : "Model catalog does not match the selected device");
+						throw new Error(t("groupRouterCatalogMismatch"));
 					setModels(data.models);
 					setVerifiedDeviceId(data.deviceId);
 				})
@@ -117,7 +124,7 @@ export function GroupRouterSettings({
 				});
 		}
 		return () => controller.abort();
-	}, [draft.deviceId, roomId, refresh, zh]);
+	}, [draft.deviceId, roomId, refresh, t]);
 	const selectedDevice = devices.find((device) => device.id === draft.deviceId);
 	const selectedModel =
 		verifiedDeviceId === draft.deviceId
@@ -137,7 +144,7 @@ export function GroupRouterSettings({
 			if (controller.signal.aborted) return;
 			onSaved();
 			window.dispatchEvent(new CustomEvent("pi-web-ui:device-groups-changed"));
-			setNotice(zh ? "群组 Router 配置已保存" : "Group Router settings saved");
+			setNotice(t("groupRouterSaved"));
 		} catch (cause) {
 			if (!controller.signal.aborted) setError((cause as Error).message);
 		} finally {
@@ -148,21 +155,11 @@ export function GroupRouterSettings({
 		<section
 			className="dc-bot-editor-body"
 			style={{ minWidth: 0, maxWidth: "100%", overflowWrap: "anywhere" }}
-			aria-label={zh ? "群组 AI Router" : "Group AI Router"}
+			aria-label={t("groupRouterLabel")}
 		>
-			<p className="dc-bot-section-intro">
-				{zh
-					? "群组 AI 是独立的中心 Router，负责理解消息与调度；Bot 只执行任务。Router 的模型、思考与工具独立配置。"
-					: "The group AI is an independent central Router that understands messages and coordinates work. Bots execute tasks. Its model, thinking and tools are configured separately."}
-			</p>
+			<p className="dc-bot-section-intro">{t("groupRouterIntro")}</p>
 			<p role="status">
-				{router?.enabled
-					? zh
-						? "已启用"
-						: "Enabled"
-					: zh
-						? "未启用 · 沿用原主 Bot 协作"
-						: "Disabled · using legacy primary Bot routing"}{" "}
+				{router?.enabled ? t("groupRouterStatusEnabled") : t("groupRouterDisabled")}{" "}
 				{router?.enabled && ` · ${router.deviceId} · ${router.model} · ${router.thinkingLevel}`}
 			</p>
 			<form
@@ -172,7 +169,7 @@ export function GroupRouterSettings({
 				}}
 			>
 				<fieldset className="dc-bot-section" disabled={disabled || busy}>
-					<legend>{zh ? "独立 Router 配置" : "Independent Router settings"}</legend>
+					<legend>{t("groupRouterIndependent")}</legend>
 					<label className="dc-bot-enabled">
 						<input
 							type="checkbox"
@@ -180,10 +177,10 @@ export function GroupRouterSettings({
 							checked={draft.enabled}
 							onChange={(event) => setDraft({ ...draft, enabled: event.target.checked })}
 						/>
-						{zh ? "启用群组 AI Router" : "Enable group AI Router"}
+						{t("groupRouterEnable")}
 					</label>
 					<label className="dc-field field">
-						{zh ? "运行设备" : "Run on device"}
+						{t("groupRouterDevice")}
 						<select
 							value={draft.deviceId}
 							onChange={(event) => {
@@ -191,27 +188,25 @@ export function GroupRouterSettings({
 								setNotice("");
 							}}
 						>
-							<option value="">{zh ? "选择设备" : "Select device"}</option>
+							<option value="">{t("groupRouterSelectDevice")}</option>
 							{draft.deviceId && !selectedDevice && <option value={draft.deviceId}>{draft.deviceId}</option>}
 							{devices.map((device) => (
 								<option key={device.id} value={device.id}>
 									{device.name} · {device.id}
-									{device.id === localDeviceId ? (zh ? " · 本机" : " · Local") : zh ? " · 远程" : " · Remote"}
-									{device.online === false ? (zh ? " · 离线" : " · Offline") : ""}
+									{device.id === localDeviceId ? t("groupRouterLocalSuffix") : t("groupRouterRemoteSuffix")}
+									{device.online === false ? t("groupRouterOfflineSuffix") : ""}
 								</option>
 							))}
 						</select>
 					</label>
 					<label className="dc-field field">
-						{zh ? "该设备的模型" : "Model on this device"}
+						{t("groupRouterModel")}
 						<select
 							value={selectedModel ? draft.model : ""}
 							disabled={!draft.deviceId || loading}
 							onChange={(event) => setDraft({ ...draft, model: event.target.value })}
 						>
-							<option value="">
-								{loading ? (zh ? "正在验证设备模型…" : "Checking device models…") : zh ? "选择模型" : "Select model"}
-							</option>
+							<option value="">{loading ? t("groupRouterCheckingModels") : t("groupRouterSelectModel")}</option>
 							{models.map((model) => (
 								<option key={`${model.provider}/${model.id}`} value={`${model.provider}/${model.id}`}>
 									{model.name ?? model.id} · {model.provider}/{model.id}
@@ -220,9 +215,7 @@ export function GroupRouterSettings({
 						</select>
 					</label>
 					<label className="dc-field">
-						{zh
-							? "或输入完整模型 ID（需在所选设备验证）"
-							: "Or enter a full model ID (verified on the selected device)"}
+						{t("groupRouterModelPlaceholder")}
 						<input
 							value={draft.model}
 							placeholder="provider/modelId"
@@ -235,45 +228,37 @@ export function GroupRouterSettings({
 						disabled={!draft.deviceId || loading}
 						onClick={() => setRefresh((n) => n + 1)}
 					>
-						{zh ? "重新验证模型目录" : "Recheck model catalog"}
+						{t("groupRouterRecheck")}
 					</button>
 					{catalogError && (
 						<p className="dc-bot-error" role="alert">
 							{catalogError}
 						</p>
 					)}
-					{draft.deviceId && !loading && !valid && (
-						<p role="status">
-							{zh
-								? "所选设备必须在线，且模型须存在于该设备目录中，才能启用。不会自动选择其他模型。"
-								: "Enabling requires an online device and a model in its catalog. No alternative model is selected automatically."}
-						</p>
-					)}
+					{draft.deviceId && !loading && !valid && <p role="status">{t("groupRouterValidationHint")}</p>}
 					{selectedModel && (
 						<p role="status">
-							{zh ? "模型已在所选设备验证" : "Model verified on the selected device"} · {draft.model}
+							{t("groupRouterModelVerified")} · {draft.model}
 						</p>
 					)}
 					<label className="dc-field field">
-						{zh ? "思考级别" : "Thinking level"}
+						{t("groupRouterThinking")}
 						<select
 							value={draft.thinkingLevel}
 							onChange={(event) =>
 								setDraft({ ...draft, thinkingLevel: event.target.value as GroupRouterConfig["thinkingLevel"] })
 							}
 						>
-							{(["off", "minimal", "low", "medium", "high", "xhigh"] as const).map((level, index) => (
+							{(["off", "minimal", "low", "medium", "high", "xhigh"] as const).map((level) => (
 								<option key={level} value={level}>
-									{zh ? ["关闭", "最少", "低", "中", "高", "极高"][index] : level}
+									{t(`thinking.${level}`)}
 								</option>
 							))}
 						</select>
 					</label>
 					<fieldset className="dc-bot-section">
-						<legend>
-							{zh ? "Router 工具（独立于 Bot 执行工具）" : "Router tools (separate from Bot execution tools)"}
-						</legend>
-						{(["reply", "dispatch", "work_items"] as const).map((tool, index) => (
+						<legend>{t("groupRouterTools")}</legend>
+						{(["reply", "dispatch", "work_items"] as const).map((tool) => (
 							<label key={tool} className="dc-bot-enabled">
 								<input
 									type="checkbox"
@@ -288,14 +273,12 @@ export function GroupRouterSettings({
 										})
 									}
 								/>{" "}
-								{zh
-									? ["回复群聊", "派发任务", "管理工单"][index]
-									: ["Reply to group", "Dispatch tasks", "Manage work items"][index]}
+								{t(ROUTER_TOOL_KEYS[tool])}
 							</label>
 						))}
 					</fieldset>
 					<button type="submit" className="btn primary" disabled={!canSave}>
-						{busy ? (zh ? "保存中…" : "Saving…") : zh ? "保存 Router 配置" : "Save Router settings"}
+						{busy ? t("saving") : t("groupRouterSave")}
 					</button>
 				</fieldset>
 			</form>
