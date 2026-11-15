@@ -523,6 +523,8 @@ export function App() {
 			? viewChosen
 			: "chat";
 	const isNativeCliConversation = Boolean(chat.state?.nativeCli) && !activeGroupId && !sharedReadOnly;
+	// 终端 / Git 抽屉不遮住聊天区，所以这三个 view 下聊天主体仍算“可见”。
+	const chatPaneVisible = view === "chat" || view === "terminal" || view === "git";
 	const [cachedNativeClis, setCachedNativeClis] = useState<
 		Record<string, { nativeCli: NativeCliConversation; cwd: string }>
 	>({});
@@ -1077,14 +1079,17 @@ export function App() {
 	const [leftCollapsed, setLeftCollapsed] = useState(() => readPanelCollapsed("left"));
 	const [rightCollapsed, setRightCollapsed] = useState(() => readPanelCollapsed("right"));
 	// Git 抽屉需要宽度：打开时先把右栏折叠，关闭后再恢复它原来的状态。
+	// 用 gitWasOpen 锁住“从关到开”的那一次，否则 rightCollapsed 自身变化会把记录值冲掉。
 	const rightBeforeGit = useRef(false);
+	const gitWasOpen = useRef(false);
 	useEffect(() => {
-		if (gitDrawerOpen) {
+		if (gitDrawerOpen && !gitWasOpen.current) {
 			rightBeforeGit.current = rightCollapsed;
 			if (!rightCollapsed) setRightCollapsed(true);
-		} else if (!rightBeforeGit.current && rightCollapsed) {
-			setRightCollapsed(false);
+		} else if (!gitDrawerOpen && gitWasOpen.current) {
+			if (!rightBeforeGit.current) setRightCollapsed(false);
 		}
+		gitWasOpen.current = gitDrawerOpen;
 	}, [gitDrawerOpen, rightCollapsed]);
 	const toggleLeft = useCallback(() => {
 		setLeftCollapsed((v) => {
@@ -1396,7 +1401,7 @@ export function App() {
 			}
 			terminal.select(targetId);
 			setTermDrawerOpen(true);
-			setView("chat");
+			setView("terminal");
 		};
 		window.addEventListener("pi-web-ui:plugin-run-command", onPluginRunCommand);
 		window.addEventListener("pi-web-ui:run-command", onPluginRunCommand);
@@ -2233,18 +2238,34 @@ export function App() {
 		if (createShell()) terminalOpenRequested.current = false;
 	}, [shellTerminalCount, createShell, view]);
 
-	/** 打开终端抽屉：从其他全页视图回到聊天，否则抽屉里看不到对话。 */
+	/** 打开终端抽屉。view 跟着切到 terminal，顶栏 / 左侧 dock 的高亮才能对上（聊天区不受影响）。 */
 	const openTerminalDrawer = useCallback(() => {
 		terminalOpenRequested.current = shellTerminalCount === 0;
 		if (terminalOpenRequested.current && createShell()) terminalOpenRequested.current = false;
 		setTermDrawerOpen(true);
+		setView("terminal");
 		setDrawer(null);
 	}, [shellTerminalCount, createShell]);
 
 	const openGitDrawer = useCallback(() => {
 		setGitDrawerOpen(true);
+		setView("git");
 		setDrawer(null);
 	}, []);
+
+	/** 关掉一个抽屉；如果当前 view 正是它，交给另一个还开着的抽屉，否则回聊天。 */
+	const closeDrawer = useCallback(
+		(which: "terminal" | "git") => {
+			if (which === "terminal") setTermDrawerOpen(false);
+			else setGitDrawerOpen(false);
+			setView((prev) => {
+				if (which === "terminal" && prev === "terminal") return gitDrawerOpen ? "git" : "chat";
+				if (which === "git" && prev === "git") return termDrawerOpen ? "terminal" : "chat";
+				return prev;
+			});
+		},
+		[termDrawerOpen, gitDrawerOpen],
+	);
 
 	const handleViewChange = useCallback(
 		(v: ViewName, opts?: { skipAutoCreate?: boolean }) => {
@@ -2256,13 +2277,13 @@ export function App() {
 				setNativeCliCreateCwd(cwd);
 				return;
 			}
-			// 终端 / Git 不再是一个“页面”，而是可以并存的抽屉：不再 setView 切页。
+			// 终端 / Git 不是“页面”而是抽屉，两者可以并存；view 跟着抽屉走，只为了高亮。
 			if (v === "terminal" || v === "git") {
-				setView("chat");
 				if (v === "terminal") {
 					if (opts?.skipAutoCreate) {
 						terminalOpenRequested.current = false;
 						setTermDrawerOpen(true);
+						setView("terminal");
 					} else {
 						openTerminalDrawer();
 					}
@@ -2271,6 +2292,11 @@ export function App() {
 				}
 				setDrawer(null);
 				return;
+			}
+			// 回聊天页时顺手把两个抽屉都收起来，避免“回到对话但还剩半个抽屉”。
+			if (v === "chat") {
+				setTermDrawerOpen(false);
+				setGitDrawerOpen(false);
 			}
 			setView(v);
 			setDrawer(null);
@@ -2345,19 +2371,19 @@ export function App() {
 			const isGitToggle = (e.ctrlKey || e.metaKey) && e.shiftKey && !e.altKey && e.key.toLowerCase() === "g";
 			if (isTermToggle) {
 				e.preventDefault();
-				if (termDrawerOpen) setTermDrawerOpen(false);
+				if (termDrawerOpen) closeDrawer("terminal");
 				else openTerminalDrawer();
 				return;
 			}
 			if (isGitToggle) {
 				e.preventDefault();
-				if (gitDrawerOpen) setGitDrawerOpen(false);
+				if (gitDrawerOpen) closeDrawer("git");
 				else openGitDrawer();
 			}
 		};
 		window.addEventListener("keydown", onKey);
 		return () => window.removeEventListener("keydown", onKey);
-	}, [toggleZenMode, termDrawerOpen, gitDrawerOpen, openTerminalDrawer, openGitDrawer]);
+	}, [toggleZenMode, termDrawerOpen, gitDrawerOpen, openTerminalDrawer, openGitDrawer, closeDrawer]);
 
 	const openNativeCliCreate = useCallback(
 		(projectCwd?: string) => {
@@ -2648,7 +2674,7 @@ export function App() {
 						>
 							{Object.entries(cachedNativeClis).map(([id, info]) => {
 								const isCurrent = isNativeCliConversation && chat.state?.conversationId === id;
-								const active = isCurrent && view === "chat" && !chat.transition;
+								const active = isCurrent && chatPaneVisible && !chat.transition;
 								return (
 									<Suspense key={id} fallback={null}>
 										<div className={`native-cli-main ${isCurrent ? "" : "hidden"}`}>
@@ -2676,7 +2702,7 @@ export function App() {
 											send={send}
 											conversationId={chat.state.conversationId}
 											nativeCli={chat.state.nativeCli}
-											active={view === "chat" && !chat.transition}
+											active={chatPaneVisible && !chat.transition}
 											cwd={chat.state.cwd}
 											onAddFiles={addNativeCliFiles}
 											pushNotice={pushNotice}
@@ -2691,7 +2717,7 @@ export function App() {
 											<GroupConversation
 												key={activeGroupId}
 												roomId={activeGroupId}
-												active={view === "chat"}
+												active={chatPaneVisible}
 												onBack={() => setActiveGroupId(null)}
 											/>
 										</Suspense>
@@ -3158,7 +3184,7 @@ export function App() {
 							<Suspense fallback={null}>
 								<TerminalDrawer
 									open={termDrawerOpen}
-									onToggle={() => setTermDrawerOpen((v) => !v)}
+									onToggle={() => (termDrawerOpen ? closeDrawer("terminal") : openTerminalDrawer())}
 									chat={chat}
 									terminal={terminal}
 									uiTerminalToolbar={uiTerminalToolbar}
@@ -3168,12 +3194,11 @@ export function App() {
 							<Suspense fallback={null}>
 								<GitDrawer
 									open={gitDrawerOpen}
-									onClose={() => setGitDrawerOpen(false)}
+									onClose={() => closeDrawer("git")}
 									chat={chat}
 									terminal={terminal}
-									active={gitDrawerOpen && view === "chat"}
+									active={gitDrawerOpen}
 									onSwitchToTerminal={() => {
-										setGitDrawerOpen(false);
 										openTerminalDrawer();
 									}}
 									uiScmToolbar={uiScmToolbar}
@@ -3188,7 +3213,7 @@ export function App() {
 							}`}
 						>
 							<RightPanel
-								desktopVisible={view === "chat" && (isMobile ? drawer === "right" : !rightCollapsed)}
+								desktopVisible={chatPaneVisible && (isMobile ? drawer === "right" : !rightCollapsed)}
 								quickAskReferenceMenus={chat.settings?.quickAskReferenceMenus !== false}
 								collapsible={!isMobile}
 								onToggleCollapse={toggleRight}
