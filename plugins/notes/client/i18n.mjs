@@ -1,3 +1,5 @@
+import { createPluginI18n } from "@pi-web-ui/plugin-sdk/client";
+
 export const DICT = {
 	zh: {
 		"app.title": "笔记",
@@ -341,21 +343,15 @@ export const DICT = {
 	},
 };
 
+/** 当前界面语言（词典里存在的那一个）；解析与回退由 SDK 统一实现。 */
 export function detectLang() {
-	try {
-		const raw = String(globalThis.document?.documentElement?.lang ?? "").toLowerCase();
-		if (raw.startsWith("zh")) return "zh";
-		if (raw) return "en";
-	} catch {}
-	const nav = String(globalThis.navigator?.language ?? "").toLowerCase();
-	return nav.startsWith("zh") ? "zh" : nav ? "en" : "zh";
+	return createPluginI18n(DICT).locale;
 }
 
+/** 取文案函数；语言可以是字符串或惰性 getter，每次调用时解析。 */
 export function makeT(lang) {
-	const table = DICT[lang] ?? DICT.zh;
 	return (key, params) => {
-		const raw = table[key] ?? DICT.zh[key] ?? key;
-		if (!params) return raw;
-		return raw.replace(/\{(\w+)\}/g, (m, name) => (params[name] === undefined ? m : String(params[name])));
+		const current = typeof lang === "function" ? lang() : lang;
+		return createPluginI18n(DICT, { locale: current }).t(key, params);
 	};
 }

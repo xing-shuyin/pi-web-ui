@@ -1,3 +1,5 @@
+import { createPluginI18n } from "@pi-web-ui/plugin-sdk/client";
+
 export const DICT = {
 	zh: {
 		"app.title": "图片工具",
@@ -518,20 +520,15 @@ export const DICT = {
 	},
 };
 
+/** 当前界面语言（词典里存在的那一个）；解析与回退由 SDK 统一实现。 */
 export function detectLang() {
-	const html = (typeof document !== "undefined" && document.documentElement.lang) || "";
-	const nav = (typeof navigator !== "undefined" && (navigator.language || "")) || "";
-	const l = (html || nav || "zh").toLowerCase();
-	return l.startsWith("zh") ? "zh" : "en";
+	return createPluginI18n(DICT).locale;
 }
 
-export function makeT(getLang) {
-	return (key, vars) => {
-		const lang = getLang();
-		let s = DICT[lang]?.[key] ?? DICT.en[key] ?? DICT.zh[key] ?? key;
-		if (vars) {
-			for (const [k, v] of Object.entries(vars)) s = s.split(`{${k}}`).join(String(v));
-		}
-		return s;
+/** 取文案函数；语言可以是字符串或惰性 getter，每次调用时解析。 */
+export function makeT(lang) {
+	return (key, params) => {
+		const current = typeof lang === "function" ? lang() : lang;
+		return createPluginI18n(DICT, { locale: current }).t(key, params);
 	};
 }
