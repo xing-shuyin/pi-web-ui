@@ -6,6 +6,7 @@ import {
 } from "../../../server/device-center/verification-limits";
 import { appUrl } from "../base-url";
 import { withToken } from "../auth-token";
+import { useT } from "../i18n";
 import type { GroupDevice } from "../device-group-messages";
 import type { DeviceDelivery, DeviceIntegration, DeviceIntegrationListResponse, DeviceReview } from "../types";
 
@@ -37,6 +38,7 @@ export interface GroupIntegrationProps {
 	onIntegrationChange?: (integration: DeviceIntegration | null) => void;
 	bots: GroupDevice[];
 	disabled?: boolean;
+	/** Retained for existing callers; this panel resolves text through useT(). */
 	zh: boolean;
 }
 
@@ -48,8 +50,8 @@ export function GroupIntegration({
 	onIntegrationChange,
 	bots,
 	disabled = false,
-	zh,
 }: GroupIntegrationProps) {
+	const t = useT();
 	const [, setIntegrations] = useState<DeviceIntegration[]>([]);
 	const [activeIntegration, setActiveIntegration] = useState<DeviceIntegration | null>(null);
 	const [canResumePublication, setCanResumePublication] = useState(false);
@@ -153,15 +155,9 @@ export function GroupIntegration({
 			setError(
 				pendingPublication
 					? activeIntegration.publishReceipt
-						? zh
-							? "已记录发布效果，原进程停止仍未确认。请稍后回查。"
-							: "Publication effect is recorded; original process stop remains unconfirmed. Reconcile later."
-						: zh
-							? "发布结果仍未知。稍后手动回查；不会自动重发写入。"
-							: "Publication outcome remains unknown. Reconcile later; writes are never retried automatically."
-					: zh
-						? "验证仍在运行，稍后关闭并重新打开此面板以刷新状态。"
-						: "Verification is still running. Close and reopen this panel later to refresh its status.",
+						? t("groupIntegration.exhaustedReceiptRecorded")
+						: t("groupIntegration.exhaustedOutcomeUnknown")
+					: t("groupIntegration.exhaustedVerifying"),
 			);
 		async function refresh() {
 			if (!current()) return;
@@ -223,7 +219,7 @@ export function GroupIntegration({
 		pendingPublication,
 		delivery.id,
 		basePath,
-		zh,
+		t,
 	]);
 
 	async function handlePrepare() {
@@ -272,7 +268,7 @@ export function GroupIntegration({
 			commandsToRun.push(customCommand.trim());
 		}
 		if (commandsToRun.length === 0) {
-			setError(zh ? "请勾选或输入至少一条验证命令" : "Select or enter at least one validation command");
+			setError(t("groupIntegration.selectCommandRequired"));
 			return;
 		}
 
@@ -492,26 +488,20 @@ export function GroupIntegration({
 			style={{ marginTop: "1rem", borderTop: "1px solid var(--border)", paddingTop: "0.75rem" }}
 		>
 			<summary style={{ cursor: "pointer", fontWeight: 600, fontSize: "0.95rem" }}>
-				{zh ? "验证与合并" : "Verify & merge"} ·{" "}
+				{t("groupIntegration.title")} ·{" "}
 				{isApplied
-					? zh
-						? "已合并"
-						: "Merged"
+					? t("groupIntegration.statusMerged")
 					: publicationUnknown
-						? zh
-							? "发布结果未知"
-							: "Publication outcome unknown"
+						? t("groupIntegration.publicationUnknown")
 						: activeIntegration
 							? activeIntegration.status
-							: zh
-								? "待集成"
-								: "Ready to integrate"}
+							: t("groupIntegration.statusReady")}
 			</summary>
 			<div style={{ marginTop: "0.5rem" }}>
 				<p style={{ margin: "0 0 0.5rem 0", fontSize: "0.85rem", color: "var(--text-faint)" }}>
-					{zh
-						? `先在独立工作区验证此交付${delivery.commit ? ` (${delivery.commit.slice(0, 8)})` : ""}，验收通过并确认后才写入目标分支。`
-						: `Verify this delivery${delivery.commit ? ` (${delivery.commit.slice(0, 8)})` : ""} in a separate workspace. The target branch changes only after acceptance and your confirmation.`}
+					{t("groupIntegration.intro", {
+						commit: delivery.commit ? ` (${delivery.commit.slice(0, 8)})` : "",
+					})}
 				</p>
 
 				{error && (
@@ -524,51 +514,39 @@ export function GroupIntegration({
 					<div className="gi-publication" style={{ overflowWrap: "anywhere", wordBreak: "break-word", minWidth: 0 }}>
 						<p role="status">
 							{isApplied
-								? zh
-									? `已记录发布效果（证据：${activeIntegration.publishReceipt?.proof ?? "legacy"}）。`
-									: `Publication effect recorded (proof: ${activeIntegration.publishReceipt?.proof ?? "legacy"}).`
+								? t("groupIntegration.publicationApplied", {
+										proof: activeIntegration.publishReceipt?.proof ?? "legacy",
+									})
 								: publicationUnknown
-									? zh
-										? "发布结果未知。回查只读取证据，不会自动重新写入分支。"
-										: "Publication outcome unknown. Reconciliation observes evidence and never retries branch writes."
-									: zh
-										? "已确认在发布前取消。"
-										: "Cancellation before publication is confirmed."}
+									? t("groupIntegration.publicationUnknownDetail")
+									: t("groupIntegration.publicationCancelledBeforeWrite")}
 						</p>
 						<div>
-							{zh ? "发布意图：" : "Intent: "}
+							{t("groupIntegration.intentLabel")}
 							<code>{activeIntegration.publishIntent.id}</code>
 						</div>
 						<div>
-							{zh ? "候选提交：" : "Candidate: "}
+							{t("groupIntegration.candidateLabel")}
 							<code>{activeIntegration.publishIntent.candidateSha}</code>
 						</div>
 						<p>
-							{zh ? "当前目标观察：" : "Current target observation: "}
+							{t("groupIntegration.observationLabel")}
 							{activeIntegration.publishObservation ? (
 								<>
 									{activeIntegration.publishObservation.target} · {activeIntegration.publishObservation.phase}{" "}
 									<code>{activeIntegration.publishObservation.targetSha}</code>
 								</>
-							) : zh ? (
-								"未知（尚未观察）"
 							) : (
-								"Unknown (not yet observed)"
+								t("groupIntegration.observationUnknown")
 							)}
 						</p>
 						{activeIntegration.publishStop && (
 							<p>
 								{!activeIntegration.publishStop.stopConfirmed
-									? zh
-										? "已封闭未来写入；原发布进程停止尚未确认，仍保持隔离。"
-										: "Future writes are fenced; the original publication process has not been confirmed stopped and remains isolated."
+									? t("groupIntegration.stopUnconfirmed")
 									: activeIntegration.publishStop.pastEffect === "unknown"
-										? zh
-											? "已封闭写入并确认进程停止；历史发布结果仍未知。"
-											: "Writes are fenced and process stop is confirmed; historical publication outcome remains unknown."
-										: zh
-											? "已确认封闭并停止发布操作。"
-											: "Publication operation is fenced and confirmed stopped."}
+										? t("groupIntegration.stopConfirmedOutcomeUnknown")
+										: t("groupIntegration.stopConfirmed")}
 							</p>
 						)}
 						<button
@@ -577,7 +555,7 @@ export function GroupIntegration({
 							disabled={disabled || busy}
 							onClick={() => void handlePublicationAction("reconcile")}
 						>
-							{zh ? "回查发布证据" : "Reconcile publication"}
+							{t("groupIntegration.reconcile")}
 						</button>
 						{canResume && (
 							<button
@@ -586,28 +564,18 @@ export function GroupIntegration({
 								disabled={disabled || busy}
 								onClick={() => void handlePublicationAction("resume")}
 							>
-								{zh ? "恢复同一发布意图" : "Resume same publication intent"}
+								{t("groupIntegration.resumeIntent")}
 							</button>
 						)}
 					</div>
 				)}
-				{isApplied && !activeIntegration?.publishReceipt && (
-					<p role="status">
-						{zh ? "旧记录标记已应用；没有持久发布回执。" : "Legacy applied record; no durable publication receipt."}
-					</p>
-				)}
-				{legacyUnknown && (
-					<p role="status">
-						{zh
-							? "旧发布记录缺少持久意图，历史结果未知。需本机核查；不会自动重试。"
-							: "Legacy publication has no durable intent; its historical outcome is unknown. Local inspection is required; it will not retry automatically."}
-					</p>
-				)}
+				{isApplied && !activeIntegration?.publishReceipt && <p role="status">{t("groupIntegration.legacyApplied")}</p>}
+				{legacyUnknown && <p role="status">{t("groupIntegration.legacyUnknown")}</p>}
 				{!activeIntegration || isCancelled ? (
 					<div className="gi-prepare-form" style={{ display: "flex", flexDirection: "column", gap: "0.5rem" }}>
 						<div style={{ display: "flex", gap: "0.5rem", flexWrap: "wrap", alignItems: "center" }}>
 							<label style={{ fontSize: "0.85rem" }}>
-								{zh ? "目标工作区 (Bot):" : "Target Bot Workspace:"}
+								{t("groupIntegration.targetBotWorkspace")}
 								<select
 									value={targetBotId}
 									onChange={(e) => setTargetBotId(e.target.value)}
@@ -623,7 +591,7 @@ export function GroupIntegration({
 							</label>
 
 							<label style={{ fontSize: "0.85rem" }}>
-								{zh ? "目标分支:" : "Target Branch:"}
+								{t("groupIntegration.targetBranchField")}
 								<input
 									type="text"
 									value={targetBranch}
@@ -639,7 +607,7 @@ export function GroupIntegration({
 								disabled={disabled || busy || !targetBotId || !canStartNew}
 								onClick={() => void handlePrepare()}
 							>
-								{busy ? (zh ? "准备中…" : "Preparing…") : zh ? "准备隔离集成" : "Prepare Isolated Integration"}
+								{busy ? t("groupIntegration.preparing") : t("groupIntegration.prepare")}
 							</button>
 						</div>
 					</div>
@@ -647,17 +615,13 @@ export function GroupIntegration({
 					<div className="gi-active-task" style={{ display: "flex", flexDirection: "column", gap: "0.5rem" }}>
 						<div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
 							<span style={{ fontSize: "0.85rem", fontWeight: 600 }}>
-								{zh ? "集成状态: " : "Status: "}
+								{t("groupIntegration.statusLabel")}
 								<span
 									style={{
 										color: isApplied ? "var(--green, #10b981)" : isConflict ? "var(--red, #f43f5e)" : "var(--accent)",
 									}}
 								>
-									{publicationUnknown
-										? zh
-											? "发布结果未知"
-											: "Publication outcome unknown"
-										: activeIntegration.status}
+									{publicationUnknown ? t("groupIntegration.publicationUnknown") : activeIntegration.status}
 								</span>
 							</span>
 							{(!isApplied || pendingPublication) && !isCancelled && !closedPublication && (
@@ -668,31 +632,25 @@ export function GroupIntegration({
 									onClick={() => void handleCancel()}
 									style={{ fontSize: "0.75rem", padding: "0.2rem 0.5rem" }}
 								>
-									{isApplied
-										? zh
-											? "封闭写入并确认进程停止"
-											: "Fence writes & confirm process stop"
-										: zh
-											? "取消集成"
-											: "Cancel"}
+									{isApplied ? t("groupIntegration.fenceWrites") : t("groupIntegration.cancelIntegration")}
 								</button>
 							)}
 						</div>
 
 						<div style={{ fontSize: "0.8rem", color: "var(--text-faint)" }}>
 							<span>
-								{zh ? "目标分支: " : "Target Branch: "}
+								{t("groupIntegration.targetBranch")}
 								<code>{activeIntegration.targetBranch}</code>
 							</span>
 							{activeIntegration.expectedTargetSha && (
 								<span style={{ marginLeft: "1rem" }}>
-									{zh ? "基线 SHA: " : "Target SHA: "}
+									{t("groupIntegration.targetSha")}
 									<code>{activeIntegration.expectedTargetSha.slice(0, 8)}</code>
 								</span>
 							)}
 							{activeIntegration.newCommitSha && (
 								<span style={{ marginLeft: "1rem" }}>
-									{zh ? "新提交 SHA: " : "New Commit SHA: "}
+									{t("groupIntegration.newCommitSha")}
 									<code>{activeIntegration.newCommitSha.slice(0, 8)}</code>
 								</span>
 							)}
@@ -701,7 +659,7 @@ export function GroupIntegration({
 						{isConflict && activeIntegration.conflicts && (
 							<div style={{ background: "rgba(244, 63, 94, 0.1)", padding: "0.5rem", borderRadius: "4px" }}>
 								<strong style={{ color: "var(--red, #f43f5e)", fontSize: "0.85rem" }}>
-									{zh ? "检测到合并冲突！无法自动合并：" : "Merge conflicts detected:"}
+									{t("groupIntegration.conflictsDetected")}
 								</strong>
 								<ul style={{ margin: "0.25rem 0", paddingLeft: "1.2rem", fontSize: "0.8rem" }}>
 									{activeIntegration.conflicts.map((file, i) => (
@@ -712,7 +670,7 @@ export function GroupIntegration({
 								</ul>
 								{activeIntegration.diff && (
 									<details style={{ marginTop: "0.25rem", fontSize: "0.8rem" }}>
-										<summary>{zh ? "查看冲突 Diff" : "View Conflict Diff"}</summary>
+										<summary>{t("groupIntegration.viewConflictDiff")}</summary>
 										<pre style={{ maxHeight: "150px", overflow: "auto", fontSize: "0.75rem" }}>
 											{activeIntegration.diff}
 										</pre>
@@ -723,7 +681,7 @@ export function GroupIntegration({
 
 						{activeIntegration.diff && !isConflict && (
 							<details style={{ fontSize: "0.85rem", margin: "0.25rem 0" }}>
-								<summary>{zh ? "集成 Diff 预览" : "Integration Diff Preview"}</summary>
+								<summary>{t("groupIntegration.diffPreview")}</summary>
 								<pre
 									style={{
 										maxHeight: "200px",
@@ -749,16 +707,10 @@ export function GroupIntegration({
 								}}
 							>
 								<div style={{ fontSize: "0.85rem", fontWeight: 600, marginBottom: "0.25rem" }}>
-									{zh ? "验证命令" : "Verification commands"}
+									{t("groupIntegration.verificationCommands")}
 								</div>
 								<p style={{ fontSize: "0.75rem", color: "var(--text-faint)", margin: "0 0 0.25rem 0" }}>
-									{zh
-										? planLocked
-											? "命令已锁定。重试会运行相同命令；更换命令需要新建验证。"
-											: "请由账户所有者选择或填写命令。点击验证即授权执行并锁定这些命令。"
-										: planLocked
-											? "Commands are locked. A retry runs the same commands; start a new verification to change them."
-											: "As the account owner, select or enter commands. Clicking Verify authorizes execution and locks these commands."}
+									{planLocked ? t("groupIntegration.commandsLocked") : t("groupIntegration.commandsAuthorize")}
 								</p>
 
 								{planLocked && (
@@ -782,7 +734,7 @@ export function GroupIntegration({
 												/>
 												<code>{c.command}</code>
 												<span style={{ color: "var(--text-faint)", fontSize: "0.75rem" }}>
-													({zh ? "Bot 自述结果:" : "Bot claimed:"} {c.status})
+													{t("groupIntegration.botClaimed", { status: c.status })}
 												</span>
 											</label>
 										))}
@@ -792,7 +744,7 @@ export function GroupIntegration({
 								<div style={{ display: "flex", gap: "0.5rem", marginTop: "0.25rem" }}>
 									<input
 										type="text"
-										placeholder={zh ? "自定义验证命令，如 npm test" : "Custom command, e.g. npm test"}
+										placeholder={t("groupIntegration.commandPlaceholder")}
 										value={customCommand}
 										onChange={(e) => setCustomCommand(e.target.value)}
 										disabled={disabled || busy || planLocked}
@@ -808,20 +760,14 @@ export function GroupIntegration({
 										style={{ fontSize: "0.8rem" }}
 									>
 										{busy && activeIntegration.status === "verifying"
-											? zh
-												? "验证中…"
-												: "Verifying…"
-											: zh
-												? "验证"
-												: "Verify"}
+											? t("groupIntegration.verifying")
+											: t("groupIntegration.verify")}
 									</button>
 								</div>
 
 								{activeIntegration.validationCommands.length > 0 && (
 									<div style={{ marginTop: "0.5rem" }}>
-										<div style={{ fontSize: "0.8rem", fontWeight: 600 }}>
-											{zh ? "验证结果：" : "Validation Results:"}
-										</div>
+										<div style={{ fontSize: "0.8rem", fontWeight: 600 }}>{t("groupIntegration.validationResults")}</div>
 										{activeIntegration.validationCommands.map((v, i) => (
 											<div key={i} style={{ fontSize: "0.75rem", margin: "0.25rem 0" }}>
 												<code>{v.command}</code>:{" "}
@@ -833,7 +779,7 @@ export function GroupIntegration({
 												>
 													{v.status}
 												</span>
-												{v.exitCode !== undefined && ` (exit ${v.exitCode})`}
+												{v.exitCode !== undefined && ` ${t("groupIntegration.exitCode", { code: v.exitCode })}`}
 												{v.output && (
 													<pre
 														style={{
@@ -856,16 +802,13 @@ export function GroupIntegration({
 
 						{activeIntegration.verification && (
 							<div>
-								<p role="status">
-									{zh
-										? "验证已成功并锁定。重新验证请新建整合。"
-										: "Verification succeeded and is locked. Start a new integration to verify again."}
-								</p>
+								<p role="status">{t("groupIntegration.verificationLocked")}</p>
 								<details>
-									<summary>{zh ? "验证结果" : "Verification results"}</summary>
+									<summary>{t("groupIntegration.verificationResults")}</summary>
 									{activeIntegration.verification.results.map((result, index) => (
 										<div key={index}>
-											<code>{result.command}</code> · {result.status} (exit {result.exitCode})
+											<code>{result.command}</code> · {result.status}{" "}
+											{t("groupIntegration.exitCode", { code: result.exitCode })}
 											<pre style={{ maxHeight: "150px", overflow: "auto" }}>{result.outputPreview}</pre>
 										</div>
 									))}
@@ -873,15 +816,11 @@ export function GroupIntegration({
 							</div>
 						)}
 						{activeIntegration.verification && !canApply && !isApplied && !activeIntegration.publishIntent && (
-							<p>
-								{zh
-									? "请完成与本次验证对应的独立验收，再确认合并。"
-									: "Complete an independent review for this verification before confirming the merge."}
-							</p>
+							<p>{t("groupIntegration.reviewRequired")}</p>
 						)}
 						{!isApplied && canStartNew && (
 							<button type="button" className="btn" disabled={disabled || busy} onClick={() => void handlePrepare()}>
-								{zh ? "新建整合与验证" : "Start a new integration & verification"}
+								{t("groupIntegration.newIntegration")}
 							</button>
 						)}
 
@@ -895,17 +834,11 @@ export function GroupIntegration({
 									style={{ fontSize: "0.85rem" }}
 								>
 									{busy && activeIntegration.status === "applying"
-										? zh
-											? "正在写入目标分支…"
-											: "Writing to target branch…"
-										: zh
-											? `确认合并写入 ${activeIntegration.targetBranch}`
-											: `Confirm & Merge into ${activeIntegration.targetBranch}`}
+										? t("groupIntegration.applying")
+										: t("groupIntegration.confirmMerge", { branch: activeIntegration.targetBranch })}
 								</button>
 								<span style={{ fontSize: "0.75rem", color: "var(--text-faint)" }}>
-									{zh
-										? "（点击即确认合并，绝不强制覆盖或自动推送）"
-										: "(Explicit confirmation; never forces or pushes)"}
+									{t("groupIntegration.confirmMergeHint")}
 								</span>
 							</div>
 						)}
@@ -914,10 +847,7 @@ export function GroupIntegration({
 							<div
 								style={{ color: "var(--green, #10b981)", fontSize: "0.85rem", fontWeight: 600, marginTop: "0.25rem" }}
 							>
-								✓{" "}
-								{zh
-									? `已记录分支 ${activeIntegration.targetBranch} 的历史发布结果；当前分支状态以上方观察为准。`
-									: `Historical publication recorded for branch ${activeIntegration.targetBranch}; see the current target observation above.`}
+								✓ {t("groupIntegration.appliedRecorded", { branch: activeIntegration.targetBranch })}
 							</div>
 						)}
 					</div>
