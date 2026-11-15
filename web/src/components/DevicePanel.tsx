@@ -284,7 +284,8 @@ export function DevicePanel({
 						const isSelf = device.id === currentDeviceId;
 						const isEditing = editingId === device.id;
 						const menuOpen = menu?.device.id === device.id;
-						const target = targetOf(device.id);
+						// 本机不提供远程入口：打开自己是重复窗口、远程控制自己是无意义的
+						const target = isSelf ? undefined : targetOf(device.id);
 						const meta = [shortId(device.id), device.online ? "" : zh ? "离线" : "Offline"].filter(Boolean).join(" · ");
 						return (
 							<li
@@ -373,18 +374,20 @@ export function DevicePanel({
 										</>
 									) : (
 										<>
-											<button
-												type="button"
-												className="dp-icon"
-												aria-label={zh ? "远程桌面" : "Remote desktop"}
-												title={zh ? "远程桌面" : "Remote desktop"}
-												onClick={(event) => {
-													clearPress();
-													onOpen(event, device.id, true);
-												}}
-											>
-												<FiMonitor aria-hidden />
-											</button>
+											{!isSelf && (
+												<button
+													type="button"
+													className="dp-icon"
+													aria-label={zh ? "远程桌面" : "Remote desktop"}
+													title={zh ? "远程桌面" : "Remote desktop"}
+													onClick={(event) => {
+														clearPress();
+														onOpen(event, device.id, true);
+													}}
+												>
+													<FiMonitor aria-hidden />
+												</button>
+											)}
 											<button
 												type="button"
 												className="dp-icon"
@@ -404,7 +407,8 @@ export function DevicePanel({
 										</>
 									)}
 								</span>
-								<FiChevronRight className="dp-chev" aria-hidden />
+								{/* 本机不可打开：占位保持「⋯」与其它行右对齐 */}
+								{target ? <FiChevronRight className="dp-chev" aria-hidden /> : <span className="dp-chev" aria-hidden />}
 							</li>
 						);
 					})}

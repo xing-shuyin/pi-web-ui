@@ -86,16 +86,36 @@ it("紧凑行：一台设备一行，备注优先作为名称，本机带标签"
 it("点整行打开设备，行尾图标一步进远程桌面（都不进菜单）", async () => {
 	const { host, handlers, unmount } = await mount();
 	try {
-		const hit = host.querySelectorAll<HTMLAnchorElement>(".dp-hit")[1];
+		const rows = [...host.querySelectorAll(".dp-row")];
+		const hit = rows[1].querySelector<HTMLAnchorElement>(".dp-hit")!;
 		expect(hit.href).toBe(`https://hub.example.com/device/${DEVICES[1].id}`);
 		await act(async () => hit.click());
 		expect(handlers.onOpen).toHaveBeenCalledTimes(1);
 		expect(handlers.onOpen.mock.calls[0][1]).toBe(DEVICES[1].id);
 
-		const desktop = host.querySelectorAll<HTMLButtonElement>('.dp-row [aria-label="远程桌面"]')[1];
+		const desktop = rows[1].querySelector<HTMLButtonElement>('[aria-label="远程桌面"]')!;
 		await act(async () => desktop.click());
 		expect(handlers.onOpen).toHaveBeenCalledTimes(2);
 		expect(handlers.onOpen.mock.calls[1][2]).toBe(true);
+	} finally {
+		unmount();
+	}
+});
+
+it("本机行不提供远程入口：没有整行链接、没有远程桌面，只剩 ⋯", async () => {
+	const { host, unmount } = await mount();
+	try {
+		const self = host.querySelectorAll(".dp-row")[0];
+		expect(self.querySelector(".dp-hit")).toBeNull();
+		expect(self.querySelector('[aria-label="远程桌面"]')).toBeNull();
+		expect(self.querySelector('[aria-label="更多操作"]')).not.toBeNull();
+		// 占位 chevron 只为对齐「⋯」，不带图标也不算可点
+		expect(self.querySelector("svg.dp-chev")).toBeNull();
+		// 其它设备仍然两个动作都在
+		const other = host.querySelectorAll(".dp-row")[1];
+		expect(other.querySelector(".dp-hit")).not.toBeNull();
+		expect(other.querySelector('[aria-label="远程桌面"]')).not.toBeNull();
+		expect(other.querySelector("svg.dp-chev")).not.toBeNull();
 	} finally {
 		unmount();
 	}

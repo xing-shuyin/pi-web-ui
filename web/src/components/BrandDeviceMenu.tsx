@@ -187,7 +187,12 @@ export function BrandDeviceMenu({
 							role="dialog"
 							aria-label={zh ? "设备列表" : "Devices"}
 						>
-							<DeviceDirectory hubUrl={binding.hubUrl} currentDeviceId={binding.deviceId} variant="panel" />
+							<DeviceDirectory
+								hubUrl={binding.hubUrl}
+								currentDeviceId={binding.deviceId}
+								variant="panel"
+								onAfterOpen={close}
+							/>
 						</div>
 					),
 					document.body,
