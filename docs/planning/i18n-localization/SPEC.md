@@ -1,0 +1,104 @@
+# SPEC — Localization coverage for pi-web-ui UI and plugin UI
+
+Status: **DRAFT — NOT APPROVED** (planning artifact; implementation not authorized)
+Stage: specification · Run: 2026-11-15 · Owner: MidnightPhreaker
+
+## 1. Scope lock
+
+| Field                       | Value                                                                                                                                                                                                                                                                                                           |
+| --------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Requested outcome           | No user-visible UI text is hardcoded in one language; every UI string resolves through the localization layer, for both the web app and plugin-contributed UI; Simplified Chinese, Traditional Chinese (`zh-TW`) and English resolve from their own dictionaries; verified in a real browser.                   |
+| In scope                    | `web/src/**` UI strings, `web/src/i18n/*` locale selection, `plugin-sdk/client.mjs` + `server/plugins.ts` host API surface, `plugins/*/client/**` UI labels, `scripts/lib/i18n-catalog.mjs` and the `i18n:*` tooling, the repo's existing browser-test harness.                                                 |
+| Out of scope                | Server logs (§ they are operator-facing, already English-keyed where user-visible), AI prompt text, user-authored content, docs prose translation (shipped separately in PR #919), new translation languages beyond the existing 14, translation-quality review of existing packs, CI/CD or deployment changes. |
+| Authority boundary          | Repository writes on a new branch; commit and push to `midnightphreaker` fork. No new runtime dependency, no reformat of unrelated files, no changes to published `locales/*.json` semantics.                                                                                                                   |
+| Done when                   | The acceptance scenarios in §6 pass in a real browser, the guard tests in §5 pass, and no user-visible hardcoded literal remains in the scoped files.                                                                                                                                                           |
+| Scale / validation boundary | hobbyist/homelab, fewer than 10 users. Validation = focused functional acceptance (browser run per language) + existing `vitest` unit guards + `i18n:check`. No performance, security, coverage or load work.                                                                                                   |
+| Effort limits               | Planning run ≤ 30 min wall clock; 2 research batches; 1 review pass per artifact.                                                                                                                                                                                                                               |
+
+## 2. Current state (verified facts)
+
+| #   | Fact                                                                                                                                                                                                                                                                                                          | Evidence                                                                                                                                                                                           |
+| --- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| F1  | The web app already has a typed two-source catalog (zh + en) merged from 6 modules, 3571 keys total (`core` 2753, `canvas` 648, `canvas-runtime` 92, `desktop` 42, `native-cli-session` 36).                                                                                                                  | `web/src/i18n/catalog.ts`; `web/src/i18n/messages/*/zh.json` key counts (measured 2026-11-15)                                                                                                      |
+| F2  | Language selection already negotiates `navigator.languages`, a server default, persistence and per-language fallback (`zh-TW` → `zh`).                                                                                                                                                                        | `web/src/i18n.tsx` (`initializeUiLocale`, `pickLocale`), `web/src/pick-locale.ts`, `web/src/ui-locale.ts`                                                                                          |
+| F3  | Download packs exist for 12 non-source languages; `zh` and `en` are built-in dictionaries, not pack files.                                                                                                                                                                                                    | `locales/` listing: de, es, fr, it, ja, ko, pt, ru, tr, zh-Hant, zh-HK, zh-TW                                                                                                                      |
+| F4  | **1271 hardcoded CJK string literals remain across 119 `web/src` files** outside `i18n/messages`. Top: `SettingsModal.tsx` 116, `GroupWebhooks.tsx` 85, `mcp-catalog.ts` 80, `SubagentInspectorView.tsx` 57, `skill-catalog.ts` 54, `GroupTaskDetails.tsx` 53, `LeftPanel.tsx` 52, `GroupIntegration.tsx` 52. | `grep -rc "[一-龥]" web/src --include=*.tsx --include=*.ts \| grep -v i18n/messages` (2026-11-15)                                                                                                  |
+| F5  | 43 plugins ship a `client/entry.mjs`; only 3 ship their own `client/i18n.mjs` (`image-toolkit`, `live2d`, `notes`), each a distinct hand-written implementation with a private `DICT` + `detectLang` + `makeT`.                                                                                               | `ls plugins/*/client/i18n.mjs`; `md5sum` shows 3 different files; `plugins/notes/client/i18n.mjs:1-25`                                                                                             |
+| F6  | The host exposes no localization API to plugins; `plugin-sdk/client.mjs` has no i18n surface.                                                                                                                                                                                                                 | `grep -n "i18n\|locale" plugin-sdk/README.md plugin-sdk/client.d.ts` → no matches                                                                                                                  |
+| F7  | Guard tests already cover dictionary consistency, dead keys, runtime fallback, server strings and Canvas messages.                                                                                                                                                                                            | `tests/unit/i18n-catalog.test.ts`, `i18n-dead-keys.test.ts`, `i18n-runtime.test.ts`, `i18n-server-strings.test.ts`, `canvas-i18n.test.ts`, `canvas-runtime-i18n.test.ts`, `canvas-ui-i18n.test.ts` |
+| F8  | Real-browser tests already run through `playwright-core` against a local Chromium with a build precondition.                                                                                                                                                                                                  | `tests/canvas-browser-test.mjs:1-9` imports `playwright-core`, `./lib/chrome.mjs`, `./lib/ensure-build.mjs`; `tests/lib/chrome.mjs:17-24`                                                          |
+
+## 3. Research evidence ledger
+
+| ID  | Claim                                                                                                                                                                                                                | Source (accessed 2026-11-15)                                                                                                                                                                                                                                                        | Verification                                                                                                                       | Consuming artifact |
+| --- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------- | ------------------ |
+| R1  | `zh-Hans`/`zh-Hant` are the script subtags for Simplified/Traditional Chinese; region subtags such as `zh-CN`/`zh-TW` are valid but less precise, and language negotiation is defined by BCP 47 / RFC 4647 matching. | W3C, _Understanding the New Language Tags_ — https://www.w3.org/International/articles/bcp47/ ; IETF, _RFC 4647 Matching of Language Tags_ — https://www.rfc-editor.org/rfc/rfc4647                                                                                                 | Two independent standards bodies agree; F2/F3 confirm the repo already distinguishes `zh`, `zh-TW`, `zh-Hant`, `zh-HK`.            | DESIGN D1, FR-006  |
+| R2  | Plural-sensitive text is handled at runtime by `Intl.PluralRules` (`select()` returns the locale's plural category), not by static translation strings.                                                              | MDN, _Intl.PluralRules_ — https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Intl/PluralRules ; MDN, _Intl.PluralRules.prototype.select()_ — https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Intl/PluralRules/select | Both pages are the normative browser-API reference and agree; `Intl.PluralRules` is baseline-available in the Chromium used by F8. | DESIGN D2, FR-008  |
+
+No claim in this artifact relies on model recall alone: F1–F8 are repository observations with the command or path that produced them.
+
+## 4. Goals and non-goals
+
+**Goals**
+
+- G1 A developer adding UI cannot introduce a language-specific literal in the scoped code paths without a guard test failing.
+- G2 Every user-visible string in the web app resolves from the catalog by key, including the group/device-center surfaces that hold most of the remaining literals.
+- G3 Plugins get one host-provided localization contract instead of per-plugin reimplementations.
+- G4 `zh` (Simplified), `zh-TW` and `en` each render their own text end-to-end in a real browser, with `zh-CN`/`zh-Hans` accepted as aliases of the Simplified source.
+
+**Non-goals**
+
+- N1 Adding languages, crowdsourcing translations, or auditing existing translation quality.
+- N2 Replacing the translation runtime with a third-party library.
+- N3 Localizing developer-facing artifacts (logs intended for operators, AI prompt text, error stack strings).
+- N4 Changing the download-pack file format or public endpoints.
+
+## 5. Functional requirements
+
+| ID     | Requirement (testable)                                                                                                                                                                                                                              |
+| ------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| FR-001 | Every user-visible literal in the files listed by the inventory (F4) resolves through `t(key, vars)` or `useT()`; the scoped files contain no CJK or English UI literal outside `i18n/messages`.                                                    |
+| FR-002 | A guard test fails when a scoped source file introduces a new hardcoded UI literal, using the inventory as a shrinking allowlist (deleted entries must not be re-addable without updating the allowlist).                                           |
+| FR-003 | New keys are added to the owning module's `zh.json` and `en.json` simultaneously, preserving key order and placeholder sets, and `npm run i18n:sync` keeps `locales/*.json` consistent.                                                             |
+| FR-004 | Selecting `zh-TW` renders Traditional Chinese for every migrated surface; any missing key falls back to `zh` (not English) as today.                                                                                                                |
+| FR-005 | `en` renders English for every migrated surface with no Chinese residual.                                                                                                                                                                           |
+| FR-006 | `zh-CN`, `zh-Hans` and `zh-Hans-*` inputs resolve to the Simplified source dictionary; `zh-TW`, `zh-Hant` and `zh-HK` resolve to their existing packs. No new dictionary file is created for `zh-CN`.                                               |
+| FR-007 | Plugins receive `host.i18n` (`locale`, `t(key, vars)`, `available`) through `plugin-sdk/client.mjs`; a plugin's keys live in `<plugin>/locales/<locale>.json` namespaced by plugin id; absent keys fall back to the plugin's `en`, then to the key. |
+| FR-008 | Counts shown to users use `Intl.PluralRules` for the active locale where a phrase depends on plurality; `zh`/`zh-TW` need no distinct plural form.                                                                                                  |
+| FR-009 | The 3 existing per-plugin `client/i18n.mjs` implementations are migrated onto `host.i18n`, leaving one implementation in the host.                                                                                                                  |
+| FR-010 | `npm run i18n:check` reports plugin dictionary drift (missing keys, placeholder mismatch) with the same exit-code semantics as today's web dictionaries.                                                                                            |
+
+## 6. Acceptance scenarios
+
+| ID    | Scenario                                                                                                | Expected observable result                                                                                  |
+| ----- | ------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------- |
+| AS-01 | Load the app with `locale=en`, open Settings and the group/device-center panels.                        | No CJK text on screen; visible labels match `messages/*/en.json` values.                                    |
+| AS-02 | Switch to `zh-TW` at runtime, revisit the same panels.                                                  | Traditional Chinese labels; no Simplified-only strings except where `zh` fallback is documented.            |
+| AS-03 | Send `locale=zh-CN` (and `zh-Hans`) on first load.                                                      | Simplified Chinese dictionary is used; the UI language label reads as the Simplified option, not "unknown". |
+| AS-04 | Install/activate `notes` and one migrated third-party-style plugin, switch locale from `en` to `zh-TW`. | Plugin UI labels change with the app language without a page reload.                                        |
+| AS-05 | Add a hardcoded literal to a scoped component and run the unit suite.                                   | The guard test fails and names the file and line.                                                           |
+| AS-06 | Missing key in `zh-TW`.                                                                                 | Falls back to `zh`, logs no crash, UI stays usable.                                                         |
+| AS-07 | Browser test runs all three locales against a real Chromium.                                            | `tests/i18n-browser-test.mjs` exits 0 with per-locale assertions in its output.                             |
+
+## 7. Non-functional requirements (bounded, project-required)
+
+| ID      | Requirement                                                                                                                                   |
+| ------- | --------------------------------------------------------------------------------------------------------------------------------------------- |
+| NFR-001 | No new runtime dependency; the catalog type safety (literal key union) is preserved.                                                          |
+| NFR-002 | First-screen bundle does not gain language packs for non-active locales (existing dynamic loading behavior is preserved; see `docs/i18n.md`). |
+| NFR-003 | Placeholder interpolation stays single-pass, so values containing `{count}` or `$&` stay literal (existing `i18n-runtime.test.ts` contract).  |
+| NFR-004 | Migration is additive per module: at any commit the app still builds, typechecks and runs the existing i18n guards green.                     |
+
+## 8. Assumptions, dependencies, open questions
+
+| ID  | Item                                                                                  | Handling                                                                                                                                                                                    |
+| --- | ------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| A-1 | `mcp-catalog.ts` and `skill-catalog.ts` may carry content data rather than UI labels. | Classified per entry during Task 5; content that is data (tool/skill descriptions shipped by third parties) is explicitly excluded from FR-001 and recorded in the allowlist with a reason. |
+| A-2 | The 40 plugins without `client/i18n.mjs` mostly render no localized labels.           | Task 8 localizes only plugins whose client entry renders user-visible labels; the remainder are covered by the contract, not migrated.                                                      |
+| Q-1 | Should the UI language switcher surface `zh-CN` as a distinct menu option?            | Default: no — same dictionary as `zh`; revisit only if the owner asks. Recorded as a reversible decision.                                                                                   |
+
+## 9. Definition of done
+
+- AS-01…AS-07 pass with recorded evidence.
+- F4's inventory is reduced to zero for UI strings, with the allowlist holding only justified data-catalog entries.
+- `npm run i18n:check`, `npx vitest run tests/unit/i18n-*.test.ts` and `node tests/i18n-browser-test.mjs` are green on the same commit.
