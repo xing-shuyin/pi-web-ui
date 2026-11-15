@@ -98,7 +98,7 @@ interface Room {
 1. `botIds.length === 1`，且 `primaryBotId === botIds[0]`——主 Bot 字段必须保留：既有“无 targetBotIds 时投递给主 Bot”的路径靠它生效，私聊因此不需要另写一套分发；
 2. 无 `router` / `blackboard` / `webhooks` / `canvasBinding` / `hubRelayBaseUrl`；
 3. 不允许 `members` 增删（→ 409 `DIRECT_ROOM_FIXED_MEMBER`）；群能力路由（黑板/Webhook/画布/中继/路由）在直聊房间上统一 409 `DIRECT_ROOM_CAPABILITY`；
-4. id 确定性生成 `direct:<sha256(accountId, botId).slice(0,24)>` → 天然幂等，重复“开始私聊”不会建出两个（`POST /api/bots/:id/direct-room`）；
+4. id 确定性生成 `direct-<sha256(accountId, botId).slice(0,24)>` → 天然幂等，重复“开始私聊”不会建出两个（`POST /api/bots/:id/direct-room`）。**前缀必须是 `direct-` 而不是 `direct:`**：房间 id 会直接成为 Hub 分区日志的文件名（只接受 `[A-Za-z0-9_-]`，Windows 不允许冒号），带冒号会让直聊的消息/任务写不进日志、重启即丢；
 5. `GET /api/rooms`（群组列表）只返回 `group`；直聊由 `GET /api/direct-rooms` 单独提供；
 6. 直聊任务上下文带 `roomKind: "direct"`：`primary` 不再成立，执行指令换成私聊变体（不广播、不写黑板、不协调其他 Bot）。
 
