@@ -37,6 +37,20 @@
 
 本机用户操作与 AI 接力使用不同权限：新配对时分别生成设备执行凭据和本机交互凭据，后者仅由本机受限 HTTP 接口持有，不下发浏览器或模型。本机人类可发起新的任务链，AI 凭据仍需可信父任务；旧绑定缺少交互凭据时需重新配对。删除群组或移除成员遇到相关未结束任务时拒绝，避免丢失执行归属。
 
+## 左上角设备浮层（桌面浮层 / 手机抽屉）
+
+顶栏左上角品牌按钮（`BrandDeviceMenu`）在有外部绑定时变成设备入口：桌面是贴着按钮的浮层，窄屏或粗指针（`(max-width: 640px), (pointer: coarse)`）换成从底部升起的抽屉。两处共用同一份内容体 `DevicePanel`，只换容器与尺寸令牌。
+
+- **一行一台设备 = 一个可点区域**：整行点击直接打开该设备（最高频动作，0 层菜单）；行尾常显 `远程桌面` 与 `⋯` 两个动作，`⋯` 只放低频（设置备注 / 复制设备 ID）。远程桌面是第二高频动作，不进菜单——否则就多一次点击。
+- **尺寸**：桌面浮层 264px 宽、行 30px、图标 24px；触控布局行 56px、触控块 44×44（两块之间 1px 分隔线，读作「分体按钮」）、行内显示设备 ID 次行、隐去 chevron。
+- **备注**：桌面在行内就地编辑（`Enter` 保存、`Esc` 取消、行高不变）；手机是「长按整行」或 `⋯ → 设置备注` 打开抽屉底部编辑条（`保存` 一次点完）。
+- **手势**：抽屉在列表滚到顶部时下拉刷新（0 次点击）、从顶部抓手条下滑关闭、点遮罩关闭；键盘 `Esc` 关闭。触控反馈走 `:active`，不依赖 `:hover`。
+- **浮层契约**：`⋯` 菜单 portal 到 `body` + `fixed`（否则被 `.dp-scroll` / 浮层的 `overflow` 截断），层级走 `useOverlayZIndex()`；抽屉容器用叠栈层号，`max-height: 62dvh` + `overscroll-behavior: contain` + `env(safe-area-inset-bottom)`。
+- **断点单源**：`web/src/use-coarse-pointer.ts` 的 `COARSE_POINTER_QUERY` 与 `styles.css` 里 `.dp-*` 的媒体查询必须同时改，否则组件与样式会各走一套布局。
+- **事实源**：`web/src/components/DeviceDirectory.tsx`（取数 / 备注写回 / 页面版卡片） · `web/src/components/DevicePanel.tsx`★（浮层与抽屉的内容体） · `web/src/components/BrandDeviceMenu.tsx`（浮层 / 抽屉容器） · `web/src/use-coarse-pointer.ts` · `web/src/styles.css`（`.dp-*`）。单测：`tests/unit/device-panel.test.ts`、`tests/unit/brand-device-menu.test.ts`。
+
+## 部署中心
+
 ## 部署中心
 
 已安装 npm 包可直接管理服务；源码目录需要先构建服务端：

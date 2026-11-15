@@ -1,10 +1,16 @@
-import { useEffect, useRef, useState, type MouseEventHandler } from "react";
+import { useCallback, useEffect, useRef, useState, type MouseEventHandler } from "react";
 import { createPortal } from "react-dom";
 import { appBase, appUrl } from "../base-url";
 import { withToken } from "../auth-token";
 import { isZhLocale, useI18n } from "../i18n";
+import { useOverlayZIndex } from "../overlay-stack";
+import { useEscapeKey } from "../shortcut-stack";
+import { useCoarsePointer } from "../use-coarse-pointer";
 import { useFloatingPanel } from "../use-floating-panel";
 import { DeviceDirectory } from "./DeviceDirectory";
+
+/** 抽屉下滑关闭的位移阈值（px）。 */
+const SHEET_DISMISS = 80;
 
 export function BrandDeviceMenu({
 	label = "pi-web-ui",
@@ -20,11 +26,22 @@ export function BrandDeviceMenu({
 	const [binding, setBinding] = useState<{ hubUrl: string; deviceId: string } | null>(null);
 	const [open, setOpen] = useState(false);
 	const anchor = useRef<HTMLButtonElement>(null);
+	const coarse = useCoarsePointer();
+	const sheetRef = useRef<HTMLDivElement>(null);
+	const dragStart = useRef<number | null>(null);
+	const dragged = useRef(0);
+	const [dragY, setDragY] = useState(0);
+	const overlayZIndex = useOverlayZIndex(open && coarse);
+	const close = useCallback(() => {
+		setOpen(false);
+		setDragY(0);
+		dragged.current = 0;
+	}, []);
 	const { panelRef, style } = useFloatingPanel({
-		open: open && !!binding,
+		open: open && !!binding && !coarse,
 		anchor,
 		align: "left",
-		onClose: () => setOpen(false),
+		onClose: close,
 	});
 	useEffect(() => {
 		let stopped = false;
@@ -61,6 +78,37 @@ export function BrandDeviceMenu({
 			clearTimeout(timer);
 		};
 	}, []);
+	// 抽屉：Escape 关闭 + 打开时把焦点交给面板（外接键盘 / 读屏）
+	useEscapeKey(close, open && coarse);
+	useEffect(() => {
+		if (!open || !coarse) return;
+		sheetRef.current?.focus();
+	}, [open, coarse]);
+	// 抽屉：只能从顶部抓手条下滑关闭（列表本身留给下拉刷新与滚动）
+	useEffect(() => {
+		if (!open || !coarse) return;
+		const onMove = (event: PointerEvent) => {
+			if (dragStart.current === null) return;
+			const dy = Math.max(0, event.clientY - dragStart.current);
+			dragged.current = dy;
+			setDragY(dy);
+		};
+		const onUp = () => {
+			if (dragStart.current === null) return;
+			dragStart.current = null;
+			if (dragged.current > SHEET_DISMISS) close();
+			else setDragY(0);
+			dragged.current = 0;
+		};
+		window.addEventListener("pointermove", onMove);
+		window.addEventListener("pointerup", onUp);
+		window.addEventListener("pointercancel", onUp);
+		return () => {
+			window.removeEventListener("pointermove", onMove);
+			window.removeEventListener("pointerup", onUp);
+			window.removeEventListener("pointercancel", onUp);
+		};
+	}, [open, coarse, close]);
 	const content = (
 		<>
 			<img
@@ -98,16 +146,50 @@ export function BrandDeviceMenu({
 				{content}
 			</button>
 			{open &&
+				binding &&
 				createPortal(
-					<div
-						ref={panelRef}
-						style={style}
-						className="brand-device-panel"
-						role="dialog"
-						aria-label={zh ? "设备列表" : "Devices"}
-					>
-						<DeviceDirectory hubUrl={binding.hubUrl} currentDeviceId={binding.deviceId} />
-					</div>,
+					coarse ? (
+						<div className="dp-sheet-layer" style={{ zIndex: overlayZIndex }}>
+							<div className="dp-sheet-scrim" onClick={close} aria-hidden />
+							<div
+								ref={sheetRef}
+								tabIndex={-1}
+								role="dialog"
+								aria-modal="true"
+								aria-label={zh ? "设备列表" : "Devices"}
+								className={`dp-sheet${dragY > 0 ? " is-dragging" : ""}`}
+								style={dragY > 0 ? { transform: `translateY(${dragY}px)` } : undefined}
+							>
+								<div
+									className="dp-sheet-grab"
+									role="presentation"
+									onPointerDown={(event) => {
+										dragStart.current = event.clientY;
+										dragged.current = 0;
+									}}
+								>
+									<span className="dp-grab" />
+								</div>
+								<DeviceDirectory
+									hubUrl={binding.hubUrl}
+									currentDeviceId={binding.deviceId}
+									variant="panel"
+									mobile
+									onAfterOpen={close}
+								/>
+							</div>
+						</div>
+					) : (
+						<div
+							ref={panelRef}
+							style={style}
+							className="brand-device-panel"
+							role="dialog"
+							aria-label={zh ? "设备列表" : "Devices"}
+						>
+							<DeviceDirectory hubUrl={binding.hubUrl} currentDeviceId={binding.deviceId} variant="panel" />
+						</div>
+					),
 					document.body,
 				)}
 		</>
