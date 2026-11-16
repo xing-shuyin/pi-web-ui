@@ -34,6 +34,7 @@ async function attemptRecoverPlayback(reason = "stall") {
 
 	try {
 		recoverAttempts++;
+		// developer-facing, not UI: browser console only
 		console.warn(`[LX-Music] 触发播放自愈 (${reason}, 第 ${recoverAttempts} 次, 进度: ${formatTime(resumeTime)})`);
 
 		if (recoverAttempts <= 1 && targetSong._realPlayUrl) {
@@ -86,6 +87,7 @@ async function attemptRecoverPlayback(reason = "stall") {
 			showToast(t("toastPlaybackInterrupted"), 3500);
 		}
 	} catch (err) {
+		// developer-facing, not UI: browser console only
 		console.error("[LX-Music] 恢复失败:", err);
 	} finally {
 		setTimeout(() => {
@@ -134,7 +136,7 @@ let globalState = {
 	topListsMap: {},
 	topChartSongs: [],
 	playlistSource: "wy",
-	playlistTag: "全部",
+	playlistTag: "全部", // data: playlist tag is an API query value (server-side vocab, not UI copy)
 	playlistTagsMap: {},
 	playlists: [],
 	activePlaylistDetail: null,
@@ -1957,6 +1959,7 @@ function renderApp(el) {
 					<div class="lx-pill-divider"></div>
 					<div class="lx-pill-subgroup" id="lx-playlist-tag-pills">
 						<span style="color: var(--text-faint, #64748b); margin-right: 4px;">${t("categoryLabel")}</span>
+						<!-- data: data-pl-tag is the API tag key; the visible label comes from t("playlistAllTag") -->
 						<button class="lx-pill-btn active" data-pl-tag="全部">${t("playlistAllTag")}</button>
 					</div>
 				</div>
@@ -2346,7 +2349,7 @@ function bindEvents(rootEl) {
 			plSrcBtns.forEach((b) => b.classList.remove("active"));
 			btn.classList.add("active");
 			globalState.playlistSource = btn.dataset.plSrc;
-			globalState.playlistTag = "全部";
+			globalState.playlistTag = "全部"; // data: API tag key, not UI copy
 			globalState.activePlaylistDetail = null;
 			updateViewTabUI();
 		});
@@ -2364,6 +2367,7 @@ function bindEvents(rootEl) {
 			} catch {}
 		}
 		if (!tags || !tags.length) {
+			// data: fallback tags mirror the server's tag vocabulary and are also sent as query values
 			tags = ["全部", "热门", "华语", "流行", "民谣", "轻音乐"];
 		}
 
