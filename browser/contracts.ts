@@ -131,6 +131,8 @@ export type BrowserShellAction =
 	| "passwords.reveal"
 	| "passwords.upsert"
 	| "passwords.remove"
+	/** 从 CSV 导出文件导入：宿主自己开原生选文件对话框，明文不进渲染层 */
+	| "passwords.import"
 	/** TOTP 保管库：secret 永不出主进程，渲染层只要 6 位码（`totp.code`） */
 	| "totp.available"
 	| "totp.list"

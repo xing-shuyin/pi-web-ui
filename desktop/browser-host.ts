@@ -36,6 +36,7 @@ import {
 	type InstalledExtension,
 } from "../browser/runtime/extension-state.js";
 import { fillCredential, fillTotpCode, publicCredential } from "../browser/runtime/credentials.js";
+import { mergeCredentials, parseCredentialCsv } from "../browser/runtime/credentials-csv.js";
 import {
 	clampPopupSize,
 	placePopup,
@@ -106,6 +107,8 @@ const TEXT_EXTENSIONS = new Set([
 	".svg",
 ]);
 const MAX_FILE_BYTES = 32 * 1024 * 1024;
+/** 密码 CSV 导入的文件上限：5000 行导出撑死几百 KB，超过就是选错文件了。 */
+const MAX_CREDENTIAL_CSV_BYTES = 8 * 1024 * 1024;
 const object = (value: unknown): Record<string, unknown> =>
 	value && typeof value === "object" && !Array.isArray(value) ? (value as Record<string, unknown>) : {};
 const text = (value: unknown): string => (typeof value === "string" ? value : "");
@@ -1134,7 +1137,7 @@ export class DesktopBrowserHost {
 				const url = object(args) && typeof args.url === "string" ? args.url.trim() : "";
 				const username = text(args.username).trim();
 				const password = typeof args.password === "string" ? args.password : "";
-				if (!name || !url || !username) throw new Error("Name, URL and username are required");
+				if (!name || !url) throw new Error("Name and URL are required");
 				if (id) {
 					const index = entries.findIndex((item) => item.id === id);
 					if (index < 0) throw new Error("This credential no longer exists");
@@ -1153,6 +1156,27 @@ export class DesktopBrowserHost {
 				}
 				this.browser.storage.savePasswords(entries);
 				return this.browser.storage.listPasswords().map(publicCredential);
+			}
+			case "passwords.import": {
+				// 密码 CSV 的正文只在主进程里过一遍：渲染层既读不到文件也看不到这 500 行明文
+				const chosen = await dialog.showOpenDialog(this.window, {
+					properties: ["openFile"],
+					filters: [{ name: "CSV 密码文件", extensions: ["csv", "tsv", "txt"] }],
+				});
+				if (chosen.canceled || !chosen.filePaths[0]) return null;
+				const source = chosen.filePaths[0];
+				const info = await stat(source);
+				if (info.size > MAX_CREDENTIAL_CSV_BYTES)
+					throw new Error(`That file is over ${MAX_CREDENTIAL_CSV_BYTES / 1024 / 1024} MB`);
+				const parsed = parseCredentialCsv(await readFile(source, "utf8"));
+				const merged = mergeCredentials(this.browser.storage.listPasswords(), parsed.rows);
+				if (merged.imported || merged.updated) this.browser.storage.savePasswords(merged.entries);
+				return {
+					imported: merged.imported,
+					updated: merged.updated,
+					duplicate: merged.duplicate,
+					skipped: parsed.skipped,
+				};
 			}
 			case "passwords.remove": {
 				const id = text(args.id);

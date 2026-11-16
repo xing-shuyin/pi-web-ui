@@ -125,6 +125,9 @@ const messages = {
 		passwordKeep: "留空则不修改",
 		passwordRevealed: "密码已显示，10 秒后自动隐藏。",
 		credentialRemoveConfirm: "确定删除这条凭据？删除后无法恢复。",
+		credentialImport: "从 CSV 导入密码",
+		credentialImportDone: "导入完成：新增 {imported} 条，更新 {updated} 条，已存在 {duplicate} 条，跳过 {skipped} 条",
+		credentialImportEmpty: "这个文件里没有可导入的密码（需要名称 / 网址 / 密码列，按 UTF-8 CSV 保存）。",
 		totpHelp:
 			"扫页面上的二维码（otpauth://），或粘贴链接、导入二维码图片。密钥与密码同一条加密口径，且只在主进程里使用。",
 		totpUnavailable: "系统安全存储不可用，TOTP 保管库已锁定。",
@@ -225,7 +228,7 @@ const messages = {
 		extensionHelp:
 			"选已解压的目录，或选 .crx 文件（自动解包）。扩展由 Electron 原生加载，重启后自动恢复；停用只是卸载，目录和扩展存储都保留。",
 		addCredential: "添加凭据",
-		credentialRequired: "请填写名称、有效网址、用户名和密码",
+		credentialRequired: "请填写名称、有效网址和密码",
 		removeCredential: "删除凭据",
 		noCredentials: "尚未保存凭据",
 		previewOnly: "只读预览",
@@ -360,6 +363,11 @@ const messages = {
 		passwordKeep: "Leave empty to keep the current password",
 		passwordRevealed: "Password shown for 10 seconds.",
 		credentialRemoveConfirm: "Delete this credential? This cannot be undone.",
+		credentialImport: "Import passwords from CSV",
+		credentialImportDone:
+			"Import finished: {imported} added, {updated} updated, {duplicate} already saved, {skipped} skipped",
+		credentialImportEmpty:
+			"No importable passwords in that file (it needs name / URL / password columns, saved as UTF-8 CSV).",
 		totpHelp:
 			"Scan the QR code on a page (otpauth://), paste a link, or import a QR image. Secrets use the same encryption as passwords and never leave the main process.",
 		totpUnavailable: "System secure storage is unavailable, so the TOTP vault is locked.",
@@ -462,7 +470,7 @@ const messages = {
 		extensionHelp:
 			"Pick an unpacked folder or a .crx file (unpacked automatically). Electron loads extensions natively and restores them after restart; disabling only unloads one, keeping its folder and storage.",
 		addCredential: "Add credential",
-		credentialRequired: "Enter a name, valid URL, username and password",
+		credentialRequired: "Enter a name, a valid URL and a password",
 		removeCredential: "Delete credential",
 		noCredentials: "No saved credentials",
 		previewOnly: "Read-only preview",
@@ -475,4 +483,9 @@ const messages = {
 export type MessageKey = keyof typeof messages.en;
 export const language = navigator.language.toLowerCase().startsWith("zh") ? "zh" : "en";
 export const t = (key: MessageKey): string => messages[language][key];
+/** 带占位符的文案：`{name}` 被 `values` 里的同名字段替换（没给的占位符原样留着）。 */
+export const tf = (key: MessageKey, values: Record<string, string | number>): string =>
+	t(key).replace(/\{(\w+)\}/g, (match, name: string) =>
+		Object.prototype.hasOwnProperty.call(values, name) ? String(values[name]) : match,
+	);
 document.documentElement.lang = language === "zh" ? "zh-CN" : "en";

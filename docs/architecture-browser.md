@@ -126,7 +126,7 @@ Agent 可以给网页注入脚本：`browser_script` 工具（`server/browser-sc
 
 ### 共同交互（设计 C：图标工具条）
 
-- **动作只在顶部一行**：面板不给条目挂按钮，动作统一收进标题栏的动作槽（`panels.ts` 的 `.pb-dialog-actions`）。按钮纯图标（无障碍名走 `aria-label`），名字靠 `data-tip` 的 CSS 悬浮气泡（`title` 留空，避免原生提示叠加）；最右两个图标用 `data-tip-end` 贴右对齐，免得被浮层圆角裁掉。工具条随标签切换：密码是 `添加 ｜ 填入 / 显示密码 / 编辑 / 删除`，TOTP 是 `扫码 / 导入图片 / 添加 ｜ 填入 / 导出此条 / 导出全部 / 改名 / 上移 / 下移 / 删除`。
+- **动作只在顶部一行**：面板不给条目挂按钮，动作统一收进标题栏的动作槽（`panels.ts` 的 `.pb-dialog-actions`）。按钮纯图标（无障碍名走 `aria-label`），名字靠 `data-tip` 的 CSS 悬浮气泡（`title` 留空，避免原生提示叠加）；最右两个图标用 `data-tip-end` 贴右对齐，免得被浮层圆角裁掉。工具条随标签切换：密码是 `添加 / 导入 CSV ｜ 填入 / 显示密码 / 编辑 / 删除`，TOTP 是 `扫码 / 导入图片 / 添加 ｜ 填入 / 导出此条 / 导出全部 / 改名 / 上移 / 下移 / 删除`。
 - **先选中再操作**：点条目或键盘 ↑↓ 选中，工具条作用于选中那条；没选中时动作图标 `disabled`（灰度、`::after` 气泡不弹），首尾两端的上/下移也置灰。命中当前标签页的条目打开即选中并置顶，所以「打开面板 → 点填入」两下就完事。`Enter` 填到页面；TOTP 标签的 `Shift+Enter` 复制验证码、密码标签的是显示/收起密码。
 - 设置面板里的「密码库」段只留一句说明和一个入口（`vaultSection`），真正的增删改都在这里，避免两处各维护一套列表。
 - 面板浮层视图（`panel.html`，`body.pb-panel-layer`）是第三套根：`[hidden]` 的全局豁免名单里必须带上它，否则 `.pb-form{display:flex}` 之类的规则会把 `hidden=true` 的表单照样画出来（「添加」表单默认展开的 bug 就出在这里）。
@@ -134,7 +134,8 @@ Agent 可以给网页注入脚本：`browser_script` 工具（`server/browser-sc
 ### 密码
 
 - **列表不下发明文**：`passwords.list` 返回投影 `{ id, name, url, username, createdAt, hasPassword }`（主进程 `browser-host.ts` 里去掉 `password`），和 TOTP 的「secret 不出主进程」同一条口径。要明文只有两条口子：`passwords.reveal { id }`（用户点「显示密码」时取一次，界面 10 秒后自动盖回）和 `passwords.fill`（主进程内部取出来直接填页面，明文不经过渲染层）。
-- **写回只走细粒度动作**：`passwords.upsert { id?, name, url, username, password? }`（`id` 存在即更新，`password` 留空表示沿用旧密码）与 `passwords.remove { id }`。渲染层拿不到整份明文，所以不能让它 `save` 全量列表——旧的 `passwords.save` 只保留给冒烟测试/迁移用。
+- **写回只走细粒度动作**：`passwords.upsert { id?, name, url, username, password? }`（`id` 存在即更新，`password` 留空表示沿用旧密码；`username` 可以留空——路由器这类登录框只要密码）与 `passwords.remove { id }`。渲染层拿不到整份明文，所以不能让它 `save` 全量列表——旧的 `passwords.save` 只保留给冒烟测试/迁移用。
+- **整份 CSV 导入走主进程**：工具条的导入图标发 `passwords.import`（无参数），宿主自己 `dialog.showOpenDialog` 选文件、读盘、解析后合并，回执只有 `{ imported, updated, duplicate, skipped }` 四个数字——这份 500 行明文从不经过渲染层，与「list 不下发明文」同一条口径。解析/合并纯逻辑在 `browser/runtime/credentials-csv.ts`（`parseCredentialCsv` / `mergeCredentials`）：RFC 4180 引号与 `""` 转义、BOM、CRLF、制表符分隔、表头同义词白名单（Chrome / Edge / Bitwarden / 1Password / LastPass 的列名）都会被认，认不出表头就按 `名称,网址,账号,密码` 的位置取；缺密码或网址不是 http(s) 的整行算 `skipped`，绝不半条入库。**同网址同账号（大小写不敏感）就是同一条**：密码不同视为「文件里的更新」覆盖旧值并计入 `updated`，完全一致计入 `duplicate`。文件上限 8MB / 5000 行。
 - **填密码校验同源**：`passwords.fill` → `fillCredential()`，要求当前标签页与条目 `url` 的 **origin 完全相等**，且页面上只有一个可见密码框；填完只发 `input`/`change`，由用户自己点提交。
 - 加密仍然走 `BrowserStorage` 的 `enc:<safeStorage>`，`passwords.available`（= `isEncryptionAvailable()`）为假时面板显示保险库锁定。
 

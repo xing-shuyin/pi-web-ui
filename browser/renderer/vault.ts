@@ -31,7 +31,7 @@ import {
 	webUrl,
 } from "./common.js";
 import type { BrowserState } from "../contracts.js";
-import { t } from "./i18n.js";
+import { t, tf } from "./i18n.js";
 
 export type VaultTab = "passwords" | "totp";
 
@@ -57,6 +57,14 @@ interface CredentialSummary {
 	username: string;
 	createdAt: string;
 	hasPassword: boolean;
+}
+
+/** 与主进程 `passwords.import` 的回执对齐：只有条数，没有任何明文。 */
+interface ImportSummary {
+	imported: number;
+	updated: number;
+	duplicate: number;
+	skipped: number;
 }
 
 interface CodeResponse {
@@ -153,6 +161,14 @@ function exportToolIcon(): SVGSVGElement {
 	return createSvg(16, 16, "0 0 16 16", [
 		svgPath("M8 10.4V3.2", "1.2"),
 		svgPath("M5.4 5.8L8 3.2l2.6 2.6", "1.2"),
+		svgPath("M3.5 10.2v1.6A1.6 1.6 0 0 0 5.1 13.4h5.8a1.6 1.6 0 0 0 1.6-1.6v-1.6", "1.2"),
+	]);
+}
+
+function importToolIcon(): SVGSVGElement {
+	return createSvg(16, 16, "0 0 16 16", [
+		svgPath("M8 3.2v7.2", "1.2"),
+		svgPath("M5.4 7.8L8 10.4l2.6-2.6", "1.2"),
 		svgPath("M3.5 10.2v1.6A1.6 1.6 0 0 0 5.1 13.4h5.8a1.6 1.6 0 0 0 1.6-1.6v-1.6", "1.2"),
 	]);
 }
@@ -322,7 +338,7 @@ export async function vaultPanel(
 		event.preventDefault();
 		void (async () => {
 			const normalized = webUrl(urlField.value.trim());
-			if (!nameField.value.trim() || !normalized || !userField.value.trim()) throw new Error(t("credentialRequired"));
+			if (!nameField.value.trim() || !normalized) throw new Error(t("credentialRequired"));
 			if (!editingPasswordId && !secretField.value) throw new Error(t("credentialRequired"));
 			await call("passwords.upsert", {
 				id: editingPasswordId,
@@ -551,6 +567,26 @@ export async function vaultPanel(
 	};
 
 	const addPasswordButton = toolButton(plusToolIcon(), t("addCredential"), () => openPasswordForm());
+	/** 导入整份 CSV：选文件与解析都在主进程里（`passwords.import`），这里只拿回来条数。 */
+	const importPasswordButton = toolButton(importToolIcon(), t("credentialImport"), () => {
+		void (async () => {
+			importPasswordButton.disabled = true;
+			try {
+				const summary = await call<ImportSummary | null>("passwords.import");
+				if (!summary || stale()) return;
+				await loadCredentials();
+				render();
+				onChange();
+				if (summary.imported + summary.updated + summary.duplicate === 0) {
+					notify(t("credentialImportEmpty"), true);
+					return;
+				}
+				notify(tf("credentialImportDone", { ...summary }));
+			} finally {
+				importPasswordButton.disabled = false;
+			}
+		})().catch(reportError);
+	});
 	const fillPasswordButton = toolButton(fillToolIcon(), t("fillCredential"), () => {
 		const entry = selectedPassword();
 		if (entry) void fillPassword(entry).catch(reportError);
@@ -584,6 +620,7 @@ export async function vaultPanel(
 
 	passwordGroup.append(
 		addPasswordButton,
+		importPasswordButton,
 		separator(),
 		fillPasswordButton,
 		revealButton,
@@ -779,7 +816,7 @@ export async function vaultPanel(
 
 		const meta = element("div", "pb-vault-meta");
 		meta.append(
-			element("span", "pb-muted pb-vault-account", entry.username),
+			element("span", "pb-muted pb-vault-account", entry.username || "—"),
 			element("span", "pb-vault-origin", hostName(entry.url)),
 		);
 

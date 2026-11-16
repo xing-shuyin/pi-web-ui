@@ -37,7 +37,8 @@ export async function fillCredential(contents: WebContents, entry: PasswordEntry
 			[user, username],
 			[field, secret],
 		] as const) {
-			if (!node || node.disabled || node.readOnly) continue;
+			// 空值不动页面：路由器这类登录框只要密码，把已经填好的账号清掉比不填更坑
+			if (!node || node.disabled || node.readOnly || !value) continue;
 			set.call(node, value);
 			node.dispatchEvent(new Event("input", { bubbles: true }));
 			node.dispatchEvent(new Event("change", { bubbles: true }));
