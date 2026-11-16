@@ -1,0 +1,3498 @@
+<!doctype html>
+<html lang="zh-CN" data-theme="dark">
+	<head>
+		<meta charset="UTF-8" />
+		<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+		<title>pi-web-ui · Git 界面改版方案（参照 GitHub）</title>
+		<style>
+			/* ============================================================
+   0. 设计令牌（与 web/src/styles.css :root 同名，落地可直接复用）
+   ============================================================ */
+			[data-theme="dark"] {
+				color-scheme: dark;
+				--bg: #0d0e12;
+				--bg-elev: #14161c;
+				--bg-elev2: #1a1d26;
+				--bg-elev3: #222634;
+				--border: #262a35;
+				--border-soft: #1e2230;
+				--text: #e6e8ef;
+				--text-dim: #9aa1b4;
+				--text-faint: #6b7284;
+				--accent: #8b5cf6;
+				--accent-hover: #a78bfa;
+				--accent-contrast: #fff;
+				--accent-soft: rgba(139, 92, 246, 0.14);
+				--green: #34d399;
+				--green-soft: rgba(52, 211, 153, 0.12);
+				--red: #f87171;
+				--red-soft: rgba(248, 113, 113, 0.12);
+				--amber: #fbbf24;
+				--amber-soft: rgba(251, 191, 36, 0.12);
+				--blue: #60a5fa;
+				--blue-soft: rgba(96, 165, 250, 0.12);
+				--term-bg: #0b0d12;
+				--scrim: rgba(0, 0, 0, 0.58);
+				--shadow-pop: 0 24px 60px -28px rgba(0, 0, 0, 0.8), 0 0 0 1px var(--border);
+				--grain: radial-gradient(1200px 420px at 18% -12%, rgba(139, 92, 246, 0.12), transparent 62%);
+				--diff-add: rgba(52, 211, 153, 0.1);
+				--diff-del: rgba(248, 113, 113, 0.1);
+				--diff-add-gut: rgba(52, 211, 153, 0.2);
+				--diff-del-gut: rgba(248, 113, 113, 0.2);
+			}
+			[data-theme="light"] {
+				color-scheme: light;
+				--bg: #ffffff;
+				--bg-elev: #fafafa;
+				--bg-elev2: #f4f4f5;
+				--bg-elev3: #ececee;
+				--border: #e3e3e7;
+				--border-soft: #eeeef1;
+				--text: #141418;
+				--text-dim: #5f6170;
+				--text-faint: #8b8d9a;
+				--accent: #7c3aed;
+				--accent-hover: #6d28d9;
+				--accent-contrast: #fff;
+				--accent-soft: rgba(124, 58, 237, 0.1);
+				--green: #059669;
+				--green-soft: rgba(5, 150, 105, 0.1);
+				--red: #dc2626;
+				--red-soft: rgba(220, 38, 38, 0.09);
+				--amber: #b45309;
+				--amber-soft: rgba(180, 83, 9, 0.1);
+				--blue: #2563eb;
+				--blue-soft: rgba(37, 99, 235, 0.1);
+				--term-bg: #fbfbfc;
+				--scrim: rgba(24, 24, 28, 0.32);
+				--shadow-pop: 0 24px 56px -30px rgba(16, 18, 27, 0.35), 0 0 0 1px var(--border);
+				--grain: radial-gradient(1200px 420px at 18% -12%, rgba(124, 58, 237, 0.08), transparent 62%);
+				--diff-add: rgba(5, 150, 105, 0.08);
+				--diff-del: rgba(220, 38, 38, 0.07);
+				--diff-add-gut: rgba(5, 150, 105, 0.16);
+				--diff-del-gut: rgba(220, 38, 38, 0.16);
+			}
+			:root {
+				--mono: "SF Mono", "JetBrains Mono", ui-monospace, Menlo, Consolas, monospace;
+				--sans:
+					-apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", Roboto,
+					Helvetica, Arial, sans-serif;
+				--r-lg: 14px;
+				--r-md: 10px;
+				--r-sm: 7px;
+				--r-xs: 5px;
+				--ease: cubic-bezier(0.22, 1, 0.36, 1);
+				--dur: 200ms;
+				--hair: 1px solid var(--border-soft);
+			}
+			* {
+				box-sizing: border-box;
+				margin: 0;
+				padding: 0;
+			}
+			html,
+			body {
+				height: 100%;
+			}
+			body {
+				background: var(--bg);
+				color: var(--text);
+				font-family: var(--sans);
+				font-size: 13px;
+				line-height: 1.5;
+				-webkit-font-smoothing: antialiased;
+				overflow-x: hidden;
+			}
+			button {
+				font: inherit;
+				color: inherit;
+				background: none;
+				border: 0;
+				cursor: pointer;
+			}
+			input,
+			textarea {
+				font: inherit;
+				color: inherit;
+				background: none;
+				border: 0;
+			}
+			:focus-visible {
+				outline: 2px solid var(--accent);
+				outline-offset: 1px;
+				border-radius: var(--r-xs);
+			}
+			::selection {
+				background: var(--accent-soft);
+			}
+			.mono {
+				font-family: var(--mono);
+				font-variant-numeric: tabular-nums;
+			}
+			svg.i {
+				width: 14px;
+				height: 14px;
+				fill: none;
+				stroke: currentColor;
+				stroke-width: 1.7;
+				stroke-linecap: round;
+				stroke-linejoin: round;
+				flex: none;
+			}
+			svg.i.sm {
+				width: 12px;
+				height: 12px;
+			}
+
+			/* ============================================================
+   1. 文档外壳（仅原型页用，不进产品）
+   ============================================================ */
+			.doc-top {
+				position: sticky;
+				top: 0;
+				z-index: 90;
+				display: flex;
+				align-items: center;
+				gap: 14px;
+				padding: 11px 20px;
+				background: color-mix(in srgb, var(--bg) 84%, transparent);
+				backdrop-filter: blur(14px) saturate(1.3);
+				border-bottom: var(--hair);
+			}
+			.doc-brand {
+				display: flex;
+				align-items: center;
+				gap: 9px;
+				font-weight: 650;
+				letter-spacing: -0.01em;
+			}
+			.doc-brand .mark {
+				display: grid;
+				place-items: center;
+				width: 22px;
+				height: 22px;
+				border-radius: 6px;
+				color: #fff;
+				font-size: 11px;
+				font-weight: 800;
+				font-family: var(--mono);
+				background: linear-gradient(140deg, var(--accent), color-mix(in srgb, var(--accent) 40%, var(--blue)));
+			}
+			.doc-brand small {
+				font-weight: 450;
+				color: var(--text-faint);
+				font-size: 11.5px;
+				letter-spacing: 0;
+			}
+			.doc-nav {
+				display: flex;
+				gap: 2px;
+				margin-left: 8px;
+				flex-wrap: wrap;
+			}
+			.doc-nav a {
+				color: var(--text-dim);
+				text-decoration: none;
+				font-size: 12.5px;
+				padding: 5px 9px;
+				border-radius: var(--r-sm);
+				transition:
+					background var(--dur) var(--ease),
+					color var(--dur) var(--ease);
+			}
+			.doc-nav a:hover {
+				background: var(--bg-elev2);
+				color: var(--text);
+			}
+			.doc-tools {
+				margin-left: auto;
+				display: flex;
+				align-items: center;
+				gap: 8px;
+			}
+			.ghost-btn {
+				display: inline-flex;
+				align-items: center;
+				gap: 6px;
+				height: 28px;
+				padding: 0 10px;
+				border-radius: var(--r-sm);
+				border: 1px solid var(--border);
+				background: var(--bg-elev);
+				color: var(--text-dim);
+				font-size: 12px;
+				transition: all var(--dur) var(--ease);
+			}
+			.ghost-btn:hover {
+				background: var(--bg-elev2);
+				color: var(--text);
+			}
+			.wrap {
+				max-width: 1400px;
+				margin: 0 auto;
+				padding: 26px 20px 100px;
+			}
+			.sec {
+				margin-top: 40px;
+				scroll-margin-top: 62px;
+			}
+			.sec-head {
+				display: flex;
+				align-items: flex-end;
+				gap: 12px;
+				margin-bottom: 14px;
+				flex-wrap: wrap;
+			}
+			.sec-head h2 {
+				font-size: 15px;
+				font-weight: 650;
+				letter-spacing: -0.01em;
+			}
+			.sec-head p {
+				color: var(--text-faint);
+				font-size: 12px;
+				margin-left: auto;
+				text-align: right;
+				max-width: 62%;
+			}
+			.sec-no {
+				display: grid;
+				place-items: center;
+				min-width: 21px;
+				height: 21px;
+				border-radius: 6px;
+				background: var(--accent-soft);
+				color: var(--accent);
+				font-family: var(--mono);
+				font-size: 11px;
+				font-weight: 700;
+			}
+			.card {
+				border: 1px solid var(--border);
+				border-radius: var(--r-lg);
+				background: var(--bg-elev);
+			}
+			.hero {
+				border-radius: 18px;
+				padding: 26px 28px;
+				background: linear-gradient(180deg, var(--bg-elev), var(--bg));
+				border: 1px solid var(--border);
+				position: relative;
+				overflow: hidden;
+			}
+			.hero::after {
+				content: "";
+				position: absolute;
+				inset: 0;
+				background: var(--grain);
+				pointer-events: none;
+			}
+			.hero h1 {
+				font-size: 25px;
+				line-height: 1.28;
+				letter-spacing: -0.025em;
+				font-weight: 700;
+			}
+			.hero h1 em {
+				font-style: normal;
+				color: var(--accent);
+			}
+			.hero .lead {
+				margin-top: 10px;
+				color: var(--text-dim);
+				font-size: 13.5px;
+				max-width: 76ch;
+				position: relative;
+				z-index: 1;
+			}
+			.hero-row {
+				display: flex;
+				flex-wrap: wrap;
+				gap: 8px;
+				margin-top: 18px;
+				position: relative;
+				z-index: 1;
+			}
+			.tag {
+				display: inline-flex;
+				align-items: center;
+				gap: 6px;
+				height: 25px;
+				padding: 0 10px;
+				border-radius: 999px;
+				border: 1px solid var(--border);
+				background: var(--bg-elev2);
+				color: var(--text-dim);
+				font-size: 11.5px;
+			}
+			.tag.accent {
+				color: var(--accent);
+				border-color: color-mix(in srgb, var(--accent) 38%, var(--border));
+				background: var(--accent-soft);
+			}
+			.tag.green {
+				color: var(--green);
+				border-color: color-mix(in srgb, var(--green) 34%, var(--border));
+				background: var(--green-soft);
+			}
+			.tag.red {
+				color: var(--red);
+				border-color: color-mix(in srgb, var(--red) 34%, var(--border));
+				background: var(--red-soft);
+			}
+			.grid2 {
+				display: grid;
+				grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+				gap: 12px;
+			}
+			.note {
+				padding: 14px 16px;
+				border-radius: var(--r-md);
+				border: 1px solid var(--border);
+				background: var(--bg-elev);
+				font-size: 12.5px;
+				color: var(--text-dim);
+			}
+			.note b {
+				color: var(--text);
+				font-weight: 620;
+			}
+			.note .hd {
+				display: flex;
+				align-items: center;
+				gap: 8px;
+				margin-bottom: 6px;
+				color: var(--text);
+				font-weight: 620;
+				font-size: 12.5px;
+			}
+			.note .hd svg {
+				color: var(--accent);
+			}
+			.note ul {
+				margin: 6px 0 0;
+				padding-left: 16px;
+			}
+			.note li {
+				margin: 3px 0;
+			}
+			.caption {
+				margin-top: 10px;
+				color: var(--text-faint);
+				font-size: 11.5px;
+				display: flex;
+				gap: 14px;
+				flex-wrap: wrap;
+			}
+			.caption b {
+				color: var(--text-dim);
+				font-weight: 600;
+			}
+
+			/* ============================================================
+   2. 应用外框（原型舞台）
+   ============================================================ */
+			.stage {
+				border: 1px solid var(--border);
+				border-radius: var(--r-lg);
+				background: var(--bg);
+				overflow: hidden;
+				box-shadow: 0 30px 70px -34px rgba(0, 0, 0, 0.75);
+			}
+			.chrome {
+				height: 32px;
+				display: flex;
+				align-items: center;
+				gap: 8px;
+				padding: 0 12px;
+				border-bottom: var(--hair);
+				background: var(--bg-elev);
+			}
+			.traffic {
+				display: flex;
+				gap: 6px;
+				margin-right: 4px;
+			}
+			.traffic i {
+				width: 9px;
+				height: 9px;
+				border-radius: 50%;
+				background: var(--border);
+				display: block;
+			}
+			.traffic i:nth-child(1) {
+				background: #ff5f57;
+			}
+			.traffic i:nth-child(2) {
+				background: #febc2e;
+			}
+			.traffic i:nth-child(3) {
+				background: #28c840;
+			}
+			.chrome .t {
+				font-size: 11.5px;
+				color: var(--text-faint);
+			}
+			.chrome .r {
+				margin-left: auto;
+				display: flex;
+				align-items: center;
+				gap: 6px;
+			}
+			.stage-body {
+				display: flex;
+				min-height: 0;
+				background: var(--bg);
+			}
+			.rail {
+				width: 42px;
+				flex: none;
+				border-right: var(--hair);
+				background: var(--bg-elev);
+				display: flex;
+				flex-direction: column;
+				align-items: center;
+				gap: 2px;
+				padding: 9px 0;
+			}
+			.rail .rb {
+				width: 30px;
+				height: 30px;
+				display: grid;
+				place-items: center;
+				border-radius: 7px;
+				color: var(--text-faint);
+				position: relative;
+			}
+			.rail .rb:hover {
+				background: var(--bg-elev2);
+				color: var(--text);
+			}
+			.rail .rb.on {
+				color: var(--accent);
+				background: var(--accent-soft);
+			}
+			.rail .rb.on::before {
+				content: "";
+				position: absolute;
+				left: -9px;
+				top: 7px;
+				bottom: 7px;
+				width: 2px;
+				border-radius: 2px;
+				background: var(--accent);
+			}
+			.rail .sp {
+				flex: 1;
+			}
+
+			/* 通用小件 */
+			.pill {
+				display: inline-flex;
+				align-items: center;
+				gap: 5px;
+				height: 23px;
+				padding: 0 8px;
+				border-radius: 999px;
+				border: 1px solid var(--border);
+				background: var(--bg-elev2);
+				color: var(--text-dim);
+				font-size: 11.5px;
+				white-space: nowrap;
+			}
+			.pill b {
+				color: var(--text);
+				font-weight: 600;
+			}
+			.btn {
+				display: inline-flex;
+				align-items: center;
+				justify-content: center;
+				gap: 6px;
+				height: 28px;
+				padding: 0 11px;
+				border-radius: var(--r-sm);
+				border: 1px solid var(--border);
+				background: var(--bg-elev2);
+				color: var(--text-dim);
+				font-size: 12px;
+				transition: all var(--dur) var(--ease);
+				white-space: nowrap;
+			}
+			.btn:hover {
+				color: var(--text);
+				background: var(--bg-elev3);
+			}
+			.btn.primary {
+				background: var(--accent);
+				border-color: transparent;
+				color: var(--accent-contrast);
+				font-weight: 600;
+			}
+			.btn.primary:hover {
+				background: var(--accent-hover);
+			}
+			.btn.primary:disabled {
+				opacity: 0.45;
+				cursor: not-allowed;
+				background: var(--accent);
+			}
+			.btn.green {
+				background: var(--green);
+				border-color: transparent;
+				color: #04150f;
+				font-weight: 650;
+			}
+			.btn.green:hover {
+				filter: brightness(1.08);
+			}
+			.btn.sm {
+				height: 24px;
+				padding: 0 8px;
+				font-size: 11.5px;
+			}
+			.btn.ghost {
+				background: transparent;
+				border-color: transparent;
+			}
+			.btn.ghost:hover {
+				background: var(--bg-elev2);
+			}
+			.iconbtn {
+				width: 24px;
+				height: 24px;
+				display: grid;
+				place-items: center;
+				border-radius: 6px;
+				color: var(--text-faint);
+			}
+			.iconbtn:hover {
+				background: var(--bg-elev2);
+				color: var(--text);
+			}
+			.kbd {
+				font-family: var(--mono);
+				font-size: 10.5px;
+				padding: 1px 5px;
+				border-radius: 4px;
+				border: 1px solid var(--border);
+				background: var(--bg-elev2);
+				color: var(--text-faint);
+			}
+			.av {
+				width: 18px;
+				height: 18px;
+				border-radius: 50%;
+				display: grid;
+				place-items: center;
+				font-size: 9.5px;
+				font-weight: 700;
+				color: #fff;
+				flex: none;
+				background: linear-gradient(140deg, var(--accent), color-mix(in srgb, var(--accent) 35%, var(--blue)));
+			}
+			/* ============================================================
+   3. 方案 A · GitHub Desktop 式侧栏
+   ============================================================ */
+			.sp {
+				flex: 1;
+			}
+			.add {
+				color: var(--green);
+			}
+			.del {
+				color: var(--red);
+			}
+			.scmp {
+				width: 400px;
+				flex: none;
+				display: flex;
+				flex-direction: column;
+				min-height: 0;
+				background: var(--bg-elev);
+				border-right: var(--hair);
+			}
+			.scmp-head {
+				flex: none;
+				display: flex;
+				flex-direction: column;
+				gap: 8px;
+				padding: 10px 12px 0;
+				border-bottom: var(--hair);
+			}
+			.scmp-r1 {
+				display: flex;
+				align-items: center;
+				gap: 5px;
+				min-width: 0;
+			}
+			.scmp-r1 b {
+				font-size: 13px;
+				font-weight: 640;
+				overflow: hidden;
+				text-overflow: ellipsis;
+				white-space: nowrap;
+			}
+			.syncbar {
+				display: flex;
+				align-items: center;
+				gap: 6px;
+			}
+			.syncbar .pill {
+				height: 26px;
+				padding: 0 9px;
+				font-family: var(--mono);
+				color: var(--text);
+			}
+			.scmp-tabs {
+				display: flex;
+				gap: 14px;
+				margin: 2px -12px 0;
+				padding: 0 12px;
+			}
+			.scmp-tabs button {
+				position: relative;
+				height: 33px;
+				font-size: 12.5px;
+				color: var(--text-faint);
+				display: inline-flex;
+				align-items: center;
+				gap: 5px;
+			}
+			.scmp-tabs button:hover {
+				color: var(--text);
+			}
+			.scmp-tabs button.on {
+				color: var(--text);
+				font-weight: 600;
+			}
+			.scmp-tabs button.on::after {
+				content: "";
+				position: absolute;
+				left: 0;
+				right: 0;
+				bottom: -1px;
+				height: 2px;
+				border-radius: 2px;
+				background: var(--accent);
+			}
+			.scmp-tabs .n {
+				font-size: 10.5px;
+				font-family: var(--mono);
+				padding: 0 5px;
+				border-radius: 999px;
+				background: var(--bg-elev2);
+				color: var(--text-dim);
+			}
+			.scmp-tabs button.on .n {
+				background: var(--accent-soft);
+				color: var(--accent);
+			}
+			.scmp-filter {
+				flex: none;
+				display: flex;
+				align-items: center;
+				gap: 7px;
+				padding: 8px 12px;
+				border-bottom: var(--hair);
+				color: var(--text-faint);
+			}
+			.scmp-filter input {
+				flex: 1;
+				min-width: 0;
+				font-size: 12px;
+				color: var(--text);
+			}
+			.scmp-filter input::placeholder {
+				color: var(--text-faint);
+			}
+			.scmp-scroll {
+				flex: 1;
+				min-height: 0;
+				overflow-y: auto;
+				padding: 4px 0 10px;
+				overscroll-behavior: contain;
+			}
+			.grp-head {
+				display: flex;
+				align-items: center;
+				gap: 6px;
+				padding: 8px 8px 5px 12px;
+				font-size: 10.5px;
+				font-weight: 700;
+				letter-spacing: 0.07em;
+				text-transform: uppercase;
+				color: var(--text-faint);
+				position: sticky;
+				top: 0;
+				z-index: 1;
+				background: color-mix(in srgb, var(--bg-elev) 94%, transparent);
+				backdrop-filter: blur(6px);
+			}
+			.grp-head .n {
+				font-family: var(--mono);
+				letter-spacing: 0;
+				padding: 0 5px;
+				border-radius: 999px;
+				background: var(--bg-elev2);
+				color: var(--text-dim);
+			}
+			.frow {
+				display: flex;
+				align-items: center;
+				gap: 7px;
+				height: 27px;
+				padding: 0 6px 0 11px;
+				cursor: pointer;
+				position: relative;
+				user-select: none;
+			}
+			.frow:hover {
+				background: var(--bg-elev2);
+			}
+			.frow > input {
+				position: absolute;
+				opacity: 0;
+				pointer-events: none;
+			}
+			.frow .box {
+				width: 14px;
+				height: 14px;
+				border-radius: 4px;
+				border: 1.5px solid var(--border);
+				flex: none;
+				display: grid;
+				place-items: center;
+				color: transparent;
+				transition: all 0.15s var(--ease);
+			}
+			.frow:hover .box {
+				border-color: var(--text-faint);
+			}
+			.frow > input:checked + .box {
+				background: var(--accent);
+				border-color: var(--accent);
+				color: var(--accent-contrast);
+			}
+			.frow .box svg {
+				width: 9px;
+				height: 9px;
+				stroke-width: 3.4;
+			}
+			.frow .xy {
+				font-family: var(--mono);
+				font-size: 10px;
+				width: 11px;
+				text-align: center;
+				flex: none;
+			}
+			.xy.m {
+				color: var(--amber);
+			}
+			.xy.a {
+				color: var(--green);
+			}
+			.xy.d {
+				color: var(--red);
+			}
+			.xy.u {
+				color: var(--blue);
+			}
+			.frow .nm {
+				flex: 1;
+				min-width: 0;
+				display: flex;
+				align-items: baseline;
+				gap: 4px;
+				overflow: hidden;
+			}
+			.frow .nm .dir {
+				font-size: 10.5px;
+				color: var(--text-faint);
+				overflow: hidden;
+				text-overflow: ellipsis;
+				white-space: nowrap;
+				flex: 0 1 auto;
+			}
+			.frow .nm b {
+				font-size: 12px;
+				font-weight: 600;
+				white-space: nowrap;
+				flex: none;
+				max-width: 60%;
+				overflow: hidden;
+				text-overflow: ellipsis;
+			}
+			.frow .fstat {
+				display: flex;
+				gap: 5px;
+				font-family: var(--mono);
+				font-size: 10.5px;
+				flex: none;
+			}
+			.frow .fact {
+				display: none;
+				gap: 1px;
+				flex: none;
+			}
+			.frow:hover .fstat {
+				display: none;
+			}
+			.frow:hover .fact {
+				display: flex;
+			}
+			.scmp-commit {
+				flex: none;
+				border-top: 1px solid var(--border);
+				background: var(--bg-elev);
+				padding: 9px 12px 10px;
+				display: flex;
+				flex-direction: column;
+				gap: 6px;
+			}
+			.cm-top {
+				display: flex;
+				gap: 8px;
+				align-items: flex-start;
+			}
+			.cm-top textarea {
+				flex: 1;
+				resize: none;
+				height: 36px;
+				font-size: 12.5px;
+				line-height: 1.45;
+				border: 1px solid var(--border);
+				border-radius: var(--r-sm);
+				background: var(--bg-elev2);
+				padding: 5px 8px;
+				color: var(--text);
+				outline: none;
+			}
+			.cm-top textarea:focus {
+				border-color: var(--accent);
+			}
+			.cm-desc {
+				border: 1px solid var(--border);
+				border-radius: var(--r-sm);
+				background: var(--bg-elev2);
+				height: 26px;
+				padding: 0 8px;
+				font-size: 12px;
+				color: var(--text);
+			}
+			.cm-desc::placeholder {
+				color: var(--text-faint);
+			}
+			.cm-foot {
+				display: flex;
+				align-items: center;
+				gap: 8px;
+				font-size: 11.5px;
+				color: var(--text-faint);
+				font-family: var(--mono);
+			}
+			.cm-foot .btn {
+				font-family: var(--sans);
+			}
+			.cm-hint {
+				display: flex;
+				align-items: center;
+				gap: 6px;
+				font-size: 10.5px;
+				color: var(--text-faint);
+			}
+
+			/* ============================================================
+   4. 方案 B · GitHub PR 式全屏检阅
+   ============================================================ */
+			.pr {
+				flex: 1;
+				display: flex;
+				flex-direction: column;
+				min-width: 0;
+				min-height: 0;
+			}
+			.pr-top {
+				flex: none;
+				display: flex;
+				align-items: center;
+				gap: 8px;
+				padding: 9px 12px;
+				border-bottom: var(--hair);
+				background: var(--bg-elev);
+			}
+			.crumb {
+				color: var(--text-faint);
+				font-size: 12px;
+			}
+			.crumb b {
+				color: var(--text);
+				font-weight: 600;
+			}
+			.checks {
+				display: inline-flex;
+				align-items: center;
+				gap: 5px;
+				font-size: 11.5px;
+				color: var(--green);
+				background: var(--green-soft);
+				padding: 2px 8px;
+				border-radius: 999px;
+				border: 1px solid color-mix(in srgb, var(--green) 30%, transparent);
+			}
+			.pr-bar {
+				flex: none;
+				display: flex;
+				align-items: center;
+				gap: 10px;
+				padding: 7px 12px;
+				border-bottom: var(--hair);
+				background: var(--bg-elev);
+				font-size: 11.5px;
+				color: var(--text-dim);
+				flex-wrap: wrap;
+			}
+			.ratio {
+				display: flex;
+				width: 82px;
+				height: 6px;
+				border-radius: 3px;
+				overflow: hidden;
+				background: var(--bg-elev3);
+			}
+			.ratio i {
+				display: block;
+				height: 100%;
+			}
+			.ratio .g {
+				background: var(--green);
+			}
+			.ratio .r {
+				background: var(--red);
+			}
+			.seg {
+				display: inline-flex;
+				padding: 2px;
+				gap: 2px;
+				border: 1px solid var(--border);
+				border-radius: var(--r-sm);
+				background: var(--bg-elev2);
+			}
+			.seg button {
+				font-size: 11px;
+				padding: 2px 8px;
+				border-radius: 4px;
+				color: var(--text-faint);
+				display: inline-flex;
+				align-items: center;
+				gap: 4px;
+			}
+			.seg button.on {
+				background: var(--accent-soft);
+				color: var(--accent);
+				font-weight: 600;
+			}
+			.chk {
+				display: inline-flex;
+				align-items: center;
+				gap: 5px;
+				font-size: 11.5px;
+				color: var(--text-dim);
+				cursor: pointer;
+			}
+			.chk input {
+				accent-color: var(--accent);
+				width: 12px;
+				height: 12px;
+			}
+			.pr-body {
+				flex: 1;
+				display: flex;
+				min-height: 0;
+			}
+			.pr-graph {
+				width: 238px;
+				flex: none;
+				border-right: var(--hair);
+				overflow-y: auto;
+				padding: 6px 0 12px;
+			}
+			.g-date {
+				padding: 8px 12px 4px;
+				font-size: 10.5px;
+				font-weight: 700;
+				letter-spacing: 0.06em;
+				text-transform: uppercase;
+				color: var(--text-faint);
+			}
+			.g-row {
+				position: relative;
+				padding: 6px 10px 6px 24px;
+				cursor: pointer;
+				border-left: 2px solid transparent;
+			}
+			.g-row::before {
+				content: "";
+				position: absolute;
+				left: 12px;
+				top: 11px;
+				width: 7px;
+				height: 7px;
+				border-radius: 50%;
+				background: var(--border);
+				box-shadow: 0 0 0 2px var(--bg);
+			}
+			.g-row::after {
+				content: "";
+				position: absolute;
+				left: 15px;
+				top: 18px;
+				bottom: -6px;
+				width: 1px;
+				background: var(--border-soft);
+			}
+			.g-row:last-child::after {
+				display: none;
+			}
+			.g-row:hover {
+				background: var(--bg-elev2);
+			}
+			.g-row.on {
+				background: var(--accent-soft);
+				border-left-color: var(--accent);
+			}
+			.g-row.on::before {
+				background: var(--accent);
+			}
+			.g-sub {
+				font-size: 11.5px;
+				line-height: 1.35;
+				color: var(--text);
+				display: -webkit-box;
+				-webkit-line-clamp: 2;
+				-webkit-box-orient: vertical;
+				overflow: hidden;
+			}
+			.g-meta {
+				display: flex;
+				align-items: center;
+				gap: 5px;
+				margin-top: 3px;
+				font-size: 10px;
+				color: var(--text-faint);
+				font-family: var(--mono);
+			}
+			.ref {
+				font-family: var(--mono);
+				font-size: 9.5px;
+				padding: 0 4px;
+				border-radius: 4px;
+				border: 1px solid var(--border);
+				color: var(--text-dim);
+				white-space: nowrap;
+			}
+			.ref.main {
+				color: var(--accent);
+				border-color: color-mix(in srgb, var(--accent) 40%, transparent);
+				background: var(--accent-soft);
+			}
+			.ref.remote {
+				color: var(--blue);
+				border-color: color-mix(in srgb, var(--blue) 36%, transparent);
+				background: var(--blue-soft);
+			}
+			.pr-files {
+				width: 330px;
+				flex: none;
+				border-right: var(--hair);
+				overflow-y: auto;
+				padding: 4px 0 12px;
+				background: var(--bg);
+			}
+			.folder {
+				display: flex;
+				align-items: center;
+				gap: 5px;
+				padding: 6px 10px 4px;
+				font-size: 11px;
+				font-weight: 600;
+				color: var(--text-dim);
+				position: sticky;
+				top: 0;
+				background: color-mix(in srgb, var(--bg) 94%, transparent);
+				backdrop-filter: blur(6px);
+			}
+			.folder .n {
+				margin-left: auto;
+				font-family: var(--mono);
+				font-size: 10px;
+				color: var(--text-faint);
+				font-weight: 400;
+			}
+			.fitem {
+				display: flex;
+				align-items: center;
+				gap: 6px;
+				padding: 4px 10px 4px 21px;
+				font-size: 11.5px;
+				cursor: pointer;
+			}
+			.fitem:hover {
+				background: var(--bg-elev2);
+			}
+			.fitem.on {
+				background: var(--accent-soft);
+				box-shadow: inset 2px 0 0 var(--accent);
+			}
+			.fitem .fn {
+				flex: 1;
+				min-width: 0;
+				overflow: hidden;
+				text-overflow: ellipsis;
+				white-space: nowrap;
+			}
+			.squares {
+				display: inline-flex;
+				gap: 1.5px;
+				flex: none;
+			}
+			.squares i {
+				width: 6px;
+				height: 6px;
+				border-radius: 1.5px;
+				background: var(--bg-elev3);
+			}
+			.squares i.g {
+				background: var(--green);
+			}
+			.squares i.r {
+				background: var(--red);
+			}
+			.pr-diff {
+				flex: 1;
+				min-width: 0;
+				display: flex;
+				flex-direction: column;
+				overflow: hidden;
+				background: var(--term-bg);
+			}
+			.df-head {
+				flex: none;
+				display: flex;
+				align-items: center;
+				gap: 8px;
+				padding: 7px 12px;
+				border-bottom: var(--hair);
+				background: var(--bg-elev);
+				font-size: 11.5px;
+				color: var(--text-dim);
+				flex-wrap: wrap;
+			}
+			.df-head b {
+				color: var(--text);
+				font-weight: 600;
+				font-family: var(--mono);
+				font-size: 11.5px;
+			}
+			.df-scroll {
+				flex: 1;
+				overflow: auto;
+				font-family: var(--mono);
+				font-size: 11.5px;
+				line-height: 19px;
+				overscroll-behavior: contain;
+			}
+			table.diff {
+				width: 100%;
+				border-collapse: collapse;
+				table-layout: fixed;
+			}
+			.diff td {
+				padding: 0 8px;
+				white-space: pre;
+				vertical-align: top;
+				overflow: hidden;
+				text-overflow: ellipsis;
+			}
+			.diff td.ln {
+				text-align: right;
+				color: var(--text-faint);
+				user-select: none;
+				background: var(--bg-elev);
+				border-right: var(--hair);
+				padding: 0 6px;
+			}
+			.diff td.gut {
+				width: 22px;
+				padding: 0;
+				text-align: center;
+				color: var(--text-faint);
+				border-right: var(--hair);
+				opacity: 0;
+				cursor: pointer;
+			}
+			.diff tr:hover td.gut {
+				opacity: 1;
+			}
+			.diff tr.add td.code {
+				background: var(--diff-add);
+			}
+			.diff tr.add td.ln {
+				background: var(--diff-add-gut);
+				color: var(--text-dim);
+			}
+			.diff tr.del td.code {
+				background: var(--diff-del);
+			}
+			.diff tr.del td.ln {
+				background: var(--diff-del-gut);
+				color: var(--text-dim);
+			}
+			.diff tr.hunk td {
+				background: var(--bg-elev2);
+				color: var(--text-faint);
+				padding: 2px 8px;
+				font-size: 10.5px;
+			}
+			.diff tr.hunk td.ln {
+				background: var(--bg-elev2);
+			}
+			.diff td.code {
+				background: transparent;
+			}
+			.diff td.code.add {
+				background: var(--diff-add);
+			}
+			.diff td.code.del {
+				background: var(--diff-del);
+			}
+			.diff td.ln.add {
+				background: var(--diff-add-gut);
+				color: var(--text-dim);
+			}
+			.diff td.ln.del {
+				background: var(--diff-del-gut);
+				color: var(--text-dim);
+			}
+			.k-add {
+				color: var(--green);
+			}
+			.k-del {
+				color: var(--red);
+			}
+			.k-kw {
+				color: var(--accent-hover);
+			}
+			.k-str {
+				color: var(--amber);
+			}
+			.k-dim {
+				color: var(--text-faint);
+			}
+			.thread {
+				margin: 10px 12px 14px 60px;
+				border: 1px solid var(--border);
+				border-radius: var(--r-md);
+				background: var(--bg-elev);
+				overflow: hidden;
+			}
+			.thread-top {
+				display: flex;
+				align-items: center;
+				gap: 7px;
+				padding: 7px 10px;
+				border-bottom: var(--hair);
+				font-size: 11.5px;
+			}
+			.thread-body {
+				padding: 8px 10px;
+				font-size: 12px;
+				color: var(--text-dim);
+				line-height: 1.5;
+			}
+			.thread-reply {
+				padding: 0 10px 9px;
+			}
+			.thread-reply input {
+				width: 100%;
+				height: 26px;
+				border: 1px solid var(--border);
+				border-radius: var(--r-sm);
+				background: var(--bg-elev2);
+				padding: 0 8px;
+				font-size: 11.5px;
+			}
+
+			/* ============================================================
+   5. 方案 C · 命令面板 / 分组操作台
+   ============================================================ */
+			.palwrap {
+				position: relative;
+				display: flex;
+				gap: 16px;
+				align-items: flex-start;
+				flex-wrap: wrap;
+			}
+			.pal-stage {
+				position: relative;
+				flex: 1 1 620px;
+				min-width: 0;
+				border-radius: var(--r-lg);
+				overflow: hidden;
+				border: 1px solid var(--border);
+				background: var(--bg);
+				min-height: 576px;
+			}
+			.pal-under {
+				position: absolute;
+				inset: 0;
+				background: var(--bg);
+				opacity: 0.5;
+				filter: saturate(0.6);
+			}
+			.pal-scrim {
+				position: absolute;
+				inset: 0;
+				background: var(--scrim);
+				backdrop-filter: blur(1.5px);
+			}
+			.pal {
+				position: relative;
+				margin: 34px auto 0;
+				width: min(620px, calc(100% - 32px));
+				border-radius: 12px;
+				overflow: hidden;
+				background: var(--bg-elev);
+				border: 1px solid var(--border);
+				box-shadow: var(--shadow-pop);
+			}
+			.pal-head {
+				display: flex;
+				align-items: center;
+				gap: 9px;
+				padding: 11px 12px;
+				border-bottom: var(--hair);
+				color: var(--text-faint);
+			}
+			.pal-head input {
+				flex: 1;
+				min-width: 0;
+				font-size: 13px;
+				color: var(--text);
+			}
+			.pal-head input::placeholder {
+				color: var(--text-faint);
+			}
+			.pal-chips {
+				display: flex;
+				gap: 5px;
+				padding: 8px 12px;
+				border-bottom: var(--hair);
+				flex-wrap: wrap;
+			}
+			.pal-chips button {
+				font-size: 11px;
+				height: 22px;
+				padding: 0 9px;
+				border-radius: 999px;
+				border: 1px solid var(--border);
+				color: var(--text-dim);
+				background: var(--bg-elev2);
+			}
+			.pal-chips button.on {
+				color: var(--accent);
+				border-color: color-mix(in srgb, var(--accent) 42%, transparent);
+				background: var(--accent-soft);
+				font-weight: 600;
+			}
+			.pal-list {
+				max-height: 326px;
+				overflow-y: auto;
+				padding: 4px 0 6px;
+				overscroll-behavior: contain;
+			}
+			.pal-grp {
+				padding: 7px 12px 3px;
+				font-size: 10px;
+				font-weight: 700;
+				letter-spacing: 0.08em;
+				text-transform: uppercase;
+				color: var(--text-faint);
+			}
+			.pal-row {
+				display: flex;
+				align-items: center;
+				gap: 9px;
+				width: 100%;
+				padding: 7px 12px;
+				text-align: left;
+				border-left: 2px solid transparent;
+			}
+			.pal-row:hover {
+				background: var(--bg-elev2);
+			}
+			.pal-row.sel {
+				background: var(--accent-soft);
+				border-left-color: var(--accent);
+			}
+			.pal-row svg {
+				color: var(--text-dim);
+			}
+			.pal-row.sel svg {
+				color: var(--accent);
+			}
+			.pal-row .lbl {
+				flex: 1;
+				min-width: 0;
+				display: flex;
+				flex-direction: column;
+			}
+			.pal-row .lbl span {
+				font-size: 12.5px;
+				color: var(--text);
+			}
+			.pal-row .sub {
+				font-size: 10.5px;
+				color: var(--text-faint);
+				font-family: var(--mono);
+				margin-top: 1px;
+				overflow: hidden;
+				text-overflow: ellipsis;
+				white-space: nowrap;
+			}
+			.pal-row .badge {
+				font-family: var(--mono);
+				font-size: 10px;
+				padding: 0 5px;
+				border-radius: 999px;
+				background: var(--green-soft);
+				color: var(--green);
+			}
+			.pal-foot {
+				display: flex;
+				align-items: center;
+				gap: 12px;
+				padding: 8px 12px;
+				border-top: var(--hair);
+				font-size: 10.5px;
+				color: var(--text-faint);
+				background: var(--bg-elev2);
+			}
+			.pal-foot .kbd {
+				background: var(--bg-elev3);
+			}
+			.menu-stage {
+				flex: 0 1 336px;
+				min-width: 280px;
+				border-radius: var(--r-lg);
+				border: 1px solid var(--border);
+				background: var(--bg-elev);
+				padding: 12px;
+				box-shadow: var(--shadow-pop);
+			}
+			.menu-title {
+				padding: 2px 6px 8px;
+				font-size: 10.5px;
+				font-weight: 700;
+				letter-spacing: 0.07em;
+				text-transform: uppercase;
+				color: var(--text-faint);
+			}
+			.mrow {
+				display: flex;
+				align-items: center;
+				gap: 8px;
+				width: 100%;
+				padding: 6px 8px;
+				border-radius: var(--r-sm);
+				font-size: 12.5px;
+				color: var(--text-dim);
+				text-align: left;
+			}
+			.mrow:hover {
+				background: var(--bg-elev2);
+				color: var(--text);
+			}
+			.mrow .kbd {
+				margin-left: auto;
+			}
+			.msep {
+				height: 1px;
+				background: var(--border-soft);
+				margin: 6px 4px;
+			}
+			.mrow.hi {
+				color: var(--accent);
+			}
+
+			/* ============================================================
+   6. 表格 / 规格
+   ============================================================ */
+			.tbl {
+				width: 100%;
+				border-collapse: collapse;
+				font-size: 12px;
+			}
+			.tbl th,
+			.tbl td {
+				text-align: left;
+				padding: 9px 12px;
+				border-bottom: var(--hair);
+				vertical-align: top;
+			}
+			.tbl th {
+				font-size: 10.5px;
+				letter-spacing: 0.06em;
+				text-transform: uppercase;
+				color: var(--text-faint);
+				font-weight: 700;
+				background: var(--bg-elev2);
+			}
+			.tbl tr:last-child td {
+				border-bottom: 0;
+			}
+			.tbl td b {
+				color: var(--text);
+			}
+			.tbl .mono {
+				font-size: 11px;
+			}
+			.tbl-wrap {
+				border: 1px solid var(--border);
+				border-radius: var(--r-lg);
+				overflow: hidden;
+				background: var(--bg-elev);
+			}
+			.tbl code {
+				padding: 1px 5px;
+				border-radius: 4px;
+				background: var(--bg-elev3);
+				font-family: var(--mono);
+				font-size: 11px;
+			}
+			.frow .fstat i,
+			.fstat i {
+				font-style: normal;
+			}
+			.fact .iconbtn {
+				width: 20px;
+				height: 20px;
+			}
+			.stage-anno {
+				display: flex;
+				gap: 16px;
+				flex-wrap: wrap;
+				margin-top: 10px;
+			}
+			.anno {
+				flex: 1 1 220px;
+				display: flex;
+				gap: 8px;
+				font-size: 11.5px;
+				color: var(--text-faint);
+			}
+			.anno .pin {
+				display: grid;
+				place-items: center;
+				width: 17px;
+				height: 17px;
+				border-radius: 5px;
+				background: var(--accent-soft);
+				color: var(--accent);
+				font-family: var(--mono);
+				font-size: 10px;
+				font-weight: 700;
+				flex: none;
+			}
+			.anno b {
+				color: var(--text-dim);
+				font-weight: 600;
+			}
+			.rec {
+				display: flex;
+				gap: 14px;
+				padding: 16px 18px;
+				border-radius: var(--r-lg);
+				border: 1px solid color-mix(in srgb, var(--accent) 34%, var(--border));
+				background: linear-gradient(180deg, var(--accent-soft), transparent);
+			}
+			.rec .no {
+				display: grid;
+				place-items: center;
+				width: 26px;
+				height: 26px;
+				border-radius: 8px;
+				background: var(--accent);
+				color: var(--accent-contrast);
+				font-weight: 800;
+				font-size: 12px;
+				flex: none;
+			}
+			.diff.splitview td.cl,
+			.diff.splitview td.cr {
+				width: calc(50% - 40px);
+			}
+			.diff.splitview td.ln.s {
+				width: 40px;
+			}
+			.pal-row .danger {
+				color: var(--red);
+			}
+			.pa-prev {
+				flex: 1;
+				min-width: 0;
+				display: flex;
+				flex-direction: column;
+				border-left: var(--hair);
+				background: var(--term-bg);
+				overflow: hidden;
+			}
+			.pa-prev-head {
+				flex: none;
+				display: flex;
+				align-items: center;
+				gap: 8px;
+				padding: 9px 12px;
+				border-bottom: var(--hair);
+				background: var(--bg-elev);
+				font-size: 11.5px;
+				color: var(--text-dim);
+			}
+			.pa-prev-head b {
+				color: var(--text);
+				font-family: var(--mono);
+				font-size: 11.5px;
+			}
+			.pa-prev-body {
+				flex: 1;
+				overflow: auto;
+				font-family: var(--mono);
+				font-size: 11.5px;
+				line-height: 19px;
+				padding: 4px 0;
+			}
+			.pv {
+				display: flex;
+				gap: 8px;
+				padding: 0 10px;
+				white-space: pre;
+			}
+			.pv .ln {
+				width: 36px;
+				text-align: right;
+				color: var(--text-faint);
+				flex: none;
+				user-select: none;
+			}
+			.pv.add {
+				background: var(--diff-add);
+			}
+			.pv.add .ln {
+				background: var(--diff-add-gut);
+				color: var(--text-dim);
+			}
+			.pv.del {
+				background: var(--diff-del);
+			}
+			.pv.del .ln {
+				background: var(--diff-del-gut);
+				color: var(--text-dim);
+			}
+			.pv.hunk {
+				background: var(--bg-elev2);
+				color: var(--text-faint);
+				padding: 2px 10px;
+				font-size: 10.5px;
+			}
+			.pa-prev-foot {
+				flex: none;
+				padding: 8px 12px;
+				border-top: var(--hair);
+				background: var(--bg-elev);
+				font-size: 11px;
+				color: var(--text-faint);
+				display: flex;
+				gap: 8px;
+				align-items: center;
+				font-family: var(--mono);
+			}
+			.cmp-badge {
+				display: inline-block;
+				font-size: 10px;
+				padding: 1px 6px;
+				border-radius: 999px;
+				font-weight: 600;
+			}
+			.cmp-badge.s {
+				background: var(--green-soft);
+				color: var(--green);
+			}
+			.cmp-badge.m {
+				background: var(--amber-soft);
+				color: var(--amber);
+			}
+			.cmp-badge.l {
+				background: var(--red-soft);
+				color: var(--red);
+			}
+			.steps {
+				counter-reset: s;
+				display: flex;
+				flex-direction: column;
+				gap: 9px;
+			}
+			.steps li {
+				list-style: none;
+				display: flex;
+				gap: 10px;
+				font-size: 12.5px;
+				color: var(--text-dim);
+				align-items: flex-start;
+			}
+			.steps li::before {
+				counter-increment: s;
+				content: counter(s);
+				display: grid;
+				place-items: center;
+				width: 19px;
+				height: 19px;
+				border-radius: 6px;
+				background: var(--bg-elev3);
+				color: var(--text-dim);
+				font-family: var(--mono);
+				font-size: 10.5px;
+				font-weight: 700;
+				flex: none;
+				margin-top: 1px;
+			}
+			.steps li b {
+				color: var(--text);
+			}
+			.steps li .mono {
+				font-size: 11px;
+			}
+			.rec p {
+				color: var(--text-dim);
+				font-size: 12.5px;
+			}
+			.rec h3 {
+				font-size: 13.5px;
+				margin-bottom: 4px;
+			}
+			/* ---------- 窄屏（手机看稿）---------- */
+			@media (max-width: 820px) {
+				.doc-top {
+					flex-wrap: wrap;
+					row-gap: 6px;
+					padding: 9px 12px;
+				}
+				.doc-brand small {
+					display: none;
+				}
+				.doc-nav {
+					order: 3;
+					flex: 1 1 100%;
+					margin-left: 0;
+					flex-wrap: nowrap;
+					overflow-x: auto;
+					scrollbar-width: none;
+				}
+				.doc-nav a {
+					white-space: nowrap;
+				}
+				.doc-tools {
+					margin-left: auto;
+				}
+				.wrap {
+					padding: 18px 12px 64px;
+				}
+				.sec-head p {
+					margin-left: 0;
+					text-align: left;
+					max-width: none;
+				}
+				.stage {
+					overflow-x: auto;
+				}
+				.stage-body,
+				.pr {
+					min-width: 660px;
+				}
+				.palwrap {
+					flex-direction: column;
+				}
+				.menu-stage {
+					width: 100%;
+					box-sizing: border-box;
+				}
+			}
+		</style>
+	</head>
+	<body>
+		<svg width="0" height="0" style="position: absolute" aria-hidden="true">
+			<defs>
+				<symbol id="i-branch" viewBox="0 0 24 24">
+					<path d="M6 3v12" />
+					<circle cx="18" cy="6" r="2.6" />
+					<circle cx="6" cy="18" r="2.6" />
+					<path d="M18 8.6a9 9 0 0 1-9 9" />
+				</symbol>
+				<symbol id="i-commit" viewBox="0 0 24 24">
+					<circle cx="12" cy="12" r="3.1" />
+					<path d="M3 12h5.9M15.1 12H21" />
+				</symbol>
+				<symbol id="i-check" viewBox="0 0 24 24"><path d="M20 6 9 17l-5-5" /></symbol>
+				<symbol id="i-chev" viewBox="0 0 24 24"><path d="m6 9 6 6 6-6" /></symbol>
+				<symbol id="i-chev-r" viewBox="0 0 24 24"><path d="m9 6 6 6-6 6" /></symbol>
+				<symbol id="i-refresh" viewBox="0 0 24 24">
+					<path d="M21 4v6h-6" />
+					<path d="M20.2 14a8.5 8.5 0 1 1-2-8.8L21 10" />
+				</symbol>
+				<symbol id="i-up" viewBox="0 0 24 24"><path d="M12 19V5M5 12l7-7 7 7" /></symbol>
+				<symbol id="i-down" viewBox="0 0 24 24"><path d="M12 5v14M5 12l7 7 7-7" /></symbol>
+				<symbol id="i-more" viewBox="0 0 24 24">
+					<circle cx="5" cy="12" r="1.4" />
+					<circle cx="12" cy="12" r="1.4" />
+					<circle cx="19" cy="12" r="1.4" />
+				</symbol>
+				<symbol id="i-x" viewBox="0 0 24 24"><path d="M18 6 6 18M6 6l12 12" /></symbol>
+				<symbol id="i-file" viewBox="0 0 24 24">
+					<path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+					<path d="M14 2v6h6" />
+				</symbol>
+				<symbol id="i-folder" viewBox="0 0 24 24">
+					<path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" />
+				</symbol>
+				<symbol id="i-search" viewBox="0 0 24 24">
+					<circle cx="11" cy="11" r="7" />
+					<path d="m20 20-3.6-3.6" />
+				</symbol>
+				<symbol id="i-term" viewBox="0 0 24 24">
+					<path d="m4 17 6-6-6-6" />
+					<path d="M12 19h8" />
+				</symbol>
+				<symbol id="i-push" viewBox="0 0 24 24">
+					<path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+					<path d="M17 8l-5-5-5 5" />
+					<path d="M12 3v13" />
+				</symbol>
+				<symbol id="i-pull" viewBox="0 0 24 24">
+					<path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+					<path d="M7 10l5 5 5-5" />
+					<path d="M12 15V2" />
+				</symbol>
+				<symbol id="i-tag" viewBox="0 0 24 24">
+					<path
+						d="M20.6 13.4 13.4 20.6a2 2 0 0 1-2.8 0l-7.2-7.2A2 2 0 0 1 3 12V5a2 2 0 0 1 2-2h7a2 2 0 0 1 1.4.6l7.2 7.2a2 2 0 0 1 0 2.6z"
+					/>
+					<circle cx="7.6" cy="7.6" r="1.1" />
+				</symbol>
+				<symbol id="i-history" viewBox="0 0 24 24">
+					<path d="M3 12a9 9 0 1 0 2.6-6.4" />
+					<path d="M3 4v5h5" />
+					<path d="M12 8v4.4l3 1.8" />
+				</symbol>
+				<symbol id="i-cloud" viewBox="0 0 24 24">
+					<path d="M6.5 19a4.5 4.5 0 0 1-.4-9A6 6 0 0 1 17.8 9a4.2 4.2 0 0 1 .7 8.4" />
+				</symbol>
+				<symbol id="i-trash" viewBox="0 0 24 24"><path d="M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13" /></symbol>
+				<symbol id="i-plus" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14" /></symbol>
+				<symbol id="i-cpu" viewBox="0 0 24 24">
+					<rect x="8" y="8" width="8" height="8" rx="1.6" />
+					<path d="M4 10h4M4 14h4M16 10h4M16 14h4M10 4v4M14 4v4M10 16v4M14 16v4" />
+				</symbol>
+				<symbol id="i-eye" viewBox="0 0 24 24">
+					<path d="M1.8 12S5.5 5.5 12 5.5 22.2 12 22.2 12 18.5 18.5 12 18.5 1.8 12 1.8 12z" />
+					<circle cx="12" cy="12" r="2.8" />
+				</symbol>
+				<symbol id="i-comment" viewBox="0 0 24 24">
+					<path d="M21 12a8 8 0 0 1-8 8H8l-4 3v-4.6A8 8 0 0 1 13 4a8 8 0 0 1 8 8z" />
+				</symbol>
+				<symbol id="i-split" viewBox="0 0 24 24">
+					<rect x="3" y="4" width="18" height="16" rx="2" />
+					<path d="M12 4v16" />
+				</symbol>
+				<symbol id="i-warn" viewBox="0 0 24 24">
+					<path d="M12 3.5 22 20H2z" />
+					<path d="M12 9.5v4M12 16.6v.6" />
+				</symbol>
+				<symbol id="i-cloud-ok" viewBox="0 0 24 24">
+					<path d="M6.5 18a4.5 4.5 0 0 1-.4-9A6 6 0 0 1 17.8 8.2a4.2 4.2 0 0 1 .7 8.3" />
+					<path d="m9.4 12.5 2 2 3.6-3.6" />
+				</symbol>
+				<symbol id="i-merge" viewBox="0 0 24 24">
+					<circle cx="18" cy="18" r="2.6" />
+					<circle cx="6" cy="6" r="2.6" />
+					<path d="M6 8.6v6a3 3 0 0 0 3 3h6.4" />
+				</symbol>
+				<symbol id="i-copy" viewBox="0 0 24 24">
+					<rect x="9" y="9" width="12" height="12" rx="2" />
+					<path d="M5 15V5a2 2 0 0 1 2-2h8" />
+				</symbol>
+			</defs>
+		</svg>
+
+		<header class="doc-top">
+			<div class="doc-brand">
+				<span class="mark">pi</span> Git 界面改版方案 <small>参照 GitHub · 3 套设计 + 1 组合推荐</small>
+			</div>
+			<nav class="doc-nav">
+				<a href="#diagnose">现状诊断</a>
+				<a href="#principles">借鉴原则</a>
+				<a href="#plan-a">方案 A</a>
+				<a href="#plan-b">方案 B</a>
+				<a href="#plan-c">方案 C</a>
+				<a href="#compare">对比</a>
+				<a href="#spec">规格 / 落地</a>
+			</nav>
+			<div class="doc-tools">
+				<button class="ghost-btn" id="themeBtn">
+					<svg class="i sm"><use href="#i-eye" /></svg><span id="themeLabel">浅色</span>
+				</button>
+				<button class="ghost-btn" onclick="document.getElementById('plan-a').scrollIntoView({ behavior: 'smooth' })">
+					<svg class="i sm"><use href="#i-branch" /></svg> 看原型
+				</button>
+			</div>
+		</header>
+
+		<main class="wrap">
+			<section class="hero">
+				<h1>把「Source Control」从 <em>命令菜单</em> 改成 <em>可读的状态机</em></h1>
+				<p class="lead">
+					现在的 Git 面板能把活干完，但读不出来"现在该做什么"：分支、上游差、暂存状态、提交上下文全挤成一排小图标，
+					真正要用的动作（Pull / Push / Fetch / Checkout / Stash / Tags）藏在一个 16 项平铺的右键菜单里。
+					下面三套方案都把 GitHub
+					已经验证过的心智模型搬过来——<b>状态条说清"差多少"、文件列表按暂存分组、动作按意图分组</b>——
+					每套都给出可点的静态原型、改动面和风险。
+				</p>
+				<div class="hero-row">
+					<span class="tag accent"
+						><svg class="i sm"><use href="#i-branch" /></svg> 方案 A · GitHub Desktop 式侧栏</span
+					>
+					<span class="tag accent"
+						><svg class="i sm"><use href="#i-split" /></svg> 方案 B · GitHub PR 式全屏检阅</span
+					>
+					<span class="tag accent"
+						><svg class="i sm"><use href="#i-search" /></svg> 方案 C · 命令面板 / 分组操作台</span
+					>
+					<span class="tag green"
+						><svg class="i sm"><use href="#i-check" /></svg> 推荐 A + C 组合落地</span
+					>
+				</div>
+				<div class="hero-row" style="margin-top: 12px">
+					<span class="tag green"
+						><svg class="i sm"><use href="#i-check" /></svg> 已落地：A + C</span
+					>
+					<span class="tag">web/src/components/scm/ScmChangesList.tsx · ScmCommandPalette.tsx</span>
+					<span class="tag">web/src/scm-file-kind.ts · scm-palette-actions.ts</span>
+					<span class="tag accent">面板快捷键：⌘⇧P（⌘⇧G 开关 Git 抽屉，⌘K 全局搜索）</span>
+				</div>
+			</section>
+
+			<section class="sec" id="diagnose">
+				<div class="sec-head">
+					<span class="sec-no">1</span>
+					<h2>现状诊断</h2>
+					<p>
+						基于截图（VS Code 式 Source Control）与 <span class="mono">web/src/components/SCMPanel.tsx</span> 现有结构
+					</p>
+				</div>
+				<div class="grid2">
+					<div class="note">
+						<div class="hd">
+							<svg class="i sm"><use href="#i-warn" /></svg> 四个具体问题
+						</div>
+						<ul>
+							<li>
+								<b>菜单即功能表</b>：右键菜单 16 项平铺，Pull/Push 同时出现在两处，Clone
+								与本地仓库动作混排，无搜索、无分组、无快捷键提示。
+							</li>
+							<li>
+								<b>暂存状态不可见</b>：文件列表不区分 staged / unstaged（只有
+								<span class="mono">x/y</span> 两个字母），用户无法"逐文件勾选再提交"。
+							</li>
+							<li>
+								<b>同步差是装饰</b>：<span class="mono">↑2 ↓0</span> 是灰色小字，没有对应的动作按钮；不知道该 Push 还是
+								Pull。
+							</li>
+							<li>
+								<b>提交区没有上下文</b>：输入框 → Commit 按钮，缺少"这次提交包含几个文件、多少行、提交到哪个分支、是否
+								amend"。
+							</li>
+						</ul>
+					</div>
+					<div class="note">
+						<div class="hd">
+							<svg class="i sm"><use href="#i-check" /></svg> 现有能力（不用重写后端）
+						</div>
+						<ul>
+							<li>
+								查询：<span class="mono">scm_status / history / filediff / commit</span>（<span class="mono"
+									>server/files-service.ts → scmQuery</span
+								>）。
+							</li>
+							<li>
+								动作：全部经终端桥 <span class="mono">runGitCommand()</span> 执行
+								<span class="mono">git add -- &lt;path&gt;</span> /
+								<span class="mono">git reset HEAD -- &lt;path&gt;</span> / <span class="mono">commit --amend</span> /
+								<span class="mono">stash push|pop|apply|drop</span>。
+							</li>
+							<li>
+								已有 <span class="mono">fileKind(f)</span>（line 83）能把 <span class="mono">x/y</span> 归到 staged /
+								unstaged / untracked / both —— 只是没被 UI 用起来。
+							</li>
+							<li>
+								缺的只有
+								<span class="mono">fetch / clone / tags / remote / checkout-to-commit</span
+								>，加命令即可，协议与权限模型不变。
+							</li>
+						</ul>
+					</div>
+				</div>
+			</section>
+
+			<section class="sec" id="principles">
+				<div class="sec-head">
+					<span class="sec-no">2</span>
+					<h2>从 GitHub 借的 6 条</h2>
+					<p>不是抄配色，是抄信息层级与命名</p>
+				</div>
+				<div class="grid2">
+					<div class="note">
+						<div class="hd">
+							<svg class="i sm"><use href="#i-commit" /></svg> 1 · Sync bar 代替箭头
+						</div>
+						GitHub Desktop 顶部一条 <span class="mono">Fetch origin</span> / <span class="mono">Push origin ↑2</span> /
+						<span class="mono">Pull origin ↓1</span> 智能切换按钮：差多少直接写在按钮上。
+					</div>
+					<div class="note">
+						<div class="hd">
+							<svg class="i sm"><use href="#i-file" /></svg> 2 · 文件行 = 勾选框 + 统计条
+						</div>
+						每个文件前面一个勾选框（= 暂存），行尾 GitHub 的 5 格 stat 条 +
+						<span class="mono">+12 −3</span>；悬停才出现破坏性动作。
+					</div>
+					<div class="note">
+						<div class="hd">
+							<svg class="i sm"><use href="#i-history" /></svg> 3 · 提交图是时间线，不是列表
+						</div>
+						History 用"日期分组 + 圆点 + refs 徽章"，与 GraphQL 式
+						<span class="mono">main / origin/main</span> 徽章并置，一眼看出是否已推送。
+					</div>
+					<div class="note">
+						<div class="hd">
+							<svg class="i sm"><use href="#i-split" /></svg> 4 · Diff 是可检阅的
+						</div>
+						Unified / Split 切换、<span class="mono">Viewed</span> 勾选、行号为锚点的评论按钮、<span class="mono"
+							>Files changed 12</span
+						>
+						的绿红比例条。
+					</div>
+					<div class="note">
+						<div class="hd">
+							<svg class="i sm"><use href="#i-search" /></svg> 5 · 动作可搜索
+						</div>
+						<span class="mono">⌘⇧P</span> 命令面板：分组 + 描述 + 快捷键，替代平铺菜单；右键只留最常用 5 项。
+					</div>
+					<div class="note">
+						<div class="hd">
+							<svg class="i sm"><use href="#i-cloud-ok" /></svg> 6 · 状态即结论
+						</div>
+						<span class="mono">✓ 3 checks passed</span> /
+						<span class="mono">Conflicts 1</span> 用徽章一次性给结论，不用读日志。
+					</div>
+				</div>
+			</section>
+			<section class="sec" id="plan-a">
+				<div class="sec-head">
+					<span class="sec-no">A</span>
+					<h2>方案 A · GitHub Desktop 式侧栏（最小改动、最高性价比）</h2>
+					<p>保留现有侧栏位置与宽度（400px），重排为「仓库头 → 同步条 → 分段 tab → 分组文件列表 → 常驻提交区」</p>
+				</div>
+
+				<div class="stage" style="max-width: 940px">
+					<div class="chrome">
+						<span class="traffic"><i></i><i></i><i></i></span><span class="t">pi-web-ui — Git（方案 A）</span>
+						<span class="r"
+							><span class="pill"
+								><svg class="i sm"><use href="#i-branch" /></svg> main</span
+							></span
+						>
+					</div>
+					<div class="stage-body" style="height: 646px">
+						<div class="rail">
+							<span class="rb"
+								><svg class="i"><use href="#i-file" /></svg
+							></span>
+							<span class="rb"
+								><svg class="i"><use href="#i-search" /></svg
+							></span>
+							<span class="rb on"
+								><svg class="i"><use href="#i-branch" /></svg
+							></span>
+							<span class="rb"
+								><svg class="i"><use href="#i-commit" /></svg
+							></span>
+							<span class="rb"
+								><svg class="i"><use href="#i-eye" /></svg
+							></span>
+							<span class="rb"
+								><svg class="i"><use href="#i-term" /></svg
+							></span>
+							<span class="sp"></span>
+							<span class="rb"
+								><svg class="i"><use href="#i-cpu" /></svg
+							></span>
+						</div>
+
+						<div class="scmp">
+							<div class="scmp-head">
+								<div class="scmp-r1">
+									<span
+										class="repo-ic"
+										style="
+											display: grid;
+											place-items: center;
+											width: 18px;
+											height: 18px;
+											border-radius: 5px;
+											background: var(--accent-soft);
+											color: var(--accent);
+										"
+										><svg class="i sm"><use href="#i-branch" /></svg
+									></span>
+									<b>pi-web-ui</b>
+									<button class="iconbtn" title="切换仓库">
+										<svg class="i sm"><use href="#i-chev" /></svg>
+									</button>
+									<span class="sp"></span>
+									<button class="iconbtn" title="刷新状态">
+										<svg class="i sm"><use href="#i-refresh" /></svg>
+									</button>
+									<button class="iconbtn" title="更多 Git 操作（⌘⇧P）">
+										<svg class="i sm"><use href="#i-more" /></svg>
+									</button>
+								</div>
+								<div class="syncbar">
+									<button class="pill" title="切换分支">
+										<svg class="i sm"><use href="#i-branch" /></svg><b>main</b
+										><svg class="i sm" style="opacity: 0.6"><use href="#i-chev" /></svg>
+									</button>
+									<span class="sp"></span>
+									<span
+										class="pill"
+										style="border-color: transparent; background: transparent; font-size: 10.5px; padding: 0"
+										>↑2 ↓0</span
+									>
+									<button class="btn green sm" id="syncBtn" title="git push origin main">
+										<svg class="i sm"><use href="#i-push" /></svg> Push origin 2
+									</button>
+								</div>
+								<div class="scmp-tabs" id="scmTabs">
+									<button class="on" data-view="changes">Changes <span class="n" id="tabChg">12</span></button>
+									<button data-view="history">History</button>
+									<button data-view="stash">Stash <span class="n">1</span></button>
+								</div>
+							</div>
+
+							<div class="scmp-filter">
+								<svg class="i sm"><use href="#i-search" /></svg>
+								<input id="scmFilter" placeholder="Filter files by path…" />
+								<span class="kbd">⌘F</span>
+							</div>
+
+							<div class="scmp-scroll" id="scmScroll">
+								<div class="grp" data-grp="staged">
+									<div class="grp-head">
+										<svg class="i sm"><use href="#i-chev" /></svg> Staged <span class="n" id="cStaged">3</span
+										><span class="sp"></span>
+										<button class="iconbtn" title="全部取消暂存">
+											<svg class="i sm"><use href="#i-down" /></svg>
+										</button>
+									</div>
+									<div id="listStaged">
+										<label class="frow" data-staged="1" data-add="6" data-del="2"
+											><input type="checkbox" checked /><span class="box"
+												><svg class="i"><use href="#i-check" /></svg></span
+											><span class="xy m">M</span
+											><span class="nm"><span class="dir">server/</span><b>protocol.ts</b></span
+											><span class="fstat"><i class="add">+6</i><i class="del">−2</i></span
+											><span class="fact"
+												><button class="iconbtn" title="取消暂存">
+													<svg class="i sm"><use href="#i-down" /></svg></button></span
+										></label>
+										<label class="frow" data-staged="1" data-add="18" data-del="4"
+											><input type="checkbox" checked /><span class="box"
+												><svg class="i"><use href="#i-check" /></svg></span
+											><span class="xy m">M</span
+											><span class="nm"><span class="dir">server/</span><b>conversation-rows.ts</b></span
+											><span class="fstat"><i class="add">+18</i><i class="del">−4</i></span
+											><span class="fact"
+												><button class="iconbtn" title="取消暂存">
+													<svg class="i sm"><use href="#i-down" /></svg></button></span
+										></label>
+										<label class="frow" data-staged="1" data-add="1204" data-del="0"
+											><input type="checkbox" checked /><span class="box"
+												><svg class="i"><use href="#i-check" /></svg></span
+											><span class="xy a">A</span
+											><span class="nm"><span class="dir">docs/</span><b>git-ui-redesign-proposals.html</b></span
+											><span class="fstat"><i class="add">+1,204</i></span
+											><span class="fact"
+												><button class="iconbtn" title="取消暂存">
+													<svg class="i sm"><use href="#i-down" /></svg></button></span
+										></label>
+									</div>
+								</div>
+
+								<div class="grp" data-grp="unstaged">
+									<div class="grp-head">
+										<svg class="i sm"><use href="#i-chev" /></svg> Changes <span class="n" id="cChanges">9</span
+										><span class="sp"></span>
+										<button class="iconbtn" title="全部暂存">
+											<svg class="i sm"><use href="#i-up" /></svg>
+										</button>
+									</div>
+									<div id="listChanges">
+										<label class="frow" data-staged="0" data-add="38" data-del="12"
+											><input type="checkbox" /><span class="box"
+												><svg class="i"><use href="#i-check" /></svg></span
+											><span class="xy m">M</span
+											><span class="nm"><span class="dir">web/src/components/</span><b>SCMPanel.tsx</b></span
+											><span class="fstat"><i class="add">+38</i><i class="del">−12</i></span
+											><span class="fact"
+												><button class="iconbtn" title="暂存此文件">
+													<svg class="i sm"><use href="#i-up" /></svg></button
+												><button class="iconbtn" title="丢弃变更">
+													<svg class="i sm"><use href="#i-trash" /></svg></button></span
+										></label>
+										<label class="frow" data-staged="0" data-add="126" data-del="9"
+											><input type="checkbox" /><span class="box"
+												><svg class="i"><use href="#i-check" /></svg></span
+											><span class="xy m">M</span
+											><span class="nm"><span class="dir">web/src/</span><b>styles.css</b></span
+											><span class="fstat"><i class="add">+126</i><i class="del">−9</i></span
+											><span class="fact"
+												><button class="iconbtn" title="暂存此文件">
+													<svg class="i sm"><use href="#i-up" /></svg></button
+												><button class="iconbtn" title="丢弃变更">
+													<svg class="i sm"><use href="#i-trash" /></svg></button></span
+										></label>
+										<label class="frow" data-staged="0" data-add="42" data-del="0"
+											><input type="checkbox" /><span class="box"
+												><svg class="i"><use href="#i-check" /></svg></span
+											><span class="xy u">U</span
+											><span class="nm"><span class="dir">web/src/</span><b>scm-file-kind.ts</b></span
+											><span class="fstat"><i class="add">+42</i></span
+											><span class="fact"
+												><button class="iconbtn" title="暂存此文件">
+													<svg class="i sm"><use href="#i-up" /></svg></button></span
+										></label>
+										<label class="frow" data-staged="0" data-add="12" data-del="3"
+											><input type="checkbox" /><span class="box"
+												><svg class="i"><use href="#i-check" /></svg></span
+											><span class="xy m">M</span><span class="nm"><span class="dir">server/</span><b>scm.ts</b></span
+											><span class="fstat"><i class="add">+12</i><i class="del">−3</i></span
+											><span class="fact"
+												><button class="iconbtn" title="暂存此文件">
+													<svg class="i sm"><use href="#i-up" /></svg></button
+												><button class="iconbtn" title="丢弃变更">
+													<svg class="i sm"><use href="#i-trash" /></svg></button></span
+										></label>
+										<label class="frow" data-staged="0" data-add="8" data-del="0"
+											><input type="checkbox" /><span class="box"
+												><svg class="i"><use href="#i-check" /></svg></span
+											><span class="xy m">M</span
+											><span class="nm"><span class="dir">server/</span><b>locales.ts</b></span
+											><span class="fstat"><i class="add">+8</i></span
+											><span class="fact"
+												><button class="iconbtn" title="暂存此文件">
+													<svg class="i sm"><use href="#i-up" /></svg></button></span
+										></label>
+										<label class="frow" data-staged="0" data-add="8" data-del="0"
+											><input type="checkbox" /><span class="box"
+												><svg class="i"><use href="#i-check" /></svg></span
+											><span class="xy m">M</span
+											><span class="nm"><span class="dir">web/src/i18n/messages/</span><b>zh-CN.ts</b></span
+											><span class="fstat"><i class="add">+8</i></span
+											><span class="fact"
+												><button class="iconbtn" title="暂存此文件">
+													<svg class="i sm"><use href="#i-up" /></svg></button></span
+										></label>
+										<label class="frow" data-staged="0" data-add="3" data-del="3"
+											><input type="checkbox" /><span class="box"
+												><svg class="i"><use href="#i-check" /></svg></span
+											><span class="xy m">M</span
+											><span class="nm"><span class="dir">plugins/qq/</span><b>voice.mjs</b></span
+											><span class="fstat"><i class="add">+3</i><i class="del">−3</i></span
+											><span class="fact"
+												><button class="iconbtn" title="暂存此文件">
+													<svg class="i sm"><use href="#i-up" /></svg></button
+												><button class="iconbtn" title="丢弃变更">
+													<svg class="i sm"><use href="#i-trash" /></svg></button></span
+										></label>
+										<label class="frow" data-staged="0" data-add="5" data-del="1"
+											><input type="checkbox" /><span class="box"
+												><svg class="i"><use href="#i-check" /></svg></span
+											><span class="xy m">M</span
+											><span class="nm"><span class="dir">web/src/</span><b>use-chat.ts</b></span
+											><span class="fstat"><i class="add">+5</i><i class="del">−1</i></span
+											><span class="fact"
+												><button class="iconbtn" title="暂存此文件">
+													<svg class="i sm"><use href="#i-up" /></svg></button
+												><button class="iconbtn" title="丢弃变更">
+													<svg class="i sm"><use href="#i-trash" /></svg></button></span
+										></label>
+										<label class="frow" data-staged="0" data-add="2" data-del="2"
+											><input type="checkbox" /><span class="box"
+												><svg class="i"><use href="#i-check" /></svg></span
+											><span class="xy m">M</span><span class="nm"><span class="dir">server/</span><b>index.ts</b></span
+											><span class="fstat"><i class="add">+2</i><i class="del">−2</i></span
+											><span class="fact"
+												><button class="iconbtn" title="暂存此文件">
+													<svg class="i sm"><use href="#i-up" /></svg></button
+												><button class="iconbtn" title="丢弃变更">
+													<svg class="i sm"><use href="#i-trash" /></svg></button></span
+										></label>
+									</div>
+								</div>
+							</div>
+
+							<div class="scmp-commit">
+								<div class="cm-top">
+									<span class="av">ME</span>
+									<textarea id="cmMsg">feat(scm): 分组暂存 + 同步条</textarea>
+								</div>
+								<input class="cm-desc" placeholder="Description (optional)" />
+								<div class="cm-foot">
+									<span id="cmMeta">3 files · +1,228 −6</span>
+									<span class="sp"></span>
+									<button class="btn primary" id="commitBtn">
+										<svg class="i sm"><use href="#i-check" /></svg> Commit to main
+										<svg class="i sm" style="opacity: 0.7"><use href="#i-chev" /></svg>
+									</button>
+								</div>
+								<div class="cm-hint">
+									<span class="kbd">Ctrl</span><span class="kbd">Enter</span> 提交 · <span class="kbd">⌘⇧P</span> 全部
+									Git 操作
+								</div>
+							</div>
+						</div>
+
+						<div class="pa-prev">
+							<div class="pa-prev-head">
+								<svg class="i sm" style="color: var(--amber)"><use href="#i-file" /></svg>
+								<b>web/src/components/SCMPanel.tsx</b>
+								<span class="mono"><span class="add">+38</span> <span class="del">−12</span></span>
+								<span class="sp"></span>
+								<span class="ref">unstaged</span>
+							</div>
+							<!-- prettier-ignore -->
+							<div class="pa-prev-body">
+<div class="pv hunk">@@ -1737,9 +1737,24 @@ export function ScmPanel({</div>
+<div class="pv"><span class="ln">1737</span><span>&nbsp;&nbsp;&nbsp; &lt;div className="scm-files"&gt;</span></div>
+<div class="pv del"><span class="ln">1738</span><span>&nbsp;&nbsp;&nbsp; &lt;div className="scm-files-header"&gt;</span></div>
+<div class="pv del"><span class="ln">1739</span><span>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; &lt;span&gt;{t("scmChanges")}&lt;/span&gt;</span></div>
+<div class="pv del"><span class="ln">1740</span><span>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; &lt;span className="scm-files-count"&gt;{status.files.length}&lt;/span&gt;</span></div>
+<div class="pv del"><span class="ln">1741</span><span>&nbsp;&nbsp;&nbsp; &lt;/div&gt;</span></div>
+<div class="pv add"><span class="ln">1738</span><span>&nbsp;&nbsp;&nbsp; &lt;ScmChangesList</span></div>
+<div class="pv add"><span class="ln">1739</span><span>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; staged={stagedFiles}</span></div>
+<div class="pv add"><span class="ln">1740</span><span>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; unstaged={unstagedFiles}</span></div>
+<div class="pv add"><span class="ln">1741</span><span>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; onStage={stageFile}</span></div>
+<div class="pv add"><span class="ln">1742</span><span>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; onUnstage={unstageFile}</span></div>
+<div class="pv add"><span class="ln">1743</span><span>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; onStageAll={stageAll}</span></div>
+<div class="pv add"><span class="ln">1744</span><span>&nbsp;&nbsp;&nbsp; /&gt;</span></div>
+<div class="pv"><span class="ln">1742</span><span>&nbsp;&nbsp;&nbsp; &lt;div className="scm-files-list"&gt;</span></div>
+<div class="pv"><span class="ln">1743</span><span>&nbsp;&nbsp;&nbsp;&nbsp; {status.files.map((f) =&gt; (</span></div>
+<div class="pv"><span class="ln">1744</span><span>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; &lt;div key={f.path} className="scm-file"&gt;</span></div>
+</div>
+							<div class="pa-prev-foot">
+								<span>Unified</span><span style="opacity: 0.4">·</span><span>2 hunks</span
+								><span style="opacity: 0.4">·</span><span>点击身份直接暂存此文件</span>
+								<span class="sp"></span>
+								<span>点击行号可给 agent 发 review 意见</span>
+							</div>
+						</div>
+					</div>
+				</div>
+
+				<div class="stage-anno">
+					<div class="anno">
+						<span class="pin">1</span
+						><span
+							><b>同步条</b>：一颗按钮按 ahead/behind 自动变成
+							<span class="mono">Fetch / Pull ↓1 / Push ↑2</span>，不再靠猜箭头含义。</span
+						>
+					</div>
+					<div class="anno">
+						<span class="pin">2</span
+						><span
+							><b>勾选即暂存</b>：点文件行首勾选框 → 真发 <span class="mono">git add -- &lt;path&gt;</span>，行在 Staged
+							/ Changes 两组之间移动，计数与提交摘要实时重算。</span
+						>
+					</div>
+					<div class="anno">
+						<span class="pin">3</span
+						><span
+							><b>提交区常驻</b>：永远贴在底部（sticky），写明"发给哪个分支 / 几个文件 / 多少行"，<span class="mono"
+								>Enter</span
+							>
+							不再误触。</span
+						>
+					</div>
+					<div class="anno">
+						<span class="pin">4</span
+						><span><b>检索优先</b>：文件超过 20 个时过滤框比眼睛快；<span class="mono">⌘F</span> 直接聚焦。</span>
+					</div>
+				</div>
+				<div class="caption">
+					<span
+						><b>改动面</b> SCMPanel.tsx 拆分（列表 / 提交区 / 同步条三个子组件）+ styles.css 新增
+						<span class="mono">.scm-*</span> 约 180 行</span
+					><span><b>后端</b> 0 改动</span><span><b>工期</b> ~1.5 天</span>
+				</div>
+			</section>
+
+			<section class="sec" id="plan-b">
+				<div class="sec-head">
+					<span class="sec-no">B</span>
+					<h2>方案 B · GitHub PR 式全屏检阅（大屏 / 桌面端）</h2>
+					<p>
+						把 Git 从侧栏升级成可全屏的第三视图：左提交时间线 · 中文件树 · 右 diff，带 Unified / Split、Viewed
+						勾选与行内评论
+					</p>
+				</div>
+
+				<div class="stage">
+					<div class="chrome">
+						<span class="traffic"><i></i><i></i><i></i></span><span class="t">pi-web-ui — Review（方案 B）</span>
+						<span class="r"><span class="tag" style="height: 22px">12 files changed</span></span>
+					</div>
+					<div class="pr" style="height: 660px">
+						<div class="pr-top">
+							<span class="crumb">pi-web-ui / <b>Review</b></span>
+							<span class="pill" style="font-family: var(--mono)"
+								><svg class="i sm"><use href="#i-branch" /></svg> main</span
+							>
+							<span class="checks"
+								><svg class="i sm"><use href="#i-cloud-ok" /></svg> 3 checks passed</span
+							>
+							<span class="sp"></span>
+							<button class="btn sm">
+								<svg class="i sm"><use href="#i-merge" /></svg> Compare
+							</button>
+							<button class="btn sm">
+								<svg class="i sm"><use href="#i-plus" /></svg> New branch
+							</button>
+							<button class="btn sm primary">
+								<svg class="i sm"><use href="#i-check" /></svg> Create review
+							</button>
+						</div>
+						<div class="pr-bar">
+							<span><b style="color: var(--text)">12</b> files changed</span>
+							<span class="ratio"><i class="g" style="width: 72%"></i><i class="r" style="width: 28%"></i></span>
+							<span class="mono"><span class="add">+1,452</span> <span class="del">−36</span></span>
+							<span class="sp"></span>
+							<div class="seg" id="diffMode">
+								<button class="on" data-mode="unified">
+									<svg class="i sm"><use href="#i-file" /></svg> Unified</button
+								><button data-mode="split">
+									<svg class="i sm"><use href="#i-split" /></svg> Split
+								</button>
+							</div>
+							<label class="chk"><input type="checkbox" /> Hide whitespace</label>
+							<label class="chk"><input type="checkbox" checked /> Viewed 4 / 12</label>
+						</div>
+						<div class="pr-body">
+							<aside class="pr-graph">
+								<div class="g-date">今天</div>
+								<div class="g-row on">
+									<div class="g-sub">feat(scm): 分组暂存 + 同步条</div>
+									<div class="g-meta">
+										<span class="av" style="width: 13px; height: 13px; font-size: 7px">ME</span><span>a1c9f2d</span
+										><span class="ref main">main</span><span class="ref remote">origin/main</span>
+									</div>
+								</div>
+								<div class="g-row">
+									<div class="g-sub">chore(protocol): bump PROTO_VERSION 12</div>
+									<div class="g-meta">
+										<span class="av" style="width: 13px; height: 13px; font-size: 7px">ME</span><span>7f21ab8</span
+										><span>2 小时前</span>
+									</div>
+								</div>
+								<div class="g-date">昨天</div>
+								<div class="g-row">
+									<div class="g-sub">fix(agent-bot): 入站 webhook 自带 token 校验</div>
+									<div class="g-meta">
+										<span class="av" style="width: 13px; height: 13px; font-size: 7px">BO</span><span>3de0b71</span>
+									</div>
+								</div>
+								<div class="g-row">
+									<div class="g-sub">feat(ui): 底栏下沉为底部抽屉，Git 改为右侧</div>
+									<div class="g-meta">
+										<span class="av" style="width: 13px; height: 13px; font-size: 7px">ME</span><span>b48c102</span>
+									</div>
+								</div>
+								<div class="g-date">3 天前</div>
+								<div class="g-row">
+									<div class="g-sub">feat(devices): 打开设备后自动收起浮层</div>
+									<div class="g-meta">
+										<span class="av" style="width: 13px; height: 13px; font-size: 7px">ME</span><span>c9013aa</span
+										><span class="ref">v1.4.0</span>
+									</div>
+								</div>
+								<div class="g-row">
+									<div class="g-sub">fix(desktop): 浮层紧癖度、内容防溢出</div>
+									<div class="g-meta">
+										<span class="av" style="width: 13px; height: 13px; font-size: 7px">ME</span><span>e4b70c9</span>
+									</div>
+								</div>
+							</aside>
+
+							<aside class="pr-files">
+								<div class="folder">
+									<svg class="i sm"><use href="#i-chev" /></svg
+									><svg class="i sm"><use href="#i-folder" /></svg> web/src/components <span class="n">+164 −21</span>
+								</div>
+								<div class="fitem on">
+									<svg class="i sm" style="color: var(--amber)"><use href="#i-file" /></svg
+									><span class="fn">SCMPanel.tsx</span
+									><span class="squares"
+										><i class="g"></i><i class="g"></i><i class="g"></i><i class="g"></i><i class="r"></i></span
+									><span class="mono" style="font-size: 10px; color: var(--text-faint)">+38</span>
+								</div>
+								<div class="fitem">
+									<svg class="i sm" style="color: var(--amber)"><use href="#i-file" /></svg
+									><span class="fn">DevicePanel.tsx</span><span class="squares"><i class="g"></i><i class="r"></i></span
+									><span class="mono" style="font-size: 10px; color: var(--text-faint)">+4</span>
+								</div>
+								<div class="folder">
+									<svg class="i sm"><use href="#i-chev" /></svg><svg class="i sm"><use href="#i-folder" /></svg> web/src
+									<span class="n">+131 −9</span>
+								</div>
+								<div class="fitem">
+									<svg class="i sm" style="color: var(--amber)"><use href="#i-file" /></svg
+									><span class="fn">styles.css</span
+									><span class="squares"
+										><i class="g"></i><i class="g"></i><i class="g"></i><i class="g"></i><i class="g"></i></span
+									><span class="mono" style="font-size: 10px; color: var(--text-faint)">+126</span>
+								</div>
+								<div class="fitem">
+									<svg class="i sm" style="color: var(--green)"><use href="#i-file" /></svg
+									><span class="fn">scm-file-kind.ts</span
+									><span class="squares"><i class="g"></i><i class="g"></i></span
+									><span class="mono" style="font-size: 10px; color: var(--text-faint)">+42</span>
+								</div>
+								<div class="folder">
+									<svg class="i sm"><use href="#i-chev" /></svg><svg class="i sm"><use href="#i-folder" /></svg> server
+									<span class="n">+40 −7</span>
+								</div>
+								<div class="fitem">
+									<svg class="i sm" style="color: var(--amber)"><use href="#i-file" /></svg
+									><span class="fn">protocol.ts</span><span class="squares"><i class="g"></i><i class="r"></i></span
+									><span class="mono" style="font-size: 10px; color: var(--text-faint)">+6</span>
+								</div>
+								<div class="fitem">
+									<svg class="i sm" style="color: var(--amber)"><use href="#i-file" /></svg
+									><span class="fn">scm.ts</span
+									><span class="squares"><i class="g"></i><i class="g"></i><i class="r"></i></span
+									><span class="mono" style="font-size: 10px; color: var(--text-faint)">+12</span>
+								</div>
+								<div class="folder">
+									<svg class="i sm"><use href="#i-chev" /></svg><svg class="i sm"><use href="#i-folder" /></svg> docs
+									<span class="n">+1,204</span>
+								</div>
+								<div class="fitem">
+									<svg class="i sm" style="color: var(--green)"><use href="#i-file" /></svg
+									><span class="fn">git-ui-redesign-proposals.html</span
+									><span class="squares"
+										><i class="g"></i><i class="g"></i><i class="g"></i><i class="g"></i><i class="g"></i></span
+									><span class="mono" style="font-size: 10px; color: var(--text-faint)">+1,204</span>
+								</div>
+							</aside>
+
+							<section class="pr-diff">
+								<div class="df-head">
+									<b>web/src/components/SCMPanel.tsx</b>
+									<span class="mono"><span class="add">+38</span> <span class="del">−12</span></span>
+									<span class="sp"></span>
+									<label class="chk"><input type="checkbox" /> Viewed</label>
+									<button class="iconbtn" title="复制路径">
+										<svg class="i sm"><use href="#i-copy" /></svg>
+									</button>
+								</div>
+								<div class="df-scroll" id="dfScroll"></div>
+								<div class="thread">
+									<div class="thread-top">
+										<span class="av">ME</span><b style="font-size: 12px">你</b
+										><span style="color: var(--text-faint); font-size: 11px">刚才 · 行 1742</span
+										><span class="sp"></span><span class="ref">suggestion</span>
+									</div>
+									<div class="thread-body">
+										<span class="mono" style="font-size: 11px; color: var(--text-dim)">stagedCount</span> 应该从
+										<span class="mono" style="font-size: 11px; color: var(--text-dim)">status.files</span>
+										推导，不要在组件里再存一份 —— 否则切换 tab 后计数会和列表不一致。
+									</div>
+									<div class="thread-reply"><input placeholder="回复…" /></div>
+								</div>
+							</section>
+						</div>
+					</div>
+				</div>
+
+				<div class="stage-anno">
+					<div class="anno">
+						<span class="pin">B1</span
+						><span><b>提交时间线</b>：按日期分组 + refs 徽章，避免“这个 commit 到底推没推”的往返检查。</span>
+					</div>
+					<div class="anno">
+						<span class="pin">B2</span
+						><span
+							><b>文件树 + stat 方块</b>：一眼看出哪个文件改动最大；<span class="mono">Viewed</span> 勾选让 12
+							个文件的大改可分批阅。</span
+						>
+					</div>
+					<div class="anno">
+						<span class="pin">B3</span
+						><span><b>Unified / Split</b>：宽屏用 Split（改成对改），窄屏自动回 Unified。</span>
+					</div>
+					<div class="anno">
+						<span class="pin">B4</span
+						><span><b>行内评论</b>：为后续“让 agent 处理这条 review 意见”留的入口（可直接转成对话提示）。</span>
+					</div>
+				</div>
+				<div class="caption">
+					<span
+						><b>改动面</b> 新增 <span class="mono">web/src/components/scm/</span> 子目录（Graph / FileTree / DiffView /
+						ReviewThread）+ BottomDock 新 tab</span
+					><span
+						><b>后端</b> 需补 <span class="mono">scm_commit_files</span>（一次拿 commit 的文件清单，避免 N 次
+						filediff）</span
+					><span><b>工期</b> ~4 天</span>
+				</div>
+			</section>
+
+			<section class="sec" id="plan-c">
+				<div class="sec-head">
+					<span class="sec-no">C</span>
+					<h2>方案 C · 命令面板 / 分组操作台（直接治那个 16 项菜单）</h2>
+					<p>
+						右键菜单瘦身到 5 项，其余全部收进 <span class="mono">⌘⇧P</span> 可搜索面板：分组 + 描述 + 快捷键 + 实时状态
+					</p>
+				</div>
+
+				<div class="palwrap">
+					<div class="pal-stage">
+						<div class="pal-under">
+							<div style="display: flex; height: 100%">
+								<div class="rail" style="width: 40px">
+									<span class="rb"
+										><svg class="i"><use href="#i-file" /></svg
+									></span>
+									<span class="rb on"
+										><svg class="i"><use href="#i-branch" /></svg
+									></span>
+									<span class="rb"
+										><svg class="i"><use href="#i-term" /></svg
+									></span>
+								</div>
+								<div style="flex: 1; padding: 12px; display: flex; flex-direction: column; gap: 8px">
+									<div style="font-size: 12px; font-weight: 650">pi-web-ui · main</div>
+									<div style="height: 1px; background: var(--border-soft)"></div>
+									<div class="mono" style="font-size: 11px; color: var(--text-faint)">Changes 12 · ↑2 ↓0</div>
+								</div>
+							</div>
+						</div>
+						<div class="pal-scrim"></div>
+						<div class="pal">
+							<div class="pal-head">
+								<svg class="i"><use href="#i-search" /></svg>
+								<input id="palInput" placeholder="搜索 Git 操作：pull / branch / stash / tag…" />
+								<span class="kbd">Esc</span>
+							</div>
+							<div class="pal-chips" id="palChips">
+								<button class="on" data-cat="all">全部 <span class="mono">12</span></button>
+								<button data-cat="sync">同步</button>
+								<button data-cat="branch">分支</button>
+								<button data-cat="commit">提交</button>
+								<button data-cat="change">更改</button>
+								<button data-cat="remote">远端 / 标签</button>
+								<button data-cat="tool">工具</button>
+							</div>
+							<div class="pal-list" id="palList">
+								<div class="pal-grp" data-grp>同步</div>
+								<button class="pal-row sel" data-cat="sync" data-k="pull">
+									<svg class="i"><use href="#i-pull" /></svg
+									><span class="lbl"
+										><span>Pull origin</span><span class="sub">git pull --ff-only · 落后 0 个提交</span></span
+									><span class="kbd">⌘⇧P</span>
+								</button>
+								<button class="pal-row" data-cat="sync" data-k="push">
+									<svg class="i"><use href="#i-push" /></svg
+									><span class="lbl"><span>Push origin</span><span class="sub">git push · 领先 2 个提交</span></span
+									><span class="badge">↑2</span><span class="kbd">⌘⇧U</span>
+								</button>
+								<button class="pal-row" data-cat="sync" data-k="fetch">
+									<svg class="i"><use href="#i-cloud" /></svg
+									><span class="lbl"
+										><span>Fetch all remotes</span
+										><span class="sub">git fetch --all --prune · 只拉引用不改工作区</span></span
+									><span class="kbd">⌘⇧F</span>
+								</button>
+								<div class="pal-grp" data-grp>分支</div>
+								<button class="pal-row" data-cat="branch" data-k="newbranch">
+									<svg class="i"><use href="#i-plus" /></svg
+									><span class="lbl"
+										><span>Create branch…</span><span class="sub">git checkout -b &lt;name&gt;</span></span
+									><span class="kbd">⌘⇧B</span>
+								</button>
+								<button class="pal-row" data-cat="branch" data-k="checkout">
+									<svg class="i"><use href="#i-branch" /></svg
+									><span class="lbl"
+										><span>Checkout to…</span><span class="sub">本地 12 个 · 远端 8 个分支（可搜索）</span></span
+									><span class="kbd">⌘⇧C</span>
+								</button>
+								<button class="pal-row" data-cat="branch" data-k="mergerebase">
+									<svg class="i"><use href="#i-merge" /></svg
+									><span class="lbl"
+										><span>Merge / Rebase from…</span
+										><span class="sub">git merge &lt;branch&gt; · git rebase &lt;branch&gt;</span></span
+									>
+								</button>
+								<div class="pal-grp" data-grp>提交</div>
+								<button class="pal-row" data-cat="commit" data-k="commit">
+									<svg class="i"><use href="#i-check" /></svg
+									><span class="lbl"
+										><span>Commit staged (3 files)</span><span class="sub">git commit -m \"…\"</span></span
+									><span class="kbd">⌘↵</span>
+								</button>
+								<button class="pal-row" data-cat="commit" data-k="commitall">
+									<svg class="i"><use href="#i-commit" /></svg
+									><span class="lbl"
+										><span>Commit all changes (12 files)</span
+										><span class="sub">git add -A &amp;&amp; git commit</span></span
+									>
+								</button>
+								<button class="pal-row" data-cat="commit" data-k="amend">
+									<svg class="i"><use href="#i-history" /></svg
+									><span class="lbl"
+										><span>Amend last commit…</span><span class="sub">git commit --amend --no-edit</span></span
+									>
+								</button>
+								<button class="pal-row" data-cat="commit" data-k="genmsg">
+									<svg class="i"><use href="#i-cpu" /></svg
+									><span class="lbl"
+										><span>Generate commit message</span><span class="sub">用当前会话模型生成 + 人工确认</span></span
+									><span class="kbd">⌘G</span>
+								</button>
+								<div class="pal-grp" data-grp>更改</div>
+								<button class="pal-row" data-cat="change" data-k="stash">
+									<svg class="i"><use href="#i-folder" /></svg
+									><span class="lbl"
+										><span>Stash changes…</span><span class="sub">git stash push -u · 已有 1 条 stash</span></span
+									>
+								</button>
+								<button class="pal-row" data-cat="change" data-k="unstageall">
+									<svg class="i"><use href="#i-down" /></svg
+									><span class="lbl"
+										><span>Unstage all</span><span class="sub">git reset HEAD · 3 个已暂存文件</span></span
+									>
+								</button>
+								<button class="pal-row" data-cat="change" data-k="discard">
+									<svg class="i"><use href="#i-trash" /></svg
+									><span class="lbl"
+										><span class="danger">Discard all changes…</span
+										><span class="sub">git restore . · 需输入仓库名确认</span></span
+									>
+								</button>
+								<div class="pal-grp" data-grp>远端 / 标签</div>
+								<button class="pal-row" data-cat="remote" data-k="remote">
+									<svg class="i"><use href="#i-cloud" /></svg
+									><span class="lbl"
+										><span>Manage remotes…</span><span class="sub">origin → github.com/…/pi-web-ui</span></span
+									>
+								</button>
+								<button class="pal-row" data-cat="remote" data-k="tag">
+									<svg class="i"><use href="#i-tag" /></svg
+									><span class="lbl"
+										><span>Create tag…</span><span class="sub">git tag -a v1.4.1 · 最新 v1.4.0</span></span
+									>
+								</button>
+								<div class="pal-grp" data-grp>工具</div>
+								<button class="pal-row" data-cat="tool" data-k="output">
+									<svg class="i"><use href="#i-term" /></svg
+									><span class="lbl"><span>Show Git Output</span><span class="sub">打开执行日志 tab</span></span>
+								</button>
+								<button class="pal-row" data-cat="tool" data-k="clone">
+									<svg class="i"><use href="#i-copy" /></svg
+									><span class="lbl"
+										><span>Clone repository…</span><span class="sub">仅当工作区不是仓库时出现</span></span
+									>
+								</button>
+							</div>
+							<div class="pal-foot">
+								<span><span class="kbd">↑</span><span class="kbd">↓</span> 选择</span>
+								<span><span class="kbd">⏎</span> 执行</span>
+								<span><span class="kbd">Esc</span> 关闭</span>
+								<span class="sp"></span>
+								<span class="mono" id="palCount">12 actions</span>
+							</div>
+						</div>
+					</div>
+
+					<div class="menu-stage">
+						<div class="menu-title">瘦身后的右键菜单</div>
+						<button class="mrow">
+							<svg class="i sm"><use href="#i-pull" /></svg>Pull<span class="kbd">⌘⇧P</span>
+						</button>
+						<button class="mrow">
+							<svg class="i sm"><use href="#i-push" /></svg>Push <span class="badge" style="margin-left: 4px">↑2</span
+							><span class="kbd">⌘⇧U</span>
+						</button>
+						<button class="mrow">
+							<svg class="i sm"><use href="#i-check" /></svg>Commit staged<span class="kbd">⌘↵</span>
+						</button>
+						<button class="mrow">
+							<svg class="i sm"><use href="#i-branch" /></svg>Branch…<svg
+								class="i sm"
+								style="margin-left: auto; opacity: 0.5"
+							>
+								<use href="#i-chev-r" />
+							</svg>
+						</button>
+						<button class="mrow">
+							<svg class="i sm"><use href="#i-folder" /></svg>Stash changes…
+						</button>
+						<div class="msep"></div>
+						<button class="mrow hi">
+							<svg class="i sm"><use href="#i-search" /></svg>更多 Git 操作…<span class="kbd">⌘⇧P</span>
+						</button>
+						<div class="menu-title" style="padding-top: 14px">为什么不直接平铺</div>
+						<div style="font-size: 11.5px; color: var(--text-faint); padding: 0 6px; line-height: 1.6">
+							截图里的菜单 16 项里有 5 项是"二级入口"（Commit / Changes / Branch / Stash / Tags 都带
+							<span class="mono">›</span>），展开后平均要 2.4 次点击。面板式后：<b style="color: var(--text-dim)"
+								>⌘⇧P → 输入 3 个字母 → ⏎</b
+							>，且可在输入框里拼参数（分支名、stash ref）。
+						</div>
+					</div>
+				</div>
+
+				<div class="caption">
+					<span
+						><b>改动面</b> 新增 <span class="mono">ScmCommandPalette.tsx</span> + 一张静态动作表（约 120 行），替换
+						<span class="mono">gd-more</span></span
+					><span
+						><b>键盘</b> ⌘⇧P 全局注册（与现有快捷键表同处）；面板 z-index 走
+						<span class="mono">useOverlayZIndex()</span></span
+					><span><b>工期</b> ~1 天</span>
+				</div>
+			</section>
+
+			<section class="sec" id="compare">
+				<div class="sec-head">
+					<span class="sec-no">D</span>
+					<h2>三方案对比</h2>
+					<p>按“能不能在不拆现有结构的前提下落地”排序</p>
+				</div>
+				<div class="tbl-wrap">
+					<table class="tbl">
+						<thead>
+							<tr>
+								<th style="width: 14%">方案</th>
+								<th style="width: 20%">借鉴的 GitHub 形态</th>
+								<th>解决的核心痛点</th>
+								<th style="width: 12%">改动面</th>
+								<th style="width: 12%">风险 / 代价</th>
+								<th style="width: 8%">工期</th>
+							</tr>
+						</thead>
+						<tbody>
+							<tr>
+								<td><b>A · Desktop 侧栏</b><br /><span class="cmp-badge s">推荐</span></td>
+								<td>Sync bar、勾选暂存、常驻 commit box、underline tabs</td>
+								<td>暂存不可见、同步差不可点、提交没上下文</td>
+								<td>SCMPanel 拆 3 个子组件 + CSS</td>
+								<td>低：不动协议，不动终端桥</td>
+								<td>1.5 天</td>
+							</tr>
+							<tr>
+								<td><b>B · PR 式全屏</b></td>
+								<td>提交时间线、文件树 + stat 方、Unified/Split、Viewed、行内评论</td>
+								<td>大改时读不完整 diff；无法分批阅</td>
+								<td>新增全屏 tab + 4 个组件 + 1 个查询</td>
+								<td>中：需补 <span class="mono">scm_commit_files</span>，大仓库文件树下卡</td>
+								<td>4 天</td>
+							</tr>
+							<tr>
+								<td><b>C · 命令面板</b><br /><span class="cmp-badge s">推荐</span></td>
+								<td>⌘⇧P 分组搜索结果、描述 + 快捷键、徽章状态</td>
+								<td>16 项平铺菜单、动作找不到、无快捷键</td>
+								<td>1 个新组件 + 静态动作表</td>
+								<td>低：纯前端；仅需新增部分 git 命令</td>
+								<td>1 天</td>
+							</tr>
+							<tr>
+								<td><b>A + C</b></td>
+								<td>Desktop 主界面 + 命令面板作为“全部动作”兜底</td>
+								<td>日常三件事（暂存、提交、同步）零菜单；长尾操作可搜</td>
+								<td>两套改动同落</td>
+								<td>低：互不依赖，可分两次提交</td>
+								<td>2.5 天</td>
+							</tr>
+						</tbody>
+					</table>
+				</div>
+			</section>
+
+			<section class="sec" id="spec">
+				<div class="sec-head">
+					<span class="sec-no">E</span>
+					<h2>规格与落地</h2>
+					<p>每个视图块对应哪个文件 / 哪个字段，改的时候不用再反推</p>
+				</div>
+
+				<div class="tbl-wrap" style="margin-bottom: 14px">
+					<table class="tbl">
+						<thead>
+							<tr>
+								<th style="width: 20%">视图块</th>
+								<th style="width: 22%">新组件</th>
+								<th style="width: 26%">现落点（要拆的对象）</th>
+								<th>数据源</th>
+							</tr>
+						</thead>
+						<tbody>
+							<tr>
+								<td>仓库头 + 分支</td>
+								<td class="mono">ScmRepoHeader.tsx</td>
+								<td class="mono">SCMPanel.tsx · host:scm-branch</td>
+								<td class="mono">scm_status.branch / upstream / ahead / behind</td>
+							</tr>
+							<tr>
+								<td>同步条</td>
+								<td class="mono">ScmSyncBar.tsx</td>
+								<td class="mono">handlePull / handlePush</td>
+								<td>ahead/behind + 新增 <span class="mono">git fetch --prune</span></td>
+							</tr>
+							<tr>
+								<td>分组文件列表</td>
+								<td class="mono">ScmChangesList.tsx</td>
+								<td class="mono">scm-files-list 内联 map + fileKind()</td>
+								<td class="mono">scm_status.files[].x/y</td>
+							</tr>
+							<tr>
+								<td>提交区</td>
+								<td class="mono">ScmCommitBox.tsx</td>
+								<td class="mono">host:scm-input / commit / commit-all / genmsg</td>
+								<td class="mono">commitMsg + status.files</td>
+							</tr>
+							<tr>
+								<td>提交时间线</td>
+								<td class="mono">scm/ScmGraph.tsx</td>
+								<td class="mono">scm-history-list</td>
+								<td class="mono">scm_history（已含 decorations）</td>
+							</tr>
+							<tr>
+								<td>Diff 视图</td>
+								<td class="mono">scm/ScmDiffView.tsx</td>
+								<td class="mono">scm-diff-body + buildSideRows()</td>
+								<td class="mono">scm_filediff.staged / worktree</td>
+							</tr>
+							<tr>
+								<td>命令面板</td>
+								<td class="mono">ScmCommandPalette.tsx</td>
+								<td class="mono">gd-more 菜单（16 项）</td>
+								<td>静态动作表 + 实时 badge</td>
+							</tr>
+						</tbody>
+					</table>
+				</div>
+
+				<div class="grid2" style="margin-bottom: 14px">
+					<div class="card" style="padding: 14px 16px">
+						<div class="menu-title" style="padding: 0 0 8px">尺寸 / 令牌规范</div>
+						<table class="tbl" style="font-size: 11.5px">
+							<tbody>
+								<tr>
+									<td>文件行高</td>
+									<td class="mono">27px</td>
+									<td style="color: var(--text-faint)">勾选命中区 = 整行（不是 14px 的小方块）</td>
+								</tr>
+								<tr>
+									<td>勾选框</td>
+									<td class="mono">14px / r4</td>
+									<td style="color: var(--text-faint)">
+										选中态 <span class="mono">--accent</span> 底 + <span class="mono">--accent-contrast</span> 勾
+									</td>
+								</tr>
+								<tr>
+									<td>分组头</td>
+									<td class="mono">10.5px / 700</td>
+									<td style="color: var(--text-faint)">uppercase + letter-spacing .07em</td>
+								</tr>
+								<tr>
+									<td>文件名 / 目录</td>
+									<td class="mono">12px·600 / 10.5px</td>
+									<td style="color: var(--text-faint)">目录在前、名字在后，名字永不换行</td>
+								</tr>
+								<tr>
+									<td>状态色</td>
+									<td class="mono">accent/amber/blue/red</td>
+									<td style="color: var(--text-faint)">staged / modified / untracked / conflict</td>
+								</tr>
+								<tr>
+									<td>提交区</td>
+									<td class="mono">sticky 底部</td>
+									<td style="color: var(--text-faint)">不随列表滚动；高度随摘要行数 36→72px</td>
+								</tr>
+								<tr>
+									<td>手机（短边 &lt; 640px）</td>
+									<td class="mono">行高 36px</td>
+									<td style="color: var(--text-faint)">勾选框 18px；同步条按钮占满整行</td>
+								</tr>
+							</tbody>
+						</table>
+					</div>
+					<div class="card" style="padding: 14px 16px">
+						<div class="menu-title" style="padding: 0 0 10px">落地顺序（可分 3 次提交）</div>
+						<ol class="steps">
+							<li>
+								<span
+									><b>抬单源</b>：把 <span class="mono">SCMPanel.tsx:83</span> 的
+									<span class="mono">fileKind()</span> 串到
+									<span class="mono">web/src/scm-file-kind.ts</span>，补单测（后续分组、TransitionCount 全用它）。</span
+								>
+							</li>
+							<li>
+								<span
+									><b>分组 + 勾选</b>：仅前端 + 现成 <span class="mono">git add -- &lt;path&gt;</span> /
+									<span class="mono">git reset HEAD -- &lt;path&gt;</span>，无协议改动。</span
+								>
+							</li>
+							<li>
+								<span
+									><b>同步条</b>：pull / push 复用，新增 <span class="mono">fetch</span> 一条；按 ahead/behind
+									切换主按钮文案与颜色。</span
+								>
+							</li>
+							<li>
+								<span><b>提交区常驻</b>：文件数 / 行数由已暂存集合推导（<b>不要在组件里再存一份计数</b>）。</span>
+							</li>
+							<li>
+								<span
+									><b>⌘⇧P 面板</b>：替换 <span class="mono">gd-more</span>；动作表与快捷键表同源，避免两处漂移。</span
+								>
+							</li>
+							<li>
+								<span
+									><b>全屏 review</b>（方案 B）：单开一个需求，补
+									<span class="mono">scm_commit_files</span> 后再做，不影响前五步。</span
+								>
+							</li>
+						</ol>
+					</div>
+				</div>
+
+				<div class="note" style="margin-bottom: 16px">
+					<div class="hd">
+						<svg class="i sm"><use href="#i-warn" /></svg> 落地时要守的红线（否则 CI 会拦）
+					</div>
+					<ul>
+						<li>
+							强调色实底上的文字必须用 <span class="mono">--accent-contrast</span>（Commit 主按钮、勾选框选中态）——<span
+								class="mono"
+								>accent-contrast</span
+							>
+							守卫。
+						</li>
+						<li>
+							路径长文本三件套：单行 <span class="mono">ellipsis</span> + <span class="mono">min-width:0</span> + 悬停
+							<span class="mono">title</span> 全路径——<span class="mono">text-wrap</span> 守卫。
+						</li>
+						<li>
+							命令面板属于叠栈浮层，<span class="mono">z-index</span> 一律走
+							<span class="mono">useOverlayZIndex()</span>，禁写死数值——<span class="mono">overlay-stack</span> 守卫。
+						</li>
+						<li>
+							新增文案走 <span class="mono">scm*</span> 前缀 i18n key，中英包同步（<span class="mono"
+								>npm run i18n</span
+							>
+							校验）。
+						</li>
+						<li>不涉及插件，无需 bump <span class="mono">manifest.json</span>；不新增可开关工具，无需改 catalog。</li>
+					</ul>
+				</div>
+
+				<div class="rec">
+					<span class="no">荐</span>
+					<div>
+						<h3>A + C 组合（2.5 天）</h3>
+						<p>
+							A 把“每天都做的三件事”（暂存、提交、同步）做成零点击的可见状态；C
+							把“偶尔才用的十几项”做成可搜索的命令面板。两者互不依赖，可以分两次提交：先 A（可见收益最大），再
+							C（顺带删掉那个 16 项菜单）。B 单独排期，等前两步上线、确认侧栏已能覆盖 90% 场景后再做。
+						</p>
+					</div>
+				</div>
+
+				<div class="caption" style="margin-top: 12px">
+					<span
+						>本页为静态原型：无真实 git 调用，勾选 / 切换 / 搜索均为本地模拟；所有尺寸与色值取自
+						<span class="mono">web/src/styles.css</span> 的 <span class="mono">:root</span>。</span
+					>
+				</div>
+			</section>
+		</main>
+		<script>
+			/* ---------- 主题切换 ---------- */
+			(function () {
+				var html = document.documentElement,
+					label = document.getElementById("themeLabel");
+				document.getElementById("themeBtn").addEventListener("click", function () {
+					var next = html.dataset.theme === "dark" ? "light" : "dark";
+					html.dataset.theme = next;
+					label.textContent = next === "dark" ? "浅色" : "深色";
+				});
+			})();
+
+			/* ---------- 方案 A：勾选即暂存，计数与提交摘要实时重算 ---------- */
+			(function () {
+				var st = document.getElementById("listStaged"),
+					ch = document.getElementById("listChanges");
+				if (!st || !ch) return;
+				var cStaged = document.getElementById("cStaged"),
+					cChanges = document.getElementById("cChanges"),
+					tabChg = document.getElementById("tabChg"),
+					cmMeta = document.getElementById("cmMeta"),
+					commitBtn = document.getElementById("commitBtn"),
+					cmMsg = document.getElementById("cmMsg"),
+					filter = document.getElementById("scmFilter");
+
+				function fmt(n) {
+					return n.toLocaleString("en-US");
+				}
+				function recount() {
+					var rows = [].slice.call(document.querySelectorAll(".frow"));
+					var s = st.querySelectorAll(".frow").length,
+						c = ch.querySelectorAll(".frow").length;
+					cStaged.textContent = s;
+					cChanges.textContent = c;
+					tabChg.textContent = s + c;
+					var add = 0,
+						del = 0;
+					[].forEach.call(st.querySelectorAll(".frow"), function (r) {
+						add += +r.dataset.add;
+						del += +r.dataset.del;
+					});
+					cmMeta.textContent = s + " files · +" + fmt(add) + " −" + fmt(del);
+					var ok = s > 0 && cmMsg.value.trim().length > 0;
+					commitBtn.disabled = !ok;
+					commitBtn.innerHTML =
+						'<svg class="i sm"><use href="#i-check"/></svg> Commit to main <svg class="i sm" style="opacity:.7"><use href="#i-chev"/></svg>';
+				}
+				function move(row, toStaged) {
+					row.dataset.staged = toStaged ? "1" : "0";
+					row.querySelector("input").checked = toStaged;
+					(toStaged ? st : ch).appendChild(row);
+					recount();
+				}
+				[].forEach.call(document.querySelectorAll(".frow"), function (row) {
+					row.querySelector("input").addEventListener("change", function (e) {
+						move(row, e.target.checked);
+					});
+					row.addEventListener("click", function (e) {
+						if (e.target.closest(".fact")) e.preventDefault();
+					});
+				});
+				[].forEach.call(document.querySelectorAll(".grp-head .iconbtn"), function (b) {
+					b.addEventListener("click", function () {
+						var grp = b.closest(".grp").dataset.grp;
+						if (grp === "unstaged") {
+							[].slice.call(ch.querySelectorAll(".frow")).forEach(function (r) {
+								move(r, true);
+							});
+						} else {
+							[].slice.call(st.querySelectorAll(".frow")).forEach(function (r) {
+								move(r, false);
+							});
+						}
+					});
+				});
+				cmMsg.addEventListener("input", recount);
+				filter.addEventListener("input", function () {
+					var q = filter.value.trim().toLowerCase();
+					[].forEach.call(document.querySelectorAll(".frow"), function (r) {
+						var hit = !q || r.textContent.toLowerCase().indexOf(q) >= 0;
+						r.style.display = hit ? "" : "none";
+					});
+				});
+				document.addEventListener("keydown", function (e) {
+					if ((e.metaKey || e.ctrlKey) && (e.key === "f" || e.key === "F") && document.getElementById("plan-a")) {
+						var box = document.getElementById("plan-a").getBoundingClientRect();
+						if (box.top < window.innerHeight && box.bottom > 0) {
+							e.preventDefault();
+							filter.focus();
+						}
+					}
+				});
+				recount();
+			})();
+
+			/* ---------- 方案 B：diff 渲染 + Unified / Split ---------- */
+			(function () {
+				var host = document.getElementById("dfScroll");
+				if (!host) return;
+				var DIFF = [
+					{ t: "h", s: "@@ -1737,9 +1737,24 @@ export function ScmPanel({" },
+					{ t: "c", o: 1737, n: 1737, s: '    <div className="scm-files">' },
+					{ t: "-", o: 1738, s: '      <div className="scm-files-header">' },
+					{ t: "-", o: 1739, s: '        <span>{t("scmChanges")}</span>' },
+					{ t: "-", o: 1740, s: '        <span className="scm-files-count">{status.files.length}</span>' },
+					{ t: "-", o: 1741, s: "      </div>" },
+					{ t: "+", n: 1738, s: "      <ScmChangesList" },
+					{ t: "+", n: 1739, s: "        staged={stagedFiles}" },
+					{ t: "+", n: 1740, s: "        unstaged={unstagedFiles}" },
+					{ t: "+", n: 1741, s: "        onStage={stageFile}" },
+					{ t: "+", n: 1742, s: "        onUnstage={unstageFile}" },
+					{ t: "+", n: 1743, s: "        onStageAll={stageAll}" },
+					{ t: "+", n: 1744, s: "      />" },
+					{ t: "c", o: 1742, n: 1745, s: '      <div className="scm-files-list">' },
+					{ t: "c", o: 1743, n: 1746, s: "        {status.files.map((f) => (" },
+					{ t: "h", s: "@@ -1744,6 +1747,10 @@ export function ScmPanel({" },
+					{ t: "-", o: 1744, s: '          <div key={f.path} className="scm-file">' },
+					{ t: "-", o: 1745, s: '            <span className="scm-file-path">{f.path}</span>' },
+					{ t: "+", n: 1747, s: "          <ScmFileRow" },
+					{ t: "+", n: 1748, s: "            key={f.path}" },
+					{ t: "+", n: 1749, s: "            file={f}" },
+					{ t: "+", n: 1750, s: '            staged={fileKind(f) === "staged"}' },
+					{ t: "+", n: 1751, s: "          />" },
+					{ t: "c", o: 1746, n: 1752, s: "        ))}" },
+				];
+				var MODE = "unified";
+				function esc(s) {
+					return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+				}
+				function hl(s) {
+					return esc(s)
+						.replace(/"([^"]*)"/g, '<span class="k-str">"$1"</span>')
+						.replace(/\b(import|export|function|const|return|if|from)\b/g, '<span class="k-kw">$1</span>');
+				}
+				function gut() {
+					return '<td class="gut"><svg class="i sm" style="vertical-align:middle"><use href="#i-plus"/></svg></td>';
+				}
+				function unified() {
+					var h =
+						'<table class="diff"><colgroup><col style="width:42px"><col style="width:42px"><col style="width:20px"><col></colgroup>';
+					DIFF.forEach(function (d) {
+						if (d.t === "h") {
+							h +=
+								'<tr class="hunk"><td class="ln"></td><td class="ln"></td><td class="gut"></td><td>' +
+								esc(d.s) +
+								"</td></tr>";
+							return;
+						}
+						var cls = d.t === "+" ? "add" : d.t === "-" ? "del" : "";
+						var pre = d.t === "+" ? "+" : d.t === "-" ? "-" : " ";
+						h +=
+							'<tr class="' +
+							cls +
+							'"><td class="ln">' +
+							(d.t === "+" ? "" : d.o) +
+							'</td><td class="ln">' +
+							(d.t === "-" ? "" : d.n) +
+							"</td>" +
+							gut() +
+							'<td class="code">' +
+							pre +
+							hl(d.s) +
+							"</td></tr>";
+					});
+					return h + "</table>";
+				}
+				function split() {
+					var out = [],
+						i = 0;
+					while (i < DIFF.length) {
+						var d = DIFF[i];
+						if (d.t === "h") {
+							out.push({ h: d.s });
+							i++;
+							continue;
+						}
+						if (d.t === "c") {
+							out.push({ l: d, r: d });
+							i++;
+							continue;
+						}
+						var dels = [],
+							adds = [];
+						while (i < DIFF.length && DIFF[i].t === "-") {
+							dels.push(DIFF[i]);
+							i++;
+						}
+						while (i < DIFF.length && DIFF[i].t === "+") {
+							adds.push(DIFF[i]);
+							i++;
+						}
+						var n = Math.max(dels.length, adds.length);
+						for (var j = 0; j < n; j++) out.push({ l: dels[j] || null, r: adds[j] || null });
+					}
+					var h =
+						'<table class="diff splitview"><colgroup><col style="width:42px"><col><col style="width:42px"><col></colgroup>';
+					out.forEach(function (p) {
+						if (p.h) {
+							h += '<tr class="hunk"><td class="ln"></td><td colspan="3">' + esc(p.h) + "</td></tr>";
+							return;
+						}
+						var l = p.l,
+							r = p.r;
+						var lc = l && l.t === "-" ? "del" : "",
+							rc = r && r.t === "+" ? "add" : "";
+						var lp = l ? (lc ? "-" : " ") : "",
+							rp = r ? (rc ? "+" : " ") : "";
+						h +=
+							'<tr><td class="ln ' +
+							lc +
+							'">' +
+							(l ? l.o : "") +
+							'</td><td class="cl code ' +
+							lc +
+							'">' +
+							(l ? '<span class="' + (lc ? "k-del" : "k-dim") + '">' + lp + "</span>" + hl(l.s) : "") +
+							"</td>" +
+							'<td class="ln ' +
+							rc +
+							'">' +
+							(r ? r.n : "") +
+							'</td><td class="cr code ' +
+							rc +
+							'">' +
+							(r ? '<span class="' + (rc ? "k-add" : "k-dim") + '">' + rp + "</span>" + hl(r.s) : "") +
+							"</td></tr>";
+					});
+					return h + "</table>";
+				}
+				function render() {
+					host.innerHTML = MODE === "split" ? split() : unified();
+				}
+				[].forEach.call(document.querySelectorAll("#diffMode button"), function (b) {
+					b.addEventListener("click", function () {
+						MODE = b.dataset.mode;
+						[].forEach.call(document.querySelectorAll("#diffMode button"), function (x) {
+							x.classList.toggle("on", x === b);
+						});
+						render();
+					});
+				});
+				render();
+			})();
+
+			/* ---------- 方案 C：命令面板搜索 + 键盘选择 ---------- */
+			(function () {
+				var panel = document.getElementById("palList"),
+					input = document.getElementById("palInput");
+				if (!panel || !input) return;
+				var cat = "all",
+					countEl = document.getElementById("palCount");
+				function rows() {
+					return [].slice.call(panel.querySelectorAll(".pal-row"));
+				}
+				function visible() {
+					return rows().filter(function (r) {
+						return r.style.display !== "none";
+					});
+				}
+				function selectFirst() {
+					rows().forEach(function (r) {
+						r.classList.remove("sel");
+					});
+					var v = visible();
+					if (v[0]) v[0].classList.add("sel");
+				}
+				function apply() {
+					var q = input.value.trim().toLowerCase(),
+						n = 0;
+					rows().forEach(function (r) {
+						var hit = (cat === "all" || r.dataset.cat === cat) && (!q || r.textContent.toLowerCase().indexOf(q) >= 0);
+						r.style.display = hit ? "" : "none";
+						if (hit) n++;
+					});
+					[].forEach.call(panel.querySelectorAll(".pal-grp"), function (g) {
+						var el = g.nextElementSibling,
+							any = false;
+						while (el && !el.classList.contains("pal-grp")) {
+							if (el.classList.contains("pal-row") && el.style.display !== "none") any = true;
+							el = el.nextElementSibling;
+						}
+						g.style.display = any ? "" : "none";
+					});
+					countEl.textContent = n + " actions";
+					selectFirst();
+				}
+				input.addEventListener("input", apply);
+				input.addEventListener("keydown", function (e) {
+					if (e.key !== "ArrowDown" && e.key !== "ArrowUp" && e.key !== "Enter") return;
+					e.preventDefault();
+					if (e.key === "Enter") {
+						var sel = visible().find(function (r) {
+							return r.classList.contains("sel");
+						});
+						if (sel) {
+							sel.style.transition = "background 120ms";
+							sel.style.background = "var(--accent)";
+							sel.style.color = "#fff";
+							setTimeout(function () {
+								sel.style.background = "";
+								sel.style.color = "";
+							}, 180);
+						}
+						return;
+					}
+					var v = visible(),
+						i = v.findIndex(function (r) {
+							return r.classList.contains("sel");
+						});
+					var j = i + (e.key === "ArrowDown" ? 1 : -1);
+					if (j < 0) j = v.length - 1;
+					if (j >= v.length) j = 0;
+					rows().forEach(function (r) {
+						r.classList.remove("sel");
+					});
+					if (v[j]) {
+						v[j].classList.add("sel");
+						v[j].scrollIntoView({ block: "nearest" });
+					}
+				});
+				[].forEach.call(document.querySelectorAll("#palChips button"), function (b) {
+					b.addEventListener("click", function () {
+						cat = b.dataset.cat;
+						[].forEach.call(document.querySelectorAll("#palChips button"), function (x) {
+							x.classList.toggle("on", x === b);
+						});
+						apply();
+					});
+				});
+				rows().forEach(function (r) {
+					r.addEventListener("click", function () {
+						rows().forEach(function (x) {
+							x.classList.remove("sel");
+						});
+						r.classList.add("sel");
+					});
+				});
+				apply();
+				document.addEventListener("keydown", function (e) {
+					if ((e.metaKey || e.ctrlKey) && (e.key === "k" || e.key === "K")) {
+						var box = document.getElementById("plan-c");
+						if (!box) return;
+						var r = box.getBoundingClientRect();
+						if (r.top < window.innerHeight && r.bottom > 0) {
+							e.preventDefault();
+							input.focus();
+							input.select();
+						}
+					}
+				});
+			})();
+		</script>
+	</body>
+</html>

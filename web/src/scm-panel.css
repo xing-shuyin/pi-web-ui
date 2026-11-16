@@ -1,0 +1,523 @@
+/*
+ * Git 面板（右栏 / 底部抽屉）新增样式：同步条、分组文件列表、提交摘要、⌘⇧G 操作面板。
+ *
+ * 只放这一块独有的东西；.scm-view / .scm-file / .gd-* 的基础规则仍在 styles.css、drawer.css。
+ * 本文件由 SCMPanel.tsx 直接 import（组件级样式，与 agent-bots.css 同一种做法）。
+ */
+
+/* ------------------------------ 同步条 ------------------------------ */
+.scm-view .scm-sync {
+	display: flex;
+	align-items: center;
+	gap: 6px;
+	flex: none;
+	margin: 8px 10px 0;
+	padding: 6px;
+	border: 1px solid var(--border-soft);
+	border-radius: 8px;
+	background: var(--bg-elev2);
+	min-width: 0;
+}
+
+.scm-view .scm-sync .sp {
+	flex: 1;
+	min-width: 4px;
+}
+
+.scm-sync .btn {
+	height: 24px;
+	padding: 0 8px;
+	font-size: 11.5px;
+	border-radius: 6px;
+	gap: 4px;
+	min-width: 0;
+}
+
+.scm-sync .btn svg {
+	width: 12px;
+	height: 12px;
+	flex: none;
+}
+
+.scm-sync .btn.primary {
+	background: var(--button-primary-bg);
+	border-color: var(--button-primary-bg);
+	color: var(--button-primary-fg);
+}
+
+.scm-sync .btn.primary:hover:not(:disabled) {
+	background: var(--button-primary-hover-bg);
+	border-color: var(--button-primary-hover-bg);
+	color: var(--button-primary-hover-fg);
+}
+
+.scm-sync .btn:disabled {
+	opacity: 0.45;
+	cursor: not-allowed;
+}
+
+.scm-sync-count {
+	font-family: var(--mono);
+	font-size: 10px;
+	padding: 0 4px;
+	border-radius: 4px;
+	background: var(--bg-elev3);
+	color: var(--text-dim);
+	flex: none;
+}
+
+.scm-sync .btn.primary .scm-sync-count {
+	background: color-mix(in srgb, var(--button-primary-fg) 22%, transparent);
+	color: var(--button-primary-fg);
+}
+
+.scm-view .scm-upstream-gone {
+	font-size: 10.5px;
+	color: var(--amber);
+	white-space: nowrap;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	min-width: 0;
+}
+
+/* ---------------------------- 更改列表 ---------------------------- */
+.scm-files-head-actions {
+	display: inline-flex;
+	align-items: center;
+	gap: 4px;
+	flex: none;
+}
+
+.scm-filter {
+	display: flex;
+	align-items: center;
+	gap: 6px;
+	flex: none;
+	padding: 5px 10px;
+	border-bottom: 1px solid var(--border-soft);
+	color: var(--text-faint);
+	min-width: 0;
+}
+
+.scm-filter > svg {
+	width: 12px;
+	height: 12px;
+	flex: none;
+}
+
+.scm-filter input {
+	flex: 1;
+	min-width: 0;
+	border: 0;
+	background: transparent;
+	color: var(--text);
+	font-size: 12px;
+	outline: none;
+}
+
+.scm-filter input::placeholder {
+	color: var(--text-faint);
+}
+
+.scm-filter-clear {
+	width: 18px;
+	height: 18px;
+	display: grid;
+	place-items: center;
+	border: 0;
+	border-radius: 4px;
+	background: transparent;
+	color: var(--text-faint);
+	cursor: pointer;
+	flex: none;
+}
+
+.scm-filter-clear:hover {
+	background: var(--bg-elev2);
+	color: var(--text);
+}
+
+.scm-group + .scm-group {
+	margin-top: 2px;
+}
+
+.scm-group-head {
+	display: flex;
+	align-items: center;
+	gap: 6px;
+	padding: 6px 10px 4px;
+	position: sticky;
+	top: 0;
+	z-index: 1;
+	background: color-mix(in srgb, var(--bg-elev) 94%, transparent);
+	backdrop-filter: blur(6px);
+	font-family: var(--mono);
+	font-size: 10px;
+	letter-spacing: 0.06em;
+	text-transform: uppercase;
+	color: var(--text-faint);
+	min-width: 0;
+}
+
+.scm-group-title {
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+
+.scm-group-count {
+	font-size: 9.5px;
+	padding: 0 4px;
+	border-radius: 4px;
+	background: var(--bg-elev3);
+	color: var(--text-dim);
+	flex: none;
+}
+
+.scm-group-stat {
+	font-size: 10px;
+	flex: none;
+}
+
+.scm-group-stat.add {
+	color: var(--green);
+}
+
+.scm-group-stat.del {
+	color: var(--red);
+}
+
+/* 文件列表的最小可读宽度：SCM 现在住在右栏（refresh 后可能只有 ~240px 宽），
+   只靠 styles.css 的 max-width: calc(100% - 220px) 会把列表压到十几像素——几乎看不见。
+   挤压的代价交给右侧 diff（flex:1; min-width:0）承担。 */
+.scm-files,
+.scm-history {
+	min-width: 200px;
+}
+
+/* 行首：勾选框命中区 = 整行高度，方块本身 14px */
+.scm-file-tick {
+	position: relative;
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	width: 18px;
+	height: 22px;
+	flex: none;
+	cursor: pointer;
+	border-radius: 4px;
+}
+
+.scm-file-tick input {
+	position: absolute;
+	inset: 0;
+	opacity: 0;
+	margin: 0;
+	cursor: pointer;
+}
+
+.scm-file-box {
+	display: grid;
+	place-items: center;
+	width: 14px;
+	height: 14px;
+	border: 1.5px solid var(--border);
+	border-radius: 4px;
+	color: transparent;
+	background: var(--bg-elev2);
+	transition:
+		background 0.14s ease,
+		border-color 0.14s ease,
+		color 0.14s ease;
+	pointer-events: none;
+}
+
+.scm-file-box svg {
+	width: 9px;
+	height: 9px;
+	stroke-width: 3.4;
+}
+
+.scm-file-tick:hover .scm-file-box {
+	border-color: var(--text-faint);
+}
+
+.scm-file-tick input:focus-visible + .scm-file-box {
+	outline: 2px solid var(--accent);
+	outline-offset: 1px;
+}
+
+.scm-file-tick input:checked + .scm-file-box {
+	background: var(--accent);
+	border-color: var(--accent);
+	color: var(--accent-contrast);
+}
+
+/* 单字符状态位：M / A / U / D / R */
+.scm-file-letter {
+	width: 12px;
+	flex: none;
+	text-align: center;
+	font-family: var(--mono);
+	font-size: 10.5px;
+	font-weight: 700;
+}
+
+.scm-file-letter.green {
+	color: var(--green);
+}
+
+.scm-file-letter.red {
+	color: var(--red);
+}
+
+.scm-file-letter.amber {
+	color: var(--amber);
+}
+
+.scm-file-letter.accent {
+	color: var(--accent);
+}
+
+.scm-file.staged .scm-file-path {
+	color: var(--text-dim);
+}
+
+/* ---------------------------- 提交摘要 ---------------------------- */
+.scm-commit-meta {
+	display: flex;
+	align-items: center;
+	gap: 8px;
+	flex-wrap: wrap;
+	font-family: var(--mono);
+	font-size: 10.5px;
+	color: var(--text-faint);
+	min-width: 0;
+}
+
+.scm-commit-meta .scm-commit-target {
+	color: var(--accent);
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+	min-width: 0;
+}
+
+.scm-commit-meta .add {
+	color: var(--green);
+}
+
+.scm-commit-meta .del {
+	color: var(--red);
+}
+
+/* -------------------------- Git 操作面板 -------------------------- */
+.scm-pal-backdrop {
+	position: fixed;
+	inset: 0;
+	display: flex;
+	align-items: flex-start;
+	justify-content: center;
+	padding: min(10vh, 88px) 12px 12px;
+	background: color-mix(in srgb, var(--bg) 55%, transparent);
+	backdrop-filter: blur(2px);
+	overscroll-behavior: contain;
+}
+
+.scm-pal {
+	display: flex;
+	flex-direction: column;
+	width: min(560px, 100%);
+	max-height: min(70vh, 560px);
+	min-height: 0;
+	border: 1px solid var(--border);
+	border-radius: 12px;
+	background: var(--bg-elev);
+	box-shadow: 0 24px 60px -28px #000000cc;
+	overflow: hidden;
+}
+
+.scm-pal-head {
+	display: flex;
+	align-items: center;
+	gap: 8px;
+	padding: 10px 12px;
+	border-bottom: 1px solid var(--border-soft);
+	color: var(--text-faint);
+	flex: none;
+}
+
+.scm-pal-head > svg {
+	width: 14px;
+	height: 14px;
+	flex: none;
+}
+
+.scm-pal-head input {
+	flex: 1;
+	min-width: 0;
+	border: 0;
+	background: transparent;
+	color: var(--text);
+	font-size: 13px;
+	outline: none;
+}
+
+.scm-pal-head input::placeholder {
+	color: var(--text-faint);
+}
+
+.scm-pal-kbd {
+	font-family: var(--mono);
+	font-size: 10px;
+	padding: 1px 5px;
+	border: 1px solid var(--border);
+	border-radius: 4px;
+	color: var(--text-faint);
+	background: var(--bg-elev2);
+	flex: none;
+}
+
+.scm-pal-list {
+	flex: 1;
+	min-height: 0;
+	overflow-y: auto;
+	padding: 4px 0 6px;
+	overscroll-behavior: contain;
+}
+
+.scm-pal-group-title {
+	padding: 7px 12px 3px;
+	font-size: 10px;
+	font-weight: 700;
+	letter-spacing: 0.07em;
+	text-transform: uppercase;
+	color: var(--text-faint);
+}
+
+.scm-pal-row {
+	display: flex;
+	align-items: center;
+	gap: 8px;
+	width: 100%;
+	padding: 6px 12px;
+	border: 0;
+	border-left: 2px solid transparent;
+	background: transparent;
+	color: var(--text);
+	text-align: left;
+	cursor: pointer;
+	min-width: 0;
+}
+
+.scm-pal-row.on {
+	background: var(--accent-soft);
+	border-left-color: var(--accent);
+}
+
+.scm-pal-row:disabled {
+	opacity: 0.42;
+	cursor: not-allowed;
+}
+
+.scm-pal-row.danger .scm-pal-row-label {
+	color: var(--red);
+}
+
+.scm-pal-row-main {
+	flex: 1;
+	min-width: 0;
+	display: flex;
+	flex-direction: column;
+	gap: 1px;
+}
+
+.scm-pal-row-label {
+	font-size: 12.5px;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+
+.scm-pal-row-hint {
+	font-family: var(--mono);
+	font-size: 10.5px;
+	color: var(--text-faint);
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+
+.scm-pal-badge {
+	flex: none;
+	font-family: var(--mono);
+	font-size: 10px;
+	padding: 0 5px;
+	border-radius: 999px;
+	background: var(--bg-elev3);
+	color: var(--text-dim);
+}
+
+.scm-pal-row.on .scm-pal-badge {
+	background: color-mix(in srgb, var(--accent) 26%, transparent);
+	color: var(--text);
+}
+
+.scm-pal-empty {
+	padding: 18px 12px;
+	text-align: center;
+	font-size: 12px;
+	color: var(--text-faint);
+}
+
+.scm-pal-foot {
+	display: flex;
+	align-items: center;
+	gap: 10px;
+	padding: 7px 12px;
+	border-top: 1px solid var(--border-soft);
+	background: var(--bg-elev2);
+	font-size: 10.5px;
+	color: var(--text-faint);
+	flex: none;
+	flex-wrap: wrap;
+}
+
+.scm-pal-foot > span {
+	display: inline-flex;
+	align-items: center;
+	gap: 4px;
+	white-space: nowrap;
+}
+
+.scm-pal-count {
+	margin-left: auto;
+	font-family: var(--mono);
+}
+
+/* 手机：面板贴底、行更高 */
+@media (max-width: 640px) {
+	.scm-pal-backdrop {
+		align-items: flex-end;
+		padding: 0;
+	}
+
+	.scm-pal {
+		width: 100%;
+		max-height: 82dvh;
+		border-radius: 14px 14px 0 0;
+	}
+
+	.scm-pal-row {
+		padding: 9px 12px;
+	}
+
+	.scm-sync .btn {
+		height: 28px;
+	}
+
+	.scm-file {
+		padding-top: 7px;
+		padding-bottom: 7px;
+	}
+}

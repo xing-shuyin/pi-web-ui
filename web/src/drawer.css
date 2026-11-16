@@ -879,27 +879,6 @@
 		color: var(--text-faint);
 	}
 
-	.gd-ab {
-		display: inline-flex;
-		align-items: center;
-		gap: 3px;
-		font-family: var(--mono);
-		font-size: 10px;
-		flex: none;
-	}
-
-	.gd-ab .up {
-		color: var(--green);
-	}
-
-	.gd-ab .dn {
-		color: var(--red);
-	}
-
-	.gd-ab .gone {
-		color: var(--amber);
-	}
-
 	.gd-titlebar .gd-actions {
 		margin-left: auto;
 		display: flex;
@@ -1075,50 +1054,6 @@
 	.scm-view .scm-back svg {
 		width: 14px;
 		height: 14px;
-	}
-
-	.gd-more-scrim {
-		position: absolute;
-		inset: 0;
-		z-index: 7;
-		background: transparent;
-		border: 0;
-		cursor: default;
-	}
-
-	/* 「更多」浮层：承载 stash / 分支 / amend / blame */
-	.gd-more {
-		position: absolute;
-		top: 40px;
-		right: 8px;
-		width: min(340px, calc(100% - 16px));
-		max-height: 60%;
-		overflow-y: auto;
-		overscroll-behavior: contain;
-		z-index: 8;
-		display: flex;
-		flex-direction: column;
-		gap: 6px;
-		padding: 10px;
-		background: var(--bg-elev);
-		border: 1px solid var(--border);
-		border-radius: 10px;
-		box-shadow: 0 22px 50px -22px #000000d9;
-	}
-
-	.gd-more .gd-more-title {
-		font-size: 10.5px;
-		font-weight: 600;
-		letter-spacing: 0.05em;
-		text-transform: uppercase;
-		color: var(--text-faint);
-	}
-
-	.gd-more .gd-more-row {
-		display: flex;
-		flex-wrap: wrap;
-		gap: 4px;
-		align-items: center;
 	}
 
 	/* 提交栏：常驻底部 */

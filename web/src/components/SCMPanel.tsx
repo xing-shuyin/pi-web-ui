@@ -4,6 +4,7 @@ import {
 	type ReactNode,
 	useCallback,
 	useEffect,
+	useMemo,
 	useRef,
 	useState,
 } from "react";
@@ -13,9 +14,9 @@ import {
 	FiCheck,
 	FiChevronDown,
 	FiChevronLeft,
+	FiCommand,
 	FiCpu,
 	FiGitBranch,
-	FiMoreHorizontal,
 	FiRefreshCw,
 	FiTerminal,
 	FiTrash2,
@@ -28,6 +29,8 @@ import { randomUuid } from "../uuid";
 import { quotePath } from "../scm-quote";
 import { clampScmSidebarWidth, parseScmSidebarWidth, SCM_SIDEBAR_DEFAULT, SCM_SIDEBAR_WIDTH_KEY } from "../scm-sidebar";
 import { filterScmCommits } from "../scm-history-filter";
+import { scmFileKind, splitScmFiles, sumScmStats } from "../scm-file-kind";
+import { buildScmPaletteActions, type ScmPaletteAction } from "../scm-palette-actions";
 import {
 	COMMIT_RECALL_INITIAL,
 	cycleCommitRecall,
@@ -40,6 +43,9 @@ import { appSend } from "../app-globals";
 import type { UiSlotEntry } from "../ui-slots";
 import { renderMergedToolbar } from "../slot-toolbar";
 import { Dropdown } from "./Dropdown";
+import { ScmChangesList } from "./scm/ScmChangesList";
+import { ScmCommandPalette } from "./scm/ScmCommandPalette";
+import "../scm-panel.css";
 
 interface ScmFile {
 	path: string;
@@ -76,17 +82,6 @@ interface ScmCommit {
 interface StatInfo {
 	add: number;
 	del: number;
-}
-
-type FileKind = "staged" | "unstaged" | "untracked" | "both";
-
-function fileKind(f: ScmFile): FileKind {
-	if (f.x === "?" && f.y === "?") return "untracked";
-	const staged = f.x !== " " && f.x !== "?";
-	const unstaged = f.y !== " " && f.y !== "?";
-	if (staged && unstaged) return "both";
-	if (staged) return "staged";
-	return "unstaged";
 }
 
 function isDiffMetaLine(ln: string): boolean {
@@ -157,6 +152,7 @@ function stripAnsiForScm(s: string): string {
 		.replace(/\x1b\][^\x07\x1b]*(\x07|\x1b\\)/g, "")
 		.replace(/\x1b\[[0-9;?]*[a-zA-Z]/g, "")
 		.replace(/\x1b\(B/g, "")
+		.replace(/\x1b/g, "")
 		.replace(/\r/g, "");
 }
 
@@ -249,10 +245,6 @@ function isValidBranchName(name: string): boolean {
 	if (name.endsWith(".lock") || name.endsWith(".")) return false;
 	if (name.startsWith("-") || name.includes("@{")) return false;
 	return /^[A-Za-z0-9._/-]+$/.test(name);
-}
-
-function isValidStashRef(ref: string): boolean {
-	return /^stash@\{\d+\}$/.test(ref.trim());
 }
 
 function parseHunkHeader(ln: string): { oldStart: number; newStart: number } | null {
@@ -361,7 +353,7 @@ export function ScmPanel({
 	const [branchMenuOpen, setBranchMenuOpen] = useState(false);
 	const [statMap, setStatMap] = useState<Map<string, StatInfo>>(new Map());
 	const [viewMode, setViewMode] = useState<"changes" | "history" | "stash">("changes");
-	const [moreOpen, setMoreOpen] = useState(false);
+	const [paletteOpen, setPaletteOpen] = useState(false);
 	const [history, setHistory] = useState<ScmCommit[]>([]);
 	const [selectedCommit, setSelectedCommit] = useState<ScmCommit | null>(null);
 	const [commitDetail, setCommitDetail] = useState("");
@@ -384,10 +376,8 @@ export function ScmPanel({
 		parseScmSidebarWidth(localStorage.getItem(SCM_SIDEBAR_WIDTH_KEY)),
 	);
 	const [commitMsg, setCommitMsg] = useState("");
-	const [stashUntracked, setStashUntracked] = useState(false);
 	const [stashList, setStashList] = useState<ScmStashEntry[] | null>(null);
 	const [stashLoading, setStashLoading] = useState(false);
-	const [stashRefInput, setStashRefInput] = useState("stash@{0}");
 	const [showBlame, setShowBlame] = useState(false);
 	const [blameLines, setBlameLines] = useState<ScmBlameLine[] | null>(null);
 	const [blameLoading, setBlameLoading] = useState(false);
@@ -705,7 +695,7 @@ export function ScmPanel({
 	const handleDiscard = useCallback(
 		(f: ScmFile) => {
 			if (notRepo) return;
-			const untracked = fileKind(f) === "untracked";
+			const untracked = scmFileKind(f) === "untracked";
 			const ok = window.confirm(t(untracked ? "scmDiscardUntrackedConfirm" : "scmDiscardConfirm", { path: f.path }));
 			if (!ok) return;
 			if (untracked) {
@@ -752,6 +742,7 @@ export function ScmPanel({
 
 	const handlePush = useCallback(() => runGitCommand("git push", "git push"), [runGitCommand]);
 	const handlePull = useCallback(() => runGitCommand("git pull", "git pull"), [runGitCommand]);
+	const handleFetch = useCallback(() => runGitCommand("git fetch", "git fetch --all --prune"), [runGitCommand]);
 
 	const runGitCapture = useCallback(
 		(
@@ -841,29 +832,23 @@ export function ScmPanel({
 		window.setTimeout(() => setStashLoading(false), 16000);
 	}, [notRepo, runGitCapture]);
 
-	const handleStashSave = useCallback(() => {
-		if (notRepo) return;
-		const msg = window.prompt(t("scmStashMsgPrompt"), "");
-		if (msg === null) return;
-		const scope = stashUntracked ? t("scmStashScopeUntracked") : "";
-		if (!window.confirm(t("scmStashSaveConfirm", { scope }))) return;
-		const trimmed = msg.trim();
-		const escaped = trimmed.replace(/\\/g, "\\\\").replace(/"/g, '\\"').replace(/`/g, "\\`").replace(/\$/g, "\\$");
-		const parts = ["git stash push"];
-		if (stashUntracked) parts.push("-u");
-		if (trimmed) parts.push(`-m "${escaped}"`);
-		runGitCommand("git stash", parts.join(" "));
-		handleStashList();
-	}, [notRepo, stashUntracked, runGitCommand, handleStashList, t]);
-
-	const stashTargetRef = useCallback(() => {
-		const ref = stashRefInput.trim() || "stash@{0}";
-		if (!isValidStashRef(ref)) {
-			window.alert(t("scmStashRefPrompt"));
-			return null;
-		}
-		return ref;
-	}, [stashRefInput, t]);
+	const handleStashSave = useCallback(
+		(includeUntracked = false) => {
+			if (notRepo) return;
+			const msg = window.prompt(t("scmStashMsgPrompt"), "");
+			if (msg === null) return;
+			const scope = includeUntracked ? t("scmStashScopeUntracked") : "";
+			if (!window.confirm(t("scmStashSaveConfirm", { scope }))) return;
+			const trimmed = msg.trim();
+			const escaped = trimmed.replace(/\\/g, "\\\\").replace(/"/g, '\\"').replace(/`/g, "\\`").replace(/\$/g, "\\$");
+			const parts = ["git stash push"];
+			if (includeUntracked) parts.push("-u");
+			if (trimmed) parts.push(`-m "${escaped}"`);
+			runGitCommand("git stash", parts.join(" "));
+			handleStashList();
+		},
+		[notRepo, runGitCommand, handleStashList, t],
+	);
 
 	const handleStashPopWithRef = useCallback(
 		(ref: string) => {
@@ -892,20 +877,34 @@ export function ScmPanel({
 		[notRepo, runGitCommand, t],
 	);
 
-	const handleStashPop = useCallback(() => {
-		const ref = stashTargetRef();
-		if (ref) handleStashPopWithRef(ref);
-	}, [stashTargetRef, handleStashPopWithRef]);
+	const handleStashOpen = useCallback(() => {
+		setViewMode("stash");
+		setError(null);
+		handleStashList();
+	}, [handleStashList]);
 
-	const handleStashApply = useCallback(() => {
-		const ref = stashTargetRef();
-		if (ref) handleStashApplyWithRef(ref);
-	}, [stashTargetRef, handleStashApplyWithRef]);
+	const handleDiscardSelected = useCallback(() => {
+		if (!selected) return;
+		handleDiscard(selected);
+	}, [selected, handleDiscard]);
 
-	const handleStashDrop = useCallback(() => {
-		const ref = stashTargetRef();
-		if (ref) handleStashDropWithRef(ref);
-	}, [stashTargetRef, handleStashDropWithRef]);
+	const handleCreateTag = useCallback(() => {
+		if (notRepo) return;
+		const name = (window.prompt(t("scmTagCreatePrompt"), "") ?? "").trim();
+		if (!name) return;
+		if (!isValidBranchName(name)) {
+			window.alert(t("scmTagInvalid"));
+			return;
+		}
+		if (!window.confirm(t("scmTagCreateConfirm", { name }))) return;
+		runGitCommand("git tag", `git tag ${name}`);
+	}, [notRepo, runGitCommand, t]);
+
+	const handlePushTags = useCallback(() => {
+		if (notRepo) return;
+		if (!window.confirm(t("scmTagPushConfirm"))) return;
+		runGitCommand("git push", "git push --tags");
+	}, [notRepo, runGitCommand, t]);
 
 	const handleAmend = useCallback(() => {
 		if (notRepo) return;
@@ -976,20 +975,8 @@ export function ScmPanel({
 		[notRepo, runGitCapture, t],
 	);
 
-	const handleBlameToggle = useCallback(() => {
-		setShowBlame((prev) => {
-			const next = !prev;
-			if (next && selected && selected.x !== "?" && selected.y !== "?") {
-				window.setTimeout(() => fetchBlame(selected.path), 0);
-			} else if (next && selected) {
-				window.setTimeout(() => {
-					setBlameLines(null);
-					setBlameError(t("scmBlameEmpty"));
-				}, 0);
-			}
-			return next;
-		});
-	}, [selected, fetchBlame, t]);
+	// blame 只在这里翻转开关：抓取交给下面的 effect（单触发点，避免两条路径各抳一次）。
+	const handleBlameToggle = useCallback(() => setShowBlame((prev) => !prev), []);
 
 	const handleGenCommitMsg = useCallback(() => {
 		if (genLoading || notRepo || !chat.ready || chat.status !== "open") return;
@@ -1070,12 +1057,90 @@ export function ScmPanel({
 		setBlameLoading(false);
 	}, [chat.state?.cwd]);
 
-	const kindLabels: Record<FileKind, string> = {
-		staged: t("scmStaged"),
-		unstaged: t("scmUnstaged"),
-		untracked: t("scmUntracked"),
-		both: t("scmStagedUnstaged"),
-	};
+	const changeLists = useMemo(() => splitScmFiles(status?.files ?? []), [status]);
+	const stagedSummary = useMemo(() => sumScmStats(changeLists.staged, statMap), [changeLists, statMap]);
+	const fileCount = status?.files.length ?? 0;
+	const commitTarget = status && !status.detached ? status.branch : "";
+
+	const paletteActions = useMemo<ScmPaletteAction[]>(() => {
+		const actions = buildScmPaletteActions({
+			t,
+			notRepo,
+			status,
+			branches,
+			fileCount,
+			stagedCount: stagedSummary.count,
+			commitMsg,
+			selectedPath: selected?.path ?? null,
+			showBlame,
+			handlers: {
+				pull: handlePull,
+				push: handlePush,
+				fetch: handleFetch,
+				branchCreate: handleBranchCreate,
+				branchRename: handleBranchRename,
+				branchCheckout: switchBranch,
+				commit: handleCommit,
+				commitAll: handleCommitAll,
+				amend: handleAmend,
+				genMessage: handleGenCommitMsg,
+				stageAll: handleStageAll,
+				unstageAll: handleUnstageAll,
+				stashSave: handleStashSave,
+				stashOpen: handleStashOpen,
+				discardSelected: handleDiscardSelected,
+				toggleBlame: handleBlameToggle,
+				openTerminal: onSwitchToTerminal,
+				refresh: () => refresh(true),
+				createTag: handleCreateTag,
+				pushTags: handlePushTags,
+			},
+		});
+		return actions;
+	}, [
+		t,
+		notRepo,
+		status,
+		branches,
+		fileCount,
+		stagedSummary.count,
+		commitMsg,
+		selected,
+		showBlame,
+		handlePull,
+		handlePush,
+		handleFetch,
+		handleBranchCreate,
+		handleBranchRename,
+		switchBranch,
+		handleCommit,
+		handleCommitAll,
+		handleAmend,
+		handleGenCommitMsg,
+		handleStageAll,
+		handleUnstageAll,
+		handleStashSave,
+		handleStashOpen,
+		handleDiscardSelected,
+		handleBlameToggle,
+		onSwitchToTerminal,
+		refresh,
+		handleCreateTag,
+		handlePushTags,
+	]);
+
+	// ⌘⇧P：面板可见时才接管（⌘⇧G 在 App 里是开关 Git 抽屉，⌘K 是全局搜索）。
+	useEffect(() => {
+		if (!active) return;
+		const onKey = (e: KeyboardEvent) => {
+			if (!(e.metaKey || e.ctrlKey) || !e.shiftKey) return;
+			if (e.key.toLowerCase() !== "p") return;
+			e.preventDefault();
+			setPaletteOpen((v) => !v);
+		};
+		window.addEventListener("keydown", onKey);
+		return () => window.removeEventListener("keydown", onKey);
+	}, [active]);
 
 	const filteredHistory = filterScmCommits(history, historyFilter);
 	const effectiveDiffView = isNarrow ? "inline" : diffView;
@@ -1341,25 +1406,27 @@ export function ScmPanel({
 		"host:scm-push": (
 			<button
 				type="button"
-				className="btn"
-				disabled={!status || status.detached || notRepo}
+				className={`btn${status && status.ahead > 0 ? " primary" : ""}`}
+				disabled={!status || status.detached || status.upstreamGone || notRepo || status.ahead === 0}
 				title={t("scmPushTip")}
 				onClick={handlePush}
 			>
 				<FiArrowUp />
 				{scmLabel("host:scm-push", t("scmPush"))}
+				{status && status.ahead > 0 && <span className="scm-sync-count">↑{status.ahead}</span>}
 			</button>
 		),
 		"host:scm-pull": (
 			<button
 				type="button"
-				className="btn"
-				disabled={!status || status.detached || notRepo}
+				className={`btn${status && status.behind > 0 ? " primary" : ""}`}
+				disabled={!status || status.detached || status.upstreamGone || notRepo || status.behind === 0}
 				title={t("scmPullTip")}
 				onClick={handlePull}
 			>
 				<FiArrowDown />
 				{scmLabel("host:scm-pull", t("scmPull"))}
+				{status && status.behind > 0 && <span className="scm-sync-count">↓{status.behind}</span>}
 			</button>
 		),
 		"host:scm-input": (
@@ -1411,7 +1478,7 @@ export function ScmPanel({
 			<button
 				type="button"
 				className="btn primary"
-				disabled={!commitMsg.trim() || notRepo}
+				disabled={!commitMsg.trim() || notRepo || stagedSummary.count === 0}
 				title={t("scmCommitTip")}
 				onClick={handleCommit}
 			>
@@ -1437,29 +1504,17 @@ export function ScmPanel({
 			<div className="scm-header">
 				<div className="gd-titlebar">
 					{renderMergedToolbar(scmZone(["host:scm-branch"], false), scmHostNodes, onUiAction)}
-					{status?.upstream && (
-						<span className={`gd-ab${status.upstreamGone ? " gone" : ""}`}>
-							{status.upstreamGone ? (
-								<span className="gone">{t("scmUpstreamGone")}</span>
-							) : (
-								<>
-									<span className="up">↑{status.ahead}</span>
-									<span className="dn">↓{status.behind}</span>
-								</>
-							)}
-						</span>
-					)}
 					<div className="gd-actions">
 						{renderMergedToolbar(scmZone(["host:scm-refresh"], true), scmHostNodes, onUiAction)}
-						{renderMergedToolbar(scmZone(["host:scm-push", "host:scm-pull"], false), scmHostNodes, onUiAction)}
 						<button
 							type="button"
 							className="icon-btn"
-							title={t("scmMoreActions")}
-							aria-expanded={moreOpen}
-							onClick={() => setMoreOpen((v) => !v)}
+							title={t("scmPaletteTriggerTip")}
+							aria-haspopup="dialog"
+							aria-expanded={paletteOpen}
+							onClick={() => setPaletteOpen(true)}
 						>
-							<FiMoreHorizontal />
+							<FiCommand />
 						</button>
 						{onClose && (
 							<button type="button" className="icon-btn" title={t("close")} onClick={onClose}>
@@ -1467,6 +1522,17 @@ export function ScmPanel({
 							</button>
 						)}
 					</div>
+				</div>
+
+				<div className="scm-sync">
+					<button type="button" className="btn" disabled={notRepo} title={t("scmSyncFetchTip")} onClick={handleFetch}>
+						<FiRefreshCw />
+						{t("scmSyncFetch")}
+					</button>
+					<span className="sp" />
+					{status?.upstreamGone && <span className="scm-upstream-gone">{t("scmUpstreamGone")}</span>}
+					{renderMergedToolbar(scmZone(["host:scm-pull"], false), scmHostNodes, onUiAction)}
+					{renderMergedToolbar(scmZone(["host:scm-push"], false), scmHostNodes, onUiAction)}
 				</div>
 
 				<div className="gd-seg">
@@ -1485,120 +1551,6 @@ export function ScmPanel({
 						{stashList && stashList.length > 0 && <span className="n">{stashList.length}</span>}
 					</button>
 				</div>
-
-				{moreOpen && (
-					<>
-						<button
-							type="button"
-							className="gd-more-scrim"
-							aria-label={t("close")}
-							onClick={() => setMoreOpen(false)}
-						/>
-						<div className="gd-more">
-							<div className="gd-more-title">{t("scmBranchNew")}</div>
-							<div className="gd-more-row">
-								<button
-									type="button"
-									className="btn"
-									disabled={notRepo}
-									title={t("scmBranchNewTip")}
-									onClick={handleBranchCreate}
-								>
-									{t("scmBranchNew")}
-								</button>
-								<button
-									type="button"
-									className="btn"
-									disabled={notRepo || !status || status.detached}
-									title={t("scmBranchRenameTip")}
-									onClick={handleBranchRename}
-								>
-									{t("scmBranchRename")}
-								</button>
-								<button type="button" className="btn" disabled={notRepo} title={t("scmAmendTip")} onClick={handleAmend}>
-									{t("scmAmend")}
-								</button>
-								<button
-									type="button"
-									className="btn"
-									disabled={notRepo || !selected}
-									title={t("scmBlameTip")}
-									onClick={handleBlameToggle}
-									style={showBlame ? { background: "var(--accent-soft)", borderColor: "var(--accent)" } : {}}
-								>
-									{showBlame ? t("scmBlameHide") : t("scmBlameShow")}
-								</button>
-							</div>
-							<div className="gd-more-title">{t("scmStash")}</div>
-							<div className="gd-more-row">
-								<button
-									type="button"
-									className="btn"
-									disabled={notRepo}
-									title={t("scmStashSaveTip")}
-									onClick={handleStashSave}
-								>
-									{t("scmStashSave")}
-								</button>
-								<button
-									type="button"
-									className="btn"
-									disabled={notRepo}
-									title={t("scmStashPopTip")}
-									onClick={handleStashPop}
-								>
-									{t("scmStashPop")}
-								</button>
-								<button
-									type="button"
-									className="btn"
-									disabled={notRepo}
-									title={t("scmStashApplyTip")}
-									onClick={handleStashApply}
-								>
-									{t("scmStashApply")}
-								</button>
-								<button
-									type="button"
-									className="btn"
-									disabled={notRepo}
-									title={t("scmStashDropTip")}
-									onClick={handleStashDrop}
-								>
-									{t("scmStashDrop")}
-								</button>
-								<label
-									style={{
-										display: "inline-flex",
-										alignItems: "center",
-										gap: 4,
-										fontSize: 12,
-										fontWeight: 400,
-										cursor: "pointer",
-									}}
-									title={t("scmStashUntrackedTip")}
-								>
-									<input
-										type="checkbox"
-										checked={stashUntracked}
-										onChange={(e) => setStashUntracked(e.target.checked)}
-										disabled={notRepo}
-									/>
-									{t("scmStashUntracked")}
-								</label>
-								<input
-									className="scm-commit-input"
-									value={stashRefInput}
-									placeholder={t("scmStashRefPlaceholder")}
-									title={t("scmStashRefLabel")}
-									disabled={notRepo}
-									style={{ flex: "0 1 auto", minWidth: 90 }}
-									onChange={(e) => setStashRefInput(e.target.value)}
-								/>
-							</div>
-						</div>
-					</>
-				)}
 
 				{genError && (
 					<div className="scm-gen-error" role="alert" title={t("close")} onClick={() => setGenError(null)}>
@@ -1637,12 +1589,7 @@ export function ScmPanel({
 							) : (
 								stashList.map((entry) => (
 									<div key={entry.ref} className="scm-file" style={{ cursor: "default" }}>
-										<span
-											className="scm-file-path"
-											style={{ cursor: "pointer" }}
-											title={entry.ref}
-											onClick={() => setStashRefInput(entry.ref)}
-										>
+										<span className="scm-file-path" title={entry.ref}>
 											<span style={{ color: "var(--accent)", fontFamily: "var(--mono)" }}>{entry.ref}</span>
 											{"  "}
 											{entry.message || "—"}
@@ -1734,113 +1681,20 @@ export function ScmPanel({
 						</div>
 					</div>
 				) : (
-					<div className="scm-files">
-						<div className="scm-files-header">
-							<span>{t("scmChanges")}</span>
-							<span style={{ display: "inline-flex", alignItems: "center", gap: "4px" }}>
-								{status && status.files.length > 0 && <span className="scm-files-count">{status.files.length}</span>}
-								<button
-									type="button"
-									className="scm-act"
-									style={{ width: "auto", padding: "0 6px", fontSize: "11px" }}
-									title={t("scmStageAllTip")}
-									disabled={notRepo || !status || !status.files.some((f) => fileKind(f) !== "staged")}
-									onClick={handleStageAll}
-								>
-									{t("scmStageAll")}
-								</button>
-								<button
-									type="button"
-									className="scm-act"
-									style={{ width: "auto", padding: "0 6px", fontSize: "11px" }}
-									title={t("scmUnstageAllTip")}
-									disabled={notRepo || !status || !status.files.some((f) => f.x !== " " && f.x !== "?")}
-									onClick={handleUnstageAll}
-								>
-									{t("scmUnstageAll")}
-								</button>
-							</span>
-						</div>
-						<div className="scm-files-list">
-							{notRepo ? (
-								<div className="scm-empty">{t("scmNotGitRepo")}</div>
-							) : !status ? (
-								<div className="scm-empty">{chat.status === "open" ? t("scmLoading") : t("scmConnecting")}</div>
-							) : status.files.length === 0 ? (
-								<div className="scm-empty">{t("scmNoChanges")}</div>
-							) : (
-								status.files.map((f) => {
-									const kind = fileKind(f);
-									const st = statMap.get(f.path);
-									return (
-										<div
-											key={f.path}
-											className={`scm-file ${selected?.path === f.path ? "active" : ""}`}
-											title={kindLabels[kind]}
-											onClick={() => showFileDiff(f)}
-										>
-											<span className={`scm-file-xy ${kind === "untracked" ? "q" : "x"}`}>
-												{f.x !== " " ? f.x : "\u00a0"}
-											</span>
-											<span className={`scm-file-xy ${kind === "untracked" ? "q" : "y"}`}>
-												{f.y !== " " ? f.y : "\u00a0"}
-											</span>
-											<span className="scm-file-path">{f.path}</span>
-											{st && (st.add > 0 || st.del > 0) && (
-												<span className="scm-file-stat">
-													{st.add > 0 && <span className="add">+{st.add}</span>}
-													{st.del > 0 && <span className="del">-{st.del}</span>}
-												</span>
-											)}
-											<span className="scm-file-actions">
-												{(f.y !== " " || kind === "untracked") && (
-													<button
-														type="button"
-														className="scm-act"
-														title={t("scmStageTip", { path: f.path })}
-														onClick={(e) => {
-															e.stopPropagation();
-															handleStage(f);
-														}}
-													>
-														+
-													</button>
-												)}
-												{kind === "staged" || kind === "both" ? (
-													<button
-														type="button"
-														className="scm-act"
-														title={t("scmUnstageTip", { path: f.path })}
-														onClick={(e) => {
-															e.stopPropagation();
-															handleUnstage(f);
-														}}
-													>
-														−
-													</button>
-												) : null}
-												<button
-													type="button"
-													className="scm-act"
-													title={
-														kind === "untracked"
-															? t("scmDiscardUntrackedTip", { path: f.path })
-															: t("scmDiscardTip", { path: f.path })
-													}
-													onClick={(e) => {
-														e.stopPropagation();
-														handleDiscard(f);
-													}}
-												>
-													×
-												</button>
-											</span>
-										</div>
-									);
-								})
-							)}
-						</div>
-					</div>
+					<ScmChangesList
+						files={status?.files ?? []}
+						stats={statMap}
+						selectedPath={selected?.path ?? null}
+						notRepo={notRepo}
+						pending={!status}
+						connected={chat.status === "open"}
+						onSelect={showFileDiff}
+						onStage={handleStage}
+						onUnstage={handleUnstage}
+						onDiscard={handleDiscard}
+						onStageAll={handleStageAll}
+						onUnstageAll={handleUnstageAll}
+					/>
 				)}
 
 				<div
@@ -2095,6 +1949,18 @@ export function ScmPanel({
 			<div className="gd-commit-bar">
 				<div className="commit-box">
 					{renderMergedToolbar(scmZone(["host:scm-input"], false), scmHostNodes, onUiAction)}
+					<div className="scm-commit-meta">
+						<span>
+							{stagedSummary.count === 0
+								? t("scmCommitNothingStaged")
+								: t("scmCommitMetaCount", { count: stagedSummary.count })}
+							{stagedSummary.add > 0 && <span className="add"> · +{stagedSummary.add}</span>}
+							{stagedSummary.del > 0 && <span className="del"> · −{stagedSummary.del}</span>}
+						</span>
+						{commitTarget && (
+							<span className="scm-commit-target">{t("scmCommitTarget", { branch: commitTarget })}</span>
+						)}
+					</div>
 					<div className="commit-row">
 						{renderMergedToolbar(scmZone(["host:scm-genmsg"], false), scmHostNodes, onUiAction)}
 						<span style={{ marginLeft: "auto", display: "inline-flex", gap: 4 }}>
@@ -2131,6 +1997,21 @@ export function ScmPanel({
 					</button>
 				)}
 			</div>
+
+			<ScmCommandPalette
+				open={paletteOpen}
+				onClose={() => setPaletteOpen(false)}
+				labels={{
+					title: t("scmPaletteOpen"),
+					placeholder: t("scmPalettePlaceholder"),
+					empty: t("scmPaletteEmpty"),
+					move: t("scmPaletteKeysMove"),
+					run: t("scmPaletteKeysRun"),
+					close: t("scmPaletteKeysClose"),
+					count: (n) => t("scmPaletteCount", { count: n }),
+				}}
+				actions={paletteActions}
+			/>
 		</div>
 	);
 }

@@ -112,9 +112,17 @@
 
 全部走 silent refresh 不闪 spinner：scm_changed / 终端 tab 里 SCM 生成的 git 写命令 running→exit（标题 `/^git /`）/ 视图激活 / cwd 切换 / 30s 轮询。
 
+### 暂存分组与 Git 操作面板（A + C 改版）
+
+列表按「已暂存 / 更改」分组，行首勾选框就是暂存开关：勾上 → `git add -- <path>`，取消 → `git reset HEAD -- <path>`；同一个文件在 `x`、`y` 两位都有标记时（改完又改）两组都出现，与 GitHub Desktop 一致。x/y 的解释只允许写在 `web/src/scm-file-kind.ts`：`scmFileKind` / `splitScmFiles` / `scmStatusLetter` / `sumScmStats`，组件里不再自己判 `x !== " "`（单测 `tests/unit/scm-file-kind.test.ts`）；提交摘要的「N 个文件 · +a −d」也只从 `sumScmStats(staged, statMap)` 来，不在组件里另存一份计数。
+
+头部改成同步条：`获取`（`git fetch --all --prune`）+ `拉取 ↓n` + `推送 ↑n`，两个按钮按 ahead/behind 给主色、为 0 时禁用，不再靠箭头猜该推还是该拉。
+
+原来那个十几项平铺的「更多」菜单换成 **⌘⇧P 操作面板**（`web/src/components/scm/ScmCommandPalette.tsx` + 纯数据动作表 `web/src/scm-palette-actions.ts`）：分组 + 命令提示 + 搜索 + ↑↓/⏎ 键盘操作，分支切换也作为可搜索条目列在面板里（上限 30 条，其余走分支下拉）。快捷键避让：`⌘⇧G` 是开关 Git 抽屉（App 级），`⌘K` 是全局搜索，所以面板用 `⌘⇧P`，按钮上有 `aria-haspopup="dialog"`。动作表的禁用条件（没上游不能推、没写提交信息/没暂存文件不能提交、detached 不能改名…）在 `tests/unit/scm-palette-actions.test.ts` 里钉死，面板只负责渲染与选择。
+
 ### 写操作
 
-仍走可见终端 tab（TerminalPanel 同款 tab 复用逻辑）并切到终端视图：提交/推送/拉取/切换分支（远程分支 `origin/x` → `git checkout -b x origin/x || git checkout x`）/ 单文件暂存（`git add -- <path>`，行 hover 显示 + 按钮）/ 取消暂存（`git reset HEAD -- <path>`，− 按钮），路径经单引号转义。分支下拉本地/远程分组（optgroup，i18n scmRemoteBranches）。
+仍走可见终端 tab（TerminalPanel 同款 tab 复用逻辑）并切到终端视图：提交/推送/拉取/获取/切换分支（远程分支 `origin/x` → `git checkout -b x origin/x || git checkout x`）/ 单文件暂存（`git add -- <path>`，行首勾选框或 hover 的 + 按钮）/ 取消暂存（`git reset HEAD -- <path>`，− 按钮）/ 标签（`git tag`、`git push --tags`），路径经单引号转义。分支下拉本地/远程分组（optgroup，i18n scmRemoteBranches）。
 
 ### 历史教训（已废弃的旧实现）
 
