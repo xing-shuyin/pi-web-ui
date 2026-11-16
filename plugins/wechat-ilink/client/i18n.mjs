@@ -76,6 +76,76 @@ export const DICT = {
 		deny: "拒绝",
 		openSession: "在主界面打开对话流",
 	},
+	"zh-TW": {
+		// 通用
+		reading: "讀取中…",
+		cancel: "取消",
+
+		// 面板头部
+		title: "💬 微信通道",
+		statusDisconnected: "未連線",
+		hint: "掃碼登入後，微信裡直接指揮 agent（出站長輪詢，無需公網）。陌生人先配對，白名單在 ⚙ 設定裡。",
+
+		// 工作空间根目录
+		wsTitle: "工作空間根目錄（專案）",
+		wsInputPlaceholder: "留空 = 跟隨當前網頁專案根目錄",
+		wsQuickPick: "快速點選已有專案…",
+		wsBrowse: "📂 瀏覽目錄…",
+		wsSave: "設為根目錄",
+		wsUseCwd: "設為當前專案",
+		wsOpenProject: "把專案改為此根目錄",
+		wsClear: "清空固定",
+		wsOptionRecent: "選擇最近專案…",
+		wsOptionHostProject: "當前網頁專案：{name} ({path})",
+		wsOptionPinned: "已固定根目錄：{name} ({path})",
+		wsPinned: "已固定微信根目錄：{path}",
+		wsPinnedDiff: "（當前網頁專案：{path}）",
+		wsUnpinnedWithHost: "未固定（預設跟隨當前網頁專案：{path}）",
+		wsUnpinned: "未固定（預設跟隨當前網頁專案）",
+
+		// AI 模型与思考强度
+		modelTitle: "AI 模型與思考強度",
+		modelInputPlaceholder: "留空 = 跟隨全域性預設模型（支援輸入或選擇）",
+		modelBrowse: "✨ 選擇模型…",
+		thinkingFollowGlobal: "思考強度：跟隨全域性",
+		thinkingOff: "思考：關閉 (off)",
+		thinkingLow: "思考：低 (low)",
+		thinkingMedium: "思考：中 (medium)",
+		thinkingHigh: "思考：高 (high)",
+		thinkingMax: "思考：最大 (max)",
+		modelSave: "儲存配置",
+		modelClear: "恢復預設",
+		bindActive: "💻📱 電腦手機訊息同步：投遞到網頁當前開啟的對話（大屏即時看流式思考與工具輸出）",
+
+		// 登录 / 配对 / 收件箱 / 手动发送
+		loginSection: "登入",
+		pendingSection: "待配對",
+		inboxSection: "收件箱",
+		inboxEmpty: "暫無訊息",
+		sendSection: "手動傳送",
+		toPlaceholder: "微信使用者 ID",
+		textPlaceholder: "文本內容",
+		mediaPlaceholder: "圖片/檔案路徑或 URL（可選）",
+		sendBtn: "傳送",
+
+		// 登录状态与扫码
+		statusLoggedIn: "已登入",
+		statusReceiving: " · 接收中",
+		statusPaused: " · 受限暫停",
+		lastLogin: "上次登入：{time}",
+		logout: "登出",
+		pollError: "輪詢：{error}",
+		qrGenerating: "生成二維碼中…",
+		qrHint: "微信掃碼確認登入（5 分鐘有效，過期後重新點“掃碼登入”）",
+		qrCantScan: "掃不上？",
+		qrOpenOfficial: "在新標籤頁開啟官方掃碼頁",
+		loginBtn: "掃碼登入",
+
+		// 待配对与收件箱条目
+		allow: "允許",
+		deny: "拒絕",
+		openSession: "在主介面開啟對話流",
+	},
 	en: {
 		// Common
 		reading: "Loading…",

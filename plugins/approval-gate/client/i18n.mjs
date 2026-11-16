@@ -26,6 +26,26 @@ export const DICT = {
 		timeYesterday: "昨天",
 		timeDays: "{n} 天前",
 	},
+	"zh-TW": {
+		title: "拍板",
+		pendingCount: "待拍板 {n}",
+		done: "全部處理完畢",
+		doneHint: "定時任務有新拍板請求時會自動出現在這裡。",
+		jump: "點選跳轉會話拍板",
+		noConv: "無關聯會話（登記時未提供 conversationId）",
+		dismiss: "忽略",
+		onlyPending: "只看待拍板",
+		resolved: "已拍板",
+		dismissed: "已忽略",
+		emptyFiltered: "沒有待拍板項",
+
+		// 相对时间
+		timeNow: "剛剛",
+		timeMinutes: "{n} 分鐘前",
+		timeHours: "{n} 小時前",
+		timeYesterday: "昨天",
+		timeDays: "{n} 天前",
+	},
 	en: {
 		title: "Approvals",
 		pendingCount: "{n} pending",

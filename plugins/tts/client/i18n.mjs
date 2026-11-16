@@ -76,6 +76,73 @@ export const DICT = {
 		"alert.sessionReset": "已重置 DeepSeek 专属语音会话，下次发音将自动创建并长期复用新会话。",
 		"confirm.clearCreds": "确定清空本地保存的凭据吗？",
 	},
+	"zh-TW": {
+		// 页头
+		"app.title": "多源語音合成助手 (TTS)",
+		"app.subtitle": "聚合豆包大模型與 DeepSeek 官方語音，支援伴侶擴充套件一鍵同步與系統全功能流式朗讀",
+		refresh: "重新整理狀態",
+
+		// 封号风控警示
+		"risk.title": "已啟用防風控偽裝模型（專屬會話複用 + 瀏覽器真實標頭對齊）",
+		"risk.bodyLead": "現已徹底移除指令碼自曝特徵，並採用",
+		"risk.bodySession": "專屬持久化會話複用",
+		"risk.bodyMiddle":
+			"（杜絕頻繁秒建秒刪會話的高危特徵）與人性化防抖排隊。但因 DeepSeek 官方未開放獨立 TTS 介面，長文本流式伴讀仍存在被官方風控限制的可能，日常推薦優先使用",
+		"risk.bodyDoubao": "豆包語音",
+		"risk.bodyTail": "（正規 API Key 通道，穩定免封）。",
+
+		// 凭据状态
+		"creds.title": "憑據就緒狀態",
+		checking: "檢測中...",
+		"doubao.name": "豆包語音",
+		"doubao.detail": "支援網頁 Cookie 或火山引擎 Key",
+		"doubao.badgeApiKey": "🟢 官方 Key 就緒",
+		"doubao.badgeCookie": "🟢 網頁 Cookie 就緒",
+		"doubao.detailReady": "憑據有效，可正常合成",
+		"deepseek.name": "DeepSeek 語音",
+		"deepseek.detail": "支援 chat.deepseek.com 憑證",
+		"deepseek.warn": "易觸發網頁封號風控，建議慎用",
+		"deepseek.badgeReady": "🟢 userToken 就緒",
+		"deepseek.detailReady": "已獲取 DeepSeek 網頁登入態",
+		badgeMissing: "🟡 暫未配置",
+		"doubao.detailMissing": "請通過擴充套件同步或填入 API Key",
+		"deepseek.detailMissing": "請在擴充套件或設定中填入 userToken",
+
+		// 伴侣扩展
+		"extension.title": "伴侶擴充套件（一鍵提取雙平臺憑證）",
+		"extension.openDir": "在電腦中定位擴充套件目錄",
+		"extension.downloadZip": "下載擴充套件壓縮包 (.zip)",
+		"extension.resetSession": "重置 DeepSeek 會話",
+		"extension.clearCreds": "清空本地憑證",
+		"guide.lead": "極速載入指南：",
+		"guide.beforeCode": "開啟",
+		"guide.afterCode":
+			"開啟開發者模式，點選上方【在電腦中定位擴充套件目錄】把彈出的資料夾拖入瀏覽器即可。在豆包或 DeepSeek 網頁點一下擴充套件圖示秒級完成同步！",
+
+		// 在线试听
+		"test.title": "線上試聽測試",
+		"test.riskLabel": "提示",
+		"test.riskBody":
+			"：當前選擇 DeepSeek 語音引擎。已啟用專屬會話長期複用與真實瀏覽器標頭偽裝，已避免秒建秒刪與機器人特徵。高頻長文本伴讀仍建議優先使用豆包語音。",
+		"test.engine": "語音引擎",
+		"test.speaker": "發音角色",
+		"test.text": "測試文本",
+		"test.sample": "煮栗子前可以用刀在背部劃一道口，水開後煮二十分鐘即可輕鬆剝殼。",
+		"test.speak": "開始試聽合成",
+		"test.synthRunning": "正在合成…",
+		"test.success": "合成成功！",
+		"test.failed": "合成失敗: {error}",
+		unknownError: "未知錯誤",
+		defaultVoice: "預設音色",
+
+		// 引擎下拉（服务端引擎未到达前的占位；id 见 value 属性）
+		"engine.doubao": "豆包大模型語音 (Doubao)",
+		"engine.deepseek": "DeepSeek 官方語音",
+
+		// 确认与提示
+		"alert.sessionReset": "已重置 DeepSeek 專屬語音會話，下次發音將自動建立並長期複用新會話。",
+		"confirm.clearCreds": "確定清空本地儲存的憑據嗎？",
+	},
 	en: {
 		// Page header
 		"app.title": "Multi-source TTS Assistant",

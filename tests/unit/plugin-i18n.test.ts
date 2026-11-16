@@ -46,6 +46,13 @@ describe("createPluginI18n", () => {
 		expect(i18n.locale).toBe("zh");
 	});
 
+	it("prefers an explicit zh-TW dictionary over the zh base", () => {
+		const withTw = { ...dicts, "zh-TW": { hello: "妳好（台）" } };
+		expect(createPluginI18n(withTw, { locale: "zh-TW" }).t("hello")).toBe("妳好（台）");
+		// 没有 zh-TW 文案的 key 仍然回落到 zh
+		expect(createPluginI18n(withTw, { locale: "zh-TW" }).t("withVar", { name: "Ada" })).toBe("你好 Ada");
+	});
+
 	it("exposes the available locales", () => {
 		expect(createPluginI18n(dicts, { locale: "en" }).available).toEqual(["en", "zh", "zh-TW"]);
 	});

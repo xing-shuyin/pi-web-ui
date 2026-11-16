@@ -134,3 +134,12 @@ The contract (`createPluginI18n`) is used by **35 plugins**. Per-plugin dictiona
 | Excluded: developer-facing                       | `console.*`, internal `throw`s and host-API error strings across plugins, annotated `// developer-facing, not UI`                                                                                                                                                                                                                                                                                    |
 
 Validation for this section: `npx vitest run tests/unit/plugin-version-bump-guard.test.ts tests/unit/plugin-i18n.test.ts tests/unit/extension-host-packages.test.ts`, `npm run lint`, `npm run build`, plus each plugin's own UI test where one exists (`tests/remote-workbench-ui-test.mjs`, `tests/db-client-test.mjs`, …).
+
+### zh-TW in plugin dictionaries
+
+Plugin dictionaries carry `zh`, `en` **and `zh-TW`**. The Traditional block is generated deterministically from `zh` with OpenCC `cn → twp` by `scripts/plugin-i18n-tw.mjs` (same rule set as the app's `locales/zh-TW.json`), so a `zh-TW` user no longer falls back to Simplified in plugin UI.
+
+- Refresh: `OPENCC_DIR=<dir> node scripts/plugin-i18n-tw.mjs`
+- Drift gate: `node scripts/plugin-i18n-tw.mjs --check` exits non-zero when a `zh-TW` block is missing or stale.
+- Only string values are converted; keys, placeholders and comments are untouched.
+- `createPluginI18n` picks the exact `zh-TW` dictionary and still falls back per key (zh-TW → zh → en → key); covered by `tests/unit/plugin-i18n.test.ts`.

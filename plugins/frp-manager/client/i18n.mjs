@@ -124,6 +124,115 @@ export const DICT = {
 		title: "🚇 内网穿透",
 		subtitle: "frpc 穿透列表 · 本地 frps 联调 · 远端一键部署",
 	},
+	"zh-TW": {
+		// 通用
+		connectingFailed: "連線失敗：{error}",
+		unknownError: "未知錯誤",
+		failed: "失敗：{error}",
+		working: "執行中…",
+		done: "已完成",
+		notFilled: "(未填)",
+		refresh: "重新整理",
+
+		// 环境探测
+		probing: "正在檢測 frp 環境…",
+
+		// 页签
+		tabList: "穿透列表",
+		tabClient: "客戶端 frpc",
+		tabFrps: "本地 frps",
+		tabRemote: "遠端部署",
+		tabLogs: "日誌",
+
+		// 穿透列表
+		runningWithPid: "執行中 (pid {pid})",
+		notRunning: "未執行",
+		serverSummary: "服務端 {addr}:{port} · {count} 條啟用",
+		installFrp: "一鍵安裝 frp",
+		restart: "重啟",
+		start: "啟動",
+		stop: "停止",
+		frpcMissing: "未檢測到 frpc（{dir}），點一鍵安裝從 GitHub 下載官方版；離線機器可手動放二進位制到該目錄。",
+		newProxy: "+ 新增穿透",
+		applyHint: "改完點「啟動/重啟」生效",
+		colName: "名稱",
+		colType: "型別",
+		colMapping: "對映",
+		colOps: "操作",
+		emptyProxies: "還沒有穿透規則，點「新增穿透」把本機服務（如 127.0.0.1:3000）暴露出去。",
+		disabled: "已停用",
+		enable: "啟用",
+		disable: "停用",
+		edit: "編輯",
+		remove: "刪",
+
+		// 穿透表单
+		editProxy: "編輯 {name}",
+		addProxy: "新增穿透",
+		fName: "名稱",
+		namePlaceholder: "如 web-admin",
+		fType: "型別",
+		fLocalIp: "本地 IP",
+		fLocalPort: "本地埠",
+		localPortPlaceholder: "如 3000",
+		fRemotePort: "遠端埠",
+		remotePortPlaceholder: "tcp/udp 用，如 6000",
+		fDomains: "域名",
+		domainsPlaceholder: "http/https 用，逗號分隔",
+		fSubdomain: "subdomain",
+		subdomainPlaceholder: "可選，需服務端 subdomainHost",
+		save: "儲存",
+		cancel: "取消",
+
+		// 客户端 frpc
+		clientSection: "服務端連線（frpc.toml [common]）",
+		addrPlaceholder: "公網伺服器 IP/域名",
+		tokenPlaceholder: "與 frps 一致",
+		tlsOn: "開啟",
+		tlsOff: "關閉",
+		clientSavedHint: "儲存後重啟 frpc 生效 · 配置檔案 frpc.toml 在資料目錄",
+
+		// 本地 frps
+		localFrps: "本地 frps",
+		frpsSummary: "聯呼叫：本機同時起 frps + frpc 自測",
+		fHttpPort: "http 穿透埠",
+		httpPortPlaceholder: "如 8080，空=關閉",
+		fDashboardPort: "dashboard 埠",
+		dashboardPortPlaceholder: "如 7500",
+		fDashboardUser: "dashboard 賬號",
+		fDashboardPwd: "dashboard 密碼",
+		subdomainHostPlaceholder: "如 frp.example.com",
+
+		// 远端部署
+		remoteSection: "遠端公網 frps 一鍵部署",
+		remoteDesc:
+			"用本機<b>共享 SSH 主機庫</b>（與遠端工作臺/SFTP 同一份：截圖裡那些已儲存連線直接選，不用再填 IP 密碼）。主機先去遠端工作臺加好，回來點重新整理。遠端需放行 bindPort/tcp（如 7000）+ http/dashboard 埠。",
+		remoteHost: "遠端主機",
+		remoteDeployHint: "直裝成功後 frpc 服務端地址自動同步為所選主機 IP，token 與本地 frps 頁一致，重啟 frpc 即通。",
+		hostLibEmpty: "（主機庫為空，先去遠端工作臺新增）",
+		hostOption: "{name}（{user}@{host}:{port}）",
+		useThisHost: "選用該主機",
+		probe: "測試連通",
+		copyScript: "複製一鍵指令碼",
+		deploy: "SSH 直裝遠端",
+		remoteCurrent: "當前遠端配置：bindPort {bindPort} / token ",
+		tokenSet: "已設。",
+		tokenUnset: "<b>未設（先去本地 frps 頁設定）</b>。",
+		scriptCopied: "一鍵指令碼已複製，到遠端 root 下 bash 貼上執行即可",
+		copyFailed: "複製失敗，點 SSH 直裝或稍後重試",
+		installing: "下載安裝中（GitHub release，約 10-20MB）…",
+		installed: "安裝完成 {version}",
+		deleteProxyAsk: "刪除穿透 {name}？",
+
+		// 日志
+		logsFrpc: "frpc 日誌",
+		logsFrps: "frps 日誌",
+		logsEmpty: "(暫無日誌)",
+
+		// 头部
+		title: "🚇 內網穿透",
+		subtitle: "frpc 穿透列表 · 本地 frps 聯調 · 遠端一鍵部署",
+	},
 	en: {
 		// Common
 		connectingFailed: "Connection failed: {error}",

@@ -45,6 +45,42 @@ export const DICT = {
 		"countdown.hoursMins": "{hours} 小时 {mins} 分后重置",
 		"countdown.minutes": "{mins} 分钟后重置",
 	},
+	"zh-TW": {
+		// 卡片外壳
+		title: "額度看板",
+		refresh: "重新整理",
+		never: "尚未載入",
+		loading: "讀取中…",
+		failed: "讀取失敗",
+		unknown: "未知",
+		resetDone: "已重置",
+		balance: "餘額",
+		noWindows: "沒有額度視窗",
+		noSource: "當前模型沒有對應的額度來源",
+		signedOut: "未登入 / 未配置",
+		empty: "該賬號沒有返回額度",
+		stale: "數值來自上次成功讀取",
+		lowBalance: "餘額偏低，建議充值後再跑長任務",
+
+		// 自动刷新节奏
+		"auto.everySeconds": "每 {seconds} 秒自動重新整理",
+		"auto.everyMinute": "每分鐘自動重新整理",
+		"auto.everyMinutes": "每 {minutes} 分鐘自動重新整理",
+
+		// 新鲜度
+		justNow: "剛剛",
+		secondsAgo: "{n} 秒前",
+		minutesAgo: "{n} 分鐘前",
+		hoursAgo: "{n} 小時前",
+		aging: "陳舊",
+
+		// 窗口重置倒计时
+		"countdown.days": "{days} 天后重置",
+		"countdown.daysHours": "{days} 天 {hours} 小時後重置",
+		"countdown.hours": "{hours} 小時後重置",
+		"countdown.hoursMins": "{hours} 小時 {mins} 分後重置",
+		"countdown.minutes": "{mins} 分鐘後重置",
+	},
 	en: {
 		// Card shell
 		title: "Quota Watch",

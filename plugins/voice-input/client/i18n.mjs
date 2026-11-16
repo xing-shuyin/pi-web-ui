@@ -91,6 +91,85 @@ export const DICT = {
 		camTooBig: "照片压不进 2MB，请离远一点再拍",
 		camDecodeFailed: "图片解码失败",
 	},
+	"zh-TW": {
+		// 语音浮层通用
+		listening: "正在聆聽…（再點 🎤 結束）",
+		recording: "正在錄音…（再點 🎤 結束並轉寫）",
+		uploading: "轉寫中…",
+		send: "直接傳送",
+		fill: "填入輸入框",
+		stopAndTranscribe: "停止並轉寫",
+		sendFailed: "直接傳送沒接通，已填入輸入框，請手動傳送",
+		cancel: "取消",
+		close: "關閉",
+		copy: "複製",
+		useServer: "改用服務端錄音",
+		retry: "重試",
+		switchEngine: "切換識別方式",
+		empty: "沒聽清，請再說一次",
+
+		// 本地 Whisper 安装
+		installLocal: "一鍵安裝本地 Whisper",
+		installing: "正在安裝本地 Whisper… {p}",
+		installPhase: "（{phase}）",
+		installDone: "安裝完成，開始錄音吧",
+		installFailed: "安裝失敗",
+		installFailedDetail: "安裝失敗：{error}",
+		installNote:
+			"本地 Whisper：免費、無需 key、錄音不出本機。首次安裝要下載約 150–300MB（模型）+ 執行時，關掉浮層會在後臺繼續裝。",
+
+		// 引擎选择
+		pickEngine: "用哪種識別方式？",
+		pickEngineNote: "選完會存回外掛設定，下次點 🎤 直接用這一檔。本地 Whisper 還沒裝的話，選它會直接帶你裝。",
+		engAuto: "瀏覽器聯網識別（免費即時）",
+		engLocal: "本地 Whisper（離線，不出本機）",
+		engRemote: "遠端轉寫介面",
+		engLocalMissing: "本地 Whisper（未安裝，點此安裝）",
+		engRemoteMissing: "遠端介面（未配置）",
+		engineNotSaved: "切換沒存上（服務端沒確認），這次沒開始：請到外掛設定裡直接把「轉寫引擎」改成你要的那一檔",
+
+		// 不可用时的出路
+		noSpeech: "瀏覽器語音識別不可用",
+		srUnknown: "瀏覽器語音識別不可用（{code}）",
+		serverMissing: "服務端轉寫還沒得用：本地 Whisper 沒裝，遠端介面也沒配",
+		localNotInstalled: "本地 Whisper 還沒裝。裝一次就能一直離線識別，錄音不出本機、不需要 key。",
+		remoteNotConfigured: "還沒配遠端轉寫介面：在外掛設定裡填「轉寫介面基址」與金鑰，或改成用本地 Whisper。",
+		serverFallbackOff: "「服務端轉寫降級」關著，服務端錄音這條路被封了：去外掛設定裡開啟它，或改用瀏覽器識別。",
+
+		// 引擎徽标
+		badgeSr: "🌐 瀏覽器識別",
+		badgeRemote: "☁️ 遠端介面",
+		badgeLocal: "🧠 本地 Whisper({model})",
+
+		// 浏览器识别错误
+		micDenied: "麥克風被拒絕：請點瀏覽器位址列左側的 🔒/🎤 圖示，把本站麥克風設為“允許”，然後重試。",
+		srNetwork:
+			"瀏覽器語音服務連不上（Edge/Chrome 識別要聯網，代理·VPN·企業策略都可能攔）：已為你切到服務端錄音；也可以檢查網路後重試。",
+		srNoSpeech: "瀏覽器沒聽到聲音就斷了（靜音超時/麥克風沒聲）：靠近麥克風再說一次，或改用服務端錄音。",
+		srBusy: "瀏覽器語音識別正忙（可能別的標籤頁佔著），請稍等幾秒再點 🎤。",
+		tooShort: "錄音太短了，請說完一句話再結束。",
+		tooLong: "錄音超過 5 分鐘已自動結束，正在轉寫…",
+		recorderBroken: "瀏覽器錄不了音（AudioContext/Gum 不可用，多半還是非安全上下文，見上）：請用 localhost 開啟本站。",
+		insecure:
+			"當前頁面不是安全上下文（http://區域網IP 開啟的吧？）：瀏覽器直接停用了語音識別和麥克風。請改用 http://localhost:8787 或 http://127.0.0.1:8787 開啟本站，再點 🎤。",
+
+		// 拍照浮层
+		camTitle: "拍照",
+		camShoot: "拍照並放入輸入框",
+		camSwitch: "切換攝像頭",
+		camFile: "用系統相機 / 選圖片",
+		camStarting: "正在開啟攝像頭…",
+		camHint: "對準要拍的東西，點「拍照並放入輸入框」；可以連拍多張，拍完補一句話再發。",
+		camShot: "已放入輸入框附件，可繼續拍",
+		camComposeFailed: "輸入框還沒準備好（頁面剛開啟？），稍後再拍一張",
+		camDenied: "攝像頭被拒絕：請點瀏覽器位址列左側的 🔒 圖示，把本站攝像頭設為“允許”，再重試；也可以直接用系統相機。",
+		camUnavailable: "打不開攝像頭（裝置沒有攝像頭，或被其它程式佔用）。可以直接用系統相機拍。",
+		camInsecure:
+			"當前頁面不是安全上下文（http://區域網IP 開啟的吧？）：瀏覽器直接停用了攝像頭。請改用 http://localhost:8787 或 http://127.0.0.1:8787 開啟本站；手機等裝置可以直接用系統相機。",
+		camNoFrame: "取不到畫面尺寸，請稍後再拍",
+		camTooBig: "照片壓不進 2MB，請離遠一點再拍",
+		camDecodeFailed: "圖片解碼失敗",
+	},
 	en: {
 		// Voice overlay
 		listening: "Listening… (click 🎤 again to finish)",

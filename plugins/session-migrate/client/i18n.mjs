@@ -44,6 +44,44 @@ export const DICT = {
 		importFailedReason: "导入失败：{error}",
 		serverReturned: "服务端返回 {status}",
 	},
+	"zh-TW": {
+		// 扫描 / 导入工具栏
+		sourceAll: "全部來源",
+		onlyKind: "僅 {kind}",
+		scan: "🔍 掃描",
+		importSelected: "📥 匯入選中",
+		cwdPlaceholder: "目標 cwd（可選重定向）",
+
+		// 上传导入
+		uploadImport: "⬆️ 上傳匯入",
+		uploadHint: "匯出過的 .jsonl / 其它機器的會話檔案",
+
+		// 扫描结果与导入回执
+		scanning: "掃描中…",
+		msgCount: "{n}條",
+		export: "⬇ 匯出",
+		downloadStarted: "已開始下載：{name}.jsonl",
+		selectSessionsFirst: "請先勾選要匯入的會話。",
+		importFinished: "匯入完成：成功 {ok}，跳過 {skip}，失敗 {failed}",
+		refreshHintAfterImport: "匯入後回到左欄「歷史會話」重新整理即可看到。",
+
+		// 上传导入回执
+		selectFileFirst: "請先選擇要匯入的 .jsonl 檔案。",
+		uploading: "上傳中…（{size} KB）",
+		sessionExists: "會話 {id} 已存在：{paths}",
+		conflictPrompt: "該會話已存在於本機會話庫，請選擇處理方式。",
+		overwrite: "覆蓋原會話",
+		saveCopy: "另存副本",
+		cancel: "取消",
+		cancelled: "已取消匯入。",
+		overwriting: "覆蓋中…",
+		savingCopy: "另存副本中…",
+		importDone: "匯入完成：",
+		importFailed: "匯入失敗：",
+		refreshHint: "回到左欄「歷史會話」重新整理即可看到。",
+		importFailedReason: "匯入失敗：{error}",
+		serverReturned: "服務端返回 {status}",
+	},
 	en: {
 		// Scan / import toolbar
 		sourceAll: "All sources",

@@ -102,6 +102,102 @@ export const DICT = {
 		saveFailed: "保存失败: {error}",
 		unknownError: "未知错误",
 	},
+	"zh-TW": {
+		// 顶栏
+		workspaceTitle: "WhatsApp 機器人工作臺",
+		checking: "檢測中...",
+		configureCredentials: "⚙️ 配置憑證",
+
+		// 双工状态卡
+		botStatusTitle: "🤖 WhatsApp Bot 雙工服務狀態",
+		toggleBotService: "切換機器人服務",
+		duplexStatus: "雙工狀態",
+		linkedAccount: "關聯號碼 / 賬號",
+		messagesReceived: "已接收訊息",
+		messagesReplied: "已回覆訊息",
+		msgCount: "{count} 條",
+		botIntro:
+			"基於 Meta 官方 WhatsApp Cloud API，需配置經過鑑權的 webhook 轉發。支援多使用者獨立上下文隔離，自動結構化分塊，程式碼塊完整閉合，支援 <code>/help</code>、<code>/clear</code>、<code>/status</code> 等斜槓快捷指令。",
+		stateOnline: "🟢 線上",
+		stateConnected: "🟢 已連線 (線上)",
+		stateConnecting: "🟡 連線中",
+		stateConnectingDetail: "🟡 正在連線...",
+		stateError: "🔴 錯誤",
+		stateErrorDetail: "🔴 連接出錯",
+		stateStopped: "⚪ 未啟動",
+
+		// 发送消息卡
+		sendCardTitle: "📤 快捷向 WhatsApp 使用者傳送訊息",
+		targetPhoneLabel: "目標電話號碼 (帶國家區號，如 8613800000000):",
+		targetPhonePlaceholder: "如：8613800000000 (留空使用預設號碼)",
+		messageTextLabel: "訊息文本內容:",
+		messageTextPlaceholder: "輸入要傳送的訊息內容...",
+		messageKindAria: "訊息型別",
+		kindText: "文本",
+		kindImage: "圖片",
+		kindAudio: "語音/音訊",
+		kindDocument: "檔案",
+		kindVideo: "影片",
+		mediaPathPlaceholder: "媒體檔案的工作區相對路徑（20 MiB 以內）",
+		mediaPathAria: "媒體檔案路徑",
+		mimePlaceholder: "MIME 型別，例如 image/png、audio/ogg",
+		mimeAria: "媒體 MIME 型別",
+		sendMessage: "🚀 傳送訊息",
+		sending: "傳送中...",
+		sendMissingPath: "請輸入媒體檔案的工作區路徑",
+		sendMissingText: "請輸入要傳送的訊息文本",
+		sendOk: "✅ WhatsApp 訊息傳送成功！",
+		sendFailed: "傳送失敗: {error}",
+
+		// 凭证弹窗
+		credentialsTitle: "🟢 WhatsApp Cloud API 憑證配置",
+		phoneIdLabel: "Phone Number ID (來自 Meta for Developers):",
+		phoneIdPlaceholder: "如：105938472910482",
+		phoneIdHint: "在 Meta for Developers → WhatsApp → API Setup 中複製 Phone number ID",
+		accessTokenLabel: "System Access Token (加密儲存):",
+		accessTokenPlaceholder: "EAABwz... (永久系統訪問令牌)",
+		accessTokenSaved: "●●●●●● (已加密儲存，留空保持)",
+		accessTokenEnter: "填入 Access Token",
+		defaultRecipientLabel: "預設傳送目標號碼 (可選):",
+		defaultRecipientPlaceholder: "如：8613800000000",
+
+		// 机器人双工与白名单
+		botControlTitle: "🤖 機器人雙工與白名單控制",
+		botEnabledLabel: "啟用 WhatsApp 機器人雙向對話回覆服務",
+		allowlistLabel: "安全白名單 (手機號，逗號分隔，留空不限制):",
+		allowlistPlaceholder: "8613800000000, 15551234567 (留空允許所有使用者)",
+
+		// 工作区目录
+		workspaceLabel: "📂 專案根目錄 (Workspace Cwd，留空跟隨當前專案，支援聊天發 /cwd 切換):",
+		workspacePlaceholder: "如：E:/my-project (留空跟隨當前專案)",
+		quickPickProject: "快速點選已有專案...",
+		browse: "📂 瀏覽...",
+		useCurrentProject: "設為當前專案",
+		pickWorkspaceTitle: "選擇 WhatsApp 機器人執行專案根目錄",
+
+		// 模型与思考强度
+		modelLabel: "✨ AI 模型與思考強度 (留空跟隨全域性預設):",
+		modelPlaceholder: "留空 = 跟隨全域性預設模型（支援手輸或點選）",
+		pickModel: "✨ 選擇模型...",
+		thinkingFollow: "思考強度：跟隨全域性",
+		thinkingOff: "思考：關閉 (off)",
+		thinkingLow: "思考：低 (low)",
+		thinkingMedium: "思考：中 (medium)",
+		thinkingHigh: "思考：高 (high)",
+		thinkingMinimal: "思考：最小 (minimal)",
+		thinkingXhigh: "思考：極高 (xhigh)",
+
+		// 底部操作
+		testConnection: "🔌 測試連線",
+		testing: "測試中...",
+		testPassed: "連線測試通過！",
+		testFailed: "測試失敗",
+		cancel: "取消",
+		saveConfig: "💾 儲存配置",
+		saving: "儲存中...",
+		saveFailed: "儲存失敗: {error}",
+		unknownError: "未知錯誤",
+	},
 	en: {
 		// Top bar
 		workspaceTitle: "WhatsApp bot workspace",

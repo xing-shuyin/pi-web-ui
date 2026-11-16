@@ -100,6 +100,100 @@ export const DICT = {
 		// 无数据兜底正文
 		defaultContent: "⚡ SoL-Pi（当前会话）：当前会话暂未产生大输出打包或上下文规划数据。",
 	},
+	"zh-TW": {
+		// 通用
+		close: "關閉",
+		unknownError: "未知錯誤",
+
+		// 弹窗骨架
+		panelTitle: "⚡ SoL-Pi 狀態與配置管理",
+
+		// 当前会话节省看板
+		savingsTitle: "📊 當前會話節省看板",
+		savingsScope: "僅限當前會話 · 跨會話隔離",
+		statTotalSaved: "累計節省 Token",
+		statPacked: "大輸出打包截斷",
+		statPackedUnit: "次 ({bytes})",
+		toolBreakdownItem: "{name}: {count} 次",
+		toolBreakdownNone: "無",
+		toolBreakdown: "• 工具打包明細: {list}",
+		planProgress: "• 活動規劃進度: {progress} {marker} {goal}",
+		emptyTip:
+			"💡 提示：當前會話尚未產生 &gt;10KB 的工具大輸出（或處於前 2 輪觀察期），未觸發截斷，節省量為 0。切換至其他會話將展示對應會話的獨立節省資料。",
+
+		// 运行与配置区块
+		runtimeSection: "⚙️ SoL-Pi 執行與配置",
+		installed: "擴充套件已安裝",
+		notInstalled: "未安裝擴充套件",
+		expandCollapse: "▶ 展開/收起",
+		statusMissingPkg: "• 未檢測到 SoL-Pi 擴充套件包 (NVlabs/SoL-Pi)。",
+		statusConfigActive: "• 配置檔案生效中: {path}",
+		statusConfigMissing: "• 擴充套件已安裝，但尚未配置 <code>sol-pi.json</code>，特性未啟用。",
+
+		// 预设
+		presetsLabel: "快速預設:",
+		presetWebui: "🛡️ WebUI 推薦",
+		presetMax: "⚡ 極致節能 (全開)",
+		presetLight: "📦 輕量省流",
+
+		// 特性开关
+		optObservationPackLabel: "📦 大工具輸出打包 (observationPack)",
+		optObservationPackDesc: "工具輸出 >10KB 時替換為緊湊佔位符，由 obs_recall 按需讀取，有效減少上下文佔用。",
+		optOnlineCompactLabel: "🎯 線上規劃與邊界壓縮 (onlineContextCompact)",
+		optOnlineCompactDesc: "任務階段完成時觸發上下文壓縮點。由擴充套件註冊 update_plan 工具。",
+		optOnlineCompactTip:
+			"💡 提示：若當前主要使用 Web 介面內建的「任務計劃看板 (Plan Mode)」，可取消勾選此項以避免工具提示詞與 plan_update 衝突。",
+		optActionFusionLabel: "⚡ 操作融合 (actionFusion)",
+		optActionFusionDesc: "自動融合連續的只讀/只寫操作，替換原生 edit/write 工具（實驗性）。",
+		optEvidenceReducerLabel: "🛡️ 診斷證據保留 (evidencePreservingReducer)",
+		optEvidenceReducerDesc: "在上下文壓縮過程中儘可能保留關鍵診斷日誌與執行證據痕跡（實驗性）。",
+
+		// 缓存读写比
+		ratioLabel: "快取讀寫比閾值 (cacheWriteReadRatio)",
+		ratioDesc: "Prompt Cache 閾值因子（預設 12.5，0 為不懲罰寫入）",
+
+		// 证据缩减器辅模型
+		advSummary: "⚙️ 證據縮減器專屬輔模型路由 (可選)",
+		advExpand: "▶ 展開配置",
+		advDesc:
+			"為 Evidence-Preserving Reducer 指定廉價極速的專用輔模型（如 gpt-4o-mini / deepseek-chat），避免佔用高階主模型。留空自動跟隨主會話模型。",
+		providerLabel: "服務商 (Provider):",
+		providerPlaceholder: "例如 openai, deepseek",
+		modelLabel: "模型 ID (Model):",
+		modelPlaceholder: "例如 gpt-4o-mini",
+		pickModel: "✨ 調起統一模型選擇器點選...",
+		jsonPreview: "🔍 檢視即將生成的 sol-pi.json 配置預覽",
+
+		// 安装 / 写配置
+		installBtn: "📦 一鍵安裝 SoL-Pi 擴充套件",
+		installConfirm:
+			"確認安裝 SoL-Pi 擴充套件？\n\n將從網路執行：pi install git:github.com/NVlabs/SoL-Pi\n（已有配置不會被覆蓋）",
+		installing: "⏳ 正在安裝...",
+		installDone: "✅ SoL-Pi 擴充套件安裝成功！已同時自動寫入推薦開啟配置。",
+		installFailed: "❌ 安裝失敗: {error}",
+		enableBtn: "🚀 一鍵生成推薦配置",
+		writingConfig: "⏳ 配置寫入中...",
+		writeDone: "✅ 已成功寫入 sol-pi.json！",
+		writeFailed: "❌ 寫入配置失敗: {error}",
+
+		// 底部操作
+		resetBtn: "↺ 恢復推薦",
+		resetConfirm: "確認恢復為 SoL-Pi 預設推薦配置？",
+		resetDone: "✅ 已重置為推薦配置",
+		resetFailed: "❌ 重置失敗: {error}",
+		resetError: "❌ 重置異常: {error}",
+		saveBtn: "💾 儲存配置",
+		saving: "⏳ 儲存中...",
+		saveDone: "✅ 配置已儲存（新會話或重啟生效）",
+		serverRestart: "⚠️ 服務端待重啟",
+		serverRestartAlert:
+			"⚠️ 當前後臺 Node 服務尚未熱載入新版儲存路由。\n\n• 當前所勾選配置已同步寫入本地 sol-pi.json（下次會話即可生效）；\n• 如需在介面中直接熱儲存，請在控制台按 Ctrl+C 重啟一次 npm start 即可！",
+		saveFailed: "❌ 儲存配置失敗: {error}",
+		saveError: "❌ 儲存異常: {error}",
+
+		// 无数据兜底正文
+		defaultContent: "⚡ SoL-Pi（當前會話）：當前會話暫未產生大輸出打包或上下文規劃資料。",
+	},
 	en: {
 		// Common
 		close: "Close",

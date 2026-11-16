@@ -73,6 +73,66 @@ export const DICT = {
 		listEmpty: "工作区暂无 Office 文档",
 		listFailed: "加载列表失败：{error}",
 	},
+	"zh-TW": {
+		// 通用
+		canceled: "已取消",
+		invalidJson: "伺服器返回了無效 JSON",
+		requestFailed: "請求失敗",
+		invalidData: "伺服器返回了無效資料",
+		timeoutRetry: "請求超時，請重試；伺服器操作可能仍在繼續",
+		retry: "重試",
+		refresh: "重新整理",
+
+		// 文件视图工具栏
+		reload: "重新載入",
+		reloadDiscard: "重新載入（放棄當前編輯）",
+		saveAs: "另存為",
+		save: "儲存 (Ctrl/⌘+S)",
+		saving: "正在儲存…",
+		editingHint:
+			"編輯後請手動儲存。當前未接入檢視器編輯事件，修改與同步狀態尚未確認；儲存結果僅表示伺服器寫盤結果。快捷鍵僅在此面板獲得鍵盤事件時生效。",
+		copyPathLabel: "工作區內的副本路徑（已有檔案可能被覆蓋，請使用新路徑）",
+		saveCopy: "儲存副本",
+		cancel: "取消",
+
+		// 打开与加载状态
+		openFailed: "開啟失敗：{error}",
+		previewLoading: "編輯器不可用，正在讀取文件的只讀文本預覽…",
+		previewAria: "Office 只讀文本預覽",
+		previewNotice: "編輯器不可用：{error}。當前為只讀文本預覽，編輯和儲存已停用。",
+		previewHint: "此預覽展示伺服器返回的有限文本內容，可能省略格式或資料。",
+		previewFailed: "編輯器不可用：{error}；只讀預覽失敗：{inspection}",
+		canvasStarting: "正在啟動安全畫布編輯器…",
+		canvasInvalid: "安全畫布返回了無效資料",
+		documentTitle: "Office 文件：{name}",
+		canvasTimeout: "安全畫布啟動超時",
+		canvasLoadFailed: "安全畫布載入失敗",
+		docOpening: "正在啟動執行時並開啟文件…",
+
+		// 运行时准备
+		runtimeDownloading: "正在下載執行時元件…",
+		runtimeTimeout: "執行時安裝等待超時",
+		runtimeInstalling: "正在安裝執行時：{percent}%",
+		progressRetry: "進度查詢失敗，正在重試 ({failures}/3)：{error}",
+		checkingRuntime: "正在檢查 Office 執行時…",
+		runtimePrompt: "需要下載 Office 執行時元件（約 34MB）。",
+		downloadAndOpen: "下載並開啟",
+
+		// 保存
+		copyNeedsNewPath: "另存為需要使用不同的新檔案路徑。",
+		savedCopy: "副本已儲存：",
+		savedToDisk: "已儲存到磁碟：",
+		conflictTail: "；原檔案衝突仍需重新載入處理。",
+		conflictSave: "儲存衝突：{error}。請重新載入（放棄當前編輯），或另存為新檔案以保留當前內容。",
+		saveFailed: "儲存失敗：{error}",
+
+		// 文档列表视图
+		listTitle: "📑 Office",
+		scanning: "正在掃描工作區中的 Office 文件…",
+		listInvalid: "文件列表格式無效",
+		listEmpty: "工作區暫無 Office 文件",
+		listFailed: "載入列表失敗：{error}",
+	},
 	en: {
 		// Common
 		canceled: "Canceled",

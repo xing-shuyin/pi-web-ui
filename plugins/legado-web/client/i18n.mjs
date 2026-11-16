@@ -15,6 +15,13 @@ export const DICT = {
 		hostUnsupported: "当前宿主不支持自动开对话（pi-web-ui 版本较旧）。",
 		hostNotConnected: "还没连上 pi-web-ui 服务（或连接未就绪），稍后重试。",
 	},
+	"zh-TW": {
+		// 宿主能力提示
+		hostUnsupportedCopied:
+			"當前宿主不支援自動開對話（pi-web-ui 版本較舊）。\n給 AI 的正文已複製到剪貼簿，貼上到對話方塊即可。",
+		hostUnsupported: "當前宿主不支援自動開對話（pi-web-ui 版本較舊）。",
+		hostNotConnected: "還沒連上 pi-web-ui 服務（或連線未就緒），稍後重試。",
+	},
 	en: {
 		// Host capability notices
 		hostUnsupportedCopied:
