@@ -45,3 +45,11 @@ void ipcRenderer
 		});
 	})
 	.catch(() => {});
+
+// passkey 的本地确认闸门（`browser/renderer/passkey-gate.js`）：document-start 就要用，
+// 所以这里**同步**暴露（上面的 __piBrowser 依赖 trust 往返，赶不上首屏）。
+// 它只能“请求一次确认”；真凭据操作仍在主进程/Chromium 里，这里拿不到任何密文。
+contextBridge.exposeInMainWorld("__piPasskey", {
+	version: 1,
+	confirm: (kind: unknown) => ipcRenderer.invoke("pi-browser:passkey-confirm", kind === "create" ? "create" : "get"),
+});

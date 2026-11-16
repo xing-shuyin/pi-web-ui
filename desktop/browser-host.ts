@@ -1,4 +1,5 @@
 import {
+	app,
 	BrowserWindow,
 	dialog,
 	ipcMain,
@@ -38,6 +39,7 @@ import {
 import { fillCredential, fillTotpCode, publicCredential } from "../browser/runtime/credentials.js";
 import { mergeCredentials, parseCredentialCsv } from "../browser/runtime/credentials-csv.js";
 import { publicPasskey } from "../browser/runtime/passkeys.js";
+import { PASSKEY_PROMPT_MS, passkeyPromptDataUrl } from "../browser/runtime/passkey-prompt.js";
 import {
 	clampPopupSize,
 	placePopup,
@@ -205,6 +207,8 @@ export class DesktopBrowserHost {
 	private networkRuleCount = 0;
 	private mode: BrowserMode;
 	private splitRatio: number;
+	/** passkey 本地确认小窗（同一时刻只留一个）。 */
+	private passkeyPrompt: BrowserWindow | null = null;
 	private agentUrl = "";
 	private agentReady = false;
 	private agentGeneration = 0;
@@ -403,6 +407,10 @@ export class DesktopBrowserHost {
 				.filter((entry) => webOrigin(entry.url) === origin)
 				.map((entry) => ({ id: entry.id, name: entry.name, username: entry.username }));
 		});
+		ipcMain.handle("pi-browser:passkey-confirm", async (event) => {
+			const origin = this.autofillOrigin(event);
+			return await this.confirmPasskey(origin);
+		});
 		ipcMain.handle("pi-browser:autofill-pick", async (event, id: unknown) => {
 			const origin = this.autofillOrigin(event);
 			const entry = this.browser.storage
@@ -431,6 +439,74 @@ export class DesktopBrowserHost {
 		const origin = webOrigin(url);
 		if (!origin) throw new Error("Autofill is only available on websites");
 		return origin;
+	}
+
+	/**
+	 * passkey 的本地确认：弹一个无边框小窗（“正在验证本机凭据…” → “已通过”），到时自动通过。
+	 *
+	 * Electron 没有可用的平台生物识别（见 docs/architecture-browser.md），所以这里**不假装**做了生物识别：
+	 * 文案明说是本地确认。弹窗本身出不来也不拦路——直接放行，passkey 照常用。
+	 */
+	private async confirmPasskey(_origin: string): Promise<boolean> {
+		if (this.passkeyPrompt && !this.passkeyPrompt.isDestroyed()) {
+			try {
+				this.passkeyPrompt.close();
+			} catch {}
+		}
+		let prompt: BrowserWindow;
+		try {
+			prompt = new BrowserWindow({
+				parent: this.window,
+				width: 372,
+				height: 86,
+				show: false,
+				frame: false,
+				resizable: false,
+				minimizable: false,
+				maximizable: false,
+				fullscreenable: false,
+				skipTaskbar: true,
+				alwaysOnTop: true,
+				focusable: false,
+				roundedCorners: true,
+				backgroundColor: "#1b1d24",
+				webPreferences: { sandbox: true, contextIsolation: true, nodeIntegration: false, devTools: false },
+			});
+		} catch {
+			return true;
+		}
+		this.passkeyPrompt = prompt;
+		return await new Promise<boolean>((resolve) => {
+			let settled = false;
+			const finish = (): void => {
+				if (settled) return;
+				settled = true;
+				clearTimeout(timer);
+				if (!prompt.isDestroyed()) {
+					try {
+						prompt.destroy();
+					} catch {}
+				}
+				if (this.passkeyPrompt === prompt) this.passkeyPrompt = null;
+				resolve(true);
+			};
+			const timer = setTimeout(finish, PASSKEY_PROMPT_MS);
+			prompt.once("closed", finish);
+			void prompt
+				.loadURL(passkeyPromptDataUrl(app.getLocale()))
+				.then(() => {
+					if (prompt.isDestroyed()) return;
+					if (this.window && !this.window.isDestroyed()) {
+						const bounds = this.window.getBounds();
+						prompt.setBounds({
+							x: Math.round(bounds.x + (bounds.width - 372) / 2),
+							y: Math.round(bounds.y + (bounds.height - 86) / 2),
+						});
+					}
+					prompt.showInactive();
+				})
+				.catch(finish);
+		});
 	}
 
 	private installPermissions(): void {

@@ -18,6 +18,7 @@ import { isWebUrl, internalPageName, internalPageUrl, normalizeBrowserUrl, pickT
 import { BrowserCustomization } from "./customize.js";
 import { DOCK_SCRIPT, SCROLLBAR_CSS } from "./dock.js";
 import { AUTOFILL_SCRIPT } from "./autofill.js";
+import { PASSKEY_GATE_SCRIPT } from "./passkey-gate.js";
 import {
 	passkeyFromCredential,
 	passkeysForHost,
@@ -97,6 +98,8 @@ const PASSKEY_AUTHENTICATOR = {
 } as const;
 interface PasskeySession {
 	enabled: boolean;
+	/** 本地确认闸门是否已挂到「新文档」上（每个标签一次）。 */
+	gateInjected: boolean;
 	authenticatorId: string | null;
 }
 const messageOf = (error: unknown): string => (error instanceof Error ? error.message : String(error));
@@ -876,7 +879,7 @@ export class BrowserManager {
 	private installPasskeys(tabId: string, wc: WebContents): void {
 		const dbg = (wc as unknown as { debugger?: Electron.Debugger }).debugger;
 		if (!dbg || typeof dbg.sendCommand !== "function") return;
-		this.passkeySessions.set(tabId, { enabled: false, authenticatorId: null });
+		this.passkeySessions.set(tabId, { enabled: false, gateInjected: false, authenticatorId: null });
 		if (typeof dbg.on === "function")
 			dbg.on("message", (_event: Electron.Event, method: string, params: Record<string, unknown>) => {
 				this.handlePasskeyEvent(tabId, wc, method, params);
@@ -896,6 +899,17 @@ export class BrowserManager {
 			if (!session.enabled) {
 				await dbg.sendCommand("WebAuthn.enable", { enableUI: false });
 				session.enabled = true;
+			}
+			if (!session.gateInjected && PASSKEY_GATE_SCRIPT) {
+				// 闸门要赶在页面脚本之前装：document-start 注入 + 当前这份文档补一次
+				session.gateInjected = true;
+				try {
+					await dbg.sendCommand("Page.enable");
+					await dbg.sendCommand("Page.addScriptToEvaluateOnNewDocument", { source: PASSKEY_GATE_SCRIPT });
+				} catch {}
+				try {
+					await wc.executeJavaScript(PASSKEY_GATE_SCRIPT);
+				} catch {}
 			}
 			if (!session.authenticatorId) {
 				const added = (await dbg.sendCommand("WebAuthn.addVirtualAuthenticator", {

@@ -164,6 +164,7 @@ Agent 可以给网页注入脚本：`browser_script` 工具（`server/browser-sc
 - **用凭据**：每进一个页面先 `WebAuthn.clearCredentials` 再把 `passkeysForHost()`（WebAuthn 的 rpId 后缀语义：`example.com` 覆盖 `www.example.com`，反之不行）的凭据 `addCredential` 装回去，所以换站不会串台；登录后 `credentialAsserted` 事件里回写 `signCount`。
 - **已验证的闭环**：本地测站上 create → 落盘（加密）→ 新 manager 实例重开标签页 → 用存下的凭据 get 成功（见提交说明里的 e2e 探针）。
 - **代价（不要美化）**：user verification 由客户端“代为确认”（`isUserVerified: true`），**不是生物识别**，私钥由 safeStorage 加密保管（不享受 TPM）；凭据只在本浏览器有效，**不与 Windows Hello / 手机 passkey 同步**；要求 attestation 的站点会拒（虚拟认证器只给 `none`）；**手机扫码（hybrid）仍不支持**，得等上游。
+- **本地确认闸门（“假生物识别”，但不说假话）**：虚拟认证器把 UV 直接置为已满足，网站要 UV 时我们本来会**静默通过**。`browser/renderer/passkey-gate.js`（document-start 注入，源码单源在 `browser/runtime/passkey-gate.ts`；走 CDP `Page.addScriptToEvaluateOnNewDocument` + 当前文档补一次）把 `navigator.credentials.create/get` 包一层：先 `__piPasskey.confirm()` 请主进程弹一个无边框小窗（“正在验证本机凭据…” → 0.9s 后“已通过”自动关，`browser/runtime/passkey-prompt.ts` 生成页面），批准后才真正发起 ceremony；拒绝则抛 `NotAllowedError` 让网站走自己的失败分支。**文案明说是“本地确认、本机无可用生物识别”**——不做假指纹、也不假装做了生物识别。闸门是体验层：桥不在、注入失败、调用异常一律**直接放行**（fail-open），不能因为它把 passkey 弄坏。
 - **面板**：凭据保险库第三个标签「Passkey」（`vault.ts` 的 `passkeyRow`），只列 + 删；条目由网站注册时产生，不在面板里手写。
 
 ## 自定义新标签页与主题覆盖（用户改 / Agent 设计）
