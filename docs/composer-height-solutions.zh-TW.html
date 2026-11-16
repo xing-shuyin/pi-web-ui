@@ -1,0 +1,1336 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>輸入框高度自適應與視口遮擋治理方案 (4套完善設計與原型)</title>
+  <style>
+    :root {
+      --bg-base: #0b0f17;
+      --bg-surface: #131a26;
+      --bg-elevated: #1a2333;
+      --bg-elevated-hover: #222e42;
+      --border-subtle: rgba(255, 255, 255, 0.08);
+      --border-strong: rgba(255, 255, 255, 0.16);
+      --border-accent: #3b82f6;
+      --accent: #3b82f6;
+      --accent-soft: rgba(59, 130, 246, 0.15);
+      --accent-glow: rgba(59, 130, 246, 0.35);
+      --accent-contrast: #ffffff;
+      --text-main: #f8fafc;
+      --text-muted: #94a3b8;
+      --text-dim: #64748b;
+      --danger: #ef4444;
+      --danger-soft: rgba(239, 68, 68, 0.15);
+      --success: #10b981;
+      --success-soft: rgba(16, 185, 129, 0.15);
+      --warning: #f59e0b;
+      --warning-soft: rgba(245, 158, 11, 0.15);
+      --purple: #8b5cf6;
+      --purple-soft: rgba(139, 92, 246, 0.15);
+      --font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+      --font-mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+      --radius-sm: 8px;
+      --radius-md: 12px;
+      --radius-lg: 16px;
+      --shadow-lg: 0 12px 36px rgba(0, 0, 0, 0.4);
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      background: var(--bg-base);
+      color: var(--text-main);
+      font-family: var(--font-sans);
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      padding: 32px 20px 80px;
+      background-image: 
+        radial-gradient(ellipse 65% 50% at 50% -15%, rgba(59, 130, 246, 0.15), transparent),
+        radial-gradient(ellipse 40% 40% at 90% 85%, rgba(139, 92, 246, 0.1), transparent);
+    }
+
+    .container {
+      width: 100%;
+      max-width: 1200px;
+      display: flex;
+      flex-direction: column;
+      gap: 32px;
+    }
+
+    /* 頂欄與背景說明 */
+    .header {
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+    .badge-pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 4px 12px;
+      background: var(--accent-soft);
+      border: 1px solid rgba(59, 130, 246, 0.3);
+      color: #93c5fd;
+      border-radius: 9999px;
+      font-size: 12px;
+      font-weight: 600;
+      width: fit-content;
+    }
+    .header h1 {
+      font-size: 28px;
+      font-weight: 800;
+      letter-spacing: -0.5px;
+      background: linear-gradient(135deg, #ffffff 40%, #94a3b8 100%);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+    }
+    .header p {
+      font-size: 14.5px;
+      color: var(--text-muted);
+      line-height: 1.6;
+    }
+
+    /* 核心病理診斷卡 */
+    .diagnosis-card {
+      background: var(--bg-surface);
+      border: 1px solid var(--border-subtle);
+      border-radius: var(--radius-lg);
+      padding: 24px;
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+      box-shadow: var(--shadow-lg);
+    }
+    .diagnosis-title {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      font-size: 16px;
+      font-weight: 700;
+      color: #fca5a5;
+    }
+    .bug-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+      gap: 16px;
+    }
+    .bug-item {
+      background: rgba(239, 68, 68, 0.05);
+      border: 1px solid rgba(239, 68, 68, 0.2);
+      border-radius: var(--radius-md);
+      padding: 16px;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+    .bug-item h4 {
+      font-size: 14px;
+      font-weight: 600;
+      color: #f87171;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .bug-item p {
+      font-size: 12.5px;
+      color: var(--text-muted);
+      line-height: 1.5;
+    }
+    .bug-item code {
+      font-family: var(--font-mono);
+      font-size: 11.5px;
+      background: rgba(0, 0, 0, 0.35);
+      padding: 2px 6px;
+      border-radius: 4px;
+      color: #fca5a5;
+    }
+
+    /* 方案切換 Tabs */
+    .tab-bar {
+      display: flex;
+      gap: 8px;
+      background: var(--bg-surface);
+      padding: 6px;
+      border-radius: var(--radius-md);
+      border: 1px solid var(--border-subtle);
+      overflow-x: auto;
+    }
+    .tab-btn {
+      flex: 1;
+      min-width: 170px;
+      padding: 10px 16px;
+      background: transparent;
+      border: none;
+      border-radius: var(--radius-sm);
+      color: var(--text-muted);
+      font-size: 13.5px;
+      font-weight: 600;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      transition: all 0.2s;
+      white-space: nowrap;
+    }
+    .tab-btn:hover {
+      background: var(--bg-elevated);
+      color: var(--text-main);
+    }
+    .tab-btn.active {
+      background: var(--accent);
+      color: var(--accent-contrast);
+      box-shadow: 0 4px 14px var(--accent-glow);
+    }
+
+    /* 方案內容面板 */
+    .solution-panel {
+      display: none;
+      flex-direction: column;
+      gap: 24px;
+    }
+    .solution-panel.active {
+      display: flex;
+    }
+
+    /* 原型展示互動沙箱 */
+    .sandbox-container {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 24px;
+      align-items: stretch;
+    }
+    @media (max-width: 960px) {
+      .sandbox-container {
+        grid-template-columns: 1fr;
+      }
+    }
+
+    /* 模擬視窗螢幕 */
+    .screen-mockup {
+      background: #0d1117;
+      border: 1px solid var(--border-strong);
+      border-radius: var(--radius-lg);
+      height: 580px;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+      box-shadow: var(--shadow-lg);
+      position: relative;
+    }
+    .screen-titlebar {
+      height: 38px;
+      background: #161b22;
+      border-bottom: 1px solid var(--border-subtle);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 0 14px;
+      font-size: 12px;
+      color: var(--text-dim);
+      user-select: none;
+    }
+    .titlebar-dots {
+      display: flex;
+      gap: 6px;
+    }
+    .titlebar-dot {
+      width: 10px;
+      height: 10px;
+      border-radius: 50%;
+    }
+    .dot-red { background: #ef4444; }
+    .dot-yellow { background: #f59e0b; }
+    .dot-green { background: #10b981; }
+
+    /* 訊息區 (正文) */
+    .chat-messages {
+      flex: 1 1 auto;
+      min-height: 80px;
+      overflow-y: auto;
+      padding: 18px;
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+      background: #090d14;
+    }
+    .chat-bubble {
+      max-width: 85%;
+      padding: 10px 14px;
+      border-radius: 12px;
+      font-size: 13px;
+      line-height: 1.5;
+    }
+    .bubble-user {
+      align-self: flex-end;
+      background: var(--accent);
+      color: var(--accent-contrast);
+      border-bottom-right-radius: 4px;
+    }
+    .bubble-ai {
+      align-self: flex-start;
+      background: #1e2638;
+      border: 1px solid var(--border-subtle);
+      color: var(--text-main);
+      border-bottom-left-radius: 4px;
+    }
+    .bubble-ai code {
+      font-family: var(--font-mono);
+      background: rgba(0, 0, 0, 0.3);
+      padding: 2px 5px;
+      border-radius: 4px;
+      color: #93c5fd;
+    }
+
+    /* 輸入欄外圍 */
+    .composer-area {
+      flex: 0 0 auto;
+      background: #101622;
+      border-top: 1px solid var(--border-subtle);
+      padding: 10px 14px 14px;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      position: relative;
+    }
+
+    .quick-chips {
+      display: flex;
+      gap: 6px;
+      overflow-x: auto;
+      padding-bottom: 2px;
+    }
+    .chip {
+      background: #1a2333;
+      border: 1px solid var(--border-subtle);
+      color: var(--text-muted);
+      font-size: 11px;
+      padding: 3px 9px;
+      border-radius: 9999px;
+      white-space: nowrap;
+      cursor: pointer;
+    }
+    .chip:hover {
+      background: #232f44;
+      color: var(--text-main);
+    }
+
+    /* 方案沙箱裡的真實元件樣式 */
+    .composer-box {
+      background: #171f2e;
+      border: 1px solid var(--border-strong);
+      border-radius: 14px;
+      display: flex;
+      flex-direction: column;
+      position: relative;
+      transition: border-color 0.2s, box-shadow 0.2s;
+    }
+    .composer-box:focus-within {
+      border-color: var(--accent);
+      box-shadow: 0 0 0 2px var(--accent-soft);
+    }
+
+    /* 拖拽手柄 */
+    .drag-handle {
+      height: 12px;
+      width: 100%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      cursor: ns-resize;
+      user-select: none;
+      touch-action: none;
+    }
+    .drag-pill {
+      width: 38px;
+      height: 4px;
+      border-radius: 2px;
+      background: rgba(255, 255, 255, 0.2);
+      transition: all 0.2s;
+    }
+    .drag-handle:hover .drag-pill,
+    .drag-handle.dragging .drag-pill {
+      background: var(--accent);
+      width: 54px;
+      box-shadow: 0 0 8px var(--accent-glow);
+    }
+
+    /* 輸入文本框 */
+    .composer-textarea {
+      width: 100%;
+      background: transparent;
+      border: none;
+      outline: none;
+      color: var(--text-main);
+      font-family: var(--font-sans);
+      font-size: 13.5px;
+      line-height: 1.6;
+      padding: 6px 12px;
+      resize: none;
+      overflow-y: auto;
+    }
+    .composer-textarea::placeholder {
+      color: var(--text-dim);
+    }
+
+    /* 底部工具條 */
+    .composer-foot {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 6px 10px;
+      border-top: 1px solid rgba(255, 255, 255, 0.05);
+    }
+    .foot-left {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .foot-right {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .btn-icon {
+      background: transparent;
+      border: 1px solid transparent;
+      color: var(--text-muted);
+      border-radius: 6px;
+      padding: 5px;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 12px;
+    }
+    .btn-icon:hover {
+      background: rgba(255, 255, 255, 0.06);
+      color: var(--text-main);
+    }
+    .btn-send {
+      width: 28px;
+      height: 28px;
+      border-radius: 50%;
+      background: var(--accent);
+      color: #fff;
+      border: none;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-weight: bold;
+    }
+
+    /* 側邊分析與程式碼 */
+    .sandbox-guide {
+      background: var(--bg-surface);
+      border: 1px solid var(--border-subtle);
+      border-radius: var(--radius-lg);
+      padding: 24px;
+      display: flex;
+      flex-direction: column;
+      gap: 18px;
+    }
+    .guide-sec h3 {
+      font-size: 16px;
+      font-weight: 700;
+      color: var(--text-main);
+      margin-bottom: 8px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .guide-sec p {
+      font-size: 13.5px;
+      color: var(--text-muted);
+      line-height: 1.6;
+    }
+    .feature-list {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      margin-top: 8px;
+    }
+    .feature-point {
+      display: flex;
+      align-items: flex-start;
+      gap: 8px;
+      font-size: 13px;
+      color: var(--text-main);
+    }
+    .feature-point svg {
+      flex-shrink: 0;
+      margin-top: 3px;
+      color: var(--success);
+    }
+
+    .code-block {
+      background: #090d14;
+      border: 1px solid var(--border-subtle);
+      border-radius: var(--radius-md);
+      padding: 14px;
+      font-family: var(--font-mono);
+      font-size: 12px;
+      color: #cbd5e1;
+      overflow-x: auto;
+      line-height: 1.5;
+    }
+    .code-block .hl-kw { color: #f472b6; }
+    .code-block .hl-fn { color: #60a5fa; }
+    .code-block .hl-str { color: #34d399; }
+    .code-block .hl-num { color: #fbbf24; }
+    .code-block .hl-com { color: #64748b; font-style: italic; }
+
+    /* 方案沙箱專用控制元件 */
+    .sandbox-ctrls {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      padding: 10px 14px;
+      background: #141b27;
+      border-radius: var(--radius-md);
+      border: 1px solid var(--border-subtle);
+      align-items: center;
+    }
+    .ctrl-tag {
+      font-size: 12px;
+      color: var(--text-dim);
+      margin-right: 4px;
+    }
+    .btn-action {
+      background: var(--bg-elevated);
+      border: 1px solid var(--border-subtle);
+      color: var(--text-main);
+      font-size: 12px;
+      padding: 5px 10px;
+      border-radius: 6px;
+      cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      transition: all 0.15s;
+    }
+    .btn-action:hover {
+      background: var(--bg-elevated-hover);
+      border-color: var(--border-strong);
+    }
+    .metric-badge {
+      font-family: var(--font-mono);
+      font-size: 11.5px;
+      background: rgba(59, 130, 246, 0.12);
+      border: 1px solid rgba(59, 130, 246, 0.25);
+      color: #93c5fd;
+      padding: 2px 8px;
+      border-radius: 4px;
+      margin-left: auto;
+    }
+
+    /* 方案3：全屏沉浸抽屜/模態 */
+    .zen-overlay {
+      position: absolute;
+      inset: 0;
+      background: rgba(0, 0, 0, 0.75);
+      backdrop-filter: blur(6px);
+      z-index: 50;
+      display: none;
+      align-items: center;
+      justify-content: center;
+      padding: 20px;
+    }
+    .zen-modal {
+      width: 100%;
+      height: 90%;
+      background: #131a26;
+      border: 1px solid var(--border-strong);
+      border-radius: var(--radius-lg);
+      display: flex;
+      flex-direction: column;
+      box-shadow: 0 20px 50px rgba(0, 0, 0, 0.6);
+      overflow: hidden;
+    }
+    .zen-head {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 12px 18px;
+      border-bottom: 1px solid var(--border-subtle);
+      font-size: 14px;
+      font-weight: 600;
+    }
+    .zen-textarea {
+      flex: 1;
+      background: transparent;
+      border: none;
+      outline: none;
+      padding: 18px;
+      color: #fff;
+      font-family: var(--font-mono);
+      font-size: 14px;
+      line-height: 1.7;
+      resize: none;
+    }
+    .zen-foot {
+      padding: 12px 18px;
+      border-top: 1px solid var(--border-subtle);
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    /* 方案對比表 */
+    .compare-table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 13px;
+      margin-top: 10px;
+    }
+    .compare-table th, .compare-table td {
+      border: 1px solid var(--border-subtle);
+      padding: 10px 14px;
+      text-align: left;
+    }
+    .compare-table th {
+      background: rgba(255, 255, 255, 0.03);
+      color: var(--text-muted);
+      font-weight: 600;
+    }
+    .compare-table tr:hover {
+      background: rgba(255, 255, 255, 0.02);
+    }
+  </style>
+</head>
+<body>
+<div data-docs-i18n-switch style="position:fixed;top:8px;right:12px;z-index:2147483647;font:12px/1.6 -apple-system,system-ui,sans-serif;background:rgba(15,17,22,.78);color:#fff;padding:4px 12px;border-radius:999px;box-shadow:0 2px 10px rgba(0,0,0,.35)"><a href="./composer-height-solutions.html" style="color:#fff;text-decoration:none">简体中文</a> · <a href="./composer-height-solutions.en.html" style="color:#fff;text-decoration:none">English</a> · <strong>繁體中文</strong></div>
+
+
+
+  <div class="container">
+    
+    <!-- 頭部說明 -->
+    <div class="header">
+      <div class="badge-pill">
+        <svg width="14" height="14" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"/></svg>
+        UX & 架構綜合治理方案
+      </div>
+      <h1>輸入框高度自適應失控 & 正文遮擋治理</h1>
+      <p>針對使用者反饋的「輸入框高度一直增加直到遮擋正文、無法下拉縮小、無文字時也被巨大保底撐滿」缺陷，從根因剖析、互動演進到工程落地的 4 套完善方案合集與可互動沙箱原型。</p>
+    </div>
+
+    <!-- 缺陷根因深度解構 -->
+    <div class="diagnosis-card">
+      <div class="diagnosis-title">
+        <svg width="18" height="18" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"/></svg>
+        現行程式碼的 4 大致盲性邏輯缺陷（為什麼無法減小？為什麼空內容也撐滿？）
+      </div>
+      <div class="bug-grid">
+        <div class="bug-item">
+          <h4>1. Math.max 產生“只能增不能減”死鎖</h4>
+          <p>程式碼中寫了 <code>Math.min(Math.max(scrollHeight, composerH), cap)</code>。當用戶輸入長文本導致 scrollHeight 達 500px 時，向下拖拽把 composerH 降到 150px 根本無效，scrollHeight 始終死死頂住高度！</p>
+        </div>
+        <div class="bug-item">
+          <h4>2. 720px 絕對畫素脫離視口安全保障</h4>
+          <p>硬編碼了 <code>COMPOSER_MAX_H = 720</code>。1080P 或筆記本視口常只有 750~850px，輸入框加上工具條直接佔滿 100% 視口，將正文區（.messages）擠壓至 0px 徹底不可見。</p>
+        </div>
+        <div class="bug-item">
+          <h4>3. localStorage 持久化“幽靈高度”</h4>
+          <p>一旦拉高或誤觸，保底高度存入 localStorage。之後清空文字、新建對話，輸入框依然以 720px 撐開整個螢幕（如截圖所示無文字卻佔全屏），而“雙擊恢復”隱藏在隱形細線上無法被發現。</p>
+        </div>
+        <div class="bug-item">
+          <h4>4. 抓手重疊與操作盲區</h4>
+          <p>頂部拖拽條平時 <code>opacity: 0</code>，當輸入框被撐大到頂邊時，抓手與快捷短語藥丸嚴重重疊擠佔，滑鼠極易觸發短語點選，根本摸不到 14px 的細窄抓手。</p>
+        </div>
+      </div>
+    </div>
+
+    <!-- 方案選擇 Tabs -->
+    <div class="tab-bar">
+      <button class="tab-btn active" onclick="switchTab(0)">
+        <span>方案 1：視口彈性約束 + 雙向自由調節</span>
+      </button>
+      <button class="tab-btn" onclick="switchTab(1)">
+        <span>方案 2：分體式物理阻尼安全區 (Splitter)</span>
+      </button>
+      <button class="tab-btn" onclick="switchTab(2)">
+        <span>方案 3：輕量輸入 + 沉浸式 Zen 模態 (推薦)</span>
+      </button>
+      <button class="tab-btn" onclick="switchTab(3)">
+        <span>方案 4：三檔吸附控制器 (快速切換)</span>
+      </button>
+    </div>
+
+    <!-- 方案 1 -->
+    <div class="solution-panel active" id="panel-0">
+      <div class="sandbox-ctrls">
+        <span class="ctrl-tag">互動實驗：</span>
+        <button class="btn-action" onclick="feedText(0, 'short')">輸入單行短語</button>
+        <button class="btn-action" onclick="feedText(0, 'medium')">貼上 6 行多行程式碼</button>
+        <button class="btn-action" onclick="feedText(0, 'long')">貼上 30 行大段 Prompt</button>
+        <button class="btn-action" onclick="clearText(0)">清空文本 (觀察自動回縮)</button>
+        <button class="btn-action" onclick="resetComposer(0)">↺ 重置高度</button>
+        <div class="metric-badge" id="metric-0">當前高度: 44px (10% 視口)</div>
+      </div>
+
+      <div class="sandbox-container">
+        <!-- 模擬器 -->
+        <div class="screen-mockup" id="screen-0">
+          <div class="screen-titlebar">
+            <div class="titlebar-dots">
+              <span class="titlebar-dot dot-red"></span>
+              <span class="titlebar-dot dot-yellow"></span>
+              <span class="titlebar-dot dot-green"></span>
+            </div>
+            <span>pi-web-ui 對話視窗 (保證正文可見)</span>
+            <span>線上</span>
+          </div>
+
+          <div class="chat-messages" id="msgs-0">
+            <div class="chat-bubble bubble-user">請幫我重構一下輸入框的高度計算邏輯。</div>
+            <div class="chat-bubble bubble-ai">
+              沒問題！核心是必須徹底打破 <code>Math.max(scrollHeight, composerH)</code> 的單向死鎖，無論內容多少，使用者都可以自由拉大或拉小。
+            </div>
+            <div class="chat-bubble bubble-ai">
+              正文訊息區域必須隨時保證至少可見 50% 以上空間。現在無論你輸入多少文字，或者向上/向下拖拽手柄，正文區域都絕對不會被遮擋消失！
+            </div>
+          </div>
+
+          <div class="composer-area">
+            <div class="quick-chips">
+              <span class="chip" onclick="feedText(0, '繼續')">繼續</span>
+              <span class="chip" onclick="feedText(0, '上傳發布')">上傳發布</span>
+              <span class="chip" onclick="feedText(0, '處理pr')">處理pr</span>
+              <span class="chip" onclick="feedText(0, '處理issue')">處理issue</span>
+            </div>
+
+            <div class="composer-box" id="composer-box-0">
+              <!-- 顯式可見的拖拽手柄 -->
+              <div class="drag-handle" id="handle-0" title="拖拽調整高度，雙擊還原">
+                <div class="drag-pill"></div>
+              </div>
+
+              <textarea 
+                class="composer-textarea" 
+                id="ta-0" 
+                rows="1" 
+                placeholder="給 pi 傳送訊息 — 輸入長文本試試看，永遠不擋正文..."
+                oninput="handleInput(0)"
+              ></textarea>
+
+              <div class="composer-foot">
+                <div class="foot-left">
+                  <button class="btn-icon">📎</button>
+                  <button class="btn-icon">🎙️</button>
+                  <span style="font-size: 11.5px; color: var(--text-dim);">Gemini 3.8 Flash</span>
+                </div>
+                <div class="foot-right">
+                  <button class="btn-icon" onclick="resetComposer(0)" title="還原高度">↺</button>
+                  <button class="btn-send">↑</button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- 技術方案解讀與程式碼 -->
+        <div class="sandbox-guide">
+          <div class="guide-sec">
+            <h3>方案 1 機制：視口百分比上限 + 雙向自由裁剪</h3>
+            <p>徹底解決“只能變大不能縮小”以及“空文本霸屏”的黃金法則：</p>
+            <div class="feature-list">
+              <div class="feature-point">
+                <svg width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/></svg>
+                <span><strong>動態相對上限</strong>：摒棄 720px，採用 <code>maxHeight = min(40vh, 320px)</code>，正文隨時擁有 ≥60% 安全視口。</span>
+              </div>
+              <div class="feature-point">
+                <svg width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/></svg>
+                <span><strong>雙向真實控制</strong>：使用者拖動時，設定的是目標限高 <code>userH</code>。當 <code>userH &lt; scrollHeight</code> 時，強制啟用內部縱向滾動 <code>overflow-y: auto</code>，讓使用者能隨時向下拉扁輸入框看上面的正文！</span>
+              </div>
+              <div class="feature-point">
+                <svg width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/></svg>
+                <span><strong>空狀態智慧回縮</strong>：無內容時始終緊湊（40px），使用者拖拽的高度僅作為“長文本時的容納上限”，決不再出現截圖中的巨型空框！</span>
+              </div>
+            </div>
+          </div>
+
+          <div class="code-block"><span class="hl-com">// ChatInput.tsx 核心計算公式重構</span>
+<span class="hl-kw">const</span> MAX_SAFE_CAP = Math.<span class="hl-fn">min</span>(window.innerHeight * <span class="hl-num">0.42</span>, <span class="hl-num">320</span>);
+
+<span class="hl-kw">let</span> targetH = COMPOSER_AUTO_H;
+<span class="hl-kw">if</span> (!text.trim()) {
+  targetH = COMPOSER_MIN_H; <span class="hl-com">// 空文本絕對不撐滿</span>
+} <span class="hl-kw">else if</span> (userH != <span class="hl-kw">null</span>) {
+  <span class="hl-com">// 允許向下自由壓縮！超出部分交給內部滾動</span>
+  targetH = Math.<span class="hl-fn">min</span>(userH, MAX_SAFE_CAP);
+} <span class="hl-kw">else</span> {
+  targetH = Math.<span class="hl-fn">min</span>(ta.scrollHeight, MAX_SAFE_CAP);
+}
+
+ta.style.height = <span class="hl-str">`${targetH}px`</span>;
+ta.style.overflowY = ta.scrollHeight > targetH ? <span class="hl-str">"auto"</span> : <span class="hl-str">"hidden"</span>;</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 方案 2 -->
+    <div class="solution-panel" id="panel-1">
+      <div class="sandbox-ctrls">
+        <span class="ctrl-tag">互動實驗：</span>
+        <button class="btn-action" onclick="feedText(1, 'long')">輸入大段程式碼</button>
+        <button class="btn-action" onclick="dragToMax(1)">直接向上拉到極限</button>
+        <button class="btn-action" onclick="resetComposer(1)">恢復預設分割</button>
+        <div class="metric-badge" id="metric-1">正文保護高度: 280px (安全)</div>
+      </div>
+
+      <div class="sandbox-container">
+        <div class="screen-mockup" id="screen-1" style="display: flex; flex-direction: column;">
+          <div class="screen-titlebar">
+            <div class="titlebar-dots">
+              <span class="titlebar-dot dot-red"></span>
+              <span class="titlebar-dot dot-yellow"></span>
+              <span class="titlebar-dot dot-green"></span>
+            </div>
+            <span>Splitter 物理隔離阻尼模式</span>
+          </div>
+
+          <!-- 正文擁有絕對 min-height 保證 -->
+          <div class="chat-messages" id="msgs-1" style="min-height: 240px; border-bottom: 2px dashed rgba(59, 130, 246, 0.4);">
+            <div class="chat-bubble bubble-ai">
+              <strong>【物理安全區】</strong> 本區域被 CSS <code>min-height: 240px</code> 或 <code>45%</code> 剛性保護。
+            </div>
+            <div class="chat-bubble bubble-ai">
+              無論輸入框如何拉伸、如何輸入，輸入框到達這道虛線時都會被硬截斷，絕不可能侵入正文安全區！
+            </div>
+          </div>
+
+          <!-- 分割欄 -->
+          <div style="background: #1e293b; height: 6px; cursor: ns-resize; display: flex; align-items: center; justify-content: center;" id="splitter-handle-1">
+            <div style="width: 40px; height: 2px; background: #64748b;"></div>
+          </div>
+
+          <div class="composer-area" style="flex: 1; display: flex; flex-direction: column;" id="composer-area-1">
+            <div class="composer-box" style="flex: 1; display: flex; flex-direction: column;">
+              <textarea 
+                class="composer-textarea" 
+                id="ta-1" 
+                placeholder="拖動上方分割線試試看..."
+                style="flex: 1;"
+                oninput="handleInput(1)"
+              ></textarea>
+              <div class="composer-foot">
+                <span style="font-size: 11px; color: var(--text-dim);">Split Pane 嚴格按比例劃分</span>
+                <button class="btn-send">↑</button>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="sandbox-guide">
+          <div class="guide-sec">
+            <h3>方案 2 機制：Splitter 剛性安全門禁</h3>
+            <p>將訊息流與輸入框作為真正的 Flex 分割視窗：</p>
+            <div class="feature-list">
+              <div class="feature-point">
+                <svg width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/></svg>
+                <span><strong>正文剛性下限</strong>：宣告 <code>.messages { min-height: 240px; flex: 1 1 auto; }</code>，輸入框絕對無法侵佔該區域。</span>
+              </div>
+              <div class="feature-point">
+                <svg width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/></svg>
+                <span><strong>物理阻尼碰撞</strong>：拖動分割線時，如果正文高度即將低於 240px，拖動手勢立即進入硬阻尼鎖定，防止穿透。</span>
+              </div>
+              <div class="feature-point">
+                <svg width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/></svg>
+                <span><strong>大屏多工友好</strong>：適合桌面寬屏 IDE 風格，兩塊區域各自擁有獨立捲軸，權責分明。</span>
+              </div>
+            </div>
+          </div>
+          <div class="code-block"><span class="hl-com">/* CSS 剛性佈局防侵入 */</span>
+.main-chat-container {
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+}
+.messages {
+  flex: 1 1 auto;
+  min-height: max(240px, 40vh); <span class="hl-com">/* 絕對不可侵犯的正文空間 */</span>
+  overflow-y: auto;
+}
+.composer-pane {
+  flex: 0 0 auto;
+  max-height: calc(100vh - 240px); <span class="hl-com">/* 動態鎖死上限 */</span>
+}</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 方案 3 -->
+    <div class="solution-panel" id="panel-2">
+      <div class="sandbox-ctrls">
+        <span class="ctrl-tag">互動實驗：</span>
+        <button class="btn-action" onclick="feedText(2, 'short')">常規聊天輸入 (單行)</button>
+        <button class="btn-action" onclick="feedText(2, 'long')">輸入超長大段程式碼 (自動喚醒展開按鈕)</button>
+        <button class="btn-action" onclick="toggleZen(true)">⛶ 點選開啟 Zen 沉浸編輯器</button>
+        <div class="metric-badge" id="metric-2">主輸入框始終保持緊湊 ≤ 140px</div>
+      </div>
+
+      <div class="sandbox-container">
+        <div class="screen-mockup" id="screen-2">
+          <div class="screen-titlebar">
+            <div class="titlebar-dots">
+              <span class="titlebar-dot dot-red"></span>
+              <span class="titlebar-dot dot-yellow"></span>
+              <span class="titlebar-dot dot-green"></span>
+            </div>
+            <span>Claude / Cursor 同款：輕量輸入 + 模態解耦</span>
+          </div>
+
+          <div class="chat-messages" id="msgs-2">
+            <div class="chat-bubble bubble-ai">
+              主輸入框永遠保持極簡優雅（最多展示 5 行），聊天正文閱讀體驗 100% 連貫，絕不發生跳變和視口擠壓。
+            </div>
+            <div class="chat-bubble bubble-ai">
+              當需要編寫複雜 Prompt 或長篇程式碼時，點選右側的 <strong>「⛶ 展開」</strong> 按鈕，或者按 <code>Ctrl+E</code>，進入沉浸式全功能編輯抽屜！
+            </div>
+          </div>
+
+          <div class="composer-area">
+            <div class="composer-box" id="composer-box-2">
+              <textarea 
+                class="composer-textarea" 
+                id="ta-2" 
+                rows="1" 
+                placeholder="極簡輸入框，打多行文字試試..."
+                oninput="handleInput(2)"
+                style="max-height: 120px;"
+              ></textarea>
+              <div class="composer-foot">
+                <div class="foot-left">
+                  <span style="font-size: 11px; color: var(--text-dim);" id="word-count-2">0 字元</span>
+                </div>
+                <div class="foot-right">
+                  <button class="btn-icon" id="zen-btn" onclick="toggleZen(true)" title="展開全屏編輯器 (Ctrl+E)">⛶ 展開編輯</button>
+                  <button class="btn-send">↑</button>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Zen 沉浸式模態彈窗 -->
+          <div class="zen-overlay" id="zen-overlay">
+            <div class="zen-modal">
+              <div class="zen-head">
+                <span>沉浸式長文 / Prompt 編輯器</span>
+                <button class="btn-icon" onclick="toggleZen(false)">✕ 關閉</button>
+              </div>
+              <textarea class="zen-textarea" id="zen-ta" placeholder="在此舒適編寫大段 Markdown、Prompt 或程式碼..."></textarea>
+              <div class="zen-foot">
+                <span style="font-size: 12px; color: var(--text-dim);" id="zen-stats">0 詞 · 預計 0 tokens</span>
+                <div style="display: flex; gap: 8px;">
+                  <button class="btn-action" onclick="toggleZen(false)">取消</button>
+                  <button class="btn-action" style="background: var(--accent); color:#fff;" onclick="applyZen()">完成並就緒 (Ctrl+Enter)</button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="sandbox-guide">
+          <div class="guide-sec">
+            <h3>方案 3 機制：長文編輯與日常聊天分離 (強烈推薦)</h3>
+            <p>現代頂級 AI 應用（Claude 3.7 Projects、Cursor Composer、GitHub Copilot）普遍採納的行業終極範式：</p>
+            <div class="feature-list">
+              <div class="feature-point">
+                <svg width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/></svg>
+                <span><strong>主介面極致緊湊</strong>：輸入框高度牢牢鎖死在 40px~140px（不超過 5 行）。絕不對正文產生壓迫感。</span>
+              </div>
+              <div class="feature-point">
+                <svg width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/></svg>
+                <span><strong>按需展開沉浸空間</strong>：貼上多行內容或內容變長時，右下角高亮提示「⛶ 展開編輯」，彈窗中支援舒適排版與 Token 估算。</span>
+              </div>
+              <div class="feature-point">
+                <svg width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/></svg>
+                <span><strong>心智徹底解脫</strong>：使用者再也不用在侷促又容易變形的主聊天框裡提心吊膽地上下拉扯，從根源上消除高度自適應的邊際災難。</span>
+              </div>
+            </div>
+          </div>
+
+          <div class="code-block"><span class="hl-com">// 模態與主輸入框雙向同步</span>
+<span class="hl-kw">function</span> <span class="hl-fn">openZenEditor</span>() {
+  zenTextarea.value = chatTextarea.value;
+  zenModal.style.display = <span class="hl-str">"flex"</span>;
+}
+<span class="hl-kw">function</span> <span class="hl-fn">saveZenEditor</span>() {
+  chatTextarea.value = zenTextarea.value;
+  zenModal.style.display = <span class="hl-str">"none"</span>;
+  <span class="hl-fn">triggerComposerAutoResize</span>();
+}</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 方案 4 -->
+    <div class="solution-panel" id="panel-3">
+      <div class="sandbox-ctrls">
+        <span class="ctrl-tag">一鍵檔位切換：</span>
+        <button class="btn-action" onclick="setPresetTier(1)">1檔：緊湊單行 (44px)</button>
+        <button class="btn-action" onclick="setPresetTier(2)">2檔：日常標準 (160px)</button>
+        <button class="btn-action" onclick="setPresetTier(3)">3檔：寬適大窗 (280px)</button>
+        <div class="metric-badge" id="metric-3">當前檔位: 2檔 (日常 160px)</div>
+      </div>
+
+      <div class="sandbox-container">
+        <div class="screen-mockup" id="screen-3">
+          <div class="screen-titlebar">
+            <div class="titlebar-dots">
+              <span class="titlebar-dot dot-red"></span>
+              <span class="titlebar-dot dot-yellow"></span>
+              <span class="titlebar-dot dot-green"></span>
+            </div>
+            <span>三檔明確吸附檔位模式 (零心智負擔)</span>
+          </div>
+
+          <div class="chat-messages" id="msgs-3">
+            <div class="chat-bubble bubble-ai">
+              很多時候，使用者不需要精確到 1 個畫素的隨意拖拽，而只是想在“<strong>緊湊看歷史</strong>”和“<strong>展開寫長文</strong>”之間快速切換。
+            </div>
+            <div class="chat-bubble bubble-ai">
+              看輸入框右上角的分檔控制藥丸，點一下就能在 44px、160px、280px 之間平滑切換！
+            </div>
+          </div>
+
+          <div class="composer-area">
+            <div class="composer-box" id="composer-box-3" style="height: 160px; transition: height 0.25s cubic-bezier(0.16, 1, 0.3, 1);">
+              <div style="display: flex; align-items: center; justify-content: space-between; padding: 6px 12px 2px; border-bottom: 1px solid rgba(255,255,255,0.04);">
+                <span style="font-size: 11px; color: var(--text-dim);">高度檔位控制</span>
+                <div style="display: flex; gap: 4px; background: rgba(0,0,0,0.3); padding: 2px; border-radius: 6px;">
+                  <button class="chip" id="tier-btn-1" style="border:none; padding:2px 8px;" onclick="setPresetTier(1)">單行</button>
+                  <button class="chip" id="tier-btn-2" style="border:none; padding:2px 8px; background:var(--accent); color:#fff;" onclick="setPresetTier(2)">標準</button>
+                  <button class="chip" id="tier-btn-3" style="border:none; padding:2px 8px;" onclick="setPresetTier(3)">大窗</button>
+                </div>
+              </div>
+
+              <textarea 
+                class="composer-textarea" 
+                id="ta-3" 
+                style="flex: 1;"
+                placeholder="點選上方檔位，體驗平滑吸附..."
+              ></textarea>
+
+              <div class="composer-foot">
+                <span style="font-size: 11.5px; color: var(--text-dim);">平滑過渡 · 不擠壓視口</span>
+                <button class="btn-send">↑</button>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="sandbox-guide">
+          <div class="guide-sec">
+            <h3>方案 4 機制：離散檔位吸附 (Discrete Magnetic Tiers)</h3>
+            <p>消除畫素級拖拽的不確定性，提供明確預期：</p>
+            <div class="feature-list">
+              <div class="feature-point">
+                <svg width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/></svg>
+                <span><strong>三種固定心智模型</strong>：44px（快速指令）、160px（多行提問）、280px（大段程式碼審閱），嚴格封頂 280px。</span>
+              </div>
+              <div class="feature-point">
+                <svg width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/></svg>
+                <span><strong>狀態一目瞭然</strong>：右上角始終標明當前檔位，隨時可點切，不會出現“不知道當前處於什麼保底高度”的隱形困擾。</span>
+              </div>
+              <div class="feature-point">
+                <svg width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/></svg>
+                <span><strong>結合拖拽吸附</strong>：如果使用者手動拖拽，鬆手時自動平滑磁吸至最近的一檔（Magnetic Snap），手感順滑。</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 方案橫向對比與推薦評測表 -->
+    <div class="diagnosis-card" style="margin-top: 10px;">
+      <h3 style="font-size: 17px; font-weight: 700;">四套方案工程落地的全景對比與選型建議</h3>
+      <table class="compare-table">
+        <thead>
+          <tr>
+            <th>方案維度</th>
+            <th>方案 1: 視口彈性+雙向自由調節</th>
+            <th>方案 2: Splitter 剛性安全門禁</th>
+            <th>方案 3: 輕量輸入 + Zen 模態 (推薦)</th>
+            <th>方案 4: 離散三檔磁吸切換</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><strong>正文可見性保障</strong></td>
+            <td>★★★★★ (min(40vh, 320px))</td>
+            <td>★★★★★ (物理 min-height 240px)</td>
+            <td>★★★★★+ (主框恆定 ≤140px)</td>
+            <td>★★★★★ (封頂 280px)</td>
+          </tr>
+          <tr>
+            <td><strong>高度縮小的自由度</strong></td>
+            <td>★★★★★ (隨時向下壓低，滾輪承接)</td>
+            <td>★★★★☆ (拖動受正文限制)</td>
+            <td>★★★★★ (主框恆定小，彈窗全屏)</td>
+            <td>★★★★★ (一鍵降檔)</td>
+          </tr>
+          <tr>
+            <td><strong>空文本撐爆免疫力</strong></td>
+            <td>完全免疫 (空狀態強制回縮)</td>
+            <td>較好</td>
+            <td>絕對免疫 (架構級解耦)</td>
+            <td>完全免疫</td>
+          </tr>
+          <tr>
+            <td><strong>改造成本 (對本倉庫)</strong></td>
+            <td><strong>最小</strong> (僅需改 ChatInput.tsx 計算)</td>
+            <td>中等 (需調整 flex split 佈局)</td>
+            <td>中等 (新增一個全屏彈窗元件)</td>
+            <td>較小 (增加檔位 state)</td>
+          </tr>
+          <tr>
+            <td><strong>落地推薦度</strong></td>
+            <td><strong>首選快速修復</strong> (立即徹底治本)</td>
+            <td>適合大屏桌面專屬模式</td>
+            <td><strong>終極體驗首選</strong> (與方案1搭配)</td>
+            <td>互動體驗良好備選</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+  </div>
+
+  <script>
+    // 切換方案標籤頁
+    function switchTab(index) {
+      document.querySelectorAll('.tab-btn').forEach((btn, i) => {
+        btn.classList.toggle('active', i === index);
+      });
+      document.querySelectorAll('.solution-panel').forEach((panel, i) => {
+        panel.classList.toggle('active', i === index);
+      });
+    }
+
+    // 預置文本測試集
+    const SAMPLE_TEXTS = {
+      short: "請幫我看看這段程式碼有什麼效能瓶頸？",
+      medium: `function calculateTotal(items) {
+  return items.reduce((acc, cur) => {
+    return acc + cur.price * cur.count;
+  }, 0);
+}`,
+      long: `你是一名資深的系統架構師與前端效能專家。
+請仔細審查以下核心邏輯，並從以下五個維度進行全方位的架構重構：
+
+1. 視口與佈局防穿透設計（避免 Flex 容器未設定 min-width: 0 導致的撐爆）
+2. 雙向拖動手柄與阻尼邊界約束（保證正文訊息流永遠可見）
+3. 文本行號與渲染批處理效能（防止長文本導致的頻繁重繪）
+4. localStorage 狀態記憶的白名單與容錯機制
+5. 模態長文編輯器的鍵盤快捷鍵鏈路（Ctrl+E / Esc / Ctrl+Enter）
+
+請嚴格遵循以上規範，給出詳盡的程式碼重構方案與測試用例驗證清單。`
+    };
+
+    // 方案 1 互動沙箱邏輯
+    const ta0 = document.getElementById('ta-0');
+    const box0 = document.getElementById('composer-box-0');
+    const handle0 = document.getElementById('handle-0');
+    const metric0 = document.getElementById('metric-0');
+    let userH0 = null;
+
+    function handleInput(idx) {
+      if (idx === 0) {
+        updateComposer0();
+      } else if (idx === 2) {
+        const val = document.getElementById('ta-2').value;
+        document.getElementById('word-count-2').textContent = `${val.length} 字元`;
+        const btn = document.getElementById('zen-btn');
+        if (val.split('\n').length >= 4 || val.length > 120) {
+          btn.style.color = 'var(--accent)';
+          btn.style.fontWeight = 'bold';
+        } else {
+          btn.style.color = 'var(--text-muted)';
+          btn.style.fontWeight = 'normal';
+        }
+      }
+    }
+
+    function updateComposer0() {
+      const screenH = 580;
+      const MAX_SAFE = Math.min(screenH * 0.42, 260); // 最大安全上限 (視口保護)
+      const MIN_H = 38;
+
+      ta0.style.height = 'auto';
+      const scrollH = ta0.scrollHeight;
+
+      let h = MIN_H;
+      const isManualFixed = userH0 != null && userH0 > MIN_H + 4;
+
+      if (isManualFixed) {
+        // 模式 1：手動拖拽拉高了高度 -> 固定高度不自適應！內容超長內部滾動
+        h = Math.min(userH0, MAX_SAFE);
+      } else {
+        // 模式 2：最低高度開始寫 -> 自適應高度！隨輸入長高，最高到 MAX_SAFE
+        h = Math.min(Math.max(scrollH, MIN_H), MAX_SAFE);
+      }
+
+      ta0.style.height = `${h}px`;
+      ta0.style.overflowY = scrollH > h ? 'auto' : 'hidden';
+
+      const pct = Math.round((h / screenH) * 100);
+      const modeStr = isManualFixed ? "手動固定模式 (不自適應)" : "最低高度自適應模式";
+      metric0.textContent = `${modeStr} · 高度: ${h}px (${pct}%)`;
+    }
+
+    // 拖拽手柄邏輯 (方案 1)
+    let startY = 0;
+    let startH = 0;
+    let dragging = false;
+
+    handle0.addEventListener('pointerdown', (e) => {
+      e.preventDefault();
+      dragging = true;
+      handle0.classList.add('dragging');
+      startY = e.clientY;
+      startH = ta0.getBoundingClientRect().height;
+      handle0.setPointerCapture(e.pointerId);
+    });
+
+    handle0.addEventListener('pointermove', (e) => {
+      if (!dragging) return;
+      const delta = startY - e.clientY; // 往上拉變大，往下拉變小
+      const next = startH + delta;
+      if (next <= 38 + 4) {
+        userH0 = null; // 拉到底恢復自適應
+      } else {
+        userH0 = next; // 手動拉高固定高度
+      }
+      updateComposer0();
+    });
+
+    handle0.addEventListener('pointerup', () => {
+      dragging = false;
+      handle0.classList.remove('dragging');
+    });
+
+    handle0.addEventListener('dblclick', () => {
+      resetComposer(0);
+    });
+
+    function resetComposer(idx) {
+      if (idx === 0) {
+        userH0 = null;
+        updateComposer0();
+      } else if (idx === 1) {
+        document.getElementById('ta-1').style.height = '70px';
+      }
+    }
+
+    function feedText(idx, key) {
+      const text = SAMPLE_TEXTS[key] || key;
+      const ta = document.getElementById(`ta-${idx}`);
+      if (ta) {
+        ta.value = text;
+        handleInput(idx);
+      }
+    }
+
+    function clearText(idx) {
+      const ta = document.getElementById(`ta-${idx}`);
+      if (ta) {
+        ta.value = '';
+        handleInput(idx);
+      }
+    }
+
+    // 方案 2 拖拽分割線
+    const splitter = document.getElementById('splitter-handle-1');
+    let splitDragging = false;
+    let splitStartY = 0;
+    let splitAreaH = 0;
+
+    if (splitter) {
+      splitter.addEventListener('pointerdown', (e) => {
+        splitDragging = true;
+        splitStartY = e.clientY;
+        splitAreaH = document.getElementById('composer-area-1').getBoundingClientRect().height;
+        splitter.setPointerCapture(e.pointerId);
+      });
+      splitter.addEventListener('pointermove', (e) => {
+        if (!splitDragging) return;
+        const delta = splitStartY - e.clientY;
+        const newH = Math.min(260, Math.max(90, splitAreaH + delta));
+        document.getElementById('composer-area-1').style.height = `${newH}px`;
+      });
+      splitter.addEventListener('pointerup', () => {
+        splitDragging = false;
+      });
+    }
+
+    function dragToMax(idx) {
+      if (idx === 1) {
+        document.getElementById('composer-area-1').style.height = '260px';
+      }
+    }
+
+    // 方案 3 Zen 模態
+    const zenOverlay = document.getElementById('zen-overlay');
+    const zenTa = document.getElementById('zen-ta');
+
+    function toggleZen(open) {
+      if (open) {
+        zenTa.value = document.getElementById('ta-2').value;
+        zenOverlay.style.display = 'flex';
+        updateZenStats();
+        zenTa.focus();
+      } else {
+        zenOverlay.style.display = 'none';
+      }
+    }
+
+    function updateZenStats() {
+      const len = zenTa.value.length;
+      const words = zenTa.value.trim() ? zenTa.value.trim().split(/\s+/).length : 0;
+      const estTokens = Math.round(len / 3.5);
+      document.getElementById('zen-stats').textContent = `${len} 字元 · ${words} 詞 · 預估 ~${estTokens} tokens`;
+    }
+
+    zenTa.addEventListener('input', updateZenStats);
+
+    function applyZen() {
+      document.getElementById('ta-2').value = zenTa.value;
+      handleInput(2);
+      toggleZen(false);
+    }
+
+    // 方案 4 檔位切換
+    function setPresetTier(tier) {
+      const heights = { 1: '48px', 2: '140px', 3: '260px' };
+      const labels = { 1: '1檔 (緊湊單行 48px)', 2: '2檔 (日常標準 140px)', 3: '3檔 (寬適大窗 260px)' };
+      const box = document.getElementById('composer-box-3');
+      box.style.height = heights[tier];
+      document.getElementById('metric-3').textContent = `當前檔位: ${labels[tier]}`;
+
+      for (let i = 1; i <= 3; i++) {
+        const btn = document.getElementById(`tier-btn-${i}`);
+        if (i === tier) {
+          btn.style.background = 'var(--accent)';
+          btn.style.color = '#fff';
+        } else {
+          btn.style.background = 'transparent';
+          btn.style.color = 'var(--text-muted)';
+        }
+      }
+    }
+
+    // 初始化
+    updateComposer0();
+  </script>
+</body>
+</html>
+
+
+

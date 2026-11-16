@@ -1,3 +1,5 @@
+[English](./env-vars.en.md) · **简体中文** · [繁體中文](./env-vars.zh-TW.md)
+
 # 环境变量
 
 `PI_WEB_LOAD_TIMING=1` 可开启历史对话打开的服务端分段计时（默认关闭，也接受 `true` / `on` / `yes`）。服务端控制台输出 `[load-timing]` JSON，包含修复、SDK 打开、分支校准、预览、运行环境初始化、绑定和快照发送阶段的耗时，不含会话路径、ID 或正文。它不测量浏览器渲染及网络送达时间。详见 [加载性能说明](loading-performance.md)。

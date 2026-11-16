@@ -1,3 +1,5 @@
+[English](./duty.en.md) · **简体中文** · [繁體中文](./duty.zh-TW.md)
+
 # 刷B站 —— 每天一轮
 
 <!-- duty-charter v3 · 2026-10-17 -->

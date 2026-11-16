@@ -1,3 +1,5 @@
+[English](./device-center.en.md) · **简体中文** · [繁體中文](./device-center.zh-TW.md)
+
 # 设备中心与跨平台协作（内测）
 
 手机原生客户端可使用 Hub 账号列出、连接和切换多台设备，集中接收设备通知；native 登录、capability、中继边界和构建验收见 [`mobile.md`](mobile.md)。

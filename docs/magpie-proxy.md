@@ -1,3 +1,5 @@
+[English](./magpie-proxy.en.md) · **简体中文** · [繁體中文](./magpie-proxy.zh-TW.md)
+
 # Magpie 反代接入
 
 [Magpie](https://github.com/yetone/magpie) 将多个供应商、订阅账号和本地模型汇集到同一个网关。pi-web-ui 可通过标准兼容协议连接，无需安装额外插件。

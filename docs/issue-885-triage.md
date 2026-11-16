@@ -1,3 +1,5 @@
+[English](./issue-885-triage.en.md) · **简体中文** · [繁體中文](./issue-885-triage.zh-TW.md)
+
 # Issue #885 分诊：Full Pi CLI 继承 + 统一扩展管理
 
 > 只读核实，不改逻辑。并行 PR 在跑，本次只写本文档，不碰 `SCMPanel` / `vscode-editor` 相关文件。

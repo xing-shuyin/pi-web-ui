@@ -1,3 +1,5 @@
+[English](./README.en.md) · **简体中文** · [繁體中文](./README.zh-TW.md)
+
 # Office 预览与编辑插件
 
 基于 Univer 的 Office 画布与结构化 AI 操作。支持 `.xlsx`、`.docx`、`.pptx`、`.csv`、`.tsv`。宏文档及旧二进制格式不接管、不写回，请先使用 Office 或 LibreOffice 转换为受支持格式。

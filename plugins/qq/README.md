@@ -1,3 +1,5 @@
+[English](./README.en.md) · **简体中文** · [繁體中文](./README.zh-TW.md)
+
 # QQ 机器人与工作台 (QQBot Plugin)
 
 > QQ 机器人插件，基于腾讯官方开放平台 QQBot WebSocket 出站长连接，支持双向会话对话（零公网 IP / 免反代）、结构感知 Markdown 智能分块、白名单安全准入与频道/群聊消息推送。基础文字与媒体收发使用 Node 内建能力；自动语音回复按需安装 SILK 编码组件。

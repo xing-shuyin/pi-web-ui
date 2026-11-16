@@ -1,3 +1,5 @@
+[English](./README.en.md) · **简体中文** · [繁體中文](./README.zh-TW.md)
+
 # 编码工作流实验预设
 
 [claude-code-inspired.json](./claude-code-inspired.json) 是可导入的 pi-web-ui 预设，借鉴调查、根因修复、持续执行和验证闭环等编码实践。它不是 Anthropic 官方预设，也未复制或核对某个版本的 Claude Code 系统提示词，不保证提高所有模型或任务的表现。

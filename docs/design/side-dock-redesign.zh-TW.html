@@ -1,0 +1,3162 @@
+<!doctype html>
+<html lang="zh-CN" data-theme="dark">
+	<head>
+		<meta charset="utf-8" />
+		<meta name="viewport" content="width=device-width, initial-scale=1" />
+		<title>側欄 Dock 重設計 · 4 個上下貫通方案 · pi-web-ui</title>
+		<style>
+			/* ============================================================
+			   設計研究頁。所有 demo 內的配色都複用 pi-web-ui 的 :root token，
+			   只有 --rail-* 是本頁新引入的候選規格。
+			   ============================================================ */
+			:root {
+				color-scheme: dark;
+				--bg: #0d0e12;
+				--bg-elev: #14161c;
+				--bg-elev2: #1a1d26;
+				--bg-sunken: #0a0b10;
+				--border: #262a35;
+				--border-soft: #1e2230;
+				--text: #e6e8ef;
+				--text-dim: #9aa1b4;
+				--text-faint: #6b7284;
+				--accent: #8b5cf6;
+				--accent-soft: rgba(139, 92, 246, 0.16);
+				--accent-ink: #c4b5fd;
+				--green: #34d399;
+				--amber: #fbbf24;
+				--red: #f87171;
+				--blue: #60a5fa;
+				--tooltip-bg: #232733;
+				--rail-hover: rgba(255, 255, 255, 0.06);
+				--rail-pill: rgba(255, 255, 255, 0.09);
+				--page: #08090c;
+				--page-card: #101218;
+				--shadow: 0 24px 70px -34px #000;
+				--sans:
+					-apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", Roboto,
+					sans-serif;
+				--mono: "SF Mono", "JetBrains Mono", ui-monospace, Menlo, Consolas, monospace;
+				--rail-w: 56px;
+				--rail-btn: 36px;
+				--rail-radius: 11px;
+			}
+			[data-theme="light"] {
+				color-scheme: light;
+				--bg: #f6f7fb;
+				--bg-elev: #ffffff;
+				--bg-elev2: #eef1f7;
+				--bg-sunken: #eceef5;
+				--border: #dfe3ee;
+				--border-soft: #e8ebf3;
+				--text: #171a22;
+				--text-dim: #5b6377;
+				--text-faint: #8b93a6;
+				--accent: #7c3aed;
+				--accent-soft: rgba(124, 58, 237, 0.1);
+				--accent-ink: #6d28d9;
+				--green: #0f9f6e;
+				--amber: #b45309;
+				--red: #dc2626;
+				--blue: #2563eb;
+				--tooltip-bg: #1a1d26;
+				--rail-hover: rgba(16, 20, 32, 0.055);
+				--rail-pill: rgba(16, 20, 32, 0.08);
+				--page: #eef0f6;
+				--page-card: #ffffff;
+				--shadow: 0 24px 60px -36px rgba(20, 24, 40, 0.5);
+			}
+
+			* {
+				box-sizing: border-box;
+			}
+			html,
+			body {
+				margin: 0;
+			}
+			body {
+				background:
+					radial-gradient(1100px 520px at 18% -8%, var(--accent-soft), transparent 62%),
+					radial-gradient(900px 420px at 92% 4%, rgba(96, 165, 250, 0.1), transparent 60%), var(--page);
+				color: var(--text);
+				font-family: var(--sans);
+				font-size: 14px;
+				line-height: 1.7;
+				-webkit-font-smoothing: antialiased;
+				overflow-x: hidden;
+			}
+			h1,
+			h2,
+			h3,
+			h4 {
+				margin: 0;
+				line-height: 1.3;
+				letter-spacing: -0.01em;
+			}
+			p {
+				margin: 0;
+			}
+			button {
+				font: inherit;
+				color: inherit;
+			}
+			code {
+				font-family: var(--mono);
+				font-size: 0.92em;
+			}
+			.ic {
+				width: 18px;
+				height: 18px;
+				flex: none;
+				fill: none;
+				stroke: currentColor;
+				stroke-width: 1.7;
+				stroke-linecap: round;
+				stroke-linejoin: round;
+			}
+			.sprite {
+				position: absolute;
+				width: 0;
+				height: 0;
+				overflow: hidden;
+			}
+
+			/* ---------- 頁面骨架 ---------- */
+			.page {
+				display: grid;
+				grid-template-columns: 232px minmax(0, 1fr);
+				gap: 40px;
+				max-width: 1520px;
+				margin: 0 auto;
+				padding: 0 32px;
+			}
+			.snav {
+				position: sticky;
+				top: 0;
+				align-self: start;
+				height: 100vh;
+				padding: 26px 0 20px;
+				display: flex;
+				flex-direction: column;
+				gap: 4px;
+			}
+			.snav-brand {
+				display: flex;
+				align-items: center;
+				gap: 10px;
+				padding: 0 10px 18px;
+			}
+			.snav-brand .mark {
+				width: 30px;
+				height: 30px;
+				flex: none;
+				border-radius: 9px;
+				display: grid;
+				place-items: center;
+				background: linear-gradient(145deg, #8b5cf6, #6366f1);
+				color: #fff;
+				font-weight: 700;
+				font-size: 15px;
+				box-shadow: 0 6px 16px -6px rgba(139, 92, 246, 0.9);
+			}
+			.snav-brand b {
+				display: block;
+				font-size: 13px;
+				line-height: 1.3;
+			}
+			.snav-brand span {
+				display: block;
+				font-size: 11px;
+				color: var(--text-faint);
+				line-height: 1.3;
+			}
+			.snav a {
+				position: relative;
+				display: flex;
+				align-items: center;
+				gap: 10px;
+				padding: 7px 10px;
+				border-radius: 9px;
+				color: var(--text-dim);
+				text-decoration: none;
+				font-size: 13px;
+				transition:
+					background-color 0.16s ease,
+					color 0.16s ease;
+			}
+			.snav a .k {
+				font-family: var(--mono);
+				font-size: 10.5px;
+				color: var(--text-faint);
+				width: 14px;
+				flex: none;
+			}
+			.snav a:hover {
+				background: var(--rail-hover);
+				color: var(--text);
+			}
+			.snav a.on {
+				background: var(--accent-soft);
+				color: var(--text);
+			}
+			.snav a.on .k {
+				color: var(--accent-ink);
+			}
+			.snav a.on::before {
+				content: "";
+				position: absolute;
+				left: -10px;
+				top: 50%;
+				transform: translateY(-50%);
+				width: 3px;
+				height: 16px;
+				border-radius: 0 3px 3px 0;
+				background: var(--accent);
+			}
+			.snav-foot {
+				margin-top: auto;
+				display: flex;
+				flex-direction: column;
+				gap: 10px;
+				padding-top: 16px;
+				border-top: 1px solid var(--border-soft);
+			}
+			.theme-btn {
+				display: inline-flex;
+				align-items: center;
+				justify-content: center;
+				gap: 8px;
+				height: 32px;
+				border-radius: 9px;
+				border: 1px solid var(--border);
+				background: var(--bg-elev);
+				color: var(--text-dim);
+				cursor: pointer;
+				font-size: 12.5px;
+			}
+			.theme-btn:hover {
+				color: var(--text);
+				border-color: var(--text-faint);
+			}
+			.snav-foot em {
+				font-style: normal;
+				font-size: 11px;
+				color: var(--text-faint);
+				line-height: 1.6;
+			}
+
+			main {
+				padding: 44px 0 140px;
+				min-width: 0;
+			}
+			.hero {
+				max-width: 860px;
+			}
+			.eyebrow {
+				display: inline-flex;
+				align-items: center;
+				gap: 8px;
+				height: 24px;
+				padding: 0 10px;
+				border-radius: 999px;
+				border: 1px solid var(--border);
+				background: var(--bg-elev);
+				color: var(--text-dim);
+				font-size: 11.5px;
+				letter-spacing: 0.02em;
+			}
+			.eyebrow i {
+				width: 6px;
+				height: 6px;
+				border-radius: 50%;
+				background: var(--green);
+			}
+			h1 {
+				margin-top: 18px;
+				font-size: 34px;
+				font-weight: 650;
+			}
+			h1 small {
+				display: block;
+				margin-top: 8px;
+				font-size: 15px;
+				font-weight: 400;
+				color: var(--text-dim);
+				letter-spacing: 0;
+				line-height: 1.75;
+			}
+			.hero-note {
+				margin-top: 22px;
+				display: grid;
+				grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+				gap: 10px;
+			}
+			.hero-note div {
+				border: 1px solid var(--border-soft);
+				background: var(--page-card);
+				border-radius: 12px;
+				padding: 12px 14px;
+				font-size: 12.5px;
+				line-height: 1.65;
+				color: var(--text-dim);
+			}
+			.hero-note b {
+				display: block;
+				color: var(--text);
+				font-size: 12.5px;
+				margin-bottom: 3px;
+			}
+
+			section {
+				scroll-margin-top: 24px;
+				margin-top: 68px;
+			}
+			.sec-head {
+				display: flex;
+				align-items: baseline;
+				gap: 14px;
+				flex-wrap: wrap;
+				margin-bottom: 6px;
+			}
+			.sec-tag {
+				font-family: var(--mono);
+				font-size: 11px;
+				letter-spacing: 0.08em;
+				color: var(--accent-ink);
+				text-transform: uppercase;
+			}
+			h2 {
+				font-size: 21px;
+				font-weight: 620;
+			}
+			.sec-sub {
+				max-width: 760px;
+				color: var(--text-dim);
+				font-size: 13.5px;
+				line-height: 1.8;
+				margin-bottom: 22px;
+			}
+			.rec {
+				display: inline-flex;
+				align-items: center;
+				gap: 6px;
+				height: 22px;
+				padding: 0 9px;
+				border-radius: 999px;
+				background: var(--accent-soft);
+				color: var(--accent-ink);
+				font-size: 11px;
+				font-weight: 600;
+			}
+
+			/* ---------- 現狀診斷 ---------- */
+			.diag {
+				display: grid;
+				grid-template-columns: 268px minmax(0, 1fr);
+				gap: 22px;
+				align-items: start;
+			}
+			.now-shot {
+				border: 1px solid var(--border);
+				border-radius: 14px;
+				background: var(--bg);
+				padding: 16px 14px 12px;
+				box-shadow: var(--shadow);
+			}
+			.now-shot .cap {
+				font-size: 11px;
+				color: var(--text-faint);
+				margin-bottom: 10px;
+			}
+			.now-crop {
+				display: flex;
+				align-items: stretch;
+				height: 218px;
+				border-radius: 8px;
+				background: var(--bg-sunken);
+				overflow: hidden;
+			}
+			.now-rail {
+				width: 52px;
+				flex: none;
+				border: 1px solid var(--border);
+				border-left: none;
+				border-radius: 0 10px 10px 0;
+				background: var(--bg-elev);
+				box-shadow: 0 4px 18px rgba(0, 0, 0, 0.25);
+				display: flex;
+				flex-direction: column;
+				align-items: center;
+				gap: 4px;
+				padding: 8px 3px;
+				/* 真實 bug：overflow-y:auto 讓 overflow-x 計算成 auto */
+				overflow-y: auto;
+				overflow-x: auto;
+			}
+			.now-rail .b {
+				width: 30px;
+				height: 30px;
+				flex: none;
+				border-radius: 50%;
+				display: grid;
+				place-items: center;
+				color: var(--text-dim);
+			}
+			.now-rail .b:first-child {
+				color: var(--amber);
+			}
+			/* 偽 tooltip：向左/右伸出，撐出滾動區域 */
+			.now-rail .b::after {
+				content: attr(data-t) " 很長很長的標籤";
+				position: absolute;
+				left: 100%;
+				white-space: nowrap;
+				font-size: 11px;
+				opacity: 0;
+			}
+			.now-rail .b {
+				position: relative;
+			}
+			.now-hbar {
+				height: 15px;
+				flex: none;
+				align-self: flex-end;
+				display: flex;
+				align-items: center;
+				background: #2a2f3d;
+				border-radius: 2px;
+				gap: 2px;
+				padding: 0 2px;
+				width: 100%;
+			}
+			.now-hbar i {
+				width: 9px;
+				height: 9px;
+				background: #6b7284;
+				clip-path: polygon(100% 0, 0 50%, 100% 100%);
+			}
+			.now-hbar i.r {
+				clip-path: polygon(0 0, 100% 50%, 0 100%);
+			}
+			.now-hbar i.k {
+				flex: 1;
+				height: 7px;
+				border-radius: 4px;
+				background: #4a5163;
+				clip-path: none;
+			}
+			.now-pane {
+				flex: 1;
+				min-width: 0;
+				border-left: 1px solid var(--border);
+				padding: 10px 8px;
+				display: flex;
+				flex-direction: column;
+				gap: 7px;
+			}
+			.now-pane .ln {
+				height: 7px;
+				border-radius: 4px;
+				background: var(--bg-elev2);
+			}
+			.now-pane .ln.s {
+				width: 52%;
+			}
+			.now-pane .ln.m {
+				width: 72%;
+			}
+			.now-pane .chip {
+				height: 24px;
+				border-radius: 7px;
+				border: 1px solid var(--border);
+				background: var(--bg-elev);
+			}
+			.diag-list {
+				display: grid;
+				gap: 10px;
+			}
+			.diag-item {
+				display: grid;
+				grid-template-columns: 22px minmax(0, 1fr);
+				gap: 10px;
+				border: 1px solid var(--border-soft);
+				border-radius: 12px;
+				padding: 12px 14px;
+				background: var(--page-card);
+			}
+			.diag-item .n {
+				width: 22px;
+				height: 22px;
+				border-radius: 7px;
+				display: grid;
+				place-items: center;
+				font-family: var(--mono);
+				font-size: 11px;
+				background: var(--bg-elev2);
+				color: var(--text-dim);
+			}
+			.diag-item b {
+				font-size: 13px;
+			}
+			.diag-item p {
+				font-size: 12.5px;
+				color: var(--text-dim);
+				line-height: 1.7;
+				margin-top: 2px;
+			}
+			.code {
+				margin-top: 10px;
+				border: 1px solid var(--border-soft);
+				border-radius: 10px;
+				background: var(--bg-sunken);
+				padding: 11px 12px;
+				font-family: var(--mono);
+				font-size: 11.5px;
+				line-height: 1.75;
+				color: var(--text-dim);
+				overflow-x: auto;
+				white-space: pre;
+			}
+			.code b {
+				color: var(--accent-ink);
+				font-weight: 500;
+			}
+			.code .bad {
+				color: var(--red);
+			}
+			.code .ok {
+				color: var(--green);
+			}
+
+			/* ---------- Demo 舞臺 ---------- */
+			.stage {
+				container-type: inline-size;
+				border: 1px solid var(--border);
+				border-radius: 16px;
+				background: var(--bg);
+				overflow: hidden;
+				box-shadow: var(--shadow);
+			}
+			.winbar {
+				display: flex;
+				align-items: center;
+				gap: 12px;
+				height: 34px;
+				padding: 0 12px;
+				background: var(--page-card);
+				border-bottom: 1px solid var(--border-soft);
+			}
+			.dots {
+				display: inline-flex;
+				gap: 6px;
+			}
+			.dots i {
+				width: 9px;
+				height: 9px;
+				border-radius: 50%;
+				background: #3a4152;
+			}
+			.dots i:nth-child(1) {
+				background: #f87171;
+			}
+			.dots i:nth-child(2) {
+				background: #fbbf24;
+			}
+			.dots i:nth-child(3) {
+				background: #34d399;
+			}
+			.winbar .t {
+				font-size: 11.5px;
+				color: var(--text-dim);
+				font-family: var(--mono);
+			}
+			.winbar .hint {
+				margin-left: auto;
+				font-size: 11px;
+				color: var(--text-faint);
+				display: inline-flex;
+				align-items: center;
+				gap: 6px;
+			}
+			.winbar .hint kbd {
+				font-family: var(--mono);
+				font-size: 10px;
+				padding: 1px 5px;
+				border-radius: 4px;
+				border: 1px solid var(--border);
+				background: var(--bg-elev2);
+			}
+			.app {
+				display: flex;
+				flex-direction: column;
+				height: 486px;
+				background: var(--bg);
+				min-width: 0;
+			}
+
+			/* 頂欄 */
+			.tb {
+				flex: none;
+				height: 44px;
+				display: flex;
+				align-items: center;
+				justify-content: space-between;
+				gap: 12px;
+				padding: 0 10px 0 12px;
+				border-bottom: 1px solid var(--border);
+				background: var(--bg-elev);
+			}
+			.tb-l,
+			.tb-r {
+				display: flex;
+				align-items: center;
+				gap: 8px;
+				min-width: 0;
+			}
+			.brand {
+				display: inline-flex;
+				align-items: center;
+				gap: 7px;
+				font-size: 12.5px;
+				font-weight: 600;
+				white-space: nowrap;
+			}
+			.brand .mark {
+				width: 22px;
+				height: 22px;
+				border-radius: 7px;
+				display: grid;
+				place-items: center;
+				background: linear-gradient(145deg, #8b5cf6, #6366f1);
+				color: #fff;
+				font-size: 12px;
+				font-weight: 700;
+			}
+			.tb-tabs {
+				display: inline-flex;
+				gap: 2px;
+				padding: 2px;
+				border-radius: 9px;
+				background: var(--bg-elev2);
+			}
+			.tb-tabs button {
+				height: 24px;
+				padding: 0 10px;
+				border: 0;
+				border-radius: 7px;
+				background: transparent;
+				color: var(--text-dim);
+				font-size: 12px;
+				cursor: pointer;
+				display: inline-flex;
+				align-items: center;
+				gap: 6px;
+			}
+			.tb-tabs button.on {
+				background: var(--bg-elev);
+				color: var(--text);
+				box-shadow: 0 1px 2px rgba(0, 0, 0, 0.25);
+			}
+			.tb-chip {
+				display: inline-flex;
+				align-items: center;
+				gap: 6px;
+				height: 24px;
+				padding: 0 9px;
+				border-radius: 7px;
+				border: 1px solid var(--border-soft);
+				background: var(--bg-elev2);
+				font-size: 11.5px;
+				color: var(--text-dim);
+				max-width: 220px;
+				overflow: hidden;
+				text-overflow: ellipsis;
+				white-space: nowrap;
+			}
+			.tb-chip .dot {
+				width: 6px;
+				height: 6px;
+				border-radius: 50%;
+				background: var(--green);
+				flex: none;
+			}
+			.ibtn {
+				position: relative;
+				width: 28px;
+				height: 28px;
+				flex: none;
+				border: 0;
+				border-radius: 8px;
+				background: transparent;
+				color: var(--text-dim);
+				display: grid;
+				place-items: center;
+				cursor: pointer;
+			}
+			.ibtn:hover {
+				background: var(--rail-hover);
+				color: var(--text);
+			}
+			.avatar {
+				width: 24px;
+				height: 24px;
+				border-radius: 50%;
+				background: linear-gradient(150deg, #6366f1, #22d3ee);
+				border: 1px solid var(--border);
+				flex: none;
+			}
+
+			/* 主體 */
+			.shell {
+				flex: 1;
+				display: flex;
+				min-height: 0;
+				min-width: 0;
+			}
+
+			/* 左面板 / 右面板通用 */
+			.pane {
+				flex: none;
+				width: 236px;
+				min-height: 0;
+				display: flex;
+				flex-direction: column;
+				background: var(--bg-elev);
+				min-width: 0;
+			}
+			.pane.left {
+				border-right: 1px solid var(--border);
+			}
+			.pane.right {
+				border-left: 1px solid var(--border);
+			}
+			.pane-head {
+				flex: none;
+				height: 38px;
+				display: flex;
+				align-items: center;
+				gap: 6px;
+				padding: 0 8px 0 10px;
+				border-bottom: 1px solid var(--border-soft);
+			}
+			.proj {
+				display: inline-flex;
+				align-items: center;
+				gap: 6px;
+				min-width: 0;
+				height: 24px;
+				padding: 0 7px;
+				border-radius: 7px;
+				border: 1px solid var(--border-soft);
+				background: var(--bg-elev2);
+				color: var(--text);
+				font-size: 12px;
+				font-weight: 600;
+				cursor: pointer;
+			}
+			.proj .ic {
+				width: 14px;
+				height: 14px;
+				color: var(--text-dim);
+			}
+			.search {
+				flex: none;
+				display: flex;
+				align-items: center;
+				gap: 7px;
+				margin: 8px 10px;
+				height: 28px;
+				padding: 0 9px;
+				border-radius: 8px;
+				border: 1px solid var(--border-soft);
+				background: var(--bg-sunken);
+				color: var(--text-faint);
+				font-size: 12px;
+			}
+			.list {
+				flex: 1;
+				min-height: 0;
+				overflow-y: auto;
+				overflow-x: clip;
+				padding: 2px 6px 10px;
+			}
+			.grp {
+				display: flex;
+				align-items: center;
+				gap: 5px;
+				padding: 6px 5px 4px;
+				font-size: 11.5px;
+				color: var(--text-faint);
+				font-weight: 600;
+			}
+			.grp .ic {
+				width: 12px;
+				height: 12px;
+			}
+			.row {
+				display: flex;
+				align-items: center;
+				gap: 7px;
+				height: 28px;
+				padding: 0 7px;
+				border-radius: 7px;
+				font-size: 12.5px;
+				color: var(--text-dim);
+				white-space: nowrap;
+				overflow: hidden;
+				text-overflow: ellipsis;
+				cursor: default;
+			}
+			.row span {
+				overflow: hidden;
+				text-overflow: ellipsis;
+			}
+			.row:hover {
+				background: var(--rail-hover);
+				color: var(--text);
+			}
+			.row.on {
+				background: var(--accent-soft);
+				color: var(--text);
+			}
+			.row .bullet {
+				width: 5px;
+				height: 5px;
+				border-radius: 50%;
+				background: var(--text-faint);
+				flex: none;
+			}
+			.row.on .bullet {
+				background: var(--accent);
+			}
+			.row .badge {
+				margin-left: auto;
+				font-size: 10px;
+				color: var(--accent-ink);
+				background: var(--accent-soft);
+				border-radius: 5px;
+				padding: 0 5px;
+				flex: none;
+			}
+
+			/* 會話區 */
+			.chat {
+				flex: 1;
+				min-width: 0;
+				min-height: 0;
+				display: flex;
+				flex-direction: column;
+				background: var(--bg);
+				position: relative;
+			}
+			.chat-head {
+				flex: none;
+				height: 38px;
+				display: flex;
+				align-items: center;
+				gap: 8px;
+				padding: 0 12px;
+				border-bottom: 1px solid var(--border-soft);
+				font-size: 12px;
+				color: var(--text-dim);
+			}
+			.chat-head .title {
+				color: var(--text);
+				font-weight: 600;
+				max-width: 46%;
+				overflow: hidden;
+				text-overflow: ellipsis;
+				white-space: nowrap;
+			}
+			.msgs {
+				flex: 1;
+				min-height: 0;
+				overflow-y: auto;
+				overflow-x: clip;
+				padding: 16px 18px;
+				display: flex;
+				flex-direction: column;
+				gap: 14px;
+			}
+			.msg {
+				display: flex;
+				gap: 9px;
+				font-size: 12.5px;
+				line-height: 1.75;
+				max-width: 94%;
+			}
+			.msg .who {
+				width: 20px;
+				height: 20px;
+				flex: none;
+				border-radius: 6px;
+				display: grid;
+				place-items: center;
+				font-size: 10px;
+				background: var(--bg-elev2);
+				color: var(--text-dim);
+				margin-top: 2px;
+			}
+			.msg.user .who {
+				background: var(--accent-soft);
+				color: var(--accent-ink);
+			}
+			.msg .body {
+				min-width: 0;
+				color: var(--text-dim);
+			}
+			.msg.user .body {
+				color: var(--text);
+			}
+			.msg .body strong {
+				color: var(--text);
+				font-weight: 600;
+			}
+			.tool {
+				border: 1px solid var(--border-soft);
+				border-radius: 9px;
+				background: var(--code-bg, var(--bg-sunken));
+				padding: 7px 10px;
+				font-family: var(--mono);
+				font-size: 11px;
+				color: var(--text-dim);
+				display: flex;
+				align-items: center;
+				gap: 7px;
+				margin-top: 8px;
+			}
+			.tool .ok {
+				color: var(--green);
+			}
+			.composer-wrap {
+				flex: none;
+				padding: 8px 16px 12px;
+				position: relative;
+			}
+			.composer {
+				border: 1px solid var(--border);
+				border-radius: 12px;
+				background: var(--bg-elev);
+				padding: 9px 10px 8px;
+				box-shadow: 0 10px 24px -18px #000;
+			}
+			.composer .ph {
+				font-size: 12.5px;
+				color: var(--text-faint);
+				padding: 2px 4px 10px;
+			}
+			.composer-bar {
+				display: flex;
+				align-items: center;
+				gap: 6px;
+				font-size: 11px;
+				color: var(--text-dim);
+			}
+			.composer-bar .spacer {
+				margin-left: auto;
+			}
+			.mini {
+				display: inline-flex;
+				align-items: center;
+				gap: 5px;
+				height: 22px;
+				padding: 0 7px;
+				border-radius: 6px;
+				background: var(--bg-elev2);
+				color: var(--text-dim);
+				border: 1px solid var(--border-soft);
+				font-size: 11px;
+				white-space: nowrap;
+			}
+			.mini.send {
+				background: var(--accent);
+				color: #fff;
+				border-color: transparent;
+				font-weight: 600;
+			}
+
+			/* 狀態列 */
+			.sb {
+				flex: none;
+				height: 22px;
+				display: flex;
+				align-items: center;
+				gap: 10px;
+				padding: 0 10px;
+				border-top: 1px solid var(--border-soft);
+				background: var(--bg-elev);
+				font-size: 10.5px;
+				color: var(--text-faint);
+				white-space: nowrap;
+				overflow: hidden;
+			}
+			.sb .spacer {
+				margin-left: auto;
+			}
+			.sb .dot {
+				width: 5px;
+				height: 5px;
+				border-radius: 50%;
+				background: var(--green);
+			}
+
+			/* ================= 方案 A：無形之欄 ================= */
+			.rail-a {
+				position: relative;
+				z-index: 4;
+				flex: none;
+				width: var(--rail-w);
+				display: flex;
+				flex-direction: column;
+				align-items: center;
+				gap: 3px;
+				padding: 9px 0 9px;
+				/* 貫通：從頂欄底到狀態列頂。與頂欄/面板同底色 → 連成一片 L 形表面，
+				   只留一條 1px 髮絲線與面板分界；不畫外框、不畫陰影。 */
+				background: var(--bg-elev);
+				border-right: 1px solid var(--border-soft);
+			}
+			.rb {
+				position: relative;
+				width: var(--rail-btn);
+				height: var(--rail-btn);
+				flex: none;
+				border: 0;
+				padding: 0;
+				border-radius: var(--rail-radius);
+				background: transparent;
+				color: var(--text-dim);
+				display: grid;
+				place-items: center;
+				cursor: pointer;
+				transition:
+					background-color 0.16s ease,
+					color 0.16s ease,
+					transform 0.16s ease;
+			}
+			.rb .ic {
+				width: 19px;
+				height: 19px;
+			}
+			.rb:hover {
+				background: var(--rail-hover);
+				color: var(--text);
+			}
+			.rb.on {
+				background: var(--accent-soft);
+				color: var(--accent-ink);
+			}
+			.rb.on::before {
+				content: "";
+				position: absolute;
+				left: -8px;
+				top: 50%;
+				transform: translateY(-50%);
+				width: 3px;
+				height: 17px;
+				border-radius: 0 3px 3px 0;
+				background: var(--accent);
+			}
+			/* hover 滑出標籤（rail 不設 overflow，所以不會被裁 / 不會撐捲軸） */
+			.rb .lbl {
+				position: absolute;
+				left: calc(100% + 6px);
+				top: 50%;
+				transform: translate(-6px, -50%);
+				display: inline-flex;
+				align-items: center;
+				height: 24px;
+				padding: 0 10px;
+				white-space: nowrap;
+				border-radius: 8px;
+				border: 1px solid var(--border);
+				background: var(--tooltip-bg);
+				color: var(--text);
+				font-size: 11.5px;
+				box-shadow: 0 8px 22px -10px #000;
+				opacity: 0;
+				pointer-events: none;
+				transition:
+					opacity 0.14s ease,
+					transform 0.16s ease;
+				z-index: 30;
+			}
+			.rb:hover .lbl {
+				opacity: 1;
+				transform: translate(0, -50%);
+			}
+			.rail-a .sep {
+				width: 22px;
+				height: 1px;
+				flex: none;
+				background: var(--border);
+				margin: 6px 0;
+			}
+			.rail-a .grow {
+				flex: 1;
+				min-height: 6px;
+			}
+			.rb .bdg {
+				position: absolute;
+				top: 4px;
+				right: 4px;
+				min-width: 13px;
+				height: 13px;
+				padding: 0 3px;
+				border-radius: 999px;
+				background: var(--accent);
+				color: #fff;
+				font-size: 9px;
+				line-height: 13px;
+				text-align: center;
+				font-weight: 700;
+			}
+			.rb .live {
+				position: absolute;
+				top: 5px;
+				right: 6px;
+				width: 6px;
+				height: 6px;
+				border-radius: 50%;
+				background: var(--amber);
+				box-shadow: 0 0 0 0 rgba(251, 191, 36, 0.55);
+				animation: pulse 1.9s ease-out infinite;
+			}
+			@keyframes pulse {
+				0% {
+					box-shadow: 0 0 0 0 rgba(251, 191, 36, 0.5);
+				}
+				70% {
+					box-shadow: 0 0 0 6px rgba(251, 191, 36, 0);
+				}
+				100% {
+					box-shadow: 0 0 0 0 rgba(251, 191, 36, 0);
+				}
+			}
+
+			/* ================= 方案 B：一體雙欄 ================= */
+			.shell-b {
+				gap: 8px;
+				padding: 8px;
+				background: var(--bg-sunken);
+			}
+			.card-b {
+				display: flex;
+				min-height: 0;
+				border: 1px solid var(--border);
+				border-radius: 13px;
+				overflow: hidden;
+				background: var(--bg-elev);
+				box-shadow: 0 12px 30px -24px #000;
+			}
+			.card-b.chatcard {
+				flex: 1;
+				min-width: 0;
+				background: var(--bg);
+			}
+			.rail-b {
+				flex: none;
+				width: 50px;
+				display: flex;
+				flex-direction: column;
+				align-items: center;
+				gap: 3px;
+				padding: 8px 0;
+				background: color-mix(in srgb, var(--bg-sunken) 55%, var(--bg-elev));
+				border-right: 1px solid var(--border-soft);
+			}
+			.rail-b.right {
+				border-right: 0;
+				border-left: 1px solid var(--border-soft);
+			}
+			.rail-b .rb {
+				width: 34px;
+				height: 34px;
+				border-radius: 10px;
+			}
+			.rail-b .rb.on::before {
+				left: -8px;
+				height: 16px;
+			}
+			/* 右側映象：啟用豎條貼外緣（卡片右邊） */
+			.rail-b.right .rb.on::before {
+				left: auto;
+				right: -8px;
+				border-radius: 3px 0 0 3px;
+			}
+			.card-b .pane {
+				width: 208px;
+				background: transparent;
+			}
+			.card-b .pane.left,
+			.card-b .pane.right {
+				border: 0;
+			}
+			.card-b .search,
+			.card-b .pane-head {
+				border-color: transparent;
+			}
+			.card-b .pane-head {
+				border-bottom: 1px solid var(--border-soft);
+			}
+			.shell-b .chat {
+				border-radius: 0;
+			}
+
+			/* ================= 方案 C：圖示 + 文字寬欄 ================= */
+			.rail-c {
+				flex: none;
+				width: 204px;
+				display: flex;
+				flex-direction: column;
+				gap: 2px;
+				padding: 12px 10px;
+				background: color-mix(in srgb, var(--bg-elev) 78%, var(--bg-sunken));
+				border-right: 1px solid var(--border);
+			}
+			.rail-c .rc-head {
+				display: flex;
+				align-items: center;
+				gap: 8px;
+				padding: 0 6px 12px;
+			}
+			.rail-c .rc-sec {
+				font-size: 10.5px;
+				font-weight: 700;
+				letter-spacing: 0.07em;
+				text-transform: uppercase;
+				color: var(--text-faint);
+				padding: 10px 8px 5px;
+			}
+			.navitem {
+				position: relative;
+				display: flex;
+				align-items: center;
+				gap: 9px;
+				height: 32px;
+				padding: 0 9px;
+				border: 0;
+				border-radius: 9px;
+				background: transparent;
+				color: var(--text-dim);
+				font-size: 12.5px;
+				cursor: pointer;
+				text-align: left;
+			}
+			.navitem .ic {
+				width: 17px;
+				height: 17px;
+				flex: none;
+			}
+			.navitem span {
+				overflow: hidden;
+				text-overflow: ellipsis;
+				white-space: nowrap;
+			}
+			.navitem:hover {
+				background: var(--rail-hover);
+				color: var(--text);
+			}
+			.navitem.on {
+				background: var(--accent-soft);
+				color: var(--text);
+				font-weight: 600;
+			}
+			.navitem.on .ic {
+				color: var(--accent-ink);
+			}
+			.navitem .badge {
+				margin-left: auto;
+				font-size: 10px;
+				background: var(--accent);
+				color: #fff;
+				border-radius: 999px;
+				padding: 0 6px;
+				line-height: 16px;
+			}
+			/* 軟色底 + 語義色字，避免實底白字在深色主題下對比不足 */
+			.navitem .badge.run {
+				background: color-mix(in srgb, var(--amber) 20%, transparent);
+				color: var(--amber);
+			}
+			.rail-c .grow {
+				flex: 1;
+			}
+			.rail-c .rc-foot {
+				display: flex;
+				align-items: center;
+				gap: 8px;
+				padding: 9px 8px 4px;
+				margin-top: 8px;
+				border-top: 1px solid var(--border-soft);
+			}
+			.rail-c .rc-foot .nm {
+				display: block;
+				font-size: 12px;
+				color: var(--text);
+				line-height: 1.3;
+				white-space: nowrap;
+				overflow: hidden;
+				text-overflow: ellipsis;
+			}
+			.rail-c .rc-foot .st {
+				display: block;
+				font-size: 10.5px;
+				color: var(--text-faint);
+				line-height: 1.4;
+				white-space: nowrap;
+				overflow: hidden;
+				text-overflow: ellipsis;
+			}
+			/* 摺疊態預覽 */
+			.rail-c.mini {
+				width: 60px;
+				padding: 12px 9px;
+				align-items: center;
+			}
+			.rail-c.mini .navitem {
+				justify-content: center;
+				padding: 0;
+				width: 38px;
+			}
+			.rail-c.mini .navitem span,
+			.rail-c.mini .rc-sec,
+			.rail-c.mini .rc-foot .nm {
+				display: none;
+			}
+
+			/* ================= 方案 D：框架式 · 完全貫通 ================= */
+			.shell-d {
+				display: flex;
+				min-height: 0;
+				background: var(--bg);
+			}
+			.rail-d {
+				flex: none;
+				width: 58px;
+				display: flex;
+				flex-direction: column;
+				align-items: center;
+				gap: 3px;
+				padding: 8px 0 10px;
+				background: var(--bg-elev);
+				border-right: 1px solid var(--border);
+				position: relative;
+				z-index: 3;
+			}
+			/* 頂部品牌塊 + rail 連成一條豎線，直到狀態列 */
+			.rail-d .rlogo {
+				width: 30px;
+				height: 30px;
+				border-radius: 9px;
+				display: grid;
+				place-items: center;
+				background: linear-gradient(145deg, #8b5cf6, #6366f1);
+				color: #fff;
+				font-weight: 700;
+				font-size: 13px;
+				margin-bottom: 10px;
+				box-shadow: 0 6px 16px -8px rgba(139, 92, 246, 0.9);
+			}
+			.rail-d .rb {
+				width: 34px;
+				height: 34px;
+				border-radius: 9px;
+			}
+			.rail-d .rb.on::before {
+				left: -12px;
+			}
+			.rail-d .sep {
+				width: 24px;
+				height: 1px;
+				background: var(--border);
+				margin: 6px 0;
+			}
+			.rail-d .grow {
+				flex: 1;
+			}
+			.d-topgap {
+				flex: none;
+				height: 44px;
+				display: flex;
+				align-items: center;
+				gap: 8px;
+				padding: 0 12px;
+				border-bottom: 1px solid var(--border);
+				background: var(--bg-elev);
+			}
+			.d-col {
+				flex: 1;
+				min-width: 0;
+				display: flex;
+				flex-direction: column;
+				min-height: 0;
+			}
+
+			/* 卡片註釋 */
+			.notes {
+				display: grid;
+				grid-template-columns: repeat(auto-fit, minmax(230px, 1fr));
+				gap: 10px;
+				margin-top: 14px;
+			}
+			.note {
+				border: 1px solid var(--border-soft);
+				border-radius: 12px;
+				background: var(--page-card);
+				padding: 13px 15px;
+			}
+			.note h4 {
+				font-size: 12px;
+				color: var(--text-faint);
+				font-weight: 600;
+				letter-spacing: 0.04em;
+				text-transform: uppercase;
+				margin-bottom: 8px;
+			}
+			.note ul {
+				margin: 0;
+				padding-left: 16px;
+				color: var(--text-dim);
+				font-size: 12.5px;
+				line-height: 1.75;
+			}
+			.note li::marker {
+				color: var(--text-faint);
+			}
+			.note li + li {
+				margin-top: 3px;
+			}
+			.note p {
+				color: var(--text-dim);
+				font-size: 12.5px;
+				line-height: 1.75;
+			}
+			.note.trade p + p {
+				margin-top: 6px;
+			}
+			.note .plus {
+				color: var(--green);
+			}
+			.note .minus {
+				color: var(--amber);
+			}
+
+			/* ================= 手機形態 ================= */
+			.phone-wrap {
+				display: grid;
+				grid-template-columns: 330px minmax(0, 1fr);
+				gap: 22px;
+				align-items: start;
+			}
+			.phone {
+				width: 330px;
+				padding: 9px;
+				border: 1px solid var(--border);
+				border-radius: 36px;
+				background: var(--page-card);
+				box-shadow: var(--shadow);
+			}
+			.phone-screen {
+				overflow: hidden;
+				border: 1px solid var(--border-soft);
+				border-radius: 27px;
+				background: var(--bg);
+			}
+			.app-m {
+				height: 566px;
+			}
+			.tb-m {
+				padding: 0 8px;
+				height: 42px;
+			}
+			.tb-m .ibtn {
+				width: 30px;
+				height: 30px;
+			}
+			.rail-a.rail-m {
+				width: 46px;
+			}
+			.rail-m .rb {
+				width: 38px;
+				height: 38px;
+				border-radius: 11px;
+			}
+			.rail-m .rb .lbl {
+				display: none;
+			}
+			.rail-m .rb.on::before {
+				left: -4px;
+			}
+			.app-m .chat-head {
+				height: 34px;
+				padding: 0 10px;
+			}
+			.app-m .msgs {
+				padding: 12px 12px;
+				gap: 12px;
+			}
+			.app-m .composer-wrap {
+				padding: 6px 10px 10px;
+			}
+			@media (max-width: 860px) {
+				.phone-wrap {
+					grid-template-columns: minmax(0, 1fr);
+				}
+				.phone {
+					margin: 0 auto;
+				}
+			}
+
+			/* 對照表 */
+			.cmp {
+				width: 100%;
+				border-collapse: separate;
+				border-spacing: 0;
+				border: 1px solid var(--border);
+				border-radius: 14px;
+				overflow: hidden;
+				font-size: 12.5px;
+			}
+			.cmp th,
+			.cmp td {
+				padding: 10px 12px;
+				text-align: left;
+				border-bottom: 1px solid var(--border-soft);
+				vertical-align: middle;
+			}
+			.cmp thead th {
+				background: var(--page-card);
+				font-size: 11.5px;
+				color: var(--text-dim);
+				font-weight: 600;
+				white-space: nowrap;
+			}
+			.cmp tbody tr:last-child td {
+				border-bottom: 0;
+			}
+			.cmp tbody th {
+				font-weight: 500;
+				color: var(--text-dim);
+				white-space: nowrap;
+			}
+			.cmp td {
+				color: var(--text);
+			}
+			.cmp td.dim {
+				color: var(--text-dim);
+			}
+			.cmp .yes {
+				color: var(--green);
+			}
+			.cmp .mid {
+				color: var(--amber);
+			}
+			.cmp .no {
+				color: var(--red);
+			}
+			.cmp tr.hl {
+				background: color-mix(in srgb, var(--accent) 7%, transparent);
+			}
+
+			/* 規格 */
+			.spec-grid {
+				display: grid;
+				grid-template-columns: minmax(0, 1.25fr) minmax(0, 1fr);
+				gap: 18px;
+				align-items: start;
+			}
+			.spec-card {
+				border: 1px solid var(--border);
+				border-radius: 14px;
+				background: var(--page-card);
+				padding: 16px 18px;
+			}
+			.spec-card h3 {
+				font-size: 13px;
+				margin-bottom: 10px;
+			}
+			.spec-card ul {
+				margin: 0;
+				padding-left: 17px;
+				font-size: 12.5px;
+				line-height: 1.85;
+				color: var(--text-dim);
+			}
+			.spec-card li::marker {
+				color: var(--text-faint);
+			}
+			.tokens {
+				display: grid;
+				gap: 6px;
+				font-family: var(--mono);
+				font-size: 11.5px;
+				color: var(--text-dim);
+			}
+			.tokens div {
+				display: flex;
+				justify-content: space-between;
+				gap: 12px;
+				border-bottom: 1px dashed var(--border-soft);
+				padding-bottom: 5px;
+			}
+			.tokens b {
+				color: var(--accent-ink);
+				font-weight: 500;
+			}
+			.final {
+				margin-top: 16px;
+				border: 1px solid color-mix(in srgb, var(--accent) 35%, var(--border));
+				background: linear-gradient(180deg, var(--accent-soft), transparent 70%), var(--page-card);
+				border-radius: 14px;
+				padding: 16px 18px;
+			}
+			.final p {
+				font-size: 13px;
+				color: var(--text-dim);
+				line-height: 1.8;
+			}
+			.final b {
+				color: var(--text);
+			}
+
+			/* 固定 tooltip 層（演示「tooltip 必須離開滾動容器」） */
+			.tip {
+				position: fixed;
+				left: 0;
+				top: 0;
+				z-index: 9999;
+				visibility: hidden;
+				display: inline-flex;
+				align-items: center;
+				height: 24px;
+				padding: 0 9px;
+				border-radius: 7px;
+				border: 1px solid var(--border);
+				background: var(--tooltip-bg);
+				color: var(--text);
+				font-size: 11.5px;
+				line-height: 1;
+				white-space: nowrap;
+				box-shadow: 0 10px 24px -12px #000;
+				pointer-events: none;
+			}
+			.tip.on {
+				visibility: visible;
+			}
+
+			@media (max-width: 1180px) {
+				.page {
+					grid-template-columns: 1fr;
+					gap: 0;
+				}
+				.snav {
+					position: static;
+					height: auto;
+					flex-direction: row;
+					flex-wrap: wrap;
+					align-items: center;
+					gap: 6px;
+					padding: 16px 0;
+				}
+				.snav-brand {
+					padding: 0 8px 0 0;
+				}
+				.snav a.on::before {
+					display: none;
+				}
+				.snav-foot {
+					margin-left: auto;
+					border: 0;
+					padding: 0;
+					flex-direction: row;
+				}
+				.snav-foot em {
+					display: none;
+				}
+				main {
+					padding-top: 8px;
+				}
+				.diag,
+				.spec-grid {
+					grid-template-columns: minmax(0, 1fr);
+				}
+			}
+			@media (max-width: 720px) {
+				body {
+					font-size: 13.5px;
+				}
+				.page {
+					padding: 0 16px;
+				}
+				h1 {
+					font-size: 27px;
+				}
+				.pane.right {
+					display: none;
+				}
+			}
+			@container (max-width: 900px) {
+				.pane.right {
+					display: none;
+				}
+				.rail-c {
+					width: 60px;
+					padding: 12px 9px;
+					align-items: center;
+					overflow: hidden;
+				}
+				.rail-c .rc-head {
+					display: none;
+				}
+				.rail-c .navitem {
+					justify-content: center;
+					padding: 0;
+					width: 38px;
+				}
+				.rail-c .navitem span,
+				.rail-c .rc-sec,
+				.rail-c .rc-foot .nm,
+				.rail-c .rc-foot .st {
+					display: none;
+				}
+				.rail-c .rc-foot {
+					justify-content: center;
+					padding: 9px 0 4px;
+				}
+				.card-b .pane {
+					width: 190px;
+				}
+			}
+			@container (max-width: 700px) {
+				.pane.left {
+					display: none;
+				}
+			}
+		</style>
+	</head>
+	<body>
+<div data-docs-i18n-switch style="position:fixed;top:8px;right:12px;z-index:2147483647;font:12px/1.6 -apple-system,system-ui,sans-serif;background:rgba(15,17,22,.78);color:#fff;padding:4px 12px;border-radius:999px;box-shadow:0 2px 10px rgba(0,0,0,.35)"><a href="./side-dock-redesign.html" style="color:#fff;text-decoration:none">简体中文</a> · <a href="./side-dock-redesign.en.html" style="color:#fff;text-decoration:none">English</a> · <strong>繁體中文</strong></div>
+
+
+		<svg class="sprite" aria-hidden="true">
+			<symbol id="i-chat" viewBox="0 0 24 24">
+				<path
+					d="M21 11.5a8.4 8.4 0 0 1-9 8.4 9 9 0 0 1-3.9-.9L3 21l1.9-4.6A8.4 8.4 0 0 1 12 3.1a8.4 8.4 0 0 1 9 8.4z"
+				/>
+			</symbol>
+			<symbol id="i-term" viewBox="0 0 24 24">
+				<path d="M4 7l4 5-4 5M12 17h8" />
+			</symbol>
+			<symbol id="i-files" viewBox="0 0 24 24">
+				<path d="M4 5h5l2 2h9v12H4z" />
+			</symbol>
+			<symbol id="i-canvas" viewBox="0 0 24 24">
+				<rect x="3" y="4" width="6" height="5" rx="1.2" />
+				<rect x="15" y="4" width="6" height="5" rx="1.2" />
+				<rect x="9" y="15" width="6" height="5" rx="1.2" />
+				<path d="M9 6.5h6M6 9v4h12V9M12 13v2" />
+			</symbol>
+			<symbol id="i-bot" viewBox="0 0 24 24">
+				<path d="M12 3v3M6 9h12a2 2 0 0 1 2 2v6a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2v-6a2 2 0 0 1 2-2z" />
+				<path d="M9.5 14h.01M14.5 14h.01" />
+			</symbol>
+			<symbol id="i-flask" viewBox="0 0 24 24">
+				<path d="M9 3h6M10 3v6l-5 9a2 2 0 0 0 1.8 3h10.4a2 2 0 0 0 1.8-3l-5-9V3" />
+			</symbol>
+			<symbol id="i-quill" viewBox="0 0 24 24">
+				<path d="M20 4c-6 1-10 4-12 9l-1 4 4-1c5-2 8-6 9-12zM6 18l-2 2" />
+			</symbol>
+			<symbol id="i-gear" viewBox="0 0 24 24">
+				<circle cx="12" cy="12" r="3" />
+				<path
+					d="M19.4 15a1.7 1.7 0 0 0 .3 1.9l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-2.9 1.2V21a2 2 0 1 1-4 0v-.1A1.7 1.7 0 0 0 7 19.4a1.7 1.7 0 0 0-1.9.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1A1.7 1.7 0 0 0 3 14H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.2-2.9l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1A1.7 1.7 0 0 0 10 3.1V3a2 2 0 1 1 4 0v.1A1.7 1.7 0 0 0 16.9 4.2l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1A1.7 1.7 0 0 0 21 10h.1a2 2 0 1 1 0 4H21a1.7 1.7 0 0 0-1.6 1z"
+				/>
+			</symbol>
+			<symbol id="i-search" viewBox="0 0 24 24">
+				<circle cx="11" cy="11" r="7" />
+				<path d="M20 20l-3.6-3.6" />
+			</symbol>
+			<symbol id="i-plus" viewBox="0 0 24 24">
+				<path d="M12 5v14M5 12h14" />
+			</symbol>
+			<symbol id="i-bell" viewBox="0 0 24 24">
+				<path d="M18 8a6 6 0 1 0-12 0c0 6-2 7-2 7h16s-2-1-2-7" />
+				<path d="M10.3 20a2 2 0 0 0 3.4 0" />
+			</symbol>
+			<symbol id="i-moon" viewBox="0 0 24 24">
+				<path d="M20 14.5A8.5 8.5 0 0 1 9.5 4a8.5 8.5 0 1 0 10.5 10.5z" />
+			</symbol>
+			<symbol id="i-sun" viewBox="0 0 24 24">
+				<circle cx="12" cy="12" r="4" />
+				<path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4" />
+			</symbol>
+			<symbol id="i-chev" viewBox="0 0 24 24">
+				<path d="M6 9l6 6 6-6" />
+			</symbol>
+			<symbol id="i-chev-r" viewBox="0 0 24 24">
+				<path d="M9 6l6 6-6 6" />
+			</symbol>
+			<symbol id="i-chev-l" viewBox="0 0 24 24">
+				<path d="M15 6l-6 6 6 6" />
+			</symbol>
+			<symbol id="i-user" viewBox="0 0 24 24">
+				<circle cx="12" cy="8" r="4" />
+				<path d="M4 21a8 8 0 0 1 16 0" />
+			</symbol>
+			<symbol id="i-cpu" viewBox="0 0 24 24">
+				<rect x="7" y="7" width="10" height="10" rx="2" />
+				<path d="M12 3v4M12 17v4M3 12h4M17 12h4M5 5l2 2M19 5l-2 2M5 19l2-2M19 19l-2-2" />
+			</symbol>
+			<symbol id="i-menu" viewBox="0 0 24 24"><path d="M4 7h16M4 12h16M4 17h16" /></symbol>
+			<symbol id="i-more" viewBox="0 0 24 24">
+				<circle cx="6" cy="12" r="1.4" />
+				<circle cx="12" cy="12" r="1.4" />
+				<circle cx="18" cy="12" r="1.4" />
+			</symbol>
+			<symbol id="i-image" viewBox="0 0 24 24">
+				<rect x="3" y="4" width="18" height="16" rx="2" />
+				<circle cx="9" cy="10" r="1.6" />
+				<path d="M4 18l5-5 4 4 3-3 4 4" />
+			</symbol>
+			<symbol id="i-git" viewBox="0 0 24 24">
+				<circle cx="7" cy="6" r="2.4" />
+				<circle cx="7" cy="18" r="2.4" />
+				<circle cx="17" cy="12" r="2.4" />
+				<path d="M7 8.4v7.2M9.4 6h2.2a3 3 0 0 1 3 3v.6" />
+			</symbol>
+		</svg>
+
+		<div class="page">
+			<nav class="snav">
+				<div class="snav-brand">
+					<span class="mark">Π</span>
+					<span>
+						<b>側欄重設計</b>
+						<span>pi-web-ui · 設計研究</span>
+					</span>
+				</div>
+				<a href="#diagnose" class="on"><span class="k">00</span>現狀診斷</a>
+				<a href="#opt-a"><span class="k">A</span>無形之欄</a>
+				<a href="#opt-a-mobile"><span class="k">A+</span>手機形態</a>
+				<a href="#opt-b"><span class="k">B</span>一體雙欄</a>
+				<a href="#opt-c"><span class="k">C</span>圖示+文字寬欄</a>
+				<a href="#opt-d"><span class="k">D</span>框架式完全貫通</a>
+				<a href="#compare"><span class="k">↔</span>方案對照</a>
+				<a href="#spec"><span class="k">→</span>落地規格</a>
+				<div class="snav-foot">
+					<button class="theme-btn" id="themeBtn" type="button">
+						<svg class="ic" style="width: 15px; height: 15px"><use href="#i-moon" /></svg>
+						<span id="themeLabel">切到淺色</span>
+					</button>
+					<em>下面 4 個 demo 都是真 DOM，可 hover / 點選。</em>
+				</div>
+			</nav>
+
+			<main>
+				<header class="hero">
+					<span class="eyebrow"><i></i>4 個方案 · 全部上下貫通</span>
+					<h1>
+						側欄 Dock：從「貼邊膠囊」改成「貫通列」
+						<small>
+							你要的是整列從頂欄下沿一直貫通到狀態列，而不是懸在中間 70vh 的浮標。下面 4 個方案都按這個
+							前提畫，差別在「這一列到底是透明的、和麵板合併的、帶文字的，還是包進視窗外框的」。
+						</small>
+					</h1>
+					<div class="hero-note">
+						<div><b>共同修正</b>整列 height:100%、無 scrollbar、tooltip 移出滾動容器、圖示規格統一。</div>
+						<div><b>推薦</b>方案 A 改動最小、最像 Linear/Arc；方案 B 最治「割裂」，但要多寫一層容器。</div>
+						<div><b>關鍵約束</b>保持 <code>start / center / end</code> 三槽與外掛槽位相容，不重排資料。</div>
+						<div><b>手機版</b>同一列收窄到 46px（命中區 38），關掉懸停標籤，其餘規則不變。</div>
+					</div>
+				</header>
+
+				<!-- ================= 00 診斷 ================= -->
+				<section id="diagnose">
+					<div class="sec-head">
+						<span class="sec-tag">00 / 診斷</span>
+						<h2>割裂和橫向捲軸，是三個獨立問題疊出來的</h2>
+					</div>
+					<p class="sec-sub">
+						左邊是現在的樣子：一個 border + 陰影 + 半透明模糊的膠囊貼在面板邊上，而面板自己是另一張卡片，
+						於是「兩層框」互相切割。同時膠囊內部 <code>overflow-y: auto</code> 讓 <code>overflow-x</code> 被計算成
+						<code>auto</code>，而 tooltip 偽元素是往右伸出的，於是橫向捲軸被撐了出來。
+					</p>
+					<div class="diag">
+						<div class="now-shot">
+							<div class="cap">現狀復刻（左側收窄）</div>
+							<div class="now-crop">
+								<div class="now-rail">
+									<span class="b" data-t="實驗臺"
+										><svg class="ic" style="width: 15px; height: 15px"><use href="#i-flask" /></svg
+									></span>
+									<span class="b" data-t="寫作"
+										><svg class="ic" style="width: 15px; height: 15px"><use href="#i-quill" /></svg
+									></span>
+									<div class="now-hbar"><i class="r"></i><i class="k"></i><i></i></div>
+								</div>
+								<div class="now-pane">
+									<div class="chip"></div>
+									<div class="ln m"></div>
+									<div class="ln"></div>
+									<div class="ln s"></div>
+									<div class="ln"></div>
+									<div class="ln m"></div>
+									<div class="ln s"></div>
+								</div>
+							</div>
+						</div>
+						<div class="diag-list">
+							<div class="diag-item">
+								<span class="n">1</span>
+								<div>
+									<b>兩層卡片語言打架</b>
+									<p>
+										dock 有 <code>border</code> + 陰影 + <code>backdrop-filter</code>，面板又是另一張帶 border
+										的卡片，中間還留了透明縫 —— 眼睛會讀成「兩個不相干的浮層」。
+									</p>
+								</div>
+							</div>
+							<div class="diag-item">
+								<span class="n">2</span>
+								<div>
+									<b>豎向列表裡冒出橫向捲軸</b>
+									<p>
+										只聲明瞭 <code>overflow-y: auto</code>，另一軸會從 <code>visible</code> 計算成 <code>auto</code>；而
+										<code>[data-tip]::after</code> 用 <code>left: calc(100% + 8px)</code>
+										往右伸出，撐大了可滾動區域。
+									</p>
+									<div class="code">
+										<span class="bad">/* 現狀 */</span> .side-dock-seg { overflow-y: auto; }
+										<span class="bad">← 橫向也被 auto</span> .side-dock [data-tip]::after { left: calc(100% + 8px); }
+										<span class="bad">← 撐寬</span>
+
+										<span class="ok">/* 修法 */</span>
+										.side-dock-seg { overflow-y: auto; <b>overflow-x: clip</b>; }
+										<span class="ok">// tooltip 改成單例 fixed 浮層，不進滾動容器</span>
+									</div>
+								</div>
+							</div>
+							<div class="diag-item">
+								<span class="n">3</span>
+								<div>
+									<b>尺寸語言沒統一</b>
+									<p>
+										同一列裡混著 30px 圓形 <code>border-radius: 50%</code> 的 bar item、22px 的摺疊鍵、18px
+										的引擎徽標；和頂欄 28px 圓角 8px 的按鈕、狀態列 11px 的字號不構成一套。
+									</p>
+								</div>
+							</div>
+							<div class="diag-item">
+								<span class="n">4</span>
+								<div>
+									<b>整列只有 70vh 高</b>
+									<p>
+										<code>.side-dock-float { height: 70vh; top: 50% }</code> 決定它天然不可能「貫通」，
+										上下都是空氣，視覺重量和左右面板不在同一根線上。
+									</p>
+								</div>
+							</div>
+						</div>
+					</div>
+				</section>
+
+				<!-- ================= A ================= -->
+				<section id="opt-a">
+					<div class="sec-head">
+						<span class="sec-tag">方案 A</span>
+						<h2>無形之欄：貫通整列，完全透明</h2>
+						<span class="rec">推薦</span>
+					</div>
+					<p class="sec-sub">
+						不畫卡片、不畫外框、不畫陰影 —— 圖示直接坐在和頂欄、面板同一塊表面上，從頂欄下沿貫通到狀態列。
+						位置感只靠「1px 髮絲線」+「啟用態左側 3px 豎條」建立。hover 時只長出一塊藥丸底，
+						並向右滑出文字標籤，解決純圖示不可讀的問題。
+					</p>
+
+					<div class="stage">
+						<div class="winbar">
+							<span class="dots"><i></i><i></i><i></i></span>
+							<span class="t">方案 A · 無形之欄</span>
+							<span class="hint">hover 圖示看標籤 · 點選切啟用</span>
+						</div>
+						<div class="app">
+							<div class="tb">
+								<div class="tb-l">
+									<span class="brand"><span class="mark">Π</span>pi-web-ui</span>
+									<nav class="tb-tabs demo-btns">
+										<button class="on">對話</button>
+										<button>終端</button>
+										<button>檔案</button>
+										<button>畫布</button>
+									</nav>
+								</div>
+								<div class="tb-r">
+									<span class="tb-chip"><i class="dot"></i>poe / 為什麼會有這個需求</span>
+									<button class="ibtn" data-tip="全域性搜尋 ⌘K" aria-label="搜尋">
+										<svg class="ic"><use href="#i-search" /></svg>
+									</button>
+									<button class="ibtn" data-tip="通知" aria-label="通知">
+										<svg class="ic"><use href="#i-bell" /></svg>
+									</button>
+									<button class="ibtn" data-tip="設定" aria-label="設定">
+										<svg class="ic"><use href="#i-gear" /></svg>
+									</button>
+									<span class="avatar"></span>
+								</div>
+							</div>
+							<div class="shell">
+								<nav class="rail-a demo-rail">
+									<button class="rb on" data-tip="對話" aria-label="對話">
+										<svg class="ic"><use href="#i-chat" /></svg><span class="lbl">對話</span>
+									</button>
+									<button class="rb" data-tip="終端" aria-label="終端">
+										<svg class="ic"><use href="#i-term" /></svg><span class="lbl">終端</span>
+									</button>
+									<button class="rb" data-tip="檔案" aria-label="檔案">
+										<svg class="ic"><use href="#i-files" /></svg><span class="lbl">檔案</span>
+									</button>
+									<button class="rb" data-tip="畫布" aria-label="畫布">
+										<svg class="ic"><use href="#i-canvas" /></svg><span class="lbl">畫布</span>
+									</button>
+									<div class="sep"></div>
+									<button class="rb" data-tip="實驗臺（外掛）" aria-label="實驗臺">
+										<svg class="ic"><use href="#i-flask" /></svg>
+										<span class="live"></span><span class="lbl">實驗臺 · 執行中</span>
+									</button>
+									<button class="rb" data-tip="寫作（外掛）" aria-label="寫作">
+										<svg class="ic"><use href="#i-quill" /></svg><span class="lbl">寫作</span>
+									</button>
+									<button class="rb" data-tip="機器人" aria-label="機器人">
+										<svg class="ic"><use href="#i-bot" /></svg><span class="bdg">3</span
+										><span class="lbl">機器人 · 3 個線上</span>
+									</button>
+									<div class="grow"></div>
+									<button class="rb" data-tip="git" aria-label="git">
+										<svg class="ic"><use href="#i-git" /></svg><span class="lbl">版本 / SCM</span>
+									</button>
+									<button class="rb" data-tip="設定" aria-label="設定">
+										<svg class="ic"><use href="#i-gear" /></svg><span class="lbl">設定</span>
+									</button>
+									<span class="avatar" style="margin-top: 6px"></span>
+								</nav>
+
+								<aside class="pane left">
+									<div class="pane-head">
+										<button class="proj">
+											<svg class="ic"><use href="#i-files" /></svg>專案
+											<svg class="ic" style="width: 12px; height: 12px"><use href="#i-chev" /></svg>
+										</button>
+										<span style="flex: 1"></span>
+										<button class="ibtn" data-tip="新建對話" aria-label="新建">
+											<svg class="ic"><use href="#i-plus" /></svg>
+										</button>
+									</div>
+									<div class="search">
+										<svg class="ic" style="width: 14px; height: 14px"><use href="#i-search" /></svg>過濾會話
+									</div>
+									<div class="list">
+										<div class="grp">
+											<svg class="ic"><use href="#i-chev" /></svg>poe
+										</div>
+										<div class="row on"><span class="bullet"></span><span>為什麼會有這個需求</span></div>
+										<div class="row"><span class="bullet" style="opacity: 0"></span><span>週期性任務清單</span></div>
+										<div class="row"><span class="bullet" style="opacity: 0"></span><span>側欄重設計討論</span></div>
+										<div class="grp">
+											<svg class="ic"><use href="#i-chev" /></svg>pi-web-ui
+										</div>
+										<div class="row">
+											<span class="bullet"></span><span>外掛槽位相容性</span><span class="badge">新</span>
+										</div>
+										<div class="row"><span class="bullet" style="opacity: 0"></span><span>終端 PTY 卡死排查</span></div>
+										<div class="row"><span class="bullet" style="opacity: 0"></span><span>畫布協同版本對比</span></div>
+									</div>
+								</aside>
+
+								<section class="chat">
+									<div class="chat-head">
+										<span class="title">側欄重設計討論</span>
+										<span>·</span><span>claude-opus-4</span>
+										<span style="margin-left: auto" class="mini">上下文 12%</span>
+										<button class="ibtn" data-tip="面板摺疊">
+											<svg class="ic"><use href="#i-chev-l" /></svg>
+										</button>
+									</div>
+									<div class="msgs">
+										<div class="msg user">
+											<span class="who">你</span>
+											<div class="body">
+												左側那一條能不能別懸在中間？我希望它<strong>上下貫通</strong>，一口氣到底，別像浮窗。
+											</div>
+										</div>
+										<div class="msg">
+											<span class="who">AI</span>
+											<div class="body">
+												可以。把 <code>:root</code> 裡的 <code>--side-dock-w</code> 從 <code>fit-content</code>
+												改成固定列寬、高度交給 flex 撐滿，去掉 border/shadow/backdrop，啟用態只留一條 3px 豎條。
+												<div class="tool">
+													<span class="ok">●</span> read · web/src/styles.css <span class="ok">✓</span>
+												</div>
+											</div>
+										</div>
+									</div>
+									<div class="composer-wrap">
+										<div class="composer">
+											<div class="ph">輸入訊息，/ 檢視命令…</div>
+											<div class="composer-bar">
+												<span class="mini"
+													><svg class="ic" style="width: 12px; height: 12px"><use href="#i-cpu" /></svg
+													>claude-opus-4</span
+												>
+												<span class="mini">工作區</span>
+												<span class="spacer"></span>
+												<span class="mini send">傳送 ↵</span>
+											</div>
+										</div>
+									</div>
+								</section>
+
+								<aside class="pane right">
+									<div class="pane-head">
+										<span
+											class="mini"
+											style="background: var(--accent-soft); color: var(--accent-ink); border-color: transparent"
+											>檔案</span
+										>
+										<span class="mini">工具</span>
+										<span class="mini">上下文</span>
+									</div>
+									<div class="list">
+										<div class="grp">
+											<svg class="ic"><use href="#i-chev" /></svg>web/src
+										</div>
+										<div class="row"><span>App.tsx</span></div>
+										<div class="row"><span>styles.css</span></div>
+										<div class="row"><span>use-chat.ts</span></div>
+										<div class="grp">
+											<svg class="ic"><use href="#i-chev" /></svg>server
+										</div>
+										<div class="row"><span>plugins.ts</span></div>
+										<div class="row"><span>protocol.ts</span></div>
+									</div>
+								</aside>
+							</div>
+							<div class="sb">
+								<span class="dot"></span><span>就緒</span><span>poe</span><span>ctx 12%</span><span>$0.42</span>
+								<span class="spacer"></span><span>12 條訊息</span><span>claude-opus-4</span>
+							</div>
+						</div>
+					</div>
+
+					<div class="notes">
+						<div class="note">
+							<h4>怎麼做到「貫通」</h4>
+							<ul>
+								<li>列寬固定 <code>--rail-w: 56px</code>，高度吃 flex，不再有 70vh / translateY。</li>
+								<li>底色與頂欄、面板同為 <code>--bg-elev</code>：三者連成一片 L 形表面，不再是貼上去的卡片。</li>
+								<li>與面板之間只留 1px <code>--border-soft</code> 髮絲線；不畫外框、不畫陰影。</li>
+								<li>底部圖示用 <code>margin-top: auto</code> 頂到底，跟狀態列留 9px 呼吸。</li>
+							</ul>
+						</div>
+						<div class="note trade">
+							<h4>取捨</h4>
+							<p>
+								<span class="plus">＋</span> 改動最小：只動 <code>.side-dock*</code> 的 30 行 CSS + SideDock 根節點。
+							</p>
+							<p><span class="plus">＋</span> 最接近 Linear / Arc 的「無容器」觀感，和任意主題都好配。</p>
+							<p><span class="minus">−</span> 純圖示可讀性依賴 hover 標籤，觸屏上要退回長按提示。</p>
+						</div>
+						<div class="note">
+							<h4>適配細節</h4>
+							<ul>
+								<li>圖示 19px / 命中區 36px / 圓角 11px / 間距 3px，與頂欄 28px 按鈕同族。</li>
+								<li>掃描外掛槽位：<code>align=start/center/end</code> 三槽保留，視覺上只表現為「空隙 + 1px 細線」。</li>
+								<li>標籤用絕對定位，但 rail <b>不能</b>設 overflow，否則又被裁。</li>
+							</ul>
+						</div>
+					</div>
+				</section>
+
+				<!-- ================= A 手機形態 ================= -->
+				<section id="opt-a-mobile">
+					<div class="sec-head">
+						<span class="sec-tag">方案 A · 手機版</span>
+						<h2>同一列，收窄到 46px</h2>
+					</div>
+					<p class="sec-sub">
+						手機上沒有第二個面板——左右面板都變成抽屜，所以這條豎列是唯一常駐的導航。它不能消失，也不能吃掉太多寬度：
+						列寬從 56 收到 46，命中區從 36 拉到 38（拇指能穩穩點中），懸停標籤改成關掉（觸屏沒有 hover），
+						其餘（貫通、髮絲線、啟用豎條）與桌面完全一致。右側列只在真有條目時出現，空的時候不佔位。
+					</p>
+					<div class="phone-wrap">
+						<div class="phone">
+							<div class="phone-screen">
+								<div class="app app-m">
+									<div class="tb tb-m">
+										<button class="ibtn" data-tip="專案與會話" aria-label="選單">
+											<svg class="ic"><use href="#i-menu" /></svg>
+										</button>
+										<span class="brand"><span class="mark">Π</span></span>
+										<span class="tb-chip" style="max-width: 118px"><i class="dot"></i>poe</span>
+										<span style="flex: 1"></span>
+										<button class="ibtn" data-tip="搜尋">
+											<svg class="ic"><use href="#i-search" /></svg>
+										</button>
+										<button class="ibtn" data-tip="設定">
+											<svg class="ic"><use href="#i-gear" /></svg>
+										</button>
+									</div>
+									<div class="shell">
+										<nav class="rail-a rail-m demo-rail">
+											<button class="rb on" aria-label="對話">
+												<svg class="ic"><use href="#i-chat" /></svg>
+											</button>
+											<button class="rb" aria-label="終端">
+												<svg class="ic"><use href="#i-term" /></svg>
+											</button>
+											<button class="rb" aria-label="檔案">
+												<svg class="ic"><use href="#i-files" /></svg>
+											</button>
+											<button class="rb" aria-label="畫布">
+												<svg class="ic"><use href="#i-canvas" /></svg>
+											</button>
+											<div class="sep"></div>
+											<button class="rb" aria-label="實驗臺">
+												<svg class="ic"><use href="#i-flask" /></svg><span class="live"></span>
+											</button>
+											<button class="rb" aria-label="寫作">
+												<svg class="ic"><use href="#i-quill" /></svg>
+											</button>
+											<div class="grow"></div>
+											<button class="rb" aria-label="設定">
+												<svg class="ic"><use href="#i-gear" /></svg>
+											</button>
+										</nav>
+										<section class="chat">
+											<div class="chat-head">
+												<span class="title">側欄重設計</span>
+												<span class="mini" style="margin-left: auto">12%</span>
+											</div>
+											<div class="msgs">
+												<div class="msg user">
+													<span class="who">你</span>
+													<div class="body">手機上也要貫通，但列不能太寬。</div>
+												</div>
+												<div class="msg">
+													<span class="who">AI</span>
+													<div class="body">
+														列寬 46、按鈕 38，其餘沿桌面：
+														<div class="tool">
+															<span class="ok">●</span> edit · styles.css +4 行 <span class="ok">✓</span>
+														</div>
+													</div>
+												</div>
+											</div>
+											<div class="composer-wrap">
+												<div class="composer">
+													<div class="ph">輸入訊息…</div>
+													<div class="composer-bar">
+														<span class="mini"
+															><svg class="ic" style="width: 12px; height: 12px"><use href="#i-cpu" /></svg>opus-4</span
+														>
+														<span class="spacer"></span>
+														<span class="mini send">發</span>
+													</div>
+												</div>
+											</div>
+										</section>
+									</div>
+									<div class="sb">
+										<span class="dot"></span><span>就緒</span><span>poe</span> <span class="spacer"></span
+										><span>opus-4</span>
+									</div>
+								</div>
+							</div>
+						</div>
+						<div class="notes" style="margin-top: 0; grid-template-columns: minmax(0, 1fr)">
+							<div class="note">
+								<h4>手機上的規則</h4>
+								<ul>
+									<li>列寬 <code>46px</code>、按鈕 <code>38px</code>、間距 4px（觸控命中區下限）。</li>
+									<li>不彈懸停標籤（觸屏無 hover）；保留 <code>title</code> 供長按提示。</li>
+									<li>左右面板都是抽屜，列不跟著抽屜走，始終貫通全高。</li>
+									<li>右列沒有條目時整列 <code>display:none</code>，不白佔 46px。</li>
+								</ul>
+							</div>
+							<div class="note trade">
+								<h4>為什麼不用底部 tab bar</h4>
+								<p>
+									底部已經有輸入框 + 狀態列，再加一條 tab 會變成三層。豎列與桌面同一套 DOM，
+									只用媒體查詢換尺寸，改動面最小；且手機橫屏時列自動變回“側欄”的直覺位置。
+								</p>
+							</div>
+						</div>
+					</div>
+				</section>
+
+				<!-- ================= B ================= -->
+				<section id="opt-b">
+					<div class="sec-head">
+						<span class="sec-tag">方案 B</span>
+						<h2>一體雙欄：dock 和麵板住進同一張卡片</h2>
+					</div>
+					<p class="sec-sub">
+						割裂的根源是「兩個浮層」。這個方案反過來：dock + 面板合成一個容器，只有一條外邊框、一個圓角； dock
+						用比面板深一檔的底色區分層級，中間一條 1px 內線。中間會話區不再是「被兩塊卡片夾住」， 而是反過來浮在畫布上
+						—— 也就是 Figma / Linear 桌面版的骨架。
+					</p>
+
+					<div class="stage">
+						<div class="winbar">
+							<span class="dots"><i></i><i></i><i></i></span>
+							<span class="t">方案 B · 一體雙欄</span>
+							<span class="hint">左右兩側都是「dock+面板」合體</span>
+						</div>
+						<div class="app">
+							<div class="tb">
+								<div class="tb-l">
+									<span class="brand"><span class="mark">Π</span>pi-web-ui</span>
+									<nav class="tb-tabs demo-btns">
+										<button class="on">對話</button>
+										<button>終端</button>
+										<button>檔案</button>
+									</nav>
+								</div>
+								<div class="tb-r">
+									<span class="tb-chip"><i class="dot"></i>poe / 週期性任務</span>
+									<button class="ibtn" data-tip="搜尋">
+										<svg class="ic"><use href="#i-search" /></svg>
+									</button>
+									<button class="ibtn" data-tip="設定">
+										<svg class="ic"><use href="#i-gear" /></svg>
+									</button>
+									<span class="avatar"></span>
+								</div>
+							</div>
+							<div class="shell shell-b">
+								<div class="card-b">
+									<nav class="rail-b demo-rail">
+										<button class="rb on" data-tip="對話" data-tip-side="right" aria-label="對話">
+											<svg class="ic"><use href="#i-chat" /></svg>
+										</button>
+										<button class="rb" data-tip="終端" aria-label="終端">
+											<svg class="ic"><use href="#i-term" /></svg>
+										</button>
+										<button class="rb" data-tip="檔案" aria-label="檔案">
+											<svg class="ic"><use href="#i-files" /></svg>
+										</button>
+										<button class="rb" data-tip="畫布" aria-label="畫布">
+											<svg class="ic"><use href="#i-canvas" /></svg>
+										</button>
+										<div class="sep" style="width: 22px; height: 1px; background: var(--border); margin: 6px 0"></div>
+										<button class="rb" data-tip="實驗臺（外掛）" aria-label="實驗臺">
+											<svg class="ic"><use href="#i-flask" /></svg>
+										</button>
+										<button class="rb" data-tip="寫作（外掛）" aria-label="寫作">
+											<svg class="ic"><use href="#i-quill" /></svg>
+										</button>
+										<div class="grow" style="flex: 1"></div>
+										<button class="rb" data-tip="設定" aria-label="設定">
+											<svg class="ic"><use href="#i-gear" /></svg>
+										</button>
+										<span class="avatar" style="margin: 2px 0 4px"></span>
+									</nav>
+									<aside class="pane left">
+										<div class="pane-head">
+											<button class="proj">
+												<svg class="ic"><use href="#i-files" /></svg>專案<svg
+													class="ic"
+													style="width: 12px; height: 12px"
+												>
+													<use href="#i-chev" />
+												</svg>
+											</button>
+											<span style="flex: 1"></span>
+											<button class="ibtn" data-tip="新建">
+												<svg class="ic"><use href="#i-plus" /></svg>
+											</button>
+										</div>
+										<div class="search">
+											<svg class="ic" style="width: 14px; height: 14px"><use href="#i-search" /></svg>過濾會話
+										</div>
+										<div class="list">
+											<div class="grp">
+												<svg class="ic"><use href="#i-chev" /></svg>poe
+											</div>
+											<div class="row on"><span class="bullet"></span><span>週期性任務清單</span></div>
+											<div class="row">
+												<span class="bullet" style="opacity: 0"></span><span>為什麼會有這個需求</span>
+											</div>
+											<div class="grp">
+												<svg class="ic"><use href="#i-chev" /></svg>pi-web-ui
+											</div>
+											<div class="row"><span class="bullet"></span><span>側欄重設計</span></div>
+											<div class="row"><span class="bullet" style="opacity: 0"></span><span>外掛槽位相容</span></div>
+										</div>
+									</aside>
+								</div>
+
+								<div class="card-b chatcard">
+									<section class="chat">
+										<div class="chat-head">
+											<span class="title">週期性任務清單</span>
+											<span>·</span><span>gemini-2.5-pro</span>
+											<span style="margin-left: auto" class="mini">上下文 8%</span>
+										</div>
+										<div class="msgs">
+											<div class="msg user">
+												<span class="who">你</span>
+												<div class="body">把左側圖示條和麵板合成一個容器試試，現在兩邊都在畫邊框，看著像貼紙。</div>
+											</div>
+											<div class="msg">
+												<span class="who">AI</span>
+												<div class="body">
+													合成後只剩一條外邊框 + 一條內分隔線；dock 用 <code>--bg-sunken</code> 混一檔底色， 面板保持
+													<code>--bg-elev</code>，層級靠明度而不是靠陰影。
+												</div>
+											</div>
+											<div class="msg">
+												<span class="who">AI</span>
+												<div class="body">
+													<div class="tool">
+														<span class="ok">●</span> edit · web/src/styles.css +38 −12 <span class="ok">✓</span>
+													</div>
+												</div>
+											</div>
+										</div>
+										<div class="composer-wrap">
+											<div class="composer">
+												<div class="ph">輸入訊息…</div>
+												<div class="composer-bar">
+													<span class="mini"
+														><svg class="ic" style="width: 12px; height: 12px"><use href="#i-cpu" /></svg
+														>gemini-2.5-pro</span
+													>
+													<span class="spacer"></span>
+													<span class="mini send">傳送 ↵</span>
+												</div>
+											</div>
+										</div>
+									</section>
+								</div>
+
+								<div class="card-b">
+									<aside class="pane right">
+										<div class="pane-head">
+											<span
+												class="mini"
+												style="background: var(--accent-soft); color: var(--accent-ink); border-color: transparent"
+												>檔案</span
+											>
+											<span class="mini">工具</span>
+										</div>
+										<div class="list">
+											<div class="grp">
+												<svg class="ic"><use href="#i-chev" /></svg>web/src
+											</div>
+											<div class="row"><span>App.tsx</span></div>
+											<div class="row"><span>styles.css</span></div>
+											<div class="grp">
+												<svg class="ic"><use href="#i-chev" /></svg>server
+											</div>
+											<div class="row"><span>plugins.ts</span></div>
+										</div>
+									</aside>
+									<nav class="rail-b right demo-rail">
+										<button class="rb on" data-tip="檔案" data-tip-side="left" aria-label="檔案">
+											<svg class="ic"><use href="#i-files" /></svg>
+										</button>
+										<button class="rb" data-tip="工具" aria-label="工具">
+											<svg class="ic"><use href="#i-gear" /></svg>
+										</button>
+										<button class="rb" data-tip="圖片" aria-label="圖片">
+											<svg class="ic"><use href="#i-image" /></svg>
+										</button>
+										<div class="grow" style="flex: 1"></div>
+										<button class="rb" data-tip="更多" aria-label="更多">
+											<svg class="ic"><use href="#i-more" /></svg>
+										</button>
+									</nav>
+								</div>
+							</div>
+							<div class="sb">
+								<span class="dot"></span><span>就緒</span><span>poe</span><span>ctx 8%</span>
+								<span class="spacer"></span><span>gemini-2.5-pro</span>
+							</div>
+						</div>
+					</div>
+
+					<div class="notes">
+						<div class="note">
+							<h4>結構</h4>
+							<ul>
+								<li><code>.card-b { display:flex; border:1px; radius:13px; overflow:hidden }</code></li>
+								<li>dock 底色 = <code>color-mix(bg-sunken 55%, bg-elev)</code>，與面板差一檔明度。</li>
+								<li>左右映象：右側是「面板 + dock」，外框同款，視覺對稱。</li>
+								<li>中間會話區是一張<b>獨立</b>卡片，四周留 8px 畫布色，不再被兩側夾。</li>
+							</ul>
+						</div>
+						<div class="note trade">
+							<h4>取捨</h4>
+							<p><span class="plus">＋</span> 最徹底地消掉「兩層邊框」，層級靠明度而不是陰影。</p>
+							<p><span class="plus">＋</span> 半徑為 13px 的外框讓整窗更像一個應用，不像網頁拼接。</p>
+							<p><span class="minus">−</span> 需要給 <code>.layout</code> 新增一層容器 + 8px 內邊距，改動面比 A 大。</p>
+							<p><span class="minus">−</span> 面板與 dock 的邊框要重算（原來是 pane 自己扛 border）。</p>
+						</div>
+						<div class="note">
+							<h4>注意</h4>
+							<ul>
+								<li>卡片 <code>overflow:hidden</code> 之後，面板內的 popover 必須走 portal，否則被裁。</li>
+								<li>拖拽 resizer 要挪到卡片之間，而不是 pane 上。</li>
+								<li>窄屏（&lt;900px）自動退化為單卡片，dock 保持貫通。</li>
+							</ul>
+						</div>
+					</div>
+				</section>
+
+				<!-- ================= C ================= -->
+				<section id="opt-c">
+					<div class="sec-head">
+						<span class="sec-tag">方案 C</span>
+						<h2>圖示 + 文字寬欄：一列本身就是導航</h2>
+					</div>
+					<p class="sec-sub">
+						Slack / Notion / ChatGPT 新版左側欄的形態：圖示帶文字，整列從頂到底貫通，頂部有品牌塊，底部有賬戶與狀態。
+						好處是「不用 hover 也知道每個圖示是什麼」，而且分割槽（導航 / 外掛 /
+						系統）靠小節標題表達，外掛再多也不會失控。 可摺疊成 60px 的純圖示態。
+					</p>
+
+					<div class="stage">
+						<div class="winbar">
+							<span class="dots"><i></i><i></i><i></i></span>
+							<span class="t">方案 C · 寬欄（展開 204px）</span>
+							<span class="hint">點選可切啟用</span>
+						</div>
+						<div class="app">
+							<div class="tb">
+								<div class="tb-l">
+									<span class="brand"><span class="mark">Π</span>pi-web-ui</span>
+									<nav class="tb-tabs demo-btns">
+										<button class="on">對話</button>
+										<button>終端</button>
+										<button>檔案</button>
+									</nav>
+								</div>
+								<div class="tb-r">
+									<span class="tb-chip"><i class="dot"></i>poe / 側欄重設計</span>
+									<button class="ibtn" data-tip="搜尋">
+										<svg class="ic"><use href="#i-search" /></svg>
+									</button>
+									<button class="ibtn" data-tip="設定">
+										<svg class="ic"><use href="#i-gear" /></svg>
+									</button>
+									<span class="avatar"></span>
+								</div>
+							</div>
+							<div class="shell">
+								<nav class="rail-c demo-rail">
+									<div class="rc-head">
+										<button class="proj" style="flex: 1">
+											<svg class="ic"><use href="#i-files" /></svg>poe<svg
+												class="ic"
+												style="width: 12px; height: 12px; margin-left: auto"
+											>
+												<use href="#i-chev" />
+											</svg>
+										</button>
+									</div>
+									<button class="navitem on">
+										<svg class="ic"><use href="#i-chat" /></svg><span>對話</span><span class="badge">12</span>
+									</button>
+									<button class="navitem">
+										<svg class="ic"><use href="#i-term" /></svg><span>終端</span>
+									</button>
+									<button class="navitem">
+										<svg class="ic"><use href="#i-files" /></svg><span>檔案</span>
+									</button>
+									<button class="navitem">
+										<svg class="ic"><use href="#i-canvas" /></svg><span>畫布</span>
+									</button>
+									<div class="rc-sec">外掛</div>
+									<button class="navitem">
+										<svg class="ic"><use href="#i-flask" /></svg><span>實驗臺</span>
+										<span class="badge run">執行</span>
+									</button>
+									<button class="navitem">
+										<svg class="ic"><use href="#i-quill" /></svg><span>寫作</span>
+									</button>
+									<button class="navitem">
+										<svg class="ic"><use href="#i-bot" /></svg><span>機器人</span>
+									</button>
+									<div class="grow"></div>
+									<button class="navitem">
+										<svg class="ic"><use href="#i-gear" /></svg><span>設定</span>
+									</button>
+									<div class="rc-foot">
+										<span class="avatar" style="width: 26px; height: 26px"></span>
+										<span style="min-width: 0">
+											<span class="nm">本機 · 桌面</span>
+											<span class="st">已連線 · 3 個裝置</span>
+										</span>
+									</div>
+								</nav>
+								<aside class="pane left" style="width: 218px">
+									<div class="pane-head">
+										<button class="proj">
+											<svg class="ic"><use href="#i-files" /></svg>對話
+										</button>
+										<span style="flex: 1"></span>
+										<button class="ibtn" data-tip="新建">
+											<svg class="ic"><use href="#i-plus" /></svg>
+										</button>
+									</div>
+									<div class="search">
+										<svg class="ic" style="width: 14px; height: 14px"><use href="#i-search" /></svg>過濾會話
+									</div>
+									<div class="list">
+										<div class="grp">今天</div>
+										<div class="row on"><span class="bullet"></span><span>側欄重設計討論</span></div>
+										<div class="row">
+											<span class="bullet" style="opacity: 0"></span><span>為什麼會有這個需求</span>
+										</div>
+										<div class="grp">更早</div>
+										<div class="row"><span class="bullet"></span><span>外掛槽位相容性</span></div>
+										<div class="row"><span class="bullet" style="opacity: 0"></span><span>終端卡死排查</span></div>
+									</div>
+								</aside>
+								<section class="chat">
+									<div class="chat-head">
+										<span class="title">側欄重設計討論</span>
+										<span>·</span><span>claude-opus-4</span>
+										<span style="margin-left: auto" class="mini">12%</span>
+									</div>
+									<div class="msgs">
+										<div class="msg user">
+											<span class="who">你</span>
+											<div class="body">圖示只有圖示，新人根本猜不出來。能不能像 Slack 那樣帶字？</div>
+										</div>
+										<div class="msg">
+											<span class="who">AI</span>
+											<div class="body">
+												那就把「導航」升級成寬欄：圖示 + 文字 + 角標，分組用節標題，外掛區單獨一段。 摺疊後回到 60px
+												純圖示，寬度用 <code>--rail-w</code> 一個變數控制。
+											</div>
+										</div>
+									</div>
+									<div class="composer-wrap">
+										<div class="composer">
+											<div class="ph">輸入訊息…</div>
+											<div class="composer-bar">
+												<span class="mini"
+													><svg class="ic" style="width: 12px; height: 12px"><use href="#i-cpu" /></svg
+													>claude-opus-4</span
+												>
+												<span class="spacer"></span><span class="mini send">傳送 ↵</span>
+											</div>
+										</div>
+									</div>
+								</section>
+								<aside class="pane right">
+									<div class="pane-head">
+										<span
+											class="mini"
+											style="background: var(--accent-soft); color: var(--accent-ink); border-color: transparent"
+											>檔案</span
+										>
+										<span class="mini">工具</span>
+									</div>
+									<div class="list">
+										<div class="grp">
+											<svg class="ic"><use href="#i-chev" /></svg>web/src
+										</div>
+										<div class="row"><span>App.tsx</span></div>
+										<div class="row"><span>styles.css</span></div>
+									</div>
+								</aside>
+							</div>
+							<div class="sb">
+								<span class="dot"></span><span>就緒</span><span>poe</span> <span class="spacer"></span
+								><span>claude-opus-4</span>
+							</div>
+						</div>
+					</div>
+
+					<div class="notes">
+						<div class="note">
+							<h4>結構</h4>
+							<ul>
+								<li>rail 同時是「導航」：<code>width: 204px</code>，摺疊態 60px，同一套 DOM。</li>
+								<li>分割槽：導航 / 外掛 / 系統，各帶節標題；外掛區隨市場安裝自動增長。</li>
+								<li>底部固定賬戶塊，和狀態列只隔 4px，視覺上是一條。</li>
+								<li>hover 不再需要 tooltip —— 文字已經常駐。</li>
+							</ul>
+						</div>
+						<div class="note trade">
+							<h4>取捨</h4>
+							<p><span class="plus">＋</span> 可讀性最好，外掛市場裝多少都不會變成「一排看不懂的 icon」。</p>
+							<p><span class="plus">＋</span> 摺疊/展開只改一個寬度，移動端天然複用。</p>
+							<p><span class="minus">−</span> 204 + 218 + 240 = 662px 全被吃掉，寬屏才舒服。</p>
+							<p><span class="minus">−</span> 與現有「窄欄 + 面板」資訊層級要重新定義（rail 和麵板誰主誰次）。</p>
+						</div>
+						<div class="note">
+							<h4>建議組合</h4>
+							<ul>
+								<li>≥1600px：寬欄展開（本圖）。</li>
+								<li>1200–1600px：自動摺疊成 60px 純圖示，hover 出標籤。</li>
+								<li>&lt;1200px：退成方案 A 的貫通窄欄。</li>
+							</ul>
+						</div>
+					</div>
+				</section>
+
+				<!-- ================= D ================= -->
+				<section id="opt-d">
+					<div class="sec-head">
+						<span class="sec-tag">方案 D</span>
+						<h2>框架式：豎列從視窗頂一直通到底</h2>
+					</div>
+					<p class="sec-sub">
+						比「頂欄下方貫通」更徹底：豎列吃掉左上角，品牌 logo 就在列首，頂欄從列右側開始 —— 形成一條
+						從視窗頂端到狀態列的完整豎線。這是 Linear / Notion 桌面版的骨架，也是「上下貫通」能做到的極限。
+					</p>
+
+					<div class="stage">
+						<div class="winbar">
+							<span class="dots"><i></i><i></i><i></i></span>
+							<span class="t">方案 D · 完全貫通（列吃左上角）</span>
+							<span class="hint">logo 屬於豎列</span>
+						</div>
+						<div class="app">
+							<div class="shell shell-d" style="flex: 1">
+								<nav class="rail-d demo-rail">
+									<span class="rlogo">Π</span>
+									<button class="rb on" data-tip="對話" data-tip-side="right" aria-label="對話">
+										<svg class="ic"><use href="#i-chat" /></svg>
+									</button>
+									<button class="rb" data-tip="終端" aria-label="終端">
+										<svg class="ic"><use href="#i-term" /></svg>
+									</button>
+									<button class="rb" data-tip="檔案" aria-label="檔案">
+										<svg class="ic"><use href="#i-files" /></svg>
+									</button>
+									<button class="rb" data-tip="畫布" aria-label="畫布">
+										<svg class="ic"><use href="#i-canvas" /></svg>
+									</button>
+									<div class="sep"></div>
+									<button class="rb" data-tip="實驗臺（外掛）" aria-label="實驗臺">
+										<svg class="ic"><use href="#i-flask" /></svg>
+									</button>
+									<button class="rb" data-tip="寫作（外掛）" aria-label="寫作">
+										<svg class="ic"><use href="#i-quill" /></svg>
+									</button>
+									<div class="grow"></div>
+									<button class="rb" data-tip="設定" aria-label="設定">
+										<svg class="ic"><use href="#i-gear" /></svg>
+									</button>
+									<span class="avatar" style="margin: 2px 0 2px"></span>
+								</nav>
+								<div class="d-col">
+									<div class="d-topgap">
+										<nav class="tb-tabs demo-btns">
+											<button class="on">對話</button>
+											<button>終端</button>
+											<button>檔案</button>
+											<button>畫布</button>
+										</nav>
+										<span class="tb-chip" style="margin-left: 6px"><i class="dot"></i>poe / 側欄重設計</span>
+										<span style="flex: 1"></span>
+										<button class="ibtn" data-tip="搜尋 ⌘K">
+											<svg class="ic"><use href="#i-search" /></svg>
+										</button>
+										<button class="ibtn" data-tip="通知">
+											<svg class="ic"><use href="#i-bell" /></svg>
+										</button>
+										<button class="ibtn" data-tip="設定">
+											<svg class="ic"><use href="#i-gear" /></svg>
+										</button>
+									</div>
+									<div class="shell">
+										<aside class="pane left" style="width: 240px">
+											<div class="pane-head">
+												<button class="proj">
+													<svg class="ic"><use href="#i-files" /></svg>專案<svg
+														class="ic"
+														style="width: 12px; height: 12px"
+													>
+														<use href="#i-chev" />
+													</svg>
+												</button>
+												<span style="flex: 1"></span>
+												<button class="ibtn" data-tip="新建">
+													<svg class="ic"><use href="#i-plus" /></svg>
+												</button>
+											</div>
+											<div class="search">
+												<svg class="ic" style="width: 14px; height: 14px"><use href="#i-search" /></svg>過濾會話
+											</div>
+											<div class="list">
+												<div class="grp">
+													<svg class="ic"><use href="#i-chev" /></svg>poe
+												</div>
+												<div class="row on"><span class="bullet"></span><span>側欄重設計討論</span></div>
+												<div class="row">
+													<span class="bullet" style="opacity: 0"></span><span>為什麼會有這個需求</span>
+												</div>
+												<div class="grp">
+													<svg class="ic"><use href="#i-chev" /></svg>pi-web-ui
+												</div>
+												<div class="row"><span class="bullet"></span><span>外掛槽位相容性</span></div>
+											</div>
+										</aside>
+										<section class="chat">
+											<div class="chat-head">
+												<span class="title">側欄重設計討論</span>
+												<span>·</span><span>claude-opus-4</span>
+												<span style="margin-left: auto" class="mini">12%</span>
+											</div>
+											<div class="msgs">
+												<div class="msg user">
+													<span class="who">你</span>
+													<div class="body">能不能讓左列連頂欄那條也吃掉？整條豎線從視窗最頂貫到最底。</div>
+												</div>
+												<div class="msg">
+													<span class="who">AI</span>
+													<div class="body">
+														可以：把頂欄拆成「列首品牌塊 + 右側工具條」，豎列 <code>height:100%</code> 貫穿
+														<code>.app</code>，頂欄只剩右側那一段。豎線自然對齊到底。
+													</div>
+												</div>
+											</div>
+											<div class="composer-wrap">
+												<div class="composer">
+													<div class="ph">輸入訊息…</div>
+													<div class="composer-bar">
+														<span class="mini"
+															><svg class="ic" style="width: 12px; height: 12px"><use href="#i-cpu" /></svg
+															>claude-opus-4</span
+														>
+														<span class="spacer"></span><span class="mini send">傳送 ↵</span>
+													</div>
+												</div>
+											</div>
+										</section>
+										<aside class="pane right" style="width: 220px">
+											<div class="pane-head">
+												<span
+													class="mini"
+													style="background: var(--accent-soft); color: var(--accent-ink); border-color: transparent"
+													>檔案</span
+												>
+												<span class="mini">工具</span>
+											</div>
+											<div class="list">
+												<div class="grp">
+													<svg class="ic"><use href="#i-chev" /></svg>web/src
+												</div>
+												<div class="row"><span>App.tsx</span></div>
+												<div class="row"><span>styles.css</span></div>
+											</div>
+										</aside>
+									</div>
+								</div>
+							</div>
+							<div class="sb">
+								<span class="dot"></span><span>就緒</span><span>poe</span> <span class="spacer"></span
+								><span>claude-opus-4</span>
+							</div>
+						</div>
+					</div>
+
+					<div class="notes">
+						<div class="note">
+							<h4>結構</h4>
+							<ul>
+								<li><code>.app { flex-direction: row }</code>：左列 58px + 右列內容（其中再分頂欄/主體）。</li>
+								<li>logo 在列首，啟用態豎條貼視窗左緣，方向感最強。</li>
+								<li>狀態列橫跨全寬，壓在最底部，形成「П」形框架。</li>
+							</ul>
+						</div>
+						<div class="note trade">
+							<h4>取捨</h4>
+							<p><span class="plus">＋</span> 貫通最徹底，豎線一條到底，無任何斷點。</p>
+							<p><span class="plus">＋</span> 品牌感和桌面應用感最強。</p>
+							<p><span class="minus">−</span> 要拆頂欄（現在頂欄是 <code>.app</code> 的直接子節點，全寬）。</p>
+							<p><span class="minus">−</span> 狀態列若也貫通，會把 rail 底部截斷，需明確誰壓誰。</p>
+						</div>
+						<div class="note">
+							<h4>可加項</h4>
+							<ul>
+								<li>列可自動隱現：hover 左邊緣 8px 感應區滑出（隱藏態 4px 細線）。</li>
+								<li>拖動列底可重排外掛圖示（已有 icon-editor 可複用）。</li>
+							</ul>
+						</div>
+					</div>
+				</section>
+
+				<!-- ================= 對照 ================= -->
+				<section id="compare">
+					<div class="sec-head">
+						<span class="sec-tag">↔ 對照</span>
+						<h2>四個方案橫向比</h2>
+					</div>
+					<p class="sec-sub">
+						「收益 / 成本」都按本倉庫實際改動量估：A 只動 <code>.side-dock*</code>，B 要加容器，C 改資訊層級，D 拆頂欄。
+					</p>
+					<table class="cmp">
+						<thead>
+							<tr>
+								<th>維度</th>
+								<th>A · 無形之欄</th>
+								<th>B · 一體雙欄</th>
+								<th>C · 寬欄</th>
+								<th>D · 框架式</th>
+							</tr>
+						</thead>
+						<tbody>
+							<tr class="hl">
+								<th>上下貫通程度</th>
+								<td class="yes">整列貫通（頂欄下方→狀態列）</td>
+								<td class="yes">貫通，含左右映象</td>
+								<td class="yes">貫通，含底部賬戶塊</td>
+								<td class="yes">完全貫通（吃左上角）</td>
+							</tr>
+							<tr>
+								<th>消「割裂」</th>
+								<td class="yes">強（欄本身消失）</td>
+								<td class="yes">最強（合一張卡）</td>
+								<td class="mid">中（多了文字重量）</td>
+								<td class="yes">強</td>
+							</tr>
+							<tr>
+								<th>橫向捲軸風險</th>
+								<td class="yes">無（無容器、無 overflow）</td>
+								<td class="yes">無（列表 overflow-x: clip）</td>
+								<td class="yes">無</td>
+								<td class="yes">無</td>
+							</tr>
+							<tr>
+								<th>純圖示可讀性</th>
+								<td class="mid">hover 標籤</td>
+								<td class="mid">tooltip</td>
+								<td class="yes">常駐文字</td>
+								<td class="mid">tooltip</td>
+							</tr>
+							<tr>
+								<th>橫向空間成本</th>
+								<td class="yes">56px</td>
+								<td class="mid">50 + 8×2</td>
+								<td class="no">204px</td>
+								<td class="mid">58px</td>
+							</tr>
+							<tr>
+								<th>改動量</th>
+								<td class="yes">小（CSS ~40 行）</td>
+								<td class="mid">中（容器 + resizer 遷移）</td>
+								<td class="no">大（導航資訊層級）</td>
+								<td class="no">大（拆頂欄）</td>
+							</tr>
+							<tr>
+								<th>外掛槽位相容</th>
+								<td class="yes">完全相容</td>
+								<td class="yes">完全相容</td>
+								<td class="mid">需新分組欄位</td>
+								<td class="yes">完全相容</td>
+							</tr>
+							<tr>
+								<th>與現有主題</th>
+								<td class="yes">只吃 token</td>
+								<td class="yes">多一個衍生色</td>
+								<td class="yes">沿用</td>
+								<td class="yes">沿用</td>
+							</tr>
+						</tbody>
+					</table>
+				</section>
+
+				<!-- ================= 規格 ================= -->
+				<section id="spec">
+					<div class="sec-head">
+						<span class="sec-tag">→ 落地</span>
+						<h2>不管選哪個，這 6 條必須一起改</h2>
+					</div>
+					<p class="sec-sub">否則換成哪個方案都會再冒出「割裂」和「捲軸」：</p>
+					<div class="spec-grid">
+						<div class="spec-card">
+							<h3>改動清單（按檔案）</h3>
+							<ul>
+								<li>
+									<code>web/src/styles.css</code> · <code>.side-dock</code>：<code>width</code> 改固定
+									<code>var(--rail-w)</code>；刪 <code>border / box-shadow / backdrop-filter</code>；
+									<code>height: 100%</code>，刪掉 <code>.side-dock-float</code> 的 <code>70vh + translateY</code>。
+								</li>
+								<li>
+									<code>.side-dock-seg</code>：<code>overflow-y: auto</code> 旁邊補
+									<code>overflow-x: clip</code>，並且<b>別</b>再把 tooltip 放這裡面。
+								</li>
+								<li>
+									<code>web/src/components/BarItem.tsx</code>（1132 行）：把 <code>data-tip</code> 的自繪偽元素換成統一
+									tooltip 層（單例 <code>position: fixed</code>，250ms 延遲，左右側自動翻轉）。
+								</li>
+								<li>
+									<code>web/src/components/SideDock.tsx</code>：根節點加 <code>--rail-w</code> 與
+									<code>data-side</code>；三槽保留，視覺分隔改為「空隙 + 可選 1px 線」；超出高度時收進
+									「更多」而不是滾動。
+								</li>
+								<li>
+									<code>web/src/App.tsx:334</code> 的 <code>PanelRail</code>（面板摺疊後的把手）：與 rail
+									同寬同色，別再單獨一個浮動圓角塊。
+								</li>
+								<li>
+									守衛：<code>tests/unit/bar-item-unified.test.ts</code> 里加一條靜態斷言「rail 內部不得出現
+									<code>overflow-x: auto</code>」。
+								</li>
+							</ul>
+						</div>
+						<div class="spec-card">
+							<h3>統一規格 token</h3>
+							<div class="tokens">
+								<div><span>列寬</span><b>--rail-w: 56px</b></div>
+								<div><span>按鈕</span><b>36 × 36</b></div>
+								<div><span>圓角</span><b>11px（頂欄按鈕 8px 同族）</b></div>
+								<div><span>圖示</span><b>19px / stroke 1.7</b></div>
+								<div><span>間距</span><b>3px；分組 6px + 1px 線</b></div>
+								<div><span>啟用</span><b>accent-soft + 3px 豎條 + accent-ink</b></div>
+								<div><span>命中區</span><b>≥ 36px（觸屏 44）</b></div>
+								<div><span>tooltip</span><b>fixed 單例 / 250ms / 左右翻轉</b></div>
+							</div>
+						</div>
+					</div>
+					<div class="final">
+						<p>
+							<b>我建議先落 A。</b>它只用改 <code>.side-dock*</code> 這一層，就能同時拿到「上下貫通 + 無捲軸 +
+							無兩層框」三個收益，而且天然相容現有三槽和外掛。等 A
+							上線跑一週，如果還覺得「圖示太輕、和麵板分得不夠開」， 再把 <code>.layout</code> 加一層容器升級到 B —— B
+							是 A 的結構超集，不會白做。
+						</p>
+					</div>
+					<div class="spec-card" style="margin-top: 14px">
+						<h3>落地記錄（已按 A 實現）</h3>
+						<ul>
+							<li>
+								<code>web/src/styles.css</code>：<code>.side-dock</code> 改成 56px 貫通列（同底色 + 1px
+								髮絲線，無外框/陰影/毛玻璃）； <code>.side-dock-seg</code> 補 <code>overflow-x: clip</code>；刪掉三處
+								<code>[data-tip]::after</code>； 新增 <code>.rail-tip</code>；<code
+									>.side-dock:not(:has(.bar-item))</code
+								>
+								空列不佔位； <code>@media (max-width: 768px)</code> 下 46px / 38px；面板摺疊把手的雙重位移已刪。
+							</li>
+							<li>
+								<code>web/src/components/SideDock.tsx</code>：tooltip 改為單例
+								<code>fixed</code> 浮層（<code>useOverlayZIndex</code>、 220ms 延遲、左右側自動翻轉）；桌面剔除原生
+								<code>title</code> 避免雙提示；觸屏關掉 hover 提示。
+							</li>
+							<li>
+								<code>server/client-state.ts</code>：<code>sideDockFloat</code> 預設改為
+								<code>false</code>（舊「浮動」現在也是全高膠囊， 不再是 70vh 浮標）。
+							</li>
+							<li>
+								<code>tests/unit/side-dock-rail.test.ts</code>：鎖死「固定列寬 + 兩軸顯式宣告 + 無偽元素 tooltip + 無
+								70vh + 手機規格」。
+							</li>
+						</ul>
+						<div class="code" style="margin-top: 10px">
+							實測（真實服務 1440×900）：dock 56×831（top 49 → bottom 880，貫通） seg scrollWidth 55 = clientWidth 55
+							<span class="ok">← 無橫向溢位</span> seg scrollHeight 154 = clientHeight 154
+							<span class="ok">← 無多餘滾動空間</span> documentElement.scrollWidth 1440 = clientWidth 1440 手機
+							390×844：dock 46×777，seg 45 = 45
+						</div>
+					</div>
+				</section>
+			</main>
+		</div>
+
+		<div class="tip" id="tip" role="tooltip"></div>
+
+		<script>
+			/* ---------- 主題 ---------- */
+			const root = document.documentElement;
+			const themeBtn = document.getElementById("themeBtn");
+			const themeLabel = document.getElementById("themeLabel");
+			themeBtn.addEventListener("click", () => {
+				const next = root.dataset.theme === "dark" ? "light" : "dark";
+				root.dataset.theme = next;
+				themeLabel.textContent = next === "dark" ? "切到淺色" : "切到深色";
+			});
+
+			/* ---------- 單例 tooltip（演示「tooltip 離開滾動容器」） ---------- */
+			const tip = document.getElementById("tip");
+			let tipTimer = 0;
+			function place(el) {
+				const txt = el.getAttribute("data-tip");
+				if (!txt) return;
+				tip.textContent = txt;
+				tip.classList.add("on");
+				tip.style.visibility = "hidden";
+				const r = el.getBoundingClientRect();
+				const tw = tip.offsetWidth;
+				const th = tip.offsetHeight;
+				const side = el.dataset.tipSide === "left" ? "left" : "right";
+				let x = side === "right" ? r.right + 8 : r.left - tw - 8;
+				let y = r.top + r.height / 2 - th / 2;
+				x = Math.min(Math.max(8, x), window.innerWidth - tw - 8);
+				y = Math.min(Math.max(8, y), window.innerHeight - th - 8);
+				tip.style.transform = "translate(" + x + "px," + y + "px)";
+				tip.style.visibility = "";
+			}
+			document.addEventListener("mouseover", (e) => {
+				const el = e.target.closest && e.target.closest("[data-tip]");
+				if (!el) return;
+				clearTimeout(tipTimer);
+				tipTimer = setTimeout(() => place(el), 260);
+			});
+			document.addEventListener("mouseout", (e) => {
+				const el = e.target.closest && e.target.closest("[data-tip]");
+				if (!el) return;
+				clearTimeout(tipTimer);
+				tip.classList.remove("on");
+			});
+			document.addEventListener("focusin", (e) => {
+				const el = e.target.closest && e.target.closest("[data-tip]");
+				if (el) place(el);
+			});
+			document.addEventListener("focusout", () => tip.classList.remove("on"));
+			window.addEventListener("scroll", () => tip.classList.remove("on"), { passive: true });
+
+			/* ---------- demo：rail 切啟用 ---------- */
+			document.querySelectorAll(".demo-rail").forEach((rail) => {
+				rail.addEventListener("click", (e) => {
+					const b = e.target.closest(".rb, .navitem");
+					if (!b || !rail.contains(b)) return;
+					rail.querySelectorAll(".rb, .navitem").forEach((x) => x.classList.remove("on"));
+					b.classList.add("on");
+				});
+			});
+			document.querySelectorAll(".demo-btns").forEach((nav) => {
+				nav.addEventListener("click", (e) => {
+					const b = e.target.closest("button");
+					if (!b) return;
+					nav.querySelectorAll("button").forEach((x) => x.classList.remove("on"));
+					b.classList.add("on");
+				});
+			});
+
+			/* ---------- 滾動高亮 ---------- */
+			const links = [...document.querySelectorAll(".snav a")];
+			const secs = links.map((a) => document.querySelector(a.getAttribute("href"))).filter(Boolean);
+			const io = new IntersectionObserver(
+				(entries) => {
+					entries.forEach((en) => {
+						if (!en.isIntersecting) return;
+						links.forEach((a) => a.classList.toggle("on", a.getAttribute("href") === "#" + en.target.id));
+					});
+				},
+				{ rootMargin: "-12% 0px -70% 0px" },
+			);
+			secs.forEach((s) => io.observe(s));
+		</script>
+	</body>
+</html>
+
+
+
+

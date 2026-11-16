@@ -1,3 +1,5 @@
+[English](./antigravity-proxy.en.md) · **简体中文** · [繁體中文](./antigravity-proxy.zh-TW.md)
+
 # Antigravity-Manager 反代接入
 
 [Antigravity-Manager](https://github.com/lbjlaq/Antigravity-Manager) 是本机 8045

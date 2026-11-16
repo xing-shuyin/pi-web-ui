@@ -1,0 +1,717 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Beyond Local Patches: 4 Higher-Level Sidebar Interaction Architectures</title>
+  <style>
+    :root {
+      --bg-page: #0a0b0e;
+      --bg-sidebar: #111218;
+      --bg-hover: rgba(255, 255, 255, 0.05);
+      --bg-active: rgba(255, 255, 255, 0.08);
+      --border: #1a1c26;
+      --border-light: rgba(255, 255, 255, 0.06);
+      --text: #e6e8f2;
+      --text-dim: #9098ac;
+      --text-faint: #52596d;
+      --accent: #8b5cf6;
+      --accent-soft: rgba(139, 92, 246, 0.14);
+      --green: #10b981;
+      --green-soft: rgba(16, 185, 129, 0.14);
+      --font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "PingFang SC", sans-serif;
+      --font-mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+      --radius-sm: 4px;
+      --radius-md: 6px;
+      --radius-lg: 10px;
+    }
+
+    [data-theme="light"] {
+      --bg-page: #f4f5f8;
+      --bg-sidebar: #ffffff;
+      --bg-hover: rgba(0, 0, 0, 0.04);
+      --bg-active: rgba(0, 0, 0, 0.07);
+      --border: #e2e5ec;
+      --border-light: rgba(0, 0, 0, 0.05);
+      --text: #191c24;
+      --text-dim: #5c6475;
+      --text-faint: #98a0b3;
+      --accent: #6d28d9;
+      --accent-soft: rgba(109, 40, 217, 0.08);
+      --green: #059669;
+      --green-soft: rgba(5, 150, 105, 0.1);
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      background: var(--bg-page);
+      color: var(--text);
+      font-family: var(--font-sans);
+      font-size: 13px;
+      line-height: 1.5;
+    }
+
+    header.nav-header {
+      background: var(--bg-sidebar);
+      border-bottom: 1px solid var(--border);
+      padding: 12px 28px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      position: sticky;
+      top: 0;
+      z-index: 100;
+    }
+    .nav-title {
+      font-size: 15px;
+      font-weight: 700;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+    .badge-super {
+      font-size: 10.5px;
+      font-weight: 600;
+      padding: 2px 8px;
+      border-radius: 99px;
+      background: var(--accent-soft);
+      color: var(--accent);
+    }
+    .solution-tabs {
+      display: flex;
+      gap: 6px;
+      background: var(--bg-page);
+      padding: 3px;
+      border-radius: var(--radius-md);
+      border: 1px solid var(--border);
+    }
+    .tab-btn {
+      padding: 6px 14px;
+      font-size: 12px;
+      font-weight: 600;
+      border: none;
+      background: transparent;
+      color: var(--text-dim);
+      border-radius: var(--radius-sm);
+      cursor: pointer;
+      transition: all 0.15s;
+    }
+    .tab-btn:hover { color: var(--text); }
+    .tab-btn.active {
+      background: var(--bg-sidebar);
+      color: var(--text);
+      box-shadow: 0 1px 3px rgba(0,0,0,0.15);
+    }
+    .theme-btn {
+      padding: 6px 12px;
+      border: 1px solid var(--border);
+      border-radius: var(--radius-md);
+      background: transparent;
+      color: var(--text);
+      cursor: pointer;
+      font-size: 12px;
+    }
+
+    .main-wrap {
+      max-width: 1400px;
+      margin: 24px auto;
+      padding: 0 24px;
+      display: grid;
+      grid-template-columns: 360px 1fr;
+      gap: 32px;
+      align-items: start;
+    }
+
+    .mock-frame {
+      background: var(--bg-sidebar);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      height: 720px;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+      box-shadow: 0 8px 24px rgba(0,0,0,0.18);
+      position: relative;
+    }
+
+    .panel-header {
+      height: 44px;
+      padding: 0 12px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      border-bottom: 1px solid var(--border-light);
+      flex-shrink: 0;
+    }
+    .tab-pills {
+      display: flex;
+      align-items: center;
+      gap: 4px;
+    }
+    .tab-pill {
+      display: flex;
+      align-items: center;
+      gap: 5px;
+      padding: 4px 9px;
+      font-size: 11.5px;
+      font-weight: 600;
+      border-radius: var(--radius-sm);
+      cursor: pointer;
+    }
+    .tab-pill.active {
+      background: var(--accent-soft);
+      color: var(--text);
+    }
+    .tab-pill:not(.active) { color: var(--text-dim); }
+
+    .tree-scroll-area {
+      flex: 1;
+      overflow-y: auto;
+      padding: 8px;
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+    }
+
+    /* 样式通用规则 */
+    .chat-item {
+      height: 28px;
+      display: flex;
+      align-items: center;
+      padding-left: 24px;
+      padding-right: 8px;
+      border-radius: 6px;
+      cursor: pointer;
+      position: relative;
+      font-size: 12.5px;
+      color: var(--text);
+      transition: background 0.1s;
+    }
+    .chat-item:hover { background: var(--bg-hover); }
+    .chat-item.active {
+      background: var(--bg-active);
+      font-weight: 600;
+    }
+    .chat-title {
+      flex: 1;
+      min-width: 0;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      margin-right: 6px;
+      line-height: 1;
+      padding-top: 1px;
+    }
+    .meta-right {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      margin-left: auto;
+      flex-shrink: 0;
+    }
+    .time-text {
+      font-size: 11px;
+      color: var(--text-faint);
+      font-variant-numeric: tabular-nums;
+      text-align: right;
+    }
+    .badge-pill {
+      font-size: 10px;
+      font-weight: 600;
+      padding: 1px 5px;
+      border-radius: 3px;
+    }
+    .badge-pill.wechat { background: var(--green-soft); color: var(--green); }
+    .badge-pill.running { background: var(--green-soft); color: var(--green); border-radius: 99px; display: inline-flex; align-items: center; gap: 4px; padding: 1px 6px; }
+    .spinner-dot {
+      width: 5px;
+      height: 5px;
+      border-radius: 50%;
+      background: var(--green);
+      animation: pulse 1.6s infinite ease-in-out;
+    }
+    @keyframes pulse { 0%,100%{opacity:1;} 50%{opacity:0.35;} }
+
+    /* 方案 1: 手风琴单开聚焦 */
+    .sol-1 .proj-row {
+      height: 28px;
+      display: flex;
+      align-items: center;
+      padding: 0 8px 0 4px;
+      border-radius: 6px;
+      cursor: pointer;
+      user-select: none;
+      font-weight: 700;
+      font-size: 13px;
+    }
+    .sol-1 .proj-row:hover { background: var(--bg-hover); }
+    .sol-1 .proj-row.current-active {
+      color: var(--text);
+    }
+    .sol-1 .proj-chevron {
+      width: 16px;
+      height: 16px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      color: var(--text-faint);
+      margin-right: 4px;
+    }
+    .sol-1 .proj-chevron.collapsed { transform: rotate(-90deg); }
+
+    /* 方案 2: Cursor 式顶栏工作区胶囊快切 */
+    .sol-2 .workspace-capsule {
+      margin: 8px 10px 4px 10px;
+      padding: 7px 10px;
+      background: var(--bg-hover);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      cursor: pointer;
+      user-select: none;
+      transition: all 0.15s;
+    }
+    .sol-2 .workspace-capsule:hover {
+      background: var(--bg-active);
+      border-color: var(--accent);
+    }
+    .sol-2 .chat-item {
+      padding-left: 10px; /* 无树状缩进，纯平直展！横向空间极其宽广 */
+    }
+
+    /* 方案 3: 双轨微双栏（Slack / Discord 工作区列） */
+    .sol-3 .dual-rail-wrap {
+      display: flex;
+      height: 100%;
+    }
+    .sol-3 .left-rail {
+      width: 44px;
+      background: rgba(0,0,0,0.15);
+      border-right: 1px solid var(--border);
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      padding: 10px 0;
+      gap: 10px;
+    }
+    .sol-3 .rail-item {
+      width: 32px;
+      height: 32px;
+      border-radius: 8px;
+      background: var(--bg-hover);
+      color: var(--text-dim);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-weight: 700;
+      font-size: 12px;
+      cursor: pointer;
+      position: relative;
+      transition: all 0.15s;
+    }
+    .sol-3 .rail-item:hover {
+      background: var(--bg-active);
+      color: var(--text);
+    }
+    .sol-3 .rail-item.active {
+      background: var(--accent);
+      color: #fff;
+    }
+    .sol-3 .rail-item.has-running::after {
+      content: "";
+      position: absolute;
+      top: -2px;
+      right: -2px;
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: var(--green);
+      box-shadow: 0 0 6px var(--green);
+    }
+    .sol-3 .right-stream {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      overflow-y: auto;
+      padding: 8px;
+    }
+    .sol-3 .chat-item {
+      padding-left: 10px;
+    }
+
+    /* 方案 4: 全局时间线 + 项目来源徽标（统一信息流） */
+    .sol-4 .timeline-group-title {
+      font-size: 11px;
+      font-weight: 700;
+      color: var(--text-faint);
+      padding: 8px 10px 4px 10px;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+    .sol-4 .chat-item {
+      padding-left: 10px;
+    }
+    .sol-4 .proj-tag {
+      font-size: 10px;
+      padding: 1px 5px;
+      border-radius: 3px;
+      background: rgba(255, 255, 255, 0.08);
+      color: var(--text-dim);
+    }
+
+    .doc-col {
+      display: flex;
+      flex-direction: column;
+      gap: 20px;
+    }
+    .card {
+      background: var(--bg-sidebar);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 24px;
+    }
+    .card h2 {
+      font-size: 15px;
+      font-weight: 700;
+      margin-bottom: 12px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .card p {
+      font-size: 13px;
+      color: var(--text-dim);
+      line-height: 1.65;
+      margin-bottom: 16px;
+    }
+    .adv-list {
+      list-style: none;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+    .adv-item {
+      display: flex;
+      gap: 10px;
+      font-size: 12.5px;
+      line-height: 1.5;
+    }
+    .adv-icon {
+      color: var(--accent);
+      font-weight: bold;
+    }
+  </style>
+</head>
+<body>
+<div data-docs-i18n-switch style="position:fixed;top:8px;right:12px;z-index:2147483647;font:12px/1.6 -apple-system,system-ui,sans-serif;background:rgba(15,17,22,.78);color:#fff;padding:4px 12px;border-radius:999px;box-shadow:0 2px 10px rgba(0,0,0,.35)"><a href="./ultimate-architecture-comparison.html" style="color:#fff;text-decoration:none">简体中文</a> · <strong>English</strong> · <a href="./ultimate-architecture-comparison.zh-TW.html" style="color:#fff;text-decoration:none">繁體中文</a></div>
+
+
+
+  <header class="nav-header">
+    <div class="nav-title">
+      <span>The interaction-architecture panorama, one level up</span>
+      <span class="badge-super">Architecture-level comparison</span>
+    </div>
+    <div class="solution-tabs">
+      <button class="tab-btn active" onclick="switchSol(1)">Shape 1: Smart accordion (one project open · many projects, no long scroll)</button>
+      <button class="tab-btn" onclick="switchSol(2)">Shape 2: Cursor-style top-bar workspace pill switcher</button>
+      <button class="tab-btn" onclick="switchSol(3)">Shape 3: Dual-rail ultra-narrow micro-columns (Slack flow)</button>
+      <button class="tab-btn" onclick="switchSol(4)">Shape 4: Global timeline stream (with project badges)</button>
+    </div>
+    <button class="theme-btn" onclick="toggleTheme()">🌓 Toggle light/dark theme</button>
+  </header>
+
+  <main class="main-wrap">
+    
+    <!-- Simulated sidebar container -->
+    <div class="mock-frame" id="mockContainer"></div>
+
+    <!-- Right-hand analysis -->
+    <div class="doc-col">
+      <div class="card">
+        <h2 id="cardTitle">Shape 1: Smart accordion (one project open · many projects, no long scroll)</h2>
+        <p id="cardDesc"></p>
+        <ul class="adv-list" id="cardList"></ul>
+      </div>
+
+      <div class="card">
+        <h2>💡 Architectural reflection: why does one deep nested tree feel "not quite there"?</h2>
+        <div class="adv-item">
+          <span class="adv-icon">1</span>
+          <div>
+            <strong>Space explosion</strong>: with 25 projects, opening two or three at once makes the sidebar scrollbar a hair-thin sliver — every lookup is a hunt through thousands of pixels;
+          </div>
+        </div>
+        <div class="adv-item" style="margin-top: 10px;">
+          <span class="adv-icon">2</span>
+          <div>
+            <strong>Horizontal width tax</strong>: nesting always costs left padding and guide lines, so titles are the first thing to get truncated on small screens or in a narrow sidebar;
+          </div>
+        </div>
+        <div class="adv-item" style="margin-top: 10px;">
+          <span class="adv-icon">3</span>
+          <div>
+            <strong>The mental-focus argument</strong>: at any given moment nearly every developer is deep in exactly one project (the current workspace). Shape 1 and shape 2 obey that law and push the noise to a minimum.
+          </div>
+        </div>
+      </div>
+    </div>
+
+  </main>
+
+  <script>
+    let currentSol = 1;
+    let activeId = 'c1';
+    let currentProjId = 'p1';
+
+    const mockProjects = [
+      {
+        id: 'p1',
+        name: 'pi-web-ui',
+        shortName: 'PW',
+        runningCount: 1,
+        convs: [
+          { id: 'c1', title: 'Hello', running: false, time: '16:11' },
+          { id: 'c1-sub', title: 'This is a retest run for a retained conversation. Please check the project', isSub: true, running: false, time: '16:12' },
+          { id: 'c2', title: 'Add a terminal run button to code blocks', running: true, time: '16:22' },
+          { id: 'c3', title: 'Merge running and history into one conversation tab in the left project list', running: true, time: '16:21' },
+          { id: 'c4', title: 'Every chat platform throws this error', category: 'wechat', label: 'WeChat', running: false, time: '14:56' },
+          { id: 'c5', title: '@plugins/lx-music double-click playback logic refactor', running: false, time: '11:09' }
+        ],
+        more: 42
+      },
+      {
+        id: 'p2',
+        name: 'ai-browser',
+        shortName: 'AB',
+        runningCount: 0,
+        convs: [
+          { id: 'c6', title: 'Clean up unused files', running: false, time: '12:08' },
+          { id: 'c7', title: 'Playwright proxy-pool config and session persistence', category: 'wechat', label: 'WeChat', running: false, time: 'Yesterday' }
+        ]
+      },
+      {
+        id: 'p3',
+        name: 'yth-operation',
+        shortName: 'YO',
+        runningCount: 0,
+        convs: [
+          { id: 'c8', title: 'Fix false failure states on Kafka and Canvas', running: false, time: '3 days ago' }
+        ]
+      },
+      {
+        id: 'p4',
+        name: 'stay-alive',
+        shortName: 'SA',
+        runningCount: 0,
+        convs: [
+          { id: 'c9', title: 'Background daemon heartbeat probing', running: false, time: '10/9' }
+        ]
+      }
+    ];
+
+    const docs = {
+      1: {
+        title: 'Shape 1: Smart accordion (one project open · 25+ projects never a long scroll)',
+        desc: '<strong>The most restrained answer to multi-project long scrolling</strong>: only the currently active project is ever expanded! When you expand <code>ai-browser</code>, the history of <code>pi-web-ui</code> automatically folds down to a single row (but running tasks still stay pinned outside it). The sidebar scrollbar always stays within one screen!',
+        list: [
+          'Height never overflows: with 25 projects or 100, the sidebar stays light — no frantic scrolling to hunt for a project.',
+          'Running work stays visible: even when a project is collapsed, any agent still running in it stays steadily on display.',
+          'Maximum mental focus: your eyes stay 100% on the current workspace, distractions gone.'
+        ]
+      },
+      2: {
+        title: 'Shape 2: Cursor-style top-bar workspace pill switcher (maximum flat flow)',
+        desc: '<strong>Cut the folder tree out entirely!</strong><br>Turn the project into a workspace pill in the top bar <code>[ 📁 pi-web-ui ▾ ]</code>, so the whole left sidebar becomes the flat conversation flow of the current project. No tree indentation, no multi-level triangles — conversation titles get maximum horizontal width!',
+        list: [
+          'No tree-indentation tax: titles no longer waste 24px on indentation, so text width is maximized.',
+          'As smooth as a native chat app: like ChatGPT / Cursor / Claude — extremely crisp.',
+          'Instant workspace switching: click the top pill for a quick-switch panel of the 25 most recent projects.'
+        ]
+      },
+      3: {
+        title: 'Shape 3: Dual-rail ultra-narrow micro-columns (Slack / Discord workspace flow)',
+        desc: '<strong>Physical hierarchy decoupled!</strong><br>A single 44px ultra-narrow rail on the far left holds nothing but project badges (such as <code>PW</code>, <code>AB</code>), while the right side directly shows the flat conversation list of that project. Click a left-hand icon to switch projects instantly!',
+        list: [
+          'Left rail switches repos, right rail shows conversations: two dimensions fully separated, never interfering with each other.',
+          'Status halo awareness: when a background project has tasks running, its mini badge on the left lights up a breathing green dot.',
+          'Zero collapse interaction cost: no expand/collapse arrows to click.'
+        ]
+      },
+      4: {
+        title: 'Shape 4: Global timeline stream (with project badges)',
+        desc: '<strong>Break the project walls — sort naturally by activity time!</strong><br>All conversations line up in one flat stream ordered by today, yesterday and last week, each with a very faint project-name badge on the right (such as <code>pi-web-ui</code>).',
+        list: [
+          'Cross-project panorama: see at a glance what you did today across every project.',
+          'Ideal for task-driven work: the core mental model is “which tasks did I do today”.'
+        ]
+      }
+    };
+
+    function switchSol(num) {
+      currentSol = num;
+      document.querySelectorAll('.tab-btn').forEach((b, i) => b.classList.toggle('active', i + 1 === num));
+      const doc = docs[num];
+      document.getElementById('cardTitle').innerHTML = doc.title;
+      document.getElementById('cardDesc').innerHTML = doc.desc;
+      document.getElementById('cardList').innerHTML = doc.list.map(item => `
+        <li class="adv-item">
+          <span class="adv-icon">✓</span>
+          <span>${item}</span>
+        </li>
+      `).join('');
+
+      render();
+    }
+
+    function render() {
+      const container = document.getElementById('mockContainer');
+      container.innerHTML = '';
+
+      if (currentSol === 1) {
+        // Shape 1: accordion
+        container.innerHTML = `
+          <div class="panel-header">
+            <div class="tab-pills">
+              <div class="tab-pill active">📁 Projects (25)</div>
+              <div class="tab-pill">👥 Groups</div>
+            </div>
+            <button style="border:none;background:transparent;color:var(--text-dim);cursor:pointer;">+</button>
+          </div>
+          <div class="tree-scroll-area sol-1">
+            ${mockProjects.map(p => {
+              const isCurrent = p.id === currentProjId;
+              const runningConvs = p.convs.filter(c => c.running);
+              const idleConvs = p.convs.filter(c => !c.running);
+              return `
+                <div class="tree-project-group">
+                  <div class="proj-row ${isCurrent ? 'current-active' : ''}" onclick="currentProjId='${p.id}'; render();">
+                    <span class="proj-chevron ${!isCurrent ? 'collapsed' : ''}">▼</span>
+                    <span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${p.name}</span>
+                    ${p.runningCount > 0 ? `<span class="badge-pill running"><span class="spinner-dot"></span> ${p.runningCount}</span>` : ''}
+                  </div>
+                  <div class="proj-children">
+                    ${(isCurrent ? p.convs : runningConvs).map(c => `
+                      <div class="chat-item ${c.id === activeId ? 'active' : ''}" onclick="activeId='${c.id}'; render();" style="${c.isSub ? 'padding-left: 24px;' : ''}">
+                        <span class="chat-title">${c.title}</span>
+                        <span class="meta-right">
+                          ${c.running ? `<span class="spinner-dot"></span>` : ''}
+                          ${c.label ? `<span class="badge-pill wechat">${c.label}</span>` : ''}
+                          <span class="time-text">${c.time}</span>
+                        </span>
+                      </div>
+                    `).join('')}
+                    ${!isCurrent && idleConvs.length > 0 ? `
+                      <div style="padding: 4px 8px 4px 24px; font-size: 11px; color: var(--text-faint); cursor: pointer;" onclick="currentProjId='${p.id}'; render();">
+                        + ${idleConvs.length} more in history ›
+                      </div>
+                    ` : ''}
+                  </div>
+                </div>
+              `;
+            }).join('')}
+          </div>
+        `;
+      } else if (currentSol === 2) {
+        // Shape 2: Cursor-style top-bar pill
+        const curProj = mockProjects.find(p => p.id === currentProjId) || mockProjects[0];
+        container.innerHTML = `
+          <div class="sol-2" style="display:flex; flex-direction:column; height:100%;">
+            <div class="workspace-capsule" onclick="alert('Opens a quick-switch panel for 25 projects (supports pinyin and keyword search)')">
+              <span style="font-size:13px;">📁</span>
+              <strong style="flex:1; font-size:13px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">${curProj.name}</strong>
+              <span style="font-size:10.5px; color:var(--text-faint);">▼ Switch</span>
+            </div>
+            <div style="flex:1; overflow-y:auto; padding:8px;">
+              ${curProj.convs.map(c => `
+                <div class="chat-item ${c.id === activeId ? 'active' : ''}" onclick="activeId='${c.id}'; render();">
+                  <span class="chat-title">${c.title}</span>
+                  <span class="meta-right">
+                    ${c.running ? `<span class="spinner-dot"></span>` : ''}
+                    ${c.label ? `<span class="badge-pill wechat">${c.label}</span>` : ''}
+                    <span class="time-text">${c.time}</span>
+                  </span>
+                </div>
+              `).join('')}
+            </div>
+          </div>
+        `;
+      } else if (currentSol === 3) {
+        // Shape 3: dual-rail ultra-narrow micro-columns
+        const curProj = mockProjects.find(p => p.id === currentProjId) || mockProjects[0];
+        container.innerHTML = `
+          <div class="sol-3" style="height:100%;">
+            <div class="dual-rail-wrap">
+              <div class="left-rail">
+                ${mockProjects.map(p => `
+                  <div class="rail-item ${p.id === currentProjId ? 'active' : ''} ${p.runningCount > 0 ? 'has-running' : ''}" title="${p.name}" onclick="currentProjId='${p.id}'; render();">
+                    ${p.shortName}
+                  </div>
+                `).join('')}
+              </div>
+              <div class="right-stream">
+                <div style="font-size:13px; font-weight:700; padding:6px 10px; border-bottom:1px solid var(--border-light); margin-bottom:6px;">
+                  ${curProj.name}
+                </div>
+                ${curProj.convs.map(c => `
+                  <div class="chat-item ${c.id === activeId ? 'active' : ''}" onclick="activeId='${c.id}'; render();">
+                    <span class="chat-title">${c.title}</span>
+                    <span class="meta-right">
+                      ${c.running ? `<span class="spinner-dot"></span>` : ''}
+                      <span class="time-text">${c.time}</span>
+                    </span>
+                  </div>
+                `).join('')}
+              </div>
+            </div>
+          </div>
+        `;
+      } else if (currentSol === 4) {
+        // Shape 4: global timeline
+        const allConvs = mockProjects.flatMap(p => p.convs.map(c => ({ ...c, projName: p.name })));
+        container.innerHTML = `
+          <div class="sol-4" style="height:100%; display:flex; flex-direction:column;">
+            <div class="panel-header">
+              <div class="tab-pills"><div class="tab-pill active">🕒 Global conversation timeline</div></div>
+            </div>
+            <div style="flex:1; overflow-y:auto; padding:8px;">
+              <div class="timeline-group-title">Today</div>
+              ${allConvs.slice(0, 5).map(c => `
+                <div class="chat-item ${c.id === activeId ? 'active' : ''}" onclick="activeId='${c.id}'; render();">
+                  <span class="chat-title">${c.title}</span>
+                  <span class="meta-right">
+                    <span class="proj-tag">${c.projName}</span>
+                    ${c.running ? `<span class="spinner-dot"></span>` : ''}
+                    <span class="time-text">${c.time}</span>
+                  </span>
+                </div>
+              `).join('')}
+              <div class="timeline-group-title">Earlier</div>
+              ${allConvs.slice(5).map(c => `
+                <div class="chat-item ${c.id === activeId ? 'active' : ''}" onclick="activeId='${c.id}'; render();">
+                  <span class="chat-title">${c.title}</span>
+                  <span class="meta-right">
+                    <span class="proj-tag">${c.projName}</span>
+                    <span class="time-text">${c.time}</span>
+                  </span>
+                </div>
+              `).join('')}
+            </div>
+          </div>
+        `;
+      }
+    }
+
+    function toggleTheme() {
+      const cur = document.documentElement.getAttribute('data-theme');
+      document.documentElement.setAttribute('data-theme', cur === 'light' ? 'dark' : 'light');
+    }
+
+    render();
+  </script>
+</body>
+</html>
+
+

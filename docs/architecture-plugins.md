@@ -1,3 +1,5 @@
+[English](./architecture-plugins.en.md) · **简体中文** · [繁體中文](./architecture-plugins.zh-TW.md)
+
 # 插件系统
 
 语音引擎只向服务端 `host.tts.registerEngine()` 注册，系统播报、QQ 与其他工具统一通过 `host.tts` 调用。浏览器 `ttsProviders` 仅保留中心目录的只读入口，详见 [`architecture-tts.md`](architecture-tts.md)。

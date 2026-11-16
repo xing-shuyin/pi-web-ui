@@ -1,3 +1,5 @@
+[English](./README.en.md) · **简体中文** · [繁體中文](./README.zh-TW.md)
+
 # Windows Electron 便携版启动说明
 
 本目录提供 Windows Electron 便携包使用的 `.bat` 启动与快捷方式脚本。下载 `pi-web-ui-desktop-<版本>-portable.zip` 后，完整解压即可使用；单独下载此目录没有应用程序，不能启动 pi-web-ui。

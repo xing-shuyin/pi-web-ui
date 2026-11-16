@@ -1,0 +1,851 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Projects ↔ conversations merge prototype · Smart collapse (running stays, history folds)</title>
+  <style>
+    :root {
+      /* 深色主题 */
+      --bg-page: #0c0d12;
+      --bg-sidebar: #13151c;
+      --bg-dock: #0e1017;
+      --bg-hover: #1c1e28;
+      --bg-active: #222634;
+      --bg-card: #181a22;
+      --border: #242735;
+      --border-light: #1c1f2b;
+      --text: #e2e4ed;
+      --text-muted: #8b92a4;
+      --text-faint: #596075;
+      --accent: #8b5cf6;
+      --accent-soft: rgba(139, 92, 246, 0.14);
+      --accent-border: rgba(139, 92, 246, 0.4);
+      --running-green: #10b981;
+      --running-green-soft: rgba(16, 185, 129, 0.15);
+      --running-green-border: rgba(16, 185, 129, 0.35);
+      --amber: #f59e0b;
+      --font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "PingFang SC", "Microsoft YaHei", sans-serif;
+      --radius-sm: 5px;
+      --radius-md: 8px;
+    }
+
+    [data-theme="light"] {
+      --bg-page: #f4f5f8;
+      --bg-sidebar: #ffffff;
+      --bg-dock: #edeff4;
+      --bg-hover: #f1f3f7;
+      --bg-active: #e5e9f4;
+      --bg-card: #ffffff;
+      --border: #e2e5ec;
+      --border-light: #edf0f6;
+      --text: #1a1d24;
+      --text-muted: #646b7a;
+      --text-faint: #98a0b2;
+      --accent: #6d28d9;
+      --accent-soft: rgba(109, 40, 217, 0.08);
+      --accent-border: rgba(109, 40, 217, 0.3);
+      --running-green: #059669;
+      --running-green-soft: rgba(5, 150, 105, 0.1);
+      --running-green-border: rgba(5, 150, 105, 0.25);
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      background: var(--bg-page);
+      color: var(--text);
+      font-family: var(--font-sans);
+      font-size: 13px;
+      line-height: 1.5;
+    }
+
+    /* 顶部导航 */
+    header.top-nav {
+      background: var(--bg-sidebar);
+      border-bottom: 1px solid var(--border);
+      padding: 12px 24px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+    .top-title {
+      font-size: 15px;
+      font-weight: 700;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+    .badge-highlight {
+      font-size: 11px;
+      font-weight: 600;
+      padding: 2px 9px;
+      border-radius: 99px;
+      background: var(--running-green-soft);
+      color: var(--running-green);
+      border: 1px solid var(--running-green-border);
+    }
+
+    .main-layout {
+      max-width: 1400px;
+      margin: 20px auto;
+      padding: 0 20px;
+      display: grid;
+      grid-template-columns: 370px 1fr;
+      gap: 28px;
+      align-items: start;
+    }
+
+    /* 模拟侧边栏壳体 */
+    .mock-shell {
+      background: var(--bg-sidebar);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      height: 740px;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+      box-shadow: 0 8px 24px rgba(0, 0, 0, 0.2);
+    }
+
+    .lp-container {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+
+    /* 分区 Header */
+    .lp-section-header {
+      height: 44px;
+      padding: 0 12px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      border-bottom: 1px solid var(--border-light);
+      user-select: none;
+      flex-shrink: 0;
+    }
+    .lp-tabs {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+    }
+    .lp-tab-pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+      padding: 4px 10px;
+      font-size: 11.5px;
+      font-weight: 600;
+      border-radius: var(--radius-sm);
+      cursor: pointer;
+      border: 1px solid transparent;
+      transition: all 0.15s;
+    }
+    .lp-tab-pill.active {
+      background: var(--accent-soft);
+      border-color: var(--accent-border);
+      color: var(--text);
+    }
+    .lp-tab-pill:not(.active) {
+      color: var(--text-muted);
+    }
+    .lp-tab-pill:not(.active):hover {
+      background: var(--bg-hover);
+      color: var(--text);
+    }
+
+    .lp-head-actions {
+      display: flex;
+      align-items: center;
+      gap: 4px;
+    }
+    .lp-btn-icon {
+      width: 26px;
+      height: 26px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      border: 1px solid transparent;
+      border-radius: var(--radius-sm);
+      background: transparent;
+      color: var(--text-muted);
+      cursor: pointer;
+      font-size: 13px;
+    }
+    .lp-btn-icon:hover {
+      background: var(--bg-hover);
+      color: var(--text);
+      border-color: var(--border);
+    }
+
+    /* 滚动主体 */
+    .lp-tree-scroll {
+      flex: 1;
+      overflow-y: auto;
+      padding: 8px 8px 14px 8px;
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+
+    /* 项目分组 */
+    .proj-block {
+      display: flex;
+      flex-direction: column;
+      border-radius: var(--radius-md);
+      transition: all 0.2s;
+    }
+    .proj-block.has-running {
+      background: rgba(16, 185, 129, 0.03);
+      border: 1px solid rgba(16, 185, 129, 0.2);
+      padding: 2px 2px 4px 2px;
+    }
+
+    /* 项目标题行 */
+    .proj-head {
+      display: flex;
+      align-items: center;
+      padding: 6px 8px;
+      border-radius: var(--radius-sm);
+      cursor: pointer;
+      user-select: none;
+      gap: 6px;
+      position: relative;
+    }
+    .proj-head:hover {
+      background: var(--bg-hover);
+    }
+    .proj-chevron {
+      font-size: 10px;
+      color: var(--text-muted);
+      width: 14px;
+      text-align: center;
+      transition: transform 0.2s ease;
+    }
+    .proj-chevron.collapsed {
+      transform: rotate(-90deg);
+    }
+    .proj-name {
+      font-size: 13px;
+      font-weight: 700;
+      color: var(--text);
+      flex: 1;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    /* 运行中徽标 */
+    .badge-running {
+      font-size: 10px;
+      font-weight: 600;
+      padding: 1px 6px;
+      border-radius: 99px;
+      background: var(--running-green-soft);
+      color: var(--running-green);
+      display: flex;
+      align-items: center;
+      gap: 4px;
+      white-space: nowrap;
+    }
+    .pulse-dot {
+      width: 6px;
+      height: 6px;
+      border-radius: 50%;
+      background: var(--running-green);
+      animation: pulse 1.6s infinite ease-in-out;
+    }
+    @keyframes pulse {
+      0%, 100% { opacity: 1; transform: scale(1); }
+      50% { opacity: 0.3; transform: scale(0.85); }
+    }
+
+    .proj-quick-add {
+      display: none;
+      font-size: 14px;
+      color: var(--text-muted);
+      padding: 0 4px;
+    }
+    .proj-head:hover .proj-quick-add {
+      display: block;
+    }
+
+    /* 对话项列表 */
+    .conv-items-wrap {
+      display: flex;
+      flex-direction: column;
+      gap: 1px;
+      margin-top: 1px;
+    }
+    .conv-row {
+      display: flex;
+      align-items: center;
+      padding: 7px 8px 7px 22px;
+      border-radius: var(--radius-sm);
+      cursor: pointer;
+      font-size: 12.5px;
+      color: var(--text);
+      position: relative;
+      transition: background 0.12s;
+    }
+    .conv-row:hover {
+      background: var(--bg-hover);
+    }
+    .conv-row.active {
+      background: var(--bg-active);
+      font-weight: 600;
+    }
+    .conv-row.active::before {
+      content: "";
+      position: absolute;
+      left: 6px;
+      top: 6px;
+      bottom: 6px;
+      width: 3px;
+      background: var(--accent);
+      border-radius: 2px;
+    }
+
+    .conv-spinner {
+      width: 11px;
+      height: 11px;
+      border: 2px solid var(--accent);
+      border-top-color: transparent;
+      border-radius: 50%;
+      animation: spin 0.8s linear infinite;
+      margin-right: 6px;
+      flex-shrink: 0;
+    }
+    @keyframes spin {
+      100% { transform: rotate(360deg); }
+    }
+
+    .conv-title {
+      flex: 1;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      margin-right: 6px;
+    }
+    .conv-time {
+      font-size: 11px;
+      color: var(--text-faint);
+      white-space: nowrap;
+    }
+    .conv-menu-btn {
+      display: none;
+      font-size: 12px;
+      color: var(--text-muted);
+      margin-left: 4px;
+    }
+    .conv-row:hover .conv-menu-btn {
+      display: block;
+    }
+
+    /* 智能折叠提示条（折叠时显示：历史已收起，运行仍保留） */
+    .collapsed-history-hint {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 4px 10px 4px 22px;
+      font-size: 11px;
+      color: var(--text-faint);
+      cursor: pointer;
+      border-radius: var(--radius-sm);
+      margin-top: 2px;
+    }
+    .collapsed-history-hint:hover {
+      color: var(--accent);
+      background: var(--bg-hover);
+    }
+
+    /* 按需加载 Loading 状态条目 */
+    .lazy-loading-row {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 6px 10px 6px 22px;
+      font-size: 12px;
+      color: var(--text-faint);
+    }
+
+    /* 截断加载更多 */
+    .show-more-row {
+      padding: 6px 10px 6px 22px;
+      font-size: 12px;
+      color: var(--text-muted);
+      cursor: pointer;
+      border-radius: var(--radius-sm);
+      user-select: none;
+    }
+    .show-more-row:hover {
+      color: var(--accent);
+      background: var(--bg-hover);
+    }
+
+    /* 底部保留：插件自定义折叠分区 */
+    .plugin-section-box {
+      border-top: 1px solid var(--border);
+      flex-shrink: 0;
+    }
+    .plugin-section-head {
+      height: 38px;
+      padding: 0 12px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      cursor: pointer;
+      user-select: none;
+      font-size: 12px;
+      font-weight: 600;
+      color: var(--text-muted);
+      background: var(--bg-card);
+    }
+    .plugin-section-head:hover {
+      color: var(--text);
+    }
+    .plugin-section-body {
+      padding: 10px 12px;
+      font-size: 12px;
+      color: var(--text-faint);
+      background: var(--bg-sidebar);
+      border-top: 1px dashed var(--border-light);
+    }
+
+    /* 右侧控制与说明栏 */
+    .right-doc {
+      display: flex;
+      flex-direction: column;
+      gap: 18px;
+    }
+    .card {
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 20px 24px;
+    }
+    .card h2 {
+      font-size: 15px;
+      font-weight: 700;
+      margin-bottom: 12px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .card p {
+      font-size: 13px;
+      color: var(--text-muted);
+      line-height: 1.6;
+      margin-bottom: 14px;
+    }
+
+    .demo-bar {
+      display: flex;
+      gap: 10px;
+      margin-bottom: 14px;
+      padding: 12px;
+      background: var(--bg-page);
+      border-radius: var(--radius-md);
+      border: 1px solid var(--border);
+      align-items: center;
+    }
+    .demo-btn {
+      padding: 6px 12px;
+      border-radius: var(--radius-sm);
+      border: 1px solid var(--border);
+      background: var(--bg-sidebar);
+      color: var(--text);
+      cursor: pointer;
+      font-size: 12px;
+      font-weight: 600;
+    }
+    .demo-btn:hover {
+      background: var(--bg-hover);
+      border-color: var(--accent);
+    }
+
+    .rule-box {
+      background: var(--bg-page);
+      border-left: 3px solid var(--running-green);
+      padding: 10px 14px;
+      border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
+      margin-bottom: 10px;
+    }
+    .rule-box strong {
+      display: block;
+      color: var(--text);
+      font-size: 13px;
+      margin-bottom: 3px;
+    }
+    .rule-box span {
+      font-size: 12px;
+      color: var(--text-muted);
+      line-height: 1.5;
+      display: block;
+    }
+
+    .interactive-toast {
+      position: fixed;
+      bottom: 24px;
+      right: 24px;
+      background: var(--text);
+      color: var(--bg-page);
+      padding: 10px 18px;
+      border-radius: var(--radius-md);
+      font-size: 12.5px;
+      font-weight: 600;
+      box-shadow: 0 6px 20px rgba(0,0,0,0.3);
+      display: none;
+      z-index: 1000;
+    }
+  </style>
+</head>
+<body>
+<div data-docs-i18n-switch style="position:fixed;top:8px;right:12px;z-index:2147483647;font:12px/1.6 -apple-system,system-ui,sans-serif;background:rgba(15,17,22,.78);color:#fff;padding:4px 12px;border-radius:999px;box-shadow:0 2px 10px rgba(0,0,0,.35)"><a href="./project-conversations-merge-proposals.html" style="color:#fff;text-decoration:none">简体中文</a> · <strong>English</strong> · <a href="./project-conversations-merge-proposals.zh-TW.html" style="color:#fff;text-decoration:none">繁體中文</a></div>
+
+
+
+  <header class="top-nav">
+    <div class="top-title">
+      <span>"Smart half-collapse" interactive prototype</span>
+      <span class="badge-highlight">💡 Collapsing tucks history away only; anything running always hangs outside it</span>
+    </div>
+    <div>
+      <button class="lp-tab-pill" onclick="toggleTheme()" style="background: var(--bg-hover);">
+        🌓 Toggle light/dark theme
+      </button>
+    </div>
+  </header>
+
+  <div class="main-layout">
+    
+    <!-- Mock left sidebar -->
+    <div class="mock-shell">
+      <div class="lp-container">
+        
+        <!-- Header -->
+        <div class="lp-section-header">
+          <div class="lp-tabs">
+            <div class="lp-tab-pill active" id="tabProjects">
+              <span>📁</span>
+              <span>Projects</span>
+              <span style="opacity: 0.8; font-size: 10.5px;">(25)</span>
+            </div>
+            <div class="lp-tab-pill" id="tabGroups">
+              <span>👥</span>
+              <span>Groups</span>
+            </div>
+          </div>
+          <div class="lp-head-actions">
+            <button class="lp-btn-icon" title="New project or conversation" onclick="showToast('Click + at the top to create one')">+</button>
+            <button class="lp-btn-icon" title="Collapse the whole column">‹</button>
+          </div>
+        </div>
+
+        <!-- Aggregated tree scroll area -->
+        <div class="lp-tree-scroll" id="treeListArea"></div>
+
+        <!-- Preserved plugin section -->
+        <div class="plugin-section-box">
+          <div class="plugin-section-head" onclick="togglePluginSection()">
+            <span>🧩 Plugin-defined collapsible section</span>
+            <span id="pluginChevron">▼</span>
+          </div>
+          <div class="plugin-section-body" id="pluginBody">
+            <div>• filesystem-mcp: ready</div>
+            <div style="margin-top: 4px;">• memory-cache: connected</div>
+          </div>
+        </div>
+
+      </div>
+    </div>
+
+    <!-- Right side: interactive demo and logic walkthrough -->
+    <div class="right-doc">
+      
+      <div class="card">
+        <h2>✨ Smart half-collapse (Partial Collapse) interactive demo</h2>
+        <p>Your idea — <strong>"collapsing should hide only what is not running"</strong> — is a genuinely sharp design: it gives users the tidy sidebar they want while folding away piles of history, and it eliminates the risk of a background Agent being buried for good!</p>
+
+        <div class="demo-bar">
+          <span style="font-size: 12px; color: var(--text-muted); font-weight: 600;">Try it:</span>
+          <button class="demo-btn" onclick="toggleSimulateRunning('p-yth')">
+            🔄 Toggle yth-operation's collapsed state (click it yourself)
+          </button>
+          <button class="demo-btn" onclick="completeAllRunning('p-yth')">
+            ✅ Simulate every running task finishing (watch it settle naturally)
+          </button>
+        </div>
+
+        <div class="rule-box">
+          <strong>State A: expanded (Full Expand)</strong>
+          <span>With the project expanded, the 2 running tasks are pinned on top and history conversations are listed below.</span>
+        </div>
+
+        <div class="rule-box" style="border-left-color: var(--accent);">
+          <strong>State B: collapsed (Partial Fold · the core new behaviour)</strong>
+          <span>The user collapses a project: <strong>all static history conversations fold away</strong>, yet <strong>running tasks still hang right below the project title</strong> — progress and spinners stay live, so no execution state is ever hidden. A "+ expand 3 history items" entry also appears below.</span>
+        </div>
+
+        <div class="rule-box" style="border-left-color: var(--amber);">
+          <strong>State C: tasks settle back naturally once they finish</strong>
+          <span>When a background task finishes while the project is collapsed, it simply merges into the folded history and the project closes up into a single row. No jarring jumps.</span>
+        </div>
+      </div>
+
+      <div class="card">
+        <h2>💻 Core front-end rendering algorithm (pseudocode)</h2>
+        <div style="background: var(--bg-page); border: 1px solid var(--border); border-radius: 6px; padding: 12px; font-family: monospace; font-size: 12px; line-height: 1.6; color: var(--text);">
+          <span style="color: var(--text-muted);">// When rendering conversations inside a Project group:</span><br>
+          const runningConvs = convs.filter(c => c.running);<br>
+          const historyConvs = convs.filter(c => !c.running);<br><br>
+          <span style="color: var(--text-muted);">// Key point: collapsing filters out history only; running is always rendered!</span><br>
+          const visibleConvs = isCollapsed ? <strong>runningConvs</strong> : <strong>[...runningConvs, ...historyConvs]</strong>;<br><br>
+          <span style="color: var(--text-muted);">// When collapsed and hidden history exists, render the lightweight expand affordance:</span><br>
+          if (isCollapsed && historyConvs.length > 0) {<br>
+          &nbsp;&nbsp;render(<code>+ expand ${historyConvs.length} history items...</code>);<br>
+          }
+        </div>
+      </div>
+
+    </div>
+
+  </div>
+
+  <div class="interactive-toast" id="toastBox">Notice</div>
+
+  <script>
+    const projectsData = [
+      {
+        id: 'p-yth',
+        name: 'yth-operation',
+        path: 'E:\\yth-operation',
+        loaded: true,
+        collapsed: true, // Collapsed by default, to show "folded but still running" at a glance!
+        convs: [
+          { id: 'c1', title: 'Fix false Kafka & Canvas fault-status alarms', time: '4m', running: true },
+          { id: 'c2', title: 'Fix false Kafka & Canvas fault-status alarms · cd61', time: '56m', running: true },
+          { id: 'c3', title: 'Fix false Kafka & Canvas fault-status alarms · e52e', time: '58m', running: false },
+          { id: 'c4', title: '[WeChat] What are you up to', time: '11h', running: false },
+          { id: 'c5', title: '[WeChat] The directory I have in mind', time: '12h', running: false }
+        ]
+      },
+      {
+        id: 'p-work',
+        name: 'work',
+        path: 'E:\\work',
+        loaded: true,
+        collapsed: false,
+        convs: [
+          { id: 'c6', title: '/code/work/cluster-upgrade/01-manual-deployment-guide.md', time: '1h', running: false },
+          { id: 'c7', title: 'Homepage access URL', time: '1h', running: false },
+          { id: 'c8', title: 'Help me polish my weekly report based on the image...', time: '4d', running: false }
+        ],
+        moreCount: 2
+      },
+      {
+        id: 'p-web',
+        name: 'web',
+        path: 'E:\\pi-web-ui',
+        loaded: false,
+        collapsed: true,
+        convs: []
+      },
+      ...Array.from({ length: 22 }).map((_, i) => ({
+        id: `p-other-${i+1}`,
+        name: `project-module-${String(i+1).padStart(2, '0')}`,
+        path: `D:\\code\\repo-${i+1}`,
+        loaded: false,
+        collapsed: true,
+        convs: []
+      }))
+    ];
+
+    let activeConvId = 'c1';
+    let pluginCollapsed = false;
+
+    function renderTree() {
+      const container = document.getElementById('treeListArea');
+      container.innerHTML = '';
+
+      projectsData.forEach(proj => {
+        const runningConvs = proj.convs.filter(c => c.running);
+        const historyConvs = proj.convs.filter(c => !c.running);
+        const hasRunning = runningConvs.length > 0;
+
+        // Core render logic: when collapsed keep running only; when expanded keep everything
+        const visibleConvs = proj.collapsed ? runningConvs : [...runningConvs, ...historyConvs];
+        const isPartiallyFolded = proj.collapsed && hasRunning;
+
+        const block = document.createElement('div');
+        block.className = `proj-block ${hasRunning ? 'has-running' : ''}`;
+
+        // Header
+        const head = document.createElement('div');
+        head.className = 'proj-head';
+        head.onclick = () => toggleProject(proj);
+
+        // Collapse chevron
+        const chevron = document.createElement('span');
+        chevron.className = `proj-chevron ${proj.collapsed ? 'collapsed' : ''}`;
+        chevron.textContent = '▼';
+        head.appendChild(chevron);
+
+        // Project name
+        const name = document.createElement('span');
+        name.className = 'proj-name';
+        name.textContent = proj.name;
+        head.appendChild(name);
+
+        // Running status badge
+        if (hasRunning) {
+          const badge = document.createElement('span');
+          badge.className = 'badge-running';
+          badge.innerHTML = `<span class="pulse-dot"></span> ${runningConvs.length} running`;
+          head.appendChild(badge);
+        }
+
+        const plus = document.createElement('span');
+        plus.className = 'proj-quick-add';
+        plus.textContent = '+';
+        plus.title = 'New conversation';
+        plus.onclick = (e) => {
+          e.stopPropagation();
+          showToast(`Create a new conversation under ${proj.name}`);
+        };
+        head.appendChild(plus);
+
+        block.appendChild(head);
+
+        // Render conversation rows
+        if (visibleConvs.length > 0) {
+          const wrap = document.createElement('div');
+          wrap.className = 'conv-items-wrap';
+
+          visibleConvs.forEach(conv => {
+            const row = document.createElement('div');
+            row.className = `conv-row ${conv.id === activeConvId ? 'active' : ''}`;
+            row.onclick = () => {
+              activeConvId = conv.id;
+              renderTree();
+              showToast(`Switched to: ${conv.title}`);
+            };
+
+            if (conv.running) {
+              const sp = document.createElement('div');
+              sp.className = 'conv-spinner';
+              row.appendChild(sp);
+            }
+
+            const title = document.createElement('span');
+            title.className = 'conv-title';
+            title.textContent = conv.title;
+            row.appendChild(title);
+
+            const time = document.createElement('span');
+            time.className = 'conv-time';
+            time.textContent = conv.time;
+            row.appendChild(time);
+
+            wrap.appendChild(row);
+          });
+
+          // If in "collapsed but still running" state and hidden history exists
+          if (isPartiallyFolded && historyConvs.length > 0) {
+            const hint = document.createElement('div');
+            hint.className = 'collapsed-history-hint';
+            hint.innerHTML = `<span>+ ${historyConvs.length} history items folded</span> <span>Click to expand ›</span>`;
+            hint.onclick = (e) => {
+              e.stopPropagation();
+              proj.collapsed = false;
+              renderTree();
+              showToast(`Expanded all history for ${proj.name}`);
+            };
+            wrap.appendChild(hint);
+          } else if (!proj.collapsed && proj.moreCount) {
+            const more = document.createElement('div');
+            more.className = 'show-more-row';
+            more.textContent = `Show more · ${proj.moreCount}`;
+            more.onclick = () => showToast(`Show more history`);
+            wrap.appendChild(more);
+          }
+
+          block.appendChild(wrap);
+        }
+
+        container.appendChild(block);
+      });
+    }
+
+    function toggleProject(proj) {
+      proj.collapsed = !proj.collapsed;
+      
+      // If expanding while history is not loaded, trigger lazy loading
+      if (!proj.collapsed && !proj.loaded) {
+        renderTree();
+        showToast(`⚡ Lazy load: reading ${proj.name} conversation history from disk`);
+        setTimeout(() => {
+          proj.loaded = true;
+          proj.convs = [
+            { id: `c-${proj.id}-1`, title: 'Refactor unit tests and the state tree', time: '2h ago', running: false },
+            { id: `c-${proj.id}-2`, title: 'Fix memory leak and reconnect assertions', time: '1d ago', running: false }
+          ];
+          renderTree();
+        }, 350);
+        return;
+      }
+
+      renderTree();
+      if (proj.collapsed) {
+        const runCount = proj.convs.filter(c => c.running).length;
+        if (runCount > 0) {
+          showToast(`Folded ${proj.name} history; ${runCount} running tasks remain visible`);
+        } else {
+          showToast(`Folded ${proj.name}`);
+        }
+      } else {
+        showToast(`Expanded ${proj.name}`);
+      }
+    }
+
+    function toggleSimulateRunning(pid) {
+      const p = projectsData.find(x => x.id === pid);
+      if (p) toggleProject(p);
+    }
+
+    function completeAllRunning(pid) {
+      const p = projectsData.find(x => x.id === pid);
+      if (!p) return;
+      p.convs.forEach(c => { c.running = false; });
+      renderTree();
+      showToast(`🎉 All tasks in ${p.name} are done! They settle into history naturally while collapsed`);
+    }
+
+    function togglePluginSection() {
+      pluginCollapsed = !pluginCollapsed;
+      document.getElementById('pluginBody').style.display = pluginCollapsed ? 'none' : 'block';
+      document.getElementById('pluginChevron').textContent = pluginCollapsed ? '▶' : '▼';
+    }
+
+    function showToast(msg) {
+      const el = document.getElementById('toastBox');
+      el.textContent = msg;
+      el.style.display = 'block';
+      clearTimeout(window.__toastTimer);
+      window.__toastTimer = setTimeout(() => {
+        el.style.display = 'none';
+      }, 2500);
+    }
+
+    function toggleTheme() {
+      const cur = document.documentElement.getAttribute('data-theme');
+      document.documentElement.setAttribute('data-theme', cur === 'light' ? 'dark' : 'light');
+    }
+
+    renderTree();
+  </script>
+</body>
+</html>
+
+

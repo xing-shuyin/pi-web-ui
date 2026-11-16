@@ -1,3 +1,5 @@
+[English](./app-playbook.en.md) · **简体中文** · [繁體中文](./app-playbook.zh-TW.md)
+
 # 常见桌面软件操作手册与最佳实践（Desktop App Playbook）
 
 > 本文档记录 `desktop-use` 插件在操作 Windows 常见软件（尤其是微信、QQ 等自绘界面与复杂多窗口应用）时的操作范式、避坑指南与跨回合稳定性规范。

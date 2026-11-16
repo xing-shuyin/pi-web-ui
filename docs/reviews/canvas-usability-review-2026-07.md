@@ -1,3 +1,5 @@
+[English](./canvas-usability-review-2026-07.en.md) · **简体中文** · [繁體中文](./canvas-usability-review-2026-07.zh-TW.md)
+
 # 画布协同可用性审视
 
 ## 结论与范围

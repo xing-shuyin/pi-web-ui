@@ -1,3 +1,5 @@
+[English](./rules.en.md) · **简体中文** · [繁體中文](./rules.zh-TW.md)
+
 # Legado 书源规则速查（本插件引擎的实际语义）
 
 > 这份文档是 **给 AI 修书源用的知识库**（工具 `legado_rules` 原样返回它），也是人看的参考。

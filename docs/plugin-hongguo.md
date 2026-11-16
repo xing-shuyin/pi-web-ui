@@ -1,3 +1,5 @@
+[English](./plugin-hongguo.en.md) · **简体中文** · [繁體中文](./plugin-hongguo.zh-TW.md)
+
 # hongguo 插件
 
 `plugins/hongguo/` 是 [frostming/dsh-hongguo](https://github.com/frostming/dsh-hongguo) 的 pi-web-ui 移植，使用 [openhongguo](https://github.com/beilunyang/openhongguo) `0.1.0` 访问匿名短剧接口。通过顶栏「hongguo」打开，支持剧名搜索、演员搜索与参演作品、选集、续播、观看记录、播放速度、自动下一集、下一集预加载和浏览器画中画。

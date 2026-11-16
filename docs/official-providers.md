@@ -1,3 +1,5 @@
+[English](./official-providers.en.md) · **简体中文** · [繁體中文](./official-providers.zh-TW.md)
+
 # 官方供应商接入
 
 普通安装和便携版均可通过「模型管理 → 添加供应商」选择快速配置，填写官方 API Key，再获取模型列表或手动添加模型 ID 后保存。

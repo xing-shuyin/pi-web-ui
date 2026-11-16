@@ -1,3 +1,5 @@
+[English](./README.en.md) · **简体中文** · [繁體中文](./README.zh-TW.md)
+
 # frp-manager · 内网穿透
 
 frp（fatedier/frp）一站式管理：**本机穿透列表 + 客户端 frpc + 本地 frps 联调 + 远端公网 frps 一键部署**，TOML 新版格式（v0.52+）。

@@ -1,3 +1,5 @@
+[English](./mobile-local-engine.en.md) · **简体中文** · [繁體中文](./mobile-local-engine.zh-TW.md)
+
 # 本机引擎：手机版 pi-web-ui 完全独立运行
 
 > 目标：手机不依赖 PC，APK 内自带 Linux rootfs + Node + pi-web-ui，本机跑 server 与 pi 引擎，用自家 WebView UI 操作；同时保留现有遥控能力。

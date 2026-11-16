@@ -1,3 +1,5 @@
+[English](./README.en.md) · **简体中文** · [繁體中文](./README.zh-TW.md)
+
 # 钉钉机器人与工作台
 
 企业机器人通过钉钉 Stream 网关接收消息，无需公开回调端口；使用 Node 内建 WebSocket、fetch、crypto，无兄弟插件依赖。自定义群机器人 Webhook 单独支持文字和 Markdown 通知。

@@ -1,0 +1,1359 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+	<meta charset="UTF-8">
+	<meta name="viewport" content="width=device-width, initial-scale=1.0">
+	<title>Issue #769 方案提議與互動原型：Editor & Writer 工具視覺化展示</title>
+	<style>
+		:root {
+			--bg: #0f1117;
+			--bg-elev: #161922;
+			--bg-elev2: #1e222f;
+			--bg-elev3: #282d3e;
+			--border: #2a3143;
+			--border-soft: #202636;
+			--text: #e2e8f0;
+			--text-dim: #94a3b8;
+			--text-faint: #64748b;
+			--accent: #3b82f6;
+			--accent-soft: rgba(59, 130, 246, 0.15);
+			--accent-contrast: #ffffff;
+			--green: #10b981;
+			--green-soft: rgba(16, 185, 129, 0.15);
+			--green-dim: #059669;
+			--red: #ef4444;
+			--red-soft: rgba(239, 68, 68, 0.15);
+			--red-dim: #dc2626;
+			--amber: #f59e0b;
+			--amber-soft: rgba(245, 158, 11, 0.15);
+			--mono: "JetBrains Mono", "Fira Code", Consolas, Menlo, monospace;
+			--sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", sans-serif;
+			--radius: 8px;
+			--radius-lg: 12px;
+			--shadow: 0 4px 20px rgba(0, 0, 0, 0.35);
+		}
+
+		[data-theme="light"] {
+			--bg: #f8fafc;
+			--bg-elev: #ffffff;
+			--bg-elev2: #f1f5f9;
+			--bg-elev3: #e2e8f0;
+			--border: #cbd5e1;
+			--border-soft: #e2e8f0;
+			--text: #0f172a;
+			--text-dim: #475569;
+			--text-faint: #64748b;
+			--accent: #2563eb;
+			--accent-soft: rgba(37, 99, 235, 0.12);
+			--accent-contrast: #ffffff;
+			--green: #059669;
+			--green-soft: rgba(5, 150, 105, 0.12);
+			--green-dim: #047857;
+			--red: #dc2626;
+			--red-soft: rgba(220, 38, 38, 0.12);
+			--red-dim: #b91c1c;
+			--amber: #d97706;
+			--amber-soft: rgba(217, 119, 6, 0.12);
+			--shadow: 0 4px 16px rgba(0, 0, 0, 0.08);
+		}
+
+		* { box-sizing: border-box; margin: 0; padding: 0; }
+
+		body {
+			font-family: var(--sans);
+			background: var(--bg);
+			color: var(--text);
+			line-height: 1.6;
+			padding: 24px;
+			transition: background 0.2s, color 0.2s;
+		}
+
+		.container {
+			max-width: 1240px;
+			margin: 0 auto;
+		}
+
+		/* 頂部標題欄與控制台 */
+		.header {
+			background: var(--bg-elev);
+			border: 1px solid var(--border);
+			border-radius: var(--radius-lg);
+			padding: 24px 28px;
+			margin-bottom: 24px;
+			box-shadow: var(--shadow);
+		}
+		.header-badge {
+			display: inline-flex;
+			align-items: center;
+			gap: 6px;
+			padding: 4px 10px;
+			border-radius: 999px;
+			background: var(--accent-soft);
+			color: var(--accent);
+			font-size: 12px;
+			font-weight: 600;
+			margin-bottom: 12px;
+		}
+		.header h1 {
+			font-size: 24px;
+			font-weight: 700;
+			margin-bottom: 8px;
+			letter-spacing: -0.02em;
+		}
+		.header p {
+			color: var(--text-dim);
+			font-size: 14px;
+			max-width: 900px;
+		}
+		.header-toolbar {
+			display: flex;
+			align-items: center;
+			gap: 12px;
+			margin-top: 16px;
+			padding-top: 16px;
+			border-top: 1px solid var(--border-soft);
+			flex-wrap: wrap;
+		}
+
+		/* 按鈕與控制元件 */
+		.btn {
+			display: inline-flex;
+			align-items: center;
+			gap: 6px;
+			padding: 6px 14px;
+			border-radius: var(--radius);
+			border: 1px solid var(--border);
+			background: var(--bg-elev2);
+			color: var(--text);
+			font-size: 13px;
+			font-weight: 500;
+			cursor: pointer;
+			transition: all 0.15s ease;
+			user-select: none;
+		}
+		.btn:hover {
+			border-color: var(--accent);
+			color: var(--accent);
+		}
+		.btn.active {
+			background: var(--accent);
+			border-color: var(--accent);
+			color: var(--accent-contrast);
+		}
+		.btn-group {
+			display: inline-flex;
+			border: 1px solid var(--border);
+			border-radius: var(--radius);
+			overflow: hidden;
+		}
+		.btn-group .btn {
+			border: none;
+			border-radius: 0;
+			border-right: 1px solid var(--border);
+		}
+		.btn-group .btn:last-child {
+			border-right: none;
+		}
+
+		/* 標籤頁導航 */
+		.tabs {
+			display: flex;
+			gap: 6px;
+			border-bottom: 2px solid var(--border);
+			margin-bottom: 24px;
+			overflow-x: auto;
+		}
+		.tab-item {
+			padding: 10px 18px;
+			font-size: 14px;
+			font-weight: 600;
+			color: var(--text-dim);
+			cursor: pointer;
+			border-bottom: 2px solid transparent;
+			margin-bottom: -2px;
+			transition: all 0.2s;
+			white-space: nowrap;
+		}
+		.tab-item:hover {
+			color: var(--text);
+		}
+		.tab-item.active {
+			color: var(--accent);
+			border-bottom-color: var(--accent);
+		}
+
+		/* 內容區域與卡片 */
+		.panel {
+			display: none;
+		}
+		.panel.active {
+			display: block;
+			animation: fadeIn 0.2s ease;
+		}
+		@keyframes fadeIn {
+			from { opacity: 0; transform: translateY(4px); }
+			to { opacity: 1; transform: translateY(0); }
+		}
+
+		.card {
+			background: var(--bg-elev);
+			border: 1px solid var(--border);
+			border-radius: var(--radius-lg);
+			padding: 20px 24px;
+			margin-bottom: 24px;
+			box-shadow: var(--shadow);
+		}
+		.card-title {
+			font-size: 17px;
+			font-weight: 700;
+			margin-bottom: 12px;
+			display: flex;
+			align-items: center;
+			gap: 8px;
+		}
+		.card-desc {
+			font-size: 14px;
+			color: var(--text-dim);
+			margin-bottom: 16px;
+		}
+
+		/* 對比展示臺 */
+		.showcase-grid {
+			display: grid;
+			grid-template-columns: 1fr 1fr;
+			gap: 20px;
+			margin-bottom: 24px;
+		}
+		@media (max-width: 900px) {
+			.showcase-grid { grid-template-columns: 1fr; }
+		}
+
+		.showcase-col h3 {
+			font-size: 14px;
+			color: var(--text-dim);
+			margin-bottom: 8px;
+			text-transform: uppercase;
+			letter-spacing: 0.05em;
+		}
+
+		/* 工具卡模擬器（復刻 pi-web-ui 真實結構） */
+		.toolcall {
+			border: 1px solid var(--border);
+			background: var(--bg-elev);
+			border-radius: var(--radius);
+			margin-bottom: 16px;
+			overflow: hidden;
+			transition: border-color 0.15s;
+		}
+		.toolcall:hover {
+			border-color: var(--accent);
+		}
+		.toolcall-head {
+			display: flex;
+			align-items: center;
+			gap: 8px;
+			padding: 8px 12px;
+			background: var(--bg-elev2);
+			border-bottom: 1px solid transparent;
+			cursor: pointer;
+			user-select: none;
+			font-size: 13px;
+		}
+		.toolcall.expanded .toolcall-head {
+			border-bottom-color: var(--border-soft);
+		}
+		.toolcall-icon {
+			display: flex;
+			align-items: center;
+			justify-content: center;
+			width: 22px;
+			height: 22px;
+			border-radius: 4px;
+			font-size: 12px;
+		}
+		.tc-tone-edit { background: rgba(59, 130, 246, 0.15); color: #60a5fa; }
+		.tc-tone-write { background: rgba(16, 185, 129, 0.15); color: #34d399; }
+
+		.toolcall-name {
+			font-weight: 600;
+			font-size: 12.5px;
+		}
+		.toolcall-status {
+			display: inline-flex;
+			align-items: center;
+			color: var(--green);
+			font-size: 12px;
+		}
+		.toolcall-path {
+			font-family: var(--mono);
+			font-size: 11.5px;
+			color: var(--text-dim);
+			background: var(--bg-elev3);
+			padding: 2px 6px;
+			border-radius: 4px;
+			max-width: 320px;
+			overflow: hidden;
+			text-overflow: ellipsis;
+			white-space: nowrap;
+		}
+		.diff-badge {
+			display: inline-flex;
+			align-items: center;
+			gap: 4px;
+			font-family: var(--mono);
+			font-size: 11px;
+			padding: 2px 6px;
+			border-radius: 4px;
+			background: var(--bg-elev3);
+		}
+		.diff-badge .add { color: var(--green); font-weight: 600; }
+		.diff-badge .del { color: var(--red); font-weight: 600; }
+
+		.toolcall-spacer { flex: 1; }
+
+		.toolcall-btn {
+			background: transparent;
+			border: none;
+			color: var(--text-faint);
+			cursor: pointer;
+			padding: 4px;
+			border-radius: 4px;
+			display: inline-flex;
+			align-items: center;
+			justify-content: center;
+		}
+		.toolcall-btn:hover {
+			color: var(--text);
+			background: var(--bg-elev3);
+		}
+
+		.toolcall-body {
+			padding: 12px;
+			font-size: 12.5px;
+		}
+
+		/* 原始 JSON 痛點展示 */
+		.raw-json-box {
+			background: var(--bg);
+			border: 1px solid var(--border-soft);
+			border-radius: 6px;
+			padding: 12px;
+			font-family: var(--mono);
+			font-size: 12px;
+			color: var(--text-dim);
+			white-space: pre-wrap;
+			word-break: break-all;
+			max-height: 260px;
+			overflow-y: auto;
+		}
+
+		/* 差異渲染器元件樣式 */
+		.diff-container {
+			background: var(--bg);
+			border: 1px solid var(--border-soft);
+			border-radius: 6px;
+			overflow: hidden;
+			font-family: var(--mono);
+			font-size: 12px;
+			line-height: 1.6;
+		}
+		.diff-toolbar {
+			display: flex;
+			align-items: center;
+			justify-content: space-between;
+			padding: 6px 12px;
+			background: var(--bg-elev2);
+			border-bottom: 1px solid var(--border-soft);
+			font-size: 11.5px;
+		}
+		.diff-file-info {
+			display: flex;
+			align-items: center;
+			gap: 8px;
+			font-weight: 500;
+		}
+		.diff-actions {
+			display: flex;
+			align-items: center;
+			gap: 6px;
+		}
+
+		/* 統一差異 Unified Diff 行 */
+		.diff-table {
+			width: 100%;
+			border-collapse: collapse;
+			table-layout: fixed;
+		}
+		.diff-line {
+			display: flex;
+			min-width: 0;
+			user-select: text;
+		}
+		.diff-line:hover {
+			background: rgba(255, 255, 255, 0.02);
+		}
+		.diff-gutter {
+			flex-shrink: 0;
+			width: 48px;
+			padding: 0 8px;
+			text-align: right;
+			color: var(--text-faint);
+			user-select: none;
+			font-size: 11px;
+			border-right: 1px solid var(--border-soft);
+			background: var(--bg-elev);
+		}
+		.diff-content {
+			flex: 1;
+			padding: 0 10px;
+			white-space: pre-wrap;
+			word-break: break-all;
+			overflow-wrap: anywhere;
+		}
+		.diff-line.hunk-header {
+			background: var(--accent-soft);
+			color: var(--accent);
+			font-weight: 600;
+			font-size: 11px;
+			padding: 3px 12px;
+			border-top: 1px solid var(--border-soft);
+			border-bottom: 1px solid var(--border-soft);
+		}
+		.diff-line.del {
+			background: var(--red-soft);
+			color: var(--red);
+		}
+		.diff-line.del .diff-gutter {
+			background: rgba(239, 68, 68, 0.12);
+			color: var(--red-dim);
+		}
+		.diff-line.add {
+			background: var(--green-soft);
+			color: var(--green);
+		}
+		.diff-line.add .diff-gutter {
+			background: rgba(16, 185, 129, 0.12);
+			color: var(--green-dim);
+		}
+
+		/* 行內詞級高亮（Word-level Highlighting） */
+		.char-del {
+			background: rgba(239, 68, 68, 0.35);
+			border-radius: 2px;
+			padding: 1px 2px;
+			text-decoration: line-through;
+			font-weight: 600;
+		}
+		.char-add {
+			background: rgba(16, 185, 129, 0.35);
+			border-radius: 2px;
+			padding: 1px 2px;
+			font-weight: 600;
+		}
+
+		/* 分屏對照 Split Diff */
+		.split-diff {
+			display: grid;
+			grid-template-columns: 1fr 1fr;
+			border-top: 1px solid var(--border-soft);
+		}
+		.split-pane {
+			overflow-x: auto;
+		}
+		.split-pane:first-child {
+			border-right: 1px solid var(--border-soft);
+		}
+		.split-pane-header {
+			padding: 4px 10px;
+			background: var(--bg-elev2);
+			font-size: 11px;
+			font-weight: 600;
+			color: var(--text-faint);
+			border-bottom: 1px solid var(--border-soft);
+		}
+
+		/* 寫檔案預覽卡片 Write Card */
+		.write-box {
+			background: var(--bg);
+			border: 1px solid var(--border-soft);
+			border-radius: 6px;
+			overflow: hidden;
+			font-family: var(--mono);
+			font-size: 12px;
+		}
+		.write-toolbar {
+			display: flex;
+			align-items: center;
+			justify-content: space-between;
+			padding: 8px 12px;
+			background: var(--bg-elev2);
+			border-bottom: 1px solid var(--border-soft);
+		}
+		.write-content {
+			max-height: 280px;
+			overflow-y: auto;
+			padding: 8px 0;
+		}
+		.code-line {
+			display: flex;
+			padding: 0 8px;
+			line-height: 1.6;
+		}
+		.code-num {
+			width: 42px;
+			text-align: right;
+			padding-right: 12px;
+			color: var(--text-faint);
+			user-select: none;
+			font-size: 11px;
+		}
+		.code-text {
+			flex: 1;
+			white-space: pre-wrap;
+			word-break: break-all;
+		}
+		.write-fold-banner {
+			text-align: center;
+			padding: 8px;
+			background: var(--bg-elev2);
+			border-top: 1px dashed var(--border);
+			color: var(--accent);
+			cursor: pointer;
+			font-size: 12px;
+			font-weight: 500;
+		}
+		.write-fold-banner:hover {
+			background: var(--bg-elev3);
+		}
+
+		/* 方案對比表 */
+		.compare-table {
+			width: 100%;
+			border-collapse: collapse;
+			margin: 16px 0;
+			font-size: 13.5px;
+		}
+		.compare-table th, .compare-table td {
+			padding: 12px 14px;
+			border: 1px solid var(--border);
+			text-align: left;
+		}
+		.compare-table th {
+			background: var(--bg-elev2);
+			font-weight: 600;
+		}
+		.compare-table tr:hover {
+			background: var(--bg-elev2);
+		}
+		.tag-pill {
+			display: inline-block;
+			padding: 2px 8px;
+			border-radius: 999px;
+			font-size: 11px;
+			font-weight: 600;
+		}
+		.tag-green { background: var(--green-soft); color: var(--green); }
+		.tag-blue { background: var(--accent-soft); color: var(--accent); }
+		.tag-amber { background: var(--amber-soft); color: var(--amber); }
+
+		/* 抽屜演示器 */
+		.drawer-layout {
+			display: grid;
+			grid-template-columns: 280px 1fr;
+			border: 1px solid var(--border);
+			border-radius: var(--radius);
+			height: 480px;
+			background: var(--bg);
+			overflow: hidden;
+		}
+		.drawer-sidebar {
+			background: var(--bg-elev);
+			border-right: 1px solid var(--border);
+			display: flex;
+			flex-direction: column;
+		}
+		.drawer-sidebar-head {
+			padding: 10px 14px;
+			border-bottom: 1px solid var(--border-soft);
+			font-size: 12px;
+			font-weight: 600;
+			color: var(--text-dim);
+		}
+		.drawer-file-item {
+			padding: 10px 14px;
+			border-bottom: 1px solid var(--border-soft);
+			cursor: pointer;
+			display: flex;
+			align-items: center;
+			justify-content: space-between;
+			font-size: 12.5px;
+			transition: background 0.15s;
+		}
+		.drawer-file-item:hover {
+			background: var(--bg-elev2);
+		}
+		.drawer-file-item.active {
+			background: var(--accent-soft);
+			border-left: 3px solid var(--accent);
+		}
+		.drawer-main {
+			display: flex;
+			flex-direction: column;
+			overflow: hidden;
+		}
+
+		/* 架構流向圖 */
+		.arch-diagram {
+			background: var(--bg);
+			border: 1px solid var(--border-soft);
+			border-radius: var(--radius);
+			padding: 20px;
+			margin: 16px 0;
+			font-family: var(--mono);
+			font-size: 12px;
+			color: var(--text-dim);
+			line-height: 1.5;
+			overflow-x: auto;
+		}
+		.arch-box {
+			display: inline-block;
+			padding: 8px 14px;
+			border: 1px solid var(--border);
+			border-radius: 6px;
+			background: var(--bg-elev2);
+			color: var(--text);
+			font-weight: 600;
+		}
+	</style>
+</head>
+<body>
+<div data-docs-i18n-switch style="position:fixed;top:8px;right:12px;z-index:2147483647;font:12px/1.6 -apple-system,system-ui,sans-serif;background:rgba(15,17,22,.78);color:#fff;padding:4px 12px;border-radius:999px;box-shadow:0 2px 10px rgba(0,0,0,.35)"><a href="./issue-769-file-diff-visualization.html" style="color:#fff;text-decoration:none">简体中文</a> · <a href="./issue-769-file-diff-visualization.en.html" style="color:#fff;text-decoration:none">English</a> · <strong>繁體中文</strong></div>
+
+
+
+<div class="container">
+	<!-- 頂部 Header -->
+	<header class="header">
+		<div class="header-badge">
+			<span>📌 Issue #769 方案設計與互動原型</span>
+			<span>·</span>
+			<span>pi-web-ui 體驗增強</span>
+		</div>
+		<h1>檔案編輯視覺化架構方案：editor & writer 視覺化顯示</h1>
+		<p>
+			針對 issue #769 提出的痛點：目前工具呼叫只顯示未格式化的原始引數 JSON，開發時無法直觀感知 Agent 的改動。
+			本文件提供 4 種系統化解決方案、高保真互動 Demo 原型、架構選型對比及落地路徑，跳出“修補表象”的視角，實現優雅高效的程式碼審查體驗。
+		</p>
+
+		<div class="header-toolbar">
+			<span style="font-size: 13px; color: var(--text-dim); font-weight: 600;">主題與互動控制：</span>
+			<button class="btn" id="themeToggleBtn" onclick="toggleTheme()">🌓 切換明暗主題</button>
+			<div class="btn-group">
+				<button class="btn active" id="btnCaseEdit" onclick="switchCase('edit')">用例: edit 精確替換</button>
+				<button class="btn" id="btnCaseMulti" onclick="switchCase('multi')">用例: edit 多處修改</button>
+				<button class="btn" id="btnCaseWrite" onclick="switchCase('write')">用例: write 新建/重寫</button>
+			</div>
+			<div class="btn-group">
+				<button class="btn active" id="btnStateDone" onclick="switchToolState('done')">狀態: 已完成 (Done)</button>
+				<button class="btn" id="btnStateRun" onclick="switchToolState('running')">狀態: 流式中 (Running)</button>
+			</div>
+		</div>
+	</header>
+
+	<!-- 標籤頁導航 -->
+	<nav class="tabs">
+		<div class="tab-item active" onclick="switchTab('rec')">🌟 推薦方案：漸進式三層體系（方案四）</div>
+		<div class="tab-item" onclick="switchTab('s1')">方案一：卡片內聯精簡 Diff</div>
+		<div class="tab-item" onclick="switchTab('s2')">方案二：雙檢視程式碼審查器 (Unified / Split)</div>
+		<div class="tab-item" onclick="switchTab('s3')">方案三：全景工作區變更抽屜</div>
+		<div class="tab-item" onclick="switchTab('matrix')">📊 四大方案多維對比與權衡</div>
+		<div class="tab-item" onclick="switchTab('arch')">🛠️ 架構與系統級根本解決路線</div>
+	</nav>
+
+	<!-- ================= 推薦方案（方案四） ================= -->
+	<div class="panel active" id="panel-rec">
+		<div class="card">
+			<div class="card-title">
+				<span>🌟 漸進式三層融合體系（Progressive 3-Tier Experience）</span>
+				<span class="tag-pill tag-green">強烈推薦 · 平衡極致體驗與架構解耦</span>
+			</div>
+			<div class="card-desc">
+				<strong>核心設計哲學：</strong> 兼顧“快掃”與“深審”。
+				第一層（卡頭）提供檔案與增刪統計膠囊；
+				第二層（卡體內聯）提供帶詞級高亮的統一緊湊差異，超過 20 行智慧摺疊；
+				第三層（沉浸檢查器）支援放大為雙分屏（Split Diff）對照與檔案跳轉。
+			</div>
+
+			<!-- 對比效果演示 -->
+			<div class="showcase-grid">
+				<div class="showcase-col">
+					<h3>❌ 改造前：原始 JSON 現狀 (現狀實拍)</h3>
+					<div class="toolcall">
+						<div class="toolcall-head">
+							<span class="toolcall-icon tc-tone-edit">✏️</span>
+							<span class="toolcall-name">edit</span>
+							<span class="toolcall-status">✓</span>
+							<span class="toolcall-path" id="rawPathPrev">server/tool-guards.ts</span>
+							<span class="toolcall-spacer"></span>
+							<span class="toolcall-btn">📋</span>
+						</div>
+						<div class="toolcall-body">
+							<div class="raw-json-box" id="rawJsonBox">
+{
+  "path": "server/tool-guards.ts",
+  "edits": [
+    {
+      "oldText": "const perm = getPermission();\nif (perm === \"read-only\") {\n  return { isError: true };\n}",
+      "newText": "const perm = getPermission();\nif (perm === \"read-only\" || perm === \"audit-lock\") {\n  return { isError: true, reason: \"Permission denied\" };\n}"
+    }
+  ]
+}
+							</div>
+						</div>
+					</div>
+				</div>
+
+				<div class="showcase-col">
+					<h3>✅ 改造後：推薦方案高保真原型 (可點選互動)</h3>
+					<div class="toolcall expanded" id="interactiveToolcall">
+						<div class="toolcall-head" onclick="toggleInteractiveCollapse()">
+							<span class="toolcall-icon tc-tone-edit" id="protoIcon">✏️</span>
+							<span class="toolcall-name" id="protoToolName">edit</span>
+							<span class="toolcall-status" id="protoStatus">✓ 142ms</span>
+							<span class="toolcall-path" id="protoPath">server/tool-guards.ts</span>
+							<span class="diff-badge" id="protoDiffBadge">
+								<span class="add">+2</span>
+								<span class="del">-1</span>
+							</span>
+							<span class="toolcall-spacer"></span>
+							<button class="toolcall-btn" title="在右側檔案樹開啟" onclick="event.stopPropagation(); alert('已聯動在檔案預覽抽屜中定位該檔案！')">📂</button>
+							<button class="toolcall-btn" title="複製改動程式碼" onclick="event.stopPropagation(); alert('已成功複製修改後的程式碼！')">📋</button>
+							<span class="toolcall-btn" id="collapseIndicator">▼</span>
+						</div>
+
+						<div class="toolcall-body" id="interactiveBody">
+							<!-- 檢視工具條 -->
+							<div class="diff-toolbar">
+								<div class="diff-file-info">
+									<span>📄 server/tool-guards.ts</span>
+									<span style="color: var(--text-faint);">· TypeScript</span>
+								</div>
+								<div class="diff-actions">
+									<div class="btn-group">
+										<button class="btn active" id="viewModeUnified" onclick="setDiffViewMode('unified')">統一 Unified</button>
+										<button class="btn" id="viewModeSplit" onclick="setDiffViewMode('split')">分屏 Split</button>
+										<button class="btn" id="viewModeRaw" onclick="setDiffViewMode('raw')">原始 JSON</button>
+									</div>
+									<button class="btn" onclick="alert('已在新視窗開啟沉浸式全屏審查模式！')">⛶ 全屏</button>
+								</div>
+							</div>
+
+							<!-- 差異展示容器（動態渲染） -->
+							<div id="diffViewContainer">
+								<!-- Unified Diff 檢視預設 -->
+								<div class="diff-container" id="unifiedDiffBlock">
+									<div class="diff-line hunk-header">@@ -470,7 +470,8 @@ function wrapEditToolWithPermission()</div>
+									<div class="diff-line">
+										<div class="diff-gutter">470</div>
+										<div class="diff-content">&nbsp; const perm = getPermission();</div>
+									</div>
+									<div class="diff-line del">
+										<div class="diff-gutter">471</div>
+										<div class="diff-content">- if (perm === "read-only") {</div>
+									</div>
+									<div class="diff-line add">
+										<div class="diff-gutter">471</div>
+										<div class="diff-content">+ if (perm === "read-only" || <span class="char-add">perm === "audit-lock"</span>) {</div>
+									</div>
+									<div class="diff-line del">
+										<div class="diff-gutter">472</div>
+										<div class="diff-content">- &nbsp; return { isError: true };</div>
+									</div>
+									<div class="diff-line add">
+										<div class="diff-gutter">472</div>
+										<div class="diff-content">+ &nbsp; return { isError: true, <span class="char-add">reason: "Permission denied"</span> };</div>
+									</div>
+									<div class="diff-line">
+										<div class="diff-gutter">473</div>
+										<div class="diff-content">&nbsp; }</div>
+									</div>
+								</div>
+							</div>
+						</div>
+					</div>
+				</div>
+			</div>
+
+			<!-- 關鍵特性亮點 -->
+			<div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 16px; margin-top: 16px;">
+				<div style="background: var(--bg-elev2); padding: 14px; border-radius: 8px; border-left: 3px solid var(--green);">
+					<strong style="color: var(--green);">1. 詞級差異高亮 (Word-level)</strong>
+					<p style="font-size: 13px; color: var(--text-dim); margin-top: 4px;">
+						不僅標出行變色，更計算出該行中具體增加/修改的變數或短語（深綠/深紅背景），1 秒看清微小改動。
+					</p>
+				</div>
+				<div style="background: var(--bg-elev2); padding: 14px; border-radius: 8px; border-left: 3px solid var(--accent);">
+					<strong style="color: var(--accent);">2. 檢視三態任意切</strong>
+					<p style="font-size: 13px; color: var(--text-dim); margin-top: 4px;">
+						預設緊湊 Unified；需精細比對時切 Split；除錯 Agent 引數時一鍵回切 Raw JSON，完全不破壞排障能力。
+					</p>
+				</div>
+				<div style="background: var(--bg-elev2); padding: 14px; border-radius: 8px; border-left: 3px solid var(--amber);">
+					<strong style="color: var(--amber);">3. 大檔案保護與智慧摺疊</strong>
+					<p style="font-size: 13px; color: var(--text-dim); margin-top: 4px;">
+						write 工具寫入上千行程式碼時，自動摺疊超出閾值程式碼並顯示“展開剩餘 N 行”，堅決防範介面卡頓。
+					</p>
+				</div>
+			</div>
+		</div>
+	</div>
+
+	<!-- ================= 方案一 ================= -->
+	<div class="panel" id="panel-s1">
+		<div class="card">
+			<div class="card-title">
+				<span>方案一：內嵌式智慧差異卡片（Embedded Smart Diff Card）</span>
+				<span class="tag-pill tag-blue">輕量內嵌 · 極低侵入 · 極速落地</span>
+			</div>
+			<div class="card-desc">
+				<strong>核心思想：</strong> 在現有 <code>ToolCallBlock.tsx</code> 的分支結構中，直接新增對 <code>edit</code>、<code>write</code> 工具的輕量化結構提取。
+				純 Unified 緊湊檢視，不引入額外的重型分屏元件。
+			</div>
+
+			<div class="diff-container" style="margin-bottom: 16px;">
+				<div class="diff-toolbar">
+					<span class="diff-file-info">📄 web/src/components/ToolCallBlock.tsx (+8 -3)</span>
+					<span style="color: var(--text-faint);">精簡內嵌模式</span>
+				</div>
+				<div class="diff-line hunk-header">@@ -847,9 +847,15 @@ renderToolBody()</div>
+				<div class="diff-line">
+					<div class="diff-gutter">847</div>
+					<div class="diff-content">&nbsp; ) : isCodemode && codemodeArgs?.code ? (</div>
+				</div>
+				<div class="diff-line del">
+					<div class="diff-gutter">848</div>
+					<div class="diff-content">- &nbsp; &lt;pre&gt;{block.argumentsText}&lt;/pre&gt;</div>
+				</div>
+				<div class="diff-line add">
+					<div class="diff-gutter">848</div>
+					<div class="diff-content">+ &nbsp; ) : isEditTool ? (</div>
+				</div>
+				<div class="diff-line add">
+					<div class="diff-gutter">849</div>
+					<div class="diff-content">+ &nbsp; &nbsp; &lt;FileDiffBlock args={editArgs} diff={view.result?.details?.diff} /&gt;</div>
+				</div>
+				<div class="diff-line add">
+					<div class="diff-gutter">850</div>
+					<div class="diff-content">+ &nbsp; ) : isWriteTool ? (</div>
+				</div>
+				<div class="diff-line add">
+					<div class="diff-gutter">851</div>
+					<div class="diff-content">+ &nbsp; &nbsp; &lt;FileWriteBlock args={writeArgs} /&gt;</div>
+				</div>
+				<div class="diff-line">
+					<div class="diff-gutter">852</div>
+					<div class="diff-content">&nbsp; ) : (</div>
+				</div>
+			</div>
+
+			<h4>方案一優缺點：</h4>
+			<ul style="padding-left: 20px; font-size: 13.5px; color: var(--text-dim); margin-top: 8px;">
+				<li><strong>優勢：</strong> 程式碼量極少（~200 行程式碼），改動集中在單個 UI 元件，零服務端依賴（直接使用 SDK 原生的 <code>details.diff</code>）。</li>
+				<li><strong>侷限：</strong> 遇到複雜的多檔案改動時，仍然需要在主對話區一條條卡片上下滾動；長行換行時缺乏左右對照的清晰度。</li>
+			</ul>
+		</div>
+	</div>
+
+	<!-- ================= 方案二 ================= -->
+	<div class="panel" id="panel-s2">
+		<div class="card">
+			<div class="card-title">
+				<span>方案二：雙檢視程式碼審查器（Dual-View Reviewer: Unified & Split + 詞級高亮）</span>
+				<span class="tag-pill tag-green">專業審查 · IDE級對比精度</span>
+			</div>
+			<div class="card-desc">
+				<strong>核心思想：</strong> 提供類似 GitHub PR 的專業程式碼對比體驗。在統一檢視與左右分屏檢視之間無縫切換，特別針對大螢幕開發者設計。
+			</div>
+
+			<!-- 分屏示例 -->
+			<div class="diff-container" style="margin-bottom: 16px;">
+				<div class="diff-toolbar">
+					<span class="diff-file-info">📄 Split Mode 對照演示 (左：修改前 ； 右：修改後)</span>
+					<span class="tag-pill tag-blue">Split View</span>
+				</div>
+				<div class="split-diff">
+					<div class="split-pane">
+						<div class="split-pane-header">BEFORE (ORIGINAL)</div>
+						<div class="diff-line del">
+							<div class="diff-gutter">42</div>
+							<div class="diff-content">const timeout = <span class="char-del">30000</span>;</div>
+						</div>
+						<div class="diff-line del">
+							<div class="diff-gutter">43</div>
+							<div class="diff-content">const retry = <span class="char-del">false</span>;</div>
+						</div>
+						<div class="diff-line">
+							<div class="diff-gutter">44</div>
+							<div class="diff-content">return client.connect(timeout);</div>
+						</div>
+					</div>
+					<div class="split-pane">
+						<div class="split-pane-header">AFTER (MODIFIED)</div>
+						<div class="diff-line add">
+							<div class="diff-gutter">42</div>
+							<div class="diff-content">const timeout = <span class="char-add">60000</span>;</div>
+						</div>
+						<div class="diff-line add">
+							<div class="diff-gutter">43</div>
+							<div class="diff-content">const retry = <span class="char-add">true</span>;</div>
+						</div>
+						<div class="diff-line">
+							<div class="diff-gutter">44</div>
+							<div class="diff-content">return client.connect(timeout);</div>
+						</div>
+					</div>
+				</div>
+			</div>
+
+			<h4>方案二優缺點：</h4>
+			<ul style="padding-left: 20px; font-size: 13.5px; color: var(--text-dim); margin-top: 8px;">
+				<li><strong>優勢：</strong> 視覺對比最符合資深開發者直覺，一眼看出行與行、詞與詞之間的嚴格對齊，適合重構審查。</li>
+				<li><strong>侷限：</strong> 在小螢幕或移動裝置上橫向空間受限，需要編寫自動退化回單欄的媒體查詢邏輯。</li>
+			</ul>
+		</div>
+	</div>
+
+	<!-- ================= 方案三 ================= -->
+	<div class="panel" id="panel-s3">
+		<div class="card">
+			<div class="card-title">
+				<span>方案三：全景工作區變更抽屜（Workspace Changeset Hub / Timeline Drawer）</span>
+				<span class="tag-pill tag-amber">任務級全景 · 跳出打地鼠區域性視角</span>
+			</div>
+			<div class="card-desc">
+				<strong>核心思想：</strong> 跳出單次工具呼叫的孤立卡片，將 Agent 在本輪對話或任務中產生的所有檔案編輯彙總為一個“變更中心（Changeset Drawer）”。
+				聊天流中僅保留輕量卡頭膠囊，點選直接喚出右側沉浸式檔案對比抽屜。
+			</div>
+
+			<!-- 抽屜佈局模擬原型 -->
+			<div class="drawer-layout">
+				<div class="drawer-sidebar">
+					<div class="drawer-sidebar-head">本輪改動檔案清單 (3 個檔案)</div>
+					<div class="drawer-file-item active">
+						<div>
+							<div style="font-weight: 600;">server/tool-guards.ts</div>
+							<div style="font-size: 11px; color: var(--text-faint);">許可權門禁修改</div>
+						</div>
+						<span class="diff-badge"><span class="add">+12</span> <span class="del">-4</span></span>
+					</div>
+					<div class="drawer-file-item">
+						<div>
+							<div style="font-weight: 600;">web/src/ToolCallBlock.tsx</div>
+							<div style="font-size: 11px; color: var(--text-faint);">卡片元件重構</div>
+						</div>
+						<span class="diff-badge"><span class="add">+45</span> <span class="del">-8</span></span>
+					</div>
+					<div class="drawer-file-item">
+						<div>
+							<div style="font-weight: 600;">web/src/file-diff.tsx</div>
+							<div style="font-size: 11px; color: var(--text-faint);">[新建檔案]</div>
+						</div>
+						<span class="diff-badge"><span class="add">+180</span></span>
+					</div>
+				</div>
+				<div class="drawer-main">
+					<div class="diff-toolbar">
+						<span>審查面板: server/tool-guards.ts</span>
+						<div class="diff-actions">
+							<button class="btn">Git Diff 對比</button>
+							<button class="btn">全部標記已審</button>
+						</div>
+					</div>
+					<div style="padding: 16px; overflow-y: auto; flex: 1;">
+						<div class="diff-container">
+							<div class="diff-line hunk-header">@@ -120,6 +120,14 @@ 變更細節展示</div>
+							<div class="diff-line add">
+								<div class="diff-gutter">121</div>
+								<div class="diff-content">+ export function resolveDiffModel(args) { ... }</div>
+							</div>
+							<div class="diff-line">
+								<div class="diff-gutter">122</div>
+								<div class="diff-content">&nbsp; return cachedResult;</div>
+							</div>
+						</div>
+					</div>
+				</div>
+			</div>
+
+			<h4 style="margin-top: 16px;">方案三優缺點：</h4>
+			<ul style="padding-left: 20px; font-size: 13.5px; color: var(--text-dim); margin-top: 8px;">
+				<li><strong>優勢：</strong> 針對複雜 Agent 任務體驗無敵，不僅看到一次 edit，還能看到多次 edit 之間的累計變更歷史，不汙染聊天流。</li>
+				<li><strong>侷限：</strong> 需要聯動現有的 <code>SideDock</code>、<code>useFloatingPanel</code> 或新增獨立的全局面板狀態，工程量較大。</li>
+			</ul>
+		</div>
+	</div>
+
+	<!-- ================= 方案對比矩陣 ================= -->
+	<div class="panel" id="panel-matrix">
+		<div class="card">
+			<div class="card-title">📊 四大方案多維度對比評估矩陣</div>
+			<div class="card-desc">從工程複雜度、對現有流的干擾、審查效率、大檔案抗壓與移動端適配等 5 個維度全面權衡：</div>
+
+			<table class="compare-table">
+				<thead>
+					<tr>
+						<th>對比維度</th>
+						<th>方案一：內嵌精簡 Diff</th>
+						<th>方案二：雙檢視審查器</th>
+						<th>方案三：全景變更抽屜</th>
+						<th>🌟 方案四：漸進式三層 (推薦)</th>
+					</tr>
+				</thead>
+				<tbody>
+					<tr>
+						<td><strong>資訊呈現密度</strong></td>
+						<td>中等（僅統一差異）</td>
+						<td>高（分屏 + 詞級高亮）</td>
+						<td>極高（跨檔案任務級聚合）</td>
+						<td><strong>最高（微觀膠囊 + 緊湊 + 沉浸）</strong></td>
+					</tr>
+					<tr>
+						<td><strong>對聊天流的打擾</strong></td>
+						<td>有一定拉長風險</td>
+						<td>通過限高可控</td>
+						<td>幾乎不拉長（抽屜承載）</td>
+						<td><strong>完美平衡（卡片智慧截斷+抽屜放大）</strong></td>
+					</tr>
+					<tr>
+						<td><strong>大檔案/大Diff效能</strong></td>
+						<td>需加行數截斷</td>
+						<td>需加行數截斷</td>
+						<td>自帶獨立視口與虛擬滾動</td>
+						<td><strong>三層限高 + 惰性解析 + 自動摺疊</strong></td>
+					</tr>
+					<tr>
+						<td><strong>移動端/窄屏體驗</strong></td>
+						<td>優秀（純單欄）</td>
+						<td>需要降級回單欄</td>
+						<td>需要抽屜全屏覆蓋</td>
+						<td><strong>自動響應式適配（寬屏Split/窄屏Unified）</strong></td>
+					</tr>
+					<tr>
+						<td><strong>開發與遷移成本</strong></td>
+						<td>低（約 1 天）</td>
+						<td>中（約 2 天）</td>
+						<td>高（需設計全局面板，約 4 天）</td>
+						<td><strong>中偏低（基於方案一二漸進融合，約 2.5 天）</strong></td>
+					</tr>
+					<tr>
+						<td><strong>推薦評級</strong></td>
+						<td>⭐ 快速過渡備選</td>
+						<td>⭐⭐ 深度開發者備選</td>
+						<td>⭐⭐ 遠期演進目標</td>
+						<td>⭐⭐⭐⭐⭐ <strong>當前最佳實施方案</strong></td>
+					</tr>
+				</tbody>
+			</table>
+		</div>
+	</div>
+
+	<!-- ================= 根本解決路線 ================= -->
+	<div class="panel" id="panel-arch">
+		<div class="card">
+			<div class="card-title">🛠️ 架構與系統級根本解決路線（跳出打地鼠視角）</div>
+			<div class="card-desc">
+				為什麼單純在前端寫兩個 <code>if (block.name === 'edit')</code> 是“頭痛醫頭”？以下是根本性系統設計剖析：
+			</div>
+
+			<div class="arch-diagram">
++----------------------------------------------------------------------------------------+
+|                          1. 服務端事實源與上下文預算保障                                 |
+|                                                                                        |
+|  [Agent Core / SDK]                                                                    |
+|    |                                                                                   |
+|    |-- edit 成功執行 --> result.details: { diff, patch, firstChangedLine } (已原生具備)  |
+|    |                                                                                   |
+|    |-- write 成功執行 -> 守衛 details 預算 <= 64KB (AGENTS.md 硬規則)                  |
+|          服務端僅注入 { isNewFile: boolean, totalLines: number, oldLines?: number }    |
+|          絕不注入超大原始檔案內容，防止 WS 背壓與整包丟棄！                               |
++----------------------------------------------------------------------------------------+
+                                           |
+                                           v  (WebSocket protocol: message_delta / snapshot)
++----------------------------------------------------------------------------------------+
+|                          2. 前端穩健資料模型 (FileMutationModel)                         |
+|                                                                                        |
+|  [tool-args.ts] 統一抽象 parser: parseFileMutationArgs(name, argumentsText, details)   |
+|    |                                                                                   |
+|    +-- 🛡️ 流式容錯: 即使 JSON 剛收到一半 (如 {"path": "src/a.ts", "edits": [...)       |
+|    |   正則提前提取 path 與第一段 hunk，顯示 "正在替換第 N 行..."，杜絕白屏與拋錯         |
+|    |                                                                                   |
+|    +-- 🧩 統一規格: 無論 edit / edit_soft / write / patch，輸出標準 UnifiedDiffBlock[]   |
++----------------------------------------------------------------------------------------+
+                                           |
+                                           v
++----------------------------------------------------------------------------------------+
+|                          3. 表現層複用與多視口一致性保障                               |
+|                                                                                        |
+|  [FileChangeCard.tsx] 核心高內聚元件                                                    |
+|    |                                                                                   |
+|    |-- 1. 普通聊天流卡片 (ToolCallBlock.tsx 展開態)                                     |
+|    |-- 2. 極簡/Flow 模式彈窗 (ToolInspectorModal.tsx 居中彈窗)                          |
+|    |-- 3. 懸浮檔案預覽抽屜 (file-preview-bridge.ts 側邊抽屜)                            |
+|                                                                                        |
+|  ✅ 統一複用 styles.css 中的 .scm-diff 語義色與 CSS 變數 (--green, --red, --bg-elev)    |
+|  ✅ 統一滿足文字對比度與無障礙規範 (AGENTS.md: semantic-contrast / accent-contrast)    |
++----------------------------------------------------------------------------------------+
+			</div>
+
+			<h3 style="font-size: 15px; margin: 16px 0 8px;">根本性解決步驟清單：</h3>
+			<ol style="padding-left: 20px; font-size: 13.5px; color: var(--text-dim); line-height: 1.8;">
+				<li>
+					<strong>模型層抽象 (<code>web/src/file-diff.ts</code>)</strong>：
+					解耦具體工具名稱，將 <code>edit</code> 的 <code>oldText/newText</code>、SDK 的 <code>details.diff</code>、<code>write</code> 的 <code>content</code> 統一規整化，支援流式容錯解析。
+				</li>
+				<li>
+					<strong>渲染層元件 (<code>web/src/components/FileChangeCard.tsx</code>)</strong>：
+					實現統一差異、分屏差異、詞級高亮、行號對齊與摺疊保護（預設展示最多 20 行，超額摺疊）。
+				</li>
+				<li>
+					<strong>兩處視口無縫聯動</strong>：
+					同時接入 <code>ToolCallBlock.tsx</code>（普通對話流）與 <code>ToolInspectorModal.tsx</code>（Flow 檢查器模式），保證全站一致體驗。
+				</li>
+				<li>
+					<strong>細節打磨與安全測試</strong>：
+					嚴格遵守 <code>AGENTS.md</code> 規範（details ≤64KB、CSS 變數先定義後引用、文字對比度合規），並補充單元測試 <code>tests/unit/file-change-card.test.ts</code>。
+				</li>
+			</ol>
+		</div>
+	</div>
+
+</div>
+
+<script>
+	// 狀態管理
+	let currentCase = 'edit';
+	let currentToolState = 'done';
+	let currentViewMode = 'unified';
+	let isCollapsed = false;
+
+	// 測試資料來源
+	const DEMO_CASES = {
+		edit: {
+			tool: 'edit',
+			icon: '✏️',
+			path: 'server/tool-guards.ts',
+			badge: { add: '+2', del: '-1' },
+			rawJson: `{\n  "path": "server/tool-guards.ts",\n  "edits": [\n    {\n      "oldText": "const perm = getPermission();\\nif (perm === \\"read-only\\") {\\n  return { isError: true };\\n}",\n      "newText": "const perm = getPermission();\\nif (perm === \\"read-only\\" || perm === \\"audit-lock\\") {\\n  return { isError: true, reason: \\"Permission denied\\" };\\n}"\n    }\n  ]\n}`,
+			unifiedHtml: `
+				<div class="diff-container">
+					<div class="diff-line hunk-header">@@ -470,7 +470,8 @@ wrapEditToolWithPermission()</div>
+					<div class="diff-line"><div class="diff-gutter">470</div><div class="diff-content">&nbsp; const perm = getPermission();</div></div>
+					<div class="diff-line del"><div class="diff-gutter">471</div><div class="diff-content">- if (perm === "read-only") {</div></div>
+					<div class="diff-line add"><div class="diff-gutter">471</div><div class="diff-content">+ if (perm === "read-only" || <span class="char-add">perm === "audit-lock"</span>) {</div></div>
+					<div class="diff-line del"><div class="diff-gutter">472</div><div class="diff-content">- &nbsp; return { isError: true };</div></div>
+					<div class="diff-line add"><div class="diff-gutter">472</div><div class="diff-content">+ &nbsp; return { isError: true, <span class="char-add">reason: "Permission denied"</span> };</div></div>
+					<div class="diff-line"><div class="diff-gutter">473</div><div class="diff-content">&nbsp; }</div></div>
+				</div>
+			`,
+			splitHtml: `
+				<div class="diff-container">
+					<div class="split-diff">
+						<div class="split-pane">
+							<div class="split-pane-header">BEFORE (ORIGINAL)</div>
+							<div class="diff-line"><div class="diff-gutter">470</div><div class="diff-content">&nbsp; const perm = getPermission();</div></div>
+							<div class="diff-line del"><div class="diff-gutter">471</div><div class="diff-content">- if (perm === "read-only") {</div></div>
+							<div class="diff-line del"><div class="diff-gutter">472</div><div class="diff-content">- &nbsp; return { isError: true };</div></div>
+							<div class="diff-line"><div class="diff-gutter">473</div><div class="diff-content">&nbsp; }</div></div>
+						</div>
+						<div class="split-pane">
+							<div class="split-pane-header">AFTER (MODIFIED)</div>
+							<div class="diff-line"><div class="diff-gutter">470</div><div class="diff-content">&nbsp; const perm = getPermission();</div></div>
+							<div class="diff-line add"><div class="diff-gutter">471</div><div class="diff-content">+ if (perm === "read-only" || <span class="char-add">perm === "audit-lock"</span>) {</div></div>
+							<div class="diff-line add"><div class="diff-gutter">472</div><div class="diff-content">+ &nbsp; return { isError: true, <span class="char-add">reason: "Permission denied"</span> };</div></div>
+							<div class="diff-line"><div class="diff-gutter">473</div><div class="diff-content">&nbsp; }</div></div>
+						</div>
+					</div>
+				</div>
+			`
+		},
+		multi: {
+			tool: 'edit',
+			icon: '✏️',
+			path: 'web/src/components/ToolCallBlock.tsx',
+			badge: { add: '+14', del: '-6' },
+			rawJson: `{\n  "path": "web/src/components/ToolCallBlock.tsx",\n  "edits": [\n    {\n      "oldText": "import { openToolInfo } from \\"../tool-info-state\\";",\n      "newText": "import { openToolInfo } from \\"../tool-info-state\\";\\nimport { FileChangeCard } from \\"./FileChangeCard\\";"\n    },\n    {\n      "oldText": "<pre>{block.argumentsText}</pre>",\n      "newText": "<FileChangeCard toolName={block.name} argsText={block.argumentsText} details={view.result?.details} />"\n    }\n  ]\n}`,
+			unifiedHtml: `
+				<div class="diff-container">
+					<div class="diff-line hunk-header">@@ -45,4 +45,5 @@ Imports 區域</div>
+					<div class="diff-line"><div class="diff-gutter">45</div><div class="diff-content">&nbsp; import { openToolInfo } from "../tool-info-state";</div></div>
+					<div class="diff-line add"><div class="diff-gutter">46</div><div class="diff-content">+ <span class="char-add">import { FileChangeCard } from "./FileChangeCard";</span></div></div>
+					
+					<div class="diff-line hunk-header">@@ -848,7 +849,7 @@ 引數渲染分支</div>
+					<div class="diff-line del"><div class="diff-gutter">848</div><div class="diff-content">- &lt;pre&gt;{block.argumentsText}&lt;/pre&gt;</div></div>
+					<div class="diff-line add"><div class="diff-gutter">848</div><div class="diff-content">+ &lt;<span class="char-add">FileChangeCard toolName={block.name} argsText={block.argumentsText} details={view.result?.details}</span> /&gt;</div></div>
+				</div>
+			`,
+			splitHtml: `
+				<div class="diff-container">
+					<div class="split-diff">
+						<div class="split-pane">
+							<div class="split-pane-header">BEFORE</div>
+							<div class="diff-line del"><div class="diff-gutter">848</div><div class="diff-content">- &lt;pre&gt;{block.argumentsText}&lt;/pre&gt;</div></div>
+						</div>
+						<div class="split-pane">
+							<div class="split-pane-header">AFTER</div>
+							<div class="diff-line add"><div class="diff-gutter">848</div><div class="diff-content">+ &lt;<span class="char-add">FileChangeCard ...</span> /&gt;</div></div>
+						</div>
+					</div>
+				</div>
+			`
+		},
+		write: {
+			tool: 'write',
+			icon: '📄',
+			path: 'web/src/components/FileChangeCard.tsx',
+			badge: { add: '+86', del: 'NEW' },
+			rawJson: `{\n  "path": "web/src/components/FileChangeCard.tsx",\n  "content": "import React from 'react';\\nimport { UnifiedDiff } from './UnifiedDiff';\\n\\nexport function FileChangeCard(props) {\\n  // 86 lines of newly created source code...\\n  return <div className=\\"file-diff\\">...</div>;\\n}"\n}`,
+			unifiedHtml: `
+				<div class="write-box">
+					<div class="write-toolbar">
+						<span>✨ 新建檔案 · 86 行程式碼 (TypeScript React)</span>
+						<button class="btn" onclick="alert('已複製全部檔案內容！')">📋 複製全文</button>
+					</div>
+					<div class="write-content">
+						<div class="code-line"><div class="code-num">1</div><div class="code-text"><span style="color:#60a5fa;">import</span> React, { useMemo } <span style="color:#60a5fa;">from</span> <span style="color:#34d399;">"react"</span>;</div></div>
+						<div class="code-line"><div class="code-num">2</div><div class="code-text"><span style="color:#60a5fa;">import</span> { parseFileMutationArgs } <span style="color:#60a5fa;">from</span> <span style="color:#34d399;">"../file-diff"</span>;</div></div>
+						<div class="code-line"><div class="code-num">3</div><div class="code-text"><span style="color:#60a5fa;">import</span> { useT } <span style="color:#60a5fa;">from</span> <span style="color:#34d399;">"../i18n"</span>;</div></div>
+						<div class="code-line"><div class="code-num">4</div><div class="code-text"></div></div>
+						<div class="code-line"><div class="code-num">5</div><div class="code-text"><span style="color:#f59e0b;">export function</span> <span style="color:#60a5fa;">FileChangeCard</span>(props) {</div></div>
+						<div class="code-line"><div class="code-num">6</div><div class="code-text">&nbsp; <span style="color:#f59e0b;">const</span> t = useT();</div></div>
+						<div class="code-line"><div class="code-num">7</div><div class="code-text">&nbsp; <span style="color:#f59e0b;">const</span> data = useMemo(() => parseFileMutationArgs(props), [props]);</div></div>
+						<div class="code-line"><div class="code-num">8</div><div class="code-text">&nbsp; <span style="color:#60a5fa;">return</span> (</div></div>
+						<div class="code-line"><div class="code-num">9</div><div class="code-text">&nbsp; &nbsp; &lt;<span style="color:#ef4444;">div</span> className=<span style="color:#34d399;">"file-change-card"</span>&gt;</div></div>
+						<div class="code-line"><div class="code-num">10</div><div class="code-text">&nbsp; &nbsp; &nbsp; &lt;<span style="color:#ef4444;">UnifiedDiffView</span> hunks={data.hunks} /&gt;</div></div>
+						<div class="code-line"><div class="code-num">11</div><div class="code-text">&nbsp; &nbsp; &lt;/<span style="color:#ef4444;">div</span>&gt;</div></div>
+						<div class="code-line"><div class="code-num">12</div><div class="code-text">&nbsp; );</div></div>
+						<div class="code-line"><div class="code-num">13</div><div class="code-text">}</div></div>
+					</div>
+					<div class="write-fold-banner" onclick="alert('已展開剩餘 73 行程式碼！')">
+						🔽 智慧保護摺疊：顯示前 13 行 · 點選展開剩餘 73 行
+					</div>
+				</div>
+			`,
+			splitHtml: `
+				<div class="write-box">
+					<div class="write-toolbar">
+						<span>✨ 新建檔案全覽模式 (New File View)</span>
+					</div>
+					<div style="padding: 12px; color: var(--text-dim);">
+						該操作為全新建立檔案（無歷史比對基線），已自動最佳化為帶有行號、語法高亮與智慧長度保護的原始碼檢視。
+					</div>
+				</div>
+			`
+		}
+	};
+
+	function switchTab(id) {
+		document.querySelectorAll('.tab-item').forEach(el => el.classList.remove('active'));
+		document.querySelectorAll('.panel').forEach(el => el.classList.remove('active'));
+		event.currentTarget.classList.add('active');
+		document.getElementById('panel-' + id).classList.add('active');
+	}
+
+	function toggleTheme() {
+		const isLight = document.body.getAttribute('data-theme') === 'light';
+		if (isLight) {
+			document.body.removeAttribute('data-theme');
+		} else {
+			document.body.setAttribute('data-theme', 'light');
+		}
+	}
+
+	function switchCase(c) {
+		currentCase = c;
+		document.querySelectorAll('#btnCaseEdit, #btnCaseMulti, #btnCaseWrite').forEach(b => b.classList.remove('active'));
+		if (c === 'edit') document.getElementById('btnCaseEdit').classList.add('active');
+		if (c === 'multi') document.getElementById('btnCaseMulti').classList.add('active');
+		if (c === 'write') document.getElementById('btnCaseWrite').classList.add('active');
+		updateInteractiveDemo();
+	}
+
+	function switchToolState(s) {
+		currentToolState = s;
+		document.querySelectorAll('#btnStateDone, #btnStateRun').forEach(b => b.classList.remove('active'));
+		if (s === 'done') document.getElementById('btnStateDone').classList.add('active');
+		if (s === 'running') document.getElementById('btnStateRun').classList.add('active');
+		updateInteractiveDemo();
+	}
+
+	function setDiffViewMode(mode) {
+		currentViewMode = mode;
+		document.querySelectorAll('#viewModeUnified, #viewModeSplit, #viewModeRaw').forEach(b => b.classList.remove('active'));
+		if (mode === 'unified') document.getElementById('viewModeUnified').classList.add('active');
+		if (mode === 'split') document.getElementById('viewModeSplit').classList.add('active');
+		if (mode === 'raw') document.getElementById('viewModeRaw').classList.add('active');
+		renderDiffContent();
+	}
+
+	function toggleInteractiveCollapse() {
+		const card = document.getElementById('interactiveToolcall');
+		const body = document.getElementById('interactiveBody');
+		const ind = document.getElementById('collapseIndicator');
+		isCollapsed = !isCollapsed;
+		if (isCollapsed) {
+			card.classList.remove('expanded');
+			body.style.display = 'none';
+			ind.textContent = '▶';
+		} else {
+			card.classList.add('expanded');
+			body.style.display = 'block';
+			ind.textContent = '▼';
+		}
+	}
+
+	function renderDiffContent() {
+		const container = document.getElementById('diffViewContainer');
+		const data = DEMO_CASES[currentCase];
+		if (currentViewMode === 'raw') {
+			container.innerHTML = `<div class="raw-json-box">${data.rawJson}</div>`;
+		} else if (currentViewMode === 'split') {
+			container.innerHTML = data.splitHtml;
+		} else {
+			container.innerHTML = data.unifiedHtml;
+		}
+	}
+
+	function updateInteractiveDemo() {
+		const data = DEMO_CASES[currentCase];
+		document.getElementById('rawPathPrev').textContent = data.path;
+		document.getElementById('rawJsonBox').textContent = data.rawJson;
+
+		document.getElementById('protoIcon').textContent = data.icon;
+		document.getElementById('protoToolName').textContent = data.tool;
+		document.getElementById('protoPath').textContent = data.path;
+
+		if (currentToolState === 'running') {
+			document.getElementById('protoStatus').innerHTML = '<span style="color:var(--amber);">⚡ 正在流式編輯...</span>';
+		} else {
+			document.getElementById('protoStatus').innerHTML = '<span style="color:var(--green);">✓ 142ms</span>';
+		}
+
+		if (data.badge.del === 'NEW') {
+			document.getElementById('protoDiffBadge').innerHTML = `<span class="add">${data.badge.add}</span> <span style="color:var(--accent);">NEW</span>`;
+		} else {
+			document.getElementById('protoDiffBadge').innerHTML = `<span class="add">${data.badge.add}</span> <span class="del">${data.badge.del}</span>`;
+		}
+
+		renderDiffContent();
+	}
+
+	// 初始觸發渲染
+	updateInteractiveDemo();
+</script>
+
+</body>
+</html>
+
+
+
+

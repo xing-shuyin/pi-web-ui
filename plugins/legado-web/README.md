@@ -1,3 +1,5 @@
+[English](./README.en.md) · **简体中文** · [繁體中文](./README.zh-TW.md)
+
 # legado-web（📖 阅读）
 
 把 [Legado / 阅读](https://github.com/gedoor/legado) 的核心读书链路搬进 pi-web-ui：

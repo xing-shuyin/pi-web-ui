@@ -1,3 +1,5 @@
+[English](./README.en.md) · **简体中文** · [繁體中文](./README.zh-TW.md)
+
 # 远程工作台
 
 远程工作台复用宿主 `remoteSsh` 服务和 `<dataDir>/global-hosts.json`，与远程工作区、SFTP 插件共享 SSH 主机和加密凭据。插件自己的分组、任务、命令片段和隧道配置独立保存，不复制 SSH 密码。

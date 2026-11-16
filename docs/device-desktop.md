@@ -1,3 +1,5 @@
+[English](./device-desktop.en.md) · **简体中文** · [繁體中文](./device-desktop.zh-TW.md)
+
 # 已授权设备的原生远程桌面
 
 设备中心参考 [krd](https://github.com/zzjcool/krd) 的原生捕获与输入方式，复用设备访问票据和连接器，在浏览器 canvas 显示 JPEG。从本机设备中心打开时，与「打开设备」的完整对话界面共用[局域网优先访问](device-center.md#局域网优先访问)：优先使用经过 TLS PSK 验证的私网通道，不可达时尝试设备间 P2P，失败使用原 Hub WebSocket 中继。无需 VNC 服务、noVNC 或固定桌面端口。画面不进入聊天快照或模型上下文。
