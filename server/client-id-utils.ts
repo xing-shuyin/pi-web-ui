@@ -38,6 +38,14 @@ export function isOrphanAdoptionExcludedClientId(id: string): boolean {
 	return isDeviceTaskClientId(id) || isPseudoClientId(id);
 }
 
+/**
+ * 无人值守持有方：定时任务 / 插件 / 画布 / 设备任务。没有人给它开浏览器，
+ * 所以它的会话（包括子代理）只能靠「别处运行中」列表被看见。
+ */
+export function isUnattendedClientId(id: string): boolean {
+	return isDeviceTaskClientId(id) || isPseudoClientId(id);
+}
+
 export function isPseudoClientId(id: string): boolean {
 	return (
 		id.startsWith("plugin:") || id.startsWith("scheduler:") || id.startsWith("canvas:") || id.startsWith("canvas-")

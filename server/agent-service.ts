@@ -870,6 +870,28 @@ interface PreviewIdSeed {
 	uiMessageCache: Map<string, UiMessage>;
 }
 
+/**
+ * 一个持有方（ClientSession）向「别处运行中」列表上报的会话行。
+ * 子代理行由 `isSubagent` + `parentId` 标出来，客户端据此挂到父行下面；
+ * 无人值守持有方（`scheduler:` / `plugin:` 这类伪客户端）也会上报子代理，
+ * 否则定时任务里跑的子代理在侧栏里彻底没有落脚点。
+ */
+export interface ElsewhereClientRow {
+	title: string;
+	cwd: string;
+	isStreaming: boolean;
+	convId: string;
+	independent: boolean;
+	forked: boolean;
+	hasQuestion: boolean;
+	questionTitle?: string;
+	sessionFile?: string;
+	activity: number;
+	isSubagent: boolean;
+	/** 父对话在本持有方内的 id（跨持有方无法解析，故只给同持有方的父行） */
+	parentId?: string;
+}
+
 const LIST_TEXT_MAX = 300;
 export function clipListText(text: string): string {
 	if (text.length <= LIST_TEXT_MAX) return text;
@@ -10584,36 +10606,18 @@ export class ClientSession {
 		return out;
 	}
 
-	streamingSummariesAll(): {
-		title: string;
-		cwd: string;
-		isStreaming: boolean;
-		convId: string;
-		independent: boolean;
-		forked: boolean;
-		hasQuestion: boolean;
-		questionTitle?: string;
-		sessionFile?: string;
-		activity: number;
-	}[] {
+	streamingSummariesAll(): ElsewhereClientRow[] {
 		if (this.clientId?.startsWith("canvas:") || this.clientId?.startsWith("canvas-")) {
 			return [];
 		}
-		const out: {
-			title: string;
-			cwd: string;
-			isStreaming: boolean;
-			convId: string;
-			independent: boolean;
-			forked: boolean;
-			hasQuestion: boolean;
-			questionTitle?: string;
-			sessionFile?: string;
-			activity: number;
-		}[] = [];
+		// 无人值守持有方（定时任务 / 插件 / 设备任务）没人给它开浏览器，子代理行只能靠
+		// 「别处运行中」列表透出去；普通浏览器持有方的子代理仍由自己的对话列表负责，
+		// 不往别处列表重复推。
+		const exposeSubagents = isUnattendedClientId(this.clientId ?? "");
+		const out: ElsewhereClientRow[] = [];
 		const seenFiles = new Set<string>();
 		for (const conv of this.convs.values()) {
-			if (conv.isSubagent) continue;
+			if (conv.isSubagent && !exposeSubagents) continue;
 			const streaming = this.conversationStreaming(conv);
 			if (!streaming && !this.shownInRunningList(conv)) continue;
 			const pq = this.getPendingQuestionForConv(conv.id);
@@ -10627,6 +10631,7 @@ export class ClientSession {
 				if (seenFiles.has(sessionFile)) continue;
 				seenFiles.add(sessionFile);
 			}
+			const parentId = conv.isSubagent ? this.localParentId(conv) : undefined;
 			out.push({
 				title: conv.title,
 				cwd: conv.cwd,
@@ -10635,6 +10640,8 @@ export class ClientSession {
 				independent: conv.independent !== false,
 				forked: Boolean(conv.forkFrom || conv.forkedFromSessionPath),
 				hasQuestion: !!pq,
+				isSubagent: !!conv.isSubagent,
+				...(parentId ? { parentId } : {}),
 				...(pq?.title ? { questionTitle: pq.title } : {}),
 				...(sessionFile ? { sessionFile } : {}),
 				activity: Math.max(conv.lastActiveAt || 0, conv.lastSdkEventAt || 0),
@@ -16222,7 +16229,7 @@ export class ClientSession {
 	}
 }
 
-import { checkPluginCwd, isPseudoClientId } from "./client-id-utils.js";
+import { checkPluginCwd, isPseudoClientId, isUnattendedClientId } from "./client-id-utils.js";
 export { checkPluginCwd, isPseudoClientId };
 
 import { AgentService } from "./agent-service-daemon.js";

@@ -2781,6 +2781,10 @@ export interface ElsewhereRunning {
 	questionTitle?: string;
 	pseudo?: boolean;
 	ownerOffline?: boolean;
+	/** 子代理行：挂到同一持有方的父对话行下面（只读查看） */
+	isSubagent?: boolean;
+	/** 父对话在持有方内部的 id；客户端拼成 `elsewhere:<owner>:<parentId>` 认父行 */
+	parentId?: string;
 }
 
 export interface UiAgentPreset {

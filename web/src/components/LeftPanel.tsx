@@ -117,7 +117,7 @@ interface LeftPanelProps {
 			| { type: "pin_conversation"; id: string; pinned: boolean }
 			| { type: "pin_session"; path: string; pinned: boolean }
 			| { type: "take_over_conversation"; owner: string; id: string }
-			| { type: "open_shared_conversation"; owner: string; id: string }
+			| { type: "open_shared_conversation"; owner: string; id: string; readOnly?: boolean }
 			| { type: "peek_elsewhere_question"; owner: string; id: string }
 			| { type: "make_dir"; path: string; setAsCwd?: boolean },
 	) => boolean;
@@ -1376,18 +1376,23 @@ export const LeftPanel = memo(function LeftPanel({
 			if (seenKeys.has(key)) continue;
 			seenKeys.add(key);
 
+			const rowId =
+				w.convId && w.owner
+					? `elsewhere:${w.owner}:${w.convId}`
+					: w.sessionFile
+						? `elsewhere:${w.owner}:${w.cwd}:${w.sessionFile}`
+						: `elsewhere:${w.cwd}:${w.title}${w.owner ? `:${w.owner}` : ""}`;
+			// 子代理行挂到同一持有方的父行下（双方 id 都由 `elsewhere:<owner>:` 拼成）
+			const parentRowId = w.isSubagent && w.owner && w.parentId ? `elsewhere:${w.owner}:${w.parentId}` : undefined;
+
 			filteredElsewhere.push({
-				id:
-					w.convId && w.owner
-						? `elsewhere:${w.owner}:${w.convId}`
-						: w.sessionFile
-							? `elsewhere:${w.owner}:${w.cwd}:${w.sessionFile}`
-							: `elsewhere:${w.cwd}:${w.title}${w.owner ? `:${w.owner}` : ""}`,
+				id: rowId,
 				title: w.title,
 				cwd: w.cwd,
 				messageCount: 0,
 				isStreaming: w.isStreaming,
-				isSubagent: false as const,
+				isSubagent: Boolean(w.isSubagent),
+				...(parentRowId ? { parentId: parentRowId } : {}),
 				elsewhere: true as const,
 				pseudo: Boolean(w.pseudo),
 				independent: w.independent,
@@ -1399,7 +1404,15 @@ export const LeftPanel = memo(function LeftPanel({
 			});
 		}
 
-		return [...conversations, ...filteredElsewhere];
+		// 父行没出来（被本地会话去重挡掉，或持有方只丢了子代理）就不留孤儿子代理行，
+		// 否则 buildConversationRows 会把它当根行顶到列表最上面。
+		const presentRowIds = new Set<string>(conversations.map((c) => c.id));
+		for (const c of filteredElsewhere) presentRowIds.add(c.id);
+		const keptElsewhere = filteredElsewhere.filter(
+			(c) => !c.isSubagent || Boolean(c.parentId && presentRowIds.has(c.parentId)),
+		);
+
+		return [...conversations, ...keptElsewhere];
 	}, [conversations, elsewhere]);
 
 	interface HistoryRunningInfo {
@@ -2207,8 +2220,10 @@ export const LeftPanel = memo(function LeftPanel({
 			const isOffline = Boolean((c as RowConv).ownerOffline) && !isPseudo;
 			const isScheduler = Boolean(typeof elseOwner === "string" && elseOwner.startsWith("scheduler:"));
 			const isShared = (c as RowConv).independent === false;
-			const canOpenDirectly = Boolean(elseOwner && elseConvId) && (isShared || isScheduler);
-			const canTakeover = Boolean(elseOwner && elseConvId) && !isScheduler && !isShared;
+			const isSubagentRow = Boolean(c.isSubagent);
+			// 子代理对话不论持有方是谁都只能只读打开（服务端也只允许 readOnly 共享子代理）
+			const canOpenDirectly = Boolean(elseOwner && elseConvId) && (isShared || isScheduler || isSubagentRow);
+			const canTakeover = Boolean(elseOwner && elseConvId) && !isScheduler && !isShared && !isSubagentRow;
 			const canClick = canOpenDirectly || canTakeover;
 			const active = sharedConversationOwner === elseOwner && activeConversationId === elseConvId;
 			const isActuallyRunning = Boolean(c.isStreaming || hasStreaming || c.completionPending);
@@ -2220,16 +2235,18 @@ export const LeftPanel = memo(function LeftPanel({
 					sessionId: c.sessionId,
 					sessionFile: c.sessionFile,
 				});
-			const confirming = !isShared && !isScheduler && confirmTakeover === c.id;
-			const tooltip = isShared
-				? c.cwd
-				: isScheduler
-					? `${t("schedulerViewTip")}\n${c.cwd}`
-					: confirming
-						? t("takeoverConfirm")
-						: isPseudo
-							? `${t("lpOpenOnDesktopTip")}\n${c.cwd}`
-							: `${t(isOffline ? "elsewhereOfflineTip" : "elsewhereTip")}\n${c.cwd}`;
+			const confirming = !isShared && !isScheduler && !isSubagentRow && confirmTakeover === c.id;
+			const tooltip = isSubagentRow
+				? `${t("subagentBadge")}\n${c.cwd}`
+				: isShared
+					? c.cwd
+					: isScheduler
+						? `${t("schedulerViewTip")}\n${c.cwd}`
+						: confirming
+							? t("takeoverConfirm")
+							: isPseudo
+								? `${t("lpOpenOnDesktopTip")}\n${c.cwd}`
+								: `${t(isOffline ? "elsewhereOfflineTip" : "elsewhereTip")}\n${c.cwd}`;
 
 			const { cleanTitle, categoryTag } = categorizeTitle(
 				c.title,
@@ -2285,6 +2302,8 @@ export const LeftPanel = memo(function LeftPanel({
 												type: "open_shared_conversation",
 												owner: elseOwner as string,
 												id: elseConvId as string,
+												// 子代理对话只能只看：服务端不允许接管/改写子代理
+												...(isSubagentRow ? { readOnly: true } : {}),
 											});
 											return;
 										}
@@ -2340,6 +2359,12 @@ export const LeftPanel = memo(function LeftPanel({
 							{isOffline && (
 								<span className="category-badge-pill elsewhere offline" title={t("elsewhereOfflineTip")}>
 									{t("elsewhereOfflineBadge")}
+								</span>
+							)}
+
+							{isSubagentRow && (
+								<span className="category-badge-pill subagent" title={c.title}>
+									{t("subagentBadge")}
 								</span>
 							)}
 

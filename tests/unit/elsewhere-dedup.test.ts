@@ -328,4 +328,152 @@ describe("elsewhere（「另一处」）排重与过户生命周期防护", () =
 		expect(elsewhere[0].owner).toBe("live-page");
 		expect(elsewhere[0].ownerOffline).toBeUndefined();
 	});
+
+	describe("无人值守持有方的子代理行（定时任务 / 插件 / 设备任务）", () => {
+		const seedSubagents = (clientId: string) => {
+			const cs = fakeClientSession() as any;
+			cs.clientId = clientId;
+			cs.convs = new Map();
+			cs.conversationStreaming = vi.fn().mockReturnValue(false);
+			cs.shownInRunningList = vi.fn().mockReturnValue(true);
+			cs.getPendingQuestionForConv = vi.fn().mockReturnValue(undefined);
+			cs.localParentId = vi.fn().mockReturnValue("parent-1");
+			cs.convs.set("parent-1", {
+				id: "parent-1",
+				title: "定时任务：每小时巡检",
+				cwd: "/fake/work",
+				isSubagent: false,
+				session: { sessionFile: resolve("/fake/work/sessions/parent.json") },
+			});
+			cs.convs.set("child-1", {
+				id: "child-1",
+				title: "子代理 · 查日志",
+				cwd: "/fake/work",
+				isSubagent: true,
+				session: { sessionFile: resolve("/fake/agent/subagent-sessions/child.json") },
+			});
+			return cs;
+		};
+
+		it.each(["scheduler:task-1", "plugin:qq:default", "device-task-1"])(
+			"%s 上报子代理行并带 parentId（有人看的持有方不重复推）",
+			(clientId) => {
+				expect(
+					seedSubagents(clientId)
+						.streamingSummariesAll()
+						.map((r: any) => r.convId),
+				).toEqual(["parent-1", "child-1"]);
+				expect(seedSubagents(clientId).streamingSummariesAll()[1].parentId).toBe("parent-1");
+				// 浏览器自己持有的会话，子代理由它自己的对话列表负责
+				expect(
+					seedSubagents("browser-1")
+						.streamingSummariesAll()
+						.map((r: any) => r.convId),
+				).toEqual(["parent-1"]);
+			},
+		);
+
+		it("listExternalRunning: 父行不在时丢掉孤儿子代理行", () => {
+			const svc = fakeAgentService() as any;
+			svc.clients = new Map();
+			const viewer = fakeClientSession() as any;
+			viewer.sinkCount = vi.fn().mockReturnValue(1);
+			viewer.takeoverBriefs = vi.fn().mockReturnValue([]);
+			viewer.streamingSummariesAll = vi.fn().mockReturnValue([]);
+			const owner = fakeClientSession() as any;
+			owner.sinkCount = vi.fn().mockReturnValue(0);
+			owner.streamingSummariesAll = vi.fn().mockReturnValue([
+				{
+					title: "子代理 · 父行已消失",
+					cwd: "/fake/work",
+					isStreaming: true,
+					convId: "orphan-child",
+					independent: true,
+					forked: false,
+					hasQuestion: false,
+					isSubagent: true,
+					parentId: "parent-not-emitted",
+					activity: Date.now(),
+				},
+			]);
+			svc.clients.set("viewer", viewer);
+			svc.clients.set("scheduler:task-1", owner);
+
+			expect(svc.listExternalRunning("viewer")).toEqual([]);
+		});
+
+		it("listExternalRunning: 父行在时子代理行随行，并标出 isSubagent + parentId", () => {
+			const svc = fakeAgentService() as any;
+			svc.clients = new Map();
+			const viewer = fakeClientSession() as any;
+			viewer.sinkCount = vi.fn().mockReturnValue(1);
+			viewer.takeoverBriefs = vi.fn().mockReturnValue([]);
+			viewer.streamingSummariesAll = vi.fn().mockReturnValue([]);
+			const owner = fakeClientSession() as any;
+			owner.sinkCount = vi.fn().mockReturnValue(0);
+			const base = {
+				cwd: "/fake/work",
+				isStreaming: true,
+				independent: true,
+				forked: false,
+				hasQuestion: false,
+				activity: Date.now(),
+			};
+			owner.streamingSummariesAll = vi.fn().mockReturnValue([
+				{
+					...base,
+					title: "定时任务：每小时巡检",
+					convId: "parent-1",
+					sessionFile: resolve("/fake/work/sessions/parent.json"),
+					isSubagent: false,
+				},
+				{
+					...base,
+					title: "子代理 · 查日志",
+					convId: "child-1",
+					isSubagent: true,
+					parentId: "parent-1",
+					sessionFile: resolve("/fake/agent/subagent-sessions/child.json"),
+				},
+			]);
+			svc.clients.set("viewer", viewer);
+			svc.clients.set("scheduler:task-1", owner);
+
+			const rows = svc.listExternalRunning("viewer");
+			expect(rows.map((r: any) => r.convId)).toEqual(["parent-1", "child-1"]);
+			const child = rows.find((r: any) => r.convId === "child-1");
+			expect(child.isSubagent).toBe(true);
+			expect(child.parentId).toBe("parent-1");
+			expect(child.pseudo).toBe(true);
+		});
+
+		it("dismissConversation: 收掉子代理行不拆整个无人值守持有方", async () => {
+			const svc = fakeAgentService() as any;
+			svc.clients = new Map();
+			svc.pokeExternalRunning = vi.fn();
+			const owner = fakeClientSession() as any;
+			owner.convs = new Map([
+				["child-1", { id: "child-1", title: "子代理 · 查日志", isSubagent: true, session: { isStreaming: false } }],
+			]);
+			owner.sinkCount = vi.fn().mockReturnValue(0);
+			owner.dismissConversation = vi.fn().mockResolvedValue(undefined);
+			owner.dispose = vi.fn().mockResolvedValue(undefined);
+			owner.abortConversation = vi.fn().mockResolvedValue(undefined);
+			const viewer = fakeClientSession() as any;
+			viewer.convs = new Map();
+			viewer.sendNotice = vi.fn();
+			svc.clients.set("scheduler:task-1", owner);
+			svc.clients.set("viewer", viewer);
+
+			const ok = await svc.dismissConversation("viewer", {
+				id: "child-1",
+				owner: "scheduler:task-1",
+				force: true,
+			});
+			expect(ok).toBe(true);
+			expect(owner.dismissConversation).toHaveBeenCalledWith("child-1", undefined, true);
+			expect(owner.dispose).not.toHaveBeenCalled();
+			expect(svc.clients.has("scheduler:task-1")).toBe(true);
+		});
+	});
 });

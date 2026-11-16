@@ -572,6 +572,22 @@ export class AgentService {
 		const isSharedExecution = isSharedExecutionClientId(ownerId);
 		const isOffline = owner.sinkCount() === 0;
 
+		// 子代理行是父对话的附属：只收掉这一行，不能把整个无人值守持有方（定时任务客户端）拆掉。
+		if (conv.isSubagent) {
+			if (owner.conversationStreaming(conv) && !msg.force) {
+				requester?.sendNotice({
+					type: "notice",
+					level: "warning",
+					text: `子代理「${conv.title}」仍在运行中，请先等待结束或点击强行关闭`,
+					textEn: `Subagent "${conv.title}" is still running. Wait for it to finish or force dismiss.`,
+				});
+				return false;
+			}
+			await owner.dismissConversation(conv.id, msg.withFinishedSubagents, msg.force);
+			this.pokeExternalRunning(ownerId);
+			return true;
+		}
+
 		if (isSharedExecution || isOffline) {
 			if (owner.conversationStreaming(conv) && !msg.force) {
 				requester?.sendNotice({
@@ -999,7 +1015,13 @@ export class AgentService {
 			if (offline && OFFLINE_ROW_TTL_MS <= 0) continue;
 			const offlineSince = offline ? (this.offlineSince.get(clientId) ?? 0) : 0;
 
-			for (const r of cs.streamingSummariesAll()) {
+			const rows = cs.streamingSummariesAll();
+			// 子代理行只能活在自己父行下面：父行没被推出去时宁可不推，
+			// 否则客户端拿不到父行，会把子代理当成根行飘在列表顶部。
+			const parentIds = new Set(rows.filter((r) => !r.isSubagent).map((r) => r.convId));
+
+			for (const r of rows) {
+				if (r.isSubagent && (!r.parentId || !parentIds.has(r.parentId))) continue;
 				const { activity, ...rest } = r;
 				if (offline && !rest.isStreaming) {
 					const latest = Math.max(offlineSince, activity || 0);
