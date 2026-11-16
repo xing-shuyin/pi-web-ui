@@ -1,3 +1,5 @@
+[English](./architecture-core.en.md) · **简体中文** · [繁體中文](./architecture-core.zh-TW.md)
+
 # 核心架构
 
 > 改代码前必读。本文档覆盖快照驱动、协议单源、安全边界、主题切换、多对话并发等全局架构决策。

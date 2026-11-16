@@ -1,3 +1,5 @@
+[English](./README.en.md) · **简体中文** · [繁體中文](./README.zh-TW.md)
+
 # GitHub 工作台
 
 在右侧「文件列表」旁的「工作台」Tab 集中处理 PR 和 Issue，与对话并排使用。复用服务所在机器的 GitHub CLI 登录，无需另填 Token。

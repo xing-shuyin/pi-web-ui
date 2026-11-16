@@ -1,3 +1,5 @@
+[English](./README.en.md) · **简体中文** · [繁體中文](./README.zh-TW.md)
+
 # iMessage
 
 通过 macOS Messages 发送文字及本地图片、语音、文件、视频，并只读轮询 `~/Library/Messages/chat.db` 接收消息。无需公网入口。

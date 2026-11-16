@@ -1,0 +1,826 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+	<meta charset="UTF-8">
+	<meta name="viewport" content="width=device-width, initial-scale=1.0">
+	<title>Issue #769 介面精簡與去冗餘方案對比</title>
+	<style>
+		:root {
+			--bg: #0f1117;
+			--bg-elev: #161922;
+			--bg-elev2: #1e222f;
+			--bg-elev3: #282d3e;
+			--border: #2a3143;
+			--border-soft: #202636;
+			--text: #e2e8f0;
+			--text-dim: #94a3b8;
+			--text-faint: #64748b;
+			--accent: #3b82f6;
+			--accent-soft: rgba(59, 130, 246, 0.15);
+			--accent-contrast: #ffffff;
+			--green: #10b981;
+			--green-soft: rgba(16, 185, 129, 0.15);
+			--red: #ef4444;
+			--red-soft: rgba(239, 68, 68, 0.15);
+			--amber: #f59e0b;
+			--amber-soft: rgba(245, 158, 11, 0.15);
+			--mono: "JetBrains Mono", "Fira Code", Consolas, Menlo, monospace;
+			--sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", sans-serif;
+			--radius: 8px;
+			--radius-lg: 12px;
+		}
+
+		[data-theme="light"] {
+			--bg: #f8fafc;
+			--bg-elev: #ffffff;
+			--bg-elev2: #f1f5f9;
+			--bg-elev3: #e2e8f0;
+			--border: #cbd5e1;
+			--border-soft: #e2e8f0;
+			--text: #0f172a;
+			--text-dim: #475569;
+			--text-faint: #64748b;
+			--accent: #2563eb;
+			--accent-soft: rgba(37, 99, 235, 0.12);
+			--accent-contrast: #ffffff;
+			--green: #059669;
+			--green-soft: rgba(5, 150, 105, 0.12);
+			--red: #dc2626;
+			--red-soft: rgba(220, 38, 38, 0.12);
+			--amber: #d97706;
+			--amber-soft: rgba(217, 119, 6, 0.12);
+		}
+
+		* { box-sizing: border-box; margin: 0; padding: 0; }
+		body {
+			font-family: var(--sans);
+			background: var(--bg);
+			color: var(--text);
+			padding: 24px;
+			line-height: 1.5;
+		}
+		.container {
+			max-width: 1200px;
+			margin: 0 auto;
+		}
+
+		/* 頂部標題區 */
+		.header {
+			background: var(--bg-elev);
+			border: 1px solid var(--border);
+			border-radius: var(--radius-lg);
+			padding: 20px 24px;
+			margin-bottom: 24px;
+			box-shadow: 0 4px 20px rgba(0,0,0,0.25);
+		}
+		.header h1 {
+			font-size: 22px;
+			font-weight: 700;
+			margin-bottom: 6px;
+		}
+		.header p {
+			color: var(--text-dim);
+			font-size: 14px;
+		}
+		.toolbar {
+			display: flex;
+			align-items: center;
+			gap: 12px;
+			margin-top: 16px;
+			padding-top: 14px;
+			border-top: 1px solid var(--border-soft);
+			flex-wrap: wrap;
+		}
+
+		.btn {
+			display: inline-flex;
+			align-items: center;
+			gap: 6px;
+			padding: 6px 12px;
+			border-radius: var(--radius);
+			border: 1px solid var(--border);
+			background: var(--bg-elev2);
+			color: var(--text);
+			font-size: 13px;
+			font-weight: 500;
+			cursor: pointer;
+			transition: all 0.15s;
+			user-select: none;
+		}
+		.btn:hover {
+			border-color: var(--accent);
+			color: var(--accent);
+		}
+		.btn.active {
+			background: var(--accent);
+			border-color: var(--accent);
+			color: var(--accent-contrast);
+		}
+
+		.btn-group {
+			display: inline-flex;
+			border: 1px solid var(--border);
+			border-radius: var(--radius);
+			overflow: hidden;
+		}
+		.btn-group .btn {
+			border: none;
+			border-radius: 0;
+			border-right: 1px solid var(--border);
+		}
+		.btn-group .btn:last-child {
+			border-right: none;
+		}
+
+		/* 診斷與度量分析條 */
+		.diagnosis-bar {
+			display: grid;
+			grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+			gap: 16px;
+			margin-bottom: 24px;
+		}
+		.diag-card {
+			background: var(--bg-elev);
+			border: 1px solid var(--border);
+			border-radius: var(--radius);
+			padding: 14px 16px;
+		}
+		.diag-card.warn {
+			border-left: 3px solid var(--amber);
+		}
+		.diag-card.good {
+			border-left: 3px solid var(--green);
+		}
+		.diag-card.info {
+			border-left: 3px solid var(--accent);
+		}
+		.diag-val {
+			font-size: 20px;
+			font-weight: 700;
+			font-family: var(--mono);
+			margin: 4px 0;
+		}
+		.diag-label {
+			font-size: 12px;
+			color: var(--text-dim);
+		}
+
+		/* 彈窗模擬器外殼 */
+		.modal-mockup-wrap {
+			background: rgba(0, 0, 0, 0.4);
+			border: 1px dashed var(--border);
+			border-radius: var(--radius-lg);
+			padding: 30px 20px;
+			display: flex;
+			justify-content: center;
+			margin-bottom: 24px;
+		}
+
+		.mockup-dialog {
+			width: 820px;
+			max-width: 100%;
+			background: var(--bg-elev);
+			border: 1px solid var(--border);
+			border-radius: 12px;
+			box-shadow: 0 16px 40px rgba(0,0,0,0.5);
+			overflow: hidden;
+			display: flex;
+			flex-direction: column;
+		}
+
+		/* 通用 Header */
+		.mockup-header {
+			display: flex;
+			align-items: center;
+			justify-content: space-between;
+			padding: 10px 16px;
+			background: var(--bg-elev2);
+			border-bottom: 1px solid var(--border-soft);
+			font-size: 13px;
+		}
+		.mockup-title-group {
+			display: flex;
+			align-items: center;
+			gap: 8px;
+			font-weight: 600;
+		}
+		.mockup-badge {
+			padding: 2px 6px;
+			border-radius: 4px;
+			font-size: 11px;
+			background: var(--green-soft);
+			color: var(--green);
+			font-weight: 500;
+		}
+
+		/* 現狀中的 Hero Banner */
+		.hero-banner {
+			display: flex;
+			align-items: center;
+			justify-content: space-between;
+			padding: 12px 16px;
+			margin: 12px 16px 0;
+			background: var(--bg-elev2);
+			border: 1px solid var(--border-soft);
+			border-radius: 8px;
+		}
+		.hero-banner .title {
+			font-size: 10.5px;
+			color: var(--text-faint);
+			letter-spacing: 0.5px;
+		}
+		.hero-banner .path {
+			font-family: var(--mono);
+			font-size: 13px;
+			font-weight: 600;
+			margin-top: 2px;
+		}
+
+		/* Diff 元件樣式 */
+		.diff-card {
+			margin: 12px 16px;
+			border: 1px solid var(--border-soft);
+			border-radius: 8px;
+			background: var(--bg);
+			overflow: hidden;
+			font-family: var(--mono);
+			font-size: 12px;
+		}
+		.diff-toolbar {
+			display: flex;
+			align-items: center;
+			justify-content: space-between;
+			padding: 6px 12px;
+			background: var(--bg-elev2);
+			border-bottom: 1px solid var(--border-soft);
+			font-size: 11.5px;
+		}
+		.diff-table {
+			width: 100%;
+			border-collapse: collapse;
+			font-family: var(--mono);
+		}
+		.diff-row {
+			display: flex;
+			line-height: 1.5;
+		}
+		.diff-row.hunk {
+			background: var(--accent-soft);
+			color: var(--accent);
+			font-weight: 600;
+			padding: 2px 10px;
+			font-size: 11px;
+		}
+		.diff-row.del {
+			background: var(--red-soft);
+			color: var(--red);
+		}
+		.diff-row.add {
+			background: var(--green-soft);
+			color: var(--green);
+		}
+		.diff-gutter {
+			width: 38px;
+			padding: 0 8px;
+			text-align: right;
+			color: var(--text-faint);
+			user-select: none;
+			font-size: 11px;
+			border-right: 1px solid var(--border-soft);
+			background: var(--bg-elev);
+		}
+		.diff-code {
+			flex: 1;
+			padding: 0 10px;
+			white-space: pre;
+			overflow-x: auto;
+		}
+
+		.char-del {
+			background: rgba(239, 68, 68, 0.35);
+			padding: 0 2px;
+			border-radius: 2px;
+			text-decoration: line-through;
+			font-weight: 600;
+		}
+		.char-add {
+			background: rgba(16, 185, 129, 0.35);
+			padding: 0 2px;
+			border-radius: 2px;
+			font-weight: 600;
+		}
+
+		/* 現狀中的 Output 與 Details 區 */
+		.section-output {
+			margin: 0 16px 16px;
+			padding: 10px 14px;
+			background: var(--bg);
+			border: 1px solid var(--border-soft);
+			border-radius: 6px;
+			font-size: 12px;
+			font-family: var(--mono);
+			color: var(--text-dim);
+		}
+		.section-output-title {
+			display: flex;
+			justify-content: space-between;
+			font-size: 11px;
+			color: var(--text-faint);
+			margin-bottom: 4px;
+			text-transform: uppercase;
+		}
+		.section-details-strip {
+			margin: 0 16px 16px;
+			padding: 8px 12px;
+			background: var(--bg-elev2);
+			border: 1px solid var(--border-soft);
+			border-radius: 6px;
+			font-size: 12px;
+			display: flex;
+			align-items: center;
+			justify-content: space-between;
+			color: var(--text-dim);
+		}
+
+		/* 方案 B：IDE 選項卡無縫風格 */
+		.ide-tab-header {
+			display: flex;
+			align-items: center;
+			justify-content: space-between;
+			background: var(--bg-elev2);
+			border-bottom: 1px solid var(--border);
+			padding-left: 8px;
+		}
+		.ide-tab {
+			display: inline-flex;
+			align-items: center;
+			gap: 8px;
+			padding: 8px 14px;
+			background: var(--bg);
+			border-right: 1px solid var(--border);
+			border-bottom: 2px solid var(--accent);
+			font-family: var(--mono);
+			font-size: 12.5px;
+			font-weight: 600;
+		}
+		.ide-statusbar {
+			display: flex;
+			align-items: center;
+			justify-content: space-between;
+			padding: 6px 14px;
+			background: var(--bg-elev2);
+			border-top: 1px solid var(--border);
+			font-size: 11.5px;
+			color: var(--text-dim);
+		}
+
+		/* 方案 C：浮動膠囊風格 */
+		.floating-diff-wrap {
+			position: relative;
+			background: var(--bg);
+		}
+		.floating-pill {
+			position: absolute;
+			top: 10px;
+			right: 14px;
+			z-index: 10;
+			background: var(--bg-elev3);
+			border: 1px solid var(--border);
+			border-radius: 20px;
+			padding: 3px 8px;
+			display: flex;
+			gap: 4px;
+			box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+		}
+
+		/* 方案對比評估表 */
+		.compare-table {
+			width: 100%;
+			border-collapse: collapse;
+			margin: 20px 0;
+			font-size: 13.5px;
+		}
+		.compare-table th, .compare-table td {
+			padding: 10px 14px;
+			border: 1px solid var(--border);
+			text-align: left;
+		}
+		.compare-table th {
+			background: var(--bg-elev2);
+			font-weight: 600;
+		}
+		.compare-table tr:hover {
+			background: var(--bg-elev2);
+		}
+	</style>
+</head>
+<body>
+<div data-docs-i18n-switch style="position:fixed;top:8px;right:12px;z-index:2147483647;font:12px/1.6 -apple-system,system-ui,sans-serif;background:rgba(15,17,22,.78);color:#fff;padding:4px 12px;border-radius:999px;box-shadow:0 2px 10px rgba(0,0,0,.35)"><a href="./issue-769-diff-compact-ui-proposals.html" style="color:#fff;text-decoration:none">简体中文</a> · <a href="./issue-769-diff-compact-ui-proposals.en.html" style="color:#fff;text-decoration:none">English</a> · <strong>繁體中文</strong></div>
+
+
+
+<div class="container">
+	<!-- 頂部標題 -->
+	<header class="header">
+		<h1>介面精簡與去冗餘方案評估（Issue #769 視覺瘦身）</h1>
+		<p>
+			深入剖析使用者截圖反饋的“介面太臃腫”問題：在原 520px 的彈窗高度中，三處重複的檔案路徑、三組重複的操作按鈕、過大的 Hero Banner 以及獨佔一整塊的 Output 資訊，導致<strong>真正的核心程式碼 Diff 區域僅佔不到 35%</strong>。
+			以下提供 4 個精簡重構方案與無縫對比原型。
+		</p>
+
+		<div class="toolbar">
+			<span style="font-size: 13px; font-weight: 600; color: var(--text-dim);">切換對比原型方案：</span>
+			<div class="btn-group">
+				<button class="btn" id="btn-orig" onclick="setScheme('orig')">現狀：多層臃腫 (截圖原樣)</button>
+				<button class="btn active" id="btn-d" onclick="setScheme('d')">🌟 方案D：黃金分割精煉 (強烈推薦)</button>
+				<button class="btn" id="btn-a" onclick="setScheme('a')">方案A：流線極簡 (去Banner+去冗餘)</button>
+				<button class="btn" id="btn-b" onclick="setScheme('b')">方案B：IDE 標籤頁融合 (Tab 一體化)</button>
+				<button class="btn" id="btn-c" onclick="setScheme('c')">方案C：懸浮膠囊緊湊 (浮動Toolbar)</button>
+			</div>
+			<button class="btn" onclick="toggleTheme()">🌓 切換明暗主題</button>
+		</div>
+	</header>
+
+	<!-- 空間利用率診斷度量 -->
+	<div class="diagnosis-bar" id="diagContainer">
+		<!-- 動態渲染資料 -->
+	</div>
+
+	<!-- 互動原型模擬器 -->
+	<div class="modal-mockup-wrap">
+		<div class="mockup-dialog" id="mockupDialog">
+			<!-- 動態插入所選方案的 HTML 結構 -->
+		</div>
+	</div>
+
+	<!-- 方案對比表格 -->
+	<div class="header" style="margin-top: 24px;">
+		<h2 style="font-size: 17px; margin-bottom: 12px;">📊 4 套精簡方案量化對比與改動明細</h2>
+		<table class="compare-table">
+			<thead>
+				<tr>
+					<th>方案</th>
+					<th>核心動作</th>
+					<th>Diff 可視面積佔比</th>
+					<th>去除非必要高度</th>
+					<th>資訊重複度</th>
+					<th>推薦度</th>
+				</tr>
+			</thead>
+			<tbody>
+				<tr>
+					<td><strong>現狀 (截圖)</strong></td>
+					<td>多層卡片巢狀 + Hero Banner + Output 獨佔大塊 + 重複路徑與按鈕</td>
+					<td style="color: var(--red); font-weight: 700;">~34%</td>
+					<td>0px</td>
+					<td>高（路徑出現 3 次，按鈕重複 3 組）</td>
+					<td>❌ 亟需瘦身</td>
+				</tr>
+				<tr>
+					<td><strong>方案 A：流線極簡</strong></td>
+					<td>剔除 Hero Banner，Output 縮成單行徽標，減少外邊框 padding</td>
+					<td style="color: var(--green); font-weight: 700;">~68%</td>
+					<td>省約 120px</td>
+					<td>低（路徑保留 1 處）</td>
+					<td>⭐⭐⭐⭐ 實用幹練</td>
+				</tr>
+				<tr>
+					<td><strong>方案 B：IDE 標籤融合</strong></td>
+					<td>頂欄化身為檔案 Tab 選項卡，去除雙層邊框，Diff 從頂直通到底</td>
+					<td style="color: var(--green); font-weight: 700;">~82%</td>
+					<td>省約 175px</td>
+					<td>極低（純 IDE 風格）</td>
+					<td>⭐⭐⭐⭐ 極客首選</td>
+				</tr>
+				<tr>
+					<td><strong>方案 C：懸浮膠囊緊湊</strong></td>
+					<td>Toolbar 改為半透明懸浮膠囊，Diff 程式碼全幅鋪滿</td>
+					<td style="color: var(--green); font-weight: 700;">~88%</td>
+					<td>省約 190px</td>
+					<td>極低（程式碼絕對優先）</td>
+					<td>⭐⭐⭐ 極客前衛</td>
+				</tr>
+				<tr style="background: var(--accent-soft);">
+					<td><strong>🌟 方案 D：黃金精煉 (推薦)</strong></td>
+					<td>
+						1. 移除 Hero Banner（-60px）；<br>
+						2. 路徑與增刪統計合併至 Diff 頭，按鈕去重（-35px）；<br>
+						3. Output 濃縮為底部緊湊狀態條（-45px）；<br>
+						4. 行號槽收窄至 34px，去除雙層卡片 padding。
+					</td>
+					<td style="color: var(--green); font-weight: 800;">~76%</td>
+					<td><strong>省約 140px</strong></td>
+					<td><strong>零冗餘（層級極度清晰）</strong></td>
+					<td>⭐⭐⭐⭐⭐ <strong>最佳落地體驗</strong></td>
+				</tr>
+			</tbody>
+		</table>
+	</div>
+</div>
+
+<script>
+	let currentScheme = 'd';
+
+	const SCHEMES = {
+		orig: {
+			name: '現狀：多層臃腫 (使用者截圖還原)',
+			ratio: '34%',
+			savedHeight: '0px (無削減)',
+			redundancy: '檔案路徑重複 3 次 · 按鈕重複 3 組',
+			render: () => `
+				<!-- 1. 頂欄 -->
+				<div class="mockup-header">
+					<div class="mockup-title-group">
+						<span>✏️</span>
+						<span>edit(server/serialize.ts)</span>
+						<span class="mockup-badge">完成</span>
+					</div>
+					<div style="display:flex; gap:6px;">
+						<button class="btn" style="font-size:11px;">⚙ 原始引數</button>
+						<button class="btn" style="font-size:11px;">⛶</button>
+						<button class="btn" style="font-size:11px;">📋 複製全部</button>
+						<button class="btn" style="font-size:11px;">✕</button>
+					</div>
+				</div>
+
+				<!-- 2. 冗餘的 Hero Banner (整整 62px 高度) -->
+				<div class="hero-banner">
+					<div>
+						<div class="title">目標檔案路徑 (TARGET FILE PATH)</div>
+						<div class="path">server/serialize.ts</div>
+					</div>
+					<button class="btn" style="font-size:11px;">📋 複製路徑</button>
+				</div>
+
+				<!-- 3. 第二次出現路徑與重複按鈕的 Diff 卡片 -->
+				<div class="diff-card">
+					<div class="diff-toolbar">
+						<div>
+							<span>📄 server/serialize.ts</span>
+							<span style="font-size:10px; background:var(--bg-elev3); padding:1px 4px; border-radius:3px;">TYPESCRIPT</span>
+							<span style="color:var(--green); font-weight:600;">+1</span>
+							<span style="color:var(--red); font-weight:600;">-1</span>
+						</div>
+						<div style="display:flex; gap:4px;">
+							<div class="btn-group">
+								<button class="btn active" style="font-size:10.5px; padding:2px 6px;">統一差異</button>
+								<button class="btn" style="font-size:10.5px; padding:2px 6px;">分屏對照</button>
+								<button class="btn" style="font-size:10.5px; padding:2px 6px;">原始引數</button>
+							</div>
+							<button class="btn" style="font-size:10.5px; padding:2px 6px;">↗</button>
+							<button class="btn" style="font-size:10.5px; padding:2px 6px;">⛶</button>
+							<button class="btn" style="font-size:10.5px; padding:2px 6px;">📋</button>
+						</div>
+					</div>
+					<div class="diff-table">
+						<div class="diff-row hunk">@@ -13,9 +13,9 @@</div>
+						<div class="diff-row"><div class="diff-gutter">16</div><div class="diff-code">&nbsp;export const TOOL_OUTPUT_CAP = 100_000;</div></div>
+						<div class="diff-row del"><div class="diff-gutter">17</div><div class="diff-code">- export const ARGS_CAP = <span class="char-del">20_000</span>;</div></div>
+						<div class="diff-row add"><div class="diff-gutter">17</div><div class="diff-code">+ export const ARGS_CAP = <span class="char-add">200_000</span>;</div></div>
+						<div class="diff-row"><div class="diff-gutter">18</div><div class="diff-code">&nbsp;/**</div></div>
+					</div>
+				</div>
+
+				<!-- 4. 冗餘單獨佔塊的 Output (75px 高度) -->
+				<div class="section-output">
+					<div class="section-output-title">
+						<span>執行輸出 (OUTPUT)</span>
+						<span>56 字元 · 1 行</span>
+					</div>
+					<div>Successfully replaced 1 block(s) in server/serialize.ts.</div>
+				</div>
+
+				<!-- 5. 擴充套件詳情條 -->
+				<div class="section-details-strip">
+					<span>> ⚙ 擴充套件詳情 (Details)</span>
+					<span style="font-size:11px; color:var(--text-faint);">3 keys</span>
+				</div>
+			`
+		},
+		d: {
+			name: '🌟 方案 D：黃金分割精煉 (推薦最佳平衡)',
+			ratio: '76%',
+			savedHeight: '節省 140px 垂直高度',
+			redundancy: '零重複 · 緊湊通透 · 專注程式碼',
+			render: () => `
+				<!-- 1. 頂欄：集中收斂路徑與視窗級控制 -->
+				<div class="mockup-header" style="padding: 10px 16px;">
+					<div class="mockup-title-group">
+						<span>📄</span>
+						<span style="font-family:var(--mono); font-size:13.5px;">server/serialize.ts</span>
+						<span style="font-size:10px; background:var(--bg-elev3); padding:1px 5px; border-radius:3px;">TS</span>
+						<span style="display:inline-flex; gap:3px; font-family:var(--mono); font-size:11px;">
+							<span style="color:var(--green); font-weight:700;">+1</span>
+							<span style="color:var(--red); font-weight:700;">-1</span>
+						</span>
+						<span class="mockup-badge">✓ 完成 (56ms)</span>
+					</div>
+					<div style="display:flex; gap:6px;">
+						<div class="btn-group">
+							<button class="btn active" style="font-size:11px; padding:3px 8px;">統一差異</button>
+							<button class="btn" style="font-size:11px; padding:3px 8px;">分屏對照</button>
+							<button class="btn" style="font-size:11px; padding:3px 8px;">Raw</button>
+						</div>
+						<button class="btn" title="複製程式碼" style="font-size:11px; padding:3px 7px;">📋</button>
+						<button class="btn" title="在檔案樹中開啟" style="font-size:11px; padding:3px 7px;">📂</button>
+						<button class="btn" title="全屏檢視" style="font-size:11px; padding:3px 7px;">⛶</button>
+						<button class="btn" title="關閉 (ESC)" style="font-size:11px; padding:3px 7px;">✕</button>
+					</div>
+				</div>
+
+				<!-- 2. Diff 核心內容區：無多餘包裹卡片，空間直通 -->
+				<div style="background:var(--bg); overflow:hidden; font-family:var(--mono); font-size:12px;">
+					<div class="diff-table">
+						<div class="diff-row hunk" style="padding: 2px 14px;">@@ -13,9 +13,9 @@</div>
+						<div class="diff-row"><div class="diff-gutter" style="width:34px;">15</div><div class="diff-code">&nbsp;export const TEXT_CAP = 200_000;</div></div>
+						<div class="diff-row"><div class="diff-gutter" style="width:34px;">16</div><div class="diff-code">&nbsp;export const TOOL_OUTPUT_CAP = 100_000;</div></div>
+						<div class="diff-row del"><div class="diff-gutter" style="width:34px;">17</div><div class="diff-code">- export const ARGS_CAP = <span class="char-del">20_000</span>;</div></div>
+						<div class="diff-row add"><div class="diff-gutter" style="width:34px;">17</div><div class="diff-code">+ export const ARGS_CAP = <span class="char-add">200_000</span>;</div></div>
+						<div class="diff-row"><div class="diff-gutter" style="width:34px;">18</div><div class="diff-code">&nbsp;/**</div></div>
+						<div class="diff-row"><div class="diff-gutter" style="width:34px;">19</div><div class="diff-code">&nbsp; * toolResult 裡單張圖片進快照的上限...</div></div>
+						<div class="diff-row"><div class="diff-gutter" style="width:34px;">20</div><div class="diff-code">&nbsp; */</div></div>
+					</div>
+				</div>
+
+				<!-- 3. 底部極簡狀態條：合併 Output 與 Details，高度僅 26px -->
+				<div style="display:flex; align-items:center; justify-content:space-between; padding:5px 14px; background:var(--bg-elev2); border-top:1px solid var(--border-soft); font-size:11px; color:var(--text-dim);">
+					<div style="display:flex; align-items:center; gap:8px;">
+						<span style="color:var(--green);">✓</span>
+						<span>Successfully replaced 1 block(s) in server/serialize.ts</span>
+					</div>
+					<div style="display:flex; gap:10px; font-family:var(--mono);">
+						<span>details: 3 keys</span>
+						<span style="color:var(--text-faint);">|</span>
+						<a href="#" style="color:var(--accent); text-decoration:none;" onclick="alert('展開全部細節'); return false;">檢視完整日誌</a>
+					</div>
+				</div>
+			`
+		},
+		a: {
+			name: '方案 A：流線極簡 (去 Banner + 削減邊距)',
+			ratio: '68%',
+			savedHeight: '節省 120px',
+			redundancy: '去掉了中間最大的 Hero 橫幅',
+			render: () => `
+				<!-- 頂欄保留 -->
+				<div class="mockup-header">
+					<div class="mockup-title-group">
+						<span>✏️</span>
+						<span>edit · server/serialize.ts</span>
+						<span class="mockup-badge">完成</span>
+					</div>
+					<div style="display:flex; gap:6px;">
+						<button class="btn" style="font-size:11px;">⛶ 全屏</button>
+						<button class="btn" style="font-size:11px;">✕</button>
+					</div>
+				</div>
+
+				<!-- Diff 卡片緊湊貼頂，無中間大橫幅 -->
+				<div class="diff-card" style="margin: 8px 12px;">
+					<div class="diff-toolbar">
+						<span>📄 server/serialize.ts (+1 -1)</span>
+						<div class="btn-group">
+							<button class="btn active" style="font-size:10.5px; padding:2px 6px;">統一差異</button>
+							<button class="btn" style="font-size:10.5px; padding:2px 6px;">分屏</button>
+							<button class="btn" style="font-size:10.5px; padding:2px 6px;">Raw</button>
+						</div>
+					</div>
+					<div class="diff-table">
+						<div class="diff-row hunk">@@ -13,9 +13,9 @@</div>
+						<div class="diff-row"><div class="diff-gutter">16</div><div class="diff-code">&nbsp;export const TOOL_OUTPUT_CAP = 100_000;</div></div>
+						<div class="diff-row del"><div class="diff-gutter">17</div><div class="diff-code">- export const ARGS_CAP = <span class="char-del">20_000</span>;</div></div>
+						<div class="diff-row add"><div class="diff-gutter">17</div><div class="diff-code">+ export const ARGS_CAP = <span class="char-add">200_000</span>;</div></div>
+						<div class="diff-row"><div class="diff-gutter">18</div><div class="diff-code">&nbsp;/**</div></div>
+					</div>
+				</div>
+
+				<!-- 底部輸出極簡單行化 -->
+				<div style="margin: 0 12px 10px; padding: 6px 10px; background:var(--bg-elev2); border-radius:6px; font-size:11.5px; color:var(--text-dim); display:flex; justify-content:space-between;">
+					<span>✓ Successfully replaced 1 block(s)</span>
+					<span style="font-family:var(--mono);">3 keys</span>
+				</div>
+			`
+		},
+		b: {
+			name: '方案 B：IDE 標籤頁融合 (Tab 一體化)',
+			ratio: '82%',
+			savedHeight: '節省 175px 垂直空間',
+			redundancy: '零巢狀邊框 · 原汁原味 IDE 體驗',
+			render: () => `
+				<!-- 仿 VS Code 檔案 Tab -->
+				<div class="ide-tab-header">
+					<div class="ide-tab">
+						<span>📄 server/serialize.ts</span>
+						<span style="color:var(--green); font-size:11px;">+1</span>
+						<span style="color:var(--red); font-size:11px;">-1</span>
+					</div>
+					<div style="display:flex; align-items:center; gap:6px; padding-right:12px;">
+						<div class="btn-group">
+							<button class="btn active" style="font-size:10.5px; padding:2px 6px;">Unified</button>
+							<button class="btn" style="font-size:10.5px; padding:2px 6px;">Split</button>
+						</div>
+						<button class="btn" style="font-size:11px; padding:2px 6px;">⛶</button>
+						<button class="btn" style="font-size:11px; padding:2px 6px;">✕</button>
+					</div>
+				</div>
+
+				<!-- 直通 Diff，零外框 padding -->
+				<div style="background:var(--bg); font-family:var(--mono); font-size:12px;">
+					<div class="diff-table">
+						<div class="diff-row hunk">@@ -13,9 +13,9 @@</div>
+						<div class="diff-row"><div class="diff-gutter">16</div><div class="diff-code">&nbsp;export const TOOL_OUTPUT_CAP = 100_000;</div></div>
+						<div class="diff-row del"><div class="diff-gutter">17</div><div class="diff-code">- export const ARGS_CAP = <span class="char-del">20_000</span>;</div></div>
+						<div class="diff-row add"><div class="diff-gutter">17</div><div class="diff-code">+ export const ARGS_CAP = <span class="char-add">200_000</span>;</div></div>
+						<div class="diff-row"><div class="diff-gutter">18</div><div class="diff-code">&nbsp;/**</div></div>
+					</div>
+				</div>
+
+				<!-- 仿 IDE 底部狀態列 -->
+				<div class="ide-statusbar">
+					<span>✓ edit: Successfully replaced 1 block(s)</span>
+					<span>TypeScript · UTF-8 · LF</span>
+				</div>
+			`
+		},
+		c: {
+			name: '方案 C：懸浮膠囊緊湊 (浮動 Toolbar)',
+			ratio: '88%',
+			savedHeight: '節省 190px (極致空間)',
+			redundancy: '僅留浮層控制膠囊',
+			render: () => `
+				<!-- 頂欄精簡為一條細線 -->
+				<div class="mockup-header" style="padding:6px 14px;">
+					<span style="font-family:var(--mono); font-size:12px;">server/serialize.ts</span>
+					<button class="btn" style="font-size:10px; padding:1px 6px;">✕</button>
+				</div>
+
+				<div class="floating-diff-wrap">
+					<!-- 右上角微型半透明懸浮膠囊 -->
+					<div class="floating-pill">
+						<button class="btn active" style="font-size:10px; padding:1px 5px;">Diff</button>
+						<button class="btn" style="font-size:10px; padding:1px 5px;">Split</button>
+						<button class="btn" style="font-size:10px; padding:1px 5px;">📋</button>
+						<button class="btn" style="font-size:10px; padding:1px 5px;">⛶</button>
+					</div>
+
+					<div class="diff-table" style="font-size:12px;">
+						<div class="diff-row hunk">@@ -13,9 +13,9 @@</div>
+						<div class="diff-row"><div class="diff-gutter">16</div><div class="diff-code">&nbsp;export const TOOL_OUTPUT_CAP = 100_000;</div></div>
+						<div class="diff-row del"><div class="diff-gutter">17</div><div class="diff-code">- export const ARGS_CAP = <span class="char-del">20_000</span>;</div></div>
+						<div class="diff-row add"><div class="diff-gutter">17</div><div class="diff-code">+ export const ARGS_CAP = <span class="char-add">200_000</span>;</div></div>
+						<div class="diff-row"><div class="diff-gutter">18</div><div class="diff-code">&nbsp;/**</div></div>
+					</div>
+				</div>
+			`
+		}
+	};
+
+	function setScheme(key) {
+		currentScheme = key;
+		document.querySelectorAll('.btn-group .btn').forEach(b => b.classList.remove('active'));
+		document.getElementById('btn-' + key).classList.add('active');
+		renderDemo();
+	}
+
+	function toggleTheme() {
+		const isLight = document.body.getAttribute('data-theme') === 'light';
+		if (isLight) {
+			document.body.removeAttribute('data-theme');
+		} else {
+			document.body.setAttribute('data-theme', 'light');
+		}
+	}
+
+	function renderDemo() {
+		const s = SCHEMES[currentScheme];
+		document.getElementById('mockupDialog').innerHTML = s.render();
+
+		const diagHtml = `
+			<div class="diag-card ${currentScheme === 'orig' ? 'warn' : 'good'}">
+				<div class="diag-label">程式碼 Diff 有效可視面積佔比</div>
+				<div class="diag-val" style="color:${currentScheme === 'orig' ? 'var(--red)' : 'var(--green)'};">${s.ratio}</div>
+				<div class="diag-label">${currentScheme === 'orig' ? '大量空間被冗餘Banner與邊框擠佔' : '核心程式碼佔據視口絕對主體'}</div>
+			</div>
+			<div class="diag-card info">
+				<div class="diag-label">垂直空間節省</div>
+				<div class="diag-val" style="color:var(--accent);">${s.savedHeight}</div>
+				<div class="diag-label">消除空行、多層 padding 與重複盒子</div>
+			</div>
+			<div class="diag-card good">
+				<div class="diag-label">資訊冗餘度</div>
+				<div class="diag-val" style="font-size:15px; margin:7px 0;">${s.redundancy}</div>
+				<div class="diag-label">消除重複出現的路徑與重合按鈕</div>
+			</div>
+		`;
+		document.getElementById('diagContainer').innerHTML = diagHtml;
+	}
+
+	renderDemo();
+</script>
+
+</body>
+</html>
+
+
+
+

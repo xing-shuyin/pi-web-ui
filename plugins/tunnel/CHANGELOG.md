@@ -1,3 +1,5 @@
+[English](./CHANGELOG.en.md) · **简体中文** · [繁體中文](./CHANGELOG.zh-TW.md)
+
 # pi-tunnel CHANGELOG
 
 ## 1.5.0（2026-10-24）安全修复：wsPort 鉴权 + 设备安装链路修正

@@ -1,0 +1,1782 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>pi-web-ui · Mobile settings redesign (three interactive prototypes: A/B/C)</title>
+<style>
+/* ==========================================================================
+   0. 设计令牌（对齐 web/src/styles.css :root 与 themes/*，light 为新增对照）
+   ========================================================================== */
+:root{
+  --font-sans:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Hiragino Sans GB","Microsoft YaHei",Roboto,sans-serif;
+  --mono:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+
+  /* 深色（= 宿主默认 :root） */
+  --bg:#0d0e12;
+  --bg-elev:#14161c;
+  --bg-elev2:#1a1d26;
+  --bg-sunk:#0a0b0f;
+  --border-soft:#1e2230;
+  --border:#262a35;
+  --text:#e6e8ef;
+  --text-dim:#9aa1b4;
+  --text-faint:#8b93a7;          /* AA: 5.8:1 on --bg-elev */
+  --accent:#8b5cf6;
+  --accent-text:#a78bfa;         /* AA: 6.5:1 on --bg-elev */
+  --accent-contrast:#ffffff;
+  --accent-soft:rgba(139,92,246,.16);
+  --red:#f87171;
+  --red-text:#fca5a5;
+  --red-soft:rgba(248,113,113,.12);
+  --on-red:#1a1a1a;
+  --green:#34d399;
+  --amber:#fbbf24;
+  --fill-press:rgba(255,255,255,.07);
+  --fill-hover:rgba(255,255,255,.04);
+  --knob:#ffffff;
+  --track-off:rgba(255,255,255,.14);
+  --shadow-card:0 1px 0 rgba(255,255,255,.03),0 8px 24px rgba(0,0,0,.28);
+  --scrim:rgba(0,0,0,.58);
+
+  /* 尺寸（移动端规范，非桌面值） */
+  --row-h:56px;          /* 列表项主高 */
+  --row-h-sm:48px;       /* 紧凑页（方案 C 全量页） */
+  --touch:44px;          /* 最小触控 */
+  --pad-x:16px;
+  --group-gap:16px;
+  --radius:12px;         /* 卡片圆角（需求指定） */
+  --radius-sm:8px;
+  --radius-lg:16px;
+  --icon-tile:28px;
+  --chev:16px;
+  --fs-title:30px;       /* 页面大标题 */
+  --fs-nav:17px;         /* 导航栏标题 */
+  --fs-group:13px;       /* 分组标题 */
+  --fs-label:16px;       /* 列表主文案 */
+  --fs-desc:12.5px;      /* 辅助说明 */
+  --fs-value:13px;       /* 右侧当前值 */
+
+  /* 设备安全区（原型内以变量模拟 env()） */
+  --screen-w:390px;
+  --screen-h:844px;
+  --safe-top:54px;
+  --safe-bottom:34px;
+}
+[data-theme="light"]{
+  --bg:#f1f2f6;
+  --bg-elev:#ffffff;
+  --bg-elev2:#ffffff;
+  --bg-sunk:#e9eaf0;
+  --border-soft:#e6e8ef;
+  --border:#d8dae4;
+  --text:#14161c;
+  --text-dim:#5b6270;            /* AA: 5.6:1 */
+  --text-faint:#666e7c;          /* AA: 5.1:1 */
+  --accent:#7c3aed;
+  --accent-text:#6d28d9;         /* AA: 6.9:1 */
+  --accent-soft:rgba(124,58,237,.10);
+  --red:#dc2626;
+  --red-text:#b91c1c;
+  --red-soft:rgba(220,38,38,.08);
+  --on-red:#ffffff;
+  --green:#0f9d68;
+  --amber:#b45309;
+  --fill-press:rgba(0,0,0,.06);
+  --fill-hover:rgba(0,0,0,.03);
+  --track-off:rgba(0,0,0,.18);
+  --shadow-card:0 1px 2px rgba(16,18,28,.06),0 6px 18px rgba(16,18,28,.05);
+  --scrim:rgba(20,22,30,.42);
+}
+
+*{box-sizing:border-box}
+html[data-theme="dark"]{color-scheme:dark}
+html[data-theme="light"]{color-scheme:light}
+html,body{margin:0;padding:0}
+body{
+  background:var(--bg-sunk);
+  color:var(--text);
+  font-family:var(--font-sans);
+  -webkit-font-smoothing:antialiased;
+  line-height:1.5;
+  background-image:radial-gradient(1200px 500px at 50% -18%,rgba(139,92,246,.14),transparent 70%);
+}
+[data-theme="light"] body{background-image:radial-gradient(1200px 500px at 50% -18%,rgba(124,58,237,.08),transparent 70%)}
+button{font:inherit;color:inherit}
+a{color:var(--accent-text)}
+
+/* ==========================================================================
+   1. 展示页外壳
+   ========================================================================== */
+.wrap{max-width:1180px;margin:0 auto;padding:28px 16px 80px}
+.sc-head{display:flex;flex-direction:column;gap:10px;align-items:center;text-align:center;margin-bottom:18px}
+.sc-kicker{font-size:11.5px;letter-spacing:.10em;text-transform:uppercase;color:var(--text-faint);font-weight:700}
+.sc-title{font-size:clamp(22px,3.4vw,30px);font-weight:800;letter-spacing:-.4px;margin:0}
+.sc-sub{color:var(--text-dim);font-size:13.5px;max-width:760px;margin:0}
+.sc-sub code{font-family:var(--mono);font-size:12px;background:var(--bg-elev);border:1px solid var(--border-soft);border-radius:6px;padding:1px 5px}
+
+.controls{display:flex;flex-wrap:wrap;gap:8px;justify-content:center;align-items:center;margin:6px 0 22px}
+.seg{display:inline-flex;padding:3px;gap:2px;background:var(--bg-elev);border:1px solid var(--border-soft);border-radius:999px}
+.seg button{
+  border:0;background:transparent;color:var(--text-dim);font-size:12.5px;font-weight:600;
+  padding:9px 14px;border-radius:999px;min-height:38px;cursor:pointer;display:inline-flex;align-items:center;gap:6px;
+  transition:background .16s,color .16s;
+}
+.seg button:hover{color:var(--text);background:var(--fill-hover)}
+.seg button[aria-pressed="true"]{background:var(--accent);color:var(--accent-contrast)}
+.seg.small button{padding:7px 11px;font-size:12px;min-height:34px}
+.seg .n{font-variant-numeric:tabular-nums;opacity:.75;font-weight:600}
+
+/* 舞台 */
+.stage{display:flex;gap:26px;align-items:flex-start;justify-content:center;flex-wrap:wrap}
+.stage-note{flex:1 1 320px;min-width:290px;max-width:420px;display:flex;flex-direction:column;gap:12px;position:sticky;top:18px}
+.note-card{background:var(--bg-elev);border:1px solid var(--border-soft);border-radius:var(--radius-lg);padding:16px 16px 14px}
+.note-card h3{margin:0 0 6px;font-size:15px}
+.note-card p{margin:0;color:var(--text-dim);font-size:13px;line-height:1.65}
+.note-card dl{display:grid;grid-template-columns:auto 1fr;gap:6px 10px;margin:10px 0 0;font-size:12.5px}
+.note-card dt{color:var(--text-faint);font-weight:600;white-space:nowrap}
+.note-card dd{margin:0;color:var(--text-dim)}
+.note-card.pros{border-left:3px solid var(--green)}
+.note-card.cons{border-left:3px solid var(--amber)}
+.note-card.rec{border-left:3px solid var(--accent)}
+
+/* ==========================================================================
+   2. 手机外壳 + 安全区
+   ========================================================================== */
+.device{
+  position:relative;flex:none;
+  width:calc(var(--screen-w) + 22px);
+  height:calc(var(--screen-h) + 22px);
+  padding:11px;
+  border-radius:calc(var(--radius-screen,46px) + 12px);
+  background:linear-gradient(160deg,#23262f,#0b0c10 55%);
+  box-shadow:0 1px 0 rgba(255,255,255,.10) inset,0 30px 70px rgba(0,0,0,.55),0 0 0 1px rgba(255,255,255,.05);
+}
+.screen{
+  position:relative;width:var(--screen-w);height:var(--screen-h);
+  border-radius:var(--radius-screen,46px);overflow:hidden;
+  background:var(--bg);display:flex;flex-direction:column;
+  isolation:isolate;
+}
+.device[data-device="punch"]{--screen-w:360px;--screen-h:780px;--safe-top:44px}
+.device[data-device="se"]{--screen-w:320px;--screen-h:568px;--safe-top:20px;--safe-bottom:8px;--radius-screen:26px}
+
+.island{position:absolute;z-index:60;left:50%;top:11px;transform:translateX(-50%);width:112px;height:30px;border-radius:18px;background:#000}
+.device[data-device="punch"] .island{width:11px;height:11px;border-radius:50%;top:14px}
+.device[data-device="se"] .island{display:none}
+
+.statusbar{
+  flex:none;height:var(--safe-top);display:flex;align-items:flex-end;justify-content:space-between;
+  padding:0 22px 6px;font-size:12px;font-weight:650;color:var(--text);letter-spacing:.02em;
+}
+.device[data-device="se"] .statusbar{align-items:center;padding-bottom:2px;font-size:11px}
+.statusbar .sb-r{display:flex;align-items:center;gap:5px;opacity:.9}
+.statusbar svg{width:15px;height:15px}
+.homebar{flex:none;height:var(--safe-bottom);display:flex;align-items:center;justify-content:center}
+.homebar i{display:block;width:120px;height:5px;border-radius:3px;background:var(--text);opacity:.35}
+.device[data-device="se"] .homebar i{width:90px;height:4px;opacity:.28}
+.device[data-device="se"] .row{padding-left:12px;padding-right:12px;gap:10px}
+.device[data-device="se"] .row-value{max-width:38%;font-size:12px}
+.device[data-device="se"] .row-desc{-webkit-line-clamp:1}
+.device[data-device="se"] .row-label{font-size:15px}
+.device[data-device="se"] .idcard{padding:12px;gap:10px}
+.device[data-device="se"] .idcard .avatar{width:40px;height:40px;border-radius:11px;font-size:15px}
+.device[data-device="se"] .idcard .id-action{padding:0 10px;font-size:12px;min-height:34px}
+.device[data-device="se"] .idcard .id-name{font-size:15px}
+.device[data-device="se"] .nav-large{padding-left:12px;padding-right:12px}
+.device[data-device="se"] .scroll-body{padding-left:12px;padding-right:12px}
+.device[data-device="se"] .tile{min-height:70px;padding:10px}
+.device[data-device="se"] .navbar h1{font-size:16px}
+.device[data-device="se"] .divider{margin-left:50px}
+.device[data-device="se"] .dense .divider{margin-left:46px}
+
+.app svg{width:16px;height:16px;flex:none}
+.app{position:relative;flex:1 1 auto;min-height:0;display:flex;flex-direction:column;background:var(--bg);overflow:hidden}
+.scroll{flex:1 1 auto;min-height:0;overflow-y:auto;overscroll-behavior:contain;scrollbar-width:none;-webkit-overflow-scrolling:touch}
+.scroll::-webkit-scrollbar{width:0;height:0}
+
+/* ==========================================================================
+   3. 移动端导航：大标题（首页）/ 紧凑导航栏（二级页）
+   ========================================================================== */
+.nav-large{flex:none;padding:2px var(--pad-x) 10px;background:var(--bg);position:relative;z-index:20}
+.nav-large .nl-top{display:flex;align-items:center;justify-content:space-between;gap:10px;min-height:34px}
+.nav-large h1{margin:0;font-size:var(--fs-title);font-weight:800;letter-spacing:-.5px;line-height:1.16}
+.device[data-device="se"] .nav-large h1{font-size:24px}
+
+.navbar{
+  flex:none;display:flex;align-items:center;gap:6px;padding:4px 8px 6px;background:var(--bg);
+  border-bottom:1px solid var(--border-soft);position:relative;z-index:20;min-height:48px;
+}
+.navbar h1{margin:0;font-size:var(--fs-nav);font-weight:650;letter-spacing:-.2px;flex:1 1 auto;min-width:0;
+  overflow:hidden;text-overflow:ellipsis;white-space:nowrap;text-align:center;padding:0 2px}
+.navbar .nav-spacer{width:var(--touch);flex:none}
+
+.icon-btn{
+  flex:none;width:var(--touch);height:var(--touch);display:grid;place-items:center;
+  border:0;background:transparent;border-radius:10px;color:var(--text);cursor:pointer;
+  transition:background .14s,transform .12s;
+}
+.icon-btn:hover{background:var(--fill-hover)}
+.icon-btn:active{background:var(--fill-press);transform:scale(.94)}
+.icon-btn svg{width:21px;height:21px}
+.icon-btn.brand{color:var(--accent-text)}
+
+/* 保存状态（宿主 settings-live-pill 的移动版） */
+.pill{
+  display:inline-flex;align-items:center;gap:6px;flex:none;
+  height:28px;padding:0 10px;border-radius:999px;
+  border:1px solid var(--border-soft);background:var(--bg-elev);
+  font-size:11.5px;font-weight:650;color:var(--text-dim);cursor:default;
+  transition:border-color .2s,color .2s,background .2s;
+}
+.pill i{width:6px;height:6px;border-radius:50%;background:var(--green);flex:none}
+.pill[data-state="saving"] i{background:var(--amber);animation:pulse 1s infinite}
+.pill[data-state="failed"]{color:var(--red-text);border-color:var(--red);background:var(--red-soft);cursor:pointer}
+.pill[data-state="failed"] i{background:var(--red)}
+@keyframes pulse{50%{opacity:.25}}
+.save-banner{
+  flex:none;display:flex;align-items:center;gap:8px;margin:0 var(--pad-x) 8px;padding:8px 10px;
+  border-radius:var(--radius-sm);background:var(--red-soft);border:1px solid var(--red);
+  color:var(--red-text);font-size:12.5px;font-weight:600;
+}
+.save-banner button{margin-left:auto;border:0;background:transparent;color:var(--red-text);font-weight:800;text-decoration:underline;cursor:pointer;padding:4px 2px}
+
+/* ==========================================================================
+   4. 搜索
+   ========================================================================== */
+.search{position:relative;display:flex;align-items:center;gap:8px;margin-top:8px;padding:0 10px;
+  min-height:var(--touch);background:var(--bg-elev2);border:1px solid var(--border-soft);border-radius:11px}
+.search svg{width:16px;height:16px;color:var(--text-faint);flex:none}
+.search input{
+  flex:1 1 auto;min-width:0;border:0;background:transparent;color:var(--text);
+  font:inherit;font-size:15px;padding:9px 0;outline:none;
+}
+.search input::placeholder{color:var(--text-faint)}
+.search input::-webkit-search-cancel-button,.search input::-webkit-search-decoration{-webkit-appearance:none;display:none}
+.search:focus-within{border-color:var(--accent);box-shadow:0 0 0 3px var(--accent-soft)}
+.search .clear{border:0;background:var(--fill-press);color:var(--text-dim);width:22px;height:22px;border-radius:50%;
+  display:grid;place-items:center;cursor:pointer;font-size:13px;line-height:1;flex:none}
+.search.hero{min-height:48px;border-radius:12px;margin-top:12px}
+.search.hero input{font-size:16px}
+
+/* ==========================================================================
+   5. 分组卡片与行（三套方案共用基元）
+   ========================================================================== */
+.scroll-body{padding:2px var(--pad-x) calc(var(--safe-bottom) + 24px);display:flex;flex-direction:column;gap:var(--group-gap)}
+.group{display:flex;flex-direction:column;gap:7px}
+.group-title{
+  margin:0;padding:0 4px;font-size:var(--fs-group);font-weight:700;letter-spacing:.02em;
+  color:var(--text-dim);display:flex;align-items:center;gap:6px;
+}
+.group-title .count{font-weight:600;color:var(--text-faint);font-variant-numeric:tabular-nums}
+.group-title .spacer{flex:1}
+.group-title .link{border:0;background:transparent;color:var(--accent-text);font-size:12px;font-weight:700;
+  min-height:32px;padding:0 4px;border-radius:6px;cursor:pointer}
+.card{
+  background:var(--bg-elev);border:1px solid var(--border-soft);border-radius:var(--radius);
+  overflow:hidden;box-shadow:var(--shadow-card);
+}
+.card.tight{border-radius:var(--radius)}
+.divider{height:1px;background:var(--border-soft);margin-left:calc(var(--pad-x) + var(--icon-tile) + 12px)}
+.card > .row + .divider{/* 首行上方无分隔线由渲染器控制 */}
+.divider.full{margin-left:0}
+
+/* 行：整行一个可点目标（>= 52px），右侧值 + chevron */
+.row{
+  display:flex;align-items:center;gap:12px;width:100%;
+  min-height:var(--row-h);padding:8px var(--pad-x);
+  border:0;background:transparent;color:var(--text);text-align:left;
+  cursor:pointer;transition:background .12s,transform .12s;
+  -webkit-tap-highlight-color:transparent;
+}
+.row:hover{background:var(--fill-hover)}
+.row:active{background:var(--fill-press)}
+.row:focus-visible{outline:2px solid var(--accent);outline-offset:-2px}
+.row[aria-disabled="true"]{cursor:not-allowed;color:var(--text-faint)}
+.row[aria-disabled="true"] .row-label{color:var(--text-faint)}
+.row[aria-disabled="true"] .row-ico{opacity:.45}
+.row[aria-disabled="true"]:hover{background:transparent}
+
+.row-ico{
+  flex:none;width:var(--icon-tile);height:var(--icon-tile);border-radius:8px;display:grid;place-items:center;
+  color:var(--tone,var(--text-dim));
+  background:color-mix(in srgb,var(--tone,var(--text-dim)) 16%,transparent);
+}
+[data-theme="light"] .row-ico{
+  color:var(--tone-l,var(--tone,var(--text-dim)));
+  background:color-mix(in srgb,var(--tone-l,var(--tone,var(--text-dim))) 12%,transparent);
+}
+.row-ico svg{width:16px;height:16px}
+.tone-blue{--tone:#60a5fa;--tone-l:#2563eb}
+.tone-violet{--tone:#a78bfa;--tone-l:#7c3aed}
+.tone-teal{--tone:#2dd4bf;--tone-l:#0d9488}
+.tone-amber{--tone:#fbbf24;--tone-l:#b45309}
+.tone-pink{--tone:#f472b6;--tone-l:#be185d}
+.tone-green{--tone:#34d399;--tone-l:#0f9d68}
+.tone-sky{--tone:#38bdf8;--tone-l:#0284c7}
+.tone-slate{--tone:#94a3b8;--tone-l:#556074}
+.tone-red{--tone:#f87171;--tone-l:#dc2626}
+
+.row-main{flex:1 1 auto;min-width:0;display:flex;flex-direction:column;gap:2px}
+.row-label{font-size:var(--fs-label);font-weight:500;line-height:1.28;
+  overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.row-desc{font-size:var(--fs-desc);color:var(--text-dim);line-height:1.35;
+  display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;overflow-wrap:anywhere}
+.row-value{
+  flex:none;max-width:42%;font-size:var(--fs-value);color:var(--text-dim);
+  overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-variant-numeric:tabular-nums;
+}
+.row-value.bad{color:var(--red-text);font-weight:650}
+.chev{flex:none;width:var(--chev);height:var(--chev);color:var(--text-faint);display:grid;place-items:center}
+.chev svg{width:15px;height:15px}
+.row-badge{flex:none;height:20px;min-width:20px;padding:0 6px;border-radius:10px;background:var(--accent-soft);
+  color:var(--accent-text);font-size:11.5px;font-weight:750;display:inline-grid;place-items:center;font-variant-numeric:tabular-nums}
+.row-badge.warn{background:var(--red-soft);color:var(--red-text)}
+.dot{width:7px;height:7px;border-radius:50%;background:var(--accent);flex:none}
+.dot.ok{background:var(--green)}
+.dot.err{background:var(--red)}
+
+/* 危险行：弱化但可识别（不靠颜色单一通道 → 文案 + 图标 + 分组标题） */
+.row.danger .row-label{color:var(--red-text);font-weight:600}
+.row.danger .row-ico{--tone:var(--red);--tone-l:var(--red)}
+
+/* 开关：视觉 50×30，命中区跟随整行 56 */
+.switch{
+  flex:none;position:relative;width:50px;height:30px;border-radius:15px;
+  background:var(--track-off);border:1px solid transparent;
+  transition:background .2s,border-color .2s;box-shadow:inset 0 1px 2px rgba(0,0,0,.18);
+}
+.switch .knob{
+  position:absolute;top:2px;left:2px;width:24px;height:24px;border-radius:50%;
+  background:var(--knob);box-shadow:0 2px 5px rgba(0,0,0,.35);
+  transition:transform .2s cubic-bezier(.2,.8,.3,1.1);
+}
+.row[aria-checked="true"] .switch{background:var(--accent);border-color:transparent}
+.row[aria-checked="true"] .switch .knob{transform:translateX(20px)}
+.row:active .switch .knob{width:26px}
+.row[aria-checked="false"]:active .switch .knob{left:2px}
+
+/* 分段控件（主题：窄/宽 等） */
+.segmented{display:flex;gap:2px;padding:3px;background:var(--bg-sunk);border-radius:10px;border:1px solid var(--border-soft)}
+.segmented button{
+  flex:1 1 0;min-height:36px;border:0;border-radius:8px;background:transparent;color:var(--text-dim);
+  font-size:13px;font-weight:600;cursor:pointer;transition:background .14s,color .14s;
+}
+.segmented button[aria-pressed="true"]{background:var(--bg-elev2);color:var(--text);box-shadow:0 1px 3px rgba(0,0,0,.18)}
+[data-theme="light"] .segmented button[aria-pressed="true"]{box-shadow:0 1px 3px rgba(16,18,28,.14);border:1px solid var(--border-soft)}
+
+/* 值预览行（不可点，仅展示当前值） */
+.row-static{cursor:default}
+
+/* ==========================================================================
+   6. 方案 A 专有：身份卡
+   ========================================================================== */
+.idcard{
+  display:flex;align-items:center;gap:12px;padding:14px;
+  background:var(--bg-elev);border:1px solid var(--border-soft);border-radius:var(--radius);
+  box-shadow:var(--shadow-card);
+}
+.idcard .avatar{
+  flex:none;width:46px;height:46px;border-radius:13px;display:grid;place-items:center;
+  background:linear-gradient(150deg,var(--accent),#6366f1);color:#fff;font-weight:800;font-size:17px;letter-spacing:-.5px;
+}
+.idcard .id-main{flex:1 1 auto;min-width:0;display:flex;flex-direction:column;gap:3px}
+.idcard .id-name{font-size:16px;font-weight:650;display:flex;align-items:center;gap:6px;min-width:0}
+.idcard .id-name span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.idcard .id-sub{font-size:12.5px;color:var(--text-dim);display:flex;align-items:center;gap:6px;flex-wrap:wrap}
+.idcard .id-sub .tag{
+  display:inline-flex;align-items:center;gap:4px;height:20px;padding:0 7px;border-radius:6px;
+  background:var(--accent-soft);color:var(--accent-text);font-weight:700;font-size:11px;
+}
+.idcard .id-action{
+  flex:none;min-height:36px;padding:0 12px;border-radius:9px;border:1px solid var(--border);
+  background:var(--bg-elev2);color:var(--text);font-size:12.5px;font-weight:650;cursor:pointer;
+}
+.idcard .id-action:active{background:var(--fill-press)}
+
+/* ==========================================================================
+   7. 方案 B 专有：高频磁贴 + 可折叠分组
+   ========================================================================== */
+.tiles{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.tile{
+  display:flex;flex-direction:column;gap:6px;align-items:flex-start;text-align:left;
+  min-height:78px;padding:12px;border-radius:var(--radius);border:1px solid var(--border-soft);
+  background:var(--bg-elev);color:var(--text);cursor:pointer;box-shadow:var(--shadow-card);
+  transition:transform .12s,background .12s,border-color .12s;
+}
+.tile:hover{border-color:var(--border)}
+.tile:active{transform:scale(.975);background:var(--fill-press)}
+.tile .tile-top{display:flex;align-items:center;gap:7px;width:100%}
+.tile .tile-ico{width:26px;height:26px;border-radius:8px;display:grid;place-items:center;flex:none;
+  color:var(--tone,var(--text-dim));background:color-mix(in srgb,var(--tone,var(--text-dim)) 16%,transparent)}
+[data-theme="light"] .tile .tile-ico{color:var(--tone-l,var(--tone));background:color-mix(in srgb,var(--tone-l,var(--tone)) 12%,transparent)}
+.tile .tile-ico svg{width:15px;height:15px}
+.tile .tile-name{font-size:13px;font-weight:650;line-height:1.2;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.tile .tile-val{font-size:12.5px;color:var(--text-dim);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;width:100%}
+.tile .tile-chev{margin-left:auto;color:var(--text-faint);display:grid;place-items:center}
+.tile .tile-chev svg{width:14px;height:14px}
+
+.group-head{
+  display:flex;align-items:center;gap:8px;width:100%;min-height:var(--touch);
+  padding:0 4px;border:0;background:transparent;color:var(--text-dim);cursor:pointer;
+  border-radius:8px;
+}
+.group-head:active{background:var(--fill-press)}
+.group-head .gh-title{font-size:var(--fs-group);font-weight:700;letter-spacing:.02em;color:var(--text-dim)}
+.group-head .gh-sum{font-size:11.5px;color:var(--text-faint);font-weight:600;
+  overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:52%}
+.group-head .spacer{flex:1}
+.group-head .gh-chev{width:18px;height:18px;color:var(--text-faint);transition:transform .2s;display:grid;place-items:center}
+.group-head .gh-chev svg{width:16px;height:16px}
+.group[data-open="true"] .gh-chev{transform:rotate(90deg)}
+.group[data-open="false"] .group-head{
+  border:1px solid var(--border-soft);background:var(--bg-elev);border-radius:var(--radius);
+  padding:0 14px;min-height:52px;box-shadow:var(--shadow-card);
+}
+.group[data-open="false"] .card{display:none}
+
+/* ==========================================================================
+   8. 方案 C 专有：场景卡 + 底部全量入口
+   ========================================================================== */
+.scene{
+  border:1px solid var(--border-soft);border-radius:var(--radius);background:var(--bg-elev);
+  box-shadow:var(--shadow-card);overflow:hidden;
+}
+.scene-head{
+  display:flex;align-items:center;gap:11px;width:100%;min-height:64px;padding:12px var(--pad-x);
+  border:0;background:transparent;color:var(--text);text-align:left;cursor:pointer;
+}
+.scene-head:active{background:var(--fill-press)}
+.scene-head .s-title{font-size:15px;font-weight:650;line-height:1.25}
+.scene-head .s-sub{font-size:12px;color:var(--text-dim);margin-top:2px}
+.scene-body{display:none;border-top:1px solid var(--border-soft)}
+.scene[data-open="true"] .scene-body{display:block}
+.scene[data-open="true"] .gh-chev{transform:rotate(90deg)}
+.scene-body .row{min-height:var(--row-h-sm)}
+.bottombar{
+  flex:none;padding:10px var(--pad-x) calc(8px + var(--safe-bottom) * .5);
+  background:color-mix(in srgb,var(--bg) 92%,transparent);
+  border-top:1px solid var(--border-soft);backdrop-filter:blur(10px);
+}
+.bottombar button{
+  width:100%;min-height:48px;border-radius:12px;border:1px solid var(--border);
+  background:var(--bg-elev);color:var(--text);font-size:14px;font-weight:650;
+  display:flex;align-items:center;justify-content:center;gap:8px;cursor:pointer;
+}
+.bottombar button:active{background:var(--fill-press)}
+.bottombar .bb-count{font-size:12px;color:var(--text-dim);font-weight:600}
+
+/* 全量页（C 的第三级：仍是列表页，不超三级） */
+.dense .row{min-height:var(--row-h-sm);padding-top:6px;padding-bottom:6px}
+.dense .row-label{font-size:15px}
+.dense .row-ico{width:24px;height:24px;border-radius:7px}
+.dense .row-ico svg{width:14px;height:14px}
+.dense .divider{margin-left:calc(var(--pad-x) + 24px + 12px)}
+
+/* 二级页内的分组间标题 */
+.sub-note{font-size:12px;color:var(--text-faint);line-height:1.6;padding:0 4px}
+.sub-note code{font-family:var(--mono);font-size:11.5px;background:var(--bg-elev);border:1px solid var(--border-soft);
+  border-radius:5px;padding:0 4px;overflow-wrap:anywhere}
+.text-btn{width:100%;min-height:var(--row-h-sm);border:0;background:transparent;color:var(--accent-text);
+  font-size:14px;font-weight:650;cursor:pointer;border-top:1px solid var(--border-soft)}
+.text-btn:active{background:var(--fill-press)}
+
+/* ==========================================================================
+   9. 状态：空 / 加载 / 禁用 / 底部确认面板
+   ========================================================================== */
+.empty{padding:40px 20px;display:flex;flex-direction:column;align-items:center;gap:10px;text-align:center}
+.empty .e-ico{width:44px;height:44px;border-radius:14px;display:grid;place-items:center;background:var(--bg-elev2);
+  border:1px solid var(--border-soft);color:var(--text-faint)}
+.empty .e-ico svg{width:20px;height:20px}
+.empty .e-t{font-size:14px;font-weight:650}
+.empty .e-d{font-size:12.5px;color:var(--text-dim);max-width:230px}
+.empty .e-btn{margin-top:4px;min-height:36px;padding:0 14px;border-radius:9px;border:1px solid var(--border);
+  background:var(--bg-elev);color:var(--text);font-size:12.5px;font-weight:650;cursor:pointer}
+
+.sk-row{display:flex;align-items:center;gap:12px;min-height:var(--row-h);padding:8px var(--pad-x)}
+.sk{background:linear-gradient(90deg,var(--bg-elev2) 25%,var(--border-soft) 37%,var(--bg-elev2) 63%);
+  background-size:400% 100%;animation:shine 1.4s ease-in-out infinite;border-radius:6px}
+@keyframes shine{0%{background-position:100% 0}100%{background-position:0 0}}
+.sk-ico{width:28px;height:28px;border-radius:8px;flex:none}
+.sk-l1{height:12px;width:38%}
+.sk-l2{height:10px;width:22%;margin-top:7px}
+.sk-v{height:11px;width:16%;margin-left:auto;flex:none}
+
+.sheet-layer{position:absolute;inset:0;z-index:80;display:flex;align-items:flex-end;justify-content:center}
+.sheet-scrim{position:absolute;inset:0;background:var(--scrim);backdrop-filter:blur(2px);animation:fadein .18s ease-out}
+.sheet{
+  position:relative;width:100%;background:var(--bg-elev);border-radius:18px 18px 0 0;
+  padding:18px var(--pad-x) calc(14px + var(--safe-bottom) * .6);
+  border-top:1px solid var(--border-soft);box-shadow:0 -18px 40px rgba(0,0,0,.35);
+  animation:slideup .22s cubic-bezier(.2,.9,.25,1);
+}
+@keyframes slideup{from{transform:translateY(18px);opacity:.6}to{transform:none;opacity:1}}
+@keyframes fadein{from{opacity:0}to{opacity:1}}
+.sheet h3{margin:0 0 6px;font-size:16px}
+.sheet p{margin:0 0 14px;font-size:13px;color:var(--text-dim);line-height:1.55}
+.sheet .sc-actions{display:flex;flex-direction:column;gap:8px}
+.sheet button{min-height:50px;border-radius:12px;border:1px solid var(--border);background:var(--bg-elev2);
+  color:var(--text);font-size:15px;font-weight:650;cursor:pointer}
+.sheet button.destructive{background:var(--red);border-color:var(--red);color:var(--on-red);font-weight:750}
+.sheet button.cancel{background:transparent;border-color:var(--border-soft);color:var(--text-dim)}
+.sheet button:active{transform:scale(.99)}
+
+/* ==========================================================================
+   10. 文档区
+   ========================================================================== */
+.docs{margin-top:44px;display:flex;flex-direction:column;gap:16px}
+.doc{
+  background:var(--bg-elev);border:1px solid var(--border-soft);border-radius:var(--radius-lg);
+  padding:20px 20px 18px;
+}
+.doc > h2{margin:0 0 4px;font-size:18px;letter-spacing:-.2px}
+.doc > h2 .idx{color:var(--accent-text);font-variant-numeric:tabular-nums;margin-right:8px}
+.doc > p.lead{margin:0 0 14px;color:var(--text-dim);font-size:13px}
+.doc h3{font-size:14px;margin:18px 0 8px}
+.doc h3:first-of-type{margin-top:6px}
+.doc ul,.doc ol{margin:0;padding-left:20px;color:var(--text-dim);font-size:13.5px;line-height:1.7}
+.doc li::marker{color:var(--text-faint)}
+.doc li b,.doc p b{color:var(--text)}
+.doc code{font-family:var(--mono);font-size:12px;background:var(--bg-sunk);border:1px solid var(--border-soft);
+  border-radius:5px;padding:1px 5px;overflow-wrap:anywhere}
+pre{
+  margin:10px 0 0;padding:14px;background:var(--bg-sunk);border:1px solid var(--border-soft);border-radius:10px;
+  overflow-x:auto;font-family:var(--mono);font-size:12px;line-height:1.6;color:var(--text-dim);
+}
+pre b{color:var(--text);font-weight:650}
+pre .c{color:var(--text-faint)}
+
+table{width:100%;border-collapse:collapse;margin-top:10px;font-size:13px;display:block;overflow-x:auto;white-space:normal}
+table > thead,table > tbody{display:table;width:100%}
+th,td{text-align:left;padding:8px 10px;border-bottom:1px solid var(--border-soft);vertical-align:top}
+th{color:var(--text-faint);font-size:11.5px;font-weight:750;letter-spacing:.04em;text-transform:uppercase}
+td{color:var(--text-dim)}
+td b{color:var(--text);font-weight:600}
+tr:last-child td{border-bottom:0}
+.tagx{display:inline-block;padding:1px 6px;border-radius:5px;font-size:11px;font-weight:700;
+  background:var(--accent-soft);color:var(--accent-text);font-family:var(--mono)}
+.tagx.red{background:var(--red-soft);color:var(--red-text)}
+.tagx.gray{background:var(--fill-press);color:var(--text-dim)}
+.grid2{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:12px;margin-top:10px}
+.mini{border:1px solid var(--border-soft);border-radius:10px;overflow:hidden;background:var(--bg)}
+.mini .m-head{padding:7px 12px;font-size:11px;font-weight:750;color:var(--text-faint);
+  border-bottom:1px solid var(--border-soft);letter-spacing:.04em;text-transform:uppercase}
+.mini .row{min-height:52px}
+.note{display:block;padding:11px 12px;border-radius:10px;background:var(--accent-soft);
+  color:var(--text-dim);font-size:12.5px;line-height:1.6;margin-top:12px;border:1px solid color-mix(in srgb,var(--accent) 34%,transparent)}
+.note.warn{background:var(--red-soft);border-color:color-mix(in srgb,var(--red) 34%,transparent);color:var(--text-dim)}
+.note b{color:var(--text)}
+.figma{
+  border:1px dashed color-mix(in srgb,var(--accent) 45%,transparent);border-radius:12px;padding:16px;
+  background:var(--bg-sunk);font-size:13px;line-height:1.75;color:var(--text-dim);
+}
+.figma b{color:var(--text)}
+
+/* 方案对比表 */
+.compare th:nth-child(1){width:130px}
+.compare td{white-space:normal}
+.best{color:var(--green);font-weight:700}
+
+/* 响应式：展示页自身 */
+@media (max-width:900px){
+  .stage{flex-direction:column;align-items:center}
+  .stage-note{position:static;max-width:none;width:100%;order:2}
+}
+@media (max-width:420px){
+  .wrap{padding:18px 10px 60px}
+  .device{transform:scale(.92);transform-origin:top center;margin-bottom:-40px}
+}
+@media (prefers-reduced-motion:reduce){
+  *{animation-duration:.001ms !important;animation-iteration-count:1 !important;transition-duration:.001ms !important}
+  .sheet,.sheet-scrim{animation:none}
+}
+</style>
+</head>
+<body>
+<div data-docs-i18n-switch style="position:fixed;top:8px;right:12px;z-index:2147483647;font:12px/1.6 -apple-system,system-ui,sans-serif;background:rgba(15,17,22,.78);color:#fff;padding:4px 12px;border-radius:999px;box-shadow:0 2px 10px rgba(0,0,0,.35)"><a href="./settings-mobile-redesign.html" style="color:#fff;text-decoration:none">简体中文</a> · <strong>English</strong> · <a href="./settings-mobile-redesign.zh-TW.html" style="color:#fff;text-decoration:none">繁體中文</a></div>
+
+
+<div class="wrap">
+  <header class="sc-head">
+    <div class="sc-kicker">pi-web-ui · Mobile Settings · Redesign 2026</div>
+    <h1 class="sc-title">Mobile settings redesign · three interactive options</h1>
+    <p class="sc-sub">
+      Today: settings is a 960px-wide desktop dialog, and mobile crams <b>21+ tabs</b> into one horizontal pill rail (inside
+      <code>@media (max-width:640px)</code>, <code>.settings-rail{flex-direction:row;overflow-x:auto}</code>), while group titles and search are <code>display:none</code>.
+      All three options share the same real tab inventory (no new product surface); they differ only in how the home screen lowers the cost of a jump.
+    </p>
+  </header>
+
+  <div class="controls" role="group" aria-label="Prototype controls">
+    <div class="seg" id="schemeSeg" role="group" aria-label="Options">
+      <button data-scheme="A" aria-pressed="true"><span class="n">A</span> Grouped home</button>
+      <button data-scheme="B" aria-pressed="false"><span class="n">B</span> Value preview</button>
+      <button data-scheme="C" aria-pressed="false"><span class="n">C</span> Search first</button>
+    </div>
+    <div class="seg small" id="themeSeg" role="group" aria-label="Theme">
+      <button data-theme-set="dark" aria-pressed="true">Dark</button>
+      <button data-theme-set="light" aria-pressed="false">Light</button>
+    </div>
+    <div class="seg small" id="deviceSeg" role="group" aria-label="Device">
+      <button data-device-set="island" aria-pressed="true">390 Dynamic Island</button>
+      <button data-device-set="punch" aria-pressed="false">360 punch-hole</button>
+      <button data-device-set="se" aria-pressed="false">320 small screen</button>
+    </div>
+    <div class="seg small" id="stateSeg" role="group" aria-label="State demo">
+      <button data-state-set="default" aria-pressed="true">Default</button>
+      <button data-state-set="loading" aria-pressed="false">Loading</button>
+      <button data-state-set="failed" aria-pressed="false">Save failed</button>
+      <button data-state-set="empty" aria-pressed="false">Empty results</button>
+    </div>
+  </div>
+
+  <div class="stage">
+    <div class="device" id="device" data-device="island">
+      <div class="island" aria-hidden="true"></div>
+      <div class="screen">
+        <div class="statusbar" aria-hidden="true">
+          <span>9:41</span>
+          <span class="sb-r">
+            <svg viewBox="0 0 24 24" fill="currentColor"><path d="M3 18h3v-5H3v5zm5 0h3V9H8v9zm5 0h3V6h-3v12zm5 0h3V3h-3v15z"/></svg>
+            <svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 20a1.6 1.6 0 1 0 0-3.2A1.6 1.6 0 0 0 12 20zm0-6.2c1.6 0 3 .6 4.1 1.7l1.6-1.6A8 8 0 0 0 12 11.4a8 8 0 0 0-5.7 2.5l1.6 1.6A5.8 5.8 0 0 1 12 13.8zm0-5.2c2.9 0 5.5 1.1 7.5 3l1.6-1.6A13.7 13.7 0 0 0 12 6.2c-3.7 0-7.1 1.4-9.6 4l1.6 1.6a11.7 11.7 0 0 1 8-3z"/></svg>
+            <svg viewBox="0 0 26 24" fill="none" stroke="currentColor" stroke-width="1.6"><rect x="2" y="8" width="17" height="9" rx="2.6"/><rect x="4" y="10" width="12" height="5" rx="1.4" fill="currentColor" stroke="none"/><path d="M22 11v3" stroke-linecap="round"/></svg>
+          </span>
+        </div>
+        <div class="app" id="app" data-scheme="A"><!--__APP__--></div>
+        <div class="homebar" aria-hidden="true"><i></i></div>
+      </div>
+    </div>
+
+    <aside class="stage-note">
+      <div class="note-card rec" id="noteMain">
+        <h3>Option A · Grouped home + push into second-level pages</h3>
+        <p>A straight port of iOS Settings: large title → identity card → 6 group cards (3–6 rows each), with a current value replacing the bare chevron on each row. Second-level pages slide in from the right and the save state lives at the right end of the nav bar.</p>
+      </div>
+      <div class="note-card pros" id="notePros">
+        <h3 style="font-size:13.5px">Why we recommend it</h3>
+        <dl>
+          <dt>Scanning</dt><dd>7 rows plus 5 group titles per screen, eyes stay on the left-hand labels — built for "find a feature", not "read content"</dd>
+          <dt>Touch</dt><dd>56px rows, one 44px+ hit area per row, so nobody has to hit a 30px dot to flip a switch</dd>
+          <dt>Mental model</dt><dd>Isomorphic with iOS Settings, zero learning cost, and the back gesture comes for free</dd>
+          <dt>Cost</dt><dd>Lowest: the existing <code>tab</code> state maps straight onto a "stack"; one new mobile block in the stylesheet is enough</dd>
+        </dl>
+      </div>
+      <div class="note-card cons" id="noteCons">
+        <h3 style="font-size:13.5px">Cost / trade-offs</h3>
+        <dl>
+          <dt>Jumps</dt><dd>Changing one value costs 2 jumps on average; the value preview only rescues read-only confirmation</dd>
+          <dt>Long tail</dt><dd>The 21 tabs still need groups to carry them, and a newcomer may never find "Approval rules"</dd>
+          <dt>Mitigation</dt><dd>Search always pinned at the top + counts on group titles + recently changed items floating up (recorded locally, no collection)</dd>
+        </dl>
+      </div>
+      <div class="note-card">
+        <h3 style="font-size:13.5px">Try it</h3>
+        <p>Tap a row to enter its second-level page (the back arrow returns); switches flip directly; in option A, "Reset &amp; destructive actions" is reached from the bottom of the <b>About</b> page or from the last row of the home screen. Switch the demo to "Save failed" to see the red receipt at the top and the retry.</p>
+      </div>
+    </aside>
+  </div>
+
+  <section class="docs" id="docs">
+
+  <article class="doc" id="diagnosis">
+    <h2><span class="idx">0</span>Diagnosis: it is not "ugly", it is the desktop IA pressed straight into 390px</h2>
+    <p class="lead">Evidence comes from the code currently in the repo (the <code>@media (max-width:640px)</code> block in <code>web/src/styles.css</code>, the <code>SettingsTab</code> union in <code>web/src/components/SettingsModal.tsx</code>, and <code>web/index.html</code>).</p>
+    <table>
+      <thead><tr><th>Symptom</th><th>Where in the code</th><th>What it does to the user</th></tr></thead>
+      <tbody>
+        <tr><td><b>21+ tabs laid out as one horizontal pill rail</b><br>no groups, no search, no hint of "there is more"</td><td><code>.settings-rail{flex-direction:row;overflow-x:auto}</code><br><code>.settings-group-title{display:none}</code><br><code>.settings-search-wrap{display:none}</code></td><td>You have to swipe 3–4 screens to reach "UI plugins" or "Group collaboration"; <b>newcomers never learn those pages exist</b></td></tr>
+        <tr><td><b>Tabs 40px, sub-tabs 36px</b></td><td><code>.settings-tab{min-height:40px}</code><br><code>.set-subtab{min-height:36px}</code></td><td>Below the 44pt guidance; thumbs misfire</td></tr>
+        <tr><td><b>Form rows 40px with only 2px of side padding</b></td><td><code>.settings-modal .set-row{min-height:40px;padding:10px 2px}</code></td><td>Rows sit flush against each other, so while scrolling you hit the neighbouring switch</td></tr>
+        <tr><td><b>Dialog at 92vh, no safe area</b></td><td><code>.settings-modal{height:92vh}</code><br><code>web/index.html</code> lacks <code>viewport-fit=cover</code></td><td>On iOS <code>env(safe-area-inset-*)</code> is always 0: the Dynamic Island sits on the title and the Home bar covers the last row</td></tr>
+        <tr><td><b><code>color-scheme: dark</code> hard-coded</b></td><td><code>meta name="color-scheme" content="dark"</code> in <code>web/index.html</code></td><td>Under a light theme the scrollbars and native controls still paint dark — a visible seam</td></tr>
+        <tr><td><b>No current-value preview</b></td><td>Mobile reuses the desktop <code>set-row</code></td><td>Even to learn "wide or narrow right now?" you must enter a second-level page</td></tr>
+      </tbody>
+    </table>
+    <div class="note">
+      <b>Design goals (in priority order)</b>: ① high-frequency entries visible on the first screen, horizontal swiping gone; ② every tappable area ≥ 44×44; ③ safe areas + light/dark + dynamic type are first-class citizens; ④ the 21 tabs need stable ownership rules, not a memorised position.
+    </div>
+  </article>
+
+  <article class="doc" id="tree">
+    <h2><span class="idx">1</span>Page structure tree (option A is the spine; B/C only swap the home shell)</h2>
+    <p class="lead">Strictly three levels of hierarchy: <b>settings home → second-level settings page → (at most) in-page group</b>. The confirm sheet is a modal and does not count as a level.</p>
+<pre><b>Settings</b> (home screen)
+├─ Identity card   this device · pi ｜ connected · running locally ｜ 3 devices ｜ [Switch engine]
+├─ <b>Notifications</b>            <span class="c">// capability gate: exists only in the phone package (PiPush); the whole group is not rendered on the web</span>
+│   ├─ Device notifications ………………………… Switch (applies immediately)
+│   ├─ Notification types  4 / 5 kinds › …………… second-level page: 5 kind toggles + system permission
+│   └─ System notification permission  allowed › ………… same second-level page; on failure offer "Open system settings"
+├─ <b>Everyday</b>
+│   ├─ Models &amp; providers  pi · 12 ›
+│   ├─ Conversation  wide · show model ›
+│   ├─ Alert sound  Switch
+│   ├─ Quick phrases  8 ›
+│   └─ Theme  flow-ink · dark ›
+├─ <b>Agent capabilities</b>
+│   ├─ System prompt  append mode ›
+│   ├─ Tools  3 disabled ›
+│   ├─ Skills  12 ›
+│   ├─ Presets  4 ›
+│   ├─ Sub-agent templates  6 ›
+│   └─ Quick ask  on ›
+├─ <b>Connections &amp; automation</b>
+│   ├─ MCP servers  2 · 1 failing ›      <span class="c">// "failing" = wording + red dot, two channels</span>
+│   ├─ Scheduled tasks  3 ›
+│   ├─ Group collaboration &amp; execution  default quota ›
+│   ├─ Approval rules  5 ›
+│   └─ Vision bridge  not configured (disabled)     <span class="c">// secondary copy states "configure a vision model first"</span>
+├─ <b>Appearance &amp; UI</b>
+│   ├─ Layout  default ›
+│   ├─ UI plugins  6 · 1 has an update ›
+│   ├─ Plugins (extensions)  4 ›
+│   └─ Language  Simplified Chinese ›
+├─ <b>More</b>
+│   ├─ Input history  238 entries ›
+│   ├─ Goal review  3 skills ›
+│   └─ About &amp; version  v0.119.0 ›
+└─ <b>Destructive actions</b>        <span class="c">// its own group + pinned to the bottom + red text; concrete actions appear only on the second-level page</span>
+    └─ Reset &amp; destructive actions  3 items ›
+
+<b>Second-level template</b> (25 pages, all isomorphic)
+├─ Nav bar: ‹ Back ｜ title ｜ save-state pill
+├─ Group card A: segmented control (e.g. Conversation: narrow / wide)
+├─ Group card B: toggle row / value row / danger row
+└─ Footer: changes apply immediately, no save button
+
+<b>Third level</b>: group titles inside a second-level page (e.g. "Receive these notifications"); no deeper drilling.</pre>
+    <p class="lead" style="margin:12px 0 0">The options differ only in the home shell:</p>
+    <ul>
+      <li><b>A</b>: 6 group cards + identity card, all expanded by default (everything exposed, fastest scanning).</li>
+      <li><b>B</b>: a 2×2 grid of high-frequency tiles + groups collapsed by default (highest first-screen density, but discoverability depends on expanding).</li>
+      <li><b>C</b>: search hero + 6 frequently changed items + 5 collapsed scenarios + "All settings" at the bottom (find by intent; the deepest path is the longest).</li>
+    </ul>
+  </article>
+
+  <article class="doc" id="inventory">
+    <h2><span class="idx">2</span>Groups and list-row inventory</h2>
+    <p class="lead">The copy in the right-hand "value" column is part of the design: <b>it decides whether the user needs to tap in at all</b>. Numbers are typographic examples; field names and tabs all come from existing code.</p>
+    <table>
+      <thead><tr><th>Group</th><th>List row</th><th>Control</th><th>Right value / secondary copy</th><th>Where it goes, and why</th></tr></thead>
+      <tbody>
+        <tr><td rowspan="3"><b>Notifications</b><br><span class="tagx gray">App only</span></td><td>Device notifications</td><td><span class="tagx">Switch</span></td><td>sub: task done, needs an answer, approval</td><td>Pushes toggle immediately; when off, the secondary copy becomes "Off · tap to turn back on"</td></tr>
+        <tr><td>Notification types</td><td>Nav</td><td>4 / 5 kinds</td><td>Second-level page with 5 toggles: task done / failed / needs an answer / needs approval / sub-task done</td></tr>
+        <tr><td>System notification permission</td><td>Nav</td><td>Allowed</td><td>Not authorised → an inline "Open system settings" action appears (<code>PiPush.openSystemSettings()</code>)</td></tr>
+        <tr><td rowspan="5"><b>Everyday</b></td><td>Models &amp; providers</td><td>Nav</td><td>pi · 12</td><td>Second-level page: engine card / provider list / clear keys (danger)</td></tr>
+        <tr><td>Conversation</td><td>Nav</td><td>wide · show model</td><td>Second-level page: narrow/wide segment + 4 display toggles + context soft cap</td></tr>
+        <tr><td>Alert sound</td><td><span class="tagx">Switch</span></td><td>sub: on task done, when confirmation is needed</td><td>The only switch lifted onto the home screen, so muting does not require a second-level page</td></tr>
+        <tr><td>Quick phrases</td><td>Nav</td><td>8</td><td>Second-level page: list (tap to edit) + add + restore defaults (danger)</td></tr>
+        <tr><td>Theme</td><td>Nav</td><td>flow-ink · dark</td><td>Second-level page: theme radio (with preview swatches) + follow system</td></tr>
+        <tr><td rowspan="6"><b>Agent capabilities</b></td><td>System prompt</td><td>Nav</td><td>append mode</td><td>Second-level page: append/replace segment + editor entry + restore defaults (danger)</td></tr>
+        <tr><td>Tools</td><td>Nav</td><td>3 disabled</td><td>The count comes from <code>disabledToolsCount + disabledMarkers.length</code>, so "someone touched this" is visible at a glance</td></tr>
+        <tr><td>Skills</td><td>Nav</td><td>12</td><td>Second-level page: installed / directory loaded on demand / skill marketplace</td></tr>
+        <tr><td>Presets</td><td>Nav</td><td>4</td><td>Second-level page: list + JSON import and export</td></tr>
+        <tr><td>Sub-agent templates</td><td>Nav</td><td>6</td><td>Second-level page: templates / concurrency cap / auto-wake</td></tr>
+        <tr><td>Quick ask</td><td>Nav</td><td>On</td><td>Second-level page: enable toggle + popover prompt</td></tr>
+        <tr><td rowspan="5"><b>Connections &amp; automation</b></td><td>MCP servers</td><td>Nav</td><td><span class="tagx red">2 · 1 failing</span></td><td>The failing value uses <code>--red-text</code> plus wording, two channels; each server on the second-level page carries a connection dot</td></tr>
+        <tr><td>Scheduled tasks</td><td>Nav</td><td>3</td><td>Second-level page: tasks + enable toggle + create</td></tr>
+        <tr><td>Group collaboration &amp; execution</td><td>Nav</td><td>default quota</td><td>Second-level page: concurrency cap / task quota / blackboard context</td></tr>
+        <tr><td>Approval rules</td><td>Nav</td><td>5</td><td>Second-level page: master switch + rule library + presentation (queue / all)</td></tr>
+        <tr><td>Vision bridge</td><td>Nav (disabled)</td><td>Not configured</td><td>Disabled state: <code>aria-disabled</code>, icon at 45% opacity, secondary copy gives the fix path</td></tr>
+        <tr><td rowspan="4"><b>Appearance &amp; UI</b></td><td>Layout</td><td>Nav</td><td>default</td><td>Second-level page: top bar / bottom dock / composer actions + restore defaults (danger)</td></tr>
+        <tr><td>UI plugins</td><td>Nav</td><td>6 · 1 has an update</td><td>When an update exists, a 6px dot leads the row, with copy as the fallback channel</td></tr>
+        <tr><td>Plugins (extensions)</td><td>Nav</td><td>4</td><td>Second-level page: installed extensions + marketplace</td></tr>
+        <tr><td>Language</td><td>Nav</td><td>Simplified Chinese</td><td>Second-level page: radio (Simplified Chinese / English / Traditional Chinese)</td></tr>
+        <tr><td rowspan="3"><b>More</b></td><td>Input history</td><td>Nav</td><td>238</td><td>Second-level page: keep drafts across conversations + clear history (danger)</td></tr>
+        <tr><td>Goal review</td><td>Nav</td><td>3 skills</td><td>Second-level page: review skills + must pass before submit</td></tr>
+        <tr><td>About &amp; version</td><td>Nav</td><td>v0.119.0</td><td>Second-level page: version / engine / licence / repository, with the destructive entry repeated at the bottom</td></tr>
+        <tr><td><b>Destructive actions</b></td><td>Reset &amp; destructive actions</td><td>Nav</td><td>3</td><td>Second-level page: clear history / clear all keys / restore default layout, <b>each one goes through the bottom confirm sheet</b></td></tr>
+      </tbody>
+    </table>
+
+    <h3>2.1 Mapping the requested groups onto real capabilities (no fabrication)</h3>
+    <table>
+      <thead><tr><th>Group in the request template</th><th>What this product actually has</th><th>How we handle it</th></tr></thead>
+      <tbody>
+        <tr><td>Account area: avatar / nickname / account state</td><td><b>No account system</b> (local token auth); only "this machine's engine + authorised devices"</td><td>Replaced by an <b>identity card</b>: engine badge + connection state + device count + switch engine; no fake avatar or nickname</td></tr>
+        <tr><td>General: language / theme / <s>font size</s></td><td>Language ✓ (LocaleModal), theme ✓ (themes/*.css)<br>font size ✗</td><td>Language and theme stay; <b>no new font-size setting</b> — instead follow the system's dynamic type (<code>rem</code> + no locked scaling), which is a defect fix rather than a feature</td></tr>
+        <tr><td>Notifications: push toggle / do-not-disturb</td><td>The phone package has real push (<code>mobile/src/Settings.tsx</code>: 5 notification kinds + permission + server config)<br>DND ✗</td><td>Keep push and the kinds, <b>invent no DND</b>; the whole group is hidden on the web (capability gate)</td></tr>
+        <tr><td>Privacy &amp; security: permission management / signed-in devices</td><td>Approval rules ✓ (<code>tool-approval.ts</code>), plugin permissions ✓, provider keys ✓</td><td>Merged into "approval rules + keys + devices"; device authorisation lives in the device center, so settings only carries a one-row jump</td></tr>
+        <tr><td>Storage: cache cleanup / disk usage</td><td>No on-disk cache panel; there is input history, conversation cache (in memory) and provider keys</td><td>Express what is clearable as "input history, 238 entries + clear"; <b>do not invent "1.2GB used"</b></td></tr>
+        <tr><td>About: version / licence / privacy policy</td><td>Version ✓, MIT licence ✓, repository ✓</td><td>Keep; <b>no dead links</b> (no privacy-policy page means no link)</td></tr>
+        <tr><td>Danger: sign out / delete account</td><td>No login</td><td>Replaced by real irreversible actions: clear history / clear all keys / restore default layout, all with a second confirmation</td></tr>
+      </tbody>
+    </table>
+  </article>
+
+
+  <article class="doc" id="tokens">
+    <h2><span class="idx">3</span>Component inventory and size / spacing / colour tokens</h2>
+    <h3>3.1 Size and spacing (mobile-only, decoupled from desktop)</h3>
+    <table>
+      <thead><tr><th>token</th><th>Value</th><th>Use / basis</th></tr></thead>
+      <tbody>
+        <tr><td><code>--row-h</code></td><td><b>56px</b></td><td>List row; when the secondary copy wraps to two lines, 64–76 is allowed and the content sets the height</td></tr>
+        <tr><td><code>--row-h-sm</code></td><td>48px</td><td>Compact pages (option C's "All settings")</td></tr>
+        <tr><td><code>--touch</code></td><td><b>44px</b></td><td>Minimum hit area; icon buttons, group headers and the search field are all ≥ 44</td></tr>
+        <tr><td><code>--pad-x</code></td><td>16px</td><td>Page side padding (drops to 12px on a 320px screen)</td></tr>
+        <tr><td><code>--group-gap</code></td><td><b>16px</b></td><td>Distance between group cards</td></tr>
+        <tr><td><code>--radius</code></td><td><b>12px</b></td><td>Card radius (specified by the request); tiles also 12, confirm sheet 18 (top corners only)</td></tr>
+        <tr><td><code>--icon-tile</code></td><td>28px</td><td>In-row icon pedestal (radius 8); the glyph itself is 16px at a 1.6 stroke width</td></tr>
+        <tr><td><code>--chev</code></td><td>16px</td><td>Right chevron, colour <code>--text-faint</code></td></tr>
+        <tr><td>Switch</td><td>50×30, dot 24</td><td>Visual mass close to iOS, but the hit area is still the whole 56px row</td></tr>
+        <tr><td>Status bar / Home</td><td>44–54 / 34</td><td><code>env(safe-area-inset-top/bottom)</code>; 20/8 on small screens</td></tr>
+        <tr><td>Nav bar</td><td>48px</td><td>Back key 44×44, title centred at 17px</td></tr>
+        <tr><td>Type ramp</td><td>30 (large title) / 17 (nav) / 16 (row label) / 13 (value, group title) / 12.5 (secondary copy) / 11.5 (badge)</td><td>All <code>rem</code>; the row label = 1rem and follows the system font size</td></tr>
+      </tbody>
+    </table>
+
+    <h3>3.2 Colour tokens (dark/light pairs; measured contrast in parentheses)</h3>
+    <table>
+      <thead><tr><th>token</th><th>Dark</th><th>Light</th><th>Use</th></tr></thead>
+      <tbody>
+        <tr><td><code>--bg</code></td><td>#0d0e12</td><td>#f1f2f6</td><td>Page base (the light value is the request's "light grey / white")</td></tr>
+        <tr><td><code>--bg-elev</code></td><td>#14161c</td><td>#ffffff</td><td>Cards; in light mode, layering comes from a 1px stroke + a very soft shadow, never a big gradient</td></tr>
+        <tr><td><code>--border-soft</code></td><td>#1e2230</td><td>#e6e8ef</td><td>Card strokes and row dividers (indented 56px from the left)</td></tr>
+        <tr><td><code>--text</code></td><td>#e6e8ef (15.9:1)</td><td>#14161c (16.8:1)</td><td>Row labels, titles</td></tr>
+        <tr><td><code>--text-dim</code></td><td>#9aa1b4 (6.8:1)</td><td>#5b6270 (5.6:1)</td><td>Secondary copy, right-hand values, group titles</td></tr>
+        <tr><td><code>--text-faint</code></td><td>#8b93a7 (5.8:1)</td><td>#666e7c (5.1:1)</td><td>Chevrons, placeholders, weak hints (still ≥4.5:1)</td></tr>
+        <tr><td><code>--accent</code></td><td>#8b5cf6</td><td>#7c3aed</td><td>Switch on, focus ring, selected background</td></tr>
+        <tr><td><code>--accent-text</code></td><td>#a78bfa (6.5:1)</td><td>#6d28d9 (6.9:1)</td><td>Accent <b>text</b> gets its own tier — using <code>--accent</code> directly as text is only 4.2:1 on dark, which fails</td></tr>
+        <tr><td><code>--accent-contrast</code></td><td>#ffffff</td><td>#ffffff</td><td>Text on solid buttons and badges</td></tr>
+        <tr><td><code>--red</code> / <code>--red-text</code></td><td>#f87171 / #fca5a5</td><td>#dc2626 / #b91c1c</td><td>Danger rows, failure receipts; solid red button text uses <code>--on-red</code> (dark text in the dark theme, so white never sits on light red)</td></tr>
+        <tr><td><code>--green</code></td><td>#34d399</td><td>#0f9d68</td><td>Connection state dot (always accompanied by text)</td></tr>
+      </tbody>
+    </table>
+
+    <h3>3.3 Component inventory</h3>
+    <table>
+      <thead><tr><th>Component</th><th>Structure</th><th>States</th></tr></thead>
+      <tbody>
+        <tr><td><b>SettingsRow</b> (navigation row)</td><td>28px icon pedestal + label/secondary copy + right value + chevron</td><td>default / hover (pointer devices only) / pressed / focus / disabled</td></tr>
+        <tr><td><b>ToggleRow</b> (toggle row)</td><td>Same as above with a 50×30 switch at the right end; <b>the whole row is a single <code>role="switch"</code></b></td><td>on / off / saving / save failed / disabled</td></tr>
+        <tr><td><b>DangerRow</b></td><td>Red icon + red label (de-emphasised, never hidden)</td><td>default / pressed / awaiting the second confirmation</td></tr>
+        <tr><td><b>GroupCard</b></td><td>12px radius + 1px stroke + embedded rows; dividers are indented to where the text starts</td><td>default / collapsed (B)</td></tr>
+        <tr><td><b>Segmented</b></td><td>36px tall, inset track, the selected item floats on a white fill</td><td>selected / unselected / disabled</td></tr>
+        <tr><td><b>SearchField</b></td><td>44px tall, leading icon, clearable; option C uses a 48px hero version</td><td>idle / focused (accent ring) / has value / empty result</td></tr>
+        <tr><td><b>SavePill</b></td><td>28px pill + state dot + copy</td><td>saved / saving (amber pulse) / unsaved (red + tappable retry)</td></tr>
+        <tr><td><b>ConfirmSheet</b></td><td>Bottom sheet: title + explanation + red confirm + cancel</td><td>220ms enter animation / scrim tap closes / Esc closes</td></tr>
+        <tr><td><b>EmptyState</b></td><td>44px icon pedestal + one line of cause + one line of advice + clear button</td><td>empty search / empty list</td></tr>
+        <tr><td><b>Skeleton</b></td><td>Icon block + two text blocks + value block, 1.4s sweep</td><td>first load (<code>aria-busy</code>)</td></tr>
+      </tbody>
+    </table>
+  </article>
+
+  <article class="doc" id="states">
+    <h2><span class="idx">4</span>Key interactions and states</h2>
+
+    <div class="grid2">
+      <div class="mini"><div class="m-head">Default</div>
+        <div class="row"><span class="row-ico tone-blue"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><rect x="7" y="7" width="10" height="10" rx="2"/></svg></span><span class="row-main"><span class="row-label">Models &amp; providers</span><span class="row-desc">Engine, providers and default model</span></span><span class="row-value">pi · 12</span></div>
+      </div>
+      <div class="mini"><div class="m-head">Pressed (whole row)</div>
+        <div class="row" style="background:var(--fill-press)"><span class="row-ico tone-blue"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><rect x="7" y="7" width="10" height="10" rx="2"/></svg></span><span class="row-main"><span class="row-label">Models &amp; providers</span><span class="row-desc">Engine, providers and default model</span></span><span class="row-value">pi · 12</span></div>
+      </div>
+      <div class="mini"><div class="m-head">Disabled (with reason)</div>
+        <div class="row" aria-disabled="true"><span class="row-ico tone-slate" style="opacity:.45"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7-10-7-10-7z"/><circle cx="12" cy="12" r="3"/></svg></span><span class="row-main"><span class="row-label">Vision bridge</span><span class="row-desc">Configure a vision model under Models &amp; providers first</span></span><span class="row-value">Not configured</span></div>
+      </div>
+      <div class="mini"><div class="m-head">Loading (skeleton)</div>
+        <div class="sk-row"><span class="sk sk-ico"></span><div style="flex:1"><div class="sk sk-l1"></div><div class="sk sk-l2"></div></div><span class="sk sk-v"></span></div>
+      </div>
+    </div>
+
+    <h3>4.1 State-by-state notes</h3>
+    <ul>
+      <li><b>Default</b>: row 56 tall, icon pedestal 28, right value 13px in <code>--text-dim</code>, chevron 16px; at most one accent colour per screen (switch on / selected), everything else rests on hierarchy and whitespace.</li>
+      <li><b>Pressed</b>: <code>:active</code> → background <code>--fill-press</code> (7% white on dark / 6% black on light) + tile <code>scale(.975)</code>, 120–160ms; <b>no</b> ripple, no change in shadow.</li>
+      <li><b>Disabled</b>: <code>aria-disabled="true"</code> + icon at 45% opacity + label in <code>--text-faint</code> + the chevron stays; the secondary copy <b>must</b> spell out why it is disabled and where to fix it.</li>
+      <li><b>Loading</b>: first entry shows a skeleton (not a spinner), <code>aria-busy="true"</code> + <code>aria-label="Loading settings"</code>; once content exists, changing a value updates only that part — never a full-page flash.</li>
+      <li><b>Empty</b>: no search results → icon + "No setting matches “XXX”" + suggested keywords + a "Clear search" button. <b>Never write</b> information-free copy like "No data yet".</li>
+      <li><b>Switch</b>: on = <code>--accent</code> track + the dot slides 20px right; off = <code>--track-off</code>. The copy layer also exposes <code>aria-checked</code>, so colour never speaks alone.</li>
+      <li><b>Entering a second-level page</b>: a 220ms <code>translateX(16px)+fade</code> push; going back runs the reverse. Android uses the system back key; on iOS also enable the edge-swipe back (cheap to implement, see the rollout checklist).</li>
+      <li><b>Destructive actions</b>: the row is only an entry point → second-level page → tapping the action brings up the bottom sheet (the title restates the object + the consequences + whether it is irreversible); the confirm button is solid red, cancel sits below and is taller; <b>do not use a system Alert with side-by-side "OK / Cancel"</b> — thumbs misfire on it.</li>
+      <li><b>Save policy</b>: <b>everything applies immediately, there is no Save button</b>. The 28px pill at the top reads <code>Saved / Saving… / Unsaved · retry</code>; on failure a red banner (<code>role="alert"</code>) and a red row appear together, and tapping either retries. This matches the receipt semantics of the existing <code>useSettingsSync</code>.</li>
+      <li><b>Search</b>: always resident on the home screen (never collapsed into an icon). Scope = row label + secondary copy + group name + second-level title + keyword aliases (reusing the Chinese/English aliases in <code>TAB_KEYWORDS</code>). Input is debounced 200ms, result rows carry a group breadcrumb ("· Everyday"), and <b>toggles can be flipped right in the results</b>.</li>
+    </ul>
+  </article>
+
+  <article class="doc" id="figma">
+    <h2><span class="idx">5</span>Visual brief for Figma / AI design tools</h2>
+    <p class="lead">The whole block can be pasted straight into Figma Make / v0 / Cursor.</p>
+    <div class="figma">
+      <b>Artboard</b>: iPhone 15 (390×844, radius 46), status bar 54, Home area 34, with SafeArea auto layout; also produce 320×568 and 360×780 versions for adaptation checks.
+      <br><br>
+      <b>Style</b>: modern, restrained, trustworthy; take the information density from iOS Settings and the card whitespace from Material 3. Dark is the default (page base #0D0E12); light is a Light variant (#F1F2F6 base + pure-white cards + 1px #E6E8EF stroke + a very soft shadow). <b>No large gradients</b> — only the identity card's brand square may take a 150° purple→indigo gradient (#8B5CF6 → #6366F1).
+      <br><br>
+      <b>Home screen, top to bottom</b>: ① large title "Settings" at 30px/700, with a 28px-tall state pill on the right (6px green dot + "Saved" at 11.5px); ② search field 44px tall, radius 11, one elevation brighter than the page, 16px line magnifier on the left; ③ identity card, radius 12, 46×46 brand square + 16px title + 12.5px status line (7px state dot) + a 36px-tall outlined "Switch engine" button on the right; ④ 6 groups, each = a 13px/700 group title (#9AA1B4, 4px side inset) + card (radius 12, 1px stroke, 1px dividers indented 56px); ⑤ finally a separate "Destructive actions" card holding a single red-text entry.
+      <br><br>
+      <b>Row</b>: 56 tall, 16 side padding; at the left a 28×28 radius-8 icon pedestal (fill = the row's hue at 16% opacity, glyph 16px line, hue at 100%); in the middle the label at 16px/500, with an optional 12.5px secondary copy (two lines max, colour #9AA1B4); at the right the current value at 13px in the same colour, 42% width max and ellipsised beyond; far right a 16px chevron in #8B93A7. Toggle rows carry no chevron.
+      <br><br>
+      <b>Hue assignment</b> (icon pedestals, one consistent set): models = blue #60A5FA, prompt = blue, tools = purple #A78BFA, skills = amber #FBBF24, MCP = sky #38BDF8, approval = green #34D399, notifications = pink #F472B6, danger = red #F87171, everything else = grey #94A3B8.
+      <br><br>
+      <b>Second-level page</b>: a 48px nav bar (44×44 back on the left, 17px/650 title in the middle, the same state pill on the right), with identically styled group cards below; segmented control 36px tall, inset track, the selected item floating on a white fill at radius 8.
+      <br><br>
+      <b>Confirm sheet</b>: a bottom sheet with a top radius of 18, title 16px/650, explanation 13px, primary button 50px tall in solid red (dark text #1A1A1A in the dark theme to hold contrast), secondary "Cancel" outlined below. Scrim 58% black + 2px blur.
+      <br><br>
+      <b>Forbidden</b>: no stacked card shadows, no glassmorphism, no rainbow icons, no type below 8pt, no action that only appears on hover, no fixed bottom bar covering the last row (leave safe-area + 24 at the end of the list).
+    </div>
+  </article>
+
+
+  <article class="doc" id="code">
+    <h2><span class="idx">6</span>React Native pseudo-code (structure / tokens / a11y alignment)</h2>
+    <p class="lead">Skeleton only; the emphasis is "the row is the single tap target", "groups are data-driven", "safe areas and dynamic type are built in".</p>
+<pre><b>// tokens.ts</b>
+export const T = {
+  rowH: 56, rowHSm: 48, touch: 44, padX: 16, gap: 16, radius: 12, iconTile: 28,
+  fs: { title: 30, nav: 17, label: 16, value: 13, desc: 12.5, badge: 11.5 },
+};
+
+<b>// SettingsHome.tsx</b>
+export function SettingsHome({ onOpen }: { onOpen: (page: PageId) =&gt; void }) {
+  return (
+    &lt;SafeAreaView edges={['top', 'bottom']} style={{ flex: 1, backgroundColor: c.bg }}&gt;
+      &lt;LargeTitle title="Settings" accessory={&lt;SavePill /&gt;} /&gt;
+      &lt;SearchField placeholder="Search settings" onChange={setQuery} /&gt;
+      &lt;FlatList
+        data={groups}                      <span class="c">// data-driven: group → rows, order is priority</span>
+        keyExtractor={(g) =&gt; g.id}
+        renderItem={({ item }) =&gt; (
+          &lt;Section title={item.title}&gt;
+            {item.rows.map((r) =&gt; r.kind === 'toggle'
+              ? &lt;ToggleRow key={r.id} row={r} /&gt;
+              : &lt;NavRow key={r.id} row={r} onPress={() =&gt; onOpen(r.page)} /&gt;)}
+          &lt;/Section&gt;
+        )}
+        ListFooterComponent={&lt;DangerSection /&gt;}
+        contentContainerStyle={{ paddingHorizontal: T.padX, paddingBottom: insets.bottom + 24 }}
+      /&gt;
+    &lt;/SafeAreaView&gt;
+  );
+}
+
+<b>// Row: one tap target per row; the switch is visual only</b>
+function ToggleRow({ row }: { row: Row }) {
+  const on = useSetting(row.key);
+  return (
+    &lt;Pressable
+      role="switch"                       <span class="c">// TalkBack / VoiceOver announce "switch"</span>
+      aria-checked={on}
+      accessibilityLabel={row.label + (row.desc ? ', ' + row.desc : '')}
+      onPress={() =&gt; setSetting(row.key, !on)}
+      style={({ pressed }) =&gt; [styles.row, pressed &amp;&amp; { backgroundColor: c.fillPress }]}
+    &gt;
+      &lt;RowIcon icon={row.icon} tone={row.tone} /&gt;
+      &lt;View style={{ flex: 1, minWidth: 0 }}&gt;
+        &lt;Text numberOfLines={1} style={styles.label}&gt;{row.label}&lt;/Text&gt;
+        {row.desc ? &lt;Text numberOfLines={2} style={styles.desc}&gt;{row.desc}&lt;/Text&gt; : null}
+      &lt;/View&gt;
+      &lt;Switch value={on} pointerEvents="none" accessible={false} /&gt;
+    &lt;/Pressable&gt;
+  );
+}
+
+<b>// Destructive action: entry → sheet → confirm</b>
+const askClearHistory = () =&gt; sheet.confirm({
+  title: 'Clear input history?',
+  body: 'All 238 input records will be permanently deleted; conversation content is not affected.',
+  confirmLabel: 'Confirm delete',
+  destructive: true,
+  onConfirm: () =&gt; api.clearPromptHistory(),
+});
+
+<b>// Accessibility and dynamic type</b>
+&lt;Text maxFontSizeMultiplier={1.6} allowFontScaling style={{ fontSize: T.fs.label }} /&gt;
+<span class="c">// Row height uses minHeight, not height; when the font size doubles the row grows instead of clipping text</span></pre>
+  </article>
+
+  <article class="doc" id="a11y">
+    <h2><span class="idx">7</span>Accessibility and mobile hard requirements</h2>
+    <table>
+      <thead><tr><th>Item</th><th>Requirement</th><th>How this design meets it</th></tr></thead>
+      <tbody>
+        <tr><td>Contrast</td><td>Body ≥ 4.5:1, large text ≥ 3:1</td><td>The three text tiers measure 15.9 / 6.8 / 5.8 (dark) and 16.8 / 5.6 / 5.1 (light); accent text gets its own tier, <code>--accent-text</code>, because <code>--accent</code> used directly as small text is only 4.2:1</td></tr>
+        <tr><td>Dynamic type</td><td>200% without distortion</td><td>Everything in <code>rem</code>; rows use <code>min-height</code>; secondary copy clamped to 2 lines with <code>line-clamp</code>; the page stays zoomable (no locked <code>user-scalable</code>)</td></tr>
+        <tr><td>Touch</td><td>≥ 44×44pt / 48×48dp</td><td>Rows 56, icon buttons 44, group headers 44, the whole toggle row tappable, tiles 78</td></tr>
+        <tr><td>Labels</td><td>Icons and switches need a readable name</td><td>Toggle rows use <code>role="switch" aria-checked</code> + <code>aria-label="Alert sound, on task done and when confirmation is needed"</code>; icon-only buttons get <code>aria-label</code>; decorative SVG gets <code>aria-hidden</code>; the value is folded into the label ("Models &amp; providers, currently pi · 12")</td></tr>
+        <tr><td>Never colour alone</td><td>States need a second channel</td><td>Failing = red text + the copy "1 failing" + a dot; switch = position + <code>aria-checked</code>; disabled = reduced opacity + reason copy; danger = red + a "Destructive actions" title + a second confirmation</td></tr>
+        <tr><td>Focus</td><td>Fully operable with an external keyboard</td><td><code>:focus-visible</code> 2px accent ring, <code>outline-offset:-2px</code>; tab order = visual order; opening the sheet moves focus in, Esc closes it and returns focus</td></tr>
+        <tr><td>Motion</td><td>Respect reduced motion</td><td>Under <code>prefers-reduced-motion: reduce</code>, disable the push animation and the skeleton sweep (keep a 150ms fade)</td></tr>
+        <tr><td>Safe areas</td><td>Notch / Dynamic Island / punch-hole / Home bar</td><td><code>viewport-fit=cover</code> + <code>env(safe-area-inset-*)</code>; the dialog height is <code>100dvh</code> minus safe areas instead of <code>92vh</code>; the list ends with <code>inset-bottom + 24</code></td></tr>
+      </tbody>
+    </table>
+  </article>
+
+  <article class="doc" id="compare">
+    <h2><span class="idx">8</span>Comparing the three options, the recommendation, and rollout</h2>
+    <table class="compare">
+      <thead><tr><th></th><th>A grouped home</th><th>B value preview + collapse</th><th>C search first + scenarios</th></tr></thead>
+      <tbody>
+        <tr><td><b>Mental model</b></td><td>iOS Settings</td><td>Material 3 dashboard</td><td>Search + task scenarios</td></tr>
+        <tr><td><b>Visible on the first screen</b></td><td>8–9 rows</td><td>4 tiles + 1 group (about 10 rows)</td><td>6 rows + 5 scenario entries</td></tr>
+        <tr><td><b>Median jumps to change one value</b></td><td>2 jumps</td><td class="best">1 jump (0 for most confirmations)</td><td>2 jumps (3 if you go through the bottom all-settings page)</td></tr>
+        <tr><td><b>Discoverability for newcomers</b></td><td class="best">High (everything exposed)</td><td>Medium (collapsing hides content)</td><td>Medium (you must grasp the scenario naming)</td></tr>
+        <tr><td><b>Power-user efficiency</b></td><td>Medium</td><td class="best">High</td><td class="best">High (search goes straight there)</td></tr>
+        <tr><td><b>Implementation cost</b></td><td class="best">Low</td><td>Medium</td><td>Medium-high (scenario ownership must be maintained)</td></tr>
+        <tr><td><b>Main risk</b></td><td>The home screen grows with more tabs</td><td>Values get truncated at 320px</td><td>Taxonomy arguments, longer paths</td></tr>
+      </tbody>
+    </table>
+    <div class="note">
+      <b>Recommendation</b>: ship <b>A</b> by default, take <b>C's search</b> (always present + breadcrumbs + toggles flippable right in the results) as a built-in capability of A, and fold <b>B's value preview</b> straight into A's row design — all three are really one component set with different home-screen arrangements. Once real feedback proves the value preview is enough, revisit B's collapsing.
+    </div>
+
+    <h3>Rollout checklist (which files change)</h3>
+    <ul>
+      <li><b>Already shipped</b> (option A, first cut): new <code>web/src/components/settings-mobile/</code> — <code>SettingsMobileHome.tsx</code> (home: title + search + group cards), <code>mobile-ia.ts</code> (a pure tab→group function; an unknown group falls back to the last group so nothing is dropped), <code>use-narrow-layout.ts</code> (640px breakpoint), <code>settings-mobile.css</code> (full screen + safe areas + 56px rows).</li>
+      <li><b>Already changed</b> <code>web/src/components/SettingsModal.tsx</code>: on narrow screens it adds the <code>is-mobile</code> / <code>is-mobile-home</code> classes, renders <code>SettingsMobileHome</code> as the home screen, and reuses the existing head (plus a back key and the current page title) and body for second-level pages; the desktop DOM and render path are <b>unchanged</b>. Groups reuse the existing <code>TAB_GROUPS</code> / <code>GROUP_LABELS</code>, with <b>zero new copy and zero new i18n keys</b>.</li>
+      <li><b>To change</b> <code>web/src/styles.css</code>: drop the two "make mobile cope" rules <code>.settings-rail{overflow-x:auto}</code> and <code>.settings-search-wrap{display:none}</code>, and replace them with the new component styles + new tokens (<code>--row-h</code> / <code>--touch</code> / <code>--group-gap</code>). Mind the <code>overlay-stack</code> / <code>accent-contrast</code> / <code>semantic-contrast</code> guards: new colours must land in tokens, never hard-coded.</li>
+      <li><b>To change</b> <code>web/index.html</code>: add <code>viewport-fit=cover</code> to <code>viewport</code>; change <code>color-scheme</code> from the fixed <code>dark</code> to <code>light dark</code> (or set it dynamically from the theme).</li>
+      <li><b>Add a guard</b> <code>tests/unit/settings-mobile-ia.test.ts</code>: assert that every id in the <code>SettingsTab</code> union appears in the mobile group table — otherwise a new tab "disappears" on phones, and that class of regression is the hardest to notice.</li>
+      <li><b>Do not add</b>: any new settings field, new product API, or new dependency (keep using <code>react-icons/fi</code> line icons, consistent with desktop).</li>
+    </ul>
+    <p class="sub-note" style="margin-top:10px">Prototype data sources: <code>web/src/components/SettingsModal.tsx</code> (SettingsTab / TAB_GROUPS / TAB_KEYWORDS), <code>web/src/i18n/messages/core/zh.json</code>, <code>web/src/styles.css</code> (640px breakpoint, tokens), <code>web/index.html</code>, <code>mobile/src/Settings.tsx</code> (NotificationSettings). Numbers and counts are typographic examples.</p>
+  </article>
+
+</section>
+
+</div>
+
+<script>
+/* ============================================================================
+   pi-web-ui mobile settings prototype engine
+   Data uses only settings pages and fields that really exist in the repo (see the
+   SettingsTab union type and the i18n settings* keys in
+   web/src/components/SettingsModal.tsx); numbers and strings are sample layout values.
+   ========================================================================== */
+const ICONS = {
+  model:'<rect x="7" y="7" width="10" height="10" rx="2"/><path d="M10 3v3M14 3v3M10 18v3M14 18v3M3 10h3M3 14h3M18 10h3M18 14h3"/>',
+  file:'<path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/><path d="M14 3v5h5M9 13h6M9 17h4"/>',
+  wrench:'<path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.8-3.8a6 6 0 0 1-7.9 7.9l-6.9 6.9a2.1 2.1 0 0 1-3-3l6.9-6.9a6 6 0 0 1 7.9-7.9z"/>',
+  shield:'<path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><path d="M9 12l2 2 4-4"/>',
+  server:'<rect x="3" y="3" width="18" height="7" rx="2"/><rect x="3" y="14" width="18" height="7" rx="2"/><path d="M7 6.5h.01M7 17.5h.01"/>',
+  sparkles:'<path d="M12 3l1.9 4.6L18.5 9.5 13.9 11.4 12 16l-1.9-4.6L5.5 9.5 10.1 7.6z"/><path d="M18.5 15.5l.8 2 2 .8-2 .8-.8 2-.8-2-2-.8 2-.8z"/>',
+  box:'<path d="M21 16V8l-9-5-9 5v8l9 5 9-5z"/><path d="M3.3 7.3 12 12l8.7-4.7M12 22V12"/>',
+  sliders:'<path d="M4 7h10M18 7h2M4 17h4M12 17h8"/><circle cx="16" cy="7" r="2"/><circle cx="10" cy="17" r="2"/>',
+  chat:'<path d="M21 15a2 2 0 0 1-2 2H8l-5 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/><path d="M8 10h8M8 13h5"/>',
+  volume:'<path d="M11 5 6 9H2v6h4l5 4z"/><path d="M16 8.5a4.5 4.5 0 0 1 0 7M19 6a8 8 0 0 1 0 12"/>',
+  send:'<path d="M22 2 11 13"/><path d="M22 2l-7 20-4-9-9-4z"/>',
+  eye:'<path d="M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7-10-7-10-7z"/><circle cx="12" cy="12" r="3"/>',
+  clock:'<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3.5 2"/>',
+  calendar:'<rect x="3" y="5" width="18" height="16" rx="2"/><path d="M8 3v4M16 3v4M3 10h18"/>',
+  target:'<circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="5"/><circle cx="12" cy="12" r="1.4"/>',
+  users:'<circle cx="9" cy="8" r="3.4"/><path d="M2.5 21a6.5 6.5 0 0 1 13 0"/><path d="M16 5.2a3.4 3.4 0 0 1 0 6.6M17.5 21a6.5 6.5 0 0 0-3-5.5"/>',
+  layers:'<path d="M12 2 2.5 7 12 12l9.5-5z"/><path d="M2.5 12.5 12 17.5l9.5-5M2.5 17 12 22l9.5-5"/>',
+  bookmark:'<path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z"/>',
+  palette:'<circle cx="12" cy="12" r="9"/><circle cx="8.5" cy="10" r="1.2"/><circle cx="12" cy="8" r="1.2"/><circle cx="15.5" cy="10.5" r="1.2"/><path d="M12 21a3 3 0 0 1 0-6h2a2 2 0 0 0 0-4"/>',
+  globe:'<circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3a15 15 0 0 1 0 18 15 15 0 0 1 0-18z"/>',
+  info:'<circle cx="12" cy="12" r="9"/><path d="M12 11v5M12 8h.01"/>',
+  alert:'<path d="M10.3 3.9 2.5 17.4A2 2 0 0 0 4.2 20.4h15.6a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"/><path d="M12 9v4M12 17h.01"/>',
+  search:'<circle cx="11" cy="11" r="7"/><path d="m20 20-3.6-3.6"/>',
+  chev:'<path d="m9 5 7 7-7 7"/>',
+  back:'<path d="m15 5-7 7 7 7"/>',
+  check:'<path d="m4 12.5 5 5L20 6.5"/>',
+  message:'<path d="M21 12a8 8 0 0 1-8 8H8l-5 3 1.5-5.5A8 8 0 1 1 21 12z"/><path d="M9 12h6"/>',
+  plug:'<path d="M9 3v5M15 3v5M6 8h12v3a6 6 0 0 1-12 0z"/><path d="M12 17v4"/>',
+  bell:'<path d="M18 8a6 6 0 1 0-12 0c0 7-3 8-3 8h18s-3-1-3-8z"/><path d="M13.7 21a2 2 0 0 1-3.4 0"/>',
+  db:'<ellipse cx="12" cy="5.5" rx="8" ry="3"/><path d="M4 5.5v13c0 1.7 3.6 3 8 3s8-1.3 8-3v-13M4 12c0 1.7 3.6 3 8 3s8-1.3 8-3"/>'
+};
+const icon = (n, cls) => `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"${cls ? ` class="${cls}"` : ""}>${ICONS[n] || ""}</svg>`;
+
+/* ---------- Row descriptions shared by home / second-level pages (real settings) ---------- */
+const ROWS = {
+  models: { icon:'model', tone:'blue', label:'Models & providers', desc:'Engine, providers and default model', value:'pi · 12', page:'models' },
+  display: { icon:'chat', tone:'teal', label:'Chat', value:'Wide · shows model', page:'display' },
+  theme: { icon:'palette', tone:'violet', label:'Theme', value:'flow-ink · dark', page:'theme' },
+  locale: { icon:'globe', tone:'slate', label:'Language', value:'Simplified Chinese', page:'locale' },
+  quick: { icon:'send', tone:'sky', label:'Quick phrases', value:'8 entries', page:'quick' },
+  prompt: { icon:'file', tone:'blue', label:'System prompt', value:'Append mode', page:'prompt' },
+  tools: { icon:'wrench', tone:'violet', label:'Tools', value:'3 disabled', page:'tools' },
+  skills: { icon:'sparkles', tone:'amber', label:'Skills', value:'12', page:'skills' },
+  presets: { icon:'bookmark', tone:'green', label:'Presets', value:'4', page:'presets' },
+  subagents:{ icon:'layers', tone:'slate', label:'Subagent templates', value:'6', page:'subagents' },
+  quickask: { icon:'message', tone:'teal', label:'Quick ask', value:'On', page:'quickask' },
+  mcp: { icon:'server', tone:'sky', label:'MCP servers', value:'2 · 1 failing', bad:true, page:'mcp' },
+  scheduler:{ icon:'calendar', tone:'amber', label:'Scheduled tasks', value:'3', page:'scheduler' },
+  collab: { icon:'users', tone:'violet', label:'Group collaboration & execution', value:'Default quota', page:'collab' },
+  approval: { icon:'shield', tone:'green', label:'Approval rules', value:'5 rules', page:'approval' },
+  vision: { icon:'eye', tone:'slate', label:'Vision bridge', value:'Not configured', page:'vision',
+              desc:'Configure a vision model under “Models & providers” first', disabled:true },
+  extensions:{ icon:'plug', tone:'slate', label:'Plugins (extensions)', value:'4', page:'extensions' },
+  pluginui: { icon:'box', tone:'sky', label:'UI plugins', value:'6 · 1 update available', page:'pluginui' },
+  layout: { icon:'sliders', tone:'blue', label:'Layout', value:'Default', page:'layout' },
+  history: { icon:'clock', tone:'slate', label:'Input history', value:'238 entries', page:'history' },
+  review: { icon:'target', tone:'amber', label:'Goal review', value:'3 skills', page:'review' },
+  about: { icon:'info', tone:'slate', label:'About & version', value:'v0.119.0', page:'about' },
+  reset: { icon:'alert', tone:'red', label:'Reset & dangerous actions', value:'3 items', page:'reset' },
+
+  /* Notifications (mobile package only: mobile/src/Settings.tsx · NotificationSettings; hidden on web) */
+  pushOn: { icon:'bell', tone:'pink', label:'Device notifications', desc:'Task done, needs answer, approval', type:'toggle', key:'pushOn', on:true },
+  pushKinds:{ icon:'sliders', tone:'pink', label:'Notification types', value:'4 / 5 types', page:'notify' },
+  pushPerm: { icon:'shield', tone:'green', label:'System notification permission', value:'Allowed', page:'notify' },
+
+  /* Global booleans (read-only display + direct toggle, no second-level page) */
+  soundAlert:{ icon:'volume', tone:'pink', label:'Sound alert', desc:'When a task finishes or needs your confirmation', type:'toggle', key:'soundAlert', on:true },
+  tts: { icon:'volume', tone:'pink', label:'Spoken replies', desc:'Read replies aloud (system voice)', type:'toggle', key:'tts', on:false }
+};
+
+/* ---------- Home groups for schemes A / B / C ---------- */
+const HOME = {
+  A: [
+    { title:'Common', rows:['models','display','soundAlert','quick','theme'] },
+    { title:'Notifications', rows:['pushOn','pushKinds','pushPerm'] },
+    { title:'Agent capabilities', rows:['prompt','tools','skills','presets','subagents','quickask'] },
+    { title:'Connections & automation', rows:['mcp','scheduler','collab','approval','vision'] },
+    { title:'Appearance & UI', rows:['layout','pluginui','extensions','locale'] },
+    { title:'More', rows:['history','review','about'] }
+  ],
+  B: [
+    { key:'notify', title:'Notifications', sum:'4 / 5 types', rows:['pushOn','pushKinds','pushPerm'] },
+    { key:'agent', title:'Agent capabilities', sum:'6 items', rows:['prompt','tools','skills','presets','subagents','quickask'] },
+    { key:'connect', title:'Connections & automation', sum:'1 issue', rows:['mcp','scheduler','collab','approval','vision'] },
+    { key:'ui', title:'Appearance & UI', sum:'4 items', rows:['layout','pluginui','extensions','locale','history'] },
+    { key:'more', title:'More', sum:'', rows:['review','about'] }
+  ],
+  C: [
+    { key:'smart', title:'Make it smarter', sub:'Models, prompts, skills and presets', icon:'sparkles', tone:'violet', rows:['models','prompt','skills','presets','subagents'] },
+    { key:'habit', title:'More like your habits', sub:'Chat layout, theme, language, quick phrases', icon:'palette', tone:'teal', rows:['display','theme','locale','quick','quickask'] },
+    { key:'world', title:'Connect the outside world', sub:'MCP, plugins and the vision bridge', icon:'plug', tone:'sky', rows:['mcp','extensions','pluginui','vision'] },
+    { key:'auto', title:'Alerts & automation', sub:'Notifications, schedules, group collaboration, approval gates', icon:'bell', tone:'amber', rows:['pushOn','pushKinds','pushPerm','scheduler','collab','approval'] },
+    { key:'maint', title:'UI & maintenance', sub:'Layout, history, review and version', icon:'sliders', tone:'slate', rows:['layout','history','review','about'] }
+  ]
+};
+
+/* ---------- Second-level page content (every field comes from an existing settings page) ---------- */
+const PAGES = {
+  models:{ title:'Models & providers', sections:[
+    { title:'Current engine', rows:[
+      { icon:'model', tone:'blue', label:'Engine', value:'pi', type:'static' },
+      { icon:'sliders', tone:'slate', label:'Thinking level', value:'Medium', type:'static' }
+    ]},
+    { title:'Providers', rows:[
+      { icon:'model', tone:'green', label:'DeepSeek', desc:'Configured · 3 models', type:'static' },
+      { icon:'model', tone:'green', label:'Anthropic', desc:'Configured · 4 models', type:'static' },
+      { icon:'model', tone:'slate', label:'OpenAI', desc:'No API key', value:'Set up', page:'models' }
+    ]},
+    { title:'Keys', rows:[
+      { icon:'alert', tone:'red', label:'Clear all provider keys', type:'danger', confirm:{ title:'Clear all provider keys?', body:'Deletes every key saved in the server’s auth.json; affected models disappear from the list until you configure them again. Keys provided through environment variables are unaffected.', key:'keys' } }
+    ]}
+  ]},
+  tools:{ title:'Tools', sections:[
+    { title:'Enabled tools', rows:[
+      { icon:'wrench', tone:'violet', label:'bash (terminal command)', type:'toggle', key:'toolBash', on:true },
+      { icon:'file', tone:'blue', label:'read / write / edit', desc:'File read, write and edit', type:'toggle', key:'toolFiles', on:true },
+      { icon:'search', tone:'slate', label:'grep / find', type:'toggle', key:'toolSearch', on:false },
+      { icon:'box', tone:'sky', label:'Image tools', type:'toggle', key:'toolImages', on:true }
+    ]},
+    { title:'Advanced', rows:[
+      { icon:'sparkles', tone:'amber', label:'Lazy tool loading', desc:'Long-tail tools injected on demand to save context', type:'toggle', key:'toolLazy', on:true },
+      { icon:'file', tone:'slate', label:'Tool prompt overrides', value:'2 items', page:'tools' }
+    ]}
+  ]},
+  notify:{ title:'Notifications', sections:[
+    { title:'Notify me about', rows:[
+      { icon:'bell', tone:'pink', label:'Task finished', type:'toggle', key:'kindDone', on:true },
+      { icon:'bell', tone:'pink', label:'Task failed', type:'toggle', key:'kindError', on:true },
+      { icon:'bell', tone:'pink', label:'Needs an answer', type:'toggle', key:'kindQuestion', on:true },
+      { icon:'bell', tone:'pink', label:'Needs approval', type:'toggle', key:'kindApproval', on:true },
+      { icon:'bell', tone:'slate', label:'Subtask finished', type:'toggle', key:'kindSub', on:false }
+    ]},
+    { title:'System', rows:[
+      { icon:'shield', tone:'green', label:'System notification permission', value:'Allowed', type:'static' },
+      { icon:'sliders', tone:'slate', label:'Open system settings', type:'static' },
+      { icon:'bell', tone:'slate', label:'Re-check push configuration', type:'static' }
+    ]}
+  ]},
+  approval:{ title:'Approval rules', sections:[
+    { title:'Approval gates', rows:[
+      { icon:'shield', tone:'green', label:'Tool approval master switch', desc:'High-risk commands must be confirmed first', type:'toggle', key:'approvalOn', on:true },
+      { icon:'sliders', tone:'slate', label:'Presentation', value:'Queue', type:'static' },
+      { icon:'file', tone:'blue', label:'Rule library', value:'5 rules', page:'approval' }
+    ]}
+  ]},
+  mcp:{ title:'MCP servers', sections:[
+    { title:'Connected', rows:[
+      { icon:'db', tone:'green', label:'filesystem', desc:'stdio · 12 tools · connected', type:'static' },
+      { icon:'plug', tone:'red', label:'chrome-devtools', desc:'sse · connection failed: ECONNREFUSED', value:'Retry', type:'static' },
+      { icon:'server', tone:'slate', label:'Add server', value:'', type:'static' }
+    ]}
+  ]},
+  scheduler:{ title:'Scheduled tasks', sections:[
+    { title:'Tasks', rows:[
+      { icon:'calendar', tone:'amber', label:'Daily dependency check', desc:'Every day at 09:00 · runs in the background', type:'toggle', key:'sch1', on:true },
+      { icon:'calendar', tone:'slate', label:'Repo cleanup', desc:'Sundays at 22:00', type:'toggle', key:'sch2', on:false }
+    ]},
+    { title:'', rows:[ { icon:'calendar', tone:'slate', label:'New scheduled task', type:'static' } ]}
+  ]},
+  display:{ title:'Chat', sections:[
+    { title:'Layout', segment:{ key:'chatWidth', options:['Narrow','Wide'] }, rows:[] },
+    { title:'Display', rows:[
+      { icon:'chat', tone:'teal', label:'Show model name', type:'toggle', key:'showModel', on:true },
+      { icon:'eye', tone:'slate', label:'Show avatars', type:'toggle', key:'showAvatar', on:true },
+      { icon:'file', tone:'blue', label:'Collapse long messages', desc:'Collapsed by default past 12 lines', type:'toggle', key:'foldLong', on:true },
+      { icon:'db', tone:'amber', label:'Context soft cap', value:'120k tokens', type:'static' }
+    ]}
+  ]},
+  sound:{ title:'Sound & speech', sections:[
+    { title:'Alerts', rows:[
+      { icon:'volume', tone:'pink', label:'Sound alert', desc:'When a task finishes or needs confirmation', type:'toggle', key:'soundAlert', on:true },
+      { icon:'volume', tone:'violet', label:'Spoken replies (TTS)', type:'toggle', key:'tts', on:false }
+    ]},
+    { title:'Speech', rows:[
+      { icon:'glob', tone:'slate', label:'Voice', value:'System default', type:'static' },
+      { icon:'sliders', tone:'slate', label:'Speed', type:'range' }
+    ]}
+  ]},
+  quick:{ title:'Quick phrases', sections:[
+    { title:'Saved (tap to edit)', rows:[
+      { icon:'send', tone:'sky', label:'Continue', type:'static' },
+      { icon:'send', tone:'sky', label:'Run the tests', type:'static' },
+      { icon:'send', tone:'sky', label:'Explain before editing', type:'static' },
+      { icon:'send', tone:'sky', label:'Summarize this change', type:'static' }
+    ]},
+    { title:'', rows:[
+      { icon:'send', tone:'slate', label:'Add phrase', type:'static' },
+      { icon:'alert', tone:'red', label:'Restore default phrases', desc:'Overwrites the current 8 phrases', type:'danger', confirm:{ title:'Restore default phrases?', body:'Your 8 custom phrases will be replaced by the default list. This cannot be undone.', key:'phrases' } }
+    ]}
+  ]},
+  theme:{ title:'Theme', sections:[
+    { title:'Appearance', rows:[
+      { icon:'palette', tone:'violet', label:'flow-ink', desc:'Dark · teal accent', type:'radio', key:'themeSel', value:'In use' },
+      { icon:'palette', tone:'teal', label:'flow-light', desc:'Light', type:'radio', key:'themeSel2' },
+      { icon:'palette', tone:'blue', label:'catppuccin', desc:'Dark · soft', type:'radio', key:'themeSel3' }
+    ]},
+    { title:'', rows:[ { icon:'sliders', tone:'slate', label:'Follow system light/dark', type:'toggle', key:'followSystem', on:false } ]}
+  ]},
+  locale:{ title:'Language', sections:[
+    { title:'Interface language', rows:[
+      { icon:'globe', tone:'slate', label:'Simplified Chinese', value:'In use', type:'static' },
+      { icon:'globe', tone:'slate', label:'English', type:'static' },
+      { icon:'globe', tone:'slate', label:'Traditional Chinese', type:'static' }
+    ]}
+  ]},
+  history:{ title:'Input history', sections:[
+    { title:'Records', rows:[
+      { icon:'clock', tone:'slate', label:'238 entries saved', desc:'Stored on this device only, used for ↑ recall in the composer', type:'static' },
+      { icon:'chat', tone:'teal', label:'Keep drafts across conversations', type:'toggle', key:'keepDraft', on:true }
+    ]},
+    { title:'', rows:[
+      { icon:'alert', tone:'red', label:'Clear history', desc:'Cannot be undone', type:'danger', confirm:{ title:'Clear input history?', body:'238 input records will be permanently deleted. Conversation content is not affected.', key:'history' } }
+    ]}
+  ]},
+  prompt:{ title:'System prompt', sections:[
+    { title:'Mode', segment:{ key:'promptMode', options:['Append','Replace'] }, rows:[] },
+    { title:'Content', rows:[
+      { icon:'file', tone:'blue', label:'Custom system prompt', desc:'1,240 characters customized', type:'static', value:'Edit' },
+      { icon:'sliders', tone:'slate', label:'Block overrides', value:'2 blocks', type:'static' }
+    ]},
+    { title:'', rows:[
+      { icon:'alert', tone:'red', label:'Restore default template', desc:'Clears all overrides', type:'danger', confirm:{ title:'Restore the default prompt template?', body:'Custom content and block overrides are cleared and the built-in template is restored.', key:'prompt' } }
+    ]}
+  ]},
+  layout:{ title:'Layout', sections:[
+    { title:'Areas', rows:[
+      { icon:'sliders', tone:'blue', label:'Top bar', value:'5 entries', type:'static' },
+      { icon:'sliders', tone:'slate', label:'Bottom bar', value:'3 entries', type:'static' },
+      { icon:'chat', tone:'teal', label:'Composer actions', value:'Default', type:'static' }
+    ]},
+    { title:'', rows:[
+      { icon:'alert', tone:'red', label:'Restore default layout', type:'danger', confirm:{ title:'Restore the default UI layout?', body:'Hidden and reordered entries both return to their initial state.', key:'layout' } }
+    ]}
+  ]},
+  skills:{ title:'Skills', sections:[
+    { title:'Installed', rows:[
+      { icon:'sparkles', tone:'amber', label:'12 skills', desc:'3 manual-only', type:'static' },
+      { icon:'sparkles', tone:'slate', label:'Load catalog on demand', type:'toggle', key:'skillLazy', on:true },
+      { icon:'box', tone:'sky', label:'Skill marketplace', type:'static' }
+    ]}
+  ]},
+  presets:{ title:'Presets', sections:[
+    { title:'Local presets', rows:[
+      { icon:'bookmark', tone:'green', label:'4 presets', desc:'1 built-in included', type:'static' },
+      { icon:'layers', tone:'slate', label:'Import / export JSON', type:'static' }
+    ]}
+  ]},
+  subagents:{ title:'Subagent templates', sections:[
+    { title:'Templates', rows:[
+      { icon:'users', tone:'violet', label:'6 templates', type:'static' },
+      { icon:'sliders', tone:'slate', label:'Concurrency limit', value:'3', type:'static' },
+      { icon:'chat', tone:'teal', label:'Auto-wake', type:'toggle', key:'autoWake', on:true }
+    ]}
+  ]},
+  quickask:{ title:'Quick ask', sections:[
+    { title:'', rows:[
+      { icon:'message', tone:'teal', label:'Enable quick ask', desc:'A small window appears when you select text', type:'toggle', key:'quickaskOn', on:true },
+      { icon:'file', tone:'slate', label:'Popover prompt', value:'Default', type:'static' }
+    ]}
+  ]},
+  collab:{ title:'Group collaboration & execution', sections:[
+    { title:'Execution', rows:[
+      { icon:'users', tone:'violet', label:'Concurrency limit', value:'3', type:'static' },
+      { icon:'sliders', tone:'slate', label:'Task quota', value:'Default', type:'static' },
+      { icon:'chat', tone:'teal', label:'Blackboard context', value:'On', type:'static' }
+    ]}
+  ]},
+  pluginui:{ title:'UI plugins', sections:[
+    { title:'Enabled', rows:[
+      { icon:'box', tone:'sky', label:'6 plugins', desc:'1 update available', value:'Update', type:'static' },
+      { icon:'sliders', tone:'slate', label:'Plugin marketplace', type:'static' }
+    ]}
+  ]},
+  extensions:{ title:'Plugins (extensions)', sections:[
+    { title:'', rows:[
+      { icon:'plug', tone:'slate', label:'4 extensions', desc:'1 dsh patch', type:'static' },
+      { icon:'box', tone:'sky', label:'Extension marketplace', type:'static' }
+    ]}
+  ]},
+  review:{ title:'Goal review', sections:[
+    { title:'', rows:[
+      { icon:'target', tone:'amber', label:'Review skills', value:'3', type:'static' },
+      { icon:'shield', tone:'green', label:'Must pass before commit', type:'toggle', key:'reviewGate', on:true }
+    ]}
+  ]},
+  vision:{ title:'Vision bridge', sections:[
+    { title:'', rows:[
+      { icon:'eye', tone:'slate', label:'Vision bridge', desc:'Hand screenshots to a vision model to interpret', type:'toggle', key:'visionOn', on:false },
+      { icon:'model', tone:'blue', label:'Vision model', desc:'Configure a provider first', value:'Not set', type:'static' }
+    ]}
+  ]},
+  about:{ title:'About & version', sections:[
+    { title:'', rows:[
+      { icon:'info', tone:'slate', label:'Version', value:'v0.119.0', type:'static' },
+      { icon:'model', tone:'blue', label:'Engine', value:'pi 0.52.1', type:'static' },
+      { icon:'file', tone:'slate', label:'License', value:'MIT', type:'static' },
+      { icon:'globe', tone:'slate', label:'Repo & changelog', value:'GitHub', type:'static' }
+    ]},
+    { title:'Danger zone', rows:[
+      { icon:'alert', tone:'red', label:'Reset & dangerous actions', desc:'Clear history, clear keys, restore layout', type:'danger', page:'reset' }
+    ]}
+  ]},
+  reset:{ title:'Reset & dangerous actions', sections:[
+    { title:'These actions cannot be undone and run on this device only', rows:[
+      { icon:'clock', tone:'red', label:'Clear input history', desc:'238 entries', type:'danger', confirm:{ title:'Clear input history?', body:'238 input records will be permanently deleted. Conversation content is not affected.', key:'history' } },
+      { icon:'alert', tone:'red', label:'Clear all provider keys', desc:'8 providers', type:'danger', confirm:{ title:'Clear all provider keys?', body:'Deletes the keys in the server’s auth.json; affected models disappear from the list until you configure them again.', key:'keys' } },
+      { icon:'sliders', tone:'red', label:'Restore default UI layout', type:'danger', confirm:{ title:'Restore the default UI layout?', body:'Hidden and reordered entries both return to their initial state.', key:'layout' } }
+    ]}
+  ]}
+};
+
+/* ---------- State ---------- */
+const S = {
+  scheme:'A', demo:'default', query:'', stack:['home'], save:'saved', sheet:null,
+  fold:{ 'agent':true, 'connect':false, 'ui':false, 'more':false, smart:true, habit:false, world:false, auto:false, maint:false },
+  seg:{ chatWidth:1, promptMode:0 },
+  toggles:{ soundAlert:true, tts:false, toolBash:true, toolFiles:true, toolSearch:false, toolImages:true, toolLazy:true,
+    approvalOn:true, sch1:true, sch2:false, showModel:true, showAvatar:true, foldLong:true, keepDraft:true, skillLazy:true,
+    pushOn:true, kindDone:true, kindError:true, kindQuestion:true, kindApproval:true, kindSub:false,
+    autoWake:true, quickaskOn:true, reviewGate:true, visionOn:false, followSystem:false }
+};
+const ALL_PAGES = Object.keys(PAGES);
+const allCount = () => new Set(HOME.C.flatMap((g) => g.rows)).size;
+
+/* ---------- Render primitives ---------- */
+const esc = (s) => String(s == null ? '' : s).replace(/[&<>"]/g, (c) => ({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;' }[c]));
+
+function ico(r) {
+  return `<span class="row-ico tone-${r.tone || 'slate'}">${icon(r.icon || 'sliders')}</span>`;
+}
+
+function rowsHtml(rows, opts) {
+  const o = opts || {};
+  const list = rows.map((id) => (typeof id === 'string' ? ROWS[id] : id)).filter(Boolean);
+  return list.map((r, i) => `<div class="divider${o.fullDivider ? ' full' : ''}" ${i === 0 ? 'hidden' : ''}></div>` + rowHtml(r, o)).join('');
+}
+
+function rowHtml(r, opts) {
+  const o = opts || {};
+  const value = r.value ? `<span class="row-value${r.bad ? ' bad' : ''}">${esc(r.value)}</span>` : '';
+  const badge = r.badge ? `<span class="row-badge${r.badgeWarn ? ' warn' : ''}">${esc(r.badge)}</span>` : '';
+  const desc = r.desc ? `<span class="row-desc">${esc(r.desc)}</span>` : '';
+  const label = `<span class="row-main"><span class="row-label">${esc(r.label)}</span>${desc}</span>`;
+  const danger = r.type === 'danger' ? ' danger' : '';
+
+  if (r.type === 'toggle') {
+    const on = !!(S.toggles[r.key] ?? r.on);
+    return `<button class="row" role="switch" aria-checked="${on}" data-act="toggle" data-key="${esc(r.key)}"
+      aria-label="${esc(r.label)}${r.desc ? ', ' + esc(r.desc) : ''}">${ico(r)}${label}<span class="switch" aria-hidden="true"><span class="knob"></span></span></button>`;
+  }
+  if (r.type === 'radio') {
+    const on = !!r.on;
+    return `<div class="row row-static">${ico(r)}${label}${value}${'<span class="chev" aria-hidden="true">' + (on ? icon('check') : '') + '</span>'}</div>`;
+  }
+  if (r.type === 'range') {
+    return `<div class="row row-static" style="flex-direction:column;align-items:stretch;gap:6px">
+      <div style="display:flex;align-items:center;gap:12px">${ico(r)}<span class="row-main"><span class="row-label">${esc(r.label)}</span></span><span class="row-value">1.0×</span></div>
+      <input class="range" type="range" min="5" max="20" value="11" aria-label="${esc(r.label)}"></div>`;
+  }
+  if (r.type === 'static') {
+    return `<div class="row row-static">${ico(r)}${label}${badge}${value}</div>`;
+  }
+  if (r.type === 'danger') {
+    const act = r.confirm ? `data-act="confirm" data-title="${esc(r.confirm.title)}" data-body="${esc(r.confirm.body)}"` : `data-act="nav" data-page="${esc(r.page)}"`;
+    return `<button class="row${danger}" ${act} aria-label="${esc(r.label)}${r.desc ? ', ' + esc(r.desc) : ''}, danger zone, confirmation required">${ico(r)}${label}${value}<span class="chev" aria-hidden="true">${icon('chev')}</span></button>`;
+  }
+  const disabled = r.disabled ? ' aria-disabled="true"' : '';
+  return `<button class="row" data-act="nav" data-page="${esc(r.page || '')}"${disabled}
+    aria-label="${esc(r.label)}${r.value ? ', currently ' + esc(r.value) : ''}${r.desc ? ', ' + esc(r.desc) : ''}${r.disabled ? ', unavailable' : ''}">${ico(r)}${label}${badge}${value}<span class="chev" aria-hidden="true">${icon('chev')}</span></button>`;
+}
+
+function savePill() {
+  const st = S.demo === 'failed' ? 'failed' : S.save;
+  const txt = st === 'saving' ? 'Saving…' : st === 'failed' ? 'Not saved · retry' : 'Saved';
+  const title = st === 'failed' ? '2 items not saved, tap to retry' : 'Changes apply live · saved locally';
+  return `<button class="pill" data-state="${st}" data-act="save" title="${title}" aria-label="Save status: ${txt}" ${st === 'failed' ? '' : 'tabindex="-1"'}><i aria-hidden="true"></i>${txt}</button>`;
+}
+function saveBanner() {
+  if (S.demo !== 'failed') return '';
+  return `<div class="save-banner" role="alert"><span aria-hidden="true">!</span>2 items failed to save <button data-act="retry">Retry</button></div>`;
+}
+
+/* ---------- Home ---------- */
+function idCard() {
+  return `<div class="idcard">
+    <span class="avatar" aria-hidden="true">pi</span>
+    <div class="id-main">
+      <span class="id-name"><span>This device · pi</span></span>
+      <span class="id-sub"><span class="dot ok" aria-hidden="true"></span>Connected · running locally<span class="tag">3 devices</span></span>
+    </div>
+    <button class="id-action" data-act="nav" data-page="models" aria-label="Switch engine, currently pi">Switch engine</button>
+  </div>`;
+}
+
+function searchBox(hero) {
+  return `<div class="search${hero ? ' hero' : ''}" role="search">
+    ${icon('search')}
+    <input id="q" type="search" enterkeyhint="search" placeholder="Search settings" aria-label="Search settings" value="${esc(S.query)}" autocomplete="off">
+    ${S.query ? '<button class="clear" data-act="clearq" aria-label="Clear search">✕</button>' : ''}
+  </div>`;
+}
+
+function homeView() {
+  if (S.demo === 'loading') return headerA() + loadingBody();
+  if (S.query.trim()) return headerA() + searchResults();
+  return S.scheme === 'A' ? homeA() : S.scheme === 'B' ? homeB() : homeC();
+}
+
+function headerA() {
+  return `<div class="nav-large"><div class="nl-top"><h1>Settings</h1>${savePill()}</div>${searchBox(false)}</div>${saveBanner()}`;
+}
+
+function homeA() {
+  const groups = HOME.A.map((g, gi) => `
+    <section class="group" aria-labelledby="gA${gi}">
+      <h2 class="group-title" id="gA${gi}">${g.title}<span class="spacer"></span>${gi === 4 ? '<button class="link" data-act="nav" data-page="all">All</button>' : ''}</h2>
+      <div class="card">${rowsHtml(g.rows)}</div>
+    </section>`).join('');
+  const danger = `<section class="group" aria-labelledby="gAdanger">
+      <h2 class="group-title" id="gAdanger">Danger zone</h2>
+      <div class="card">${rowsHtml(['reset'])}</div>
+    </section>`;
+  return headerA() + `<div class="scroll" id="scroller" tabindex="0"><div class="scroll-body">${idCard()}${groups}${danger}
+    <p class="sub-note" style="text-align:center">pi-web-ui v0.119.0 · changes apply instantly</p>
+  </div></div>`;
+}
+
+function homeB() {
+  const tiles = [
+    ['models', 'model', 'blue'], ['theme', 'palette', 'violet'], ['display', 'chat', 'teal'], ['sound', 'volume', 'pink']
+  ].map(([id, ic, tone]) => {
+    const r = ROWS[id] || { label: 'Sound & speech', value: 'Sound alert on', page: 'sound' };
+    return `<button class="tile" data-act="nav" data-page="${r.page || id}" aria-label="${esc(r.label)}, currently ${esc(r.value || '')}">
+      <span class="tile-top"><span class="tile-ico tone-${tone}">${icon(ic)}</span><span class="tile-name">${esc(r.label)}</span><span class="tile-chev" aria-hidden="true">${icon('chev')}</span></span>
+      <span class="tile-val">${esc(r.value || '')}</span></button>`;
+  }).join('');
+  const groups = HOME.B.map((g) => {
+    const open = !!S.fold[g.key];
+    return `<section class="group" data-open="${open}" data-group="${g.key}">
+      <button class="group-head" data-act="fold" data-key="${g.key}" aria-expanded="${open}">
+        <span class="gh-title">${g.title}</span><span class="gh-sum">${g.sum || ''}</span><span class="spacer"></span>
+        <span class="gh-chev" aria-hidden="true">${icon('chev')}</span></button>
+      <div class="card">${rowsHtml(g.rows)}</div></section>`;
+  }).join('');
+  const danger = `<section class="group" data-open="true"><div class="card">${rowsHtml(['reset'])}</div></section>`;
+  return `<div class="nav-large" style="padding-bottom:0"><div class="nl-top"><h1>Settings</h1>${savePill()}</div>${searchBox(false)}</div>${saveBanner()}` +
+    `<div class="scroll" id="scroller" tabindex="0"><div class="scroll-body">
+      <h2 class="group-title" style="margin-top:2px">Most used</h2>
+      <div class="tiles">${tiles}</div>
+      ${groups}${danger}
+      <p class="sub-note" style="text-align:center">Groups start collapsed; tap a header to expand / collapse</p>
+    </div></div>`;
+}
+
+function homeC() {
+  const freq = `<div class="card">${rowsHtml(['models', 'display', 'theme', 'soundAlert', 'prompt', 'approval'])}</div>`;
+  const scenes = HOME.C.map((g) => {
+    const open = !!S.fold[g.key];
+    return `<section class="scene" data-open="${open}" data-group="${g.key}">
+      <button class="scene-head" data-act="fold" data-key="${g.key}" aria-expanded="${open}">
+        <span class="row-ico tone-${g.tone}">${icon(g.icon)}</span>
+        <span class="row-main"><span class="s-title">${g.title}</span><span class="s-sub">${g.sub}</span></span>
+        <span class="row-badge" aria-label="${g.rows.length} items">${g.rows.length}</span>
+        <span class="gh-chev" aria-hidden="true" style="width:18px;height:18px;color:var(--text-faint);display:grid;place-items:center">${icon('chev')}</span>
+      </button>
+      <div class="scene-body">${rowsHtml(g.rows, { fullDivider: true })}</div></section>`;
+  }).join('');
+  return `<div class="nav-large" style="padding-bottom:0"><div class="nl-top"><h1>Settings</h1>${savePill()}</div>${searchBox(true)}</div>${saveBanner()}` +
+    `<div class="scroll" id="scroller" tabindex="0"><div class="scroll-body">
+      <h2 class="group-title" style="margin-top:4px">The 6 you change most <span class="count">in built-in recommended order; no usage data collected</span></h2>
+      ${freq}
+      <h2 class="group-title" style="margin-top:6px">Find by scenario</h2>
+      ${scenes}
+    </div></div>` +
+    `<div class="bottombar"><button data-act="nav" data-page="all">${icon('sliders')} All settings <span class="bb-count">${allCount()} items · advanced included</span></button></div>`;
+}
+
+/* ---------- Search ---------- */
+function searchResults() {
+  const q = S.query.trim().toLowerCase();
+  const hits = [];
+  for (const g of HOME.A) for (const id of g.rows) {
+    const r = ROWS[id];
+    if (!r) continue;
+    if ((r.label + ' ' + (r.desc || '') + ' ' + g.title).toLowerCase().includes(q)) hits.push({ r, crumb: g.title });
+  }
+  const seen = new Set(hits.map((h) => h.r.label));
+  for (const pid of ALL_PAGES) {
+    const p = PAGES[pid];
+    for (const sec of p.sections) for (const r of sec.rows) {
+      if (!r.label || seen.has(r.label)) continue;
+      if ((r.label + ' ' + (r.desc || '') + ' ' + p.title).toLowerCase().includes(q)) hits.push({ r, crumb: p.title, page: pid });
+    }
+  }
+  if (!hits.length) {
+    return `<div class="scroll"><div class="empty">
+      <span class="e-ico">${icon('search')}</span>
+      <span class="e-t">No settings match “${esc(S.query)}”</span>
+      <span class="e-d">Try a shorter keyword, for example “model”, “theme”, “approval” or “voice”.</span>
+      <button class="e-btn" data-act="clearq">Clear search</button></div></div>`;
+  }
+  const rows = hits.slice(0, 24).map(({ r, crumb, page }) => {
+    const clone = Object.assign({}, r);
+    if (page && !clone.page) clone.page = page;
+    if (!clone.type) clone.type = 'nav';
+    return `<div class="divider" hidden></div>` + rowHtml(Object.assign(clone, { desc: (r.desc ? r.desc + ' · ' : '') + crumb }));
+  }).join('');
+  return `<div class="scroll"><div class="scroll-body">
+    <h2 class="group-title" style="margin-top:4px">${hits.length} results</h2>
+    <div class="card">${rows}</div></div></div>`;
+}
+
+/* ---------- Second-level pages ---------- */
+function pageView(pid) {
+  if (pid === 'all') return allView();
+  const p = PAGES[pid];
+  if (!p) return homeView();
+  const body = p.sections.map((sec, si) => {
+    const head = sec.title && p.sections.length > 1 ? `<h2 class="group-title" style="margin-top:${si ? 6 : 0}px">${esc(sec.title)}</h2>` : '';
+    const seg = sec.segment ? `<div class="card"><div style="padding:10px 16px"><div class="segmented" role="group" aria-label="${esc(sec.title)}">` +
+      sec.segment.options.map((op, i) => `<button data-act="seg" data-key="${sec.segment.key}" data-idx="${i}" aria-pressed="${S.seg[sec.segment.key] === i}">${esc(op)}</button>`).join('') +
+      `</div></div></div>` : '';
+    const rows = sec.rows.length ? `<div class="card">${rowsHtml(sec.rows)}</div>` : '';
+    const note = si === 0 && p.sections[0].rows.some((r) => r.type === 'danger') ? '' : '';
+    return `<section style="display:flex;flex-direction:column;gap:7px">${head}${seg}${rows}${note}</section>`;
+  }).join('');
+  const foot = `<p class="sub-note" style="text-align:center;margin-top:2px">Changes apply instantly, no save needed</p>`;
+  return navbar(p.title) + `<div class="scroll" id="scroller" tabindex="0"><div class="scroll-body">${body}${foot}</div></div>`;
+}
+
+function allView() {
+  const groups = HOME.C.map((g) => `<section class="group">
+      <h2 class="group-title">${g.title}<span class="spacer"></span><span class="count">${g.rows.length}</span></h2>
+      <div class="card">${rowsHtml(g.rows, { fullDivider: true })}</div></section>`).join('');
+  return navbar('All settings', true) + `<div class="scroll dense" id="scroller" tabindex="0"><div class="scroll-body">${groups}
+      <section class="group"><h2 class="group-title">Danger zone</h2><div class="card">${rowsHtml(['reset'])}</div></section>
+    </div></div>`;
+}
+
+function navbar(title, root) {
+  return `<div class="navbar">
+    <button class="icon-btn" data-act="${root ? 'home' : 'back'}" aria-label="${root ? 'Back to settings home' : 'Back one level'}">${icon(root ? 'back' : 'back')}</button>
+    <h1>${esc(title)}</h1>${savePill()}</div>${saveBanner()}`;
+}
+
+/* ---------- States: loading / empty ---------- */
+function loadingBody() {
+  const sk = (n) => Array.from({ length: n }, () => `<div class="sk-row"><span class="sk sk-ico"></span><div style="flex:1"><div class="sk sk-l1"></div><div class="sk sk-l2"></div></div><span class="sk sk-v"></span></div>`).join('');
+  return `<div class="scroll" aria-busy="true" aria-label="Loading settings"><div class="scroll-body">
+    <div class="idcard"><span class="sk" style="width:46px;height:46px;border-radius:13px"></span><div style="flex:1"><div class="sk sk-l1" style="width:30%"></div><div class="sk sk-l2" style="width:45%"></div></div></div>
+    <div class="group"><div class="sk" style="height:12px;width:64px;margin:0 4px 7px"></div><div class="card">${sk(3)}</div></div>
+    <div class="group"><div class="sk" style="height:12px;width:88px;margin:0 4px 7px"></div><div class="card">${sk(3)}</div></div>
+  </div></div>`;
+}
+
+/* ---------- Confirmation sheet ---------- */
+function sheetHtml() {
+  if (!S.sheet) return '';
+  const sh = S.sheet;
+  return `<div class="sheet-layer" role="dialog" aria-modal="true" aria-labelledby="sheetTitle">
+    <div class="sheet-scrim" data-act="sheet-close"></div>
+    <div class="sheet">
+      <h3 id="sheetTitle">${esc(sh.title)}</h3>
+      <p>${esc(sh.body)}</p>
+      <div class="sc-actions">
+        <button class="destructive" data-act="sheet-ok">Delete</button>
+        <button class="cancel" data-act="sheet-close">Cancel</button>
+      </div>
+    </div></div>`;
+}
+
+/* ---------- Main render ---------- */
+const app = document.getElementById('app');
+const deviceEl = document.getElementById('device');
+
+function render(keepScroll) {
+  const pid = S.stack[S.stack.length - 1];
+  app.dataset.scheme = S.scheme;
+  app.innerHTML = (pid === 'home' ? homeView() : pageView(pid)) + sheetHtml();
+  if (!keepScroll) { const sc = app.querySelector('.scroll'); if (sc) sc.scrollTop = 0; }
+  app.classList.remove('push');
+  void app.offsetWidth;
+  if (S.stack.length > 1) app.classList.add('push');
+  updateNote();
+}
+
+function updateNote() {
+  const meta = {
+    A:{ t:'Scheme A · grouped home + pushed second-level pages', d:'A direct port of iOS Settings: large title → identity card → 6 grouped cards, with the current value replacing the plain chevron on the right of each row. Second-level pages slide in from the right and the nav bar carries the save state.' },
+    B:{ t:'Scheme B · value previews + collapsible groups', d:'Material 3 leaning: a 2×2 grid of high-frequency tiles carries 80% of navigation, the other groups start collapsed showing only a title and summary, and every row carries its current value so most checks never need a second-level page.' },
+    C:{ t:'Scheme C · search first + scenario grouping', d:'A response to 21-tab overload: the search box leads, followed by “the 6 you change most” plus 5 task scenarios (only one expanded by default), with a persistent “All settings” bar at the bottom (21 items on web / 24 with the mobile package’s notification pages). Aimed at power users and at people who go straight to their target on the first visit.' }
+  }[S.scheme];
+  document.querySelector('#noteMain h3').textContent = meta.t;
+  document.querySelector('#noteMain p').textContent = meta.d;
+  const pros = {
+    A:[['Scanning','7–8 rows and 6 group titles per screen; the eye only needs the left-hand labels, which suits “find a feature” rather than “read content”.'],
+       ['Touch','56px rows with one hit area per row, so switches never depend on hitting a 30px dot'],
+       ['Mental model','Isomorphic with iOS Settings: no learning curve, and the back gesture comes for free'],
+       ['Cost','Lowest: the existing tab state maps straight onto a stack, plus one block of mobile styles']],
+    B:[['Zero hops','Every row carries its value, so “just checking” costs 0 navigations'],
+       ['First screen','Tiles plus collapsed groups squeeze 20+ items into 1.3 screens, so long lists no longer bury the frequent ones'],
+       ['Big targets','78px-tall tiles that are fully tappable give the thumb zone its best hit rate'],
+       ['Progressive','The collapsed state shows only title and summary, so beginners are not scared off by “advanced”']],
+    C:[['Findable','Search leads and stays pinned; keywords match group titles and descriptions'],
+       ['By intent','Scenario names (“make it smarter” / “connect the outside world”) sit closer to the user’s own question than “tools & execution”'],
+       ['Safety net','The bottom “All settings” entry is always reachable, so the long tail is never missing'],
+       ['Space saving','Only one scenario opens by default, so the first screen shows 6 frequent items plus 5 entry points']]
+  }[S.scheme];
+  const cons = {
+    A:[['Navigation','2 hops on average to change a value; value previews only rescue “read-only” checks'],
+       ['Long tail','21 tabs still live inside groups, so a newcomer may not find “approval rules”'],
+       ['Mitigation','Pinned search + group counts + “recently changed” floated up (recorded locally, no telemetry)']],
+    B:[['Density','High information density; value previews truncate to an ellipsis on 320px screens'],
+       ['Collapsing','Collapsing hides discoverability, so it needs “expand all” and search as a fallback'],
+       ['Implementation','Tile order has to be maintained by hand; no ranking algorithm (no data collected)']],
+    C:[['Learning','Scenario grouping asks users to learn the product’s mental model; on a first visit “theme” may be hard to locate'],
+       ['Hierarchy','Scenario → list inside the scenario → second-level page: still three levels deep, but longer paths'],
+       ['Maintenance','Every new tab must belong to a scenario, which needs a lint rule / unit test to enforce it']]
+  }[S.scheme];
+  document.querySelector('#notePros dl').innerHTML = pros.map(([k,v])=>`<dt>${k}</dt><dd>${v}</dd>`).join('');
+  document.querySelector('#noteCons dl').innerHTML = cons.map(([k,v])=>`<dt>${k}</dt><dd>${v}</dd>`).join('');
+}
+
+/* ---------- Interaction ---------- */
+function push(pid) { S.stack.push(pid); S.query = ''; render(); }
+function back() { if (S.stack.length > 1) S.stack.pop(); render(); }
+let saveTimer = null;
+function touchSave() {
+  S.save = 'saving'; render(true);
+  clearTimeout(saveTimer);
+  saveTimer = setTimeout(() => { S.save = 'saved'; render(true); }, 900);
+}
+
+app.addEventListener('click', (e) => {
+  const el = e.target.closest('[data-act]');
+  if (!el) return;
+  const act = el.dataset.act;
+  if (act === 'nav') {
+    if (el.getAttribute('aria-disabled') === 'true') return;
+    if (el.dataset.page) push(el.dataset.page);
+  } else if (act === 'back') back();
+  else if (act === 'home') { S.stack = ['home']; render(); }
+  else if (act === 'toggle') {
+    const k = el.dataset.key; S.toggles[k] = !S.toggles[k];
+    const on = S.toggles[k];
+    el.setAttribute('aria-checked', String(on));
+    touchSave();
+  } else if (act === 'fold') {
+    const k = el.dataset.key; S.fold[k] = !S.fold[k]; render(true);
+  } else if (act === 'seg') {
+    S.seg[el.dataset.key] = Number(el.dataset.idx); render(true);
+  } else if (act === 'clearq') {
+    S.query = ''; render();
+  } else if (act === 'confirm') {
+    S.sheet = { title: el.dataset.title, body: el.dataset.body }; render(true);
+  } else if (act === 'sheet-close') {
+    S.sheet = null; render(true);
+  } else if (act === 'sheet-ok') {
+    S.sheet = null; S.save = 'saved'; render(true);
+  } else if (act === 'save' || act === 'retry') {
+    S.demo = 'default'; document.querySelectorAll('#stateSeg button').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.stateSet === 'default')));
+    touchSave();
+  }
+});
+
+app.addEventListener('input', (e) => {
+  if (e.target.id !== 'q') return;
+  S.query = e.target.value;
+  const pos = e.target.selectionStart;
+  render();
+  const q = app.querySelector('#q');
+  if (q) { q.focus(); try { q.setSelectionRange(pos, pos); } catch (_) {} }
+});
+
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape') {
+    if (S.sheet) { S.sheet = null; render(true); }
+    else back();
+  }
+  if (e.key === 'Enter' && document.activeElement && document.activeElement.id === 'q') {
+    const first = app.querySelector('.scroll .row, .scroll .tile');
+    if (first) first.click();
+  }
+});
+
+/* Top control bar */
+document.getElementById('schemeSeg').addEventListener('click', (e) => {
+  const b = e.target.closest('button[data-scheme]'); if (!b) return;
+  S.scheme = b.dataset.scheme; S.stack = ['home']; S.query = '';
+  document.querySelectorAll('#schemeSeg button').forEach((x) => x.setAttribute('aria-pressed', String(x === b)));
+  render();
+});
+document.getElementById('themeSeg').addEventListener('click', (e) => {
+  const b = e.target.closest('button[data-theme-set]'); if (!b) return;
+  document.documentElement.dataset.theme = b.dataset.themeSet;
+  document.querySelectorAll('#themeSeg button').forEach((x) => x.setAttribute('aria-pressed', String(x === b)));
+});
+document.getElementById('deviceSeg').addEventListener('click', (e) => {
+  const b = e.target.closest('button[data-device-set]'); if (!b) return;
+  deviceEl.dataset.device = b.dataset.deviceSet;
+  document.querySelectorAll('#deviceSeg button').forEach((x) => x.setAttribute('aria-pressed', String(x === b)));
+  render();
+});
+document.getElementById('stateSeg').addEventListener('click', (e) => {
+  const b = e.target.closest('button[data-state-set]'); if (!b) return;
+  S.demo = b.dataset.stateSet;
+  S.save = 'saved';
+  if (S.demo === 'empty') { S.query = 'dark mode toggle font size'; S.stack = ['home']; }
+  else if (S.demo === 'failed') { S.query = ''; S.save = 'failed'; }
+  else if (S.demo === 'loading') { S.query = ''; S.stack = ['home']; }
+  else { S.query = ''; S.save = 'saved'; }
+  document.querySelectorAll('#stateSeg button').forEach((x) => x.setAttribute('aria-pressed', String(x === b)));
+  render();
+});
+
+render();
+</script>
+
+<style>
+/* 页内补充：推入动画、滑杆、方案 B/C 的展开过渡 */
+.app.push > .scroll{animation:pushIn .22s cubic-bezier(.2,.9,.25,1)}
+@keyframes pushIn{from{transform:translateX(16px);opacity:.5}to{transform:none;opacity:1}}
+.range{-webkit-appearance:none;appearance:none;width:100%;height:28px;background:transparent;margin:0}
+.range::-webkit-slider-runnable-track{height:4px;border-radius:2px;background:var(--border)}
+.range::-webkit-slider-thumb{-webkit-appearance:none;width:22px;height:22px;border-radius:50%;background:var(--knob);
+  border:1px solid var(--border);box-shadow:0 1px 4px rgba(0,0,0,.28);margin-top:-9px}
+.range::-moz-range-track{height:4px;border-radius:2px;background:var(--border)}
+.range::-moz-range-thumb{width:20px;height:20px;border-radius:50%;background:var(--knob);border:1px solid var(--border)}
+.card > .divider[hidden]{display:none}
+.row-static{cursor:default}
+.row-static:hover{background:transparent}
+</style>
+</body>
+</html>
+
+
+

@@ -1,3 +1,5 @@
+[English](./device-collaboration.en.md) · **简体中文** · [繁體中文](./device-collaboration.zh-TW.md)
+
 # 群组 / Bot / 跨设备协作硬约束
 
 > 服务端架构与部署链路见 [`device-center.md`](device-center.md)（Hub 与本机连接器、绑定与配对、部署）

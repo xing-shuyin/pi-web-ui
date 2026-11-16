@@ -1,3 +1,5 @@
+[English](./README.en.md) · **简体中文** · [繁體中文](./README.zh-TW.md)
+
 # db-client —— 数据库连接管理插件
 
 pi-web-ui 界面插件，类似 [vscode-database-client](https://github.com/cweijan/vscode-database-client)

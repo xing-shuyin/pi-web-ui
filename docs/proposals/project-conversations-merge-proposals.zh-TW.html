@@ -1,0 +1,852 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>專案與對話合併落地原型 · 智慧摺疊(執行常駐,僅收歷史)</title>
+  <style>
+    :root {
+      /* 深色主題 */
+      --bg-page: #0c0d12;
+      --bg-sidebar: #13151c;
+      --bg-dock: #0e1017;
+      --bg-hover: #1c1e28;
+      --bg-active: #222634;
+      --bg-card: #181a22;
+      --border: #242735;
+      --border-light: #1c1f2b;
+      --text: #e2e4ed;
+      --text-muted: #8b92a4;
+      --text-faint: #596075;
+      --accent: #8b5cf6;
+      --accent-soft: rgba(139, 92, 246, 0.14);
+      --accent-border: rgba(139, 92, 246, 0.4);
+      --running-green: #10b981;
+      --running-green-soft: rgba(16, 185, 129, 0.15);
+      --running-green-border: rgba(16, 185, 129, 0.35);
+      --amber: #f59e0b;
+      --font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "PingFang SC", "Microsoft YaHei", sans-serif;
+      --radius-sm: 5px;
+      --radius-md: 8px;
+    }
+
+    [data-theme="light"] {
+      --bg-page: #f4f5f8;
+      --bg-sidebar: #ffffff;
+      --bg-dock: #edeff4;
+      --bg-hover: #f1f3f7;
+      --bg-active: #e5e9f4;
+      --bg-card: #ffffff;
+      --border: #e2e5ec;
+      --border-light: #edf0f6;
+      --text: #1a1d24;
+      --text-muted: #646b7a;
+      --text-faint: #98a0b2;
+      --accent: #6d28d9;
+      --accent-soft: rgba(109, 40, 217, 0.08);
+      --accent-border: rgba(109, 40, 217, 0.3);
+      --running-green: #059669;
+      --running-green-soft: rgba(5, 150, 105, 0.1);
+      --running-green-border: rgba(5, 150, 105, 0.25);
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      background: var(--bg-page);
+      color: var(--text);
+      font-family: var(--font-sans);
+      font-size: 13px;
+      line-height: 1.5;
+    }
+
+    /* 頂部導航 */
+    header.top-nav {
+      background: var(--bg-sidebar);
+      border-bottom: 1px solid var(--border);
+      padding: 12px 24px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+    .top-title {
+      font-size: 15px;
+      font-weight: 700;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+    .badge-highlight {
+      font-size: 11px;
+      font-weight: 600;
+      padding: 2px 9px;
+      border-radius: 99px;
+      background: var(--running-green-soft);
+      color: var(--running-green);
+      border: 1px solid var(--running-green-border);
+    }
+
+    .main-layout {
+      max-width: 1400px;
+      margin: 20px auto;
+      padding: 0 20px;
+      display: grid;
+      grid-template-columns: 370px 1fr;
+      gap: 28px;
+      align-items: start;
+    }
+
+    /* 模擬側邊欄殼體 */
+    .mock-shell {
+      background: var(--bg-sidebar);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      height: 740px;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+      box-shadow: 0 8px 24px rgba(0, 0, 0, 0.2);
+    }
+
+    .lp-container {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+
+    /* 分割槽 Header */
+    .lp-section-header {
+      height: 44px;
+      padding: 0 12px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      border-bottom: 1px solid var(--border-light);
+      user-select: none;
+      flex-shrink: 0;
+    }
+    .lp-tabs {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+    }
+    .lp-tab-pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+      padding: 4px 10px;
+      font-size: 11.5px;
+      font-weight: 600;
+      border-radius: var(--radius-sm);
+      cursor: pointer;
+      border: 1px solid transparent;
+      transition: all 0.15s;
+    }
+    .lp-tab-pill.active {
+      background: var(--accent-soft);
+      border-color: var(--accent-border);
+      color: var(--text);
+    }
+    .lp-tab-pill:not(.active) {
+      color: var(--text-muted);
+    }
+    .lp-tab-pill:not(.active):hover {
+      background: var(--bg-hover);
+      color: var(--text);
+    }
+
+    .lp-head-actions {
+      display: flex;
+      align-items: center;
+      gap: 4px;
+    }
+    .lp-btn-icon {
+      width: 26px;
+      height: 26px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      border: 1px solid transparent;
+      border-radius: var(--radius-sm);
+      background: transparent;
+      color: var(--text-muted);
+      cursor: pointer;
+      font-size: 13px;
+    }
+    .lp-btn-icon:hover {
+      background: var(--bg-hover);
+      color: var(--text);
+      border-color: var(--border);
+    }
+
+    /* 滾動主體 */
+    .lp-tree-scroll {
+      flex: 1;
+      overflow-y: auto;
+      padding: 8px 8px 14px 8px;
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+
+    /* 專案分組 */
+    .proj-block {
+      display: flex;
+      flex-direction: column;
+      border-radius: var(--radius-md);
+      transition: all 0.2s;
+    }
+    .proj-block.has-running {
+      background: rgba(16, 185, 129, 0.03);
+      border: 1px solid rgba(16, 185, 129, 0.2);
+      padding: 2px 2px 4px 2px;
+    }
+
+    /* 專案標題行 */
+    .proj-head {
+      display: flex;
+      align-items: center;
+      padding: 6px 8px;
+      border-radius: var(--radius-sm);
+      cursor: pointer;
+      user-select: none;
+      gap: 6px;
+      position: relative;
+    }
+    .proj-head:hover {
+      background: var(--bg-hover);
+    }
+    .proj-chevron {
+      font-size: 10px;
+      color: var(--text-muted);
+      width: 14px;
+      text-align: center;
+      transition: transform 0.2s ease;
+    }
+    .proj-chevron.collapsed {
+      transform: rotate(-90deg);
+    }
+    .proj-name {
+      font-size: 13px;
+      font-weight: 700;
+      color: var(--text);
+      flex: 1;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    /* 執行中徽標 */
+    .badge-running {
+      font-size: 10px;
+      font-weight: 600;
+      padding: 1px 6px;
+      border-radius: 99px;
+      background: var(--running-green-soft);
+      color: var(--running-green);
+      display: flex;
+      align-items: center;
+      gap: 4px;
+      white-space: nowrap;
+    }
+    .pulse-dot {
+      width: 6px;
+      height: 6px;
+      border-radius: 50%;
+      background: var(--running-green);
+      animation: pulse 1.6s infinite ease-in-out;
+    }
+    @keyframes pulse {
+      0%, 100% { opacity: 1; transform: scale(1); }
+      50% { opacity: 0.3; transform: scale(0.85); }
+    }
+
+    .proj-quick-add {
+      display: none;
+      font-size: 14px;
+      color: var(--text-muted);
+      padding: 0 4px;
+    }
+    .proj-head:hover .proj-quick-add {
+      display: block;
+    }
+
+    /* 對話項列表 */
+    .conv-items-wrap {
+      display: flex;
+      flex-direction: column;
+      gap: 1px;
+      margin-top: 1px;
+    }
+    .conv-row {
+      display: flex;
+      align-items: center;
+      padding: 7px 8px 7px 22px;
+      border-radius: var(--radius-sm);
+      cursor: pointer;
+      font-size: 12.5px;
+      color: var(--text);
+      position: relative;
+      transition: background 0.12s;
+    }
+    .conv-row:hover {
+      background: var(--bg-hover);
+    }
+    .conv-row.active {
+      background: var(--bg-active);
+      font-weight: 600;
+    }
+    .conv-row.active::before {
+      content: "";
+      position: absolute;
+      left: 6px;
+      top: 6px;
+      bottom: 6px;
+      width: 3px;
+      background: var(--accent);
+      border-radius: 2px;
+    }
+
+    .conv-spinner {
+      width: 11px;
+      height: 11px;
+      border: 2px solid var(--accent);
+      border-top-color: transparent;
+      border-radius: 50%;
+      animation: spin 0.8s linear infinite;
+      margin-right: 6px;
+      flex-shrink: 0;
+    }
+    @keyframes spin {
+      100% { transform: rotate(360deg); }
+    }
+
+    .conv-title {
+      flex: 1;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      margin-right: 6px;
+    }
+    .conv-time {
+      font-size: 11px;
+      color: var(--text-faint);
+      white-space: nowrap;
+    }
+    .conv-menu-btn {
+      display: none;
+      font-size: 12px;
+      color: var(--text-muted);
+      margin-left: 4px;
+    }
+    .conv-row:hover .conv-menu-btn {
+      display: block;
+    }
+
+    /* 智慧摺疊提示條（摺疊時顯示：歷史已收起，執行仍保留） */
+    .collapsed-history-hint {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 4px 10px 4px 22px;
+      font-size: 11px;
+      color: var(--text-faint);
+      cursor: pointer;
+      border-radius: var(--radius-sm);
+      margin-top: 2px;
+    }
+    .collapsed-history-hint:hover {
+      color: var(--accent);
+      background: var(--bg-hover);
+    }
+
+    /* 按需載入 Loading 狀態條目 */
+    .lazy-loading-row {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 6px 10px 6px 22px;
+      font-size: 12px;
+      color: var(--text-faint);
+    }
+
+    /* 截斷載入更多 */
+    .show-more-row {
+      padding: 6px 10px 6px 22px;
+      font-size: 12px;
+      color: var(--text-muted);
+      cursor: pointer;
+      border-radius: var(--radius-sm);
+      user-select: none;
+    }
+    .show-more-row:hover {
+      color: var(--accent);
+      background: var(--bg-hover);
+    }
+
+    /* 底部保留：外掛自定義摺疊分割槽 */
+    .plugin-section-box {
+      border-top: 1px solid var(--border);
+      flex-shrink: 0;
+    }
+    .plugin-section-head {
+      height: 38px;
+      padding: 0 12px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      cursor: pointer;
+      user-select: none;
+      font-size: 12px;
+      font-weight: 600;
+      color: var(--text-muted);
+      background: var(--bg-card);
+    }
+    .plugin-section-head:hover {
+      color: var(--text);
+    }
+    .plugin-section-body {
+      padding: 10px 12px;
+      font-size: 12px;
+      color: var(--text-faint);
+      background: var(--bg-sidebar);
+      border-top: 1px dashed var(--border-light);
+    }
+
+    /* 右側控制與說明欄 */
+    .right-doc {
+      display: flex;
+      flex-direction: column;
+      gap: 18px;
+    }
+    .card {
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 20px 24px;
+    }
+    .card h2 {
+      font-size: 15px;
+      font-weight: 700;
+      margin-bottom: 12px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .card p {
+      font-size: 13px;
+      color: var(--text-muted);
+      line-height: 1.6;
+      margin-bottom: 14px;
+    }
+
+    .demo-bar {
+      display: flex;
+      gap: 10px;
+      margin-bottom: 14px;
+      padding: 12px;
+      background: var(--bg-page);
+      border-radius: var(--radius-md);
+      border: 1px solid var(--border);
+      align-items: center;
+    }
+    .demo-btn {
+      padding: 6px 12px;
+      border-radius: var(--radius-sm);
+      border: 1px solid var(--border);
+      background: var(--bg-sidebar);
+      color: var(--text);
+      cursor: pointer;
+      font-size: 12px;
+      font-weight: 600;
+    }
+    .demo-btn:hover {
+      background: var(--bg-hover);
+      border-color: var(--accent);
+    }
+
+    .rule-box {
+      background: var(--bg-page);
+      border-left: 3px solid var(--running-green);
+      padding: 10px 14px;
+      border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
+      margin-bottom: 10px;
+    }
+    .rule-box strong {
+      display: block;
+      color: var(--text);
+      font-size: 13px;
+      margin-bottom: 3px;
+    }
+    .rule-box span {
+      font-size: 12px;
+      color: var(--text-muted);
+      line-height: 1.5;
+      display: block;
+    }
+
+    .interactive-toast {
+      position: fixed;
+      bottom: 24px;
+      right: 24px;
+      background: var(--text);
+      color: var(--bg-page);
+      padding: 10px 18px;
+      border-radius: var(--radius-md);
+      font-size: 12.5px;
+      font-weight: 600;
+      box-shadow: 0 6px 20px rgba(0,0,0,0.3);
+      display: none;
+      z-index: 1000;
+    }
+  </style>
+</head>
+<body>
+<div data-docs-i18n-switch style="position:fixed;top:8px;right:12px;z-index:2147483647;font:12px/1.6 -apple-system,system-ui,sans-serif;background:rgba(15,17,22,.78);color:#fff;padding:4px 12px;border-radius:999px;box-shadow:0 2px 10px rgba(0,0,0,.35)"><a href="./project-conversations-merge-proposals.html" style="color:#fff;text-decoration:none">简体中文</a> · <a href="./project-conversations-merge-proposals.en.html" style="color:#fff;text-decoration:none">English</a> · <strong>繁體中文</strong></div>
+
+
+
+  <header class="top-nav">
+    <div class="top-title">
+      <span>「智慧半摺疊」互動原型</span>
+      <span class="badge-highlight">💡 摺疊只收起歷史，執行態永遠懸掛露在外面</span>
+    </div>
+    <div>
+      <button class="lp-tab-pill" onclick="toggleTheme()" style="background: var(--bg-hover);">
+        🌓 切換深淺主題
+      </button>
+    </div>
+  </header>
+
+  <div class="main-layout">
+    
+    <!-- 模擬左側欄 -->
+    <div class="mock-shell">
+      <div class="lp-container">
+        
+        <!-- Header -->
+        <div class="lp-section-header">
+          <div class="lp-tabs">
+            <div class="lp-tab-pill active" id="tabProjects">
+              <span>📁</span>
+              <span>專案</span>
+              <span style="opacity: 0.8; font-size: 10.5px;">(25)</span>
+            </div>
+            <div class="lp-tab-pill" id="tabGroups">
+              <span>👥</span>
+              <span>群組</span>
+            </div>
+          </div>
+          <div class="lp-head-actions">
+            <button class="lp-btn-icon" title="新建專案或對話" onclick="showToast('點選頂部 + 新建')">+</button>
+            <button class="lp-btn-icon" title="收起整欄">‹</button>
+          </div>
+        </div>
+
+        <!-- 聚合樹滾動區 -->
+        <div class="lp-tree-scroll" id="treeListArea"></div>
+
+        <!-- 保留外掛分割槽 -->
+        <div class="plugin-section-box">
+          <div class="plugin-section-head" onclick="togglePluginSection()">
+            <span>🧩 外掛自定義摺疊分割槽</span>
+            <span id="pluginChevron">▼</span>
+          </div>
+          <div class="plugin-section-body" id="pluginBody">
+            <div>• filesystem-mcp: ready</div>
+            <div style="margin-top: 4px;">• memory-cache: connected</div>
+          </div>
+        </div>
+
+      </div>
+    </div>
+
+    <!-- 右側：互動演示器與邏輯解析 -->
+    <div class="right-doc">
+      
+      <div class="card">
+        <h2>✨ 智慧半摺疊（Partial Collapse）互動演示</h2>
+        <p>你提出的<strong>“摺疊只隱藏沒執行的”</strong>是極為高明的設計：既滿足了使用者將大量歷史記錄摺疊收納、保持側邊欄清爽的訴求，又徹底消除了後臺 Agent 被掩蓋的風險！</p>
+
+        <div class="demo-bar">
+          <span style="font-size: 12px; color: var(--text-muted); font-weight: 600;">模擬操作：</span>
+          <button class="demo-btn" onclick="toggleSimulateRunning('p-yth')">
+            🔄 切換 yth-operation 的摺疊狀態（親自點選測試）
+          </button>
+          <button class="demo-btn" onclick="completeAllRunning('p-yth')">
+            ✅ 模擬執行任務全部完成（觀察自然收縮）
+          </button>
+        </div>
+
+        <div class="rule-box">
+          <strong>狀態 A：展開狀態（Full Expand）</strong>
+          <span>專案展開時，執行中的 2 個任務置頂顯示，歷史對話在下方列出。</span>
+        </div>
+
+        <div class="rule-box" style="border-left-color: var(--accent);">
+          <strong>狀態 B：摺疊狀態（Partial Fold · 核心新邏輯）</strong>
+          <span>使用者點選摺疊專案：<strong>靜態歷史對話全部收起</strong>；但<strong>正在執行的任務依然懸掛在專案標題下方</strong>，進度/轉圈即時可見，絕不漏掉任何執行狀態！下方還會出現「+ 展開 3 條歷史」入口。</span>
+        </div>
+
+        <div class="rule-box" style="border-left-color: var(--amber);">
+          <strong>狀態 C：任務完成後自然歸位</strong>
+          <span>當後臺執行的任務跑完後，如果當前專案處於摺疊態，該任務將自然融入摺疊的歷史中，專案完全閉合為單行。沒有任何生硬跳變！</span>
+        </div>
+      </div>
+
+      <div class="card">
+        <h2>💻 前端渲染層核心演算法（虛擬碼）</h2>
+        <div style="background: var(--bg-page); border: 1px solid var(--border); border-radius: 6px; padding: 12px; font-family: monospace; font-size: 12px; line-height: 1.6; color: var(--text);">
+          <span style="color: var(--text-muted);">// 在 Project 分組渲染對話時：</span><br>
+          const runningConvs = convs.filter(c => c.running);<br>
+          const historyConvs = convs.filter(c => !c.running);<br><br>
+          <span style="color: var(--text-muted);">// 關鍵：摺疊時只過濾掉 history，running 恆展示！</span><br>
+          const visibleConvs = isCollapsed ? <strong>runningConvs</strong> : <strong>[...runningConvs, ...historyConvs]</strong>;<br><br>
+          <span style="color: var(--text-muted);">// 摺疊時若存在被隱藏的歷史，展示貼心的輕量展開入口：</span><br>
+          if (isCollapsed && historyConvs.length > 0) {<br>
+          &nbsp;&nbsp;render(<code>+ 展開 ${historyConvs.length} 條歷史...</code>);<br>
+          }
+        </div>
+      </div>
+
+    </div>
+
+  </div>
+
+  <div class="interactive-toast" id="toastBox">提示資訊</div>
+
+  <script>
+    const projectsData = [
+      {
+        id: 'p-yth',
+        name: 'yth-operation',
+        path: 'E:\\yth-operation',
+        loaded: true,
+        collapsed: true, // 初始設為摺疊，直觀展示“摺疊但保留執行”！
+        convs: [
+          { id: 'c1', title: 'Kafka 與 Canvas 故障狀態誤報修復', time: '4分', running: true },
+          { id: 'c2', title: 'Kafka 與 Canvas 故障狀態誤報修復 · cd61', time: '56分', running: true },
+          { id: 'c3', title: 'Kafka 與 Canvas 故障狀態誤報修復 · e52e', time: '58分', running: false },
+          { id: 'c4', title: '[微信] 在幹嘛', time: '11小時', running: false },
+          { id: 'c5', title: '[微信] 我在想的目錄', time: '12小時', running: false }
+        ]
+      },
+      {
+        id: 'p-work',
+        name: 'work',
+        path: 'E:\\work',
+        loaded: true,
+        collapsed: false,
+        convs: [
+          { id: 'c6', title: '/code/work/cluster-upgrade/01-手動部署手冊.md', time: '1小時', running: false },
+          { id: 'c7', title: '主頁訪問地址', time: '1小時', running: false },
+          { id: 'c8', title: '幫我最佳化週報，根據圖片的內容最佳化...', time: '4天', running: false }
+        ],
+        moreCount: 2
+      },
+      {
+        id: 'p-web',
+        name: 'web',
+        path: 'E:\\pi-web-ui',
+        loaded: false,
+        collapsed: true,
+        convs: []
+      },
+      ...Array.from({ length: 22 }).map((_, i) => ({
+        id: `p-other-${i+1}`,
+        name: `project-module-${String(i+1).padStart(2, '0')}`,
+        path: `D:\\code\\repo-${i+1}`,
+        loaded: false,
+        collapsed: true,
+        convs: []
+      }))
+    ];
+
+    let activeConvId = 'c1';
+    let pluginCollapsed = false;
+
+    function renderTree() {
+      const container = document.getElementById('treeListArea');
+      container.innerHTML = '';
+
+      projectsData.forEach(proj => {
+        const runningConvs = proj.convs.filter(c => c.running);
+        const historyConvs = proj.convs.filter(c => !c.running);
+        const hasRunning = runningConvs.length > 0;
+
+        // 核心渲染邏輯：摺疊狀態下只保留 running，展開時保留全部
+        const visibleConvs = proj.collapsed ? runningConvs : [...runningConvs, ...historyConvs];
+        const isPartiallyFolded = proj.collapsed && hasRunning;
+
+        const block = document.createElement('div');
+        block.className = `proj-block ${hasRunning ? 'has-running' : ''}`;
+
+        // 頭部
+        const head = document.createElement('div');
+        head.className = 'proj-head';
+        head.onclick = () => toggleProject(proj);
+
+        // 摺疊箭頭
+        const chevron = document.createElement('span');
+        chevron.className = `proj-chevron ${proj.collapsed ? 'collapsed' : ''}`;
+        chevron.textContent = '▼';
+        head.appendChild(chevron);
+
+        // 專案名
+        const name = document.createElement('span');
+        name.className = 'proj-name';
+        name.textContent = proj.name;
+        head.appendChild(name);
+
+        // 執行中狀態角標
+        if (hasRunning) {
+          const badge = document.createElement('span');
+          badge.className = 'badge-running';
+          badge.innerHTML = `<span class="pulse-dot"></span> ${runningConvs.length} 執行中`;
+          head.appendChild(badge);
+        }
+
+        const plus = document.createElement('span');
+        plus.className = 'proj-quick-add';
+        plus.textContent = '+';
+        plus.title = '新建對話';
+        plus.onclick = (e) => {
+          e.stopPropagation();
+          showToast(`在 ${proj.name} 下建立新對話`);
+        };
+        head.appendChild(plus);
+
+        block.appendChild(head);
+
+        // 對話條目渲染
+        if (visibleConvs.length > 0) {
+          const wrap = document.createElement('div');
+          wrap.className = 'conv-items-wrap';
+
+          visibleConvs.forEach(conv => {
+            const row = document.createElement('div');
+            row.className = `conv-row ${conv.id === activeConvId ? 'active' : ''}`;
+            row.onclick = () => {
+              activeConvId = conv.id;
+              renderTree();
+              showToast(`切換到: ${conv.title}`);
+            };
+
+            if (conv.running) {
+              const sp = document.createElement('div');
+              sp.className = 'conv-spinner';
+              row.appendChild(sp);
+            }
+
+            const title = document.createElement('span');
+            title.className = 'conv-title';
+            title.textContent = conv.title;
+            row.appendChild(title);
+
+            const time = document.createElement('span');
+            time.className = 'conv-time';
+            time.textContent = conv.time;
+            row.appendChild(time);
+
+            wrap.appendChild(row);
+          });
+
+          // 如果處於“已摺疊但保留執行”狀態，且存在被隱藏的歷史
+          if (isPartiallyFolded && historyConvs.length > 0) {
+            const hint = document.createElement('div');
+            hint.className = 'collapsed-history-hint';
+            hint.innerHTML = `<span>+ 已摺疊 ${historyConvs.length} 條歷史記錄</span> <span>點選展開 ›</span>`;
+            hint.onclick = (e) => {
+              e.stopPropagation();
+              proj.collapsed = false;
+              renderTree();
+              showToast(`展開了 ${proj.name} 的全部歷史`);
+            };
+            wrap.appendChild(hint);
+          } else if (!proj.collapsed && proj.moreCount) {
+            const more = document.createElement('div');
+            more.className = 'show-more-row';
+            more.textContent = `顯示更多 · ${proj.moreCount}`;
+            more.onclick = () => showToast(`展開更多歷史`);
+            wrap.appendChild(more);
+          }
+
+          block.appendChild(wrap);
+        }
+
+        container.appendChild(block);
+      });
+    }
+
+    function toggleProject(proj) {
+      proj.collapsed = !proj.collapsed;
+      
+      // 如果展開且未載入歷史，觸發按需載入
+      if (!proj.collapsed && !proj.loaded) {
+        renderTree();
+        showToast(`⚡ 按需拉取: 從磁碟讀取 ${proj.name} 的歷史會話`);
+        setTimeout(() => {
+          proj.loaded = true;
+          proj.convs = [
+            { id: `c-${proj.id}-1`, title: '重構單元測試與狀態樹', time: '2小時前', running: false },
+            { id: `c-${proj.id}-2`, title: '修復記憶體洩漏與重連斷言', time: '1天前', running: false }
+          ];
+          renderTree();
+        }, 350);
+        return;
+      }
+
+      renderTree();
+      if (proj.collapsed) {
+        const runCount = proj.convs.filter(c => c.running).length;
+        if (runCount > 0) {
+          showToast(`已摺疊 ${proj.name} 的歷史記錄，${runCount} 個執行中任務依然常駐可見`);
+        } else {
+          showToast(`已摺疊 ${proj.name}`);
+        }
+      } else {
+        showToast(`已展開 ${proj.name}`);
+      }
+    }
+
+    function toggleSimulateRunning(pid) {
+      const p = projectsData.find(x => x.id === pid);
+      if (p) toggleProject(p);
+    }
+
+    function completeAllRunning(pid) {
+      const p = projectsData.find(x => x.id === pid);
+      if (!p) return;
+      p.convs.forEach(c => { c.running = false; });
+      renderTree();
+      showToast(`🎉 ${p.name} 的任務全部執行完成！在摺疊態下自然隱入歷史`);
+    }
+
+    function togglePluginSection() {
+      pluginCollapsed = !pluginCollapsed;
+      document.getElementById('pluginBody').style.display = pluginCollapsed ? 'none' : 'block';
+      document.getElementById('pluginChevron').textContent = pluginCollapsed ? '▶' : '▼';
+    }
+
+    function showToast(msg) {
+      const el = document.getElementById('toastBox');
+      el.textContent = msg;
+      el.style.display = 'block';
+      clearTimeout(window.__toastTimer);
+      window.__toastTimer = setTimeout(() => {
+        el.style.display = 'none';
+      }, 2500);
+    }
+
+    function toggleTheme() {
+      const cur = document.documentElement.getAttribute('data-theme');
+      document.documentElement.setAttribute('data-theme', cur === 'light' ? 'dark' : 'light');
+    }
+
+    renderTree();
+  </script>
+</body>
+</html>
+
+
+

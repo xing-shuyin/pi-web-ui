@@ -1,3 +1,5 @@
+[English](./README.en.md) · **简体中文** · [繁體中文](./README.zh-TW.md)
+
 # hongguo
 
 将 [frostming/dsh-hongguo](https://github.com/frostming/dsh-hongguo) v1.2.1 移植为 pi-web-ui 原生插件，基于 [openhongguo](https://github.com/beilunyang/openhongguo) 提供剧名 / 演员搜索、参演作品、选集、进度续播、自动连播和下一集预加载。

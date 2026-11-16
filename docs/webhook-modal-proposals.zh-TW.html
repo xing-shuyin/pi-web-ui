@@ -1,0 +1,995 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>新建 Webhook 彈窗設計方案對比 - pi-web-ui</title>
+  <style>
+    :root {
+      --bg: #121316;
+      --bg-elev: #1a1b20;
+      --bg-elev2: #22242c;
+      --bg-input: #18191f;
+      --border: rgba(255, 255, 255, 0.1);
+      --border-hover: rgba(255, 255, 255, 0.2);
+      --border-active: #4f46e5;
+      --accent: #6366f1;
+      --accent-soft: rgba(99, 102, 241, 0.15);
+      --accent-contrast: #ffffff;
+      --text: #f3f4f6;
+      --text-dim: #9ca3af;
+      --text-faint: #6b7280;
+      --green: #10b981;
+      --green-soft: rgba(16, 185, 129, 0.15);
+      --blue: #3b82f6;
+      --blue-soft: rgba(59, 130, 246, 0.15);
+      --mono: 'JetBrains Mono', 'Fira Code', Menlo, Consolas, monospace;
+      --sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    }
+
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      padding: 0;
+      font-family: var(--sans);
+      background: #090a0c;
+      color: var(--text);
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      min-height: 100vh;
+      -webkit-font-smoothing: antialiased;
+    }
+
+    /* Top Proposal Switcher Toolbar */
+    .proposal-nav {
+      position: sticky;
+      top: 0;
+      z-index: 100;
+      width: 100%;
+      background: rgba(18, 19, 22, 0.85);
+      backdrop-filter: blur(12px);
+      border-bottom: 1px solid var(--border);
+      padding: 12px 24px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      flex-wrap: wrap;
+      gap: 12px;
+    }
+
+    .proposal-title {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-size: 14px;
+      font-weight: 600;
+      color: var(--text);
+    }
+    .proposal-title span {
+      color: var(--text-dim);
+      font-weight: normal;
+      font-size: 13px;
+    }
+
+    .proposal-buttons {
+      display: flex;
+      background: var(--bg-elev);
+      padding: 3px;
+      border-radius: 8px;
+      border: 1px solid var(--border);
+      gap: 4px;
+    }
+
+    .proposal-btn {
+      padding: 6px 14px;
+      font-size: 12.5px;
+      font-weight: 500;
+      color: var(--text-dim);
+      background: transparent;
+      border: none;
+      border-radius: 6px;
+      cursor: pointer;
+      transition: all 0.15s ease;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .proposal-btn:hover {
+      color: var(--text);
+    }
+
+    .proposal-btn.active {
+      background: var(--accent);
+      color: #fff;
+      box-shadow: 0 2px 8px rgba(99, 102, 241, 0.4);
+    }
+
+    /* Canvas Stage */
+    .stage {
+      flex: 1;
+      width: 100%;
+      max-width: 1100px;
+      padding: 32px 20px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .view-container {
+      display: none;
+      width: 100%;
+      animation: fadeIn 0.25s ease-out;
+    }
+    .view-container.active {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+    }
+
+    @keyframes fadeIn {
+      from { opacity: 0; transform: translateY(6px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+
+    .proposal-meta {
+      width: 100%;
+      max-width: 640px;
+      margin-bottom: 20px;
+      background: rgba(255, 255, 255, 0.03);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 12px 18px;
+      font-size: 13px;
+      line-height: 1.5;
+      color: var(--text-dim);
+    }
+    .proposal-meta strong {
+      color: var(--accent);
+    }
+
+    /* Common Modal Simulation Backdrop */
+    .mock-backdrop {
+      width: 100%;
+      display: flex;
+      justify-content: center;
+      background: radial-gradient(circle at top, rgba(99, 102, 241, 0.08) 0%, transparent 60%);
+      padding: 10px;
+    }
+
+    .modal-box {
+      background: var(--bg-elev);
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      box-shadow: 0 24px 60px rgba(0, 0, 0, 0.6), 0 0 0 1px rgba(255, 255, 255, 0.05);
+      overflow: hidden;
+      display: flex;
+      flex-direction: column;
+    }
+
+    .m-head {
+      padding: 18px 22px 14px 22px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+    }
+    .m-head-title {
+      display: flex;
+      flex-direction: column;
+      gap: 3px;
+    }
+    .m-head-title h3 {
+      margin: 0;
+      font-size: 16px;
+      font-weight: 600;
+      color: var(--text);
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .m-head-title p {
+      margin: 0;
+      font-size: 12px;
+      color: var(--text-dim);
+    }
+    .m-close-btn {
+      width: 28px;
+      height: 28px;
+      border-radius: 6px;
+      background: transparent;
+      border: none;
+      color: var(--text-dim);
+      font-size: 15px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+      transition: all 0.15s;
+    }
+    .m-close-btn:hover {
+      background: var(--bg-elev2);
+      color: var(--text);
+    }
+
+    .m-body {
+      padding: 20px 22px;
+      display: flex;
+      flex-direction: column;
+      gap: 18px;
+    }
+
+    .m-foot {
+      padding: 14px 22px;
+      background: rgba(0, 0, 0, 0.18);
+      border-top: 1px solid rgba(255, 255, 255, 0.06);
+      display: flex;
+      align-items: center;
+      justify-content: flex-end;
+      gap: 10px;
+    }
+
+    .btn {
+      padding: 8px 16px;
+      border-radius: 7px;
+      font-size: 13px;
+      font-weight: 500;
+      cursor: pointer;
+      transition: all 0.15s;
+      border: 1px solid transparent;
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .btn-secondary {
+      background: var(--bg-elev2);
+      border-color: var(--border);
+      color: var(--text);
+    }
+    .btn-secondary:hover {
+      background: #2b2e38;
+      border-color: var(--border-hover);
+    }
+    .btn-primary {
+      background: var(--accent);
+      color: var(--accent-contrast);
+      box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3), inset 0 1px 0 rgba(255, 255, 255, 0.2);
+    }
+    .btn-primary:hover {
+      background: #4f46e5;
+    }
+
+    .form-group {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+    .form-label {
+      font-size: 12.5px;
+      font-weight: 500;
+      color: var(--text);
+    }
+    .input-text {
+      background: var(--bg-input);
+      border: 1px solid var(--border);
+      border-radius: 7px;
+      padding: 9px 12px;
+      font-size: 13px;
+      color: var(--text);
+      outline: none;
+      transition: border-color 0.15s, box-shadow 0.15s;
+      font-family: inherit;
+    }
+    .input-text:focus {
+      border-color: var(--accent);
+      box-shadow: 0 0 0 3px var(--accent-soft);
+    }
+    .form-hint {
+      font-size: 11.5px;
+      color: var(--text-faint);
+      line-height: 1.45;
+    }
+
+    /* Switch Component */
+    .switch-row {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      padding: 10px 12px;
+      background: rgba(255, 255, 255, 0.02);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      cursor: pointer;
+      transition: all 0.15s;
+      gap: 12px;
+    }
+    .switch-row:hover {
+      border-color: var(--border-hover);
+      background: rgba(255, 255, 255, 0.035);
+    }
+    .switch-text {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+    }
+    .switch-title {
+      font-size: 13px;
+      font-weight: 500;
+      color: var(--text);
+    }
+    .switch-desc {
+      font-size: 11.5px;
+      color: var(--text-dim);
+      line-height: 1.4;
+    }
+    .ui-switch {
+      position: relative;
+      width: 36px;
+      height: 20px;
+      background: var(--switch-bg-off, #424754);
+      border: 1px solid var(--switch-border-off, #8791a3);
+      border-radius: 20px;
+      flex-shrink: 0;
+      margin-top: 2px;
+      transition: background-color 0.2s, border-color 0.2s;
+    }
+    .ui-switch.on {
+      background: var(--switch-bg-on, var(--accent));
+      border-color: var(--switch-border-on, var(--accent));
+    }
+    .ui-switch::after {
+      content: '';
+      position: absolute;
+      top: 2px;
+      left: 2px;
+      width: 14px;
+      height: 14px;
+      background: var(--switch-knob, #ffffff);
+      border-radius: 50%;
+      transition: transform 0.2s;
+    }
+    .ui-switch.on::after {
+      background: var(--switch-knob-on, var(--accent-contrast));
+      transform: translateX(16px);
+    }
+
+    /* ========================================================
+       方案 1：Linear 風格卡片單選（清晰、大氣、層次分明）
+       ======================================================== */
+    .p1-box {
+      width: 540px;
+    }
+    .type-cards {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 12px;
+    }
+    .type-card {
+      border: 1px solid var(--border);
+      background: var(--bg);
+      border-radius: 10px;
+      padding: 14px 14px 12px 14px;
+      cursor: pointer;
+      position: relative;
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+      transition: all 0.2s ease;
+    }
+    .type-card:hover {
+      border-color: var(--border-hover);
+      transform: translateY(-1px);
+    }
+    .type-card.selected {
+      border-color: var(--accent);
+      background: linear-gradient(180deg, var(--accent-soft) 0%, rgba(99, 102, 241, 0.04) 100%);
+      box-shadow: 0 0 0 1px var(--accent);
+    }
+    .type-card-head {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .type-card-icon {
+      width: 26px;
+      height: 26px;
+      border-radius: 6px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 14px;
+    }
+    .type-card.selected .type-card-icon.incoming {
+      background: var(--blue-soft);
+      color: #60a5fa;
+    }
+    .type-card.selected .type-card-icon.outgoing {
+      background: var(--green-soft);
+      color: #34d399;
+    }
+    .type-card:not(.selected) .type-card-icon {
+      background: var(--bg-elev2);
+      color: var(--text-dim);
+    }
+    .type-card-name {
+      font-size: 13px;
+      font-weight: 600;
+      color: var(--text);
+    }
+    .type-card-check {
+      position: absolute;
+      top: 10px;
+      right: 10px;
+      width: 16px;
+      height: 16px;
+      border-radius: 50%;
+      border: 1px solid var(--border);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 10px;
+      color: transparent;
+      transition: all 0.15s;
+    }
+    .type-card.selected .type-card-check {
+      background: var(--accent);
+      border-color: var(--accent);
+      color: #fff;
+    }
+    .type-card-desc {
+      font-size: 11.5px;
+      color: var(--text-dim);
+      line-height: 1.4;
+      margin: 0;
+    }
+
+    /* ========================================================
+       方案 2：分段膠囊 Tab 切換（緊湊、專注、無冗餘）
+       ======================================================== */
+    .p2-box {
+      width: 500px;
+    }
+    .p2-segmented {
+      display: flex;
+      background: var(--bg);
+      padding: 4px;
+      border-radius: 9px;
+      border: 1px solid var(--border);
+      gap: 4px;
+    }
+    .p2-seg-item {
+      flex: 1;
+      padding: 8px 12px;
+      font-size: 13px;
+      font-weight: 500;
+      text-align: center;
+      border-radius: 6px;
+      cursor: pointer;
+      color: var(--text-dim);
+      transition: all 0.15s ease;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 6px;
+    }
+    .p2-seg-item:hover {
+      color: var(--text);
+    }
+    .p2-seg-item.active {
+      background: var(--bg-elev2);
+      color: #fff;
+      font-weight: 600;
+      box-shadow: 0 1px 3px rgba(0, 0, 0, 0.4);
+    }
+
+    .events-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 8px;
+    }
+    .event-chip {
+      padding: 8px 10px;
+      background: var(--bg-input);
+      border: 1px solid var(--border);
+      border-radius: 7px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      cursor: pointer;
+      font-size: 12px;
+      color: var(--text-dim);
+      transition: all 0.15s;
+    }
+    .event-chip:hover {
+      border-color: var(--border-hover);
+      color: var(--text);
+    }
+    .event-chip.active {
+      border-color: var(--accent);
+      background: var(--accent-soft);
+      color: #fff;
+    }
+    .chip-box {
+      width: 14px;
+      height: 14px;
+      border-radius: 3px;
+      border: 1px solid var(--border);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 9px;
+    }
+    .event-chip.active .chip-box {
+      background: var(--accent);
+      border-color: var(--accent);
+      color: #fff;
+    }
+
+    /* ========================================================
+       方案 3：雙欄即時預覽（極客、透明、所見即所得）
+       ======================================================== */
+    .p3-box {
+      width: 780px;
+    }
+    .p3-split {
+      display: grid;
+      grid-template-columns: 1.15fr 0.85fr;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+    }
+    .p3-left {
+      padding: 20px 22px;
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+      border-right: 1px solid rgba(255, 255, 255, 0.06);
+    }
+    .p3-right {
+      padding: 20px;
+      background: rgba(0, 0, 0, 0.25);
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+    .preview-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      font-size: 12px;
+      font-weight: 600;
+      color: var(--text-dim);
+      letter-spacing: 0.5px;
+    }
+    .preview-code {
+      font-family: var(--mono);
+      font-size: 11px;
+      line-height: 1.5;
+      color: #a5b4fc;
+      background: #0d0e12;
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      border-radius: 8px;
+      padding: 12px;
+      overflow-x: auto;
+      flex: 1;
+      margin: 0;
+      white-space: pre;
+    }
+    .preview-tag {
+      font-size: 10px;
+      background: rgba(99, 102, 241, 0.2);
+      color: #818cf8;
+      padding: 2px 6px;
+      border-radius: 4px;
+    }
+  </style>
+</head>
+<body>
+<div data-docs-i18n-switch style="position:fixed;top:8px;right:12px;z-index:2147483647;font:12px/1.6 -apple-system,system-ui,sans-serif;background:rgba(15,17,22,.78);color:#fff;padding:4px 12px;border-radius:999px;box-shadow:0 2px 10px rgba(0,0,0,.35)"><a href="./webhook-modal-proposals.html" style="color:#fff;text-decoration:none">简体中文</a> · <a href="./webhook-modal-proposals.en.html" style="color:#fff;text-decoration:none">English</a> · <strong>繁體中文</strong></div>
+
+
+
+  <!-- Top Proposal Switcher Toolbar -->
+  <header class="proposal-nav">
+    <div class="proposal-title">
+      🎨 新建 Webhook 彈窗設計方案
+      <span>(點選右側按鈕切換對比)</span>
+    </div>
+    <div class="proposal-buttons">
+      <button class="proposal-btn active" onclick="switchView('p1')">方案 A：Linear 卡片流 (推薦)</button>
+      <button class="proposal-btn" onclick="switchView('p2')">方案 B：分段膠囊 Tab 式</button>
+      <button class="proposal-btn" onclick="switchView('p3')">方案 C：雙欄即時預覽式</button>
+    </div>
+  </header>
+
+  <main class="stage">
+
+    <!-- ==================== 方案 A ==================== -->
+    <div id="view-p1" class="view-container active">
+      <div class="proposal-meta">
+        <strong>方案 A 特色：Linear 質感卡片流</strong><br>
+        採用現代 SaaS 標準設計語言。型別選擇使用細膩的卡片網格，選中狀態帶發光微光邊框與對勾；表單採用優雅的開關元件（Switch）替代傳統核取方塊；層級分明，視覺舒適，資訊密度恰到好處。
+      </div>
+
+      <div class="mock-backdrop">
+        <div class="modal-box p1-box">
+          <div class="m-head">
+            <div class="m-head-title">
+              <h3><span>🔗</span> 新建 Webhook</h3>
+              <p>配置入站自動化觸發或出站事件廣播通知</p>
+            </div>
+            <button class="m-close-btn" title="關閉">✕</button>
+          </div>
+
+          <div class="m-body">
+            <!-- Webhook 型別選擇 -->
+            <div class="form-group">
+              <label class="form-label">整合型別</label>
+              <div class="type-cards">
+                <div class="type-card selected" id="p1-card-in" onclick="selectP1Type('incoming')">
+                  <span class="type-card-check">✓</span>
+                  <div class="type-card-head">
+                    <span class="type-card-icon incoming">📥</span>
+                    <span class="type-card-name">入站 Webhook</span>
+                  </div>
+                  <p class="type-card-desc">外部系統推送訊息進群，可自動指派或喚醒群內 Bot 執行任務</p>
+                </div>
+
+                <div class="type-card" id="p1-card-out" onclick="selectP1Type('outgoing')">
+                  <span class="type-card-check">✓</span>
+                  <div class="type-card-head">
+                    <span class="type-card-icon outgoing">📤</span>
+                    <span class="type-card-name">出站 Webhook</span>
+                  </div>
+                  <p class="type-card-desc">將新訊息、任務完成、失敗或交付等事件即時推送至外部服務</p>
+                </div>
+              </div>
+            </div>
+
+            <!-- Webhook 名稱 -->
+            <div class="form-group">
+              <label class="form-label">Webhook 名稱</label>
+              <input type="text" class="input-text" placeholder="例如：GitHub Actions CI、監控告警、飛書群通知" value="GitHub Actions CI">
+            </div>
+
+            <!-- 入站模式動態項 -->
+            <div id="p1-fields-in">
+              <div class="switch-row" onclick="toggleSwitch('p1-sw-bot')">
+                <div class="switch-text">
+                  <span class="switch-title">收到推送時喚醒 Bot 執行任務</span>
+                  <span class="switch-desc">檢測到訊息包含 @Bot 或群組設有群主管時，自動生成任務派發</span>
+                </div>
+                <div class="ui-switch on" id="p1-sw-bot"></div>
+              </div>
+            </div>
+
+            <!-- 出站模式動態項 -->
+            <div id="p1-fields-out" style="display: none; flex-direction: column; gap: 14px;">
+              <div class="form-group">
+                <label class="form-label">目標接收 URL</label>
+                <input type="url" class="input-text" placeholder="https://example.com/webhook">
+              </div>
+
+              <div class="switch-row" onclick="toggleSwitch('p1-sw-relay')">
+                <div class="switch-text">
+                  <span class="switch-title">通過 Hub 伺服器中轉代發</span>
+                  <span class="switch-desc">由 Hub 作為出口代發（固定 IP）；若目標是區域網私有地址請關閉</span>
+                </div>
+                <div class="ui-switch on" id="p1-sw-relay"></div>
+              </div>
+
+              <div class="form-group">
+                <label class="form-label">簽名金鑰 Secret (可選)</label>
+                <input type="text" class="input-text" placeholder="用於 X-Pi-Signature HMAC 校驗">
+              </div>
+            </div>
+
+            <!-- 啟用狀態開關 -->
+            <div class="switch-row" onclick="toggleSwitch('p1-sw-enable')">
+              <div class="switch-text">
+                <span class="switch-title">立即啟用該 Webhook</span>
+                <span class="switch-desc">建立完成後立即生效並接受請求</span>
+              </div>
+              <div class="ui-switch on" id="p1-sw-enable"></div>
+            </div>
+          </div>
+
+          <div class="m-foot">
+            <button class="btn btn-secondary">取消</button>
+            <button class="btn btn-primary">建立 Webhook</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+
+    <!-- ==================== 方案 B ==================== -->
+    <div id="view-p2" class="view-container">
+      <div class="proposal-meta">
+        <strong>方案 B 特色：分段膠囊 Tab 切換</strong><br>
+        極致緊湊，適合追求操作效率的高階場景。頂部將“型別選擇”簡化為膠囊式 Segmented Control，無需滾動螢幕；出站事件訂閱使用點選即選的多彩標籤徽章（Chips），高度集約。
+      </div>
+
+      <div class="mock-backdrop">
+        <div class="modal-box p2-box">
+          <div class="m-head">
+            <div class="m-head-title">
+              <h3>新建 Webhook 整合</h3>
+            </div>
+            <button class="m-close-btn" title="關閉">✕</button>
+          </div>
+
+          <div class="m-body">
+            <!-- 膠囊切換 -->
+            <div class="p2-segmented">
+              <div class="p2-seg-item active" id="p2-tab-in" onclick="selectP2Type('incoming')">📥 入站推送 (Incoming)</div>
+              <div class="p2-seg-item" id="p2-tab-out" onclick="selectP2Type('outgoing')">📤 出站廣播 (Outgoing)</div>
+            </div>
+
+            <div class="form-group">
+              <label class="form-label">標識名稱</label>
+              <input type="text" class="input-text" placeholder="給此 Webhook 起一個名字" value="Sentry Error Reporter">
+            </div>
+
+            <!-- 入站專屬表單 -->
+            <div id="p2-fields-in" style="display: flex; flex-direction: column; gap: 14px;">
+              <div class="switch-row" onclick="toggleSwitch('p2-sw-bot')">
+                <div class="switch-text">
+                  <span class="switch-title">自動派發群 Bot</span>
+                  <span class="switch-desc">允許訊息觸發群主管或被 @ 提及的協作 Bot</span>
+                </div>
+                <div class="ui-switch on" id="p2-sw-bot"></div>
+              </div>
+            </div>
+
+            <!-- 出站專屬表單 -->
+            <div id="p2-fields-out" style="display: none; flex-direction: column; gap: 14px;">
+              <div class="form-group">
+                <label class="form-label">推送端點</label>
+                <input type="url" class="input-text" placeholder="https://api.example.com/hooks" value="https://oapi.dingtalk.com/robot/send">
+              </div>
+
+              <div class="form-group">
+                <label class="form-label">訂閱事件</label>
+                <div class="events-grid">
+                  <div class="event-chip active" onclick="this.classList.toggle('active')">
+                    <span class="chip-box">✓</span> 💬 新群聊訊息
+                  </div>
+                  <div class="event-chip active" onclick="this.classList.toggle('active')">
+                    <span class="chip-box">✓</span> ✅ 任務成功完成
+                  </div>
+                  <div class="event-chip active" onclick="this.classList.toggle('active')">
+                    <span class="chip-box">✓</span> ❌ 任務執行失敗
+                  </div>
+                  <div class="event-chip" onclick="this.classList.toggle('active')">
+                    <span class="chip-box">✓</span> 📦 程式碼交付提交
+                  </div>
+                </div>
+              </div>
+
+              <div class="switch-row" onclick="toggleSwitch('p2-sw-relay')">
+                <div class="switch-text">
+                  <span class="switch-title">經由 Hub 服務端中轉</span>
+                  <span class="switch-desc">公網集中代理出網</span>
+                </div>
+                <div class="ui-switch on" id="p2-sw-relay"></div>
+              </div>
+            </div>
+
+            <div class="switch-row" onclick="toggleSwitch('p2-sw-enable')">
+              <div class="switch-text">
+                <span class="switch-title">啟用狀態</span>
+              </div>
+              <div class="ui-switch on" id="p2-sw-enable"></div>
+            </div>
+          </div>
+
+          <div class="m-foot">
+            <button class="btn btn-secondary">取消</button>
+            <button class="btn btn-primary">儲存配置</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+
+    <!-- ==================== 方案 C ==================== -->
+    <div id="view-p3" class="view-container">
+      <div class="proposal-meta">
+        <strong>方案 C 特色：雙欄即時預覽式（所見即所得）</strong><br>
+        左側為配置表單，右側是深色程式碼窗，即時生成 cURL 示例（入站模式）或推送 Payload 結構（出站模式）。使用者邊輸入邊能明確知道它將如何工作，開發者體驗極其優異。
+      </div>
+
+      <div class="mock-backdrop">
+        <div class="modal-box p3-box">
+          <div class="m-head">
+            <div class="m-head-title">
+              <h3><span>⚡</span> 建立 Webhook 整合</h3>
+              <p>配置並即時預覽呼叫命令與載荷結構</p>
+            </div>
+            <button class="m-close-btn" title="關閉">✕</button>
+          </div>
+
+          <div class="p3-split">
+            <!-- Left Config -->
+            <div class="p3-left">
+              <div class="p2-segmented">
+                <div class="p2-seg-item active" id="p3-tab-in" onclick="selectP3Type('incoming')">📥 入站模式</div>
+                <div class="p2-seg-item" id="p3-tab-out" onclick="selectP3Type('outgoing')">📤 出站模式</div>
+              </div>
+
+              <div class="form-group">
+                <label class="form-label">整合名稱</label>
+                <input type="text" class="input-text" id="p3-name-input" oninput="updateP3Preview()" value="CI Build Bot">
+              </div>
+
+              <div id="p3-fields-in">
+                <div class="switch-row" onclick="toggleSwitch('p3-sw-bot')">
+                  <div class="switch-text">
+                    <span class="switch-title">觸發群主管 / Bot 執行</span>
+                    <span class="switch-desc">自動將訊息轉為執行任務</span>
+                  </div>
+                  <div class="ui-switch on" id="p3-sw-bot"></div>
+                </div>
+              </div>
+
+              <div id="p3-fields-out" style="display: none; flex-direction: column; gap: 12px;">
+                <div class="form-group">
+                  <label class="form-label">推送 URL</label>
+                  <input type="url" class="input-text" value="https://corp.com/hooks/alert">
+                </div>
+                <div class="switch-row" onclick="toggleSwitch('p3-sw-relay')">
+                  <div class="switch-text">
+                    <span class="switch-title">Hub 中轉外發</span>
+                  </div>
+                  <div class="ui-switch on" id="p3-sw-relay"></div>
+                </div>
+              </div>
+
+              <div class="switch-row" onclick="toggleSwitch('p3-sw-enable')">
+                <div class="switch-text">
+                  <span class="switch-title">啟用 Webhook</span>
+                </div>
+                <div class="ui-switch on" id="p3-sw-enable"></div>
+              </div>
+            </div>
+
+            <!-- Right Preview -->
+            <div class="p3-right">
+              <div class="preview-header">
+                <span id="p3-preview-title">即時呼叫命令 (cURL)</span>
+                <span class="preview-tag">LIVE PREVIEW</span>
+              </div>
+              <pre class="preview-code" id="p3-preview-code">curl -X POST "https://hub.example.com/api/rooms/r-101/webhooks/incoming/hook-preview?token=abc..." \
+  -H "Content-Type: application/json" \
+  -d '{
+    "text": "任務構建成功",
+    "senderName": "CI Build Bot"
+  }'</pre>
+            </div>
+          </div>
+
+          <div class="m-foot">
+            <button class="btn btn-secondary">取消</button>
+            <button class="btn btn-primary">確認並生成</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+  </main>
+
+  <script>
+    function switchView(id) {
+      document.querySelectorAll('.proposal-btn').forEach(btn => btn.classList.remove('active'));
+      document.querySelectorAll('.view-container').forEach(view => view.classList.remove('active'));
+      event.currentTarget.classList.add('active');
+      document.getElementById('view-' + id).classList.add('active');
+    }
+
+    function toggleSwitch(id) {
+      const sw = document.getElementById(id);
+      if (sw) sw.classList.toggle('on');
+    }
+
+    // Proposal 1 logic
+    function selectP1Type(type) {
+      const cardIn = document.getElementById('p1-card-in');
+      const cardOut = document.getElementById('p1-card-out');
+      const fIn = document.getElementById('p1-fields-in');
+      const fOut = document.getElementById('p1-fields-out');
+
+      if (type === 'incoming') {
+        cardIn.classList.add('selected');
+        cardOut.classList.remove('selected');
+        fIn.style.display = 'block';
+        fOut.style.display = 'none';
+      } else {
+        cardOut.classList.add('selected');
+        cardIn.classList.remove('selected');
+        fIn.style.display = 'none';
+        fOut.style.display = 'flex';
+      }
+    }
+
+    // Proposal 2 logic
+    function selectP2Type(type) {
+      const tabIn = document.getElementById('p2-tab-in');
+      const tabOut = document.getElementById('p2-tab-out');
+      const fIn = document.getElementById('p2-fields-in');
+      const fOut = document.getElementById('p2-fields-out');
+
+      if (type === 'incoming') {
+        tabIn.classList.add('active');
+        tabOut.classList.remove('active');
+        fIn.style.display = 'flex';
+        fOut.style.display = 'none';
+      } else {
+        tabOut.classList.add('active');
+        tabIn.classList.remove('active');
+        fIn.style.display = 'none';
+        fOut.style.display = 'flex';
+      }
+    }
+
+    // Proposal 3 logic
+    let p3CurrentType = 'incoming';
+    function selectP3Type(type) {
+      p3CurrentType = type;
+      const tabIn = document.getElementById('p3-tab-in');
+      const tabOut = document.getElementById('p3-tab-out');
+      const fIn = document.getElementById('p3-fields-in');
+      const fOut = document.getElementById('p3-fields-out');
+
+      if (type === 'incoming') {
+        tabIn.classList.add('active');
+        tabOut.classList.remove('active');
+        fIn.style.display = 'block';
+        fOut.style.display = 'none';
+      } else {
+        tabOut.classList.add('active');
+        tabIn.classList.remove('active');
+        fIn.style.display = 'none';
+        fOut.style.display = 'flex';
+      }
+      updateP3Preview();
+    }
+
+    function updateP3Preview() {
+      const name = document.getElementById('p3-name-input').value || 'My Webhook';
+      const code = document.getElementById('p3-preview-code');
+      const title = document.getElementById('p3-preview-title');
+
+      if (p3CurrentType === 'incoming') {
+        title.textContent = '即時呼叫命令 (cURL)';
+        code.textContent = `curl -X POST "https://hub.example.com/api/rooms/r-101/webhooks/incoming/hook-preview?token=abc..." \\
+  -H "Content-Type: application/json" \\
+  -d '{
+    "text": "任務構建成功",
+    "senderName": "${name}"
+  }'`;
+      } else {
+        title.textContent = '出站推送 Payload (JSON)';
+        code.textContent = `{
+  "event": "task_completed",
+  "roomId": "room-101",
+  "roomName": "研發協同組",
+  "timestamp": ${Date.now()},
+  "data": {
+    "taskId": "t-808",
+    "botId": "bot-frontend",
+    "status": "completed",
+    "report": "已完成程式碼編譯與打包",
+    "webhook": "${name}"
+  }
+}`;
+      }
+    }
+  </script>
+</body>
+</html>
+
+
+
+

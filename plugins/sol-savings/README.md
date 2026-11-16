@@ -1,3 +1,5 @@
+[English](./README.en.md) · **简体中文** · [繁體中文](./README.zh-TW.md)
+
 # SoL-Pi 状态与节省统计插件 (SoL-Pi Savings & Plan)
 
 实时统计并展示 [NVlabs/SoL-Pi](https://github.com/NVlabs/SoL-Pi) 在当前打开会话中节省的上下文 Token（Observation Pack 大工具结果压缩、在线边界压缩）与 Plan 规划进度。

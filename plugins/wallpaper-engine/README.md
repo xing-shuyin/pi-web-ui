@@ -1,3 +1,5 @@
+[English](./README.en.md) · **简体中文** · [繁體中文](./README.zh-TW.md)
+
 # Wallpaper Engine 动态壁纸插件 (v0.3.0)
 
 把本机 **Wallpaper Engine** 的创意工坊壁纸无缝融入到 `pi-web-ui` 的对话界面后方，配合液态毛玻璃磨砂效果、透明度微调、WebGL2 场景渲染、音频频谱联动与自动轮播。

@@ -1,3 +1,5 @@
+[English](./README.en.md) · **简体中文** · [繁體中文](./README.zh-TW.md)
+
 # Legado Web（插件内嵌版 · 仅文本源 + 代理模式）
 
 从 `legado-E`（阅读 Sigma / Legado 衍生）剥离的核心读书链路：

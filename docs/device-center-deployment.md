@@ -1,3 +1,5 @@
+[English](./device-center-deployment.en.md) · **简体中文** · [繁體中文](./device-center-deployment.zh-TW.md)
+
 # pi-web-ui 设备中心部署指南
 
 本文面向第一次接触 pi-web-ui 的服务器管理员及 AI 部署助手。无需阅读项目源码或此前对话，即可根据本文部署设备中心。

@@ -1,3 +1,5 @@
+[English](./README.en.md) · **简体中文** · [繁體中文](./README.zh-TW.md)
+
 # 桌面控制（desktop-use）🖱️
 
 让 AI 操作 **Windows / macOS 桌面**：通过系统原生无障碍接口定位控件，自绘界面通过窗口截图与离线 OCR 定位。Windows 输入走 nut-js（自动安装），PowerShell 兜底；macOS 使用本插件内置的 Swift 原生后端，不依赖外部插件或第三方输入库。
