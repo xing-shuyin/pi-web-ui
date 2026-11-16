@@ -36,7 +36,7 @@ describe("local device enrollment", () => {
 		])
 			expect(() => normalizeHubUrl(value)).toThrow();
 	});
-	it("pairs without exposing credentials and persists execution permission before reconnect", async () => {
+	it("pairs without exposing credentials and keeps execution on the local engine", async () => {
 		const dir = await mkdtemp(join(tmpdir(), "device-local-"));
 		cleanup.push(() => rm(dir, { recursive: true, force: true }));
 		const remote = express();
@@ -47,15 +47,21 @@ describe("local device enrollment", () => {
 		remote.post("/api/pair/poll", (_req, res) =>
 			res.json({ deviceId: "device-a", credential: "device-secret", uiCredential: "ui-secret" }),
 		);
+		const remoteHits: string[] = [];
+		remote.use((req, res) => {
+			remoteHits.push(`${req.method} ${req.path}`);
+			if (req.path === "/api/agent/bots") return res.json({ accountId: "acc" });
+			res.status(404).json({ error: "User route missing" });
+		});
 		const hub = await listen(createServer(remote));
 		const app = express();
 		app.use(express.json());
-		const allowed: boolean[] = [];
+		const connectTargets: string[] = [];
 		const local = await installLocalDeviceCenter({
 			app,
 			dataDir: dir,
 			connect: (cfg) => {
-				allowed.push(cfg.allowExecution);
+				connectTargets.push(cfg.hubUrl);
 				return { close() {}, isConnected: () => true };
 			},
 		});
@@ -78,10 +84,12 @@ describe("local device enrollment", () => {
 		expect(status).not.toContain("device-secret");
 		expect(status).not.toContain("poll-secret");
 		expect(status).not.toContain("ui-secret");
-		expect(allowed).toEqual([false]);
 		expect(JSON.parse(await readFile(join(dir, "device-center.json"), "utf8")).uiCredential).toBe("ui-secret");
+		// 执行通道只接本机房间引擎（loopback），配对来的远端 Hub 不再是房间/执行的宿主。
+		expect(connectTargets.length).toBeGreaterThan(0);
+		expect(connectTargets.every((target) => target !== hub && target.startsWith("http://127.0.0.1:"))).toBe(true);
+		expect(remoteHits.some((hit) => hit.includes("/api/device-user/"))).toBe(false);
 		expect((await post("execution", { allowExecution: true })).status).toBe(200);
-		expect(allowed).toEqual([false, true]);
 		expect(JSON.parse(await readFile(join(dir, "device-center.json"), "utf8")).allowExecution).toBe(true);
 		expect((await post("disconnect", {})).status).toBe(200);
 		expect(JSON.parse(await readFile(join(dir, "device-center.json"), "utf8"))).toBeNull();

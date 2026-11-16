@@ -392,29 +392,13 @@ describe("device user group authority", () => {
 		await hub.acceptTaskEvent("host", { ...event, status: "completed", report: "verified" });
 		expect(hub.store.snapshot().messages.at(-1)?.sender).toMatchObject({ type: "bot", id: "worker" });
 	});
-	it("bridges only fixed user routes without execution permission or secret leakage, and bounds remote responses", async () => {
+	it("serves rooms from the local engine, keeps the allowlist, and never sends room traffic to the remote Hub", async () => {
 		const remote = express();
 		remote.use(express.json());
-		const calls: { path: string; auth: string | undefined }[] = [];
-		let arrived!: () => void;
-		const waiting = new Promise<void>((resolve) => {
-			arrived = resolve;
-		});
-		let cancelled!: () => void;
-		const remoteCancelled = new Promise<void>((resolve) => {
-			cancelled = resolve;
-		});
+		const remoteHits: string[] = [];
 		remote.use((req, res) => {
-			calls.push({ path: req.path, auth: req.headers.authorization });
-			if (req.path.endsWith("/waiting")) {
-				res.once("close", cancelled);
-				arrived();
-				return;
-			}
-			if (req.path.endsWith("/oversize")) return res.json({ text: "x".repeat(2 * 1024 * 1024) });
-			if (req.path.endsWith("/failure"))
-				return res.status(403).json({ error: "ui-secret device-secret upstream internals" });
-			return res.status(req.method === "POST" ? 201 : 200).json({ rooms: [], room: { id: "team" } });
+			remoteHits.push(`${req.method} ${req.path}`);
+			res.status(500).json({ error: "rooms must stay local" });
 		});
 		const hubUrl = await listen(createServer(remote));
 		const dataDir = await directory();
@@ -449,27 +433,28 @@ describe("device user group authority", () => {
 				...(body === undefined ? {} : { body: JSON.stringify(body) }),
 			});
 		}
-		expect(await (await request("chat-status")).json()).toEqual({ hubUrl, deviceId: "one", name: "one" });
+		// 配对身份照旧上报（设备中心/浮层用它），但房间引擎已经是本机。
+		expect(await (await request("chat-status")).json()).toEqual({
+			hubUrl,
+			deviceId: "one",
+			name: "one",
+			roomsReady: true,
+		});
 		expect((await request("rooms")).status).toBe(200);
-		expect((await request("rooms", { name: "team", botIds: [] })).status).toBe(201);
-		expect(calls[0]).toEqual({ path: "/api/device-user/rooms", auth: "Bearer ui-secret" });
-		expect((await request("rooms", { name: "team", endpoint: "http://evil.test" })).status).toBe(400);
+		// 房间由本机引擎校验：Bot 不在本机 → 400（不是远端 500）。
+		expect((await request("rooms", { name: "team", botIds: ["ghost-bot"] })).status).toBe(400);
+		// 多余字段一律被闸门拒掉，凭据/endpoint 不能由客户端决定。
+		expect((await request("rooms", { name: "team", botIds: [], endpoint: "http://evil.test" })).status).toBe(400);
 		const forbidden = await request("rooms", { name: "team" }, "http://evil.test");
 		expect(forbidden.status).toBe(403);
 		expect((await forbidden.json()).code).toBe("LOCAL_ONLY");
-		const failure = await request("rooms/failure");
-		expect(failure.status).toBe(403);
-		expect(await failure.text()).not.toContain("secret");
-		expect((await request("rooms/oversize")).status).toBe(502);
 		expect(await (await request("status")).text()).not.toContain("secret");
-		const stale = request("rooms/waiting");
-		await waiting;
+		// 断开配对后房间还在本机：侧栏不会因为 Hub 关系变化而清空。
 		expect((await request("disconnect", {})).status).toBe(200);
 		expect(await (await request("chat-status")).json()).toMatchObject({ local: true, deviceId: "local-device" });
-		const staleResponse = await stale;
-		expect(staleResponse.status).toBe(409);
-		expect((await staleResponse.json()).code).toBe("DEVICE_CHANGED");
-		await remoteCancelled;
+		expect((await request("rooms")).status).toBe(200);
+		// 远端只该收到 Bot 列表镜像（`PUT /api/agent/bots`），一个房间请求都不该有。
+		expect(remoteHits.filter((hit) => hit !== "PUT /api/agent/bots")).toEqual([]);
 	});
 	it("automatically resumes active conversation for mentioned bot and creates new on request", async () => {
 		const port = await new Promise<number>((resolve) => {
@@ -552,7 +537,7 @@ describe("device user group authority", () => {
 		expect(convId2).not.toBe(convId1);
 		expect(r3.tasks[0]?.resume).toBeFalsy();
 	});
-	it("requires old devices to re-pair while retaining their agent connection", async () => {
+	it("requires old devices to re-pair for Hub administration while rooms keep working locally", async () => {
 		const dataDir = await directory();
 		await writeFile(
 			join(dataDir, "device-center.json"),
@@ -576,10 +561,14 @@ describe("device user group authority", () => {
 		});
 		cleanup.push(() => local.close());
 		const base = await listen(createServer(app));
-		const response = await fetch(`${base}/api/device-center/rooms`);
+		// 本机房间引擎与配对无关：旧设备（没有 uiCredential）也能列/建本机房间。
+		const rooms = await fetch(`${base}/api/device-center/rooms`);
 		expect(connected).toBe(true);
-		expect(response.status).toBe(409);
-		expect((await response.json()).code).toBe("REPAIR_REQUIRED");
+		expect(rooms.status).toBe(200);
+		// 远端管理类路径仍然要求重新配对（它们还要跟 Hub 用 UI 凭据说话）。
+		const devices = await fetch(`${base}/api/device-center/devices`);
+		expect(devices.status).toBe(409);
+		expect((await devices.json()).code).toBe("REPAIR_REQUIRED");
 	});
 });
 

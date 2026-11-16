@@ -1,5 +1,5 @@
 import { createHash, randomUUID } from "node:crypto";
-import { mkdir, readFile, rename, rm, writeFile } from "node:fs/promises";
+import { mkdir, readFile, readdir, rename, rm, stat, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { DeviceWorkspaceError, validateDeviceProject } from "./workspaces.js";
 
@@ -112,12 +112,52 @@ function validate(input: LocalBot): LocalBot {
 	};
 }
 
+/**
+ * 本机 Bot 身份的作用域。
+ *
+ * Bot 属于**这台机器**，不属于某次 Hub 配对；旧版本按 `[hubUrl, deviceId]` 分文件，
+ * 换配对/断连一次就“Bot 全不见了”。现在固定一个机器级 scope（见 `adoptLegacyScope`）。
+ */
+export const LOCAL_BOT_SCOPE = "local";
+
+/**
+ * 一次性迁移：首次运行（本机 scope 文件还不存在）时，把最近修改过的旧 scope 文件搬过来。
+ *
+ * 旧文件保留不删（可人工回滚）；迁移幂等，已有本机文件时直接返回。
+ */
+async function adoptLegacyScope(directory: string, target: string): Promise<void> {
+	try {
+		await stat(target);
+		return;
+	} catch (error) {
+		if ((error as NodeJS.ErrnoException).code !== "ENOENT") return;
+	}
+	let newest: { path: string; mtime: number } | undefined;
+	try {
+		for (const entry of await readdir(directory, { withFileTypes: true })) {
+			if (!entry.isFile() || !entry.name.endsWith(".json")) continue;
+			const path = join(directory, entry.name);
+			if (path === target) continue;
+			const info = await stat(path).catch(() => undefined);
+			if (info && (!newest || info.mtimeMs > newest.mtime)) newest = { path, mtime: info.mtimeMs };
+		}
+	} catch {
+		return;
+	}
+	if (!newest) return;
+	const content = await readFile(newest.path, "utf8").catch(() => undefined);
+	if (!content) return;
+	await writeFile(target, content, { mode: 0o600, flag: "wx" }).catch(() => undefined);
+}
+
 export async function createLocalBotRegistry(dataDir: string): Promise<LocalBotRegistry> {
 	await mkdir(dataDir, { recursive: true });
 	const directory = join(dataDir, "device-bots");
 	await mkdir(directory, { recursive: true });
 	const scopeFile = (scope: string) => join(directory, `${createHash("sha256").update(scope).digest("hex")}.json`);
-	let file = scopeFile("unpaired");
+	const localFile = scopeFile(LOCAL_BOT_SCOPE);
+	await adoptLegacyScope(directory, localFile);
+	let file = localFile;
 	let bots = new Map<string, LocalBot>();
 	const leases = new Map<string, number>();
 	let serial: Promise<unknown> = Promise.resolve();

@@ -3,7 +3,7 @@ import { mkdir, mkdtemp, readFile, readdir, rename, rm, symlink, writeFile } fro
 import { homedir, tmpdir } from "node:os";
 import { join, parse } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
-import { createLocalBotRegistry, type LocalBotInput } from "../../server/device-center/bots.js";
+import { createLocalBotRegistry, LOCAL_BOT_SCOPE, type LocalBotInput } from "../../server/device-center/bots.js";
 
 const cleanups: (() => Promise<unknown>)[] = [];
 afterEach(async () => {
@@ -28,12 +28,12 @@ async function fixture() {
 		enabled: true,
 	};
 	const directory = join(dataDir, "device-bots");
-	const filename = `${createHash("sha256").update("unpaired").digest("hex")}.json`;
+	const filename = `${createHash("sha256").update(LOCAL_BOT_SCOPE).digest("hex")}.json`;
 	return { dir, dataDir, directory, filename, cwd, registry, input, file: join(directory, filename) };
 }
 
 describe("local Bot registry", () => {
-	it("isolates accounts and hubs in hashed scope files, including the unpaired default", async () => {
+	it("isolates accounts and hubs in hashed scope files, including the machine default", async () => {
 		const f = await fixture();
 		const unpaired = await f.registry.upsert(f.input);
 		const scopes = ["hub-a/account-a", "hub-a/account-b", "hub-b/account-a", "../../outside"];
@@ -52,9 +52,42 @@ describe("local Bot registry", () => {
 			await f.registry.setScope(scope);
 			expect(f.registry.list().map((bot) => bot.id)).toEqual([ids.get(scope)]);
 		}
-		await f.registry.setScope("unpaired");
+		await f.registry.setScope(LOCAL_BOT_SCOPE);
 		expect(f.registry.list()).toEqual([unpaired]);
 		expect((await createLocalBotRegistry(f.dataDir)).list()).toEqual([unpaired]);
+	});
+
+	it("adopts the newest legacy scope file so Bot identity stops following Hub pairing", async () => {
+		const dir = await mkdtemp(join(tmpdir(), "device-bots-migrate-"));
+		cleanups.push(() => rm(dir, { recursive: true, force: true }));
+		const dataDir = join(dir, "data");
+		const cwd = join(dir, "project");
+		await mkdir(cwd, { recursive: true });
+		const directory = join(dataDir, "device-bots");
+		await mkdir(directory, { recursive: true });
+		const legacy = join(directory, `${createHash("sha256").update('["https://old-hub","dev-1"]').digest("hex")}.json`);
+		const bot = {
+			id: "legacy-bot",
+			name: "Kept",
+			description: "",
+			systemPrompt: "Help",
+			cwd,
+			tools: ["read"],
+			skills: [],
+			mcpServers: [],
+			enabled: true,
+			revision: 3,
+		};
+		await writeFile(legacy, JSON.stringify([bot]));
+		const registry = await createLocalBotRegistry(dataDir);
+		// 旧的分配对 scope 文件被搬进机器级 scope，旧文件保留（可回滚）。
+		expect(registry.list().map((entry) => entry.id)).toEqual(["legacy-bot"]);
+		const local = join(directory, `${createHash("sha256").update(LOCAL_BOT_SCOPE).digest("hex")}.json`);
+		expect(JSON.parse(await readFile(local, "utf8"))).toEqual([bot]);
+		expect(JSON.parse(await readFile(legacy, "utf8"))).toEqual([bot]);
+		// 幂等：再开一次不会覆盖机器级 scope 的后续修改。
+		await registry.upsert({ ...bot, revision: 3, name: "Renamed" });
+		expect((await createLocalBotRegistry(dataDir)).list()[0].name).toBe("Renamed");
 	});
 
 	it("rejects scope changes while leases are held and preserves the current scope on invalid or corrupt loads", async () => {
@@ -62,7 +95,7 @@ describe("local Bot registry", () => {
 		const bot = await f.registry.upsert(f.input);
 		const first = await f.registry.acquire(bot.id);
 		const second = await f.registry.acquire(bot.id);
-		await f.registry.setScope("unpaired");
+		await f.registry.setScope(LOCAL_BOT_SCOPE);
 		await expect(f.registry.setScope("other")).rejects.toMatchObject({ code: "BOT_BUSY" });
 		first.release();
 		first.release();

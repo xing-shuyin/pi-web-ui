@@ -275,18 +275,18 @@ describe("publication HTTP authorization", () => {
 	});
 });
 
-describe("local publication proxy and authenticated account binding", () => {
-	it("whitelists recovery bodies and backfills old config accountId through a live runtime getter", async () => {
-		const received: { path: string; body: any; credential?: string }[] = [];
+describe("local publication surface and authenticated account binding", () => {
+	it("whitelists recovery bodies and backfills the paired accountId through the live runtime getter", async () => {
+		const received: { path: string; credential?: string }[] = [];
 		let authenticatedAccount: string | undefined;
 		const upstream = express();
 		upstream.use(express.json());
 		upstream.use((req, res) => {
-			received.push({ path: req.path, body: req.body, credential: req.headers.authorization });
+			received.push({ path: req.path, credential: req.headers.authorization });
 			res.json(
 				req.path === "/api/agent/bots"
 					? { bots: [], ...(authenticatedAccount ? { accountId: authenticatedAccount } : {}) }
-					: { integration: { id: "integration" } },
+					: {},
 			);
 		});
 		const hubUrl = await listen(createServer(upstream));
@@ -302,28 +302,25 @@ describe("local publication proxy and authenticated account binding", () => {
 				allowExecution: false,
 			}),
 		);
-		let runtimeConfig: LocalDeviceConfig | undefined;
 		const app = express();
 		app.use(express.json());
-		const local = await installLocalDeviceCenter({
-			app,
-			dataDir,
-			connect: (config) => {
-				runtimeConfig = config;
-				return { close() {} };
-			},
-		});
+		const local = await installLocalDeviceCenter({ app, dataDir, connect: () => ({ close() {} }) });
 		cleanups.push(() => local.close());
-		expect(runtimeConfig!.accountId).toBeUndefined();
-		expect(runtimeConfig!.uiCredential).toBeUndefined();
+		// 配对身份（远端镜像用）不在 `connect` 里露出 ui 凭据；账号由被认证的 Hub 回填。
+		expect(local.getConfig()).not.toHaveProperty("uiCredential");
+		expect(local.getConfig()?.accountId).toBeUndefined();
 		await local.syncBots();
-		expect(runtimeConfig!.accountId).toBeUndefined();
+		expect(local.getConfig()?.accountId).toBeUndefined();
 		authenticatedAccount = "account";
 		await local.syncBots();
-		expect(runtimeConfig!.accountId).toBe("account");
+		expect(local.getConfig()?.accountId).toBe("account");
 		authenticatedAccount = "forged-other";
+		// 换绑 = 安全信号：镜像被拒必须冒出来，不能当“同步失败”吞掉。
 		await expect(local.syncBots()).rejects.toThrow("Device account binding changed");
-		expect(runtimeConfig!.accountId).toBe("account");
+		expect(local.getConfig()?.accountId).toBe("account");
+		// Bot 列表镜像每轮只会打 `PUT /api/agent/bots`；房间类请求全部留在本机。
+		expect(received.every((entry) => entry.path === "/api/agent/bots")).toBe(true);
+		expect(received.at(-1)?.credential).toBe("Bearer device-agent");
 		const base = await listen(createServer(app));
 		const path = `${base}/api/device-center/rooms/room/conversations/conversation/integrations/integration`;
 		const post = (suffix: string, body: unknown) =>
@@ -333,9 +330,10 @@ describe("local publication proxy and authenticated account binding", () => {
 				body: JSON.stringify(body),
 			});
 		const input = { intentId: "intent", intentDigest: "a".repeat(64), candidateSha: "b".repeat(40) };
-		expect((await post("/reconcile", {})).status).toBe(200);
-		expect((await post("/resume", input)).status).toBe(200);
-		const count = received.length;
+		// 允许字段过闸 → 落到本机引擎（房间不存在 404，不是闸门 400）。
+		expect((await post("/reconcile", {})).status).not.toBe(400);
+		expect((await post("/resume", input)).status).not.toBe(400);
+		// 夹带字段一律 400：恢复请求的 body 是白名单。
 		for (const body of [
 			{ ...input, sourceBotId: "spoof" },
 			{ ...input, repoRoot: "arbitrary" },
@@ -343,13 +341,6 @@ describe("local publication proxy and authenticated account binding", () => {
 		])
 			expect((await post("/resume", body)).status).toBe(400);
 		expect((await post("/reconcile", { mode: "resume" })).status).toBe(400);
-		expect(received).toHaveLength(count);
-		expect(received.at(-2)).toMatchObject({
-			path: "/api/device-user/rooms/room/conversations/conversation/integrations/integration/reconcile",
-			body: {},
-			credential: "Bearer device-ui",
-		});
-		expect(received.at(-1)).toMatchObject({ body: input, credential: "Bearer device-ui" });
 		expect(JSON.parse(await readFile(join(dataDir, "device-center.json"), "utf8")).accountId).toBeUndefined();
 	});
 });

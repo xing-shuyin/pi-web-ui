@@ -7,8 +7,8 @@ import { DEVICE_GROUPS_CHANGED, deviceGroupRequest } from "./components/DeviceGr
  * 不再各写一份「fetch 幂等直聊房间 + 派发事件」的逻辑。
  *
  * - 直聊：沿用现有端点 `POST /api/device-center/bots/:id/direct-room`
- *   （deviceGroupRequest 走 appUrl + withToken，服务端为设备侧 userRoute，最终落 Hub 的
- *   `/api/bots/:id/direct-room`）；幂等拿到房间 id 后派发 `pi-web-ui:device-group-open` { roomId }。
+ *   （deviceGroupRequest 走 appUrl + withToken；服务端把房间类路径转给**本机**房间引擎，
+ *   配对来的远端 Hub 不参与建房间）；幂等拿到房间 id 后派发 `pi-web-ui:device-group-open` { roomId }。
  * - 管理：派发同一事件的空 detail，切到设备中心视图（LocalBots 卡片）。
  *
  * 事件名与 detail 形态都收在这里，避免组件各自硬编码。

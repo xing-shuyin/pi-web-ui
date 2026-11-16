@@ -155,6 +155,11 @@ interface BotQueueState {
   - 点开进入 `GroupConversation.tsx` 的同构视图（直聊模式隐藏 黑板/成员/路由/画布 面板）；
   - **行归属必须走 `server/conversation-rows.ts` 的 `rowKind` + `web/src/session-identity.ts`**，禁止组件内自造临时键（守卫：`session-identity`、`conversation-row-declared`）。
 - **历史**：直聊线程的会话与群聊共用 `hub-conversations`，因此"恢复、重命名、导出"免费获得。
+- **数据源（全本地）**：直聊与群组的房间引擎都是**本机 loopback Hub**（`server/device-center/local-hub.ts`），远端配对不再是房间宿主：
+  - 左栏唯一读取入口 `GET /api/device-center/bot-panel`（`server/device-center/local.ts`）：`bots` 来自本机 `device-bots/`（`local:true` / `online:true`），`drafts` 来自本机 `bot-drafts.json`，`rooms` 来自本机引擎的 `direct-rooms`；
+  - 只有本机引擎异常时才置 `roomsAvailable:false`，**绝不让整块列表变成"加载失败"**（守卫：`tests/unit/local-first-rooms.test.ts`）；
+  - Hub 只做两件事：设备级功能，以及 Bot 列表镜像（`syncBots()` → `PUT /api/agent/bots`）；镜像失败不影响本地保存，账号被换绑仍然报错；
+  - 房间类路由（`rooms/*`、`direct-rooms`、`bots/*`、`work-items*`）的转发目标统一是 `roomConfig()`（本机），只有 `devices*` 还走远端配对。
 
 ### 5.2 直接派活（G2）
 

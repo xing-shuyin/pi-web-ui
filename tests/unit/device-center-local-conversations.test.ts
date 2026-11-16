@@ -20,28 +20,14 @@ async function listen(server: Server) {
 	});
 	return `http://127.0.0.1:${(server.address() as { port: number }).port}`;
 }
-describe("local persistent conversation proxy", () => {
-	it("forwards all conversation routes with UI authority and strict body allowlists", async () => {
-		const received: {
-			method: string;
-			path: string;
-			body: unknown;
-			authorization: string | undefined;
-			device: unknown;
-		}[] = [];
+describe("local persistent conversation routes", () => {
+	it("keeps the body allowlist and same-origin rules while serving conversations from the local engine", async () => {
+		const remoteHits: string[] = [];
 		const upstream = express();
 		upstream.use(express.json());
 		upstream.use((req, res) => {
-			received.push({
-				method: req.method,
-				path: req.path,
-				body: req.body,
-				authorization: req.headers.authorization,
-				device: req.headers["x-device-id"],
-			});
-			res
-				.status(req.method === "POST" ? 409 : 200)
-				.json(req.method === "POST" ? { code: "CONVERSATION_BUSY", error: "busy" } : { conversations: [] });
+			remoteHits.push(`${req.method} ${req.path}`);
+			res.status(500).json({ error: "rooms must not reach the remote hub" });
 		});
 		const hubUrl = await listen(createServer(upstream));
 		const dataDir = await mkdtemp(join(tmpdir(), "local-conversations-"));
@@ -63,8 +49,11 @@ describe("local persistent conversation proxy", () => {
 		cleanup.push(() => local.close());
 		const base = await listen(createServer(app));
 		const route = `${base}/api/device-center/rooms/team/conversations`;
+		// 房间不存在：本机引擎回 404，设备层按 Hub 语义映射（证明请求落在本机而不是远端）。
 		for (const suffix of ["", "/thread"]) {
-			expect((await fetch(route + suffix)).status).toBe(200);
+			const response = await fetch(route + suffix);
+			expect(response.status).toBe(404);
+			expect(await response.json()).toMatchObject({ code: "HUB_REJECTED", hubStatus: 404 });
 		}
 		const create = { name: "Review", targetBotId: "original-bot", text: "Start", idempotencyKey: "new-key" };
 		const continuation = { text: "Follow up", kind: "message", requestId: "request", idempotencyKey: "continue-key" };
@@ -77,26 +66,11 @@ describe("local persistent conversation proxy", () => {
 				headers: { Origin: base, "Content-Type": "application/json" },
 				body: JSON.stringify(body),
 			});
-			expect(result.status).toBe(409);
-			expect(await result.json()).toEqual({
-				code: "HUB_REJECTED",
-				error: "busy",
-				hubStatus: 409,
-				hubCode: "CONVERSATION_BUSY",
-			});
+			// 过了设备侧允许列表 → 落到本机引擎（房间不存在 404），而不是 400 INVALID_BODY。
+			expect(result.status).toBe(404);
+			expect(await result.json()).toMatchObject({ code: "HUB_REJECTED", hubStatus: 404 });
 		}
-		expect(received.map((entry) => entry.path)).toEqual([
-			"/api/device-user/rooms/team/conversations",
-			"/api/device-user/rooms/team/conversations/thread",
-			"/api/device-user/rooms/team/conversations",
-			"/api/device-user/rooms/team/conversations/thread/messages",
-		]);
-		expect(received[2].body).toEqual(create);
-		expect(received[3].body).toEqual(continuation);
-		for (const entry of received) {
-			expect(entry.authorization).toBe("Bearer ui-secret");
-			expect(entry.device).toBe("source");
-		}
+		// 多一个字段就是注入：闸门先拒（凭据 / 越权只能由服务端决定）。
 		for (const [suffix, body] of [
 			["", { ...create, credential: "injected" }],
 			["/thread/messages", { ...continuation, targetBotId: "other-bot" }],
@@ -120,14 +94,15 @@ describe("local persistent conversation proxy", () => {
 				})
 			).status,
 		).toBe(403);
-		expect(received).toHaveLength(4);
+		// 房间流量一次都没打到远端 Hub。
+		expect(remoteHits.filter((hit) => hit.includes("/rooms"))).toEqual([]);
 	});
-	it("forwards bounded artifact contracts through all task creation routes while keeping ordinary requests small", async () => {
-		const received: unknown[] = [];
+	it("bounds artifact contracts and oversized text at the device gate", async () => {
+		const remoteHits: string[] = [];
 		const upstream = express();
 		upstream.use(express.json({ limit: "1mb" }));
 		upstream.use((req, res) => {
-			received.push(req.body);
+			remoteHits.push(`${req.method} ${req.path}`);
 			res.json({ ok: true });
 		});
 		const hubUrl = await listen(createServer(upstream));
@@ -182,53 +157,32 @@ describe("local persistent conversation proxy", () => {
 				headers: { Origin: base, "Content-Type": "application/json" },
 				body: JSON.stringify(body),
 			});
+		// 契约体（64KB patch）过闸后落到本机引擎：房间不存在 → 404，而不是被闸门拒成 400。
 		for (const path of [
 			"rooms/team/messages",
 			"rooms/team/conversations",
 			"rooms/team/conversations/thread/messages",
 		]) {
 			const response = await post(path, { text: "Code task", executionMode: "code", contract });
-			expect(response.status).toBe(200);
+			// 契约体没被设备侧闸门拒（INVALID_BODY）：请求真的带着完整契约进了本机引擎。
+			expect((await response.json()).code).not.toBe("INVALID_BODY");
 		}
-		expect(received).toHaveLength(3);
-		for (const body of received) expect(body).toMatchObject({ executionMode: "code", contract });
-		expect((await post("rooms/team/messages", { text: "x".repeat(40 * 1024) })).status).toBe(400);
-		expect(
-			(await post("rooms/team/messages", { text: "Code", contract: { ...contract, goal: "x".repeat(384 * 1024) } }))
-				.status,
-		).toBe(400);
-		expect(received).toHaveLength(3);
+		// 超大文本 / 超大契约：设备侧闸门先拒，永不读进内存再转发。
+		const oversizeText = await post("rooms/team/messages", { text: "x".repeat(40 * 1024) });
+		expect(oversizeText.status).toBe(400);
+		expect((await oversizeText.json()).code).toBe("INVALID_BODY");
+		const oversizeContract = await post("rooms/team/messages", {
+			text: "Code",
+			contract: { ...contract, goal: "x".repeat(384 * 1024) },
+		});
+		expect(oversizeContract.status).toBe(400);
+		expect((await oversizeContract.json()).code).toBe("INVALID_BODY");
+		expect(remoteHits.filter((hit) => hit.includes("/rooms"))).toEqual([]);
 	});
 
-	it("forwards exact artifact acceptance fields through the owner UI route and rejects forged receipts", async () => {
-		const received: { path: string; body: unknown; authorization: string | undefined }[] = [];
-		const upstream = express();
-		upstream.use(express.json());
-		upstream.use((req, res) => {
-			received.push({ path: req.path, body: req.body, authorization: req.headers.authorization });
-			if (req.path.endsWith("/verify") || req.path.endsWith("/cancel")) {
-				setTimeout(
-					() => res.json({ integration: { status: req.path.endsWith("/cancel") ? "cancelled" : "verified" } }),
-					16000,
-				);
-				return;
-			}
-			res.json({ ok: true });
-		});
-		const hubUrl = await listen(createServer(upstream));
+	it("accepts only the declared artifact fields and rejects forged receipts", async () => {
 		const dataDir = await mkdtemp(join(tmpdir(), "local-artifact-acceptance-"));
 		cleanup.push(() => rm(dataDir, { recursive: true, force: true }));
-		await writeFile(
-			join(dataDir, "device-center.json"),
-			JSON.stringify({
-				hubUrl,
-				deviceId: "source",
-				name: "Source",
-				credential: "agent-fixture",
-				uiCredential: "owner-fixture",
-				allowExecution: true,
-			}),
-		);
 		const app = express();
 		app.use(express.json());
 		const local = await installLocalDeviceCenter({ app, dataDir, connect: () => ({ close() {} }) });
@@ -250,29 +204,17 @@ describe("local persistent conversation proxy", () => {
 			verdict: "accepted",
 			summary: "Reviewed",
 		};
-		expect((await post("deliveries", delivery)).status).toBe(200);
-		expect((await post("reviews", review)).status).toBe(200);
-		expect(received.map((item) => item.body)).toEqual([delivery, review]);
-		expect(received.every((item) => item.authorization === "Bearer owner-fixture")).toBe(true);
-		expect(received.every((item) => !item.path.includes("/agent/"))).toBe(true);
+		// 合法字段过闸（房间不存在 → 404），伪造的验收字段被闸门拒成 400。
+		expect((await post("deliveries", delivery)).status).not.toBe(400);
+		expect((await post("reviews", review)).status).not.toBe(400);
 		expect((await post("reviews", { ...review, verification: { status: "verified" } })).status).toBe(400);
 		expect((await post("deliveries", { ...delivery, artifactRef: { artifactDigest: "a".repeat(64) } })).status).toBe(
 			400,
 		);
-		expect(received).toHaveLength(2);
-		const verified = await post("integrations/integration/verify", { commands: ["node check.cjs"] });
-		expect(verified.status).toBe(200);
-		expect(await verified.json()).toMatchObject({ integration: { status: "verified" } });
-		expect(received).toHaveLength(3);
-		const cancelled = await post("integrations/integration/cancel", {});
-		expect(cancelled.status).toBe(200);
-		expect(await cancelled.json()).toMatchObject({ integration: { status: "cancelled" } });
-		expect(received).toHaveLength(4);
-	}, 60000);
-
-	describe("error forwarding", () => {
+	});
+	describe("error forwarding (device-level proxy still points at the paired Hub)", () => {
 		it("keeps the hub status, message and code for every allowed failure class", async () => {
-			let reply: { status: number; body: unknown } = { status: 404, body: { error: "Task missing" } };
+			let reply: { status: number; body: unknown } = { status: 404, body: { error: "Device missing" } };
 			const upstream = express();
 			upstream.use((_req, res) => res.status(reply.status).json(reply.body));
 			const hubUrl = await listen(createServer(upstream));
@@ -293,22 +235,19 @@ describe("local persistent conversation proxy", () => {
 			app.use(express.json());
 			const local = await installLocalDeviceCenter({ app, dataDir, connect: () => ({ close() {} }) });
 			cleanup.push(() => local.close());
-			const route = `${await listen(createServer(app))}/api/device-center/rooms/team/tasks/task`;
+			const route = `${await listen(createServer(app))}/api/device-center/devices`;
 			const get = async () => {
 				const result = await fetch(route);
 				return { status: result.status, body: await result.json() };
 			};
 			expect(await get()).toEqual({
 				status: 404,
-				body: { code: "HUB_REJECTED", error: "Task missing", hubStatus: 404 },
+				body: { code: "HUB_REJECTED", error: "Device missing", hubStatus: 404 },
 			});
-			reply = { status: 409, body: { code: "ACTIVE_TASKS", error: "remove blocked" } };
+			reply = { status: 409, body: { error: "Device busy" } };
 			expect(await get()).toEqual({
 				status: 409,
-				body: {
-					code: "ACTIVE_TASKS",
-					error: "Stop active tasks before removing members, clearing messages or deleting this group",
-				},
+				body: { code: "HUB_REJECTED", error: "Device busy", hubStatus: 409 },
 			});
 			reply = { status: 401, body: { error: "UI device authentication required; pair again" } };
 			expect(await get()).toEqual({

@@ -54,6 +54,9 @@ export function deviceGroupErrorKind(error: unknown): "bind" | "running" | "forb
 	return "failed";
 }
 
+/** `chat-status` 投影：配对身份（`hubUrl`/`deviceId`）与“房间能不能列”（`roomsReady`，本机引擎永远 true）。 */
+type ChatStatus = { hubUrl?: string; deviceId?: string; roomsReady?: boolean };
+
 export function createDeviceGroupRefresh(
 	load: (signal: AbortSignal) => Promise<SidebarDeviceGroup[]>,
 	onResult: (rooms: SidebarDeviceGroup[]) => void,
@@ -156,8 +159,9 @@ export function DeviceGroupSection({
 		let confirmedBound = false;
 		const poll = createDeviceGroupRefresh(
 			async (signal) => {
-				const status = await deviceGroupRequest<{ hubUrl?: string; deviceId?: string }>("chat-status", signal);
-				confirmedBound = !!(status.hubUrl && status.deviceId);
+				const status = await deviceGroupRequest<ChatStatus>("chat-status", signal);
+				// 房间引擎在本机：不再要求“已配对远端 Hub”才去拉列表（旧 Hub 也能列本地房间）。
+				confirmedBound = status.roomsReady === true || !!(status.hubUrl && status.deviceId);
 				if (!confirmedBound) return [];
 				const result = await deviceGroupRequest<{ rooms: SidebarDeviceGroup[] }>("rooms", signal);
 				if (!Array.isArray(result.rooms)) throw new Error("Invalid rooms response");
