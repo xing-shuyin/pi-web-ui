@@ -1,0 +1,1683 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>定時任務建立/編輯彈窗重構方案 · pi-web-ui</title>
+  <style>
+    :root {
+      --bg: #0d0e12;
+      --bg-elev: #14161c;
+      --bg-elev2: #1a1d26;
+      --bg-elev3: #222634;
+      --border: #262a35;
+      --border-soft: #1e2230;
+      --border-focus: #8b5cf6;
+      --text: #e6e8ef;
+      --text-dim: #9aa1b4;
+      --text-faint: #6b7284;
+      --accent: #8b5cf6;
+      --accent-contrast: #ffffff;
+      --accent-soft: rgba(139, 92, 246, 0.14);
+      --accent-hover: #9d74f7;
+      --green: #34d399;
+      --green-soft: rgba(52, 211, 153, 0.12);
+      --green-border: rgba(52, 211, 153, 0.28);
+      --red: #f87171;
+      --red-soft: rgba(248, 113, 113, 0.12);
+      --amber: #fbbf24;
+      --amber-soft: rgba(251, 191, 36, 0.12);
+      --blue: #3b82f6;
+      --blue-soft: rgba(59, 130, 246, 0.12);
+      --mono: "SF Mono", "JetBrains Mono", ui-monospace, Menlo, Consolas, monospace;
+      --sans: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", Roboto, sans-serif;
+      --radius-sm: 6px;
+      --radius-md: 10px;
+      --radius-lg: 14px;
+      --radius-xl: 18px;
+      --shadow-modal: 0 24px 64px rgba(0, 0, 0, 0.65), 0 0 0 1px rgba(255, 255, 255, 0.04);
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: var(--sans);
+      line-height: 1.5;
+      font-size: 13px;
+      padding-bottom: 80px;
+      -webkit-font-smoothing: antialiased;
+    }
+
+    /* 頂部 Hero */
+    .hero {
+      background: linear-gradient(180deg, #161821 0%, var(--bg) 100%);
+      border-bottom: 1px solid var(--border);
+      padding: 36px 48px 28px;
+    }
+    .hero-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 4px 12px;
+      background: var(--accent-soft);
+      border: 1px solid rgba(139, 92, 246, 0.3);
+      color: #c4b5fd;
+      border-radius: 999px;
+      font-size: 12px;
+      font-weight: 600;
+      margin-bottom: 12px;
+    }
+    .hero h1 {
+      font-size: 26px;
+      font-weight: 700;
+      color: #fff;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+    .hero-desc {
+      color: var(--text-dim);
+      font-size: 14px;
+      max-width: 820px;
+      margin-top: 8px;
+      line-height: 1.6;
+    }
+
+    /* 問題診斷條目 */
+    .audit-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+      gap: 14px;
+      margin-top: 24px;
+    }
+    .audit-card {
+      background: var(--bg-elev);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-md);
+      padding: 14px 16px;
+    }
+    .audit-tag {
+      font-size: 11px;
+      font-weight: 600;
+      color: var(--red);
+      display: flex;
+      align-items: center;
+      gap: 5px;
+      margin-bottom: 6px;
+    }
+    .audit-tag.fix {
+      color: var(--green);
+    }
+    .audit-title {
+      font-size: 13px;
+      font-weight: 600;
+      color: var(--text);
+      margin-bottom: 4px;
+    }
+    .audit-detail {
+      font-size: 12px;
+      color: var(--text-dim);
+      line-height: 1.45;
+    }
+
+    /* 方案切換 Tab 欄 */
+    .tab-bar-wrap {
+      position: sticky;
+      top: 0;
+      z-index: 100;
+      background: rgba(13, 14, 18, 0.88);
+      backdrop-filter: blur(12px);
+      -webkit-backdrop-filter: blur(12px);
+      border-bottom: 1px solid var(--border);
+      padding: 12px 48px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 16px;
+    }
+    .tab-group {
+      display: inline-flex;
+      background: var(--bg-elev);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 3px;
+      gap: 2px;
+    }
+    .tab-btn {
+      border: none;
+      background: transparent;
+      color: var(--text-dim);
+      padding: 7px 18px;
+      border-radius: 7px;
+      font-size: 13px;
+      font-weight: 500;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      transition: all 0.15s ease;
+    }
+    .tab-btn:hover {
+      color: var(--text);
+    }
+    .tab-btn.active {
+      background: var(--accent);
+      color: var(--accent-contrast);
+      font-weight: 600;
+      box-shadow: 0 2px 8px rgba(139, 92, 246, 0.35);
+    }
+    .tab-pill {
+      font-size: 10px;
+      padding: 1px 6px;
+      border-radius: 999px;
+      background: rgba(255,255,255,0.18);
+    }
+    .tab-btn:not(.active) .tab-pill {
+      background: var(--bg-elev2);
+      color: var(--text-faint);
+    }
+    .meta-actions {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+    .btn-toggle-contrast {
+      background: var(--bg-elev);
+      border: 1px solid var(--border);
+      color: var(--text-dim);
+      padding: 6px 14px;
+      border-radius: 8px;
+      font-size: 12px;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .btn-toggle-contrast:hover {
+      color: var(--text);
+      border-color: var(--text-dim);
+    }
+
+    /* 內容容器 */
+    .container {
+      max-width: 1280px;
+      margin: 0 auto;
+      padding: 36px 48px;
+    }
+    .proposal-panel {
+      display: none;
+    }
+    .proposal-panel.active {
+      display: block;
+      animation: fadeIn 0.25s ease-out;
+    }
+    @keyframes fadeIn {
+      from { opacity: 0; transform: translateY(6px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+
+    /* 方案簡介卡 */
+    .proposal-header {
+      margin-bottom: 24px;
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      gap: 20px;
+      padding-bottom: 20px;
+      border-bottom: 1px solid var(--border-soft);
+    }
+    .proposal-header h2 {
+      font-size: 20px;
+      font-weight: 700;
+      color: #fff;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+    .proposal-tag {
+      font-size: 12px;
+      padding: 2px 10px;
+      border-radius: 999px;
+      font-weight: 600;
+    }
+    .tag-primary { background: var(--accent-soft); color: #c4b5fd; border: 1px solid rgba(139, 92, 246, 0.3); }
+    .tag-geek { background: var(--blue-soft); color: #93c5fd; border: 1px solid rgba(59, 130, 246, 0.3); }
+    .tag-wizard { background: var(--green-soft); color: #86efac; border: 1px solid rgba(52, 211, 153, 0.3); }
+    .proposal-bullets {
+      color: var(--text-dim);
+      font-size: 13px;
+      margin-top: 6px;
+      line-height: 1.6;
+    }
+
+    /* 模擬彈窗容器包裝 */
+    .modal-preview-stage {
+      background: radial-gradient(circle at 50% 30%, #1e2230 0%, #0d0f14 85%);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-xl);
+      padding: 40px 24px;
+      display: flex;
+      justify-content: center;
+      align-items: flex-start;
+      min-height: 680px;
+      position: relative;
+      box-shadow: inset 0 2px 12px rgba(0,0,0,0.4);
+    }
+
+    /* ==========================================================================
+       通用彈窗元件庫設計系統
+       ========================================================================== */
+    .demo-modal {
+      background: var(--bg-elev2);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-lg);
+      box-shadow: var(--shadow-modal);
+      overflow: hidden;
+      display: flex;
+      flex-direction: column;
+      position: relative;
+    }
+    .demo-modal-head {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 18px 24px 14px;
+      border-bottom: 1px solid var(--border-soft);
+      background: rgba(26, 29, 38, 0.7);
+    }
+    .demo-head-title-wrap {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+    .demo-head-icon {
+      width: 32px;
+      height: 32px;
+      border-radius: 8px;
+      background: var(--accent-soft);
+      border: 1px solid rgba(139, 92, 246, 0.25);
+      color: #c4b5fd;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 16px;
+    }
+    .demo-head-title {
+      font-size: 16px;
+      font-weight: 700;
+      color: #fff;
+    }
+    .demo-head-sub {
+      font-size: 12px;
+      color: var(--text-dim);
+      margin-top: 1px;
+    }
+    .demo-modal-close {
+      width: 28px;
+      height: 28px;
+      border-radius: 6px;
+      border: 1px solid transparent;
+      background: transparent;
+      color: var(--text-dim);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+      font-size: 16px;
+      transition: all 0.15s ease;
+    }
+    .demo-modal-close:hover {
+      background: var(--bg-elev3);
+      color: var(--text);
+      border-color: var(--border);
+    }
+
+    .demo-modal-body {
+      padding: 20px 24px;
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+      overflow-y: auto;
+      max-height: calc(85vh - 120px);
+    }
+    .demo-modal-foot {
+      padding: 14px 24px;
+      border-top: 1px solid var(--border-soft);
+      background: var(--bg-elev);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+    .foot-left-info {
+      font-size: 12px;
+      color: var(--text-dim);
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .foot-btns {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    /* 按鈕組 */
+    .btn {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 6px;
+      padding: 7px 16px;
+      border-radius: 8px;
+      font-size: 13px;
+      font-weight: 500;
+      border: 1px solid var(--border);
+      background: var(--bg-elev);
+      color: var(--text);
+      cursor: pointer;
+      transition: all 0.15s ease;
+      white-space: nowrap;
+    }
+    .btn:hover {
+      background: var(--bg-elev3);
+      border-color: var(--text-faint);
+    }
+    .btn.primary {
+      background: var(--accent);
+      color: var(--accent-contrast);
+      border-color: var(--accent);
+      font-weight: 600;
+      box-shadow: 0 2px 10px rgba(139, 92, 246, 0.35);
+    }
+    .btn.primary:hover {
+      background: var(--accent-hover);
+      border-color: var(--accent-hover);
+    }
+    .btn.subtle {
+      border-color: transparent;
+      background: transparent;
+      color: var(--text-dim);
+    }
+    .btn.subtle:hover {
+      background: var(--bg-elev);
+      color: var(--text);
+    }
+    .btn.sm {
+      padding: 4px 10px;
+      font-size: 12px;
+      border-radius: 6px;
+    }
+
+    /* 模組卡片 Card Block */
+    .section-card {
+      background: var(--bg-elev);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-md);
+      padding: 16px;
+      display: flex;
+      flex-direction: column;
+      gap: 14px;
+      transition: border-color 0.2s ease;
+    }
+    .section-card:focus-within {
+      border-color: rgba(139, 92, 246, 0.4);
+    }
+    .section-head {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+    .section-title {
+      font-size: 13px;
+      font-weight: 600;
+      color: var(--text);
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .section-title svg {
+      color: var(--accent);
+    }
+    .section-title .badge {
+      font-size: 11px;
+      font-weight: 500;
+      padding: 1px 7px;
+      border-radius: 4px;
+      background: var(--bg-elev2);
+      color: var(--text-dim);
+      border: 1px solid var(--border-soft);
+    }
+
+    /* 表單元件 */
+    .field-label {
+      font-size: 12px;
+      font-weight: 500;
+      color: var(--text-dim);
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      margin-bottom: 6px;
+    }
+    .field-hint {
+      font-size: 11px;
+      color: var(--text-faint);
+    }
+    .input-text, .select-box, .textarea-box {
+      width: 100%;
+      background: var(--bg-elev2);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      color: var(--text);
+      font-size: 13px;
+      font-family: inherit;
+      padding: 8px 12px;
+      outline: none;
+      transition: all 0.15s ease;
+    }
+    .input-text:focus, .select-box:focus, .textarea-box:focus {
+      border-color: var(--accent);
+      box-shadow: 0 0 0 3px var(--accent-soft);
+    }
+    .input-text::placeholder, .textarea-box::placeholder {
+      color: var(--text-faint);
+    }
+    .textarea-box {
+      font-family: var(--mono);
+      font-size: 12.5px;
+      line-height: 1.6;
+      resize: vertical;
+    }
+
+    /* 快捷膠囊 Pill Buttons */
+    .pill-group {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+    }
+    .pill-btn {
+      padding: 5px 12px;
+      border-radius: 999px;
+      background: var(--bg-elev2);
+      border: 1px solid var(--border);
+      color: var(--text-dim);
+      font-size: 12px;
+      cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      transition: all 0.15s ease;
+    }
+    .pill-btn:hover {
+      border-color: var(--text-dim);
+      color: var(--text);
+    }
+    .pill-btn.active {
+      background: var(--accent-soft);
+      border-color: var(--accent);
+      color: #d8b4fe;
+      font-weight: 600;
+    }
+
+    /* 自然語言排程預覽徽標 */
+    .schedule-preview-banner {
+      background: rgba(52, 211, 153, 0.08);
+      border: 1px solid var(--green-border);
+      border-radius: 8px;
+      padding: 10px 14px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+    }
+    .preview-left {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .status-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: var(--green);
+      box-shadow: 0 0 8px rgba(52, 211, 153, 0.6);
+      flex-shrink: 0;
+    }
+    .preview-text {
+      font-size: 12.5px;
+      color: #a7f3d0;
+      font-weight: 500;
+    }
+    .preview-next-times {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 11.5px;
+      color: var(--text-dim);
+      font-family: var(--mono);
+    }
+    .time-chip {
+      background: rgba(0, 0, 0, 0.25);
+      padding: 2px 8px;
+      border-radius: 4px;
+      border: 1px solid var(--border-soft);
+    }
+
+    /* 優雅 Switch 開關 */
+    .switch-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 8px 12px;
+      background: var(--bg-elev2);
+      border: 1px solid var(--border-soft);
+      border-radius: 8px;
+      cursor: pointer;
+    }
+    .switch-label-wrap {
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+    }
+    .switch-title {
+      font-size: 12.5px;
+      font-weight: 500;
+      color: var(--text);
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .switch-desc {
+      font-size: 11px;
+      color: var(--text-faint);
+    }
+    .switch-toggle {
+      width: 36px;
+      height: 20px;
+      border-radius: 999px;
+      background: var(--bg-elev3);
+      border: 1px solid var(--border);
+      position: relative;
+      transition: background 0.2s ease;
+      flex-shrink: 0;
+    }
+    .switch-toggle::after {
+      content: "";
+      position: absolute;
+      top: 2px;
+      left: 2px;
+      width: 14px;
+      height: 14px;
+      border-radius: 50%;
+      background: var(--text-dim);
+      transition: transform 0.2s ease, background 0.2s ease;
+    }
+    .switch-row.on .switch-toggle {
+      background: var(--accent);
+      border-color: var(--accent);
+    }
+    .switch-row.on .switch-toggle::after {
+      transform: translateX(16px);
+      background: #fff;
+    }
+
+    /* Prompt 模板快捷標籤 */
+    .prompt-toolbar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 6px;
+    }
+    .template-chips {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      overflow-x: auto;
+      padding-bottom: 2px;
+    }
+    .tpl-chip {
+      font-size: 11px;
+      padding: 2px 8px;
+      border-radius: 4px;
+      background: var(--bg-elev2);
+      border: 1px solid var(--border-soft);
+      color: var(--text-dim);
+      cursor: pointer;
+      transition: all 0.15s ease;
+      white-space: nowrap;
+    }
+    .tpl-chip:hover {
+      background: var(--accent-soft);
+      color: #c4b5fd;
+      border-color: var(--accent);
+    }
+
+
+    /* ==========================================================================
+       方案 A 專屬樣式 (720px 卡片編排式)
+       ========================================================================== */
+    .modal-plan-a {
+      width: 720px;
+      max-width: 95vw;
+    }
+    .plan-a-grid-2 {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 12px;
+    }
+    .plan-a-grid-3 {
+      display: grid;
+      grid-template-columns: 1.2fr 1fr 1fr;
+      gap: 12px;
+    }
+
+
+    /* ==========================================================================
+       方案 B 專屬樣式 (880px 雙欄駕駛臺)
+       ========================================================================== */
+    .modal-plan-b {
+      width: 880px;
+      max-width: 95vw;
+    }
+    .plan-b-workbench {
+      display: grid;
+      grid-template-columns: 1.35fr 1fr;
+      gap: 18px;
+    }
+    .plan-b-left {
+      display: flex;
+      flex-direction: column;
+      gap: 14px;
+    }
+    .plan-b-right {
+      display: flex;
+      flex-direction: column;
+      gap: 14px;
+    }
+    .timeline-list {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      padding-left: 12px;
+      border-left: 2px solid var(--border);
+      margin: 6px 4px;
+    }
+    .timeline-item {
+      position: relative;
+      font-size: 12px;
+      color: var(--text-dim);
+    }
+    .timeline-item::before {
+      content: "";
+      position: absolute;
+      left: -17px;
+      top: 5px;
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: var(--border);
+      border: 2px solid var(--bg-elev);
+    }
+    .timeline-item.next {
+      color: var(--text);
+      font-weight: 600;
+    }
+    .timeline-item.next::before {
+      background: var(--green);
+      box-shadow: 0 0 6px rgba(52, 211, 153, 0.8);
+    }
+
+
+    /* ==========================================================================
+       方案 C 專屬樣式 (640px 步驟引導式)
+       ========================================================================== */
+    .modal-plan-c {
+      width: 650px;
+      max-width: 95vw;
+    }
+    .step-stepper {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 12px 24px;
+      background: var(--bg-elev);
+      border-bottom: 1px solid var(--border-soft);
+    }
+    .step-item {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-size: 12.5px;
+      color: var(--text-faint);
+      cursor: pointer;
+    }
+    .step-item.active {
+      color: var(--accent);
+      font-weight: 600;
+    }
+    .step-item.done {
+      color: var(--green);
+    }
+    .step-num {
+      width: 22px;
+      height: 22px;
+      border-radius: 50%;
+      background: var(--bg-elev2);
+      border: 1px solid var(--border);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 11px;
+    }
+    .step-item.active .step-num {
+      background: var(--accent);
+      color: #fff;
+      border-color: var(--accent);
+    }
+    .step-item.done .step-num {
+      background: var(--green);
+      color: #0b0d12;
+      border-color: var(--green);
+      font-weight: 700;
+    }
+    .step-line {
+      flex: 1;
+      height: 1px;
+      background: var(--border-soft);
+      margin: 0 12px;
+    }
+
+
+    /* 原版對比彈窗 */
+    .old-modal-replica {
+      width: 440px;
+      background: #1a1d26;
+      border: 1px solid #262a35;
+      border-radius: 12px;
+      padding: 16px;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      font-size: 13px;
+      box-shadow: 0 12px 40px rgba(0,0,0,0.7);
+    }
+    .old-modal-replica input, .old-modal-replica select, .old-modal-replica textarea {
+      background: #14161c;
+      border: 1px solid #262a35;
+      border-radius: 6px;
+      padding: 6px 10px;
+      color: #e6e8ef;
+      font-size: 12px;
+      width: 100%;
+    }
+    .old-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+    }
+  </style>
+</head>
+<body>
+<div data-docs-i18n-switch style="position:fixed;top:8px;right:12px;z-index:2147483647;font:12px/1.6 -apple-system,system-ui,sans-serif;background:rgba(15,17,22,.78);color:#fff;padding:4px 12px;border-radius:999px;box-shadow:0 2px 10px rgba(0,0,0,.35)"><a href="./scheduler-modal-redesign.html" style="color:#fff;text-decoration:none">简体中文</a> · <a href="./scheduler-modal-redesign.en.html" style="color:#fff;text-decoration:none">English</a> · <strong>繁體中文</strong></div>
+
+
+
+  <!-- 頂部英雄區 -->
+  <header class="hero">
+    <div class="hero-badge">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+      UI / UX 提案 · 任務排程模組
+    </div>
+    <h1>定時任務建立/編輯彈窗重構方案</h1>
+    <p class="hero-desc">
+      針對現有定時任務彈窗「寬度僅 460px、單列單行羅列、Prompt 區域侷促、排程無自然語義翻譯與觸發預覽」的問題，提供三套經過深思熟慮的高保真重構方案。
+    </p>
+
+    <!-- 診斷矩陣 -->
+    <div class="audit-grid">
+      <div class="audit-card">
+        <div class="audit-tag">
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+          原版痛點 1 · 視覺逼仄
+        </div>
+        <div class="audit-title">460px 寬度單列堆疊</div>
+        <div class="audit-detail">沿用基礎彈窗尺寸，10 項欄位垂直平鋪，像一張毫無呼吸感的資訊表格，小家子氣。</div>
+      </div>
+      <div class="audit-card">
+        <div class="audit-tag">
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+          原版痛點 2 · Prompt 殘疾
+        </div>
+        <div class="audit-title">核心指令區僅 4 行高度</div>
+        <div class="audit-detail">定時任務的核心是給智慧體的具體指令（Prompt），狹小輸入框極難書寫多步驟巡檢指令碼。</div>
+      </div>
+      <div class="audit-card">
+        <div class="audit-tag">
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+          原版痛點 3 · 排程無心智反饋
+        </div>
+        <div class="audit-title">純生硬 Cron / 預設</div>
+        <div class="audit-detail">選了或寫了 Cron 後，缺少中文自然語言解讀與「接下來執行時間」預演，使用者心裡沒底。</div>
+      </div>
+      <div class="audit-card">
+        <div class="audit-tag fix">
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
+          改進抓手 · 根本解決
+        </div>
+        <div class="audit-title">結構分割槽 + 寬屏 + 排程智慧翻譯</div>
+        <div class="audit-detail">分卡片/分欄佈局，大 Prompt 空間 + 預設場景模板，視覺化 Cron 預演，高階項收納。</div>
+      </div>
+    </div>
+  </header>
+
+  <!-- 粘性 Tab 切換欄 -->
+  <div class="tab-bar-wrap">
+    <div class="tab-group">
+      <button class="tab-btn active" onclick="switchPlan('plan-a')">
+        <span>方案 A：現代分塊卡片式</span>
+        <span class="tab-pill">推薦 ⭐⭐⭐⭐⭐</span>
+      </button>
+      <button class="tab-btn" onclick="switchPlan('plan-b')">
+        <span>方案 B：雙欄工程駕駛臺</span>
+        <span class="tab-pill">極客專業 ⭐⭐⭐⭐</span>
+      </button>
+      <button class="tab-btn" onclick="switchPlan('plan-c')">
+        <span>方案 C：分步聚焦流式</span>
+        <span class="tab-pill">輕量沉浸 ⭐⭐⭐⭐</span>
+      </button>
+      <button class="tab-btn" onclick="switchPlan('plan-compare')">
+        <span>對照組：新舊實景對比</span>
+        <span class="tab-pill">1:1 直觀體驗</span>
+      </button>
+    </div>
+    <div class="meta-actions">
+      <span style="font-size: 12px; color: var(--text-faint);">💡 點選方案內的預設膠囊或模板，可即時互動體驗！</span>
+    </div>
+  </div>
+
+  <main class="container">
+
+    <!-- ====================================================================
+         方案 A：現代分塊卡片式 (Modern Sectioned Cards) - 主推推薦
+         ==================================================================== -->
+    <section id="plan-a" class="proposal-panel active">
+      <div class="proposal-header">
+        <div>
+          <h2>
+            方案 A：現代分塊卡片式 (Modern Sectioned Cards)
+            <span class="proposal-tag tag-primary">強烈推薦 · 大氣穩健</span>
+          </h2>
+          <p class="proposal-bullets">
+            寬度拓展至 <strong>720px</strong>。採用現代 Cloud / DevOps 面板標準規範，劃分為 <strong>「任務目標與指令」</strong>、<strong>「排程週期與執行預演」</strong>、<strong>「執行時與模型環境」</strong> 三大邏輯卡片，主次清晰，Prompt 擁有極大自由度。
+          </p>
+        </div>
+      </div>
+
+      <div class="modal-preview-stage">
+        <!-- 彈窗本體 -->
+        <div class="demo-modal modal-plan-a">
+          <!-- 頭部 -->
+          <div class="demo-modal-head">
+            <div class="demo-head-title-wrap">
+              <div class="demo-head-icon">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+              </div>
+              <div>
+                <div class="demo-head-title">新建定時任務</div>
+                <div class="demo-head-sub">配置自動化週期性巡檢、程式碼審查或畫布流程</div>
+              </div>
+            </div>
+            <button class="demo-modal-close" title="關閉 (Esc)">✕</button>
+          </div>
+
+          <!-- 主體 -->
+          <div class="demo-modal-body">
+
+            <!-- 1. 基本資訊與目標 -->
+            <div class="section-card">
+              <div class="section-head">
+                <span class="section-title">
+                  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
+                  任務身份與目標專案
+                </span>
+                <span class="badge">必填</span>
+              </div>
+              
+              <div class="plan-a-grid-2">
+                <div>
+                  <label class="field-label">任務名稱</label>
+                  <input class="input-text" id="a-task-name" value="每日依賴升級與安全巡檢" placeholder="如：每日依賴與程式碼健康檢查..." />
+                </div>
+                <div>
+                  <label class="field-label">任務說明 <span class="field-hint">(可選)</span></label>
+                  <input class="input-text" value="每天早晨審查 npm outdated 並檢查潛在構建安全隱患" placeholder="描述此任務的職責與目的..." />
+                </div>
+              </div>
+
+              <div class="plan-a-grid-2">
+                <div>
+                  <label class="field-label">執行目標專案 (CWD)</label>
+                  <div style="display: flex; gap: 8px;">
+                    <input class="input-text" id="a-task-cwd" value="E:\pi-web-ui" />
+                    <button class="btn sm" onclick="document.getElementById('a-task-cwd').value='E:\\pi-web-ui'">用當前專案</button>
+                  </div>
+                </div>
+                <div>
+                  <label class="field-label">任務目標型別</label>
+                  <div class="pill-group" style="padding-top: 3px;">
+                    <button class="pill-btn active" id="a-tgt-conv" onclick="setTargetA('conversation')">
+                      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+                      智慧體對話 (Agent)
+                    </button>
+                    <button class="pill-btn" id="a-tgt-canvas" onclick="setTargetA('canvas')">
+                      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h18"/><path d="M9 21V9"/></svg>
+                      畫布工作流 (Canvas)
+                    </button>
+                  </div>
+                </div>
+              </div>
+
+              <!-- 畫布選擇（僅當切為 canvas 時顯示） -->
+              <div id="a-canvas-select-row" style="display: none; padding-top: 4px;">
+                <label class="field-label">繫結畫布工作流</label>
+                <select class="select-box">
+                  <option value="daily-ai-maintainer">日常 AI 維護流 · daily-ai-maintainer</option>
+                  <option value="code-review-flow">全量程式碼審查流水線 · code-review-flow</option>
+                </select>
+              </div>
+            </div>
+
+            <!-- 2. 排程策略與時間預演 -->
+            <div class="section-card">
+              <div class="section-head">
+                <span class="section-title">
+                  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+                  排程策略與時間預演
+                </span>
+                <span class="badge" id="a-cron-raw-badge">0 9 * * 1-5</span>
+              </div>
+
+              <!-- 快捷週期膠囊 -->
+              <div>
+                <label class="field-label">常用頻次快捷選擇</label>
+                <div class="pill-group">
+                  <button class="pill-btn" onclick="selectPresetA('0 9 * * *', '每天早上 09:00', this)">每天 9:00</button>
+                  <button class="pill-btn active" onclick="selectPresetA('0 9 * * 1-5', '每個工作日 (週一至週五) 上午 09:00', this)">工作日 9:00</button>
+                  <button class="pill-btn" onclick="selectPresetA('0 * * * *', '每小時整點執行一次', this)">每小時</button>
+                  <button class="pill-btn" onclick="selectPresetA('*/30 * * * *', '每 30 分鐘週期執行', this)">每 30 分鐘</button>
+                  <button class="pill-btn" onclick="selectPresetA('0 9 * * 1', '每週一上午 09:00', this)">週一早報</button>
+                  <button class="pill-btn" onclick="selectPresetA('custom', '自定義 Cron 表示式', this)">自定義 Cron ⚙️</button>
+                  <button class="pill-btn" onclick="selectPresetA('interval', '固定間隔時長執行', this)">固定分鐘間隔 ⏱️</button>
+                </div>
+              </div>
+
+              <!-- 自定義輸入行（點選自定義時展開） -->
+              <div id="a-custom-cron-row" style="display: none; padding: 10px; background: var(--bg-elev2); border-radius: 8px; border: 1px solid var(--border);">
+                <div class="plan-a-grid-2">
+                  <div>
+                    <label class="field-label">標準 5 段式 Cron 表示式</label>
+                    <input class="input-text" id="a-custom-cron-input" value="0 9 * * 1-5" oninput="updateCronCustomA(this.value)" />
+                  </div>
+                  <div>
+                    <label class="field-label">表示式說明</label>
+                    <div style="font-size: 11.5px; color: var(--text-dim); margin-top: 6px;">
+                      格式：分 時 日 月 周（如 <code>0 2 * * *</code> 表示每天凌晨 2 點）
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <!-- 自然語言與時間預演條 -->
+              <div class="schedule-preview-banner">
+                <div class="preview-left">
+                  <span class="status-dot"></span>
+                  <span class="preview-text" id="a-preview-text">每個工作日 (週一至週五) 上午 09:00 執行</span>
+                </div>
+                <div class="preview-next-times">
+                  <span>下次觸發:</span>
+                  <span class="time-chip" id="a-next-time-1">明天 09:00</span>
+                  <span class="time-chip" id="a-next-time-2">後天 09:00</span>
+                </div>
+              </div>
+            </div>
+
+            <!-- 3. 執行內容 (Prompt 指令) -->
+            <div class="section-card">
+              <div class="section-head">
+                <span class="section-title">
+                  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+                  給智慧體的具體任務 (Prompt 指令)
+                </span>
+                <span style="font-size: 11px; color: var(--text-faint);">支援 Markdown 與工作區命令</span>
+              </div>
+
+              <div>
+                <div class="prompt-toolbar">
+                  <span class="field-label" style="margin: 0;">點選快捷填入巡檢模板：</span>
+                  <div class="template-chips">
+                    <button class="tpl-chip" onclick="applyTemplateA('health')">🔍 程式碼與依賴體檢</button>
+                    <button class="tpl-chip" onclick="applyTemplateA('test')">🧪 執行測試與診斷</button>
+                    <button class="tpl-chip" onclick="applyTemplateA('git')">🌿 未合分支與 PR 梳理</button>
+                    <button class="tpl-chip" onclick="applyTemplateA('clean')">🧹 構建快取清理</button>
+                  </div>
+                </div>
+                <textarea class="textarea-box" id="a-prompt-area" rows="6" placeholder="給 Agent 的具體任務，如：審計依賴並報告可升級項、執行全量測試套件、梳理未提交修改等..."></textarea>
+              </div>
+            </div>
+
+            <!-- 4. 模型與高階執行策略 -->
+            <div class="section-card">
+              <div class="section-head">
+                <span class="section-title">
+                  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+                  執行環境與容災配置
+                </span>
+              </div>
+
+              <div class="plan-a-grid-3">
+                <div>
+                  <label class="field-label">執行模型</label>
+                  <select class="select-box">
+                    <option value="">跟隨主對話當前模型 (預設)</option>
+                    <option value="anthropic/claude-3-7-sonnet">Claude 3.7 Sonnet</option>
+                    <option value="openai/gpt-4o">GPT-4o (Omni)</option>
+                    <option value="deepseek/deepseek-chat">DeepSeek V3</option>
+                  </select>
+                </div>
+                <div>
+                  <label class="field-label">思考強度 (Reasoning)</label>
+                  <select class="select-box">
+                    <option value="">跟隨主對話當前思考強度</option>
+                    <option value="off">關閉 (off)</option>
+                    <option value="low">低 (low)</option>
+                    <option value="medium" selected>中 (medium)</option>
+                    <option value="high">高 (high)</option>
+                  </select>
+                </div>
+                <div>
+                  <label class="field-label">服務補跑機制</label>
+                  <div class="switch-row on" id="a-catchup-switch" onclick="this.classList.toggle('on')" style="margin-top: 0; height: 38px;">
+                    <span class="switch-title" style="font-size: 11.5px;">重啟後補跑漏掉</span>
+                    <span class="switch-toggle"></span>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+          </div>
+
+          <!-- 底部動作條 -->
+          <div class="demo-modal-foot">
+            <div class="foot-left-info">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>
+              <span>定時任務將在後臺靜默排程執行，可在歷史記錄檢視執行日誌</span>
+            </div>
+            <div class="foot-btns">
+              <button class="btn subtle">取消</button>
+              <button class="btn primary">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="20 6 9 17 4 12"/></svg>
+                儲存並啟用任務
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ====================================================================
+         方案 B：雙欄工程駕駛臺 (Split Workbench Studio)
+         ==================================================================== -->
+    <section id="plan-b" class="proposal-panel">
+      <div class="proposal-header">
+        <div>
+          <h2>
+            方案 B：雙欄工程駕駛臺 (Split Workbench Studio)
+            <span class="proposal-tag tag-geek">重度開發者 · 駕駛艙視野</span>
+          </h2>
+          <p class="proposal-bullets">
+            寬度拓展至 <strong>880px</strong>。採用類似現代 IDE 與流水線編排器（如 GitHub Actions / Temporal）的 <strong>左工作區（60%）+ 右檢視區（40%）</strong> 結構。左側專注於任務指令編寫與目標，右側擁有完整的觸發流水線時間軸預演。
+          </p>
+        </div>
+      </div>
+
+      <div class="modal-preview-stage">
+        <!-- 彈窗本體 -->
+        <div class="demo-modal modal-plan-b">
+          <div class="demo-modal-head">
+            <div class="demo-head-title-wrap">
+              <div class="demo-head-icon" style="background: var(--blue-soft); border-color: rgba(59, 130, 246, 0.3); color: #93c5fd;">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="12 2 2 7 12 12 22 7 12 2"/><polyline points="2 17 12 22 22 17"/><polyline points="2 12 12 17 22 12"/></svg>
+              </div>
+              <div>
+                <div class="demo-head-title">配置自動化任務流水線</div>
+                <div class="demo-head-sub">工作區指令與觸發器全景駕駛臺</div>
+              </div>
+            </div>
+            <button class="demo-modal-close">✕</button>
+          </div>
+
+          <div class="demo-modal-body">
+            <div class="plan-b-workbench">
+              <!-- 左側：主要指令工作區 -->
+              <div class="plan-b-left">
+                <div class="section-card">
+                  <div>
+                    <label class="field-label">任務名稱</label>
+                    <input class="input-text" value="深夜程式碼全量測試與安全審計" />
+                  </div>
+                  <div style="margin-top: 10px;">
+                    <label class="field-label">執行目錄與目標</label>
+                    <div style="display: flex; gap: 8px;">
+                      <input class="input-text" value="E:\pi-web-ui" style="flex: 1;" />
+                      <select class="select-box" style="width: 140px;">
+                        <option>智慧體對話</option>
+                        <option>畫布工作流</option>
+                      </select>
+                    </div>
+                  </div>
+                </div>
+
+                <div class="section-card" style="flex: 1;">
+                  <div class="section-head">
+                    <span class="section-title">
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/></svg>
+                      智慧體任務指令 (Agent Prompt)
+                    </span>
+                    <span class="field-hint">大屏沉浸式工作區</span>
+                  </div>
+
+                  <div class="prompt-toolbar">
+                    <div class="template-chips">
+                      <button class="tpl-chip" onclick="document.getElementById('b-prompt-area').value='執行 npm run test 並定位所有失敗用例，生成簡短測試報告。'">🧪 測試診斷</button>
+                      <button class="tpl-chip" onclick="document.getElementById('b-prompt-area').value='檢查 git status 與 git log，彙總今日完成的特性與待合分支。'">📋 每日摘要</button>
+                    </div>
+                    <span style="font-size: 11px; color: var(--text-faint);">支援多行/程式碼塊</span>
+                  </div>
+
+                  <textarea class="textarea-box" id="b-prompt-area" rows="11" style="height: 240px;" placeholder="在此輸入給智慧體的執行指令...">請執行以下例行維護：
+1. 執行 git fetch 並檢查當前分支是否落後於遠端 main；
+2. 執行 npm audit 檢查高危依賴漏洞；
+3. 如果發現異常，請整理出受影響的包名並提出升級建議；
+4. 執行一次快速型別檢查 npm run typecheck 並彙報狀態。</textarea>
+                </div>
+              </div>
+
+              <!-- 右側：檢視板與觸發策略 -->
+              <div class="plan-b-right">
+                <!-- 排程觸發器卡片 -->
+                <div class="section-card">
+                  <div class="section-head">
+                    <span class="section-title">
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+                      觸發策略 (Trigger)
+                    </span>
+                    <span class="badge" style="color: var(--green);">0 2 * * *</span>
+                  </div>
+
+                  <div>
+                    <label class="field-label">週期預設</label>
+                    <select class="select-box">
+                      <option>每天凌晨 02:00 (0 2 * * *)</option>
+                      <option>每個工作日 09:00 (0 9 * * 1-5)</option>
+                      <option>每小時一次 (0 * * * *)</option>
+                      <option>自定義 Cron 表示式</option>
+                    </select>
+                  </div>
+
+                  <!-- 觸發時間軸預演 -->
+                  <div style="background: var(--bg-elev2); border-radius: 8px; padding: 10px; border: 1px solid var(--border-soft);">
+                    <div style="font-size: 11.5px; font-weight: 600; color: var(--text); margin-bottom: 8px;">未來執行流水線</div>
+                    <div class="timeline-list">
+                      <div class="timeline-item next">
+                        <div>今天深夜 02:00 (預計 11 小時後)</div>
+                        <div style="font-size: 10.5px; color: var(--green);">● 下次將觸發</div>
+                      </div>
+                      <div class="timeline-item">
+                        <div>明天深夜 02:00</div>
+                      </div>
+                      <div class="timeline-item">
+                        <div>後天深夜 02:00</div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                <!-- 執行模型與環境 -->
+                <div class="section-card">
+                  <div class="section-head">
+                    <span class="section-title">
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/></svg>
+                      執行環境與算力
+                    </span>
+                  </div>
+
+                  <div>
+                    <label class="field-label">指定智慧體模型</label>
+                    <select class="select-box">
+                      <option>跟隨主對話當前模型</option>
+                      <option selected>Claude 3.7 Sonnet (推薦)</option>
+                      <option>GPT-4o</option>
+                      <option>DeepSeek V3</option>
+                    </select>
+                  </div>
+
+                  <div>
+                    <label class="field-label">思考預算</label>
+                    <select class="select-box">
+                      <option>預設級別</option>
+                      <option selected>中等思考 (Medium)</option>
+                      <option>高強度思考 (High)</option>
+                    </select>
+                  </div>
+
+                  <div class="switch-row on" onclick="this.classList.toggle('on')">
+                    <div class="switch-label-wrap">
+                      <span class="switch-title">停機補跑機制</span>
+                      <span class="switch-desc">服務斷開重啟後自動補跑</span>
+                    </div>
+                    <span class="switch-toggle"></span>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div class="demo-modal-foot">
+            <div class="foot-left-info">
+              <span>狀態：就緒 · 觸發後自動建立獨立子對話</span>
+            </div>
+            <div class="foot-btns">
+              <button class="btn subtle">取消</button>
+              <button class="btn primary">儲存並激活任務</button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ====================================================================
+         方案 C：分步聚焦流式 (Step Flow Modal)
+         ==================================================================== -->
+    <section id="plan-c" class="proposal-panel">
+      <div class="proposal-header">
+        <div>
+          <h2>
+            方案 C：分步聚焦嚮導式 (Step Flow Wizard)
+            <span class="proposal-tag tag-wizard">低心智負擔 · 漸進聚焦</span>
+          </h2>
+          <p class="proposal-bullets">
+            寬度 <strong>650px</strong>。將原本臃腫的表單拆解為 <strong>① 任務與排程</strong>、<strong>② 指令編寫</strong>、<strong>③ 執行環境</strong> 三個平滑步驟。每一步僅關注核心輸入項，清晰不壓抑，適合絕大多數常規任務建立。
+          </p>
+        </div>
+      </div>
+
+      <div class="modal-preview-stage">
+        <!-- 彈窗本體 -->
+        <div class="demo-modal modal-plan-c">
+          <div class="demo-modal-head">
+            <div class="demo-head-title-wrap">
+              <div class="demo-head-icon" style="background: var(--green-soft); border-color: rgba(52, 211, 153, 0.3); color: #86efac;">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 11 12 14 22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>
+              </div>
+              <div>
+                <div class="demo-head-title">嚮導式新建任務</div>
+                <div class="demo-head-sub">按步驟快速引導建立定時排程工作</div>
+              </div>
+            </div>
+            <button class="demo-modal-close">✕</button>
+          </div>
+
+          <!-- 步驟條 -->
+          <div class="step-stepper">
+            <div class="step-item done" id="c-step-tab-1" onclick="jumpStepC(1)">
+              <div class="step-num">✓</div>
+              <span>1. 目標與排程</span>
+            </div>
+            <div class="step-line"></div>
+            <div class="step-item active" id="c-step-tab-2" onclick="jumpStepC(2)">
+              <div class="step-num">2</div>
+              <span>2. 智慧體指令</span>
+            </div>
+            <div class="step-line"></div>
+            <div class="step-item" id="c-step-tab-3" onclick="jumpStepC(3)">
+              <div class="step-num">3</div>
+              <span>3. 模型與高階</span>
+            </div>
+          </div>
+
+          <div class="demo-modal-body">
+            <!-- 步驟 1 容器 -->
+            <div id="c-step-content-1" style="display: none;" class="section-card">
+              <div class="section-head"><span class="section-title">第一步：定義任務與排程週期</span></div>
+              <div>
+                <label class="field-label">任務名稱</label>
+                <input class="input-text" value="每日程式碼健康巡檢" />
+              </div>
+              <div>
+                <label class="field-label">專案目錄</label>
+                <input class="input-text" value="E:\pi-web-ui" />
+              </div>
+              <div>
+                <label class="field-label">執行頻率</label>
+                <div class="pill-group">
+                  <button class="pill-btn active">每個工作日 09:00</button>
+                  <button class="pill-btn">每天 09:00</button>
+                  <button class="pill-btn">每小時</button>
+                  <button class="pill-btn">自定義 Cron</button>
+                </div>
+              </div>
+            </div>
+
+            <!-- 步驟 2 容器 (預設展示) -->
+            <div id="c-step-content-2" class="section-card">
+              <div class="section-head">
+                <span class="section-title">第二步：編寫智慧體執行指令 (Prompt)</span>
+                <span class="badge">最核心內容</span>
+              </div>
+              <div class="prompt-toolbar">
+                <span class="field-label" style="margin: 0;">一鍵套用模板：</span>
+                <div class="template-chips">
+                  <button class="tpl-chip" onclick="document.getElementById('c-prompt-text').value='執行 npm audit 檢查安全漏洞並生成更新清單。'">🔍 安全巡檢</button>
+                  <button class="tpl-chip" onclick="document.getElementById('c-prompt-text').value='梳理未合併的 Git 分支並檢查是否有遺留未提程式碼。'">🌿 Git 分支梳理</button>
+                </div>
+              </div>
+              <textarea class="textarea-box" id="c-prompt-text" rows="8" placeholder="請詳細輸入希望智慧體定時執行的具體動作...">審查當前專案的依賴版本，執行 npm outdated，並針對次版本（Minor）與補丁版本（Patch）分析是否有推薦升級的無破壞性依賴，列出更新清單與風險預估。</textarea>
+            </div>
+
+            <!-- 步驟 3 容器 -->
+            <div id="c-step-content-3" style="display: none;" class="section-card">
+              <div class="section-head"><span class="section-title">第三步：模型與高階策略</span></div>
+              <div class="plan-a-grid-2">
+                <div>
+                  <label class="field-label">模型選擇</label>
+                  <select class="select-box">
+                    <option>跟隨主對話當前模型</option>
+                    <option>Claude 3.7 Sonnet</option>
+                  </select>
+                </div>
+                <div>
+                  <label class="field-label">思考強度</label>
+                  <select class="select-box">
+                    <option>中等思考 (Medium)</option>
+                    <option>關閉思考</option>
+                  </select>
+                </div>
+              </div>
+              <div class="switch-row on" onclick="this.classList.toggle('on')" style="margin-top: 10px;">
+                <div class="switch-label-wrap">
+                  <span class="switch-title">重啟後補跑</span>
+                  <span class="switch-desc">服務重啟後補跑在掉線期間漏掉的一次</span>
+                </div>
+                <span class="switch-toggle"></span>
+              </div>
+            </div>
+          </div>
+
+          <div class="demo-modal-foot">
+            <div class="foot-left-info">
+              <button class="btn sm subtle" id="c-prev-btn" onclick="nextStepC(-1)">← 上一步</button>
+            </div>
+            <div class="foot-btns">
+              <button class="btn subtle">取消</button>
+              <button class="btn primary" id="c-next-btn" onclick="nextStepC(1)">下一步：環境配置 →</button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ====================================================================
+         對照組：新舊 1:1 直觀對比
+         ==================================================================== -->
+    <section id="plan-compare" class="proposal-panel">
+      <div class="proposal-header">
+        <div>
+          <h2>
+            新舊視覺實景橫向對比
+            <span class="proposal-tag tag-primary">一眼見高下</span>
+          </h2>
+          <p class="proposal-bullets">
+            左側為目前線上版本（460px 寬度，單列無分組），右側為方案 A（720px 寬屏，分組卡片，自然語言預演）。
+          </p>
+        </div>
+      </div>
+
+      <div style="display: grid; grid-template-columns: 1fr 1.6fr; gap: 24px; align-items: start;">
+        <!-- 原版復刻 -->
+        <div>
+          <div style="margin-bottom: 10px; font-weight: 600; color: var(--red); display: flex; align-items: center; gap: 6px;">
+            <span>❌ 現有版本 (當前線上)</span>
+            <span style="font-size: 11px; background: var(--red-soft); padding: 1px 6px; border-radius: 4px;">460px 窄窄一根</span>
+          </div>
+          <div class="old-modal-replica">
+            <div style="display: flex; justify-content: space-between; align-items: center; font-weight: 600; padding-bottom: 6px; border-bottom: 1px solid #262a35;">
+              <span>🕒 新建任務</span>
+              <span style="color: #6b7284;">✕</span>
+            </div>
+            <input placeholder="如：每日依賴與程式碼健康檢查..." value="每日程式碼健康巡檢" />
+            <input placeholder="說明（可選）：這個任務是幹什麼的..." />
+            <div class="old-row">
+              <span style="color: #9aa1b4; width: 80px;">執行目標專案</span>
+              <input value="E:\pi-web-ui" style="flex: 1;" />
+              <button class="btn sm">用當前專案</button>
+            </div>
+            <div class="old-row">
+              <span style="color: #9aa1b4; width: 80px;">任務目標</span>
+              <select style="flex: 1;"><option>智慧體對話</option></select>
+            </div>
+            <div class="old-row">
+              <span style="color: #9aa1b4; width: 80px;">排程週期</span>
+              <select style="flex: 1;"><option>Cron 表示式</option></select>
+            </div>
+            <div class="old-row">
+              <span style="color: #9aa1b4; width: 80px;">Cron 表示式</span>
+              <select style="flex: 1;"><option>每天 9:00 - 0 9 * * *</option></select>
+            </div>
+            <textarea rows="4" placeholder="給 Agent 的具體任務，如：審計依賴並報告可升級項…" style="font-family: monospace;">審查依賴並彙報健康狀況</textarea>
+            <div class="old-row">
+              <span style="color: #9aa1b4; width: 80px;">模型</span>
+              <select style="flex: 1;"><option>跟隨主對話當前模型</option></select>
+            </div>
+            <div class="old-row">
+              <span style="color: #9aa1b4; width: 80px;">思考強度</span>
+              <select style="flex: 1;"><option>跟隨主對話當前思考強度</option></select>
+            </div>
+            <div style="display: flex; align-items: center; gap: 6px; font-size: 12px; color: #9aa1b4;">
+              <input type="checkbox" style="width: 14px; height: 14px;" />
+              <span>服務重啟後補跑漏掉的一次 ⓘ</span>
+            </div>
+            <div style="display: flex; justify-content: flex-end; gap: 8px; margin-top: 10px;">
+              <button class="btn sm">取消編輯</button>
+              <button class="btn sm primary">儲存任務</button>
+            </div>
+          </div>
+        </div>
+
+        <!-- 重構方案優勢解析卡 -->
+        <div>
+          <div style="margin-bottom: 10px; font-weight: 600; color: var(--green); display: flex; align-items: center; gap: 6px;">
+            <span>✨ 為什麼重構後更專業更開闊？</span>
+          </div>
+          <div class="section-card" style="padding: 24px;">
+            <div style="display: flex; flex-direction: column; gap: 16px;">
+              <div style="display: flex; gap: 12px;">
+                <div style="width: 28px; height: 28px; border-radius: 6px; background: var(--accent-soft); color: var(--accent); display: flex; align-items: center; justify-content: center; font-weight: 700;">1</div>
+                <div>
+                  <div style="font-size: 14px; font-weight: 600; color: var(--text);">寬度從 460px 提升至 720px ~ 880px</div>
+                  <div style="font-size: 12.5px; color: var(--text-dim); margin-top: 2px;">
+                    不再擠牙膏。控制元件之間有足夠的呼吸空間，雙列並排與卡片分組讓視覺重心平衡。
+                  </div>
+                </div>
+              </div>
+
+              <div style="display: flex; gap: 12px;">
+                <div style="width: 28px; height: 28px; border-radius: 6px; background: var(--green-soft); color: var(--green); display: flex; align-items: center; justify-content: center; font-weight: 700;">2</div>
+                <div>
+                  <div style="font-size: 14px; font-weight: 600; color: var(--text);">Prompt 尊享一級公民待遇</div>
+                  <div style="font-size: 12.5px; color: var(--text-dim); margin-top: 2px;">
+                    將單薄的 4 行框擴充套件為帶快捷模板（體檢、測試、安全、彙總）的程式碼風格大編輯區，編寫巡檢指令行雲流水。
+                  </div>
+                </div>
+              </div>
+
+              <div style="display: flex; gap: 12px;">
+                <div style="width: 28px; height: 28px; border-radius: 6px; background: var(--blue-soft); color: var(--blue); display: flex; align-items: center; justify-content: center; font-weight: 700;">3</div>
+                <div>
+                  <div style="font-size: 14px; font-weight: 600; color: var(--text);">直觀的自然語義與「未來執行時間」預演</div>
+                  <div style="font-size: 12.5px; color: var(--text-dim); margin-top: 2px;">
+                    點選或輸入 Cron 後，下方立即用綠色高亮條翻譯為白話文，並動態展示接下來 2~3 次的具體執行時間戳，心裡極踏實。
+                  </div>
+                </div>
+              </div>
+
+              <div style="display: flex; gap: 12px;">
+                <div style="width: 28px; height: 28px; border-radius: 6px; background: var(--amber-soft); color: var(--amber); display: flex; align-items: center; justify-content: center; font-weight: 700;">4</div>
+                <div>
+                  <div style="font-size: 14px; font-weight: 600; color: var(--text);">高階項優雅收納，開關動效絲滑</div>
+                  <div style="font-size: 12.5px; color: var(--text-dim); margin-top: 2px;">
+                    模型、思考等級、停機補償採用並排網格與 iOS 風格 Switch，取代突兀的原生單選框。
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+  </main>
+
+  <!-- 互動指令碼 -->
+  <script>
+    // 方案面板切換
+    function switchPlan(planId) {
+      document.querySelectorAll('.tab-btn').forEach(btn => btn.classList.remove('active'));
+      event.currentTarget.classList.add('active');
+
+      document.querySelectorAll('.proposal-panel').forEach(panel => {
+        panel.classList.remove('active');
+      });
+      document.getElementById(planId).classList.add('active');
+    }
+
+    // 方案 A 互動：切換任務目標 (conversation vs canvas)
+    function setTargetA(target) {
+      const btnConv = document.getElementById('a-tgt-conv');
+      const btnCanvas = document.getElementById('a-tgt-canvas');
+      const canvasRow = document.getElementById('a-canvas-select-row');
+      if (target === 'conversation') {
+        btnConv.classList.add('active');
+        btnCanvas.classList.remove('active');
+        canvasRow.style.display = 'none';
+      } else {
+        btnCanvas.classList.add('active');
+        btnConv.classList.remove('active');
+        canvasRow.style.display = 'block';
+      }
+    }
+
+    // 方案 A 互動：選擇排程預設
+    function selectPresetA(cron, desc, btn) {
+      btn.parentElement.querySelectorAll('.pill-btn').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+
+      const customRow = document.getElementById('a-custom-cron-row');
+      const badge = document.getElementById('a-cron-raw-badge');
+      const previewText = document.getElementById('a-preview-text');
+      const time1 = document.getElementById('a-next-time-1');
+      const time2 = document.getElementById('a-next-time-2');
+
+      if (cron === 'custom') {
+        customRow.style.display = 'block';
+        badge.innerText = '自定義 Cron';
+        previewText.innerText = '請在上方輸入合法 Cron 表示式';
+        time1.innerText = '即時計算中...';
+        time2.innerText = '—';
+      } else if (cron === 'interval') {
+        customRow.style.display = 'none';
+        badge.innerText = '固定 60 分鐘';
+        previewText.innerText = '每隔 60 分鐘觸發一次';
+        time1.innerText = '1 小時後';
+        time2.innerText = '2 小時後';
+      } else {
+        customRow.style.display = 'none';
+        badge.innerText = cron;
+        previewText.innerText = desc + ' 執行';
+        if (cron.includes('1-5')) {
+          time1.innerText = '明天 09:00';
+          time2.innerText = '後天 09:00';
+        } else if (cron.includes('*/30')) {
+          time1.innerText = '14:30';
+          time2.innerText = '15:00';
+        } else if (cron.includes('0 * * * *')) {
+          time1.innerText = '15:00';
+          time2.innerText = '16:00';
+        } else {
+          time1.innerText = '明天 09:00';
+          time2.innerText = '後天 09:00';
+        }
+      }
+    }
+
+    function updateCronCustomA(val) {
+      document.getElementById('a-cron-raw-badge').innerText = val || '* * * * *';
+      document.getElementById('a-preview-text').innerText = '表示式: ' + (val || '—');
+    }
+
+    // 方案 A 互動：套用 Prompt 模板
+    const TEMPLATES = {
+      health: '請對當前專案進行健康與安全性巡檢：\n1. 檢查 package.json 依賴是否有高危漏洞；\n2. 檢查是否有未解決的構建告警；\n3. 輸出一份簡潔的健康總結並給出升級建議。',
+      test: '執行測試套件與異常排查：\n1. 運行當前專案的自動化測試套件；\n2. 若有失敗用例，讀取相關程式碼並定位根因；\n3. 生成測試失敗報告並提出修復補丁建議。',
+      git: '日常 Git 倉庫狀態審計：\n1. 檢查是否存在未提交的程式碼修改或衝突標記；\n2. 檢視近 3 天本地分支與遠端 main 的差異；\n3. 提示需要清理的廢棄分支。',
+      clean: '維護與清理任務：\n1. 檢查 node_modules、dist、.cache 等臨時目錄大小；\n2. 清理過期的構建快取與臨時日誌檔案；\n3. 報告清理後節省的磁碟空間。'
+    };
+
+    function applyTemplateA(key) {
+      const area = document.getElementById('a-prompt-area');
+      area.value = TEMPLATES[key] || '';
+      area.focus();
+    }
+
+    // 方案 C 互動：步驟跳轉
+    let currentStepC = 2;
+    function jumpStepC(step) {
+      currentStepC = step;
+      updateStepUI();
+    }
+    function nextStepC(delta) {
+      currentStepC = Math.max(1, Math.min(3, currentStepC + delta));
+      updateStepUI();
+    }
+    function updateStepUI() {
+      for (let i = 1; i <= 3; i++) {
+        const tab = document.getElementById('c-step-tab-' + i);
+        const content = document.getElementById('c-step-content-' + i);
+        if (i === currentStepC) {
+          tab.className = 'step-item active';
+          content.style.display = 'block';
+        } else if (i < currentStepC) {
+          tab.className = 'step-item done';
+          content.style.display = 'none';
+        } else {
+          tab.className = 'step-item';
+          content.style.display = 'none';
+        }
+      }
+      const prevBtn = document.getElementById('c-prev-btn');
+      const nextBtn = document.getElementById('c-next-btn');
+      prevBtn.style.visibility = currentStepC === 1 ? 'hidden' : 'visible';
+      if (currentStepC === 3) {
+        nextBtn.innerText = '立即儲存任務 ✓';
+        nextBtn.className = 'btn primary';
+      } else {
+        nextBtn.innerText = '下一步 →';
+      }
+    }
+  </script>
+</body>
+</html>
+
+
+
+

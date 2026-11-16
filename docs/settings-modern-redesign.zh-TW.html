@@ -1,0 +1,1071 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>pi-web-ui 全景現代設定方案合集 (6大前沿範式)</title>
+  <style>
+    :root {
+      --bg-base: #090b0e;
+      --bg-surface: #12151b;
+      --bg-elevated: #181c24;
+      --bg-elevated-hover: #1f242e;
+      --bg-glass: rgba(18, 21, 27, 0.72);
+      --border-subtle: rgba(255, 255, 255, 0.08);
+      --border-strong: rgba(255, 255, 255, 0.16);
+      --border-focus: rgba(91, 157, 255, 0.55);
+      --accent: #3b82f6;
+      --accent-glow: rgba(59, 130, 246, 0.3);
+      --accent-soft: rgba(59, 130, 246, 0.14);
+      --accent-contrast: #ffffff;
+      --text-main: #f8fafc;
+      --text-muted: #94a3b8;
+      --text-dim: #64748b;
+      --success: #10b981;
+      --success-soft: rgba(16, 185, 129, 0.15);
+      --warning: #f59e0b;
+      --purple: #a855f7;
+      --purple-soft: rgba(168, 85, 247, 0.15);
+      --radius-sm: 8px;
+      --radius-md: 12px;
+      --radius-lg: 16px;
+      --radius-xl: 22px;
+      --radius-full: 9999px;
+      --font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+      --font-mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+      --transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      background: var(--bg-base);
+      color: var(--text-main);
+      font-family: var(--font-sans);
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      padding: 24px 16px;
+      overflow-x: hidden;
+      background-image: 
+        radial-gradient(ellipse 70% 50% at 50% -10%, rgba(59, 130, 246, 0.16), transparent),
+        radial-gradient(ellipse 40% 40% at 90% 70%, rgba(168, 85, 247, 0.12), transparent);
+    }
+
+    .showcase-header {
+      width: 100%;
+      max-width: 1080px;
+      display: flex;
+      flex-direction: column;
+      gap: 14px;
+      margin-bottom: 22px;
+      text-align: center;
+    }
+
+    .showcase-title {
+      font-size: 26px;
+      font-weight: 800;
+      letter-spacing: -0.6px;
+      background: linear-gradient(135deg, #ffffff 30%, #94a3b8 100%);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+    }
+
+    .showcase-subtitle {
+      font-size: 13.5px;
+      color: var(--text-muted);
+      line-height: 1.5;
+    }
+
+    /* 6 大方案平鋪切換器 */
+    .proto-switcher {
+      display: flex;
+      flex-wrap: wrap;
+      justify-content: center;
+      gap: 6px;
+      background: rgba(255, 255, 255, 0.04);
+      border: 1px solid var(--border-subtle);
+      border-radius: var(--radius-full);
+      padding: 5px;
+      margin: 4px auto 0;
+      backdrop-filter: blur(14px);
+    }
+
+    .proto-btn {
+      background: transparent;
+      border: none;
+      color: var(--text-muted);
+      font-size: 12.5px;
+      font-weight: 500;
+      padding: 7px 15px;
+      border-radius: var(--radius-full);
+      cursor: pointer;
+      transition: var(--transition);
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      white-space: nowrap;
+    }
+
+    .proto-btn:hover { color: var(--text-main); }
+    .proto-btn.active {
+      background: var(--accent);
+      color: #fff;
+      box-shadow: 0 2px 14px var(--accent-glow);
+    }
+
+    /* 方案主檢視區 */
+    .prototype-container {
+      width: 100%;
+      max-width: 1080px;
+      display: none;
+      animation: protoFadeIn 0.28s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+    }
+    .prototype-container.active { display: block; }
+
+    @keyframes protoFadeIn {
+      from { opacity: 0; transform: translateY(10px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+
+    /* 公共 UI 基礎件 */
+    .switch {
+      position: relative;
+      display: inline-block;
+      width: 38px;
+      height: 22px;
+      flex-shrink: 0;
+    }
+    .switch input { opacity: 0; width: 0; height: 0; }
+    .slider {
+      position: absolute; cursor: pointer; inset: 0;
+      background-color: rgba(255, 255, 255, 0.15);
+      transition: .2s;
+      border-radius: 22px;
+    }
+    .slider:before {
+      position: absolute; content: "";
+      height: 16px; width: 16px; left: 3px; bottom: 3px;
+      background-color: white;
+      transition: .22s cubic-bezier(0.34, 1.56, 0.64, 1);
+      border-radius: 50%;
+    }
+    input:checked + .slider { background-color: var(--accent); }
+    input:checked + .slider:before { transform: translateX(16px); }
+
+    .segmented {
+      display: inline-flex;
+      background: rgba(0, 0, 0, 0.35);
+      padding: 3px;
+      border-radius: 8px;
+      border: 1px solid var(--border-subtle);
+    }
+    .segmented button {
+      background: transparent;
+      border: none;
+      color: var(--text-muted);
+      font-size: 12px;
+      padding: 4px 10px;
+      border-radius: 6px;
+      cursor: pointer;
+      transition: var(--transition);
+    }
+    .segmented button.active {
+      background: rgba(255, 255, 255, 0.14);
+      color: var(--text-main);
+      font-weight: 500;
+    }
+
+    /* 方案解說卡片 */
+    .scheme-analysis {
+      margin-top: 18px;
+      background: rgba(255, 255, 255, 0.025);
+      border: 1px dashed var(--border-subtle);
+      border-radius: var(--radius-md);
+      padding: 16px 20px;
+      font-size: 13px;
+      color: var(--text-muted);
+      line-height: 1.6;
+    }
+    .scheme-analysis strong { color: var(--text-main); }
+    .scheme-badge {
+      display: inline-block;
+      padding: 2px 8px;
+      border-radius: 4px;
+      font-size: 11px;
+      font-weight: 600;
+      background: var(--accent-soft);
+      color: var(--accent);
+      margin-right: 6px;
+    }
+
+    /* =========================================================================
+       方案一：Linear / Raycast 風格（Command-Driven 極客極簡流）
+       ========================================================================= */
+    .scheme-linear {
+      background: var(--bg-surface);
+      border: 1px solid var(--border-subtle);
+      border-radius: var(--radius-lg);
+      box-shadow: 0 24px 60px rgba(0, 0, 0, 0.65);
+      display: flex;
+      flex-direction: column;
+      height: 640px;
+      overflow: hidden;
+    }
+    .linear-cmd-bar {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      padding: 14px 20px;
+      border-bottom: 1px solid var(--border-subtle);
+      background: rgba(18, 21, 27, 0.9);
+    }
+    .cmd-search-wrap {
+      flex: 1;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      background: rgba(255, 255, 255, 0.04);
+      border: 1px solid var(--border-subtle);
+      border-radius: var(--radius-sm);
+      padding: 6px 12px;
+      transition: var(--transition);
+    }
+    .cmd-search-wrap:focus-within {
+      border-color: var(--accent);
+      box-shadow: 0 0 0 2px var(--accent-soft);
+      background: rgba(255, 255, 255, 0.07);
+    }
+    .cmd-search-input {
+      background: transparent;
+      border: none;
+      outline: none;
+      color: var(--text-main);
+      font-size: 13px;
+      width: 100%;
+    }
+    .kbd-shortcut {
+      font-size: 11px;
+      background: rgba(255, 255, 255, 0.08);
+      border: 1px solid var(--border-subtle);
+      color: var(--text-dim);
+      padding: 2px 6px;
+      border-radius: 4px;
+      font-family: var(--font-mono);
+    }
+    .sync-badge {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 12px;
+      color: var(--success);
+      font-weight: 500;
+      padding: 4px 10px;
+      background: var(--success-soft);
+      border-radius: var(--radius-full);
+    }
+    .linear-layout { flex: 1; display: flex; min-height: 0; }
+    .linear-sidebar {
+      width: 220px;
+      border-right: 1px solid var(--border-subtle);
+      padding: 12px 10px;
+      display: flex;
+      flex-direction: column;
+      gap: 3px;
+      background: rgba(14, 16, 21, 0.65);
+    }
+    .linear-nav-group-label {
+      font-size: 11px;
+      font-weight: 600;
+      color: var(--text-dim);
+      text-transform: uppercase;
+      letter-spacing: 0.6px;
+      padding: 8px 10px 4px;
+    }
+    .linear-nav-item {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 8px 10px;
+      border-radius: var(--radius-sm);
+      color: var(--text-muted);
+      font-size: 13px;
+      cursor: pointer;
+      transition: var(--transition);
+      border: none;
+      background: transparent;
+      width: 100%;
+      text-align: left;
+    }
+    .linear-nav-item:hover { background: rgba(255, 255, 255, 0.04); color: var(--text-main); }
+    .linear-nav-item.active { background: rgba(255, 255, 255, 0.08); color: #fff; font-weight: 500; }
+    .linear-content {
+      flex: 1;
+      overflow-y: auto;
+      padding: 28px 36px;
+      display: flex;
+      flex-direction: column;
+      gap: 26px;
+    }
+    .linear-group-card {
+      background: var(--bg-elevated);
+      border: 1px solid var(--border-subtle);
+      border-radius: var(--radius-md);
+      overflow: hidden;
+    }
+    .linear-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 14px 18px;
+    }
+    .linear-row:not(:last-child) { border-bottom: 1px solid var(--border-subtle); }
+    .linear-row:hover { background: rgba(255, 255, 255, 0.015); }
+    .linear-row-info { display: flex; flex-direction: column; gap: 3px; max-width: 70%; }
+    .linear-row-label { font-size: 13.5px; font-weight: 500; color: var(--text-main); }
+    .linear-row-desc { font-size: 12px; color: var(--text-muted); line-height: 1.4; }
+
+    /* =========================================================================
+       方案二：Bento Grid 儀表盤流
+       ========================================================================= */
+    .scheme-bento {
+      background: var(--bg-surface);
+      border: 1px solid var(--border-subtle);
+      border-radius: var(--radius-lg);
+      box-shadow: 0 24px 60px rgba(0, 0, 0, 0.65);
+      height: 640px;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+    .bento-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 16px 28px;
+      border-bottom: 1px solid var(--border-subtle);
+    }
+    .bento-body { flex: 1; overflow-y: auto; padding: 22px 28px; }
+    .bento-grid {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 16px;
+    }
+    .bento-card {
+      background: var(--bg-elevated);
+      border: 1px solid var(--border-subtle);
+      border-radius: var(--radius-md);
+      padding: 18px;
+      display: flex;
+      flex-direction: column;
+      transition: var(--transition);
+    }
+    .bento-card:hover { border-color: rgba(255, 255, 255, 0.15); transform: translateY(-2px); }
+    .bento-card.col-2 { grid-column: span 2; }
+    .bento-card.col-3 { grid-column: span 3; }
+    .bento-card-title {
+      font-size: 12.5px;
+      font-weight: 600;
+      color: var(--text-muted);
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      margin-bottom: 12px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+    .bento-stat-num { font-size: 26px; font-weight: 700; color: #fff; margin-bottom: 4px; }
+    .tool-chip {
+      background: rgba(255, 255, 255, 0.05);
+      border: 1px solid var(--border-subtle);
+      color: var(--text-main);
+      font-size: 12px;
+      padding: 4px 10px;
+      border-radius: 6px;
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .tool-chip.active { border-color: rgba(16, 185, 129, 0.4); background: var(--success-soft); }
+
+    /* =========================================================================
+       方案三：Spatial Glass 懸浮流
+       ========================================================================= */
+    .scheme-spatial {
+      background: var(--bg-glass);
+      backdrop-filter: blur(32px) saturate(180%);
+      border: 1px solid rgba(255, 255, 255, 0.12);
+      border-radius: 24px;
+      box-shadow: 0 32px 80px rgba(0, 0, 0, 0.7), inset 0 1px 0 rgba(255, 255, 255, 0.15);
+      height: 640px;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+    .spatial-topbar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 20px 32px 14px;
+    }
+    .spatial-pill-nav {
+      display: inline-flex;
+      background: rgba(0, 0, 0, 0.4);
+      padding: 4px;
+      border-radius: var(--radius-full);
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      backdrop-filter: blur(16px);
+    }
+    .spatial-nav-btn {
+      background: transparent;
+      border: none;
+      color: var(--text-muted);
+      font-size: 13px;
+      padding: 7px 18px;
+      border-radius: var(--radius-full);
+      cursor: pointer;
+      transition: var(--transition);
+    }
+    .spatial-nav-btn.active {
+      background: rgba(255, 255, 255, 0.18);
+      color: #fff;
+      font-weight: 600;
+    }
+    .spatial-content { flex: 1; overflow-y: auto; padding: 16px 32px 32px; display: flex; flex-direction: column; gap: 18px; }
+    .spatial-glass-card {
+      background: rgba(255, 255, 255, 0.035);
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      border-radius: 18px;
+      padding: 20px;
+      backdrop-filter: blur(16px);
+      display: flex;
+      flex-direction: column;
+      gap: 14px;
+    }
+
+    /* =========================================================================
+       方案四：【Cursor / Linear 風格】非模態分體抽屜流 (Contextual Split Drawer)
+       ========================================================================= */
+    .scheme-drawer {
+      display: flex;
+      height: 640px;
+      background: #0d0f14;
+      border: 1px solid var(--border-subtle);
+      border-radius: var(--radius-lg);
+      overflow: hidden;
+      box-shadow: 0 24px 60px rgba(0, 0, 0, 0.7);
+    }
+    /* 模擬左側活躍對話流 */
+    .drawer-chat-mock {
+      flex: 1;
+      padding: 20px;
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+      background: rgba(0, 0, 0, 0.2);
+      border-right: 1px solid var(--border-subtle);
+    }
+    .chat-mock-msg {
+      background: rgba(255, 255, 255, 0.04);
+      border: 1px solid var(--border-subtle);
+      border-radius: 10px;
+      padding: 12px 16px;
+      font-size: 13px;
+      color: var(--text-muted);
+      line-height: 1.5;
+    }
+    .chat-mock-input {
+      background: rgba(255, 255, 255, 0.06);
+      border: 1px solid var(--border-subtle);
+      border-radius: 8px;
+      padding: 10px 14px;
+      font-size: 12.5px;
+      color: var(--text-dim);
+    }
+    /* 右側即時生效設定面板 */
+    .drawer-panel {
+      width: 440px;
+      background: var(--bg-surface);
+      display: flex;
+      flex-direction: column;
+      animation: slideInRight 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+    }
+    @keyframes slideInRight {
+      from { transform: translateX(30px); opacity: 0; }
+      to { transform: translateX(0); opacity: 1; }
+    }
+    .drawer-head {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 16px 20px;
+      border-bottom: 1px solid var(--border-subtle);
+    }
+    .drawer-scroll {
+      flex: 1;
+      overflow-y: auto;
+      padding: 18px 20px;
+      display: flex;
+      flex-direction: column;
+      gap: 20px;
+    }
+    .drawer-card {
+      background: var(--bg-elevated);
+      border: 1px solid var(--border-subtle);
+      border-radius: var(--radius-md);
+      padding: 14px;
+    }
+
+    /* =========================================================================
+       方案五：【Vercel / Notion 風格】Studio 全屏工作臺流 (Studio View)
+       ========================================================================= */
+    .scheme-studio {
+      height: 640px;
+      background: var(--bg-surface);
+      border: 1px solid var(--border-subtle);
+      border-radius: var(--radius-lg);
+      display: grid;
+      grid-template-columns: 240px 1fr 280px;
+      overflow: hidden;
+      box-shadow: 0 24px 60px rgba(0, 0, 0, 0.7);
+    }
+    .studio-sidebar {
+      background: #0f1217;
+      border-right: 1px solid var(--border-subtle);
+      padding: 18px 14px;
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+    .studio-main {
+      padding: 24px 32px;
+      overflow-y: auto;
+      display: flex;
+      flex-direction: column;
+      gap: 24px;
+    }
+    .studio-inspector {
+      background: #0f1217;
+      border-left: 1px solid var(--border-subtle);
+      padding: 20px 18px;
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+    }
+    .inspector-title {
+      font-size: 12px;
+      font-weight: 700;
+      text-transform: uppercase;
+      color: var(--text-dim);
+      letter-spacing: 0.5px;
+    }
+    .inspector-box {
+      background: rgba(255, 255, 255, 0.03);
+      border: 1px solid var(--border-subtle);
+      border-radius: var(--radius-sm);
+      padding: 12px;
+      font-size: 12px;
+      color: var(--text-muted);
+      line-height: 1.5;
+    }
+
+    /* =========================================================================
+       方案六：【AI-Native 意圖驅動流】生成式意圖配置條 (Intent-Driven Settings)
+       ========================================================================= */
+    .scheme-intent {
+      height: 640px;
+      background: var(--bg-surface);
+      border: 1px solid var(--border-subtle);
+      border-radius: var(--radius-lg);
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+      box-shadow: 0 24px 60px rgba(0, 0, 0, 0.7);
+    }
+    .intent-hero {
+      padding: 28px 36px 20px;
+      background: linear-gradient(180deg, rgba(168, 85, 247, 0.08) 0%, transparent 100%);
+      border-bottom: 1px solid var(--border-subtle);
+    }
+    .intent-ai-input-wrap {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      background: rgba(0, 0, 0, 0.4);
+      border: 1px solid var(--purple);
+      box-shadow: 0 0 20px rgba(168, 85, 247, 0.2);
+      border-radius: var(--radius-md);
+      padding: 10px 16px;
+      margin-top: 14px;
+    }
+    .intent-ai-input {
+      flex: 1;
+      background: transparent;
+      border: none;
+      outline: none;
+      color: #fff;
+      font-size: 14px;
+    }
+    .intent-apply-btn {
+      background: var(--purple);
+      color: #fff;
+      border: none;
+      padding: 7px 16px;
+      border-radius: 6px;
+      font-size: 12.5px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: var(--transition);
+    }
+    .intent-apply-btn:hover { opacity: 0.9; }
+    .intent-diff-list {
+      flex: 1;
+      overflow-y: auto;
+      padding: 24px 36px;
+      display: flex;
+      flex-direction: column;
+      gap: 14px;
+    }
+    .diff-item {
+      background: var(--bg-elevated);
+      border: 1px solid var(--border-subtle);
+      border-radius: var(--radius-md);
+      padding: 14px 18px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+    .diff-badge-old {
+      font-size: 11px;
+      padding: 2px 6px;
+      border-radius: 4px;
+      background: rgba(239, 68, 68, 0.15);
+      color: #f87171;
+      text-decoration: line-through;
+    }
+    .diff-badge-new {
+      font-size: 11px;
+      padding: 2px 6px;
+      border-radius: 4px;
+      background: var(--success-soft);
+      color: var(--success);
+      font-weight: 600;
+    }
+  </style>
+</head>
+<body>
+<div data-docs-i18n-switch style="position:fixed;top:8px;right:12px;z-index:2147483647;font:12px/1.6 -apple-system,system-ui,sans-serif;background:rgba(15,17,22,.78);color:#fff;padding:4px 12px;border-radius:999px;box-shadow:0 2px 10px rgba(0,0,0,.35)"><a href="./settings-modern-redesign.html" style="color:#fff;text-decoration:none">简体中文</a> · <a href="./settings-modern-redesign.en.html" style="color:#fff;text-decoration:none">English</a> · <strong>繁體中文</strong></div>
+
+
+
+  <header class="showcase-header">
+    <h1 class="showcase-title">pi-web-ui 設定頁面重構方案矩陣 (6大前沿範式)</h1>
+    <p class="showcase-subtitle">從“彈窗打地鼠”到“無阻斷、意圖化、儀表化”的現代互動升級</p>
+    
+    <div class="proto-switcher">
+      <button class="proto-btn active" onclick="switchProto('linear')">⚡ 1. Linear 穿透命令流</button>
+      <button class="proto-btn" onclick="switchProto('bento')">🍱 2. Bento 磁貼全景流</button>
+      <button class="proto-btn" onclick="switchProto('spatial')">🫧 3. Spatial 懸浮膠囊流</button>
+      <button class="proto-btn" onclick="switchProto('drawer')">🪟 4. Cursor 分體抽屜流</button>
+      <button class="proto-btn" onclick="switchProto('studio')">🖥️ 5. Studio 全屏工作臺流</button>
+      <button class="proto-btn" onclick="switchProto('intent')">✨ 6. AI 意圖驅動配置流</button>
+    </div>
+  </header>
+
+  <!-- =======================================================================
+       方案一：Linear 穿透命令流
+       ======================================================================= -->
+  <main id="proto-linear" class="prototype-container active">
+    <div class="scheme-linear">
+      <div class="linear-cmd-bar">
+        <div class="cmd-search-wrap">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="color: var(--text-dim);"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
+          <input type="text" class="cmd-search-input" placeholder="輸入關鍵字直達配置或開關 (Ctrl K)..." />
+          <span class="kbd-shortcut">Ctrl K</span>
+        </div>
+        <div class="sync-badge">
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><polyline points="20 6 9 17 4 12"></polyline></svg>
+          已即時同步
+        </div>
+      </div>
+      <div class="linear-layout">
+        <aside class="linear-sidebar">
+          <div class="linear-nav-group-label">智慧體核心</div>
+          <button class="linear-nav-item active">模型與閘道器</button>
+          <button class="linear-nav-item">系統提示詞</button>
+          <button class="linear-nav-item">上下文軟上限</button>
+          <div class="linear-nav-group-label" style="margin-top: 10px;">工具與安全</div>
+          <button class="linear-nav-item">工具開關池 (14)</button>
+          <button class="linear-nav-item">安全審批規則</button>
+          <button class="linear-nav-item">MCP 伺服器</button>
+          <div class="linear-nav-group-label" style="margin-top: 10px;">介面與體驗</div>
+          <button class="linear-nav-item">對話流排版</button>
+          <button class="linear-nav-item">聲音與語音</button>
+        </aside>
+        <section class="linear-content">
+          <div>
+            <h2 style="font-size: 18px; font-weight: 600; margin-bottom: 4px;">模型與推理</h2>
+            <p style="font-size: 13px; color: var(--text-dim);">配置智慧體推理引擎、字首快取與上下文預算策略</p>
+          </div>
+          <div class="linear-group-card">
+            <div class="linear-row">
+              <div class="linear-row-info">
+                <span class="linear-row-label">工具延遲按需載入 (Lazy Loading)</span>
+                <span class="linear-row-desc">僅核心工具常駐，其餘動態熱載入，保持 100% 服務端字首快取</span>
+              </div>
+              <label class="switch"><input type="checkbox" checked /><span class="slider"></span></label>
+            </div>
+            <div class="linear-row">
+              <div class="linear-row-info">
+                <span class="linear-row-label">思考預算強度 (Thinking Budget)</span>
+                <span class="linear-row-desc">設定推理模型思考輪次的預設深度</span>
+              </div>
+              <div class="segmented"><button class="active">中等</button><button>深入</button><button>最大</button></div>
+            </div>
+          </div>
+        </section>
+      </div>
+    </div>
+    <div class="scheme-analysis">
+      <span class="scheme-badge">方案 1 · 鍵盤優先</span><strong>Linear 穿透命令流：</strong>通過全域性 Ctrl+K 穿透式搜尋直接定位和觸發開關，取消底部繁重的儲存欄，利用 Inset Grouped 圓角卡片聚合零碎條目。
+    </div>
+  </main>
+
+  <!-- =======================================================================
+       方案二：Bento 磁貼全景流
+       ======================================================================= -->
+  <main id="proto-bento" class="prototype-container">
+    <div class="scheme-bento">
+      <div class="bento-header">
+        <div>
+          <h2 style="font-size: 18px; font-weight: 700;">控制中心</h2>
+          <p style="font-size: 12px; color: var(--text-dim);">一覽智慧體執行全景與環境指標</p>
+        </div>
+        <div class="segmented">
+          <button class="active">概覽儀表盤</button>
+          <button>推理引擎</button>
+          <button>擴充套件外掛</button>
+        </div>
+      </div>
+      <div class="bento-body">
+        <div class="bento-grid">
+          <div class="bento-card col-2">
+            <div class="bento-card-title"><span>當前執行模型</span><span style="font-size: 11px; color: var(--accent); background: var(--accent-soft); padding: 2px 8px; border-radius: 99px;">DeepSeek-R1 (API)</span></div>
+            <div style="display: flex; gap: 36px; margin-top: 6px;">
+              <div><div class="bento-stat-num">128K</div><div style="font-size: 12px; color: var(--text-dim);">上下文軟上限</div></div>
+              <div><div class="bento-stat-num" style="color: var(--success);">0.42s</div><div style="font-size: 12px; color: var(--text-dim);">首 Token 響應</div></div>
+              <div><div class="bento-stat-num">98.2%</div><div style="font-size: 12px; color: var(--text-dim);">字首快取命中</div></div>
+            </div>
+          </div>
+          <div class="bento-card">
+            <div class="bento-card-title">介面模式</div>
+            <div style="display: flex; flex-direction: column; gap: 8px;">
+              <div style="display: flex; justify-content: space-between; align-items: center;"><span style="font-size: 13px;">寬屏沉浸</span><label class="switch"><input type="checkbox" checked /><span class="slider"></span></label></div>
+              <div style="display: flex; justify-content: space-between; align-items: center;"><span style="font-size: 13px;">緊湊排版</span><label class="switch"><input type="checkbox" /><span class="slider"></span></label></div>
+            </div>
+          </div>
+          <div class="bento-card col-3">
+            <div class="bento-card-title">活躍工具池 (8 / 12)</div>
+            <div style="display: flex; flex-wrap: wrap; gap: 8px;">
+              <span class="tool-chip active">● bash (持久)</span>
+              <span class="tool-chip active">● read (目錄智慧)</span>
+              <span class="tool-chip active">● edit_soft</span>
+              <span class="tool-chip active">● browser_search</span>
+              <span class="tool-chip" style="opacity: 0.5;">○ remote_term (已停用)</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="scheme-analysis">
+      <span class="scheme-badge">方案 2 · 資訊降維</span><strong>Bento 磁貼全景流：</strong>首屏即總覽，把深埋在十幾個 Tab 裡的核心指標（模型、工具、延遲、MCP 連線）轉變成便當盒磁貼，一目瞭然。
+    </div>
+  </main>
+
+  <!-- =======================================================================
+       方案三：Spatial 懸浮膠囊流
+       ======================================================================= -->
+  <main id="proto-spatial" class="prototype-container">
+    <div class="scheme-spatial">
+      <div class="spatial-topbar">
+        <span style="font-size: 14px; font-weight: 600;">智慧體偏好</span>
+        <nav class="spatial-pill-nav">
+          <button class="spatial-nav-btn active">常規互動</button>
+          <button class="spatial-nav-btn">提示詞與模型</button>
+          <button class="spatial-nav-btn">擴充套件生態</button>
+        </nav>
+      </div>
+      <div class="spatial-content">
+        <div class="spatial-glass-card">
+          <div style="display: flex; justify-content: space-between; align-items: center;">
+            <div>
+              <div style="font-size: 14px; font-weight: 600;">傳送按鍵對映</div>
+              <div style="font-size: 12px; color: var(--text-dim); margin-top: 2px;">控制對話訊息觸發方式</div>
+            </div>
+            <div class="segmented"><button class="active">Enter 傳送</button><button>Ctrl + Enter 傳送</button></div>
+          </div>
+        </div>
+        <div class="spatial-glass-card">
+          <div>
+            <div style="font-size: 14px; font-weight: 600;">輸入暫存與自動聚焦</div>
+            <div style="font-size: 12px; color: var(--text-dim); margin-top: 2px;">會話切換時保持輸入狀態</div>
+          </div>
+          <div style="display: flex; gap: 12px;">
+            <div style="flex: 1; background: rgba(0,0,0,0.3); border: 1px solid var(--border-subtle); padding: 12px; border-radius: 12px; display: flex; justify-content: space-between; align-items: center;">
+              <span style="font-size: 13px;">自動暫存未傳送草稿</span>
+              <label class="switch"><input type="checkbox" checked /><span class="slider"></span></label>
+            </div>
+            <div style="flex: 1; background: rgba(0,0,0,0.3); border: 1px solid var(--border-subtle); padding: 12px; border-radius: 12px; display: flex; justify-content: space-between; align-items: center;">
+              <span style="font-size: 13px;">切頁自動獲得焦點</span>
+              <label class="switch"><input type="checkbox" checked /><span class="slider"></span></label>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="scheme-analysis">
+      <span class="scheme-badge">方案 3 · 空間擬態</span><strong>Spatial 懸浮膠囊流：</strong>參考 Apple VisionOS / macOS Tahoe 的毛玻璃懸浮擬態，頂部居中藥丸導航，雙列卡片並排大幅縮短滾動距離。
+    </div>
+  </main>
+
+  <!-- =======================================================================
+       方案四：Cursor 分體抽屜流
+       ======================================================================= -->
+  <main id="proto-drawer" class="prototype-container">
+    <div class="scheme-drawer">
+      <!-- 左側：保持對話上下文可見 -->
+      <div class="drawer-chat-mock">
+        <div style="font-size: 12px; color: var(--text-dim); margin-bottom: 8px;">活躍對話視窗 (背景不阻斷，上下文完全保留)</div>
+        <div style="display: flex; flex-direction: column; gap: 12px;">
+          <div class="chat-mock-msg" style="align-self: flex-end; background: rgba(59, 130, 246, 0.15); border-color: rgba(59, 130, 246, 0.3);">
+            請幫我把這個檔案轉換成 TypeScript，並用 bash 測試。
+          </div>
+          <div class="chat-mock-msg" style="align-self: flex-start;">
+            我已經使用 read 檢查了目錄，正在編寫對應的 .ts 實現...
+          </div>
+        </div>
+        <div class="chat-mock-input">傳送訊息給智慧體... (可以在左邊邊聊，右邊邊除錯設定)</div>
+      </div>
+
+      <!-- 右側：無遮擋抽屜面板 -->
+      <aside class="drawer-panel">
+        <div class="drawer-head">
+          <div style="display: flex; align-items: center; gap: 8px;">
+            <span style="font-size: 14px; font-weight: 700;">即時引數面板</span>
+            <span style="font-size: 11px; color: var(--success); background: var(--success-soft); padding: 2px 6px; border-radius: 4px;">Live Active</span>
+          </div>
+          <button style="background: none; border: none; color: var(--text-muted); cursor: pointer; font-size: 13px;">✕ 收起</button>
+        </div>
+
+        <div class="drawer-scroll">
+          <div class="drawer-card">
+            <div style="font-size: 13px; font-weight: 600; margin-bottom: 8px;">當前會話溫度 & 預算</div>
+            <div style="display: flex; justify-content: space-between; align-items: center;">
+              <span style="font-size: 12px; color: var(--text-muted);">Thinking 思考深度</span>
+              <div class="segmented"><button class="active">中</button><button>高</button></div>
+            </div>
+          </div>
+
+          <div class="drawer-card">
+            <div style="font-size: 13px; font-weight: 600; margin-bottom: 8px;">工具授權模式</div>
+            <div style="display: flex; flex-direction: column; gap: 8px;">
+              <div style="display: flex; justify-content: space-between; align-items: center;">
+                <span style="font-size: 12.5px;">終端接管 (Terminal Bash)</span>
+                <label class="switch"><input type="checkbox" checked /><span class="slider"></span></label>
+              </div>
+              <div style="display: flex; justify-content: space-between; align-items: center;">
+                <span style="font-size: 12.5px;">讀目錄增強 (Read Dir)</span>
+                <label class="switch"><input type="checkbox" checked /><span class="slider"></span></label>
+              </div>
+            </div>
+          </div>
+
+          <div class="drawer-card">
+            <div style="font-size: 13px; font-weight: 600; margin-bottom: 4px;">系統提示詞即時覆寫</div>
+            <div style="font-size: 11px; color: var(--text-dim); margin-bottom: 8px;">修改後下一次傳送立刻生效</div>
+            <textarea style="width: 100%; height: 70px; background: rgba(0,0,0,0.3); border: 1px solid var(--border-subtle); border-radius: 6px; color: #fff; font-size: 12px; padding: 8px; outline: none; font-family: var(--font-mono); resize: none;">You are a senior full-stack engineer. Always be concise.</textarea>
+          </div>
+        </div>
+      </aside>
+    </div>
+    <div class="scheme-analysis">
+      <span class="scheme-badge">方案 4 · 零阻斷流</span><strong>Cursor 分體抽屜流 (Contextual Split Panel)：</strong>完全摒棄居中彈窗！改用從右側平滑滑出的 440px 抽屜。使用者在調整“提示詞”或“工具開關”時，可以隨時看左側對話並直接發訊息測試，杜絕“關彈窗-測試-再開彈窗”的割裂感。
+    </div>
+  </main>
+
+  <!-- =======================================================================
+       方案五：Studio 全屏工作臺流
+       ======================================================================= -->
+  <main id="proto-studio" class="prototype-container">
+    <div class="scheme-studio">
+      <!-- 左：導航欄 -->
+      <aside class="studio-sidebar">
+        <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 12px; padding: 4px 6px;">
+          <span style="font-size: 14px; font-weight: 700;">Studio 偏好中心</span>
+        </div>
+        <button class="linear-nav-item active">核心引擎與模型</button>
+        <button class="linear-nav-item">MCP 協議與外部服務</button>
+        <button class="linear-nav-item">計劃與審查者模式</button>
+        <button class="linear-nav-item">外掛生態與插槽</button>
+        <button class="linear-nav-item">主題與 CSS 令牌</button>
+        <div style="margin-top: auto; padding: 8px 6px;">
+          <button style="width: 100%; background: rgba(255,255,255,0.06); border: 1px solid var(--border-subtle); color: var(--text-main); padding: 7px; border-radius: 6px; font-size: 12px; cursor: pointer;">&larr; 返回會話工作區</button>
+        </div>
+      </aside>
+
+      <!-- 中：主設定流 -->
+      <main class="studio-main">
+        <div>
+          <h2 style="font-size: 20px; font-weight: 700; margin-bottom: 4px;">MCP 協議叢集與服務管理</h2>
+          <p style="font-size: 13px; color: var(--text-dim);">配置 Model Context Protocol 遠端服務節點與本地 Stdio 程序</p>
+        </div>
+
+        <div class="linear-group-card">
+          <div class="linear-row">
+            <div class="linear-row-info">
+              <span class="linear-row-label">自動心跳檢測與斷線重連</span>
+              <span class="linear-row-desc">當後臺 MCP 程序退出或網路中斷時自動重試，防止工具呼叫丟擲 ENOENT</span>
+            </div>
+            <label class="switch"><input type="checkbox" checked /><span class="slider"></span></label>
+          </div>
+          <div class="linear-row">
+            <div class="linear-row-info">
+              <span class="linear-row-label">安全審計白名單嚴格過濾</span>
+              <span class="linear-row-desc">只允許執行符合審批規則庫中安全雜湊的遠端工具宣告</span>
+            </div>
+            <label class="switch"><input type="checkbox" checked /><span class="slider"></span></label>
+          </div>
+        </div>
+
+        <div>
+          <h3 style="font-size: 14px; font-weight: 600; margin-bottom: 10px;">已連線的 MCP 服務例項 (2)</h3>
+          <div style="display: flex; gap: 12px;">
+            <div style="flex: 1; background: var(--bg-elevated); border: 1px solid var(--border-subtle); border-radius: 8px; padding: 12px;">
+              <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
+                <span style="font-weight: 600; font-size: 13px;">github-mcp</span>
+                <span style="font-size: 10.5px; color: var(--success); background: var(--success-soft); padding: 1px 6px; border-radius: 4px;">Online</span>
+              </div>
+              <div style="font-size: 11.5px; color: var(--text-dim);">Stdio / node dist/index.js (3 工具)</div>
+            </div>
+            <div style="flex: 1; background: var(--bg-elevated); border: 1px solid var(--border-subtle); border-radius: 8px; padding: 12px;">
+              <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
+                <span style="font-weight: 600; font-size: 13px;">filesystem-sandbox</span>
+                <span style="font-size: 10.5px; color: var(--success); background: var(--success-soft); padding: 1px 6px; border-radius: 4px;">Online</span>
+              </div>
+              <div style="font-size: 11.5px; color: var(--text-dim);">SSE / port 9872 (8 工具)</div>
+            </div>
+          </div>
+        </div>
+      </main>
+
+      <!-- 右：即時上下文幫助文件 -->
+      <aside class="studio-inspector">
+        <div class="inspector-title">配置指導與規範</div>
+        <div class="inspector-box">
+          <strong>什麼是 MCP？</strong>
+          <p style="margin-top: 6px;">Model Context Protocol 是目前工業界統一的智慧體外部資源整合協議。它支援在本地或遠端按需暴露工具與資源提示詞。</p>
+        </div>
+        <div class="inspector-box">
+          <strong>安全提示：</strong>
+          <p style="margin-top: 6px;">嚴禁將包含 root 許可權的執行器直接暴露給非受信智慧體。建議配合安全審批規則三檔使用。</p>
+        </div>
+      </aside>
+    </div>
+    <div class="scheme-analysis">
+      <span class="scheme-badge">方案 5 · 專業 IDE 級</span><strong>Studio 全屏工作臺流 (Vercel / Notion 模式)：</strong>適合當專案生態過於龐大時（MCP、定時任務、子代理模板庫、DSH）。平滑切換為三欄式寬屏工作臺：左側導航、中間設定流、右側整合即時文件與執行態診斷，徹底擺脫 800px 彈窗的狹窄窒息感。
+    </div>
+  </main>
+
+  <!-- =======================================================================
+       方案六：AI 意圖驅動流 (Intent-Driven Settings)
+       ======================================================================= -->
+  <main id="proto-intent" class="prototype-container">
+    <div class="scheme-intent">
+      <div class="intent-hero">
+        <div style="display: flex; align-items: center; gap: 8px;">
+          <span style="font-size: 16px; font-weight: 700; color: #fff;">生成式意圖配置</span>
+          <span style="font-size: 11px; background: var(--purple-soft); color: var(--purple); padding: 2px 8px; border-radius: 4px; font-weight: 600;">AI-Native 2025+</span>
+        </div>
+        <p style="font-size: 12.5px; color: var(--text-dim); margin-top: 4px;">不用手動翻找 100+ 個選項，直接用自然語言描述你的工作場景，智慧體自動計算配置補丁</p>
+
+        <div class="intent-ai-input-wrap">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="color: var(--purple);"><path d="M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4M18 12h4M4.93 19.07l2.83-2.83M16.24 7.76l2.83-2.83"/></svg>
+          <input type="text" class="intent-ai-input" id="intent-input" value="我正在重構一個關鍵生產庫，請幫我開啟最嚴格的安全保護，只使用只讀工具，並將思考深度拉滿" />
+          <button class="intent-apply-btn" onclick="simulateIntent()">分析並應用</button>
+        </div>
+      </div>
+
+      <div class="intent-diff-list" id="intent-diffs">
+        <div style="font-size: 12.5px; font-weight: 600; color: var(--text-muted); margin-bottom: 2px;">計算出的配置補丁 (Diff Preview):</div>
+        
+        <div class="diff-item">
+          <div>
+            <div style="font-size: 13.5px; font-weight: 500;">思考預算強度 (Thinking Level)</div>
+            <div style="font-size: 12px; color: var(--text-dim); margin-top: 2px;">提升到最高推理深度以保證程式碼重構邏輯無漏洞</div>
+          </div>
+          <div style="display: flex; align-items: center; gap: 8px;">
+            <span class="diff-badge-old">medium (中)</span>
+            <span style="color: var(--text-dim);">&rarr;</span>
+            <span class="diff-badge-new">max (最大深度)</span>
+          </div>
+        </div>
+
+        <div class="diff-item">
+          <div>
+            <div style="font-size: 13.5px; font-weight: 500;">寫類工具硬閘門攔截 (Write Protection)</div>
+            <div style="font-size: 12px; color: var(--text-dim); margin-top: 2px;">自動停用 edit / write / terminalBash 寫操作</div>
+          </div>
+          <div style="display: flex; align-items: center; gap: 8px;">
+            <span class="diff-badge-old">全部允許</span>
+            <span style="color: var(--text-dim);">&rarr;</span>
+            <span class="diff-badge-new">安全只讀保護</span>
+          </div>
+        </div>
+
+        <div class="diff-item">
+          <div>
+            <div style="font-size: 13.5px; font-weight: 500;">審查者委派模式 (Delegate Mode)</div>
+            <div style="font-size: 12px; color: var(--text-dim); margin-top: 2px;">主會話作為只讀架構審查官，程式碼生成派發給獨立沙箱</div>
+          </div>
+          <div style="display: flex; align-items: center; gap: 8px;">
+            <span class="diff-badge-old">已關閉</span>
+            <span style="color: var(--text-dim);">&rarr;</span>
+            <span class="diff-badge-new">已強制開啟</span>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="scheme-analysis">
+      <span class="scheme-badge">方案 6 · 意圖驅動</span><strong>AI-Native 意圖驅動流：</strong>“讓智慧體來配置智慧體”。使用者只需輸入諸如“進入極客極簡模式”、“我要開始重構核心模組，確保萬無一失”，系統後臺直接生成並應用 SettingsPatch，一鍵完成多項跨 Tab 聯動配置！
+    </div>
+  </main>
+
+  <script>
+    function switchProto(type) {
+      document.querySelectorAll('.proto-btn').forEach(btn => btn.classList.remove('active'));
+      document.querySelectorAll('.prototype-container').forEach(c => c.classList.remove('active'));
+      
+      const targetBtn = Array.from(document.querySelectorAll('.proto-btn')).find(b => b.getAttribute('onclick').includes(type));
+      if (targetBtn) targetBtn.classList.add('active');
+
+      const targetContainer = document.getElementById('proto-' + type);
+      if (targetContainer) targetContainer.classList.add('active');
+    }
+
+    function simulateIntent() {
+      const input = document.getElementById('intent-input');
+      const diffs = document.getElementById('intent-diffs');
+      diffs.style.opacity = '0.5';
+      setTimeout(() => {
+        diffs.style.opacity = '1';
+        alert('意圖解析成功！已自動將配置補丁應用到當前會話中。');
+      }, 400);
+    }
+  </script>
+</body>
+</html>
+
+
+
+

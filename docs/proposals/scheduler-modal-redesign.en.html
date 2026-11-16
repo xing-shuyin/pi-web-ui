@@ -1,0 +1,1682 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Scheduled-task create/edit modal redesign · pi-web-ui</title>
+  <style>
+    :root {
+      --bg: #0d0e12;
+      --bg-elev: #14161c;
+      --bg-elev2: #1a1d26;
+      --bg-elev3: #222634;
+      --border: #262a35;
+      --border-soft: #1e2230;
+      --border-focus: #8b5cf6;
+      --text: #e6e8ef;
+      --text-dim: #9aa1b4;
+      --text-faint: #6b7284;
+      --accent: #8b5cf6;
+      --accent-contrast: #ffffff;
+      --accent-soft: rgba(139, 92, 246, 0.14);
+      --accent-hover: #9d74f7;
+      --green: #34d399;
+      --green-soft: rgba(52, 211, 153, 0.12);
+      --green-border: rgba(52, 211, 153, 0.28);
+      --red: #f87171;
+      --red-soft: rgba(248, 113, 113, 0.12);
+      --amber: #fbbf24;
+      --amber-soft: rgba(251, 191, 36, 0.12);
+      --blue: #3b82f6;
+      --blue-soft: rgba(59, 130, 246, 0.12);
+      --mono: "SF Mono", "JetBrains Mono", ui-monospace, Menlo, Consolas, monospace;
+      --sans: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", Roboto, sans-serif;
+      --radius-sm: 6px;
+      --radius-md: 10px;
+      --radius-lg: 14px;
+      --radius-xl: 18px;
+      --shadow-modal: 0 24px 64px rgba(0, 0, 0, 0.65), 0 0 0 1px rgba(255, 255, 255, 0.04);
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: var(--sans);
+      line-height: 1.5;
+      font-size: 13px;
+      padding-bottom: 80px;
+      -webkit-font-smoothing: antialiased;
+    }
+
+    /* 顶部 Hero */
+    .hero {
+      background: linear-gradient(180deg, #161821 0%, var(--bg) 100%);
+      border-bottom: 1px solid var(--border);
+      padding: 36px 48px 28px;
+    }
+    .hero-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 4px 12px;
+      background: var(--accent-soft);
+      border: 1px solid rgba(139, 92, 246, 0.3);
+      color: #c4b5fd;
+      border-radius: 999px;
+      font-size: 12px;
+      font-weight: 600;
+      margin-bottom: 12px;
+    }
+    .hero h1 {
+      font-size: 26px;
+      font-weight: 700;
+      color: #fff;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+    .hero-desc {
+      color: var(--text-dim);
+      font-size: 14px;
+      max-width: 820px;
+      margin-top: 8px;
+      line-height: 1.6;
+    }
+
+    /* 问题诊断条目 */
+    .audit-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+      gap: 14px;
+      margin-top: 24px;
+    }
+    .audit-card {
+      background: var(--bg-elev);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-md);
+      padding: 14px 16px;
+    }
+    .audit-tag {
+      font-size: 11px;
+      font-weight: 600;
+      color: var(--red);
+      display: flex;
+      align-items: center;
+      gap: 5px;
+      margin-bottom: 6px;
+    }
+    .audit-tag.fix {
+      color: var(--green);
+    }
+    .audit-title {
+      font-size: 13px;
+      font-weight: 600;
+      color: var(--text);
+      margin-bottom: 4px;
+    }
+    .audit-detail {
+      font-size: 12px;
+      color: var(--text-dim);
+      line-height: 1.45;
+    }
+
+    /* 方案切换 Tab 栏 */
+    .tab-bar-wrap {
+      position: sticky;
+      top: 0;
+      z-index: 100;
+      background: rgba(13, 14, 18, 0.88);
+      backdrop-filter: blur(12px);
+      -webkit-backdrop-filter: blur(12px);
+      border-bottom: 1px solid var(--border);
+      padding: 12px 48px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 16px;
+    }
+    .tab-group {
+      display: inline-flex;
+      background: var(--bg-elev);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 3px;
+      gap: 2px;
+    }
+    .tab-btn {
+      border: none;
+      background: transparent;
+      color: var(--text-dim);
+      padding: 7px 18px;
+      border-radius: 7px;
+      font-size: 13px;
+      font-weight: 500;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      transition: all 0.15s ease;
+    }
+    .tab-btn:hover {
+      color: var(--text);
+    }
+    .tab-btn.active {
+      background: var(--accent);
+      color: var(--accent-contrast);
+      font-weight: 600;
+      box-shadow: 0 2px 8px rgba(139, 92, 246, 0.35);
+    }
+    .tab-pill {
+      font-size: 10px;
+      padding: 1px 6px;
+      border-radius: 999px;
+      background: rgba(255,255,255,0.18);
+    }
+    .tab-btn:not(.active) .tab-pill {
+      background: var(--bg-elev2);
+      color: var(--text-faint);
+    }
+    .meta-actions {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+    .btn-toggle-contrast {
+      background: var(--bg-elev);
+      border: 1px solid var(--border);
+      color: var(--text-dim);
+      padding: 6px 14px;
+      border-radius: 8px;
+      font-size: 12px;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .btn-toggle-contrast:hover {
+      color: var(--text);
+      border-color: var(--text-dim);
+    }
+
+    /* 内容容器 */
+    .container {
+      max-width: 1280px;
+      margin: 0 auto;
+      padding: 36px 48px;
+    }
+    .proposal-panel {
+      display: none;
+    }
+    .proposal-panel.active {
+      display: block;
+      animation: fadeIn 0.25s ease-out;
+    }
+    @keyframes fadeIn {
+      from { opacity: 0; transform: translateY(6px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+
+    /* 方案简介卡 */
+    .proposal-header {
+      margin-bottom: 24px;
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      gap: 20px;
+      padding-bottom: 20px;
+      border-bottom: 1px solid var(--border-soft);
+    }
+    .proposal-header h2 {
+      font-size: 20px;
+      font-weight: 700;
+      color: #fff;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+    .proposal-tag {
+      font-size: 12px;
+      padding: 2px 10px;
+      border-radius: 999px;
+      font-weight: 600;
+    }
+    .tag-primary { background: var(--accent-soft); color: #c4b5fd; border: 1px solid rgba(139, 92, 246, 0.3); }
+    .tag-geek { background: var(--blue-soft); color: #93c5fd; border: 1px solid rgba(59, 130, 246, 0.3); }
+    .tag-wizard { background: var(--green-soft); color: #86efac; border: 1px solid rgba(52, 211, 153, 0.3); }
+    .proposal-bullets {
+      color: var(--text-dim);
+      font-size: 13px;
+      margin-top: 6px;
+      line-height: 1.6;
+    }
+
+    /* 模拟弹窗容器包装 */
+    .modal-preview-stage {
+      background: radial-gradient(circle at 50% 30%, #1e2230 0%, #0d0f14 85%);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-xl);
+      padding: 40px 24px;
+      display: flex;
+      justify-content: center;
+      align-items: flex-start;
+      min-height: 680px;
+      position: relative;
+      box-shadow: inset 0 2px 12px rgba(0,0,0,0.4);
+    }
+
+    /* ==========================================================================
+       通用弹窗组件库设计系统
+       ========================================================================== */
+    .demo-modal {
+      background: var(--bg-elev2);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-lg);
+      box-shadow: var(--shadow-modal);
+      overflow: hidden;
+      display: flex;
+      flex-direction: column;
+      position: relative;
+    }
+    .demo-modal-head {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 18px 24px 14px;
+      border-bottom: 1px solid var(--border-soft);
+      background: rgba(26, 29, 38, 0.7);
+    }
+    .demo-head-title-wrap {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+    .demo-head-icon {
+      width: 32px;
+      height: 32px;
+      border-radius: 8px;
+      background: var(--accent-soft);
+      border: 1px solid rgba(139, 92, 246, 0.25);
+      color: #c4b5fd;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 16px;
+    }
+    .demo-head-title {
+      font-size: 16px;
+      font-weight: 700;
+      color: #fff;
+    }
+    .demo-head-sub {
+      font-size: 12px;
+      color: var(--text-dim);
+      margin-top: 1px;
+    }
+    .demo-modal-close {
+      width: 28px;
+      height: 28px;
+      border-radius: 6px;
+      border: 1px solid transparent;
+      background: transparent;
+      color: var(--text-dim);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+      font-size: 16px;
+      transition: all 0.15s ease;
+    }
+    .demo-modal-close:hover {
+      background: var(--bg-elev3);
+      color: var(--text);
+      border-color: var(--border);
+    }
+
+    .demo-modal-body {
+      padding: 20px 24px;
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+      overflow-y: auto;
+      max-height: calc(85vh - 120px);
+    }
+    .demo-modal-foot {
+      padding: 14px 24px;
+      border-top: 1px solid var(--border-soft);
+      background: var(--bg-elev);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+    .foot-left-info {
+      font-size: 12px;
+      color: var(--text-dim);
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .foot-btns {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    /* 按钮组 */
+    .btn {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 6px;
+      padding: 7px 16px;
+      border-radius: 8px;
+      font-size: 13px;
+      font-weight: 500;
+      border: 1px solid var(--border);
+      background: var(--bg-elev);
+      color: var(--text);
+      cursor: pointer;
+      transition: all 0.15s ease;
+      white-space: nowrap;
+    }
+    .btn:hover {
+      background: var(--bg-elev3);
+      border-color: var(--text-faint);
+    }
+    .btn.primary {
+      background: var(--accent);
+      color: var(--accent-contrast);
+      border-color: var(--accent);
+      font-weight: 600;
+      box-shadow: 0 2px 10px rgba(139, 92, 246, 0.35);
+    }
+    .btn.primary:hover {
+      background: var(--accent-hover);
+      border-color: var(--accent-hover);
+    }
+    .btn.subtle {
+      border-color: transparent;
+      background: transparent;
+      color: var(--text-dim);
+    }
+    .btn.subtle:hover {
+      background: var(--bg-elev);
+      color: var(--text);
+    }
+    .btn.sm {
+      padding: 4px 10px;
+      font-size: 12px;
+      border-radius: 6px;
+    }
+
+    /* 模块卡片 Card Block */
+    .section-card {
+      background: var(--bg-elev);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-md);
+      padding: 16px;
+      display: flex;
+      flex-direction: column;
+      gap: 14px;
+      transition: border-color 0.2s ease;
+    }
+    .section-card:focus-within {
+      border-color: rgba(139, 92, 246, 0.4);
+    }
+    .section-head {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+    .section-title {
+      font-size: 13px;
+      font-weight: 600;
+      color: var(--text);
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .section-title svg {
+      color: var(--accent);
+    }
+    .section-title .badge {
+      font-size: 11px;
+      font-weight: 500;
+      padding: 1px 7px;
+      border-radius: 4px;
+      background: var(--bg-elev2);
+      color: var(--text-dim);
+      border: 1px solid var(--border-soft);
+    }
+
+    /* 表单组件 */
+    .field-label {
+      font-size: 12px;
+      font-weight: 500;
+      color: var(--text-dim);
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      margin-bottom: 6px;
+    }
+    .field-hint {
+      font-size: 11px;
+      color: var(--text-faint);
+    }
+    .input-text, .select-box, .textarea-box {
+      width: 100%;
+      background: var(--bg-elev2);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      color: var(--text);
+      font-size: 13px;
+      font-family: inherit;
+      padding: 8px 12px;
+      outline: none;
+      transition: all 0.15s ease;
+    }
+    .input-text:focus, .select-box:focus, .textarea-box:focus {
+      border-color: var(--accent);
+      box-shadow: 0 0 0 3px var(--accent-soft);
+    }
+    .input-text::placeholder, .textarea-box::placeholder {
+      color: var(--text-faint);
+    }
+    .textarea-box {
+      font-family: var(--mono);
+      font-size: 12.5px;
+      line-height: 1.6;
+      resize: vertical;
+    }
+
+    /* 快捷胶囊 Pill Buttons */
+    .pill-group {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+    }
+    .pill-btn {
+      padding: 5px 12px;
+      border-radius: 999px;
+      background: var(--bg-elev2);
+      border: 1px solid var(--border);
+      color: var(--text-dim);
+      font-size: 12px;
+      cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      transition: all 0.15s ease;
+    }
+    .pill-btn:hover {
+      border-color: var(--text-dim);
+      color: var(--text);
+    }
+    .pill-btn.active {
+      background: var(--accent-soft);
+      border-color: var(--accent);
+      color: #d8b4fe;
+      font-weight: 600;
+    }
+
+    /* 自然语言调度预览徽标 */
+    .schedule-preview-banner {
+      background: rgba(52, 211, 153, 0.08);
+      border: 1px solid var(--green-border);
+      border-radius: 8px;
+      padding: 10px 14px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+    }
+    .preview-left {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .status-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: var(--green);
+      box-shadow: 0 0 8px rgba(52, 211, 153, 0.6);
+      flex-shrink: 0;
+    }
+    .preview-text {
+      font-size: 12.5px;
+      color: #a7f3d0;
+      font-weight: 500;
+    }
+    .preview-next-times {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 11.5px;
+      color: var(--text-dim);
+      font-family: var(--mono);
+    }
+    .time-chip {
+      background: rgba(0, 0, 0, 0.25);
+      padding: 2px 8px;
+      border-radius: 4px;
+      border: 1px solid var(--border-soft);
+    }
+
+    /* 优雅 Switch 开关 */
+    .switch-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 8px 12px;
+      background: var(--bg-elev2);
+      border: 1px solid var(--border-soft);
+      border-radius: 8px;
+      cursor: pointer;
+    }
+    .switch-label-wrap {
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+    }
+    .switch-title {
+      font-size: 12.5px;
+      font-weight: 500;
+      color: var(--text);
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .switch-desc {
+      font-size: 11px;
+      color: var(--text-faint);
+    }
+    .switch-toggle {
+      width: 36px;
+      height: 20px;
+      border-radius: 999px;
+      background: var(--bg-elev3);
+      border: 1px solid var(--border);
+      position: relative;
+      transition: background 0.2s ease;
+      flex-shrink: 0;
+    }
+    .switch-toggle::after {
+      content: "";
+      position: absolute;
+      top: 2px;
+      left: 2px;
+      width: 14px;
+      height: 14px;
+      border-radius: 50%;
+      background: var(--text-dim);
+      transition: transform 0.2s ease, background 0.2s ease;
+    }
+    .switch-row.on .switch-toggle {
+      background: var(--accent);
+      border-color: var(--accent);
+    }
+    .switch-row.on .switch-toggle::after {
+      transform: translateX(16px);
+      background: #fff;
+    }
+
+    /* Prompt 模板快捷标签 */
+    .prompt-toolbar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 6px;
+    }
+    .template-chips {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      overflow-x: auto;
+      padding-bottom: 2px;
+    }
+    .tpl-chip {
+      font-size: 11px;
+      padding: 2px 8px;
+      border-radius: 4px;
+      background: var(--bg-elev2);
+      border: 1px solid var(--border-soft);
+      color: var(--text-dim);
+      cursor: pointer;
+      transition: all 0.15s ease;
+      white-space: nowrap;
+    }
+    .tpl-chip:hover {
+      background: var(--accent-soft);
+      color: #c4b5fd;
+      border-color: var(--accent);
+    }
+
+
+    /* ==========================================================================
+       方案 A 专属样式 (720px 卡片编排式)
+       ========================================================================== */
+    .modal-plan-a {
+      width: 720px;
+      max-width: 95vw;
+    }
+    .plan-a-grid-2 {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 12px;
+    }
+    .plan-a-grid-3 {
+      display: grid;
+      grid-template-columns: 1.2fr 1fr 1fr;
+      gap: 12px;
+    }
+
+
+    /* ==========================================================================
+       方案 B 专属样式 (880px 双栏驾驶台)
+       ========================================================================== */
+    .modal-plan-b {
+      width: 880px;
+      max-width: 95vw;
+    }
+    .plan-b-workbench {
+      display: grid;
+      grid-template-columns: 1.35fr 1fr;
+      gap: 18px;
+    }
+    .plan-b-left {
+      display: flex;
+      flex-direction: column;
+      gap: 14px;
+    }
+    .plan-b-right {
+      display: flex;
+      flex-direction: column;
+      gap: 14px;
+    }
+    .timeline-list {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      padding-left: 12px;
+      border-left: 2px solid var(--border);
+      margin: 6px 4px;
+    }
+    .timeline-item {
+      position: relative;
+      font-size: 12px;
+      color: var(--text-dim);
+    }
+    .timeline-item::before {
+      content: "";
+      position: absolute;
+      left: -17px;
+      top: 5px;
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: var(--border);
+      border: 2px solid var(--bg-elev);
+    }
+    .timeline-item.next {
+      color: var(--text);
+      font-weight: 600;
+    }
+    .timeline-item.next::before {
+      background: var(--green);
+      box-shadow: 0 0 6px rgba(52, 211, 153, 0.8);
+    }
+
+
+    /* ==========================================================================
+       方案 C 专属样式 (640px 步骤引导式)
+       ========================================================================== */
+    .modal-plan-c {
+      width: 650px;
+      max-width: 95vw;
+    }
+    .step-stepper {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 12px 24px;
+      background: var(--bg-elev);
+      border-bottom: 1px solid var(--border-soft);
+    }
+    .step-item {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-size: 12.5px;
+      color: var(--text-faint);
+      cursor: pointer;
+    }
+    .step-item.active {
+      color: var(--accent);
+      font-weight: 600;
+    }
+    .step-item.done {
+      color: var(--green);
+    }
+    .step-num {
+      width: 22px;
+      height: 22px;
+      border-radius: 50%;
+      background: var(--bg-elev2);
+      border: 1px solid var(--border);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 11px;
+    }
+    .step-item.active .step-num {
+      background: var(--accent);
+      color: #fff;
+      border-color: var(--accent);
+    }
+    .step-item.done .step-num {
+      background: var(--green);
+      color: #0b0d12;
+      border-color: var(--green);
+      font-weight: 700;
+    }
+    .step-line {
+      flex: 1;
+      height: 1px;
+      background: var(--border-soft);
+      margin: 0 12px;
+    }
+
+
+    /* 原版对比弹窗 */
+    .old-modal-replica {
+      width: 440px;
+      background: #1a1d26;
+      border: 1px solid #262a35;
+      border-radius: 12px;
+      padding: 16px;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      font-size: 13px;
+      box-shadow: 0 12px 40px rgba(0,0,0,0.7);
+    }
+    .old-modal-replica input, .old-modal-replica select, .old-modal-replica textarea {
+      background: #14161c;
+      border: 1px solid #262a35;
+      border-radius: 6px;
+      padding: 6px 10px;
+      color: #e6e8ef;
+      font-size: 12px;
+      width: 100%;
+    }
+    .old-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+    }
+  </style>
+</head>
+<body>
+<div data-docs-i18n-switch style="position:fixed;top:8px;right:12px;z-index:2147483647;font:12px/1.6 -apple-system,system-ui,sans-serif;background:rgba(15,17,22,.78);color:#fff;padding:4px 12px;border-radius:999px;box-shadow:0 2px 10px rgba(0,0,0,.35)"><a href="./scheduler-modal-redesign.html" style="color:#fff;text-decoration:none">简体中文</a> · <strong>English</strong> · <a href="./scheduler-modal-redesign.zh-TW.html" style="color:#fff;text-decoration:none">繁體中文</a></div>
+
+
+
+  <!-- Top hero -->
+  <header class="hero">
+    <div class="hero-badge">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+      UI / UX proposal · Task scheduling module
+    </div>
+    <h1>Scheduled-task create/edit modal redesign</h1>
+    <p class="hero-desc">
+      Three carefully worked-out, high-fidelity redesigns for the current scheduled-task modal, which is only 460px wide, lists everything in one column and one row, crams the Prompt area, and offers neither a natural-language schedule reading nor a trigger preview.
+    </p>
+
+    <!-- Diagnosis matrix -->
+    <div class="audit-grid">
+      <div class="audit-card">
+        <div class="audit-tag">
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+          Original pain point 1 · Cramped visuals
+        </div>
+        <div class="audit-title">460px wide, stacked in one column</div>
+        <div class="audit-detail">Reuses the base modal size and flattens all 10 fields vertically, so it reads like a spreadsheet with no room to breathe — cheap.</div>
+      </div>
+      <div class="audit-card">
+        <div class="audit-tag">
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+          Original pain point 2 · Crippled Prompt
+        </div>
+        <div class="audit-title">The core instruction area is only 4 rows tall</div>
+        <div class="audit-detail">The whole point of a scheduled task is the concrete instruction (Prompt) you give the agent, yet the tiny box makes a multi-step inspection script nearly impossible to write.</div>
+      </div>
+      <div class="audit-card">
+        <div class="audit-tag">
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+          Original pain point 3 · No mental feedback on the schedule
+        </div>
+        <div class="audit-title">Raw Cron / bare presets</div>
+        <div class="audit-detail">After picking or typing a Cron there is no plain-language reading and no next-run preview, so the user has no idea what will actually happen.</div>
+      </div>
+      <div class="audit-card">
+        <div class="audit-tag fix">
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
+          Fix lever · Root solution
+        </div>
+        <div class="audit-title">Structural sections + wide canvas + smart schedule translation</div>
+        <div class="audit-detail">Card and column layout, a large Prompt surface plus scenario templates, a visualized Cron preview, and advanced options tucked away.</div>
+      </div>
+    </div>
+  </header>
+
+  <!-- Sticky tab bar -->
+  <div class="tab-bar-wrap">
+    <div class="tab-group">
+      <button class="tab-btn active" onclick="switchPlan('plan-a')">
+        <span>Proposal A: Modern sectioned cards</span>
+        <span class="tab-pill">Recommended ⭐⭐⭐⭐⭐</span>
+      </button>
+      <button class="tab-btn" onclick="switchPlan('plan-b')">
+        <span>Proposal B: Two-column workbench</span>
+        <span class="tab-pill">Geek-grade ⭐⭐⭐⭐</span>
+      </button>
+      <button class="tab-btn" onclick="switchPlan('plan-c')">
+        <span>Proposal C: Stepwise focus flow</span>
+        <span class="tab-pill">Lightweight and immersive ⭐⭐⭐⭐</span>
+      </button>
+      <button class="tab-btn" onclick="switchPlan('plan-compare')">
+        <span>Baseline: old vs. new, side by side</span>
+        <span class="tab-pill">1:1, hands-on comparison</span>
+      </button>
+    </div>
+    <div class="meta-actions">
+      <span style="font-size: 12px; color: var(--text-faint);">💡 Click the preset pills and templates inside each proposal — the demo is live.</span>
+    </div>
+  </div>
+
+  <main class="container">
+
+    <!-- ====================================================================
+         Proposal A: Modern sectioned cards - top recommendation
+         ==================================================================== -->
+    <section id="plan-a" class="proposal-panel active">
+      <div class="proposal-header">
+        <div>
+          <h2>
+            Proposal A: Modern sectioned-card layout
+            <span class="proposal-tag tag-primary">Strong recommendation · Bold and solid</span>
+          </h2>
+          <p class="proposal-bullets">
+            Width grows to <strong>720px</strong>. Following the conventions of modern Cloud / DevOps panels, the form splits into three logical cards — <strong>"task goal and instructions"</strong>, <strong>"schedule and run preview"</strong>, and <strong>"runtime and model environment"</strong> — with a clear primary/secondary order and plenty of room for the Prompt.
+          </p>
+        </div>
+      </div>
+
+      <div class="modal-preview-stage">
+        <!-- Modal body -->
+        <div class="demo-modal modal-plan-a">
+          <!-- Header -->
+          <div class="demo-modal-head">
+            <div class="demo-head-title-wrap">
+              <div class="demo-head-icon">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+              </div>
+              <div>
+                <div class="demo-head-title">New scheduled task</div>
+                <div class="demo-head-sub">Set up a recurring inspection, code review, or canvas run</div>
+              </div>
+            </div>
+            <button class="demo-modal-close" title="Close (Esc)">✕</button>
+          </div>
+
+          <!-- Body -->
+          <div class="demo-modal-body">
+
+            <!-- 1. Identity and target -->
+            <div class="section-card">
+              <div class="section-head">
+                <span class="section-title">
+                  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
+                  Task identity and target project
+                </span>
+                <span class="badge">Required</span>
+              </div>
+              
+              <div class="plan-a-grid-2">
+                <div>
+                  <label class="field-label">Task name</label>
+                  <input class="input-text" id="a-task-name" value="Daily dependency upgrade and security sweep" placeholder="e.g. daily dependency and code-health check..." />
+                </div>
+                <div>
+                  <label class="field-label">Task description <span class="field-hint">(optional)</span></label>
+                  <input class="input-text" value="Every morning, review npm outdated and look for potential build-time security issues" placeholder="Describe what this task is responsible for..." />
+                </div>
+              </div>
+
+              <div class="plan-a-grid-2">
+                <div>
+                  <label class="field-label">Target project (CWD)</label>
+                  <div style="display: flex; gap: 8px;">
+                    <input class="input-text" id="a-task-cwd" value="E:\pi-web-ui" />
+                    <button class="btn sm" onclick="document.getElementById('a-task-cwd').value='E:\\pi-web-ui'">Use current project</button>
+                  </div>
+                </div>
+                <div>
+                  <label class="field-label">Task target type</label>
+                  <div class="pill-group" style="padding-top: 3px;">
+                    <button class="pill-btn active" id="a-tgt-conv" onclick="setTargetA('conversation')">
+                      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+                      Agent conversation
+                    </button>
+                    <button class="pill-btn" id="a-tgt-canvas" onclick="setTargetA('canvas')">
+                      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h18"/><path d="M9 21V9"/></svg>
+                      Canvas workflow
+                    </button>
+                  </div>
+                </div>
+              </div>
+
+              <!-- Canvas picker (only shown when target = canvas) -->
+              <div id="a-canvas-select-row" style="display: none; padding-top: 4px;">
+                <label class="field-label">Bound canvas workflow</label>
+                <select class="select-box">
+                  <option value="daily-ai-maintainer">Daily AI maintenance flow · daily-ai-maintainer</option>
+                  <option value="code-review-flow">Full code-review pipeline · code-review-flow</option>
+                </select>
+              </div>
+            </div>
+
+            <!-- 2. Schedule and run preview -->
+            <div class="section-card">
+              <div class="section-head">
+                <span class="section-title">
+                  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+                  Schedule and run preview
+                </span>
+                <span class="badge" id="a-cron-raw-badge">0 9 * * 1-5</span>
+              </div>
+
+              <!-- Quick-frequency pills -->
+              <div>
+                <label class="field-label">Quick frequency picks</label>
+                <div class="pill-group">
+                  <button class="pill-btn" onclick="selectPresetA('0 9 * * *', 'Every day at 09:00', this)">Every day 9:00</button>
+                  <button class="pill-btn active" onclick="selectPresetA('0 9 * * 1-5', 'Every weekday (Mon-Fri) at 09:00', this)">Weekdays 9:00</button>
+                  <button class="pill-btn" onclick="selectPresetA('0 * * * *', 'Runs once every hour, on the hour', this)">Every hour</button>
+                  <button class="pill-btn" onclick="selectPresetA('*/30 * * * *', 'Runs every 30 minutes', this)">Every 30 minutes</button>
+                  <button class="pill-btn" onclick="selectPresetA('0 9 * * 1', 'Every Monday at 09:00', this)">Monday digest</button>
+                  <button class="pill-btn" onclick="selectPresetA('custom', 'Custom Cron expression', this)">Custom Cron ⚙️</button>
+                  <button class="pill-btn" onclick="selectPresetA('interval', 'Runs on a fixed interval', this)">Fixed-minute interval ⏱️</button>
+                </div>
+              </div>
+
+              <!-- Custom input row (expands when Custom is picked) -->
+              <div id="a-custom-cron-row" style="display: none; padding: 10px; background: var(--bg-elev2); border-radius: 8px; border: 1px solid var(--border);">
+                <div class="plan-a-grid-2">
+                  <div>
+                    <label class="field-label">Standard 5-field Cron expression</label>
+                    <input class="input-text" id="a-custom-cron-input" value="0 9 * * 1-5" oninput="updateCronCustomA(this.value)" />
+                  </div>
+                  <div>
+                    <label class="field-label">Expression notes</label>
+                    <div style="font-size: 11.5px; color: var(--text-dim); margin-top: 6px;">
+                      Format: minute hour day month weekday (e.g. <code>0 2 * * *</code> means 2 a.m. every day)
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <!-- Plain-language and time-preview bar -->
+              <div class="schedule-preview-banner">
+                <div class="preview-left">
+                  <span class="status-dot"></span>
+                  <span class="preview-text" id="a-preview-text">Runs every weekday (Mon-Fri) at 09:00</span>
+                </div>
+                <div class="preview-next-times">
+                  <span>Next runs:</span>
+                  <span class="time-chip" id="a-next-time-1">Tomorrow 09:00</span>
+                  <span class="time-chip" id="a-next-time-2">Day after tomorrow 09:00</span>
+                </div>
+              </div>
+            </div>
+
+            <!-- 3. Execution content (Prompt instruction) -->
+            <div class="section-card">
+              <div class="section-head">
+                <span class="section-title">
+                  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+                  Concrete task for the agent (Prompt instruction)
+                </span>
+                <span style="font-size: 11px; color: var(--text-faint);">Markdown and workspace commands supported</span>
+              </div>
+
+              <div>
+                <div class="prompt-toolbar">
+                  <span class="field-label" style="margin: 0;">Click to drop in an inspection template:</span>
+                  <div class="template-chips">
+                    <button class="tpl-chip" onclick="applyTemplateA('health')">🔍 Code and dependency check-up</button>
+                    <button class="tpl-chip" onclick="applyTemplateA('test')">🧪 Run tests and diagnose</button>
+                    <button class="tpl-chip" onclick="applyTemplateA('git')">🌿 Untangle unmerged branches and PRs</button>
+                    <button class="tpl-chip" onclick="applyTemplateA('clean')">🧹 Build cache cleanup</button>
+                  </div>
+                </div>
+                <textarea class="textarea-box" id="a-prompt-area" rows="6" placeholder="The concrete task for the Agent, e.g. audit dependencies and report upgrade candidates, run the full test suite, review uncommitted changes..."></textarea>
+              </div>
+            </div>
+
+            <!-- 4. Model and advanced run policy -->
+            <div class="section-card">
+              <div class="section-head">
+                <span class="section-title">
+                  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+                  Runtime and failover configuration
+                </span>
+              </div>
+
+              <div class="plan-a-grid-3">
+                <div>
+                  <label class="field-label">Model</label>
+                  <select class="select-box">
+                    <option value="">Follow the main conversation's current model (default)</option>
+                    <option value="anthropic/claude-3-7-sonnet">Claude 3.7 Sonnet</option>
+                    <option value="openai/gpt-4o">GPT-4o (Omni)</option>
+                    <option value="deepseek/deepseek-chat">DeepSeek V3</option>
+                  </select>
+                </div>
+                <div>
+                  <label class="field-label">Reasoning effort</label>
+                  <select class="select-box">
+                    <option value="">Follow the main conversation's current reasoning effort</option>
+                    <option value="off">Off</option>
+                    <option value="low">Low</option>
+                    <option value="medium" selected>Medium</option>
+                    <option value="high">High</option>
+                  </select>
+                </div>
+                <div>
+                  <label class="field-label">Catch-up mechanism</label>
+                  <div class="switch-row on" id="a-catchup-switch" onclick="this.classList.toggle('on')" style="margin-top: 0; height: 38px;">
+                    <span class="switch-title" style="font-size: 11.5px;">Catch up on missed runs after a restart</span>
+                    <span class="switch-toggle"></span>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+          </div>
+
+          <!-- Footer action bar -->
+          <div class="demo-modal-foot">
+            <div class="foot-left-info">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>
+              <span>The task runs on schedule silently in the background; execution logs live in history</span>
+            </div>
+            <div class="foot-btns">
+              <button class="btn subtle">Cancel</button>
+              <button class="btn primary">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="20 6 9 17 4 12"/></svg>
+                Save and enable task
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ====================================================================
+         Proposal B: Two-column engineering workbench (Split Workbench Studio)
+         ==================================================================== -->
+    <section id="plan-b" class="proposal-panel">
+      <div class="proposal-header">
+        <div>
+          <h2>
+            Proposal B: Two-column engineering workbench (Split Workbench Studio)
+            <span class="proposal-tag tag-geek">Heavy-duty developers · Cockpit view</span>
+          </h2>
+          <p class="proposal-bullets">
+            Width grows to <strong>880px</strong>. The layout borrows from modern IDEs and pipeline orchestrators (GitHub Actions / Temporal): <strong>left workspace (60%) + right inspector (40%)</strong>. The left side is all about writing the instruction and picking the target; the right side gets a full trigger-pipeline timeline preview.
+          </p>
+        </div>
+      </div>
+
+      <div class="modal-preview-stage">
+        <!-- Modal body -->
+        <div class="demo-modal modal-plan-b">
+          <div class="demo-modal-head">
+            <div class="demo-head-title-wrap">
+              <div class="demo-head-icon" style="background: var(--blue-soft); border-color: rgba(59, 130, 246, 0.3); color: #93c5fd;">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="12 2 2 7 12 12 22 7 12 2"/><polyline points="2 17 12 22 22 17"/><polyline points="2 12 12 17 22 12"/></svg>
+              </div>
+              <div>
+                <div class="demo-head-title">Configure an automation task pipeline</div>
+                <div class="demo-head-sub">Panoramic workbench for workspace instructions and triggers</div>
+              </div>
+            </div>
+            <button class="demo-modal-close">✕</button>
+          </div>
+
+          <div class="demo-modal-body">
+            <div class="plan-b-workbench">
+              <!-- Left: primary instruction workspace -->
+              <div class="plan-b-left">
+                <div class="section-card">
+                  <div>
+                    <label class="field-label">Task name</label>
+                    <input class="input-text" value="Late-night full test suite and security audit" />
+                  </div>
+                  <div style="margin-top: 10px;">
+                    <label class="field-label">Working directory and target</label>
+                    <div style="display: flex; gap: 8px;">
+                      <input class="input-text" value="E:\pi-web-ui" style="flex: 1;" />
+                      <select class="select-box" style="width: 140px;">
+                        <option>Agent conversation</option>
+                        <option>Canvas workflow</option>
+                      </select>
+                    </div>
+                  </div>
+                </div>
+
+                <div class="section-card" style="flex: 1;">
+                  <div class="section-head">
+                    <span class="section-title">
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/></svg>
+                      Agent task instructions (Agent prompt)
+                    </span>
+                    <span class="field-hint">Big-screen immersive workspace</span>
+                  </div>
+
+                  <div class="prompt-toolbar">
+                    <div class="template-chips">
+                      <button class="tpl-chip" onclick="document.getElementById('b-prompt-area').value='Run npm run test, locate every failing case, and produce a short test report.'">🧪 Test diagnosis</button>
+                      <button class="tpl-chip" onclick="document.getElementById('b-prompt-area').value='Check git status and git log, then summarize the features finished today and the branches still waiting to merge.'">📋 Daily digest</button>
+                    </div>
+                    <span style="font-size: 11px; color: var(--text-faint);">Multi-line / code blocks supported</span>
+                  </div>
+
+                  <textarea class="textarea-box" id="b-prompt-area" rows="11" style="height: 240px;" placeholder="Enter the instruction for the agent here...">Please run the following routine maintenance:
+1. Run git fetch and check whether the current branch is behind remote main;
+2. Run npm audit and check for high-severity dependency vulnerabilities;
+3. If anything looks wrong, list the affected package names and propose upgrades;
+4. Run a quick type check with npm run typecheck and report the status.</textarea>
+                </div>
+              </div>
+
+              <!-- Right: inspector and trigger policy -->
+              <div class="plan-b-right">
+                <!-- Schedule trigger card -->
+                <div class="section-card">
+                  <div class="section-head">
+                    <span class="section-title">
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+                      Trigger policy
+                    </span>
+                    <span class="badge" style="color: var(--green);">0 2 * * *</span>
+                  </div>
+
+                  <div>
+                    <label class="field-label">Period presets</label>
+                    <select class="select-box">
+                      <option>Every day at 02:00 (0 2 * * *)</option>
+                      <option>Every weekday 09:00 (0 9 * * 1-5)</option>
+                      <option>Once every hour (0 * * * *)</option>
+                      <option>Custom Cron expression</option>
+                    </select>
+                  </div>
+
+                  <!-- Trigger timeline preview -->
+                  <div style="background: var(--bg-elev2); border-radius: 8px; padding: 10px; border: 1px solid var(--border-soft);">
+                    <div style="font-size: 11.5px; font-weight: 600; color: var(--text); margin-bottom: 8px;">Upcoming run pipeline</div>
+                    <div class="timeline-list">
+                      <div class="timeline-item next">
+                        <div>Today at 02:00 (in ~11 hours)</div>
+                        <div style="font-size: 10.5px; color: var(--green);">● Next to fire</div>
+                      </div>
+                      <div class="timeline-item">
+                        <div>Tomorrow at 02:00</div>
+                      </div>
+                      <div class="timeline-item">
+                        <div>Day after tomorrow at 02:00</div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                <!-- Model and environment -->
+                <div class="section-card">
+                  <div class="section-head">
+                    <span class="section-title">
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/></svg>
+                      Execution environment and compute
+                    </span>
+                  </div>
+
+                  <div>
+                    <label class="field-label">Agent model</label>
+                    <select class="select-box">
+                      <option>Follow the main conversation's current model</option>
+                      <option selected>Claude 3.7 Sonnet (recommended)</option>
+                      <option>GPT-4o</option>
+                      <option>DeepSeek V3</option>
+                    </select>
+                  </div>
+
+                  <div>
+                    <label class="field-label">Reasoning budget</label>
+                    <select class="select-box">
+                      <option>Default level</option>
+                      <option selected>Medium reasoning</option>
+                      <option>High reasoning</option>
+                    </select>
+                  </div>
+
+                  <div class="switch-row on" onclick="this.classList.toggle('on')">
+                    <div class="switch-label-wrap">
+                      <span class="switch-title">Catch-up after downtime</span>
+                      <span class="switch-desc">Catches up automatically once the service reconnects and restarts</span>
+                    </div>
+                    <span class="switch-toggle"></span>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div class="demo-modal-foot">
+            <div class="foot-left-info">
+              <span>Status: ready · each trigger creates its own sub-conversation</span>
+            </div>
+            <div class="foot-btns">
+              <button class="btn subtle">Cancel</button>
+              <button class="btn primary">Save and activate task</button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ====================================================================
+         Proposal C: Stepwise focus flow (Step Flow Modal)
+         ==================================================================== -->
+    <section id="plan-c" class="proposal-panel">
+      <div class="proposal-header">
+        <div>
+          <h2>
+            Proposal C: Stepwise focus wizard (Step Flow Wizard)
+            <span class="proposal-tag tag-wizard">Low cognitive load · Progressive focus</span>
+          </h2>
+          <p class="proposal-bullets">
+            At <strong>650px</strong> wide. The bloated form breaks into three smooth steps: <strong>(1) task and schedule</strong>, <strong>(2) instruction</strong>, <strong>(3) runtime</strong>. Each step shows only its core inputs — clear and unclaustrophobic, which suits the vast majority of ordinary task setups.
+          </p>
+        </div>
+      </div>
+
+      <div class="modal-preview-stage">
+        <!-- Modal body -->
+        <div class="demo-modal modal-plan-c">
+          <div class="demo-modal-head">
+            <div class="demo-head-title-wrap">
+              <div class="demo-head-icon" style="background: var(--green-soft); border-color: rgba(52, 211, 153, 0.3); color: #86efac;">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 11 12 14 22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>
+              </div>
+              <div>
+                <div class="demo-head-title">New task wizard</div>
+                <div class="demo-head-sub">Walk through creating a scheduled run, one step at a time</div>
+              </div>
+            </div>
+            <button class="demo-modal-close">✕</button>
+          </div>
+
+          <!-- Stepper -->
+          <div class="step-stepper">
+            <div class="step-item done" id="c-step-tab-1" onclick="jumpStepC(1)">
+              <div class="step-num">✓</div>
+              <span>1. Goal and schedule</span>
+            </div>
+            <div class="step-line"></div>
+            <div class="step-item active" id="c-step-tab-2" onclick="jumpStepC(2)">
+              <div class="step-num">2</div>
+              <span>2. Agent instruction</span>
+            </div>
+            <div class="step-line"></div>
+            <div class="step-item" id="c-step-tab-3" onclick="jumpStepC(3)">
+              <div class="step-num">3</div>
+              <span>3. Model and advanced</span>
+            </div>
+          </div>
+
+          <div class="demo-modal-body">
+            <!-- Step 1 container -->
+            <div id="c-step-content-1" style="display: none;" class="section-card">
+              <div class="section-head"><span class="section-title">Step 1: define the task and its schedule</span></div>
+              <div>
+                <label class="field-label">Task name</label>
+                <input class="input-text" value="Daily code health inspection" />
+              </div>
+              <div>
+                <label class="field-label">Project directory</label>
+                <input class="input-text" value="E:\pi-web-ui" />
+              </div>
+              <div>
+                <label class="field-label">Run frequency</label>
+                <div class="pill-group">
+                  <button class="pill-btn active">Every weekday 09:00</button>
+                  <button class="pill-btn">Every day 09:00</button>
+                  <button class="pill-btn">Every hour</button>
+                  <button class="pill-btn">Custom Cron</button>
+                </div>
+              </div>
+            </div>
+
+            <!-- Step 2 container (shown by default) -->
+            <div id="c-step-content-2" class="section-card">
+              <div class="section-head">
+                <span class="section-title">Step 2: write the agent instruction (Prompt)</span>
+                <span class="badge">The core of it all</span>
+              </div>
+              <div class="prompt-toolbar">
+                <span class="field-label" style="margin: 0;">Apply a template in one click:</span>
+                <div class="template-chips">
+                  <button class="tpl-chip" onclick="document.getElementById('c-prompt-text').value='Run npm audit, check for security issues, and produce an upgrade list.'">🔍 Security sweep</button>
+                  <button class="tpl-chip" onclick="document.getElementById('c-prompt-text').value='Review unmerged Git branches and check for leftover uncommitted code.'">🌿 Git branch triage</button>
+                </div>
+              </div>
+              <textarea class="textarea-box" id="c-prompt-text" rows="8" placeholder="Describe in detail the actions you want the agent to run on schedule...">Review the dependency versions of this project, run npm outdated, and for minor and patch releases work out which upgrades are recommended and non-breaking. Produce an update list with a risk estimate.</textarea>
+            </div>
+
+            <!-- Step 3 container -->
+            <div id="c-step-content-3" style="display: none;" class="section-card">
+              <div class="section-head"><span class="section-title">Step 3: model and advanced policy</span></div>
+              <div class="plan-a-grid-2">
+                <div>
+                  <label class="field-label">Model</label>
+                  <select class="select-box">
+                    <option>Follow the main conversation's current model</option>
+                    <option>Claude 3.7 Sonnet</option>
+                  </select>
+                </div>
+                <div>
+                  <label class="field-label">Reasoning effort</label>
+                  <select class="select-box">
+                    <option>Medium reasoning</option>
+                    <option>Reasoning off</option>
+                  </select>
+                </div>
+              </div>
+              <div class="switch-row on" onclick="this.classList.toggle('on')" style="margin-top: 10px;">
+                <div class="switch-label-wrap">
+                  <span class="switch-title">Catch up after restart</span>
+                  <span class="switch-desc">Catches up on the single run missed while the service was down</span>
+                </div>
+                <span class="switch-toggle"></span>
+              </div>
+            </div>
+          </div>
+
+          <div class="demo-modal-foot">
+            <div class="foot-left-info">
+              <button class="btn sm subtle" id="c-prev-btn" onclick="nextStepC(-1)">← Previous</button>
+            </div>
+            <div class="foot-btns">
+              <button class="btn subtle">Cancel</button>
+              <button class="btn primary" id="c-next-btn" onclick="nextStepC(1)">Next: runtime setup →</button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ====================================================================
+         Baseline: old vs. new, 1:1
+         ==================================================================== -->
+    <section id="plan-compare" class="proposal-panel">
+      <div class="proposal-header">
+        <div>
+          <h2>
+            Old vs. new, side by side
+            <span class="proposal-tag tag-primary">The difference is obvious</span>
+          </h2>
+          <p class="proposal-bullets">
+            Left is what ships today (460px wide, one ungrouped column); right is Proposal A (720px wide, grouped cards, plain-language preview).
+          </p>
+        </div>
+      </div>
+
+      <div style="display: grid; grid-template-columns: 1fr 1.6fr; gap: 24px; align-items: start;">
+        <!-- Replica of the current version -->
+        <div>
+          <div style="margin-bottom: 10px; font-weight: 600; color: var(--red); display: flex; align-items: center; gap: 6px;">
+            <span>❌ Current version (live today)</span>
+            <span style="font-size: 11px; background: var(--red-soft); padding: 1px 6px; border-radius: 4px;">460px, one thin column</span>
+          </div>
+          <div class="old-modal-replica">
+            <div style="display: flex; justify-content: space-between; align-items: center; font-weight: 600; padding-bottom: 6px; border-bottom: 1px solid #262a35;">
+              <span>🕒 New task</span>
+              <span style="color: #6b7284;">✕</span>
+            </div>
+            <input placeholder="e.g. daily dependency and code-health check..." value="Daily code health inspection" />
+            <input placeholder="Description (optional): what is this task for..." />
+            <div class="old-row">
+              <span style="color: #9aa1b4; width: 80px;">Target project</span>
+              <input value="E:\pi-web-ui" style="flex: 1;" />
+              <button class="btn sm">Use current project</button>
+            </div>
+            <div class="old-row">
+              <span style="color: #9aa1b4; width: 80px;">Task target</span>
+              <select style="flex: 1;"><option>Agent conversation</option></select>
+            </div>
+            <div class="old-row">
+              <span style="color: #9aa1b4; width: 80px;">Schedule</span>
+              <select style="flex: 1;"><option>Cron expression</option></select>
+            </div>
+            <div class="old-row">
+              <span style="color: #9aa1b4; width: 80px;">Cron expression</span>
+              <select style="flex: 1;"><option>Every day 9:00 - 0 9 * * *</option></select>
+            </div>
+            <textarea rows="4" placeholder="The concrete task for the Agent, e.g. audit dependencies and report upgrade candidates..." style="font-family: monospace;">Review dependencies and report on their health</textarea>
+            <div class="old-row">
+              <span style="color: #9aa1b4; width: 80px;">Model</span>
+              <select style="flex: 1;"><option>Follow the main conversation's current model</option></select>
+            </div>
+            <div class="old-row">
+              <span style="color: #9aa1b4; width: 80px;">Reasoning effort</span>
+              <select style="flex: 1;"><option>Follow the main conversation's current reasoning effort</option></select>
+            </div>
+            <div style="display: flex; align-items: center; gap: 6px; font-size: 12px; color: #9aa1b4;">
+              <input type="checkbox" style="width: 14px; height: 14px;" />
+              <span>Catch up on the run missed after a service restart ⓘ</span>
+            </div>
+            <div style="display: flex; justify-content: flex-end; gap: 8px; margin-top: 10px;">
+              <button class="btn sm">Cancel edit</button>
+              <button class="btn sm primary">Save task</button>
+            </div>
+          </div>
+        </div>
+
+        <!-- Why the redesign wins -->
+        <div>
+          <div style="margin-bottom: 10px; font-weight: 600; color: var(--green); display: flex; align-items: center; gap: 6px;">
+            <span>✨ Why does the redesign feel more professional and more open?</span>
+          </div>
+          <div class="section-card" style="padding: 24px;">
+            <div style="display: flex; flex-direction: column; gap: 16px;">
+              <div style="display: flex; gap: 12px;">
+                <div style="width: 28px; height: 28px; border-radius: 6px; background: var(--accent-soft); color: var(--accent); display: flex; align-items: center; justify-content: center; font-weight: 700;">1</div>
+                <div>
+                  <div style="font-size: 14px; font-weight: 600; color: var(--text);">Width goes from 460px to 720px ~ 880px</div>
+                  <div style="font-size: 12.5px; color: var(--text-dim); margin-top: 2px;">
+                    No more squeezing the toothpaste tube. Controls get room to breathe, and the two-column, card-grouped layout keeps the visual weight balanced.
+                  </div>
+                </div>
+              </div>
+
+              <div style="display: flex; gap: 12px;">
+                <div style="width: 28px; height: 28px; border-radius: 6px; background: var(--green-soft); color: var(--green); display: flex; align-items: center; justify-content: center; font-weight: 700;">2</div>
+                <div>
+                  <div style="font-size: 14px; font-weight: 600; color: var(--text);">The Prompt becomes a first-class citizen</div>
+                  <div style="font-size: 12.5px; color: var(--text-dim); margin-top: 2px;">
+                    The thin 4-row box becomes a large monospace-style editor with quick templates (check-up, tests, security, digest), so inspection instructions flow without friction.
+                  </div>
+                </div>
+              </div>
+
+              <div style="display: flex; gap: 12px;">
+                <div style="width: 28px; height: 28px; border-radius: 6px; background: var(--blue-soft); color: var(--blue); display: flex; align-items: center; justify-content: center; font-weight: 700;">3</div>
+                <div>
+                  <div style="font-size: 14px; font-weight: 600; color: var(--text);">Plain-language reading and a next-run preview</div>
+                  <div style="font-size: 12.5px; color: var(--text-dim); margin-top: 2px;">
+                    Pick or type a Cron and the green bar below instantly translates it into plain words and shows the concrete timestamps of the next 2~3 runs — deeply reassuring.
+                  </div>
+                </div>
+              </div>
+
+              <div style="display: flex; gap: 12px;">
+                <div style="width: 28px; height: 28px; border-radius: 6px; background: var(--amber-soft); color: var(--amber); display: flex; align-items: center; justify-content: center; font-weight: 700;">4</div>
+                <div>
+                  <div style="font-size: 14px; font-weight: 600; color: var(--text);">Advanced options tucked away elegantly, switches that feel smooth</div>
+                  <div style="font-size: 12.5px; color: var(--text-dim); margin-top: 2px;">
+                    Model, reasoning level, and downtime catch-up sit in a side-by-side grid with iOS-style Switches instead of jarring native radio buttons.
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+  </main>
+
+  <!-- Interaction script -->
+  <script>
+    // Switch proposal panel
+    function switchPlan(planId) {
+      document.querySelectorAll('.tab-btn').forEach(btn => btn.classList.remove('active'));
+      event.currentTarget.classList.add('active');
+
+      document.querySelectorAll('.proposal-panel').forEach(panel => {
+        panel.classList.remove('active');
+      });
+      document.getElementById(planId).classList.add('active');
+    }
+
+    // Plan A interaction: switch task target (conversation vs canvas)
+    function setTargetA(target) {
+      const btnConv = document.getElementById('a-tgt-conv');
+      const btnCanvas = document.getElementById('a-tgt-canvas');
+      const canvasRow = document.getElementById('a-canvas-select-row');
+      if (target === 'conversation') {
+        btnConv.classList.add('active');
+        btnCanvas.classList.remove('active');
+        canvasRow.style.display = 'none';
+      } else {
+        btnCanvas.classList.add('active');
+        btnConv.classList.remove('active');
+        canvasRow.style.display = 'block';
+      }
+    }
+
+    // Plan A interaction: pick a schedule preset
+    function selectPresetA(cron, desc, btn) {
+      btn.parentElement.querySelectorAll('.pill-btn').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+
+      const customRow = document.getElementById('a-custom-cron-row');
+      const badge = document.getElementById('a-cron-raw-badge');
+      const previewText = document.getElementById('a-preview-text');
+      const time1 = document.getElementById('a-next-time-1');
+      const time2 = document.getElementById('a-next-time-2');
+
+      if (cron === 'custom') {
+        customRow.style.display = 'block';
+        badge.innerText = 'Custom Cron';
+        previewText.innerText = 'Enter a valid Cron expression above';
+        time1.innerText = 'Calculating in real time...';
+        time2.innerText = '—';
+      } else if (cron === 'interval') {
+        customRow.style.display = 'none';
+        badge.innerText = 'Fixed 60 minutes';
+        previewText.innerText = 'Fires once every 60 minutes';
+        time1.innerText = 'In 1 hour';
+        time2.innerText = 'In 2 hours';
+      } else {
+        customRow.style.display = 'none';
+        badge.innerText = cron;
+        previewText.innerText = desc + ' (scheduled run)';
+        if (cron.includes('1-5')) {
+          time1.innerText = 'Tomorrow 09:00';
+          time2.innerText = 'Day after tomorrow 09:00';
+        } else if (cron.includes('*/30')) {
+          time1.innerText = '14:30';
+          time2.innerText = '15:00';
+        } else if (cron.includes('0 * * * *')) {
+          time1.innerText = '15:00';
+          time2.innerText = '16:00';
+        } else {
+          time1.innerText = 'Tomorrow 09:00';
+          time2.innerText = 'Day after tomorrow 09:00';
+        }
+      }
+    }
+
+    function updateCronCustomA(val) {
+      document.getElementById('a-cron-raw-badge').innerText = val || '* * * * *';
+      document.getElementById('a-preview-text').innerText = 'Expression: ' + (val || '—');
+    }
+
+    // Plan A interaction: apply a prompt template
+    const TEMPLATES = {
+      health: 'Run a health and security inspection of the current project:\n1. Check package.json dependencies for high-severity vulnerabilities;\n2. Check whether there are unresolved build warnings;\n3. Output a concise health summary with upgrade recommendations.',
+      test: 'Run the test suite and triage failures:\n1. Run the automated test suite for the current project;\n2. If any cases fail, read the relevant code and pinpoint the root cause;\n3. Produce a test failure report with suggested fix patches.',
+      git: 'Routine Git repository status audit:\n1. Check for uncommitted code changes or conflict markers;\n2. Compare the local branch against remote main over the last 3 days;\n3. Flag stale branches that should be cleaned up.',
+      clean: 'Maintenance and cleanup task:\n1. Check the size of temp directories such as node_modules, dist, and .cache;\n2. Clear expired build caches and temporary log files;\n3. Report the disk space saved after cleanup.'
+    };
+
+    function applyTemplateA(key) {
+      const area = document.getElementById('a-prompt-area');
+      area.value = TEMPLATES[key] || '';
+      area.focus();
+    }
+
+    // Plan C interaction: step navigation
+    let currentStepC = 2;
+    function jumpStepC(step) {
+      currentStepC = step;
+      updateStepUI();
+    }
+    function nextStepC(delta) {
+      currentStepC = Math.max(1, Math.min(3, currentStepC + delta));
+      updateStepUI();
+    }
+    function updateStepUI() {
+      for (let i = 1; i <= 3; i++) {
+        const tab = document.getElementById('c-step-tab-' + i);
+        const content = document.getElementById('c-step-content-' + i);
+        if (i === currentStepC) {
+          tab.className = 'step-item active';
+          content.style.display = 'block';
+        } else if (i < currentStepC) {
+          tab.className = 'step-item done';
+          content.style.display = 'none';
+        } else {
+          tab.className = 'step-item';
+          content.style.display = 'none';
+        }
+      }
+      const prevBtn = document.getElementById('c-prev-btn');
+      const nextBtn = document.getElementById('c-next-btn');
+      prevBtn.style.visibility = currentStepC === 1 ? 'hidden' : 'visible';
+      if (currentStepC === 3) {
+        nextBtn.innerText = 'Save task now ✓';
+        nextBtn.className = 'btn primary';
+      } else {
+        nextBtn.innerText = 'Next step →';
+      }
+    }
+  </script>
+</body>
+</html>
+
+
+
