@@ -1,8 +1,13 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState, type MouseEvent as ReactMouseEvent } from "react";
 import { FiChevronDown, FiChevronRight, FiCpu, FiSettings } from "react-icons/fi";
 import { useT } from "../i18n";
 import { DEVICE_GROUPS_CHANGED, deviceGroupRequest } from "./DeviceGroupSection";
-import { openBotManagement, openDirectRoom, openRoomView } from "../open-direct-room";
+import { openBotChat, openBotManagement } from "../bot-chat";
+import { openContextMenu } from "../context-menu-state";
+import type { UiSlotEntry } from "../ui-slots";
+import { referenceBotInComposer } from "../bot-reference";
+import { requestBotEdit } from "../bot-edit";
+import { copyTextToClipboard } from "../use-copy-feedback";
 import { BotMemoryDialog } from "./BotMemoryDialog";
 import "./agent-bots.css";
 
@@ -12,7 +17,7 @@ import "./agent-bots.css";
  * 直聊不是新系统：每个 Bot 对应一个 `kind: "direct"` 的房间（服务端确定性 id），
  * 点开走的是同一套 `GroupConversation` 房间视图，因此流式、停止、恢复、历史全都免费复用。
  * 这里只负责列表与状态（草案确认、导入）；「打开直聊」与「跳转到设备中心管理」的实现
- * 统一收在 ../open-direct-room.ts，Bot 身份的创建/编辑/权限一律去设备中心。
+ * 统一收在 ../bot-chat.ts，Bot 身份的创建/编辑/权限一律去设备中心。
  */
 
 type DirectRoomBot = {
@@ -50,10 +55,11 @@ type BotDraft = {
 
 export function AgentBotsSection({
 	active = true,
-	selectedRoomId,
+	activeBotId,
 }: {
 	active?: boolean;
-	selectedRoomId?: string | null;
+	/** 当前对话如果是某 Bot 的私聊，这里就是它的 id（私聊 = 普通对话 + Bot 身份）。 */
+	activeBotId?: string | null;
 }) {
 	const t = useT();
 	const [bots, setBots] = useState<BotRow[] | null>(null);
@@ -106,19 +112,14 @@ export function AgentBotsSection({
 		};
 	}, [active, load]);
 
-	const startChat = useCallback(
-		async (bot: BotRow) => {
-			setPending(bot.id);
-			try {
-				await openDirectRoom(bot.id, { knownRoomId: rooms.find((room) => room.bot?.id === bot.id)?.id });
-			} catch (cause) {
-				setError(cause instanceof Error ? cause.message : String(cause));
-			} finally {
-				setPending(null);
-			}
-		},
-		[rooms],
-	);
+	// 私聊 = 开一条普通对话并绑定这个 Bot（角色/工具/模型/记忆都在会话上），
+	// 不再建房间、也不再产生任务。群聊才需要房间与 @ 路由。
+	const startChat = useCallback((bot: BotRow) => {
+		setPending(bot.id);
+		openBotChat(bot.id);
+		// 打开是同步派发，给一拍反馈就复位（会话真正就绪由快照驱动高亮）。
+		window.setTimeout(() => setPending(null), 400);
+	}, []);
 
 	const confirmDraft = useCallback(
 		async (draft: BotDraft) => {
@@ -127,7 +128,7 @@ export function AgentBotsSection({
 			const controller = new AbortController();
 			setApproving(draft.id);
 			try {
-				const result = await deviceGroupRequest<{ roomId?: string }>(
+				const result = await deviceGroupRequest<{ bot?: { id: string } }>(
 					`bot-drafts/${encodeURIComponent(draft.id)}/approve`,
 					controller.signal,
 					{
@@ -138,7 +139,7 @@ export function AgentBotsSection({
 				);
 				window.dispatchEvent(new CustomEvent("pi-web-ui:device-bots-changed"));
 				await load();
-				if (result.roomId) openRoomView(result.roomId);
+				if (result.bot?.id) openBotChat(result.bot.id);
 			} catch (cause) {
 				setError(cause instanceof Error ? cause.message : String(cause));
 			} finally {
@@ -169,7 +170,7 @@ export function AgentBotsSection({
 			setError("");
 			try {
 				const bundle = JSON.parse(await file.text()) as unknown;
-				const result = await deviceGroupRequest<{ bot: BotRow; imported: number; skipped: number; roomId?: string }>(
+				const result = await deviceGroupRequest<{ bot: BotRow; imported: number; skipped: number }>(
 					"bot-import",
 					new AbortController().signal,
 					{ bundle },
@@ -182,7 +183,7 @@ export function AgentBotsSection({
 					}),
 				);
 				await load();
-				if (result.roomId) openRoomView(result.roomId);
+				if (result.bot?.id) openBotChat(result.bot.id);
 			} catch (cause) {
 				setError(cause instanceof Error ? cause.message : t("agentBots.importFailed"));
 			} finally {
@@ -190,6 +191,53 @@ export function AgentBotsSection({
 			}
 		},
 		[load, t],
+	);
+
+	// 右键菜单：Bot 行本身是「对话入口」，不做成编辑表单的入口。
+	// 菜单只放跳转与轻量动作（开私聊 / @ 引用 / 编辑与权限跳设备中心 / 记忆 / 复制 ID），
+	// 避免左栏和设备中心各写一套 Bot 编辑器。
+	const openBotMenu = useCallback(
+		(event: ReactMouseEvent, bot: BotRow) => {
+			event.preventDefault();
+			event.stopPropagation();
+			const items = [
+				{ action: "chat", label: t("agentBots.menuChat") },
+				{ action: "reference", label: t("agentBots.menuReference") },
+				{ action: "edit", label: t("agentBots.menuEdit") },
+				{ action: "manage", label: t("agentBots.menuManage") },
+				{ action: "memory", label: t("agentBots.menuMemory") },
+				{ action: "copy-id", label: t("agentBots.menuCopyId") },
+			] as const;
+			const entries: UiSlotEntry[] = items.map((item, index) => ({
+				id: `host:bot-${item.action}`,
+				slot: "contextmenu.bot",
+				source: "host",
+				label: item.label,
+				kind: "action",
+				action: item.action,
+				order: (index + 1) * 10,
+				align: "start",
+				hidden: false,
+				userOverrides: [],
+				arrangedBy: [],
+			}));
+			openContextMenu({
+				x: event.clientX,
+				y: event.clientY,
+				slot: "contextmenu.bot",
+				target: { id: bot.id, kind: "agent-bot", label: bot.name },
+				entries,
+				onHostAction: (entry) => {
+					if (entry.action === "chat") void startChat(bot);
+					else if (entry.action === "reference") referenceBotInComposer({ botId: bot.id, name: bot.name });
+					else if (entry.action === "edit") requestBotEdit(bot.id);
+					else if (entry.action === "manage") openBotManagement();
+					else if (entry.action === "memory") setMemoryBot(bot);
+					else if (entry.action === "copy-id") void copyTextToClipboard(bot.id);
+				},
+			});
+		},
+		[startChat, t],
 	);
 
 	if (!bots && !error) {
@@ -340,10 +388,10 @@ export function AgentBotsSection({
 					)}
 					{!error && (!bots || bots.length === 0) && <p className="lp-bots-empty">{t("agentBots.empty")}</p>}
 					{(bots ?? []).map((bot) => {
-						const room = rooms.find((entry) => entry.bot?.id === bot.id);
-						const isActive = Boolean(room && selectedRoomId === room.id);
+						// 高亮跟着"当前对话是不是这个 Bot 的私聊"走（普通会话 + Bot 绑定）。
+						const isActive = activeBotId === bot.id;
 						return (
-							<div key={bot.id} className="lp-bot-item">
+							<div key={bot.id} className="lp-bot-item" onContextMenu={(event) => openBotMenu(event, bot)}>
 								<button
 									type="button"
 									className={`lp-bot-row${isActive ? " is-active" : ""}`}

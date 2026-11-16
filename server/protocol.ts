@@ -945,6 +945,8 @@ export interface UiState {
 	model: UiModelInfo | null;
 	thinkingLevel: string;
 	agentPreset?: { id: string; name: string; locked: boolean } | null;
+	/** 当前会话绑定的 Bot（私聊）：UI 据此显示身份并去掉房间语义。 */
+	bot?: { id: string; name: string } | null;
 	permission?: string | null;
 	availableThinkingLevels: string[];
 	queue: {
@@ -1409,6 +1411,8 @@ export type ClientMessage =
 			independent?: boolean;
 			/** 目标工作目录：服务端先切到该目录并核验，再建会话；切不过去就不建（`ok:false`）。 */
 			cwd?: string;
+			/** 私聊：把会话绑定到本机这个 Bot（普通对话 + Bot 身份；群聊仍走房间与 @ 路由）。 */
+			botId?: string;
 	  }
 	| { type: "new_cli_chat"; config: NativeCliConfig; cwd?: string; requestId?: string }
 	| { type: "open_shared_conversation"; owner: string; id: string; readOnly?: boolean }
@@ -2518,6 +2522,7 @@ export type UiSlotId =
 	| "contextmenu.file"
 	| "contextmenu.search"
 	| "contextmenu.toolcall"
+	| "contextmenu.bot"
 	| "tool.card.footer"
 	| "settings.pages"
 	| "leftpanel.projects.actions"
@@ -2729,6 +2734,9 @@ export interface ConversationSummary {
 	isSubagent: boolean;
 	agentPreset?: string;
 	presetLocked?: boolean;
+	/** 私聊会话绑定的 Bot（普通对话 + Bot 身份）；普通对话/群任务无此字段。 */
+	botId?: string;
+	botName?: string;
 	error?: string;
 	canceled?: boolean;
 	/**

@@ -3,7 +3,8 @@ import { createPortal } from "react-dom";
 import { appUrl } from "../base-url";
 import { withToken } from "../auth-token";
 import { useT } from "../i18n";
-import { openDirectRoom } from "../open-direct-room";
+import { openBotChat } from "../bot-chat";
+import { clearBotEditRequest, peekBotEditRequest, subscribeBotEditRequest } from "../bot-edit";
 import { useEscapeKey } from "../shortcut-stack";
 import type { ModelInfo } from "../types";
 import { resolveBotCwd } from "../local-bot-path";
@@ -127,6 +128,21 @@ export function LocalBots({
 			controller.current?.abort();
 		};
 	}, []);
+	// 左栏智能体右键「编辑 Bot」：直接打开这个 Bot 的编辑器。
+	// 面板可能刚被切到设备中心才挂载（事件早于监听器），所以先 peek 一次 pending 再订阅。
+	useEffect(() => {
+		const open = (botId: string) => {
+			const bot = bots.find((entry) => entry.id === botId);
+			if (!bot) return;
+			setDraft(structuredClone(bot));
+			setError("");
+			setModelOpen(false);
+			clearBotEditRequest(botId);
+		};
+		const pending = peekBotEditRequest();
+		if (pending) open(pending);
+		return subscribeBotEditRequest(open);
+	}, [bots]);
 	const cwd = draft?.cwd;
 	useEffect(() => {
 		if (cwd === undefined) return;
@@ -200,7 +216,7 @@ export function LocalBots({
 		setChatPending(botId);
 		setError("");
 		try {
-			await openDirectRoom(botId);
+			openBotChat(botId);
 		} catch (cause) {
 			setError(cause instanceof Error ? cause.message : String(cause));
 		} finally {

@@ -122,4 +122,20 @@ v0.116.0 的旧 `task-recovery-outbox.json` 在完成时未保存 leaseToken/gen
 
 `bot-queue.ts` 的 `sameBotConflict` 是两层共用的冲突判定单源：`task-scheduler.ts` 的 `checkConflict` 与 `runtime.ts` 的 `conflicts` 都复用它；`activeTaskForBot` / `rankBotQueue` 只服务 Hub 派发层。Hub 的 `store.subscribe` 触发 `createBotQueueDispatcher().drain()`，设备侧 `DeviceTaskScheduler.drain()` 是另一条独立路径，二者不互相调用。
 
+**本机设备直调（`server/device-center/local-task-bridge.ts`）的完整语义**：
+
+| 关心的事                                | 直调怎么处理                                                                                             | 为什么                                                            |
+| --------------------------------------- | -------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------- |
+| 投递 / 认领                             | `onTask` 先写 `task_event running`（Hub 记 `acknowledgedAt`）再交给运行时；重复投递幂等返回 `true`       | 返回 `false` 会被 Hub 当成"拒绝投递"直接把任务判失败              |
+| 租约续期                                | 桥自己每 15s 续一次（活动取自 `onProgress` / 工具 / 交互回调），不依赖 connector 的 WS 心跳              | WS 抖动、任务还在本地调度排队时，都不能被"派发后没起来"看门狗误判 |
+| 进度 / 工具 / 交互 / 计划               | `acceptTaskProgress` / `acceptTaskToolLifecycle` / `acceptInteractions` / `acceptTaskPlanReady` 直写 Hub | 与 connector 的帧一一对应，UI/日志/任务简报不需要区分来源         |
+| 终态与报告                              | `reportOutbox` + `uploadTaskReport`（loopback HTTP）后写 `task_event` 终态                               | 报告仍走 outbox/配额/校验一整套，不因直调而缩水                   |
+| 停止 / 转向 / 交互应答                  | `cancelScheduledTask` / `steerTask` / `answerTaskInteraction`                                            | 群聊的「停止」「飞行中转向」「回答问题」在本机不再依赖 WS         |
+| WS 断开                                 | Hub 的 `onTaskDisconnect` 对直调设备**直接忽略**                                                         | 任务跑在同一进程里，WS 掉了不等于设备没了                         |
+| 设备命令（桌面/文件/终端/webhook 回调） | 仍然走 relay（WS）                                                                                       | 这些确实需要设备连接，不属于任务生命周期                          |
+
+已知边界：本机任务若被设备侧并发位挡住而排队，Hub 侧仍显示"运行中"（不会误判为没起来，但也看不到"排队中"原因）；真实队列见设备中心「执行设置」的调度快照。
+
+**投递通道分两种（同进程设备走直调）**：`deliverTask` 先用 `hub.setLocalTaskExecutor()` 注册的直调器，命中时任务**不经过 relay（WS）**，直接交给本机运行时（`server/device-center/local-task-bridge.ts`）；其它设备仍走 `relay.sendTask`。停止/转向/交互应答同样优先命中直调器（`localFor(deviceId)`），桌面/文件/终端等命令永远走 relay。理由：本机设备不需要网络可靠性，而 WS 通道里 `sendFrame` 断连、`runningTasks` 不匹配这类失败都是**静默**的，用户只会看到"派发出去了、一直转圈"。直调把这一层整个拿掉，并让失败在秒级写回任务终态。租约续期不受影响：connector 的心跳仍基于 `recovery.activeLeases`，直调任务同样在里面。守卫：`tests/unit/local-task-bridge.test.ts`、`tests/unit/local-task-executor-priority.test.ts`。
+
 守卫：`tests/unit/hub-task-queue.test.ts`（派发仲裁）、`tests/unit/bot-queue.test.ts`（纯排序与 ETA）、`tests/unit/device-center-resource-locks.test.ts`（设备侧锁）。

@@ -134,19 +134,19 @@ describe("注册→目录", () => {
 		expect(GROUP_BOT_TOOL_CATALOG.some((tool) => tool.name === DEVICE_COLLAB_TOOL_NAME)).toBe(true);
 	});
 
-	it("agent-service 仅在 botExecution 存在时才条件注入 makeDeviceCollabTool", () => {
-		expect(AGENT_SERVICE_SRC).toMatch(/\.\.\.\(this\.botExecution\s*\?\s*\[makeDeviceCollabTool\(\)\]\s*:\s*\[\]\)/);
+	it("agent-service 仅在 Bot 能力存在时才条件注入 makeDeviceCollabTool", () => {
+		expect(AGENT_SERVICE_SRC).toMatch(/\.\.\.\(botExecution\s*\?\s*\[makeDeviceCollabTool\(\)\]\s*:\s*\[\]\)/);
 	});
 
 	it("agent_bot 只对主智能体注册，且只在设备侧接入草案仓库时出现", () => {
-		expect(AGENT_SERVICE_SRC).toMatch(/!this\.botExecution && agentBotToolAvailable\(\)/);
+		expect(AGENT_SERVICE_SRC).toMatch(/!botExecution && agentBotToolAvailable\(\)/);
 		expect(AGENT_TOOL_CATALOG.some((tool) => tool.name === AGENT_BOT_TOOL_NAME)).toBe(true);
 	});
 
 	it("memory 是 Bot 私产技能：只对有记忆目录的 Bot 执行注册，不进普通设置目录", () => {
 		expect(AGENT_TOOL_CATALOG.some((tool) => tool.name === BOT_MEMORY_TOOL_NAME)).toBe(false);
 		expect(GROUP_BOT_TOOL_CATALOG.some((tool) => tool.name === BOT_MEMORY_TOOL_NAME)).toBe(true);
-		expect(AGENT_SERVICE_SRC).toMatch(/this\.botExecution\?\.memoryRoot/);
+		expect(AGENT_SERVICE_SRC).toMatch(/botExecution\?\.memoryRoot/);
 		expect(AGENT_SERVICE_SRC).toContain("makeBotMemoryTool(");
 	});
 

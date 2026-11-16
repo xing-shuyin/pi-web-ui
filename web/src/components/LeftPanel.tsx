@@ -94,6 +94,8 @@ interface LeftPanelProps {
 	activeConversationId: string;
 	sharedConversationOwner?: string;
 	activeGroupId?: string | null;
+	/** 当前对话绑定的 Bot（私聊）；用来高亮左栏「智能体」区的那一行。 */
+	activeBotId?: string | null;
 	projectSessions?: Record<string, SessionSummary[]>;
 	projectSessionsHasMore?: Record<string, boolean>;
 	engine?: string;
@@ -450,6 +452,7 @@ export const LeftPanel = memo(function LeftPanel({
 	activeConversationId,
 	sharedConversationOwner,
 	activeGroupId,
+	activeBotId,
 	projectSessions,
 	projectSessionsHasMore,
 	engine,
@@ -2911,7 +2914,7 @@ export const LeftPanel = memo(function LeftPanel({
 						(workspaceTab === "groups" && hasGroupsSection ? (
 							<>
 								{/* 智能体（直聊）在群组同层：两者都是“协作对象”，不需要再开一个 tab。 */}
-								<AgentBotsSection active={active} selectedRoomId={activeGroupId} />
+								<AgentBotsSection active={active} activeBotId={activeBotId} />
 								<DeviceGroupSection
 									entry={uiSections?.find((entry) => entry.id === "host:lp-groups")}
 									active={active}

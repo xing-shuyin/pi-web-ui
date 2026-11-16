@@ -39,6 +39,59 @@ export const hasTaskLease = (task: HubTask) => !!task.leaseToken || task.leaseGe
 export const isRecoveringTask = (task: HubTask, now: number) =>
 	!task.outcomeFingerprint && typeof task.recoveryUntil === "number" && now <= task.recoveryUntil;
 
+/** 已经派发给设备、但长时间没有任何租约续期的宽限。 */
+export const TASK_START_GRACE_MS = 3 * 60_000;
+/** 代码任务需要先开工作区/容器，没起来也可能是设备并发位被占，给更长的宽限。 */
+export const CODE_TASK_START_GRACE_MS = 10 * 60_000;
+/** 真正跑起来的任务：设备侧每 15s 续租一次，这么久没有续租说明执行端已经不在了。 */
+export const TASK_LEASE_IDLE_MS = 30 * 60_000;
+
+type LeaseBearingTask = Pick<
+	HubTask,
+	| "status"
+	| "leaseToken"
+	| "leaseGeneration"
+	| "executionMode"
+	| "contract"
+	| "lastHeartbeatAt"
+	| "acknowledgedAt"
+	| "lastLeaseRenewAt"
+	| "recoveryUntil"
+	| "outcomeFingerprint"
+>;
+
+const executionModeOf = (task: Pick<HubTask, "executionMode" | "contract">) =>
+	task.executionMode ?? task.contract?.executionMode ?? "chat";
+
+/** 任务仍占着设备租约（派发出去且未被终态化）。 */
+export function holdsDeviceLease(task: Pick<HubTask, "status" | "leaseToken" | "leaseGeneration">) {
+	return task.status === "running" || (task.status === "queued" && hasTaskLease(task as HubTask));
+}
+
+/**
+ * 派发出去却从未开始执行的判定。
+ *
+ * 两道证据是分开的（见 `store.ts` HubTask 字段注释）：
+ * - `acknowledgedAt`：设备收到任务即回一帧 running（发生在本地调度入队之前）；
+ * - `lastLeaseRenewAt`：设备真正开始执行才会续租（`recordTaskStart` 之后）。
+ * 只有“有 ack、没续租、已经过了宽限”才判定为没起来：这样既不会误杀设备并发位排队中的任务，
+ * 也不会放任一条私聊在不报错的情况下挂半小时（旧行为是 30 分钟后的租约过期才收尸）。
+ */
+export function taskStartStalled(task: LeaseBearingTask, now: number): boolean {
+	if (task.outcomeFingerprint || !holdsDeviceLease(task)) return false;
+	if (task.lastLeaseRenewAt !== undefined || task.recoveryUntil !== undefined) return false;
+	const since = task.acknowledgedAt ?? task.lastHeartbeatAt;
+	if (since === undefined) return false;
+	const grace = executionModeOf(task) === "code" ? CODE_TASK_START_GRACE_MS : TASK_START_GRACE_MS;
+	return now - since > grace;
+}
+
+/** 跑起来之后彻底没心跳的判定。 */
+export function taskLeaseIdle(task: LeaseBearingTask, now: number): boolean {
+	if (task.outcomeFingerprint || !holdsDeviceLease(task)) return false;
+	return task.lastHeartbeatAt !== undefined && now - task.lastHeartbeatAt > TASK_LEASE_IDLE_MS;
+}
+
 function effects(): TaskSettlementEffects {
 	return { settledWakes: [], readyTaskIds: [], cascadedFailedTaskIds: [] };
 }
@@ -465,11 +518,9 @@ export function sweepExpiredRecoveryLeases(
 	for (const task of [...draft.tasks]) {
 		if (task.outcomeFingerprint) continue;
 		const windowExpired = typeof task.recoveryUntil === "number" && now > task.recoveryUntil;
-		const leaseExpired =
-			(task.status === "running" || (task.status === "queued" && hasTaskLease(task))) &&
-			task.lastHeartbeatAt !== undefined &&
-			now - task.lastHeartbeatAt > 30 * 60_000;
-		if (!windowExpired && !leaseExpired) continue;
+		const startStalled = taskStartStalled(task, now);
+		const leaseExpired = !startStalled && taskLeaseIdle(task, now);
+		if (!windowExpired && !startStalled && !leaseExpired) continue;
 		const notice = recordTaskOutcome(
 			draft,
 			task,
@@ -477,7 +528,9 @@ export function sweepExpiredRecoveryLeases(
 				status: "interrupted",
 				report: windowExpired
 					? "Hub restarted; recovery window expired without reconnect claim."
-					: "Task lease expired due to prolonged inactivity.",
+					: startStalled
+						? "Task was dispatched but never started on the device; submit a new turn to retry."
+						: "Task lease expired due to prolonged inactivity.",
 			},
 			ctx,
 			now,

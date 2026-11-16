@@ -26,6 +26,8 @@ import {
 	settleTaskTerminalOutcome,
 	rescanReadyTasksOnRecovery,
 	sweepExpiredRecoveryLeases,
+	taskLeaseIdle,
+	taskStartStalled,
 } from "../../server/device-center/task-settlement.js";
 
 const ctx = { settings: DEFAULT_EXECUTION_SETTINGS, getHistoryLimit: () => 500 };
@@ -499,6 +501,57 @@ describe("device task settlement fault boundaries", () => {
 		const committed = structuredClone(draft);
 		sweepExpiredRecoveryLeases(draft, 102, ctx);
 		expect(draft).toEqual(committed);
+	});
+	it("reaps a dispatched task the device acked but never started", () => {
+		const now = 10_000_000;
+		// 设备收到即回 running（ack），但从未续租：本地调度没起来 / 执行端没接手。
+		const stalled = task("stalled", {
+			leaseToken: "lease",
+			leaseGeneration: 1,
+			lastHeartbeatAt: now - 4 * 60_000,
+			acknowledgedAt: now - 4 * 60_000,
+		});
+		// 同样安静，但已经开始执行（有续租）：不能被当成没起来。
+		const thinking = task("thinking", {
+			leaseToken: "lease",
+			leaseGeneration: 1,
+			lastHeartbeatAt: now - 4 * 60_000,
+			acknowledgedAt: now - 4 * 60_000,
+			lastLeaseRenewAt: now - 30_000,
+		});
+		// 设备只是收到、还没轮到它（本地并发位排着）：宽限内不杀。
+		const waitingTurn = task("waiting-turn", {
+			leaseToken: "lease",
+			leaseGeneration: 1,
+			lastHeartbeatAt: now - 30_000,
+			acknowledgedAt: now - 30_000,
+		});
+		expect(taskStartStalled(stalled, now)).toBe(true);
+		expect(taskStartStalled(thinking, now)).toBe(false);
+		expect(taskStartStalled(waitingTurn, now)).toBe(false);
+		const draft = state([stalled, thinking, waitingTurn]);
+		const sweep = sweepExpiredRecoveryLeases(draft, now, ctx);
+		expect(stalled.status).toBe("interrupted");
+		expect(stalled.report).toContain("never started");
+		expect(thinking.status).toBe("running");
+		expect(waitingTurn.status).toBe("running");
+		expect(sweep.settledWakes.map((item) => item.taskId)).toEqual([stalled.id]);
+	});
+	it("keeps the long inactivity window for tasks that really started", () => {
+		const now = 10_000_000;
+		const idle = task("idle", {
+			leaseToken: "lease",
+			leaseGeneration: 1,
+			lastHeartbeatAt: now - 31 * 60_000,
+			acknowledgedAt: now - 31 * 60_000,
+			lastLeaseRenewAt: now - 31 * 60_000,
+		});
+		expect(taskStartStalled(idle, now)).toBe(false);
+		expect(taskLeaseIdle(idle, now)).toBe(true);
+		const draft = state([idle]);
+		sweepExpiredRecoveryLeases(draft, now, ctx);
+		expect(idle.status).toBe("interrupted");
+		expect(idle.report).toContain("prolonged inactivity");
 	});
 });
 

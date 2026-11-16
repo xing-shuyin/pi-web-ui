@@ -13,6 +13,8 @@ describe("empty prompt backend guard", () => {
 			emit: (msg: unknown) => emitted.push(msg),
 			flushSnapshot,
 			assertSubagentWorktreeAdmission: vi.fn(),
+			// 私聊/设备任务的能力解析：空白 prompt 在解析之前就该返回，取不到能力也无所谓。
+			botOf: () => undefined,
 			drafts: { clear: draftsClear },
 			conv: { session: { sessionId: "sid-1" } },
 			session: { prompt: sessionPrompt },

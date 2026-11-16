@@ -663,14 +663,29 @@ export function createDeviceRuntime(options: {
 						.digest("hex");
 					const stored = transcripts[task.conversationId];
 					if (task.resume) {
-						if (!stored || stored.binding !== binding)
-							throw new DeviceTaskError("Conversation unavailable or configuration changed");
-						try {
-							if (!statSync(stored.path).isFile()) throw new Error();
-						} catch {
-							throw new DeviceTaskError("Conversation transcript unavailable");
+						// resume 是"接着上一轮"的优化，不是会话不变量：Hub 对同一 conversationId 的后续轮次
+						// 一律带 resume=true，但转录要等上一轮真的跑出会话后才落盘。首轮失败 / 从未启动时
+						// 根本没有记录，旧行为在这里直接报 "Conversation unavailable or configuration changed"，
+						// 结果这条会话被永久判死（以后每条消息都复现同一个错）。没有记录 = 不可能丢历史，
+						// 所以当场降级为"开一轮新会话"；已有记录但 binding 对不上 / 文件没了仍报错，
+						// 那是真的配置不一致或转录被删，不能静默洗白成另一个会话。
+						if (!stored) {
+							// 执行器要求 `resume` 与 `resumePath` 严格一致（`executor.ts` 的"Resume requires an
+							// authorized local transcript path"），所以降级必须连标志一起改，而不是只留空路径。
+							task.resume = false;
+							console.warn(
+								`[DeviceRuntime] conversation ${task.conversationId} has no session yet (previous turn never produced one); starting a fresh session for task ${task.id}`,
+							);
+						} else {
+							if (stored.binding !== binding)
+								throw new DeviceTaskError("Conversation unavailable or configuration changed");
+							try {
+								if (!statSync(stored.path).isFile()) throw new Error();
+							} catch {
+								throw new DeviceTaskError("Conversation transcript unavailable");
+							}
+							resumePath = stored.path;
 						}
-						resumePath = stored.path;
 					} else if (stored) throw new DeviceTaskError("Conversation already exists; explicit resume required");
 				}
 				const memoryRoot = options.dataDir ? botMemoryRoot(options.dataDir, task.botId) : undefined;

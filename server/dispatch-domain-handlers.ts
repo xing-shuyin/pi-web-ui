@@ -677,7 +677,7 @@ export function handleSessionLifecycleMessage(
 				const pending =
 					msg.type === "new_cli_chat"
 						? cs.newCliChat?.(msg.config, msg.cwd, acknowledge)
-						: cs.newChat(msg.preset, msg.ephemeral, acknowledge, msg.independent);
+						: cs.newChat(msg.preset, msg.ephemeral, acknowledge, msg.independent, msg.botId);
 				await Promise.resolve(pending);
 			}).then(
 				() => acknowledge(),

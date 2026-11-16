@@ -57,6 +57,7 @@ import { nextSearchReqId } from "../search-req-id";
 import { ModelThinking } from "./ModelThinking";
 import { SystemScreenshotButton } from "./SystemScreenshotButton";
 import { groupConversationHits, groupMessageTargets } from "../device-group-messages";
+import { subscribeBotReference } from "../bot-reference";
 import {
 	insertGroupMember,
 	registerGroupMemberSink,
@@ -472,6 +473,42 @@ export const ChatInput = memo(function ChatInput({
 			});
 		});
 	}, [sessionId, Boolean(groupDevices)]);
+	// 「引用到对话」：左栏智能体右键 → 把这个 Bot 作为 @ 目标塞进输入框。
+	// 群组房间里必须落成成员 chip（`@名字(id)`），否则 @ 不是发送目标；主对话里就是一句普通文本。
+	useEffect(
+		() =>
+			subscribeBotReference((bot) => {
+				const member = groupDevices?.find((device) => device.id === bot.botId || device.name === bot.name);
+				const ta = taRef.current;
+				const current = textRef.current;
+				const start = ta?.selectionStart ?? current.length;
+				const end = ta?.selectionEnd ?? current.length;
+				const next = member ? insertGroupMember(current, start, member) : undefined;
+				const token = `@${bot.name}`;
+				const prefix = start > 0 && !/[\s([{]$/.test(current.slice(0, start)) ? " " : "";
+				const insert = next ? next.text.slice(start, next.cursor) : `${prefix}${token} `;
+				const resolved = next ?? {
+					text: current.slice(0, start) + insert + current.slice(end),
+					cursor: start + insert.length,
+				};
+				if (member) {
+					groupReferences.current = [
+						...groupReferences.current,
+						{ start: resolved.cursor - member.name.length - 2, end: resolved.cursor - 1, member },
+					];
+					groupReferenceText.current = resolved.text;
+				}
+				textMirrorRef.current = resolved.text;
+				textRef.current = resolved.text;
+				menuTextRef.current = resolved.text;
+				setText(resolved.text);
+				requestAnimationFrame(() => {
+					taRef.current?.focus();
+					taRef.current?.setSelectionRange(resolved.cursor, resolved.cursor);
+				});
+			}),
+		[groupDevices],
+	);
 	const noteComposerEdit = (value: string) => {
 		if (groupDevices) {
 			groupReferences.current = updateGroupMemberReferences(groupReferenceText.current, value, groupReferences.current);

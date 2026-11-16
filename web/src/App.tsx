@@ -2790,6 +2790,7 @@ export function App() {
 								activeConversationId={activeGroupId ? "" : chat.activeConversationId}
 								sharedConversationOwner={chat.state?.sharedConversation?.owner}
 								activeGroupId={activeGroupId}
+								activeBotId={activeGroupId ? null : (chat.state?.bot?.id ?? null)}
 								uiContextSession={uiSlots["contextmenu.session"]}
 								uiLeftSessions={uiLeftSessions}
 								uiContextProject={uiSlots["contextmenu.project"]}

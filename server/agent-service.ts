@@ -153,6 +153,7 @@ import { SandboxManager, evaluateSandboxJail, isSameOrSubpath, withSandboxJailGa
 import { readPermissionFromSession } from "./permission-preset.js";
 import { McpBridge, getMcpToolServer } from "./mcp-bridge.js";
 import { getBotExecution, type BotExecutionCapability } from "./device-center/bot-execution.js";
+import { BOT_CHAT_ENTRY, createBotChatCapability, readBotChatBinding } from "./device-center/bot-chat.js";
 import { checkGroupTaskPlanGuard } from "./device-center/group-plan-guard.js";
 import { prepareBotExecutionSystemPrompt } from "./device-center/execution-system-prompt.js";
 import {
@@ -695,6 +696,10 @@ export interface Conversation {
 	lastSdkEventAt: number;
 	agentPreset?: string;
 	presetLocked?: boolean;
+	/** 私聊会话绑定的 Bot 身份（会话级，见 device-center/bot-chat.ts）。 */
+	bot?: BotExecutionCapability;
+	botId?: string;
+	botName?: string;
 	permissionPreset?: string;
 	planMode?: boolean;
 	delegateMode?: boolean;
@@ -4042,6 +4047,28 @@ export class ClientSession {
 	}
 
 	private botExecution?: BotExecutionCapability;
+	/** 新建会话时先登记、会话创建后再落到 `Conversation.bot` 的 Bot 能力。 */
+	private readonly pendingBotChat = new Map<string, BotExecutionCapability>();
+
+	/**
+	 * 读某个会话的 Bot 身份：会话级优先（私聊），客户端级兜底（设备任务的无头会话）。
+	 * 会话对象还没创建时（运行时工厂先跑）先看 pending 槽，并顺手落到会话上。
+	 */
+	private botOf(conversationId?: string): BotExecutionCapability | undefined {
+		const id = conversationId ?? this.activeId;
+		if (!id) return this.botExecution;
+		const conv = this.convs.get(id);
+		if (conv?.bot) return conv.bot;
+		const pending = this.pendingBotChat.get(id);
+		if (pending) {
+			if (conv) {
+				conv.bot = pending;
+				this.pendingBotChat.delete(id);
+			}
+			return pending;
+		}
+		return this.botExecution;
+	}
 	private botMcpBridge?: McpBridge;
 
 	private executionMcpBridge(cwd: string): McpBridge | undefined {
@@ -4054,7 +4081,8 @@ export class ClientSession {
 		params?: unknown,
 		phase: "execute" | "register" = "execute",
 	): { allowed: boolean; reason?: string } {
-		const bot = this.botExecution;
+		// 私聊会话有自己的 Bot 能力；无头设备任务仍然用客户端级能力。
+		const bot = this.botOf();
 		if (!bot) return { allowed: true };
 		bot.assertActive();
 		if (bot.planOnly && phase === "execute") {
@@ -4230,6 +4258,41 @@ export class ClientSession {
 		return cs;
 	}
 
+	/**
+	 * 解析一个会话该用哪个 Bot 能力（私聊）：
+	 * 1. 已绑定（新建后 / `botOf` 命中）→ 直接用；
+	 * 2. 会话文件里带 `webui/bot-chat`（重开、重启后恢复）→ 按**当前** Bot 配置重建能力；
+	 * 3. 都没有 → `undefined`（普通对话）。
+	 */
+	private async botExecutionForConversation(
+		ownerId: string | undefined,
+		sessionManager: { getEntries?: () => Array<{ type?: string; customType?: string; data?: unknown }> },
+		_cwd: string,
+	): Promise<BotExecutionCapability | undefined> {
+		const bound = this.botOf(ownerId);
+		if (bound) return bound;
+		let entries: Array<{ type?: string; customType?: string; data?: unknown }> = [];
+		try {
+			entries = sessionManager.getEntries?.() ?? [];
+		} catch {
+			entries = [];
+		}
+		const binding = readBotChatBinding(entries);
+		if (!binding) return undefined;
+		const created = await createBotChatCapability(binding.botId);
+		if (!created) return undefined;
+		if (!ownerId) return created.capability;
+		this.pendingBotChat.set(ownerId, created.capability);
+		const conv = this.convs.get(ownerId);
+		if (conv) {
+			conv.bot = created.capability;
+			conv.botId = created.bot.id;
+			conv.botName = created.bot.name;
+			this.pendingBotChat.delete(ownerId);
+		}
+		return created.capability;
+	}
+
 	private makeRuntimeFactory(
 		terminals: TerminalManager,
 		apply?: SubagentTemplate,
@@ -4239,41 +4302,54 @@ export class ClientSession {
 		noSpawnTools?: boolean,
 	): CreateAgentSessionRuntimeFactory {
 		return async ({ cwd: effectiveCwd, sessionManager }) => {
-			if (this.botExecution) await this.botExecution.assertWorkspace(effectiveCwd);
+			// 会话级 Bot 绑定（私聊）优先；无头设备任务仍走客户端级能力兜底。
+			const botExecution = await this.botExecutionForConversation(ownerId, sessionManager, effectiveCwd);
+			if (botExecution) await botExecution.assertWorkspace(effectiveCwd);
 			const botEntry = sessionManager
 				.getEntries()
 				.find((entry) => entry.type === "custom" && entry.customType === "device-bot-execution");
-			if (botEntry && !this.botExecution)
+			if (botEntry && !botExecution)
 				throw new Error("Bot execution transcripts cannot be resumed as ordinary sessions");
-			if (botEntry?.type === "custom" && this.botExecution) {
+			if (botEntry?.type === "custom" && botExecution) {
 				const owner = botEntry.data as { botId?: unknown; revision?: unknown } | undefined;
-				if (owner?.botId !== this.botExecution.bot.id || owner?.revision !== this.botExecution.bot.revision)
+				if (owner?.botId !== botExecution.bot.id || owner?.revision !== botExecution.bot.revision)
 					throw new Error("Bot execution transcript ownership does not match the active capability");
 			}
-			if (this.botExecution && !botEntry)
+			if (botExecution && !botEntry)
 				sessionManager.appendCustomEntry("device-bot-execution", {
-					botId: this.botExecution.bot.id,
-					revision: this.botExecution.bot.revision,
+					botId: botExecution.bot.id,
+					revision: botExecution.bot.revision,
 				});
-			const expectedBotCwd = this.botExecution?.executionCwd ?? this.botExecution?.bot.cwd;
-			if (this.botExecution && expectedBotCwd && resolve(effectiveCwd) !== resolve(expectedBotCwd))
+			// 私聊会话的持久化锚点：重开/重启后据此把同一个 Bot 重新绑回来。
+			if (botExecution) {
+				const chatEntry = sessionManager
+					.getEntries()
+					.find((entry) => entry.type === "custom" && entry.customType === BOT_CHAT_ENTRY);
+				if (!chatEntry)
+					sessionManager.appendCustomEntry(BOT_CHAT_ENTRY, {
+						botId: botExecution.bot.id,
+						revision: botExecution.bot.revision,
+						name: botExecution.bot.name,
+					});
+			}
+			const expectedBotCwd = botExecution?.executionCwd ?? botExecution?.bot.cwd;
+			if (botExecution && expectedBotCwd && resolve(effectiveCwd) !== resolve(expectedBotCwd))
 				throw new Error("Bot cwd is fixed");
 			const sandboxIdentity = this.sandboxes.getExecutionIdentity(effectiveCwd);
-			const releaseMcp =
-				sandboxIdentity || this.botExecution ? undefined : ClientSession.mcpProjects?.retain(effectiveCwd);
+			const releaseMcp = sandboxIdentity || botExecution ? undefined : ClientSession.mcpProjects?.retain(effectiveCwd);
 			try {
-				if (this.botExecution) {
+				if (botExecution) {
 					if (!this.botMcpBridge) {
 						this.botMcpBridge = new McpBridge(this.stateStore.dataDir, undefined, {
 							agentDir: this.agentDir,
 							cwd: effectiveCwd,
-							allowedServers: this.botExecution.bot.mcpServers,
+							allowedServers: botExecution.bot.mcpServers,
 						});
 						await this.botMcpBridge.load();
-						await this.botExecution.assertWorkspace(effectiveCwd);
+						await botExecution.assertWorkspace(effectiveCwd);
 					}
 				} else if (!sandboxIdentity) await ClientSession.mcpProjects?.prepare(effectiveCwd);
-				const sdkBuiltins = sandboxIdentity || this.botExecution ? [] : await getSdkBuiltinExtensionFactories();
+				const sdkBuiltins = sandboxIdentity || botExecution ? [] : await getSdkBuiltinExtensionFactories();
 				const sandboxRuntimeGate = createSandboxRuntimeGate(
 					() => this.sandboxes.getExecutionIdentity(effectiveCwd, sandboxIdentity),
 					effectiveCwd,
@@ -4320,7 +4396,7 @@ export class ClientSession {
 					cwd: effectiveCwd,
 					modelRuntime: this.sharedModelRuntime,
 					resourceLoaderOptions: {
-						...sandboxExtensionOptions(Boolean(sandboxIdentity) || Boolean(this.botExecution)),
+						...sandboxExtensionOptions(Boolean(sandboxIdentity) || Boolean(botExecution)),
 						systemPromptOverride: promptBase.systemPromptOverride,
 						appendSystemPromptOverride: promptBase.appendSystemPromptOverride,
 						skillsOverride: (res) => {
@@ -4330,7 +4406,7 @@ export class ClientSession {
 								workspaceRoots: this.roots,
 							});
 							const allSkills = mergeSkillCollections(res.skills, discovered);
-							if (this.botExecution) return { ...res, skills: this.botExecution.filterSkills(allSkills) };
+							if (botExecution) return { ...res, skills: botExecution.filterSkills(allSkills) };
 							if (apply && apply.enabledSkills.length > 0) {
 								const set = new Set(apply.enabledSkills);
 								return { ...res, skills: allSkills.filter((s) => set.has(s.name)) };
@@ -4368,9 +4444,9 @@ export class ClientSession {
 								hidden: true,
 								factory: (pi) => {
 									pi.on("tool_call", async (event) => {
-										if (this.botExecution) {
+										if (botExecution) {
 											try {
-												await this.botExecution.assertWorkspace(effectiveCwd);
+												await botExecution.assertWorkspace(effectiveCwd);
 												const auth = this.botToolAuthorization(event.toolName, effectiveCwd, event.input);
 												if (!auth.allowed)
 													return { block: true, reason: auth.reason ?? "Tool is not authorized for this Bot" };
@@ -4387,7 +4463,7 @@ export class ClientSession {
 								hidden: true,
 								factory: (pi) => {
 									pi.on("context", (event, ctx) => {
-										const bot = this.botExecution;
+										const bot = botExecution;
 										if (!bot?.groupContext) return;
 										const messages = repairGroupContextRequest(bot.groupContext, event.messages, bot.bot.id);
 										const metrics =
@@ -4398,7 +4474,7 @@ export class ClientSession {
 										if (messages !== event.messages) return { messages };
 									});
 									pi.on("before_agent_start", (_event, ctx) => {
-										const bot = this.botExecution;
+										const bot = botExecution;
 										const current = bot?.groupContext;
 										if (!current) return;
 										const message = groupContextMessage(
@@ -4416,7 +4492,7 @@ export class ClientSession {
 								hidden: true,
 								factory: (pi) => {
 									pi.on("before_agent_start", (event) => {
-										const { core, rewrap } = prepareBotExecutionSystemPrompt(event, this.botExecution);
+										const { core, rewrap } = prepareBotExecutionSystemPrompt(event, botExecution);
 										if (apply) {
 											const tplPrompt = this.templatePrompt(apply).trim();
 											if (apply.promptMode !== "replace" || !tplPrompt) return undefined;
@@ -4516,8 +4592,8 @@ export class ClientSession {
 				const bridge = this.bridgeTarget(bridgeAnchor, ownerId);
 
 				let sessionModel: Parameters<AgentSession["setModel"]>[0] | undefined = initialModel;
-				if (this.botExecution) {
-					const fixed = this.botExecution.captureModel(undefined);
+				if (botExecution) {
+					const fixed = botExecution.captureModel(undefined);
 					sessionModel = services.modelRuntime.getModel(fixed.provider, fixed.modelId);
 					if (!sessionModel) throw new Error("Configured Bot model is unavailable");
 					await this.restoreKeyForModel(`${fixed.provider}/${fixed.modelId}`, effectiveCwd);
@@ -4550,7 +4626,7 @@ export class ClientSession {
 					}
 				}
 
-				await this.botExecution?.assertWorkspace(effectiveCwd);
+				await botExecution?.assertWorkspace(effectiveCwd);
 				const created = await createAgentSessionFromServices({
 					services,
 					sessionManager,
@@ -4790,15 +4866,15 @@ export class ClientSession {
 							},
 							() => this.getLang(),
 						),
-						...(this.botExecution ? [makeDeviceCollabTool()] : []),
+						...(botExecution ? [makeDeviceCollabTool()] : []),
 						// 一句话创建：只有设备侧接入了草案仓库时才出现（Bot 执行里不需要它）。
-						...(!this.botExecution && agentBotToolAvailable() ? [makeAgentBotTool()] : []),
+						...(!botExecution && agentBotToolAvailable() ? [makeAgentBotTool()] : []),
 						// 记忆工具只对有独立记忆目录的 Bot 执行注册（普通会话与子代理不共享这份私产）。
-						...(this.botExecution?.memoryRoot
+						...(botExecution?.memoryRoot
 							? [
 									makeBotMemoryTool({
-										root: this.botExecution.memoryRoot,
-										botId: this.botExecution.bot.id,
+										root: botExecution.memoryRoot,
+										botId: botExecution.bot.id,
 									}),
 								]
 							: []),
@@ -4820,7 +4896,7 @@ export class ClientSession {
 					]).map((t) => this.wrapGenericTool(t, ownerId, effectiveCwd, bridgeAnchor, true)),
 				});
 				try {
-					await this.botExecution?.assertWorkspace(effectiveCwd);
+					await botExecution?.assertWorkspace(effectiveCwd);
 				} catch (error) {
 					created.session.dispose();
 					throw error;
@@ -6543,6 +6619,7 @@ export class ClientSession {
 						locked: conv.presetLocked || !this.isBlankConversation(conv),
 					}
 				: null,
+			bot: conv?.botId ? { id: conv.botId, name: conv.botName ?? conv.botId } : null,
 			permission: conv
 				? (conv.permissionPreset ?? this.settingsSvc.current.defaultPermissionPreset ?? "workspace-write-never")
 				: null,
@@ -8727,8 +8804,9 @@ export class ClientSession {
 		session: AgentSession,
 		model: Parameters<AgentSession["setModel"]>[0],
 	): Promise<void> {
-		if (this.botExecution) {
-			const fixed = this.botExecution.captureModel(undefined);
+		const bot = this.botOf();
+		if (bot) {
+			const fixed = bot.captureModel(undefined);
 			if (model.provider !== fixed.provider || model.id !== fixed.modelId) throw new Error("Bot model is fixed");
 		}
 		await session.setModel(model);
@@ -9772,7 +9850,7 @@ export class ClientSession {
 			this.settingsSvc.current.defaultAgentPreset ??
 			"standard";
 		this.syncPluginTools(session, targetPreset);
-		if (this.botExecution) {
+		if (this.botOf(conv?.id)) {
 			session.setActiveToolsByName(
 				session
 					.getAllTools()
@@ -10697,9 +10775,12 @@ export class ClientSession {
 		queue = false,
 		targetConversation?: Conversation,
 	): Promise<void> {
-		this.botExecution?.assertActive();
-		if (this.botExecution && text.trimStart().startsWith("/")) throw new Error("Bot slash commands are disabled");
+		// 私聊会话的能力挂在会话上（`conv.bot`）；无头设备任务才有客户端级能力。
+		(this.botOf(targetConversation?.id) ?? this.botExecution)?.assertActive();
 		const conv = targetConversation ?? this.conv;
+		// 私聊会话的能力挂在会话上（`conv.bot`），无头设备任务挂在客户端上：两处都要认。
+		const botCapability = this.botOf(conv.id);
+		if (botCapability && text.trimStart().startsWith("/")) throw new Error("Bot slash commands are disabled");
 		if (conv.nativeCli) {
 			this.emit({
 				type: "notice",
@@ -10709,13 +10790,13 @@ export class ClientSession {
 			});
 			return;
 		}
-		if (this.botExecution) await this.botExecution.assertWorkspace(conv.cwd);
+		if (botCapability) await botCapability.assertWorkspace(conv.cwd);
 		this.assertSubagentWorktreeAdmission(conv);
 		if (
-			!this.botExecution &&
+			!botCapability &&
 			conv.session.sessionManager
 				?.getEntries?.()
-				.some((entry) => entry.type === "custom" && entry.customType === "device-bot-execution")
+				.some((entry) => entry.type === "custom" && entry.customType === BOT_CHAT_ENTRY)
 		)
 			throw new Error("Bot transcripts are inspection-only outside their execution capability");
 		if (targetConversation && this.convs.get(conv.id) !== conv) {
@@ -12043,8 +12124,23 @@ export class ClientSession {
 		ephemeral?: boolean,
 		onReady?: (id: string) => void,
 		independent = true,
+		botId?: string,
 	): Promise<boolean> {
 		if (this.quiesceBlocked()) return false;
+		// 私聊 = 普通对话 + Bot 身份：先把常驻能力建好，建会话时按 Bot 的目录/模型/工具/prompt 走。
+		const botChat = botId ? await createBotChatCapability(botId) : undefined;
+		if (botId && !botChat) {
+			this.emit({
+				type: "notice",
+				level: "error",
+				text: "这个智能体已不可用（被删除或停用），请到设备中心确认后再试。",
+				textEn: "This agent is unavailable (deleted or disabled). Check the device center and retry.",
+			});
+			return false;
+		}
+		// Bot 没配模型时用本机默认模型（与无头设备任务一致：`captureModel` 只认第一次传入的兜底值）。
+		if (botChat) botChat.capability.captureModel(this.stateStore?.getDefaultModel("pi"));
+		const sameBotChat = (c: Conversation | undefined) => !!botChat && c?.botId === botChat.bot.id;
 		const isBlank = (c: Conversation): boolean => {
 			if (c.transferring || c.nativeCli) return false;
 			try {
@@ -12055,7 +12151,8 @@ export class ClientSession {
 			}
 		};
 		const active = this.convs.get(this.activeId);
-		if (!ephemeral && active && !active.transferring && isBlank(active)) {
+		const reuseActive = botChat ? sameBotChat(active) : !active?.botId;
+		if (!ephemeral && active && !active.transferring && isBlank(active) && reuseActive) {
 			if (_preset) await this.selectAgentPreset(_preset);
 			else {
 				this.pushSettings();
@@ -12068,6 +12165,7 @@ export class ClientSession {
 		if (!ephemeral) {
 			for (const conv of this.convs.values()) {
 				if (conv.id === this.activeId || conv.transferring) continue;
+				if (botChat ? conv.botId !== botChat.bot.id : !!conv.botId) continue;
 				if (isBlank(conv)) {
 					await this.switchConversation(conv.id);
 					if (_preset) await this.selectAgentPreset(_preset);
@@ -12122,11 +12220,21 @@ export class ClientSession {
 					mkdirSync(ephemeralDir, { recursive: true });
 					(sessionManager as unknown as { sessionDir: string }).sessionDir = ephemeralDir;
 				} catch {}
+			} else if (botChat) {
+				// Bot 私聊的转录落在 bot 自己的目录里：与普通会话历史分开，重开时按 bot 找回。
+				sessionManager = SessionManager.create(sessionBaseDir, join(this.agentDir, "bot-sessions", botChat.bot.id));
 			} else {
 				sessionManager = SessionManager.create(sessionBaseDir);
 			}
+			if (botChat) this.pendingBotChat.set(conversationId, botChat.capability);
 			const runtime = await createAgentSessionRuntime(
-				this.makeRuntimeFactory(terminals, undefined, conversationId, prevModel ?? undefined, _preset),
+				this.makeRuntimeFactory(
+					terminals,
+					undefined,
+					conversationId,
+					prevModel ?? undefined,
+					botChat ? undefined : _preset,
+				),
 				{
 					cwd: sessionBaseDir,
 					agentDir: this.agentDir,
@@ -12136,6 +12244,12 @@ export class ClientSession {
 			const conv = this.makeConversation(runtime, conversationId, terminals);
 			conv.cwd = this.cwd;
 			conv.independent = independent;
+			if (botChat) {
+				conv.bot = botChat.capability;
+				conv.botId = botChat.bot.id;
+				conv.botName = botChat.bot.name;
+				this.pendingBotChat.delete(conversationId);
+			}
 			conv.session.sessionManager.appendCustomEntry("webui/independent", { independent });
 			if (ephemeral) conv.isEphemeral = true;
 			if (_preset) {
@@ -13164,6 +13278,9 @@ export class ClientSession {
 				...(conv.terminals.countUserBlockingLive() > 0 ? { hasUserTerminals: true as const } : {}),
 				...(conv.forkFrom ? { forkFrom: conv.forkFrom } : {}),
 				...(conv.forkFrom || conv.forkedFromSessionPath ? { forked: true as const } : {}),
+				// 私聊 = 普通对话 + Bot 身份：左栏/头部据此显示是谁，并高亮「智能体」区那一行。
+				...(conv.botId ? { botId: conv.botId } : {}),
+				...(conv.botName ? { botName: conv.botName } : {}),
 			});
 		}
 		try {

@@ -127,6 +127,10 @@ export interface HubTask {
 	leaseToken?: string;
 	leaseGeneration?: number;
 	lastHeartbeatAt?: number;
+	/** 设备侧第一次确认收到任务的时刻（`task_event running`）。只写一次，用于识别"派了但没起来"。 */
+	acknowledgedAt?: number;
+	/** 设备侧最近一次租约续期（`task_lease_renew`）的时刻：唯一能证明执行端真的在跑的信号。 */
+	lastLeaseRenewAt?: number;
 	recoveryUntil?: number;
 	planOnly?: boolean;
 	plan?: import("./group-plan-guard.js").GroupTaskPlanRecord;

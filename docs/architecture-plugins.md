@@ -553,6 +553,7 @@ CLI `install --catalog <url>`（同步列表 + 逐条安装/更新，已安装�
 | `contextmenu.file`           | 文件树条目右键菜单                                                                                                                                                                    |
 | `contextmenu.search`         | 全局搜索（Ctrl+K）结果行右键菜单（`target.kind` 为 `session` / `project` / `file` / `folder` / `plugin`；`when` 可用 `search.isSession` 一类判据）                                    |
 | `contextmenu.toolcall`       | 工具调用卡片的**工具名**右键菜单（宿主唯一菜单；内置一条「显示工具详细信息」，见 `ToolInfoDialog.tsx`）                                                                               |
+| `contextmenu.bot`            | 左栏「智能体」Bot 行右键菜单（`target.kind="agent-bot"`；宿主条目：私聊 / 引用到对话 / 编辑 / 设备中心管理 / 记忆 / 复制 ID，见 `AgentBotsSection.tsx`）                              |
 | `settings.pages`             | 设置面板里的一整页（插件用 `mount()` 自己渲染）                                                                                                                                       |
 | `leftpanel.projects.actions` | 左栏「最近项目」标题栏按钮（宿主「管理项目」按钮之后追加；无条目不画）                                                                                                                |
 | `leftpanel.project`          | 左栏项目行内嵌区（项目名旁的徽标 / 快捷按钮；点击回传 `target={id: 项目路径, kind: "project"}`）                                                                                      |

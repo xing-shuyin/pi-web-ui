@@ -560,14 +560,18 @@ describe("Bot-only device runtime", () => {
 		await expect(second.onTask({ ...f.task("room1"), conversationId, resume: true })).rejects.toThrow(
 			"configuration changed",
 		);
-		await expect(
-			second.onTask({
+		// 这个会话在本设备上还没有任何转录（首轮失败 / 从未启动）：resume 必须降级为
+		// “开一轮新会话”，而不是把整条会话判死（旧行为下以后每条消息都报 unavailable）。
+		// 已有转录但 binding 变了（下一段 room1 / changed-hub）仍然必须报错，不能静默洗白。
+		expect(
+			await second.onTask({
 				...f.task("room0", "missing-conversation"),
 				conversationId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
 				resume: true,
 			}),
-		).rejects.toThrow("unavailable");
-		expect(seen).toHaveLength(2);
+		).toBe("created");
+		expect(seen).toHaveLength(3);
+		expect(seen[2]).toBeUndefined();
 		const changed = createDeviceRuntime({
 			...f.options,
 			config: { ...f.options.config, hubUrl: "http://different-hub" },

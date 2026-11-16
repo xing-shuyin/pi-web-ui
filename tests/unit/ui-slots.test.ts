@@ -42,7 +42,7 @@ const ids = (entries: { id: string }[]) => entries.map((e) => e.id);
 
 describe("UI slot cardinality（P1-4）", () => {
 	it("所有现有挂载点都有显式 list 规格，新增 single 不会改变现有入口语义", () => {
-		expect(UI_SLOT_SPECS).toHaveLength(39);
+		expect(UI_SLOT_SPECS).toHaveLength(40);
 		expect(UI_SLOT_SPECS.every((spec) => spec.cardinality === "list")).toBe(true);
 		expect(new Set(UI_SLOT_SPECS.map((spec) => spec.slot)).size).toBe(UI_SLOT_SPECS.length);
 	});
@@ -188,7 +188,7 @@ describe("buildUiSlots / 第 1 层：宿主默认", () => {
 			order: 59,
 			align: "end",
 		});
-		expect(Object.keys(slots)).toHaveLength(39);
+		expect(Object.keys(slots)).toHaveLength(40);
 		expect(slots["composer.leading"]).toEqual([]);
 		expect(ids(slots["composer.actions"])).toEqual([
 			"host:composer-upload",
@@ -271,6 +271,7 @@ describe("buildUiSlots / 第 1 层：宿主默认", () => {
 			"contextmenu.file",
 			"contextmenu.search",
 			"contextmenu.toolcall",
+			"contextmenu.bot",
 			"tool.card.footer",
 			"settings.pages",
 			"tasks.panel",
@@ -446,7 +447,7 @@ describe("buildUiSlots / 第 2 层：插件贡献", () => {
 			arrange: [],
 		});
 		const slots = build([dirty]);
-		expect(Object.keys(slots)).toHaveLength(39);
+		expect(Object.keys(slots)).toHaveLength(40);
 		expect(ids(Object.values(slots).flat()).some((id) => id === "dirty:bad")).toBe(false);
 	});
 });

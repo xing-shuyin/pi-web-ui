@@ -19,6 +19,7 @@
 import { botExecutionMessageAllowed } from "./device-center/bot-execution.js";
 import { createBotDraftStore, normalizeBotDraft } from "./device-center/bot-drafts.js";
 import { setAgentBotHost } from "./device-center/bot-creation-tool.js";
+import { setBotChatHost } from "./device-center/bot-chat.js";
 import { startBotMemoryMaintenance } from "./device-center/bot-memory-scheduler.js";
 import { ALL_AGENT_TOOL_ENTRIES, effectiveDisabledAgentTools, isToolSupportedOnPlatform } from "./tool-manager.js";
 import "./patch-remote-catalog.js";
@@ -1103,6 +1104,14 @@ const botMemoryMaintenance = startBotMemoryMaintenance({
 void botMemoryMaintenance;
 
 // 一句话创建：模型只能写草案，落库由人在界面确认（见 bot-drafts.ts 的批准语义）。
+setBotChatHost({
+	// 私聊 = 普通对话 + Bot 身份：会话创建/恢复时按 id 回到本机 Bot 注册表取当前配置。
+	// 走 `list()` 而不是 `get()`：注册表是懒加载的（首次 list 才读盘），
+	// `get()` 在加载前会给出 undefined，那会把"还没加载"误判成"Bot 不存在"。
+	resolve: async (botId) => (await deviceBots.list()).find((bot) => bot.id === botId),
+	dataDir: DATA_DIR,
+});
+
 setAgentBotHost({
 	draft: async (input) => {
 		const allowed = new Set(ALL_AGENT_TOOL_ENTRIES.map((tool) => tool.name));
@@ -1398,6 +1407,7 @@ export interface DispatchSession {
 		ephemeral?: boolean,
 		onReady?: (id: string) => void,
 		independent?: boolean,
+		botId?: string,
 	): Promise<boolean | void>;
 	newCliChat?(config: NativeCliConfig, cwd?: string, onReady?: (id: string) => void): Promise<boolean>;
 	controlNativeCli?(conversationId: string, terminalId: string, action: "detach" | "reconnect" | "stop"): Promise<void>;
