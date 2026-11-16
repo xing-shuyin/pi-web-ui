@@ -15,7 +15,7 @@ import { appUrl } from "../base-url";
 import { openGroupEventStream, taskProgressMatches, acceptTaskProgress } from "../group-event-stream";
 import { randomUuid } from "../uuid";
 import { withToken } from "../auth-token";
-import { isZhLocale, useI18n, useT } from "../i18n";
+import { useI18n, useT } from "../i18n";
 import { groupAttention } from "../group-attention";
 import { buildUiSlots, type UiSlotEntry } from "../ui-slots";
 import {
@@ -92,7 +92,6 @@ function GroupRoom({
 }) {
 	const { locale } = useI18n();
 	const t = useT();
-	const zh = isZhLocale(locale);
 	const [detail, setDetail] = useState<RouterGroupDetail | null>(null);
 	const devices: GroupDevice[] = detail?.bots ?? [];
 	const [error, setError] = useState("");
@@ -255,7 +254,7 @@ function GroupRoom({
 		const displayDetail = detail?.room.router?.enabled
 			? { ...detail, room: { ...detail.room, primaryBotId: undefined } }
 			: detail;
-		const result = groupConversationState(roomId, displayDetail, devices, zh);
+		const result = groupConversationState(roomId, displayDetail, devices, t);
 		const routerMessageIds = new Set(
 			(detail?.messages ?? [])
 				.filter((message) => String(message.sender.type) === "router")
@@ -272,7 +271,7 @@ function GroupRoom({
 			},
 			labels: displayLabels,
 		};
-	}, [roomId, detail, devices, zh, t]);
+	}, [roomId, detail, devices, t]);
 	const uiSlots = useMemo(() => {
 		return buildUiSlots([], {
 			locale,

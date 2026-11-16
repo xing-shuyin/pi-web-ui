@@ -26,7 +26,7 @@ const STORAGE_KEY = "pi-web-ui:lang";
 export type Translate = (key: keyof typeof zh, vars?: Record<string, string | number>) => string;
 
 /** Replace source tokens once; interpolated user text is never parsed as another token or replacement pattern. */
-function interpolate(text: string, vars?: Record<string, string | number>): string {
+export function interpolate(text: string, vars?: Record<string, string | number>): string {
 	return vars
 		? text.replace(/\{([^{}]+)\}/g, (token, key: string) => (Object.hasOwn(vars, key) ? String(vars[key]) : token))
 		: text;

@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from "react";
 import { appUrl } from "../base-url";
 import { withToken } from "../auth-token";
-import { isZhLocale, useI18n } from "../i18n";
+import { useT } from "../i18n";
 import type { GroupDevice } from "../device-group-messages";
 
 export interface TransferFilePreview {
@@ -82,8 +82,7 @@ export function DeviceFileTransfer({
 	bots?: GroupDevice[];
 	disabled?: boolean;
 }) {
-	const { locale } = useI18n();
-	const zh = isZhLocale(locale);
+	const t = useT();
 
 	const [transfers, setTransfers] = useState<TransferItem[]>([]);
 	const [selectedOverwrites, setSelectedOverwrites] = useState<Record<string, Set<string>>>({});
@@ -194,7 +193,7 @@ export function DeviceFileTransfer({
 		e.preventDefault();
 		if (!sourceBotId || !targetBotId || !transferPaths.trim() || starting) return;
 		if (sourceBotId === targetBotId) {
-			setError(zh ? "源机器人与目标机器人不能相同" : "Source and target bots must be different");
+			setError(t("deviceFileTransferSameBotError"));
 			return;
 		}
 
@@ -204,7 +203,7 @@ export function DeviceFileTransfer({
 
 		setStarting(true);
 		setError("");
-		setStatusMessage(zh ? "正在创建并启动文件传输..." : "Initiating chunked file transfer...");
+		setStatusMessage(t("deviceFileTransferStartingStatus"));
 
 		try {
 			const paths = transferPaths
@@ -225,11 +224,7 @@ export function DeviceFileTransfer({
 
 			if (gen !== generationRef.current || targetRoom !== roomRef.current) return;
 
-			setStatusMessage(
-				zh
-					? `传输任务已成功启动 (ID: ${result.transferId?.slice(0, 8) ?? ""})，正在后台分块传输中。`
-					: `Transfer started (ID: ${result.transferId?.slice(0, 8) ?? ""}), streaming chunks in background.`,
-			);
+			setStatusMessage(t("deviceFileTransferStarted", { id: result.transferId?.slice(0, 8) ?? "" }));
 			setShowNewTransfer(false);
 			setTransferPaths("");
 			startKeyRef.current = null;
@@ -265,7 +260,7 @@ export function DeviceFileTransfer({
 
 		setApplying(true);
 		setError("");
-		setStatusMessage(zh ? "正在导入文件变更..." : "Applying file changes...");
+		setStatusMessage(t("deviceFileTransferApplyingStatus"));
 
 		try {
 			const overwrites = Array.from(selectedOverwrites[item.transferId] || []);
@@ -281,9 +276,10 @@ export function DeviceFileTransfer({
 			if (gen !== generationRef.current || targetRoom !== roomRef.current) return;
 
 			setStatusMessage(
-				zh
-					? `导入成功：已应用 ${result.applied?.length ?? 0} 个文件，未变 ${result.unchanged?.length ?? 0} 个`
-					: `Apply successful: applied ${result.applied?.length ?? 0}, unchanged ${result.unchanged?.length ?? 0}`,
+				t("deviceFileTransferApplied", {
+					applied: result.applied?.length ?? 0,
+					unchanged: result.unchanged?.length ?? 0,
+				}),
 			);
 			setTransfers((prev) => prev.map((t) => (t.transferId === item.transferId ? { ...t, status: "applied" } : t)));
 		} catch (err) {
@@ -312,7 +308,7 @@ export function DeviceFileTransfer({
 			if (gen !== generationRef.current || targetRoom !== roomRef.current) return;
 
 			setTransfers((prev) => prev.map((t) => (t.transferId === item.transferId ? { ...t, status: "cancelled" } : t)));
-			setStatusMessage(zh ? "传输已取消，暂存文件与配额已物理释放" : "Transfer aborted; staged quota freed");
+			setStatusMessage(t("deviceFileTransferAborted"));
 		} catch (err) {
 			if (gen === generationRef.current && targetRoom === roomRef.current) {
 				setError(err instanceof Error ? err.message : String(err));
@@ -353,17 +349,13 @@ export function DeviceFileTransfer({
 		<details className="dft-panel" open={transfers.length > 0}>
 			<summary className="dft-summary">
 				<span className="dft-title-icon">📦</span>
-				<span>{zh ? "跨机大文件传输与断点续传" : "Cross-Device Chunked File Transfers"}</span>
+				<span>{t("deviceFileTransferTitle")}</span>
 				{transfers.length > 0 && (
 					<span className="dft-badge">
 						{stagingCount > 0
-							? zh
-								? `${stagingCount} 个传输中`
-								: `${stagingCount} streaming`
+							? t("deviceFileTransferStreamingCount", { count: stagingCount })
 							: stagedCount > 0
-								? zh
-									? `${stagedCount} 个待导入`
-									: `${stagedCount} staged`
+								? t("deviceFileTransferStagedCount", { count: stagedCount })
 								: `${transfers.length}`}
 					</span>
 				)}
@@ -383,13 +375,7 @@ export function DeviceFileTransfer({
 						onClick={() => setShowNewTransfer((v) => !v)}
 						disabled={disabled || bots.length < 2}
 					>
-						{showNewTransfer
-							? zh
-								? "收起传输表单"
-								: "Close Transfer Form"
-							: zh
-								? "+ 发起新文件/目录传输"
-								: "+ New File/Directory Transfer"}
+						{showNewTransfer ? t("deviceFileTransferCloseForm") : t("deviceFileTransferNewTransfer")}
 					</button>
 				</div>
 
@@ -397,7 +383,7 @@ export function DeviceFileTransfer({
 					<form className="dft-start-form" onSubmit={handleStartTransfer}>
 						<div className="dft-form-row">
 							<label className="dft-form-label">
-								<span>{zh ? "源机器人 (发送端)" : "Source Bot (Sender)"}</span>
+								<span>{t("deviceFileTransferSourceBot")}</span>
 								<select
 									className="dft-select"
 									value={sourceBotId}
@@ -413,7 +399,7 @@ export function DeviceFileTransfer({
 							</label>
 
 							<label className="dft-form-label">
-								<span>{zh ? "目标机器人 (接收端)" : "Target Bot (Receiver)"}</span>
+								<span>{t("deviceFileTransferTargetBot")}</span>
 								<select
 									className="dft-select"
 									value={targetBotId}
@@ -433,11 +419,11 @@ export function DeviceFileTransfer({
 
 						<div className="dft-form-row">
 							<label className="dft-form-label full-width">
-								<span>{zh ? "相对路径（文件或目录，每行一个）" : "Project-relative paths (one per line)"}</span>
+								<span>{t("deviceFileTransferPathsLabel")}</span>
 								<textarea
 									className="dft-textarea"
 									rows={2}
-									placeholder={zh ? "如: src/ 或 large-asset.bin" : "e.g. src/ or data/model.weights"}
+									placeholder={t("deviceFileTransferPathsPlaceholder")}
 									value={transferPaths}
 									onChange={(e) => setTransferPaths(e.target.value)}
 									disabled={disabled || starting}
@@ -453,7 +439,7 @@ export function DeviceFileTransfer({
 									onChange={(e) => setRecursive(e.target.checked)}
 									disabled={disabled || starting}
 								/>
-								<span>{zh ? "递归包含子目录 (recursive)" : "Recursive directory traversal"}</span>
+								<span>{t("deviceFileTransferRecursive")}</span>
 							</label>
 
 							<button
@@ -461,7 +447,7 @@ export function DeviceFileTransfer({
 								className="btn primary dft-btn-submit"
 								disabled={disabled || starting || !transferPaths.trim() || sourceBotId === targetBotId}
 							>
-								{starting ? (zh ? "启动中..." : "Starting...") : zh ? "开始分块传输" : "Start Transfer"}
+								{starting ? t("deviceFileTransferStarting") : t("deviceFileTransferStart")}
 							</button>
 						</div>
 					</form>
@@ -469,12 +455,8 @@ export function DeviceFileTransfer({
 
 				{transfers.length === 0 ? (
 					<div className="dft-empty">
-						<p>{zh ? "当前群暂无文件传输记录。" : "No active file transfers in this room."}</p>
-						<span className="dft-hint">
-							{zh
-								? "支持突破 8MiB 限制的大文件及 >128 文件的目录分块传输。发起后将在此实时展示进度与断点续传状态。"
-								: "Supports >8MiB files and 128+ file directories. Live progress, chunk checksums and resume controls appear here."}
-						</span>
+						<p>{t("deviceFileTransferEmpty")}</p>
+						<span className="dft-hint">{t("deviceFileTransferEmptyHint")}</span>
 					</div>
 				) : (
 					<div className="dft-transfers-list">
@@ -495,29 +477,29 @@ export function DeviceFileTransfer({
 											</span>
 										</div>
 										<span className={`dft-status-tag dft-tag-${item.status}`}>
-											{item.status === "staging" && (zh ? "分块传输中" : "Streaming")}
-											{(item.status === "staged" || item.status === "ready") && (zh ? "待确认导入" : "Ready")}
-											{item.status === "queued" && (zh ? "排队中" : "Queued")}
-											{item.status === "interrupted" && (zh ? "已中断" : "Interrupted")}
-											{item.status === "cancelling" && (zh ? "取消中" : "Cancelling")}
-											{item.status === "applying" && (zh ? "导入中" : "Applying")}
-											{item.status === "applied" && (zh ? "已导入" : "Applied")}
-											{item.status === "cancelled" && (zh ? "已取消" : "Cancelled")}
-											{item.status === "failed" && (zh ? "失败" : "Failed")}
+											{item.status === "staging" && t("deviceFileTransferStatusStaging")}
+											{(item.status === "staged" || item.status === "ready") && t("deviceFileTransferStatusReady")}
+											{item.status === "queued" && t("groupWorkItemsStatusQueued")}
+											{item.status === "interrupted" && t("groupWorkItemsStatusInterrupted")}
+											{item.status === "cancelling" && t("deviceFileTransferStatusCancelling")}
+											{item.status === "applying" && t("deviceFileTransferStatusApplying")}
+											{item.status === "applied" && t("deviceFileTransferStatusApplied")}
+											{item.status === "cancelled" && t("cancelled")}
+											{item.status === "failed" && t("groupWorkItemsStatusFailed")}
 										</span>
 									</div>
 
 									<div className="dft-metrics">
 										<span>
-											{zh ? "文件: " : "Files: "}
+											{t("deviceFileTransferMetricFiles")}
 											<strong>{item.totalFiles != null ? item.totalFiles : "-"}</strong>
 										</span>
 										<span>
-											{zh ? "大小: " : "Size: "}
+											{t("deviceFileTransferMetricSize")}
 											<strong>{item.totalBytes != null ? formatBytes(item.totalBytes) : "-"}</strong>
 										</span>
 										<span>
-											{zh ? "分块: " : "Chunks: "}
+											{t("deviceFileTransferMetricChunks")}
 											<strong>
 												{item.totalChunks != null ? `${item.receivedChunks?.length ?? 0} / ${item.totalChunks}` : "-"}
 											</strong>
@@ -531,24 +513,14 @@ export function DeviceFileTransfer({
 										<span>{percent}%</span>
 										<span className="dft-hash-status">
 											{item.status === "staged" || item.status === "ready" || item.status === "applied"
-												? zh
-													? "✓ SHA256 完整校验通过"
-													: "✓ SHA256 Verified"
+												? t("deviceFileTransferHashVerified")
 												: item.status === "cancelled"
-													? zh
-														? "传输已取消"
-														: "Transfer cancelled"
+													? t("deviceFileTransferHashCancelled")
 													: item.status === "failed"
-														? zh
-															? "传输失败"
-															: "Transfer failed"
+														? t("deviceFileTransferHashFailed")
 														: item.status === "interrupted"
-															? zh
-																? "传输已中断"
-																: "Transfer interrupted"
-															: zh
-																? "32KiB 有界分块传输与断点校验中"
-																: "32KiB Bounded Chunk Streaming"}
+															? t("deviceFileTransferHashInterrupted")
+															: t("deviceFileTransferHashStreaming")}
 										</span>
 									</div>
 
@@ -560,7 +532,7 @@ export function DeviceFileTransfer({
 
 									{previewFiles.length > 0 && (
 										<div className="dft-preview-section">
-											<div className="dft-preview-title">{zh ? "变更差异预览：" : "File Changes Preview:"}</div>
+											<div className="dft-preview-title">{t("deviceFileTransferPreviewTitle")}</div>
 											<div className="dft-files-table">
 												{previewFiles.map((file) => (
 													<div key={file.path} className={`dft-file-row dft-file-${file.status}`}>
@@ -581,7 +553,7 @@ export function DeviceFileTransfer({
 																	onChange={() => toggleOverwrite(item.transferId, file.path)}
 																	disabled={disabled || (item.status !== "staged" && item.status !== "ready")}
 																/>
-																<span>{zh ? "显式覆盖" : "Overwrite"}</span>
+																<span>{t("deviceFileTransferOverwrite")}</span>
 															</label>
 														)}
 													</div>
@@ -593,7 +565,7 @@ export function DeviceFileTransfer({
 									<div className="dft-card-actions">
 										{item.status === "interrupted" && item.manifestHash && (
 											<button type="button" className="btn" disabled={disabled} onClick={() => handleResume(item)}>
-												{zh ? "按原版本续传" : "Resume saved version"}
+												{t("deviceFileTransferResume")}
 											</button>
 										)}
 										{!item.applyStarted &&
@@ -604,7 +576,7 @@ export function DeviceFileTransfer({
 													onClick={() => handleAbort(item)}
 													disabled={disabled}
 												>
-													{zh ? "取消传输" : "Abort Transfer"}
+													{t("deviceFileTransferAbort")}
 												</button>
 											)}
 										{(item.status === "staged" || item.status === "ready") && (
@@ -614,7 +586,7 @@ export function DeviceFileTransfer({
 												onClick={() => handleApply(item)}
 												disabled={disabled || applying}
 											>
-												{applying ? (zh ? "导入中..." : "Applying...") : zh ? "确认导入变更 (Apply)" : "Confirm Apply"}
+												{applying ? t("deviceFileTransferApplying") : t("deviceFileTransferConfirmApply")}
 											</button>
 										)}
 									</div>

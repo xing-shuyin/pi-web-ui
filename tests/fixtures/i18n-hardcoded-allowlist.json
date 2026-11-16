@@ -632,264 +632,6 @@
 			"reason": "pending"
 		},
 		{
-			"file": "web/src/components/DeviceFileTransfer.tsx",
-			"text": "+ 发起新文件/目录传输",
-			"count": 1,
-			"reason": "pending"
-		},
-		{
-			"file": "web/src/components/DeviceFileTransfer.tsx",
-			"text": "✓ SHA256 完整校验通过",
-			"count": 1,
-			"reason": "pending"
-		},
-		{
-			"file": "web/src/components/DeviceFileTransfer.tsx",
-			"text": "${stagedCount} 个待导入",
-			"count": 1,
-			"reason": "pending"
-		},
-		{
-			"file": "web/src/components/DeviceFileTransfer.tsx",
-			"text": "${stagingCount} 个传输中",
-			"count": 1,
-			"reason": "pending"
-		},
-		{
-			"file": "web/src/components/DeviceFileTransfer.tsx",
-			"text": "32KiB 有界分块传输与断点校验中",
-			"count": 1,
-			"reason": "pending"
-		},
-		{
-			"file": "web/src/components/DeviceFileTransfer.tsx",
-			"text": "传输任务已成功启动 (ID: ${result.transferId?.slice(0, 8) ?? \"\"})，正在后台分块传输中。",
-			"count": 1,
-			"reason": "pending"
-		},
-		{
-			"file": "web/src/components/DeviceFileTransfer.tsx",
-			"text": "传输失败",
-			"count": 1,
-			"reason": "pending"
-		},
-		{
-			"file": "web/src/components/DeviceFileTransfer.tsx",
-			"text": "传输已中断",
-			"count": 1,
-			"reason": "pending"
-		},
-		{
-			"file": "web/src/components/DeviceFileTransfer.tsx",
-			"text": "传输已取消",
-			"count": 1,
-			"reason": "pending"
-		},
-		{
-			"file": "web/src/components/DeviceFileTransfer.tsx",
-			"text": "传输已取消，暂存文件与配额已物理释放",
-			"count": 1,
-			"reason": "pending"
-		},
-		{
-			"file": "web/src/components/DeviceFileTransfer.tsx",
-			"text": "分块: ",
-			"count": 1,
-			"reason": "pending"
-		},
-		{
-			"file": "web/src/components/DeviceFileTransfer.tsx",
-			"text": "分块传输中",
-			"count": 1,
-			"reason": "pending"
-		},
-		{
-			"file": "web/src/components/DeviceFileTransfer.tsx",
-			"text": "取消中",
-			"count": 1,
-			"reason": "pending"
-		},
-		{
-			"file": "web/src/components/DeviceFileTransfer.tsx",
-			"text": "取消传输",
-			"count": 1,
-			"reason": "pending"
-		},
-		{
-			"file": "web/src/components/DeviceFileTransfer.tsx",
-			"text": "变更差异预览：",
-			"count": 1,
-			"reason": "pending"
-		},
-		{
-			"file": "web/src/components/DeviceFileTransfer.tsx",
-			"text": "启动中...",
-			"count": 1,
-			"reason": "pending"
-		},
-		{
-			"file": "web/src/components/DeviceFileTransfer.tsx",
-			"text": "大小: ",
-			"count": 1,
-			"reason": "pending"
-		},
-		{
-			"file": "web/src/components/DeviceFileTransfer.tsx",
-			"text": "失败",
-			"count": 1,
-			"reason": "pending"
-		},
-		{
-			"file": "web/src/components/DeviceFileTransfer.tsx",
-			"text": "如: src/ 或 large-asset.bin",
-			"count": 1,
-			"reason": "pending"
-		},
-		{
-			"file": "web/src/components/DeviceFileTransfer.tsx",
-			"text": "导入中",
-			"count": 1,
-			"reason": "pending"
-		},
-		{
-			"file": "web/src/components/DeviceFileTransfer.tsx",
-			"text": "导入中...",
-			"count": 1,
-			"reason": "pending"
-		},
-		{
-			"file": "web/src/components/DeviceFileTransfer.tsx",
-			"text": "导入成功：已应用 ${result.applied?.length ?? 0} 个文件，未变 ${result.unchanged?.length ?? 0} 个",
-			"count": 1,
-			"reason": "pending"
-		},
-		{
-			"file": "web/src/components/DeviceFileTransfer.tsx",
-			"text": "已中断",
-			"count": 1,
-			"reason": "pending"
-		},
-		{
-			"file": "web/src/components/DeviceFileTransfer.tsx",
-			"text": "已取消",
-			"count": 1,
-			"reason": "pending"
-		},
-		{
-			"file": "web/src/components/DeviceFileTransfer.tsx",
-			"text": "已导入",
-			"count": 1,
-			"reason": "pending"
-		},
-		{
-			"file": "web/src/components/DeviceFileTransfer.tsx",
-			"text": "开始分块传输",
-			"count": 1,
-			"reason": "pending"
-		},
-		{
-			"file": "web/src/components/DeviceFileTransfer.tsx",
-			"text": "当前群暂无文件传输记录。",
-			"count": 1,
-			"reason": "pending"
-		},
-		{
-			"file": "web/src/components/DeviceFileTransfer.tsx",
-			"text": "待确认导入",
-			"count": 1,
-			"reason": "pending"
-		},
-		{
-			"file": "web/src/components/DeviceFileTransfer.tsx",
-			"text": "按原版本续传",
-			"count": 1,
-			"reason": "pending"
-		},
-		{
-			"file": "web/src/components/DeviceFileTransfer.tsx",
-			"text": "排队中",
-			"count": 1,
-			"reason": "pending"
-		},
-		{
-			"file": "web/src/components/DeviceFileTransfer.tsx",
-			"text": "支持突破 8MiB 限制的大文件及 >128 文件的目录分块传输。发起后将在此实时展示进度与断点续传状态。",
-			"count": 1,
-			"reason": "pending"
-		},
-		{
-			"file": "web/src/components/DeviceFileTransfer.tsx",
-			"text": "收起传输表单",
-			"count": 1,
-			"reason": "pending"
-		},
-		{
-			"file": "web/src/components/DeviceFileTransfer.tsx",
-			"text": "文件: ",
-			"count": 1,
-			"reason": "pending"
-		},
-		{
-			"file": "web/src/components/DeviceFileTransfer.tsx",
-			"text": "显式覆盖",
-			"count": 1,
-			"reason": "pending"
-		},
-		{
-			"file": "web/src/components/DeviceFileTransfer.tsx",
-			"text": "正在创建并启动文件传输...",
-			"count": 1,
-			"reason": "pending"
-		},
-		{
-			"file": "web/src/components/DeviceFileTransfer.tsx",
-			"text": "正在导入文件变更...",
-			"count": 1,
-			"reason": "pending"
-		},
-		{
-			"file": "web/src/components/DeviceFileTransfer.tsx",
-			"text": "源机器人 (发送端)",
-			"count": 1,
-			"reason": "pending"
-		},
-		{
-			"file": "web/src/components/DeviceFileTransfer.tsx",
-			"text": "源机器人与目标机器人不能相同",
-			"count": 1,
-			"reason": "pending"
-		},
-		{
-			"file": "web/src/components/DeviceFileTransfer.tsx",
-			"text": "目标机器人 (接收端)",
-			"count": 1,
-			"reason": "pending"
-		},
-		{
-			"file": "web/src/components/DeviceFileTransfer.tsx",
-			"text": "相对路径（文件或目录，每行一个）",
-			"count": 1,
-			"reason": "pending"
-		},
-		{
-			"file": "web/src/components/DeviceFileTransfer.tsx",
-			"text": "确认导入变更 (Apply)",
-			"count": 1,
-			"reason": "pending"
-		},
-		{
-			"file": "web/src/components/DeviceFileTransfer.tsx",
-			"text": "跨机大文件传输与断点续传",
-			"count": 1,
-			"reason": "pending"
-		},
-		{
-			"file": "web/src/components/DeviceFileTransfer.tsx",
-			"text": "递归包含子目录 (recursive)",
-			"count": 1,
-			"reason": "pending"
-		},
-		{
 			"file": "web/src/components/DeviceGroupBotDialog.tsx",
 			"text": "Bot 已保存；请启用并同步到中心后，再添加到群组。",
 			"count": 1,
@@ -2199,93 +1941,45 @@
 		},
 		{
 			"file": "web/src/components/ModelConfigModal.tsx",
-			"text": "✓ JSON语法有效（保存后自动无损合入请求 body）",
-			"count": 1,
-			"reason": "pending"
-		},
-		{
-			"file": "web/src/components/ModelConfigModal.tsx",
 			"text": "云端",
 			"count": 2,
-			"reason": "pending"
-		},
-		{
-			"file": "web/src/components/ModelConfigModal.tsx",
-			"text": "删除此预设",
-			"count": 1,
-			"reason": "pending"
+			"reason": "data"
 		},
 		{
 			"file": "web/src/components/ModelConfigModal.tsx",
 			"text": "反代",
 			"count": 3,
-			"reason": "pending"
-		},
-		{
-			"file": "web/src/components/ModelConfigModal.tsx",
-			"text": "套用自定义预设：${preset.name}",
-			"count": 1,
-			"reason": "pending"
+			"reason": "data"
 		},
 		{
 			"file": "web/src/components/ModelConfigModal.tsx",
 			"text": "官方",
 			"count": 14,
-			"reason": "pending"
-		},
-		{
-			"file": "web/src/components/ModelConfigModal.tsx",
-			"text": "将当前模型的思考配置、协议与 JSON 存为一个命名的预设模板",
-			"count": 1,
-			"reason": "pending"
-		},
-		{
-			"file": "web/src/components/ModelConfigModal.tsx",
-			"text": "必须是 JSON 对象 (以 { 开头)",
-			"count": 1,
-			"reason": "pending"
-		},
-		{
-			"file": "web/src/components/ModelConfigModal.tsx",
-			"text": "思考配置",
-			"count": 1,
-			"reason": "pending"
+			"reason": "data"
 		},
 		{
 			"file": "web/src/components/ModelConfigModal.tsx",
 			"text": "智谱 GLM",
 			"count": 1,
-			"reason": "pending"
+			"reason": "data"
 		},
 		{
 			"file": "web/src/components/ModelConfigModal.tsx",
 			"text": "本地",
 			"count": 3,
-			"reason": "pending"
+			"reason": "data"
 		},
 		{
 			"file": "web/src/components/ModelConfigModal.tsx",
 			"text": "硅基流动",
 			"count": 1,
-			"reason": "pending"
+			"reason": "data"
 		},
 		{
 			"file": "web/src/components/ModelConfigModal.tsx",
 			"text": "聚合",
 			"count": 2,
-			"reason": "pending"
-		},
-		{
-			"file": "web/src/components/ModelConfigModal.tsx",
-			"text": "自定义发送给模型/网关的字面量或 Token 数（留空为默认）",
-			"count": 1,
-			"reason": "pending"
-		},
-		{
-			"file": "web/src/components/ModelConfigModal.tsx",
-			"text": "预设名称 (如: 16K模版)",
-			"count": 1,
-			"reason": "pending"
+			"reason": "data"
 		},
 		{
 			"file": "web/src/components/ModelPickerModal.tsx",
@@ -2873,228 +2567,6 @@
 			"file": "web/src/device-access.ts",
 			"text": "请允许弹出窗口后重试。",
 			"count": 2,
-			"reason": "pending"
-		},
-		{
-			"file": "web/src/device-group-messages.ts",
-			"text": " [${zh ? \"群组主管\" : \"Coordinator\"}]",
-			"count": 1,
-			"reason": "pending"
-		},
-		{
-			"file": "web/src/device-group-messages.ts",
-			"text": "@${bot.name} · ${zh ? \"新对话\" : \"New conversation\"}",
-			"count": 1,
-			"reason": "pending"
-		},
-		{
-			"file": "web/src/device-group-messages.ts",
-			"text": "@${bot.name} · ${zh ? \"继续：\" : \"Continue: \"}${c.name || (zh ? \"未命名对话\" : \"Untitled conversation\")}",
-			"count": 1,
-			"reason": "pending"
-		},
-		{
-			"file": "web/src/device-group-messages.ts",
-			"text": "> **执行阶段**：\\`${phase}\\` · **错误类型**：\\`${category}\\`",
-			"count": 1,
-			"reason": "pending"
-		},
-		{
-			"file": "web/src/device-group-messages.ts",
-			"text": "> ⚠️ **任务执行中断 · ${phaseLabel}**",
-			"count": 1,
-			"reason": "pending"
-		},
-		{
-			"file": "web/src/device-group-messages.ts",
-			"text": "> ${cleanDetail || \"远端设备执行异常，现场任务会话已完整保留在目标设备上，可前往排查或重新提交。\"}",
-			"count": 1,
-			"reason": "pending"
-		},
-		{
-			"file": "web/src/device-group-messages.ts",
-			"text": "⏳ 等待前序任务交付中",
-			"count": 1,
-			"reason": "pending"
-		},
-		{
-			"file": "web/src/device-group-messages.ts",
-			"text": "⚙️ **${zh ? \"执行阶段\" : \"Phase\"}**：\\`${progressPhase}\\`${toolName ? ",
-			"count": 1,
-			"reason": "pending"
-		},
-		{
-			"file": "web/src/device-group-messages.ts",
-			"text": "❌ **${zh ? \"协同子代理执行失败\" : \"Worker Subagent Failed\"}** · \\`@${bot?.name ?? task.botId}\\`",
-			"count": 1,
-			"reason": "pending"
-		},
-		{
-			"file": "web/src/device-group-messages.ts",
-			"text": "🎯 **${zh ? \"分配指令\" : \"Instruction\"}**：${taskText}",
-			"count": 2,
-			"reason": "pending"
-		},
-		{
-			"file": "web/src/device-group-messages.ts",
-			"text": "🎯 **${zh ? (isSubagentTask ? \"分配指令\" : \"目标指令\") : \"Instruction\"}**：${taskText}",
-			"count": 3,
-			"reason": "pending"
-		},
-		{
-			"file": "web/src/device-group-messages.ts",
-			"text": "📋 展开查看工作内容与交付详情",
-			"count": 1,
-			"reason": "pending"
-		},
-		{
-			"file": "web/src/device-group-messages.ts",
-			"text": "🔗 **${zh ? \"依赖任务\" : \"Depends on\"}**：${depBot ? ",
-			"count": 1,
-			"reason": "pending"
-		},
-		{
-			"file": "web/src/device-group-messages.ts",
-			"text": "🤖 **${zh ? \"协同子代理交付完成\" : \"Worker Subagent Completed\"}** · \\`@${bot?.name ?? task.botId}\\`",
-			"count": 1,
-			"reason": "pending"
-		},
-		{
-			"file": "web/src/device-group-messages.ts",
-			"text": "${bot.name} · ${c.name || (zh ? \"未命名对话\" : \"Untitled conversation\")}",
-			"count": 1,
-			"reason": "pending"
-		},
-		{
-			"file": "web/src/device-group-messages.ts",
-			"text": "任务执行中",
-			"count": 1,
-			"reason": "pending"
-		},
-		{
-			"file": "web/src/device-group-messages.ts",
-			"text": "任务排队等待调度",
-			"count": 1,
-			"reason": "pending"
-		},
-		{
-			"file": "web/src/device-group-messages.ts",
-			"text": "会话切换",
-			"count": 1,
-			"reason": "pending"
-		},
-		{
-			"file": "web/src/device-group-messages.ts",
-			"text": "协同子代理",
-			"count": 1,
-			"reason": "pending"
-		},
-		{
-			"file": "web/src/device-group-messages.ts",
-			"text": "协同子代理执行中",
-			"count": 1,
-			"reason": "pending"
-		},
-		{
-			"file": "web/src/device-group-messages.ts",
-			"text": "协同子代理排队等待调度",
-			"count": 1,
-			"reason": "pending"
-		},
-		{
-			"file": "web/src/device-group-messages.ts",
-			"text": "失败",
-			"count": 1,
-			"reason": "pending"
-		},
-		{
-			"file": "web/src/device-group-messages.ts",
-			"text": "工具调用阶段",
-			"count": 1,
-			"reason": "pending"
-		},
-		{
-			"file": "web/src/device-group-messages.ts",
-			"text": "已中断",
-			"count": 1,
-			"reason": "pending"
-		},
-		{
-			"file": "web/src/device-group-messages.ts",
-			"text": "已完成",
-			"count": 1,
-			"reason": "pending"
-		},
-		{
-			"file": "web/src/device-group-messages.ts",
-			"text": "排队中",
-			"count": 1,
-			"reason": "pending"
-		},
-		{
-			"file": "web/src/device-group-messages.ts",
-			"text": "新对话",
-			"count": 1,
-			"reason": "pending"
-		},
-		{
-			"file": "web/src/device-group-messages.ts",
-			"text": "新建会话",
-			"count": 1,
-			"reason": "pending"
-		},
-		{
-			"file": "web/src/device-group-messages.ts",
-			"text": "权限审批阶段",
-			"count": 1,
-			"reason": "pending"
-		},
-		{
-			"file": "web/src/device-group-messages.ts",
-			"text": "模型推理阶段",
-			"count": 1,
-			"reason": "pending"
-		},
-		{
-			"file": "web/src/device-group-messages.ts",
-			"text": "环境初始化",
-			"count": 1,
-			"reason": "pending"
-		},
-		{
-			"file": "web/src/device-group-messages.ts",
-			"text": "等待依赖",
-			"count": 2,
-			"reason": "pending"
-		},
-		{
-			"file": "web/src/device-group-messages.ts",
-			"text": "等待前序任务",
-			"count": 1,
-			"reason": "pending"
-		},
-		{
-			"file": "web/src/device-group-messages.ts",
-			"text": "继续对话",
-			"count": 1,
-			"reason": "pending"
-		},
-		{
-			"file": "web/src/device-group-messages.ts",
-			"text": "网络连接",
-			"count": 1,
-			"reason": "pending"
-		},
-		{
-			"file": "web/src/device-group-messages.ts",
-			"text": "设备握手",
-			"count": 1,
-			"reason": "pending"
-		},
-		{
-			"file": "web/src/device-group-messages.ts",
-			"text": "运行中",
-			"count": 1,
 			"reason": "pending"
 		},
 		{

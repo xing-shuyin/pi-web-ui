@@ -629,7 +629,7 @@ export const ChatInput = memo(function ChatInput({
 			return;
 		}
 		if (groupDevices) {
-			const items = groupConversationHits(groupDevices, groupConversations, tok.query, isZhLocale(locale));
+			const items = groupConversationHits(groupDevices, groupConversations, tok.query, t);
 			setMenu(items.length ? { kind: "at", start: tok.start, end: cursor, items } : null);
 			setMenuIndex(0);
 			return;

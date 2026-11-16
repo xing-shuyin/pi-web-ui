@@ -1,5 +1,6 @@
 import type { UiMessage, UiState } from "./types";
 import type { AtHit } from "./at-mention";
+import type { Translate } from "./i18n";
 
 export type GroupDevice = {
 	id: string;
@@ -29,25 +30,25 @@ export function groupConversationHits(
 	devices: readonly GroupDevice[],
 	conversations: readonly GroupBotConversation[],
 	query: string,
-	zh: boolean,
+	t: Translate,
 ): AtHit[] {
 	return devices.flatMap((bot) => {
 		const choices = [
 			{
 				providerId: "host:group-devices",
-				providerLabel: zh ? "新对话" : "New conversation",
+				providerLabel: t("newChat"),
 				title: bot.name,
 				hint: bot.id,
-				text: `@${bot.name} · ${zh ? "新对话" : "New conversation"}`,
+				text: `@${bot.name} · ${t("newChat")}`,
 			},
 			...conversations
 				.filter((c) => c.botId === bot.id && c.status !== "closed" && !c.stale)
 				.map((c) => ({
 					providerId: "host:group-conversations",
-					providerLabel: zh ? "继续对话" : "Continue conversation",
-					title: `${bot.name} · ${c.name || (zh ? "未命名对话" : "Untitled conversation")}`,
+					providerLabel: t("deviceGroupMentionContinue"),
+					title: `${bot.name} · ${c.name || t("groupDeliveriesUntitledConversation")}`,
 					hint: c.id,
-					text: `@${bot.name} · ${zh ? "继续：" : "Continue: "}${c.name || (zh ? "未命名对话" : "Untitled conversation")}`,
+					text: `@${bot.name} · ${t("deviceGroupMentionContinuePrefix")}${c.name || t("groupDeliveriesUntitledConversation")}`,
 				})),
 		];
 		return choices.filter((hit) =>
@@ -131,49 +132,29 @@ export function formatGroupTaskChip(text: string, botName?: string): { botPrefix
 	};
 }
 
-export function formatDeviceFailureReport(raw: string, zh = true): string {
+export function formatDeviceFailureReport(raw: string, t: Translate): string {
 	if (!raw.includes("Device task failed")) return formatGroupDisplayText(raw);
 	const match = raw.match(/Device task failed\s*\[phase=([^;]+);\s*category=([^\]]+)\]\.\s*(.*)/s);
 	if (!match) return formatGroupDisplayText(raw);
 	const [, phase, category, detail] = match;
-	const phaseMap: Record<string, string> = zh
-		? {
-				model: "模型推理阶段",
-				tool: "工具调用阶段",
-				approval: "权限审批阶段",
-				connection: "网络连接",
-				handshake: "设备握手",
-				init: "环境初始化",
-				switch_session: "会话切换",
-				new_chat: "新建会话",
-			}
-		: {
-				model: "Model Execution",
-				tool: "Tool Execution",
-				approval: "Approval Phase",
-				connection: "Network Connection",
-				handshake: "Device Handshake",
-				init: "Initialization",
-				switch_session: "Session Switch",
-				new_chat: "New Chat",
-			};
+	const phaseMap: Record<string, string> = {
+		model: t("deviceGroupFailurePhaseModel"),
+		tool: t("deviceGroupFailurePhaseTool"),
+		approval: t("deviceGroupFailurePhaseApproval"),
+		connection: t("deviceGroupFailurePhaseConnection"),
+		handshake: t("deviceGroupFailurePhaseHandshake"),
+		init: t("deviceGroupFailurePhaseInit"),
+		switch_session: t("deviceGroupFailurePhaseSwitchSession"),
+		new_chat: t("deviceGroupFailurePhaseNewChat"),
+	};
 	const phaseLabel = phaseMap[phase] || phase;
 	const cleanDetail = detail.trim();
-	if (zh) {
-		return [
-			`> ⚠️ **任务执行中断 · ${phaseLabel}**`,
-			`>`,
-			`> **执行阶段**：\`${phase}\` · **错误类型**：\`${category}\``,
-			`>`,
-			`> ${cleanDetail || "远端设备执行异常，现场任务会话已完整保留在目标设备上，可前往排查或重新提交。"}`,
-		].join("\n");
-	}
 	return [
-		`> ⚠️ **Task Interrupted · ${phaseLabel}**`,
+		t("deviceGroupFailureTitle", { phase: phaseLabel }),
 		`>`,
-		`> **Phase**: \`${phase}\` · **Category**: \`${category}\``,
+		t("deviceGroupFailureMeta", { phase, category }),
 		`>`,
-		`> ${cleanDetail || "Remote agent execution failed; task session is safely retained on target device."}`,
+		`> ${cleanDetail || t("deviceGroupFailureDetailFallback")}`,
 	].join("\n");
 }
 
@@ -195,29 +176,20 @@ export function groupConversationState(
 	roomId: string,
 	detail: GroupDetail | null,
 	devices: readonly GroupDevice[],
-	zh = false,
+	t: Translate,
 ): { state: UiState; labels: ReadonlyMap<string, string> } {
 	const labels = new Map<string, string>();
 	const entries: UiMessage[] = [];
 	const bots = new Map(devices.map((bot) => [bot.id, bot]));
 	for (const bot of detail?.bots ?? []) bots.set(bot.id, { ...bots.get(bot.id), ...bot });
-	const statuses: Record<string, string> = zh
-		? {
-				queued: "排队中",
-				waiting: "等待依赖",
-				running: "运行中",
-				completed: "已完成",
-				failed: "失败",
-				interrupted: "已中断",
-			}
-		: {
-				queued: "Queued",
-				waiting: "Waiting",
-				running: "Running",
-				completed: "Completed",
-				failed: "Failed",
-				interrupted: "Interrupted",
-			};
+	const statuses: Record<string, string> = {
+		queued: t("groupWorkItemsStatusQueued"),
+		waiting: t("deviceGroupStatusWaitingDependency"),
+		running: t("tabRunning"),
+		completed: t("groupWorkItemsStatusCompleted"),
+		failed: t("groupWorkItemsStatusFailed"),
+		interrupted: t("groupWorkItemsStatusInterrupted"),
+	};
 	const tasks = new Map((detail?.tasks ?? []).map((task) => [task.id, task]));
 	const reportedTasks = new Set<string>();
 	const botLabel = (botId: string | undefined, name: string, deviceId?: string) => {
@@ -229,7 +201,7 @@ export function groupConversationState(
 		const id = `group-message:${message.id}`;
 		const isBot = message.sender.type === "bot";
 		const rawText = message.text;
-		let text = isBot ? formatDeviceFailureReport(rawText, zh) : formatGroupDisplayText(rawText);
+		let text = isBot ? formatDeviceFailureReport(rawText, t) : formatGroupDisplayText(rawText);
 		const parent = message.replyToMessageId
 			? detail?.messages.find((entry) => entry.id === message.replyToMessageId)
 			: undefined;
@@ -254,7 +226,7 @@ export function groupConversationState(
 		for (const task of linkedTasks) if (task.report) reportedTasks.add(task.id);
 		const status = [...new Set(linkedTasks.map((task) => statuses[task.status]))].join(" · ");
 		const isPrimary = Boolean(detail?.room.primaryBotId && message.sender.id === detail.room.primaryBotId);
-		const coordinatorTag = isPrimary ? ` [${zh ? "群组主管" : "Coordinator"}]` : "";
+		const coordinatorTag = isPrimary ? ` [${t("deviceGroupCoordinatorTag")}]` : "";
 		const sender = `${botLabel(message.sender.id, message.sender.name, message.sender.sourceDeviceId)}${coordinatorTag}`;
 		labels.set(id, status ? `${sender} · ${status}` : sender);
 	}
@@ -263,17 +235,13 @@ export function groupConversationState(
 		const id = `group-task:${task.id}`;
 		const bot = bots.get(task.botId);
 		const isSubagentTask = Boolean(task.parentTaskId || (task.sourceBotId && task.sourceBotId !== task.botId));
-		const subagentTag = zh ? "协同子代理" : "Worker Subagent";
+		const subagentTag = t("deviceGroupWorkerSubagent");
 		const labelPrefix = botLabel(task.botId, bot?.name ?? task.botId, task.deviceId);
 		const statusLabel =
 			task.status === "waiting"
 				? task.dependsOnTaskId
-					? zh
-						? "等待前序任务"
-						: "Waiting for upstream"
-					: zh
-						? "等待依赖"
-						: "Waiting"
+					? t("groupConversationWaitingUpstream")
+					: t("deviceGroupStatusWaitingDependency")
 				: (statuses[task.status] ?? task.status);
 		labels.set(
 			id,
@@ -284,37 +252,42 @@ export function groupConversationState(
 		let body: string;
 		if (rawReport) {
 			if (isSubagentTask) {
-				const summaryTitle = zh ? "📋 展开查看工作内容与交付详情" : "📋 View Detailed Delivery & Evidence";
+				const summaryTitle = t("deviceGroupSubagentSummary");
 				body = [
-					`🤖 **${zh ? "协同子代理交付完成" : "Worker Subagent Completed"}** · \`@${bot?.name ?? task.botId}\``,
-					`🎯 **${zh ? "分配指令" : "Instruction"}**：${taskText}`,
+					t("deviceGroupSubagentCompleted", { bot: bot?.name ?? task.botId }),
+					t("deviceGroupInstructionLine", {
+						label: t("deviceGroupInstructionAssigned"),
+						text: taskText,
+					}),
 					``,
 					`<details>`,
 					`<summary>${summaryTitle}</summary>`,
 					``,
-					formatDeviceFailureReport(rawReport, zh),
+					formatDeviceFailureReport(rawReport, t),
 					``,
 					`</details>`,
 				].join("\n");
 			} else {
-				body = formatDeviceFailureReport(rawReport, zh);
+				body = formatDeviceFailureReport(rawReport, t);
 			}
 		} else if (task.status === "running") {
-			const phaseLabel = isSubagentTask
-				? zh
-					? "协同子代理执行中"
-					: "Worker Subagent Running"
-				: zh
-					? "任务执行中"
-					: "Task Running";
+			const phaseLabel = isSubagentTask ? t("deviceGroupSubagentRunning") : t("deviceGroupTaskRunning");
 			const progressPhase = task.progress?.phase;
 			const toolName = task.progress?.toolName;
 			const progressText = task.progress?.text?.trim();
 			body = [
 				`⏳ **${phaseLabel}**${isSubagentTask ? ` · \`@${bot?.name ?? task.botId}\`` : ""}`,
-				`🎯 **${zh ? (isSubagentTask ? "分配指令" : "目标指令") : "Instruction"}**：${taskText}`,
+				t("deviceGroupInstructionLine", {
+					label: isSubagentTask ? t("deviceGroupInstructionAssigned") : t("deviceGroupInstructionGoal"),
+					text: taskText,
+				}),
 				...(progressPhase
-					? [`⚙️ **${zh ? "执行阶段" : "Phase"}**：\`${progressPhase}\`${toolName ? ` · \`${toolName}\`` : ""}`]
+					? [
+							t("deviceGroupProgressPhaseLine", {
+								phase: progressPhase,
+								tool: toolName ? ` · \`${toolName}\`` : "",
+							}),
+						]
 					: []),
 				...(progressText ? [``, `> ${progressText}`] : []),
 			].join("\n");
@@ -322,33 +295,38 @@ export function groupConversationState(
 			const depTask = task.dependsOnTaskId ? tasks.get(task.dependsOnTaskId) : undefined;
 			const depBot = depTask ? (bots.get(depTask.botId)?.name ?? depTask.botId) : undefined;
 			const depSummary = depTask ? formatGroupTaskChip(depTask.text, depBot).summary : task.dependsOnTaskId;
-			const waitingHeader = zh ? "⏳ 等待前序任务交付中" : "⏳ Waiting for upstream task delivery";
+			const waitingHeader = t("deviceGroupWaitingUpstreamTitle");
 			body = [
-				`⏳ **${waitingHeader}**${isSubagentTask ? ` · \`@${bot?.name ?? task.botId}\`` : ""}`,
-				`🎯 **${zh ? (isSubagentTask ? "分配指令" : "目标指令") : "Instruction"}**：${taskText}`,
+				`${waitingHeader}${isSubagentTask ? ` · \`@${bot?.name ?? task.botId}\`` : ""}`,
+				t("deviceGroupInstructionLine", {
+					label: isSubagentTask ? t("deviceGroupInstructionAssigned") : t("deviceGroupInstructionGoal"),
+					text: taskText,
+				}),
 				...(task.dependsOnTaskId
 					? [
-							`🔗 **${zh ? "依赖任务" : "Depends on"}**：${depBot ? `@${depBot} · ` : ""}${depSummary || task.dependsOnTaskId}`,
+							t("deviceGroupDependsOnLine", {
+								dep: `${depBot ? `@${depBot} · ` : ""}${depSummary || task.dependsOnTaskId}`,
+							}),
 						]
 					: []),
 			].join("\n");
 		} else if (task.status === "queued") {
-			const queueLabel = isSubagentTask
-				? zh
-					? "协同子代理排队等待调度"
-					: "Worker Subagent Queued"
-				: zh
-					? "任务排队等待调度"
-					: "Task Queued";
+			const queueLabel = isSubagentTask ? t("deviceGroupSubagentQueued") : t("deviceGroupTaskQueued");
 			body = [
 				`⏱️ **${queueLabel}**${isSubagentTask ? ` · \`@${bot?.name ?? task.botId}\`` : ""}`,
-				`🎯 **${zh ? (isSubagentTask ? "分配指令" : "目标指令") : "Instruction"}**：${taskText}`,
+				t("deviceGroupInstructionLine", {
+					label: isSubagentTask ? t("deviceGroupInstructionAssigned") : t("deviceGroupInstructionGoal"),
+					text: taskText,
+				}),
 			].join("\n");
 		} else if (task.status === "failed" && isSubagentTask) {
 			body = [
-				`❌ **${zh ? "协同子代理执行失败" : "Worker Subagent Failed"}** · \`@${bot?.name ?? task.botId}\``,
-				`🎯 **${zh ? "分配指令" : "Instruction"}**：${taskText}`,
-				...(rawReport ? [``, formatDeviceFailureReport(rawReport, zh)] : []),
+				t("deviceGroupSubagentFailed", { bot: bot?.name ?? task.botId }),
+				t("deviceGroupInstructionLine", {
+					label: t("deviceGroupInstructionAssigned"),
+					text: taskText,
+				}),
+				...(rawReport ? [``, formatDeviceFailureReport(rawReport, t)] : []),
 			].join("\n");
 		} else {
 			body = `${statuses[task.status] || task.status}\n\n${taskText}`;
