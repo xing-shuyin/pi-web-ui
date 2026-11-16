@@ -15,6 +15,7 @@ export function shellQuote(value) {
 }
 export function expandSnippet(template, values) {
 	return template.replace(/\{\{([a-zA-Z_][a-zA-Z0-9_]*)\}\}/g, (_, key) => {
+		// developer-facing, not UI: thrown only when a snippet template references an undeclared parameter
 		if (!Object.hasOwn(values, key)) throw new Error(`缺少参数: ${key}`);
 		return shellQuote(values[key]);
 	});

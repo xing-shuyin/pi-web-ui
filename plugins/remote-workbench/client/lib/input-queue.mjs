@@ -1,4 +1,7 @@
 import { decodeBytes, encodeInput } from "./workbench-state.mjs";
+import { makeT } from "../i18n.mjs";
+
+const t = makeT();
 
 export function createInputQueue(send, onError, limit = 65536) {
 	const chunks = [];
@@ -19,7 +22,7 @@ export function createInputQueue(send, onError, limit = 65536) {
 			const data = decodeBytes(encodeInput(text));
 			if (disposed) return false;
 			if (bytes + data.length > limit) {
-				onError(`输入队列超过 ${limit} 字节，请等待后再发送；此次输入未发送`);
+				onError(t("inputQueueOverflow", { limit }));
 				return false;
 			}
 			for (let offset = 0; offset < data.length; offset += 16384) chunks.push(data.slice(offset, offset + 16384));
@@ -37,7 +40,7 @@ export function createInputQueue(send, onError, limit = 65536) {
 				blocked = msg.writable === false && drainVersion === attempt.drainVersion;
 			} else {
 				blocked = true;
-				onError(msg.error || "输入尚未接受，已保留等待恢复");
+				onError(msg.error || t("inputNotAccepted"));
 			}
 			pump();
 			return true;
