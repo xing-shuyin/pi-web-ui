@@ -1,3 +1,5 @@
+import { makeT } from "../client/i18n.mjs";
+
 function esc(s) {
 	return String(s ?? "").replace(
 		/[&<>"']/g,
@@ -6,6 +8,9 @@ function esc(s) {
 }
 
 let reqSeq = 0;
+
+/** 面板文案：语言解析 / 回退 / 插值都在 SDK 里，这里只按当前界面语言取词。 */
+const t = makeT();
 
 export default {
 	mount(container, ctx) {
@@ -237,57 +242,57 @@ export default {
 	</style>
 	<div class="dbx-backdrop hidden"></div>
 	<div class="dbx-side">
-		<div class="dbx-side-head"><b>数据库连接</b><button data-act="add" title="新建连接">＋</button></div>
+		<div class="dbx-side-head"><b>${esc(t("connsTitle"))}</b><button data-act="add" title="${esc(t("newConnection"))}">＋</button></div>
 		<div class="dbx-deps"></div>
 		<div class="dbx-conns"></div>
 	</div>
 	<div class="dbx-main">
-		<div class="dbx-placeholder">👈 选择左侧连接打开数据库<br><small>库表浏览 · 数据分页 · 结构查看 · SQL 查询</small></div>
+		<div class="dbx-placeholder">👈 ${esc(t("pickConnection"))}<br><small>${esc(t("pickConnectionHint"))}</small></div>
 		<div class="dbx-work hidden" style="flex-direction:column;flex:1;min-height:0">
 			<div class="dbx-topbar">
-				<button class="act btn-menu" title="连接列表">☰</button>
+				<button class="act btn-menu" title="${esc(t("connList"))}">☰</button>
 				<span class="lbl"></span>
-				<select class="db-sel" title="选择数据库"></select>
+				<select class="db-sel" title="${esc(t("selectDatabase"))}"></select>
 				<span class="dbx-tabs">
-					<button class="dbx-tab" data-tab="data">数据</button>
-					<button class="dbx-tab" data-tab="schema">结构</button>
+					<button class="dbx-tab" data-tab="data">${esc(t("tabData"))}</button>
+					<button class="dbx-tab" data-tab="schema">${esc(t("tabSchema"))}</button>
 					<button class="dbx-tab" data-tab="query">SQL</button>
 				</span>
 				<span class="dbx-grow"></span>
-				<button class="act btn-refresh" title="刷新">⟳</button>
-				<button class="act btn-disconnect">断开</button>
+				<button class="act btn-refresh" title="${esc(t("refresh"))}">⟳</button>
+				<button class="act btn-disconnect">${esc(t("disconnect"))}</button>
 			</div>
 			<div class="dbx-body">
 				<div class="dbx-tree">
-					<input class="filter" placeholder="筛选名称…" spellcheck="false" />
+					<input class="filter" placeholder="${esc(t("filterTables"))}" spellcheck="false" />
 					<div class="dbx-tables"></div>
 				</div>
 				<div class="dbx-content">
 					<div class="pane pane-data">
 						<div class="data-bar">
 							<span class="tbl-lbl"></span>
-							<input class="docfilter hidden" placeholder='过滤条件 JSON，如 {"age":{"$gt":18}}' spellcheck="false" />
-							<button class="btn btn-filter hidden">应用过滤</button>
-							<button class="btn btn-insert hidden">＋ 新增</button>
+							<input class="docfilter hidden" placeholder='${esc(t("filterJsonPlaceholder"))}' spellcheck="false" />
+							<button class="btn btn-filter hidden">${esc(t("applyFilter"))}</button>
+							<button class="btn btn-insert hidden">${esc(t("plus"))} ${esc(t("add"))}</button>
 							<span class="dbx-grow"></span>
-							<button class="btn pg-first" title="首页">⏮</button>
-							<button class="btn pg-prev" title="上一页">◀</button>
+							<button class="btn pg-first" title="${esc(t("firstPage"))}">⏮</button>
+							<button class="btn pg-prev" title="${esc(t("prevPage"))}">◀</button>
 							<span class="pginfo"></span>
-							<button class="btn pg-next" title="下一页">▶</button>
-							<button class="btn pg-last" title="末页">⏭</button>
+							<button class="btn pg-next" title="${esc(t("nextPage"))}">▶</button>
+							<button class="btn pg-last" title="${esc(t("lastPage"))}">⏭</button>
 						</div>
 						<div class="grid-wrap"><div class="grid-host"></div></div>
 						<div class="status-line"></div>
 					</div>
 					<div class="pane pane-schema hidden">
-						<h4>列</h4><div class="cols-host"></div>
-						<h4>索引</h4><div class="idx-host"></div>
+						<h4>${esc(t("columns"))}</h4><div class="cols-host"></div>
+						<h4>${esc(t("indexes"))}</h4><div class="idx-host"></div>
 						<h4>DDL</h4><pre class="ddl"></pre>
 					</div>
 					<div class="pane pane-query hidden">
 						<div class="query-bar">
-							<button class="primary btn-run">▶ 运行 (Ctrl+Enter)</button>
-							<span class="hint">对当前选中的库执行；多条语句只返回第一个结果集</span>
+							<button class="primary btn-run">▶ ${esc(t("run"))} (Ctrl+Enter)</button>
+							<span class="hint">${esc(t("queryHint"))}</span>
 							<span class="dbx-grow"></span>
 							<span class="q-status"></span>
 						</div>
@@ -297,20 +302,20 @@ export default {
 					<div class="pane pane-redis hidden">
 						<div class="redis-bar">
 							<input class="pattern" value="*" spellcheck="false" />
-							<button class="btn btn-scan">扫描</button>
+							<button class="btn btn-scan">${esc(t("scan"))}</button>
 							<span class="redis-meta"></span>
 							<span class="dbx-grow"></span>
-							<input class="cmdline" placeholder="原始命令，如 GET foo / KEYS *" spellcheck="false" />
-							<button class="btn btn-cmd">执行</button>
+							<input class="cmdline" placeholder="${esc(t("rawCmdPlaceholder"))}" spellcheck="false" />
+							<button class="btn btn-cmd">${esc(t("execRaw"))}</button>
 						</div>
 						<div class="redis-split">
 							<div class="keys-list"></div>
 							<div class="key-detail">
 								<div class="kd-head"><span class="kd-name"></span><span class="kd-info"></span>
 									<span class="dbx-grow"></span>
-									<button class="btn btn-save-key hidden" title="写回该字符串键">保存键值</button>
-									<button class="btn btn-del-key">删除键</button></div>
-								<pre class="kd-value">// 点击左侧键查看详情；上方命令行可执行任意 Redis 命令</pre>
+									<button class="btn btn-save-key hidden" title="${esc(t("saveKeyHint"))}">${esc(t("saveKey"))}</button>
+									<button class="btn btn-del-key">${esc(t("deleteKey"))}</button></div>
+								<pre class="kd-value">${esc(t("redisDetailHint"))}</pre>
 								<textarea class="kd-text hidden" spellcheck="false"></textarea>
 							</div>
 						</div>
@@ -322,48 +327,48 @@ export default {
 			<div class="dbx-modal">
 				<h3 class="row-title"></h3>
 				<div class="row-body"></div>
-				<div class="hint row-hint">留空的列使用数据库默认值；输入 NULL（大写）表示写入 SQL NULL。</div>
+				<div class="hint row-hint">${esc(t("rowHint"))}</div>
 				<div class="btns"><span class="row-err err-text"></span>
-					<span class="right"><button class="r-cancel">取消</button><button class="primary r-save">保存</button></span></div>
+					<span class="right"><button class="r-cancel">${esc(t("cancel"))}</button><button class="primary r-save">${esc(t("save"))}</button></span></div>
 			</div>
 		</div>
 		<div class="dbx-modal-bg hidden">
 			<div class="dbx-modal">
-				<h3 class="m-title">新建连接</h3>
-				<label>名称（可选）</label><input name="name" placeholder="本地开发库" />
-				<label>类型 *</label>
+				<h3 class="m-title">${esc(t("newConnection"))}</h3>
+				<label>${esc(t("nameOptional"))}</label><input name="name" placeholder="${esc(t("namePlaceholder"))}" />
+				<label>${esc(t("typeRequired"))}</label>
 				<select name="type">
 					<option value="mysql">MySQL / MariaDB</option>
 					<option value="postgres">PostgreSQL</option>
-					<option value="sqlite">SQLite（文件）</option>
+					<option value="sqlite">${esc(t("sqliteFile"))}</option>
 					<option value="sqlserver">SQL Server</option>
 					<option value="mongodb">MongoDB</option>
 					<option value="redis">Redis</option>
 				</select>
 				<div class="grp-net">
 					<div class="grid2">
-						<span><label>主机 *</label><input name="host" placeholder="127.0.0.1" /></span>
-						<span><label>端口</label><input name="port" placeholder="自动" /></span>
+						<span><label>${esc(t("hostRequired"))}</label><input name="host" placeholder="127.0.0.1" /></span>
+						<span><label>${esc(t("port"))}</label><input name="port" placeholder="${esc(t("auto"))}" /></span>
 					</div>
 					<div class="grid2">
-						<span><label>用户名</label><input name="user" autocomplete="off" /></span>
-						<span><label>密码</label><input name="password" type="password" autocomplete="new-password" /></span>
+						<span><label>${esc(t("username"))}</label><input name="user" autocomplete="off" /></span>
+						<span><label>${esc(t("password"))}</label><input name="password" type="password" autocomplete="new-password" /></span>
 					</div>
-					<label>默认数据库（可选）</label><input name="database" autocomplete="off" />
+					<label>${esc(t("databaseOptional"))}</label><input name="database" autocomplete="off" />
 				</div>
 				<div class="grp-file">
-					<label>数据库文件路径 *</label><input name="file" placeholder="/path/to/data.db" spellcheck="false" />
+					<label>${esc(t("filePathRequired"))}</label><input name="file" placeholder="/path/to/data.db" spellcheck="false" />
 				</div>
 				<div class="grp-uri">
-					<label>连接 URI（可选，填了忽略上面主机/端口）</label><input name="uri" placeholder="mongodb://user:pass@host:27017" spellcheck="false" />
+					<label>${esc(t("uriOptional"))}</label><input name="uri" placeholder="mongodb://user:pass@host:27017" spellcheck="false" />
 				</div>
 				<div class="grp-redis">
-					<label>逻辑库编号 db（0-15，可选）</label><input name="redisDb" placeholder="0" />
+					<label>${esc(t("redisDbOptional"))}</label><input name="redisDb" placeholder="0" />
 				</div>
-				<div class="hint">配置只保存在本机插件目录（db-connections.json），不会上传。编辑时密码留空 = 保持不变。</div>
+				<div class="hint">${esc(t("configStoredHint"))}</div>
 				<div class="btns">
-					<button class="btn-test">测试连接</button>
-					<span class="right"><button class="m-cancel">取消</button><button class="primary m-save">保存</button></span>
+					<button class="btn-test">${esc(t("testConnection"))}</button>
+					<span class="right"><button class="m-cancel">${esc(t("cancel"))}</button><button class="primary m-save">${esc(t("save"))}</button></span>
 				</div>
 			</div>
 		</div>
@@ -430,7 +435,7 @@ export default {
 			const open = treeEl.classList.contains("open");
 			treeToggle.innerHTML =
 				`<span>${open ? "▾" : "▸"}</span>` +
-				`<span class="tn">${work?.curTable ? esc(`${work.curDb}.${work.curTable}`) : "选择数据表…"}</span>`;
+				`<span class="tn">${work?.curTable ? esc(`${work.curDb}.${work.curTable}`) : esc(t("pickTable"))}</span>`;
 		}
 		treeToggle.addEventListener("click", () => {
 			treeEl.classList.toggle("open");
@@ -446,14 +451,14 @@ export default {
 		function toast(text, isErr) {
 			root.querySelector(".dbx-toast")?.remove();
 			if (!text) return;
-			const t = document.createElement("div");
-			t.className = "dbx-toast";
-			if (isErr) t.style.color = "var(--red,#f87171)";
-			t.textContent = text;
-			root.appendChild(t);
+			const el = document.createElement("div");
+			el.className = "dbx-toast";
+			if (isErr) el.style.color = "var(--red,#f87171)";
+			el.textContent = text;
+			root.appendChild(el);
 			setTimeout(() => {
-				t.style.opacity = "0";
-				setTimeout(() => t.remove(), 300);
+				el.style.opacity = "0";
+				setTimeout(() => el.remove(), 300);
 			}, 3600);
 		}
 
@@ -464,7 +469,7 @@ export default {
 				pending.set(reqId, resolve);
 				ctx.send({ ...payload, reqId });
 				setTimeout(() => {
-					if (pending.delete(reqId)) resolve({ ok: false, error: "请求超时" });
+					if (pending.delete(reqId)) resolve({ ok: false, error: t("requestTimeout") });
 				}, 45000);
 			});
 		}
@@ -483,7 +488,7 @@ export default {
 				return;
 			}
 			if (p.event === "conn_closed") {
-				toast(`连接断开：${p.reason || p.connId}`, true);
+				toast(t("connClosed", { reason: p.reason || p.connId }), true);
 				if (work && work.connId === p.connId) closeWork();
 			}
 		});
@@ -492,7 +497,7 @@ export default {
 			depsEl.textContent = "";
 			if (state.depsOk) return;
 			const b = document.createElement("button");
-			b.textContent = state.depsInstalling ? "驱动安装中…" : "⚠ 驱动未安装，点击安装";
+			b.textContent = state.depsInstalling ? t("depsInstalling") : `⚠ ${t("depsMissing")}`;
 			b.disabled = Boolean(state.depsInstalling);
 			b.addEventListener("click", () => void request({ action: "deps_install" }));
 			depsEl.appendChild(b);
@@ -501,7 +506,7 @@ export default {
 		function renderConns() {
 			connsEl.textContent = "";
 			if (!state.conns.length) {
-				connsEl.innerHTML = `<div class="dbx-empty">还没有连接<br>点右上角 ＋ 新建</div>`;
+				connsEl.innerHTML = `<div class="dbx-empty">${esc(t("connsEmpty"))}<br>${esc(t("connsEmptyHint"))}</div>`;
 				return;
 			}
 			for (const c of state.conns) {
@@ -512,13 +517,14 @@ export default {
 					`<span class="dot ${isActive ? "on" : ""}"></span>` +
 					`<span class="info"><span class="nm">${esc(c.name)}</span>` +
 					`<span class="addr">${esc(connAddr(c))}</span></span>` +
-					`<span class="ops"><button data-op="edit" title="编辑">✎</button><button data-op="del" title="删除">🗑</button></span>`;
+					`<span class="ops"><button data-op="edit" title="${esc(t("edit"))}">✎</button><button data-op="del" title="${esc(t("del"))}">🗑</button></span>`;
 				row.addEventListener("click", (ev) => {
 					const btn = ev.target.closest("button[data-op]");
 					if (!btn) return void openConn(c.id);
 					ev.stopPropagation();
 					if (btn.dataset.op === "edit") openModal(c);
-					else if (confirm(`删除连接「${c.name}」？`)) void request({ action: "conns_delete", id: c.id });
+					else if (confirm(t("deleteConnConfirm", { name: c.name })))
+						void request({ action: "conns_delete", id: c.id });
 				});
 				connsEl.appendChild(row);
 			}
@@ -535,7 +541,7 @@ export default {
 		async function openConn(hostId) {
 			const r = await request({ action: "connect", id: hostId });
 			if (!r.ok) {
-				toast(`连接失败：${r.error}`, true);
+				toast(t("connectFailed", { error: r.error }), true);
 				return;
 			}
 			setupWork(r.connId, r.label, r.kind, r.dialect);
@@ -594,7 +600,7 @@ export default {
 				work.dbs = r.databases;
 				work.curDb = pickDefaultDb(r.databases);
 			} catch (e) {
-				toast(`读取数据库列表失败：${e.message ?? e}`, true);
+				toast(t("dbsListFailed", { error: e.message ?? e }), true);
 				work.dbs = [];
 				work.curDb = null;
 			}
@@ -623,7 +629,7 @@ export default {
 			if (!work) return;
 			const r = await request({ action: "tables_list", connId: work.connId, db: work.curDb });
 			if (!r.ok) {
-				toast(`读取表列表失败：${r.error}`, true);
+				toast(t("tablesListFailed", { error: r.error }), true);
 				work.tables = [];
 			} else work.tables = r.tables;
 			renderTables();
@@ -635,7 +641,7 @@ export default {
 			const kw = filterInput.value.trim().toLowerCase();
 			tablesEl.textContent = "";
 			if (!work.tables.length) {
-				tablesEl.innerHTML = `<div class="dbx-tree-empty">${work.kind === "mongodb" ? "无集合" : "无表"}<br><small>点 ⟳ 刷新</small></div>`;
+				tablesEl.innerHTML = `<div class="dbx-tree-empty">${work.kind === "mongodb" ? esc(t("noCollections")) : esc(t("noTables"))}<br><small>${esc(t("clickRefresh"))}</small></div>`;
 				return;
 			}
 			for (const t of work.tables) {
@@ -708,7 +714,7 @@ export default {
 
 		async function loadData() {
 			if (!work || !work.curTable || work.kind === "redis") return;
-			statusLine.textContent = "加载中…";
+			statusLine.textContent = t("loading");
 			gridHost.textContent = "";
 			const p = work.page;
 			const r = await request({
@@ -733,13 +739,14 @@ export default {
 			work.pkCol = r.grid.pkCol ?? null;
 			const canInsert = work.editable || (work.kind === "mongodb" && work.docs);
 			$(".btn-insert").classList.toggle("hidden", !canInsert);
-			$(".btn-insert").textContent = work.kind === "mongodb" ? "＋ 新文档" : "＋ 新增行";
+			$(".btn-insert").textContent =
+				work.kind === "mongodb" ? `${t("plus")} ${t("newDoc")}` : `${t("plus")} ${t("insertRow")}`;
 			renderGrid(gridHost, r.grid.columns, r.grid.rows, work.kind, r.grid);
 			const pages = Math.max(1, Math.ceil(p.total / p.size));
-			pgInfo.textContent = `第 ${p.no + 1}/${pages} 页`;
+			pgInfo.textContent = t("pageOf", { no: p.no + 1, pages });
 			statusLine.textContent =
-				`${work.curTable} · 共 ${fmtCount(p.total)} 行` +
-				(r.grid.rows.length ? ` · 本页 ${r.grid.rows.length} 行` : "");
+				`${work.curTable} · ${t("rowsTotal", { count: fmtCount(p.total) })}` +
+				(r.grid.rows.length ? ` · ${t("rowsThisPage", { count: r.grid.rows.length })}` : "");
 			$(".pg-first").disabled = $(".pg-prev").disabled = p.no <= 0;
 			$(".pg-next").disabled = $(".pg-last").disabled = p.no >= pages - 1;
 		}
@@ -747,7 +754,7 @@ export default {
 		function renderGrid(host, columns, rows, kind, grid = {}) {
 			host.textContent = "";
 			if (!columns.length || !rows.length) {
-				host.innerHTML = `<div class="grid-empty">${columns.length ? "没有数据" : "无结果"}</div>`;
+				host.innerHTML = `<div class="grid-empty">${columns.length ? esc(t("noData")) : esc(t("noResults"))}</div>`;
 				return;
 			}
 			const docs = Array.isArray(grid.docs) ? grid.docs : null;
@@ -799,8 +806,8 @@ export default {
 						.join("") +
 					(canDel
 						? '<td class="ops-cell">' +
-							(kind === "mongodb" ? '<button data-op="docedit" title="编辑文档">✎</button>' : "") +
-							'<button data-op="del" title="删除">🗑</button></td>'
+							(kind === "mongodb" ? `<button data-op="docedit" title="${esc(t("editDoc"))}">✎</button>` : "") +
+							`<button data-op="del" title="${esc(t("del"))}">🗑</button></td>`
 						: "");
 				tb.appendChild(tr);
 			});
@@ -864,7 +871,7 @@ export default {
 				pk: { col: work.pkCol, val: pkVal },
 				changes: { [col]: val },
 			});
-			r.ok ? (toast("已保存"), void loadData()) : toast(`保存失败：${r.error}`, true);
+			r.ok ? (toast(t("saved")), void loadData()) : toast(t("saveFailed", { error: r.error }), true);
 		}
 
 		async function confirmDeleteRow(tr) {
@@ -872,7 +879,7 @@ export default {
 			let r;
 			if (work.kind === "mongodb") {
 				const idx = [...tr.parentNode.children].indexOf(tr);
-				if (!confirm("删除该文档？直接写库，不可撤销")) return;
+				if (!confirm(t("deleteDocConfirm"))) return;
 				r = await request({
 					action: "doc_delete",
 					connId: work.connId,
@@ -883,10 +890,10 @@ export default {
 			} else {
 				const pkCell = tr.querySelector("td[data-pk]");
 				if (!pkCell) {
-					toast("该表没有主键，无法定位行", true);
+					toast(t("noPkRow"), true);
 					return;
 				}
-				if (!confirm("删除这一行？直接写库，不可撤销")) return;
+				if (!confirm(t("deleteRowConfirm"))) return;
 				r = await request({
 					action: "row_delete",
 					connId: work.connId,
@@ -895,7 +902,7 @@ export default {
 					pk: { col: work.pkCol, val: pkCell.dataset.pk },
 				});
 			}
-			r.ok ? void loadData() : toast(`删除失败：${r.error}`, true);
+			r.ok ? void loadData() : toast(t("deleteFailed", { error: r.error }), true);
 		}
 
 		async function openInsertModal() {
@@ -908,12 +915,12 @@ export default {
 			if (!work.schema) {
 				const r = await request({ action: "describe", connId: work.connId, db: work.curDb, table: work.curTable });
 				if (!r.ok) {
-					toast(`读取结构失败：${r.error}`, true);
+					toast(t("describeFailed", { error: r.error }), true);
 					return;
 				}
 				work.schema = r.describe;
 			}
-			rowTitle.textContent = `新增行 · ${work.curTable}`;
+			rowTitle.textContent = `${t("insertRow")} · ${work.curTable}`;
 			rowHint.classList.remove("hidden");
 			const cols = work.schema.columns.filter(
 				(c) => !(c.key === "PRI" && /int|serial/i.test(c.type)) && !(c.def && /nextval/i.test(c.def)),
@@ -921,8 +928,8 @@ export default {
 			rowBody.innerHTML = `<div class="flds">${cols
 				.map(
 					(c) =>
-						`<label>${esc(c.name)}<small>${esc(c.type)}${c.nullable ? "" : " · 非空"}</small></label>` +
-						`<input data-col="${esc(c.name)}" spellcheck="false" placeholder="${c.nullable ? "留空=默认值" : "必填"}" />`,
+						`<label>${esc(c.name)}<small>${esc(c.type)}${c.nullable ? "" : esc(t("notNullSuffix"))}</small></label>` +
+						`<input data-col="${esc(c.name)}" spellcheck="false" placeholder="${c.nullable ? esc(t("emptyDefaultPlaceholder")) : esc(t("requiredPlaceholder"))}" />`,
 				)
 				.join("")}</div>`;
 			rowModalBg.classList.remove("hidden");
@@ -934,7 +941,7 @@ export default {
 			rowErr.textContent = "";
 			rowHint.classList.add("hidden");
 			const doc = mode === "edit" ? (work.docs?.[idx] ?? {}) : {};
-			rowTitle.textContent = `${mode === "edit" ? "编辑文档" : "新文档"} · ${work.curTable}`;
+			rowTitle.textContent = `${mode === "edit" ? t("editDoc") : t("newDoc")} · ${work.curTable}`;
 			rowBody.innerHTML = `<textarea class="jsonbox" spellcheck="false">${esc(JSON.stringify(doc, null, 2))}</textarea>`;
 			rowModalBg.dataset.mode = mode;
 			rowModalBg.dataset.idx = String(idx ?? "");
@@ -982,11 +989,11 @@ export default {
 					});
 				}
 				if (!r.ok) {
-					rowErr.textContent = r.error ?? "保存失败";
+					rowErr.textContent = r.error ?? t("saveFailedShort");
 					return;
 				}
 				rowModalBg.classList.add("hidden");
-				toast("已保存");
+				toast(t("saved"));
 				void loadData();
 			} catch (e) {
 				rowErr.textContent = String(e?.message ?? e);
@@ -1031,10 +1038,10 @@ export default {
 
 		async function loadSchema() {
 			if (!work || !work.curTable) {
-				ddlPre.textContent = "// 先在左侧选择一张表";
+				ddlPre.textContent = t("selectTableFirst");
 				return;
 			}
-			colsHost.innerHTML = "<div class='grid-empty'>加载中…</div>";
+			colsHost.innerHTML = `<div class='grid-empty'>${esc(t("loading"))}</div>`;
 			idxHost.textContent = "";
 			ddlPre.textContent = "";
 			const r = await request({ action: "describe", connId: work.connId, db: work.curDb, table: work.curTable });
@@ -1045,10 +1052,10 @@ export default {
 			const d = r.describe;
 			colsHost.textContent = "";
 			if (d.columns.length) {
-				const t = document.createElement("table");
-				t.className = "mtable";
-				t.innerHTML =
-					"<thead><tr><th>#</th><th>列名</th><th>类型</th><th>空</th><th>键</th><th>默认值</th><th>备注</th></tr></thead><tbody>" +
+				const tbl = document.createElement("table");
+				tbl.className = "mtable";
+				tbl.innerHTML =
+					`<thead><tr><th>#</th><th>${esc(t("colName"))}</th><th>${esc(t("colType"))}</th><th>${esc(t("colNullable"))}</th><th>${esc(t("colKey"))}</th><th>${esc(t("colDefault"))}</th><th>${esc(t("colComment"))}</th></tr></thead><tbody>` +
 					d.columns
 						.map(
 							(c, i) =>
@@ -1058,31 +1065,31 @@ export default {
 						)
 						.join("") +
 					"</tbody>";
-				colsHost.appendChild(t);
-			} else colsHost.innerHTML = "<div class='grid-empty'>无固定列信息</div>";
+				colsHost.appendChild(tbl);
+			} else colsHost.innerHTML = `<div class='grid-empty'>${esc(t("noColumns"))}</div>`;
 			idxHost.textContent = "";
 			if (d.indexes?.length) {
-				const t = document.createElement("table");
-				t.className = "mtable";
-				t.innerHTML =
-					"<thead><tr><th>索引名</th><th>唯一</th><th>列 / 定义</th></tr></thead><tbody>" +
+				const tbl = document.createElement("table");
+				tbl.className = "mtable";
+				tbl.innerHTML =
+					`<thead><tr><th>${esc(t("idxName"))}</th><th>${esc(t("idxUnique"))}</th><th>${esc(t("idxColumns"))}</th></tr></thead><tbody>` +
 					d.indexes
 						.map((i) => `<tr><td>${esc(i.name)}</td><td>${i.unique ? "✓" : ""}</td><td>${esc(i.columns)}</td></tr>`)
 						.join("") +
 					"</tbody>";
-				idxHost.appendChild(t);
-			} else idxHost.innerHTML = "<div class='grid-empty'>无索引</div>";
-			ddlPre.textContent = d.ddl || "-- 无 DDL 信息";
+				idxHost.appendChild(tbl);
+			} else idxHost.innerHTML = `<div class='grid-empty'>${esc(t("noIndexes"))}</div>`;
+			ddlPre.textContent = d.ddl || t("noDdl");
 		}
 
 		async function runQuery() {
 			if (!work) return;
 			const sql = sqlBox.value.trim();
 			if (!sql) {
-				toast("SQL 为空", true);
+				toast(t("sqlEmpty"), true);
 				return;
 			}
-			qStatus.textContent = "执行中…";
+			qStatus.textContent = t("executing");
 			qStatus.classList.remove("err-text");
 			qGridHost.textContent = "";
 			const r = await request({ action: "query_exec", connId: work.connId, db: work.curDb, sql });
@@ -1093,8 +1100,8 @@ export default {
 			}
 			qStatus.textContent =
 				`✓ ${r.grid.elapsedMs}ms` +
-				(r.grid.total ? ` · ${r.grid.total} 行` : "") +
-				(r.grid.affected ? ` · 影响 ${r.grid.affected} 行` : "");
+				(r.grid.total ? ` · ${t("rowsShort", { count: r.grid.total })}` : "") +
+				(r.grid.affected ? ` · ${t("rowsAffected", { count: r.grid.affected })}` : "");
 			renderGrid(qGridHost, r.grid.columns, r.grid.rows, work.kind);
 		}
 		$(".btn-run").addEventListener("click", () => void runQuery());
@@ -1111,7 +1118,7 @@ export default {
 
 		let curKey = null;
 		async function redisScan(pattern) {
-			keysList.innerHTML = "<div class='grid-empty'>扫描中…</div>";
+			keysList.innerHTML = `<div class='grid-empty'>${esc(t("scanning"))}</div>`;
 			const r = await request({ action: "redis_scan", connId: work.connId, pattern: pattern || "*", count: 300 });
 			if (!r.ok) {
 				keysList.innerHTML = `<div class="err-text">${esc(r.error)}</div>`;
@@ -1121,10 +1128,10 @@ export default {
 			setKeyEditor(false);
 			kdName.textContent = "";
 			kdInfo.textContent = "";
-			kdValue.textContent = "// 点击左侧键查看详情";
+			kdValue.textContent = t("redisDetailIdle");
 			keysList.textContent = "";
 			if (!r.keys.length) {
-				keysList.innerHTML = "<div class='grid-empty'>没有匹配的键</div>";
+				keysList.innerHTML = `<div class='grid-empty'>${esc(t("noMatchingKeys"))}</div>`;
 				return;
 			}
 			for (const k of r.keys) {
@@ -1138,7 +1145,7 @@ export default {
 			if (r.cursor !== "0") {
 				const more = document.createElement("div");
 				more.className = "krow";
-				more.innerHTML = "<span class='kn' style='opacity:.5'>…还有更多（缩小 pattern 再扫）</span>";
+				more.innerHTML = `<span class='kn' style='opacity:.5'>${esc(t("moreKeys"))}</span>`;
 				keysList.appendChild(more);
 			}
 		}
@@ -1147,7 +1154,7 @@ export default {
 			curKey = key;
 			keysList.querySelectorAll(".krow").forEach((r) => r.classList.toggle("active", r.dataset.key === key));
 			kdName.textContent = key;
-			kdInfo.textContent = "加载中…";
+			kdInfo.textContent = t("loading");
 			const r = await request({ action: "redis_key", connId: work.connId, key });
 			if (!r.ok) {
 				setKeyEditor(null);
@@ -1156,13 +1163,13 @@ export default {
 				return;
 			}
 			const d = r.detail;
-			kdInfo.textContent = `类型 ${d.type} · 大小 ${fmtCount(d.size)} · TTL ${d.ttl < 0 ? "∞" : `${d.ttl}s`}`;
+			kdInfo.textContent = t("keyMeta", { type: d.type, size: fmtCount(d.size), ttl: d.ttl < 0 ? "∞" : `${d.ttl}s` });
 			const editable = d.type === "string" && !d.truncated;
 			setKeyEditor(editable);
 			if (editable) kdText.value = d.value;
 			else {
 				kdValue.textContent = d.value;
-				if (d.truncated) kdValue.textContent += "\n\n（内容过长已截断，请用上方原始命令查看/修改）";
+				if (d.truncated) kdValue.textContent += `\n\n${t("valueTruncated")}`;
 			}
 		}
 
@@ -1176,7 +1183,7 @@ export default {
 		async function saveKeyValue() {
 			if (!curKey || !work) return;
 			const r = await request({ action: "redis_key_set", connId: work.connId, key: curKey, value: kdText.value });
-			r.ok ? toast("键值已保存") : toast(r.error, true);
+			r.ok ? toast(t("keySaved")) : toast(r.error, true);
 		}
 
 		async function refreshRedisMeta() {
@@ -1189,17 +1196,17 @@ export default {
 			if (ev.key === "Enter") void redisScan($(".pattern").value.trim());
 		});
 		$(".btn-del-key").addEventListener("click", async () => {
-			if (!curKey || !confirm(`删除键「${curKey}」？`)) return;
+			if (!curKey || !confirm(t("deleteKeyConfirm", { key: curKey }))) return;
 			const r = await request({ action: "redis_del", connId: work.connId, key: curKey });
-			r.ok ? (toast("已删除"), void redisScan($(".pattern").value.trim())) : toast(r.error, true);
+			r.ok ? (toast(t("deleted")), void redisScan($(".pattern").value.trim())) : toast(r.error, true);
 		});
 		async function runCmd() {
 			const line = $(".cmdline").value.trim();
 			if (!line) return;
 			kdName.textContent = `$ ${line}`;
-			kdInfo.textContent = "执行中…";
+			kdInfo.textContent = t("executing");
 			const r = await request({ action: "redis_cmd", connId: work.connId, cmd: line });
-			kdInfo.textContent = r.ok ? "完成" : "";
+			kdInfo.textContent = r.ok ? t("done") : "";
 			kdValue.textContent = r.ok ? String(r.output) : `✗ ${r.error}`;
 			void refreshRedisMeta();
 		}
@@ -1248,7 +1255,7 @@ export default {
 
 		function openModal(conn) {
 			modalEditId = conn?.id ?? null;
-			$(".m-title").textContent = conn ? "编辑连接" : "新建连接";
+			$(".m-title").textContent = conn ? t("editConnection") : t("newConnection");
 			qf("name").value = conn?.name ?? "";
 			const type = conn?.type ?? "mysql";
 			qf("type").value = type;
@@ -1258,11 +1265,11 @@ export default {
 			qf("port").placeholder = TYPE_PORT[type] ? String(TYPE_PORT[type]) : "—";
 			qf("user").value = conn?.user ?? "";
 			qf("password").value = "";
-			qf("password").placeholder = conn?.hasPass ? "已保存（留空保持不变）" : "";
+			qf("password").placeholder = conn?.hasPass ? t("savedKeepEmpty") : "";
 			qf("database").value = conn?.database ?? "";
 			qf("file").value = conn?.file ?? "";
 			qf("uri").value = "";
-			qf("uri").placeholder = conn?.hasUri ? "已保存（留空保持不变）" : "mongodb://user:pass@host:27017";
+			qf("uri").placeholder = conn?.hasUri ? t("savedKeepEmpty") : "mongodb://user:pass@host:27017";
 			qf("redisDb").value = conn?.redisDb || "0";
 			syncFormGroups(type);
 			setDrawer(false);
@@ -1296,16 +1303,16 @@ export default {
 			const body = collectForm(true);
 			if (modalEditId && !body.password) delete body.password;
 			const btn = modalBg.querySelector(".btn-test");
-			btn.textContent = "测试中…";
+			btn.textContent = t("testing");
 			const r = await request({ action: "test", conn: body });
-			btn.textContent = "测试连接";
-			toast(r.ok ? "✓ 连接成功" : `✗ 连接失败：${r.error}`, !r.ok);
+			btn.textContent = t("testConnection");
+			toast(r.ok ? t("testOk") : t("testFailed", { error: r.error }), !r.ok);
 		});
 		modalBg.querySelector(".m-save").addEventListener("click", async () => {
 			const body = collectForm(true);
 			const r = await request({ action: "conns_save", conn: body });
 			if (!r.ok) {
-				toast(`保存失败：${r.error}`, true);
+				toast(t("saveFailed", { error: r.error }), true);
 				return;
 			}
 			modalBg.classList.add("hidden");
