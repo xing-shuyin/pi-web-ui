@@ -149,7 +149,7 @@ async function main() {
 	}
 	check("status lists hello.txt + newfile.txt", fileRows.includes("hello.txt") && fileRows.includes("newfile.txt"));
 
-	const branchText = await page.locator(".scm-branch-current").textContent();
+	const branchText = await page.locator(".gd-branch").textContent();
 	check("branch chip shows main", branchText?.includes("main"));
 
 	await page.locator(".scm-file-path", { hasText: "hello.txt" }).click();
@@ -256,14 +256,13 @@ async function main() {
 	check("reset is persisted too", (await readStoredWidth()) === "300");
 
 	execSync("git branch feature-x", { cwd: repo, stdio: "ignore" });
-	await page.click(".scm-title-row .panel-refresh");
-	await waitFor(
-		async () => (await page.locator(".scm-select option").allTextContents()).some((s) => s.includes("feature-x")),
-		20000,
-		"branch appears in select",
-	);
-	await page.selectOption(".scm-select", "feature-x");
-	await page.click('.scm-row button:has-text("切换")');
+	await page.click(".scm-header .panel-refresh");
+	const featureRow = page.locator(".gd-branch-row", { hasText: "feature-x" });
+	await page.click(".gd-branch");
+	await waitFor(async () => ((await featureRow.count()) > 0 ? true : null), 20000, "branch appears in the branch menu");
+	check("branch appears in the branch menu", true);
+	// 选分支就是切分支：菜单里点一下直接 checkout，没有“选中 + 切换”两步。
+	await featureRow.locator(".gd-branch-pick").click();
 	await waitFor(
 		async () => execSync("git rev-parse --abbrev-ref HEAD", { cwd: repo }).toString().trim() === "feature-x",
 		20000,
@@ -275,9 +274,9 @@ async function main() {
 	check("terminal tab 'git checkout' created", true);
 
 	await page.click('.topbar-flow [role="tab"]:has-text("Git")');
-	await page.click(".scm-title-row .panel-refresh");
+	await page.click(".scm-header .panel-refresh");
 	await waitFor(
-		async () => (await page.locator(".scm-branch-current").textContent())?.includes("feature-x"),
+		async () => (await page.locator(".gd-branch").textContent())?.includes("feature-x"),
 		20000,
 		"panel shows switched branch",
 	);

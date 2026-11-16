@@ -41,11 +41,12 @@ const hostEntry = (id: string, hidden = false) => ({
 });
 
 function mount(
-	view: "chat" | "terminal" | "git" | "plugin:demo-mailbox",
+	view: "chat" | "terminal" | "git" | "canvas" | "plugin:demo-mailbox",
 	uiPrimary?: unknown[],
 	uiOverflow?: unknown[],
 	plugins?: { id: string; name: string; icon?: string; description?: string; error?: string; view?: boolean }[],
 	chatPatch?: Record<string, unknown>,
+	topPatch?: Record<string, unknown>,
 ) {
 	const container = document.createElement("div");
 	document.body.appendChild(container);
@@ -68,6 +69,7 @@ function mount(
 						select: () => {},
 					},
 					view,
+					...topPatch,
 					plugins: plugins ?? [],
 					onViewChange: () => {},
 					onOpenPanel: (side: "left" | "right") => opened.push(side),
@@ -125,7 +127,7 @@ describe("TopBar 是单一扁直流（无按种类包裹的容器、无贴边例
 	});
 
 	it("两个 spacer 把条目分成 start / center / end 三段（align 真的换位置）", () => {
-		const { container } = mount("terminal", [
+		const { container } = mount("canvas", [
 			{ ...hostEntry("host:brand"), align: "start" },
 			{ ...hostEntry("host:chat"), align: "center" },
 			{ ...hostEntry("host:tasks"), align: "end" },
@@ -149,7 +151,7 @@ describe("TopBar 是单一扁直流（无按种类包裹的容器、无贴边例
 	});
 
 	it("全部条目设为居中时，条目两侧各有一个 spacer（平分空间，真正居中而非偏右）", () => {
-		const { container } = mount("terminal", [
+		const { container } = mount("canvas", [
 			{ ...hostEntry("host:chat"), align: "center" },
 			{ ...hostEntry("host:terminal"), align: "center" },
 		]);
@@ -431,11 +433,14 @@ describe("TopBar 槽位渲染（顺序即 slot 顺序，插件条目与宿主条
 	});
 
 	it("视图 tab 按 slot 顺序直排（不再写死 chat/terminal/git，也不再包容器）", () => {
-		const { container } = mount("terminal", [
-			hostEntry("host:git"),
-			hostEntry("host:chat"),
-			hostEntry("host:terminal"),
-		]);
+		const { container } = mount(
+			"canvas",
+			[hostEntry("host:git"), hostEntry("host:chat"), hostEntry("host:terminal")],
+			undefined,
+			undefined,
+			undefined,
+			{ termOpen: true },
+		);
 		const tabs = Array.from(container.querySelectorAll('[role="tab"]'));
 		expect(tabs.length).toBe(3);
 		expect(tabs.findIndex((b) => b.getAttribute("aria-selected") === "true")).toBe(2);
@@ -517,7 +522,7 @@ describe("TopBar 实测宽度溢出（放不下的自动进「⋯」）", () => 
 			hostEntry("host:git"),
 			hostEntry("host:new-chat"),
 		];
-		const { container } = mount("terminal", rows);
+		const { container } = mount("canvas", rows);
 		expect(flowItems(container).length).toBe(3);
 		const more = container.querySelector<HTMLButtonElement>(".plugin-topbar-more > button");
 		expect(more).toBeTruthy();
@@ -530,7 +535,7 @@ describe("TopBar 实测宽度溢出（放不下的自动进「⋯」）", () => 
 
 describe("TopBar 靠左图标提示向右偏移（防左缘溢出裁剪）", () => {
 	it("无 center 段、仅有 start 与 end 段时，单 spacer 挂 tb-spacer-end 类名区分右段", () => {
-		const { container } = mount("terminal", [
+		const { container } = mount("canvas", [
 			{ ...hostEntry("host:open-project"), align: "start" },
 			{ ...hostEntry("host:chat"), align: "end" },
 		]);

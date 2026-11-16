@@ -156,6 +156,31 @@ export function isIncomingWebhookRequest(req: Request): boolean {
 	return req.method === "POST" && /^\/api\/rooms\/[^/]+\/webhooks\/incoming\/[^/]+$/.test(req.path);
 }
 
+/**
+ * 入站 webhook 的凭据来源单源：query `token` / `Authorization: Bearer` / `x-webhook-token` / body `token`。
+ *
+ * Hub 侧用它做严格比对；主 Web app 的全局认证（`server/index.ts`）用它判断"这条请求自带凭据"。
+ * 两边各写一遍就会漂移：历史上主 app 只认本机口令，公网回调因此被提前拒成 401。
+ */
+export function incomingWebhookToken(req: Request): string | undefined {
+	const bearer = req.headers.authorization?.startsWith("Bearer ") ? req.headers.authorization.slice(7) : undefined;
+	const queryToken = typeof req.query?.token === "string" ? req.query.token : undefined;
+	const headerToken = typeof req.headers["x-webhook-token"] === "string" ? req.headers["x-webhook-token"] : undefined;
+	const bodyToken = typeof req.body?.token === "string" ? req.body.token : undefined;
+	return queryToken ?? bearer ?? headerToken ?? bodyToken;
+}
+
+/**
+ * 「自带凭据的入站 webhook」判定：鉴权责任在 Hub 的 token 比对，不在本机口令。
+ *
+ * 只认这一条精确路径（`POST /api/rooms/:id/webhooks/incoming/:webhookId`），不放宽到整个 `/api/rooms`。
+ */
+export function isSelfAuthenticatedWebhook(req: Request): boolean {
+	if (!isIncomingWebhookRequest(req)) return false;
+	const token = incomingWebhookToken(req);
+	return typeof token === "string" && token.length > 0;
+}
+
 export function secureCompareTokens(given: string, expected: string): boolean {
 	const a = Buffer.from(given, "utf8");
 	const b = Buffer.from(expected, "utf8");

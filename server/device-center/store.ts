@@ -16,6 +16,7 @@ import type {
 } from "../protocol.js";
 export type { BlackboardSection } from "../protocol.js";
 import { createHash, randomUUID, timingSafeEqual } from "node:crypto";
+import { assertDirectRoom, DirectRoomInvariantError, isDirectRoom } from "./direct-rooms.js";
 import {
 	projectConversationState,
 	reconcileConversationState,
@@ -112,6 +113,10 @@ export interface HubTask {
 	status: TaskStatus;
 	createdAt: number;
 	updatedAt: number;
+	/** 队列优先级：0 人私聊 / 1 群内人消息 / 2 路由·Webhook·定时。缺省按 1。 */
+	queuePriority?: number;
+	/** 触发源（用于优先级与调度审计）；不影响权限。 */
+	origin?: "human" | "router" | "webhook" | "schedule" | "work_item";
 	parentTaskId?: string;
 	rootTaskId?: string;
 	dispatchDepth?: number;
@@ -128,6 +133,8 @@ export interface HubTask {
 	resourceLocks?: string[];
 	blockReason?: import("../protocol.js").DeviceTaskBlockReason;
 	blockReasonDetail?: string;
+	/** 排队说明（如"前面还有 N 个任务"），与 blockReason 一起展示给用户。 */
+	queuedReason?: string;
 	attenuatedTools?: string[];
 	dependsOnTaskId?: string;
 	outcomeFingerprint?: string;
@@ -170,6 +177,8 @@ export interface GroupWebhook {
 export interface Room {
 	id: string;
 	accountId: string;
+	/** 缺省 `group`（存量数据零迁移）；`direct` = 与单个 Bot 的私聊容器，见 `direct-rooms.ts`。 */
+	kind?: "group" | "direct";
 	name: string;
 	botIds: string[];
 	primaryBotId?: string;
@@ -194,6 +203,13 @@ export interface RoomMessage {
 	replyToMessageId?: string;
 	conversationId?: string;
 	conversationIds?: string[];
+	/** 从私聊投递到群的消息：保留来源，供 UI 标注"来自与 X 的私聊"。 */
+	sharedFrom?: {
+		mode: "as_bot" | "as_forward";
+		sourceRoomId: string;
+		botId: string;
+		messageIds: string[];
+	};
 }
 export interface HubState {
 	version: 2;
@@ -320,6 +336,27 @@ function mergeRows<T extends { id: string }>(stored: readonly T[], inline: reado
 	for (const row of inline) merged.set(row.id, row);
 	for (const row of stored) if (!merged.has(row.id)) merged.set(row.id, row);
 	return [...merged.values()];
+}
+
+/**
+ * 直聊房间不变量的写入断言（单源）。
+ * 只检查本事务新增或改动过的房间：存量数据零迁移，历史脏房间不会因为无关事务而把 Hub 卡死；
+ * 但一旦某个写入路径动到它，就必须显式拒绝而不是静默退化成群组。
+ */
+export function assertRoomWriteInvariants(before: readonly Room[], after: readonly Room[]): void {
+	const beforeById = new Map(before.map((room) => [room.id, room]));
+	for (const room of computeCollectionDiff(before, after).upsert) {
+		// 直聊 → 群组（或 kind 被清空）的改写等于静默降级：房间 id 还是那个派生值，
+		// 但 router / 黑板 / 多成员这些群能力会突然被放开。只改 kind 就能绕过下面逐字段的校验，
+		// 因此必须按「改动方向」单独拒绝，而不能只看改完之后是不是直聊。
+		const previous = beforeById.get(room.id);
+		if (previous && isDirectRoom(previous) && !isDirectRoom(room))
+			throw new DirectRoomInvariantError({
+				code: "DIRECT_ROOM_KIND_REWRITE",
+				message: "Direct room kind cannot be rewritten into a group room",
+			});
+		if (isDirectRoom(room)) assertDirectRoom(room);
+	}
 }
 
 function computeCollectionDiff<T extends { id: string }>(
@@ -611,6 +648,9 @@ export class DeviceHubStore {
 			if (typeof reconcileConversationState === "function") {
 				reconcileConversationState(this.state, draft);
 			}
+			// 直聊不变量的写入单源：只断言本事务新增/改动过的房间，存量数据零迁移。
+			// 路由层的散点校验会被绕过（例如设备撤销时连改 botIds），这里兜底让事务整体回滚。
+			assertRoomWriteInvariants(this.state.rooms, draft.rooms);
 			const detachedResult = structuredClone(result);
 
 			const nextSeq = this.lastSeq + 1;

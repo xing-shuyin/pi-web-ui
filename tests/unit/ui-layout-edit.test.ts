@@ -8,7 +8,7 @@ import {
 	applyIconHide,
 	collectIconEditItems,
 	findIconEditEntry,
-	sideAlignLabel,
+	alignLabel,
 	visibleZoneEntries,
 	zoneEntriesForAlign,
 } from "../../web/src/ui-layout-edit.js";
@@ -180,10 +180,17 @@ describe("竖向栏（侧边停靠栏）", () => {
 		expect(zones.bottombar).toMatchObject({ alignable: true, vertical: false });
 	});
 
-	it("文案：start=靠上 / center=居中 / end=靠下（字面量 key，死 key 守卫认得出）", () => {
+	it("文案：竖向栏 start=靠上 / center=居中 / end=靠下（字面量 key，死 key 守卫认得出）", () => {
 		const t = (key: string) => key;
-		expect(sideAlignLabel(t, "start")).toBe("uiLayoutAlignTop");
-		expect(sideAlignLabel(t, "center")).toBe("uiLayoutAlignMiddle");
-		expect(sideAlignLabel(t, "end")).toBe("uiLayoutAlignBottom");
+		expect(alignLabel(t, "start", true)).toBe("uiLayoutAlignTop");
+		expect(alignLabel(t, "center", true)).toBe("uiLayoutAlignMiddle");
+		expect(alignLabel(t, "end", true)).toBe("uiLayoutAlignBottom");
+	});
+
+	it("文案：横向栏也是中文——start=靠左 / center=居中 / end=靠右，不再直出 start/center/end", () => {
+		const t = (key: string) => key;
+		expect(alignLabel(t, "start", false)).toBe("uiLayoutAlignLeft");
+		expect(alignLabel(t, "center", false)).toBe("uiLayoutAlignMiddle");
+		expect(alignLabel(t, "end", false)).toBe("uiLayoutAlignRight");
 	});
 });

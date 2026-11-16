@@ -129,6 +129,8 @@ function dynamicKeys(): Set<string> {
 	for (const tk of PROMPT_TOKENS) {
 		out.add(`promptTok_${tk}`);
 		out.add(`promptTok_${tk}_desc`);
+		out.add(`promptSec_${tk}_edit`);
+		out.add(`promptSec_${tk}_hint`);
 	}
 	for (const file of collectFiles(join(ROOT, "server/canvas"))) {
 		if (!file.endsWith(".ts")) continue;

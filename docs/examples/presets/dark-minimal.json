@@ -375,7 +375,7 @@
 		"toolImagesEnabled": true,
 		"keepRecentMessages": 15,
 		"reversePagination": false,
-		"showForkedParentSessions": false,
+		"showForkedParentSessions": true,
 		"retainFinishedConversations": false,
 		"openRecentSessionOnProjectSwitch": false,
 		"quickPhrases": ["继续", "上传发布", "上传github", "处理pr", "处理issue", "还有更好的方式吗", "关闭回复issue"],

@@ -43,12 +43,23 @@ import {
 	ALLOWED_WEBHOOK_EVENTS,
 	createWebhookToken,
 	dispatchGroupWebhook,
+	incomingWebhookToken,
 	isIncomingWebhookRequest,
 	secureCompareTokens,
 	testOutgoingWebhook,
 	validateWebhookInput,
 } from "./hub-webhooks.js";
-import type { GroupWebhook, RoomMessage } from "./store.js";
+import type { GroupWebhook, Room, RoomMessage } from "./store.js";
+import {
+	createDirectRoom,
+	groupRoomsOf,
+	isDirectRoom,
+	isGroupOnlyRoomPath,
+	pruneDirectRoomsForBots,
+} from "./direct-rooms.js";
+import { buildSharedMessage, shareContentFingerprint } from "./direct-room-share.js";
+import { activeTaskForBot, BOT_QUEUE_MAX_PENDING, queuePriorityForCreation } from "./bot-queue.js";
+import { createBotQueueDispatcher } from "./hub-task-queue.js";
 import {
 	GROUP_RETENTION_LIMIT,
 	groupHistoryPage,
@@ -168,12 +179,13 @@ class HttpError extends Error {
 	constructor(
 		public status: number,
 		message: string,
+		public code?: string,
 	) {
 		super(message);
 	}
 }
-function fail(status: number, message: string): never {
-	throw new HttpError(status, message);
+function fail(status: number, message: string, code?: string): never {
+	throw new HttpError(status, message, code);
 }
 function text(value: unknown, max = 16384): string {
 	if (typeof value !== "string" || !value.trim() || Buffer.byteLength(value) > max) fail(400, "Invalid text");
@@ -319,13 +331,14 @@ export async function createDeviceHub(options: DeviceHubOptions) {
 					webhookRoute ||
 					/^\/rooms\/[^/]+\/(?:events|interactions|transfers|locks|blackboard)$/.test(suffix) ||
 					/^\/rooms\/[^/]+\/transfers\/[^/]+\/preview$/.test(suffix) ||
-					["/devices", "/bots", "/rooms", "/system/upgrade"].includes(suffix) ||
+					["/devices", "/bots", "/rooms", "/direct-rooms", "/system/upgrade"].includes(suffix) ||
 					/^\/rooms\/[^/]+$/.test(suffix))) ||
 			(["POST", "PUT"].includes(req.method) &&
 				(suffix === "/rooms" ||
 					suffix === "/system/upgrade" ||
 					conversationRoute ||
 					webhookRoute ||
+					/^\/bots\/[^/]+\/(?:direct-room|share)$/.test(suffix) ||
 					/^\/rooms\/[^/]+\/(messages|rename|members|clear|delete|interactions|canvas|blackboard(?:\/sections\/[^/]+)?)$/.test(
 						suffix,
 					) ||
@@ -646,6 +659,8 @@ export async function createDeviceHub(options: DeviceHubOptions) {
 			draft.devices = draft.devices.filter((device) => device.id !== id);
 			const removedBots = new Set(draft.bots.filter((b) => b.deviceId === id).map((b) => b.id));
 			draft.bots = draft.bots.filter((b) => b.deviceId !== id);
+			// 直聊房间是 Bot 的函数（id 由 account+bot 派生）：Bot 没了，容器也不该留下。
+			draft.rooms = pruneDirectRoomsForBots(draft.rooms, owner.id, removedBots).rooms;
 			for (const room of draft.rooms) {
 				room.botIds = room.botIds.filter((botId) => !removedBots.has(botId));
 				if (room.primaryBotId && removedBots.has(room.primaryBotId)) delete room.primaryBotId;
@@ -803,6 +818,15 @@ export async function createDeviceHub(options: DeviceHubOptions) {
 						updatedAt: Date.now(),
 					});
 			}
+			// 设备不再上报的 Bot：记录保留（历史引用还在），但它派生的直聊容器必须一起消失，
+			// 否则左栏会留下一个永远派不出任务的私聊。只删「设备注册表里已经没有」的 Bot，
+			// 单纯 enabled=false 的房间保留（用户可能只是临时停用，历史不该被一并删掉）。
+			const removedBotIds = new Set(
+				draft.bots
+					.filter((bot) => bot.deviceId === device.id && !incoming.some((row) => row.id === bot.id))
+					.map((bot) => bot.id),
+			);
+			if (removedBotIds.size) draft.rooms = pruneDirectRoomsForBots(draft.rooms, owner.id, removedBotIds).rooms;
 			for (const bot of draft.bots)
 				if (bot.deviceId === device.id && !incoming.some((b) => b.id === bot.id)) {
 					bot.enabled = false;
@@ -812,26 +836,135 @@ export async function createDeviceHub(options: DeviceHubOptions) {
 		});
 		res.json({ bots, accountId: owner.id });
 	});
-	app.get("/api/rooms", (req, res) =>
+	app.get("/api/rooms", (req, res) => {
+		const owner = account(req);
+		const state = store.snapshot();
 		res.json({
-			rooms: store
-				.snapshot()
-				.rooms.filter(
-					(r) =>
-						r.accountId === account(req).id &&
-						(!agents.has(req) ||
-							store
-								.snapshot()
-								.bots.some(
-									(b) =>
-										b.enabled &&
-										b.deviceId === agents.get(req)!.device.id &&
-										b.accountId === r.accountId &&
-										r.botIds.includes(b.id),
-								)),
-				),
-		}),
-	);
+			rooms: groupRoomsOf(state.rooms, owner.id).filter(
+				(r) =>
+					!agents.has(req) ||
+					state.bots.some(
+						(b) =>
+							b.enabled &&
+							b.deviceId === agents.get(req)!.device.id &&
+							b.accountId === r.accountId &&
+							r.botIds.includes(b.id),
+					),
+			),
+		});
+	});
+	// 直聊房间不上群组列表：单独端点供左栏「智能体」区使用，附带 Bot 投影。
+	app.get("/api/direct-rooms", (req, res) => {
+		const owner = account(req);
+		const state = store.snapshot();
+		res.json({
+			rooms: state.rooms
+				.filter((room) => room.accountId === owner.id && isDirectRoom(room))
+				.map((room) => {
+					const bot = state.bots.find((b) => b.id === room.botIds[0] && b.accountId === owner.id);
+					return {
+						...room,
+						bot: bot
+							? { id: bot.id, name: bot.name, deviceId: bot.deviceId, enabled: bot.enabled, revision: bot.revision }
+							: undefined,
+					};
+				}),
+		});
+	});
+	// 幂等开启直聊：同一 (账号, Bot) 永远得到同一个房间 id。
+	app.post("/api/bots/:id/direct-room", async (req, res) => {
+		const owner = account(req);
+		const room = await store.transact((draft) => {
+			const bot = validBot(draft, req.params.id as string, owner.id);
+			if (!bot) fail(404, "Bot not found");
+			// 不变量断言在 direct-rooms.ts（入口快速失败）与 store.transact（写入兜底）两处共用，
+			// 路由层不再重复翻译错误码。
+			return createDirectRoom(draft, { accountId: owner.id, botId: bot.id, botName: bot.name });
+		});
+		res.status(201).json({ room });
+	});
+	/**
+	 * 私聊 → 群：把私聊里的消息投递到群（`docs/agent-bot-design.md` §5.3）。
+	 *
+	 * 三条硬约束：
+	 *   - 只有账号所有者能投递，Bot 自己不能把私聊内容广播出去（`agents.has(req)` 直接拒）；
+	 *   - `as_bot` 要求 Bot 是目标群成员，否则 409；`as_forward` 以人身份转发、不需要成员关系；
+	 *   - 必带 `idempotencyKey`，重复投递返回同一条消息，payload 变化则 409。
+	 *
+	 * 投递只产生一条群消息（带 `sharedFrom` 来源），**不触发路由、不派活**——"公布"和"派活"是两件事。
+	 */
+	app.post("/api/bots/:id/share", async (req, res) => {
+		if (agents.has(req)) fail(403, "Bots cannot broadcast private chats");
+		const owner = account(req);
+		const sourceRoomId = text(req.body?.sourceRoomId, 128);
+		const targetRoomId = text(req.body?.targetRoomId, 128);
+		const mode = req.body?.mode === "as_bot" || req.body?.mode === "as_forward" ? req.body.mode : undefined;
+		if (!mode) fail(400, "Share mode must be as_bot or as_forward");
+		const messageIds = ids(req.body?.messageIds ?? []);
+		if (!messageIds.length || messageIds.length > 10) fail(400, "Share requires 1-10 message ids");
+		const note = req.body?.note === undefined ? "" : text(req.body.note, 2000);
+		if (req.body?.idempotencyKey === undefined) fail(400, "Share requires idempotencyKey");
+		const key = text(req.body.idempotencyKey, 128);
+		const fingerprint = shareContentFingerprint({ mode, note, sourceRoomId, targetRoomId, messageIds });
+		const result = await store.transact((draft) => {
+			const bot = validBot(draft, req.params.id as string, owner.id);
+			if (!bot) fail(404, "Bot not found");
+			const source = draft.rooms.find((r) => r.id === sourceRoomId && r.accountId === owner.id);
+			if (!source || !isDirectRoom(source) || source.botIds[0] !== bot.id) fail(404, "Direct chat missing");
+			const target = draft.rooms.find((r) => r.id === targetRoomId && r.accountId === owner.id);
+			if (!target || isDirectRoom(target)) fail(404, "Target group missing");
+			if (mode === "as_bot" && !target.botIds.includes(bot.id))
+				fail(409, "Bot is not a member of the target group", "SHARE_BOT_NOT_MEMBER");
+			const receiptKey = `share:${key}`;
+			const prior = draft.receipts.find(
+				(r) => r.roomId === target.id && r.accountId === owner.id && r.key === receiptKey,
+			);
+			if (prior) {
+				if (prior.fingerprint !== fingerprint) fail(409, "Idempotency key reused with different share content");
+				return { message: draft.messages.find((m) => m.id === prior.messageId), duplicate: true };
+			}
+			const picked = messageIds.map((id) => {
+				const message = draft.messages.find((m) => m.id === id && m.roomId === source.id && m.accountId === owner.id);
+				if (!message) fail(400, "Shared message is not in the source chat");
+				return message;
+			});
+			const now = Date.now();
+			const message = buildSharedMessage({
+				mode,
+				note,
+				bot: { id: bot.id, name: bot.name },
+				owner: { id: owner.id, username: owner.username },
+				targetRoomId: target.id,
+				sourceRoomId: source.id,
+				messageIds,
+				picked,
+				now,
+			});
+			draft.messages.push(message);
+			draft.receipts.push({
+				accountId: owner.id,
+				roomId: target.id,
+				key: receiptKey,
+				fingerprint,
+				messageId: message.id,
+				createdAt: now,
+			});
+			trimRoomReceipts(draft, target.id);
+			return { message, duplicate: false };
+		});
+		if (!result.duplicate && result.message)
+			dispatchGroupWebhook(store, targetRoomId, "message", result.message as RoomMessage);
+		res.json({ message: result.message, duplicate: result.duplicate });
+	});
+	// 群组专属能力（黑板 / Webhook / 画布 / 中继 / 路由）在直聊房间上必须显式失败，
+	// 而不是静默降级成“空黑板”这类半成品行为。
+	app.use("/api/rooms/:id", (req: Request, _res: Response, next: NextFunction) => {
+		if (!isGroupOnlyRoomPath(req.path)) return next();
+		const owner = account(req);
+		const room = store.snapshot().rooms.find((r) => r.id === req.params.id && r.accountId === owner.id);
+		if (isDirectRoom(room)) fail(409, "Direct chats do not support group capabilities", "DIRECT_ROOM_CAPABILITY");
+		next();
+	});
 	app.post("/api/rooms", async (req, res) => {
 		const owner = account(req),
 			name = text(req.body?.name, 128),
@@ -840,10 +973,18 @@ export async function createDeviceHub(options: DeviceHubOptions) {
 			const source = ownBot(req, draft);
 			if (source && !botIds.includes(source.id)) fail(403, "Source Bot must be a member");
 			if (!botIds.length || botIds.some((id) => !validBot(draft, id, owner.id))) fail(400, "Invalid room Bot");
-			if (draft.rooms.filter((r) => r.accountId === owner.id).length >= 100) fail(409, "Room capacity reached");
+			if (groupRoomsOf(draft.rooms, owner.id).length >= 100) fail(409, "Room capacity reached");
 			const primaryBotId = req.body?.primaryBotId == null ? undefined : text(req.body.primaryBotId, 128);
 			if (primaryBotId && !botIds.includes(primaryBotId)) fail(400, "Primary Bot must be a room member");
-			const room = { id: randomUUID(), accountId: owner.id, name, botIds, primaryBotId, createdAt: Date.now() };
+			const room: Room = {
+				id: randomUUID(),
+				accountId: owner.id,
+				kind: "group",
+				name,
+				botIds,
+				primaryBotId,
+				createdAt: Date.now(),
+			};
 			draft.rooms.push(room);
 			return room;
 		});
@@ -1382,11 +1523,7 @@ export async function createDeviceHub(options: DeviceHubOptions) {
 		const webhook = room.webhooks?.find((w) => w.id === webhookId && w.type === "incoming");
 		if (!webhook || webhook.enabled === false) return res.status(404).json({ error: "Webhook not found or disabled" });
 
-		const bearer = req.headers.authorization?.startsWith("Bearer ") ? req.headers.authorization.slice(7) : undefined;
-		const queryToken = typeof req.query?.token === "string" ? req.query.token : undefined;
-		const headerToken = typeof req.headers["x-webhook-token"] === "string" ? req.headers["x-webhook-token"] : undefined;
-		const bodyToken = typeof req.body?.token === "string" ? req.body.token : undefined;
-		const providedToken = queryToken ?? bearer ?? headerToken ?? bodyToken;
+		const providedToken = incomingWebhookToken(req);
 		if (!providedToken || !webhook.token || !secureCompareTokens(providedToken, webhook.token)) {
 			return res.status(401).json({ error: "Invalid webhook token" });
 		}
@@ -1470,6 +1607,8 @@ export async function createDeviceHub(options: DeviceHubOptions) {
 					status: "queued" as const,
 					createdAt: now,
 					updatedAt: now,
+					queuePriority: 2 as const,
+					origin: "webhook" as const,
 				};
 			});
 
@@ -1715,6 +1854,8 @@ export async function createDeviceHub(options: DeviceHubOptions) {
 				...(conversation ? { conversationId: conversation.id } : {}),
 				...(task.sourceBotId ? { sourceBotId: task.sourceBotId } : {}),
 				...(task.attenuatedTools ? { attenuatedTools: [...task.attenuatedTools] } : {}),
+				...(task.queuePriority === undefined ? {} : { queuePriority: task.queuePriority }),
+				...(task.origin === undefined ? {} : { origin: task.origin }),
 			};
 
 			draft.tasks.push(nextTask);
@@ -1943,6 +2084,8 @@ export async function createDeviceHub(options: DeviceHubOptions) {
 				const room = draft.rooms.find((r) => r.id === req.params.id && r.accountId === owner.id);
 				if (!room) fail(404, "Room missing");
 				if (operation !== "rename") assertNoApplyingIntegration(draft, owner.id, room.id);
+				if (operation === "members" && isDirectRoom(room))
+					fail(409, "Direct chats cannot change members; open a group instead", "DIRECT_ROOM_FIXED_MEMBER");
 				if (operation === "rename") room.name = text(req.body?.name, 128);
 				if (operation === "members") {
 					const members = ids(req.body?.botIds);
@@ -3018,6 +3161,23 @@ export async function createDeviceHub(options: DeviceHubOptions) {
 			if (targets.length && (root?.dispatchCount ?? 0) + targets.length > settings.maxDispatchBudget)
 				fail(409, "Dispatch budget exhausted");
 			if (root && targets.length) root.dispatchCount = (root.dispatchCount ?? 0) + targets.length;
+			// 队列上限：targets 到这里才最终确定（含主 Bot 兜底与 @ 提及），积压太多就先拒绝。
+			for (const botId of targets) {
+				const pending = draft.tasks.filter(
+					(task) =>
+						task.botId === botId &&
+						task.status === "queued" &&
+						task.blockReason === "bot_busy" &&
+						!task.leaseToken &&
+						!deliveredTasks.has(task.id),
+				).length;
+				if (pending >= BOT_QUEUE_MAX_PENDING)
+					fail(
+						429,
+						`这个 Bot 的排队已满（${BOT_QUEUE_MAX_PENDING} 个任务在等），等前面的跑完再派 / Bot queue is full (${BOT_QUEUE_MAX_PENDING} pending)`,
+						"BOT_QUEUE_FULL",
+					);
+			}
 			if (draft.tasks.filter((t) => t.roomId === room.id && taskPending(t)).length + targets.length > getHistoryLimit())
 				fail(409, "Too many active tasks");
 			if (
@@ -3083,6 +3243,11 @@ export async function createDeviceHub(options: DeviceHubOptions) {
 					...(attenuatedTools ? { attenuatedTools } : {}),
 					executionMode,
 					...(contract ? { contract } : {}),
+					queuePriority: queuePriorityForCreation({
+						direct: room.kind === "direct",
+						origin: routerSource ? "router" : source ? "work_item" : "human",
+					}),
+					origin: routerSource ? "router" : source ? "work_item" : "human",
 				};
 			});
 			if (isPipeline) {
@@ -3365,9 +3530,11 @@ export async function createDeviceHub(options: DeviceHubOptions) {
 		);
 	});
 	app.use((error: Error & { status?: number; code?: string }, _req: Request, res: Response, _next: NextFunction) => {
+		// 机器可读错误码只放行大写快照式标识（如 ACTIVE_TASKS / DIRECT_ROOM_*），避免把内部错误码泄露成约定。
+		const code = typeof error.code === "string" && /^[A-Z][A-Z0-9_]{2,63}$/.test(error.code) ? error.code : undefined;
 		res.status(error.status ?? 500).json({
 			error: error.status && error.status < 500 ? error.message : "Storage or internal error",
-			...(error.code === "ACTIVE_TASKS" ? { code: "ACTIVE_TASKS" } : {}),
+			...(code ? { code } : {}),
 		});
 	});
 	const server = options.server ?? createServer();
@@ -3516,6 +3683,18 @@ export async function createDeviceHub(options: DeviceHubOptions) {
 				);
 		}
 	}
+	/**
+	 * 每 Bot 串行队列：并发派活不再直接失败，而是排队并解释"前面还有几个"。
+	 * 纯排序在 `bot-queue.ts`，写状态与唤醒在 `hub-task-queue.ts`；
+	 * 本文件只注入 store / deliverTask / 群上下文，不再承载调度逻辑。
+	 */
+	const botQueue = createBotQueueDispatcher({
+		store,
+		deliveredTasks,
+		deliverTask,
+		taskContext: (room, state) =>
+			groupTaskContext(room, state.bots, state.messages, currentSettings().groupContextBytes),
+	});
 	async function deliverTask(task: HubTask, context?: GroupTaskContext) {
 		const state = store.snapshot();
 		const current = state.tasks.find((entry) => entry.id === task.id && entry.attemptId === task.attemptId);
@@ -3537,7 +3716,21 @@ export async function createDeviceHub(options: DeviceHubOptions) {
 			);
 			if (!pred || pred.status !== "completed" || pred.cancelRequested || pred.stopConfirmed) return;
 		}
-		if (task.conversationId && nextReadyConversationTask(state, task.conversationId)?.id !== task.id) return;
+		if (task.conversationId && nextReadyConversationTask(state, task.conversationId)?.id !== task.id) {
+			// 同一会话的串行由会话顺序裁定：只要前一轮还在跑/持租约，本轮就不是"下一个可执行"。
+			const ahead = state.tasks.find(
+				(entry) =>
+					entry.conversationId === task.conversationId &&
+					entry.id !== task.id &&
+					(entry.status === "running" || Boolean(entry.leaseToken) || entry.status === "queued"),
+			);
+			await botQueue.queueBehindConversationTurn(task, ahead?.id ?? "previous turn");
+			return;
+		}
+
+		// 同一个 Bot 只允许一个执行位：后来者排队（按优先级 + FIFO），而不是报"设备忙"让用户重试。
+		const busy = activeTaskForBot(state.tasks, task.botId, deliveredTasks, task.id);
+		if (busy) return botQueue.queueBehindBusyBot(task, busy);
 
 		if (task.resourceLocks && task.resourceLocks.length > 0) {
 			const acquired = lockManager.acquireLocks({
@@ -3575,6 +3768,9 @@ export async function createDeviceHub(options: DeviceHubOptions) {
 			await store.transact((draft) => {
 				const current = draft.tasks.find((entry) => entry.id === task.id && entry.attemptId === task.attemptId);
 				if (current) {
+					delete current.blockReason;
+					delete current.blockReasonDetail;
+					delete current.queuedReason;
 					current.leaseToken = randomUUID();
 					current.leaseGeneration = (current.leaseGeneration ?? 0) + 1;
 					current.lastHeartbeatAt = Date.now();
@@ -4143,6 +4339,9 @@ export async function createDeviceHub(options: DeviceHubOptions) {
 		});
 	}
 
+	// 任何状态变更（设备上报完成、停止、撤销、失败）都可能让某个 Bot 空出来：统一在变更后唤醒队列。
+	const unsubscribeQueueDrain = store.subscribe(botQueue.scheduleDrain);
+
 	return {
 		app,
 		server,
@@ -4167,6 +4366,8 @@ export async function createDeviceHub(options: DeviceHubOptions) {
 		async close() {
 			await mobilePush.dispose();
 			clearInterval(recoverySweepTimer);
+			botQueue.dispose();
+			unsubscribeQueueDrain();
 			lockManager.close();
 			await groupEvents.close();
 			await taskJournalManager.close();

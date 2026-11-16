@@ -3,6 +3,7 @@ import http, { type Server } from "node:http";
 import { once } from "node:events";
 import { WebSocket, WebSocketServer } from "ws";
 import {
+	browserSessionExpiry,
 	createDeviceRelay,
 	safePath,
 	checkedUrl,
@@ -707,5 +708,22 @@ describe("device reverse relay", () => {
 		f.relay.revoke("dev1");
 		await disconnected;
 		expect((await request(f.port, f.host, "/", { cookie: f.cookie })).status).toBe(403);
+	});
+});
+
+describe("browser P2P session expiry", () => {
+	const now = 1_700_000_000_000;
+	const cap = 30 * 60_000;
+	it("keeps a healthy grant from a device whose clock runs minutes ahead of the hub", () => {
+		// Device grants its own 30-minute TTL, so positive drift lands just past `now + cap`.
+		expect(browserSessionExpiry(now + cap + 9_000, now)).toBe(now + cap);
+		expect(browserSessionExpiry(now + cap + 5 * 60_000, now)).toBe(now + cap);
+	});
+	it("keeps the device value when the device clock runs behind the hub", () => {
+		expect(browserSessionExpiry(now + cap - 5 * 60_000, now)).toBe(now + cap - 5 * 60_000);
+		expect(browserSessionExpiry(now + cap, now)).toBe(now + cap);
+	});
+	it("still bounds a session that the device claims far too long", () => {
+		expect(browserSessionExpiry(now + 2 * 60 * 60_000, now)).toBe(now + cap);
 	});
 });

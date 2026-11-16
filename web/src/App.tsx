@@ -9,6 +9,7 @@ import {
 	useState,
 	type CSSProperties,
 	type PointerEvent as ReactPointerEvent,
+	type ReactNode,
 } from "react";
 import { TopBar } from "./components/TopBar";
 import { RemoteDesktopWindow } from "./components/RemoteDesktopWindow";
@@ -31,12 +32,14 @@ import { Dialog } from "./components/Dialog";
 import { QuestionQueue } from "./components/QuestionQueue";
 import { resolveQuestionQueue, mergeOwnedPending } from "./question-queue";
 import { presetText } from "./components/DshPresetBar";
+const BottomDock = lazy(() => import("./components/BottomDock").then((m) => ({ default: m.BottomDock })));
 const TerminalPanel = lazy(() => import("./components/TerminalPanel").then((m) => ({ default: m.TerminalPanel })));
+const ScmPanel = lazy(() => import("./components/SCMPanel").then((m) => ({ default: m.ScmPanel })));
+import type { BottomDockTab } from "./components/BottomDock";
 const NativeCliPanel = lazy(() => import("./components/NativeCliPanel").then((m) => ({ default: m.NativeCliPanel })));
 import "./native-cli.css";
 import { NativeCliCreateModal } from "./components/NativeCliCreateModal";
 import { requestNativeCliChat } from "./new-chat-request";
-const ScmPanel = lazy(() => import("./components/SCMPanel").then((m) => ({ default: m.ScmPanel })));
 const DeviceCenter = lazy(() => import("./components/DeviceCenter").then((m) => ({ default: m.DeviceCenter })));
 const DeviceGroupCreateDialog = lazy(() =>
 	import("./components/DeviceGroups").then((m) => ({ default: m.DeviceGroupCreateDialog })),
@@ -250,23 +253,44 @@ const EMPTY_MESSAGES: UiMessage[] = [];
 
 const PANEL_MIN = 180;
 const PANEL_MAX = 520;
+// 右栏还要装“文件列表 + diff”（源代码管理标签），给它更宽的上限。
+const PANEL_MAX_RIGHT = 780;
 const PANEL_DEFAULT = 240;
+/** 切到源代码管理标签时的最小右栏宽度：再窄就只剩一列文件名了。 */
+const SCM_DOCK_MIN_W = 560;
+const RIGHT_TAB_FILES = "files";
+const RIGHT_TAB_SCM = "scm";
+const BOTTOM_TAB_TERMINAL = "host:bottom-terminal";
 type PanelSide = "left" | "right";
+const panelMax = (side: PanelSide) => (side === "right" ? PANEL_MAX_RIGHT : PANEL_MAX);
 const panelWidthKey = (side: PanelSide) => `pi-web-ui:${side}-panel-width`;
 function readPanelWidth(side: PanelSide): number {
 	try {
 		const v = Number(localStorage.getItem(panelWidthKey(side)));
-		return Number.isFinite(v) && v >= PANEL_MIN && v <= PANEL_MAX ? v : PANEL_DEFAULT;
+		return Number.isFinite(v) && v >= PANEL_MIN && v <= panelMax(side) ? v : PANEL_DEFAULT;
 	} catch {
 		return PANEL_DEFAULT;
 	}
 }
 const panelCollapsedKey = (side: PanelSide) => `pi-web-ui:${side}-panel-collapsed`;
+function savePanelCollapsed(side: PanelSide, collapsed: boolean): void {
+	try {
+		localStorage.setItem(panelCollapsedKey(side), collapsed ? "1" : "0");
+	} catch {}
+}
 function readPanelCollapsed(side: PanelSide): boolean {
 	try {
 		return localStorage.getItem(panelCollapsedKey(side)) === "1";
 	} catch {
 		return false;
+	}
+}
+/** 右栏标签的选中态由 SlotTabs 持久化，这里只读一份用于顶栏高亮。 */
+function readRightDockTab(): string {
+	try {
+		return localStorage.getItem("pi-web-ui:rightpanel:tab") ?? RIGHT_TAB_FILES;
+	} catch {
+		return RIGHT_TAB_FILES;
 	}
 }
 
@@ -280,7 +304,7 @@ function ResizeHandle({ side, width, onResize }: { side: PanelSide; width: numbe
 			let last = startW;
 			const move = (ev: PointerEvent) => {
 				const delta = side === "left" ? ev.clientX - startX : startX - ev.clientX;
-				last = Math.min(PANEL_MAX, Math.max(PANEL_MIN, Math.round(startW + delta)));
+				last = Math.min(panelMax(side), Math.max(PANEL_MIN, Math.round(startW + delta)));
 				onResize(last);
 			};
 			const up = () => {
@@ -475,6 +499,12 @@ export function App() {
 	const [viewChosen, setView] = useState<ViewName>(() =>
 		new URLSearchParams(window.location.search).get("view") === "devices" ? "devices" : "chat",
 	);
+	// 终端 / 源码管理不再是“页面”：终端是底部全宽抽屉，源码管理是右栏的一个标签。
+	const [termDrawerOpen, setTermDrawerOpen] = useState(false);
+	const [termCollapsed, setTermCollapsed] = useState(false);
+	const [bottomTab, setBottomTab] = useState<string>(BOTTOM_TAB_TERMINAL);
+	// 右栏当前标签的镜像（SlotTabs 自己持有选中态并写 localStorage，这里只是读一份用于高亮）。
+	const [rightTab, setRightTab] = useState<string>(readRightDockTab);
 	const [nativeCliCreateCwd, setNativeCliCreateCwd] = useState<string | null>(null);
 	const [nativeCliCreating, setNativeCliCreating] = useState(false);
 	const [activeGroupId, setActiveGroupId] = useState<string | null>(null);
@@ -520,6 +550,8 @@ export function App() {
 			? viewChosen
 			: "chat";
 	const isNativeCliConversation = Boolean(chat.state?.nativeCli) && !activeGroupId && !sharedReadOnly;
+	// 终端 / Git 抽屉不遮住聊天区，所以这三个 view 下聊天主体仍算“可见”。
+	const chatPaneVisible = view === "chat" || view === "terminal" || view === "git";
 	const [cachedNativeClis, setCachedNativeClis] = useState<
 		Record<string, { nativeCli: NativeCliConversation; cwd: string }>
 	>({});
@@ -1073,6 +1105,8 @@ export function App() {
 	const resizeRight = useCallback((w: number) => setRightWidth(w), []);
 	const [leftCollapsed, setLeftCollapsed] = useState(() => readPanelCollapsed("left"));
 	const [rightCollapsed, setRightCollapsed] = useState(() => readPanelCollapsed("right"));
+	// 源码管理标签在右栏里显示着（= 顶栏 Git 高亮 / 再点一次收起）。
+	const gitDrawerOpen = !rightCollapsed && rightTab === RIGHT_TAB_SCM;
 	const toggleLeft = useCallback(() => {
 		setLeftCollapsed((v) => {
 			try {
@@ -1083,12 +1117,15 @@ export function App() {
 	}, []);
 	const toggleRight = useCallback(() => {
 		setRightCollapsed((v) => {
-			try {
-				localStorage.setItem(panelCollapsedKey("right"), v ? "0" : "1");
-			} catch {}
+			savePanelCollapsed("right", !v);
 			return !v;
 		});
 	}, []);
+	// 右栏被收起时，顶栏 Git 不应该还亮着（源码管理已经看不见了）。
+	useEffect(() => {
+		if (!rightCollapsed || view !== "git") return;
+		setView(termDrawerOpen ? "terminal" : "chat");
+	}, [rightCollapsed, view, termDrawerOpen]);
 	const [drawer, setDrawer] = useState<"left" | "right" | null>(null);
 	const unreadConvKeys = useUnreadConversationKeys();
 	const layoutRef = useRef<HTMLDivElement | null>(null);
@@ -1382,6 +1419,7 @@ export function App() {
 				});
 			}
 			terminal.select(targetId);
+			setTermDrawerOpen(true);
 			setView("terminal");
 		};
 		window.addEventListener("pi-web-ui:plugin-run-command", onPluginRunCommand);
@@ -1403,72 +1441,6 @@ export function App() {
 	}, [chat, terminal, send]);
 
 	// Ctrl+K / Cmd+K opens global search (also reachable via the topbar button).
-	useEffect(() => {
-		const onKey = (e: KeyboardEvent) => {
-			if (!(e.ctrlKey || e.metaKey) || e.key.toLowerCase() !== "k") return;
-			e.preventDefault();
-			setGlobalSearchOpen((v) => !v);
-		};
-		window.addEventListener("keydown", onKey);
-		return () => window.removeEventListener("keydown", onKey);
-	}, []);
-
-	const [zenMode, setZenMode] = useState<boolean>(() => {
-		try {
-			return localStorage.getItem("pi_zen_mode") === "1";
-		} catch {
-			return false;
-		}
-	});
-
-	useEffect(() => {
-		try {
-			if (zenMode) {
-				localStorage.setItem("pi_zen_mode", "1");
-			} else {
-				localStorage.removeItem("pi_zen_mode");
-			}
-		} catch {}
-	}, [zenMode]);
-
-	const toggleZenMode = useCallback(() => {
-		setZenMode((prev) => {
-			const next = !prev;
-			if (next && view !== "chat") {
-				setView("chat");
-			}
-			return next;
-		});
-	}, [view]);
-
-	useEscapeKey(() => {
-		if (zenMode) {
-			setZenMode(false);
-			return true;
-		}
-		return false;
-	}, zenMode);
-
-	// 手机端子抽屉是主导航：返回键/ESC 逐层退出的第一层就是它（联开后注册，所以优先于其他浮层被消费）。
-	useEscapeKey(() => {
-		if (!drawer) return false;
-		setDrawer(null);
-		return true;
-	}, drawer !== null);
-
-	useEffect(() => {
-		const onKey = (e: KeyboardEvent) => {
-			const isAltZ = e.altKey && !e.ctrlKey && !e.metaKey && e.key.toLowerCase() === "z";
-			const isCtrlShiftF = (e.ctrlKey || e.metaKey) && e.shiftKey && e.key.toLowerCase() === "f";
-			if (isAltZ || isCtrlShiftF) {
-				e.preventDefault();
-				toggleZenMode();
-			}
-		};
-		window.addEventListener("keydown", onKey);
-		return () => window.removeEventListener("keydown", onKey);
-	}, [toggleZenMode]);
-
 	const [sound, setSound] = useState<SoundSettings>(loadSoundSettings);
 	const [tts, setTts] = useState<TtsSettings>(loadTtsSettings);
 	const { themes, theme, switchTheme, reloadThemes } = useTheme();
@@ -2285,6 +2257,49 @@ export function App() {
 		if (createShell()) terminalOpenRequested.current = false;
 	}, [shellTerminalCount, createShell, view]);
 
+	/** 打开终端抽屉。view 跟着切到 terminal，顶栏 / 左侧 dock 的高亮才能对上（聊天区不受影响）。 */
+	const openTerminalDrawer = useCallback(() => {
+		terminalOpenRequested.current = shellTerminalCount === 0;
+		if (terminalOpenRequested.current && createShell()) terminalOpenRequested.current = false;
+		setTermDrawerOpen(true);
+		setTermCollapsed(false);
+		setBottomTab(BOTTOM_TAB_TERMINAL);
+		setView("terminal");
+		setDrawer(null);
+	}, [shellTerminalCount, createShell]);
+
+	/** 源码管理是右栏的一个标签：打开（必要时展开右栏）并选中它。 */
+	const openGitDrawer = useCallback(() => {
+		if (isMobile) setDrawer("right");
+		setRightTab(RIGHT_TAB_SCM);
+		setRightCollapsed(false);
+		savePanelCollapsed("right", false);
+		// 右栏 240px 装不下“文件列表 + diff”，直接给到够用的宽度（用户之后还能拖）。
+		setRightWidth((w) => (w < SCM_DOCK_MIN_W ? SCM_DOCK_MIN_W : w));
+		// 标签选中态住在 SlotTabs 里，靠既有的切换事件告诉它。
+		window.dispatchEvent(new CustomEvent("pi:select-slot-tab", { detail: { group: "rightpanel", id: RIGHT_TAB_SCM } }));
+		setView("git");
+		setDrawer(null);
+	}, [isMobile]);
+
+	/** 关掉一个抽屉；如果当前 view 正是它，交给另一个还开着的抽屉，否则回聊天。 */
+	const closeDrawer = useCallback(
+		(which: "terminal" | "git") => {
+			if (which === "terminal") setTermDrawerOpen(false);
+			else {
+				// 源码管理不是独立抽屉：把它收起来 = 收起整个右栏（文件树一起下）。
+				setRightCollapsed(true);
+				savePanelCollapsed("right", true);
+			}
+			setView((prev) => {
+				if (which === "terminal" && prev === "terminal") return gitDrawerOpen ? "git" : "chat";
+				if (which === "git" && prev === "git") return termDrawerOpen ? "terminal" : "chat";
+				return prev;
+			});
+		},
+		[termDrawerOpen, gitDrawerOpen],
+	);
+
 	const handleViewChange = useCallback(
 		(v: ViewName, opts?: { skipAutoCreate?: boolean }) => {
 			if (sharedReadOnly && v !== "chat" && v !== "devices") {
@@ -2295,19 +2310,138 @@ export function App() {
 				setNativeCliCreateCwd(cwd);
 				return;
 			}
-			if (opts?.skipAutoCreate) {
-				terminalOpenRequested.current = false;
-			} else {
-				terminalOpenRequested.current = v === "terminal" && shellTerminalCount === 0;
-				if (terminalOpenRequested.current && createShell()) {
-					terminalOpenRequested.current = false;
+			// 终端 / Git 不是“页面”而是抽屉，两者可以并存；view 跟着抽屉走，只为了高亮。
+			if (v === "terminal" || v === "git") {
+				// 同一个按钮既是开也是关：面板已经开着再点一次就收起（两个面板可以并存，所以按各自的
+				// 开关判断，而不是"当前 view 是不是它"）。从 native CLI 运行命令走 skipAutoCreate，
+				// 那是"去终端看输出"，不能把已经开着的面板关掉。
+				const alreadyOpen = v === "terminal" ? termDrawerOpen : gitDrawerOpen;
+				const keepOpen = v === "terminal" && opts?.skipAutoCreate;
+				if (alreadyOpen && !keepOpen) {
+					closeDrawer(v);
+					setDrawer(null);
+					return;
 				}
+				if (v === "terminal") {
+					if (opts?.skipAutoCreate) {
+						terminalOpenRequested.current = false;
+						setTermDrawerOpen(true);
+						setTermCollapsed(false);
+						setBottomTab(BOTTOM_TAB_TERMINAL);
+						setView("terminal");
+					} else {
+						openTerminalDrawer();
+					}
+					setDrawer(null);
+				} else {
+					openGitDrawer();
+					// 手机上右栏是抽屉，必须显式拉开；桌面端右栏本就是常驻的一块。
+					setDrawer(isMobile ? "right" : null);
+				}
+				return;
+			}
+			// 回聊天页时顺手把两个抽屉都收起来，避免“回到对话但还剩半个抽屉”。
+			if (v === "chat") {
+				setTermDrawerOpen(false);
 			}
 			setView(v);
 			setDrawer(null);
 		},
-		[shellTerminalCount, createShell, cwd, sharedReadOnly, pushNotice],
+		[
+			sharedReadOnly,
+			pushNotice,
+			cwd,
+			openTerminalDrawer,
+			openGitDrawer,
+			termDrawerOpen,
+			gitDrawerOpen,
+			view,
+			closeDrawer,
+			isMobile,
+		],
 	);
+
+	useEffect(() => {
+		const onKey = (e: KeyboardEvent) => {
+			if (!(e.ctrlKey || e.metaKey) || e.key.toLowerCase() !== "k") return;
+			e.preventDefault();
+			setGlobalSearchOpen((v) => !v);
+		};
+		window.addEventListener("keydown", onKey);
+		return () => window.removeEventListener("keydown", onKey);
+	}, []);
+
+	const [zenMode, setZenMode] = useState<boolean>(() => {
+		try {
+			return localStorage.getItem("pi_zen_mode") === "1";
+		} catch {
+			return false;
+		}
+	});
+
+	useEffect(() => {
+		try {
+			if (zenMode) {
+				localStorage.setItem("pi_zen_mode", "1");
+			} else {
+				localStorage.removeItem("pi_zen_mode");
+			}
+		} catch {}
+	}, [zenMode]);
+
+	const toggleZenMode = useCallback(() => {
+		setZenMode((prev) => {
+			const next = !prev;
+			if (next && view !== "chat") {
+				setView("chat");
+			}
+			return next;
+		});
+	}, [view]);
+
+	useEscapeKey(() => {
+		if (zenMode) {
+			setZenMode(false);
+			return true;
+		}
+		return false;
+	}, zenMode);
+
+	// 手机端子抽屉是主导航：返回键/ESC 逐层退出的第一层就是它（联开后注册，所以优先于其他浮层被消费）。
+	useEscapeKey(() => {
+		if (!drawer) return false;
+		setDrawer(null);
+		return true;
+	}, drawer !== null);
+
+	useEffect(() => {
+		const onKey = (e: KeyboardEvent) => {
+			const isAltZ = e.altKey && !e.ctrlKey && !e.metaKey && e.key.toLowerCase() === "z";
+			const isCtrlShiftF = (e.ctrlKey || e.metaKey) && e.shiftKey && e.key.toLowerCase() === "f";
+			if (isAltZ || isCtrlShiftF) {
+				e.preventDefault();
+				toggleZenMode();
+				return;
+			}
+			// 抽屉开关：Ctrl+` 终端，Ctrl+Shift+G Git（Ctrl+G 被浏览器查找占用）。
+			const isTermToggle = (e.ctrlKey || e.metaKey) && !e.shiftKey && !e.altKey && (e.key === "`" || e.key === "~");
+			const isGitToggle = (e.ctrlKey || e.metaKey) && e.shiftKey && !e.altKey && e.key.toLowerCase() === "g";
+			if (isTermToggle) {
+				e.preventDefault();
+				if (termDrawerOpen) closeDrawer("terminal");
+				else openTerminalDrawer();
+				return;
+			}
+			if (isGitToggle) {
+				e.preventDefault();
+				if (gitDrawerOpen) closeDrawer("git");
+				else openGitDrawer();
+			}
+		};
+		window.addEventListener("keydown", onKey);
+		return () => window.removeEventListener("keydown", onKey);
+	}, [toggleZenMode, termDrawerOpen, gitDrawerOpen, openTerminalDrawer, openGitDrawer, closeDrawer]);
+
 	const openNativeCliCreate = useCallback(
 		(projectCwd?: string) => {
 			if (sharedReadOnly) return;
@@ -2316,6 +2450,65 @@ export function App() {
 		},
 		[cwd, sharedReadOnly],
 	);
+	/**
+	 * 底部面板的标签：宿主项（终端）+ 插件用 `bottomdock.tabs` 注册的标签。
+	 * 顺序、显隐都走 uiSlots（用户可在设置里调），和右栏标签同一套规则。
+	 */
+	const bottomHostTabs: Record<string, { label: string; element: ReactNode }> = {
+		"host:bottom-terminal": {
+			label: t("terminal"),
+			element: (
+				<Suspense fallback={null}>
+					<TerminalPanel
+						chat={chat}
+						terminal={terminal}
+						uiTerminalToolbar={uiTerminalToolbar}
+						onUiAction={onUiAction}
+						collapsed={termCollapsed}
+						onToggleCollapse={() => setTermCollapsed((v) => !v)}
+					/>
+				</Suspense>
+			),
+		},
+	};
+	const bottomDockTabs: BottomDockTab[] = [];
+	for (const entry of uiSlots["bottomdock.tabs"] ?? []) {
+		if (entry.hidden || entry.kind === "divider") continue;
+		if (entry.source === "host") {
+			const host = bottomHostTabs[entry.id];
+			if (host)
+				bottomDockTabs.push({
+					id: entry.id,
+					label: entry.labelExplicit ? entry.label : host.label,
+					element: host.element,
+				});
+			continue;
+		}
+		const plugin = enabledPlugins.find((p) => p.id === entry.source.slice("plugin:".length));
+		if (!plugin) continue;
+		bottomDockTabs.push({
+			id: entry.id,
+			label: entry.label || plugin.name,
+			hint: entry.hint || entry.label || plugin.name,
+			element: <PluginPage plugin={plugin} epoch={chat.pluginsEpoch} send={send} />,
+		});
+	}
+
+	/** 源码管理：右栏里的一个标签（懒加载，只有激活时 SlotTabs 才挂载它）。 */
+	const scmTab = (
+		<Suspense fallback={null}>
+			<ScmPanel
+				chat={chat}
+				terminal={terminal}
+				// 只有这一个标签会挂载，所以"可见"就等于"激活"：桌面看右栏是否展开，手机看右抽屉。
+				active={isMobile ? drawer === "right" : !rightCollapsed}
+				onSwitchToTerminal={openTerminalDrawer}
+				uiScmToolbar={uiScmToolbar}
+				onUiAction={onUiAction}
+			/>
+		</Suspense>
+	);
+
 	const createNativeCliConversation = async (config: NativeCliConfig) => {
 		if (nativeCliCreating || nativeCliCreateCwd === null) return;
 		setNativeCliCreating(true);
@@ -2378,6 +2571,8 @@ export function App() {
 				chat={chat}
 				terminal={terminal}
 				view={view}
+				termOpen={termDrawerOpen}
+				gitOpen={gitDrawerOpen}
 				plugins={enabledPlugins}
 				uiPrimary={uiPrimary}
 				uiOverflow={uiOverflow}
@@ -2543,7 +2738,7 @@ export function App() {
 						zenMode={zenMode}
 						onToggleZenMode={toggleZenMode}
 					/>
-					<div className={`view-pane ${view === "chat" ? "" : "hidden"}`}>
+					<div className={`view-pane ${view === "chat" || view === "terminal" || view === "git" ? "" : "hidden"}`}>
 						{!isMobile && leftCollapsed && <PanelRail side="left" onClick={toggleLeft} />}
 						<div
 							className={`panel-drawer drawer-left ${drawer === "left" ? "open" : ""}${
@@ -2597,7 +2792,7 @@ export function App() {
 						>
 							{Object.entries(cachedNativeClis).map(([id, info]) => {
 								const isCurrent = isNativeCliConversation && chat.state?.conversationId === id;
-								const active = isCurrent && view === "chat" && !chat.transition;
+								const active = isCurrent && chatPaneVisible && !chat.transition;
 								return (
 									<Suspense key={id} fallback={null}>
 										<div className={`native-cli-main ${isCurrent ? "" : "hidden"}`}>
@@ -2625,7 +2820,7 @@ export function App() {
 											send={send}
 											conversationId={chat.state.conversationId}
 											nativeCli={chat.state.nativeCli}
-											active={view === "chat" && !chat.transition}
+											active={chatPaneVisible && !chat.transition}
 											cwd={chat.state.cwd}
 											onAddFiles={addNativeCliFiles}
 											pushNotice={pushNotice}
@@ -2640,7 +2835,7 @@ export function App() {
 											<GroupConversation
 												key={activeGroupId}
 												roomId={activeGroupId}
-												active={view === "chat"}
+												active={chatPaneVisible}
 												onBack={() => setActiveGroupId(null)}
 											/>
 										</Suspense>
@@ -3112,7 +3307,7 @@ export function App() {
 							}`}
 						>
 							<RightPanel
-								desktopVisible={view === "chat" && (isMobile ? drawer === "right" : !rightCollapsed)}
+								desktopVisible={chatPaneVisible && (isMobile ? drawer === "right" : !rightCollapsed)}
 								quickAskReferenceMenus={chat.settings?.quickAskReferenceMenus !== false}
 								collapsible={!isMobile}
 								onToggleCollapse={toggleRight}
@@ -3135,31 +3330,18 @@ export function App() {
 								plugins={enabledPlugins}
 								pluginsEpoch={chat.pluginsEpoch}
 								send={send}
+								scmTab={scmTab}
+								onActiveTabChange={(id) => {
+									setRightTab(id);
+									if (rightCollapsed) return;
+									setView((prev) => {
+										if (id === RIGHT_TAB_SCM) return prev === "terminal" ? prev : "git";
+										return prev === "git" ? (termDrawerOpen ? "terminal" : "chat") : prev;
+									});
+								}}
 							/>
 						</div>
 						{!isMobile && rightCollapsed && <PanelRail side="right" onClick={toggleRight} />}
-					</div>
-					<div className={`view-pane ${view === "terminal" ? "" : "hidden"}`}>
-						<DeferredMount active={view === "terminal"}>
-							<TerminalPanel
-								chat={chat}
-								terminal={terminal}
-								uiTerminalToolbar={uiTerminalToolbar}
-								onUiAction={onUiAction}
-							/>
-						</DeferredMount>
-					</div>
-					<div className={`view-pane ${view === "git" ? "" : "hidden"}`}>
-						<DeferredMount active={view === "git"}>
-							<ScmPanel
-								chat={chat}
-								terminal={terminal}
-								active={view === "git"}
-								onSwitchToTerminal={() => setView("terminal")}
-								uiScmToolbar={uiScmToolbar}
-								onUiAction={onUiAction}
-							/>
-						</DeferredMount>
 					</div>
 					<div className={`view-pane ${view === "canvas" ? "" : "hidden"}`}>
 						<DeferredMount active={view === "canvas"}>
@@ -3247,6 +3429,17 @@ export function App() {
 						onToggleZenMode={toggleZenMode}
 					/>
 				</div>
+				<Suspense fallback={null}>
+					<BottomDock
+						open={termDrawerOpen}
+						collapsed={termCollapsed}
+						onToggleCollapse={() => setTermCollapsed((v) => !v)}
+						onHide={() => closeDrawer("terminal")}
+						tabs={bottomDockTabs}
+						activeId={bottomTab}
+						onSelectTab={setBottomTab}
+					/>
+				</Suspense>
 			</TemplateProvider>
 			<FooterBar
 				onCreateCli={openNativeCliCreate}
@@ -3346,7 +3539,10 @@ export function App() {
 						chat={chat}
 						terminal={terminal}
 						initialSection={settingsInitialSection}
-						onSwitchToTerminal={() => setView("terminal")}
+						onSwitchToTerminal={() => {
+							setSettingsOpen(false);
+							openTerminalDrawer();
+						}}
 						onClose={() => setSettingsOpen(false)}
 						onOpenIconEdit={() => setIconEditOpen(true)}
 						onOpenManageModels={() => {
@@ -3399,6 +3595,8 @@ export function App() {
 					projects={chat.projects}
 					fileSearch={chat.fileSearch}
 					sessionSearch={chat.sessionSearch}
+					uiContextSearch={uiSlots["contextmenu.search"]}
+					quickAskReferenceMenus={chat.settings?.quickAskReferenceMenus !== false}
 					onClose={() => setGlobalSearchOpen(false)}
 					onSwitchSession={(path, anchors) => {
 						void send({ type: "switch_session", path });

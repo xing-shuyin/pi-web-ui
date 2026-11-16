@@ -408,6 +408,8 @@ import { makeSandboxTool } from "./sandbox-tool.js";
 import { createSandboxRuntimeGate, sandboxExtensionOptions } from "./sandbox-runtime-gate.js";
 import { makeWorktreeTool } from "./worktree-tool.js";
 import { makeDeviceCollabTool } from "./device-center/collab-tool.js";
+import { makeBotMemoryTool } from "./bot-memory-tool.js";
+import { agentBotToolAvailable, makeAgentBotTool } from "./device-center/bot-creation-tool.js";
 import { makeCanvasTool } from "./canvas/canvas-agent-tool.js";
 import { getWorktreeContext, removeWorktree, normalizeWirePath } from "./worktree-service.js";
 import type { WorktreeInfo } from "./protocol.js";
@@ -4754,6 +4756,17 @@ export class ClientSession {
 							() => this.getLang(),
 						),
 						...(this.botExecution ? [makeDeviceCollabTool()] : []),
+						// 一句话创建：只有设备侧接入了草案仓库时才出现（Bot 执行里不需要它）。
+						...(!this.botExecution && agentBotToolAvailable() ? [makeAgentBotTool()] : []),
+						// 记忆工具只对有独立记忆目录的 Bot 执行注册（普通会话与子代理不共享这份私产）。
+						...(this.botExecution?.memoryRoot
+							? [
+									makeBotMemoryTool({
+										root: this.botExecution.memoryRoot,
+										botId: this.botExecution.bot.id,
+									}),
+								]
+							: []),
 						makeWorktreeTool(
 							{
 								getCwd: () => (ownerId ? this.convs.get(ownerId)?.cwd : undefined) ?? effectiveCwd,

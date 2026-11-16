@@ -67,16 +67,21 @@ async function openSettings(page) {
 	return false;
 }
 
-const row = (page, token) =>
-	page
-		.locator(".override-row")
-		.filter({ hasText: `{{${token}}}` })
-		.first();
+const row = (page, token) => page.locator(`.prompt-src[data-token="${token}"]`).first();
+const openRow = async (page, token) => {
+	const r = row(page, token);
+	if (!(await r.evaluate((el) => el.classList.contains("open")))) {
+		await tap(page, r.locator(".prompt-src-main").first());
+	}
+	await r.locator(".prompt-src-body").first().waitFor({ state: "visible", timeout: 10000 });
+};
 const soulValue = async (page) => {
 	const area = row(page, "soul").locator("textarea");
 	if ((await area.count()) === 0) return null;
 	return area.first().inputValue();
 };
+/** 「已改」标记 = 该来源有覆盖（展开区为空 = 无覆盖） */
+const hasOverride = async (page, token) => (await row(page, token).locator(".prompt-src-flag.edited").count()) > 0;
 
 async function main() {
 	if (!CHROME_PATH) {
@@ -141,10 +146,10 @@ async function main() {
 		}
 		await page.waitForSelector(".settings-tab", { timeout: 25000 });
 		await tap(page, page.locator('.settings-tab[data-tab="prompt"]').first());
-		await page.locator(".override-row").first().waitFor({ timeout: 15000 });
+		await page.locator(".prompt-src-list").first().waitFor({ timeout: 15000 });
 
-		// 1) 灵魂提示词：点默认内容填空 → 改成标记文本
-		await tap(page, row(page, "soul").locator(".source-default").first());
+		// 1) 灵魂提示词：展开行 → 直接写覆盖文本
+		await openRow(page, "soul");
 		const soulArea = row(page, "soul").locator("textarea").first();
 		await soulArea.waitFor({ state: "visible", timeout: 10000 });
 		await soulArea.click();
@@ -152,17 +157,17 @@ async function main() {
 		await page.keyboard.type(MARK, { delay: 10 });
 		check("编辑后输入框是新值", (await soulValue(page)) === MARK);
 
-		// 2) 点开「追加段」编辑器（这里曾经把灵魂的 pending 冲掉）
-		const appendArea = row(page, "append").locator("textarea").first();
-		if ((await appendArea.count()) > 0) await tap(page, appendArea);
-		else await tap(page, row(page, "append").locator(".source-default").first());
+		// 2) 点开「追加段」：单开手风琴会把灵魂行收起，再打开时内容不能回退
+		await openRow(page, "append");
 		await sleep(400);
-		check("切到追加段后灵魂内容不回退", (await soulValue(page)) === MARK, String(await soulValue(page)));
+		await openRow(page, "soul");
+		check("切到追加段再回来，灵魂内容不回退", (await soulValue(page)) === MARK, String(await soulValue(page)));
 
-		// 3) 再点灵魂提示词行（行头），内容仍应是新值
-		await tap(page, row(page, "soul").locator(".override-row-head").first());
+		// 3) 收起再展开灵魂行，内容仍应是新值
+		await tap(page, row(page, "soul").locator(".prompt-src-main").first());
+		await openRow(page, "soul");
 		await sleep(300);
-		check("点回灵魂提示词行不丢内容", (await soulValue(page)) === MARK, String(await soulValue(page)));
+		check("收起再展开灵魂提示词不丢内容", (await soulValue(page)) === MARK, String(await soulValue(page)));
 
 		// 4) 状态胶囊 = 服务端回执驱动的「已保存」
 		const pill = page.locator(".settings-live-pill").first();
@@ -181,25 +186,26 @@ async function main() {
 		check("重开设置面板", await openSettings(page));
 		await page.waitForSelector(".settings-tab", { timeout: 25000 });
 		await tap(page, page.locator('.settings-tab[data-tab="prompt"]').first());
+		await openRow(page, "soul");
 		await until(async () => (await soulValue(page)) === MARK, 40, 250);
 		check("关面板重开后仍是保存后的值（落盘）", (await soulValue(page)) === MARK, String(await soulValue(page)));
 
 		// 5b) 「恢复默认模板并清空所有覆盖」必须真的清空服务端覆盖（逐个 token 发空串，空对象补丁删不掉）
 		await tap(page, page.locator(".compose-toolbar > button.set-btn").last());
-		await until(async () => (await soulValue(page)) === null, 40, 200);
-		check("一键恢复默认后覆盖框消失", (await soulValue(page)) === null, String(await soulValue(page)));
+		await until(async () => !(await hasOverride(page, "soul")), 40, 200);
+		check("一键恢复默认后该来源不再是「已改」", !(await hasOverride(page, "soul")));
 		await tap(page, page.locator(".settings-modal .modal-close").first());
 		await until(async () => (await page.locator(".settings-modal").count()) === 0, 30, 200);
 		check("清空后重开设置面板", await openSettings(page));
 		await page.waitForSelector(".settings-tab", { timeout: 25000 });
 		await tap(page, page.locator('.settings-tab[data-tab="prompt"]').first());
 		await sleep(1200);
-		check("清空是持久的（服务端覆盖真的删了）", (await soulValue(page)) === null, String(await soulValue(page)));
+		check("清空是持久的（服务端覆盖真的删了）", !(await hasOverride(page, "soul")));
 
 		// 6) 保存失败必须明说：断开服务端再改 → 胶囊转 failed（红色）。禁止静默假装成功。
 		server.kill("SIGKILL");
 		await sleep(1500);
-		await tap(page, row(page, "soul").locator(".source-default").first());
+		await openRow(page, "soul");
 		const soulAgain = row(page, "soul").locator("textarea").first();
 		await soulAgain.click();
 		await page.keyboard.type("-FAIL", { delay: 10 });
