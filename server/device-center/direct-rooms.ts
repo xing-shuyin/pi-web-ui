@@ -2,45 +2,28 @@ import { createHash } from "node:crypto";
 import type { Room } from "./store.js";
 
 /**
- * 直聊容器（direct room）单源。
+ * 历史直聊容器（legacy direct room）——**只为兼容存量数据**而保留。
  *
- * 设计：私聊不是新系统，而是"只有一个 Bot 的群"——沿用既有的
- * 消息 → 任务 → 租约 → 执行 → 交付/评审 → 恢复 全链路，只额外锁定三件事：
+ * 私聊已经不是「只有一个 Bot 的群」：它是**一条普通对话 + 会话级 Bot 绑定**
+ * （`bot-chat.ts` → `Conversation.bot`，语义见 `docs/agent-bot-design.md`）。
+ * 因此这里只做两件事：
  *
- * 1. 成员固定：`botIds` 恒为 1 个，且就是 `primaryBotId`（复用既有"主 Bot 私聊"路径）；
- * 2. 无群能力：router / blackboard / webhooks / canvas / hub-relay 一律不存在；
- * 3. 不可见：`GET /api/rooms`（群组列表）不返回直聊房间，改由 `GET /api/direct-rooms` 提供。
+ * 1. `pruneLegacyDirectRooms`：Hub 载入时把历史 `kind:"direct"` 房间连同其消息/任务清掉；
+ * 2. `assertDirectRoom`：万一存量或对端同步进来的数据里还有直聊房间，写入前仍按旧不变量
+ *    校验（成员固定 1、无群能力、id 由 account+bot 派生），避免它悄悄退化成群组。
  *
- * id 由 (accountId, botId) 确定性派生：重复"开始私聊"天然幂等，不会长出两个房间。
+ * **不要在这里新增「建直聊房间」的入口**——私聊入口是 `new_chat { botId }`。
  */
 
 /**
  * 直聊房间 id 前缀。
  *
  * 用 `direct-` 而不是 `direct:`：房间 id 会直接成为 Hub 分区日志的文件名
- * （`server/device-center/partition-log.ts` 只接受 `[A-Za-z0-9_-]`，且 Windows 不允许 `:`），
- * 带冒号的 id 会让直聊的消息/任务**写不进分区日志**，重启后丢失。
+ * （`server/device-center/partition-log.ts` 只接受 `[A-Za-z0-9_-]`，且 Windows 不允许 `:`）。
  */
 export const DIRECT_ROOM_ID_PREFIX = "direct-";
 
 const DIRECT_ROOM_HASH_LENGTH = 24;
-
-/** 直聊房间支持的能力（与群组区分，供 UI 与守卫共用）。 */
-export const DIRECT_ROOM_CAPABILITIES = ["message", "task", "conversation", "history", "stop", "attention"] as const;
-
-/**
- * 只对 kind==="group" 生效的端点路径单源。
- * 与 `directRoomViolation` 里禁止的字段一一对应：黑板 / Webhook / 画布 / 中继 / 路由。
- * 路由守卫不再自己写正则，新增群能力时只改这里。
- */
-export const GROUP_ONLY_ROOM_PATHS = ["blackboard", "webhooks", "canvas", "hub-relay", "router"] as const;
-
-export function isGroupOnlyRoomPath(path: string): boolean {
-	// incoming webhook 挂在 /webhooks 下，但它自带 token 认证、没有账号 Cookie：
-	// 不归「需要账号登录的群能力」这一类，否则守卫会在路由验签之前就把它拒成 401。
-	if (path.startsWith("/webhooks/incoming/")) return false;
-	return GROUP_ONLY_ROOM_PATHS.some((name) => path === `/${name}` || path.startsWith(`/${name}/`));
-}
 
 export interface DirectRoomViolation {
 	code: string;
@@ -62,6 +45,20 @@ export class DirectRoomInvariantError extends Error {
 	}
 }
 
+/** 直聊房间 id 由 (accountId, botId) 确定性派生：旧版「开始私聊」天然幂等。 */
+export function directRoomId(accountId: string, botId: string): string {
+	const hash = createHash("sha256").update(`${accountId}\u0000${botId}`).digest("hex");
+	return `${DIRECT_ROOM_ID_PREFIX}${hash.slice(0, DIRECT_ROOM_HASH_LENGTH)}`;
+}
+
+export function isDirectRoom(room: Pick<Room, "kind"> | null | undefined): boolean {
+	return room?.kind === "direct";
+}
+
+export function isGroupRoom(room: Pick<Room, "kind"> | null | undefined): boolean {
+	return !isDirectRoom(room);
+}
+
 /** 任何写入路径都用它断言：返回房间本身，违规则抛 `DirectRoomInvariantError`。 */
 export function assertDirectRoom(room: Room): Room {
 	const violation = directRoomViolation(room);
@@ -69,63 +66,9 @@ export function assertDirectRoom(room: Room): Room {
 	return room;
 }
 
-export function directRoomId(accountId: string, botId: string): string {
-	return (
-		DIRECT_ROOM_ID_PREFIX +
-		createHash("sha256").update(`${accountId}\u0000${botId}`).digest("hex").slice(0, DIRECT_ROOM_HASH_LENGTH)
-	);
-}
-
-export function isDirectRoomId(roomId: string): boolean {
-	return roomId.startsWith(DIRECT_ROOM_ID_PREFIX);
-}
-
-export function isDirectRoom(room: Pick<Room, "kind"> | null | undefined): boolean {
-	return room?.kind === "direct";
-}
-
-/** 群组语义（列表、成员、路由、黑板、Webhook、画布）只对 kind==="group" 生效。 */
-export function isGroupRoom(room: Pick<Room, "kind"> | null | undefined): boolean {
-	return !isDirectRoom(room);
-}
-
-export function directRoomOf(rooms: readonly Room[], accountId: string, botId: string): Room | undefined {
-	const id = directRoomId(accountId, botId);
-	return rooms.find((room) => room.id === id && room.accountId === accountId);
-}
-
-export function buildDirectRoom(input: { accountId: string; botId: string; botName: string; now?: number }): Room {
-	const botName = input.botName.trim();
-	if (!input.accountId || !input.botId || !botName)
-		throw new Error("Direct room requires an account, a Bot and its name");
-	return {
-		id: directRoomId(input.accountId, input.botId),
-		accountId: input.accountId,
-		name: botName.slice(0, 128),
-		kind: "direct",
-		botIds: [input.botId],
-		// 主 Bot 让既有"无 targetBotIds 时投递给主 Bot"的路径直接生效，无需为直聊另写分发逻辑。
-		primaryBotId: input.botId,
-		createdAt: input.now ?? Date.now(),
-	};
-}
-
 /**
- * 幂等创建：已存在则原样返回（不修复、不覆盖，修复由调用方显式决定）。
- * 无论新建还是命中已有房间都做不变量断言——重复「开始私聊」不应把一条坏数据洗白。
- * store 的写入断言是最终兜底，这里是离入口最近的一次快速失败。
- */
-export function createDirectRoom(draft: { rooms: Room[] }, input: Parameters<typeof buildDirectRoom>[0]): Room {
-	const existing = directRoomOf(draft.rooms, input.accountId, input.botId);
-	if (existing) return assertDirectRoom(existing);
-	const room = assertDirectRoom(buildDirectRoom(input));
-	draft.rooms.push(room);
-	return room;
-}
-
-/**
- * 不变量校验：返回第一处违规（供 Hub 的写入路径断言，测试也复用它）。
- * 直聊房间一旦破坏这些条件，就会悄悄退化成群组（广播、黑板、多成员），必须显式拒绝而不是尽力修补。
+ * 不变量校验：返回第一处违规。
+ * 直聊房间一旦破坏这些条件，就会悄悄退化成群组（广播、黑板、多成员），必须显式拒绝。
  */
 export function directRoomViolation(room: Room): DirectRoomViolation | undefined {
 	if (!isDirectRoom(room)) return { code: "ROOM_NOT_DIRECT", message: "Room is not a direct chat" };
@@ -143,33 +86,20 @@ export function directRoomViolation(room: Room): DirectRoomViolation | undefined
 	return undefined;
 }
 
-/** 列表投影：直聊房间不上群组列表，由 `/api/direct-rooms` 单独提供。 */
+/** 列表投影：群组列表永远不含历史直聊房间。 */
 export function groupRoomsOf(rooms: readonly Room[], accountId: string): Room[] {
 	return rooms.filter((room) => room.accountId === accountId && isGroupRoom(room));
 }
 
 /**
- * Bot 消失后清理由 (accountId, botId) 派生的直聊容器。
- *
- * 直聊房间是 Bot 的函数：Bot 记录没了，容器也不该留下，否则会剩下一个没有成员、
- * 却仍被当作私聊的非法房间（`assertDirectRoom` 仍会放过它，因为它结构上"合法"，
- * 只是永远派不出任务）。设备撤销与设备重新注册（`PUT /api/agent/bots` 里 Bot 不再出现）
- * 两条路径共用这一份判定，避免一边清理一边残留。
- *
- * 只删直聊容器；群组房间由调用方自己剔除成员，不在这里处理。
+ * 一次性清理历史私聊房间：私聊已经不是「房间」了（= 普通对话 + Bot 绑定），
+ * 旧数据里的 `kind:"direct"` 容器必须在载入时丢掉，否则群组列表 / Bot 面板会留下幽灵房间。
  */
-export function pruneDirectRoomsForBots(
-	rooms: readonly Room[],
-	accountId: string,
-	removedBotIds: ReadonlySet<string>,
-): { rooms: Room[]; removedRoomIds: string[] } {
-	if (!removedBotIds.size) return { rooms: [...rooms], removedRoomIds: [] };
+export function pruneLegacyDirectRooms(rooms: readonly Room[]): { rooms: Room[]; removedRoomIds: string[] } {
 	const removedRoomIds: string[] = [];
 	const kept: Room[] = [];
 	for (const room of rooms) {
-		const orphaned =
-			room.accountId === accountId && isDirectRoom(room) && room.botIds.some((botId) => removedBotIds.has(botId));
-		if (orphaned) removedRoomIds.push(room.id);
+		if (isDirectRoom(room)) removedRoomIds.push(room.id);
 		else kept.push(room);
 	}
 	return { rooms: kept, removedRoomIds };

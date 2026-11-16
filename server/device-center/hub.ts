@@ -50,14 +50,7 @@ import {
 	validateWebhookInput,
 } from "./hub-webhooks.js";
 import type { GroupWebhook, Room, RoomMessage } from "./store.js";
-import {
-	createDirectRoom,
-	groupRoomsOf,
-	isDirectRoom,
-	isGroupOnlyRoomPath,
-	pruneDirectRoomsForBots,
-} from "./direct-rooms.js";
-import { buildSharedMessage, shareContentFingerprint } from "./direct-room-share.js";
+import { groupRoomsOf, pruneLegacyDirectRooms } from "./direct-rooms.js";
 import { activeTaskForBot, BOT_QUEUE_MAX_PENDING, queuePriorityForCreation } from "./bot-queue.js";
 import { createBotQueueDispatcher } from "./hub-task-queue.js";
 import {
@@ -120,6 +113,8 @@ import {
 	settleTaskTerminalOutcome,
 	rescanReadyTasksOnRecovery,
 	sweepExpiredRecoveryLeases,
+	taskLeaseIdle,
+	taskStartStalled,
 	type TaskSettlementEffects,
 } from "./task-settlement.js";
 import type { DeviceTaskEventFrame } from "../protocol.js";
@@ -131,6 +126,24 @@ import { installHubOrchestration } from "./hub-orchestration.js";
 import { queueRouterJob, nextRouterAction, type RouterJob } from "./group-router.js";
 
 export interface HubTaskEvent extends Omit<DeviceTaskEventFrame, "type"> {}
+
+/**
+ * 同进程设备的任务直调接口（实现见 `local-task-bridge.ts`）：命中后优先于 relay 接管
+ * 投递/停止/转向/交互应答，让本机 Bot 的私聊不再绕 WS + 本地调度一圈。
+ * 桌面/文件/终端等设备命令仍走 relay。
+ */
+export interface LocalTaskExecutor {
+	deviceId: string;
+	onTask(deviceId: string, task: any): Promise<boolean>;
+	cancelTask?(deviceId: string, taskId: string, attemptId: string): Promise<{ stopped: boolean }>;
+	steerTask?(deviceId: string, taskId: string, attemptId: string, text: string): Promise<{ steered: boolean }>;
+	answerInteraction?(
+		deviceId: string,
+		answer: import("../protocol.js").DeviceTaskInteractionAnswer,
+	): boolean | Promise<boolean>;
+	/** 卸载时收尾（停租约心跳等）。 */
+	close?(): void;
+}
 export interface HubRelay {
 	createNativeCapability?: (request: NativeCapabilityRequest) => Promise<string | null>;
 	callDevice?: (
@@ -249,6 +262,21 @@ export async function createDeviceHub(options: DeviceHubOptions) {
 			throw new Error("Device domain must be independent of hub domain");
 	}
 	const store = await DeviceHubStore.open(options.dataDir, { retainUnleasedQueued: true });
+	// 旧版「私聊 = 单人群房间」的实现已废弃：载入时把历史 direct 房间连同其消息一并清掉。
+	{
+		const legacy = pruneLegacyDirectRooms(store.snapshot().rooms);
+		if (legacy.removedRoomIds.length) {
+			const gone = new Set(legacy.removedRoomIds);
+			await store.transact((draft) => {
+				draft.rooms = draft.rooms.filter((room) => !gone.has(room.id));
+				draft.messages = draft.messages.filter((message) => !gone.has(message.roomId));
+				draft.tasks = draft.tasks.filter((task) => !gone.has(task.roomId));
+				draft.receipts = draft.receipts.filter((receipt) => !gone.has(receipt.roomId));
+				draft.conversations = draft.conversations.filter((conv) => !gone.has(conv.roomId));
+				return draft;
+			});
+		}
+	}
 	const taskJournalManager = createTaskJournalManager(options.dataDir);
 	const taskReportStore = createTaskReportStore(options.dataDir, "hub");
 	const groupEvents = createGroupEvents(store, taskJournalManager);
@@ -331,14 +359,13 @@ export async function createDeviceHub(options: DeviceHubOptions) {
 					webhookRoute ||
 					/^\/rooms\/[^/]+\/(?:events|interactions|transfers|locks|blackboard)$/.test(suffix) ||
 					/^\/rooms\/[^/]+\/transfers\/[^/]+\/preview$/.test(suffix) ||
-					["/devices", "/bots", "/rooms", "/direct-rooms", "/system/upgrade"].includes(suffix) ||
+					["/devices", "/bots", "/rooms", "/system/upgrade"].includes(suffix) ||
 					/^\/rooms\/[^/]+$/.test(suffix))) ||
 			(["POST", "PUT"].includes(req.method) &&
 				(suffix === "/rooms" ||
 					suffix === "/system/upgrade" ||
 					conversationRoute ||
 					webhookRoute ||
-					/^\/bots\/[^/]+\/(?:direct-room|share)$/.test(suffix) ||
 					/^\/rooms\/[^/]+\/(messages|rename|members|clear|delete|interactions|canvas|blackboard(?:\/sections\/[^/]+)?)$/.test(
 						suffix,
 					) ||
@@ -471,7 +498,7 @@ export async function createDeviceHub(options: DeviceHubOptions) {
 			const now = Date.now();
 			if (task.recoveryUntil !== undefined && now <= task.recoveryUntil) return true;
 			if (hasTaskLease(task)) return true;
-			if (task.lastHeartbeatAt !== undefined && now - task.lastHeartbeatAt <= 30 * 60_000) return true;
+			if (!taskLeaseIdle(task, now)) return true;
 			return false;
 		},
 	});
@@ -659,8 +686,6 @@ export async function createDeviceHub(options: DeviceHubOptions) {
 			draft.devices = draft.devices.filter((device) => device.id !== id);
 			const removedBots = new Set(draft.bots.filter((b) => b.deviceId === id).map((b) => b.id));
 			draft.bots = draft.bots.filter((b) => b.deviceId !== id);
-			// 直聊房间是 Bot 的函数（id 由 account+bot 派生）：Bot 没了，容器也不该留下。
-			draft.rooms = pruneDirectRoomsForBots(draft.rooms, owner.id, removedBots).rooms;
 			for (const room of draft.rooms) {
 				room.botIds = room.botIds.filter((botId) => !removedBots.has(botId));
 				if (room.primaryBotId && removedBots.has(room.primaryBotId)) delete room.primaryBotId;
@@ -818,15 +843,7 @@ export async function createDeviceHub(options: DeviceHubOptions) {
 						updatedAt: Date.now(),
 					});
 			}
-			// 设备不再上报的 Bot：记录保留（历史引用还在），但它派生的直聊容器必须一起消失，
-			// 否则左栏会留下一个永远派不出任务的私聊。只删「设备注册表里已经没有」的 Bot，
-			// 单纯 enabled=false 的房间保留（用户可能只是临时停用，历史不该被一并删掉）。
-			const removedBotIds = new Set(
-				draft.bots
-					.filter((bot) => bot.deviceId === device.id && !incoming.some((row) => row.id === bot.id))
-					.map((bot) => bot.id),
-			);
-			if (removedBotIds.size) draft.rooms = pruneDirectRoomsForBots(draft.rooms, owner.id, removedBotIds).rooms;
+			// 设备不再上报的 Bot：记录保留（历史引用还在），只是标记停用。
 			for (const bot of draft.bots)
 				if (bot.deviceId === device.id && !incoming.some((b) => b.id === bot.id)) {
 					bot.enabled = false;
@@ -852,118 +869,6 @@ export async function createDeviceHub(options: DeviceHubOptions) {
 					),
 			),
 		});
-	});
-	// 直聊房间不上群组列表：单独端点供左栏「智能体」区使用，附带 Bot 投影。
-	app.get("/api/direct-rooms", (req, res) => {
-		const owner = account(req);
-		const state = store.snapshot();
-		res.json({
-			rooms: state.rooms
-				.filter((room) => room.accountId === owner.id && isDirectRoom(room))
-				.map((room) => {
-					const bot = state.bots.find((b) => b.id === room.botIds[0] && b.accountId === owner.id);
-					return {
-						...room,
-						bot: bot
-							? { id: bot.id, name: bot.name, deviceId: bot.deviceId, enabled: bot.enabled, revision: bot.revision }
-							: undefined,
-					};
-				}),
-		});
-	});
-	// 幂等开启直聊：同一 (账号, Bot) 永远得到同一个房间 id。
-	app.post("/api/bots/:id/direct-room", async (req, res) => {
-		const owner = account(req);
-		const room = await store.transact((draft) => {
-			const bot = validBot(draft, req.params.id as string, owner.id);
-			if (!bot) fail(404, "Bot not found");
-			// 不变量断言在 direct-rooms.ts（入口快速失败）与 store.transact（写入兜底）两处共用，
-			// 路由层不再重复翻译错误码。
-			return createDirectRoom(draft, { accountId: owner.id, botId: bot.id, botName: bot.name });
-		});
-		res.status(201).json({ room });
-	});
-	/**
-	 * 私聊 → 群：把私聊里的消息投递到群（`docs/agent-bot-design.md` §5.3）。
-	 *
-	 * 三条硬约束：
-	 *   - 只有账号所有者能投递，Bot 自己不能把私聊内容广播出去（`agents.has(req)` 直接拒）；
-	 *   - `as_bot` 要求 Bot 是目标群成员，否则 409；`as_forward` 以人身份转发、不需要成员关系；
-	 *   - 必带 `idempotencyKey`，重复投递返回同一条消息，payload 变化则 409。
-	 *
-	 * 投递只产生一条群消息（带 `sharedFrom` 来源），**不触发路由、不派活**——"公布"和"派活"是两件事。
-	 */
-	app.post("/api/bots/:id/share", async (req, res) => {
-		if (agents.has(req)) fail(403, "Bots cannot broadcast private chats");
-		const owner = account(req);
-		const sourceRoomId = text(req.body?.sourceRoomId, 128);
-		const targetRoomId = text(req.body?.targetRoomId, 128);
-		const mode = req.body?.mode === "as_bot" || req.body?.mode === "as_forward" ? req.body.mode : undefined;
-		if (!mode) fail(400, "Share mode must be as_bot or as_forward");
-		const messageIds = ids(req.body?.messageIds ?? []);
-		if (!messageIds.length || messageIds.length > 10) fail(400, "Share requires 1-10 message ids");
-		const note = req.body?.note === undefined ? "" : text(req.body.note, 2000);
-		if (req.body?.idempotencyKey === undefined) fail(400, "Share requires idempotencyKey");
-		const key = text(req.body.idempotencyKey, 128);
-		const fingerprint = shareContentFingerprint({ mode, note, sourceRoomId, targetRoomId, messageIds });
-		const result = await store.transact((draft) => {
-			const bot = validBot(draft, req.params.id as string, owner.id);
-			if (!bot) fail(404, "Bot not found");
-			const source = draft.rooms.find((r) => r.id === sourceRoomId && r.accountId === owner.id);
-			if (!source || !isDirectRoom(source) || source.botIds[0] !== bot.id) fail(404, "Direct chat missing");
-			const target = draft.rooms.find((r) => r.id === targetRoomId && r.accountId === owner.id);
-			if (!target || isDirectRoom(target)) fail(404, "Target group missing");
-			if (mode === "as_bot" && !target.botIds.includes(bot.id))
-				fail(409, "Bot is not a member of the target group", "SHARE_BOT_NOT_MEMBER");
-			const receiptKey = `share:${key}`;
-			const prior = draft.receipts.find(
-				(r) => r.roomId === target.id && r.accountId === owner.id && r.key === receiptKey,
-			);
-			if (prior) {
-				if (prior.fingerprint !== fingerprint) fail(409, "Idempotency key reused with different share content");
-				return { message: draft.messages.find((m) => m.id === prior.messageId), duplicate: true };
-			}
-			const picked = messageIds.map((id) => {
-				const message = draft.messages.find((m) => m.id === id && m.roomId === source.id && m.accountId === owner.id);
-				if (!message) fail(400, "Shared message is not in the source chat");
-				return message;
-			});
-			const now = Date.now();
-			const message = buildSharedMessage({
-				mode,
-				note,
-				bot: { id: bot.id, name: bot.name },
-				owner: { id: owner.id, username: owner.username },
-				targetRoomId: target.id,
-				sourceRoomId: source.id,
-				messageIds,
-				picked,
-				now,
-			});
-			draft.messages.push(message);
-			draft.receipts.push({
-				accountId: owner.id,
-				roomId: target.id,
-				key: receiptKey,
-				fingerprint,
-				messageId: message.id,
-				createdAt: now,
-			});
-			trimRoomReceipts(draft, target.id);
-			return { message, duplicate: false };
-		});
-		if (!result.duplicate && result.message)
-			dispatchGroupWebhook(store, targetRoomId, "message", result.message as RoomMessage);
-		res.json({ message: result.message, duplicate: result.duplicate });
-	});
-	// 群组专属能力（黑板 / Webhook / 画布 / 中继 / 路由）在直聊房间上必须显式失败，
-	// 而不是静默降级成“空黑板”这类半成品行为。
-	app.use("/api/rooms/:id", (req: Request, _res: Response, next: NextFunction) => {
-		if (!isGroupOnlyRoomPath(req.path)) return next();
-		const owner = account(req);
-		const room = store.snapshot().rooms.find((r) => r.id === req.params.id && r.accountId === owner.id);
-		if (isDirectRoom(room)) fail(409, "Direct chats do not support group capabilities", "DIRECT_ROOM_CAPABILITY");
-		next();
 	});
 	app.post("/api/rooms", async (req, res) => {
 		const owner = account(req),
@@ -1059,7 +964,12 @@ export async function createDeviceHub(options: DeviceHubOptions) {
 			(i) => i.id === req.body.interactionId && i.taskId === req.body.taskId && i.attemptId === req.body.attemptId,
 		);
 		if (!item) fail(409, "Interaction expired");
-		if (!(await options.relay?.answerInteraction?.(item.deviceId, req.body)))
+		if (
+			!(await (localFor(item.deviceId)?.answerInteraction ?? options.relay?.answerInteraction)?.(
+				item.deviceId,
+				req.body,
+			))
+		)
 			fail(409, "Executor rejected or did not acknowledge the answer");
 		humanInteractions.set(
 			item.taskId,
@@ -1932,10 +1842,11 @@ export async function createDeviceHub(options: DeviceHubOptions) {
 		});
 
 		let steered = false;
-		if (options.relay?.steerTask) {
-			const relayResult = await options.relay
-				.steerTask(task.deviceId, task.id, task.attemptId, instruction)
-				.catch(() => ({ steered: false }));
+		const steer = localFor(task.deviceId)?.steerTask ?? options.relay?.steerTask;
+		if (steer) {
+			const relayResult = await steer(task.deviceId, task.id, task.attemptId, instruction).catch(() => ({
+				steered: false,
+			}));
 			steered = relayResult.steered;
 		}
 		res.json({ success: true, taskId: task.id, steered });
@@ -2084,8 +1995,6 @@ export async function createDeviceHub(options: DeviceHubOptions) {
 				const room = draft.rooms.find((r) => r.id === req.params.id && r.accountId === owner.id);
 				if (!room) fail(404, "Room missing");
 				if (operation !== "rename") assertNoApplyingIntegration(draft, owner.id, room.id);
-				if (operation === "members" && isDirectRoom(room))
-					fail(409, "Direct chats cannot change members; open a group instead", "DIRECT_ROOM_FIXED_MEMBER");
 				if (operation === "rename") room.name = text(req.body?.name, 128);
 				if (operation === "members") {
 					const members = ids(req.body?.botIds);
@@ -2350,9 +2259,11 @@ export async function createDeviceHub(options: DeviceHubOptions) {
 		await publishSettlementEffects(pending.settlement);
 		for (const task of pending.tasks) {
 			if (task.stopConfirmed) continue;
-			const confirmed = await options.relay
-				?.cancelTask?.(task.deviceId, task.id, task.attemptId)
-				.catch(() => ({ stopped: false }));
+			const confirmed = await (localFor(task.deviceId)?.cancelTask ?? options.relay?.cancelTask)?.(
+				task.deviceId,
+				task.id,
+				task.attemptId,
+			).catch(() => ({ stopped: false }));
 			if (!confirmed?.stopped) continue;
 			const settlement = await store.transact((draft) => {
 				const current = draft.tasks.find((t) => t.id === task.id && t.attemptId === task.attemptId);
@@ -3755,7 +3666,7 @@ export async function createDeviceHub(options: DeviceHubOptions) {
 		}
 
 		deliveredTasks.add(task.id);
-		const deliver = options.onTask ?? options.relay?.onTask;
+		const deliver = localFor(task.deviceId)?.onTask ?? options.onTask ?? options.relay?.onTask;
 		try {
 			const latest = store.snapshot();
 			if (
@@ -3926,6 +3837,9 @@ export async function createDeviceHub(options: DeviceHubOptions) {
 			if (!bot.enabled || bot.revision !== task.botRevision || task.cancelRequested || task.stopConfirmed)
 				fail(409, "Task unavailable");
 			if (task.recoveryUntil !== undefined && Date.now() > task.recoveryUntil) fail(409, "Recovery window expired");
+			// 设备收到任务后的第一帧就是这个 running 事件，且发生在本地调度入队之前：
+			// 它只能证明"设备拿到了任务"，不能证明"真的开始执行了"（后者看 lastLeaseRenewAt）。
+			if (task.acknowledgedAt === undefined) task.acknowledgedAt = Date.now();
 			if (task.status === "running") {
 				delete task.recoveryUntil;
 				return { task, duplicate: true };
@@ -4004,11 +3918,9 @@ export async function createDeviceHub(options: DeviceHubOptions) {
 				.snapshot()
 				.tasks.some(
 					(task) =>
-						!task.outcomeFingerprint &&
-						((task.recoveryUntil !== undefined && now > task.recoveryUntil) ||
-							((task.status === "running" || (task.status === "queued" && hasTaskLease(task))) &&
-								task.lastHeartbeatAt !== undefined &&
-								now - task.lastHeartbeatAt > 30 * 60_000)),
+						(task.recoveryUntil !== undefined && now > task.recoveryUntil) ||
+						taskStartStalled(task, now) ||
+						taskLeaseIdle(task, now),
 				)
 		)
 			return;
@@ -4204,6 +4116,9 @@ export async function createDeviceHub(options: DeviceHubOptions) {
 
 			const hasActiveInteraction = liveInteractions(task.roomId, task.accountId).some((i) => i.taskId === task.id);
 			const now = Date.now();
+			// 续租本身就是"执行端确实接手了"的证据：即使本轮没有新活动（模型在长时间思考），
+			// 也要记下来，否则无法把"在跑但很安静"与"派发出去后从未启动"区分开。
+			task.lastLeaseRenewAt = now;
 			if (renew.hasActivity || hasActiveInteraction) {
 				task.lastHeartbeatAt = now;
 				task.updatedAt = now;
@@ -4324,6 +4239,9 @@ export async function createDeviceHub(options: DeviceHubOptions) {
 	}
 
 	async function onTaskDisconnect(deviceId: string, taskId: string, attemptId: string): Promise<void> {
+		// 本机设备的 WS 掉了不等于设备掉了：任务就跑在这个进程里。把它的在飞任务推进
+		// recovery 窗口只会在一次重连抖动后误中断对话框。
+		if (localFor(deviceId)) return;
 		const now = Date.now();
 		const recoveryGraceMs = 60_000;
 		await store.transact((draft) => {
@@ -4338,6 +4256,14 @@ export async function createDeviceHub(options: DeviceHubOptions) {
 			}
 		});
 	}
+
+	/**
+	 * 本机设备（与 Hub 同进程）的任务直调器：命中后**优先于** relay 接管任务类动作。
+	 * 不接管桌面/文件/终端等命令通道（那些仍然需要 WS 上的设备连接）。
+	 */
+	const localExecutor = { current: undefined as LocalTaskExecutor | undefined };
+	const localFor = (deviceId: string) =>
+		localExecutor.current && localExecutor.current.deviceId === deviceId ? localExecutor.current : undefined;
 
 	// 任何状态变更（设备上报完成、停止、撤销、失败）都可能让某个 Bot 空出来：统一在变更后唤醒队列。
 	const unsubscribeQueueDrain = store.subscribe(botQueue.scheduleDrain);
@@ -4363,7 +4289,13 @@ export async function createDeviceHub(options: DeviceHubOptions) {
 			options.relay = relay;
 			void reconcilePendingPublications();
 		},
+		setLocalTaskExecutor(executor: LocalTaskExecutor | undefined) {
+			if (localExecutor.current && localExecutor.current !== executor) localExecutor.current.close?.();
+			localExecutor.current = executor;
+		},
 		async close() {
+			localExecutor.current?.close?.();
+			localExecutor.current = undefined;
 			await mobilePush.dispose();
 			clearInterval(recoverySweepTimer);
 			botQueue.dispose();

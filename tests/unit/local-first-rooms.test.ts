@@ -121,35 +121,19 @@ async function fixture(hooks: { onConnect?: (config: { hubUrl: string; hubIdenti
 	return { base, bots, request, createBot, deliveries, hubHits };
 }
 
-describe("全本地：直聊与群组不经过远端 Hub", () => {
-	it("已配对但 Hub 是旧版本时，Bot 面板、直聊、群组、派活全部本地可用", async () => {
+describe("全本地：Bot 面板与群组不经过远端 Hub", () => {
+	it("已配对但 Hub 是旧版本时，Bot 面板、群组、派活全部本地可用", async () => {
 		const f = await fixture();
 		await f.createBot("Planner");
 		await f.createBot("Builder");
 		const botIds = f.bots.list().map((bot) => bot.id);
 
-		// 1) 面板：Bot 与房间都来自本机，不再有「加载失败」。
+		// 1) 面板：Bot 列表来自本机，不再有「加载失败」。
 		const panel = await (await f.request("bot-panel")).json();
-		expect(panel.roomsAvailable).toBe(true);
 		expect(panel.bots.map((bot: { name: string }) => bot.name).sort()).toEqual(["Builder", "Planner"]);
 		expect(panel.bots.every((bot: { local: boolean }) => bot.local === true)).toBe(true);
 
-		// 2) 直聊：幂等建在本机引擎上（`direct-` 前缀 id）。
-		const first = await f.request(`bots/${botIds[0]}/direct-room`, {});
-		expect(first.status).toBe(201);
-		expect(first.status).toBe(201);
-		const room = (await first.json()).room;
-		expect(room.id.startsWith("direct-")).toBe(true);
-		const again = await (await f.request(`bots/${botIds[0]}/direct-room`, {})).json();
-		expect(again.room.id).toBe(room.id);
-		await expect
-			.poll(async () => {
-				const data = await (await f.request("direct-rooms")).json();
-				return data.rooms.map((entry: { id: string }) => entry.id);
-			})
-			.toContain(room.id);
-
-		// 3) 群组：本机建房间 + 派活 + 本地 Bot 执行。
+		// 2) 群组：本机建房间 + 派活 + 本地 Bot 执行。
 		const created = await f.request("rooms", { name: "本地小队", botIds, primaryBotId: botIds[0] });
 		expect(created.status).toBe(201);
 		const group = (await created.json()).room;
@@ -167,7 +151,7 @@ describe("全本地：直聊与群组不经过远端 Hub", () => {
 			})
 			.toBe("completed");
 
-		// 4) 远端只收到 Bot 列表镜像，房间类请求一个都没打到它。
+		// 3) 远端只收到 Bot 列表镜像，房间类请求一个都没打到它。
 		expect(f.hubHits).toContain("PUT /api/agent/bots");
 		expect(f.hubHits.filter((hit) => hit.includes("/api/device-user/"))).toEqual([]);
 	});

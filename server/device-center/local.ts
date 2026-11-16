@@ -15,6 +15,7 @@ import { writeAtomic } from "../atomic-file.js";
 import { installHubSetupRoutes } from "./hub-setup.js";
 import { DeviceWorkspaceError, validateDeviceProject } from "./workspaces.js";
 import { createLocalDeviceHub } from "./local-hub.js";
+import { isLocalTaskRuntime } from "./local-task-bridge.js";
 import { createLocalBotRegistry, type LocalBotRegistry, type LocalBotInput } from "./bots.js";
 import { loadExecutionSettings, saveExecutionSettings, type DeviceExecutionSettings } from "./execution-settings.js";
 import type { TaskSchedulerSnapshot } from "./task-scheduler.js";
@@ -46,10 +47,19 @@ export interface LocalDeviceConfig {
 interface Connection {
 	close(): void | Promise<void>;
 	isConnected?(): boolean;
+	/**
+	 * 设备运行时：`getSchedulerSnapshot` 等三个是设备中心 UI 必需；
+	 * 其余为实现"本机任务直调"才需要——缺失时 installLocalDeviceCenter 会继续走 relay。
+	 */
 	runtime?: {
 		getSchedulerSnapshot(): TaskSchedulerSnapshot;
 		updateExecutionSettings(next: unknown): DeviceExecutionSettings;
 		cancelScheduledTask(taskId: string, attemptId?: string): boolean;
+		onTask?: import("./local-task-bridge.js").LocalTaskRuntime["onTask"];
+		steerTask?: import("./local-task-bridge.js").LocalTaskRuntime["steerTask"];
+		answerTaskInteraction?: import("./local-task-bridge.js").LocalTaskRuntime["answerTaskInteraction"];
+		recovery?: import("./local-task-bridge.js").LocalTaskRuntime["recovery"];
+		reportOutbox?: import("./local-task-bridge.js").LocalTaskRuntime["reportOutbox"];
 	};
 }
 interface Options {
@@ -61,44 +71,6 @@ interface Options {
 	botCatalog?: BotCatalogSources;
 	allowHosts?: readonly string[];
 	lanAccess?: DeviceLanAccess;
-}
-
-/** 左栏直接用的房间投影：只要渲染需要的字段，不把整个房间对象透给前端。 */
-interface PanelDirectRoom {
-	id: string;
-	name: string;
-	bot?: { id: string; name: string; deviceId: string; enabled: boolean; revision: number };
-}
-
-/** `undefined` = 本机房间引擎没给出列表（异常 / 启动中），与「确实没有直聊房间」区分开。 */
-function panelDirectRooms(value: unknown): PanelDirectRoom[] | undefined {
-	const list = (value as { rooms?: unknown } | undefined)?.rooms;
-	if (!Array.isArray(list)) return undefined;
-	return list
-		.flatMap((entry): PanelDirectRoom[] => {
-			if (!entry || typeof entry !== "object") return [];
-			const room = entry as Record<string, unknown>;
-			if (typeof room.id !== "string" || !room.id || typeof room.name !== "string") return [];
-			const bot = room.bot && typeof room.bot === "object" ? (room.bot as Record<string, unknown>) : undefined;
-			return [
-				{
-					id: room.id,
-					name: room.name,
-					...(typeof bot?.id === "string"
-						? {
-								bot: {
-									id: bot.id,
-									name: typeof bot.name === "string" ? bot.name : "",
-									deviceId: typeof bot.deviceId === "string" ? bot.deviceId : "",
-									enabled: bot.enabled === true,
-									revision: typeof bot.revision === "number" ? bot.revision : 0,
-								},
-							}
-						: {}),
-				},
-			];
-		})
-		.slice(0, 256);
 }
 
 /** Hub enrollment accepts HTTP(S) origins, including public IP addresses. */
@@ -267,6 +239,9 @@ export async function installLocalDeviceCenter(options: Options) {
 				try {
 					localHub = hub;
 					connection = await options.connect(forAgent(hub.config), syncBots);
+					// 本机设备：任务直调（不绕 WS + 本地调度）。远程设备仍然走 relay。
+					if (connection.runtime && isLocalTaskRuntime(connection.runtime))
+						hub.attachLocalDeviceRuntime(connection.runtime);
 					await syncBots();
 				} catch (error) {
 					await connection?.close();
@@ -1030,13 +1005,7 @@ export async function installLocalDeviceCenter(options: Options) {
 			await serialize(ensureLocalHub);
 			const engine = roomConfig();
 			if (!engine) throw new Error("Local room engine is unavailable");
-			const [rooms, drafts] = await Promise.all([
-				requestDeviceHub(engine, "/api/device-user/direct-rooms", "GET", undefined, {
-					user: true,
-					signal: controller.signal,
-				}).catch(() => undefined),
-				botDrafts ? botDrafts.list().catch(() => []) : [],
-			]);
+			const drafts = botDrafts ? await botDrafts.list().catch(() => []) : [];
 			if (controller.signal.aborted) return;
 			const deviceName = config?.name ?? hostname();
 			const bots_ = bots.list().map(({ id, name, enabled }) => ({
@@ -1047,8 +1016,7 @@ export async function installLocalDeviceCenter(options: Options) {
 				online: true,
 				local: true,
 			}));
-			const direct = panelDirectRooms(rooms);
-			res.json({ bots: bots_, drafts, rooms: direct ?? [], roomsAvailable: direct !== undefined });
+			res.json({ bots: bots_, drafts });
 		})()
 			.catch(() => {
 				if (!res.destroyed && !res.headersSent)
@@ -1216,15 +1184,6 @@ export async function installLocalDeviceCenter(options: Options) {
 			res.off("close", cancel);
 		}
 	});
-	/** 首轮自举：让 Bot 自己写 profile / 记忆，而不是服务端替它编一份身份。 */
-	function bootstrapText(name: string): string {
-		return [
-			`你是刚创建出来的智能体「${name}」。请完成首轮自举：`,
-			"1) 用一两句话介绍你自己（你是谁、负责什么、你打算怎么工作）；",
-			"2) 把职责与工作约定写进你的个人记忆（profile / MEMORY.md 允许的方式），并确认你的工作目录可读、记忆可写；",
-			"3) 如果缺少必要信息，只问最关键的一个问题，别罗列清单。",
-		].join("\n");
-	}
 	async function scaffoldBotHome(bot: { id: string; name: string; description: string }, draft: BotDraft) {
 		const memoryRoot = botMemoryRoot(options.dataDir, bot.id);
 		await mkdir(join(options.dataDir, "bot-agents", bot.id, "identity"), { recursive: true });
@@ -1324,34 +1283,7 @@ export async function installLocalDeviceCenter(options: Options) {
 				} catch {
 					synced = false;
 				}
-				const captured = roomConfig();
-				let roomId: string | undefined;
-				let bootstrapped = false;
-				if (captured && synced) {
-					try {
-						const room = (await requestDeviceHub(
-							captured,
-							`/api/device-user/bots/${encodeURIComponent(bot.id)}/direct-room`,
-							"POST",
-							{},
-							{ user: true },
-						)) as { room?: { id?: string } };
-						roomId = room.room?.id;
-					} catch {}
-					if (roomId && confirmed.bootstrap) {
-						try {
-							await requestDeviceHub(
-								captured,
-								`/api/device-user/rooms/${encodeURIComponent(roomId)}/messages`,
-								"POST",
-								{ text: bootstrapText(bot.name), idempotencyKey: `bootstrap:${bot.id}` },
-								{ user: true },
-							);
-							bootstrapped = true;
-						} catch {}
-					}
-				}
-				return { bot, synced, roomId, bootstrapped };
+				return { bot, synced };
 			}).then(
 				(data) => res.json(data),
 				(error) => {
@@ -1483,21 +1415,7 @@ export async function installLocalDeviceCenter(options: Options) {
 			} catch {
 				synced = false;
 			}
-			const captured = roomConfig();
-			let roomId: string | undefined;
-			if (captured && synced) {
-				try {
-					const room = (await requestDeviceHub(
-						captured,
-						`/api/device-user/bots/${encodeURIComponent(bot.id)}/direct-room`,
-						"POST",
-						{},
-						{ user: true },
-					)) as { room?: { id?: string } };
-					roomId = room.room?.id;
-				} catch {}
-			}
-			return { bot, synced, roomId, ...imported };
+			return { bot, synced, ...imported };
 		}).then(
 			(data) => res.json(data),
 			(error) => {
@@ -1509,9 +1427,6 @@ export async function installLocalDeviceCenter(options: Options) {
 	options.app.post("/api/device-center/local-bots", botMutation(false));
 	options.app.post("/api/device-center/local-bots/:id/delete", botMutation(true));
 	userRoute("get", "bots", []);
-	userRoute("post", "bots/:id/direct-room", []);
-	userRoute("post", "bots/:id/share", ["sourceRoomId", "targetRoomId", "mode", "messageIds", "note", "idempotencyKey"]);
-	userRoute("get", "direct-rooms", []);
 	userRoute("get", "devices", []);
 	userRoute("post", "devices/:id/open", ["preferLan", "desktop", "basePath"]);
 	userRoute("post", "devices/:id/remark", ["remark"]);
