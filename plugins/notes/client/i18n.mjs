@@ -170,6 +170,9 @@ export const DICT = {
 		"week.4": "周四",
 		"week.5": "周五",
 		"week.6": "周六",
+
+		"action.deleteAgain": "再次点击确认",
+		"schedule.domSuffix": "{dom}日",
 	},
 	en: {
 		"app.title": "Notes",
@@ -340,6 +343,9 @@ export const DICT = {
 		"week.4": "Thu",
 		"week.5": "Fri",
 		"week.6": "Sat",
+
+		"action.deleteAgain": "click again to confirm",
+		"schedule.domSuffix": "{dom}",
 	},
 };
 

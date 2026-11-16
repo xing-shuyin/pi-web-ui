@@ -46,6 +46,8 @@ function estimateVocalF0(timeBytes, sampleRate) {
 export class AudioLipSyncEngine {
 	constructor(options = {}) {
 		this.options = options;
+		/** 界面文案（默认轨道名等）；未注入时原样返回 key，避免这里再写一份中文。 */
+		this.t = options.t || ((key) => key);
 		this.audioCtx = null;
 		this.analyser = null;
 		this.gainNode = null;
@@ -240,7 +242,7 @@ export class AudioLipSyncEngine {
 		}
 
 		this._currentBlobUrl = URL.createObjectURL(file);
-		this.trackTitle = file.name ? file.name.replace(/\.[^/.]+$/, "") : "本地音乐";
+		this.trackTitle = file.name ? file.name.replace(/\.[^/.]+$/, "") : this.t("audio.local_track");
 		this.audioEl.src = this._currentBlobUrl;
 		this.audioEl.volume = 1.0;
 
@@ -258,7 +260,7 @@ export class AudioLipSyncEngine {
 		this._ensureContextResumed();
 		this._connectMediaElement();
 
-		this.trackTitle = title || url.split("/").pop().split("?")[0] || "网络音频";
+		this.trackTitle = title || url.split("/").pop().split("?")[0] || this.t("audio.url_track");
 		this.audioEl.src = url;
 		this.audioEl.volume = 1.0;
 
@@ -269,7 +271,7 @@ export class AudioLipSyncEngine {
 		}
 	}
 
-	async playBase64(base64, mimeType = "audio/mpeg", title = "语音朗读") {
+	async playBase64(base64, mimeType = "audio/mpeg", title = "") {
 		if (!base64) return;
 		let raw = base64;
 		const match = raw.match(/^data:(audio\/[^;]+);base64,(.+)$/);
@@ -282,7 +284,7 @@ export class AudioLipSyncEngine {
 		for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
 		const blob = new Blob([bytes], { type: mimeType });
 		await this.playFile(blob);
-		this.trackTitle = title;
+		this.trackTitle = title || this.t("audio.speech_track");
 	}
 
 	playDemo() {
@@ -293,7 +295,7 @@ export class AudioLipSyncEngine {
 
 		this.isDemoActive = true;
 		this.state = "playing";
-		this.trackTitle = "🎹 示范旋律 (Demo Melody)";
+		this.trackTitle = this.t("music.demo_track");
 		this.onStateChange?.(this.state);
 
 		const ctx = this.audioCtx;
