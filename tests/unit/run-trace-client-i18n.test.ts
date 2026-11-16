@@ -26,7 +26,10 @@ describe("run-trace client i18n wiring", () => {
 	});
 
 	it("follows the interface language by default and falls back to English", () => {
+		// 词典里已有 zh-TW 时按精确匹配解析；没有该语言的 key 时仍回退到 zh
 		localStorage.setItem("pi-web-ui:lang", "zh-TW");
+		expect(detectLang()).toBe("zh-TW");
+		localStorage.setItem("pi-web-ui:lang", "zh-HK");
 		expect(detectLang()).toBe("zh");
 		localStorage.setItem("pi-web-ui:lang", "fr");
 		expect(detectLang()).toBe("en");

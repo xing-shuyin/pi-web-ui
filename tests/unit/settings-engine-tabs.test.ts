@@ -72,7 +72,7 @@ describe("设置面板多引擎动态自适应（分区条件隐藏与模型中�
 		expect(SETTINGS_SRC).toContain('import { DeviceExecutionSettings } from "./DeviceExecutionSettings";');
 		expect(SETTINGS_SRC).toContain('| "device-collab"');
 		expect(SETTINGS_SRC).toContain('"device-collab": "advanced"');
-		expect(SETTINGS_SRC).toContain('"device-collab": [');
+		expect(SETTINGS_SRC).toContain('"device-collab": split(t("settingsSearchKeywordsDeviceCollab"))');
 		expect(SETTINGS_SRC).toMatch(/tab === "device-collab"\s*&&\s*isPi[\s\S]*?<DeviceExecutionSettings/);
 		expect(SETTINGS_SRC).toContain("onNotice={() => triggerSyncState()}");
 	});
