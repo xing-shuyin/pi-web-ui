@@ -1,314 +1,6 @@
-const TEXT = {
-	zh: {
-		title: "SFTP 同步",
-		subtitle: "项目级配置 · 差异预览 · 删除保护",
-		profile: "连接",
-		addProfile: "新建连接",
-		addProfilePrompt: "新连接名称（如 dev, prod）",
-		confirmAdd: "创建",
-		cancel: "取消",
-		delProfile: "删除当前连接",
-		delProfileConfirm: "确定要删除连接「{name}」吗？（仅删除该连接配置，不会删除文件）",
-		profileNameRequired: "请填写新连接名称",
-		profileNameInvalid: "连接名只允许字母、数字、点、横线、下划线（1-48 字符）",
-		profileExists: "已存在同名连接「{name}」",
-		profileCreated: "✓ 已创建连接「{name}」，请在下方填写信息并保存",
-		profileDeleted: "✓ 已删除连接「{name}」",
-		noProfile: "（未配置）",
-		host: "主机",
-		port: "端口",
-		username: "用户名",
-		remotePath: "远端根目录",
-		authMethod: "认证方式",
-		authSecret: "加密机密（推荐）",
-		authPassword: "明文密码",
-		authKey: "密钥文件",
-		authAgent: "ssh-agent",
-		secretName: "机密名",
-		secretSelectPrompt: "选择已有同名机密 ▾",
-		secretSelectNone: "（暂无已建机密）",
-		secretQuickPick: "已有同名机密",
-		secretNamePlaceholder: "如 prod-password（可从右侧下拉选择）",
-		secretValue: "机密值",
-		secretValuePlaceholder: "输入密码/机密值（不会回显）",
-		secretValueReusePlaceholder: "已存在同名机密，留空直接复用",
-		secretValueReuseTip: "✓ 留空将直接复用本地同名机密；若输入新值将覆盖更新",
-		secretValueNewTip: "保存时将自动存入本地加密存储（AES-256），配置文件中只存代号",
-		secretExists: "✓ 已有同名机密（可直接复用）",
-		secretNew: "＋ 新机密（保存时自动创建）",
-		secretNameRequired: "请填写加密机密名称",
-		secretNameInvalid: "机密名只允许字母、数字、点、横线、下划线（1-64 字符）",
-		secretValueRequired: "机密「{name}」尚不存在，请填写机密值以完成创建",
-		password: "明文密码",
-		passwordPlaceholder: "留空 = 不改；直接输入明文密码",
-		passwordHelpTip: "点击查看密码与 ${secret:名} 变量使用说明",
-		passwordHelpTitle: "密码与变量引用说明",
-		helpPlainTitle: "直接输入明文",
-		helpPlainDesc: "个人电脑本地使用时，可直接在此填写服务器密码，简单直接。",
-		helpBlankTitle: "留空",
-		helpBlankDesc: "保持当前已保存的密码不变（如果此前已配置过）。",
-		helpSecretTitle: "推荐：${secret:名} 加密机密（防泄露）",
-		helpSecretDesc:
-			"点击下方「写入加密机密」存入本地（AES-256 加密存本机），在此填入 ${secret:名} 引用。项目配置文件 .pi/sftp.json 里只存代号，提交到 Git 或分享给他人也不会泄露真实密码。",
-		helpEnvFileTitle: "环境变量与本地文件",
-		helpEnvFileDesc:
-			"亦支持 ${env:环境变量名}（如 ${env:SFTP_PASSWORD}）或 ${file:文件路径}（如 ${file:~/.ssh/pass.txt}）。",
-		helpQuickSecret: "☞ 点击立即写入加密机密",
-		secretFilled: "✓ 已写入加密机密并自动填入密码框：{ref}",
-		privateKeyPath: "私钥路径",
-		passphrase: "私钥口令",
-		agent: "agent socket",
-		ignore: "额外排除（逗号或换行分隔）",
-		save: "保存",
-		testing: "测试中…",
-		test: "测试连接",
-		import: "导入 .vscode/sftp.json",
-		importing: "导入中…",
-		direction: "方向",
-		sync: "同步",
-		up: "上传 本地→远端",
-		down: "下载 远端→本地",
-		both: "双向",
-		scope: "范围",
-		all: "全部同步根",
-		tree: "子树",
-		file: "单文件",
-		path: "路径",
-		pathHint: "相对工作区，如 web/dist",
-		plan: "预览差异",
-		planning: "扫描中…",
-		stopBtn: "停止",
-		stopping: "正在停止…",
-		stopped: "已停止（已完成的文件保留）",
-		scanStat: "扫描{side}：{files} 个文件 / {dirs} 个目录",
-		sideLocal: "本地",
-		sideRemote: "远端",
-		reusedPlan: "沿用刚才预览的计划（未重新扫描）",
-		run: "执行同步",
-		confirmDelete: "本次计划包含 {n} 项删除（会先进垃圾桶）。确认执行？",
-		confirmRun: "开始同步？",
-		summary: "待上传 {up} · 待下载 {down} · 待清理 {trash} · 一致 {same} · 冲突 {conflict}",
-		noPlan: "还没有计划 —— 先点「预览差异」看要改什么。",
-		identical: "没有需要变更的文件。",
-		upload: "上传",
-		download: "下载",
-		trashRemote: "清远端",
-		trashLocal: "清本地",
-		skip: "跳过",
-		conflict: "冲突",
-		reason: "原因",
-		failed: "失败 {n} 个",
-		done: "完成：上传 {up} / 下载 {down} / 清理 {trash}",
-		running: "传输中",
-		otherProject: "其他项目",
-		remote: "远端文件",
-		refresh: "刷新",
-		goUp: "上一级",
-		uploadHere: "上传本地对应目录",
-		uploading: "上传中…",
-		downloading: "下载中…",
-		transferred: "已{dir} {n} 个文件",
-		size: "大小",
-		openFile: "打开",
-		go: "前往",
-		close: "关闭",
-		write: "写回远端",
-		writing: "写入中…",
-		binary: "二进制文件，不在面板里编辑",
-		plaintextWarn: "⚠ 配置里有明文凭据：{list}。改成 ${secret:名} 更安全。",
-		importAvailable: "检测到 .vscode/sftp.json —— 可以一键导入（口令会转成加密机密）。",
-		trash: "垃圾桶",
-		needConn: "先在左侧配好连接并保存。",
-		secretBtn: "写入加密机密",
-		secretPrompt: "机密名（如 prod-password）",
-		secretValue: "机密值（不会回显）",
-		settingsHint: "并发数、扫描并发、删除策略、远端命令开关在「设置 → 插件 → SFTP 同步」里。",
-		outsideWorkspace: "只能同步工作区内的文件：{path}（右键菜单里的机器浏览路径不在工作区里）",
-		keypathPlaceholder: "留空自动尝试 ~/.ssh/ 默认密钥（id_ed25519 等）",
-		copyKey: "添加公钥到远端",
-		copyKeyPrompt: "请输入远程服务器的密码以安装公钥：",
-		copyKeyTesting: "正在添加公钥并验证…",
-		copyKeySuccess: "✓ 公钥已成功写入远端 authorized_keys，且密钥登录验证通过！",
-		copyKeyAlready: "✓ 远端 authorized_keys 已存在该公钥，密钥登录验证通过！",
-		copyKeyWarn: "⚠ 公钥已写入，但密钥验证失败：{err}",
-		goProjectRoot: "项目根",
-		goProjectRootHint: "回到当前项目的远端根目录 ({root})",
-		uploadHereDisabled: "上传本地对应目录 (非项目内)",
-		outsideRootUploadHint: "当前远端路径在项目根目录（{root}）之外，无法映射到本地工作区",
-		outsideRootDownloadHint: "此项在项目根目录（{root}）之外，无法同步到本地工作区",
-		uploadItemHint: "上传本地对应内容到此 (覆盖远端)",
-		downloadItemHint: "下载此项同步到本地 (覆盖本地)",
-		ignoreItemHint: "将对应路径添加到 SFTP 忽略",
-		outsideRootUploadItemHint: "在项目根目录之外，无本地对应文件可上传",
-		outsideRootIgnoreHint: "在项目根目录之外，无需添加忽略",
-		diffTabActionable: "待同步变更",
-		diffTabUpload: "待上传",
-		diffTabDownload: "待下载",
-		diffTabTrash: "待清理",
-		diffTabRemoteOnly: "仅远端存在 (保留)",
-		diffTabSame: "两端一致",
-		diffNoChanges: "✓ 没有需要同步的变更文件（两端文件已一致）",
-		summaryDetailed:
-			"待同步变更：待上传 {up} · 待下载 {down} · 待清理 {trash}（已跳过 {same} 个一致文件，{remoteOnly} 个远端独有文件）",
-	},
-	en: {
-		title: "SFTP Sync",
-		subtitle: "Project config · diff preview · delete protection",
-		profile: "Connection",
-		addProfile: "New connection",
-		addProfilePrompt: "New connection name (e.g. dev, prod)",
-		confirmAdd: "Create",
-		cancel: "Cancel",
-		delProfile: "Delete current connection",
-		delProfileConfirm:
-			"Are you sure you want to delete connection “{name}”? (Only deletes configuration, no files will be removed)",
-		profileNameRequired: "Please enter connection name",
-		profileNameInvalid: "Connection name only allows letters, digits, dot, dash, underscore (1-48 chars)",
-		profileExists: "Connection “{name}” already exists",
-		profileCreated: "✓ Connection “{name}” created. Fill in details below and save.",
-		profileDeleted: "✓ Connection “{name}” deleted",
-		noProfile: "(none)",
-		host: "Host",
-		port: "Port",
-		username: "User",
-		remotePath: "Remote root",
-		authMethod: "Auth",
-		authSecret: "Encrypted Secret (Recommended)",
-		authPassword: "Plaintext Password",
-		authKey: "Key file",
-		authAgent: "ssh-agent",
-		secretName: "Secret Name",
-		secretSelectPrompt: "Select existing secret ▾",
-		secretSelectNone: "(No existing secrets)",
-		secretQuickPick: "Existing secrets",
-		secretNamePlaceholder: "e.g. prod-password (or pick from dropdown)",
-		secretValue: "Secret Value",
-		secretValuePlaceholder: "Enter secret value/password",
-		secretValueReusePlaceholder: "Secret exists; leave blank to reuse",
-		secretValueReuseTip: "✓ Leave blank to reuse existing secret; enter new value to overwrite",
-		secretValueNewTip: "Will be encrypted with AES-256 locally on save; config only stores reference",
-		secretExists: "✓ Secret exists (ready to reuse)",
-		secretNew: "+ New secret (will create on save)",
-		secretNameRequired: "Please enter a secret name",
-		secretNameInvalid: "Secret name may only contain letters, digits, dots, dashes, and underscores",
-		secretValueRequired: 'Secret "{name}" does not exist yet; please enter its value to create it',
-		password: "Password",
-		passwordPlaceholder: "blank = keep; enter plaintext password",
-		passwordHelpTip: "Click to see password and ${secret:name} variable guide",
-		passwordHelpTitle: "Password & Variable Reference Guide",
-		helpPlainTitle: "Plaintext Password",
-		helpPlainDesc: "For local personal use, enter your server password directly.",
-		helpBlankTitle: "Leave Blank",
-		helpBlankDesc: "Keeps the existing saved password unchanged.",
-		helpSecretTitle: "Recommended: ${secret:name} Encrypted Secret",
-		helpSecretDesc:
-			"Click “Store encrypted secret” below to save locally (AES-256 encrypted). Put ${secret:name} here to reference it. The config in .pi/sftp.json stores only the reference name, making it safe to commit to git.",
-		helpEnvFileTitle: "Environment Variables & Files",
-		helpEnvFileDesc:
-			"Also supports ${env:VAR_NAME} (e.g. ${env:SFTP_PASSWORD}) or ${file:path} (e.g. ${file:~/.ssh/pass.txt}).",
-		helpQuickSecret: "☞ Store encrypted secret now",
-		secretFilled: "✓ Encrypted secret stored and filled: {ref}",
-		keypathPlaceholder: "blank = probe ~/.ssh/ default keys (id_ed25519, etc.)",
-		copyKey: "Copy Key to Remote",
-		copyKeyPrompt: "Enter remote server password to install public key:",
-		copyKeyTesting: "Adding key and verifying…",
-		copyKeySuccess: "✓ Successfully added public key to remote authorized_keys and verified!",
-		copyKeyAlready: "✓ Public key already exists in remote authorized_keys, verified!",
-		copyKeyWarn: "⚠ Key added, but verification failed: {err}",
-		goProjectRoot: "Project Root",
-		goProjectRootHint: "Jump to project remote root ({root})",
-		uploadHereDisabled: "Upload local folder (outside project)",
-		outsideRootUploadHint: "Current remote path is outside the project root ({root}), no corresponding local directory",
-		outsideRootDownloadHint: "This item is outside the project root ({root}), cannot download to local workspace",
-		uploadItemHint: "Upload local corresponding item to here",
-		downloadItemHint: "Download and sync this item to local",
-		ignoreItemHint: "Add corresponding path to SFTP ignore",
-		outsideRootUploadItemHint: "Outside project root, no local file to upload",
-		outsideRootIgnoreHint: "Outside project root, cannot ignore",
-		diffTabActionable: "Changes to Sync",
-		diffTabUpload: "Upload",
-		diffTabDownload: "Download",
-		diffTabTrash: "Trash",
-		diffTabRemoteOnly: "Remote-only (kept)",
-		diffTabSame: "Identical",
-		diffNoChanges: "✓ No changes to sync (files are in sync)",
-		summaryDetailed:
-			"Changes to sync: {up} upload · {down} download · {trash} trash ({same} identical skipped, {remoteOnly} remote-only kept)",
-		privateKeyPath: "Private key path",
-		passphrase: "Key passphrase",
-		agent: "agent socket",
-		ignore: "Extra excludes (comma or newline separated)",
-		save: "Save",
-		testing: "Testing…",
-		test: "Test connection",
-		import: "Import .vscode/sftp.json",
-		importing: "Importing…",
-		direction: "Direction",
-		sync: "Sync",
-		up: "Upload local→remote",
-		down: "Download remote→local",
-		both: "Two-way",
-		scope: "Scope",
-		all: "All roots",
-		tree: "Subtree",
-		file: "Single file",
-		path: "Path",
-		pathHint: "relative to the workspace, e.g. web/dist",
-		plan: "Preview diff",
-		planning: "Scanning…",
-		stopBtn: "Stop",
-		stopping: "Stopping…",
-		stopped: "Stopped (finished files are kept)",
-		scanStat: "Scanning {side}: {files} files / {dirs} dirs",
-		sideLocal: "local",
-		sideRemote: "remote",
-		reusedPlan: "Reused the plan you just previewed (no rescan)",
-		run: "Run sync",
-		confirmDelete: "This plan deletes {n} entries (moved to trash). Continue?",
-		confirmRun: "Start the sync?",
-		summary: "{up} to send · {down} to fetch · {trash} to clean · {same} same · {conflict} conflicts",
-		noPlan: "No plan yet — hit “Preview diff” to see what would change.",
-		identical: "Nothing to change.",
-		upload: "upload",
-		download: "download",
-		trashRemote: "clean remote",
-		trashLocal: "clean local",
-		skip: "skip",
-		conflict: "conflict",
-		reason: "Why",
-		failed: "{n} failed",
-		done: "Done: {up} up / {down} down / {trash} cleaned",
-		running: "Transferring",
-		otherProject: "other project",
-		remote: "Remote files",
-		refresh: "Refresh",
-		goUp: "Up",
-		uploadHere: "Upload the matching local folder",
-		uploading: "Uploading…",
-		downloading: "Downloading…",
-		transferred: "{dir} {n} files",
-		size: "Size",
-		openFile: "Open",
-		go: "Go",
-		close: "Close",
-		write: "Write to remote",
-		writing: "Writing…",
-		binary: "Binary file — not editable here",
-		plaintextWarn: "⚠ Plaintext credentials in config: {list}. Use ${secret:name} instead.",
-		importAvailable: "Found .vscode/sftp.json — one-click import available (passwords move to the encrypted store).",
-		trash: "Trash",
-		needConn: "Configure and save a connection on the left first.",
-		secretBtn: "Store encrypted secret",
-		secretPrompt: "Secret name (e.g. prod-password)",
-		secretValue: "Secret value (never echoed)",
-		settingsHint:
-			"Concurrency, scan concurrency, delete policy and remote command access live in Settings → Plugins → SFTP Sync.",
-		outsideWorkspace: "Only files inside the workspace can be synced: {path} (machine-browse paths live outside it)",
-	},
-};
-
 import { esc } from "@pi-web-ui/plugin-sdk/client";
 import { authFormState } from "./auth-form.mjs";
+import { makeT } from "./i18n.mjs";
 
 function resolveApiBase(importMetaUrl) {
 	const s = String(importMetaUrl);
@@ -318,6 +10,9 @@ function resolveApiBase(importMetaUrl) {
 }
 
 const API = resolveApiBase(import.meta.url);
+
+/** 面板文案：语言解析 / 回退 / 插值都在 SDK 里，这里只按当前界面语言取词。 */
+const t = makeT();
 
 function fmtSize(n) {
 	if (n === null || n === undefined) return "—";
@@ -330,12 +25,6 @@ function fmtTime(sec) {
 	if (!sec) return "—";
 	const d = new Date(sec * 1000);
 	return d.toLocaleString([], { month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit" });
-}
-
-function detectLang() {
-	const el = globalThis.document?.documentElement;
-	const attr = el?.getAttribute?.("lang") || globalThis.navigator?.language || "zh";
-	return String(attr).toLowerCase().startsWith("zh") ? "zh" : "en";
 }
 
 const ACTION_UPLOAD_FILE = "sftp:upload-file";
@@ -363,7 +52,7 @@ async function handleIgnoreAction(mode, target) {
 	const rel = cleanWorkspaceRel(raw);
 	if (!rel) {
 		try {
-			globalThis.window?.__piWebUiHost?.notify?.("warning", "无法忽略工作区根目录", "Cannot ignore workspace root");
+			globalThis.window?.__piWebUiHost?.notify?.("warning", t("ignoreRootBlocked"));
 		} catch {}
 		return;
 	}
@@ -378,10 +67,10 @@ async function handleIgnoreAction(mode, target) {
 			body: JSON.stringify({ path: rel, mode }),
 		});
 		const json = await res.json();
-		if (!json.ok) throw new Error(json.error || "请求失败");
+		if (!json.ok) throw new Error(json.error || t("requestFailed"));
 	} catch (err) {
 		try {
-			globalThis.window?.__piWebUiHost?.notify?.("error", `SFTP 忽略操作失败：${err.message ?? err}`);
+			globalThis.window?.__piWebUiHost?.notify?.("error", t("ignoreFailed", { err: err.message ?? err }));
 		} catch {}
 	}
 }
@@ -450,13 +139,6 @@ whenBridge((bridge) => {
 
 export default {
 	mount(container, _ctx) {
-		const t = (key, vars) => {
-			const dict = TEXT[detectLang()] ?? TEXT.zh;
-			let out = dict[key] ?? TEXT.zh[key] ?? key;
-			for (const [k, v] of Object.entries(vars ?? {})) out = out.split(`{${k}}`).join(String(v));
-			return out;
-		};
-
 		let disposed = false;
 		let state = null;
 		let pollTimer = null;
@@ -794,34 +476,27 @@ export default {
 			}
 			if (!json?.ok) {
 				if (json?.hostTrust && !disposed && requestContext === trustContext()) showHostTrust(json.hostTrust);
-				throw new Error(
-					json?.hostTrust
-						? detectLang() === "zh"
-							? "请在主机信任面板中核对指纹。"
-							: "Review the fingerprint in the host trust panel."
-						: (json?.error ?? `HTTP ${res.status}`),
-				);
+				throw new Error(json?.hostTrust ? t("trustPending") : (json?.error ?? `HTTP ${res.status}`));
 			}
 			return json.data;
 		}
 
 		function showHostTrust(challenge) {
 			trustChallenge = challenge;
-			const zh = detectLang() === "zh";
 			const changed = challenge.status === "changed";
 			const revoked = challenge.status === "revoked";
 			const panel = $(".host-trust");
 			panel.classList.remove("hidden");
 			panel.innerHTML = `
-				<h3>${esc(zh ? (revoked ? "主机密钥已撤销" : changed ? "主机密钥已变更" : "首次连接：确认主机身份") : revoked ? "Host key revoked" : changed ? "Host key changed" : "First connection: verify host identity")}</h3>
-				<p>${esc(zh ? "请通过服务器控制台或管理员核对以下指纹。确认后，插件会保存到运行服务的电脑上的 known_hosts。" : "Verify this fingerprint through the server console or administrator. Confirmation saves it to known_hosts on the computer running this service.")}</p>
-				<dl><dt>${zh ? "主机" : "Host"}</dt><dd>${esc(challenge.host)}:${esc(challenge.port)}</dd>
-				<dt>${zh ? "密钥类型" : "Key type"}</dt><dd>${esc(challenge.algorithm)}</dd>
-				<dt>${zh ? "指纹" : "Fingerprint"}</dt><dd>${esc(challenge.fingerprint)}</dd>
-				<dt>${zh ? "保存位置" : "Save location"}</dt><dd>${esc(challenge.knownHostsFile)}</dd></dl>
-				${changed ? `<p>${esc(zh ? "已有记录与当前密钥不一致。请先确认服务器重装或密钥轮换，再替换。" : "The saved key differs. Confirm a server rebuild or key rotation before replacing it.")}</p>` : ""}
-				${revoked ? `<p>${esc(zh ? "该密钥已被标记撤销，插件不能信任它，请联系管理员。" : "This key is marked revoked and cannot be trusted here. Contact your administrator.")}</p>` : `<label><input class="trust-verified" type="checkbox"> ${esc(zh ? "我已通过独立渠道核对，指纹一致" : "I independently verified that this fingerprint matches")}</label>`}
-				<div class="row"><button class="btn-trust-save" ${revoked ? "hidden" : "disabled"}>${esc(zh ? (changed ? "替换并重新连接" : "信任并重新连接") : changed ? "Replace and reconnect" : "Trust and reconnect")}</button><button class="btn-trust-cancel">${esc(zh ? "取消" : "Cancel")}</button></div>
+				<h3>${esc(revoked ? t("trustRevokedTitle") : changed ? t("trustChangedTitle") : t("trustFirstTitle"))}</h3>
+				<p>${esc(t("trustIntro"))}</p>
+				<dl><dt>${esc(t("trustHost"))}</dt><dd>${esc(challenge.host)}:${esc(challenge.port)}</dd>
+				<dt>${esc(t("trustKeyType"))}</dt><dd>${esc(challenge.algorithm)}</dd>
+				<dt>${esc(t("trustFingerprint"))}</dt><dd>${esc(challenge.fingerprint)}</dd>
+				<dt>${esc(t("trustSaveLocation"))}</dt><dd>${esc(challenge.knownHostsFile)}</dd></dl>
+				${changed ? `<p>${esc(t("trustChangedBody"))}</p>` : ""}
+				${revoked ? `<p>${esc(t("trustRevokedBody"))}</p>` : `<label><input class="trust-verified" type="checkbox"> ${esc(t("trustVerifiedLabel"))}</label>`}
+				<div class="row"><button class="btn-trust-save" ${revoked ? "hidden" : "disabled"}>${esc(changed ? t("trustReplaceAndReconnect") : t("trustTrustAndReconnect"))}</button><button class="btn-trust-cancel">${esc(t("cancel"))}</button></div>
 				<div class="trust-error" role="alert"></div>`;
 			panel.scrollIntoView({ block: "center", behavior: "smooth" });
 			panel.querySelector(".trust-verified")?.focus({ preventScroll: true });
@@ -834,15 +509,7 @@ export default {
 			};
 			panel.querySelector(".btn-trust-save").onclick = async (event) => {
 				if (trustChallenge !== challenge || !panel.querySelector(".trust-verified")?.checked) return;
-				if (
-					changed &&
-					!confirm(
-						zh
-							? `确认已核实 ${challenge.host}:${challenge.port} 的密钥轮换，替换旧记录？`
-							: `Confirm verified key rotation for ${challenge.host}:${challenge.port} and replace the old entry?`,
-					)
-				)
-					return;
+				if (changed && !confirm(t("trustRotateConfirm", { host: challenge.host, port: challenge.port }))) return;
 				event.target.disabled = true;
 				try {
 					await api("/host-trust", {
@@ -994,7 +661,7 @@ export default {
 				} else {
 					chipsWrap.classList.remove("hidden");
 					chipsWrap.innerHTML =
-						`<span class="hint" style="align-self:center;font-size:11px;">${esc(t("secretQuickPick"))}：</span>` +
+						`<span class="hint" style="align-self:center;font-size:11px;">${esc(t("secretQuickPick"))}</span>` +
 						list
 							.map(
 								(s) =>
@@ -1132,53 +799,57 @@ export default {
 		}
 
 		function actionLabel(action, kind) {
-			if (action === "upload") return kind === "add" ? "+ 上传" : "↑ 更新";
-			if (action === "download") return kind === "add" ? "↓ 新增" : "↓ 拉取";
-			if (action === "trash-remote" || action === "trash-local") return "✗ 清理";
-			if (kind === "remote-only") return "· 远端";
-			if (kind === "same") return "✓ 一致";
-			if (kind === "conflict") return "⚠ 冲突";
-			return "跳过";
+			if (action === "upload") return kind === "add" ? t("labelUploadAdd") : t("labelUploadUpdate");
+			if (action === "download") return kind === "add" ? t("labelDownloadAdd") : t("labelDownloadUpdate");
+			if (action === "trash-remote" || action === "trash-local") return t("labelTrash");
+			if (kind === "remote-only") return t("labelRemoteOnly");
+			if (kind === "same") return t("labelSame");
+			if (kind === "conflict") return t("labelConflict");
+			return t("labelSkip");
 		}
 
 		function formatDetailedReason(e) {
 			if (e.action === "upload" && e.kind === "add") {
-				return `本地新增文件 (${fmtSize(e.localSize)}) · 准备上传至远端`;
+				return t("whyUploadAdd", { size: fmtSize(e.localSize) });
 			}
 			if (e.action === "upload" && e.kind === "update") {
 				if (e.localSize !== e.remoteSize) {
 					const diff = (e.localSize ?? 0) - (e.remoteSize ?? 0);
 					const diffStr = diff > 0 ? `+${fmtSize(diff)}` : `-${fmtSize(Math.abs(diff))}`;
-					return `内容修改：本地 ${fmtSize(e.localSize)} vs 远端 ${fmtSize(e.remoteSize)} (${diffStr}) · 准备覆盖上传`;
+					return t("whyUploadSizeChanged", {
+						local: fmtSize(e.localSize),
+						remote: fmtSize(e.remoteSize),
+						diff: diffStr,
+					});
 				}
 				if (e.localMtime && e.remoteMtime && e.localMtime !== e.remoteMtime) {
-					return `修改时间更新：本地 ${fmtTime(e.localMtime)} vs 远端 ${fmtTime(e.remoteMtime)} · 准备覆盖上传`;
+					return t("whyUploadMtime", { local: fmtTime(e.localMtime), remote: fmtTime(e.remoteMtime) });
 				}
-				return `内容有改动 · 准备覆盖上传`;
+				return t("whyUploadTouched");
 			}
 			if (e.action === "download" && e.kind === "add") {
-				return `远端新增文件 (${fmtSize(e.remoteSize)}) · 准备拉取到本地`;
+				return t("whyDownloadAdd", { size: fmtSize(e.remoteSize) });
 			}
 			if (e.action === "download" && e.kind === "update") {
-				return `远端内容更新 (${fmtSize(e.remoteSize)}) · 准备拉取覆盖本地`;
+				return t("whyDownloadUpdate", { size: fmtSize(e.remoteSize) });
 			}
 			if (e.action === "trash-remote") {
-				return `远端多余文件 (${fmtSize(e.remoteSize)}) · 本地已不存在，准备移入远端垃圾桶`;
+				return t("whyTrashRemote", { size: fmtSize(e.remoteSize) });
 			}
 			if (e.action === "trash-local") {
-				return `本地多余文件 (${fmtSize(e.localSize)}) · 远端已不存在，准备移入本地垃圾桶`;
+				return t("whyTrashLocal", { size: fmtSize(e.localSize) });
 			}
 			if (e.kind === "remote-only" && e.action === "skip") {
-				return `仅远端存在 (${fmtSize(e.remoteSize)}) · 删除策略设为从不删除，保留不清理`;
+				return t("whyRemoteOnly", { size: fmtSize(e.remoteSize) });
 			}
 			if (e.kind === "local-only" && e.action === "skip") {
-				return `仅本地存在 (${fmtSize(e.localSize)}) · 远端无对应文件，保留不上传`;
+				return t("whyLocalOnly", { size: fmtSize(e.localSize) });
 			}
 			if (e.kind === "same") {
-				return `两侧内容完全一致 (${fmtSize(e.localSize)}) · 无需同步`;
+				return t("whySame", { size: fmtSize(e.localSize) });
 			}
 			if (e.kind === "conflict") {
-				return `两侧均有冲突修改 · ${e.reason}`;
+				return t("whyConflict", { reason: e.reason });
 			}
 			return e.reason || "";
 		}
@@ -1540,13 +1211,13 @@ export default {
 				});
 				if (out.message) {
 					try {
-						globalThis.window?.__piWebUiHost?.notify?.("info", `☁ ${out.message}`, `☁ ${out.message}`);
+						globalThis.window?.__piWebUiHost?.notify?.("info", `☁ ${out.message}`);
 					} catch {}
 				}
 				await refresh(true);
 			} catch (err) {
 				try {
-					globalThis.window?.__piWebUiHost?.notify?.("error", `SFTP 忽略操作失败：${err.message ?? err}`);
+					globalThis.window?.__piWebUiHost?.notify?.("error", t("ignoreFailed", { err: err.message ?? err }));
 				} catch {}
 			}
 		};
@@ -1560,7 +1231,8 @@ export default {
 				const f = await api(`/remote-file?path=${encodeURIComponent(path)}`);
 				editor = { path: f.path, text: f.text, binary: f.binary };
 				$(".editor").classList.remove("hidden");
-				$(".ed-path").textContent = f.path + (f.binary ? ` — ${t("binary")}` : `（${fmtSize(f.size)}）`);
+				$(".ed-path").textContent =
+					f.path + (f.binary ? ` — ${t("binary")}` : t("sizeInParens", { size: fmtSize(f.size) }));
 				$(".ed-text").value = f.text;
 				$(".ed-text").readOnly = f.binary;
 				$(".btn-ed-save").disabled = f.binary;
@@ -1822,7 +1494,7 @@ export default {
 		on(".btn-secret", "click", async () => {
 			const name = globalThis.prompt?.(t("secretPrompt")) ?? "";
 			if (!name) return;
-			const value = globalThis.prompt?.(t("secretValue")) ?? "";
+			const value = globalThis.prompt?.(t("secretValuePrompt")) ?? "";
 			if (!value) return;
 			try {
 				const out = await api("/secret", { method: "POST", body: { name, value } });
@@ -1858,7 +1530,7 @@ export default {
 				const out = await api("/test", { method: "POST", body: { profile: $(".profile").value } });
 				showError(
 					".msg.ok",
-					`${out.host}:${out.port} ✓ ${out.remoteExists ? "" : "（远端根不存在，首次同步会创建）"}${out.writable ? "" : " ⚠ 不可写"}`,
+					`${out.host}:${out.port} ✓ ${out.remoteExists ? "" : t("testRemoteMissing")}${out.writable ? "" : t("testNotWritable")}`,
 				);
 			} catch (err) {
 				showError(".msg.err", String(err.message ?? err));
@@ -1916,7 +1588,7 @@ export default {
 					const root = remoteDir || state?.connection?.remotePath || "/";
 					void loadRemote(root);
 				} else {
-					showError(".msg.err", t("copyKeyWarn", { err: out.verifyError || "验证未通过" }));
+					showError(".msg.err", t("copyKeyWarn", { err: out.verifyError || t("verifyFailed") }));
 				}
 				await refresh(false);
 			} catch (err) {
@@ -2070,7 +1742,10 @@ export default {
 			btn.disabled = true;
 			btn.textContent = t("writing");
 			try {
-				await api("/remote-write", { method: "POST", body: { path: editor.path, text: $(".ed-text").value } });
+				await api("/remote-write", {
+					method: "POST",
+					body: { path: editor.path, text: $(".ed-text").value },
+				});
 				$(".ed-msg").textContent = "✓";
 			} catch (err) {
 				$(".ed-msg").textContent = String(err.message ?? err);
