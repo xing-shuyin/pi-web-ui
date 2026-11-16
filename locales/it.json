@@ -1869,7 +1869,7 @@
 		"reversePagination": "Carica messaggi precedenti",
 		"reversePaginationDesc": "Attivo: Mostra solo i messaggi recenti; scorri verso l alto o fai clic per caricare la cronologia precedente.",
 		"showForkedParents": "Mostra sessioni padre diramate",
-		"showForkedParentsDesc": "Mantieni visibili nella cronologia le sessioni padre originali dopo aver modificato una domanda o creato un ramo (per impostazione predefinita viene mostrato solo il ramo più recente)",
+		"showForkedParentsDesc": "Mantieni visibili nella cronologia le sessioni padre originali dopo aver modificato una domanda o creato un ramo (attivo per impostazione predefinita; se disattivato viene mostrato solo il ramo più recente di ogni catena)",
 		"retainFinishedConversations": "Mantieni chat terminate al cambio",
 		"retainFinishedConversationsDesc": "Attivo: le conversazioni terminate (inattive) rimangono nell'elenco delle chat attive quando si cambia o si creano nuove chat fino alla rimozione manuale con ✕; Disattivo: le chat non proseguite vengono rimosse automaticamente",
 		"openRecentSessionOnProjectSwitch": "Apri sessione recente al cambio di progetto",

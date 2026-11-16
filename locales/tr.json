@@ -1869,7 +1869,7 @@
 		"reversePagination": "Önceki mesajları yükle",
 		"reversePaginationDesc": "Açık: Yalnızca son mesajları gösterir; önceki geçmişi yüklemek için yukarı kaydırın veya tıklayın.",
 		"showForkedParents": "Çatallanmış üst oturumları göster",
-		"showForkedParentsDesc": "Bir iletiyi düzenledikten veya bir dal çatalladıktan sonra özgün üst oturumları geçmiş listesinde görünür tutar (varsayılan olarak her zincirde yalnızca en son dal gösterilir)",
+		"showForkedParentsDesc": "Bir iletiyi düzenledikten veya bir dal çatalladıktan sonra özgün üst oturumları geçmiş listesinde görünür tutar (varsayılan olarak açık; kapatıldığında her zincirde yalnızca en son dal gösterilir)",
 		"retainFinishedConversations": "Geçişte biten konuşmaları koru",
 		"retainFinishedConversationsDesc": "Açık: başka bir konuşmaya geçerken veya yeni konuşma açarken bitmiş (boşta) konuşmalar, ✕ ile elle kaldırılana kadar «Çalışan konuşmalar» listesinde kalır; Kapalı: devam edilmeyen konuşmalar otomatik kaldırılır",
 		"openRecentSessionOnProjectSwitch": "Proje değiştirirken son oturumu aç",

@@ -1865,7 +1865,7 @@
 	"reversePagination": "Load earlier messages",
 	"reversePaginationDesc": "On: only mount recent messages; scroll up to seamlessly preload earlier history without viewport placeholders for butter-smooth native scrolling; Off: use dynamic viewport placeholders",
 	"showForkedParents": "Show forked parent sessions",
-	"showForkedParentsDesc": "Keep original parent sessions visible in the history list after editing a message or forking a branch (by default only the latest branch in each chain is shown)",
+	"showForkedParentsDesc": "Keep original parent sessions visible in the history list after editing a message or forking a branch (on by default; turn off to show only the latest branch in each chain)",
 	"retainFinishedConversations": "Keep finished chats on switch",
 	"retainFinishedConversationsDesc": "On: keep finished (idle) conversations in the Running Chats list when switching away or creating new chats until manually removed with ✕; Off: chats left without continuing are auto-cleared",
 	"openRecentSessionOnProjectSwitch": "Open recent session on project switch",

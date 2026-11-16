@@ -1869,7 +1869,7 @@
 		"reversePagination": "Cargar mensajes anteriores",
 		"reversePaginationDesc": "Activado: Solo muestra mensajes recientes; desplácese hacia arriba o haga clic para cargar el historial anterior.",
 		"showForkedParents": "Mostrar sesiones padre bifurcadas",
-		"showForkedParentsDesc": "Mantener visibles las sesiones padre originales en el historial tras editar una pregunta o crear una rama (por defecto solo se muestra la rama más reciente)",
+		"showForkedParentsDesc": "Mantener visibles las sesiones padre originales en el historial tras editar una pregunta o crear una rama (activado por defecto; al desactivarlo solo se muestra la rama más reciente de cada cadena)",
 		"retainFinishedConversations": "Mantener chats finalizados al cambiar",
 		"retainFinishedConversationsDesc": "Activado: las conversaciones finalizadas (inactivas) permanecen en la lista de chats en ejecución al cambiar o crear nuevos chats hasta que se eliminen manualmente con ✕; Desactivado: los chats que no se continúan se eliminan automáticamente",
 		"openRecentSessionOnProjectSwitch": "Abrir sesión reciente al cambiar de proyecto",

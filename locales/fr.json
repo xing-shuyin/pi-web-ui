@@ -1869,7 +1869,7 @@
 		"reversePagination": "Charger les messages précédents",
 		"reversePaginationDesc": "Activé : Afficher uniquement les messages récents ; faites défiler vers le haut ou cliquez pour charger l historique précédent.",
 		"showForkedParents": "Afficher les sessions parentes dérivées",
-		"showForkedParentsDesc": "Conserver les sessions parentes d’origine visibles dans l’historique après la modification d’un message ou une bifurcation (seule la branche la plus récente est affichée par défaut)",
+		"showForkedParentsDesc": "Conserver les sessions parentes d’origine visibles dans l’historique après la modification d’un message ou une bifurcation (activé par défaut ; désactivé, seule la branche la plus récente de chaque chaîne est affichée)",
 		"retainFinishedConversations": "Conserver les conversations terminées lors du changement",
 		"retainFinishedConversationsDesc": "Activé : les conversations terminées (inactives) restent dans la liste des conversations actives lors d'un changement ou de la création de nouveaux chats jusqu'à leur suppression manuelle avec ✕ ; Désactivé : les chats non poursuivis sont automatiquement retirés",
 		"openRecentSessionOnProjectSwitch": "Ouvrir la session récente lors du changement de projet",

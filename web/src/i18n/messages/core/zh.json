@@ -1865,7 +1865,7 @@
 	"reversePagination": "向上分页加载",
 	"reversePaginationDesc": "开启：默认仅挂载最近消息，向上滚动自动无缝前插更早历史；完全不使用视口动态占位符，享受极致原生流畅度；关闭：使用视口惰性占位探测",
 	"showForkedParents": "显示被分支的父会话",
-	"showForkedParentsDesc": "编辑历史提问或派生分支后，在历史对话列表中同时保留原父会话（默认仅显示每条分支链的最新会话）",
+	"showForkedParentsDesc": "编辑历史提问或派生分支后，在历史对话列表中同时保留原父会话（默认开启；关闭后仅显示每条分支链的最新会话）",
 	"retainFinishedConversations": "切走时保留已结束的对话",
 	"retainFinishedConversationsDesc": "开启：切换对话或新建对话时，已结束（空闲）的对话依然保留在「运行的对话」列表中，直到手动点击 ✕ 移出；关闭：切走且未继续对话的会话自动移出",
 	"openRecentSessionOnProjectSwitch": "切换项目时打开最近会话",

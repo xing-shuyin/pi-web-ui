@@ -172,7 +172,7 @@ describe("shared settings subscriptions", () => {
 			softCapTokens: 100_000,
 			codemodeInlineBudget: 5000,
 			disabledAgentTools: ["bash"],
-			showForkedParentSessions: true,
+			showForkedParentSessions: false,
 			goalModeEnabled: false,
 		});
 		await new Promise<void>((resolve) => setImmediate(resolve));
