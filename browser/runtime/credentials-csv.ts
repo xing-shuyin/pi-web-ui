@@ -11,7 +11,7 @@
  */
 import { randomUUID } from "node:crypto";
 import type { PasswordEntry } from "../storage/index.js";
-import { isWebUrl } from "./urls.js";
+import { isWebUrl, webOrigin } from "./urls.js";
 
 /** 单次导入的行数上限：再多就不是「导出文件」，而是有人选错了文件。 */
 export const CSV_MAX_ROWS = 5000;
@@ -35,7 +35,7 @@ export interface MergeResult {
 	imported: number;
 	/** 同站点同账号、但密码不同的条目数（已用文件里的密码覆盖）。 */
 	updated: number;
-	/** 与库里完全一致、因此没动的条目数。 */
+	/** 库里已经有同一站点同一账号的条目（含库里本就重复的那些），因此没动 / 被合并的条数。 */
 	duplicate: number;
 }
 
@@ -160,16 +160,33 @@ export function parseCredentialCsv(text: string): CsvParseResult {
 	return { rows, skipped };
 }
 
-const keyOf = (url: string, username: string): string => `${url.toLowerCase()}\n${username.toLowerCase()}`;
+/**
+ * 「同一条凭据」的key：**origin + 账号**（大小写不敏感）。
+ *
+ * 不能拿完整 URL 当 key——同一个站点的 `/login` 与 `/my-account` 是两条导出记录，
+ * 用户眼里却是同一个密码；按站点算才能把它们并成一条。账号为空时也按「空账号」算一条。
+ */
+const keyOf = (url: string, username: string): string =>
+	`${webOrigin(url) || url.toLowerCase()}\n${username.trim().toLowerCase()}`;
 
 /**
- * 把解析结果并进现有条目：**同网址同账号就是同一条**（大小写不敏感），
- * 密码不同视为「文件里的更新」（导出文件比库里新才叫导出），完全一致则不动。
+ * 把解析结果并进现有条目：**同站点同账号就是同一条**，密码不同视为「文件里的更新」，
+ * 完全一致则不动；库里本来就重复的条目（早期按完整 URL 去重留下的）也顺手并成一条。
  */
 export function mergeCredentials(existing: PasswordEntry[], rows: ImportedCredential[]): MergeResult {
-	const entries = existing.slice();
-	const index = new Map(entries.map((entry) => [keyOf(entry.url, entry.username), entry]));
+	const entries: PasswordEntry[] = [];
+	const index = new Map<string, PasswordEntry>();
 	const result: MergeResult = { entries, imported: 0, updated: 0, duplicate: 0 };
+	for (const entry of existing) {
+		const key = keyOf(entry.url, entry.username);
+		if (index.has(key)) {
+			result.duplicate += 1;
+			continue;
+		}
+		const copy = { ...entry };
+		index.set(key, copy);
+		entries.push(copy);
+	}
 	for (const row of rows) {
 		const key = keyOf(row.url, row.username);
 		const current = index.get(key);

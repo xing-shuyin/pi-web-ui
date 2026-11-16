@@ -52,6 +52,23 @@ export function isWebUrl(value: string): boolean {
 	}
 }
 
+/**
+ * URL → origin（只认 http/https，其余返回空串）。
+ *
+ * 凭据「属于哪个网站」只按 origin 算：`https://x.com/a` 与 `https://x.com/b` 是同一个站点，
+ * `https://a.x.com` 不是。密码库的去重、自动填充候选、填入前的同源校验全走这一个函数。
+ */
+export function webOrigin(value: string): string {
+	try {
+		const url = new URL(value);
+		// 带内嵌账号/密码的 URL 与 `isWebUrl` 同一条口径：不当成可归属的站点
+		if (!["http:", "https:"].includes(url.protocol) || !url.hostname || url.username || url.password) return "";
+		return url.origin;
+	} catch {
+		return "";
+	}
+}
+
 /** 标签图标（favicon）的 data: URL 上限：再长的直接当没有，别把每次状态推送撑大。 */
 export const TAB_FAVICON_MAX_DATA_URL = 8192;
 

@@ -35,5 +35,13 @@ void ipcRenderer
 				version: 1,
 				pageCall: (request: unknown) => ipcRenderer.invoke("pi-browser:page-call", request),
 			});
+		// 网页里的密码自动填充下拉（`browser/renderer/autofill.js`）只有这条窄桥：
+		// `lookup` 只回本页面 origin 的 `{ id, name, username }`，`pick` 只是让主进程去填——
+		// 明文密码任何时候都不会沿这条桥回到页面；主进程会再按发送方 frame 的 origin 校一遍。
+		contextBridge.exposeInMainWorld("__piAutofill", {
+			version: 1,
+			lookup: () => ipcRenderer.invoke("pi-browser:autofill-lookup"),
+			pick: (id: unknown) => ipcRenderer.invoke("pi-browser:autofill-pick", typeof id === "string" ? id : ""),
+		});
 	})
 	.catch(() => {});

@@ -116,4 +116,31 @@ describe("merging an import into the vault", () => {
 		expect(result).toMatchObject({ imported: 1, duplicate: 1 });
 		expect(result.entries).toHaveLength(1);
 	});
+	it("treats two paths of the same site as one credential, like the vault shows it", () => {
+		// 导出文件里 /login 与 /my-account 是两行，用户眼里是同一个密码
+		const result = mergeCredentials(
+			[entry({ url: "https://bank.example.com/login", username: "Ann", password: "old" })],
+			[{ ...row, url: "https://bank.example.com/my-account" }],
+		);
+		expect(result).toMatchObject({ imported: 0, updated: 1, duplicate: 0 });
+		expect(result.entries).toHaveLength(1);
+		expect(result.entries[0]).toMatchObject({ url: "https://bank.example.com/login", password: "pw" });
+	});
+	it("merges duplicates that are already in the vault and stops mutating the input", () => {
+		const existing = [
+			entry({ id: "a", url: "https://bank.example.com/login", username: "Ann", password: "pw" }),
+			entry({ id: "b", url: "https://bank.example.com/my-account", username: "ann", password: "pw" }),
+		];
+		const result = mergeCredentials(existing, [{ ...row, username: "ann" }]);
+		expect(result.entries).toHaveLength(1);
+		expect(result.entries[0]?.id).toBe("a");
+		expect(result).toMatchObject({ imported: 0, updated: 0, duplicate: 2 });
+		// 库里原本的两条不动（纯函数不应改调用方的数据）
+		expect(existing).toHaveLength(2);
+	});
+	it("keeps different accounts on one site apart", () => {
+		const result = mergeCredentials([entry({ url: row.url, username: "other", password: "pw" })], [row]);
+		expect(result).toMatchObject({ imported: 1, updated: 0 });
+		expect(result.entries).toHaveLength(2);
+	});
 });

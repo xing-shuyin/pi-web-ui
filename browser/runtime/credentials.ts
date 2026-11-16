@@ -22,15 +22,35 @@ export async function fillCredential(contents: WebContents, entry: PasswordEntry
 		throw new Error("This credential belongs to a different website");
 	const fill = (origin: string, username: string, secret: string): void => {
 		if (location.origin !== origin) throw new Error("The page navigated to a different website");
-		const candidates = [...document.querySelectorAll<HTMLInputElement>('input[type="password"]')].filter(
-			(node) => !node.disabled && !node.readOnly && node.getBoundingClientRect().width > 0,
-		);
+		const box = (node: Element) => node.getBoundingClientRect();
+		const visible = (node: HTMLInputElement) => {
+			const rect = box(node);
+			return rect.width > 0 && rect.height > 0;
+		};
+		const editable = (node: HTMLInputElement) =>
+			!node.disabled &&
+			!node.readOnly &&
+			visible(node) &&
+			!/^(hidden|submit|button|checkbox|radio|search|file)$/i.test(node.type);
+		const candidates = [...document.querySelectorAll<HTMLInputElement>('input[type="password"]')].filter(editable);
 		if (candidates.length !== 1) throw new Error("Open a login form with a single password field first");
 		const field = candidates[0];
 		const container = field.form ?? document;
-		const user = container.querySelector<HTMLInputElement>(
-			'input[autocomplete="username"], input[type="email"], input[type="text"], input:not([type])',
+		const inputs = [...container.querySelectorAll<HTMLInputElement>("input")].filter(editable);
+		const textish = inputs.filter((node) => ["text", "email", "tel", ""].includes(node.type.toLowerCase()));
+		/**
+		 * 账号框的站位：显式 `autocomplete="username"` → `type=email` → **密码框前面最近的那个文本框**。
+		 * 最后这条是关键：按“文档里第一个文本框”挑，会把页头的搜索框当成账号框，
+		 * 于是账号被写进搜索框、登录框还是空的（也解释了为什么有人看到填的是站点名）。
+		 */
+		const before = textish.filter(
+			(node) => node !== field && node.compareDocumentPosition(field) & Node.DOCUMENT_POSITION_FOLLOWING,
 		);
+		const user =
+			inputs.find((node) => node.autocomplete === "username") ??
+			inputs.find((node) => node.type.toLowerCase() === "email") ??
+			before.at(-1) ??
+			textish[0];
 		const set = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")?.set;
 		if (!set) throw new Error("This login form cannot be filled");
 		for (const [node, value] of [

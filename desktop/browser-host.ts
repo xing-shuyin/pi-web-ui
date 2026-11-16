@@ -46,7 +46,7 @@ import {
 	type PopupPoint,
 	type PopupSize,
 } from "../browser/runtime/extension-popup.js";
-import { isWebUrl } from "../browser/runtime/urls.js";
+import { isWebUrl, webOrigin } from "../browser/runtime/urls.js";
 import {
 	createTotpEntry,
 	normalizeOrigin,
@@ -394,6 +394,23 @@ export class DesktopBrowserHost {
 			if (this.mode === "agent") this.setMode("split");
 			return tabId;
 		});
+		// 网页侧自动填充下拉的两个口子（`browser/renderer/autofill.js`）
+		ipcMain.handle("pi-browser:autofill-lookup", (event) => {
+			const origin = this.autofillOrigin(event);
+			return this.browser.storage
+				.listPasswords()
+				.filter((entry) => webOrigin(entry.url) === origin)
+				.map((entry) => ({ id: entry.id, name: entry.name, username: entry.username }));
+		});
+		ipcMain.handle("pi-browser:autofill-pick", async (event, id: unknown) => {
+			const origin = this.autofillOrigin(event);
+			const entry = this.browser.storage
+				.listPasswords()
+				.find((item) => item.id === id && webOrigin(item.url) === origin);
+			if (!entry) throw new Error("This credential belongs to a different website");
+			await fillCredential(event.sender, entry);
+			return true;
+		});
 		// 扩展页面的 chrome.tabs.captureVisibleTab → 主进程截图（见 browser/runtime/extension-bridge.ts）
 		ipcMain.handle("pi-browser:capture-visible-tab", async (event, options: unknown) => {
 			if (event.sender.session !== this.browser.session) throw new Error("Untrusted capture request");
@@ -401,6 +418,18 @@ export class DesktopBrowserHost {
 			if (!origin.startsWith("chrome-extension://")) throw new Error("Untrusted capture request");
 			return this.captureVisibleTab(object(options));
 		});
+	}
+
+	/**
+	 * 自动填充的发送方校验：只认浏览器 session 里的**网站 frame**，返回它的 origin。
+	 * 后面所有候选/填入都按这个 origin 卡，页面自己伪造参数也拿不到别的网站的凭据。
+	 */
+	private autofillOrigin(event: IpcMainInvokeEvent): string {
+		if (event.sender.session !== this.browser.session) throw new Error("Untrusted autofill request");
+		const url = event.senderFrame?.url || event.sender.getURL();
+		const origin = webOrigin(url);
+		if (!origin) throw new Error("Autofill is only available on websites");
+		return origin;
 	}
 
 	private installPermissions(): void {

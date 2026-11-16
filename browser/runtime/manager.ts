@@ -17,6 +17,7 @@ import { BrowserStorage } from "../storage/index.js";
 import { isWebUrl, internalPageName, internalPageUrl, normalizeBrowserUrl, pickTabFavicon } from "./urls.js";
 import { BrowserCustomization } from "./customize.js";
 import { DOCK_SCRIPT, SCROLLBAR_CSS } from "./dock.js";
+import { AUTOFILL_SCRIPT } from "./autofill.js";
 import {
 	buildCleanupCode,
 	buildInjectionCode,
@@ -264,6 +265,10 @@ export class BrowserManager {
 					try {
 						if (this.storage.getSettings().smartDock !== false) {
 							void wc.executeJavaScript(DOCK_SCRIPT).catch(() => {});
+						}
+						// 密码自动填充下拉：只对真网站注入（内部页没有登录表单，也不该拿到那条桥）
+						if (isWebUrl(current) && AUTOFILL_SCRIPT) {
+							void wc.executeJavaScript(AUTOFILL_SCRIPT).catch(() => {});
 						}
 					} catch {}
 				}

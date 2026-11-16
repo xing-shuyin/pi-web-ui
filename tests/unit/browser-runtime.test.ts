@@ -5,7 +5,7 @@ import { EventEmitter } from "node:events";
 import { pathToFileURL } from "node:url";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { BrowserWindow, WebContents } from "electron";
-import { isInternalUrl, normalizeBrowserUrl, pickTabFavicon } from "../../browser/runtime/urls.js";
+import { isInternalUrl, normalizeBrowserUrl, pickTabFavicon, webOrigin } from "../../browser/runtime/urls.js";
 
 const mock = vi.hoisted(() => ({ views: [] as any[], sessions: [] as any[], downloadsDir: "" }));
 vi.mock("electron", async () => {
@@ -110,6 +110,18 @@ beforeEach(() => {
 afterEach(() => {
 	for (const manager of managers.splice(0)) manager.dispose();
 	for (const dir of directories.splice(0)) fs.rmSync(dir, { recursive: true, force: true });
+});
+
+describe("credential origin matching", () => {
+	it("treats one site as one credential scope regardless of path", () => {
+		expect(webOrigin("https://www.pathofexile.com/login/email")).toBe("https://www.pathofexile.com");
+		expect(webOrigin("https://www.pathofexile.com/my-account/change-email")).toBe("https://www.pathofexile.com");
+		expect(webOrigin("http://example.com/")).not.toBe(webOrigin("https://example.com/"));
+	});
+	it.each(["", "javascript:alert(1)", "file:///tmp/a.html", "https://user:pw@example.com/"])(
+		"returns nothing for %s",
+		(value) => expect(webOrigin(value)).toBe(""),
+	);
 });
 
 describe("browser URL policy", () => {
