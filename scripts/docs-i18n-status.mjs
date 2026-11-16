@@ -95,7 +95,7 @@ console.log(
 		.slice(0, 3)
 		.join(", ")}${excluded.length > 3 ? ", …" : ""}）`,
 );
-console.log(`  HTML 设计稿（policy: 原文发布，不提供译本）：${htmlDocs.length}`);
+console.log(`  HTML 设计稿（自带 en / zh-TW 版本，见 npm run docs:i18n:html）：${htmlDocs.length}`);
 if (missing.length) {
 	console.log(`\n缺少译本：${missing.length}`);
 	for (const m of missing) console.log(`  ${m.file}  缺少 ${m.lacks.join(" / ")}`);
