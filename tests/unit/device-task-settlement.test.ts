@@ -75,8 +75,21 @@ function state(tasks: HubTask[]): HubState {
 				createdAt: 1,
 				updatedAt: 1,
 			},
+			// 第二个 Bot 只给「多个任务同时处于可投递状态」的用例用：同一个 Bot 只有一个执行位，
+			// 两条任务共用一个 Bot 时后一条会被刻意排到它后面，那是闸门行为、不是恢复行为。
+			{
+				id: "bot-2",
+				accountId: "account",
+				deviceId: "device",
+				name: "bot-2",
+				description: "",
+				enabled: true,
+				revision: 1,
+				createdAt: 1,
+				updatedAt: 1,
+			},
 		],
-		rooms: [{ id: "room", accountId: "account", name: "room", botIds: ["bot"], createdAt: 1 }],
+		rooms: [{ id: "room", accountId: "account", name: "room", botIds: ["bot", "bot-2"], createdAt: 1 }],
 		tasks,
 		messages: [],
 		conversations: [],
@@ -583,7 +596,9 @@ describe("Hub durable task settlement integration", () => {
 	it("recovers only unissued queued tasks and successful dependencies on startup", async () => {
 		const first = task("first", { status: "completed", report: "output" });
 		const second = task("second", { status: "waiting", dependsOnTaskId: first.id });
-		const unissued = task("unissued", { status: "queued" });
+		// 用第二个 Bot：同一个 Bot 只有一个执行位，两条任务共用它会后一条被刻意排队（闸门行为）。
+		// 本用例要验的是恢复语义（未派发的 queued 任务 + 依赖已满足的任务都能被派发）。
+		const unissued = task("unissued", { status: "queued", botId: "bot-2" });
 		const issued = task("issued", { status: "queued", leaseToken: "lease", leaseGeneration: 1 });
 		const { hub, onTask } = await persistedHub([first, second, unissued, issued]);
 		expect(onTask.mock.calls.map((c) => (c as unknown as [string, HubTask])[1].id).sort()).toEqual([
