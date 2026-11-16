@@ -25,21 +25,6 @@ function formatServerLine(s: UiMcpServer): string {
 	return `- ${s.name} [${s.scope}] (${s.status}${s.enabled === false ? ", disabled" : ""}): ${target}${toolSuffix}${errSuffix}`;
 }
 
-/** Post-install/reload companion hint. Two real pitfalls (2026-11 network-ops rollout):
- *  (1) the live conversation's tool registry belongs to the pi-mcp-adapter extension, which
- *  snapshots mcp.json at session start — newly installed servers need `/reload` (extensions)
- *  or a session restart before their tools become callable;
- *  (2) with a default-deny permission policy (pi-extensions permission-policy.ts), every call
- *  is blocked until an allow rule like {"tool": "<server>*", "action": "allow"} is added. */
-function sessionHint(lang: ServerLang): string {
-	return pick(
-		lang,
-		"\n⚠️ 新装 server 的工具不会自动进入当前会话的工具注册表——运行 /reload（重载扩展）或重启会话后可调用。若调用报「权限策略默认拒绝」，还需在 ~/.pi/agent/permission-policy.json 加 allow 规则（先例：{\"tool\": \"<server>*\", \"action\": \"allow\"}）。",
-		"\n⚠️ Newly installed servers do not join the live session's tool registry automatically — run /reload (extensions) or restart the session to make them callable. If a call reports a default-deny policy error, also add an allow rule to ~/.pi/agent/permission-policy.json (e.g. {\"tool\": \"<server>*\", \"action\": \"allow\"}).",
-		"mcp_manage.session_hint",
-	);
-}
-
 export function makeMcpManageTool(host: McpManageToolHost, lang?: () => ServerLang): ToolDefinition {
 	const getLang: () => ServerLang = lang ?? (() => "en");
 	const reply = (
@@ -211,8 +196,8 @@ export function makeMcpManageTool(host: McpManageToolHost, lang?: () => ServerLa
 				return reply(
 					pick(
 						L,
-						`已安装 MCP 服务器「${res.name}」（作用域：${res.scope}，状态：${res.status}）。${toolHint}${sessionHint(L)}`,
-						`Installed MCP server "${res.name}" (scope: ${res.scope}, status: ${res.status}).${toolHint}${sessionHint(L)}`,
+						`已安装 MCP 服务器「${res.name}」（作用域：${res.scope}，状态：${res.status}）。${toolHint}`,
+						`Installed MCP server "${res.name}" (scope: ${res.scope}, status: ${res.status}).${toolHint}`,
 						"mcp_manage.install.ok",
 						{ name: res.name ?? "", scope: res.scope ?? "project", status: res.status ?? "stopped", toolHint },
 					),
@@ -222,7 +207,6 @@ export function makeMcpManageTool(host: McpManageToolHost, lang?: () => ServerLa
 						scope: res.scope,
 						status: res.status,
 						toolCount: toolNames.length,
-						sessionReloadHint: true,
 						...(res.error ? { error: res.error } : {}),
 					},
 				);
@@ -258,12 +242,12 @@ export function makeMcpManageTool(host: McpManageToolHost, lang?: () => ServerLa
 				return reply(
 					pick(
 						L,
-						`已移除 MCP 服务器「${name}」并同步工具列表。${sessionHint(L)}`,
-						`Removed MCP server "${name}" and synced tools.${sessionHint(L)}`,
+						`已移除 MCP 服务器「${name}」并同步工具列表。`,
+						`Removed MCP server "${name}" and synced tools.`,
 						"mcp_manage.remove.ok",
 						{ name },
 					),
-					{ ok: true, name, sessionReloadHint: true },
+					{ ok: true, name },
 				);
 			}
 
@@ -272,12 +256,12 @@ export function makeMcpManageTool(host: McpManageToolHost, lang?: () => ServerLa
 			return reply(
 				pick(
 					L,
-					`已重新加载全部 MCP 服务器（共 ${servers.length} 个，运行中 ${runningCount} 个）。${sessionHint(L)}`,
-					`Reloaded all MCP servers (${servers.length} total, ${runningCount} running).${sessionHint(L)}`,
+					`已重新加载全部 MCP 服务器（共 ${servers.length} 个，运行中 ${runningCount} 个）。`,
+					`Reloaded all MCP servers (${servers.length} total, ${runningCount} running).`,
 					"mcp_manage.reload.ok",
 					{ count: servers.length, running: runningCount },
 				),
-				{ count: servers.length, running: runningCount, sessionReloadHint: true },
+				{ count: servers.length, running: runningCount },
 			);
 		},
 	});

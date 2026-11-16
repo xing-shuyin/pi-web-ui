@@ -3784,7 +3784,7 @@
 		"mcp_manage.check.not_installed": "Nenhum servidor MCP correspondente a \"{query}\" está instalado (installed=false). Use action=\"install\" para instalar.",
 		"mcp_manage.install.fail": "Falha ao instalar o servidor MCP: {error}",
 		"mcp_manage.install.ok": "Servidor MCP \"{name}\" instalado (escopo: {scope}, status: {status}).{toolHint}",
-		"mcp_manage.install.tools": "\nFerramentas expostas ({count}): {tools}",
+		"mcp_manage.install.tools": "\nFerramentas ({count}): {tools}",
 		"mcp_manage.list.empty": "Nenhum servidor MCP configurado.\nConfiguração do projeto: {projectPath}\nConfiguração global: {globalPath}",
 		"mcp_manage.list.ok": "Servidores MCP configurados ({count}):\n{lines}",
 		"mcp_manage.reload.ok": "Todos os servidores MCP foram recarregados ({count} no total, {running} em execução).",
