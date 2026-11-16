@@ -17,13 +17,13 @@ if (!CHROME_PATH) {
 	const calls = [];
 	let tasks = [],
 		tunnels = [];
-	const html = `<!doctype html><style>:root{--bg:#111827;--bg-elev:#182030;--bg-elev2:#223047;--text:#eee;--text-faint:#bbc;--border:#456;--accent:#8b5cf6;--accent-contrast:#fff}body{margin:0}#app{height:950px;width:1280px}</style><script type="importmap">{"imports":{"@pi-web-ui/plugin-sdk/client":"/pi/sdk.mjs"}}</script><div id="app"></div><script type="module">
+	const html = `<!doctype html><html lang="zh-CN"><style>:root{--bg:#111827;--bg-elev:#182030;--bg-elev2:#223047;--text:#eee;--text-faint:#bbc;--border:#456;--accent:#8b5cf6;--accent-contrast:#fff}body{margin:0}#app{height:950px;width:1280px}</style><script type="importmap">{"imports":{"@pi-web-ui/plugin-sdk/client":"/pi/sdk.mjs"}}</script><div id="app"></div><script type="module">
 	import plugin from '/pi/plugins/remote-workbench/client/entry.mjs';
 	window.messages=[];window.listenerCount=()=>listeners.size;const listeners=new Set();let number=0;
 	window.emit=(msg)=>{for(const cb of listeners)cb(msg)};
 	window.ctx={appUrl:(p)=>'/pi'+p,onData(cb){listeners.add(cb);return()=>listeners.delete(cb)},send(m){messages.push(m);if(m.action==='shell_input'){const writable=!window.blockNextInput;queueMicrotask(()=>emit({res:true,reqId:m.reqId,ok:true,accepted:true,writable}));window.blockNextInput=false;}if(m.action==='shell_open'||m.action==='shell_attach'){const id='shell-'+(++number);queueMicrotask(()=>emit({res:true,action:m.action,reqId:m.reqId,ok:true,shellId:id,resumeToken:m.resumeToken||'token-'+number}));}}};
 	window.mount=()=>{window.unmount=plugin.mount(document.querySelector('#app'),ctx)};window.mount();window.ready=true;
-	</script>`;
+	</script></html>`;
 	const server = createServer(async (req, res) => {
 		try {
 			const url = new URL(req.url, "http://mock");
@@ -33,6 +33,11 @@ if (!CHROME_PATH) {
 				return;
 			}
 			if (url.pathname === "/pi/sdk.mjs") {
+				res.setHeader("Content-Type", "text/javascript");
+				res.end(await readFile(resolve(base, "plugin-sdk/client.mjs")));
+				return;
+			}
+			if (url.pathname === "/pi/client-utils.mjs") {
 				res.setHeader("Content-Type", "text/javascript");
 				res.end(await readFile(resolve(base, "plugin-sdk/client-utils.mjs")));
 				return;
@@ -209,8 +214,26 @@ if (!CHROME_PATH) {
 		await page.waitForTimeout(80);
 		assert.equal(await page.evaluate(() => messages.length), finalCount);
 		assert.deepEqual(errors, []);
+
+		// 插件词典的英文分支：同一页面语言为 en 时应渲染英文文案
+		const enPage = await browser.newPage({ viewport: { width: 1360, height: 1000 } });
+		const enErrors = [];
+		enPage.on("pageerror", (err) => enErrors.push(err.message));
+		enPage.on("dialog", (dialog) => dialog.accept());
+		await enPage.addInitScript(() => localStorage.setItem("pi-web-ui:lang", "en"));
+		await enPage.goto(`http://127.0.0.1:${server.address().port}`);
+		await enPage.waitForFunction(() => window.ready);
+		await enPage.getByText("Hosts", { exact: true }).waitFor();
+		assert.match(await enPage.locator('.rw-nav-btn[data-tab="tunnels"]').textContent(), /^Port Forwarding \(\d+\)$/);
+		assert.match(await enPage.locator('.rw-nav-btn[data-tab="term"]').textContent(), /^Web Terminal \(\d+\)$/);
+		assert.equal(await enPage.getByText("Multi-host tasks", { exact: true }).count(), 1);
+		assert.equal(await enPage.locator(".rw-hosts-toolbar > div").nth(1).textContent(), "Global hosts: 2");
+		assert.equal(await enPage.locator(".rw-op-del").first().getAttribute("title"), "Delete from the global inventory");
+		assert.deepEqual(enErrors, []);
+		await enPage.close();
+
 		console.log(
-			"PASS remote-workbench UI: module import, hosts/filter, tasks/cancel, tunnels, UTF8/search, paste, detach/restore",
+			"PASS remote-workbench UI: module import, hosts/filter, tasks/cancel, tunnels, UTF8/search, paste, detach/restore, zh+en copy",
 		);
 	} finally {
 		await browser?.close();

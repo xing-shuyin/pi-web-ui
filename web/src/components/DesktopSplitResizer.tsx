@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState, type PointerEvent } from "react";
 import { isDesktopShell, type DesktopBrowserBridge, type DesktopShellWindow } from "../desktop";
+import { useT } from "../i18n";
 
 interface DesktopBrowserState {
 	mode?: "browser" | "agent" | "split";
@@ -7,6 +8,7 @@ interface DesktopBrowserState {
 }
 
 export function DesktopSplitResizer() {
+	const t = useT();
 	const [desktopState, setDesktopState] = useState<DesktopBrowserState | null>(null);
 	const [dragging, setDragging] = useState(false);
 	const [snapMode, setSnapMode] = useState<"agent" | "browser" | null>(null);
@@ -119,15 +121,15 @@ export function DesktopSplitResizer() {
 			onPointerMove={handlePointerMove}
 			onPointerUp={handlePointerUp}
 			onPointerCancel={handlePointerUp}
-			title="按住拖动调整分栏比例，拖至边缘可隐藏"
+			title={t("desktopSplitResizerTip")}
 		>
 			<div className="desktop-split-resizer-line" />
 			{dragging && (
 				<div className="desktop-split-resizer-badge">
 					{snapMode === "agent"
-						? "释放隐藏浏览器"
+						? t("desktopSplitHideBrowser")
 						: snapMode === "browser"
-							? "释放隐藏智能体"
+							? t("desktopSplitHideAgent")
 							: `${Math.round(currentRatio * 100)}% | ${Math.round((1 - currentRatio) * 100)}%`}
 				</div>
 			)}

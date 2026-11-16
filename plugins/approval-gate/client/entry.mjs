@@ -1,60 +1,16 @@
 import { defineView } from "./sdk/index.mjs";
+import { makeT } from "./i18n.mjs";
 
-const I18N = {
-	zh: {
-		title: "拍板",
-		pendingCount: (n) => `待拍板 ${n}`,
-		done: "全部处理完毕",
-		doneHint: "定时任务有新拍板请求时会自动出现在这里。",
-		jump: "点击跳转会话拍板",
-		noConv: "无关联会话（登记时未提供 conversationId）",
-		dismiss: "忽略",
-		onlyPending: "只看待拍板",
-		resolved: "已拍板",
-		dismissed: "已忽略",
-		emptyFiltered: "没有待拍板项",
-		failure: "加载失败，请稍后刷新重试。",
-		time: {
-			now: "刚刚",
-			min: (n) => `${n} 分钟前`,
-			hour: (n) => `${n} 小时前`,
-			yesterday: "昨天",
-			day: (n) => `${n} 天前`,
-		},
-	},
-	en: {
-		title: "Approvals",
-		pendingCount: (n) => `${n} pending`,
-		done: "All clear",
-		doneHint: "New approval requests from scheduled tasks will appear here automatically.",
-		jump: "Click to open the conversation",
-		noConv: "No linked conversation (registered without conversationId)",
-		dismiss: "Dismiss",
-		onlyPending: "Pending only",
-		resolved: "Resolved",
-		dismissed: "Dismissed",
-		emptyFiltered: "No pending items",
-		failure: "Failed to load. Please refresh and retry.",
-		time: {
-			now: "just now",
-			min: (n) => `${n}m ago`,
-			hour: (n) => `${n}h ago`,
-			yesterday: "yesterday",
-			day: (n) => `${n}d ago`,
-		},
-	},
-};
-
-const ZH = (navigator.language || "").toLowerCase().startsWith("zh");
-const t = ZH ? I18N.zh : I18N.en;
+/** 视图文案：语言解析 / 回退 / 插值都在 SDK 里，这里只按当前界面语言取词。 */
+const t = makeT();
 
 function relTime(iso) {
 	const ms = Date.now() - (Date.parse(iso) || 0);
-	if (ms < 60e3) return t.time.now;
-	if (ms < 3600e3) return t.time.min(Math.floor(ms / 60e3));
-	if (ms < 86400e3) return t.time.hour(Math.floor(ms / 3600e3));
+	if (ms < 60e3) return t("timeNow");
+	if (ms < 3600e3) return t("timeMinutes", { n: Math.floor(ms / 60e3) });
+	if (ms < 86400e3) return t("timeHours", { n: Math.floor(ms / 3600e3) });
 	const days = Math.floor(ms / 86400e3);
-	return days === 1 ? t.time.yesterday : t.time.day(days);
+	return days === 1 ? t("timeYesterday") : t("timeDays", { n: days });
 }
 
 function registerOpenAction() {
@@ -171,12 +127,12 @@ export default defineView({
 			}
 			if (isPending) {
 				const canJump = Boolean(it.conversationId);
-				row4.append(el("span", canJump ? "ag-jump" : "ag-jump noconv", canJump ? t.jump : t.noConv));
-				const btn = el("button", "ag-btn", t.dismiss);
+				row4.append(el("span", canJump ? "ag-jump" : "ag-jump noconv", canJump ? t("jump") : t("noConv")));
+				const btn = el("button", "ag-btn", t("dismiss"));
 				btn.dataset.dismiss = it.id;
 				row4.append(btn);
 			} else {
-				row4.append(el("span", "ag-status", it.status === "dismissed" ? t.dismissed : t.resolved));
+				row4.append(el("span", "ag-status", it.status === "dismissed" ? t("dismissed") : t("resolved")));
 			}
 			main.append(row4);
 			el2.append(main);
@@ -197,17 +153,17 @@ export default defineView({
 			const done = items.filter((x) => x.status !== "pending");
 
 			const head = el("div", "ag-head");
-			head.append(el("div", "ag-title", `🪧 ${t.title}`));
+			head.append(el("div", "ag-title", `🪧 ${t("title")}`));
 			const right = el("div", "ag-head-right");
 			const toggleLabel = el("label", "ag-toggle");
 			const cb = document.createElement("input");
 			cb.type = "checkbox";
 			cb.id = "ag-only";
 			cb.checked = onlyPending;
-			toggleLabel.append(cb, el("span", "", t.onlyPending));
+			toggleLabel.append(cb, el("span", "", t("onlyPending")));
 			right.append(
 				toggleLabel,
-				el("span", `ag-badge ${pending.length ? "hot" : "calm"}`, t.pendingCount(pending.length)),
+				el("span", `ag-badge ${pending.length ? "hot" : "calm"}`, t("pendingCount", { n: pending.length })),
 			);
 			head.append(right);
 			wrap.append(head);
@@ -223,8 +179,8 @@ export default defineView({
 				const empty = el("div", "ag-empty");
 				empty.append(
 					el("div", "ag-empty-icon", "✅"),
-					el("div", "ag-empty-title", onlyPending ? t.emptyFiltered : t.done),
-					el("div", "ag-empty-hint", t.doneHint),
+					el("div", "ag-empty-title", onlyPending ? t("emptyFiltered") : t("done")),
+					el("div", "ag-empty-hint", t("doneHint")),
 				);
 				list.append(empty);
 			}

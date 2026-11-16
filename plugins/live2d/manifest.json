@@ -2,7 +2,7 @@
 	"id": "live2d",
 	"name": "Live2D 看板娘",
 	"nameEn": "Live2D Companion",
-	"version": "0.1.18",
+	"version": "0.1.21",
 	"icon": "🐾",
 	"iconSvg": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><path d=\"M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 18c-4.41 0-8-3.59-8-8s3.59-8 8-8 8 3.59 8 8-3.59 8-8 8zm-2-9c.55 0 1-.45 1-1s-.45-1-1-1-1 .45-1 1 .45 1 1 1zm4 0c.55 0 1-.45 1-1s-.45-1-1-1-1 .45-1 1 .45 1 1 1zm-2 5c1.66 0 3-1.34 3-3H9c0 1.66 1.34 3 3 3z\"/></svg>",
 	"description": "页面悬浮 Live2D 桌面看板娘宠物：支持 Cubism 2/3/4 模型、音乐音频实时口型对齐 (Lip Sync)、自然眨眼与抛媚眼、透明与完全点击穿透、本地模型一键上传、鼠标视线跟随与 AI 操控工具。",
@@ -25,10 +25,22 @@
 			"label": "当前看板娘模型",
 			"default": "shizuku",
 			"options": [
-				{ "value": "shizuku", "label": "🌸 雫 (Shizuku - Cubism 2)" },
-				{ "value": "haru", "label": "🌿 春 (Haru - Cubism 4)" },
-				{ "value": "hiyori", "label": "☀️ 日和 (Hiyori - Cubism 4)" },
-				{ "value": "wanko", "label": "🐶 萌柴 (Wanko - Cubism 4)" }
+				{
+					"value": "shizuku",
+					"label": "🌸 雫 (Shizuku - Cubism 2)"
+				},
+				{
+					"value": "haru",
+					"label": "🌿 春 (Haru - Cubism 4)"
+				},
+				{
+					"value": "hiyori",
+					"label": "☀️ 日和 (Hiyori - Cubism 4)"
+				},
+				{
+					"value": "wanko",
+					"label": "🐶 萌柴 (Wanko - Cubism 4)"
+				}
 			],
 			"hint": "选择默认展示的看板娘角色（全部内置离线就绪），也可在挂件右键菜单或设置面板中一键换装。"
 		},
@@ -38,8 +50,14 @@
 			"label": "默认交互模式",
 			"default": "mouse",
 			"options": [
-				{ "value": "mouse", "label": "👀 鼠标视线跟随 (Head & Eye Tracking)" },
-				{ "value": "idle", "label": "💤 自然待机 (Breathing & Auto Blink)" }
+				{
+					"value": "mouse",
+					"label": "👀 鼠标视线跟随 (Head & Eye Tracking)"
+				},
+				{
+					"value": "idle",
+					"label": "💤 自然待机 (Breathing & Auto Blink)"
+				}
 			],
 			"hint": "视线跟随模式下看板娘眼珠和头部会跟随鼠标转动；待机模式下自然呼吸。"
 		},
@@ -47,7 +65,7 @@
 			"key": "scale",
 			"type": "number",
 			"label": "模型初始缩放比例",
-			"default": 1.0,
+			"default": 1,
 			"hint": "模型初始大小比例（0.4 到 2.0），也可在挂件上滚动鼠标滚轮快速缩放。"
 		},
 		{

@@ -193,8 +193,8 @@ export const AGENT_TOOL_CATALOG: AgentToolEntry[] = [
 		group: "other",
 		defaultOn: true,
 		dshVisible: false,
-		descKey: "agentBotEnabledDesc",
-		offHintKey: "agentBotOffHint",
+		descKey: "agentBotToolEnabledDesc",
+		offHintKey: "agentBotToolOffHint",
 	},
 	{
 		name: PATCH_TOOL_NAME,

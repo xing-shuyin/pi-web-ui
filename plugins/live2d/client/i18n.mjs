@@ -1,3 +1,5 @@
+import { createPluginI18n } from "@pi-web-ui/plugin-sdk/client";
+
 const DICT = {
 	zh: {
 		"topbar.toggle": "显示/隐藏看板娘 (Alt+L)",
@@ -83,6 +85,113 @@ const DICT = {
 		"toast.switched_mode": "已切换模式为：",
 		"toast.click_through_on": "已开启点击穿透，点击顶栏图标或按 Alt+L 可随时退出",
 		"toast.click_through_off": "已恢复正常交互模式",
+		"bubble.model_load_failed": "加载 {name} 失败，已恢复",
+		"music.now_playing": "🎵 正在播放: {title}",
+		"music.untitled": "音乐",
+		"music.demo_track": "🎹 示范旋律 (Demo Melody)",
+		"audio.local_track": "本地音乐",
+		"audio.url_track": "网络音频",
+		"audio.speech_track": "语音朗读",
+		"model.shizuku": "🌸 雫 (Shizuku - Cubism 2)",
+		"model.haru": "🌿 春 (Haru - Cubism 4)",
+		"model.hiyori": "☀️ 日和 (Hiyori - Cubism 4)",
+		"model.wanko": "🐶 萌柴 (Wanko - Cubism 4)",
+	},
+	"zh-TW": {
+		"topbar.toggle": "顯示/隱藏看板娘 (Alt+L)",
+		"bubble.default": "你好呀！今天想寫點什麼程式碼呢？",
+		"bubble.thought_label": "心聲",
+		"bubble.thinking": "正在認真思考中...",
+		"bubble.done": "回答完成啦！",
+		"bubble.error": "嗚，好像遇到了一點小麻煩...",
+		"bubble.poke_head": "哇！摸摸頭~ (´▽`ʃ♡ƪ)",
+		"bubble.poke_body": "別戳啦，好癢呀~ >///<",
+		"bubble.poke_mouth": "想吃草莓蛋糕了！🍰",
+		"bubble.random1": "今天也是充滿幹勁的一天！✨",
+		"bubble.random2": "累了就喝口水，休息一下眼睛吧~ 🍵",
+		"bubble.random3": "程式碼寫得真棒，繼續加油！🚀",
+		"bubble.random4": "有什麼難題都可以交給我和 AI 智慧體哦！💡",
+		"menu.mode": "互動模式",
+		"menu.mode.mouse": "👀 滑鼠視線跟隨",
+		"menu.mode.idle": "💤 自然呼吸待機",
+		"menu.click_through_enable": "👻 開啟點選穿透",
+		"menu.click_through_disable": "🔓 取消點選穿透",
+		"menu.expressions": "表情選擇",
+		"menu.motions": "動作互動",
+		"menu.models": "角色切換",
+		"menu.reset_pos": "📍 恢復預設位置",
+		"menu.settings": "⚙️ 看板娘設定",
+		"menu.hide": "✕ 暫時收起掛件",
+		"settings.title": "Live2D 看板娘設定",
+		"settings.models": "已配置模型",
+		"settings.upload_title": "📦 上傳本地模型",
+		"settings.upload_desc": "支援直接拖入/選擇 .zip 模型壓縮包，或直接選擇解壓後的本地模型資料夾。",
+		"settings.upload_zip_btn": "📁 上傳 ZIP 壓縮包",
+		"settings.upload_folder_btn": "📂 上傳模型資料夾",
+		"settings.uploading": "正在上傳與解壓解析模型...",
+		"settings.upload_success": "模型上傳成功！",
+		"settings.upload_failed": "上傳失敗：",
+		"settings.add_model": "+ 外部 URL 匯入",
+		"settings.model_name": "顯示名稱",
+		"settings.model_url": "模型配置地址 (.model3.json 或 .model.json)",
+		"settings.scale": "掛件縮放比例",
+		"settings.click_through": "完全點選穿透 (Ghost 幽靈模式)",
+		"settings.click_through_hint":
+			"預設人物透明區域已自動穿透；開啟此項後人物身體也完全不攔截滑鼠，絲毫不擋頁面點選與操作。",
+		"settings.react_agent": "跟隨 AI 思考與回答情緒聯動",
+		"settings.sound": "互動輕提示音",
+		"settings.save": "儲存設定",
+		"settings.cancel": "取消",
+		"settings.del": "刪除",
+		"settings.apply": "立即切換",
+		"actions.expressions": "表情",
+		"actions.switch_model": "換裝",
+		"actions.music": "音樂口型",
+		"actions.mode": "模式",
+		"actions.click_through": "穿透",
+		"actions.settings": "設定",
+		"actions.close": "收起",
+		"menu.music_and_blink": "音樂與眨眼",
+		"menu.music_panel": "🎵 音樂口型對齊",
+		"menu.blink_eye": "😉 眨眨眼",
+		"menu.wink_eye": "😜 拋媚眼",
+		"music.title": "音樂口型對齊",
+		"music.track_idle": "未在播放音樂",
+		"music.source_local": "本地音樂",
+		"music.source_local_desc": "選擇或拖入本地 MP3/WAV/OGG 等音樂檔案播放",
+		"music.source_demo": "示範旋律",
+		"music.source_demo_desc": "一鍵播放內建 Lo-Fi 示範旋律與口型對齊",
+		"music.source_url": "網路音訊",
+		"music.url_placeholder": "輸入音訊直鏈 (http/https)...",
+		"music.play": "播放",
+		"music.stop": "停止",
+		"music.play_pause": "播放/暫停",
+		"music.lip_meter_desc": "根據即時音訊音量與人聲共振峰驅動嘴唇開合",
+		"music.sens_label": "口型靈敏度",
+		"music.volume_label": "音樂音量",
+		"music.voice_only": "只跟人聲唱字才張嘴",
+		"music.voice_only_desc": "開啟後只在檢測到唱歌人聲時張嘴，純伴奏間奏自動閉嘴；關閉則跟隨整曲音量律動",
+		"music.auto_blink": "自然呼吸眨眼",
+		"music.blink_now": "😉 眨眨眼",
+		"music.wink_now": "😜 拋媚眼",
+		"settings.auto_blink": "自然隨機眨眼與連眨",
+		"settings.voice_only": "只跟人聲（間奏閉嘴）",
+		"settings.lipsync_sens": "音樂口型開合靈敏度",
+		"toast.switched_model": "已切換看板娘為：",
+		"toast.switched_mode": "已切換模式為：",
+		"toast.click_through_on": "已開啟點選穿透，點選頂欄圖示或按 Alt+L 可隨時退出",
+		"toast.click_through_off": "已恢復正常互動模式",
+		"bubble.model_load_failed": "載入 {name} 失敗，已恢復",
+		"music.now_playing": "🎵 正在播放: {title}",
+		"music.untitled": "音樂",
+		"music.demo_track": "🎹 示範旋律 (Demo Melody)",
+		"audio.local_track": "本地音樂",
+		"audio.url_track": "網路音訊",
+		"audio.speech_track": "語音朗讀",
+		"model.shizuku": "🌸 雫 (Shizuku - Cubism 2)",
+		"model.haru": "🌿 春 (Haru - Cubism 4)",
+		"model.hiyori": "☀️ 日和 (Hiyori - Cubism 4)",
+		"model.wanko": "🐶 萌柴 (Wanko - Cubism 4)",
 	},
 	en: {
 		"topbar.toggle": "Toggle Live2D Companion (Alt+L)",
@@ -169,29 +278,26 @@ const DICT = {
 		"toast.switched_mode": "Switched mode to: ",
 		"toast.click_through_on": "Click-through enabled. Click topbar icon or press Alt+L to exit",
 		"toast.click_through_off": "Normal interaction restored",
+		"bubble.model_load_failed": "Failed to load {name}; restored the previous model",
+		"music.now_playing": "🎵 Now playing: {title}",
+		"music.untitled": "Music",
+		"music.demo_track": "🎹 Demo Melody",
+		"audio.local_track": "Local audio",
+		"audio.url_track": "Online audio",
+		"audio.speech_track": "Speech",
+		"model.shizuku": "🌸 Shizuku (Cubism 2)",
+		"model.haru": "🌿 Haru (Cubism 4)",
+		"model.hiyori": "☀️ Hiyori (Cubism 4)",
+		"model.wanko": "🐶 Wanko (Cubism 4)",
 	},
 };
 
+/** 当前界面语言（词典里存在的那一个）；解析与回退由 SDK 统一实现。 */
 export function detectLang() {
-	try {
-		const docLang = document.documentElement.lang;
-		if (docLang && docLang.toLowerCase().startsWith("zh")) return "zh";
-		const navLang = navigator.language;
-		if (navLang && navLang.toLowerCase().startsWith("zh")) return "zh";
-	} catch {}
-	return "en";
+	return createPluginI18n(DICT).locale;
 }
 
+/** 取文案函数：显式 lang 优先（插件设置可选），否则跟随界面语言。 */
 export function makeT(lang = "zh") {
-	const current = DICT[lang] || DICT.zh;
-	const fallback = DICT.en;
-	return (key, params) => {
-		let text = current[key] || fallback[key] || key;
-		if (params && typeof params === "object") {
-			for (const [k, v] of Object.entries(params)) {
-				text = text.replace(new RegExp(`{${k}}`, "g"), String(v));
-			}
-		}
-		return text;
-	};
+	return createPluginI18n(DICT, { locale: lang }).t;
 }

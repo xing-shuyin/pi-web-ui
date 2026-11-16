@@ -2,6 +2,7 @@ import type { CanvasGraphSummary, ServerMessage } from "./types";
 import type { AtHit } from "./at-mention";
 
 export const CANVAS_LIST_EVENT = "pi:canvas-list-result";
+// Mention trigger vocabulary typed after "@": matched, never rendered.
 const triggers = new Set(["canvas", "canvases", "画布", "工作流", "workflow", "workflows"]);
 
 export function mapCanvasHits(graphs: CanvasGraphSummary[], query: string, label: string, limit = 10): AtHit[] {

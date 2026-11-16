@@ -1,4 +1,8 @@
 import { loadPlayer, savePlayer, PLAYER_STORAGE_KEY } from "./player-storage.mjs";
+import { makeT } from "./i18n.mjs";
+
+/** 面板文案：语言解析 / 回退 / 插值都在 SDK 里，这里只按当前界面语言取词。 */
+const t = makeT();
 
 let globalAudio = null;
 let storageKey = PLAYER_STORAGE_KEY;
@@ -30,10 +34,11 @@ async function attemptRecoverPlayback(reason = "stall") {
 
 	try {
 		recoverAttempts++;
+		// developer-facing, not UI: browser console only
 		console.warn(`[LX-Music] 触发播放自愈 (${reason}, 第 ${recoverAttempts} 次, 进度: ${formatTime(resumeTime)})`);
 
 		if (recoverAttempts <= 1 && targetSong._realPlayUrl) {
-			showToast("网络流异常，正在重连当前进度...", 1800);
+			showToast(t("toastStreamRetry"), 1800);
 			const retryUrl = `${apiBaseUrl}/stream?url=${encodeURIComponent(targetSong._realPlayUrl)}&source=${targetSong.source}&_retry=${Date.now()}`;
 			globalAudio.src = retryUrl;
 			if (resumeTime > 0) {
@@ -52,7 +57,7 @@ async function attemptRecoverPlayback(reason = "stall") {
 			return;
 		}
 
-		showToast("正在重新解析音源并恢复播放...", 2000);
+		showToast(t("toastReResolve"), 2000);
 		const urlRes = await fetch(
 			`${apiBaseUrl}/song-url?source=${targetSong.source}&songId=${encodeURIComponent(targetSong.id)}&name=${encodeURIComponent(targetSong.name)}&singer=${encodeURIComponent(targetSong.singer)}&album=${encodeURIComponent(targetSong.album || "")}&quality=${globalState.quality}&_refresh=1`,
 		).then((r) => r.json());
@@ -77,11 +82,12 @@ async function attemptRecoverPlayback(reason = "stall") {
 			}
 			await globalAudio.play().catch(() => {});
 			recoverAttempts = 0;
-			showToast("播放已恢复", 1500);
+			showToast(t("toastPlaybackRecovered"), 1500);
 		} else {
-			showToast(`播放中断，建议在右上角切换音源或重试`, 3500);
+			showToast(t("toastPlaybackInterrupted"), 3500);
 		}
 	} catch (err) {
+		// developer-facing, not UI: browser console only
 		console.error("[LX-Music] 恢复失败:", err);
 	} finally {
 		setTimeout(() => {
@@ -96,7 +102,7 @@ function persistPlayer() {
 	} catch {}
 	if (!storageWarningShown) {
 		storageWarningShown = true;
-		showToast("播放数据保存失败，请检查浏览器存储空间或权限", 5000);
+		showToast(t("toastStorageSaveFailed"), 5000);
 	}
 }
 function resumePlayback() {
@@ -104,7 +110,7 @@ function resumePlayback() {
 	if (!globalAudio?.getAttribute("src")) {
 		return playSong(globalState.currentSong, false, globalState.currentTime);
 	}
-	return globalAudio.play().catch(() => showToast("播放失败，请重试"));
+	return globalAudio.play().catch(() => showToast(t("toastPlayFailed")));
 }
 let globalState = {
 	currentSong: null,
@@ -130,7 +136,7 @@ let globalState = {
 	topListsMap: {},
 	topChartSongs: [],
 	playlistSource: "wy",
-	playlistTag: "全部",
+	playlistTag: "全部", // data: playlist tag is an API query value (server-side vocab, not UI copy)
 	playlistTagsMap: {},
 	playlists: [],
 	activePlaylistDetail: null,
@@ -224,7 +230,7 @@ function updatePipLyric(mainText, subText = "") {
 	pipCtx.font = "bold 24px -apple-system, BlinkMacSystemFont, sans-serif";
 	pipCtx.textAlign = "center";
 	pipCtx.textBaseline = "middle";
-	pipCtx.fillText(mainText || "洛雪音乐", 320, 52);
+	pipCtx.fillText(mainText || t("appName"), 320, 52);
 
 	pipCtx.fillStyle = "#7e8798";
 	pipCtx.font = "15px sans-serif";
@@ -242,13 +248,13 @@ async function togglePictureInPicture() {
 			await document.exitPictureInPicture();
 		} else {
 			updatePipLyric(
-				globalState.lyrics[globalState.currentLrcIndex]?.text || "正在播放",
+				globalState.lyrics[globalState.currentLrcIndex]?.text || t("nowPlaying"),
 				globalState.currentSong ? `${globalState.currentSong.name} - ${globalState.currentSong.singer}` : "",
 			);
 			await pipVideo.requestPictureInPicture();
 		}
 	} catch (err) {
-		showToast(`画中画启动失败: ${err.message}`);
+		showToast(t("toastPipFailed", { error: err.message }));
 	}
 }
 
@@ -337,7 +343,7 @@ function ensureGlobalAudio(apiBase) {
 }
 
 function parseLrc(lrcText) {
-	if (!lrcText) return [{ time: 0, text: "暂无歌词" }];
+	if (!lrcText) return [{ time: 0, text: t("noLyrics") }];
 	const lines = lrcText.split("\n");
 	const result = [];
 	const timeReg = /\[(\d{2}):(\d{2})(?:\.(\d{2,3}))?\]/g;
@@ -357,7 +363,7 @@ function parseLrc(lrcText) {
 	}
 
 	result.sort((a, b) => a.time - b.time);
-	return result.length ? result : [{ time: 0, text: "暂无有效歌词" }];
+	return result.length ? result : [{ time: 0, text: t("noValidLyrics") }];
 }
 
 function formatTime(sec) {
@@ -379,7 +385,7 @@ function updatePlayButtonState() {
 		btn.innerHTML = globalState.isPlaying
 			? `<svg width="22" height="22" viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/></svg>`
 			: `<svg width="22" height="22" viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"/></svg>`;
-		btn.title = globalState.isPlaying ? "暂停 (Space)" : "播放 (Space)";
+		btn.title = globalState.isPlaying ? t("titlePause") : t("titlePlay");
 	}
 	if (coverDisc) {
 		if (globalState.isPlaying) coverDisc.classList.add("playing");
@@ -444,7 +450,7 @@ function updateMediaSession() {
 		navigator.mediaSession.metadata = new MediaMetadata({
 			title: s.name,
 			artist: s.singer,
-			album: s.album || "洛雪音乐",
+			album: s.album || t("appName"),
 			artwork: s.pic ? [{ src: s.pic, sizes: "300x300", type: "image/jpeg" }] : [],
 		});
 		navigator.mediaSession.setActionHandler("play", () => {
@@ -489,10 +495,10 @@ async function playSong(song, addToQueue = true, resumeTime = 0) {
 		if (lrcRes.ok && lrcRes.lyric) {
 			globalState.lyrics = parseLrc(lrcRes.lyric);
 		} else {
-			globalState.lyrics = [{ time: 0, text: `${song.name} - ${song.singer} (暂无歌词)` }];
+			globalState.lyrics = [{ time: 0, text: t("lyricInlineNoLyrics", { name: song.name, singer: song.singer }) }];
 		}
 	} catch {
-		globalState.lyrics = [{ time: 0, text: "歌词加载失败" }];
+		globalState.lyrics = [{ time: 0, text: t("lyricLoadFailed") }];
 	}
 	renderLyrics();
 
@@ -526,7 +532,7 @@ async function playSong(song, addToQueue = true, resumeTime = 0) {
 			].slice(0, 500);
 			renderCurrentTable();
 		} else {
-			showToast(`无法获取播放链接: ${song.name}（若当前音源失效，可在右上角切换为 Fish 音源）`, 3500);
+			showToast(t("toastNoStreamUrl", { name: song.name }), 3500);
 		}
 	} catch (err) {
 		console.error("Play error:", err);
@@ -570,10 +576,10 @@ async function toggleFavorite(song) {
 	const idx = globalState.favorites.findIndex((f) => f.id === song.id && f.source === song.source);
 	if (idx >= 0) {
 		globalState.favorites.splice(idx, 1);
-		showToast(`已从收藏夹移除: ${song.name}`);
+		showToast(t("toastUnfavorited", { name: song.name }));
 	} else {
 		globalState.favorites.push(song);
-		showToast(`已收藏: ${song.name}`);
+		showToast(t("toastFavorited", { name: song.name }));
 	}
 	renderCurrentTable();
 
@@ -595,9 +601,9 @@ async function downloadCurrentSong(song) {
 			).then((r) => r.json());
 			if (urlRes.ok && urlRes.url) url = urlRes.url;
 		}
-		if (!url) return showToast("获取下载链接失败");
+		if (!url) return showToast(t("toastDownloadUrlFailed"));
 
-		showToast(`正在开始下载: ${song.name}`);
+		showToast(t("toastDownloadStart", { name: song.name }));
 		const downloadUrl = `${apiBaseUrl}/download?url=${encodeURIComponent(url)}&name=${encodeURIComponent(song.name)}&singer=${encodeURIComponent(song.singer)}`;
 		const a = document.createElement("a");
 		a.href = downloadUrl;
@@ -606,7 +612,7 @@ async function downloadCurrentSong(song) {
 		a.click();
 		document.body.removeChild(a);
 	} catch (err) {
-		showToast(`下载出错: ${err.message}`);
+		showToast(t("toastDownloadError", { error: err.message }));
 	}
 }
 
@@ -630,19 +636,19 @@ function getCurrentViewSongs() {
 function playAllCurrentList() {
 	const songs = getCurrentViewSongs();
 	if (!songs || songs.length === 0) {
-		return showToast("当前列表没有可播放的歌曲");
+		return showToast(t("toastListEmptyNoPlayable"));
 	}
 
 	globalState.queue = [...songs];
 	updateQueueBadge();
 	playSong(songs[0], false);
-	showToast(`开始播放全部 (共 ${songs.length} 首)`);
+	showToast(t("toastPlayAll", { count: songs.length }));
 }
 
 function addAllCurrentToQueue() {
 	const songs = getCurrentViewSongs();
 	if (!songs || songs.length === 0) {
-		return showToast("当前列表没有歌曲");
+		return showToast(t("toastListEmpty"));
 	}
 
 	let addedCount = 0;
@@ -655,17 +661,17 @@ function addAllCurrentToQueue() {
 	});
 
 	updateQueueBadge();
-	showToast(`已追加 ${addedCount} 首歌曲至播放队列`);
+	showToast(t("toastAddedToQueue", { count: addedCount }));
 }
 
 function addSingleToQueueDirectly(song) {
 	const exists = globalState.queue.find((item) => item.id === song.id && item.source === song.source);
 	if (exists) {
-		showToast(`该歌曲已在队列中: ${song.name}`);
+		showToast(t("toastAlreadyInQueue", { name: song.name }));
 	} else {
 		globalState.queue.push(song);
 		updateQueueBadge();
-		showToast(`已加入播放队列: ${song.name}`);
+		showToast(t("toastAddedSong", { name: song.name }));
 	}
 }
 
@@ -673,7 +679,7 @@ function clearQueue() {
 	globalState.queue = [];
 	updateQueueBadge();
 	renderCurrentTable();
-	showToast("播放队列已清空");
+	showToast(t("toastQueueCleared"));
 }
 
 function renderPlayerBarInfo() {
@@ -685,8 +691,8 @@ function renderPlayerBarInfo() {
 	const discImg = activeRootEl.querySelector("#lx-disc-img");
 
 	if (!s) {
-		if (nameEl) nameEl.textContent = "洛雪音乐";
-		if (singerEl) singerEl.textContent = "选择一首歌曲开始播放";
+		if (nameEl) nameEl.textContent = t("appName");
+		if (singerEl) singerEl.textContent = t("pickSongHint");
 		if (coverEl)
 			coverEl.src =
 				"data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='48' height='48' viewBox='0 0 24 24' fill='none' stroke='%23888' stroke-width='2'><path d='M9 18V5l12-2v13'/><circle cx='6' cy='18' r='3'/><circle cx='18' cy='16' r='3'/></svg>";
@@ -695,7 +701,7 @@ function renderPlayerBarInfo() {
 
 	if (nameEl) nameEl.textContent = s.name;
 	const qualityBadge = s._realQuality ? ` [${s._realQuality.toUpperCase()}]` : "";
-	if (singerEl) singerEl.textContent = `${s.singer} · ${s.album || "精选"}${qualityBadge}`;
+	if (singerEl) singerEl.textContent = `${s.singer} · ${s.album || t("albumFallback")}${qualityBadge}`;
 	const defaultCover =
 		"data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='120' height='120' viewBox='0 0 24 24' fill='none' stroke='%23888' stroke-width='1.5'><path d='M9 18V5l12-2v13'/><circle cx='6' cy='18' r='3'/><circle cx='18' cy='16' r='3'/></svg>";
 	if (coverEl) coverEl.src = s.pic || defaultCover;
@@ -713,7 +719,7 @@ function renderLyrics() {
 		const div = document.createElement("div");
 		div.className = "lx-lrc-line";
 		div.textContent = line.text;
-		div.title = `点击跳转到 ${formatTime(line.time)}`;
+		div.title = t("lyricSeekTitle", { time: formatTime(line.time) });
 		div.addEventListener("click", () => {
 			if (globalAudio) {
 				globalAudio.currentTime = line.time;
@@ -729,7 +735,10 @@ function updateUserApiBadge() {
 	const badge = activeRootEl.querySelector("#lx-active-api-badge");
 	if (!badge) return;
 	if (globalState.activeUserApi) {
-		badge.textContent = `⚡ 音源: ${globalState.activeUserApi.name} (${globalState.activeUserApi.version})`;
+		badge.textContent = t("badgeActiveSource", {
+			name: globalState.activeUserApi.name,
+			version: globalState.activeUserApi.version,
+		});
 		badge.style.display = "inline-flex";
 	} else {
 		badge.style.display = "none";
@@ -741,7 +750,7 @@ function updateQueueBadge() {
 	if (!activeRootEl) return;
 	const queueNavTab = activeRootEl.querySelector(".lx-nav-tab[data-tab='queue']");
 	if (queueNavTab) {
-		queueNavTab.innerHTML = `<span>📋 播放队列</span><span class="lx-badge-count">${globalState.queue.length}</span>`;
+		queueNavTab.innerHTML = `<span>${t("tabQueue")}</span><span class="lx-badge-count">${globalState.queue.length}</span>`;
 	}
 }
 
@@ -754,7 +763,7 @@ function renderCurrentTable() {
 	const songs = getCurrentViewSongs();
 
 	if (listCountEl) {
-		listCountEl.textContent = `共 ${songs.length} 首歌曲`;
+		listCountEl.textContent = t("listCount", { count: songs.length });
 	}
 	if (clearQueueBtn) {
 		clearQueueBtn.style.display = globalState.activeViewTab === "queue" && songs.length > 0 ? "inline-flex" : "none";
@@ -762,14 +771,14 @@ function renderCurrentTable() {
 
 	if (!songs || songs.length === 0) {
 		const tips = {
-			search: "输入关键词开始搜索音乐",
-			top: "正在加载排行榜...",
-			playlist: "歌单内暂无歌曲或正在加载中...",
-			favorites: "暂无收藏歌曲，点击歌曲行 ❤️ 即可收藏",
-			queue: "播放队列为空，点击歌曲直接入队",
-			history: "暂无播放记录，成功播放的歌曲会自动保存在这里",
+			search: t("tipSearch"),
+			top: t("tipTop"),
+			playlist: t("tipPlaylist"),
+			favorites: t("tipFavorites"),
+			queue: t("tipQueue"),
+			history: t("tipHistory"),
 		};
-		tbody.innerHTML = `<tr><td colspan="6" style="text-align: center; color: var(--text-faint, #7e8798); padding: 40px;">${tips[globalState.activeViewTab] || "无数据"}</td></tr>`;
+		tbody.innerHTML = `<tr><td colspan="6" style="text-align: center; color: var(--text-faint, #7e8798); padding: 40px;">${tips[globalState.activeViewTab] || t("noData")}</td></tr>`;
 		return;
 	}
 
@@ -783,7 +792,7 @@ function renderCurrentTable() {
 
 		const tr = document.createElement("tr");
 		if (isCur) tr.classList.add("playing-row");
-		tr.title = "双击播放";
+		tr.title = t("rowDoubleClickPlay");
 
 		tr.innerHTML = `
 			<td style="width: 44px; text-align: center;">
@@ -799,7 +808,7 @@ function renderCurrentTable() {
 			</td>
 			<td>
 				<div class="lx-song-name">
-					<button class="lx-fav-btn ${isFav ? "active" : ""}" title="${isFav ? "取消收藏" : "收藏"}">
+					<button class="lx-fav-btn ${isFav ? "active" : ""}" title="${isFav ? t("unfavorite") : t("favorite")}">
 						${isFav ? "❤️" : "🤍"}
 					</button>
 					<span class="lx-song-title-text" style="${isCur ? "color: var(--accent, #60a5fa); font-weight: 700;" : ""}" title="${song.name}">${song.name}</span>
@@ -811,13 +820,13 @@ function renderCurrentTable() {
 			<td class="lx-duration">${song.duration}</td>
 			<td style="text-align: right;">
 				<div class="lx-table-actions" style="justify-content: flex-end;">
-					<button class="lx-icon-btn btn-play" title="立即播放">
+					<button class="lx-icon-btn btn-play" title="${t("playNow")}">
 						<svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"/></svg>
 					</button>
-					<button class="lx-icon-btn btn-add" title="直接加入播放队列(不弹窗)">
+					<button class="lx-icon-btn btn-add" title="${t("addToQueueNoDialog")}">
 						<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
 					</button>
-					<button class="lx-icon-btn btn-down" title="下载音频">
+					<button class="lx-icon-btn btn-down" title="${t("downloadAudio")}">
 						<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
 					</button>
 				</div>
@@ -1880,30 +1889,30 @@ function renderApp(el) {
 							<circle cx="18" cy="16" r="3"></circle>
 						</svg>
 					</div>
-					<span>洛雪音乐</span>
+					<span>${t("appName")}</span>
 				</div>
 
 				<div class="lx-nav-tabs" id="lx-nav-tabs">
-					<button class="lx-nav-tab active" data-tab="search">🔍 搜索</button>
-					<button class="lx-nav-tab" data-tab="top">🔥 排行榜</button>
-					<button class="lx-nav-tab" data-tab="playlist">🎶 歌单</button>
-					<button class="lx-nav-tab" data-tab="favorites">❤️ 我的收藏</button>
-					<button class="lx-nav-tab" data-tab="queue">📋 播放队列</button>
-					<button class="lx-nav-tab" data-tab="history">🕘 播放记录</button>
+					<button class="lx-nav-tab active" data-tab="search">${t("tabSearch")}</button>
+					<button class="lx-nav-tab" data-tab="top">${t("tabTop")}</button>
+					<button class="lx-nav-tab" data-tab="playlist">${t("tabPlaylist")}</button>
+					<button class="lx-nav-tab" data-tab="favorites">${t("tabFavorites")}</button>
+					<button class="lx-nav-tab" data-tab="queue">${t("tabQueue")}</button>
+					<button class="lx-nav-tab" data-tab="history">${t("tabHistory")}</button>
 				</div>
 
 				<div class="lx-search-box" id="lx-search-box-wrap">
-					<input type="text" id="lx-search-input" class="lx-search-input" placeholder="搜索歌曲、歌手、专辑..." />
-					<button id="lx-search-btn" class="lx-search-btn" title="搜索">
+					<input type="text" id="lx-search-input" class="lx-search-input" placeholder="${t("searchPlaceholder")}" />
+					<button id="lx-search-btn" class="lx-search-btn" title="${t("search")}">
 						<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
 					</button>
 				</div>
 
 				<div class="lx-action-btns">
-					<span class="lx-api-badge" id="lx-active-api-badge">⚡ 自定义源</span>
+					<span class="lx-api-badge" id="lx-active-api-badge">${t("badgeCustomSource")}</span>
 					<button class="lx-btn" id="lx-open-userapi-btn">
 						<span>🧩</span>
-						<span>音源管理</span>
+						<span>${t("sourceManage")}</span>
 					</button>
 				</div>
 			</div>
@@ -1912,50 +1921,51 @@ function renderApp(el) {
 			<div class="lx-sub-bar" id="lx-sub-bar">
 				<!-- 搜索源 Pills -->
 				<div class="lx-pill-group" id="lx-source-pills">
-					<span style="color: var(--text-faint, #64748b); margin-right: 4px;">音源平台:</span>
-					<button class="lx-pill-btn active" data-src="wy">网易云</button>
-					<button class="lx-pill-btn" data-src="tx">QQ音乐</button>
-					<button class="lx-pill-btn" data-src="kw">酷我</button>
-					<button class="lx-pill-btn" data-src="kg">酷狗</button>
-					<button class="lx-pill-btn" data-src="mg">咪咕</button>
+					<span style="color: var(--text-faint, #64748b); margin-right: 4px;">${t("sourcePlatformLabel")}</span>
+					<button class="lx-pill-btn active" data-src="wy">${t("srcWy")}</button>
+					<button class="lx-pill-btn" data-src="tx">${t("srcTx")}</button>
+					<button class="lx-pill-btn" data-src="kw">${t("srcKw")}</button>
+					<button class="lx-pill-btn" data-src="kg">${t("srcKg")}</button>
+					<button class="lx-pill-btn" data-src="mg">${t("srcMg")}</button>
 				</div>
 
 				<!-- 排行榜的平台与榜单选择 Pills -->
 				<div class="lx-pill-group" id="lx-top-pills" style="display: none; flex-wrap: wrap; gap: 6px;">
 					<div class="lx-pill-subgroup">
-						<span style="color: var(--text-faint, #64748b); margin-right: 4px;">平台:</span>
-						<button class="lx-pill-btn active" data-top-src="wy">网易云</button>
-						<button class="lx-pill-btn" data-top-src="tx">QQ音乐</button>
-						<button class="lx-pill-btn" data-top-src="kw">酷我</button>
-						<button class="lx-pill-btn" data-top-src="kg">酷狗</button>
+						<span style="color: var(--text-faint, #64748b); margin-right: 4px;">${t("platformLabel")}</span>
+						<button class="lx-pill-btn active" data-top-src="wy">${t("srcWy")}</button>
+						<button class="lx-pill-btn" data-top-src="tx">${t("srcTx")}</button>
+						<button class="lx-pill-btn" data-top-src="kw">${t("srcKw")}</button>
+						<button class="lx-pill-btn" data-top-src="kg">${t("srcKg")}</button>
 					</div>
 					<div class="lx-pill-divider"></div>
 					<div class="lx-pill-subgroup" id="lx-top-board-pills">
-						<span style="color: var(--text-faint, #64748b); margin-right: 4px;">榜单:</span>
-						<button class="lx-pill-btn active" data-chart="hot">🔥 热歌榜</button>
-						<button class="lx-pill-btn" data-chart="soar">🚀 飙升榜</button>
-						<button class="lx-pill-btn" data-chart="new">🌟 新歌榜</button>
+						<span style="color: var(--text-faint, #64748b); margin-right: 4px;">${t("chartLabel")}</span>
+						<button class="lx-pill-btn active" data-chart="hot">${t("chartHot")}</button>
+						<button class="lx-pill-btn" data-chart="soar">${t("chartSoar")}</button>
+						<button class="lx-pill-btn" data-chart="new">${t("chartNew")}</button>
 					</div>
 				</div>
 
 				<!-- 歌单的平台与分类标签 Pills -->
 				<div class="lx-pill-group" id="lx-playlist-pills" style="display: none; flex-wrap: wrap; gap: 6px;">
 					<div class="lx-pill-subgroup">
-						<span style="color: var(--text-faint, #64748b); margin-right: 4px;">平台:</span>
-						<button class="lx-pill-btn active" data-pl-src="wy">网易云</button>
-						<button class="lx-pill-btn" data-pl-src="tx">QQ音乐</button>
-						<button class="lx-pill-btn" data-pl-src="kw">酷我</button>
-						<button class="lx-pill-btn" data-pl-src="kg">酷狗</button>
+						<span style="color: var(--text-faint, #64748b); margin-right: 4px;">${t("platformLabel")}</span>
+						<button class="lx-pill-btn active" data-pl-src="wy">${t("srcWy")}</button>
+						<button class="lx-pill-btn" data-pl-src="tx">${t("srcTx")}</button>
+						<button class="lx-pill-btn" data-pl-src="kw">${t("srcKw")}</button>
+						<button class="lx-pill-btn" data-pl-src="kg">${t("srcKg")}</button>
 					</div>
 					<div class="lx-pill-divider"></div>
 					<div class="lx-pill-subgroup" id="lx-playlist-tag-pills">
-						<span style="color: var(--text-faint, #64748b); margin-right: 4px;">分类:</span>
-						<button class="lx-pill-btn active" data-pl-tag="全部">全部</button>
+						<span style="color: var(--text-faint, #64748b); margin-right: 4px;">${t("categoryLabel")}</span>
+						<!-- data: data-pl-tag is the API tag key; the visible label comes from t("playlistAllTag") -->
+						<button class="lx-pill-btn active" data-pl-tag="全部">${t("playlistAllTag")}</button>
 					</div>
 				</div>
 
 				<div style="color: var(--text-faint, #64748b); font-size: 11px; margin-left: auto;">
-					快捷键: 空格(播放/暂停) · 方向键(快进/音量)
+					${t("shortcutHint")}
 				</div>
 			</div>
 
@@ -1965,17 +1975,17 @@ function renderApp(el) {
 				<div class="lx-playlist-grid-wrap" id="lx-playlist-grid-wrap" style="display: none;">
 					<div class="lx-playlist-grid-header">
 						<div style="display: flex; align-items: center; gap: 10px;">
-							<span id="lx-playlist-category-title" class="lx-playlist-category-title">精选热门歌单</span>
-							<span id="lx-playlist-count-badge" class="lx-pill-btn" style="font-size: 10.5px; pointer-events: none;">0 个歌单</span>
+							<span id="lx-playlist-category-title" class="lx-playlist-category-title">${t("playlistCategoryTitle")}</span>
+							<span id="lx-playlist-count-badge" class="lx-pill-btn" style="font-size: 10.5px; pointer-events: none;">${t("playlistCount", { count: 0 })}</span>
 						</div>
 						<div style="display: flex; gap: 8px;">
-							<button class="lx-btn" id="lx-import-playlist-btn" title="输入网易云/QQ/酷我/酷狗歌单链接或ID快速打开">
+							<button class="lx-btn" id="lx-import-playlist-btn" title="${t("importPlaylistTitle")}">
 								<span>🔗</span>
-								<span>导入/直达歌单</span>
+								<span>${t("importPlaylist")}</span>
 							</button>
-							<button class="lx-btn" id="lx-refresh-playlist-btn" title="刷新歌单列表">
+							<button class="lx-btn" id="lx-refresh-playlist-btn" title="${t("refreshPlaylistTitle")}">
 								<span>🔄</span>
-								<span>刷新</span>
+								<span>${t("refresh")}</span>
 							</button>
 						</div>
 					</div>
@@ -1991,10 +2001,10 @@ function renderApp(el) {
 						<img id="lx-detail-cover" class="lx-detail-cover" src="" alt="cover" />
 						<div class="lx-detail-info">
 							<div style="display: flex; align-items: center; justify-content: space-between; gap: 8px;">
-								<h2 id="lx-detail-title" class="lx-detail-title">歌单详情</h2>
-								<button class="lx-btn lx-back-btn" id="lx-back-playlist-btn" title="返回歌单列表">
+								<h2 id="lx-detail-title" class="lx-detail-title">${t("playlistDetailTitle")}</h2>
+								<button class="lx-btn lx-back-btn" id="lx-back-playlist-btn" title="${t("backToPlaylistTitle")}">
 									<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M19 12H5M12 19l-7-7 7-7"/></svg>
-									<span>返回歌单</span>
+									<span>${t("backToPlaylist")}</span>
 								</button>
 							</div>
 							<div class="lx-detail-meta" id="lx-detail-meta"></div>
@@ -2007,16 +2017,16 @@ function renderApp(el) {
 						<div class="lx-list-left-actions">
 							<button class="lx-btn-primary" id="lx-play-all-btn">
 								<svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"/></svg>
-								<span>播放全部</span>
+								<span>${t("playAll")}</span>
 							</button>
-							<button class="lx-btn" id="lx-add-all-btn" title="将当前列表整张加入播放队列(无确认框)">
-								<span>➕ 全部入队</span>
+							<button class="lx-btn" id="lx-add-all-btn" title="${t("addAllTitle")}">
+								<span>${t("addAll")}</span>
 							</button>
-							<button class="lx-btn" id="lx-clear-queue-btn" style="display: none;" title="清空播放队列">
-								<span>🗑️ 清空队列</span>
+							<button class="lx-btn" id="lx-clear-queue-btn" style="display: none;" title="${t("clearQueueTitle")}">
+								<span>${t("clearQueue")}</span>
 							</button>
 						</div>
-						<div class="lx-list-count" id="lx-list-count">共 0 首歌曲</div>
+						<div class="lx-list-count" id="lx-list-count">${t("listCount", { count: 0 })}</div>
 					</div>
 
 					<table class="lx-table">
@@ -2031,17 +2041,17 @@ function renderApp(el) {
 						<thead>
 							<tr>
 								<th style="text-align: center;">#</th>
-								<th>歌曲标题</th>
-								<th>歌手</th>
-								<th>专辑</th>
-								<th>时长</th>
-								<th style="text-align: right;">操作</th>
+								<th>${t("thTitle")}</th>
+								<th>${t("thSinger")}</th>
+								<th>${t("thAlbum")}</th>
+								<th>${t("thDuration")}</th>
+								<th style="text-align: right;">${t("thActions")}</th>
 							</tr>
 						</thead>
 						<tbody id="lx-song-table-body">
 							<tr>
 								<td colspan="6" style="text-align: center; color: var(--text-faint, #7e8798); padding: 40px;">
-									输入关键词开始搜索音乐
+									${t("tipSearch")}
 								</td>
 							</tr>
 						</tbody>
@@ -2057,7 +2067,7 @@ function renderApp(el) {
 						</div>
 					</div>
 					<div class="lx-lyrics-scroll" id="lx-lyrics-scroll">
-						<div class="lx-lrc-line">暂无歌词</div>
+						<div class="lx-lrc-line">${t("noLyrics")}</div>
 					</div>
 				</div>
 			</div>
@@ -2067,26 +2077,26 @@ function renderApp(el) {
 				<div class="lx-footer-left">
 					<img class="lx-bar-cover" id="lx-bar-cover" src="" alt="Cover" />
 					<div class="lx-bar-info">
-						<div class="lx-bar-song-name" id="lx-bar-song-name">洛雪音乐</div>
-						<div class="lx-bar-singer" id="lx-bar-singer">选择一首歌曲开始播放</div>
+						<div class="lx-bar-song-name" id="lx-bar-song-name">${t("appName")}</div>
+						<div class="lx-bar-singer" id="lx-bar-singer">${t("pickSongHint")}</div>
 					</div>
 				</div>
 
 				<div class="lx-footer-center">
 					<div class="lx-ctrl-btns">
-						<button class="lx-icon-btn" id="lx-mode-btn" title="列表循环">
+						<button class="lx-icon-btn" id="lx-mode-btn" title="${t("modeLoop")}">
 							<span id="lx-mode-icon">🔁</span>
 						</button>
-						<button class="lx-icon-btn" id="lx-prev-btn" title="上一首 (Ctrl+Left)">
+						<button class="lx-icon-btn" id="lx-prev-btn" title="${t("prevTitle")}">
 							<svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><polygon points="19 20 9 12 19 4 19 20"/><line x1="5" y1="19" x2="5" y2="5" stroke="currentColor" stroke-width="2.5"/></svg>
 						</button>
-						<button class="lx-play-main-btn" id="lx-play-btn" title="播放/暂停 (Space)">
+						<button class="lx-play-main-btn" id="lx-play-btn" title="${t("playPauseTitle")}">
 							<svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"/></svg>
 						</button>
-						<button class="lx-icon-btn" id="lx-next-btn" title="下一首 (Ctrl+Right)">
+						<button class="lx-icon-btn" id="lx-next-btn" title="${t("nextTitle")}">
 							<svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><polygon points="5 4 15 12 5 20 5 4"/><line x1="19" y1="5" x2="19" y2="19" stroke="currentColor" stroke-width="2.5"/></svg>
 						</button>
-						<button class="lx-icon-btn" id="lx-pip-btn" title="开启桌面画中画悬浮歌词">
+						<button class="lx-icon-btn" id="lx-pip-btn" title="${t("pipTitle")}">
 							<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="3" width="20" height="14" rx="2"/><rect x="12" y="9" width="8" height="6" rx="1"/></svg>
 						</button>
 					</div>
@@ -2101,11 +2111,11 @@ function renderApp(el) {
 				</div>
 
 				<div class="lx-footer-right">
-					<select class="lx-quality-select" id="lx-quality-select" title="音质选择">
-						<option value="128k">标准 128k</option>
-						<option value="320k" selected>高品 320k</option>
-						<option value="flac">无损 FLAC</option>
-						<option value="hires">Hi-Res 母带</option>
+					<select class="lx-quality-select" id="lx-quality-select" title="${t("qualityTitle")}">
+						<option value="128k">${t("quality128")}</option>
+						<option value="320k" selected>${t("quality320")}</option>
+						<option value="flac">${t("qualityFlac")}</option>
+						<option value="hires">${t("qualityHires")}</option>
 					</select>
 
 					<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><path d="M19.07 4.93a10 10 0 0 1 0 14.14M15.54 8.46a5 5 0 0 1 0 7.07"/></svg>
@@ -2116,13 +2126,13 @@ function renderApp(el) {
 			<!-- 自定义音源弹窗 (支持社区推荐优质源与在线健康诊断) -->
 			<div class="lx-modal-mask" id="lx-userapi-modal">
 				<div class="lx-modal">
-					<div class="lx-modal-title">自定义音源与高音质管理</div>
+					<div class="lx-modal-title">${t("userApiTitle")}</div>
 
 					<!-- 当前音源状态与测试 -->
 					<div class="lx-userapi-section" id="lx-current-api-section" style="display: none; background: rgba(0,0,0,0.25); border: 1px solid var(--border); border-radius: 8px; padding: 10px 12px;">
 						<div class="lx-userapi-sec-title">
-							<span>当前活跃音源</span>
-							<button class="lx-btn" id="lx-probe-btn" style="padding: 2px 8px; font-size: 11px;">🔍 测试可用性</button>
+							<span>${t("currentSource")}</span>
+							<button class="lx-btn" id="lx-probe-btn" style="padding: 2px 8px; font-size: 11px;">${t("probeBtn")}</button>
 						</div>
 						<div id="lx-current-api-desc" style="font-size: 12px; color: var(--text-faint);"></div>
 						<div id="lx-probe-result" style="font-size: 11px; display: none; margin-top: 4px; padding: 4px 8px; border-radius: 4px;"></div>
@@ -2131,8 +2141,8 @@ function renderApp(el) {
 					<!-- 社区推荐可用音源 -->
 					<div class="lx-userapi-section">
 						<div class="lx-userapi-sec-title">
-							<span>社区精选音源 (来自 lx-music-source)</span>
-							<span style="font-size: 11px; color: var(--text-faint);">实时稳定 · 高品质推荐</span>
+							<span>${t("recSourcesTitle")}</span>
+							<span style="font-size: 11px; color: var(--text-faint);">${t("recSourcesHint")}</span>
 						</div>
 						<div id="lx-rec-sources-list" style="display: flex; flex-direction: column; gap: 6px;">
 							<!-- 动态注入推荐音源卡片 -->
@@ -2142,17 +2152,17 @@ function renderApp(el) {
 					<!-- 手动自定义导入 -->
 					<div class="lx-userapi-section">
 						<div class="lx-userapi-sec-title">
-							<span>手动导入脚本或 URL</span>
+							<span>${t("manualImportTitle")}</span>
 						</div>
 						<div style="font-size: 11px; color: var(--text-faint, #7e8798);">
-							支持直接粘贴音源 JS 代码，或输入 GitHub raw 脚本 URL。
+							${t("manualImportHint")}
 						</div>
-						<textarea class="lx-textarea" id="lx-userapi-script" style="height: 80px;" placeholder="粘贴 JS 源码，或输入 https://raw.githubusercontent.com/..."></textarea>
+						<textarea class="lx-textarea" id="lx-userapi-script" style="height: 80px;" placeholder="${t("manualImportPlaceholder")}"></textarea>
 					</div>
 
 					<div style="display: flex; justify-content: flex-end; gap: 10px; margin-top: 4px;">
-						<button class="lx-btn" id="lx-modal-close-btn">关闭</button>
-						<button class="lx-btn" id="lx-modal-save-btn" style="background: var(--accent); color: var(--accent-contrast);">导入并激活</button>
+						<button class="lx-btn" id="lx-modal-close-btn">${t("close")}</button>
+						<button class="lx-btn" id="lx-modal-save-btn" style="background: var(--accent); color: var(--accent-contrast);">${t("importActivate")}</button>
 					</div>
 				</div>
 			</div>
@@ -2160,26 +2170,26 @@ function renderApp(el) {
 			<!-- 导入/直达歌单弹窗 -->
 			<div class="lx-modal-mask" id="lx-import-playlist-modal">
 				<div class="lx-modal" style="width: 460px;">
-					<div class="lx-modal-title">🔗 导入 / 直达歌单</div>
+					<div class="lx-modal-title">${t("importModalTitle")}</div>
 					<div style="font-size: 11.5px; color: var(--text-faint, #94a3b8); line-height: 1.5;">
-						输入各大音乐平台的歌单分享链接或歌单 ID，即可立即在线解析并试听整份歌单：
+						${t("importModalHint")}
 					</div>
 					<div style="display: flex; gap: 8px; align-items: center;">
-						<span style="font-size: 12px; color: var(--text-faint, #64748b);">所属平台:</span>
+						<span style="font-size: 12px; color: var(--text-faint, #64748b);">${t("importPlatformLabel")}</span>
 						<select class="lx-quality-select" id="lx-import-source" style="flex: 1;">
-							<option value="wy">网易云音乐 (163.com)</option>
-							<option value="tx">QQ音乐 (qq.com)</option>
-							<option value="kw">酷我音乐 (kuwo.cn)</option>
-							<option value="kg">酷狗音乐 (kugou.com)</option>
+							<option value="wy">${t("impWy")}</option>
+							<option value="tx">${t("impTx")}</option>
+							<option value="kw">${t("impKw")}</option>
+							<option value="kg">${t("impKg")}</option>
 						</select>
 					</div>
-					<input type="text" class="lx-search-input" id="lx-import-input" style="width: 100%; border-radius: 6px;" placeholder="粘贴歌单链接或纯数字歌单ID..." />
+					<input type="text" class="lx-search-input" id="lx-import-input" style="width: 100%; border-radius: 6px;" placeholder="${t("importInputPlaceholder")}" />
 					<div style="font-size: 10.5px; color: var(--text-faint, #64748b);">
-						支持如：https://music.163.com/#/playlist?id=3778678 或直接输入 3778678
+						${t("importExample")}
 					</div>
 					<div style="display: flex; justify-content: flex-end; gap: 10px; margin-top: 6px;">
-						<button class="lx-btn" id="lx-import-modal-close-btn">取消</button>
-						<button class="lx-btn-primary" id="lx-import-modal-confirm-btn">立即打开</button>
+						<button class="lx-btn" id="lx-import-modal-close-btn">${t("cancel")}</button>
+						<button class="lx-btn-primary" id="lx-import-modal-confirm-btn">${t("openNow")}</button>
 					</div>
 				</div>
 			</div>
@@ -2191,8 +2201,8 @@ function bindEvents(rootEl) {
 	const formatPlayCount = (num) => {
 		const n = parseInt(num || "0", 10);
 		if (isNaN(n) || n <= 0) return "";
-		if (n >= 100000000) return `${(n / 100000000).toFixed(1)}亿`;
-		if (n >= 10000) return `${(n / 10000).toFixed(1)}万`;
+		if (n >= 100000000) return t("playCountHundredMillion", { n: (n / 100000000).toFixed(1) });
+		if (n >= 10000) return t("playCountTenThousand", { n: (n / 10000).toFixed(1) });
 		return String(n);
 	};
 
@@ -2273,7 +2283,7 @@ function bindEvents(rootEl) {
 	});
 
 	const loadTopLists = async (source) => {
-		topBoardPills.innerHTML = `<span style="color: var(--text-faint, #64748b); margin-right: 4px;">榜单:</span><span style="color: var(--text-faint); font-size: 11px;">加载中...</span>`;
+		topBoardPills.innerHTML = `<span style="color: var(--text-faint, #64748b); margin-right: 4px;">${t("chartLabel")}</span><span style="color: var(--text-faint); font-size: 11px;">${t("loading")}</span>`;
 		let boards = globalState.topListsMap[source];
 		if (!boards || !boards.length) {
 			try {
@@ -2287,9 +2297,9 @@ function bindEvents(rootEl) {
 
 		if (!boards || !boards.length) {
 			boards = [
-				{ id: "hot", name: "🔥 热歌榜" },
-				{ id: "soar", name: "🚀 飙升榜" },
-				{ id: "new", name: "🌟 新歌榜" },
+				{ id: "hot", name: t("chartHot") },
+				{ id: "soar", name: t("chartSoar") },
+				{ id: "new", name: t("chartNew") },
 			];
 		}
 
@@ -2297,7 +2307,7 @@ function bindEvents(rootEl) {
 			globalState.topChartBangId = boards[0].id;
 		}
 
-		topBoardPills.innerHTML = `<span style="color: var(--text-faint, #64748b); margin-right: 4px;">榜单:</span>`;
+		topBoardPills.innerHTML = `<span style="color: var(--text-faint, #64748b); margin-right: 4px;">${t("chartLabel")}</span>`;
 		boards.slice(0, 16).forEach((board) => {
 			const bBtn = document.createElement("button");
 			bBtn.className = `lx-pill-btn ${board.id === globalState.topChartBangId ? "active" : ""}`;
@@ -2317,7 +2327,7 @@ function bindEvents(rootEl) {
 
 	const loadTopChart = async (source, bangId) => {
 		const tbody = rootEl.querySelector("#lx-song-table-body");
-		tbody.innerHTML = `<tr><td colspan="6" style="text-align: center; padding: 40px; color: var(--text-faint);">正在获取排行榜歌曲...</td></tr>`;
+		tbody.innerHTML = `<tr><td colspan="6" style="text-align: center; padding: 40px; color: var(--text-faint);">${t("loadingTopSongs")}</td></tr>`;
 		try {
 			const res = await fetch(
 				`${apiBaseUrl}/top-list?source=${source}&bangId=${encodeURIComponent(bangId)}&limit=60`,
@@ -2326,10 +2336,10 @@ function bindEvents(rootEl) {
 				globalState.topChartSongs = res.songs;
 				renderCurrentTable();
 			} else {
-				tbody.innerHTML = `<tr><td colspan="6" style="text-align: center; color: var(--err-text, #f87171); padding: 40px;">获取排行榜歌曲失败</td></tr>`;
+				tbody.innerHTML = `<tr><td colspan="6" style="text-align: center; color: var(--err-text, #f87171); padding: 40px;">${t("topSongsFailed")}</td></tr>`;
 			}
 		} catch (err) {
-			tbody.innerHTML = `<tr><td colspan="6" style="text-align: center; color: var(--err-text, #f87171); padding: 40px;">加载排行榜失败: ${err.message}</td></tr>`;
+			tbody.innerHTML = `<tr><td colspan="6" style="text-align: center; color: var(--err-text, #f87171); padding: 40px;">${t("topChartLoadFailed", { error: err.message })}</td></tr>`;
 		}
 	};
 
@@ -2339,7 +2349,7 @@ function bindEvents(rootEl) {
 			plSrcBtns.forEach((b) => b.classList.remove("active"));
 			btn.classList.add("active");
 			globalState.playlistSource = btn.dataset.plSrc;
-			globalState.playlistTag = "全部";
+			globalState.playlistTag = "全部"; // data: API tag key, not UI copy
 			globalState.activePlaylistDetail = null;
 			updateViewTabUI();
 		});
@@ -2357,10 +2367,11 @@ function bindEvents(rootEl) {
 			} catch {}
 		}
 		if (!tags || !tags.length) {
+			// data: fallback tags mirror the server's tag vocabulary and are also sent as query values
 			tags = ["全部", "热门", "华语", "流行", "民谣", "轻音乐"];
 		}
 
-		playlistTagPills.innerHTML = `<span style="color: var(--text-faint, #64748b); margin-right: 4px;">分类:</span>`;
+		playlistTagPills.innerHTML = `<span style="color: var(--text-faint, #64748b); margin-right: 4px;">${t("categoryLabel")}</span>`;
 		tags.forEach((tag) => {
 			const tBtn = document.createElement("button");
 			tBtn.className = `lx-pill-btn ${tag === globalState.playlistTag ? "active" : ""}`;
@@ -2376,7 +2387,7 @@ function bindEvents(rootEl) {
 	};
 
 	const loadPlaylists = async (source, tag, page = 1) => {
-		playlistCards.innerHTML = `<div style="grid-column: 1 / -1; text-align: center; padding: 40px; color: var(--text-faint);">正在加载精选歌单...</div>`;
+		playlistCards.innerHTML = `<div style="grid-column: 1 / -1; text-align: center; padding: 40px; color: var(--text-faint);">${t("loadingPlaylists")}</div>`;
 		try {
 			const res = await fetch(
 				`${apiBaseUrl}/playlist/list?source=${source}&tag=${encodeURIComponent(tag)}&page=${page}&limit=30`,
@@ -2385,13 +2396,13 @@ function bindEvents(rootEl) {
 			if (res.ok && Array.isArray(res.list) && res.list.length > 0) {
 				globalState.playlists = res.list;
 				const countBadge = rootEl.querySelector("#lx-playlist-count-badge");
-				if (countBadge) countBadge.textContent = `${res.list.length} 个歌单`;
+				if (countBadge) countBadge.textContent = t("playlistCount", { count: res.list.length });
 				renderPlaylistGrid(res.list);
 			} else {
-				playlistCards.innerHTML = `<div style="grid-column: 1 / -1; text-align: center; padding: 40px; color: var(--text-faint);">未找到歌单数据</div>`;
+				playlistCards.innerHTML = `<div style="grid-column: 1 / -1; text-align: center; padding: 40px; color: var(--text-faint);">${t("playlistsEmpty")}</div>`;
 			}
 		} catch (err) {
-			playlistCards.innerHTML = `<div style="grid-column: 1 / -1; text-align: center; padding: 40px; color: var(--err-text, #f87171);">加载歌单失败: ${err.message}</div>`;
+			playlistCards.innerHTML = `<div style="grid-column: 1 / -1; text-align: center; padding: 40px; color: var(--err-text, #f87171);">${t("playlistsLoadFailed", { error: err.message })}</div>`;
 		}
 	};
 
@@ -2406,12 +2417,12 @@ function bindEvents(rootEl) {
 				<div class="lx-playlist-cover-wrap">
 					<img class="lx-playlist-cover" src="${p.pic || ""}" alt="${p.name}" loading="lazy" />
 					${playCountText ? `<div class="lx-playlist-playcount"><span>🎧</span><span>${playCountText}</span></div>` : ""}
-					<div class="lx-playlist-play-hover" title="直接播放整张歌单">
+					<div class="lx-playlist-play-hover" title="${t("playPlaylistTitle")}">
 						<svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"/></svg>
 					</div>
 				</div>
 				<div class="lx-playlist-card-title" title="${p.name}">${p.name}</div>
-				<div class="lx-playlist-card-sub">${p.author ? p.author : p.trackCount ? `${p.trackCount} 首歌曲` : "精选歌单"}</div>
+				<div class="lx-playlist-card-sub">${p.author ? p.author : p.trackCount ? t("trackCount", { count: p.trackCount }) : t("featuredPlaylist")}</div>
 			`;
 
 			card.addEventListener("click", (e) => {
@@ -2423,7 +2434,7 @@ function bindEvents(rootEl) {
 			if (playHoverBtn) {
 				playHoverBtn.addEventListener("click", async (e) => {
 					e.stopPropagation();
-					showToast(`正在加载并播放歌单: ${p.name}...`, 2000);
+					showToast(t("loadingPlaylistThenPlay", { name: p.name }), 2000);
 					try {
 						const detailRes = await fetch(
 							`${apiBaseUrl}/playlist/detail?source=${p.source || globalState.playlistSource}&id=${p.id}`,
@@ -2432,12 +2443,12 @@ function bindEvents(rootEl) {
 							globalState.queue = [...detailRes.playlist.songs];
 							updateQueueBadge();
 							playSong(detailRes.playlist.songs[0], false);
-							showToast(`开始播放整份歌单 (共 ${detailRes.playlist.songs.length} 首)`);
+							showToast(t("playlistPlayAll", { count: detailRes.playlist.songs.length }));
 						} else {
-							showToast("歌单解析失败或暂无可播放歌曲");
+							showToast(t("playlistParseFailed"));
 						}
 					} catch (err) {
-						showToast(`歌单播放失败: ${err.message}`);
+						showToast(t("playlistPlayFailed", { error: err.message }));
 					}
 				});
 			}
@@ -2447,7 +2458,7 @@ function bindEvents(rootEl) {
 	};
 
 	const openPlaylistDetail = async (source, id) => {
-		showToast("正在解析歌单歌曲...", 1500);
+		showToast(t("resolvingPlaylist"), 1500);
 		try {
 			const res = await fetch(`${apiBaseUrl}/playlist/detail?source=${source}&id=${id}`).then((r) => r.json());
 			if (res.ok && res.playlist) {
@@ -2459,11 +2470,13 @@ function bindEvents(rootEl) {
 				const descEl = rootEl.querySelector("#lx-detail-desc");
 
 				if (coverEl) coverEl.src = res.playlist.pic || "";
-				if (titleEl) titleEl.textContent = res.playlist.name || "歌单详情";
+				if (titleEl) titleEl.textContent = res.playlist.name || t("playlistDetailTitle");
 				if (metaEl) {
-					const author = res.playlist.author ? `创建者: ${res.playlist.author}` : "";
-					const count = res.playlist.songs ? `共 ${res.playlist.songs.length} 首歌曲` : "";
-					const playCount = res.playlist.playCount ? `播放: ${formatPlayCount(res.playlist.playCount)}` : "";
+					const author = res.playlist.author ? t("playlistAuthor", { author: res.playlist.author }) : "";
+					const count = res.playlist.songs ? t("listCount", { count: res.playlist.songs.length }) : "";
+					const playCount = res.playlist.playCount
+						? t("playlistPlayCount", { count: formatPlayCount(res.playlist.playCount) })
+						: "";
 					metaEl.innerHTML = [author, count, playCount]
 						.filter(Boolean)
 						.map((t) => `<span>${t}</span>`)
@@ -2473,10 +2486,10 @@ function bindEvents(rootEl) {
 
 				updateViewTabUI();
 			} else {
-				showToast(`无法获取歌单详情: ${res.error || "未知原因"}`);
+				showToast(t("playlistDetailFailed", { error: res.error || t("unknownReason") }));
 			}
 		} catch (err) {
-			showToast(`加载歌单详情失败: ${err.message}`);
+			showToast(t("playlistDetailLoadFailed", { error: err.message }));
 		}
 	};
 
@@ -2522,7 +2535,7 @@ function bindEvents(rootEl) {
 
 		const handleDoImport = () => {
 			const raw = (importInput?.value || "").trim();
-			if (!raw) return showToast("请输入歌单链接或ID");
+			if (!raw) return showToast(t("importInputRequired"));
 
 			let src = importSourceSelect?.value || "wy";
 			let id = raw;
@@ -2547,7 +2560,7 @@ function bindEvents(rootEl) {
 				id = raw.replace(/[^0-9]/g, "");
 			}
 
-			if (!id) return showToast("未能识别出有效的歌单 ID，请检查链接或输入纯数字 ID");
+			if (!id) return showToast(t("importBadId"));
 
 			importPlaylistModal.style.display = "none";
 			globalState.activeViewTab = "playlist";
@@ -2573,7 +2586,7 @@ function bindEvents(rootEl) {
 		globalState.searchKeyword = kw;
 		if (!kw) return;
 		const tbody = rootEl.querySelector("#lx-song-table-body");
-		tbody.innerHTML = `<tr><td colspan="6" style="text-align: center; padding: 40px;">正在检索 ${kw}...</td></tr>`;
+		tbody.innerHTML = `<tr><td colspan="6" style="text-align: center; padding: 40px;">${t("searching", { keyword: kw })}</td></tr>`;
 
 		try {
 			const res = await fetch(
@@ -2581,14 +2594,14 @@ function bindEvents(rootEl) {
 			).then((r) => r.json());
 
 			if (!res.ok || !res.songs || res.songs.length === 0) {
-				tbody.innerHTML = `<tr><td colspan="6" style="text-align: center; padding: 40px; color: var(--text-faint);">未找到相关歌曲</td></tr>`;
+				tbody.innerHTML = `<tr><td colspan="6" style="text-align: center; padding: 40px; color: var(--text-faint);">${t("searchNoResults")}</td></tr>`;
 				return;
 			}
 
 			globalState.searchResults = res.songs;
 			renderCurrentTable();
 		} catch (err) {
-			tbody.innerHTML = `<tr><td colspan="6" style="text-align: center; color: var(--err-text, #bf616a); padding: 40px;">搜索失败: ${err.message}</td></tr>`;
+			tbody.innerHTML = `<tr><td colspan="6" style="text-align: center; color: var(--err-text, #bf616a); padding: 40px;">${t("searchFailed", { error: err.message })}</td></tr>`;
 		}
 	};
 
@@ -2613,9 +2626,9 @@ function bindEvents(rootEl) {
 	const modeBtn = rootEl.querySelector("#lx-mode-btn");
 	const modeIcon = rootEl.querySelector("#lx-mode-icon");
 	const modes = [
-		{ type: "loop", icon: "🔁", title: "列表循环" },
-		{ type: "random", icon: "🔀", title: "随机播放" },
-		{ type: "single", icon: "🔂", title: "单曲循环" },
+		{ type: "loop", icon: "🔁", title: t("modeLoop") },
+		{ type: "random", icon: "🔀", title: t("modeRandom") },
+		{ type: "single", icon: "🔂", title: t("modeSingle") },
 	];
 
 	const savedMode = modes.find((m) => m.type === globalState.playMode);
@@ -2627,7 +2640,7 @@ function bindEvents(rootEl) {
 		globalState.playMode = next.type;
 		modeIcon.textContent = next.icon;
 		modeBtn.title = next.title;
-		showToast(`播放模式: ${next.title}`);
+		showToast(t("toastPlayMode", { mode: next.title }));
 	});
 
 	rootEl.querySelector("#lx-pip-btn").addEventListener("click", togglePictureInPicture);
@@ -2636,7 +2649,7 @@ function bindEvents(rootEl) {
 	qualitySelect.value = globalState.quality;
 	qualitySelect.addEventListener("change", (e) => {
 		globalState.quality = e.target.value;
-		showToast(`已切换音质: ${e.target.options[e.target.selectedIndex].text}`);
+		showToast(t("toastQuality", { quality: e.target.options[e.target.selectedIndex].text }));
 	});
 
 	const track = rootEl.querySelector("#lx-progress-track");
@@ -2687,8 +2700,8 @@ function bindEvents(rootEl) {
 
 					const isDead = item.status === "dead";
 					const statusPill = isDead
-						? `<span class="lx-status-pill lx-status-dead">已失效 (404)</span>`
-						: `<span class="lx-status-pill lx-status-healthy">社区稳定可用</span>`;
+						? `<span class="lx-status-pill lx-status-dead">${t("recStatusDead")}</span>`
+						: `<span class="lx-status-pill lx-status-healthy">${t("recStatusHealthy")}</span>`;
 
 					card.innerHTML = `
 						<div class="lx-userapi-rec-info">
@@ -2701,8 +2714,8 @@ function bindEvents(rootEl) {
 						<div style="flex-shrink: 0;">
 							${
 								isCurrent
-									? `<span style="font-size: 11px; color: var(--accent); font-weight: 600;">正在使用</span>`
-									: `<button class="lx-btn lx-rec-import-btn" style="padding: 4px 10px; font-size: 11px; ${item.recommended ? "background: var(--accent); color: var(--accent-contrast);" : ""}" data-url="${item.url}">${isDead ? "仍要导入" : "一键导入使用"}</button>`
+									? `<span style="font-size: 11px; color: var(--accent); font-weight: 600;">${t("recInUse")}</span>`
+									: `<button class="lx-btn lx-rec-import-btn" style="padding: 4px 10px; font-size: 11px; ${item.recommended ? "background: var(--accent); color: var(--accent-contrast);" : ""}" data-url="${item.url}">${isDead ? t("recImportAnyway") : t("recImport")}</button>`
 							}
 						</div>
 					`;
@@ -2711,7 +2724,7 @@ function bindEvents(rootEl) {
 					if (importBtn) {
 						importBtn.addEventListener("click", async () => {
 							importBtn.disabled = true;
-							importBtn.textContent = "导入中...";
+							importBtn.textContent = t("recImporting");
 							try {
 								const res = await fetch(`${apiBaseUrl}/user-api/import`, {
 									method: "POST",
@@ -2721,16 +2734,16 @@ function bindEvents(rootEl) {
 								if (res.ok) {
 									globalState.activeUserApi = res.meta;
 									updateUserApiBadge();
-									showToast(`音源已激活: ${res.meta.name}`);
+									showToast(t("toastSourceActivated", { name: res.meta.name }));
 									refreshUserApiModal();
 								} else {
-									showToast(`导入失败: ${res.error}`);
+									showToast(t("toastImportFailed", { error: res.error }));
 								}
 							} catch (e) {
-								showToast(`网络异常: ${e.message}`);
+								showToast(t("toastNetworkError", { error: e.message }));
 							} finally {
 								importBtn.disabled = false;
-								importBtn.textContent = isDead ? "仍要导入" : "一键导入使用";
+								importBtn.textContent = isDead ? t("recImportAnyway") : t("recImport");
 							}
 						});
 					}
@@ -2743,31 +2756,31 @@ function bindEvents(rootEl) {
 
 	probeBtn.addEventListener("click", async () => {
 		probeBtn.disabled = true;
-		probeBtn.textContent = "⏳ 探测中...";
+		probeBtn.textContent = t("probeRunning");
 		probeResultEl.style.display = "block";
 		probeResultEl.style.background = "rgba(255, 255, 255, 0.05)";
 		probeResultEl.style.color = "var(--text)";
-		probeResultEl.textContent = "正在测试各平台解析能力与音频直链可用性...";
+		probeResultEl.textContent = t("probing");
 
 		try {
 			const res = await fetch(`${apiBaseUrl}/user-api/probe`).then((r) => r.json());
 			if (res.ok && res.probe?.ok) {
 				probeResultEl.style.background = "rgba(34, 197, 94, 0.15)";
 				probeResultEl.style.color = "#4ade80";
-				probeResultEl.textContent = "✅ 音源探测通畅！各平台无损及标准音质均正常解析可播放。";
+				probeResultEl.textContent = t("probeOk");
 			} else {
 				probeResultEl.style.background = "rgba(239, 68, 68, 0.15)";
 				probeResultEl.style.color = "#f87171";
-				const errMsg = res.probe?.error || res.error || "音源解析失败";
+				const errMsg = res.probe?.error || res.error || t("probeDefaultError");
 				probeResultEl.textContent = `❌ ${errMsg}`;
 			}
 		} catch (err) {
 			probeResultEl.style.background = "rgba(239, 68, 68, 0.15)";
 			probeResultEl.style.color = "#f87171";
-			probeResultEl.textContent = `❌ 请求探测失败: ${err.message}`;
+			probeResultEl.textContent = t("probeRequestFailed", { error: err.message });
 		} finally {
 			probeBtn.disabled = false;
-			probeBtn.textContent = "🔍 测试可用性";
+			probeBtn.textContent = t("probeBtn");
 		}
 	});
 
@@ -2781,11 +2794,11 @@ function bindEvents(rootEl) {
 
 	saveBtn.addEventListener("click", async () => {
 		const script = scriptArea.value.trim();
-		if (!script) return showToast("脚本内容或 URL 不能为空");
+		if (!script) return showToast(t("scriptRequired"));
 
 		const oldText = saveBtn.textContent;
 		saveBtn.disabled = true;
-		saveBtn.textContent = "正在下载与解析...";
+		saveBtn.textContent = t("downloading");
 
 		try {
 			const res = await fetch(`${apiBaseUrl}/user-api/import`, {
@@ -2797,14 +2810,14 @@ function bindEvents(rootEl) {
 			if (res.ok) {
 				globalState.activeUserApi = res.meta;
 				updateUserApiBadge();
-				showToast(`自定义音源激活成功: ${res.meta.name}`);
+				showToast(t("toastCustomSourceActivated", { name: res.meta.name }));
 				scriptArea.value = "";
 				refreshUserApiModal();
 			} else {
-				showToast(`导入失败: ${res.error}`);
+				showToast(t("toastImportFailed", { error: res.error }));
 			}
 		} catch (err) {
-			showToast(`请求异常: ${err.message}`);
+			showToast(t("toastRequestError", { error: err.message }));
 		} finally {
 			saveBtn.disabled = false;
 			saveBtn.textContent = oldText;
@@ -2892,7 +2905,7 @@ export default {
 					globalState.queue = [...payload.songs];
 					updateQueueBadge();
 					playSong(payload.songs[0], false);
-					showToast(`AI 已为你开始播放整份歌单 (${payload.songs.length} 首)`);
+					showToast(t("aiPlayAll", { count: payload.songs.length }));
 				} else if (payload?.type === "lx:pause" && globalAudio) {
 					globalAudio.pause();
 				} else if (payload?.type === "lx:resume") {
@@ -2900,7 +2913,7 @@ export default {
 				} else if (payload?.type === "lx:playlist_add" && payload?.song) {
 					globalState.queue.push(payload.song);
 					updateQueueBadge();
-					showToast(`已追加至播放队列: ${payload.song.name}`);
+					showToast(t("toastAppendQueue", { name: payload.song.name }));
 				}
 			});
 		}

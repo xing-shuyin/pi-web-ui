@@ -211,6 +211,8 @@ describe("resolveInspectorStatus 检查器状态机单源化", () => {
 			done: "已完成",
 			error: "执行出错",
 			running: "执行中...",
+			toolInspectorExecutionDone: "执行完成",
+			toolInspectorExecutionFailed: "命令执行失败",
 		};
 		return map[key] || key;
 	}) as any;
@@ -225,7 +227,6 @@ describe("resolveInspectorStatus 检查器状态机单源化", () => {
 				output: "19 行输出",
 			},
 			mockT,
-			true,
 		);
 
 		expect(meta.isRunning).toBe(true);
@@ -248,7 +249,6 @@ describe("resolveInspectorStatus 检查器状态机单源化", () => {
 				duration: "1.2s",
 			},
 			mockT,
-			true,
 		);
 
 		expect(meta.isRunning).toBe(false);
@@ -269,7 +269,6 @@ describe("resolveInspectorStatus 检查器状态机单源化", () => {
 				exitHint: "exit 127",
 			},
 			mockT,
-			true,
 		);
 
 		expect(meta.isRunning).toBe(false);

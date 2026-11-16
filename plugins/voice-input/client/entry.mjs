@@ -1,4 +1,8 @@
 import { hostApi, apiBase as getSharedApiBase } from "@pi-web-ui/plugin-sdk/client";
+import { makeT } from "./i18n.mjs";
+
+/** UI copy: language resolution / fallback / interpolation live in the SDK; this only reads the active locale. */
+const t = makeT();
 
 const ACTION = "voice-input:toggle";
 const MAX_RECORD_MS = 5 * 60 * 1000;
@@ -8,118 +12,15 @@ function apiBase() {
 	return getSharedApiBase("voice-input");
 }
 
-const isZh = (() => {
-	try {
-		return (navigator.language || "zh-CN").toLowerCase().startsWith("zh");
-	} catch {
-		return true;
-	}
-})();
-
-const T = {
-	listening: isZh ? "正在聆听…（再点 🎤 结束）" : "Listening… (click 🎤 again to finish)",
-	recording: isZh ? "正在录音…（再点 🎤 结束并转写）" : "Recording… (click 🎤 again to transcribe)",
-	uploading: isZh ? "转写中…" : "Transcribing…",
-	send: isZh ? "直接发送" : "Send",
-	fill: isZh ? "填入输入框" : "Fill composer",
-	stopAndTranscribe: isZh ? "停止并转写" : "Stop & transcribe",
-	sendFailed: isZh
-		? "直接发送没接通，已填入输入框，请手动发送"
-		: "Direct send unavailable — filled into the composer, please send manually",
-	cancel: isZh ? "取消" : "Cancel",
-	close: isZh ? "关闭" : "Close",
-	useServer: isZh ? "改用服务端录音" : "Use server recording",
-	installLocal: isZh ? "一键安装本地 Whisper" : "Install local Whisper",
-	retry: isZh ? "重试" : "Retry",
-	installing: (p) => (isZh ? `正在安装本地 Whisper… ${p}` : `Installing local Whisper… ${p}`),
-	installDone: isZh ? "安装完成，开始录音吧" : "Installed, start speaking",
-	installFailed: isZh ? "安装失败" : "Install failed",
-	noSpeech: isZh ? "浏览器语音识别不可用" : "Browser recognition unavailable",
-	serverMissing: isZh
-		? "服务端转写还没得用：本地 Whisper 没装，远端接口也没配"
-		: "No server transcription: local Whisper not installed, no remote endpoint configured",
-	empty: isZh ? "没听清，请再说一次" : "Didn't catch that, please try again",
-	composeFailed: isZh
-		? "输入框还没准备好，已复制到剪贴板，请粘贴发送"
-		: "Composer not ready, copied to clipboard instead",
-	copied: isZh ? "已复制" : "Copied",
-	camTitle: isZh ? "拍照" : "Take photo",
-	camShoot: isZh ? "拍照并放入输入框" : "Capture into composer",
-	camSwitch: isZh ? "切换摄像头" : "Switch camera",
-	camFile: isZh ? "用系统相机 / 选图片" : "Use system camera / pick a file",
-	camStarting: isZh ? "正在打开摄像头…" : "Opening camera…",
-	camHint: isZh
-		? "对准要拍的东西，点「拍照并放入输入框」；可以连拍多张，拍完补一句话再发。"
-		: "Aim at what you want to capture, then hit “Capture into composer”. You can take several shots; add a sentence and send.",
-	camShot: isZh ? "已放入输入框附件，可继续拍" : "Added to the composer — keep shooting if needed",
-	camComposeFailed: isZh
-		? "输入框还没准备好（页面刚打开？），稍后再拍一张"
-		: "Composer not ready (page still loading?) — try again in a moment",
-	camDenied: isZh
-		? "摄像头被拒绝：请点浏览器地址栏左侧的 🔒 图标，把本站摄像头设为“允许”，再重试；也可以直接用系统相机。"
-		: "Camera permission denied: click the 🔒 icon in the address bar, allow camera for this site, then retry — or use the system camera.",
-	camUnavailable: isZh
-		? "打不开摄像头（设备没有摄像头，或被其它程序占用）。可以直接用系统相机拍。"
-		: "Camera could not be opened (no camera on this device, or it is busy). You can use the system camera instead.",
-	camInsecure: isZh
-		? "当前页面不是安全上下文（http://局域网IP 打开的吧？）：浏览器直接禁用了摄像头。请改用 http://localhost:8787 或 http://127.0.0.1:8787 打开本站；手机等设备可以直接用系统相机。"
-		: "This page is not a secure context (opened via http://LAN-IP?): the browser disables the camera. Reopen via http://localhost:8787 or http://127.0.0.1:8787 — on phones you can use the system camera instead.",
-	insecure: isZh
-		? "当前页面不是安全上下文（http://局域网IP 打开的吧？）：浏览器直接禁用了语音识别和麦克风。请改用 http://localhost:8787 或 http://127.0.0.1:8787 打开本站，再点 🎤。"
-		: "This page is not a secure context (opened via http://LAN-IP?): the browser disables speech recognition and mic. Reopen via http://localhost:8787 or http://127.0.0.1:8787 and try again.",
-	micDenied: isZh
-		? "麦克风被拒绝：请点浏览器地址栏左侧的 🔒/🎤 图标，把本站麦克风设为“允许”，然后重试。"
-		: "Microphone denied: click the lock/mic icon left of the address bar, allow the mic for this site, then retry.",
-	srNetwork: isZh
-		? "浏览器语音服务连不上（Edge/Chrome 识别要联网，代理·VPN·企业策略都可能拦）：已为你切到服务端录音；也可以检查网络后重试。"
-		: "Browser speech service unreachable (Edge/Chrome recognition needs internet; proxy/VPN/enterprise policy may block it). Switched to server recording; or check network and retry.",
-	srNoSpeech: isZh
-		? "浏览器没听到声音就断了（静音超时/麦克风没声）：靠近麦克风再说一次，或改用服务端录音。"
-		: "Browser stopped hearing audio (silence timeout / no mic signal). Speak closer, or use server recording.",
-	srBusy: isZh
-		? "浏览器语音识别正忙（可能别的标签页占着），请稍等几秒再点 🎤。"
-		: "Browser recognition busy (maybe another tab holds it). Wait a few seconds and retry.",
-	tooShort: isZh ? "录音太短了，请说完一句话再结束。" : "Recording too short, please finish a sentence.",
-	tooLong: isZh ? "录音超过 5 分钟已自动结束，正在转写…" : "Over 5 minutes, auto-finished. Transcribing…",
-	recorderBroken: isZh
-		? "浏览器录不了音（AudioContext/Gum 不可用，多半还是非安全上下文，见上）：请用 localhost 打开本站。"
-		: "This browser cannot record (AudioContext/getUserMedia unavailable, likely insecure context). Reopen via localhost.",
-	installNote: isZh
-		? "本地 Whisper：免费、无需 key、录音不出本机。首次安装要下载约 150–300MB（模型）+ 运行时，关掉浮层会在后台继续装。"
-		: "Local Whisper: free, no key, audio never leaves this machine. First install downloads ~150–300MB (model) + runtime; closing this panel keeps installing in background.",
-	switchEngine: isZh ? "切换识别方式" : "Switch engine",
-	pickEngine: isZh ? "用哪种识别方式？" : "Which recognition engine?",
-	pickEngineNote: isZh
-		? "选完会存回插件设置，下次点 🎤 直接用这一档。本地 Whisper 还没装的话，选它会直接带你装。"
-		: "Your choice is saved back to the plugin settings and used by the 🎤 button next time. If local Whisper isn't installed yet, picking it walks you through the install.",
-	engAuto: isZh ? "浏览器联网识别（免费实时）" : "Browser recognition (free, live)",
-	engLocal: isZh ? "本地 Whisper（离线，不出本机）" : "Local Whisper (offline, on-device)",
-	engRemote: isZh ? "远端转写接口" : "Remote endpoint",
-	engLocalMissing: isZh ? "本地 Whisper（未安装，点此安装）" : "Local Whisper (not installed — install)",
-	engRemoteMissing: isZh ? "远端接口（未配置）" : "Remote endpoint (not configured)",
-	engineNotSaved: isZh
-		? "切换没存上（服务端没确认），这次没开始：请到插件设置里直接把「转写引擎」改成你要的那一档"
-		: "Couldn't save the switch (the server didn't confirm), so nothing started: change “Transcription engine” in the plugin settings instead",
-	localNotInstalled: isZh
-		? "本地 Whisper 还没装。装一次就能一直离线识别，录音不出本机、不需要 key。"
-		: "Local Whisper isn't installed yet. Install it once for offline dictation — audio never leaves this machine, no key needed.",
-	remoteNotConfigured: isZh
-		? "还没配远端转写接口：在插件设置里填「转写接口基址」与密钥，或改成用本地 Whisper。"
-		: "No remote endpoint configured: fill in the transcription base URL and key in the plugin settings, or switch to local Whisper.",
-	serverFallbackOff: isZh
-		? "「服务端转写降级」关着，服务端录音这条路被封了：去插件设置里打开它，或改用浏览器识别。"
-		: "“Server transcription fallback” is off, so server recording is disabled: turn it on in the plugin settings, or use browser recognition.",
-};
-
 export function srExplain(code) {
 	const c = String(code || "");
-	if (c === "not-allowed" || c === "service-not-allowed") return { msg: T.micDenied, kind: "denied" };
-	if (c === "network") return { msg: T.srNetwork, kind: "network" };
-	if (c === "no-speech") return { msg: T.srNoSpeech, kind: "nospeech" };
-	if (c === "audio-capture") return { msg: T.srNoSpeech, kind: "nospeech" };
-	if (c === "aborted") return { msg: T.empty, kind: "aborted" };
-	if (c === "language-not-supported") return { msg: T.noSpeech, kind: "unsupported" };
-	return { msg: `${T.noSpeech}（${c || "unknown"}）`, kind: "other" };
+	if (c === "not-allowed" || c === "service-not-allowed") return { msg: t("micDenied"), kind: "denied" };
+	if (c === "network") return { msg: t("srNetwork"), kind: "network" };
+	if (c === "no-speech") return { msg: t("srNoSpeech"), kind: "nospeech" };
+	if (c === "audio-capture") return { msg: t("srNoSpeech"), kind: "nospeech" };
+	if (c === "aborted") return { msg: t("empty"), kind: "aborted" };
+	if (c === "language-not-supported") return { msg: t("noSpeech"), kind: "unsupported" };
+	return { msg: t("srUnknown", { code: c || "unknown" }), kind: "other" };
 }
 
 export function resolveActiveEngine(cfg, mode) {
@@ -133,16 +34,12 @@ export function resolveActiveEngine(cfg, mode) {
 }
 
 export function engineBadgeText(engineId, options = {}) {
-	const zh = options.isZh ?? isZh;
+	const tt = makeT(options.isZh === undefined ? undefined : options.isZh ? "zh" : "en");
 	const id = String(engineId || "").toLowerCase();
-	if (id === "sr") {
-		return zh ? "🌐 浏览器识别" : "🌐 Browser speech";
-	}
-	if (id === "remote") {
-		return zh ? "☁️ 远端接口" : "☁️ Remote endpoint";
-	}
-	const model = options.localModel || "base";
-	return zh ? `🧠 本地 Whisper(${model})` : `🧠 Local Whisper (${model})`;
+	if (id === "sr") return tt("badgeSr");
+	if (id === "remote") return tt("badgeRemote");
+	// localModel is a settings model id (base/tiny/small) — data, interpolated as-is
+	return tt("badgeLocal", { model: options.localModel || "base" });
 }
 
 export function computeAudioRms(frames) {
@@ -235,6 +132,7 @@ async function getSettings() {
 		return r.json();
 	});
 	settingsCache = {
+		// lang is a recognition language code sent to SpeechRecognition.lang and ?lang= (data, not UI copy)
 		lang: d.lang || "zh-CN",
 		serverFallback: d.serverFallback !== false,
 		engine: d.engine || "auto",
@@ -278,6 +176,8 @@ function findAnchorButton(actionName = ACTION) {
 		btn = document.querySelector(`button[data-plugin-slot-id="${slotId}"]`);
 		if (btn && btn.offsetParent !== null) return btn;
 
+		// Selector vocabulary for the host composer buttons (aria-label/title match), not UI copy:
+		// the Chinese words match the zh host UI, the English words the en host UI.
 		const kw = actionName === CAM_ACTION ? ["拍照", "相机", "Camera", "Photo"] : ["语音", "麦克风", "Voice", "Mic"];
 		for (const k of kw) {
 			const candidate = document.querySelector(
@@ -598,8 +498,8 @@ async function sendDirectText(text, engineBadge = "") {
 		const ui = openOverlay();
 		ui.setStatus("🎤");
 		if (engineBadge) ui.setBadge(engineBadge);
-		ui.setText(T.empty, true);
-		ui.setButtons([{ label: T.close, primary: true, onClick: closeOverlay }]);
+		ui.setText(t("empty"), true);
+		ui.setButtons([{ label: t("close"), primary: true, onClick: closeOverlay }]);
 		setTimeout(closeOverlay, 2500);
 		return;
 	}
@@ -612,8 +512,8 @@ async function sendDirectText(text, engineBadge = "") {
 		ui.setStatus("🎤");
 		if (engineBadge) ui.setBadge(engineBadge);
 		ui.setText(t);
-		ui.setNote(T.sendFailed);
-		ui.setButtons([{ label: T.close, primary: true, onClick: closeOverlay }]);
+		ui.setNote(t("sendFailed"));
+		ui.setButtons([{ label: t("close"), primary: true, onClick: closeOverlay }]);
 		setTimeout(closeOverlay, 3000);
 		return;
 	}
@@ -623,7 +523,7 @@ async function sendDirectText(text, engineBadge = "") {
 	ui.setText(t);
 	ui.setButtons([
 		{
-			label: isZh ? "复制" : "Copy",
+			label: t("copy"),
 			primary: true,
 			onClick: async () => {
 				try {
@@ -632,7 +532,7 @@ async function sendDirectText(text, engineBadge = "") {
 				closeOverlay();
 			},
 		},
-		{ label: T.close, onClick: closeOverlay },
+		{ label: t("close"), onClick: closeOverlay },
 	]);
 }
 
@@ -643,8 +543,8 @@ async function finishWithText(text, engineBadge = "") {
 		const ui = openOverlay();
 		ui.setStatus("🎤");
 		if (engineBadge) ui.setBadge(engineBadge);
-		ui.setText(T.empty, true);
-		ui.setButtons([{ label: T.close, primary: true, onClick: closeOverlay }]);
+		ui.setText(t("empty"), true);
+		ui.setButtons([{ label: t("close"), primary: true, onClick: closeOverlay }]);
 		setTimeout(closeOverlay, 2500);
 		return;
 	}
@@ -665,7 +565,7 @@ async function finishWithText(text, engineBadge = "") {
 	ui.setText(t);
 	ui.setButtons([
 		{
-			label: isZh ? "复制" : "Copy",
+			label: t("copy"),
 			primary: true,
 			onClick: async () => {
 				try {
@@ -674,7 +574,7 @@ async function finishWithText(text, engineBadge = "") {
 				closeOverlay();
 			},
 		},
-		{ label: T.close, onClick: closeOverlay },
+		{ label: t("close"), onClick: closeOverlay },
 	]);
 }
 
@@ -685,7 +585,7 @@ function showError(msg, note = "", actions = []) {
 	ui.setText(msg, true);
 	if (note) ui.setNote(note);
 	const btns = Array.isArray(actions) && actions.length ? [...actions] : [];
-	btns.push({ label: T.close, primary: btns.length === 0, onClick: closeOverlay });
+	btns.push({ label: t("close"), primary: btns.length === 0, onClick: closeOverlay });
 	ui.setButtons(btns);
 }
 
@@ -728,13 +628,13 @@ function startByEngine(cfg) {
 		return;
 	}
 	if (route === "install-local") {
-		showInstallPrompt(T.localNotInstalled, cfg);
+		showInstallPrompt(t("localNotInstalled"), cfg);
 		return;
 	}
 	if (route === "remote-missing") {
-		showError(T.remoteNotConfigured, "", [
+		showError(t("remoteNotConfigured"), "", [
 			{
-				label: T.switchEngine,
+				label: t("switchEngine"),
 				primary: true,
 				onClick: () => {
 					showEnginePicker(cfg);
@@ -744,9 +644,9 @@ function startByEngine(cfg) {
 		return;
 	}
 	if (route === "fallback-off") {
-		showError(T.serverFallbackOff, "", [
+		showError(t("serverFallbackOff"), "", [
 			{
-				label: T.switchEngine,
+				label: t("switchEngine"),
 				primary: true,
 				onClick: () => {
 					showEnginePicker(cfg);
@@ -755,7 +655,7 @@ function startByEngine(cfg) {
 		]);
 		return;
 	}
-	showInstallPrompt(T.noSpeech, cfg);
+	showInstallPrompt(t("noSpeech"), cfg);
 }
 
 async function persistEngine(eng) {
@@ -778,27 +678,28 @@ async function persistEngine(eng) {
 function showEnginePicker(cfg) {
 	const ui = openOverlay();
 	ui.setStatus("🎤");
-	ui.setText(T.pickEngine);
-	ui.setNote(T.pickEngineNote);
+	ui.setText(t("pickEngine"));
+	ui.setNote(t("pickEngineNote"));
 	const pick = (eng) => () => {
 		if (settingsCache) settingsCache = { ...settingsCache, engine: eng };
 		const next = { ...(cfg ?? {}), engine: eng };
 		void persistEngine(eng).then((ok) => {
-			if (!ok) showError(T.engineNotSaved);
+			if (!ok) showError(t("engineNotSaved"));
 			else startByEngine(next);
 		});
 	};
 	ui.setButtons([
-		{ label: T.engAuto, onClick: pick("auto") },
-		{ label: cfg?.localReady ? T.engLocal : T.engLocalMissing, onClick: pick("local") },
-		{ label: cfg?.serverReady ? T.engRemote : T.engRemoteMissing, onClick: pick("remote") },
-		{ label: T.close, onClick: closeOverlay },
+		{ label: t("engAuto"), onClick: pick("auto") },
+		{ label: cfg?.localReady ? t("engLocal") : t("engLocalMissing"), onClick: pick("local") },
+		{ label: cfg?.serverReady ? t("engRemote") : t("engRemoteMissing"), onClick: pick("remote") },
+		{ label: t("close"), onClick: closeOverlay },
 	]);
 }
 
 function startSpeechRecognition(lang, cfg) {
 	const Ctor = window.SpeechRecognition || window.webkitSpeechRecognition;
 	const rec = new Ctor();
+	// language code handed to the browser speech API (data)
 	rec.lang = lang;
 	rec.continuous = true;
 	rec.interimResults = true;
@@ -811,8 +712,8 @@ function startSpeechRecognition(lang, cfg) {
 	session.srRestarts = 0;
 	const ui = openOverlay();
 	session.ui = ui;
-	ui.setStatus(`🎤 ${T.listening}`);
-	ui.setBadge(engineBadgeText("sr", { isZh }));
+	ui.setStatus(`🎤 ${t("listening")}`);
+	ui.setBadge(engineBadgeText("sr"));
 	const wireButtons = () => {
 		const leave = (next) => {
 			session.switching = true;
@@ -824,23 +725,23 @@ function startSpeechRecognition(lang, cfg) {
 			} catch {}
 			next();
 		};
-		const srBadge = engineBadgeText("sr", { isZh });
+		const srBadge = engineBadgeText("sr");
 		const btns = [
 			{
-				label: T.fill,
+				label: t("fill"),
 				primary: true,
 				onClick: () => finishWithText(srTotalText(session.finalText, session.interim), srBadge),
 			},
-			{ label: T.send, onClick: () => sendDirectText(srTotalText(session.finalText, session.interim), srBadge) },
+			{ label: t("send"), onClick: () => sendDirectText(srTotalText(session.finalText, session.interim), srBadge) },
 			{
-				label: T.switchEngine,
+				label: t("switchEngine"),
 				onClick: () => {
 					resetSession();
 					showEnginePicker(cfg);
 				},
 			},
 			{
-				label: T.cancel,
+				label: t("cancel"),
 				onClick: () => {
 					resetSession();
 					closeOverlay();
@@ -849,7 +750,7 @@ function startSpeechRecognition(lang, cfg) {
 		];
 		if (serverUsable(cfg)) {
 			btns.splice(1, 0, {
-				label: T.useServer,
+				label: t("useServer"),
 				onClick: () => leave(() => void startRecorderFlow()),
 			});
 		}
@@ -876,7 +777,7 @@ function startSpeechRecognition(lang, cfg) {
 			return;
 		}
 		if (ev?.error === "audio-busy" || ev?.error === "SpeechRecognitionError") {
-			showError(T.srBusy);
+			showError(t("srBusy"));
 			return;
 		}
 		if (serverUsable(cfg)) {
@@ -909,7 +810,7 @@ function startSpeechRecognition(lang, cfg) {
 		}
 		if (session.srRestarts >= MAX_SR_RESTARTS) {
 			if (serverUsable(cfg)) void startRecorderFlow();
-			else showInstallPrompt(T.srNoSpeech);
+			else showInstallPrompt(t("srNoSpeech"));
 			return;
 		}
 		session.srRestarts++;
@@ -1015,7 +916,7 @@ function capturePcm16k(onAutoStop, onLevel) {
 				if (!navigator.mediaDevices?.getUserMedia) throw new Error("gum-missing");
 				stream = await navigator.mediaDevices.getUserMedia({ audio: true });
 			} catch {
-				reject(new Error(T.micDenied));
+				reject(new Error(t("micDenied")));
 				return;
 			}
 			try {
@@ -1031,7 +932,7 @@ function capturePcm16k(onAutoStop, onLevel) {
 				try {
 					stream.getTracks().forEach((t) => t.stop());
 				} catch {}
-				reject(new Error(T.recorderBroken));
+				reject(new Error(t("recorderBroken")));
 				return;
 			}
 			src = ctx.createMediaStreamSource(stream);
@@ -1089,7 +990,7 @@ function capturePcm16k(onAutoStop, onLevel) {
 					} catch {}
 				} catch {
 					cleanup();
-					reject(new Error(T.recorderBroken));
+					reject(new Error(t("recorderBroken")));
 					return;
 				}
 			}
@@ -1103,29 +1004,29 @@ async function startRecorderFlow(opts = {}) {
 	try {
 		cfg = await getSettings();
 	} catch {
-		showInstallPrompt(T.serverMissing);
+		showInstallPrompt(t("serverMissing"));
 		return;
 	}
 	const explicitOk = Boolean(opts.explicit) && Boolean(cfg.localReady || cfg.serverReady);
 	if (!explicitOk && !serverUsable(cfg)) {
-		showInstallPrompt(T.serverMissing);
+		showInstallPrompt(t("serverMissing"));
 		return;
 	}
 	resetSession();
 	session.mode = "rec";
 	const activeEng = resolveActiveEngine(cfg, "rec");
-	const badge = engineBadgeText(activeEng, { isZh, localModel: cfg?.localModel });
+	const badge = engineBadgeText(activeEng, { localModel: cfg?.localModel });
 	const ui = openOverlay();
 	session.ui = ui;
-	ui.setStatus(`🎤 ${T.recording}`);
+	ui.setStatus(`🎤 ${t("recording")}`);
 	ui.setBadge(badge);
 	const stopAndTranscribe = (mode) => {
 		session.manualStop = true;
-		ui.setStatus(`🎤 ${T.uploading}`);
+		ui.setStatus(`🎤 ${t("uploading")}`);
 		ui.setLevel(null);
 		ui.setButtons([
 			{
-				label: T.cancel,
+				label: t("cancel"),
 				onClick: () => {
 					resetSession();
 					closeOverlay();
@@ -1142,23 +1043,23 @@ async function startRecorderFlow(opts = {}) {
 	};
 	ui.setButtons([
 		{
-			label: T.stopAndTranscribe,
+			label: t("stopAndTranscribe"),
 			primary: true,
 			onClick: () => stopAndTranscribe("compose"),
 		},
 		{
-			label: T.send,
+			label: t("send"),
 			onClick: () => stopAndTranscribe("send"),
 		},
 		{
-			label: T.switchEngine,
+			label: t("switchEngine"),
 			onClick: () => {
 				resetSession();
 				showEnginePicker(cfg);
 			},
 		},
 		{
-			label: T.cancel,
+			label: t("cancel"),
 			onClick: () => {
 				resetSession();
 				closeOverlay();
@@ -1195,22 +1096,22 @@ async function handleRecorded(samples, cfg, timedOut, mode = "compose") {
 	const rec = session.rec;
 	resetSession();
 	const activeEng = resolveActiveEngine(cfg, "rec");
-	const initialBadge = engineBadgeText(activeEng, { isZh, localModel: cfg?.localModel });
+	const initialBadge = engineBadgeText(activeEng, { localModel: cfg?.localModel });
 	if (!samples || !samples.length) {
 		const ui = openOverlay();
 		ui.setStatus("🎤");
 		ui.setBadge(initialBadge);
-		ui.setText(T.tooShort, true);
-		ui.setButtons([{ label: T.close, primary: true, onClick: closeOverlay }]);
+		ui.setText(t("tooShort"), true);
+		ui.setButtons([{ label: t("close"), primary: true, onClick: closeOverlay }]);
 		setTimeout(closeOverlay, 2500);
 		return;
 	}
 	const ui = openOverlay();
-	ui.setStatus(`🎤 ${timedOut ? T.tooLong : T.uploading}`);
+	ui.setStatus(`🎤 ${timedOut ? t("tooLong") : t("uploading")}`);
 	ui.setBadge(initialBadge);
 	ui.setButtons([
 		{
-			label: T.cancel,
+			label: t("cancel"),
 			onClick: () => {
 				resetSession();
 				closeOverlay();
@@ -1248,7 +1149,7 @@ async function handleRecorded(samples, cfg, timedOut, mode = "compose") {
 		showError(err instanceof Error ? err.message : String(err));
 		return;
 	}
-	const finalBadge = engineBadgeText(finalEngine, { isZh, localModel: cfg?.localModel });
+	const finalBadge = engineBadgeText(finalEngine, { localModel: cfg?.localModel });
 	if (mode === "send") await sendDirectText(text, finalBadge);
 	else await finishWithText(text, finalBadge);
 }
@@ -1257,18 +1158,18 @@ function showInstallPrompt(why, cfg = null) {
 	resetSession();
 	const ui = openOverlay();
 	ui.setStatus("🎤");
-	ui.setText(why || T.serverMissing);
-	ui.setNote(T.installNote);
-	const btns = [{ label: T.installLocal, primary: true, onClick: () => void runLocalInstall() }];
+	ui.setText(why || t("serverMissing"));
+	ui.setNote(t("installNote"));
+	const btns = [{ label: t("installLocal"), primary: true, onClick: () => void runLocalInstall() }];
 	if (cfg) {
 		btns.push({
-			label: T.switchEngine,
+			label: t("switchEngine"),
 			onClick: () => {
 				showEnginePicker(cfg);
 			},
 		});
 	}
-	btns.push({ label: T.close, onClick: closeOverlay });
+	btns.push({ label: t("close"), onClick: closeOverlay });
 	ui.setButtons(btns);
 }
 
@@ -1280,9 +1181,9 @@ async function fetchLocalStatus() {
 
 async function runLocalInstall() {
 	const ui = openOverlay();
-	ui.setStatus(`🎤 ${T.installing("…")}`);
-	ui.setNote(T.installNote);
-	ui.setButtons([{ label: T.close, onClick: closeOverlay }]);
+	ui.setStatus(`🎤 ${t("installing", { p: "…" })}`);
+	ui.setNote(t("installNote"));
+	ui.setButtons([{ label: t("close"), onClick: closeOverlay }]);
 	try {
 		const r = await fetch(`${apiBase()}/local-install`, {
 			method: "POST",
@@ -1294,10 +1195,10 @@ async function runLocalInstall() {
 		if (!r.ok && r.status !== 202) throw new Error(data?.error || `local-install ${r.status}`);
 	} catch (err) {
 		ui.setStatus("🎤");
-		ui.setText(`${T.installFailed}：${err instanceof Error ? err.message : String(err)}`, true);
+		ui.setText(t("installFailedDetail", { error: err instanceof Error ? err.message : String(err) }), true);
 		ui.setButtons([
-			{ label: T.retry, primary: true, onClick: () => void runLocalInstall() },
-			{ label: T.close, onClick: closeOverlay },
+			{ label: t("retry"), primary: true, onClick: () => void runLocalInstall() },
+			{ label: t("close"), onClick: closeOverlay },
 		]);
 		return;
 	}
@@ -1315,24 +1216,24 @@ async function runLocalInstall() {
 		}
 		if (st.installing) {
 			const pct = typeof st.progress === "number" ? `${st.progress}%` : "";
-			const phase = st.phase ? `（${st.phase}）` : "";
-			ui.setStatus(`🎤 ${T.installing(`${pct} ${phase}`.trim())}`);
+			const phase = st.phase ? t("installPhase", { phase: st.phase }) : "";
+			ui.setStatus(`🎤 ${t("installing", { p: `${pct} ${phase}`.trim() })}`);
 			return;
 		}
 		clearInterval(timer);
 		if (!overlay || overlay !== currentOverlay) return;
 		if (st.error) {
 			ui.setStatus("🎤");
-			ui.setText(`${T.installFailed}：${st.error}`, true);
+			ui.setText(t("installFailedDetail", { error: st.error }), true);
 			ui.setButtons([
-				{ label: T.retry, primary: true, onClick: () => void runLocalInstall() },
-				{ label: T.close, onClick: closeOverlay },
+				{ label: t("retry"), primary: true, onClick: () => void runLocalInstall() },
+				{ label: t("close"), onClick: closeOverlay },
 			]);
 			return;
 		}
 		if (st.ready) {
 			settingsAt = 0;
-			ui.setStatus(`🎤 ${T.installDone}`);
+			ui.setStatus(`🎤 ${t("installDone")}`);
 			ui.setText("");
 			ui.setNote("");
 			setTimeout(() => {
@@ -1341,8 +1242,8 @@ async function runLocalInstall() {
 			return;
 		}
 		ui.setStatus("🎤");
-		ui.setText(T.installFailed, true);
-		ui.setButtons([{ label: T.close, primary: true, onClick: closeOverlay }]);
+		ui.setText(t("installFailed"), true);
+		ui.setButtons([{ label: t("close"), primary: true, onClick: closeOverlay }]);
 	}, 1000);
 }
 
@@ -1383,7 +1284,7 @@ async function toggle() {
 		return;
 	}
 	if (!isSecure()) {
-		showError(T.insecure);
+		showError(t("insecure"));
 		return;
 	}
 	let cfg = { lang: "zh-CN", engine: "auto", serverFallback: true, serverReady: false, localReady: false };
@@ -1443,7 +1344,7 @@ function closeCameraPanel() {
 }
 
 function frameToJpegBase64(source, srcW, srcH) {
-	if (!srcW || !srcH) throw new Error(isZh ? "取不到画面尺寸，请稍后再拍" : "No frame size yet, try again");
+	if (!srcW || !srcH) throw new Error(t("camNoFrame"));
 	const canvas = document.createElement("canvas");
 	let scale = Math.min(1, CAMERA_MAX_DIM / Math.max(srcW, srcH));
 	for (let attempt = 0; attempt < 4; attempt++) {
@@ -1456,14 +1357,14 @@ function frameToJpegBase64(source, srcW, srcH) {
 		if (base64.length * 0.75 <= CAMERA_MAX_BYTES) return base64;
 		scale *= 0.7;
 	}
-	throw new Error(isZh ? "照片压不进 2MB，请离远一点再拍" : "Photo stays above 2MB — step back and retry");
+	throw new Error(t("camTooBig"));
 }
 
 function loadImage(src) {
 	return new Promise((resolve, reject) => {
 		const img = new Image();
 		img.onload = () => resolve(img);
-		img.onerror = () => reject(new Error(isZh ? "图片解码失败" : "Image decode failed"));
+		img.onerror = () => reject(new Error(t("camDecodeFailed")));
 		img.src = src;
 	});
 }
@@ -1592,11 +1493,11 @@ function openCameraPanel() {
 		requestAnimationFrame(updateCamPos);
 	};
 
-	root.querySelector(".vc-title").textContent = T.camTitle;
-	closeBtn.title = T.close;
-	shotBtn.textContent = T.camShoot;
-	switchBtn.textContent = T.camSwitch;
-	fileBtn.textContent = T.camFile;
+	root.querySelector(".vc-title").textContent = t("camTitle");
+	closeBtn.title = t("close");
+	shotBtn.textContent = t("camShoot");
+	switchBtn.textContent = t("camSwitch");
+	fileBtn.textContent = t("camFile");
 
 	closeBtn.addEventListener("click", closeCameraPanel);
 	fileBtn.addEventListener("click", () => pickViaSystemCamera());
@@ -1612,20 +1513,20 @@ function openCameraPanel() {
 
 	const startLive = async () => {
 		if (!cameraCapable()) {
-			fallback(T.camInsecure);
+			fallback(t("camInsecure"));
 			return;
 		}
 		stopCamStream();
 		show(video, false);
 		show(fileBtn, false);
-		setHint(T.camStarting);
+		setHint(t("camStarting"));
 		try {
 			camStream = await navigator.mediaDevices.getUserMedia({
 				video: { facingMode: { ideal: camFacing }, width: { ideal: 1920 }, height: { ideal: 1080 } },
 				audio: false,
 			});
 		} catch (err) {
-			fallback(err?.name === "NotAllowedError" ? T.camDenied : T.camUnavailable);
+			fallback(err?.name === "NotAllowedError" ? t("camDenied") : t("camUnavailable"));
 			return;
 		}
 		if (!camPanel) {
@@ -1640,7 +1541,7 @@ function openCameraPanel() {
 		show(shotBtn, true);
 		const cams = await navigator.mediaDevices.enumerateDevices().catch(() => []);
 		show(switchBtn, cams.filter((d) => d.kind === "videoinput").length > 1);
-		setHint(T.camHint);
+		setHint(t("camHint"));
 	};
 
 	switchBtn.addEventListener("click", () => {
@@ -1651,7 +1552,9 @@ function openCameraPanel() {
 	shotBtn.addEventListener("click", () => {
 		try {
 			setHint(
-				attachPhoto(frameToJpegBase64(video, video.videoWidth, video.videoHeight)) ? T.camShot : T.camComposeFailed,
+				attachPhoto(frameToJpegBase64(video, video.videoWidth, video.videoHeight))
+					? t("camShot")
+					: t("camComposeFailed"),
 			);
 		} catch (err) {
 			setHint(err instanceof Error ? err.message : String(err));

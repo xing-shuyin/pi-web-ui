@@ -27,7 +27,6 @@ export function RemoteDesktopWindow() {
 }
 
 function DesktopWindow({ access }: { access: DesktopAccess }) {
-	const { zh } = access;
 	const t = useT();
 	const zIndex = useOverlayZIndex();
 	const { target, error: targetError, retry } = useDesktopTarget(access);
@@ -164,7 +163,7 @@ function DesktopWindow({ access }: { access: DesktopAccess }) {
 		setBusy(true);
 		setError("");
 		try {
-			await openDeviceAccess(access.id, access.hubUrl, true, zh, true, access.name, { local: access.local });
+			await openDeviceAccess(access.id, access.hubUrl, true, t, true, access.name, { local: access.local });
 			setDesktopMode(access, "preview");
 		} catch (e) {
 			setError(e instanceof Error ? e.message : String(e));

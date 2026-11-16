@@ -1,6 +1,7 @@
 import { deviceLabel } from "../../server/device-center/device-label";
 import { appBase, appUrl } from "./base-url";
 import { withToken } from "./auth-token";
+import type { Translate } from "./i18n";
 import { getMobileRuntime } from "./mobile-runtime";
 import { randomUuid } from "./uuid";
 
@@ -10,7 +11,7 @@ export function pageDeviceId(): string | undefined {
 	return appBase().match(/\/(?:device|device-lan)\/([a-z0-9][a-z0-9-]{0,62})\/__relay\/[a-f0-9]{64}\/$/)?.[1];
 }
 
-export async function openPageDesktop(zh: boolean, name: string, signal?: AbortSignal) {
+export async function openPageDesktop(t: Translate, name: string, signal?: AbortSignal) {
 	const id = pageDeviceId();
 	if (!id) return;
 	const initialRevision = revision;
@@ -26,7 +27,7 @@ export async function openPageDesktop(zh: boolean, name: string, signal?: AbortS
 		id,
 		typeof status.hubUrl === "string" ? status.hubUrl : "",
 		true,
-		zh,
+		t,
 		false,
 		deviceLabel(status.name, status.remark, name),
 	);
@@ -35,7 +36,6 @@ export async function openPageDesktop(zh: boolean, name: string, signal?: AbortS
 export type DesktopAccess = {
 	id: string;
 	hubUrl: string;
-	zh: boolean;
 	name?: string;
 	revision: number;
 	mode: "preview" | "live";
@@ -72,7 +72,7 @@ export async function requestDeviceAccessUrl(
 	id: string,
 	hubUrl: string,
 	desktop: boolean,
-	zh: boolean,
+	t: Translate,
 	preview = false,
 	signal?: AbortSignal,
 	local = false,
@@ -97,12 +97,7 @@ export async function requestDeviceAccessUrl(
 		credentials: "same-origin",
 		signal: signal ? AbortSignal.any([signal, AbortSignal.timeout(30000)]) : AbortSignal.timeout(30000),
 	});
-	if (!response.ok)
-		throw new Error(
-			zh
-				? "无法打开设备，请确认设备在线且本机绑定有效。"
-				: "Could not open the device. Check connectivity and local pairing.",
-		);
+	if (!response.ok) throw new Error(t("deviceAccessOpenFailed"));
 	const data = await response.json();
 	const direct = data.transport === "lan" || data.transport === "p2p";
 	const url = direct ? new URL(appUrl(data.url), window.location.href) : new URL(data.url);
@@ -131,7 +126,7 @@ export async function openDeviceAccess(
 	id: string,
 	hubUrl: string,
 	desktop: boolean,
-	zh: boolean,
+	t: Translate,
 	detached = false,
 	name?: string,
 	presentation?: { mode?: DesktopAccess["mode"]; local?: boolean; groupId?: string },
@@ -146,7 +141,6 @@ export async function openDeviceAccess(
 		desktopAccess = {
 			id,
 			hubUrl,
-			zh,
 			name,
 			revision: ++revision,
 			...presentation,
@@ -157,36 +151,35 @@ export async function openDeviceAccess(
 		return;
 	}
 	if (desktop && detached && pageDeviceId() && window.parent !== window) {
-		await openPortalDesktop(zh, id);
+		await openPortalDesktop(t, id);
 		return;
 	}
 	const shell = (window as unknown as { piDesktop?: { openHub?: (url: string) => Promise<boolean> } }).piDesktop;
 	const tab = shell?.openHub ? null : window.open("about:blank", "_blank");
-	if (!shell?.openHub && !tab) throw new Error(zh ? "请允许弹出窗口后重试。" : "Allow popups and try again.");
+	if (!shell?.openHub && !tab) throw new Error(t("deviceAccessPopupBlocked"));
 	if (tab) {
 		// 取票要一次网络往返：先写一张「正在打开」的静态页，用户不会对着空白标签页发呆；
 		// 取票失败时这个标签页会被关掉，不会留下一张白板。
 		try {
 			tab.document.open();
 			tab.document.write(
-				`<!doctype html><meta charset="utf-8"><title>${zh ? "正在打开设备…" : "Opening device…"}</title>` +
+				`<!doctype html><meta charset="utf-8"><title>${t("deviceAccessOpening")}</title>` +
 					'<style>html,body{height:100%;margin:0}body{display:grid;place-items:center;background:#0d0e12;color:#9aa1b4;font:14px/1.6 -apple-system,"PingFang SC","Microsoft YaHei",sans-serif}</style>' +
-					`<body>${zh ? "正在打开设备…" : "Opening device…"}</body>`,
+					`<body>${t("deviceAccessOpening")}</body>`,
 			);
 			tab.document.close();
 		} catch {}
 		tab.opener = null;
 	}
 	try {
-		const target = await requestDeviceAccessUrl(id, hubUrl, desktop, zh, false, undefined, presentation?.local);
+		const target = await requestDeviceAccessUrl(id, hubUrl, desktop, t, false, undefined, presentation?.local);
 		const url = new URL(target.url);
 		if (shell?.openHub) {
 			if (target.transport !== "hub") {
 				url.searchParams.set("hub", new URL(hubUrl).origin);
 				if (typeof target.fallbackOrigin === "string") url.searchParams.set("portal", target.fallbackOrigin);
 			}
-			if (!(await shell.openHub(url.href)))
-				throw new Error(zh ? "无法打开设备窗口。" : "Could not open device window.");
+			if (!(await shell.openHub(url.href))) throw new Error(t("deviceAccessWindowFailed"));
 		} else if (tab) tab.location.replace(url.href);
 	} catch (error) {
 		tab?.close();
@@ -194,7 +187,7 @@ export async function openDeviceAccess(
 	}
 }
 
-function openPortalDesktop(zh: boolean, deviceId: string): Promise<void> {
+function openPortalDesktop(t: Translate, deviceId: string): Promise<void> {
 	const requestId = randomUuid();
 	const origin = new URL(appUrl("/"), window.location.href).origin;
 	return new Promise((resolve, reject) => {
@@ -204,9 +197,7 @@ function openPortalDesktop(zh: boolean, deviceId: string): Promise<void> {
 			if (error) reject(new Error(error));
 			else resolve();
 		};
-		const unavailable = zh
-			? "无法打开独立标签，请更新本机和 Hub 后重试。"
-			: "Could not open a tab. Update this computer and the Hub, then retry.";
+		const unavailable = t("deviceAccessTabFailed");
 		const receive = (event: MessageEvent) => {
 			if (
 				event.source !== window.parent ||
@@ -216,13 +207,7 @@ function openPortalDesktop(zh: boolean, deviceId: string): Promise<void> {
 			)
 				return;
 			finish(
-				event.data.ok === true
-					? undefined
-					: event.data.error === "popup"
-						? zh
-							? "请允许弹出窗口后重试。"
-							: "Allow popups and try again."
-						: unavailable,
+				event.data.ok === true ? undefined : event.data.error === "popup" ? t("deviceAccessPopupBlocked") : unavailable,
 			);
 		};
 		const timer = setTimeout(() => finish(unavailable), 30000);

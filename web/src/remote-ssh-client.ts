@@ -1,4 +1,5 @@
 import { appSend } from "./app-globals";
+import type { Translate } from "./i18n";
 import type {
 	RemoteSshDirItem,
 	RemoteSshHostTrustOffer,
@@ -57,7 +58,10 @@ export function parseRemoteWorkspaceUri(uri: string): {
 
 let nextReqId = 1;
 
-export function requestRemoteProbe(params: RemoteSshProbeParams): Promise<{
+export function requestRemoteProbe(
+	params: RemoteSshProbeParams,
+	t: Translate,
+): Promise<{
 	ok: boolean;
 	connectionId?: string;
 	error?: string;
@@ -93,13 +97,14 @@ export function requestRemoteProbe(params: RemoteSshProbeParams): Promise<{
 
 		if (!sent) {
 			cleanup();
-			resolve({ ok: false, error: "WebSocket 连接不可用，请稍候重试" });
+			resolve({ ok: false, error: t("remoteSshSocketDownRetry") });
 		}
 	});
 }
 
 export function requestRemoteListDir(
 	connectionId: string,
+	t: Translate,
 	dirPath?: string,
 ): Promise<{
 	ok: boolean;
@@ -139,7 +144,7 @@ export function requestRemoteListDir(
 				connectionId,
 				path: dirPath || "/",
 				items: [],
-				error: "WebSocket 连接不可用",
+				error: t("remoteSshSocketDown"),
 			});
 		}
 	});
@@ -148,6 +153,7 @@ export function requestRemoteListDir(
 export function requestRemoteInstallTools(
 	connectionId: string,
 	tools: string[],
+	t: Translate,
 ): Promise<{
 	ok: boolean;
 	connectionId: string;
@@ -183,7 +189,7 @@ export function requestRemoteInstallTools(
 				ok: false,
 				connectionId,
 				tool: tools[0] || "",
-				error: "WebSocket 连接不可用",
+				error: t("remoteSshSocketDown"),
 			});
 		}
 	});
@@ -218,12 +224,15 @@ export function deleteRemoteProfile(name: string): void {
 	});
 }
 
-export function requestRemoteTrustHost(args: {
-	host: string;
-	port: number;
-	fingerprint: string;
-	replace?: boolean;
-}): Promise<{ ok: boolean; error?: string }> {
+export function requestRemoteTrustHost(
+	args: {
+		host: string;
+		port: number;
+		fingerprint: string;
+		replace?: boolean;
+	},
+	t: Translate,
+): Promise<{ ok: boolean; error?: string }> {
 	const reqId = `trust_${Date.now()}_${nextReqId++}`;
 	return new Promise((resolve) => {
 		const cleanup = subscribeRemoteSsh((msg) => {
@@ -235,7 +244,7 @@ export function requestRemoteTrustHost(args: {
 		const sent = appSend({ type: "remote_ssh_trust_host", reqId, ...args });
 		if (!sent) {
 			cleanup();
-			resolve({ ok: false, error: "WebSocket 连接不可用" });
+			resolve({ ok: false, error: t("remoteSshSocketDown") });
 		}
 	});
 }

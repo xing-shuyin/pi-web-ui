@@ -40,7 +40,7 @@ import {
 } from "react-icons/fi";
 import type { ToolStatus, UiImageBlock, UiMessage, UiToolCallBlock } from "../types";
 import { formatDuration as formatDurationShared, formatTimeFull, resolveToolTimeRange } from "../tool-time";
-import { isZhLocale, useLocale, useT } from "../i18n";
+import { useT } from "../i18n";
 import { openContextMenu } from "../context-menu-state";
 import { openToolInfo } from "../tool-info-state";
 import { getToolInspectorState, isFlowMode, openToolInspector, updateToolInspectorLive } from "../tool-inspector-state";
@@ -276,7 +276,6 @@ const ToolCallCapsule = memo(function ToolCallCapsule({
 	rootRef: React.RefObject<HTMLDivElement | null>;
 }) {
 	const t = useT();
-	const isZh = isZhLocale(useLocale());
 	const isPresent = block.name === PRESENT_FILES_TOOL_NAME;
 	const isBash = block.name === "bash";
 
@@ -351,7 +350,7 @@ const ToolCallCapsule = memo(function ToolCallCapsule({
 				createHostSlotEntry({
 					id: "host:kill-bash",
 					slot: "contextmenu.toolcall",
-					label: isZh ? "结束此 bash 命令" : "Stop bash command",
+					label: t("toolInspectorStopBash"),
 					icon: "■",
 					kind: "action",
 					order: -1,
@@ -480,11 +479,7 @@ const ToolCallCapsule = memo(function ToolCallCapsule({
 					</span>
 				)}
 				{hasMarkdown && (
-					<span
-						className="toolcall-out-badge md"
-						title={isZh ? "包含 Markdown 输出" : "Contains Markdown output"}
-						aria-label="markdown output"
-					>
+					<span className="toolcall-out-badge md" title={t("toolCallContainsMarkdown")} aria-label="markdown output">
 						<FiFileText />
 					</span>
 				)}
@@ -506,7 +501,6 @@ const ToolCallCard = memo(function ToolCallCard({
 	rootRef,
 }: ToolCallBlockProps & { rootRef: React.RefObject<HTMLDivElement | null> }) {
 	const t = useT();
-	const isZh = isZhLocale(useLocale());
 	const [open, setOpen] = useState<boolean | null>(null);
 	const isPresent = block.name === PRESENT_FILES_TOOL_NAME;
 	const expanded = open ?? (isPresent ? true : wrap);
@@ -687,7 +681,7 @@ const ToolCallCard = memo(function ToolCallCard({
 				createHostSlotEntry({
 					id: "host:kill-bash",
 					slot: "contextmenu.toolcall",
-					label: isZh ? "结束此 bash 命令" : "Stop bash command",
+					label: t("toolInspectorStopBash"),
 					icon: "■",
 					kind: "action",
 					order: -1,
@@ -834,7 +828,7 @@ const ToolCallCard = memo(function ToolCallCard({
 						{hasMarkdown && (
 							<span
 								className="toolcall-out-badge md"
-								title={isZh ? "包含 Markdown 输出" : "Contains Markdown output"}
+								title={t("toolCallContainsMarkdown")}
 								aria-label="markdown output"
 							>
 								<FiFileText />
@@ -1097,10 +1091,11 @@ export const ToolCallBlock = memo(function ToolCallBlock(props: ToolCallBlockPro
 });
 
 export function TerminalCommand({ command }: { command: string }) {
+	const t = useT();
 	return (
 		<div className="termline">
 			<FiTerminal className="termline-icon" />
-			<code>{renderHighlightedCommand(command)}</code>
+			<code>{renderHighlightedCommand(command, t)}</code>
 		</div>
 	);
 }

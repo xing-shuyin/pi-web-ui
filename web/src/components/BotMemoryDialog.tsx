@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { appUrl } from "../base-url";
 import { withToken } from "../auth-token";
-import { isZhLocale, useI18n } from "../i18n";
+import { useT } from "../i18n";
 import { useEscapeKey } from "../shortcut-stack";
 import { useOverlayZIndex } from "../overlay-stack";
 
@@ -45,8 +45,7 @@ async function call<T>(path: string, body?: object): Promise<T> {
 }
 
 export function BotMemoryDialog({ botId, botName, onClose }: { botId: string; botName: string; onClose: () => void }) {
-	const { locale } = useI18n();
-	const zh = isZhLocale(locale);
+	const t = useT();
 	const [snapshot, setSnapshot] = useState<MemorySnapshot | null>(null);
 	const [error, setError] = useState("");
 	const [notice, setNotice] = useState("");
@@ -99,13 +98,13 @@ export function BotMemoryDialog({ botId, botName, onClose }: { botId: string; bo
 			anchor.download = `${slug || "bot"}-home.json`;
 			anchor.click();
 			URL.revokeObjectURL(url);
-			setNotice(zh ? "已导出迁移包（身份 + 记忆）；在另一台设备用「导入 Bot 包」接收" : "Bundle exported");
+			setNotice(t("botMemory.exportedBundle"));
 		} catch (cause) {
 			setError(cause instanceof Error ? cause.message : String(cause));
 		} finally {
 			setBusy(false);
 		}
-	}, [botId, botName, zh]);
+	}, [botId, botName, t]);
 
 	const exportMemory = useCallback(async () => {
 		setBusy(true);
@@ -122,50 +121,46 @@ export function BotMemoryDialog({ botId, botName, onClose }: { botId: string; bo
 			anchor.download = `${slug || "bot"}-memory.md`;
 			anchor.click();
 			URL.revokeObjectURL(url);
-			setNotice(zh ? "已导出 Markdown" : "Exported Markdown");
+			setNotice(t("botMemory.exportedMarkdown"));
 		} catch (cause) {
 			setError(cause instanceof Error ? cause.message : String(cause));
 		} finally {
 			setBusy(false);
 		}
-	}, [botId, botName, zh]);
+	}, [botId, botName, t]);
 
 	return (
 		<div
 			className="lp-memory-backdrop"
 			role="dialog"
 			aria-modal="true"
-			aria-label={zh ? "记忆" : "Memory"}
+			aria-label={t("botMemory.title")}
 			style={{ zIndex }}
 		>
 			<div className="lp-memory-dialog">
 				<header className="lp-memory-head">
 					<div>
-						<strong>{zh ? `记忆 · ${botName}` : `Memory · ${botName}`}</strong>
-						<p className="lp-memory-sub">
-							{zh
-								? "启动时只注入常驻条目与索引；这里是完整清单（可删、可晋升、可导出）。"
-								: "Only resident entries and the index are injected; this is the full list."}
-						</p>
+						<strong>{t("botMemory.titleNamed", { name: botName })}</strong>
+						<p className="lp-memory-sub">{t("botMemory.subtitle")}</p>
 					</div>
 					<div className="lp-memory-head-actions">
 						<button
 							type="button"
 							disabled={busy}
 							onClick={() =>
-								void act(zh ? "已整理" : "Compacted", () => call(`${encodeURIComponent(botId)}/memory/compact`, {}))
+								void act(t("botMemory.compacted"), () => call(`${encodeURIComponent(botId)}/memory/compact`, {}))
 							}
 						>
-							{zh ? "整理" : "Compact"}
+							{t("botMemory.compact")}
 						</button>
 						<button type="button" disabled={busy} onClick={() => void exportMemory()}>
-							{zh ? "导出" : "Export"}
+							{t("botMemory.export")}
 						</button>
 						<button type="button" disabled={busy} onClick={() => void exportBundle()}>
-							{zh ? "迁移包" : "Bundle"}
+							{t("botMemory.bundle")}
 						</button>
 						<button type="button" onClick={onClose}>
-							{zh ? "关闭" : "Close"}
+							{t("close")}
 						</button>
 					</div>
 				</header>
@@ -176,25 +171,21 @@ export function BotMemoryDialog({ botId, botName, onClose }: { botId: string; bo
 						{snapshot.scopes.map((row) => (
 							<span key={row.scope} className="lp-memory-scope">
 								{row.scope} · {row.entries}
-								{row.resident ? ` (${zh ? "常驻" : "resident"} ${row.resident})` : ""}
+								{row.resident ? ` (${t("botMemory.residentCount", { count: row.resident })})` : ""}
 							</span>
 						))}
 					</p>
 				)}
 				<div className="lp-memory-list">
-					{snapshot && snapshot.entries.length === 0 && (
-						<p className="lp-memory-empty">
-							{zh ? "还没有记忆。跟它聊几轮，它会自己记。" : "No memories yet. Chat with it and it will remember."}
-						</p>
-					)}
+					{snapshot && snapshot.entries.length === 0 && <p className="lp-memory-empty">{t("botMemory.empty")}</p>}
 					{(snapshot?.entries ?? []).map((entry) => (
 						<article key={entry.id} className="lp-memory-entry">
 							<div className="lp-memory-entry-head">
 								<span className="lp-memory-scope">{entry.scope}</span>
 								<span className="lp-memory-badge">{entry.confidence}</span>
-								{entry.resident && <span className="lp-memory-badge is-resident">{zh ? "常驻" : "resident"}</span>}
+								{entry.resident && <span className="lp-memory-badge is-resident">{t("botMemory.resident")}</span>}
 								<span className="lp-memory-meta">
-									{entry.source}:{entry.sourceId} · {zh ? "命中" : "hits"} {entry.hits}
+									{entry.source}:{entry.sourceId} · {t("botMemory.hits")} {entry.hits}
 								</span>
 							</div>
 							<p className="lp-memory-text">{entry.text}</p>
@@ -204,24 +195,24 @@ export function BotMemoryDialog({ botId, botName, onClose }: { botId: string; bo
 										type="button"
 										disabled={busy}
 										onClick={() =>
-											void act(zh ? "已晋升为常驻" : "Promoted", () =>
+											void act(t("botMemory.promoted"), () =>
 												call(`${encodeURIComponent(botId)}/memory/promote`, { id: entry.id }),
 											)
 										}
 									>
-										{zh ? "晋升" : "Promote"}
+										{t("botMemory.promote")}
 									</button>
 								)}
 								<button
 									type="button"
 									disabled={busy}
 									onClick={() =>
-										void act(zh ? "已遗忘" : "Forgotten", () =>
+										void act(t("botMemory.forgotten"), () =>
 											call(`${encodeURIComponent(botId)}/memory/forget`, { id: entry.id }),
 										)
 									}
 								>
-									{zh ? "遗忘" : "Forget"}
+									{t("botMemory.forget")}
 								</button>
 							</div>
 						</article>

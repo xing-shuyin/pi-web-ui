@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState, type MouseEventHandler } from
 import { createPortal } from "react-dom";
 import { appBase, appUrl } from "../base-url";
 import { withToken } from "../auth-token";
-import { isZhLocale, useI18n } from "../i18n";
+import { useT } from "../i18n";
 import { useOverlayZIndex } from "../overlay-stack";
 import { useEscapeKey } from "../shortcut-stack";
 import { useCoarsePointer } from "../use-coarse-pointer";
@@ -21,8 +21,7 @@ export function BrandDeviceMenu({
 	barItem?: boolean;
 	onContextMenu?: MouseEventHandler<HTMLElement>;
 }) {
-	const { locale } = useI18n();
-	const zh = isZhLocale(locale);
+	const t = useT();
 	const [binding, setBinding] = useState<{ hubUrl: string; deviceId: string } | null>(null);
 	const [open, setOpen] = useState(false);
 	const anchor = useRef<HTMLButtonElement>(null);
@@ -137,8 +136,8 @@ export function BrandDeviceMenu({
 				onContextMenu={onContextMenu}
 				type="button"
 				className={`${className} brand-device-trigger`}
-				title={zh ? "设备列表" : "Devices"}
-				aria-label={zh ? "设备列表" : "Devices"}
+				title={t("brandDeviceList")}
+				aria-label={t("brandDeviceList")}
 				aria-haspopup="dialog"
 				aria-expanded={open}
 				onClick={() => setOpen((value) => !value)}
@@ -156,7 +155,7 @@ export function BrandDeviceMenu({
 								tabIndex={-1}
 								role="dialog"
 								aria-modal="true"
-								aria-label={zh ? "设备列表" : "Devices"}
+								aria-label={t("brandDeviceList")}
 								className={`dp-sheet${dragY > 0 ? " is-dragging" : ""}`}
 								style={dragY > 0 ? { transform: `translateY(${dragY}px)` } : undefined}
 							>
@@ -185,7 +184,7 @@ export function BrandDeviceMenu({
 							style={style}
 							className="brand-device-panel"
 							role="dialog"
-							aria-label={zh ? "设备列表" : "Devices"}
+							aria-label={t("brandDeviceList")}
 						>
 							<DeviceDirectory
 								hubUrl={binding.hubUrl}

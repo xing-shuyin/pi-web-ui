@@ -10,76 +10,14 @@
  */
 
 import { esc } from "@pi-web-ui/plugin-sdk/client";
+import { detectLang, makeT } from "./i18n.mjs";
 import { createSummaryStore } from "./store.mjs";
 
-const TEXT = {
-	zh: {
-		title: "额度看板",
-		refresh: "刷新",
-		never: "尚未加载",
-		loading: "读取中…",
-		failed: "读取失败",
-		unknown: "未知",
-		resetDone: "已重置",
-		balance: "余额",
-		noWindows: "没有额度窗口",
-		noSource: "当前模型没有对应的额度来源",
-		signedOut: "未登录 / 未配置",
-		empty: "该账号没有返回额度",
-		stale: "数值来自上次成功读取",
-		lowBalance: "余额偏低，建议充值后再跑长任务",
-		autoEvery: (seconds) =>
-			seconds < 60
-				? `每 ${seconds} 秒自动刷新`
-				: seconds === 60
-					? "每分钟自动刷新"
-					: `每 ${Math.round(seconds / 60)} 分钟自动刷新`,
-		justNow: "刚刚",
-		secondsAgo: (n) => `${n} 秒前`,
-		minutesAgo: (n) => `${n} 分钟前`,
-		hoursAgo: (n) => `${n} 小时前`,
-		aging: "陈旧",
-	},
-	en: {
-		title: "Quota Watch",
-		refresh: "Refresh",
-		never: "not loaded yet",
-		loading: "Loading…",
-		failed: "Failed to load",
-		unknown: "unknown",
-		resetDone: "reset",
-		balance: "Balance",
-		noWindows: "no quota window",
-		noSource: "No quota source for the active model",
-		signedOut: "signed out / not configured",
-		empty: "this account returned no quota",
-		stale: "showing the last successful read",
-		lowBalance: "Balance is low — top up before long runs",
-		autoEvery: (seconds) =>
-			seconds < 60
-				? `refreshes every ${seconds}s`
-				: seconds === 60
-					? "refreshes every minute"
-					: `refreshes every ${Math.round(seconds / 60)} min`,
-		justNow: "just now",
-		secondsAgo: (n) => `${n}s ago`,
-		minutesAgo: (n) => `${n}m ago`,
-		hoursAgo: (n) => `${n}h ago`,
-		aging: "stale",
-	},
-};
+/** 卡片文案：语言解析 / 回退 / 插值都在 SDK 里，这里只按当前界面语言取词。 */
+const t = makeT();
 
 /** 余额低于这个数就整卡转红（只对余额型来源有意义）。 */
 const LOW_BALANCE = 5;
-
-function currentLang() {
-	try {
-		const lang = document.documentElement?.lang ?? navigator.language ?? "zh";
-		return String(lang).toLowerCase().startsWith("zh") ? "zh" : "en";
-	} catch {
-		return "zh";
-	}
-}
 
 /**
  * 把 `¥47.86` / `CNY 47.86` 拆成「货币符号 + 数字」，符号用小一号字号排。
@@ -123,54 +61,55 @@ function level(remaining) {
 /**
  * 「多久以前」—— 卡片自己的可信度指标。秒级刷新，人眼才看得出数字在动。
  * @param {number} ms
- * @param {typeof TEXT.zh} t
  */
-function ageText(ms, t) {
+function ageText(ms) {
 	const s = Math.max(0, Math.round(ms / 1000));
-	if (s < 2) return t.justNow;
-	if (s < 60) return t.secondsAgo(s);
+	if (s < 2) return t("justNow");
+	if (s < 60) return t("secondsAgo", { n: s });
 	const m = Math.floor(s / 60);
-	if (m < 60) return t.minutesAgo(m);
-	return t.hoursAgo(Math.floor(m / 60));
+	if (m < 60) return t("minutesAgo", { n: m });
+	return t("hoursAgo", { n: Math.floor(m / 60) });
+}
+
+/**
+ * 自动刷新节奏：不足一分钟按秒报，整分钟报「每分钟」，其余按分钟。
+ * @param {number} seconds
+ */
+function autoEveryText(seconds) {
+	if (seconds < 60) return t("auto.everySeconds", { seconds });
+	if (seconds === 60) return t("auto.everyMinute");
+	return t("auto.everyMinutes", { minutes: Math.round(seconds / 60) });
 }
 
 /**
  * 重置倒计时。
  * @param {string} iso
- * @param {typeof TEXT.zh} t
- * @param {boolean} zh
  */
-function countdown(iso, t, zh) {
+function countdown(iso) {
 	const at = Date.parse(String(iso ?? ""));
 	if (!Number.isFinite(at)) return "";
 	const ms = at - Date.now();
-	if (ms <= 0) return t.resetDone;
+	if (ms <= 0) return t("resetDone");
 	const minutes = Math.max(1, Math.round(ms / 60_000));
 	const days = Math.floor(minutes / 1440);
 	const hours = Math.floor((minutes % 1440) / 60);
 	const mins = minutes % 60;
-	if (zh) {
-		if (days) return `${days} 天${hours ? ` ${hours} 小时` : ""}后重置`;
-		if (hours) return `${hours} 小时${mins ? ` ${mins} 分` : ""}后重置`;
-		return `${mins} 分钟后重置`;
-	}
-	if (days) return `resets in ${days}d${hours ? ` ${hours}h` : ""}`;
-	if (hours) return `resets in ${hours}h${mins ? ` ${mins}m` : ""}`;
-	return `resets in ${mins}m`;
+	if (days) return hours ? t("countdown.daysHours", { days, hours }) : t("countdown.days", { days });
+	if (hours) return mins ? t("countdown.hoursMins", { hours, mins }) : t("countdown.hours", { hours });
+	return t("countdown.minutes", { mins });
 }
 
 /**
  * 一个窗口一行：标签 + 百分比 + 细进度条 + 倒计时。
  * @param {any} win
- * @param {typeof TEXT.zh} t
  * @param {boolean} zh
  */
-function renderWindow(win, t, zh) {
+function renderWindow(win, zh) {
 	const remaining = remainingOf(win);
 	const label = (zh ? win?.label : win?.labelEn || win?.label) || "";
-	const pct = remaining === null ? t.unknown : `${pctText(remaining)}%`;
+	const pct = remaining === null ? t("unknown") : `${pctText(remaining)}%`;
 	const width = remaining === null ? 0 : Math.max(0, Math.min(100, remaining));
-	const reset = countdown(win?.resetAt, t, zh);
+	const reset = countdown(win?.resetAt);
 	return `
 		<div class="qw-win" data-level="${level(remaining)}">
 			<div class="qw-win-head">
@@ -185,11 +124,10 @@ function renderWindow(win, t, zh) {
 /**
  * 正文：余额（主数字）+ 拆分 chips + 窗口 / 附加项 / 一句状态说明。
  * @param {any} provider
- * @param {typeof TEXT.zh} t
  * @param {boolean} zh
  * @param {{ stale: boolean, low: boolean }} flags
  */
-function renderProvider(provider, t, zh, flags) {
+function renderProvider(provider, zh, flags) {
 	const status = String(provider?.status ?? "ok");
 	const windows = Array.isArray(provider?.windows) ? provider.windows : [];
 	const balance = provider?.balance;
@@ -203,7 +141,7 @@ function renderProvider(provider, t, zh, flags) {
 				<span class="qw-amount" data-role="amount"${flags.stale ? ' data-stale="1"' : ""}>${
 					money.symbol ? `<span class="qw-cur">${esc(money.symbol)}</span>` : ""
 				}${esc(money.value)}</span>
-				<span class="qw-unit">${esc(t.balance)}</span>
+				<span class="qw-unit">${esc(t("balance"))}</span>
 				<span class="qw-age" data-role="age"></span>
 			</div>`);
 	}
@@ -217,15 +155,15 @@ function renderProvider(provider, t, zh, flags) {
 	if (chips.length) parts.push(`<div class="qw-extra qw-chips">${chips.join("")}</div>`);
 
 	if (windows.length) {
-		parts.push(`<div class="qw-windows">${windows.map((win) => renderWindow(win, t, zh)).join("")}</div>`);
+		parts.push(`<div class="qw-windows">${windows.map((win) => renderWindow(win, zh)).join("")}</div>`);
 	}
 
 	if (flags.low) {
-		parts.push(`<div class="qw-alert" data-kind="warn">${esc(t.lowBalance)}</div>`);
+		parts.push(`<div class="qw-alert" data-kind="warn">${esc(t("lowBalance"))}</div>`);
 	}
 
 	if (!windows.length && !balance && !failed) {
-		const empty = status === "signed-out" ? t.signedOut : status === "empty" ? t.empty : t.noWindows;
+		const empty = status === "signed-out" ? t("signedOut") : status === "empty" ? t("empty") : t("noWindows");
 		parts.push(`<div class="qw-empty">${esc(empty)}</div>`);
 	}
 
@@ -238,7 +176,7 @@ function renderProvider(provider, t, zh, flags) {
 	}
 	if (flags.stale) {
 		parts.push(
-			`<div class="qw-note" data-kind="stale"><span>${esc(t.stale)}</span><span data-role="stale-age"></span></div>`,
+			`<div class="qw-note" data-kind="stale"><span>${esc(t("stale"))}</span><span data-role="stale-age"></span></div>`,
 		);
 	}
 	return parts.join("");
@@ -252,8 +190,8 @@ function renderProvider(provider, t, zh, flags) {
  */
 export function createQuotaCard({ apiBase, store }) {
 	return function render(container) {
-		const zh = currentLang() === "zh";
-		const t = zh ? TEXT.zh : TEXT.en;
+		/** 当前语言决定服务端数据的 nameEn / labelEn 选哪一份；文案本身走 t()。 */
+		const zh = detectLang() === "zh";
 		/** 没传 store 时（单测 / 独立使用）自建一个，行为与主流程一致。 */
 		const own = store ? null : createSummaryStore({ apiBase });
 		const hub = store ?? own;
@@ -268,11 +206,11 @@ export function createQuotaCard({ apiBase, store }) {
 		container.classList.add("qw-card");
 		container.innerHTML = `
 			<div class="qw-head">
-				<span class="qw-name" data-role="name">${esc(t.title)}</span>
+				<span class="qw-name" data-role="name">${esc(t("title"))}</span>
 				<span class="qw-plan" data-role="plan" hidden></span>
 				<span class="qw-gap"></span>
 				<span class="qw-head-age" data-role="head-age" hidden></span>
-				<button class="qw-refresh" type="button" data-role="refresh" title="${esc(t.refresh)}" aria-label="${esc(t.refresh)}">
+				<button class="qw-refresh" type="button" data-role="refresh" title="${esc(t("refresh"))}" aria-label="${esc(t("refresh"))}">
 					<svg class="qw-ring" viewBox="0 0 24 24" aria-hidden="true">
 						<circle class="qw-ring-track" cx="12" cy="12" r="10"></circle>
 						<circle class="qw-ring-fill" cx="12" cy="12" r="10"></circle>
@@ -280,7 +218,7 @@ export function createQuotaCard({ apiBase, store }) {
 					<span class="qw-glyph">⟳</span>
 				</button>
 			</div>
-			<div class="qw-body" data-role="body"><div class="qw-empty">${esc(t.loading)}</div></div>
+			<div class="qw-body" data-role="body"><div class="qw-empty">${esc(t("loading"))}</div></div>
 			<div class="qw-foot">
 				<span class="qw-auto" data-role="auto"></span>
 			</div>`;
@@ -303,7 +241,7 @@ export function createQuotaCard({ apiBase, store }) {
 			const stalled = age > ttl;
 			const ageNode = $('[data-role="age"]');
 			const headAge = $('[data-role="head-age"]');
-			const ageLabel = stalled ? `${ageText(age, t)} · ${t.aging}` : ageText(age, t);
+			const ageLabel = stalled ? `${ageText(age)} · ${t("aging")}` : ageText(age);
 			if (ageNode) {
 				ageNode.textContent = ageLabel;
 				ageNode.toggleAttribute("data-stale", stalled);
@@ -316,7 +254,7 @@ export function createQuotaCard({ apiBase, store }) {
 			const staleAge = $('[data-role="stale-age"]');
 			if (staleAge) {
 				const since = Date.parse(String(payload?.lastGoodAt ?? ""));
-				staleAge.textContent = Number.isFinite(since) ? ` · ${ageText(Date.now() - since, t)}` : "";
+				staleAge.textContent = Number.isFinite(since) ? ` · ${ageText(Date.now() - since)}` : "";
 			}
 			if (ringFill) {
 				const circumference = 2 * Math.PI * 10;
@@ -326,7 +264,7 @@ export function createQuotaCard({ apiBase, store }) {
 			}
 			// 窗口倒计时也一起走
 			container.querySelectorAll("[data-reset]").forEach((node) => {
-				const text = countdown(node.getAttribute("data-reset") ?? "", t, zh);
+				const text = countdown(node.getAttribute("data-reset") ?? "");
 				if (text) node.textContent = text;
 			});
 		}
@@ -342,21 +280,21 @@ export function createQuotaCard({ apiBase, store }) {
 			const stale = provider?.stale === true || Number(data?.staleMs) > Number(data?.ttlMs);
 
 			container.setAttribute("data-tone", low ? "low" : "ok");
-			if (nameNode) nameNode.textContent = provider?.name || t.title;
+			if (nameNode) nameNode.textContent = provider?.name || t("title");
 			if (planNode) {
 				planNode.textContent = provider?.plan || "";
 				planNode.toggleAttribute("hidden", !provider?.plan);
 			}
 			if (bodyNode) {
 				bodyNode.innerHTML = provider
-					? renderProvider(provider, t, zh, { stale, low })
-					: `<div class="qw-empty">${esc(t.noSource)}</div>`;
+					? renderProvider(provider, zh, { stale, low })
+					: `<div class="qw-empty">${esc(t("noSource"))}</div>`;
 			}
 			const headAge = $('[data-role="head-age"]');
 			if (headAge) headAge.toggleAttribute("hidden", Boolean(provider?.balance));
 			if (autoNode) {
 				const seconds = Number(data?.refreshSeconds) || 60;
-				autoNode.textContent = provider ? t.autoEvery(seconds) : "";
+				autoNode.textContent = provider ? autoEveryText(seconds) : "";
 				// 没有内容时别留一条孤零零的分隔线
 				autoNode.parentElement?.toggleAttribute("hidden", !provider);
 			}
@@ -377,7 +315,7 @@ export function createQuotaCard({ apiBase, store }) {
 		function paintError(error) {
 			if (disposed || !bodyNode || payload) return;
 			const message = error instanceof Error ? error.message : String(error);
-			bodyNode.innerHTML = `<div class="qw-empty" data-kind="error">${esc(t.failed)}: ${esc(message)}</div>`;
+			bodyNode.innerHTML = `<div class="qw-empty" data-kind="error">${esc(t("failed"))}: ${esc(message)}</div>`;
 		}
 
 		/** @param {boolean} force */

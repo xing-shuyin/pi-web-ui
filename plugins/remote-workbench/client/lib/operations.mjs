@@ -1,4 +1,7 @@
 import { esc } from "@pi-web-ui/plugin-sdk/client";
+import { makeT } from "../i18n.mjs";
+
+const t = makeT();
 
 export function createOperations({ root, api, hosts, post }) {
 	let panel = null,
@@ -14,7 +17,7 @@ export function createOperations({ root, api, hosts, post }) {
 		close();
 		panel = document.createElement("div");
 		panel.className = "rw-modal-overlay";
-		panel.innerHTML = `<div class="rw-modal" style="width:850px;max-height:85vh;overflow:auto;overscroll-behavior:contain"><div class="rw-modal-title">${esc(title)}</div><button class="rw-btn rw-ops-close">关闭</button><div class="rw-ops-content"></div></div>`;
+		panel.innerHTML = `<div class="rw-modal" style="width:850px;max-height:85vh;overflow:auto;overscroll-behavior:contain"><div class="rw-modal-title">${esc(title)}</div><button class="rw-btn rw-ops-close">${t("close")}</button><div class="rw-ops-content"></div></div>`;
 		root.append(panel);
 		panel.querySelector(".rw-ops-close").onclick = close;
 		return panel.querySelector(".rw-ops-content");
@@ -25,16 +28,16 @@ export function createOperations({ root, api, hosts, post }) {
 		box.append(el);
 	}
 	async function health(host) {
-		const box = open(`健康 · ${host.name} · ${host.environment || "未标记环境"}`),
+		const box = open(t("healthTitle", { name: host.name, env: host.environment || t("noEnvironment") })),
 			version = generation;
 		const refresh = document.createElement("button");
 		refresh.className = "rw-btn";
-		refresh.textContent = "刷新健康检查";
+		refresh.textContent = t("refreshHealth");
 		const output = document.createElement("pre");
 		box.append(refresh, output);
 		async function load() {
 			refresh.disabled = true;
-			output.textContent = "检查中…";
+			output.textContent = t("checking");
 			try {
 				const value = await post("/health", { hostName: host.name });
 				if (version !== generation) return;
@@ -49,16 +52,16 @@ export function createOperations({ root, api, hosts, post }) {
 		load();
 	}
 	function tasks() {
-		const box = open("多机任务中心"),
+		const box = open(t("tasksCenter")),
 			version = generation;
 		box.innerHTML = `<form class="rw-task-form"><div class="rw-task-targets">${hosts()
 			.map(
 				(h, i) =>
-					`<label><input type="checkbox" name="target" value="${i}">${esc(h.name)} · ${esc(h.group || "未分组")} · ${esc(h.environment || "未标记环境")}</label>`,
+					`<label><input type="checkbox" name="target" value="${i}">${esc(h.name)} · ${esc(h.group || t("ungrouped"))} · ${esc(h.environment || t("noEnvironment"))}</label>`,
 			)
 			.join(
 				"",
-			)}</div><label>命令<textarea name="cmd" required rows="3"></textarea></label><label>工作目录<input name="cwd" placeholder="可选"></label><label>并发<input name="concurrency" type="number" min="1" max="8" value="2"></label><label>超时（秒）<input name="timeout" type="number" min="1" max="120" value="60"></label><button class="rw-btn primary">执行所选主机</button></form><div class="rw-task-error" role="alert"></div><div class="rw-task-list"></div>`;
+			)}</div><label>${t("commandLabel")}<textarea name="cmd" required rows="3"></textarea></label><label>${t("cwdLabel")}<input name="cwd" placeholder="${t("optional")}"></label><label>${t("concurrencyLabel")}<input name="concurrency" type="number" min="1" max="8" value="2"></label><label>${t("timeoutLabel")}<input name="timeout" type="number" min="1" max="120" value="60"></label><button class="rw-btn primary">${t("runOnSelected")}</button></form><div class="rw-task-error" role="alert"></div><div class="rw-task-list"></div>`;
 		const rowStates = new Map();
 		let lastRevision = "";
 		const snapshot = [...hosts()],
@@ -72,15 +75,18 @@ export function createOperations({ root, api, hosts, post }) {
 				(el) => snapshot[Number(el.value)].name,
 			);
 			if (!hostNames.length) {
-				errBox.textContent = "请选择明确的目标主机";
+				errBox.textContent = t("selectTargetsFirst");
 				return;
 			}
 			if (
 				!confirm(
-					`在以下主机执行命令？\n${snapshot
-						.filter((h) => hostNames.includes(h.name))
-						.map((h) => `${h.name} [${h.environment || "未标记环境"}]`)
-						.join("\n")}\n\n${form.elements.cmd.value}`,
+					t("confirmRunOnHosts", {
+						hosts: snapshot
+							.filter((h) => hostNames.includes(h.name))
+							.map((h) => `${h.name} [${h.environment || t("noEnvironment")}]`)
+							.join("\n"),
+						cmd: form.elements.cmd.value,
+					}),
 				)
 			)
 				return;
@@ -117,7 +123,7 @@ export function createOperations({ root, api, hosts, post }) {
 				errBox.textContent = data.storageError || data.error || "";
 				const revision = JSON.stringify(data.tasks);
 				if (revision === lastRevision) {
-					if (data.tasks.some((t) => t.status === "running")) timer = setTimeout(load, 2000);
+					if (data.tasks.some((task) => task.status === "running")) timer = setTimeout(load, 2000);
 					return;
 				}
 				lastRevision = revision;
@@ -130,7 +136,7 @@ export function createOperations({ root, api, hosts, post }) {
 				for (const task of data.tasks || []) {
 					const card = document.createElement("section");
 					card.className = "rw-task-card";
-					card.innerHTML = `<strong>${esc(task.cmd)}</strong> · ${esc(task.status)} · 并发 ${task.concurrency}<button class="rw-btn rw-task-cancel">取消任务</button><button class="rw-btn rw-task-retry">重试失败主机</button>`;
+					card.innerHTML = `<strong>${esc(task.cmd)}</strong> · ${esc(task.status)} · ${t("concurrencyValue", { n: task.concurrency })}<button class="rw-btn rw-task-cancel">${t("cancelTask")}</button><button class="rw-btn rw-task-retry">${t("retryFailed")}</button>`;
 					card.querySelector(".rw-task-cancel").disabled = task.status !== "running";
 					card.querySelector(".rw-task-cancel").onclick = () => action("/tasks/cancel", { taskId: task.id });
 					card.querySelector(".rw-task-retry").disabled = !task.items.some((item) => item.status === "failed");
@@ -155,7 +161,7 @@ export function createOperations({ root, api, hosts, post }) {
 						row.ontoggle = () => {
 							state.open = row.open;
 						};
-						row.innerHTML = `<summary>${esc(item.hostName)} · ${esc(item.status)} · 第 ${item.attempt} 次</summary>`;
+						row.innerHTML = `<summary>${esc(item.hostName)} · ${esc(item.status)} · ${t("attemptNth", { n: item.attempt })}</summary>`;
 						const pre = document.createElement("pre");
 						pre.textContent = [
 							item.result?.output,
@@ -165,7 +171,7 @@ export function createOperations({ root, api, hosts, post }) {
 							task.storageError,
 							task.error,
 							item.result?.stopGuarantee,
-							item.result?.truncated ? "输出已截断，可读取完整日志" : "",
+							item.result?.truncated ? t("outputTruncated") : "",
 						]
 							.filter(Boolean)
 							.join("\n");
@@ -174,14 +180,14 @@ export function createOperations({ root, api, hosts, post }) {
 						if (["queued", "running"].includes(item.status)) {
 							const cancel = document.createElement("button");
 							cancel.className = "rw-btn";
-							cancel.textContent = "取消此主机";
+							cancel.textContent = t("cancelHost");
 							cancel.onclick = () => action("/tasks/cancel", { taskId: task.id, hostName: item.hostName });
 							row.append(cancel);
 						}
 						if (item.result?.logId) {
 							const more = document.createElement("button");
 							more.className = "rw-btn";
-							more.textContent = "读取日志下一页";
+							more.textContent = t("readMoreLog");
 							more.disabled = state.eof;
 							more.onclick = async () => {
 								more.disabled = true;
@@ -211,7 +217,7 @@ export function createOperations({ root, api, hosts, post }) {
 					list.append(card);
 				}
 				panel.scrollTop = scrollTop;
-				if (!data.tasks.some((t) => t.status === "running")) return;
+				if (!data.tasks.some((task) => task.status === "running")) return;
 			} catch (err) {
 				if (version === generation) errBox.textContent = err.message;
 			}

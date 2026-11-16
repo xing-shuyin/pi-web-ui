@@ -646,5 +646,6 @@
 	"canvas.edges.type.condition_true": "Bedingung erfüllt",
 	"canvas.edges.type.condition_false": "Bedingung nicht erfüllt",
 	"canvas.edges.type.approve": "Genehmigen",
-	"canvas.edges.type.reject": "Ablehnen"
+	"canvas.edges.type.reject": "Ablehnen",
+	"canvas.aiBar.placeholder": "Beispiel: Lösung recherchieren, implementieren, testen, dann prüfen und zusammenfassen"
 }

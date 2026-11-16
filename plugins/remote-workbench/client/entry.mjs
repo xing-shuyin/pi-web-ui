@@ -13,6 +13,9 @@ import { createOperations } from "./lib/operations.mjs";
 import { compact } from "./lib/compact.mjs";
 import { buildRemoteWorkspaceUri } from "./lib/workspace-uri.mjs";
 import { esc as escapeHtml } from "@pi-web-ui/plugin-sdk/client";
+import { makeT } from "./i18n.mjs";
+
+const t = makeT();
 
 let xtermModule = null;
 async function loadXterm() {
@@ -722,22 +725,22 @@ export default {
 		header.className = "rw-header";
 		header.innerHTML = `
 			<div class="rw-header-left">
-				<div class="rw-title">🖥️ 远程工作台</div>
-				<div class="rw-sub">全局主机 · Web SSH 终端 · 画布分屏 · SFTP 联动 · 端口转发</div>
+				<div class="rw-title">${t("title")}</div>
+				<div class="rw-sub">${t("subtitle")}</div>
 			</div>
 			<div class="rw-header-right">
 				<div class="rw-nav">
-					<button class="rw-nav-btn active" data-tab="hosts">主机资产</button>
-					<button class="rw-nav-btn" data-tab="term">Web 终端 (<span id="rw-term-count">0</span>)</button>
-					<button class="rw-nav-btn" data-tab="tunnels">端口转发 (<span id="rw-tunnel-count">0</span>)</button>
+					<button class="rw-nav-btn active" data-tab="hosts">${t("navHosts")}</button>
+					<button class="rw-nav-btn" data-tab="term">${t("navTerm")} (<span id="rw-term-count">0</span>)</button>
+					<button class="rw-nav-btn" data-tab="tunnels">${t("navTunnels")} (<span id="rw-tunnel-count">0</span>)</button>
 				</div>
-				<button class="rw-btn primary" id="rw-btn-add">＋ 添加主机</button>
+				<button class="rw-btn primary" id="rw-btn-add">${t("addHost")}</button>
 			</div>
 		`;
 		root.appendChild(header);
 		const tasksButton = document.createElement("button");
 		tasksButton.className = "rw-btn";
-		tasksButton.textContent = "多机任务中心";
+		tasksButton.textContent = t("tasksCenter");
 		tasksButton.onclick = () => operations.tasks();
 		header.querySelector(".rw-header-right").append(tasksButton);
 
@@ -758,22 +761,22 @@ export default {
 				<div class="rw-term-tools">
 					<!-- 布局切换器：标签单屏 / 双列 / 四宫格 / 画布平铺 -->
 					<div class="rw-layout-group">
-						<button class="rw-layout-btn active" data-layout="tabs" title="单标签页视图">📑 标签</button>
-						<button class="rw-layout-btn" data-layout="grid" title="左右双列平铺">◫ 双列</button>
-						<button class="rw-layout-btn" data-layout="quad" title="四宫格矩阵分屏">⊞ 四格</button>
-						<button class="rw-layout-btn" data-layout="canvas" title="自适应画布多卡片平铺">🎨 画布</button>
+						<button class="rw-layout-btn active" data-layout="tabs" title="${t("layoutTabsHint")}">${t("layoutTabs")}</button>
+						<button class="rw-layout-btn" data-layout="grid" title="${t("layoutGridHint")}">${t("layoutGrid")}</button>
+						<button class="rw-layout-btn" data-layout="quad" title="${t("layoutQuadHint")}">${t("layoutQuad")}</button>
+						<button class="rw-layout-btn" data-layout="canvas" title="${t("layoutCanvasHint")}">${t("layoutCanvas")}</button>
 					</div>
 					<!-- 多机广播输入开关 -->
-					<button class="rw-btn sm" id="rw-tool-broadcast" title="明确选择目标与环境后广播到所选终端">⚡ 广播输入: 关</button>
-					<button class="rw-btn sm" id="rw-tool-export" title="清理 ANSI 与进度条后导出纯净文本日志 (Termcp Compact)">📄 导出日志</button>
-					<button class="rw-btn sm" id="rw-tool-clear" title="清除屏幕 (clear)">🧹 清屏</button>
-					<button class="rw-btn sm" id="rw-tool-reconnect" title="重新连接当前终端">🔄 重连</button>
-					<button class="rw-btn sm" id="rw-tool-snippet" title="显示/隐藏快捷运维指令条">⚡ 快捷条</button>
-					<button class="rw-btn sm" id="rw-tool-fullscreen" title="全屏终端模式 (Esc 退出)">⛶ 全屏</button>
+					<button class="rw-btn sm" id="rw-tool-broadcast" title="${t("broadcastHint")}">${t("broadcastOff")}</button>
+					<button class="rw-btn sm" id="rw-tool-export" title="${t("exportLogHint")}">${t("exportLog")}</button>
+					<button class="rw-btn sm" id="rw-tool-clear" title="${t("clearScreenHint")}">${t("clearScreen")}</button>
+					<button class="rw-btn sm" id="rw-tool-reconnect" title="${t("reconnectHint")}">${t("reconnect")}</button>
+					<button class="rw-btn sm" id="rw-tool-snippet" title="${t("snippetBarToggleHint")}">${t("snippetBarToggle")}</button>
+					<button class="rw-btn sm" id="rw-tool-fullscreen" title="${t("fullscreenHint")}">${t("fullscreen")}</button>
 				</div>
 			</div>
 			<div class="rw-snippet-bar" id="rw-snippet-bar">
-				<span style="font-size: 11px; color: var(--text-faint); margin-right: 4px;">快捷指令:</span>
+				<span style="font-size: 11px; color: var(--text-faint); margin-right: 4px;">${t("quickCommands")}</span>
 				<button class="rw-snippet-btn" data-cmd="SIGINT">Ctrl+C</button>
 				<button class="rw-snippet-btn" data-cmd="SIGQUIT">Ctrl+D</button>
 				<button class="rw-snippet-btn" data-cmd="ESC">Esc</button>
@@ -789,19 +792,19 @@ export default {
 			<div class="rw-term-viewport layout-tabs" id="rw-term-viewport">
 				<div class="rw-term-empty" id="rw-term-empty">
 					<div style="font-size: 32px;">💻</div>
-					<div>暂无打开的远程终端会话</div>
-					<button class="rw-btn primary" id="rw-btn-goto-hosts">从主机列表中选择并连接</button>
+					<div>${t("noSessions")}</div>
+					<button class="rw-btn primary" id="rw-btn-goto-hosts">${t("pickHostToConnect")}</button>
 				</div>
 				<!-- 凭据外带直通输入条（检测到 Sudo/Password 时滑出） -->
 				<div class="rw-secure-bar" id="rw-secure-bar" style="display: none;">
-					<span>🔒 <b>凭据/Sudo 提权请求</b>（发送到下方明确标记的终端）:</span>
-					<input type="password" class="rw-secure-input" id="rw-secure-input" placeholder="输入密码 / Key 口令" />
-					<button class="rw-btn primary sm" id="rw-secure-send">发送</button>
-					<button class="rw-btn sm" id="rw-secure-cancel">取消 (Ctrl+C)</button>
+					<span>${t("securePrompt")}</span>
+					<input type="password" class="rw-secure-input" id="rw-secure-input" placeholder="${t("securePlaceholder")}" />
+					<button class="rw-btn primary sm" id="rw-secure-send">${t("send")}</button>
+					<button class="rw-btn sm" id="rw-secure-cancel">${t("cancelWithCtrlC")}</button>
 				</div>
 				<div class="rw-term-reconnect-bar" id="rw-reconnect-bar" style="display: none;">
-					<span>⚠️ 远程连接已断开</span>
-					<button class="rw-btn primary sm" id="rw-reconnect-btn">立即重连</button>
+					<span>${t("connectionLost")}</span>
+					<button class="rw-btn primary sm" id="rw-reconnect-btn">${t("reconnectNow")}</button>
 				</div>
 			</div>
 		`;
@@ -819,7 +822,8 @@ export default {
 				...options,
 			});
 			const json = await res.json();
-			if (!res.ok || !json.ok) throw new Error(json.error || `请求失败 (${res.status})`);
+			if (!res.ok || !json.ok) throw new Error(json.error || t("requestFailedWithStatus", { status: res.status }));
+			// developer-facing, not UI: sentinel for a view that is already unmounted
 			if (disposed) throw new Error("工作台已卸载");
 			return json.data;
 		}
@@ -830,6 +834,7 @@ export default {
 				hosts = data?.hosts ?? [];
 				renderHosts();
 			} catch (err) {
+				// developer-facing, not UI: browser console only
 				console.error("[remote-workbench] 加载主机失败:", err);
 			}
 		}
@@ -840,6 +845,7 @@ export default {
 				tunnels = data?.tunnels ?? [];
 				renderTunnels();
 			} catch (err) {
+				// developer-facing, not UI: browser console only
 				console.error("[remote-workbench] 加载隧道失败:", err);
 			}
 		}
@@ -851,11 +857,11 @@ export default {
 			toolbar.className = "rw-hosts-toolbar";
 			toolbar.innerHTML = `
 				<div style="display: flex; gap: 8px; flex: 1; align-items: center; flex-wrap: wrap;">
-					<input type="text" class="rw-search-input" id="rw-search" placeholder="🔍 搜索主机 IP / 名称 / 用户名..." value="${escapeHtml(filterKeyword)}" />
-					<button class="rw-btn sm" id="rw-btn-scan-sshconfig" title="扫描并导入本机 ~/.ssh/config 主机">⚙ 导入 ~/.ssh/config</button>
-					<button class="rw-btn sm primary" id="rw-btn-open-all-canvas" title="一键将所有主机在画布矩阵中同时连接并平铺展示">🎨 画布平铺全部主机</button>
+					<input type="text" class="rw-search-input" id="rw-search" placeholder="${t("searchHosts")}" value="${escapeHtml(filterKeyword)}" />
+					<button class="rw-btn sm" id="rw-btn-scan-sshconfig" title="${t("importSshConfigHint")}">${t("importSshConfig")}</button>
+					<button class="rw-btn sm primary" id="rw-btn-open-all-canvas" title="${t("canvasAllHostsHint")}">${t("canvasAllHosts")}</button>
 				</div>
-				<div style="font-size: 12px; color: var(--text-faint);">共 ${hosts.length} 台全局主机</div>
+				<div style="font-size: 12px; color: var(--text-faint);">${t("hostCount", { n: hosts.length })}</div>
 			`;
 			hostsPane.appendChild(toolbar);
 			for (const [field, selected, setter] of [
@@ -877,7 +883,7 @@ export default {
 				const select = document.createElement("select");
 				select.className = "rw-search-input";
 				select.innerHTML =
-					`<option value="">${field === "group" ? "所有分组" : "所有环境"}</option>` +
+					`<option value="">${field === "group" ? t("allGroups") : t("allEnvironments")}</option>` +
 					[...new Set(hosts.map((h) => h[field]).filter(Boolean))]
 						.map((v) => `<option value="${escapeHtml(v)}">${escapeHtml(v)}</option>`)
 						.join("");
@@ -898,7 +904,7 @@ export default {
 
 			toolbar.querySelector("#rw-btn-open-all-canvas").addEventListener("click", () => {
 				if (!hosts.length) {
-					alert("当前暂无主机，请先添加主机");
+					alert(t("noHostsYet"));
 					return;
 				}
 				termLayout = "canvas";
@@ -934,8 +940,8 @@ export default {
 				listContainer.innerHTML = `
 					<div class="rw-hosts-empty" style="padding: 40px 0;">
 						<div style="font-size: 28px;">🌐</div>
-						<div>${hosts.length ? "没有匹配的主机" : "全局主机库（global-hosts.json）为空"}</div>
-						<button class="rw-btn primary" id="rw-empty-add">＋ 添加远程主机</button>
+						<div>${hosts.length ? t("noMatchingHosts") : t("hostInventoryEmpty")}</div>
+						<button class="rw-btn primary" id="rw-empty-add">${t("addRemoteHost")}</button>
 					</div>
 				`;
 				listContainer.querySelector("#rw-empty-add")?.addEventListener("click", () => showEditModal());
@@ -945,52 +951,53 @@ export default {
 			filtered.forEach((h) => {
 				const card = document.createElement("div");
 				card.className = "rw-host-card";
-				const authText = h.authType === "key" ? "密钥认证" : h.authType === "agent" ? "Agent" : "密码认证";
-				const timeText = h.lastConnected ? new Date(h.lastConnected).toLocaleString() : "从未连接";
+				const authText =
+					h.authType === "key" ? t("authKeyCard") : h.authType === "agent" ? t("authAgentCard") : t("authPasswordCard");
+				const timeText = h.lastConnected ? new Date(h.lastConnected).toLocaleString() : t("neverConnected");
 
 				card.innerHTML = `
 					<div class="rw-host-main">
 						<div class="rw-host-head">
 							<span style="font-size: 16px;">💻</span>
-							<span class="rw-host-name">${escapeHtml(h.name)}</span><span class="rw-host-badge">${escapeHtml(h.group || "未分组")} · ${escapeHtml(h.environment || "未标记环境")}</span>
+							<span class="rw-host-name">${escapeHtml(h.name)}</span><span class="rw-host-badge">${escapeHtml(h.group || t("ungrouped"))} · ${escapeHtml(h.environment || t("noEnvironment"))}</span>
 							<span class="rw-host-badge">${authText}</span>
-							${h.reviewMode ? `<span class="rw-host-badge" style="color: var(--amber, #f59e0b); border-color: var(--amber, #f59e0b);">🛡️ 生产保护</span>` : ""}
+							${h.reviewMode ? `<span class="rw-host-badge" style="color: var(--amber, #f59e0b); border-color: var(--amber, #f59e0b);">${t("prodGuard")}</span>` : ""}
 							<span class="rw-host-badge" id="rw-probe-badge-${escapeHtml(h.name)}" style="display: none;"></span>
 							${h.description ? `<span style="font-size: 12px; color: var(--text-faint);">· ${escapeHtml(h.description)}</span>` : ""}
 						</div>
 						<div class="rw-host-meta">
-							<span>地址: <b>${escapeHtml(h.username)}@${escapeHtml(h.host)}:${h.port || 22}</b></span>
-							${h.remotePath ? `<span>路径: ${escapeHtml(h.remotePath)}</span>` : ""}
-							<span>最近连接: ${timeText}</span>
+							<span>${t("addressLabel")} <b>${escapeHtml(h.username)}@${escapeHtml(h.host)}:${h.port || 22}</b></span>
+							${h.remotePath ? `<span>${t("pathLabel")} ${escapeHtml(h.remotePath)}</span>` : ""}
+							<span>${t("lastConnectedLabel")} ${timeText}</span>
 						</div>
 					</div>
 					<div class="rw-host-ops">
-						<button class="rw-btn primary rw-op-term" title="打开 Web SSH 终端">⚡ 终端</button>
-						<button class="rw-btn rw-op-files" title="轻量浏览远端目录树与文件">📂 文件</button>
-						<button class="rw-btn rw-op-health">健康</button><button class="rw-btn rw-op-meta">分组/环境</button><button class="rw-btn rw-op-tmux">tmux</button>
-						<button class="rw-btn rw-op-probe" title="探测服务器配置与在线状态">🔍 探测</button>
-						<button class="rw-btn rw-op-tunnel" title="建立本地到远端的端口转发隧道 (-L)">🔀 转发</button>
-						<button class="rw-btn rw-op-sftp" title="在 SFTP 插件中联动使用">☁️ SFTP</button>
-						<button class="rw-btn rw-op-workspace" title="设为当前远程工作区">📁 工作区</button>
-						<button class="rw-btn rw-op-edit" title="编辑主机配置">✎ 编辑</button>
-						<button class="rw-btn danger rw-op-del" title="从全局删除">🗑</button>
+						<button class="rw-btn primary rw-op-term" title="${t("openTerminalHint")}">${t("openTerminal")}</button>
+						<button class="rw-btn rw-op-files" title="${t("filesHint")}">${t("files")}</button>
+						<button class="rw-btn rw-op-health">${t("health")}</button><button class="rw-btn rw-op-meta">${t("groupEnv")}</button><button class="rw-btn rw-op-tmux">tmux</button>
+						<button class="rw-btn rw-op-probe" title="${t("probeHint")}">${t("probe")}</button>
+						<button class="rw-btn rw-op-tunnel" title="${t("forwardHint")}">${t("forward")}</button>
+						<button class="rw-btn rw-op-sftp" title="${t("sftpHint")}">${t("sftp")}</button>
+						<button class="rw-btn rw-op-workspace" title="${t("workspaceHint")}">${t("workspace")}</button>
+						<button class="rw-btn rw-op-edit" title="${t("editHint")}">${t("edit")}</button>
+						<button class="rw-btn danger rw-op-del" title="${t("deleteFromGlobalHint")}">🗑</button>
 					</div>
 				`;
 
 				card.querySelector(".rw-op-health").onclick = () => operations.health(h);
 				card.querySelector(".rw-op-tmux").onclick = () => {
-					const tmuxSession = prompt("tmux 会话名（字母、数字、_、-；留空自动生成）", "");
+					const tmuxSession = prompt(t("tmuxSessionPrompt"), "");
 					if (tmuxSession === null) return;
 					if (tmuxSession && !/^[a-zA-Z0-9_-]{1,64}$/.test(tmuxSession)) {
-						alert("会话名格式无效");
+						alert(t("tmuxSessionInvalid"));
 						return;
 					}
 					openTerminal({ ...h, tmux: true, tmuxSession });
 				};
 				card.querySelector(".rw-op-meta").onclick = async () => {
-					const group = prompt("主机分组", h.group || "");
+					const group = prompt(t("hostGroupPrompt"), h.group || "");
 					if (group === null) return;
-					const environment = prompt("环境（例如 production / staging）", h.environment || "");
+					const environment = prompt(t("environmentPrompt"), h.environment || "");
 					if (environment === null) return;
 					try {
 						await post("/hosts/metadata", { name: h.name, group, environment });
@@ -1017,12 +1024,12 @@ export default {
 			overlay.className = "rw-modal-overlay";
 			overlay.innerHTML = `
 				<div class="rw-modal" style="width: 520px;">
-					<div class="rw-modal-title">⚙ 发现并导入本机 ~/.ssh/config 主机</div>
-					<div id="rw-cfg-loading" style="padding: 20px 0; text-align: center; color: var(--text-faint);">正在读取本机 ~/.ssh/config…</div>
+					<div class="rw-modal-title">${t("sshConfigTitle")}</div>
+					<div id="rw-cfg-loading" style="padding: 20px 0; text-align: center; color: var(--text-faint);">${t("sshConfigReading")}</div>
 					<div id="rw-cfg-content" style="display: none; max-height: 320px; overflow-y: auto; flex-direction: column; gap: 8px;"></div>
 					<div class="rw-modal-footer">
-						<button class="rw-btn" id="rw-cfg-cancel">取消</button>
-						<button class="rw-btn primary" id="rw-cfg-import-btn" disabled>一键导入已选主机</button>
+						<button class="rw-btn" id="rw-cfg-cancel">${t("cancel")}</button>
+						<button class="rw-btn primary" id="rw-cfg-import-btn" disabled>${t("sshConfigImportSelected")}</button>
 					</div>
 				</div>
 			`;
@@ -1037,7 +1044,7 @@ export default {
 				contentEl.style.display = "flex";
 
 				if (!res.exists || !res.list.length) {
-					contentEl.innerHTML = `<div style="color: var(--text-faint); padding: 20px 0; text-align: center;">未在「${escapeHtml(res.path || "~/.ssh/config")}」中发现可用的 Host 主机块。</div>`;
+					contentEl.innerHTML = `<div style="color: var(--text-faint); padding: 20px 0; text-align: center;">${t("sshConfigNoHosts", { path: escapeHtml(res.path || "~/.ssh/config") })}</div>`;
 					return;
 				}
 
@@ -1048,12 +1055,12 @@ export default {
 							<div style="display: flex; align-items: center; gap: 10px;">
 								<input type="checkbox" class="rw-cfg-cb" data-idx="${idx}" ${item.imported || item.importable === false ? "disabled" : "checked"} />
 								<div>
-									<div style="font-weight: 600; font-size: 13px;">${escapeHtml(item.alias)}</div><div role="alert">${(item.warnings || []).map((warning) => escapeHtml(warning)).join(" · ")}${item.importable === false ? " · 不支持此连接配置，禁止导入" : ""}</div>
+									<div style="font-weight: 600; font-size: 13px;">${escapeHtml(item.alias)}</div><div role="alert">${(item.warnings || []).map((warning) => escapeHtml(warning)).join(" · ")}${item.importable === false ? t("sshConfigUnsupported") : ""}</div>
 									<div style="font-size: 11.5px; color: var(--text-faint);">${escapeHtml(item.username)}@${escapeHtml(item.host)}:${item.port} ${item.privateKeyPath ? `(Key: ${escapeHtml(item.privateKeyPath)})` : ""}</div>
 								</div>
 							</div>
 							<div style="font-size: 11px;">
-								${item.imported ? `<span class="rw-host-badge">已在全局库</span>` : `<span class="rw-host-badge success">新发现</span>`}
+								${item.imported ? `<span class="rw-host-badge">${t("alreadyInInventory")}</span>` : `<span class="rw-host-badge success">${t("newlyDiscovered")}</span>`}
 							</div>
 						</label>
 					`;
@@ -1072,7 +1079,7 @@ export default {
 					});
 					if (!selected.length) return;
 					importBtn.disabled = true;
-					importBtn.textContent = "导入中…";
+					importBtn.textContent = t("importing");
 					try {
 						await api("/sshconfig/import", {
 							method: "POST",
@@ -1081,13 +1088,13 @@ export default {
 						overlay.remove();
 						await refreshHosts();
 					} catch (err) {
-						alert(`导入失败: ${err.message}`);
+						alert(t("importFailed", { error: err.message }));
 						importBtn.disabled = false;
-						importBtn.textContent = "一键导入已选主机";
+						importBtn.textContent = t("sshConfigImportSelected");
 					}
 				});
 			} catch (err) {
-				overlay.querySelector("#rw-cfg-loading").textContent = `扫描失败: ${err.message}`;
+				overlay.querySelector("#rw-cfg-loading").textContent = t("scanFailed", { error: err.message });
 			}
 		}
 
@@ -1097,28 +1104,28 @@ export default {
 			overlay.innerHTML = `
 				<div class="rw-modal" style="width: 720px; max-width: 95%; max-height: 85vh; display: flex; flex-direction: column;">
 					<div class="rw-modal-title" style="display: flex; justify-content: space-between; align-items: center;">
-						<span>📂 远程文件浏览 — <b>${escapeHtml(h.name)}</b></span>
+						<span>${t("fileBrowser")} — <b>${escapeHtml(h.name)}</b></span>
 						<button class="rw-btn sm" id="rw-fs-close">✖</button>
 					</div>
 
 					<div style="display: flex; gap: 8px; align-items: center; margin: 4px 0;">
-						<button class="rw-btn sm" id="rw-fs-up" title="返回上级目录">⬆ 上级</button>
-						<button class="rw-btn sm" id="rw-fs-refresh" title="刷新">⟳ 刷新</button>
+						<button class="rw-btn sm" id="rw-fs-up" title="${t("goUpHint")}">${t("goUp")}</button>
+						<button class="rw-btn sm" id="rw-fs-refresh" title="${t("refreshHint")}">${t("refresh")}</button>
 						<input type="text" id="rw-fs-path-input" style="flex: 1; padding: 4px 8px; font-size: 12px; font-family: var(--mono, monospace); background: var(--bg); border: 1px solid var(--border); border-radius: 4px; color: var(--text);" value="${escapeHtml(h.remotePath || "/")}" />
-						<button class="rw-btn sm primary" id="rw-fs-go">前往</button>
-						<button class="rw-btn sm" id="rw-fs-open-ws" title="将当前浏览目录设为远程工作区">📁 设为工作区</button>
+						<button class="rw-btn sm primary" id="rw-fs-go">${t("go")}</button>
+						<button class="rw-btn sm" id="rw-fs-open-ws" title="${t("setAsWorkspaceHint")}">${t("setAsWorkspace")}</button>
 						<label class="rw-btn sm" style="cursor: pointer; position: relative;">
-							<span>⬆ 上传</span>
+							<span>${t("upload")}</span>
 							<input type="file" id="rw-fs-upload-input" style="display: none;" />
 						</label>
 					</div>
 
 					<div id="rw-fs-list" style="flex: 1; min-height: 240px; max-height: 420px; overflow-y: auto; background: var(--bg); border: 1px solid var(--border); border-radius: 6px; padding: 4px;">
-						<div style="text-align: center; color: var(--text-faint); padding: 40px 0;">加载中…</div>
+						<div style="text-align: center; color: var(--text-faint); padding: 40px 0;">${t("loading")}</div>
 					</div>
 
 					<div style="font-size: 11px; color: var(--text-faint); display: flex; justify-content: space-between;">
-						<span>提示: 双击文件夹进入，双击文本文件直接查看预览内容</span>
+						<span>${t("fileBrowserTip")}</span>
 						<span id="rw-fs-status"></span>
 					</div>
 				</div>
@@ -1153,20 +1160,20 @@ export default {
 								<button class="rw-btn sm" id="rw-prev-close">✖</button>
 							</div>
 							<div style="flex: 1; overflow-y: auto; background: var(--bg); border: 1px solid var(--border); border-radius: 6px; padding: 10px;">
-								<pre style="margin: 0; font-family: var(--mono, monospace); font-size: 12px; white-space: pre-wrap; word-break: break-all;">${res.isBinary ? "(检测到二进制文件，不提供文本预览)" : escapeHtml(res.content)}</pre>
+								<pre style="margin: 0; font-family: var(--mono, monospace); font-size: 12px; white-space: pre-wrap; word-break: break-all;">${res.isBinary ? t("binaryPreviewUnavailable") : escapeHtml(res.content)}</pre>
 							</div>
 						</div>
 					`;
 					root.appendChild(prevModal);
 					prevModal.querySelector("#rw-prev-close").addEventListener("click", () => prevModal.remove());
 				} catch (err) {
-					alert(`预览失败: ${err.message}`);
+					alert(t("previewFailed", { error: err.message }));
 				}
 			}
 
 			async function loadDir(targetPath) {
 				const listEl = overlay.querySelector("#rw-fs-list");
-				listEl.innerHTML = `<div style="text-align: center; color: var(--text-faint); padding: 40px 0;">加载目录中…</div>`;
+				listEl.innerHTML = `<div style="text-align: center; color: var(--text-faint); padding: 40px 0;">${t("loadingDirectory")}</div>`;
 				try {
 					const data = await api("/files/list", {
 						method: "POST",
@@ -1176,10 +1183,10 @@ export default {
 					curParent = data.parentPath;
 					overlay.querySelector("#rw-fs-path-input").value = curPath;
 					overlay.querySelector("#rw-fs-up").disabled = !curParent;
-					overlay.querySelector("#rw-fs-status").textContent = `共 ${data.items.length} 个条目`;
+					overlay.querySelector("#rw-fs-status").textContent = t("entryCount", { n: data.items.length });
 
 					if (!data.items.length) {
-						listEl.innerHTML = `<div style="text-align: center; color: var(--text-faint); padding: 30px 0;">(空目录)</div>`;
+						listEl.innerHTML = `<div style="text-align: center; color: var(--text-faint); padding: 30px 0;">${t("emptyDirectory")}</div>`;
 						return;
 					}
 
@@ -1217,7 +1224,7 @@ export default {
 						});
 					});
 				} catch (err) {
-					listEl.innerHTML = `<div style="color: var(--red); padding: 20px 10px;">读取失败: ${err.message}</div>`;
+					listEl.innerHTML = `<div style="color: var(--red); padding: 20px 10px;">${t("readFailed", { error: err.message })}</div>`;
 				}
 			}
 
@@ -1243,7 +1250,7 @@ export default {
 				const file = e.target.files?.[0];
 				if (!file) return;
 				const statusEl = overlay.querySelector("#rw-fs-status");
-				statusEl.textContent = `正在上传 ${file.name}…`;
+				statusEl.textContent = t("uploading", { name: file.name });
 				const reader = new FileReader();
 				reader.onload = async () => {
 					try {
@@ -1252,11 +1259,11 @@ export default {
 							method: "POST",
 							body: JSON.stringify({ hostName: h.name, targetDir: curPath, fileName: file.name, b64 }),
 						});
-						statusEl.textContent = `✓ 上传完成`;
+						statusEl.textContent = t("uploadDone");
 						loadDir(curPath);
 					} catch (err) {
-						alert(`上传失败: ${err.message}`);
-						statusEl.textContent = `上传失败`;
+						alert(t("uploadFailed", { error: err.message }));
+						statusEl.textContent = t("uploadFailedShort");
 					}
 				};
 				reader.readAsDataURL(file);
@@ -1273,8 +1280,8 @@ export default {
 			const toolbar = document.createElement("div");
 			toolbar.className = "rw-hosts-toolbar";
 			toolbar.innerHTML = `
-				<div style="font-size: 13px; font-weight: 600;">已启用的 SSH 端口转发隧道 (-L Local Tunnel)</div>
-				<button class="rw-btn primary sm" id="rw-btn-add-tunnel">＋ 新建端口转发</button>
+				<div style="font-size: 13px; font-weight: 600;">${t("tunnelsHeading")}</div>
+				<button class="rw-btn primary sm" id="rw-btn-add-tunnel">${t("newTunnel")}</button>
 			`;
 			tunnelsPane.appendChild(toolbar);
 			toolbar.querySelector("#rw-btn-add-tunnel").addEventListener("click", () => showCreateTunnelModal());
@@ -1284,9 +1291,9 @@ export default {
 				empty.className = "rw-hosts-empty";
 				empty.innerHTML = `
 					<div style="font-size: 28px;">🔀</div>
-					<div>当前暂无运行中的端口转发隧道</div>
-					<div style="font-size: 12px; color: var(--text-faint);">可将远端集群的内网服务（如 Redis、DB、内网 Web）映射到本机端口</div>
-					<button class="rw-btn primary" id="rw-empty-add-tun">立即新建转发隧道</button>
+					<div>${t("noTunnels")}</div>
+					<div style="font-size: 12px; color: var(--text-faint);">${t("tunnelsEmptyHint")}</div>
+					<button class="rw-btn primary" id="rw-empty-add-tun">${t("createTunnelNow")}</button>
 				`;
 				empty.querySelector("#rw-empty-add-tun")?.addEventListener("click", () => showCreateTunnelModal());
 				tunnelsPane.appendChild(empty);
@@ -1298,55 +1305,57 @@ export default {
 			listContainer.style.flexDirection = "column";
 			listContainer.style.gap = "10px";
 
-			tunnels.forEach((t) => {
+			tunnels.forEach((tunnel) => {
 				const card = document.createElement("div");
 				card.className = "rw-tunnel-card";
-				const upTime = t.startedAt ? new Date(t.startedAt).toLocaleTimeString() : "";
+				const upTime = tunnel.startedAt ? new Date(tunnel.startedAt).toLocaleTimeString() : "";
 
 				card.innerHTML = `
 					<div class="rw-host-main">
 						<div class="rw-host-head">
-							<span class="rw-host-badge">● ${escapeHtml(t.status || "未知")}</span>${t.error ? `<span role="alert">${escapeHtml(t.error)}</span>` : ""}
-							<span class="rw-host-name">127.0.0.1:${t.localPort} ➔ ${escapeHtml(t.targetHost)}:${t.targetPort}</span>
+							<span class="rw-host-badge">● ${escapeHtml(tunnel.status || t("unknown"))}</span>${tunnel.error ? `<span role="alert">${escapeHtml(tunnel.error)}</span>` : ""}
+							<span class="rw-host-name">127.0.0.1:${tunnel.localPort} ➔ ${escapeHtml(tunnel.targetHost)}:${tunnel.targetPort}</span>
 						</div>
 						<div class="rw-host-meta">
-							<span>SSH 跳板主机: <b>${escapeHtml(t.hostName)}</b></span>
-							<span>启动于: ${upTime}</span>
+							<span>${t("jumpHostLabel")} <b>${escapeHtml(tunnel.hostName)}</b></span>
+							<span>${t("startedAtLabel")} ${upTime}</span>
 						</div>
 					</div>
 					<div class="rw-host-ops">
-						<button class="rw-btn rw-op-starttun">恢复隧道</button><button class="rw-btn rw-op-deletetun">删除配置</button><button class="rw-btn danger rw-op-stoptun" title="停止该端口转发">停止隧道</button>
+						<button class="rw-btn rw-op-starttun">${t("resumeTunnel")}</button><button class="rw-btn rw-op-deletetun">${t("deleteTunnelConfig")}</button><button class="rw-btn danger rw-op-stoptun" title="${t("stopTunnelHint")}">${t("stopTunnel")}</button>
 					</div>
 				`;
 
-				card.querySelector(".rw-op-starttun").disabled = ["listening", "connecting", "reconnecting"].includes(t.status);
+				card.querySelector(".rw-op-starttun").disabled = ["listening", "connecting", "reconnecting"].includes(
+					tunnel.status,
+				);
 				card.querySelector(".rw-op-starttun").onclick = async () => {
 					try {
-						await post("/tunnels/start", { id: t.id });
+						await post("/tunnels/start", { id: tunnel.id });
 						await refreshTunnels();
 					} catch (err) {
 						alert(err.message);
 					}
 				};
 				card.querySelector(".rw-op-deletetun").onclick = async () => {
-					if (!confirm(`删除隧道配置 ${t.hostName}:${t.localPort}？`)) return;
+					if (!confirm(t("deleteTunnelConfirm", { host: tunnel.hostName, port: tunnel.localPort }))) return;
 					try {
-						await post("/tunnels/delete", { tunnelId: t.id });
+						await post("/tunnels/delete", { tunnelId: tunnel.id });
 						await refreshTunnels();
 					} catch (err) {
 						alert(err.message);
 					}
 				};
 				card.querySelector(".rw-op-stoptun").addEventListener("click", async () => {
-					if (!confirm(`确定要停止 127.0.0.1:${t.localPort} 的转发吗？`)) return;
+					if (!confirm(t("stopTunnelConfirm", { port: tunnel.localPort }))) return;
 					try {
 						await api("/tunnels/stop", {
 							method: "POST",
-							body: JSON.stringify({ tunnelId: t.id }),
+							body: JSON.stringify({ tunnelId: tunnel.id }),
 						});
 						await refreshTunnels();
 					} catch (err) {
-						alert(`停止失败: ${err.message}`);
+						alert(t("stopFailed", { error: err.message }));
 					}
 				});
 
@@ -1370,7 +1379,7 @@ export default {
 			const badge = card.querySelector(`[id^="rw-probe-badge"]`);
 			const btn = card.querySelector(".rw-op-probe");
 			btn.disabled = true;
-			btn.textContent = "探测中…";
+			btn.textContent = t("probing");
 			try {
 				const res = await api("/hosts/probe", {
 					method: "POST",
@@ -1383,22 +1392,22 @@ export default {
 					}),
 				});
 				btn.disabled = false;
-				btn.textContent = "🔍 探测";
+				btn.textContent = t("probe");
 				const isSuccess = Boolean(res.connected || res.ok);
 				if (badge && isSuccess) {
 					const memStr = formatMem(res.system?.totalMemMb);
 					const osStr = res.system?.distro || res.system?.os || "Linux";
-					const coresStr = `${res.system?.cores || 1}核`;
+					const coresStr = t("coresBadge", { n: res.system?.cores || 1 });
 					badge.textContent = `${osStr} · ${coresStr}${memStr ? ` · ${memStr}` : ""}`;
 					badge.className = "rw-host-badge success";
 					badge.style.display = "inline-block";
 				} else {
-					alert(`探测失败: ${res.error || "无法连通"}`);
+					alert(t("probeFailed", { error: res.error || t("unreachable") }));
 				}
 			} catch (err) {
 				btn.disabled = false;
-				btn.textContent = "🔍 探测";
-				alert(`探测失败: ${err.message}`);
+				btn.textContent = t("probe");
+				alert(t("probeFailed", { error: err.message }));
 			}
 		}
 
@@ -1477,10 +1486,10 @@ export default {
 							<span>${escapeHtml(waitingItem.title)}</span>
 						</div>
 						<div class="rw-term-cell-ops">
-							<button class="rw-cell-op-btn rw-cell-max" title="最大化/恢复此窗口">⛶</button>
-							<button class="rw-cell-op-btn rw-cell-clear" title="清屏">🧹</button>
-							<button class="rw-cell-op-btn rw-cell-reconnect" title="重连">🔄</button>
-							<button class="rw-cell-op-btn rw-cell-close" title="关闭">✖</button>
+							<button class="rw-cell-op-btn rw-cell-max" title="${t("maximizeOrRestore")}">⛶</button>
+							<button class="rw-cell-op-btn rw-cell-clear" title="${t("clearScreenHint")}">🧹</button>
+							<button class="rw-cell-op-btn rw-cell-reconnect" title="${t("reconnectShort")}">🔄</button>
+							<button class="rw-cell-op-btn rw-cell-close" title="${t("close")}">✖</button>
 						</div>
 					</div>
 					<div class="rw-term-cell-body"></div>
@@ -1581,7 +1590,7 @@ export default {
 				renderTermTabs();
 				refitActiveTerm();
 			} catch (err) {
-				alert(`打开终端失败: ${err.message}`);
+				alert(t("openTerminalFailed", { error: err.message }));
 				closeTerminal(waitingItem);
 			}
 		}
@@ -1626,9 +1635,9 @@ export default {
 			menu.style.left = `${Math.max(8, rect.left - parentRect.left)}px`;
 			menu.style.top = `${rect.bottom - parentRect.top + 4}px`;
 
-			let html = `<div class="rw-popmenu-header">选择要连接的主机：</div>`;
+			let html = `<div class="rw-popmenu-header">${t("chooseHost")}</div>`;
 			if (hosts.length === 0) {
-				html += `<div style="font-size: 12px; color: var(--text-faint); padding: 6px 8px;">暂无已保存主机</div>`;
+				html += `<div style="font-size: 12px; color: var(--text-faint); padding: 6px 8px;">${t("noSavedHosts")}</div>`;
 			} else {
 				hosts.forEach((h, i) => {
 					html += `
@@ -1645,7 +1654,7 @@ export default {
 				html += `
 					<div class="rw-popmenu-divider"></div>
 					<button class="rw-popmenu-item" id="rw-pop-dup">
-						<span>📑 在当前主机新建 Shell</span>
+						<span>${t("newShellOnHost")}</span>
 						<span style="font-size: 11px; color: var(--text-faint);">${escapeHtml(currentSh.title)}</span>
 					</button>
 				`;
@@ -1654,7 +1663,7 @@ export default {
 			html += `
 				<div class="rw-popmenu-divider"></div>
 				<button class="rw-popmenu-item" id="rw-pop-add-new">
-					<span>➕ 添加并连接新主机...</span>
+					<span>${t("addAndConnectHost")}</span>
 				</button>
 			`;
 			menu.innerHTML = html;
@@ -1728,7 +1737,7 @@ export default {
 				tab.innerHTML = `
 					<span>${sh.connected ? "🟢" : "🔴"}</span>
 					<span>${escapeHtml(sh.title)}</span>
-					<span class="rw-tab-close" title="关闭会话">✖</span>
+					<span class="rw-tab-close" title="${t("closeSession")}">✖</span>
 				`;
 
 				tab.addEventListener("click", (e) => {
@@ -1762,7 +1771,7 @@ export default {
 			const addBtn = document.createElement("button");
 			addBtn.className = "rw-term-tab-add";
 			addBtn.id = "rw-term-add-btn";
-			addBtn.title = "新建终端会话 / 连接其他主机";
+			addBtn.title = t("newTerminalOrHost");
 			addBtn.textContent = "＋";
 			tabsContainer.appendChild(addBtn);
 
@@ -1825,7 +1834,7 @@ export default {
 		function showSecureBar(target = activeShells[activeShellIndex]) {
 			if (!target?.connected || target.closed) return;
 			secureTarget = target;
-			secureBar.querySelector("span").textContent = `凭据目标: ${target.title} (${target.port})`;
+			secureBar.querySelector("span").textContent = t("credentialTarget", { title: target.title, port: target.port });
 			secureBar.style.display = "flex";
 			secureInput.value = "";
 			if (!disposed) secureInput.focus();
@@ -1885,15 +1894,15 @@ export default {
 			}
 			const overlay = document.createElement("div");
 			overlay.className = "rw-modal-overlay";
-			overlay.innerHTML = `<div class="rw-modal"><div class="rw-modal-title">选择广播目标（输入将发送到以下环境）</div>${activeShells
+			overlay.innerHTML = `<div class="rw-modal"><div class="rw-modal-title">${t("chooseBroadcastTargets")}</div>${activeShells
 				.filter((s) => s.connected)
 				.map(
 					(s) =>
-						`<label><input type="checkbox" value="${escapeHtml(s.id)}">${escapeHtml(s.title)}:${s.port} · ${escapeHtml(hosts.find((h) => h.host === s.host && h.username === s.username && (h.port || 22) === s.port)?.environment || "未标记环境")}</label>`,
+						`<label><input type="checkbox" value="${escapeHtml(s.id)}">${escapeHtml(s.title)}:${s.port} · ${escapeHtml(hosts.find((h) => h.host === s.host && h.username === s.username && (h.port || 22) === s.port)?.environment || t("noEnvironment"))}</label>`,
 				)
 				.join(
 					"",
-				)}<button class="rw-btn primary rw-confirm">启用所选目标</button><button class="rw-btn rw-cancel">取消</button></div>`;
+				)}<button class="rw-btn primary rw-confirm">${t("enableSelectedTargets")}</button><button class="rw-btn rw-cancel">${t("cancel")}</button></div>`;
 			root.append(overlay);
 			overlay.querySelector(".rw-cancel").onclick = () => overlay.remove();
 			overlay.querySelector(".rw-confirm").onclick = () => {
@@ -1907,11 +1916,13 @@ export default {
 		function updateBroadcast() {
 			broadcastBtn.classList.toggle("primary", broadcastInput);
 			broadcastBtn.textContent = broadcastInput
-				? `⚡ 广播: ${activeShells
-						.filter((s) => broadcastTargets.has(s.id))
-						.map((s) => s.title)
-						.join(", ")}`
-				: "⚡ 广播输入: 关";
+				? t("broadcastOn", {
+						targets: activeShells
+							.filter((s) => broadcastTargets.has(s.id))
+							.map((s) => s.title)
+							.join(", "),
+					})
+				: t("broadcastOff");
 		}
 		function sendInput(data, source, targets = null) {
 			if (disposed) return;
@@ -1921,7 +1932,7 @@ export default {
 		}
 		function previewPaste(text, source) {
 			if (!source?.connected || source.closed) {
-				alert("请先连接终端");
+				alert(t("connectTerminalFirst"));
 				return;
 			}
 			const recipients = broadcastInput
@@ -1929,7 +1940,7 @@ export default {
 				: [source];
 			const overlay = document.createElement("div");
 			overlay.className = "rw-modal-overlay";
-			overlay.innerHTML = `<div class="rw-modal"><div class="rw-modal-title">多行粘贴预览</div><div>${recipients.map((s) => `${escapeHtml(s.title)}:${s.port} [${escapeHtml(hosts.find((h) => h.host === s.host && h.username === s.username && (h.port || 22) === s.port)?.environment || "未标记环境")}]`).join("<br>")}</div><textarea rows="10"></textarea><button class="rw-btn primary rw-confirm">发送以上内容</button><button class="rw-btn rw-cancel">取消</button></div>`;
+			overlay.innerHTML = `<div class="rw-modal"><div class="rw-modal-title">${t("pastePreviewTitle")}</div><div>${recipients.map((s) => `${escapeHtml(s.title)}:${s.port} [${escapeHtml(hosts.find((h) => h.host === s.host && h.username === s.username && (h.port || 22) === s.port)?.environment || t("noEnvironment"))}]`).join("<br>")}</div><textarea rows="10"></textarea><button class="rw-btn primary rw-confirm">${t("sendAbove")}</button><button class="rw-btn rw-cancel">${t("cancel")}</button></div>`;
 			overlay.querySelector("textarea").value = text;
 			root.append(overlay);
 			overlay.querySelector(".rw-cancel").onclick = () => overlay.remove();
@@ -1958,7 +1969,7 @@ export default {
 			a.download = `terminal-${current.title.replace(/[^a-zA-Z0-9_.-]/g, "_")}-${Date.now()}.log`;
 			a.click();
 			URL.revokeObjectURL(url);
-			alert("✓ 已清洗 ANSI 噪音与覆盖进度条，纯净日志已复制到剪贴板并已触发下载！");
+			alert(t("exportDone"));
 		});
 
 		termPane.querySelector("#rw-tool-clear").addEventListener("click", () => {
@@ -1997,13 +2008,14 @@ export default {
 
 		const searchBar = document.createElement("div");
 		searchBar.className = "rw-snippet-bar";
-		searchBar.innerHTML = `<input class="rw-search-input" placeholder="搜索终端缓冲" aria-label="搜索终端缓冲"><button class="rw-btn rw-search-prev">上一个</button><button class="rw-btn rw-search-next">下一个</button><span role="status"></span><button class="rw-btn rw-param-command">参数化命令</button>`;
+		searchBar.innerHTML = `<input class="rw-search-input" placeholder="${t("searchBufferPlaceholder")}" aria-label="${t("searchBufferPlaceholder")}"><button class="rw-btn rw-search-prev">${t("previous")}</button><button class="rw-btn rw-search-next">${t("next")}</button><span role="status"></span><button class="rw-btn rw-param-command">${t("parameterizedCommand")}</button>`;
 		termPane.insertBefore(searchBar, termPane.querySelector("#rw-term-viewport"));
 		function search(backwards) {
 			const sh = activeShells[activeShellIndex];
 			if (!sh?.term) return;
 			sh.searchRow = findBuffer(sh.term, searchBar.querySelector("input").value, sh.searchRow ?? -1, backwards);
-			searchBar.querySelector("span").textContent = sh.searchRow < 0 ? "未找到" : `第 ${sh.searchRow + 1} 行`;
+			searchBar.querySelector("span").textContent =
+				sh.searchRow < 0 ? t("notFound") : t("lineNumber", { n: sh.searchRow + 1 });
 		}
 		searchBar.querySelector(".rw-search-prev").onclick = () => search(true);
 		searchBar.querySelector(".rw-search-next").onclick = () => search(false);
@@ -2011,11 +2023,11 @@ export default {
 			if (e.key === "Enter") search(e.shiftKey);
 		};
 		searchBar.querySelector(".rw-param-command").onclick = () => {
-			const template = prompt("命令模板（{{name}} 参数会按 Shell 字面量转义）", "tail -n {{lines}} {{path}}");
+			const template = prompt(t("commandTemplatePrompt"), "tail -n {{lines}} {{path}}");
 			if (!template) return;
 			const values = {};
 			for (const key of new Set([...template.matchAll(/\{\{([a-zA-Z_][a-zA-Z0-9_]*)\}\}/g)].map((m) => m[1]))) {
-				const value = prompt(`参数 ${key}`);
+				const value = prompt(t("parameterPrompt", { name: key }));
 				if (value === null) return;
 				values[key] = value;
 			}
@@ -2060,8 +2072,8 @@ export default {
 						target.resumeToken = null;
 						persistSessions();
 						if (target.tmux && target.tmuxSession)
-							target.term?.write(`\r\n[tmux ${target.tmuxSession}: 点击重连可重新附着远端会话]\r\n`);
-						target.term?.write(`\r\n\x1b[31m连接失败: ${msg.error}\x1b[0m\r\n`);
+							target.term?.write(`\r\n${t("tmuxResumeHint", { session: target.tmuxSession })}\r\n`);
+						target.term?.write(`\r\n\x1b[31m${t("connectionFailed", { error: msg.error })}\x1b[0m\r\n`);
 					}
 				}
 				if (!target && msg.ok && msg.shellId && ["shell_open", "shell_attach"].includes(msg.action))
@@ -2098,20 +2110,20 @@ export default {
 			if (msg.event === "shell_gap") {
 				activeShells
 					.find((s) => s.shellId === msg.shellId)
-					?.term?.write(`\r\n[恢复缓冲丢失 ${msg.droppedBytes} 字节]\r\n`);
+					?.term?.write(`\r\n${t("bufferGap", { n: msg.droppedBytes })}\r\n`);
 				return;
 			}
 			if (msg.event === "shell_close" && msg.shellId) {
 				const target = activeShells.find((s) => s.shellId === msg.shellId);
 				if (target) {
 					if (msg.tailB64) target.term?.write(decodeBytes(msg.tailB64));
-					if (msg.droppedBytes) target.term?.write(`\r\n[丢失 ${msg.droppedBytes} 字节]\r\n`);
+					if (msg.droppedBytes) target.term?.write(`\r\n${t("bytesDropped", { n: msg.droppedBytes })}\r\n`);
 					target.inputQueue?.dispose();
 					target.connected = false;
 					if (secureTarget === target) hideSecureBar();
 					target.resumeToken = null;
 					persistSessions();
-					target.term?.write("\r\n\x1b[33m[远程连接已断开]\x1b[0m\r\n");
+					target.term?.write(`\r\n\x1b[33m${t("remoteDisconnected")}\x1b[0m\r\n`);
 					renderTermTabs();
 				}
 				return;
@@ -2141,9 +2153,7 @@ export default {
 		}, 10000);
 
 		async function linkSftp(h) {
-			const ok = confirm(
-				`是否将「${h.name}」绑定至当前项目的 SFTP 同步？\n绑定后可在顶部「SFTP 同步」面板直接比较文件差异与上传下载。`,
-			);
+			const ok = confirm(t("sftpLinkConfirm", { name: h.name }));
 			if (!ok) return;
 			try {
 				const res = await fetch(appPath(ctx, "/plugins-api/sftp/use-global", import.meta.url), {
@@ -2154,19 +2164,19 @@ export default {
 				});
 				const json = await res.json();
 				if (json.ok) {
-					alert(`✓ 已将「${h.name}」配置为当前项目的 SFTP 远端！`);
+					alert(t("sftpLinked", { name: h.name }));
 				} else {
-					alert(`绑定失败: ${json.error}`);
+					alert(t("sftpLinkFailed", { error: json.error }));
 				}
 			} catch (err) {
-				alert(`SFTP 插件响应异常: ${err.message}`);
+				alert(t("sftpLinkError", { error: err.message }));
 			}
 		}
 
 		async function openWorkspace(h, initialPath, onSuccess) {
 			const host = globalThis.window?.__piWebUiHost;
 			if (!host || typeof host.pickDirectory !== "function") {
-				alert("宿主路径选择组件尚未就绪，请刷新重试");
+				alert(t("hostPickerNotReady"));
 				return;
 			}
 
@@ -2176,7 +2186,7 @@ export default {
 			try {
 				const res = await host.pickDirectory({
 					initialPath: initialUri,
-					title: `选择远程工作区 — ${h.name}`,
+					title: t("pickRemoteWorkspace", { name: h.name }),
 				});
 
 				if (!res || !res.ok || !res.path) {
@@ -2195,15 +2205,15 @@ export default {
 						host.setView("chat");
 					}
 				} else {
-					alert(`切换远程工作区失败: ${sessionRes?.error || "未知原因"}`);
+					alert(t("switchWorkspaceFailed", { error: sessionRes?.error || t("unknownReason") }));
 				}
 			} catch (err) {
-				alert(`打开远程工作区异常: ${err.message}`);
+				alert(t("openWorkspaceError", { error: err.message }));
 			}
 		}
 
 		async function deleteHost(name) {
-			if (!confirm(`确定要从全局主机库（global-hosts.json）中删除「${name}」吗？`)) return;
+			if (!confirm(t("deleteHostConfirm", { name }))) return;
 			try {
 				await api("/hosts/delete", {
 					method: "POST",
@@ -2211,7 +2221,7 @@ export default {
 				});
 				await refreshHosts();
 			} catch (err) {
-				alert(`删除失败: ${err.message}`);
+				alert(t("deleteFailed", { error: err.message }));
 			}
 		}
 
@@ -2227,11 +2237,11 @@ export default {
 
 			overlay.innerHTML = `
 				<div class="rw-modal">
-					<div class="rw-modal-title">🔀 新建本地端口转发 (-L Tunnel)</div>
+					<div class="rw-modal-title">${t("tunnelCreateTitle")}</div>
 					<div id="rw-tun-err" style="color: var(--red); font-size: 12px; display: none;"></div>
 
 					<div class="rw-form-row">
-						<label>SSH 跳板主机 *</label>
+						<label>${t("jumpHostRequired")}</label>
 						<select id="rw-tun-host">
 							${hostOptions}
 						</select>
@@ -2239,23 +2249,23 @@ export default {
 
 					<div class="rw-form-inline">
 						<div class="rw-form-row">
-							<label>本地监听端口 *</label>
-							<input type="number" id="rw-tun-localport" placeholder="如 8080 / 6379" value="8080" />
+							<label>${t("localPortLabel")}</label>
+							<input type="number" id="rw-tun-localport" placeholder="${t("localPortPlaceholder")}" value="8080" />
 						</div>
 						<div class="rw-form-row">
-							<label>远端目标端口 *</label>
-							<input type="number" id="rw-tun-remoteport" placeholder="如 80 / 3000 / 6379" value="80" />
+							<label>${t("remotePortLabel")}</label>
+							<input type="number" id="rw-tun-remoteport" placeholder="${t("remotePortPlaceholder")}" value="80" />
 						</div>
 					</div>
 
 					<div class="rw-form-row">
-						<label>远端目标地址 (以远端主机视角)</label>
-						<input type="text" id="rw-tun-targethost" value="127.0.0.1" placeholder="127.0.0.1 或内网 IP" />
+						<label>${t("targetHostLabel")}</label>
+						<input type="text" id="rw-tun-targethost" value="127.0.0.1" placeholder="${t("targetHostPlaceholder")}" />
 					</div>
 
 					<div class="rw-modal-footer">
-						<button class="rw-btn" id="rw-tun-cancel">取消</button>
-						<label><input type="checkbox" id="rw-tun-auto">断线自动恢复</label><label><input type="checkbox" id="rw-tun-save-only">仅保存配置</label><button class="rw-btn primary" id="rw-tun-start">保存并开启转发</button>
+						<button class="rw-btn" id="rw-tun-cancel">${t("cancel")}</button>
+						<label><input type="checkbox" id="rw-tun-auto">${t("autoReconnect")}</label><label><input type="checkbox" id="rw-tun-save-only">${t("saveOnly")}</label><button class="rw-btn primary" id="rw-tun-start">${t("saveAndForward")}</button>
 					</div>
 				</div>
 			`;
@@ -2271,19 +2281,19 @@ export default {
 				const targetPort = Number(overlay.querySelector("#rw-tun-remoteport").value);
 
 				if (!localPort) {
-					errBox.textContent = "请填写本地监听端口";
+					errBox.textContent = t("localPortRequired");
 					errBox.style.display = "block";
 					return;
 				}
 				if (!targetPort) {
-					errBox.textContent = "请填写远端目标端口";
+					errBox.textContent = t("targetPortRequired");
 					errBox.style.display = "block";
 					return;
 				}
 
 				const startBtn = overlay.querySelector("#rw-tun-start");
 				startBtn.disabled = true;
-				startBtn.textContent = "启动中…";
+				startBtn.textContent = t("starting");
 
 				try {
 					const saved = await post("/tunnels/save", {
@@ -2301,7 +2311,7 @@ export default {
 					errBox.textContent = err.message;
 					errBox.style.display = "block";
 					startBtn.disabled = false;
-					startBtn.textContent = "开启转发";
+					startBtn.textContent = t("startForward");
 				}
 			});
 		}
@@ -2315,69 +2325,69 @@ export default {
 			overlay.className = "rw-modal-overlay";
 			overlay.innerHTML = `
 				<div class="rw-modal">
-					<div class="rw-modal-title">${isEdit ? "✎ 编辑远程主机" : "＋ 添加远程主机"}（存入 global-hosts.json）</div>
+					<div class="rw-modal-title">${isEdit ? t("hostModalEditTitle") : t("hostModalAddTitle")}</div>
 					<div id="rw-modal-err" style="color: var(--red); font-size: 12px; display: none;"></div>
 					
 					<div class="rw-form-inline">
 						<div class="rw-form-row" style="flex: 2;">
-							<label>主机地址 (IP / 域名) *</label>
+							<label>${t("hostAddressLabel")}</label>
 							<input type="text" id="rw-in-host" value="${escapeHtml(existingHost?.host || "")}" placeholder="192.168.1.100" />
 						</div>
 						<div class="rw-form-row" style="flex: 1;">
-							<label>端口</label>
+							<label>${t("portLabel")}</label>
 							<input type="number" id="rw-in-port" value="${existingHost?.port || 22}" />
 						</div>
 					</div>
 
 					<div class="rw-form-inline">
 						<div class="rw-form-row">
-							<label>用户名 *</label>
+							<label>${t("usernameLabel")}</label>
 							<input type="text" id="rw-in-user" value="${escapeHtml(existingHost?.username || "root")}" placeholder="root / ubuntu" />
 						</div>
 						<div class="rw-form-row">
-							<label>认证方式</label>
+							<label>${t("authMethodLabel")}</label>
 							<select id="rw-in-authtype">
-								<option value="password" ${existingHost?.authType === "password" ? "selected" : ""}>密码</option>
-								<option value="key" ${existingHost?.authType === "key" ? "selected" : ""}>私钥</option>
+								<option value="password" ${existingHost?.authType === "password" ? "selected" : ""}>${t("authPasswordOption")}</option>
+								<option value="key" ${existingHost?.authType === "key" ? "selected" : ""}>${t("authKeyOption")}</option>
 								<option value="agent" ${existingHost?.authType === "agent" ? "selected" : ""}>SSH Agent</option>
 							</select>
 						</div>
 					</div>
 
 					<div class="rw-form-row" id="rw-row-password" style="${existingHost?.authType === "key" || existingHost?.authType === "agent" ? "display: none;" : ""}">
-						<label>密码 ${isEdit ? "(留空 = 保持已保存的密码不变)" : ""}</label>
-						<input type="password" id="rw-in-password" placeholder="${isEdit ? "留空表示不修改已有密码" : "••••••••"}" />
+						<label>${t("passwordLabel")}${isEdit ? t("passwordKeepHint") : ""}</label>
+						<input type="password" id="rw-in-password" placeholder="${isEdit ? t("passwordKeepPlaceholder") : "••••••••"}" />
 					</div>
 
 					<div class="rw-form-row" id="rw-row-key" style="${existingHost?.authType === "key" ? "" : "display: none;"}">
-						<label>私钥路径 (留空自动尝试 ~/.ssh 常用密钥)</label>
+						<label>${t("keyPathLabel")}</label>
 						<input type="text" id="rw-in-keypath" value="${escapeHtml(existingHost?.privateKeyPath || "")}" placeholder="~/.ssh/id_ed25519" />
-						<label style="margin-top: 5px;">私钥口令 (可选)</label>
+						<label style="margin-top: 5px;">${t("passphraseLabel")}</label>
 						<input type="password" id="rw-in-passphrase" placeholder="Passphrase" />
 					</div>
 
 					<div class="rw-form-inline">
 						<div class="rw-form-row">
-							<label>配置别名 (唯一键)</label>
-							<input type="text" id="rw-in-name" value="${escapeHtml(existingHost?.name || "")}" placeholder="留空自动生成" ${isEdit ? "readonly" : ""} />
+							<label>${t("aliasLabel")}</label>
+							<input type="text" id="rw-in-name" value="${escapeHtml(existingHost?.name || "")}" placeholder="${t("aliasPlaceholder")}" ${isEdit ? "readonly" : ""} />
 						</div>
 						<div class="rw-form-row">
-							<label>默认远端路径</label>
-							<input type="text" id="rw-in-path" value="${escapeHtml(existingHost?.remotePath || "")}" placeholder="/var/www 或 ~" />
+							<label>${t("remotePathLabel")}</label>
+							<input type="text" id="rw-in-path" value="${escapeHtml(existingHost?.remotePath || "")}" placeholder="${t("remotePathPlaceholder")}" />
 						</div>
 					</div>
 
 					<div class="rw-form-row">
 						<label style="display: flex; align-items: center; gap: 7px; cursor: pointer; user-select: none;">
 							<input type="checkbox" id="rw-in-review" ${existingHost?.reviewMode ? "checked" : ""} />
-							<span style="font-size: 12.5px; color: var(--text);">🛡️ 开启高危指令审阅保护模式（拦截 AI 针对本机的 rm -rf 等破坏性操作）</span>
+							<span style="font-size: 12.5px; color: var(--text);">${t("reviewModeLabel")}</span>
 						</label>
 					</div>
 
 					<div class="rw-modal-footer">
-						<button class="rw-btn" id="rw-modal-probe">测试连接</button>
-						<button class="rw-btn" id="rw-modal-cancel">取消</button>
-						<button class="rw-btn primary" id="rw-modal-save">保存</button>
+						<button class="rw-btn" id="rw-modal-probe">${t("testConnection")}</button>
+						<button class="rw-btn" id="rw-modal-cancel">${t("cancel")}</button>
+						<button class="rw-btn primary" id="rw-modal-save">${t("save")}</button>
 					</div>
 				</div>
 			`;
@@ -2407,8 +2417,8 @@ export default {
 				const passphrase = overlay.querySelector("#rw-in-passphrase").value;
 				const reviewMode = overlay.querySelector("#rw-in-review").checked;
 
-				if (!hostAddr) throw new Error("请填写主机地址");
-				if (!username) throw new Error("请填写用户名");
+				if (!hostAddr) throw new Error(t("hostRequired"));
+				if (!username) throw new Error(t("usernameRequired"));
 
 				return {
 					name,
@@ -2431,32 +2441,37 @@ export default {
 					errBox.style.display = "none";
 					const p = getPayload();
 					const probeBtn = overlay.querySelector("#rw-modal-probe");
-					probeBtn.textContent = "探测中…";
+					probeBtn.textContent = t("probing");
 					probeBtn.disabled = true;
 
 					const res = await api("/hosts/probe", {
 						method: "POST",
 						body: JSON.stringify(p),
 					});
-					probeBtn.textContent = "测试连接";
+					probeBtn.textContent = t("testConnection");
 					probeBtn.disabled = false;
 
 					const isSuccess = Boolean(res.connected || res.ok);
 					if (isSuccess) {
 						const memStr = formatMem(res.system?.totalMemMb);
 						const osStr = res.system?.distro || res.system?.os || "Linux";
-						const coresStr = `${res.system?.cores || 1} 核`;
+						const coresStr = t("coresLine", { n: res.system?.cores || 1 });
 						alert(
-							`✓ 连接可用（可能复用已建立 SSH，不能验证新输入凭据）！\n系统: ${osStr} (${res.system?.arch || "x64"})\nCPU: ${coresStr}${memStr ? ` | 内存: ${memStr}` : ""}`,
+							t("probeSuccess", {
+								os: osStr,
+								arch: res.system?.arch || "x64",
+								cores: coresStr,
+								memory: memStr ? t("probeMemory", { size: memStr }) : "",
+							}),
 						);
 					} else {
-						errBox.textContent = `连接失败: ${res.error || "未知原因"}`;
+						errBox.textContent = t("connectionFailed", { error: res.error || t("unknownReason") });
 						errBox.style.display = "block";
 					}
 				} catch (err) {
 					errBox.textContent = err.message;
 					errBox.style.display = "block";
-					overlay.querySelector("#rw-modal-probe").textContent = "测试连接";
+					overlay.querySelector("#rw-modal-probe").textContent = t("testConnection");
 					overlay.querySelector("#rw-modal-probe").disabled = false;
 				}
 			});
@@ -2466,7 +2481,7 @@ export default {
 					errBox.style.display = "none";
 					const p = getPayload();
 					const saveBtn = overlay.querySelector("#rw-modal-save");
-					saveBtn.textContent = "保存中…";
+					saveBtn.textContent = t("saving");
 					saveBtn.disabled = true;
 
 					await api("/hosts", {
@@ -2483,7 +2498,7 @@ export default {
 					errBox.style.display = "block";
 					const saveBtn = overlay.querySelector("#rw-modal-save");
 					if (saveBtn) {
-						saveBtn.textContent = "保存";
+						saveBtn.textContent = t("save");
 						saveBtn.disabled = false;
 					}
 				}
@@ -2508,7 +2523,7 @@ export default {
 		if (tmuxRecovery.length) {
 			const recover = document.createElement("button");
 			recover.className = "rw-btn";
-			recover.textContent = "重新连接保存的 tmux 会话";
+			recover.textContent = t("reconnectTmuxSessions");
 			recover.onclick = () => {
 				for (const session of tmuxRecovery) openTerminal(session);
 				recover.remove();
@@ -2520,7 +2535,11 @@ export default {
 			const queuedInput = activeShells.filter((sh) => sh.inputQueue?.bytes > 0);
 			if (queuedInput.length)
 				alert(
-					`工作台已脱离，以下输入仍未发送或未获接受确认，恢复后请核对终端再决定是否重输：\n${queuedInput.map((sh) => `${sh.title}:${sh.port} · ${sh.inputQueue.bytes} 字节`).join("\n")}`,
+					t("detachedPendingInput", {
+						list: queuedInput
+							.map((sh) => `${sh.title}:${sh.port} · ${t("byteCount", { n: sh.inputQueue.bytes })}`)
+							.join("\n"),
+					}),
 				);
 			disposed = true;
 			persistSessions();

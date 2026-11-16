@@ -168,6 +168,7 @@ function RowMain({
 }
 
 type CategoryTag = { key: string; label: string };
+// Persisted conversation titles carry these literal channel prefixes; match them as data.
 const CHANNEL_PREFIX_RE = /^\[(微信|feishu|飞书|dingtalk|钉钉|wechat|qq|telegram)[^\]]*\]\s*(.*)$/i;
 
 function categorizeTitle(
@@ -2082,7 +2083,7 @@ export const LeftPanel = memo(function LeftPanel({
 						)}
 						{runInfo?.conv?.isEphemeral && (
 							<span className="ephemeral-badge" title={t("newChatEphemeralTip")}>
-								{t("newChatEphemeral") || "临时"}
+								{t("newChatEphemeral")}
 							</span>
 						)}
 						{categoryTag && <span className={`category-badge-pill ${categoryTag.key}`}>{categoryTag.label}</span>}
@@ -2323,7 +2324,7 @@ export const LeftPanel = memo(function LeftPanel({
 							)}
 							{c.isEphemeral && (
 								<span className="ephemeral-badge" title={t("newChatEphemeralTip")}>
-									{t("newChatEphemeral") || "临时"}
+									{t("newChatEphemeral")}
 								</span>
 							)}
 							{categoryTag && <span className={`category-badge-pill ${categoryTag.key}`}>{categoryTag.label}</span>}
@@ -2535,7 +2536,7 @@ export const LeftPanel = memo(function LeftPanel({
 						)}
 						{c.isEphemeral && (
 							<span className="ephemeral-badge" title={t("newChatEphemeralTip")}>
-								{t("newChatEphemeral") || "临时"}
+								{t("newChatEphemeral")}
 							</span>
 						)}
 						{categoryTag && <span className={`category-badge-pill ${categoryTag.key}`}>{categoryTag.label}</span>}
@@ -3159,7 +3160,7 @@ export const LeftPanel = memo(function LeftPanel({
 															<button
 																type="button"
 																className="lp-project-btn lp-project-new-chat-btn"
-																title={t("newChat") || "新建对话"}
+																title={t("newChat")}
 																onClick={(e) => {
 																	e.stopPropagation();
 																	panelSend({ type: "new_chat", cwd: p.path });
@@ -3243,9 +3244,9 @@ export const LeftPanel = memo(function LeftPanel({
 																	!failedProjects.has(pNorm) && (
 																		<div className="lp-project-empty-tip">
 																			{isLoadingSessions ? (
-																				<span>{t("loadingSessions") || "正在读取会话…"}</span>
+																				<span>{t("loadingSessions")}</span>
 																			) : (
-																				<span>{t("noSessionsYet") || "暂无历史会话"}</span>
+																				<span>{t("noSessionsYet")}</span>
 																			)}
 																		</div>
 																	)}

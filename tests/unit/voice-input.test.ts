@@ -375,8 +375,11 @@ describe("srTotalText", () => {
 	});
 	it("本地引擎录音中主按钮文案为「停止并转写」，避免与浏览器即时识别的「填入输入框」语义歧义 (issue #549)", () => {
 		const src = readFileSync(join(pluginDir, "client", "entry.mjs"), "utf8");
-		expect(src).toContain('stopAndTranscribe: isZh ? "停止并转写" : "Stop & transcribe"');
-		expect(src).toContain("label: T.stopAndTranscribe");
+		// 文案住在插件词典里（zh / en 两份），entry 只按键取词
+		const dict = readFileSync(join(pluginDir, "client", "i18n.mjs"), "utf8");
+		expect(dict).toContain('stopAndTranscribe: "停止并转写"');
+		expect(dict).toContain('stopAndTranscribe: "Stop & transcribe"');
+		expect(src).toContain('label: t("stopAndTranscribe")');
 	});
 });
 

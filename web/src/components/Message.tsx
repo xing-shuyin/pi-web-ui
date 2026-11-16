@@ -159,6 +159,7 @@ export interface CollabMeta {
 	userText?: string;
 }
 
+/** Markers are matched against incoming message text (both languages), never rendered. */
 export function parseCollabMessage(text: string): CollabMeta | null {
 	if (!text) return null;
 	if (text.startsWith("[子代理执行完成通知]") || text.startsWith("[Subagent Execution Completion Notice]")) {
@@ -1093,7 +1094,7 @@ export const Message = memo(function Message({
 									: `${t("plugin")} · ${message.customType ?? t("unknown")}`
 						: collabMeta
 							? collabMeta.isNotice
-								? `${t("subagentBadge")} · 完成通知`
+								? `${t("subagentBadge")} · ${t("subagentCompletionNotice")}`
 								: `${t("subagentBadge")} · ${collabMeta.sourceTitle || collabMeta.sourceRole || t("subagentBadge")}`
 							: roleLabel(message.role, t)}
 				</span>
@@ -2093,7 +2094,7 @@ function Block({
 			<div className="bashblock">
 				<div className="bashblock-command">
 					<span className="bashblock-prompt">$</span>
-					<code>{renderHighlightedCommand(bash.command)}</code>
+					<code>{renderHighlightedCommand(bash.command, t)}</code>
 					{bash.exitCode !== undefined && (
 						<span className={`bashblock-exit ${bash.exitCode === 0 ? "ok" : "err"}`}>
 							{t("exitCode", { code: bash.exitCode })}

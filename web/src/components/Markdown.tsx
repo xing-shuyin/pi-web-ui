@@ -23,7 +23,7 @@ import {
 	widgetRegistry,
 } from "../plugin-fence";
 import type { FenceRenderContext } from "../plugin-loader";
-import { isZhLocale, useLocale } from "../i18n";
+import { useT } from "../i18n";
 import { PluginFenceBlock } from "./PluginFenceBlock";
 import { openFilePreview } from "../file-preview-bridge";
 import { openImageLightbox } from "../image-lightbox-bridge";
@@ -124,7 +124,7 @@ export const Markdown = memo(function Markdown({
 
 function MdLink({ node: _node, href, children, ...rest }: JSX.IntrinsicElements["a"] & { node?: unknown }) {
 	const target = String(href ?? "");
-	const isZh = isZhLocale(useLocale());
+	const t = useT();
 	const cwd = useAppField("cwd");
 	if (target.startsWith("pi-file://")) {
 		const rawPath = target.slice("pi-file://".length);
@@ -140,7 +140,7 @@ function MdLink({ node: _node, href, children, ...rest }: JSX.IntrinsicElements[
 			<button
 				type="button"
 				className="file-pill"
-				title={(isZh ? "点击预览文件: " : "Click to preview file: ") + filePath}
+				title={t("markdownPreviewFileTip", { path: filePath })}
 				onClick={(e) => {
 					e.preventDefault();
 					e.stopPropagation();
@@ -172,7 +172,7 @@ function MdLink({ node: _node, href, children, ...rest }: JSX.IntrinsicElements[
 				}}
 				target="_blank"
 				rel="noreferrer noopener"
-				title={(isZh ? "点击预览: " : "Click to preview: ") + cleanPath}
+				title={t("markdownPreviewTip", { path: cleanPath })}
 			>
 				{children}
 			</a>
@@ -297,7 +297,7 @@ export function PluginWidgetBlock({ type, code, children }: { type: string; code
 				const result = await renderer(code, ctx);
 				if (!cancelled && result instanceof HTMLElement) setEl(result);
 			} catch (err) {
-				console.error(`[plugin-widget:${type}] 渲染失败:`, err);
+				console.error(`[plugin-widget:${type}] 渲染失败:`, err); // developer log, not UI text (guard: reason data)
 			}
 		});
 		return () => {

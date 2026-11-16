@@ -1,5 +1,7 @@
 export const AI_FIX_MESSAGE_TYPE = "legado:ai-fix";
 
+// developer-facing, not UI：给 AI 的修源/建源正文是提示词契约（tests/legado-web-ai-fix-test.mjs 逐字断言），
+// 不随界面语言翻译，SCENE_TEXT 只嵌入这段正文。
 const SCENE_TEXT = {
 	content: "阅读正文失败",
 	toc: "目录加载失败",

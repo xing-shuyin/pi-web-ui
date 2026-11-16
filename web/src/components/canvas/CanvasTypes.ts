@@ -585,6 +585,9 @@ export interface RoleField {
 	showIf?: { key: string; value: string | number | boolean };
 }
 
+// Select `value`s and `default`s below are persisted node metadata (matched by identity
+// against saved topology and role presets), so they stay in their original Chinese form.
+// Only `label`s are UI text and go through `t()`.
 export function getRoleFields(t: Translate): Record<CanvasNodeRole, RoleField[]> {
 	return {
 		trigger: [

@@ -24,7 +24,7 @@ import type {
 	UiProviderConfig,
 	UiThinkingLevelMap,
 } from "../types";
-import { useT } from "../i18n";
+import { useT, type Translate } from "../i18n";
 import { appSend } from "../app-globals";
 import { ProviderOAuthControls } from "./ProviderOAuthControls";
 
@@ -101,6 +101,12 @@ interface QuickProviderPreset {
 	tag?: string;
 }
 
+/**
+ * `tag` values below are stable enum ids (persisted with saved presets), not UI text:
+ * `getPresetTagLabel` maps them to `presetTag*` keys, and brand names (`智谱 GLM`,
+ * `硅基流动`) stay verbatim. The hardcoded-string guard therefore records them as
+ * reason `data` instead of migrating them.
+ */
 const QUICK_PRESETS: QuickProviderPreset[] = [
 	{
 		id: "openai",
@@ -327,12 +333,12 @@ function saveCustomThinkingPresets(presets: CustomThinkingPreset[]): void {
 	} catch {}
 }
 
-function validateJsonString(str: string): { valid: boolean; error?: string } {
+function validateJsonString(str: string, t: Translate): { valid: boolean; error?: string } {
 	if (!str.trim()) return { valid: true };
 	try {
 		const parsed = JSON.parse(str.trim());
 		if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
-			return { valid: false, error: "必须是 JSON 对象 (以 { 开头)" };
+			return { valid: false, error: t("modelConfigJsonObjectError") };
 		}
 		return { valid: true };
 	} catch (e) {
@@ -1681,7 +1687,7 @@ export function ModelConfigModal({
 														<div className="thinking-drawer-header">
 															<div className="thinking-drawer-title">
 																<FiSliders />
-																<span>{t("thinkingConfigBtn") || "思考配置"}</span>
+																<span>{t("thinkingConfigBtn")}</span>
 															</div>
 															<div className="thinking-drawer-actions">
 																<button
@@ -1722,9 +1728,9 @@ export function ModelConfigModal({
 																				compat: Object.keys(currentCompat).length ? currentCompat : undefined,
 																			});
 																		}}
-																		title={profile.desc}
+																		title={t(profile.descKey)}
 																	>
-																		{profile.name}
+																		{t(profile.nameKey)}
 																	</button>
 																))}
 
@@ -1746,7 +1752,7 @@ export function ModelConfigModal({
 																					customExtraBody: preset.customExtraBody ?? "",
 																				});
 																			}}
-																			title={`套用自定义预设：${preset.name}`}
+																			title={t("modelConfigApplyPresetTitle", { name: preset.name })}
 																		>
 																			🏷️ {preset.name}
 																		</button>
@@ -1754,7 +1760,7 @@ export function ModelConfigModal({
 																			type="button"
 																			className="user-preset-del"
 																			onClick={(e) => handleDeleteUserPreset(preset.id, e)}
-																			title="删除此预设"
+																			title={t("modelConfigDeletePreset")}
 																		>
 																			×
 																		</button>
@@ -1785,7 +1791,7 @@ export function ModelConfigModal({
 																	>
 																		{THINKING_FORMAT_OPTIONS.map((opt) => (
 																			<option key={opt.value} value={opt.value}>
-																				{opt.label}
+																				{t(opt.labelKey)}
 																			</option>
 																		))}
 																	</select>
@@ -1797,7 +1803,7 @@ export function ModelConfigModal({
 																			type="text"
 																			className="spec-combobox-custom-input"
 																			style={{ width: 130, textAlign: "left" }}
-																			placeholder="预设名称 (如: 16K模版)"
+																			placeholder={t("modelConfigPresetNamePlaceholder")}
 																			value={presetNameInput}
 																			onChange={(e) => setPresetNameInput(e.target.value)}
 																			onKeyDown={(e) => {
@@ -1809,14 +1815,14 @@ export function ModelConfigModal({
 																			className="btn xs"
 																			onClick={() => handleSaveAsUserPreset(idx)}
 																		>
-																			保存
+																			{t("save")}
 																		</button>
 																		<button
 																			type="button"
 																			className="btn xs text-btn"
 																			onClick={() => setSavingPresetForIdx(null)}
 																		>
-																			取消
+																			{t("cancel")}
 																		</button>
 																	</div>
 																) : (
@@ -1827,9 +1833,9 @@ export function ModelConfigModal({
 																			setSavingPresetForIdx(idx);
 																			setPresetNameInput("");
 																		}}
-																		title="将当前模型的思考配置、协议与 JSON 存为一个命名的预设模板"
+																		title={t("modelConfigSavePresetTitle")}
 																	>
-																		<FiPlus /> 存为我的预设
+																		<FiPlus /> {t("modelConfigSavePreset")}
 																	</button>
 																)}
 															</div>
@@ -1847,14 +1853,14 @@ export function ModelConfigModal({
 																		<span
 																			style={{
 																				fontSize: "10.5px",
-																				color: validateJsonString(m.customExtraBody).valid
+																				color: validateJsonString(m.customExtraBody, t).valid
 																					? "var(--green, #22c55e)"
 																					: "var(--red, #ef4444)",
 																			}}
 																		>
-																			{validateJsonString(m.customExtraBody).valid
-																				? "✓ JSON语法有效（保存后自动无损合入请求 body）"
-																				: `✕ ${validateJsonString(m.customExtraBody).error}`}
+																			{validateJsonString(m.customExtraBody, t).valid
+																				? t("modelConfigJsonValid")
+																				: `✕ ${validateJsonString(m.customExtraBody, t).error}`}
 																		</span>
 																	)}
 																</div>
@@ -1905,7 +1911,7 @@ export function ModelConfigModal({
 																				className="level-val-input"
 																				value={customVal}
 																				placeholder={placeholder}
-																				title="自定义发送给模型/网关的字面量或 Token 数（留空为默认）"
+																				title={t("modelConfigRawBodyTitle")}
 																				onChange={(e) => {
 																					const currentMap = { ...(m.thinkingLevelMap ?? {}) };
 																					const val = e.target.value.trim();

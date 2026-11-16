@@ -93,7 +93,7 @@ export const ModelPickerModal = memo(function ModelPickerModal({
 							className="ghost dd-header-btn"
 							style={{ border: 0, cursor: "pointer", fontSize: 16 }}
 							onClick={onClose}
-							title="关闭"
+							title={t("close")}
 						>
 							<FiX />
 						</button>

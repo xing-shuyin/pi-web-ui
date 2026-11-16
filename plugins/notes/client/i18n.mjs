@@ -1,3 +1,5 @@
+import { createPluginI18n } from "@pi-web-ui/plugin-sdk/client";
+
 export const DICT = {
 	zh: {
 		"app.title": "笔记",
@@ -168,6 +170,182 @@ export const DICT = {
 		"week.4": "周四",
 		"week.5": "周五",
 		"week.6": "周六",
+
+		"action.deleteAgain": "再次点击确认",
+		"schedule.domSuffix": "{dom}日",
+	},
+	"zh-TW": {
+		"app.title": "筆記",
+		"app.subtitle": "筆記 · 待辦 · 提醒",
+
+		"tab.todo": "待辦",
+		"tab.note": "筆記",
+		"tab.reminder": "提醒",
+		"tab.agenda": "議程",
+		"tab.calendar": "日曆",
+
+		"quick.todo": "例如：交週報 明天 18:00 #工作 !!",
+		"quick.note": "隨手記錄想法…（Ctrl+Enter 儲存）",
+		"quick.notePlaceholder": "隨手記錄想法…（支援 Markdown，Ctrl+Enter 儲存）",
+		"quick.reminder": "例如：每天 9:00 吃藥",
+		"quick.add": "新增",
+		"quick.save": "記下",
+		"quick.setReminder": "設提醒",
+		"quick.clearReminder": "清除提醒",
+		"quick.smartSuggest": "設為 {time} 提醒",
+		"quick.preset1h": "1小時後",
+		"quick.presetTonight": "今晚 20:00",
+		"quick.presetTomorrow": "明天 09:00",
+		"quick.presetTomorrowPm": "明天 15:00",
+		"quick.presetAfterTomorrow": "後天 09:00",
+		"quick.presetNextMonday": "下週一 09:00",
+		"quick.customTime": "自定義時間…",
+		"quick.newNoteOnDay": "在這一天記筆記",
+		"quick.now": "剛剛",
+		"quick.ago": "{m} 分鐘前",
+		"quick.todayAt": "今天 {t}",
+		"quick.yesterdayAt": "昨天 {t}",
+		"quick.hintTodo": "支援「明天 18:00」「週五」「#標籤」「!!」等寫法",
+		"quick.hintNote": "直接記錄文字，Ctrl+Enter 即刻儲存",
+		"quick.hintReminder": "支援「每天 9:00 …」「每週五 18:00 …」「每30分鐘 …」「明天 21:00 …」",
+
+		"search.placeholder": "搜尋筆記與標籤…",
+		"empty.todo": "還沒有待辦。上面輸入框寫一句 + 回車即可。",
+		"empty.note": "還沒有筆記。上面直接寫文字 + 回車即可。",
+		"empty.reminder": "還沒有提醒。試試「每天 9:00 吃藥」。",
+		"empty.agenda": "接下來沒有安排。",
+		"empty.search": "沒有匹配的條目。",
+		"empty.list": "這裡是空的。",
+
+		"field.title": "標題",
+		"field.body": "正文",
+		"field.bodyHint": "支援 Markdown 原文（純文本編輯，不渲染）",
+		"field.tags": "標籤",
+		"field.tagsHint": "空格或逗號分隔",
+		"field.pinned": "置頂",
+		"field.text": "內容",
+		"field.priority": "優先順序",
+		"field.due": "截止時間",
+		"field.repeat": "重複",
+		"field.noteText": "備註",
+		"field.schedule": "時間",
+		"field.enabled": "啟用",
+		"field.cron": "cron 表示式",
+		"field.time": "時刻",
+		"field.dow": "星期",
+		"field.dom": "每月幾號",
+		"field.minutes": "間隔（分鐘）",
+		"field.minutesHint": "1 .. 10080（7 天）；到點判定按上一次到點時刻接著走，不會慢慢漂",
+		"field.at": "時間點",
+
+		"repeat.none": "不重複",
+		"repeat.daily": "每天",
+		"repeat.weekly": "每週",
+		"repeat.monthly": "每月",
+		"pri.0": "普通",
+		"pri.1": "較低",
+		"pri.2": "較高",
+		"pri.3": "緊急",
+
+		"type.once": "一次性",
+		"type.daily": "每天",
+		"type.weekly": "每週",
+		"type.monthly": "每月",
+		"type.every": "每隔 N 分鐘",
+		"type.cron": "自定義 cron",
+
+		"rem.next": "下次",
+		"rem.never": "不會再觸發",
+		"rem.disabled": "已停用",
+		"rem.last": "上次",
+		"rem.snooze": "推遲 10 分鐘",
+		"rem.enabledOn": "已啟用",
+		"rem.enabledOff": "已停用",
+
+		"due.overdue": "已逾期",
+		"due.today": "今天",
+		"due.future": "截止",
+		"todo.clearDone": "清除已完成",
+		"todo.done": "已完成",
+		"todo.open": "未完成",
+
+		"agenda.overdue": "已逾期",
+		"agenda.today": "今天",
+		"agenda.tomorrow": "明天",
+		"agenda.upcoming": "接下來",
+		"agenda.week": "未來 7 天",
+		"agenda.noDate": "沒有日期",
+		"agenda.reminders": "提醒",
+
+		"cal.month": "{y} 年 {m} 月",
+		"cal.prev": "上個月",
+		"cal.next": "下個月",
+		"cal.today": "今天",
+		"cal.more": "還有 {n} 條",
+		"cal.empty": "這天沒有安排",
+
+		"action.new": "新建",
+		"action.edit": "編輯",
+		"action.pin": "置頂",
+		"action.unpin": "取消置頂",
+		"action.delete": "刪除",
+		"action.save": "儲存",
+		"action.cancel": "取消",
+		"action.minimize": "收起為小貼片",
+		"action.restore": "展開",
+		"action.close": "關閉浮窗",
+		"action.exportJson": "匯出 JSON（備份）",
+		"action.exportMd": "匯出 Markdown",
+		"action.import": "匯入 JSON…",
+		"action.settings": "設定",
+		"action.refresh": "重新整理",
+		"action.alwaysOnTop": "視窗置頂",
+		"action.hide": "從頂欄隱藏",
+		"action.copy": "複製",
+		"action.quote": "新增到輸入框",
+		"action.composerBusy": "輸入框沒就緒，已複製到剪貼簿",
+
+		"confirm.delete": "刪除「{name}」？",
+		"confirm.clearDone": "清除 {n} 條已完成待辦？",
+		"confirm.replace": "覆蓋匯入會用檔案內容替換整個庫，繼續？",
+
+		"settings.toast": "站內通知條",
+		"settings.desktop": "桌面通知",
+		"settings.sound": "提示音",
+		"settings.desktopDenied": "瀏覽器拒絕了通知許可權（可在位址列許可權裡重新允許）",
+		"settings.soundEnable": "需要先在本頁有過互動才能出聲",
+		"settings.position": "重置浮窗位置",
+		"settings.autoOpen": "提醒時自動展開浮窗",
+		"settings.lang": "語言",
+		"settings.about": "資料存在 <dataDir>/notes/store.json；刪除外掛不會刪資料。",
+
+		"notify.title": "筆記提醒",
+		"notify.view": "檢視",
+		"notify.ahead": "知道了",
+		"notify.many": "{n} 條提醒",
+
+		"status.notesTotal": "{n} 篇筆記",
+		"status.notesRemCount": "{n} 篇筆記 · ⏰ {m} 個提醒",
+		"status.offline": "連不上服務端，稍後自動重試",
+		"status.syncing": "同步中…",
+		"status.error": "操作失敗：{e}",
+
+		"import.merge": "合併（同 id 覆蓋）",
+		"import.replace": "覆蓋（清空後匯入）",
+		"import.ok": "匯入完成：新增 {a} 條，更新 {u} 條",
+		"import.fail": "匯入失敗：{e}",
+		"export.ok": "已匯出",
+
+		"week.0": "週日",
+		"week.1": "週一",
+		"week.2": "週二",
+		"week.3": "週三",
+		"week.4": "週四",
+		"week.5": "週五",
+		"week.6": "週六",
+
+		"action.deleteAgain": "再次點選確認",
+		"schedule.domSuffix": "{dom}日",
 	},
 	en: {
 		"app.title": "Notes",
@@ -338,24 +516,21 @@ export const DICT = {
 		"week.4": "Thu",
 		"week.5": "Fri",
 		"week.6": "Sat",
+
+		"action.deleteAgain": "click again to confirm",
+		"schedule.domSuffix": "{dom}",
 	},
 };
 
+/** 当前界面语言（词典里存在的那一个）；解析与回退由 SDK 统一实现。 */
 export function detectLang() {
-	try {
-		const raw = String(globalThis.document?.documentElement?.lang ?? "").toLowerCase();
-		if (raw.startsWith("zh")) return "zh";
-		if (raw) return "en";
-	} catch {}
-	const nav = String(globalThis.navigator?.language ?? "").toLowerCase();
-	return nav.startsWith("zh") ? "zh" : nav ? "en" : "zh";
+	return createPluginI18n(DICT).locale;
 }
 
+/** 取文案函数；语言可以是字符串或惰性 getter，每次调用时解析。 */
 export function makeT(lang) {
-	const table = DICT[lang] ?? DICT.zh;
 	return (key, params) => {
-		const raw = table[key] ?? DICT.zh[key] ?? key;
-		if (!params) return raw;
-		return raw.replace(/\{(\w+)\}/g, (m, name) => (params[name] === undefined ? m : String(params[name])));
+		const current = typeof lang === "function" ? lang() : lang;
+		return createPluginI18n(DICT, { locale: current }).t(key, params);
 	};
 }

@@ -2,9 +2,9 @@ import { useEffect, useRef, useState } from "react";
 import { artifactRefsMatch, deliveryReviewMatches } from "../../../server/device-center/delivery-subject";
 import { appUrl } from "../base-url";
 import { withToken } from "../auth-token";
-import { isZhLocale, useI18n } from "../i18n";
+import { isZhLocale, useI18n, useT } from "../i18n";
 import { randomUuid } from "../uuid";
-import { groupAttention, groupAttentionLabel } from "../group-attention";
+import { groupAttention, groupAttentionKey } from "../group-attention";
 import type { GroupBotConversation, GroupDevice } from "../device-group-messages";
 import type { DeviceDelivery, DeviceIntegration, DeviceReview, DeviceReviewRequest } from "../types";
 import { GroupIntegration } from "./GroupIntegration";
@@ -37,6 +37,7 @@ export function GroupDeliveries({
 	onRefresh?: () => void;
 }) {
 	const { locale } = useI18n();
+	const t = useT();
 	const zh = isZhLocale(locale);
 	const [attentionOnly, setAttentionOnly] = useState(true);
 	const attentionCount = conversations.filter((conversation) => groupAttention(conversation)).length;
@@ -44,25 +45,17 @@ export function GroupDeliveries({
 	return (
 		<details className="gd-panel">
 			<summary>
-				{zh ? "需要我处理" : "Needs attention"} · {attentionCount} · {zh ? "全部对话" : "All conversations"}{" "}
+				{t("groupDeliveriesNeedsAttention")} · {attentionCount} · {t("groupDeliveriesAllConversations")}{" "}
 				{conversations.length}
 			</summary>
 			<div className="gd-content">
 				{error && <p role="alert">{error}</p>}
 				<label>
 					<input type="checkbox" checked={attentionOnly} onChange={(event) => setAttentionOnly(event.target.checked)} />
-					{zh ? "仅显示需要处理的事项" : "Show only items needing attention"}
+					{t("groupDeliveriesAttentionOnly")}
 				</label>
 				{!visible.length && (
-					<p>
-						{attentionOnly
-							? zh
-								? "当前没有需要处理的事项。"
-								: "Nothing needs attention right now."
-							: zh
-								? "暂无 Bot 对话。"
-								: "No Bot conversations yet."}
-					</p>
+					<p>{attentionOnly ? t("groupDeliveriesNothingPending") : t("groupDeliveriesNoConversations")}</p>
 				)}
 				{visible.map((conversation) => (
 					<ConversationDelivery
@@ -98,6 +91,7 @@ function ConversationDelivery({
 	onRefresh?: () => void;
 	zh: boolean;
 }) {
+	const t = useT();
 	const attention = groupAttention(conversation);
 	const [deleting, setDeleting] = useState(false);
 	const [deleteError, setDeleteError] = useState("");
@@ -148,29 +142,19 @@ function ConversationDelivery({
 	return (
 		<section className="gd-conversation" aria-label={`${bot} · ${conversation.name}`}>
 			<strong>
-				{bot} · {conversation.name || (zh ? "未命名对话" : "Untitled conversation")}
+				{bot} · {conversation.name || t("groupDeliveriesUntitledConversation")}
 			</strong>
 			<p>
-				{zh ? "执行状态" : "Execution status"}: {conversation.status}
+				{t("groupDeliveriesExecutionStatus")}: {conversation.status}
 			</p>
 			{conversation.closedReason && (
 				<p role="status">
 					{conversation.closedReason === "device_revoked"
-						? zh
-							? "承载 Bot 的设备已解绑，此会话已停止。"
-							: "The device hosting this Bot was revoked, so the conversation stopped."
-						: zh
-							? "此会话已停止。"
-							: "This conversation was stopped."}
+						? t("groupDeliveriesDeviceRevoked")
+						: t("groupDeliveriesConversationStopped")}
 				</p>
 			)}
-			{conversation.stale && (
-				<p role="status">
-					{zh
-						? "Bot 配置已变更（revision/设备/成员），此会话无法继续；请新建对话。"
-						: "This Bot's configuration changed (revision, device or membership); start a new conversation."}
-				</p>
-			)}
+			{conversation.stale && <p role="status">{t("groupDeliveriesStale")}</p>}
 			{conversation.status !== "closed" && !conversation.stale && (
 				<>
 					<button
@@ -195,7 +179,7 @@ function ConversationDelivery({
 							}
 						}}
 					>
-						{zh ? "关闭会话" : "Close conversation"}
+						{t("groupDeliveriesCloseConversation")}
 					</button>
 					{stopError && <p role="alert">{stopError}</p>}
 				</>
@@ -224,31 +208,19 @@ function ConversationDelivery({
 							}
 						}}
 					>
-						{zh ? "删除会话（释放容量）" : "Delete conversation (free capacity)"}
+						{t("groupDeliveriesDeleteConversation")}
 					</button>
 					{deleteError && <p role="alert">{deleteError}</p>}
 				</>
 			)}
-			{attention && <p role="status">{groupAttentionLabel(attention, zh)}</p>}
+			{attention && <p role="status">{t(groupAttentionKey(attention))}</p>}
 			{conversation.attention && (
-				<HumanAnswer
-					key={conversation.attention.id}
-					roomId={roomId}
-					conversation={conversation}
-					disabled={disabled}
-					zh={zh}
-				/>
+				<HumanAnswer key={conversation.attention.id} roomId={roomId} conversation={conversation} disabled={disabled} />
 			)}
 			{(attention === "failed" || attention === "interrupted" || attention === "changes_requested") && (
-				<p>
-					{zh
-						? "在输入框输入 @，选择此 Bot 的原对话补充要求或继续处理。"
-						: "Type @ in the composer and select this Bot's existing conversation to continue."}
-				</p>
+				<p>{t("groupDeliveriesContinueHint")}</p>
 			)}
-			{conversation.deliverySummaryTruncated && !history && (
-				<p>{zh ? "当前为摘要，请展开完整交付后验收。" : "Summary only. Load the full delivery before reviewing."}</p>
-			)}
+			{conversation.deliverySummaryTruncated && !history && <p>{t("groupDeliveriesSummaryOnly")}</p>}
 			{latest ? (
 				<DeliveryCard
 					key={latest.id}
@@ -262,7 +234,7 @@ function ConversationDelivery({
 					zh={zh}
 				/>
 			) : (
-				<p>{zh ? "未交付（执行结束不代表已交付）" : "Not delivered (execution ending does not imply delivery)"}</p>
+				<p>{t("groupDeliveriesNotDelivered")}</p>
 			)}
 			{latest && (
 				<details
@@ -272,14 +244,14 @@ function ConversationDelivery({
 					}}
 				>
 					<summary>
-						{zh ? "完整交付与历史" : "Full delivery & history"} · {conversation.deliveryCount ?? deliveries.length}
+						{t("groupDeliveriesFullHistory")} · {conversation.deliveryCount ?? deliveries.length}
 					</summary>
-					{loading && <p role="status">{zh ? "加载中…" : "Loading…"}</p>}
+					{loading && <p role="status">{t("loading")}</p>}
 					{historyError && (
 						<p role="alert">
 							{historyError}{" "}
 							<button type="button" className="btn" onClick={() => void loadHistory()}>
-								{zh ? "重试" : "Retry"}
+								{t("groupDeliveriesRetry")}
 							</button>
 						</p>
 					)}
@@ -306,13 +278,12 @@ function HumanAnswer({
 	roomId,
 	conversation,
 	disabled,
-	zh,
 }: {
 	roomId: string;
 	conversation: GroupBotConversation;
 	disabled?: boolean;
-	zh: boolean;
 }) {
+	const t = useT();
 	const [answer, setAnswer] = useState("");
 	const [error, setError] = useState("");
 	const [busy, setBusy] = useState(false);
@@ -356,7 +327,7 @@ function HumanAnswer({
 		<div>
 			<p>{conversation.attention?.question}</p>
 			{sent ? (
-				<p role="status">{zh ? "已回复，原会话将继续。" : "Answer sent. The original conversation will continue."}</p>
+				<p role="status">{t("groupDeliveriesAnswerSent")}</p>
 			) : (
 				<form
 					onSubmit={(event) => {
@@ -365,7 +336,7 @@ function HumanAnswer({
 					}}
 				>
 					<label>
-						{zh ? "你的答复" : "Your answer"}
+						{t("groupDeliveriesYourAnswer")}
 						<textarea
 							value={answer}
 							maxLength={8000}
@@ -378,7 +349,7 @@ function HumanAnswer({
 						className="btn"
 						disabled={disabled || busy || !answer.trim() || conversation.status === "closed"}
 					>
-						{zh ? "回复并继续" : "Answer & continue"}
+						{t("groupDeliveriesAnswerContinue")}
 					</button>
 					{error && <p role="alert">{error}</p>}
 				</form>
@@ -408,6 +379,7 @@ function DeliveryCard({
 	readOnly?: boolean;
 	zh: boolean;
 }) {
+	const t = useT();
 	const [saved, setSaved] = useState<DeviceReview | null>(null);
 	const [integration, setIntegration] = useState<DeviceIntegration | null>(null);
 	const [criteria, setCriteria] = useState<{ met: boolean; evidence: string }[]>([]);
@@ -484,20 +456,14 @@ function DeliveryCard({
 			<p className="gd-status" role="status">
 				{review
 					? review.verdict === "accepted"
-						? zh
-							? "验收通过"
-							: "Accepted"
-						: zh
-							? "需返工"
-							: "Changes requested"
-					: zh
-						? "已交付 · 待验收"
-						: "Delivered · Awaiting review"}
+						? t("groupDeliveriesAccepted")
+						: t("groupDeliveriesChangesRequested")
+					: t("groupDeliveriesAwaitingReview")}
 			</p>
 			<dl>
-				<dt>{zh ? "交付版本 ID" : "Delivery version ID"}</dt>
+				<dt>{t("groupDeliveriesDeliveryId")}</dt>
 				<dd>{delivery.id}</dd>
-				<dt>{zh ? "仓库" : "Repository"}</dt>
+				<dt>{t("groupDeliveriesRepository")}</dt>
 				<dd>{delivery.repository}</dd>
 				{delivery.commit && (
 					<>
@@ -509,46 +475,36 @@ function DeliveryCard({
 				)}
 				{delivery.artifactRef && (
 					<>
-						<dt>{zh ? "产物" : "Artifact"}</dt>
+						<dt>{t("groupDeliveriesArtifact")}</dt>
 						<dd>{delivery.artifactRef.artifactId}</dd>
-						<dt>{zh ? "源码任务" : "Source task"}</dt>
+						<dt>{t("groupDeliveriesSourceTask")}</dt>
 						<dd>{delivery.artifactRef.artifactTaskId}</dd>
-						<dt>{zh ? "内容摘要" : "Content digest"}</dt>
+						<dt>{t("groupDeliveriesContentDigest")}</dt>
 						<dd>
 							<code>{delivery.artifactRef.artifactDigest}</code>
 						</dd>
-						<dt>{zh ? "文件树版本" : "File tree version"}</dt>
+						<dt>{t("groupDeliveriesFileTree")}</dt>
 						<dd>
 							<code>{delivery.artifactRef.outputTree}</code>
 						</dd>
 					</>
 				)}
-				<dt>{zh ? "基线 SHA" : "Base SHA"}</dt>
+				<dt>{t("groupDeliveriesBaseSha")}</dt>
 				<dd>
 					<code>{delivery.baseCommit}</code>
 				</dd>
 				{delivery.branch && (
 					<>
-						<dt>{zh ? "分支" : "Branch"}</dt>
+						<dt>{t("groupDeliveriesBranch")}</dt>
 						<dd>{delivery.branch}</dd>
 					</>
 				)}
-				<dt>{zh ? "交付摘要" : "Summary"}</dt>
+				<dt>{t("groupDeliveriesSummary")}</dt>
 				<dd>{delivery.summary}</dd>
-				<dt>{zh ? "限制与未完成项" : "Limitations"}</dt>
-				<dd>
-					{delivery.limitations.length
-						? delivery.limitations.join("\n")
-						: zh
-							? "Bot 未报告限制"
-							: "No limitations reported by Bot"}
-				</dd>
+				<dt>{t("groupDeliveriesLimitations")}</dt>
+				<dd>{delivery.limitations.length ? delivery.limitations.join("\n") : t("groupDeliveriesNoLimitations")}</dd>
 			</dl>
-			<p>
-				{zh
-					? "检查来源：Bot 自报，未经宿主或 CI 验证。"
-					: "Checks source: Bot self-report; not verified by host or CI."}
-			</p>
+			<p>{t("groupDeliveriesChecksSource")}</p>
 			{delivery.checks.length ? (
 				<ul>
 					{delivery.checks.map((check, index) => (
@@ -559,18 +515,18 @@ function DeliveryCard({
 					))}
 				</ul>
 			) : (
-				<p>{zh ? "Bot 未报告检查" : "No checks reported by Bot"}</p>
+				<p>{t("groupDeliveriesNoChecks")}</p>
 			)}
 			{review && (
 				<p>
-					{zh ? "验收意见" : "Review"} ({review.reviewer.type === "human" ? (zh ? "人工" : "Human") : "Bot"}) ·{" "}
+					{t("groupDeliveriesReview")} ({review.reviewer.type === "human" ? t("groupDeliveriesHuman") : "Bot"}) ·{" "}
 					{review.summary}
 				</p>
 			)}
 			{!readOnly && (
 				<form onSubmit={(event) => event.preventDefault()}>
 					<label>
-						{zh ? "人工验收意见（对应以上交付版本）" : "Human review (for the delivery version above)"}
+						{t("groupDeliveriesHumanReview")}
 						<textarea
 							value={summary}
 							onChange={(event) => setSummary(event.target.value)}
@@ -581,13 +537,11 @@ function DeliveryCard({
 					</label>
 					{delivery.artifactRef && (
 						<fieldset disabled={disabled || pending || !verified}>
-							<legend>{zh ? "逐项验收" : "Acceptance criteria"}</legend>
+							<legend>{t("groupDeliveriesCriteria")}</legend>
 							<p>
 								{verified
-									? (zh ? "对应验证：" : "Reviewing verification: ") + integration!.id
-									: zh
-										? "请先展开验证与合并，完成验证后填写验收证据。"
-										: "Open Verify & merge and complete verification before entering acceptance evidence."}
+									? t("groupDeliveriesReviewingVerification", { id: integration!.id })
+									: t("groupDeliveriesVerifyFirst")}
 							</p>
 							{delivery.acceptanceCriteria?.map((criterion, index) => (
 								<div key={index}>
@@ -606,7 +560,7 @@ function DeliveryCard({
 										{criterion}
 									</label>
 									<label>
-										{zh ? "验收证据" : "Evidence"}
+										{t("groupDeliveriesEvidence")}
 										<textarea
 											value={criteria[index]?.evidence ?? ""}
 											maxLength={2000}
@@ -630,7 +584,7 @@ function DeliveryCard({
 							disabled={disabled || pending || !summary.trim() || !canAccept}
 							onClick={() => void submit("accepted")}
 						>
-							{zh ? "验收通过" : "Accept delivery"}
+							{t("groupDeliveriesAccept")}
 						</button>
 						<button
 							type="button"
@@ -638,10 +592,10 @@ function DeliveryCard({
 							disabled={disabled || pending || !summary.trim()}
 							onClick={() => void submit("changes_requested")}
 						>
-							{zh ? "需返工" : "Request changes"}
+							{t("groupDeliveriesRequestChanges")}
 						</button>
 					</div>
-					{pending && <p role="status">{zh ? "提交中…" : "Submitting…"}</p>}
+					{pending && <p role="status">{t("groupDeliveriesSubmitting")}</p>}
 					{error && <p role="alert">{error}</p>}
 				</form>
 			)}

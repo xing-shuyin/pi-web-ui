@@ -1,3 +1,28 @@
+import { esc } from "@pi-web-ui/plugin-sdk/client";
+import { makeT } from "./i18n.mjs";
+
+/** 面板文案：语言解析 / 回退 / 插值都在 SDK 里，这里只按当前界面语言取词。 */
+const t = makeT();
+
+/** 指令词表本身是数据（/help、1/cwd…），只有方括号里的参数提示随界面语言变化。 */
+const cmdCode = (token) => `<code>${esc(token)}</code>`;
+/** 路径展示沿用原生 code 标签样式（数据由宿主/配置提供）。 */
+const codeTag = (text) => `<code style="background:var(--bg-elev2);padding:2px 6px;border-radius:4px;">${text}</code>`;
+function quickCmdGuide() {
+	return t("quickCmdBody", {
+		slash: cmdCode("/"),
+		help: cmdCode("/help"),
+		cwd: cmdCode(t("cmdCwd")),
+		new: cmdCode(t("cmdNew")),
+		status: cmdCode(t("cmdStatus")),
+		model: cmdCode(t("cmdModel")),
+		thinking: cmdCode(t("cmdThinking")),
+		plan: cmdCode(t("cmdPlan")),
+		compact: cmdCode(t("cmdCompact")),
+		stop: cmdCode(t("cmdStop")),
+	});
+}
+
 const ACTION_SET_WORKSPACE = "qq:set-workspace";
 
 let panelSendSink = null;
@@ -47,13 +72,13 @@ export default {
 				<div class="qq-topbar" style="display: flex; align-items: center; justify-content: space-between; padding: 12px 20px; border-bottom: 1px solid var(--border); background: var(--bg-elev); flex-shrink: 0; flex-wrap: wrap; gap: 10px;">
 					<div style="display: flex; align-items: center; gap: 10px;">
 						<span style="font-size: 20px;">🐧</span>
-						<span style="font-weight: 600; font-size: 15px;">QQ 机器人工作台</span>
-						<span class="qq-status-badge" style="font-size: 11px; padding: 2px 8px; border-radius: 12px; background: var(--bg-elev2); color: var(--text-dim); border: 1px solid var(--border);">检测中...</span>
+						<span style="font-weight: 600; font-size: 15px;">${esc(t("workbenchTitle"))}</span>
+						<span class="qq-status-badge" style="font-size: 11px; padding: 2px 8px; border-radius: 12px; background: var(--bg-elev2); color: var(--text-dim); border: 1px solid var(--border);">${esc(t("checking"))}</span>
 					</div>
 					<div style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap;">
-						<button class="qq-btn-refresh" style="padding: 6px 12px; border-radius: 4px; border: 1px solid var(--border); background: var(--bg-elev2); color: var(--text); cursor: pointer; font-size: 12px;">⟳ 刷新状态</button>
-						<button class="qq-btn-toggle-bot" style="padding: 6px 14px; border-radius: 4px; border: 1px solid var(--border); background: var(--bg-elev2); color: var(--text); cursor: pointer; font-size: 12px; font-weight: 500;">⚡ 启停服务</button>
-						<button class="qq-btn-config" style="padding: 6px 14px; border-radius: 4px; border: 1px solid var(--border); background: var(--bg-elev2); color: var(--text); cursor: pointer; font-size: 12px;">⚙️ 凭证与高级设置</button>
+						<button class="qq-btn-refresh" style="padding: 6px 12px; border-radius: 4px; border: 1px solid var(--border); background: var(--bg-elev2); color: var(--text); cursor: pointer; font-size: 12px;">${esc(t("refreshStatus"))}</button>
+						<button class="qq-btn-toggle-bot" style="padding: 6px 14px; border-radius: 4px; border: 1px solid var(--border); background: var(--bg-elev2); color: var(--text); cursor: pointer; font-size: 12px; font-weight: 500;">${esc(t("toggleBot"))}</button>
+						<button class="qq-btn-config" style="padding: 6px 14px; border-radius: 4px; border: 1px solid var(--border); background: var(--bg-elev2); color: var(--text); cursor: pointer; font-size: 12px;">${esc(t("openConfig"))}</button>
 					</div>
 				</div>
 
@@ -63,47 +88,47 @@ export default {
 					<!-- Workspace Cwd Section -->
 					<div style="border: 1px solid var(--border); border-radius: 6px; padding: 14px 16px; background: var(--bg-elev);">
 						<div style="font-weight: 600; font-size: 14px; margin-bottom: 8px; display: flex; align-items: center; gap: 6px;">
-							<span>📂</span><span>项目根目录（执行工作空间）</span>
+							<span>📂</span><span>${esc(t("wsTitle"))}</span>
 						</div>
-						<div class="qq-ws-status" style="font-size: 12px; color: var(--text-dim); margin-bottom: 10px; word-break: break-all;">读取中…</div>
+						<div class="qq-ws-status" style="font-size: 12px; color: var(--text-dim); margin-bottom: 10px; word-break: break-all;">${esc(t("loading"))}</div>
 						<div style="display: flex; gap: 8px; align-items: center; flex-wrap: wrap;">
-							<input type="text" class="qq-ws-input" placeholder="留空 = 跟随当前网页项目根目录" style="flex: 2; min-width: 220px; box-sizing: border-box; padding: 6px 10px; border-radius: 4px; border: 1px solid var(--border); background: var(--bg); color: var(--text);" />
+							<input type="text" class="qq-ws-input" placeholder="${esc(t("wsPlaceholder"))}" style="flex: 2; min-width: 220px; box-sizing: border-box; padding: 6px 10px; border-radius: 4px; border: 1px solid var(--border); background: var(--bg); color: var(--text);" />
 							<select class="qq-ws-select" style="min-width: 150px; padding: 6px 10px; border-radius: 4px; border: 1px solid var(--border); background: var(--bg); color: var(--text);">
-								<option value="">快速点选已有项目…</option>
+								<option value="">${esc(t("wsSelectPlaceholder"))}</option>
 							</select>
-							<button class="qq-ws-browse" style="padding: 6px 12px; border-radius: 4px; border: 1px solid var(--border); background: var(--bg-elev2); color: var(--text); cursor: pointer;">📂 浏览目录…</button>
-							<button class="qq-ws-save" style="padding: 6px 14px; border-radius: 4px; border: none; background: var(--accent); color: var(--accent-contrast, #fff); cursor: pointer; font-weight: 500;">设为根目录</button>
-							<button class="qq-ws-use-cwd" style="padding: 6px 12px; border-radius: 4px; border: 1px solid var(--border); background: var(--bg-elev2); color: var(--text); cursor: pointer;">设为当前项目</button>
-							<button class="qq-ws-clear" style="padding: 6px 12px; border-radius: 4px; border: 1px solid var(--border); background: var(--bg-elev2); color: var(--text); cursor: pointer;">清空固定</button>
+							<button class="qq-ws-browse" style="padding: 6px 12px; border-radius: 4px; border: 1px solid var(--border); background: var(--bg-elev2); color: var(--text); cursor: pointer;">${esc(t("wsBrowse"))}</button>
+							<button class="qq-ws-save" style="padding: 6px 14px; border-radius: 4px; border: none; background: var(--accent); color: var(--accent-contrast, #fff); cursor: pointer; font-weight: 500;">${esc(t("wsSetRoot"))}</button>
+							<button class="qq-ws-use-cwd" style="padding: 6px 12px; border-radius: 4px; border: 1px solid var(--border); background: var(--bg-elev2); color: var(--text); cursor: pointer;">${esc(t("wsUseCwd"))}</button>
+							<button class="qq-ws-clear" style="padding: 6px 12px; border-radius: 4px; border: 1px solid var(--border); background: var(--bg-elev2); color: var(--text); cursor: pointer;">${esc(t("wsClear"))}</button>
 						</div>
 					</div>
 
 					<!-- Model & Thinking Level Section -->
 					<div style="border: 1px solid var(--border); border-radius: 6px; padding: 14px 16px; background: var(--bg-elev);">
 						<div style="font-weight: 600; font-size: 14px; margin-bottom: 8px; display: flex; align-items: center; gap: 6px;">
-							<span>🤖</span><span>AI 模型与双向同步模式</span>
+							<span>🤖</span><span>${esc(t("modelTitle"))}</span>
 						</div>
 						<div style="display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-bottom: 10px;">
-							<input type="text" class="qq-model-input" placeholder="留空 = 跟随全局默认模型（支持手输或点选）" style="flex: 2; min-width: 200px; box-sizing: border-box; padding: 6px 10px; border-radius: 4px; border: 1px solid var(--border); background: var(--bg); color: var(--text);" />
-							<button class="qq-model-browse" style="padding: 6px 12px; border-radius: 4px; border: 1px solid var(--border); background: var(--bg-elev2); color: var(--text); cursor: pointer;">✨ 选择模型…</button>
+							<input type="text" class="qq-model-input" placeholder="${esc(t("modelPlaceholder"))}" style="flex: 2; min-width: 200px; box-sizing: border-box; padding: 6px 10px; border-radius: 4px; border: 1px solid var(--border); background: var(--bg); color: var(--text);" />
+							<button class="qq-model-browse" style="padding: 6px 12px; border-radius: 4px; border: 1px solid var(--border); background: var(--bg-elev2); color: var(--text); cursor: pointer;">${esc(t("modelBrowse"))}</button>
 							<select class="qq-thinking-select" style="min-width: 140px; padding: 6px 10px; border-radius: 4px; border: 1px solid var(--border); background: var(--bg); color: var(--text);">
-								<option value="">思考强度：跟随全局</option>
-								<option value="off">思考：关闭 (off)</option>
-								<option value="low">思考：低 (low)</option>
-								<option value="medium">思考：中 (medium)</option>
-								<option value="high">思考：高 (high)</option>
-								<option value="max">思考：最大 (max)</option>
+								<option value="">${esc(t("thinkingDefault"))}</option>
+								<option value="off">${esc(t("thinkingOff"))}</option>
+								<option value="low">${esc(t("thinkingLow"))}</option>
+								<option value="medium">${esc(t("thinkingMedium"))}</option>
+								<option value="high">${esc(t("thinkingHigh"))}</option>
+								<option value="max">${esc(t("thinkingMax"))}</option>
 							</select>
-							<button class="qq-model-save" style="padding: 6px 14px; border-radius: 4px; border: none; background: var(--accent); color: var(--accent-contrast, #fff); cursor: pointer; font-weight: 500;">保存配置</button>
-							<button class="qq-model-clear" style="padding: 6px 12px; border-radius: 4px; border: 1px solid var(--border); background: var(--bg-elev2); color: var(--text); cursor: pointer;">恢复默认</button>
+							<button class="qq-model-save" style="padding: 6px 14px; border-radius: 4px; border: none; background: var(--accent); color: var(--accent-contrast, #fff); cursor: pointer; font-weight: 500;">${esc(t("saveConfig"))}</button>
+							<button class="qq-model-clear" style="padding: 6px 12px; border-radius: 4px; border: 1px solid var(--border); background: var(--bg-elev2); color: var(--text); cursor: pointer;">${esc(t("modelClear"))}</button>
 						</div>
 						<div style="background: var(--bg); border: 1px solid var(--border); border-radius: 6px; padding: 10px 12px;">
 							<label style="display: flex; align-items: center; gap: 8px; cursor: pointer; font-size: 13px; font-weight: 500;">
 								<input type="checkbox" class="qq-bind-active-check" style="cursor: pointer;" />
-								<span>⚠️ 强行注入电脑端当前打开的会话（遥控器模式，默认关闭）</span>
+								<span>${esc(t("bindActiveLabel"))}</span>
 							</label>
 							<div style="font-size: 12px; color: var(--text-dim); margin-top: 4px; line-height: 1.5; padding-left: 22px;">
-								建议保持关闭：每个 QQ 用户/群自动拥有独立的专属会话，绝不干扰电脑端正在进行的日常写代码对话。在下方点击「👁️ 打开此对话」即可随时在电脑端点开专属会话并接管！
+								${esc(t("bindActiveHint"))}
 							</div>
 						</div>
 					</div>
@@ -112,76 +137,76 @@ export default {
 					<div style="border: 1px solid var(--border); border-radius: 6px; padding: 14px 16px; background: var(--bg-elev);">
 						<div style="font-weight: 600; font-size: 14px; margin-bottom: 10px; display: flex; align-items: center; justify-content: space-between;">
 							<div style="display: flex; align-items: center; gap: 6px;">
-								<span>💬</span><span>最近 QQ 互动对话（电脑端直接点开查看）</span>
+								<span>💬</span><span>${esc(t("recentTitle"))}</span>
 							</div>
-							<span style="font-size: 11px; color: var(--text-dim); font-weight: normal;">双向消息流转</span>
+							<span style="font-size: 11px; color: var(--text-dim); font-weight: normal;">${esc(t("recentSubtitle"))}</span>
 						</div>
 						<div class="qq-recent-list" style="display: flex; flex-direction: column; gap: 8px;">
 							<div style="color: var(--text-dim); font-size: 12px; padding: 12px; text-align: center; border: 1px dashed var(--border); border-radius: 4px;">
-								暂无 QQ 互动记录。在 QQ 中 @机器人 发送消息，这里即可实时查看并一键跳转到主界面！
+								${esc(t("recentEmpty"))}
 							</div>
 						</div>
 					</div>
 
 					<!-- Status & Health Card -->
 					<div style="border: 1px solid var(--border); border-radius: 6px; padding: 16px; background: var(--bg-elev);">
-						<div style="font-weight: 600; font-size: 14px; margin-bottom: 12px;">📊 机器人连接与运行概况</div>
+						<div style="font-weight: 600; font-size: 14px; margin-bottom: 12px;">${esc(t("healthTitle"))}</div>
 						<div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 12px;">
 							<div style="padding: 10px; border-radius: 4px; background: var(--bg); border: 1px solid var(--border);">
-								<div style="color: var(--text-dim); font-size: 11px; margin-bottom: 4px;">连接状态</div>
-								<div class="qq-metric-state" style="font-size: 14px; font-weight: 600;">检测中...</div>
+								<div style="color: var(--text-dim); font-size: 11px; margin-bottom: 4px;">${esc(t("connState"))}</div>
+								<div class="qq-metric-state" style="font-size: 14px; font-weight: 600;">${esc(t("checking"))}</div>
 							</div>
 							<div style="padding: 10px; border-radius: 4px; background: var(--bg); border: 1px solid var(--border);">
-								<div style="color: var(--text-dim); font-size: 11px; margin-bottom: 4px;">机器人账号</div>
+								<div style="color: var(--text-dim); font-size: 11px; margin-bottom: 4px;">${esc(t("botAccount"))}</div>
 								<div class="qq-metric-username" style="font-size: 14px; font-weight: 600;">--</div>
 							</div>
 							<div style="padding: 10px; border-radius: 4px; background: var(--bg); border: 1px solid var(--border);">
-								<div style="color: var(--text-dim); font-size: 11px; margin-bottom: 4px;">已接收消息</div>
-								<div class="qq-metric-recv" style="font-size: 14px; font-weight: 600;">0 条</div>
+								<div style="color: var(--text-dim); font-size: 11px; margin-bottom: 4px;">${esc(t("recvCount"))}</div>
+								<div class="qq-metric-recv" style="font-size: 14px; font-weight: 600;">${esc(t("countMessages", { count: 0 }))}</div>
 							</div>
 							<div style="padding: 10px; border-radius: 4px; background: var(--bg); border: 1px solid var(--border);">
-								<div style="color: var(--text-dim); font-size: 11px; margin-bottom: 4px;">已回复消息</div>
-								<div class="qq-metric-sent" style="font-size: 14px; font-weight: 600;">0 条</div>
+								<div style="color: var(--text-dim); font-size: 11px; margin-bottom: 4px;">${esc(t("sentCount"))}</div>
+								<div class="qq-metric-sent" style="font-size: 14px; font-weight: 600;">${esc(t("countMessages", { count: 0 }))}</div>
 							</div>
 						</div>
 						<div style="margin-top: 12px; font-size: 12px; color: var(--text-dim); line-height: 1.6; border-top: 1px dashed var(--border); padding-top: 10px;">
-							💬 <strong>快捷指令指南</strong>：在 QQ 频道或群聊中发送 <code>/</code> 或 <code>/help</code> 可查看编号操作菜单。支持发送 <code>1/cwd [路径]</code> 切换项目、<code>2/new [提示]</code> 清空或开新任务、<code>3/status</code> 查看状态、<code>4/model [ID]</code> 切模型、<code>5/thinking [档位]</code> 调思考、<code>6/plan [on/off]</code> 计划模式、<code>7/compact</code> 压缩会话、<code>8/stop</code> 中止任务。
+							💬 <strong>${esc(t("quickCmdTitle"))}</strong>${quickCmdGuide()}
 						</div>
 					</div>
 
 					<!-- Send Message Card -->
 					<div style="border: 1px solid var(--border); border-radius: 6px; padding: 16px; background: var(--bg-elev);">
-						<div style="font-weight: 600; font-size: 14px; margin-bottom: 12px;">📤 快捷向 QQ 频道子频道发送测试消息</div>
+						<div style="font-weight: 600; font-size: 14px; margin-bottom: 12px;">${esc(t("sendTitle"))}</div>
 						<div style="display: flex; flex-direction: column; gap: 10px;">
 							<div>
 								<div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px;">
-									<label style="color: var(--text-dim);">目标子频道 Channel ID:</label>
-									<button class="qq-btn-fetch-channels" style="font-size: 11px; padding: 2px 8px; border-radius: 4px; border: 1px solid var(--border); background: var(--bg); color: var(--text); cursor: pointer;">🔍 自动读取我的子频道</button>
+									<label style="color: var(--text-dim);">${esc(t("targetChannel"))}</label>
+									<button class="qq-btn-fetch-channels" style="font-size: 11px; padding: 2px 8px; border-radius: 4px; border: 1px solid var(--border); background: var(--bg); color: var(--text); cursor: pointer;">${esc(t("fetchChannels"))}</button>
 								</div>
 								<select class="qq-channels-dropdown" style="display: none; width: 100%; box-sizing: border-box; margin-bottom: 6px; padding: 6px 10px; border-radius: 4px; border: 1px solid var(--accent); background: var(--bg-elev); color: var(--text);"></select>
-								<input type="text" class="qq-send-channelid" placeholder="如：12345678 (注意：是具体的文字子频道ID，不是大频道号)" style="width: 100%; box-sizing: border-box; padding: 6px 10px; border-radius: 4px; border: 1px solid var(--border); background: var(--bg); color: var(--text);" />
+								<input type="text" class="qq-send-channelid" placeholder="${esc(t("channelPlaceholder"))}" style="width: 100%; box-sizing: border-box; padding: 6px 10px; border-radius: 4px; border: 1px solid var(--border); background: var(--bg); color: var(--text);" />
 							</div>
 							<div>
-								<label style="display: block; margin-bottom: 4px; color: var(--text-dim);">消息文本内容:</label>
-								<textarea class="qq-send-text" rows="2" placeholder="输入要发送的消息内容..." style="width: 100%; box-sizing: border-box; padding: 8px 10px; border-radius: 4px; border: 1px solid var(--border); background: var(--bg); color: var(--text); resize: vertical; font-family: inherit;"></textarea>
+								<label style="display: block; margin-bottom: 4px; color: var(--text-dim);">${esc(t("messageText"))}</label>
+								<textarea class="qq-send-text" rows="2" placeholder="${esc(t("messagePlaceholder"))}" style="width: 100%; box-sizing: border-box; padding: 8px 10px; border-radius: 4px; border: 1px solid var(--border); background: var(--bg); color: var(--text); resize: vertical; font-family: inherit;"></textarea>
 							</div>
 							<div>
-								<label style="display: block; margin-bottom: 4px; color: var(--text-dim);">媒体（可选：本地文件路径或 http(s) URL）:</label>
-								<input type="text" class="qq-send-media" placeholder="如 C:\\pic\\a.png 或 https://…/a.png" style="width: 100%; box-sizing: border-box; padding: 6px 10px; border-radius: 4px; border: 1px solid var(--border); background: var(--bg); color: var(--text);" />
-								<div style="font-size: 11px; color: var(--text-dim); margin-top: 4px;">子频道（Channel ID）只支持公网 URL（官方限制）；发本地文件请填下面的单聊/群聊 openid。</div>
+								<label style="display: block; margin-bottom: 4px; color: var(--text-dim);">${esc(t("mediaLabel"))}</label>
+								<input type="text" class="qq-send-media" placeholder="${esc(t("mediaPlaceholder"))}" style="width: 100%; box-sizing: border-box; padding: 6px 10px; border-radius: 4px; border: 1px solid var(--border); background: var(--bg); color: var(--text);" />
+								<div style="font-size: 11px; color: var(--text-dim); margin-top: 4px;">${esc(t("mediaHint"))}</div>
 							</div>
 							<div>
-								<label style="display: block; margin-bottom: 4px; color: var(--text-dim);">单聊 / 群聊 openid（可选，填了就发它而不是频道）:</label>
+								<label style="display: block; margin-bottom: 4px; color: var(--text-dim);">${esc(t("openidLabel"))}</label>
 								<div style="display: flex; gap: 8px;">
 									<select class="qq-send-openid-type" style="padding: 6px 8px; border-radius: 4px; border: 1px solid var(--border); background: var(--bg); color: var(--text);">
-										<option value="user">单聊 user_openid</option>
-										<option value="group">群聊 group_openid</option>
+										<option value="user">${esc(t("openidTypeUser"))}</option>
+										<option value="group">${esc(t("openidTypeGroup"))}</option>
 									</select>
-									<input type="text" class="qq-send-openid" placeholder="留空 = 发到上方子频道" style="flex: 1; min-width: 0; box-sizing: border-box; padding: 6px 10px; border-radius: 4px; border: 1px solid var(--border); background: var(--bg); color: var(--text);" />
+									<input type="text" class="qq-send-openid" placeholder="${esc(t("openidPlaceholder"))}" style="flex: 1; min-width: 0; box-sizing: border-box; padding: 6px 10px; border-radius: 4px; border: 1px solid var(--border); background: var(--bg); color: var(--text);" />
 								</div>
 							</div>
 							<div style="display: flex; justify-content: flex-end; gap: 8px;">
-								<button class="qq-btn-send" style="padding: 6px 16px; border-radius: 4px; border: none; background: var(--accent); color: var(--accent-contrast, #fff); cursor: pointer; font-weight: 500;">🚀 发送消息</button>
+								<button class="qq-btn-send" style="padding: 6px 16px; border-radius: 4px; border: none; background: var(--accent); color: var(--accent-contrast, #fff); cursor: pointer; font-weight: 500;">${esc(t("sendMessage"))}</button>
 							</div>
 						</div>
 					</div>
@@ -191,92 +216,92 @@ export default {
 				<div class="qq-modal-settings" style="display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.5); z-index: 1000; align-items: center; justify-content: center;">
 					<div style="width: 540px; max-width: 90vw; max-height: 85vh; background: var(--bg); border: 1px solid var(--border); border-radius: 8px; display: flex; flex-direction: column; overflow: hidden; box-shadow: 0 8px 24px rgba(0,0,0,0.3);">
 						<div style="padding: 12px 16px; border-bottom: 1px solid var(--border); display: flex; justify-content: space-between; align-items: center; background: var(--bg-elev);">
-							<span style="font-weight: 600;">🐧 QQ 机器人凭证与高级设置</span>
+							<span style="font-weight: 600;">${esc(t("modalTitle"))}</span>
 							<button class="qq-modal-close" style="background: none; border: none; color: var(--text-dim); cursor: pointer; font-size: 16px;">✕</button>
 						</div>
 						<div style="padding: 16px; overflow-y: auto; display: flex; flex-direction: column; gap: 14px;">
 							<div>
-								<label style="display: block; margin-bottom: 4px; color: var(--text-dim);">AppID (来自 QQ 开放平台):</label>
-								<input type="text" class="qq-cfg-appid" placeholder="如：102030405" style="width: 100%; box-sizing: border-box; padding: 6px 10px; border-radius: 4px; border: 1px solid var(--border); background: var(--bg); color: var(--text);" />
+								<label style="display: block; margin-bottom: 4px; color: var(--text-dim);">${esc(t("appIdLabel"))}</label>
+								<input type="text" class="qq-cfg-appid" placeholder="${esc(t("appIdPlaceholder"))}" style="width: 100%; box-sizing: border-box; padding: 6px 10px; border-radius: 4px; border: 1px solid var(--border); background: var(--bg); color: var(--text);" />
 							</div>
 
 							<div>
-								<label style="display: block; margin-bottom: 4px; color: var(--text-dim);">AppSecret / ClientSecret (机器人密钥, 加密存储):</label>
-								<input type="password" class="qq-cfg-clientsecret" placeholder="填入 AppSecret (机器人密钥)" style="width: 100%; box-sizing: border-box; padding: 6px 10px; border-radius: 4px; border: 1px solid var(--border); background: var(--bg); color: var(--text);" />
+								<label style="display: block; margin-bottom: 4px; color: var(--text-dim);">${esc(t("secretLabel"))}</label>
+								<input type="password" class="qq-cfg-clientsecret" placeholder="${esc(t("secretPlaceholder"))}" style="width: 100%; box-sizing: border-box; padding: 6px 10px; border-radius: 4px; border: 1px solid var(--border); background: var(--bg); color: var(--text);" />
 							</div>
 
 							<div style="display: flex; align-items: center; gap: 8px;">
 								<input type="checkbox" id="qq-cfg-sandbox" class="qq-cfg-sandbox" style="cursor: pointer;" />
-								<label for="qq-cfg-sandbox" style="font-size: 12px; cursor: pointer; user-select: none;">使用沙箱测试环境 (sandbox.api.sgroup.qq.com)</label>
+								<label for="qq-cfg-sandbox" style="font-size: 12px; cursor: pointer; user-select: none;">${esc(t("sandboxLabel"))}</label>
 							</div>
 
 							<div>
-								<label style="display: block; margin-bottom: 4px; color: var(--text-dim);">默认发送子频道 Channel ID (可选，非 AppSecret，不使用可留空):</label>
-								<input type="text" class="qq-cfg-default-channel" placeholder="如：12345678 (不用频道请留空)" style="width: 100%; box-sizing: border-box; padding: 6px 10px; border-radius: 4px; border: 1px solid var(--border); background: var(--bg); color: var(--text);" />
+								<label style="display: block; margin-bottom: 4px; color: var(--text-dim);">${esc(t("defaultChannelLabel"))}</label>
+								<input type="text" class="qq-cfg-default-channel" placeholder="${esc(t("defaultChannelPlaceholder"))}" style="width: 100%; box-sizing: border-box; padding: 6px 10px; border-radius: 4px; border: 1px solid var(--border); background: var(--bg); color: var(--text);" />
 							</div>
 
 							<div style="border-top: 1px solid var(--border); padding-top: 12px;">
-								<div style="font-weight: 600; margin-bottom: 6px;">📢 频道通知广播</div>
-								<div style="font-size: 12px; color: var(--text-dim); margin-bottom: 8px;">借助私人频道接收 AI 状态推送，无需时刻守在电脑前。</div>
+								<div style="font-weight: 600; margin-bottom: 6px;">${esc(t("broadcastSection"))}</div>
+								<div style="font-size: 12px; color: var(--text-dim); margin-bottom: 8px;">${esc(t("broadcastDesc"))}</div>
 								<div style="margin-bottom: 8px;">
-									<label style="display: block; margin-bottom: 4px; color: var(--text-dim);">广播通知子频道 ID (留空默认使用上方默认子频道):</label>
-									<input type="text" class="qq-cfg-broadcast-channel" placeholder="留空使用上方默认子频道" style="width: 100%; box-sizing: border-box; padding: 6px 10px; border-radius: 4px; border: 1px solid var(--border); background: var(--bg); color: var(--text);" />
+									<label style="display: block; margin-bottom: 4px; color: var(--text-dim);">${esc(t("broadcastChannelLabel"))}</label>
+									<input type="text" class="qq-cfg-broadcast-channel" placeholder="${esc(t("broadcastChannelPlaceholder"))}" style="width: 100%; box-sizing: border-box; padding: 6px 10px; border-radius: 4px; border: 1px solid var(--border); background: var(--bg); color: var(--text);" />
 								</div>
 								<div style="display: flex; flex-direction: column; gap: 6px;">
 									<div style="display: flex; align-items: center; gap: 8px;">
 										<input type="checkbox" id="qq-cfg-notify-question" class="qq-cfg-notify-question" style="cursor: pointer;" />
-										<label for="qq-cfg-notify-question" style="font-size: 12px; cursor: pointer; user-select: none;">AI 提问待确认时发送频道通知 (ask_user_question)</label>
+										<label for="qq-cfg-notify-question" style="font-size: 12px; cursor: pointer; user-select: none;">${esc(t("notifyQuestionLabel"))}</label>
 									</div>
 									<div style="display: flex; align-items: center; gap: 8px;">
 										<input type="checkbox" id="qq-cfg-notify-runend" class="qq-cfg-notify-runend" style="cursor: pointer;" />
-										<label for="qq-cfg-notify-runend" style="font-size: 12px; cursor: pointer; user-select: none;">AI 任务执行完成时发送频道通知 (run_end 摘要)</label>
+										<label for="qq-cfg-notify-runend" style="font-size: 12px; cursor: pointer; user-select: none;">${esc(t("notifyRunEndLabel"))}</label>
 									</div>
 								</div>
 							</div>
 
 							<div style="border-top: 1px solid var(--border); padding-top: 12px;">
-								<div style="font-weight: 600; margin-bottom: 8px;">🔊 自动回复语音</div>
-								<label style="display: block; margin-bottom: 8px;">回复方式
+								<div style="font-weight: 600; margin-bottom: 8px;">${esc(t("voiceSection"))}</div>
+								<label style="display: block; margin-bottom: 8px;">${esc(t("replyModeLabel"))}
 									<select class="qq-cfg-reply-mode" style="width: 100%; padding: 6px; background: var(--bg); color: var(--text); border: 1px solid var(--border); border-radius: 4px;">
-										<option value="text">文字回复</option><option value="voice">语音回复</option><option value="both">语音和文字</option>
+										<option value="text">${esc(t("replyModeText"))}</option><option value="voice">${esc(t("replyModeVoice"))}</option><option value="both">${esc(t("replyModeBoth"))}</option>
 									</select>
 								</label>
-								<label style="display: block; margin-bottom: 8px;">TTS 引擎
+								<label style="display: block; margin-bottom: 8px;">${esc(t("voiceEngineLabel"))}
 									<select class="qq-cfg-voice-engine" style="width: 100%; padding: 6px; background: var(--bg); color: var(--text); border: 1px solid var(--border); border-radius: 4px;"></select>
 								</label>
-								<label style="display: block; margin-bottom: 8px;">音色
+								<label style="display: block; margin-bottom: 8px;">${esc(t("voiceSpeakerLabel"))}
 									<select class="qq-cfg-voice-speaker" style="width: 100%; padding: 6px; background: var(--bg); color: var(--text); border: 1px solid var(--border); border-radius: 4px;"></select>
 								</label>
-								<label style="display: block; margin-bottom: 8px;">语速
+								<label style="display: block; margin-bottom: 8px;">${esc(t("voiceRateLabel"))}
 									<input type="number" class="qq-cfg-voice-rate" min="0.5" max="2" step="0.1" value="1" style="width: 100%; box-sizing: border-box; padding: 6px; background: var(--bg); color: var(--text); border: 1px solid var(--border); border-radius: 4px;" />
 								</label>
 								<div class="qq-voice-error" role="alert" style="font-size: 12px; color: var(--text-dim); overflow-wrap: anywhere;"></div>
-								<div style="font-size: 12px; color: var(--text-dim);">单聊和群聊支持语音，频道使用文字。长回复朗读开头并附完整文字；语音失败自动发送文字。安装并启用 TTS 插件后，可选择豆包等引擎及其音色。</div>
+								<div style="font-size: 12px; color: var(--text-dim);">${esc(t("voiceHint"))}</div>
 							</div>
 
 							<div style="border-top: 1px solid var(--border); padding-top: 12px;">
-								<div style="font-weight: 600; margin-bottom: 8px;">🤖 机器人双工与白名单控制</div>
+								<div style="font-weight: 600; margin-bottom: 8px;">${esc(t("botSection"))}</div>
 								<div style="display: flex; align-items: center; gap: 8px; margin-bottom: 8px;">
 									<input type="checkbox" id="qq-cfg-bot-enabled" class="qq-cfg-bot-enabled" style="cursor: pointer;" />
-									<label for="qq-cfg-bot-enabled" style="font-size: 12px; cursor: pointer; user-select: none;">启用 QQ 机器人双向会话对话服务 (WebSocket 出站长连接)</label>
+									<label for="qq-cfg-bot-enabled" style="font-size: 12px; cursor: pointer; user-select: none;">${esc(t("botEnabledLabel"))}</label>
 								</div>
 								<div style="margin-bottom: 8px;">
-									<label style="display: block; margin-bottom: 4px; color: var(--text-dim);">允许的用户白名单 (用户 ID / OpenID，逗号分隔，留空不限制):</label>
-									<input type="text" class="qq-cfg-allowed-users" placeholder="123456, 789012 (留空允许所有用户)" style="width: 100%; box-sizing: border-box; padding: 6px 10px; border-radius: 4px; border: 1px solid var(--border); background: var(--bg); color: var(--text);" />
+									<label style="display: block; margin-bottom: 4px; color: var(--text-dim);">${esc(t("allowedUsersLabel"))}</label>
+									<input type="text" class="qq-cfg-allowed-users" placeholder="${esc(t("allowedUsersPlaceholder"))}" style="width: 100%; box-sizing: border-box; padding: 6px 10px; border-radius: 4px; border: 1px solid var(--border); background: var(--bg); color: var(--text);" />
 								</div>
 								<div style="display: flex; gap: 10px; align-items: center;">
 									<div style="flex: 1;">
-										<label style="display: block; margin-bottom: 4px; color: var(--text-dim);">执行超时提醒 (秒):</label>
+										<label style="display: block; margin-bottom: 4px; color: var(--text-dim);">${esc(t("timeoutLabel"))}</label>
 										<input type="number" class="qq-cfg-timeout" min="15" max="600" placeholder="90" style="width: 100%; box-sizing: border-box; padding: 6px 10px; border-radius: 4px; border: 1px solid var(--border); background: var(--bg); color: var(--text);" />
 									</div>
 								</div>
 							</div>
 						</div>
 						<div style="padding: 12px 16px; border-top: 1px solid var(--border); display: flex; justify-content: space-between; align-items: center; background: var(--bg-elev);">
-							<button class="qq-btn-test-cfg" style="padding: 6px 12px; border-radius: 4px; border: 1px solid var(--border); background: var(--bg); color: var(--text); cursor: pointer;">🔌 测试连接</button>
+							<button class="qq-btn-test-cfg" style="padding: 6px 12px; border-radius: 4px; border: 1px solid var(--border); background: var(--bg); color: var(--text); cursor: pointer;">${esc(t("testConnection"))}</button>
 							<div style="display: flex; gap: 8px;">
-								<button class="qq-modal-cancel" style="padding: 6px 12px; border-radius: 4px; border: 1px solid var(--border); background: var(--bg); color: var(--text); cursor: pointer;">取消</button>
-								<button class="qq-btn-save-cfg" style="padding: 6px 16px; border-radius: 4px; border: none; background: var(--accent); color: var(--accent-contrast, #fff); cursor: pointer; font-weight: 500;">💾 保存配置</button>
+								<button class="qq-modal-cancel" style="padding: 6px 12px; border-radius: 4px; border: 1px solid var(--border); background: var(--bg); color: var(--text); cursor: pointer;">${esc(t("cancel"))}</button>
+								<button class="qq-btn-save-cfg" style="padding: 6px 16px; border-radius: 4px; border: none; background: var(--accent); color: var(--accent-contrast, #fff); cursor: pointer; font-weight: 500;">${esc(t("saveConfigBtn"))}</button>
 							</div>
 						</div>
 					</div>
@@ -337,30 +362,32 @@ export default {
 
 		function updateStatusView(b = {}) {
 			if (b.state === "connected") {
-				statusBadge.textContent = "🟢 在线";
+				statusBadge.textContent = t("statusOnline");
 				statusBadge.style.color = "var(--green, #22c55e)";
-				metricState.textContent = b.lastError ? `🔴 投递失败: ${b.lastError}` : "🟢 已连接 (在线)";
+				metricState.textContent = b.lastError
+					? t("metricDeliveryFailed", { error: b.lastError })
+					: t("metricConnected");
 				metricState.style.color = b.lastError ? "var(--red, #ef4444)" : "var(--green, #22c55e)";
 			} else if (b.state === "connecting") {
-				statusBadge.textContent = "🟡 连接中";
+				statusBadge.textContent = t("statusConnecting");
 				statusBadge.style.color = "var(--amber, #eab308)";
-				metricState.textContent = "🟡 正在连接...";
+				metricState.textContent = t("metricConnecting");
 				metricState.style.color = "var(--amber, #eab308)";
 			} else if (b.state === "error") {
-				statusBadge.textContent = "🔴 错误";
+				statusBadge.textContent = t("statusError");
 				statusBadge.style.color = "var(--red, #ef4444)";
-				metricState.textContent = b.lastError ? `🔴 出错: ${b.lastError}` : "🔴 连接出错";
+				metricState.textContent = b.lastError ? t("metricErrored", { error: b.lastError }) : t("metricConnError");
 				metricState.style.color = "var(--red, #ef4444)";
 			} else {
-				statusBadge.textContent = "⚪ 未启动";
+				statusBadge.textContent = t("notRunning");
 				statusBadge.style.color = "var(--text-dim)";
-				metricState.textContent = "⚪ 未启动";
+				metricState.textContent = t("notRunning");
 				metricState.style.color = "var(--text-dim)";
 			}
 
 			metricUsername.textContent = b.botUsername ? `${b.botUsername}` : "--";
-			metricRecv.textContent = `${b.messagesReceived || 0} 条`;
-			metricSent.textContent = `${b.messagesReplied || 0} 条`;
+			metricRecv.textContent = t("countMessages", { count: b.messagesReceived || 0 });
+			metricSent.textContent = t("countMessages", { count: b.messagesReplied || 0 });
 		}
 
 		function renderWorkspace(s = {}) {
@@ -375,22 +402,22 @@ export default {
 			}
 
 			if (ws) {
-				wsStatusEl.innerHTML = `当前已固定根目录：<code style="background:var(--bg-elev2);padding:2px 6px;border-radius:4px;">${ws}</code>`;
+				wsStatusEl.innerHTML = t("wsFixed", { path: codeTag(ws) });
 			} else if (hostCwd) {
-				wsStatusEl.innerHTML = `跟随网页当前项目：<code style="background:var(--bg-elev2);padding:2px 6px;border-radius:4px;">${hostCwd}</code> (留空默认)`;
+				wsStatusEl.innerHTML = t("wsFollowing", { path: codeTag(hostCwd) });
 			} else {
-				wsStatusEl.textContent = "跟随宿主启动工作目录 (默认)";
+				wsStatusEl.textContent = t("wsFollowHost");
 			}
 
 			if (wsSelectEl) {
-				const options = [{ label: "选择最近项目…", value: "" }];
+				const options = [{ label: t("wsSelectOption"), value: "" }];
 				if (hostCwd) {
 					const name =
 						hostCwd
 							.replace(/[\\/]+$/, "")
 							.split(/[\\/]/)
 							.pop() || hostCwd;
-					options.push({ label: `当前网页项目：${name} (${hostCwd})`, value: hostCwd });
+					options.push({ label: t("wsCurrentOption", { name, path: hostCwd }), value: hostCwd });
 				}
 				if (ws && ws !== hostCwd) {
 					const name =
@@ -398,7 +425,7 @@ export default {
 							.replace(/[\\/]+$/, "")
 							.split(/[\\/]/)
 							.pop() || ws;
-					options.push({ label: `已固定根目录：${name} (${ws})`, value: ws });
+					options.push({ label: t("wsPinnedOption", { name, path: ws }), value: ws });
 				}
 				try {
 					const hostProjects = globalThis.window?.__piWebUiHost?.listProjects?.() ?? [];
@@ -437,8 +464,7 @@ export default {
 			const listEl = q(".qq-recent-list");
 			if (!listEl) return;
 			if (!Array.isArray(chats) || chats.length === 0) {
-				listEl.innerHTML =
-					'<div style="color: var(--text-dim); font-size: 12px; padding: 12px; text-align: center; border: 1px dashed var(--border); border-radius: 4px;">暂无 QQ 互动记录。在 QQ 中 @机器人 发送消息，这里即可实时查看并一键跳转到主界面！</div>';
+				listEl.innerHTML = `<div style="color: var(--text-dim); font-size: 12px; padding: 12px; text-align: center; border: 1px dashed var(--border); border-radius: 4px;">${esc(t("recentEmpty"))}</div>`;
 				return;
 			}
 
@@ -455,16 +481,16 @@ export default {
 				metaRow.style.cssText =
 					"display: flex; align-items: center; gap: 8px; font-size: 11px; color: var(--text-dim); margin-bottom: 4px;";
 				const timeStr = item.updatedAt ? new Date(item.updatedAt).toLocaleTimeString() : "";
-				metaRow.innerHTML = `<span>👤 QQ用户: <strong>${item.authorId}</strong></span>${timeStr ? `<span>• ${timeStr}</span>` : ""}<span>• 会话: <code>${item.conversationId}</code></span>`;
+				metaRow.innerHTML = `<span>👤 ${esc(t("chatUser"))}<strong>${item.authorId}</strong></span>${timeStr ? `<span>• ${timeStr}</span>` : ""}<span>• ${esc(t("chatSession"))}<code>${item.conversationId}</code></span>`;
 
 				const textDiv = document.createElement("div");
 				textDiv.style.cssText =
 					"font-size: 12.5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 550px;";
-				const promptPreview = item.lastUserText ? `<strong>问：</strong>${item.lastUserText}` : "";
+				const promptPreview = item.lastUserText ? `<strong>${esc(t("askPrefix"))}</strong>${item.lastUserText}` : "";
 				const replyPreview = item.lastAssistantText
-					? ` <span style="color:var(--text-dim);"><strong>答：</strong>${item.lastAssistantText}</span>`
+					? ` <span style="color:var(--text-dim);"><strong>${esc(t("replyPrefix"))}</strong>${item.lastAssistantText}</span>`
 					: "";
-				textDiv.innerHTML = promptPreview + replyPreview || "(暂无消息文本)";
+				textDiv.innerHTML = promptPreview + replyPreview || esc(t("noMessageText"));
 
 				infoCol.appendChild(metaRow);
 				infoCol.appendChild(textDiv);
@@ -472,13 +498,13 @@ export default {
 				const btn = document.createElement("button");
 				btn.style.cssText =
 					"padding: 6px 14px; border-radius: 4px; border: 1px solid var(--border); background: var(--accent); color: var(--accent-contrast, #fff); cursor: pointer; font-size: 12px; font-weight: 500; flex-shrink: 0;";
-				btn.textContent = "👁️ 打开此对话";
-				btn.title = "在电脑端直接打开该会话，查看流式记录并直接回复接管";
+				btn.textContent = t("openChat");
+				btn.title = t("openChatTitle");
 
 				btn.addEventListener("click", async () => {
 					const bridge = globalThis.window?.__piWebUiHost;
 					btn.disabled = true;
-					btn.textContent = "打开中...";
+					btn.textContent = t("opening");
 					try {
 						if (bridge?.sessions?.open) {
 							await bridge.sessions.open(item.openId || item.conversationId);
@@ -486,7 +512,7 @@ export default {
 						bridge?.setView?.("chat");
 					} finally {
 						btn.disabled = false;
-						btn.textContent = "👁️ 打开此对话";
+						btn.textContent = t("openChat");
 					}
 				});
 
@@ -521,7 +547,7 @@ export default {
 				return new Promise((resolve) => {
 					const timer = setTimeout(() => {
 						pendingReplies.delete(rid);
-						resolve({ success: false, message: "宿主通信超时" });
+						resolve({ success: false, message: t("hostTimeout") });
 					}, 30000);
 					pendingReplies.set(rid, { resolve, timer });
 					try {
@@ -533,7 +559,7 @@ export default {
 					}
 				});
 			}
-			return Promise.resolve({ success: false, message: "宿主通信未就绪" });
+			return Promise.resolve({ success: false, message: t("hostNotReady") });
 		}
 
 		async function refresh() {
@@ -565,7 +591,7 @@ export default {
 			const host = globalThis.window?.__piWebUiHost;
 			if (typeof host?.pickDirectory !== "function") return;
 			const res = await host.pickDirectory({
-				title: "选择 QQ 机器人执行项目根目录",
+				title: t("pickDirTitle"),
 				initialPath: wsInputEl.value.trim() || currentWorkspace || currentHostCwd,
 			});
 			if (res?.ok && res.path) {
@@ -579,10 +605,10 @@ export default {
 			const val = wsInputEl.value.trim();
 			const r = await sendHost("set_workspace", { workspace: val });
 			if (r?.success) {
-				alert?.("✅ 已将项目根目录设为：" + (val || "(跟随全局)"));
+				alert?.(t("workspaceSet", { path: val || t("followGlobal") }));
 				await refresh();
 			} else {
-				alert?.("⚠️ 切换失败: " + (r?.message || "未知错误"));
+				alert?.(t("switchFailed", { error: r?.message || t("unknownError") }));
 			}
 		});
 
@@ -598,7 +624,7 @@ export default {
 			wsInputEl.value = "";
 			const r = await sendHost("set_workspace", { workspace: "" });
 			if (r?.success) {
-				alert?.("已清空固定根目录，恢复跟随全局");
+				alert?.(t("workspaceCleared"));
 				await refresh();
 			}
 		});
@@ -626,10 +652,10 @@ export default {
 			};
 			const r = await sendHost("save_config", { config: cfg });
 			if (r?.success) {
-				alert?.("✅ AI 模型与思考强度配置已保存！");
+				alert?.(t("modelSaved"));
 				await refresh();
 			} else {
-				alert?.("保存失败: " + (r?.message || "未知错误"));
+				alert?.(t("saveFailed", { error: r?.message || t("unknownError") }));
 			}
 		});
 
@@ -643,7 +669,7 @@ export default {
 			};
 			const r = await sendHost("save_config", { config: cfg });
 			if (r?.success) {
-				alert?.("已恢复跟随全局默认模型与思考强度");
+				alert?.(t("modelReset"));
 				await refresh();
 			}
 		});
@@ -660,17 +686,17 @@ export default {
 		async function loadVoices(selected = "") {
 			const request = ++voiceRequest;
 			const engine = cfgVoiceEngine.value;
-			cfgVoiceSpeaker.replaceChildren(new Option("默认音色", ""));
+			cfgVoiceSpeaker.replaceChildren(new Option(t("defaultVoice"), ""));
 			if (selected) cfgVoiceSpeaker.add(new Option(selected, selected));
 			cfgVoiceSpeaker.value = selected;
 			voiceError.textContent = currentState.botStatus?.lastVoiceError
-				? `上次语音回复已回退为文字：${currentState.botStatus.lastVoiceError}`
+				? t("voiceFallbackNotice", { error: currentState.botStatus.lastVoiceError })
 				: "";
 			try {
 				const result = await sendHost("get_voice_options", { engine });
 				if (request !== voiceRequest || engine !== cfgVoiceEngine.value) return;
-				if (result?.type !== "voice_options") throw new Error(result?.message || "无法加载音色");
-				cfgVoiceSpeaker.replaceChildren(new Option("默认音色", ""));
+				if (result?.type !== "voice_options") throw new Error(result?.message || t("voiceLoadFailed"));
+				cfgVoiceSpeaker.replaceChildren(new Option(t("defaultVoice"), ""));
 				for (const voice of result.voices || []) cfgVoiceSpeaker.add(new Option(voice.label, voice.id));
 				if (selected && !(result.voices || []).some((voice) => voice.id === selected))
 					cfgVoiceSpeaker.add(new Option(selected, selected));
@@ -692,9 +718,7 @@ export default {
 			const cfg = currentState.config || {};
 			cfgAppId.value = cfg.appId || "";
 			cfgClientSecret.value = "";
-			cfgClientSecret.placeholder = cfg.hasClientSecret
-				? "●●●●●● (已加密保存，留空保持不变)"
-				: "填入 AppSecret (机器人密钥)";
+			cfgClientSecret.placeholder = cfg.hasClientSecret ? t("secretSavedPlaceholder") : t("secretPlaceholder");
 			cfgSandbox.checked = Boolean(cfg.useSandbox);
 			cfgDefaultChannel.value = cfg.defaultChannelId || "";
 			cfgBroadcastChannel.value = cfg.broadcastChannelId || "";
@@ -708,10 +732,10 @@ export default {
 			cfgVoiceRate.value = cfg.voiceRate || 1;
 			const engines = currentState.ttsEngines?.length
 				? currentState.ttsEngines
-				: [{ id: "builtin", label: "系统语音" }];
+				: [{ id: "builtin", label: t("builtinVoice") }];
 			cfgVoiceEngine.replaceChildren(...engines.map((engine) => new Option(engine.label, engine.id)));
 			if (cfg.voiceEngine && !engines.some((engine) => engine.id === cfg.voiceEngine))
-				cfgVoiceEngine.add(new Option(`${cfg.voiceEngine}（未加载）`, cfg.voiceEngine));
+				cfgVoiceEngine.add(new Option(t("voiceNotLoaded", { engine: cfg.voiceEngine }), cfg.voiceEngine));
 			cfgVoiceEngine.value = cfg.voiceEngine || "builtin";
 			updateVoiceRate();
 			void loadVoices(cfg.voiceSpeaker || "");
@@ -728,17 +752,17 @@ export default {
 			const hasSavedSecret = Boolean(currentState.config?.hasClientSecret);
 
 			if (!appId) {
-				alert?.("请先填写 AppID");
+				alert?.(t("needAppId"));
 				return;
 			}
 			if (!clientSecret && !hasSavedSecret) {
-				alert?.("请先填写 AppSecret / ClientSecret (机器人密钥)");
+				alert?.(t("needSecret"));
 				return;
 			}
 
 			const btn = q(".qq-btn-test-cfg");
 			btn.disabled = true;
-			btn.textContent = "测试中...";
+			btn.textContent = t("testing");
 			try {
 				const testCfg = {
 					appId,
@@ -747,13 +771,13 @@ export default {
 				};
 				const res = await sendHost("test_config", { config: testCfg });
 				if (res?.success) {
-					alert?.(res.message || "连接测试通过！");
+					alert?.(res.message || t("testPassed"));
 				} else {
-					alert?.(res?.message ? `测试失败: ${res.message}` : "测试失败: 未收到有效响应");
+					alert?.(res?.message ? t("testFailed", { error: res.message }) : t("testNoResponse"));
 				}
 			} finally {
 				btn.disabled = false;
-				btn.textContent = "🔌 测试连接";
+				btn.textContent = t("testConnection");
 			}
 		});
 
@@ -763,13 +787,13 @@ export default {
 			const hasSavedSecret = Boolean(currentState.config?.hasClientSecret);
 
 			if (cfgBotEnabled.checked && (!appId || (!clientSecret && !hasSavedSecret))) {
-				alert?.("启用机器人对话服务需要先配置 AppID 和 AppSecret");
+				alert?.(t("enableNeedsCreds"));
 				return;
 			}
 
 			const btn = q(".qq-btn-save-cfg");
 			btn.disabled = true;
-			btn.textContent = "保存中...";
+			btn.textContent = t("savingConfig");
 
 			try {
 				const newCfg = {
@@ -805,11 +829,11 @@ export default {
 					modal.style.display = "none";
 					await refresh();
 				} else {
-					alert?.(`保存失败: ${res?.message || "未知错误"}`);
+					alert?.(t("saveFailed", { error: res?.message || t("unknownError") }));
 				}
 			} finally {
 				btn.disabled = false;
-				btn.textContent = "💾 保存配置";
+				btn.textContent = t("saveConfigBtn");
 			}
 		});
 
@@ -826,26 +850,26 @@ export default {
 
 		fetchChannelsBtn?.addEventListener("click", async () => {
 			fetchChannelsBtn.disabled = true;
-			fetchChannelsBtn.textContent = "读取中...";
+			fetchChannelsBtn.textContent = t("fetching");
 			try {
 				const res = await sendHost("list_channels");
 				if (!res?.success) {
-					alert?.(res?.message ? `读取失败: ${res.message}` : "读取失败: 请确认机器人是否已加入频道并在线");
+					alert?.(res?.message ? t("fetchFailed", { error: res.message }) : t("fetchFailedHint"));
 					return;
 				}
 				const guilds = Array.isArray(res.guilds) ? res.guilds : [];
 				if (guilds.length === 0) {
-					alert?.("未找到机器人加入的频道。请先在 QQ 开放平台将机器人邀请进您的频道！");
+					alert?.(t("fetchNoGuilds"));
 					return;
 				}
-				channelsDropdown.innerHTML = '<option value="">-- 点击选择下方读取到的子频道 --</option>';
+				channelsDropdown.innerHTML = `<option value="">${esc(t("channelPickHint"))}</option>`;
 				let count = 0;
 				for (const g of guilds) {
 					for (const c of g.channels || []) {
 						count++;
 						const opt = document.createElement("option");
 						opt.value = c.id;
-						opt.textContent = `【${g.guildName}】#${c.name} (ID: ${c.id})`;
+						opt.textContent = t("channelOption", { guild: g.guildName, channel: c.name, id: c.id });
 						channelsDropdown.appendChild(opt);
 					}
 				}
@@ -856,13 +880,13 @@ export default {
 							channelInput.value = channelsDropdown.value;
 						}
 					});
-					alert?.(`成功读取到 ${count} 个子频道！已在下方列出，请直接在下拉框中选择。`);
+					alert?.(t("fetchOk", { count }));
 				} else {
-					alert?.("已找到频道，但未获取到子频道列表。请检查机器人是否有子频道访问权限。");
+					alert?.(t("fetchNoSubs"));
 				}
 			} finally {
 				fetchChannelsBtn.disabled = false;
-				fetchChannelsBtn.textContent = "🔍 自动读取我的子频道";
+				fetchChannelsBtn.textContent = t("fetchChannels");
 			}
 		});
 
@@ -876,13 +900,13 @@ export default {
 			const media = mediaInput?.value?.trim?.() || "";
 			const openid = openidInput?.value?.trim?.() || "";
 			if (!text && !media) {
-				alert?.("请输入消息文本或媒体路径");
+				alert?.(t("emptyMessage"));
 				return;
 			}
 
 			const btn = q(".qq-btn-send");
 			btn.disabled = true;
-			btn.textContent = media ? "上传中..." : "发送中...";
+			btn.textContent = media ? t("uploading") : t("sending");
 			try {
 				const res = await sendHost("send_message", {
 					channelId: channelInput.value.trim(),
@@ -892,15 +916,15 @@ export default {
 					openidType: openidTypeSel?.value === "group" ? "group" : "user",
 				});
 				if (res?.success) {
-					alert?.(media ? "✅ QQ 媒体发送成功！" : "✅ QQ 消息发送成功！");
+					alert?.(media ? t("sendOkMedia") : t("sendOkText"));
 					textInput.value = "";
 					if (mediaInput) mediaInput.value = "";
 				} else {
-					alert?.(`发送失败: ${res?.message || "未知错误"}`);
+					alert?.(t("sendFailed", { error: res?.message || t("unknownError") }));
 				}
 			} finally {
 				btn.disabled = false;
-				btn.textContent = "🚀 发送消息";
+				btn.textContent = t("sendMessage");
 			}
 		});
 

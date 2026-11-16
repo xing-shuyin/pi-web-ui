@@ -12,7 +12,7 @@ import {
 } from "../device-access";
 import type { ActiveGroupState } from "../group-active-context";
 import { groupDesktops, type GroupDesktop } from "../group-desktop";
-import { isZhLocale, useI18n, useT } from "../i18n";
+import { useT } from "../i18n";
 import { DesktopPreviewFrame as PreviewFrame } from "./DesktopPreviewFrame";
 import type { Device } from "./DeviceDirectory";
 
@@ -20,8 +20,6 @@ type Directory = { hubUrl: string; deviceId?: string; devices: Device[] };
 
 export function GroupDesktopPreview({ group, visible }: { group: ActiveGroupState; visible: boolean }) {
 	const t = useT();
-	const { locale } = useI18n();
-	const zh = isZhLocale(locale);
 	const access = useSyncExternalStore(subscribeDesktopAccess, getDesktopAccess);
 	const seenAccess = useRef(access?.revision);
 	const [directory, setDirectory] = useState<Directory>();
@@ -107,7 +105,7 @@ export function GroupDesktopPreview({ group, visible }: { group: ActiveGroupStat
 	async function open(target: GroupDesktop) {
 		if (!directory || !target.online || group.disabled) return;
 		try {
-			await openDeviceAccess(target.id, directory.hubUrl, true, zh, false, target.name, {
+			await openDeviceAccess(target.id, directory.hubUrl, true, t, false, target.name, {
 				mode: "live",
 				local: target.id === directory.deviceId,
 				groupId: group.roomId,
@@ -152,7 +150,6 @@ export function GroupDesktopPreview({ group, visible }: { group: ActiveGroupStat
 									target={target}
 									active={active}
 									directory={directory}
-									zh={zh}
 									selected={selected}
 									access={access}
 									onOpen={() => void open(target)}
@@ -190,7 +187,6 @@ function GroupDesktopCard({
 	target,
 	active,
 	directory,
-	zh,
 	selected,
 	access,
 	onOpen,
@@ -198,7 +194,6 @@ function GroupDesktopCard({
 	target: GroupDesktop;
 	active: boolean;
 	directory: Directory;
-	zh: boolean;
 	selected: string | null;
 	access: DesktopAccess | null;
 	onOpen: () => void;
@@ -221,7 +216,6 @@ function GroupDesktopCard({
 		id: target.id,
 		hubUrl: directory.hubUrl,
 		name: target.name,
-		zh,
 		revision: 0,
 		mode: "preview",
 		local: directory.deviceId === target.id,

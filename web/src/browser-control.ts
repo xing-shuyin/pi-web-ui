@@ -3,6 +3,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import type { BrowserHostBridge } from "../../browser/contracts";
 import type { DraftAttachment } from "./composer-draft";
 import { isDesktopShell } from "./desktop";
+import { useT, type Translate } from "./i18n";
 
 export const PAGE_PICKER_ZIP_URL =
 	"https://github.com/xing-shuyin/pi-web-ui/releases/latest/download/page-picker-extension.zip";
@@ -57,18 +58,18 @@ export function getLastBrowserControlPages(): BrowserControlPage[] {
 	return lastBrowserControl?.available === true ? (lastBrowserControl.pages ?? []) : [];
 }
 
-export function pokeBrowserControl(): void {
+export function pokeBrowserControl(t: Translate): void {
 	if (Date.now() - lastBrowserControlAt < 5000) return;
-	void queryBrowserControl().catch(() => {});
+	void queryBrowserControl(t).catch(() => {});
 }
 
-export async function queryBrowserControl(): Promise<BrowserControlStatus> {
+export async function queryBrowserControl(t: Translate): Promise<BrowserControlStatus> {
 	if (isDesktopShell() && !nativeHost()) {
 		return {
 			available: false,
 			pages: [],
 			desktop: true,
-			error: "此桌面版尚未提供原生浏览器桥：请升级到支持 AI Browser 的桌面版，或在系统浏览器中使用 page-picker 扩展",
+			error: t("browserControlNoDesktopBridge"),
 		};
 	}
 	const pageCall = host();
@@ -76,12 +77,12 @@ export async function queryBrowserControl(): Promise<BrowserControlStatus> {
 		return {
 			available: false,
 			pages: [],
-			error: "宿主页面桥不可用：这个 pi-web-ui 页面还没装上扩展桥（装/启用 page-picker 后刷新本页）",
+			error: t("browserControlNoHostBridge"),
 		};
 	}
 	try {
 		const res = await pageCall({ op: "status", timeoutMs: 5000 });
-		if (!res.ok) return { available: false, pages: [], error: res.error ?? "扩展没有返回状态" };
+		if (!res.ok) return { available: false, pages: [], error: res.error ?? t("browserControlNoExtensionStatus") };
 		const value = (res.result ?? {}) as Record<string, unknown>;
 		const next: BrowserControlStatus = {
 			available: value.installed === true,
@@ -131,19 +132,23 @@ export function useBrowserControl(pollMs = 45000): {
 	status: BrowserControlStatus | null;
 	refresh: () => void;
 } {
+	const t = useT();
 	const [status, setStatus] = useState<BrowserControlStatus | null>(null);
 	const alive = useRef(true);
 
-	const run = useCallback(async (retryIfOffline: boolean) => {
-		const next = await queryBrowserControl();
-		if (!alive.current) return;
-		setStatus(next);
-		if (retryIfOffline && !next.available) {
-			setTimeout(() => {
-				if (alive.current) void run(false);
-			}, 1500);
-		}
-	}, []);
+	const run = useCallback(
+		async (retryIfOffline: boolean) => {
+			const next = await queryBrowserControl(t);
+			if (!alive.current) return;
+			setStatus(next);
+			if (retryIfOffline && !next.available) {
+				setTimeout(() => {
+					if (alive.current) void run(false);
+				}, 1500);
+			}
+		},
+		[t],
+	);
 
 	useEffect(() => {
 		alive.current = true;

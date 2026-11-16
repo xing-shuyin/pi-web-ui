@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { appUrl } from "../base-url";
 import { withToken } from "../auth-token";
-import { isZhLocale, useI18n, useT } from "../i18n";
+import { useT } from "../i18n";
 import { openDirectRoom } from "../open-direct-room";
 import { useEscapeKey } from "../shortcut-stack";
 import type { ModelInfo } from "../types";
@@ -49,17 +49,6 @@ const blank = (): Omit<Bot, "id" | "revision"> => ({
 	enabled: true,
 });
 // 与左栏「智能体」区对称：设备中心是管理入口，Bot 行上的「私聊」只负责跳回对话入口。
-// 本地双语文案，不走 i18n catalog（语言包由并行窗口维护）。
-const entryWords = {
-	zh: {
-		chat: "与 {name} 私聊",
-		chatShort: "私聊",
-	},
-	en: {
-		chat: "Chat privately with {name}",
-		chatShort: "Chat",
-	},
-};
 async function request(path: string, signal: AbortSignal, body?: object) {
 	const response = await fetch(withToken(appUrl(`/api/device-center/${path}`)), {
 		method: body ? "POST" : "GET",
@@ -83,8 +72,6 @@ export function LocalBots({
 	onCancel?: () => void;
 }) {
 	const t = useT();
-	const { locale } = useI18n();
-	const entry = entryWords[isZhLocale(locale) ? "zh" : "en"];
 	const [bots, setBots] = useState<Bot[]>([]);
 	const [chatPending, setChatPending] = useState<string | null>(null);
 	const [draft, setDraft] = useState<(ReturnType<typeof blank> & Partial<Pick<Bot, "id" | "revision">>) | null>(() =>
@@ -270,12 +257,12 @@ export function LocalBots({
 							<button
 								type="button"
 								className="dc-bot-chat"
-								title={entry.chat.replace("{name}", bot.name)}
-								aria-label={entry.chat.replace("{name}", bot.name)}
+								title={t("botChat", { name: bot.name })}
+								aria-label={t("botChat", { name: bot.name })}
 								disabled={busy || chatPending !== null}
 								onClick={() => void startChat(bot.id)}
 							>
-								{chatPending === bot.id ? "…" : entry.chatShort}
+								{chatPending === bot.id ? "…" : t("botChatShort")}
 							</button>
 						</div>
 					))}

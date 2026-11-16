@@ -8,7 +8,7 @@ export function groupReferenceDestination(refs: GroupMemberReference[]): string 
 	const destination = continued[0].conversationId;
 	if (refs.some((ref) => ref.conversationId !== destination))
 		throw new Error(
-			"同一条消息只能继续一个对话，请移除其他 @ 目标。 / Continue one conversation per message. Remove other @ targets.",
+			"同一条消息只能继续一个对话，请移除其他 @ 目标。 / Continue one conversation per message. Remove other @ targets." /* developer-facing API error, intentionally bilingual (guard: reason data) */,
 		);
 	return destination;
 }

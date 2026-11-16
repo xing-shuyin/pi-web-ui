@@ -22,6 +22,7 @@ export interface AtHit {
 	attachments?: AtAttachment[];
 }
 
+// Mention trigger vocabulary typed after "@" (English and Chinese spellings): matched, never rendered.
 export const ALL_PAGES_TRIGGERS: ReadonlySet<string> = new Set(["p", "page", "pages", "web", "网页", "页面"]);
 
 export function mapPageHits(

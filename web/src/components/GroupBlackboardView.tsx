@@ -16,40 +16,40 @@ import {
 import { Markdown } from "./Markdown";
 import { appUrl } from "../base-url";
 import { withToken } from "../auth-token";
-import { isZhLocale, useI18n } from "../i18n";
+import { useI18n, useT } from "../i18n";
+import type { MessageKey } from "../i18n/catalog";
 import { useCopyFeedback } from "../use-copy-feedback";
 import type { GroupBlackboard } from "../../../server/device-center/store";
 
 export interface BlackboardSectionDef {
 	id: string;
-	titleZh: string;
-	titleEn: string;
+	titleKey: MessageKey;
 	aliases: string[];
 }
 
+// `aliases` are bilingual match tokens for the `##` headers the AI writes into the blackboard
+// markdown; they are compared against user/AI content, never rendered. Translating them would
+// break section resolution for existing boards, so they stay verbatim (data), while the tab
+// titles come from `titleKey`.
 export const PRESET_SECTIONS: BlackboardSectionDef[] = [
 	{
 		id: "architecture",
-		titleZh: "架构设计",
-		titleEn: "Architecture",
+		titleKey: "groupBlackboardSectionArchitecture",
 		aliases: ["架构设计", "系统架构", "architecture", "system architecture", "架构契约", "技术方案"],
 	},
 	{
 		id: "contracts",
-		titleZh: "接口契约",
-		titleEn: "Contracts",
+		titleKey: "groupBlackboardSectionContracts",
 		aliases: ["接口契约", "接口规范", "contracts", "api contracts", "api规范", "协议契约", "数据契约"],
 	},
 	{
 		id: "progress",
-		titleZh: "任务分工",
-		titleEn: "Task Progress",
+		titleKey: "groupBlackboardSectionProgress",
 		aliases: ["任务分工", "分工与进度", "progress", "tasks", "task progress", "流水线分工", "任务流水线"],
 	},
 	{
 		id: "blockers",
-		titleZh: "阻塞与决策",
-		titleEn: "Blockers & Decisions",
+		titleKey: "groupBlackboardSectionBlockers",
 		aliases: ["阻塞与决策", "决策记录", "blockers", "decisions", "风险与阻塞", "关键技术决策"],
 	},
 ];
@@ -163,7 +163,7 @@ interface GroupBlackboardViewProps {
 
 export function GroupBlackboardView({ roomId, blackboard, disabled = false, onSaved }: GroupBlackboardViewProps) {
 	const { locale } = useI18n();
-	const zh = isZhLocale(locale);
+	const t = useT();
 
 	const [activeTab, setActiveTab] = useState<string>("all");
 	const [isEditing, setIsEditing] = useState(false);
@@ -179,13 +179,13 @@ export function GroupBlackboardView({ roomId, blackboard, disabled = false, onSa
 
 	const availableTabs = useMemo(() => {
 		const tabs: Array<{ id: string; label: string; count?: number; isCustom?: boolean }> = [
-			{ id: "all", label: zh ? "全量共识" : "All Consensus" },
+			{ id: "all", label: t("groupBlackboardAllConsensus") },
 		];
 		for (const preset of PRESET_SECTIONS) {
 			const found = parsed.sections.find((s) => s.id === preset.id);
 			tabs.push({
 				id: preset.id,
-				label: zh ? preset.titleZh : preset.titleEn,
+				label: t(preset.titleKey),
 				count: found?.content ? 1 : 0,
 			});
 		}
@@ -200,7 +200,7 @@ export function GroupBlackboardView({ roomId, blackboard, disabled = false, onSa
 			}
 		}
 		return tabs;
-	}, [parsed.sections, zh]);
+	}, [parsed.sections, t]);
 
 	useEffect(() => {
 		if (!isEditing) {
@@ -272,11 +272,7 @@ export function GroupBlackboardView({ roomId, blackboard, disabled = false, onSa
 				} catch {}
 
 				if (!sectionSaved) {
-					const sectionTitle = activePresetDef
-						? zh
-							? activePresetDef.titleZh
-							: activePresetDef.titleEn
-						: activeSection?.title || activeTab;
+					const sectionTitle = activePresetDef ? t(activePresetDef.titleKey) : activeSection?.title || activeTab;
 
 					const newFullContent = assembleMarkdownSection(
 						blackboard?.content ?? "",
@@ -302,18 +298,14 @@ export function GroupBlackboardView({ roomId, blackboard, disabled = false, onSa
 					const data = await fullRes.json().catch(() => ({}));
 					if (!fullRes.ok) {
 						if (fullRes.status === 409) {
-							throw new Error(
-								zh
-									? "黑板已被其他成员更新，版本发生冲突，请刷新后重试。"
-									: "Blackboard has been updated by another member (version conflict). Refresh and retry.",
-							);
+							throw new Error(t("groupBlackboardVersionConflict"));
 						}
 						throw new Error(data.error || String(fullRes.status));
 					}
 				}
 			} else {
 				if (!content.trim()) {
-					setError(zh ? "黑板内容不能为空" : "Blackboard content cannot be empty");
+					setError(t("groupBlackboardContentEmpty"));
 					setSaving(false);
 					return;
 				}
@@ -335,11 +327,7 @@ export function GroupBlackboardView({ roomId, blackboard, disabled = false, onSa
 				const data = await response.json().catch(() => ({}));
 				if (!response.ok) {
 					if (response.status === 409) {
-						throw new Error(
-							zh
-								? "黑板已被其他成员更新，版本发生冲突，请刷新后重试。"
-								: "Blackboard has been updated by another member (version conflict). Refresh and retry.",
-						);
+						throw new Error(t("groupBlackboardVersionConflict"));
 					}
 					throw new Error(data.error || String(response.status));
 				}
@@ -348,11 +336,11 @@ export function GroupBlackboardView({ roomId, blackboard, disabled = false, onSa
 			setIsEditing(false);
 			onSaved?.();
 		} catch (err: any) {
-			setError(err?.message || (zh ? "保存黑板失败" : "Failed to save blackboard"));
+			setError(err?.message || t("groupBlackboardSaveFailed"));
 		} finally {
 			setSaving(false);
 		}
-	}, [activeTab, blackboard, content, sectionContent, title, roomId, zh, activePresetDef, activeSection, onSaved]);
+	}, [activeTab, blackboard, content, sectionContent, title, roomId, t, activePresetDef, activeSection, onSaved]);
 
 	const currentContentToCopy = useMemo(() => {
 		if (activeTab === "all") return blackboard?.content ?? "";
@@ -370,23 +358,15 @@ export function GroupBlackboardView({ roomId, blackboard, disabled = false, onSa
 	const renderPlaceholder = (tabId: string) => {
 		switch (tabId) {
 			case "architecture":
-				return zh
-					? "架构设计与技术栈决策规范\n\n例如：\n- 系统分层与目录拓扑\n- 事件模型与状态机规范\n- 核心数据流驱动方式"
-					: "Architecture & System Design\n\ne.g.\n- Topology & Layering\n- Event & State Machine\n- Core Data Flow";
+				return t("groupBlackboardPlaceholderArchitecture");
 			case "contracts":
-				return zh
-					? "接口契约与数据模型定义\n\n例如：\n- REST / RPC 接口路由与方法\n- 请求入参和响应出参 JSON Schema\n- 错误码与异常契约"
-					: "Interface Contracts & Schemas\n\ne.g.\n- Endpoints & Methods\n- Request & Response Schemas\n- Error Codes";
+				return t("groupBlackboardPlaceholderContracts");
 			case "progress":
-				return zh
-					? "任务流水线分工与进度追踪\n\n例如：\n- [ ] @BotA: 数据层适配与测试\n- [ ] @BotB: 业务层实现\n- [ ] @BotC: 验证与交付物汇总"
-					: "Task Pipeline & Assignments\n\ne.g.\n- [ ] @BotA: Data layer\n- [ ] @BotB: Business logic\n- [ ] @BotC: Verification";
+				return t("groupBlackboardPlaceholderProgress");
 			case "blockers":
-				return zh
-					? "阻塞卡点与关键技术决策记录 (ADR)\n\n例如：\n- 决策：采用 SSE 替代长轮询\n- 阻塞：依赖的设备驱动尚未注册"
-					: "Blockers & Architecture Decision Records (ADR)\n\ne.g.\n- Decision: Use SSE instead of polling\n- Blocker: Missing device driver";
+				return t("groupBlackboardPlaceholderBlockers");
 			default:
-				return zh ? "在此输入该分区的 Markdown 格式内容..." : "Enter Markdown content for this section...";
+				return t("groupBlackboardPlaceholderSection");
 		}
 	};
 
@@ -394,17 +374,17 @@ export function GroupBlackboardView({ roomId, blackboard, disabled = false, onSa
 		<div className="dg-blackboard-view">
 			<div className="dg-blackboard-header">
 				<div className="dg-blackboard-meta">
-					<span className="dg-blackboard-badge" title={zh ? "黑板协议版本" : "Protocol version"}>
-						{blackboard?.version ? `v${blackboard.version}` : zh ? "未初始化" : "Initial"}
+					<span className="dg-blackboard-badge" title={t("groupBlackboardProtocolVersion")}>
+						{blackboard?.version ? `v${blackboard.version}` : t("groupBlackboardUninitialized")}
 					</span>
 					{blackboard?.updatedBy && (
-						<span className="dg-blackboard-updater" title={zh ? "最后更新者" : "Last updated by"}>
+						<span className="dg-blackboard-updater" title={t("groupBlackboardLastUpdatedBy")}>
 							<FiUser style={{ marginRight: 4 }} />
-							{blackboard.updatedBy.name} ({blackboard.updatedBy.type === "bot" ? "Bot" : zh ? "人工" : "Human"})
+							{blackboard.updatedBy.name} ({blackboard.updatedBy.type === "bot" ? "Bot" : t("groupBlackboardHuman")})
 						</span>
 					)}
 					{formattedTime && (
-						<span className="dg-blackboard-time" title={zh ? "更新时间" : "Updated at"}>
+						<span className="dg-blackboard-time" title={t("groupBlackboardUpdatedAt")}>
 							<FiClock style={{ marginRight: 4 }} />
 							{formattedTime}
 						</span>
@@ -416,14 +396,14 @@ export function GroupBlackboardView({ roomId, blackboard, disabled = false, onSa
 						className="btn secondary sm"
 						onClick={() => copy(currentContentToCopy)}
 						disabled={!currentContentToCopy.trim()}
-						title={zh ? "复制当前查看的黑板内容" : "Copy current content to clipboard"}
+						title={t("groupBlackboardCopyHint")}
 					>
 						{copied ? (
 							<FiCheck style={{ color: "var(--green)", marginRight: 4 }} />
 						) : (
 							<FiCopy style={{ marginRight: 4 }} />
 						)}
-						{copied ? (zh ? "已复制" : "Copied") : zh ? "复制" : "Copy"}
+						{copied ? t("copied") : t("copy")}
 					</button>
 
 					{!isEditing ? (
@@ -432,16 +412,16 @@ export function GroupBlackboardView({ roomId, blackboard, disabled = false, onSa
 							className="btn secondary sm"
 							onClick={handleStartEdit}
 							disabled={disabled}
-							title={zh ? "编辑黑板内容" : "Edit blackboard content"}
+							title={t("groupBlackboardEditHint")}
 						>
 							<FiEdit3 style={{ marginRight: 4 }} />
-							{activeTab === "all" ? (zh ? "编辑共识" : "Edit All") : zh ? "编辑此分区" : "Edit Section"}
+							{activeTab === "all" ? t("groupBlackboardEditAll") : t("groupBlackboardEditSection")}
 						</button>
 					) : (
 						<div className="dg-edit-btn-group">
 							<button type="button" className="btn secondary sm" onClick={handleCancelEdit} disabled={saving}>
 								<FiX style={{ marginRight: 4 }} />
-								{zh ? "取消" : "Cancel"}
+								{t("cancel")}
 							</button>
 							<button
 								type="button"
@@ -454,7 +434,7 @@ export function GroupBlackboardView({ roomId, blackboard, disabled = false, onSa
 								) : (
 									<FiCheck style={{ marginRight: 4 }} />
 								)}
-								{saving ? (zh ? "保存中..." : "Saving...") : zh ? "提交保存" : "Save"}
+								{saving ? t("groupBlackboardSaving") : t("groupBlackboardSave")}
 							</button>
 						</div>
 					)}
@@ -499,11 +479,11 @@ export function GroupBlackboardView({ roomId, blackboard, disabled = false, onSa
 					{activeTab === "all" ? (
 						<>
 							<div className="dg-editor-field">
-								<label className="dg-field-label">{zh ? "共识主题 / 标题 (可选)" : "Title / Subject (Optional)"}</label>
+								<label className="dg-field-label">{t("groupBlackboardTitleLabel")}</label>
 								<input
 									type="text"
 									className="dg-input"
-									placeholder={zh ? "例如：系统统一重构规范 (RFC-089)" : "e.g. Unified System Redesign RFC"}
+									placeholder={t("groupBlackboardTitlePlaceholder")}
 									value={title}
 									onChange={(e) => setTitle(e.target.value)}
 									maxLength={200}
@@ -512,19 +492,13 @@ export function GroupBlackboardView({ roomId, blackboard, disabled = false, onSa
 							</div>
 							<div className="dg-editor-field">
 								<div className="dg-field-header">
-									<label className="dg-field-label">
-										{zh ? "结构化 Markdown 全量内容" : "Structured Markdown Content"}
-									</label>
+									<label className="dg-field-label">{t("groupBlackboardContentLabel")}</label>
 									<span className="dg-field-bytes">{new TextEncoder().encode(content).length} bytes</span>
 								</div>
 								<textarea
 									className="dg-textarea"
 									rows={14}
-									placeholder={
-										zh
-											? "# 群组共享共识\n\n## 架构设计\n- 统一事件模型\n- 接口规范定义\n\n## 任务分工\n- [ ] BotA: 调研接口\n- [ ] BotB: 实现测试"
-											: "# Shared Consensus\n\n## Architecture\n- Unified event model\n\n## Pipeline\n- [ ] BotA: Draft interfaces"
-									}
+									placeholder={t("groupBlackboardPlaceholderAll")}
 									value={content}
 									onChange={(e) => setContent(e.target.value)}
 									disabled={saving}
@@ -535,9 +509,9 @@ export function GroupBlackboardView({ roomId, blackboard, disabled = false, onSa
 						<div className="dg-editor-field">
 							<div className="dg-field-header">
 								<label className="dg-field-label">
-									{zh
-										? `编辑分区：${activePresetDef ? activePresetDef.titleZh : activeSection?.title || activeTab}`
-										: `Edit Section: ${activePresetDef ? activePresetDef.titleEn : activeSection?.title || activeTab}`}
+									{t("groupBlackboardEditSectionTitle", {
+										section: activePresetDef ? t(activePresetDef.titleKey) : activeSection?.title || activeTab,
+									})}
 								</label>
 								<span className="dg-field-bytes">{new TextEncoder().encode(sectionContent).length} bytes</span>
 							</div>
@@ -564,11 +538,7 @@ export function GroupBlackboardView({ roomId, blackboard, disabled = false, onSa
 							) : (
 								<div className="dg-blackboard-empty">
 									<FiFileText style={{ fontSize: 32, opacity: 0.4, marginBottom: 8 }} />
-									<p>
-										{zh
-											? "当前群组黑板为空。点击右上角“编辑共识”为所有协作 Bot 确立技术架构契约与长期记忆。"
-											: "Blackboard is empty. Click 'Edit All' to set shared contracts and long-term memory."}
-									</p>
+									<p>{t("groupBlackboardEmpty")}</p>
 								</div>
 							)}
 						</>
@@ -576,11 +546,7 @@ export function GroupBlackboardView({ roomId, blackboard, disabled = false, onSa
 						<>
 							<div className="dg-bb-section-header">
 								<h4 className="dg-bb-section-title">
-									{activePresetDef
-										? zh
-											? activePresetDef.titleZh
-											: activePresetDef.titleEn
-										: activeSection?.title || activeTab}
+									{activePresetDef ? t(activePresetDef.titleKey) : activeSection?.title || activeTab}
 								</h4>
 							</div>
 							{activeSection?.content ? (
@@ -590,11 +556,7 @@ export function GroupBlackboardView({ roomId, blackboard, disabled = false, onSa
 							) : (
 								<div className="dg-blackboard-empty">
 									<FiFileText style={{ fontSize: 32, opacity: 0.4, marginBottom: 8 }} />
-									<p>
-										{zh
-											? "该分区当前尚无记录内容。点击右上角“编辑此分区”快速添加共识与规则。"
-											: "No content in this section yet. Click 'Edit Section' to add consensus and specifications."}
-									</p>
+									<p>{t("groupBlackboardSectionEmpty")}</p>
 								</div>
 							)}
 						</>

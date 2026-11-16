@@ -83,6 +83,8 @@ export class Live2DStage {
 		this.audioSync = new AudioLipSyncEngine({
 			sensitivity: options.lipSyncSensitivity ?? 1.25,
 			voiceOnly: options.voiceOnly !== false,
+			/** 轨道标题等界面文案跟着挂件的取词函数走（widget 注入）。 */
+			t: options.t,
 			onBeat: () => {
 				this.eyeBlink?.onMusicBeat();
 			},

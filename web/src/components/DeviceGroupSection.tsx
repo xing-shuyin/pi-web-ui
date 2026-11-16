@@ -4,62 +4,26 @@ import { appUrl } from "../base-url";
 import { DeviceGroupMembers } from "./DeviceGroupMembers";
 import { DeviceGroupBotDialog } from "./DeviceGroupBotDialog";
 import { withToken } from "../auth-token";
-import { isZhLocale, useI18n } from "../i18n";
+import { useT } from "../i18n";
 import { openContextMenu } from "../context-menu-state";
 import type { UiSlotEntry } from "../ui-slots";
 import { hostEntryIcon } from "../host-icon";
 
 export type SidebarDeviceGroup = { id: string; name: string; botIds: string[] };
 export const DEVICE_GROUPS_CHANGED = "pi-web-ui:device-groups-changed";
-const words = {
-	zh: {
-		groups: "群组",
-		create: "建群",
-		rename: "重命名",
-		members: "管理成员",
-		clear: "清空消息",
-		delete: "删除群组",
-		confirmClear: "确定清空群组“{name}”的全部消息和历史任务记录？此操作无法撤销，群组和成员将保留。",
-		save: "保存",
-		cancel: "取消",
-		empty: "还没有群组",
-		loading: "加载中…",
-		expand: "展开群组",
-		collapse: "折叠群组",
-		bind: "请先在设备设置中绑定本机，旧版绑定请重新绑定。",
-		settings: "打开设备中心",
-		failed: "群组请求失败，请重试。",
-		retry: "重试",
-		forbidden: "无法访问群组，请检查本机访问权限。",
-		running: "群内仍有排队或运行中的任务，请等待任务结束后再操作。",
-		confirm: "确定删除群组“{name}”？",
-		name: "群名称",
-	},
-	en: {
-		groups: "Groups",
-		create: "Create group",
-		rename: "Rename",
-		members: "Manage members",
-		clear: "Clear messages",
-		delete: "Delete group",
-		confirmClear:
-			"Clear all messages and task history in “{name}”? This cannot be undone. The group and members will be kept.",
-		save: "Save",
-		cancel: "Cancel",
-		empty: "No groups yet",
-		loading: "Loading…",
-		expand: "Expand groups",
-		collapse: "Collapse groups",
-		bind: "Bind this computer in device settings first. Older bindings must be renewed.",
-		settings: "Open device center",
-		failed: "Group request failed. Please retry.",
-		retry: "Retry",
-		forbidden: "Group access denied. Check local access permissions.",
-		running: "This group has queued or running tasks. Wait for them to finish before making this change.",
-		confirm: "Delete group “{name}”?",
-		name: "Group name",
-	},
-};
+const ACTION_LABELS = {
+	rename: "deviceGroupManagerRename",
+	members: "deviceGroupManagerManageMembersTitle",
+	clear: "deviceGroupSectionClearMessages",
+	delete: "deviceGroupSectionDeleteGroup",
+} as const;
+
+const ERROR_LABELS = {
+	bind: "deviceGroupSectionBind",
+	running: "deviceGroupSectionRunning",
+	forbidden: "deviceGroupSectionForbidden",
+	failed: "deviceGroupSectionFailed",
+} as const;
 
 export class DeviceGroupRequestError extends Error {
 	constructor(
@@ -162,9 +126,8 @@ export function DeviceGroupSection({
 	hideHeader?: boolean;
 	onRoomCountChange?: (count: number) => void;
 }) {
-	const { locale } = useI18n();
-	const w = words[isZhLocale(locale) ? "zh" : "en"];
-	const title = entry?.labelExplicit ? entry.label : w.groups;
+	const t = useT();
+	const title = entry?.labelExplicit ? entry.label : t("deviceGroups");
 	const [collapsed, setCollapsed] = useState(false);
 	const [addingBots, setAddingBots] = useState<SidebarDeviceGroup | null>(null);
 	const [expandedRooms, setExpandedRooms] = useState<Set<string>>(() => new Set());
@@ -235,8 +198,8 @@ export function DeviceGroupSection({
 
 	const mutate = async (room: SidebarDeviceGroup, action: "rename" | "clear" | "delete") => {
 		if (mutationRef.current) return;
-		if (action === "delete" && !window.confirm(w.confirm.replace("{name}", room.name))) return;
-		if (action === "clear" && !window.confirm(w.confirmClear.replace("{name}", room.name))) return;
+		if (action === "delete" && !window.confirm(t("deviceGroupSectionConfirmDelete", { name: room.name }))) return;
+		if (action === "clear" && !window.confirm(t("deviceGroupSectionConfirmClear", { name: room.name }))) return;
 		const controller = new AbortController();
 		mutationRef.current = controller;
 		setBusy(true);
@@ -265,7 +228,7 @@ export function DeviceGroupSection({
 			id: `host:device-group-${action}`,
 			slot: "contextmenu.project",
 			source: "host",
-			label: w[action],
+			label: t(ACTION_LABELS[action]),
 			kind: "action",
 			action,
 			order,
@@ -297,19 +260,21 @@ export function DeviceGroupSection({
 		<div className="lp-section-body dg-side-body">
 			{error && (
 				<div className="dg-side-error" role="status">
-					{w[error]}
+					{t(ERROR_LABELS[error])}
 					{error === "bind" ? (
 						<button type="button" className="dc-button" onClick={() => openGroup({})}>
-							{w.settings}
+							{t("deviceGroupSectionOpenDeviceCenter")}
 						</button>
 					) : (
 						<button type="button" className="dc-button" onClick={() => refreshRef.current?.refresh()}>
-							{w.retry}
+							{t("retryNow")}
 						</button>
 					)}
 				</div>
 			)}
-			{!error && rooms.length === 0 && <div className="dg-side-empty">{loading ? w.loading : w.empty}</div>}
+			{!error && rooms.length === 0 && (
+				<div className="dg-side-empty">{loading ? t("loading") : t("deviceGroupSectionEmpty")}</div>
+			)}
 			{rooms.map((room) => (
 				<div key={room.id} className="dg-side-item">
 					<div className="dg-side-heading">
@@ -317,7 +282,7 @@ export function DeviceGroupSection({
 							type="button"
 							className="dg-side-toggle"
 							aria-expanded={expandedRooms.has(room.id)}
-							aria-label={`${room.name} · ${isZhLocale(locale) ? "成员" : "Members"}`}
+							aria-label={`${room.name} · ${t("deviceGroupSectionMembers")}`}
 							onClick={() =>
 								setExpandedRooms((previous) => {
 									const next = new Set(previous);
@@ -350,8 +315,8 @@ export function DeviceGroupSection({
 						<button
 							type="button"
 							className="dg-side-toggle"
-							aria-label={`${room.name} · ${isZhLocale(locale) ? "添加 Bot" : "Add Bot"}`}
-							title={isZhLocale(locale) ? "添加或新建 Bot" : "Add or create Bot"}
+							aria-label={`${room.name} · ${t("deviceGroupSectionAddBot")}`}
+							title={t("deviceGroupSectionAddOrCreateBot")}
 							onClick={() => setAddingBots(room)}
 						>
 							<FiPlus />
@@ -368,7 +333,7 @@ export function DeviceGroupSection({
 						>
 							<input
 								className="dc-input"
-								aria-label={w.name}
+								aria-label={t("deviceGroupManagerNameLabel")}
 								value={name}
 								maxLength={120}
 								autoFocus
@@ -379,10 +344,10 @@ export function DeviceGroupSection({
 								}}
 							/>
 							<button type="submit" className="dc-button" disabled={busy || !name.trim()}>
-								{w.save}
+								{t("save")}
 							</button>
 							<button type="button" className="dc-button" disabled={busy} onClick={() => setRenaming(null)}>
-								{w.cancel}
+								{t("cancel")}
 							</button>
 						</form>
 					)}
@@ -415,7 +380,7 @@ export function DeviceGroupSection({
 					type="button"
 					className="lp-section-title panel-section-title"
 					aria-expanded={!collapsed}
-					title={collapsed ? w.expand : w.collapse}
+					title={collapsed ? t("deviceGroupSectionExpand") : t("deviceGroupSectionCollapse")}
 					onClick={() => setCollapsed(!collapsed)}
 				>
 					<span className="lp-section-title-text">
@@ -427,8 +392,8 @@ export function DeviceGroupSection({
 					<button
 						type="button"
 						className="lp-section-action"
-						title={w.create}
-						aria-label={w.create}
+						title={t("deviceGroupsCreate")}
+						aria-label={t("deviceGroupsCreate")}
 						onClick={() => openGroup({ create: true })}
 					>
 						<FiPlus />

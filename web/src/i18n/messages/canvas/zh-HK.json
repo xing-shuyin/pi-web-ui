@@ -646,5 +646,6 @@
 	"canvas.edges.type.condition_true": "條件成立",
 	"canvas.edges.type.condition_false": "條件不成立",
 	"canvas.edges.type.approve": "核准",
-	"canvas.edges.type.reject": "退回"
+	"canvas.edges.type.reject": "退回",
+	"canvas.aiBar.placeholder": "例如：調研方案、實作、測試，然後審查並彙總"
 }

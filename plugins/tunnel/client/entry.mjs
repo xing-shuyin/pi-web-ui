@@ -1,4 +1,14 @@
 import { defineView, esc } from "./sdk/index.mjs";
+import { makeT } from "./i18n.mjs";
+
+/** 面板文案：语言解析 / 回退 / 插值都在 SDK 里，这里只按当前界面语言取词。 */
+const t = makeT();
+
+/** 硬件概览的「标签 + 值」一行：按视觉宽度补空格（中日韩字符占 2 列），中英文都能对齐。 */
+function hwLine(label, value) {
+	const width = [...label].reduce((n, ch) => n + (ch.charCodeAt(0) >= 0x2e80 ? 2 : 1), 0);
+	return label + " ".repeat(Math.max(1, 10 - width)) + value;
+}
 
 const CSS = `
 .tnl-wrap { font-family: -apple-system, "PingFang SC", sans-serif; font-size: 13px; line-height: 1.7; max-width: 720px; padding: 18px; color: var(--text, inherit); --green: #34c759; --green-soft: #34c75933; --green-text: #2e9e47; }
@@ -79,16 +89,16 @@ let lastToken = "";
 let lastDevices = [];
 
 function persistCmd(os) {
-	const host = lastLanIp || "<mini内网IP>";
+	const host = lastLanIp || t("fallbackHost");
 	const port = lastPort || 8765;
-	const tk = lastToken || "<tunnel令牌>";
+	const tk = lastToken || t("fallbackToken");
 	if (os === "Windows") {
 		return [
 			'curl.exe -o $env:USERPROFILE\\pi-tunnel-cli.mjs "http://' + host + ":" + port + "/cli?token=" + tk + '"',
 			"npm i -g @earendil-works/pi-coding-agent",
 			'schtasks /create /tn "pi-tunnel" /tr "node $env:USERPROFILE\\pi-tunnel-cli.mjs" /sc onlogon /f',
 			'schtasks /run /tn "pi-tunnel"',
-			"echo 常驻已装：登录自启，CLI 内置 5s 掉线重连；pi agent 已就绪（首次用需 pi auth 配模型）",
+			'echo "' + t("echoWindows") + '"',
 		].join("\n");
 	}
 	if (os === "Linux") {
@@ -108,7 +118,7 @@ function persistCmd(os) {
 			"UNIT",
 			"systemctl --user daemon-reload",
 			"systemctl --user enable --now pi-tunnel",
-			"echo 常驻已装：开机自启+掉线自愈",
+			'echo "' + t("echoUnix") + '"',
 		].join("\n");
 	}
 	return [
@@ -138,7 +148,7 @@ function persistCmd(os) {
 		"</plist>",
 		"PLIST",
 		"launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.pi-tunnel.cli.plist",
-		"echo 常驻已装：开机自启+掉线自愈",
+		'echo "' + t("echoUnix") + '"',
 	].join("\n");
 }
 
@@ -150,50 +160,50 @@ export default defineView({
 		const H = [
 			'<div class="tnl-wrap">',
 			'<div class="tnl-card">',
-			'<div class="tnl-row"><span class="tnl-dot" id="tnl-dot"></span><span class="tnl-state" id="tnl-state">读取中…</span>',
-			'<button class="tnl-btn danger" id="tnl-toggle" style="margin-left:auto">停止服务</button></div>',
-			'<div class="tnl-row" style="margin-top:10px"><span class="tnl-label">连接数</span><span id="tnl-conns">—</span>',
-			'<span class="tnl-kv" style="margin-left:18px"><span class="tnl-label">端口</span><span class="tnl-mono" id="tnl-ports">—</span></span></div>',
+			`<div class="tnl-row"><span class="tnl-dot" id="tnl-dot"></span><span class="tnl-state" id="tnl-state">${t("reading")}</span>`,
+			`<button class="tnl-btn danger" id="tnl-toggle" style="margin-left:auto">${t("stopService")}</button></div>`,
+			`<div class="tnl-row" style="margin-top:10px"><span class="tnl-label">${t("conns")}</span><span id="tnl-conns">—</span>`,
+			`<span class="tnl-kv" style="margin-left:18px"><span class="tnl-label">${t("ports")}</span><span class="tnl-mono" id="tnl-ports">—</span></span></div>`,
 			"</div>",
 			'<div class="tnl-card">',
-			'<div class="tnl-row"><b>模型通道</b><span class="tnl-dim">指挥设备 pi agent 用的模型；手动指定优先于自动挑选</span>',
-			'<span class="tnl-dim" id="tnl-me-state" style="margin-left:auto;font-size:11.5px">读取中…</span></div>',
+			`<div class="tnl-row"><b>${t("modelChannel")}</b><span class="tnl-dim">${t("modelChannelDesc")}</span>`,
+			`<span class="tnl-dim" id="tnl-me-state" style="margin-left:auto;font-size:11.5px">${t("reading")}</span></div>`,
 			'<div class="tnl-row" style="margin-top:8px">',
-			'<input class="tnl-in" id="tnl-me-base" placeholder="baseUrl（http://…/v1）" style="flex:2">',
+			`<input class="tnl-in" id="tnl-me-base" placeholder="${t("meBasePlaceholder")}" style="flex:2">`,
 			'<input class="tnl-in" id="tnl-me-key" type="password" placeholder="apiKey">',
-			'<input class="tnl-in" id="tnl-me-model" placeholder="model（provider/模型ID）" style="flex:1.4">',
+			`<input class="tnl-in" id="tnl-me-model" placeholder="${t("meModelPlaceholder")}" style="flex:1.4">`,
 			"</div>",
 			'<div class="tnl-row" style="margin-top:6px">',
-			'<button class="tnl-btn primary sm" id="tnl-me-save">保存手动指定</button>',
-			'<button class="tnl-btn sm" id="tnl-me-clear">恢复自动</button>',
+			`<button class="tnl-btn primary sm" id="tnl-me-save">${t("meSave")}</button>`,
+			`<button class="tnl-btn sm" id="tnl-me-clear">${t("meClear")}</button>`,
 			'<span class="tnl-dim" style="font-size:11px" id="tnl-me-cands"></span>',
 			"</div>",
 			"</div>",
 			'<div class="tnl-card">',
-			'<div class="tnl-row"><b>Mesh 桥</b><span class="tnl-dim">把设备 pi agent 接入 pi_messenger，任意会话可 send 直达</span>',
-			'<span class="tnl-dim" id="tnl-mesh-state" style="margin-left:auto;font-size:11.5px">读取中…</span></div>',
+			`<div class="tnl-row"><b>${t("meshBridge")}</b><span class="tnl-dim">${t("meshDesc")}</span>`,
+			`<span class="tnl-dim" id="tnl-mesh-state" style="margin-left:auto;font-size:11.5px">${t("reading")}</span></div>`,
 			'<div class="tnl-row" style="margin-top:6px">',
-			'<button class="tnl-btn primary sm" id="tnl-mesh-toggle">开启 Mesh 桥</button>',
-			'<button class="tnl-btn sm" id="tnl-mesh-session">会话</button>',
-			'<button class="tnl-btn sm" id="tnl-mesh-reset" style="color:var(--red-text,var(--red,#ff3b30))">重置会话</button>',
+			`<button class="tnl-btn primary sm" id="tnl-mesh-toggle">${t("meshEnable")}</button>`,
+			`<button class="tnl-btn sm" id="tnl-mesh-session">${t("meshSession")}</button>`,
+			`<button class="tnl-btn sm" id="tnl-mesh-reset" style="color:var(--red-text,var(--red,#ff3b30))">${t("meshReset")}</button>`,
 			'<span class="tnl-dim" style="font-size:11px" id="tnl-mesh-info"></span>',
 			"</div>",
 			"</div>",
 			'<div class="tnl-card">',
-			'<div class="tnl-row"><b>出口设备</b><span class="tnl-dim">SOCKS 流量走选中的设备；出口掉线自动切换</span></div>',
-			'<div id="tnl-devs"><div class="tnl-row tnl-dim">加载中…</div></div>',
+			`<div class="tnl-row"><b>${t("devices")}</b><span class="tnl-dim">${t("devicesDesc")}</span></div>`,
+			`<div id="tnl-devs"><div class="tnl-row tnl-dim">${t("loading")}</div></div>`,
 			"</div>",
 			'<div class="tnl-card">',
-			'<div class="tnl-row"><b>操作审计（最近 100 条）</b><span class="tnl-dim">设备侧文件/目录枚举操作记录</span></div>',
-			'<div id="tnl-audit" class="tnl-code tnl-audit" style="max-height:190px;overflow-y:auto">加载中…</div>',
+			`<div class="tnl-row"><b>${t("audit")}</b><span class="tnl-dim">${t("auditDesc")}</span></div>`,
+			`<div id="tnl-audit" class="tnl-code tnl-audit" style="max-height:190px;overflow-y:auto">${t("loading")}</div>`,
 			"</div>",
 			'<div class="tnl-card">',
-			'<div class="tnl-sec">接入令牌</div>',
+			`<div class="tnl-sec">${t("tokenSection")}</div>`,
 			'<div class="tnl-row"><span class="tnl-token" id="tnl-token">—</span>',
-			'<button class="tnl-btn danger sm" id="tnl-rotate">重置令牌</button>',
-			'<span class="tnl-dim" style="font-size:11px">重置后所有已分发 CLI 将无法重连，需重新下载</span></div>',
+			`<button class="tnl-btn danger sm" id="tnl-rotate">${t("rotate")}</button>`,
+			`<span class="tnl-dim" style="font-size:11px">${t("rotateHint")}</span></div>`,
 			'<hr class="tnl-sep">',
-			'<div class="tnl-sec">设备常驻化 <span class="tnl-dim" style="font-weight:400;font-size:12px">一次性安装，装完不开终端；按设备系统选页签</span></div>',
+			`<div class="tnl-sec">${t("persistSection")} <span class="tnl-dim" style="font-weight:400;font-size:12px">${t("persistDesc")}</span></div>`,
 			'<div class="tnl-row" id="tnl-tabs">',
 			'<button class="tnl-btn tab on" data-os="macOS">macOS</button>',
 			'<button class="tnl-btn tab" data-os="Windows">Windows</button>',
@@ -201,36 +211,36 @@ export default defineView({
 			"</div>",
 			'<div class="tnl-code" id="tnl-persist"></div>',
 			'<div class="tnl-row" style="margin-top:8px">',
-			'<button class="tnl-btn primary sm" id="tnl-copy">复制当前页签命令</button>',
-			'<span class="tnl-copied" id="tnl-copy-ok" style="display:none">已复制</span>',
-			'<a class="tnl-a" id="tnl-dl" href="/plugins-api/tunnel/cli" download="pi-tunnel-cli.mjs">下载 CLI（已注入令牌）</a>',
+			`<button class="tnl-btn primary sm" id="tnl-copy">${t("copyTab")}</button>`,
+			`<span class="tnl-copied" id="tnl-copy-ok" style="display:none">${t("copied")}</span>`,
+			`<a class="tnl-a" id="tnl-dl" href="/plugins-api/tunnel/cli" download="pi-tunnel-cli.mjs">${t("downloadCli")}</a>`,
 			"</div>",
-			'<div class="tnl-row tnl-dim" style="font-size:11px;margin-top:8px">AI 侧探测： curl --socks5-hostname 127.0.0.1:1080 &lt;url&gt;</div>',
+			`<div class="tnl-row tnl-dim" style="font-size:11px;margin-top:8px">${t("aiProbe")}</div>`,
 			"</div>",
 			'<div class="tnl-bm" id="tnl-bm" style="display:none">',
 			'<div class="tnl-bm-card">',
-			'<div class="tnl-bm-head"><b>选择白名单目录</b><button class="tnl-btn sm" id="tnl-bm-x">关闭</button></div>',
+			`<div class="tnl-bm-head"><b>${t("bmTitle")}</b><button class="tnl-btn sm" id="tnl-bm-x">${t("close")}</button></div>`,
 			'<div class="tnl-bm-path" id="tnl-bm-path">—</div>',
-			'<div class="tnl-bm-list" id="tnl-bm-list">加载中…</div>',
+			`<div class="tnl-bm-list" id="tnl-bm-list">${t("loading")}</div>`,
 			'<div class="tnl-bm-foot">',
-			'<button class="tnl-btn primary" id="tnl-bm-pick">选择此目录</button>',
+			`<button class="tnl-btn primary" id="tnl-bm-pick">${t("bmPick")}</button>`,
 			"</div>",
 			"</div>",
 			"</div>",
 			'<div class="tnl-bm" id="tnl-hw" style="display:none">',
 			'<div class="tnl-bm-card">',
-			'<div class="tnl-bm-head"><b>硬件概览</b><button class="tnl-btn sm" id="tnl-hw-x">关闭</button></div>',
-			'<pre id="tnl-hw-body" class="tnl-bm-path" style="margin:14px;white-space:pre-wrap;font-size:12.5px;line-height:1.9">加载中…</pre>',
+			`<div class="tnl-bm-head"><b>${t("hwTitle")}</b><button class="tnl-btn sm" id="tnl-hw-x">${t("close")}</button></div>`,
+			`<pre id="tnl-hw-body" class="tnl-bm-path" style="margin:14px;white-space:pre-wrap;font-size:12.5px;line-height:1.9">${t("loading")}</pre>`,
 			"</div>",
 			"</div>",
 			'<div class="tnl-bm" id="tnl-tk" style="display:none">',
 			'<div class="tnl-bm-card" style="width:520px">',
-			'<div class="tnl-bm-head"><b>指挥设备 pi agent</b><button class="tnl-btn sm" id="tnl-tk-x">关闭</button></div>',
-			'<textarea id="tnl-tk-prompt" placeholder="任务描述（如：列出 Downloads 下大于 100MB 的文件）" style="margin:10px 14px 6px;width:calc(100% - 28px);height:64px;background:var(--bg-elev2,#8881);color:var(--text,inherit);border:1px solid var(--border,#8884);border-radius:8px;padding:8px;font-size:12.5px;resize:vertical"></textarea>',
-			'<div class="tnl-row" style="margin:0 14px"><label style="font-size:12px;color:var(--text-dim,#999)"><input type="checkbox" id="tnl-tk-full"> 允许写入/执行（bash/edit/write，默认只读）</label>',
-			'<button class="tnl-btn primary sm" id="tnl-tk-run" style="margin-left:auto">执行任务</button></div>',
+			`<div class="tnl-bm-head"><b>${t("tkTitle")}</b><button class="tnl-btn sm" id="tnl-tk-x">${t("close")}</button></div>`,
+			`<textarea id="tnl-tk-prompt" placeholder="${t("tkPlaceholder")}" style="margin:10px 14px 6px;width:calc(100% - 28px);height:64px;background:var(--bg-elev2,#8881);color:var(--text,inherit);border:1px solid var(--border,#8884);border-radius:8px;padding:8px;font-size:12.5px;resize:vertical"></textarea>`,
+			`<div class="tnl-row" style="margin:0 14px"><label style="font-size:12px;color:var(--text-dim,#999)"><input type="checkbox" id="tnl-tk-full"> ${t("tkAllowWrite")}</label>`,
+			`<button class="tnl-btn primary sm" id="tnl-tk-run" style="margin-left:auto">${t("tkRun")}</button></div>`,
 			'<div class="tnl-tk-meta" id="tnl-tk-meta" style="display:none"></div>',
-			'<pre id="tnl-tk-out" class="tnl-bm-path" style="margin:0 14px 14px;max-height:260px;overflow-y:auto;white-space:pre-wrap;font-size:11.5px;line-height:1.7">（结果将显示在这里）</pre>',
+			`<pre id="tnl-tk-out" class="tnl-bm-path" style="margin:0 14px 14px;max-height:260px;overflow-y:auto;white-space:pre-wrap;font-size:11.5px;line-height:1.7">${t("tkResultPlaceholder")}</pre>`,
 			"</div>",
 			"</div>",
 			"</div>",
@@ -269,7 +279,7 @@ export default defineView({
 				return;
 			}
 			if (b.classList.contains("tnl-cfg-uninst")) {
-				if (!confirm("确定卸载该设备上的隧道 CLI？\n将停止常驻服务并删除 CLI 文件，设备将从列表消失。")) return;
+				if (!confirm(t("uninstallConfirm"))) return;
 				try {
 					await fetch("/plugins-api/tunnel/device/uninstall", {
 						method: "POST",
@@ -297,7 +307,7 @@ export default defineView({
 				if (fullBox) {
 					fullBox.disabled = !canWrite;
 					if (!canWrite) fullBox.checked = false;
-					fullBox.title = canWrite ? "" : "设备未开启写权限（可在能力设置中开启）";
+					fullBox.title = canWrite ? "" : t("devWriteOff");
 				}
 				return;
 			}
@@ -328,7 +338,7 @@ export default defineView({
 			browseHome = "/";
 		const rel = (p) => (browseHome && p.startsWith(browseHome) ? "~" + p.slice(browseHome.length) : p);
 		async function browseTo(p) {
-			$("#tnl-bm-list").textContent = "加载中…";
+			$("#tnl-bm-list").textContent = t("loading");
 			try {
 				const r = await fetch("/plugins-api/tunnel/device/fs", {
 					method: "POST",
@@ -357,9 +367,10 @@ export default defineView({
 					)
 					.join("");
 				if (!d.dirs.length)
-					$("#tnl-bm-list").innerHTML += '<div class="tnl-bm-item" style="color:var(--text-faint,#777)">无子目录</div>';
+					$("#tnl-bm-list").innerHTML +=
+						'<div class="tnl-bm-item" style="color:var(--text-faint,#777)">' + t("bmEmpty") + "</div>";
 			} catch {
-				$("#tnl-bm-list").textContent = "浏览失败";
+				$("#tnl-bm-list").textContent = t("browseFailed");
 			}
 		}
 		function openBrowse(id) {
@@ -370,7 +381,7 @@ export default defineView({
 		}
 		async function openHw(id) {
 			$("#tnl-hw").style.display = "flex";
-			$("#tnl-hw-body").textContent = "加载中…";
+			$("#tnl-hw-body").textContent = t("loading");
 			try {
 				const r = await fetch("/plugins-api/tunnel/device/hw", {
 					method: "POST",
@@ -383,16 +394,16 @@ export default defineView({
 					return;
 				}
 				$("#tnl-hw-body").textContent = [
-					"型号     " + (d.model || "—"),
-					"系统     " + (d.osv || "—") + " (" + d.arch + ")",
-					"CPU      " + (d.cpu || "—") + " × " + d.cores,
-					"内存     " + d.memGB + " GB",
-					"根分区   " + (d.disk || "—"),
-					"运行时长 " + d.uptimeH + " 小时",
-					"负载     " + (d.load || []).join(" / "),
+					hwLine(t("hwModel"), d.model || "—"),
+					hwLine(t("hwOs"), (d.osv || "—") + " (" + d.arch + ")"),
+					hwLine(t("hwCpu"), (d.cpu || "—") + " × " + d.cores),
+					hwLine(t("hwMem"), d.memGB + " GB"),
+					hwLine(t("hwDisk"), d.disk || "—"),
+					hwLine(t("hwUptime"), t("hwHours", { n: d.uptimeH })),
+					hwLine(t("hwLoad"), (d.load || []).join(" / ")),
 				].join("\n");
 			} catch {
-				$("#tnl-hw-body").textContent = "查询失败";
+				$("#tnl-hw-body").textContent = t("hwFailed");
 			}
 		}
 		$("#tnl-hw-x").onclick = () => {
@@ -411,12 +422,12 @@ export default defineView({
 			const id = $("#tnl-tk-prompt").dataset.id;
 			const prompt = $("#tnl-tk-prompt").value.trim();
 			if (!id || !prompt) {
-				$("#tnl-tk-out").textContent = "请先填写任务描述";
+				$("#tnl-tk-out").textContent = t("tkNoPrompt");
 				return;
 			}
 			const full = $("#tnl-tk-full").checked;
 			$("#tnl-tk-run").disabled = true;
-			$("#tnl-tk-out").textContent = "任务执行中（设备端 pi agent，最长 5 分钟）…";
+			$("#tnl-tk-out").textContent = t("tkRunning");
 			try {
 				const r = await fetch("/plugins-api/tunnel/device/task", {
 					method: "POST",
@@ -445,11 +456,15 @@ export default defineView({
 					const secs = Math.round((d.ms || 0) / 1000);
 					$("#tnl-tk-meta").style.display = "flex";
 					$("#tnl-tk-meta").innerHTML =
-						'<span class="tnl-cur">✓ 完成</span><span class="tnl-dim">设备端 pi agent · 耗时 ' + secs + "s</span>";
-					$("#tnl-tk-out").textContent = text || String(d.output || "").slice(-3000) || "（无输出）";
+						'<span class="tnl-cur">' +
+						t("tkDone") +
+						'</span><span class="tnl-dim">' +
+						t("tkMeta", { secs }) +
+						"</span>";
+					$("#tnl-tk-out").textContent = text || String(d.output || "").slice(-3000) || t("tkNoOutput");
 				}
 			} catch {
-				$("#tnl-tk-out").textContent = "✗ 请求失败";
+				$("#tnl-tk-out").textContent = t("tkRequestFailed");
 			}
 			$("#tnl-tk-run").disabled = false;
 		};
@@ -498,7 +513,7 @@ export default defineView({
 									"</div>",
 							)
 							.join("")
-					: "暂无操作记录";
+					: t("auditEmpty");
 			} catch {}
 		}
 		loadAudit();
@@ -508,8 +523,7 @@ export default defineView({
 			const dv = $("#tnl-devs");
 			const list = d.devices ?? [];
 			if (!list.length) {
-				dv.innerHTML =
-					'<div class="tnl-dim" style="padding:10px 8px;font-size:12px">暂无设备连入 —— 在主人设备上运行 CLI 后出现在这里</div>';
+				dv.innerHTML = '<div class="tnl-dim" style="padding:10px 8px;font-size:12px">' + t("devicesEmpty") + "</div>";
 				return;
 			}
 			dv.innerHTML = list
@@ -520,32 +534,47 @@ export default defineView({
 					const ver = x.ver ? '<span class="tnl-ver">v ' + esc(x.ver) + "</span>" : "";
 					const stale =
 						x.online && !x.ver
-							? '<span class="tnl-os" style="color:var(--red-text,var(--red,#d33))">CLI 需更新</span>'
+							? '<span class="tnl-os" style="color:var(--red-text,var(--red,#d33))">' + t("devCliOutdated") + "</span>"
 							: "";
 					let tag;
-					if (x.id === d.activeAgentId) tag = '<span class="tnl-cur">当前出口</span>';
-					else if (x.online) tag = '<button class="tnl-btn sm" data-id="' + esc(x.id) + '">设为出口</button>';
-					else tag = '<span class="tnl-dim" style="font-size:11px">重连中</span>';
+					if (x.id === d.activeAgentId) tag = '<span class="tnl-cur">' + t("devCurrent") + "</span>";
+					else if (x.online)
+						tag = '<button class="tnl-btn sm" data-id="' + esc(x.id) + '">' + t("devSetCurrent") + "</button>";
+					else tag = '<span class="tnl-dim" style="font-size:11px">' + t("devReconnecting") + "</span>";
 					const caps = x.caps ?? {};
 					const cfgRow = x.online
 						? [
 								'<div class="tnl-cfg" data-id="' + esc(x.id) + '">',
 								'<label><input type="checkbox" class="tnl-cfg-fsr" ' +
 									(caps.fsRead ? "checked" : "") +
-									"> 文件读</label>",
+									"> " +
+									t("devFsRead") +
+									"</label>",
 								'<label><input type="checkbox" class="tnl-cfg-fsw" ' +
 									(caps.fsWrite ? "checked" : "") +
-									"> 文件写</label>",
+									"> " +
+									t("devFsWrite") +
+									"</label>",
 								'<input class="tnl-wl" value="' +
 									esc((caps.whitelist ?? []).join(", ")) +
-									'" placeholder="白名单目录（逗号分隔）">',
+									'" placeholder="' +
+									t("devWhitelist") +
+									'">',
 								'<span class="tnl-btnrow">',
-								'<button class="tnl-btn sm tnl-cfg-task" data-id="' + esc(x.id) + '">任务</button>',
-								'<button class="tnl-btn sm tnl-cfg-hw" data-id="' + esc(x.id) + '">硬件</button>',
-								'<button class="tnl-btn sm tnl-cfg-browse" data-id="' + esc(x.id) + '">浏览…</button>',
+								'<button class="tnl-btn sm tnl-cfg-task" data-id="' + esc(x.id) + '">' + t("devTask") + "</button>",
+								'<button class="tnl-btn sm tnl-cfg-hw" data-id="' + esc(x.id) + '">' + t("devHw") + "</button>",
+								'<button class="tnl-btn sm tnl-cfg-browse" data-id="' + esc(x.id) + '">' + t("devBrowse") + "</button>",
 								'<span class="tnl-btnrow-sep"></span>',
-								'<button class="tnl-btn sm primary tnl-cfg-save" data-id="' + esc(x.id) + '">保存配置</button>',
-								'<button class="tnl-btn sm danger tnl-cfg-uninst" data-id="' + esc(x.id) + '">卸载</button>',
+								'<button class="tnl-btn sm primary tnl-cfg-save" data-id="' +
+									esc(x.id) +
+									'">' +
+									t("devSave") +
+									"</button>",
+								'<button class="tnl-btn sm danger tnl-cfg-uninst" data-id="' +
+									esc(x.id) +
+									'">' +
+									t("devUninstall") +
+									"</button>",
 								"</span>",
 								"</div>",
 							].join("")
@@ -578,16 +607,16 @@ export default defineView({
 				const act = (d.devices ?? []).find((x) => x.id === d.activeAgentId);
 				dot.className = "tnl-dot " + (d.agentOnline ? "ok" : d.running ? "bad" : "");
 				st.textContent = d.agentOnline
-					? "隧道在线 · 出口 " + (act ? act.name : "")
+					? t("tunnelOnline", { name: act ? act.name : "" })
 					: d.running
-						? "服务运行 · 等待设备连入"
-						: "服务已停止";
-				btn.textContent = d.running ? "停止服务" : "启动服务";
+						? t("serviceWaiting")
+						: t("serviceStopped");
+				btn.textContent = d.running ? t("stopService") : t("startService");
 				btn.className = "tnl-btn " + (d.running ? "danger" : "primary");
-				$("#tnl-conns").textContent = "活跃 " + d.activeConns + " · 累计 " + d.totalServed;
+				$("#tnl-conns").textContent = t("connsSummary", { active: d.activeConns, total: d.totalServed });
 				if (d.tokenRedacted) {
-					$("#tnl-token").textContent = d.tokenPrefix + " (脱敏)";
-					$("#tnl-token").title = "宿主未设 PI_WEB_TOKEN，公网下已脱敏保护；设置口令后解锁";
+					$("#tnl-token").textContent = d.tokenPrefix + t("tokenRedactedSuffix");
+					$("#tnl-token").title = t("tokenRedactedHint");
 				} else {
 					$("#tnl-token").textContent = d.tokenPrefix;
 					$("#tnl-token").title = "";
@@ -600,7 +629,7 @@ export default defineView({
 				$("#tnl-persist").textContent = persistCmd(curOs);
 				renderDevs(d);
 			} catch {
-				$("#tnl-state").textContent = "状态读取失败（插件未激活？）";
+				$("#tnl-state").textContent = t("statusReadFailedInactive");
 			}
 		}
 		async function refreshMe() {
@@ -610,11 +639,19 @@ export default defineView({
 				const st = $("#tnl-me-state");
 				if (d.resolved) {
 					const src =
-						d.resolved.source === "manual" ? "手动指定" : d.resolved.source === "override" ? "请求指定" : "自动挑选";
-					st.textContent = "生效：" + src + " · " + d.resolved.model + " · key…" + (d.resolved.keyTail || "—");
+						d.resolved.source === "manual"
+							? t("meSourceManual")
+							: d.resolved.source === "override"
+								? t("meSourceOverride")
+								: t("meSourceAuto");
+					st.textContent = t("meResolved", {
+						source: src,
+						model: d.resolved.model,
+						tail: d.resolved.keyTail || "—",
+					});
 					st.style.color = "";
 				} else {
-					st.textContent = "未解析" + (d.resolveError ? "：" + d.resolveError : "") + "——请手动指定";
+					st.textContent = d.resolveError ? t("meUnresolvedWithReason", { reason: d.resolveError }) : t("meUnresolved");
 					st.style.color = "var(--red-text,var(--red,#ff3b30))";
 				}
 				if (d.manual) {
@@ -623,13 +660,11 @@ export default defineView({
 				}
 				const cands = (d.candidates || [])
 					.filter((c) => c.api === "openai-completions" && c.hasKey)
-					.map((c) => c.provider + "（" + (c.models[0] || "") + "）")
+					.map((c) => t("meCandidateItem", { provider: c.provider, model: c.models[0] || "" }))
 					.join(" · ");
-				$("#tnl-me-cands").textContent = cands
-					? "自动候选：" + cands
-					: "自动候选：无（需 models.json provider 为 openai-completions 型且 provider-keys 有 key）";
+				$("#tnl-me-cands").textContent = cands ? t("meCandidates", { list: cands }) : t("meCandidatesNone");
 			} catch {
-				$("#tnl-me-state").textContent = "状态读取失败";
+				$("#tnl-me-state").textContent = t("statusReadFailed");
 			}
 		}
 		$("#tnl-me-save").onclick = async () => {
@@ -646,13 +681,13 @@ export default defineView({
 				});
 				const d = await r.json();
 				if (!d.ok) {
-					alert("保存失败：" + (d.error || "未知错误"));
+					alert(t("saveFailed", { error: d.error || t("unknownError") }));
 					return;
 				}
 				$("#tnl-me-key").value = "";
 				refreshMe();
 			} catch {
-				alert("保存失败：网络错误");
+				alert(t("saveFailedNetwork"));
 			}
 		};
 		$("#tnl-me-clear").onclick = async () => {
@@ -672,21 +707,22 @@ export default defineView({
 				const st = $("#tnl-mesh-state");
 				const btn = $("#tnl-mesh-toggle");
 				if (d.enabled) {
-					st.textContent =
-						"已开启 · " +
-						(d.agentName || "—") +
-						(d.device ? "（" + d.device + "）" : "") +
-						(d.running ? "" : " · 桥未运行（服务未启动？）");
+					const agent = d.agentName || "—";
+					const note = d.running ? "" : t("meshNotRunning");
+					st.textContent = d.device
+						? t("meshOnDevice", { agent, device: d.device, note })
+						: t("meshOn", { agent, note });
 					st.style.color = d.running ? "" : "var(--red-text,var(--red,#ff3b30))";
-					btn.textContent = "关闭 Mesh 桥";
+					btn.textContent = t("meshDisable");
 				} else {
-					st.textContent = "已关闭——开启后设备 pi agent 加入 pi_messenger";
+					st.textContent = t("meshOff");
 					st.style.color = "";
-					btn.textContent = "开启 Mesh 桥";
+					btn.textContent = t("meshEnable");
 				}
-				$("#tnl-mesh-info").textContent = d.queue || d.pending ? "队列 " + d.queue + " · 待回 " + d.pending : "";
+				$("#tnl-mesh-info").textContent =
+					d.queue || d.pending ? t("meshQueue", { queue: d.queue, pending: d.pending }) : "";
 			} catch {
-				$("#tnl-mesh-state").textContent = "状态读取失败";
+				$("#tnl-mesh-state").textContent = t("statusReadFailed");
 			}
 		}
 		$("#tnl-mesh-toggle").onclick = async () => {
@@ -700,7 +736,7 @@ export default defineView({
 				});
 				refreshMesh();
 			} catch {
-				alert("切换失败：网络错误");
+				alert(t("meshToggleFailed"));
 			}
 		};
 		$("#tnl-mesh-session").onclick = async () => {
@@ -709,25 +745,21 @@ export default defineView({
 				const d = await r.json();
 				if (d.ok) {
 					const s = d.session;
-					alert(
-						"设备 mesh 会话：\n" +
-							(s.exists
-								? "会话 ID：" +
-									s.sessionId +
-									"\n最近活跃：" +
-									s.updatedAt +
-									"\n文件大小：" +
-									(s.size / 1024).toFixed(1) +
-									" KB"
-								: "无会话（尚未进行过 mesh 对话）"),
-					);
-				} else alert("读取失败：" + (d.error || "未知错误"));
+					const detail = s.exists
+						? t("meshSessionDetail", {
+								id: s.sessionId,
+								updated: s.updatedAt,
+								size: (s.size / 1024).toFixed(1),
+							})
+						: t("meshSessionNone");
+					alert(t("meshSessionInfo", { detail }));
+				} else alert(t("readFailed", { error: d.error || t("unknownError") }));
 			} catch {
-				alert("读取失败：网络错误");
+				alert(t("readFailedNetwork"));
 			}
 		};
 		$("#tnl-mesh-reset").onclick = async () => {
-			if (!confirm("确定重置设备端 mesh 会话？\n\n重置后设备将遗忘之前的对话记忆，下条消息开启新会话。")) return;
+			if (!confirm(t("meshResetConfirm"))) return;
 			try {
 				const r = await fetch("/plugins-api/tunnel/mesh/reset", {
 					method: "POST",
@@ -735,9 +767,13 @@ export default defineView({
 					body: "{}",
 				});
 				const d = await r.json();
-				alert(d.ok ? "已重置（原会话 " + (d.removed || "无") + "）" : "重置失败：" + (d.error || "未知错误"));
+				alert(
+					d.ok
+						? t("meshResetDone", { id: d.removed || t("none") })
+						: t("meshResetFailed", { error: d.error || t("unknownError") }),
+				);
 			} catch {
-				alert("重置失败：网络错误");
+				alert(t("meshResetFailedNetwork"));
 			}
 		};
 		refreshMesh();
@@ -753,7 +789,7 @@ export default defineView({
 			refresh();
 		};
 		$("#tnl-rotate").onclick = async () => {
-			if (!confirm("重置令牌后，所有已分发 CLI 将无法重连（需重新下载）。确定重置？")) return;
+			if (!confirm(t("rotateConfirm"))) return;
 			try {
 				await fetch("/plugins-api/tunnel/rotate", { method: "POST" });
 			} catch {}
@@ -769,12 +805,12 @@ export default defineView({
 				}, 2000);
 			} catch {
 				const ok = $("#tnl-copy-ok");
-				ok.textContent = "复制失败：请手动选中命令块复制";
+				ok.textContent = t("copyFailed");
 				ok.style.color = "var(--red-text, var(--red, #ff3b30))";
 				ok.style.display = "inline";
 				setTimeout(() => {
 					ok.style.display = "none";
-					ok.textContent = "已复制";
+					ok.textContent = t("copied");
 					ok.style.color = "";
 				}, 2600);
 			}

@@ -646,5 +646,6 @@
 	"canvas.edges.type.condition_true": "条件成立",
 	"canvas.edges.type.condition_false": "条件不成立",
 	"canvas.edges.type.approve": "承認",
-	"canvas.edges.type.reject": "却下"
+	"canvas.edges.type.reject": "却下",
+	"canvas.aiBar.placeholder": "例：調査 → 実装 → テスト → レビュー → まとめ"
 }

@@ -89,5 +89,10 @@ test("旧笔记：头部元信息被剥掉，正文保留", () => {
 });
 
 test("空内容有兜底文案，不返回空字符串", () => {
-	assert.equal(renderMiniMd(""), '<p style="color: var(--text-dim);">暂无内容</p>');
+	assert.equal(renderMiniMd(""), '<p style="color: var(--text-dim);">No content</p>');
+});
+
+test("时间戳提示走调用方注入的文案函数", () => {
+	const html = renderMiniMd("见 [07:12]。", { url: URL_BV, t: (key, params) => `${key}:${params.label}` });
+	assert.ok(html.includes('title="tsJump:07:12"'));
 });

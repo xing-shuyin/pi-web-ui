@@ -1,6 +1,8 @@
 import { esc, hostApi, formatBytes, apiBase as getSharedApiBase } from "@pi-web-ui/plugin-sdk/client";
+import { makeT } from "./i18n.mjs";
 
 const ACTION_DETAILS = "sol-savings:details";
+const t = makeT();
 
 function formatPlanSummary(plan) {
 	if (!Array.isArray(plan) || plan.length === 0) return null;
@@ -115,7 +117,7 @@ function showModal(content, statusInfo) {
 		font-size: 15px;
 		flex: 0 0 auto;
 	`;
-	header.innerHTML = `<span>⚡ SoL-Pi 状态与配置管理</span><button type="button" style="background:none;border:none;color:var(--text-dim,#888);cursor:pointer;font-size:18px;padding:2px 6px;">✕</button>`;
+	header.innerHTML = `<span>${t("panelTitle")}</span><button type="button" style="background:none;border:none;color:var(--text-dim,#888);cursor:pointer;font-size:18px;padding:2px 6px;">✕</button>`;
 
 	const body = document.createElement("div");
 	body.style.cssText = `
@@ -149,36 +151,39 @@ function showModal(content, statusInfo) {
 		const packedCount = stats.packedCount || 0;
 
 		const toolEntries = Object.entries(stats.toolBreakdown || {});
-		const toolStr = toolEntries.length > 0 ? toolEntries.map(([t, c]) => `${esc(t)}: ${c} 次`).join(", ") : "无";
+		const toolStr =
+			toolEntries.length > 0
+				? toolEntries.map(([name, count]) => t("toolBreakdownItem", { name: esc(name), count })).join(", ")
+				: t("toolBreakdownNone");
 
 		const planSummary = formatPlanSummary(stats.plan);
 
 		statsBox.innerHTML = `
 			<div style="font-weight: 600; font-size: 13px; display: flex; align-items: center; justify-content: space-between; border-bottom: 1px solid rgba(255,255,255,0.08); padding-bottom: 6px;">
-				<span>📊 当前会话节省看板</span>
-				<span style="font-size: 11px; color: var(--text-dim, #888); font-weight: normal;">仅限当前会话 · 跨会话隔离</span>
+				<span>${t("savingsTitle")}</span>
+				<span style="font-size: 11px; color: var(--text-dim, #888); font-weight: normal;">${t("savingsScope")}</span>
 			</div>
 			<div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin: 4px 0;">
 				<div style="background: rgba(0,0,0,0.2); padding: 8px 10px; border-radius: 4px; border: 1px solid rgba(255,255,255,0.04);">
-					<div style="font-size: 11px; color: var(--text-dim, #888);">累计节省 Token</div>
+					<div style="font-size: 11px; color: var(--text-dim, #888);">${t("statTotalSaved")}</div>
 					<div style="font-size: 16px; font-weight: bold; color: ${stats.totalSavedTokens > 0 ? "var(--green, #10b981)" : "inherit"}; margin-top: 2px;">
 						${totalTokens} <span style="font-size: 11px; font-weight: normal; color: var(--text-dim, #888);">tokens</span>
 					</div>
 				</div>
 				<div style="background: rgba(0,0,0,0.2); padding: 8px 10px; border-radius: 4px; border: 1px solid rgba(255,255,255,0.04);">
-					<div style="font-size: 11px; color: var(--text-dim, #888);">大输出打包截断</div>
+					<div style="font-size: 11px; color: var(--text-dim, #888);">${t("statPacked")}</div>
 					<div style="font-size: 16px; font-weight: bold; margin-top: 2px;">
-						${packedCount} <span style="font-size: 11px; font-weight: normal; color: var(--text-dim, #888);">次 (${totalBytes})</span>
+						${packedCount} <span style="font-size: 11px; font-weight: normal; color: var(--text-dim, #888);">${t("statPackedUnit", { bytes: totalBytes })}</span>
 					</div>
 				</div>
 			</div>
-			${toolEntries.length > 0 ? `<div style="font-size: 12px; color: var(--text-dim, #aaa);">• 工具打包明细: ${toolStr}</div>` : ""}
-			${planSummary ? `<div style="font-size: 12px; color: var(--text-dim, #aaa);">• 活动规划进度: ${esc(planSummary.progress)} ${esc(planSummary.marker)} ${esc(planSummary.goal)}</div>` : ""}
+			${toolEntries.length > 0 ? `<div style="font-size: 12px; color: var(--text-dim, #aaa);">${t("toolBreakdown", { list: toolStr })}</div>` : ""}
+			${planSummary ? `<div style="font-size: 12px; color: var(--text-dim, #aaa);">${t("planProgress", { progress: esc(planSummary.progress), marker: esc(planSummary.marker), goal: esc(planSummary.goal) })}</div>` : ""}
 			${
 				stats.totalSavedTokens === 0
 					? `
 				<div style="font-size: 12px; color: var(--text-dim, #888); background: rgba(255,255,255,0.02); padding: 6px 8px; border-radius: 4px; border-left: 2px solid var(--accent, #3b82f6); line-height: 1.5;">
-					💡 提示：当前会话尚未产生 &gt;10KB 的工具大输出（或处于前 2 轮观察期），未触发截断，节省量为 0。切换至其他会话将展示对应会话的独立节省数据。
+					${t("emptyTip")}
 				</div>
 			`
 					: ""
@@ -220,14 +225,14 @@ function showModal(content, statusInfo) {
 	`;
 	summary.innerHTML = `
 		<div style="display: flex; align-items: center; gap: 8px;">
-			<span>⚙️ SoL-Pi 运行与配置</span>
+			<span>${t("runtimeSection")}</span>
 			<span style="font-size: 11px; padding: 1px 6px; border-radius: 4px; background: ${
 				isInstalled ? "var(--green, #10b981)" : "var(--amber, #f59e0b)"
 			}; color: #000; font-weight: bold;">
-				${isInstalled ? "扩展已安装" : "未安装扩展"}
+				${t(isInstalled ? "installed" : "notInstalled")}
 			</span>
 		</div>
-		<span style="font-size: 11px; color: var(--text-dim, #888); font-weight: normal;">▶ 展开/收起</span>
+		<span style="font-size: 11px; color: var(--text-dim, #888); font-weight: normal;">${t("expandCollapse")}</span>
 	`;
 
 	const configBox = document.createElement("div");
@@ -245,10 +250,10 @@ function showModal(content, statusInfo) {
 		<div style="font-size: 12px; color: var(--text-dim, #aaa);">
 			${
 				!isInstalled
-					? "• 未检测到 SoL-Pi 扩展包 (NVlabs/SoL-Pi)。"
+					? t("statusMissingPkg")
 					: hasConfig
-						? `• 配置文件生效中: <code>${esc(statusInfo.configPath)}</code>`
-						: "• 扩展已安装，但尚未配置 <code>sol-pi.json</code>，特性未激活。"
+						? t("statusConfigActive", { path: `<code>${esc(statusInfo.configPath)}</code>` })
+						: t("statusConfigMissing")
 			}
 		</div>
 	`;
@@ -289,7 +294,7 @@ function showModal(content, statusInfo) {
 		`;
 		const presetLabel = document.createElement("span");
 		presetLabel.style.cssText = "font-size: 11px; color: var(--text-dim, #888); margin-right: 2px;";
-		presetLabel.textContent = "快速预设:";
+		presetLabel.textContent = t("presetsLabel");
 		presetBar.appendChild(presetLabel);
 
 		const makePresetBtn = (text, applyFn) => {
@@ -320,7 +325,7 @@ function showModal(content, statusInfo) {
 		};
 
 		presetBar.appendChild(
-			makePresetBtn("🛡️ WebUI 推荐", () => {
+			makePresetBtn(t("presetWebui"), () => {
 				inputsMap.observationPack.checked = true;
 				inputsMap.onlineContextCompact.checked = false;
 				inputsMap.actionFusion.checked = false;
@@ -329,7 +334,7 @@ function showModal(content, statusInfo) {
 			}),
 		);
 		presetBar.appendChild(
-			makePresetBtn("⚡ 极致节能 (全开)", () => {
+			makePresetBtn(t("presetMax"), () => {
 				inputsMap.observationPack.checked = true;
 				inputsMap.onlineContextCompact.checked = true;
 				inputsMap.actionFusion.checked = true;
@@ -338,7 +343,7 @@ function showModal(content, statusInfo) {
 			}),
 		);
 		presetBar.appendChild(
-			makePresetBtn("📦 轻量省流", () => {
+			makePresetBtn(t("presetLight"), () => {
 				inputsMap.observationPack.checked = true;
 				inputsMap.onlineContextCompact.checked = false;
 				inputsMap.actionFusion.checked = false;
@@ -350,29 +355,29 @@ function showModal(content, statusInfo) {
 		const items = [
 			{
 				id: "observationPack",
-				label: "📦 大工具输出打包 (observationPack)",
-				desc: "工具输出 >10KB 时替换为紧凑占位符，由 obs_recall 按需读取，有效减少上下文占用。",
+				label: t("optObservationPackLabel"),
+				desc: t("optObservationPackDesc"),
 				checked: Boolean(currentCfg.observationPack ?? true),
 				tip: null,
 			},
 			{
 				id: "onlineContextCompact",
-				label: "🎯 在线规划与边界压缩 (onlineContextCompact)",
-				desc: "任务阶段完成时触发上下文压缩点。由扩展注册 update_plan 工具。",
+				label: t("optOnlineCompactLabel"),
+				desc: t("optOnlineCompactDesc"),
 				checked: Boolean(currentCfg.onlineContextCompact ?? false),
-				tip: "💡 提示：若当前主要使用 Web 界面内置的「任务计划看板 (Plan Mode)」，可取消勾选此项以避免工具提示词与 plan_update 冲突。",
+				tip: t("optOnlineCompactTip"),
 			},
 			{
 				id: "actionFusion",
-				label: "⚡ 操作融合 (actionFusion)",
-				desc: "自动融合连续的只读/只写操作，替换原生 edit/write 工具（实验性）。",
+				label: t("optActionFusionLabel"),
+				desc: t("optActionFusionDesc"),
 				checked: Boolean(currentCfg.actionFusion ?? false),
 				tip: null,
 			},
 			{
 				id: "evidencePreservingReducer",
-				label: "🛡️ 诊断证据保留 (evidencePreservingReducer)",
-				desc: "在上下文压缩过程中尽可能保留关键诊断日志与执行证据痕迹（实验性）。",
+				label: t("optEvidenceReducerLabel"),
+				desc: t("optEvidenceReducerDesc"),
 				checked: Boolean(currentCfg.evidencePreservingReducer ?? false),
 				tip: null,
 			},
@@ -446,8 +451,8 @@ function showModal(content, statusInfo) {
 		`;
 		ratioRow.innerHTML = `
 			<div>
-				<div style="font-weight: 500;">缓存读写比阈值 (cacheWriteReadRatio)</div>
-				<div style="font-size: 11px; color: var(--text-dim, #888); margin-top: 2px;">Prompt Cache 阈值因子（默认 12.5，0 为不惩罚写入）</div>
+				<div style="font-weight: 500;">${t("ratioLabel")}</div>
+				<div style="font-size: 11px; color: var(--text-dim, #888); margin-top: 2px;">${t("ratioDesc")}</div>
 			</div>
 		`;
 		const ratioControl = document.createElement("div");
@@ -492,29 +497,29 @@ function showModal(content, statusInfo) {
 			align-items: center;
 			justify-content: space-between;
 		`;
-		advSummary.innerHTML = `<span>⚙️ 证据缩减器专属辅模型路由 (可选)</span><span style="font-size: 10px;">▶ 展开配置</span>`;
+		advSummary.innerHTML = `<span>${t("advSummary")}</span><span style="font-size: 10px;">${t("advExpand")}</span>`;
 
 		const advBox = document.createElement("div");
 		advBox.style.cssText = "padding: 8px 10px 10px 10px; display: flex; flex-direction: column; gap: 8px;";
 		advBox.innerHTML = `
 			<div style="font-size: 11px; color: var(--text-dim, #888); line-height: 1.4;">
-				为 Evidence-Preserving Reducer 指定廉价极速的专用辅模型（如 gpt-4o-mini / deepseek-chat），避免占用高阶主模型。留空自动跟随主会话模型。
+				${t("advDesc")}
 			</div>
 			<div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px;">
 				<div>
-					<div style="font-size: 11px; margin-bottom: 3px;">服务商 (Provider):</div>
-					<input id="sol-epr-provider" type="text" placeholder="例如 openai, deepseek" style="width: 100%; box-sizing: border-box; padding: 4px 6px; background: rgba(0,0,0,0.3); border: 1px solid var(--border,#444); border-radius: 4px; color: inherit; font-size: 11.5px;" value="${esc(
+					<div style="font-size: 11px; margin-bottom: 3px;">${t("providerLabel")}</div>
+					<input id="sol-epr-provider" type="text" placeholder="${t("providerPlaceholder")}" style="width: 100%; box-sizing: border-box; padding: 4px 6px; background: rgba(0,0,0,0.3); border: 1px solid var(--border,#444); border-radius: 4px; color: inherit; font-size: 11.5px;" value="${esc(
 						currentCfg.evidencePreservingReducerProvider || "",
 					)}" />
 				</div>
 				<div>
-					<div style="font-size: 11px; margin-bottom: 3px;">模型 ID (Model):</div>
-					<input id="sol-epr-model" type="text" placeholder="例如 gpt-4o-mini" style="width: 100%; box-sizing: border-box; padding: 4px 6px; background: rgba(0,0,0,0.3); border: 1px solid var(--border,#444); border-radius: 4px; color: inherit; font-size: 11.5px;" value="${esc(
+					<div style="font-size: 11px; margin-bottom: 3px;">${t("modelLabel")}</div>
+					<input id="sol-epr-model" type="text" placeholder="${t("modelPlaceholder")}" style="width: 100%; box-sizing: border-box; padding: 4px 6px; background: rgba(0,0,0,0.3); border: 1px solid var(--border,#444); border-radius: 4px; color: inherit; font-size: 11.5px;" value="${esc(
 						currentCfg.evidencePreservingReducerModel || "",
 					)}" />
 				</div>
 				<div style="grid-column: span 2;">
-					<button type="button" id="sol-epr-pick-model" style="padding: 4px 10px; font-size: 11px; border-radius: 4px; border: 1px solid var(--border,#444); background: rgba(255,255,255,0.08); color: inherit; cursor: pointer;">✨ 调起统一模型选择器点选...</button>
+					<button type="button" id="sol-epr-pick-model" style="padding: 4px 10px; font-size: 11px; border-radius: 4px; border: 1px solid var(--border,#444); background: rgba(255,255,255,0.08); color: inherit; cursor: pointer;">${t("pickModel")}</button>
 				</div>
 			</div>
 		`;
@@ -552,7 +557,7 @@ function showModal(content, statusInfo) {
 		`;
 		const jsonSummary = document.createElement("summary");
 		jsonSummary.style.cssText = "padding: 6px 10px; cursor: pointer; color: var(--text-dim, #777); font-size: 11px;";
-		jsonSummary.textContent = "🔍 查看即将生成的 sol-pi.json 配置预览";
+		jsonSummary.textContent = t("jsonPreview");
 		const jsonPre = document.createElement("pre");
 		jsonPre.style.cssText =
 			"margin: 0; padding: 8px 10px; overflow-x: auto; color: var(--text-dim, #aaa); font-family: monospace; font-size: 11px; line-height: 1.4;";
@@ -587,7 +592,7 @@ function showModal(content, statusInfo) {
 
 	if (!isInstalled) {
 		const installBtn = document.createElement("button");
-		installBtn.textContent = "📦 一键安装 SoL-Pi 扩展";
+		installBtn.textContent = t("installBtn");
 		installBtn.style.cssText = `
 			padding: 6px 14px;
 			border-radius: 4px;
@@ -599,20 +604,18 @@ function showModal(content, statusInfo) {
 			font-weight: 500;
 		`;
 		installBtn.onclick = async () => {
-			const okToInstall = window.confirm(
-				"确认安装 SoL-Pi 扩展？\n\n将从网络执行：pi install git:github.com/NVlabs/SoL-Pi\n（已有配置不会被覆盖）",
-			);
+			const okToInstall = window.confirm(t("installConfirm"));
 			if (!okToInstall) return;
 			installBtn.disabled = true;
-			installBtn.textContent = "⏳ 正在安装...";
+			installBtn.textContent = t("installing");
 			const res = await postAction("install", { confirm: "install" });
 			if (res.ok) {
-				alert("✅ SoL-Pi 扩展安装成功！已同时自动写入推荐开启配置。");
+				alert(t("installDone"));
 				close();
 			} else {
-				alert("❌ 安装失败: " + (res.error || "未知错误"));
+				alert(t("installFailed", { error: res.error || t("unknownError") }));
 				installBtn.disabled = false;
-				installBtn.textContent = "📦 一键安装 SoL-Pi 扩展";
+				installBtn.textContent = t("installBtn");
 			}
 		};
 		btnRow.appendChild(installBtn);
@@ -620,7 +623,7 @@ function showModal(content, statusInfo) {
 
 	if (!hasConfig && !isInstalled) {
 		const enableBtn = document.createElement("button");
-		enableBtn.textContent = "🚀 一键生成推荐配置";
+		enableBtn.textContent = t("enableBtn");
 		enableBtn.style.cssText = `
 			padding: 6px 14px;
 			border-radius: 4px;
@@ -633,15 +636,15 @@ function showModal(content, statusInfo) {
 		`;
 		enableBtn.onclick = async () => {
 			enableBtn.disabled = true;
-			enableBtn.textContent = "⏳ 配置写入中...";
+			enableBtn.textContent = t("writingConfig");
 			const res = await postAction("write_config");
 			if (res.ok) {
-				alert("✅ 已成功写入 sol-pi.json！");
+				alert(t("writeDone"));
 				close();
 			} else {
-				alert("❌ 写入配置失败: " + (res.error || "未知错误"));
+				alert(t("writeFailed", { error: res.error || t("unknownError") }));
 				enableBtn.disabled = false;
-				enableBtn.textContent = "🚀 一键生成推荐配置";
+				enableBtn.textContent = t("enableBtn");
 			}
 		};
 		btnRow.appendChild(enableBtn);
@@ -673,7 +676,7 @@ function showModal(content, statusInfo) {
 
 	if (isInstalled || hasConfig) {
 		const resetBtn = document.createElement("button");
-		resetBtn.textContent = "↺ 恢复推荐";
+		resetBtn.textContent = t("resetBtn");
 		resetBtn.style.cssText = `
 			padding: 6px 12px;
 			border-radius: 4px;
@@ -684,7 +687,7 @@ function showModal(content, statusInfo) {
 			font-size: 12px;
 		`;
 		resetBtn.onclick = async () => {
-			if (!window.confirm("确认恢复为 SoL-Pi 默认推荐配置？")) return;
+			if (!window.confirm(t("resetConfirm"))) return;
 			resetBtn.disabled = true;
 			try {
 				const res = await postAction("reset_config");
@@ -696,15 +699,15 @@ function showModal(content, statusInfo) {
 					inputsMap.cacheWriteReadRatio.value = "12.5";
 					if (inputsMap.evidencePreservingReducerProvider) inputsMap.evidencePreservingReducerProvider.value = "";
 					if (inputsMap.evidencePreservingReducerModel) inputsMap.evidencePreservingReducerModel.value = "";
-					saveStatusText.textContent = "✅ 已重置为推荐配置";
+					saveStatusText.textContent = t("resetDone");
 					setTimeout(() => {
 						saveStatusText.textContent = "";
 					}, 4000);
 				} else {
-					alert("❌ 重置失败: " + (res.error || "未知错误"));
+					alert(t("resetFailed", { error: res.error || t("unknownError") }));
 				}
 			} catch (err) {
-				alert("❌ 重置异常: " + (err?.message || String(err)));
+				alert(t("resetError", { error: err?.message || String(err) }));
 			} finally {
 				resetBtn.disabled = false;
 			}
@@ -712,7 +715,7 @@ function showModal(content, statusInfo) {
 		footerBtns.appendChild(resetBtn);
 
 		const saveBtn = document.createElement("button");
-		saveBtn.textContent = "💾 保存配置";
+		saveBtn.textContent = t("saveBtn");
 		saveBtn.style.cssText = `
 			padding: 6px 14px;
 			border-radius: 4px;
@@ -725,7 +728,7 @@ function showModal(content, statusInfo) {
 		`;
 		saveBtn.onclick = async () => {
 			saveBtn.disabled = true;
-			saveBtn.textContent = "⏳ 保存中...";
+			saveBtn.textContent = t("saving");
 			try {
 				const payload = {
 					observationPack: Boolean(inputsMap.observationPack?.checked),
@@ -740,32 +743,30 @@ function showModal(content, statusInfo) {
 				if (mdl !== undefined) payload.evidencePreservingReducerModel = mdl;
 				const res = await postAction("save_config", { config: payload });
 				if (res.ok) {
-					saveStatusText.textContent = "✅ 配置已保存（新会话或重启生效）";
+					saveStatusText.textContent = t("saveDone");
 					setTimeout(() => {
 						saveStatusText.textContent = "";
 					}, 4000);
 				} else {
 					if (String(res.error || "").includes("unknown action")) {
-						saveStatusText.textContent = "⚠️ 服务端待重启";
-						alert(
-							"⚠️ 当前后台 Node 服务尚未热加载新版保存路由。\n\n• 当前所勾选配置已同步写入本地 sol-pi.json（下次会话即可生效）；\n• 如需在界面中直接热保存，请在控制台按 Ctrl+C 重启一次 npm start 即可！",
-						);
+						saveStatusText.textContent = t("serverRestart");
+						alert(t("serverRestartAlert"));
 					} else {
-						alert("❌ 保存配置失败: " + (res.error || "未知错误"));
+						alert(t("saveFailed", { error: res.error || t("unknownError") }));
 					}
 				}
 			} catch (err) {
-				alert("❌ 保存异常: " + (err?.message || String(err)));
+				alert(t("saveError", { error: err?.message || String(err) }));
 			} finally {
 				saveBtn.disabled = false;
-				saveBtn.textContent = "💾 保存配置";
+				saveBtn.textContent = t("saveBtn");
 			}
 		};
 		footerBtns.appendChild(saveBtn);
 	}
 
 	const closeBtn = document.createElement("button");
-	closeBtn.textContent = "关闭";
+	closeBtn.textContent = t("close");
 	closeBtn.style.cssText = `
 		padding: 6px 16px;
 		border-radius: 4px;
@@ -802,8 +803,9 @@ function register() {
 				document.querySelector('[data-pi-slot="bottombar"] button.status-action[title*="SoL-Pi"]') ||
 				document.querySelector('button.status-action[title*="SoL-Pi"]');
 			const tip = btn?.getAttribute("title") || "";
-			let content = "⚡ SoL-Pi（当前会话）：当前会话暂未产生大输出打包或上下文规划数据。";
+			let content = t("defaultContent");
 			if (tip) {
+				// 过滤条件对齐服务端生成的底栏 tooltip 文案（服务端文案非本次范围的 UI 字典）
 				const lines = tip.split("\n").filter((l) => !l.includes("点击查看"));
 				if (lines.length > 0) content = lines.join("\n");
 			}

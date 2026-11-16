@@ -13,6 +13,8 @@ import { appUrl, appWsUrl } from "./base-url";
 import { isMobileRuntime } from "./mobile-runtime";
 import { handleNativeCliEvent, resolveNativeCliControlResult } from "./native-cli-events";
 import { notifySessionSwitch } from "./composer-bridge";
+import { useT } from "./i18n";
+import type { MessageKey } from "./i18n/catalog";
 import { phoneHost } from "./phone-control";
 import { syncKnownInlineMarkers } from "./components/Message";
 import type {
@@ -468,6 +470,9 @@ export interface WorkspaceTransitionState {
 	progress: number;
 	text: string;
 	textEn: string;
+	/** Client-originated transitions carry a dictionary key instead of pre-rendered text. */
+	textKey?: MessageKey;
+	textVars?: Record<string, string | number>;
 	totalMessages?: number;
 	previewMessages?: UiMessage[];
 	previewConversationId?: string;
@@ -666,8 +671,8 @@ type Action =
 			kind: WorkspaceTransitionState["kind"];
 			target: string;
 			progress: number;
-			text: string;
-			textEn: string;
+			textKey: MessageKey;
+			textVars?: Record<string, string | number>;
 	  }
 	| {
 			type: "transition_progress";
@@ -1459,8 +1464,10 @@ export function reducer(state: ChatState, action: Action): ChatState {
 					target: action.target,
 					phase: "start",
 					progress: action.progress,
-					text: action.text,
-					textEn: action.textEn,
+					text: "",
+					textEn: "",
+					textKey: action.textKey,
+					...(action.textVars ? { textVars: action.textVars } : {}),
 					startedAt: Date.now(),
 				},
 			};
@@ -1795,6 +1802,7 @@ function wsUrl(): string {
 }
 
 export function useChat() {
+	const t = useT();
 	const [chat, dispatch] = useReducer(reducer, {
 		status: "connecting",
 		ready: false,
@@ -1942,8 +1950,8 @@ export function useChat() {
 	useEffect(() => {
 		if (!chat.transition) return;
 		if (chat.transition.phase === "done" || chat.transition.phase === "error") {
-			const t = setTimeout(() => dispatch({ type: "transition_clear" }), 180);
-			return () => clearTimeout(t);
+			const timer = setTimeout(() => dispatch({ type: "transition_clear" }), 180);
+			return () => clearTimeout(timer);
 		}
 		const cur = chat.state;
 		if (cur && chat.ready) {
@@ -2034,8 +2042,8 @@ export function useChat() {
 					kind: "cwd",
 					target: msg.path,
 					progress: 14,
-					text: `正在切换到工作目录：${msg.path}`,
-					textEn: `Switching to workspace: ${msg.path}`,
+					textKey: "transitionSwitchWorkspace",
+					textVars: { path: msg.path },
 				});
 			}
 		} else if (msg.type === "switch_session" && (msg.path || msg.sessionId)) {
@@ -2056,8 +2064,7 @@ export function useChat() {
 					kind: "session",
 					target: msg.path || msg.sessionId || "",
 					progress: 14,
-					text: "正在流式载入历史会话…",
-					textEn: "Streaming session history…",
+					textKey: "transitionStreamingSession",
 				});
 			}
 		} else if (msg.type === "new_chat" || msg.type === "new_cli_chat") {
@@ -2070,8 +2077,7 @@ export function useChat() {
 					kind: "new_chat",
 					target: curState.cwd,
 					progress: 22,
-					text: "正在初始化新对话…",
-					textEn: "Initializing new chat…",
+					textKey: "transitionNewChat",
 				});
 			}
 		} else if (msg.type === "switch_conversation" && msg.id) {
@@ -2081,8 +2087,7 @@ export function useChat() {
 					kind: "conversation",
 					target: msg.id,
 					progress: 35,
-					text: "正在切换对话…",
-					textEn: "Switching conversation…",
+					textKey: "transitionSwitchConversation",
 				});
 			}
 		}
@@ -2742,7 +2747,7 @@ export function useChat() {
 						).__piWebUiHost;
 						let res: { ok: boolean; result?: unknown; error?: string };
 						if (!host?.pageCall) {
-							res = { ok: false, error: "宿主页面桥不可用（页面版本过旧？）—— 刷新本页后再试" };
+							res = { ok: false, error: t("pageBridgeUnavailable") };
 						} else {
 							try {
 								res = await host.pageCall({
@@ -2763,7 +2768,7 @@ export function useChat() {
 								? res.result === undefined
 									? {}
 									: { result: res.result }
-								: { error: res.error ?? "页面操作失败" }),
+								: { error: res.error ?? t("pageActionFailed") }),
 						});
 					})();
 					break;
@@ -2773,10 +2778,7 @@ export function useChat() {
 						const call = phoneHost();
 						let res: { ok: boolean; result?: unknown; error?: string };
 						if (!call) {
-							res = {
-								ok: false,
-								error: "当前页面没有手机操控桥：请在 pi 手机端打开（浏览器/桌面端不支持）。",
-							};
+							res = { ok: false, error: t("phoneBridgeUnavailable") };
 						} else {
 							try {
 								res = await call({
@@ -2796,7 +2798,7 @@ export function useChat() {
 								? res.result === undefined
 									? {}
 									: { result: res.result }
-								: { error: res.error ?? "手机操作失败" }),
+								: { error: res.error ?? t("phoneActionFailed") }),
 						});
 					})();
 					break;

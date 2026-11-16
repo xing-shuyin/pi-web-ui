@@ -132,9 +132,7 @@ function ApprovalDialog({ approval, onDefer }: ToolApprovalDialogProps & { onDef
 				editedParams: edited,
 			});
 		} catch (err) {
-			setParseError(
-				isZhLocale(locale) ? `JSON 格式错误：${(err as Error).message}` : `JSON parse error: ${(err as Error).message}`,
-			);
+			setParseError(t("toolApprovalJsonError", { message: (err as Error).message }));
 		}
 	};
 
@@ -261,7 +259,7 @@ function ApprovalDialog({ approval, onDefer }: ToolApprovalDialogProps & { onDef
 							<div className="approval-cmd-preview-label">{t("approvalCommandPreview")}:</div>
 							<div className="approval-cmd-preview-box">
 								<span className="bashblock-prompt">$</span>
-								<code>{renderHighlightedCommand((approval.params as any).command, approval.hits)}</code>
+								<code>{renderHighlightedCommand((approval.params as any).command, t, approval.hits)}</code>
 							</div>
 						</div>
 					)}

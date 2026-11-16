@@ -7,7 +7,14 @@ import { GroupDeliveries } from "../../web/src/components/GroupDeliveries";
 import type { DeviceDelivery, DeviceIntegration, DevicePublishObservation } from "../../server/protocol";
 import { publicationFixture } from "../helpers/publish-intent-fixture";
 
-vi.mock("../../web/src/i18n", () => ({ useI18n: () => ({ locale: "en" }), isZhLocale: () => false }));
+vi.mock("../../web/src/i18n", async (importOriginal) => {
+	const actual = await importOriginal<typeof import("../../web/src/i18n")>();
+	return {
+		...actual,
+		useI18n: () => ({ locale: "en" }),
+		isZhLocale: () => false,
+	};
+});
 const { integration: verified, intent } = publicationFixture();
 const identity = { intentId: intent.id, intentDigest: intent.digest, candidateSha: intent.candidateSha };
 const delivery: DeviceDelivery = {

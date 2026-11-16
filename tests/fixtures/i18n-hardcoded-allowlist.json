@@ -1,0 +1,1583 @@
+{
+	"note": "Shrink-only allowlist of hardcoded UI literals in web/src (see scripts/i18n-literal-inventory.mjs). reason=pending: migrate to i18n keys; reason=data: third-party catalog content, notUI chrome.",
+	"entries": [
+		{
+			"file": "web/src/App.tsx",
+			"text": "未找到会话",
+			"count": 1,
+			"reason": "data"
+		},
+		{
+			"file": "web/src/at-mention.ts",
+			"text": "网页",
+			"count": 1,
+			"reason": "data"
+		},
+		{
+			"file": "web/src/at-mention.ts",
+			"text": "页面",
+			"count": 1,
+			"reason": "data"
+		},
+		{
+			"file": "web/src/canvas-mentions.ts",
+			"text": "工作流",
+			"count": 1,
+			"reason": "data"
+		},
+		{
+			"file": "web/src/canvas-mentions.ts",
+			"text": "画布",
+			"count": 1,
+			"reason": "data"
+		},
+		{
+			"file": "web/src/components/canvas/CanvasAiBar.tsx",
+			"text": "人工",
+			"count": 1,
+			"reason": "data"
+		},
+		{
+			"file": "web/src/components/canvas/CanvasAiBar.tsx",
+			"text": "合并",
+			"count": 1,
+			"reason": "data"
+		},
+		{
+			"file": "web/src/components/canvas/CanvasAiBar.tsx",
+			"text": "合规",
+			"count": 1,
+			"reason": "data"
+		},
+		{
+			"file": "web/src/components/canvas/CanvasAiBar.tsx",
+			"text": "实现",
+			"count": 2,
+			"reason": "data"
+		},
+		{
+			"file": "web/src/components/canvas/CanvasAiBar.tsx",
+			"text": "审批",
+			"count": 1,
+			"reason": "data"
+		},
+		{
+			"file": "web/src/components/canvas/CanvasAiBar.tsx",
+			"text": "审查",
+			"count": 1,
+			"reason": "data"
+		},
+		{
+			"file": "web/src/components/canvas/CanvasAiBar.tsx",
+			"text": "开发",
+			"count": 1,
+			"reason": "data"
+		},
+		{
+			"file": "web/src/components/canvas/CanvasAiBar.tsx",
+			"text": "打分",
+			"count": 1,
+			"reason": "data"
+		},
+		{
+			"file": "web/src/components/canvas/CanvasAiBar.tsx",
+			"text": "拆解",
+			"count": 1,
+			"reason": "data"
+		},
+		{
+			"file": "web/src/components/canvas/CanvasAiBar.tsx",
+			"text": "搜索",
+			"count": 1,
+			"reason": "data"
+		},
+		{
+			"file": "web/src/components/canvas/CanvasAiBar.tsx",
+			"text": "文档",
+			"count": 1,
+			"reason": "data"
+		},
+		{
+			"file": "web/src/components/canvas/CanvasAiBar.tsx",
+			"text": "架构",
+			"count": 1,
+			"reason": "data"
+		},
+		{
+			"file": "web/src/components/canvas/CanvasAiBar.tsx",
+			"text": "汇总",
+			"count": 1,
+			"reason": "data"
+		},
+		{
+			"file": "web/src/components/canvas/CanvasAiBar.tsx",
+			"text": "测试",
+			"count": 1,
+			"reason": "data"
+		},
+		{
+			"file": "web/src/components/canvas/CanvasAiBar.tsx",
+			"text": "编码",
+			"count": 1,
+			"reason": "data"
+		},
+		{
+			"file": "web/src/components/canvas/CanvasAiBar.tsx",
+			"text": "规划",
+			"count": 1,
+			"reason": "data"
+		},
+		{
+			"file": "web/src/components/canvas/CanvasAiBar.tsx",
+			"text": "评估",
+			"count": 1,
+			"reason": "data"
+		},
+		{
+			"file": "web/src/components/canvas/CanvasAiBar.tsx",
+			"text": "调研",
+			"count": 1,
+			"reason": "data"
+		},
+		{
+			"file": "web/src/components/canvas/CanvasAiBar.tsx",
+			"text": "选型",
+			"count": 1,
+			"reason": "data"
+		},
+		{
+			"file": "web/src/components/canvas/CanvasAiBar.tsx",
+			"text": "重构",
+			"count": 1,
+			"reason": "data"
+		},
+		{
+			"file": "web/src/components/canvas/CanvasTypes.ts",
+			"text": "严格",
+			"count": 1,
+			"reason": "data"
+		},
+		{
+			"file": "web/src/components/canvas/CanvasTypes.ts",
+			"text": "宽松",
+			"count": 1,
+			"reason": "data"
+		},
+		{
+			"file": "web/src/components/canvas/CanvasTypes.ts",
+			"text": "快速",
+			"count": 1,
+			"reason": "data"
+		},
+		{
+			"file": "web/src/components/canvas/CanvasTypes.ts",
+			"text": "标准",
+			"count": 4,
+			"reason": "data"
+		},
+		{
+			"file": "web/src/components/canvas/CanvasTypes.ts",
+			"text": "深度",
+			"count": 1,
+			"reason": "data"
+		},
+		{
+			"file": "web/src/components/canvas/CanvasTypes.ts",
+			"text": "生产",
+			"count": 1,
+			"reason": "data"
+		},
+		{
+			"file": "web/src/components/canvas/CanvasTypes.ts",
+			"text": "预发",
+			"count": 2,
+			"reason": "data"
+		},
+		{
+			"file": "web/src/components/GroupBlackboardView.tsx",
+			"text": "api规范",
+			"count": 1,
+			"reason": "data"
+		},
+		{
+			"file": "web/src/components/GroupBlackboardView.tsx",
+			"text": "任务分工",
+			"count": 1,
+			"reason": "data"
+		},
+		{
+			"file": "web/src/components/GroupBlackboardView.tsx",
+			"text": "任务流水线",
+			"count": 1,
+			"reason": "data"
+		},
+		{
+			"file": "web/src/components/GroupBlackboardView.tsx",
+			"text": "关键技术决策",
+			"count": 1,
+			"reason": "data"
+		},
+		{
+			"file": "web/src/components/GroupBlackboardView.tsx",
+			"text": "决策记录",
+			"count": 1,
+			"reason": "data"
+		},
+		{
+			"file": "web/src/components/GroupBlackboardView.tsx",
+			"text": "分工与进度",
+			"count": 1,
+			"reason": "data"
+		},
+		{
+			"file": "web/src/components/GroupBlackboardView.tsx",
+			"text": "协议契约",
+			"count": 1,
+			"reason": "data"
+		},
+		{
+			"file": "web/src/components/GroupBlackboardView.tsx",
+			"text": "技术方案",
+			"count": 1,
+			"reason": "data"
+		},
+		{
+			"file": "web/src/components/GroupBlackboardView.tsx",
+			"text": "接口契约",
+			"count": 1,
+			"reason": "data"
+		},
+		{
+			"file": "web/src/components/GroupBlackboardView.tsx",
+			"text": "接口规范",
+			"count": 1,
+			"reason": "data"
+		},
+		{
+			"file": "web/src/components/GroupBlackboardView.tsx",
+			"text": "数据契约",
+			"count": 1,
+			"reason": "data"
+		},
+		{
+			"file": "web/src/components/GroupBlackboardView.tsx",
+			"text": "架构契约",
+			"count": 1,
+			"reason": "data"
+		},
+		{
+			"file": "web/src/components/GroupBlackboardView.tsx",
+			"text": "架构设计",
+			"count": 1,
+			"reason": "data"
+		},
+		{
+			"file": "web/src/components/GroupBlackboardView.tsx",
+			"text": "流水线分工",
+			"count": 1,
+			"reason": "data"
+		},
+		{
+			"file": "web/src/components/GroupBlackboardView.tsx",
+			"text": "系统架构",
+			"count": 1,
+			"reason": "data"
+		},
+		{
+			"file": "web/src/components/GroupBlackboardView.tsx",
+			"text": "阻塞与决策",
+			"count": 1,
+			"reason": "data"
+		},
+		{
+			"file": "web/src/components/GroupBlackboardView.tsx",
+			"text": "风险与阻塞",
+			"count": 1,
+			"reason": "data"
+		},
+		{
+			"file": "web/src/components/LeftPanel.tsx",
+			"text": "微信",
+			"count": 1,
+			"reason": "data"
+		},
+		{
+			"file": "web/src/components/LeftPanel.tsx",
+			"text": "钉钉",
+			"count": 1,
+			"reason": "data"
+		},
+		{
+			"file": "web/src/components/LeftPanel.tsx",
+			"text": "飞书",
+			"count": 1,
+			"reason": "data"
+		},
+		{
+			"file": "web/src/components/Markdown.tsx",
+			"text": "[plugin-widget:${type}] 渲染失败:",
+			"count": 1,
+			"reason": "data"
+		},
+		{
+			"file": "web/src/components/Message.tsx",
+			"text": "[子代理执行完成通知]",
+			"count": 1,
+			"reason": "data"
+		},
+		{
+			"file": "web/src/components/ModelConfigModal.tsx",
+			"text": "云端",
+			"count": 2,
+			"reason": "data"
+		},
+		{
+			"file": "web/src/components/ModelConfigModal.tsx",
+			"text": "反代",
+			"count": 3,
+			"reason": "data"
+		},
+		{
+			"file": "web/src/components/ModelConfigModal.tsx",
+			"text": "官方",
+			"count": 14,
+			"reason": "data"
+		},
+		{
+			"file": "web/src/components/ModelConfigModal.tsx",
+			"text": "智谱 GLM",
+			"count": 1,
+			"reason": "data"
+		},
+		{
+			"file": "web/src/components/ModelConfigModal.tsx",
+			"text": "本地",
+			"count": 3,
+			"reason": "data"
+		},
+		{
+			"file": "web/src/components/ModelConfigModal.tsx",
+			"text": "硅基流动",
+			"count": 1,
+			"reason": "data"
+		},
+		{
+			"file": "web/src/components/ModelConfigModal.tsx",
+			"text": "聚合",
+			"count": 2,
+			"reason": "data"
+		},
+		{
+			"file": "web/src/components/PluginPage.tsx",
+			"text": "[plugin:${plugin.id}] cleanup 失败:",
+			"count": 1,
+			"reason": "data"
+		},
+		{
+			"file": "web/src/components/PluginPage.tsx",
+			"text": "[plugin:${plugin.id}] 页面${mounting ? \"挂载\" : \"加载\"}失败:",
+			"count": 1,
+			"reason": "data"
+		},
+		{
+			"file": "web/src/components/PluginPage.tsx",
+			"text": "client/entry.mjs 没有导出 default.mount()",
+			"count": 1,
+			"reason": "data"
+		},
+		{
+			"file": "web/src/components/QuickAskSettings.tsx",
+			"text": "将以下文字翻译成{{targetLanguage}}，只输出译文，保留代码与专有名词。\\n{{input}}",
+			"count": 1,
+			"reason": "data"
+		},
+		{
+			"file": "web/src/components/QuickAskSettings.tsx",
+			"text": "日本語",
+			"count": 1,
+			"reason": "data"
+		},
+		{
+			"file": "web/src/components/QuickAskSettings.tsx",
+			"text": "简体中文",
+			"count": 1,
+			"reason": "data"
+		},
+		{
+			"file": "web/src/components/QuickAskSettings.tsx",
+			"text": "繁體中文",
+			"count": 1,
+			"reason": "data"
+		},
+		{
+			"file": "web/src/components/QuickAskSettings.tsx",
+			"text": "解释下: {{input}}",
+			"count": 1,
+			"reason": "data"
+		},
+		{
+			"file": "web/src/components/ThinkingBlock.tsx",
+			"text": "思考",
+			"count": 1,
+			"reason": "data"
+		},
+		{
+			"file": "web/src/components/ThinkingBlock.tsx",
+			"text": "思考过程",
+			"count": 1,
+			"reason": "data"
+		},
+		{
+			"file": "web/src/components/ThinkingBlock.tsx",
+			"text": "思考过程：",
+			"count": 1,
+			"reason": "data"
+		},
+		{
+			"file": "web/src/components/ThinkingBlock.tsx",
+			"text": "思路",
+			"count": 1,
+			"reason": "data"
+		},
+		{
+			"file": "web/src/components/ThinkingBlock.tsx",
+			"text": "思路：",
+			"count": 1,
+			"reason": "data"
+		},
+		{
+			"file": "web/src/group-member-reference.ts",
+			"text": "同一条消息只能继续一个对话，请移除其他 @ 目标。 / Continue one conversation per message. Remove other @ targets.",
+			"count": 1,
+			"reason": "data"
+		},
+		{
+			"file": "web/src/i18n.tsx",
+			"text": "中文",
+			"count": 1,
+			"reason": "data"
+		},
+		{
+			"file": "web/src/i18n.tsx",
+			"text": "台繁",
+			"count": 1,
+			"reason": "data"
+		},
+		{
+			"file": "web/src/i18n.tsx",
+			"text": "港繁",
+			"count": 1,
+			"reason": "data"
+		},
+		{
+			"file": "web/src/i18n.tsx",
+			"text": "简体中文",
+			"count": 1,
+			"reason": "data"
+		},
+		{
+			"file": "web/src/i18n.tsx",
+			"text": "繁中",
+			"count": 1,
+			"reason": "data"
+		},
+		{
+			"file": "web/src/mcp-catalog.ts",
+			"text": "1.6万星合集",
+			"count": 1,
+			"reason": "data"
+		},
+		{
+			"file": "web/src/mcp-catalog.ts",
+			"text": "3000+插件",
+			"count": 1,
+			"reason": "data"
+		},
+		{
+			"file": "web/src/mcp-catalog.ts",
+			"text": "4,300+ 星标的经典精选合集，系统化整理了全球与中文优秀 MCP 服务实现、适配客户端与开发库。",
+			"count": 1,
+			"reason": "data"
+		},
+		{
+			"file": "web/src/mcp-catalog.ts",
+			"text": "4300星精选",
+			"count": 1,
+			"reason": "data"
+		},
+		{
+			"file": "web/src/mcp-catalog.ts",
+			"text": "7,700+ 星标的中文最全 MCP 精选合集：涵盖高德、飞书、微信、音视频、知识库等各类国内 MCP 插件列表与配置教程。",
+			"count": 1,
+			"reason": "data"
+		},
+		{
+			"file": "web/src/mcp-catalog.ts",
+			"text": "7700+星",
+			"count": 1,
+			"reason": "data"
+		},
+		{
+			"file": "web/src/mcp-catalog.ts",
+			"text": "7700星推荐",
+			"count": 1,
+			"reason": "data"
+		},
+		{
+			"file": "web/src/mcp-catalog.ts",
+			"text": "9800+插件",
+			"count": 1,
+			"reason": "data"
+		},
+		{
+			"file": "web/src/mcp-catalog.ts",
+			"text": "AMap (高德地图)",
+			"count": 1,
+			"reason": "data"
+		},
+		{
+			"file": "web/src/mcp-catalog.ts",
+			"text": "Anthropic 官方 GitHub 工具，支持检索代码、列出与修改 Issue、检查 PR 变更与提交评审意见。",
+			"count": 1,
+			"reason": "data"
+		},
+		{
+			"file": "web/src/mcp-catalog.ts",
+			"text": "Anthropic 官方开源的核心参考服务仓库目录：文件系统、网页抓取、持久记忆图谱、SQLite、Git、GitHub 等官方服务清单。",
+			"count": 1,
+			"reason": "data"
+		},
+		{
+			"file": "web/src/mcp-catalog.ts",
+			"text": "Anthropic 官方核心参考服务集目录",
+			"count": 1,
+			"reason": "data"
+		},
+		{
+			"file": "web/src/mcp-catalog.ts",
+			"text": "Anthropic 官方核心文件系统工具，支持受限目录下的安全文件读写、创建与遍历。",
+			"count": 1,
+			"reason": "data"
+		},
+		{
+			"file": "web/src/mcp-catalog.ts",
+			"text": "Anthropic 官方知识图谱记忆服务，将实体与关联关系持久化于本地，赋予 AI 跨会话长期记忆。",
+			"count": 1,
+			"reason": "data"
+		},
+		{
+			"file": "web/src/mcp-catalog.ts",
+			"text": "Anthropic 官方网页抓取工具，抓取指定 URL 页面并提取为结构化净室 Markdown。",
+			"count": 1,
+			"reason": "data"
+		},
+		{
+			"file": "web/src/mcp-catalog.ts",
+			"text": "Awesome China MCP (国内常用应用市场)",
+			"count": 1,
+			"reason": "data"
+		},
+		{
+			"file": "web/src/mcp-catalog.ts",
+			"text": "Awesome MCP ZH (中文精选合集)",
+			"count": 1,
+			"reason": "data"
+		},
+		{
+			"file": "web/src/mcp-catalog.ts",
+			"text": "Awesome MCP 中文精选市场与资源列表",
+			"count": 1,
+			"reason": "data"
+		},
+		{
+			"file": "web/src/mcp-catalog.ts",
+			"text": "Feishu / Lark (飞书)",
+			"count": 1,
+			"reason": "data"
+		},
+		{
+			"file": "web/src/mcp-catalog.ts",
+			"text": "GitHub #mcp-server 实时开源服务列表",
+			"count": 1,
+			"reason": "data"
+		},
+		{
+			"file": "web/src/mcp-catalog.ts",
+			"text": "GitHub 上 16,000+ 星标的最权威开源 MCP 清单，按开发、数据库、文件、搜索等数十个能力分类列出。",
+			"count": 1,
+			"reason": "data"
+		},
+		{
+			"file": "web/src/mcp-catalog.ts",
+			"text": "GitHub 仓库协作与代码管理",
+			"count": 1,
+			"reason": "data"
+		},
+		{
+			"file": "web/src/mcp-catalog.ts",
+			"text": "GitHub 全球开源 MCP 仓库实时列表",
+			"count": 1,
+			"reason": "data"
+		},
+		{
+			"file": "web/src/mcp-catalog.ts",
+			"text": "GitHub 官方 #mcp-server 标签实时聚合，直达全球开发者开源的具体 MCP Server 代码仓库列表。",
+			"count": 1,
+			"reason": "data"
+		},
+		{
+			"file": "web/src/mcp-catalog.ts",
+			"text": "GitHub 官方标签直达，全球开源智能体 MCP 仓库实时列表，可按 Star 数和最新活跃度在线浏览。",
+			"count": 1,
+			"reason": "data"
+		},
+		{
+			"file": "web/src/mcp-catalog.ts",
+			"text": "Glama 开发者 MCP 市场",
+			"count": 1,
+			"reason": "data"
+		},
+		{
+			"file": "web/src/mcp-catalog.ts",
+			"text": "mcp-get 发现与包管理平台",
+			"count": 1,
+			"reason": "data"
+		},
+		{
+			"file": "web/src/mcp-catalog.ts",
+			"text": "MCP.so 综合分类导航目录",
+			"count": 1,
+			"reason": "data"
+		},
+		{
+			"file": "web/src/mcp-catalog.ts",
+			"text": "mcpservers.org 综合插件市场",
+			"count": 1,
+			"reason": "data"
+		},
+		{
+			"file": "web/src/mcp-catalog.ts",
+			"text": "Playwright 浏览器自动化 (微软)",
+			"count": 1,
+			"reason": "data"
+		},
+		{
+			"file": "web/src/mcp-catalog.ts",
+			"text": "PostgreSQL 数据库管理",
+			"count": 1,
+			"reason": "data"
+		},
+		{
+			"file": "web/src/mcp-catalog.ts",
+			"text": "PulseMCP 实时生态与趋势雷达",
+			"count": 1,
+			"reason": "data"
+		},
+		{
+			"file": "web/src/mcp-catalog.ts",
+			"text": "Punkpeye 1.6万星全球开源合集",
+			"count": 1,
+			"reason": "data"
+		},
+		{
+			"file": "web/src/mcp-catalog.ts",
+			"text": "Smithery 3,000+ 在线插件市场",
+			"count": 1,
+			"reason": "data"
+		},
+		{
+			"file": "web/src/mcp-catalog.ts",
+			"text": "SQLite 数据库查询与分析",
+			"count": 1,
+			"reason": "data"
+		},
+		{
+			"file": "web/src/mcp-catalog.ts",
+			"text": "Tavily 智能体深度搜索引擎",
+			"count": 1,
+			"reason": "data"
+		},
+		{
+			"file": "web/src/mcp-catalog.ts",
+			"text": "wong2 精选 MCP 服务与客户端合集",
+			"count": 1,
+			"reason": "data"
+		},
+		{
+			"file": "web/src/mcp-catalog.ts",
+			"text": "专为 AI 智能体设计的搜索引擎，提供实时、高相关度、结构化且包含引文出处的互联网检索结果。",
+			"count": 1,
+			"reason": "data"
+		},
+		{
+			"file": "web/src/mcp-catalog.ts",
+			"text": "专为国内生态打造的 MCP 列表专区：收录高德地图、12306 查票、小红书、飞书、语雀文档、A股量化等常用国内服务。",
+			"count": 1,
+			"reason": "data"
+		},
+		{
+			"file": "web/src/mcp-catalog.ts",
+			"text": "中文精选",
+			"count": 2,
+			"reason": "data"
+		},
+		{
+			"file": "web/src/mcp-catalog.ts",
+			"text": "主流的 MCP 服务器发现与注册市场，收录 3,000+ 个可在线检索与一键配置的 MCP 服务及连接命令。",
+			"count": 1,
+			"reason": "data"
+		},
+		{
+			"file": "web/src/mcp-catalog.ts",
+			"text": "全球开源",
+			"count": 1,
+			"reason": "data"
+		},
+		{
+			"file": "web/src/mcp-catalog.ts",
+			"text": "全面的 MCP 服务器目录索引，支持按业务分类、协议类型、部署依赖与集成目标精准筛选检索。",
+			"count": 1,
+			"reason": "data"
+		},
+		{
+			"file": "web/src/mcp-catalog.ts",
+			"text": "关系型数据库",
+			"count": 1,
+			"reason": "data"
+		},
+		{
+			"file": "web/src/mcp-catalog.ts",
+			"text": "分类导航",
+			"count": 1,
+			"reason": "data"
+		},
+		{
+			"file": "web/src/mcp-catalog.ts",
+			"text": "包检索",
+			"count": 1,
+			"reason": "data"
+		},
+		{
+			"file": "web/src/mcp-catalog.ts",
+			"text": "协同办公",
+			"count": 1,
+			"reason": "data"
+		},
+		{
+			"file": "web/src/mcp-catalog.ts",
+			"text": "发现经过检验的社区 MCP 服务器，支持在线服务状态监测、开发者评分、配置代码与安全合规提示。",
+			"count": 1,
+			"reason": "data"
+		},
+		{
+			"file": "web/src/mcp-catalog.ts",
+			"text": "国内常用",
+			"count": 1,
+			"reason": "data"
+		},
+		{
+			"file": "web/src/mcp-catalog.ts",
+			"text": "国内常用应用 MCP 专区列表",
+			"count": 1,
+			"reason": "data"
+		},
+		{
+			"file": "web/src/mcp-catalog.ts",
+			"text": "国内应用专区",
+			"count": 1,
+			"reason": "data"
+		},
+		{
+			"file": "web/src/mcp-catalog.ts",
+			"text": "国内生态",
+			"count": 3,
+			"reason": "data"
+		},
+		{
+			"file": "web/src/mcp-catalog.ts",
+			"text": "地理位置",
+			"count": 1,
+			"reason": "data"
+		},
+		{
+			"file": "web/src/mcp-catalog.ts",
+			"text": "多维表格",
+			"count": 1,
+			"reason": "data"
+		},
+		{
+			"file": "web/src/mcp-catalog.ts",
+			"text": "多语言库",
+			"count": 1,
+			"reason": "data"
+		},
+		{
+			"file": "web/src/mcp-catalog.ts",
+			"text": "官方参考",
+			"count": 1,
+			"reason": "data"
+		},
+		{
+			"file": "web/src/mcp-catalog.ts",
+			"text": "官方工具",
+			"count": 1,
+			"reason": "data"
+		},
+		{
+			"file": "web/src/mcp-catalog.ts",
+			"text": "官方核心",
+			"count": 1,
+			"reason": "data"
+		},
+		{
+			"file": "web/src/mcp-catalog.ts",
+			"text": "实时趋势",
+			"count": 1,
+			"reason": "data"
+		},
+		{
+			"file": "web/src/mcp-catalog.ts",
+			"text": "客户端",
+			"count": 1,
+			"reason": "data"
+		},
+		{
+			"file": "web/src/mcp-catalog.ts",
+			"text": "小红书",
+			"count": 1,
+			"reason": "data"
+		},
+		{
+			"file": "web/src/mcp-catalog.ts",
+			"text": "开发指南",
+			"count": 1,
+			"reason": "data"
+		},
+		{
+			"file": "web/src/mcp-catalog.ts",
+			"text": "开发者市场",
+			"count": 1,
+			"reason": "data"
+		},
+		{
+			"file": "web/src/mcp-catalog.ts",
+			"text": "微软官方",
+			"count": 1,
+			"reason": "data"
+		},
+		{
+			"file": "web/src/mcp-catalog.ts",
+			"text": "微软官方维护的 Playwright 自动化工具：驱动无头/有头浏览器交互、全页截长图与复杂动态页面操作。",
+			"count": 1,
+			"reason": "data"
+		},
+		{
+			"file": "web/src/mcp-catalog.ts",
+			"text": "持久化知识记忆图谱",
+			"count": 1,
+			"reason": "data"
+		},
+		{
+			"file": "web/src/mcp-catalog.ts",
+			"text": "教程指南",
+			"count": 1,
+			"reason": "data"
+		},
+		{
+			"file": "web/src/mcp-catalog.ts",
+			"text": "数据库",
+			"count": 1,
+			"reason": "data"
+		},
+		{
+			"file": "web/src/mcp-catalog.ts",
+			"text": "智能体搜索",
+			"count": 1,
+			"reason": "data"
+		},
+		{
+			"file": "web/src/mcp-catalog.ts",
+			"text": "服务实现",
+			"count": 1,
+			"reason": "data"
+		},
+		{
+			"file": "web/src/mcp-catalog.ts",
+			"text": "本地安全文件系统",
+			"count": 1,
+			"reason": "data"
+		},
+		{
+			"file": "web/src/mcp-catalog.ts",
+			"text": "每周动态更新的 MCP 趋势雷达与目录，汇集每周热门服务器、实用开发工具、适配客户端与生态快讯。",
+			"count": 1,
+			"reason": "data"
+		},
+		{
+			"file": "web/src/mcp-catalog.ts",
+			"text": "汇聚 9,800+ 款开源 MCP 服务器的大型在线市场，支持按分类检索、星标排行与一键复制配置命令。",
+			"count": 1,
+			"reason": "data"
+		},
+		{
+			"file": "web/src/mcp-catalog.ts",
+			"text": "研发协同",
+			"count": 1,
+			"reason": "data"
+		},
+		{
+			"file": "web/src/mcp-catalog.ts",
+			"text": "网页抓取与 Markdown 提取",
+			"count": 1,
+			"reason": "data"
+		},
+		{
+			"file": "web/src/mcp-catalog.ts",
+			"text": "路线规划",
+			"count": 1,
+			"reason": "data"
+		},
+		{
+			"file": "web/src/mcp-catalog.ts",
+			"text": "连接 PostgreSQL 数据库，支持执行安全参数化查询、表与索引分析及数据检索。",
+			"count": 1,
+			"reason": "data"
+		},
+		{
+			"file": "web/src/mcp-catalog.ts",
+			"text": "连接并查询本地 SQLite 数据库文件，支持执行 SQL 语句、表结构探查与业务数据分析。",
+			"count": 1,
+			"reason": "data"
+		},
+		{
+			"file": "web/src/mcp-catalog.ts",
+			"text": "长期记忆",
+			"count": 1,
+			"reason": "data"
+		},
+		{
+			"file": "web/src/mcp-catalog.ts",
+			"text": "面向开发者打造的 MCP 服务发现与命令行管理平台，便于快速定位并执行跨环境 MCP 服务。",
+			"count": 1,
+			"reason": "data"
+		},
+		{
+			"file": "web/src/mcp-catalog.ts",
+			"text": "飞书",
+			"count": 2,
+			"reason": "data"
+		},
+		{
+			"file": "web/src/mcp-catalog.ts",
+			"text": "飞书办公协同与多维表格",
+			"count": 1,
+			"reason": "data"
+		},
+		{
+			"file": "web/src/mcp-catalog.ts",
+			"text": "飞书官方",
+			"count": 1,
+			"reason": "data"
+		},
+		{
+			"file": "web/src/mcp-catalog.ts",
+			"text": "飞书官方开放平台 OpenAPI 集成：支持多维表格增删改查、发送机器人卡片消息、读取飞书云文档与日程管理。",
+			"count": 1,
+			"reason": "data"
+		},
+		{
+			"file": "web/src/mcp-catalog.ts",
+			"text": "飞书自建应用 Secret",
+			"count": 1,
+			"reason": "data"
+		},
+		{
+			"file": "web/src/mcp-catalog.ts",
+			"text": "高德地图",
+			"count": 2,
+			"reason": "data"
+		},
+		{
+			"file": "web/src/mcp-catalog.ts",
+			"text": "高德地图位置服务",
+			"count": 1,
+			"reason": "data"
+		},
+		{
+			"file": "web/src/mcp-catalog.ts",
+			"text": "高德地图官方开放平台位置服务，提供地址解析编码、周边 POI 检索、驾车与公交路线规划及实时天气。",
+			"count": 1,
+			"reason": "data"
+		},
+		{
+			"file": "web/src/mcp-catalog.ts",
+			"text": "高德官方",
+			"count": 1,
+			"reason": "data"
+		},
+		{
+			"file": "web/src/mcp-catalog.ts",
+			"text": "高德开放平台 Web 服务 Key",
+			"count": 1,
+			"reason": "data"
+		},
+		{
+			"file": "web/src/plugin-fence.ts",
+			"text": "[plugin:${entry.pluginId}] renderer(\"${lang}\") 执行失败:",
+			"count": 1,
+			"reason": "data"
+		},
+		{
+			"file": "web/src/plugin-fence.ts",
+			"text": "[plugin:${pluginId}] entry.mjs 未提供 messageWidgets[\"${type}\"]",
+			"count": 1,
+			"reason": "data"
+		},
+		{
+			"file": "web/src/plugin-fence.ts",
+			"text": "[plugin:${pluginId}] entry.mjs 未提供 renderers[\"${lang}\"]",
+			"count": 1,
+			"reason": "data"
+		},
+		{
+			"file": "web/src/plugin-fence.ts",
+			"text": "[plugin:${pluginId}] messageWidget 加载失败（${type}）:",
+			"count": 1,
+			"reason": "data"
+		},
+		{
+			"file": "web/src/plugin-fence.ts",
+			"text": "[plugin:${pluginId}] renderer 加载失败（${lang}）:",
+			"count": 1,
+			"reason": "data"
+		},
+		{
+			"file": "web/src/plugin-host.ts",
+			"text": "[plugin-host] onLocale 处理器抛错:",
+			"count": 1,
+			"reason": "data"
+		},
+		{
+			"file": "web/src/plugin-host.ts",
+			"text": "[plugin-host] onModelChange 处理器抛错:",
+			"count": 1,
+			"reason": "data"
+		},
+		{
+			"file": "web/src/plugin-host.ts",
+			"text": "[plugin-host] onTheme 处理器抛错:",
+			"count": 1,
+			"reason": "data"
+		},
+		{
+			"file": "web/src/plugin-host.ts",
+			"text": "[plugin-host] onViewChange 处理器抛错:",
+			"count": 1,
+			"reason": "data"
+		},
+		{
+			"file": "web/src/plugin-host.ts",
+			"text": "[plugin-host] 快捷键处理器抛错:",
+			"count": 1,
+			"reason": "data"
+		},
+		{
+			"file": "web/src/plugin-host.ts",
+			"text": "[plugin:${pluginId}] 顶栏动作 ${action} 抛错:",
+			"count": 1,
+			"reason": "data"
+		},
+		{
+			"file": "web/src/plugin-host.ts",
+			"text": "openSession 需要 cwd / folders / roots（绝对路径）",
+			"count": 1,
+			"reason": "data"
+		},
+		{
+			"file": "web/src/plugin-host.ts",
+			"text": "pageCall 需要一个动作名（op）",
+			"count": 1,
+			"reason": "data"
+		},
+		{
+			"file": "web/src/plugin-host.ts",
+			"text": "reloadCatalog 需要一个目录来源（http(s) URL 或本地文件路径）",
+			"count": 1,
+			"reason": "data"
+		},
+		{
+			"file": "web/src/plugin-host.ts",
+			"text": "sessions.open 需要一个会话 id（先调 list）",
+			"count": 1,
+			"reason": "data"
+		},
+		{
+			"file": "web/src/plugin-host.ts",
+			"text": "切换会话超时：${info.title}",
+			"count": 1,
+			"reason": "data"
+		},
+		{
+			"file": "web/src/plugin-host.ts",
+			"text": "切换工作目录失败或超时：${info.cwd}",
+			"count": 1,
+			"reason": "data"
+		},
+		{
+			"file": "web/src/plugin-host.ts",
+			"text": "切换工作目录失败或超时：${target}",
+			"count": 1,
+			"reason": "data"
+		},
+		{
+			"file": "web/src/plugin-host.ts",
+			"text": "尚未连接到服务器（还没有快照）",
+			"count": 3,
+			"reason": "data"
+		},
+		{
+			"file": "web/src/plugin-host.ts",
+			"text": "打开并接入会话超时：${info.title}",
+			"count": 1,
+			"reason": "data"
+		},
+		{
+			"file": "web/src/plugin-host.ts",
+			"text": "找不到会话：${targetId}",
+			"count": 1,
+			"reason": "data"
+		},
+		{
+			"file": "web/src/plugin-host.ts",
+			"text": "未知模型：${model}（先调 models.list() 取可用列表）",
+			"count": 1,
+			"reason": "data"
+		},
+		{
+			"file": "web/src/plugin-host.ts",
+			"text": "此桌面版尚未提供原生浏览器桥；请升级到支持 AI Browser 的桌面版，或在系统浏览器中使用 page-picker 扩展。/ Native browser bridge unavailable; upgrade the desktop app or use page-picker in a regular browser.",
+			"count": 1,
+			"reason": "data"
+		},
+		{
+			"file": "web/src/plugin-host.ts",
+			"text": "浏览器扩展的页面桥没就绪：确认已安装并启用 page-picker 扩展、本页地址已绑定，然后刷新本页",
+			"count": 1,
+			"reason": "data"
+		},
+		{
+			"file": "web/src/plugin-host.ts",
+			"text": "用户拒绝了该目录的访问：${info.cwd}",
+			"count": 1,
+			"reason": "data"
+		},
+		{
+			"file": "web/src/plugin-host.ts",
+			"text": "用户拒绝了该目录的访问：${p}",
+			"count": 1,
+			"reason": "data"
+		},
+		{
+			"file": "web/src/plugin-host.ts",
+			"text": "目录同步失败",
+			"count": 1,
+			"reason": "data"
+		},
+		{
+			"file": "web/src/plugin-host.ts",
+			"text": "目录同步超时（服务端未在等待窗口内回执）",
+			"count": 1,
+			"reason": "data"
+		},
+		{
+			"file": "web/src/plugin-loader.ts",
+			"text": "[plugin:${p.id}] entry.mjs 缺少 default.mount",
+			"count": 1,
+			"reason": "data"
+		},
+		{
+			"file": "web/src/plugin-loader.ts",
+			"text": "[plugin:${p.id}] 客户端 bundle 加载失败:",
+			"count": 1,
+			"reason": "data"
+		},
+		{
+			"file": "web/src/plugin-loader.ts",
+			"text": "[plugin:${p.id}] 客户端加载失败:",
+			"count": 1,
+			"reason": "data"
+		},
+		{
+			"file": "web/src/preview-toc.ts",
+			"text": "未命名章节",
+			"count": 1,
+			"reason": "data"
+		},
+		{
+			"file": "web/src/quick-ask.ts",
+			"text": "将以下文字翻译成{{targetLanguage}}，只输出译文，保留代码与专有名词。\\n{{input}}",
+			"count": 1,
+			"reason": "data"
+		},
+		{
+			"file": "web/src/quick-ask.ts",
+			"text": "日本語",
+			"count": 1,
+			"reason": "data"
+		},
+		{
+			"file": "web/src/quick-ask.ts",
+			"text": "简体中文",
+			"count": 1,
+			"reason": "data"
+		},
+		{
+			"file": "web/src/quick-ask.ts",
+			"text": "繁體中文",
+			"count": 1,
+			"reason": "data"
+		},
+		{
+			"file": "web/src/quick-ask.ts",
+			"text": "解释下: {{input}}",
+			"count": 1,
+			"reason": "data"
+		},
+		{
+			"file": "web/src/skill-catalog.ts",
+			"text": "11万星推荐",
+			"count": 1,
+			"reason": "data"
+		},
+		{
+			"file": "web/src/skill-catalog.ts",
+			"text": "3.8万开源库",
+			"count": 1,
+			"reason": "data"
+		},
+		{
+			"file": "web/src/skill-catalog.ts",
+			"text": "Addy Osmani 生产级工程技能库",
+			"count": 1,
+			"reason": "data"
+		},
+		{
+			"file": "web/src/skill-catalog.ts",
+			"text": "AgentSkills 开放技能市场",
+			"count": 1,
+			"reason": "data"
+		},
+		{
+			"file": "web/src/skill-catalog.ts",
+			"text": "AgentSkills 技能发现市场",
+			"count": 1,
+			"reason": "data"
+		},
+		{
+			"file": "web/src/skill-catalog.ts",
+			"text": "Anthropic 官方技能目录",
+			"count": 1,
+			"reason": "data"
+		},
+		{
+			"file": "web/src/skill-catalog.ts",
+			"text": "Anthropic 官方核心 skills 目录，直达 docx, pptx, xlsx, canvas-design, mcp-builder 等数十个官方技能。",
+			"count": 1,
+			"reason": "data"
+		},
+		{
+			"file": "web/src/skill-catalog.ts",
+			"text": "Awesome Claude Code 技能聚合",
+			"count": 1,
+			"reason": "data"
+		},
+		{
+			"file": "web/src/skill-catalog.ts",
+			"text": "Composio Claude 技能精选合集",
+			"count": 1,
+			"reason": "data"
+		},
+		{
+			"file": "web/src/skill-catalog.ts",
+			"text": "Docker 与轻量容器化部署",
+			"count": 1,
+			"reason": "data"
+		},
+		{
+			"file": "web/src/skill-catalog.ts",
+			"text": "GitHub #agent-skills 全球仓库列表",
+			"count": 1,
+			"reason": "data"
+		},
+		{
+			"file": "web/src/skill-catalog.ts",
+			"text": "GitHub 官方标签直达，全球 38,000+ 开源智能体技能与工具仓库实时列表，可按活跃度与星标浏览。",
+			"count": 1,
+			"reason": "data"
+		},
+		{
+			"file": "web/src/skill-catalog.ts",
+			"text": "Google 技术总监维护的 25+ 个生产级工程技能目录：架构设计、性能优化、安全加固与测试驱动。",
+			"count": 1,
+			"reason": "data"
+		},
+		{
+			"file": "web/src/skill-catalog.ts",
+			"text": "RESTful / RPC 接口设计规范",
+			"count": 1,
+			"reason": "data"
+		},
+		{
+			"file": "web/src/skill-catalog.ts",
+			"text": "SQL 与数据库索引优化",
+			"count": 1,
+			"reason": "data"
+		},
+		{
+			"file": "web/src/skill-catalog.ts",
+			"text": "Superpowers 实战技能合集",
+			"count": 1,
+			"reason": "data"
+		},
+		{
+			"file": "web/src/skill-catalog.ts",
+			"text": "TypeScript 严格类型强化",
+			"count": 1,
+			"reason": "data"
+		},
+		{
+			"file": "web/src/skill-catalog.ts",
+			"text": "业务与增长",
+			"count": 1,
+			"reason": "data"
+		},
+		{
+			"file": "web/src/skill-catalog.ts",
+			"text": "业务营销与产品增长技能库",
+			"count": 1,
+			"reason": "data"
+		},
+		{
+			"file": "web/src/skill-catalog.ts",
+			"text": "从异常日志与堆栈跟踪中逆向推导故障根本原因，构造最小可复现步骤并设计杜绝二次回归的根治方案。",
+			"count": 1,
+			"reason": "data"
+		},
+		{
+			"file": "web/src/skill-catalog.ts",
+			"text": "代码审查与质量把关",
+			"count": 1,
+			"reason": "data"
+		},
+		{
+			"file": "web/src/skill-catalog.ts",
+			"text": "代码重构与坏味道治理",
+			"count": 1,
+			"reason": "data"
+		},
+		{
+			"file": "web/src/skill-catalog.ts",
+			"text": "依据 OWASP Top 10 安全标准审计代码：防御 SQL/命令注入、未授权越权、反序列化攻击及敏感信息泄露。",
+			"count": 1,
+			"reason": "data"
+		},
+		{
+			"file": "web/src/skill-catalog.ts",
+			"text": "全方位代码审查：深度排查安全漏洞、并发竞争隐患、边界异常以及性能退化。",
+			"count": 1,
+			"reason": "data"
+		},
+		{
+			"file": "web/src/skill-catalog.ts",
+			"text": "分析慢查询与执行计划，设计精准复合索引，治理全表扫描与 N+1 级联查询，保障高并发下的数据吞吐。",
+			"count": 1,
+			"reason": "data"
+		},
+		{
+			"file": "web/src/skill-catalog.ts",
+			"text": "前端性能与渲染优化",
+			"count": 1,
+			"reason": "data"
+		},
+		{
+			"file": "web/src/skill-catalog.ts",
+			"text": "名声斐然的实战技能目录：子代理编排驱动、系统化调试诊断、计划编写与 Git Worktree 高效协同。",
+			"count": 1,
+			"reason": "data"
+		},
+		{
+			"file": "web/src/skill-catalog.ts",
+			"text": "在线市场",
+			"count": 1,
+			"reason": "data"
+		},
+		{
+			"file": "web/src/skill-catalog.ts",
+			"text": "在线浏览与检索 500+ 个实测 Agent Skills，支持搜索筛选、多平台一键安装命令与中文标签。",
+			"count": 1,
+			"reason": "data"
+		},
+		{
+			"file": "web/src/skill-catalog.ts",
+			"text": "安全审计与漏洞排查",
+			"count": 1,
+			"reason": "data"
+		},
+		{
+			"file": "web/src/skill-catalog.ts",
+			"text": "完备单元测试设计",
+			"count": 1,
+			"reason": "data"
+		},
+		{
+			"file": "web/src/skill-catalog.ts",
+			"text": "官方规范",
+			"count": 1,
+			"reason": "data"
+		},
+		{
+			"file": "web/src/skill-catalog.ts",
+			"text": "开放市场",
+			"count": 1,
+			"reason": "data"
+		},
+		{
+			"file": "web/src/skill-catalog.ts",
+			"text": "技术文档与 API 规范生成",
+			"count": 1,
+			"reason": "data"
+		},
+		{
+			"file": "web/src/skill-catalog.ts",
+			"text": "故障定位与根因分析",
+			"count": 1,
+			"reason": "data"
+		},
+		{
+			"file": "web/src/skill-catalog.ts",
+			"text": "汇聚 4,000+ 开发者 Agent 技能的开放市场，首页直展 Trending 与最新实战技能卡片。",
+			"count": 1,
+			"reason": "data"
+		},
+		{
+			"file": "web/src/skill-catalog.ts",
+			"text": "消除 any 与盲目类型断言，运用可辨识联合类型、模板字面量类型、精细泛型约束与类型守卫提升代码健壮度。",
+			"count": 1,
+			"reason": "data"
+		},
+		{
+			"file": "web/src/skill-catalog.ts",
+			"text": "深度工作流",
+			"count": 1,
+			"reason": "data"
+		},
+		{
+			"file": "web/src/skill-catalog.ts",
+			"text": "直接直达技能列表锚点，汇集社区贡献的思考规约、架构绘图、思维链强化与自动化脚本。",
+			"count": 1,
+			"reason": "data"
+		},
+		{
+			"file": "web/src/skill-catalog.ts",
+			"text": "直接锚定直达 #skills 章节，收录涵盖办公、分析、多工具调用等数十个分类的上百个现成技能清单。",
+			"count": 1,
+			"reason": "data"
+		},
+		{
+			"file": "web/src/skill-catalog.ts",
+			"text": "直达 150+ 个面向生物计算、化学建模、学术研读与量化数据分析的专业领域 Agent Skills 目录。",
+			"count": 1,
+			"reason": "data"
+		},
+		{
+			"file": "web/src/skill-catalog.ts",
+			"text": "社区精选",
+			"count": 1,
+			"reason": "data"
+		},
+		{
+			"file": "web/src/skill-catalog.ts",
+			"text": "科研与科学计算技能库",
+			"count": 1,
+			"reason": "data"
+		},
+		{
+			"file": "web/src/skill-catalog.ts",
+			"text": "科研专区",
+			"count": 1,
+			"reason": "data"
+		},
+		{
+			"file": "web/src/skill-catalog.ts",
+			"text": "精准提炼代码架构与接口语义，生成清晰专业的技术文档、REST/RPC 接口规范与部署快速上手手册。",
+			"count": 1,
+			"reason": "data"
+		},
+		{
+			"file": "web/src/skill-catalog.ts",
+			"text": "精准识别代码坏味道，运用 SOLID 原则治理超长函数、上帝类与深层嵌套，保证行为等价的同时提升内聚。",
+			"count": 1,
+			"reason": "data"
+		},
+		{
+			"file": "web/src/skill-catalog.ts",
+			"text": "编写轻量安全的多阶段 Dockerfile、精简镜像层级、强制非 root 用户运行，并构建标准的 Docker Compose 编排。",
+			"count": 1,
+			"reason": "data"
+		},
+		{
+			"file": "web/src/skill-catalog.ts",
+			"text": "自动设计高覆盖度、结构清晰的单元与集成测试：覆盖正常流程、边界条件、异常分支与合理 Mock。",
+			"count": 1,
+			"reason": "data"
+		},
+		{
+			"file": "web/src/skill-catalog.ts",
+			"text": "规范化 Git 提交与 PR",
+			"count": 1,
+			"reason": "data"
+		},
+		{
+			"file": "web/src/skill-catalog.ts",
+			"text": "规范化设计 RESTful 与 RPC 接口：统一资源路径命名、幂等性语义、结构化错误码与游标分页机制。",
+			"count": 1,
+			"reason": "data"
+		},
+		{
+			"file": "web/src/skill-catalog.ts",
+			"text": "诊断前端渲染瓶颈、组件多余重绘、打包体积膨胀、首屏加载慢与 Core Web Vitals 核心指标优化。",
+			"count": 1,
+			"reason": "data"
+		},
+		{
+			"file": "web/src/skill-catalog.ts",
+			"text": "遵循 Conventional Commits 规范，编写清晰、原子化且具解释力的语义化提交信息与 PR 说明。",
+			"count": 1,
+			"reason": "data"
+		},
+		{
+			"file": "web/src/skill-catalog.ts",
+			"text": "面向商业增长的技能目录：涵盖产品发布策略、转化率优化、自动化邮件序列与文案撰写规约。",
+			"count": 1,
+			"reason": "data"
+		},
+		{
+			"file": "web/src/skill-catalog.ts",
+			"text": "高星榜单",
+			"count": 1,
+			"reason": "data"
+		},
+		{
+			"file": "web/src/tts-client.ts",
+			"text": "系统语音",
+			"count": 1,
+			"reason": "data"
+		},
+		{
+			"file": "web/src/tts-client.ts",
+			"text": "语音播放失败",
+			"count": 1,
+			"reason": "data"
+		}
+	]
+}

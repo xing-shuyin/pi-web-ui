@@ -60,6 +60,9 @@ function readyFetch(saveResponse = response({ ok: true, path: file.path, size: 1
 	});
 }
 beforeEach(() => {
+	// 面板文案跟随界面语言：这些断言校验中文渲染，显式固定语言（jsdom 默认 en-US）。
+	localStorage.setItem("pi-web-ui:lang", "zh");
+
 	vi.useFakeTimers();
 	broker.attach.mockReset();
 	broker.dispose.mockReset();

@@ -1,6 +1,11 @@
 /** Native pi-web-ui player. The video element stays mounted across layout changes. */
 const revision = new URL(import.meta.url).search;
-const [{ css }, stateTools] = await Promise.all([import(`./styles.mjs${revision}`), import(`./state.mjs${revision}`)]);
+const [{ css }, stateTools, i18nTools] = await Promise.all([
+	import(`./styles.mjs${revision}`),
+	import(`./state.mjs${revision}`),
+	import(`./i18n.mjs${revision}`),
+]);
+const { makeT } = i18nTools;
 const {
 	PREFS_KEY,
 	HISTORY_KEY,
@@ -124,7 +129,8 @@ export function createPlayer(host, options = {}) {
 	const previousPadding = new Map();
 	const writtenPadding = new Map();
 	const pendingScripts = new Map();
-	const t = (zh, en) => (/^zh/i.test(host.getLocale?.() ?? document.documentElement.lang ?? "zh") ? zh : en);
+	/** UI copy: language resolution / fallback / interpolation live in the SDK; this only reads the active locale. */
+	const t = makeT(() => host.getLocale?.());
 	const savePrefs = () => {
 		prefs.mode = state.mode;
 		writeStored(storage, PREFS_KEY, prefs);
@@ -137,8 +143,7 @@ export function createPlayer(host, options = {}) {
 			signal: AbortSignal.any([lifetime.signal, AbortSignal.timeout(timeout), ...(signal ? [signal] : [])]),
 		});
 		const data = await response.json();
-		if (!response.ok || data.ok === false)
-			throw new Error(data.error?.message ?? t("短剧服务暂时不可用", "Drama service unavailable"));
+		if (!response.ok || data.ok === false) throw new Error(data.error?.message ?? t("serviceUnavailable"));
 		return data;
 	}
 	function message(text = "", error = false) {
@@ -352,23 +357,23 @@ export function createPlayer(host, options = {}) {
 			if (document.pictureInPictureElement === video) await document.exitPictureInPicture();
 			else if (video.requestPictureInPicture) await video.requestPictureInPicture();
 			else if (video.webkitSetPresentationMode) video.webkitSetPresentationMode("picture-in-picture");
-			else message(t("当前浏览器不支持画中画，请使用悬浮模式", "Picture-in-picture is unavailable; use floating mode"));
+			else message(t("pipUnsupported"));
 		} catch {
-			message(t("视频加载后再尝试画中画", "Try picture-in-picture after the video loads"));
+			message(t("pipAfterLoad"));
 		}
 	}
 	function init() {
 		if (initialized || destroyed) return initialized;
 		app = host.dom?.anchors?.().app;
 		if (!app) return false;
-		root = el("section", { class: "hg-root", "aria-label": t("hongguo 播放器", "hongguo player"), hidden: "" });
+		root = el("section", { class: "hg-root", "aria-label": t("playerAria"), hidden: "" });
 		root.append(el("style", { text: css }));
-		floatingButton = button(t("悬浮", "Float"), () => setMode("floating"), { "aria-pressed": "false" });
-		splitButton = button(t("分屏", "Split"), () => setMode("split"), { "aria-pressed": "false" });
-		sideFullscreenButton = button(t("侧边全屏", "Side fullscreen"), () => toggleSideFullscreen(), {
+		floatingButton = button(t("modeFloat"), () => setMode("floating"), { "aria-pressed": "false" });
+		splitButton = button(t("modeSplit"), () => setMode("split"), { "aria-pressed": "false" });
+		sideFullscreenButton = button(t("sideFullscreen"), () => toggleSideFullscreen(), {
 			"aria-pressed": "false",
-			title: t("侧边全屏", "Side fullscreen"),
-			"aria-label": t("侧边全屏", "Side fullscreen"),
+			title: t("sideFullscreen"),
+			"aria-label": t("sideFullscreen"),
 		});
 		miniButton = button(
 			icon("mini"),
@@ -376,7 +381,7 @@ export function createPlayer(host, options = {}) {
 				state.mini = !state.mini;
 				layout();
 			},
-			{ class: "hg-icon", title: t("精简播放器", "Compact player"), "aria-label": t("精简播放器", "Compact player") },
+			{ class: "hg-icon", title: t("compactPlayer"), "aria-label": t("compactPlayer") },
 		);
 		const head = el(
 			"header",
@@ -385,12 +390,12 @@ export function createPlayer(host, options = {}) {
 				"div",
 				{ class: "hg-brand" },
 				icon("play"),
-				t("红果", "Drama"),
-				el("span", { class: "hg-label" }, t("短剧放映室", "HONGGUO")),
+				t("brandName"),
+				el("span", { class: "hg-label" }, t("brandTagline")),
 			),
 			el(
 				"div",
-				{ class: "hg-modes", role: "group", "aria-label": t("播放布局", "Player layout") },
+				{ class: "hg-modes", role: "group", "aria-label": t("layoutGroup") },
 				floatingButton,
 				splitButton,
 				sideFullscreenButton,
@@ -398,15 +403,15 @@ export function createPlayer(host, options = {}) {
 			miniButton,
 			button(icon("close"), close, {
 				class: "hg-icon",
-				title: t("关闭并暂停", "Close and pause"),
-				"aria-label": t("关闭并暂停", "Close and pause"),
+				title: t("closeAndPause"),
+				"aria-label": t("closeAndPause"),
 			}),
 		);
 		video = el("video", {
 			controls: "",
 			playsinline: "",
 			preload: "metadata",
-			"aria-label": t("短剧视频", "Drama video"),
+			"aria-label": t("videoAria"),
 		});
 		video.volume = Math.max(0, Math.min(1, Number.isFinite(prefs.volume) ? prefs.volume : 0.8));
 		video.playbackRate = [0.75, 1, 1.25, 1.5, 2].includes(prefs.speed) ? prefs.speed : 1;
@@ -433,7 +438,7 @@ export function createPlayer(host, options = {}) {
 					class: `hg-resize hg-resize-${edge}`,
 					"data-edge": edge,
 					onpointerdown: (event) => startGesture(event, edge),
-					title: t("拖动边缘调整大小", "Drag an edge to resize"),
+					title: t("resizeEdge"),
 				}),
 			),
 		);
@@ -450,7 +455,7 @@ export function createPlayer(host, options = {}) {
 			void prepareNext();
 		});
 		video.addEventListener("waiting", () => {
-			if (state.source) overlay.textContent = t("正在缓冲…", "Buffering…");
+			if (state.source) overlay.textContent = t("buffering");
 		});
 		video.addEventListener("pause", saveProgress);
 		video.addEventListener("timeupdate", () => {
@@ -470,13 +475,7 @@ export function createPlayer(host, options = {}) {
 		video.addEventListener("error", () => {
 			if (state.source) {
 				overlay.textContent = "";
-				message(
-					t(
-						"视频加载失败，请重试或检查网络与 FFmpeg。",
-						"Video failed to load. Retry or check the network and FFmpeg.",
-					),
-					true,
-				);
+				message(t("videoLoadFailed"), true);
 				renderControls();
 			}
 		});
@@ -490,14 +489,14 @@ export function createPlayer(host, options = {}) {
 	function renderControls() {
 		if (!controls) return;
 		const index = state.episodes.findIndex((row) => row.id === state.current?.id);
-		const prev = button(t("上一集", "Previous"), () => adjacent(-1));
+		const prev = button(t("prevEpisode"), () => adjacent(-1));
 		prev.disabled = index <= 0;
-		const next = button(t("下一集", "Next"), () => adjacent(1));
+		const next = button(t("nextEpisode"), () => adjacent(1));
 		next.disabled = index < 0 || index >= state.episodes.length - 1;
 		const speed = el(
 			"select",
 			{
-				"aria-label": t("播放速度", "Playback speed"),
+				"aria-label": t("playbackSpeed"),
 				onchange: (event) => {
 					prefs.speed = Number(event.target.value);
 					video.playbackRate = prefs.speed;
@@ -520,15 +519,15 @@ export function createPlayer(host, options = {}) {
 			next,
 			speed,
 			button(icon("pip"), pip, {
-				title: t("系统画中画", "System picture-in-picture"),
-				"aria-label": t("系统画中画", "System picture-in-picture"),
+				title: t("systemPip"),
+				"aria-label": t("systemPip"),
 			}),
 		];
 		if (state.sources.length > 1) {
 			const sources = el(
 				"select",
 				{
-					"aria-label": t("清晰度", "Quality"),
+					"aria-label": t("quality"),
 					onchange: (event) => {
 						const index = Number(event.target.value);
 						const selected = state.sources[index];
@@ -560,20 +559,16 @@ export function createPlayer(host, options = {}) {
 		});
 		preload.checked = prefs.preloadNext !== false;
 		items.push(
-			button(t("重试", "Retry"), () => play(state.current, video.currentTime)),
+			button(t("retry"), () => play(state.current, video.currentTime)),
 			el(
 				"div",
 				{ class: "hg-options" },
-				el("label", { class: "hg-auto" }, auto, t("自动连播", "Auto-next")),
-				el("label", { class: "hg-auto hg-preload" }, preload, t("预载下一集", "Preload next")),
+				el("label", { class: "hg-auto" }, auto, t("autoNext")),
+				el("label", { class: "hg-auto hg-preload" }, preload, t("preloadNext")),
 				el(
 					"span",
 					{ class: "hg-preload-state hg-subtle", role: "status" },
-					state.preloadState === "ready"
-						? t("下一集已就绪", "Next episode ready")
-						: state.preloadState === "loading"
-							? t("准备下一集…", "Preparing next…")
-							: "",
+					state.preloadState === "ready" ? t("nextReady") : state.preloadState === "loading" ? t("preparingNext") : "",
 				),
 			),
 		);
@@ -594,7 +589,7 @@ export function createPlayer(host, options = {}) {
 					script.onerror = () => {
 						script.remove();
 						pendingScripts.delete(kind);
-						reject(new Error(t("播放器组件加载失败", "Player component failed to load")));
+						reject(new Error(t("vendorLoadFailed")));
 					};
 					root.append(script);
 				}),
@@ -636,8 +631,8 @@ export function createPlayer(host, options = {}) {
 		lastSaved = resumeAt;
 		player.hidden = false;
 		title.textContent = state.series.title;
-		subtitle.textContent = t(`第 ${episode.number ?? "?"} 集`, `Episode ${episode.number ?? "?"}`);
-		overlay.textContent = t("正在准备视频…", "Preparing video…");
+		subtitle.textContent = t("episodeNumber", { n: episode.number ?? "?" });
+		overlay.textContent = t("preparingVideo");
 		message();
 		layout();
 		render();
@@ -654,7 +649,7 @@ export function createPlayer(host, options = {}) {
 			}
 			if (resolvedIndex < 0) resolvedIndex = 0;
 			const source = state.sources[resolvedIndex] ?? state.sources[0];
-			if (!source) throw new Error(t("没有可用的视频线路", "No playable video source"));
+			if (!source) throw new Error(t("noSource"));
 			state.source = source;
 			if (source?.definition || source?.quality) {
 				prefs.quality = source.definition ?? source.quality;
@@ -669,7 +664,7 @@ export function createPlayer(host, options = {}) {
 			} catch {
 				if (version === playVersion) {
 					overlay.textContent = "";
-					message(t("点击视频播放按钮开始观看", "Press play on the video to start"));
+					message(t("pressPlay"));
 				}
 			}
 		} catch (error) {
@@ -690,7 +685,7 @@ export function createPlayer(host, options = {}) {
 			{ class: "hg-empty" },
 			icon("play"),
 			el("div", { text }),
-			retry ? button(t("重试", "Retry"), retry) : null,
+			retry ? button(t("retry"), retry) : null,
 		);
 	}
 	function render() {
@@ -701,7 +696,7 @@ export function createPlayer(host, options = {}) {
 				{ class: "hg-episodes" },
 				state.episodes.map((episode, index) => {
 					const btn = button(String(episode.number ?? index + 1), () => play(episode), {
-						title: episode.title || t(`第 ${episode.number ?? index + 1} 集`, `Episode ${episode.number ?? index + 1}`),
+						title: episode.title || t("episodeNumber", { n: episode.number ?? index + 1 }),
 						"aria-current": String(state.current?.id === episode.id),
 					});
 					btn.disabled = episode.playable === false;
@@ -718,35 +713,33 @@ export function createPlayer(host, options = {}) {
 							state.page = "library";
 							render();
 						},
-						{ "aria-label": t("返回剧场", "Back to library") },
+						{ "aria-label": t("backToLibrary") },
 					),
 					el("div", { class: "hg-title", text: state.series?.title ?? "" }),
 					el("span", {
 						class: "hg-subtle",
-						text: t(`${state.episodes.length} 集`, `${state.episodes.length} episodes`),
+						text: t("episodeCount", { n: state.episodes.length }),
 					}),
 				),
 				state.busy
-					? empty(t("正在加载剧集…", "Loading episodes…"))
+					? empty(t("loadingEpisodes"))
 					: state.episodes.length
 						? episodes
-						: empty(t("暂时没有剧集", "No episodes available"), () => openSeries(state.series)),
+						: empty(t("noEpisodes"), () => openSeries(state.series)),
 			);
 			return;
 		}
 		const actors = state.searchType === "actor";
 		const input = el("input", {
 			type: "search",
-			placeholder: actors
-				? t("搜索演员姓名", "Search actors by name")
-				: t("搜索剧名或关键词", "Search dramas or keywords"),
-			"aria-label": actors ? t("搜索演员", "Search actors") : t("搜索短剧", "Search dramas"),
+			placeholder: actors ? t("searchActorPlaceholder") : t("searchDramaPlaceholder"),
+			"aria-label": actors ? t("searchActorAria") : t("searchDramaAria"),
 			value: state.query,
 		});
 		const searchType = el(
 			"select",
 			{
-				"aria-label": t("搜索类型", "Search type"),
+				"aria-label": t("searchType"),
 				onchange: (event) => {
 					state.searchType = event.target.value;
 					state.query = input.value.trim();
@@ -755,8 +748,8 @@ export function createPlayer(host, options = {}) {
 					loadList();
 				},
 			},
-			el("option", { value: "drama" }, t("剧名", "Drama")),
-			el("option", { value: "actor" }, t("演员", "Actor")),
+			el("option", { value: "drama" }, t("typeDrama")),
+			el("option", { value: "actor" }, t("typeActor")),
 		);
 		searchType.value = state.searchType;
 		const form = el(
@@ -773,14 +766,14 @@ export function createPlayer(host, options = {}) {
 			},
 			searchType,
 			input,
-			button(icon("search"), () => {}, { type: "submit", class: "hg-primary", "aria-label": t("搜索", "Search") }),
+			button(icon("search"), () => {}, { type: "submit", class: "hg-primary", "aria-label": t("search") }),
 		);
 		const toolbar = el("div", { class: "hg-toolbar" }, form);
 		const tabs = el(
 			"div",
 			{ class: "hg-tabs" },
 			button(
-				t("推荐剧场", "Discover"),
+				t("tabDiscover"),
 				() => {
 					state.tab = "recommend";
 					state.query = "";
@@ -791,7 +784,7 @@ export function createPlayer(host, options = {}) {
 				{ "aria-pressed": String(state.tab === "recommend" && !state.query && !state.actor) },
 			),
 			button(
-				t("观看记录", "History"),
+				t("tabHistory"),
 				() => {
 					saveProgress();
 					state.tab = "history";
@@ -803,7 +796,7 @@ export function createPlayer(host, options = {}) {
 		if (state.current)
 			tabs.append(
 				button(
-					t("正在播放", "Now playing"),
+					t("tabNowPlaying"),
 					() => {
 						state.page = "series";
 						render();
@@ -834,13 +827,13 @@ export function createPlayer(host, options = {}) {
 						}),
 					);
 				if (item.episodes && !actor)
-					poster.append(el("span", { class: "hg-poster-tag", text: t(`${item.episodes}集`, `${item.episodes} ep`) }));
+					poster.append(el("span", { class: "hg-poster-tag", text: t("episodeBadge", { n: item.episodes }) }));
 				const record = history[item.id];
 				const meta = actor
-					? t("查看参演作品", "View dramas")
+					? t("viewWorks")
 					: record
-						? t(`续播第 ${record.number ?? "?"} 集`, `Resume episode ${record.number ?? "?"}`)
-						: t("点击选集", "Choose an episode");
+						? t("resumeEpisode", { n: record.number ?? "?" })
+						: t("chooseEpisode");
 				return button(
 					[
 						poster,
@@ -854,17 +847,17 @@ export function createPlayer(host, options = {}) {
 		);
 		const emptyText =
 			state.tab === "history"
-				? t("看过的短剧会出现在这里", "Your watched dramas will appear here")
+				? t("emptyHistory")
 				: state.actor
-					? t("暂无公开参演作品", "No public dramas found for this actor")
+					? t("emptyActorWorks")
 					: actors
 						? state.query
-							? t("没有找到演员，试试完整姓名", "No actors found. Try their full name.")
-							: t("输入演员姓名，查看参演短剧", "Enter an actor's name to find their dramas")
-						: t("没有找到短剧，试试其他关键词", "No dramas found. Try another search.");
+							? t("emptyActorNotFound")
+							: t("emptyActorPrompt")
+						: t("emptyDramas");
 		const content =
 			state.busy && !rows.length
-				? empty(t("正在加载…", "Loading…"))
+				? empty(t("loading"))
 				: rows.length
 					? cards
 					: empty(emptyText, state.tab === "history" || (actors && !state.query) ? null : () => loadList());
@@ -880,14 +873,14 @@ export function createPlayer(host, options = {}) {
 							state.actor = null;
 							loadList();
 						},
-						{ "aria-label": t("返回演员搜索", "Back to actors") },
+						{ "aria-label": t("backToActors") },
 					),
-					el("div", { class: "hg-title", text: t(`${state.actor.name}的作品`, `Dramas by ${state.actor.name}`) }),
+					el("div", { class: "hg-title", text: t("actorWorks", { name: state.actor.name }) }),
 				),
 			);
 		body.append(content);
 		if (state.hasMore && state.tab !== "history") {
-			const more = button(state.busy ? t("加载中…", "Loading…") : t("加载更多", "Load more"), () => loadList(true));
+			const more = button(state.busy ? t("loadingBusy") : t("loadMore"), () => loadList(true));
 			more.disabled = state.busy;
 			body.append(el("div", { class: "hg-more" }, more));
 		}
@@ -963,6 +956,7 @@ export function createPlayer(host, options = {}) {
 			state.series = {
 				...item,
 				...data.series,
+				// "未命名短剧" is the server-side placeholder title (data contract, not UI copy)
 				title: data.series?.title && data.series.title !== "未命名短剧" ? data.series.title : item.title,
 				cover: data.series?.cover || item.cover,
 			};
@@ -1000,13 +994,7 @@ export function createPlayer(host, options = {}) {
 			configLoaded = true;
 			void api("config")
 				.then((config) => {
-					if (!config.ffmpegAvailable && !destroyed)
-						message(
-							t(
-								"部分视频需要 FFmpeg，可在插件设置中配置路径",
-								"Some videos need FFmpeg. Configure its path in plugin settings.",
-							),
-						);
+					if (!config.ffmpegAvailable && !destroyed) message(t("ffmpegHint"));
 				})
 				.catch(() => {});
 		}

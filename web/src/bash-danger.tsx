@@ -1,4 +1,5 @@
 import type { ReactNode } from "react";
+import type { Translate } from "./i18n";
 import type { UiApprovalHit } from "./types";
 import { DEFAULT_APPROVAL_RULES } from "../../server/approval-default-rules.js";
 
@@ -67,7 +68,7 @@ export function findDangerousBashSegments(command: string, hits?: UiApprovalHit[
 	return mergeSegments(found);
 }
 
-export function renderHighlightedCommand(command: string, hits?: UiApprovalHit[]): ReactNode {
+export function renderHighlightedCommand(command: string, t: Translate, hits?: UiApprovalHit[]): ReactNode {
 	const segments = findDangerousBashSegments(command, hits);
 	if (segments.length === 0) return command;
 
@@ -79,7 +80,7 @@ export function renderHighlightedCommand(command: string, hits?: UiApprovalHit[]
 		}
 		const highlightedText = command.slice(seg.start, seg.end);
 		parts.push(
-			<mark key={i} className="bash-danger-hit" title={seg.label ?? "高危命令片段"}>
+			<mark key={i} className="bash-danger-hit" title={seg.label ?? t("bashDangerSegment")}>
 				{highlightedText}
 			</mark>,
 		);

@@ -15,7 +15,7 @@ import {
 	FiPlus,
 } from "react-icons/fi";
 import { appSend } from "../app-globals";
-import { isZhLocale, useLocale, useT } from "../i18n";
+import { useT } from "../i18n";
 import type { PlanState, PlanStep, PlanStepStatus } from "../types";
 import { useCopyFeedback } from "../use-copy-feedback";
 
@@ -32,7 +32,6 @@ const NEXT_STATUS: Record<PlanStepStatus, PlanStepStatus> = {
 
 export function PlanBoard({ plan }: PlanBoardProps) {
 	const t = useT();
-	const isZh = isZhLocale(useLocale());
 	const [expanded, setExpanded] = useState(false);
 	const { copied, copy } = useCopyFeedback({ duration: 2000 });
 	const [editingId, setEditingId] = useState<string | null>(null);
@@ -51,7 +50,7 @@ export function PlanBoard({ plan }: PlanBoardProps) {
 	const activeStep = steps.find((s) => s.id === plan.activeStepId) ?? steps.find((s) => s.status === "in_progress");
 
 	const handleClearPlan = () => {
-		if (window.confirm(isZh ? "确定要清空当前任务计划看板吗？" : "Are you sure you want to clear the plan board?")) {
+		if (window.confirm(t("planBoardClearConfirm"))) {
 			appSend({
 				type: "plan_update",
 				steps: [],
@@ -188,11 +187,7 @@ export function PlanBoard({ plan }: PlanBoardProps) {
 					e.stopPropagation();
 					handleCycleStatus(stepId);
 				}}
-				title={
-					isZh
-						? "点击切换状态 (pending / in_progress / done / failed)"
-						: "Click to toggle status (pending / in_progress / done / failed)"
-				}
+				title={t("planBoardToggleStatusTip")}
 				style={{
 					display: "inline-flex",
 					alignItems: "center",

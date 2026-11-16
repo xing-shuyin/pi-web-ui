@@ -22,7 +22,8 @@ function fail(msg) {
 mkdirSync(plugDir, { recursive: true });
 for (const f of ["manifest.json", "index.mjs"]) cpSync(join(SRC, f), join(plugDir, f));
 mkdirSync(join(plugDir, "client"), { recursive: true });
-cpSync(join(SRC, "client", "entry.mjs"), join(plugDir, "client", "entry.mjs"));
+// entry.mjs 在运行期以相对路径 import ./i18n.mjs（词典），两个文件都要拷进去。
+cpSync(join(SRC, "client"), join(plugDir, "client"), { recursive: true });
 if (!existsSync(join(plugDir, "client", "entry.mjs"))) {
 	fail("client/entry.mjs 缺失——请先在 plugins/db-client 下 npm run build");
 	process.exit(1);
