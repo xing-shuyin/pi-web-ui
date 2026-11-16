@@ -2,14 +2,15 @@
 
 # 群組 / Bot / 跨裝置協作硬約束
 
-> 服務端架構與部署鏈路見 [`device-center.md`](device-center.zh-TW.md)（Hub 與本機聯結器、繫結與配對、部署）
-> 與 [`device-center-deployment.md`](device-center-deployment.zh-TW.md)；遠端桌面實現細節見 [`device-desktop.md`](device-desktop.zh-TW.md)；
+> 服務端架構與部署鏈路見 [`device-center.md`](device-center.md)（Hub 與本機聯結器、繫結與配對、部署）
+> 與 [`device-center-deployment.md`](device-center-deployment.md)；遠端桌面實現細節見 [`device-desktop.md`](device-desktop.md)；
 > 分塊檔案同步細節見 [`device-file-sync.md`](device-file-sync.md)。
+> 與單個 Bot 的私聊（`kind: "direct"` 的房間）與 Bot 獨立記憶見 [`agent-bot-design.md`](agent-bot-design.md)。
 > **本文只收錄「改程式碼時必須遵守」的硬約束**（原 `AGENTS.md`「裝置中心與跨裝置協作」整段遷入）。
 
 ## 1. 裝置中心入口與本機 Hub
 
-獨立 Hub 與本機聯結器位於 `server/device-center/`，部署與邊界見 [`device-center.md`](device-center.zh-TW.md)。主介面「裝置中心」為原生 `devices` 檢視（`DeviceCenter.tsx`），舊 `/devices` 重定向到該檢視；未繫結時通過程序內私有 loopback Hub 支援本機 Bot/群組（`local-hub.ts`，資料與外部繫結隔離），概覽保留群組管理及連線/建立引導，離線或請求失敗不得清空已知群組；本機 Hub 安裝走 `hub-setup.ts` 的 loopback 同源介面與獨立 Hub CLI，必須驗證引數、隔離資料目錄、互斥執行並在關閉時取消等待；配對介面僅允許迴環來源與同源寫入；群成員統一為 Bot，裝置僅負責承載與連線。
+獨立 Hub 與本機聯結器位於 `server/device-center/`，部署與邊界見 [`device-center.md`](device-center.md)。主介面「裝置中心」為原生 `devices` 檢視（`DeviceCenter.tsx`），舊 `/devices` 重定向到該檢視；未繫結時通過程序內私有 loopback Hub 支援本機 Bot/群組（`local-hub.ts`，資料與外部繫結隔離），概覽保留群組管理及連線/建立引導，離線或請求失敗不得清空已知群組；本機 Hub 安裝走 `hub-setup.ts` 的 loopback 同源介面與獨立 Hub CLI，必須驗證引數、隔離資料目錄、互斥執行並在關閉時取消等待；配對介面僅允許迴環來源與同源寫入；群成員統一為 Bot，裝置僅負責承載與連線。
 
 ## 2. 群任務派發與上下文
 
@@ -65,7 +66,7 @@ Hub 在首次傳送釋出 RPC 前，先通過現有 WAL 事務持久儲存不可
 
 ## 4. 併發、排程與進度推送
 
-同裝置預設 4 個執行 + 32 個等待，可配置併發 1–16、等待 0–128，按群公平排程；房間公平歷史持久化到裝置資料目錄 `task-scheduler-state.json`（防抖原子寫入、重啟恢復、損壞按中性啟動）；按 Bot 與真實路徑重疊工作區序列，獨立工作區可併發；同一會話繼續訊息在前輪終態後投遞，不打斷工具。群進度經有界、按 attempt 校驗的 SSE 推送，斷線回退輪詢並重同步；原生問卷與一次性工具審批使用任務繫結互動橋。請求/回覆繫結原始會話與 requestId，結果只喚醒原發起者，自動繼續共享任務鏈預算，人工新輸入可開新鏈。忙碌或停止未確認時禁止換根，舊檔案包不得落入新根。
+同裝置預設 4 個執行 + 32 個等待，可配置併發 1–16、等待 0–128，按群公平排程；房間公平歷史持久化到裝置資料目錄 `task-scheduler-state.json`（防抖原子寫入、重啟恢復、損壞按中性啟動）；按 Bot 與真實路徑重疊工作區序列，獨立工作區可併發；同一會話繼續訊息在前輪終態後投遞，不打斷工具。群進度經有界、按 attempt 校驗的 SSE 推送，斷線回退輪詢並重同步；原生問卷與一次性工具審批使用任務繫結互動橋。請求/回覆繫結原始會話與 requestId，結果只喚醒原發起者，自動繼續共享任務鏈預算，人工新輸入可開新鏈。忙碌或停止未確認時禁止換根，舊檔案包不得落入新根。Hub 側「哪個任務先下發」與裝置側「本地哪些任務真的併發跑」是兩層職責，見本文 §12「排程分層（Hub 派發 vs 裝置執行）」。
 
 ## 5. 檔案同步
 
@@ -85,11 +86,11 @@ v0.116.0 的舊 `task-recovery-outbox.json` 在完成時未儲存 leaseToken/gen
 
 ## 8. 交付與審查（交付 ≠ 驗收）
 
-群組開發交付獨立於執行狀態：`completed` 不代表驗收通過。交付與審查協議統一在 `server/protocol.ts`，Bot 交付必須繫結自身執行任務、穩定對話及完整提交 SHA；審查繫結交付 ID 與 SHA，禁止 Bot 自審，新版本不得沿用舊版本驗收。檢查來源固定為 `bot_reported`，不得聲稱宿主或 CI 已驗證，不自動執行宣告的命令或合併。人類可啟動獨立整合流水線：目標裝置固定 Bot 工作區建立隔離預合併，顯式選擇驗證命令，最後確認按目標 SHA 原子更新；目標分支在任何工作樹被檢出時拒絕，禁止 hard reset 或自動推送，整合會話與操作代次須持久並繫結 exact delivery/review/Bot revision。交付/審查先持久化，冪等衝突明確拒絕，有界歷史不得靜默淘汰。詳情見 [`device-center.md`](device-center.zh-TW.md)，完整迴歸 `tests/device-project-collaboration-test.mjs`。
+群組開發交付獨立於執行狀態：`completed` 不代表驗收通過。交付與審查協議統一在 `server/protocol.ts`，Bot 交付必須繫結自身執行任務、穩定對話及完整提交 SHA；審查繫結交付 ID 與 SHA，禁止 Bot 自審，新版本不得沿用舊版本驗收。檢查來源固定為 `bot_reported`，不得聲稱宿主或 CI 已驗證，不自動執行宣告的命令或合併。人類可啟動獨立整合流水線：目標裝置固定 Bot 工作區建立隔離預合併，顯式選擇驗證命令，最後確認按目標 SHA 原子更新；目標分支在任何工作樹被檢出時拒絕，禁止 hard reset 或自動推送，整合會話與操作代次須持久並繫結 exact delivery/review/Bot revision。交付/審查先持久化，冪等衝突明確拒絕，有界歷史不得靜默淘汰。詳情見 [`device-center.md`](device-center.md)，完整迴歸 `tests/device-project-collaboration-test.mjs`。
 
 ## 9. 遠端桌面
 
-裝置中心遠端桌面由 `desktop.ts` 經既有 WebSocket 傳輸原生 JPEG，`desktop-native.ts` 管 Windows/macOS 助手，`desktop-linux.ts` 管 Linux X11（ffmpeg/xdotool）；不再依賴 VNC/noVNC。只讀由服務端按連線強制，瀏覽器繪製 ACK 限制跨裝置待確認幀，斷開須釋放輸入。macOS 14+ 需螢幕錄製/輔助功能許可權，授權申請僅由裝置本機「裝置中心 → 本機遠端桌面」按鈕發起，遠端連線只檢查；`/api/device-desktop/local/*` 禁止經過 Hub/connector 中繼。Wayland 尚不支援；啟用狀態儲存在 `desktop-settings.json`。詳見 [`device-desktop.md`](device-desktop.zh-TW.md)。
+裝置中心遠端桌面由 `desktop.ts` 經既有 WebSocket 傳輸原生 JPEG，`desktop-native.ts` 管 Windows/macOS 助手，`desktop-linux.ts` 管 Linux X11（ffmpeg/xdotool）；不再依賴 VNC/noVNC。只讀由服務端按連線強制，瀏覽器繪製 ACK 限制跨裝置待確認幀，斷開須釋放輸入。macOS 14+ 需螢幕錄製/輔助功能許可權，授權申請僅由裝置本機「裝置中心 → 本機遠端桌面」按鈕發起，遠端連線只檢查；`/api/device-desktop/local/*` 禁止經過 Hub/connector 中繼。Wayland 尚不支援；啟用狀態儲存在 `desktop-settings.json`。詳見 [`device-desktop.md`](device-desktop.md)。
 
 ## 10. 群組 Webhook 整合
 
@@ -98,6 +99,7 @@ v0.116.0 的舊 `task-recovery-outbox.json` 在完成時未儲存 leaseToken/gen
 - **入站 Webhook**：每個群組可建立多個入站端點，生成獨立的安全 Token。外部系統（如 CI/CD、報警、指令碼）向 `/api/rooms/:id/webhooks/incoming/:webhookId?token=...` 傳送 HTTP POST JSON 請求（支援 `text`、`senderName`、`targetBotIds`、`replyToMessageId`）。若開啟 `allowBotTrigger`（預設），外部訊息按群規則自動分發給顯式提及或主 Bot（`primaryBotId`），喚醒 Bot 執行任務並在群內協作。
 - **出站 Webhook**：群組可配置多個外部通知地址，訂閱群事件（`message`、`task_completed`、`task_failed`、`delivery`）。事件產生時異步向外部發送 JSON 載荷；支援配置 `secret`，通過 `X-Pi-Signature: sha256=...` 附帶 HMAC-SHA256 簽名校驗。出站請求帶 5 秒超時保護與異常隔離，不阻斷主流程。
 - **Hub 中轉支援**：入站支援切換或配置公共 Hub 中轉地址（`hubRelayBaseUrl`），外部請求由公網 Hub 集中接收並排程給內網裝置上的 Bot；出站 Webhook 支援可選開關 `relayViaHub`，開啟時由 Hub 伺服器作為出口代理代發，關閉時供區域網內網直連模式使用。
+- **入站鑑權只認 webhook token**：取值與比對單源在 `server/device-center/hub-webhooks.ts`（`incomingWebhookToken` 支援 query `token` / `Authorization: Bearer` / `X-Webhook-Token` / body `token`，`secureCompareTokens` 定長比較），主 Web app 與 Hub 共用 `isSelfAuthenticatedWebhook` 判定。主 app 的登入閘門只放行這一條精確路徑（`POST /api/rooms/:id/webhooks/incoming/:webhookId`）：外部平臺不可能持有本機口令，把它歸進賬號登入會讓公網回撥恆 401；但也**只能**用這個判定，禁止放寬到整個 `/api/rooms`。守衛：`tests/unit/incoming-webhook-auth.test.ts`。
 
 ## 11. 群組獨立 AI Router 與外部工單
 
@@ -107,4 +109,17 @@ v0.116.0 的舊 `task-recovery-outbox.json` 在完成時未儲存 leaseToken/gen
 
 內建渠道模組 Superagent 0.1.3 將 GitHub / 飛書事件接入宿主工單服務並回寫原執行緒。每個外部事件獨立校驗授權，auto 工單不授權未通過作者白名單的 followup；人工授權僅綁定當前最新 `authorizedEventId`。初始工單描述保留，後續事件追加為證據，關閉 / 重開 / 合併事件不自動等於業務完成。飛書支援明文或 AES 加密的簽名 text 回撥，投遞不確定超過 45 分鐘需人工核對；渠道 mock 測試不代表真實渠道已聯通。
 
-統一入口是 **裝置連線與跨平臺協作**：裝置與連線、群組與工單、外部渠道。群組列表內可直接管理 AI Router 和工單；渠道介面內嵌宿主模組，不再增加獨立頂欄按鈕，也不顯示在普通外掛列表、市場或外掛開關中。完整職責、使用步驟、手動恢復、公開 webhook 邊界、分頁 / 上下文預算和恢復語義見 [群組獨立 AI Router 與 Superagent](group-orchestration.zh-TW.md)；渠道配置欄位見 [Superagent README](../plugins/superagent/README.zh-TW.md)。
+統一入口是 **裝置連線與跨平臺協作**：裝置與連線、群組與工單、外部渠道。群組列表內可直接管理 AI Router 和工單；渠道介面內嵌宿主模組，不再增加獨立頂欄按鈕，也不顯示在普通外掛列表、市場或外掛開關中。完整職責、使用步驟、手動恢復、公開 webhook 邊界、分頁 / 上下文預算和恢復語義見 [群組獨立 AI Router 與 Superagent](group-orchestration.md)；渠道配置欄位見 [Superagent README](../plugins/superagent/README.md)。
+
+## 12. 排程分層（Hub 派發 vs 裝置執行）
+
+「同一 Bot 不能併發」是一條共享語義，但兩層負責不同的事，**不是兩套重複佇列，也不應合併**：
+
+| 層         | 模組                                                                | 負責                               | 語義                                                                                                                                                               |
+| ---------- | ------------------------------------------------------------------- | ---------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Hub 派發層 | `server/device-center/hub-task-queue.ts`（純排序在 `bot-queue.ts`） | 決定哪個 `queued` 任務先下發到裝置 | 每 Bot 一個執行位；優先順序 0 人私聊 / 1 群內人訊息 / 2 自動觸發；同優先順序 FIFO；`BOT_QUEUE_MAX_PENDING=12`；中位數 ETA；只喚醒 `blockReason: "bot_busy"` 的任務 |
+| 裝置執行層 | `server/device-center/task-scheduler.ts`（`runtime.ts` 持有）       | 決定本地哪些任務真的併發跑         | 4 併發 / 32 等待、工作區重疊鎖、群公平、飢餓提升、停止未確認隔離                                                                                                   |
+
+`bot-queue.ts` 的 `sameBotConflict` 是兩層共用的衝突判定單源：`task-scheduler.ts` 的 `checkConflict` 與 `runtime.ts` 的 `conflicts` 都複用它；`activeTaskForBot` / `rankBotQueue` 只服務 Hub 派發層。Hub 的 `store.subscribe` 觸發 `createBotQueueDispatcher().drain()`，裝置側 `DeviceTaskScheduler.drain()` 是另一條獨立路徑，二者不互相呼叫。
+
+守衛：`tests/unit/hub-task-queue.test.ts`（派發仲裁）、`tests/unit/bot-queue.test.ts`（純排序與 ETA）、`tests/unit/device-center-resource-locks.test.ts`（裝置側鎖）。

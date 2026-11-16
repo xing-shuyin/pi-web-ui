@@ -144,9 +144,16 @@
         group fields); delete/share/import all reuse the preset channel (preset_export / preset_import /
         PresetShareModal), and an imported prompt-only JSON lands in the template library automatically. "In use" check:
         effectiveTemplate + the normalized override map + the promptDisabled set equal the server snapshot.
-    Assembly sources (switch-based compose template, no text box):
-        Each row = switch (whether it enters the prompt) + {{token}} + name/description + ↑↓ reordering.
-        Empty template = default template: the switches drive promptDisabled (same semantics as the old "enable" checkbox);
+    Prompt sources (single list: switch + Chinese name + one-liner + ↑↓; click a name to expand and edit in place):
+        Each row = switch (whether it enters the prompt) + Chinese name/one-line description + a 「已改|自动」
+        (modified|auto) label + ≈tokens + ↑↓.
+        Clicking the name expands: writable sources get an edit area (sub-heading promptSec_<token>_edit, hint
+        _hint, empty = automatic content) + a collapsible 「查看默认内容」(view default content) comparison (one click
+        fills it in); read-only sources only show the system-generated content and 「恢复默认」(restore default).
+        The expanded area spans the whole row (no left/right padding, only the input's own padding) —
+        .prompt-src-list / .prompt-src-body.
+        Template-string semantics are unchanged: the switches drive promptDisabled (same semantics as the old
+        "enable" checkbox);
         custom template: the template string is the single source of truth (collectTemplateTokens takes the order),
         switches = add/remove tokens, ↑↓ = swap neighbours; serialized with join("\n\n"), and zeroed back to "" when it
         exactly equals the default string (the zero-overhead default branch).
@@ -156,11 +163,13 @@
         source sections.
         setTemplateValue uses the same submission discipline as the old editor (send only when it differs from
         serverSettings, keep the draft until the acknowledgement).
-    Per-source override rows: token + description + override input (empty = automatic)
-        Per-source "restore default" button (clears that override); a row whose source is disabled by its switch is greyed out
     Global "restore default template and clear all overrides" button (still sends an empty string per token; an empty-object patch deletes nothing)
     "View the current full prompt" read-only preview = the composed render result
-    Message keys: promptTok_<token> / promptTok_<token>_desc + promptAssembly* / promptTemplate* (zh/en in sync)
+    Message keys: promptTok_<token> (name) / promptTok_<token>_desc (one-liner)
+        + promptSec_<token>_edit (edit-box sub-heading) / promptSec_<token>_hint (empty hint)
+        + promptSecEdited / promptSecShowDefault + promptAssembly* / promptTemplate*
+        (zh/en in sync; the other 12 language packs fall back to English by default, the Traditional Chinese pack
+        writes its own Traditional text)
 
     Saving and acknowledgement (source of truth web/src/settings-sync.ts, regression tests
     tests/settings-prompt-save-test.mjs + tests/unit/settings-sync.test.ts) — read the four rules before touching this:

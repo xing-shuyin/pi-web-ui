@@ -1,0 +1,1335 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Composer auto-height and viewport-occlusion remediation (4 complete designs with prototypes)</title>
+  <style>
+    :root {
+      --bg-base: #0b0f17;
+      --bg-surface: #131a26;
+      --bg-elevated: #1a2333;
+      --bg-elevated-hover: #222e42;
+      --border-subtle: rgba(255, 255, 255, 0.08);
+      --border-strong: rgba(255, 255, 255, 0.16);
+      --border-accent: #3b82f6;
+      --accent: #3b82f6;
+      --accent-soft: rgba(59, 130, 246, 0.15);
+      --accent-glow: rgba(59, 130, 246, 0.35);
+      --accent-contrast: #ffffff;
+      --text-main: #f8fafc;
+      --text-muted: #94a3b8;
+      --text-dim: #64748b;
+      --danger: #ef4444;
+      --danger-soft: rgba(239, 68, 68, 0.15);
+      --success: #10b981;
+      --success-soft: rgba(16, 185, 129, 0.15);
+      --warning: #f59e0b;
+      --warning-soft: rgba(245, 158, 11, 0.15);
+      --purple: #8b5cf6;
+      --purple-soft: rgba(139, 92, 246, 0.15);
+      --font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+      --font-mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+      --radius-sm: 8px;
+      --radius-md: 12px;
+      --radius-lg: 16px;
+      --shadow-lg: 0 12px 36px rgba(0, 0, 0, 0.4);
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      background: var(--bg-base);
+      color: var(--text-main);
+      font-family: var(--font-sans);
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      padding: 32px 20px 80px;
+      background-image: 
+        radial-gradient(ellipse 65% 50% at 50% -15%, rgba(59, 130, 246, 0.15), transparent),
+        radial-gradient(ellipse 40% 40% at 90% 85%, rgba(139, 92, 246, 0.1), transparent);
+    }
+
+    .container {
+      width: 100%;
+      max-width: 1200px;
+      display: flex;
+      flex-direction: column;
+      gap: 32px;
+    }
+
+    /* Top bar and background notes */
+    .header {
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+    .badge-pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 4px 12px;
+      background: var(--accent-soft);
+      border: 1px solid rgba(59, 130, 246, 0.3);
+      color: #93c5fd;
+      border-radius: 9999px;
+      font-size: 12px;
+      font-weight: 600;
+      width: fit-content;
+    }
+    .header h1 {
+      font-size: 28px;
+      font-weight: 800;
+      letter-spacing: -0.5px;
+      background: linear-gradient(135deg, #ffffff 40%, #94a3b8 100%);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+    }
+    .header p {
+      font-size: 14.5px;
+      color: var(--text-muted);
+      line-height: 1.6;
+    }
+
+    /* Core pathology card */
+    .diagnosis-card {
+      background: var(--bg-surface);
+      border: 1px solid var(--border-subtle);
+      border-radius: var(--radius-lg);
+      padding: 24px;
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+      box-shadow: var(--shadow-lg);
+    }
+    .diagnosis-title {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      font-size: 16px;
+      font-weight: 700;
+      color: #fca5a5;
+    }
+    .bug-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+      gap: 16px;
+    }
+    .bug-item {
+      background: rgba(239, 68, 68, 0.05);
+      border: 1px solid rgba(239, 68, 68, 0.2);
+      border-radius: var(--radius-md);
+      padding: 16px;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+    .bug-item h4 {
+      font-size: 14px;
+      font-weight: 600;
+      color: #f87171;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .bug-item p {
+      font-size: 12.5px;
+      color: var(--text-muted);
+      line-height: 1.5;
+    }
+    .bug-item code {
+      font-family: var(--font-mono);
+      font-size: 11.5px;
+      background: rgba(0, 0, 0, 0.35);
+      padding: 2px 6px;
+      border-radius: 4px;
+      color: #fca5a5;
+    }
+
+    /* Solution tabs */
+    .tab-bar {
+      display: flex;
+      gap: 8px;
+      background: var(--bg-surface);
+      padding: 6px;
+      border-radius: var(--radius-md);
+      border: 1px solid var(--border-subtle);
+      overflow-x: auto;
+    }
+    .tab-btn {
+      flex: 1;
+      min-width: 170px;
+      padding: 10px 16px;
+      background: transparent;
+      border: none;
+      border-radius: var(--radius-sm);
+      color: var(--text-muted);
+      font-size: 13.5px;
+      font-weight: 600;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      transition: all 0.2s;
+      white-space: nowrap;
+    }
+    .tab-btn:hover {
+      background: var(--bg-elevated);
+      color: var(--text-main);
+    }
+    .tab-btn.active {
+      background: var(--accent);
+      color: var(--accent-contrast);
+      box-shadow: 0 4px 14px var(--accent-glow);
+    }
+
+    /* Solution content panel */
+    .solution-panel {
+      display: none;
+      flex-direction: column;
+      gap: 24px;
+    }
+    .solution-panel.active {
+      display: flex;
+    }
+
+    /* Prototype interaction sandbox */
+    .sandbox-container {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 24px;
+      align-items: stretch;
+    }
+    @media (max-width: 960px) {
+      .sandbox-container {
+        grid-template-columns: 1fr;
+      }
+    }
+
+    /* Mock window screen */
+    .screen-mockup {
+      background: #0d1117;
+      border: 1px solid var(--border-strong);
+      border-radius: var(--radius-lg);
+      height: 580px;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+      box-shadow: var(--shadow-lg);
+      position: relative;
+    }
+    .screen-titlebar {
+      height: 38px;
+      background: #161b22;
+      border-bottom: 1px solid var(--border-subtle);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 0 14px;
+      font-size: 12px;
+      color: var(--text-dim);
+      user-select: none;
+    }
+    .titlebar-dots {
+      display: flex;
+      gap: 6px;
+    }
+    .titlebar-dot {
+      width: 10px;
+      height: 10px;
+      border-radius: 50%;
+    }
+    .dot-red { background: #ef4444; }
+    .dot-yellow { background: #f59e0b; }
+    .dot-green { background: #10b981; }
+
+    /* Message area (body) */
+    .chat-messages {
+      flex: 1 1 auto;
+      min-height: 80px;
+      overflow-y: auto;
+      padding: 18px;
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+      background: #090d14;
+    }
+    .chat-bubble {
+      max-width: 85%;
+      padding: 10px 14px;
+      border-radius: 12px;
+      font-size: 13px;
+      line-height: 1.5;
+    }
+    .bubble-user {
+      align-self: flex-end;
+      background: var(--accent);
+      color: var(--accent-contrast);
+      border-bottom-right-radius: 4px;
+    }
+    .bubble-ai {
+      align-self: flex-start;
+      background: #1e2638;
+      border: 1px solid var(--border-subtle);
+      color: var(--text-main);
+      border-bottom-left-radius: 4px;
+    }
+    .bubble-ai code {
+      font-family: var(--font-mono);
+      background: rgba(0, 0, 0, 0.3);
+      padding: 2px 5px;
+      border-radius: 4px;
+      color: #93c5fd;
+    }
+
+    /* Composer surround */
+    .composer-area {
+      flex: 0 0 auto;
+      background: #101622;
+      border-top: 1px solid var(--border-subtle);
+      padding: 10px 14px 14px;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      position: relative;
+    }
+
+    .quick-chips {
+      display: flex;
+      gap: 6px;
+      overflow-x: auto;
+      padding-bottom: 2px;
+    }
+    .chip {
+      background: #1a2333;
+      border: 1px solid var(--border-subtle);
+      color: var(--text-muted);
+      font-size: 11px;
+      padding: 3px 9px;
+      border-radius: 9999px;
+      white-space: nowrap;
+      cursor: pointer;
+    }
+    .chip:hover {
+      background: #232f44;
+      color: var(--text-main);
+    }
+
+    /* Real component styles inside the sandbox */
+    .composer-box {
+      background: #171f2e;
+      border: 1px solid var(--border-strong);
+      border-radius: 14px;
+      display: flex;
+      flex-direction: column;
+      position: relative;
+      transition: border-color 0.2s, box-shadow 0.2s;
+    }
+    .composer-box:focus-within {
+      border-color: var(--accent);
+      box-shadow: 0 0 0 2px var(--accent-soft);
+    }
+
+    /* Drag handle */
+    .drag-handle {
+      height: 12px;
+      width: 100%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      cursor: ns-resize;
+      user-select: none;
+      touch-action: none;
+    }
+    .drag-pill {
+      width: 38px;
+      height: 4px;
+      border-radius: 2px;
+      background: rgba(255, 255, 255, 0.2);
+      transition: all 0.2s;
+    }
+    .drag-handle:hover .drag-pill,
+    .drag-handle.dragging .drag-pill {
+      background: var(--accent);
+      width: 54px;
+      box-shadow: 0 0 8px var(--accent-glow);
+    }
+
+    /* Composer textarea */
+    .composer-textarea {
+      width: 100%;
+      background: transparent;
+      border: none;
+      outline: none;
+      color: var(--text-main);
+      font-family: var(--font-sans);
+      font-size: 13.5px;
+      line-height: 1.6;
+      padding: 6px 12px;
+      resize: none;
+      overflow-y: auto;
+    }
+    .composer-textarea::placeholder {
+      color: var(--text-dim);
+    }
+
+    /* Bottom toolbar */
+    .composer-foot {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 6px 10px;
+      border-top: 1px solid rgba(255, 255, 255, 0.05);
+    }
+    .foot-left {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .foot-right {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .btn-icon {
+      background: transparent;
+      border: 1px solid transparent;
+      color: var(--text-muted);
+      border-radius: 6px;
+      padding: 5px;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 12px;
+    }
+    .btn-icon:hover {
+      background: rgba(255, 255, 255, 0.06);
+      color: var(--text-main);
+    }
+    .btn-send {
+      width: 28px;
+      height: 28px;
+      border-radius: 50%;
+      background: var(--accent);
+      color: #fff;
+      border: none;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-weight: bold;
+    }
+
+    /* Side analysis and code */
+    .sandbox-guide {
+      background: var(--bg-surface);
+      border: 1px solid var(--border-subtle);
+      border-radius: var(--radius-lg);
+      padding: 24px;
+      display: flex;
+      flex-direction: column;
+      gap: 18px;
+    }
+    .guide-sec h3 {
+      font-size: 16px;
+      font-weight: 700;
+      color: var(--text-main);
+      margin-bottom: 8px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .guide-sec p {
+      font-size: 13.5px;
+      color: var(--text-muted);
+      line-height: 1.6;
+    }
+    .feature-list {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      margin-top: 8px;
+    }
+    .feature-point {
+      display: flex;
+      align-items: flex-start;
+      gap: 8px;
+      font-size: 13px;
+      color: var(--text-main);
+    }
+    .feature-point svg {
+      flex-shrink: 0;
+      margin-top: 3px;
+      color: var(--success);
+    }
+
+    .code-block {
+      background: #090d14;
+      border: 1px solid var(--border-subtle);
+      border-radius: var(--radius-md);
+      padding: 14px;
+      font-family: var(--font-mono);
+      font-size: 12px;
+      color: #cbd5e1;
+      overflow-x: auto;
+      line-height: 1.5;
+    }
+    .code-block .hl-kw { color: #f472b6; }
+    .code-block .hl-fn { color: #60a5fa; }
+    .code-block .hl-str { color: #34d399; }
+    .code-block .hl-num { color: #fbbf24; }
+    .code-block .hl-com { color: #64748b; font-style: italic; }
+
+    /* Sandbox-only controls */
+    .sandbox-ctrls {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      padding: 10px 14px;
+      background: #141b27;
+      border-radius: var(--radius-md);
+      border: 1px solid var(--border-subtle);
+      align-items: center;
+    }
+    .ctrl-tag {
+      font-size: 12px;
+      color: var(--text-dim);
+      margin-right: 4px;
+    }
+    .btn-action {
+      background: var(--bg-elevated);
+      border: 1px solid var(--border-subtle);
+      color: var(--text-main);
+      font-size: 12px;
+      padding: 5px 10px;
+      border-radius: 6px;
+      cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      transition: all 0.15s;
+    }
+    .btn-action:hover {
+      background: var(--bg-elevated-hover);
+      border-color: var(--border-strong);
+    }
+    .metric-badge {
+      font-family: var(--font-mono);
+      font-size: 11.5px;
+      background: rgba(59, 130, 246, 0.12);
+      border: 1px solid rgba(59, 130, 246, 0.25);
+      color: #93c5fd;
+      padding: 2px 8px;
+      border-radius: 4px;
+      margin-left: auto;
+    }
+
+    /* Solution 3: fullscreen immersive drawer/modal */
+    .zen-overlay {
+      position: absolute;
+      inset: 0;
+      background: rgba(0, 0, 0, 0.75);
+      backdrop-filter: blur(6px);
+      z-index: 50;
+      display: none;
+      align-items: center;
+      justify-content: center;
+      padding: 20px;
+    }
+    .zen-modal {
+      width: 100%;
+      height: 90%;
+      background: #131a26;
+      border: 1px solid var(--border-strong);
+      border-radius: var(--radius-lg);
+      display: flex;
+      flex-direction: column;
+      box-shadow: 0 20px 50px rgba(0, 0, 0, 0.6);
+      overflow: hidden;
+    }
+    .zen-head {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 12px 18px;
+      border-bottom: 1px solid var(--border-subtle);
+      font-size: 14px;
+      font-weight: 600;
+    }
+    .zen-textarea {
+      flex: 1;
+      background: transparent;
+      border: none;
+      outline: none;
+      padding: 18px;
+      color: #fff;
+      font-family: var(--font-mono);
+      font-size: 14px;
+      line-height: 1.7;
+      resize: none;
+    }
+    .zen-foot {
+      padding: 12px 18px;
+      border-top: 1px solid var(--border-subtle);
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    /* Solution comparison table */
+    .compare-table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 13px;
+      margin-top: 10px;
+    }
+    .compare-table th, .compare-table td {
+      border: 1px solid var(--border-subtle);
+      padding: 10px 14px;
+      text-align: left;
+    }
+    .compare-table th {
+      background: rgba(255, 255, 255, 0.03);
+      color: var(--text-muted);
+      font-weight: 600;
+    }
+    .compare-table tr:hover {
+      background: rgba(255, 255, 255, 0.02);
+    }
+  </style>
+</head>
+<body>
+<div data-docs-i18n-switch style="position:fixed;top:8px;right:12px;z-index:2147483647;font:12px/1.6 -apple-system,system-ui,sans-serif;background:rgba(15,17,22,.78);color:#fff;padding:4px 12px;border-radius:999px;box-shadow:0 2px 10px rgba(0,0,0,.35)"><a href="./composer-height-solutions.html" style="color:#fff;text-decoration:none">简体中文</a> · <strong>English</strong> · <a href="./composer-height-solutions.zh-TW.html" style="color:#fff;text-decoration:none">繁體中文</a></div>
+
+
+
+  <div class="container">
+    
+    <!-- Header description -->
+    <div class="header">
+      <div class="badge-pill">
+        <svg width="14" height="14" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"/></svg>
+        UX & architecture remediation plan
+      </div>
+      <h1>Composer height runaway & message-area occlusion remediation</h1>
+      <p>Four complete designs — root-cause analysis, interaction evolution, engineering rollout — plus interactive sandbox prototypes, answering the reported defect where the composer “keeps growing until it covers the messages, refuses to shrink back down, and is force-filled to a huge floor height even with no text”.</p>
+    </div>
+
+    <!-- Deep dissection of the root causes -->
+    <div class="diagnosis-card">
+      <div class="diagnosis-title">
+        <svg width="18" height="18" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"/></svg>
+        4 logic defects in the current code that blind every guard (why can't it shrink? why does empty content fill the screen?)
+      </div>
+      <div class="bug-grid">
+        <div class="bug-item">
+          <h4>1. Math.max creates an “increase-only, never-decrease” deadlock</h4>
+          <p>The code runs <code>Math.min(Math.max(scrollHeight, composerH), cap)</code>. Once long input pushes scrollHeight to 500px, dragging down to bring composerH to 150px does nothing at all — scrollHeight keeps pinning the height.</p>
+        </div>
+        <div class="bug-item">
+          <h4>2. A hard-coded 720px is detached from viewport safety</h4>
+          <p><code>COMPOSER_MAX_H = 720</code> is hard-coded. A 1080P or laptop viewport is often only 750–850px tall, so the composer plus its toolbar eat 100% of the viewport and squeeze the message area (.messages) down to 0px — completely invisible.</p>
+        </div>
+        <div class="bug-item">
+          <h4>3. localStorage persists a “ghost height”</h4>
+          <p>One drag upward — or one accidental touch — writes the floor height into localStorage. After that, clearing the text or starting a new conversation still opens the composer at a screen-filling 720px (as in the screenshot: no text, full screen), while “double-click to restore” hides on an invisible hairline nobody can find.</p>
+        </div>
+        <div class="bug-item">
+          <h4>4. Overlapping handle, unclickable zones</h4>
+          <p>The top drag strip sits at <code>opacity: 0</code>. Once the composer has grown to the top edge, the handle collides with and is crowded out by the quick-prompt pills, the cursor lands on a prompt chip instead, and the 14px sliver of a handle is impossible to hit.</p>
+        </div>
+      </div>
+    </div>
+
+    <!-- Solution tabs -->
+    <div class="tab-bar">
+      <button class="tab-btn active" onclick="switchTab(0)">
+        <span>Solution 1: viewport-elastic cap + free bidirectional resize</span>
+      </button>
+      <button class="tab-btn" onclick="switchTab(1)">
+        <span>Solution 2: split-pane physical dampening safety zone (Splitter)</span>
+      </button>
+      <button class="tab-btn" onclick="switchTab(2)">
+        <span>Solution 3: lightweight composer + immersive Zen modal (recommended)</span>
+      </button>
+      <button class="tab-btn" onclick="switchTab(3)">
+        <span>Solution 4: three-tier magnetic snap controller (quick switching)</span>
+      </button>
+    </div>
+
+    <!-- Solution 1 -->
+    <div class="solution-panel active" id="panel-0">
+      <div class="sandbox-ctrls">
+        <span class="ctrl-tag">Try it:</span>
+        <button class="btn-action" onclick="feedText(0, 'short')">Type a one-line phrase</button>
+        <button class="btn-action" onclick="feedText(0, 'medium')">Paste 6 lines of code</button>
+        <button class="btn-action" onclick="feedText(0, 'long')">Paste a 30-line prompt</button>
+        <button class="btn-action" onclick="clearText(0)">Clear text (watch it shrink back)</button>
+        <button class="btn-action" onclick="resetComposer(0)">↺ Reset height</button>
+        <div class="metric-badge" id="metric-0">Current height: 44px (10% of viewport)</div>
+      </div>
+
+      <div class="sandbox-container">
+        <!-- Simulator -->
+        <div class="screen-mockup" id="screen-0">
+          <div class="screen-titlebar">
+            <div class="titlebar-dots">
+              <span class="titlebar-dot dot-red"></span>
+              <span class="titlebar-dot dot-yellow"></span>
+              <span class="titlebar-dot dot-green"></span>
+            </div>
+            <span>pi-web-ui conversation window (messages stay visible)</span>
+            <span>Online</span>
+          </div>
+
+          <div class="chat-messages" id="msgs-0">
+            <div class="chat-bubble bubble-user">Please refactor the composer height calculation for me.</div>
+            <div class="chat-bubble bubble-ai">
+              Sure! The key is to break the one-way <code>Math.max(scrollHeight, composerH)</code> deadlock completely, so users can drag the composer larger or smaller no matter how much content it holds.
+            </div>
+            <div class="chat-bubble bubble-ai">
+              The message area must keep at least 50% of the space visible at all times. No matter how much you type, or how far you drag the handle up or down, the messages can never be covered or pushed out of view.
+            </div>
+          </div>
+
+          <div class="composer-area">
+            <div class="quick-chips">
+              <span class="chip" onclick="feedText(0, 'Continue')">Continue</span>
+              <span class="chip" onclick="feedText(0, 'Upload & publish')">Upload & publish</span>
+              <span class="chip" onclick="feedText(0, 'Handle PR')">Handle PR</span>
+              <span class="chip" onclick="feedText(0, 'Handle issue')">Handle issue</span>
+            </div>
+
+            <div class="composer-box" id="composer-box-0">
+              <!-- Explicitly visible drag handle -->
+              <div class="drag-handle" id="handle-0" title="Drag to resize, double-click to restore">
+                <div class="drag-pill"></div>
+              </div>
+
+              <textarea 
+                class="composer-textarea" 
+                id="ta-0" 
+                rows="1" 
+                placeholder="Message pi — paste a long text and watch it never cover the messages..."
+                oninput="handleInput(0)"
+              ></textarea>
+
+              <div class="composer-foot">
+                <div class="foot-left">
+                  <button class="btn-icon">📎</button>
+                  <button class="btn-icon">🎙️</button>
+                  <span style="font-size: 11.5px; color: var(--text-dim);">Gemini 3.8 Flash</span>
+                </div>
+                <div class="foot-right">
+                  <button class="btn-icon" onclick="resetComposer(0)" title="Restore height">↺</button>
+                  <button class="btn-send">↑</button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Design explanation and code -->
+        <div class="sandbox-guide">
+          <div class="guide-sec">
+            <h3>Solution 1 mechanism: percentage viewport cap + free bidirectional clipping</h3>
+            <p>The golden rules that kill both “grows but never shrinks” and “empty text fills the screen”:</p>
+            <div class="feature-list">
+              <div class="feature-point">
+                <svg width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/></svg>
+                <span><strong>Dynamic relative cap</strong>: drop 720px for <code>maxHeight = min(40vh, 320px)</code>, so the messages own ≥60% of the safe viewport at all times.</span>
+              </div>
+              <div class="feature-point">
+                <svg width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/></svg>
+                <span><strong>Real control in both directions</strong>: dragging sets a target cap, <code>userH</code>. When <code>userH &lt; scrollHeight</code>, inner vertical scrolling takes over (<code>overflow-y: auto</code>), so users can flatten the composer at any moment to read the messages above.</span>
+              </div>
+              <div class="feature-point">
+                <svg width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/></svg>
+                <span><strong>Smart empty-state collapse</strong>: with no content it always stays compact (40px); the height the user dragged only acts as a ceiling for long text. The giant empty box from the screenshot never comes back.</span>
+              </div>
+            </div>
+          </div>
+
+          <div class="code-block"><span class="hl-com">// ChatInput.tsx: rebuilt core height calculation</span>
+<span class="hl-kw">const</span> MAX_SAFE_CAP = Math.<span class="hl-fn">min</span>(window.innerHeight * <span class="hl-num">0.42</span>, <span class="hl-num">320</span>);
+
+<span class="hl-kw">let</span> targetH = COMPOSER_AUTO_H;
+<span class="hl-kw">if</span> (!text.trim()) {
+  targetH = COMPOSER_MIN_H; <span class="hl-com">// empty text must never fill the screen</span>
+} <span class="hl-kw">else if</span> (userH != <span class="hl-kw">null</span>) {
+  <span class="hl-com">// free downward compression; overflow goes to inner scroll</span>
+  targetH = Math.<span class="hl-fn">min</span>(userH, MAX_SAFE_CAP);
+} <span class="hl-kw">else</span> {
+  targetH = Math.<span class="hl-fn">min</span>(ta.scrollHeight, MAX_SAFE_CAP);
+}
+
+ta.style.height = <span class="hl-str">`${targetH}px`</span>;
+ta.style.overflowY = ta.scrollHeight > targetH ? <span class="hl-str">"auto"</span> : <span class="hl-str">"hidden"</span>;</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Solution 2 -->
+    <div class="solution-panel" id="panel-1">
+      <div class="sandbox-ctrls">
+        <span class="ctrl-tag">Try it:</span>
+        <button class="btn-action" onclick="feedText(1, 'long')">Paste a big chunk of code</button>
+        <button class="btn-action" onclick="dragToMax(1)">Drag it all the way up</button>
+        <button class="btn-action" onclick="resetComposer(1)">Restore default split</button>
+        <div class="metric-badge" id="metric-1">Protected message height: 280px (safe)</div>
+      </div>
+
+      <div class="sandbox-container">
+        <div class="screen-mockup" id="screen-1" style="display: flex; flex-direction: column;">
+          <div class="screen-titlebar">
+            <div class="titlebar-dots">
+              <span class="titlebar-dot dot-red"></span>
+              <span class="titlebar-dot dot-yellow"></span>
+              <span class="titlebar-dot dot-green"></span>
+            </div>
+            <span>Splitter with physical dampening isolation</span>
+          </div>
+
+          <!-- messages hold an absolute min-height guarantee -->
+          <div class="chat-messages" id="msgs-1" style="min-height: 240px; border-bottom: 2px dashed rgba(59, 130, 246, 0.4);">
+            <div class="chat-bubble bubble-ai">
+              <strong>[Physical safety zone]</strong> This region is rigidly protected by CSS <code>min-height: 240px</code> or <code>45%</code>.
+            </div>
+            <div class="chat-bubble bubble-ai">
+              However far the composer is stretched or however much you type, it is hard-truncated at this dashed line and can never intrude on the message safety zone.
+            </div>
+          </div>
+
+          <!-- Splitter bar -->
+          <div style="background: #1e293b; height: 6px; cursor: ns-resize; display: flex; align-items: center; justify-content: center;" id="splitter-handle-1">
+            <div style="width: 40px; height: 2px; background: #64748b;"></div>
+          </div>
+
+          <div class="composer-area" style="flex: 1; display: flex; flex-direction: column;" id="composer-area-1">
+            <div class="composer-box" style="flex: 1; display: flex; flex-direction: column;">
+              <textarea 
+                class="composer-textarea" 
+                id="ta-1" 
+                placeholder="Drag the splitter above and see..."
+                style="flex: 1;"
+                oninput="handleInput(1)"
+              ></textarea>
+              <div class="composer-foot">
+                <span style="font-size: 11px; color: var(--text-dim);">Strictly proportional split pane</span>
+                <button class="btn-send">↑</button>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="sandbox-guide">
+          <div class="guide-sec">
+            <h3>Solution 2 mechanism: Splitter as a rigid safety gate</h3>
+            <p>Treat the message stream and the composer as a genuine flex split view:</p>
+            <div class="feature-list">
+              <div class="feature-point">
+                <svg width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/></svg>
+                <span><strong>Rigid message floor</strong>: declare <code>.messages { min-height: 240px; flex: 1 1 auto; }</code> and the composer can never encroach on that region.</span>
+              </div>
+              <div class="feature-point">
+                <svg width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/></svg>
+                <span><strong>Physical dampening</strong>: while dragging the splitter, the moment the message area would drop below 240px the gesture locks into hard damping and cannot punch through.</span>
+              </div>
+              <div class="feature-point">
+                <svg width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/></svg>
+                <span><strong>Multi-tasking friendly on large screens</strong>: fits a widescreen IDE-style desktop; each pane owns its own scrollbar and responsibilities stay clean.</span>
+              </div>
+            </div>
+          </div>
+          <div class="code-block"><span class="hl-com">/* CSS rigid layout blocks intrusion */</span>
+.main-chat-container {
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+}
+.messages {
+  flex: 1 1 auto;
+  min-height: max(240px, 40vh); <span class="hl-com">/* message space that must never be violated */</span>
+  overflow-y: auto;
+}
+.composer-pane {
+  flex: 0 0 auto;
+  max-height: calc(100vh - 240px); <span class="hl-com">/* dynamically locked ceiling */</span>
+}</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Solution 3 -->
+    <div class="solution-panel" id="panel-2">
+      <div class="sandbox-ctrls">
+        <span class="ctrl-tag">Try it:</span>
+        <button class="btn-action" onclick="feedText(2, 'short')">Normal chat input (one line)</button>
+        <button class="btn-action" onclick="feedText(2, 'long')">Paste a very long chunk of code (the expand button wakes up)</button>
+        <button class="btn-action" onclick="toggleZen(true)">⛶ Open the Zen immersive editor</button>
+        <div class="metric-badge" id="metric-2">Main composer always compact, ≤ 140px</div>
+      </div>
+
+      <div class="sandbox-container">
+        <div class="screen-mockup" id="screen-2">
+          <div class="screen-titlebar">
+            <div class="titlebar-dots">
+              <span class="titlebar-dot dot-red"></span>
+              <span class="titlebar-dot dot-yellow"></span>
+              <span class="titlebar-dot dot-green"></span>
+            </div>
+            <span>Claude / Cursor style: lightweight input + modal decoupling</span>
+          </div>
+
+          <div class="chat-messages" id="msgs-2">
+            <div class="chat-bubble bubble-ai">
+              The main composer stays minimal and elegant (at most 5 visible lines), reading the conversation stays 100% uninterrupted, and nothing ever jumps or squeezes the viewport.
+            </div>
+            <div class="chat-bubble bubble-ai">
+              When you need a complex prompt or a long block of code, click the <strong>“⛶ Expand”</strong> button on the right, or press <code>Ctrl+E</code>, to enter the immersive full-featured editing drawer.
+            </div>
+          </div>
+
+          <div class="composer-area">
+            <div class="composer-box" id="composer-box-2">
+              <textarea 
+                class="composer-textarea" 
+                id="ta-2" 
+                rows="1" 
+                placeholder="Minimal composer, try typing a few lines..."
+                oninput="handleInput(2)"
+                style="max-height: 120px;"
+              ></textarea>
+              <div class="composer-foot">
+                <div class="foot-left">
+                  <span style="font-size: 11px; color: var(--text-dim);" id="word-count-2">0 characters</span>
+                </div>
+                <div class="foot-right">
+                  <button class="btn-icon" id="zen-btn" onclick="toggleZen(true)" title="Open full-screen editor (Ctrl+E)">⛶ Expand</button>
+                  <button class="btn-send">↑</button>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Zen immersive modal -->
+          <div class="zen-overlay" id="zen-overlay">
+            <div class="zen-modal">
+              <div class="zen-head">
+                <span>Immersive long-form / prompt editor</span>
+                <button class="btn-icon" onclick="toggleZen(false)">✕ Close</button>
+              </div>
+              <textarea class="zen-textarea" id="zen-ta" placeholder="Write long Markdown, prompts, or code comfortably here..."></textarea>
+              <div class="zen-foot">
+                <span style="font-size: 12px; color: var(--text-dim);" id="zen-stats">0 words · ~0 tokens</span>
+                <div style="display: flex; gap: 8px;">
+                  <button class="btn-action" onclick="toggleZen(false)">Cancel</button>
+                  <button class="btn-action" style="background: var(--accent); color:#fff;" onclick="applyZen()">Done & ready (Ctrl+Enter)</button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="sandbox-guide">
+          <div class="guide-sec">
+            <h3>Solution 3 mechanism: separate long-form editing from everyday chat (strongly recommended)</h3>
+            <p>The industry's end-state pattern, adopted by every modern top-tier AI app (Claude 3.7 Projects, Cursor Composer, GitHub Copilot):</p>
+            <div class="feature-list">
+              <div class="feature-point">
+                <svg width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/></svg>
+                <span><strong>Radically compact main view</strong>: the composer is pinned between 40px and 140px (no more than 5 lines) and never presses down on the messages.</span>
+              </div>
+              <div class="feature-point">
+                <svg width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/></svg>
+                <span><strong>Immersive space on demand</strong>: when you paste several lines or the text grows, the bottom right highlights “⛶ Expand editor”; the modal offers comfortable layout and token estimation.</span>
+              </div>
+              <div class="feature-point">
+                <svg width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/></svg>
+                <span><strong>Zero mental overhead</strong>: no more nervously tugging up and down inside a cramped, easily deformed chat box; the marginal-disaster class of auto-height bugs is eliminated at the root.</span>
+              </div>
+            </div>
+          </div>
+
+          <div class="code-block"><span class="hl-com">// two-way sync between the modal and the main composer</span>
+<span class="hl-kw">function</span> <span class="hl-fn">openZenEditor</span>() {
+  zenTextarea.value = chatTextarea.value;
+  zenModal.style.display = <span class="hl-str">"flex"</span>;
+}
+<span class="hl-kw">function</span> <span class="hl-fn">saveZenEditor</span>() {
+  chatTextarea.value = zenTextarea.value;
+  zenModal.style.display = <span class="hl-str">"none"</span>;
+  <span class="hl-fn">triggerComposerAutoResize</span>();
+}</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Solution 4 -->
+    <div class="solution-panel" id="panel-3">
+      <div class="sandbox-ctrls">
+        <span class="ctrl-tag">One-click tier switch:</span>
+        <button class="btn-action" onclick="setPresetTier(1)">Tier 1: compact single line (44px)</button>
+        <button class="btn-action" onclick="setPresetTier(2)">Tier 2: everyday standard (160px)</button>
+        <button class="btn-action" onclick="setPresetTier(3)">Tier 3: roomy large window (280px)</button>
+        <div class="metric-badge" id="metric-3">Current tier: 2 (everyday 160px)</div>
+      </div>
+
+      <div class="sandbox-container">
+        <div class="screen-mockup" id="screen-3">
+          <div class="screen-titlebar">
+            <div class="titlebar-dots">
+              <span class="titlebar-dot dot-red"></span>
+              <span class="titlebar-dot dot-yellow"></span>
+              <span class="titlebar-dot dot-green"></span>
+            </div>
+            <span>Three explicit magnetic tiers (zero mental overhead)</span>
+          </div>
+
+          <div class="chat-messages" id="msgs-3">
+            <div class="chat-bubble bubble-ai">
+              Most of the time users don't need pixel-exact free dragging; they just want to flip quickly between two modes: <strong>compact, to read history</strong> and <strong>expanded, to write long-form</strong>.
+            </div>
+            <div class="chat-bubble bubble-ai">
+              Look at the tier pills at the composer's top right: one click switches smoothly between 44px, 160px, and 280px.
+            </div>
+          </div>
+
+          <div class="composer-area">
+            <div class="composer-box" id="composer-box-3" style="height: 160px; transition: height 0.25s cubic-bezier(0.16, 1, 0.3, 1);">
+              <div style="display: flex; align-items: center; justify-content: space-between; padding: 6px 12px 2px; border-bottom: 1px solid rgba(255,255,255,0.04);">
+                <span style="font-size: 11px; color: var(--text-dim);">Height tier control</span>
+                <div style="display: flex; gap: 4px; background: rgba(0,0,0,0.3); padding: 2px; border-radius: 6px;">
+                  <button class="chip" id="tier-btn-1" style="border:none; padding:2px 8px;" onclick="setPresetTier(1)">Single</button>
+                  <button class="chip" id="tier-btn-2" style="border:none; padding:2px 8px; background:var(--accent); color:#fff;" onclick="setPresetTier(2)">Standard</button>
+                  <button class="chip" id="tier-btn-3" style="border:none; padding:2px 8px;" onclick="setPresetTier(3)">Large</button>
+                </div>
+              </div>
+
+              <textarea 
+                class="composer-textarea" 
+                id="ta-3" 
+                style="flex: 1;"
+                placeholder="Click a tier above to feel the smooth snap..."
+              ></textarea>
+
+              <div class="composer-foot">
+                <span style="font-size: 11.5px; color: var(--text-dim);">Smooth transition · never squeezes the viewport</span>
+                <button class="btn-send">↑</button>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="sandbox-guide">
+          <div class="guide-sec">
+            <h3>Solution 4 mechanism: discrete magnetic tiers</h3>
+            <p>Remove the uncertainty of pixel-level dragging and hand users explicit expectations:</p>
+            <div class="feature-list">
+              <div class="feature-point">
+                <svg width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/></svg>
+                <span><strong>Three fixed mental models</strong>: 44px (quick command), 160px (multi-line question), 280px (reviewing a large code block), hard-capped at 280px.</span>
+              </div>
+              <div class="feature-point">
+                <svg width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/></svg>
+                <span><strong>State at a glance</strong>: the top right always names the current tier and switching is one click, so the invisible “what floor height am I in?” confusion is gone.</span>
+              </div>
+              <div class="feature-point">
+                <svg width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/></svg>
+                <span><strong>Combine with drag snapping</strong>: if the user drags manually, release snaps smoothly to the nearest tier (magnetic snap) for a silky feel.</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Cross-solution comparison and recommendation table -->
+    <div class="diagnosis-card" style="margin-top: 10px;">
+      <h3 style="font-size: 17px; font-weight: 700;">Full engineering comparison of the four designs, with selection advice</h3>
+      <table class="compare-table">
+        <thead>
+          <tr>
+            <th>Dimension</th>
+            <th>Solution 1: viewport-elastic + free bidirectional resize</th>
+            <th>Solution 2: Splitter rigid safety gate</th>
+            <th>Solution 3: lightweight input + Zen modal (recommended)</th>
+            <th>Solution 4: discrete three-tier magnetic switching</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><strong>Message visibility guarantee</strong></td>
+            <td>★★★★★ (min(40vh, 320px))</td>
+            <td>★★★★★ (physical min-height 240px)</td>
+            <td>★★★★★+ (main box constant at ≤140px)</td>
+            <td>★★★★★ (capped at 280px)</td>
+          </tr>
+          <tr>
+            <td><strong>Freedom to shrink the height</strong></td>
+            <td>★★★★★ (flatten anytime; the wheel takes the overflow)</td>
+            <td>★★★★☆ (dragging bounded by the messages)</td>
+            <td>★★★★★ (main box stays small, modal goes full screen)</td>
+            <td>★★★★★ (one-click downshift)</td>
+          </tr>
+          <tr>
+            <td><strong>Immunity to empty-text blow-up</strong></td>
+            <td>Fully immune (empty state force-collapses)</td>
+            <td>Good</td>
+            <td>Absolutely immune (architectural decoupling)</td>
+            <td>Fully immune</td>
+          </tr>
+          <tr>
+            <td><strong>Retrofit cost (this repo)</strong></td>
+            <td><strong>Smallest</strong> (only the ChatInput.tsx calculation)</td>
+            <td>Medium (the flex split layout must be reworked)</td>
+            <td>Medium (one new full-screen modal component)</td>
+            <td>Small (add tier state)</td>
+          </tr>
+          <tr>
+            <td><strong>Rollout recommendation</strong></td>
+            <td><strong>First-choice quick fix</strong> (cures the root cause immediately)</td>
+            <td>Suited to a widescreen desktop-only mode</td>
+            <td><strong>Best end-state experience</strong> (pair it with Solution 1)</td>
+            <td>Solid fallback with good interaction</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+  </div>
+
+  <script>
+    // Switch solution tabs
+    function switchTab(index) {
+      document.querySelectorAll('.tab-btn').forEach((btn, i) => {
+        btn.classList.toggle('active', i === index);
+      });
+      document.querySelectorAll('.solution-panel').forEach((panel, i) => {
+        panel.classList.toggle('active', i === index);
+      });
+    }
+
+    // Preset text fixtures
+    const SAMPLE_TEXTS = {
+      short: "Could you look at this code and tell me where the performance bottlenecks are?",
+      medium: `function calculateTotal(items) {
+  return items.reduce((acc, cur) => {
+    return acc + cur.price * cur.count;
+  }, 0);
+}`,
+      long: `You are a senior systems architect and frontend performance expert.
+Review the core logic below and carry out a full architectural refactor across five dimensions:
+
+1. Viewport and layout intrusion protection (avoid a flex container without min-width: 0 blowing out)
+2. Bidirectional drag handle and damped boundary constraints (keep the message stream always visible)
+3. Text line numbering and batched rendering performance (avoid constant repaints with long text)
+4. Whitelist and fault-tolerance policy for localStorage state memory
+5. Keyboard shortcut chain for the modal long-form editor (Ctrl+E / Esc / Ctrl+Enter)
+
+Follow the rules above strictly and deliver a detailed refactor plan plus a test-case verification checklist.`
+    };
+
+    // Solution 1 interactive sandbox logic
+    const ta0 = document.getElementById('ta-0');
+    const box0 = document.getElementById('composer-box-0');
+    const handle0 = document.getElementById('handle-0');
+    const metric0 = document.getElementById('metric-0');
+    let userH0 = null;
+
+    function handleInput(idx) {
+      if (idx === 0) {
+        updateComposer0();
+      } else if (idx === 2) {
+        const val = document.getElementById('ta-2').value;
+        document.getElementById('word-count-2').textContent = `${val.length} characters`;
+        const btn = document.getElementById('zen-btn');
+        if (val.split('\n').length >= 4 || val.length > 120) {
+          btn.style.color = 'var(--accent)';
+          btn.style.fontWeight = 'bold';
+        } else {
+          btn.style.color = 'var(--text-muted)';
+          btn.style.fontWeight = 'normal';
+        }
+      }
+    }
+
+    function updateComposer0() {
+      const screenH = 580;
+      const MAX_SAFE = Math.min(screenH * 0.42, 260); // maximum safe cap (viewport protection)
+      const MIN_H = 38;
+
+      ta0.style.height = 'auto';
+      const scrollH = ta0.scrollHeight;
+
+      let h = MIN_H;
+      const isManualFixed = userH0 != null && userH0 > MIN_H + 4;
+
+      if (isManualFixed) {
+        // Mode 1: dragged taller by hand -> fixed height, no auto-resize; long content scrolls inside
+        h = Math.min(userH0, MAX_SAFE);
+      } else {
+        // Mode 2: starts at the minimum height -> auto-resize, growing with input up to MAX_SAFE
+        h = Math.min(Math.max(scrollH, MIN_H), MAX_SAFE);
+      }
+
+      ta0.style.height = `${h}px`;
+      ta0.style.overflowY = scrollH > h ? 'auto' : 'hidden';
+
+      const pct = Math.round((h / screenH) * 100);
+      const modeStr = isManualFixed ? "manual fixed mode (no auto-resize)" : "auto-resize from minimum height";
+      metric0.textContent = `${modeStr} · height: ${h}px (${pct}%)`;
+    }
+
+    // Drag handle logic (Solution 1)
+    let startY = 0;
+    let startH = 0;
+    let dragging = false;
+
+    handle0.addEventListener('pointerdown', (e) => {
+      e.preventDefault();
+      dragging = true;
+      handle0.classList.add('dragging');
+      startY = e.clientY;
+      startH = ta0.getBoundingClientRect().height;
+      handle0.setPointerCapture(e.pointerId);
+    });
+
+    handle0.addEventListener('pointermove', (e) => {
+      if (!dragging) return;
+      const delta = startY - e.clientY; // drag up to grow, down to shrink
+      const next = startH + delta;
+      if (next <= 38 + 4) {
+        userH0 = null; // dragged to the minimum: back to auto-resize
+      } else {
+        userH0 = next; // dragged taller: fixed manual height
+      }
+      updateComposer0();
+    });
+
+    handle0.addEventListener('pointerup', () => {
+      dragging = false;
+      handle0.classList.remove('dragging');
+    });
+
+    handle0.addEventListener('dblclick', () => {
+      resetComposer(0);
+    });
+
+    function resetComposer(idx) {
+      if (idx === 0) {
+        userH0 = null;
+        updateComposer0();
+      } else if (idx === 1) {
+        document.getElementById('ta-1').style.height = '70px';
+      }
+    }
+
+    function feedText(idx, key) {
+      const text = SAMPLE_TEXTS[key] || key;
+      const ta = document.getElementById(`ta-${idx}`);
+      if (ta) {
+        ta.value = text;
+        handleInput(idx);
+      }
+    }
+
+    function clearText(idx) {
+      const ta = document.getElementById(`ta-${idx}`);
+      if (ta) {
+        ta.value = '';
+        handleInput(idx);
+      }
+    }
+
+    // Solution 2 splitter dragging
+    const splitter = document.getElementById('splitter-handle-1');
+    let splitDragging = false;
+    let splitStartY = 0;
+    let splitAreaH = 0;
+
+    if (splitter) {
+      splitter.addEventListener('pointerdown', (e) => {
+        splitDragging = true;
+        splitStartY = e.clientY;
+        splitAreaH = document.getElementById('composer-area-1').getBoundingClientRect().height;
+        splitter.setPointerCapture(e.pointerId);
+      });
+      splitter.addEventListener('pointermove', (e) => {
+        if (!splitDragging) return;
+        const delta = splitStartY - e.clientY;
+        const newH = Math.min(260, Math.max(90, splitAreaH + delta));
+        document.getElementById('composer-area-1').style.height = `${newH}px`;
+      });
+      splitter.addEventListener('pointerup', () => {
+        splitDragging = false;
+      });
+    }
+
+    function dragToMax(idx) {
+      if (idx === 1) {
+        document.getElementById('composer-area-1').style.height = '260px';
+      }
+    }
+
+    // Solution 3 Zen modal
+    const zenOverlay = document.getElementById('zen-overlay');
+    const zenTa = document.getElementById('zen-ta');
+
+    function toggleZen(open) {
+      if (open) {
+        zenTa.value = document.getElementById('ta-2').value;
+        zenOverlay.style.display = 'flex';
+        updateZenStats();
+        zenTa.focus();
+      } else {
+        zenOverlay.style.display = 'none';
+      }
+    }
+
+    function updateZenStats() {
+      const len = zenTa.value.length;
+      const words = zenTa.value.trim() ? zenTa.value.trim().split(/\s+/).length : 0;
+      const estTokens = Math.round(len / 3.5);
+      document.getElementById('zen-stats').textContent = `${len} characters · ${words} words · est. ~${estTokens} tokens`;
+    }
+
+    zenTa.addEventListener('input', updateZenStats);
+
+    function applyZen() {
+      document.getElementById('ta-2').value = zenTa.value;
+      handleInput(2);
+      toggleZen(false);
+    }
+
+    // Solution 4 tier switching
+    function setPresetTier(tier) {
+      const heights = { 1: '48px', 2: '140px', 3: '260px' };
+      const labels = { 1: 'Tier 1 (compact single line 48px)', 2: 'Tier 2 (everyday standard 140px)', 3: 'Tier 3 (roomy large window 260px)' };
+      const box = document.getElementById('composer-box-3');
+      box.style.height = heights[tier];
+      document.getElementById('metric-3').textContent = `Current tier: ${labels[tier]}`;
+
+      for (let i = 1; i <= 3; i++) {
+        const btn = document.getElementById(`tier-btn-${i}`);
+        if (i === tier) {
+          btn.style.background = 'var(--accent)';
+          btn.style.color = '#fff';
+        } else {
+          btn.style.background = 'transparent';
+          btn.style.color = 'var(--text-muted)';
+        }
+      }
+    }
+
+    // Init
+    updateComposer0();
+  </script>
+</body>
+</html>
+
+

@@ -1,0 +1,1546 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>pi-web-ui group UI redesign proposals — interactive preview</title>
+<style>
+  :root {
+    --bg: #0d0e12;
+    --bg-elev: #14161c;
+    --bg-elev2: #1a1d26;
+    --bg-elev3: #222634;
+    --border: #262a35;
+    --border-soft: #1e2230;
+    --border-focus: #4f46e5;
+    --text: #e6e8ef;
+    --text-dim: #9aa1b4;
+    --text-faint: #6b7284;
+    --accent: #8b5cf6;
+    --accent-hover: #7c3aed;
+    --accent-contrast: #ffffff;
+    --accent-soft: rgba(139, 92, 246, 0.15);
+    --green: #10b981;
+    --green-soft: rgba(16, 185, 129, 0.15);
+    --red: #ef4444;
+    --red-soft: rgba(239, 68, 68, 0.12);
+    --amber: #f59e0b;
+    --amber-soft: rgba(245, 158, 11, 0.15);
+    --blue: #3b82f6;
+    --blue-soft: rgba(59, 130, 246, 0.15);
+    --mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+    --font: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    background: #08090c;
+    color: var(--text);
+    font-family: var(--font);
+    line-height: 1.5;
+    font-size: 13px;
+    height: 100vh;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+  }
+
+  /* 顶部全局方案切换器 */
+  .demo-toolbar {
+    background: #111318;
+    border-bottom: 1px solid var(--border);
+    padding: 10px 18px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+    flex-shrink: 0;
+    z-index: 50;
+  }
+  .demo-title-group {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+  }
+  .demo-logo {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-weight: 700;
+    font-size: 14px;
+    color: var(--text);
+  }
+  .demo-logo span {
+    background: var(--accent);
+    color: #fff;
+    padding: 2px 7px;
+    border-radius: 4px;
+    font-size: 11px;
+    font-weight: 600;
+  }
+  .demo-tabs {
+    display: flex;
+    background: var(--bg-elev);
+    padding: 3px;
+    border-radius: 8px;
+    border: 1px solid var(--border);
+    gap: 4px;
+  }
+  .demo-tab-btn {
+    background: transparent;
+    border: none;
+    color: var(--text-dim);
+    padding: 6px 14px;
+    border-radius: 6px;
+    font-size: 12.5px;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.15s ease;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+  .demo-tab-btn:hover {
+    color: var(--text);
+    background: rgba(255, 255, 255, 0.04);
+  }
+  .demo-tab-btn.active {
+    background: var(--accent);
+    color: var(--accent-contrast);
+    box-shadow: 0 2px 8px rgba(139, 92, 246, 0.35);
+  }
+  .demo-tab-btn .badge-rec {
+    background: #ff5e5e;
+    color: #fff;
+    font-size: 10px;
+    padding: 1px 5px;
+    border-radius: 4px;
+    font-weight: 600;
+    margin-left: 2px;
+  }
+  .demo-controls {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+  }
+  .toggle-highlight-label {
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    font-size: 12px;
+    color: var(--text-dim);
+    cursor: pointer;
+    user-select: none;
+  }
+  .toggle-highlight-label input {
+    cursor: pointer;
+    accent-color: var(--accent);
+  }
+
+  /* 方案视口容器 */
+  .workspace-viewport {
+    flex: 1;
+    display: flex;
+    position: relative;
+    overflow: hidden;
+    background: var(--bg);
+  }
+  .plan-view {
+    position: absolute;
+    inset: 0;
+    display: none;
+    flex-direction: column;
+    overflow: hidden;
+  }
+  .plan-view.active {
+    display: flex;
+  }
+
+  /* 方案亮点与说明横条 */
+  .plan-summary-bar {
+    background: color-mix(in srgb, var(--accent) 8%, var(--bg-elev));
+    border-bottom: 1px solid color-mix(in srgb, var(--accent) 30%, var(--border));
+    padding: 8px 18px;
+    font-size: 12px;
+    color: var(--text-dim);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    flex-shrink: 0;
+  }
+  .plan-summary-bar strong {
+    color: var(--text);
+  }
+  .highlight-tag {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 2px 8px;
+    border-radius: 4px;
+    font-size: 11px;
+    background: rgba(255, 255, 255, 0.06);
+    border: 1px solid var(--border);
+    color: var(--text);
+  }
+
+  /* 通用群聊顶部 Header (基于真实风格增强) */
+  .dg-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 8px 18px;
+    border-bottom: 1px solid var(--border);
+    background: var(--bg-elev);
+    flex-shrink: 0;
+    gap: 12px;
+  }
+  .dg-head-left {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    min-width: 0;
+  }
+  .dg-head-title {
+    font-size: 14px;
+    font-weight: 600;
+    color: var(--text);
+    white-space: nowrap;
+  }
+  .dg-head-pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 11.5px;
+    padding: 3px 9px;
+    border-radius: 12px;
+    background: var(--bg-elev2);
+    border: 1px solid var(--border-soft);
+    color: var(--text-dim);
+  }
+  .dg-dot {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: var(--green);
+    box-shadow: 0 0 6px var(--green);
+  }
+  .dg-head-nav {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+  .dg-nav-tab {
+    background: transparent;
+    border: 1px solid transparent;
+    color: var(--text-dim);
+    padding: 5px 12px;
+    border-radius: 6px;
+    font-size: 12px;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    cursor: pointer;
+    transition: all 0.15s ease;
+  }
+  .dg-nav-tab:hover {
+    background: var(--bg-elev2);
+    color: var(--text);
+    border-color: var(--border-soft);
+  }
+  .dg-nav-tab.active {
+    background: var(--bg-elev2);
+    color: var(--text);
+    border-color: var(--border);
+    font-weight: 500;
+  }
+  .dg-nav-tab.attention {
+    border-color: color-mix(in srgb, var(--amber) 50%, transparent);
+    color: var(--amber);
+    background: color-mix(in srgb, var(--amber) 10%, transparent);
+  }
+  .dg-badge {
+    padding: 1px 6px;
+    border-radius: 10px;
+    font-size: 10.5px;
+    font-weight: 600;
+    background: var(--border);
+    color: var(--text);
+  }
+  .dg-badge.amber {
+    background: var(--amber);
+    color: #000;
+  }
+  .btn-back {
+    background: transparent;
+    border: 1px solid var(--border);
+    color: var(--text-dim);
+    padding: 5px 12px;
+    border-radius: 6px;
+    font-size: 12px;
+    cursor: pointer;
+    transition: all 0.15s;
+  }
+  .btn-back:hover {
+    background: var(--bg-elev2);
+    color: var(--text);
+  }
+
+  /* 顶部次级任务/状态条 */
+  .dg-task-strip {
+    background: #11141a;
+    border-bottom: 1px solid var(--border);
+    padding: 6px 18px;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    flex-shrink: 0;
+    overflow-x: auto;
+  }
+  .strip-label {
+    font-size: 11px;
+    color: var(--text-faint);
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    flex-shrink: 0;
+  }
+  .task-pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+    background: var(--bg-elev);
+    border: 1px solid var(--border);
+    padding: 3px 10px;
+    border-radius: 6px;
+    font-size: 11.5px;
+    color: var(--text);
+    cursor: pointer;
+    transition: border-color 0.15s;
+  }
+  .task-pill:hover {
+    border-color: var(--accent);
+  }
+  .task-pill .status-icon {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+  }
+  .status-icon.running { background: var(--accent); box-shadow: 0 0 6px var(--accent); animation: pulse 1.5s infinite; }
+  .status-icon.failed { background: var(--red); box-shadow: 0 0 6px var(--red); }
+  .status-icon.completed { background: var(--green); }
+  .task-pill .bot-tag {
+    color: var(--accent);
+    font-weight: 500;
+  }
+  .task-pill .task-content {
+    color: var(--text-dim);
+    max-width: 220px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .task-pill .detail-link {
+    color: var(--text-faint);
+    font-size: 10.5px;
+    margin-left: 2px;
+  }
+
+  @keyframes pulse {
+    0%, 100% { opacity: 1; transform: scale(1); }
+    50% { opacity: 0.4; transform: scale(1.2); }
+  }
+
+  /* 方案一专属：居中单栏沉浸流 */
+  .chat-stream-single {
+    flex: 1;
+    overflow-y: auto;
+    padding: 24px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+  }
+  .chat-stream-container {
+    width: 100%;
+    max-width: 860px;
+    display: flex;
+    flex-direction: column;
+    gap: 20px;
+  }
+
+  /* 消息卡片通用结构 */
+  .msg-item {
+    display: flex;
+    gap: 14px;
+    width: 100%;
+  }
+  .msg-avatar {
+    width: 34px;
+    height: 34px;
+    border-radius: 8px;
+    display: grid;
+    place-items: center;
+    font-weight: 600;
+    font-size: 13px;
+    flex-shrink: 0;
+  }
+  .msg-avatar.user {
+    background: #334155;
+    color: #e2e8f0;
+  }
+  .msg-avatar.bot {
+    background: color-mix(in srgb, var(--accent) 25%, #1e1e2d);
+    border: 1px solid color-mix(in srgb, var(--accent) 45%, transparent);
+    color: #c4b5fd;
+  }
+  .msg-avatar.bot-warn {
+    background: color-mix(in srgb, var(--red) 20%, #1e1e2d);
+    border: 1px solid color-mix(in srgb, var(--red) 45%, transparent);
+    color: #fca5a5;
+  }
+  .msg-main {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+  }
+  .msg-header {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 12px;
+  }
+  .msg-name {
+    font-weight: 600;
+    color: var(--text);
+  }
+  .msg-device-chip {
+    font-size: 11px;
+    color: var(--text-dim);
+    background: var(--bg-elev2);
+    padding: 1px 7px;
+    border-radius: 4px;
+    border: 1px solid var(--border-soft);
+  }
+  .msg-time {
+    color: var(--text-faint);
+    font-size: 11px;
+    margin-left: auto;
+  }
+  .msg-card {
+    background: var(--bg-elev);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 12px 16px;
+    color: var(--text);
+    font-size: 13px;
+    line-height: 1.6;
+    position: relative;
+  }
+  .msg-item.user .msg-card {
+    background: color-mix(in srgb, var(--accent) 7%, var(--bg-elev));
+    border-color: color-mix(in srgb, var(--accent) 25%, var(--border));
+  }
+
+  /* Mention 标签优化 */
+  .mention-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    background: color-mix(in srgb, var(--accent) 18%, transparent);
+    border: 1px solid color-mix(in srgb, var(--accent) 45%, transparent);
+    color: #c4b5fd;
+    padding: 1px 7px;
+    border-radius: 5px;
+    font-weight: 500;
+    font-size: 12px;
+    cursor: pointer;
+    vertical-align: middle;
+    transition: all 0.15s;
+  }
+  .mention-chip:hover {
+    background: color-mix(in srgb, var(--accent) 30%, transparent);
+    color: #fff;
+  }
+  .mention-chip .bot-icon {
+    font-size: 11px;
+  }
+  .mention-chip .device-sub {
+    font-size: 10px;
+    opacity: 0.75;
+  }
+
+  /* 结构化 Agent 异常/失败卡片 (彻底告别裸错误) */
+  .bot-error-card {
+    background: color-mix(in srgb, var(--red) 7%, var(--bg-elev));
+    border: 1px solid color-mix(in srgb, var(--red) 30%, var(--border));
+    border-radius: 8px;
+    overflow: hidden;
+  }
+  .bot-error-header {
+    background: color-mix(in srgb, var(--red) 12%, var(--bg-elev2));
+    border-bottom: 1px solid color-mix(in srgb, var(--red) 25%, var(--border));
+    padding: 8px 14px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+  }
+  .error-title {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 12.5px;
+    font-weight: 600;
+    color: #f87171;
+  }
+  .error-phase-badge {
+    font-size: 10.5px;
+    background: color-mix(in srgb, var(--red) 20%, transparent);
+    color: #fca5a5;
+    padding: 1px 6px;
+    border-radius: 4px;
+    font-family: var(--mono);
+  }
+  .bot-error-body {
+    padding: 12px 14px;
+    color: var(--text);
+    font-size: 12.5px;
+  }
+  .error-human-desc {
+    margin-bottom: 8px;
+    line-height: 1.5;
+  }
+  .error-details-box {
+    background: #090a0d;
+    border: 1px solid var(--border-soft);
+    border-radius: 5px;
+    padding: 8px 10px;
+    font-family: var(--mono);
+    font-size: 11px;
+    color: var(--text-dim);
+    margin-top: 8px;
+    overflow-x: auto;
+  }
+  .bot-error-actions {
+    background: rgba(0, 0, 0, 0.2);
+    border-top: 1px solid var(--border-soft);
+    padding: 8px 14px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-wrap: wrap;
+  }
+  .btn-action-primary {
+    background: var(--accent);
+    color: #fff;
+    border: none;
+    padding: 4px 12px;
+    border-radius: 5px;
+    font-size: 11.5px;
+    font-weight: 500;
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    transition: background 0.15s;
+  }
+  .btn-action-primary:hover {
+    background: var(--accent-hover);
+  }
+  .btn-action-secondary {
+    background: var(--bg-elev2);
+    color: var(--text);
+    border: 1px solid var(--border);
+    padding: 4px 10px;
+    border-radius: 5px;
+    font-size: 11.5px;
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+  }
+  .btn-action-secondary:hover {
+    background: var(--bg-elev3);
+  }
+
+  /* 通用底部输入区 */
+  .composer-wrapper {
+    background: var(--bg-elev);
+    border-top: 1px solid var(--border);
+    padding: 14px 20px;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    flex-shrink: 0;
+  }
+  .composer-target-selector {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 12px;
+  }
+  .target-badge {
+    background: var(--bg-elev2);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 3px 10px;
+    color: var(--text-dim);
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    cursor: pointer;
+  }
+  .target-badge.active {
+    background: color-mix(in srgb, var(--accent) 15%, var(--bg-elev2));
+    border-color: var(--accent);
+    color: #c4b5fd;
+    font-weight: 500;
+  }
+  .composer-box {
+    background: var(--bg-elev2);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 10px 14px;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    transition: border-color 0.15s;
+  }
+  .composer-box:focus-within {
+    border-color: var(--accent);
+  }
+  .composer-input {
+    background: transparent;
+    border: none;
+    outline: none;
+    color: var(--text);
+    font-family: var(--font);
+    font-size: 13px;
+    resize: none;
+    min-height: 48px;
+  }
+  .composer-input::placeholder {
+    color: var(--text-faint);
+  }
+  .composer-toolbar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    border-top: 1px solid rgba(255, 255, 255, 0.04);
+    padding-top: 6px;
+  }
+  .composer-tools-left {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+  .btn-comp-tool {
+    background: transparent;
+    border: 1px solid transparent;
+    color: var(--text-dim);
+    border-radius: 4px;
+    padding: 3px 8px;
+    font-size: 12px;
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+  }
+  .btn-comp-tool:hover {
+    background: rgba(255, 255, 255, 0.06);
+    color: var(--text);
+  }
+  .btn-send {
+    background: var(--accent);
+    color: #fff;
+    border: none;
+    width: 30px;
+    height: 30px;
+    border-radius: 6px;
+    display: grid;
+    place-items: center;
+    cursor: pointer;
+    transition: background 0.15s;
+  }
+  .btn-send:hover {
+    background: var(--accent-hover);
+  }
+
+  /* 方案二专属：双栏多智能体协作工作台 */
+  .workspace-dual-layout {
+    flex: 1;
+    display: flex;
+    overflow: hidden;
+    position: relative;
+  }
+  .dual-main-col {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    border-right: 1px solid var(--border);
+    overflow: hidden;
+  }
+  .dual-side-col {
+    width: 360px;
+    background: var(--bg-elev);
+    display: flex;
+    flex-direction: column;
+    flex-shrink: 0;
+    transition: width 0.2s ease;
+  }
+  .dual-side-col.collapsed {
+    width: 0;
+    border-left: none;
+    overflow: hidden;
+  }
+  .side-header {
+    padding: 10px 14px;
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    background: var(--bg-elev);
+  }
+  .side-tabs {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    background: var(--bg);
+    padding: 2px;
+    border-radius: 6px;
+    border: 1px solid var(--border-soft);
+  }
+  .side-tab-item {
+    background: transparent;
+    border: none;
+    color: var(--text-dim);
+    padding: 4px 9px;
+    font-size: 11.5px;
+    border-radius: 4px;
+    cursor: pointer;
+    transition: all 0.15s;
+    display: flex;
+    align-items: center;
+    gap: 4px;
+  }
+  .side-tab-item.active {
+    background: var(--bg-elev2);
+    color: var(--text);
+    font-weight: 500;
+  }
+  .side-tab-item .dot-badge {
+    width: 5px;
+    height: 5px;
+    border-radius: 50%;
+    background: var(--amber);
+  }
+  .side-content {
+    flex: 1;
+    overflow-y: auto;
+    padding: 14px;
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+  }
+
+  /* 侧栏卡片：协作 Bot 列表 */
+  .bot-status-card {
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 12px;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    transition: border-color 0.15s;
+  }
+  .bot-status-card:hover {
+    border-color: color-mix(in srgb, var(--accent) 50%, var(--border));
+  }
+  .bot-card-top {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+  }
+  .bot-identity {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .bot-name-text {
+    font-weight: 600;
+    color: var(--text);
+    font-size: 13px;
+  }
+  .bot-role-tag {
+    font-size: 10.5px;
+    color: var(--accent);
+    background: var(--accent-soft);
+    padding: 1px 6px;
+    border-radius: 4px;
+  }
+  .bot-card-meta {
+    font-size: 11.5px;
+    color: var(--text-dim);
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+  }
+  .bot-tools-row {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    flex-wrap: wrap;
+    margin-top: 4px;
+  }
+  .tool-micro-tag {
+    font-size: 10px;
+    background: var(--bg-elev2);
+    border: 1px solid var(--border-soft);
+    color: var(--text-faint);
+    padding: 1px 5px;
+    border-radius: 3px;
+    font-family: var(--mono);
+  }
+
+  /* 侧栏卡片：待办与交付事项 */
+  .delivery-item-card {
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 12px;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+  .delivery-item-card.needs-review {
+    border-left: 3px solid var(--amber);
+  }
+  .delivery-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+  }
+  .delivery-title {
+    font-weight: 500;
+    color: var(--text);
+    font-size: 12.5px;
+  }
+  .delivery-desc {
+    color: var(--text-dim);
+    font-size: 11.5px;
+    line-height: 1.4;
+  }
+  .delivery-actions {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    margin-top: 4px;
+  }
+
+  /* 方案三专属：任务流水线看板 */
+  .pipeline-header-bar {
+    background: #11141c;
+    border-bottom: 1px solid var(--border);
+    padding: 12px 18px;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+  }
+  .pipeline-title-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+  }
+  .pipeline-flow {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    overflow-x: auto;
+    padding-bottom: 4px;
+  }
+  .pipeline-node {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    background: var(--bg-elev);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 6px 12px;
+    font-size: 12px;
+    flex-shrink: 0;
+  }
+  .pipeline-node.done {
+    border-color: color-mix(in srgb, var(--green) 40%, var(--border));
+  }
+  .pipeline-node.failed {
+    border-color: color-mix(in srgb, var(--red) 50%, var(--border));
+    background: color-mix(in srgb, var(--red) 8%, var(--bg-elev));
+  }
+  .pipeline-node.waiting {
+    opacity: 0.6;
+    border-style: dashed;
+  }
+  .pipeline-arrow {
+    color: var(--text-faint);
+    font-size: 12px;
+  }
+
+  /* 标注模式提示标记 */
+  .diff-mark {
+    position: relative;
+  }
+  .diff-highlight {
+    outline: 2px dashed #38bdf8 !important;
+    outline-offset: 3px;
+    position: relative;
+  }
+  .diff-tag {
+    position: absolute;
+    top: -12px;
+    right: 0;
+    background: #0284c7;
+    color: #fff;
+    font-size: 10px;
+    padding: 1px 6px;
+    border-radius: 3px;
+    font-weight: 600;
+    z-index: 10;
+    pointer-events: none;
+    white-space: nowrap;
+    display: none;
+  }
+  body.show-highlights .diff-tag {
+    display: inline-block;
+  }
+
+  /* 方案底部对比卡 */
+  .plans-footer-note {
+    background: #090b0e;
+    border-top: 1px solid var(--border);
+    padding: 10px 18px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    font-size: 12px;
+    color: var(--text-dim);
+  }
+</style>
+</head>
+<body class="show-highlights">
+<div data-docs-i18n-switch style="position:fixed;top:8px;right:12px;z-index:2147483647;font:12px/1.6 -apple-system,system-ui,sans-serif;background:rgba(15,17,22,.78);color:#fff;padding:4px 12px;border-radius:999px;box-shadow:0 2px 10px rgba(0,0,0,.35)"><a href="./group-ui-proposals.html" style="color:#fff;text-decoration:none">简体中文</a> · <strong>English</strong> · <a href="./group-ui-proposals.zh-TW.html" style="color:#fff;text-decoration:none">繁體中文</a></div>
+
+
+
+<!-- Top plan switcher -->
+<header class="demo-toolbar">
+  <div class="demo-title-group">
+    <div class="demo-logo">
+      <span>pi-web-ui</span> group UI redesign proposal
+    </div>
+    <nav class="demo-tabs" role="tablist">
+      <button class="demo-tab-btn" onclick="switchPlan(1)" id="tab-btn-1">
+        Plan 1: Streaming polish
+      </button>
+      <button class="demo-tab-btn active" onclick="switchPlan(2)" id="tab-btn-2">
+        Plan 2: Two-column collaboration workbench <span class="badge-rec">Recommended</span>
+      </button>
+      <button class="demo-tab-btn" onclick="switchPlan(3)" id="tab-btn-3">
+        Plan 3: Pipeline board
+      </button>
+    </nav>
+  </div>
+  <div class="demo-controls">
+    <label class="toggle-highlight-label">
+      <input type="checkbox" id="toggleHighlights" checked onchange="toggleHighlights(this.checked)">
+      Show improvement annotations (Diff Highlights)
+    </label>
+  </div>
+</header>
+
+<!-- Main viewport -->
+<main class="workspace-viewport">
+
+  <!-- ========================================================================= -->
+  <!-- Plan 1: lightweight streaming polish (keep single-column focus, drop long IDs, turn errors into cards) -->
+  <!-- ========================================================================= -->
+  <section class="plan-view" id="plan-1">
+    <div class="plan-summary-bar">
+      <div>
+        <strong>Plan 1 core strategy:</strong> lightweight streaming polish · keep the existing single-column architecture · purge long UUID text · structured error cards with one-click self-heal
+      </div>
+      <div style="display:flex; gap:6px;">
+        <span class="highlight-tag">Low change risk</span>
+        <span class="highlight-tag">Focused reading flow</span>
+      </div>
+    </div>
+
+    <!-- Top status bar -->
+    <div class="dg-head">
+      <div class="dg-head-left">
+        <span class="dg-head-title">Joint development</span>
+        <span class="dg-head-pill">
+          <span class="dg-dot"></span>
+          <span>2 collaborating bots online</span>
+        </span>
+      </div>
+      <div class="dg-head-nav">
+        <button class="dg-nav-tab attention">
+          <span>📦 Deliveries &amp; todos</span>
+          <span class="dg-badge amber">1</span>
+        </button>
+        <button class="dg-nav-tab">
+          <span>📁 File transfer</span>
+        </button>
+        <button class="dg-nav-tab">
+          <span>🎨 Group canvas</span>
+        </button>
+        <button class="dg-nav-tab">
+          <span>🤖 Bot presets</span>
+        </button>
+      </div>
+      <div>
+        <button class="btn-back">Back to conversation</button>
+      </div>
+    </div>
+
+    <!-- Task strip (truncated long IDs removed) -->
+    <div class="dg-task-strip diff-mark diff-highlight">
+      <span class="diff-tag">Fix 1: the task strip extracts the clean instruction; truncated UUIDs are no longer shown</span>
+      <span class="strip-label">Tasks in progress:</span>
+      <div class="task-pill">
+        <span class="status-icon failed"></span>
+        <span class="bot-tag">@win</span>
+        <span class="task-content">Optimize code (execution failed)</span>
+        <span class="detail-link">Details ↗</span>
+      </div>
+      <div class="task-pill" style="opacity: 0.85;">
+        <span class="status-icon completed"></span>
+        <span class="bot-tag">@sol</span>
+        <span class="task-content">Environment &amp; dependency static check</span>
+      </div>
+    </div>
+
+    <!-- Message stream -->
+    <div class="chat-stream-single">
+      <div class="chat-stream-container">
+        
+        <!-- User message -->
+        <div class="msg-item user">
+          <div class="msg-avatar user">X</div>
+          <div class="msg-main">
+            <div class="msg-header">
+              <span class="msg-name">xingshuyin</span>
+              <span class="msg-device-chip">DESKTOP-S1QKEI6 · local workstation</span>
+              <span class="msg-time">19:13</span>
+            </div>
+            <div class="msg-card diff-mark diff-highlight">
+              <span class="diff-tag">Fix 2: mentions become capsules; hover reveals the full device and ID</span>
+              <span class="mention-chip" title="Device ID: fe2dfb80-efe8-46a7-acb1-fe0f24b1c43a&#10;Device: Windows 11 dev machine">
+                <span class="bot-icon">🤖</span>
+                <span>@win</span>
+                <span class="device-sub">· remote machine</span>
+              </span>
+              <span>Optimize code</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Bot failure reply: rebuilt as an interactive card -->
+        <div class="msg-item bot">
+          <div class="msg-avatar bot-warn">🤖</div>
+          <div class="msg-main">
+            <div class="msg-header">
+              <span class="msg-name">win</span>
+              <span class="msg-device-chip">DESKTOP-S1QKEI6 · remote collaboration machine</span>
+              <span class="msg-time">19:13</span>
+            </div>
+
+            <!-- Structured error card instead of raw text -->
+            <div class="bot-error-card diff-mark diff-highlight">
+              <span class="diff-tag">Fix 3: raw errors parsed into a human-sized card + one-click retry / diagnostics actions</span>
+              <div class="bot-error-header">
+                <div class="error-title">
+                  <span>✕ Task execution interrupted (Execution Failed)</span>
+                  <span class="error-phase-badge">Phase: model</span>
+                </div>
+                <span style="font-size: 11px; color: var(--text-dim);">Device state preserved</span>
+              </div>
+              <div class="bot-error-body">
+                <div class="error-human-desc">
+                  The agent runtime on the target device either got no model response or failed outright. The remote workspace and task session have been retained — nothing is lost.
+                </div>
+                <div class="error-details-box">
+                  Device task failed [phase=model; category=execution_failed]. Local agent execution failed; inspect the retained task conversation on the target device.
+                </div>
+              </div>
+              <div class="bot-error-actions">
+                <button class="btn-action-primary" onclick="alert('Triggering a retry on win')">🔄 Run again</button>
+                <button class="btn-action-secondary" onclick="alert('Opening remote task details')">📋 View remote diagnostics</button>
+                <button class="btn-action-secondary" onclick="alert('Hand over')">🔀 Reassign to an idle bot</button>
+              </div>
+            </div>
+
+          </div>
+        </div>
+
+      </div>
+    </div>
+
+    <!-- Bottom composer -->
+    <div class="composer-wrapper">
+      <div class="composer-target-selector">
+        <span style="color: var(--text-faint);">Send target:</span>
+        <span class="target-badge active">🤖 @win (default target)</span>
+        <span class="target-badge">👥 Broadcast to the group</span>
+      </div>
+      <div class="composer-box">
+        <textarea class="composer-input" placeholder="Type a message, or type @ to pick a bot to dispatch work to..."></textarea>
+        <div class="composer-toolbar">
+          <div class="composer-tools-left">
+            <button class="btn-comp-tool">@ Mention a member</button>
+            <button class="btn-comp-tool">📝 Plan only (Plan Only)</button>
+            <button class="btn-comp-tool">📎 Send a file</button>
+          </div>
+          <button class="btn-send">↑</button>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ========================================================================= -->
+  <!-- Plan 2: professional two-column multi-agent collaboration workbench (strongly recommended) -->
+  <!-- ========================================================================= -->
+  <section class="plan-view active" id="plan-2">
+    <div class="plan-summary-bar">
+      <div>
+        <strong>Plan 2 core strategy:</strong> two-column collaboration workbench · fixes the gaping widescreen · the top drawer moves right into a persistent sidebar · live bot load and delivery board awareness
+      </div>
+      <div style="display:flex; gap:6px;">
+        <span class="highlight-tag" style="background:var(--accent); color:#fff;">Strongly recommended</span>
+        <span class="highlight-tag">Full use of space</span>
+        <span class="highlight-tag">Zero layout shift</span>
+      </div>
+    </div>
+
+    <!-- Top header -->
+    <div class="dg-head">
+      <div class="dg-head-left">
+        <span class="dg-head-title">Joint development workspace</span>
+        <span class="dg-head-pill">
+          <span class="dg-dot"></span>
+          <span>2 devices online</span>
+        </span>
+      </div>
+      <div class="dg-head-nav">
+        <!-- Tool buttons now switch the right-hand panel -->
+        <button class="dg-nav-tab" onclick="switchSideTab('bots')" id="nav-btn-bots">
+          <span>👥 Bot status (2)</span>
+        </button>
+        <button class="dg-nav-tab attention active" onclick="switchSideTab('deliveries')" id="nav-btn-deliveries">
+          <span>📦 Delivery todos</span>
+          <span class="dg-badge amber">1</span>
+        </button>
+        <button class="dg-nav-tab" onclick="switchSideTab('transfers')" id="nav-btn-transfers">
+          <span>📁 File transfer</span>
+        </button>
+        <button class="dg-nav-tab" onclick="switchSideTab('canvas')" id="nav-btn-canvas">
+          <span>🎨 Group canvas</span>
+        </button>
+      </div>
+      <div style="display:flex; align-items:center; gap:8px;">
+        <button class="btn-back" onclick="toggleSidebar()" id="btn-toggle-side" title="Collapse/expand the right collaboration panel">
+          ◫ Toggle sidebar
+        </button>
+        <button class="btn-back">Back</button>
+      </div>
+    </div>
+
+    <!-- Two-column body container -->
+    <div class="workspace-dual-layout">
+
+      <!-- Left: main message stream -->
+      <div class="dual-main-col">
+
+        <!-- Lightweight task status hint -->
+        <div class="dg-task-strip">
+          <span class="strip-label">In progress:</span>
+          <div class="task-pill">
+            <span class="status-icon failed"></span>
+            <span class="bot-tag">@win</span>
+            <span class="task-content">Optimize code (execution failed)</span>
+            <span class="detail-link">Details ↗</span>
+          </div>
+        </div>
+
+        <!-- Message list -->
+        <div class="chat-stream-single" style="padding: 18px 24px;">
+          <div class="chat-stream-container" style="max-width: 900px;">
+            
+            <!-- User message -->
+            <div class="msg-item user">
+              <div class="msg-avatar user">X</div>
+              <div class="msg-main">
+                <div class="msg-header">
+                  <span class="msg-name">xingshuyin</span>
+                  <span class="msg-device-chip">DESKTOP-S1QKEI6 · local</span>
+                  <span class="msg-time">19:13</span>
+                </div>
+                <div class="msg-card">
+                  <span class="mention-chip" title="Target bot: win (fe2dfb80-efe8-46a7-acb1-fe0f24b1c43a)">
+                    <span class="bot-icon">🤖</span>
+                    <span>@win</span>
+                    <span class="device-sub">· remote machine</span>
+                  </span>
+                  <span>Optimize code</span>
+                </div>
+              </div>
+            </div>
+
+            <!-- Bot error reply -->
+            <div class="msg-item bot">
+              <div class="msg-avatar bot-warn">🤖</div>
+              <div class="msg-main">
+                <div class="msg-header">
+                  <span class="msg-name">win</span>
+                  <span class="msg-device-chip">Windows 11 remote workstation</span>
+                  <span class="msg-time">19:13</span>
+                </div>
+
+                <div class="bot-error-card">
+                  <div class="bot-error-header">
+                    <div class="error-title">
+                      <span>✕ Task execution interrupted (Execution Failed)</span>
+                      <span class="error-phase-badge">Phase: model</span>
+                    </div>
+                    <span style="font-size: 11px; color: var(--text-dim);">Device session safely retained</span>
+                  </div>
+                  <div class="bot-error-body">
+                    <div class="error-human-desc">
+                      The target device failed (the model-reasoning phase exited abnormally). The live context is retained in a separate session on the target device.
+                    </div>
+                    <div class="error-details-box">
+                      Device task failed [phase=model; category=execution_failed]. Local agent execution failed; inspect the retained task conversation on the target device.
+                    </div>
+                  </div>
+                  <div class="bot-error-actions">
+                    <button class="btn-action-primary">🔄 Re-run this step</button>
+                    <button class="btn-action-secondary">📋 View target machine logs</button>
+                    <button class="btn-action-secondary">🔀 Reassign to @sol test machine</button>
+                  </div>
+                </div>
+
+              </div>
+            </div>
+
+          </div>
+        </div>
+
+        <!-- Bottom composer -->
+        <div class="composer-wrapper">
+          <div class="composer-target-selector">
+            <span style="color: var(--text-faint);">Assign to:</span>
+            <span class="target-badge active" title="Click to change target">🤖 @win (remote dev)</span>
+            <span class="target-badge" title="Click to change target">🤖 @sol (test machine)</span>
+            <span class="target-badge">👥 Broadcast to all</span>
+          </div>
+          <div class="composer-box">
+            <textarea class="composer-input" placeholder="Describe the task or code instruction, Enter to send..."></textarea>
+            <div class="composer-toolbar">
+              <div class="composer-tools-left">
+                <button class="btn-comp-tool">@ Quick pick</button>
+                <button class="btn-comp-tool">📝 Plan only</button>
+                <button class="btn-comp-tool">📎 Upload a large file</button>
+              </div>
+              <button class="btn-send">↑</button>
+            </div>
+          </div>
+        </div>
+
+      </div>
+
+      <!-- Right: collaboration panel (persistent rail / drawer toggle, never squeezes the main chat) -->
+      <aside class="dual-side-col diff-mark diff-highlight" id="side-col">
+        <span class="diff-tag">Fix 4: a right-hand collaboration rail replaces the top dropdown drawer; the eye no longer jumps</span>
+
+        <!-- Sidebar header -->
+        <div class="side-header">
+          <div class="side-tabs">
+            <button class="side-tab-item" onclick="switchSideTab('bots')" id="sub-tab-bots">
+              👥 Bot status
+            </button>
+            <button class="side-tab-item active" onclick="switchSideTab('deliveries')" id="sub-tab-deliveries">
+              📦 Pending deliveries
+              <span class="dot-badge"></span>
+            </button>
+            <button class="side-tab-item" onclick="switchSideTab('transfers')" id="sub-tab-transfers">
+              📁 Transfers
+            </button>
+          </div>
+          <button style="background:transparent; border:none; color:var(--text-faint); cursor:pointer;" onclick="toggleSidebar()">✕</button>
+        </div>
+
+        <!-- Sidebar content container -->
+        <div class="side-content" id="side-content-area">
+
+          <!-- Deliveries pane (shown by default) -->
+          <div id="pane-deliveries">
+            <div style="font-size:11.5px; font-weight:600; color:var(--text-dim); margin-bottom:8px; text-transform:uppercase;">
+              Deliverables awaiting human review (1)
+            </div>
+            
+            <div class="delivery-item-card needs-review">
+              <div class="delivery-header">
+                <span class="delivery-title">Module dependency refactor draft</span>
+                <span style="font-size:10px; background:var(--amber-soft); color:var(--amber); padding:1px 5px; border-radius:3px;">Needs review</span>
+              </div>
+              <div class="delivery-desc">
+                Submitted by <strong>@win</strong> · 3 interface-adaptation patches awaiting confirmation, including TypeScript type declaration changes.
+              </div>
+              <div class="delivery-actions">
+                <button class="btn-action-primary" style="font-size:11px; padding:3px 8px;">✓ Approve &amp; merge</button>
+                <button class="btn-action-secondary" style="font-size:11px; padding:3px 8px;">View change diff</button>
+              </div>
+            </div>
+
+            <div style="font-size:11.5px; font-weight:600; color:var(--text-dim); margin-top:16px; margin-bottom:8px; text-transform:uppercase;">
+              Settled tasks (2)
+            </div>
+            <div class="delivery-item-card" style="opacity:0.8;">
+              <div class="delivery-header">
+                <span class="delivery-title">Static ESLint rule scan</span>
+                <span style="font-size:10px; color:var(--green);">Passed</span>
+              </div>
+              <div class="delivery-desc">
+                Run by @sol, passed with zero warnings.
+              </div>
+            </div>
+          </div>
+
+          <!-- Bot list pane (tab switch) -->
+          <div id="pane-bots" style="display:none;">
+            <div style="font-size:11.5px; font-weight:600; color:var(--text-dim); margin-bottom:8px; text-transform:uppercase;">
+              Online members &amp; execution capabilities (2)
+            </div>
+
+            <!-- Bot 1 -->
+            <div class="bot-status-card">
+              <div class="bot-card-top">
+                <div class="bot-identity">
+                  <span class="status-icon running"></span>
+                  <span class="bot-name-text">win</span>
+                  <span class="bot-role-tag">Primary executor bot</span>
+                </div>
+                <span style="font-size:11px; color:#f87171;">Task error</span>
+              </div>
+              <div class="bot-card-meta">
+                <div>🖥 Remote device: DESKTOP-S1QKEI6</div>
+                <div>📍 Status: interrupted on error, waiting for the user to retry</div>
+                <div class="bot-tools-row">
+                  <span class="tool-micro-tag">bash</span>
+                  <span class="tool-micro-tag">edit</span>
+                  <span class="tool-micro-tag">plan_update</span>
+                  <span class="tool-micro-tag">+6 tools</span>
+                </div>
+              </div>
+            </div>
+
+            <!-- Bot 2 -->
+            <div class="bot-status-card">
+              <div class="bot-card-top">
+                <div class="bot-identity">
+                  <span class="status-icon completed"></span>
+                  <span class="bot-name-text">sol</span>
+                  <span class="bot-role-tag">Auxiliary / test</span>
+                </div>
+                <span style="font-size:11px; color:var(--green);">Idle, standing by</span>
+              </div>
+              <div class="bot-card-meta">
+                <div>🖥 Device: Linux-Worker-Node01</div>
+                <div>📍 Status: ready, accepting assignments</div>
+                <div class="bot-tools-row">
+                  <span class="tool-micro-tag">browser_search</span>
+                  <span class="tool-micro-tag">node-eval</span>
+                  <span class="tool-micro-tag">+4 tools</span>
+                </div>
+              </div>
+            </div>
+          </div>
+
+        </div>
+      </aside>
+
+    </div>
+  </section>
+
+  <!-- ========================================================================= -->
+  <!-- Plan 3: task pipeline board (process-driven, node states chained) -->
+  <!-- ========================================================================= -->
+  <section class="plan-view" id="plan-3">
+    <div class="plan-summary-bar">
+      <div>
+        <strong>Plan 3 core strategy:</strong> task pipeline board · elevates multi-agent collaboration into a visual, chained pipeline · supports resume-from-breakpoint and smart reassignment
+      </div>
+      <div style="display:flex; gap:6px;">
+        <span class="highlight-tag">Strict process discipline</span>
+        <span class="highlight-tag">Suits long task chains</span>
+      </div>
+    </div>
+
+    <!-- Pipeline banner -->
+    <div class="pipeline-header-bar diff-mark diff-highlight">
+      <span class="diff-tag">Fix 5: multi-bot collaboration rendered as a flow; a stuck node is obvious at a glance</span>
+      <div class="pipeline-title-row">
+        <div style="display:flex; align-items:center; gap:8px;">
+          <strong style="font-size:13px; color:var(--text);">Pipeline #T102: automated code optimization and integration verification</strong>
+          <span style="font-size:11px; color:var(--red); background:var(--red-soft); padding:1px 6px; border-radius:4px;">Node 2 blocked</span>
+        </div>
+        <button class="btn-action-secondary" style="font-size:11px; padding:2px 8px;">Reset pipeline</button>
+      </div>
+
+      <div class="pipeline-flow">
+        <div class="pipeline-node done">
+          <span class="status-icon completed"></span>
+          <span>1. Dependency &amp; environment scan (@sol)</span>
+        </div>
+        <span class="pipeline-arrow">→</span>
+        <div class="pipeline-node failed">
+          <span class="status-icon failed"></span>
+          <span>2. Code refactor &amp; optimization (@win) ✕</span>
+        </div>
+        <span class="pipeline-arrow">→</span>
+        <div class="pipeline-node waiting">
+          <span>3. Unit tests &amp; build (@sol)</span>
+        </div>
+        <span class="pipeline-arrow">→</span>
+        <div class="pipeline-node waiting">
+          <span>4. Deliverable archiving &amp; review</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- Message stream -->
+    <div class="chat-stream-single">
+      <div class="chat-stream-container">
+        
+        <div class="msg-item user">
+          <div class="msg-avatar user">X</div>
+          <div class="msg-main">
+            <div class="msg-header">
+              <span class="msg-name">xingshuyin</span>
+              <span class="msg-time">19:13</span>
+            </div>
+            <div class="msg-card">
+              <span class="mention-chip">🤖 @win</span> Optimize code
+            </div>
+          </div>
+        </div>
+
+        <div class="msg-item bot">
+          <div class="msg-avatar bot-warn">🤖</div>
+          <div class="msg-main">
+            <div class="msg-header">
+              <span class="msg-name">Pipeline scheduler · Hub</span>
+              <span class="msg-time">19:13</span>
+            </div>
+
+            <div class="bot-error-card">
+              <div class="bot-error-header">
+                <div class="error-title">
+                  <span>Node 2 [code optimization] interrupted</span>
+                  <span class="error-phase-badge">Bot: win (fe2dfb80)</span>
+                </div>
+              </div>
+              <div class="bot-error-body">
+                <p>The target machine failed (phase=model; execution_failed). The pipeline is paused here.</p>
+              </div>
+              <div class="bot-error-actions">
+                <button class="btn-action-primary">🔄 Retry on this node</button>
+                <button class="btn-action-secondary">🔀 Reassign to @sol, skip the refactor</button>
+                <button class="btn-action-secondary">⏭ Skip this node and continue</button>
+              </div>
+            </div>
+
+          </div>
+        </div>
+
+      </div>
+    </div>
+
+    <!-- Bottom composer -->
+    <div class="composer-wrapper">
+      <div class="composer-box">
+        <textarea class="composer-input" placeholder="Enter the next instruction or pipeline intervention parameters..."></textarea>
+      </div>
+    </div>
+  </section>
+
+</main>
+
+<!-- Bottom comparison note -->
+<footer class="plans-footer-note">
+  <div>
+    <strong>Recommendation:</strong> use <strong>Plan 2 (two-column workbench)</strong> day to day: the top drawer that used to cover the conversation becomes a collapsible right-hand panel — widescreens no longer look empty, and the long-ID noise plus raw-text errors are gone.
+  </div>
+  <div style="color:var(--text-faint);">
+    pi-web-ui group collaboration architecture design proposal
+  </div>
+</footer>
+
+<script>
+  function switchPlan(index) {
+    document.querySelectorAll('.demo-tab-btn').forEach((btn, i) => {
+      btn.classList.toggle('active', i + 1 === index);
+    });
+    document.querySelectorAll('.plan-view').forEach((view, i) => {
+      view.classList.toggle('active', i + 1 === index);
+    });
+  }
+
+  function toggleHighlights(show) {
+    document.body.classList.toggle('show-highlights', show);
+  }
+
+  function toggleSidebar() {
+    const side = document.getElementById('side-col');
+    if (side) {
+      side.classList.toggle('collapsed');
+    }
+  }
+
+  function switchSideTab(tab) {
+    const paneDeliveries = document.getElementById('pane-deliveries');
+    const paneBots = document.getElementById('pane-bots');
+    const tabBots = document.getElementById('sub-tab-bots');
+    const tabDeliveries = document.getElementById('sub-tab-deliveries');
+    const navBots = document.getElementById('nav-btn-bots');
+    const navDeliveries = document.getElementById('nav-btn-deliveries');
+
+    // Make sure the sidebar is expanded
+    const side = document.getElementById('side-col');
+    if (side) side.classList.remove('collapsed');
+
+    if (tab === 'bots') {
+      if (paneDeliveries) paneDeliveries.style.display = 'none';
+      if (paneBots) paneBots.style.display = 'block';
+      if (tabBots) tabBots.classList.add('active');
+      if (tabDeliveries) tabDeliveries.classList.remove('active');
+      if (navBots) navBots.classList.add('active');
+      if (navDeliveries) navDeliveries.classList.remove('active');
+    } else {
+      if (paneDeliveries) paneDeliveries.style.display = 'block';
+      if (paneBots) paneBots.style.display = 'none';
+      if (tabBots) tabBots.classList.remove('active');
+      if (tabDeliveries) tabDeliveries.classList.add('active');
+      if (navBots) navBots.classList.remove('active');
+      if (navDeliveries) navDeliveries.classList.add('active');
+    }
+  }
+</script>
+</body>
+</html>
+
+
+

@@ -1,0 +1,1384 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>側邊欄頂欄小按鈕收納與互動重構方案 · pi-web-ui</title>
+  <style>
+    :root {
+      --bg: #0e0f14;
+      --bg-panel: #13151b;
+      --bg-elev: #1a1c24;
+      --bg-elev2: #21242e;
+      --bg-elev3: #2a2e3b;
+      --border: #262936;
+      --border-subtle: #1c1e28;
+      --text: #e6e8f0;
+      --text-dim: #9aa1b5;
+      --text-faint: #62687a;
+      --accent: #8b5cf6;
+      --accent-soft: rgba(139, 92, 246, 0.16);
+      --accent-border: rgba(139, 92, 246, 0.35);
+      --accent-glow: rgba(139, 92, 246, 0.3);
+      --green: #10b981;
+      --green-soft: rgba(16, 185, 129, 0.15);
+      --amber: #f59e0b;
+      --amber-soft: rgba(245, 158, 11, 0.15);
+      --red: #ef4444;
+      --red-soft: rgba(239, 68, 68, 0.15);
+      --blue: #3b82f6;
+      --blue-soft: rgba(59, 130, 246, 0.15);
+      --font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+      --font-mono: "JetBrains Mono", "SF Mono", Menlo, Consolas, monospace;
+      --radius-sm: 4px;
+      --radius-md: 6px;
+      --radius-lg: 10px;
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: var(--font-sans);
+      line-height: 1.5;
+      font-size: 13px;
+      padding-bottom: 60px;
+    }
+
+    /* 頂部導航與總覽 */
+    .top-hero {
+      background: linear-gradient(180deg, #181922 0%, var(--bg) 100%);
+      border-bottom: 1px solid var(--border);
+      padding: 32px 40px;
+      position: relative;
+    }
+    .badge-tag {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 3px 10px;
+      background: var(--accent-soft);
+      border: 1px solid var(--accent-border);
+      color: #c4b5fd;
+      border-radius: 999px;
+      font-size: 11px;
+      font-weight: 600;
+      letter-spacing: 0.5px;
+      margin-bottom: 12px;
+    }
+    .hero-title {
+      font-size: 24px;
+      font-weight: 700;
+      color: #fff;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      letter-spacing: -0.3px;
+    }
+    .hero-desc {
+      color: var(--text-dim);
+      font-size: 14px;
+      margin-top: 8px;
+      max-width: 820px;
+    }
+
+    /* 導航欄固定控制條 */
+    .sticky-nav {
+      position: sticky;
+      top: 0;
+      z-index: 100;
+      background: rgba(14, 15, 20, 0.85);
+      backdrop-filter: blur(16px);
+      border-bottom: 1px solid var(--border);
+      padding: 10px 40px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 16px;
+    }
+    .tab-pills {
+      display: flex;
+      background: var(--bg-elev);
+      padding: 3px;
+      border-radius: var(--radius-md);
+      border: 1px solid var(--border);
+      gap: 3px;
+    }
+    .tab-pill {
+      background: transparent;
+      border: none;
+      color: var(--text-dim);
+      padding: 6px 14px;
+      border-radius: var(--radius-sm);
+      font-size: 12px;
+      font-weight: 600;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      transition: all 0.15s ease;
+    }
+    .tab-pill:hover {
+      color: var(--text);
+      background: var(--bg-elev2);
+    }
+    .tab-pill.active {
+      background: var(--accent);
+      color: #fff;
+      box-shadow: 0 2px 8px var(--accent-glow);
+    }
+
+    .main-wrap {
+      max-width: 1400px;
+      margin: 0 auto;
+      padding: 32px 40px;
+    }
+
+    /* 根因深度剖析卡片 */
+    .root-cause-card {
+      background: var(--bg-panel);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-lg);
+      padding: 24px;
+      margin-bottom: 32px;
+    }
+    .section-headline {
+      font-size: 16px;
+      font-weight: 700;
+      color: #fff;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin-bottom: 16px;
+    }
+    .problem-inspect {
+      display: grid;
+      grid-template-columns: 360px 1fr;
+      gap: 24px;
+      align-items: center;
+      background: var(--bg-elev);
+      border: 1px solid var(--border-subtle);
+      border-radius: var(--radius-md);
+      padding: 16px;
+    }
+    .problem-preview {
+      background: #000;
+      border: 1px solid #333;
+      border-radius: 6px;
+      padding: 12px;
+      text-align: center;
+    }
+    .problem-tags {
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+    .p-tag {
+      display: flex;
+      align-items: flex-start;
+      gap: 10px;
+      font-size: 12.5px;
+      color: var(--text-dim);
+      line-height: 1.5;
+    }
+    .p-tag strong {
+      color: #fff;
+    }
+    .tag-badge {
+      flex-shrink: 0;
+      font-size: 11px;
+      padding: 2px 7px;
+      border-radius: 4px;
+      font-weight: 600;
+    }
+    .tag-danger { background: var(--red-soft); color: #f87171; border: 1px solid rgba(239, 68, 68, 0.3); }
+    .tag-amber { background: var(--amber-soft); color: #fbbf24; border: 1px solid rgba(245, 158, 11, 0.3); }
+    .tag-blue { background: var(--blue-soft); color: #60a5fa; border: 1px solid rgba(59, 130, 246, 0.3); }
+
+    /* 方案展示柵格 */
+    .proposals-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+      gap: 24px;
+      margin-top: 24px;
+    }
+    .proposal-card {
+      background: var(--bg-panel);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-lg);
+      padding: 20px;
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+      position: relative;
+      transition: all 0.2s ease;
+    }
+    .proposal-card:hover {
+      border-color: rgba(139, 92, 246, 0.5);
+      box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35);
+    }
+    .proposal-card.recommended {
+      border-color: var(--accent);
+      background: linear-gradient(180deg, rgba(139, 92, 246, 0.05) 0%, var(--bg-panel) 100%);
+    }
+    .proposal-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+    }
+    .proposal-title {
+      font-size: 15px;
+      font-weight: 700;
+      color: #fff;
+    }
+    .proposal-rec-badge {
+      font-size: 10px;
+      background: var(--accent);
+      color: #fff;
+      padding: 2px 8px;
+      border-radius: 999px;
+      font-weight: 700;
+      letter-spacing: 0.5px;
+    }
+
+    /* 側邊欄模擬元件 */
+    .sidebar-mock {
+      background: #111318;
+      border: 1px solid var(--border);
+      border-radius: var(--radius-md);
+      overflow: hidden;
+      box-shadow: 0 4px 16px rgba(0,0,0,0.4);
+      position: relative;
+    }
+    .mock-header {
+      height: 34px;
+      background: #141720;
+      border-bottom: 1px solid var(--border-subtle);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 0 8px;
+      position: relative;
+      user-select: none;
+    }
+    .mock-tabs {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+    }
+    .mock-tab {
+      padding: 2px 8px;
+      font-size: 11px;
+      font-weight: 600;
+      border-radius: 4px;
+      cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      transition: all 0.15s ease;
+    }
+    .mock-tab.active {
+      background: var(--accent-soft);
+      border: 1px solid var(--accent-border);
+      color: #fff;
+    }
+    .mock-tab:not(.active) {
+      border: 1px solid transparent;
+      color: var(--text-dim);
+    }
+    .mock-tab:not(.active):hover {
+      background: rgba(255, 255, 255, 0.05);
+      color: var(--text);
+    }
+    .mock-badge {
+      font-size: 10px;
+      opacity: 0.75;
+    }
+
+    .mock-actions {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+    }
+    .mock-btn {
+      width: 24px;
+      height: 24px;
+      border-radius: 5px;
+      background: #1e222d;
+      border: 1px solid transparent;
+      color: var(--text-dim);
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 12px;
+      cursor: pointer;
+      transition: all 0.15s ease;
+      position: relative;
+    }
+    .mock-btn:hover {
+      background: #2b3040;
+      color: #fff;
+      border-color: rgba(255,255,255,0.1);
+    }
+    .mock-btn.collapse-btn {
+      background: #181b24;
+      color: var(--text-faint);
+    }
+    .mock-btn.collapse-btn:hover {
+      background: #242936;
+      color: #fff;
+    }
+
+    /* 彈出選單模擬 */
+    .mock-dropdown {
+      position: absolute;
+      top: 32px;
+      right: 32px;
+      width: 190px;
+      background: #1c1f2a;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      box-shadow: 0 10px 28px rgba(0,0,0,0.6);
+      padding: 5px;
+      z-index: 50;
+      animation: fadeInDown 0.15s ease-out;
+    }
+    @keyframes fadeInDown {
+      from { opacity: 0; transform: translateY(-6px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+    .dropdown-item {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 6px 8px;
+      font-size: 11.5px;
+      color: var(--text-dim);
+      border-radius: 4px;
+      cursor: pointer;
+      transition: background 0.12s;
+    }
+    .dropdown-item:hover {
+      background: var(--accent);
+      color: #fff;
+    }
+    .dropdown-item .d-label {
+      display: flex;
+      align-items: center;
+      gap: 7px;
+    }
+    .dropdown-item .d-shortcut {
+      font-size: 10px;
+      opacity: 0.6;
+      font-family: var(--font-mono);
+    }
+    .dropdown-divider {
+      height: 1px;
+      background: var(--border-subtle);
+      margin: 4px 0;
+    }
+
+    /* 列表內容模擬 */
+    .mock-list {
+      padding: 8px 6px;
+      min-height: 140px;
+      max-height: 170px;
+      overflow-y: auto;
+      font-size: 12px;
+    }
+    .mock-item {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 5px 8px;
+      border-radius: 4px;
+      color: var(--text-dim);
+      cursor: pointer;
+    }
+    .mock-item:hover {
+      background: rgba(255, 255, 255, 0.05);
+      color: var(--text);
+    }
+    .mock-item.active {
+      background: var(--accent-soft);
+      color: #c4b5fd;
+      font-weight: 500;
+    }
+    .mock-item-sub {
+      font-size: 10px;
+      color: var(--text-faint);
+    }
+
+    /* 方案具體描述 */
+    .proposal-meta {
+      font-size: 12.5px;
+      color: var(--text-dim);
+      line-height: 1.6;
+    }
+    .metric-list {
+      list-style: none;
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+      margin-top: 8px;
+      border-top: 1px solid var(--border-subtle);
+      padding-top: 12px;
+    }
+    .metric-item {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      font-size: 11.5px;
+    }
+    .metric-label {
+      color: var(--text-faint);
+    }
+    .metric-val {
+      font-weight: 600;
+    }
+
+    /* 對比表格 */
+    .comparison-table-wrap {
+      margin-top: 36px;
+      background: var(--bg-panel);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-lg);
+      padding: 24px;
+      overflow-x: auto;
+    }
+    table.compare-table {
+      width: 100%;
+      border-collapse: collapse;
+      text-align: left;
+      font-size: 12.5px;
+    }
+    table.compare-table th, table.compare-table td {
+      padding: 12px 14px;
+      border-bottom: 1px solid var(--border);
+    }
+    table.compare-table th {
+      background: var(--bg-elev);
+      color: var(--text);
+      font-weight: 600;
+    }
+    table.compare-table td {
+      color: var(--text-dim);
+    }
+    table.compare-table tr:hover td {
+      background: rgba(255, 255, 255, 0.02);
+    }
+
+    /* 程式碼改動建議 */
+    .code-diff-card {
+      margin-top: 36px;
+      background: var(--bg-panel);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-lg);
+      padding: 24px;
+    }
+    pre.code-block {
+      background: #090a0d;
+      border: 1px solid var(--border);
+      border-radius: var(--radius-md);
+      padding: 14px;
+      color: #cbd5e1;
+      font-family: var(--font-mono);
+      font-size: 12px;
+      line-height: 1.6;
+      overflow-x: auto;
+      margin-top: 12px;
+    }
+    .diff-add { color: #86efac; background: rgba(34, 197, 94, 0.1); display: block; margin: 0 -14px; padding: 0 14px; }
+    .diff-del { color: #fca5a5; background: rgba(239, 68, 68, 0.1); display: block; margin: 0 -14px; padding: 0 14px; }
+    .diff-comment { color: #64748b; }
+
+    /* 工具按鈕微型提示框 */
+    .tooltip-tag {
+      position: absolute;
+      bottom: -24px;
+      background: #000;
+      color: #fff;
+      font-size: 10px;
+      padding: 2px 6px;
+      border-radius: 3px;
+      white-space: nowrap;
+      pointer-events: none;
+      opacity: 0;
+      transition: opacity 0.15s;
+    }
+    .mock-btn:hover .tooltip-tag {
+      opacity: 1;
+    }
+
+    /* 方案1細分摺疊形態演示 */
+    .chevron-demo-box {
+      background: var(--bg-elev);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-md);
+      padding: 16px;
+      margin-top: 20px;
+    }
+    .chevron-subtabs {
+      display: flex;
+      gap: 6px;
+      margin-bottom: 14px;
+    }
+    .subtab-btn {
+      padding: 4px 10px;
+      font-size: 11.5px;
+      border-radius: 4px;
+      background: #181a24;
+      border: 1px solid var(--border);
+      color: var(--text-dim);
+      cursor: pointer;
+      transition: all 0.15s;
+    }
+    .subtab-btn.active {
+      background: var(--accent);
+      color: #fff;
+      border-color: var(--accent);
+    }
+    .lead-chevron {
+      width: 14px;
+      height: 14px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      color: var(--text-faint);
+      cursor: pointer;
+      transition: transform 0.15s ease, color 0.15s ease;
+      margin-right: 2px;
+    }
+    .lead-chevron:hover {
+      color: var(--text);
+    }
+    .lead-chevron.collapsed {
+      transform: rotate(-90deg);
+    }
+    .mock-header.collapsed-header {
+      background: #10121a;
+      opacity: 0.85;
+    }
+    .mock-header.collapsed-header:hover {
+      opacity: 1;
+      background: #151822;
+    }
+    .mock-header:hover .hover-only-arrow {
+      opacity: 0.8 !important;
+    }
+    .hover-reveal-wrap .hover-action {
+      opacity: 0;
+      transform: translateX(4px);
+      transition: all 0.18s ease;
+    }
+    .hover-reveal-wrap:hover .hover-action {
+      opacity: 1;
+      transform: translateX(0);
+    }
+
+    /* 方案3搜尋欄 */
+    .mock-filter-bar {
+      padding: 6px 8px;
+      background: #161922;
+      border-bottom: 1px solid var(--border-subtle);
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .mock-input {
+      flex: 1;
+      background: #0e1017;
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      padding: 3px 6px;
+      font-size: 11px;
+      color: var(--text);
+      outline: none;
+    }
+    .mock-input::placeholder {
+      color: var(--text-faint);
+    }
+  </style>
+</head>
+<body>
+<div data-docs-i18n-switch style="position:fixed;top:8px;right:12px;z-index:2147483647;font:12px/1.6 -apple-system,system-ui,sans-serif;background:rgba(15,17,22,.78);color:#fff;padding:4px 12px;border-radius:999px;box-shadow:0 2px 10px rgba(0,0,0,.35)"><a href="./sidebar-header-buttons-redesign.html" style="color:#fff;text-decoration:none">简体中文</a> · <a href="./sidebar-header-buttons-redesign.en.html" style="color:#fff;text-decoration:none">English</a> · <strong>繁體中文</strong></div>
+
+
+
+  <!-- 頂部導覽 -->
+  <div class="top-hero">
+    <div class="badge-tag">UI / UX OPTIMIZATION PROPOSALS</div>
+    <div class="hero-title">
+      <span>側邊欄頂部小圖示過多問題 · 根本解決與互動提案</span>
+    </div>
+    <div class="hero-desc">
+      當前左側欄頂部右側堆疊了 4 個相互擠佔的功能小圖示（摺疊分節 <code>^</code>、新建沙盒 <code>⚗</code>、管理專案 <code>📁+</code>、面板摺疊 <code>&lt;</code>）。
+      不僅視覺雜亂、認知負荷高，而且容易誤觸。以下針對這一痛點，提供 4 種跳出“修補表象”的現代化互動最佳化方案，並在下方提供真實可互動的原型。
+    </div>
+  </div>
+
+  <!-- 導航條 -->
+  <div class="sticky-nav">
+    <div class="tab-pills">
+      <button class="tab-pill active" onclick="switchView('all')">全方案概覽與互動</button>
+      <button class="tab-pill" onclick="switchView('chevron')">🔥 重點：分塊摺疊按鈕去哪了？</button>
+      <button class="tab-pill" onclick="switchView('compare')">維度橫向對比矩陣</button>
+      <button class="tab-pill" onclick="switchView('code')">實施落地方案 (Code Diff)</button>
+    </div>
+    <div style="font-size: 11.5px; color: var(--text-dim); display: flex; align-items: center; gap: 8px;">
+      <span>💡 點選下方任意方案側欄中的按鈕，即可現場體驗互動行為</span>
+    </div>
+  </div>
+
+  <div class="main-wrap">
+
+    <!-- 根因深度剖析 -->
+    <div class="root-cause-card">
+      <div class="section-headline">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path><line x1="12" y1="9" x2="12" y2="13"></line><line x1="12" y1="17" x2="12.01" y2="17"></line></svg>
+        <span>根本原因診斷（為什麼小圖示會扎堆？）</span>
+      </div>
+
+      <div class="problem-inspect">
+        <!-- 現狀重現 -->
+        <div class="problem-preview">
+          <div style="font-size: 10px; color: #f87171; margin-bottom: 6px; font-weight: 600;">▼ 當前實際渲染效果（4 個小按鈕橫排擁擠）</div>
+          <div style="background: #141720; border: 1px solid #333; border-radius: 5px; height: 34px; display: flex; align-items: center; justify-content: space-between; padding: 0 6px;">
+            <div style="display: flex; gap: 4px;">
+              <span style="background: rgba(139, 92, 246, 0.2); border: 1px solid rgba(139, 92, 246, 0.4); padding: 1px 6px; font-size: 11px; border-radius: 4px; color: #fff;">📁 專案 (25)</span>
+              <span style="padding: 1px 6px; font-size: 11px; color: #888;">👥 群組</span>
+            </div>
+            <!-- 右側擁擠區 -->
+            <div style="display: flex; align-items: center; gap: 3px; position: relative;">
+              <span style="color: #666; font-size: 11px; margin-right: 2px;">▲</span>
+              <span style="width: 22px; height: 22px; background: #1e222d; border-radius: 4px; display: flex; align-items: center; justify-content: center; font-size: 12px;">⚗</span>
+              <span style="width: 22px; height: 22px; background: #1e222d; border-radius: 4px; display: flex; align-items: center; justify-content: center; font-size: 12px;">📁⁺</span>
+              <span style="width: 22px; height: 22px; background: #181b24; border-radius: 4px; display: flex; align-items: center; justify-content: center; font-size: 12px; color: #aaa;">‹</span>
+            </div>
+          </div>
+          <div style="margin-top: 8px; font-size: 11px; color: #ef4444; font-family: var(--font-mono);">
+            [Tab 區域] + [^摺疊] + [⚗沙盒] + [📁+管理] + [&lt;收起]
+          </div>
+        </div>
+
+        <div class="problem-tags">
+          <div class="p-tag">
+            <span class="tag-badge tag-danger">層級錯配</span>
+            <div><strong>混雜了三種不同生命週期的按鈕</strong>：<code>&lt;</code> 是整個側邊欄的全域性收起；<code>^</code> 是區域性專案摺疊；<code>⚗</code> 與 <code>📁+</code> 則是業務資產新建動作。三者混在同一行，使用者無法直觀理解誰管誰。</div>
+          </div>
+          <div class="p-tag">
+            <span class="tag-badge tag-amber">程式碼打補丁</span>
+            <div>在 <code>styles.css</code> 中，由於全域性摺疊按鈕 <code>.panel-collapse-btn</code> 採用絕對定位 <code>right: 4px</code>，首個 Header 強行設定了 <code>margin-right: 28px</code> 進行物理避讓，結果把所有按鈕壓成一字長蛇陣。</div>
+          </div>
+          <div class="p-tag">
+            <span class="tag-badge tag-blue">缺乏統一聚合</span>
+            <div>沙盒專案與普通專案本質都是工作區形態。每增加一個工作區型別（如未來若增加“遠端工作區”或“模板”），頂欄就多一個小圖示，導致圖示爆炸。</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 🔥 焦點解答：分塊摺疊按鈕（Chevron ^/v）去哪了？是隱藏嗎？ -->
+    <div id="view-chevron" class="root-cause-card" style="border-color: rgba(139, 92, 246, 0.4); background: linear-gradient(180deg, #161823 0%, var(--bg-panel) 100%);">
+      <div class="section-headline">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#a78bfa" stroke-width="2"><polyline points="6 9 12 15 18 9"></polyline></svg>
+        <span style="color: #fff;">關鍵疑問直擊：每塊的摺疊按鈕（Chevron）去哪了？是直接隱藏嗎？</span>
+      </div>
+
+      <div style="color: var(--text-dim); font-size: 13.5px; line-height: 1.6; margin-bottom: 16px;">
+        在原始程式碼中，其實<strong>整個標題欄整行都是可以點選摺疊/展開的</strong>（<code>onClick={toggleProjects}</code>）。原來的小箭頭 <code>^</code> 並不是必須點選的小按鈕，而是一個<strong style="color:#fff;">狀態指示器（Disclosure Indicator）</strong>。但因為它被放在了 Tab 後面、新建按鈕前面，被誤看成了排在一起的第 4 個操作按鈕。<br>
+        <strong>結論：不需要粗暴隱藏，而是有以下 3 種極佳的處理形態：</strong>
+      </div>
+
+      <!-- 3種摺疊形態切換體驗 -->
+      <div class="chevron-demo-box">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
+          <div class="chevron-subtabs">
+            <button class="subtab-btn active" id="st-btn-1" onclick="switchChevronStyle('lead')">形態 1A：左置前導樹狀箭頭（VS Code / IDE 經典標配 · 最推薦 ★）</button>
+            <button class="subtab-btn" id="st-btn-2" onclick="switchChevronStyle('badge')">形態 1B：微淡角標附著（縮小且降噪，強調從屬關係）</button>
+            <button class="subtab-btn" id="st-btn-3" onclick="switchChevronStyle('hover')">形態 1C：整行可點 + 懸浮顯現提示（極簡沉浸）</button>
+          </div>
+          <span style="font-size: 11px; color: var(--text-faint);">可在下方直接點選標題欄或箭頭測試摺疊</span>
+        </div>
+
+        <!-- 動態演示容器 -->
+        <div class="sidebar-mock" style="max-width: 420px; margin: 0 auto;">
+          <!-- 模擬標題欄 -->
+          <div class="mock-header" id="chevron-mock-header" style="cursor: pointer;" onclick="handleHeaderToggle(event)">
+            
+            <!-- 左側內容（由 JS 動態切換形態） -->
+            <div id="chevron-mock-left" style="display: inline-flex; align-items: center; gap: 4px;">
+              <!-- 預設：形態1A 前導箭頭 -->
+              <span class="lead-chevron" id="demo-lead-arrow">
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="6 9 12 15 18 9"></polyline></svg>
+              </span>
+              <div class="mock-tabs">
+                <span class="mock-tab active" onclick="event.stopPropagation();">📁 專案 <span class="mock-badge">(25)</span></span>
+                <span class="mock-tab" onclick="event.stopPropagation();">👥 群組</span>
+              </div>
+            </div>
+
+            <!-- 右側動作（統一的新建 + 側欄摺疊） -->
+            <div class="mock-actions" onclick="event.stopPropagation();">
+              <button class="mock-btn" id="btn-demo-chevron-add" onclick="toggleDemoDropdown()" title="新建或開啟...">
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
+              </button>
+              <span style="width: 1px; height: 14px; background: var(--border-subtle); margin: 0 1px;"></span>
+              <button class="mock-btn collapse-btn" onclick="alert('觸發左側整個大面板摺疊')" title="摺疊整個左側欄">
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="15 18 9 12 15 6"></polyline></svg>
+              </button>
+            </div>
+
+            <!-- 下拉選單 -->
+            <div class="mock-dropdown" id="demo-chevron-dropdown" style="display: none; right: 28px;">
+              <div class="dropdown-item" onclick="alert('開啟本地專案')"><span class="d-label">📁 開啟本地專案...</span></div>
+              <div class="dropdown-item" onclick="alert('新建臨時沙盒')"><span class="d-label">⚗️ 新建沙盒工作區</span></div>
+              <div class="dropdown-divider"></div>
+              <div class="dropdown-item" onclick="alert('建立裝置群組')"><span class="d-label">👥 建立裝置群組</span></div>
+            </div>
+          </div>
+
+          <!-- 模擬內容列表 -->
+          <div class="mock-list" id="demo-chevron-list">
+            <div class="mock-item active"><span>📁 pi-web-ui</span><span class="mock-item-sub">當前啟用</span></div>
+            <div class="mock-item"><span>📁 docs-site</span><span class="mock-item-sub">12小時前</span></div>
+            <div class="mock-item"><span>⚗️ sandbox-algo-test</span><span class="mock-item-sub" style="color: #a78bfa;">沙盒</span></div>
+            <div class="mock-item"><span>📁 react-dashboard</span><span class="mock-item-sub">昨天</span></div>
+          </div>
+        </div>
+
+        <!-- 詳細解說 -->
+        <div id="chevron-style-desc" style="margin-top: 14px; font-size: 12.5px; color: var(--text-dim); background: #111319; padding: 12px 16px; border-radius: 6px; border-left: 3px solid var(--accent);">
+          <strong>形態 1A（左置前導樹狀箭頭 · 強烈推薦）：</strong><br>
+          將摺疊指示器移到最左側行首（<code>▼ 專案 (25)</code>），展開時箭頭向下，摺疊時向右旋轉 90° 變成 <code>▶</code>。
+          這是 VS Code、Cursor、JetBrains 及所有檔案樹/大綱列表的通用標準。它將“本區塊摺疊”明確歸位到左側內容結構區，徹底與右側的“業務新建 [+]”和“面板摺疊 [&lt;]”分離，兩邊動線互不干擾！
+        </div>
+      </div>
+    </div>
+
+    <!-- 方案展示區 -->
+    <div id="view-proposals">
+      <div style="display: flex; justify-content: space-between; align-items: flex-end; margin-bottom: 8px;">
+        <div class="section-headline" style="margin-bottom: 0;">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect><line x1="9" y1="3" x2="9" y2="21"></line></svg>
+          <span>4 套最佳化方案原型對比（支援互動操作）</span>
+        </div>
+        <span style="font-size: 12px; color: var(--text-faint);">真實 1:1 CSS 模擬與互動觸發</span>
+      </div>
+
+      <div class="proposals-grid">
+
+        <!-- 方案 1：統一新建下拉（推薦首選） -->
+        <div class="proposal-card recommended">
+          <div class="proposal-header">
+            <div>
+              <div class="proposal-title">方案 1 · 統一「+ 新建」下拉中心</div>
+              <div style="font-size: 11px; color: #a78bfa; margin-top: 2px;">現代化 IDE（VS Code / JetBrains）主流互動</div>
+            </div>
+            <span class="proposal-rec-badge">推薦首選 ★</span>
+          </div>
+
+          <div class="proposal-meta">
+            將 <code>⚗</code> 與 <code>📁+</code> 合併為一個醒目且純淨的 <code>+</code> 按鈕，點選喚起下拉氣泡；行首支援極簡摺疊，右側僅保留 1 個操作與 1 個收起按鈕，空間瞬間釋放。
+          </div>
+
+          <!-- 原型演示 -->
+          <div class="sidebar-mock">
+            <div class="mock-header">
+              <div class="mock-tabs">
+                <span class="mock-tab active" onclick="toggleMockTab(this, 'p1')">
+                  📁 專案 <span class="mock-badge">(25)</span>
+                </span>
+                <span class="mock-tab" onclick="toggleMockTab(this, 'p1')">
+                  👥 群組
+                </span>
+              </div>
+              <div class="mock-actions">
+                <!-- 統一新建按鈕 -->
+                <button class="mock-btn" id="btn-p1-add" onclick="toggleDropdown('p1')" title="新建或開啟...">
+                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
+                  <span class="tooltip-tag">新建 / 開啟</span>
+                </button>
+
+                <!-- 分隔線 -->
+                <span style="width: 1px; height: 14px; background: var(--border-subtle); margin: 0 1px;"></span>
+
+                <!-- 側欄收起按鈕 -->
+                <button class="mock-btn collapse-btn" onclick="toggleMockCollapse('mock-list-1')" title="摺疊側邊欄">
+                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="15 18 9 12 15 6"></polyline></svg>
+                  <span class="tooltip-tag">收起側欄</span>
+                </button>
+              </div>
+
+              <!-- 模擬下拉選單 -->
+              <div class="mock-dropdown" id="dropdown-p1" style="display: none;">
+                <div class="dropdown-item" onclick="alert('已模擬觸發：開啟本地專案對話方塊')">
+                  <span class="d-label">📁 開啟本地專案...</span>
+                  <span class="d-shortcut">^O</span>
+                </div>
+                <div class="dropdown-item" onclick="alert('已模擬觸發：新建臨時沙盒工作區')">
+                  <span class="d-label">⚗️ 新建沙盒工作區</span>
+                  <span class="d-shortcut">Sand</span>
+                </div>
+                <div class="dropdown-divider"></div>
+                <div class="dropdown-item" onclick="alert('已模擬觸發：建立裝置協作群組')">
+                  <span class="d-label">👥 建立裝置群組...</span>
+                </div>
+              </div>
+            </div>
+
+            <!-- 列表 -->
+            <div class="mock-list" id="mock-list-1">
+              <div class="mock-item active">
+                <span>📁 pi-web-ui</span>
+                <span class="mock-item-sub">當前啟用</span>
+              </div>
+              <div class="mock-item">
+                <span>📁 docs-site</span>
+                <span class="mock-item-sub">12小時前</span>
+              </div>
+              <div class="mock-item">
+                <span>⚗️ sandbox-algo-test</span>
+                <span class="mock-item-sub" style="color: #a78bfa;">沙盒</span>
+              </div>
+              <div class="mock-item">
+                <span>📁 react-dashboard</span>
+                <span class="mock-item-sub">昨天</span>
+              </div>
+            </div>
+          </div>
+
+          <ul class="metric-list">
+            <li class="metric-item">
+              <span class="metric-label">常駐按鈕總數</span>
+              <span class="metric-val" style="color: var(--green);">2 個（原為 4 個，減少 50%）</span>
+            </li>
+            <li class="metric-item">
+              <span class="metric-label">擴充套件能力</span>
+              <span class="metric-val" style="color: var(--green);">極強（後續增加新專案型別零成本）</span>
+            </li>
+            <li class="metric-item">
+              <span class="metric-label">認知負荷</span>
+              <span class="metric-val" style="color: var(--green);">極低（加號代表一切新建行為）</span>
+            </li>
+          </ul>
+        </div>
+
+
+        <!-- 方案 2：懸停平滑浮現 -->
+        <div class="proposal-card">
+          <div class="proposal-header">
+            <div>
+              <div class="proposal-title">方案 2 · Hover 場景式平滑浮現</div>
+              <div style="font-size: 11px; color: var(--text-dim); margin-top: 2px;">追求沉浸式無噪視覺</div>
+            </div>
+          </div>
+
+          <div class="proposal-meta">
+            平時僅展現乾淨的 Tab 標籤與側欄收起，滑鼠移入該區域時才平滑淡入快捷操作按鈕。視線零干擾，適合對乾淨介面有極致追求的使用者。
+          </div>
+
+          <!-- 原型演示 -->
+          <div class="sidebar-mock">
+            <div class="mock-header hover-reveal-wrap">
+              <div class="mock-tabs">
+                <span class="mock-tab active">
+                  📁 專案 <span class="mock-badge">(25)</span>
+                </span>
+                <span class="mock-tab">
+                  👥 群組
+                </span>
+              </div>
+              <div class="mock-actions">
+                <!-- 懸浮顯現的按鈕 -->
+                <div class="hover-action" style="display: flex; gap: 3px;">
+                  <button class="mock-btn" title="新建沙盒" onclick="alert('新建沙盒')">
+                    ⚗️
+                    <span class="tooltip-tag">沙盒</span>
+                  </button>
+                  <button class="mock-btn" title="開啟或管理專案" onclick="alert('管理專案')">
+                    📁⁺
+                    <span class="tooltip-tag">開啟專案</span>
+                  </button>
+                </div>
+
+                <button class="mock-btn collapse-btn" onclick="toggleMockCollapse('mock-list-2')" title="摺疊側邊欄">
+                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="15 18 9 12 15 6"></polyline></svg>
+                </button>
+              </div>
+            </div>
+
+            <!-- 列表 -->
+            <div class="mock-list" id="mock-list-2">
+              <div class="mock-item active">
+                <span>📁 pi-web-ui</span>
+                <span class="mock-item-sub">當前啟用</span>
+              </div>
+              <div class="mock-item">
+                <span>📁 docs-site</span>
+                <span class="mock-item-sub">12小時前</span>
+              </div>
+              <div class="mock-item">
+                <span>⚗️ sandbox-algo-test</span>
+                <span class="mock-item-sub" style="color: #a78bfa;">沙盒</span>
+              </div>
+            </div>
+          </div>
+
+          <ul class="metric-list">
+            <li class="metric-item">
+              <span class="metric-label">常態靜止圖示</span>
+              <span class="metric-val" style="color: var(--green);">僅 1 個（極簡呼吸感）</span>
+            </li>
+            <li class="metric-item">
+              <span class="metric-label">觸控板/移動端體驗</span>
+              <span class="metric-val" style="color: var(--amber);">中等（移動端無 hover）</span>
+            </li>
+            <li class="metric-item">
+              <span class="metric-label">改造成本</span>
+              <span class="metric-val" style="color: var(--green);">極低（僅需 6 行 CSS opacity）</span>
+            </li>
+          </ul>
+        </div>
+
+
+        <!-- 方案 3：解耦頂欄 + 搜尋新建工具條 -->
+        <div class="proposal-card">
+          <div class="proposal-header">
+            <div>
+              <div class="proposal-title">方案 3 · 頂欄解耦 + 微型搜尋工具條</div>
+              <div style="font-size: 11px; color: var(--text-dim); margin-top: 2px;">面向專案量大（25+ 個專案）的重度使用者</div>
+            </div>
+          </div>
+
+          <div class="proposal-meta">
+            頂欄完全不放業務按鈕，僅負責 Tab 切換與側欄收折。在專案列表上方新增一行微型快速過濾條與新建入口，徹底解決“找專案費勁”與“按鈕扎堆”兩個痛點。
+          </div>
+
+          <!-- 原型演示 -->
+          <div class="sidebar-mock">
+            <div class="mock-header">
+              <div class="mock-tabs">
+                <span class="mock-tab active">
+                  📁 專案 <span class="mock-badge">(25)</span>
+                </span>
+                <span class="mock-tab">
+                  👥 群組
+                </span>
+              </div>
+              <div class="mock-actions">
+                <button class="mock-btn collapse-btn" onclick="toggleMockCollapse('mock-list-3')" title="摺疊側邊欄">
+                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="15 18 9 12 15 6"></polyline></svg>
+                </button>
+              </div>
+            </div>
+
+            <!-- 獨立微型工具欄 -->
+            <div class="mock-filter-bar" id="filter-bar-3">
+              <input type="text" class="mock-input" placeholder="過濾專案 (25 個)..." oninput="filterMockList(this.value)">
+              <button class="mock-btn" style="width: 22px; height: 22px;" title="開啟或新建" onclick="alert('點選新建')">
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
+              </button>
+            </div>
+
+            <!-- 列表 -->
+            <div class="mock-list" id="mock-list-3">
+              <div class="mock-item active">
+                <span>📁 pi-web-ui</span>
+                <span class="mock-item-sub">當前啟用</span>
+              </div>
+              <div class="mock-item">
+                <span>📁 docs-site</span>
+                <span class="mock-item-sub">12小時前</span>
+              </div>
+              <div class="mock-item">
+                <span>⚗️ sandbox-algo-test</span>
+                <span class="mock-item-sub" style="color: #a78bfa;">沙盒</span>
+              </div>
+            </div>
+          </div>
+
+          <ul class="metric-list">
+            <li class="metric-item">
+              <span class="metric-label">頂欄整潔度</span>
+              <span class="metric-val" style="color: var(--green);">完美（零業務按鈕）</span>
+            </li>
+            <li class="metric-item">
+              <span class="metric-label">大專案量管理效率</span>
+              <span class="metric-val" style="color: var(--green);">極高（支援模糊即時檢索）</span>
+            </li>
+            <li class="metric-item">
+              <span class="metric-label">縱向高度佔用</span>
+              <span class="metric-val" style="color: var(--amber);">略增 28px</span>
+            </li>
+          </ul>
+        </div>
+
+
+        <!-- 方案 4：列表內聯卡片操作 -->
+        <div class="proposal-card">
+          <div class="proposal-header">
+            <div>
+              <div class="proposal-title">方案 4 · 列表內聯輕量操作卡</div>
+              <div style="font-size: 11px; color: var(--text-dim); margin-top: 2px;">極簡直覺 · 新手友好</div>
+            </div>
+          </div>
+
+          <div class="proposal-meta">
+            將“開啟專案”和“新建沙盒”從頂欄移出，做成專案列表中首行的微型快捷引導項，或者直接雙擊列表空白處開啟。頂欄保持絕對的乾淨。
+          </div>
+
+          <!-- 原型演示 -->
+          <div class="sidebar-mock">
+            <div class="mock-header">
+              <div class="mock-tabs">
+                <span class="mock-tab active">
+                  📁 專案 <span class="mock-badge">(25)</span>
+                </span>
+                <span class="mock-tab">
+                  👥 群組
+                </span>
+              </div>
+              <div class="mock-actions">
+                <button class="mock-btn collapse-btn" onclick="toggleMockCollapse('mock-list-4')" title="摺疊側邊欄">
+                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="15 18 9 12 15 6"></polyline></svg>
+                </button>
+              </div>
+            </div>
+
+            <!-- 列表內聯操作 -->
+            <div class="mock-list" id="mock-list-4">
+              <div style="display: flex; gap: 6px; margin-bottom: 8px;">
+                <div style="flex: 1; padding: 4px 6px; background: rgba(255,255,255,0.03); border: 1px dashed var(--border); border-radius: 4px; text-align: center; font-size: 11px; cursor: pointer; color: var(--text-dim);" onclick="alert('開啟已有專案')">
+                  + 開啟專案
+                </div>
+                <div style="flex: 1; padding: 4px 6px; background: rgba(139,92,246,0.06); border: 1px dashed var(--accent-border); border-radius: 4px; text-align: center; font-size: 11px; cursor: pointer; color: #c4b5fd;" onclick="alert('新建沙盒')">
+                  ⚗️ 新建沙盒
+                </div>
+              </div>
+
+              <div class="mock-item active">
+                <span>📁 pi-web-ui</span>
+                <span class="mock-item-sub">當前啟用</span>
+              </div>
+              <div class="mock-item">
+                <span>📁 docs-site</span>
+                <span class="mock-item-sub">12小時前</span>
+              </div>
+            </div>
+          </div>
+
+          <ul class="metric-list">
+            <li class="metric-item">
+              <span class="metric-label">直觀引導性</span>
+              <span class="metric-val" style="color: var(--green);">強（帶文字標籤，不依賴猜圖示）</span>
+            </li>
+            <li class="metric-item">
+              <span class="metric-label">誤觸機率</span>
+              <span class="metric-val" style="color: var(--green);">幾乎為 0</span>
+            </li>
+            <li class="metric-item">
+              <span class="metric-label">列表滾動體驗</span>
+              <span class="metric-val" style="color: var(--amber);">首行佔用少量內容高度</span>
+            </li>
+          </ul>
+        </div>
+
+      </div>
+    </div>
+
+
+    <!-- 橫向多維對比 -->
+    <div id="view-compare" class="comparison-table-wrap" style="display: block;">
+      <div class="section-headline">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="20" x2="18" y2="10"></line><line x1="12" y1="20" x2="12" y2="4"></line><line x1="6" y1="20" x2="6" y2="14"></line></svg>
+        <span>4 大方案全方位對比評估矩陣</span>
+      </div>
+
+      <table class="compare-table">
+        <thead>
+          <tr>
+            <th>對比維度</th>
+            <th>當前現狀 (Baseline)</th>
+            <th style="color: #c4b5fd;">方案 1: 統一新建下拉 ★</th>
+            <th>方案 2: Hover 動態顯隱</th>
+            <th>方案 3: 頂欄解耦 + 搜尋欄</th>
+            <th>方案 4: 列表內聯卡片</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><strong>常駐圖示總數</strong></td>
+            <td><span style="color: #f87171; font-weight: 600;">4 個小按鈕扎堆</span></td>
+            <td><span style="color: #34d399; font-weight: 600;">2 個（清晰分界）</span></td>
+            <td><span style="color: #34d399; font-weight: 600;">1 個（僅收起）</span></td>
+            <td><span style="color: #34d399; font-weight: 600;">1 個（僅收起）</span></td>
+            <td><span style="color: #34d399; font-weight: 600;">1 個（僅收起）</span></td>
+          </tr>
+          <tr>
+            <td><strong>認知成本與辨識度</strong></td>
+            <td>高（需要猜 <code>⚗</code> 和 <code>📁+</code> 的區別）</td>
+            <td><span style="color: #34d399;">極低（標準 <code>+</code> 號，下拉帶文字）</span></td>
+            <td>中（懸浮時仍需辨別小圖示）</td>
+            <td>低（搜尋框明確，功能專一）</td>
+            <td>極低（直接帶有大文字標籤）</td>
+          </tr>
+          <tr>
+            <td><strong>誤觸機率</strong></td>
+            <td><span style="color: #f87171;">極高（多個 22px 按鈕緊貼）</span></td>
+            <td><span style="color: #34d399;">極低（間距充足，帶視覺分隔）</span></td>
+            <td>中</td>
+            <td>極低</td>
+            <td>極低</td>
+          </tr>
+          <tr>
+            <td><strong>後續功能可擴充套件性</strong></td>
+            <td>極差（每多一種型別就多擠一個圖示）</td>
+            <td><span style="color: #34d399;">極好（下拉選單可容納無限項）</span></td>
+            <td>差</td>
+            <td>良好</td>
+            <td>良好</td>
+          </tr>
+          <tr>
+            <td><strong>程式碼改造難度</strong></td>
+            <td>—</td>
+            <td><span style="color: #34d399;">低（僅調整 Header JSX 與 1 個 Menu）</span></td>
+            <td><span style="color: #34d399;">極低（純 CSS 懸浮控制）</span></td>
+            <td>中（需新增搜尋過濾狀態）</td>
+            <td>低</td>
+          </tr>
+          <tr>
+            <td><strong>綜合推薦度</strong></td>
+            <td>❌ 需最佳化</td>
+            <td><span style="color: #34d399; font-weight: 700;">★★★★★ 強烈推薦</span></td>
+            <td>★★★☆☆</td>
+            <td>★★★★☆（推薦重度使用者）</td>
+            <td>★★★☆☆</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+
+    <!-- 程式碼改造方案 (Code Diff) -->
+    <div id="view-code" class="code-diff-card">
+      <div class="section-headline">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="16 18 22 12 16 6"></polyline><polyline points="8 6 2 12 8 18"></polyline></svg>
+        <span>實施落地路徑（以最受推崇的方案 1 為例）</span>
+      </div>
+
+      <div style="color: var(--text-dim); font-size: 13px; line-height: 1.6;">
+        若採納 <strong>方案 1（統一新建下拉中心）</strong>，僅需修改 <code>web/src/components/LeftPanel.tsx</code> 與少量 <code>web/src/styles.css</code>，無需動用任何後端邏輯，完全向下相容。
+      </div>
+
+      <pre class="code-block">
+<span class="diff-comment">// 檔案：web/src/components/LeftPanel.tsx (約 2085 行附近)</span>
+<span class="diff-del">- &lt;button className="lp-section-action lp-sandbox-action" onClick={...}&gt;&lt;LuFlaskConical /&gt;&lt;/button&gt;</span>
+<span class="diff-del">- &lt;button className="lp-section-action" onClick={...}&gt;&lt;FiFolderPlus /&gt;&lt;/button&gt;</span>
+<span class="diff-add">+ {/* 統一聚合的新建/開啟選單按鈕 */}</span>
+<span class="diff-add">+ &lt;div className="lp-new-menu-wrap" ref={newMenuRef}&gt;</span>
+<span class="diff-add">+   &lt;button type="button" className="lp-section-action lp-btn-create" onClick={() =&gt; setNewMenuOpen(!newMenuOpen)} title="新建或開啟..."&gt;</span>
+<span class="diff-add">+     &lt;FiPlus /&gt;</span>
+<span class="diff-add">+   &lt;/button&gt;</span>
+<span class="diff-add">+   {newMenuOpen && (</span>
+<span class="diff-add">+     &lt;div className="lp-new-dropdown-menu"&gt;</span>
+<span class="diff-add">+       &lt;button type="button" onClick={() =&gt; { setNewMenuOpen(false); setProjectPickerOpen(true); }}&gt;</span>
+<span class="diff-add">+         &lt;FiFolder /&gt; &lt;span&gt;開啟本地專案...&lt;/span&gt;</span>
+<span class="diff-add">+       &lt;/button&gt;</span>
+<span class="diff-add">+       &lt;button type="button" onClick={() =&gt; { setNewMenuOpen(false); onOpenSandboxModal?.(); }}&gt;</span>
+<span class="diff-add">+         &lt;LuFlaskConical /&gt; &lt;span&gt;新建沙盒工作區&lt;/span&gt;</span>
+<span class="diff-add">+       &lt;/button&gt;</span>
+<span class="diff-add">+       &lt;button type="button" onClick={() =&gt; { setNewMenuOpen(false); openDeviceGroupCreate(); }}&gt;</span>
+<span class="diff-add">+         &lt;FiUsers /&gt; &lt;span&gt;建立裝置群組&lt;/span&gt;</span>
+<span class="diff-add">+       &lt;/button&gt;</span>
+<span class="diff-add">+     &lt;/div&gt;</span>
+<span class="diff-add">+   )}</span>
+<span class="diff-add">+ &lt;/div&gt;</span>
+      </pre>
+
+      <div style="margin-top: 16px; font-size: 13px; color: var(--text-dim);">
+        <strong>CSS 最佳化點（同時拔掉歷史遺留補丁）：</strong>
+        在 <code>styles.css</code> 中，移除 <code>.lp-panel .panel-collapse-btn + .lp-section .lp-section-actions { margin-right: 28px; }</code> 的負避讓，讓頂欄按鈕恢復 flex 彈性佈局與統一微間距，徹底根除擠壓與變形。
+      </div>
+    </div>
+
+  </div>
+
+  <script>
+    // 切換檢視選項卡
+    function switchView(tabKey) {
+      document.querySelectorAll('.tab-pill').forEach(btn => btn.classList.remove('active'));
+      event.target.classList.add('active');
+
+      const pView = document.getElementById('view-proposals');
+      const cView = document.getElementById('view-compare');
+      const dView = document.getElementById('view-code');
+      const chView = document.getElementById('view-chevron');
+
+      if (tabKey === 'all') {
+        chView.style.display = 'block';
+        pView.style.display = 'block';
+        cView.style.display = 'block';
+        dView.style.display = 'block';
+        pView.scrollIntoView({ behavior: 'smooth' });
+      } else if (tabKey === 'chevron') {
+        chView.style.display = 'block';
+        pView.style.display = 'none';
+        cView.style.display = 'none';
+        dView.style.display = 'none';
+        chView.scrollIntoView({ behavior: 'smooth' });
+      } else if (tabKey === 'compare') {
+        chView.style.display = 'none';
+        pView.style.display = 'none';
+        cView.style.display = 'block';
+        dView.style.display = 'none';
+      } else if (tabKey === 'code') {
+        chView.style.display = 'none';
+        pView.style.display = 'none';
+        cView.style.display = 'none';
+        dView.style.display = 'block';
+      }
+    }
+
+    // 互動：摺疊形態演示切換
+    let currentChevronStyle = 'lead';
+    let isChevronListCollapsed = false;
+
+    function switchChevronStyle(styleKey) {
+      currentChevronStyle = styleKey;
+      document.querySelectorAll('.chevron-subtabs .subtab-btn').forEach(b => b.classList.remove('active'));
+      
+      const leftEl = document.getElementById('chevron-mock-left');
+      const descEl = document.getElementById('chevron-style-desc');
+      
+      if (styleKey === 'lead') {
+        document.getElementById('st-btn-1').classList.add('active');
+        leftEl.innerHTML = `
+          <span class="lead-chevron ${isChevronListCollapsed ? 'collapsed' : ''}" id="demo-lead-arrow">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="6 9 12 15 18 9"></polyline></svg>
+          </span>
+          <div class="mock-tabs">
+            <span class="mock-tab active" onclick="event.stopPropagation();">📁 專案 <span class="mock-badge">(25)</span></span>
+            <span class="mock-tab" onclick="event.stopPropagation();">👥 群組</span>
+          </div>
+        `;
+        descEl.innerHTML = `
+          <strong>形態 1A（左置前導樹狀箭頭 · 強烈推薦）：</strong><br>
+          將摺疊指示器移到最左側行首（<code>▼ 專案 (25)</code>），展開時箭頭向下，摺疊時向右旋轉 90° 變成 <code>▶</code>。<br>
+          這是 VS Code、Cursor、JetBrains 及所有檔案樹/大綱列表的通用標準。它將“本區塊摺疊”明確歸位到左側內容結構區，徹底與右側的“業務新建 [+]”和“面板摺疊 [&lt;]”分離，兩邊動線互不干擾！
+        `;
+      } else if (styleKey === 'badge') {
+        document.getElementById('st-btn-2').classList.add('active');
+        leftEl.innerHTML = `
+          <div class="mock-tabs">
+            <span class="mock-tab active" onclick="event.stopPropagation();">📁 專案 <span class="mock-badge">(25)</span></span>
+            <span class="mock-tab" onclick="event.stopPropagation();">👥 群組</span>
+          </div>
+          <span style="font-size: 10px; color: var(--text-faint); margin-left: 2px; transition: transform 0.15s ease; display: inline-block; transform: ${isChevronListCollapsed ? 'rotate(180deg)' : 'none'};">
+            ${isChevronListCollapsed ? '▾' : '▴'}
+          </span>
+        `;
+        descEl.innerHTML = `
+          <strong>形態 1B：微淡角標附著（縮小且降噪）：</strong><br>
+          保留在 Tab 膠囊的後方，但<strong>不再作為獨立 24px 大小方塊按鈕</strong>，而是以 10px 弱化灰度角標出現，點選整行標題任意空白區域均可摺疊。<br>
+          讓使用者明確意識到它“只是標題的從屬屬性”，不再產生“右邊擠了一堆按鈕”的工具欄堆疊感。
+        `;
+      } else if (styleKey === 'hover') {
+        document.getElementById('st-btn-3').classList.add('active');
+        leftEl.innerHTML = `
+          <div class="mock-tabs">
+            <span class="mock-tab active" onclick="event.stopPropagation();">📁 專案 <span class="mock-badge">(25)</span></span>
+            <span class="mock-tab" onclick="event.stopPropagation();">👥 群組</span>
+          </div>
+          <span class="hover-only-arrow" style="font-size: 10px; color: var(--text-faint); margin-left: 4px; opacity: 0; transition: opacity 0.15s ease;">
+            ${isChevronListCollapsed ? '▾ (點選展開)' : '▴ (點選摺疊)'}
+          </span>
+        `;
+        descEl.innerHTML = `
+          <strong>形態 1C：整行可點 + 懸浮顯現提示（極簡沉浸）：</strong><br>
+          常態下完全隱藏摺疊箭頭，視線沒有任何雜音。展開列表本身就是最直觀的視覺事實。<br>
+          滑鼠懸停在標題欄空白處時，淡入微小提示。整行空白區域均可隨時點選摺疊/展開。
+        `;
+      }
+    }
+
+    // 互動：點選標題欄整行觸發摺疊
+    function handleHeaderToggle(e) {
+      if (e.target.closest('.mock-actions') || e.target.closest('.mock-tab')) {
+        return;
+      }
+      isChevronListCollapsed = !isChevronListCollapsed;
+      const listEl = document.getElementById('demo-chevron-list');
+      const headerEl = document.getElementById('chevron-mock-header');
+      const arrowEl = document.getElementById('demo-lead-arrow');
+      
+      if (isChevronListCollapsed) {
+        listEl.style.display = 'none';
+        headerEl.classList.add('collapsed-header');
+        if (arrowEl) arrowEl.classList.add('collapsed');
+      } else {
+        listEl.style.display = 'block';
+        headerEl.classList.remove('collapsed-header');
+        if (arrowEl) arrowEl.classList.remove('collapsed');
+      }
+      switchChevronStyle(currentChevronStyle);
+    }
+
+    function toggleDemoDropdown() {
+      const dd = document.getElementById('demo-chevron-dropdown');
+      dd.style.display = dd.style.display === 'none' ? 'block' : 'none';
+    }
+
+    // 互動：切換下拉選單
+    function toggleDropdown(id) {
+      const dd = document.getElementById('dropdown-' + id);
+      if (dd.style.display === 'none') {
+        dd.style.display = 'block';
+      } else {
+        dd.style.display = 'none';
+      }
+    }
+
+    // 互動：切換摺疊列表
+    function toggleMockCollapse(listId) {
+      const list = document.getElementById(listId);
+      if (list.style.display === 'none') {
+        list.style.display = 'block';
+      } else {
+        list.style.display = 'none';
+      }
+    }
+
+    // 互動：切換 Tab
+    function toggleMockTab(el, prefix) {
+      const parent = el.parentElement;
+      parent.querySelectorAll('.mock-tab').forEach(t => t.classList.remove('active'));
+      el.classList.add('active');
+    }
+
+    // 互動：搜尋過濾演示
+    function filterMockList(query) {
+      const items = document.querySelectorAll('#mock-list-3 .mock-item');
+      items.forEach(item => {
+        if (!query || item.innerText.toLowerCase().includes(query.toLowerCase())) {
+          item.style.display = 'flex';
+        } else {
+          item.style.display = 'none';
+        }
+      });
+    }
+
+    // 點選其他地方關閉下拉
+    window.addEventListener('click', function(e) {
+      if (!e.target.closest('#btn-p1-add') && !e.target.closest('#dropdown-p1')) {
+        const dd = document.getElementById('dropdown-p1');
+        if (dd) dd.style.display = 'none';
+      }
+    });
+  </script>
+</body>
+</html>
+
+
+
+

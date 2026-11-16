@@ -1,0 +1,1289 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>左上角「所有裝置」浮層重構 · 簡版設計方案</title>
+<style>
+  :root {
+    --bg: #0d0e12;
+    --bg-elev: #14161c;
+    --bg-elev2: #1a1d26;
+    --bg-elev3: #222634;
+    --border: #262a35;
+    --border-soft: #1e2230;
+    --text: #e6e8ef;
+    --text-dim: #9aa1b4;
+    --text-faint: #6b7284;
+    --accent: #8b5cf6;
+    --accent-contrast: #ffffff;
+    --accent-soft: rgba(139, 92, 246, 0.14);
+    --green: #34d399;
+    --green-soft: rgba(52, 211, 153, 0.12);
+    --red-text: #fca5a5;
+    --red: #f87171;
+    --amber: #fbbf24;
+    --link: #a78bfa;
+    --mono: "SF Mono", "JetBrains Mono", ui-monospace, Menlo, Consolas, monospace;
+    --sans: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", Roboto, sans-serif;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    background: #08090c;
+    color: var(--text);
+    font: 13px/1.6 var(--sans);
+    -webkit-font-smoothing: antialiased;
+  }
+  .wrap { max-width: 1080px; margin: 0 auto; padding: 40px 24px 120px; }
+
+  /* ---------- 文件頭 ---------- */
+  .kicker {
+    font-size: 11px; letter-spacing: .14em; text-transform: uppercase; color: var(--text-faint);
+    display: flex; align-items: center; gap: 8px; margin-bottom: 14px;
+  }
+  .kicker .pill {
+    padding: 2px 8px; border-radius: 99px; background: var(--accent-soft); color: var(--link);
+    letter-spacing: .04em; text-transform: none; font-size: 11px;
+  }
+  h1 { font-size: 27px; line-height: 1.32; letter-spacing: -.02em; font-weight: 650; margin-bottom: 12px; }
+  .lead { color: var(--text-dim); font-size: 14px; max-width: 720px; }
+  .lead strong { color: var(--text); font-weight: 550; }
+
+  .callout {
+    margin: 22px 0 0; padding: 14px 18px; border: 1px solid rgba(139, 92, 246, 0.28);
+    border-radius: 12px; background: rgba(139, 92, 246, 0.08);
+  }
+  .callout-title {
+    font-size: 11px; letter-spacing: 0.1em; text-transform: uppercase; color: var(--link); margin-bottom: 8px;
+  }
+  .callout ul { margin: 0; padding-left: 18px; color: var(--text-dim); font-size: 12.5px; line-height: 1.75; }
+  .callout li { margin: 3px 0; }
+  .callout b { color: var(--text); font-weight: 600; }
+  .callout code { font: 11.5px/1 var(--mono); background: var(--bg-elev2); border: 1px solid var(--border-soft); border-radius: 4px; padding: 1px 5px; color: var(--text-dim); }
+
+  .kpis { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 10px; margin: 28px 0 8px; list-style: none; }
+  .kpis li { border: 1px solid var(--border); border-radius: 10px; background: var(--bg-elev); padding: 12px 14px; }
+  .kpis .k { font-size: 10.5px; letter-spacing: .08em; text-transform: uppercase; color: var(--text-faint); }
+  .kpis .v { font-size: 19px; font-weight: 600; margin-top: 5px; letter-spacing: -.01em; }
+  .kpis .v em { font-style: normal; color: var(--text-faint); font-size: 13px; font-weight: 400; }
+  .kpis .d { font-size: 11.5px; color: var(--text-dim); margin-top: 2px; }
+  .kpis .up { color: var(--green); }
+
+  h2.sec {
+    font-size: 16px; font-weight: 600; letter-spacing: -.01em; margin: 52px 0 6px;
+    display: flex; align-items: baseline; gap: 10px; scroll-margin-top: 20px;
+  }
+  h2.sec .idx { font: 11px/1 var(--mono); color: var(--accent); }
+  .sec-sub { color: var(--text-dim); font-size: 13px; margin-bottom: 20px; max-width: 760px; }
+  h3 { font-size: 13.5px; font-weight: 600; margin: 26px 0 10px; }
+
+  /* ---------- 診斷 ---------- */
+  .faults { display: grid; gap: 8px; }
+  .fault { display: grid; grid-template-columns: 20px minmax(0, 1fr); gap: 12px; padding: 12px 14px; border: 1px solid var(--border-soft); border-radius: 10px; background: var(--bg-elev); }
+  .fault .n { font: 11px/1.7 var(--mono); color: var(--red); }
+  .fault b { display: block; font-size: 12.5px; font-weight: 600; margin-bottom: 2px; }
+  .fault p { color: var(--text-dim); font-size: 12.5px; }
+  .fault code { font: 11.5px/1 var(--mono); background: var(--bg-elev2); border: 1px solid var(--border-soft); border-radius: 4px; padding: 1px 5px; color: var(--text-dim); }
+
+  /* ---------- 舞臺（浮層演示） ---------- */
+  .stage {
+    position: relative; margin: 14px 0 8px; padding: 0 0 270px;
+    border: 1px solid var(--border); border-radius: 14px;
+    background:
+      radial-gradient(circle at 22% 0%, rgba(139,92,246,.08), transparent 46%),
+      repeating-linear-gradient(0deg, #0b0c10 0 23px, #0c0d11 23px 24px),
+      #0b0c10;
+  }
+  .stage.tall { padding-bottom: 340px; }
+  .stage.short { padding-bottom: 210px; }
+  .fake-toolbar {
+    display: flex; align-items: center; gap: 2px; padding: 9px 10px; border-radius: 13px 13px 0 0;
+    border-bottom: 1px solid var(--border-soft); background: rgba(13,14,18,.86); backdrop-filter: blur(6px);
+  }
+  .brand-chip {
+    display: flex; align-items: center; gap: 8px; padding: 2px 10px 2px 3px; border: 0;
+    border-radius: 9px; background: transparent; color: var(--text); font: inherit; cursor: pointer;
+  }
+  .brand-chip .logo {
+    width: 26px; height: 26px; border-radius: 7px; display: grid; place-items: center;
+    background: linear-gradient(160deg, #a78bfa, #7c3aed); color: #fff; font-size: 15px; font-weight: 600;
+    box-shadow: 0 0 0 1px rgba(255,255,255,.1) inset;
+  }
+  .brand-chip .name { font-size: 12.5px; color: var(--text-dim); white-space: nowrap; }
+  .brand-chip[aria-expanded="true"] { background: var(--bg-elev2); }
+  .brand-chip[aria-expanded="true"] .name { color: var(--text); }
+  .tool-sep { width: 1px; height: 16px; background: var(--border); margin: 0 6px; }
+  .tool-btn {
+    width: 26px; height: 26px; display: grid; place-items: center; border: 0; border-radius: 7px;
+    background: transparent; color: var(--text-dim); cursor: default;
+  }
+  .tool-btn svg { width: 15px; height: 15px; stroke: currentColor; fill: none; stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round; }
+  .tool-btn:hover { background: var(--bg-elev2); color: var(--text); }
+  .stage-note {
+    position: absolute; right: 12px; top: 11px; font: 10.5px/1.5 var(--mono); color: var(--text-faint);
+    text-align: right; pointer-events: none;
+  }
+
+  .stage-foot {
+    position: absolute; right: 14px; bottom: 11px; max-width: 46%; text-align: right;
+    font: 10.5px/1.6 var(--mono); color: var(--text-faint); pointer-events: none;
+  }
+  .stage-caption {
+    display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px;
+    margin: 0 0 30px; font-size: 12px; color: var(--text-dim);
+  }
+  .stage-caption .tag {
+    font: 11px/1 var(--mono); color: var(--text-faint); border: 1px solid var(--border);
+    border-radius: 5px; padding: 3px 6px; background: var(--bg-elev);
+  }
+  .stage-caption .tag.hot { color: var(--green); border-color: rgba(52,211,153,.3); background: var(--green-soft); }
+  .stage-caption .tag.bad { color: var(--red-text); border-color: rgba(248,113,113,.28); background: rgba(248,113,113,.08); }
+
+  /* ---------- 方案 0：現狀復刻 ---------- */
+  .legacy-panel {
+    position: absolute; left: 12px; top: 48px; width: min(560px, calc(100% - 24px));
+    border: 1px solid var(--border); border-radius: 12px; background: var(--bg);
+    box-shadow: 0 12px 36px #0004;
+  }
+  .legacy-card { padding: 24px; }
+  .legacy-head { display: flex; align-items: flex-start; gap: 12px; margin-bottom: 24px; }
+  .legacy-icon {
+    width: 38px; height: 38px; flex: none; display: grid; place-items: center; color: var(--text);
+    background: var(--bg-elev2); border: 1px solid var(--border); border-radius: 10px;
+  }
+  .legacy-icon svg { width: 18px; height: 18px; stroke: currentColor; fill: none; stroke-width: 1.6; }
+  .legacy-head h2 { font-size: 15px; font-weight: 600; margin-bottom: 4px; }
+  .legacy-head p { font-size: 12px; color: var(--text-dim); }
+  .legacy-refresh {
+    margin-left: auto; width: 34px; height: 34px; display: grid; place-items: center; flex: none;
+    border: 1px solid var(--border); border-radius: 7px; background: var(--bg-elev2); color: var(--text);
+  }
+  .legacy-refresh svg { width: 14px; height: 14px; stroke: currentColor; fill: none; stroke-width: 1.8; }
+  .legacy-row {
+    display: flex; flex-wrap: wrap; align-items: center; gap: 12px;
+    padding: 16px 0; border-top: 1px solid var(--border);
+  }
+  .legacy-row .dc-device-icon {
+    width: 38px; height: 38px; flex: none; display: grid; place-items: center;
+    background: var(--bg-elev2); border: 1px solid var(--border); border-radius: 10px;
+  }
+  .legacy-row .dc-device-icon svg { width: 18px; height: 18px; stroke: currentColor; fill: none; stroke-width: 1.6; }
+  .legacy-identity { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 5px; }
+  .legacy-identity strong { font-size: 13px; font-weight: 550; overflow-wrap: anywhere; }
+  .legacy-identity span { font-size: 11px; color: var(--text-faint); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .legacy-status {
+    flex: none; display: inline-flex; align-items: center; gap: 7px; font-size: 11px; padding: 5px 10px;
+    border: 1px solid var(--border); border-radius: 99px; color: var(--green); background: var(--bg-elev);
+  }
+  .legacy-status::before { content: ""; width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
+  .legacy-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+  .legacy-btn {
+    display: inline-flex; align-items: center; gap: 7px; font-size: 13px; padding: 9px 13px;
+    border: 1px solid var(--border); border-radius: 7px; background: var(--bg-elev2); color: var(--text);
+  }
+  .legacy-btn svg { width: 14px; height: 14px; stroke: currentColor; fill: none; stroke-width: 1.8; }
+
+  /* ---------- 方案 A：緊湊列表（推薦） ---------- */
+  .panel {
+    position: absolute; left: 12px; top: 48px; width: 328px; max-width: calc(100% - 24px);
+    padding: 5px; border: 1px solid var(--border); border-radius: 12px;
+    background: var(--bg-elev);
+    box-shadow: 0 18px 44px -14px #000c, 0 2px 10px #0007;
+    font-size: 12.5px;
+  }
+  .panel.compact { width: 264px; }
+  .p-head { display: flex; align-items: center; gap: 8px; min-height: 30px; padding: 4px 4px 4px 9px; }
+  .p-title { font-size: 11.5px; font-weight: 600; color: var(--text-dim); letter-spacing: .05em; }
+  .p-count { font: 10.5px/1 var(--mono); color: var(--text-faint); padding: 3px 6px; border-radius: 99px; background: var(--bg-elev2); }
+  .p-spacer { flex: 1; }
+  .icon-btn {
+    width: 24px; height: 24px; flex: none; display: grid; place-items: center;
+    border: 0; border-radius: 6px; background: transparent; color: var(--text-dim);
+    cursor: pointer; transition: background .12s, color .12s;
+  }
+  .icon-btn svg { width: 14px; height: 14px; stroke: currentColor; fill: none; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+  .icon-btn:hover { background: var(--bg-elev3); color: var(--text); }
+  .icon-btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+  .icon-btn.spin svg { animation: spin .55s cubic-bezier(.4,0,.2,1); }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  .p-list { display: flex; flex-direction: column; gap: 1px; padding-top: 4px; border-top: 1px solid var(--border-soft); }
+  .row {
+    position: relative; display: grid; grid-template-columns: 14px minmax(0, 1fr) auto auto;
+    align-items: center; gap: 9px; min-height: 44px; padding: 6px 6px 6px 7px;
+    border-radius: 8px; transition: background .12s;
+  }
+  .row:hover { background: var(--bg-elev2); }
+  .row-hit { position: absolute; inset: 0; border-radius: 8px; z-index: 1; outline: none; }
+  .row-hit:focus-visible { box-shadow: 0 0 0 2px var(--accent) inset; }
+  .dot-wrap { display: grid; place-items: center; width: 14px; height: 14px; position: relative; z-index: 2; pointer-events: none; }
+  .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--text-faint); }
+  .dot.on { background: var(--green); box-shadow: 0 0 0 3px var(--green-soft); }
+  .row-main { min-width: 0; position: relative; z-index: 2; pointer-events: none; display: flex; flex-direction: column; gap: 1px; }
+  .row-name { display: flex; align-items: center; gap: 6px; min-width: 0; }
+  .row-name strong {
+    font-size: 12.5px; font-weight: 550; line-height: 1.35;
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0;
+  }
+  .row.off .row-name strong { color: var(--text-dim); font-weight: 500; }
+  .tag-self {
+    flex: none; font-size: 10px; line-height: 1.5; padding: 0 5px; border-radius: 4px;
+    color: var(--link); background: var(--accent-soft);
+  }
+  .row-sub {
+    font: 10.5px/1.4 var(--mono); color: var(--text-faint);
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  }
+  .row-actions { display: flex; align-items: center; gap: 1px; position: relative; z-index: 3; }
+  .row-actions .icon-btn { opacity: .55; transition: opacity .12s, background .12s, color .12s; }
+  .row:hover .row-actions .icon-btn,
+  .row:focus-within .row-actions .icon-btn,
+  .row.editing .row-actions .icon-btn { opacity: 1; }
+  .chev { width: 12px; height: 12px; flex: none; color: var(--text-faint); stroke: currentColor; fill: none; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; opacity: .7; margin-left: 0; }
+  .row:hover .chev { color: var(--text-dim); opacity: 1; }
+
+  /* 行內備註編輯：不換行、不跳高 */
+  .row.editing { padding-top: 3px; padding-bottom: 3px; }
+  .row-input {
+    width: 100%; min-width: 0; height: 20px; padding: 0 6px; font: 11.5px/20px var(--sans);
+    color: var(--text); background: var(--bg); border: 1px solid var(--accent); border-radius: 5px; outline: none;
+  }
+  .row-input::placeholder { color: var(--text-faint); }
+
+  /* ⋯ 選單 */
+  .p-menu {
+    position: absolute; top: 26px; right: -27px; z-index: 20; width: 172px; padding: 4px;
+    border: 1px solid var(--border); border-radius: 9px; background: var(--bg-elev2);
+    box-shadow: 0 12px 28px -8px #000c;
+  }
+  .p-menu button {
+    display: flex; align-items: center; gap: 8px; width: 100%; padding: 6px 8px; border: 0; border-radius: 6px;
+    background: transparent; color: var(--text); font: 12px/1.5 var(--sans); text-align: left; cursor: pointer;
+  }
+  .p-menu button:hover { background: var(--bg-elev3); }
+  .p-menu button svg { width: 13px; height: 13px; flex: none; stroke: currentColor; fill: none; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; color: var(--text-dim); }
+  .p-menu .sep { height: 1px; margin: 4px 6px; background: var(--border); }
+  .p-menu .danger { color: var(--red-text); }
+  /* 選單是浮層：允許越出面板邊界（與真實彈出層一致） */
+  .p-menu { pointer-events: auto; }
+
+  .p-empty { padding: 18px 10px; text-align: center; color: var(--text-faint); font-size: 12px; }
+  .p-note {
+    display: flex; align-items: flex-start; gap: 6px; margin: 2px 4px 4px; padding: 6px 8px;
+    border-radius: 6px; background: rgba(248,113,113,.08); color: var(--red-text); font-size: 11.5px;
+  }
+  .p-note svg { width: 13px; height: 13px; flex: none; margin-top: 2px; stroke: currentColor; fill: none; stroke-width: 1.8; }
+
+  /* 方案 B：極簡單行 */
+  .panel.compact .row { min-height: 30px; padding: 3px 5px 3px 6px; grid-template-columns: 12px minmax(0, 1fr) auto auto; gap: 8px; }
+  .panel.compact .row-sub { display: none; }
+  .panel.compact .row-main { flex-direction: row; align-items: center; gap: 6px; }
+  .panel.compact .p-list { padding-top: 3px; }
+
+  /* ---------- 規格表 ---------- */
+  table { width: 100%; border-collapse: collapse; font-size: 12.5px; }
+  th, td { text-align: left; padding: 9px 12px; border-bottom: 1px solid var(--border-soft); vertical-align: top; }
+  th { font-size: 10.5px; letter-spacing: .08em; text-transform: uppercase; color: var(--text-faint); font-weight: 600; }
+  td.mono, .mono { font-family: var(--mono); font-size: 11.5px; color: var(--text-dim); }
+  td b { font-weight: 600; }
+  .table-wrap { border: 1px solid var(--border); border-radius: 10px; overflow: hidden; background: var(--bg-elev); }
+
+  .cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 10px; }
+  .card { border: 1px solid var(--border); border-radius: 10px; background: var(--bg-elev); padding: 14px 16px; }
+  .card h4 { font-size: 12.5px; font-weight: 600; margin-bottom: 6px; display: flex; align-items: center; gap: 6px; }
+  .card ul { margin: 0; padding-left: 16px; color: var(--text-dim); font-size: 12.5px; }
+  .card li { margin: 3px 0; }
+
+  pre {
+    margin: 0; padding: 14px 16px; border: 1px solid var(--border); border-radius: 10px;
+    background: #0b0d12; color: #c9d1d9; overflow: auto; font: 11.5px/1.65 var(--mono);
+  }
+  pre .c { color: #5f6b85; }
+  pre .k { color: #c084fc; }
+  pre .s { color: #7ee0b8; }
+  pre .a { color: #fcd34d; }
+  .code-block + .code-block { margin-top: 10px; }
+  .code-label { font: 10.5px/1 var(--mono); color: var(--text-faint); margin: 14px 0 6px; letter-spacing: .04em; }
+
+  ol.steps { counter-reset: s; list-style: none; display: grid; gap: 8px; }
+  ol.steps li {
+    counter-increment: s; position: relative; padding: 11px 14px 11px 42px;
+    border: 1px solid var(--border-soft); border-radius: 10px; background: var(--bg-elev); font-size: 12.5px; color: var(--text-dim);
+  }
+  ol.steps li::before {
+    content: counter(s); position: absolute; left: 13px; top: 11px; width: 18px; height: 18px;
+    display: grid; place-items: center; border-radius: 5px; background: var(--accent-soft);
+    color: var(--link); font: 10.5px/1 var(--mono);
+  }
+  ol.steps b { color: var(--text); font-weight: 600; }
+
+  /* toast */
+  #toast {
+    position: fixed; left: 50%; bottom: 26px; transform: translate(-50%, 14px);
+    padding: 8px 14px; border-radius: 8px; border: 1px solid var(--border);
+    background: var(--bg-elev2); color: var(--text); font-size: 12.5px;
+    box-shadow: 0 12px 30px -10px #000c; opacity: 0; pointer-events: none;
+    transition: opacity .16s, transform .16s; z-index: 999;
+  }
+  #toast.on { opacity: 1; transform: translate(-50%, 0); }
+
+  /* ---------- 手機抽屜演示 ---------- */
+  .tag {
+    display: inline-block; font: 10.5px/1.5 var(--mono); padding: 1px 6px; border-radius: 5px;
+    border: 1px solid var(--border); color: var(--text-faint); background: var(--bg-elev);
+  }
+  .tag.hot { color: var(--green); border-color: rgba(52, 211, 153, 0.3); background: var(--green-soft); }
+  .tag.bad { color: var(--red-text); border-color: rgba(248, 113, 113, 0.28); background: rgba(248, 113, 113, 0.08); }
+
+  .ph-grid { display: grid; grid-template-columns: 344px minmax(0, 1fr); gap: 26px; align-items: start; margin: 18px 0 6px; }
+  .ph {
+    position: relative; width: 344px; max-width: 100%; height: 660px; padding: 9px; border-radius: 40px;
+    background: #191c24; border: 1px solid #2f3542;
+    box-shadow: 0 30px 70px -26px #000, inset 0 0 0 1px rgba(255, 255, 255, 0.04);
+  }
+  .ph-screen {
+    position: relative; width: 100%; height: 100%; border-radius: 32px; overflow: hidden;
+    background: var(--bg); display: flex; flex-direction: column;
+  }
+  .ph-topbar { display: flex; align-items: center; justify-content: space-between; padding: 11px 16px 5px; font: 10px/1 var(--mono); color: var(--text-faint); }
+  .ph-bar { display: flex; align-items: center; gap: 8px; padding: 2px 12px 10px; }
+  .ph-chip { display: flex; align-items: center; gap: 7px; padding: 2px 10px 2px 2px; border: 0; border-radius: 9px; background: var(--bg-elev2); color: var(--text); font: inherit; }
+  .ph-chip .logo { width: 26px; height: 26px; display: grid; place-items: center; border-radius: 7px; background: linear-gradient(160deg, #a78bfa, #7c3aed); color: #fff; font-size: 14px; font-weight: 600; }
+  .ph-chip-name { font-size: 12px; color: var(--text-dim); }
+  .ph-tools { display: flex; gap: 2px; margin-left: auto; color: var(--text-faint); font: 12px var(--mono); }
+  .ph-tool { width: 26px; height: 26px; display: grid; place-items: center; border-radius: 7px; }
+  .ph-body { flex: 1; display: flex; flex-direction: column; gap: 8px; padding: 4px 12px; overflow: hidden; }
+  .ph-bubble { max-width: 84%; padding: 8px 11px; border-radius: 12px; border: 1px solid var(--border-soft); background: var(--bg-elev); font-size: 11.5px; line-height: 1.6; color: var(--text-dim); }
+  .ph-bubble.is-me { align-self: flex-end; background: var(--accent-soft); border-color: rgba(139, 92, 246, 0.28); color: #ddd6fe; }
+  .ph-bubble code { font: 10.5px var(--mono); color: var(--text); }
+  .ph-scrim { position: absolute; inset: 0; background: rgba(0, 0, 0, 0.45); }
+  .ph-sheet {
+    position: absolute; left: 0; right: 0; bottom: 0; display: flex; flex-direction: column;
+    border-radius: 16px 16px 0 0; border-top: 1px solid var(--border); background: var(--bg-elev);
+    box-shadow: 0 -16px 36px -12px #000c;
+  }
+  .ph-grab { width: 36px; height: 4px; border-radius: 99px; background: var(--border); margin: 7px auto 4px; }
+  .ph-sheet-head { display: flex; align-items: center; gap: 8px; padding: 0 8px 4px 14px; }
+  .ph-title { font-size: 12px; font-weight: 600; color: var(--text-dim); letter-spacing: 0.04em; }
+  .ph-count { font: 10px/1 var(--mono); color: var(--text-faint); padding: 3px 6px; border-radius: 99px; background: var(--bg-elev2); }
+  .ph-spacer { flex: 1; }
+  .ph-iconbtn { width: 36px; height: 36px; display: grid; place-items: center; border: 0; border-radius: 9px; background: transparent; color: var(--text-dim); font-size: 15px; }
+  .ph-iconbtn:active { background: var(--bg-elev2); }
+  .ph-list { list-style: none; margin: 0; padding: 0 6px; }
+  .ph-row {
+    position: relative; display: grid; grid-template-columns: 10px minmax(0, 1fr) auto; align-items: center; gap: 10px;
+    min-height: 56px; padding-left: 8px; border-radius: 10px;
+  }
+  .ph-row:active { background: var(--bg-elev2); }
+  .ph-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--text-faint); }
+  .ph-dot.on { background: var(--green); box-shadow: 0 0 0 3px var(--green-soft); }
+  .ph-main { display: flex; flex-direction: column; gap: 1px; min-width: 0; }
+  .ph-main strong { display: flex; align-items: center; gap: 6px; font-size: 14px; font-weight: 550; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .ph-row.is-off strong { color: var(--text-dim); font-weight: 500; }
+  .ph-main > span { font: 11px/1.4 var(--mono); color: var(--text-faint); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .ph-taps { position: relative; display: flex; align-items: center; }
+  .ph-tap { width: 44px; height: 44px; display: grid; place-items: center; border: 0; border-radius: 10px; background: transparent; color: var(--text-dim); cursor: pointer; }
+  .ph-tap:active { background: var(--bg-elev3); color: var(--text); }
+  .ph-tap + .ph-tap { border-left: 1px solid var(--border-soft); border-radius: 0 10px 10px 0; }
+  .ph-tap svg { width: 17px; height: 17px; stroke: currentColor; fill: none; stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round; }
+  .ph-menu {
+    position: absolute; right: 4px; top: 50px; z-index: 6; width: 164px; padding: 4px;
+    border: 1px solid var(--border); border-radius: 10px; background: var(--bg-elev2); box-shadow: 0 16px 30px -10px #000c;
+  }
+  .ph-menu.up { top: auto; bottom: 50px; }
+  .ph-menu button { display: flex; align-items: center; width: 100%; padding: 10px 9px; border: 0; border-radius: 7px; background: transparent; color: var(--text); font: 12.5px/1.4 var(--sans); text-align: left; cursor: pointer; }
+  .ph-menu button:active { background: var(--bg-elev3); }
+  .ph-edit { display: flex; gap: 8px; padding: 8px 12px 6px; border-top: 1px solid var(--border-soft); }
+  .ph-edit[hidden] { display: none; }
+  .ph-edit input { flex: 1; min-width: 0; height: 40px; padding: 0 10px; border: 1px solid var(--accent); border-radius: 9px; background: var(--bg); color: var(--text); font: 12.5px var(--sans); outline: none; }
+  .ph-primary { height: 40px; padding: 0 16px; border: 1px solid var(--accent); border-radius: 9px; background: var(--accent); color: var(--accent-contrast); font: 12.5px/1 var(--sans); font-weight: 550; cursor: pointer; }
+  .ph-safe { height: 14px; }
+  .ph-notes h4 { margin: 0 0 8px; font-size: 12.5px; font-weight: 600; }
+  .ph-notes table td:first-child { white-space: nowrap; }
+  .ph-notes table td { font-size: 12px; color: var(--text-dim); }
+  .ph-notes table td b { color: var(--text); }
+  .ph-legend { display: grid; gap: 8px; list-style: none; }
+  .ph-legend li { display: grid; grid-template-columns: 18px minmax(0, 1fr); gap: 9px; font-size: 12.5px; color: var(--text-dim); }
+  .ph-legend .n { width: 18px; height: 18px; display: grid; place-items: center; border-radius: 50%; background: var(--accent-soft); color: var(--link); font: 10px/1 var(--mono); }
+  .ph-legend b { color: var(--text); font-weight: 600; }
+  @media (max-width: 860px) {
+    .ph-grid { grid-template-columns: minmax(0, 1fr); justify-items: center; }
+    .ph-notes { width: 100%; }
+  }
+
+  @media (max-width: 640px) {
+    .stage-note { display: none; }
+    .fake-toolbar { overflow: hidden; }
+    .fake-toolbar .tool-btn:nth-of-type(n + 5) { display: none; }
+    .stage-foot { max-width: 62%; }
+    .kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    * { transition: none !important; animation: none !important; }
+  }
+</style>
+</head>
+<body>
+<div data-docs-i18n-switch style="position:fixed;top:8px;right:12px;z-index:2147483647;font:12px/1.6 -apple-system,system-ui,sans-serif;background:rgba(15,17,22,.78);color:#fff;padding:4px 12px;border-radius:999px;box-shadow:0 2px 10px rgba(0,0,0,.35)"><a href="./device-directory-redesign-proposals.html" style="color:#fff;text-decoration:none">简体中文</a> · <a href="./device-directory-redesign-proposals.en.html" style="color:#fff;text-decoration:none">English</a> · <strong>繁體中文</strong></div>
+
+
+<div class="wrap">
+
+  <div class="kicker">pi-web-ui · 設計提案 <span class="pill">已實現 · 方案 B + 手機抽屜</span></div>
+  <h1>左上角「所有裝置」浮層：結構重構</h1>
+  <p class="lead">
+    問題不在配色，而在<strong>結構</strong>：三個文字按鈕把名稱列擠成 40px，中文名被壓成逐字換行；560px 寬的卡片裡，一半寬度給了按鈕。
+    重構後：<strong>高頻動作留在行上（開啟 / 遠端桌面），只有低頻進 ⋯</strong>，名稱佔滿可讀寬度，寬度 560 → 328px，單行 96 → 45px；
+    窄屏換成<strong>底部抽屜 + 44px 觸控塊</strong>，常用動作一律 ≤ 2 次點選。
+  </p>
+
+  <div class="callout">
+    <div class="callout-title">落地記錄</div>
+    <ul>
+      <li>已按 <b>方案 B（極簡單行）+ 手機底部抽屜</b> 實現：<code>web/src/components/DevicePanel.tsx</code>（新）、<code>DeviceDirectory.tsx</code>（取數 + <code>variant="panel"</code>）、<code>BrandDeviceMenu.tsx</code>（浮層 / 抽屜容器）、<code>use-coarse-pointer.ts</code>（斷點單源）與 <code>styles.css</code> 的 <code>.dp-*</code>。</li>
+      <li><b>與稿件的一處差異</b>：行尾第二個動作落地為<b>遠端桌面</b>（稿裡畫的是 ↗「新標籤開啟」）。整行本身就是開啟裝置的入口，↗ 與它重複；遠端桌面才是需要獨立入口的第二高頻動作。因此 ⋯ 菜單隻剩「設定備註 / 複製裝置 ID」。</li>
+      <li>實測：桌面浮層 <b>264 × 221px</b>（6 臺）、行 30px、圖示 24px；手機行 <b>56px</b>、觸控塊 <b>44×44</b>、抽屜 <code>62dvh</code> 內滾動、下拉重新整理手勢已接。</li>
+      <li>測試：<code>tests/unit/device-panel.test.ts</code>（5 條：緊湊行 / 整行開啟 / 行尾遠端桌面 / ⋯ 選單 / 觸控編輯條）與 <code>brand-device-menu.test.ts</code>（新增抽屜用例：遮罩與 Escape 關閉）。</li>
+    </ul>
+  </div>
+
+  <ul class="kpis">
+    <li>
+      <div class="k">面板寬度</div>
+      <div class="v">560 → 328 <em>px</em></div>
+      <div class="d">−41%，手機上也不再頂滿屏</div>
+    </li>
+    <li>
+      <div class="k">兩裝置總高</div>
+      <div class="v">≈300 → 140 <em>px</em></div>
+      <div class="d">省掉說明段與 16px 行距；3 臺也才 185px</div>
+    </li>
+    <li>
+      <div class="k">名稱列寬</div>
+      <div class="v">≈56 → 206 <em>px</em></div>
+      <div class="d up">長名回落成省略號，不再逐字斷行</div>
+    </li>
+    <li>
+      <div class="k">點選預算</div>
+      <div class="v">每個動作 ≤ 2 <em>次</em></div>
+      <div class="d up">遠端桌面不再進二級選單；手機抽屜見 04 節</div>
+    </li>
+  </ul>
+
+  <!-- ============================================================ -->
+  <h2 class="sec" id="diagnose"><span class="idx">01</span>診斷：4 個結構性問題</h2>
+  <p class="sec-sub">截圖裡能直接看到的現象，逐條對應到程式碼（<span class="mono">web/src/components/DeviceDirectory.tsx</span>）。</p>
+
+  <div class="faults">
+    <div class="fault">
+      <span class="n">01</span>
+      <div>
+        <b>名稱列被按鈕吃掉，中文名逐字換行</b>
+        <p>行內是 <code>flex</code>：圖示 38 + 狀態膠囊 ~62 + 三個文字按鈕 ≈ 336 + 間距，合計 ~470px，留給名稱的只有幾十畫素，而 <code>.dd-identity strong</code> 帶 <code>overflow-wrap: anywhere</code> → 每個字單獨一行（截圖裡的 <code>cdeMa / c / mini.lo / cal</code>）。</p>
+      </div>
+    </div>
+    <div class="fault">
+      <span class="n">02</span>
+      <div>
+        <b>「所有裝置」頭佔了 1/3 高度</b>
+        <p>38px 圖示 + 兩行文案（標題 + 「同一賬號下的裝置，使用本機繫結授權直接訪問。」）+ 24px 下間距 ≈ 84px。這句話是<strong>一次性解釋</strong>，不該常駐在一個每次點開的浮層裡。</p>
+      </div>
+    </div>
+    <div class="fault">
+      <span class="n">03</span>
+      <div>
+        <b>主次不分：一件裝置有 3 個同權重的按鈕</b>
+        <p>「修改備註 / 開啟裝置 / 遠端桌面」視覺權重完全相同，而且「修改備註」這種低頻操作和最常用的「開啟裝置」並排。真實使用頻率極度傾斜：開啟 ≫ 遠端桌面 ≫ 備註。</p>
+      </div>
+    </div>
+    <div class="fault">
+      <span class="n">04</span>
+      <div>
+        <b>備註編輯把行撐成兩段，編輯時整塊跳高</b>
+        <p>表單用 <code>width:100%</code> + <code>flexWrap:wrap</code> 追加在行末，輸入框 <code>minWidth:180px</code>，加上兩個文字按鈕，編輯態高度直接翻倍 —— 列表上下跳動。</p>
+      </div>
+    </div>
+  </div>
+
+  <!-- ============================================================ -->
+  <h2 class="sec" id="variants"><span class="idx">02</span>方案對比（可點，可懸停）</h2>
+  <p class="sec-sub">三個方案共用同一套結構原則：<b>一行裝置 = 一個可點區域 + 懸浮圖示 + ⋯ 選單</b>。差別只在資訊密度。</p>
+
+  <h3>方案 0 · 現狀（復刻，僅作對照）</h3>
+  <div class="stage tall">
+    <div class="fake-toolbar">
+      <button class="brand-chip" aria-expanded="true"><span class="logo">π</span><span class="name">pi-web-ui</span></button>
+      <span class="tool-sep"></span>
+      <button class="tool-btn" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg></button>
+      <button class="tool-btn" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M4 7l4 4-4 4"/><path d="M12 17h8"/></svg></button>
+      <button class="tool-btn" aria-hidden="true"><svg viewBox="0 0 24 24"><circle cx="6" cy="18" r="2.5"/><circle cx="18" cy="6" r="2.5"/><path d="M8 16c4 0 4-4 8-8"/></svg></button>
+      <button class="tool-btn" aria-hidden="true"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M2 12h2M20 12h2M5 5l1.5 1.5M17.5 17.5L19 19M19 5l-1.5 1.5M6.5 17.5L5 19"/></svg></button>
+      <button class="tool-btn" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M12 3l8 4.5v9L12 21l-8-4.5v-9L12 3z"/><path d="M12 3v18"/></svg></button>
+      <button class="tool-btn" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M12 3l9 5-9 5-9-5 9-5z"/><path d="M3 13l9 5 9-5"/></svg></button>
+      <button class="tool-btn" aria-hidden="true"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 00.3 1.9l.1.1a2 2 0 11-2.8 2.8l-.1-.1a1.7 1.7 0 00-2.9 1.2 2 2 0 11-4 0 1.7 1.7 0 00-2.9-1.2l-.1.1a2 2 0 11-2.8-2.8l.1-.1A1.7 1.7 0 004.6 15a2 2 0 110-4 1.7 1.7 0 001-2.9l-.1-.1a2 2 0 112.8-2.8l.1.1a1.7 1.7 0 001.9.3H11a2 2 0 114 0 1.7 1.7 0 002.9 1l.1-.1a2 2 0 112.8 2.8l-.1.1a1.7 1.7 0 00-.3 1.9v.1a2 2 0 110 4z"/></svg></button>
+      <span class="stage-note">panel 560px<br>row ≈ 96px</span>
+    </div>
+    <span class="stage-foot">對照用：三個文字按鈕<br>把名稱擠成豎排</span>
+
+    <div class="legacy-panel">
+      <div class="legacy-card">
+        <div class="legacy-head">
+          <span class="legacy-icon"><svg viewBox="0 0 24 24"><rect x="2.5" y="4" width="19" height="13" rx="2"/><path d="M8 21h8M12 17v4"/></svg></span>
+          <div>
+            <h2>所有裝置 · 2</h2>
+            <p>同一賬號下的裝置，使用本機繫結授權直接訪問。</p>
+          </div>
+          <span class="legacy-refresh"><svg viewBox="0 0 24 24"><path d="M21 12a9 9 0 11-3-6.7"/><path d="M21 3v6h-6"/></svg></span>
+        </div>
+        <div class="legacy-row">
+          <span class="dc-device-icon"><svg viewBox="0 0 24 24"><rect x="2.5" y="4" width="19" height="13" rx="2"/><path d="M8 21h8M12 17v4"/></svg></span>
+          <div class="legacy-identity"><strong>win</strong><span>DESKTOP-4A3F9C</span></div>
+          <span class="legacy-status">線上</span>
+          <div class="legacy-actions">
+            <span class="legacy-btn"><svg viewBox="0 0 24 24"><path d="M12 20h9"/><path d="M16.5 3.5l4 4L7 21H3v-4L16.5 3.5z"/></svg>設定備註</span>
+            <span class="legacy-btn"><svg viewBox="0 0 24 24"><path d="M14 3h7v7"/><path d="M21 3L10 14"/><path d="M19 13v6a2 2 0 01-2 2H5a2 2 0 01-2-2V7a2 2 0 012-2h6"/></svg>開啟裝置</span>
+            <span class="legacy-btn"><svg viewBox="0 0 24 24"><rect x="2.5" y="4" width="19" height="13" rx="2"/><path d="M8 21h8M12 17v4"/></svg>遠端桌面</span>
+          </div>
+        </div>
+        <div class="legacy-row">
+          <span class="dc-device-icon"><svg viewBox="0 0 24 24"><rect x="2.5" y="4" width="19" height="13" rx="2"/><path d="M8 21h8M12 17v4"/></svg></span>
+          <div class="legacy-identity"><strong>cdeMac-mini.local</strong><span>66b0571f</span></div>
+          <span class="legacy-status">線上</span>
+          <div class="legacy-actions">
+            <span class="legacy-btn"><svg viewBox="0 0 24 24"><path d="M12 20h9"/><path d="M16.5 3.5l4 4L7 21H3v-4L16.5 3.5z"/></svg>設定備註</span>
+            <span class="legacy-btn"><svg viewBox="0 0 24 24"><path d="M14 3h7v7"/><path d="M21 3L10 14"/><path d="M19 13v6a2 2 0 01-2 2H5a2 2 0 01-2-2V7a2 2 0 012-2h6"/></svg>開啟裝置</span>
+            <span class="legacy-btn"><svg viewBox="0 0 24 24"><rect x="2.5" y="4" width="19" height="13" rx="2"/><path d="M8 21h8M12 17v4"/></svg>遠端桌面</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+  <div class="stage-caption">
+    <span class="tag bad">現狀</span>
+    <span>中文裝置名被壓成豎排；兩個裝置就把面板頂到 300px 高；手機上 3 個按鈕必然折行。</span>
+  </div>
+
+  <h3>方案 A · 緊湊列表（推薦）</h3>
+  <div class="stage" id="stage-a">
+    <div class="fake-toolbar">
+      <button class="brand-chip" id="chip-a" aria-expanded="true"><span class="logo">π</span><span class="name">pi-web-ui</span></button>
+      <span class="tool-sep"></span>
+      <button class="tool-btn" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg></button>
+      <button class="tool-btn" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M4 7l4 4-4 4"/><path d="M12 17h8"/></svg></button>
+      <button class="tool-btn" aria-hidden="true"><svg viewBox="0 0 24 24"><circle cx="6" cy="18" r="2.5"/><circle cx="18" cy="6" r="2.5"/><path d="M8 16c4 0 4-4 8-8"/></svg></button>
+      <button class="tool-btn" aria-hidden="true"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M2 12h2M20 12h2M5 5l1.5 1.5M17.5 17.5L19 19M19 5l-1.5 1.5M6.5 17.5L5 19"/></svg></button>
+      <button class="tool-btn" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M12 3l8 4.5v9L12 21l-8-4.5v-9L12 3z"/><path d="M12 3v18"/></svg></button>
+      <button class="tool-btn" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M12 3l9 5-9 5-9-5 9-5z"/><path d="M3 13l9 5 9-5"/></svg></button>
+      <button class="tool-btn" aria-hidden="true"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 00.3 1.9l.1.1a2 2 0 11-2.8 2.8l-.1-.1a1.7 1.7 0 00-2.9 1.2 2 2 0 11-4 0 1.7 1.7 0 00-2.9-1.2l-.1.1a2 2 0 11-2.8-2.8l.1-.1A1.7 1.7 0 004.6 15a2 2 0 110-4 1.7 1.7 0 001-2.9l-.1-.1a2 2 0 112.8-2.8l.1.1a1.7 1.7 0 001.9.3H11a2 2 0 114 0 1.7 1.7 0 002.9 1l.1-.1a2 2 0 112.8 2.8l-.1.1a1.7 1.7 0 00-.3 1.9v.1a2 2 0 110 4z"/></svg></button>
+      <span class="stage-note">panel 328px<br>row 45px</span>
+    </div>
+    <div id="panel-a"></div>
+    <span class="stage-foot">行尾常顯：遠端桌面 + ⋯<br>點行 = 開啟 · ⋯ = 備註 / 複製 ID<br>手機換成底部抽屜（04 節）</span>
+  </div>
+  <div class="stage-caption">
+    <span class="tag hot">推薦</span>
+    <span class="tag" data-size="a">—</span>
+    <span>點行 = 開啟裝置；行尾常顯 <b>遠端桌面 + ⋯</b>；⋯ 裡只放備註 / 複製 ID（高頻動作不進選單）。<b>試試 ⋯ → 設定備註，看行內就地編輯不跳高。</b></span>
+  </div>
+
+  <h3>方案 B · 極簡單行（裝置多時）</h3>
+  <div class="stage short" id="stage-b">
+    <div class="fake-toolbar">
+      <button class="brand-chip" id="chip-b" aria-expanded="true"><span class="logo">π</span><span class="name">pi-web-ui</span></button>
+      <span class="stage-note">panel 264px<br>row 30px</span>
+    </div>
+    <div id="panel-b"></div>
+    <span class="stage-foot">單行 30px，ID 收進 tooltip<br>6 臺裝置 = 233px</span>
+  </div>
+  <div class="stage-caption">
+    <span class="tag">備選</span>
+    <span class="tag" data-size="b">—</span>
+    <span>去掉 ID 次行，只留「狀態點 + 名稱 + 本機標籤」，6 臺裝置只有 233px 高。適合裝置 ≥5 臺；裝置 ID 進 tooltip 與 ⋯ 選單。</span>
+  </div>
+
+  <h3>方案 C · 雙列磁貼（不推薦）</h3>
+  <p class="sec-sub" style="margin-bottom:12px">
+    2 列 × 74px 磁貼，視覺更"體面"，但 4 臺裝置就要 170px 高，且每格只能放名稱 + 狀態，操作仍要靠懸浮圖示 —— 空間換不來資訊量，浮層裡不划算。<b>僅當裝置 ≤3 臺且未來要放縮圖時才考慮。</b>
+  </p>
+
+  <!-- ============================================================ -->
+  <h2 class="sec" id="spec"><span class="idx">03</span>方案 A 規格（可直接照著寫 CSS）</h2>
+  <p class="sec-sub">所有尺寸都用現有主題令牌，不引入新色值；淺色主題自動跟隨。</p>
+
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th style="width:150px">區域</th><th style="width:190px">尺寸 / 令牌</th><th>說明</th></tr></thead>
+      <tbody>
+        <tr><td><b>面板</b></td><td class="mono">328px · padding 5px<br>radius 12 · --bg-elev</td><td>手機 <code>min(328px, 100vw − 24px)</code>；保留既有 <code>max-height: calc(100dvh − 16px)</code> 與 <code>overscroll-behavior: contain</code></td></tr>
+        <tr><td><b>頭部</b></td><td class="mono">30px · 11.5px/600</td><td>「裝置」+ 計數膠囊 + 重新整理圖示。<span class="mono">--text-dim</span> 標題、<span class="mono">--text-faint</span> 計數</td></tr>
+        <tr><td><b>分隔</b></td><td class="mono">1px --border-soft</td><td>只保留頭部下一條；行間不用線，靠 4px 圓角 hover 底塊區分</td></tr>
+        <tr><td><b>行</b></td><td class="mono">min-h 44px · radius 8<br>grid 14 / 1fr / auto / auto · gap 9</td><td>hover → <span class="mono">--bg-elev2</span>；整行是可點區域（stretched link）</td></tr>
+        <tr><td><b>狀態點</b></td><td class="mono">7px · --green<br>ring 3px --green-soft</td><td>離線：<span class="mono">--text-faint</span> 實心、無光環；顏色 + 位置雙重編碼，不只靠顏色</td></tr>
+        <tr><td><b>名稱</b></td><td class="mono">12.5px/550 · ellipsis</td><td>單行省略，<code>title</code> 放全名；離線態降到 <span class="mono">--text-dim</span></td></tr>
+        <tr><td><b>次行</b></td><td class="mono">10.5px --mono --text-faint</td><td>裝置 ID 前 8 位（有備註時顯示「原名 · ID」），全部 <code>title</code> 可查</td></tr>
+        <tr><td><b>本機標籤</b></td><td class="mono">10px · --accent-soft / --link</td><td>軟底淺紫字，不用實底強調色（守 <code>accent-contrast</code> 紅線）</td></tr>
+        <tr><td><b>行尾動作</b></td><td class="mono">24×24（觸屏 44×44）<br>radius 6 / 10</td><td><b>常顯</b>：<code>遠端桌面</code> + <code>⋯</code>（桌面 55% 透明、hover 加深）。遠端桌面是第二高頻動作，藏進 ⋯ 就多一次點選；<code>pointer: coarse</code> 時兩塊放大到 44×44 且中間加 1px 分隔線</td></tr>
+        <tr><td><b>chevron</b></td><td class="mono">12px · --text-faint</td><td>常顯，提示"整行可點"（移動端無 hover 時的唯一操作暗示）</td></tr>
+        <tr><td><b>⋯ 選單</b></td><td class="mono">172px · z 由 <code>useOverlayZIndex()</code></td><td><b>只放低頻</b>：設定備註 / 複製裝置 ID。開啟、遠端桌面已經在行上，不在選單裡重複（否則等於多加一次點選）</td></tr>
+        <tr><td><b>行內編輯</b></td><td class="mono">20px 高 input · 1px --accent</td><td>原地替換次行，行高不變；Enter 存、Esc 撤、✓/✕ 圖示在行尾</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <h3>互動與可達性</h3>
+  <div class="cards">
+    <div class="card">
+      <h4>主次動作</h4>
+      <ul>
+        <li><b>主</b>：點行 → 開啟裝置（最高頻，一步到位）</li>
+        <li><b>次</b>：↗ 圖示 → 新標籤開啟（可中鍵/Ctrl 點）</li>
+        <li><b>低</b>：⋯ → 遠端桌面、備註、複製 ID</li>
+        <li>離線裝置：行仍可點，但先給 <code>title="裝置離線"</code> 提示，失敗時用行內 notice 而非全域性報錯</li>
+      </ul>
+    </div>
+    <div class="card">
+      <h4>語義 / 鍵盤</h4>
+      <ul>
+        <li>行用 <code>&lt;li&gt;</code> + 覆蓋整行的 <code>&lt;a class="row-hit"&gt;</code>（避免 button 套 button 的非法巢狀）</li>
+        <li>圖示按鈕在 <code>a</code> 之上（<code>z-index</code> + <code>position:relative</code>）</li>
+        <li>Tab 順序：行 → ↗ → ⋯；<code>aria-haspopup="menu"</code>、<code>aria-expanded</code></li>
+        <li>focus ring：<code>2px --accent</code>，<code>:focus-visible</code> 才顯示</li>
+      </ul>
+    </div>
+    <div class="card">
+      <h4>長文本 / 極端值</h4>
+      <ul>
+        <li>三件套：<code>min-width:0</code> + <code>overflow:hidden</code> + <code>ellipsis</code>（不再 anywhere 逐字斷行）</li>
+        <li>200 字元裝置名 → 單行省略，tooltip 全文</li>
+        <li>備註為空 → 次行回落成 ID；備註全刪 → 儲存空串即清除</li>
+        <li>裝置 20 臺 → 面板內滾動（<code>max-height: min(60vh,420px)</code>）</li>
+      </ul>
+    </div>
+    <div class="card">
+      <h4>密度權衡</h4>
+      <ul>
+        <li>A：≥3 臺仍舒適，資訊完整（名稱 + ID + 狀態 + 本機）</li>
+        <li>B：裝置 ≥5 臺時切到單行；同一份資料，只換 <code>variant</code></li>
+        <li>兩者共用行元件與事件，切換零成本</li>
+      </ul>
+    </div>
+  </div>
+
+  <!-- ============================================================ -->
+  <h2 class="sec" id="mobile"><span class="idx">04</span>手機適配：抽屜 + 觸控優先，常用動作不進選單</h2>
+  <p class="sec-sub">
+    手機上照搬桌面浮層會有兩個硬傷：<b>hover 不存在</b>（藏起來的圖示等於不可發現），<b>左上角不是拇指區</b>（浮層展開後兩個手指都難夠到）。
+    所以窄屏換形態：<b>點左上角 chip → 從底部升起抽屜</b>，行高 56px，每個常用動作一個 44px 觸控塊，<b>最多兩次點選</b>。
+  </p>
+
+  <div class="ph-grid">
+    <div class="ph">
+      <div class="ph-screen">
+        <div class="ph-topbar"><span>9:41</span><span class="ph-net">5G ▮▮▮</span></div>
+        <div class="ph-bar">
+          <button class="ph-chip" type="button"><span class="logo">π</span><span class="ph-chip-name">pi-web-ui</span></button>
+          <span class="ph-tools">
+            <span class="ph-tool">+</span>
+            <span class="ph-tool">&gt;_</span>
+            <span class="ph-tool">⑂</span>
+          </span>
+        </div>
+        <div class="ph-body">
+          <div class="ph-bubble is-me">這臺機器上的會話還在跑，幫我看下日誌</div>
+          <div class="ph-bubble">好的，正在讀取 <code>~/pi-web-ui/logs</code> …</div>
+          <div class="ph-bubble is-me">換到 Mac mini 上繼續</div>
+        </div>
+        <div class="ph-scrim" id="phScrim"></div>
+        <div class="ph-sheet" id="phSheet" role="dialog" aria-label="裝置">
+          <div class="ph-grab"></div>
+          <div class="ph-sheet-head">
+            <span class="ph-title">裝置</span>
+            <span class="ph-count">3</span>
+            <span class="ph-spacer"></span>
+            <button class="ph-iconbtn" type="button" data-ph="refresh" aria-label="重新整理">⟳</button>
+          </div>
+          <ul class="ph-list" id="phList"></ul>
+          <div class="ph-edit" id="phEdit" hidden>
+            <input id="phInput" type="text" maxlength="80" placeholder="備註（留空清除）" aria-label="裝置備註" />
+            <button class="ph-primary" type="button" id="phSave">儲存</button>
+          </div>
+          <div class="ph-safe"></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="ph-notes">
+      <h4>點哪兒 → 發生什麼</h4>
+      <ul class="ph-legend">
+        <li><span class="n">①</span><span><b>整行（名字 / 空白）</b> = 開啟裝置。一次點選，最高頻動作 0 層選單。</span></li>
+        <li><span class="n">②</span><span><b>行尾顯示器圖示（44×44）</b> = 遠端桌面。常顯，不藏進 ⋯，也不進二級選單。</span></li>
+        <li><span class="n">③</span><span><b>⋯ 或長按整行</b> = 備註、複製 ID（低頻）。長按直接聚焦輸入框，省掉「⋯ → 備註」那一步。</span></li>
+        <li><span class="n">④</span><span><b>下拉 = 重新整理（0 次點選）</b>；<b>下滑 / 點遮罩 = 關閉（1 個手勢）</b>。</span></li>
+      </ul>
+
+      <h4 style="margin-top:18px">手機規格（斷點 <span class="mono">max-width: 640px</span> 或 <span class="mono">pointer: coarse</span>）</h4>
+      <div class="table-wrap" style="margin-top:8px">
+        <table>
+          <tbody>
+            <tr><td><b>形態</b></td><td>底部抽屜：貼底、頂部圓角 16px、<code>max-height: 62dvh</code>、遮罩 <code>rgba(0,0,0,.45)</code>；滾動區 <code>overscroll-behavior: contain</code></td></tr>
+            <tr><td><b>行高</b></td><td>56px（桌面 45px）；名稱 14px、次行 11px；離線整行降到 <code>--text-dim</code> 並保留點選提示</td></tr>
+            <tr><td><b>觸控目標</b></td><td>行尾兩個 <code>44×44</code>（iOS HIG 最小值）；兩塊之間 1px 分隔線，讀起來是「分體按鈕」而不是三個圖示</td></tr>
+            <tr><td><b>無 hover</b></td><td>圖示一律常顯（桌面端 55% 透明、hover 加深）；禁「hover 才出現」的操作</td></tr>
+            <tr><td><b>手勢</b></td><td>下拉重新整理、下滑關閉（閾值 80px）；觸控反饋用 <code>:active</code> 而不是 <code>:hover</code></td></tr>
+            <tr><td><b>安全區</b></td><td>底部 <code>env(safe-area-inset-bottom)</code>；抽屜 <code>z-index</code> 走 <code>useOverlayZIndex()</code></td></tr>
+            <tr><td><b>響應速度</b></td><td><code>touch-action: manipulation</code>（去掉 300ms 點選延遲）、<code>-webkit-tap-highlight-color: transparent</code></td></tr>
+            <tr><td><b>排序</b></td><td>本機固定第一行 → 最近使用 2 臺 → 其餘線上優先。常用裝置不用翻找（省點選也省掃視）</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <h3>點選預算：每個動作都 ≤ 2 次（低頻才允許 3 次）</h3>
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th style="width:26%">任務</th>
+          <th style="width:24%">現狀</th>
+          <th style="width:24%">方案 A · 桌面</th>
+          <th style="width:26%">方案 A · 手機（抽屜）</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr><td><b>開啟本機</b>（最高頻）</td><td>chip → 開啟裝置 <span class="tag">2</span></td><td>chip → 行 <span class="tag hot">2</span></td><td>chip → 首行 <span class="tag hot">2</span></td></tr>
+        <tr><td><b>開啟其它裝置</b></td><td>chip → 開啟裝置 <span class="tag">2</span></td><td>chip → 行 <span class="tag hot">2</span></td><td>chip → 行 <span class="tag hot">2</span></td></tr>
+        <tr><td><b>遠端桌面</b></td><td>chip → 遠端桌面 <span class="tag">2</span></td><td>chip → 行尾圖示 <span class="tag hot">2</span></td><td>chip → 行尾 44px 圖示 <span class="tag hot">2</span></td></tr>
+        <tr><td><b>修改備註</b>（低頻）</td><td>chip → 設定備註 → 輸入 → 儲存 <span class="tag bad">3 + 輸入</span></td><td>chip → ⋯ → 備註 → <code>Enter</code> <span class="tag">3</span></td><td>chip → <b>長按行</b> → 鍵盤「完成」 <span class="tag hot">2</span></td></tr>
+        <tr><td><b>複製裝置 ID</b></td><td>只有整頁裝置中心能做</td><td>chip → ⋯ → 複製 <span class="tag">3</span></td><td>chip → ⋯ → 複製 <span class="tag">3</span></td></tr>
+        <tr><td><b>重新整理列表</b></td><td>chip → ⟳ <span class="tag">2</span></td><td>chip → ⟳ <span class="tag">2</span></td><td>抽屜內下拉 <span class="tag hot">1 個手勢 / 0 次點選</span></td></tr>
+        <tr><td><b>關閉面板</b></td><td>點浮層外 <span class="tag">1</span></td><td><code>Esc</code> / 點外 <span class="tag hot">1</span></td><td>下滑 / 點遮罩 <span class="tag hot">1 個手勢</span></td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <p class="sec-sub" style="margin-top:10px;font-size:12px">
+    注：現狀的差距不只在次數 —— 它還伴隨按鈕折行、名稱豎排、需要滾動；表裡只對比「能不能一步做完」。次數相同但路徑更短（不用讀三行文字按鈕）同樣是收益。
+  </p>
+
+  <div class="cards" style="margin-top:18px">
+    <div class="card">
+      <h4>能被「去掉」的點選</h4>
+      <ul>
+        <li><b>遠端桌面不再進 ⋯</b>：它是第二高頻動作，藏在選單裡就變成 3 次點選</li>
+        <li><b>備註去掉「儲存」按鈕</b>：鍵盤上的完成/回車即儲存，長按直接進入編輯</li>
+        <li><b>重新整理改下拉</b>：抽屜本來就該能下拉，順手省一次點選</li>
+        <li><b>關閉不用找按鈕</b>：下滑或點遮罩，任何位置的拇指都能關</li>
+      </ul>
+    </div>
+    <div class="card">
+      <h4>不能為了省點選犧牲的</h4>
+      <ul>
+        <li><b>不隱藏高頻動作</b>：靠 hover / 長按才能用的入口，只能給低頻功能</li>
+        <li><b>不做雙擊</b>：雙擊與「開啟」衝突，且系統級手勢容易被瀏覽器吃掉</li>
+        <li><b>不做二次確認</b>：開啟裝置是可逆操作，不需要確認彈窗</li>
+        <li><b>不做選單套選單</b>：⋯ 裡最多一層，不再出現「⋯ → 更多 → ⋯」</li>
+      </ul>
+    </div>
+    <div class="card">
+      <h4>還能再省一步（可選，需產品確認）</h4>
+      <ul>
+        <li>若「開啟本機」佔絕大多數：手機端 <b>chip 單擊 = 直接回本機</b>，長按 chip = 展開抽屜（1 次點選）</li>
+        <li>抽屜開啟時自動聚焦第一行（外接鍵盤 <code>Enter</code> 直開）</li>
+        <li>記住上次選擇：<b>最近使用的裝置排第二行</b>，常用路徑穩定在拇指第一屏</li>
+      </ul>
+    </div>
+  </div>
+
+  <p class="sec-sub" style="margin-top:16px">
+    桌面與手機共用同一套行元件與事件，只換容器（浮層 / 抽屜）與尺寸令牌；<code>pointer: coarse</code> 命中時自動切觸控佈局，不額外維護一套元件。
+  </p>
+
+  <!-- ============================================================ -->
+  <h2 class="sec" id="code"><span class="idx">05</span>落地程式碼骨架</h2>
+  <p class="sec-sub">只動 3 個檔案；<code>DeviceDirectory</code> 同時被裝置中心整頁複用，所以用 <code>variant</code> 分流，頁面樣式零迴歸。</p>
+
+  <div class="code-label">web/src/components/DeviceDirectory.tsx</div>
+  <pre><span class="c">// 新增 variant，預設保持 "page"（裝置中心不變）</span>
+<span class="k">export function</span> DeviceDirectory({ hubUrl, currentDeviceId, onRemarkUpdated, variant = <span class="s">"page"</span> }: Props) {
+  <span class="k">return</span> variant === <span class="s">"panel"</span> ? (
+    &lt;DevicePanel devices={devices} error={error} currentDeviceId={currentDeviceId}
+      onRefresh={() =&gt; setRefresh(n =&gt; n + 1)} onRemark={saveRemark} onOpen={openDevice} /&gt;
+  ) : (
+    <span class="c">/* 原整頁結構保持不變 */</span>
+  );
+}
+
+<span class="c">// 緊湊面板：一行裝置</span>
+&lt;li className={`dd-row${device.online ? <span class="s">""</span> : <span class="s">" is-off"</span>}${isEditing ? <span class="s">" is-editing"</span> : <span class="s">""</span>}&gt;
+  &lt;span className={`dd-dot${device.online ? <span class="s">" is-on"</span> : <span class="s">""</span>}`} /&gt;
+  &lt;a className=<span class="s">"dd-row-hit"</span> href={target(device.id)} aria-label={`開啟 ${displayName}`}
+     target=<span class="s">"_blank"</span> rel=<span class="s">"noopener noreferrer"</span>
+     onClick={e =&gt; void openDevice(e, device.id)} /&gt;
+  &lt;span className=<span class="s">"dd-row-main"</span>&gt;
+    &lt;span className=<span class="s">"dd-row-name"</span>&gt;
+      &lt;strong title={displayName}&gt;{displayName}&lt;/strong&gt;
+      {device.id === currentDeviceId &amp;&amp; &lt;em className=<span class="s">"dd-tag-self"</span>&gt;{zh ? <span class="s">"本機"</span> : <span class="s">"This"</span>}&lt;/em&gt;}
+    &lt;/span&gt;
+    {isEditing ? (
+      &lt;input className=<span class="s">"dd-row-input"</span> autoFocus maxLength={80} value={remarkInput}
+        onChange={e =&gt; setRemarkInput(e.target.value)}
+        onKeyDown={e =&gt; { <span class="k">if</span> (e.key === <span class="s">"Escape"</span>) setEditingId(<span class="k">null</span>); }}
+        onBlur={() =&gt; void saveRemark(device.id, remarkInput)} /&gt;
+    ) : (
+      &lt;span className=<span class="s">"dd-row-sub"</span> title={device.id}&gt;{hasRemark ? `${device.name} · ${shortId}` : shortId}&lt;/span&gt;
+    )}
+  &lt;/span&gt;
+  &lt;span className=<span class="s">"dd-row-actions"</span>&gt;
+    <span class="c">{/* ↗ / ⋯ 兩個 24px icon button，hover 顯形 */}</span>
+  &lt;/span&gt;
+  &lt;svg className=<span class="s">"dd-chev"</span> … /&gt;
+&lt;/li&gt;</pre>
+
+  <div class="code-label">web/src/components/BrandDeviceMenu.tsx</div>
+  <pre>&lt;DeviceDirectory hubUrl={binding.hubUrl} currentDeviceId={binding.deviceId} <b>variant=<span class="s">"panel"</span></b> /&gt;</pre>
+
+  <div class="code-label">web/src/styles.css（新增 .dd-row* 一組，不動 .dc-* 整頁樣式）</div>
+  <pre>.dd-row { position: relative; display: grid; grid-template-columns: 14px minmax(0,1fr) auto auto;
+  align-items: center; gap: 9px; min-height: 44px; padding: 6px 6px 6px 7px; border-radius: 8px; }
+.dd-row:hover { background: var(--bg-elev2); }
+.dd-row-hit { position: absolute; inset: 0; z-index: 1; border-radius: 8px; }
+.dd-row-hit:focus-visible { box-shadow: inset 0 0 0 2px var(--accent); }
+.dd-row-main { position: relative; z-index: 2; min-width: 0; pointer-events: none;
+  display: flex; flex-direction: column; gap: 1px; }
+.dd-row-name { display: flex; align-items: center; gap: 6px; min-width: 0; }
+.dd-row-name strong { font-size: 12.5px; font-weight: 550; min-width: 0;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.dd-row-sub { font: 10.5px/1.4 var(--mono); color: var(--text-faint);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.dd-row-actions { position: relative; z-index: 3; display: flex; align-items: center; gap: 1px; }
+.dd-row-actions .dd-icon-btn { opacity: .55; transition: opacity .12s; }   /* 常顯，不靠 hover 才出現 */
+.dd-row:hover .dd-row-actions .dd-icon-btn,
+.dd-row:focus-within .dd-row-actions .dd-icon-btn { opacity: 1; }
+
+/* 觸控：抽屜 + 56px 行 + 44px 目標，高頻動作仍在行上 */
+@media (max-width: 640px), (pointer: coarse) {
+  .dd-sheet { position: fixed; inset-inline: 0; bottom: 0; max-height: 62dvh; display: flex;
+    flex-direction: column; border-radius: 16px 16px 0 0; border-top: 1px solid var(--border);
+    padding-bottom: env(safe-area-inset-bottom); overscroll-behavior: contain;
+    z-index: var(--overlay-z, 1200); }        /* 真實實現走 useOverlayZIndex() */
+  .dd-row { min-height: 56px; }
+  .dd-row-name strong { font-size: 14px; }
+  .dd-row-actions .dd-icon-btn { width: 44px; height: 44px; opacity: 1; border-radius: 10px; }
+  .dd-row-actions .dd-icon-btn + .dd-icon-btn { border-left: 1px solid var(--border-soft); }
+}
+@media (prefers-reduced-motion: reduce) { .dd-row-actions .dd-icon-btn { transition: none; } }</pre>
+
+  <!-- ============================================================ -->
+  <h2 class="sec" id="plan"><span class="idx">06</span>實施順序（約 1 個 PR）</h2>
+  <ol class="steps">
+    <li><b>抽行元件</b>：<span class="mono">DeviceDirectory.tsx</span> 內加 <code>variant="panel"</code> 分支 + <code>.dd-row*</code> 樣式；整頁分支保持原樣（零迴歸）。</li>
+    <li><b>接線</b>：<span class="mono">BrandDeviceMenu.tsx</span> 傳 <code>variant="panel"</code>；面板寬度 560 → 328。</li>
+    <li><b>互動補齊</b>：行內備註編輯（Enter/Esc/blur）、行尾「遠端桌面 + ⋯」常顯、⋯ 選單 2 項（低頻）、複製 ID、重新整理旋轉 400ms。</li>
+    <li><b>手機形態</b>：<code>@media (max-width: 640px), (pointer: coarse)</code> 切底部抽屜（遮罩 + 下滑關閉 + 下拉重新整理 + <code>env(safe-area-inset-bottom)</code>），行 56px、目標 44px。</li>
+    <li><b>點選預算複核</b>：開啟 / 遠端桌面 / 備註三條路徑逐個點一遍，確認真機 ≤ 2 次點選、無 hover 依賴、無選單套選單。</li>
+    <li><b>守住紅線</b>：長名三件套、圖示 `useOverlayZIndex()`、軟底淺紫 <code>--link</code>（不用實底強調色）、<code>prefers-reduced-motion</code>。</li>
+    <li><b>驗收 8 態</b>：預設 / hover / 編輯中 / 離線 / 20 臺滾動 / 320px 窄屏 / iPhone SE(375×667) 抽屜 / 單手拇指可達；再跑 <span class="mono">npm run typecheck</span> + 相關 vitest。</li>
+    <li><b>可選</b>：裝置 ≥5 臺時自動切 <code>compact</code>（方案 B 引數），只需一個媒體/閾值判斷。</li>
+  </ol>
+
+  <p class="sec-sub" style="margin-top:22px">
+    需要我按方案 A 直接落地實現，說一聲即可（改 3 個檔案 + 1 張截圖對比）。
+  </p>
+</div>
+
+<div id="toast" role="status" aria-live="polite"></div>
+
+<script>
+(() => {
+  const ICON = {
+    monitor: '<svg viewBox="0 0 24 24"><rect x="2.5" y="4" width="19" height="13" rx="2"/><path d="M8 21h8M12 17v4"/></svg>',
+    external: '<svg viewBox="0 0 24 24"><path d="M14 3h7v7"/><path d="M21 3L10 14"/><path d="M19 13v6a2 2 0 01-2 2H5a2 2 0 01-2-2V7a2 2 0 012-2h6"/></svg>',
+    more: '<svg viewBox="0 0 24 24"><circle cx="5" cy="12" r="1.4"/><circle cx="12" cy="12" r="1.4"/><circle cx="19" cy="12" r="1.4"/></svg>',
+    edit: '<svg viewBox="0 0 24 24"><path d="M12 20h9"/><path d="M16.5 3.5l4 4L7 21H3v-4L16.5 3.5z"/></svg>',
+    copy: '<svg viewBox="0 0 24 24"><rect x="9" y="9" width="12" height="12" rx="2"/><path d="M5 15V5a2 2 0 012-2h10"/></svg>',
+    check: '<svg viewBox="0 0 24 24"><path d="M4 12.5l5 5L20 6.5"/></svg>',
+    x: '<svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></svg>',
+    refresh: '<svg viewBox="0 0 24 24"><path d="M21 12a9 9 0 11-3-6.7"/><path d="M21 3v6h-6"/></svg>',
+    alert: '<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 8v5M12 16.5v.5"/></svg>',
+    chev: '<svg class="chev" viewBox="0 0 24 24"><path d="M9 6l6 6-6 6"/></svg>',
+  };
+
+  const DEVICES = [
+    { id: '4f1c9a72-be4d-4e88-9c31-77d1a0b6f2e4', name: 'win', remark: '', online: true, self: true },
+    { id: '66b0571f-3ac9-4a1f-9d73-1c02b8e5a4d0', name: 'cdeMac-mini.local', remark: '', online: true, self: false },
+    { id: 'a71d3e8b-2f45-4c60-8b19-5e0d7c914a2b', name: 'studio-mbp.lan', remark: '設計組 iMac', online: false, self: false },
+    { id: '0c9f2a41-7d63-4e0b-a8f2-3b6d5c9e1a77', name: 'pi-hub-02', remark: '', online: true, self: false },
+    { id: 'de1122aa-0011-4c7e-9a10-5f8b6d3c2211', name: '桌面 · 研發', remark: '', online: true, self: false },
+    { id: 'ff4433bb-8899-4ddc-8e21-77aa66bb55cc', name: '舊筆記本', remark: '備用', online: false, self: false },
+  ];
+
+  // A 展示 3 臺（含離線、含備註），B 展示 6 臺的密度
+  const state = {
+    a: { devices: structuredClone(DEVICES.slice(0, 3)), editing: null, menu: null, error: '', refreshing: false },
+    b: { devices: structuredClone(DEVICES), editing: null, menu: null, error: '', refreshing: false },
+  };
+
+  const ESCAPES = { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' };
+  const esc = (value) => String(value).replace(/[&<>"]/g, (ch) => ESCAPES[ch]);
+
+  let toastTimer;
+  function toast(text) {
+    const el = document.getElementById('toast');
+    el.textContent = text;
+    el.classList.add('on');
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(() => el.classList.remove('on'), 1600);
+  }
+
+  function displayName(device) {
+    return device.remark && device.remark.trim() ? device.remark.trim() : device.name;
+  }
+
+  function rowMarkup(key, device, index) {
+    const st = state[key];
+    const hasRemark = !!(device.remark && device.remark.trim());
+    const title = displayName(device);
+    const short = device.id.slice(0, 8);
+    const editing = st.editing === index;
+    const menuOpen = st.menu === index;
+    const classes = 'row' + (device.online ? '' : ' off') + (editing ? ' editing' : '');
+
+    const sub = editing
+      ? '<input class="row-input" maxlength="80" placeholder="輸入備註（留空清除）" value="' + esc(device.remark || '') + '">'
+      : '<span class="row-sub" title="' + esc(device.id) + '">' +
+        esc(hasRemark ? device.name + ' · ' + short : short) +
+        '</span>';
+
+    const actions = editing
+      ? '<button class="icon-btn" data-act="save" data-i="' + index + '" aria-label="儲存備註">' + ICON.check + '</button>' +
+        '<button class="icon-btn" data-act="cancel" data-i="' + index + '" aria-label="取消">' + ICON.x + '</button>'
+      : '<button class="icon-btn" data-act="open-new" data-i="' + index + '" aria-label="新標籤開啟">' + ICON.external + '</button>' +
+        '<button class="icon-btn" data-act="menu" data-i="' + index + '" aria-label="更多操作" aria-haspopup="menu" aria-expanded="' +
+        (menuOpen ? 'true' : 'false') + '">' + ICON.more + '</button>';
+
+    const menu = menuOpen
+      ? '<div class="p-menu" role="menu">' +
+        '<button role="menuitem" data-act="remark" data-i="' + index + '">' + ICON.edit +
+        (hasRemark ? '修改備註' : '設定備註') + '</button>' +
+        '<span class="sep"></span>' +
+        '<button role="menuitem" data-act="copy" data-i="' + index + '">' + ICON.copy + '複製裝置 ID</button>' +
+        '</div>'
+      : '';
+
+    return '<li class="' + classes + '" data-i="' + index + '">' +
+      '<span class="dot-wrap"><span class="dot' + (device.online ? ' on' : '') + '"></span></span>' +
+      '<a class="row-hit" href="#" aria-label="開啟 ' + esc(title) + '" data-act="open" data-i="' + index + '"></a>' +
+      '<span class="row-main">' +
+      '<span class="row-name"><strong title="' + esc(title) + '">' + esc(title) + '</strong>' +
+      (device.self ? '<em class="tag-self">本機</em>' : '') +
+      '</span>' + sub +
+      '</span>' +
+      '<span class="row-actions">' + actions + menu + '</span>' +
+      ICON.chev +
+      '</li>';
+  }
+
+  function render(key) {
+    const st = state[key];
+    const mount = document.getElementById('panel-' + key);
+    if (!mount) return;
+    const rows = st.devices.map((device, index) => rowMarkup(key, device, index)).join('');
+
+    mount.innerHTML =
+      '<div class="panel' + (key === 'b' ? ' compact' : '') + '" role="dialog" aria-label="裝置列表" data-panel="' + key + '">' +
+      '<div class="p-head">' +
+      '<span class="p-title">裝置</span>' +
+      '<span class="p-count">' + st.devices.length + '</span>' +
+      '<span class="p-spacer"></span>' +
+      '<button class="icon-btn' + (st.refreshing ? ' spin' : '') + '" data-act="refresh" aria-label="重新整理裝置">' +
+      ICON.refresh + '</button>' +
+      '</div>' +
+      (st.error ? '<div class="p-note">' + ICON.alert + '<span>' + esc(st.error) + '</span></div>' : '') +
+      '<ul class="p-list">' + (rows || '<li class="p-empty">同一賬號下暫無其它裝置</li>') + '</ul>' +
+      '</div>';
+
+    const panel = mount.querySelector('.panel');
+    const sizeEl = document.querySelector('[data-size="' + key + '"]');
+    if (sizeEl && panel) sizeEl.textContent = panel.offsetWidth + ' × ' + panel.offsetHeight + 'px';
+    fitStages();
+
+    const input = panel.querySelector('.row-input');
+    if (!input) return;
+    const index = st.editing;
+    input.focus();
+    input.setSelectionRange(input.value.length, input.value.length);
+    input.addEventListener('keydown', (event) => {
+      if (event.key === 'Enter') {
+        event.preventDefault();
+        commitRemark(key, index, input.value);
+      }
+      if (event.key === 'Escape') {
+        event.preventDefault();
+        st.editing = null;
+        render(key);
+      }
+    });
+    input.addEventListener('blur', () => commitRemark(key, index, input.value));
+    input.addEventListener('click', (event) => event.stopPropagation());
+  }
+
+  function commitRemark(key, index, value) {
+    const st = state[key];
+    if (st.editing === null || st.editing !== index) return;
+    const device = st.devices[index];
+    if (!device) return;
+    device.remark = (value || '').trim();
+    st.editing = null;
+    render(key);
+    toast(device.remark ? '已儲存備註：' + device.remark : '已清除備註');
+  }
+
+  function onClick(event, key) {
+    const st = state[key];
+    const el = event.target.closest('[data-act]');
+    if (!el) {
+      if (st.menu !== null) {
+        st.menu = null;
+        render(key);
+      }
+      return;
+    }
+    const act = el.dataset.act;
+    const index = Number(el.dataset.i);
+    event.preventDefault();
+    st.menu = null;
+
+    if (act === 'refresh') {
+      st.refreshing = true;
+      render(key);
+      setTimeout(() => {
+        st.refreshing = false;
+        render(key);
+      }, 600);
+      toast('已重新整理裝置列表');
+      return;
+    }
+
+    const device = st.devices[index];
+    if (!device) return;
+    const label = displayName(device);
+
+    if (act === 'menu') {
+      st.menu = st.menu === index ? null : index;
+      render(key);
+      return;
+    }
+    if (act === 'remark') {
+      st.editing = index;
+      render(key);
+      return;
+    }
+    if (act === 'save') {
+      const row = el.closest('.row');
+      const input = row && row.querySelector('.row-input');
+      commitRemark(key, index, input ? input.value : device.remark || '');
+      return;
+    }
+    if (act === 'cancel') {
+      st.editing = null;
+      render(key);
+      return;
+    }
+    if (act === 'copy') {
+      toast('已複製裝置 ID：' + device.id.slice(0, 8) + '…');
+      return;
+    }
+    if (!device.online) {
+      toast('「' + label + '」當前離線' + (act === 'open' ? '，無法開啟' : act === 'desktop' ? '，遠端桌面不可用' : ''));
+      return;
+    }
+    toast((act === 'desktop' ? '遠端桌面：' : act === 'open-new' ? '新標籤開啟：' : '開啟裝置：') + label);
+  }
+
+  function fitStages() {
+    document.querySelectorAll('.stage').forEach((stage) => {
+      const panel = stage.querySelector('[data-panel], .legacy-panel');
+      if (!panel) return;
+      const isPanel = panel.hasAttribute('data-panel');
+      stage.style.paddingBottom = 48 + panel.offsetHeight + (isPanel ? 130 : 26) + 'px';
+    });
+  }
+
+  for (const key of ['a', 'b']) {
+    const mount = document.getElementById('panel-' + key);
+    mount.style.position = 'absolute';
+    mount.style.left = '12px';
+    mount.style.right = '12px';
+    mount.style.top = '48px';
+    mount.addEventListener('click', (event) => onClick(event, key));
+    render(key);
+  }
+
+  document.addEventListener('keydown', (event) => {
+    if (event.key !== 'Escape') return;
+    for (const key of ['a', 'b']) {
+      if (state[key].menu !== null || state[key].editing !== null) {
+        state[key].menu = null;
+        state[key].editing = null;
+        render(key);
+      }
+    }
+  });
+
+  document.addEventListener('click', (event) => {
+    if (event.target.closest('.p-menu') || event.target.closest('[data-act="menu"]')) return;
+    for (const key of ['a', 'b']) {
+      if (state[key].menu !== null) {
+        state[key].menu = null;
+        render(key);
+      }
+    }
+  });
+
+  window.addEventListener('resize', fitStages);
+})();
+</script>
+<script>
+(() => {
+  const ICON = {
+    desktop:
+      '<svg viewBox="0 0 24 24"><rect x="2.5" y="4" width="19" height="13" rx="2"/><path d="M8 21h8M12 17v4"/></svg>',
+    more: '<svg viewBox="0 0 24 24"><circle cx="5" cy="12" r="1.4"/><circle cx="12" cy="12" r="1.4"/><circle cx="19" cy="12" r="1.4"/></svg>',
+  };
+
+  const DEVICES = [
+    { name: 'win', id: '4f1c9a72', extra: '', online: true },
+    { name: 'cdeMac-mini.local', id: '66b0571f', extra: '最近使用', online: true },
+    { name: '設計組 iMac', id: 'a71d3e8b', extra: '離線', online: false },
+  ];
+
+  let editIndex = null;
+  let suppressClickUntil = 0;
+  let longPressTimer = null;
+  let pressStart = null;
+
+  const list = document.getElementById('phList');
+  const editBar = document.getElementById('phEdit');
+  const input = document.getElementById('phInput');
+  const toast = (text) => {
+    const el = document.getElementById('toast');
+    el.textContent = text;
+    el.classList.add('on');
+    clearTimeout(el._timer);
+    el._timer = setTimeout(() => el.classList.remove('on'), 1600);
+  };
+
+  function render() {
+    list.innerHTML = DEVICES.map((device, index) => {
+      const last = index === DEVICES.length - 1;
+      return (
+        '<li class="ph-row' + (device.online ? '' : ' is-off') + '" data-i="' + index + '" data-ph="open">' +
+        '<span class="ph-dot' + (device.online ? ' on' : '') + '"></span>' +
+        '<span class="ph-main"><strong>' + device.name +
+        (index === 0 ? '<em class="tag-self">本機</em>' : '') + '</strong>' +
+        '<span>' + device.id + (device.extra ? ' · ' + device.extra : '') + '</span></span>' +
+        '<span class="ph-taps">' +
+        '<button class="ph-tap" type="button" data-ph="desktop" data-i="' + index + '" aria-label="遠端桌面">' + ICON.desktop + '</button>' +
+        '<button class="ph-tap" type="button" data-ph="menu" data-i="' + index + '" aria-label="更多操作">' + ICON.more + '</button>' +
+        '<div class="ph-menu' + (last ? ' up' : '') + '" hidden>' +
+        '<button type="button" data-ph="remark" data-i="' + index + '">設定備註</button>' +
+        '<button type="button" data-ph="copy" data-i="' + index + '">複製裝置 ID</button>' +
+        '</div>' +
+        '</span>' +
+        '</li>'
+      );
+    }).join('');
+  }
+
+  function closeMenus() {
+    list.querySelectorAll('.ph-menu').forEach((menu) => {
+      menu.hidden = true;
+    });
+  }
+
+  function openEdit(index) {
+    editIndex = index;
+    editBar.hidden = false;
+    const device = DEVICES[index];
+    input.value = '';
+    input.placeholder = '給「' + device.name + '」寫備註（留空清除）';
+    input.focus();
+    closeMenus();
+    toast('長按進入備註：鍵盤「完成」即儲存');
+  }
+
+  function saveEdit() {
+    if (editIndex === null) return;
+    const text = input.value.trim();
+    editBar.hidden = true;
+    editIndex = null;
+    toast(text ? '已儲存備註：' + text : '已清除備註');
+  }
+
+  list.addEventListener('click', (event) => {
+    if (Date.now() < suppressClickUntil) return;
+    const el = event.target.closest('[data-ph]');
+    if (!el) return;
+    const act = el.dataset.ph;
+    const index = Number(el.dataset.i);
+    const device = DEVICES[index];
+    if (act === 'menu') {
+      event.stopPropagation();
+      const menu = el.parentElement.querySelector('.ph-menu');
+      const wasHidden = menu.hidden;
+      closeMenus();
+      menu.hidden = !wasHidden;
+      return;
+    }
+    closeMenus();
+    if (act === 'remark') return openEdit(index);
+    if (act === 'copy') return toast('已複製裝置 ID：' + device.id + '…');
+    if (!device.online) return toast('「' + device.name + '」當前離線');
+    toast((act === 'desktop' ? '遠端桌面：' : '開啟裝置：') + device.name);
+  });
+
+  list.addEventListener('pointerdown', (event) => {
+    const row = event.target.closest('.ph-row');
+    if (!row) return;
+    if (event.target.closest('.ph-tap')) return;
+    pressStart = { x: event.clientX, y: event.clientY };
+    longPressTimer = setTimeout(() => {
+      suppressClickUntil = Date.now() + 700;
+      openEdit(Number(row.dataset.i));
+    }, 450);
+  });
+
+  const cancelPress = (event) => {
+    if (pressStart && event && event.clientX !== undefined) {
+      const moved = Math.abs(event.clientX - pressStart.x) + Math.abs(event.clientY - pressStart.y);
+      if (moved < 12 && event.type === 'pointermove') return;
+    }
+    clearTimeout(longPressTimer);
+    pressStart = null;
+  };
+  list.addEventListener('pointerup', cancelPress);
+  list.addEventListener('pointercancel', cancelPress);
+  list.addEventListener('pointermove', cancelPress);
+
+  document.getElementById('phScrim').addEventListener('click', () => toast('關閉抽屜（下滑 / 點遮罩，1 個手勢）'));
+  document.getElementById('phSave').addEventListener('click', saveEdit);
+  input.addEventListener('keydown', (event) => {
+    if (event.key === 'Enter') saveEdit();
+    if (event.key === 'Escape') {
+      editBar.hidden = true;
+      editIndex = null;
+    }
+  });
+  document.querySelector('[data-ph="refresh"]').addEventListener('click', () => toast('下拉重新整理 = 0 次點選'));
+
+  render();
+})();
+</script>
+</body>
+</html>
+
+
+
+

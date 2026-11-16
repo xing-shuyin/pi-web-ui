@@ -2,7 +2,7 @@
 
 # 外掛系統
 
-語音引擎只向服務端 `host.tts.registerEngine()` 註冊，系統播報、QQ 與其他工具統一通過 `host.tts` 呼叫。瀏覽器 `ttsProviders` 僅保留中心目錄的只讀入口，詳見 [`architecture-tts.md`](architecture-tts.zh-TW.md)。
+語音引擎只向服務端 `host.tts.registerEngine()` 註冊，系統播報、QQ 與其他工具統一通過 `host.tts` 呼叫。瀏覽器 `ttsProviders` 僅保留中心目錄的只讀入口，詳見 [`architecture-tts.md`](architecture-tts.md)。
 
 > 可選介面元件，存放在 `<dataDir>/plugins/`。不裝即不存在，attach 時熱重掃。
 
@@ -10,7 +10,7 @@
 
 `plugins/github-workbench/`（官方 catalog，v0.1.3）通過 `rightpanel.tabs` 在右側「檔案列表」旁提供帶 GitHub SVG 圖示的「工作臺」Tab，與當前對話並排使用，複用服務機器的 `gh` 登入。窄側欄採用列表／詳情切換，容器寬度 ≥480px 時並排展示，型別分段按鈕和可展開搜尋適配側欄寬度；樣式統一使用宿主主題變數。Tab 解除安裝時只保留記憶體中的篩選、頁碼、選中項、滾動位置和分條目評論草稿，切回可恢復，重新整理頁面／過載外掛後清空。讀取請求隨解除安裝取消；在途寫入等待完成，跨掛載共享提交鎖，避免重複評論。倉庫自動識別與個人待辦可獨立使用；倉庫待辦、待我評審、分配給我、我建立的、提到我、自定義搜尋均按更新時間分頁。詳情展示正文、最近一頁評論及 PR 分支／合併狀態／改動統計，支援引用到當前對話草稿、評論、關閉／重新開啟。「引用到對話」與「交給 AI 處理」均只新增簡短引用附件（型別、編號、倉庫、連結），由使用者填寫處理要求併發送，已有正文和附件保留，同一引用自動去重。完整 diff、CI 與程式碼行評審由 GitHub 連結檢視，AI 可按使用者要求獲取最新資訊。
 
-事實源：`plugins/github-workbench/index.mjs`（非同步 `gh api` 與已鑑權 HTTP 路由）、`client/entry.mjs`（Shadow DOM 工作臺、Tab 狀態恢復及宿主 `compose` 引用附件橋）、`client/styles.mjs`（主題與容器自適應樣式）、`manifest.json`；安裝與搜尋語法見[外掛 README](../plugins/github-workbench/README.zh-TW.md)。路由只包含 `/status`、`/items`、`/detail`、`/comment`、`/state`，寫請求固定引數並以 JSON stdin 傳內容，無 shell。所有外部文本轉義，輸入／輸出／分頁／超時有上限；外掛解除安裝終止後端子程序，Tab 切換取消讀取，過期詳情響應不覆蓋新選擇，失敗評論保留草稿，避免重複提交。客戶端從 bundle URL 保留部署根路徑；僅支援 github.com。定向守衛：`tests/unit/github-workbench.test.ts`、`tests/unit/github-workbench-client.test.ts`。
+事實源：`plugins/github-workbench/index.mjs`（非同步 `gh api` 與已鑑權 HTTP 路由）、`client/entry.mjs`（Shadow DOM 工作臺、Tab 狀態恢復及宿主 `compose` 引用附件橋）、`client/styles.mjs`（主題與容器自適應樣式）、`manifest.json`；安裝與搜尋語法見[外掛 README](../plugins/github-workbench/README.md)。路由只包含 `/status`、`/items`、`/detail`、`/comment`、`/state`，寫請求固定引數並以 JSON stdin 傳內容，無 shell。所有外部文本轉義，輸入／輸出／分頁／超時有上限；外掛解除安裝終止後端子程序，Tab 切換取消讀取，過期詳情響應不覆蓋新選擇，失敗評論保留草稿，避免重複提交。客戶端從 bundle URL 保留部署根路徑；僅支援 github.com。定向守衛：`tests/unit/github-workbench.test.ts`、`tests/unit/github-workbench-client.test.ts`。
 
 ## 圖片預覽與 OCR 提供者
 
@@ -18,13 +18,13 @@
 
 `web/src/image-ocr-providers.ts` 是客戶端 OCR 註冊單源，註冊歸屬載入時的外掛作用域；`plugin-loader.ts` 在停用/解除安裝、過載紀元變化和載入失敗時清理提供者；停用移除 bundle 時遞增匯入快取鹽，確保同一紀元重新啟用也會執行頂層註冊，避免命中 ESM 快取後提供者無法恢復。正在載入的已停用外掛不能遲到註冊或重新進入已載入集合。共用 `ImageLightbox` 訂閱該登錄檔並管理取消與遲到結果，外掛不得忽略取消訊號。`plugins/image-ocr` 以 `preload:true` 的無檢視外掛提供本地中英文識別，真正的引擎/字型檔懶載入，外層 Worker 的終止同時結束初始化與識別的子 Worker。首次使用需聯網取得程式/字型檔，圖片不上傳至識別服務。
 
-預覽裡的 OCR 按鈕始終可見；提供者缺失時，宿主複用現有外掛安裝後臺作業安裝官方外掛，停用的外掛走設定啟用，安裝進度/錯誤保留在當前預覽。完整入口和待發附件標註邊界見 [`architecture-attachments.md`](architecture-attachments.zh-TW.md#統一圖片預覽ocr-與附件標註)。
+預覽裡的 OCR 按鈕始終可見；提供者缺失時，宿主複用現有外掛安裝後臺作業安裝官方外掛，停用的外掛走設定啟用，安裝進度/錯誤保留在當前預覽。完整入口和待發附件標註邊界見 [`architecture-attachments.md`](architecture-attachments.md#統一圖片預覽ocr-與附件標註)。
 
 ## 生命週期約束
 
 外掛管理器按代次區分 activating、loaded 與失效例項；reload 合併併發請求，立即撤銷在途啟用已註冊的副作用。舊啟用恢復後只能清理自身，不能回寫新代次的登錄檔；失效 host 禁止繼續註冊，遲到非同步資源也必須回收。工具同步的已應用名稱集合屬於每個 SDK session，不能放在跨會話共享的單一集合中。
 
-官方 live-preview 的隔離與專用訪問路徑見 [附件架構](architecture-attachments.zh-TW.md#活動內容隔離)。官方 SFTP 與遠端工作區複用 `plugin-sdk/ssh-host-trust.mjs`，未知/變更主機金鑰拒絕連線，可信配置見 [環境變數](env-vars.zh-TW.md#ssh-主機身份驗證)。
+官方 live-preview 的隔離與專用訪問路徑見 [附件架構](architecture-attachments.md#活動內容隔離)。官方 SFTP 與遠端工作區複用 `plugin-sdk/ssh-host-trust.mjs`，未知/變更主機金鑰拒絕連線，可信配置見 [環境變數](env-vars.md#ssh-主機身份驗證)。
 
 ## MCP 專案執行時
 
@@ -384,7 +384,7 @@ App 按 chat.plugins 動態 import 各外掛的 client bundle（`/* @vite-ignore
 
 ## 常駐播放器：紅果短劇
 
-`plugins/hongguo/` 將 [dsh-hongguo](https://github.com/frostming/dsh-hongguo) 移植到原生外掛介面，支援搜尋、選集、續播、自動連播以及懸浮 / 分屏切換。佈局只使用 `dom.anchors().app`，同一個影片元素常駐，切換佈局和對話不會重新載入影片。部署、FFmpeg、快取及介面細節見 [紅果短劇外掛](plugin-hongguo.zh-TW.md)。
+`plugins/hongguo/` 將 [dsh-hongguo](https://github.com/frostming/dsh-hongguo) 移植到原生外掛介面，支援搜尋、選集、續播、自動連播以及懸浮 / 分屏切換。佈局只使用 `dom.anchors().app`，同一個影片元素常駐，切換佈局和對話不會重新載入影片。部署、FFmpeg、快取及介面細節見 [紅果短劇外掛](plugin-hongguo.md)。
 
 常駐 `preload: true` 客戶端可在預設匯出中提供 `dispose(): void`。`plugin-loader.ts` 在外掛停用、移除、報錯、epoch 過載以及非同步載入結果過期時呼叫它；外掛應暫停媒體、取消請求 / 訂閱、移除浮層並恢復佈局。無此方法的舊外掛繼續按原協議載入。
 
@@ -545,11 +545,13 @@ CLI `install --catalog <url>`（同步列表 + 逐條安裝/更新，已安裝�
 | `composer.leading`           | 輸入框前置區（檔案上傳按鈕左側，純外掛新增位）                                                                                                                                        |
 | `composer.actions`           | 輸入框動作區（上傳按鈕右側到傳送按鈕之間）                                                                                                                                            |
 | `message.actions`            | 每條訊息 hover 時的工具條                                                                                                                                                             |
-| `rightpanel.tabs`            | 右欄 tab（預設是檔案樹）                                                                                                                                                              |
+| `rightpanel.tabs`            | 右欄 tab（預設是檔案樹 + 原始碼管理）                                                                                                                                                 |
+| `bottomdock.tabs`            | 底部面板 tab（預設是終端；標籤 >1 時才出現標籤條）                                                                                                                                    |
 | `contextmenu.topbar`         | 頂欄條目右鍵選單                                                                                                                                                                      |
 | `contextmenu.message`        | 訊息右鍵選單                                                                                                                                                                          |
 | `contextmenu.session`        | 左欄會話右鍵選單                                                                                                                                                                      |
 | `contextmenu.file`           | 檔案樹條目右鍵選單                                                                                                                                                                    |
+| `contextmenu.search`         | 全域性搜尋（Ctrl+K）結果行右鍵選單（`target.kind` 為 `session` / `project` / `file` / `folder` / `plugin`；`when` 可用 `search.isSession` 一類判據）                                  |
 | `contextmenu.toolcall`       | 工具呼叫卡片的**工具名**右鍵選單（宿主唯一選單；內建一條「顯示工具詳細資訊」，見 `ToolInfoDialog.tsx`）                                                                               |
 | `settings.pages`             | 設定面板裡的一整頁（外掛用 `mount()` 自己渲染）                                                                                                                                       |
 | `leftpanel.projects.actions` | 左欄「最近專案」標題欄按鈕（宿主「管理專案」按鈕之後追加；無條目不畫）                                                                                                                |
@@ -573,7 +575,7 @@ CLI `install --catalog <url>`（同步列表 + 逐條安裝/更新，已安裝�
 
 **自然簡寫**（`UI_SLOT_ALIASES`：解析時對映成完整名，讓作者少踩坑）：`topbar`→`topbar.primary`、
 `topbar.more`→`topbar.overflow`、`composer`→`composer.actions`、`message`→`message.actions`、`modal`→`modal.dialog`、
-`rightpanel`→`rightpanel.tabs`、`settings`→`settings.pages`。沒有別名的（`bottombar`、`composer.leading`、`tasks.panel` 與四個
+`rightpanel`→`rightpanel.tabs`、`bottomdock`/`bottompanel`→`bottomdock.tabs`、`settings`→`settings.pages`。沒有別名的（`bottombar`、`composer.leading`、`tasks.panel` 與五個
 `contextmenu.*`）必須寫完整名；認不出的 slot 直接丟掉該條目（不報錯、不崩）。`arrange` 的目標 slot
 只接受完整名（不走別名）。
 
@@ -638,19 +640,20 @@ CLI `install --catalog <url>`（同步列表 + 逐條安裝/更新，已安裝�
 按槽位 + 被右鍵物件現場構造上下文）：字面量 `"disabled"` / `"never"` 恆置灰、`"always"` 恆可用、
 以 `!` 開頭的條件（如 `"!message.hasSelection"`，有上下文按上下文判、無上下文按 legacy 直接置灰），
 以及肯定形適用條件 —— `file.isDir` / `file.isFile`（檔案選單，按 target.kind）、`session.isRunning`
-（會話選單）、`message.hasSelection`（訊息選單）—— 為假則**保留但置灰**。未知條件名預設可用
+（會話選單）、`message.hasSelection`（訊息選單）、`search.isSession` / `search.isProject` / `search.isFile` /
+`search.isFolder` / `search.isPlugin`（全域性搜尋選單，按 target.kind）—— 為假則**保留但置灰**。未知條件名預設可用
 （未來加新條件不翻舊外掛）。
 
 ### 合併優先順序（四級）與「同一份計算」
 
 每個 slot 的最終條目都由 `buildUiSlots(plugins, { locale, t, disabledPlugins, layout })` 算出：
 
-| 層           | 來源                                                                                                                                                                                                                                       | 規則                                                                                                                                                 |
-| ------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------- |
-| 1 宿主預設   | `BUILTIN_UI_ITEMS`（**109** 條 `host:*` 內建條目，覆蓋 **12** 個 slot：頂欄 18 / 檔案右鍵 27 / SCM 工具條 12 / 底欄 10 / 檔案預覽頭欄 9 / 目標條 8 / 輸入框動作 7 / 會話右鍵 6 / 訊息工具條 5 / 終端工具條 3 / 左欄分割槽 3 / 右欄 tab 1） | 可見性、順序、分組、文案的基線                                                                                                                       |
-| 2 外掛貢獻   | `UiPluginInfo.ui.items`                                                                                                                                                                                                                    | 同 id 後宣告的外掛覆蓋前面的（**位置仍按首次宣告**，避免重宣告把條目擠到列表尾部）；報錯外掛與「介面外掛」裡被停用的外掛整份丟棄                     |
-| 3 外掛安排   | `ui.arrange`（可改 `slot` / `hide` / `group` / `order` / `label` / `hint` / `icon` / `iconSvg`）                                                                                                                                           | 只能改**已存在**的條目（目標不存在 = 靜默忽略）；改了別人的條目會記進它的 `arrangedBy`（含 `movedFrom`）—— 這是「外掛不許偷偷改宿主 UI」的可見性保障 |
-| 4 使用者偏好 | `settings.uiLayout`（`UiLayoutPrefs`：`hidden` / `shown` / `order` / `groups` / `labels`）                                                                                                                                                 | 最高：使用者點過什麼就由它最後說話；`shown` 在 `hidden` 之後應用（「顯示」是對上一次隱藏的撤銷，必須生效）                                           |
+| 層           | 來源                                                                                                                                                                                                                                                     | 規則                                                                                                                                                 |
+| ------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 1 宿主預設   | `BUILTIN_UI_ITEMS`（**119** 條 `host:*` 內建條目，覆蓋 **13** 個 slot：頂欄 18 / 檔案右鍵 27 / SCM 工具條 12 / 底欄 10 / 檔案預覽頭欄 9 / 目標條 8 / 輸入框動作 7 / 會話右鍵 6 / 訊息工具條 5 / 終端工具條 3 / 搜尋右鍵 10 / 左欄分割槽 3 / 右欄 tab 1） | 可見性、順序、分組、文案的基線                                                                                                                       |
+| 2 外掛貢獻   | `UiPluginInfo.ui.items`                                                                                                                                                                                                                                  | 同 id 後宣告的外掛覆蓋前面的（**位置仍按首次宣告**，避免重宣告把條目擠到列表尾部）；報錯外掛與「介面外掛」裡被停用的外掛整份丟棄                     |
+| 3 外掛安排   | `ui.arrange`（可改 `slot` / `hide` / `group` / `order` / `label` / `hint` / `icon` / `iconSvg`）                                                                                                                                                         | 只能改**已存在**的條目（目標不存在 = 靜默忽略）；改了別人的條目會記進它的 `arrangedBy`（含 `movedFrom`）—— 這是「外掛不許偷偷改宿主 UI」的可見性保障 |
+| 4 使用者偏好 | `settings.uiLayout`（`UiLayoutPrefs`：`hidden` / `shown` / `order` / `groups` / `labels`）                                                                                                                                                               | 最高：使用者點過什麼就由它最後說話；`shown` 在 `hidden` 之後應用（「顯示」是對上一次隱藏的撤銷，必須生效）                                           |
 
 同 order / 無排序資訊時保持宣告順序（穩定排序兜底）。**「同一份計算」是這套框架的核心不變數**：渲染層
 （TopBar / FooterBar / ChatInput / Message(List) / RightPanel / LeftPanel / SettingsModal）與設定面板
@@ -1023,4 +1026,19 @@ Superagent 0.1.3 是宿主內建的 GitHub / 飛書渠道模組，內部複用�
 
 UI 和遠端裝置路徑沿用 `appUrl()` / 外掛 `apiBase()`，保留應用根路徑與認證。公開回調採用外掛頁面顯示的可達 URL，不把遠端頁面根路徑當作隱含中轉。Superagent 目錄進入 npm 釋出白名單，`server/builtin-modules.ts` 宣告宿主必需模組，由 `server/plugin-bundled.ts` 在掃描前離線準備，首次啟動即可從 **裝置連線與跨平臺協作 → 外部渠道** 開啟；無需額外安裝或獨立頂欄入口。`DeviceChannels` 通過現有作用域匯入器與 `PluginView` 內嵌檢視，沿用窄上下文與解除安裝清理，按 epoch 重新整理並隔離過期載入；顯式重試會更新 bundle 快取鹽。內建模組不會顯示在普通外掛市場、已安裝列表、選單、佈局或許可權列表；管理數量與更新提示也排除它，普通安裝 / 更新 / 解除安裝及自定義同名覆蓋入口拒絕操作。舊外掛停用 / 解除安裝記錄不控制宿主模組，缺失檔案會重新準備，既有設定和金鑰保留。`<dataDir>/bundled-plugin-installs.json` 只繼續控制普通可選預裝外掛的首次準備，不作為必需模組的安裝依據。飛書支援明文或 AES 加密的簽名 text 回撥，超過 45 分鐘無回執的不確定投遞需人工核對；GitHub 通過穩定 comment marker 恢復重試。真實外部憑據與渠道未在本輪聯通，mock 測試不代表上線。
 
-完整職責、群組頂部 AI Router / 工單抽屜用法、WAL 四集合、凍結 plan / lease / 配置 fence / effect receipts、分頁與上下文預算見 [群組獨立 AI Router 與 Superagent](group-orchestration.zh-TW.md)；渠道配置和支援範圍見 [Superagent README](../plugins/superagent/README.zh-TW.md)。
+完整職責、群組頂部 AI Router / 工單抽屜用法、WAL 四集合、凍結 plan / lease / 配置 fence / effect receipts、分頁與上下文預算見 [群組獨立 AI Router 與 Superagent](group-orchestration.md)；渠道配置和支援範圍見 [Superagent README](../plugins/superagent/README.md)。
+
+## 設定頁：擴充套件三選單與外掛摺疊詳情
+
+設定頁「擴充套件」分組**並排 3 根導航**：技能 / MCP 伺服器 / 外掛（`SettingsModal.tsx` 的 `tabs[]` 與 `TAB_GROUPS`）。技能、MCP 各自保留原有子頁與元件（`McpServersPanel` 只挪位置），不併入外掛頁；工具開關、審批規則、介面佈局、預設等宿主內建能力仍留原分組。
+
+**外掛頁兩個子頁**（`pluginTab`）：
+
+- **安裝的外掛**：`<InstalledPluginsPanel/>` 單列摺疊列表，同時聚合 `chat.plugins`（介面外掛）與 `settings.extensions`（Pi / agent 會話擴充套件），並從服務端 `extension_inventory_data`（`server/extension-inventory.ts`）補出 SDK 內建擴充套件的健康、錯誤原文與工具數。點行就地展開詳情，同時最多展開一項，**不設左右分欄**；介面外掛詳情含配置項（`PluginSettingsForm`）、`settings.pages` 外掛頁（`PluginPage`）、執行日誌；Pi 擴充套件詳情含註冊能力與載入資訊。啟停分別寫回 `settings.disabledPlugins` / `settings.disabledExtensions`，統一列表只是投影，**不新建第三份狀態**；SDK 隱藏內建擴充套件標「只讀」。Pi 擴充套件沒有內建市場，新增 / 解除安裝走終端 `pi install npm:<pkg>` / `pi remove npm:<pkg>`。
+- **外掛市場**：介面外掛市場全部控制元件原樣保留（官方 / 社群分割槽、自定義 catalog 源、同步並批次安裝、提交新外掛、官方倉庫連結、檢查更新、安裝 job 進度），資料仍來自 `plugins/catalog.json`、`OFFICIAL_PLUGIN_CATALOG_URL` 與 `chat.pluginCatalog`；技能市場、MCP 市場仍在各自選單，不搬到這裡。
+
+`pluginSub` 是派生值（installed 子頁為 `"installed"`，市場子頁為 `marketOrigin`），讓原有市場段無需重寫。`extension_inventory` 請求改由 `tab === "plugins"` 觸發，新列表讀同一份清單。
+
+刪除的入口：舊「介面外掛」tab、舊「外掛」tab 的 Pi 擴充套件列表、`PluginManagerModal` 在 `TopBar` 的掛載、`settings.pages` 生成的一級 tab（`plugin-page:*`）、`ExtensionInventory` 只讀清單的掛載、`PluginMenu` 的「外掛設定」按鈕。頂欄 🧩 降級為只讀快捷啟動器，僅保留一個「管理外掛 →」深鏈（`openSettings("plugins")`）。DSH 引擎的外掛市場與補丁管理保留在 `dsh-extensions` tab（advanced 分組），不進「外掛市場」。
+
+`PluginManagerModal.tsx` / `ExtensionInventory.tsx` 檔案保留（前者仍有單測直接渲染，後者仍是服務端清單能力的來源），但不再掛在使用者可見的設定 / 頂欄入口上。新增 i18n key 在 `web/src/i18n/messages/core/{zh,en}.json`，改動後需 `npm run i18n:sync`；樣式字首 `.ip-*` 在 `web/src/styles.css` 末層。
