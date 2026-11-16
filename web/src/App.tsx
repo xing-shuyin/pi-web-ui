@@ -139,7 +139,7 @@ import type {
 } from "./types";
 import { openPageDesktop, pageDeviceId } from "./device-access";
 import { isZhLocale, useT, useI18n } from "./i18n";
-import { QUICK_PHRASE_DEFAULTS } from "./quick-phrases";
+import { quickPhraseDefaults } from "./quick-phrases";
 import {
 	FiAlertCircle,
 	FiAlertTriangle,
@@ -377,11 +377,11 @@ export function App() {
 		if (chat.settings.quickPhrases.length === 0) {
 			send({
 				type: "set_settings",
-				quickPhrases: QUICK_PHRASE_DEFAULTS[locale] ?? QUICK_PHRASE_DEFAULTS.en,
+				quickPhrases: quickPhraseDefaults(t),
 				quickPhrasesSeeded: true,
 			});
 		}
-	}, [chat.ready, chat.settings, send, locale]);
+	}, [chat.ready, chat.settings, send, t]);
 	const cwd = chat.state?.cwd ?? "";
 	const projectTitle = useProjectTitle();
 	const faviconSettings = useFaviconSettings();

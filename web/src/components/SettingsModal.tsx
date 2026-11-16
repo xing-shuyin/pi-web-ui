@@ -153,7 +153,7 @@ import {
 	subscribePluginLogs,
 	type PluginLogLevel,
 } from "../plugin-logs";
-import { QUICK_PHRASE_DEFAULTS } from "../quick-phrases";
+import { quickPhraseDefaults } from "../quick-phrases";
 import {
 	DEFAULT_PROMPT_TEMPLATE,
 	DEFAULT_PROMPT_DISABLED,
@@ -4942,7 +4942,7 @@ function LoadedSettingsModal({
 										className="dd-refresh"
 										onClick={() => {
 											setQuickEdit(null);
-											setPartial({ quickPhrases: QUICK_PHRASE_DEFAULTS[locale] ?? QUICK_PHRASE_DEFAULTS.en });
+											setPartial({ quickPhrases: quickPhraseDefaults(t) });
 										}}
 									>
 										{t("quickPhrasesReset")}
