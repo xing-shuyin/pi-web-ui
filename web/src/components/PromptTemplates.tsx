@@ -816,10 +816,10 @@ function EditModal({
 											key={v.key}
 											type="button"
 											className="template-var-chip"
-											title={v.desc}
+											title={t(v.descKey)}
 											onClick={() => insertVariable(v.key)}
 										>
-											+ {v.label}
+											+ {t(v.labelKey, { token: v.key })}
 										</button>
 									))}
 								</div>

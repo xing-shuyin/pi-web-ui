@@ -7,7 +7,7 @@ import type { DeviceGroupNavigation } from "../device-group-navigation";
 import { searchGroupRoomsAndTasks, GroupNotificationManager, type SearchableGroupTask } from "../group-view-state";
 import { appUrl } from "../base-url";
 import { withToken } from "../auth-token";
-import { isZhLocale, useI18n } from "../i18n";
+import { useT } from "../i18n";
 import type { GroupRouterConfig } from "./GroupRouterSettings";
 
 type Device = { id: string; deviceId?: string; name: string; enabled: boolean; online?: boolean };
@@ -27,50 +27,6 @@ function parseDetail(data: unknown, expectedRoomId?: string): Detail {
 		throw new Error("Invalid group detail response");
 	return data as Detail;
 }
-const words = {
-	zh: {
-		groups: "群聊",
-		manage: "管理成员",
-		save: "保存设置",
-		create: "建群",
-		name: "群名称",
-		devices: "选择 Bot（设备仅承载 Bot）",
-		empty: "还没有群聊，创建一个群开始协作。",
-		choose: "选择一个群聊",
-		open: "打开聊天",
-		online: "在线",
-		offline: "离线",
-		cancel: "取消",
-		loading: "加载中…",
-		rebind: "设备绑定已失效或已解除，请在设备设置中重新绑定。",
-		forbidden: "本机访问被拒绝，请检查本机登录状态与访问权限。",
-		failed: "请求失败",
-		searchPlaceholder: "搜索群或任务…",
-		matchedBot: "Bot: ",
-		matchedTask: "任务: ",
-	},
-	en: {
-		groups: "Groups",
-		manage: "Manage members",
-		save: "Save settings",
-		create: "Create group",
-		name: "Group name",
-		devices: "Select Bots (devices host Bots)",
-		empty: "No groups yet. Create a group to collaborate.",
-		choose: "Select a group",
-		open: "Open chat",
-		online: "Online",
-		offline: "Offline",
-		cancel: "Cancel",
-		loading: "Loading…",
-		rebind: "The device binding has expired or was removed. Bind again in device settings.",
-		forbidden: "Local access denied. Check your local sign-in and access permissions.",
-		failed: "Request failed",
-		searchPlaceholder: "Search groups or tasks…",
-		matchedBot: "Bot: ",
-		matchedTask: "Task: ",
-	},
-};
 class RequestError extends Error {
 	constructor(
 		readonly status: number,
@@ -101,8 +57,7 @@ function openChat(roomId: string) {
 }
 
 export function DeviceGroupCreateDialog({ onClose }: { onClose: () => void }) {
-	const { locale } = useI18n();
-	const w = words[isZhLocale(locale) ? "zh" : "en"];
+	const t = useT();
 	useEscapeKey(() => {
 		if (!document.querySelector("dialog[open]")) onClose();
 	});
@@ -112,7 +67,7 @@ export function DeviceGroupCreateDialog({ onClose }: { onClose: () => void }) {
 				className="device-group-create-dialog"
 				role="dialog"
 				aria-modal="true"
-				aria-label={w.create}
+				aria-label={t("deviceGroupsCreate")}
 				onClick={(event) => event.stopPropagation()}
 			>
 				<DeviceGroups createOnly onClose={onClose} />
@@ -133,8 +88,7 @@ export function DeviceGroups({
 	createOnly?: boolean;
 	onClose?: () => void;
 }) {
-	const { locale } = useI18n();
-	const w = words[isZhLocale(locale) ? "zh" : "en"];
+	const t = useT();
 	const [devices, setDevices] = useState<Device[]>([]);
 	const [rooms, setRooms] = useState<Room[]>([]);
 	const [roomId, setRoomId] = useState("");
@@ -157,19 +111,19 @@ export function DeviceGroups({
 	const navigationRevision = useRef<number | undefined>(undefined);
 	const generation = useRef(0);
 	const mutation = useRef<AbortController | null>(null);
-	const translations = useRef(w);
-	translations.current = w;
+	const translateRef = useRef(t);
+	translateRef.current = t;
 	function explain(cause: unknown) {
-		const labels = translations.current;
+		const tr = translateRef.current;
 		if (cause instanceof RequestError) {
 			if (
 				(cause.status === 409 && /^(REPAIR_REQUIRED|NOT_PAIRED|DEVICE_CHANGED)$/.test(cause.code)) ||
 				(cause.status === 403 && /binding|credential|unpaired|revoked|not_bound|hub_forbidden/i.test(cause.code))
 			)
-				return labels.rebind;
-			if (cause.status === 403) return labels.forbidden;
+				return tr("deviceGroupsRebind");
+			if (cause.status === 403) return tr("deviceGroupsForbidden");
 		}
-		return `${labels.failed}: ${cause instanceof Error ? cause.message : String(cause)}`;
+		return `${tr("deviceGroupsFailed")}: ${cause instanceof Error ? cause.message : String(cause)}`;
 	}
 	function cancelMutation() {
 		mutation.current?.abort();
@@ -303,11 +257,7 @@ export function DeviceGroups({
 			if (controller.signal.aborted || mutation.current !== controller) return;
 			const { room } = parseDetail(data, isCreate ? undefined : id);
 			if ((room.primaryBotId ?? "") !== expectedPrimary) {
-				throw new Error(
-					isZhLocale(locale)
-						? "中心未保存主 Bot 设置，请更新群组所属的设备中心（Hub）后重试。"
-						: "The Hub did not save the primary Bot setting. Update the group's Hub and retry.",
-				);
+				throw new Error(t("deviceGroupsPrimaryBotUnsaved"));
 			}
 			setSaved(true);
 			setRooms((old) => [...old.filter((item) => item.id !== room.id), room]);
@@ -335,15 +285,15 @@ export function DeviceGroups({
 	}
 	const currentRoom = rooms.find((room) => room.id === roomId);
 	return (
-		<section className="dg-root" aria-label={w.groups}>
+		<section className="dg-root" aria-label={t("deviceGroupsHeading")}>
 			{!createOnly && (
 				<div className="dc-card dg-sidebar">
 					<div className="dg-heading">
 						<h2>
-							<FiUsers /> {w.groups}
+							<FiUsers /> {t("deviceGroupsHeading")}
 						</h2>
 						<button className="dc-button" type="button" disabled={!active} onClick={beginCreate}>
-							<FiPlus /> {w.create}
+							<FiPlus /> {t("deviceGroupsCreate")}
 						</button>
 					</div>
 					<div className="dg-search-bar" style={{ padding: "0 10px 8px 10px" }}>
@@ -363,7 +313,7 @@ export function DeviceGroups({
 								type="search"
 								value={searchQuery}
 								onChange={(e) => setSearchQuery(e.target.value)}
-								placeholder={w.searchPlaceholder}
+								placeholder={t("deviceGroupsSearchPlaceholder")}
 								style={{
 									border: "none",
 									background: "transparent",
@@ -406,12 +356,12 @@ export function DeviceGroups({
 										{room.name}
 										{result.matchedBy === "bot_id" && (
 											<small style={{ display: "block", color: "var(--text-dim)", fontSize: "11px" }}>
-												{w.matchedBot} {searchQuery}
+												{t("deviceGroupsMatchedBot", { query: searchQuery })}
 											</small>
 										)}
 										{result.matchedBy === "task_title" && result.matchedTask && (
 											<small style={{ display: "block", color: "var(--accent)", fontSize: "11px" }}>
-												{w.matchedTask} {result.matchedTask.title}
+												{t("deviceGroupsMatchedTask", { title: result.matchedTask.title })}
 											</small>
 										)}
 										{result.matchedBy === "task_id" && result.matchedTask && (
@@ -439,21 +389,17 @@ export function DeviceGroups({
 							);
 						})}
 					</div>
-					{!loading && !rooms.length && <p className="dg-empty">{w.empty}</p>}
+					{!loading && !rooms.length && <p className="dg-empty">{t("deviceGroupsEmpty")}</p>}
 				</div>
 			)}
 			<div className="dc-card dg-chat">
-				{saved && (
-					<p role="status">
-						{isZhLocale(locale) ? "已保存成员和主 Bot 设置。" : "Members and primary Bot settings saved."}
-					</p>
-				)}
+				{saved && <p role="status">{t("deviceGroupsSaved")}</p>}
 				{error && (
 					<p className="dc-error" role="alert">
 						{error}
 					</p>
 				)}
-				{loading && <p role="status">{w.loading}</p>}
+				{loading && <p role="status">{t("loading")}</p>}
 				{creating || managing ? (
 					<form
 						className="dg-create"
@@ -462,10 +408,10 @@ export function DeviceGroups({
 							void save();
 						}}
 					>
-						<h2>{creating ? w.create : w.manage}</h2>
+						<h2>{creating ? t("deviceGroupsCreate") : t("deviceGroupManagerManageMembersTitle")}</h2>
 						{creating && (
 							<div className="dc-field">
-								<label htmlFor="device-group-name">{w.name}</label>
+								<label htmlFor="device-group-name">{t("deviceGroupManagerNameLabel")}</label>
 								<input
 									id="device-group-name"
 									value={name}
@@ -475,7 +421,7 @@ export function DeviceGroups({
 							</div>
 						)}
 						<fieldset disabled={busy || !active || (managing && !detail)}>
-							<legend>{w.devices}</legend>
+							<legend>{t("deviceGroupsDevices")}</legend>
 							{devices.map((device) => (
 								<label className="dg-device" key={device.id}>
 									<input
@@ -490,23 +436,22 @@ export function DeviceGroups({
 									/>
 									<FiMonitor />
 									<span>
-										{device.name} · {device.id} · {device.deviceId} · {device.online ? w.online : w.offline}
+										{device.name} · {device.id} · {device.deviceId} ·{" "}
+										{device.online ? t("deviceHubOnline") : t("deviceHubOffline")}
 									</span>
 								</label>
 							))}
 						</fieldset>
 						{!detail?.room.router?.enabled && (
 							<div className="dc-field">
-								<label htmlFor="device-group-primary-bot">
-									{isZhLocale(locale) ? "原主 Bot（Router 未启用时）" : "Legacy primary Bot (when Router is disabled)"}
-								</label>
+								<label htmlFor="device-group-primary-bot">{t("deviceGroupsLegacyPrimaryBot")}</label>
 								<select
 									id="device-group-primary-bot"
 									value={selected.includes(primaryBotId) ? primaryBotId : ""}
 									disabled={busy || !active || (managing && !detail)}
 									onChange={(event) => setPrimaryBotId(event.target.value)}
 								>
-									<option value="">{isZhLocale(locale) ? "不设置（需 @ Bot）" : "None (mention a Bot)"}</option>
+									<option value="">{t("deviceGroupsPrimaryBotNone")}</option>
 									{devices
 										.filter((bot) => bot.enabled && selected.includes(bot.id))
 										.map((bot) => (
@@ -515,11 +460,7 @@ export function DeviceGroups({
 											</option>
 										))}
 								</select>
-								<p>
-									{isZhLocale(locale)
-										? "未启用 Router 时，未 @ Bot 的消息发送给原主 Bot。独立 AI Router 请在群聊顶部配置。"
-										: "When Router is disabled, messages without mentions go to the legacy primary Bot. Configure the independent AI Router from the group chat header."}
-								</p>
+								<p>{t("deviceGroupsPrimaryBotHint")}</p>
 							</div>
 						)}
 						{detail?.room.router?.enabled && (
@@ -535,14 +476,14 @@ export function DeviceGroups({
 								disabled={busy || !active || creatingBot}
 								onClick={() => setCreatingBot(true)}
 							>
-								<FiPlus /> {isZhLocale(locale) ? "新建 Bot" : "Create Bot"}
+								<FiPlus /> {t("deviceGroupsCreateBot")}
 							</button>
 							<button
 								className="dc-button"
 								type="submit"
 								disabled={busy || !active || (creating ? !name.trim() : !detail)}
 							>
-								{creating ? w.create : w.save}
+								{creating ? t("deviceGroupsCreate") : t("deviceExecSave")}
 							</button>
 							<button
 								className="dc-button"
@@ -556,7 +497,7 @@ export function DeviceGroups({
 									setError("");
 								}}
 							>
-								{w.cancel}
+								{t("cancel")}
 							</button>
 						</div>
 					</form>
@@ -570,7 +511,7 @@ export function DeviceGroups({
 						<div className="dc-actions">
 							<button className="dc-button" type="button" disabled={!active} onClick={() => openChat(currentRoom.id)}>
 								<FiMessageSquare />
-								{w.open}
+								{t("deviceGroupManagerOpenChat")}
 							</button>
 							<button
 								className="dc-button"
@@ -579,12 +520,12 @@ export function DeviceGroups({
 								onClick={() => selectRoom(currentRoom.id, true)}
 							>
 								<FiUsers />
-								{w.manage}
+								{t("deviceGroupManagerManageMembersTitle")}
 							</button>
 						</div>
 					</>
 				) : (
-					<p className="dg-empty">{w.choose}</p>
+					<p className="dg-empty">{t("deviceGroupsChoose")}</p>
 				)}
 			</div>
 			{creatingBot && (
@@ -597,11 +538,7 @@ export function DeviceGroups({
 							setDevices((old) => [...old.filter((item) => item.id !== bot.id), bot]);
 							setSelected((old) => [...new Set([...old, bot.id])]);
 						} else {
-							setError(
-								isZhLocale(locale)
-									? "Bot 已保存；请启用并同步到中心后，再加入群组。"
-									: "Bot saved. Enable and sync it to the hub before adding it to the group.",
-							);
+							setError(t("deviceGroupsBotSavedHint"));
 						}
 					}}
 				/>

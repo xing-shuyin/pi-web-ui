@@ -101,7 +101,7 @@ export function DesktopDevicePicker({ access, visible }: { access: DesktopAccess
 			return;
 		}
 		try {
-			await openDeviceAccess(device.id, access.hubUrl, true, access.zh, false, device.remark?.trim() || device.name, {
+			await openDeviceAccess(device.id, access.hubUrl, true, t, false, device.remark?.trim() || device.name, {
 				mode: access.mode,
 			});
 			setOpen(false);

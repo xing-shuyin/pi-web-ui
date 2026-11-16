@@ -14,7 +14,7 @@ import {
 import { appUrl } from "../base-url";
 import { waitForHubUpgrade, type HubUpgradeStatus } from "../hub-upgrade";
 import { withToken } from "../auth-token";
-import { isZhLocale, useLocale, useT } from "../i18n";
+import { useT } from "../i18n";
 import type { UiPluginInfo } from "../types";
 import { DeviceChannels } from "./DeviceChannels";
 import { LocalBots } from "./LocalBots";
@@ -62,7 +62,6 @@ type LocalDesktopStatus = {
 
 function LocalDesktopSettings() {
 	const t = useT();
-	const zh = useLocale().startsWith("zh");
 	const [status, setStatus] = useState<LocalDesktopStatus | null>(null);
 	const [busy, setBusy] = useState(false);
 	const [error, setError] = useState(false);
@@ -133,34 +132,26 @@ function LocalDesktopSettings() {
 	}, []);
 
 	return (
-		<section className="dc-card" aria-label={zh ? "本机远程桌面" : "Local remote desktop"} aria-busy={busy}>
+		<section className="dc-card" aria-label={t("deviceCenterLocalDesktopTitle")} aria-busy={busy}>
 			<div className="dc-card-header">
 				<span className="dc-icon">
 					<FiMonitor aria-hidden />
 				</span>
 				<div>
-					<h2>{zh ? "本机远程桌面" : "Local remote desktop"}</h2>
-					<p>
-						{zh
-							? "管理这台设备的远程桌面与系统权限，无需连接设备中心。"
-							: "Manage remote desktop and system permissions on this device, even while the device center is offline."}
-					</p>
+					<h2>{t("deviceCenterLocalDesktopTitle")}</h2>
+					<p>{t("deviceCenterLocalDesktopHint")}</p>
 				</div>
 			</div>
 			{localOnly ? (
-				<p role="status">
-					{zh
-						? "请在设备本机打开此页面以管理远程桌面权限。"
-						: "Open this page on the device itself to manage remote desktop permissions."}
-				</p>
+				<p role="status">{t("deviceCenterLocalOnly")}</p>
 			) : (
 				<>
 					{status && (
 						<>
 							<div className="dc-permission-row">
 								<div>
-									<h3 id="dc-desktop-label">{zh ? "启用远程桌面" : "Enable remote desktop"}</h3>
-									<p>{status.enabled ? (zh ? "已启用" : "Enabled") : zh ? "未启用" : "Disabled"}</p>
+									<h3 id="dc-desktop-label">{t("deviceCenterRemoteDesktopEnable")}</h3>
+									<p>{t(status.enabled ? "deviceCenterRemoteDesktopEnabled" : "deviceCenterRemoteDesktopDisabled")}</p>
 								</div>
 								<button
 									type="button"
@@ -174,23 +165,11 @@ function LocalDesktopSettings() {
 									<span className="dc-toggle-thumb" />
 								</button>
 							</div>
-							{!status.supported && (
-								<p>{zh ? "这台设备暂不支持远程桌面。" : "Remote desktop is currently unavailable on this device."}</p>
-							)}
-							{status.environmentEnabled && (
-								<p>
-									{zh
-										? "远程桌面由本机服务设置保持启用。"
-										: "Remote desktop is kept enabled by the service settings on this device."}
-								</p>
-							)}
+							{!status.supported && <p>{t("deviceCenterRemoteDesktopUnsupported")}</p>}
+							{status.environmentEnabled && <p>{t("deviceCenterRemoteDesktopManaged")}</p>}
 							{status.os === "darwin" && (
 								<>
-									<p>
-										{zh
-											? "点击下方按钮发起系统授权，请在这台 Mac 的系统设置中确认。授权后可能需要重启服务。"
-											: "Use the buttons below to request system permission, then confirm in System Settings on this Mac. You may need to restart the service afterward."}
-									</p>
+									<p>{t("deviceCenterRemoteDesktopPermissionHint")}</p>
 									<div className="dc-actions">
 										<button
 											type="button"
@@ -198,7 +177,7 @@ function LocalDesktopSettings() {
 											disabled={busy || status.permissions?.supported === false}
 											onClick={() => void load("permissions", { kind: "screen" })}
 										>
-											{zh ? "授予屏幕录制权限" : "Grant screen recording permission"}
+											{t("deviceCenterGrantScreenRecording")}
 										</button>
 										<button
 											type="button"
@@ -206,36 +185,24 @@ function LocalDesktopSettings() {
 											disabled={busy || status.permissions?.supported === false}
 											onClick={() => void load("permissions", { kind: "control" })}
 										>
-											{zh ? "授予远程控制权限" : "Grant remote control permission"}
+											{t("deviceCenterGrantRemoteControl")}
 										</button>
 									</div>
-									{status.permissions?.screen === true && (
-										<p>{zh ? "屏幕录制：已授权" : "Screen recording: granted"}</p>
-									)}
-									{status.permissions?.accessibility === true && (
-										<p>{zh ? "远程控制：已授权" : "Remote control: granted"}</p>
-									)}
-									{requested && (
-										<p role="status">
-											{zh
-												? "已发起授权请求，请确认系统设置后刷新状态。"
-												: "Permission requested. Confirm in System Settings, then refresh the status."}
-										</p>
-									)}
+									{status.permissions?.screen === true && <p>{t("deviceCenterScreenRecordingGranted")}</p>}
+									{status.permissions?.accessibility === true && <p>{t("deviceCenterRemoteControlGranted")}</p>}
+									{requested && <p role="status">{t("deviceCenterPermissionRequested")}</p>}
 								</>
 							)}
 						</>
 					)}
 					{error && (
 						<p className="dc-notice is-error" role="alert">
-							{zh
-								? "无法更新本机远程桌面设置，请重试。"
-								: "Unable to update local remote desktop settings. Please retry."}
+							{t("deviceCenterRemoteDesktopUpdateFailed")}
 						</p>
 					)}
 					<button type="button" className="dc-button" disabled={busy} onClick={() => void load("status")}>
 						<FiRefreshCw aria-hidden />
-						{busy ? t("deviceHubWorking") : zh ? "刷新远程桌面状态" : "Refresh remote desktop status"}
+						{busy ? t("deviceHubWorking") : t("deviceCenterRefreshRemoteDesktop")}
 					</button>
 				</>
 			)}
@@ -253,7 +220,6 @@ export function DeviceCenter({
 	pluginsEpoch?: number;
 }) {
 	const t = useT();
-	const zh = isZhLocale(useLocale());
 	const [section, setSection] = useState<"devices" | "groups" | "channels">("devices");
 	const [status, setStatus] = useState<DeviceStatus | null>(null);
 	const [hubUrl, setHubUrl] = useState("");
@@ -547,12 +513,12 @@ export function DeviceCenter({
 				</div>
 			</header>
 			<div className="dc-layout">
-				<nav className="dc-sidebar" aria-label={zh ? "设备与协作导航" : "Devices and collaboration"}>
+				<nav className="dc-sidebar" aria-label={t("deviceCenterNavLabel")}>
 					{(
 						[
-							["devices", FiMonitor, zh ? "设备与连接" : "Devices & connections"],
-							["groups", FiUsers, zh ? "群组与工单" : "Groups & work items"],
-							["channels", FiInbox, zh ? "外部渠道" : "External channels"],
+							["devices", FiMonitor, t("deviceCenterNavDevices")],
+							["groups", FiUsers, t("deviceCenterGroupsTitle")],
+							["channels", FiInbox, t("deviceCenterExternalChannelsTitle")],
 						] as const
 					).map(([id, Icon, label]) => (
 						<button
@@ -596,22 +562,10 @@ export function DeviceCenter({
 					)}
 					{section !== "devices" && (!bound || localOnly) && (
 						<section className="dc-card">
-							<h2>
-								{section === "groups"
-									? zh
-										? "群组与工单"
-										: "Groups & work items"
-									: zh
-										? "外部渠道"
-										: "External channels"}
-							</h2>
-							<p>
-								{zh
-									? "先连接设备中心，再创建群组、配置群组 AI 并接入外部渠道。"
-									: "Connect to a device hub before creating groups, configuring group AI, and connecting external channels."}
-							</p>
+							<h2>{section === "groups" ? t("deviceCenterGroupsTitle") : t("deviceCenterExternalChannelsTitle")}</h2>
+							<p>{t("deviceCenterConnectFirstHint")}</p>
 							<button type="button" className="dc-button is-primary" onClick={() => setSection("devices")}>
-								{zh ? "前往设备连接" : "Connect a device"}
+								{t("deviceCenterGoConnectDevice")}
 							</button>
 						</section>
 					)}

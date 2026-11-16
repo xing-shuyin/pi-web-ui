@@ -10,6 +10,11 @@ import {
 	useBrowserControl,
 	type BrowserControlStatus,
 } from "../../web/src/browser-control";
+import { interpolate, type Translate } from "../../web/src/i18n";
+import { zh } from "../../web/src/i18n/catalog";
+
+// Real zh dictionary: these assertions are about the wording the user actually sees.
+const tr: Translate = (key, vars) => interpolate(zh[key] ?? (key as string), vars);
 
 type PageCall = (opts: {
 	op: string;
@@ -31,7 +36,7 @@ afterEach(() => {
 
 describe("queryBrowserControl", () => {
 	it("没有宿主桥（扩展没装/没启用/本页没绑地址）→ available:false + 一句怎么做", async () => {
-		const status = await queryBrowserControl();
+		const status = await queryBrowserControl(tr);
 		expect(status.available).toBe(false);
 		expect(status.pages).toEqual([]);
 		expect(status.error).toContain("page-picker");
@@ -40,7 +45,7 @@ describe("queryBrowserControl", () => {
 
 	it("桥在但扩展报错 → 把原因原样带出来（不吞掉）", async () => {
 		installHost(async () => ({ ok: false, error: "页面桥只能从 http/https 页面上发起" }));
-		const status = await queryBrowserControl();
+		const status = await queryBrowserControl(tr);
 		expect(status).toEqual({ available: false, pages: [], error: "页面桥只能从 http/https 页面上发起" });
 	});
 
@@ -48,7 +53,7 @@ describe("queryBrowserControl", () => {
 		installHost(async () => {
 			throw new Error("Extension context invalidated");
 		});
-		const status = await queryBrowserControl();
+		const status = await queryBrowserControl(tr);
 		expect(status.available).toBe(false);
 		expect(String(status.error)).toContain("Extension context invalidated");
 	});
@@ -64,7 +69,7 @@ describe("queryBrowserControl", () => {
 				optionsUrl: "chrome-extension://abc/options.html",
 			},
 		}));
-		const status = await queryBrowserControl();
+		const status = await queryBrowserControl(tr);
 		expect(pageCall).toHaveBeenCalledWith({ op: "status", timeoutMs: 5000 });
 		expect(status).toEqual({
 			available: true,
@@ -79,7 +84,7 @@ describe("queryBrowserControl", () => {
 		installHost(async () => {
 			throw new Error("should not be called in desktop shell");
 		});
-		const status = await queryBrowserControl();
+		const status = await queryBrowserControl(tr);
 		expect(status.available).toBe(false);
 		expect(status.desktop).toBe(true);
 		expect(status.pages).toEqual([]);
@@ -101,7 +106,7 @@ describe("queryBrowserControl", () => {
 			},
 		}));
 		(globalThis as unknown as Record<string, unknown>).__piBrowser = { version: 1, pageCall };
-		expect(await queryBrowserControl()).toEqual({
+		expect(await queryBrowserControl(tr)).toEqual({
 			available: true,
 			native: true,
 			aiControl: true,
@@ -115,7 +120,7 @@ describe("queryBrowserControl", () => {
 	it("不支持的原生桥版本保留网页版扩展路径", async () => {
 		(globalThis as unknown as Record<string, unknown>).__piBrowser = { version: 2, pageCall: vi.fn() };
 		const pageCall = installHost(async () => ({ ok: true, result: { installed: true } }));
-		expect((await queryBrowserControl()).available).toBe(true);
+		expect((await queryBrowserControl(tr)).available).toBe(true);
 		expect(pageCall).toHaveBeenCalledOnce();
 	});
 
@@ -154,7 +159,7 @@ describe("queryBrowserControl", () => {
 
 	it("返回体脏（pages 不是数组）→ 当成没有页面，不炸", async () => {
 		installHost(async () => ({ ok: true, result: { installed: true, pages: "nope" } }));
-		const status = await queryBrowserControl();
+		const status = await queryBrowserControl(tr);
 		expect(status.available).toBe(true);
 		expect(status.pages).toEqual([]);
 	});

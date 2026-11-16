@@ -8,12 +8,24 @@
  */
 import { esc as escapeHtml } from "@pi-web-ui/plugin-sdk/client";
 
+/**
+ * 直接调用（单测 / 离线渲染）时的兜底文案：界面里由调用方注入插件的 t()，
+ * 这里只保证不把 i18n key 漏到渲染结果里。
+ */
+const FALLBACK_TEXT = { tsJump: "Watch from {label}", emptyContent: "No content" };
+const fallbackT = (key, params) =>
+	String(FALLBACK_TEXT[key] ?? key).replace(/\{(\w+)\}/g, (m, name) =>
+		params && name in params ? String(params[name]) : m,
+	);
+
 const tsToSec = (label) =>
 	String(label)
 		.split(":")
 		.reduce((acc, n) => acc * 60 + (Number(n) || 0), 0);
 
 export function renderMiniMd(src, opts = {}) {
+	// 文案函数由入口注入（entry.mjs 的 t）；没注入时用本地兜底。
+	const tr = typeof opts.t === "function" ? opts.t : fallbackT;
 	const videoUrl = String(opts.url || "").replace(/[?#].*$/, "");
 	const inline = (s) => {
 		let out = escapeHtml(s);
@@ -26,7 +38,7 @@ export function renderMiniMd(src, opts = {}) {
 		// 裸时间戳 [mm:ss] → 可点回看锚点
 		out = out.replace(/\[(\d{1,2}:\d{2}(?::\d{2})?)\]/g, (_m, label) => {
 			if (!videoUrl) return `<span class="bili-ts">${label}</span>`;
-			return `<a class="bili-ts" href="${videoUrl}?t=${tsToSec(label)}" target="_blank" rel="noreferrer" title="从 ${label} 开始看">${label}</a>`;
+			return `<a class="bili-ts" href="${videoUrl}?t=${tsToSec(label)}" target="_blank" rel="noreferrer" title="${tr("tsJump", { label })}">${label}</a>`;
 		});
 		return out;
 	};
@@ -122,7 +134,7 @@ export function renderMiniMd(src, opts = {}) {
 		para.push(t);
 	}
 	flushAll();
-	return html || '<p style="color: var(--text-dim);">暂无内容</p>';
+	return html || `<p style="color: var(--text-dim);">${tr("emptyContent")}</p>`;
 }
 
 /**

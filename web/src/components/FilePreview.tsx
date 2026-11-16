@@ -19,7 +19,7 @@ import {
 } from "react-icons/fi";
 import type { FileContent } from "../types";
 import type { UiSlotEntry } from "../ui-slots";
-import { assignHeadingIds, shouldShowToc, type TocHeading } from "../preview-toc";
+import { TOC_FALLBACK_LABEL_KEY, assignHeadingIds, shouldShowToc, type TocHeading } from "../preview-toc";
 import { useOverlayZIndex } from "../overlay-stack";
 import { Markdown } from "./Markdown";
 import { renderMergedToolbar } from "../slot-toolbar";
@@ -305,12 +305,13 @@ export function FilePreview({
 		const nodes = [...root.querySelectorAll<HTMLElement>("h1, h2, h3, h4, h5, h6")];
 		const heads = assignHeadingIds(
 			nodes.map((el) => ({ level: Number(el.tagName.slice(1)), label: el.textContent ?? "" })),
+			t(TOC_FALLBACK_LABEL_KEY),
 		);
 		nodes.forEach((el, index) => {
 			if (!el.id) el.id = heads[index].id;
 		});
 		setToc(heads);
-	}, [showMarkdown, loaded?.text, file.path]);
+	}, [showMarkdown, loaded?.text, file.path, t]);
 
 	useEffect(() => {
 		const root = markdownRef.current;

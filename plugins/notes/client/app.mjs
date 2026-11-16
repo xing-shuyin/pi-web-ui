@@ -96,7 +96,7 @@ function reminderBadgeText(reminder, t) {
 	}
 	if (s.type === "daily") return `${t("repeat.daily")} ${s.time}`;
 	if (s.type === "weekly") return `${t("repeat.weekly")} ${s.time}`;
-	if (s.type === "monthly") return `${t("repeat.monthly")} ${s.dom}日 ${s.time}`;
+	if (s.type === "monthly") return `${t("repeat.monthly")} ${t("schedule.domSuffix", { dom: s.dom })} ${s.time}`;
 	return scheduleLabel(s, t);
 }
 
@@ -501,6 +501,7 @@ export function createNotesApp(options) {
 		}
 		const tagMatches = raw.match(/#[^\s#]{1,32}/g) ?? [];
 		const tags = [...new Set(tagMatches.map((x) => x.slice(1)))];
+		// 默认标题会落进 store（持久化值），不随界面语言变。
 		const title = S.extractTitle(raw) || "未命名笔记";
 
 		const patch = {
@@ -752,7 +753,7 @@ export function createNotesApp(options) {
 				delBtn.dataset.confirming = "1";
 				delBtn.textContent = "✓";
 				delBtn.classList.add("nt-del-confirm");
-				delBtn.title = `${t("action.delete")} (再次点击确认)`;
+				delBtn.title = `${t("action.delete")} (${t("action.deleteAgain")})`;
 				delTimer = setTimeout(() => {
 					delBtn.dataset.confirming = "0";
 					delBtn.textContent = "✕";
@@ -866,7 +867,7 @@ export function createNotesApp(options) {
 				}
 				inlineDelBtn.dataset.confirming = "1";
 				inlineDelBtn.textContent = "✓";
-				inlineDelBtn.title = `${t("action.delete")} (再次点击确认)`;
+				inlineDelBtn.title = `${t("action.delete")} (${t("action.deleteAgain")})`;
 				inlineDelTimer = setTimeout(() => {
 					inlineDelBtn.dataset.confirming = "0";
 					inlineDelBtn.textContent = "✕";
@@ -909,6 +910,7 @@ export function createNotesApp(options) {
 			}
 			const tagMatches = body.match(/#[^\s#]{1,32}/g) ?? [];
 			const tags = [...new Set(tagMatches.map((x) => x.slice(1)))];
+			// 默认标题会落进 store（持久化值），不随界面语言变。
 			const title = S.extractTitle(body) || "未命名笔记";
 
 			const patch = {

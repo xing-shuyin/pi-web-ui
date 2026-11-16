@@ -2,7 +2,7 @@
 	"id": "wallpaper-engine",
 	"name": "动态壁纸",
 	"nameEn": "Wallpaper Engine",
-	"version": "0.3.71",
+	"version": "0.3.74",
 	"icon": "🖼️",
 	"iconSvg": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><rect width=\"18\" height=\"18\" x=\"3\" y=\"3\" rx=\"2\" ry=\"2\"/><circle cx=\"9\" cy=\"9\" r=\"2\"/><path d=\"m21 15-3.086-3.086a2 2 0 0 0-2.828 0L6 21\"/></svg>",
 	"description": "本地 Wallpaper Engine 动态壁纸：自动扫描创意工坊，支持视频、WebGL2 场景与网页壁纸，支持音频频谱联动、定时轮播、壁纸收藏、专属黑曜冷月极简微透毛玻璃与极简行文无界正文主题、原生 1:1 超清物理像素渲染。",
@@ -25,8 +25,14 @@
 			"label": "专属壁纸主题风格",
 			"default": "obsidian",
 			"options": [
-				{ "value": "obsidian", "label": "🌑 黑曜冷月（纯黑极简微透）" },
-				{ "value": "flow", "label": "🖋️ 极简行文（极致紧凑·无界正文）" }
+				{
+					"value": "obsidian",
+					"label": "🌑 黑曜冷月（纯黑极简微透）"
+				},
+				{
+					"value": "flow",
+					"label": "🖋️ 极简行文（极致紧凑·无界正文）"
+				}
 			],
 			"hint": "壁纸激活时专用的黑曜冷月微透或极简行文无界正文主题，与动态壁纸 100% 融合。"
 		},
@@ -50,11 +56,26 @@
 			"label": "自动轮播壁纸",
 			"default": "0",
 			"options": [
-				{ "value": "0", "label": "关闭自动轮播" },
-				{ "value": "5", "label": "每 5 分钟切换" },
-				{ "value": "15", "label": "每 15 分钟切换" },
-				{ "value": "30", "label": "每 30 分钟切换" },
-				{ "value": "60", "label": "每 1 小时切换" }
+				{
+					"value": "0",
+					"label": "关闭自动轮播"
+				},
+				{
+					"value": "5",
+					"label": "每 5 分钟切换"
+				},
+				{
+					"value": "15",
+					"label": "每 15 分钟切换"
+				},
+				{
+					"value": "30",
+					"label": "每 30 分钟切换"
+				},
+				{
+					"value": "60",
+					"label": "每 1 小时切换"
+				}
 			],
 			"hint": "开启后将从“已收藏”壁纸（若无收藏则从全部壁纸）中定时循环切换。"
 		},
@@ -71,9 +92,18 @@
 			"label": "最大帧率限制",
 			"default": "0",
 			"options": [
-				{ "value": "30", "label": "30 FPS（节能）" },
-				{ "value": "60", "label": "60 FPS（流畅）" },
-				{ "value": "0", "label": "无限制（满帧率）" }
+				{
+					"value": "30",
+					"label": "30 FPS（节能）"
+				},
+				{
+					"value": "60",
+					"label": "60 FPS（流畅）"
+				},
+				{
+					"value": "0",
+					"label": "无限制（满帧率）"
+				}
 			],
 			"hint": "用于控制 Scene 场景壁纸与视频渲染的帧率上限。"
 		},
@@ -83,10 +113,22 @@
 			"label": "Scene 场景画质档位",
 			"default": "high",
 			"options": [
-				{ "value": "high", "label": "🎨 高清细腻（默认推荐，原生 1:1 视网膜超清）" },
-				{ "value": "ultra", "label": "🌟 极致视网膜（高配旗舰独显，超高清渲染）" },
-				{ "value": "balanced", "label": "⚖️ 平衡流畅（轻量后处理，平衡节能）" },
-				{ "value": "performance", "label": "⚡ 节能极速（核显/轻薄本，仅精简粒子）" }
+				{
+					"value": "high",
+					"label": "🎨 高清细腻（默认推荐，原生 1:1 视网膜超清）"
+				},
+				{
+					"value": "ultra",
+					"label": "🌟 极致视网膜（高配旗舰独显，超高清渲染）"
+				},
+				{
+					"value": "balanced",
+					"label": "⚖️ 平衡流畅（轻量后处理，平衡节能）"
+				},
+				{
+					"value": "performance",
+					"label": "⚡ 节能极速（核显/轻薄本，仅精简粒子）"
+				}
 			],
 			"hint": "控制 3D/Scene 场景壁纸的渲染分辨率、粒子密度与后处理精度。推荐选择“高清细腻”以获得 1:1 原生超清物理画质。"
 		},
@@ -96,10 +138,22 @@
 			"label": "抗锯齿模式",
 			"default": "off",
 			"options": [
-				{ "value": "off", "label": "关闭（最高帧率）" },
-				{ "value": "fxaa", "label": "FXAA 快速平滑（默认推荐，轻量丝滑）" },
-				{ "value": "msaa2", "label": "MSAA 2x（硬件多重采样）" },
-				{ "value": "msaa4", "label": "MSAA 4x（极高负荷，需高端显卡）" }
+				{
+					"value": "off",
+					"label": "关闭（最高帧率）"
+				},
+				{
+					"value": "fxaa",
+					"label": "FXAA 快速平滑（默认推荐，轻量丝滑）"
+				},
+				{
+					"value": "msaa2",
+					"label": "MSAA 2x（硬件多重采样）"
+				},
+				{
+					"value": "msaa4",
+					"label": "MSAA 4x（极高负荷，需高端显卡）"
+				}
 			],
 			"hint": "FXAA 采用极低开销的后处理抗锯齿，边缘细腻且不掉帧；MSAA 会成倍消耗显存带宽。"
 		},

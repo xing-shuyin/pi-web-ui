@@ -12,7 +12,7 @@ import {
 import type { GroupTaskPlan, GroupCanvasRef, BotPresetSnapshot } from "../group-capabilities";
 import { shouldAutoExecuteCanvas, sanitizeBotPreset, isSnapshotApplicableToTask } from "../group-capabilities";
 import { prepareStartPlanExecution } from "../group-view-state";
-import { isZhLocale, useI18n } from "../i18n";
+import { useT } from "../i18n";
 
 export interface GroupWorkspaceActionsProps {
 	roomId: string;
@@ -29,47 +29,6 @@ export interface GroupWorkspaceActionsProps {
 	className?: string;
 }
 
-const words = {
-	zh: {
-		planTitle: "群任务计划",
-		planDraft: "计划草稿编制中",
-		planReady: "计划已就绪（需确认后开始）",
-		planApproved: "计划已批准实施",
-		startPlan: "开始实施",
-		startingPlan: "正在启动…",
-		canvasTitle: "关联画布工作流",
-		canvasManualNote: "画布已就绪。引用不会自动运行，点击按钮显式启动。",
-		launchCanvas: "启动画布",
-		launchingCanvas: "正在启动画布…",
-		botPresetTitle: "Bot 运行快照",
-		lockedSnapshot: "在途任务快照已锁定（v{rev}）",
-		toolsCount: "已授权 {count} 个工具",
-		isolatedNote: "独立隔离运行，未共享主会话私有配置",
-		applyPreset: "应用最新快照",
-		applyingPreset: "应用中…",
-		lockedCannotApply: "在途任务禁止热改预设",
-	},
-	en: {
-		planTitle: "Group Task Plan",
-		planDraft: "Drafting plan",
-		planReady: "Plan Ready (Requires confirmation to start)",
-		planApproved: "Plan approved & executing",
-		startPlan: "Start Execution",
-		startingPlan: "Starting…",
-		canvasTitle: "Linked Canvas Workflow",
-		canvasManualNote: "Canvas attached. Workflow will not run automatically. Click to launch explicitly.",
-		launchCanvas: "Launch Canvas",
-		launchingCanvas: "Launching canvas…",
-		botPresetTitle: "Bot Preset Snapshot",
-		lockedSnapshot: "Active task snapshot locked (v{rev})",
-		toolsCount: "{count} authorized tools",
-		isolatedNote: "Isolated run, main session private config is not leaked",
-		applyPreset: "Apply Latest Snapshot",
-		applyingPreset: "Applying…",
-		lockedCannotApply: "Active tasks cannot hot-reload presets",
-	},
-};
-
 export function GroupWorkspaceActions({
 	roomId,
 	activeTaskId,
@@ -84,8 +43,7 @@ export function GroupWorkspaceActions({
 	onUiAction,
 	className,
 }: GroupWorkspaceActionsProps) {
-	const { locale } = useI18n();
-	const w = words[isZhLocale(locale) ? "zh" : "en"];
+	const t = useT();
 
 	const activeRoomIdRef = useRef(roomId);
 	useEffect(() => {
@@ -105,7 +63,7 @@ export function GroupWorkspaceActions({
 		if (!activeTaskId || !planState || startingPlan || !onStartPlanExecution) return;
 		const check = prepareStartPlanExecution(planState);
 		if (!check.ok) {
-			setErrorNotice(check.reason ?? "Plan is not ready for approval");
+			setErrorNotice(check.reason ?? t("groupWorkspace.planNotReady"));
 			return;
 		}
 
@@ -148,7 +106,7 @@ export function GroupWorkspaceActions({
 
 		const isLocked = !isSnapshotApplicableToTask(taskSnapshotRevision, botSnapshot.revision);
 		if (isLocked) {
-			setErrorNotice(w.lockedCannotApply);
+			setErrorNotice(t("groupWorkspace.lockedCannotApply"));
 			return;
 		}
 
@@ -186,11 +144,11 @@ export function GroupWorkspaceActions({
 				<div className="group-workspace-card plan-card">
 					<div className="card-header">
 						<FiCheckCircle className="card-icon" />
-						<span className="card-title">{w.planTitle}</span>
+						<span className="card-title">{t("groupWorkspace.planTitle")}</span>
 						<span className={`plan-badge status-${planState.state}`}>
-							{planState.state === "draft" && w.planDraft}
-							{planState.state === "ready" && w.planReady}
-							{planState.state === "approved" && w.planApproved}
+							{planState.state === "draft" && t("groupWorkspace.planDraft")}
+							{planState.state === "ready" && t("groupWorkspace.planReady")}
+							{planState.state === "approved" && t("groupWorkspace.planApproved")}
 						</span>
 					</div>
 
@@ -214,7 +172,7 @@ export function GroupWorkspaceActions({
 								disabled={startingPlan}
 							>
 								<FiPlay className="btn-icon" />
-								<span>{startingPlan ? w.startingPlan : w.startPlan}</span>
+								<span>{startingPlan ? t("groupWorkspace.startingPlan") : t("groupWorkspace.startPlan")}</span>
 							</button>
 						</div>
 					)}
@@ -225,10 +183,10 @@ export function GroupWorkspaceActions({
 				<div className="group-workspace-card canvas-card">
 					<div className="card-header">
 						<FiLayout className="card-icon" />
-						<span className="card-title">{w.canvasTitle}</span>
+						<span className="card-title">{t("groupWorkspace.canvasTitle")}</span>
 						<span className="canvas-badge">{canvasRef.title || canvasRef.graphId}</span>
 					</div>
-					<p className="card-note">{w.canvasManualNote}</p>
+					<p className="card-note">{t("groupWorkspace.canvasManualNote")}</p>
 					{onLaunchCanvas && (
 						<div className="card-actions">
 							<button
@@ -238,7 +196,7 @@ export function GroupWorkspaceActions({
 								disabled={launchingCanvas}
 							>
 								<FiPlay className="btn-icon" />
-								<span>{launchingCanvas ? w.launchingCanvas : w.launchCanvas}</span>
+								<span>{launchingCanvas ? t("groupWorkspace.launchingCanvas") : t("groupWorkspace.launchCanvas")}</span>
 							</button>
 						</div>
 					)}
@@ -249,19 +207,19 @@ export function GroupWorkspaceActions({
 				<div className="group-workspace-card bot-preset-card">
 					<div className="card-header">
 						<FiSliders className="card-icon" />
-						<span className="card-title">{w.botPresetTitle}</span>
+						<span className="card-title">{t("groupWorkspace.botPresetTitle")}</span>
 						<span className="bot-badge">{botSnapshot.name}</span>
 					</div>
 					<div className="bot-snapshot-meta">
 						<span className="snapshot-rev">
 							<FiShield className="rev-icon" />
-							{w.lockedSnapshot.replace("{rev}", String(botSnapshot.revision))}
+							{t("groupWorkspace.lockedSnapshot", { rev: botSnapshot.revision })}
 						</span>
 						<span className="snapshot-tools">
-							{w.toolsCount.replace("{count}", String(botSnapshot.toolWhitelist.length))}
+							{t("groupWorkspace.toolsCount", { count: botSnapshot.toolWhitelist.length })}
 						</span>
 					</div>
-					<p className="card-note-faint">{w.isolatedNote}</p>
+					<p className="card-note-faint">{t("groupWorkspace.isolatedNote")}</p>
 					{onApplyPresetSnapshot && (
 						<div className="card-actions">
 							<button
@@ -271,12 +229,12 @@ export function GroupWorkspaceActions({
 								disabled={applyingPreset || !isSnapshotApplicableToTask(taskSnapshotRevision, botSnapshot.revision)}
 								title={
 									!isSnapshotApplicableToTask(taskSnapshotRevision, botSnapshot.revision)
-										? w.lockedCannotApply
+										? t("groupWorkspace.lockedCannotApply")
 										: undefined
 								}
 							>
 								<FiRefreshCw className="btn-icon" />
-								<span>{applyingPreset ? w.applyingPreset : w.applyPreset}</span>
+								<span>{applyingPreset ? t("groupWorkspace.applyingPreset") : t("groupWorkspace.applyPreset")}</span>
 							</button>
 						</div>
 					)}
@@ -286,7 +244,7 @@ export function GroupWorkspaceActions({
 			{uiSlotEntries && uiSlotEntries.length > 0 && (
 				<div className="group-workspace-card group-slots-card">
 					<div className="card-header">
-						<span className="card-title">{isZhLocale(locale) ? "扩展操作" : "Extensions"}</span>
+						<span className="card-title">{t("groupWorkspace.extensionsTitle")}</span>
 					</div>
 					<div className="card-actions group-slots-actions">
 						{uiSlotEntries

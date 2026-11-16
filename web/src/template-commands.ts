@@ -1,3 +1,4 @@
+import type { MessageKey } from "./i18n/catalog";
 import type { SlashCommandInfo } from "./types";
 
 export interface CommandTemplate {
@@ -8,17 +9,17 @@ export interface CommandTemplate {
 
 export interface TemplateVariableDef {
 	key: string;
-	label: string;
-	desc: string;
+	labelKey: MessageKey;
+	descKey: MessageKey;
 }
 
 export const COMMON_TEMPLATE_VARIABLES: readonly TemplateVariableDef[] = [
-	{ key: "{{input}}", label: "{{input}} 参数", desc: "快捷命令传入的参数，如 /pr 798 中的 798" },
-	{ key: "{{clipboard}}", label: "{{clipboard}} 剪贴板", desc: "自动提取剪贴板文本" },
-	{ key: "{{date}}", label: "{{date}} 日期", desc: "当前日期 (YYYY-MM-DD)" },
-	{ key: "{{time}}", label: "{{time}} 时间", desc: "当前时间 (HH:mm:ss)" },
-	{ key: "{{datetime}}", label: "{{datetime}} 日期时间", desc: "当前完整日期时间" },
-	{ key: "{{selection}}", label: "{{selection}} 选中文本", desc: "当前编辑器中选中的文本" },
+	{ key: "{{input}}", labelKey: "tpl.vars.inputLabel", descKey: "tpl.vars.inputDesc" },
+	{ key: "{{clipboard}}", labelKey: "tpl.vars.clipboardLabel", descKey: "tpl.vars.clipboardDesc" },
+	{ key: "{{date}}", labelKey: "tpl.vars.dateLabel", descKey: "tpl.vars.dateDesc" },
+	{ key: "{{time}}", labelKey: "tpl.vars.timeLabel", descKey: "tpl.vars.timeDesc" },
+	{ key: "{{datetime}}", labelKey: "tpl.vars.datetimeLabel", descKey: "tpl.vars.datetimeDesc" },
+	{ key: "{{selection}}", labelKey: "tpl.vars.selectionLabel", descKey: "tpl.vars.selectionDesc" },
 ];
 
 export function resolveDynamicTemplateVariables(text: string, now: Date = new Date()): string {

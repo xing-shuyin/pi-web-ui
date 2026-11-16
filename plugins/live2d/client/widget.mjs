@@ -375,6 +375,7 @@ export class Live2DWidget {
 				autoBlink: this.config.autoBlink !== false,
 				lipSyncSensitivity: this.config.lipSyncSensitivity ?? 1.25,
 				voiceOnly: this.config.voiceOnly !== false,
+				t: this.t,
 			});
 			await this.stage.init();
 			await this.stage.loadModel(this.activeModel);
@@ -394,6 +395,16 @@ export class Live2DWidget {
 		}
 	}
 
+	/**
+	 * 角色显示名：内置模型的文案在词典里（`model.<key>`），自定义/上传模型仍用服务端给的名字。
+	 * `t()` 对缺键回退为 key 本身，所以「取回来还是 key」就说明词典里没有这条。
+	 */
+	_modelLabel(model) {
+		const key = `model.${model?.key ?? ""}`;
+		const label = this.t(key);
+		return label === key ? String(model?.name ?? "") : label;
+	}
+
 	async switchModel(modelKey) {
 		const target = this.models.find((m) => m.key === modelKey);
 		if (!target || !this.stage) return;
@@ -403,13 +414,13 @@ export class Live2DWidget {
 		this.config.modelKey = modelKey;
 		this._saveConfig();
 
-		this.showBubble(`${this.t("toast.switched_model")}${target.name}`, 3000);
+		this.showBubble(`${this.t("toast.switched_model")}${this._modelLabel(target)}`, 3000);
 		if (this.config.soundEnabled) playChirpSound();
 		try {
 			await this.stage.loadModel(target);
 		} catch (err) {
 			console.error("[live2d] 模型切换失败，回退到先前模型:", err);
-			this.showBubble(`加载 ${target.name} 失败，已恢复`, 3500);
+			this.showBubble(this.t("bubble.model_load_failed", { name: this._modelLabel(target) }), 3500);
 			this.activeModel = prevModel;
 			this.config.modelKey = prevKey;
 			this._saveConfig();
@@ -637,7 +648,7 @@ export class Live2DWidget {
 		menu.appendChild(this._createMenuTitle(this.t("menu.models")));
 		for (const m of this.models) {
 			menu.appendChild(
-				this._createMenuItem(m.name, m.key === this.activeModel.key, () => {
+				this._createMenuItem(this._modelLabel(m), m.key === this.activeModel.key, () => {
 					this.switchModel(m.key);
 				}),
 			);
@@ -1109,7 +1120,7 @@ export class Live2DWidget {
 		} else {
 			await this.stage.audioSync.playUrl(url, title);
 		}
-		this.showBubble(`🎵 正在播放: ${title || "音乐"}`, 3000);
+		this.showBubble(this.t("music.now_playing", { title: title || this.t("music.untitled") }), 3000);
 	}
 
 	stopAudio() {
@@ -1221,7 +1232,7 @@ export class Live2DWidget {
 				row.style.cssText =
 					"display:flex; align-items:center; justify-content:space-between; padding:8px 12px; background:var(--bg-elev2,#1e222b); border-radius:6px;";
 				row.innerHTML = `
-					<div style="font-size:13px; font-weight:${isCur ? "600" : "400"}; color:${isCur ? "var(--accent,#3b82f6)" : "inherit"}; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; max-width:260px;">${escapeHtml(m.name)}</div>
+					<div style="font-size:13px; font-weight:${isCur ? "600" : "400"}; color:${isCur ? "var(--accent,#3b82f6)" : "inherit"}; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; max-width:260px;">${escapeHtml(this._modelLabel(m))}</div>
 					<div style="display:flex; gap:6px; align-items:center;">
 						${!isCur ? `<button class="pi-l2d-btn pi-l2d-btn-apply" data-key="${escapeHtml(m.key)}" style="padding:4px 8px; font-size:12px;">${this.t("settings.apply")}</button>` : '<span style="font-size:12px; color:var(--accent,#3b82f6);">✓</span>'}
 						${isCustom ? `<button class="pi-l2d-btn-del" data-key="${escapeHtml(m.key)}" title="${this.t("settings.del")}">🗑️</button>` : ""}

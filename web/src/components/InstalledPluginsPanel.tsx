@@ -134,7 +134,7 @@ export function InstalledPluginsPanel({
 				name: e.name || e.id,
 				icon: "📦",
 				desc: e.path || e.id,
-				scope: e.path.includes(".pi") ? "项目 .pi" : "agentDir",
+				scope: e.path.includes(".pi") ? t("pluginsScopeProjectPi") : "agentDir",
 				enabled: !disabledExtensionSet.has(e.id),
 				switchable: true,
 				health: inventoryHealth(inv),

@@ -3,7 +3,7 @@ import { CanvasClient } from "./canvas/canvas-client";
 import { appUrl } from "../base-url";
 import { withToken } from "../auth-token";
 import { useAppField } from "../app-globals";
-import { isZhLocale, useI18n } from "../i18n";
+import { useT } from "../i18n";
 import type { ServerMessage } from "../types";
 
 export interface GroupCanvasReference {
@@ -23,7 +23,7 @@ export function GroupCanvasBinding({
 	binding?: GroupCanvasReference;
 	onSaved(): void;
 }) {
-	const zh = isZhLocale(useI18n().locale);
+	const t = useT();
 	const currentCwd = useAppField("cwd");
 	const client = useRef<CanvasClient | null>(null);
 	const operation = useRef<AbortController | null>(null);
@@ -88,9 +88,7 @@ export function GroupCanvasBinding({
 			if (!response.ok) throw new Error(data.error ?? "Canvas binding failed");
 			if (controller.signal.aborted) return;
 			onSaved();
-			setStatus(
-				zh ? "群画布引用已保存；点击启动才会执行。" : "Group canvas reference saved. Run explicitly to execute.",
-			);
+			setStatus(t("groupCanvasBinding.saved"));
 		} catch (error) {
 			if (!controller.signal.aborted) setStatus((error as Error).message);
 		} finally {
@@ -100,30 +98,20 @@ export function GroupCanvasBinding({
 	return (
 		<details className="group-ecosystem-panel">
 			<summary>
-				{zh ? "群画布" : "Group canvas"}
+				{t("groupCanvasBinding.title")}
 				{binding ? ` · ${binding.title}` : ""}
 			</summary>
-			<p>
-				{zh
-					? "引用保存在群组中。运行发生在绑定设备，使用下方工作目录；保存引用不会运行。"
-					: "References are saved with the group. Runs use the bound device and workspace. Saving does not run the graph."}
-			</p>
+			<p>{t("groupCanvasBinding.hint")}</p>
 			{binding && (
 				<p>
 					{binding.deviceId} · {binding.graphId} · {binding.cwd}
 				</p>
 			)}
-			{!local && binding && (
-				<p role="status">
-					{zh
-						? "此画布属于另一台设备，请在该设备打开群组后运行。可选择本机画布重新绑定。"
-						: "This canvas belongs to another device. Open the group there to run it, or bind a local canvas."}
-				</p>
-			)}
+			{!local && binding && <p role="status">{t("groupCanvasBinding.remoteHint")}</p>}
 			<label>
-				{zh ? "本机工程" : "Local graph"}
+				{t("groupCanvasBinding.localGraph")}
 				<select value={graphId} onChange={(event) => setGraphId(event.target.value)}>
-					<option value="">{zh ? "选择画布" : "Select canvas"}</option>
+					<option value="">{t("groupCanvasBinding.selectCanvas")}</option>
 					{graphs.map((graph) => (
 						<option key={graph.id} value={graph.id}>
 							{graph.name}
@@ -132,7 +120,7 @@ export function GroupCanvasBinding({
 				</select>
 			</label>
 			<label>
-				{zh ? "本机工作目录" : "Local workspace"}
+				{t("groupCanvasBinding.localWorkspace")}
 				<input value={cwd} onChange={(event) => setCwd(event.target.value)} />
 			</label>
 			<button
@@ -140,12 +128,12 @@ export function GroupCanvasBinding({
 				disabled={busy || !connected || !deviceId || !graphId || !cwd.trim()}
 				onClick={() => void save()}
 			>
-				{zh ? "保存群引用" : "Save group reference"}
+				{t("groupCanvasBinding.save")}
 			</button>
 			{binding && (
 				<>
 					<button className="btn" disabled={busy} onClick={() => void save(true)}>
-						{zh ? "解除引用" : "Unbind"}
+						{t("groupCanvasBinding.unbind")}
 					</button>
 					<button
 						className="btn primary"
@@ -154,16 +142,12 @@ export function GroupCanvasBinding({
 							if (!binding || !local) return;
 							setStatus(
 								client.current?.send({ type: "canvas_run_all", graphId: binding.graphId, cwd: binding.cwd })
-									? zh
-										? "已请求启动，等待画布运行状态。"
-										: "Run requested; waiting for canvas status."
-									: zh
-										? "画布连接已断开。"
-										: "Canvas disconnected.",
+									? t("groupCanvasBinding.runRequested")
+									: t("groupCanvasBinding.disconnected"),
 							);
 						}}
 					>
-						{zh ? "启动绑定画布" : "Run bound canvas"}
+						{t("groupCanvasBinding.run")}
 					</button>
 				</>
 			)}

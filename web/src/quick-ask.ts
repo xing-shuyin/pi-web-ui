@@ -22,10 +22,13 @@ export function openQuickAsk(request: QuickAskOpenRequest = {}): void {
 	window.dispatchEvent(new CustomEvent<QuickAskOpenRequest>(QUICK_ASK_OPEN_EVENT, { detail: request }));
 }
 
+/** Default prompt body is model content, kept verbatim regardless of UI language (data). */
 export function explainSelectionPrompt(template: string | undefined, input: string): string {
 	return (template?.trim() || "解释下: {{input}}").replaceAll("{{input}}", () => input);
 }
 
+// Language names are prompt payload and native self-names in the picker: verbatim in every UI
+// language (data).
 const LANGUAGE_NAMES: Record<string, string> = {
 	zh: "Simplified Chinese",
 	"zh-CN": "Simplified Chinese",

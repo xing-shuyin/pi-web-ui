@@ -40,6 +40,8 @@ let bridge: {
 const ok = (body: object) => ({ ok: true, json: async () => ({ ok: true, ...body }) });
 
 beforeEach(() => {
+	// 面板文案走插件词典：这些用例校验中文渲染，显式固定界面语言（默认 jsdom 是 en-US）。
+	localStorage.setItem("pi-web-ui:lang", "zh");
 	view = createWorkbench();
 	resetComposerSinks();
 	container = document.createElement("div");
@@ -120,6 +122,16 @@ it("contributes a GitHub workbench tab beside Files", () => {
 });
 
 describe("GitHub workbench view", () => {
+	it("renders the English dictionary when the interface language is English", async () => {
+		localStorage.setItem("pi-web-ui:lang", "en");
+		await mount();
+		expect(root.querySelector("h1")!.textContent).toBe("GitHub Workbench");
+		expect(root.querySelector(".page")!.textContent).toContain("Page 1");
+		expect(root.textContent).not.toMatch(/[\u4e00-\u9fff]/);
+		await select();
+		expect(root.querySelector("[data-action='process']")!.textContent).toContain("Hand to AI");
+		expect(root.querySelector(".comment-form")!.textContent).not.toMatch(/[\u4e00-\u9fff]/);
+	});
 	it("escapes remote HTML and adds a compact reference attachment to the current composer", async () => {
 		await mount();
 		await select();

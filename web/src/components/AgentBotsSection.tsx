@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { FiChevronDown, FiChevronRight, FiCpu, FiSettings } from "react-icons/fi";
-import { isZhLocale, useI18n } from "../i18n";
+import { useT } from "../i18n";
 import { DEVICE_GROUPS_CHANGED, deviceGroupRequest } from "./DeviceGroupSection";
 import { openBotManagement, openDirectRoom, openRoomView } from "../open-direct-room";
 import { BotMemoryDialog } from "./BotMemoryDialog";
@@ -48,67 +48,6 @@ type BotDraft = {
 	createdAt: number;
 };
 
-const words = {
-	zh: {
-		title: "智能体",
-		empty: "还没有可对话的智能体。在设备中心创建 Bot 后，这里就能直接找它。",
-		loading: "加载中…",
-		failed: "智能体列表加载失败",
-		retry: "重试",
-		starting: "正在打开…",
-		offline: "设备离线",
-		disabled: "已停用",
-		collapse: "折叠智能体",
-		expand: "展开智能体",
-		open: "与 {name} 私聊",
-		drafts: "待确认的新智能体",
-		approve: "创建",
-		discard: "取消",
-		approving: "创建中…",
-		draftHint: "AI 只写了草案：确认后才会真的创建。勾选同意对应的高权限工具。",
-		tools: "工具",
-		workspace: "工作目录",
-		bootstrap: "创建后先让它自我介绍并写入记忆",
-		importBot: "导入 Bot 包",
-		importing: "导入中…",
-		importFailed: "迁移包导入失败",
-		importDone: "已导入 {name}（记忆 {imported} 条，跳过 {skipped} 条）",
-		manage: "管理 Bot",
-		manageTip: "到设备中心创建、编辑 Bot 的身份与权限",
-		triggerReserved: "预留（未接线）",
-		triggerReservedHint: "{trigger} 尚未接线（预留）：确认后 Bot 仍只按需响应私聊。",
-	},
-	en: {
-		title: "Agents",
-		empty: "No agents yet. Create a Bot in the device center and it will show up here.",
-		loading: "Loading…",
-		failed: "Could not load agents",
-		retry: "Retry",
-		starting: "Opening…",
-		offline: "Device offline",
-		disabled: "Disabled",
-		collapse: "Collapse agents",
-		expand: "Expand agents",
-		open: "Chat privately with {name}",
-		drafts: "Bots waiting for confirmation",
-		approve: "Create",
-		discard: "Discard",
-		approving: "Creating…",
-		draftHint: "The AI only drafted this: nothing exists until you confirm. Tick each high-privilege tool you allow.",
-		tools: "Tools",
-		workspace: "Workspace",
-		bootstrap: "Let it introduce itself and write memory on creation",
-		importBot: "Import Bot bundle",
-		importing: "Importing…",
-		importFailed: "Bundle import failed",
-		importDone: "Imported {name} (memories {imported}, skipped {skipped})",
-		manage: "Manage Bots",
-		manageTip: "Create and edit Bot identities in the device center",
-		triggerReserved: "Reserved (not wired up)",
-		triggerReservedHint: "{trigger} is reserved, not wired up yet; after creation it still only responds on demand.",
-	},
-};
-
 export function AgentBotsSection({
 	active = true,
 	selectedRoomId,
@@ -116,9 +55,7 @@ export function AgentBotsSection({
 	active?: boolean;
 	selectedRoomId?: string | null;
 }) {
-	const { locale } = useI18n();
-	const zh = isZhLocale(locale);
-	const t = words[zh ? "zh" : "en"];
+	const t = useT();
 	const [bots, setBots] = useState<BotRow[] | null>(null);
 	const [rooms, setRooms] = useState<DirectRoom[]>([]);
 	const [drafts, setDrafts] = useState<BotDraft[]>([]);
@@ -238,15 +175,16 @@ export function AgentBotsSection({
 					{ bundle },
 				);
 				setNotice(
-					t.importDone
-						.replace("{name}", result.bot.name)
-						.replace("{imported}", String(result.imported))
-						.replace("{skipped}", String(result.skipped)),
+					t("agentBots.importDone", {
+						name: result.bot.name,
+						imported: String(result.imported),
+						skipped: String(result.skipped),
+					}),
 				);
 				await load();
 				if (result.roomId) openRoomView(result.roomId);
 			} catch (cause) {
-				setError(cause instanceof Error ? cause.message : t.importFailed);
+				setError(cause instanceof Error ? cause.message : t("agentBots.importFailed"));
 			} finally {
 				setImporting(false);
 			}
@@ -260,44 +198,44 @@ export function AgentBotsSection({
 				<div className="lp-bots-header">
 					<span className="lp-bots-title">
 						<FiCpu aria-hidden="true" />
-						{t.title}
+						{t("agentBots.title")}
 					</span>
-					<span className="lp-bots-loading">{t.loading}</span>
+					<span className="lp-bots-loading">{t("loading")}</span>
 				</div>
 			</section>
 		);
 	}
 
 	return (
-		<section className="lp-bots-section" aria-label={t.title}>
+		<section className="lp-bots-section" aria-label={t("agentBots.title")}>
 			<div className="lp-bots-header">
 				<button
 					type="button"
 					className="lp-bots-toggle"
 					aria-expanded={!collapsed}
-					aria-label={collapsed ? t.expand : t.collapse}
+					aria-label={collapsed ? t("agentBots.expand") : t("agentBots.collapse")}
 					onClick={() => setCollapsed((value) => !value)}
 				>
 					{collapsed ? <FiChevronRight aria-hidden="true" /> : <FiChevronDown aria-hidden="true" />}
 					<FiCpu aria-hidden="true" />
-					<span className="lp-bots-title">{t.title}</span>
+					<span className="lp-bots-title">{t("agentBots.title")}</span>
 					{botCount(bots) > 0 && <span className="lp-bots-count">{botCount(bots)}</span>}
 				</button>
 				<div className="lp-bots-actions">
 					<button
 						type="button"
 						className="lp-bots-manage"
-						title={t.manageTip}
-						aria-label={t.manageTip}
+						title={t("agentBots.manageTip")}
+						aria-label={t("agentBots.manageTip")}
 						onClick={openBotManagement}
 					>
 						<FiSettings aria-hidden="true" />
-						<span>{t.manage}</span>
+						<span>{t("agentBots.manage")}</span>
 					</button>
 					<button
 						type="button"
 						className="lp-bots-import"
-						title={t.importBot}
+						title={t("agentBots.importBot")}
 						disabled={importing}
 						onClick={() => importInput.current?.click()}
 					>
@@ -321,16 +259,16 @@ export function AgentBotsSection({
 					{notice && <p className="lp-bots-notice">{notice}</p>}
 					{error && (
 						<div className="lp-bots-error">
-							<span>{t.failed}</span>
+							<span>{t("agentBots.failed")}</span>
 							<button type="button" onClick={() => void load()}>
-								{t.retry}
+								{t("retryNow")}
 							</button>
 						</div>
 					)}
 					{drafts.length > 0 && (
 						<div className="lp-bot-drafts">
-							<p className="lp-bot-drafts-title">{t.drafts}</p>
-							<p className="lp-bot-drafts-hint">{t.draftHint}</p>
+							<p className="lp-bot-drafts-title">{t("agentBots.drafts")}</p>
+							<p className="lp-bot-drafts-hint">{t("agentBots.draftHint")}</p>
 							{drafts.map((draft) => {
 								const granted = grants[draft.id] ?? [];
 								const ready = draft.highPrivilegeTools.every((tool) => granted.includes(tool));
@@ -340,20 +278,24 @@ export function AgentBotsSection({
 										<div className="lp-bot-draft-head">
 											<strong>{draft.name}</strong>
 											<span className="lp-bot-draft-badge">
-												{draft.trigger === "on_demand" ? (zh ? "只响应" : "On demand") : t.triggerReserved}
+												{draft.trigger === "on_demand"
+													? t("agentBots.triggerOnDemand")
+													: t("agentBots.triggerReserved")}
 											</span>
 										</div>
 										<p className="lp-bot-draft-desc">{draft.description}</p>
 										{draft.trigger !== "on_demand" && (
-											<p className="lp-bot-draft-meta">{t.triggerReservedHint.replace("{trigger}", draft.trigger)}</p>
+											<p className="lp-bot-draft-meta">
+												{t("agentBots.triggerReservedHint", { trigger: draft.trigger })}
+											</p>
 										)}
 										<p className="lp-bot-draft-meta" title={draft.cwd}>
-											{t.workspace}: {draft.cwd}
+											{t("agentBots.workspace")}: {draft.cwd}
 										</p>
 										{draft.rationale && <p className="lp-bot-draft-meta">{draft.rationale}</p>}
 										{draft.tools.length > 0 && (
 											<p className="lp-bot-draft-meta" title={draft.tools.join(", ")}>
-												{t.tools}: {draft.tools.join(", ")}
+												{t("agentBots.tools")}: {draft.tools.join(", ")}
 											</p>
 										)}
 										{draft.highPrivilegeTools.length > 0 && (
@@ -377,7 +319,7 @@ export function AgentBotsSection({
 												))}
 											</div>
 										)}
-										{draft.bootstrap && <p className="lp-bot-draft-meta">✓ {t.bootstrap}</p>}
+										{draft.bootstrap && <p className="lp-bot-draft-meta">✓ {t("agentBots.bootstrap")}</p>}
 										<div className="lp-bot-draft-actions">
 											<button
 												type="button"
@@ -385,10 +327,10 @@ export function AgentBotsSection({
 												disabled={!ready || busy}
 												onClick={() => void confirmDraft(draft)}
 											>
-												{busy ? t.approving : t.approve}
+												{busy ? t("agentBots.approving") : t("agentBots.approve")}
 											</button>
 											<button type="button" disabled={busy} onClick={() => void discardDraft(draft)}>
-												{t.discard}
+												{t("cancel")}
 											</button>
 										</div>
 									</div>
@@ -396,7 +338,7 @@ export function AgentBotsSection({
 							})}
 						</div>
 					)}
-					{!error && (!bots || bots.length === 0) && <p className="lp-bots-empty">{t.empty}</p>}
+					{!error && (!bots || bots.length === 0) && <p className="lp-bots-empty">{t("agentBots.empty")}</p>}
 					{(bots ?? []).map((bot) => {
 						const room = rooms.find((entry) => entry.bot?.id === bot.id);
 						const isActive = Boolean(room && selectedRoomId === room.id);
@@ -405,7 +347,7 @@ export function AgentBotsSection({
 								<button
 									type="button"
 									className={`lp-bot-row${isActive ? " is-active" : ""}`}
-									title={t.open.replace("{name}", bot.name)}
+									title={t("botChat", { name: bot.name })}
 									aria-pressed={isActive}
 									disabled={pending !== null}
 									onClick={() => void startChat(bot)}
@@ -416,15 +358,19 @@ export function AgentBotsSection({
 									<span className="lp-bot-meta">
 										<span className="lp-bot-name">{bot.name}</span>
 										<span className="lp-bot-sub">
-											{pending === bot.id ? t.starting : bot.online === false ? t.offline : (bot.deviceName ?? "Bot")}
+											{pending === bot.id
+												? t("agentBots.starting")
+												: bot.online === false
+													? t("agentBots.offline")
+													: (bot.deviceName ?? "Bot")}
 										</span>
 									</span>
 								</button>
 								<button
 									type="button"
 									className="lp-bot-memory"
-									title={zh ? "查看/整理它的记忆" : "View or curate its memory"}
-									aria-label={zh ? "记忆" : "Memory"}
+									title={t("agentBots.memoryOpen")}
+									aria-label={t("botMemory.title")}
 									onClick={() => setMemoryBot(bot)}
 								>
 									🧠

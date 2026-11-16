@@ -16,7 +16,7 @@ import {
 	FiTrash2,
 	FiX,
 } from "react-icons/fi";
-import { isZhLocale, useLocale, useT } from "../i18n";
+import { useT } from "../i18n";
 import { appSend, useAppField, useEngineCapabilities } from "../app-globals";
 import { TipButton } from "./HintTip.js";
 import {
@@ -119,7 +119,6 @@ export function DirectoryBrowser({
 	portalContainer,
 }: DirectoryBrowserProps) {
 	const t = useT();
-	const isZh = isZhLocale(useLocale());
 	const capabilities = useEngineCapabilities();
 	const supportsRemoteSsh = capabilities.remoteSsh && !localOnly;
 	const homeDir = useAppField("homeDir");
@@ -322,7 +321,7 @@ export function DirectoryBrowser({
 		const user = (overrideParams?.username ?? sshUser).trim();
 
 		if (!host || !user) {
-			setSshError(isZh ? "请填写主机地址和用户名" : "Please provide host address and username");
+			setSshError(t("directoryBrowser.missingHost"));
 			return;
 		}
 
@@ -337,21 +336,24 @@ export function DirectoryBrowser({
 					? { type: "key" as const, privateKeyPath: sshKeyPath }
 					: { type: "agent" as const });
 
-		const res = await requestRemoteProbe({
-			host,
-			port,
-			username: user,
-			auth,
-			saveProfile: sshSaveProfile,
-			profileName: overrideParams?.profileName || sshProfileName.trim() || undefined,
-		});
+		const res = await requestRemoteProbe(
+			{
+				host,
+				port,
+				username: user,
+				auth,
+				saveProfile: sshSaveProfile,
+				profileName: overrideParams?.profileName || sshProfileName.trim() || undefined,
+			},
+			t,
+		);
 
 		setConnecting(false);
 
 		if (!res.ok || !res.connectionId) {
 			setHostTrustOffer((res as any).hostTrust ?? null);
 			setTrustVerified(false);
-			setSshError(res.error || (isZh ? "连接远程服务器失败" : "Failed to connect to remote server"));
+			setSshError(res.error || t("directoryBrowser.connectFailed"));
 			return;
 		}
 
@@ -415,7 +417,7 @@ export function DirectoryBrowser({
 	const loadRemoteDir = async (connId: string, dirPath: string) => {
 		setLoadingRemoteDir(true);
 		setSshError(null);
-		const res = await requestRemoteListDir(connId, dirPath);
+		const res = await requestRemoteListDir(connId, t, dirPath);
 		setLoadingRemoteDir(false);
 
 		if (res.ok) {
@@ -423,7 +425,7 @@ export function DirectoryBrowser({
 			setRemoteDraft(res.path);
 			setRemoteItems(res.items);
 		} else {
-			setSshError(res.error || (isZh ? "读取远程目录失败" : "Failed to read remote directory"));
+			setSshError(res.error || t("directoryBrowser.readDirFailed"));
 		}
 	};
 
@@ -432,21 +434,16 @@ export function DirectoryBrowser({
 		setInstallingTool(true);
 		setSshError(null);
 
-		const res = await requestRemoteInstallTools(connectionId, [tool]);
+		const res = await requestRemoteInstallTools(connectionId, [tool], t);
 		setInstallingTool(false);
 
 		if (res.ok) {
 			setSuggestedTools((prev) => prev.filter((t) => t !== tool));
 			if (remoteTools && tool === "git") {
-				setRemoteTools({ ...remoteTools, git: { installed: true, version: isZh ? "已安装" : "Installed" } });
+				setRemoteTools({ ...remoteTools, git: { installed: true, version: t("directoryBrowser.installed") } });
 			}
 		} else {
-			setSshError(
-				res.error ||
-					(isZh
-						? `安装 ${tool} 失败，可能需要远端 sudo 权限`
-						: `Failed to install ${tool}, remote sudo permissions may be required`),
-			);
+			setSshError(res.error || t("directoryBrowser.installToolFailed", { tool }));
 		}
 	};
 
@@ -596,9 +593,7 @@ export function DirectoryBrowser({
 							<span className="cwd-toolbar-sep" aria-hidden="true" />
 							<TipButton
 								className="cwd-jump tool-up"
-								tip={
-									upPath ? `${t("cwdGoUp")} · ${upPath}` : `${t("cwdGoUp")} · ${isZh ? "已在顶层" : "already at top"}`
-								}
+								tip={upPath ? `${t("cwdGoUp")} · ${upPath}` : `${t("cwdGoUp")} · ${t("directoryBrowser.alreadyAtTop")}`}
 								aria-disabled={!upPath}
 								onClick={() => {
 									if (upPath) goQuickJump(upPath);
@@ -612,10 +607,10 @@ export function DirectoryBrowser({
 									canAddRoot
 										? t("addWorkspaceRootHint")
 										: browsePath === MACHINE_ROOT
-											? `${t("addWorkspaceRoot")} · ${isZh ? "此电脑本身不是目录" : "This PC is not a directory"}`
+											? `${t("addWorkspaceRoot")} · ${t("directoryBrowser.thisPcNotDirectory")}`
 											: cur === norm(currentCwd)
-												? `${t("addWorkspaceRoot")} · ${isZh ? "已是当前项目目录" : "Already the current project"}`
-												: `${t("addWorkspaceRoot")} · ${isZh ? "已在工作区根中" : "Already a workspace root"}`
+												? `${t("addWorkspaceRoot")} · ${t("directoryBrowser.alreadyCurrentProject")}`
+												: `${t("addWorkspaceRoot")} · ${t("directoryBrowser.alreadyWorkspaceRoot")}`
 								}
 								aria-disabled={!canAddRoot}
 								onClick={() => {
@@ -629,7 +624,7 @@ export function DirectoryBrowser({
 								className={`cwd-jump tool-new ${showNew ? "active" : ""}`}
 								tip={
 									browsePath === MACHINE_ROOT
-										? `${t("cwdNewFolder")} · ${isZh ? "此电脑下不能新建" : "Cannot create here"}`
+										? `${t("cwdNewFolder")} · ${t("directoryBrowser.cannotCreateHere")}`
 										: showNew
 											? t("cwdCancel")
 											: t("cwdNewFolder")
@@ -655,7 +650,7 @@ export function DirectoryBrowser({
 								className="cwd-jump primary tool-pick"
 								tip={
 									browsePath === MACHINE_ROOT
-										? `${t("cwdPickCurrent")} · ${isZh ? "此电脑不能作为工作目录" : "This PC cannot be a workspace"}`
+										? `${t("cwdPickCurrent")} · ${t("directoryBrowser.thisPcCannotBeWorkspace")}`
 										: `${t("cwdPickCurrent")} · ${browsePath}`
 								}
 								aria-disabled={browsePath === MACHINE_ROOT}
@@ -935,21 +930,15 @@ export function DirectoryBrowser({
 									<div style={{ border: "1px solid #d97706", borderRadius: "8px", padding: "8px", marginTop: "6px" }}>
 										<div style={{ fontSize: "12px", fontWeight: 600, marginBottom: "4px" }}>
 											{hostTrustOffer.status === "changed"
-												? isZh
-													? "主机密钥已变更"
-													: "Host key changed"
-												: isZh
-													? "新主机密钥待确认"
-													: "New host key"}
+												? t("directoryBrowser.hostKeyChanged")
+												: t("directoryBrowser.newHostKey")}
 										</div>
 										<div style={{ fontSize: "11px", wordBreak: "break-all", marginBottom: "4px" }}>
 											{hostTrustOffer.host}:{hostTrustOffer.port} {hostTrustOffer.algorithm}{" "}
 											{hostTrustOffer.fingerprint}
 										</div>
 										<div style={{ fontSize: "11px", color: "var(--text-dim)", marginBottom: "6px" }}>
-											{isZh
-												? "请先去服务器控制台核对指纹，确认一致再勾选。"
-												: "Verify fingerprint on server console first."}
+											{t("directoryBrowser.fingerprintHint")}
 										</div>
 										<label style={{ fontSize: "11px", display: "flex", gap: "6px", marginBottom: "6px" }}>
 											<input
@@ -957,7 +946,7 @@ export function DirectoryBrowser({
 												checked={trustVerified}
 												onChange={(e) => setTrustVerified(e.target.checked)}
 											/>
-											<span>{isZh ? "我已核对过，该指纹正确" : "I verified this fingerprint"}</span>
+											<span>{t("directoryBrowser.fingerprintVerified")}</span>
 										</label>
 										<div style={{ display: "flex", gap: "8px" }}>
 											<button
@@ -966,22 +955,25 @@ export function DirectoryBrowser({
 												disabled={!trustVerified || trusting}
 												onClick={async () => {
 													setTrusting(true);
-													const r = await requestRemoteTrustHost({
-														host: hostTrustOffer.host,
-														port: hostTrustOffer.port,
-														fingerprint: hostTrustOffer.fingerprint,
-														replace: hostTrustOffer.status === "changed",
-													});
+													const r = await requestRemoteTrustHost(
+														{
+															host: hostTrustOffer.host,
+															port: hostTrustOffer.port,
+															fingerprint: hostTrustOffer.fingerprint,
+															replace: hostTrustOffer.status === "changed",
+														},
+														t,
+													);
 													setTrusting(false);
 													if (!r.ok) {
-														setSshError(r.error || "fail");
+														setSshError(r.error || t("directoryBrowser.trustFailed"));
 														return;
 													}
 													setHostTrustOffer(null);
 													void handleConnectAndProbe();
 												}}
 											>
-												{isZh ? "信任并重试" : "Trust & retry"}
+												{t("directoryBrowser.trustAndRetry")}
 											</button>
 											<button
 												type="button"
@@ -991,7 +983,7 @@ export function DirectoryBrowser({
 													setTrustVerified(false);
 												}}
 											>
-												{isZh ? "取消" : "Cancel"}
+												{t("cancel")}
 											</button>
 										</div>
 									</div>
@@ -1044,12 +1036,7 @@ export function DirectoryBrowser({
 
 									{suggestedTools.length > 0 && (
 										<div className="cwd-ssh-install-box">
-											<div>
-												⚠️{" "}
-												{isZh
-													? "远端环境未检测到 Git / 基础工具，SCM 与执行功能可能受限。"
-													: "Git / essential tools not detected on remote host; SCM and execution features may be limited."}
-											</div>
+											<div>⚠️ {t("directoryBrowser.remoteToolsMissing")}</div>
 											<div style={{ display: "flex", gap: "6px", marginTop: "2px" }}>
 												<button
 													type="button"
@@ -1078,7 +1065,7 @@ export function DirectoryBrowser({
 										className="cwd-jump tool-up"
 										tip={
 											remoteCwd === "/"
-												? `${t("cwdGoUp")} · ${isZh ? "已在顶层" : "already at top"}`
+												? `${t("cwdGoUp")} · ${t("directoryBrowser.alreadyAtTop")}`
 												: `${t("cwdGoUp")} · ${parentOf(remoteCwd) || "/"}`
 										}
 										aria-disabled={remoteCwd === "/" || loadingRemoteDir}
@@ -1148,7 +1135,7 @@ export function DirectoryBrowser({
 										</div>
 									)}
 									{loadingRemoteDir ? (
-										<div className="cwd-empty">{isZh ? "正在加载远程目录…" : "Loading remote directory…"}</div>
+										<div className="cwd-empty">{t("directoryBrowser.loadingRemoteDir")}</div>
 									) : remoteItems.length === 0 ? (
 										<div className="cwd-empty">{t("cwdEmpty")}</div>
 									) : (

@@ -251,6 +251,7 @@ function normNote(raw) {
 	}
 	return {
 		id,
+		// 未命名笔记 = 持久化的默认标题（随笔记存进 store），不随界面语言变：data，不是 UI 文案。
 		title: title || extractTitle(body) || "未命名笔记",
 		body,
 		tags: tags(raw.tags),

@@ -1,5 +1,9 @@
 import { DRAWER_CSS, getGlassThemeCss } from "./styles.mjs?v=0.3.65";
 import { esc as escapeHtml } from "@pi-web-ui/plugin-sdk/client";
+import { makeT } from "./i18n.mjs";
+
+/** 抽屉与检查器文案：语言解析 / 回退 / 插值都在 SDK 里，这里只按当前界面语言取词。 */
+const t = makeT();
 
 const RUNTIME_KEY = "__piWallpaperEngineRuntime";
 
@@ -33,6 +37,7 @@ if (prev?.destroy) {
 	try {
 		prev.destroy();
 	} catch (err) {
+		// developer-facing, not UI: browser console only
 		console.warn("[wallpaper-engine] 清理上一轮实例失败：", err);
 	}
 }
@@ -112,6 +117,7 @@ async function loadWebWallGL() {
 			return webwallglModule;
 		}
 	} catch (err) {
+		// developer-facing, not UI: browser console only
 		console.warn("[wallpaper-engine] WebWallGL 模块加载失败，将自动降级为静态预览：", err);
 	}
 
@@ -263,6 +269,7 @@ window.addEventListener("storage", (e) => {
 	if (e.key === "pi-web-ui:theme") enforceThemeLock();
 });
 
+// developer-facing, not UI: profile labels are internal identifiers and never rendered
 const QUALITY_PROFILES = {
 	performance: {
 		label: "节能极速",
@@ -486,6 +493,7 @@ function createBackgroundLayer() {
 					coldPoster?.remove();
 					return;
 				}
+				// developer-facing, not UI: thrown inside the guarded scene loader, never rendered
 				if (!engine) throw new Error("WebWallGL 引擎未就绪");
 
 				const projectJson = projectRes && projectRes.ok ? await projectRes.json().catch(() => null) : null;
@@ -582,6 +590,7 @@ function createBackgroundLayer() {
 				markReady(mountEl, sceneInstance, resizeHandler);
 				return;
 			} catch (err) {
+				// developer-facing, not UI: browser console only
 				console.warn("[wallpaper-engine] Scene 壁纸渲染失败，平滑保持海报预览：", err);
 				mountEl.remove();
 				return;
@@ -667,6 +676,7 @@ function createBackgroundLayer() {
 			try {
 				currentSceneInstance.setVolume(vol);
 			} catch (err) {
+				// developer-facing, not UI: browser console only
 				console.warn("[wallpaper-engine] 设置 Scene 音量失败：", err);
 			}
 		}
@@ -719,60 +729,60 @@ function createDrawer(bgLayer, state, onStateChange, triggerRotate) {
 
 	drawer.innerHTML = `
 		<div class="pi-we-header">
-			<h3 class="pi-we-title" title="Wallpaper Engine 壁纸库">🖼️ 壁纸库</h3>
+			<h3 class="pi-we-title" title="${t("libraryTitleTooltip")}">${t("libraryTitle")}</h3>
 			<div class="pi-we-header-actions">
-				<button class="pi-we-icon-btn" id="pi-we-toggle-settings-btn" title="折叠/展开外观与渲染配置">⚙️ <span class="pi-we-btn-label">配置</span> <span id="pi-we-toggle-settings-arrow">▾</span></button>
-				<button class="pi-we-icon-btn" id="pi-we-rescan-btn" title="重新扫描壁纸">🔄 <span class="pi-we-btn-label">刷新</span></button>
-				<button class="pi-we-icon-btn pi-we-close-btn" id="pi-we-close-btn" title="关闭壁纸库">✕</button>
+				<button class="pi-we-icon-btn" id="pi-we-toggle-settings-btn" title="${t("settingsToggleTooltip")}">⚙️ <span class="pi-we-btn-label">${t("settingsToggle")}</span> <span id="pi-we-toggle-settings-arrow">▾</span></button>
+				<button class="pi-we-icon-btn" id="pi-we-rescan-btn" title="${t("rescanTooltip")}">🔄 <span class="pi-we-btn-label">${t("rescan")}</span></button>
+				<button class="pi-we-icon-btn pi-we-close-btn" id="pi-we-close-btn" title="${t("closeLibraryTooltip")}">✕</button>
 			</div>
 		</div>
 
 		<div class="pi-we-settings-bar">
 			<div class="pi-we-slider-row">
-				<span class="pi-we-slider-label">专属主题:</span>
+				<span class="pi-we-slider-label">${t("themeLabel")}</span>
 				<select class="pi-we-select" id="pi-we-theme-select" style="flex: 1;">
-					<option value="obsidian" ${state.settings.wallpaperTheme === "obsidian" || !state.settings.wallpaperTheme ? "selected" : ""}>🌑 黑曜冷月（纯黑极简微透）</option>
-					<option value="flow" ${state.settings.wallpaperTheme === "flow" || state.settings.wallpaperTheme === "compact-flow" ? "selected" : ""}>🖋️ 极简行文（极致紧凑·无界正文）</option>
+					<option value="obsidian" ${state.settings.wallpaperTheme === "obsidian" || !state.settings.wallpaperTheme ? "selected" : ""}>${t("themeObsidian")}</option>
+					<option value="flow" ${state.settings.wallpaperTheme === "flow" || state.settings.wallpaperTheme === "compact-flow" ? "selected" : ""}>${t("themeFlow")}</option>
 				</select>
 			</div>
 			<div class="pi-we-slider-row">
-				<span class="pi-we-slider-label">毛玻璃模糊度:</span>
+				<span class="pi-we-slider-label">${t("blurLabel")}</span>
 				<input type="range" id="pi-we-blur-range" min="0" max="32" value="${state.settings.glassBlur}" />
 				<span class="pi-we-slider-val" id="pi-we-blur-val">${state.settings.glassBlur}px</span>
 			</div>
 			<div class="pi-we-slider-row">
-				<span class="pi-we-slider-label">界面不透明度:</span>
+				<span class="pi-we-slider-label">${t("opacityLabel")}</span>
 				<input type="range" id="pi-we-opacity-range" min="0" max="100" value="${state.settings.glassOpacity}" />
 				<span class="pi-we-slider-val" id="pi-we-opacity-val">${state.settings.glassOpacity}%</span>
 			</div>
 			<div class="pi-we-slider-row">
-				<span class="pi-we-slider-label">自动轮播:</span>
+				<span class="pi-we-slider-label">${t("rotateLabel")}</span>
 				<select class="pi-we-select" id="pi-we-rotate-select">
-					<option value="0" ${state.settings.autoRotateMinutes === "0" ? "selected" : ""}>关闭轮播</option>
-					<option value="5" ${state.settings.autoRotateMinutes === "5" ? "selected" : ""}>每 5 分钟</option>
-					<option value="15" ${state.settings.autoRotateMinutes === "15" ? "selected" : ""}>每 15 分钟</option>
-					<option value="30" ${state.settings.autoRotateMinutes === "30" ? "selected" : ""}>每 30 分钟</option>
-					<option value="60" ${state.settings.autoRotateMinutes === "60" ? "selected" : ""}>每 1 小时</option>
+					<option value="0" ${state.settings.autoRotateMinutes === "0" ? "selected" : ""}>${t("rotateOff")}</option>
+					<option value="5" ${state.settings.autoRotateMinutes === "5" ? "selected" : ""}>${t("rotateEveryMinutes", { n: 5 })}</option>
+					<option value="15" ${state.settings.autoRotateMinutes === "15" ? "selected" : ""}>${t("rotateEveryMinutes", { n: 15 })}</option>
+					<option value="30" ${state.settings.autoRotateMinutes === "30" ? "selected" : ""}>${t("rotateEveryMinutes", { n: 30 })}</option>
+					<option value="60" ${state.settings.autoRotateMinutes === "60" ? "selected" : ""}>${t("rotateEveryHour")}</option>
 				</select>
-				<span class="pi-we-slider-label" style="width: auto; margin-left: 8px;">帧率:</span>
+				<span class="pi-we-slider-label" style="width: auto; margin-left: 8px;">${t("fpsLabel")}</span>
 				<select class="pi-we-select" id="pi-we-fps-select">
 					<option value="30" ${state.settings.fpsLimit === "30" ? "selected" : ""}>30 FPS</option>
 					<option value="60" ${state.settings.fpsLimit === "60" ? "selected" : ""}>60 FPS</option>
-					<option value="0" ${state.settings.fpsLimit === "0" || !state.settings.fpsLimit ? "selected" : ""}>无限制</option>
+					<option value="0" ${state.settings.fpsLimit === "0" || !state.settings.fpsLimit ? "selected" : ""}>${t("fpsUnlimited")}</option>
 				</select>
 			</div>
 			<div class="pi-we-slider-row">
-				<span class="pi-we-slider-label">场景画质:</span>
+				<span class="pi-we-slider-label">${t("qualityLabel")}</span>
 				<select class="pi-we-select" id="pi-we-quality-select" style="flex: 1;">
-					<option value="performance" ${state.settings.qualityPreset === "performance" || !state.settings.qualityPreset ? "selected" : ""}>⚡ 节能极速（核显推荐）</option>
-					<option value="balanced" ${state.settings.qualityPreset === "balanced" ? "selected" : ""}>⚖️ 平衡流畅（默认推荐）</option>
-					<option value="high" ${state.settings.qualityPreset === "high" ? "selected" : ""}>🎨 高清细腻（独显）</option>
-					<option value="ultra" ${state.settings.qualityPreset === "ultra" ? "selected" : ""}>🌟 极致视网膜</option>
+					<option value="performance" ${state.settings.qualityPreset === "performance" || !state.settings.qualityPreset ? "selected" : ""}>${t("qualityPerformance")}</option>
+					<option value="balanced" ${state.settings.qualityPreset === "balanced" ? "selected" : ""}>${t("qualityBalanced")}</option>
+					<option value="high" ${state.settings.qualityPreset === "high" ? "selected" : ""}>${t("qualityHigh")}</option>
+					<option value="ultra" ${state.settings.qualityPreset === "ultra" ? "selected" : ""}>${t("qualityUltra")}</option>
 				</select>
-				<span class="pi-we-slider-label" style="width: auto; margin-left: 8px;">抗锯齿:</span>
+				<span class="pi-we-slider-label" style="width: auto; margin-left: 8px;">${t("aaLabel")}</span>
 				<select class="pi-we-select" id="pi-we-aa-select">
-					<option value="off" ${state.settings.antiAliasing === "off" || !state.settings.antiAliasing ? "selected" : ""}>关闭</option>
-					<option value="fxaa" ${state.settings.antiAliasing === "fxaa" ? "selected" : ""}>FXAA 快速</option>
+					<option value="off" ${state.settings.antiAliasing === "off" || !state.settings.antiAliasing ? "selected" : ""}>${t("aaOff")}</option>
+					<option value="fxaa" ${state.settings.antiAliasing === "fxaa" ? "selected" : ""}>${t("aaFxaa")}</option>
 					<option value="msaa2" ${state.settings.antiAliasing === "msaa2" ? "selected" : ""}>MSAA 2x</option>
 					<option value="msaa4" ${state.settings.antiAliasing === "msaa4" ? "selected" : ""}>MSAA 4x</option>
 				</select>
@@ -780,56 +790,56 @@ function createDrawer(bgLayer, state, onStateChange, triggerRotate) {
 			<div class="pi-we-slider-row" style="justify-content: flex-start; gap: 14px;">
 				<label class="pi-we-checkbox-row">
 					<input type="checkbox" id="pi-we-interactive-check" ${state.settings.interactive ? "checked" : ""} />
-					<span>允许交互</span>
+					<span>${t("allowInteractive")}</span>
 				</label>
 				<label class="pi-we-checkbox-row">
 					<input type="checkbox" id="pi-we-audio-check" ${state.settings.audioReactive ? "checked" : ""} />
-					<span>音乐频谱 🎵</span>
+					<span>${t("audioSpectrum")}</span>
 				</label>
-				<label class="pi-we-checkbox-row" title="在纯白、日光或高光壁纸下启用微描边锐化与微偏光，保证白字清晰易读">
+				<label class="pi-we-checkbox-row" title="${t("lightModeTooltip")}">
 					<input type="checkbox" id="pi-we-lightmode-check" ${state.settings.lightWallpaperMode ? "checked" : ""} />
-					<span>☀️ 亮色增强</span>
+					<span>${t("lightMode")}</span>
 				</label>
 				<label class="pi-we-checkbox-row">
 					<input type="checkbox" id="pi-we-mute-check" ${state.settings.muteAudio ? "checked" : ""} />
-					<span>静音</span>
+					<span>${t("mute")}</span>
 				</label>
-				<button class="pi-we-icon-btn" id="pi-we-clear-btn" style="margin-left: auto;">关闭壁纸</button>
+				<button class="pi-we-icon-btn" id="pi-we-clear-btn" style="margin-left: auto;">${t("closeWallpaper")}</button>
 			</div>
 			<div class="pi-we-preset-row">
-				<button class="pi-we-icon-btn" id="pi-we-export-btn">📤 导出预设</button>
-				<button class="pi-we-icon-btn" id="pi-we-import-btn">📥 导入预设</button>
-				<button class="pi-we-icon-btn" id="pi-we-rotate-now-btn" style="margin-left: auto;" title="立即随机切换下一张壁纸">🎲 切下一张</button>
+				<button class="pi-we-icon-btn" id="pi-we-export-btn">${t("exportPreset")}</button>
+				<button class="pi-we-icon-btn" id="pi-we-import-btn">${t("importPreset")}</button>
+				<button class="pi-we-icon-btn" id="pi-we-rotate-now-btn" style="margin-left: auto;" title="${t("rotateNowTooltip")}">${t("rotateNow")}</button>
 			</div>
 		</div>
 
 		<div class="pi-we-filter-bar">
-			<input type="text" class="pi-we-search-input" id="pi-we-search" placeholder="搜索壁纸名称或标签..." />
+			<input type="text" class="pi-we-search-input" id="pi-we-search" placeholder="${t("searchPlaceholder")}" />
 			<div class="pi-we-tabs">
-				<button class="pi-we-tab active" data-tab="all">全部</button>
-				<button class="pi-we-tab" data-tab="fav">⭐ 收藏</button>
-				<button class="pi-we-tab" data-tab="video">视频</button>
-				<button class="pi-we-tab" data-tab="scene">场景</button>
-				<button class="pi-we-tab" data-tab="web">网页</button>
-				<button class="pi-we-tab" data-tab="image">静态图</button>
-				<button class="pi-we-mode-btn" id="pi-we-mode-btn" title="点击切换分页浏览与全部显示模式">📑 分页模式</button>
+				<button class="pi-we-tab active" data-tab="all">${t("tabAll")}</button>
+				<button class="pi-we-tab" data-tab="fav">${t("tabFavorites")}</button>
+				<button class="pi-we-tab" data-tab="video">${t("tabVideo")}</button>
+				<button class="pi-we-tab" data-tab="scene">${t("tabScene")}</button>
+				<button class="pi-we-tab" data-tab="web">${t("tabWeb")}</button>
+				<button class="pi-we-tab" data-tab="image">${t("tabImage")}</button>
+				<button class="pi-we-mode-btn" id="pi-we-mode-btn" title="${t("modeTooltip")}">${t("modePaged")}</button>
 			</div>
 		</div>
 
 		<div class="pi-we-body" id="pi-we-grid">
 			<div class="pi-we-empty">
-				<span>正在加载壁纸...</span>
+				<span>${t("loadingWallpapers")}</span>
 			</div>
 		</div>
 
 		<div class="pi-we-pagination" id="pi-we-pagination" style="display: none;">
 			<div class="pi-we-page-info">
-				<span id="pi-we-page-stats">共 0 张</span>
+				<span id="pi-we-page-stats">${t("pageStats", { n: 0 })}</span>
 			</div>
 			<div class="pi-we-page-nav">
-				<button class="pi-we-page-btn" id="pi-we-page-prev" title="上一页" disabled>◀ 上一页</button>
+				<button class="pi-we-page-btn" id="pi-we-page-prev" title="${t("pagePrevTooltip")}" disabled>${t("pagePrev")}</button>
 				<div class="pi-we-page-numbers" id="pi-we-page-numbers"></div>
-				<button class="pi-we-page-btn" id="pi-we-page-next" title="下一页" disabled>下一页 ▶</button>
+				<button class="pi-we-page-btn" id="pi-we-page-next" title="${t("pageNextTooltip")}" disabled>${t("pageNext")}</button>
 			</div>
 		</div>
 	`;
@@ -1044,17 +1054,17 @@ function createDrawer(bgLayer, state, onStateChange, triggerRotate) {
 			const text = JSON.stringify(json, null, 2);
 			if (navigator.clipboard) {
 				await navigator.clipboard.writeText(text);
-				alert("外观预设已成功复制到剪贴板！");
+				alert(t("presetCopied"));
 			} else {
-				prompt("请复制外观预设 JSON：", text);
+				prompt(t("presetCopyManual"), text);
 			}
 		} catch (err) {
-			alert(`导出失败：${err.message}`);
+			alert(t("exportFailed", { error: err.message }));
 		}
 	});
 
 	drawer.querySelector("#pi-we-import-btn").addEventListener("click", async () => {
-		const input = prompt("请粘贴外观预设 JSON 内容：");
+		const input = prompt(t("presetPaste"));
 		if (!input) return;
 		try {
 			const parsed = JSON.parse(input);
@@ -1070,10 +1080,10 @@ function createDrawer(bgLayer, state, onStateChange, triggerRotate) {
 				state.favorites = json.favorites || [];
 				syncSettings(state);
 				void loadWallpapers();
-				alert("外观预设导入成功！");
+				alert(t("presetImported"));
 			}
 		} catch (err) {
-			alert(`导入失败：${err.message}`);
+			alert(t("importFailed", { error: err.message }));
 		}
 	});
 
@@ -1108,7 +1118,7 @@ function createDrawer(bgLayer, state, onStateChange, triggerRotate) {
 
 	drawer.querySelector("#pi-we-rescan-btn").addEventListener("click", async () => {
 		currentPage = 1;
-		gridEl.innerHTML = `<div class="pi-we-empty"><span>正在全盘重新扫描...</span></div>`;
+		gridEl.innerHTML = `<div class="pi-we-empty"><span>${t("rescanning")}</span></div>`;
 		updatePagination(0, 1, 1);
 		try {
 			const res = await fetch(`${API_BASE}/api/rescan`);
@@ -1119,7 +1129,7 @@ function createDrawer(bgLayer, state, onStateChange, triggerRotate) {
 				renderGrid();
 			}
 		} catch (err) {
-			gridEl.innerHTML = `<div class="pi-we-empty"><span>扫描失败：${err.message}</span></div>`;
+			gridEl.innerHTML = `<div class="pi-we-empty"><span>${t("rescanFailed", { error: err.message })}</span></div>`;
 			updatePagination(0, 1, 1);
 		}
 	});
@@ -1143,7 +1153,7 @@ function createDrawer(bgLayer, state, onStateChange, triggerRotate) {
 	if (modeBtn) {
 		modeBtn.addEventListener("click", () => {
 			displayMode = displayMode === "paged" ? "all" : "paged";
-			modeBtn.textContent = displayMode === "paged" ? "📑 分页模式" : "📜 全部显示";
+			modeBtn.textContent = displayMode === "paged" ? t("modePaged") : t("modeAll");
 			currentPage = 1;
 			renderGrid();
 			gridEl.scrollTop = 0;
@@ -1194,7 +1204,7 @@ function createDrawer(bgLayer, state, onStateChange, triggerRotate) {
 		paginationEl.style.display = "flex";
 		if (displayMode === "all") {
 			if (pageStatsEl) {
-				pageStatsEl.textContent = `共 ${totalCount} 张 · 已全部展示 (点击顶栏切回分页)`;
+				pageStatsEl.textContent = t("pageStatsAll", { total: totalCount });
 			}
 			if (pagePrevBtn) pagePrevBtn.disabled = true;
 			if (pageNextBtn) pageNextBtn.disabled = true;
@@ -1203,7 +1213,7 @@ function createDrawer(bgLayer, state, onStateChange, triggerRotate) {
 		}
 
 		if (pageStatsEl) {
-			pageStatsEl.textContent = `共 ${totalCount} 张 · 第 ${curPage}/${totalPages} 页`;
+			pageStatsEl.textContent = t("pageStatsPaged", { total: totalCount, cur: curPage, totalPages });
 		}
 		if (pagePrevBtn) {
 			pagePrevBtn.disabled = curPage <= 1;
@@ -1270,7 +1280,7 @@ function createDrawer(bgLayer, state, onStateChange, triggerRotate) {
 
 	async function loadWallpapers(silent = false) {
 		if (!silent && wallpapers.length === 0) {
-			gridEl.innerHTML = `<div class="pi-we-empty"><span>正在加载壁纸...</span></div>`;
+			gridEl.innerHTML = `<div class="pi-we-empty"><span>${t("loadingWallpapers")}</span></div>`;
 		}
 		try {
 			const res = await fetch(`${API_BASE}/api/wallpapers`);
@@ -1284,15 +1294,15 @@ function createDrawer(bgLayer, state, onStateChange, triggerRotate) {
 			} else if (!silent) {
 				gridEl.innerHTML = `
 					<div class="pi-we-empty">
-						<span>未检测到 Steam 或创意工坊壁纸</span>
-						<span class="pi-we-empty-sub">请确认已安装 Steam 并订阅了 Wallpaper Engine 壁纸，或在插件设置中指定自定义路径。</span>
+						<span>${t("noSteam")}</span>
+						<span class="pi-we-empty-sub">${t("noSteamHint")}</span>
 					</div>
 				`;
 				updatePagination(0, 1, 1);
 			}
 		} catch (err) {
 			if (!silent) {
-				gridEl.innerHTML = `<div class="pi-we-empty"><span>加载失败：${err.message}</span></div>`;
+				gridEl.innerHTML = `<div class="pi-we-empty"><span>${t("loadFailed", { error: err.message })}</span></div>`;
 				updatePagination(0, 1, 1);
 			}
 		}
@@ -1310,7 +1320,7 @@ function createDrawer(bgLayer, state, onStateChange, triggerRotate) {
 		if (totalCount === 0) {
 			gridEl.innerHTML = `
 				<div class="pi-we-empty">
-					<span>未找到匹配的壁纸</span>
+					<span>${t("noMatch")}</span>
 				</div>
 			`;
 			updatePagination(0, 1, 1);
@@ -1334,13 +1344,13 @@ function createDrawer(bgLayer, state, onStateChange, triggerRotate) {
 				<div class="pi-we-thumb-wrap pi-we-cover-wrap">
 					${previewUrl ? `<img class="pi-we-thumb pi-we-cover-img" src="${previewUrl}" alt="${w.title}" loading="lazy" decoding="async" fetchpriority="low" />` : ""}
 					<span class="pi-we-badge ${w.type}">${w.type}</span>
-					${isActive ? `<span class="pi-we-active-indicator">✓ 使用中</span>` : ""}
+					${isActive ? `<span class="pi-we-active-indicator">${t("activeBadge")}</span>` : ""}
 				</div>
 				<div class="pi-we-card-info pi-we-card-meta-bar">
 					<div class="pi-we-card-title" title="${w.title}">${w.title}</div>
 					<div class="pi-we-card-meta">
 						<span>${w.rating || "Everyone"}</span>
-						<button class="pi-we-fav-btn ${isFav ? "active" : ""}" title="${isFav ? "取消收藏" : "加入收藏"}">${isFav ? "★" : "☆"}</button>
+						<button class="pi-we-fav-btn ${isFav ? "active" : ""}" title="${isFav ? t("removeFavorite") : t("addFavorite")}">${isFav ? "★" : "☆"}</button>
 					</div>
 				</div>
 			`;
@@ -1420,13 +1430,13 @@ function createToolInspector() {
 		<div class="pi-we-inspector-header">
 			<div class="pi-we-inspector-title-group">
 				<div class="pi-we-inspector-icon" id="pi-we-ins-icon">⚡</div>
-				<div class="pi-we-inspector-title" id="pi-we-ins-title">工具详情</div>
-				<div class="pi-we-inspector-badge" id="pi-we-ins-badge">已完成</div>
+				<div class="pi-we-inspector-title" id="pi-we-ins-title">${t("inspectorTitle")}</div>
+				<div class="pi-we-inspector-badge" id="pi-we-ins-badge">${t("inspectorDone")}</div>
 			</div>
 			<div class="pi-we-inspector-actions">
-				<button type="button" class="pi-we-inspector-btn" id="pi-we-ins-toggle-btn" style="display:none;">⚙️ 原始参数</button>
-				<button type="button" class="pi-we-inspector-btn" id="pi-we-ins-copy-btn">📋 复制全部</button>
-				<button type="button" class="pi-we-inspector-btn pi-we-inspector-close" id="pi-we-ins-close-btn" title="关闭 (ESC)">✕</button>
+				<button type="button" class="pi-we-inspector-btn" id="pi-we-ins-toggle-btn" style="display:none;">${t("toggleRaw")}</button>
+				<button type="button" class="pi-we-inspector-btn" id="pi-we-ins-copy-btn">${t("copyAll")}</button>
+				<button type="button" class="pi-we-inspector-btn pi-we-inspector-close" id="pi-we-ins-close-btn" title="${t("closeTooltip")}">✕</button>
 			</div>
 		</div>
 		<div class="pi-we-inspector-body" id="pi-we-ins-body"></div>
@@ -1504,7 +1514,7 @@ function createToolInspector() {
 		if (args) {
 			sectionsHtml += `
 				<div class="pi-we-inspector-section">
-					<div class="pi-we-inspector-label">⚡ 调用入参 / 命令 (Arguments)</div>
+					<div class="pi-we-inspector-label">${t("argsLabel")}</div>
 					<pre class="pi-we-inspector-codeblock" id="pi-we-ins-args-pre"></pre>
 				</div>
 			`;
@@ -1512,7 +1522,7 @@ function createToolInspector() {
 		if (images && images.length > 0) {
 			sectionsHtml += `
 				<div class="pi-we-inspector-section">
-					<div class="pi-we-inspector-label">🖼️ 工具输出图片 (${images.length})</div>
+					<div class="pi-we-inspector-label">${t("imagesLabel", { n: images.length })}</div>
 					<div class="pi-we-inspector-images" style="display:flex;flex-wrap:wrap;gap:8px;margin-top:6px;">
 						${images.map((src, i) => `<img src="${src}" style="max-height:240px;max-width:100%;border-radius:6px;border:1px solid rgba(255,255,255,0.14);" alt="image ${i + 1}" />`).join("")}
 					</div>
@@ -1521,7 +1531,7 @@ function createToolInspector() {
 		}
 		sectionsHtml += `
 			<div class="pi-we-inspector-section">
-				<div class="pi-we-inspector-label">${error ? "❌ 执行报错 (Error Output)" : "📄 执行输出 (Output)"}</div>
+				<div class="pi-we-inspector-label">${error ? t("errorLabel") : t("outputLabel")}</div>
 				<pre class="pi-we-inspector-codeblock" id="pi-we-ins-output-pre"></pre>
 			</div>
 		`;
@@ -1546,8 +1556,7 @@ function createToolInspector() {
 					displayOutput = JSON.stringify(JSON.parse(output), null, 2);
 				}
 			} catch {}
-			outPre.textContent =
-				displayOutput || (statusClass === "run" ? "正在执行中，等待实时输出..." : "(执行成功，无文本返回)");
+			outPre.textContent = displayOutput || (statusClass === "run" ? t("runningOutput") : t("successNoText"));
 		}
 	}
 
@@ -1581,8 +1590,8 @@ function createToolInspector() {
 							${item.caption ? `<span class="pi-we-ins-preview-caption">${escapeHtml(item.caption)}</span>` : ""}
 						</div>
 						<div class="pi-we-ins-preview-actions">
-							<a href="${fileUrl}&download=1" class="pi-we-ins-btn-sm" title="下载文件" download="${escapeHtml(fileName)}">⬇️ 下载</a>
-							<button type="button" class="pi-we-ins-btn-sm pi-we-ins-copy-path" data-path="${escapeHtml(item.path)}" title="复制相对路径">📋 路径</button>
+							<a href="${fileUrl}&download=1" class="pi-we-ins-btn-sm" title="${t("downloadTooltip")}" download="${escapeHtml(fileName)}">${t("download")}</a>
+							<button type="button" class="pi-we-ins-btn-sm pi-we-ins-copy-path" data-path="${escapeHtml(item.path)}" title="${t("copyPathTooltip")}">${t("copyPath")}</button>
 						</div>
 					</div>
 					<div class="pi-we-ins-preview-media">
@@ -1603,7 +1612,7 @@ function createToolInspector() {
 		if (error) {
 			html += `
 				<div class="pi-we-inspector-section" style="margin-top:8px;">
-					<div class="pi-we-inspector-label">❌ 执行报错 (Error Output)</div>
+					<div class="pi-we-inspector-label">${t("errorLabel")}</div>
 					<pre class="pi-we-inspector-codeblock">${escapeHtml(output)}</pre>
 				</div>
 			`;
@@ -1618,7 +1627,7 @@ function createToolInspector() {
 				if (p) {
 					void navigator.clipboard?.writeText?.(p);
 					const orig = btn.textContent;
-					btn.textContent = "✓ 已复制";
+					btn.textContent = t("copied");
 					setTimeout(() => {
 						btn.textContent = orig;
 					}, 1200);
@@ -1640,18 +1649,18 @@ function createToolInspector() {
 		if (isThinking) {
 			toggleBtn.style.display = "none";
 			iconEl.textContent = "💭";
-			titleEl.textContent = "思考过程 (Thinking)";
-			badgeEl.textContent = duration || "已完成";
+			titleEl.textContent = t("thinkingTitle");
+			badgeEl.textContent = duration || t("inspectorDone");
 			badgeEl.className = "pi-we-inspector-badge ok";
 
 			bodyEl.innerHTML = `
 				<div class="pi-we-inspector-section">
-					<div class="pi-we-inspector-label">💭 思考链路与分析过程</div>
+					<div class="pi-we-inspector-label">${t("thinkingLabel")}</div>
 					<div class="pi-we-inspector-thinking-text"></div>
 				</div>
 			`;
 			const textEl = bodyEl.querySelector(".pi-we-inspector-thinking-text");
-			if (textEl) textEl.textContent = output || "(暂无思考文本)";
+			if (textEl) textEl.textContent = output || t("thinkingEmpty");
 			currentCopyText = output || "";
 		} else {
 			const toolIcons = {
@@ -1679,15 +1688,17 @@ function createToolInspector() {
 			titleEl.textContent = `${name}()`;
 
 			badgeEl.className = `pi-we-inspector-badge ${statusClass || "ok"}`;
-			badgeEl.textContent = duration ? `${status || "完成"} · ${duration}` : status || "完成";
+			badgeEl.textContent = duration
+				? t("statusWithDuration", { status: status || t("statusDone"), duration })
+				: status || t("statusDone");
 
 			const presentData = name === "present_files" || args?.includes('"items"') ? tryParsePresentArgs(args) : null;
 
 			if (presentData) {
 				toggleBtn.style.display = "inline-flex";
 				currentMode = "preview";
-				toggleBtn.textContent = "⚙️ 原始参数";
-				toggleBtn.title = "点击切换回原有代码块展示";
+				toggleBtn.textContent = t("toggleRaw");
+				toggleBtn.title = t("toggleRawTooltip");
 				renderPreviewView(presentData, data);
 			} else {
 				toggleBtn.style.display = "none";
@@ -1708,13 +1719,13 @@ function createToolInspector() {
 
 		if (currentMode === "preview") {
 			currentMode = "raw";
-			toggleBtn.textContent = "🖼️ 文件展示";
-			toggleBtn.title = "点击切换回富媒体文件展示";
+			toggleBtn.textContent = t("togglePreview");
+			toggleBtn.title = t("togglePreviewTooltip");
 			renderRawView(currentData);
 		} else {
 			currentMode = "preview";
-			toggleBtn.textContent = "⚙️ 原始参数";
-			toggleBtn.title = "点击切换回原有代码块展示";
+			toggleBtn.textContent = t("toggleRaw");
+			toggleBtn.title = t("toggleRawTooltip");
 			renderPreviewView(presentData, currentData);
 		}
 	});
@@ -1723,7 +1734,7 @@ function createToolInspector() {
 		if (currentCopyText) {
 			void navigator.clipboard?.writeText?.(currentCopyText);
 			const orig = copyBtn.textContent;
-			copyBtn.textContent = "✓ 已复制";
+			copyBtn.textContent = t("copied");
 			setTimeout(() => {
 				copyBtn.textContent = orig;
 			}, 1200);
@@ -1845,7 +1856,7 @@ function setupToolInspectorClickListener(inspector, state) {
 			inspector.open({
 				isThinking: false,
 				name,
-				status: statusTitle || (isError ? "执行出错" : isRun ? "运行中" : "已完成"),
+				status: statusTitle || (isError ? t("statusFailed") : isRun ? t("statusRunning") : t("statusDone")),
 				statusClass,
 				duration,
 				args: args.trim(),

@@ -1,5 +1,10 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { MobilePushAdapter, MobilePushState } from "../../web/src/mobile-runtime";
+import { interpolate, type Translate } from "../../web/src/i18n";
+import { zh } from "../../web/src/i18n/catalog";
+
+// Real zh dictionary: assertions below match the wording the user sees.
+const tr: Translate = (key, vars) => interpolate(zh[key] ?? (key as string), vars);
 
 const service = "https://service.example/apps/pi";
 
@@ -204,7 +209,7 @@ describe("native device navigation", () => {
 		const open = vi.fn();
 		vi.stubGlobal("window", { open });
 		const { openDeviceAccess } = await import("../../web/src/device-access");
-		await openDeviceAccess("laptop", "https://hub.example", false, false);
+		await openDeviceAccess("laptop", "https://hub.example", false, tr);
 		expect(adapter.openDevice).toHaveBeenCalledWith("laptop", "https://hub.example");
 		expect(open).not.toHaveBeenCalled();
 		expect(fetchService).not.toHaveBeenCalled();
@@ -215,7 +220,7 @@ describe("native device navigation", () => {
 		const open = vi.fn();
 		vi.stubGlobal("window", { open });
 		const { openDeviceAccess } = await import("../../web/src/device-access");
-		await expect(openDeviceAccess("laptop", "https://hub.example", true, false)).rejects.toThrow(
+		await expect(openDeviceAccess("laptop", "https://hub.example", true, tr)).rejects.toThrow(
 			"Native device access is unavailable",
 		);
 		expect(open).not.toHaveBeenCalled();

@@ -679,13 +679,7 @@ export function PresetShareModal({
 																				className="preset-share-pick-toggle"
 																				onClick={() => toggleFieldExpand(f)}
 																			>
-																				{isExpanded
-																					? isZh
-																						? "收起 ▲"
-																						: "Collapse ▲"
-																					: isZh
-																						? "查看详情 ▼"
-																						: "Details ▼"}
+																				{isExpanded ? t("presetShareCollapseDetails") : t("presetShareShowDetails")}
 																			</button>
 																		)}
 																	</div>

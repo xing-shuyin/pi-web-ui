@@ -1,4 +1,8 @@
 import { buildFixPrompt, isAiFixMessage } from "./ai-fix.mjs";
+import { makeT } from "./i18n.mjs";
+
+/** 面板文案：语言解析 / 回退 / 插值都在 SDK 里，这里只按当前界面语言取词。 */
+const t = makeT();
 
 function appUrl() {
 	const url = new URL("app/index.html", import.meta.url);
@@ -58,18 +62,16 @@ export default {
 			if (!host || typeof host.startChat !== "function") {
 				try {
 					await navigator.clipboard?.writeText(prompt);
-					window.alert(
-						"当前宿主不支持自动开对话（pi-web-ui 版本较旧）。\n给 AI 的正文已复制到剪贴板，粘贴到对话框即可。",
-					);
+					window.alert(t("hostUnsupportedCopied"));
 				} catch {
-					window.alert("当前宿主不支持自动开对话（pi-web-ui 版本较旧）。");
+					window.alert(t("hostUnsupported"));
 				}
 				return;
 			}
 			host.setView?.("chat");
 			const cwd = dirs.dataDir || dirs.workspace || "";
 			const ok = host.startChat({ prompt, newChat: true, cwd });
-			if (!ok) window.alert("还没连上 pi-web-ui 服务（或连接未就绪），稍后重试。");
+			if (!ok) window.alert(t("hostNotConnected"));
 		};
 		window.addEventListener("message", onMessage);
 

@@ -1,3 +1,4 @@
+// 这里的「（无效）/每周/日一二三四五六」会进入持久化提醒的显示文本与导出的 Markdown：data，不随界面语言变。
 const MONTH_NAMES = {
 	jan: 1,
 	feb: 2,

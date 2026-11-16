@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { FiCheck, FiEdit2, FiMessageSquare, FiPlus, FiRefreshCw, FiTrash2, FiUsers, FiX } from "react-icons/fi";
 import { appUrl } from "../base-url";
 import { withToken } from "../auth-token";
-import { isZhLocale, useI18n } from "../i18n";
+import { useT } from "../i18n";
 import { GroupRouterSettings, type GroupRouterConfig } from "./GroupRouterSettings";
 import { GroupWorkItems } from "./GroupWorkItems";
 
@@ -32,8 +32,7 @@ export function DeviceGroupManager({ bindingKey = "" }: { bindingKey?: string })
 }
 
 function DeviceGroupManagerContent() {
-	const { locale } = useI18n();
-	const zh = isZhLocale(locale);
+	const t = useT();
 
 	const [rooms, setRooms] = useState<Room[]>([]);
 	const [bots, setBots] = useState<Bot[]>([]);
@@ -140,7 +139,7 @@ function DeviceGroupManagerContent() {
 			setCreateName("");
 			setCreateBotIds([]);
 			setCreatePrimaryBotId("");
-			setNotice(zh ? "群聊创建成功" : "Group created successfully");
+			setNotice(t("deviceGroupManagerCreateSuccess"));
 			window.dispatchEvent(new CustomEvent(DEVICE_GROUPS_CHANGED));
 		} catch (cause) {
 			if (!controller.signal.aborted) setError(cause instanceof Error ? cause.message : String(cause));
@@ -174,7 +173,7 @@ function DeviceGroupManagerContent() {
 			if (controller.signal.aborted) return;
 			setRooms((prev) => prev.map((r) => (r.id === roomId ? result.room : r)));
 			setManagingRoomId(null);
-			setNotice(zh ? "成员设置已保存" : "Members updated successfully");
+			setNotice(t("deviceGroupManagerMembersSaved"));
 			window.dispatchEvent(new CustomEvent(DEVICE_GROUPS_CHANGED));
 		} catch (cause) {
 			if (!controller.signal.aborted) setError(cause instanceof Error ? cause.message : String(cause));
@@ -196,7 +195,7 @@ function DeviceGroupManagerContent() {
 			if (controller.signal.aborted) return;
 			setRooms((prev) => prev.map((r) => (r.id === roomId ? { ...r, name: renameValue.trim() } : r)));
 			setRenamingRoomId(null);
-			setNotice(zh ? "群聊名称已更新" : "Group renamed successfully");
+			setNotice(t("deviceGroupManagerRenameSuccess"));
 			window.dispatchEvent(new CustomEvent(DEVICE_GROUPS_CHANGED));
 		} catch (cause) {
 			if (!controller.signal.aborted) setError(cause instanceof Error ? cause.message : String(cause));
@@ -207,7 +206,7 @@ function DeviceGroupManagerContent() {
 
 	async function handleDelete(room: Room) {
 		if (busy) return;
-		if (!window.confirm(zh ? `确定删除群聊“${room.name}”？` : `Are you sure you want to delete "${room.name}"?`)) {
+		if (!window.confirm(t("deviceGroupManagerDeleteConfirm", { name: room.name }))) {
 			return;
 		}
 		setBusy(true);
@@ -221,7 +220,7 @@ function DeviceGroupManagerContent() {
 			setRooms((prev) => prev.filter((r) => r.id !== room.id));
 			if (managingRoomId === room.id) setManagingRoomId(null);
 			if (renamingRoomId === room.id) setRenamingRoomId(null);
-			setNotice(zh ? "群聊已删除" : "Group deleted successfully");
+			setNotice(t("deviceGroupManagerDeleteSuccess"));
 			window.dispatchEvent(new CustomEvent(DEVICE_GROUPS_CHANGED));
 		} catch (cause) {
 			if (!controller.signal.aborted) setError(cause instanceof Error ? cause.message : String(cause));
@@ -231,20 +230,16 @@ function DeviceGroupManagerContent() {
 	}
 
 	return (
-		<section className="dc-card" aria-label={zh ? "群聊列表" : "Group list"}>
+		<section className="dc-card" aria-label={t("deviceGroupManagerTitle")}>
 			<div className="dc-card-header">
 				<span className="dc-icon">
 					<FiUsers aria-hidden />
 				</span>
 				<div>
 					<h2>
-						{zh ? "群聊列表" : "Group List"} · {rooms.length}
+						{t("deviceGroupManagerTitle")} · {rooms.length}
 					</h2>
-					<p>
-						{zh
-							? "管理群聊与成员 Bot，在此配置协作群组或直接进入聊天。"
-							: "Manage groups and member Bots. Configure collaboration groups or open chats here."}
-					</p>
+					<p>{t("deviceGroupManagerDescription")}</p>
 				</div>
 				<div className="dc-actions" style={{ marginInlineStart: "auto" }}>
 					<button
@@ -261,12 +256,12 @@ function DeviceGroupManagerContent() {
 						}}
 					>
 						<FiPlus aria-hidden />
-						{zh ? "新建群聊" : "Create Group"}
+						{t("deviceGroupManagerCreate")}
 					</button>
 					<button
 						type="button"
 						className="dc-icon-button"
-						aria-label={zh ? "刷新群聊" : "Refresh groups"}
+						aria-label={t("deviceGroupManagerRefresh")}
 						onClick={refreshGroups}
 					>
 						<FiRefreshCw />
@@ -293,22 +288,22 @@ function DeviceGroupManagerContent() {
 					onSubmit={handleCreateGroup}
 				>
 					<div className="dg-heading" style={{ marginBottom: "12px" }}>
-						<h3>{zh ? "新建群聊" : "Create Group"}</h3>
+						<h3>{t("deviceGroupManagerCreate")}</h3>
 						<button type="button" className="dc-button" onClick={() => setCreating(false)} disabled={busy}>
 							<FiX aria-hidden />
-							{zh ? "关闭" : "Close"}
+							{t("close")}
 						</button>
 					</div>
 
 					<div className="dc-field" style={{ marginBottom: "12px" }}>
-						<label htmlFor="dg-manager-new-name">{zh ? "群名称" : "Group Name"}</label>
+						<label htmlFor="dg-manager-new-name">{t("deviceGroupManagerNameLabel")}</label>
 						<input
 							id="dg-manager-new-name"
 							type="text"
 							required
 							maxLength={80}
 							value={createName}
-							placeholder={zh ? "输入群名称，如：研发协作群" : "Enter group name"}
+							placeholder={t("deviceGroupManagerNamePlaceholder")}
 							onChange={(e) => setCreateName(e.target.value)}
 							disabled={busy}
 							style={{
@@ -325,7 +320,7 @@ function DeviceGroupManagerContent() {
 
 					<div style={{ marginBottom: "12px" }}>
 						<label style={{ display: "block", marginBottom: "6px", fontSize: "12px", color: "var(--text-dim)" }}>
-							{zh ? "选择成员 Bot" : "Select Member Bots"}
+							{t("deviceGroupManagerSelectMembers")}
 						</label>
 						<div
 							style={{
@@ -342,7 +337,7 @@ function DeviceGroupManagerContent() {
 						>
 							{bots.length === 0 ? (
 								<p style={{ margin: 0, fontSize: "12px", color: "var(--text-faint)" }}>
-									{zh ? "暂无可用 Bot，请先创建 Bot。" : "No Bots available. Please create a Bot first."}
+									{t("deviceGroupManagerNoBotsCreate")}
 								</p>
 							) : (
 								bots.map((bot) => (
@@ -363,8 +358,8 @@ function DeviceGroupManagerContent() {
 										<span>
 											<strong>{bot.name}</strong>
 											<small style={{ color: "var(--text-faint)", marginInlineStart: "6px" }}>
-												{bot.online ? (zh ? "在线" : "Online") : zh ? "离线" : "Offline"}
-												{!bot.enabled ? (zh ? " · 已禁用" : " · Disabled") : ""}
+												{bot.online ? t("deviceHubOnline") : t("deviceHubOffline")}
+												{!bot.enabled ? t("deviceGroupManagerDisabledSuffix") : ""}
 											</small>
 										</span>
 									</label>
@@ -375,9 +370,7 @@ function DeviceGroupManagerContent() {
 
 					{createBotIds.length > 0 && (
 						<div className="dc-field" style={{ marginBottom: "16px" }}>
-							<label htmlFor="dg-manager-new-primary">
-								{zh ? "原主 Bot（Router 未启用时）" : "Legacy primary Bot (when Router is disabled)"}
-							</label>
+							<label htmlFor="dg-manager-new-primary">{t("deviceGroupManagerLegacyPrimary")}</label>
 							<select
 								id="dg-manager-new-primary"
 								value={createBotIds.includes(createPrimaryBotId) ? createPrimaryBotId : ""}
@@ -393,7 +386,7 @@ function DeviceGroupManagerContent() {
 									fontSize: "13px",
 								}}
 							>
-								<option value="">{zh ? "不设置（需 @ Bot）" : "None (mention a Bot)"}</option>
+								<option value="">{t("deviceGroupManagerNoPrimary")}</option>
 								{bots
 									.filter((bot) => createBotIds.includes(bot.id))
 									.map((bot) => (
@@ -408,10 +401,10 @@ function DeviceGroupManagerContent() {
 					<div className="dc-actions">
 						<button type="submit" className="dc-button is-primary" disabled={busy || !createName.trim()}>
 							<FiCheck aria-hidden />
-							{busy ? (zh ? "创建中…" : "Creating…") : zh ? "创建群聊" : "Create"}
+							{busy ? t("deviceGroupManagerCreating") : t("deviceGroupManagerCreateSubmit")}
 						</button>
 						<button type="button" className="dc-button" onClick={() => setCreating(false)} disabled={busy}>
-							{zh ? "取消" : "Cancel"}
+							{t("cancel")}
 						</button>
 					</div>
 				</form>
@@ -424,17 +417,17 @@ function DeviceGroupManagerContent() {
 				>
 					<div className="dg-heading" style={{ marginBottom: "12px" }}>
 						<h3>
-							{zh ? "管理成员" : "Manage Members"} · {rooms.find((r) => r.id === managingRoomId)?.name}
+							{t("deviceGroupManagerManageMembersTitle")} · {rooms.find((r) => r.id === managingRoomId)?.name}
 						</h3>
 						<button type="button" className="dc-button" onClick={() => setManagingRoomId(null)} disabled={busy}>
 							<FiX aria-hidden />
-							{zh ? "关闭" : "Close"}
+							{t("close")}
 						</button>
 					</div>
 
 					<div style={{ marginBottom: "12px" }}>
 						<label style={{ display: "block", marginBottom: "6px", fontSize: "12px", color: "var(--text-dim)" }}>
-							{zh ? "选择成员 Bot" : "Select Member Bots"}
+							{t("deviceGroupManagerSelectMembers")}
 						</label>
 						<div
 							style={{
@@ -451,7 +444,7 @@ function DeviceGroupManagerContent() {
 						>
 							{bots.length === 0 ? (
 								<p style={{ margin: 0, fontSize: "12px", color: "var(--text-faint)" }}>
-									{zh ? "暂无可用 Bot" : "No Bots available"}
+									{t("deviceGroupManagerNoBots")}
 								</p>
 							) : (
 								bots.map((bot) => (
@@ -472,8 +465,8 @@ function DeviceGroupManagerContent() {
 										<span>
 											<strong>{bot.name}</strong>
 											<small style={{ color: "var(--text-faint)", marginInlineStart: "6px" }}>
-												{bot.online ? (zh ? "在线" : "Online") : zh ? "离线" : "Offline"}
-												{!bot.enabled ? (zh ? " · 已禁用" : " · Disabled") : ""}
+												{bot.online ? t("deviceHubOnline") : t("deviceHubOffline")}
+												{!bot.enabled ? t("deviceGroupManagerDisabledSuffix") : ""}
 											</small>
 										</span>
 									</label>
@@ -484,9 +477,7 @@ function DeviceGroupManagerContent() {
 
 					{!rooms.find((room) => room.id === managingRoomId)?.router?.enabled && (
 						<div className="dc-field" style={{ marginBottom: "16px" }}>
-							<label htmlFor="dg-manager-edit-primary">
-								{zh ? "原主 Bot（Router 未启用时）" : "Legacy primary Bot (when Router is disabled)"}
-							</label>
+							<label htmlFor="dg-manager-edit-primary">{t("deviceGroupManagerLegacyPrimary")}</label>
 							<select
 								id="dg-manager-edit-primary"
 								value={memberBotIds.includes(memberPrimaryBotId) ? memberPrimaryBotId : ""}
@@ -502,7 +493,7 @@ function DeviceGroupManagerContent() {
 									fontSize: "13px",
 								}}
 							>
-								<option value="">{zh ? "不设置（需 @ Bot）" : "None (mention a Bot)"}</option>
+								<option value="">{t("deviceGroupManagerNoPrimary")}</option>
 								{bots
 									.filter((bot) => memberBotIds.includes(bot.id))
 									.map((bot) => (
@@ -522,22 +513,20 @@ function DeviceGroupManagerContent() {
 							onClick={() => void handleSaveMembers(managingRoomId)}
 						>
 							<FiCheck aria-hidden />
-							{busy ? (zh ? "保存中…" : "Saving…") : zh ? "保存成员设置" : "Save Members"}
+							{busy ? t("saving") : t("deviceGroupManagerSaveMembers")}
 						</button>
 						<button type="button" className="dc-button" onClick={() => setManagingRoomId(null)} disabled={busy}>
-							{zh ? "取消" : "Cancel"}
+							{t("cancel")}
 						</button>
 					</div>
 				</div>
 			)}
 
-			{loading && <p role="status">{zh ? "加载中…" : "Loading…"}</p>}
+			{loading && <p role="status">{t("loading")}</p>}
 
 			{!loading && rooms.length === 0 && (
 				<p style={{ color: "var(--text-faint)", fontSize: "13px", padding: "12px 0" }}>
-					{zh
-						? "还没有群聊，点击上方“新建群聊”开始协作。"
-						: "No groups yet. Click 'Create Group' above to get started."}
+					{t("deviceGroupManagerEmpty")}
 				</p>
 			)}
 
@@ -557,13 +546,10 @@ function DeviceGroupManagerContent() {
 								<strong>{room.name}</strong>
 								<span style={{ display: "flex", gap: "8px", flexWrap: "wrap", alignItems: "center" }}>
 									<span>
-										{zh
-											? `${room.botIds.length} 个 Bot${
-													memberBots.length ? `: ${memberBots.map((b) => b.name).join(", ")}` : ""
-												}`
-											: `${room.botIds.length} Bots${
-													memberBots.length ? `: ${memberBots.map((b) => b.name).join(", ")}` : ""
-												}`}
+										{t("deviceGroupManagerBotCount", {
+											count: room.botIds.length,
+											members: memberBots.length ? `: ${memberBots.map((b) => b.name).join(", ")}` : "",
+										})}
 									</span>
 									{room.router?.enabled && (
 										<span>
@@ -572,7 +558,7 @@ function DeviceGroupManagerContent() {
 									)}
 									{!room.router?.enabled && primaryBot && (
 										<span style={{ color: "var(--accent)" }}>
-											{zh ? `[主 Bot: ${primaryBot.name}]` : `[Primary: ${primaryBot.name}]`}
+											{t("deviceGroupManagerPrimaryBadge", { name: primaryBot.name })}
 										</span>
 									)}
 								</span>
@@ -582,11 +568,11 @@ function DeviceGroupManagerContent() {
 								<button
 									type="button"
 									className="dc-button is-primary"
-									title={zh ? "打开聊天" : "Open chat"}
+									title={t("deviceGroupManagerOpenChat")}
 									onClick={() => openChat(room.id)}
 								>
 									<FiMessageSquare aria-hidden />
-									{zh ? "打开聊天" : "Open chat"}
+									{t("deviceGroupManagerOpenChat")}
 								</button>
 								<button
 									type="button"
@@ -602,21 +588,21 @@ function DeviceGroupManagerContent() {
 									aria-expanded={selectedPanel?.roomId === room.id && selectedPanel.kind === "work"}
 									onClick={() => setSelectedPanel({ roomId: room.id, kind: "work" })}
 								>
-									{zh ? "工单与运行" : "Work items & runs"}
+									{t("deviceGroupManagerWorkItems")}
 								</button>
 								<button
 									type="button"
 									className="dc-button"
-									title={zh ? "管理成员" : "Manage members"}
+									title={t("deviceGroupManagerManageMembersTitle")}
 									onClick={() => startManageMembers(room)}
 								>
 									<FiUsers aria-hidden />
-									{zh ? "管理成员" : "Members"}
+									{t("deviceGroupManagerMembers")}
 								</button>
 								<button
 									type="button"
 									className="dc-button"
-									title={zh ? "重命名" : "Rename"}
+									title={t("deviceGroupManagerRename")}
 									onClick={() => {
 										if (isRenaming) {
 											setRenamingRoomId(null);
@@ -627,12 +613,12 @@ function DeviceGroupManagerContent() {
 									}}
 								>
 									<FiEdit2 aria-hidden />
-									{zh ? "重命名" : "Rename"}
+									{t("deviceGroupManagerRename")}
 								</button>
 								<button
 									type="button"
 									className="dc-button is-danger"
-									title={zh ? "删除群聊" : "Delete group"}
+									title={t("deviceGroupManagerDelete")}
 									disabled={busy}
 									onClick={() => void handleDelete(room)}
 								>
@@ -662,7 +648,7 @@ function DeviceGroupManagerContent() {
 										disabled={busy}
 										value={renameValue}
 										onChange={(e) => setRenameValue(e.target.value)}
-										placeholder={zh ? "输入新群名称" : "Enter new name"}
+										placeholder={t("deviceGroupManagerRenamePlaceholder")}
 										style={{
 											flex: 1,
 											minWidth: "180px",
@@ -676,11 +662,11 @@ function DeviceGroupManagerContent() {
 									/>
 									<button type="submit" className="dc-button is-primary" disabled={busy || !renameValue.trim()}>
 										<FiCheck aria-hidden />
-										{zh ? "保存" : "Save"}
+										{t("save")}
 									</button>
 									<button type="button" className="dc-button" disabled={busy} onClick={() => setRenamingRoomId(null)}>
 										<FiX aria-hidden />
-										{zh ? "取消" : "Cancel"}
+										{t("cancel")}
 									</button>
 								</form>
 							)}
@@ -689,7 +675,7 @@ function DeviceGroupManagerContent() {
 				})}
 			</div>
 			{selectedRoom && selectedPanel && (
-				<section className="dc-card" aria-label={zh ? "群组设置" : "Group settings"}>
+				<section className="dc-card" aria-label={t("deviceGroupManagerSettingsAria")}>
 					<div className="dg-heading">
 						<h3>{selectedRoom.name}</h3>
 						<div className="dc-actions">
@@ -707,11 +693,11 @@ function DeviceGroupManagerContent() {
 								aria-pressed={selectedPanel.kind === "work"}
 								onClick={() => setSelectedPanel({ roomId: selectedRoom.id, kind: "work" })}
 							>
-								{zh ? "工单与运行" : "Work items & runs"}
+								{t("deviceGroupManagerWorkItems")}
 							</button>
 							<button type="button" className="dc-button" onClick={() => setSelectedPanel(null)}>
 								<FiX aria-hidden />
-								{zh ? "关闭" : "Close"}
+								{t("close")}
 							</button>
 						</div>
 					</div>

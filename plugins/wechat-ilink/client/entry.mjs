@@ -47,6 +47,10 @@ function loadQrFactory() {
 }
 
 import { esc } from "@pi-web-ui/plugin-sdk/client";
+import { makeT } from "./i18n.mjs";
+
+/** 面板文案：语言解析 / 回退 / 插值都在 SDK 里，这里只按当前界面语言取词。 */
+const t = makeT();
 
 function timeStr(at) {
 	try {
@@ -96,55 +100,55 @@ export default {
 			.wx button { min-height: 40px; }
 		}
 	</style>
-	<h2>💬 微信通道 <span class="pill off" data-ref="pill">未连接</span></h2>
-	<p class="hint">扫码登录后，微信里直接指挥 agent（出站长轮询，无需公网）。陌生人先配对，白名单在 ⚙ 设置里。</p>
+	<h2>${t("title")} <span class="pill off" data-ref="pill">${t("statusDisconnected")}</span></h2>
+	<p class="hint">${t("hint")}</p>
 	<section data-ref="sec-workspace">
-		<h3>工作空间根目录（项目）</h3>
-		<div class="ws-status" data-ref="ws-status">读取中…</div>
+		<h3>${t("wsTitle")}</h3>
+		<div class="ws-status" data-ref="ws-status">${t("reading")}</div>
 		<div class="row">
-			<input data-ref="ws-input" placeholder="留空 = 跟随当前网页项目根目录" style="flex:1;min-width:220px" />
+			<input data-ref="ws-input" placeholder="${t("wsInputPlaceholder")}" style="flex:1;min-width:220px" />
 			<select data-ref="ws-select" style="min-width:140px;background:var(--bg-elev,#16161d);color:inherit;border:1px solid var(--border,#333);border-radius:6px;padding:6px 8px;font:inherit;">
-				<option value="">快速点选已有项目…</option>
+				<option value="">${t("wsQuickPick")}</option>
 			</select>
-			<button class="ghost" data-ref="ws-browse">📂 浏览目录…</button>
-			<button data-ref="ws-save">设为根目录</button>
-			<button class="ghost" data-ref="ws-use-cwd">设为当前项目</button>
-			<button class="ghost" data-ref="ws-open-project">把项目改为此根目录</button>
-			<button class="ghost" data-ref="ws-clear">清空固定</button>
+			<button class="ghost" data-ref="ws-browse">${t("wsBrowse")}</button>
+			<button data-ref="ws-save">${t("wsSave")}</button>
+			<button class="ghost" data-ref="ws-use-cwd">${t("wsUseCwd")}</button>
+			<button class="ghost" data-ref="ws-open-project">${t("wsOpenProject")}</button>
+			<button class="ghost" data-ref="ws-clear">${t("wsClear")}</button>
 		</div>
 	</section>
 	<section data-ref="sec-model">
-		<h3>AI 模型与思考强度</h3>
+		<h3>${t("modelTitle")}</h3>
 		<div class="row">
-			<input data-ref="model-input" placeholder="留空 = 跟随全局默认模型（支持输入或选择）" style="flex:2;min-width:180px" />
-			<button class="ghost" data-ref="model-browse">✨ 选择模型…</button>
+			<input data-ref="model-input" placeholder="${t("modelInputPlaceholder")}" style="flex:2;min-width:180px" />
+			<button class="ghost" data-ref="model-browse">${t("modelBrowse")}</button>
 			<select data-ref="thinking-select" style="min-width:120px;background:var(--bg-elev,#16161d);color:inherit;border:1px solid var(--border,#333);border-radius:6px;padding:6px 8px;font:inherit;">
-				<option value="">思考强度：跟随全局</option>
-				<option value="off">思考：关闭 (off)</option>
-				<option value="low">思考：低 (low)</option>
-				<option value="medium">思考：中 (medium)</option>
-				<option value="high">思考：高 (high)</option>
-				<option value="max">思考：最大 (max)</option>
+				<option value="">${t("thinkingFollowGlobal")}</option>
+				<option value="off">${t("thinkingOff")}</option>
+				<option value="low">${t("thinkingLow")}</option>
+				<option value="medium">${t("thinkingMedium")}</option>
+				<option value="high">${t("thinkingHigh")}</option>
+				<option value="max">${t("thinkingMax")}</option>
 			</select>
-			<button data-ref="model-save">保存配置</button>
-			<button class="ghost" data-ref="model-clear">恢复默认</button>
+			<button data-ref="model-save">${t("modelSave")}</button>
+			<button class="ghost" data-ref="model-clear">${t("modelClear")}</button>
 		</div>
 		<div style="margin-top:8px">
 			<label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-size:12px;opacity:.9">
 				<input type="checkbox" data-ref="bind-active-check" />
-				<span>💻📱 电脑手机消息同步：投递到网页当前打开的对话（大屏实时看流式思考与工具输出）</span>
+				<span>${t("bindActive")}</span>
 			</label>
 		</div>
 	</section>
-	<section data-ref="sec-login"><h3>登录</h3><div data-ref="login"></div></section>
-	<section data-ref="sec-pair" style="display:none"><h3>待配对</h3><ul data-ref="pending"></ul></section>
-	<section><h3>收件箱</h3><ul data-ref="inbox"><li style="opacity:.5">暂无消息</li></ul></section>
-	<section><h3>手动发送</h3>
+	<section data-ref="sec-login"><h3>${t("loginSection")}</h3><div data-ref="login"></div></section>
+	<section data-ref="sec-pair" style="display:none"><h3>${t("pendingSection")}</h3><ul data-ref="pending"></ul></section>
+	<section><h3>${t("inboxSection")}</h3><ul data-ref="inbox"><li style="opacity:.5">${t("inboxEmpty")}</li></ul></section>
+	<section><h3>${t("sendSection")}</h3>
 		<div class="row">
-			<input data-ref="to" placeholder="微信用户 ID" style="flex:1;min-width:140px" />
-			<input data-ref="text" placeholder="文本内容" style="flex:2;min-width:180px" />
-			<input data-ref="media" placeholder="图片/文件路径或 URL（可选）" style="flex:2;min-width:180px" />
-			<button data-ref="send">发送</button>
+			<input data-ref="to" placeholder="${t("toPlaceholder")}" style="flex:1;min-width:140px" />
+			<input data-ref="text" placeholder="${t("textPlaceholder")}" style="flex:2;min-width:180px" />
+			<input data-ref="media" placeholder="${t("mediaPlaceholder")}" style="flex:2;min-width:180px" />
+			<button data-ref="send">${t("sendBtn")}</button>
 		</div>
 		<div class="err" data-ref="err" style="margin-top:6px"></div>
 	</section>
@@ -195,14 +199,14 @@ export default {
 
 			if (wsSelectEl) {
 				const currentVal = wsSelectEl.value;
-				const options = [{ label: "选择最近项目…", value: "" }];
+				const options = [{ label: t("wsOptionRecent"), value: "" }];
 				if (hostCwd) {
 					const name =
 						hostCwd
 							.replace(/[\\/]+$/, "")
 							.split(/[\\/]/)
 							.pop() || hostCwd;
-					options.push({ label: `当前网页项目：${name} (${hostCwd})`, value: hostCwd });
+					options.push({ label: t("wsOptionHostProject", { name, path: hostCwd }), value: hostCwd });
 				}
 				if (ws && ws !== hostCwd) {
 					const name =
@@ -210,7 +214,7 @@ export default {
 							.replace(/[\\/]+$/, "")
 							.split(/[\\/]/)
 							.pop() || ws;
-					options.push({ label: `已固定根目录：${name} (${ws})`, value: ws });
+					options.push({ label: t("wsOptionPinned", { name, path: ws }), value: ws });
 				}
 				try {
 					const hostProjects = globalThis.window?.__piWebUiHost?.listProjects?.() ?? [];
@@ -236,11 +240,13 @@ export default {
 			if (ws) {
 				const diffNote =
 					hostCwd && hostCwd !== ws
-						? ` <span style="opacity:.7">（当前网页项目：<code>${esc(hostCwd)}</code>）</span>`
+						? ` <span style="opacity:.7">${t("wsPinnedDiff", { path: `<code>${esc(hostCwd)}</code>` })}</span>`
 						: "";
-				wsStatusEl.innerHTML = `已固定微信根目录：<code>${esc(ws)}</code>${diffNote}`;
+				wsStatusEl.innerHTML = `${t("wsPinned", { path: `<code>${esc(ws)}</code>` })}${diffNote}`;
 			} else {
-				wsStatusEl.innerHTML = `未固定（默认跟随当前网页项目${hostCwd ? `：<code>${esc(hostCwd)}</code>` : ""}）`;
+				wsStatusEl.innerHTML = hostCwd
+					? t("wsUnpinnedWithHost", { path: `<code>${esc(hostCwd)}</code>` })
+					: t("wsUnpinned");
 			}
 			if (wsUseCwdBtn) {
 				wsUseCwdBtn.disabled = !hostCwd || ws === hostCwd;
@@ -268,19 +274,19 @@ export default {
 			}
 
 			pill.textContent = s.loggedIn
-				? `已登录${s.botId ? ` · ${s.botId}` : ""}${s.polling ? " · 接收中" : ""}${s.paused ? " · 受限暂停" : ""}`
-				: "未连接";
+				? `${t("statusLoggedIn")}${s.botId ? ` · ${s.botId}` : ""}${s.polling ? t("statusReceiving") : ""}${s.paused ? t("statusPaused") : ""}`
+				: t("statusDisconnected");
 			pill.className = `pill ${s.loggedIn ? "on" : "off"}`;
 			if (s.loggedIn) {
-				loginEl.innerHTML = `<div class="row"><span style="opacity:.7">上次登录：${esc(timeStr(s.loginAt))}</span>
-					<button class="ghost" data-act="logout">登出</button></div>
-					${s.lastError ? `<div class="err">轮询：${esc(s.lastError)}</div>` : ""}`;
+				loginEl.innerHTML = `<div class="row"><span style="opacity:.7">${t("lastLogin", { time: esc(timeStr(s.loginAt)) })}</span>
+					<button class="ghost" data-act="logout">${t("logout")}</button></div>
+					${s.lastError ? `<div class="err">${t("pollError", { error: esc(s.lastError) })}</div>` : ""}`;
 			} else if (s.qr) {
 				const url = String(s.qr.image ?? s.qr.qrcode ?? "");
-				loginEl.innerHTML = `<div class="qr"><div data-qr="1">生成二维码中…</div>
-					<p style="opacity:.7">微信扫码确认登录（5 分钟有效，过期后重新点“扫码登录”）</p>
-					<p style="opacity:.7">扫不上？<a href="${esc(url)}" target="_blank" rel="noopener">在新标签页打开官方扫码页</a></p>
-					<div class="row"><button class="ghost" data-act="cancel">取消</button></div></div>`;
+				loginEl.innerHTML = `<div class="qr"><div data-qr="1">${t("qrGenerating")}</div>
+					<p style="opacity:.7">${t("qrHint")}</p>
+					<p style="opacity:.7">${t("qrCantScan")}<a href="${esc(url)}" target="_blank" rel="noopener">${t("qrOpenOfficial")}</a></p>
+					<div class="row"><button class="ghost" data-act="cancel">${t("cancel")}</button></div></div>`;
 				const slot = loginEl.querySelector('[data-qr="1"]');
 				if (url && slot) {
 					loadQrFactory().then((factory) => {
@@ -297,15 +303,15 @@ export default {
 					});
 				}
 			} else {
-				loginEl.innerHTML = `<div class="row"><button data-act="login">扫码登录</button></div>`;
+				loginEl.innerHTML = `<div class="row"><button data-act="login">${t("loginBtn")}</button></div>`;
 			}
 			pendingSec.style.display = (s.pendingPeers ?? []).length ? "" : "none";
 			pendingEl.innerHTML = (s.pendingPeers ?? [])
 				.map(
 					(p) => `
 <li><div class="row"><b>${esc(p)}</b>
-<button data-act="allow" data-peer="${esc(p)}">允许</button>
-<button class="ghost" data-act="deny" data-peer="${esc(p)}">拒绝</button></div></li>`,
+<button data-act="allow" data-peer="${esc(p)}">${t("allow")}</button>
+<button class="ghost" data-act="deny" data-peer="${esc(p)}">${t("deny")}</button></div></li>`,
 				)
 				.join("");
 			renderInbox(s.inbox ?? []);
@@ -323,13 +329,13 @@ export default {
 	<div class="meta">
 		<b>${m.dir === "in" ? "←" : "→"} ${esc(m.peer)}</b>
 		<span>${esc(timeStr(m.at))}</span>
-		<button class="ghost" data-act="open-session" style="padding:1px 8px;font-size:11px;margin-left:auto;height:22px;min-height:unset">在主界面打开对话流</button>
+		<button class="ghost" data-act="open-session" style="padding:1px 8px;font-size:11px;margin-left:auto;height:22px;min-height:unset">${t("openSession")}</button>
 	</div>
 	<div style="white-space:pre-wrap">${esc(m.text)}</div>
 </li>`,
 						)
 						.join("")
-				: `<li style="opacity:.5">暂无消息</li>`;
+				: `<li style="opacity:.5">${t("inboxEmpty")}</li>`;
 		}
 
 		container.addEventListener("click", (e) => {

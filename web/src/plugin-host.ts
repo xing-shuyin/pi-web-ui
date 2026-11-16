@@ -1,3 +1,8 @@
+/**
+ * Host-API error strings in this module are developer-facing (returned to plugin
+ * authors and logged), not user-visible UI: they stay English/Chinese as written and
+ * are recorded by the hardcoded-string guard as reason `data`, not migrated.
+ */
 import { listPluginTtsProviders } from "./tts-client";
 export { getPluginTtsProvider, listPluginTtsProviders, onTtsProvidersChange } from "./tts-client";
 /// <reference lib="dom" />

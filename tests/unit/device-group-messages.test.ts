@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { en, interpolate, zh, type Translate } from "../../web/src/i18n";
 import {
 	groupConversationState,
 	groupDeviceHits,
@@ -10,6 +11,10 @@ import {
 	type GroupDetail,
 	type GroupTask,
 } from "../../web/src/device-group-messages";
+
+// The adapter is pure; production passes the hook's t, tests pass catalog translators.
+const enT: Translate = (key, vars) => interpolate(en[key], vars);
+const zhT: Translate = (key, vars) => interpolate(zh[key], vars);
 const devices = [
 	{ id: "a", name: "Twin" },
 	{ id: "b", name: "Twin" },
@@ -65,6 +70,7 @@ describe("group conversation adapter", () => {
 				],
 			},
 			devices,
+			enT,
 		);
 		expect(state.messages.map((m) => m.role)).toEqual(["user", "assistant", "assistant"]);
 		expect(state.messages[1].content).toEqual([{ type: "text", text: "**done**" }]);
@@ -73,7 +79,7 @@ describe("group conversation adapter", () => {
 		expect(state.messages[2].content[0].type).toBe("text");
 		expect((state.messages[2].content[0] as { text: string }).text).toContain("Task Queued");
 		expect((state.messages[2].content[0] as { text: string }).text).toContain("next");
-		expect(groupConversationState("other", null, devices).state.messages).toEqual([]);
+		expect(groupConversationState("other", null, devices, enT).state.messages).toEqual([]);
 	});
 
 	it("renders running task with active progress as structured card", () => {
@@ -103,7 +109,7 @@ describe("group conversation adapter", () => {
 				],
 			},
 			devices,
-			true,
+			zhT,
 		);
 		const content = (state.messages[0].content[0] as { text: string }).text;
 		expect(content).toContain("任务执行中");
@@ -127,12 +133,12 @@ describe("group conversation adapter", () => {
 	it("formats technical device execution failures into readable markdown quotes", () => {
 		const failure =
 			"Device task failed [phase=model; category=execution_failed]. Local agent execution failed; inspect the retained task conversation on the target device.";
-		const formattedZh = formatDeviceFailureReport(failure, true);
+		const formattedZh = formatDeviceFailureReport(failure, zhT);
 		expect(formattedZh).toContain("任务执行中断 · 模型推理阶段");
 		expect(formattedZh).toContain("模型推理阶段");
 		expect(formattedZh).toContain("execution_failed");
 
-		const formattedEn = formatDeviceFailureReport(failure, false);
+		const formattedEn = formatDeviceFailureReport(failure, enT);
 		expect(formattedEn).toContain("Task Interrupted · Model Execution");
 		expect(formattedEn).toContain("execution_failed");
 	});
@@ -140,7 +146,7 @@ describe("group conversation adapter", () => {
 		"shows a linked %s report once with Bot, device and status",
 		(status) => {
 			const detail = reportDetail(status);
-			const { state, labels } = groupConversationState("room", detail, devices);
+			const { state, labels } = groupConversationState("room", detail, devices, enT);
 			expect(state.messages.map((m) => m.id)).toEqual(["group-message:dispatch", "group-message:report"]);
 			expect(state.messages[1].content).toEqual([{ type: "text", text: "**result**" }]);
 			expect(labels.get("group-message:report")).toBe(
@@ -164,7 +170,7 @@ describe("group conversation adapter", () => {
 			},
 			{ ...detail.messages[1], id: "report3", taskIds: ["t3"] },
 		);
-		const { state, labels } = groupConversationState("room", detail, devices);
+		const { state, labels } = groupConversationState("room", detail, devices, enT);
 		expect(state.messages.map((m) => m.id)).toEqual([
 			"group-message:dispatch",
 			"group-message:report",
@@ -186,7 +192,7 @@ describe("group conversation adapter", () => {
 			},
 		];
 		detail.tasks.push({ ...detail.tasks[0], id: "queued", status: "queued", botId: "b" });
-		const { state, labels } = groupConversationState("room", detail, devices, true);
+		const { state, labels } = groupConversationState("room", detail, devices, zhT);
 		expect(state.messages).toHaveLength(4);
 		expect(labels.get("group-task:t")).toBe("Twin · Studio PC · 运行中");
 		expect(labels.get("group-task:queued")).toBe("Twin · host · 排队中");
@@ -195,14 +201,14 @@ describe("group conversation adapter", () => {
 	it("falls back to task reports when report messages were pruned and retains unlinked history", () => {
 		const detail = reportDetail("completed");
 		detail.messages[1].taskIds = ["pruned-task"];
-		const { state, labels } = groupConversationState("room", detail, devices);
+		const { state, labels } = groupConversationState("room", detail, devices, enT);
 		expect(state.messages.map((m) => m.id)).toEqual(["group-message:dispatch", "group-task:t", "group-message:report"]);
 		expect(labels.get("group-task:t")).toBe("Twin · Studio PC · Completed");
 		expect(labels.get("group-message:report")).toBe("Twin · Studio PC");
 		delete detail.messages[1].taskIds;
-		expect(groupConversationState("room", detail, devices).state.messages).toHaveLength(3);
+		expect(groupConversationState("room", detail, devices, enT).state.messages).toHaveLength(3);
 		detail.messages.pop();
-		expect(groupConversationState("room", detail, devices).state.messages.map((m) => m.id)).toEqual([
+		expect(groupConversationState("room", detail, devices, enT).state.messages.map((m) => m.id)).toEqual([
 			"group-message:dispatch",
 			"group-task:t",
 		]);
@@ -210,9 +216,9 @@ describe("group conversation adapter", () => {
 	it("does not suppress tasks linked by a human or another Bot with identical text", () => {
 		const detail = reportDetail("completed");
 		detail.messages[1].sender.id = "b";
-		expect(groupConversationState("room", detail, devices).state.messages).toHaveLength(3);
+		expect(groupConversationState("room", detail, devices, enT).state.messages).toHaveLength(3);
 		detail.messages.pop();
-		expect(groupConversationState("room", detail, devices).state.messages).toHaveLength(2);
+		expect(groupConversationState("room", detail, devices, enT).state.messages).toHaveLength(2);
 	});
 	it("renders subagent worker tasks as structured cards with collapsible reports and coordinator tags", () => {
 		const detail: GroupDetail = {
@@ -260,7 +266,7 @@ describe("group conversation adapter", () => {
 				},
 			],
 		};
-		const { state, labels } = groupConversationState("room", detail, detail.bots, true);
+		const { state, labels } = groupConversationState("room", detail, detail.bots, zhT);
 
 		expect(labels.get("group-message:m2")).toBe("Architect · host [群组主管]");
 
@@ -305,7 +311,7 @@ describe("group conversation adapter", () => {
 				},
 			],
 		};
-		const { state, labels } = groupConversationState("room", detail, detail.bots, true);
+		const { state, labels } = groupConversationState("room", detail, detail.bots, zhT);
 		expect(labels.get("group-task:t2")).toBe("Worker · worker-pc · 等待前序任务");
 		const waitingMsg = state.messages.find((m) => m.id === "group-task:t2");
 		expect(waitingMsg).toBeDefined();

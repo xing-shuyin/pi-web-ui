@@ -39,36 +39,32 @@ const CRON_PRESETS: { value: string; key: string }[] = [
 const PROMPT_TEMPLATES = [
 	{
 		key: "health",
-		label: "🔍 依赖与健康巡检",
-		prompt:
-			"请对当前项目进行健康与安全性巡检：\n1. 检查 package.json 依赖是否有可升级项或高危安全漏洞；\n2. 检查是否有未解决的构建告警；\n3. 输出一份简洁的健康总结并给出升级建议。",
+		labelKey: "schedulerTplHealthLabel",
+		promptKey: "schedulerTplHealthPrompt",
 	},
 	{
 		key: "test",
-		label: "🧪 测试套件与排查",
-		prompt:
-			"执行测试套件与异常排查：\n1. 运行当前项目的自动化测试套件；\n2. 若有失败用例，读取相关代码并定位根因；\n3. 生成测试失败报告并提出修复补丁建议。",
+		labelKey: "schedulerTplTestLabel",
+		promptKey: "schedulerTplTestPrompt",
 	},
 	{
 		key: "git",
-		label: "🌿 Git 分支与状态审计",
-		prompt:
-			"日常 Git 仓库状态审计：\n1. 检查是否存在未提交的代码修改或冲突标记；\n2. 查看近 3 天本地分支与远程 main 的差异；\n3. 提示需要清理的废弃分支或待合代码。",
+		labelKey: "schedulerTplGitLabel",
+		promptKey: "schedulerTplGitPrompt",
 	},
 	{
 		key: "clean",
-		label: "🧹 缓存与日志清理",
-		prompt:
-			"维护与清理任务：\n1. 检查 dist、.cache、临时日志等目录大小；\n2. 清理过期的构建缓存与临时文件；\n3. 报告清理后节省的磁盘空间。",
+		labelKey: "schedulerTplCleanLabel",
+		promptKey: "schedulerTplCleanPrompt",
 	},
-];
+] as const;
 
 function explainSchedule(draft: Draft, tr: ReturnType<typeof useT>): { summary: string; nextPreview: string } {
 	if (draft.kind === "interval") {
 		const min = Math.max(1, Math.floor(Number(draft.intervalMinutes) || 0));
 		return {
-			summary: `${tr("schedulerKindInterval")} · 每隔 ${min} 分钟执行一次`,
-			nextPreview: `约 ${min} 分钟后`,
+			summary: tr("schedulerSummaryInterval", { label: tr("schedulerKindInterval"), min }),
+			nextPreview: tr("schedulerNextInMinutes", { min }),
 		};
 	}
 	const spec = draft.cron.trim();
@@ -76,28 +72,28 @@ function explainSchedule(draft: Draft, tr: ReturnType<typeof useT>): { summary: 
 	if (hit) {
 		const label = tr(hit.key as Parameters<typeof tr>[0]);
 		if (spec === "0 9 * * 1-5") {
-			return { summary: `${label}（周一至周五 09:00 执行）`, nextPreview: "下个工作日 09:00" };
+			return { summary: tr("schedulerSummaryWorkday", { label }), nextPreview: tr("schedulerNextWorkday") };
 		}
 		if (spec === "0 9 * * 1") {
-			return { summary: `${label}（每周一 09:00 执行）`, nextPreview: "下周一 09:00" };
+			return { summary: tr("schedulerSummaryMonday", { label }), nextPreview: tr("schedulerNextMonday") };
 		}
 		if (spec === "0 9 * * *") {
-			return { summary: `${label}（每天 09:00 执行）`, nextPreview: "明天 09:00" };
+			return { summary: tr("schedulerSummaryDaily", { label }), nextPreview: tr("schedulerNextTomorrow") };
 		}
 		if (spec === "0 * * * *") {
-			return { summary: `${label}（整点执行）`, nextPreview: "下个整点" };
+			return { summary: tr("schedulerSummaryHourly", { label }), nextPreview: tr("schedulerNextHour") };
 		}
 		if (spec === "*/30 * * * *") {
-			return { summary: `${label}（每 30 分钟执行）`, nextPreview: "约 30 分钟后" };
+			return { summary: tr("schedulerSummaryHalfHour", { label }), nextPreview: tr("schedulerNextHalfHour") };
 		}
-		return { summary: label, nextPreview: "按设定周期自动触发" };
+		return { summary: label, nextPreview: tr("schedulerNextCycle") };
 	}
 	if (!spec) {
-		return { summary: "尚未填写 Cron 表达式", nextPreview: "—" };
+		return { summary: tr("schedulerCronMissing"), nextPreview: "—" };
 	}
 	return {
-		summary: `Cron 规则: ${spec}`,
-		nextPreview: "按 Cron 规则自动触发",
+		summary: tr("schedulerCronRuleSummary", { spec }),
+		nextPreview: tr("schedulerNextCron"),
 	};
 }
 
@@ -409,12 +405,12 @@ export function SchedulerPanel({ tasks, cwd, models }: SchedulerPanelProps) {
 								<div className="scheduler-card">
 									<div className="scheduler-card-head">
 										<span className="scheduler-card-title">
-											<FiFileText /> 任务身份与执行目标
+											<FiFileText /> {t("schedulerCardIdentity")}
 										</span>
 									</div>
 									<div className="scheduler-grid-2">
 										<div className="scheduler-field">
-											<label className="scheduler-field-label">任务名称</label>
+											<label className="scheduler-field-label">{t("schedulerFieldName")}</label>
 											<input
 												className="set-input"
 												placeholder={t("schedulerNamePlaceholder")}
@@ -423,7 +419,7 @@ export function SchedulerPanel({ tasks, cwd, models }: SchedulerPanelProps) {
 											/>
 										</div>
 										<div className="scheduler-field">
-											<label className="scheduler-field-label">任务说明（可选）</label>
+											<label className="scheduler-field-label">{t("schedulerFieldDescription")}</label>
 											<input
 												className="set-input"
 												placeholder={t("schedulerDescPlaceholder")}
@@ -503,7 +499,7 @@ export function SchedulerPanel({ tasks, cwd, models }: SchedulerPanelProps) {
 								<div className="scheduler-card">
 									<div className="scheduler-card-head">
 										<span className="scheduler-card-title">
-											<FiClock /> {t("schedulerKindLabel")} 与时间预演
+											<FiClock /> {t("schedulerCardSchedule", { label: t("schedulerKindLabel") })}
 										</span>
 										<span className="scheduler-spec-badge">
 											{draft.kind === "cron" ? draft.cron : `${draft.intervalMinutes || 1} min`}
@@ -511,7 +507,7 @@ export function SchedulerPanel({ tasks, cwd, models }: SchedulerPanelProps) {
 									</div>
 
 									<div className="scheduler-field">
-										<label className="scheduler-field-label">常用频次快捷设定</label>
+										<label className="scheduler-field-label">{t("schedulerPresetQuickLabel")}</label>
 										<div className="scheduler-pills">
 											{CRON_PRESETS.map((p) => {
 												const active = draft.kind === "cron" && draft.preset === p.value;
@@ -564,7 +560,9 @@ export function SchedulerPanel({ tasks, cwd, models }: SchedulerPanelProps) {
 									{draft.kind === "cron" && draft.preset === "custom" && (
 										<div className="scheduler-sub-row">
 											<div className="scheduler-field" style={{ flex: 1 }}>
-												<label className="scheduler-field-label">{t("schedulerKindCron")} (分 时 日 月 周)</label>
+												<label className="scheduler-field-label">
+													{t("schedulerKindCron")} {t("schedulerCronFormat")}
+												</label>
 												<input
 													className="set-input"
 													placeholder={t("schedulerCronPlaceholder")}
@@ -611,25 +609,28 @@ export function SchedulerPanel({ tasks, cwd, models }: SchedulerPanelProps) {
 								<div className="scheduler-card">
 									<div className="scheduler-card-head">
 										<span className="scheduler-card-title">
-											<FiActivity /> {draft.target === "canvas" ? "附加输入（Prompt）" : "给 Agent 的具体任务指令"}
+											<FiActivity />{" "}
+											{draft.target === "canvas" ? t("schedulerCardCanvasPrompt") : t("schedulerCardAgentPrompt")}
 										</span>
 										<span className="scheduler-card-hint">
-											{draft.prompt.length > 0 ? `${draft.prompt.length} 字` : "支持多步骤与 Markdown"}
+											{draft.prompt.length > 0
+												? t("schedulerPromptCharCount", { count: draft.prompt.length })
+												: t("schedulerPromptSupportsMarkdown")}
 										</span>
 									</div>
 
 									{draft.target === "conversation" && (
 										<div className="scheduler-tpl-bar">
-											<span className="scheduler-tpl-label">快捷填入巡检模板：</span>
+											<span className="scheduler-tpl-label">{t("schedulerTemplateQuickFill")}</span>
 											<div className="scheduler-tpl-chips">
 												{PROMPT_TEMPLATES.map((tpl) => (
 													<button
 														key={tpl.key}
 														type="button"
 														className="scheduler-tpl-chip"
-														onClick={() => setDraft({ ...draft, prompt: tpl.prompt })}
+														onClick={() => setDraft({ ...draft, prompt: t(tpl.promptKey) })}
 													>
-														{tpl.label}
+														{t(tpl.labelKey)}
 													</button>
 												))}
 											</div>
@@ -650,7 +651,7 @@ export function SchedulerPanel({ tasks, cwd, models }: SchedulerPanelProps) {
 								<div className="scheduler-card">
 									<div className="scheduler-card-head">
 										<span className="scheduler-card-title">
-											<FiSliders /> 运行模型与容灾策略
+											<FiSliders /> {t("schedulerCardModel")}
 										</span>
 									</div>
 
@@ -692,7 +693,7 @@ export function SchedulerPanel({ tasks, cwd, models }: SchedulerPanelProps) {
 											</>
 										) : (
 											<div className="scheduler-field" style={{ gridColumn: "span 2" }}>
-												<span className="set-hint">画布工作流将使用画布各节点自身绑定的模型与执行逻辑运行。</span>
+												<span className="set-hint">{t("schedulerCanvasModelHint")}</span>
 											</div>
 										)}
 									</div>
@@ -716,7 +717,7 @@ export function SchedulerPanel({ tasks, cwd, models }: SchedulerPanelProps) {
 
 							<div className="scheduler-foot">
 								<div className="scheduler-foot-tip">
-									<span>💡 定时任务在后台自动静默执行，可在列表中查看执行记录与产出。</span>
+									<span>{t("schedulerFooterTip")}</span>
 								</div>
 								<div className="scheduler-foot-btns">
 									<button type="button" className="btn" onClick={() => setDraft(null)}>

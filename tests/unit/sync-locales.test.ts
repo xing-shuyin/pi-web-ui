@@ -159,4 +159,29 @@ describe("sync-locales", () => {
 			expect(Object.keys(synced)).toEqual(["code", "nativeName", "version", "strings", "serverStrings"]);
 		});
 	});
+
+	it("refreshTraditional 重转逐字等于简中的陈旧繁中译文，并保留真实译文", async () => {
+		await sandbox(async (repo) => {
+			moduleSource(repo, "core", "zh", { settings: "设置", save: "保存", plain: "苹果" });
+			moduleSource(repo, "core", "en", { settings: "Settings", save: "Save", plain: "Apple" });
+			pack(repo, "zh-TW", { settings: "设置", save: "儲存", plain: "蘋果" });
+			const res = await syncLocales({ repoRoot: repo, refreshTraditional: true });
+			const after = readPack(repo, "zh-TW").strings;
+			expect(after.settings, "陈旧的简中值必须重新转换").not.toBe("设置");
+			expect(after.settings).toBe("設定");
+			expect(after.save, "真实译文保留").toBe("儲存");
+			expect(after.plain).toBe("蘋果");
+			expect(res.totalUpdated).toBeGreaterThan(0);
+		});
+	});
+
+	it("未启用 refreshTraditional 时保留陈旧译文（保持既有行为）", async () => {
+		await sandbox(async (repo) => {
+			moduleSource(repo, "core", "zh", { settings: "设置" });
+			moduleSource(repo, "core", "en", { settings: "Settings" });
+			pack(repo, "zh-TW", { settings: "设置" });
+			await syncLocales({ repoRoot: repo });
+			expect(readPack(repo, "zh-TW").strings.settings).toBe("设置");
+		});
+	});
 });

@@ -38,6 +38,8 @@ const PUNCT_RULES = [
 	[/([一-鿿])\?/g, "$1？"],
 ];
 
+const TRADITIONAL_CODES = new Set(["zh-TW", "zh-Hant", "zh-HK"]);
+
 const COMMON_S2T = [
 	["设置", "設定"],
 	["配置", "配置"],
@@ -148,6 +150,8 @@ export async function syncLocales(options = {}) {
 	const repoRoot = options.repoRoot || root;
 	const dryRun = Boolean(options.dryRun);
 	const checkOnly = Boolean(options.checkOnly);
+	// 显式重转：只修复「繁中包逐字等于简中原文」的陈旧条目，不碰真实译文。
+	const refreshTraditional = Boolean(options.refreshTraditional);
 
 	const localesDirPath = join(repoRoot, LOCALES_DIR);
 	// Validate the complete source before touching any pack. A translated module is authoritative.
@@ -158,6 +162,14 @@ export async function syncLocales(options = {}) {
 	const zhSet = new Set(zhKeys);
 
 	const opencc = await loadOpenCc(repoRoot);
+
+	/** 繁中三包的统一转换入口：有 opencc 用 opencc，否则退回词汇+标点规则。 */
+	const convertTraditional = (code, zhVal, key) => {
+		if (code === "zh-TW")
+			return opencc ? opencc.tw(zhVal, key) : applyRules(applyRules(zhVal, COMMON_S2T), PUNCT_RULES);
+		if (code === "zh-Hant") return opencc ? opencc.hant(zhVal) : applyRules(applyRules(zhVal, COMMON_S2T), PUNCT_RULES);
+		return opencc ? opencc.hk(zhVal) : applyRules(applyRules(zhVal, COMMON_S2T), PUNCT_RULES);
+	};
 
 	const packFiles = readdirSync(localesDirPath)
 		.filter((f) => f.endsWith(".json"))
@@ -198,6 +210,11 @@ export async function syncLocales(options = {}) {
 				// 保留已有翻译，但需校验占位符完整性
 				let val = originalStrings[k];
 				const zhVal = zh.map.get(k) || "";
+				if (refreshTraditional && TRADITIONAL_CODES.has(pack.code) && val === zhVal) {
+					// 陈旧条目：繁中包与简中逐字相同且转换确有差别 → 重新转换
+					const converted = convertTraditional(pack.code, zhVal, k);
+					if (converted !== zhVal) val = converted;
+				}
 				const zhHolders = extractPlaceholders(zhVal);
 				const valHolders = typeof val === "string" ? extractPlaceholders(val) : null;
 				if (typeof val !== "string" || !val.length || JSON.stringify(zhHolders) !== JSON.stringify(valHolders)) {
@@ -213,12 +230,8 @@ export async function syncLocales(options = {}) {
 				const zhVal = zh.map.get(k) || "";
 				const enVal = en.map.get(k) || zhVal;
 
-				if (pack.code === "zh-TW") {
-					newStrings[k] = opencc ? opencc.tw(zhVal, k) : applyRules(applyRules(zhVal, COMMON_S2T), PUNCT_RULES);
-				} else if (pack.code === "zh-Hant") {
-					newStrings[k] = opencc ? opencc.hant(zhVal) : applyRules(applyRules(zhVal, COMMON_S2T), PUNCT_RULES);
-				} else if (pack.code === "zh-HK") {
-					newStrings[k] = opencc ? opencc.hk(zhVal) : applyRules(applyRules(zhVal, COMMON_S2T), PUNCT_RULES);
+				if (TRADITIONAL_CODES.has(pack.code)) {
+					newStrings[k] = convertTraditional(pack.code, zhVal, k);
 				} else {
 					newStrings[k] = enVal;
 				}
@@ -269,6 +282,7 @@ async function main() {
 	const argv = process.argv.slice(2);
 	const dryRun = argv.includes("--dry-run");
 	const checkOnly = argv.includes("--check");
+	const refreshTraditional = argv.includes("--refresh-traditional");
 
 	if (argv.includes("-h") || argv.includes("--help")) {
 		console.log("用法：node scripts/sync-locales.mjs [--dry-run] [--check]");
@@ -277,11 +291,12 @@ async function main() {
 		);
 		console.log("  --dry-run：只打印待改动内容，不写入文件");
 		console.log("  --check：检查是否有不同步，若存在差异以状态码 1 退出（用于 CI）");
+		console.log("  --refresh-traditional：把繁中三包中「逐字等于简中且转换有差别」的陈旧条目重新转换（真实译文保留）");
 		return;
 	}
 
 	console.log(`[i18n:sync] 扫描 ${I18N_FILE} 与 locales/*.json ...`);
-	const res = await syncLocales({ dryRun, checkOnly });
+	const res = await syncLocales({ dryRun, checkOnly, refreshTraditional });
 
 	for (const w of res.warnings) {
 		console.warn(`\x1b[33m⚠  ${w}\x1b[0m`);

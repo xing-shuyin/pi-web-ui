@@ -1,6 +1,7 @@
 import { appUrl } from "./base-url";
 import type { PluginHostTtsProvider, PluginHostTtsProviderInfo } from "./plugin-host";
 
+// Built-in provider ships the same label/labelEn pair as plugin providers; consumers pick one (data).
 let engines: PluginHostTtsProviderInfo[] = [{ id: "builtin", label: "系统语音", labelEn: "System speech" }];
 const listeners = new Set<() => void>();
 let refreshInFlight: Promise<void> | undefined;
@@ -84,6 +85,7 @@ export function getPluginTtsProvider(id: string): PluginHostTtsProvider | undefi
 						if (!stopped) onStart?.();
 					};
 					audio.onended = () => finish();
+					// Synthetic error: both call sites discard the message, so it never reaches the UI (data).
 					audio.onerror = () => finish(new Error("语音播放失败"));
 					await audio.play();
 				} catch (error) {

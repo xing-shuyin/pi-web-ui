@@ -10,7 +10,7 @@ import {
 	FiRefreshCw,
 	FiX,
 } from "react-icons/fi";
-import { isZhLocale, useI18n } from "../i18n";
+import { useT } from "../i18n";
 import { useOverlayZIndex } from "../overlay-stack";
 import { useEscapeKey } from "../shortcut-stack";
 import { useFloatingPanel } from "../use-floating-panel";
@@ -84,8 +84,7 @@ export function DevicePanel({
 	onRefresh,
 	mobile,
 }: DevicePanelProps) {
-	const { locale } = useI18n();
-	const zh = isZhLocale(locale);
+	const t = useT();
 	const [editingId, setEditingId] = useState<string | null>(null);
 	const [draft, setDraft] = useState("");
 	const [saving, setSaving] = useState(false);
@@ -246,14 +245,14 @@ export function DevicePanel({
 	return (
 		<div className={`dp-panel${mobile ? " is-mobile" : ""}`}>
 			<div className="dp-head">
-				<span className="dp-title">{zh ? "设备" : "Devices"}</span>
+				<span className="dp-title">{t("devicePanel.title")}</span>
 				<span className="dp-count">{devices.length}</span>
 				<span className="dp-spacer" />
 				<button
 					type="button"
 					className={`dp-icon dp-refresh${spinning ? " is-spinning" : ""}`}
-					aria-label={zh ? "刷新设备" : "Refresh devices"}
-					title={zh ? "刷新设备（手机上也可下拉刷新）" : "Refresh (or pull down on touch)"}
+					aria-label={t("deviceDirectory.refresh")}
+					title={t("devicePanel.refreshHint")}
 					onClick={handleRefresh}
 				>
 					<FiRefreshCw aria-hidden />
@@ -270,14 +269,12 @@ export function DevicePanel({
 				<div className="dp-pull" style={{ height: pull }} aria-hidden={pull === 0}>
 					{pull > 0 && (
 						<span className="dp-pull-text">
-							{pullReady ? (zh ? "松手刷新" : "Release to refresh") : zh ? "下拉刷新" : "Pull to refresh"}
+							{pullReady ? t("devicePanel.releaseToRefresh") : t("devicePanel.pullToRefresh")}
 						</span>
 					)}
 				</div>
 				<ul className="dp-list">
-					{devices.length === 0 && (
-						<li className="dp-empty">{zh ? "同一账号下暂无其它设备" : "No other devices yet"}</li>
-					)}
+					{devices.length === 0 && <li className="dp-empty">{t("devicePanel.empty")}</li>}
 					{devices.map((device) => {
 						const hasRemark = Boolean(device.remark?.trim());
 						const displayName = hasRemark ? device.remark!.trim() : device.name;
@@ -286,7 +283,7 @@ export function DevicePanel({
 						const menuOpen = menu?.device.id === device.id;
 						// 本机不提供远程入口：打开自己是重复窗口、远程控制自己是无意义的
 						const target = isSelf ? undefined : targetOf(device.id);
-						const meta = [shortId(device.id), device.online ? "" : zh ? "离线" : "Offline"].filter(Boolean).join(" · ");
+						const meta = [shortId(device.id), device.online ? "" : t("deviceHubOffline")].filter(Boolean).join(" · ");
 						return (
 							<li
 								key={device.id}
@@ -304,7 +301,11 @@ export function DevicePanel({
 										href={target}
 										target="_blank"
 										rel="noopener noreferrer"
-										aria-label={`${zh ? "打开设备" : "Open device"} ${displayName}${device.online ? "" : zh ? "（离线）" : " (offline)"}`}
+										aria-label={
+											device.online
+												? t("devicePanel.openDevice", { name: displayName })
+												: t("devicePanel.openDeviceOffline", { name: displayName })
+										}
 										title={`${displayName} · ${device.id}`}
 										onClick={(event) => {
 											if (Date.now() < suppressClickUntil.current) {
@@ -318,7 +319,7 @@ export function DevicePanel({
 								<span className="dp-main">
 									<span className="dp-name">
 										<strong title={displayName}>{displayName}</strong>
-										{isSelf && <em className="dp-tag">{zh ? "本机" : "This"}</em>}
+										{isSelf && <em className="dp-tag">{t("deviceDirectory.thisDevice")}</em>}
 									</span>
 									{isEditing && !mobile ? (
 										<input
@@ -328,7 +329,7 @@ export function DevicePanel({
 											maxLength={80}
 											value={draft}
 											disabled={saving}
-											placeholder={zh ? "输入备注（留空清除）" : "Remark (blank to clear)"}
+											placeholder={t("devicePanel.remarkPlaceholder")}
 											onChange={(event) => setDraft(event.target.value)}
 											onKeyDown={(event) => {
 												if (event.key === "Enter") {
@@ -354,7 +355,7 @@ export function DevicePanel({
 											<button
 												type="button"
 												className="dp-icon"
-												aria-label={zh ? "保存备注" : "Save remark"}
+												aria-label={t("devicePanel.saveRemark")}
 												disabled={saving}
 												onMouseDown={(event) => event.preventDefault()}
 												onClick={() => void commitEdit(device, draft)}
@@ -364,7 +365,7 @@ export function DevicePanel({
 											<button
 												type="button"
 												className="dp-icon"
-												aria-label={zh ? "取消" : "Cancel"}
+												aria-label={t("cancel")}
 												disabled={saving}
 												onMouseDown={(event) => event.preventDefault()}
 												onClick={() => setEditingId(null)}
@@ -378,8 +379,8 @@ export function DevicePanel({
 												<button
 													type="button"
 													className="dp-icon"
-													aria-label={zh ? "远程桌面" : "Remote desktop"}
-													title={zh ? "远程桌面" : "Remote desktop"}
+													aria-label={t("deviceDirectory.remoteDesktop")}
+													title={t("deviceDirectory.remoteDesktop")}
 													onClick={(event) => {
 														clearPress();
 														onOpen(event, device.id, true);
@@ -391,7 +392,7 @@ export function DevicePanel({
 											<button
 												type="button"
 												className="dp-icon"
-												aria-label={zh ? "更多操作" : "More actions"}
+												aria-label={t("devicePanel.moreActions")}
 												aria-haspopup="menu"
 												aria-expanded={menuOpen}
 												onClick={(event) => {
@@ -432,7 +433,7 @@ export function DevicePanel({
 							}}
 						>
 							<FiEdit2 aria-hidden />
-							{menu.device.remark?.trim() ? (zh ? "修改备注" : "Edit remark") : zh ? "设置备注" : "Set remark"}
+							{menu.device.remark?.trim() ? t("deviceDirectory.editRemark") : t("deviceDirectory.setRemark")}
 						</button>
 						<button
 							type="button"
@@ -441,7 +442,7 @@ export function DevicePanel({
 								const { device } = menu;
 								void copyText(device.id).then((ok) => {
 									if (!ok) {
-										setLocalError(zh ? "复制失败，请手动选择设备 ID。" : "Copy failed.");
+										setLocalError(t("devicePanel.copyFailed"));
 										setMenu(null);
 										return;
 									}
@@ -454,7 +455,7 @@ export function DevicePanel({
 							}}
 						>
 							{copiedId === menu.device.id ? <FiCheck aria-hidden /> : <FiCopy aria-hidden />}
-							{copiedId === menu.device.id ? (zh ? "已复制" : "Copied") : zh ? "复制设备 ID" : "Copy device ID"}
+							{copiedId === menu.device.id ? t("copied") : t("devicePanel.copyDeviceId")}
 						</button>
 					</div>,
 					document.body,
@@ -475,12 +476,10 @@ export function DevicePanel({
 						maxLength={80}
 						value={draft}
 						disabled={saving}
-						aria-label={zh ? "设备备注" : "Device remark"}
-						placeholder={
-							zh
-								? `给「${editingDevice.remark?.trim() || editingDevice.name}」写备注（留空清除）`
-								: "Device remark (blank to clear)"
-						}
+						aria-label={t("devicePanel.remarkAria")}
+						placeholder={t("devicePanel.remarkPlaceholderNamed", {
+							name: editingDevice.remark?.trim() || editingDevice.name,
+						})}
 						onChange={(event) => setDraft(event.target.value)}
 						onKeyDown={(event) => {
 							if (event.key === "Escape") {
@@ -490,12 +489,12 @@ export function DevicePanel({
 						}}
 					/>
 					<button type="submit" className="dp-save" disabled={saving}>
-						{saving ? (zh ? "保存中…" : "Saving…") : zh ? "保存" : "Save"}
+						{saving ? t("saving") : t("save")}
 					</button>
 					<button
 						type="button"
 						className="dp-icon dp-cancel"
-						aria-label={zh ? "取消" : "Cancel"}
+						aria-label={t("cancel")}
 						disabled={saving}
 						onClick={() => setEditingId(null)}
 					>

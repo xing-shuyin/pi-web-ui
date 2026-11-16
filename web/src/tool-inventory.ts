@@ -5,6 +5,7 @@ import {
 	LOAD_TOOLS_TOOL_NAME,
 } from "../../server/tool-manager.js";
 import type { UiPluginInfo } from "../../server/protocol.js";
+import type { MessageKey } from "./i18n/catalog";
 
 /** 前端与后端共用同一语义：永不延迟 = 核心 4 件套 + load_tools（见 server/tool-manager.ts isNeverLazyTool）。 */
 export const NEVER_LAZY_NAMES = new Set<string>([...LAZY_CORE_TOOL_NAMES, LOAD_TOOLS_TOOL_NAME]);
@@ -28,9 +29,8 @@ export type ToolFlowState = "resident" | "lazy" | "off";
 
 export interface ToolFlowCategory {
 	id: string;
-	titleKey?: string;
-	fallbackTitle: string;
-	sub: string;
+	titleKeys: MessageKey[];
+	subKey: MessageKey;
 	items: UnifiedToolItem[];
 }
 
@@ -179,32 +179,32 @@ export function buildFlowCategories(items: UnifiedToolItem[], opts?: { isWindows
 	const cats: ToolFlowCategory[] = [
 		{
 			id: "core",
-			fallbackTitle: "核心",
-			sub: "永不延迟",
+			titleKeys: ["toolsSectionCore"],
+			subKey: "toolFlowCategoryCoreSub",
 			items: [...byGroup("core")],
 		},
 		{
 			id: "terminal",
-			fallbackTitle: "终端协作",
-			sub: "terminal · subagent",
+			titleKeys: ["toolsSectionTerminal", "toolsSectionSubagent"],
+			subKey: "toolFlowCategoryTerminalSub",
 			items: [...byGroup("terminal"), ...byGroup("subagent")],
 		},
 		{
 			id: "other",
-			fallbackTitle: "效率工具",
-			sub: "other",
+			titleKeys: ["toolsSectionOther"],
+			subKey: "toolFlowCategoryOtherSub",
 			items: [...byGroup("other")],
 		},
 		{
 			id: "plugin",
-			fallbackTitle: "插件",
-			sub: "自动合并",
+			titleKeys: ["toolsSectionPlugin"],
+			subKey: "toolFlowCategoryPluginSub",
 			items: [...byGroup("plugin")],
 		},
 		{
 			id: "orphan",
-			fallbackTitle: "已存档",
-			sub: "插件已卸载/跨设备",
+			titleKeys: ["toolFlowCategoryOrphan"],
+			subKey: "toolFlowCategoryOrphanSub",
 			items: [...byGroup("orphan")],
 		},
 	];

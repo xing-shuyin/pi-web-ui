@@ -13,7 +13,7 @@ import {
 } from "react-icons/fi";
 import { closeToolInspector } from "../tool-inspector-state";
 import { useCopyFeedback } from "../use-copy-feedback";
-import { isZhLocale, useLocale } from "../i18n";
+import { useT, type Translate } from "../i18n";
 
 export interface SubagentParsedData {
 	action: string;
@@ -122,38 +122,38 @@ export function parseSubagentData(
 	return out;
 }
 
-function getRoleBadge(type?: string, isZh = true): { icon: string; label: string; desc: string } {
-	const t = (type || "").toLowerCase();
-	switch (t) {
+function getRoleBadge(type: string | undefined, t: Translate): { icon: string; label: string; desc: string } {
+	const normalized = (type || "").toLowerCase();
+	switch (normalized) {
 		case "review":
 			return {
 				icon: "⚖️",
-				label: isZh ? "审查者 (Review)" : "Reviewer",
-				desc: isZh ? "只读审查代码与架构" : "Read-only audit",
+				label: t("subagentInspector.roleReviewLabel"),
+				desc: t("subagentInspector.roleReviewDesc"),
 			};
 		case "implement":
 			return {
 				icon: "🛠️",
-				label: isZh ? "实施者 (Implement)" : "Implementer",
-				desc: isZh ? "编写与重构代码" : "Code modification",
+				label: t("subagentInspector.roleImplementLabel"),
+				desc: t("subagentInspector.roleImplementDesc"),
 			};
 		case "explore":
 			return {
 				icon: "🔍",
-				label: isZh ? "探索者 (Explore)" : "Explorer",
-				desc: isZh ? "调查依赖与路径" : "Codebase discovery",
+				label: t("subagentInspector.roleExploreLabel"),
+				desc: t("subagentInspector.roleExploreDesc"),
 			};
 		case "test":
 			return {
 				icon: "🧪",
-				label: isZh ? "测试者 (Test)" : "Tester",
-				desc: isZh ? "执行验证套件" : "Test verification",
+				label: t("subagentInspector.roleTestLabel"),
+				desc: t("subagentInspector.roleTestDesc"),
 			};
 		default:
 			return {
 				icon: "👥",
-				label: isZh ? "通用助手 (General)" : "General",
-				desc: isZh ? "通用协同智能体" : "General agent",
+				label: t("subagentInspector.roleGeneralLabel"),
+				desc: t("subagentInspector.roleGeneralDesc"),
 			};
 	}
 }
@@ -174,7 +174,7 @@ export function SubagentInspectorView({
 	statusClass?: "ok" | "run" | "err" | "idle";
 	isError?: boolean;
 }) {
-	const isZh = isZhLocale(useLocale());
+	const t = useT();
 	const data = useMemo(() => parseSubagentData(args, details, output), [args, details, output]);
 	const copyPrompt = useCopyFeedback({ duration: 1200 });
 	const copyOutput = useCopyFeedback({ duration: 1200 });
@@ -185,7 +185,7 @@ export function SubagentInspectorView({
 	const isSpawnAction = data.action === "spawn";
 	const [activeTab, setActiveTab] = useState<"spawn" | "result">(isSpawnAction ? "spawn" : "result");
 
-	const roleMeta = getRoleBadge(data.type, isZh);
+	const roleMeta = getRoleBadge(data.type, t);
 	const finalOutput = data.output || output || "";
 	const targetConvId = data.convId || (data.runId && /^sa-[0-9a-f]{8}/.test(data.runId) ? data.runId : undefined);
 
@@ -509,82 +509,74 @@ export function SubagentInspectorView({
 						className={`subagent-mode-btn${activeTab === "spawn" ? " active" : ""}`}
 						onClick={() => setActiveTab("spawn")}
 					>
-						🚀 {isZh ? "任务使命与指派 (Prompt)" : "Mission & Prompt"}
+						🚀 {t("subagentInspector.tabMission")}
 					</button>
 					<button
 						type="button"
 						className={`subagent-mode-btn${activeTab === "result" ? " active" : ""}`}
 						onClick={() => setActiveTab("result")}
 					>
-						📋 {isZh ? "交付成果与产出 (Result)" : "Deliverables & Output"}
+						📋 {t("subagentInspector.tabResult")}
 					</button>
 				</div>
 
 				<div className="subagent-conv-badge">
-					<span>{isZh ? "子代理" : "Subagent"}:</span>
-					<strong>{targetConvId || (isZh ? "未绑定" : "unbound")}</strong>
+					<span>{t("subagentInspector.subagentLabel")}:</span>
+					<strong>{targetConvId || t("subagentInspector.unbound")}</strong>
 				</div>
 			</div>
 
 			<div className="subagent-hud-grid">
 				<div className="subagent-hud-card accent">
-					<span className="subagent-hud-label">{isZh ? "角色与类型" : "Role & Type"}</span>
+					<span className="subagent-hud-label">{t("subagentInspector.roleTypeLabel")}</span>
 					<span className="subagent-hud-val">
 						<span>{roleMeta.icon}</span>
 						<span>{data.type || "general"}</span>
 					</span>
-					<span className="subagent-hud-sub">{data.template ? `模板: ${data.template}` : roleMeta.desc}</span>
+					<span className="subagent-hud-sub">
+						{data.template ? t("subagentInspector.templatePrefix", { template: data.template }) : roleMeta.desc}
+					</span>
 				</div>
 
 				<div className="subagent-hud-card green">
-					<span className="subagent-hud-label">{isZh ? "执行模型" : "Model & Thinking"}</span>
-					<span className="subagent-hud-val">{data.model || (isZh ? "跟随宿主" : "inherit host")}</span>
+					<span className="subagent-hud-label">{t("subagentInspector.modelLabel")}</span>
+					<span className="subagent-hud-val">{data.model || t("subagentInspector.modelInherit")}</span>
 					<span className="subagent-hud-sub">
-						{data.thinking ? `${isZh ? "思考" : "thinking"}: ${data.thinking}` : isZh ? "标准思考档位" : "default"}
+						{data.thinking
+							? t("subagentInspector.thinkingValue", { thinking: data.thinking })
+							: t("subagentInspector.thinkingDefault")}
 					</span>
 				</div>
 
 				<div className="subagent-hud-card blue">
-					<span className="subagent-hud-label">{isZh ? "隔离工作区" : "Isolation"}</span>
+					<span className="subagent-hud-label">{t("subagentInspector.isolationLabel")}</span>
 					<span className="subagent-hud-val">
 						<FiGitBranch />
 						<span>
 							{data.worktree?.branch
 								? data.worktree.branch.replace(/^agent\//, "")
 								: data.isolation === "worktree"
-									? isZh
-										? "独立分支隔离"
-										: "worktree"
-									: isZh
-										? "共享主工作区"
-										: "shared workspace"}
+									? t("subagentInspector.isolationWorktree")
+									: t("subagentInspector.isolationShared")}
 						</span>
 					</span>
 					<span className="subagent-hud-sub">
 						{data.worktree?.uncommittedCount !== undefined
-							? `${isZh ? "变更文件" : "files"}: ${data.worktree.uncommittedCount}`
+							? t("subagentInspector.filesCount", { count: data.worktree.uncommittedCount })
 							: data.isolation === "worktree"
-								? isZh
-									? "Git Worktree 物理隔离"
-									: "Dedicated worktree"
-								: isZh
-									? "无分支隔离"
-									: "No git branch"}
+								? t("subagentInspector.worktreeDedicated")
+								: t("subagentInspector.noGitBranch")}
 					</span>
 				</div>
 
 				<div className="subagent-hud-card amber">
-					<span className="subagent-hud-label">{isZh ? "运行指标" : "Metrics"}</span>
+					<span className="subagent-hud-label">{t("subagentInspector.metricsLabel")}</span>
 					<span className="subagent-hud-val">
-						{statusClass === "run"
-							? isZh
-								? "⟳ 执行中..."
-								: "Running..."
-							: duration || (isZh ? "已完成" : "Completed")}
+						{statusClass === "run" ? t("subagentInspector.running") : duration || t("subagentInspector.completed")}
 					</span>
 					<span className="subagent-hud-sub">
 						{data.messageCount !== undefined
-							? `${isZh ? "交互" : "turns"}: ${data.messageCount} ${isZh ? "轮" : ""}`
+							? t("subagentInspector.turnsCount", { count: data.messageCount })
 							: `action: ${data.action}`}
 					</span>
 				</div>
@@ -596,7 +588,7 @@ export function SubagentInspectorView({
 						<div className="subagent-section-header">
 							<span className="subagent-section-title">
 								<FiZap style={{ color: "var(--accent)" }} />
-								<span>{isZh ? "🎯 指派任务使命 (Mission Prompt)" : "Mission Prompt"}</span>
+								<span>{t("subagentInspector.missionHeader")}</span>
 							</span>
 							<button
 								type="button"
@@ -604,13 +596,11 @@ export function SubagentInspectorView({
 								onClick={() => void copyPrompt.copy(data.prompt || "")}
 							>
 								{copyPrompt.copied ? <FiCheck /> : <FiCopy />}
-								<span>{copyPrompt.copied ? (isZh ? "已复制" : "Copied") : isZh ? "复制指令" : "Copy"}</span>
+								<span>{copyPrompt.copied ? t("copied") : t("subagentInspector.copyPrompt")}</span>
 							</button>
 						</div>
 						<div className="subagent-section-body">
-							<div className="subagent-prompt-box">
-								{data.prompt || (isZh ? "(无明确 prompt，或通过 steer/消息派发)" : "(No explicit prompt)")}
-							</div>
+							<div className="subagent-prompt-box">{data.prompt || t("subagentInspector.promptEmpty")}</div>
 						</div>
 					</div>
 
@@ -618,10 +608,10 @@ export function SubagentInspectorView({
 						<div className="subagent-section-header clickable" onClick={() => setIsEnvExpanded((prev) => !prev)}>
 							<span className="subagent-section-title">
 								<FiLayers style={{ color: "var(--blue)" }} />
-								<span>{isZh ? "🛡️ 运行环境与调度配置" : "Runtime Environment & Config"}</span>
+								<span>{t("subagentInspector.envHeader")}</span>
 							</span>
 							<span style={{ fontSize: 11, color: "var(--text-dim)" }}>
-								{isEnvExpanded ? (isZh ? "收起 ▲" : "Collapse ▲") : isZh ? "展开 ▼" : "Expand ▼"}
+								{isEnvExpanded ? t("subagentInspector.collapse") : t("subagentInspector.expand")}
 							</span>
 						</div>
 						{isEnvExpanded && (
@@ -629,37 +619,29 @@ export function SubagentInspectorView({
 								<table className="subagent-spec-table">
 									<tbody>
 										<tr>
-											<td className="label">{isZh ? "工作目录" : "CWD"}</td>
-											<td className="val">{data.cwd || "（继承主项目路径）"}</td>
+											<td className="label">{t("subagentInspector.cwdLabel")}</td>
+											<td className="val">{data.cwd || t("subagentInspector.cwdInherited")}</td>
 										</tr>
 										<tr>
-											<td className="label">{isZh ? "隔离策略" : "Isolation"}</td>
+											<td className="label">{t("subagentInspector.isolationStrategyLabel")}</td>
 											<td className="val">
 												{data.isolation === "worktree"
-													? isZh
-														? "🌿 Git Worktree 独立分支隔离"
-														: "Git Worktree isolation"
-													: isZh
-														? "共享主工作区"
-														: "Shared workspace"}
+													? t("subagentInspector.worktreeIsolationValue")
+													: t("subagentInspector.isolationShared")}
 											</td>
 										</tr>
 										{data.worktree?.path && (
 											<tr>
-												<td className="label">{isZh ? "工作树路径" : "Worktree Path"}</td>
+												<td className="label">{t("subagentInspector.worktreePathLabel")}</td>
 												<td className="val">{data.worktree.path}</td>
 											</tr>
 										)}
 										<tr>
-											<td className="label">{isZh ? "自动唤醒" : "Notify Strategy"}</td>
+											<td className="label">{t("subagentInspector.notifyLabel")}</td>
 											<td className="val">
 												{data.notifyOnDone === false
-													? isZh
-														? "已禁用自动通知 (静默)"
-														: "Disabled"
-													: isZh
-														? "终态自动通知唤醒父级 (notifyOnDone: true)"
-														: "Auto-notify on complete"}
+													? t("subagentInspector.notifyDisabled")
+													: t("subagentInspector.notifyAuto")}
 											</td>
 										</tr>
 									</tbody>
@@ -676,7 +658,7 @@ export function SubagentInspectorView({
 						<div className="subagent-section-header">
 							<span className="subagent-section-title">
 								<FiTerminal style={{ color: "var(--green)" }} />
-								<span>{isZh ? "📋 任务执行交付报告 (Deliverables)" : "Deliverables"}</span>
+								<span>{t("subagentInspector.resultHeader")}</span>
 							</span>
 							<button
 								type="button"
@@ -684,19 +666,13 @@ export function SubagentInspectorView({
 								onClick={() => void copyOutput.copy(finalOutput)}
 							>
 								{copyOutput.copied ? <FiCheck /> : <FiCopy />}
-								<span>{copyOutput.copied ? (isZh ? "已复制" : "Copied") : isZh ? "复制产出" : "Copy"}</span>
+								<span>{copyOutput.copied ? t("copied") : t("subagentInspector.copyOutput")}</span>
 							</button>
 						</div>
 						<div className="subagent-section-body">
 							<div className="subagent-output-box">
 								{finalOutput ||
-									(statusClass === "run"
-										? isZh
-											? "⟳ 子代理正在后台执行并流式生成结果中..."
-											: "Running and generating output..."
-										: isZh
-											? "（暂无产出文本）"
-											: "(No output yet)")}
+									(statusClass === "run" ? t("subagentInspector.outputRunning") : t("subagentInspector.outputEmpty"))}
 							</div>
 						</div>
 					</div>
@@ -706,10 +682,10 @@ export function SubagentInspectorView({
 							<div className="subagent-section-header clickable" onClick={() => setIsPromptExpanded((prev) => !prev)}>
 								<span className="subagent-section-title">
 									<FiZap style={{ color: "var(--text-dim)" }} />
-									<span>{isZh ? "🎯 关联指派 Prompt" : "Associated Prompt"}</span>
+									<span>{t("subagentInspector.associatedPromptHeader")}</span>
 								</span>
 								<span style={{ fontSize: 11, color: "var(--text-dim)" }}>
-									{isPromptExpanded ? (isZh ? "收起 ▲" : "Collapse ▲") : isZh ? "展开 ▼" : "Expand ▼"}
+									{isPromptExpanded ? t("subagentInspector.collapse") : t("subagentInspector.expand")}
 								</span>
 							</div>
 							{isPromptExpanded && (
@@ -727,22 +703,14 @@ export function SubagentInspectorView({
 			<div className="subagent-action-dock">
 				<div className="subagent-dock-tip">
 					<span>💡</span>
-					<span>
-						{targetConvId
-							? isZh
-								? "可直接切换至子代理会话查看完整上下文交互与各轮工具调用。"
-								: "Switch to this subagent conversation to view full chat history."
-							: isZh
-								? "子代理未绑定有效会话 ID。"
-								: "Subagent ID not resolved."}
-					</span>
+					<span>{targetConvId ? t("subagentInspector.dockTipBound") : t("subagentInspector.dockTipUnbound")}</span>
 				</div>
 
 				<div className="subagent-dock-btns">
 					{targetConvId && (
 						<button type="button" className="subagent-btn primary" onClick={handleSwitchConversation}>
 							<FiUsers />
-							<span>{isZh ? "切换到该子会话 ➔" : "Switch to Conversation ➔"}</span>
+							<span>{t("subagentInspector.switchConversation")}</span>
 						</button>
 					)}
 				</div>

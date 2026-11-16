@@ -23,6 +23,8 @@ export type QuickAskPatch = Partial<
 	>
 >;
 
+// Default prompt bodies are model content (never rewritten by the UI language) and language names
+// stay in their own script, so both remain verbatim (data).
 const DEFAULT_EXPLAIN_PROMPT = "解释下: {{input}}";
 const DEFAULT_TRANSLATE_PROMPT = "将以下文字翻译成{{targetLanguage}}，只输出译文，保留代码与专有名词。\n{{input}}";
 const TARGET_LANGUAGES = [

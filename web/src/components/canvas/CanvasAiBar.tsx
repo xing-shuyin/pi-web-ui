@@ -12,6 +12,8 @@ export interface CanvasAiBarProps {
 	defaultCwd?: string;
 }
 
+// Bilingual intent vocabulary used to match user text, not UI chrome: keep both scripts so keyword
+// detection works regardless of the interface language.
 const RULES: { keys: string[]; role: CanvasNodeRole }[] = [
 	{ keys: ["调研", "搜索", "research", "search"], role: "researcher" },
 	{ keys: ["规划", "拆解", "plan"], role: "planner" },
@@ -148,7 +150,7 @@ export function CanvasAiBar({
 					if (e.key === "Enter") handleGenerate();
 					if (e.key === "Escape") setOpen(false);
 				}}
-				placeholder="Example: research a solution, implement it, test it, then review and summarize"
+				placeholder={t("canvas.aiBar.placeholder")}
 				autoFocus
 			/>
 			<button type="button" className="canvas-btn primary" onClick={handleGenerate} disabled={!text.trim()}>

@@ -646,5 +646,6 @@
 	"canvas.edges.type.condition_true": "条件通过",
 	"canvas.edges.type.condition_false": "条件不通过",
 	"canvas.edges.type.approve": "批准",
-	"canvas.edges.type.reject": "驳回"
+	"canvas.edges.type.reject": "驳回",
+	"canvas.aiBar.placeholder": "例如：调研方案、实现、测试，然后审查并汇总"
 }

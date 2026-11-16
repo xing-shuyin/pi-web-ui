@@ -1,7 +1,7 @@
 import { useEffect, useState, useRef } from "react";
 import { appUrl } from "../base-url";
 import { withToken } from "../auth-token";
-import { isZhLocale, useI18n } from "../i18n";
+import { useT } from "../i18n";
 import type { DeviceTaskInteraction, DeviceTaskInteractionAnswer, QuestionAnswer } from "../types";
 
 export function GroupNativeInteractions({
@@ -15,8 +15,6 @@ export function GroupNativeInteractions({
 	refreshKey?: number;
 	connected?: boolean;
 }) {
-	const { locale } = useI18n();
-	const zh = isZhLocale(locale);
 	const [items, setItems] = useState<DeviceTaskInteraction[]>([]);
 	const [error, setError] = useState("");
 	const [refresh, setRefresh] = useState(0);
@@ -103,20 +101,19 @@ export function GroupNativeInteractions({
 		<div className="gd-content dg-native-interactions-wrap">
 			{error && <p role="alert">{error}</p>}
 			{items.map((item) => (
-				<InteractionCard key={`${roomId}:${item.id}`} item={item} zh={zh} answer={(value) => answer(item, value)} />
+				<InteractionCard key={`${roomId}:${item.id}`} item={item} answer={(value) => answer(item, value)} />
 			))}
 		</div>
 	);
 }
 function InteractionCard({
 	item,
-	zh,
 	answer,
 }: {
 	item: DeviceTaskInteraction;
-	zh: boolean;
 	answer: (value: Partial<DeviceTaskInteractionAnswer>) => Promise<void>;
 }) {
+	const t = useT();
 	const [answers, setAnswers] = useState<Record<string, QuestionAnswer>>({});
 	const [busy, setBusy] = useState(false);
 	const [error, setError] = useState("");
@@ -141,31 +138,19 @@ function InteractionCard({
 	return (
 		<section className="gd-card">
 			<strong>
-				{item.kind === "approval"
-					? zh
-						? "工具审批 · 仅本次"
-						: "Tool approval · once"
-					: zh
-						? "模型提问"
-						: "Model question"}{" "}
-				· {item.botId}
+				{item.kind === "approval" ? t("groupInteractionToolApprovalOnce") : t("modelQuestion")} · {item.botId}
 			</strong>
-			{item.deadline && (
-				<p>
-					{zh ? "截止时间：" : "Deadline: "}
-					{new Date(item.deadline).toLocaleString()}
-				</p>
-			)}
+			{item.deadline && <p>{t("groupInteractionDeadline", { when: new Date(item.deadline).toLocaleString() })}</p>}
 			{item.kind === "approval" ? (
 				<>
 					<p>{item.toolName}</p>
 					<pre>{item.paramsPreview}</pre>
 					<p>{item.reason}</p>
 					<button className="btn" disabled={busy} onClick={() => void submit({ decision: "approve" })}>
-						{zh ? "批准本次" : "Approve once"}
+						{t("groupInteractionApproveOnce")}
 					</button>
 					<button className="btn" disabled={busy} onClick={() => void submit({ decision: "deny" })}>
-						{zh ? "拒绝" : "Deny"}
+						{t("toolApprovalDeny")}
 					</button>
 				</>
 			) : (
@@ -220,7 +205,7 @@ function InteractionCard({
 						);
 					})}
 					<button type="submit" className="btn" disabled={busy || !complete}>
-						{zh ? "提交回答" : "Submit answer"}
+						{t("modelQuestionSubmit")}
 					</button>
 					<button
 						type="button"
@@ -228,7 +213,7 @@ function InteractionCard({
 						disabled={busy}
 						onClick={() => void submit({ answers: [], cancelled: true })}
 					>
-						{zh ? "取消问卷" : "Cancel question"}
+						{t("groupInteractionCancelQuestion")}
 					</button>
 				</form>
 			)}

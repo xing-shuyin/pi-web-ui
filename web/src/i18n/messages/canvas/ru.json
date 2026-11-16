@@ -646,5 +646,6 @@
 	"canvas.edges.type.condition_true": "Условие истинно",
 	"canvas.edges.type.condition_false": "Условие ложно",
 	"canvas.edges.type.approve": "Одобрить",
-	"canvas.edges.type.reject": "Отклонить"
+	"canvas.edges.type.reject": "Отклонить",
+	"canvas.aiBar.placeholder": "Пример: изучить решение, реализовать, протестировать, затем проверить и обобщить"
 }

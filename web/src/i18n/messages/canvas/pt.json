@@ -646,5 +646,6 @@
 	"canvas.edges.type.condition_true": "Condição verdadeira",
 	"canvas.edges.type.condition_false": "Condição falsa",
 	"canvas.edges.type.approve": "Aprovar",
-	"canvas.edges.type.reject": "Rejeitar"
+	"canvas.edges.type.reject": "Rejeitar",
+	"canvas.aiBar.placeholder": "Exemplo: pesquisar uma solução, implementá-la, testá-la e depois revisá-la e resumi-la"
 }

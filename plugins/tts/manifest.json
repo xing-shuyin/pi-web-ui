@@ -2,7 +2,7 @@
 	"id": "tts",
 	"name": "语音合成 (TTS)",
 	"nameEn": "TTS Voice Engine",
-	"version": "1.5.0",
+	"version": "1.5.2",
 	"icon": "🔊",
 	"iconSvg": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><polygon points=\"11 5 6 9 2 9 2 15 6 15 11 19 11 5\"/><path d=\"M19.07 4.93a10 10 0 0 1 0 14.14M15.54 8.46a5 5 0 0 1 0 7.07\"/></svg>",
 	"description": "将豆包和 DeepSeek 语音及音色注册到系统统一 TTS 中心，供网页播报、QQ 自动回复和其他工具共用。支持浏览器扩展同步凭据、引擎音色查询与音频文件生成。",

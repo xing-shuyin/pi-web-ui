@@ -141,8 +141,9 @@ import type {
 	UiTextBlock,
 } from "./types";
 import { openPageDesktop, pageDeviceId } from "./device-access";
-import { isZhLocale, useT, useI18n } from "./i18n";
-import { QUICK_PHRASE_DEFAULTS } from "./quick-phrases";
+import { isZhLocale, useT, useI18n, type Translate } from "./i18n";
+import type { MessageKey } from "./i18n/catalog";
+import { quickPhraseDefaults } from "./quick-phrases";
 import {
 	FiAlertCircle,
 	FiAlertTriangle,
@@ -209,6 +210,19 @@ export interface PendingAttachment {
 	fileData?: string;
 	size?: number;
 	key?: string;
+}
+
+type TransitionView = {
+	textKey?: MessageKey;
+	textVars?: Record<string, string | number>;
+	text: string;
+	textEn: string;
+};
+
+/** Client transitions carry a dictionary key; server progress messages still ship pre-rendered text. */
+function transitionLabel(transition: TransitionView, locale: string, t: Translate): string {
+	if (transition.textKey) return t(transition.textKey, transition.textVars);
+	return !isZhLocale(locale) && transition.textEn ? transition.textEn : transition.text;
 }
 
 function NoticeToast({ notice, onDismiss }: { notice: Notice; onDismiss: (id: number) => void }) {
@@ -401,11 +415,11 @@ export function App() {
 		if (chat.settings.quickPhrases.length === 0) {
 			send({
 				type: "set_settings",
-				quickPhrases: QUICK_PHRASE_DEFAULTS[locale] ?? QUICK_PHRASE_DEFAULTS.en,
+				quickPhrases: quickPhraseDefaults(t),
 				quickPhrasesSeeded: true,
 			});
 		}
-	}, [chat.ready, chat.settings, send, locale]);
+	}, [chat.ready, chat.settings, send, t]);
 	const cwd = chat.state?.cwd ?? "";
 	const projectTitle = useProjectTitle();
 	const faviconSettings = useFaviconSettings();
@@ -1142,7 +1156,7 @@ export function App() {
 	useEffect(() => {
 		if (!pageDeviceId()) return;
 		const controller = new AbortController();
-		void openPageDesktop(isZhLocale(locale), t("desktop.currentDevice"), controller.signal).catch(() => {});
+		void openPageDesktop(t, t("desktop.currentDevice"), controller.signal).catch(() => {});
 		return () => controller.abort();
 	}, []);
 	useEffect(() => {
@@ -2856,9 +2870,7 @@ export function App() {
 													<div className="workspace-transition-pill">
 														<span className="workspace-transition-spinner" aria-hidden="true" />
 														<span className="workspace-transition-text">
-															{!isZhLocale(locale) && chat.transition.textEn
-																? chat.transition.textEn
-																: chat.transition.text}
+															{transitionLabel(chat.transition, locale, t)}
 														</span>
 														<span className="workspace-transition-pct">{chat.transition.progress}%</span>
 													</div>
