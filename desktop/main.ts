@@ -1,4 +1,4 @@
-import { app, BrowserWindow, ipcMain, session, type IpcMainInvokeEvent } from "electron";
+import { app, BrowserWindow, dialog, ipcMain, session, type IpcMainInvokeEvent } from "electron";
 import { ElectronChromeExtensions, setSessionPartitionResolver } from "electron-chrome-extensions";
 import { spawn, type ChildProcess } from "node:child_process";
 import { existsSync, mkdirSync } from "node:fs";
@@ -213,7 +213,20 @@ async function createWindow(): Promise<void> {
 }
 
 if (!app.requestSingleInstanceLock()) {
-	app.quit();
+	// 已有实例在跑：直接 quit 在用户眼里就是“双击没反应”（便携版尤其常见——换了目录又点了一次，
+	// 旧窗口却藏在后面）。这时候必须给一句人话，不然只能被当成“打不开”。
+	void app.whenReady().then(() => {
+		dialog.showMessageBoxSync({
+			type: "info",
+			title: "Pi Web UI",
+			message: "Pi Web UI 已经在运行 / Pi Web UI is already running",
+			detail:
+				"窗口可能被其他窗口播住，或在另一个显示器上。\n" +
+				"The existing window may be behind other windows or on another display.",
+			buttons: ["好 / OK"],
+		});
+		app.quit();
+	});
 } else {
 	app.on("second-instance", () => {
 		if (mainWin) {
