@@ -3,12 +3,14 @@ import { createPortal } from "react-dom";
 import { appUrl } from "../base-url";
 import { withToken } from "../auth-token";
 import { useT } from "../i18n";
+import { openDirectRoom } from "../open-direct-room";
 import { useEscapeKey } from "../shortcut-stack";
 import type { ModelInfo } from "../types";
 import { resolveBotCwd } from "../local-bot-path";
 import { UniversalPathPicker } from "./UniversalPathPicker";
 import { UniversalModelPicker } from "./UniversalModelPicker";
 import { LocalBotCatalogPicker, type BotCatalogEntry } from "./LocalBotCatalogPicker";
+import "./agent-bots.css";
 
 type Bot = {
 	id: string;
@@ -46,6 +48,7 @@ const blank = (): Omit<Bot, "id" | "revision"> => ({
 	mcpServers: [],
 	enabled: true,
 });
+// 与左栏「智能体」区对称：设备中心是管理入口，Bot 行上的「私聊」只负责跳回对话入口。
 async function request(path: string, signal: AbortSignal, body?: object) {
 	const response = await fetch(withToken(appUrl(`/api/device-center/${path}`)), {
 		method: body ? "POST" : "GET",
@@ -70,6 +73,7 @@ export function LocalBots({
 }) {
 	const t = useT();
 	const [bots, setBots] = useState<Bot[]>([]);
+	const [chatPending, setChatPending] = useState<string | null>(null);
 	const [draft, setDraft] = useState<(ReturnType<typeof blank> & Partial<Pick<Bot, "id" | "revision">>) | null>(() =>
 		createOnly ? blank() : null,
 	);
@@ -183,10 +187,24 @@ export function LocalBots({
 			setModelOpen(false);
 			setNotice(data.synced === false ? t("localBotSyncFailed") : t("localBotSaved"));
 			if (!remove) onCreated?.(data.bot, data.synced !== false);
+			// 左栏「智能体」区据此重新拉取：Bot 增删改后无需刷新页面就能直接对话。
+			window.dispatchEvent(new CustomEvent("pi-web-ui:device-bots-changed"));
 		} catch (cause) {
 			if (!current.signal.aborted) setError(cause instanceof Error ? cause.message : String(cause));
 		} finally {
 			if (!current.signal.aborted) setBusy(false);
+		}
+	}
+	async function startChat(botId: string) {
+		if (chatPending) return;
+		setChatPending(botId);
+		setError("");
+		try {
+			await openDirectRoom(botId);
+		} catch (cause) {
+			setError(cause instanceof Error ? cause.message : String(cause));
+		} finally {
+			setChatPending(null);
 		}
 	}
 	const chosenModel = options?.models.find(
@@ -215,27 +233,38 @@ export function LocalBots({
 			<div className={`dc-bot-workspace${draft ? " is-editing" : ""}`}>
 				<div className="dc-bot-list" aria-label={t("localBotTitle")}>
 					{bots.map((bot) => (
-						<button
-							className={`dc-button dc-bot-item${draft?.id === bot.id ? " is-selected" : ""}`}
-							aria-pressed={draft?.id === bot.id}
-							key={bot.id}
-							disabled={busy}
-							onClick={() => {
-								setDraft(structuredClone(bot));
-								setError("");
-								setModelOpen(false);
-							}}
-						>
-							<span className="dc-bot-avatar" aria-hidden="true">
-								{bot.name.slice(0, 2).toUpperCase()}
-							</span>
-							<span className="dc-bot-item-copy">
-								<strong>{bot.name}</strong>
-								<small className={bot.enabled ? "is-enabled" : ""}>
-									{bot.enabled ? t("localBotEnabled") : t("localBotDisabled")} · r{bot.revision}
-								</small>
-							</span>
-						</button>
+						<div className="dc-bot-entry" key={bot.id}>
+							<button
+								className={`dc-button dc-bot-item${draft?.id === bot.id ? " is-selected" : ""}`}
+								aria-pressed={draft?.id === bot.id}
+								disabled={busy}
+								onClick={() => {
+									setDraft(structuredClone(bot));
+									setError("");
+									setModelOpen(false);
+								}}
+							>
+								<span className="dc-bot-avatar" aria-hidden="true">
+									{bot.name.slice(0, 2).toUpperCase()}
+								</span>
+								<span className="dc-bot-item-copy">
+									<strong>{bot.name}</strong>
+									<small className={bot.enabled ? "is-enabled" : ""}>
+										{bot.enabled ? t("localBotEnabled") : t("localBotDisabled")} · r{bot.revision}
+									</small>
+								</span>
+							</button>
+							<button
+								type="button"
+								className="dc-bot-chat"
+								title={t("botChat", { name: bot.name })}
+								aria-label={t("botChat", { name: bot.name })}
+								disabled={busy || chatPending !== null}
+								onClick={() => void startChat(bot.id)}
+							>
+								{chatPending === bot.id ? "…" : t("botChatShort")}
+							</button>
+						</div>
 					))}
 				</div>
 				{draft && (

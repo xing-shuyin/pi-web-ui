@@ -11,19 +11,19 @@ import { FiX } from "react-icons/fi";
 import { useT } from "../i18n";
 import { appSend } from "../app-globals";
 import type { UiAlign, UiLayoutPrefs, UiSlotId } from "../types";
-import type { UiSlotEntry } from "../ui-slots";
+import { REQUIRED_TOPBAR_ITEM_IDS, type UiSlotEntry } from "../ui-slots";
 import { useEscapeKey } from "../shortcut-stack";
 import { hostEntryIcon } from "../host-icon";
 import {
 	ICON_EDIT_ALIGNS,
 	ICON_EDIT_TRAY,
 	ICON_EDIT_ZONES,
+	alignLabel,
 	applyIconDrop,
 	applyIconHide,
 	collectIconEditItems,
 	visibleZoneEntries,
 	zoneEntriesForAlign,
-	sideAlignLabel,
 } from "../ui-layout-edit";
 
 interface IconEditorProps {
@@ -84,6 +84,12 @@ export function IconEditor({ slots, layout, exclude, onClose }: IconEditorProps)
 		return { slot, align, index };
 	};
 
+	/** 所有布局改写都从这里发出：pendingRef 吸收连续操作，避免服务端回执尚未到时互相覆盖。 */
+	const setLayout = (next: UiLayoutPrefs) => {
+		pendingRef.current = next;
+		appSend({ type: "set_settings", uiLayout: next });
+	};
+
 	const commitDrop = () => {
 		const id = dragRef.current;
 		const target = dropRef.current;
@@ -93,7 +99,7 @@ export function IconEditor({ slots, layout, exclude, onClose }: IconEditorProps)
 		setDrop(null);
 		if (!id || !target) return;
 		const base = pendingRef.current ?? layoutRef.current;
-		const next =
+		setLayout(
 			target.slot === ICON_EDIT_TRAY
 				? applyIconHide(base, id)
 				: applyIconDrop(base, bucketsRef.current, {
@@ -101,9 +107,14 @@ export function IconEditor({ slots, layout, exclude, onClose }: IconEditorProps)
 						slot: target.slot as UiSlotId,
 						...(target.align !== undefined ? { align: target.align } : {}),
 						index: target.index,
-					});
-		pendingRef.current = next;
-		appSend({ type: "set_settings", uiLayout: next });
+					}),
+		);
+	};
+
+	/** 右上角 × 一键隐藏，不必再拖到最下面的隐藏区。 */
+	const hideEntry = (id: string) => {
+		if (dragRef.current) return;
+		setLayout(applyIconHide(pendingRef.current ?? layoutRef.current, id));
 	};
 
 	useEffect(() => {
@@ -140,23 +151,44 @@ export function IconEditor({ slots, layout, exclude, onClose }: IconEditorProps)
 		setDrop(null);
 	};
 
-	const renderChip = (entry: UiSlotEntry): ReactNode => (
-		<button
-			key={entry.id}
-			type="button"
-			data-chip={entry.id}
-			className={`icon-editor-chip${dragId === entry.id ? " dragging" : ""}`}
-			title={entry.label}
-			onPointerDown={(e) => startDrag(e, entry.id)}
-		>
-			<span className="icon-editor-chip-icon">{hostEntryIcon(entry)}</span>
-			<span className="icon-editor-chip-label">{entry.label}</span>
-		</button>
-	);
+	const renderChip = (entry: UiSlotEntry, inTray: boolean): ReactNode => {
+		// 固定入口（设置 / 历史 / 文件）服务端强制可见，给 × 只会让人以为点了没反应。
+		const hideable = !inTray && !REQUIRED_TOPBAR_ITEM_IDS.has(entry.id);
+		return (
+			<span key={entry.id} className={`icon-editor-chip-wrap${dragId === entry.id ? " dragging" : ""}`}>
+				<button
+					type="button"
+					data-chip={entry.id}
+					className="icon-editor-chip"
+					title={entry.label}
+					onPointerDown={(e) => startDrag(e, entry.id)}
+				>
+					<span className="icon-editor-chip-icon">{hostEntryIcon(entry)}</span>
+					<span className="icon-editor-chip-label">{entry.label}</span>
+				</button>
+				{hideable && (
+					<button
+						type="button"
+						className="icon-editor-chip-hide"
+						title={t("uiLayoutHide")}
+						aria-label={`${t("uiLayoutHide")} ${entry.label}`}
+						onPointerDown={(e) => e.stopPropagation()}
+						onClick={(e) => {
+							e.stopPropagation();
+							hideEntry(entry.id);
+						}}
+					>
+						<FiX />
+					</button>
+				)}
+			</span>
+		);
+	};
 
 	const renderStrip = (slot: string, align: UiAlign | undefined, hint: string | null, entries: UiSlotEntry[]) => {
 		const active = drop?.slot === slot && (drop.align ?? null) === (align ?? null);
-		const children: ReactNode[] = entries.map(renderChip);
+		const inTray = slot === ICON_EDIT_TRAY;
+		const children: ReactNode[] = entries.map((entry) => renderChip(entry, inTray));
 		if (active && drop) {
 			children.splice(
 				Math.max(0, Math.min(drop.index, children.length)),
@@ -210,7 +242,7 @@ export function IconEditor({ slots, layout, exclude, onClose }: IconEditorProps)
 											renderStrip(
 												zone.slot,
 												al,
-												zone.vertical ? sideAlignLabel(t, al) : al,
+												alignLabel(t, al, zone.vertical),
 												zoneEntriesForAlign(zoneEntries, al),
 											),
 										)
@@ -218,13 +250,17 @@ export function IconEditor({ slots, layout, exclude, onClose }: IconEditorProps)
 							</div>
 						);
 					})}
-					<div className="icon-editor-zone icon-editor-zone-tray">
-						<div className="icon-editor-zone-title">
+				</div>
+				{/* 隐藏区常驻面板底部（不跟滚动区一起滚），随时能把条目拖回任意栏位。 */}
+				<div className="icon-editor-tray">
+					<div className="icon-editor-tray-head">
+						<span className="icon-editor-zone-title">
 							{t("uiIconEditTray")}
 							<span className="icon-editor-zone-count">{buckets.tray.length}</span>
-						</div>
-						{renderStrip(ICON_EDIT_TRAY, undefined, null, buckets.tray)}
+						</span>
+						<span className="icon-editor-tray-hint">{t("uiIconEditTrayHint")}</span>
 					</div>
+					{renderStrip(ICON_EDIT_TRAY, undefined, null, buckets.tray)}
 				</div>
 			</div>
 		</>

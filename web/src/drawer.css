@@ -1,0 +1,1327 @@
+/*
+ * 终端底部抽屉 / Git 检阅抽屉
+ *
+ * 为什么单独一个文件：styles.css 有 77 万字节，任何改动都在冲突热点上。
+ * 这里只承载两个抽屉的壳与头部，内部业务样式（.term-main / .scm-*）继续留在 styles.css。
+ *
+ * 层级：@layer drawer 声明在 styles.css 的 layer 顺序末尾，因此可覆盖 base 层同名规则，
+ * 不需要靠 !important 或堆 specificity（层序优先于选择器权重）。
+ */
+
+@layer drawer {
+	/* 运行时由 JS 写入内联变量；这里给出默认值，避免 css-tokens 守卫判为未定义 */
+	.term-drawer {
+		--td-h: 318px;
+	}
+
+	.main {
+		position: relative;
+	}
+
+	/* ============================ 底部终端抽屉 ============================ */
+	.term-drawer {
+		flex: none;
+		display: flex;
+		flex-direction: column;
+		height: var(--td-h, 318px);
+		min-height: 0;
+		max-height: calc(100% - 120px);
+		overflow: hidden;
+		background: var(--bg-elev);
+		border-top: 1px solid var(--border);
+		border-radius: 12px 12px 0 0;
+		box-shadow: 0 -12px 40px -24px #000000b3;
+		position: relative;
+		transition: height 0.22s cubic-bezier(0.22, 1, 0.36, 1);
+		z-index: 2;
+	}
+
+	.term-drawer.collapsed {
+		height: 39px;
+	}
+
+	/* 折叠时只收起输出区（和命令栏），保留 tab 条：一眼能看到谁还在跑，也还能再展开 */
+	.term-drawer.collapsed .term-cmd-rail,
+	.term-drawer.collapsed .term-body,
+	.term-drawer.collapsed .bd-panes {
+		display: none;
+	}
+
+	.term-drawer.dragging {
+		transition: none;
+	}
+
+	.term-drawer .td-grip {
+		position: absolute;
+		left: 0;
+		right: 0;
+		top: 0;
+		height: 9px;
+		cursor: ns-resize;
+		z-index: 6;
+		touch-action: none;
+	}
+
+	.term-drawer .td-grip::after {
+		content: "";
+		position: absolute;
+		left: 50%;
+		top: 3px;
+		transform: translateX(-50%);
+		width: 36px;
+		height: 3px;
+		border-radius: 3px;
+		background: var(--border);
+		transition:
+			background 0.13s ease,
+			width 0.13s ease;
+	}
+
+	.term-drawer .td-grip:hover::after,
+	body.td-resizing .term-drawer .td-grip::after {
+		background: var(--accent);
+		width: 52px;
+	}
+
+	body.td-resizing {
+		cursor: ns-resize;
+		user-select: none;
+	}
+
+	.td-head {
+		display: flex;
+		align-items: center;
+		gap: 8px;
+		height: 39px;
+		padding: 0 8px 0 10px;
+		flex: none;
+		min-width: 0;
+	}
+
+	.td-tabs {
+		display: flex;
+		align-items: center;
+		gap: 3px;
+		min-width: 0;
+		flex: 0 1 auto;
+		overflow-x: auto;
+		scrollbar-width: none;
+	}
+
+	.td-tabs::-webkit-scrollbar {
+		display: none;
+	}
+
+	.td-tab {
+		display: inline-flex;
+		align-items: center;
+		gap: 6px;
+		flex: none;
+		height: 26px;
+		padding: 0 8px;
+		border-radius: 6px;
+		color: var(--text-faint);
+		font-size: 11.5px;
+		max-width: 190px;
+		position: relative;
+		background: transparent;
+		border: 0;
+		cursor: pointer;
+		transition:
+			background 0.12s ease,
+			color 0.12s ease;
+	}
+
+	.td-tab:hover {
+		background: var(--bg-elev2);
+		color: var(--text-dim);
+	}
+
+	.td-tab.on {
+		background: var(--bg-elev2);
+		color: var(--text);
+		box-shadow: inset 0 0 0 1px var(--border);
+	}
+
+	.td-tab.on::after {
+		content: "";
+		position: absolute;
+		left: 8px;
+		right: 8px;
+		bottom: -1px;
+		height: 2px;
+		border-radius: 2px;
+		background: var(--accent);
+	}
+
+	.td-tab .td-name {
+		min-width: 0;
+		overflow: hidden;
+		text-overflow: ellipsis;
+		white-space: nowrap;
+		font-family: var(--mono);
+		font-size: 11px;
+	}
+
+	.td-tab .td-dot {
+		width: 6px;
+		height: 6px;
+		border-radius: 50%;
+		flex: none;
+	}
+
+	.td-tab .td-dot.run {
+		background: var(--green);
+		animation: td-pulse 2.2s cubic-bezier(0.22, 1, 0.36, 1) infinite;
+	}
+
+	.td-tab .td-dot.exit {
+		background: var(--text-faint);
+		opacity: 0.55;
+	}
+
+	@keyframes td-pulse {
+		0% {
+			box-shadow: 0 0 0 0 color-mix(in srgb, var(--green) 55%, transparent);
+		}
+		65% {
+			box-shadow: 0 0 0 5px transparent;
+		}
+		100% {
+			box-shadow: 0 0 0 0 transparent;
+		}
+	}
+
+	.td-tab .td-tab-act {
+		display: grid;
+		place-items: center;
+		width: 16px;
+		height: 16px;
+		border-radius: 4px;
+		color: var(--text-faint);
+		opacity: 0;
+		flex: none;
+	}
+
+	.td-tab:hover .td-tab-act,
+	.td-tab.on .td-tab-act {
+		opacity: 1;
+	}
+
+	.td-tab .td-tab-act:hover {
+		background: var(--bg-elev3);
+		color: var(--text);
+	}
+
+	.td-tab .td-tab-act svg {
+		width: 10px;
+		height: 10px;
+	}
+
+	.td-tab .td-exit {
+		font-size: 9.5px;
+		color: var(--red);
+		flex: none;
+	}
+
+	.td-tab-rename {
+		width: 100%;
+		min-width: 0;
+		background: var(--bg);
+		border: 1px solid var(--accent);
+		border-radius: 4px;
+		color: var(--text);
+		font-family: var(--mono);
+		font-size: 11px;
+		padding: 1px 4px;
+	}
+
+	.td-group {
+		display: inline-flex;
+		align-items: center;
+		gap: 5px;
+		height: 26px;
+		padding: 0 7px;
+		flex: none;
+		border-radius: 6px;
+		color: var(--text-faint);
+		font-size: 11px;
+		background: transparent;
+		border: 0;
+		cursor: pointer;
+	}
+
+	.td-group:hover {
+		background: var(--bg-elev2);
+		color: var(--text-dim);
+	}
+
+	.td-group .td-caret {
+		font-size: 9px;
+		transition: rotate 0.2s ease;
+	}
+
+	.td-group.closed .td-caret {
+		rotate: -90deg;
+	}
+
+	.td-group .td-count {
+		font-family: var(--mono);
+		font-size: 9.5px;
+		padding: 1px 4px;
+		border-radius: 4px;
+		background: var(--bg-elev3);
+		color: var(--text-dim);
+	}
+
+	.td-sep {
+		width: 1px;
+		height: 15px;
+		background: var(--border);
+		flex: none;
+		margin: 0 2px;
+	}
+
+	.td-actions {
+		margin-left: auto;
+		display: flex;
+		align-items: center;
+		gap: 2px;
+		flex: none;
+	}
+
+	.td-actions .icon-btn {
+		width: 24px;
+		height: 24px;
+		border-radius: 5px;
+		display: grid;
+		place-items: center;
+		color: var(--text-faint);
+		background: transparent;
+		border: 0;
+		cursor: pointer;
+	}
+
+	.td-actions .icon-btn:hover {
+		background: var(--bg-elev2);
+		color: var(--text);
+	}
+
+	.td-actions .icon-btn.danger:hover {
+		background: var(--red-soft);
+		color: var(--red);
+	}
+
+	.td-actions .icon-btn svg {
+		width: 13px;
+		height: 13px;
+	}
+
+	.td-badge {
+		display: inline-flex;
+		align-items: center;
+		gap: 4px;
+		height: 20px;
+		padding: 0 6px;
+		border-radius: 5px;
+		font-family: var(--mono);
+		font-size: 10px;
+		background: var(--bg-elev2);
+		color: var(--text-faint);
+	}
+
+	.td-body {
+		flex: 1;
+		min-height: 0;
+		display: flex;
+		position: relative;
+		overflow: hidden;
+	}
+
+	.term-drawer.collapsed .td-body {
+		display: none;
+	}
+
+	/* 复用旧 DOM 类名（term-tab / term-commands），只换外观，不动 JSX 回归面 */
+	.term-drawer .terminal-view {
+		display: flex;
+		flex-direction: column;
+		flex: 1;
+		width: 100%;
+		min-height: 0;
+		overflow: hidden;
+	}
+
+	.term-drawer .td-tabs .term-tab {
+		display: inline-flex;
+		align-items: center;
+		gap: 5px;
+		height: 26px;
+		padding: 0 4px 0 8px;
+		border-radius: 6px;
+		max-width: 190px;
+		flex: none;
+		position: relative;
+		color: var(--text-faint);
+		background: transparent;
+		border: 0;
+		transition:
+			background 0.12s ease,
+			color 0.12s ease;
+	}
+
+	.term-drawer .td-tabs .term-tab:hover {
+		background: var(--bg-elev2);
+		color: var(--text-dim);
+	}
+
+	.term-drawer .td-tabs .term-tab.active {
+		background: var(--bg-elev2);
+		color: var(--text);
+		box-shadow: inset 0 0 0 1px var(--border);
+	}
+
+	.term-drawer .td-tabs .term-tab.active::after {
+		content: "";
+		position: absolute;
+		left: 8px;
+		right: 8px;
+		bottom: -1px;
+		height: 2px;
+		border-radius: 2px;
+		background: var(--accent);
+	}
+
+	.term-drawer .td-tabs .term-tab-main {
+		display: flex;
+		align-items: center;
+		gap: 6px;
+		min-width: 0;
+		background: none;
+		border: 0;
+		padding: 0;
+		color: inherit;
+		cursor: pointer;
+		font-size: inherit;
+	}
+
+	.term-drawer .td-tabs .term-tab-dot {
+		width: 6px;
+		height: 6px;
+		border-radius: 50%;
+		flex: none;
+		background: var(--text-faint);
+	}
+
+	.term-drawer .td-tabs .term-tab-dot.run,
+	.td-badge .td-tab-dot.run {
+		background: var(--green);
+		animation: td-pulse 2.2s cubic-bezier(0.22, 1, 0.36, 1) infinite;
+	}
+
+	.term-drawer .td-tabs .term-tab-dot.exit {
+		background: var(--text-faint);
+		opacity: 0.55;
+	}
+
+	.term-drawer .td-tabs .term-tab-title {
+		min-width: 0;
+		overflow: hidden;
+		text-overflow: ellipsis;
+		white-space: nowrap;
+		font-family: var(--mono);
+		font-size: 11px;
+	}
+
+	.term-drawer .td-tabs .term-tab-exit {
+		font-size: 9.5px;
+		color: var(--red);
+		flex: none;
+		margin-left: 2px;
+	}
+
+	.term-drawer .td-tabs .term-tab-close {
+		width: 16px;
+		height: 16px;
+		display: grid;
+		place-items: center;
+		border-radius: 4px;
+		color: var(--text-faint);
+		background: none;
+		border: 0;
+		cursor: pointer;
+		opacity: 0;
+		flex: none;
+	}
+
+	.term-drawer .td-tabs .term-tab:hover .term-tab-close,
+	.term-drawer .td-tabs .term-tab.active .term-tab-close {
+		opacity: 1;
+	}
+
+	.term-drawer .td-tabs .term-tab-close:hover {
+		background: var(--bg-elev3);
+		color: var(--text);
+	}
+
+	.term-drawer .td-tabs .term-tab-close svg {
+		width: 10px;
+		height: 10px;
+	}
+
+	.term-drawer .td-tabs .term-tab-rename-input {
+		width: 100%;
+		min-width: 64px;
+		background: var(--bg);
+		border: 1px solid var(--accent);
+		border-radius: 4px;
+		color: var(--text);
+		font-family: var(--mono);
+		font-size: 11px;
+		padding: 1px 4px;
+	}
+
+	.term-drawer .td-empty-hint {
+		font-size: 11px;
+		color: var(--text-faint);
+		padding: 0 6px;
+		white-space: nowrap;
+	}
+
+	.td-badge .td-tab-dot {
+		width: 5px;
+		height: 5px;
+		border-radius: 50%;
+		flex: none;
+	}
+
+	/* xterm 容器（沿用旧类名，只覆盖布局）
+	 * 体内是左右分区：左列命令栏（可拖宽）+ 右列终端（tab 条只属于右列，在它顶部），
+	 * 因此外层从“单列”改成“一行”，tab 条随右列一起排，不横跨左列。
+	 */
+	.term-drawer .term-main {
+		--term-cmd-w: 252px;
+		flex: 1;
+		min-width: 0;
+		min-height: 0;
+		display: flex;
+		flex-direction: row;
+		position: relative;
+		background: var(--bg-elev);
+		overflow: hidden;
+	}
+
+	.term-drawer .term-panes {
+		flex: 1;
+		min-width: 0;
+		min-height: 0;
+		display: flex;
+		flex-direction: column;
+		background: var(--term-bg);
+	}
+
+	/* 终端列自己的正文区：tab 条在它上面，内边距只给 xterm */
+	.term-drawer .term-body {
+		flex: 1;
+		min-width: 0;
+		min-height: 0;
+		display: flex;
+		flex-direction: column;
+		padding: 10px 8px 8px;
+	}
+
+	.term-drawer .td-empty {
+		flex: 1;
+		display: flex;
+		flex-direction: column;
+		align-items: center;
+		justify-content: center;
+		gap: 5px;
+		color: var(--text-faint);
+		background: var(--term-bg);
+		padding: 20px;
+		text-align: center;
+	}
+
+	.term-drawer .td-empty svg {
+		width: 20px;
+		height: 20px;
+		opacity: 0.75;
+	}
+
+	.term-drawer .td-empty .td-empty-title {
+		font-size: 12.5px;
+		color: var(--text-dim);
+	}
+
+	.term-drawer .td-empty .td-empty-sub {
+		font-family: var(--mono);
+		font-size: 10.5px;
+	}
+
+	/* ============================ 底部抽屉：全宽 + 多标签 ============================ */
+	/* 关掉就是彻底让出空间（不再留一条 39px 的壳）；折叠是“只留标签条”。 */
+	.bottom-dock.closed {
+		display: none;
+	}
+
+	.bottom-dock .bd-head {
+		display: flex;
+		align-items: center;
+		gap: 6px;
+		height: 39px;
+		padding: 0 6px 0 10px;
+		flex: none;
+		border-bottom: 1px solid var(--border-soft);
+	}
+
+	.bottom-dock .bd-tabs {
+		display: flex;
+		align-items: center;
+		gap: 2px;
+		min-width: 0;
+		overflow-x: auto;
+	}
+
+	.bottom-dock .bd-tab {
+		height: 26px;
+		padding: 0 10px;
+		border: 0;
+		border-radius: 6px;
+		background: transparent;
+		color: var(--text-faint);
+		font-size: 11.5px;
+		white-space: nowrap;
+		cursor: pointer;
+	}
+
+	.bottom-dock .bd-tab:hover {
+		background: var(--bg-elev2);
+		color: var(--text-dim);
+	}
+
+	.bottom-dock .bd-tab.on {
+		background: var(--bg-elev2);
+		color: var(--text);
+		box-shadow: inset 0 0 0 1px var(--border);
+	}
+
+	.bottom-dock .bd-acts {
+		margin-left: auto;
+		display: flex;
+		align-items: center;
+		gap: 2px;
+		flex: none;
+	}
+
+	.bottom-dock .bd-acts .icon-btn {
+		width: 24px;
+		height: 24px;
+		border-radius: 5px;
+		display: grid;
+		place-items: center;
+		color: var(--text-faint);
+		background: transparent;
+		border: 0;
+		cursor: pointer;
+	}
+
+	.bottom-dock .bd-acts .icon-btn:hover {
+		background: var(--bg-elev2);
+		color: var(--text);
+	}
+
+	.bottom-dock .bd-acts .icon-btn.danger:hover {
+		background: var(--red-soft);
+		color: var(--red);
+	}
+
+	.bottom-dock .bd-acts .icon-btn svg {
+		width: 13px;
+		height: 13px;
+	}
+
+	/* 所有标签都保持挂载：切走再切回来，xterm 的 scrollback 与 PTY 绑定都还在 */
+	.bottom-dock .bd-panes {
+		flex: 1;
+		min-height: 0;
+		display: flex;
+	}
+
+	.bottom-dock .bd-pane {
+		flex: 1;
+		min-width: 0;
+		min-height: 0;
+		display: flex;
+		flex-direction: column;
+	}
+
+	.bottom-dock .bd-pane.hidden {
+		display: none;
+	}
+
+	/* ============================ 命令栏（终端左侧常驻） ============================ */
+	/* 停靠在终端左边的固定一列，不再是浮层：头部固定、列表自己滚，宽度可拖（双击复位），也不会盖住右侧的终端输出。 */
+	.term-drawer .term-cmd-rail {
+		flex: none;
+		width: var(--term-cmd-w, 252px);
+		max-width: 50%;
+		min-height: 0;
+		display: flex;
+		flex-direction: column;
+		overflow: hidden;
+		background: var(--bg-elev);
+		border-right: 1px solid var(--border-soft);
+	}
+
+	.term-drawer .term-cmd-grip {
+		margin: 0;
+		background: transparent;
+	}
+
+	.term-drawer .td-actions .icon-btn.term-cmd-toggle.on {
+		color: var(--text);
+		background: var(--bg-elev2);
+		box-shadow: inset 0 0 0 1px var(--border);
+	}
+
+	.term-cmd-rail .term-cmd-head {
+		flex: none;
+		display: flex;
+		align-items: center;
+		gap: 6px;
+		padding: 8px 10px 7px;
+		border-bottom: 1px solid var(--border-soft);
+	}
+
+	.term-cmd-rail .term-cmd-body {
+		flex: 1;
+		min-height: 0;
+		overflow-y: auto;
+		padding: 4px 6px 6px;
+	}
+
+	/* ============================ 源代码管理（右栏标签） ============================ */
+
+	.gd-titlebar {
+		display: flex;
+		align-items: center;
+		gap: 8px;
+		min-width: 0;
+		padding: 8px 6px 0 12px;
+		flex: none;
+		overflow: hidden;
+	}
+
+	/* 分支选择：按钮 + 浮层菜单（原生 select 的下拉层由系统画，主题跟不进来） */
+	.gd-branch {
+		display: inline-flex;
+		align-items: center;
+		gap: 5px;
+		height: 24px;
+		padding: 0 7px;
+		border-radius: 6px;
+		background: var(--bg-elev2);
+		border: 1px solid var(--border);
+		font-family: var(--mono);
+		font-size: 11px;
+		color: var(--text-dim);
+		min-width: 0;
+		max-width: 190px;
+		flex: 0 1 auto;
+		cursor: pointer;
+	}
+
+	.gd-branch:hover {
+		color: var(--text);
+		border-color: color-mix(in srgb, var(--accent) 45%, var(--border));
+	}
+
+	.gd-branch-glyph {
+		width: 12px;
+		height: 12px;
+		color: var(--accent);
+		flex: none;
+	}
+
+	.gd-branch-name {
+		min-width: 0;
+		overflow: hidden;
+		text-overflow: ellipsis;
+		white-space: nowrap;
+	}
+
+	.gd-branch-caret {
+		width: 11px;
+		height: 11px;
+		color: var(--text-faint);
+		flex: none;
+		transition: rotate 0.15s ease;
+	}
+
+	.gd-branch-caret.up {
+		rotate: 180deg;
+	}
+
+	.gd-branch-dd.disabled {
+		opacity: 0.5;
+		pointer-events: none;
+	}
+
+	.gd-branch-menu {
+		padding: 5px;
+	}
+
+	.gd-branch-menu .dd-header {
+		padding: 5px 8px 3px;
+	}
+
+	.gd-branch-row {
+		display: flex;
+		align-items: center;
+		gap: 2px;
+		border-radius: 6px;
+	}
+
+	.gd-branch-row:hover {
+		background: var(--bg-elev2);
+	}
+
+	.gd-branch-pick {
+		flex: 1;
+		min-width: 0;
+		display: flex;
+		align-items: center;
+		gap: 6px;
+		padding: 5px 8px;
+		border: 0;
+		border-radius: 6px;
+		background: none;
+		color: var(--text-dim);
+		text-align: left;
+		cursor: pointer;
+	}
+
+	.gd-branch-row.current .gd-branch-pick {
+		color: var(--text);
+		font-weight: 600;
+	}
+
+	.gd-branch-tick {
+		display: grid;
+		place-items: center;
+		width: 12px;
+		height: 12px;
+		flex: none;
+		color: var(--accent);
+	}
+
+	.gd-branch-tick svg {
+		width: 11px;
+		height: 11px;
+	}
+
+	.gd-branch-text {
+		min-width: 0;
+		overflow: hidden;
+		text-overflow: ellipsis;
+		white-space: nowrap;
+		font-family: var(--mono);
+		font-size: 11.5px;
+	}
+
+	.gd-branch-text.mono {
+		color: var(--text-faint);
+	}
+
+	/* 危险操作只在悬停时露出来，菜单看起来仍然只是“选分支” */
+	.gd-branch-del {
+		display: inline-flex;
+		align-items: center;
+		justify-content: center;
+		width: 22px;
+		height: 22px;
+		flex: none;
+		border: 0;
+		border-radius: 5px;
+		background: transparent;
+		color: var(--text-faint);
+		cursor: pointer;
+		opacity: 0;
+		transition: opacity 0.1s ease;
+	}
+
+	.gd-branch-del svg {
+		width: 11px;
+		height: 11px;
+	}
+
+	.gd-branch-row:hover .gd-branch-del {
+		opacity: 1;
+	}
+
+	.gd-branch-del:hover {
+		background: var(--bg-elev);
+		color: var(--text);
+	}
+
+	.gd-branch-del.force:hover {
+		color: var(--amber);
+	}
+
+	.gd-branch-del:disabled {
+		display: none;
+	}
+
+	.gd-branch-empty {
+		padding: 8px;
+		font-size: 11.5px;
+		color: var(--text-faint);
+	}
+
+	.gd-ab {
+		display: inline-flex;
+		align-items: center;
+		gap: 3px;
+		font-family: var(--mono);
+		font-size: 10px;
+		flex: none;
+	}
+
+	.gd-ab .up {
+		color: var(--green);
+	}
+
+	.gd-ab .dn {
+		color: var(--red);
+	}
+
+	.gd-ab .gone {
+		color: var(--amber);
+	}
+
+	.gd-titlebar .gd-actions {
+		margin-left: auto;
+		display: flex;
+		align-items: center;
+		gap: 3px;
+		flex: none;
+	}
+
+	.gd-titlebar .gd-actions .icon-btn {
+		width: 25px;
+		height: 25px;
+		border-radius: 5px;
+		display: grid;
+		place-items: center;
+		color: var(--text-faint);
+		background: transparent;
+		border: 0;
+		cursor: pointer;
+	}
+
+	.gd-titlebar .gd-actions .icon-btn:hover {
+		background: var(--bg-elev2);
+		color: var(--text);
+	}
+
+	.gd-titlebar .gd-actions .icon-btn svg {
+		width: 13.5px;
+		height: 13.5px;
+	}
+
+	.gd-titlebar .gd-actions .btn {
+		height: 24px;
+		padding: 0 7px;
+		font-size: 11px;
+	}
+
+	.gd-seg {
+		display: flex;
+		gap: 2px;
+		padding: 2px;
+		margin: 8px 10px 8px;
+		border-radius: 8px;
+		background: var(--bg-elev2);
+		border: 1px solid var(--border-soft);
+		flex: none;
+	}
+
+	.gd-seg button {
+		display: inline-flex;
+		align-items: center;
+		gap: 6px;
+		height: 24px;
+		padding: 0 10px;
+		border-radius: 6px;
+		font-size: 11.5px;
+		color: var(--text-faint);
+		background: transparent;
+		border: 0;
+		cursor: pointer;
+		transition:
+			background 0.14s ease,
+			color 0.14s ease;
+	}
+
+	.gd-seg button:hover {
+		color: var(--text-dim);
+	}
+
+	.gd-seg button.on {
+		background: var(--bg-elev);
+		color: var(--text);
+		box-shadow:
+			0 1px 2px #00000047,
+			inset 0 0 0 1px var(--border);
+	}
+
+	.gd-seg button .n {
+		font-family: var(--mono);
+		font-size: 9.5px;
+		padding: 0 4px;
+		border-radius: 4px;
+		background: var(--bg-elev3);
+		color: var(--text-dim);
+	}
+
+	.gd-seg button.on .n {
+		background: var(--accent-soft);
+		color: var(--accent);
+	}
+
+	/* 旧的 tab 按钮用的是 .active，保留兼容 */
+	.gd-seg button.active {
+		background: var(--bg-elev);
+		color: var(--text);
+		box-shadow:
+			0 1px 2px #00000047,
+			inset 0 0 0 1px var(--border);
+	}
+
+	/* header 在抽屉里更紧凑，按旧 padding 会显得拥挤 */
+	.scm-view .scm-header {
+		padding: 0;
+		gap: 0;
+		border-bottom: 1px solid var(--border-soft);
+	}
+
+	.scm-view .scm-gen-error {
+		margin: 0 10px 8px;
+	}
+
+	/* stash 视图占满抽屉主体，不和 diff 分栏 */
+	.scm-view .scm-body.stash-mode {
+		display: block;
+		overflow-y: auto;
+	}
+
+	.scm-view .scm-body.stash-mode .scm-divider,
+	.scm-view .scm-body.stash-mode .scm-diff {
+		display: none;
+	}
+
+	.scm-view .scm-body.stash-mode .scm-stash {
+		display: flex;
+		flex-direction: column;
+		min-height: 100%;
+	}
+
+	.scm-view .scm-body.stash-mode .scm-files-list {
+		flex: 1;
+	}
+
+	/* 提交输入改成通栏输入框（原来是行内控件） */
+	.gd-commit-bar .scm-commit-input {
+		display: block;
+		width: 100%;
+		min-width: 0;
+		border: 0;
+		background: transparent;
+		color: var(--text);
+		font-size: 12.5px;
+		padding: 8px 10px 4px;
+		min-height: 34px;
+	}
+
+	.gd-commit-bar .scm-commit-input:focus {
+		outline: none;
+	}
+
+	/* 底部已有“在终端中打开”，旧提示行隐藏 */
+	.scm-view .scm-hint {
+		display: none;
+	}
+
+	/* 手机端才出现的“返回列表” */
+	.scm-view .scm-back {
+		display: none;
+		place-items: center;
+		width: 22px;
+		height: 22px;
+		border-radius: 5px;
+		border: 0;
+		background: transparent;
+		color: var(--text-faint);
+		flex: none;
+		cursor: pointer;
+	}
+
+	.scm-view .scm-back:hover {
+		background: var(--bg-elev2);
+		color: var(--text);
+	}
+
+	.scm-view .scm-back svg {
+		width: 14px;
+		height: 14px;
+	}
+
+	.gd-more-scrim {
+		position: absolute;
+		inset: 0;
+		z-index: 7;
+		background: transparent;
+		border: 0;
+		cursor: default;
+	}
+
+	/* 「更多」浮层：承载 stash / 分支 / amend / blame */
+	.gd-more {
+		position: absolute;
+		top: 40px;
+		right: 8px;
+		width: min(340px, calc(100% - 16px));
+		max-height: 60%;
+		overflow-y: auto;
+		overscroll-behavior: contain;
+		z-index: 8;
+		display: flex;
+		flex-direction: column;
+		gap: 6px;
+		padding: 10px;
+		background: var(--bg-elev);
+		border: 1px solid var(--border);
+		border-radius: 10px;
+		box-shadow: 0 22px 50px -22px #000000d9;
+	}
+
+	.gd-more .gd-more-title {
+		font-size: 10.5px;
+		font-weight: 600;
+		letter-spacing: 0.05em;
+		text-transform: uppercase;
+		color: var(--text-faint);
+	}
+
+	.gd-more .gd-more-row {
+		display: flex;
+		flex-wrap: wrap;
+		gap: 4px;
+		align-items: center;
+	}
+
+	/* 提交栏：常驻底部 */
+	.gd-commit-bar {
+		flex: none;
+		padding: 8px 9px calc(8px + env(safe-area-inset-bottom));
+		border-top: 1px solid var(--border);
+		background: color-mix(in srgb, var(--bg-elev) 70%, var(--bg-elev2));
+	}
+
+	.gd-commit-bar .commit-box {
+		border: 1px solid var(--border);
+		border-radius: 10px;
+		background: var(--bg);
+		overflow: hidden;
+		transition: border-color 0.2s ease;
+	}
+
+	.gd-commit-bar .commit-box:focus-within {
+		border-color: color-mix(in srgb, var(--accent) 55%, var(--border));
+	}
+
+	.gd-commit-bar .commit-row {
+		display: flex;
+		align-items: center;
+		gap: 4px;
+		padding: 2px 5px 5px 7px;
+		flex-wrap: wrap;
+	}
+
+	.gd-commit-bar .commit-row .btn {
+		height: 24px;
+		padding: 0 8px;
+		font-size: 11px;
+	}
+
+	.gd-commit-bar .gd-foot {
+		display: flex;
+		align-items: center;
+		gap: 8px;
+		margin-top: 6px;
+		font-size: 10.5px;
+		color: var(--text-faint);
+		min-width: 0;
+	}
+
+	.gd-commit-bar .gd-foot .link {
+		display: inline-flex;
+		align-items: center;
+		gap: 4px;
+		color: var(--text-dim);
+		background: transparent;
+		border: 0;
+		cursor: pointer;
+		font-size: 10.5px;
+		min-width: 0;
+	}
+
+	.gd-commit-bar .gd-foot .link:hover {
+		color: var(--accent);
+	}
+
+	.gd-commit-bar .gd-foot .link svg {
+		width: 11px;
+		height: 11px;
+	}
+
+	/* 抽屉里的变更列表：分组标题 + 紧凑行 */
+	.scm-view .scm-files-header {
+		padding: 6px 8px;
+	}
+
+	.scm-view .scm-file {
+		min-height: 26px;
+	}
+
+	.scm-view .scm-file-path {
+		font-size: 11px;
+	}
+
+	/* ============================ 手机端：全屏 sheet ============================ */
+	@media (max-width: 768px) {
+		.term-drawer {
+			height: 64dvh;
+			max-height: calc(100% - 56px);
+			border-radius: 16px 16px 0 0;
+		}
+
+		.term-drawer.collapsed {
+			height: 42px;
+		}
+
+		.term-drawer .td-grip {
+			top: -6px;
+			height: 16px;
+		}
+
+		.term-drawer .td-grip::after {
+			top: 6px;
+			width: 34px;
+			height: 4px;
+		}
+
+		.td-head {
+			height: 42px;
+			gap: 4px;
+			padding: 0 6px;
+		}
+
+		.td-tab {
+			height: 26px;
+			padding: 0 7px;
+		}
+
+		.td-tab .td-tab-act {
+			opacity: 1;
+		}
+
+		.td-badge,
+		.td-sep {
+			display: none;
+		}
+
+		/* 手机：列表 → 详情二级下钻，不再左右分栏 */
+		.scm-view .scm-body {
+			display: block;
+			position: relative;
+		}
+
+		.scm-view .scm-files,
+		.scm-view .scm-history {
+			width: 100%;
+			max-width: 100%;
+			border-right: 0;
+			height: 100%;
+		}
+
+		.scm-view .scm-diff {
+			display: none;
+		}
+
+		.scm-view .scm-body.detail-mode .scm-files,
+		.scm-view .scm-body.detail-mode .scm-history {
+			display: none;
+		}
+
+		.scm-view .scm-body.detail-mode .scm-diff {
+			display: flex;
+			height: 100%;
+		}
+
+		.scm-view .scm-divider {
+			display: none;
+		}
+
+		.scm-view .scm-file {
+			min-height: 34px;
+		}
+
+		/* 批量操作在窄屏占满头部，先把文字按钮收起来 */
+		.scm-view .scm-files-header .scm-act {
+			display: none;
+		}
+
+		.scm-view .scm-back {
+			display: grid;
+		}
+
+		.gd-titlebar {
+			padding: 8px 6px 0 10px;
+		}
+
+		.gd-branch {
+			max-width: 150px;
+		}
+
+		/* 窄屏不再左右分栏：命令栏改成盖住终端正文的二级页（tab 条留在上面可点开/收起）。 */
+		.term-drawer .term-cmd-rail {
+			position: absolute;
+			top: 42px;
+			bottom: 0;
+			left: 0;
+			right: 0;
+			width: auto;
+			max-width: none;
+			z-index: 4;
+			border-right: 0;
+		}
+
+		.term-drawer .term-cmd-grip {
+			display: none;
+		}
+	}
+
+	@media (prefers-reduced-motion: reduce) {
+		.term-drawer,
+		.td-tab,
+		.gd-seg button {
+			transition: none;
+		}
+
+		.td-tab .td-dot.run {
+			animation: none;
+		}
+	}
+}

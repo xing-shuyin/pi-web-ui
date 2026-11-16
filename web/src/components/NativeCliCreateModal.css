@@ -288,7 +288,8 @@
 	}
 }
 
-.native-cli-create-entry > button {
+/* hover 变体才把触发按钮压成图标方块、隐藏文字；inline 变体保留触发按钮自己的 chip 样式与文案。 */
+.native-cli-create-entry:not([data-cli-variant="inline"]) > button {
 	box-sizing: border-box;
 	flex-shrink: 0;
 	width: var(--native-cli-action-width);
@@ -298,7 +299,7 @@
 	justify-content: center;
 }
 
-.native-cli-create-entry > button > :is(.bar-item-text, span:not([class])) {
+.native-cli-create-entry:not([data-cli-variant="inline"]) > button > :is(.bar-item-text, span:not([class])) {
 	display: none;
 }
 
@@ -308,4 +309,13 @@
 	background: transparent;
 	color: inherit;
 	box-shadow: none;
+}
+
+/* inline（顶栏）：CLI 是排在触发按钮右侧的独立 chip，不用负边距、不遮挡相邻控件。 */
+.native-cli-create-entry[data-cli-variant="inline"] {
+	gap: 4px;
+}
+
+.native-cli-create-entry[data-cli-variant="inline"] > .native-cli-inline-button {
+	flex-shrink: 0;
 }

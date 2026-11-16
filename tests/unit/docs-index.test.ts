@@ -39,6 +39,30 @@ function relativeLinks(markdown: string): { target: string; anchor?: string }[] 
 const LANG_VARIANT = /\.(en|zh-CN|zh-TW)\.md$/;
 const docFiles = readdirSync(docsDir).filter((name) => name.endsWith(".md") && !LANG_VARIANT.test(name));
 
+describe("docs/ 之间的互链锚点", () => {
+	it("每份文档指向其它文档的锚点都真实存在", () => {
+		const broken: string[] = [];
+		let checked = 0;
+		for (const name of docFiles) {
+			for (const link of relativeLinks(readFileSync(join(docsDir, name), "utf8"))) {
+				if (!link.target.endsWith(".md")) continue;
+				const abs = join(docsDir, link.target);
+				if (!existsSync(abs)) {
+					broken.push(`${name} → ${link.target}（不存在）`);
+					continue;
+				}
+				if (!link.anchor) continue;
+				checked += 1;
+				if (statSync(abs).isFile() && !headingsOf(abs).includes(link.anchor))
+					broken.push(`${name} → ${link.target}#${link.anchor}（无此标题）`);
+			}
+		}
+		// 只验 README 一片不够：正文互相引用才是「单源声明」的实际载体。
+		expect(checked).toBeGreaterThan(0);
+		expect(broken, `文档互链死锚：\n${broken.join("\n")}`).toEqual([]);
+	});
+});
+
 describe("docs/README.md 是完整的文档总索引", () => {
 	it("覆盖 docs/ 下所有 Markdown 文档", () => {
 		const linked = new Set(relativeLinks(index).map((link) => link.target.replace(/^\.\//, "")));

@@ -1,6 +1,25 @@
-import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import {
+	useEffect,
+	useMemo,
+	useRef,
+	useState,
+	type CSSProperties,
+	type PointerEvent as ReactPointerEvent,
+	type ReactNode,
+} from "react";
 import { randomUuid } from "../uuid";
-import { FiEdit2, FiMenu, FiPlay, FiPlus, FiRefreshCw, FiTerminal, FiTrash2, FiX } from "react-icons/fi";
+import {
+	FiChevronDown,
+	FiChevronUp,
+	FiEdit2,
+	FiMenu,
+	FiPlay,
+	FiPlus,
+	FiRefreshCw,
+	FiTerminal,
+	FiTrash2,
+	FiX,
+} from "react-icons/fi";
 import type { ChatState, TerminalMeta } from "../use-chat";
 import type { CommandDef } from "../types";
 import { TermXterm } from "./TermXterm";
@@ -30,6 +49,8 @@ interface TerminalPanelProps {
 	};
 	uiTerminalToolbar?: UiSlotEntry[];
 	onUiAction?: (item: UiSlotEntry) => void;
+	collapsed?: boolean;
+	onToggleCollapse?: () => void;
 }
 
 interface Draft {
@@ -40,7 +61,48 @@ interface Draft {
 
 const EMPTY_DRAFT: Draft = { name: "", command: "", cwd: "${pwd}" };
 
-export function TerminalPanel({ chat: allChat, terminal, uiTerminalToolbar, onUiAction }: TerminalPanelProps) {
+/* 命令栏：固定在终端左侧的一列，不再是贴着按钮的浮层。开合与宽度都记住。 */
+const RAIL_OPEN_KEY = "pi-web-ui:term-cmd-rail-open";
+const RAIL_WIDTH_KEY = "pi-web-ui:term-cmd-rail-w";
+const RAIL_MIN_W = 176;
+const RAIL_DEFAULT_W = 252;
+/** 与 drawer.css 手机断点一致：窄屏命令栏改成盖住终端的抽屉。 */
+const NARROW_QUERY = "(max-width: 768px)";
+
+function isNarrowViewport(): boolean {
+	if (typeof window === "undefined" || typeof window.matchMedia !== "function") return false;
+	return window.matchMedia(NARROW_QUERY).matches;
+}
+
+function readRailOpen(): boolean {
+	try {
+		const raw = localStorage.getItem(RAIL_OPEN_KEY);
+		if (raw === "0" || raw === "1") return raw === "1";
+	} catch {
+		/* localStorage 可能被禁用，退回默认开 */
+	}
+	return true;
+}
+
+function readRailWidth(): number {
+	try {
+		const raw = localStorage.getItem(RAIL_WIDTH_KEY);
+		const v = raw === null ? Number.NaN : Number(raw);
+		if (Number.isFinite(v) && v >= RAIL_MIN_W) return v;
+	} catch {
+		/* 同上 */
+	}
+	return RAIL_DEFAULT_W;
+}
+
+export function TerminalPanel({
+	chat: allChat,
+	terminal,
+	uiTerminalToolbar,
+	onUiAction,
+	collapsed = false,
+	onToggleCollapse,
+}: TerminalPanelProps) {
 	const activeConversationId = allChat.activeConversationId || allChat.state?.conversationId || "";
 	const shellTerminals = useMemo(
 		() =>
@@ -54,7 +116,10 @@ export function TerminalPanel({ chat: allChat, terminal, uiTerminalToolbar, onUi
 	const chat = { ...allChat, terminals: shellTerminals };
 	const t = useT();
 	const [activeId, setActiveId] = useState<string | null>(null);
-	const [sideOpen, setSideOpen] = useState(false);
+	const [cmdRailOpen, setCmdRailOpen] = useState<boolean>(() => !isNarrowViewport() && readRailOpen());
+	const [railWidth, setRailWidth] = useState<number>(readRailWidth);
+	const [railDragging, setRailDragging] = useState(false);
+	const mainRef = useRef<HTMLDivElement | null>(null);
 	const [isNew, setIsNew] = useState(false);
 	const [editingIdx, setEditingIdx] = useState<number | null>(null);
 	const [draft, setDraft] = useState<Draft>(EMPTY_DRAFT);
@@ -75,9 +140,69 @@ export function TerminalPanel({ chat: allChat, terminal, uiTerminalToolbar, onUi
 		if (chat.terminalActiveId) {
 			const tab = chat.terminals.find((t) => t.id === chat.terminalActiveId && (t.ownerKind ?? "client") === "client");
 			if (tab) setActiveId(tabKey(tab));
-			setSideOpen(false);
 		}
 	}, [chat.terminalActiveId]);
+
+	useEffect(() => {
+		// 窄屏命令栏是临时抽屉（盖住终端），不写回桌面上的“常驻”偏好。
+		if (isNarrowViewport()) return;
+		try {
+			localStorage.setItem(RAIL_OPEN_KEY, cmdRailOpen ? "1" : "0");
+		} catch {
+			/* 忽略持久化失败 */
+		}
+	}, [cmdRailOpen]);
+
+	useEffect(() => {
+		if (railDragging) return;
+		try {
+			localStorage.setItem(RAIL_WIDTH_KEY, String(Math.round(railWidth)));
+		} catch {
+			/* 忽略持久化失败 */
+		}
+	}, [railWidth, railDragging]);
+
+	/** 窄屏命令栏盖着终端：一旦要看终端（新建/运行/切 tab）就自动让位。 */
+	const dismissRailOnNarrow = () => {
+		if (isNarrowViewport()) setCmdRailOpen(false);
+	};
+
+	const railMaxWidth = () => {
+		const host = mainRef.current?.clientWidth ?? window.innerWidth;
+		return Math.max(RAIL_MIN_W + 40, Math.round(host * 0.5));
+	};
+
+	/** 拖右侧分隔条改命令栏宽度；双击复位。 */
+	const onRailGripDown = (e: ReactPointerEvent<HTMLDivElement>) => {
+		e.preventDefault();
+		const el = e.currentTarget;
+		const startX = e.clientX;
+		const startW = railWidth;
+		const ceil = railMaxWidth();
+		let last = startW;
+		el.setPointerCapture(e.pointerId);
+		setRailDragging(true);
+		document.body.classList.add("panel-resizing");
+		const move = (ev: PointerEvent) => {
+			last = Math.min(ceil, Math.max(RAIL_MIN_W, Math.round(startW + (ev.clientX - startX))));
+			setRailWidth(last);
+		};
+		const up = () => {
+			el.removeEventListener("pointermove", move);
+			el.removeEventListener("pointerup", up);
+			el.removeEventListener("pointercancel", up);
+			document.body.classList.remove("panel-resizing");
+			setRailDragging(false);
+			try {
+				localStorage.setItem(RAIL_WIDTH_KEY, String(last));
+			} catch {
+				/* 忽略持久化失败 */
+			}
+		};
+		el.addEventListener("pointermove", move);
+		el.addEventListener("pointerup", up);
+		el.addEventListener("pointercancel", up);
+	};
 
 	useEffect(() => {
 		return () => {
@@ -105,7 +230,7 @@ export function TerminalPanel({ chat: allChat, terminal, uiTerminalToolbar, onUi
 			exitCode: null,
 		});
 		setActiveId(JSON.stringify(["client", "", id]));
-		setSideOpen(false);
+		dismissRailOnNarrow();
 	};
 
 	const openShell = () =>
@@ -115,6 +240,7 @@ export function TerminalPanel({ chat: allChat, terminal, uiTerminalToolbar, onUi
 		});
 
 	const runCommand = (cmd: CommandDef) => {
+		dismissRailOnNarrow();
 		const title = cmd.name || cmd.command;
 		const existing = chat.terminals.find((t) => t.title === title && (t.ownerKind ?? "client") === "client");
 		if (existing) {
@@ -155,7 +281,7 @@ export function TerminalPanel({ chat: allChat, terminal, uiTerminalToolbar, onUi
 				onClick={() => {
 					if (renamingTab) return;
 					setActiveId(tabKey(tab));
-					setSideOpen(false);
+					dismissRailOnNarrow();
 				}}
 			>
 				<span className={`term-tab-dot ${tab.running ? "run" : "exit"}`} />
@@ -312,160 +438,220 @@ export function TerminalPanel({ chat: allChat, terminal, uiTerminalToolbar, onUi
 		),
 	};
 
+	const runningCount = chat.terminals.filter((item) => item.running).length;
+
+	const closeAllTabs = () => {
+		for (const tab of chat.terminals) {
+			appSend({
+				type: "terminal_kill",
+				terminalId: tab.id,
+				conversationId: tab.conversationId,
+				ownerKind: tab.ownerKind ?? "client",
+			});
+			terminal.close(tab.id, tab.ownerKind ?? "client", tab.conversationId);
+		}
+		setActiveId(null);
+	};
+
+	const commandsBody = editing ? (
+		<div className="cmd-form">
+			<label htmlFor="cmd-name">{t("name")}</label>
+			<input
+				id="cmd-name"
+				className="cmd-input"
+				value={draft.name}
+				placeholder={t("exampleName")}
+				autoFocus
+				onChange={(e) => setDraft({ ...draft, name: e.target.value })}
+			/>
+			<label htmlFor="cmd-command">{t("command")}</label>
+			<input
+				id="cmd-command"
+				className="cmd-input"
+				value={draft.command}
+				placeholder={t("exampleCommand")}
+				onChange={(e) => setDraft({ ...draft, command: e.target.value })}
+				onKeyDown={(e) => {
+					if (e.key === "Enter" && !e.nativeEvent.isComposing) {
+						saveDraft();
+					}
+				}}
+			/>
+			<label htmlFor="cmd-cwd">
+				{t("directory")} <span className="cmd-hint">{t("cwdHint")}</span>
+			</label>
+			<input
+				id="cmd-cwd"
+				className="cmd-input"
+				value={draft.cwd}
+				placeholder="${pwd}"
+				onChange={(e) => setDraft({ ...draft, cwd: e.target.value })}
+				onKeyDown={(e) => {
+					if (e.key === "Enter" && !e.nativeEvent.isComposing) {
+						saveDraft();
+					}
+				}}
+			/>
+			<div className="cmd-form-actions">
+				<button type="button" className="btn" onClick={cancelEdit}>
+					{t("cancel")}
+				</button>
+				<button
+					type="button"
+					className="btn primary"
+					disabled={!draft.name.trim() || !draft.command.trim()}
+					onClick={saveDraft}
+				>
+					{t("save")}
+				</button>
+			</div>
+		</div>
+	) : (
+		<>
+			{chat.commands.length === 0 && <div className="panel-empty">{t("noCommands")}</div>}
+			{chat.commands.map((c, i) => (
+				<div key={i} className="cmd-item">
+					<button type="button" className="cmd-run" title={t("clickToRun")} onClick={() => runCommand(c)}>
+						<FiPlay />
+					</button>
+					<button type="button" className="cmd-main" title={t("clickToRun")} onClick={() => runCommand(c)}>
+						<span className="cmd-name">{c.name}</span>
+						<span className="cmd-command">{c.command}</span>
+						{c.cwd && <span className="cmd-cwd">{c.cwd}</span>}
+					</button>
+					<button type="button" className="cmd-act" title={t("edit")} onClick={() => startEdit(i)}>
+						<FiEdit2 />
+					</button>
+					<button
+						type="button"
+						className={`cmd-act del ${confirmDel === i ? "confirm" : ""}`}
+						title={t("delete")}
+						onClick={() => requestDelete(i)}
+					>
+						{confirmDel === i ? t("confirmQ") : <FiTrash2 />}
+					</button>
+				</div>
+			))}
+		</>
+	);
+
 	return (
 		<div className="terminal-view">
-			<aside className={`term-side term-commands ${sideOpen ? "open" : ""}`}>
-				<div className="panel-header">
-					<span className="panel-title">{t("commands")}</span>
-					<div className="panel-header-actions">
-						{renderMergedToolbar(
-							termZone(["host:term-cmd-refresh", "host:term-cmd-new"], false),
-							termHostNodes,
-							onUiAction,
-						)}
-					</div>
-				</div>
-
-				<div className="panel-body">
-					{editing ? (
-						<div className="cmd-form">
-							<label htmlFor="cmd-name">{t("name")}</label>
-							<input
-								id="cmd-name"
-								className="cmd-input"
-								value={draft.name}
-								placeholder={t("exampleName")}
-								autoFocus
-								onChange={(e) => setDraft({ ...draft, name: e.target.value })}
-							/>
-							<label htmlFor="cmd-command">{t("command")}</label>
-							<input
-								id="cmd-command"
-								className="cmd-input"
-								value={draft.command}
-								placeholder={t("exampleCommand")}
-								onChange={(e) => setDraft({ ...draft, command: e.target.value })}
-								onKeyDown={(e) => {
-									if (e.key === "Enter" && !e.nativeEvent.isComposing) {
-										saveDraft();
-									}
-								}}
-							/>
-							<label htmlFor="cmd-cwd">
-								{t("directory")} <span className="cmd-hint">{t("cwdHint")}</span>
-							</label>
-							<input
-								id="cmd-cwd"
-								className="cmd-input"
-								value={draft.cwd}
-								placeholder="${pwd}"
-								onChange={(e) => setDraft({ ...draft, cwd: e.target.value })}
-								onKeyDown={(e) => {
-									if (e.key === "Enter" && !e.nativeEvent.isComposing) {
-										saveDraft();
-									}
-								}}
-							/>
-							<div className="cmd-form-actions">
-								<button type="button" className="btn" onClick={cancelEdit}>
-									{t("cancel")}
-								</button>
-								<button
-									type="button"
-									className="btn primary"
-									disabled={!draft.name.trim() || !draft.command.trim()}
-									onClick={saveDraft}
-								>
-									{t("save")}
-								</button>
+			<div
+				className="term-main"
+				ref={mainRef}
+				style={{ "--term-cmd-w": `${Math.round(railWidth)}px` } as CSSProperties}
+			>
+				{cmdRailOpen && (
+					<>
+						<aside className="term-cmd-rail term-commands" aria-label={t("commands")}>
+							<div className="panel-header term-cmd-head">
+								<span className="panel-title">{t("commands")}</span>
+								<div className="panel-header-actions">
+									{renderMergedToolbar(
+										termZone(["host:term-cmd-refresh", "host:term-cmd-new"], false),
+										termHostNodes,
+										onUiAction,
+									)}
+								</div>
 							</div>
-						</div>
-					) : (
-						<>
-							{chat.commands.length === 0 && <div className="panel-empty">{t("noCommands")}</div>}
-							{chat.commands.map((c, i) => (
-								<div key={i} className="cmd-item">
-									<button type="button" className="cmd-run" title={t("clickToRun")} onClick={() => runCommand(c)}>
-										<FiPlay />
-									</button>
-									<button type="button" className="cmd-main" title={t("clickToRun")} onClick={() => runCommand(c)}>
-										<span className="cmd-name">{c.name}</span>
-										<span className="cmd-command">{c.command}</span>
-										{c.cwd && <span className="cmd-cwd">{c.cwd}</span>}
-									</button>
-									<button type="button" className="cmd-act" title={t("edit")} onClick={() => startEdit(i)}>
-										<FiEdit2 />
-									</button>
+							<div className="panel-body term-cmd-body">{commandsBody}</div>
+						</aside>
+						<div
+							className="term-cmd-grip resize-handle"
+							role="separator"
+							aria-orientation="vertical"
+							title={t("dragToResize")}
+							onPointerDown={onRailGripDown}
+							onDoubleClick={() => setRailWidth(RAIL_DEFAULT_W)}
+						/>
+					</>
+				)}
+				<div className="term-panes">
+					<div className="td-head">
+						<div className="td-tabs">
+							{userTabs.map(renderTab)}
+							{agentTabs.length > 0 && (
+								<>
 									<button
 										type="button"
-										className={`cmd-act del ${confirmDel === i ? "confirm" : ""}`}
-										title={t("delete")}
-										onClick={() => requestDelete(i)}
+										className={`td-group ${aiBashOpen ? "" : "closed"}`}
+										title={t("aiBashGroup")}
+										onClick={() => setAiBashOpen((v) => !v)}
 									>
-										{confirmDel === i ? t("confirmQ") : <FiTrash2 />}
+										<span className="td-caret">▾</span>
+										<span>{t("aiBashGroup")}</span>
+										<span className="td-count">{agentTabs.length}</span>
 									</button>
-								</div>
-							))}
-						</>
-					)}
-				</div>
-
-				<div className="term-tabs-block">
-					<div className="panel-header">
-						<span className="panel-title">{t("terminal")}</span>
+									{aiBashOpen && agentTabs.map(renderTab)}
+								</>
+							)}
+							{chat.terminals.length === 0 && <span className="td-empty-hint">{t("noTerminal")}</span>}
+						</div>
+						<div className="td-sep" />
 						{renderMergedToolbar(termZone(["host:term-tab-new"], true), termHostNodes, onUiAction)}
+						<div className="td-actions">
+							{runningCount > 0 && (
+								<span className="td-badge">
+									<span className="td-tab-dot run" />
+									{runningCount}
+								</span>
+							)}
+							<button
+								type="button"
+								className={`icon-btn term-cmd-toggle${cmdRailOpen ? " on" : ""}`}
+								title={t("commands")}
+								aria-pressed={cmdRailOpen}
+								onClick={() => setCmdRailOpen((v) => !v)}
+							>
+								<FiMenu />
+							</button>
+							<button
+								type="button"
+								className="icon-btn"
+								title={collapsed ? t("termDrawerExpand") : t("termDrawerCollapse")}
+								onClick={onToggleCollapse}
+							>
+								{collapsed ? <FiChevronUp /> : <FiChevronDown />}
+							</button>
+							<button
+								type="button"
+								className="icon-btn danger"
+								title={t("closeAllTerminals")}
+								disabled={chat.terminals.length === 0}
+								onClick={closeAllTabs}
+							>
+								<FiX />
+							</button>
+						</div>
 					</div>
-					<div className="panel-body">
-						{chat.terminals.length === 0 && <div className="panel-empty">{t("noTerminal")}</div>}
-						{userTabs.map(renderTab)}
-						{agentTabs.length > 0 && (
-							<div className="term-folder">
-								<button
-									type="button"
-									className={`term-folder-header ${aiBashOpen ? "open" : ""}`}
-									title={t("aiBashGroup")}
-									onClick={() => setAiBashOpen((v) => !v)}
-								>
-									<span className="term-folder-caret">{aiBashOpen ? "▾" : "▸"}</span>
-									<span className="term-folder-title">{t("aiBashGroup")}</span>
-									<span className="term-folder-count">{agentTabs.length}</span>
-								</button>
-								{aiBashOpen && <div className="term-folder-body">{agentTabs.map(renderTab)}</div>}
+					<div className="term-body">
+						{chat.terminals.length === 0 ? (
+							<div className="term-empty">
+								<FiTerminal className="term-empty-icon" />
+								<div className="term-empty-title">{t("builtinTerminal")}</div>
+								<div className="term-empty-sub">{t("termEmptySub")}</div>
 							</div>
+						) : (
+							chat.terminals.map((t) => (
+								<TermXterm
+									key={tabKey(t)}
+									ownerKind={t.ownerKind ?? "client"}
+									conversationId={t.conversationId}
+									terminalId={t.id}
+									command={t.command}
+									cwd={t.cwd}
+									title={t.title}
+									agentBash={t.agentBash}
+									active={tabKey(t) === activeId}
+									running={t.running}
+									exitCode={t.exitCode}
+									register={terminal.register}
+								/>
+							))
 						)}
 					</div>
 				</div>
-			</aside>
-
-			<div className="term-main">
-				{sideOpen && <div className="drawer-backdrop" onClick={() => setSideOpen(false)} />}
-				<button type="button" className="term-side-toggle" title={t("commands")} onClick={() => setSideOpen((v) => !v)}>
-					<FiMenu />
-				</button>
-				{chat.terminals.length === 0 ? (
-					<div className="term-empty">
-						<FiTerminal className="term-empty-icon" />
-						<div className="term-empty-title">{t("builtinTerminal")}</div>
-						<div className="term-empty-sub">{t("termEmptySub")}</div>
-					</div>
-				) : (
-					chat.terminals.map((t) => (
-						<TermXterm
-							key={tabKey(t)}
-							ownerKind={t.ownerKind ?? "client"}
-							conversationId={t.conversationId}
-							terminalId={t.id}
-							command={t.command}
-							cwd={t.cwd}
-							title={t.title}
-							agentBash={t.agentBash}
-							active={tabKey(t) === activeId}
-							running={t.running}
-							exitCode={t.exitCode}
-							register={terminal.register}
-						/>
-					))
-				)}
 			</div>
 		</div>
 	);

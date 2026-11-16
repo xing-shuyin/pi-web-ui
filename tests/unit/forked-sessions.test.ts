@@ -3,7 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { ClientSession } from "../../server/agent-service.js";
-import { ClientStateStore } from "../../server/client-state.js";
+import { ClientStateStore, DEFAULT_CLIENT_SETTINGS } from "../../server/client-state.js";
 import { filterForkedParentSessions, parentSessionOfManager } from "../../server/session-parser.js";
 import { SettingsService, type SettingsHost } from "../../server/settings-service.js";
 import { fakeClientSession } from "../helpers/fake-session.js";
@@ -80,6 +80,16 @@ describe("Fork 会话历史过滤（filterForkedParentSessions）", () => {
 		expect(visible.map((s) => s.path)).toEqual(["/sessions/session-1.jsonl", "/sessions/session-2.jsonl"]);
 	});
 
+	it("默认设置下分叉父会话与子会话同时可见（#921）", () => {
+		const now = Date.now();
+		const sessions: MockSessionInfo[] = [
+			{ path: "/sessions/parent.jsonl", modified: new Date(now - 1000) },
+			{ path: "/sessions/child.jsonl", parentSessionPath: "/sessions/parent.jsonl", modified: new Date(now) },
+		];
+		const visible = filterForkedParentSessions(sessions, DEFAULT_CLIENT_SETTINGS.showForkedParentSessions);
+		expect(visible.map((s) => s.path)).toEqual(["/sessions/parent.jsonl", "/sessions/child.jsonl"]);
+	});
+
 	it("跨平台路径大小写与斜杠格式归一化比对", () => {
 		const sessions: MockSessionInfo[] = [
 			{ path: "C:\\Sessions\\Parent.jsonl", modified: new Date() },
@@ -153,22 +163,22 @@ describe("showForkedParentSessions 设置持久化与联动（#621）", () => {
 		return host as unknown as SettingsHost & { emitted: unknown[]; filterRefreshes: number };
 	}
 
-	it("默认值为 false，切换后持久化并触发 onSessionsFilterChanged 重推历史列表", async () => {
+	it("默认值为 true（分叉后默认同时保留父会话），切换为 false 后持久化并触发 onSessionsFilterChanged 重推历史列表", async () => {
 		const store = tempStore();
-		expect(store.getSettings("c").showForkedParentSessions).toBe(false);
+		expect(store.getSettings("c").showForkedParentSessions).toBe(true);
 
 		const host = makeHost(store);
 		const svc = new SettingsService(host, templates);
-		expect(svc.current.showForkedParentSessions).toBe(false);
-
-		await svc.set({ showForkedParentSessions: true });
 		expect(svc.current.showForkedParentSessions).toBe(true);
-		expect(store.getSettings("c").showForkedParentSessions).toBe(true);
+
+		await svc.set({ showForkedParentSessions: false });
+		expect(svc.current.showForkedParentSessions).toBe(false);
+		expect(store.getSettings("c").showForkedParentSessions).toBe(false);
 		expect(host.filterRefreshes).toBe(1);
 
 		const state = host.emitted.filter((m) => (m as { type?: string }).type === "settings_state").pop() as
 			{ settings: { showForkedParentSessions?: boolean } } | undefined;
-		expect(state?.settings.showForkedParentSessions).toBe(true);
+		expect(state?.settings.showForkedParentSessions).toBe(false);
 	});
 
 	it("editMessage 在原会话重问，提示不受 showForkedParentSessions 影响，并刷新会话缓存", async () => {

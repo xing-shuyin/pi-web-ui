@@ -2367,7 +2367,7 @@ export class UniversalSession implements DispatchSession {
 			toolsWrap: s?.toolsWrap ?? false,
 			toolImagesEnabled: s?.toolImagesEnabled ?? true,
 			keepRecentMessages: s?.keepRecentMessages ?? 0,
-			showForkedParentSessions: false,
+			showForkedParentSessions: true,
 			retainFinishedConversations: false,
 			openRecentSessionOnProjectSwitch: true,
 			skillsFullText: [],

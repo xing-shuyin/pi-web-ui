@@ -100,13 +100,14 @@ function peerParent(config: { base: string; signal: string }, SocketClass: typeo
 		active = false,
 		serial = 0,
 		mode = "hub",
-		closing = false;
+		closing = false,
+		failed = false;
 	const streams = new Set<any>();
 	const frame = win.document.querySelector("iframe");
 	const badge = win.document.createElement("div");
 	badge.id = "browser-route";
 	badge.setAttribute("role", "status");
-	badge.textContent = "正在尝试浏览器直连… / Connecting directly…";
+	badge.textContent = "服务器中转（后台尝试直连…）/ Hub relay (trying direct in background…)";
 	win.document.body.prepend(badge);
 	const encoder = new TextEncoder(),
 		decoder = new TextDecoder();
@@ -140,9 +141,12 @@ function peerParent(config: { base: string; signal: string }, SocketClass: typeo
 	const fallback = () => {
 		if (closing) return;
 		closing = true;
+		failed = true;
+		const wasActive = active;
 		active = false;
 		mode = "hub";
 		announce();
+		if (wasActive) frame?.contentWindow?.postMessage({ type: "device-p2p-lost" }, "*");
 		for (const stream of streams) stream.close();
 		streams.clear();
 		pc?.close();
@@ -550,10 +554,18 @@ function peerParent(config: { base: string; signal: string }, SocketClass: typeo
 				)
 					mode = "lan";
 			}
+		if (failed) return;
 		announce();
+		// 页面已经在中转上跑着了：让子页面把长连接重开到直连通道（新的 fetch/WS 本来就走 active 通道）
+		frame?.contentWindow?.postMessage({ type: "device-p2p-upgraded" }, "*");
 	};
-	win.__piBrowserPeerReady = negotiate().catch((error: any) => {
-		win.console.warn("[browser-p2p]", error.message);
+	win.__piBrowserPeerReady = Promise.race([
+		negotiate(),
+		new Promise((_resolve: unknown, reject: (error: Error) => void) => {
+			win.setTimeout(() => reject(new Error("P2P deadline")), 20000);
+		}),
+	]).catch((error: any) => {
+		win.console.warn("[browser-p2p]", error && error.message ? error.message : error);
 		fallback();
 	});
 	win.addEventListener("message", (event: any) => {
@@ -683,12 +695,30 @@ function peerChild(basePath: string, SocketClass: typeof peerSocketClass) {
 				});
 			}),
 	);
+	const bridgedSockets = new Set<any>();
 	win.WebSocket = class extends NativeSocket {
 		constructor(url: string, protocols: any) {
-			if (route(url)) return new BridgedSocket(url, protocols) as any;
+			if (route(url)) {
+				const socket = new BridgedSocket(url, protocols);
+				bridgedSockets.add(socket);
+				socket.addEventListener("close", () => bridgedSockets.delete(socket));
+				return socket as any;
+			}
 			super(url, protocols);
 		}
 	};
+	// 传输切换：关掉现有长连接，由应用自己的重连逻辑用新通道重建（直连 ↔ 中转都走这里）
+	win.addEventListener("message", (event: any) => {
+		if (event.source !== win.parent) return;
+		const type = event.data && event.data.type;
+		if (type !== "device-p2p-upgraded" && type !== "device-p2p-lost") return;
+		for (const socket of [...bridgedSockets]) {
+			try {
+				socket.close();
+			} catch {}
+		}
+		bridgedSockets.clear();
+	});
 }
 
 export function browserPeerParentScript(base: string, signal: string) {

@@ -7,7 +7,7 @@ import {
 	type KeyboardEvent as ReactKeyboardEvent,
 } from "react";
 import { createPortal } from "react-dom";
-import { FiBox, FiMenu, FiPackage, FiSliders } from "react-icons/fi";
+import { FiBox, FiMenu, FiPackage } from "react-icons/fi";
 import { PiPushPinFill, PiPushPinSlash } from "react-icons/pi";
 import { PluginIcon } from "../plugin-icon";
 import { useI18n } from "../i18n";
@@ -21,7 +21,6 @@ export interface PluginMenuRow {
 	iconSvg?: string;
 	error?: string;
 	view?: boolean;
-	hasSettings?: boolean;
 }
 
 export interface PluginMenuProps {
@@ -33,7 +32,6 @@ export interface PluginMenuProps {
 	onTogglePin: (pluginId: string, pinned: boolean) => void;
 	onReorder: (pluginIds: string[]) => void;
 	onOpenView: (pluginId: string) => void;
-	onOpenPluginSettings?: (pluginId?: string) => void;
 	onManagePlugins: () => void;
 	onClose: () => void;
 }
@@ -47,7 +45,6 @@ export function PluginMenu({
 	onTogglePin,
 	onReorder,
 	onOpenView,
-	onOpenPluginSettings,
 	onManagePlugins,
 	onClose,
 }: PluginMenuProps) {
@@ -198,20 +195,6 @@ export function PluginMenu({
 				</button>
 
 				<div className="pm-row-actions">
-					{p.hasSettings && onOpenPluginSettings && (
-						<button
-							type="button"
-							className="pm-action-btn"
-							title={t("pluginQuickSettings")}
-							onClick={() => {
-								onClose();
-								onOpenPluginSettings(p.id);
-							}}
-						>
-							<FiSliders aria-hidden />
-						</button>
-					)}
-
 					{!noView && (
 						<button
 							type="button"
@@ -238,20 +221,6 @@ export function PluginMenu({
 					<span className="pm-head-title">{t("pluginMenuTitle")}</span>
 					<span className="pm-head-count">{orderedPlugins.length}</span>
 				</div>
-				{onOpenPluginSettings && (
-					<button
-						type="button"
-						className="pm-head-btn"
-						title={t("pluginManagerDesc")}
-						onClick={() => {
-							onClose();
-							onOpenPluginSettings();
-						}}
-					>
-						<FiSliders aria-hidden />
-						<span>{t("pluginMenuSettings")}</span>
-					</button>
-				)}
 			</div>
 
 			<div className="pm-list">
@@ -287,20 +256,6 @@ export function PluginMenu({
 			</div>
 
 			<div className="pm-footer">
-				{onOpenPluginSettings && (
-					<button
-						type="button"
-						role="menuitem"
-						className="pm-footer-btn primary"
-						onClick={() => {
-							onClose();
-							onOpenPluginSettings();
-						}}
-					>
-						<FiSliders aria-hidden />
-						<span>{t("pluginMenuSettings")}</span>
-					</button>
-				)}
 				<button
 					type="button"
 					role="menuitem"

@@ -4,16 +4,38 @@ import { appUrl } from "../base-url";
 import { openDeviceAccess } from "../device-access";
 import { withToken } from "../auth-token";
 import { useT } from "../i18n";
+import { DevicePanel } from "./DevicePanel";
 
 export type Device = { id: string; name: string; remark?: string | null; online: boolean; alias?: string };
+
+/** 设备在 hub 上的访问地址；协议不合法（含账号密码等）时不给入口。 */
+function deviceTarget(hubUrl: string, deviceId: string): string | undefined {
+	try {
+		const base = new URL(hubUrl);
+		if (!["http:", "https:"].includes(base.protocol) || base.username || base.password) return;
+		return new URL(`/device/${encodeURIComponent(deviceId)}`, base).href;
+	} catch {
+		return;
+	}
+}
+
 export function DeviceDirectory({
 	hubUrl,
 	currentDeviceId,
 	onRemarkUpdated,
+	onAfterOpen,
+	variant = "page",
+	mobile = false,
 }: {
 	hubUrl: string;
 	currentDeviceId: string;
 	onRemarkUpdated?: (deviceId: string, remark: string) => void;
+	/** 成功打开某台设备后回调（手机抽屉用它收起自己）。 */
+	onAfterOpen?: () => void;
+	/** `page` = 设备中心整页卡片；`panel` = 左上角浮层 / 手机抽屉的紧凑列表。 */
+	variant?: "page" | "panel";
+	/** 触控布局（抽屉）：行 56px、44px 触控块、行内显示设备 ID。 */
+	mobile?: boolean;
 }) {
 	const t = useT();
 	const [devices, setDevices] = useState<Device[]>([]);
@@ -57,25 +79,17 @@ export function DeviceDirectory({
 			clearTimeout(timer);
 		};
 	}, [hubUrl, currentDeviceId, refresh, t]);
-	function target(id: string): string | undefined {
-		try {
-			const base = new URL(hubUrl);
-			if (!["http:", "https:"].includes(base.protocol) || base.username || base.password) return;
-			return new URL(`/device/${encodeURIComponent(id)}`, base).href;
-		} catch {
-			return;
-		}
-	}
-	async function openDevice(event: React.MouseEvent<HTMLAnchorElement>, id: string, desktop = false) {
+	async function openDevice(event: React.MouseEvent<HTMLElement>, id: string, desktop = false) {
 		event.preventDefault();
 		try {
 			await openDeviceAccess(id, hubUrl, desktop, t, false, devices.find((device) => device.id === id)?.name);
 			setError("");
+			onAfterOpen?.();
 		} catch (cause) {
 			setError(cause instanceof Error ? cause.message : String(cause));
 		}
 	}
-	async function saveRemark(deviceId: string, text: string) {
+	async function saveRemark(deviceId: string, text: string): Promise<boolean> {
 		setSavingId(deviceId);
 		const trimmed = text.trim();
 		try {
@@ -101,12 +115,29 @@ export function DeviceDirectory({
 					detail: { deviceId, remark: trimmed || undefined },
 				}),
 			);
+			return true;
 		} catch (cause) {
 			setError(cause instanceof Error ? cause.message : String(cause));
+			return false;
 		} finally {
 			setSavingId(null);
 		}
 	}
+
+	if (variant === "panel")
+		return (
+			<DevicePanel
+				devices={devices}
+				error={error}
+				currentDeviceId={currentDeviceId}
+				targetOf={(deviceId) => deviceTarget(hubUrl, deviceId)}
+				onOpen={openDevice}
+				onRemark={saveRemark}
+				onRefresh={() => setRefresh((n) => n + 1)}
+				mobile={mobile}
+			/>
+		);
+
 	return (
 		<section className="dc-card" aria-label={t("deviceDirectory.allDevices")}>
 			<div className="dc-card-header">
@@ -170,11 +201,11 @@ export function DeviceDirectory({
 									<FiEdit2 aria-hidden />
 									{hasRemark ? t("deviceDirectory.editRemark") : t("deviceDirectory.setRemark")}
 								</button>
-								{target(device.id) && (
+								{deviceTarget(hubUrl, device.id) && (
 									<>
 										<a
 											className="dc-button"
-											href={target(device.id)}
+											href={deviceTarget(hubUrl, device.id)}
 											target="_blank"
 											rel="noopener noreferrer"
 											onClick={(event) => void openDevice(event, device.id)}
@@ -184,7 +215,7 @@ export function DeviceDirectory({
 										</a>
 										<a
 											className="dc-button"
-											href={`${target(device.id)}/desktop`}
+											href={`${deviceTarget(hubUrl, device.id)}/desktop`}
 											target="_blank"
 											rel="noopener noreferrer"
 											onClick={(event) => void openDevice(event, device.id, true)}

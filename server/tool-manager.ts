@@ -50,6 +50,10 @@ export const MCP_MANAGE_TOOL_NAME = "mcp_manage";
 export const SANDBOX_TOOL_NAME = "sandbox";
 export const WORKTREE_TOOL_NAME = "worktree";
 export const DEVICE_COLLAB_TOOL_NAME = "device_collab";
+/** Bot 个人记忆（独立 memory 目录）。只对"有记忆目录的 Bot 执行"注册，不进普通设置目录。 */
+export const BOT_MEMORY_TOOL_NAME = "memory";
+/** 一句话创建 Bot：只写待确认草案，不直接建 Bot。 */
+export const AGENT_BOT_TOOL_NAME = "agent_bot";
 export const CODEMODE_TOOL_NAME = "codemode";
 export const TOOL_SEARCH_TOOL_NAME = "tool_search";
 export const LOAD_TOOLS_TOOL_NAME = "load_tools";
@@ -184,6 +188,15 @@ export const AGENT_TOOL_CATALOG: AgentToolEntry[] = [
 		offHintKey: "planUpdateOffHint",
 	},
 	{
+		// 一句话创建智能体：默认常驻（轻量），但只会产出"待确认草案"，不能自建自授权。
+		name: AGENT_BOT_TOOL_NAME,
+		group: "other",
+		defaultOn: true,
+		dshVisible: false,
+		descKey: "agentBotToolEnabledDesc",
+		offHintKey: "agentBotToolOffHint",
+	},
+	{
 		name: PATCH_TOOL_NAME,
 		group: "other",
 		defaultOn: false,
@@ -298,6 +311,14 @@ export const GROUP_BOT_TOOL_CATALOG: readonly AgentToolEntry[] = [
 		dshVisible: false,
 		descKey: "toolsDeviceCollabDesc",
 		offHintKey: "toolsDeviceCollabOffHint",
+	},
+	{
+		// 记忆是 Bot 私产：开关由 Bot 的工具白名单决定，不在用户 Web 设置里出现。
+		name: BOT_MEMORY_TOOL_NAME,
+		group: "other",
+		defaultOn: false,
+		allowAgentToggle: false,
+		dshVisible: false,
 	},
 ] as const;
 

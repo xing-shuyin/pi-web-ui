@@ -53,6 +53,8 @@ Router 只可使用独立配置中启用的工具：
 
 ## 工单、事件和执行的关系
 
+> WAL / 事务 / 租约 / fence 的通用定义见 [`device-collaboration.md`](device-collaboration.md) §2 与 §7；本节只写工单与 Router 的四个集合。
+
 Hub 通过同一 WAL 事务体系持久化四个集合：
 
 | 集合             | 持久事实                                                                   |
@@ -141,4 +143,4 @@ Superagent 随主程序内置，首次启动自动准备并加载，**无需额�
 - 本地 Hub 代理与 DTO 桥：`server/device-center/local.ts`；插件契约：`plugin-sdk/index.d.ts`；注册与公开入口：`server/plugins.ts`、`server/index.ts`。
 - UI：统一入口 `web/src/components/DeviceCenter.tsx`，渠道内嵌 `DeviceChannels.tsx`，群组管理 `DeviceGroupManager.tsx`；复用 `GroupRouterSettings.tsx`、`GroupWorkItems.tsx` 及聊天入口 `GroupWorkspaceActions.tsx`；渠道适配与配置：[Superagent README](../plugins/superagent/README.md)。
 
-对应单测包括 `group-router`、`group-router-runtime`、`group-router-worker`、`group-router-ui`、`work-items`、`hub-orchestration` 和 `superagent-plugin`。渠道测试注入 fetch、使用伪 host 触发真实插件路由，覆盖验签、授权、重放、租约与回写恢复；这些 mock 证据不能替代真实凭据、真实网络和渠道投递验证。本文仅补充文档，不声明本轮重新执行过上述全部测试。
+对应单测包括 `group-router`、`group-router-runtime`、`group-router-worker`、`group-router-ui`、`work-items`、`hub-orchestration` 和 `superagent-plugin`。渠道测试注入 fetch、使用伪 host 触发真实插件路由，覆盖验签、授权、重放、租约与回写恢复；这些 mock 证据不能替代真实凭据、真实网络和渠道投递验证。本文仅补充文档，不声明本轮重新执行过上述全部测试。真实凭据与公网回调的人工验收清单见 [`agent-bot-design.md`](agent-bot-design.md) 的「P2 验收基线（渠道）」。

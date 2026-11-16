@@ -120,6 +120,8 @@ let termRan = false;
 try {
 	await page.click('.topbar-flow [role="tab"]:has-text("终端")');
 	await page.waitForSelector(".terminal-view", { timeout: 5000 });
+	if (!(await page.locator(".term-commands").isVisible())) await page.click(".term-cmd-toggle");
+	await page.waitForSelector(".term-commands .panel-new", { timeout: 5000 });
 	await page.click(".term-commands .panel-new");
 	await page.fill("#cmd-name", "uuid-regression");
 	await page.fill("#cmd-command", "echo UUID_OK");

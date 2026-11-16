@@ -8,7 +8,7 @@ import {
 	useState,
 	type ReactNode,
 } from "react";
-import { FiChevronRight, FiDownload, FiTerminal } from "react-icons/fi";
+import { FiChevronRight, FiCommand, FiDownload, FiTerminal } from "react-icons/fi";
 import { ENGINE_CATALOG } from "../../../server/engine-catalog";
 import type { NativeCliConfig, NativeCliDiscoveryResult } from "../types";
 import { appUrl } from "../base-url";
@@ -357,22 +357,32 @@ function NativeCliCreateForm({ cwd, onClose, onCreate, disabled = false }: Nativ
 	);
 }
 
+/**
+ * hover：CLI 按钮在悬停/聚焦时从触发按钮左侧滑出（左栏项目行等窄空间用，不额外占宽）。
+ * inline：CLI 作为独立chip 常驻在触发按钮右侧（顶栏用，不覆盖 logo 等相邻控件）。
+ */
+export type NativeCliEntryVariant = "hover" | "inline";
+
 export function NativeCliCreateEntry({
 	children,
 	cwd,
 	onCreateCli,
+	variant = "hover",
 }: {
 	children?: ReactNode;
 	cwd?: string;
 	onCreateCli?: (cwd?: string) => void;
+	variant?: NativeCliEntryVariant;
 }) {
 	const t = useT();
 	const tabs = useAppField("tabs");
 	const available = Boolean(onCreateCli) && (!tabs || tabs.includes("terminal"));
+	const inline = variant === "inline";
 	const entryRef = useRef<HTMLSpanElement>(null);
 	const cliRef = useRef<HTMLButtonElement>(null);
 	const [open, setOpen] = useState(false);
 	useLayoutEffect(() => {
+		if (inline) return;
 		const entry = entryRef.current;
 		const trigger = entry?.querySelector<HTMLButtonElement>(":scope > button");
 		if (!entry || !trigger) return;
@@ -385,7 +395,7 @@ export function NativeCliCreateEntry({
 		const observer = new ResizeObserver(measure);
 		observer.observe(trigger);
 		return () => observer.disconnect();
-	}, [available]);
+	}, [available, inline]);
 	if (!available || !onCreateCli) return children;
 	const trigger = isValidElement<{ title?: string; "aria-label"?: string }>(children)
 		? cloneElement(children, {
@@ -393,6 +403,26 @@ export function NativeCliCreateEntry({
 				"aria-label": children.props["aria-label"] ?? t("newChat"),
 			})
 		: children;
+	if (inline) {
+		return (
+			<span ref={entryRef} className="native-cli-create-entry" data-cli-variant="inline">
+				{trigger}
+				<button
+					type="button"
+					className="chip native-cli-inline-button"
+					title={t("nativeCliCreate")}
+					aria-label={t("nativeCliCreate")}
+					onClick={(event) => {
+						event.stopPropagation();
+						onCreateCli(cwd);
+					}}
+				>
+					<FiCommand size={14} />
+					<span>{t("nativeCli")}</span>
+				</button>
+			</span>
+		);
+	}
 	return (
 		<span
 			ref={entryRef}
@@ -432,7 +462,7 @@ export function NativeCliCreateEntry({
 						onCreateCli(cwd);
 					}}
 				>
-					<FiTerminal size={12} />
+					<FiCommand size={12} />
 				</button>
 			</span>
 		</span>
