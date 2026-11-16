@@ -1,13 +1,43 @@
 import { spawn, execSync } from "node:child_process";
-import { mkdtempSync, realpathSync, writeFileSync, rmSync } from "node:fs";
+import { existsSync, mkdtempSync, realpathSync, writeFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
+import net from "node:net";
 import WebSocket from "ws";
 
 const here = dirname(dirname(fileURLToPath(import.meta.url)));
 const NODE = realpathSync(process.execPath);
-const PORT = 31200 + Math.floor(Math.random() * 5000);
+/**
+ * 按 PID 杀进程树：Windows 上 process.kill(-pid) 无效（没有进程组语义），必须 taskkill /T。
+ * 只认 PID，不碰任何别的进程（禁 pkill -f / killall）。
+ */
+function killTree(pid) {
+	if (!pid) return;
+	try {
+		if (process.platform === "win32") {
+			execSync(`taskkill /PID ${pid} /T /F`, { stdio: "ignore" });
+		} else {
+			process.kill(-pid, "SIGKILL");
+		}
+	} catch {}
+}
+function portFree(port) {
+	return new Promise((resolve) => {
+		const srv = net.createServer();
+		srv.once("error", () => resolve(false));
+		srv.once("listening", () => srv.close(() => resolve(true)));
+		srv.listen(port, "127.0.0.1");
+	});
+}
+async function pickPort() {
+	for (let i = 0; i < 60; i++) {
+		const port = 8900 + Math.floor(Math.random() * 30000);
+		if (port >= 8900 && (await portFree(port))) return port;
+	}
+	throw new Error("no free port");
+}
+const PORT = await pickPort();
 const workdir = mkdtempSync(join(tmpdir(), "piweb-scmfeat-"));
 const repo = join(workdir, "repo");
 process.env.PI_WEB_CWD = repo;
@@ -49,13 +79,23 @@ const server = spawn(NODE, [join(here, "dist", "server", "index.js")], {
 	detached: true,
 });
 server.on("error", (e) => console.error("[srv]", e.message));
+let cleaned = false;
+/** 杀服务（按进程组 PID）+ 删临时目录；Windows 句柄释放是异步的，删要重试。 */
+async function cleanup() {
+	if (cleaned) return;
+	cleaned = true;
+	killTree(server.pid);
+	for (let i = 0; i < 12; i++) {
+		try {
+			rmSync(workdir, { recursive: true, force: true, maxRetries: 2, retryDelay: 200 });
+			if (!existsSync(workdir)) return;
+		} catch {}
+		await sleep(300);
+	}
+	console.log("[cleanup] 临时目录没删干净：", workdir);
+}
 process.on("exit", () => {
-	try {
-		process.kill(-server.pid, "SIGKILL");
-	} catch {}
-	try {
-		rmSync(workdir, { recursive: true, force: true, maxRetries: 5, retryDelay: 300 });
-	} catch {}
+	killTree(server.pid);
 });
 
 async function waitServer() {
@@ -128,6 +168,48 @@ async function main() {
 	const st2 = await send({ type: "scm_status" });
 	check("status sees the new commit's parent state (clean tree)", st2.ok && (st2.files ?? []).length === 0);
 
+	// 分组暂存（已暂存 / 更改）全靠 x/y 两位：这里钉死服务端吐出来的真实取值。
+	writeFileSync(join(repo, "staged.txt"), "s1\n");
+	writeFileSync(join(repo, "unstaged.txt"), "u1\n");
+	writeFileSync(join(repo, "both.txt"), "b1\n");
+	execSync("git add -A && git commit -m mixed-base", { cwd: repo, stdio: "ignore" });
+	writeFileSync(join(repo, "staged.txt"), "s1\ns2\n");
+	execSync("git add staged.txt", { cwd: repo, stdio: "ignore" });
+	writeFileSync(join(repo, "unstaged.txt"), "u1\nu2\n");
+	writeFileSync(join(repo, "both.txt"), "b1\nb2\n");
+	execSync("git add both.txt", { cwd: repo, stdio: "ignore" });
+	writeFileSync(join(repo, "both.txt"), "b1\nb2\nb3\n");
+	writeFileSync(join(repo, "untracked.txt"), "n1\n");
+
+	const st3 = await send({ type: "scm_status" });
+	const byPath = (name) => (st3.files ?? []).find((f) => f.path === name) ?? {};
+	check(
+		"x/y: 仅暂存 = (M, space)",
+		byPath("staged.txt").x === "M" && byPath("staged.txt").y === " ",
+		JSON.stringify(byPath("staged.txt")),
+	);
+	check(
+		"x/y: 仅工作区 = (space, M)",
+		byPath("unstaged.txt").x === " " && byPath("unstaged.txt").y === "M",
+		JSON.stringify(byPath("unstaged.txt")),
+	);
+	check(
+		"x/y: both = (M, M)",
+		byPath("both.txt").x === "M" && byPath("both.txt").y === "M",
+		JSON.stringify(byPath("both.txt")),
+	);
+	check(
+		"x/y: 未跟踪 = (?, ?)",
+		byPath("untracked.txt").x === "?" && byPath("untracked.txt").y === "?",
+		JSON.stringify(byPath("untracked.txt")),
+	);
+	check(
+		"stats 同时累加已暂存与工作区（both.txt 新增 2 行）",
+		(st3.stats?.["both.txt"]?.[0] ?? 0) === 2 && (st3.stats?.["both.txt"]?.[1] ?? 0) === 0,
+		JSON.stringify(st3.stats?.["both.txt"]),
+	);
+	check("staged.txt 也出现在 files 里（供新 UI 分组用）", !!byPath("staged.txt").path);
+
 	const gen = await Promise.race([send({ type: "scm_commitmsg" }), sleep(20_000).then(() => null)]);
 	check("scm_commitmsg answered", gen !== null);
 	check("scm_commitmsg kind echo", gen?.kind === "commitmsg");
@@ -135,11 +217,13 @@ async function main() {
 	check("scm_commitmsg carries an error message", typeof gen?.error === "string" && gen.error.length > 0);
 
 	ws.close();
+	await cleanup();
 	console.log(`\n${pass} passed, ${fail} failed`);
 	process.exit(fail > 0 ? 1 : 0);
 }
 
-main().catch((e) => {
+main().catch(async (e) => {
 	console.error("E2E FAILED:", e.message);
+	await cleanup();
 	process.exit(1);
 });
