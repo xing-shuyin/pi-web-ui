@@ -300,6 +300,7 @@ const PRESET_FIELD_KINDS = {
 	autoReload: "bool",
 	defaultAgentPreset: "shortString",
 	defaultPermissionPreset: "shortString",
+	claudePermissionMode: "shortString",
 } as const satisfies Record<string, string>;
 
 export const PRESET_FIELD_KIND_NAMES = Object.keys(PRESET_FIELD_KINDS);
