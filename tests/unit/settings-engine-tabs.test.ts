@@ -44,7 +44,7 @@ describe("设置面板多引擎动态自适应（分区条件隐藏与模型中�
 
 		expect(SETTINGS_SRC).toMatch(/\.\.\.\(isPi\s*\?\s*\[\s*\{\s*id:\s*"skills"/);
 
-		expect(SETTINGS_SRC).toMatch(/isDsh[\s\S]*?isPi\s*\?\s*\[\s*\{\s*id:\s*"extensions"/);
+		expect(SETTINGS_SRC).toMatch(/isDsh\s*\?\s*\[\s*\{\s*id:\s*"dsh-extensions"/);
 
 		expect(SETTINGS_SRC).toMatch(/\.\.\.\(isPi\s*\?\s*\[\s*\{\s*id:\s*"mcp"/);
 

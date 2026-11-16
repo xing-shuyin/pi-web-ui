@@ -119,8 +119,8 @@ describe("built-in modules are absent from user plugin management", () => {
 		expect(installed).toBeDefined();
 		await act(async () => installed!.click());
 		expect(document.body.textContent).not.toContain("Superagent");
-		expect(document.querySelectorAll(".smart-installed-card")).toHaveLength(1);
-		expect(document.querySelector(".smart-plugin-source")?.textContent).toBe("github-workbench");
+		expect(document.querySelectorAll(".ip-item")).toHaveLength(1);
+		expect(document.querySelector(".ip-titles small")?.textContent).toBe("ui:github-workbench");
 		expect(chat.plugins).toHaveLength(2);
 		expect(chat.pluginCatalog).toHaveLength(2);
 	});

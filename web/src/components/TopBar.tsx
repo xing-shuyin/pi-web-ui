@@ -62,7 +62,6 @@ import {
 } from "../app-globals";
 import { ProjectPicker } from "./ProjectPicker";
 import { PluginMenu } from "./PluginMenu";
-import { PluginManagerModal } from "./PluginManagerModal";
 import { LocaleModal } from "./LocaleModal";
 import { focusComposer } from "../composer-bridge";
 import { useFloatingPanel } from "../use-floating-panel";
@@ -154,6 +153,9 @@ interface TopBarProps {
 		select?: (id: string) => void;
 	};
 	view: ViewName;
+	/** 终端 / 源码管理是开关式面板：高亮跟着"开着没有"走，不再只看当前 view。 */
+	termOpen?: boolean;
+	gitOpen?: boolean;
 	onViewChange: (view: ViewName, opts?: { skipAutoCreate?: boolean }) => void;
 	plugins: {
 		id: string;
@@ -197,6 +199,8 @@ export function TopBar({
 	chat,
 	terminal,
 	view,
+	termOpen = false,
+	gitOpen = false,
 	plugins,
 	uiPrimary,
 	uiOverflow,
@@ -223,8 +227,6 @@ export function TopBar({
 	const [browserPanelOpen, setBrowserPanelOpen] = useState(false);
 	const [projectPickerOpen, setProjectPickerOpen] = useState(false);
 	const [pluginMenuAnchor, setPluginMenuAnchor] = useState<{ rect: DOMRect; el: HTMLElement } | null>(null);
-	const [pluginManagerOpen, setPluginManagerOpen] = useState(false);
-	const [pluginManagerFocusId, setPluginManagerFocusId] = useState<string | null>(null);
 	const cwd = useAppField("cwd");
 	const workspaceRoots = useAppField("workspaceRoots");
 	const isDsh = useIsDsh();
@@ -240,6 +242,12 @@ export function TopBar({
 	}, []);
 	const moreBtnRef = useRef<HTMLButtonElement>(null);
 	const tabOn = (tab: string) => !chat.tabs || tab === "chat" || chat.tabs.includes(tab);
+	/**
+	 * 是否显示「对话」回退标签。聊天区一直是中间那一块，终端 / 源码管理只是面板打开
+	 * （再点一次同一个按钮就收起），所以这两个抽屉下不需要一个"回对话"的标签；
+	 * canvas / 设备 / 工作树 / 插件页才是真的换页，那时候要留一个回来。
+	 */
+	const chatTabVisible = view !== "chat" && view !== "native-cli" && view !== "terminal" && view !== "git";
 	const pinnedOverflowItems = [...(uiOverflow ?? [])].filter(
 		(it) => !(it.source === "host" && it.id === "host:brand") && !isPluginViewItem(it),
 	);
@@ -939,7 +947,7 @@ export function TopBar({
 				</button>
 			) : null,
 		"host:new-chat": tabOn("new-chat") ? (
-			<NativeCliCreateEntry onCreateCli={onCreateCli}>
+			<NativeCliCreateEntry variant="inline" onCreateCli={onCreateCli}>
 				<button
 					type="button"
 					className="chip newchat"
@@ -982,27 +990,26 @@ export function TopBar({
 				<span>{t("newSandbox")}</span>
 			</button>
 		),
-		"host:chat":
-			view !== "chat" && view !== "native-cli" ? (
-				<button
-					type="button"
-					role="tab"
-					aria-selected={false}
-					className="tb-tab"
-					data-tip={t("chat")}
-					onClick={() => onViewChange("chat")}
-				>
-					<FiMessageSquare />
-					<span>{t("chat")}</span>
-				</button>
-			) : null,
+		"host:chat": chatTabVisible ? (
+			<button
+				type="button"
+				role="tab"
+				aria-selected={false}
+				className="tb-tab"
+				data-tip={t("chat")}
+				onClick={() => onViewChange("chat")}
+			>
+				<FiMessageSquare />
+				<span>{t("chat")}</span>
+			</button>
+		) : null,
 		"host:native-cli": null,
 		"host:terminal": tabOn("terminal") ? (
 			<button
 				type="button"
 				role="tab"
-				aria-selected={view === "terminal"}
-				className={`tb-tab${view === "terminal" ? " active" : ""}`}
+				aria-selected={termOpen}
+				className={`tb-tab${termOpen ? " active" : ""}`}
 				data-tip={t("terminal")}
 				onClick={() => onViewChange("terminal")}
 			>
@@ -1014,8 +1021,8 @@ export function TopBar({
 			<button
 				type="button"
 				role="tab"
-				aria-selected={view === "git"}
-				className={`tb-tab${view === "git" ? " active" : ""}`}
+				aria-selected={gitOpen}
+				className={`tb-tab${gitOpen ? " active" : ""}`}
 				data-tip={t("scmTab")}
 				onClick={() => onViewChange("git")}
 			>
@@ -1376,7 +1383,7 @@ export function TopBar({
 	};
 	const flowItems: { id: string; entry: UiSlotEntry | null; node: ReactNode }[] = [];
 	for (const it of topEntries) {
-		if (it.id === "host:native-cli" || (it.id === "host:chat" && (view === "chat" || view === "native-cli"))) continue;
+		if (it.id === "host:native-cli" || (it.id === "host:chat" && !chatTabVisible)) continue;
 		const isItemHidden = it.id === "host:browser" && isDesktopShell() ? false : it.entry?.hidden;
 		if (isItemHidden) continue;
 		if (isTabGatedOff(it.id)) continue;
@@ -1390,6 +1397,8 @@ export function TopBar({
 					bar="top"
 					chat={chat}
 					view={view}
+					termOpen={termOpen}
+					gitOpen={gitOpen}
 					plugins={plugins}
 					onViewChange={onViewChange}
 					onOpenPanel={onOpenPanel}
@@ -1436,6 +1445,8 @@ export function TopBar({
 				bar="top"
 				chat={chat}
 				view={view}
+				termOpen={termOpen}
+				gitOpen={gitOpen}
 				plugins={plugins}
 				onViewChange={onViewChange}
 				onUiAction={onUiAction}
@@ -1669,13 +1680,7 @@ export function TopBar({
 				<PluginMenu
 					anchorRect={pluginMenuAnchor.rect}
 					anchorEl={pluginMenuAnchor.el}
-					plugins={plugins.map((p) => {
-						const full = (chat.plugins ?? []).find((cp) => cp.id === p.id);
-						return {
-							...p,
-							hasSettings: Boolean(full?.settingsSchema && full.settingsSchema.length > 0),
-						};
-					})}
+					plugins={plugins}
 					pinnedIds={pinnedPluginIds}
 					orderedPluginIds={orderedPluginIds}
 					onTogglePin={(id, pinned) =>
@@ -1688,39 +1693,8 @@ export function TopBar({
 						setPluginMenuAnchor(null);
 						onViewChange(`plugin:${id}`);
 					}}
-					onOpenPluginSettings={(focusId) => {
-						setPluginManagerFocusId(focusId ?? null);
-						setPluginManagerOpen(true);
-					}}
 					onManagePlugins={onManagePlugins}
 					onClose={() => setPluginMenuAnchor(null)}
-				/>
-			)}
-			{pluginManagerOpen && (
-				<PluginManagerModal
-					open={pluginManagerOpen}
-					onClose={() => {
-						setPluginManagerOpen(false);
-						setPluginManagerFocusId(null);
-					}}
-					focusPluginId={pluginManagerFocusId}
-					plugins={chat.plugins ?? []}
-					disabledPlugins={chat.settings?.disabledPlugins ?? []}
-					models={chat.settings?.subagentModels ?? []}
-					onTogglePlugin={(p) => {
-						const disabled = new Set(chat.settings?.disabledPlugins ?? []);
-						if (disabled.has(p.id)) disabled.delete(p.id);
-						else disabled.add(p.id);
-						appSend({ type: "set_settings", disabledPlugins: [...disabled] });
-					}}
-					onOpenView={(id) => {
-						setPluginManagerOpen(false);
-						onViewChange(`plugin:${id}`);
-					}}
-					onOpenMarketplace={() => {
-						setPluginManagerOpen(false);
-						onManagePlugins();
-					}}
 				/>
 			)}
 			{projectPickerOpen && (

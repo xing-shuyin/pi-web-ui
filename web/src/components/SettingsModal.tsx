@@ -54,8 +54,7 @@ import { useNarrowLayout } from "./settings-mobile/use-narrow-layout";
 import "./settings-mobile/settings-mobile.css";
 import { sortAgentPresets, presetText } from "./DshPresetBar";
 import { DSH_PERMISSION_ORDER, permDescKey, permLabelKey } from "./DshPermissionBar";
-import { PluginPage } from "./PluginPage";
-import { PluginSettingsForm } from "./PluginSettingsForm";
+import { InstalledPluginsPanel } from "./InstalledPluginsPanel";
 import { ToolPromptEditor } from "./ToolPromptEditor";
 import { McpServersPanel } from "./McpServersPanel";
 import { DeviceExecutionSettings } from "./DeviceExecutionSettings";
@@ -101,7 +100,6 @@ import {
 } from "../prompt-history";
 import { randomUuid } from "../uuid";
 import { QuickAskSettings, type QuickAskPatch } from "./QuickAskSettings";
-import ExtensionInventory from "./ExtensionInventory";
 import type { UiExtensionInventoryEntry } from "../types";
 import { SubagentTemplateWizard } from "./SubagentTemplateWizard";
 import { formatTokenDraft, parseTokenInput } from "../token-input";
@@ -144,15 +142,6 @@ import type {
 import { PresetShareModal, type PresetShareTab } from "./PresetShareModal";
 import { appSend, useAppGlobals, useEngineStatuses } from "../app-globals";
 import { reconcileOverrideDraft, releaseConfirmedDrafts, useSettingsSync } from "../settings-sync";
-import { countPluginPhases, pluginPhase, type PluginPhase } from "../plugin-phase";
-import {
-	PLUGIN_LOG_LEVELS,
-	getPluginLogs,
-	pluginLogsClearRequest,
-	pluginLogsFetch,
-	subscribePluginLogs,
-	type PluginLogLevel,
-} from "../plugin-logs";
 import { QUICK_PHRASE_DEFAULTS } from "../quick-phrases";
 import {
 	DEFAULT_PROMPT_TEMPLATE,
@@ -347,16 +336,6 @@ function ToggleRow({
 	);
 }
 
-function phaseLabelKey(ph: PluginPhase): string {
-	if (ph === "active") return "pluginPhaseActive";
-	if (ph === "disabled") return "pluginPhaseDisabled";
-	if (ph === "failed") return "pluginPhaseFailed";
-	return "pluginPhaseIdle";
-}
-function InvDot({ phase, label }: { phase: PluginPhase; label: string }) {
-	return <span className={`inv-dot inv-dot-${phase}`} title={label} aria-label={label} />;
-}
-
 export const OFFICIAL_PLUGINS_REPO_URL = "https://github.com/xing-shuyin/pi-web-ui-plugins";
 export const OFFICIAL_PLUGIN_CATALOG_URL = "https://xing-shuyin.github.io/pi-web-ui-plugins/catalog.json";
 
@@ -378,29 +357,6 @@ export function pluginOfficialUrl(entry?: { homepage?: string; source?: string }
 		return `https://github.com/${parts[0]}/${parts[1]}/tree/main/${parts.slice(2).join("/")}`;
 	}
 	return null;
-}
-
-function PluginInventoryStrip({ plugins, disabledIds }: { plugins: UiPluginInfo[]; disabledIds: ReadonlySet<string> }) {
-	const t = useT();
-	const counts = countPluginPhases(plugins, disabledIds);
-	const labels: Record<PluginPhase, string> = {
-		active: t("pluginPhaseActive"),
-		disabled: t("pluginPhaseDisabled"),
-		failed: t("pluginPhaseFailed"),
-		idle: t("pluginPhaseIdle"),
-	};
-	const order: PluginPhase[] = ["active", "disabled", "failed", "idle"];
-	return (
-		<div className="smart-inv-bar">
-			{order.map((ph) => (
-				<span key={ph} className={`smart-inv-chip ${ph}`} title={labels[ph]}>
-					<InvDot phase={ph} label={labels[ph]} />
-					<span className="smart-inv-label">{labels[ph]}</span>
-					<span className="smart-inv-count">{counts[ph]}</span>
-				</span>
-			))}
-		</div>
-	);
 }
 
 function FieldRow({
@@ -492,52 +448,6 @@ function PromptOverrideEditor({
 	);
 }
 
-function PluginLogView({ pluginId }: { pluginId: string }) {
-	const t = useT();
-	const [level, setLevel] = useState<"all" | PluginLogLevel>("all");
-	const all = getPluginLogs(pluginId);
-	const shown = level === "all" ? all : all.filter((e) => e.level === level);
-	return (
-		<>
-			<div className="set-log-filter">
-				<span className="set-log-filter-label">{t("pluginLogLevel")}</span>
-				{(["all", ...PLUGIN_LOG_LEVELS] as const).map((lv) => (
-					<button
-						key={lv}
-						type="button"
-						className={`set-log-filter-btn${level === lv ? " on" : ""}`}
-						onClick={() => setLevel(lv)}
-					>
-						{lv === "all" ? t("pluginLogAll") : lv.toUpperCase()}
-					</button>
-				))}
-				<button
-					type="button"
-					className="set-log-clear"
-					title={t("pluginLogClear")}
-					onClick={() => appSend(pluginLogsClearRequest(pluginId))}
-				>
-					<FiTrash2 />
-					{t("pluginLogClear")}
-				</button>
-			</div>
-			{shown.length === 0 ? (
-				<p className="set-empty">{t("pluginLogEmpty")}</p>
-			) : (
-				<ul className="set-diag-list set-log-list">
-					{shown.map((e, i) => (
-						<li key={`${pluginId}-${e.ts}-${i}`}>
-							<span className="set-log-time">{new Date(e.ts).toLocaleTimeString()}</span>{" "}
-							<span className={`set-log-level lv-${e.level}`}>{e.level.toUpperCase()}</span>{" "}
-							<span className="set-log-text">{e.text}</span>
-						</li>
-					))}
-				</ul>
-			)}
-		</>
-	);
-}
-
 type SettingsTab =
 	| "models"
 	| "prompt"
@@ -552,7 +462,7 @@ type SettingsTab =
 	| "quick"
 	| "markers"
 	| "skills"
-	| "extensions"
+	| "dsh-extensions"
 	| "plugins"
 	| "mcp"
 	| "layout"
@@ -562,8 +472,7 @@ type SettingsTab =
 	| "dsh-presets"
 	| "subagent-templates"
 	| "device-collab"
-	| "desktop"
-	| `plugin-page:${string}`;
+	| "desktop";
 
 interface SettingsPatch extends QuickAskPatch {
 	nativeCliInheritModel?: UiSettingsState["nativeCliInheritModel"];
@@ -710,7 +619,10 @@ function LoadedSettingsModal({
 		if (narrow && !wasNarrow.current) setMobileHome(true);
 		wasNarrow.current = narrow;
 	}, [narrow]);
-	const [pluginSub, setPluginSub] = useState<"official" | "community" | "installed">("official");
+	const [pluginTab, setPluginTab] = useState<"installed" | "market">("installed");
+	const [marketOrigin, setMarketOrigin] = useState<"official" | "community">("official");
+	// 派生给已有市场段复用：子页 installed 时沿用 "installed"，市场子页才是官方/社区分区。
+	const pluginSub: "official" | "community" | "installed" = pluginTab === "installed" ? "installed" : marketOrigin;
 	const bodyRef = useRef<HTMLDivElement>(null);
 	useEffect(() => {
 		bodyRef.current?.scrollTo({ top: 0 });
@@ -937,7 +849,6 @@ function LoadedSettingsModal({
 		const id = window.setTimeout(() => setPhClearConfirm(false), 3000);
 		return () => window.clearTimeout(id);
 	}, [phClearConfirm]);
-	const [confirmUninstall, setConfirmUninstall] = useState<string | null>(null);
 	const [confirmEngineUninstallId, setConfirmEngineUninstallId] = useState<string | null>(null);
 	const [confirmUiUninstall, setConfirmUiUninstall] = useState<string | null>(null);
 	// 确认态 5s 后自动回退，避免过一会儿再点同一颗按钮误卸
@@ -946,11 +857,6 @@ function LoadedSettingsModal({
 		const id = window.setTimeout(() => setConfirmUiUninstall(null), 5000);
 		return () => window.clearTimeout(id);
 	}, [confirmUiUninstall]);
-	const [diagOpen, setDiagOpen] = useState<string | null>(null);
-	const [logOpen, setLogOpen] = useState<string | null>(null);
-	const [settingsOpen, setSettingsOpen] = useState<Record<string, boolean>>({});
-	const [, bumpLogSeq] = useState(0);
-	useEffect(() => subscribePluginLogs(() => bumpLogSeq((n) => n + 1)), []);
 	const [catSource, setCatSource] = useState("");
 	const [catId, setCatId] = useState("");
 	const [catName, setCatName] = useState("");
@@ -1093,15 +999,6 @@ function LoadedSettingsModal({
 		diagnostics: uiDiagnostics,
 	});
 
-	const pluginPages: { entry: UiSlotEntry; plugin: UiPluginInfo }[] = [];
-	for (const entry of uiSlots["settings.pages"]) {
-		if (entry.source === "host" || entry.hidden || entry.kind === "divider") continue;
-		const plugin = chat.plugins.find((p) => p.id === entry.source.slice("plugin:".length));
-		if (!plugin) continue;
-		pluginPages.push({ entry, plugin });
-	}
-	const pluginPageTabId = (entryId: string): SettingsTab => `plugin-page:${entryId}`;
-
 	const disabledTools = new Set(settings.disabledAgentTools ?? []);
 	const disabledToolsCount = disabledTools.size;
 
@@ -1157,7 +1054,6 @@ function LoadedSettingsModal({
 		label: string;
 		count?: number;
 		dot?: boolean;
-		pluginPage?: { plugin: UiPluginInfo; entry: UiSlotEntry };
 		hint?: string;
 	}[] = [
 		...(onOpenManageModels
@@ -1211,32 +1107,6 @@ function LoadedSettingsModal({
 		...(isPi
 			? [{ id: "skills" as const, icon: <FiCpu />, label: t("settingsSkills"), count: settings.skills.length }]
 			: []),
-		...(isDsh
-			? [
-					{
-						id: "extensions" as const,
-						icon: <FiPackage />,
-						label: t("dshPlugins"),
-						count: chat.dshPatches?.files.length,
-					},
-				]
-			: isPi
-				? [
-						{
-							id: "extensions" as const,
-							icon: <FiPackage />,
-							label: t("settingsExtensions"),
-							count: settings.extensions.length,
-						},
-					]
-				: []),
-		{
-			id: "plugins",
-			icon: <FiBox />,
-			label: t("settingsUiPlugins"),
-			count: chat.plugins.length,
-			dot: hasBuiltinPluginUpdate || hasAnyPluginUpdate,
-		},
 		...(isPi
 			? [
 					{
@@ -1245,6 +1115,23 @@ function LoadedSettingsModal({
 						label: t("settingsMcp"),
 						count: (settings.mcpServers ?? []).length || undefined,
 						dot: (settings.mcpServers ?? []).some((s) => s.status === "error"),
+					},
+				]
+			: []),
+		{
+			id: "plugins",
+			icon: <FiBox />,
+			label: t("settingsExtensions"),
+			count: chat.plugins.length + settings.extensions.length,
+			dot: hasBuiltinPluginUpdate || hasAnyPluginUpdate,
+		},
+		...(isDsh
+			? [
+					{
+						id: "dsh-extensions" as const,
+						icon: <FiPackage />,
+						label: t("dshPlugins"),
+						count: chat.dshPatches?.files.length,
 					},
 				]
 			: []),
@@ -1304,18 +1191,6 @@ function LoadedSettingsModal({
 					},
 				]
 			: []),
-		...pluginPages.map((p) => ({
-			id: pluginPageTabId(p.entry.id),
-			icon: p.entry.iconSvg ? (
-				<PluginIcon iconSvg={p.entry.iconSvg} />
-			) : p.entry.icon && !/[a-z]/i.test(p.entry.icon) ? (
-				<span>{p.entry.icon}</span>
-			) : (
-				<FiBox />
-			),
-			label: p.entry.label,
-			pluginPage: { plugin: p.plugin, entry: p.entry },
-		})),
 	];
 
 	const [tabSearchQuery, setTabSearchQuery] = useState("");
@@ -1357,10 +1232,8 @@ function LoadedSettingsModal({
 		question: "tools",
 		mcp: "tools",
 		skills: "tools",
-		extensions: "tools",
-
+		plugins: "tools",
 		layout: "ui",
-		plugins: "ui",
 		display: "ui",
 		sound: "ui",
 		quick: "ui",
@@ -1369,6 +1242,7 @@ function LoadedSettingsModal({
 		"prompt-history": "advanced",
 		scheduler: "advanced",
 		review: "advanced",
+		"dsh-extensions": "advanced",
 		"device-collab": "advanced",
 	};
 
@@ -1433,8 +1307,20 @@ function LoadedSettingsModal({
 		sound: ["声音", "音效", "语音", "tts", "朗读", "音量", "提示音", "静音", "播报"],
 		quick: ["快捷", "短语", "quick phrase", "常用语", "快捷短语", "快捷回复"],
 		skills: ["技能", "skills", "slash", "斜杠", "技能库", "市场"],
-		extensions: ["扩展", "extensions", "补丁", "patches", "dsh"],
-		plugins: ["插件", "ui plugins", "市场", "catalog", "更新", "组件"],
+		plugins: [
+			"插件",
+			"ui plugins",
+			"界面插件",
+			"Pi 插件",
+			"扩展",
+			"extensions",
+			"市场",
+			"catalog",
+			"更新",
+			"组件",
+			"补丁",
+			"patches",
+		],
 		mcp: ["mcp", "servers", "stdio", "sse", "协议", "服务器", "外部工具"],
 		layout: ["布局", "layout", "顶栏", "底栏", "图标", "icons", "排列", "按钮", "侧栏", "dock"],
 		review: ["审查", "review", "目标", "gate", "审阅"],
@@ -1541,10 +1427,6 @@ function LoadedSettingsModal({
 			setTab(tabs[0].id);
 		}
 	}, [tabs, tab]);
-
-	const activePluginPage = tab.startsWith("plugin-page:")
-		? (pluginPages.find((p) => pluginPageTabId(p.entry.id) === tab) ?? null)
-		: null;
 
 	const disabledSkills = new Set(settings.disabledSkills);
 	const disabledExts = new Set(settings.disabledExtensions);
@@ -1662,7 +1544,7 @@ function LoadedSettingsModal({
 	}, [chat, settings]);
 
 	useEffect(() => {
-		if (tab === "extensions") {
+		if (tab === "plugins") {
 			try {
 				appSend({ type: "extension_inventory", reqId: Date.now() % 1_000_000_000 } as never);
 			} catch {}
@@ -1670,46 +1552,11 @@ function LoadedSettingsModal({
 	}, [tab]);
 
 	useEffect(() => {
-		if (tab !== "extensions" || inventoryDirty === 0) return;
+		if (tab !== "plugins" || inventoryDirty === 0) return;
 		try {
 			appSend({ type: "extension_inventory", reqId: Date.now() % 1_000_000_000 } as never);
 		} catch {}
 	}, [tab, inventoryDirty]);
-
-	const toggleInventoryCli = (entry: UiExtensionInventoryEntry) => {
-		if (entry.switchable === false) return;
-		const next = new Set(disabledExts);
-		if (next.has(entry.name)) next.delete(entry.name);
-		else next.add(entry.name);
-		setPartial({ disabledExtensions: [...next] });
-	};
-	const toggleInventoryWebui = (entry: UiExtensionInventoryEntry) => {
-		const next = new Set(disabledPlugins);
-		if (next.has(entry.name)) next.delete(entry.name);
-		else next.add(entry.name);
-		setPartial({ disabledPlugins: [...next] });
-	};
-	const toggleInventoryExternal = (entry: UiExtensionInventoryEntry) => {
-		const m = /^mcp:(global|project):(.+)$/.exec(entry.name);
-		if (!m) return;
-		const scope = m[1] as "global" | "project";
-		const base = m[2];
-		appSend({ type: "toggle_mcp_server", name: base, scope, enabled: !entry.enabled } as never);
-	};
-	const refreshInventoryAll = () => {
-		try {
-			appSend({ type: "extensions_reload" } as never);
-		} catch {}
-		try {
-			appSend({ type: "plugins_reload" } as never);
-		} catch {}
-		try {
-			appSend({ type: "reload_mcp" } as never);
-		} catch {}
-		try {
-			appSend({ type: "extension_inventory", reqId: Date.now() % 1_000_000_000 } as never);
-		} catch {}
-	};
 
 	const onDemandTools = settings.toolOnDemandTools ?? [];
 	const onDemandToolNames = new Set(onDemandTools);
@@ -1774,8 +1621,6 @@ function LoadedSettingsModal({
 		if (needMaster && !toolFlowMasterOn) (patch as Record<string, unknown>).toolLazyLoading = true;
 		setPartial(patch);
 	};
-	const disabledPluginTools = new Set(settings.disabledPluginTools ?? []);
-
 	const disabledMarkers = new Set(settings.disabledMarkers ?? []);
 	// 标记没有独立的全局开关：只要还剩一个开着就是启用，全关 = 不再注入/解析标记。
 	const markersOn = (settings.markers ?? []).filter((m) => m.enabled).length;
@@ -1827,7 +1672,6 @@ function LoadedSettingsModal({
 	};
 
 	const runUninstall = (pkgName: string) => {
-		setConfirmUninstall(null);
 		runTerminalCommand(`${t("uninstallTitle")} ${pkgName}`, `pi remove npm:${pkgName}`);
 	};
 
@@ -1937,6 +1781,7 @@ function LoadedSettingsModal({
 		{ slot: "composer.leading", labelKey: "uiLayoutComposerLeading" },
 		{ slot: "composer.actions", labelKey: "uiLayoutComposer" },
 		{ slot: "rightpanel.tabs", labelKey: "uiLayoutRightPanel" },
+		{ slot: "bottomdock.tabs", labelKey: "uiLayoutBottomDock" },
 		{ slot: "terminal.toolbar", labelKey: "uiLayoutTerminal" },
 		{ slot: "scm.toolbar", labelKey: "uiLayoutScm" },
 		{ slot: "bottombar", labelKey: "uiLayoutBottombar" },
@@ -1946,6 +1791,7 @@ function LoadedSettingsModal({
 		{ slot: "contextmenu.session", labelKey: "uiLayoutContextSession" },
 		{ slot: "contextmenu.project", labelKey: "uiLayoutContextProject" },
 		{ slot: "contextmenu.file", labelKey: "uiLayoutContextFile" },
+		{ slot: "contextmenu.search", labelKey: "uiLayoutContextSearch" },
 		{ slot: "contextmenu.toolcall", labelKey: "uiLayoutContextToolcall" },
 		{ slot: "tool.card.footer", labelKey: "uiLayoutToolCardFooter" },
 		{ slot: "settings.pages", labelKey: "uiLayoutSettingsPages" },
@@ -5276,7 +5122,7 @@ function LoadedSettingsModal({
 							</div>
 						)}
 
-						{tab === "extensions" && isDsh && (
+						{tab === "dsh-extensions" && (
 							<div className="set-section dsh-market-container">
 								<div className="dsh-market-header">
 									<div className="dsh-market-title-group">
@@ -5701,67 +5547,6 @@ function LoadedSettingsModal({
 							</div>
 						)}
 
-						{tab === "extensions" && !isDsh && (
-							<>
-								<ExtensionInventory
-									entries={inventoryEntries}
-									onToggleCli={toggleInventoryCli}
-									onToggleWebui={toggleInventoryWebui}
-									onToggleExternal={toggleInventoryExternal}
-									onRefreshAll={refreshInventoryAll}
-								/>
-								<div className="set-section">
-									<div className="set-section-title">
-										<FiPackage className="set-section-icon" />
-										{t("settingsExtensions")}
-										<span className="set-count">{settings.extensions.length}</span>
-									</div>
-									{settings.extensions.length === 0 ? (
-										<p className="set-empty">{t("noExtensions")}</p>
-									) : (
-										<div className="set-list">
-											{settings.extensions.map((e) => {
-												const pkgName = e.id.startsWith("npm:") ? e.id.slice(4) : null;
-												return (
-													<ToggleRow
-														key={e.id}
-														title={e.name}
-														subtitle={e.path}
-														enabled={e.enabled}
-														onToggle={() => toggleExtension(e)}
-														action={
-															pkgName ? (
-																confirmUninstall === e.id ? (
-																	<button
-																		type="button"
-																		className="set-uninstall confirm"
-																		title={t("uninstallConfirmHint")}
-																		onClick={() => runUninstall(pkgName)}
-																	>
-																		{t("uninstallConfirm")}
-																	</button>
-																) : (
-																	<button
-																		type="button"
-																		className="set-uninstall"
-																		title={t("uninstallHint")}
-																		onClick={() => setConfirmUninstall(e.id)}
-																	>
-																		<FiTrash2 />
-																		{t("uninstallExt")}
-																	</button>
-																)
-															) : undefined
-														}
-													/>
-												);
-											})}
-										</div>
-									)}
-								</div>
-							</>
-						)}
-
 						{tab === "layout" && (
 							<div className="set-section">
 								<div className="set-section-title">
@@ -6011,8 +5796,8 @@ function LoadedSettingsModal({
 										) : pluginSub === "installed" ? (
 											<>
 												<FiBox className="set-section-icon" />
-												<span>{t("pluginListTab")}</span>
-												<span className="set-count">{chat.plugins.length}</span>
+												<span>{t("pluginsInstalledTab")}</span>
+												<span className="set-count">{chat.plugins.length + settings.extensions.length}</span>
 											</>
 										) : (
 											<>
@@ -6028,40 +5813,8 @@ function LoadedSettingsModal({
 											</>
 										)}
 									</div>
-									<div className="smart-market-tools">
-										{pluginSub === "installed" ? (
-											<>
-												<button
-													type="button"
-													className="smart-tool-btn"
-													title={t("pluginCheckUpdatesHint")}
-													disabled={chat.checkingPluginUpdates}
-													onClick={() => appSend({ type: "check_plugin_updates" })}
-												>
-													<FiRefreshCw className={chat.checkingPluginUpdates ? "set-job-spin" : ""} />
-													<span>{chat.checkingPluginUpdates ? t("checkingUpdate") : t("pluginCheckUpdates")}</span>
-												</button>
-												<button
-													type="button"
-													className="smart-tool-btn"
-													title={t("pluginRescanHint")}
-													onClick={() => appSend({ type: "plugins_reload" })}
-												>
-													<FiRefreshCw />
-													<span>{t("pluginRescan")}</span>
-												</button>
-												<a
-													href={OFFICIAL_PLUGINS_REPO_URL}
-													target="_blank"
-													rel="noreferrer noopener"
-													className="smart-tool-link"
-													title={t("pluginOfficialMarketHint")}
-												>
-													<FiExternalLink />
-													<span>{t("pluginOfficialMarket")}</span>
-												</a>
-											</>
-										) : (
+									<div className="smart-market-tools" style={{ display: pluginTab === "market" ? undefined : "none" }}>
+										{pluginSub === "installed" ? null : (
 											<>
 												<button
 													type="button"
@@ -6262,7 +6015,6 @@ function LoadedSettingsModal({
 									const communityCount = chat.pluginCatalog.filter(
 										(e) => (e.origin ?? (e.builtin ? "builtin" : "custom")) === "community",
 									).length;
-									const installedCount = chat.plugins.length;
 									const q = catalogSearch.trim().toLowerCase();
 									const filteredCatalog = chat.pluginCatalog.filter((e) => {
 										const origin = e.origin ?? (e.builtin ? "builtin" : "custom");
@@ -6279,13 +6031,6 @@ function LoadedSettingsModal({
 											e.source.toLowerCase().includes(q)
 										);
 									});
-									const filteredInstalled = chat.plugins.filter((p) => {
-										if (!q) return true;
-										const name = (p.name ?? "").toLowerCase();
-										const desc = (p.description ?? "").toLowerCase();
-										const id = (p.id ?? "").toLowerCase();
-										return name.includes(q) || desc.includes(q) || id.includes(q);
-									});
 
 									return (
 										<>
@@ -6294,51 +6039,72 @@ function LoadedSettingsModal({
 													<button
 														type="button"
 														role="tab"
-														data-tab="official"
-														aria-selected={pluginSub === "official"}
-														className={`smart-tab-pill${pluginSub === "official" ? " active" : ""}`}
-														onClick={() => {
-															setPluginSub("official");
-															bodyRef.current?.scrollTo({ top: 0 });
-														}}
-													>
-														{t("pluginCatalogTabBuiltin")}
-														<span className="smart-pill-count">{officialCount}</span>
-													</button>
-													<button
-														type="button"
-														role="tab"
-														data-tab="community"
-														aria-selected={pluginSub === "community"}
-														className={`smart-tab-pill${pluginSub === "community" ? " active" : ""}`}
-														onClick={() => {
-															setPluginSub("community");
-															bodyRef.current?.scrollTo({ top: 0 });
-														}}
-													>
-														{t("pluginCatalogTabCommunity")}
-														<span className="smart-pill-count">{communityCount}</span>
-													</button>
-													<button
-														type="button"
-														role="tab"
 														data-tab="installed"
-														aria-selected={pluginSub === "installed"}
-														className={`smart-tab-pill${pluginSub === "installed" ? " active" : ""}`}
+														aria-selected={pluginTab === "installed"}
+														className={`smart-tab-pill${pluginTab === "installed" ? " active" : ""}`}
 														onClick={() => {
-															setPluginSub("installed");
+															setPluginTab("installed");
 															bodyRef.current?.scrollTo({ top: 0 });
 														}}
 													>
-														{t("pluginListTab")}
-														<span className="smart-pill-count">{installedCount}</span>
+														{t("pluginsInstalledTab")}
+														<span className="smart-pill-count">{chat.plugins.length + settings.extensions.length}</span>
 														{(hasBuiltinPluginUpdate || hasAnyPluginUpdate) && (
 															<span className="update-dot" style={{ marginLeft: 4 }} />
 														)}
 													</button>
+													<button
+														type="button"
+														role="tab"
+														data-tab="market"
+														aria-selected={pluginTab === "market"}
+														className={`smart-tab-pill${pluginTab === "market" ? " active" : ""}`}
+														onClick={() => {
+															setPluginTab("market");
+															bodyRef.current?.scrollTo({ top: 0 });
+														}}
+													>
+														{t("pluginMarket")}
+														<span className="smart-pill-count">{officialCount + communityCount}</span>
+													</button>
+													{pluginTab === "market" && (
+														<>
+															<button
+																type="button"
+																role="tab"
+																data-tab="official"
+																aria-selected={marketOrigin === "official"}
+																className={`smart-tab-pill${marketOrigin === "official" ? " active" : ""}`}
+																onClick={() => {
+																	setMarketOrigin("official");
+																	bodyRef.current?.scrollTo({ top: 0 });
+																}}
+															>
+																{t("pluginCatalogTabBuiltin")}
+																<span className="smart-pill-count">{officialCount}</span>
+															</button>
+															<button
+																type="button"
+																role="tab"
+																data-tab="community"
+																aria-selected={marketOrigin === "community"}
+																className={`smart-tab-pill${marketOrigin === "community" ? " active" : ""}`}
+																onClick={() => {
+																	setMarketOrigin("community");
+																	bodyRef.current?.scrollTo({ top: 0 });
+																}}
+															>
+																{t("pluginCatalogTabCommunity")}
+																<span className="smart-pill-count">{communityCount}</span>
+															</button>
+														</>
+													)}
 												</div>
 
-												<div className="smart-search-wrap">
+												<div
+													className="smart-search-wrap"
+													style={{ display: pluginTab === "market" ? undefined : "none" }}
+												>
 													<FiSearch className="smart-search-icon" />
 													<input
 														type="text"
@@ -6568,263 +6334,25 @@ function LoadedSettingsModal({
 
 											{pluginSub === "installed" && (
 												<>
-													{chat.plugins.length > 0 && (
-														<PluginInventoryStrip plugins={chat.plugins} disabledIds={disabledPlugins} />
-													)}
-													{chat.plugins.length === 0 ? (
-														<p className="set-empty">{t("noUiPlugins")}</p>
-													) : filteredInstalled.length === 0 ? (
-														<p className="set-empty">{t("searchNoResults")}</p>
-													) : (
-														<div className="smart-plugin-list">
-															{filteredInstalled.map((p) => {
-																const upd = chat.pluginUpdates?.[p.id];
-																const isUpdatable = upd?.updatable === true;
-																const isRunning = Boolean(jobFor(p.id) && jobFor(p.id)?.phase !== "done");
-																const isDisabled = disabledPlugins.has(p.id);
-																const hasSettings = Boolean(p.settingsSchema && p.settingsSchema.length > 0);
-																const isSettingsOpen = Boolean(settingsOpen[p.id]);
-																const isLogOpen = logOpen === p.id;
-																const isDiagOpen = diagOpen === p.id;
-																const logsCount = getPluginLogs(p.id).length;
-																const diagCount = p.diagnostics?.length ?? 0;
-
-																return (
-																	<div key={p.id} className={`smart-installed-card${isDisabled ? " disabled" : ""}`}>
-																		<div className="smart-installed-head">
-																			<div className="smart-installed-lead">
-																				<InvDot
-																					phase={pluginPhase(p, isDisabled)}
-																					label={tt(phaseLabelKey(pluginPhase(p, isDisabled)))}
-																				/>
-																				<div className="smart-plugin-icon">
-																					<PluginIcon icon={p.icon} iconSvg={p.iconSvg} />
-																				</div>
-																				<div className="smart-installed-titles">
-																					<div className="smart-plugin-title-row">
-																						<span className="smart-plugin-name">{p.name}</span>
-																						{isUpdatable && (
-																							<span
-																								className="smart-badge smart-badge-update"
-																								title={
-																									upd?.latestVersion
-																										? `v${p.version ?? "0.0.0"} → v${upd.latestVersion}`
-																										: (upd?.remoteSha ?? "")
-																								}
-																							>
-																								{t("pluginUpdateAvailableBadge")}
-																								{upd?.latestVersion ? ` v${upd.latestVersion}` : ""}
-																							</span>
-																						)}
-																						<span className="smart-plugin-source" title={p.id}>
-																							{p.id}
-																						</span>
-																					</div>
-																					<div className="smart-plugin-desc">
-																						{p.error ? (
-																							<span className="smart-desc-error">{p.error}</span>
-																						) : (
-																							<span>
-																								{p.source ?? t("uiPluginNoSource")}
-																								{p.permissions?.length
-																									? ` · ${t("uiPluginPerms")}: ${p.permissions.join(", ")}`
-																									: ""}
-																							</span>
-																						)}
-																					</div>
-																				</div>
-																			</div>
-
-																			<div className="smart-installed-ctrls">
-																				{(() => {
-																					const url =
-																						pluginOfficialUrl(chat.pluginCatalog.find((c) => c.id === p.id)) ||
-																						pluginOfficialUrl(p);
-																					return url ? (
-																						<a
-																							href={url}
-																							target="_blank"
-																							rel="noreferrer noopener"
-																							className="smart-icon-btn"
-																							title={t("pluginOfficialLinkHint")}
-																						>
-																							<FiExternalLink />
-																						</a>
-																					) : null;
-																				})()}
-																				{p.source && isUpdatable && (
-																					<button
-																						type="button"
-																						className="smart-btn-action update"
-																						disabled={isRunning}
-																						title={
-																							upd?.latestVersion
-																								? t("pluginUpdateAvailableDetail", {
-																										version: `v${upd.latestVersion}`,
-																									})
-																								: t("pluginUpdateHint")
-																						}
-																						onClick={() => runUiPluginUpdate(p.id, p.source!)}
-																					>
-																						<FiRefreshCw className={isRunning ? "set-job-spin" : ""} />
-																						<span>{isRunning ? t("pluginJobRunning") : t("pluginUpdate")}</span>
-																					</button>
-																				)}
-																				{confirmUiUninstall === p.id ? (
-																					<button
-																						type="button"
-																						className="smart-btn-action danger"
-																						disabled={isRunning}
-																						title={t("pluginUninstallHint")}
-																						onClick={() => runUiPluginUninstall(p.id)}
-																					>
-																						{t("uninstallConfirm")}
-																					</button>
-																				) : (
-																					<button
-																						type="button"
-																						className="smart-icon-btn danger"
-																						disabled={isRunning}
-																						title={t("pluginUninstallHint")}
-																						onClick={() => setConfirmUiUninstall(p.id)}
-																					>
-																						<FiTrash2 />
-																					</button>
-																				)}
-																				<button
-																					type="button"
-																					role="switch"
-																					aria-checked={!isDisabled && !p.error}
-																					disabled={Boolean(p.error)}
-																					className={`set-switch${!isDisabled && !p.error ? " on" : ""}`}
-																					title={!isDisabled ? t("pluginPhaseActive") : t("pluginPhaseDisabled")}
-																					onClick={() => !p.error && togglePlugin(p)}
-																				>
-																					<span className="set-switch-knob" />
-																				</button>
-																			</div>
-																		</div>
-
-																		{renderJobStatus(p.id)}
-
-																		<div className="smart-installed-chips">
-																			{p.agentTools && p.agentTools.length > 0 && !isDsh && (
-																				<button
-																					type="button"
-																					className="smart-feature-chip"
-																					title={t("pluginToolOffHint")}
-																					onClick={() => setTab("tools")}
-																				>
-																					<FiTool className="smart-chip-icon" />
-																					<span>
-																						{t("pluginToolsSection")} ({p.agentTools.length})
-																					</span>
-																					{p.agentTools.some((tool) => disabledPluginTools.has(tool.name)) && (
-																						<span className="smart-chip-tag">{t("settingsDisabled")}</span>
-																					)}
-																					<span style={{ opacity: 0.6 }}>→</span>
-																				</button>
-																			)}
-
-																			{hasSettings && (
-																				<button
-																					type="button"
-																					className={`smart-feature-chip${isSettingsOpen ? " active" : ""}`}
-																					onClick={() => setSettingsOpen((prev) => ({ ...prev, [p.id]: !prev[p.id] }))}
-																				>
-																					<FiSliders className="smart-chip-icon" />
-																					<span>
-																						{t("pluginSettingsTitle")} ({p.settingsSchema!.length})
-																					</span>
-																					<span style={{ fontSize: 10, opacity: 0.7 }}>
-																						{isSettingsOpen ? "▲" : "▼"}
-																					</span>
-																				</button>
-																			)}
-
-																			<button
-																				type="button"
-																				className={`smart-feature-chip${isLogOpen ? " active" : ""}`}
-																				onClick={() => {
-																					if (isLogOpen) setLogOpen(null);
-																					else {
-																						setLogOpen(p.id);
-																						appSend(pluginLogsFetch(p.id));
-																					}
-																				}}
-																			>
-																				<FiFileText className="smart-chip-icon" />
-																				<span>
-																					{t("pluginLogTitle")} ({logsCount}) ·{" "}
-																					{isLogOpen ? t("pluginLogHide") : t("pluginLogShow")}
-																				</span>
-																				<span style={{ fontSize: 10, opacity: 0.7 }}>{isLogOpen ? "▲" : "▼"}</span>
-																			</button>
-
-																			{diagCount > 0 && (
-																				<button
-																					type="button"
-																					className={`smart-feature-chip warn${isDiagOpen ? " active" : ""}`}
-																					onClick={() => setDiagOpen(isDiagOpen ? null : p.id)}
-																				>
-																					<FiAlertTriangle className="smart-chip-icon" />
-																					<span>
-																						{t("pluginDiagTitle")} ({diagCount}) ·{" "}
-																						{isDiagOpen ? t("pluginDiagHide") : t("pluginDiagShow")}
-																					</span>
-																					<span style={{ fontSize: 10, opacity: 0.7 }}>{isDiagOpen ? "▲" : "▼"}</span>
-																				</button>
-																			)}
-
-																			{p.wantsDom && (
-																				<button
-																					type="button"
-																					className={`smart-feature-chip${p.domGranted ? " success" : " warn"}`}
-																					title={t("pluginDomDesc")}
-																					onClick={() =>
-																						appSend({
-																							type: "plugin_dom_consent",
-																							pluginId: p.id,
-																							granted: !p.domGranted,
-																						})
-																					}
-																				>
-																					<span>
-																						{p.domGranted
-																							? `✓ ${t("pluginDomGranted")} (${t("pluginDomRevoke")})`
-																							: `! ${t("pluginDomNeed")} (${t("pluginDomGrant")})`}
-																					</span>
-																				</button>
-																			)}
-																		</div>
-
-																		{isSettingsOpen && p.settingsSchema && (
-																			<div className="smart-card-drawer">
-																				<PluginSettingsForm plugin={p} models={settings?.subagentModels ?? []} />
-																			</div>
-																		)}
-
-																		{isLogOpen && (
-																			<div className="smart-card-drawer">
-																				<PluginLogView pluginId={p.id} />
-																			</div>
-																		)}
-
-																		{isDiagOpen && p.diagnostics && (
-																			<div className="smart-card-drawer">
-																				<ul className="set-diag-list">
-																					{p.diagnostics.map((d, i) => (
-																						<li key={`${p.id}-${i}`}>{d}</li>
-																					))}
-																				</ul>
-																			</div>
-																		)}
-																	</div>
-																);
-															})}
-														</div>
-													)}
-
+													<InstalledPluginsPanel
+														plugins={chat.plugins}
+														extensions={settings.extensions ?? []}
+														disabledPlugins={settings.disabledPlugins ?? []}
+														disabledExtensions={settings.disabledExtensions ?? []}
+														pluginUpdates={chat.pluginUpdates}
+														pluginJobs={chat.pluginJobs}
+														inventoryEntries={inventoryEntries}
+														models={settings?.subagentModels ?? []}
+														epoch={chat.pluginsEpoch}
+														onTogglePlugin={togglePlugin}
+														onToggleExtension={toggleExtension}
+														onUpdatePlugin={runUiPluginUpdate}
+														onUninstallPlugin={runUiPluginUninstall}
+														onInstallExtension={(spec) =>
+															runTerminalCommand(t("pluginInstall"), `pi install npm:${spec}`)
+														}
+														onUninstallExtension={runUninstall}
+													/>
 													{/* 目录授权 */}
 													<div className="set-section" style={{ marginTop: 24 }}>
 														<div className="set-section-title">
@@ -7814,15 +7342,6 @@ function LoadedSettingsModal({
 								)}
 							</div>
 						)}
-						{activePluginPage && (
-							<PluginPage
-								plugin={activePluginPage.plugin}
-								epoch={chat.pluginsEpoch}
-								send={appSend}
-								className="set-plugin-page"
-							/>
-						)}
-
 						{editingToolPrompt && (
 							<ToolPromptEditor
 								name={editingToolPrompt}
