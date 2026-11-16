@@ -50,6 +50,18 @@ export interface AgentEventSink {
 	onTurnComplete(meta?: AgentTurnMeta): void;
 
 	onError(err: Error | string): void;
+
+	/**
+	 * The engine asks a human to approve one tool call (Claude Code's `can_use_tool`).
+	 * The host must eventually call the driver's `respondApproval`; otherwise the engine
+	 * keeps waiting for the answer and the turn never finishes.
+	 */
+	onApprovalRequest?(
+		requestId: string,
+		toolName: string,
+		params: Record<string, unknown>,
+		options?: { suggestions?: unknown[] },
+	): void;
 }
 
 export abstract class BaseAgentDriver {
@@ -122,6 +134,16 @@ export abstract class BaseAgentDriver {
 
 	async getSkills?(): Promise<Array<{ name: string; description: string; filePath?: string }>> {
 		return [];
+	}
+
+	/** Answer an engine permission request. Drivers without permission plumbing return false. */
+	async respondApproval(
+		_requestId: string,
+		_decision: "approve" | "edit" | "deny",
+		_editedParams?: Record<string, unknown>,
+		_reason?: string,
+	): Promise<boolean> {
+		return false;
 	}
 
 	/** True when `/name` must be sent to the native CLI verbatim instead of pi's slash handlers. */

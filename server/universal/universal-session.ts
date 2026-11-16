@@ -169,6 +169,8 @@ export class UniversalSession implements DispatchSession {
 	private deltaSeq = 0;
 	private snapshotTimer: NodeJS.Timeout | null = null;
 	private pendingToolResults: UiMessage[] = [];
+	/** Engine permission requests awaiting a human answer: approval id -> request info. */
+	private readonly pendingApprovals = new Map<string, { requestId: string; toolName: string }>();
 	private readonly sessionDrafts = new Map<string, { text: string; ts: number }>();
 	private followUpQueue: QueuedMessageEntry[] = [];
 
@@ -961,14 +963,37 @@ export class UniversalSession implements DispatchSession {
 					this.emitNotice("error", `执行出错: ${errText}`, `Execution error: ${errText}`);
 					this.finalizeTurn();
 				},
+				// Engine permission request (Claude Code `can_use_tool`) -> reuse the same
+				// tool_approval_* messages the pi engine already drives the approval dialog with.
+				// NOTE: do NOT flushSnapshot() here — the frontend merges `approval` from
+				// `snapshot.pendingApproval`, which this session never sets, so a snapshot right
+				// after this message wipes the dialog before it can be shown.
+				onApprovalRequest: (requestId, toolName, params, options) => {
+					const id = `ua-${requestId}`;
+					this.pendingApprovals.set(id, { requestId, toolName });
+					this.send({
+						type: "tool_approval_pending",
+						id,
+						toolCallId: `tc-${requestId}`,
+						toolName,
+						params: params && typeof params === "object" ? params : {},
+						reason: "",
+						reasonEn: "",
+						...(this.turnConvId ? { conversationId: this.turnConvId } : {}),
+						...(options?.suggestions ? { suggestions: options.suggestions } : {}),
+					});
+				},
 			};
 
 			try {
+				// Must return: async sink methods (onApprovalRequest wiring, future ones) rely on
+				// the value/promise; the original form swallowed it, so callers waited forever.
 				const guardedSink = new Proxy(sink, {
 					get:
 						(target, key: keyof AgentEventSink) =>
 						(...args: unknown[]) => {
-							if (isCurrent()) (target[key] as (...args: unknown[]) => void)?.(...args);
+							if (!isCurrent()) return undefined;
+							return (target[key] as (...args: unknown[]) => unknown)?.(...args);
 						},
 				});
 				await this.driver.sendPrompt(
@@ -1102,7 +1127,34 @@ export class UniversalSession implements DispatchSession {
 		}
 	}
 
+	/** Approval reply routed here from dispatch (`tool_approval_response`). */
+	resolveToolApproval(
+		id: string,
+		decision: "approve" | "edit" | "deny",
+		editedParams?: Record<string, unknown>,
+		reason?: string,
+		_scope?: unknown,
+	): boolean {
+		const entry = this.pendingApprovals.get(id);
+		if (!entry) return false;
+		this.pendingApprovals.delete(id);
+		void this.driver.respondApproval(entry.requestId, decision, editedParams, reason);
+		this.send({ type: "tool_approval_resolved", id });
+		return true;
+	}
+
+	/** Deny every outstanding approval (turn aborted/ended) so the engine never hangs. */
+	private denyPendingApprovals(reason: string): void {
+		if (this.pendingApprovals.size === 0) return;
+		for (const [id, entry] of this.pendingApprovals) {
+			void this.driver.respondApproval(entry.requestId, "deny", undefined, reason);
+			this.send({ type: "tool_approval_resolved", id });
+		}
+		this.pendingApprovals.clear();
+	}
+
 	async abort(): Promise<void> {
+		this.denyPendingApprovals("aborted");
 		if (this.abortPromise) return this.abortPromise;
 		if (!this.isStreaming) return;
 		this.abortPromise = Promise.resolve().then(async () => {
