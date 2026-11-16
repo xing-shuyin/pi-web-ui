@@ -28,9 +28,45 @@ const DIRECT_ROOM_HASH_LENGTH = 24;
 /** 直聊房间支持的能力（与群组区分，供 UI 与守卫共用）。 */
 export const DIRECT_ROOM_CAPABILITIES = ["message", "task", "conversation", "history", "stop", "attention"] as const;
 
+/**
+ * 只对 kind==="group" 生效的端点路径单源。
+ * 与 `directRoomViolation` 里禁止的字段一一对应：黑板 / Webhook / 画布 / 中继 / 路由。
+ * 路由守卫不再自己写正则，新增群能力时只改这里。
+ */
+export const GROUP_ONLY_ROOM_PATHS = ["blackboard", "webhooks", "canvas", "hub-relay", "router"] as const;
+
+export function isGroupOnlyRoomPath(path: string): boolean {
+	// incoming webhook 挂在 /webhooks 下，但它自带 token 认证、没有账号 Cookie：
+	// 不归「需要账号登录的群能力」这一类，否则守卫会在路由验签之前就把它拒成 401。
+	if (path.startsWith("/webhooks/incoming/")) return false;
+	return GROUP_ONLY_ROOM_PATHS.some((name) => path === `/${name}` || path.startsWith(`/${name}/`));
+}
+
 export interface DirectRoomViolation {
 	code: string;
 	message: string;
+}
+
+/**
+ * 直聊不变量错误。带 HTTP 状态与机器可读 code，Hub 的错误中间件可直接转成 409，
+ * 因此 store 层与路由层可以共用同一个失败语义，而不必各自翻译一遍。
+ */
+export class DirectRoomInvariantError extends Error {
+	readonly status = 409;
+	readonly code: string;
+
+	constructor(violation: DirectRoomViolation) {
+		super(violation.message);
+		this.name = "DirectRoomInvariantError";
+		this.code = violation.code;
+	}
+}
+
+/** 任何写入路径都用它断言：返回房间本身，违规则抛 `DirectRoomInvariantError`。 */
+export function assertDirectRoom(room: Room): Room {
+	const violation = directRoomViolation(room);
+	if (violation) throw new DirectRoomInvariantError(violation);
+	return room;
 }
 
 export function directRoomId(accountId: string, botId: string): string {
@@ -74,11 +110,15 @@ export function buildDirectRoom(input: { accountId: string; botId: string; botNa
 	};
 }
 
-/** 幂等创建：已存在则原样返回（不修复、不覆盖，修复由调用方显式决定）。 */
+/**
+ * 幂等创建：已存在则原样返回（不修复、不覆盖，修复由调用方显式决定）。
+ * 无论新建还是命中已有房间都做不变量断言——重复「开始私聊」不应把一条坏数据洗白。
+ * store 的写入断言是最终兜底，这里是离入口最近的一次快速失败。
+ */
 export function createDirectRoom(draft: { rooms: Room[] }, input: Parameters<typeof buildDirectRoom>[0]): Room {
 	const existing = directRoomOf(draft.rooms, input.accountId, input.botId);
-	if (existing) return existing;
-	const room = buildDirectRoom(input);
+	if (existing) return assertDirectRoom(existing);
+	const room = assertDirectRoom(buildDirectRoom(input));
 	draft.rooms.push(room);
 	return room;
 }
@@ -106,4 +146,31 @@ export function directRoomViolation(room: Room): DirectRoomViolation | undefined
 /** 列表投影：直聊房间不上群组列表，由 `/api/direct-rooms` 单独提供。 */
 export function groupRoomsOf(rooms: readonly Room[], accountId: string): Room[] {
 	return rooms.filter((room) => room.accountId === accountId && isGroupRoom(room));
+}
+
+/**
+ * Bot 消失后清理由 (accountId, botId) 派生的直聊容器。
+ *
+ * 直聊房间是 Bot 的函数：Bot 记录没了，容器也不该留下，否则会剩下一个没有成员、
+ * 却仍被当作私聊的非法房间（`assertDirectRoom` 仍会放过它，因为它结构上"合法"，
+ * 只是永远派不出任务）。设备撤销与设备重新注册（`PUT /api/agent/bots` 里 Bot 不再出现）
+ * 两条路径共用这一份判定，避免一边清理一边残留。
+ *
+ * 只删直聊容器；群组房间由调用方自己剔除成员，不在这里处理。
+ */
+export function pruneDirectRoomsForBots(
+	rooms: readonly Room[],
+	accountId: string,
+	removedBotIds: ReadonlySet<string>,
+): { rooms: Room[]; removedRoomIds: string[] } {
+	if (!removedBotIds.size) return { rooms: [...rooms], removedRoomIds: [] };
+	const removedRoomIds: string[] = [];
+	const kept: Room[] = [];
+	for (const room of rooms) {
+		const orphaned =
+			room.accountId === accountId && isDirectRoom(room) && room.botIds.some((botId) => removedBotIds.has(botId));
+		if (orphaned) removedRoomIds.push(room.id);
+		else kept.push(room);
+	}
+	return { rooms: kept, removedRoomIds };
 }

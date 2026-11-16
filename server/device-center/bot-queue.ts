@@ -16,6 +16,15 @@ import type { HubTask } from "./store.js";
 
 export const BOT_QUEUE_PRIORITIES = [0, 1, 2] as const;
 
+/**
+ * 「同一 Bot 不能并发」的共享判定单源。
+ * Hub 派发层（hub-task-queue.ts）与设备执行层（task-scheduler.ts / runtime.ts）都复用它，
+ * 避免两层各写一遍 `a.botId === b.botId` 之后语义漂移。
+ */
+export function sameBotConflict(a: { botId: string }, b: { botId: string }): boolean {
+	return a.botId === b.botId;
+}
+
 /** 单个 Bot 的排队上限：超过后新的派活直接拒绝（429），而不是让它无限堆积。 */
 export const BOT_QUEUE_MAX_PENDING = 12;
 

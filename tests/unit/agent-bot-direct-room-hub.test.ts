@@ -202,6 +202,44 @@ describe("直聊房间 HTTP 契约", () => {
 		expect((await f.request("/api/direct-rooms", undefined, account.cookie)).body.rooms).toHaveLength(1);
 	});
 
+	it("设备不再上报某个 Bot 时，它的直聊房间一起消失", async () => {
+		const f = await fixture();
+		const account = await login(f);
+		const bot = await f.pair(account.cookie, "Atlas");
+		await f.request(`/api/bots/${bot.botId}/direct-room`, {}, account.cookie);
+		expect((await f.request("/api/direct-rooms", undefined, account.cookie)).body.rooms).toHaveLength(1);
+
+		// 设备侧删掉这个 Bot 后重新上报：Bot 从注册表消失 → 派生的直聊容器不能留成孤儿。
+		const emptied = await f.request(
+			"/api/agent/bots",
+			{ bots: [] },
+			"",
+			{ Authorization: `Bearer ${bot.credential}`, "X-Device-Id": bot.deviceId },
+			"PUT",
+		);
+		expect(emptied.status).toBe(200);
+		expect((await f.request("/api/direct-rooms", undefined, account.cookie)).body.rooms).toHaveLength(0);
+	});
+
+	it("只是停用（enabled=false）时保留直聊历史，不跟着删房间", async () => {
+		const f = await fixture();
+		const account = await login(f);
+		const bot = await f.pair(account.cookie, "Atlas");
+		const room = (await f.request(`/api/bots/${bot.botId}/direct-room`, {}, account.cookie)).body.room;
+
+		const disabled = await f.request(
+			"/api/agent/bots",
+			{ bots: [{ id: bot.botId, name: "Atlas", description: "test Bot", enabled: false, revision: 2 }] },
+			"",
+			{ Authorization: `Bearer ${bot.credential}`, "X-Device-Id": bot.deviceId },
+			"PUT",
+		);
+		expect(disabled.status).toBe(200);
+		const direct = await f.request("/api/direct-rooms", undefined, account.cookie);
+		expect(direct.body.rooms.map((row: { id: string }) => row.id)).toEqual([room.id]);
+		expect(direct.body.rooms[0].bot.enabled).toBe(false);
+	});
+
 	it("同一 Bot 并发派活改为排队：后到的不失败，私聊优先于群", async () => {
 		const f = await fixture();
 		const account = await login(f);
@@ -556,5 +594,20 @@ describe("直聊房间 HTTP 契约", () => {
 		const account = await login(f);
 		const missing = await f.request("/api/bots/bot-missing/direct-room", {}, account.cookie);
 		expect(missing.status).toBe(404);
+	});
+
+	it("设备撤销时直聊容器随 Bot 一起清掉，不留无成员的非法房间", async () => {
+		const f = await fixture();
+		const account = await login(f);
+		const bot = await f.pair(account.cookie, "Atlas");
+		const room = (await f.request(`/api/bots/${bot.botId}/direct-room`, {}, account.cookie)).body.room;
+		expect(room.id).toContain("direct-");
+		expect((await f.request("/api/direct-rooms", undefined, account.cookie)).body.rooms).toHaveLength(1);
+
+		// 没有这段清理，store 的写入断言会把撤销设备整个事务拒掉（直聊剩 0 个成员）。
+		const revoked = await f.request(`/api/devices/${bot.deviceId}/revoke`, {}, account.cookie);
+		expect(revoked.status).toBe(200);
+		expect((await f.request("/api/direct-rooms", undefined, account.cookie)).body.rooms).toHaveLength(0);
+		expect((await f.request("/api/rooms", undefined, account.cookie)).body.rooms).toHaveLength(0);
 	});
 });

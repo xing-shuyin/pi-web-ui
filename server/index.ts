@@ -104,6 +104,7 @@ import { createLocalBotRegistry } from "./device-center/bots.js";
 import { setDeviceCollabService } from "./device-center/collab-tool.js";
 import { createDeviceDesktop } from "./device-center/desktop.js";
 import { createDeviceLanAccess } from "./device-center/device-lan-access.js";
+import { isSelfAuthenticatedWebhook } from "./device-center/hub-webhooks.js";
 
 import { createHostMetricsSampler } from "./host-metrics.js";
 import { SchedulerStore } from "./scheduler-tasks.js";
@@ -529,7 +530,10 @@ app.use((req, res, next) => {
 	} else if (cookie) {
 		res.setHeader("Set-Cookie", [buildPiWebTokenCookie("", 0, false), buildPiWebTokenCookie("", 0, true)]);
 	}
-	if (req.path === "/api/health" || ok) {
+	// 入站 webhook 自带 token（Hub 侧严格比对，见 hub-webhooks 的 incomingWebhookToken）：
+	// 外部平台不可能持有本机口令，只能靠 webhook token 证明身份。只放行这一条精确路径，
+	// 不放宽到整个 /api/rooms —— 否则修"公网回调恒 401"会以相反方向变成越权。
+	if (req.path === "/api/health" || ok || isSelfAuthenticatedWebhook(req)) {
 		next();
 		return;
 	}
