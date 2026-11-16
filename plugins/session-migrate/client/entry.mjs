@@ -1,3 +1,8 @@
+import { makeT } from "./i18n.mjs";
+
+/** 面板文案：语言解析 / 回退 / 插值都在 SDK 里，这里只按当前界面语言取词。 */
+const t = makeT();
+
 function appRoot() {
 	try {
 		const u = new URL(import.meta.url);
@@ -30,13 +35,13 @@ export default {
 		const row = el("div", "display:flex;gap:8px;align-items:center;flex-wrap:wrap;");
 		const sel = document.createElement("select");
 		sel.innerHTML =
-			`<option value="all">全部来源</option>` +
-			CHUNK_KINDS.map((k) => `<option value="${k}">仅 ${k}</option>`).join("");
-		const scanBtn = el("button", null, "🔍 扫描");
+			`<option value="all">${t("sourceAll")}</option>` +
+			CHUNK_KINDS.map((k) => `<option value="${k}">${t("onlyKind", { kind: k })}</option>`).join("");
+		const scanBtn = el("button", null, t("scan"));
 		const cwdInput = document.createElement("input");
-		cwdInput.placeholder = "目标 cwd（可选重定向）";
+		cwdInput.placeholder = t("cwdPlaceholder");
 		cwdInput.style.cssText = "flex:1;min-width:180px;";
-		const importBtn = el("button", null, "📥 导入选中");
+		const importBtn = el("button", null, t("importSelected"));
 		row.append(sel, scanBtn, cwdInput, importBtn);
 
 		// —— 上传导出文件导入（issue #887） ——
@@ -45,8 +50,8 @@ export default {
 		fileInput.type = "file";
 		fileInput.accept = ".jsonl,.json,application/json";
 		fileInput.style.cssText = "flex:1;min-width:200px;";
-		const uploadBtn = el("button", null, "⬆️ 上传导入");
-		const upHint = el("span", "opacity:.7;font-size:12px;", "导出过的 .jsonl / 其它机器的会话文件");
+		const uploadBtn = el("button", null, t("uploadImport"));
+		const upHint = el("span", "opacity:.7;font-size:12px;", t("uploadHint"));
 		upRow.append(fileInput, uploadBtn, upHint);
 
 		const list = el("div", "display:flex;flex-direction:column;gap:6px;overflow:auto;flex:1;min-height:60px;");
@@ -67,7 +72,7 @@ export default {
 		};
 
 		const runScan = async () => {
-			say("扫描中…");
+			say(t("scanning"));
 			const r = await fetch(`${base()}/scan`);
 			const data = await r.json();
 			const want = sel.value;
@@ -83,11 +88,11 @@ export default {
 				cb.checked = it.source === "omp";
 				cb.dataset.file = it.file;
 				const info = el("div", "flex:1;min-width:0;overflow-wrap:anywhere;");
-				info.textContent = `[${it.source}] ${it.id} · ${it.messages ?? 0}条 · ${it.cwd || "?"} · ${it.preview || it.error || ""}`;
+				info.textContent = `[${it.source}] ${it.id} · ${t("msgCount", { n: it.messages ?? 0 })} · ${it.cwd || "?"} · ${it.preview || it.error || ""}`;
 				rowEl.append(cb, info);
 				// 导出只对 pi / omp 会话库开放（服务端按根目录校验）
 				if (it.source === "pi" || it.source === "omp") {
-					const exp = el("button", "flex-shrink:0;", "⬇ 导出");
+					const exp = el("button", "flex-shrink:0;", t("export"));
 					exp.onclick = (ev) => {
 						ev.preventDefault();
 						ev.stopPropagation();
@@ -98,7 +103,7 @@ export default {
 						document.body.appendChild(a);
 						a.click();
 						a.remove();
-						say(`已开始下载：${it.id}.jsonl`);
+						say(t("downloadStarted", { name: it.id }));
 					};
 					rowEl.append(exp);
 				}
@@ -115,7 +120,7 @@ export default {
 		importBtn.onclick = async () => {
 			const files = [...list.querySelectorAll("input:checked")].map((c) => c.dataset.file);
 			if (!files.length) {
-				say("请先勾选要导入的会话。");
+				say(t("selectSessionsFirst"));
 				return;
 			}
 			const r = await fetch(`${base()}/import`, {
@@ -127,9 +132,11 @@ export default {
 			const ok = data.results.filter((x) => x.ok).length;
 			const skip = data.results.filter((x) => x.skipped).length;
 			say(
-				`导入完成：成功 ${ok}，跳过 ${skip}，失败 ${data.results.length - ok - skip}\n` +
+				t("importFinished", { ok, skip, failed: data.results.length - ok - skip }) +
+					"\n" +
 					JSON.stringify(data.results, null, 2) +
-					"\n\n导入后回到左栏「历史会话」刷新即可看到。",
+					"\n\n" +
+					t("refreshHintAfterImport"),
 			);
 		};
 
@@ -142,7 +149,7 @@ export default {
 			try {
 				data = await r.json();
 			} catch {
-				throw new Error(`服务端返回 ${r.status}`);
+				throw new Error(t("serverReturned", { status: r.status }));
 			}
 			return { status: r.status, data };
 		};
@@ -150,11 +157,11 @@ export default {
 		uploadBtn.onclick = async () => {
 			const file = fileInput.files?.[0];
 			if (!file) {
-				say("请先选择要导入的 .jsonl 文件。");
+				say(t("selectFileFirst"));
 				return;
 			}
 			conflict.style.display = "none";
-			say(`上传中…（${(file.size / 1024).toFixed(1)} KB）`);
+			say(t("uploading", { size: (file.size / 1024).toFixed(1) }));
 			try {
 				const { status, data } = await upload(file);
 				if (status === 409 && data?.duplicate) {
@@ -163,40 +170,40 @@ export default {
 						el(
 							"span",
 							"flex:1;min-width:0;overflow-wrap:anywhere;",
-							`会话 ${data.sessionId} 已存在：${(data.existing || []).join(" / ")}`,
+							t("sessionExists", { id: data.sessionId, paths: (data.existing || []).join(" / ") }),
 						),
 					);
-					const run = async (mode, label) => {
+					const run = async (mode, busyText) => {
 						conflict.style.display = "none";
-						say(`${label}中…`);
+						say(busyText);
 						const { data: second } = await upload(file, mode);
 						say(
-							(second?.ok ? "导入完成：\n" : "导入失败：\n") +
+							(second?.ok ? t("importDone") + "\n" : t("importFailed") + "\n") +
 								JSON.stringify(second, null, 2) +
-								(second?.ok ? "\n\n回到左栏「历史会话」刷新即可看到。" : ""),
+								(second?.ok ? "\n\n" + t("refreshHint") : ""),
 						);
 					};
-					const overwriteBtn = el("button", null, "覆盖原会话");
-					overwriteBtn.onclick = () => void run("overwrite", "覆盖");
-					const copyBtn = el("button", null, "另存副本");
-					copyBtn.onclick = () => void run("copy", "另存副本");
-					const cancelBtn = el("button", null, "取消");
+					const overwriteBtn = el("button", null, t("overwrite"));
+					overwriteBtn.onclick = () => void run("overwrite", t("overwriting"));
+					const copyBtn = el("button", null, t("saveCopy"));
+					copyBtn.onclick = () => void run("copy", t("savingCopy"));
+					const cancelBtn = el("button", null, t("cancel"));
 					cancelBtn.onclick = () => {
 						conflict.style.display = "none";
-						say("已取消导入。");
+						say(t("cancelled"));
 					};
 					conflict.append(overwriteBtn, copyBtn, cancelBtn);
 					conflict.style.display = "flex";
-					say("该会话已存在于本机会话库，请选择处理方式。");
+					say(t("conflictPrompt"));
 					return;
 				}
 				say(
-					(data?.ok ? "导入完成：\n" : "导入失败：\n") +
+					(data?.ok ? t("importDone") + "\n" : t("importFailed") + "\n") +
 						JSON.stringify(data, null, 2) +
-						(data?.ok ? "\n\n回到左栏「历史会话」刷新即可看到。" : ""),
+						(data?.ok ? "\n\n" + t("refreshHint") : ""),
 				);
 			} catch (err) {
-				say(`导入失败：${err?.message || err}`);
+				say(t("importFailedReason", { error: err?.message || err }));
 			}
 		};
 
