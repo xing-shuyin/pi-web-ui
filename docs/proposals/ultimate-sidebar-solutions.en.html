@@ -1,0 +1,692 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Beyond Tree Folding: 4 Higher-Level Sidebar Architectures</title>
+  <style>
+    :root {
+      --bg-page: #0b0c10;
+      --bg-sidebar: #121319;
+      --bg-hover: rgba(255, 255, 255, 0.05);
+      --bg-active: rgba(255, 255, 255, 0.08);
+      --border: #1d1f29;
+      --border-light: rgba(255, 255, 255, 0.06);
+      --text: #e6e8f2;
+      --text-dim: #9299ab;
+      --text-faint: #555c70;
+      --accent: #8b5cf6;
+      --accent-soft: rgba(139, 92, 246, 0.14);
+      --green: #10b981;
+      --green-soft: rgba(16, 185, 129, 0.14);
+      --amber: #f59e0b;
+      --font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "PingFang SC", sans-serif;
+      --font-mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+      --radius-sm: 4px;
+      --radius-md: 6px;
+      --radius-lg: 10px;
+    }
+
+    [data-theme="light"] {
+      --bg-page: #f4f5f8;
+      --bg-sidebar: #ffffff;
+      --bg-hover: rgba(0, 0, 0, 0.04);
+      --bg-active: rgba(0, 0, 0, 0.07);
+      --border: #e2e5ec;
+      --border-light: rgba(0, 0, 0, 0.05);
+      --text: #191c24;
+      --text-dim: #5c6475;
+      --text-faint: #98a0b3;
+      --accent: #6d28d9;
+      --accent-soft: rgba(109, 40, 217, 0.08);
+      --green: #059669;
+      --green-soft: rgba(5, 150, 105, 0.1);
+      --amber: #d97706;
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      background: var(--bg-page);
+      color: var(--text);
+      font-family: var(--font-sans);
+      font-size: 13px;
+      line-height: 1.5;
+    }
+
+    header.nav-header {
+      background: var(--bg-sidebar);
+      border-bottom: 1px solid var(--border);
+      padding: 12px 28px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      position: sticky;
+      top: 0;
+      z-index: 100;
+    }
+    .nav-title {
+      font-size: 15px;
+      font-weight: 700;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+    .badge-super {
+      font-size: 10.5px;
+      font-weight: 600;
+      padding: 2px 8px;
+      border-radius: 99px;
+      background: var(--accent-soft);
+      color: var(--accent);
+    }
+    .solution-tabs {
+      display: flex;
+      gap: 6px;
+      background: var(--bg-page);
+      padding: 3px;
+      border-radius: var(--radius-md);
+      border: 1px solid var(--border);
+    }
+    .tab-btn {
+      padding: 6px 14px;
+      font-size: 12px;
+      font-weight: 600;
+      border: none;
+      background: transparent;
+      color: var(--text-dim);
+      border-radius: var(--radius-sm);
+      cursor: pointer;
+      transition: all 0.15s;
+    }
+    .tab-btn:hover { color: var(--text); }
+    .tab-btn.active {
+      background: var(--bg-sidebar);
+      color: var(--text);
+      box-shadow: 0 1px 3px rgba(0,0,0,0.15);
+    }
+    .theme-btn {
+      padding: 6px 12px;
+      border: 1px solid var(--border);
+      border-radius: var(--radius-md);
+      background: transparent;
+      color: var(--text);
+      cursor: pointer;
+      font-size: 12px;
+    }
+
+    .main-wrap {
+      max-width: 1400px;
+      margin: 24px auto;
+      padding: 0 24px;
+      display: grid;
+      grid-template-columns: 360px 1fr;
+      gap: 32px;
+      align-items: start;
+    }
+
+    /* 侧边栏模拟容器 */
+    .mock-frame {
+      background: var(--bg-sidebar);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      height: 720px;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+      box-shadow: 0 8px 24px rgba(0,0,0,0.18);
+    }
+
+    .panel-header {
+      height: 44px;
+      padding: 0 12px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      border-bottom: 1px solid var(--border-light);
+      flex-shrink: 0;
+    }
+    .tab-pills {
+      display: flex;
+      align-items: center;
+      gap: 4px;
+    }
+    .tab-pill {
+      display: flex;
+      align-items: center;
+      gap: 5px;
+      padding: 4px 9px;
+      font-size: 11.5px;
+      font-weight: 600;
+      border-radius: var(--radius-sm);
+      cursor: pointer;
+    }
+    .tab-pill.active {
+      background: var(--accent-soft);
+      color: var(--text);
+    }
+    .tab-pill:not(.active) { color: var(--text-dim); }
+
+    .tree-scroll-area {
+      flex: 1;
+      overflow-y: auto;
+      padding: 8px;
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+    }
+
+    /* ========================================================
+       方案 1：无竖条·柔光全药丸高亮（Linear / Zed 现代纯净流）
+       ======================================================== */
+    .sol-1 .proj-row {
+      display: flex;
+      align-items: center;
+      padding: 6px 8px;
+      cursor: pointer;
+      user-select: none;
+      border-radius: var(--radius-sm);
+    }
+    .sol-1 .proj-row:hover { background: var(--bg-hover); }
+    .sol-1 .proj-chevron {
+      font-size: 10px;
+      width: 14px;
+      margin-right: 6px;
+      color: var(--text-faint);
+      display: inline-block;
+      transition: transform 0.15s;
+    }
+    .sol-1 .proj-chevron.collapsed { transform: rotate(-90deg); }
+    .sol-1 .proj-title {
+      font-size: 13px;
+      font-weight: 700;
+      color: var(--text);
+      flex: 1;
+    }
+    .sol-1 .proj-children {
+      display: flex;
+      flex-direction: column;
+      gap: 1px;
+      margin-top: 1px;
+      margin-bottom: 4px;
+    }
+    /* 核心美学突破：彻底拿掉生硬的左侧插字竖条！采用浑然天成的柔和药丸高亮 */
+    .sol-1 .chat-item {
+      display: flex;
+      align-items: center;
+      padding: 6px 8px 6px 20px; /* 统一缩进 20px，文字绝对对齐 */
+      border-radius: 6px;
+      cursor: pointer;
+      transition: all 0.1s;
+      font-size: 12.5px;
+      color: var(--text);
+    }
+    .sol-1 .chat-item:hover { background: var(--bg-hover); }
+    .sol-1 .chat-item.active {
+      background: var(--bg-active);
+      color: var(--text);
+      font-weight: 600;
+    }
+    /* 没有 ::before 竖条！文字永远不会被压住，也不会向外跑！ */
+    .sol-1 .chat-title {
+      flex: 1;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      margin-right: 8px;
+    }
+    .sol-1 .meta-right {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      margin-left: auto;
+      flex-shrink: 0;
+    }
+    .sol-1 .time-text {
+      font-size: 11px;
+      color: var(--text-faint);
+      font-variant-numeric: tabular-nums;
+    }
+    .sol-1 .badge-wechat {
+      font-size: 10px;
+      font-weight: 600;
+      padding: 1px 5px;
+      border-radius: 3px;
+      background: var(--green-soft);
+      color: var(--green);
+    }
+    .sol-1 .badge-running {
+      font-size: 10px;
+      font-weight: 600;
+      padding: 1px 6px;
+      border-radius: 99px;
+      background: var(--green-soft);
+      color: var(--green);
+      display: flex;
+      align-items: center;
+      gap: 4px;
+    }
+    .sol-1 .spinner-dot {
+      width: 5px;
+      height: 5px;
+      border-radius: 50%;
+      background: var(--green);
+      animation: pulse 1.6s infinite ease-in-out;
+    }
+    @keyframes pulse { 0%,100%{opacity:1;} 50%{opacity:0.35;} }
+
+    /* ========================================================
+       方案 2：手风琴智能互斥（永远一屏展示，超多项目不滚屏）
+       ======================================================== */
+    .sol-2 .proj-row {
+      display: flex;
+      align-items: center;
+      padding: 7px 8px;
+      cursor: pointer;
+      border-radius: var(--radius-sm);
+    }
+    .sol-2 .proj-row:hover { background: var(--bg-hover); }
+    .sol-2 .proj-row.is-current {
+      color: var(--accent);
+      font-weight: 700;
+    }
+
+    /* ========================================================
+       方案 3：工作区顶栏下拉快切（类似 Cursor / Claude 极简纯粹流）
+       ======================================================== */
+    .sol-3 .workspace-select-bar {
+      padding: 8px 10px;
+      margin: 8px 10px 4px 10px;
+      background: var(--bg-hover);
+      border: 1px solid var(--border);
+      border-radius: 7px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      cursor: pointer;
+      user-select: none;
+    }
+    .sol-3 .workspace-select-bar:hover {
+      background: var(--bg-active);
+      border-color: var(--accent);
+    }
+    .sol-3 .chat-list-flat {
+      padding: 6px 8px;
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+    }
+    .sol-3 .flat-chat-item {
+      display: flex;
+      align-items: center;
+      padding: 7px 10px;
+      border-radius: 6px;
+      cursor: pointer;
+      font-size: 12.5px;
+    }
+    .sol-3 .flat-chat-item:hover { background: var(--bg-hover); }
+    .sol-3 .flat-chat-item.active {
+      background: var(--bg-active);
+      font-weight: 600;
+    }
+
+    .doc-col {
+      display: flex;
+      flex-direction: column;
+      gap: 20px;
+    }
+    .card {
+      background: var(--bg-sidebar);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 24px;
+    }
+    .card h2 {
+      font-size: 15px;
+      font-weight: 700;
+      margin-bottom: 12px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .card p {
+      font-size: 13px;
+      color: var(--text-dim);
+      line-height: 1.65;
+      margin-bottom: 16px;
+    }
+    .adv-list {
+      list-style: none;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+    .adv-item {
+      display: flex;
+      gap: 10px;
+      font-size: 12.5px;
+      line-height: 1.5;
+    }
+    .adv-icon {
+      color: var(--accent);
+      font-weight: bold;
+    }
+  </style>
+</head>
+<body>
+<div data-docs-i18n-switch style="position:fixed;top:8px;right:12px;z-index:2147483647;font:12px/1.6 -apple-system,system-ui,sans-serif;background:rgba(15,17,22,.78);color:#fff;padding:4px 12px;border-radius:999px;box-shadow:0 2px 10px rgba(0,0,0,.35)"><a href="./ultimate-sidebar-solutions.html" style="color:#fff;text-decoration:none">简体中文</a> · <strong>English</strong> · <a href="./ultimate-sidebar-solutions.zh-TW.html" style="color:#fff;text-decoration:none">繁體中文</a></div>
+
+
+
+  <header class="nav-header">
+    <div class="nav-title">
+      <span>A more farsighted way</span>
+      <span class="badge-super">High-level architecture discussion</span>
+    </div>
+    <div class="solution-tabs">
+      <button class="tab-btn active" onclick="switchSol(1)">Approach 1: No bar · soft-pill full-row highlight (strongly recommended)</button>
+      <button class="tab-btn" onclick="switchSol(2)">Approach 2: Smart accordion exclusion (25+ projects, never long-scrolls)</button>
+      <button class="tab-btn" onclick="switchSol(3)">Approach 3: Top-bar workspace switcher (Cursor-style)</button>
+    </div>
+    <button class="theme-btn" onclick="toggleTheme()">🌓 Toggle light/dark theme</button>
+  </header>
+
+  <main class="main-wrap">
+    
+    <!-- Simulated sidebar -->
+    <div class="mock-frame" id="mockContainer">
+      <div class="panel-header">
+        <div class="tab-pills">
+          <div class="tab-pill active">
+            <span>📁 Projects (25)</span>
+          </div>
+          <div class="tab-pill">
+            <span>👥 Groups</span>
+          </div>
+        </div>
+        <div>
+          <button style="border:none;background:transparent;color:var(--text-dim);cursor:pointer;font-size:14px;">+</button>
+        </div>
+      </div>
+
+      <!-- Dynamic render area -->
+      <div class="tree-scroll-area" id="renderArea"></div>
+    </div>
+
+    <!-- Right-hand analysis -->
+    <div class="doc-col">
+      <div class="card">
+        <h2 id="cardTitle">Approach 1: No bar · soft-pill full-row highlight (out of the bar trap for good)</h2>
+        <p id="cardDesc">
+          Why did we keep getting bitten by "the bar sits on top of the text" and "it escaped again"? Because the traditional "3px white bar on the left" is an <strong>old design with a structural flaw</strong>: it forces extra blank space on the left to host the bar, and any global padding washes it out.<br><br>
+          <strong>The better modern answer</strong>: do what Linear, Raycast, Slack and native macOS do — <strong>throw the hard-edged bar away and use a soft, slightly rounded, semi-transparent full-row wash (Soft Pill Highlight).</strong>
+        </p>
+
+        <ul class="adv-list" id="cardList"></ul>
+      </div>
+
+      <div class="card">
+        <h2>💡 Deep dive into the architecture decision</h2>
+        <div class="adv-item">
+          <span class="adv-icon">🎯</span>
+          <div>
+            <strong>Why is "de-barring" inevitable for every modern professional tool?</strong><br>
+            Cursor, the modern VS Code themes and Linear all removed the hard highlight bar on the left within the last two years and switched to a faintly translucent full-row background. That not only <strong>leaves zero text-alignment risk</strong>, it also stays rock-solid on mobile, touch screens and narrow viewports.
+          </div>
+        </div>
+        <div class="adv-item" style="margin-top: 10px;">
+          <span class="adv-icon">⚡</span>
+          <div>
+            <strong>Why does the accordion (approach 2) suit 20+ projects?</strong><br>
+            With 25 projects, plain collapsing needs only three expanded groups to push the list past two thousand pixels. Auto-collapse the rest and keep just the current project plus its running background tasks, and the sidebar stays inside a single, severely restrained screen at all times.
+          </div>
+        </div>
+      </div>
+    </div>
+
+  </main>
+
+  <script>
+    let currentSol = 1;
+    let activeId = 'c1';
+
+    const data = [
+      {
+        id: 'p1',
+        name: 'pi-web-ui',
+        isCurrent: true,
+        runningCount: 1,
+        convs: [
+          { id: 'c1', title: 'Merge running and history in the left project list', category: 'subagent', label: 'Subagent', running: true, time: '14:37' },
+          { id: 'c2', title: 'Every chat platform throws this error', category: 'wechat', label: 'WeChat', running: false, time: '11:29' },
+          { id: 'c3', title: '@plugins/lx-music double-click playback logic refactor', category: null, running: false, time: '11:09' },
+          { id: 'c4', title: 'Remove redundant text from the top of scheduled tasks', category: null, running: false, time: '10:56' }
+        ],
+        more: 42
+      },
+      {
+        id: 'p2',
+        name: 'ai-browser',
+        isCurrent: false,
+        runningCount: 0,
+        convs: [
+          { id: 'c5', title: 'Clean up unused files', running: false, time: '12:08' },
+          { id: 'c6', title: 'Playwright session persistence', category: 'wechat', label: 'WeChat', running: false, time: 'Yesterday' }
+        ]
+      },
+      {
+        id: 'p3',
+        name: 'yth-operation',
+        isCurrent: false,
+        runningCount: 0,
+        convs: [
+          { id: 'c7', title: 'Fix false Kafka status alerts', running: false, time: '3 days ago' }
+        ]
+      }
+    ];
+
+    const solDocs = {
+      1: {
+        title: 'Approach 1: No bar · soft-glow full-pill highlight (out of the alignment trap for good · most recommended)',
+        desc: '<strong>Cut the harsh 3px bar on the left entirely!</strong><br>The selected state becomes the most popular pattern today: a <strong>soft translucent rounded full-row wash (Soft Pill)</strong>. Nothing is reserved for blank space on the left, text aligns perfectly naturally from the very first pixel, and there is zero risk of the bar sitting on the text or escaping again!',
+        list: [
+          'Zero bar-on-text risk: no leading pseudo-element, so the text start point is 100% absolutely stable at the root.',
+          'Extremely soft visually: like Linear / Raycast — no glare at night and nothing harshly protruding.',
+          'All status on the right: WeChat mini-pill, streaming spinner and timestamp all line up neatly on the right.'
+        ]
+      },
+      2: {
+        title: 'Approach 2: Smart accordion exclusion (25+ projects never long-scroll)',
+        desc: 'When you open <code>ai-browser</code>, the history of <code>pi-web-ui</code> folds away automatically (running tasks still stay pinned outside).<br>Whether you have 25 projects or 100, only the currently active project is ever fully expanded, so the height always stays within one screen!',
+        list: [
+          'Goodbye scroll hell: no more dragging the scrollbar up and down through dozens of expanded projects.',
+          'Respects the always-on rule: even when a project is collapsed, any running agent stays steadily on display.',
+          'A perfect fit for heavy multi-repo workflows.'
+        ]
+      },
+      3: {
+        title: 'Approach 3: Top-bar workspace switcher (Cursor / Claude-style deep-focus flow)',
+        desc: 'Turn the “project” into a prominent <strong>top-bar workspace selector pill</strong> (like <code>[ 📁 pi-web-ui ▾ ]</code>), so the secondary sidebar becomes the flat conversation flow of the current project.<br>No multi-level tree indentation — as pure as a native chat app!',
+        list: [
+          'No folder indentation: conversation titles get the widest possible horizontal space.',
+          'Extreme mental focus: you are heads-down coding in pi-web-ui and the other 24 projects do not intrude on your view.',
+          'Switching is just as fast: click the top-bar pill to pop the recent-project quick switch at any time.'
+        ]
+      }
+    };
+
+    function switchSol(num) {
+      currentSol = num;
+      document.querySelectorAll('.tab-btn').forEach((b, i) => b.classList.toggle('active', i + 1 === num));
+      const frame = document.getElementById('mockContainer');
+      frame.className = `mock-frame sol-${num}`;
+
+      const doc = solDocs[num];
+      document.getElementById('cardTitle').innerHTML = doc.title;
+      document.getElementById('cardDesc').innerHTML = doc.desc;
+      document.getElementById('cardList').innerHTML = doc.list.map(item => `
+        <li class="adv-item">
+          <span class="adv-icon">✓</span>
+          <span>${item}</span>
+        </li>
+      `).join('');
+
+      render();
+    }
+
+    function render() {
+      const area = document.getElementById('renderArea');
+      area.innerHTML = '';
+
+      if (currentSol === 1 || currentSol === 2) {
+        data.forEach(p => {
+          const isCollapsed = currentSol === 2 ? !p.isCurrent : (p.id === 'p3');
+          const group = document.createElement('div');
+
+          // Project header
+          const head = document.createElement('div');
+          head.className = `proj-row ${p.isCurrent ? 'is-current' : ''}`;
+          head.onclick = () => {
+            if (currentSol === 2) {
+              data.forEach(x => x.isCurrent = (x.id === p.id));
+              render();
+            }
+          };
+
+          const chevron = document.createElement('span');
+          chevron.className = `proj-chevron ${isCollapsed ? 'collapsed' : ''}`;
+          chevron.textContent = '▼';
+          head.appendChild(chevron);
+
+          const title = document.createElement('span');
+          title.className = 'proj-title';
+          title.textContent = p.name;
+          head.appendChild(title);
+
+          if (p.runningCount > 0) {
+            const badge = document.createElement('span');
+            badge.className = 'badge-running';
+            badge.innerHTML = `<span class="spinner-dot"></span> ${p.runningCount}`;
+            head.appendChild(badge);
+          }
+
+          group.appendChild(head);
+
+          // Conversations
+          const children = document.createElement('div');
+          children.className = 'proj-children';
+
+          const visibleList = isCollapsed ? p.convs.filter(c => c.running) : p.convs;
+
+          visibleList.forEach(c => {
+            const item = document.createElement('div');
+            item.className = `chat-item ${c.id === activeId ? 'active' : ''}`;
+            item.onclick = () => { activeId = c.id; render(); };
+
+            const cTitle = document.createElement('span');
+            cTitle.className = 'chat-title';
+            cTitle.textContent = c.title;
+            item.appendChild(cTitle);
+
+            const meta = document.createElement('div');
+            meta.className = 'meta-right';
+
+            if (c.running) {
+              const sp = document.createElement('span');
+              sp.className = 'spinner-dot';
+              meta.appendChild(sp);
+            }
+
+            if (c.label) {
+              const b = document.createElement('span');
+              b.className = 'badge-wechat';
+              b.textContent = c.label;
+              meta.appendChild(b);
+            }
+
+            const t = document.createElement('span');
+            t.className = 'time-text';
+            t.textContent = c.time;
+            meta.appendChild(t);
+
+            item.appendChild(meta);
+            children.appendChild(item);
+          });
+
+          if (isCollapsed && p.convs.some(c => !c.running)) {
+            const tip = document.createElement('div');
+            tip.style.padding = '4px 8px 4px 20px';
+            tip.style.fontSize = '11px';
+            tip.style.color = 'var(--text-faint)';
+            tip.textContent = `+ ${p.convs.length - 1} more in history ›`;
+            children.appendChild(tip);
+          } else if (!isCollapsed && p.more) {
+            const more = document.createElement('div');
+            more.style.padding = '5px 8px 5px 20px';
+            more.style.fontSize = '11px';
+            more.style.color = 'var(--text-faint)';
+            more.textContent = `Show more · ${p.more}`;
+            children.appendChild(more);
+          }
+
+          group.appendChild(children);
+          area.appendChild(group);
+        });
+      } else if (currentSol === 3) {
+        // Approach 3: Cursor-style top-bar quick switch
+        const selector = document.createElement('div');
+        selector.className = 'workspace-select-bar';
+        selector.innerHTML = `
+          <span>📁</span>
+          <strong style="flex:1;">pi-web-ui</strong>
+          <span style="font-size:10px; color:var(--text-dim);">▼ Switch</span>
+        `;
+        selector.onclick = () => alert('Opens a quick-switch panel for the 25 most recent projects');
+        area.appendChild(selector);
+
+        const list = document.createElement('div');
+        list.className = 'chat-list-flat';
+
+        data[0].convs.forEach(c => {
+          const item = document.createElement('div');
+          item.className = `flat-chat-item ${c.id === activeId ? 'active' : ''}`;
+          item.onclick = () => { activeId = c.id; render(); };
+
+          const t = document.createElement('span');
+          t.style.flex = '1';
+          t.style.overflow = 'hidden';
+          t.style.textOverflow = 'ellipsis';
+          t.style.whiteSpace = 'nowrap';
+          t.textContent = c.title;
+          item.appendChild(t);
+
+          if (c.label) {
+            const b = document.createElement('span');
+            b.className = 'badge-wechat';
+            b.style.marginRight = '6px';
+            b.textContent = c.label;
+            item.appendChild(b);
+          }
+
+          const tm = document.createElement('span');
+          tm.className = 'time-text';
+          tm.textContent = c.time;
+          item.appendChild(tm);
+
+          list.appendChild(item);
+        });
+
+        area.appendChild(list);
+      }
+    }
+
+    function toggleTheme() {
+      const cur = document.documentElement.getAttribute('data-theme');
+      document.documentElement.setAttribute('data-theme', cur === 'light' ? 'dark' : 'light');
+    }
+
+    switchSol(1);
+  </script>
+</body>
+</html>
+
+

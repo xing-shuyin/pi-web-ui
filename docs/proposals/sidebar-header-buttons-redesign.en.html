@@ -1,0 +1,1383 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Sidebar header icon consolidation and interaction redesign · pi-web-ui</title>
+  <style>
+    :root {
+      --bg: #0e0f14;
+      --bg-panel: #13151b;
+      --bg-elev: #1a1c24;
+      --bg-elev2: #21242e;
+      --bg-elev3: #2a2e3b;
+      --border: #262936;
+      --border-subtle: #1c1e28;
+      --text: #e6e8f0;
+      --text-dim: #9aa1b5;
+      --text-faint: #62687a;
+      --accent: #8b5cf6;
+      --accent-soft: rgba(139, 92, 246, 0.16);
+      --accent-border: rgba(139, 92, 246, 0.35);
+      --accent-glow: rgba(139, 92, 246, 0.3);
+      --green: #10b981;
+      --green-soft: rgba(16, 185, 129, 0.15);
+      --amber: #f59e0b;
+      --amber-soft: rgba(245, 158, 11, 0.15);
+      --red: #ef4444;
+      --red-soft: rgba(239, 68, 68, 0.15);
+      --blue: #3b82f6;
+      --blue-soft: rgba(59, 130, 246, 0.15);
+      --font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+      --font-mono: "JetBrains Mono", "SF Mono", Menlo, Consolas, monospace;
+      --radius-sm: 4px;
+      --radius-md: 6px;
+      --radius-lg: 10px;
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: var(--font-sans);
+      line-height: 1.5;
+      font-size: 13px;
+      padding-bottom: 60px;
+    }
+
+    /* 顶部导航与总览 */
+    .top-hero {
+      background: linear-gradient(180deg, #181922 0%, var(--bg) 100%);
+      border-bottom: 1px solid var(--border);
+      padding: 32px 40px;
+      position: relative;
+    }
+    .badge-tag {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 3px 10px;
+      background: var(--accent-soft);
+      border: 1px solid var(--accent-border);
+      color: #c4b5fd;
+      border-radius: 999px;
+      font-size: 11px;
+      font-weight: 600;
+      letter-spacing: 0.5px;
+      margin-bottom: 12px;
+    }
+    .hero-title {
+      font-size: 24px;
+      font-weight: 700;
+      color: #fff;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      letter-spacing: -0.3px;
+    }
+    .hero-desc {
+      color: var(--text-dim);
+      font-size: 14px;
+      margin-top: 8px;
+      max-width: 820px;
+    }
+
+    /* 导航栏固定控制条 */
+    .sticky-nav {
+      position: sticky;
+      top: 0;
+      z-index: 100;
+      background: rgba(14, 15, 20, 0.85);
+      backdrop-filter: blur(16px);
+      border-bottom: 1px solid var(--border);
+      padding: 10px 40px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 16px;
+    }
+    .tab-pills {
+      display: flex;
+      background: var(--bg-elev);
+      padding: 3px;
+      border-radius: var(--radius-md);
+      border: 1px solid var(--border);
+      gap: 3px;
+    }
+    .tab-pill {
+      background: transparent;
+      border: none;
+      color: var(--text-dim);
+      padding: 6px 14px;
+      border-radius: var(--radius-sm);
+      font-size: 12px;
+      font-weight: 600;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      transition: all 0.15s ease;
+    }
+    .tab-pill:hover {
+      color: var(--text);
+      background: var(--bg-elev2);
+    }
+    .tab-pill.active {
+      background: var(--accent);
+      color: #fff;
+      box-shadow: 0 2px 8px var(--accent-glow);
+    }
+
+    .main-wrap {
+      max-width: 1400px;
+      margin: 0 auto;
+      padding: 32px 40px;
+    }
+
+    /* 根因深度剖析卡片 */
+    .root-cause-card {
+      background: var(--bg-panel);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-lg);
+      padding: 24px;
+      margin-bottom: 32px;
+    }
+    .section-headline {
+      font-size: 16px;
+      font-weight: 700;
+      color: #fff;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin-bottom: 16px;
+    }
+    .problem-inspect {
+      display: grid;
+      grid-template-columns: 360px 1fr;
+      gap: 24px;
+      align-items: center;
+      background: var(--bg-elev);
+      border: 1px solid var(--border-subtle);
+      border-radius: var(--radius-md);
+      padding: 16px;
+    }
+    .problem-preview {
+      background: #000;
+      border: 1px solid #333;
+      border-radius: 6px;
+      padding: 12px;
+      text-align: center;
+    }
+    .problem-tags {
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+    .p-tag {
+      display: flex;
+      align-items: flex-start;
+      gap: 10px;
+      font-size: 12.5px;
+      color: var(--text-dim);
+      line-height: 1.5;
+    }
+    .p-tag strong {
+      color: #fff;
+    }
+    .tag-badge {
+      flex-shrink: 0;
+      font-size: 11px;
+      padding: 2px 7px;
+      border-radius: 4px;
+      font-weight: 600;
+    }
+    .tag-danger { background: var(--red-soft); color: #f87171; border: 1px solid rgba(239, 68, 68, 0.3); }
+    .tag-amber { background: var(--amber-soft); color: #fbbf24; border: 1px solid rgba(245, 158, 11, 0.3); }
+    .tag-blue { background: var(--blue-soft); color: #60a5fa; border: 1px solid rgba(59, 130, 246, 0.3); }
+
+    /* 方案展示栅格 */
+    .proposals-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+      gap: 24px;
+      margin-top: 24px;
+    }
+    .proposal-card {
+      background: var(--bg-panel);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-lg);
+      padding: 20px;
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+      position: relative;
+      transition: all 0.2s ease;
+    }
+    .proposal-card:hover {
+      border-color: rgba(139, 92, 246, 0.5);
+      box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35);
+    }
+    .proposal-card.recommended {
+      border-color: var(--accent);
+      background: linear-gradient(180deg, rgba(139, 92, 246, 0.05) 0%, var(--bg-panel) 100%);
+    }
+    .proposal-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+    }
+    .proposal-title {
+      font-size: 15px;
+      font-weight: 700;
+      color: #fff;
+    }
+    .proposal-rec-badge {
+      font-size: 10px;
+      background: var(--accent);
+      color: #fff;
+      padding: 2px 8px;
+      border-radius: 999px;
+      font-weight: 700;
+      letter-spacing: 0.5px;
+    }
+
+    /* 侧边栏仿真组件 */
+    .sidebar-mock {
+      background: #111318;
+      border: 1px solid var(--border);
+      border-radius: var(--radius-md);
+      overflow: hidden;
+      box-shadow: 0 4px 16px rgba(0,0,0,0.4);
+      position: relative;
+    }
+    .mock-header {
+      height: 34px;
+      background: #141720;
+      border-bottom: 1px solid var(--border-subtle);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 0 8px;
+      position: relative;
+      user-select: none;
+    }
+    .mock-tabs {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+    }
+    .mock-tab {
+      padding: 2px 8px;
+      font-size: 11px;
+      font-weight: 600;
+      border-radius: 4px;
+      cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      transition: all 0.15s ease;
+    }
+    .mock-tab.active {
+      background: var(--accent-soft);
+      border: 1px solid var(--accent-border);
+      color: #fff;
+    }
+    .mock-tab:not(.active) {
+      border: 1px solid transparent;
+      color: var(--text-dim);
+    }
+    .mock-tab:not(.active):hover {
+      background: rgba(255, 255, 255, 0.05);
+      color: var(--text);
+    }
+    .mock-badge {
+      font-size: 10px;
+      opacity: 0.75;
+    }
+
+    .mock-actions {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+    }
+    .mock-btn {
+      width: 24px;
+      height: 24px;
+      border-radius: 5px;
+      background: #1e222d;
+      border: 1px solid transparent;
+      color: var(--text-dim);
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 12px;
+      cursor: pointer;
+      transition: all 0.15s ease;
+      position: relative;
+    }
+    .mock-btn:hover {
+      background: #2b3040;
+      color: #fff;
+      border-color: rgba(255,255,255,0.1);
+    }
+    .mock-btn.collapse-btn {
+      background: #181b24;
+      color: var(--text-faint);
+    }
+    .mock-btn.collapse-btn:hover {
+      background: #242936;
+      color: #fff;
+    }
+
+    /* 弹出菜单仿真 */
+    .mock-dropdown {
+      position: absolute;
+      top: 32px;
+      right: 32px;
+      width: 190px;
+      background: #1c1f2a;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      box-shadow: 0 10px 28px rgba(0,0,0,0.6);
+      padding: 5px;
+      z-index: 50;
+      animation: fadeInDown 0.15s ease-out;
+    }
+    @keyframes fadeInDown {
+      from { opacity: 0; transform: translateY(-6px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+    .dropdown-item {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 6px 8px;
+      font-size: 11.5px;
+      color: var(--text-dim);
+      border-radius: 4px;
+      cursor: pointer;
+      transition: background 0.12s;
+    }
+    .dropdown-item:hover {
+      background: var(--accent);
+      color: #fff;
+    }
+    .dropdown-item .d-label {
+      display: flex;
+      align-items: center;
+      gap: 7px;
+    }
+    .dropdown-item .d-shortcut {
+      font-size: 10px;
+      opacity: 0.6;
+      font-family: var(--font-mono);
+    }
+    .dropdown-divider {
+      height: 1px;
+      background: var(--border-subtle);
+      margin: 4px 0;
+    }
+
+    /* 列表内容仿真 */
+    .mock-list {
+      padding: 8px 6px;
+      min-height: 140px;
+      max-height: 170px;
+      overflow-y: auto;
+      font-size: 12px;
+    }
+    .mock-item {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 5px 8px;
+      border-radius: 4px;
+      color: var(--text-dim);
+      cursor: pointer;
+    }
+    .mock-item:hover {
+      background: rgba(255, 255, 255, 0.05);
+      color: var(--text);
+    }
+    .mock-item.active {
+      background: var(--accent-soft);
+      color: #c4b5fd;
+      font-weight: 500;
+    }
+    .mock-item-sub {
+      font-size: 10px;
+      color: var(--text-faint);
+    }
+
+    /* 方案具体描述 */
+    .proposal-meta {
+      font-size: 12.5px;
+      color: var(--text-dim);
+      line-height: 1.6;
+    }
+    .metric-list {
+      list-style: none;
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+      margin-top: 8px;
+      border-top: 1px solid var(--border-subtle);
+      padding-top: 12px;
+    }
+    .metric-item {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      font-size: 11.5px;
+    }
+    .metric-label {
+      color: var(--text-faint);
+    }
+    .metric-val {
+      font-weight: 600;
+    }
+
+    /* 对比表格 */
+    .comparison-table-wrap {
+      margin-top: 36px;
+      background: var(--bg-panel);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-lg);
+      padding: 24px;
+      overflow-x: auto;
+    }
+    table.compare-table {
+      width: 100%;
+      border-collapse: collapse;
+      text-align: left;
+      font-size: 12.5px;
+    }
+    table.compare-table th, table.compare-table td {
+      padding: 12px 14px;
+      border-bottom: 1px solid var(--border);
+    }
+    table.compare-table th {
+      background: var(--bg-elev);
+      color: var(--text);
+      font-weight: 600;
+    }
+    table.compare-table td {
+      color: var(--text-dim);
+    }
+    table.compare-table tr:hover td {
+      background: rgba(255, 255, 255, 0.02);
+    }
+
+    /* 代码改动建议 */
+    .code-diff-card {
+      margin-top: 36px;
+      background: var(--bg-panel);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-lg);
+      padding: 24px;
+    }
+    pre.code-block {
+      background: #090a0d;
+      border: 1px solid var(--border);
+      border-radius: var(--radius-md);
+      padding: 14px;
+      color: #cbd5e1;
+      font-family: var(--font-mono);
+      font-size: 12px;
+      line-height: 1.6;
+      overflow-x: auto;
+      margin-top: 12px;
+    }
+    .diff-add { color: #86efac; background: rgba(34, 197, 94, 0.1); display: block; margin: 0 -14px; padding: 0 14px; }
+    .diff-del { color: #fca5a5; background: rgba(239, 68, 68, 0.1); display: block; margin: 0 -14px; padding: 0 14px; }
+    .diff-comment { color: #64748b; }
+
+    /* 工具按钮微型提示框 */
+    .tooltip-tag {
+      position: absolute;
+      bottom: -24px;
+      background: #000;
+      color: #fff;
+      font-size: 10px;
+      padding: 2px 6px;
+      border-radius: 3px;
+      white-space: nowrap;
+      pointer-events: none;
+      opacity: 0;
+      transition: opacity 0.15s;
+    }
+    .mock-btn:hover .tooltip-tag {
+      opacity: 1;
+    }
+
+    /* 方案1细分折叠形态演示 */
+    .chevron-demo-box {
+      background: var(--bg-elev);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-md);
+      padding: 16px;
+      margin-top: 20px;
+    }
+    .chevron-subtabs {
+      display: flex;
+      gap: 6px;
+      margin-bottom: 14px;
+    }
+    .subtab-btn {
+      padding: 4px 10px;
+      font-size: 11.5px;
+      border-radius: 4px;
+      background: #181a24;
+      border: 1px solid var(--border);
+      color: var(--text-dim);
+      cursor: pointer;
+      transition: all 0.15s;
+    }
+    .subtab-btn.active {
+      background: var(--accent);
+      color: #fff;
+      border-color: var(--accent);
+    }
+    .lead-chevron {
+      width: 14px;
+      height: 14px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      color: var(--text-faint);
+      cursor: pointer;
+      transition: transform 0.15s ease, color 0.15s ease;
+      margin-right: 2px;
+    }
+    .lead-chevron:hover {
+      color: var(--text);
+    }
+    .lead-chevron.collapsed {
+      transform: rotate(-90deg);
+    }
+    .mock-header.collapsed-header {
+      background: #10121a;
+      opacity: 0.85;
+    }
+    .mock-header.collapsed-header:hover {
+      opacity: 1;
+      background: #151822;
+    }
+    .mock-header:hover .hover-only-arrow {
+      opacity: 0.8 !important;
+    }
+    .hover-reveal-wrap .hover-action {
+      opacity: 0;
+      transform: translateX(4px);
+      transition: all 0.18s ease;
+    }
+    .hover-reveal-wrap:hover .hover-action {
+      opacity: 1;
+      transform: translateX(0);
+    }
+
+    /* 方案3搜索栏 */
+    .mock-filter-bar {
+      padding: 6px 8px;
+      background: #161922;
+      border-bottom: 1px solid var(--border-subtle);
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .mock-input {
+      flex: 1;
+      background: #0e1017;
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      padding: 3px 6px;
+      font-size: 11px;
+      color: var(--text);
+      outline: none;
+    }
+    .mock-input::placeholder {
+      color: var(--text-faint);
+    }
+  </style>
+</head>
+<body>
+<div data-docs-i18n-switch style="position:fixed;top:8px;right:12px;z-index:2147483647;font:12px/1.6 -apple-system,system-ui,sans-serif;background:rgba(15,17,22,.78);color:#fff;padding:4px 12px;border-radius:999px;box-shadow:0 2px 10px rgba(0,0,0,.35)"><a href="./sidebar-header-buttons-redesign.html" style="color:#fff;text-decoration:none">简体中文</a> · <strong>English</strong> · <a href="./sidebar-header-buttons-redesign.zh-TW.html" style="color:#fff;text-decoration:none">繁體中文</a></div>
+
+
+
+  <!-- Top overview -->
+  <div class="top-hero">
+    <div class="badge-tag">UI / UX OPTIMIZATION PROPOSALS</div>
+    <div class="hero-title">
+      <span>Too many tiny icons in the sidebar header · Root-cause fixes and interaction proposals</span>
+    </div>
+    <div class="hero-desc">
+      The top-right corner of the left sidebar currently stacks 4 tiny icons that fight for the same space (collapse section <code>^</code>, new sandbox <code>⚗</code>, manage projects <code>📁+</code>, collapse panel <code>&lt;</code>).
+      Beyond the visual clutter and the cognitive load, they are easy to mis-hit. Below are 4 modern interaction redesigns that stop patching the symptoms, plus live, clickable prototypes.
+    </div>
+  </div>
+
+  <!-- Nav bar -->
+  <div class="sticky-nav">
+    <div class="tab-pills">
+      <button class="tab-pill active" onclick="switchView('all')">All proposals + live demos</button>
+      <button class="tab-pill" onclick="switchView('chevron')">🔥 Focus: where did the section chevron go?</button>
+      <button class="tab-pill" onclick="switchView('compare')">Side-by-side comparison matrix</button>
+      <button class="tab-pill" onclick="switchView('code')">Implementation (code diff)</button>
+    </div>
+    <div style="font-size: 11.5px; color: var(--text-dim); display: flex; align-items: center; gap: 8px;">
+      <span>💡 Click the buttons in any proposal sidebar below to try the interaction for real</span>
+    </div>
+  </div>
+
+  <div class="main-wrap">
+
+    <!-- Root-cause deep dive -->
+    <div class="root-cause-card">
+      <div class="section-headline">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path><line x1="12" y1="9" x2="12" y2="13"></line><line x1="12" y1="17" x2="12.01" y2="17"></line></svg>
+        <span>Root-cause diagnosis (why do the icons pile up?)</span>
+      </div>
+
+      <div class="problem-inspect">
+        <!-- Reproduce the status quo -->
+        <div class="problem-preview">
+          <div style="font-size: 10px; color: #f87171; margin-bottom: 6px; font-weight: 600;">▼ How it actually renders today (4 tiny buttons crammed into one row)</div>
+          <div style="background: #141720; border: 1px solid #333; border-radius: 5px; height: 34px; display: flex; align-items: center; justify-content: space-between; padding: 0 6px;">
+            <div style="display: flex; gap: 4px;">
+              <span style="background: rgba(139, 92, 246, 0.2); border: 1px solid rgba(139, 92, 246, 0.4); padding: 1px 6px; font-size: 11px; border-radius: 4px; color: #fff;">📁 Projects (25)</span>
+              <span style="padding: 1px 6px; font-size: 11px; color: #888;">👥 Groups</span>
+            </div>
+            <!-- Cramped right side -->
+            <div style="display: flex; align-items: center; gap: 3px; position: relative;">
+              <span style="color: #666; font-size: 11px; margin-right: 2px;">▲</span>
+              <span style="width: 22px; height: 22px; background: #1e222d; border-radius: 4px; display: flex; align-items: center; justify-content: center; font-size: 12px;">⚗</span>
+              <span style="width: 22px; height: 22px; background: #1e222d; border-radius: 4px; display: flex; align-items: center; justify-content: center; font-size: 12px;">📁⁺</span>
+              <span style="width: 22px; height: 22px; background: #181b24; border-radius: 4px; display: flex; align-items: center; justify-content: center; font-size: 12px; color: #aaa;">‹</span>
+            </div>
+          </div>
+          <div style="margin-top: 8px; font-size: 11px; color: #ef4444; font-family: var(--font-mono);">
+            [Tab area] + [^ collapse] + [⚗ sandbox] + [📁+ manage] + [&lt; collapse]
+          </div>
+        </div>
+
+        <div class="problem-tags">
+          <div class="p-tag">
+            <span class="tag-badge tag-danger">Mismatched levels</span>
+            <div><strong>Three buttons with three different lifecycles, mixed together</strong>: <code>&lt;</code> collapses the entire sidebar globally; <code>^</code> collapses one local section; <code>⚗</code> and <code>📁+</code> create business assets. All three share one row, so users cannot tell what governs what.</div>
+          </div>
+          <div class="p-tag">
+            <span class="tag-badge tag-amber">Patched in CSS</span>
+            <div>In <code>styles.css</code> the global collapse button <code>.panel-collapse-btn</code> is absolutely positioned at <code>right: 4px</code>, so the first header hard-codes <code>margin-right: 28px</code> to dodge it physically — which squashes every button into one long single-file line.</div>
+          </div>
+          <div class="p-tag">
+            <span class="tag-badge tag-blue">No unified entry point</span>
+            <div>Sandbox projects and ordinary projects are both just workspaces. Every new workspace type (say a future "remote workspace" or "template") adds another tiny icon to the header — icon explosion.</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 🔥 Focus answer: where did the section chevron (^/v) go? Hidden? -->
+    <div id="view-chevron" class="root-cause-card" style="border-color: rgba(139, 92, 246, 0.4); background: linear-gradient(180deg, #161823 0%, var(--bg-panel) 100%);">
+      <div class="section-headline">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#a78bfa" stroke-width="2"><polyline points="6 9 12 15 18 9"></polyline></svg>
+        <span style="color: #fff;">The obvious question: where did each section's collapse chevron go? Was it simply hidden?</span>
+      </div>
+
+      <div style="color: var(--text-dim); font-size: 13.5px; line-height: 1.6; margin-bottom: 16px;">
+        In the original code the <strong>entire header row is clickable to collapse/expand</strong> (<code>onClick={toggleProjects}</code>). The little <code>^</code> was never a button you had to hit — it is a <strong style="color:#fff;">status indicator (Disclosure Indicator)</strong>. But because it sat after the tabs and before the new-item button, it read as a fourth action button lined up with the rest.<br>
+        <strong>Conclusion: no need to hide it crudely — there are three excellent ways to handle it:</strong>
+      </div>
+
+      <!-- Three chevron styles to try -->
+      <div class="chevron-demo-box">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
+          <div class="chevron-subtabs">
+            <button class="subtab-btn active" id="st-btn-1" onclick="switchChevronStyle('lead')">Style 1A: leading tree chevron on the left (the VS Code / IDE classic · top pick ★)</button>
+            <button class="subtab-btn" id="st-btn-2" onclick="switchChevronStyle('badge')">Style 1B: faint trailing badge (smaller and quieter, emphasizes the parent-child relation)</button>
+            <button class="subtab-btn" id="st-btn-3" onclick="switchChevronStyle('hover')">Style 1C: whole row clickable + hint on hover (minimal, immersive)</button>
+          </div>
+          <span style="font-size: 11px; color: var(--text-faint);">Click the header row or the arrow below to test collapsing</span>
+        </div>
+
+        <!-- Live demo container -->
+        <div class="sidebar-mock" style="max-width: 420px; margin: 0 auto;">
+          <!-- Mock header -->
+          <div class="mock-header" id="chevron-mock-header" style="cursor: pointer;" onclick="handleHeaderToggle(event)">
+            
+            <!-- Left content (style swapped by JS) -->
+            <div id="chevron-mock-left" style="display: inline-flex; align-items: center; gap: 4px;">
+              <!-- Default: style 1A leading chevron -->
+              <span class="lead-chevron" id="demo-lead-arrow">
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="6 9 12 15 18 9"></polyline></svg>
+              </span>
+              <div class="mock-tabs">
+                <span class="mock-tab active" onclick="event.stopPropagation();">📁 Projects <span class="mock-badge">(25)</span></span>
+                <span class="mock-tab" onclick="event.stopPropagation();">👥 Groups</span>
+              </div>
+            </div>
+
+            <!-- Right actions (unified new + sidebar collapse) -->
+            <div class="mock-actions" onclick="event.stopPropagation();">
+              <button class="mock-btn" id="btn-demo-chevron-add" onclick="toggleDemoDropdown()" title="New or open...">
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
+              </button>
+              <span style="width: 1px; height: 14px; background: var(--border-subtle); margin: 0 1px;"></span>
+              <button class="mock-btn collapse-btn" onclick="alert('Collapse the whole left panel')" title="Collapse the entire left sidebar">
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="15 18 9 12 15 6"></polyline></svg>
+              </button>
+            </div>
+
+            <!-- Dropdown menu -->
+            <div class="mock-dropdown" id="demo-chevron-dropdown" style="display: none; right: 28px;">
+              <div class="dropdown-item" onclick="alert('Open local project')"><span class="d-label">📁 Open local project...</span></div>
+              <div class="dropdown-item" onclick="alert('New temporary sandbox')"><span class="d-label">⚗️ New sandbox workspace</span></div>
+              <div class="dropdown-divider"></div>
+              <div class="dropdown-item" onclick="alert('Create device group')"><span class="d-label">👥 Create device group</span></div>
+            </div>
+          </div>
+
+          <!-- Mock content list -->
+          <div class="mock-list" id="demo-chevron-list">
+            <div class="mock-item active"><span>📁 pi-web-ui</span><span class="mock-item-sub">Active</span></div>
+            <div class="mock-item"><span>📁 docs-site</span><span class="mock-item-sub">12 hours ago</span></div>
+            <div class="mock-item"><span>⚗️ sandbox-algo-test</span><span class="mock-item-sub" style="color: #a78bfa;">Sandbox</span></div>
+            <div class="mock-item"><span>📁 react-dashboard</span><span class="mock-item-sub">Yesterday</span></div>
+          </div>
+        </div>
+
+        <!-- Detailed explanation -->
+        <div id="chevron-style-desc" style="margin-top: 14px; font-size: 12.5px; color: var(--text-dim); background: #111319; padding: 12px 16px; border-radius: 6px; border-left: 3px solid var(--accent);">
+          <strong>Style 1A (leading tree chevron on the left · strong recommendation):</strong><br>
+          Move the collapse indicator to the very start of the row (<code>▼ Projects (25)</code>): pointing down when expanded, rotated 90° to <code>▶</code> when collapsed.
+          This is the universal convention in VS Code, Cursor, JetBrains, and every file tree or outline list. It puts "collapse this section" back where it belongs — in the left-hand content structure — fully separated from the right-hand "create [ + ]" and "collapse panel [ &lt; ]" actions, so the two flows never interfere.
+        </div>
+      </div>
+    </div>
+
+    <!-- Proposals -->
+    <div id="view-proposals">
+      <div style="display: flex; justify-content: space-between; align-items: flex-end; margin-bottom: 8px;">
+        <div class="section-headline" style="margin-bottom: 0;">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect><line x1="9" y1="3" x2="9" y2="21"></line></svg>
+          <span>Four optimized proposals, compared (all interactive)</span>
+        </div>
+        <span style="font-size: 12px; color: var(--text-faint);">Real 1:1 CSS mockups with working interactions</span>
+      </div>
+
+      <div class="proposals-grid">
+
+        <!-- Proposal 1: unified new-item dropdown (top pick) -->
+        <div class="proposal-card recommended">
+          <div class="proposal-header">
+            <div>
+              <div class="proposal-title">Proposal 1 · Unified "+ New" dropdown hub</div>
+              <div style="font-size: 11px; color: #a78bfa; margin-top: 2px;">The mainstream interaction of modern IDEs (VS Code / JetBrains)</div>
+            </div>
+            <span class="proposal-rec-badge">Top pick ★</span>
+          </div>
+
+          <div class="proposal-meta">
+            Merge <code>⚗</code> and <code>📁+</code> into one prominent, clean <code>+</code> button that opens a dropdown popover; the row start handles minimal collapsing, and the right side keeps just 1 action plus 1 collapse button — the space frees up immediately.
+          </div>
+
+          <!-- Prototype demo -->
+          <div class="sidebar-mock">
+            <div class="mock-header">
+              <div class="mock-tabs">
+                <span class="mock-tab active" onclick="toggleMockTab(this, 'p1')">
+                  📁 Projects <span class="mock-badge">(25)</span>
+                </span>
+                <span class="mock-tab" onclick="toggleMockTab(this, 'p1')">
+                  👥 Groups
+                </span>
+              </div>
+              <div class="mock-actions">
+                <!-- Unified new button -->
+                <button class="mock-btn" id="btn-p1-add" onclick="toggleDropdown('p1')" title="New or open...">
+                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
+                  <span class="tooltip-tag">New / open</span>
+                </button>
+
+                <!-- Divider -->
+                <span style="width: 1px; height: 14px; background: var(--border-subtle); margin: 0 1px;"></span>
+
+                <!-- Sidebar collapse button -->
+                <button class="mock-btn collapse-btn" onclick="toggleMockCollapse('mock-list-1')" title="Collapse sidebar">
+                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="15 18 9 12 15 6"></polyline></svg>
+                  <span class="tooltip-tag">Collapse sidebar</span>
+                </button>
+              </div>
+
+              <!-- Mock dropdown -->
+              <div class="mock-dropdown" id="dropdown-p1" style="display: none;">
+                <div class="dropdown-item" onclick="alert('Simulated: open local project dialog')">
+                  <span class="d-label">📁 Open local project...</span>
+                  <span class="d-shortcut">^O</span>
+                </div>
+                <div class="dropdown-item" onclick="alert('Simulated: create temporary sandbox workspace')">
+                  <span class="d-label">⚗️ New sandbox workspace</span>
+                  <span class="d-shortcut">Sand</span>
+                </div>
+                <div class="dropdown-divider"></div>
+                <div class="dropdown-item" onclick="alert('Simulated: create device collaboration group')">
+                  <span class="d-label">👥 Create device group...</span>
+                </div>
+              </div>
+            </div>
+
+            <!-- List -->
+            <div class="mock-list" id="mock-list-1">
+              <div class="mock-item active">
+                <span>📁 pi-web-ui</span>
+                <span class="mock-item-sub">Active</span>
+              </div>
+              <div class="mock-item">
+                <span>📁 docs-site</span>
+                <span class="mock-item-sub">12 hours ago</span>
+              </div>
+              <div class="mock-item">
+                <span>⚗️ sandbox-algo-test</span>
+                <span class="mock-item-sub" style="color: #a78bfa;">Sandbox</span>
+              </div>
+              <div class="mock-item">
+                <span>📁 react-dashboard</span>
+                <span class="mock-item-sub">Yesterday</span>
+              </div>
+            </div>
+          </div>
+
+          <ul class="metric-list">
+            <li class="metric-item">
+              <span class="metric-label">Persistent buttons</span>
+              <span class="metric-val" style="color: var(--green);">2 (down from 4 — a 50% cut)</span>
+            </li>
+            <li class="metric-item">
+              <span class="metric-label">Extensibility</span>
+              <span class="metric-val" style="color: var(--green);">Very strong (later project types cost nothing)</span>
+            </li>
+            <li class="metric-item">
+              <span class="metric-label">Cognitive load</span>
+              <span class="metric-val" style="color: var(--green);">Very low (the plus means every kind of creation)</span>
+            </li>
+          </ul>
+        </div>
+
+
+        <!-- Proposal 2: smooth hover reveal -->
+        <div class="proposal-card">
+          <div class="proposal-header">
+            <div>
+              <div class="proposal-title">Proposal 2 · Contextual smooth reveal on hover</div>
+              <div style="font-size: 11px; color: var(--text-dim); margin-top: 2px;">For an immersive, noise-free look</div>
+            </div>
+          </div>
+
+          <div class="proposal-meta">
+            At rest only the clean tabs and the sidebar collapse are visible; the shortcut actions fade in smoothly when the pointer enters the area. Zero visual interference — for users who want the cleanest possible interface.
+          </div>
+
+          <!-- Prototype demo -->
+          <div class="sidebar-mock">
+            <div class="mock-header hover-reveal-wrap">
+              <div class="mock-tabs">
+                <span class="mock-tab active">
+                  📁 Projects <span class="mock-badge">(25)</span>
+                </span>
+                <span class="mock-tab">
+                  👥 Groups
+                </span>
+              </div>
+              <div class="mock-actions">
+                <!-- Buttons revealed on hover -->
+                <div class="hover-action" style="display: flex; gap: 3px;">
+                  <button class="mock-btn" title="New sandbox" onclick="alert('New sandbox')">
+                    ⚗️
+                    <span class="tooltip-tag">Sandbox</span>
+                  </button>
+                  <button class="mock-btn" title="Open or manage project" onclick="alert('Manage project')">
+                    📁⁺
+                    <span class="tooltip-tag">Open project</span>
+                  </button>
+                </div>
+
+                <button class="mock-btn collapse-btn" onclick="toggleMockCollapse('mock-list-2')" title="Collapse sidebar">
+                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="15 18 9 12 15 6"></polyline></svg>
+                </button>
+              </div>
+            </div>
+
+            <!-- List -->
+            <div class="mock-list" id="mock-list-2">
+              <div class="mock-item active">
+                <span>📁 pi-web-ui</span>
+                <span class="mock-item-sub">Active</span>
+              </div>
+              <div class="mock-item">
+                <span>📁 docs-site</span>
+                <span class="mock-item-sub">12 hours ago</span>
+              </div>
+              <div class="mock-item">
+                <span>⚗️ sandbox-algo-test</span>
+                <span class="mock-item-sub" style="color: #a78bfa;">Sandbox</span>
+              </div>
+            </div>
+          </div>
+
+          <ul class="metric-list">
+            <li class="metric-item">
+              <span class="metric-label">Icons at rest</span>
+              <span class="metric-val" style="color: var(--green);">Just 1 (minimal, room to breathe)</span>
+            </li>
+            <li class="metric-item">
+              <span class="metric-label">Trackpad / mobile experience</span>
+              <span class="metric-val" style="color: var(--amber);">Fair (no hover on mobile)</span>
+            </li>
+            <li class="metric-item">
+              <span class="metric-label">Implementation cost</span>
+              <span class="metric-val" style="color: var(--green);">Very low (6 lines of CSS opacity)</span>
+            </li>
+          </ul>
+        </div>
+
+
+        <!-- Proposal 3: decoupled header + search/create strip -->
+        <div class="proposal-card">
+          <div class="proposal-header">
+            <div>
+              <div class="proposal-title">Proposal 3 · Decoupled header + mini search strip</div>
+              <div style="font-size: 11px; color: var(--text-dim); margin-top: 2px;">For power users with many projects (25+)</div>
+            </div>
+          </div>
+
+          <div class="proposal-meta">
+            The header carries no business buttons at all — only tab switching and sidebar collapse. A slim filter strip with a create entry sits above the project list, which kills both pain points: "finding a project is a slog" and "the buttons are piled up".
+          </div>
+
+          <!-- Prototype demo -->
+          <div class="sidebar-mock">
+            <div class="mock-header">
+              <div class="mock-tabs">
+                <span class="mock-tab active">
+                  📁 Projects <span class="mock-badge">(25)</span>
+                </span>
+                <span class="mock-tab">
+                  👥 Groups
+                </span>
+              </div>
+              <div class="mock-actions">
+                <button class="mock-btn collapse-btn" onclick="toggleMockCollapse('mock-list-3')" title="Collapse sidebar">
+                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="15 18 9 12 15 6"></polyline></svg>
+                </button>
+              </div>
+            </div>
+
+            <!-- Standalone mini toolbar -->
+            <div class="mock-filter-bar" id="filter-bar-3">
+              <input type="text" class="mock-input" placeholder="Filter projects (25)..." oninput="filterMockList(this.value)">
+              <button class="mock-btn" style="width: 22px; height: 22px;" title="Open or create" onclick="alert('Create clicked')">
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
+              </button>
+            </div>
+
+            <!-- List -->
+            <div class="mock-list" id="mock-list-3">
+              <div class="mock-item active">
+                <span>📁 pi-web-ui</span>
+                <span class="mock-item-sub">Active</span>
+              </div>
+              <div class="mock-item">
+                <span>📁 docs-site</span>
+                <span class="mock-item-sub">12 hours ago</span>
+              </div>
+              <div class="mock-item">
+                <span>⚗️ sandbox-algo-test</span>
+                <span class="mock-item-sub" style="color: #a78bfa;">Sandbox</span>
+              </div>
+            </div>
+          </div>
+
+          <ul class="metric-list">
+            <li class="metric-item">
+              <span class="metric-label">Header tidiness</span>
+              <span class="metric-val" style="color: var(--green);">Perfect (zero business buttons)</span>
+            </li>
+            <li class="metric-item">
+              <span class="metric-label">Efficiency at scale</span>
+              <span class="metric-val" style="color: var(--green);">Very high (instant fuzzy search)</span>
+            </li>
+            <li class="metric-item">
+              <span class="metric-label">Vertical space used</span>
+              <span class="metric-val" style="color: var(--amber);">+28px</span>
+            </li>
+          </ul>
+        </div>
+
+
+        <!-- Proposal 4: inline actions inside the list -->
+        <div class="proposal-card">
+          <div class="proposal-header">
+            <div>
+              <div class="proposal-title">Proposal 4 · Lightweight inline actions in the list</div>
+              <div style="font-size: 11px; color: var(--text-dim); margin-top: 2px;">Minimal and obvious · Beginner-friendly</div>
+            </div>
+          </div>
+
+          <div class="proposal-meta">
+            Move "open project" and "new sandbox" out of the header and into a slim hint row at the top of the project list — or just double-click the empty area of the list. The header stays absolutely clean.
+          </div>
+
+          <!-- Prototype demo -->
+          <div class="sidebar-mock">
+            <div class="mock-header">
+              <div class="mock-tabs">
+                <span class="mock-tab active">
+                  📁 Projects <span class="mock-badge">(25)</span>
+                </span>
+                <span class="mock-tab">
+                  👥 Groups
+                </span>
+              </div>
+              <div class="mock-actions">
+                <button class="mock-btn collapse-btn" onclick="toggleMockCollapse('mock-list-4')" title="Collapse sidebar">
+                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="15 18 9 12 15 6"></polyline></svg>
+                </button>
+              </div>
+            </div>
+
+            <!-- Inline list actions -->
+            <div class="mock-list" id="mock-list-4">
+              <div style="display: flex; gap: 6px; margin-bottom: 8px;">
+                <div style="flex: 1; padding: 4px 6px; background: rgba(255,255,255,0.03); border: 1px dashed var(--border); border-radius: 4px; text-align: center; font-size: 11px; cursor: pointer; color: var(--text-dim);" onclick="alert('Open an existing project')">
+                  + Open project
+                </div>
+                <div style="flex: 1; padding: 4px 6px; background: rgba(139,92,246,0.06); border: 1px dashed var(--accent-border); border-radius: 4px; text-align: center; font-size: 11px; cursor: pointer; color: #c4b5fd;" onclick="alert('New sandbox')">
+                  ⚗️ New sandbox
+                </div>
+              </div>
+
+              <div class="mock-item active">
+                <span>📁 pi-web-ui</span>
+                <span class="mock-item-sub">Active</span>
+              </div>
+              <div class="mock-item">
+                <span>📁 docs-site</span>
+                <span class="mock-item-sub">12 hours ago</span>
+              </div>
+            </div>
+          </div>
+
+          <ul class="metric-list">
+            <li class="metric-item">
+              <span class="metric-label">Discoverability</span>
+              <span class="metric-val" style="color: var(--green);">Strong (text labels, no icon guessing)</span>
+            </li>
+            <li class="metric-item">
+              <span class="metric-label">Mis-tap probability</span>
+              <span class="metric-val" style="color: var(--green);">Practically 0</span>
+            </li>
+            <li class="metric-item">
+              <span class="metric-label">List scrolling</span>
+              <span class="metric-val" style="color: var(--amber);">The first row eats a little content height</span>
+            </li>
+          </ul>
+        </div>
+
+      </div>
+    </div>
+
+
+    <!-- Multi-dimensional comparison -->
+    <div id="view-compare" class="comparison-table-wrap" style="display: block;">
+      <div class="section-headline">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="20" x2="18" y2="10"></line><line x1="12" y1="20" x2="12" y2="4"></line><line x1="6" y1="20" x2="6" y2="14"></line></svg>
+        <span>All four proposals, fully compared</span>
+      </div>
+
+      <table class="compare-table">
+        <thead>
+          <tr>
+            <th>Dimension</th>
+            <th>Today (baseline)</th>
+            <th style="color: #c4b5fd;">Proposal 1: unified new dropdown ★</th>
+            <th>Proposal 2: hover reveal</th>
+            <th>Proposal 3: decoupled header + search</th>
+            <th>Proposal 4: inline list cards</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><strong>Persistent icons</strong></td>
+            <td><span style="color: #f87171; font-weight: 600;">4 tiny buttons piled up</span></td>
+            <td><span style="color: #34d399; font-weight: 600;">2 (clearly separated)</span></td>
+            <td><span style="color: #34d399; font-weight: 600;">1 (collapse only)</span></td>
+            <td><span style="color: #34d399; font-weight: 600;">1 (collapse only)</span></td>
+            <td><span style="color: #34d399; font-weight: 600;">1 (collapse only)</span></td>
+          </tr>
+          <tr>
+            <td><strong>Cognitive cost and recognizability</strong></td>
+            <td>High (you must guess what <code>⚗</code> vs <code>📁+</code> means)</td>
+            <td><span style="color: #34d399;">Very low (a standard <code>+</code>, dropdown carries labels)</span></td>
+            <td>Medium (still decoding icons on hover)</td>
+            <td>Low (an explicit search box with one job)</td>
+            <td>Very low (big text labels right there)</td>
+          </tr>
+          <tr>
+            <td><strong>Mis-tap probability</strong></td>
+            <td><span style="color: #f87171;">Very high (several 22px buttons touching)</span></td>
+            <td><span style="color: #34d399;">Very low (generous spacing, visual divider)</span></td>
+            <td>Medium</td>
+            <td>Very low</td>
+            <td>Very low</td>
+          </tr>
+          <tr>
+            <td><strong>Future extensibility</strong></td>
+            <td>Very poor (every new type squeezes in another icon)</td>
+            <td><span style="color: #34d399;">Excellent (a dropdown holds unlimited items)</span></td>
+            <td>Poor</td>
+            <td>Good</td>
+            <td>Good</td>
+          </tr>
+          <tr>
+            <td><strong>Implementation difficulty</strong></td>
+            <td>—</td>
+            <td><span style="color: #34d399;">Low (adjust the Header JSX plus one Menu)</span></td>
+            <td><span style="color: #34d399;">Very low (pure CSS hover control)</span></td>
+            <td>Medium (needs new search/filter state)</td>
+            <td>Low</td>
+          </tr>
+          <tr>
+            <td><strong>Overall recommendation</strong></td>
+            <td>❌ Needs work</td>
+            <td><span style="color: #34d399; font-weight: 700;">★★★★★ Strong recommendation</span></td>
+            <td>★★★☆☆</td>
+            <td>★★★★☆ (for power users)</td>
+            <td>★★★☆☆</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+
+    <!-- Implementation (code diff) -->
+    <div id="view-code" class="code-diff-card">
+      <div class="section-headline">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="16 18 22 12 16 6"></polyline><polyline points="8 6 2 12 8 18"></polyline></svg>
+        <span>Implementation path (using the most-praised Proposal 1)</span>
+      </div>
+
+      <div style="color: var(--text-dim); font-size: 13px; line-height: 1.6;">
+        Adopting <strong>Proposal 1 (unified new-item dropdown hub)</strong> touches only <code>web/src/components/LeftPanel.tsx</code> and a little <code>web/src/styles.css</code> — no backend logic, fully backward compatible.
+      </div>
+
+      <pre class="code-block">
+<span class="diff-comment">// file: web/src/components/LeftPanel.tsx (around line 2085)</span>
+<span class="diff-del">- &lt;button className="lp-section-action lp-sandbox-action" onClick={...}&gt;&lt;LuFlaskConical /&gt;&lt;/button&gt;</span>
+<span class="diff-del">- &lt;button className="lp-section-action" onClick={...}&gt;&lt;FiFolderPlus /&gt;&lt;/button&gt;</span>
+<span class="diff-add">+ {/* unified new/open menu button */}</span>
+<span class="diff-add">+ &lt;div className="lp-new-menu-wrap" ref={newMenuRef}&gt;</span>
+<span class="diff-add">+   &lt;button type="button" className="lp-section-action lp-btn-create" onClick={() =&gt; setNewMenuOpen(!newMenuOpen)} title="New or open..."&gt;</span>
+<span class="diff-add">+     &lt;FiPlus /&gt;</span>
+<span class="diff-add">+   &lt;/button&gt;</span>
+<span class="diff-add">+   {newMenuOpen && (</span>
+<span class="diff-add">+     &lt;div className="lp-new-dropdown-menu"&gt;</span>
+<span class="diff-add">+       &lt;button type="button" onClick={() =&gt; { setNewMenuOpen(false); setProjectPickerOpen(true); }}&gt;</span>
+<span class="diff-add">+         &lt;FiFolder /&gt; &lt;span&gt;Open local project...&lt;/span&gt;</span>
+<span class="diff-add">+       &lt;/button&gt;</span>
+<span class="diff-add">+       &lt;button type="button" onClick={() =&gt; { setNewMenuOpen(false); onOpenSandboxModal?.(); }}&gt;</span>
+<span class="diff-add">+         &lt;LuFlaskConical /&gt; &lt;span&gt;New sandbox workspace&lt;/span&gt;</span>
+<span class="diff-add">+       &lt;/button&gt;</span>
+<span class="diff-add">+       &lt;button type="button" onClick={() =&gt; { setNewMenuOpen(false); openDeviceGroupCreate(); }}&gt;</span>
+<span class="diff-add">+         &lt;FiUsers /&gt; &lt;span&gt;Create device group&lt;/span&gt;</span>
+<span class="diff-add">+       &lt;/button&gt;</span>
+<span class="diff-add">+     &lt;/div&gt;</span>
+<span class="diff-add">+   )}</span>
+<span class="diff-add">+ &lt;/div&gt;</span>
+      </pre>
+
+      <div style="margin-top: 16px; font-size: 13px; color: var(--text-dim);">
+        <strong>CSS clean-up (also rips out the legacy patch):</strong>
+        In <code>styles.css</code>, drop the negative offset in <code>.lp-panel .panel-collapse-btn + .lp-section .lp-section-actions { margin-right: 28px; }</code> so the header buttons go back to flex layout with one consistent micro-gap — the squeezing and the distortion are gone for good.
+      </div>
+    </div>
+
+  </div>
+
+  <script>
+    // Switch view tabs
+    function switchView(tabKey) {
+      document.querySelectorAll('.tab-pill').forEach(btn => btn.classList.remove('active'));
+      event.target.classList.add('active');
+
+      const pView = document.getElementById('view-proposals');
+      const cView = document.getElementById('view-compare');
+      const dView = document.getElementById('view-code');
+      const chView = document.getElementById('view-chevron');
+
+      if (tabKey === 'all') {
+        chView.style.display = 'block';
+        pView.style.display = 'block';
+        cView.style.display = 'block';
+        dView.style.display = 'block';
+        pView.scrollIntoView({ behavior: 'smooth' });
+      } else if (tabKey === 'chevron') {
+        chView.style.display = 'block';
+        pView.style.display = 'none';
+        cView.style.display = 'none';
+        dView.style.display = 'none';
+        chView.scrollIntoView({ behavior: 'smooth' });
+      } else if (tabKey === 'compare') {
+        chView.style.display = 'none';
+        pView.style.display = 'none';
+        cView.style.display = 'block';
+        dView.style.display = 'none';
+      } else if (tabKey === 'code') {
+        chView.style.display = 'none';
+        pView.style.display = 'none';
+        cView.style.display = 'none';
+        dView.style.display = 'block';
+      }
+    }
+
+    // Interaction: chevron style demo switcher
+    let currentChevronStyle = 'lead';
+    let isChevronListCollapsed = false;
+
+    function switchChevronStyle(styleKey) {
+      currentChevronStyle = styleKey;
+      document.querySelectorAll('.chevron-subtabs .subtab-btn').forEach(b => b.classList.remove('active'));
+      
+      const leftEl = document.getElementById('chevron-mock-left');
+      const descEl = document.getElementById('chevron-style-desc');
+      
+      if (styleKey === 'lead') {
+        document.getElementById('st-btn-1').classList.add('active');
+        leftEl.innerHTML = `
+          <span class="lead-chevron ${isChevronListCollapsed ? 'collapsed' : ''}" id="demo-lead-arrow">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="6 9 12 15 18 9"></polyline></svg>
+          </span>
+          <div class="mock-tabs">
+            <span class="mock-tab active" onclick="event.stopPropagation();">📁 Projects <span class="mock-badge">(25)</span></span>
+            <span class="mock-tab" onclick="event.stopPropagation();">👥 Groups</span>
+          </div>
+        `;
+        descEl.innerHTML = `
+          <strong>Style 1A (leading tree chevron on the left · strong recommendation):</strong><br>
+          Move the collapse indicator to the very start of the row (<code>▼ Projects (25)</code>): pointing down when expanded, rotated 90° to <code>▶</code> when collapsed.<br>
+          This is the universal convention in VS Code, Cursor, JetBrains, and every file tree or outline list. It puts "collapse this section" back where it belongs — in the left-hand content structure — fully separated from the right-hand "create [+]" and "collapse panel [&lt;]" actions, so the two flows never interfere.
+        `;
+      } else if (styleKey === 'badge') {
+        document.getElementById('st-btn-2').classList.add('active');
+        leftEl.innerHTML = `
+          <div class="mock-tabs">
+            <span class="mock-tab active" onclick="event.stopPropagation();">📁 Projects <span class="mock-badge">(25)</span></span>
+            <span class="mock-tab" onclick="event.stopPropagation();">👥 Groups</span>
+          </div>
+          <span style="font-size: 10px; color: var(--text-faint); margin-left: 2px; transition: transform 0.15s ease; display: inline-block; transform: ${isChevronListCollapsed ? 'rotate(180deg)' : 'none'};">
+            ${isChevronListCollapsed ? '▾' : '▴'}
+          </span>
+        `;
+        descEl.innerHTML = `
+          <strong>Style 1B: faint trailing badge (smaller and quieter):</strong><br>
+          Keep it behind the tab pill, but <strong>no longer as a standalone 24px square button</strong> — show it as a 10px, low-contrast grey badge instead; clicking anywhere in the blank area of the header row toggles collapse.<br>
+          Users read it for what it is — "just a property of the title" — and the toolbar no longer feels like "a pile of buttons crammed on the right".
+        `;
+      } else if (styleKey === 'hover') {
+        document.getElementById('st-btn-3').classList.add('active');
+        leftEl.innerHTML = `
+          <div class="mock-tabs">
+            <span class="mock-tab active" onclick="event.stopPropagation();">📁 Projects <span class="mock-badge">(25)</span></span>
+            <span class="mock-tab" onclick="event.stopPropagation();">👥 Groups</span>
+          </div>
+          <span class="hover-only-arrow" style="font-size: 10px; color: var(--text-faint); margin-left: 4px; opacity: 0; transition: opacity 0.15s ease;">
+            ${isChevronListCollapsed ? '▾ (click to expand)' : '▴ (click to collapse)'}
+          </span>
+        `;
+        descEl.innerHTML = `
+          <strong>Style 1C: whole row clickable + hint on hover (minimal, immersive):</strong><br>
+          The chevron is fully hidden at rest, so there is no visual noise at all. The expanded list itself is the clearest possible signal.<br>
+          Hovering over the blank part of the header row fades in a small hint. The entire blank row area can be clicked at any time to collapse/expand.
+        `;
+      }
+    }
+
+    // Interaction: clicking anywhere in the header row triggers collapse
+    function handleHeaderToggle(e) {
+      if (e.target.closest('.mock-actions') || e.target.closest('.mock-tab')) {
+        return;
+      }
+      isChevronListCollapsed = !isChevronListCollapsed;
+      const listEl = document.getElementById('demo-chevron-list');
+      const headerEl = document.getElementById('chevron-mock-header');
+      const arrowEl = document.getElementById('demo-lead-arrow');
+      
+      if (isChevronListCollapsed) {
+        listEl.style.display = 'none';
+        headerEl.classList.add('collapsed-header');
+        if (arrowEl) arrowEl.classList.add('collapsed');
+      } else {
+        listEl.style.display = 'block';
+        headerEl.classList.remove('collapsed-header');
+        if (arrowEl) arrowEl.classList.remove('collapsed');
+      }
+      switchChevronStyle(currentChevronStyle);
+    }
+
+    function toggleDemoDropdown() {
+      const dd = document.getElementById('demo-chevron-dropdown');
+      dd.style.display = dd.style.display === 'none' ? 'block' : 'none';
+    }
+
+    // Interaction: toggle the dropdown menu
+    function toggleDropdown(id) {
+      const dd = document.getElementById('dropdown-' + id);
+      if (dd.style.display === 'none') {
+        dd.style.display = 'block';
+      } else {
+        dd.style.display = 'none';
+      }
+    }
+
+    // Interaction: toggle the collapsible list
+    function toggleMockCollapse(listId) {
+      const list = document.getElementById(listId);
+      if (list.style.display === 'none') {
+        list.style.display = 'block';
+      } else {
+        list.style.display = 'none';
+      }
+    }
+
+    // Interaction: switch tab
+    function toggleMockTab(el, prefix) {
+      const parent = el.parentElement;
+      parent.querySelectorAll('.mock-tab').forEach(t => t.classList.remove('active'));
+      el.classList.add('active');
+    }
+
+    // Interaction: search filter demo
+    function filterMockList(query) {
+      const items = document.querySelectorAll('#mock-list-3 .mock-item');
+      items.forEach(item => {
+        if (!query || item.innerText.toLowerCase().includes(query.toLowerCase())) {
+          item.style.display = 'flex';
+        } else {
+          item.style.display = 'none';
+        }
+      });
+    }
+
+    // Clicking elsewhere closes the dropdown
+    window.addEventListener('click', function(e) {
+      if (!e.target.closest('#btn-p1-add') && !e.target.closest('#dropdown-p1')) {
+        const dd = document.getElementById('dropdown-p1');
+        if (dd) dd.style.display = 'none';
+      }
+    });
+  </script>
+</body>
+</html>
+
+
+

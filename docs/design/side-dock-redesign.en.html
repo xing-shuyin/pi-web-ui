@@ -1,0 +1,3161 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+	<head>
+		<meta charset="utf-8" />
+		<meta name="viewport" content="width=device-width, initial-scale=1" />
+		<title>Side dock redesign · 4 full-height options · pi-web-ui</title>
+		<style>
+			/* ============================================================
+			   设计研究页。所有 demo 内的配色都复用 pi-web-ui 的 :root token，
+			   只有 --rail-* 是本页新引入的候选规格。
+			   ============================================================ */
+			:root {
+				color-scheme: dark;
+				--bg: #0d0e12;
+				--bg-elev: #14161c;
+				--bg-elev2: #1a1d26;
+				--bg-sunken: #0a0b10;
+				--border: #262a35;
+				--border-soft: #1e2230;
+				--text: #e6e8ef;
+				--text-dim: #9aa1b4;
+				--text-faint: #6b7284;
+				--accent: #8b5cf6;
+				--accent-soft: rgba(139, 92, 246, 0.16);
+				--accent-ink: #c4b5fd;
+				--green: #34d399;
+				--amber: #fbbf24;
+				--red: #f87171;
+				--blue: #60a5fa;
+				--tooltip-bg: #232733;
+				--rail-hover: rgba(255, 255, 255, 0.06);
+				--rail-pill: rgba(255, 255, 255, 0.09);
+				--page: #08090c;
+				--page-card: #101218;
+				--shadow: 0 24px 70px -34px #000;
+				--sans:
+					-apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", Roboto,
+					sans-serif;
+				--mono: "SF Mono", "JetBrains Mono", ui-monospace, Menlo, Consolas, monospace;
+				--rail-w: 56px;
+				--rail-btn: 36px;
+				--rail-radius: 11px;
+			}
+			[data-theme="light"] {
+				color-scheme: light;
+				--bg: #f6f7fb;
+				--bg-elev: #ffffff;
+				--bg-elev2: #eef1f7;
+				--bg-sunken: #eceef5;
+				--border: #dfe3ee;
+				--border-soft: #e8ebf3;
+				--text: #171a22;
+				--text-dim: #5b6377;
+				--text-faint: #8b93a6;
+				--accent: #7c3aed;
+				--accent-soft: rgba(124, 58, 237, 0.1);
+				--accent-ink: #6d28d9;
+				--green: #0f9f6e;
+				--amber: #b45309;
+				--red: #dc2626;
+				--blue: #2563eb;
+				--tooltip-bg: #1a1d26;
+				--rail-hover: rgba(16, 20, 32, 0.055);
+				--rail-pill: rgba(16, 20, 32, 0.08);
+				--page: #eef0f6;
+				--page-card: #ffffff;
+				--shadow: 0 24px 60px -36px rgba(20, 24, 40, 0.5);
+			}
+
+			* {
+				box-sizing: border-box;
+			}
+			html,
+			body {
+				margin: 0;
+			}
+			body {
+				background:
+					radial-gradient(1100px 520px at 18% -8%, var(--accent-soft), transparent 62%),
+					radial-gradient(900px 420px at 92% 4%, rgba(96, 165, 250, 0.1), transparent 60%), var(--page);
+				color: var(--text);
+				font-family: var(--sans);
+				font-size: 14px;
+				line-height: 1.7;
+				-webkit-font-smoothing: antialiased;
+				overflow-x: hidden;
+			}
+			h1,
+			h2,
+			h3,
+			h4 {
+				margin: 0;
+				line-height: 1.3;
+				letter-spacing: -0.01em;
+			}
+			p {
+				margin: 0;
+			}
+			button {
+				font: inherit;
+				color: inherit;
+			}
+			code {
+				font-family: var(--mono);
+				font-size: 0.92em;
+			}
+			.ic {
+				width: 18px;
+				height: 18px;
+				flex: none;
+				fill: none;
+				stroke: currentColor;
+				stroke-width: 1.7;
+				stroke-linecap: round;
+				stroke-linejoin: round;
+			}
+			.sprite {
+				position: absolute;
+				width: 0;
+				height: 0;
+				overflow: hidden;
+			}
+
+			/* ---------- 页面骨架 ---------- */
+			.page {
+				display: grid;
+				grid-template-columns: 232px minmax(0, 1fr);
+				gap: 40px;
+				max-width: 1520px;
+				margin: 0 auto;
+				padding: 0 32px;
+			}
+			.snav {
+				position: sticky;
+				top: 0;
+				align-self: start;
+				height: 100vh;
+				padding: 26px 0 20px;
+				display: flex;
+				flex-direction: column;
+				gap: 4px;
+			}
+			.snav-brand {
+				display: flex;
+				align-items: center;
+				gap: 10px;
+				padding: 0 10px 18px;
+			}
+			.snav-brand .mark {
+				width: 30px;
+				height: 30px;
+				flex: none;
+				border-radius: 9px;
+				display: grid;
+				place-items: center;
+				background: linear-gradient(145deg, #8b5cf6, #6366f1);
+				color: #fff;
+				font-weight: 700;
+				font-size: 15px;
+				box-shadow: 0 6px 16px -6px rgba(139, 92, 246, 0.9);
+			}
+			.snav-brand b {
+				display: block;
+				font-size: 13px;
+				line-height: 1.3;
+			}
+			.snav-brand span {
+				display: block;
+				font-size: 11px;
+				color: var(--text-faint);
+				line-height: 1.3;
+			}
+			.snav a {
+				position: relative;
+				display: flex;
+				align-items: center;
+				gap: 10px;
+				padding: 7px 10px;
+				border-radius: 9px;
+				color: var(--text-dim);
+				text-decoration: none;
+				font-size: 13px;
+				transition:
+					background-color 0.16s ease,
+					color 0.16s ease;
+			}
+			.snav a .k {
+				font-family: var(--mono);
+				font-size: 10.5px;
+				color: var(--text-faint);
+				width: 14px;
+				flex: none;
+			}
+			.snav a:hover {
+				background: var(--rail-hover);
+				color: var(--text);
+			}
+			.snav a.on {
+				background: var(--accent-soft);
+				color: var(--text);
+			}
+			.snav a.on .k {
+				color: var(--accent-ink);
+			}
+			.snav a.on::before {
+				content: "";
+				position: absolute;
+				left: -10px;
+				top: 50%;
+				transform: translateY(-50%);
+				width: 3px;
+				height: 16px;
+				border-radius: 0 3px 3px 0;
+				background: var(--accent);
+			}
+			.snav-foot {
+				margin-top: auto;
+				display: flex;
+				flex-direction: column;
+				gap: 10px;
+				padding-top: 16px;
+				border-top: 1px solid var(--border-soft);
+			}
+			.theme-btn {
+				display: inline-flex;
+				align-items: center;
+				justify-content: center;
+				gap: 8px;
+				height: 32px;
+				border-radius: 9px;
+				border: 1px solid var(--border);
+				background: var(--bg-elev);
+				color: var(--text-dim);
+				cursor: pointer;
+				font-size: 12.5px;
+			}
+			.theme-btn:hover {
+				color: var(--text);
+				border-color: var(--text-faint);
+			}
+			.snav-foot em {
+				font-style: normal;
+				font-size: 11px;
+				color: var(--text-faint);
+				line-height: 1.6;
+			}
+
+			main {
+				padding: 44px 0 140px;
+				min-width: 0;
+			}
+			.hero {
+				max-width: 860px;
+			}
+			.eyebrow {
+				display: inline-flex;
+				align-items: center;
+				gap: 8px;
+				height: 24px;
+				padding: 0 10px;
+				border-radius: 999px;
+				border: 1px solid var(--border);
+				background: var(--bg-elev);
+				color: var(--text-dim);
+				font-size: 11.5px;
+				letter-spacing: 0.02em;
+			}
+			.eyebrow i {
+				width: 6px;
+				height: 6px;
+				border-radius: 50%;
+				background: var(--green);
+			}
+			h1 {
+				margin-top: 18px;
+				font-size: 34px;
+				font-weight: 650;
+			}
+			h1 small {
+				display: block;
+				margin-top: 8px;
+				font-size: 15px;
+				font-weight: 400;
+				color: var(--text-dim);
+				letter-spacing: 0;
+				line-height: 1.75;
+			}
+			.hero-note {
+				margin-top: 22px;
+				display: grid;
+				grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+				gap: 10px;
+			}
+			.hero-note div {
+				border: 1px solid var(--border-soft);
+				background: var(--page-card);
+				border-radius: 12px;
+				padding: 12px 14px;
+				font-size: 12.5px;
+				line-height: 1.65;
+				color: var(--text-dim);
+			}
+			.hero-note b {
+				display: block;
+				color: var(--text);
+				font-size: 12.5px;
+				margin-bottom: 3px;
+			}
+
+			section {
+				scroll-margin-top: 24px;
+				margin-top: 68px;
+			}
+			.sec-head {
+				display: flex;
+				align-items: baseline;
+				gap: 14px;
+				flex-wrap: wrap;
+				margin-bottom: 6px;
+			}
+			.sec-tag {
+				font-family: var(--mono);
+				font-size: 11px;
+				letter-spacing: 0.08em;
+				color: var(--accent-ink);
+				text-transform: uppercase;
+			}
+			h2 {
+				font-size: 21px;
+				font-weight: 620;
+			}
+			.sec-sub {
+				max-width: 760px;
+				color: var(--text-dim);
+				font-size: 13.5px;
+				line-height: 1.8;
+				margin-bottom: 22px;
+			}
+			.rec {
+				display: inline-flex;
+				align-items: center;
+				gap: 6px;
+				height: 22px;
+				padding: 0 9px;
+				border-radius: 999px;
+				background: var(--accent-soft);
+				color: var(--accent-ink);
+				font-size: 11px;
+				font-weight: 600;
+			}
+
+			/* ---------- 现状诊断 ---------- */
+			.diag {
+				display: grid;
+				grid-template-columns: 268px minmax(0, 1fr);
+				gap: 22px;
+				align-items: start;
+			}
+			.now-shot {
+				border: 1px solid var(--border);
+				border-radius: 14px;
+				background: var(--bg);
+				padding: 16px 14px 12px;
+				box-shadow: var(--shadow);
+			}
+			.now-shot .cap {
+				font-size: 11px;
+				color: var(--text-faint);
+				margin-bottom: 10px;
+			}
+			.now-crop {
+				display: flex;
+				align-items: stretch;
+				height: 218px;
+				border-radius: 8px;
+				background: var(--bg-sunken);
+				overflow: hidden;
+			}
+			.now-rail {
+				width: 52px;
+				flex: none;
+				border: 1px solid var(--border);
+				border-left: none;
+				border-radius: 0 10px 10px 0;
+				background: var(--bg-elev);
+				box-shadow: 0 4px 18px rgba(0, 0, 0, 0.25);
+				display: flex;
+				flex-direction: column;
+				align-items: center;
+				gap: 4px;
+				padding: 8px 3px;
+				/* 真实 bug：overflow-y:auto 让 overflow-x 计算成 auto */
+				overflow-y: auto;
+				overflow-x: auto;
+			}
+			.now-rail .b {
+				width: 30px;
+				height: 30px;
+				flex: none;
+				border-radius: 50%;
+				display: grid;
+				place-items: center;
+				color: var(--text-dim);
+			}
+			.now-rail .b:first-child {
+				color: var(--amber);
+			}
+			/* 伪 tooltip：向左/右伸出，撑出滚动区域 */
+			.now-rail .b::after {
+				content: attr(data-t) " 很长很长的标签";
+				position: absolute;
+				left: 100%;
+				white-space: nowrap;
+				font-size: 11px;
+				opacity: 0;
+			}
+			.now-rail .b {
+				position: relative;
+			}
+			.now-hbar {
+				height: 15px;
+				flex: none;
+				align-self: flex-end;
+				display: flex;
+				align-items: center;
+				background: #2a2f3d;
+				border-radius: 2px;
+				gap: 2px;
+				padding: 0 2px;
+				width: 100%;
+			}
+			.now-hbar i {
+				width: 9px;
+				height: 9px;
+				background: #6b7284;
+				clip-path: polygon(100% 0, 0 50%, 100% 100%);
+			}
+			.now-hbar i.r {
+				clip-path: polygon(0 0, 100% 50%, 0 100%);
+			}
+			.now-hbar i.k {
+				flex: 1;
+				height: 7px;
+				border-radius: 4px;
+				background: #4a5163;
+				clip-path: none;
+			}
+			.now-pane {
+				flex: 1;
+				min-width: 0;
+				border-left: 1px solid var(--border);
+				padding: 10px 8px;
+				display: flex;
+				flex-direction: column;
+				gap: 7px;
+			}
+			.now-pane .ln {
+				height: 7px;
+				border-radius: 4px;
+				background: var(--bg-elev2);
+			}
+			.now-pane .ln.s {
+				width: 52%;
+			}
+			.now-pane .ln.m {
+				width: 72%;
+			}
+			.now-pane .chip {
+				height: 24px;
+				border-radius: 7px;
+				border: 1px solid var(--border);
+				background: var(--bg-elev);
+			}
+			.diag-list {
+				display: grid;
+				gap: 10px;
+			}
+			.diag-item {
+				display: grid;
+				grid-template-columns: 22px minmax(0, 1fr);
+				gap: 10px;
+				border: 1px solid var(--border-soft);
+				border-radius: 12px;
+				padding: 12px 14px;
+				background: var(--page-card);
+			}
+			.diag-item .n {
+				width: 22px;
+				height: 22px;
+				border-radius: 7px;
+				display: grid;
+				place-items: center;
+				font-family: var(--mono);
+				font-size: 11px;
+				background: var(--bg-elev2);
+				color: var(--text-dim);
+			}
+			.diag-item b {
+				font-size: 13px;
+			}
+			.diag-item p {
+				font-size: 12.5px;
+				color: var(--text-dim);
+				line-height: 1.7;
+				margin-top: 2px;
+			}
+			.code {
+				margin-top: 10px;
+				border: 1px solid var(--border-soft);
+				border-radius: 10px;
+				background: var(--bg-sunken);
+				padding: 11px 12px;
+				font-family: var(--mono);
+				font-size: 11.5px;
+				line-height: 1.75;
+				color: var(--text-dim);
+				overflow-x: auto;
+				white-space: pre;
+			}
+			.code b {
+				color: var(--accent-ink);
+				font-weight: 500;
+			}
+			.code .bad {
+				color: var(--red);
+			}
+			.code .ok {
+				color: var(--green);
+			}
+
+			/* ---------- Demo 舞台 ---------- */
+			.stage {
+				container-type: inline-size;
+				border: 1px solid var(--border);
+				border-radius: 16px;
+				background: var(--bg);
+				overflow: hidden;
+				box-shadow: var(--shadow);
+			}
+			.winbar {
+				display: flex;
+				align-items: center;
+				gap: 12px;
+				height: 34px;
+				padding: 0 12px;
+				background: var(--page-card);
+				border-bottom: 1px solid var(--border-soft);
+			}
+			.dots {
+				display: inline-flex;
+				gap: 6px;
+			}
+			.dots i {
+				width: 9px;
+				height: 9px;
+				border-radius: 50%;
+				background: #3a4152;
+			}
+			.dots i:nth-child(1) {
+				background: #f87171;
+			}
+			.dots i:nth-child(2) {
+				background: #fbbf24;
+			}
+			.dots i:nth-child(3) {
+				background: #34d399;
+			}
+			.winbar .t {
+				font-size: 11.5px;
+				color: var(--text-dim);
+				font-family: var(--mono);
+			}
+			.winbar .hint {
+				margin-left: auto;
+				font-size: 11px;
+				color: var(--text-faint);
+				display: inline-flex;
+				align-items: center;
+				gap: 6px;
+			}
+			.winbar .hint kbd {
+				font-family: var(--mono);
+				font-size: 10px;
+				padding: 1px 5px;
+				border-radius: 4px;
+				border: 1px solid var(--border);
+				background: var(--bg-elev2);
+			}
+			.app {
+				display: flex;
+				flex-direction: column;
+				height: 486px;
+				background: var(--bg);
+				min-width: 0;
+			}
+
+			/* 顶栏 */
+			.tb {
+				flex: none;
+				height: 44px;
+				display: flex;
+				align-items: center;
+				justify-content: space-between;
+				gap: 12px;
+				padding: 0 10px 0 12px;
+				border-bottom: 1px solid var(--border);
+				background: var(--bg-elev);
+			}
+			.tb-l,
+			.tb-r {
+				display: flex;
+				align-items: center;
+				gap: 8px;
+				min-width: 0;
+			}
+			.brand {
+				display: inline-flex;
+				align-items: center;
+				gap: 7px;
+				font-size: 12.5px;
+				font-weight: 600;
+				white-space: nowrap;
+			}
+			.brand .mark {
+				width: 22px;
+				height: 22px;
+				border-radius: 7px;
+				display: grid;
+				place-items: center;
+				background: linear-gradient(145deg, #8b5cf6, #6366f1);
+				color: #fff;
+				font-size: 12px;
+				font-weight: 700;
+			}
+			.tb-tabs {
+				display: inline-flex;
+				gap: 2px;
+				padding: 2px;
+				border-radius: 9px;
+				background: var(--bg-elev2);
+			}
+			.tb-tabs button {
+				height: 24px;
+				padding: 0 10px;
+				border: 0;
+				border-radius: 7px;
+				background: transparent;
+				color: var(--text-dim);
+				font-size: 12px;
+				cursor: pointer;
+				display: inline-flex;
+				align-items: center;
+				gap: 6px;
+			}
+			.tb-tabs button.on {
+				background: var(--bg-elev);
+				color: var(--text);
+				box-shadow: 0 1px 2px rgba(0, 0, 0, 0.25);
+			}
+			.tb-chip {
+				display: inline-flex;
+				align-items: center;
+				gap: 6px;
+				height: 24px;
+				padding: 0 9px;
+				border-radius: 7px;
+				border: 1px solid var(--border-soft);
+				background: var(--bg-elev2);
+				font-size: 11.5px;
+				color: var(--text-dim);
+				max-width: 220px;
+				overflow: hidden;
+				text-overflow: ellipsis;
+				white-space: nowrap;
+			}
+			.tb-chip .dot {
+				width: 6px;
+				height: 6px;
+				border-radius: 50%;
+				background: var(--green);
+				flex: none;
+			}
+			.ibtn {
+				position: relative;
+				width: 28px;
+				height: 28px;
+				flex: none;
+				border: 0;
+				border-radius: 8px;
+				background: transparent;
+				color: var(--text-dim);
+				display: grid;
+				place-items: center;
+				cursor: pointer;
+			}
+			.ibtn:hover {
+				background: var(--rail-hover);
+				color: var(--text);
+			}
+			.avatar {
+				width: 24px;
+				height: 24px;
+				border-radius: 50%;
+				background: linear-gradient(150deg, #6366f1, #22d3ee);
+				border: 1px solid var(--border);
+				flex: none;
+			}
+
+			/* 主体 */
+			.shell {
+				flex: 1;
+				display: flex;
+				min-height: 0;
+				min-width: 0;
+			}
+
+			/* 左面板 / 右面板通用 */
+			.pane {
+				flex: none;
+				width: 236px;
+				min-height: 0;
+				display: flex;
+				flex-direction: column;
+				background: var(--bg-elev);
+				min-width: 0;
+			}
+			.pane.left {
+				border-right: 1px solid var(--border);
+			}
+			.pane.right {
+				border-left: 1px solid var(--border);
+			}
+			.pane-head {
+				flex: none;
+				height: 38px;
+				display: flex;
+				align-items: center;
+				gap: 6px;
+				padding: 0 8px 0 10px;
+				border-bottom: 1px solid var(--border-soft);
+			}
+			.proj {
+				display: inline-flex;
+				align-items: center;
+				gap: 6px;
+				min-width: 0;
+				height: 24px;
+				padding: 0 7px;
+				border-radius: 7px;
+				border: 1px solid var(--border-soft);
+				background: var(--bg-elev2);
+				color: var(--text);
+				font-size: 12px;
+				font-weight: 600;
+				cursor: pointer;
+			}
+			.proj .ic {
+				width: 14px;
+				height: 14px;
+				color: var(--text-dim);
+			}
+			.search {
+				flex: none;
+				display: flex;
+				align-items: center;
+				gap: 7px;
+				margin: 8px 10px;
+				height: 28px;
+				padding: 0 9px;
+				border-radius: 8px;
+				border: 1px solid var(--border-soft);
+				background: var(--bg-sunken);
+				color: var(--text-faint);
+				font-size: 12px;
+			}
+			.list {
+				flex: 1;
+				min-height: 0;
+				overflow-y: auto;
+				overflow-x: clip;
+				padding: 2px 6px 10px;
+			}
+			.grp {
+				display: flex;
+				align-items: center;
+				gap: 5px;
+				padding: 6px 5px 4px;
+				font-size: 11.5px;
+				color: var(--text-faint);
+				font-weight: 600;
+			}
+			.grp .ic {
+				width: 12px;
+				height: 12px;
+			}
+			.row {
+				display: flex;
+				align-items: center;
+				gap: 7px;
+				height: 28px;
+				padding: 0 7px;
+				border-radius: 7px;
+				font-size: 12.5px;
+				color: var(--text-dim);
+				white-space: nowrap;
+				overflow: hidden;
+				text-overflow: ellipsis;
+				cursor: default;
+			}
+			.row span {
+				overflow: hidden;
+				text-overflow: ellipsis;
+			}
+			.row:hover {
+				background: var(--rail-hover);
+				color: var(--text);
+			}
+			.row.on {
+				background: var(--accent-soft);
+				color: var(--text);
+			}
+			.row .bullet {
+				width: 5px;
+				height: 5px;
+				border-radius: 50%;
+				background: var(--text-faint);
+				flex: none;
+			}
+			.row.on .bullet {
+				background: var(--accent);
+			}
+			.row .badge {
+				margin-left: auto;
+				font-size: 10px;
+				color: var(--accent-ink);
+				background: var(--accent-soft);
+				border-radius: 5px;
+				padding: 0 5px;
+				flex: none;
+			}
+
+			/* 会话区 */
+			.chat {
+				flex: 1;
+				min-width: 0;
+				min-height: 0;
+				display: flex;
+				flex-direction: column;
+				background: var(--bg);
+				position: relative;
+			}
+			.chat-head {
+				flex: none;
+				height: 38px;
+				display: flex;
+				align-items: center;
+				gap: 8px;
+				padding: 0 12px;
+				border-bottom: 1px solid var(--border-soft);
+				font-size: 12px;
+				color: var(--text-dim);
+			}
+			.chat-head .title {
+				color: var(--text);
+				font-weight: 600;
+				max-width: 46%;
+				overflow: hidden;
+				text-overflow: ellipsis;
+				white-space: nowrap;
+			}
+			.msgs {
+				flex: 1;
+				min-height: 0;
+				overflow-y: auto;
+				overflow-x: clip;
+				padding: 16px 18px;
+				display: flex;
+				flex-direction: column;
+				gap: 14px;
+			}
+			.msg {
+				display: flex;
+				gap: 9px;
+				font-size: 12.5px;
+				line-height: 1.75;
+				max-width: 94%;
+			}
+			.msg .who {
+				width: 20px;
+				height: 20px;
+				flex: none;
+				border-radius: 6px;
+				display: grid;
+				place-items: center;
+				font-size: 10px;
+				background: var(--bg-elev2);
+				color: var(--text-dim);
+				margin-top: 2px;
+			}
+			.msg.user .who {
+				background: var(--accent-soft);
+				color: var(--accent-ink);
+			}
+			.msg .body {
+				min-width: 0;
+				color: var(--text-dim);
+			}
+			.msg.user .body {
+				color: var(--text);
+			}
+			.msg .body strong {
+				color: var(--text);
+				font-weight: 600;
+			}
+			.tool {
+				border: 1px solid var(--border-soft);
+				border-radius: 9px;
+				background: var(--code-bg, var(--bg-sunken));
+				padding: 7px 10px;
+				font-family: var(--mono);
+				font-size: 11px;
+				color: var(--text-dim);
+				display: flex;
+				align-items: center;
+				gap: 7px;
+				margin-top: 8px;
+			}
+			.tool .ok {
+				color: var(--green);
+			}
+			.composer-wrap {
+				flex: none;
+				padding: 8px 16px 12px;
+				position: relative;
+			}
+			.composer {
+				border: 1px solid var(--border);
+				border-radius: 12px;
+				background: var(--bg-elev);
+				padding: 9px 10px 8px;
+				box-shadow: 0 10px 24px -18px #000;
+			}
+			.composer .ph {
+				font-size: 12.5px;
+				color: var(--text-faint);
+				padding: 2px 4px 10px;
+			}
+			.composer-bar {
+				display: flex;
+				align-items: center;
+				gap: 6px;
+				font-size: 11px;
+				color: var(--text-dim);
+			}
+			.composer-bar .spacer {
+				margin-left: auto;
+			}
+			.mini {
+				display: inline-flex;
+				align-items: center;
+				gap: 5px;
+				height: 22px;
+				padding: 0 7px;
+				border-radius: 6px;
+				background: var(--bg-elev2);
+				color: var(--text-dim);
+				border: 1px solid var(--border-soft);
+				font-size: 11px;
+				white-space: nowrap;
+			}
+			.mini.send {
+				background: var(--accent);
+				color: #fff;
+				border-color: transparent;
+				font-weight: 600;
+			}
+
+			/* 状态栏 */
+			.sb {
+				flex: none;
+				height: 22px;
+				display: flex;
+				align-items: center;
+				gap: 10px;
+				padding: 0 10px;
+				border-top: 1px solid var(--border-soft);
+				background: var(--bg-elev);
+				font-size: 10.5px;
+				color: var(--text-faint);
+				white-space: nowrap;
+				overflow: hidden;
+			}
+			.sb .spacer {
+				margin-left: auto;
+			}
+			.sb .dot {
+				width: 5px;
+				height: 5px;
+				border-radius: 50%;
+				background: var(--green);
+			}
+
+			/* ================= 方案 A：无形之栏 ================= */
+			.rail-a {
+				position: relative;
+				z-index: 4;
+				flex: none;
+				width: var(--rail-w);
+				display: flex;
+				flex-direction: column;
+				align-items: center;
+				gap: 3px;
+				padding: 9px 0 9px;
+				/* 贯通：从顶栏底到状态栏顶。与顶栏/面板同底色 → 连成一片 L 形表面，
+				   只留一条 1px 发丝线与面板分界；不画外框、不画阴影。 */
+				background: var(--bg-elev);
+				border-right: 1px solid var(--border-soft);
+			}
+			.rb {
+				position: relative;
+				width: var(--rail-btn);
+				height: var(--rail-btn);
+				flex: none;
+				border: 0;
+				padding: 0;
+				border-radius: var(--rail-radius);
+				background: transparent;
+				color: var(--text-dim);
+				display: grid;
+				place-items: center;
+				cursor: pointer;
+				transition:
+					background-color 0.16s ease,
+					color 0.16s ease,
+					transform 0.16s ease;
+			}
+			.rb .ic {
+				width: 19px;
+				height: 19px;
+			}
+			.rb:hover {
+				background: var(--rail-hover);
+				color: var(--text);
+			}
+			.rb.on {
+				background: var(--accent-soft);
+				color: var(--accent-ink);
+			}
+			.rb.on::before {
+				content: "";
+				position: absolute;
+				left: -8px;
+				top: 50%;
+				transform: translateY(-50%);
+				width: 3px;
+				height: 17px;
+				border-radius: 0 3px 3px 0;
+				background: var(--accent);
+			}
+			/* hover 滑出标签（rail 不设 overflow，所以不会被裁 / 不会撑滚动条） */
+			.rb .lbl {
+				position: absolute;
+				left: calc(100% + 6px);
+				top: 50%;
+				transform: translate(-6px, -50%);
+				display: inline-flex;
+				align-items: center;
+				height: 24px;
+				padding: 0 10px;
+				white-space: nowrap;
+				border-radius: 8px;
+				border: 1px solid var(--border);
+				background: var(--tooltip-bg);
+				color: var(--text);
+				font-size: 11.5px;
+				box-shadow: 0 8px 22px -10px #000;
+				opacity: 0;
+				pointer-events: none;
+				transition:
+					opacity 0.14s ease,
+					transform 0.16s ease;
+				z-index: 30;
+			}
+			.rb:hover .lbl {
+				opacity: 1;
+				transform: translate(0, -50%);
+			}
+			.rail-a .sep {
+				width: 22px;
+				height: 1px;
+				flex: none;
+				background: var(--border);
+				margin: 6px 0;
+			}
+			.rail-a .grow {
+				flex: 1;
+				min-height: 6px;
+			}
+			.rb .bdg {
+				position: absolute;
+				top: 4px;
+				right: 4px;
+				min-width: 13px;
+				height: 13px;
+				padding: 0 3px;
+				border-radius: 999px;
+				background: var(--accent);
+				color: #fff;
+				font-size: 9px;
+				line-height: 13px;
+				text-align: center;
+				font-weight: 700;
+			}
+			.rb .live {
+				position: absolute;
+				top: 5px;
+				right: 6px;
+				width: 6px;
+				height: 6px;
+				border-radius: 50%;
+				background: var(--amber);
+				box-shadow: 0 0 0 0 rgba(251, 191, 36, 0.55);
+				animation: pulse 1.9s ease-out infinite;
+			}
+			@keyframes pulse {
+				0% {
+					box-shadow: 0 0 0 0 rgba(251, 191, 36, 0.5);
+				}
+				70% {
+					box-shadow: 0 0 0 6px rgba(251, 191, 36, 0);
+				}
+				100% {
+					box-shadow: 0 0 0 0 rgba(251, 191, 36, 0);
+				}
+			}
+
+			/* ================= 方案 B：一体双栏 ================= */
+			.shell-b {
+				gap: 8px;
+				padding: 8px;
+				background: var(--bg-sunken);
+			}
+			.card-b {
+				display: flex;
+				min-height: 0;
+				border: 1px solid var(--border);
+				border-radius: 13px;
+				overflow: hidden;
+				background: var(--bg-elev);
+				box-shadow: 0 12px 30px -24px #000;
+			}
+			.card-b.chatcard {
+				flex: 1;
+				min-width: 0;
+				background: var(--bg);
+			}
+			.rail-b {
+				flex: none;
+				width: 50px;
+				display: flex;
+				flex-direction: column;
+				align-items: center;
+				gap: 3px;
+				padding: 8px 0;
+				background: color-mix(in srgb, var(--bg-sunken) 55%, var(--bg-elev));
+				border-right: 1px solid var(--border-soft);
+			}
+			.rail-b.right {
+				border-right: 0;
+				border-left: 1px solid var(--border-soft);
+			}
+			.rail-b .rb {
+				width: 34px;
+				height: 34px;
+				border-radius: 10px;
+			}
+			.rail-b .rb.on::before {
+				left: -8px;
+				height: 16px;
+			}
+			/* 右侧镜像：激活竖条贴外缘（卡片右边） */
+			.rail-b.right .rb.on::before {
+				left: auto;
+				right: -8px;
+				border-radius: 3px 0 0 3px;
+			}
+			.card-b .pane {
+				width: 208px;
+				background: transparent;
+			}
+			.card-b .pane.left,
+			.card-b .pane.right {
+				border: 0;
+			}
+			.card-b .search,
+			.card-b .pane-head {
+				border-color: transparent;
+			}
+			.card-b .pane-head {
+				border-bottom: 1px solid var(--border-soft);
+			}
+			.shell-b .chat {
+				border-radius: 0;
+			}
+
+			/* ================= 方案 C：图标 + 文字宽栏 ================= */
+			.rail-c {
+				flex: none;
+				width: 204px;
+				display: flex;
+				flex-direction: column;
+				gap: 2px;
+				padding: 12px 10px;
+				background: color-mix(in srgb, var(--bg-elev) 78%, var(--bg-sunken));
+				border-right: 1px solid var(--border);
+			}
+			.rail-c .rc-head {
+				display: flex;
+				align-items: center;
+				gap: 8px;
+				padding: 0 6px 12px;
+			}
+			.rail-c .rc-sec {
+				font-size: 10.5px;
+				font-weight: 700;
+				letter-spacing: 0.07em;
+				text-transform: uppercase;
+				color: var(--text-faint);
+				padding: 10px 8px 5px;
+			}
+			.navitem {
+				position: relative;
+				display: flex;
+				align-items: center;
+				gap: 9px;
+				height: 32px;
+				padding: 0 9px;
+				border: 0;
+				border-radius: 9px;
+				background: transparent;
+				color: var(--text-dim);
+				font-size: 12.5px;
+				cursor: pointer;
+				text-align: left;
+			}
+			.navitem .ic {
+				width: 17px;
+				height: 17px;
+				flex: none;
+			}
+			.navitem span {
+				overflow: hidden;
+				text-overflow: ellipsis;
+				white-space: nowrap;
+			}
+			.navitem:hover {
+				background: var(--rail-hover);
+				color: var(--text);
+			}
+			.navitem.on {
+				background: var(--accent-soft);
+				color: var(--text);
+				font-weight: 600;
+			}
+			.navitem.on .ic {
+				color: var(--accent-ink);
+			}
+			.navitem .badge {
+				margin-left: auto;
+				font-size: 10px;
+				background: var(--accent);
+				color: #fff;
+				border-radius: 999px;
+				padding: 0 6px;
+				line-height: 16px;
+			}
+			/* 软色底 + 语义色字，避免实底白字在深色主题下对比不足 */
+			.navitem .badge.run {
+				background: color-mix(in srgb, var(--amber) 20%, transparent);
+				color: var(--amber);
+			}
+			.rail-c .grow {
+				flex: 1;
+			}
+			.rail-c .rc-foot {
+				display: flex;
+				align-items: center;
+				gap: 8px;
+				padding: 9px 8px 4px;
+				margin-top: 8px;
+				border-top: 1px solid var(--border-soft);
+			}
+			.rail-c .rc-foot .nm {
+				display: block;
+				font-size: 12px;
+				color: var(--text);
+				line-height: 1.3;
+				white-space: nowrap;
+				overflow: hidden;
+				text-overflow: ellipsis;
+			}
+			.rail-c .rc-foot .st {
+				display: block;
+				font-size: 10.5px;
+				color: var(--text-faint);
+				line-height: 1.4;
+				white-space: nowrap;
+				overflow: hidden;
+				text-overflow: ellipsis;
+			}
+			/* 折叠态预览 */
+			.rail-c.mini {
+				width: 60px;
+				padding: 12px 9px;
+				align-items: center;
+			}
+			.rail-c.mini .navitem {
+				justify-content: center;
+				padding: 0;
+				width: 38px;
+			}
+			.rail-c.mini .navitem span,
+			.rail-c.mini .rc-sec,
+			.rail-c.mini .rc-foot .nm {
+				display: none;
+			}
+
+			/* ================= 方案 D：框架式 · 完全贯通 ================= */
+			.shell-d {
+				display: flex;
+				min-height: 0;
+				background: var(--bg);
+			}
+			.rail-d {
+				flex: none;
+				width: 58px;
+				display: flex;
+				flex-direction: column;
+				align-items: center;
+				gap: 3px;
+				padding: 8px 0 10px;
+				background: var(--bg-elev);
+				border-right: 1px solid var(--border);
+				position: relative;
+				z-index: 3;
+			}
+			/* 顶部品牌块 + rail 连成一条竖线，直到状态栏 */
+			.rail-d .rlogo {
+				width: 30px;
+				height: 30px;
+				border-radius: 9px;
+				display: grid;
+				place-items: center;
+				background: linear-gradient(145deg, #8b5cf6, #6366f1);
+				color: #fff;
+				font-weight: 700;
+				font-size: 13px;
+				margin-bottom: 10px;
+				box-shadow: 0 6px 16px -8px rgba(139, 92, 246, 0.9);
+			}
+			.rail-d .rb {
+				width: 34px;
+				height: 34px;
+				border-radius: 9px;
+			}
+			.rail-d .rb.on::before {
+				left: -12px;
+			}
+			.rail-d .sep {
+				width: 24px;
+				height: 1px;
+				background: var(--border);
+				margin: 6px 0;
+			}
+			.rail-d .grow {
+				flex: 1;
+			}
+			.d-topgap {
+				flex: none;
+				height: 44px;
+				display: flex;
+				align-items: center;
+				gap: 8px;
+				padding: 0 12px;
+				border-bottom: 1px solid var(--border);
+				background: var(--bg-elev);
+			}
+			.d-col {
+				flex: 1;
+				min-width: 0;
+				display: flex;
+				flex-direction: column;
+				min-height: 0;
+			}
+
+			/* 卡片注释 */
+			.notes {
+				display: grid;
+				grid-template-columns: repeat(auto-fit, minmax(230px, 1fr));
+				gap: 10px;
+				margin-top: 14px;
+			}
+			.note {
+				border: 1px solid var(--border-soft);
+				border-radius: 12px;
+				background: var(--page-card);
+				padding: 13px 15px;
+			}
+			.note h4 {
+				font-size: 12px;
+				color: var(--text-faint);
+				font-weight: 600;
+				letter-spacing: 0.04em;
+				text-transform: uppercase;
+				margin-bottom: 8px;
+			}
+			.note ul {
+				margin: 0;
+				padding-left: 16px;
+				color: var(--text-dim);
+				font-size: 12.5px;
+				line-height: 1.75;
+			}
+			.note li::marker {
+				color: var(--text-faint);
+			}
+			.note li + li {
+				margin-top: 3px;
+			}
+			.note p {
+				color: var(--text-dim);
+				font-size: 12.5px;
+				line-height: 1.75;
+			}
+			.note.trade p + p {
+				margin-top: 6px;
+			}
+			.note .plus {
+				color: var(--green);
+			}
+			.note .minus {
+				color: var(--amber);
+			}
+
+			/* ================= 手机形态 ================= */
+			.phone-wrap {
+				display: grid;
+				grid-template-columns: 330px minmax(0, 1fr);
+				gap: 22px;
+				align-items: start;
+			}
+			.phone {
+				width: 330px;
+				padding: 9px;
+				border: 1px solid var(--border);
+				border-radius: 36px;
+				background: var(--page-card);
+				box-shadow: var(--shadow);
+			}
+			.phone-screen {
+				overflow: hidden;
+				border: 1px solid var(--border-soft);
+				border-radius: 27px;
+				background: var(--bg);
+			}
+			.app-m {
+				height: 566px;
+			}
+			.tb-m {
+				padding: 0 8px;
+				height: 42px;
+			}
+			.tb-m .ibtn {
+				width: 30px;
+				height: 30px;
+			}
+			.rail-a.rail-m {
+				width: 46px;
+			}
+			.rail-m .rb {
+				width: 38px;
+				height: 38px;
+				border-radius: 11px;
+			}
+			.rail-m .rb .lbl {
+				display: none;
+			}
+			.rail-m .rb.on::before {
+				left: -4px;
+			}
+			.app-m .chat-head {
+				height: 34px;
+				padding: 0 10px;
+			}
+			.app-m .msgs {
+				padding: 12px 12px;
+				gap: 12px;
+			}
+			.app-m .composer-wrap {
+				padding: 6px 10px 10px;
+			}
+			@media (max-width: 860px) {
+				.phone-wrap {
+					grid-template-columns: minmax(0, 1fr);
+				}
+				.phone {
+					margin: 0 auto;
+				}
+			}
+
+			/* 对照表 */
+			.cmp {
+				width: 100%;
+				border-collapse: separate;
+				border-spacing: 0;
+				border: 1px solid var(--border);
+				border-radius: 14px;
+				overflow: hidden;
+				font-size: 12.5px;
+			}
+			.cmp th,
+			.cmp td {
+				padding: 10px 12px;
+				text-align: left;
+				border-bottom: 1px solid var(--border-soft);
+				vertical-align: middle;
+			}
+			.cmp thead th {
+				background: var(--page-card);
+				font-size: 11.5px;
+				color: var(--text-dim);
+				font-weight: 600;
+				white-space: nowrap;
+			}
+			.cmp tbody tr:last-child td {
+				border-bottom: 0;
+			}
+			.cmp tbody th {
+				font-weight: 500;
+				color: var(--text-dim);
+				white-space: nowrap;
+			}
+			.cmp td {
+				color: var(--text);
+			}
+			.cmp td.dim {
+				color: var(--text-dim);
+			}
+			.cmp .yes {
+				color: var(--green);
+			}
+			.cmp .mid {
+				color: var(--amber);
+			}
+			.cmp .no {
+				color: var(--red);
+			}
+			.cmp tr.hl {
+				background: color-mix(in srgb, var(--accent) 7%, transparent);
+			}
+
+			/* 规格 */
+			.spec-grid {
+				display: grid;
+				grid-template-columns: minmax(0, 1.25fr) minmax(0, 1fr);
+				gap: 18px;
+				align-items: start;
+			}
+			.spec-card {
+				border: 1px solid var(--border);
+				border-radius: 14px;
+				background: var(--page-card);
+				padding: 16px 18px;
+			}
+			.spec-card h3 {
+				font-size: 13px;
+				margin-bottom: 10px;
+			}
+			.spec-card ul {
+				margin: 0;
+				padding-left: 17px;
+				font-size: 12.5px;
+				line-height: 1.85;
+				color: var(--text-dim);
+			}
+			.spec-card li::marker {
+				color: var(--text-faint);
+			}
+			.tokens {
+				display: grid;
+				gap: 6px;
+				font-family: var(--mono);
+				font-size: 11.5px;
+				color: var(--text-dim);
+			}
+			.tokens div {
+				display: flex;
+				justify-content: space-between;
+				gap: 12px;
+				border-bottom: 1px dashed var(--border-soft);
+				padding-bottom: 5px;
+			}
+			.tokens b {
+				color: var(--accent-ink);
+				font-weight: 500;
+			}
+			.final {
+				margin-top: 16px;
+				border: 1px solid color-mix(in srgb, var(--accent) 35%, var(--border));
+				background: linear-gradient(180deg, var(--accent-soft), transparent 70%), var(--page-card);
+				border-radius: 14px;
+				padding: 16px 18px;
+			}
+			.final p {
+				font-size: 13px;
+				color: var(--text-dim);
+				line-height: 1.8;
+			}
+			.final b {
+				color: var(--text);
+			}
+
+			/* 固定 tooltip 层（演示「tooltip 必须离开滚动容器」） */
+			.tip {
+				position: fixed;
+				left: 0;
+				top: 0;
+				z-index: 9999;
+				visibility: hidden;
+				display: inline-flex;
+				align-items: center;
+				height: 24px;
+				padding: 0 9px;
+				border-radius: 7px;
+				border: 1px solid var(--border);
+				background: var(--tooltip-bg);
+				color: var(--text);
+				font-size: 11.5px;
+				line-height: 1;
+				white-space: nowrap;
+				box-shadow: 0 10px 24px -12px #000;
+				pointer-events: none;
+			}
+			.tip.on {
+				visibility: visible;
+			}
+
+			@media (max-width: 1180px) {
+				.page {
+					grid-template-columns: 1fr;
+					gap: 0;
+				}
+				.snav {
+					position: static;
+					height: auto;
+					flex-direction: row;
+					flex-wrap: wrap;
+					align-items: center;
+					gap: 6px;
+					padding: 16px 0;
+				}
+				.snav-brand {
+					padding: 0 8px 0 0;
+				}
+				.snav a.on::before {
+					display: none;
+				}
+				.snav-foot {
+					margin-left: auto;
+					border: 0;
+					padding: 0;
+					flex-direction: row;
+				}
+				.snav-foot em {
+					display: none;
+				}
+				main {
+					padding-top: 8px;
+				}
+				.diag,
+				.spec-grid {
+					grid-template-columns: minmax(0, 1fr);
+				}
+			}
+			@media (max-width: 720px) {
+				body {
+					font-size: 13.5px;
+				}
+				.page {
+					padding: 0 16px;
+				}
+				h1 {
+					font-size: 27px;
+				}
+				.pane.right {
+					display: none;
+				}
+			}
+			@container (max-width: 900px) {
+				.pane.right {
+					display: none;
+				}
+				.rail-c {
+					width: 60px;
+					padding: 12px 9px;
+					align-items: center;
+					overflow: hidden;
+				}
+				.rail-c .rc-head {
+					display: none;
+				}
+				.rail-c .navitem {
+					justify-content: center;
+					padding: 0;
+					width: 38px;
+				}
+				.rail-c .navitem span,
+				.rail-c .rc-sec,
+				.rail-c .rc-foot .nm,
+				.rail-c .rc-foot .st {
+					display: none;
+				}
+				.rail-c .rc-foot {
+					justify-content: center;
+					padding: 9px 0 4px;
+				}
+				.card-b .pane {
+					width: 190px;
+				}
+			}
+			@container (max-width: 700px) {
+				.pane.left {
+					display: none;
+				}
+			}
+		</style>
+	</head>
+	<body>
+<div data-docs-i18n-switch style="position:fixed;top:8px;right:12px;z-index:2147483647;font:12px/1.6 -apple-system,system-ui,sans-serif;background:rgba(15,17,22,.78);color:#fff;padding:4px 12px;border-radius:999px;box-shadow:0 2px 10px rgba(0,0,0,.35)"><a href="./side-dock-redesign.html" style="color:#fff;text-decoration:none">简体中文</a> · <strong>English</strong> · <a href="./side-dock-redesign.zh-TW.html" style="color:#fff;text-decoration:none">繁體中文</a></div>
+
+
+		<svg class="sprite" aria-hidden="true">
+			<symbol id="i-chat" viewBox="0 0 24 24">
+				<path
+					d="M21 11.5a8.4 8.4 0 0 1-9 8.4 9 9 0 0 1-3.9-.9L3 21l1.9-4.6A8.4 8.4 0 0 1 12 3.1a8.4 8.4 0 0 1 9 8.4z"
+				/>
+			</symbol>
+			<symbol id="i-term" viewBox="0 0 24 24">
+				<path d="M4 7l4 5-4 5M12 17h8" />
+			</symbol>
+			<symbol id="i-files" viewBox="0 0 24 24">
+				<path d="M4 5h5l2 2h9v12H4z" />
+			</symbol>
+			<symbol id="i-canvas" viewBox="0 0 24 24">
+				<rect x="3" y="4" width="6" height="5" rx="1.2" />
+				<rect x="15" y="4" width="6" height="5" rx="1.2" />
+				<rect x="9" y="15" width="6" height="5" rx="1.2" />
+				<path d="M9 6.5h6M6 9v4h12V9M12 13v2" />
+			</symbol>
+			<symbol id="i-bot" viewBox="0 0 24 24">
+				<path d="M12 3v3M6 9h12a2 2 0 0 1 2 2v6a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2v-6a2 2 0 0 1 2-2z" />
+				<path d="M9.5 14h.01M14.5 14h.01" />
+			</symbol>
+			<symbol id="i-flask" viewBox="0 0 24 24">
+				<path d="M9 3h6M10 3v6l-5 9a2 2 0 0 0 1.8 3h10.4a2 2 0 0 0 1.8-3l-5-9V3" />
+			</symbol>
+			<symbol id="i-quill" viewBox="0 0 24 24">
+				<path d="M20 4c-6 1-10 4-12 9l-1 4 4-1c5-2 8-6 9-12zM6 18l-2 2" />
+			</symbol>
+			<symbol id="i-gear" viewBox="0 0 24 24">
+				<circle cx="12" cy="12" r="3" />
+				<path
+					d="M19.4 15a1.7 1.7 0 0 0 .3 1.9l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-2.9 1.2V21a2 2 0 1 1-4 0v-.1A1.7 1.7 0 0 0 7 19.4a1.7 1.7 0 0 0-1.9.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1A1.7 1.7 0 0 0 3 14H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.2-2.9l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1A1.7 1.7 0 0 0 10 3.1V3a2 2 0 1 1 4 0v.1A1.7 1.7 0 0 0 16.9 4.2l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1A1.7 1.7 0 0 0 21 10h.1a2 2 0 1 1 0 4H21a1.7 1.7 0 0 0-1.6 1z"
+				/>
+			</symbol>
+			<symbol id="i-search" viewBox="0 0 24 24">
+				<circle cx="11" cy="11" r="7" />
+				<path d="M20 20l-3.6-3.6" />
+			</symbol>
+			<symbol id="i-plus" viewBox="0 0 24 24">
+				<path d="M12 5v14M5 12h14" />
+			</symbol>
+			<symbol id="i-bell" viewBox="0 0 24 24">
+				<path d="M18 8a6 6 0 1 0-12 0c0 6-2 7-2 7h16s-2-1-2-7" />
+				<path d="M10.3 20a2 2 0 0 0 3.4 0" />
+			</symbol>
+			<symbol id="i-moon" viewBox="0 0 24 24">
+				<path d="M20 14.5A8.5 8.5 0 0 1 9.5 4a8.5 8.5 0 1 0 10.5 10.5z" />
+			</symbol>
+			<symbol id="i-sun" viewBox="0 0 24 24">
+				<circle cx="12" cy="12" r="4" />
+				<path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4" />
+			</symbol>
+			<symbol id="i-chev" viewBox="0 0 24 24">
+				<path d="M6 9l6 6 6-6" />
+			</symbol>
+			<symbol id="i-chev-r" viewBox="0 0 24 24">
+				<path d="M9 6l6 6-6 6" />
+			</symbol>
+			<symbol id="i-chev-l" viewBox="0 0 24 24">
+				<path d="M15 6l-6 6 6 6" />
+			</symbol>
+			<symbol id="i-user" viewBox="0 0 24 24">
+				<circle cx="12" cy="8" r="4" />
+				<path d="M4 21a8 8 0 0 1 16 0" />
+			</symbol>
+			<symbol id="i-cpu" viewBox="0 0 24 24">
+				<rect x="7" y="7" width="10" height="10" rx="2" />
+				<path d="M12 3v4M12 17v4M3 12h4M17 12h4M5 5l2 2M19 5l-2 2M5 19l2-2M19 19l-2-2" />
+			</symbol>
+			<symbol id="i-menu" viewBox="0 0 24 24"><path d="M4 7h16M4 12h16M4 17h16" /></symbol>
+			<symbol id="i-more" viewBox="0 0 24 24">
+				<circle cx="6" cy="12" r="1.4" />
+				<circle cx="12" cy="12" r="1.4" />
+				<circle cx="18" cy="12" r="1.4" />
+			</symbol>
+			<symbol id="i-image" viewBox="0 0 24 24">
+				<rect x="3" y="4" width="18" height="16" rx="2" />
+				<circle cx="9" cy="10" r="1.6" />
+				<path d="M4 18l5-5 4 4 3-3 4 4" />
+			</symbol>
+			<symbol id="i-git" viewBox="0 0 24 24">
+				<circle cx="7" cy="6" r="2.4" />
+				<circle cx="7" cy="18" r="2.4" />
+				<circle cx="17" cy="12" r="2.4" />
+				<path d="M7 8.4v7.2M9.4 6h2.2a3 3 0 0 1 3 3v.6" />
+			</symbol>
+		</svg>
+
+		<div class="page">
+			<nav class="snav">
+				<div class="snav-brand">
+					<span class="mark">Π</span>
+					<span>
+						<b>Side dock redesign</b>
+						<span>pi-web-ui · design study</span>
+					</span>
+				</div>
+				<a href="#diagnose" class="on"><span class="k">00</span>Where it breaks today</a>
+				<a href="#opt-a"><span class="k">A</span>Invisible rail</a>
+				<a href="#opt-a-mobile"><span class="k">A+</span>Mobile shape</a>
+				<a href="#opt-b"><span class="k">B</span>One-piece columns</a>
+				<a href="#opt-c"><span class="k">C</span>Wide rail, icons + labels</a>
+				<a href="#opt-d"><span class="k">D</span>Window frame, fully continuous</a>
+				<a href="#compare"><span class="k">↔</span>Options compared</a>
+				<a href="#spec"><span class="k">→</span>Implementation spec</a>
+				<div class="snav-foot">
+					<button class="theme-btn" id="themeBtn" type="button">
+						<svg class="ic" style="width: 15px; height: 15px"><use href="#i-moon" /></svg>
+						<span id="themeLabel">Switch to light</span>
+					</button>
+					<em>All 4 demos below are real DOM — hover and click them.</em>
+				</div>
+			</nav>
+
+			<main>
+				<header class="hero">
+					<span class="eyebrow"><i></i>4 options · all running top to bottom</span>
+					<h1>
+						Side dock: from a "floating capsule" to a "continuous column"
+						<small>
+							What you asked for is one column running from the bottom edge of the top bar all the way to the status bar, not a buoy hovering at 70vh in the middle. All 4 options below work from that
+							assumption; they differ in whether that column is transparent, merged with the pane, carrying labels, or folded into the window frame.
+						</small>
+					</h1>
+					<div class="hero-note">
+						<div><b>Common fixes</b>column height:100%, no scrollbar, tooltip out of the scroll container, one icon spec.</div>
+						<div><b>Recommended</b>option A changes least and looks most like Linear/Arc; option B kills the fragmentation best but needs one more container layer.</div>
+						<div><b>Hard constraint</b>keep <code>start / center / end</code> slots and the plugin slots compatible, no data reshuffle.</div>
+						<div><b>Mobile</b>the same column narrows to 46px (38px hit area), hover labels off, every other rule unchanged.</div>
+					</div>
+				</header>
+
+				<!-- ================= 00 diagnosis ================= -->
+				<section id="diagnose">
+					<div class="sec-head">
+						<span class="sec-tag">00 / diagnosis</span>
+						<h2>The fragmentation and the horizontal scrollbar are three separate problems stacked up</h2>
+					</div>
+					<p class="sec-sub">
+						On the left is what it looks like now: a capsule with a border + shadow + translucent blur stuck to the edge of the pane, while the pane is a card of its own,
+						so the two frames cut into each other. And <code>overflow-y: auto</code> inside the capsule makes <code>overflow-x</code> compute to
+						<code>auto</code>, while the tooltip pseudo-element reaches out to the right, which forces a horizontal scrollbar open.
+					</p>
+					<div class="diag">
+						<div class="now-shot">
+							<div class="cap">Today, reproduced (left side cropped)</div>
+							<div class="now-crop">
+								<div class="now-rail">
+									<span class="b" data-t="Playground"
+										><svg class="ic" style="width: 15px; height: 15px"><use href="#i-flask" /></svg
+									></span>
+									<span class="b" data-t="Writing"
+										><svg class="ic" style="width: 15px; height: 15px"><use href="#i-quill" /></svg
+									></span>
+									<div class="now-hbar"><i class="r"></i><i class="k"></i><i></i></div>
+								</div>
+								<div class="now-pane">
+									<div class="chip"></div>
+									<div class="ln m"></div>
+									<div class="ln"></div>
+									<div class="ln s"></div>
+									<div class="ln"></div>
+									<div class="ln m"></div>
+									<div class="ln s"></div>
+								</div>
+							</div>
+						</div>
+						<div class="diag-list">
+							<div class="diag-item">
+								<span class="n">1</span>
+								<div>
+									<b>Two card languages fighting each other</b>
+									<p>
+										the dock has <code>border</code> + shadow + <code>backdrop-filter</code>, and the pane is another card with its own border
+										with a transparent seam in between — the eye reads it as two unrelated overlays.
+									</p>
+								</div>
+							</div>
+							<div class="diag-item">
+								<span class="n">2</span>
+								<div>
+									<b>A vertical list grows a horizontal scrollbar</b>
+									<p>
+										Only <code>overflow-y: auto</code> is declared, so the other axis computes from <code>visible</code> to <code>auto</code>; and
+										<code>[data-tip]::after</code> uses <code>left: calc(100% + 8px)</code>
+										to reach right, widening the scrollable area.
+									</p>
+									<div class="code">
+										<span class="bad">/* today */</span> .side-dock-seg { overflow-y: auto; }
+										<span class="bad">← the other axis goes auto too</span> .side-dock [data-tip]::after { left: calc(100% + 8px); }
+										<span class="bad">← widens the box</span>
+
+										<span class="ok">/* the fix */</span>
+										.side-dock-seg { overflow-y: auto; <b>overflow-x: clip</b>; }
+										<span class="ok">// tooltip becomes a singleton fixed layer, outside the scroll container</span>
+									</div>
+								</div>
+							</div>
+							<div class="diag-item">
+								<span class="n">3</span>
+								<div>
+									<b>No single size language</b>
+									<p>
+										One column mixes 30px round <code>border-radius: 50%</code> bar items, a 22px collapse key, an 18px
+										engine badge; none of it belongs to the same family as the 28px / 8px-radius top-bar buttons or the 11px status bar.
+									</p>
+								</div>
+							</div>
+							<div class="diag-item">
+								<span class="n">4</span>
+								<div>
+									<b>The whole column is only 70vh tall</b>
+									<p>
+										<code>.side-dock-float { height: 70vh; top: 50% }</code> makes running the full height impossible by construction,
+										with air above and below; its visual weight does not sit on the same line as the panes beside it.
+									</p>
+								</div>
+							</div>
+						</div>
+					</div>
+				</section>
+
+				<!-- ================= A ================= -->
+				<section id="opt-a">
+					<div class="sec-head">
+						<span class="sec-tag">Option A</span>
+						<h2>The invisible rail: one continuous, fully transparent column</h2>
+						<span class="rec">Recommended</span>
+					</div>
+					<p class="sec-sub">
+						No card, no frame, no shadow — the icons sit on the same surface as the top bar and the panes, running from the bottom edge of the top bar down to the status bar.
+						Position is established by a 1px hairline plus a 3px bar to the left of the active item. On hover only a pill background appears,
+						with a text label sliding out to the right, which fixes the unreadability of icon-only navigation.
+					</p>
+
+					<div class="stage">
+						<div class="winbar">
+							<span class="dots"><i></i><i></i><i></i></span>
+							<span class="t">Option A · invisible rail</span>
+							<span class="hint">hover an icon for its label · click to activate</span>
+						</div>
+						<div class="app">
+							<div class="tb">
+								<div class="tb-l">
+									<span class="brand"><span class="mark">Π</span>pi-web-ui</span>
+									<nav class="tb-tabs demo-btns">
+										<button class="on">Chat</button>
+										<button>Terminal</button>
+										<button>Files</button>
+										<button>Canvas</button>
+									</nav>
+								</div>
+								<div class="tb-r">
+									<span class="tb-chip"><i class="dot"></i>poe / Why we need this</span>
+									<button class="ibtn" data-tip="Global search ⌘K" aria-label="Search">
+										<svg class="ic"><use href="#i-search" /></svg>
+									</button>
+									<button class="ibtn" data-tip="Notifications" aria-label="Notifications">
+										<svg class="ic"><use href="#i-bell" /></svg>
+									</button>
+									<button class="ibtn" data-tip="Settings" aria-label="Settings">
+										<svg class="ic"><use href="#i-gear" /></svg>
+									</button>
+									<span class="avatar"></span>
+								</div>
+							</div>
+							<div class="shell">
+								<nav class="rail-a demo-rail">
+									<button class="rb on" data-tip="Chat" aria-label="Chat">
+										<svg class="ic"><use href="#i-chat" /></svg><span class="lbl">Chat</span>
+									</button>
+									<button class="rb" data-tip="Terminal" aria-label="Terminal">
+										<svg class="ic"><use href="#i-term" /></svg><span class="lbl">Terminal</span>
+									</button>
+									<button class="rb" data-tip="Files" aria-label="Files">
+										<svg class="ic"><use href="#i-files" /></svg><span class="lbl">Files</span>
+									</button>
+									<button class="rb" data-tip="Canvas" aria-label="Canvas">
+										<svg class="ic"><use href="#i-canvas" /></svg><span class="lbl">Canvas</span>
+									</button>
+									<div class="sep"></div>
+									<button class="rb" data-tip="Playground (plugin)" aria-label="Playground">
+										<svg class="ic"><use href="#i-flask" /></svg>
+										<span class="live"></span><span class="lbl">Playground · running</span>
+									</button>
+									<button class="rb" data-tip="Writing (plugin)" aria-label="Writing">
+										<svg class="ic"><use href="#i-quill" /></svg><span class="lbl">Writing</span>
+									</button>
+									<button class="rb" data-tip="Bots" aria-label="Bots">
+										<svg class="ic"><use href="#i-bot" /></svg><span class="bdg">3</span
+										><span class="lbl">Bots · 3 online</span>
+									</button>
+									<div class="grow"></div>
+									<button class="rb" data-tip="git" aria-label="git">
+										<svg class="ic"><use href="#i-git" /></svg><span class="lbl">Version / SCM</span>
+									</button>
+									<button class="rb" data-tip="Settings" aria-label="Settings">
+										<svg class="ic"><use href="#i-gear" /></svg><span class="lbl">Settings</span>
+									</button>
+									<span class="avatar" style="margin-top: 6px"></span>
+								</nav>
+
+								<aside class="pane left">
+									<div class="pane-head">
+										<button class="proj">
+											<svg class="ic"><use href="#i-files" /></svg>Project
+											<svg class="ic" style="width: 12px; height: 12px"><use href="#i-chev" /></svg>
+										</button>
+										<span style="flex: 1"></span>
+										<button class="ibtn" data-tip="New conversation" aria-label="New">
+											<svg class="ic"><use href="#i-plus" /></svg>
+										</button>
+									</div>
+									<div class="search">
+										<svg class="ic" style="width: 14px; height: 14px"><use href="#i-search" /></svg>Filter conversations
+									</div>
+									<div class="list">
+										<div class="grp">
+											<svg class="ic"><use href="#i-chev" /></svg>poe
+										</div>
+										<div class="row on"><span class="bullet"></span><span>Why we need this</span></div>
+										<div class="row"><span class="bullet" style="opacity: 0"></span><span>Recurring task checklist</span></div>
+										<div class="row"><span class="bullet" style="opacity: 0"></span><span>Side dock redesign thread</span></div>
+										<div class="grp">
+											<svg class="ic"><use href="#i-chev" /></svg>pi-web-ui
+										</div>
+										<div class="row">
+											<span class="bullet"></span><span>Plugin slot compatibility</span><span class="badge">New</span>
+										</div>
+										<div class="row"><span class="bullet" style="opacity: 0"></span><span>Terminal PTY hang triage</span></div>
+										<div class="row"><span class="bullet" style="opacity: 0"></span><span>Canvas collaboration version diff</span></div>
+									</div>
+								</aside>
+
+								<section class="chat">
+									<div class="chat-head">
+										<span class="title">Side dock redesign thread</span>
+										<span>·</span><span>claude-opus-4</span>
+										<span style="margin-left: auto" class="mini">Context 12%</span>
+										<button class="ibtn" data-tip="Collapse pane">
+											<svg class="ic"><use href="#i-chev-l" /></svg>
+										</button>
+									</div>
+									<div class="msgs">
+										<div class="msg user">
+											<span class="who">You</span>
+											<div class="body">
+												Can that left strip stop hovering in the middle? I want it <strong>running top to bottom</strong>, one go from edge to edge, not like a floating window.
+											</div>
+										</div>
+										<div class="msg">
+											<span class="who">AI</span>
+											<div class="body">
+												Sure. In <code>:root</code>, take <code>--side-dock-w</code> from <code>fit-content</code>
+												to a fixed column width, let flex fill the height, drop border/shadow/backdrop, and keep only a 3px bar for the active item.
+												<div class="tool">
+													<span class="ok">●</span> read · web/src/styles.css <span class="ok">✓</span>
+												</div>
+											</div>
+										</div>
+									</div>
+									<div class="composer-wrap">
+										<div class="composer">
+											<div class="ph">Message, / for commands…</div>
+											<div class="composer-bar">
+												<span class="mini"
+													><svg class="ic" style="width: 12px; height: 12px"><use href="#i-cpu" /></svg
+													>claude-opus-4</span
+												>
+												<span class="mini">Workspace</span>
+												<span class="spacer"></span>
+												<span class="mini send">Send ↵</span>
+											</div>
+										</div>
+									</div>
+								</section>
+
+								<aside class="pane right">
+									<div class="pane-head">
+										<span
+											class="mini"
+											style="background: var(--accent-soft); color: var(--accent-ink); border-color: transparent"
+											>Files</span
+										>
+										<span class="mini">Tools</span>
+										<span class="mini">Context</span>
+									</div>
+									<div class="list">
+										<div class="grp">
+											<svg class="ic"><use href="#i-chev" /></svg>web/src
+										</div>
+										<div class="row"><span>App.tsx</span></div>
+										<div class="row"><span>styles.css</span></div>
+										<div class="row"><span>use-chat.ts</span></div>
+										<div class="grp">
+											<svg class="ic"><use href="#i-chev" /></svg>server
+										</div>
+										<div class="row"><span>plugins.ts</span></div>
+										<div class="row"><span>protocol.ts</span></div>
+									</div>
+								</aside>
+							</div>
+							<div class="sb">
+								<span class="dot"></span><span>Ready</span><span>poe</span><span>ctx 12%</span><span>$0.42</span>
+								<span class="spacer"></span><span>12 messages</span><span>claude-opus-4</span>
+							</div>
+						</div>
+					</div>
+
+					<div class="notes">
+						<div class="note">
+							<h4>How to get it continuous</h4>
+							<ul>
+								<li>Fixed column width <code>--rail-w: 56px</code>, height from flex, no more 70vh / translateY.</li>
+								<li>Background matches the top bar and the panes (<code>--bg-elev</code>): the three join into one L-shaped surface instead of a card stuck on top.</li>
+								<li>Against the pane, only a 1px <code>--border-soft</code> hairline; no outer frame, no shadow.</li>
+								<li>Bottom icons use <code>margin-top: auto</code> to sit at the bottom, 9px of breathing room above the status bar.</li>
+							</ul>
+						</div>
+						<div class="note trade">
+							<h4>Trade-offs</h4>
+							<p>
+								<span class="plus">＋</span> Smallest change: only <code>.side-dock*</code> — about 30 lines of CSS plus the SideDock root node.
+							</p>
+							<p><span class="plus">＋</span> Closest to the containerless look of Linear / Arc, and it plays well with any theme.</p>
+							<p><span class="minus">−</span> Icon-only readability leans on hover labels; on touch it falls back to long-press hints.</p>
+						</div>
+						<div class="note">
+							<h4>Implementation details</h4>
+							<ul>
+								<li>Icons 19px / hit area 36px / radius 11px / gap 3px, same family as the 28px top-bar buttons.</li>
+								<li>Plugin slots: <code>align=start/center/end</code> — the three slots stay, and visually they only show up as a gap plus a 1px line.</li>
+								<li>Labels are absolutely positioned, but the rail <b>must not</b> set overflow or they get clipped again.</li>
+							</ul>
+						</div>
+					</div>
+				</section>
+
+				<!-- ================= A mobile shape ================= -->
+				<section id="opt-a-mobile">
+					<div class="sec-head">
+						<span class="sec-tag">Option A · mobile</span>
+						<h2>The same column, narrowed to 46px</h2>
+					</div>
+					<p class="sec-sub">
+						There is no second pane on mobile — the left and right panes both become drawers, so this column is the only permanent navigation. It cannot disappear, and it cannot eat much width:
+						width drops from 56 to 46, the hit area grows from 36 to 38 (a thumb lands on it reliably), hover labels are switched off (no hover on touch),
+						everything else (continuity, hairline, active bar) matches the desktop exactly. The right column only appears when it has real items; when empty it takes no space.
+					</p>
+					<div class="phone-wrap">
+						<div class="phone">
+							<div class="phone-screen">
+								<div class="app app-m">
+									<div class="tb tb-m">
+										<button class="ibtn" data-tip="Projects and conversations" aria-label="Menu">
+											<svg class="ic"><use href="#i-menu" /></svg>
+										</button>
+										<span class="brand"><span class="mark">Π</span></span>
+										<span class="tb-chip" style="max-width: 118px"><i class="dot"></i>poe</span>
+										<span style="flex: 1"></span>
+										<button class="ibtn" data-tip="Search">
+											<svg class="ic"><use href="#i-search" /></svg>
+										</button>
+										<button class="ibtn" data-tip="Settings">
+											<svg class="ic"><use href="#i-gear" /></svg>
+										</button>
+									</div>
+									<div class="shell">
+										<nav class="rail-a rail-m demo-rail">
+											<button class="rb on" aria-label="Chat">
+												<svg class="ic"><use href="#i-chat" /></svg>
+											</button>
+											<button class="rb" aria-label="Terminal">
+												<svg class="ic"><use href="#i-term" /></svg>
+											</button>
+											<button class="rb" aria-label="Files">
+												<svg class="ic"><use href="#i-files" /></svg>
+											</button>
+											<button class="rb" aria-label="Canvas">
+												<svg class="ic"><use href="#i-canvas" /></svg>
+											</button>
+											<div class="sep"></div>
+											<button class="rb" aria-label="Playground">
+												<svg class="ic"><use href="#i-flask" /></svg><span class="live"></span>
+											</button>
+											<button class="rb" aria-label="Writing">
+												<svg class="ic"><use href="#i-quill" /></svg>
+											</button>
+											<div class="grow"></div>
+											<button class="rb" aria-label="Settings">
+												<svg class="ic"><use href="#i-gear" /></svg>
+											</button>
+										</nav>
+										<section class="chat">
+											<div class="chat-head">
+												<span class="title">Side dock redesign</span>
+												<span class="mini" style="margin-left: auto">12%</span>
+											</div>
+											<div class="msgs">
+												<div class="msg user">
+													<span class="who">You</span>
+													<div class="body">It has to run full height on mobile too, but the column cannot be wide.</div>
+												</div>
+												<div class="msg">
+													<span class="who">AI</span>
+													<div class="body">
+														Column 46, buttons 38, the rest as on desktop:
+														<div class="tool">
+															<span class="ok">●</span> edit · styles.css +4 lines <span class="ok">✓</span>
+														</div>
+													</div>
+												</div>
+											</div>
+											<div class="composer-wrap">
+												<div class="composer">
+													<div class="ph">Message…</div>
+													<div class="composer-bar">
+														<span class="mini"
+															><svg class="ic" style="width: 12px; height: 12px"><use href="#i-cpu" /></svg>opus-4</span
+														>
+														<span class="spacer"></span>
+														<span class="mini send">Send</span>
+													</div>
+												</div>
+											</div>
+										</section>
+									</div>
+									<div class="sb">
+										<span class="dot"></span><span>Ready</span><span>poe</span> <span class="spacer"></span
+										><span>opus-4</span>
+									</div>
+								</div>
+							</div>
+						</div>
+						<div class="notes" style="margin-top: 0; grid-template-columns: minmax(0, 1fr)">
+							<div class="note">
+								<h4>Rules on mobile</h4>
+								<ul>
+									<li>Column <code>46px</code>, buttons <code>38px</code>, gap 4px (the floor for a touch target).</li>
+									<li>No hover labels (no hover on touch); keep <code>title</code> for the long-press hint.</li>
+									<li>Both panes are drawers; the column does not travel with them and always runs the full height.</li>
+									<li>With no items, the right column goes <code>display:none</code> instead of wasting 46px.</li>
+								</ul>
+							</div>
+							<div class="note trade">
+								<h4>Why not a bottom tab bar</h4>
+								<p>
+									The composer and the status bar already sit at the bottom; a tab bar would make three layers. The column shares the desktop DOM,
+									so a media query only changes sizes — the smallest possible surface; and in landscape the column falls back to the intuitive "sidebar" position.
+								</p>
+							</div>
+						</div>
+					</div>
+				</section>
+
+				<!-- ================= B ================= -->
+				<section id="opt-b">
+					<div class="sec-head">
+						<span class="sec-tag">Option B</span>
+						<h2>One-piece columns: the dock and the pane move into one card</h2>
+					</div>
+					<p class="sec-sub">
+						The root of the fragmentation is two overlays. This option inverts it: dock + pane become one container with a single outer border and a single radius; the dock
+						separates levels with a background one step darker than the pane plus a 1px inner line. The conversation area is no longer pinched between two cards; it floats on the canvas instead
+						— which is the skeleton of the Figma / Linear desktop apps.
+					</p>
+
+					<div class="stage">
+						<div class="winbar">
+							<span class="dots"><i></i><i></i><i></i></span>
+							<span class="t">Option B · one-piece columns</span>
+							<span class="hint">Both sides are a merged "dock + pane"</span>
+						</div>
+						<div class="app">
+							<div class="tb">
+								<div class="tb-l">
+									<span class="brand"><span class="mark">Π</span>pi-web-ui</span>
+									<nav class="tb-tabs demo-btns">
+										<button class="on">Chat</button>
+										<button>Terminal</button>
+										<button>Files</button>
+									</nav>
+								</div>
+								<div class="tb-r">
+									<span class="tb-chip"><i class="dot"></i>poe / Recurring tasks</span>
+									<button class="ibtn" data-tip="Search">
+										<svg class="ic"><use href="#i-search" /></svg>
+									</button>
+									<button class="ibtn" data-tip="Settings">
+										<svg class="ic"><use href="#i-gear" /></svg>
+									</button>
+									<span class="avatar"></span>
+								</div>
+							</div>
+							<div class="shell shell-b">
+								<div class="card-b">
+									<nav class="rail-b demo-rail">
+										<button class="rb on" data-tip="Chat" data-tip-side="right" aria-label="Chat">
+											<svg class="ic"><use href="#i-chat" /></svg>
+										</button>
+										<button class="rb" data-tip="Terminal" aria-label="Terminal">
+											<svg class="ic"><use href="#i-term" /></svg>
+										</button>
+										<button class="rb" data-tip="Files" aria-label="Files">
+											<svg class="ic"><use href="#i-files" /></svg>
+										</button>
+										<button class="rb" data-tip="Canvas" aria-label="Canvas">
+											<svg class="ic"><use href="#i-canvas" /></svg>
+										</button>
+										<div class="sep" style="width: 22px; height: 1px; background: var(--border); margin: 6px 0"></div>
+										<button class="rb" data-tip="Playground (plugin)" aria-label="Playground">
+											<svg class="ic"><use href="#i-flask" /></svg>
+										</button>
+										<button class="rb" data-tip="Writing (plugin)" aria-label="Writing">
+											<svg class="ic"><use href="#i-quill" /></svg>
+										</button>
+										<div class="grow" style="flex: 1"></div>
+										<button class="rb" data-tip="Settings" aria-label="Settings">
+											<svg class="ic"><use href="#i-gear" /></svg>
+										</button>
+										<span class="avatar" style="margin: 2px 0 4px"></span>
+									</nav>
+									<aside class="pane left">
+										<div class="pane-head">
+											<button class="proj">
+												<svg class="ic"><use href="#i-files" /></svg>Project<svg
+													class="ic"
+													style="width: 12px; height: 12px"
+												>
+													<use href="#i-chev" />
+												</svg>
+											</button>
+											<span style="flex: 1"></span>
+											<button class="ibtn" data-tip="New">
+												<svg class="ic"><use href="#i-plus" /></svg>
+											</button>
+										</div>
+										<div class="search">
+											<svg class="ic" style="width: 14px; height: 14px"><use href="#i-search" /></svg>Filter conversations
+										</div>
+										<div class="list">
+											<div class="grp">
+												<svg class="ic"><use href="#i-chev" /></svg>poe
+											</div>
+											<div class="row on"><span class="bullet"></span><span>Recurring task checklist</span></div>
+											<div class="row">
+												<span class="bullet" style="opacity: 0"></span><span>Why we need this</span>
+											</div>
+											<div class="grp">
+												<svg class="ic"><use href="#i-chev" /></svg>pi-web-ui
+											</div>
+											<div class="row"><span class="bullet"></span><span>Side dock redesign</span></div>
+											<div class="row"><span class="bullet" style="opacity: 0"></span><span>Plugin slot compatibility</span></div>
+										</div>
+									</aside>
+								</div>
+
+								<div class="card-b chatcard">
+									<section class="chat">
+										<div class="chat-head">
+											<span class="title">Recurring task checklist</span>
+											<span>·</span><span>gemini-2.5-pro</span>
+											<span style="margin-left: auto" class="mini">Context 8%</span>
+										</div>
+										<div class="msgs">
+											<div class="msg user">
+												<span class="who">You</span>
+												<div class="body">Try merging the left icon strip and the pane into one container; right now both draw borders and it looks like a sticker.</div>
+											</div>
+											<div class="msg">
+												<span class="who">AI</span>
+												<div class="body">
+													Merged, one outer border plus one inner divider remains; the dock mixes in <code>--bg-sunken</code> for a step of depth and the pane keeps
+													<code>--bg-elev</code> — hierarchy by lightness, not by shadow.
+												</div>
+											</div>
+											<div class="msg">
+												<span class="who">AI</span>
+												<div class="body">
+													<div class="tool">
+														<span class="ok">●</span> edit · web/src/styles.css +38 −12 <span class="ok">✓</span>
+													</div>
+												</div>
+											</div>
+										</div>
+										<div class="composer-wrap">
+											<div class="composer">
+												<div class="ph">Message…</div>
+												<div class="composer-bar">
+													<span class="mini"
+														><svg class="ic" style="width: 12px; height: 12px"><use href="#i-cpu" /></svg
+														>gemini-2.5-pro</span
+													>
+													<span class="spacer"></span>
+													<span class="mini send">Send ↵</span>
+												</div>
+											</div>
+										</div>
+									</section>
+								</div>
+
+								<div class="card-b">
+									<aside class="pane right">
+										<div class="pane-head">
+											<span
+												class="mini"
+												style="background: var(--accent-soft); color: var(--accent-ink); border-color: transparent"
+												>Files</span
+											>
+											<span class="mini">Tools</span>
+										</div>
+										<div class="list">
+											<div class="grp">
+												<svg class="ic"><use href="#i-chev" /></svg>web/src
+											</div>
+											<div class="row"><span>App.tsx</span></div>
+											<div class="row"><span>styles.css</span></div>
+											<div class="grp">
+												<svg class="ic"><use href="#i-chev" /></svg>server
+											</div>
+											<div class="row"><span>plugins.ts</span></div>
+										</div>
+									</aside>
+									<nav class="rail-b right demo-rail">
+										<button class="rb on" data-tip="Files" data-tip-side="left" aria-label="Files">
+											<svg class="ic"><use href="#i-files" /></svg>
+										</button>
+										<button class="rb" data-tip="Tools" aria-label="Tools">
+											<svg class="ic"><use href="#i-gear" /></svg>
+										</button>
+										<button class="rb" data-tip="Images" aria-label="Images">
+											<svg class="ic"><use href="#i-image" /></svg>
+										</button>
+										<div class="grow" style="flex: 1"></div>
+										<button class="rb" data-tip="More" aria-label="More">
+											<svg class="ic"><use href="#i-more" /></svg>
+										</button>
+									</nav>
+								</div>
+							</div>
+							<div class="sb">
+								<span class="dot"></span><span>Ready</span><span>poe</span><span>ctx 8%</span>
+								<span class="spacer"></span><span>gemini-2.5-pro</span>
+							</div>
+						</div>
+					</div>
+
+					<div class="notes">
+						<div class="note">
+							<h4>Structure</h4>
+							<ul>
+								<li><code>.card-b { display:flex; border:1px; radius:13px; overflow:hidden }</code></li>
+								<li>dock background = <code>color-mix(bg-sunken 55%, bg-elev)</code>, one step away from the pane.</li>
+								<li>Mirrored: the right side is "pane + dock" with the same frame, visually symmetric.</li>
+								<li>The conversation area is an <b>independent</b> card with 8px of canvas colour around it, no longer pinched from both sides.</li>
+							</ul>
+						</div>
+						<div class="note trade">
+							<h4>Trade-offs</h4>
+							<p><span class="plus">＋</span> Kills the double frame most thoroughly; hierarchy comes from lightness, not shadow.</p>
+							<p><span class="plus">＋</span> A 13px-radius outer frame makes the window read as one app instead of stitched-together pages.</p>
+							<p><span class="minus">−</span> On <code>.layout</code>, add one more container layer + 8px padding — a bigger surface than A.</p>
+							<p><span class="minus">−</span> Pane and dock borders have to be recomputed (the pane used to carry its own border).</p>
+						</div>
+						<div class="note">
+							<h4>Watch out</h4>
+							<ul>
+								<li>A card with <code>overflow:hidden</code> means popovers inside the pane must go through a portal or they get clipped.</li>
+								<li>The drag resizer moves between cards, not onto the pane.</li>
+								<li>Narrow screens (&lt;900px) degrade to a single card, the dock stays continuous.</li>
+							</ul>
+						</div>
+					</div>
+				</section>
+
+				<!-- ================= C ================= -->
+				<section id="opt-c">
+					<div class="sec-head">
+						<span class="sec-tag">Option C</span>
+						<h2>Wide rail with icons + labels: the column is the navigation</h2>
+					</div>
+					<p class="sec-sub">
+						The shape of the new Slack / Notion / ChatGPT sidebars: icons with labels, one column running top to bottom, a brand block on top, account and status at the bottom.
+						The win: you know what every icon does without hovering, and the grouping (navigation / plugins /
+						system) is expressed by section headings, so no number of plugins gets out of hand. It collapses to a 60px icon-only state.
+					</p>
+
+					<div class="stage">
+						<div class="winbar">
+							<span class="dots"><i></i><i></i><i></i></span>
+							<span class="t">Option C · wide rail (204px expanded)</span>
+							<span class="hint">Click to activate</span>
+						</div>
+						<div class="app">
+							<div class="tb">
+								<div class="tb-l">
+									<span class="brand"><span class="mark">Π</span>pi-web-ui</span>
+									<nav class="tb-tabs demo-btns">
+										<button class="on">Chat</button>
+										<button>Terminal</button>
+										<button>Files</button>
+									</nav>
+								</div>
+								<div class="tb-r">
+									<span class="tb-chip"><i class="dot"></i>poe / Side dock redesign</span>
+									<button class="ibtn" data-tip="Search">
+										<svg class="ic"><use href="#i-search" /></svg>
+									</button>
+									<button class="ibtn" data-tip="Settings">
+										<svg class="ic"><use href="#i-gear" /></svg>
+									</button>
+									<span class="avatar"></span>
+								</div>
+							</div>
+							<div class="shell">
+								<nav class="rail-c demo-rail">
+									<div class="rc-head">
+										<button class="proj" style="flex: 1">
+											<svg class="ic"><use href="#i-files" /></svg>poe<svg
+												class="ic"
+												style="width: 12px; height: 12px; margin-left: auto"
+											>
+												<use href="#i-chev" />
+											</svg>
+										</button>
+									</div>
+									<button class="navitem on">
+										<svg class="ic"><use href="#i-chat" /></svg><span>Chat</span><span class="badge">12</span>
+									</button>
+									<button class="navitem">
+										<svg class="ic"><use href="#i-term" /></svg><span>Terminal</span>
+									</button>
+									<button class="navitem">
+										<svg class="ic"><use href="#i-files" /></svg><span>Files</span>
+									</button>
+									<button class="navitem">
+										<svg class="ic"><use href="#i-canvas" /></svg><span>Canvas</span>
+									</button>
+									<div class="rc-sec">Plugins</div>
+									<button class="navitem">
+										<svg class="ic"><use href="#i-flask" /></svg><span>Playground</span>
+										<span class="badge run">Running</span>
+									</button>
+									<button class="navitem">
+										<svg class="ic"><use href="#i-quill" /></svg><span>Writing</span>
+									</button>
+									<button class="navitem">
+										<svg class="ic"><use href="#i-bot" /></svg><span>Bots</span>
+									</button>
+									<div class="grow"></div>
+									<button class="navitem">
+										<svg class="ic"><use href="#i-gear" /></svg><span>Settings</span>
+									</button>
+									<div class="rc-foot">
+										<span class="avatar" style="width: 26px; height: 26px"></span>
+										<span style="min-width: 0">
+											<span class="nm">This machine · Desktop</span>
+											<span class="st">Connected · 3 devices</span>
+										</span>
+									</div>
+								</nav>
+								<aside class="pane left" style="width: 218px">
+									<div class="pane-head">
+										<button class="proj">
+											<svg class="ic"><use href="#i-files" /></svg>Chat
+										</button>
+										<span style="flex: 1"></span>
+										<button class="ibtn" data-tip="New">
+											<svg class="ic"><use href="#i-plus" /></svg>
+										</button>
+									</div>
+									<div class="search">
+										<svg class="ic" style="width: 14px; height: 14px"><use href="#i-search" /></svg>Filter conversations
+									</div>
+									<div class="list">
+										<div class="grp">Today</div>
+										<div class="row on"><span class="bullet"></span><span>Side dock redesign thread</span></div>
+										<div class="row">
+											<span class="bullet" style="opacity: 0"></span><span>Why we need this</span>
+										</div>
+										<div class="grp">Earlier</div>
+										<div class="row"><span class="bullet"></span><span>Plugin slot compatibility</span></div>
+										<div class="row"><span class="bullet" style="opacity: 0"></span><span>Terminal hang triage</span></div>
+									</div>
+								</aside>
+								<section class="chat">
+									<div class="chat-head">
+										<span class="title">Side dock redesign thread</span>
+										<span>·</span><span>claude-opus-4</span>
+										<span style="margin-left: auto" class="mini">12%</span>
+									</div>
+									<div class="msgs">
+										<div class="msg user">
+											<span class="who">You</span>
+											<div class="body">Icons are just icons; a newcomer has no way to guess. Can they carry labels like Slack?</div>
+										</div>
+										<div class="msg">
+											<span class="who">AI</span>
+											<div class="body">
+												Then promote the navigation to a wide rail: icon + label + badge, grouping via section headings, a separate block for plugins. Collapsed it returns to 60px
+												of icons only, with width driven by the single <code>--rail-w</code> variable.
+											</div>
+										</div>
+									</div>
+									<div class="composer-wrap">
+										<div class="composer">
+											<div class="ph">Message…</div>
+											<div class="composer-bar">
+												<span class="mini"
+													><svg class="ic" style="width: 12px; height: 12px"><use href="#i-cpu" /></svg
+													>claude-opus-4</span
+												>
+												<span class="spacer"></span><span class="mini send">Send ↵</span>
+											</div>
+										</div>
+									</div>
+								</section>
+								<aside class="pane right">
+									<div class="pane-head">
+										<span
+											class="mini"
+											style="background: var(--accent-soft); color: var(--accent-ink); border-color: transparent"
+											>Files</span
+										>
+										<span class="mini">Tools</span>
+									</div>
+									<div class="list">
+										<div class="grp">
+											<svg class="ic"><use href="#i-chev" /></svg>web/src
+										</div>
+										<div class="row"><span>App.tsx</span></div>
+										<div class="row"><span>styles.css</span></div>
+									</div>
+								</aside>
+							</div>
+							<div class="sb">
+								<span class="dot"></span><span>Ready</span><span>poe</span> <span class="spacer"></span
+								><span>claude-opus-4</span>
+							</div>
+						</div>
+					</div>
+
+					<div class="notes">
+						<div class="note">
+							<h4>Structure</h4>
+							<ul>
+								<li>The rail is the navigation: <code>width: 204px</code>, 60px collapsed, one DOM.</li>
+								<li>Sections: navigation / plugins / system, each with a heading; the plugin area grows as things are installed from the market.</li>
+								<li>A fixed account block at the bottom, 4px from the status bar, reading as one line.</li>
+								<li>No tooltip on hover — the labels are always there.</li>
+							</ul>
+						</div>
+						<div class="note trade">
+							<h4>Trade-offs</h4>
+							<p><span class="plus">＋</span> Best readability; no number of installed plugins turns into "a row of icons you cannot read".</p>
+							<p><span class="plus">＋</span> Collapse/expand changes one width, and mobile reuses it for free.</p>
+							<p><span class="minus">−</span> 204 + 218 + 240 = 662px gone; only comfortable on a wide screen.</p>
+							<p><span class="minus">−</span> The hierarchy of the current "narrow rail + pane" has to be redefined (which of rail and pane leads).</p>
+						</div>
+						<div class="note">
+							<h4>Suggested combination</h4>
+							<ul>
+								<li>≥1600px: wide rail expanded (this figure).</li>
+								<li>1200–1600px: auto-collapse to 60px icon-only, labels on hover.</li>
+								<li>&lt;1200px: fall back to the continuous narrow rail of option A.</li>
+							</ul>
+						</div>
+					</div>
+				</section>
+
+				<!-- ================= D ================= -->
+				<section id="opt-d">
+					<div class="sec-head">
+						<span class="sec-tag">Option D</span>
+						<h2>Window frame: the column runs from the very top of the window to the very bottom</h2>
+					</div>
+					<p class="sec-sub">
+						More radical than "continuous below the top bar": the column takes the top-left corner, the brand logo heads it, the top bar starts to its right — producing one
+						unbroken vertical line from the top of the window to the status bar. That is the skeleton of the Linear / Notion desktop apps and the limit of what "running top to bottom" can do.
+					</p>
+
+					<div class="stage">
+						<div class="winbar">
+							<span class="dots"><i></i><i></i><i></i></span>
+							<span class="t">Option D · fully continuous (the column takes the top-left corner)</span>
+							<span class="hint">the logo belongs to the column</span>
+						</div>
+						<div class="app">
+							<div class="shell shell-d" style="flex: 1">
+								<nav class="rail-d demo-rail">
+									<span class="rlogo">Π</span>
+									<button class="rb on" data-tip="Chat" data-tip-side="right" aria-label="Chat">
+										<svg class="ic"><use href="#i-chat" /></svg>
+									</button>
+									<button class="rb" data-tip="Terminal" aria-label="Terminal">
+										<svg class="ic"><use href="#i-term" /></svg>
+									</button>
+									<button class="rb" data-tip="Files" aria-label="Files">
+										<svg class="ic"><use href="#i-files" /></svg>
+									</button>
+									<button class="rb" data-tip="Canvas" aria-label="Canvas">
+										<svg class="ic"><use href="#i-canvas" /></svg>
+									</button>
+									<div class="sep"></div>
+									<button class="rb" data-tip="Playground (plugin)" aria-label="Playground">
+										<svg class="ic"><use href="#i-flask" /></svg>
+									</button>
+									<button class="rb" data-tip="Writing (plugin)" aria-label="Writing">
+										<svg class="ic"><use href="#i-quill" /></svg>
+									</button>
+									<div class="grow"></div>
+									<button class="rb" data-tip="Settings" aria-label="Settings">
+										<svg class="ic"><use href="#i-gear" /></svg>
+									</button>
+									<span class="avatar" style="margin: 2px 0 2px"></span>
+								</nav>
+								<div class="d-col">
+									<div class="d-topgap">
+										<nav class="tb-tabs demo-btns">
+											<button class="on">Chat</button>
+											<button>Terminal</button>
+											<button>Files</button>
+											<button>Canvas</button>
+										</nav>
+										<span class="tb-chip" style="margin-left: 6px"><i class="dot"></i>poe / Side dock redesign</span>
+										<span style="flex: 1"></span>
+										<button class="ibtn" data-tip="Search ⌘K">
+											<svg class="ic"><use href="#i-search" /></svg>
+										</button>
+										<button class="ibtn" data-tip="Notifications">
+											<svg class="ic"><use href="#i-bell" /></svg>
+										</button>
+										<button class="ibtn" data-tip="Settings">
+											<svg class="ic"><use href="#i-gear" /></svg>
+										</button>
+									</div>
+									<div class="shell">
+										<aside class="pane left" style="width: 240px">
+											<div class="pane-head">
+												<button class="proj">
+													<svg class="ic"><use href="#i-files" /></svg>Project<svg
+														class="ic"
+														style="width: 12px; height: 12px"
+													>
+														<use href="#i-chev" />
+													</svg>
+												</button>
+												<span style="flex: 1"></span>
+												<button class="ibtn" data-tip="New">
+													<svg class="ic"><use href="#i-plus" /></svg>
+												</button>
+											</div>
+											<div class="search">
+												<svg class="ic" style="width: 14px; height: 14px"><use href="#i-search" /></svg>Filter conversations
+											</div>
+											<div class="list">
+												<div class="grp">
+													<svg class="ic"><use href="#i-chev" /></svg>poe
+												</div>
+												<div class="row on"><span class="bullet"></span><span>Side dock redesign thread</span></div>
+												<div class="row">
+													<span class="bullet" style="opacity: 0"></span><span>Why we need this</span>
+												</div>
+												<div class="grp">
+													<svg class="ic"><use href="#i-chev" /></svg>pi-web-ui
+												</div>
+												<div class="row"><span class="bullet"></span><span>Plugin slot compatibility</span></div>
+											</div>
+										</aside>
+										<section class="chat">
+											<div class="chat-head">
+												<span class="title">Side dock redesign thread</span>
+												<span>·</span><span>claude-opus-4</span>
+												<span style="margin-left: auto" class="mini">12%</span>
+											</div>
+											<div class="msgs">
+												<div class="msg user">
+													<span class="who">You</span>
+													<div class="body">Can the left column swallow the top bar too? One vertical line from the very top of the window to the very bottom.</div>
+												</div>
+												<div class="msg">
+													<span class="who">AI</span>
+													<div class="body">
+														Yes: split the top bar into a brand block at the head of the column plus a tool strip on the right; the column uses <code>height:100%</code> across
+														<code>.app</code>, and the top bar keeps only the right-hand segment. The vertical line aligns to the bottom on its own.
+													</div>
+												</div>
+											</div>
+											<div class="composer-wrap">
+												<div class="composer">
+													<div class="ph">Message…</div>
+													<div class="composer-bar">
+														<span class="mini"
+															><svg class="ic" style="width: 12px; height: 12px"><use href="#i-cpu" /></svg
+															>claude-opus-4</span
+														>
+														<span class="spacer"></span><span class="mini send">Send ↵</span>
+													</div>
+												</div>
+											</div>
+										</section>
+										<aside class="pane right" style="width: 220px">
+											<div class="pane-head">
+												<span
+													class="mini"
+													style="background: var(--accent-soft); color: var(--accent-ink); border-color: transparent"
+													>Files</span
+												>
+												<span class="mini">Tools</span>
+											</div>
+											<div class="list">
+												<div class="grp">
+													<svg class="ic"><use href="#i-chev" /></svg>web/src
+												</div>
+												<div class="row"><span>App.tsx</span></div>
+												<div class="row"><span>styles.css</span></div>
+											</div>
+										</aside>
+									</div>
+								</div>
+							</div>
+							<div class="sb">
+								<span class="dot"></span><span>Ready</span><span>poe</span> <span class="spacer"></span
+								><span>claude-opus-4</span>
+							</div>
+						</div>
+					</div>
+
+					<div class="notes">
+						<div class="note">
+							<h4>Structure</h4>
+							<ul>
+								<li><code>.app { flex-direction: row }</code>: a 58px left column plus the content column (which itself splits into top bar / body).</li>
+								<li>The logo heads the column and the active bar hugs the window's left edge — the strongest sense of direction.</li>
+								<li>The status bar spans the full width at the very bottom, closing a "П"-shaped frame.</li>
+							</ul>
+						</div>
+						<div class="note trade">
+							<h4>Trade-offs</h4>
+							<p><span class="plus">＋</span> The most thorough continuity: one vertical line all the way down, no break.</p>
+							<p><span class="plus">＋</span> The strongest brand and desktop-app feel.</p>
+							<p><span class="minus">−</span> The top bar has to be split (today it is a full-width direct child of <code>.app</code>).</p>
+							<p><span class="minus">−</span> If the status bar runs through as well it cuts off the bottom of the rail; who overlays whom must be decided.</p>
+						</div>
+						<div class="note">
+							<h4>Optional extras</h4>
+							<ul>
+								<li>The column can auto-reveal: hover an 8px sensing strip at the left edge to slide it out (4px hairline when hidden).</li>
+								<li>Drag the bottom of the column to reorder plugin icons (the existing icon-editor can be reused).</li>
+							</ul>
+						</div>
+					</div>
+				</section>
+
+				<!-- ================= comparison ================= -->
+				<section id="compare">
+					<div class="sec-head">
+						<span class="sec-tag">↔ comparison</span>
+						<h2>The four options side by side</h2>
+					</div>
+					<p class="sec-sub">
+						Benefit / cost are estimated from the real diff in this repo: A touches only <code>.side-dock*</code>, B adds a container, C changes the hierarchy, D splits the top bar.
+					</p>
+					<table class="cmp">
+						<thead>
+							<tr>
+								<th>Dimension</th>
+								<th>A · invisible rail</th>
+								<th>B · one-piece columns</th>
+								<th>C · wide rail</th>
+								<th>D · window frame</th>
+							</tr>
+						</thead>
+						<tbody>
+							<tr class="hl">
+								<th>Continuity top to bottom</th>
+								<td class="yes">Whole column (below the top bar → status bar)</td>
+								<td class="yes">Continuous, mirrored on both sides</td>
+								<td class="yes">Continuous, including the bottom account block</td>
+								<td class="yes">Fully continuous (takes the top-left corner)</td>
+							</tr>
+							<tr>
+								<th>Kills the fragmentation</th>
+								<td class="yes">Strong (the rail itself disappears)</td>
+								<td class="yes">Strongest (one card)</td>
+								<td class="mid">Medium (labels add weight)</td>
+								<td class="yes">Strong</td>
+							</tr>
+							<tr>
+								<th>Horizontal scrollbar risk</th>
+								<td class="yes">None (no container, no overflow)</td>
+								<td class="yes">None (list uses overflow-x: clip)</td>
+								<td class="yes">None</td>
+								<td class="yes">None</td>
+							</tr>
+							<tr>
+								<th>Icon-only readability</th>
+								<td class="mid">hover labels</td>
+								<td class="mid">tooltip</td>
+								<td class="yes">permanent labels</td>
+								<td class="mid">tooltip</td>
+							</tr>
+							<tr>
+								<th>Horizontal space cost</th>
+								<td class="yes">56px</td>
+								<td class="mid">50 + 8×2</td>
+								<td class="no">204px</td>
+								<td class="mid">58px</td>
+							</tr>
+							<tr>
+								<th>Size of the change</th>
+								<td class="yes">Small (~40 lines of CSS)</td>
+								<td class="mid">Medium (container + moving the resizer)</td>
+								<td class="no">Large (navigation hierarchy)</td>
+								<td class="no">Large (splitting the top bar)</td>
+							</tr>
+							<tr>
+								<th>Plugin slot compatibility</th>
+								<td class="yes">Fully compatible</td>
+								<td class="yes">Fully compatible</td>
+								<td class="mid">Needs a new grouping field</td>
+								<td class="yes">Fully compatible</td>
+							</tr>
+							<tr>
+								<th>With existing themes</th>
+								<td class="yes">Tokens only</td>
+								<td class="yes">One extra derived colour</td>
+								<td class="yes">Reused as is</td>
+								<td class="yes">Reused as is</td>
+							</tr>
+						</tbody>
+					</table>
+				</section>
+
+				<!-- ================= spec ================= -->
+				<section id="spec">
+					<div class="sec-head">
+						<span class="sec-tag">→ shipping</span>
+						<h2>Whichever you pick, these 6 changes go together</h2>
+					</div>
+					<p class="sec-sub">Otherwise the fragmentation and the scrollbar come right back, whichever option you pick:</p>
+					<div class="spec-grid">
+						<div class="spec-card">
+							<h3>Change list, by file</h3>
+							<ul>
+								<li>
+									<code>web/src/styles.css</code> · <code>.side-dock</code>: <code>width</code> becomes a fixed
+									<code>var(--rail-w)</code>; delete <code>border / box-shadow / backdrop-filter</code>;
+									<code>height: 100%</code>, drop <code>.side-dock-float</code> from <code>70vh + translateY</code>.
+								</li>
+								<li>
+									<code>.side-dock-seg</code>: next to <code>overflow-y: auto</code> add
+									<code>overflow-x: clip</code>, and do <b>not</b> put the tooltip back in there.
+								</li>
+								<li>
+									<code>web/src/components/BarItem.tsx</code> (1132 lines): replace the hand-drawn <code>data-tip</code> pseudo-element with one shared
+									tooltip layer (singleton <code>position: fixed</code>, 250ms delay, auto-flips left/right).
+								</li>
+								<li>
+									<code>web/src/components/SideDock.tsx</code>: add <code>--rail-w</code> and
+									<code>data-side</code> to the root; keep the three slots but make the visual separation a gap plus an optional 1px line; on overflow, fold into
+									"More" instead of scrolling.
+								</li>
+								<li>
+									<code>web/src/App.tsx:334</code> — the <code>PanelRail</code> (the handle left after collapsing a pane): same width and colour as the rail,
+									not another floating rounded block of its own.
+								</li>
+								<li>
+									Guard: <code>tests/unit/bar-item-unified.test.ts</code> — add a static assertion: "the rail must not contain
+									<code>overflow-x: auto</code>".
+								</li>
+							</ul>
+						</div>
+						<div class="spec-card">
+							<h3>One spec for the tokens</h3>
+							<div class="tokens">
+								<div><span>Column width</span><b>--rail-w: 56px</b></div>
+								<div><span>Button</span><b>36 × 36</b></div>
+								<div><span>Radius</span><b>11px (same family as the 8px top-bar buttons)</b></div>
+								<div><span>Icon</span><b>19px / stroke 1.7</b></div>
+								<div><span>Gap</span><b>3px; between groups 6px + 1px line</b></div>
+								<div><span>Active</span><b>accent-soft + 3px bar + accent-ink</b></div>
+								<div><span>Hit area</span><b>≥ 36px (44 on touch)</b></div>
+								<div><span>tooltip</span><b>fixed singleton / 250ms / flips left-right</b></div>
+							</div>
+						</div>
+					</div>
+					<div class="final">
+						<p>
+							<b>My recommendation: ship A first.</b>It only changes <code>.side-dock*</code> and still buys all three wins at once — continuous top to bottom, no scrollbar,
+							no double frame — and it stays compatible with the three slots and plugins. Once A
+							has run for a week, if the icons still feel too light and not separated enough from the pane, add a container layer to <code>.layout</code> and upgrade to B — B
+							is a structural superset of A, so none of that work is wasted.
+						</p>
+					</div>
+					<div class="spec-card" style="margin-top: 14px">
+						<h3>What shipped (implemented as A)</h3>
+						<ul>
+							<li>
+								<code>web/src/styles.css</code>: <code>.side-dock</code> becomes a 56px continuous column (same background + 1px
+								hairline, no frame/shadow/frosted glass); <code>.side-dock-seg</code> gains <code>overflow-x: clip</code>; three blocks of
+								<code>[data-tip]::after</code> are gone; <code>.rail-tip</code> is new; <code
+									>.side-dock:not(:has(.bar-item))</code
+								>
+								— an empty column takes no space; <code>@media (max-width: 768px)</code> gets 46px / 38px; the pane collapse handle's double offset is gone.
+							</li>
+							<li>
+								<code>web/src/components/SideDock.tsx</code>: the tooltip becomes a singleton
+								<code>fixed</code> layer (<code>useOverlayZIndex</code>, 220ms delay, auto-flips left/right); desktop drops the native
+								<code>title</code> to avoid double hints; touch turns hover hints off.
+							</li>
+							<li>
+								<code>server/client-state.ts</code>: <code>sideDockFloat</code> now defaults to
+								<code>false</code> (the old "floating" mode is a full-height capsule now, no longer a 70vh buoy).
+							</li>
+							<li>
+								<code>tests/unit/side-dock-rail.test.ts</code>: locks in "fixed column width + both axes declared + no pseudo-element tooltip + no
+								70vh + mobile spec".
+							</li>
+						</ul>
+						<div class="code" style="margin-top: 10px">
+							Measured (real server, 1440×900): dock 56×831 (top 49 → bottom 880, continuous) seg scrollWidth 55 = clientWidth 55
+							<span class="ok">← no horizontal overflow</span> seg scrollHeight 154 = clientHeight 154
+							<span class="ok">← no slack to scroll</span> documentElement.scrollWidth 1440 = clientWidth 1440 mobile
+							390×844: dock 46×777, seg 45 = 45
+						</div>
+					</div>
+				</section>
+			</main>
+		</div>
+
+		<div class="tip" id="tip" role="tooltip"></div>
+
+		<script>
+			/* ---------- Theme ---------- */
+			const root = document.documentElement;
+			const themeBtn = document.getElementById("themeBtn");
+			const themeLabel = document.getElementById("themeLabel");
+			themeBtn.addEventListener("click", () => {
+				const next = root.dataset.theme === "dark" ? "light" : "dark";
+				root.dataset.theme = next;
+				themeLabel.textContent = next === "dark" ? "Switch to light" : "Switch to dark";
+			});
+
+			/* ---------- Singleton tooltip (demo: "tooltip escapes the scroll container") ---------- */
+			const tip = document.getElementById("tip");
+			let tipTimer = 0;
+			function place(el) {
+				const txt = el.getAttribute("data-tip");
+				if (!txt) return;
+				tip.textContent = txt;
+				tip.classList.add("on");
+				tip.style.visibility = "hidden";
+				const r = el.getBoundingClientRect();
+				const tw = tip.offsetWidth;
+				const th = tip.offsetHeight;
+				const side = el.dataset.tipSide === "left" ? "left" : "right";
+				let x = side === "right" ? r.right + 8 : r.left - tw - 8;
+				let y = r.top + r.height / 2 - th / 2;
+				x = Math.min(Math.max(8, x), window.innerWidth - tw - 8);
+				y = Math.min(Math.max(8, y), window.innerHeight - th - 8);
+				tip.style.transform = "translate(" + x + "px," + y + "px)";
+				tip.style.visibility = "";
+			}
+			document.addEventListener("mouseover", (e) => {
+				const el = e.target.closest && e.target.closest("[data-tip]");
+				if (!el) return;
+				clearTimeout(tipTimer);
+				tipTimer = setTimeout(() => place(el), 260);
+			});
+			document.addEventListener("mouseout", (e) => {
+				const el = e.target.closest && e.target.closest("[data-tip]");
+				if (!el) return;
+				clearTimeout(tipTimer);
+				tip.classList.remove("on");
+			});
+			document.addEventListener("focusin", (e) => {
+				const el = e.target.closest && e.target.closest("[data-tip]");
+				if (el) place(el);
+			});
+			document.addEventListener("focusout", () => tip.classList.remove("on"));
+			window.addEventListener("scroll", () => tip.classList.remove("on"), { passive: true });
+
+			/* ---------- demo: rail switches the active item ---------- */
+			document.querySelectorAll(".demo-rail").forEach((rail) => {
+				rail.addEventListener("click", (e) => {
+					const b = e.target.closest(".rb, .navitem");
+					if (!b || !rail.contains(b)) return;
+					rail.querySelectorAll(".rb, .navitem").forEach((x) => x.classList.remove("on"));
+					b.classList.add("on");
+				});
+			});
+			document.querySelectorAll(".demo-btns").forEach((nav) => {
+				nav.addEventListener("click", (e) => {
+					const b = e.target.closest("button");
+					if (!b) return;
+					nav.querySelectorAll("button").forEach((x) => x.classList.remove("on"));
+					b.classList.add("on");
+				});
+			});
+
+			/* ---------- Scroll highlight ---------- */
+			const links = [...document.querySelectorAll(".snav a")];
+			const secs = links.map((a) => document.querySelector(a.getAttribute("href"))).filter(Boolean);
+			const io = new IntersectionObserver(
+				(entries) => {
+					entries.forEach((en) => {
+						if (!en.isIntersecting) return;
+						links.forEach((a) => a.classList.toggle("on", a.getAttribute("href") === "#" + en.target.id));
+					});
+				},
+				{ rootMargin: "-12% 0px -70% 0px" },
+			);
+			secs.forEach((s) => io.observe(s));
+		</script>
+	</body>
+</html>
+
+
+
