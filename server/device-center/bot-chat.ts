@@ -1,3 +1,5 @@
+import { closeSync, openSync, readSync, readdirSync, statSync } from "node:fs";
+import { join, resolve } from "node:path";
 import { buildBotMemoryInjection, botMemoryRoot, createBotMemory } from "./bot-memory.js";
 import { registerBotExecution, type BotExecutionCapability } from "./bot-execution.js";
 import type { LocalBot } from "./bots.js";
@@ -64,6 +66,128 @@ export async function resolveBotChatBot(botId: string): Promise<LocalBot | undef
 	} catch {
 		return undefined;
 	}
+}
+
+/**
+ * 一个 Bot 的私聊转录目录（单源）：`<agentDir>/bot-sessions/<botId>`。
+ *
+ * 与普通会话历史分开是有意的：私聊不是「某个项目的对话」，它属于这个 Bot；
+ * 但它也就是普通会话文件，所以「回到同一个私聊」= 在这里按 mtime 找最近一份并重新打开。
+ */
+export function botChatSessionDir(agentDir: string, botId: string): string {
+	return join(agentDir, "bot-sessions", botId);
+}
+
+/** 私聊会话文件头里能读到的绑定判定窗口（header + 几条 custom 条目就够）。 */
+const BOT_CHAT_HEAD_BYTES = 8192;
+
+/** 两路径同不同（只用于「转录记的 cwd 是不是 Bot 的固定 cwd」，大小写在 win32 无意义）。 */
+function sameCwd(a: unknown, b: string): boolean {
+	if (typeof a !== "string" || !a) return false;
+	try {
+		const left = resolve(a);
+		const right = resolve(b);
+		return process.platform === "win32" ? left.toLowerCase() === right.toLowerCase() : left === right;
+	} catch {
+		return false;
+	}
+}
+
+/**
+ * 这份转录是不是「这个 Bot 的私聊」：带 `webui/bot-chat`、botId 对得上，且 cwd 就是 Bot 现在的 cwd。
+ *
+ * cwd 这一条不是冗余：Bot 被改过工作目录后，旧转录里记的还是旧目录，重开上去会撞
+ * `Bot cwd is fixed` 的断言，不如不认它（改成新开一条）。
+ */
+function isBotChatTranscriptOf(path: string, botId: string, expectedCwd?: string): boolean {
+	let fd: number | undefined;
+	try {
+		fd = openSync(path, "r");
+		const buffer = Buffer.allocUnsafe(BOT_CHAT_HEAD_BYTES);
+		const read = readSync(fd, buffer, 0, BOT_CHAT_HEAD_BYTES, 0);
+		const head = buffer.subarray(0, read).toString("utf8");
+		if (!head.includes(`"${BOT_CHAT_ENTRY}"`)) return false;
+		if (!head.includes(`"botId":"${botId}"`)) return false;
+		if (!expectedCwd) return true;
+		const header = head.split("\n")[0] ?? "";
+		const match = /"cwd":"((?:[^"\\]|\\.)*)"/.exec(header);
+		if (!match) return false;
+		let recorded = match[1];
+		try {
+			recorded = JSON.parse(`"${recorded}"`) as string;
+		} catch {
+			return false;
+		}
+		return sameCwd(recorded, expectedCwd);
+	} catch {
+		return false;
+	} finally {
+		if (fd !== undefined) {
+			try {
+				closeSync(fd);
+			} catch {}
+		}
+	}
+}
+
+/**
+ * 这个 Bot 最近一次的私聊转录（没有就返回 undefined）。
+ *
+ * 「最近一次」按文件 mtime：续聊会继续写同一份文件，所以 mtime 天然跟着使用顺序走。
+ * 只认带 `webui/bot-chat`、botId 对得上、且 cwd 还没变的文件——同目录里绝不该有别的转录，
+ * 真出现了（或 Bot 改过工作目录）也不许冒充。
+ */
+export function latestBotChatTranscript(agentDir: string, botId: string, expectedCwd?: string): string | undefined {
+	const dir = botChatSessionDir(agentDir, botId);
+	let names: string[];
+	try {
+		names = readdirSync(dir);
+	} catch {
+		return undefined;
+	}
+	const candidates: Array<{ path: string; mtime: number }> = [];
+	for (const name of names) {
+		if (!name.endsWith(".jsonl")) continue;
+		const path = join(dir, name);
+		try {
+			candidates.push({ path, mtime: statSync(path).mtimeMs });
+		} catch {}
+	}
+	candidates.sort((a, b) => b.mtime - a.mtime);
+	for (const candidate of candidates) {
+		if (isBotChatTranscriptOf(candidate.path, botId, expectedCwd)) return candidate.path;
+	}
+	return undefined;
+}
+
+export interface BotChatConversationRef {
+	id: string;
+	botId?: string;
+	isSubagent?: boolean;
+	isEphemeral?: boolean;
+	nativeCli?: unknown;
+	transferring?: boolean;
+	lastActiveAt?: number;
+}
+
+/**
+ * 这个 Bot 已经开着的私聊会话（优先当前活跃的，其次最近用过的）。
+ *
+ * 点左栏的 Bot 行 = 「回到**同一个**私聊」：内存里已经有就切过去，不再新建一条。
+ */
+export function pickBotChatConversation<T extends BotChatConversationRef>(
+	conversations: readonly T[],
+	botId: string,
+	activeId?: string,
+): T | undefined {
+	let best: T | undefined;
+	for (const conv of conversations) {
+		if (conv.botId !== botId) continue;
+		if (conv.isSubagent || conv.isEphemeral || conv.nativeCli || conv.transferring) continue;
+		if (conv.id === activeId) return conv;
+		if (!best || (conv.lastActiveAt ?? 0) > (best.lastActiveAt ?? 0)) best = conv;
+	}
+	return best;
 }
 
 /**

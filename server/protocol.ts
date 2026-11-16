@@ -1414,7 +1414,22 @@ export type ClientMessage =
 			/** 私聊：把会话绑定到本机这个 Bot（普通对话 + Bot 身份；群聊仍走房间与 @ 路由）。 */
 			botId?: string;
 	  }
-	| { type: "new_cli_chat"; config: NativeCliConfig; cwd?: string; requestId?: string }
+	| {
+			type: "new_cli_chat";
+			config: NativeCliConfig;
+			cwd?: string;
+			requestId?: string;
+	  }
+	| {
+			/**
+			 * 私聊入口（左栏「智能体」点一行）：默认回到这个 Bot 的**同一个**对话。
+			 * 默认依次找到内存里开着的私聊 → 磁盘上它最近一次的转录 → 都没有才新建；
+			 * `fresh: true` = 开一条新的（用户按住想要「清空对话」），旧转录保留。
+			 */
+			type: "open_bot_chat";
+			botId: string;
+			fresh?: boolean;
+	  }
 	| { type: "open_shared_conversation"; owner: string; id: string; readOnly?: boolean }
 	| { type: "delete_message"; messageId: string; conversationId?: string }
 	| {

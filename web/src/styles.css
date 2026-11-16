@@ -5560,6 +5560,8 @@
 		padding: 0;
 		border: 0;
 		margin: 0;
+		/* 只剩一个抽屉：不能留一块空卡片背景（左栏弹窗时它就楺在页面上）。 */
+		background: transparent;
 	}
 	.dc-bots.is-create-only > .dg-heading,
 	.dc-bots.is-create-only > p,

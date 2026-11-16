@@ -685,6 +685,10 @@ export function handleSessionLifecycleMessage(
 			);
 			return true;
 		}
+		// 私聊入口：可能切会话/工作区，同样入队列（顺序与 new_chat 一致）。
+		case "open_bot_chat":
+			void runWorkspaceCommand(cs, () => cs.openBotChat?.(msg.botId, { fresh: msg.fresh }));
+			return true;
 		case "delete_message":
 			if (cs.deleteMessage) void cs.deleteMessage(msg.messageId, msg.conversationId);
 			else

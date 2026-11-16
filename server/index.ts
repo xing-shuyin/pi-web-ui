@@ -18,6 +18,7 @@
  */
 import { botExecutionMessageAllowed } from "./device-center/bot-execution.js";
 import { createBotDraftStore, normalizeBotDraft } from "./device-center/bot-drafts.js";
+import { createBotDraftRunner } from "./bot-draft-runner.js";
 import { setAgentBotHost } from "./device-center/bot-creation-tool.js";
 import { setBotChatHost } from "./device-center/bot-chat.js";
 import { startBotMemoryMaintenance } from "./device-center/bot-memory-scheduler.js";
@@ -1009,6 +1010,15 @@ const deviceCenter = await installLocalDeviceCenter({
 	dataDir: DATA_DIR,
 	bots: deviceBots,
 	botDrafts: deviceBotDrafts,
+	// 一句话建 Bot：一次模型调用产出草案，创建仍由人在面板上确认。
+	draftBotFromRequest: createBotDraftRunner({
+		agentDir: getAgentDir(),
+		cwd: process.env.PI_WEB_CWD ? process.env.PI_WEB_CWD : process.cwd(),
+		allowedTools: new Set(
+			ALL_AGENT_TOOL_ENTRIES.map((tool) => tool.name).filter((name) => isToolSupportedOnPlatform(name)),
+		),
+		create: (input, createdBy) => deviceBotDrafts.create(input, createdBy),
+	}),
 	allowHosts: ALLOW_HOSTS,
 	lanAccess: deviceLanAccess,
 	botCatalog: {
@@ -1409,6 +1419,8 @@ export interface DispatchSession {
 		independent?: boolean,
 		botId?: string,
 	): Promise<boolean | void>;
+	/** 打开某个 Bot 的私聊：默认回到同一个对话，`fresh` 才新开一条（见 device-center/bot-chat.ts）。 */
+	openBotChat?(botId: string, opts?: { fresh?: boolean }): Promise<boolean>;
 	newCliChat?(config: NativeCliConfig, cwd?: string, onReady?: (id: string) => void): Promise<boolean>;
 	controlNativeCli?(conversationId: string, terminalId: string, action: "detach" | "reconnect" | "stop"): Promise<void>;
 	getNativeCliConversation?(conversationId?: string): import("./protocol.js").NativeCliConversation | undefined;

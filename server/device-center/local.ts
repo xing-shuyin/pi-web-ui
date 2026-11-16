@@ -68,6 +68,11 @@ interface Options {
 	connect(config: LocalDeviceConfig, syncBots: () => Promise<void>): Connection | Promise<Connection>;
 	bots?: LocalBotRegistry;
 	botDrafts?: BotDraftStore;
+	/**
+	 * 「一句话建 Bot」的服务端执行者：跑一次模型调用产出草案（不占会话）。
+	 * 由宿主注入（需要 agentDir / 工具白名单 / 模型），设备中心本身不碰模型。
+	 */
+	draftBotFromRequest?: (request: string, signal?: AbortSignal) => Promise<BotDraft>;
 	botCatalog?: BotCatalogSources;
 	allowHosts?: readonly string[];
 	lanAccess?: DeviceLanAccess;
@@ -208,6 +213,7 @@ export async function installLocalDeviceCenter(options: Options) {
 	const file = join(options.dataDir, "device-center.json");
 	const bots = options.bots ?? (await createLocalBotRegistry(options.dataDir));
 	const botDrafts = options.botDrafts;
+	const draftBotFromRequest = options.draftBotFromRequest;
 	let config: LocalDeviceConfig | undefined;
 	let connection: Connection | undefined;
 	let localHub: Awaited<ReturnType<typeof createLocalDeviceHub>> | undefined;
@@ -1236,6 +1242,23 @@ export async function installLocalDeviceCenter(options: Options) {
 				},
 			);
 		});
+		// 一句话建 Bot：AI 只产出草案，创建仍走 approve（人按一次确认）。
+		if (draftBotFromRequest)
+			options.app.post("/api/device-center/bot-drafts", (req: Request, res: Response) => {
+				const request =
+					typeof (req.body as { request?: unknown } | undefined)?.request === "string"
+						? ((req.body as { request: string }).request as string)
+						: "";
+				const controller = new AbortController();
+				res.once("close", () => controller.abort());
+				void draftBotFromRequest(request, controller.signal).then(
+					(draft) => res.json({ draft }),
+					(error) => {
+						const failure = draftFailure(error);
+						if (!res.headersSent) res.status(failure.status).json({ code: failure.code, error: failure.message });
+					},
+				);
+			});
 		options.app.post("/api/device-center/bot-drafts/:id/discard", (req: Request, res: Response) => {
 			void botDrafts.discard(String(req.params.id)).then(
 				() => res.json({ discarded: true }),

@@ -153,7 +153,15 @@ import { SandboxManager, evaluateSandboxJail, isSameOrSubpath, withSandboxJailGa
 import { readPermissionFromSession } from "./permission-preset.js";
 import { McpBridge, getMcpToolServer } from "./mcp-bridge.js";
 import { getBotExecution, type BotExecutionCapability } from "./device-center/bot-execution.js";
-import { BOT_CHAT_ENTRY, createBotChatCapability, readBotChatBinding } from "./device-center/bot-chat.js";
+import {
+	BOT_CHAT_ENTRY,
+	botChatSessionDir,
+	createBotChatCapability,
+	latestBotChatTranscript,
+	pickBotChatConversation,
+	readBotChatBinding,
+	resolveBotChatBot,
+} from "./device-center/bot-chat.js";
 import { checkGroupTaskPlanGuard } from "./device-center/group-plan-guard.js";
 import { prepareBotExecutionSystemPrompt } from "./device-center/execution-system-prompt.js";
 import {
@@ -12136,6 +12144,46 @@ export class ClientSession {
 		await this.pushSessionsForCwd(cwd);
 	}
 
+	/**
+	 * 打开某个 Bot 的私聊（左栏「智能体」点一行 = 这个方法，**不是**「新建对话」）。
+	 *
+	 * 默认语义是「回到**同一个**对话」，依次尝试：
+	 * 1. 内存里已经开着的它的私聊 → 切过去（当前就在这条上就什么都不做）；
+	 * 2. 磁盘上它最近一次的私聊转录（`bot-sessions/<botId>`）→ 重新打开，绑定由 `webui/bot-chat` 条目重建；
+	 * 3. 都没有 → 建一条新的（`newChat(botId)` 那条路）。
+	 *
+	 * `fresh: true` 才是「清空当前、开一条新的」：跳过 1、2 直接新建；旧转录留在磁盘上，不删。
+	 */
+	async openBotChat(botId: string, opts?: { fresh?: boolean }): Promise<boolean> {
+		if (this.quiesceBlocked()) return false;
+		const bot = await resolveBotChatBot(botId);
+		if (!bot) {
+			this.emit({
+				type: "notice",
+				level: "error",
+				text: "这个智能体已不可用（被删除或停用），请到设备中心确认后再试。",
+				textEn: "This agent is unavailable (deleted or disabled). Check the device center and retry.",
+			});
+			return false;
+		}
+		if (opts?.fresh !== true) {
+			const open = pickBotChatConversation([...this.convs.values()], bot.id, this.activeId);
+			if (open) {
+				if (open.id === this.activeId) {
+					this.pushSettings();
+					this.flushSnapshot();
+				} else await this.switchConversation(open.id);
+				return true;
+			}
+			const latest = latestBotChatTranscript(this.agentDir, bot.id, bot.cwd);
+			if (latest) {
+				await this.switchSession(latest);
+				return true;
+			}
+		}
+		return this.newChat(undefined, false, undefined, true, bot.id);
+	}
+
 	async newChat(
 		_preset?: string,
 		ephemeral?: boolean,
@@ -12238,8 +12286,8 @@ export class ClientSession {
 					(sessionManager as unknown as { sessionDir: string }).sessionDir = ephemeralDir;
 				} catch {}
 			} else if (botChat) {
-				// Bot 私聊的转录落在 bot 自己的目录里：与普通会话历史分开，重开时按 bot 找回。
-				sessionManager = SessionManager.create(sessionBaseDir, join(this.agentDir, "bot-sessions", botChat.bot.id));
+				// Bot 私聊的转录落在 bot 自己的目录里：与普通会话历史分开，下次点这个 Bot 就回到这一份。
+				sessionManager = SessionManager.create(sessionBaseDir, botChatSessionDir(this.agentDir, botChat.bot.id));
 			} else {
 				sessionManager = SessionManager.create(sessionBaseDir);
 			}

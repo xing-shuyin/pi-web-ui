@@ -62,7 +62,7 @@ afterEach(() => {
 });
 
 describe("智能体区 Bot 行右键菜单", () => {
-	it("右键打开 contextmenu.bot，条目覆盖私聊/引用/编辑/管理/记忆/复制", async () => {
+	it("右键打开 contextmenu.bot，条目覆盖私聊/新开对话/引用/编辑/管理/记忆/复制", async () => {
 		const row = await render();
 		// 右键点在整行容器上（行本身是按钮，容器负责接管 contextmenu）。
 		await act(async () => {
@@ -75,6 +75,8 @@ describe("智能体区 Bot 行右键菜单", () => {
 		expect(menu?.target).toMatchObject({ id: bot.id, kind: "agent-bot", label: bot.name });
 		expect(menu?.entries.map((entry) => entry.action)).toEqual([
 			"chat",
+			// 默认点行 = 回到同一个私聊；「新开对话」才是另起一条（fresh）。
+			"new-chat",
 			"reference",
 			"edit",
 			"manage",

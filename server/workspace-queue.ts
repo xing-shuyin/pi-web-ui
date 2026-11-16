@@ -2,7 +2,7 @@
  * 工作区命令队列（唯一单源）。
  *
  * 「工作区绑定」类命令都在改同一组可变状态：`cs.cwd`、活动对话、runtime 绑定 ——
- * `set_cwd` / `new_chat` / `new_cli_chat` / `switch_session` / `switch_conversation` /
+ * `set_cwd` / `new_chat` / `new_cli_chat` / `open_bot_chat` / `switch_session` / `switch_conversation` /
  * `fork_session` / `rollback_session` / `make_dir(setAsCwd)` / 沙盒切换。
  *
  * 每个方法内部都是异步重活（stat 目标目录、恢复最近会话、挂载 runtime、复制沙盒），而 ws 消息是一条

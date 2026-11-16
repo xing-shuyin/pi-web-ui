@@ -60,13 +60,13 @@
 | --------- | ----------------------------------------------------- | --------------------------------------- |
 | 会话      | **普通 `conversation`**，与主对话同构                 | `conversation`，属于某个 room           |
 | 绑定      | `Conversation.bot`（会话级 `BotExecutionCapability`） | 无；由 room 成员 + `@名字(id)` 决定目标 |
-| 建会话    | `new_chat { botId }`                                  | `POST /api/rooms/:id/messages`          |
+| 建会话    | `open_bot_chat { botId }`（默认回到同一个私聊）        | `POST /api/rooms/:id/messages`          |
 | 执行身份  | 该 Bot 的系统提示 / 工具白名单 / 模型 / 记忆          | 任务 → 目标设备执行（任务卡回执）       |
 | 转录位置  | `<agentDir>/bot-sessions/<botId>/`                    | Hub 会话（`hub-conversations`）         |
 | 持久化    | 会话条目 `webui/bot-chat { botId, revision, name }`   | room 成员关系                           |
 | 房间/任务 | **没有**                                              | 有                                      |
 
-失配语义：Bot 被删除/停用时 `new_chat { botId }` 直接失败并给提示；重开旧会话时读 `webui/bot-chat`
+失配语义：Bot 被删除/停用时 `open_bot_chat { botId }` 直接失败并给提示；重开旧会话时读 `webui/bot-chat`
 重新解析当前配置，Bot 不存在就降级成普通对话（不会留下半个 Bot 会话）。
 
 ### 3.2 术语
@@ -156,11 +156,32 @@ interface BotQueueState {
 
 ## 5. 三种使用面
 
+### 5.0 新建与导入的入口（单源）
+
+| 动作                  | 入口                                                          | 落点                                                                                                                                                                              |
+| --------------------- | ------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 新建（AI 起草，默认） | 左栏「智能体」标题右侧 **＋** → 一句话 + 「让 AI 起草」       | `POST /api/device-center/bot-drafts { request }` → `server/bot-draft-runner.ts`：一次模型调用产出**草案**，出现在「待确认的新智能体」里，人按「创建」才真的建（高权限工具要手点） |
+| 新建（手动）          | 同一对话框的「手动填写」，或设备中心 Bot 管理页的「新建 Bot」 | `web/src/bot-create.ts` 的 `requestBotCreate()` → 本视图弹 `BotCreateDialog`（复用设备中心同一个 `LocalBots` 编辑器，不跳视图），建完直接进私聊；设备中心页仍自带「新建 Bot」 |
+| 导入迁移包            | **设备中心 → 本机 Bot → 导入 Bot**                            | `web/src/bot-import.ts` → `POST /api/device-center/bot-import`（左栏不再挂导入）                                                                                                  |
+
+为什么要两条创建路径：AI 起草负责"从一句话到可用身份"，但模型可能给出不合适的工具/提示词，
+或者模型不可用；手动填写永远是兜底，且**两者产出的都是草案**，创建永远要人确认。
+
+起草器的边界：模型只填 `name/description/systemPrompt/tools/skills/mcpServers/rationale`，
+**`cwd` 由宿主盖章**（`options.cwd`，模型不知道设备路径，也不允许它猜）；工具只能取宿主给的允许列表，
+`normalizeBotDraft(...)` 二次校验，越权/未知工具直接 400。
+
 ### 5.1 私聊（G1）
 
-- **建立**：左栏「智能体」点一行 → `web/src/bot-chat.ts` 的 `openBotChat(botId)` → `new_chat { botId }`。
-  服务端建一条**普通会话**（`SessionManager.create(..., <agentDir>/bot-sessions/<botId>)`），
-  把 `BotExecutionCapability` 挂到这条会话上（`Conversation.bot`），并在转录里写 `webui/bot-chat` 条目。
+- **建立**：左栏「智能体」点一行 → `web/src/bot-chat.ts` 的 `openBotChat(botId)` → `open_bot_chat { botId }`。
+  服务端行为是**幂等的「回到同一个私聊」**（`ClientSession.openBotChat`）：
+  1. 内存里已经开着这个 Bot 的私聊 → 切过去（当前就在那一条就什么都不做）；
+  2. 否则在这个 Bot 的转录目录（`SessionManager.create(..., <agentDir>/bot-sessions/<botId>)`）里
+     取 `webui/bot-chat` 条目里 botId 对得上的**最新**一份 → 重新打开（`switchSession`，绑定由条目重建）；
+  3. 都没有才建一条新的（`newChat(botId)`：普通会话 + `BotExecutionCapability` 挂在 `Conversation.bot` 上）。
+  右键菜单的「新开对话」才传 `fresh: true`：跳过 1/2 直接另起一条，**旧转录留在磁盘上不删**。
+  单源：`server/device-center/bot-chat.ts` 的 `latestBotChatTranscript` / `pickBotChatConversation`，
+  派发走工作区队列（`open_bot_chat` 与 `new_chat` 同一 FIFO，守卫：`workspace-queue`）。
 - **跑链路**：与主对话**完全一致** —— `prompt` → 模型流式 → 工具（按 Bot 白名单过滤）→ 分支/压缩/停止/附件/终端，
   没有任何 room / task / lease / 评审环节；`@` 也不参与（私聊没有第二个参与者）。
 - **身份来源**：`registerBotExecution(bot, …, { primary: true, executionMode: "chat", memoryRoot, memoryBlock })`
@@ -168,9 +189,10 @@ interface BotQueueState {
 - **UI 落点**：
   - 左栏「智能体」区每个 Bot 一行；当前会话就是它的私聊时 `activeBotId` 高亮（`UiState.bot` → `App.tsx` → `LeftPanel` → `AgentBotsSection`）。
   - 点开就是普通对话视图（不套 `GroupConversation`），群能力条 / 成员 / 路由 / 转群一律不出现。
-  - **行右键菜单**（槽位 `contextmenu.bot`，`web/src/components/AgentBotsSection.tsx`）：打开私聊 / **引用到对话** / 编辑 Bot / 设备中心管理 / 记忆 / 复制 Bot ID。菜单只做跳转与轻量动作，不复制一份 Bot 编辑器：编辑走 `web/src/bot-edit.ts`（`requestBotEdit` → 切设备中心 + `LocalBots` 消费 pending 打开该 Bot）；引用走 `web/src/bot-reference.ts`，由 `ChatInput` 落地——主对话是普通 `@名字` 文本，群组房间必须登记成员引用范围（发送时序列化成 `@名字(id)`，否则不会被派给那个 Bot）。
+  - **行右键菜单**（槽位 `contextmenu.bot`，`web/src/components/AgentBotsSection.tsx`）：打开私聊 / **新开对话**（`fresh`，默认点行是同一个私聊） / **引用到对话** / 编辑 Bot / 设备中心管理 / 记忆 / 复制 Bot ID。菜单只做跳转与轻量动作，不复制一份 Bot 编辑器：编辑走 `web/src/bot-edit.ts`（`requestBotEdit` → 切设备中心 + `LocalBots` 消费 pending 打开该 Bot）；引用走 `web/src/bot-reference.ts`，由 `ChatInput` 落地——主对话是普通 `@名字` 文本，群组房间必须登记成员引用范围（发送时序列化成 `@名字(id)`，否则不会被派给那个 Bot）。
   - **行归属必须走 `server/conversation-rows.ts` 的 `rowKind` + `web/src/session-identity.ts`**，禁止组件内自造临时键（守卫：`session-identity`、`conversation-row-declared`）。
-- **历史**：私聊会话就是普通会话，天然出现在历史里；重开/重启后由 `webui/bot-chat` 条目重新解析 Bot 配置
+- **历史**：私聊转录落在 `bot-sessions/<botId>/`，**不进**工作区历史列表（私聊属于 Bot 而不是某个项目）；
+  重开/重启后靠 `open_bot_chat` 回到这个 Bot 最近一份转录，绑定由 `webui/bot-chat` 条目重新解析
   （Bot 没了就降级成普通对话并给提示，不会报 "Conversation unavailable"）。
 - **数据源（全本地）**：`GET /api/device-center/bot-panel`（`server/device-center/local.ts`）只返回本机 `bots` + `drafts`，
   不再有 `rooms`；房间类路由只有群组（`rooms/*`、`work-items*`）转发到本机引擎 `roomConfig()`，`devices*` 仍走远端配对。
@@ -439,7 +461,7 @@ type Priority = 0 | 1 | 2; // 0 人私聊 / 1 群内 @ / 2 定时与广播
 
 | 位置                           | 改动                                                                              |
 | ------------------------------ | --------------------------------------------------------------------------------- |
-| 左栏（`LeftPanel.tsx`）        | "智能体"区：Bot 行（头像/名字/忙闲）；点开 = `new_chat { botId }`，当前私聊行高亮 |
+| 左栏（`LeftPanel.tsx`）        | "智能体"区：Bot 行（头像/名字/忙闲）；点开 = `open_bot_chat { botId }`（回到同一个私聊），右键「新开对话」才 `fresh`；当前私聊行高亮 |
 | 私聊视图                       | **普通对话视图**（与主对话同构），不套 `GroupConversation`；无成员/黑板/路由/画布 |
 | Bot 详情页                     | 四段：身份（含 AI 草稿与变更历史）、工作目录、记忆、工具与模型                    |
 | 记忆页                         | 条目列表 + 来源 + 命中次数 + 删除 + 导出 + `REPORT.md` 摘要                       |
@@ -452,7 +474,7 @@ type Priority = 0 | 1 | 2; // 0 人私聊 / 1 群内 @ / 2 定时与广播
 
 | 阶段                                      | 范围                 | 主要改动                                                                                                                                           | 验收                                                                                    |
 | ----------------------------------------- | -------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------- |
-| **P0 私聊**（已按新模型重做）             | G1                   | `bot-chat.ts`（会话级能力 + `webui/bot-chat` 条目）；`agent-service` 的 `Conversation.bot` / `botOf()`；`new_chat { botId }`；左栏智能体区点击入口 | 点 Bot 行即可对话；流式/停止/历史/分支/压缩/附件/终端全部可用；私聊里没有房间/任务/成员 |
+| **P0 私聊**（已按新模型重做）             | G1                   | `bot-chat.ts`（会话级能力 + `webui/bot-chat` 条目）；`agent-service` 的 `Conversation.bot` / `botOf()` / `openBotChat()`；`open_bot_chat { botId, fresh? }`；左栏智能体区点击入口 | 点 Bot 行即可对话；流式/停止/历史/分支/压缩/附件/终端全部可用；私聊里没有房间/任务/成员 |
 | **P1 派活 + 记忆骨架**（已完成）          | G2 + G5（一半）      | 每 Bot 队列（§8.1，`bot-queue.ts`）；任务直发直聊线程；记忆目录与索引；`memory` 工具；三层注入预算                                                 | 私聊里能派任务并看到排队提示；注入字节 ≤4KB 有单测                                      |
 | **P2 一句话创建 + 整理 + 投递**（已完成） | G3 + G4 + G5（剩余） | `BotDraft` 草案 + 确认卡；首轮自举；`promote/forget`；`share` 原语；记忆日常维护与 UI；身份台账                                                    | 一句话生成可用的 Bot；AI 改不了高权限工具；收敛后 `REPORT.md` 正常；投递幂等            |
 
@@ -488,7 +510,7 @@ type Priority = 0 | 1 | 2; // 0 人私聊 / 1 群内 @ / 2 定时与广播
 
 | 风险                                        | 影响     | 缓解                                                                                                                         |
 | ------------------------------------------- | -------- | ---------------------------------------------------------------------------------------------------------------------------- |
-| 有人把"私聊"重新做成房间/任务（旧实现腐化） | 抽象腐化 | 私聊入口只有一个（`new_chat { botId }`）；`direct-rooms.ts` 只剩载入清理 + 写入校验；`bot-chat-binding.test.ts` 守会话级绑定 |
+| 有人把"私聊"重新做成房间/任务（旧实现腐化） | 抽象腐化 | 私聊入口只有一个（`open_bot_chat { botId }`）；`direct-rooms.ts` 只剩载入清理 + 写入校验；`bot-chat-binding.test.ts` 守会话级绑定 |
 | 记忆规则过严，Bot 变得"失忆"                | 体验差   | 预算可配（`memoryBudget`），先按 4KB 上线再调                                                                                |
 | AI 起草的身份带越权倾向                     | 安全     | 高权限必须人工勾 + 服务端二次校验                                                                                            |
 | 每 Bot 独立会话推高成本                     | 费用     | 默认 `on_demand` + 空闲自动归档线程                                                                                          |
@@ -510,7 +532,7 @@ type Priority = 0 | 1 | 2; // 0 人私聊 / 1 群内 @ / 2 定时与广播
 
 | 能力                                                          | 事实源                                                                                                                                                                                                                                                                                      | 守卫                                                                                                                     |
 | ------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------ |
-| 私聊 = 普通对话 + Bot 绑定                                    | `server/device-center/bot-chat.ts` ★（`BOT_CHAT_ENTRY` / `readBotChatBinding` / `createBotChatCapability`）· `server/agent-service.ts` ★（`Conversation.bot` + `botOf()` + `newChat(botId)`）· `server/protocol.ts`（`new_chat.botId`、`UiState.bot`、`ConversationSummary.botId/botName`） | `tests/unit/bot-chat-binding.test.ts` · `bot-chat` 端到端（`new_chat` → `prompt` → 回复）                                |
+| 私聊 = 普通对话 + Bot 绑定                                    | `server/device-center/bot-chat.ts` ★（`BOT_CHAT_ENTRY` / `readBotChatBinding` / `createBotChatCapability`）· `server/agent-service.ts` ★（`Conversation.bot` + `botOf()` + `openBotChat()`/`newChat(botId)`）· `server/protocol.ts`（`open_bot_chat.botId/fresh`、`UiState.bot`、`ConversationSummary.botId/botName`） | `tests/unit/bot-chat-binding.test.ts` · `bot-chat-resume.test.ts` · `bot-chat` 端到端（`new_chat` → `prompt` → 回复）                                |
 | 历史直聊房间清理（legacy）                                    | `server/device-center/direct-rooms.ts` ★（`pruneLegacyDirectRooms` / `directRoomViolation` / `assertDirectRoom`）· `hub.ts`（载入时清房间+消息+任务+回执+会话）                                                                                                                             | —                                                                                                                        |
 | 记忆存储（写入闸 / 索引 / 投影 / 衰减 / 审计）                | `server/device-center/bot-memory.ts` ★                                                                                                                                                                                                                                                      | `tests/unit/agent-memory.test.ts`                                                                                        |
 | 记忆工具（`search/read/write/list/promote/forget`）           | `server/bot-memory-tool.ts` ★ · `server/tool-manager.ts`（`memory` 入 GROUP_BOT_TOOL_CATALOG）                                                                                                                                                                                              | `tool-registration` · `tool-prompt-hygiene`                                                                              |

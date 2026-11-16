@@ -5,6 +5,7 @@ import { withToken } from "../auth-token";
 import { useT } from "../i18n";
 import { openBotChat } from "../bot-chat";
 import { clearBotEditRequest, peekBotEditRequest, subscribeBotEditRequest } from "../bot-edit";
+import { importBotBundle } from "../bot-import";
 import { useEscapeKey } from "../shortcut-stack";
 import type { ModelInfo } from "../types";
 import { resolveBotCwd } from "../local-bot-path";
@@ -90,6 +91,8 @@ export function LocalBots({
 	const [loading, setLoading] = useState(false);
 	const [reload, setReload] = useState(0);
 	const [modelOpen, setModelOpen] = useState(false);
+	const [importing, setImporting] = useState(false);
+	const importInput = useRef<HTMLInputElement | null>(null);
 	const [catalogTab, setCatalogTab] = useState<"tools" | "skills" | "mcpServers">("tools");
 	const [tab, setTab] = useState<"identity" | "runtime" | "permissions">("identity");
 	const controller = useRef<AbortController | null>(null);
@@ -143,6 +146,24 @@ export function LocalBots({
 		if (pending) open(pending);
 		return subscribeBotEditRequest(open);
 	}, [bots]);
+	const importBundle = async (file: File) => {
+		setImporting(true);
+		setError("");
+		try {
+			const result = await importBotBundle(file);
+			setNotice(t("localBotImportDone"));
+			setReload((value) => value + 1);
+			void request("local-bots", new AbortController().signal)
+				.then((data) => {
+					if (Array.isArray(data.bots)) setBots(data.bots);
+				})
+				.catch(() => {});
+		} catch (cause) {
+			setError(cause instanceof Error ? cause.message : t("localBotImportFailed"));
+		} finally {
+			setImporting(false);
+		}
+	};
 	const cwd = draft?.cwd;
 	useEffect(() => {
 		if (cwd === undefined) return;
@@ -230,18 +251,40 @@ export function LocalBots({
 		<section className={`dc-card dc-bots${createOnly ? " is-create-only" : ""}`} aria-label={t("localBotTitle")}>
 			<div className="dg-heading">
 				<h2>{t("localBotTitle")}</h2>
-				<button
-					className="dc-button"
-					type="button"
-					disabled={busy}
-					onClick={() => {
-						setDraft(blank());
-						setError("");
-						setModelOpen(false);
-					}}
-				>
-					{t("localBotCreate")}
-				</button>
+				<div className="dc-bots-actions">
+					<button
+						className="dc-button"
+						type="button"
+						disabled={busy}
+						onClick={() => {
+							setDraft(blank());
+							setError("");
+							setModelOpen(false);
+						}}
+					>
+						{t("localBotCreate")}
+					</button>
+					<button
+						className="dc-button"
+						type="button"
+						disabled={busy || importing}
+						title={t("localBotImportTip")}
+						onClick={() => importInput.current?.click()}
+					>
+						{importing ? t("localBotImporting") : t("localBotImport")}
+					</button>
+					<input
+						ref={importInput}
+						type="file"
+						accept="application/json,.json"
+						hidden
+						onChange={(event) => {
+							const file = event.target.files?.[0];
+							event.target.value = "";
+							if (file) void importBundle(file);
+						}}
+					/>
+				</div>
 			</div>
 			<p>{t("localBotHint")}</p>
 			{error && !draft && <p role="alert">{error}</p>}

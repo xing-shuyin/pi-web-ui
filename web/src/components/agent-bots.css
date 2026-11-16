@@ -582,3 +582,89 @@
 	opacity: 0.55;
 	cursor: default;
 }
+
+/* 加号 = 新建智能体：内联小表单（AI 起草优先，手动兜底）。
+   做在区块内部而不是浮层：左栏宽度固定、上下文贴着列表，省掉遮罩与 z-index 那一套。 */
+.lp-bots-create {
+	display: flex;
+	flex-direction: column;
+	gap: 6px;
+	margin: 2px 10px 8px;
+	padding: 8px;
+	border: 1px solid var(--border-soft, var(--border));
+	border-radius: 8px;
+	background: var(--bg-elev2);
+	min-width: 0;
+}
+
+.lp-bots-create-title {
+	font-size: 12px;
+	font-weight: 600;
+	color: var(--text-dim);
+}
+
+.lp-bots-create-input {
+	width: 100%;
+	min-width: 0;
+	resize: vertical;
+	font: inherit;
+	font-size: 12px;
+	line-height: 1.5;
+	color: var(--text);
+	background: var(--bg-input);
+	border: 1px solid var(--border-soft, var(--border));
+	border-radius: 6px;
+	padding: 6px 8px;
+}
+
+.lp-bots-create-input:focus-visible {
+	outline: 2px solid var(--accent, #6ea8fe);
+	outline-offset: 1px;
+}
+
+.lp-bots-create-error {
+	margin: 0;
+	font-size: 11px;
+	color: var(--red-text);
+	overflow-wrap: anywhere;
+}
+
+.lp-bots-create-actions {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 6px;
+}
+
+.lp-bots-create-actions > button {
+	font-size: 12px;
+	line-height: 1;
+	padding: 5px 9px;
+	border-radius: 6px;
+	cursor: pointer;
+	border: 1px solid var(--border-soft, var(--border));
+	background: transparent;
+	color: var(--text-dim);
+}
+
+.lp-bots-create-primary {
+	border-color: transparent !important;
+	background: var(--accent, #6ea8fe) !important;
+	color: var(--accent-contrast, #0b1020) !important;
+	font-weight: 600;
+}
+
+.lp-bots-create-actions > button:disabled {
+	opacity: 0.55;
+	cursor: default;
+}
+
+.lp-bots-create-actions > button:hover:not(:disabled) {
+	color: var(--text);
+}
+
+/* 设备中心 Bot 管理头部：新建 + 导入并排 */
+.dc-bots-actions {
+	display: flex;
+	gap: 8px;
+	flex-wrap: wrap;
+}
