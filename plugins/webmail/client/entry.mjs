@@ -1,4 +1,7 @@
 import { esc } from "@pi-web-ui/plugin-sdk/client";
+import { makeT } from "./i18n.mjs";
+
+const t = makeT();
 
 function fmtDate(iso) {
 	if (!iso) return "";
@@ -22,7 +25,7 @@ function shortDomain(rawUrl) {
 		}
 		return parts.join(".");
 	} catch {
-		return "链接";
+		return t("linkFallback");
 	}
 }
 
@@ -132,11 +135,11 @@ function formatMailBody(text, truncated = false) {
 	flushPara();
 	closeList();
 	if (inFooter) blocks.push("</div>");
-	if (truncated) blocks.push('<p style="opacity:.55;font-size:12px">…（内容过长已截断）</p>');
+	if (truncated) blocks.push(`<p style="opacity:.55;font-size:12px">${t("truncated")}</p>`);
 	return blocks.join("");
 }
 
-const EMPTY_READER = `<div class="empty-reader">👈 从左侧选择一封邮件查看内容</div>`;
+const emptyReaderHtml = () => `<div class="empty-reader">${t("emptyReader")}</div>`;
 
 export default {
 	mount(container, ctx) {
@@ -322,94 +325,94 @@ export default {
 	</style>
 
 	<header class="wmx-head">
-		<h2>📬 网页邮箱
+		<h2>${t("viewTitle")}
 			<span class="chip st">…</span>
 			<span class="chip unseen badge" hidden></span>
 		</h2>
 		<div class="head-actions">
-			<button class="btn-compose" title="写邮件">✉ 写信</button>
-			<button class="btn-gear" title="邮箱设置">⚙ 设置</button>
-			<button class="btn-refresh" title="刷新列表">刷新</button>
+			<button class="btn-compose" title="${t("composeTitle")}">${t("btnCompose")}</button>
+			<button class="btn-gear" title="${t("settingsTitle")}">${t("btnSettings")}</button>
+			<button class="btn-refresh" title="${t("refreshListTitle")}">${t("btnRefresh")}</button>
 		</div>
 	</header>
-	<p class="hint deps" hidden>缺少运行依赖（imapflow / mailparser / nodemailer），正在后台自动安装；也可手动
-		<button class="btn-deps">立即安装</button></p>
+	<p class="hint deps" hidden>${t("depsMissing")}
+		<button class="btn-deps">${t("installNow")}</button></p>
 
 	<div class="wmx-body">
 		<section class="pane-list">
 			<div class="toolbar">
 				<select class="folder"><option value="INBOX">INBOX</option></select>
-				<input type="search" class="q" placeholder="搜索主题 / 发件人…" />
-				<button class="btn-search">搜索</button>
-				<label style="opacity:.7;font-size:12px"><input type="checkbox" class="unseen-only" /> 未读</label>
+				<input type="search" class="q" placeholder="${t("searchPlaceholder")}" />
+				<button class="btn-search">${t("search")}</button>
+				<label style="opacity:.7;font-size:12px"><input type="checkbox" class="unseen-only" /> ${t("unreadOnly")}</label>
 			</div>
 			<ul class="maillist"></ul>
 		</section>
-		<section class="reader">${EMPTY_READER}</section>
+		<section class="reader">${emptyReaderHtml()}</section>
 	</div>
 
 	<div class="modal-backdrop cfg-modal" hidden>
-		<div class="modal" role="dialog" aria-label="邮箱设置">
-			<div class="modal-head"><b>⚙ 邮箱设置</b><button class="modal-close" title="关闭">✕</button></div>
+		<div class="modal" role="dialog" aria-label="${t("settingsTitle")}">
+			<div class="modal-head"><b>⚙ ${t("settingsTitle")}</b><button class="modal-close" title="${t("close")}">✕</button></div>
 			<div class="modal-body">
 			<form class="cfg">
 				<fieldset>
-					<legend>收信 IMAP</legend>
-					<label>服务器</label><input name="imapHost" placeholder="imap.example.com" />
-					<label>端口</label><input name="imapPort" type="number" placeholder="993" />
-					<label>用户名</label><input name="imapUser" autocomplete="off" />
-					<label>密码 / 授权码</label><input name="imapPass" type="password" autocomplete="new-password" />
-					<label class="full"><input type="checkbox" name="imapTls" /> 使用 SSL/TLS（端口通常 993；关闭则 143）</label>
+					<legend>${t("imapLegend")}</legend>
+					<label>${t("server")}</label><input name="imapHost" placeholder="imap.example.com" />
+					<label>${t("port")}</label><input name="imapPort" type="number" placeholder="993" />
+					<label>${t("username")}</label><input name="imapUser" autocomplete="off" />
+					<label>${t("passwordOrToken")}</label><input name="imapPass" type="password" autocomplete="new-password" />
+					<label class="full"><input type="checkbox" name="imapTls" /> ${t("imapTls")}</label>
 				</fieldset>
 				<fieldset>
-					<legend>发信 SMTP</legend>
-					<label>服务器</label><input name="smtpHost" placeholder="smtp.example.com" />
-					<label>端口</label><input name="smtpPort" type="number" placeholder="465" />
-					<label>用户名</label><input name="smtpUser" autocomplete="off" />
-					<label>密码 / 授权码</label><input name="smtpPass" type="password" autocomplete="new-password" />
-					<label>显示发件人</label><input name="smtpFrom" placeholder="Me &lt;me@example.com&gt;" />
-					<label class="full"><input type="checkbox" name="smtpTls" /> 使用 SSL/TLS（端口通常 465）</label>
+					<legend>${t("smtpLegend")}</legend>
+					<label>${t("server")}</label><input name="smtpHost" placeholder="smtp.example.com" />
+					<label>${t("port")}</label><input name="smtpPort" type="number" placeholder="465" />
+					<label>${t("username")}</label><input name="smtpUser" autocomplete="off" />
+					<label>${t("passwordOrToken")}</label><input name="smtpPass" type="password" autocomplete="new-password" />
+					<label>${t("fromLabel")}</label><input name="smtpFrom" placeholder="Me &lt;me@example.com&gt;" />
+					<label class="full"><input type="checkbox" name="smtpTls" /> ${t("smtpTls")}</label>
 				</fieldset>
 				<fieldset>
-					<legend>行为</legend>
-					<label>轮询间隔(秒)</label><input name="pollSec" type="number" min="15" />
-					<label>翻译引擎</label>
+					<legend>${t("behaviorLegend")}</legend>
+					<label>${t("pollSec")}</label><input name="pollSec" type="number" min="15" />
+					<label>${t("transEngine")}</label>
 					<select name="transModel">
-						<option value="">⚡ 快速公共引擎（免 Token · 速度快）</option>
-						<option value="current">🤖 跟随主会话当前模型</option>
+						<option value="">${t("transEngineFast")}</option>
+						<option value="current">${t("transEngineSession")}</option>
 					</select>
-					<label class="full"><input type="checkbox" name="notifyEnabled" /> 新邮件桌面通知条</label>
+					<label class="full"><input type="checkbox" name="notifyEnabled" /> ${t("notifyEnabled")}</label>
 				</fieldset>
 				<fieldset>
-					<legend>插件更新</legend>
+					<legend>${t("pluginUpdateLegend")}</legend>
 					<label class="full" style="justify-content:space-between">
-						<span style="opacity:.75">从 GitHub 拉取最新版本覆盖安装（保留配置；依赖会自动重装）</span>
-						<button type="button" class="btn-update">更新到最新版</button>
+						<span style="opacity:.75">${t("updateHintLabel")}</span>
+						<button type="button" class="btn-update">${t("updateNow")}</button>
 					</label>
-					<p class="hint full">更新在可见终端执行，完成后刷新页面加载新版本。</p>
+					<p class="hint full">${t("updateHint")}</p>
 				</fieldset>
-				<p class="hint">凭据明文保存在本机 &lt;dataDir&gt;/plugins/webmail/config.json，不上传、重装插件不丢失。保存后立即生效。</p>
-				<div class="row" style="display:flex;justify-content:flex-end"><button type="submit" class="primary">保存并应用</button></div>
+				<p class="hint">${t("credentialsHint")}</p>
+				<div class="row" style="display:flex;justify-content:flex-end"><button type="submit" class="primary">${t("saveAndApply")}</button></div>
 			</form>
 			</div>
 		</div>
 	</div>
 
 	<div class="modal-backdrop compose-modal" hidden>
-		<div class="modal" role="dialog" aria-label="写邮件">
-			<div class="modal-head"><b>✉ 写邮件</b><button class="modal-close" title="关闭">✕</button></div>
+		<div class="modal" role="dialog" aria-label="${t("composeTitle")}">
+			<div class="modal-head"><b>✉ ${t("composeTitle")}</b><button class="modal-close" title="${t("close")}">✕</button></div>
 			<div class="modal-body">
 			<form class="compose">
-				<input name="to" placeholder="收件人 to@example.com" required />
-				<input name="subject" placeholder="主题" />
-				<textarea name="body" rows="8" placeholder="正文…"></textarea>
+				<input name="to" placeholder="${t("toPlaceholder")}" required />
+				<input name="subject" placeholder="${t("subjectPlaceholder")}" />
+				<textarea name="body" rows="8" placeholder="${t("bodyPlaceholder")}"></textarea>
 				<div style="display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap">
 					<label style="font-size:12px;opacity:.75;display:inline-flex;align-items:center;gap:5px;cursor:pointer">
-						<input type="checkbox" name="isHtml" /> HTML 正文（自动生成纯文本降级）
+						<input type="checkbox" name="isHtml" /> ${t("htmlBody")}
 					</label>
 					<div class="row" style="margin:0">
-						<button type="button" class="btn-cancel">取消</button>
-						<button type="submit" class="primary">发送</button>
+						<button type="button" class="btn-cancel">${t("cancel")}</button>
+						<button type="submit" class="primary">${t("send")}</button>
 					</div>
 				</div>
 			</form>
@@ -431,8 +434,8 @@ export default {
 		function getModelOptionsHtml(selectedVal) {
 			const seen = new Set(["", "current"]);
 			const opts = [
-				{ val: "", text: "⚡ 快速引擎" },
-				{ val: "current", text: "🤖 当前会话模型" },
+				{ val: "", text: t("modelFastOption") },
+				{ val: "current", text: t("modelSessionOption") },
 			];
 			let hostModels = [];
 			try {
@@ -486,14 +489,15 @@ export default {
 
 		function setStateChips(state) {
 			const chip = $(".st");
-			chip.textContent = state.status || "未知";
+			// 状态文案由服务端下发（服务端自有文案，保持原样），仅兜底文案本地化
+			chip.textContent = state.status || t("unknownStatus");
 			chip.className = `chip st ${state.configured ? (state.status.startsWith("连接失败") ? "err" : "ok") : ""}`;
 			const badge = $(".unseen");
 			badge.hidden = !state.unseen;
-			badge.textContent = `${state.unseen} 封未读`;
+			badge.textContent = t("unseenBadge", { count: state.unseen });
 			$(".deps").hidden = state.depsOk || state.depsInstalling;
 			$(".btn-deps").disabled = Boolean(state.depsInstalling);
-			$(".btn-deps").textContent = state.depsInstalling ? "安装中…" : "立即安装";
+			$(".btn-deps").textContent = state.depsInstalling ? t("installing") : t("installNow");
 		}
 
 		function fillSettings(cfg) {
@@ -503,12 +507,12 @@ export default {
 			f.imapHost.value = cfg.imap?.host ?? "";
 			f.imapPort.value = cfg.imap?.port ?? 993;
 			f.imapUser.value = cfg.imap?.user ?? "";
-			f.imapPass.placeholder = cfg.imap?.hasPass ? "已保存（输入可覆盖）" : "密码";
+			f.imapPass.placeholder = cfg.imap?.hasPass ? t("passSaved") : t("passPlaceholder");
 			f.imapTls.checked = cfg.imap?.tls !== false;
 			f.smtpHost.value = cfg.smtp?.host ?? "";
 			f.smtpPort.value = cfg.smtp?.port ?? 465;
 			f.smtpUser.value = cfg.smtp?.user ?? "";
-			f.smtpPass.placeholder = cfg.smtp?.hasPass ? "已保存（输入可覆盖）" : "密码";
+			f.smtpPass.placeholder = cfg.smtp?.hasPass ? t("passSaved") : t("passPlaceholder");
 			f.smtpFrom.value = cfg.smtp?.from ?? "";
 			f.smtpTls.checked = cfg.smtp?.tls !== false;
 			f.pollSec.value = cfg.pollSec ?? 60;
@@ -526,7 +530,7 @@ export default {
 		function renderList() {
 			const ul = $(".maillist");
 			if (!st.mails.length) {
-				ul.innerHTML = `<li class="empty" style="list-style:none;border:0;cursor:default;display:block;text-align:center;opacity:.45;padding:24px 0">没有匹配的邮件</li>`;
+				ul.innerHTML = `<li class="empty" style="list-style:none;border:0;cursor:default;display:block;text-align:center;opacity:.45;padding:24px 0">${t("emptyList")}</li>`;
 				return;
 			}
 			ul.innerHTML = st.mails
@@ -542,11 +546,11 @@ export default {
 		}
 
 		function getTranslateBtnLabel(mail) {
-			if (mail._translating) return "🌐 翻译中…";
+			if (mail._translating) return t("translating");
 			if (mail._translation) {
-				return mail._showTranslation ? "🌐 显示原文" : "🌐 显示译文";
+				return mail._showTranslation ? t("showOriginal") : t("showTranslation");
 			}
-			return "🌐 翻译";
+			return t("translate");
 		}
 
 		function renderReader(mail) {
@@ -558,25 +562,25 @@ export default {
 
 			let transHtml = "";
 			if (showTrans) {
-				const langLabel = mail._translation.targetLang === "en" ? "英文" : "中文";
+				const langLabel = mail._translation.targetLang === "en" ? t("langEnglish") : t("langChinese");
 				const engineLabel =
 					mail._translation.engine === "llm"
-						? ` · 🤖 ${shortModelLabel(mail._translation.model || "AI 大模型")}`
+						? t("engineLlm", { model: shortModelLabel(mail._translation.model || t("aiModelFallback")) })
 						: mail._translation.model
-							? ` · ⚡ ${shortModelLabel(mail._translation.model)}`
-							: " · ⚡ 快速引擎";
+							? t("engineQuickNamed", { model: shortModelLabel(mail._translation.model) })
+							: t("engineQuick");
 				transHtml = `
 <div class="trans-box">
 	<div class="trans-head">
 		<div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;min-width:0">
-			<span>🌐 译文（已译为${langLabel}${esc(engineLabel)}）</span>
-			<select class="sel-card-model" title="切换模型并重新翻译" style="padding:1px 5px;font-size:11px;height:22px;max-width:160px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;background:var(--bg,#101016);color:inherit;border:1px solid color-mix(in srgb,var(--accent,#7c5cff) 40%,var(--border,#333));border-radius:4px;cursor:pointer">
+			<span>${t("transHead", { lang: esc(langLabel), engine: esc(engineLabel) })}</span>
+			<select class="sel-card-model" title="${t("transHeadSwitchTitle")}" style="padding:1px 5px;font-size:11px;height:22px;max-width:160px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;background:var(--bg,#101016);color:inherit;border:1px solid color-mix(in srgb,var(--accent,#7c5cff) 40%,var(--border,#333));border-radius:4px;cursor:pointer">
 				${getModelOptionsHtml(curModel)}
 			</select>
 		</div>
 		<div style="display:flex;gap:6px;flex-shrink:0">
-			<button type="button" class="act-copy-trans">复制译文</button>
-			<button type="button" class="act-toggle-orig">${mail._showOrig ? "收起原文" : "对照原文"}</button>
+			<button type="button" class="act-copy-trans">${t("copyTranslation")}</button>
+			<button type="button" class="act-toggle-orig">${mail._showOrig ? t("hideOriginal") : t("compareOriginal")}</button>
 		</div>
 	</div>
 	<div class="body md trans-body">${formatMailBody(mail._translation.translatedText)}</div>
@@ -586,30 +590,30 @@ export default {
 			const hideOrigBody = showTrans && !mail._showOrig;
 			const origHtml = hideOrigBody
 				? ""
-				: `${showTrans ? '<div style="font-size:11px;opacity:.55;margin-top:6px">【原文】</div>' : ""}<div class="body md">${formatMailBody(mail.text, mail.truncated)}</div>`;
+				: `${showTrans ? `<div style="font-size:11px;opacity:.55;margin-top:6px">${t("originalLabel")}</div>` : ""}<div class="body md">${formatMailBody(mail.text, mail.truncated)}</div>`;
 
 			r.innerHTML = `
 <div style="display:flex;gap:10px;align-items:baseline;flex-wrap:wrap">
 	<b style="font-size:14px">${esc(mail.subject)}</b>
 	<span style="opacity:.55;font-size:11px">${esc(fmtDate(mail.date))}</span>
 </div>
-${showTrans && mail._translation.translatedSubject ? `<div class="trans-subj">译：${esc(mail._translation.translatedSubject)}</div>` : ""}
+${showTrans && mail._translation.translatedSubject ? `<div class="trans-subj">${esc(t("transSubjectPrefix"))}${esc(mail._translation.translatedSubject)}</div>` : ""}
 <div style="opacity:.7;font-size:12px">${esc(mail.fromName)} &lt;${esc(mail.from)}&gt; → ${esc(mail.to)}
-	${mail.hasAttachments ? " · 📎 含附件（正文下方不展示）" : ""}</div>
+	${mail.hasAttachments ? t("attachmentsNote") : ""}</div>
 ${transHtml}
 ${origHtml}
 <div class="actions">
-	<button class="act-toggle-seen">${mail.seen ? "标为未读" : "标为已读"}</button>
+	<button class="act-toggle-seen">${mail.seen ? t("markUnread") : t("markRead")}</button>
 	<div style="display:inline-flex;align-items:center;gap:4px;min-width:0">
 		<button class="act-translate"${mail._translating ? " disabled" : ""}>${getTranslateBtnLabel(mail)}</button>
-		<select class="sel-reader-model" title="选择翻译使用的 AI 模型或引擎" style="padding:2px 6px;font-size:12px;height:28px;max-width:155px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;background:var(--bg-elev,#16161d);color:inherit;border:1px solid var(--border,#333);border-radius:6px;cursor:pointer">
+		<select class="sel-reader-model" title="${t("selectModelTitle")}" style="padding:2px 6px;font-size:12px;height:28px;max-width:155px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;background:var(--bg-elev,#16161d);color:inherit;border:1px solid var(--border,#333);border-radius:6px;cursor:pointer">
 			${getModelOptionsHtml(curModel)}
 		</select>
-		<button class="act-browse-model" title="调起统一模型选择器点选模型" style="padding:2px 7px;font-size:11px;height:28px;background:var(--bg-elev2);border:1px solid var(--border,#333);border-radius:6px;cursor:pointer">✨</button>
+		<button class="act-browse-model" title="${t("pickModelTitle")}" style="padding:2px 7px;font-size:11px;height:28px;background:var(--bg-elev2);border:1px solid var(--border,#333);border-radius:6px;cursor:pointer">✨</button>
 	</div>
-	<button class="act-quote-chat" title="将此邮件引用到主对话输入框">💬 引用到对话</button>
-	<button class="act-reply">回复</button>
-	<button class="act-delete danger">删除</button>
+	<button class="act-quote-chat" title="${t("quoteToChatTitle")}">${t("quoteToChat")}</button>
+	<button class="act-reply">${t("reply")}</button>
+	<button class="act-delete danger">${t("delete")}</button>
 </div>`;
 			$(".act-toggle-seen").onclick = () => ctx.send({ action: "mark", uids: [mail.uid], seen: !mail.seen });
 			$(".act-delete").onclick = () => ctx.send({ action: "delete", uids: [mail.uid] });
@@ -626,12 +630,15 @@ ${origHtml}
 						.trim();
 					const subjLine =
 						showTrans && mail._translation?.translatedSubject && mail._translation.translatedSubject !== mail.subject
-							? `${mail.subject}（译：${mail._translation.translatedSubject}）`
+							? t("quoteTranslatedSubject", {
+									subject: mail.subject,
+									translated: mail._translation.translatedSubject,
+								})
 							: mail.subject;
 					const fromStr = mail.fromName ? `${mail.fromName} <${mail.from}>` : mail.from;
 					const quoteText = [
-						`📬 邮件 #${mail.uid}：${subjLine}`,
-						`发件人：${fromStr}${mail.date ? ` · ${fmtDate(mail.date)}` : ""}`,
+						t("quoteSubject", { uid: mail.uid, subject: subjLine }),
+						t("quoteFrom", { from: fromStr, when: mail.date ? ` · ${fmtDate(mail.date)}` : "" }),
 						"",
 						cleanBody,
 					].join("\n");
@@ -656,9 +663,9 @@ ${origHtml}
 						hostBridge.setView?.("chat");
 					} else {
 						navigator.clipboard?.writeText?.(quoteText);
-						quoteBtn.textContent = "✓ 已复制引用";
+						quoteBtn.textContent = t("quoteCopied");
 						setTimeout(() => {
-							if (quoteBtn) quoteBtn.textContent = "💬 引用到对话";
+							if (quoteBtn) quoteBtn.textContent = t("quoteToChat");
 						}, 1500);
 					}
 				};
@@ -732,9 +739,9 @@ ${origHtml}
 				copyBtn.onclick = async () => {
 					try {
 						await navigator.clipboard.writeText(mail._translation.translatedText || "");
-						copyBtn.textContent = "已复制！";
+						copyBtn.textContent = t("copied");
 						setTimeout(() => {
-							if (copyBtn) copyBtn.textContent = "复制译文";
+							if (copyBtn) copyBtn.textContent = t("copyTranslation");
 						}, 1500);
 					} catch {}
 				};
@@ -754,7 +761,7 @@ ${origHtml}
 		function clearReader() {
 			st.activeUid = null;
 			st.activeMail = null;
-			$(".reader").innerHTML = EMPTY_READER;
+			$(".reader").innerHTML = emptyReaderHtml();
 		}
 
 		function openCompose(prefill = {}) {
@@ -791,7 +798,7 @@ ${origHtml}
 				window.dispatchEvent(
 					new CustomEvent("pi-web-ui:plugin-run-command", {
 						detail: {
-							title: "webmail 更新",
+							title: t("updateTerminalTitle"),
 							command: "pi-web-ui install xing-shuyin/pi-web-ui/tree/main/plugins/webmail --force",
 						},
 					}),
