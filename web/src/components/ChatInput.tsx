@@ -1147,12 +1147,7 @@ export const ChatInput = memo(function ChatInput({
 			return;
 		}
 		if (!capabilities.conversationRef && attachments.some((a) => a.mode === "conversation")) {
-			onNotice(
-				"warning",
-				isZhLocale(locale)
-					? "当前底层智能体不支持跨对话引用（缺少 conversation_read 工具），请移除会话引用后再发送。"
-					: "The current agent engine does not support conversation references (conversation_read tool unavailable). Remove conversation references before sending.",
-			);
+			onNotice("warning", t("chatInputConversationRefUnsupported"));
 			return;
 		}
 		if (trimmed === "/help") {
@@ -1875,12 +1870,8 @@ export const ChatInput = memo(function ChatInput({
 					placeholder={
 						groupDevices
 							? groupPrimaryBotName
-								? isZhLocale(locale)
-									? `直接发送给 ${groupPrimaryBotName}，或 @ 其他 Bot`
-									: `Message ${groupPrimaryBotName}, or @ another Bot`
-								: isZhLocale(locale)
-									? "输入 @，选择 Bot 开始新对话或继续之前的对话"
-									: "Type @ to start or continue a Bot conversation"
+								? t("chatInputGroupPlaceholderWithBot", { name: groupPrimaryBotName })
+								: t("chatInputGroupPlaceholder")
 							: connected
 								? streaming
 									? isDsh
@@ -1955,10 +1946,9 @@ export const ChatInput = memo(function ChatInput({
 							zIndex: 2,
 						}}
 						onClick={() => setGroupPlanOnly(false)}
-						title={isZhLocale(locale) ? "群计划模式（只规划，不实施写操作）" : "Group plan mode (planning only)"}
+						title={t("chatInputGroupPlanModeTip")}
 					>
-						📋 {isZhLocale(locale) ? "群计划模式" : "Group Plan Mode"}{" "}
-						<span style={{ marginLeft: 2, opacity: 0.7 }}>✕</span>
+						📋 {t("chatInputGroupPlanMode")} <span style={{ marginLeft: 2, opacity: 0.7 }}>✕</span>
 					</button>
 				)}
 				<div className="composer-tools">
@@ -1968,7 +1958,7 @@ export const ChatInput = memo(function ChatInput({
 								<button
 									type="button"
 									className="btn group-at-btn"
-									title={isZhLocale(locale) ? "选择或 @ 群成员 Bot" : "Mention a Bot (@)"}
+									title={t("chatInputGroupMentionTip")}
 									onClick={() => {
 										const ta = taRef.current;
 										const cur = ta ? ta.selectionStart : text.length;
@@ -1982,11 +1972,11 @@ export const ChatInput = memo(function ChatInput({
 								<button
 									type="button"
 									className={`btn group-plan-toggle ${groupPlanOnly ? "active" : ""}`}
-									title={isZhLocale(locale) ? "群任务计划模式（只规划不实施）" : "Group task plan mode (plan only)"}
+									title={t("chatInputGroupTaskPlanModeTip")}
 									onClick={() => setGroupPlanOnly((prev) => !prev)}
 								>
 									<span className="group-plan-icon">📋</span>
-									<span className="group-plan-label">{isZhLocale(locale) ? "只规划" : "Plan Only"}</span>
+									<span className="group-plan-label">{t("chatInputGroupPlanOnly")}</span>
 								</button>
 							</div>
 							<div className="composer-tools-right">{renderActions()}</div>

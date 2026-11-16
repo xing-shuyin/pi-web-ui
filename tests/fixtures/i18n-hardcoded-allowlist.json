@@ -62,72 +62,6 @@
 			"reason": "pending"
 		},
 		{
-			"file": "web/src/components/BrowserControl.tsx",
-			"text": "仅 Agent 模式",
-			"count": 1,
-			"reason": "pending"
-		},
-		{
-			"file": "web/src/components/BrowserControl.tsx",
-			"text": "完整浏览器 (Browser)",
-			"count": 1,
-			"reason": "pending"
-		},
-		{
-			"file": "web/src/components/BrowserControl.tsx",
-			"text": "已打开的网页标签",
-			"count": 1,
-			"reason": "pending"
-		},
-		{
-			"file": "web/src/components/BrowserControl.tsx",
-			"text": "并列分栏 (Split)",
-			"count": 1,
-			"reason": "pending"
-		},
-		{
-			"file": "web/src/components/BrowserControl.tsx",
-			"text": "打开浏览器分栏 (Ctrl+Shift+3) · 右键打开选项",
-			"count": 1,
-			"reason": "pending"
-		},
-		{
-			"file": "web/src/components/BrowserControl.tsx",
-			"text": "收起浏览器分栏 (Ctrl+Shift+2) · 右键打开选项",
-			"count": 1,
-			"reason": "pending"
-		},
-		{
-			"file": "web/src/components/BrowserControl.tsx",
-			"text": "新建网页标签",
-			"count": 1,
-			"reason": "pending"
-		},
-		{
-			"file": "web/src/components/BrowserControl.tsx",
-			"text": "新标签页",
-			"count": 1,
-			"reason": "pending"
-		},
-		{
-			"file": "web/src/components/BrowserControl.tsx",
-			"text": "桌面内置浏览器已就绪，可在右侧并列分栏浏览网页，或切换到独立浏览器。",
-			"count": 1,
-			"reason": "pending"
-		},
-		{
-			"file": "web/src/components/BrowserControl.tsx",
-			"text": "视图模式",
-			"count": 1,
-			"reason": "pending"
-		},
-		{
-			"file": "web/src/components/BrowserControl.tsx",
-			"text": "跳转",
-			"count": 1,
-			"reason": "pending"
-		},
-		{
 			"file": "web/src/components/canvas/CanvasAiBar.tsx",
 			"text": "人工",
 			"count": 1,
@@ -251,91 +185,43 @@
 			"file": "web/src/components/canvas/CanvasTypes.ts",
 			"text": "严格",
 			"count": 1,
-			"reason": "pending"
+			"reason": "data"
 		},
 		{
 			"file": "web/src/components/canvas/CanvasTypes.ts",
 			"text": "宽松",
 			"count": 1,
-			"reason": "pending"
+			"reason": "data"
 		},
 		{
 			"file": "web/src/components/canvas/CanvasTypes.ts",
 			"text": "快速",
 			"count": 1,
-			"reason": "pending"
+			"reason": "data"
 		},
 		{
 			"file": "web/src/components/canvas/CanvasTypes.ts",
 			"text": "标准",
 			"count": 4,
-			"reason": "pending"
+			"reason": "data"
 		},
 		{
 			"file": "web/src/components/canvas/CanvasTypes.ts",
 			"text": "深度",
 			"count": 1,
-			"reason": "pending"
+			"reason": "data"
 		},
 		{
 			"file": "web/src/components/canvas/CanvasTypes.ts",
 			"text": "生产",
 			"count": 1,
-			"reason": "pending"
+			"reason": "data"
 		},
 		{
 			"file": "web/src/components/canvas/CanvasTypes.ts",
 			"text": "预发",
 			"count": 2,
-			"reason": "pending"
-		},
-		{
-			"file": "web/src/components/ChatInput.tsx",
-			"text": "只规划",
-			"count": 1,
-			"reason": "pending"
-		},
-		{
-			"file": "web/src/components/ChatInput.tsx",
-			"text": "当前底层智能体不支持跨对话引用（缺少 conversation_read 工具），请移除会话引用后再发送。",
-			"count": 1,
-			"reason": "pending"
-		},
-		{
-			"file": "web/src/components/ChatInput.tsx",
-			"text": "直接发送给 ${groupPrimaryBotName}，或 @ 其他 Bot",
-			"count": 1,
-			"reason": "pending"
-		},
-		{
-			"file": "web/src/components/ChatInput.tsx",
-			"text": "群任务计划模式（只规划不实施）",
-			"count": 1,
-			"reason": "pending"
-		},
-		{
-			"file": "web/src/components/ChatInput.tsx",
-			"text": "群计划模式",
-			"count": 1,
-			"reason": "pending"
-		},
-		{
-			"file": "web/src/components/ChatInput.tsx",
-			"text": "群计划模式（只规划，不实施写操作）",
-			"count": 1,
-			"reason": "pending"
-		},
-		{
-			"file": "web/src/components/ChatInput.tsx",
-			"text": "输入 @，选择 Bot 开始新对话或继续之前的对话",
-			"count": 1,
-			"reason": "pending"
-		},
-		{
-			"file": "web/src/components/ChatInput.tsx",
-			"text": "选择或 @ 群成员 Bot",
-			"count": 1,
-			"reason": "pending"
+			"reason": "data"
 		},
 		{
 			"file": "web/src/components/desktop-clipboard-control.tsx",
@@ -412,66 +298,6 @@
 		{
 			"file": "web/src/components/DeviceChannels.tsx",
 			"text": "重试",
-			"count": 1,
-			"reason": "pending"
-		},
-		{
-			"file": "web/src/components/DeviceGroupBotDialog.tsx",
-			"text": "Bot 已保存；请启用并同步到中心后，再添加到群组。",
-			"count": 1,
-			"reason": "pending"
-		},
-		{
-			"file": "web/src/components/DeviceGroupBotDialog.tsx",
-			"text": "关闭",
-			"count": 1,
-			"reason": "pending"
-		},
-		{
-			"file": "web/src/components/DeviceGroupBotDialog.tsx",
-			"text": "加载中…",
-			"count": 1,
-			"reason": "pending"
-		},
-		{
-			"file": "web/src/components/DeviceGroupBotDialog.tsx",
-			"text": "新建 Bot",
-			"count": 1,
-			"reason": "pending"
-		},
-		{
-			"file": "web/src/components/DeviceGroupBotDialog.tsx",
-			"text": "正在添加…",
-			"count": 1,
-			"reason": "pending"
-		},
-		{
-			"file": "web/src/components/DeviceGroupBotDialog.tsx",
-			"text": "没有可添加的 Bot，可以新建一个。",
-			"count": 1,
-			"reason": "pending"
-		},
-		{
-			"file": "web/src/components/DeviceGroupBotDialog.tsx",
-			"text": "添加 Bot",
-			"count": 1,
-			"reason": "pending"
-		},
-		{
-			"file": "web/src/components/DeviceGroupBotDialog.tsx",
-			"text": "添加到群组",
-			"count": 1,
-			"reason": "pending"
-		},
-		{
-			"file": "web/src/components/DeviceGroupBotDialog.tsx",
-			"text": "添加或新建 Bot",
-			"count": 1,
-			"reason": "pending"
-		},
-		{
-			"file": "web/src/components/DeviceGroupBotDialog.tsx",
-			"text": "选择已有 Bot 加入群组，或在本机新建 Bot。",
 			"count": 1,
 			"reason": "pending"
 		},
@@ -627,45 +453,21 @@
 		},
 		{
 			"file": "web/src/components/LeftPanel.tsx",
-			"text": "临时",
-			"count": 3,
-			"reason": "pending"
-		},
-		{
-			"file": "web/src/components/LeftPanel.tsx",
 			"text": "微信",
 			"count": 1,
-			"reason": "pending"
-		},
-		{
-			"file": "web/src/components/LeftPanel.tsx",
-			"text": "新建对话",
-			"count": 1,
-			"reason": "pending"
-		},
-		{
-			"file": "web/src/components/LeftPanel.tsx",
-			"text": "暂无历史会话",
-			"count": 1,
-			"reason": "pending"
-		},
-		{
-			"file": "web/src/components/LeftPanel.tsx",
-			"text": "正在读取会话…",
-			"count": 1,
-			"reason": "pending"
+			"reason": "data"
 		},
 		{
 			"file": "web/src/components/LeftPanel.tsx",
 			"text": "钉钉",
 			"count": 1,
-			"reason": "pending"
+			"reason": "data"
 		},
 		{
 			"file": "web/src/components/LeftPanel.tsx",
 			"text": "飞书",
 			"count": 1,
-			"reason": "pending"
+			"reason": "data"
 		},
 		{
 			"file": "web/src/components/Markdown.tsx",
@@ -904,60 +706,6 @@
 		{
 			"file": "web/src/components/UniversalModelPicker.tsx",
 			"text": "默认模型: ${defaultModel}",
-			"count": 1,
-			"reason": "pending"
-		},
-		{
-			"file": "web/src/components/UniversalPathPicker.tsx",
-			"text": ". (当前项目根目录)",
-			"count": 1,
-			"reason": "pending"
-		},
-		{
-			"file": "web/src/components/UniversalPathPicker.tsx",
-			"text": "docs (文档目录)",
-			"count": 1,
-			"reason": "pending"
-		},
-		{
-			"file": "web/src/components/UniversalPathPicker.tsx",
-			"text": "server (后端服务)",
-			"count": 1,
-			"reason": "pending"
-		},
-		{
-			"file": "web/src/components/UniversalPathPicker.tsx",
-			"text": "src (源码目录)",
-			"count": 1,
-			"reason": "pending"
-		},
-		{
-			"file": "web/src/components/UniversalPathPicker.tsx",
-			"text": "tests (测试套件)",
-			"count": 1,
-			"reason": "pending"
-		},
-		{
-			"file": "web/src/components/UniversalPathPicker.tsx",
-			"text": "web (前端目录)",
-			"count": 1,
-			"reason": "pending"
-		},
-		{
-			"file": "web/src/components/UniversalPathPicker.tsx",
-			"text": "如 . 或 web 或绝对路径",
-			"count": 1,
-			"reason": "pending"
-		},
-		{
-			"file": "web/src/components/UniversalPathPicker.tsx",
-			"text": "工作目录: ${cwd || \".\"}",
-			"count": 1,
-			"reason": "pending"
-		},
-		{
-			"file": "web/src/components/UniversalPathPicker.tsx",
-			"text": "选择推荐子目录或最近项目",
 			"count": 1,
 			"reason": "pending"
 		},
@@ -2178,54 +1926,6 @@
 			"text": "高星榜单",
 			"count": 1,
 			"reason": "data"
-		},
-		{
-			"file": "web/src/tool-inventory.ts",
-			"text": "已存档",
-			"count": 1,
-			"reason": "pending"
-		},
-		{
-			"file": "web/src/tool-inventory.ts",
-			"text": "插件",
-			"count": 1,
-			"reason": "pending"
-		},
-		{
-			"file": "web/src/tool-inventory.ts",
-			"text": "插件已卸载/跨设备",
-			"count": 1,
-			"reason": "pending"
-		},
-		{
-			"file": "web/src/tool-inventory.ts",
-			"text": "效率工具",
-			"count": 1,
-			"reason": "pending"
-		},
-		{
-			"file": "web/src/tool-inventory.ts",
-			"text": "核心",
-			"count": 1,
-			"reason": "pending"
-		},
-		{
-			"file": "web/src/tool-inventory.ts",
-			"text": "永不延迟",
-			"count": 1,
-			"reason": "pending"
-		},
-		{
-			"file": "web/src/tool-inventory.ts",
-			"text": "终端协作",
-			"count": 1,
-			"reason": "pending"
-		},
-		{
-			"file": "web/src/tool-inventory.ts",
-			"text": "自动合并",
-			"count": 1,
-			"reason": "pending"
 		},
 		{
 			"file": "web/src/tts-client.ts",

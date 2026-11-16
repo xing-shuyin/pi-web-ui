@@ -3841,16 +3841,7 @@ function LoadedSettingsModal({
 								)}
 								{!isDsh &&
 									toolFlowCats.map((cat) => {
-										const title =
-											cat.id === "core"
-												? t("toolsSectionCore")
-												: cat.id === "terminal"
-													? `${t("toolsSectionTerminal")} · ${t("toolsSectionSubagent")}`
-													: cat.id === "other"
-														? t("toolsSectionOther")
-														: cat.id === "plugin"
-															? t("toolsSectionPlugin")
-															: cat.fallbackTitle;
+										const title = cat.titleKeys.map((key) => t(key)).join(" · ");
 										const kw = toolFlowQuery.trim().toLowerCase();
 										const items = cat.items.filter((it) => {
 											if (!kw) return true;
@@ -3903,7 +3894,7 @@ function LoadedSettingsModal({
 											<div className="toolflow-cat" key={cat.id}>
 												<div className="toolflow-chead">
 													<b>{title}</b>
-													<span className="sub">{cat.sub}</span>
+													<span className="sub">{t(cat.subKey)}</span>
 													<span className="nums">
 														{(() => {
 															let rs = 0,

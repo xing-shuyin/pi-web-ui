@@ -1,14 +1,13 @@
 import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { isZhLocale, useI18n } from "../i18n";
+import { useT } from "../i18n";
 import { useEscapeKey } from "../shortcut-stack";
 import { LocalBots } from "./LocalBots";
 import { DEVICE_GROUPS_CHANGED, deviceGroupRequest, type SidebarDeviceGroup } from "./DeviceGroupSection";
 
 type Bot = { id: string; name: string; enabled: boolean; deviceName?: string };
 export function DeviceGroupBotDialog({ room, onClose }: { room: SidebarDeviceGroup; onClose: () => void }) {
-	const { locale } = useI18n();
-	const zh = isZhLocale(locale);
+	const t = useT();
 	const [bots, setBots] = useState<Bot[]>([]);
 	const [members, setMembers] = useState(room.botIds);
 	const [selected, setSelected] = useState<string[]>([]);
@@ -72,15 +71,15 @@ export function DeviceGroupBotDialog({ room, onClose }: { room: SidebarDeviceGro
 				className="device-group-bot-dialog"
 				role="dialog"
 				aria-modal="true"
-				aria-label={zh ? "添加或新建 Bot" : "Add or create Bot"}
+				aria-label={t("deviceGroupSectionAddOrCreateBot")}
 				onClick={(event) => event.stopPropagation()}
 			>
 				<div className="dg-heading">
 					<h2>
-						{zh ? "添加 Bot" : "Add Bot"} · {room.name}
+						{t("deviceGroupSectionAddBot")} · {room.name}
 					</h2>
 					<button type="button" className="dc-button" disabled={busy || creating} onClick={close}>
-						{zh ? "关闭" : "Close"}
+						{t("close")}
 					</button>
 				</div>
 				{error && (
@@ -88,13 +87,9 @@ export function DeviceGroupBotDialog({ room, onClose }: { room: SidebarDeviceGro
 						{error}
 					</p>
 				)}
-				<p>
-					{zh
-						? "选择已有 Bot 加入群组，或在本机新建 Bot。"
-						: "Add existing Bots to this group or create a Bot on this computer."}
-				</p>
+				<p>{t("deviceGroupBotDialogLead")}</p>
 				{loading ? (
-					<p>{zh ? "加载中…" : "Loading…"}</p>
+					<p>{t("loading")}</p>
 				) : (
 					<div className="dg-bot-choices">
 						{bots
@@ -117,9 +112,7 @@ export function DeviceGroupBotDialog({ room, onClose }: { room: SidebarDeviceGro
 									</span>
 								</label>
 							))}
-						{!bots.some((bot) => bot.enabled && !members.includes(bot.id)) && (
-							<p>{zh ? "没有可添加的 Bot，可以新建一个。" : "No Bots available to add. Create a new one."}</p>
-						)}
+						{!bots.some((bot) => bot.enabled && !members.includes(bot.id)) && <p>{t("deviceGroupBotDialogEmpty")}</p>}
 					</div>
 				)}
 				<div className="dc-actions">
@@ -132,7 +125,7 @@ export function DeviceGroupBotDialog({ room, onClose }: { room: SidebarDeviceGro
 							setError("");
 						}}
 					>
-						{zh ? "新建 Bot" : "Create Bot"}
+						{t("deviceGroupsCreateBot")}
 					</button>
 					<button
 						type="button"
@@ -140,7 +133,7 @@ export function DeviceGroupBotDialog({ room, onClose }: { room: SidebarDeviceGro
 						disabled={loading || busy || creating || !selected.length}
 						onClick={() => void add(selected)}
 					>
-						{busy ? (zh ? "正在添加…" : "Adding…") : zh ? "添加到群组" : "Add to group"}
+						{busy ? t("deviceGroupBotDialogAdding") : t("deviceGroupBotDialogAddToGroup")}
 					</button>
 				</div>
 				{creating && (
@@ -151,11 +144,7 @@ export function DeviceGroupBotDialog({ room, onClose }: { room: SidebarDeviceGro
 							setCreating(false);
 							setRefresh((old) => old + 1);
 							if (!synced || !bot.enabled) {
-								setError(
-									zh
-										? "Bot 已保存；请启用并同步到中心后，再添加到群组。"
-										: "Bot saved. Enable and sync it to the hub before adding it to the group.",
-								);
+								setError(t("deviceGroupBotDialogSaved"));
 								return;
 							}
 							void add([bot.id]);

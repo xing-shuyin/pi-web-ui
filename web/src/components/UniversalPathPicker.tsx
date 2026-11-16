@@ -35,7 +35,7 @@ export function UniversalPathPicker({
 	baseCwd,
 	onCreateProject,
 	className = "",
-	placeholder = "如 . 或 web 或绝对路径",
+	placeholder,
 	inputId,
 	disabled = false,
 	commitOnBlur = false,
@@ -62,12 +62,12 @@ export function UniversalPathPicker({
 	}, [menuOpen]);
 
 	const commonDirs = [
-		{ label: ". (当前项目根目录)", value: "." },
-		{ label: "web (前端目录)", value: "web" },
-		{ label: "server (后端服务)", value: "server" },
-		{ label: "tests (测试套件)", value: "tests" },
-		{ label: "src (源码目录)", value: "src" },
-		{ label: "docs (文档目录)", value: "docs" },
+		{ label: t("universalPathDirRoot"), value: "." },
+		{ label: t("universalPathDirWeb"), value: "web" },
+		{ label: t("universalPathDirServer"), value: "server" },
+		{ label: t("universalPathDirTests"), value: "tests" },
+		{ label: t("universalPathDirSrc"), value: "src" },
+		{ label: t("universalPathDirDocs"), value: "docs" },
 	];
 
 	const closePicker = () => {
@@ -107,15 +107,15 @@ export function UniversalPathPicker({
 							if (typedCwd !== cwd) onSelectCwd(typedCwd);
 						}
 					}}
-					placeholder={placeholder}
-					title={`工作目录: ${cwd || "."}`}
+					placeholder={placeholder ?? t("universalPathPlaceholder")}
+					title={t("universalPathCwdTitle", { cwd: cwd || "." })}
 				/>
 				<button
 					type="button"
 					className="universal-path-dropdown-toggle"
 					disabled={disabled}
 					onClick={() => setMenuOpen(!menuOpen)}
-					title="选择推荐子目录或最近项目"
+					title={t("universalPathDropdownTip")}
 				>
 					<FiChevronDown />
 				</button>
