@@ -190,4 +190,45 @@ describe("全本地：直聊与群组不经过远端 Hub", () => {
 		// 但用于会话/恢复/锁分桶的身份必须稳定，否则重启后 resume 全部失效。
 		expect(new Set(identities)).toEqual(new Set(["local-device-hub"]));
 	});
+
+	it("proxies group blackboard reads and writes (PUT) to the local engine", async () => {
+		const f = await fixture();
+		const bot = await f.createBot("Scribe");
+		const created = await f.request("rooms", { name: "黑板房", botIds: [bot.id] });
+		expect(created.status).toBe(201);
+		const roomId = (await created.json()).room.id;
+		const put = (path: string, body: unknown) =>
+			fetch(`${f.base}/api/device-center/${path}`, {
+				method: "PUT",
+				headers: { Origin: f.base, "Content-Type": "application/json" },
+				body: JSON.stringify(body),
+			});
+		// 首次写：expectedVersion 0 → version 1
+		const PLAN = "# 计划：先跑通本地群组";
+		const first = await put(`rooms/${roomId}/blackboard`, { content: PLAN, expectedVersion: 0 });
+		expect(first.status).toBe(200);
+		expect((await first.json()).blackboard).toMatchObject({ version: 1, content: PLAN });
+		// 读回
+		const read = await f.request(`rooms/${roomId}/blackboard`);
+		expect(read.status).toBe(200);
+		expect((await read.json()).blackboard.version).toBe(1);
+		// 分段写
+		const section = await put(`rooms/${roomId}/blackboard/sections/risk`, {
+			content: "## 风险：无",
+			expectedVersion: 1,
+		});
+		expect(section.status).toBe(200);
+		// 版本冲突仍然是 409（不是被设备层吞成 400/502）
+		const stale = await put(`rooms/${roomId}/blackboard`, { content: "# 旧版本", expectedVersion: 1 });
+		expect(stale.status).toBe(409);
+		// 白名单：夹带字段直接 400
+		const smuggled = await put(`rooms/${roomId}/blackboard`, {
+			content: "# x",
+			expectedVersion: 2,
+			updatedBy: { type: "bot", id: "spoof" },
+		});
+		expect(smuggled.status).toBe(400);
+		// 锁信息（UI 未用，但属于房间面板的一部分）也要能在本机读到
+		expect((await f.request(`rooms/${roomId}/locks`)).status).toBe(200);
+	});
 });

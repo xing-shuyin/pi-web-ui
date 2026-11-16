@@ -751,8 +751,15 @@ export async function installLocalDeviceCenter(options: Options) {
 			}
 		});
 	}
-	function userRoute(method: "get" | "post", path: string, fields: string[]) {
+	function userRoute(
+		method: "get" | "post" | "put",
+		path: string,
+		fields: string[],
+		limits: { maxBytes?: number } = {},
+	) {
+		const writes = method !== "get";
 		const supportsContract = method === "post" && fields.includes("contract");
+		const maxBytes = limits.maxBytes ?? 32768;
 		options.app[method](`/api/device-center/${path}`, async (req, res) => {
 			try {
 				await serialize(ensureLocalHub);
@@ -772,13 +779,13 @@ export async function installLocalDeviceCenter(options: Options) {
 			if (closed || inFlight >= 8) return res.status(429).json({ code: "BUSY", error: "Device center busy" });
 			const body = req.body ?? {};
 			if (
-				method === "post" &&
+				writes &&
 				(!body ||
 					typeof body !== "object" ||
 					Array.isArray(body) ||
 					Object.keys(body).some((key) => !fields.includes(key)) ||
 					Buffer.byteLength(JSON.stringify(body)) >
-						(supportsContract && body.contract !== undefined ? MAX_CONTRACT_REQUEST_BYTES : 32768))
+						(supportsContract && body.contract !== undefined ? MAX_CONTRACT_REQUEST_BYTES : maxBytes))
 			)
 				return res.status(400).json({ code: "INVALID_BODY", error: "Invalid group request" });
 			if (path === "devices/:id/open" && body.preferLan === true) {
@@ -817,7 +824,7 @@ export async function installLocalDeviceCenter(options: Options) {
 						"X-Device-Id": captured.deviceId,
 						Authorization: `Bearer ${captured.uiCredential}`,
 					},
-					...(method === "post" ? { body: JSON.stringify(body) } : {}),
+					...(writes ? { body: JSON.stringify(body) } : {}),
 				});
 				if (!response.body) throw new Error("Empty response");
 				const reader = response.body.getReader();
@@ -1624,6 +1631,15 @@ export async function installLocalDeviceCenter(options: Options) {
 		"executionMode",
 		"contract",
 	]);
+	// 群黑板：UI 用 PUT 保存（`GroupBlackboardView`），Hub 侧上限 512kb，代理照抄同一档。
+	userRoute("get", "rooms/:id/blackboard", []);
+	userRoute("put", "rooms/:id/blackboard", ["content", "expectedVersion", "title", "sections"], {
+		maxBytes: 512 * 1024,
+	});
+	userRoute("put", "rooms/:id/blackboard/sections/:sectionId", ["content", "expectedVersion", "title"], {
+		maxBytes: 512 * 1024,
+	});
+	userRoute("get", "rooms/:id/locks", []);
 	userRoute("get", "rooms/:id/webhooks", []);
 	userRoute("post", "rooms/:id/webhooks", [
 		"name",
