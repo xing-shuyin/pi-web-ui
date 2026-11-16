@@ -646,5 +646,6 @@
 	"canvas.edges.type.condition_true": "Koşul doğru",
 	"canvas.edges.type.condition_false": "Koşul yanlış",
 	"canvas.edges.type.approve": "Onayla",
-	"canvas.edges.type.reject": "Reddet"
+	"canvas.edges.type.reject": "Reddet",
+	"canvas.aiBar.placeholder": "Örnek: bir çözümü araştırın, uygulayın, test edin, ardından inceleyip özetleyin"
 }

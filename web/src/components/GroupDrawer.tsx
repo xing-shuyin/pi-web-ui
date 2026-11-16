@@ -9,7 +9,7 @@ import { GroupBlackboardView } from "./GroupBlackboardView";
 import { GroupWebhooks } from "./GroupWebhooks";
 import { GroupRouterSettings, type GroupRouterConfig } from "./GroupRouterSettings";
 import { GroupWorkItems } from "./GroupWorkItems";
-import { isZhLocale, useI18n } from "../i18n";
+import { useT } from "../i18n";
 
 export type GroupDrawerTab =
 	"blackboard" | "deliveries" | "transfers" | "canvas" | "presets" | "bots" | "webhooks" | "router" | "work-items";
@@ -48,8 +48,7 @@ export const GroupDrawer = memo(function GroupDrawer({
 	onRefreshGroup,
 	onRefreshConversations,
 }: GroupDrawerProps) {
-	const { locale } = useI18n();
-	const zh = isZhLocale(locale);
+	const t = useT();
 
 	useEffect(() => {
 		if (!isOpen) return;
@@ -66,42 +65,42 @@ export const GroupDrawer = memo(function GroupDrawer({
 	if (!isOpen) return null;
 
 	const titleMap: Record<GroupDrawerTab, { icon: string; title: string; badge?: number }> = {
-		router: { icon: "🧭", title: zh ? "群组 AI Router" : "Group AI Router" },
-		"work-items": { icon: "🗂", title: zh ? "群组工单与 Router 运行" : "Work Items & Router Runs" },
+		router: { icon: "🧭", title: t("groupRouterLabel") },
+		"work-items": { icon: "🗂", title: t("groupDrawer.tabWorkItems") },
 		blackboard: {
 			icon: "📋",
-			title: zh ? "群组共享共识黑板" : "Group Shared Blackboard",
+			title: t("groupDrawer.tabBlackboard"),
 			badge: detail?.room.blackboard?.version,
 		},
 		deliveries: {
 			icon: "📦",
-			title: zh ? "交付与待办事项" : "Deliveries & Attention",
+			title: t("groupDrawer.tabDeliveries"),
 			badge: attentionCount > 0 ? attentionCount : conversations.length > 0 ? conversations.length : undefined,
 		},
 		transfers: {
 			icon: "📁",
-			title: zh ? "跨机大文件传输与断点续传" : "Cross-Device File Transfers",
+			title: t("deviceFileTransferTitle"),
 		},
 		canvas: {
 			icon: "🎨",
-			title: zh ? "群画布工作流" : "Group Canvas Workflow",
+			title: t("groupDrawer.tabCanvas"),
 		},
 		presets: {
 			icon: "🤖",
-			title: zh ? "Bot 预设与规则配置" : "Bot Presets & Settings",
+			title: t("groupDrawer.tabPresets"),
 		},
 		bots: {
 			icon: "👥",
-			title: zh ? "群协作 Bot 成员清单" : "Collaborating Bots",
+			title: t("groupDrawer.tabBots"),
 			badge: members.length,
 		},
 		webhooks: {
 			icon: "🔗",
-			title: zh ? "群组 Webhook 集成" : "Group Webhooks",
+			title: t("groupDrawer.tabWebhooks"),
 			badge: detail?.room.webhooks?.filter((w) => w.enabled).length,
 		},
 	};
-	const currentTitle = titleMap[activeTab] || { icon: "📦", title: zh ? "群协同" : "Collaboration" };
+	const currentTitle = titleMap[activeTab] || { icon: "📦", title: t("groupDrawer.title") };
 
 	return (
 		<div className="group-drawer-overlay" role="dialog" aria-modal="true" aria-label={currentTitle.title}>
@@ -123,8 +122,8 @@ export const GroupDrawer = memo(function GroupDrawer({
 						type="button"
 						className="btn group-drawer-close-btn"
 						onClick={onClose}
-						title={zh ? "关闭抽屉 (Esc)" : "Close Drawer (Esc)"}
-						aria-label={zh ? "关闭" : "Close"}
+						title={t("groupDrawer.closeTitle")}
+						aria-label={t("close")}
 					>
 						<FiX />
 					</button>
@@ -208,7 +207,7 @@ export const GroupDrawer = memo(function GroupDrawer({
 					{activeTab === "bots" && (
 						<div className="group-drawer-pane group-members-overview">
 							<div className="grp-section-title">
-								<span>{zh ? "群协作 Bot 成员清单" : "Collaborating Bots"}</span>
+								<span>{t("groupDrawer.tabBots")}</span>
 								<span className="grp-count">({members.length})</span>
 							</div>
 							<div className="grp-bot-list">
@@ -219,17 +218,17 @@ export const GroupDrawer = memo(function GroupDrawer({
 												<span className={`grp-bot-indicator ${bot.online !== false ? "online" : "offline"}`} />
 												<strong>{bot.name}</strong>
 												{!detail?.room.router?.enabled && bot.id === detail?.room.primaryBotId && (
-													<span className="grp-primary-badge">{zh ? "主协调" : "Primary"}</span>
+													<span className="grp-primary-badge">{t("groupDrawer.primaryBot")}</span>
 												)}
 											</div>
 											<span className="grp-bot-status-text">
-												{bot.online !== false ? (zh ? "在线就绪" : "Online Ready") : zh ? "离线" : "Offline"}
+												{bot.online !== false ? t("groupDrawer.botOnlineReady") : t("deviceHubOffline")}
 											</span>
 										</div>
 										<div className="grp-bot-info">
 											{bot.deviceName && (
 												<div className="grp-bot-device">
-													<span>🖥 {zh ? "设备: " : "Device: "}</span>
+													<span>🖥 {t("groupDrawer.botDevice")}</span>
 													<code>{bot.deviceName}</code>
 												</div>
 											)}
@@ -240,7 +239,7 @@ export const GroupDrawer = memo(function GroupDrawer({
 										</div>
 										{bot.tools && bot.tools.length > 0 && (
 											<div className="grp-bot-tools">
-												<span className="grp-tools-label">{zh ? "授权工具: " : "Tools: "}</span>
+												<span className="grp-tools-label">{t("groupDrawer.botTools")}</span>
 												<div className="grp-tools-chips">
 													{bot.tools.map((tool) => (
 														<span key={tool} className="grp-tool-chip">

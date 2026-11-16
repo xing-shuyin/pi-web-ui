@@ -3,7 +3,7 @@ import { FiCheck, FiEdit2, FiExternalLink, FiMonitor, FiRefreshCw, FiX } from "r
 import { appUrl } from "../base-url";
 import { openDeviceAccess } from "../device-access";
 import { withToken } from "../auth-token";
-import { isZhLocale, useI18n } from "../i18n";
+import { isZhLocale, useI18n, useT } from "../i18n";
 
 export type Device = { id: string; name: string; remark?: string | null; online: boolean; alias?: string };
 export function DeviceDirectory({
@@ -16,6 +16,7 @@ export function DeviceDirectory({
 	onRemarkUpdated?: (deviceId: string, remark: string) => void;
 }) {
 	const { locale } = useI18n();
+	const t = useT();
 	const zh = isZhLocale(locale);
 	const [devices, setDevices] = useState<Device[]>([]);
 	const [error, setError] = useState("");
@@ -35,17 +36,9 @@ export function DeviceDirectory({
 					credentials: "same-origin",
 				});
 				if (!response.ok)
-					throw new Error(
-						response.status === 409
-							? zh
-								? "请重新绑定本机以读取设备列表。"
-								: "Pair this computer again to read the device list."
-							: zh
-								? "无法读取设备列表，请重试。"
-								: "Could not load devices. Try again.",
-					);
+					throw new Error(response.status === 409 ? t("deviceDirectory.pairAgain") : t("deviceDirectory.loadFailed"));
 				const data = await response.json();
-				if (!Array.isArray(data.devices)) throw new Error(zh ? "设备列表格式异常。" : "Invalid device list.");
+				if (!Array.isArray(data.devices)) throw new Error(t("deviceDirectory.invalidList"));
 				if (!stopped) {
 					setDevices(data.devices);
 					setError("");
@@ -65,7 +58,7 @@ export function DeviceDirectory({
 			controller?.abort();
 			clearTimeout(timer);
 		};
-	}, [hubUrl, currentDeviceId, refresh, zh]);
+	}, [hubUrl, currentDeviceId, refresh, t]);
 	function target(id: string): string | undefined {
 		try {
 			const base = new URL(hubUrl);
@@ -99,7 +92,7 @@ export function DeviceDirectory({
 			);
 			if (!response.ok) {
 				const data = await response.json().catch(() => ({}));
-				throw new Error(data.error || (zh ? "保存备注失败" : "Failed to save remark"));
+				throw new Error(data.error || t("deviceDirectory.saveRemarkFailed"));
 			}
 			setDevices((prev) => prev.map((d) => (d.id === deviceId ? { ...d, remark: trimmed || undefined } : d)));
 			setEditingId(null);
@@ -117,25 +110,21 @@ export function DeviceDirectory({
 		}
 	}
 	return (
-		<section className="dc-card" aria-label={zh ? "所有设备" : "All devices"}>
+		<section className="dc-card" aria-label={t("deviceDirectory.allDevices")}>
 			<div className="dc-card-header">
 				<span className="dc-icon">
 					<FiMonitor aria-hidden />
 				</span>
 				<div>
 					<h2>
-						{zh ? "所有设备" : "All devices"} · {devices.length}
+						{t("deviceDirectory.allDevices")} · {devices.length}
 					</h2>
-					<p>
-						{zh
-							? "同一账号下的设备，使用本机绑定授权直接访问。"
-							: "Devices in your account. Access is authorized through this computer's pairing."}
-					</p>
+					<p>{t("deviceDirectory.intro")}</p>
 				</div>
 				<button
 					type="button"
 					className="dc-icon-button"
-					aria-label={zh ? "刷新设备" : "Refresh devices"}
+					aria-label={t("deviceDirectory.refresh")}
 					onClick={() => setRefresh((n) => n + 1)}
 				>
 					<FiRefreshCw />
@@ -160,17 +149,17 @@ export function DeviceDirectory({
 								<strong>{displayName}</strong>
 								<span>
 									{hasRemark ? `${device.name} · ` : ""}
-									{device.id === currentDeviceId ? (zh ? "本机" : "This device") : device.id}
+									{device.id === currentDeviceId ? t("deviceDirectory.thisDevice") : device.id}
 								</span>
 							</div>
 							<span className={`dc-status ${device.online ? "is-online" : "is-offline"}`}>
-								{device.online ? (zh ? "在线" : "Online") : zh ? "离线" : "Offline"}
+								{device.online ? t("deviceHubOnline") : t("deviceHubOffline")}
 							</span>
 							<div className="dc-actions">
 								<button
 									type="button"
 									className="dc-button"
-									title={zh ? (hasRemark ? "修改备注" : "设置备注") : hasRemark ? "Edit remark" : "Set remark"}
+									title={hasRemark ? t("deviceDirectory.editRemark") : t("deviceDirectory.setRemark")}
 									onClick={() => {
 										if (isEditing) {
 											setEditingId(null);
@@ -181,7 +170,7 @@ export function DeviceDirectory({
 									}}
 								>
 									<FiEdit2 aria-hidden />
-									{zh ? (hasRemark ? "修改备注" : "设置备注") : hasRemark ? "Edit remark" : "Set remark"}
+									{hasRemark ? t("deviceDirectory.editRemark") : t("deviceDirectory.setRemark")}
 								</button>
 								{target(device.id) && (
 									<>
@@ -193,7 +182,7 @@ export function DeviceDirectory({
 											onClick={(event) => void openDevice(event, device.id)}
 										>
 											<FiExternalLink aria-hidden />
-											{zh ? "打开设备" : "Open device"}
+											{t("deviceDirectory.openDevice")}
 										</a>
 										<a
 											className="dc-button"
@@ -203,7 +192,7 @@ export function DeviceDirectory({
 											onClick={(event) => void openDevice(event, device.id, true)}
 										>
 											<FiMonitor aria-hidden />
-											{zh ? "远程桌面" : "Remote desktop"}
+											{t("deviceDirectory.remoteDesktop")}
 										</a>
 									</>
 								)}
@@ -229,7 +218,7 @@ export function DeviceDirectory({
 										maxLength={80}
 										autoFocus
 										disabled={savingId === device.id}
-										placeholder={zh ? "输入设备备注（留空清除）" : "Device remark (leave blank to clear)"}
+										placeholder={t("deviceDirectory.remarkPlaceholder")}
 										value={remarkInput}
 										onChange={(event) => setRemarkInput(event.target.value)}
 										style={{
@@ -245,7 +234,7 @@ export function DeviceDirectory({
 									/>
 									<button type="submit" className="dc-button is-primary" disabled={savingId === device.id}>
 										<FiCheck aria-hidden />
-										{savingId === device.id ? (zh ? "保存中…" : "Saving…") : zh ? "保存" : "Save"}
+										{savingId === device.id ? t("saving") : t("save")}
 									</button>
 									<button
 										type="button"
@@ -254,7 +243,7 @@ export function DeviceDirectory({
 										onClick={() => setEditingId(null)}
 									>
 										<FiX aria-hidden />
-										{zh ? "取消" : "Cancel"}
+										{t("cancel")}
 									</button>
 								</form>
 							)}

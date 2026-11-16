@@ -646,5 +646,6 @@
 	"canvas.edges.type.condition_true": "Condición verdadera",
 	"canvas.edges.type.condition_false": "Condición falsa",
 	"canvas.edges.type.approve": "Aprobar",
-	"canvas.edges.type.reject": "Rechazar"
+	"canvas.edges.type.reject": "Rechazar",
+	"canvas.aiBar.placeholder": "Ejemplo: investigar una solución, implementarla, probarla y luego revisarla y resumirla"
 }

@@ -131,121 +131,121 @@
 			"file": "web/src/components/canvas/CanvasAiBar.tsx",
 			"text": "人工",
 			"count": 1,
-			"reason": "pending"
+			"reason": "data"
 		},
 		{
 			"file": "web/src/components/canvas/CanvasAiBar.tsx",
 			"text": "合并",
 			"count": 1,
-			"reason": "pending"
+			"reason": "data"
 		},
 		{
 			"file": "web/src/components/canvas/CanvasAiBar.tsx",
 			"text": "合规",
 			"count": 1,
-			"reason": "pending"
+			"reason": "data"
 		},
 		{
 			"file": "web/src/components/canvas/CanvasAiBar.tsx",
 			"text": "实现",
 			"count": 2,
-			"reason": "pending"
+			"reason": "data"
 		},
 		{
 			"file": "web/src/components/canvas/CanvasAiBar.tsx",
 			"text": "审批",
 			"count": 1,
-			"reason": "pending"
+			"reason": "data"
 		},
 		{
 			"file": "web/src/components/canvas/CanvasAiBar.tsx",
 			"text": "审查",
 			"count": 1,
-			"reason": "pending"
+			"reason": "data"
 		},
 		{
 			"file": "web/src/components/canvas/CanvasAiBar.tsx",
 			"text": "开发",
 			"count": 1,
-			"reason": "pending"
+			"reason": "data"
 		},
 		{
 			"file": "web/src/components/canvas/CanvasAiBar.tsx",
 			"text": "打分",
 			"count": 1,
-			"reason": "pending"
+			"reason": "data"
 		},
 		{
 			"file": "web/src/components/canvas/CanvasAiBar.tsx",
 			"text": "拆解",
 			"count": 1,
-			"reason": "pending"
+			"reason": "data"
 		},
 		{
 			"file": "web/src/components/canvas/CanvasAiBar.tsx",
 			"text": "搜索",
 			"count": 1,
-			"reason": "pending"
+			"reason": "data"
 		},
 		{
 			"file": "web/src/components/canvas/CanvasAiBar.tsx",
 			"text": "文档",
 			"count": 1,
-			"reason": "pending"
+			"reason": "data"
 		},
 		{
 			"file": "web/src/components/canvas/CanvasAiBar.tsx",
 			"text": "架构",
 			"count": 1,
-			"reason": "pending"
+			"reason": "data"
 		},
 		{
 			"file": "web/src/components/canvas/CanvasAiBar.tsx",
 			"text": "汇总",
 			"count": 1,
-			"reason": "pending"
+			"reason": "data"
 		},
 		{
 			"file": "web/src/components/canvas/CanvasAiBar.tsx",
 			"text": "测试",
 			"count": 1,
-			"reason": "pending"
+			"reason": "data"
 		},
 		{
 			"file": "web/src/components/canvas/CanvasAiBar.tsx",
 			"text": "编码",
 			"count": 1,
-			"reason": "pending"
+			"reason": "data"
 		},
 		{
 			"file": "web/src/components/canvas/CanvasAiBar.tsx",
 			"text": "规划",
 			"count": 1,
-			"reason": "pending"
+			"reason": "data"
 		},
 		{
 			"file": "web/src/components/canvas/CanvasAiBar.tsx",
 			"text": "评估",
 			"count": 1,
-			"reason": "pending"
+			"reason": "data"
 		},
 		{
 			"file": "web/src/components/canvas/CanvasAiBar.tsx",
 			"text": "调研",
 			"count": 1,
-			"reason": "pending"
+			"reason": "data"
 		},
 		{
 			"file": "web/src/components/canvas/CanvasAiBar.tsx",
 			"text": "选型",
 			"count": 1,
-			"reason": "pending"
+			"reason": "data"
 		},
 		{
 			"file": "web/src/components/canvas/CanvasAiBar.tsx",
 			"text": "重构",
 			"count": 1,
-			"reason": "pending"
+			"reason": "data"
 		},
 		{
 			"file": "web/src/components/canvas/CanvasTypes.ts",
@@ -524,114 +524,6 @@
 			"reason": "pending"
 		},
 		{
-			"file": "web/src/components/DeviceDirectory.tsx",
-			"text": "保存",
-			"count": 1,
-			"reason": "pending"
-		},
-		{
-			"file": "web/src/components/DeviceDirectory.tsx",
-			"text": "保存中…",
-			"count": 1,
-			"reason": "pending"
-		},
-		{
-			"file": "web/src/components/DeviceDirectory.tsx",
-			"text": "保存备注失败",
-			"count": 1,
-			"reason": "pending"
-		},
-		{
-			"file": "web/src/components/DeviceDirectory.tsx",
-			"text": "修改备注",
-			"count": 2,
-			"reason": "pending"
-		},
-		{
-			"file": "web/src/components/DeviceDirectory.tsx",
-			"text": "刷新设备",
-			"count": 1,
-			"reason": "pending"
-		},
-		{
-			"file": "web/src/components/DeviceDirectory.tsx",
-			"text": "取消",
-			"count": 1,
-			"reason": "pending"
-		},
-		{
-			"file": "web/src/components/DeviceDirectory.tsx",
-			"text": "同一账号下的设备，使用本机绑定授权直接访问。",
-			"count": 1,
-			"reason": "pending"
-		},
-		{
-			"file": "web/src/components/DeviceDirectory.tsx",
-			"text": "在线",
-			"count": 1,
-			"reason": "pending"
-		},
-		{
-			"file": "web/src/components/DeviceDirectory.tsx",
-			"text": "所有设备",
-			"count": 2,
-			"reason": "pending"
-		},
-		{
-			"file": "web/src/components/DeviceDirectory.tsx",
-			"text": "打开设备",
-			"count": 1,
-			"reason": "pending"
-		},
-		{
-			"file": "web/src/components/DeviceDirectory.tsx",
-			"text": "无法读取设备列表，请重试。",
-			"count": 1,
-			"reason": "pending"
-		},
-		{
-			"file": "web/src/components/DeviceDirectory.tsx",
-			"text": "本机",
-			"count": 1,
-			"reason": "pending"
-		},
-		{
-			"file": "web/src/components/DeviceDirectory.tsx",
-			"text": "离线",
-			"count": 1,
-			"reason": "pending"
-		},
-		{
-			"file": "web/src/components/DeviceDirectory.tsx",
-			"text": "设备列表格式异常。",
-			"count": 1,
-			"reason": "pending"
-		},
-		{
-			"file": "web/src/components/DeviceDirectory.tsx",
-			"text": "设置备注",
-			"count": 2,
-			"reason": "pending"
-		},
-		{
-			"file": "web/src/components/DeviceDirectory.tsx",
-			"text": "请重新绑定本机以读取设备列表。",
-			"count": 1,
-			"reason": "pending"
-		},
-		{
-			"file": "web/src/components/DeviceDirectory.tsx",
-			"text": "输入设备备注（留空清除）",
-			"count": 1,
-			"reason": "pending"
-		},
-		{
-			"file": "web/src/components/DeviceDirectory.tsx",
-			"text": "远程桌面",
-			"count": 1,
-			"reason": "pending"
-		},
-		{
 			"file": "web/src/components/DeviceGroupBotDialog.tsx",
 			"text": "Bot 已保存；请启用并同步到中心后，再添加到群组。",
 			"count": 1,
@@ -749,198 +641,6 @@
 			"file": "web/src/components/DeviceGroupMembers.tsx",
 			"text": "远程桌面",
 			"count": 2,
-			"reason": "pending"
-		},
-		{
-			"file": "web/src/components/DirectoryBrowser.tsx",
-			"text": "${t(\"addWorkspaceRoot\")} · ${isZh ? \"已在工作区根中\" : \"Already a workspace root\"}",
-			"count": 1,
-			"reason": "pending"
-		},
-		{
-			"file": "web/src/components/DirectoryBrowser.tsx",
-			"text": "${t(\"addWorkspaceRoot\")} · ${isZh ? \"已是当前项目目录\" : \"Already the current project\"}",
-			"count": 1,
-			"reason": "pending"
-		},
-		{
-			"file": "web/src/components/DirectoryBrowser.tsx",
-			"text": "${t(\"addWorkspaceRoot\")} · ${isZh ? \"此电脑本身不是目录\" : \"This PC is not a directory\"}",
-			"count": 1,
-			"reason": "pending"
-		},
-		{
-			"file": "web/src/components/DirectoryBrowser.tsx",
-			"text": "${t(\"cwdGoUp\")} · ${isZh ? \"已在顶层\" : \"already at top\"}",
-			"count": 2,
-			"reason": "pending"
-		},
-		{
-			"file": "web/src/components/DirectoryBrowser.tsx",
-			"text": "${t(\"cwdNewFolder\")} · ${isZh ? \"此电脑下不能新建\" : \"Cannot create here\"}",
-			"count": 1,
-			"reason": "pending"
-		},
-		{
-			"file": "web/src/components/DirectoryBrowser.tsx",
-			"text": "${t(\"cwdPickCurrent\")} · ${isZh ? \"此电脑不能作为工作目录\" : \"This PC cannot be a workspace\"}",
-			"count": 1,
-			"reason": "pending"
-		},
-		{
-			"file": "web/src/components/DirectoryBrowser.tsx",
-			"text": "主机密钥已变更",
-			"count": 1,
-			"reason": "pending"
-		},
-		{
-			"file": "web/src/components/DirectoryBrowser.tsx",
-			"text": "信任并重试",
-			"count": 1,
-			"reason": "pending"
-		},
-		{
-			"file": "web/src/components/DirectoryBrowser.tsx",
-			"text": "取消",
-			"count": 1,
-			"reason": "pending"
-		},
-		{
-			"file": "web/src/components/DirectoryBrowser.tsx",
-			"text": "安装 ${tool} 失败，可能需要远端 sudo 权限",
-			"count": 1,
-			"reason": "pending"
-		},
-		{
-			"file": "web/src/components/DirectoryBrowser.tsx",
-			"text": "已安装",
-			"count": 1,
-			"reason": "pending"
-		},
-		{
-			"file": "web/src/components/DirectoryBrowser.tsx",
-			"text": "我已核对过，该指纹正确",
-			"count": 1,
-			"reason": "pending"
-		},
-		{
-			"file": "web/src/components/DirectoryBrowser.tsx",
-			"text": "新主机密钥待确认",
-			"count": 1,
-			"reason": "pending"
-		},
-		{
-			"file": "web/src/components/DirectoryBrowser.tsx",
-			"text": "正在加载远程目录…",
-			"count": 1,
-			"reason": "pending"
-		},
-		{
-			"file": "web/src/components/DirectoryBrowser.tsx",
-			"text": "请先去服务器控制台核对指纹，确认一致再勾选。",
-			"count": 1,
-			"reason": "pending"
-		},
-		{
-			"file": "web/src/components/DirectoryBrowser.tsx",
-			"text": "请填写主机地址和用户名",
-			"count": 1,
-			"reason": "pending"
-		},
-		{
-			"file": "web/src/components/DirectoryBrowser.tsx",
-			"text": "读取远程目录失败",
-			"count": 1,
-			"reason": "pending"
-		},
-		{
-			"file": "web/src/components/DirectoryBrowser.tsx",
-			"text": "远端环境未检测到 Git / 基础工具，SCM 与执行功能可能受限。",
-			"count": 1,
-			"reason": "pending"
-		},
-		{
-			"file": "web/src/components/DirectoryBrowser.tsx",
-			"text": "连接远程服务器失败",
-			"count": 1,
-			"reason": "pending"
-		},
-		{
-			"file": "web/src/components/ExtensionInventory.tsx",
-			"text": "SDK 不支持单独启停，仅展示 / Not switchable via SDK, display only",
-			"count": 1,
-			"reason": "pending"
-		},
-		{
-			"file": "web/src/components/ExtensionInventory.tsx",
-			"text": "一键刷新 Refresh all",
-			"count": 1,
-			"reason": "pending"
-		},
-		{
-			"file": "web/src/components/ExtensionInventory.tsx",
-			"text": "停用 Disable",
-			"count": 2,
-			"reason": "pending"
-		},
-		{
-			"file": "web/src/components/ExtensionInventory.tsx",
-			"text": "启用 Enable",
-			"count": 2,
-			"reason": "pending"
-		},
-		{
-			"file": "web/src/components/ExtensionInventory.tsx",
-			"text": "在线 Online",
-			"count": 1,
-			"reason": "pending"
-		},
-		{
-			"file": "web/src/components/ExtensionInventory.tsx",
-			"text": "外部 External",
-			"count": 1,
-			"reason": "pending"
-		},
-		{
-			"file": "web/src/components/ExtensionInventory.tsx",
-			"text": "已停用 Disabled",
-			"count": 1,
-			"reason": "pending"
-		},
-		{
-			"file": "web/src/components/ExtensionInventory.tsx",
-			"text": "已停用 Stopped",
-			"count": 1,
-			"reason": "pending"
-		},
-		{
-			"file": "web/src/components/ExtensionInventory.tsx",
-			"text": "已启用 Enabled",
-			"count": 1,
-			"reason": "pending"
-		},
-		{
-			"file": "web/src/components/ExtensionInventory.tsx",
-			"text": "异常 Error",
-			"count": 1,
-			"reason": "pending"
-		},
-		{
-			"file": "web/src/components/ExtensionInventory.tsx",
-			"text": "搜索名称 / 描述 / 错误 Search name, description, error",
-			"count": 1,
-			"reason": "pending"
-		},
-		{
-			"file": "web/src/components/ExtensionInventory.tsx",
-			"text": "未知 Unknown",
-			"count": 1,
-			"reason": "pending"
-		},
-		{
-			"file": "web/src/components/ExtensionInventory.tsx",
-			"text": "离线 Offline",
-			"count": 1,
 			"reason": "pending"
 		},
 		{
@@ -1202,108 +902,6 @@
 			"reason": "pending"
 		},
 		{
-			"file": "web/src/components/GroupDrawer.tsx",
-			"text": "Bot 预设与规则配置",
-			"count": 1,
-			"reason": "pending"
-		},
-		{
-			"file": "web/src/components/GroupDrawer.tsx",
-			"text": "主协调",
-			"count": 1,
-			"reason": "pending"
-		},
-		{
-			"file": "web/src/components/GroupDrawer.tsx",
-			"text": "交付与待办事项",
-			"count": 1,
-			"reason": "pending"
-		},
-		{
-			"file": "web/src/components/GroupDrawer.tsx",
-			"text": "关闭",
-			"count": 1,
-			"reason": "pending"
-		},
-		{
-			"file": "web/src/components/GroupDrawer.tsx",
-			"text": "关闭抽屉 (Esc)",
-			"count": 1,
-			"reason": "pending"
-		},
-		{
-			"file": "web/src/components/GroupDrawer.tsx",
-			"text": "在线就绪",
-			"count": 1,
-			"reason": "pending"
-		},
-		{
-			"file": "web/src/components/GroupDrawer.tsx",
-			"text": "授权工具: ",
-			"count": 1,
-			"reason": "pending"
-		},
-		{
-			"file": "web/src/components/GroupDrawer.tsx",
-			"text": "离线",
-			"count": 1,
-			"reason": "pending"
-		},
-		{
-			"file": "web/src/components/GroupDrawer.tsx",
-			"text": "群协作 Bot 成员清单",
-			"count": 2,
-			"reason": "pending"
-		},
-		{
-			"file": "web/src/components/GroupDrawer.tsx",
-			"text": "群协同",
-			"count": 1,
-			"reason": "pending"
-		},
-		{
-			"file": "web/src/components/GroupDrawer.tsx",
-			"text": "群画布工作流",
-			"count": 1,
-			"reason": "pending"
-		},
-		{
-			"file": "web/src/components/GroupDrawer.tsx",
-			"text": "群组 AI Router",
-			"count": 1,
-			"reason": "pending"
-		},
-		{
-			"file": "web/src/components/GroupDrawer.tsx",
-			"text": "群组 Webhook 集成",
-			"count": 1,
-			"reason": "pending"
-		},
-		{
-			"file": "web/src/components/GroupDrawer.tsx",
-			"text": "群组共享共识黑板",
-			"count": 1,
-			"reason": "pending"
-		},
-		{
-			"file": "web/src/components/GroupDrawer.tsx",
-			"text": "群组工单与 Router 运行",
-			"count": 1,
-			"reason": "pending"
-		},
-		{
-			"file": "web/src/components/GroupDrawer.tsx",
-			"text": "设备: ",
-			"count": 1,
-			"reason": "pending"
-		},
-		{
-			"file": "web/src/components/GroupDrawer.tsx",
-			"text": "跨机大文件传输与断点续传",
-			"count": 1,
-			"reason": "pending"
-		},
-		{
 			"file": "web/src/components/GroupNativeInteractions.tsx",
 			"text": "取消问卷",
 			"count": 1,
@@ -1342,114 +940,6 @@
 		{
 			"file": "web/src/components/GroupNativeInteractions.tsx",
 			"text": "模型提问",
-			"count": 1,
-			"reason": "pending"
-		},
-		{
-			"file": "web/src/components/GroupWorkspaceActions.tsx",
-			"text": "Bot 运行快照",
-			"count": 1,
-			"reason": "pending"
-		},
-		{
-			"file": "web/src/components/GroupWorkspaceActions.tsx",
-			"text": "关联画布工作流",
-			"count": 1,
-			"reason": "pending"
-		},
-		{
-			"file": "web/src/components/GroupWorkspaceActions.tsx",
-			"text": "启动画布",
-			"count": 1,
-			"reason": "pending"
-		},
-		{
-			"file": "web/src/components/GroupWorkspaceActions.tsx",
-			"text": "在途任务快照已锁定（v{rev}）",
-			"count": 1,
-			"reason": "pending"
-		},
-		{
-			"file": "web/src/components/GroupWorkspaceActions.tsx",
-			"text": "在途任务禁止热改预设",
-			"count": 1,
-			"reason": "pending"
-		},
-		{
-			"file": "web/src/components/GroupWorkspaceActions.tsx",
-			"text": "已授权 {count} 个工具",
-			"count": 1,
-			"reason": "pending"
-		},
-		{
-			"file": "web/src/components/GroupWorkspaceActions.tsx",
-			"text": "应用中…",
-			"count": 1,
-			"reason": "pending"
-		},
-		{
-			"file": "web/src/components/GroupWorkspaceActions.tsx",
-			"text": "应用最新快照",
-			"count": 1,
-			"reason": "pending"
-		},
-		{
-			"file": "web/src/components/GroupWorkspaceActions.tsx",
-			"text": "开始实施",
-			"count": 1,
-			"reason": "pending"
-		},
-		{
-			"file": "web/src/components/GroupWorkspaceActions.tsx",
-			"text": "扩展操作",
-			"count": 1,
-			"reason": "pending"
-		},
-		{
-			"file": "web/src/components/GroupWorkspaceActions.tsx",
-			"text": "正在启动…",
-			"count": 1,
-			"reason": "pending"
-		},
-		{
-			"file": "web/src/components/GroupWorkspaceActions.tsx",
-			"text": "正在启动画布…",
-			"count": 1,
-			"reason": "pending"
-		},
-		{
-			"file": "web/src/components/GroupWorkspaceActions.tsx",
-			"text": "独立隔离运行，未共享主会话私有配置",
-			"count": 1,
-			"reason": "pending"
-		},
-		{
-			"file": "web/src/components/GroupWorkspaceActions.tsx",
-			"text": "画布已就绪。引用不会自动运行，点击按钮显式启动。",
-			"count": 1,
-			"reason": "pending"
-		},
-		{
-			"file": "web/src/components/GroupWorkspaceActions.tsx",
-			"text": "群任务计划",
-			"count": 1,
-			"reason": "pending"
-		},
-		{
-			"file": "web/src/components/GroupWorkspaceActions.tsx",
-			"text": "计划已就绪（需确认后开始）",
-			"count": 1,
-			"reason": "pending"
-		},
-		{
-			"file": "web/src/components/GroupWorkspaceActions.tsx",
-			"text": "计划已批准实施",
-			"count": 1,
-			"reason": "pending"
-		},
-		{
-			"file": "web/src/components/GroupWorkspaceActions.tsx",
-			"text": "计划草稿编制中",
 			"count": 1,
 			"reason": "pending"
 		},

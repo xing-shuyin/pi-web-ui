@@ -646,5 +646,6 @@
 	"canvas.edges.type.condition_true": "조건 충족",
 	"canvas.edges.type.condition_false": "조건 불충족",
 	"canvas.edges.type.approve": "승인",
-	"canvas.edges.type.reject": "반려"
+	"canvas.edges.type.reject": "반려",
+	"canvas.aiBar.placeholder": "예: 솔루션 조사 → 구현 → 테스트 → 검토 → 요약"
 }
