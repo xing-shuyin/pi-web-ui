@@ -1,0 +1,1516 @@
+<!doctype html>
+<html lang="en">
+	<head>
+		<meta charset="UTF-8" />
+		<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+		<title>Device Group Architecture Rewrite and Limit Overhaul — Full Picture</title>
+		<style>
+			:root {
+				--bg: #0f141c;
+				--surface: #18202c;
+				--surface-hover: #212c3d;
+				--card: #1c2636;
+				--card-border: #2a3a52;
+				--primary: #3b82f6;
+				--primary-light: #60a5fa;
+				--primary-glow: rgba(59, 130, 246, 0.25);
+				--success: #10b981;
+				--warning: #f59e0b;
+				--danger: #ef4444;
+				--purple: #8b5cf6;
+				--cyan: #06b6d4;
+				--text: #f1f5f9;
+				--text-muted: #94a3b8;
+				--font-mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+				--radius: 12px;
+				--transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+			}
+
+			* {
+				box-sizing: border-box;
+				margin: 0;
+				padding: 0;
+			}
+			body {
+				font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+				background: var(--bg);
+				color: var(--text);
+				line-height: 1.6;
+				padding-bottom: 80px;
+			}
+
+			/* 顶部导航与 Header */
+			header {
+				background: rgba(24, 32, 44, 0.85);
+				backdrop-filter: blur(16px);
+				border-bottom: 1px solid var(--card-border);
+				position: sticky;
+				top: 0;
+				z-index: 100;
+				padding: 16px 32px;
+				display: flex;
+				justify-content: space-between;
+				align-items: center;
+			}
+			.brand {
+				display: flex;
+				align-items: center;
+				gap: 12px;
+				font-size: 1.25rem;
+				font-weight: 700;
+				letter-spacing: -0.02em;
+			}
+			.brand-badge {
+				font-size: 0.75rem;
+				padding: 4px 8px;
+				background: var(--primary-glow);
+				color: var(--primary-light);
+				border: 1px solid var(--primary);
+				border-radius: 999px;
+				font-weight: 600;
+			}
+			nav.nav-links {
+				display: flex;
+				gap: 8px;
+			}
+			nav.nav-links a {
+				color: var(--text-muted);
+				text-decoration: none;
+				padding: 8px 16px;
+				border-radius: 8px;
+				font-size: 0.9rem;
+				font-weight: 500;
+				transition: var(--transition);
+			}
+			nav.nav-links a:hover,
+			nav.nav-links a.active {
+				color: var(--text);
+				background: var(--surface-hover);
+			}
+
+			.container {
+				max-width: 1280px;
+				margin: 0 auto;
+				padding: 32px 24px;
+			}
+
+			/* Hero Banner */
+			.hero {
+				background: linear-gradient(135deg, rgba(59, 130, 246, 0.12) 0%, rgba(139, 92, 246, 0.08) 100%);
+				border: 1px solid var(--card-border);
+				border-radius: var(--radius);
+				padding: 40px;
+				margin-bottom: 40px;
+				position: relative;
+				overflow: hidden;
+			}
+			.hero::before {
+				content: "";
+				position: absolute;
+				top: -100px;
+				right: -100px;
+				width: 300px;
+				height: 300px;
+				background: radial-gradient(circle, var(--primary-glow) 0%, transparent 70%);
+				border-radius: 50%;
+				pointer-events: none;
+			}
+			.hero h1 {
+				font-size: 2.2rem;
+				font-weight: 800;
+				line-height: 1.25;
+				margin-bottom: 16px;
+				background: linear-gradient(to right, #ffffff, #94a3b8);
+				-webkit-background-clip: text;
+				-webkit-text-fill-color: transparent;
+			}
+			.hero p {
+				font-size: 1.1rem;
+				color: var(--text-muted);
+				max-width: 860px;
+				margin-bottom: 24px;
+			}
+			.hero-stats {
+				display: grid;
+				grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+				gap: 16px;
+				margin-top: 24px;
+			}
+			.stat-card {
+				background: var(--surface);
+				border: 1px solid var(--card-border);
+				border-radius: 8px;
+				padding: 16px;
+			}
+			.stat-label {
+				font-size: 0.8rem;
+				color: var(--text-muted);
+				text-transform: uppercase;
+				letter-spacing: 0.05em;
+			}
+			.stat-value {
+				font-size: 1.5rem;
+				font-weight: 700;
+				color: var(--primary-light);
+				margin-top: 4px;
+			}
+
+			/* Section Styling */
+			section {
+				margin-bottom: 56px;
+				scroll-margin-top: 80px;
+			}
+			.section-title {
+				font-size: 1.6rem;
+				font-weight: 700;
+				margin-bottom: 8px;
+				display: flex;
+				align-items: center;
+				gap: 10px;
+			}
+			.section-desc {
+				color: var(--text-muted);
+				margin-bottom: 24px;
+				font-size: 0.95rem;
+			}
+
+			/* 缺陷分析卡片 */
+			.grid-2 {
+				display: grid;
+				grid-template-columns: repeat(auto-fit, minmax(360px, 1fr));
+				gap: 20px;
+			}
+			.flaw-card {
+				background: var(--card);
+				border: 1px solid var(--card-border);
+				border-radius: var(--radius);
+				padding: 24px;
+				position: relative;
+				transition: var(--transition);
+			}
+			.flaw-card:hover {
+				border-color: var(--primary);
+				transform: translateY(-2px);
+				box-shadow: 0 10px 24px -8px rgba(0, 0, 0, 0.4);
+			}
+			.flaw-header {
+				display: flex;
+				justify-content: space-between;
+				align-items: flex-start;
+				margin-bottom: 12px;
+			}
+			.flaw-badge {
+				font-size: 0.75rem;
+				font-weight: 600;
+				padding: 2px 8px;
+				border-radius: 6px;
+				background: rgba(239, 68, 68, 0.15);
+				color: #fca5a5;
+				border: 1px solid rgba(239, 68, 68, 0.3);
+			}
+			.flaw-card h3 {
+				font-size: 1.15rem;
+				font-weight: 600;
+				margin-bottom: 10px;
+			}
+			.flaw-card p {
+				color: var(--text-muted);
+				font-size: 0.9rem;
+				margin-bottom: 14px;
+			}
+			.flaw-impact {
+				background: var(--surface);
+				border-radius: 6px;
+				padding: 10px 14px;
+				font-size: 0.85rem;
+				border-left: 3px solid var(--danger);
+			}
+			.flaw-impact strong {
+				color: #fca5a5;
+			}
+
+			/* 表格样式 */
+			.table-wrapper {
+				background: var(--card);
+				border: 1px solid var(--card-border);
+				border-radius: var(--radius);
+				overflow-x: auto;
+				box-shadow: 0 4px 20px rgba(0, 0, 0, 0.2);
+			}
+			table {
+				width: 100%;
+				border-collapse: collapse;
+				text-align: left;
+				font-size: 0.9rem;
+			}
+			th {
+				background: var(--surface);
+				color: var(--text-muted);
+				font-weight: 600;
+				padding: 14px 20px;
+				border-bottom: 1px solid var(--card-border);
+				font-size: 0.8rem;
+				text-transform: uppercase;
+				letter-spacing: 0.05em;
+			}
+			td {
+				padding: 14px 20px;
+				border-bottom: 1px solid var(--card-border);
+			}
+			tr:last-child td {
+				border-bottom: none;
+			}
+			tr:hover td {
+				background: var(--surface-hover);
+			}
+			.badge-old {
+				color: #94a3b8;
+				font-family: var(--font-mono);
+				font-size: 0.85rem;
+				background: rgba(148, 163, 184, 0.1);
+				padding: 2px 6px;
+				border-radius: 4px;
+			}
+			.badge-new {
+				color: var(--success);
+				font-family: var(--font-mono);
+				font-size: 0.85rem;
+				background: rgba(16, 185, 129, 0.15);
+				border: 1px solid rgba(16, 185, 129, 0.3);
+				padding: 2px 6px;
+				border-radius: 4px;
+				font-weight: 600;
+			}
+			.scope-tag {
+				font-size: 0.75rem;
+				padding: 2px 8px;
+				border-radius: 4px;
+				background: var(--surface);
+				border: 1px solid var(--card-border);
+				color: var(--cyan);
+			}
+
+			/* 方案选项卡 */
+			.plan-tabs {
+				display: flex;
+				gap: 12px;
+				margin-bottom: 24px;
+			}
+			.plan-tab-btn {
+				flex: 1;
+				background: var(--surface);
+				border: 1px solid var(--card-border);
+				border-radius: var(--radius);
+				padding: 16px 20px;
+				color: var(--text-muted);
+				cursor: pointer;
+				text-align: left;
+				transition: var(--transition);
+				display: flex;
+				flex-direction: column;
+				gap: 6px;
+			}
+			.plan-tab-btn:hover {
+				background: var(--surface-hover);
+				color: var(--text);
+			}
+			.plan-tab-btn.active {
+				background: var(--card);
+				border-color: var(--primary);
+				box-shadow: 0 0 0 2px var(--primary-glow);
+				color: var(--text);
+			}
+			.plan-tab-title {
+				font-size: 1.1rem;
+				font-weight: 700;
+				color: var(--text);
+			}
+			.plan-tab-badge {
+				font-size: 0.75rem;
+				width: fit-content;
+				padding: 2px 8px;
+				border-radius: 999px;
+				font-weight: 600;
+			}
+			.badge-a {
+				background: rgba(59, 130, 246, 0.2);
+				color: #93c5fd;
+			}
+			.badge-b {
+				background: rgba(139, 92, 246, 0.2);
+				color: #c4b5fd;
+			}
+			.badge-c {
+				background: rgba(16, 185, 129, 0.2);
+				color: #6ee7b7;
+			}
+
+			.plan-content {
+				background: var(--card);
+				border: 1px solid var(--card-border);
+				border-radius: var(--radius);
+				padding: 32px;
+				display: none;
+				animation: fadeIn 0.3s ease;
+			}
+			.plan-content.active {
+				display: block;
+			}
+			@keyframes fadeIn {
+				from {
+					opacity: 0;
+					transform: translateY(8px);
+				}
+				to {
+					opacity: 1;
+					transform: translateY(0);
+				}
+			}
+
+			/* 方案内部结构 */
+			.plan-header {
+				display: flex;
+				justify-content: space-between;
+				align-items: flex-start;
+				margin-bottom: 24px;
+				border-bottom: 1px solid var(--card-border);
+				padding-bottom: 20px;
+			}
+			.plan-meta {
+				max-width: 70%;
+			}
+			.plan-meta h2 {
+				font-size: 1.5rem;
+				font-weight: 700;
+				margin-bottom: 8px;
+			}
+			.plan-meta p {
+				color: var(--text-muted);
+			}
+			.plan-ratings {
+				display: flex;
+				gap: 16px;
+			}
+			.rating-item {
+				text-align: right;
+			}
+			.rating-label {
+				font-size: 0.75rem;
+				color: var(--text-muted);
+			}
+			.rating-val {
+				font-size: 1.1rem;
+				font-weight: 700;
+				color: var(--primary-light);
+			}
+
+			/* 架构图容器 */
+			.arch-diagram {
+				background: #0a0e14;
+				border: 1px solid var(--card-border);
+				border-radius: 8px;
+				padding: 24px;
+				margin: 24px 0;
+				overflow-x: auto;
+				font-family: var(--font-mono);
+				font-size: 0.85rem;
+				color: #94a3b8;
+			}
+			.arch-diagram svg {
+				width: 100%;
+				height: auto;
+				display: block;
+			}
+
+			.feature-list {
+				display: grid;
+				grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+				gap: 16px;
+				margin-top: 24px;
+			}
+			.feature-item {
+				background: var(--surface);
+				border: 1px solid var(--card-border);
+				border-radius: 8px;
+				padding: 16px;
+			}
+			.feature-item h4 {
+				font-size: 0.95rem;
+				font-weight: 600;
+				margin-bottom: 6px;
+				color: var(--text);
+				display: flex;
+				align-items: center;
+				gap: 8px;
+			}
+			.feature-item p {
+				font-size: 0.85rem;
+				color: var(--text-muted);
+			}
+
+			/* 交互式模拟器 */
+			.simulator-box {
+				background: var(--card);
+				border: 1px solid var(--card-border);
+				border-radius: var(--radius);
+				padding: 32px;
+				display: grid;
+				grid-template-columns: 1fr 1fr;
+				gap: 32px;
+			}
+			.slider-group {
+				margin-bottom: 20px;
+			}
+			.slider-header {
+				display: flex;
+				justify-content: space-between;
+				margin-bottom: 8px;
+				font-size: 0.9rem;
+			}
+			.slider-header span:first-child {
+				font-weight: 600;
+			}
+			.slider-header span:last-child {
+				font-family: var(--font-mono);
+				color: var(--primary-light);
+				font-weight: 600;
+			}
+			input[type="range"] {
+				width: 100%;
+				height: 6px;
+				background: var(--surface-hover);
+				border-radius: 3px;
+				outline: none;
+				-webkit-appearance: none;
+			}
+			input[type="range"]::-webkit-slider-thumb {
+				-webkit-appearance: none;
+				width: 18px;
+				height: 18px;
+				border-radius: 50%;
+				background: var(--primary);
+				cursor: pointer;
+				box-shadow: 0 0 10px var(--primary);
+			}
+
+			.sim-results {
+				background: var(--surface);
+				border: 1px solid var(--card-border);
+				border-radius: 8px;
+				padding: 24px;
+				display: flex;
+				flex-direction: column;
+				justify-content: center;
+				gap: 20px;
+			}
+			.sim-card {
+				border-bottom: 1px solid var(--card-border);
+				padding-bottom: 12px;
+			}
+			.sim-card:last-child {
+				border-bottom: none;
+				padding-bottom: 0;
+			}
+			.sim-card-title {
+				font-size: 0.85rem;
+				color: var(--text-muted);
+			}
+			.sim-card-value {
+				font-size: 1.8rem;
+				font-weight: 800;
+				color: var(--cyan);
+				font-family: var(--font-mono);
+				margin-top: 4px;
+			}
+			.sim-card-desc {
+				font-size: 0.8rem;
+				color: var(--text-muted);
+				margin-top: 4px;
+			}
+
+			/* UI 原型卡片 */
+			.mockup-container {
+				background: var(--card);
+				border: 1px solid var(--card-border);
+				border-radius: var(--radius);
+				overflow: hidden;
+				margin-top: 24px;
+			}
+			.mockup-header {
+				background: var(--surface);
+				border-bottom: 1px solid var(--card-border);
+				padding: 12px 20px;
+				display: flex;
+				align-items: center;
+				gap: 8px;
+			}
+			.mockup-dot {
+				width: 10px;
+				height: 10px;
+				border-radius: 50%;
+				display: inline-block;
+			}
+			.mockup-body {
+				padding: 24px;
+				display: grid;
+				grid-template-columns: 2fr 1fr;
+				gap: 20px;
+				min-height: 380px;
+				background: #0d121a;
+			}
+			.mock-chat-pane {
+				background: var(--surface);
+				border: 1px solid var(--card-border);
+				border-radius: 8px;
+				padding: 16px;
+				display: flex;
+				flex-direction: column;
+				gap: 12px;
+			}
+			.mock-bubble {
+				padding: 10px 14px;
+				border-radius: 8px;
+				font-size: 0.85rem;
+				max-width: 85%;
+			}
+			.mock-bubble.human {
+				align-self: flex-end;
+				background: #1e3a8a;
+				color: #bfdbfe;
+			}
+			.mock-bubble.bot {
+				align-self: flex-start;
+				background: #1e293b;
+				color: #cbd5e1;
+				border: 1px solid #334155;
+			}
+			.mock-side-pane {
+				background: var(--surface);
+				border: 1px solid var(--card-border);
+				border-radius: 8px;
+				padding: 16px;
+				display: flex;
+				flex-direction: column;
+				gap: 12px;
+			}
+			.mock-side-title {
+				font-size: 0.9rem;
+				font-weight: 700;
+				color: var(--primary-light);
+				display: flex;
+				align-items: center;
+				gap: 6px;
+				border-bottom: 1px solid var(--card-border);
+				padding-bottom: 8px;
+			}
+			.blackboard-preview {
+				font-family: var(--font-mono);
+				font-size: 0.8rem;
+				background: #090d13;
+				padding: 12px;
+				border-radius: 6px;
+				color: #a5f3fc;
+				line-height: 1.5;
+				overflow-y: auto;
+				flex: 1;
+			}
+
+			/* 底部操作区 */
+			.cta-bar {
+				margin-top: 48px;
+				background: linear-gradient(135deg, rgba(30, 41, 59, 0.8) 0%, rgba(15, 23, 42, 0.95) 100%);
+				border: 1px solid var(--card-border);
+				border-radius: var(--radius);
+				padding: 32px;
+				text-align: center;
+			}
+			.cta-bar h3 {
+				font-size: 1.4rem;
+				font-weight: 700;
+				margin-bottom: 12px;
+			}
+			.cta-bar p {
+				color: var(--text-muted);
+				margin-bottom: 24px;
+				max-width: 600px;
+				margin-left: auto;
+				margin-right: auto;
+			}
+			.btn-group {
+				display: flex;
+				justify-content: center;
+				gap: 16px;
+				flex-wrap: wrap;
+			}
+			.btn {
+				padding: 12px 24px;
+				border-radius: 8px;
+				font-size: 0.95rem;
+				font-weight: 600;
+				cursor: pointer;
+				border: none;
+				transition: var(--transition);
+				text-decoration: none;
+				display: inline-flex;
+				align-items: center;
+				gap: 8px;
+			}
+			.btn-primary {
+				background: var(--primary);
+				color: white;
+				box-shadow: 0 4px 14px var(--primary-glow);
+			}
+			.btn-primary:hover {
+				background: #2563eb;
+				transform: translateY(-1px);
+			}
+			.btn-secondary {
+				background: var(--surface);
+				color: var(--text);
+				border: 1px solid var(--card-border);
+			}
+			.btn-secondary:hover {
+				background: var(--surface-hover);
+			}
+
+			@media (max-width: 900px) {
+				.simulator-box {
+					grid-template-columns: 1fr;
+				}
+				.mockup-body {
+					grid-template-columns: 1fr;
+				}
+				.plan-tabs {
+					flex-direction: column;
+				}
+			}
+		</style>
+	</head>
+	<body>
+<div data-docs-i18n-switch style="position:fixed;top:8px;right:12px;z-index:2147483647;font:12px/1.6 -apple-system,system-ui,sans-serif;background:rgba(15,17,22,.78);color:#fff;padding:4px 12px;border-radius:999px;box-shadow:0 2px 10px rgba(0,0,0,.35)"><a href="./group-redesign-proposals.html" style="color:#fff;text-decoration:none">简体中文</a> · <strong>English</strong> · <a href="./group-redesign-proposals.zh-TW.html" style="color:#fff;text-decoration:none">繁體中文</a></div>
+
+
+		<header>
+			<div class="brand">
+				<span>⚡</span>
+				<span>pi-web-ui device group architecture redesign</span>
+				<span class="brand-badge">RFC / Architecture review</span>
+			</div>
+			<nav class="nav-links">
+				<a href="#flaws" class="active">Diagnosis &amp; defects</a>
+				<a href="#limits">Limit matrix</a>
+				<a href="#proposals">Proposal comparison</a>
+				<a href="#simulator">Capacity simulator</a>
+				<a href="#mockup">Interaction prototype</a>
+			</nav>
+		</header>
+
+		<div class="container">
+			<!-- Hero Banner -->
+			<div class="hero">
+				<h1>Architecture-Level Evolution for Group Collaboration and a Full Limit Overhaul</h1>
+				<p>
+					Stop patching surface symptoms. For complex multi-machine engineering scenarios, eliminate the core defects:
+					“pseudo group chat with island dispatch”, “split dual-track messaging”, the “invisible blackboard” and “locks lost on restart”.
+					Raise system throughput, history recall, memory capacity and large-file limits across the board, and build a runtime
+					dynamic configuration hub with tiered overrides.
+				</p>
+				<div class="hero-stats">
+					<div class="stat-card">
+						<div class="stat-label">Group context cap</div>
+						<div class="stat-value">24 KiB → 2 MiB</div>
+					</div>
+					<div class="stat-card">
+						<div class="stat-label">Group log retention</div>
+						<div class="stat-value">500 → 20,000 entries</div>
+					</div>
+					<div class="stat-card">
+						<div class="stat-label">Group blackboard capacity</div>
+						<div class="stat-value">32 KiB → 4 MiB</div>
+					</div>
+					<div class="stat-card">
+						<div class="stat-label">File sync limit</div>
+						<div class="stat-value">8 MiB → 10 GiB</div>
+					</div>
+				</div>
+			</div>
+
+			<!-- 1. Current state and defect diagnosis -->
+			<section id="flaws">
+				<div class="section-title">
+					<span>🔍</span>
+					<h2>A Full Diagnosis of the Systemic Design Defects in Today's Groups</h2>
+				</div>
+				<p class="section-desc">Based on hands-on code experiments and a deep audit of the call chains, group collaboration has 6 core bottlenecks:</p>
+
+				<div class="grid-2">
+					<div class="flaw-card">
+						<div class="flaw-header">
+							<span class="flaw-badge">Fragmented topology model</span>
+							<span style="color: var(--danger)">#FLAW-01</span>
+						</div>
+						<h3>“Fork-and-Forget” Dispatch Creates Collaboration Islands</h3>
+						<p>
+							When a human @-mentions several Bots in one message, the Hub forks multiple independent Tasks concurrently through <code>targets.map</code>. Every Task
+							is frozen against the current 24 KiB snapshot before it runs, so concurrent Bots cannot see each other's reasoning or intermediate artifacts, and there is no Pipeline /
+							Join orchestration.
+						</p>
+						<div class="flaw-impact">
+							<strong>Root consequence:</strong> Dependent collaboration such as “Bot A writes the interface while Bot B
+							writes the tests against it” is impossible; each Bot reinvents the wheel and the artifacts collide badly.
+						</div>
+					</div>
+
+					<div class="flaw-card">
+						<div class="flaw-header">
+							<span class="flaw-badge">Two tracking models</span>
+							<span style="color: var(--danger)">#FLAW-02</span>
+						</div>
+						<h3>Public Group Message Stream vs. Point-to-Point Private Conversations</h3>
+						<p>
+							The backend maintains both <code>RoomMessage</code> (max 500) and <code>HubConversation</code>. Bot-to-bot
+							<code>send_task</code> /
+							<code>reply</code>
+							calls live inside private conversations, so the group chat stream has to stitch in fake messages (<code>group-task:${id}</code>) to force status cards into view.
+						</p>
+						<div class="flaw-impact">
+							<strong>Root consequence:</strong> The main group view is flooded with mechanical “collaborating sub-agent queued/running” cards, and the human conversation is cut off from the multi-Bot
+							business discussion.
+						</div>
+					</div>
+
+					<div class="flaw-card">
+						<div class="flaw-header">
+							<span class="flaw-badge">Memory gap</span>
+							<span style="color: var(--danger)">#FLAW-03</span>
+						</div>
+						<h3>A Mechanical 24 KiB Hard Cap and the “Invisible Blackboard”</h3>
+						<p>
+							The task context <code>groupTaskContext</code> is hard-capped at 24 KiB, so any long log brutally truncates older history. The server does already ship
+							<code>GroupBlackboard</code
+							> (with versioned optimistic locking), but the web group drawer and the main chat view <strong>expose no way at all to view or edit the blackboard</strong>!
+						</p>
+						<div class="flaw-impact">
+							<strong>Root consequence:</strong> Long-lived business background and technical constraints are lost within a couple of turns; Bot consensus is guesswork, and humans cannot inspect or correct the blackboard
+							from the UI at all.
+						</div>
+					</div>
+
+					<div class="flaw-card">
+						<div class="flaw-header">
+							<span class="flaw-badge">Distributed consistency</span>
+							<span style="color: var(--danger)">#FLAW-04</span>
+						</div>
+						<h3>Resource Locks Are Memory-Only, Lost on Restart and Invisible to Humans</h3>
+						<p>
+							The single-machine scheduler relies on overlapping physical paths for mutual exclusion, but cross-device locking depends entirely on the Hub's
+							<code>HubLockManager</code>. That manager is pure in-memory, so every lock is gone after a Hub restart; and the chat composer has no entry point for declaring a resource lock, so multi-machine
+							Bots mutating the same remote Git repo are left with no protection.
+						</p>
+						<div class="flaw-impact">
+							<strong>Root consequence:</strong> Concurrent Git push force-overwrite conflicts and file corruption are easy to trigger, and after a network outage recovers there is no distributed transaction compensation.
+						</div>
+					</div>
+
+					<div class="flaw-card">
+						<div class="flaw-header">
+							<span class="flaw-badge">Human-in-the-loop closure</span>
+							<span style="color: var(--danger)">#FLAW-05</span>
+						</div>
+						<h3>No In-Flight Steering</h3>
+						<p>
+							A normal single conversation accepts live Steering input to correct execution; in a group, <code>queue: { steering: [], followUp: [] }</code>
+							is hard-coded empty. If a running Bot goes off course, the human can only watch it finish or bluntly call
+							<code>/stop</code> to kill it; there is no way to step in and correct it mid-flight.
+						</p>
+						<div class="flaw-impact">
+							<strong>Root consequence:</strong> Long tasks have almost no fault tolerance; one wrong step collapses the whole collaboration chain, and human-machine collaboration lacks flexibility.
+						</div>
+					</div>
+
+					<div class="flaw-card">
+						<div class="flaw-header">
+							<span class="flaw-badge">Hard-coded lock-in</span>
+							<span style="color: var(--danger)">#FLAW-06</span>
+						</div>
+						<h3>Core Configuration Is Not Decoupled; Hard-Coded Constants Bypass Settings</h3>
+						<p>
+							The code is littered with hard-coded constants such as <code>const HISTORY = 500</code>, <code>GROUP_CONTEXT_BYTES = 24 * 1024</code>, <code
+								>allowBotMentions: false</code
+							>
+							and other hard-coded constants. Even after raising parameters in <code>execution-settings.json</code>, many Hub
+							code paths still read the fixed constants, so the configuration never takes effect.
+						</p>
+						<div class="flaw-impact">
+							<strong>Root consequence:</strong> Even when compute and network would allow it, group performance and scale stay throttled by the hard-coded “thin pipe” at the bottom of the stack.
+						</div>
+					</div>
+				</div>
+			</section>
+
+			<!-- 2. Limit raisings and the full configurability matrix -->
+			<section id="limits">
+				<div class="section-title">
+					<span>📊</span>
+					<h2>Spec Matrix of Every Raised Limit and Full Configurability</h2>
+				</div>
+				<p class="section-desc">
+					Decouple every hard-coded value into “global default + scoped override (Hub-wide / Room group / local Device)”, with substantially raised defaults:
+				</p>
+
+				<div class="table-wrapper">
+					<table>
+						<thead>
+							<tr>
+								<th>Domain</th>
+								<th>Parameter (Key)</th>
+								<th>Old default</th>
+								<th>Old hard ceiling</th>
+								<th>New default</th>
+								<th>New system ceiling</th>
+								<th>Override scope</th>
+							</tr>
+						</thead>
+						<tbody>
+							<tr>
+								<td rowspan="4"><strong>Context &amp; memory</strong></td>
+								<td><code>groupContextBytes</code></td>
+								<td><span class="badge-old">24 KiB</span></td>
+								<td>256 KiB</td>
+								<td><span class="badge-new">128 KiB</span></td>
+								<td><strong>2 MiB</strong></td>
+								<td><span class="scope-tag">Room / Device</span></td>
+							</tr>
+							<tr>
+								<td><code>groupRetentionLimit</code></td>
+								<td><span class="badge-old">500 entries</span></td>
+								<td>2,000 entries</td>
+								<td><span class="badge-new">2,000 entries</span></td>
+								<td><strong>20,000 entries</strong></td>
+								<td><span class="scope-tag">Hub / Room</span></td>
+							</tr>
+							<tr>
+								<td><code>blackboardMaxBytes</code></td>
+								<td><span class="badge-old">32 KiB</span></td>
+								<td>256 KiB</td>
+								<td><span class="badge-new">256 KiB</span></td>
+								<td><strong>4 MiB</strong></td>
+								<td><span class="scope-tag">Hub / Room</span></td>
+							</tr>
+							<tr>
+								<td><code>taskReportExcerptBytes</code></td>
+								<td><span class="badge-old">16 KiB (hard-coded)</span></td>
+								<td>16 KiB</td>
+								<td><span class="badge-new">64 KiB</span></td>
+								<td><strong>512 KiB</strong></td>
+								<td><span class="scope-tag">Device / Room</span></td>
+							</tr>
+
+							<tr>
+								<td rowspan="5"><strong>Concurrency &amp; task scheduling</strong></td>
+								<td><code>maxActiveTasks</code></td>
+								<td><span class="badge-old">4</span></td>
+								<td>32</td>
+								<td><span class="badge-new">8</span></td>
+								<td><strong>64</strong></td>
+								<td><span class="scope-tag">Device Agent</span></td>
+							</tr>
+							<tr>
+								<td><code>maxWaitingTasks</code></td>
+								<td><span class="badge-old">32</span></td>
+								<td>256</td>
+								<td><span class="badge-new">128</span></td>
+								<td><strong>1,024</strong></td>
+								<td><span class="scope-tag">Device Agent</span></td>
+							</tr>
+							<tr>
+								<td><code>maxDispatchBudget</code></td>
+								<td><span class="badge-old">16</span></td>
+								<td>64</td>
+								<td><span class="badge-new">64</span></td>
+								<td><strong>256</strong></td>
+								<td><span class="scope-tag">Room / Device</span></td>
+							</tr>
+							<tr>
+								<td><code>maxDispatchDepth</code></td>
+								<td><span class="badge-old">8</span></td>
+								<td>32</td>
+								<td><span class="badge-new">16</span></td>
+								<td><strong>64</strong></td>
+								<td><span class="scope-tag">Room / Device</span></td>
+							</tr>
+							<tr>
+								<td><code>allowBotMentions</code></td>
+								<td><span class="badge-old">false (hard-coded)</span></td>
+								<td>Boolean</td>
+								<td><span class="badge-new">true</span></td>
+								<td><strong>true / threshold circuit breaker</strong></td>
+								<td><span class="scope-tag">Room Policy</span></td>
+							</tr>
+
+							<tr>
+								<td rowspan="2"><strong>Distributed resource locks</strong></td>
+								<td><code>resourceLockDefaultTtlMs</code></td>
+								<td><span class="badge-old">10 min</span></td>
+								<td>60 min</td>
+								<td><span class="badge-new">30 min</span></td>
+								<td><strong>24 h</strong></td>
+								<td><span class="scope-tag">Hub / Room</span></td>
+							</tr>
+							<tr>
+								<td><code>maxResourceLocksPerTask</code></td>
+								<td><span class="badge-old">16 (hard-coded)</span></td>
+								<td>16</td>
+								<td><span class="badge-new">64</span></td>
+								<td><strong>256</strong></td>
+								<td><span class="scope-tag">Hub Settings</span></td>
+							</tr>
+
+							<tr>
+								<td rowspan="4"><strong>File sync &amp; evidence chain</strong></td>
+								<td><code>fileSyncMaxBytes</code></td>
+								<td><span class="badge-old">8 MiB</span></td>
+								<td>100 MiB</td>
+								<td><span class="badge-new">100 MiB</span></td>
+								<td><strong>10 GiB</strong></td>
+								<td><span class="scope-tag">Hub / Device</span></td>
+							</tr>
+							<tr>
+								<td><code>fileSyncMaxFiles</code></td>
+								<td><span class="badge-old">128</span></td>
+								<td>1,000</td>
+								<td><span class="badge-new">1,000</span></td>
+								<td><strong>10,000</strong></td>
+								<td><span class="scope-tag">Hub / Device</span></td>
+							</tr>
+							<tr>
+								<td><code>fileSyncStagedBytes</code></td>
+								<td><span class="badge-old">32 MiB</span></td>
+								<td>512 MiB</td>
+								<td><span class="badge-new">1 GiB</span></td>
+								<td><strong>50 GiB</strong></td>
+								<td><span class="scope-tag">Hub Settings</span></td>
+							</tr>
+							<tr>
+								<td><code>taskReportMaxBytes</code></td>
+								<td><span class="badge-old">4 MiB (hard-coded)</span></td>
+								<td>4 MiB</td>
+								<td><span class="badge-new">16 MiB</span></td>
+								<td><strong>128 MiB</strong></td>
+								<td><span class="scope-tag">Hub Settings</span></td>
+							</tr>
+						</tbody>
+					</table>
+				</div>
+			</section>
+
+			<!-- 3. Deep comparison of the three architecture-level rewrites -->
+			<section id="proposals">
+				<div class="section-title">
+					<span>🏗️</span>
+					<h2>A Deep Comparison of the Three Architecture-Level Rewrites</h2>
+				</div>
+				<p class="section-desc">Judged by engineering feasibility, system robustness and forward-looking design, here are three staged architecture options:</p>
+
+				<div class="plan-tabs">
+					<button class="plan-tab-btn active" onclick="switchPlan(0)">
+						<div class="plan-tab-title">Plan A: Progressive enhancement</div>
+						<span class="plan-tab-badge badge-a">Safe delivery · Blackboard first · Dynamic config hub</span>
+					</button>
+					<button class="plan-tab-btn" onclick="switchPlan(1)">
+						<div class="plan-tab-title">Plan B: Collaboration bus (recommended)</div>
+						<span class="plan-tab-badge badge-b">One unified stream · Orchestrated workflows · Live steering</span>
+					</button>
+					<button class="plan-tab-btn" onclick="switchPlan(2)">
+						<div class="plan-tab-title">Plan C: Autonomous mesh</div>
+						<span class="plan-tab-badge badge-c">Distributed mesh · Vector retrieval · Sandbox snapshot rollback</span>
+					</button>
+				</div>
+
+				<!-- Plan A content -->
+				<div class="plan-content active" id="plan-0">
+					<div class="plan-header">
+						<div class="plan-meta">
+							<h2>Plan A: Progressive enhancement — “Blackboard consensus hub + fully externalized parameters”</h2>
+							<p>
+								Keep the existing Hub-Device primary/replica topology and log model; focus on closing the critical gaps: a native blackboard UI, decoupled hard-coded constants, and opened-up in-group @
+								interaction with decision write-back.
+							</p>
+						</div>
+						<div class="plan-ratings">
+							<div class="rating-item">
+								<div class="rating-label">Change risk</div>
+								<div class="rating-val" style="color: var(--success)">Low</div>
+							</div>
+							<div class="rating-item">
+								<div class="rating-label">Timeline</div>
+								<div class="rating-val" style="color: var(--primary-light)">1.5 weeks</div>
+							</div>
+						</div>
+					</div>
+
+					<div class="arch-diagram">
+						<svg viewBox="0 0 900 220" xmlns="http://www.w3.org/2000/svg">
+							<rect x="20" y="20" width="860" height="180" rx="10" fill="#131b26" stroke="#2a3a52" />
+
+							<!-- Human & UI -->
+							<rect x="50" y="50" width="140" height="120" rx="8" fill="#1e293b" stroke="#3b82f6" />
+							<text x="120" y="80" fill="#f8fafc" font-size="13" font-weight="bold" text-anchor="middle">
+								Group chat UI
+							</text>
+							<text x="120" y="105" fill="#94a3b8" font-size="11" text-anchor="middle">Native blackboard sidebar</text>
+							<text x="120" y="125" fill="#94a3b8" font-size="11" text-anchor="middle">Multi-parameter tuning panel</text>
+							<text x="120" y="145" fill="#38bdf8" font-size="11" text-anchor="middle">@Bot quick routing</text>
+
+							<path d="M 190 110 L 260 110" stroke="#3b82f6" stroke-width="2" marker-end="url(#arrow)" />
+
+							<!-- Hub Server -->
+							<rect x="260" y="40" width="340" height="140" rx="8" fill="#1e293b" stroke="#8b5cf6" />
+							<text x="430" y="65" fill="#f8fafc" font-size="13" font-weight="bold" text-anchor="middle">
+								Hub coordination core (upgraded)
+							</text>
+
+							<rect x="280" y="80" width="140" height="40" rx="4" fill="#0f172a" stroke="#64748b" />
+							<text x="350" y="105" fill="#38bdf8" font-size="11" text-anchor="middle">Dynamic config (WAL)</text>
+
+							<rect x="440" y="80" width="140" height="40" rx="4" fill="#0f172a" stroke="#64748b" />
+							<text x="510" y="105" fill="#a7f3d0" font-size="11" text-anchor="middle">Blackboard-first injector</text>
+
+							<rect x="280" y="130" width="300" height="35" rx="4" fill="#0f172a" stroke="#64748b" />
+							<text x="430" y="152" fill="#cbd5e1" font-size="11" text-anchor="middle">
+								Guarded Bot-to-Bot Mention resolver (loop-safe)
+							</text>
+
+							<path d="M 600 110 L 670 110" stroke="#8b5cf6" stroke-width="2" />
+
+							<!-- Execution Devices -->
+							<rect x="670" y="50" width="180" height="120" rx="8" fill="#1e293b" stroke="#10b981" />
+							<text x="760" y="80" fill="#f8fafc" font-size="13" font-weight="bold" text-anchor="middle">
+								Execution device cluster
+							</text>
+							<text x="760" y="105" fill="#94a3b8" font-size="11" text-anchor="middle">Bot 1 (large context 128K)</text>
+							<text x="760" y="125" fill="#94a3b8" font-size="11" text-anchor="middle">Bot 2 (large file sync 10G)</text>
+							<text x="760" y="145" fill="#6ee7b7" font-size="11" text-anchor="middle">Automatic decision write-back</text>
+						</svg>
+					</div>
+
+					<div class="feature-list">
+						<div class="feature-item">
+							<h4>📌 1. Global and room-level config hub (Execution Settings 2.0)</h4>
+							<p>
+								Refactor every hard-coded constant into a three-level inheritance model. Room-level
+								<code>RoomSettings</code> lets you drag-adjust group history and context size right in the frontend group settings.
+							</p>
+						</div>
+						<div class="feature-item">
+							<h4>📋 2. Native persistent blackboard panel (First-Class Blackboard)</h4>
+							<p>
+								Add a “group blackboard” interactive drawer to the top right of the main group view, with live Markdown
+								editing and version history. Task context always packs the full blackboard, eradicating long-term memory loss.
+							</p>
+						</div>
+						<div class="feature-item">
+							<h4>💬 3. Guarded self-initiated collaboration (Safe Bot Mentions)</h4>
+							<p>
+								Turn on <code>allowBotMentions: true</code> and add a Hub-level rate-limit circuit breaker of at most 3 dispatches per turn; a Bot that @-mentions a
+								peer in the group then triggers dispatch automatically.
+							</p>
+						</div>
+						<div class="feature-item">
+							<h4>🔔 4. Automatic decision bulletin (Attention Auto-Broadcast)</h4>
+							<p>
+								After a human answers a Bot questionnaire or approves a request, the system broadcasts a formatted bulletin into the public group stream and incrementally writes it back to the blackboard, removing the cognitive
+								silos between Bots.
+							</p>
+						</div>
+					</div>
+				</div>
+
+				<!-- Plan B content -->
+				<div class="plan-content" id="plan-1">
+					<div class="plan-header">
+						<div class="plan-meta">
+							<h2>Plan B: Collaboration bus (recommended) — “One unified stream + declarative workflows + live steering”</h2>
+							<p>
+								Kill the dual message/conversation model outright; introduce topology orchestration (Pipeline / Fan-in / Fan-out) and a distributed Steering
+								protocol to build an industrial-grade multi-agent collaboration pipeline.
+							</p>
+						</div>
+						<div class="plan-ratings">
+							<div class="rating-item">
+								<div class="rating-label">Architecture completeness</div>
+								<div class="rating-val" style="color: var(--purple)">Excellent (9.5/10)</div>
+							</div>
+							<div class="rating-item">
+								<div class="rating-label">Recommendation</div>
+								<div class="rating-val" style="color: var(--success)">★★★★★</div>
+							</div>
+						</div>
+					</div>
+
+					<div class="arch-diagram">
+						<svg viewBox="0 0 900 240" xmlns="http://www.w3.org/2000/svg">
+							<rect x="20" y="20" width="860" height="200" rx="10" fill="#131b26" stroke="#2a3a52" />
+
+							<!-- Unified Bus -->
+							<rect x="50" y="45" width="220" height="150" rx="8" fill="#1e293b" stroke="#3b82f6" />
+							<text x="160" y="75" fill="#f8fafc" font-size="13" font-weight="bold" text-anchor="middle">
+								Unified event and message bus
+							</text>
+							<text x="160" y="100" fill="#94a3b8" font-size="11" text-anchor="middle">No more Room vs Conv split</text>
+							<text x="160" y="125" fill="#38bdf8" font-size="11" text-anchor="middle">Tree-shaped Thread derivation model</text>
+							<text x="160" y="150" fill="#cbd5e1" font-size="11" text-anchor="middle">Live bidirectional stream (SSE/WS)</text>
+							<text x="160" y="175" fill="#a7f3d0" font-size="11" text-anchor="middle">In-flight steering channel (Steering)</text>
+
+							<!-- Orchestrator -->
+							<rect x="310" y="45" width="260" height="150" rx="8" fill="#1e293b" stroke="#8b5cf6" />
+							<text x="440" y="75" fill="#f8fafc" font-size="13" font-weight="bold" text-anchor="middle">
+								Group workflow orchestrator (Workflow DSL)
+							</text>
+							<rect x="330" y="90" width="220" height="30" rx="4" fill="#0f172a" stroke="#64748b" />
+							<text x="440" y="110" fill="#c4b5fd" font-size="11" text-anchor="middle">
+								Serial pipeline: BotA → BotB → BotC
+							</text>
+							<rect x="330" y="125" width="220" height="30" rx="4" fill="#0f172a" stroke="#64748b" />
+							<text x="440" y="145" fill="#67e8f9" font-size="11" text-anchor="middle">
+								Fan-out + join: [A,B] → C merges
+							</text>
+							<rect x="330" y="160" width="220" height="25" rx="4" fill="#0f172a" stroke="#64748b" />
+							<text x="440" y="177" fill="#fbbf24" font-size="10" text-anchor="middle">
+								Persistent resource locks (WAL)
+							</text>
+
+							<!-- Execution Nodes -->
+							<rect x="610" y="45" width="240" height="150" rx="8" fill="#1e293b" stroke="#10b981" />
+							<text x="730" y="75" fill="#f8fafc" font-size="13" font-weight="bold" text-anchor="middle">
+								Distributed execution nodes
+							</text>
+							<text x="730" y="100" fill="#94a3b8" font-size="11" text-anchor="middle">
+								Pty in-flight steering receiver
+							</text>
+							<text x="730" y="125" fill="#a7f3d0" font-size="11" text-anchor="middle">Live streamed token broadcast</text>
+							<text x="730" y="150" fill="#94a3b8" font-size="11" text-anchor="middle">Shared virtual workspace leases</text>
+							<text x="730" y="175" fill="#cbd5e1" font-size="11" text-anchor="middle">Outage compensation transactions (Saga)</text>
+						</svg>
+					</div>
+
+					<div class="feature-list">
+						<div class="feature-item">
+							<h4>🌿 1. Unified tree conversation model (Unified Tree Stream)</h4>
+							<p>
+								Abolish the dual-track model: every message is a node in the same tree stream. Bot-to-bot delegation becomes a child branch
+								(Thread) under the main message, which the frontend collapses and drills into directly — no more card flooding.
+							</p>
+						</div>
+						<div class="feature-item">
+							<h4>🎯 2. Declarative collaboration workflows (Pipeline / Fan-in / Fan-out)</h4>
+							<p>
+								Humans can issue a workflow instruction right in the group (e.g.
+								<code>@BotA research this and hand it to @BotB to implement, then let @BotC summarize</code
+								>); the orchestrator then advances state along the topology graph, and each node's artifacts automatically become the exact input for the next node.
+							</p>
+						</div>
+						<div class="feature-item">
+							<h4>🕹️ 3. Live in-flight steering (In-flight Steering Protocol)</h4>
+							<p>
+								Open up the cross-device Steering protocol. While a Bot runs a long task, the human types corrections in the group and the Hub delivers them in real time into the target device Agent's
+								execution queue, dynamically influencing later tool choices with no hard interrupt.
+							</p>
+						</div>
+						<div class="feature-item">
+							<h4>🔒 4. Persistent distributed locks and intent locks (Persistent Resource Locks)</h4>
+							<p>
+								<code>HubLockManager</code> moves to an append-only log (WAL) for persistence, with Shared Read / Exclusive Write
+								intent lock tiers, and the group composer automatically derives resource locks from the project root paths implied by the @Bot mentions.
+							</p>
+						</div>
+					</div>
+				</div>
+
+				<!-- Plan C content -->
+				<div class="plan-content" id="plan-2">
+					<div class="plan-header">
+						<div class="plan-meta">
+							<h2>Plan C: Autonomous agent mesh — “Digital R&amp;D studio + distributed knowledge base + sandbox rollback”</h2>
+							<p>
+								A forward-looking architecture that upgrades a group into a fully autonomous virtual team. It introduces vectorized semantic layered memory, fine-grained Capability permission decay and Git
+								worktree snapshot rollback.
+							</p>
+						</div>
+						<div class="plan-ratings">
+							<div class="rating-item">
+								<div class="rating-label">Forward-looking</div>
+								<div class="rating-val" style="color: var(--cyan)">Very high (Cutting-edge)</div>
+							</div>
+							<div class="rating-item">
+								<div class="rating-label">Timeline</div>
+								<div class="rating-val" style="color: var(--warning)">4 - 6 weeks</div>
+							</div>
+						</div>
+					</div>
+
+					<div class="feature-list">
+						<div class="feature-item">
+							<h4>🧠 1. Hierarchical memory matrix (Hierarchical Memory Matrix)</h4>
+							<p>
+								Break past every plain-text context limit: L1 blackboard consensus (global state) + L2 embedded vector knowledge base (semantic retrieval over 20,000+ group history entries, backfilled on demand)
+								+ L3 task snapshot evidence chain.
+							</p>
+						</div>
+						<div class="feature-item">
+							<h4>🛡️ 2. Physical Git worktree isolation and crash snapshot rollback (Worktree Sandbox)</h4>
+							<p>
+								Every multi-machine task dispatch pulls its own isolated temporary Git
+								branch. On a network split, a crash or a human rejecting the delivery, one click rolls back the physical directory and leaves the main branch untouched.
+							</p>
+						</div>
+						<div class="feature-item">
+							<h4>👥 3. Multi-account cross-device federation (Multi-Tenant Group Collaboration)</h4>
+							<p>
+								Rework the single <code>accountId</code> architecture so different team members can bring their own machines and Bots
+								into the same distributed project group, backed by a group membership identity chain signed with public/private keys.
+							</p>
+						</div>
+						<div class="feature-item">
+							<h4>📺 4. Multi-machine live streaming dashboard (Live Streaming Multiplexing)</h4>
+							<p>
+								The frontend natively fans out multiplexed real-time Token streams; while several Bots run concurrently, you can watch each Agent's
+								reasoning and terminal execution side by side like a war room.
+							</p>
+						</div>
+					</div>
+				</div>
+			</section>
+
+			<!-- 4. Interactive capacity and resource simulator -->
+			<section id="simulator">
+				<div class="section-title">
+					<span>🧮</span>
+					<h2>Group Capacity and Resource Consumption Simulator (Interactive)</h2>
+				</div>
+				<p class="section-desc">
+					Drag the sliders below and watch, live, how the raised limits change memory use, context throughput and network load under extreme concurrency:
+				</p>
+
+				<div class="simulator-box">
+					<div class="sim-controls">
+						<div class="slider-group">
+							<div class="slider-header">
+								<span>Bots in the group</span>
+								<span id="val-bots">6</span>
+							</div>
+							<input type="range" id="input-bots" min="2" max="32" value="6" oninput="updateSim()" />
+						</div>
+
+						<div class="slider-group">
+							<div class="slider-header">
+								<span>Group task context cap (groupContextBytes)</span>
+								<span id="val-context">256 KiB</span>
+							</div>
+							<input type="range" id="input-context" min="24" max="2048" step="32" value="256" oninput="updateSim()" />
+						</div>
+
+						<div class="slider-group">
+							<div class="slider-header">
+								<span>Group blackboard capacity (blackboardMaxBytes)</span>
+								<span id="val-blackboard">512 KiB</span>
+							</div>
+							<input
+								type="range"
+								id="input-blackboard"
+								min="32"
+								max="4096"
+								step="64"
+								value="512"
+								oninput="updateSim()"
+							/>
+						</div>
+
+						<div class="slider-group">
+							<div class="slider-header">
+								<span>Group persistent history retention (groupRetentionLimit)</span>
+								<span id="val-retention">5,000 entries</span>
+							</div>
+							<input
+								type="range"
+								id="input-retention"
+								min="500"
+								max="20000"
+								step="500"
+								value="5000"
+								oninput="updateSim()"
+							/>
+						</div>
+
+						<div class="slider-group">
+							<div class="slider-header">
+								<span>Concurrent active tasks per device (maxActiveTasks)</span>
+								<span id="val-tasks">12</span>
+							</div>
+							<input type="range" id="input-tasks" min="4" max="64" value="12" oninput="updateSim()" />
+						</div>
+					</div>
+
+					<div class="sim-results">
+						<div class="sim-card">
+							<div class="sim-card-title">Context capacity per dispatched task</div>
+							<div class="sim-card-value" id="res-tokens">~85,000 Tokens</div>
+							<div class="sim-card-desc">
+								Against ~8,000 Tokens at the old 24 KB, a capacity gain of <strong>10.6x</strong>, fully covering long-context input for modern large models
+							</div>
+						</div>
+
+						<div class="sim-card">
+							<div class="sim-card-title">Hub resident memory and history-index overhead</div>
+							<div class="sim-card-value" id="res-ram">~18.4 MiB</div>
+							<div class="sim-card-desc">
+								Sharded storage via PartitionedAppendLog: even under high concurrency the memory cost on the Node.js process is negligible
+							</div>
+						</div>
+
+						<div class="sim-card">
+							<div class="sim-card-title">Peak fan-out network throughput (Fan-out Peak)</div>
+							<div class="sim-card-value" id="res-bandwidth">~3.0 MiB/s</div>
+							<div class="sim-card-desc">Instantaneous data flow when broadcasting to every member and fanning out tasks — well within what a LAN and standard broadband can carry</div>
+						</div>
+					</div>
+				</div>
+			</section>
+
+			<!-- 5. Core interaction prototype preview -->
+			<section id="mockup">
+				<div class="section-title">
+					<span>🖥️</span>
+					<h2>Prototype Preview of the Core Interaction Experience (UI Mockup)</h2>
+				</div>
+				<p class="section-desc">A direct preview of the two-column collaboration UI from Plan B: “group main timeline + persistent consensus blackboard + live in-flight steering”:</p>
+
+				<div class="mockup-container">
+					<div class="mockup-header">
+						<span class="mockup-dot" style="background: #ef4444"></span>
+						<span class="mockup-dot" style="background: #f59e0b"></span>
+						<span class="mockup-dot" style="background: #10b981"></span>
+						<span style="font-size: 0.85rem; color: var(--text-muted); margin-left: 12px; font-weight: 600"
+							>pi-web-ui group collaboration workbench · global blackboard with live multi-Bot steering</span
+						>
+					</div>
+					<div class="mockup-body">
+						<div class="mock-chat-pane">
+							<div
+								style="
+									font-size: 0.85rem;
+									color: var(--text-muted);
+									border-bottom: 1px solid var(--card-border);
+									padding-bottom: 6px;
+								"
+							>
+								💬 Joint architecture rewrite group (Room #104) · 4 Bots online · active tasks: 2
+							</div>
+							<div class="mock-bubble human">
+								@ArchitectBot @CoderBot start the data-layer rewrite; settle the interface definition first and keep the blackboard updated.
+							</div>
+							<div class="mock-bubble bot">
+								🤖 <strong>ArchitectBot</strong>: architecture drafted and written to the <strong>[group blackboard]</strong> (version v4). Generated the interface contract for
+								<code>CoderBot</code>.<br />
+								<span style="color: #6ee7b7; font-size: 0.75rem"
+									>⚡ Pipeline orchestration triggered: abstract contract piped to CoderBot</span
+								>
+							</div>
+							<div class="mock-bubble bot">
+								🤖 <strong>CoderBot</strong>: implementing atomic shard writes in
+								<code>server/store.ts</code> from the blackboard contract...<br />
+								<span style="color: #38bdf8; font-size: 0.75rem"
+									>⏳ Task running · lock held: [repo:store.ts]</span
+								>
+							</div>
+							<div class="mock-bubble human" style="background: #0f766e; color: #ccfbf1">
+								🕹️ <strong>[In-flight steering]</strong> CoderBot, hold off on the legacy read-compat layer for now — append only!
+							</div>
+							<div class="mock-bubble bot">
+								🤖 <strong>CoderBot</strong>: live steering received! Skipped the destructive compat-layer rewrite and switched to append-only in a separate namespace.
+							</div>
+						</div>
+
+						<div class="mock-side-pane">
+							<div class="mock-side-title">
+								<span>📋</span>
+								<span>Group consensus blackboard (Blackboard v4)</span>
+							</div>
+							<div class="blackboard-preview">
+								# Unified architecture consensus (RFC-089) - updated by: ArchitectBot - time: 14:32:05 - lock state: store.ts (held by CoderBot) ##
+								Core contract 1. Abolish the dual-track model, route all messages into TreeStream 2. groupContextBytes raised to 256KB 3.
+								Default lock TTL raised to 30 min ## Pipeline TODO - [x] ArchitectBot: interface contract - [ ] CoderBot:
+								implement atomic writes (60% running) - [ ] ReviewerBot: run the test suite
+							</div>
+							<div style="font-size: 0.75rem; color: var(--text-muted); text-align: center">
+								✨ Humans can click any line to edit and correct it live
+							</div>
+						</div>
+					</div>
+				</div>
+			</section>
+
+			<!-- Bottom confirmation bar -->
+			<div class="cta-bar">
+				<h3>Ready to Start the Device Group Architecture Rewrite</h3>
+				<p>
+					Adopt <strong>Plan B (collaboration bus)</strong>: raise every system limit, wire the frontend blackboard to
+					Steering, and end whack-a-mole patching at the root.
+				</p>
+				<div class="btn-group">
+					<button class="btn btn-primary" onclick="alert('Plan B confirmed as first choice — moving into coding and architecture delivery!')">
+						🚀 Confirm Plan B (collaboration bus + blackboard delivery)
+					</button>
+					<button class="btn btn-secondary" onclick="alert('Plan A preference recorded — we will first open up the limits and the blackboard UI incrementally!')">
+						📦 Adopt Plan A (gradual, smooth transition)
+					</button>
+				</div>
+			</div>
+		</div>
+
+		<script>
+			function switchPlan(index) {
+				const tabs = document.querySelectorAll(".plan-tab-btn");
+				const contents = document.querySelectorAll(".plan-content");
+				tabs.forEach((tab, i) => {
+					tab.classList.toggle("active", i === index);
+				});
+				contents.forEach((content, i) => {
+					content.classList.toggle("active", i === index);
+				});
+			}
+
+			function updateSim() {
+				const bots = parseInt(document.getElementById("input-bots").value, 10);
+				const contextKb = parseInt(document.getElementById("input-context").value, 10);
+				const blackboardKb = parseInt(document.getElementById("input-blackboard").value, 10);
+				const retention = parseInt(document.getElementById("input-retention").value, 10);
+				const tasks = parseInt(document.getElementById("input-tasks").value, 10);
+
+				document.getElementById("val-bots").textContent = bots;
+				document.getElementById("val-context").textContent =
+					contextKb >= 1024 ? (contextKb / 1024).toFixed(1) + " MiB" : contextKb + " KiB";
+				document.getElementById("val-blackboard").textContent =
+					blackboardKb >= 1024 ? (blackboardKb / 1024).toFixed(1) + " MiB" : blackboardKb + " KiB";
+				document.getElementById("val-retention").textContent = retention.toLocaleString() + " entries";
+				document.getElementById("val-tasks").textContent = tasks;
+
+				// Compute
+				const tokensEst = Math.round((contextKb * 1024) / 3.2);
+				document.getElementById("res-tokens").textContent = "~" + tokensEst.toLocaleString() + " Tokens";
+
+				const memMb = ((retention * 1.5) / 1024 + blackboardKb / 1024 + tasks * 0.8).toFixed(1);
+				document.getElementById("res-ram").textContent = "~" + memMb + " MiB";
+
+				const bwMb = ((bots * contextKb) / 1024 / 2).toFixed(1);
+				document.getElementById("res-bandwidth").textContent = "~" + bwMb + " MiB/s";
+			}
+
+			// Initialize simulator calculation
+			updateSim();
+		</script>
+	</body>
+</html>
+
+
+
