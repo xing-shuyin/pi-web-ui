@@ -108,7 +108,12 @@ function resolvePluginLocale(dicts, candidates) {
 export function createPluginI18n(dicts, options = {}) {
 	const dict = dicts && typeof dicts === "object" ? dicts : {};
 	const available = Object.keys(dict);
-	const locale = resolvePluginLocale(dict, [options.locale, readActiveLocale()]);
+	// An explicitly passed locale is authoritative: if the caller asked for a language the
+	// dictionary does not have, the answer is English — not whatever language the host page
+	// happens to be in. Only an omitted locale consults the page/browser language, and an
+	// empty string counts as "asked for nothing" (which also lands on English).
+	const requested = typeof options.locale === "string" ? options.locale : readActiveLocale();
+	const locale = resolvePluginLocale(dict, [requested]);
 	const baseLocale = locale.split("-")[0] ?? "";
 	const interpolate = (text, params) =>
 		String(text).replace(/\{(\w+)\}/g, (match, name) =>
