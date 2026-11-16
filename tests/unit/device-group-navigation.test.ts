@@ -5,7 +5,12 @@ import { afterEach, expect, it, vi } from "vitest";
 import { DeviceGroups } from "../../web/src/components/DeviceGroups";
 import { openDeviceGroup, useDeviceGroupNavigation } from "../../web/src/device-group-navigation";
 
-vi.mock("../../web/src/i18n", () => ({ useI18n: () => ({ locale: "en" }), isZhLocale: () => false }));
+vi.mock("../../web/src/i18n", async (importOriginal) => {
+	const actual = await importOriginal<typeof import("../../web/src/i18n")>();
+	const t = (key: string, vars?: Record<string, string | number>) =>
+		actual.interpolate(actual.en[key as keyof typeof actual.en] ?? key, vars);
+	return { ...actual, useI18n: () => ({ locale: "en", t }), useT: () => t, isZhLocale: () => false };
+});
 
 const rooms = [
 	{ id: "room-a", name: "Group A", botIds: ["bot-a"], primaryBotId: "bot-a" },

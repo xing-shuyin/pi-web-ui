@@ -27,7 +27,7 @@ import {
 	FiX,
 	FiZap,
 } from "react-icons/fi";
-import { isZhLocale, useLocale, useT } from "../i18n";
+import { useT } from "../i18n";
 import { closeToolInspector, useToolInspectorState, type ToolInspectorState } from "../tool-inspector-state";
 import { useOverlayZIndex } from "../overlay-stack";
 import { openContextMenu } from "../context-menu-state";
@@ -112,7 +112,6 @@ const TOOL_ICONS: Record<string, ReactNode> = {
 export function resolveInspectorStatus(
 	state: ToolInspectorState,
 	t: ReturnType<typeof useT>,
-	isZh: boolean,
 ): {
 	isRunning: boolean;
 	badgeClass: "run" | "err" | "ok";
@@ -129,7 +128,7 @@ export function resolveInspectorStatus(
 	if (isError) {
 		badgeText = state.duration ? `${t("error")} (${state.duration})` : t("error");
 	} else if (isRunning) {
-		badgeText = state.status || (isZh ? "执行中..." : "Running...");
+		badgeText = state.status || t("running");
 	} else if (state.duration) {
 		badgeText = `${t("done")} (${state.duration})`;
 	} else {
@@ -138,11 +137,11 @@ export function resolveInspectorStatus(
 
 	let footerText: string;
 	if (isError) {
-		footerText = state.exitHint || (isZh ? "命令执行失败" : "Execution failed");
+		footerText = state.exitHint || t("toolInspectorExecutionFailed");
 	} else if (isRunning) {
-		footerText = state.exitHint || (isZh ? "执行中..." : "Running...");
+		footerText = state.exitHint || t("running");
 	} else {
-		footerText = state.exitHint || (isZh ? "执行完成" : "Execution completed");
+		footerText = state.exitHint || t("toolInspectorExecutionDone");
 	}
 
 	return { isRunning, badgeClass, statusIcon, badgeText, footerText };
@@ -349,7 +348,6 @@ function BashInspectorDialog({
 	onToggleMaximize: () => void;
 }) {
 	const t = useT();
-	const isZh = isZhLocale(useLocale());
 	const [viewMode, setViewMode] = useState<"preview" | "raw">("preview");
 	const copyCmd = useCopyFeedback({ duration: 1200 });
 	const copyOut = useCopyFeedback({ duration: 1200 });
@@ -367,7 +365,7 @@ function BashInspectorDialog({
 		}
 	}, [details]);
 
-	const statusMeta = resolveInspectorStatus(state, t, isZh);
+	const statusMeta = resolveInspectorStatus(state, t);
 
 	const lines = output ? output.split("\n").length : 0;
 	const detailsKeysCount =
@@ -386,7 +384,7 @@ function BashInspectorDialog({
 				createHostSlotEntry({
 					id: "host:kill-bash",
 					slot: "contextmenu.toolcall",
-					label: isZh ? "结束此 bash 命令" : "Stop bash command",
+					label: t("toolInspectorStopBash"),
 					icon: "■",
 					kind: "action",
 					order: -1,
@@ -399,7 +397,7 @@ function BashInspectorDialog({
 				createHostSlotEntry({
 					id: "host:copy-command",
 					slot: "contextmenu.toolcall",
-					label: isZh ? "复制执行命令" : "Copy command",
+					label: t("toolInspectorCopyCommand"),
 					icon: "copy",
 					kind: "action",
 					order: 1,
@@ -411,7 +409,7 @@ function BashInspectorDialog({
 				createHostSlotEntry({
 					id: "host:copy-output",
 					slot: "contextmenu.toolcall",
-					label: isZh ? "复制终端输出" : "Copy output",
+					label: t("toolInspectorCopyTerminalOutput"),
 					icon: "copy",
 					kind: "action",
 					order: 2,
@@ -422,7 +420,7 @@ function BashInspectorDialog({
 			createHostSlotEntry({
 				id: "host:tool-info",
 				slot: "contextmenu.toolcall",
-				label: isZh ? "工具详细信息" : "Tool Details",
+				label: t("toolInfoTitle"),
 				icon: "info",
 				kind: "action",
 				order: 3,
@@ -486,14 +484,14 @@ function BashInspectorDialog({
 							<button
 								type="button"
 								className="file-diff-action-btn kill-btn"
-								title={isZh ? "结束此 bash 命令 (Stop)" : "Stop bash command"}
+								title={t("toolInspectorStopBashTitle")}
 								onClick={(e) => {
 									e.stopPropagation();
 									state.onKillBash?.();
 								}}
 							>
 								<FiSquare />
-								<span className="kill-btn-label">{isZh ? "结束" : "Stop"}</span>
+								<span className="kill-btn-label">{t("toolInspectorStop")}</span>
 							</button>
 						)}
 						<div className="btn-group-diff" role="group">
@@ -505,7 +503,7 @@ function BashInspectorDialog({
 									setViewMode("preview");
 								}}
 							>
-								{isZh ? "终端输出" : "Terminal"}
+								{t("toolInspectorTabTerminal")}
 							</button>
 							<button
 								type="button"
@@ -576,7 +574,7 @@ function BashInspectorDialog({
 						<div className="file-diff-raw-body">
 							<div className="file-diff-raw-section">
 								<div className="file-diff-raw-title">⚡ {t("toolInspectorArgs")}</div>
-								<pre className="file-diff-pre">{args || "(无入参参数 / No arguments)"}</pre>
+								<pre className="file-diff-pre">{args || t("toolInspectorNoArgs")}</pre>
 							</div>
 							{formattedDetails && (
 								<div className="file-diff-raw-section">
@@ -620,13 +618,7 @@ function BashInspectorDialog({
 								setViewMode(viewMode === "raw" ? "preview" : "raw");
 							}}
 						>
-							{viewMode === "raw"
-								? isZh
-									? "返回终端输出"
-									: "Back to terminal"
-								: isZh
-									? "查看完整日志与详情"
-									: "View raw & details"}
+							{viewMode === "raw" ? t("toolInspectorBackToTerminal") : t("toolInspectorViewRawLogsDetails")}
 						</button>
 					</div>
 				</div>
@@ -645,7 +637,6 @@ function ReadInspectorDialog({
 	onToggleMaximize: () => void;
 }) {
 	const t = useT();
-	const isZh = isZhLocale(useLocale());
 	const [viewMode, setViewMode] = useState<"preview" | "raw">("preview");
 	const copyOut = useCopyFeedback({ duration: 1200 });
 
@@ -693,7 +684,7 @@ function ReadInspectorDialog({
 		}
 	}, [details]);
 
-	const statusMeta = resolveInspectorStatus(state, t, isZh);
+	const statusMeta = resolveInspectorStatus(state, t);
 
 	const lines = output ? output.split("\n").length : 0;
 	const detailsKeysCount =
@@ -725,10 +716,7 @@ function ReadInspectorDialog({
 							{titleText}
 						</span>
 						{targetQuery && (
-							<span
-								className="file-diff-pattern"
-								title={isZh ? `搜索表达式: ${targetQuery}` : `Pattern: ${targetQuery}`}
-							>
+							<span className="file-diff-pattern" title={t("toolInspectorPatternTitle", { query: targetQuery })}>
 								{name === "grep" ? "REGEX" : "QUERY"}
 							</span>
 						)}
@@ -736,10 +724,7 @@ function ReadInspectorDialog({
 							<span className="file-diff-lang">{targetPath.split(".").pop()?.toUpperCase() || "FILE"}</span>
 						)}
 						{startLine > 1 && (
-							<span
-								className="file-diff-lang"
-								title={isZh ? `起始偏移量: 第 ${startLine} 行` : `Start offset: line ${startLine}`}
-							>
+							<span className="file-diff-lang" title={t("toolInspectorStartOffsetTitle", { line: startLine })}>
 								L{startLine}~L{startLine + lines - 1}
 							</span>
 						)}
@@ -758,7 +743,7 @@ function ReadInspectorDialog({
 									setViewMode("preview");
 								}}
 							>
-								{isZh ? "内容查看" : "Content"}
+								{t("toolInspectorTabContent")}
 							</button>
 							<button
 								type="button"
@@ -821,7 +806,7 @@ function ReadInspectorDialog({
 						<div className="file-diff-raw-body">
 							<div className="file-diff-raw-section">
 								<div className="file-diff-raw-title">⚡ {t("toolInspectorArgs")}</div>
-								<pre className="file-diff-pre">{args || "(无入参参数 / No arguments)"}</pre>
+								<pre className="file-diff-pre">{args || t("toolInspectorNoArgs")}</pre>
 							</div>
 							{formattedDetails && (
 								<div className="file-diff-raw-section">
@@ -892,7 +877,7 @@ function ReadInspectorDialog({
 								setViewMode(viewMode === "raw" ? "preview" : "raw");
 							}}
 						>
-							{viewMode === "raw" ? (isZh ? "返回内容" : "Back to content") : isZh ? "查看完整参数" : "View raw"}
+							{viewMode === "raw" ? t("toolInspectorBackToContent") : t("toolInspectorViewRawArgs")}
 						</button>
 					</div>
 				</div>
@@ -911,7 +896,6 @@ function FileDiffInspectorDialog({
 	onToggleMaximize: () => void;
 }) {
 	const t = useT();
-	const isZh = isZhLocale(useLocale());
 	const [viewMode, setViewMode] = useState<"unified" | "split" | "raw">("unified");
 	const { copied, copy } = useCopyFeedback({ duration: 1200 });
 
@@ -931,7 +915,7 @@ function FileDiffInspectorDialog({
 		}
 	}, [details]);
 
-	const statusMeta = resolveInspectorStatus(state, t, isZh);
+	const statusMeta = resolveInspectorStatus(state, t);
 
 	const handleCopy = (e: React.MouseEvent) => {
 		e.stopPropagation();
@@ -1075,7 +1059,7 @@ function FileDiffInspectorDialog({
 						<div className="file-diff-raw-body">
 							<div className="file-diff-raw-section">
 								<div className="file-diff-raw-title">⚡ {t("toolInspectorArgs")}</div>
-								<pre className="file-diff-pre">{args || "(无入参参数 / No arguments)"}</pre>
+								<pre className="file-diff-pre">{args || t("toolInspectorNoArgs")}</pre>
 							</div>
 							{formattedDetails && (
 								<div className="file-diff-raw-section">
@@ -1104,7 +1088,7 @@ function FileDiffInspectorDialog({
 						<span className="file-diff-status-text">
 							{statusMeta.isRunning
 								? statusMeta.footerText
-								: output || (isEdit ? (isZh ? "补丁已应用" : "Patch applied") : isZh ? "文件已写入" : "File written")}
+								: output || (isEdit ? t("toolInspectorPatchApplied") : t("toolInspectorFileWritten"))}
 						</span>
 					</div>
 					<div className="file-diff-footer-meta">
@@ -1119,7 +1103,7 @@ function FileDiffInspectorDialog({
 								setViewMode(viewMode === "raw" ? "unified" : "raw");
 							}}
 						>
-							{viewMode === "raw" ? (isZh ? "返回差异对比" : "Back to diff") : isZh ? "查看完整日志" : "View raw logs"}
+							{viewMode === "raw" ? t("toolInspectorBackToDiff") : t("toolInspectorViewRawLogs")}
 						</button>
 					</div>
 				</div>
@@ -1138,7 +1122,6 @@ function GenericInspectorDialog({
 	onToggleMaximize: () => void;
 }) {
 	const t = useT();
-	const isZh = isZhLocale(useLocale());
 	const [viewMode, setViewMode] = useState<"preview" | "raw">("preview");
 	const copyAll = useCopyFeedback({ duration: 1200 });
 
@@ -1156,7 +1139,7 @@ function GenericInspectorDialog({
 		}
 	}, [details]);
 
-	const statusMeta = resolveInspectorStatus(state, t, isZh);
+	const statusMeta = resolveInspectorStatus(state, t);
 	const detailsKeysCount =
 		details && typeof details === "object" ? Object.keys(details as Record<string, unknown>).length : 0;
 
@@ -1219,7 +1202,7 @@ function GenericInspectorDialog({
 										setViewMode("preview");
 									}}
 								>
-									{isZh ? "视图" : "View"}
+									{t("toolInspectorTabView")}
 								</button>
 								<button
 									type="button"
@@ -1277,7 +1260,7 @@ function GenericInspectorDialog({
 						<div className="file-diff-raw-body">
 							<div className="file-diff-raw-section">
 								<div className="file-diff-raw-title">⚡ {t("toolInspectorArgs")}</div>
-								<pre className="file-diff-pre">{args || "(无入参参数 / No arguments)"}</pre>
+								<pre className="file-diff-pre">{args || t("toolInspectorNoArgs")}</pre>
 							</div>
 							{formattedDetails && (
 								<div className="file-diff-raw-section">
@@ -1395,13 +1378,7 @@ function GenericInspectorDialog({
 								setViewMode(viewMode === "raw" ? "preview" : "raw");
 							}}
 						>
-							{viewMode === "raw"
-								? isZh
-									? "返回视图"
-									: "Back to view"
-								: isZh
-									? "查看完整参数与详情"
-									: "View raw & details"}
+							{viewMode === "raw" ? t("toolInspectorBackToView") : t("toolInspectorViewRawArgsDetails")}
 						</button>
 					</div>
 				</div>
