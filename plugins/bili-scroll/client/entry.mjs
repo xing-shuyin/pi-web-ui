@@ -1,6 +1,10 @@
 import qrcode from "./vendor/qrcode.js";
 import { renderMiniMd, stripNoteScaffold } from "./md.mjs?v=2.8.0";
 import { esc } from "@pi-web-ui/plugin-sdk/client";
+import { makeT } from "./i18n.mjs";
+
+/** 面板文案：语言解析 / 回退 / 插值都在 SDK 里，这里只按当前界面语言取词。 */
+const t = makeT();
 
 export default {
 	async mount(el, ctx) {
@@ -33,7 +37,7 @@ export default {
 				return new Promise((resolve) => {
 					const timer = setTimeout(() => {
 						pendingReplies.delete(rid);
-						resolve({ ok: false, error: "请求宿主服务超时 (30s)" });
+						resolve({ ok: false, error: t("hostTimeout") });
 					}, 30000);
 					pendingReplies.set(rid, { resolve, timer });
 					try {
@@ -165,23 +169,23 @@ export default {
 						<div class="bili-logo">📺</div>
 <div class="bili-brand-text">
 <div class="bili-brand-row">
-<span class="bili-brand-title">刷 B 站</span>
+<span class="bili-brand-title">${t("brandTitle")}</span>
 <span class="bili-badge-ver" hidden>v—</span>
-<span class="bili-badge-always" title="无界面也自动跑：服务器启动即常驻，峰谷窗口+私信监听都在后台">● 常驻自跑</span>
-<span class="bili-pill-stat" title="今日挑中 / 每日额度上限（挑够自动停刷）">挑 <b class="bili-hp-quota">—</b></span>
-<span class="bili-pill-stat" title="今日巡检轮次（峰谷窗口自动跑）"><b class="bili-hp-rounds">—</b></span>
-<span class="bili-pill-stat" title="投递方式（only 只私信 / both 私信+评论 / off 只公评）"><b class="bili-hp-dmmode">—</b></span>
+<span class="bili-badge-always" title="${t("badgeAlwaysTitle")}">${t("badgeAlways")}</span>
+<span class="bili-pill-stat" title="${t("pillQuotaTitle")}">${t("pillPickedLabel")} <b class="bili-hp-quota">—</b></span>
+<span class="bili-pill-stat" title="${t("pillRoundsTitle")}"><b class="bili-hp-rounds">—</b></span>
+<span class="bili-pill-stat" title="${t("pillDmTitle")}"><b class="bili-hp-dmmode">—</b></span>
 <span style="color: var(--border);">|</span>
-<span class="bili-hp-lastrun" style="font-size: 10px; color: var(--text-dim); font-family: ui-monospace, Menlo, Consolas, monospace;">末次 —</span>
+<span class="bili-hp-lastrun" style="font-size: 10px; color: var(--text-dim); font-family: ui-monospace, Menlo, Consolas, monospace;">${t("lastRunPrefix")} —</span>
 </div>
-<div class="bili-brand-sub">主页只有视频列表 · 点封面 opens 详情弹窗（视频 / 账号动作 / 评论了什么 / 内容总结）</div>
+<div class="bili-brand-sub">${t("brandSub")}</div>
 </div>
 					</div>
 <div class="bili-topbar-actions">
-<button class="bili-btn-run-top" type="button" title="立刻跑一轮巡检（峰谷窗口之外也可以手动触发）">🚀 跑一轮</button>
-<button class="bili-btn-runs" type="button" title="查看每次跑一轮的状态记录：下拉切轮次，看 AI 看了哪条视频、转写/点赞/评论/私信每一步">📊 运行状态</button>
-<button class="bili-btn-settings" type="button" title="打开设置：常用 / 偏好 / 互动 / 高级">⚙️ 设置</button>
-<button class="bili-btn-refresh" type="button" title="刷新状态与视频卡片">🔄 刷新</button>
+<button class="bili-btn-run-top" type="button" title="${t("topRunTitle")}">${t("topRun")}</button>
+<button class="bili-btn-runs" type="button" title="${t("topRunsTitle")}">${t("topRuns")}</button>
+<button class="bili-btn-settings" type="button" title="${t("topSettingsTitle")}">${t("topSettings")}</button>
+<button class="bili-btn-refresh" type="button" title="${t("topRefreshTitle")}">${t("topRefresh")}</button>
 </div>
 				</div>
 				<!-- 仪表盘样式（跟随宿主主题变量） -->
@@ -279,7 +283,7 @@ export default {
 					/* 提示词：能看见的默认值 + 固定追加部分 */
 					.bili-prompt-area { width: 100%; box-sizing: border-box; margin-top: 10px; padding: 10px; border: 1px solid var(--border); border-radius: 8px; background: var(--bg); color: var(--text); font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace; font-size: 12px; line-height: 1.55; resize: vertical; overflow-wrap: anywhere; }
 					.bili-prompt-fixed { margin-top: 8px; padding: 10px; border-radius: 8px; border: 1px dashed var(--border); background: color-mix(in srgb, var(--accent) 6%, transparent); font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace; font-size: 11px; line-height: 1.5; color: var(--text-dim); white-space: pre-wrap; overflow-wrap: anywhere; }
-					.bili-prompt-fixed::before { content: "✏️ 固定追加（可改，保存时校验格式）"; display: block; margin-bottom: 6px; font-family: inherit; font-weight: 700; color: var(--text); }
+					.bili-prompt-fixed::before { content: "${t("promptFixedBadge")}"; display: block; margin-bottom: 6px; font-family: inherit; font-weight: 700; color: var(--text); }
 					textarea.bili-prompt-fixed { width: 100%; box-sizing: border-box; resize: vertical; color: var(--text); }
 					.bili-prompt-actions { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin-top: 10px; }
 					.bili-prompt-state { font-weight: 400; }
@@ -445,49 +449,49 @@ export default {
 <div class="bili-card" style="flex: 1; min-height: 0; display: flex; flex-direction: column;">
 							<div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 8px;">
 								<div>
-<div class="bili-card-title">🎞️ 它刷过的视频 <span class="bili-card-title-hint">封面由宿主代理转发 · 点封面出详情弹窗</span></div>
+<div class="bili-card-title">${t("watchedTitle")} <span class="bili-card-title-hint">${t("watchedHint")}</span></div>
 								</div>
-								<button class="bili-btn-clear-history" type="button" title="清空刷过的视频、日报、笔记与 AI 总结">🧹 清空</button>
-								<!-- 筛选 Chips -->
+								<button class="bili-btn-clear-history" type="button" title="${t("clearTitle")}">${t("clearBtn")}</button>
+								<!-- 筛选 Chips（data key, not UI：data-tier 的值参与服务端筛选查询，不翻译） -->
 								<div class="bili-watched-filters" style="display: flex; gap: 6px; flex-wrap: wrap; align-items: center;">
-									<button class="bili-chip-state" data-state="" style="padding: 3px 8px; border-radius: 12px; border: 1px solid var(--border); background: var(--accent); color: var(--accent-contrast, #fff); font-size: 11px; cursor: pointer;">全部</button>
-									<button class="bili-chip-state" data-state="picked" style="padding: 3px 8px; border-radius: 12px; border: 1px solid var(--border); background: var(--bg); color: var(--text); font-size: 11px; cursor: pointer;">🌟 挑中的</button>
-									<button class="bili-chip-state" data-state="skipped" style="padding: 3px 8px; border-radius: 12px; border: 1px solid var(--border); background: var(--bg); color: var(--text); font-size: 11px; cursor: pointer;">⏭️ 跳过的</button>
-									<button class="bili-chip-state" data-state="commented" style="padding: 3px 8px; border-radius: 12px; border: 1px solid var(--border); background: var(--bg); color: var(--text); font-size: 11px; cursor: pointer;">💬 已投递/评论</button>
+									<button class="bili-chip-state" data-state="" style="padding: 3px 8px; border-radius: 12px; border: 1px solid var(--border); background: var(--accent); color: var(--accent-contrast, #fff); font-size: 11px; cursor: pointer;">${t("chipAll")}</button>
+									<button class="bili-chip-state" data-state="picked" style="padding: 3px 8px; border-radius: 12px; border: 1px solid var(--border); background: var(--bg); color: var(--text); font-size: 11px; cursor: pointer;">${t("chipPicked")}</button>
+									<button class="bili-chip-state" data-state="skipped" style="padding: 3px 8px; border-radius: 12px; border: 1px solid var(--border); background: var(--bg); color: var(--text); font-size: 11px; cursor: pointer;">${t("chipSkipped")}</button>
+									<button class="bili-chip-state" data-state="commented" style="padding: 3px 8px; border-radius: 12px; border: 1px solid var(--border); background: var(--bg); color: var(--text); font-size: 11px; cursor: pointer;">${t("chipCommented")}</button>
 									<span style="color: var(--border);">|</span>
-									<button class="bili-chip-tier" data-tier="" style="padding: 3px 8px; border-radius: 12px; border: 1px solid var(--border); background: var(--bg); color: var(--text); font-size: 11px; cursor: pointer;">全档位</button>
-									<button class="bili-chip-tier" data-tier="值得看" style="padding: 3px 8px; border-radius: 12px; border: 1px solid var(--border); background: var(--bg); color: var(--text); font-size: 11px; cursor: pointer;">值得看</button>
-									<button class="bili-chip-tier" data-tier="可以看" style="padding: 3px 8px; border-radius: 12px; border: 1px solid var(--border); background: var(--bg); color: var(--text); font-size: 11px; cursor: pointer;">可以看</button>
+									<button class="bili-chip-tier" data-tier="" style="padding: 3px 8px; border-radius: 12px; border: 1px solid var(--border); background: var(--bg); color: var(--text); font-size: 11px; cursor: pointer;">${t("chipAllTiers")}</button>
+									<button class="bili-chip-tier" data-tier="值得看" style="padding: 3px 8px; border-radius: 12px; border: 1px solid var(--border); background: var(--bg); color: var(--text); font-size: 11px; cursor: pointer;">${t("chipTierWorth")}</button>
+									<button class="bili-chip-tier" data-tier="可以看" style="padding: 3px 8px; border-radius: 12px; border: 1px solid var(--border); background: var(--bg); color: var(--text); font-size: 11px; cursor: pointer;">${t("chipTierWatchable")}</button>
 								</div>
 							</div>
 
 <!-- 时间范围：默认上次可切今日近7天往期 -->
 <div class="bili-range-row" style="display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin-top: 10px;">
 <div class="bili-range-seg">
-<button class="is-active" data-range="last">🕒 上次</button>
-<button data-range="today">今日</button>
-<button data-range="week">近7天</button>
+<button class="is-active" data-range="last">${t("rangeBtnLast")}</button>
+<button data-range="today">${t("rangeBtnToday")}</button>
+<button data-range="week">${t("rangeBtnWeek")}</button>
 </div>
-<select class="bili-day-select" title="往期日期"></select>
-<span class="bili-range-hint" style="font-size: 11px; color: var(--text-dim);">点封面看详情</span>
+<select class="bili-day-select" title="${t("daySelectTitle")}"></select>
+<span class="bili-range-hint" style="font-size: 11px; color: var(--text-dim);">${t("clickCoverHint")}</span>
 <span style="flex: 1;"></span>
-<div class="bili-wall-toggle" role="group" aria-label="列表视图切换">
-<button class="bili-wt is-active" data-view="grid" type="button" title="封面网格">▦ 网格</button>
-<button class="bili-wt" data-view="list" type="button" title="紧凑列表">☰ 列表</button>
+<div class="bili-wall-toggle" role="group" aria-label="${t("viewToggleAria")}">
+<button class="bili-wt is-active" data-view="grid" type="button" title="${t("viewGridTitle")}">${t("viewGrid")}</button>
+<button class="bili-wt" data-view="list" type="button" title="${t("viewListTitle")}">${t("viewList")}</button>
 </div>
 </div>
 
 <!-- 视频网格卡片容器（内部滚动主页不滚） -->
 <div class="bili-cards-grid bili-b-grid">
-								<div style="grid-column: 1 / -1; padding: 24px; text-align: center; color: var(--text-dim);">正在加载视频卡片...</div>
+								<div style="grid-column: 1 / -1; padding: 24px; text-align: center; color: var(--text-dim);">${t("loadingCards")}</div>
 							</div>
 
 							<!-- 卡片分页控制器 -->
 							<div style="display: flex; justify-content: space-between; align-items: center; margin-top: 12px; padding-top: 10px; border-top: 1px solid var(--border); font-size: 12px;">
-								<span class="bili-page-info" style="color: var(--text-dim);">第 0 - 0 条，共 0 条</span>
+								<span class="bili-page-info" style="color: var(--text-dim);">${t("pageInfo", { from: 0, to: 0, total: 0 })}</span>
 								<div style="display: flex; gap: 8px;">
-									<button class="bili-btn-prev-page bili-btn-ghost bili-btn-xs">上一页</button>
-									<button class="bili-btn-next-page bili-btn-ghost bili-btn-xs">下一页</button>
+									<button class="bili-btn-prev-page bili-btn-ghost bili-btn-xs">${t("prevPage")}</button>
+									<button class="bili-btn-next-page bili-btn-ghost bili-btn-xs">${t("nextPage")}</button>
 								</div>
 							</div>
 						</div>
@@ -501,14 +505,14 @@ export default {
 								<div class="bili-card">
 									<div class="bili-card-head">
 										<div>
-											<div class="bili-card-title">⚡ 一键巡检 <span class="bili-pill-peak">峰谷自动巡检: 开</span></div>
-											<div class="bili-card-sub">中午 12:00–14:00 ｜ 夜间 00:30–08:30 自动跑 · 挑中额度上限达标即停；不用守着页面，跑完私信收日报。</div>
+											<div class="bili-card-title">${t("dashTitle")} <span class="bili-pill-peak">${t("peakPill", { state: t("peakOn") })}</span></div>
+											<div class="bili-card-sub">${t("dashSub")}</div>
 										</div>
 									</div>
 									<div class="bili-run-row">
-										<button class="bili-btn-run-duty"><span>🚀</span><span>现在跑一轮</span></button>
-										<button class="bili-btn-ghost bili-btn-chat-mode">💬 在对话中漫游</button>
-										<button class="bili-btn-ghost bili-btn-fav-today">⭐ 收藏今天挑中的</button>
+										<button class="bili-btn-run-duty"><span>🚀</span><span>${t("runNow")}</span></button>
+										<button class="bili-btn-ghost bili-btn-chat-mode">${t("chatRoam")}</button>
+										<button class="bili-btn-ghost bili-btn-fav-today">${t("favToday")}</button>
 									</div>
 
 									<!-- AI 实时动作视窗 (Live Action Terminal) -->
@@ -516,25 +520,25 @@ export default {
 										<div class="bili-terminal-head">
 											<div class="bili-terminal-head-left">
 												<span class="bili-pulse-dot"></span>
-												<span class="bili-terminal-title">AI 实时动作视窗</span>
-												<span class="bili-action-status-pill">待命</span>
+												<span class="bili-terminal-title">${t("terminalTitle")}</span>
+												<span class="bili-action-status-pill">${t("terminalIdleStatus")}</span>
 											</div>
-											<button class="bili-btn-clear-terminal">清屏</button>
+											<button class="bili-btn-clear-terminal">${t("terminalClear")}</button>
 										</div>
-										<div class="bili-action-terminal-body"><span style="color: #666;">[待命] 点击「现在跑一轮」或开启峰谷巡检后，这里将实时输出每一项动作（检索、字幕提取、语义排雷、评级、私信与记账）...</span></div>
+										<div class="bili-action-terminal-body"><span style="color: #666;">${t("terminalIdleHint")}</span></div>
 									</div>
 								</div>
 
 								<!-- 📑 精选速报 -->
 								<div class="bili-card">
 									<div class="bili-card-head">
-										<div class="bili-card-title">📑 今日精选 · 速报 <span class="bili-card-title-hint">Markdown 日报 · 巡检完自动生成</span></div>
+										<div class="bili-card-title">${t("reportTitle")} <span class="bili-card-title-hint">${t("reportHint")}</span></div>
 										<div class="bili-report-actions">
 											<select class="bili-report-select"></select>
-											<button class="bili-btn-ghost bili-btn-copy-report">📋 复制 Markdown</button>
+											<button class="bili-btn-ghost bili-btn-copy-report">${t("copyMarkdown")}</button>
 										</div>
 									</div>
-									<div class="bili-report-content">暂无今日日报，点击「现在跑一轮」后在此生成。</div>
+									<div class="bili-report-content">${t("reportEmpty")}</div>
 								</div>
 							</div>
 
@@ -546,34 +550,34 @@ export default {
 <!-- ═══════════ v2.6 视频详情弹窗：左 = 视频 + 账号动作台账；右 = 总结 + 证据 ═══════════ -->
 <div class="bili-detail" hidden>
 <div class="bili-detail-backdrop"></div>
-<div class="bili-detail-panel" role="dialog" aria-modal="true" aria-label="视频详情">
+<div class="bili-detail-panel" role="dialog" aria-modal="true" aria-label="${t("detailAria")}">
 <div class="bili-detail-head">
 <div style="flex: 1; min-width: 0;">
 <h3 class="bili-detail-title"></h3>
 <div class="bili-detail-sub"></div>
 </div>
-<button class="bili-btn-ghost bili-detail-open" style="flex: none;">B站打开 ↗</button>
-<button class="bili-modal-close bili-detail-close" type="button" aria-label="关闭详情">✕</button>
+<button class="bili-btn-ghost bili-detail-open" style="flex: none;">${t("openOnBili")}</button>
+<button class="bili-modal-close bili-detail-close" type="button" aria-label="${t("closeDetail")}">✕</button>
 </div>
 <div class="bili-detail-body">
 <div class="bili-detail-left">
 <div class="bili-detail-player">
 <img class="bili-detail-cover" alt="" />
-<div class="bili-detail-play"><button type="button" title="播放B站嵌入视频">▶</button></div>
+<div class="bili-detail-play"><button type="button" title="${t("playTitle")}">▶</button></div>
 </div>
-<div style="font-size: 11px; color: var(--text-dim); margin-top: 6px;">点 ▶ 用B站嵌入播放，不自动播、可全屏</div>
+<div style="font-size: 11px; color: var(--text-dim); margin-top: 6px;">${t("playerHint")}</div>
 <div class="bili-detail-acts"></div>
 <div class="bili-ledger">
-<div class="bili-ledger-title">这个账号对它做了什么 <span class="bili-ledger-sub">点赞/收藏实时只读查询 · 评论/私信用状态库</span></div>
+<div class="bili-ledger-title">${t("ledgerTitle")} <span class="bili-ledger-sub">${t("ledgerSub")}</span></div>
 <div class="bili-ledger-rows"></div>
 </div>
 <div class="bili-detail-comments"></div>
 </div>
 <div class="bili-detail-right">
 <div class="bili-sum-bar">
-<span class="bili-sum-label">📄 AI 内容总结</span>
+<span class="bili-sum-label">${t("summaryLabel")}</span>
 <span class="bili-sum-meta"></span>
-<button class="bili-sum-regen" type="button" hidden>重新生成</button>
+<button class="bili-sum-regen" type="button" hidden>${t("regenerate")}</button>
 </div>
 <div class="bili-sum-body bili-md"></div>
 </div>
@@ -584,24 +588,24 @@ export default {
 <!-- ═══════════ 清空确认 ═══════════ -->
 <div class="bili-modal bili-clear-modal" hidden>
 <div class="bili-modal-backdrop bili-clear-backdrop"></div>
-<div class="bili-modal-panel" role="dialog" aria-modal="true" aria-label="清空刷过的视频">
+<div class="bili-modal-panel" role="dialog" aria-modal="true" aria-label="${t("clearModalAria")}">
 <div class="bili-modal-head">
-<div class="bili-modal-title">🧹 清空刷过的视频</div>
-<button class="bili-modal-close bili-clear-close" type="button" aria-label="关闭">✕</button>
+<div class="bili-modal-title">${t("clearModalTitle")}</div>
+<button class="bili-modal-close bili-clear-close" type="button" aria-label="${t("close")}">✕</button>
 </div>
 <div class="bili-modal-body">
-<div class="bili-clear-warn">这一步不可撤销，会删掉：</div>
+<div class="bili-clear-warn">${t("clearWarn")}</div>
 <ul class="bili-clear-list">
-<li>刷过的视频列表与判重表（之后这些视频能重新被刷到）</li>
-<li>日报、单篇笔记、月度清单、AI 内容总结</li>
-<li>内容索引、品味账本里的挑中与信号记录</li>
+<li>${t("clearItem1")}</li>
+<li>${t("clearItem2")}</li>
+<li>${t("clearItem3")}</li>
 </ul>
-<div class="bili-clear-keep">✅ 保留：已发评论 / 私信记录（避免对同一视频重复打扰）、登录凭证、所有设置</div>
+<div class="bili-clear-keep">${t("clearKeep")}</div>
 </div>
 <div class="bili-modal-foot">
-<span class="bili-modal-foot-hint">清完后下一轮巡检从零开始</span>
-<button class="bili-btn-clear-cancel bili-btn-ghost" type="button">取消</button>
-<button class="bili-btn-clear-ok" type="button">确认清空</button>
+<span class="bili-modal-foot-hint">${t("clearFootHint")}</span>
+<button class="bili-btn-clear-cancel bili-btn-ghost" type="button">${t("cancel")}</button>
+<button class="bili-btn-clear-ok" type="button">${t("clearConfirm")}</button>
 </div>
 </div>
 </div>
@@ -609,24 +613,24 @@ export default {
 <!-- ═══════════ 「📊 运行状态」弹窗：每次跑一轮的状态记录，下拉切轮次看 AI 每一步 ═══════════ -->
 <div class="bili-modal bili-runs-modal" hidden>
 <div class="bili-modal-backdrop bili-runs-backdrop"></div>
-<div class="bili-modal-panel" role="dialog" aria-modal="true" aria-label="运行状态">
+<div class="bili-modal-panel" role="dialog" aria-modal="true" aria-label="${t("runsAria")}">
 <div class="bili-modal-head">
-<div class="bili-modal-title">📊 运行状态 <span class="bili-modal-sub">每轮挑了几条 · AI 看了啥 · 转写/点赞/评论/私信</span></div>
-<button class="bili-modal-close bili-runs-close" type="button" aria-label="关闭运行状态">✕</button>
+<div class="bili-modal-title">${t("runsTitle")} <span class="bili-modal-sub">${t("runsSub")}</span></div>
+<button class="bili-modal-close bili-runs-close" type="button" aria-label="${t("closeRuns")}">✕</button>
 </div>
 <div class="bili-modal-body">
 <div style="display: flex; gap: 8px; align-items: center; margin-bottom: 8px;">
-<select class="bili-runs-select" aria-label="切换轮次"></select>
-<button class="bili-btn-refresh bili-runs-reload" type="button" title="重新拉取轮次记录">🔄</button>
+<select class="bili-runs-select" aria-label="${t("runsSelectAria")}"></select>
+<button class="bili-btn-refresh bili-runs-reload" type="button" title="${t("runsReloadTitle")}">🔄</button>
 </div>
 <div class="bili-runs-head" style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap;"></div>
 <div class="bili-runs-summary"></div>
 <div class="bili-runs-picks" style="display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 4px;"></div>
-<div class="bili-runs-timeline"><div style="color: var(--text-dim);">正在加载轮次记录…</div></div>
+<div class="bili-runs-timeline"><div style="color: var(--text-dim);">${t("runsLoading")}</div></div>
 </div>
 <div class="bili-modal-foot">
-<span class="bili-modal-foot-hint">running 是正在跑的那轮，每 5 秒自动刷一次动作流水</span>
-<button class="bili-btn-clear-cancel bili-runs-close2 bili-btn-ghost" type="button">关闭</button>
+<span class="bili-modal-foot-hint">${t("runsFootHint")}</span>
+<button class="bili-btn-clear-cancel bili-runs-close2 bili-btn-ghost" type="button">${t("closeBtn")}</button>
 </div>
 </div>
 </div>
@@ -634,159 +638,159 @@ export default {
 <!-- ═══════════ 「⚙️ 设置」弹窗：所有配置都收在这里 ═══════════ -->
 				<div class="bili-modal bili-settings-modal" hidden>
 					<div class="bili-modal-backdrop"></div>
-					<div class="bili-modal-panel" role="dialog" aria-modal="true" aria-label="bili-scroll 设置">
+					<div class="bili-modal-panel" role="dialog" aria-modal="true" aria-label="${t("settingsAria")}">
 						<div class="bili-modal-head">
-							<div class="bili-modal-title">⚙️ 设置 <span class="bili-modal-sub">补丁式保存 · Esc 关闭</span></div>
-							<button class="bili-modal-close" type="button" aria-label="关闭设置">✕</button>
+							<div class="bili-modal-title">${t("settingsTitle")} <span class="bili-modal-sub">${t("settingsSub")}</span></div>
+							<button class="bili-modal-close" type="button" aria-label="${t("closeSettings")}">✕</button>
 						</div>
 						<div class="bili-modal-nav">
-							<button class="bili-modal-tab is-active" type="button" data-pane="quick">🎛️ 常用</button>
-							<button class="bili-modal-tab" type="button" data-pane="prompt">🧠 提示词</button>
-							<button class="bili-modal-tab" type="button" data-pane="taste">🎨 偏好</button>
-							<button class="bili-modal-tab" type="button" data-pane="social">💬 互动</button>
-							<button class="bili-modal-tab" type="button" data-pane="adv">🛠️ 高级</button>
+							<button class="bili-modal-tab is-active" type="button" data-pane="quick">${t("tabQuick")}</button>
+							<button class="bili-modal-tab" type="button" data-pane="prompt">${t("tabPrompt")}</button>
+							<button class="bili-modal-tab" type="button" data-pane="taste">${t("tabTaste")}</button>
+							<button class="bili-modal-tab" type="button" data-pane="social">${t("tabSocial")}</button>
+							<button class="bili-modal-tab" type="button" data-pane="adv">${t("tabAdv")}</button>
 						</div>
 						<div class="bili-modal-body">
 							<!-- 常用：原「关键设置」，补丁式保存，即时生效 -->
 							<div class="bili-pane" data-pane="quick">
 								<div class="bili-card">
-									<div class="bili-card-title">🎛️ 常用 <span class="bili-card-title-hint">改完即时生效</span></div>
-									<div class="bili-card-sub">只提交改过的项（补丁式保存）；私信监听间隔保存后立即重建。</div>
+									<div class="bili-card-title">${t("quickTitle")} <span class="bili-card-title-hint">${t("quickHint")}</span></div>
+									<div class="bili-card-sub">${t("quickSub")}</div>
 									<div class="bili-set-rows">
-										<div class="bili-set-row"><span>每天最多挑几条</span><input class="bili-quick-perday" type="number" min="1" max="30" value="5" /></div>
-										<div class="bili-set-row"><span>私信轮询间隔（分钟）</span><input class="bili-quick-mins" type="number" min="1" max="60" value="1" /></div>
-										<div class="bili-set-row"><span>投递方式</span><select class="bili-quick-dmmode"><option value="only">only 只发私信</option><option value="both">both 私信+评论</option><option value="off">off 只发评论</option></select></div>
-										<div class="bili-set-row"><span>峰谷自动刷</span><label class="bili-switch-wrap" title="峰谷自动巡检总开关"><input type="checkbox" class="bili-quick-peak" checked /><span class="bili-toggle-slider"></span></label></div>
-										<div class="bili-set-row"><span>私信监听</span><label class="bili-switch-wrap" title="监听当前登录账号的新私信"><input type="checkbox" class="bili-quick-watch" checked /><span class="bili-toggle-slider"></span></label></div>
+										<div class="bili-set-row"><span>${t("perDayLabel")}</span><input class="bili-quick-perday" type="number" min="1" max="30" value="5" /></div>
+										<div class="bili-set-row"><span>${t("dmMinsLabel")}</span><input class="bili-quick-mins" type="number" min="1" max="60" value="1" /></div>
+										<div class="bili-set-row"><span>${t("dmModeLabel")}</span><select class="bili-quick-dmmode"><option value="only">${t("dmModeOnlyOpt")}</option><option value="both">${t("dmModeBothOpt")}</option><option value="off">${t("dmModeOffOpt")}</option></select></div>
+										<div class="bili-set-row"><span>${t("peakLabel")}</span><label class="bili-switch-wrap" title="${t("peakSwitchTitle")}"><input type="checkbox" class="bili-quick-peak" checked /><span class="bili-toggle-slider"></span></label></div>
+										<div class="bili-set-row"><span>${t("watchLabel")}</span><label class="bili-switch-wrap" title="${t("watchSwitchTitle")}"><input type="checkbox" class="bili-quick-watch" checked /><span class="bili-toggle-slider"></span></label></div>
 									</div>
 						<button class="bili-btn-save-quick bili-btn-save" hidden></button>
-						<div class="bili-note">常驻模式下保存后定时器立即重建，无需重启插件；设置页里的值也不会被旧快照覆盖。</div>
+						<div class="bili-note">${t("quickNote")}</div>
 								</div>
 							</div>
 
 							<!-- 提示词：默认值直接填在框里，能看能改 -->
 							<div class="bili-pane bili-page-prompt" data-pane="prompt" hidden>
 								<div class="bili-card">
-									<div class="bili-card-title">🧠 研读提示词 <span class="bili-card-title-hint bili-prompt-state">当前：默认</span></div>
+									<div class="bili-card-title">${t("promptTitle")} <span class="bili-card-title-hint bili-prompt-state">${t("promptStateDefault")}</span></div>
 									<div class="bili-card-sub">
-										巡检逐条判断视频质量时发给模型的系统提示词。框里就是当前生效的文本——直接改就改掉默认值，「恢复默认」回到内置版本。下面的 JSON 契约与不可信内容条款同样可改，保存时校验格式（四键 + 不可信条款缺一不可）。清空=用默认。
+										${t("promptSub")}
 									</div>
 									<textarea class="bili-cfg-analyze-prompt bili-prompt-area" rows="12" spellcheck="false"></textarea>
 									<textarea class="bili-prompt-fixed bili-prompt-fixed-analyze bili-prompt-area" rows="8" spellcheck="false"></textarea>
 									<div class="bili-prompt-actions">
 						<button class="bili-btn-save-prompts bili-btn-save" type="button" hidden></button>
-						<button class="bili-btn-reset-analyze bili-btn-ghost" type="button">♻️ 恢复默认研读提示词</button>
+						<button class="bili-btn-reset-analyze bili-btn-ghost" type="button">${t("resetAnalyze")}</button>
 									</div>
 								</div>
 								<div class="bili-card">
-									<div class="bili-card-title">📄 内容总结提示词</div>
+									<div class="bili-card-title">${t("summaryPromptTitle")}</div>
 									<div class="bili-card-sub">
-										详情页右栏那份「AI 内容总结」就是用它写的：一次读完字幕、写成一篇带结论与要点的文档。下面固定追加的小节结构与不可信内容条款同样可改，保存时校验格式（结论/要点/局限 + 不可信条款缺一不可）。清空=用默认。
+										${t("summaryPromptSub")}
 									</div>
 									<textarea class="bili-cfg-summary-prompt bili-prompt-area" rows="9" spellcheck="false"></textarea>
 									<textarea class="bili-prompt-fixed bili-prompt-fixed-summary bili-prompt-area" rows="6" spellcheck="false"></textarea>
 									<div class="bili-prompt-actions">
 						<button class="bili-btn-save-prompts bili-btn-save" type="button" hidden></button>
-						<button class="bili-btn-reset-summary bili-btn-ghost" type="button">♻️ 恢复默认总结提示词</button>
+						<button class="bili-btn-reset-summary bili-btn-ghost" type="button">${t("resetSummary")}</button>
 									</div>
 								</div>
 								<div class="bili-card">
-									<div class="bili-card-title">💬 私信回复提示词</div>
-									<div class="bili-card-sub">自动回复新私信时的系统提示词（英文）。安全条款同样可改，保存时必须保留不可信条款。清空=用默认。</div>
+									<div class="bili-card-title">${t("dmPromptTitle")}</div>
+									<div class="bili-card-sub">${t("dmPromptSub")}</div>
 									<textarea class="bili-cfg-dm-prompt bili-prompt-area" rows="6" spellcheck="false"></textarea>
 									<textarea class="bili-prompt-fixed bili-prompt-fixed-dm bili-prompt-area" rows="4" spellcheck="false"></textarea>
 								</div>
-								<div class="bili-note">人设提示词在「🎨 偏好」里，会接在研读提示词之后一起发出。</div>
+								<div class="bili-note">${t("promptsNote")}</div>
 							</div>
 
 							<!-- 偏好 -->
 							<div class="bili-pane bili-page-taste" data-pane="taste" hidden>
 						<!-- 模型、思考强度与工作区目录 -->
 						<div class="bili-card">
-							<div class="bili-card-title">🤖 模型、思考强度与工作目录</div>
+							<div class="bili-card-title">${t("tasteTitle")}</div>
 							<div class="bili-card-sub">
-								使用当前登录账号自主浏览，结合字幕、音频转写与抽样视觉帧理解视频内容。抽样画面和可获得的音频 / 字幕可能仅覆盖部分视频；结论应注明依据与覆盖范围。可指定笔记工作目录。
+								${t("tasteSub")}
 							</div>
 							<div style="margin-top: 10px; display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">
 								<div>
-									<div style="font-size: 12px; font-weight: 600; margin-bottom: 4px;">指定研读模型 (provider/model)</div>
+									<div style="font-size: 12px; font-weight: 600; margin-bottom: 4px;">${t("modelLabel")}</div>
 									<div style="display: flex; gap: 6px;">
 										<select class="bili-cfg-model" style="flex: 1; min-width: 0; padding: 7px 8px; border-radius: 6px; border: 1px solid var(--border); background: var(--bg); color: var(--text); font-size: 12px;">
-											<option value="">跟随当前会话模型</option>
+											<option value="">${t("followActiveModel")}</option>
 										</select>
-										<button type="button" class="bili-btn-pick-model bili-btn-ghost">🎯 选择模型</button>
+										<button type="button" class="bili-btn-pick-model bili-btn-ghost">${t("pickModel")}</button>
 									</div>
 								</div>
 								<div>
-									<div style="font-size: 12px; font-weight: 600; margin-bottom: 4px;">思考强度 (Reasoning Effort)</div>
+									<div style="font-size: 12px; font-weight: 600; margin-bottom: 4px;">${t("reasoningLabel")}</div>
 									<select class="bili-cfg-reasoning-effort" style="width: 100%; padding: 7px 8px; border-radius: 6px; border: 1px solid var(--border); background: var(--bg); color: var(--text); font-size: 12px;">
-										<option value="medium">中等深度 (medium - 认真通读梳理逻辑)</option>
-										<option value="high">深度推演 (high - 高强度严苛排查水分)</option>
-										<option value="low">轻度敏捷 (low - 快速提炼干货点)</option>
-										<option value="off">关闭思考 (off - 快速结论)</option>
+										<option value="medium">${t("effortMedium")}</option>
+										<option value="high">${t("effortHigh")}</option>
+										<option value="low">${t("effortLow")}</option>
+										<option value="off">${t("effortOff")}</option>
 									</select>
 								</div>
 								<div style="grid-column: 1 / -1; display: flex; flex-direction: column; gap: 8px;">
-									<label>视觉模型（可选，provider/model）
-										<input class="bili-cfg-vision-model" type="text" placeholder="留空使用配置的研读模型" style="width: 100%; box-sizing: border-box; padding: 7px; background: var(--bg); color: var(--text); border: 1px solid var(--border); border-radius: 6px;" />
+									<label>${t("visionLabel")}
+										<input class="bili-cfg-vision-model" type="text" placeholder="${t("visionPlaceholder")}" style="width: 100%; box-sizing: border-box; padding: 7px; background: var(--bg); color: var(--text); border: 1px solid var(--border); border-radius: 6px;" />
 									</label>
-									<label style="display: flex; align-items: center; gap: 8px;"><input type="checkbox" class="bili-cfg-transcribe" checked />启用音频转写（默认开，需本地转写依赖）</label>
-									<div style="font-size: 12px; color: var(--text-dim);">视觉模型需支持图片输入；研读模型未指定时跟随当前会话模型。无法获取某种内容时应明确说明，避免把部分理解当作完整观看。</div>
+									<label style="display: flex; align-items: center; gap: 8px;"><input type="checkbox" class="bili-cfg-transcribe" checked />${t("transcribeLabel")}</label>
+									<div style="font-size: 12px; color: var(--text-dim);">${t("visionHint")}</div>
 								</div>
 								<div style="grid-column: 1 / -1;">
-									<div style="font-size: 12px; font-weight: 600; margin-bottom: 4px;">指定工作区目录 (Workspace 绝对路径)</div>
+									<div style="font-size: 12px; font-weight: 600; margin-bottom: 4px;">${t("workspaceLabel")}</div>
 									<div style="display: flex; gap: 6px;">
-										<input type="text" class="bili-cfg-workspace" placeholder="例如 D:\\ObsidianVault，单条笔记会自动镜像写入该目录下的 bili-notes/" style="flex: 1; min-width: 0; box-sizing: border-box; padding: 7px 10px; border-radius: 6px; border: 1px solid var(--border); background: var(--bg); color: var(--text); font-size: 12px;" />
-										<button type="button" class="bili-btn-pick-workspace bili-btn-ghost">📂 选择目录</button>
+										<input type="text" class="bili-cfg-workspace" placeholder="${t("workspacePlaceholder")}" style="flex: 1; min-width: 0; box-sizing: border-box; padding: 7px 10px; border-radius: 6px; border: 1px solid var(--border); background: var(--bg); color: var(--text); font-size: 12px;" />
+										<button type="button" class="bili-btn-pick-workspace bili-btn-ghost">${t("pickWorkspace")}</button>
 									</div>
 								</div>
 							</div>
 						</div>
 
 						<div class="bili-card">
-							<div class="bili-card-title">🎭 它按什么说话（人设提示词）</div>
-							<div class="bili-card-sub">想让它像谁就写在这儿，留空按中性工程师风格说话。老用户可一键从工作区导入 AGENTS.md。</div>
+							<div class="bili-card-title">${t("personaTitle")}</div>
+							<div class="bili-card-sub">${t("personaSub")}</div>
 							<div style="margin-top: 8px; display: flex; flex-direction: column; gap: 8px;">
-								<textarea class="bili-cfg-persona" rows="4" placeholder="例如：你是一个毒舌但专业的架构师，对标题党毫不留情，只看重真正的代码和工程实操..." style="width: 100%; box-sizing: border-box; padding: 8px 10px; border-radius: 6px; border: 1px solid var(--border); background: var(--bg); color: var(--text); font-size: 12px; line-height: 1.5; font-family: inherit;"></textarea>
+								<textarea class="bili-cfg-persona" rows="4" placeholder="${t("personaPlaceholder")}" style="width: 100%; box-sizing: border-box; padding: 8px 10px; border-radius: 6px; border: 1px solid var(--border); background: var(--bg); color: var(--text); font-size: 12px; line-height: 1.5; font-family: inherit;"></textarea>
 								<div style="display: flex; gap: 8px;">
-									<button class="bili-btn-import-agents bili-btn-ghost bili-btn-xs">📥 从工作区 AGENTS.md 导入</button>
+									<button class="bili-btn-import-agents bili-btn-ghost bili-btn-xs">${t("importAgents")}</button>
 								</div>
 							</div>
 						</div>
 
 						<div class="bili-card">
-							<div class="bili-card-title">🔍 关注与排除关键词</div>
-							<div class="bili-card-sub">关注词按行或半角逗号分隔；排除词命中的视频将直接跳过不予精选。</div>
+							<div class="bili-card-title">${t("keywordsTitle")}</div>
+							<div class="bili-card-sub">${t("keywordsSub")}</div>
 							<div style="margin-top: 10px; display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">
 								<div>
-									<div style="font-size: 12px; font-weight: 600; margin-bottom: 4px;">关注关键词 (一行一个或逗号分隔)</div>
+									<div style="font-size: 12px; font-weight: 600; margin-bottom: 4px;">${t("keywordsLabel")}</div>
 									<textarea class="bili-cfg-keywords" rows="4" style="width: 100%; box-sizing: border-box; padding: 8px; border-radius: 6px; border: 1px solid var(--border); background: var(--bg); color: var(--text); font-size: 12px; font-family: monospace;"></textarea>
 								</div>
 								<div>
-									<div style="font-size: 12px; font-weight: 600; margin-bottom: 4px;">排除关键词 (黑名单)</div>
+									<div style="font-size: 12px; font-weight: 600; margin-bottom: 4px;">${t("excludeLabel")}</div>
 									<textarea class="bili-cfg-exclude" rows="4" style="width: 100%; box-sizing: border-box; padding: 8px; border-radius: 6px; border: 1px solid var(--border); background: var(--bg); color: var(--text); font-size: 12px; font-family: monospace;"></textarea>
 								</div>
 							</div>
 						</div>
 
 						<div class="bili-card">
-							<div class="bili-card-title">⭐ 自动收藏与日报精细度</div>
+							<div class="bili-card-title">${t("favTitle")}</div>
 							<div style="margin-top: 10px; display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">
 								<div>
-									<div style="font-size: 12px; font-weight: 600; margin-bottom: 4px;">自动收藏到哪个收藏夹</div>
+									<div style="font-size: 12px; font-weight: 600; margin-bottom: 4px;">${t("favLabel")}</div>
 									<div style="display: flex; gap: 6px;">
 										<select class="bili-cfg-fav-folder" style="flex: 1; padding: 6px 8px; border-radius: 6px; border: 1px solid var(--border); background: var(--bg); color: var(--text); font-size: 12px;">
-											<option value="0">不自动收藏</option>
+											<option value="0">${t("favNone")}</option>
 										</select>
-										<button class="bili-btn-reload-favs bili-btn-ghost bili-btn-xs">🔄 刷新</button>
+										<button class="bili-btn-reload-favs bili-btn-ghost bili-btn-xs">${t("refreshBtn")}</button>
 									</div>
 								</div>
 								<div>
-									<div style="font-size: 12px; font-weight: 600; margin-bottom: 4px;">日报写多细 (Report Level)</div>
+									<div style="font-size: 12px; font-weight: 600; margin-bottom: 4px;">${t("reportLevelLabel")}</div>
 									<select class="bili-cfg-report-level" style="width: 100%; padding: 6px 8px; border-radius: 6px; border: 1px solid var(--border); background: var(--bg); color: var(--text); font-size: 12px;">
-										<option value="full">完整详尽 (full - 标题/UP/为什么值得/要点)</option>
-										<option value="brief">薄版 (brief - 每条一两行)</option>
-										<option value="off">不写报告 (off - 仅私信/评论投递)</option>
+										<option value="full">${t("reportFull")}</option>
+										<option value="brief">${t("reportBrief")}</option>
+										<option value="off">${t("reportOff")}</option>
 									</select>
 								</div>
 							</div>
@@ -800,36 +804,36 @@ export default {
 					<!-- 互动 -->
 					<div class="bili-pane bili-page-social" data-pane="social" hidden>
 						<div class="bili-card">
-							<div class="bili-card-title">📬 精选速报投递方式</div>
+							<div class="bili-card-title">${t("socialTitle")}</div>
 							<div class="bili-card-sub">
-								使用当前登录账号浏览和互动。速报私信仅在配置可选接收者后投递；收件箱读取和自动回复无需填写接收者 UID 或昵称。
+								${t("socialSub")}
 							</div>
 							<div style="margin-top: 10px; display: flex; flex-direction: column; gap: 8px;">
 								<label style="display: flex; align-items: center; gap: 8px; cursor: pointer;">
 									<input type="radio" name="bili_dm_mode" value="only" checked />
-									<span><strong>只私信 (only)</strong> —— 推荐！完全不发公开评论，安静不打扰</span>
+									<span><strong>${t("dmOnlyStrong")}</strong> ${t("dmOnlyDesc")}</span>
 								</label>
 								<label style="display: flex; align-items: center; gap: 8px; cursor: pointer;">
 									<input type="radio" name="bili_dm_mode" value="both" />
-									<span><strong>私信 + 公开评论 (both)</strong> —— 两边都发</span>
+									<span><strong>${t("dmBothStrong")}</strong> ${t("dmBothDesc")}</span>
 								</label>
 								<label style="display: flex; align-items: center; gap: 8px; cursor: pointer;">
 									<input type="radio" name="bili_dm_mode" value="off" />
-									<span><strong>只发公开评论 (off)</strong> —— 不发私信</span>
+									<span><strong>${t("dmOffStrong")}</strong> ${t("dmOffDesc")}</span>
 								</label>
 							</div>
 						</div>
 
 						<div class="bili-card">
-							<div class="bili-card-title">👤 速报接收者（可选，不影响收件箱）</div>
+							<div class="bili-card-title">${t("recipientTitle")}</div>
 							<div style="margin-top: 10px; display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">
 								<div>
-									<div style="font-size: 12px; font-weight: 600; margin-bottom: 4px;">速报接收者 UID（可选）</div>
-									<input type="number" class="bili-cfg-dm-uid" placeholder="可留空；无需设置主人 UID" style="width: 100%; box-sizing: border-box; padding: 7px 10px; border-radius: 6px; border: 1px solid var(--border); background: var(--bg); color: var(--text); font-size: 12px;" />
+									<div style="font-size: 12px; font-weight: 600; margin-bottom: 4px;">${t("uidLabel")}</div>
+									<input type="number" class="bili-cfg-dm-uid" placeholder="${t("uidPlaceholder")}" style="width: 100%; box-sizing: border-box; padding: 7px 10px; border-radius: 6px; border: 1px solid var(--border); background: var(--bg); color: var(--text); font-size: 12px;" />
 								</div>
 								<div>
-									<div style="font-size: 12px; font-weight: 600; margin-bottom: 4px;">速报接收者昵称 / 评论 @（可选）</div>
-									<input type="text" class="bili-cfg-mention-name" placeholder="例如：张三" style="width: 100%; box-sizing: border-box; padding: 7px 10px; border-radius: 6px; border: 1px solid var(--border); background: var(--bg); color: var(--text); font-size: 12px;" />
+									<div style="font-size: 12px; font-weight: 600; margin-bottom: 4px;">${t("mentionLabel")}</div>
+									<input type="text" class="bili-cfg-mention-name" placeholder="${t("mentionPlaceholder")}" style="width: 100%; box-sizing: border-box; padding: 7px 10px; border-radius: 6px; border: 1px solid var(--border); background: var(--bg); color: var(--text); font-size: 12px;" />
 								</div>
 							</div>
 						</div>
@@ -837,57 +841,57 @@ export default {
 						<div class="bili-card">
 							<div style="display: flex; justify-content: space-between; align-items: center;">
 								<div>
-									<div class="bili-card-title">🔄 当前账号私信监听</div>
+									<div class="bili-card-title">${t("watchTitle")}</div>
 									<div class="bili-card-sub">
-										监听当前登录账号的新私信，不按主人 UID 筛选。关闭监听也可随时手动查看收件箱和历史记录。
+										${t("watchSub")}
 									</div>
 								</div>
-								<label class="bili-switch-wrap" title="监听当前登录账号的新私信">
+								<label class="bili-switch-wrap" title="${t("watchSwitchTitle")}">
 									<input type="checkbox" class="bili-cfg-dm-watch" checked />
 									<span class="bili-toggle-slider"></span>
 								</label>
 							</div>
 							<div style="margin-top: 10px; display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">
 								<div>
-									<label style="display: flex; align-items: center; gap: 8px; margin-bottom: 8px;"><input type="checkbox" class="bili-cfg-dm-auto-reply" checked />自动回复新私信（默认开）</label>
-									<div style="font-size: 12px; color: var(--text-dim); margin-bottom: 8px;">监听开启时，仅收到新私信才调用模型并消耗模型 tokens；自动回复不使用工具。读取列表和历史不调用模型。</div>
-									<div style="font-size: 12px; font-weight: 600; margin-bottom: 4px;">监听间隔 (分钟)</div>
+									<label style="display: flex; align-items: center; gap: 8px; margin-bottom: 8px;"><input type="checkbox" class="bili-cfg-dm-auto-reply" checked />${t("autoReplyLabel")}</label>
+									<div style="font-size: 12px; color: var(--text-dim); margin-bottom: 8px;">${t("autoReplyHint")}</div>
+									<div style="font-size: 12px; font-weight: 600; margin-bottom: 4px;">${t("watchMinsLabel")}</div>
 									<input type="number" class="bili-cfg-dm-minutes" value="1" min="1" max="60" style="width: 100%; box-sizing: border-box; padding: 6px 10px; border-radius: 6px; border: 1px solid var(--border); background: var(--bg); color: var(--text); font-size: 12px;" />
 								</div>
 								<div>
-									<div style="font-size: 12px; font-weight: 600; margin-bottom: 4px;">每日回复上限 (防刷)</div>
+									<div style="font-size: 12px; font-weight: 600; margin-bottom: 4px;">${t("replyLimitLabel")}</div>
 									<input type="number" class="bili-cfg-dm-reply-limit" value="20" min="0" max="100" style="width: 100%; box-sizing: border-box; padding: 6px 10px; border-radius: 6px; border: 1px solid var(--border); background: var(--bg); color: var(--text); font-size: 12px;" />
 								</div>
 							</div>
 						</div>
 
 						<div class="bili-card">
-							<div class="bili-card-title">💬 公开评论与楼中楼互动</div>
+							<div class="bili-card-title">${t("commentTitle")}</div>
 							<div style="margin-top: 10px; display: flex; flex-direction: column; gap: 10px;">
 								<label style="display: flex; align-items: center; gap: 8px; cursor: pointer;">
 									<input type="checkbox" class="bili-cfg-auto-comment" />
-									<span>允许自动发表公开评论并 @ 昵称（安全闸，默认关）</span>
+									<span>${t("autoCommentLabel")}</span>
 								</label>
 								<label style="display: flex; align-items: center; gap: 8px; cursor: pointer;">
 									<input type="checkbox" class="bili-cfg-reply-comments" />
-									<span>允许回复评论楼中楼（仅回复直接回复到它下面的提问与轻互动）</span>
+									<span>${t("replyCommentsLabel")}</span>
 								</label>
 							</div>
 						</div>
 
 						<div class="bili-inbox bili-card">
-							<div class="bili-card-title">📥 当前登录账号收件箱</div>
-							<div style="color: var(--text-dim);">无需主人 UID。点击刷新即可查看全部私信会话，再选择会话读取历史。</div>
-							<button class="bili-dm-refresh" type="button">刷新私信会话</button>
-							<div class="bili-dm-status" role="status" aria-live="polite">尚未加载收件箱</div>
-							<div class="bili-inbox-list bili-dm-sessions" aria-label="私信会话"></div>
-							<button class="bili-dm-more-sessions" type="button" hidden>加载更多会话</button>
-							<div class="bili-dm-selected">当前未选择会话</div>
-							<button class="bili-dm-refresh-messages" type="button" disabled>刷新当前会话历史</button>
-							<div class="bili-inbox-list bili-dm-messages" aria-label="私信历史"></div>
-							<button class="bili-dm-more-messages" type="button" hidden>加载更早消息</button>
-							<label>手动回复（发送前请核对上方 UID）<textarea class="bili-dm-compose" rows="3" disabled placeholder="输入要发送的文字"></textarea></label>
-							<button class="bili-dm-send" type="button" disabled>发送到所选 UID</button>
+							<div class="bili-card-title">${t("inboxTitle")}</div>
+							<div style="color: var(--text-dim);">${t("inboxHint")}</div>
+							<button class="bili-dm-refresh" type="button">${t("inboxRefresh")}</button>
+							<div class="bili-dm-status" role="status" aria-live="polite">${t("inboxNotLoaded")}</div>
+							<div class="bili-inbox-list bili-dm-sessions" aria-label="${t("inboxSessionsAria")}"></div>
+							<button class="bili-dm-more-sessions" type="button" hidden>${t("inboxMoreSessions")}</button>
+							<div class="bili-dm-selected">${t("inboxNoSelection")}</div>
+							<button class="bili-dm-refresh-messages" type="button" disabled>${t("inboxRefreshHistory")}</button>
+							<div class="bili-inbox-list bili-dm-messages" aria-label="${t("inboxHistoryAria")}"></div>
+							<button class="bili-dm-more-messages" type="button" hidden>${t("inboxMoreMessages")}</button>
+							<label>${t("composeLabel")}<textarea class="bili-dm-compose" rows="3" disabled placeholder="${t("composePlaceholder")}"></textarea></label>
+							<button class="bili-dm-send" type="button" disabled>${t("sendToSelected")}</button>
 						</div>
 						<div>
 							<button class="bili-btn-save-social bili-btn-save" hidden></button>
@@ -904,52 +908,52 @@ export default {
 										👤
 									</div>
 									<div>
-										<div class="bili-uname" style="font-weight: 600; font-size: 14px;">未登录 B 站</div>
-										<div class="bili-udesc" style="font-size: 12px; color: var(--text-dim); margin-top: 2px;">扫码登录后凭证保存在本地 bili_credential.json，解锁私信投递与原文字幕。</div>
+										<div class="bili-uname" style="font-weight: 600; font-size: 14px;">${t("notLoggedIn")}</div>
+										<div class="bili-udesc" style="font-size: 12px; color: var(--text-dim); margin-top: 2px;">${t("notLoggedInDesc")}</div>
 									</div>
 								</div>
 								<div class="bili-user-actions" style="display: flex; gap: 8px;">
-									<button class="bili-btn-login bili-btn-save">📱 扫码登录</button>
-									<button class="bili-btn-logout bili-btn-ghost" style="display: none;">退出登录</button>
+									<button class="bili-btn-login bili-btn-save">${t("loginQr")}</button>
+									<button class="bili-btn-logout bili-btn-ghost" style="display: none;">${t("logout")}</button>
 								</div>
 							</div>
 
 							<!-- 扫码出码视窗 -->
 							<div class="bili-qr-section" style="display: none; margin-top: 14px; padding-top: 14px; border-top: 1px dashed var(--border); text-align: center;">
-								<div style="font-size: 13px; font-weight: 600; margin-bottom: 8px;">请使用 哔哩哔哩 手机客户端扫码登录（确认时请勾选记住我/长期）</div>
+								<div style="font-size: 13px; font-weight: 600; margin-bottom: 8px;">${t("qrTitle")}</div>
 								<div class="bili-qr-container" style="display: inline-flex; align-items: center; justify-content: center; min-width: 180px; min-height: 180px; padding: 10px; background: #fff; border-radius: 8px; box-shadow: 0 2px 10px rgba(0,0,0,0.12);">
 									<div class="bili-qr-svg-slot" style="display: flex; align-items: center; justify-content: center;"></div>
 								</div>
-								<div class="bili-qr-status" style="font-size: 12px; color: var(--text-dim); margin-top: 8px;">等待扫码中...</div>
+								<div class="bili-qr-status" style="font-size: 12px; color: var(--text-dim); margin-top: 8px;">${t("qrWaiting")}</div>
 								<div style="margin-top: 8px;">
-									<button class="bili-btn-cancel-login bili-btn-ghost bili-btn-xs">取消扫码</button>
+									<button class="bili-btn-cancel-login bili-btn-ghost bili-btn-xs">${t("cancelQr")}</button>
 								</div>
 							</div>
 						</div>
 
 						<!-- 环境与依赖安装 -->
 						<div class="bili-card">
-							<div class="bili-card-title">🐍 环境与扩展依赖</div>
+							<div class="bili-card-title">${t("envTitle")}</div>
 							<div class="bili-card-sub">
-								插件支持内置纯 JS API 无依赖运行；如需使用本地 Whisper 深度转写无字幕视频，可在此一键安装环境。
+								${t("envSub")}
 							</div>
 							<div style="margin-top: 12px; display: flex; gap: 8px; flex-wrap: wrap;">
-								<button class="bili-btn-install bili-btn-ghost">📦 装主依赖 (venv)</button>
-								<button class="bili-btn-install-asr bili-btn-ghost">🎙️ 装本地转写依赖 (Whisper+yt-dlp)</button>
+								<button class="bili-btn-install bili-btn-ghost">${t("installMain")}</button>
+								<button class="bili-btn-install-asr bili-btn-ghost">${t("installAsr")}</button>
 							</div>
 							<div class="bili-install-tail" style="margin-top: 10px; padding: 8px 10px; border-radius: 6px; background: #0c0d0e; color: #a0a0a0; font-family: monospace; font-size: 11px; max-height: 120px; overflow-y: auto; white-space: pre-wrap; display: none;"></div>
 						</div>
 
 						<!-- 工具箱与自检 -->
 						<div class="bili-card">
-							<div class="bili-card-title">🧰 工具箱与自检诊断</div>
+							<div class="bili-card-title">${t("toolboxTitle")}</div>
 							<div style="margin-top: 12px; display: flex; gap: 8px; flex-wrap: wrap;">
-								<button class="bili-btn-check-up bili-btn-ghost">🧪 测一下</button>
-								<button class="bili-btn-diagnose bili-btn-ghost">📋 复制诊断信息</button>
-								<button class="bili-btn-selfcheck bili-btn-ghost">🩺 环境自检</button>
-								<button class="bili-btn-verify bili-btn-ghost">🔍 复核公开评论</button>
-								<button class="bili-btn-open-out bili-btn-ghost">📂 打开日报目录 (out)</button>
-								<button class="bili-btn-open-home bili-btn-ghost">🏠 打开家目录</button>
+								<button class="bili-btn-check-up bili-btn-ghost">${t("checkUp")}</button>
+								<button class="bili-btn-diagnose bili-btn-ghost">${t("diagnose")}</button>
+								<button class="bili-btn-selfcheck bili-btn-ghost">${t("selfcheck")}</button>
+								<button class="bili-btn-verify bili-btn-ghost">${t("verifyComments")}</button>
+								<button class="bili-btn-open-out bili-btn-ghost">${t("openOut")}</button>
+								<button class="bili-btn-open-home bili-btn-ghost">${t("openHome")}</button>
 							</div>
 								<div class="bili-diag-result" style="margin-top: 10px; display: none; padding: 10px; border-radius: 6px; background: var(--bg); border: 1px solid var(--border); font-size: 12px; line-height: 1.5; white-space: pre-wrap; font-family: monospace;"></div>
 							</div>
@@ -957,8 +961,8 @@ export default {
 					</div>
 					<!-- 常驻底栏：在滚动区之外，所有页签共用，不随内容滚动 -->
 					<div class="bili-modal-foot">
-						<span class="bili-modal-foot-hint">补丁式保存 · 只提交改过的项 · 高级页为即时工具，无需保存</span>
-						<button class="bili-btn-save-foot" type="button">💾 保存</button>
+						<span class="bili-modal-foot-hint">${t("footHint")}</span>
+						<button class="bili-btn-save-foot" type="button">${t("save")}</button>
 					</div>
 				</div>
 				</div>
@@ -989,19 +993,20 @@ export default {
 		// 固定追加前端预校验（与服务端 validateFixed 同规则，最终以服务端为准）
 		const FIXED_KIND_KEYS = {
 			analyze: ["tier", "whyWorth", "insights", "comment"],
-			summary: ["结论", "要点", "局限"],
+			summary: ["结论", "要点", "局限"], // developer-facing, not UI：提示词契约字段名
 			dm: [],
 		};
 		const checkFixedClient = (kind, text) => {
-			const t = String(text || "").trim();
-			if (!t) return null;
-			if (t.length > 4000) return `固定追加太长（${t.length}/4000字）精简后再保存`;
-			const miss = (FIXED_KIND_KEYS[kind] || []).filter((k) => !t.includes(k));
-			if (miss.length) return `固定追加缺了 ${miss.join("、")}补上才能保存`;
+			const rawText = String(text || "").trim();
+			if (!rawText) return null;
+			if (rawText.length > 4000) return t("fixedTooLong", { n: rawText.length });
+			const miss = (FIXED_KIND_KEYS[kind] || []).filter((k) => !rawText.includes(k));
+			if (miss.length) return t("fixedMissing", { keys: miss.join(t("listSeparator")) });
+			// developer-facing, not UI：校验词表只认提示词契约里的中文/英文条款词
 			const safe =
-				(t.includes("不可信") && (t.includes("不执行") || t.includes("不得执行"))) ||
-				(/untrusted/i.test(t) && /never\s+execute/i.test(t));
-			if (!safe) return "固定追加必须保留不可信内容条款（“不可信…不执行”）删了不能保存";
+				(rawText.includes("不可信") && (rawText.includes("不执行") || rawText.includes("不得执行"))) ||
+				(/untrusted/i.test(rawText) && /never\s+execute/i.test(rawText));
+			if (!safe) return t("fixedClauseRequired");
 			return null;
 		};
 		const feedbackBar = el.querySelector(".bili-feedback-bar");
@@ -1026,7 +1031,7 @@ export default {
 			if (!clearModal) return;
 			clearModal.hidden = false;
 			btnClearOk && (btnClearOk.disabled = false);
-			if (btnClearOk) btnClearOk.textContent = "确认清空";
+			if (btnClearOk) btnClearOk.textContent = t("clearConfirm");
 			document.addEventListener("keydown", onClearKey);
 		};
 		if (btnClearOpen) btnClearOpen.addEventListener("click", openClear);
@@ -1036,22 +1041,19 @@ export default {
 		if (btnClearOk)
 			btnClearOk.addEventListener("click", async () => {
 				btnClearOk.disabled = true;
-				btnClearOk.textContent = "清空中…";
+				btnClearOk.textContent = t("clearing");
 				const res = await httpPost("clear", {});
 				if (res && res.ok) {
 					closeClear();
 					const r = res.removed || {};
-					notify(
-						`已清空：视频列表/判重表 · 日报 ${r.reports || 0} · 笔记 ${r.notes || 0} · 总结 ${r.summaries || 0}`,
-						"good",
-					);
+					notify(t("clearDone", { reports: r.reports || 0, notes: r.notes || 0, summaries: r.summaries || 0 }), "good");
 					currentOffset = 0;
 					await loadWatchedCards();
 					refreshStatus(true);
 				} else {
 					btnClearOk.disabled = false;
-					btnClearOk.textContent = "确认清空";
-					notify(`清空失败：${res?.error || "未知错误"}`, "warn");
+					btnClearOk.textContent = t("clearConfirm");
+					notify(t("clearFailed", { err: res?.error || t("unknownError") }), "warn");
 				}
 			});
 
@@ -1145,7 +1147,7 @@ export default {
 			dmSessions.innerHTML = sessions
 				.map(
 					(s) =>
-						`<button type="button" data-uid="${esc(String(s.uid))}" aria-pressed="${String(s.uid) === selectedUid}">UID: ${esc(String(s.uid))} · 未读: ${esc(String(s.unread ?? 0))} · 时间戳: ${esc(String(s.lastTs ?? ""))}\n${esc(String(s.preview ?? ""))}</button>`,
+						`<button type="button" data-uid="${esc(String(s.uid))}" aria-pressed="${String(s.uid) === selectedUid}">${t("dmSessionLine", { uid: esc(String(s.uid)), unread: esc(String(s.unread ?? 0)), ts: esc(String(s.lastTs ?? "")) })}\n${esc(String(s.preview ?? ""))}</button>`,
 				)
 				.join("");
 		}
@@ -1155,26 +1157,26 @@ export default {
 				messages
 					.map(
 						(m) =>
-							`<div class="bili-dm-message">${m.fromMe ? "我" : `UID: ${esc(selectedUid)}`} · 时间戳: ${esc(String(m.ts ?? ""))} · 类型: ${esc(String(m.kind ?? ""))}\n${esc(String(m.text ?? ""))}${m.bvid ? `\n视频: ${esc(String(m.bvid))}` : ""}</div>`,
+							`<div class="bili-dm-message">${m.fromMe ? t("dmMsgMe") : `UID: ${esc(selectedUid)}`} · ${t("dmMsgMeta", { ts: esc(String(m.ts ?? "")), kind: esc(String(m.kind ?? "")) })}\n${esc(String(m.text ?? ""))}${m.bvid ? `\n${t("dmMsgVideo", { bv: esc(String(m.bvid)) })}` : ""}</div>`,
 					)
-					.join("") || "暂无消息";
+					.join("") || t("dmNoMessages");
 		}
 
 		async function loadSessions(more = false) {
 			if (sessionsBusy) return;
 			sessionsBusy = true;
 			dmRefresh.disabled = dmMoreSessions.disabled = true;
-			dmStatus.textContent = "正在读取私信会话…";
+			dmStatus.textContent = t("dmLoadingSessions");
 			try {
 				const res = await sendMsg("bili:dm-sessions", { size: 20, ...(more ? { cursor: sessionsCursor } : {}) });
-				if (!res?.ok || !Array.isArray(res.sessions)) throw new Error(res?.error || "私信会话响应无效");
+				if (!res?.ok || !Array.isArray(res.sessions)) throw new Error(res?.error || t("dmInvalidSessions"));
 				sessions = [...new Map([...(more ? sessions : []), ...res.sessions].map((s) => [String(s.uid), s])).values()];
 				sessionsCursor = res.nextCursor;
 				dmMoreSessions.hidden = !(res.hasMore && res.nextCursor != null);
 				renderSessions();
-				dmStatus.textContent = sessions.length ? `已加载 ${sessions.length} 个会话` : "暂无私信会话";
+				dmStatus.textContent = sessions.length ? t("dmLoadedSessions", { n: sessions.length }) : t("dmNoSessions");
 			} catch (err) {
-				dmStatus.textContent = `读取失败: ${err.message}`;
+				dmStatus.textContent = t("dmReadFailed", { err: err.message });
 			} finally {
 				sessionsBusy = false;
 				dmRefresh.disabled = dmMoreSessions.disabled = false;
@@ -1187,20 +1189,20 @@ export default {
 			const generation = ++messageGeneration;
 			messagesBusy = true;
 			dmRefreshMessages.disabled = dmMoreMessages.disabled = true;
-			dmStatus.textContent = `正在读取 UID ${uid} 的历史…`;
+			dmStatus.textContent = t("dmLoadingHistory", { uid });
 			try {
 				const res = await sendMsg("bili:dm-messages", { uid, size: 30, ...(more ? { cursor: messagesCursor } : {}) });
 				if (generation !== messageGeneration) return;
-				if (!res?.ok || !Array.isArray(res.messages)) throw new Error(res?.error || "私信历史响应无效");
+				if (!res?.ok || !Array.isArray(res.messages)) throw new Error(res?.error || t("dmInvalidMessages"));
 				messages = [
 					...new Map([...(more ? messages : []), ...res.messages].map((m) => [String(m.key), m])).values(),
 				].sort((a, b) => Number(a.ts) - Number(b.ts));
 				messagesCursor = res.nextCursor;
 				dmMoreMessages.hidden = !(res.hasMore && res.nextCursor != null);
 				renderMessages();
-				dmStatus.textContent = `UID ${uid}: 已加载 ${messages.length} 条消息`;
+				dmStatus.textContent = t("dmLoadedMessages", { uid, n: messages.length });
 			} catch (err) {
-				if (generation === messageGeneration) dmStatus.textContent = `读取失败: ${err.message}`;
+				if (generation === messageGeneration) dmStatus.textContent = t("dmReadFailed", { err: err.message });
 			} finally {
 				if (generation === messageGeneration) {
 					messagesBusy = false;
@@ -1224,8 +1226,8 @@ export default {
 			messagesCursor = undefined;
 			dmMessages.textContent = "";
 			dmMoreMessages.hidden = true;
-			dmSelected.textContent = `当前所选 UID: ${selectedUid}`;
-			dmSend.textContent = `发送到 UID ${selectedUid}`;
+			dmSelected.textContent = t("dmSelectedUid", { uid: selectedUid });
+			dmSend.textContent = t("dmSendToUid", { uid: selectedUid });
 			dmCompose.disabled = dmSend.disabled = false;
 			dmCompose.value = drafts.get(selectedUid) || "";
 			renderSessions();
@@ -1237,15 +1239,15 @@ export default {
 			if (!uid || !text || sending) return;
 			sending = true;
 			dmSend.disabled = dmCompose.disabled = true;
-			dmStatus.textContent = `正在发送到 UID ${uid}…`;
+			dmStatus.textContent = t("dmSending", { uid });
 			try {
 				const res = await sendMsg("bili:dm-send", { uid, text });
-				if (!res?.ok) throw new Error(res?.error || "发送失败");
+				if (!res?.ok) throw new Error(res?.error || t("dmSendFailed"));
 				dmCompose.value = "";
 				drafts.delete(uid);
-				dmStatus.textContent = `已发送到 UID ${uid}，可刷新历史查看`;
+				dmStatus.textContent = t("dmSent", { uid });
 			} catch (err) {
-				dmStatus.textContent = `UID ${uid}: ${err.message}。未确认成功，请先刷新历史核对，再决定是否重发。`;
+				dmStatus.textContent = t("dmSendUnconfirmed", { uid, err: err.message });
 			} finally {
 				sending = false;
 				dmSend.disabled = dmCompose.disabled = false;
@@ -1329,15 +1331,15 @@ export default {
 			if (btnSaveFoot) {
 				const saveBy = { quick: btnSaveQuick, prompt: btnSavePrompts, taste: btnSaveTaste, social: btnSaveSocial };
 				const labels = {
-					quick: "💾 保存常用设置",
-					prompt: "💾 保存提示词",
-					taste: "💾 保存偏好设置",
-					social: "💾 保存互动设置",
-					adv: "本页为工具与诊断，无需保存",
+					quick: t("saveQuickFoot"),
+					prompt: t("savePromptFoot"),
+					taste: t("saveTasteFoot"),
+					social: t("saveSocialFoot"),
+					adv: t("advNoSave"),
 				};
 				const target = saveBy[settingsPane] || null;
 				btnSaveFoot.disabled = !target;
-				btnSaveFoot.textContent = labels[settingsPane] || "💾 保存";
+				btnSaveFoot.textContent = labels[settingsPane] || t("save");
 			}
 		}
 
@@ -1378,51 +1380,51 @@ export default {
 		let runsCache = [];
 		let runsPollTimer = null;
 		const RUN_STEP_LABEL = {
-			start: "启动",
-			status: "配额核查",
-			search: "检索",
-			search_result: "检索结果",
-			read_subtitle: "取证据",
-			index_hit: "命中索引",
-			index_err: "索引失败",
-			analyze: "模型研读",
-			skip_badword: "跳过(黑名单)",
-			skip_unworthy: "排雷跳过",
-			no_subtitle: "跳过(无字幕)",
-			picked: "挑中",
-			taste: "品味排序",
-			filter: "候选过滤",
-			cluster: "内容去重",
-			quota_reached: "触顶",
-			check: "额度检查",
-			summary_batch: "写总结",
-			summary: "写总结",
-			summary_ok: "总结就绪",
-			summary_err: "总结跳过",
-			sync_workspace: "同步笔记",
-			dm_sent: "私信已发",
-			dm_dup: "私信去重",
-			dm_skip: "私信跳过",
-			dm_fail: "私信失败",
-			comment_sent: "评论已发",
-			comment_dup: "评论去重",
-			comment_err: "评论失败",
-			fav_done: "收藏",
-			done: "完成",
-			error: "出错",
+			start: t("stepStart"),
+			status: t("stepStatus"),
+			search: t("stepSearch"),
+			search_result: t("stepSearchResult"),
+			read_subtitle: t("stepReadSubtitle"),
+			index_hit: t("stepIndexHit"),
+			index_err: t("stepIndexErr"),
+			analyze: t("stepAnalyze"),
+			skip_badword: t("stepSkipBadword"),
+			skip_unworthy: t("stepSkipUnworthy"),
+			no_subtitle: t("stepNoSubtitle"),
+			picked: t("stepPicked"),
+			taste: t("stepTaste"),
+			filter: t("stepFilter"),
+			cluster: t("stepCluster"),
+			quota_reached: t("stepQuotaReached"),
+			check: t("stepCheck"),
+			summary_batch: t("stepSummaryBatch"),
+			summary: t("stepSummary"),
+			summary_ok: t("stepSummaryOk"),
+			summary_err: t("stepSummaryErr"),
+			sync_workspace: t("stepSyncWorkspace"),
+			dm_sent: t("stepDmSent"),
+			dm_dup: t("stepDmDup"),
+			dm_skip: t("stepDmSkip"),
+			dm_fail: t("stepDmFail"),
+			comment_sent: t("stepCommentSent"),
+			comment_dup: t("stepCommentDup"),
+			comment_err: t("stepCommentErr"),
+			fav_done: t("stepFavDone"),
+			done: t("stepDone"),
+			error: t("stepError"),
 		};
 		const runStatusMeta = (s) => {
-			if (s === "running") return { text: "跑步中", cls: "run" };
-			if (s === "success") return { text: "已完成", cls: "ok" };
-			if (s === "quota_reached") return { text: "额度已满", cls: "warn" };
-			if (s === "aborted") return { text: "已中断", cls: "warn" };
-			if (s === "error") return { text: "出错", cls: "err" };
-			return { text: String(s || "未知"), cls: "" };
+			if (s === "running") return { text: t("runStatusRunning"), cls: "run" };
+			if (s === "success") return { text: t("runStatusSuccess"), cls: "ok" };
+			if (s === "quota_reached") return { text: t("runStatusQuota"), cls: "warn" };
+			if (s === "aborted") return { text: t("runStatusAborted"), cls: "warn" };
+			if (s === "error") return { text: t("runStatusError"), cls: "err" };
+			return { text: String(s || t("runStatusUnknown")), cls: "" };
 		};
 		const fmtDur = (ms) => {
 			const s = Math.max(0, Math.round((Number(ms) || 0) / 1000));
-			if (s < 60) return `${s} 秒`;
-			return `${Math.floor(s / 60)} 分 ${s % 60} 秒`;
+			if (s < 60) return t("durationSec", { s });
+			return t("durationMin", { m: Math.floor(s / 60), s: s % 60 });
 		};
 		const fmtTime = (iso) => {
 			try {
@@ -1441,12 +1443,12 @@ export default {
 				runsHead.innerHTML = "";
 				runsSummary.innerHTML = "";
 				runsPicks.innerHTML = "";
-				runsTimeline.innerHTML = `<div style="color: var(--text-dim);">暂无轮次记录，先点「🚀 跑一轮」。跑完每一轮的状态（挑中几条、AI 看了啥、点赞/评论/私信）都会记在这里。</div>`;
+				runsTimeline.innerHTML = `<div style="color: var(--text-dim);">${t("runsEmpty")}</div>`;
 				return;
 			}
 			const meta = runStatusMeta(run.status);
-			runsHead.innerHTML = `<span class="bili-runs-badge ${meta.cls}">${meta.text}</span><b>第 ${esc(String(run.round ?? "—"))} 轮</b><span style="color: var(--text-dim); font-size: 12px;">${esc(run.trigger || "")} · ${esc(fmtTime(run.startedAt))}</span>`;
-			runsSummary.innerHTML = `<span>挑中 <b>${run.pickedDelta ?? 0}</b> 条</span><span>候选 <b>${run.candidates ?? 0}</b> 条</span><span>跳过无字幕 <b>${run.skippedNoSubtitle ?? 0}</b></span><span>当日累计 <b>${run.pickedToday ?? 0}/${run.quota ?? "—"}</b></span><span>用时 <b>${fmtDur(run.durationMs)}</b></span>`;
+			runsHead.innerHTML = `<span class="bili-runs-badge ${meta.cls}">${meta.text}</span><b>${t("runHeadRound", { n: esc(String(run.round ?? "—")) })}</b><span style="color: var(--text-dim); font-size: 12px;">${esc(run.trigger || "")} · ${esc(fmtTime(run.startedAt))}</span>`;
+			runsSummary.innerHTML = `<span>${t("runsSumPicked", { n: `<b>${run.pickedDelta ?? 0}</b>` })}</span><span>${t("runsSumCandidates", { n: `<b>${run.candidates ?? 0}</b>` })}</span><span>${t("runsSumSkipped", { n: `<b>${run.skippedNoSubtitle ?? 0}</b>` })}</span><span>${t("runsSumToday", { now: `<b>${run.pickedToday ?? 0}/${run.quota ?? "—"}</b>` })}</span><span>${t("runsSumDuration", { d: `<b>${fmtDur(run.durationMs)}</b>` })}</span>`;
 			const picks = Array.isArray(run.picks) ? run.picks : [];
 			runsPicks.innerHTML = picks
 				.map(
@@ -1456,22 +1458,22 @@ export default {
 				.join("");
 			const acts = Array.isArray(run.actions) ? run.actions : [];
 			if (!acts.length) {
-				runsTimeline.innerHTML = `<div style="color: var(--text-dim);">${run.status === "running" ? "本轮刚启动，AI 动作正在产生…稍等几秒点右上 🔄 刷新。" : esc(run.lastMessage || run.message || "本轮暂无动作明细")}</div>`;
+				runsTimeline.innerHTML = `<div style="color: var(--text-dim);">${run.status === "running" ? t("runJustStarted") : esc(run.lastMessage || run.message || t("runNoActions"))}</div>`;
 				return;
 			}
 			runsTimeline.innerHTML = acts
 				.map((a) => {
-					const label = RUN_STEP_LABEL[a.step] || a.step || "动作";
+					const label = RUN_STEP_LABEL[a.step] || a.step || t("actionFallback");
 					return `<div class="bili-runs-step"><span class="bili-runs-clock">${esc(a.clock || "")}</span><span class="bili-runs-tag">${esc(label)}</span><span class="bili-runs-msg">${linkBvid(a.message || "")}</span></div>`;
 				})
 				.join("");
 			runsTimeline.scrollTop = runsTimeline.scrollHeight;
 		}
 		async function loadRunsList(preferId) {
-			runsTimeline.innerHTML = `<div style="color: var(--text-dim);">正在加载轮次记录…</div>`;
+			runsTimeline.innerHTML = `<div style="color: var(--text-dim);">${t("runsLoading")}</div>`;
 			const res = await httpGet("runs", { limit: 30 });
 			if (!res || !res.ok) {
-				runsTimeline.innerHTML = `<div style="color: var(--text-dim);">拉取失败：${esc(res?.error || "未知错误")}</div>`;
+				runsTimeline.innerHTML = `<div style="color: var(--text-dim);">${t("fetchFailed", { err: esc(res?.error || t("unknownError")) })}</div>`;
 				return;
 			}
 			runsCache = Array.isArray(res.runs) ? res.runs : [];
@@ -1483,7 +1485,7 @@ export default {
 			runsSelect.innerHTML = runsCache
 				.map((r) => {
 					const meta = runStatusMeta(r.status);
-					return `<option value="${esc(r.id)}">第 ${esc(String(r.round ?? "—"))} 轮 · ${esc(r.trigger || "")} · ${meta.text} · 挑中 ${r.pickedDelta ?? 0} 条 · ${esc(fmtTime(r.startedAt))}</option>`;
+					return `<option value="${esc(r.id)}">${t("runOption", { round: esc(String(r.round ?? "—")), trigger: esc(r.trigger || ""), status: meta.text, n: r.pickedDelta ?? 0, time: esc(fmtTime(r.startedAt)) })}</option>`;
 				})
 				.join("");
 			const target = runsCache.find((r) => r.id === preferId) || runsCache[0];
@@ -1504,7 +1506,7 @@ export default {
 			} else if (lite) {
 				renderRunDetail(lite);
 			} else {
-				runsTimeline.innerHTML = `<div style="color: var(--text-dim);">找不到该轮记录</div>`;
+				runsTimeline.innerHTML = `<div style="color: var(--text-dim);">${t("runNotFound")}</div>`;
 			}
 		}
 		function stopRunsPoll() {
@@ -1578,7 +1580,8 @@ export default {
 				promptFixedSummary.value = res.summary?.fixedEffective ?? res.summary?.fixed ?? "";
 			if (promptFixedDm && (force || !promptFixedDm.dataset.dirty))
 				promptFixedDm.value = res.dm?.fixedEffective ?? res.dm?.fixed ?? "";
-			if (promptState) promptState.textContent = res.analyze?.override ? "当前：你改过的版本" : "当前：默认";
+			if (promptState)
+				promptState.textContent = res.analyze?.override ? t("promptStateCustom") : t("promptStateDefault");
 		}
 
 		for (const area of [
@@ -1610,7 +1613,7 @@ export default {
 				]) {
 					const err = checkFixedClient(kind, text);
 					if (err) {
-						notify(`固定追加格式不对：${err}`, "warn");
+						notify(t("fixedInvalid", { err }), "warn");
 						return;
 					}
 				}
@@ -1630,9 +1633,9 @@ export default {
 					if (promptFixedSummary) delete promptFixedSummary.dataset.dirty;
 					if (promptFixedDm) delete promptFixedDm.dataset.dirty;
 					await loadPrompts(true);
-					notify("提示词已保存，下一轮巡检起生效", "good");
+					notify(t("promptSaved"), "good");
 				} else {
-					notify(`保存失败: ${res?.error || "未知异常"}`, "warn");
+					notify(t("saveFailed", { err: res?.error || t("unknownException") }), "warn");
 				}
 			};
 			// 每张提示词卡片各自一个保存键，都写同一份配置
@@ -1650,9 +1653,9 @@ export default {
 				const res = await httpPost("config", { analyzePrompt: "", analyzeFixed: "" });
 				if (res && res.ok) {
 					await loadPrompts(true);
-					notify("研读提示词已恢复默认", "good");
+					notify(t("resetAnalyzeDone"), "good");
 				} else {
-					notify(`恢复失败: ${res?.error || "未知异常"}`, "warn");
+					notify(t("resetFailed", { err: res?.error || t("unknownException") }), "warn");
 				}
 			});
 		}
@@ -1668,9 +1671,9 @@ export default {
 				const res = await httpPost("config", { summaryPrompt: "", summaryFixed: "" });
 				if (res && res.ok) {
 					await loadPrompts(true);
-					notify("内容总结提示词已恢复默认", "good");
+					notify(t("resetSummaryDone"), "good");
 				} else {
-					notify(`恢复失败: ${res?.error || "未知异常"}`, "warn");
+					notify(t("resetFailed", { err: res?.error || t("unknownException") }), "warn");
 				}
 			});
 		}
@@ -1723,7 +1726,7 @@ export default {
 		if (btnRunTop) btnRunTop.addEventListener("click", () => btnRunDuty.click());
 
 		btnClearTerminal.addEventListener("click", () => {
-			terminalBody.innerHTML = '<span style="color: #666;">[终端已清空]</span>';
+			terminalBody.innerHTML = `<span style="color: #666;">${t("terminalCleared")}</span>`;
 		});
 
 		async function refreshStatus(force = false) {
@@ -1741,19 +1744,22 @@ export default {
 			}
 
 			const quota = res.config?.perDay || 5;
-			if (statQuota) statQuota.textContent = `${res.pickedToday || 0} / ${quota} 条`;
-			if (statRounds) statRounds.textContent = `${res.ranToday || 0} 轮`;
-			if (statNotesCount) statNotesCount.textContent = `${res.notesCount || 0} 篇`;
+			if (statQuota) statQuota.textContent = t("statQuota", { picked: res.pickedToday || 0, quota });
+			if (statRounds) statRounds.textContent = t("statRounds", { n: res.ranToday || 0 });
+			if (statNotesCount) statNotesCount.textContent = t("statNotes", { n: res.notesCount || 0 });
 			if (statLastRun) {
 				const ts = Number(res.lastRunAt) || 0;
-				statLastRun.textContent = ts ? `末次 ${new Date(ts).toLocaleTimeString()}` : "末次 —";
+				statLastRun.textContent = ts ? t("lastRunAt", { time: new Date(ts).toLocaleTimeString() }) : t("lastRunNone");
 			}
-			if (pillPeak) pillPeak.textContent = `峰谷自动巡检: ${res.config?.peakValley === false ? "关" : "开"}`;
+			if (pillPeak)
+				pillPeak.textContent = t("peakStatePill", {
+					state: res.config?.peakValley === false ? t("peakOff") : t("peakOn"),
+				});
 
 			const dmMode = res.config?.dmMode || "only";
 			if (statDmMode) {
 				statDmMode.textContent =
-					dmMode === "only" ? "只发私信 (默认)" : dmMode === "both" ? "私信 + 评论" : "只发公开评论";
+					dmMode === "only" ? t("dmStatOnly") : dmMode === "both" ? t("dmStatBoth") : t("dmStatOff");
 			}
 
 			// v2.6 顶栏 pills 与隐藏 KPI 同步（挑中/额度 · 巡检 · 投递方式 · 末次）
@@ -1762,10 +1768,15 @@ export default {
 			const hpDmmode = el.querySelector(".bili-hp-dmmode");
 			const hpLastrun = el.querySelector(".bili-hp-lastrun");
 			if (hpQuota) hpQuota.textContent = `${res.pickedToday || 0}/${quota}`;
-			if (hpRounds) hpRounds.textContent = `${res.ranToday || 0} 轮`;
-			if (hpDmmode) hpDmmode.textContent = dmMode === "only" ? "只私信" : dmMode === "both" ? "私信+评论" : "只公评";
+			if (hpRounds) hpRounds.textContent = t("statRounds", { n: res.ranToday || 0 });
+			if (hpDmmode)
+				hpDmmode.textContent =
+					dmMode === "only" ? t("dmPillOnly") : dmMode === "both" ? t("dmPillBoth") : t("dmPillOff");
 			const lastTs = Number(res.lastRunAt) || 0;
-			if (hpLastrun) hpLastrun.textContent = lastTs ? `末次 ${new Date(lastTs).toLocaleTimeString()}` : "末次 —";
+			if (hpLastrun)
+				hpLastrun.textContent = lastTs
+					? t("lastRunAt", { time: new Date(lastTs).toLocaleTimeString() })
+					: t("lastRunNone");
 
 			populateModelOptions(res.config?.model || "");
 			if (force || !cfgVisionModel.dataset.dirty) cfgVisionModel.value = res.config?.visionModel || "";
@@ -1799,13 +1810,17 @@ export default {
 					? `<img src="${esc(res.user.face)}" referrerpolicy="no-referrer" style="width: 100%; height: 100%; object-fit: cover;" />`
 					: "👤";
 				uname.innerHTML = `${esc(res.user.uname)} <span style="font-size: 11px; padding: 1px 5px; border-radius: 4px; background: color-mix(in srgb, var(--accent) 15%, transparent); color: var(--accent);">Lv.${res.user.level || 0}</span>`;
-				udesc.textContent = `UID: ${res.user.mid} ｜ 硬币: ${res.user.money || 0} ｜ 会员: ${res.user.vipType ? "年度大会员" : "普通会员"}`;
+				udesc.textContent = t("userDesc", {
+					uid: res.user.mid,
+					coins: res.user.money || 0,
+					vip: res.user.vipType ? t("vipAnnual") : t("vipNormal"),
+				});
 				btnLogin.style.display = "none";
 				btnLogout.style.display = "inline-block";
 			} else {
 				avatar.innerHTML = "👤";
-				uname.textContent = "未登录 B 站";
-				udesc.textContent = "扫码登录后凭证保存在本地 bili_credential.json，解锁私信投递与原文字幕。";
+				uname.textContent = t("notLoggedIn");
+				udesc.textContent = t("notLoggedInDesc");
 				btnLogin.style.display = "inline-block";
 				btnLogout.style.display = "none";
 			}
@@ -1828,7 +1843,7 @@ export default {
 			if (res && res.exists) {
 				reportContent.textContent = res.text;
 			} else {
-				reportContent.textContent = "暂无该日精选日报。";
+				reportContent.textContent = t("reportNone");
 			}
 		}
 
@@ -1839,7 +1854,7 @@ export default {
 		btnCopyReport.addEventListener("click", () => {
 			if (reportContent.textContent) {
 				navigator.clipboard.writeText(reportContent.textContent);
-				notify("已复制 Markdown 日报到剪贴板", "good");
+				notify(t("reportCopied"), "good");
 			}
 		});
 
@@ -1853,20 +1868,23 @@ export default {
 			// 时间范围换算成服务端 day/from/to（默认上次=最新有数据的日期）
 			if (rangeMode === "day" && rangeDay) params.day = rangeDay;
 			else if (rangeMode === "today") {
-				const t = dayOf(new Date());
-				params.day = t;
+				params.day = dayOf(new Date());
 			} else if (rangeMode === "week" && availDays.length) params.from = addDays(availDays[0], -6);
 
 			const res = await httpGet("watched", params);
 			if (!res || !res.ok) {
-				cardsGrid.innerHTML = `<div style="grid-column: 1 / -1; padding: 20px; text-align: center; color: var(--text-dim);">加载失败: ${esc(res?.error || "未知异常")}</div>`;
+				cardsGrid.innerHTML = `<div style="grid-column: 1 / -1; padding: 20px; text-align: center; color: var(--text-dim);">${t("cardsLoadFailed", { err: esc(res?.error || t("unknownException")) })}</div>`;
 				return;
 			}
 
 			const rows = res.rows || [];
 			detailRows = rows;
 			const total = res.total || 0;
-			pageInfo.textContent = `第 ${total === 0 ? 0 : currentOffset + 1} - ${currentOffset + rows.length} 条，共 ${total} 条`;
+			pageInfo.textContent = t("pageInfo", {
+				from: total === 0 ? 0 : currentOffset + 1,
+				to: currentOffset + rows.length,
+				total,
+			});
 			btnPrevPage.disabled = currentOffset === 0;
 			btnNextPage.disabled = currentOffset + rows.length >= total;
 			// 日期下拉与范围提示（days 由服务端随包返回）
@@ -1881,35 +1899,35 @@ export default {
 			if (rangeHint) {
 				rangeHint.textContent =
 					rangeMode === "last"
-						? `默认上次 ${availDays[0] || ""} · ${total} 条`
+						? t("rangeLast", { day: availDays[0] || "", total })
 						: rangeMode === "today"
-							? `今日 · ${total} 条`
+							? t("rangeToday", { total })
 							: rangeMode === "week"
-								? `近7天 · ${total} 条`
-								: `${rangeDay} · ${total} 条`;
+								? t("rangeWeek", { total })
+								: t("rangeDay", { day: rangeDay, total });
 			}
 
 			if (rows.length === 0) {
-				cardsGrid.innerHTML = `<div style="grid-column: 1 / -1; padding: 30px; text-align: center; color: var(--text-dim);">暂无符合筛选条件的视频记录</div>`;
+				cardsGrid.innerHTML = `<div style="grid-column: 1 / -1; padding: 30px; text-align: center; color: var(--text-dim);">${t("noWatched")}</div>`;
 				return;
 			}
 
 			const fmtCount = (n) => {
 				const v = Number(n);
 				if (!Number.isFinite(v)) return "—";
-				if (v >= 10000) return `${(v / 10000).toFixed(1)}万`;
+				if (v >= 10000) return t("countCompact", { wan: (v / 10000).toFixed(1), k: Math.round(v / 1000) });
 				return String(v);
 			};
 			const statsRow = (item) =>
 				`<span class="stat-like" data-bv="${esc(item.bvid)}">${SVG_LIKE} …</span><span class="stat-fav" data-bv="${esc(item.bvid)}">${SVG_FAV} …</span><span class="stat-reply" data-bv="${esc(item.bvid)}">${SVG_CMT} …</span><span style="margin-left:auto;font-family:ui-monospace,Menlo,Consolas,monospace;">${esc(item.bvid.slice(0, 7))}…</span>`;
 			const coverBox = (item) =>
-				`<div class="bili-b-cover"><img src="/plugins-api/bili-scroll/cover?bv=${esc(item.bvid)}" loading="lazy" alt="" onerror="this.style.display='none'" /><div class="bili-b-flags">${item.tier ? `<i class="f-like">${esc(item.tier)}</i>` : ""}${item.picked && !item.tier ? '<i class="f-like">入选</i>' : ""}${item.delivered || item.commented ? '<i class="f-cmt">已投递</i>' : ""}${item.summary ? '<i class="f-cmt">有总结</i>' : item.note ? '<i class="f-cmt">有笔记</i>' : ""}</div><div class="bili-b-meta"><span class="m stat-play" data-bv="${esc(item.bvid)}">${SVG_PLAY} …</span><span class="m stat-dm" data-bv="${esc(item.bvid)}">${SVG_DM} …</span><span class="bili-b-dur stat-dur" data-bv="${esc(item.bvid)}">${esc(item.day)}</span></div></div>`;
+				`<div class="bili-b-cover"><img src="/plugins-api/bili-scroll/cover?bv=${esc(item.bvid)}" loading="lazy" alt="" onerror="this.style.display='none'" /><div class="bili-b-flags">${item.tier ? `<i class="f-like">${esc(item.tier)}</i>` : ""}${item.picked && !item.tier ? `<i class="f-like">${t("flagPicked")}</i>` : ""}${item.delivered || item.commented ? `<i class="f-cmt">${t("flagDelivered")}</i>` : ""}${item.summary ? `<i class="f-cmt">${t("flagSummary")}</i>` : item.note ? `<i class="f-cmt">${t("flagNote")}</i>` : ""}</div><div class="bili-b-meta"><span class="m stat-play" data-bv="${esc(item.bvid)}">${SVG_PLAY} …</span><span class="m stat-dm" data-bv="${esc(item.bvid)}">${SVG_DM} …</span><span class="bili-b-dur stat-dur" data-bv="${esc(item.bvid)}">${esc(item.day)}</span></div></div>`;
 			const bodyBox = (item) =>
-				`<div class="bili-b-body"><p class="bili-b-title">${esc(item.title || item.bvid)}</p><div class="bili-b-up"><span class="bili-b-ava"><b>${esc((item.up || "?").slice(0, 1))}</b></span><span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${esc(item.up || "未知")} · ${esc(item.day)}</span></div><div class="bili-b-acts">${statsRow(item)}</div>${item.why ? `<div class="whyline" style="font-size:11px;color:var(--text-dim);margin-top:4px;">💡 ${esc(item.why)}</div>` : ""}</div>`;
+				`<div class="bili-b-body"><p class="bili-b-title">${esc(item.title || item.bvid)}</p><div class="bili-b-up"><span class="bili-b-ava"><b>${esc((item.up || "?").slice(0, 1))}</b></span><span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${esc(item.up || t("upUnknown"))} · ${esc(item.day)}</span></div><div class="bili-b-acts">${statsRow(item)}</div>${item.why ? `<div class="whyline" style="font-size:11px;color:var(--text-dim);margin-top:4px;">💡 ${esc(item.why)}</div>` : ""}</div>`;
 			cardsGrid.innerHTML = rows
 				.map(
 					(item, idx) =>
-						`<div class="bili-b-card" data-idx="${idx}" role="button" tabindex="0" title="点击看详情（账号动作 · 评论了什么 · 总结）">${coverBox(item)}${bodyBox(item)}</div>`,
+						`<div class="bili-b-card" data-idx="${idx}" role="button" tabindex="0" title="${t("cardTitle")}">${coverBox(item)}${bodyBox(item)}</div>`,
 				)
 				.join("");
 			// 懒加载真实播放/弹幕/时长/赞藏数（B站味封面底边行）
@@ -1951,10 +1969,10 @@ export default {
 					const res = await httpGet("note", { bvid: bv, day, kind: "report" });
 					if (res && res.ok && res.text) {
 						reportContent.textContent = res.text;
-						notify(`已在下方日报视窗载入 ${bv} 的单条笔记`, "good");
+						notify(t("noteLoaded", { bv }), "good");
 						reportContent.scrollIntoView({ behavior: "smooth", block: "nearest" });
 					} else {
-						notify("未找到该视频的单条笔记", "warn");
+						notify(t("noteNotFound"), "warn");
 					}
 				});
 			});
@@ -2016,9 +2034,11 @@ export default {
 			if (res && res.ok) {
 				const cur = cfgFavFolder.value;
 				cfgFavFolder.innerHTML =
-					`<option value="0">不自动收藏</option>` +
+					`<option value="0">${t("favNone")}</option>` +
 					(res.folders || [])
-						.map((f) => `<option value="${f.id}">${esc(f.title)} (${f.count || 0}个内容)</option>`)
+						.map(
+							(f) => `<option value="${f.id}">${t("favFolderItem", { title: esc(f.title), n: f.count || 0 })}</option>`,
+						)
 						.join("");
 				if (cur) cfgFavFolder.value = cur;
 			}
@@ -2047,26 +2067,31 @@ export default {
 		}
 
 		const DM_STATE_TXT = {
-			drafted: "排队中",
-			sent: "已发送",
-			acked: "已送达",
-			acted: "已回执",
-			expired: "已过期",
-			failed: "发送失败",
+			drafted: t("dmStateDrafted"),
+			sent: t("dmStateSent"),
+			acked: t("dmStateAcked"),
+			acted: t("dmStateActed"),
+			expired: t("dmStateExpired"),
+			failed: t("dmStateFailed"),
 		};
 		const stateTxt = (s) => DM_STATE_TXT[s] || "";
 
 		function ledgerSkeleton() {
-			const row = (ico, t) =>
-				`<div class="bili-ledger-row"><span class="bili-ledger-ico">${ico}</span><div class="bili-ledger-main"><div class="t no">${t}</div><div class="d">查询中…</div></div></div>`;
+			const row = (ico, title) =>
+				`<div class="bili-ledger-row"><span class="bili-ledger-ico">${ico}</span><div class="bili-ledger-main"><div class="t no">${title}</div><div class="d">${t("querying")}</div></div></div>`;
 			if (detailLedgerRows)
-				detailLedgerRows.innerHTML = [row("👍", "点赞"), row("⭐", "收藏"), row("💬", "评论"), row("✉️", "私信")].join(
-					"",
-				);
+				detailLedgerRows.innerHTML = [
+					row("👍", t("like")),
+					row("⭐", t("favorite")),
+					row("💬", t("comment")),
+					row("✉️", t("dm")),
+				].join("");
 		}
 
 		const likeAction = (act) =>
-			act.like === true ? "" : '<button class="bili-ledger-act" data-act="like" type="button">👍 点赞</button>';
+			act.like === true
+				? ""
+				: `<button class="bili-ledger-act" data-act="like" type="button">${t("likeAction")}</button>`;
 
 		function ledgerRowDone({ ico, title, ok, detail, quote, action }) {
 			const cls = ok === true ? "ok" : ok === false ? "no" : "unknown";
@@ -2075,36 +2100,34 @@ export default {
 
 		function renderLedger(item, act) {
 			if (!detailLedgerRows) return;
-			const likeBadge = act.like === null ? "未能查询" : act.like ? "已点赞" : "未点赞";
-			const likeDetail =
-				act.like === null
-					? "未登录、风控或接口限制；只读查询不编造状态"
-					: act.like
-						? "本账号真实点赞状态（官方接口查询）"
-						: "可在 B 站 App / 网页上手动点赞";
-			const favBadge = act.fav === null ? "未能查询" : act.fav ? "已在目标收藏夹" : "不在目标收藏夹";
+			const likeBadge = act.like === null ? t("likeUnknown") : act.like ? t("likeYes") : t("likeNo");
+			const likeDetail = act.like === null ? t("likeDetailUnknown") : act.like ? t("likeDetailYes") : t("likeDetailNo");
+			const favBadge = act.fav === null ? t("likeUnknown") : act.fav ? t("favYes") : t("favNo");
 			const favDetail =
 				act.fav === null
-					? "未设置目标收藏夹或查询失败"
+					? t("favDetailUnknown")
 					: act.favPartial
-						? "已拦截前 300 条，夹内更多未核对"
-						: `目标收藏夹设置（偏好页）内翻页核对的结果 · ${esc(item.day)} 巡检记录`;
-			let cTitle = "无已记录评论";
-			let cDetail = act.comment ? "" : "未发过公开评论（安全闸默认关）";
+						? t("favDetailPartial")
+						: t("favDetailOk", { day: esc(item.day) });
+			let cTitle = t("noRecordedComment");
+			let cDetail = act.comment ? "" : t("noPublicComment");
 			let cQuote = "";
 			if (act.comment) {
-				const st = act.comment.state === "failed" ? "发送失败" : stateTxt(act.comment.state) || act.comment.state;
-				cTitle = `已评论 · <span style="font-weight:400;color:var(--text-dim)">${esc(st)}${act.comment.day ? ` · ${esc(act.comment.day)}` : ""}${act.comment.rpid ? ` · rpid ${act.comment.rpid}` : ""}</span>`;
+				const st =
+					act.comment.state === "failed" ? t("dmStateFailed") : stateTxt(act.comment.state) || act.comment.state;
+				cTitle = `${t("commentedLabel")} · <span style="font-weight:400;color:var(--text-dim)">${esc(st)}${act.comment.day ? ` · ${esc(act.comment.day)}` : ""}${act.comment.rpid ? ` · rpid ${act.comment.rpid}` : ""}</span>`;
 				cQuote = esc(act.comment.text || "");
 			} else if (item?.commented) {
-				cDetail = "有评论痕迹但状态库无原文记录";
+				cDetail = t("commentTraceOnly");
 			}
 			const dmRow = act.dm
 				? {
-						t: `在速报私信 <span style="font-weight:400;color:var(--text-dim)">${esc(stateTxt(act.dm.state) || act.dm.state)} · ${esc(act.dm.day)}</span>`,
-						d: "该条在当天精选速报私信的列表里",
+						t: t("inDigestDm", {
+							state: `<span style="font-weight:400;color:var(--text-dim)">${esc(stateTxt(act.dm.state) || act.dm.state)} · ${esc(act.dm.day)}</span>`,
+						}),
+						d: t("inDigestDmDetail"),
 					}
-				: { t: "未私信", d: "投递方式默认 only=只私信；预算超报只写日报不打扰" };
+				: { t: t("noDm"), d: t("noDmDetail") };
 			detailLedgerRows.innerHTML = [
 				ledgerRowDone({ ico: "👍", title: likeBadge, ok: act.like, detail: likeDetail, action: likeAction(act) }),
 				ledgerRowDone({
@@ -2112,16 +2135,16 @@ export default {
 					title: favBadge,
 					ok: act.fav,
 					detail: favDetail,
-					action: '<button class="bili-ledger-act" data-act="fav" type="button">⭐ 收藏到目标夹</button>',
+					action: `<button class="bili-ledger-act" data-act="fav" type="button">${t("favToTarget")}</button>`,
 				}),
 				ledgerRowDone({
 					ico: "💬",
-					title: "评论",
+					title: t("comment"),
 					ok: act.comment ? true : false,
 					detail: cDetail,
 					quote: act.comment ? cQuote : "",
 				}),
-				ledgerRowDone({ ico: "✉️", title: "私信", ok: act.dm ? true : false, detail: dmRow.d }),
+				ledgerRowDone({ ico: "✉️", title: t("dm"), ok: act.dm ? true : false, detail: dmRow.d }),
 			].join("");
 			if (act.dm) {
 				const titleEl = detailLedgerRows.querySelector(".bili-ledger-row:last-child .t");
@@ -2138,15 +2161,14 @@ export default {
 					if (r && r.ok) renderLedger(item, r);
 					else if (detailLedgerRows) {
 						detailLedgerRows.innerHTML =
-							'<div class="bili-ledger-row"><div class="bili-ledger-main"><div class="t no">账本查询失败</div><div class="d">' +
-							esc((r && r.error) || "未知异常") +
+							`<div class="bili-ledger-row"><div class="bili-ledger-main"><div class="t no">${t("ledgerQueryFailed")}</div><div class="d">` +
+							esc((r && r.error) || t("unknownException")) +
 							"</div></div></div>";
 					}
 				})
 				.catch(() => {
 					if (detailLedgerRows && currentDetailBv === item.bvid) {
-						detailLedgerRows.innerHTML =
-							'<div class="bili-ledger-row"><div class="bili-ledger-main"><div class="t no">账本查询失败</div><div class="d">网络异常</div></div></div>';
+						detailLedgerRows.innerHTML = `<div class="bili-ledger-row"><div class="bili-ledger-main"><div class="t no">${t("ledgerQueryFailed")}</div><div class="d">${t("networkError")}</div></div></div>`;
 					}
 				});
 		}
@@ -2157,14 +2179,14 @@ export default {
 			currentDetailItem = item;
 			el.querySelector(".bili-detail-title").textContent = item.title || item.bvid;
 			el.querySelector(".bili-detail-sub").innerHTML =
-				`<em>${esc(item.bvid)}</em><em>${esc(item.up || "未知")}</em><em>${esc(item.day)}</em><em class="detail-stat-sub">加载统计…</em>`;
+				`<em>${esc(item.bvid)}</em><em>${esc(item.up || t("upUnknown"))}</em><em>${esc(item.day)}</em><em class="detail-stat-sub">${t("statsLoading")}</em>`;
 			el.querySelector(".bili-detail-cover").src = `/plugins-api/bili-scroll/cover?bv=${item.bvid}`;
 			el.querySelector(".bili-sum-meta").textContent = "";
 			el.querySelector(".bili-sum-regen").hidden = true;
 			el.querySelector(".bili-sum-body").innerHTML =
-				'<p style="color: var(--text-dim); font-size: 12px;">正在读取 AI 总结…</p>';
+				`<p style="color: var(--text-dim); font-size: 12px;">${t("readingSummary")}</p>`;
 			el.querySelector(".bili-detail-acts").innerHTML =
-				'<span class="chip skel">播放…</span><span class="chip skel">弹幕…</span><span class="chip on" data-act="fav">⭐ 收藏到目标夹</span>';
+				`<span class="chip skel">${t("viewsPlaceholder")}</span><span class="chip skel">${t("danmakuPlaceholder")}</span><span class="chip on" data-act="fav">${t("favToTarget")}</span>`;
 			el.querySelector(".bili-detail-comments").innerHTML = "";
 			ledgerSkeleton();
 			loadAccountActions(item);
@@ -2196,14 +2218,14 @@ export default {
 						const st = sr.stat;
 						const em2 = el.querySelector(".detail-stat-sub");
 						if (em2) {
-							em2.textContent = `(${fmtCount(st.view)}播放 · ${fmtCount(st.danmaku)}弹幕)`;
+							em2.textContent = t("statsInline", { views: fmtCount(st.view), danmaku: fmtCount(st.danmaku) });
 						}
 						el.querySelector(".bili-detail-acts").innerHTML = [
-							`<span class="chip">播放 ${fmtCount(st.view)}</span>`,
-							`<span class="chip">弹幕 ${fmtCount(st.danmaku)}</span>`,
-							`<span class="chip">点赞 ${fmtCount(st.like)}</span>`,
-							`<span class="chip">收藏 ${fmtCount(st.favorite)}</span>`,
-							'<span class="chip on" data-act="fav">☆ 收藏到默认夹</span>',
+							`<span class="chip">${t("viewsChip", { n: fmtCount(st.view) })}</span>`,
+							`<span class="chip">${t("danmakuChip", { n: fmtCount(st.danmaku) })}</span>`,
+							`<span class="chip">${t("likesChip", { n: fmtCount(st.like) })}</span>`,
+							`<span class="chip">${t("favoritesChip", { n: fmtCount(st.favorite) })}</span>`,
+							`<span class="chip on" data-act="fav">${t("favToDefault")}</span>`,
 						].join("");
 						bindDetailActs(item);
 					}
@@ -2244,7 +2266,7 @@ export default {
 			if (currentDetailBv !== item.bvid) return;
 			// 巡检后台正在写这条：不催、不重复起任务，直接等文件出来
 			if (r && r.ok && r.kind === "pending") {
-				metaEl.textContent = "后台正在写…";
+				metaEl.textContent = t("backgroundWriting");
 				await pollDetailSummary(item, {
 					busy: (msg) => {
 						body.innerHTML = `<div class="bili-sum-busy"><div>${msg}</div><div class="skel" style="width: 92%"></div><div class="skel" style="width: 78%"></div></div>`;
@@ -2255,7 +2277,7 @@ export default {
 				return;
 			}
 			if (r && r.ok && r.kind === "summary" && r.text) {
-				body.innerHTML = renderMiniMd(r.text, { url: item.url });
+				body.innerHTML = renderMiniMd(r.text, { url: item.url, t });
 				metaEl.textContent = summaryMetaText(r.meta);
 				regen.hidden = false;
 				regen.onclick = () => generateDetailSummary(item, regen);
@@ -2265,13 +2287,14 @@ export default {
 			const hasReport = Boolean(r && r.ok && r.text);
 			body.innerHTML = `
 				<div class="bili-sum-empty">
-					<div><b>这条还没有 AI 内容总结。</b><br/>点下面按钮，AI 会通读字幕证据，一次写成一份完整总结（约 10–40 秒）。</div>
-					<button class="bili-sum-cta" type="button">✨ 生成内容总结</button>
-					${hasReport ? '<details class="bili-sum-raw"><summary>查看原始笔记（报告字段拼接）</summary><div class="bili-md bili-sum-raw-body"></div></details>' : ""}
+					<div><b>${t("summaryEmptyTitle")}</b><br/>${t("summaryEmptyBody")}</div>
+					<button class="bili-sum-cta" type="button">${t("generateSummary")}</button>
+					${hasReport ? `<details class="bili-sum-raw"><summary>${t("viewRawNote")}</summary><div class="bili-md bili-sum-raw-body"></div></details>` : ""}
 				</div>`;
 			if (hasReport) {
 				body.querySelector(".bili-sum-raw-body").innerHTML = renderMiniMd(stripNoteScaffold(r.text), {
 					url: item.url,
+					t,
 				});
 			}
 			body.querySelector(".bili-sum-cta").onclick = (e) => generateDetailSummary(item, e.currentTarget);
@@ -2284,9 +2307,9 @@ export default {
 			const regen = el.querySelector(".bili-sum-regen");
 			if (btn) {
 				btn.disabled = true;
-				btn.textContent = "生成中…";
+				btn.textContent = t("generating");
 			}
-			metaEl.textContent = "生成中…";
+			metaEl.textContent = t("generating");
 			regen.hidden = true;
 			const busy = (msg) => {
 				body.innerHTML = `<div class="bili-sum-busy">
@@ -2296,7 +2319,7 @@ export default {
 				<div class="skel" style="width: 86%"></div>
 				</div>`;
 			};
-			busy("AI 正在通读字幕证据，一次写成整篇总结…（1-2 分钟，可以继续看左侧）");
+			busy(t("summaryBusy"));
 			const r = await httpPost("summary", { bvid: item.bvid, day: item.day, force: true });
 			if (currentDetailBv !== item.bvid) return;
 			// 后台任务模式：轮询状态直到出文档或报错（最多 4 分钟）
@@ -2308,7 +2331,7 @@ export default {
 				showDetailSummary(item, r);
 				return;
 			}
-			showSummaryError(item, r?.error || "未知错误");
+			showSummaryError(item, r?.error || t("unknownError"));
 		}
 
 		async function pollDetailSummary(item, { busy, metaEl, regen }) {
@@ -2323,7 +2346,7 @@ export default {
 					return;
 				}
 				if (s && s.state === "error") {
-					showSummaryError(item, s.error || "生成失败");
+					showSummaryError(item, s.error || t("generateFailed"));
 					return;
 				}
 				// idle 有两种：后台巡检在写（/note 会报 pending），或任务真的丢了
@@ -2337,34 +2360,34 @@ export default {
 							return;
 						}
 						if (!(note && note.ok && note.kind === "pending")) {
-							showSummaryError(item, "任务已中断（插件重载或其他操作），请重试");
+							showSummaryError(item, t("taskInterrupted"));
 							return;
 						}
 					}
 				} else {
 					idleStreak = 0;
 				}
-				if (i === 12) busy("模型还在写（大视频字幕长时会慢一点），已经等 40 多秒……");
+				if (i === 12) busy(t("summaryStillWriting"));
 			}
 			metaEl.textContent = "";
 			regen.hidden = true;
-			showSummaryError(item, "等了 4 分钟还没写完，稍后再点一次重新生成");
+			showSummaryError(item, t("summaryTimeout"));
 		}
 
 		function showDetailSummary(item, res) {
 			const body = el.querySelector(".bili-sum-body");
 			if (!body) return;
-			body.innerHTML = renderMiniMd(res.text || "", { url: item.url });
+			body.innerHTML = renderMiniMd(res.text || "", { url: item.url, t });
 			const metaEl = el.querySelector(".bili-sum-meta");
 			if (metaEl) metaEl.textContent = summaryMetaText(res.meta);
 			const regen = el.querySelector(".bili-sum-regen");
 			if (regen) {
 				regen.hidden = false;
 				regen.disabled = false;
-				regen.textContent = "重新生成";
+				regen.textContent = t("regenerate");
 				regen.onclick = () => generateDetailSummary(item, regen);
 			}
-			notify("AI 内容总结已就绪", "good");
+			notify(t("summaryReady"), "good");
 		}
 
 		function showSummaryError(item, message) {
@@ -2378,8 +2401,8 @@ export default {
 			const metaEl = el.querySelector(".bili-sum-meta");
 			if (metaEl) metaEl.textContent = "";
 			body.innerHTML = `<div class="bili-sum-empty">
-				<div><b>总结生成失败。</b><br/>${esc(message)}</div>
-				<button class="bili-sum-cta" type="button">重试</button>
+				<div><b>${t("summaryFailedTitle")}</b><br/>${esc(message)}</div>
+				<button class="bili-sum-cta" type="button">${t("retry")}</button>
 			</div>`;
 			body.querySelector(".bili-sum-cta").onclick = (e) => generateDetailSummary(item, e.currentTarget);
 		}
@@ -2388,30 +2411,30 @@ export default {
 			el.querySelectorAll(".bili-detail-acts .chip[data-act='fav'], .bili-ledger-act[data-act='fav']").forEach(
 				(btn) => {
 					btn.onclick = async () => {
-						btn.textContent = "收藏中…";
+						btn.textContent = t("favoriting");
 						const r = await httpPost("fav-add", { bvid: item.bvid });
 						if (r && r.ok) {
-							btn.textContent = r.already ? "已在收藏夹 ✓" : "已收藏 ✓";
-							notify(r.already ? "这条本来就在目标收藏夹里" : "已收藏 ✓（未选目标夹时存入默认收藏夹）", "good");
+							btn.textContent = r.already ? t("favAlreadyBtn") : t("favDoneBtn");
+							notify(r.already ? t("favAlreadyToast") : t("favDoneToast"), "good");
 							loadAccountActions(item);
 						} else {
-							btn.textContent = "☆ 收藏失败，点重试";
-							notify((r && r.error) || "收藏失败", "warn");
+							btn.textContent = t("favFailedBtn");
+							notify((r && r.error) || t("favFailed"), "warn");
 						}
 					};
 				},
 			);
 			el.querySelectorAll(".bili-ledger-act[data-act='like']").forEach((btn) => {
 				btn.onclick = async () => {
-					btn.textContent = "点赞中…";
+					btn.textContent = t("liking");
 					const r = await httpPost("like-add", { bvid: item.bvid });
 					if (r && r.ok) {
-						btn.textContent = "已赞 ✓";
-						notify("已点赞，台账已同步", "good");
+						btn.textContent = t("likedBtn");
+						notify(t("likedToast"), "good");
 						loadAccountActions(item);
 					} else {
-						btn.textContent = "👍 再试一次";
-						notify((r && r.error) || "点赞失败", "warn");
+						btn.textContent = t("likeRetry");
+						notify((r && r.error) || t("likeFailed"), "warn");
 					}
 				};
 			});
@@ -2454,12 +2477,12 @@ export default {
 		if (rangeRunBtn) rangeRunBtn.addEventListener("click", () => btnRunDuty.click());
 		btnReloadFavs.addEventListener("click", () => {
 			reloadFavFolders();
-			notify("已更新收藏夹列表", "good");
+			notify(t("favsUpdated"), "good");
 		});
 
 		function populateModelOptions(selectedModel = "") {
 			const hostModels = window.__piWebUiHost?.models?.list?.() || [];
-			cfgModel.innerHTML = '<option value="">跟随当前会话模型</option>';
+			cfgModel.innerHTML = `<option value="">${t("followActiveModel")}</option>`;
 			let hasSelected = !selectedModel;
 			for (const m of hostModels) {
 				// 宿主给的 id 已带 provider 前缀，再拼一次就会变成 provider/provider/id（模型接口不认）
@@ -2478,7 +2501,7 @@ export default {
 			if (selectedModel && !hasSelected) {
 				const opt = document.createElement("option");
 				opt.value = selectedModel;
-				opt.textContent = `${selectedModel} (当前指定)`;
+				opt.textContent = t("modelCustomSuffix", { model: selectedModel });
 				opt.selected = true;
 				cfgModel.appendChild(opt);
 			}
@@ -2491,10 +2514,10 @@ export default {
 				if (res && res.ok && res.modelId) {
 					populateModelOptions(res.modelId);
 					cfgModel.value = res.modelId;
-					notify(`已选定模型: ${res.name || res.modelId}`, "good");
+					notify(t("modelPicked", { name: res.name || res.modelId }), "good");
 				}
 			} else {
-				notify("请直接在下拉列表中选择模型", "info");
+				notify(t("pickModelHint"), "info");
 			}
 		});
 
@@ -2504,10 +2527,10 @@ export default {
 				const res = await window.__piWebUiHost.pickDirectory({ initialPath: cur || undefined });
 				if (res && res.ok && res.path) {
 					cfgWorkspace.value = res.path;
-					notify(`已选定工作区: ${res.path}`, "good");
+					notify(t("workspacePicked", { path: res.path }), "good");
 				}
 			} else {
-				notify("请在输入框中填入本地目录绝对路径", "info");
+				notify(t("workspaceHint"), "info");
 			}
 		});
 
@@ -2532,13 +2555,13 @@ export default {
 			};
 			const res = await httpPost("config", patch);
 			if (res && res.ok) {
-				notify("偏好设置保存成功！", "good");
+				notify(t("tasteSaved"), "good");
 				for (const input of [cfgVisionModel, cfgTranscribe, cfgDmWatch, cfgDmAutoReply]) {
 					if (input) delete input.dataset.dirty;
 				}
 				refreshStatus(true);
 			} else {
-				notify(`保存失败: ${res?.error || "未知异常"}`, "warn");
+				notify(t("saveFailed", { err: res?.error || t("unknownException") }), "warn");
 			}
 		});
 		if (btnSaveQuick) {
@@ -2552,10 +2575,10 @@ export default {
 				};
 				const res = await httpPost("config", patch);
 				if (res && res.ok) {
-					notify("关键设置保存成功！监听/排期已即时重建", "good");
+					notify(t("quickSaved"), "good");
 					refreshStatus(true);
 				} else {
-					notify(`保存失败: ${res?.error || "未知异常"}`, "warn");
+					notify(t("saveFailed", { err: res?.error || t("unknownException") }), "warn");
 				}
 			});
 		}
@@ -2563,9 +2586,9 @@ export default {
 		btnImportAgents.addEventListener("click", () => {
 			if (currentStatus?.personaFromWs) {
 				cfgPersona.value = currentStatus.personaFromWs;
-				notify("已成功导入当前工作区 AGENTS.md", "good");
+				notify(t("agentsImported"), "good");
 			} else {
-				notify("工作区中未找到 AGENTS.md", "warn");
+				notify(t("agentsNotFound"), "warn");
 			}
 		});
 
@@ -2587,28 +2610,28 @@ export default {
 			};
 			const res = await httpPost("config", patch);
 			if (res && res.ok) {
-				notify("互动设置保存成功！", "good");
+				notify(t("socialSaved"), "good");
 				for (const input of [cfgVisionModel, cfgTranscribe, cfgDmWatch, cfgDmAutoReply]) {
 					if (input) delete input.dataset.dirty;
 				}
 				refreshStatus(true);
 			} else {
-				notify(`保存失败: ${res?.error || "未知异常"}`, "warn");
+				notify(t("saveFailed", { err: res?.error || t("unknownException") }), "warn");
 			}
 		});
 
 		btnLogin.addEventListener("click", async () => {
 			qrSection.style.display = "block";
-			qrStatus.textContent = "正在向 B站 请求登录二维码...";
+			qrStatus.textContent = t("qrRequesting");
 			qrSvgSlot.innerHTML = "";
 
 			const res = await httpPost("login/start");
 			if (!res || !res.ok) {
-				qrStatus.textContent = `出码失败: ${res?.error || "网络异常"}`;
+				qrStatus.textContent = t("qrFailed", { err: res?.error || t("networkError") });
 				return;
 			}
 
-			qrStatus.textContent = "等待手机 B站 客户端扫码...";
+			qrStatus.textContent = t("qrWaitingPhone");
 			try {
 				const qr = qrcode(0, "M");
 				qr.addData(String(res.url || ""));
@@ -2617,22 +2640,22 @@ export default {
 				qrSvgSlot.innerHTML = qrSvg;
 			} catch (e) {
 				console.error("[bili-scroll] QR generation failed", e);
-				qrSvgSlot.textContent = "二维码生成失败";
+				qrSvgSlot.textContent = t("qrGenFailed");
 			}
 
 			if (pollTimer) clearInterval(pollTimer);
 			pollTimer = setInterval(async () => {
 				const pollRes = await httpPost("login/poll", { key: res.key });
 				if (pollRes.state === "scanned") {
-					qrStatus.textContent = "已扫描，请在手机上点击确认登录...";
+					qrStatus.textContent = t("qrScanned");
 				} else if (pollRes.state === "ok") {
 					clearInterval(pollTimer);
 					qrSection.style.display = "none";
-					notify("🎉 登录成功！凭证已安全保存到 bili_credential.json", "good");
+					notify(t("loginSuccess"), "good");
 					refreshStatus();
 				} else if (pollRes.state === "expired") {
 					clearInterval(pollTimer);
-					qrStatus.textContent = "二维码已过期，请重新点击扫码登录。";
+					qrStatus.textContent = t("qrExpired");
 				}
 			}, 2500);
 		});
@@ -2644,36 +2667,35 @@ export default {
 
 		btnLogout.addEventListener("click", async () => {
 			await httpPost("login/logout");
-			notify("已退出登录并清除凭证", "info");
+			notify(t("loggedOut"), "info");
 			refreshStatus();
 		});
 
 		btnRunDuty.addEventListener("click", async () => {
-			notify("🚀 AI 巡检已启动，正向动作视窗汇报每一步...", "info");
+			notify(t("dutyStarted"), "info");
 			const r = await httpPost("duty/run");
 			if (r && r.started) {
-				appendActionTerminal({ step: "start", message: "🚀 巡检流程已在后台执行..." });
+				appendActionTerminal({ step: "start", message: t("dutyBackground") });
 			}
 		});
 
 		btnChatMode.addEventListener("click", () => {
-			const prompt =
-				"帮我开启一次 B 站 AI 漫游（AI Roaming）：围绕我的关注关键词搜寻最新视频，调用 bili_subtitle 通读原文字幕深度排雷；遇到真正的干货视频时，调用 bili_related 顺藤摸瓜继续漫游探索；将今日精选沉淀到日报并私信发给我。";
+			const prompt = t("roamPrompt");
 			if (typeof ctx.insertPrompt === "function") {
 				ctx.insertPrompt(prompt);
-				notify("已填入主聊天输入框，回车即可让智能体自主漫游！", "good");
+				notify(t("roamInserted"), "good");
 			} else {
 				navigator.clipboard.writeText(prompt);
-				notify("已复制漫游指令到剪贴板", "good");
+				notify(t("roamCopied"), "good");
 			}
 		});
 
 		btnFavToday.addEventListener("click", async () => {
 			const res = await httpPost("fav-today");
 			if (res && res.ok) {
-				notify(`成功将 ${res.added}/${res.total} 条视频收藏到目标收藏夹！`, "good");
+				notify(t("favTodayDone", { added: res.added, total: res.total }), "good");
 			} else {
-				notify(`收藏失败: ${res?.error || "未知异常"}`, "warn");
+				notify(t("favTodayFailed", { err: res?.error || t("unknownException") }), "warn");
 			}
 		});
 
@@ -2696,29 +2718,29 @@ export default {
 		}
 
 		btnInstall.addEventListener("click", async () => {
-			notify("正在安装主依赖环境，请观察下方实时日志...", "info");
+			notify(t("installingMain"), "info");
 			startInstallTailPolling();
 			const r = await httpPost("install");
 			if (r && r.started) {
-				notify(r.hint || "正在后台安装主依赖...", "info");
+				notify(r.hint || t("installMainBg"), "info");
 			}
 		});
 
 		btnInstallAsr.addEventListener("click", async () => {
-			notify("正在安装本地 Whisper 转写依赖，模型走国内镜像...", "info");
+			notify(t("installingAsr"), "info");
 			startInstallTailPolling();
 			const r = await httpPost("install-asr");
 			if (r && r.started) {
-				notify(r.hint || "正在后台安装转写依赖...", "info");
+				notify(r.hint || t("installAsrBg"), "info");
 			}
 		});
 
 		btnCheckUp.addEventListener("click", async () => {
-			notify("正在真机测试 B站 接口连通性...", "info");
+			notify(t("testingApi"), "info");
 			diagResult.style.display = "block";
-			diagResult.textContent = "正在测试登录凭证与搜索...";
+			diagResult.textContent = t("testingCreds");
 			const res = await httpGet("status");
-			diagResult.textContent = res.loggedIn ? "✅ 凭证有效，B站通信正常！" : "❌ 凭证无效或未登录";
+			diagResult.textContent = res.loggedIn ? t("credsOk") : t("credsBad");
 		});
 
 		btnDiagnose.addEventListener("click", async () => {
@@ -2727,7 +2749,7 @@ export default {
 				navigator.clipboard.writeText(res.text);
 				diagResult.style.display = "block";
 				diagResult.textContent = res.text;
-				notify("诊断信息已复制到剪贴板！", "good");
+				notify(t("diagCopied"), "good");
 			}
 		});
 
@@ -2736,20 +2758,21 @@ export default {
 			diagResult.style.display = "block";
 			if (res && res.items) {
 				const lines = res.items.map(
-					(i) => `${i.ok ? "✅" : "❌"} ${i.name}：${i.detail} ${i.fix ? `(修复建议: ${i.fix})` : ""}`,
+					(i) =>
+						`${t("selfcheckLine", { ok: i.ok ? "✅" : "❌", name: i.name, detail: i.detail, fix: i.fix ? t("selfcheckFix", { fix: i.fix }) : "" })}`,
 				);
 				diagResult.textContent = lines.join("\n");
 			}
 		});
 
 		btnVerify.addEventListener("click", async () => {
-			notify("正在复核发出的公开评论可见性...", "info");
+			notify(t("verifyingComments"), "info");
 			diagResult.style.display = "block";
-			diagResult.textContent = "正在向 B站 接口核对评论列表...";
+			diagResult.textContent = t("verifyingList");
 			const res = await httpPost("verify");
 			if (res && res.text) {
 				diagResult.textContent = res.text;
-				notify("复核完成！结果已显示在下方", "good");
+				notify(t("verifyDone"), "good");
 			}
 		});
 
@@ -2760,7 +2783,7 @@ export default {
 			refreshStatus();
 			loadWatchedCards();
 			reloadFavFolders();
-			notify("数据已刷新", "info");
+			notify(t("dataRefreshed"), "info");
 		});
 
 		refreshStatus();
