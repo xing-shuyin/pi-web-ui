@@ -41,7 +41,7 @@ function fingerprint(text) {
 	};
 }
 
-const tracked = execSync("git ls-files '*.md'", { encoding: "utf8" })
+const tracked = execSync('git ls-files "*.md"', { encoding: "utf8" })
 	.split("\n")
 	.filter(Boolean)
 	.filter((file) => !isVariant(file));
@@ -82,7 +82,7 @@ for (const file of tracked) {
 	translated.push(file);
 }
 
-const htmlDocs = execSync("git ls-files 'docs/*.html' 'docs/**/*.html'", { encoding: "utf8" })
+const htmlDocs = execSync('git ls-files "docs/*.html" "docs/**/*.html"', { encoding: "utf8" })
 	.split("\n")
 	.filter(Boolean);
 
