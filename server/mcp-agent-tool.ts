@@ -185,8 +185,8 @@ export function makeMcpManageTool(host: McpManageToolHost, lang?: () => ServerLa
 					toolNames.length > 0
 						? pick(
 								L,
-								`\n已暴露工具（${toolNames.length}）：${toolsJoined}`,
-								`\nExposed tools (${toolNames.length}): ${toolsJoined}`,
+								`\n工具清单（${toolNames.length}）：${toolsJoined}`,
+								`\nTool list (${toolNames.length}): ${toolsJoined}`,
 								"mcp_manage.install.tools",
 								{ count: toolNames.length, tools: toolsJoined },
 							)
