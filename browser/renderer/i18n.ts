@@ -119,6 +119,11 @@ const messages = {
 		hidePassword: "隐藏密码",
 		vaultTabPasswords: "密码",
 		vaultTabTotp: "TOTP",
+		vaultTabPasskeys: "Passkey",
+		passkeyHelp:
+			"Passkey 由网站注册时创建，存在本机加密存储里：登录时网站会直接认，不用输密码。只在本浏览器内有效，不与系统/手机的 passkey 同步。",
+		passkeyEmpty: "还没有 passkey。在某网站的账户安全设置里「添加 passkey」即可（本浏览器已向网站报告支持）。",
+		passkeyRemoveConfirm: "删除这把 passkey？删后该网站无法再用它登录（可用密码或其他方式）。",
 		vaultHintKeys: "键盘：↑↓ 选行 · Enter 填入当前网页 · Shift+Enter 复制验证码 / 显示密码",
 		vaultMovedHint: "密码与 TOTP 已经合并到同一个面板：用顶部图标增删改，点条目选中后再操作。",
 		openVault: "打开凭据保险库",
@@ -357,6 +362,13 @@ const messages = {
 		hidePassword: "Hide password",
 		vaultTabPasswords: "Passwords",
 		vaultTabTotp: "TOTP",
+		vaultTabPasskeys: "Passkeys",
+		passkeyHelp:
+			"Passkeys are created by websites and stored in this app's encrypted store, so a site can sign you in without a password. They only work in this browser — they are not synced with your system or phone.",
+		passkeyEmpty:
+			"No passkeys yet. Add one from a site's account security settings — this browser reports itself as a platform authenticator.",
+		passkeyRemoveConfirm:
+			"Delete this passkey? The site will no longer be able to use it to sign you in (use your password or another method instead).",
 		vaultHintKeys: "Keyboard: ↑↓ select · Enter fill the page · Shift+Enter copy the code / reveal the password",
 		vaultMovedHint: "Passwords and TOTP now live in one panel: use the toolbar icons, select a row first.",
 		openVault: "Open credentials vault",

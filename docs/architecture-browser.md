@@ -153,6 +153,19 @@ Agent 可以给网页注入脚本：`browser_script` 工具（`server/browser-sc
 - 排序（`totp.reorder`）、改名/改绑定（`totp.update`）、删除（`totp.remove`）都在工具条上，写回同一份加密文件；列表顺序就是 `order` 字段，未列出的条目在重排后保留在尾部，不丢数据。
 - 纯逻辑（Base32/HOTP/TOTP 的 RFC 6238 向量、otpauth 各种变体、投影、排序、origin 匹配、二维码位图解码）全在 `tests/unit/totp.test.ts`，不依赖 Electron。
 
+## Passkey（WebAuthn）
+
+**先说限制**：Electron 自己**不提供平台认证器**（Windows Hello / 手机扫码 hybrid）——这部分在 Chromium 里属于 chrome/ 层（谁弹 UI、什么时候调 `webauthn.dll`），Electron 只编 content/device 层，所以默认情况下页面看到的是 `isUserVerifyingPlatformAuthenticatorAvailable() === false`、`passkeyPlatformAuthenticator === false`，GitHub 这类站点会直接报 “this browser is reporting partial passkey support”。实测把 `WebAuthenticationUseNativeWinApi` 这个编进二进制的特性开关打开也一样（缺的是宿主实现，不是开关）；macOS 上 Electron 另有 `app.configureWebAuthn({ touchID })`（本轮未用）。
+
+**我们的做法：CDP 虚拟认证器当平台认证器**（`browser/runtime/passkeys.ts` + `manager.ts`）：
+
+- **挂认证器**：每个标签在 `dom-ready` 时（`ensurePasskeyAuthenticator`）attach 调试器 → `WebAuthn.enable` → `WebAuthn.addVirtualAuthenticator({ protocol: ctap2, transport: internal, hasResidentKey, hasUserVerification, isUserVerified })`。有了它，页面侧 `isUVPAA()` / `passkeyPlatformAuthenticator` 都变 true，网站愿意跟我们做 passkey。
+- **存凭据**：CDP 的 `WebAuthn.credentialAdded` 事件里 **privateKey（PKCS8 base64）是直接给的**，所以 `browser/storage/index.ts` 的 `passkeys.json` 只加密 `privateKey`（同一条 `enc:<safeStorage>` 口径），其余字段（rpId / 账号 / 凭据 id）明文保留——锁定时也能列出条目。面板拿到的是 `PublicPasskey` 投影，**私钥永不出主进程**。
+- **用凭据**：每进一个页面先 `WebAuthn.clearCredentials` 再把 `passkeysForHost()`（WebAuthn 的 rpId 后缀语义：`example.com` 覆盖 `www.example.com`，反之不行）的凭据 `addCredential` 装回去，所以换站不会串台；登录后 `credentialAsserted` 事件里回写 `signCount`。
+- **已验证的闭环**：本地测站上 create → 落盘（加密）→ 新 manager 实例重开标签页 → 用存下的凭据 get 成功（见提交说明里的 e2e 探针）。
+- **代价（不要美化）**：user verification 由客户端“代为确认”（`isUserVerified: true`），**不是生物识别**，私钥由 safeStorage 加密保管（不享受 TPM）；凭据只在本浏览器有效，**不与 Windows Hello / 手机 passkey 同步**；要求 attestation 的站点会拒（虚拟认证器只给 `none`）；**手机扫码（hybrid）仍不支持**，得等上游。
+- **面板**：凭据保险库第三个标签「Passkey」（`vault.ts` 的 `passkeyRow`），只列 + 删；条目由网站注册时产生，不在面板里手写。
+
 ## 自定义新标签页与主题覆盖（用户改 / Agent 设计）
 
 内置页（shell / panel / newtab / office / workspace）是构建产物，只读且打包后不可写；用户与 Agent 的自定义内容一律落在 **Electron `userData/browser/custom/`**：`newtab.html`（新标签页，自包含 HTML）与 `theme.css`（主题覆盖）。单源在 `browser/runtime/customize.ts`（`BrowserCustomization`：路径、大小上限、原子写、状态、回落规则）。

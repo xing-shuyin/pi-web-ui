@@ -37,6 +37,7 @@ import {
 } from "../browser/runtime/extension-state.js";
 import { fillCredential, fillTotpCode, publicCredential } from "../browser/runtime/credentials.js";
 import { mergeCredentials, parseCredentialCsv } from "../browser/runtime/credentials-csv.js";
+import { publicPasskey } from "../browser/runtime/passkeys.js";
 import {
 	clampPopupSize,
 	placePopup,
@@ -1219,6 +1220,16 @@ export class DesktopBrowserHost {
 				return this.browser.storage.savePasswords(args.entries ?? args.passwords);
 			case "passwords.available":
 				return this.browser.storage.isEncryptionAvailable();
+			case "passkeys.list":
+				// 同样只下发投影：privateKey 永远不出主进程
+				return this.browser.storage.listPasskeys().map(publicPasskey);
+			case "passkeys.remove": {
+				const id = text(args.id);
+				if (!id) throw new Error("passkeys.remove requires an id");
+				return this.browser.storage
+					.savePasskeys(this.browser.storage.listPasskeys().filter((entry) => entry.id !== id))
+					.map(publicPasskey);
+			}
 			case "passwords.fill": {
 				const entry = this.browser.storage.listPasswords().find((entry) => entry.id === args.id);
 				const contents = this.browser.getWebContents(this.browser.getActiveTabId() ?? "");

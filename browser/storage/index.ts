@@ -4,6 +4,7 @@ import { randomUUID } from "node:crypto";
 import type { BrowserMode } from "../contracts.js";
 import { readPageScripts, type PageScript } from "../runtime/scripts.js";
 import { normalizeTotpEntries, sortTotpEntries, type TotpEntry } from "../runtime/totp.js";
+import { normalizePasskeys, type StoredPasskey } from "../runtime/passkeys.js";
 import { isWebUrl } from "../runtime/urls.js";
 
 export interface Bookmark {
@@ -302,6 +303,49 @@ export class BrowserStorage {
 			entries.map((entry) => ({
 				...entry,
 				secret: `enc:${this.encryption.encryptString(entry.secret).toString("base64")}`,
+			})),
+		);
+		return entries;
+	}
+	/**
+	 * Passkey 保管库：同一条 safeStorage 口径，但只加密 `privateKey`。
+	 *
+	 * 其余字段（rpId / 账号名 / 凭据 id）不是秘密，留着明文才能在锁定时也能列出条目；
+	 * 真正的凭据材料只有 `privateKey` 一份，它还是能登录网站的唯一东西。
+	 */
+	listPasskeys(): StoredPasskey[] {
+		const value = this.read("passkeys");
+		if (value === undefined) return [];
+		this.requireEncryption();
+		const decoded = normalizePasskeys(
+			(Array.isArray(value) ? value : []).map((item) => {
+				if (!item || typeof item !== "object") return item;
+				const entry = item as Record<string, unknown>;
+				const privateKey = typeof entry.privateKey === "string" ? entry.privateKey : "";
+				return {
+					...entry,
+					privateKey: privateKey.startsWith("enc:")
+						? this.encryption.decryptString(Buffer.from(privateKey.slice(4), "base64"))
+						: privateKey,
+				};
+			}),
+		);
+		if (
+			(value as { privateKey?: unknown }[]).some(
+				(item) => typeof item?.privateKey === "string" && !item.privateKey.startsWith("enc:"),
+			)
+		)
+			this.savePasskeys(decoded);
+		return decoded;
+	}
+	savePasskeys(value: unknown): StoredPasskey[] {
+		this.requireEncryption();
+		const entries = normalizePasskeys(value);
+		this.write(
+			"passkeys",
+			entries.map((entry) => ({
+				...entry,
+				privateKey: `enc:${this.encryption.encryptString(entry.privateKey).toString("base64")}`,
 			})),
 		);
 		return entries;

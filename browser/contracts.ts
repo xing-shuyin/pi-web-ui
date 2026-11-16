@@ -135,6 +135,9 @@ export type BrowserShellAction =
 	| "passwords.remove"
 	/** 从 CSV 导出文件导入：宿主自己开原生选文件对话框，明文不进渲染层 */
 	| "passwords.import"
+	/** Passkey 保管库：私钥永不下发渲染层，面板只看得到投影（`PublicPasskey`） */
+	| "passkeys.list"
+	| "passkeys.remove"
 	/** TOTP 保管库：secret 永不出主进程，渲染层只要 6 位码（`totp.code`） */
 	| "totp.available"
 	| "totp.list"

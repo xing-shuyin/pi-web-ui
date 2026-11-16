@@ -14,10 +14,18 @@ import { fileURLToPath } from "node:url";
 import { randomUUID } from "node:crypto";
 import type { BrowserTab, BrowserDesignDocument, BrowserDesignKind, BrowserDesignStatus } from "../contracts.js";
 import { BrowserStorage } from "../storage/index.js";
-import { isWebUrl, internalPageName, internalPageUrl, normalizeBrowserUrl, pickTabFavicon } from "./urls.js";
+import { isWebUrl, internalPageName, internalPageUrl, normalizeBrowserUrl, pickTabFavicon, webOrigin } from "./urls.js";
 import { BrowserCustomization } from "./customize.js";
 import { DOCK_SCRIPT, SCROLLBAR_CSS } from "./dock.js";
 import { AUTOFILL_SCRIPT } from "./autofill.js";
+import {
+	passkeyFromCredential,
+	passkeysForHost,
+	toCdpCredential,
+	upsertPasskey,
+	type CdpCredential,
+	type StoredPasskey,
+} from "./passkeys.js";
 import {
 	buildCleanupCode,
 	buildInjectionCode,
@@ -72,6 +80,25 @@ interface TabScriptRun {
 	debuggerAttached: boolean;
 }
 const ISOLATED_SCRIPT_WORLD = 999;
+/**
+ * Passkey 的平台认证器配置（CDP `WebAuthn.addVirtualAuthenticator`）。
+ *
+ * - `transport: "internal"`：网站看到的是“本机平台认证器”（就是它让 `isUVPAA()` 变成 true）。
+ * - `hasResidentKey`：可发现凭据（不先输账号也能登，passkey 的标准形态）。
+ * - `hasUserVerification/isUserVerified`：用户验证由本地确认（见 `docs/architecture-browser.md`）。
+ */
+const PASSKEY_AUTHENTICATOR = {
+	protocol: "ctap2",
+	transport: "internal",
+	hasResidentKey: true,
+	hasUserVerification: true,
+	isUserVerified: true,
+	automaticPresenceSimulation: true,
+} as const;
+interface PasskeySession {
+	enabled: boolean;
+	authenticatorId: string | null;
+}
 const messageOf = (error: unknown): string => (error instanceof Error ? error.message : String(error));
 type Bounds = { x: number; y: number; width: number; height: number };
 
@@ -87,6 +114,10 @@ export class BrowserManager {
 	private activeTabId: string | null = null;
 	private readonly sessionScripts = new Map<string, PageScript>();
 	private readonly scriptRuns = new Map<string, TabScriptRun>();
+	/** 每个标签的 passkey 会话（CDP 虚拟认证器）；换文档不需要重建。 */
+	private readonly passkeySessions = new Map<string, PasskeySession>();
+	/** 这些 WebContents 的调试器是 passkey 挂上的：document-start 逻辑不能把它拆了。 */
+	private readonly passkeyDebuggable = new WeakSet<WebContents>();
 	private visible = true;
 	private bounds: Bounds = { x: 0, y: 0, width: 0, height: 0 };
 	private disposed = false;
@@ -157,6 +188,7 @@ export class BrowserManager {
 			debuggerAttached: false,
 		});
 		const wc = view.webContents;
+		this.installPasskeys(id, wc);
 		const update = () => {
 			if (this.disposed || this.tabs.get(id) !== record || wc.isDestroyed()) return;
 			state.url = wc.getURL() || state.url;
@@ -251,6 +283,8 @@ export class BrowserManager {
 				} catch {}
 			}
 			void this.applyPageScripts(id).catch(() => {});
+			// passkey：先确保本标签有平台认证器，再把属于这个站点的凭据装回去
+			if (isWebUrl(current)) void this.syncPasskeyCredentials(id, wc).catch(() => {});
 		});
 		wc.on("did-finish-load", () => {
 			update();
@@ -765,6 +799,11 @@ export class BrowserManager {
 			await this.removeCdpScript(dbg, identifier);
 		}
 		if (!wanted.length) {
+			// passkey 还要用同一个调试器（虚拟认证器绑在 CDP 会话上），不能因为它没脚本就拆掉
+			if (this.passkeyDebuggable.has(wc)) {
+				state.debuggerAttached = false;
+				return;
+			}
 			if (state.debuggerAttached && dbg.isAttached()) {
 				try {
 					dbg.detach();
@@ -829,6 +868,97 @@ export class BrowserManager {
 		}
 	}
 
+	/**
+	 * 给标签挂一个“平台认证器”（CDP 虚拟认证器）：网站看到的 `isUVPAA()` / `passkeyPlatformAuthenticator`
+	 * 就是它。Electron 自己不提供 Windows Hello 那层实现（见 docs/architecture-browser.md），
+	 * 所以 passkey 的生成/断言全在 Chromium 内部完成，私钥由我们加密保管。
+	 */
+	private installPasskeys(tabId: string, wc: WebContents): void {
+		const dbg = (wc as unknown as { debugger?: Electron.Debugger }).debugger;
+		if (!dbg || typeof dbg.sendCommand !== "function") return;
+		this.passkeySessions.set(tabId, { enabled: false, authenticatorId: null });
+		if (typeof dbg.on === "function")
+			dbg.on("message", (_event: Electron.Event, method: string, params: Record<string, unknown>) => {
+				this.handlePasskeyEvent(tabId, wc, method, params);
+			});
+	}
+
+	/** 确保本标签的虚拟认证器已就位（可能要在先 attach 调试器），返回它的 id。 */
+	private async ensurePasskeyAuthenticator(tabId: string, wc: WebContents): Promise<string | null> {
+		const session = this.passkeySessions.get(tabId);
+		const dbg = (wc as unknown as { debugger?: Electron.Debugger }).debugger;
+		if (!session || !dbg || typeof dbg.sendCommand !== "function" || wc.isDestroyed()) return null;
+		try {
+			if (!dbg.isAttached()) {
+				dbg.attach("1.3");
+				this.passkeyDebuggable.add(wc);
+			}
+			if (!session.enabled) {
+				await dbg.sendCommand("WebAuthn.enable", { enableUI: false });
+				session.enabled = true;
+			}
+			if (!session.authenticatorId) {
+				const added = (await dbg.sendCommand("WebAuthn.addVirtualAuthenticator", {
+					options: PASSKEY_AUTHENTICATOR,
+				})) as { authenticatorId?: string };
+				if (!added?.authenticatorId) return null;
+				session.authenticatorId = added.authenticatorId;
+			}
+			return session.authenticatorId;
+		} catch {
+			return null;
+		}
+	}
+
+	/** 进新页面时把属于这个 host 的凭据装进虚拟认证器（换站就换成那家的）。 */
+	private async syncPasskeyCredentials(tabId: string, wc: WebContents): Promise<void> {
+		const url = wc.getURL();
+		const origin = webOrigin(url);
+		if (!origin) return;
+		const authenticatorId = await this.ensurePasskeyAuthenticator(tabId, wc);
+		if (!authenticatorId) return;
+		const dbg = (wc as unknown as { debugger?: Electron.Debugger }).debugger;
+		if (!dbg || typeof dbg.sendCommand !== "function") return;
+		let entries: StoredPasskey[] = [];
+		try {
+			entries = passkeysForHost(this.storage.listPasskeys(), new URL(url).hostname);
+		} catch {
+			// safeStorage 不可用：没有可装的凭据，但藏读器仍可让网站自己注册（注册后也存不进）
+			entries = [];
+		}
+		// 先清空再装：导航可能换了站点，旧站点的凭据不该留在新页面的认证器里
+		try {
+			await dbg.sendCommand("WebAuthn.clearCredentials", { authenticatorId });
+		} catch {}
+		for (const entry of entries) {
+			try {
+				await dbg.sendCommand("WebAuthn.addCredential", { authenticatorId, credential: toCdpCredential(entry) });
+			} catch {}
+		}
+	}
+
+	/** CDP 事件：网站刚注册了一把新 passkey，或刚用已有的登录（signCount 会涨）。 */
+	private handlePasskeyEvent(tabId: string, wc: WebContents, method: string, params: Record<string, unknown>): void {
+		const session = this.passkeySessions.get(tabId);
+		if (!session?.authenticatorId || params?.authenticatorId !== session.authenticatorId) return;
+		if (method !== "WebAuthn.credentialAdded" && method !== "WebAuthn.credentialAsserted") return;
+		const credential = params?.credential as CdpCredential | undefined;
+		if (!credential?.credentialId || !wc || wc.isDestroyed()) return;
+		try {
+			const current = this.storage.listPasskeys();
+			if (method === "WebAuthn.credentialAdded") {
+				const entry = passkeyFromCredential(credential, webOrigin(wc.getURL()));
+				if (!entry) return;
+				this.storage.savePasskeys(upsertPasskey(current, entry));
+				return;
+			}
+			const index = current.findIndex((item) => item.credentialId === credential.credentialId);
+			if (index < 0) return;
+			current[index] = { ...current[index], signCount: credential.signCount };
+			this.storage.savePasskeys(current);
+		} catch {}
+	}
+
 	dispose(): void {
 		if (this.disposed) return;
 		for (const [tabId, state] of this.scriptRuns) {
@@ -841,6 +971,7 @@ export class BrowserManager {
 			}
 		}
 		this.scriptRuns.clear();
+		this.passkeySessions.clear();
 		this.sessionScripts.clear();
 		this.persist();
 		this.disposed = true;

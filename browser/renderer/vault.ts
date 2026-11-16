@@ -33,7 +33,7 @@ import {
 import type { BrowserState } from "../contracts.js";
 import { t, tf } from "./i18n.js";
 
-export type VaultTab = "passwords" | "totp";
+export type VaultTab = "passwords" | "totp" | "passkeys";
 
 /** 与主进程 `PublicTotpEntry` 对齐（没有 secret）。 */
 interface PublicTotpEntry {
@@ -57,6 +57,20 @@ interface CredentialSummary {
 	username: string;
 	createdAt: string;
 	hasPassword: boolean;
+}
+
+/** 与主进程 `passkeys.list` 的投影对齐（没有 privateKey）。 */
+interface PublicPasskeyEntry {
+	id: string;
+	rpId: string;
+	origin: string;
+	credentialId: string;
+	userHandle: string;
+	userName: string;
+	userDisplayName: string;
+	signCount: number;
+	label: string;
+	createdAt: string;
 }
 
 /** 与主进程 `passwords.import` 的回执对齐：只有条数，没有任何明文。 */
@@ -244,8 +258,17 @@ export async function vaultPanel(
 	/* ------------------------------- 状态 ------------------------------- */
 
 	let activeTab: VaultTab =
-		options.tab && (options.tab === "passwords" ? available : totpAvailable) ? options.tab : "passwords";
+		options.tab === "totp"
+			? "totp"
+			: options.tab === "passkeys" && available
+				? "passkeys"
+				: available
+					? "passwords"
+					: totpAvailable
+						? "totp"
+						: "passwords";
 	let credentials: CredentialSummary[] = [];
+	let passkeys: PublicPasskeyEntry[] = [];
 	let totpEntries: PublicTotpEntry[] = [];
 	let orderedTotp: PublicTotpEntry[] = [];
 	const codes = new Map<string, CodeState>();
@@ -256,12 +279,15 @@ export async function vaultPanel(
 	const secrets = new Map<string, HTMLButtonElement>();
 	let selectedPasswordId: string | undefined;
 	let selectedTotpId: string | undefined;
+	let selectedPasskeyId: string | undefined;
 	let editingPasswordId: string | undefined;
 	let revealTimer: ReturnType<typeof setTimeout> | undefined;
 
 	const selectedPassword = (): CredentialSummary | undefined =>
 		credentials.find((entry) => entry.id === selectedPasswordId);
 	const selectedTotp = (): PublicTotpEntry | undefined => orderedTotp.find((entry) => entry.id === selectedTotpId);
+	const selectedPasskey = (): PublicPasskeyEntry | undefined =>
+		passkeys.find((entry) => entry.id === selectedPasskeyId);
 	const selectedEntry = (): CredentialSummary | PublicTotpEntry | undefined =>
 		activeTab === "passwords" ? selectedPassword() : selectedTotp();
 
@@ -270,13 +296,17 @@ export async function vaultPanel(
 	const tabBar = element("div", "pb-vault-tabs");
 	const passwordTabButton = element("button", "pb-vault-tab", t("vaultTabPasswords"));
 	const totpTabButton = element("button", "pb-vault-tab", t("vaultTabTotp"));
+	const passkeyTabButton = element("button", "pb-vault-tab", t("vaultTabPasskeys"));
 	passwordTabButton.type = "button";
 	totpTabButton.type = "button";
+	passkeyTabButton.type = "button";
 	const passwordCount = element("span", "pb-vault-count");
 	const totpCount = element("span", "pb-vault-count");
+	const passkeyCount = element("span", "pb-vault-count");
 	passwordTabButton.append(passwordCount);
 	totpTabButton.append(totpCount);
-	tabBar.append(passwordTabButton, totpTabButton);
+	passkeyTabButton.append(passkeyCount);
+	tabBar.append(passwordTabButton, totpTabButton, passkeyTabButton);
 
 	const list = element("div", "pb-list pb-vault-list");
 	const exportArea = element("div", "pb-vault-export");
@@ -740,12 +770,41 @@ export async function vaultPanel(
 		removeTotpButton,
 	);
 
-	tools.append(passwordGroup, totpGroup);
+	const removePasskeyButton = toolButton(
+		trashToolIcon(),
+		t("removeCredential"),
+		() => {
+			const entry = selectedPasskey();
+			if (!entry) return;
+			const row = rows.get(entry.id);
+			if (!row) return;
+			const confirmation = element("div", "pb-confirm");
+			confirmation.append(
+				element("span", "", t("passkeyRemoveConfirm")),
+				button(t("yesDelete"), () => {
+					void (async () => {
+						passkeys = await call<PublicPasskeyEntry[]>("passkeys.remove", { id: entry.id });
+						render();
+						onChange();
+					})().catch(reportError);
+				}),
+				button(t("cancel"), render),
+			);
+			row.replaceChildren(confirmation);
+		},
+		{ end: true },
+	);
+	const passkeyGroup = element("div", "pb-vault-group");
+	passkeyGroup.append(removePasskeyButton);
+
+	tools.append(passwordGroup, passkeyGroup, totpGroup);
 
 	/** 没选中行 / 已在首尾时把动作图标置灰（置灰 = 点了没反应，不让用户猜）。 */
 	function syncTools(): void {
 		passwordGroup.hidden = activeTab !== "passwords";
+		passkeyGroup.hidden = activeTab !== "passkeys";
 		totpGroup.hidden = activeTab !== "totp";
+		removePasskeyButton.disabled = !selectedPasskey();
 		const hasPassword = !!selectedPassword();
 		for (const node of [fillPasswordButton, revealButton, editPasswordButton, removePasswordButton])
 			node.disabled = !hasPassword;
@@ -771,6 +830,15 @@ export async function vaultPanel(
 		syncTools();
 	}
 
+	function selectPasskey(id: string | undefined): void {
+		selectedPasskeyId = id;
+		for (const [entryId, row] of rows) {
+			if (!row.classList.contains("pb-vault-item-passkey")) continue;
+			row.classList.toggle("pb-vault-selected", entryId === id);
+		}
+		syncTools();
+	}
+
 	function selectTotp(id: string | undefined): void {
 		selectedTotpId = id;
 		for (const [entryId, row] of rows) {
@@ -782,13 +850,19 @@ export async function vaultPanel(
 
 	function selectByOffset(delta: number): void {
 		const order =
-			activeTab === "passwords" ? credentials.map((entry) => entry.id) : orderedTotp.map((entry) => entry.id);
+			activeTab === "passwords"
+				? credentials.map((entry) => entry.id)
+				: activeTab === "passkeys"
+					? passkeys.map((entry) => entry.id)
+					: orderedTotp.map((entry) => entry.id);
 		if (!order.length) return;
-		const current = activeTab === "passwords" ? selectedPasswordId : selectedTotpId;
+		const current =
+			activeTab === "passwords" ? selectedPasswordId : activeTab === "passkeys" ? selectedPasskeyId : selectedTotpId;
 		const index = order.indexOf(current ?? "");
 		const next =
 			index < 0 ? (delta > 0 ? 0 : order.length - 1) : Math.min(order.length - 1, Math.max(0, index + delta));
 		if (activeTab === "passwords") selectPassword(order[next]);
+		else if (activeTab === "passkeys") selectPasskey(order[next]);
 		else selectTotp(order[next]);
 		rows.get(order[next])?.scrollIntoView({ block: "nearest" });
 	}
@@ -868,12 +942,37 @@ export async function vaultPanel(
 		return row;
 	}
 
+	function passkeyRow(entry: PublicPasskeyEntry): HTMLElement {
+		const matched = !!entry.origin && entry.origin === pageOrigin;
+		const row = element("div", "pb-list-item pb-vault-item pb-vault-item-passkey");
+		const head = element("div", "pb-vault-head");
+		const title = element("div", "pb-vault-title");
+		title.append(element("strong", "", entry.label));
+		head.append(title);
+		if (matched) head.append(element("span", "pb-vault-site", t("totpCurrentSite")));
+		const main = element("span", "pb-vault-main pb-muted", entry.rpId);
+		const meta = element("div", "pb-vault-meta");
+		meta.append(
+			element("span", "pb-muted pb-vault-account", entry.userName || entry.userDisplayName || "—"),
+			element("span", "pb-vault-origin", new Date(entry.createdAt).toLocaleDateString()),
+		);
+		row.addEventListener("pointerdown", () => selectPasskey(entry.id));
+		row.tabIndex = 0;
+		row.addEventListener("focus", () => selectPasskey(entry.id));
+		row.append(head, main, meta);
+		rows.set(entry.id, row);
+		return row;
+	}
+
 	function renderTabs(): void {
 		passwordTabButton.classList.toggle("pb-vault-tab-on", activeTab === "passwords");
 		totpTabButton.classList.toggle("pb-vault-tab-on", activeTab === "totp");
+		passkeyTabButton.classList.toggle("pb-vault-tab-on", activeTab === "passkeys");
 		passwordCount.textContent = String(credentials.length);
 		totpCount.textContent = String(totpEntries.length);
+		passkeyCount.textContent = String(passkeys.length);
 		passwordTabButton.hidden = !available;
+		passkeyTabButton.hidden = !available;
 		totpTabButton.hidden = !totpAvailable;
 		tabBar.hidden = !available || !totpAvailable;
 	}
@@ -891,6 +990,7 @@ export async function vaultPanel(
 		totpForm.hidden = true;
 		const showingPasswords = activeTab === "passwords";
 		hint.hidden = false;
+		hint.textContent = activeTab === "passkeys" ? t("passkeyHelp") : t("vaultHintKeys");
 
 		if (showingPasswords) {
 			if (!credentials.length) {
@@ -906,6 +1006,19 @@ export async function vaultPanel(
 			selectPassword(
 				credentials.some((entry) => entry.id === selectedPasswordId) ? selectedPasswordId : credentials[0]?.id,
 			);
+			return;
+		}
+
+		if (activeTab === "passkeys") {
+			if (!passkeys.length) {
+				list.append(empty(t("passkeyEmpty")));
+				selectPasskey(undefined);
+				return;
+			}
+			const sorted = passkeys.slice().sort((a, b) => Number(b.origin === pageOrigin) - Number(a.origin === pageOrigin));
+			passkeys = sorted;
+			for (const entry of sorted) list.append(passkeyRow(entry));
+			selectPasskey(passkeys.some((entry) => entry.id === selectedPasskeyId) ? selectedPasskeyId : passkeys[0]?.id);
 			return;
 		}
 
@@ -932,11 +1045,17 @@ export async function vaultPanel(
 
 	passwordTabButton.addEventListener("click", () => switchTab("passwords"));
 	totpTabButton.addEventListener("click", () => switchTab("totp"));
+	passkeyTabButton.addEventListener("click", () => switchTab("passkeys"));
 
 	container.append(filePicker, tabBar, passwordForm, totpForm, list, exportArea, hint);
 
 	await Promise.all([
 		available ? loadCredentials() : Promise.resolve(),
+		available
+			? call<PublicPasskeyEntry[]>("passkeys.list").then((value) => {
+					passkeys = value;
+				})
+			: Promise.resolve(),
 		totpAvailable
 			? call<PublicTotpEntry[]>("totp.list").then((value) => {
 					totpEntries = value;
@@ -968,6 +1087,7 @@ export async function vaultPanel(
 		}
 		if (event.key === "Enter") {
 			event.preventDefault();
+			if (activeTab === "passkeys") return;
 			if (activeTab === "passwords") {
 				const entry = selectedPassword();
 				if (entry) void (event.shiftKey ? revealPassword(entry) : fillPassword(entry)).catch(reportError);
