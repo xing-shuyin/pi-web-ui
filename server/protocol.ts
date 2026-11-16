@@ -1713,6 +1713,7 @@ export type ClientMessage =
 	| { type: "dsh_preset_default"; preset: string }
 	| { type: "dsh_permission_set"; preset: string }
 	| { type: "dsh_permission_default"; preset: string }
+	| { type: "claude_permission_mode"; mode: string }
 	| { type: "dsh_patches_rescan" }
 	| { type: "dsh_patch_install"; spec: string; id?: string }
 	| { type: "dsh_patch_toggle"; name: string; enabled: boolean }
@@ -3714,6 +3715,7 @@ export type ServerMessage =
 			defaultPreset: string;
 	  }
 	| { type: "dsh_permission"; options: DshPermissionOption[]; defaultPreset: string }
+	| { type: "claude_permission"; modes: string[]; current: string }
 	| {
 			type: "question_pending";
 			owner?: string;

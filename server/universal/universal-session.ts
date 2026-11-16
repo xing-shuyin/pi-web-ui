@@ -211,6 +211,11 @@ export class UniversalSession implements DispatchSession {
 		this.store = opts.store;
 		this.stateStore = opts.stateStore;
 		this.driver = opts.driver;
+		// Restore the UI-selected permission mode (env stays the fallback when unset).
+		try {
+			const savedMode = this.stateStore?.getSettings(this.clientId)?.claudePermissionMode;
+			if (savedMode) this.driver.setPermissionMode?.(savedMode);
+		} catch {}
 		this.driverFactory = opts.driverFactory;
 		this.pluginCommandsProvider = opts.pluginCommandsProvider;
 		this.onQuit = opts.onQuit;
@@ -602,6 +607,7 @@ export class UniversalSession implements DispatchSession {
 
 	attachSink(send: (msg: ServerMessage) => void): void {
 		this.sinks.add(send);
+		this.pushClaudePermission();
 		this.pushSettings();
 		void this.pushSlashCommands();
 		const defModel = this.stateStore?.getDefaultModel(this.engine);
@@ -1125,6 +1131,29 @@ export class UniversalSession implements DispatchSession {
 			this.flushSnapshot(true);
 			void this.prompt(next.text, next.attachments);
 		}
+	}
+
+	/** UI setting: Claude Code permission mode (env stays the fallback). */
+	async setClaudePermissionMode(mode: string): Promise<void> {
+		const options = this.driver.permissionModeOptions?.() ?? [];
+		if (options.length === 0) return;
+		if (!options.includes(mode)) {
+			this.emitNotice(
+				"warning",
+				`未知权限模式「${mode}」，默认未改`,
+				`Unknown permission mode "${mode}"; setting unchanged`,
+			);
+			return;
+		}
+		this.driver.setPermissionMode?.(mode);
+		await this.stateStore?.saveSettings?.(this.clientId, { claudePermissionMode: mode });
+		this.pushClaudePermission();
+	}
+
+	private pushClaudePermission(): void {
+		const options = this.driver.permissionModeOptions?.();
+		if (!options || options.length === 0) return;
+		this.send({ type: "claude_permission", modes: options, current: this.driver.currentPermissionMode?.() ?? "" });
 	}
 
 	/** Approval reply routed here from dispatch (`tool_approval_response`). */

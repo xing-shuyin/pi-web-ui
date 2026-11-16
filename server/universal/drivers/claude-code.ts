@@ -32,8 +32,23 @@ const CLAUDE_PERMISSION_MODES = ["acceptEdits", "auto", "manual", "dontAsk", "pl
  * - PI_WEB_CLAUDE_PERMISSION_MODE   acceptEdits (default) | auto | manual | dontAsk | plan | bypassPermissions
  * - PI_WEB_CLAUDE_PERMISSION_PROMPTS host (default) | none  ("none" auto-denies anything that would prompt)
  */
+let permissionModeOverride: string | null = null;
+
+/** Set by the UI setting (process-wide, which matches the single global setting). */
+export function setClaudePermissionMode(mode: string | null): void {
+	permissionModeOverride = mode;
+}
+
+export const CLAUDE_PERMISSION_MODE_OPTIONS = [...CLAUDE_PERMISSION_MODES];
+
+/** Current effective mode (UI override > env > default). */
+export function currentClaudePermissionMode(): string {
+	const raw = (permissionModeOverride ?? process.env.PI_WEB_CLAUDE_PERMISSION_MODE ?? "acceptEdits").trim();
+	return (CLAUDE_PERMISSION_MODES as readonly string[]).includes(raw) ? raw : "acceptEdits";
+}
+
 function buildPermissionArgs(): string[] {
-	const rawMode = (process.env.PI_WEB_CLAUDE_PERMISSION_MODE ?? "acceptEdits").trim();
+	const rawMode = currentClaudePermissionMode();
 	const mode = (CLAUDE_PERMISSION_MODES as readonly string[]).includes(rawMode) ? rawMode : "acceptEdits";
 	const prompts = (process.env.PI_WEB_CLAUDE_PERMISSION_PROMPTS ?? "host").trim();
 	const args = ["--permission-mode", mode];
@@ -155,6 +170,18 @@ export class ClaudeCodeDriver extends BaseAgentDriver {
 		this.currentModel = normalizeClaudeModelId(opts?.defaultModel ?? "default");
 		this.agentDir = opts?.agentDir || process.env.PI_CODING_AGENT_DIR || join(homedir(), ".pi", "agent");
 		this.dataDir = opts?.dataDir;
+	}
+
+	permissionModeOptions(): string[] {
+		return CLAUDE_PERMISSION_MODE_OPTIONS;
+	}
+
+	currentPermissionMode(): string {
+		return currentClaudePermissionMode();
+	}
+
+	setPermissionMode(mode: string): void {
+		setClaudePermissionMode(mode);
 	}
 
 	async createSession(): Promise<string> {

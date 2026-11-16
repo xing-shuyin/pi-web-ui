@@ -136,6 +136,13 @@ export abstract class BaseAgentDriver {
 		return [];
 	}
 
+	/** Permission mode surfaced in the UI (Claude Code only); undefined = driver has no such setting. */
+	permissionModeOptions?(): string[];
+
+	currentPermissionMode?(): string;
+
+	setPermissionMode?(_mode: string): void;
+
 	/** Answer an engine permission request. Drivers without permission plumbing return false. */
 	async respondApproval(
 		_requestId: string,
