@@ -92,6 +92,15 @@ export function buildWhenContext(slot: ContextMenuSlot, target: ContextMenuReque
 		return { "file.isDir": isDir, "file.isFile": kind === "file" };
 	}
 	if (slot === "contextmenu.session") return { "session.isRunning": kind === "running" };
+	if (slot === "contextmenu.search") {
+		return {
+			"search.isSession": kind === "session",
+			"search.isProject": kind === "project",
+			"search.isFile": kind === "file",
+			"search.isFolder": kind === "folder",
+			"search.isPlugin": kind === "plugin",
+		};
+	}
 	if (slot === "contextmenu.message") {
 		let hasSelection = false;
 		try {

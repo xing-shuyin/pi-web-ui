@@ -378,7 +378,7 @@ export const DEFAULT_UI_LAYOUT: UiLayoutPrefs = Object.freeze({
 		"office:__view": "end",
 	} as Record<string, UiAlign>,
 	topbarText: false,
-	sideDockFloat: true,
+	sideDockFloat: false,
 	slots: {
 		"host:chat": "topbar.primary",
 		"host:conn": "bottombar",
@@ -718,7 +718,7 @@ export const DEFAULT_DARK_MINIMAL_SETTINGS: ClientSettings = Object.freeze({
 	toolImagesEnabled: true,
 	keepRecentMessages: 15,
 	reversePagination: false,
-	showForkedParentSessions: false,
+	showForkedParentSessions: true,
 	retainFinishedConversations: false,
 	openRecentSessionOnProjectSwitch: true,
 	skillsFullText: [],
@@ -1443,7 +1443,7 @@ export class ClientStateStore {
 			toolImagesEnabled: stored?.toolImagesEnabled ?? true,
 			keepRecentMessages: normalizeKeepRecentMessages(stored?.keepRecentMessages),
 			reversePagination: stored?.reversePagination ?? false,
-			showForkedParentSessions: stored?.showForkedParentSessions ?? false,
+			showForkedParentSessions: stored?.showForkedParentSessions ?? true,
 			retainFinishedConversations: stored?.retainFinishedConversations ?? false,
 			openRecentSessionOnProjectSwitch:
 				stored?.openRecentSessionOnProjectSwitch ?? DEFAULT_CLIENT_SETTINGS.openRecentSessionOnProjectSwitch,
@@ -1555,7 +1555,7 @@ export class ClientStateStore {
 				settings.keepRecentMessages ?? cur.keepRecentMessages ?? DEFAULT_KEEP_RECENT_MESSAGES,
 			),
 			reversePagination: settings.reversePagination ?? cur.reversePagination ?? false,
-			showForkedParentSessions: settings.showForkedParentSessions ?? cur.showForkedParentSessions ?? false,
+			showForkedParentSessions: settings.showForkedParentSessions ?? cur.showForkedParentSessions ?? true,
 			retainFinishedConversations: settings.retainFinishedConversations ?? cur.retainFinishedConversations ?? false,
 			openRecentSessionOnProjectSwitch:
 				settings.openRecentSessionOnProjectSwitch ?? cur.openRecentSessionOnProjectSwitch ?? true,

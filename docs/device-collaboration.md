@@ -5,6 +5,7 @@
 > 服务端架构与部署链路见 [`device-center.md`](device-center.md)（Hub 与本机连接器、绑定与配对、部署）
 > 与 [`device-center-deployment.md`](device-center-deployment.md)；远程桌面实现细节见 [`device-desktop.md`](device-desktop.md)；
 > 分块文件同步细节见 [`device-file-sync.md`](device-file-sync.md)。
+> 与单个 Bot 的私聊（`kind: "direct"` 的房间）与 Bot 独立记忆见 [`agent-bot-design.md`](agent-bot-design.md)。
 > **本文只收录「改代码时必须遵守」的硬约束**（原 `AGENTS.md`「设备中心与跨设备协作」整段迁入）。
 
 ## 1. 设备中心入口与本机 Hub
@@ -65,7 +66,7 @@ Hub 在首次发送发布 RPC 前，先通过现有 WAL 事务持久保存不可
 
 ## 4. 并发、调度与进度推送
 
-同设备默认 4 个执行 + 32 个等待，可配置并发 1–16、等待 0–128，按群公平调度；房间公平历史持久化到设备数据目录 `task-scheduler-state.json`（防抖原子写入、重启恢复、损坏按中性启动）；按 Bot 与真实路径重叠工作区串行，独立工作区可并发；同一会话继续消息在前轮终态后投递，不打断工具。群进度经有界、按 attempt 校验的 SSE 推送，断线回退轮询并重同步；原生问卷与一次性工具审批使用任务绑定交互桥。请求/回复绑定原始会话与 requestId，结果只唤醒原发起者，自动继续共享任务链预算，人工新输入可开新链。忙碌或停止未确认时禁止换根，旧文件包不得落入新根。
+同设备默认 4 个执行 + 32 个等待，可配置并发 1–16、等待 0–128，按群公平调度；房间公平历史持久化到设备数据目录 `task-scheduler-state.json`（防抖原子写入、重启恢复、损坏按中性启动）；按 Bot 与真实路径重叠工作区串行，独立工作区可并发；同一会话继续消息在前轮终态后投递，不打断工具。群进度经有界、按 attempt 校验的 SSE 推送，断线回退轮询并重同步；原生问卷与一次性工具审批使用任务绑定交互桥。请求/回复绑定原始会话与 requestId，结果只唤醒原发起者，自动继续共享任务链预算，人工新输入可开新链。忙碌或停止未确认时禁止换根，旧文件包不得落入新根。Hub 侧「哪个任务先下发」与设备侧「本地哪些任务真的并发跑」是两层职责，见本文 §12「调度分层（Hub 派发 vs 设备执行）」。
 
 ## 5. 文件同步
 
@@ -98,6 +99,7 @@ v0.116.0 的旧 `task-recovery-outbox.json` 在完成时未保存 leaseToken/gen
 - **入站 Webhook**：每个群组可创建多个入站端点，生成独立的安全 Token。外部系统（如 CI/CD、报警、脚本）向 `/api/rooms/:id/webhooks/incoming/:webhookId?token=...` 发送 HTTP POST JSON 请求（支持 `text`、`senderName`、`targetBotIds`、`replyToMessageId`）。若开启 `allowBotTrigger`（默认），外部消息按群规则自动分发给显式提及或主 Bot（`primaryBotId`），唤醒 Bot 执行任务并在群内协作。
 - **出站 Webhook**：群组可配置多个外部通知地址，订阅群事件（`message`、`task_completed`、`task_failed`、`delivery`）。事件产生时异步向外部发送 JSON 载荷；支持配置 `secret`，通过 `X-Pi-Signature: sha256=...` 附带 HMAC-SHA256 签名校验。出站请求带 5 秒超时保护与异常隔离，不阻断主流程。
 - **Hub 中转支持**：入站支持切换或配置公共 Hub 中转地址（`hubRelayBaseUrl`），外部请求由公网 Hub 集中接收并调度给内网设备上的 Bot；出站 Webhook 支持可选开关 `relayViaHub`，开启时由 Hub 服务器作为出口代理代发，关闭时供局域网内网直连模式使用。
+- **入站鉴权只认 webhook token**：取值与比对单源在 `server/device-center/hub-webhooks.ts`（`incomingWebhookToken` 支持 query `token` / `Authorization: Bearer` / `X-Webhook-Token` / body `token`，`secureCompareTokens` 定长比较），主 Web app 与 Hub 共用 `isSelfAuthenticatedWebhook` 判定。主 app 的登录闸门只放行这一条精确路径（`POST /api/rooms/:id/webhooks/incoming/:webhookId`）：外部平台不可能持有本机口令，把它归进账号登录会让公网回调恒 401；但也**只能**用这个判定，禁止放宽到整个 `/api/rooms`。守卫：`tests/unit/incoming-webhook-auth.test.ts`。
 
 ## 11. 群组独立 AI Router 与外部工单
 
@@ -108,3 +110,16 @@ v0.116.0 的旧 `task-recovery-outbox.json` 在完成时未保存 leaseToken/gen
 内置渠道模块 Superagent 0.1.3 将 GitHub / 飞书事件接入宿主工单服务并回写原线程。每个外部事件独立校验授权，auto 工单不授权未通过作者白名单的 followup；人工授权仅绑定当前最新 `authorizedEventId`。初始工单描述保留，后续事件追加为证据，关闭 / 重开 / 合并事件不自动等于业务完成。飞书支持明文或 AES 加密的签名 text 回调，投递不确定超过 45 分钟需人工核对；渠道 mock 测试不代表真实渠道已联通。
 
 统一入口是 **设备连接与跨平台协作**：设备与连接、群组与工单、外部渠道。群组列表内可直接管理 AI Router 和工单；渠道界面内嵌宿主模块，不再增加独立顶栏按钮，也不显示在普通插件列表、市场或插件开关中。完整职责、使用步骤、手动恢复、公开 webhook 边界、分页 / 上下文预算和恢复语义见 [群组独立 AI Router 与 Superagent](group-orchestration.md)；渠道配置字段见 [Superagent README](../plugins/superagent/README.md)。
+
+## 12. 调度分层（Hub 派发 vs 设备执行）
+
+「同一 Bot 不能并发」是一条共享语义，但两层负责不同的事，**不是两套重复队列，也不应合并**：
+
+| 层         | 模块                                                                | 负责                               | 语义                                                                                                                                                           |
+| ---------- | ------------------------------------------------------------------- | ---------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Hub 派发层 | `server/device-center/hub-task-queue.ts`（纯排序在 `bot-queue.ts`） | 决定哪个 `queued` 任务先下发到设备 | 每 Bot 一个执行位；优先级 0 人私聊 / 1 群内人消息 / 2 自动触发；同优先级 FIFO；`BOT_QUEUE_MAX_PENDING=12`；中位数 ETA；只唤醒 `blockReason: "bot_busy"` 的任务 |
+| 设备执行层 | `server/device-center/task-scheduler.ts`（`runtime.ts` 持有）       | 决定本地哪些任务真的并发跑         | 4 并发 / 32 等待、工作区重叠锁、群公平、饥饿提升、停止未确认隔离                                                                                               |
+
+`bot-queue.ts` 的 `sameBotConflict` 是两层共用的冲突判定单源：`task-scheduler.ts` 的 `checkConflict` 与 `runtime.ts` 的 `conflicts` 都复用它；`activeTaskForBot` / `rankBotQueue` 只服务 Hub 派发层。Hub 的 `store.subscribe` 触发 `createBotQueueDispatcher().drain()`，设备侧 `DeviceTaskScheduler.drain()` 是另一条独立路径，二者不互相调用。
+
+守卫：`tests/unit/hub-task-queue.test.ts`（派发仲裁）、`tests/unit/bot-queue.test.ts`（纯排序与 ETA）、`tests/unit/device-center-resource-locks.test.ts`（设备侧锁）。

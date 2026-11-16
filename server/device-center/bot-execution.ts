@@ -14,6 +14,12 @@ import { checkGroupTaskPlanGuard, isGroupToolForbiddenInPlanCatalog } from "./gr
 export interface BotExecutionCapability {
 	readonly bot: Readonly<LocalBot>;
 	readonly instructions: string;
+	/** 记忆目录（私产，跨项目）。缺失 = 本次执行不开放记忆工具。 */
+	readonly memoryRoot?: string;
+	/** 启动时装载的记忆块（常驻 + 目录 + 预取），由 runtime 异步预读后带入。 */
+	readonly memoryBlock?: string;
+	/** 直聊（一对一）执行：不是群上下文，不承担群内广播/黑板/主播协调职责。 */
+	readonly direct: boolean;
 	readonly groupContext?: Readonly<GroupTaskContext>;
 	readonly authorizedResumePath?: string;
 	readonly planOnly?: boolean;
@@ -81,6 +87,8 @@ export function registerBotExecution(
 		deviceId?: string;
 		taskId?: string;
 		attemptId?: string;
+		memoryRoot?: string;
+		memoryBlock?: string;
 	},
 ): {
 	clientId: string;
@@ -160,8 +168,14 @@ export function registerBotExecution(
 		: "";
 	const capability: BotExecutionCapability = {
 		bot: snapshot,
+		memoryRoot: context?.memoryRoot,
+		memoryBlock: context?.memoryBlock,
+		direct: context?.groupContext?.roomKind === "direct",
 		instructions:
-			getBotExecutionInstructions(context?.primary === true) +
+			getBotExecutionInstructions(
+				context?.primary === true && context?.groupContext?.roomKind !== "direct",
+				context?.groupContext?.roomKind === "direct",
+			) +
 			(context?.planOnly
 				? "\n\n[PLAN MODE HARD ENFORCEMENT]\nThis task is strictly PLAN ONLY. You are prohibited from mutating files, creating files, running state-changing terminal commands, or dispatching tasks. You must only read, inspect, and draft an executable plan via plan_update. Provide 1–32 steps with unique IDs, nonempty titles (max 200 characters), explicit pending/in_progress/done/failed status, and optional descriptions (max 1000 characters)."
 				: "") +

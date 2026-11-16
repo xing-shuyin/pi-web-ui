@@ -163,7 +163,20 @@ export async function openDeviceAccess(
 	const shell = (window as unknown as { piDesktop?: { openHub?: (url: string) => Promise<boolean> } }).piDesktop;
 	const tab = shell?.openHub ? null : window.open("about:blank", "_blank");
 	if (!shell?.openHub && !tab) throw new Error(zh ? "请允许弹出窗口后重试。" : "Allow popups and try again.");
-	if (tab) tab.opener = null;
+	if (tab) {
+		// 取票要一次网络往返：先写一张「正在打开」的静态页，用户不会对着空白标签页发呆；
+		// 取票失败时这个标签页会被关掉，不会留下一张白板。
+		try {
+			tab.document.open();
+			tab.document.write(
+				`<!doctype html><meta charset="utf-8"><title>${zh ? "正在打开设备…" : "Opening device…"}</title>` +
+					'<style>html,body{height:100%;margin:0}body{display:grid;place-items:center;background:#0d0e12;color:#9aa1b4;font:14px/1.6 -apple-system,"PingFang SC","Microsoft YaHei",sans-serif}</style>' +
+					`<body>${zh ? "正在打开设备…" : "Opening device…"}</body>`,
+			);
+			tab.document.close();
+		} catch {}
+		tab.opener = null;
+	}
 	try {
 		const target = await requestDeviceAccessUrl(id, hubUrl, desktop, zh, false, undefined, presentation?.local);
 		const url = new URL(target.url);

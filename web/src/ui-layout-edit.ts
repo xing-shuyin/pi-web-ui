@@ -19,11 +19,14 @@ export const ICON_EDIT_TRAY = "__tray";
 
 export const ICON_EDIT_ALIGNS: readonly UiAlign[] = ["start", "center", "end"];
 
-export function sideAlignLabel(
-	t: (key: "uiLayoutAlignTop" | "uiLayoutAlignMiddle" | "uiLayoutAlignBottom") => string,
-	align: UiAlign,
-): string {
-	return t(align === "start" ? "uiLayoutAlignTop" : align === "end" ? "uiLayoutAlignBottom" : "uiLayoutAlignMiddle");
+export type AlignLabelKey =
+	"uiLayoutAlignTop" | "uiLayoutAlignMiddle" | "uiLayoutAlignBottom" | "uiLayoutAlignLeft" | "uiLayoutAlignRight";
+
+/** 分段文案：竖向栏「靠上/居中/靠下」，横向栏「靠左/居中/靠右」——界面里不再出现 start/center/end。 */
+export function alignLabel(t: (key: AlignLabelKey) => string, align: UiAlign, vertical: boolean): string {
+	if (align === "center") return t("uiLayoutAlignMiddle");
+	if (vertical) return t(align === "start" ? "uiLayoutAlignTop" : "uiLayoutAlignBottom");
+	return t(align === "start" ? "uiLayoutAlignLeft" : "uiLayoutAlignRight");
 }
 
 interface IconDrop {

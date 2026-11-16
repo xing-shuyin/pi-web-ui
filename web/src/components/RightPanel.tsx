@@ -1,4 +1,4 @@
-import { Fragment, memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Fragment, memo, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import {
 	FiCheck,
 	FiChevronDown,
@@ -58,6 +58,7 @@ interface FileMenuCtx {
 }
 
 const FILES_TAB_ID = "files";
+const SCM_TAB_ID = "scm";
 
 const EMPTY_PLUGINS: UiPluginInfo[] = [];
 const NOOP_SEND = (): void => {};
@@ -177,6 +178,10 @@ interface RightPanelProps {
 
 	uiRightPanelTabs?: UiSlotEntry[];
 	uiContextFile?: UiSlotEntry[];
+	/** 源码管理面板：作为右栏的一个标签渲染（App 侧懒加载 ScmPanel 后传进来）。 */
+	scmTab?: ReactNode;
+	/** 当前选中的标签 id（files / scm / 插件 id），用来把顶栏 Git 高亮对上。 */
+	onActiveTabChange?: (id: string) => void;
 	quickAskReferenceMenus?: boolean;
 	plugins?: UiPluginInfo[];
 	pluginsEpoch?: number;
@@ -197,6 +202,8 @@ export const RightPanel = memo(function RightPanel({
 	onToggleCollapse,
 	uiRightPanelTabs,
 	uiContextFile,
+	scmTab,
+	onActiveTabChange,
 	quickAskReferenceMenus = true,
 	plugins,
 	pluginsEpoch,
@@ -1020,11 +1027,13 @@ export const RightPanel = memo(function RightPanel({
 	}
 
 	const filesTabHidden = (uiRightPanelTabs ?? []).some((e) => e.id === "host:right-files" && e.hidden);
+	const scmTabHidden = (uiRightPanelTabs ?? []).some((e) => e.id === "host:right-scm" && e.hidden);
 	const orderTabs = (tabs: SlotTab[]): SlotTab[] => {
 		const visible = (uiRightPanelTabs ?? []).filter((e) => !e.hidden);
 		if (visible.length === 0) return tabs;
 		const rank = new Map(visible.map((e, i) => [e.id, i] as const));
-		const key = (id: string) => rank.get(id === FILES_TAB_ID ? "host:right-files" : id) ?? 1e9;
+		const hostId: Record<string, string> = { [FILES_TAB_ID]: "host:right-files", [SCM_TAB_ID]: "host:right-scm" };
+		const key = (id: string) => rank.get(hostId[id] ?? id) ?? 1e9;
 		return [...tabs].sort((a, b) => key(a.id) - key(b.id));
 	};
 
@@ -1049,6 +1058,7 @@ export const RightPanel = memo(function RightPanel({
 					storageKey="rightpanel"
 					epoch={pluginsEpoch ?? 0}
 					send={send ?? NOOP_SEND}
+					onActiveChange={onActiveTabChange}
 					tabs={orderTabs([
 						...(filesTabHidden
 							? []
@@ -1583,6 +1593,7 @@ export const RightPanel = memo(function RightPanel({
 										),
 									},
 								]),
+						...(scmTab && !scmTabHidden ? [{ id: SCM_TAB_ID, label: t("scmTitle"), element: scmTab }] : []),
 						...pluginTabs,
 					])}
 				/>

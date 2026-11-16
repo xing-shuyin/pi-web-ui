@@ -35,6 +35,18 @@ export const RELAY_LIMITS = {
 	devices: 128,
 	sessions: 2048,
 };
+/** The hub owns the browser P2P session lifetime; the device's grant is only an upper bound. */
+const BROWSER_SESSION_MAX = 30 * 60_000;
+/** Devices report their own clock, so a grant needs bounded skew before it counts as dead. */
+const BROWSER_SESSION_SKEW = 60_000;
+/**
+ * Devices answer with the expiry of their own LAN grant, computed on the device clock, while the
+ * grant TTL equals the hub cap. Any positive clock drift therefore lands just past `now + cap`;
+ * clamping keeps such a healthy direct connection instead of failing it back to the hub relay.
+ */
+export function browserSessionExpiry(deviceExpiresAt: number, now = Date.now()) {
+	return Math.min(deviceExpiresAt, now + BROWSER_SESSION_MAX);
+}
 export type RelayFrame = { type: string; id?: string; [key: string]: unknown };
 export function loopback(host: string) {
 	return host === "localhost" || host.endsWith(".localhost") || host === "127.0.0.1" || host === "[::1]";
@@ -1067,10 +1079,12 @@ export function createDeviceRelay(options: DeviceRelayOptions) {
 					typeof answer.key !== "string" ||
 					!/^[a-f0-9]{64}$/.test(answer.key) ||
 					!Number.isSafeInteger(answer.expiresAt) ||
-					answer.expiresAt <= Date.now() ||
-					answer.expiresAt > Date.now() + 30 * 60_000
+					answer.expiresAt <= Date.now() - BROWSER_SESSION_SKEW
 				)
 					throw new Error("Browser P2P unavailable");
+				// A device whose clock runs behind the hub would report an already-dead grant; tolerate
+				// bounded skew so clock differences alone never decide the outcome, then clamp to the cap.
+				const sessionExpiresAt = browserSessionExpiry(answer.expiresAt);
 				if (!valid()) {
 					void entry.rpc
 						.call("device_browser_p2p", { op: "close", session: answer.key }, { signal: AbortSignal.timeout(3000) })
@@ -1083,7 +1097,7 @@ export function createDeviceRelay(options: DeviceRelayOptions) {
 						version: 1,
 						signal: { version: 1, sdp: answer.signal.sdp },
 						key: answer.key,
-						expiresAt: answer.expiresAt,
+						expiresAt: sessionExpiresAt,
 					}),
 				);
 			} catch {

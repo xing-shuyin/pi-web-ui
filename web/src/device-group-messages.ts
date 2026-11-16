@@ -67,6 +67,8 @@ export type GroupMessage = {
 	taskIds?: string[];
 	targetBotIds?: string[];
 	replyToMessageId?: string;
+	/** 从私聊投递过来的消息：保留来源，渲染时标注"来自与 X 的私聊"。 */
+	sharedFrom?: { mode: "as_bot" | "as_forward"; sourceRoomId: string; botId: string; messageIds: string[] };
 };
 export type GroupTask = {
 	progress?: import("../../server/protocol").DeviceTaskProgress;
@@ -78,6 +80,10 @@ export type GroupTask = {
 	text: string;
 	report?: string;
 	status: "queued" | "waiting" | "running" | "completed" | "failed" | "interrupted";
+	/** 排队原因（`bot_busy` = 同 Bot 已有任务在跑；`dependency` = 上一轮还没结束）。 */
+	blockReason?: string;
+	blockReasonDetail?: string;
+	queuedReason?: string;
 	dependsOnTaskId?: string;
 	createdAt: number;
 	botRevision?: number;
@@ -96,6 +102,8 @@ export type GroupDetail = {
 	room: {
 		id: string;
 		name: string;
+		/** `direct` = 与单个 Bot 的私聊房间（无成员/黑板/路由/画布）；缺省为群组。 */
+		kind?: "group" | "direct";
 		botIds: string[];
 		primaryBotId?: string;
 		canvasBinding?: { deviceId: string; graphId: string; cwd: string; title: string };
@@ -230,6 +238,13 @@ export function groupConversationState(
 		const isBot = message.sender.type === "bot";
 		const rawText = message.text;
 		let text = isBot ? formatDeviceFailureReport(rawText, zh) : formatGroupDisplayText(rawText);
+		if (message.sharedFrom) {
+			const botName = bots.get(message.sharedFrom.botId)?.name ?? message.sharedFrom.botId;
+			const label = zh
+				? `🔗 来自与 ${botName} 的私聊（${message.sharedFrom.mode === "as_bot" ? "Bot 发言" : "人工转发"}）`
+				: `🔗 Shared from a private chat with ${botName} (${message.sharedFrom.mode === "as_bot" ? "as Bot" : "forwarded"})`;
+			text = `${label}\n\n${text}`;
+		}
 		const parent = message.replyToMessageId
 			? detail?.messages.find((entry) => entry.id === message.replyToMessageId)
 			: undefined;

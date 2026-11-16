@@ -1,0 +1,2053 @@
+<!doctype html>
+<html lang="zh-CN">
+	<head>
+		<meta charset="UTF-8" />
+		<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+		<title>系统提示词页 · 精简方案 A/B/C — pi-web-ui</title>
+		<style>
+			:root {
+				--bg: #0a0c10;
+				--panel: #11141b;
+				--panel-2: #161a23;
+				--panel-3: #1b2029;
+				--line: rgba(255, 255, 255, 0.07);
+				--line-2: rgba(255, 255, 255, 0.12);
+				--text: #e9ecf3;
+				--muted: #98a1b3;
+				--faint: #6d7688;
+				--accent: #34d399;
+				--accent-soft: rgba(52, 211, 153, 0.13);
+				--accent-line: rgba(52, 211, 153, 0.38);
+				--font: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Hiragino Sans GB",
+					"Microsoft YaHei", "Noto Sans JP", Roboto, sans-serif;
+				--mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+			}
+			* {
+				box-sizing: border-box;
+				margin: 0;
+				padding: 0;
+			}
+			body {
+				background: radial-gradient(1200px 600px at 50% -10%, #12161f 0%, var(--bg) 55%);
+				color: var(--text);
+				font-family: var(--font);
+				font-size: 14px;
+				line-height: 1.5;
+				-webkit-font-smoothing: antialiased;
+				padding: 34px 28px 90px;
+			}
+			.wrap {
+				max-width: 1240px;
+				margin: 0 auto;
+			}
+
+			/* ---------- 展示页头部 ---------- */
+			.show-head {
+				display: flex;
+				flex-direction: column;
+				gap: 10px;
+				padding-bottom: 22px;
+				border-bottom: 1px solid var(--line);
+				margin-bottom: 14px;
+			}
+			.show-head h1 {
+				font-size: 22px;
+				font-weight: 650;
+				letter-spacing: -0.015em;
+			}
+			.show-head p {
+				color: var(--muted);
+				font-size: 13px;
+				max-width: 800px;
+			}
+			.show-head .tag-list {
+				display: flex;
+				flex-wrap: wrap;
+				gap: 8px;
+				margin-top: 4px;
+			}
+			.tag {
+				font-size: 11.5px;
+				color: var(--muted);
+				border: 1px solid var(--line-2);
+				border-radius: 999px;
+				padding: 3px 10px;
+				background: rgba(255, 255, 255, 0.02);
+			}
+			.topbar {
+				position: sticky;
+				top: 0;
+				z-index: 20;
+				display: flex;
+				align-items: center;
+				gap: 8px;
+				padding: 10px 0;
+				margin-bottom: 18px;
+				background: linear-gradient(to bottom, rgba(10, 12, 16, 0.97) 72%, rgba(10, 12, 16, 0));
+				backdrop-filter: blur(6px);
+			}
+			.tabs {
+				display: flex;
+				gap: 6px;
+				flex-wrap: wrap;
+				min-width: 0;
+			}
+			.tabs button,
+			.langs button {
+				font: inherit;
+				font-size: 13px;
+				color: var(--muted);
+				background: transparent;
+				border: 1px solid transparent;
+				border-radius: 9px;
+				padding: 7px 13px;
+				cursor: pointer;
+				transition: all 0.16s ease;
+				white-space: nowrap;
+			}
+			.tabs button:hover,
+			.langs button:hover {
+				color: var(--text);
+				background: rgba(255, 255, 255, 0.04);
+			}
+			.tabs button[aria-selected="true"] {
+				color: var(--text);
+				background: var(--panel-2);
+				border-color: var(--line-2);
+			}
+			.tabs button b {
+				font-weight: 600;
+				color: var(--accent);
+				margin-right: 6px;
+			}
+			.langs {
+				margin-left: auto;
+				display: flex;
+				gap: 2px;
+				padding: 2px;
+				border: 1px solid var(--line);
+				border-radius: 11px;
+				background: rgba(255, 255, 255, 0.02);
+			}
+			.langs button {
+				font-size: 12px;
+				padding: 5px 11px;
+				border-radius: 8px;
+			}
+			.langs button[aria-pressed="true"] {
+				color: var(--text);
+				background: var(--panel-3);
+				box-shadow: 0 0 0 1px var(--line-2) inset;
+			}
+
+			/* ---------- 方案容器 ---------- */
+			.scheme {
+				--accent: #34d399;
+				--accent-soft: rgba(52, 211, 153, 0.13);
+				--accent-line: rgba(52, 211, 153, 0.38);
+				display: none;
+				flex-direction: column;
+				gap: 18px;
+			}
+			.scheme.on {
+				display: flex;
+			}
+			.scheme[data-scheme="b"] {
+				--accent: #8b8cf9;
+				--accent-soft: rgba(139, 140, 249, 0.14);
+				--accent-line: rgba(139, 140, 249, 0.4);
+			}
+			.scheme[data-scheme="c"] {
+				--accent: #38bdf8;
+				--accent-soft: rgba(56, 189, 248, 0.13);
+				--accent-line: rgba(56, 189, 248, 0.4);
+			}
+			.scheme-head {
+				display: flex;
+				flex-wrap: wrap;
+				align-items: baseline;
+				gap: 10px 14px;
+			}
+			.scheme-head h2 {
+				font-size: 17px;
+				font-weight: 620;
+				letter-spacing: -0.01em;
+			}
+			.scheme-head h2 .num {
+				color: var(--accent);
+				margin-right: 8px;
+			}
+			.scheme-head p {
+				color: var(--muted);
+				font-size: 12.5px;
+				flex: 1 1 420px;
+				min-width: 0;
+			}
+
+			/* ---------- 模拟窗口 ---------- */
+			.mock {
+				border: 1px solid var(--line-2);
+				border-radius: 16px;
+				background: linear-gradient(180deg, #14181f 0%, #0e1116 100%);
+				box-shadow:
+					0 40px 80px -32px rgba(0, 0, 0, 0.9),
+					0 0 0 1px rgba(0, 0, 0, 0.4);
+				overflow: hidden;
+			}
+			.mock-bar {
+				display: flex;
+				align-items: center;
+				justify-content: space-between;
+				gap: 12px;
+				padding: 11px 16px;
+				border-bottom: 1px solid var(--line);
+				background: rgba(255, 255, 255, 0.02);
+			}
+			.mock-bar .left,
+			.mock-bar .right {
+				display: flex;
+				align-items: center;
+				gap: 10px;
+				min-width: 0;
+			}
+			.mock-bar .crumb {
+				color: var(--faint);
+				font-size: 12.5px;
+				white-space: nowrap;
+			}
+			.mock-bar .crumb b {
+				color: var(--text);
+				font-weight: 500;
+			}
+			.save-pill {
+				display: inline-flex;
+				align-items: center;
+				gap: 5px;
+				font-size: 11.5px;
+				color: var(--accent);
+				background: var(--accent-soft);
+				border: 1px solid var(--accent-line);
+				border-radius: 999px;
+				padding: 2px 9px;
+				white-space: nowrap;
+			}
+			.close-x {
+				color: var(--faint);
+				font-size: 15px;
+				line-height: 1;
+				padding: 2px 4px;
+			}
+			.mock-body {
+				display: grid;
+				grid-template-columns: 176px minmax(0, 1fr);
+				min-height: 560px;
+			}
+			.mock-body.wide {
+				grid-template-columns: 64px minmax(0, 1fr) 292px;
+			}
+			.mock-nav {
+				border-right: 1px solid var(--line);
+				padding: 14px 10px;
+				display: flex;
+				flex-direction: column;
+				gap: 2px;
+				background: rgba(0, 0, 0, 0.16);
+			}
+			.nav-label {
+				font-size: 10.5px;
+				letter-spacing: 0.09em;
+				color: var(--faint);
+				padding: 8px 10px 6px;
+			}
+			.nav-item {
+				display: flex;
+				align-items: center;
+				gap: 9px;
+				font-size: 12.5px;
+				color: var(--muted);
+				padding: 7px 10px;
+				border-radius: 8px;
+				white-space: nowrap;
+				overflow: hidden;
+				text-overflow: ellipsis;
+			}
+			.nav-item .ico {
+				width: 15px;
+				text-align: center;
+				opacity: 0.7;
+				font-size: 12px;
+				flex: none;
+			}
+			.nav-item.active {
+				color: var(--text);
+				background: var(--panel-3);
+				box-shadow: 0 0 0 1px var(--line-2) inset;
+			}
+			.nav-item .pill {
+				margin-left: auto;
+				font-size: 10.5px;
+				color: var(--faint);
+			}
+			.mock-nav.rail {
+				align-items: center;
+				padding: 14px 0;
+				gap: 6px;
+			}
+			.mock-nav.rail .rail-ico {
+				width: 34px;
+				height: 34px;
+				display: grid;
+				place-items: center;
+				border-radius: 9px;
+				color: var(--muted);
+				font-size: 14px;
+			}
+			.mock-nav.rail .rail-ico.active {
+				color: var(--accent);
+				background: var(--accent-soft);
+				box-shadow: 0 0 0 1px var(--accent-line) inset;
+			}
+			.mock-nav.rail .rail-gap {
+				height: 8px;
+			}
+
+			/* ---------- 内容列 ---------- */
+			.pane {
+				padding: 20px 22px 24px;
+				display: flex;
+				flex-direction: column;
+				gap: 16px;
+				min-width: 0;
+			}
+			.pane-head {
+				display: flex;
+				align-items: flex-start;
+				gap: 14px;
+			}
+			.pane-head .txt {
+				flex: 1;
+				min-width: 0;
+			}
+			.pane-head h3 {
+				font-size: 15.5px;
+				font-weight: 620;
+				letter-spacing: -0.01em;
+			}
+			.pane-head p {
+				color: var(--muted);
+				font-size: 12.5px;
+				margin-top: 4px;
+				max-width: 520px;
+			}
+			.pane-actions {
+				display: flex;
+				gap: 8px;
+				flex: none;
+			}
+			.ghost {
+				font: inherit;
+				font-size: 12px;
+				color: var(--muted);
+				background: rgba(255, 255, 255, 0.03);
+				border: 1px solid var(--line-2);
+				border-radius: 8px;
+				padding: 6px 11px;
+				cursor: pointer;
+				white-space: nowrap;
+				transition: 0.15s ease;
+			}
+			.ghost:hover {
+				color: var(--text);
+				border-color: rgba(255, 255, 255, 0.22);
+				background: rgba(255, 255, 255, 0.06);
+			}
+			.link {
+				font: inherit;
+				font-size: 12px;
+				color: var(--muted);
+				background: none;
+				border: 0;
+				cursor: pointer;
+				padding: 0;
+				white-space: nowrap;
+			}
+			.link:hover {
+				color: var(--accent);
+				text-decoration: underline;
+				text-underline-offset: 3px;
+			}
+			.card {
+				border: 1px solid var(--line);
+				border-radius: 13px;
+				background: var(--panel);
+				overflow: hidden;
+			}
+			.card-head {
+				display: flex;
+				align-items: center;
+				gap: 10px;
+				padding: 12px 14px;
+				border-bottom: 1px solid var(--line);
+			}
+			.card-head .title {
+				color: var(--text);
+				font-size: 12.5px;
+				font-weight: 560;
+				white-space: nowrap;
+			}
+			.label {
+				font-size: 11px;
+				letter-spacing: 0.08em;
+				color: var(--muted);
+				white-space: nowrap;
+			}
+			.count {
+				font-size: 11.5px;
+				color: var(--faint);
+				font-variant-numeric: tabular-nums;
+				white-space: nowrap;
+			}
+			.card-head .spacer,
+			.editor-foot .spacer,
+			.pcard-foot .spacer,
+			.total-bar .spacer {
+				flex: 1;
+			}
+
+			/* 开关 */
+			.sw {
+				flex: none;
+				width: 36px;
+				height: 20px;
+				border-radius: 999px;
+				border: 1px solid var(--line-2);
+				background: rgba(255, 255, 255, 0.06);
+				position: relative;
+				cursor: pointer;
+				transition: 0.18s ease;
+				padding: 0;
+			}
+			.sw i {
+				position: absolute;
+				top: 2px;
+				left: 2px;
+				width: 14px;
+				height: 14px;
+				border-radius: 50%;
+				background: #cfd6e4;
+				transition: 0.18s cubic-bezier(0.4, 0.9, 0.3, 1);
+				display: block;
+			}
+			.sw[aria-checked="true"] {
+				background: var(--accent);
+				border-color: transparent;
+			}
+			.sw[aria-checked="true"] i {
+				left: 18px;
+				background: #08120f;
+			}
+
+			/* ---------- 方案 A：清单 ---------- */
+			.rows {
+				list-style: none;
+			}
+			.entry + .entry {
+				border-top: 1px solid var(--line);
+			}
+			.row {
+				display: flex;
+				align-items: center;
+				gap: 12px;
+				padding: 11px 14px;
+				transition: background 0.14s ease;
+			}
+			.row:hover {
+				background: rgba(255, 255, 255, 0.025);
+			}
+			.entry.open .row {
+				background: rgba(255, 255, 255, 0.03);
+			}
+			.row-main {
+				flex: 1;
+				min-width: 0;
+				display: flex;
+				align-items: baseline;
+				gap: 10px;
+				text-align: left;
+				background: none;
+				border: 0;
+				font: inherit;
+				color: inherit;
+				cursor: pointer;
+				padding: 0;
+				overflow: hidden;
+			}
+			.row-name {
+				font-size: 13.5px;
+				font-weight: 500;
+				white-space: nowrap;
+				flex: none;
+			}
+			.row-desc {
+				font-size: 12px;
+				color: var(--faint);
+				overflow: hidden;
+				text-overflow: ellipsis;
+				white-space: nowrap;
+				min-width: 0;
+			}
+			.row-meta {
+				font-size: 11.5px;
+				color: var(--faint);
+				font-variant-numeric: tabular-nums;
+				flex: none;
+			}
+			.row-flag {
+				font-size: 10.5px;
+				color: var(--accent);
+				background: var(--accent-soft);
+				border-radius: 5px;
+				padding: 1px 6px;
+				flex: none;
+				white-space: nowrap;
+			}
+			.chev {
+				color: var(--faint);
+				font-size: 10px;
+				transition: transform 0.18s ease;
+				flex: none;
+				width: 14px;
+				text-align: center;
+			}
+			.entry.open .chev {
+				transform: rotate(180deg);
+				color: var(--accent);
+			}
+			.entry.off .row-name,
+			.entry.off .row-desc {
+				opacity: 0.45;
+			}
+			/* 展开区铺满整行：左右无留白，输入框自身留内边距 */
+			.editor {
+				display: none;
+				padding: 0;
+				background: rgba(255, 255, 255, 0.02);
+			}
+			.entry.open .editor {
+				display: block;
+			}
+			.editor > .editor-label {
+				margin: 0;
+				padding: 10px 14px 8px;
+			}
+			.editor textarea {
+				display: block;
+				min-height: 96px;
+				padding: 10px 14px;
+				border-width: 1px 0;
+				border-radius: 0;
+			}
+			.editor textarea:focus {
+				border-color: var(--accent-line);
+				box-shadow: inset 0 0 0 1px var(--accent-line);
+			}
+			.editor .editor-foot {
+				margin-top: 0;
+				padding: 9px 14px 12px;
+			}
+			.editor-label {
+				display: flex;
+				align-items: baseline;
+				gap: 8px;
+				font-size: 11.5px;
+				color: var(--muted);
+				margin: 6px 0 7px;
+				flex-wrap: wrap;
+			}
+			.editor-label em {
+				font-style: normal;
+				color: var(--faint);
+			}
+			textarea {
+				width: 100%;
+				resize: vertical;
+				min-height: 84px;
+				font-family: var(--font);
+				font-size: 12.5px;
+				line-height: 1.65;
+				color: var(--text);
+				background: #0b0e13;
+				border: 1px solid var(--line-2);
+				border-radius: 9px;
+				padding: 10px 12px;
+				outline: none;
+				transition:
+					border-color 0.15s ease,
+					box-shadow 0.15s ease;
+			}
+			textarea::placeholder {
+				color: #556;
+			}
+			textarea:focus {
+				border-color: var(--accent-line);
+				box-shadow: 0 0 0 3px var(--accent-soft);
+			}
+			.editor-foot {
+				display: flex;
+				align-items: center;
+				gap: 10px;
+				margin-top: 8px;
+				font-size: 11.5px;
+				color: var(--faint);
+				flex-wrap: wrap;
+			}
+			.advanced {
+				border: 1px dashed var(--line-2);
+				border-radius: 11px;
+				padding: 11px 14px;
+				color: var(--muted);
+				font-size: 12px;
+				background: rgba(255, 255, 255, 0.015);
+			}
+			.advanced summary {
+				cursor: pointer;
+				list-style: none;
+				display: flex;
+				align-items: center;
+				gap: 8px;
+			}
+			.advanced summary::-webkit-details-marker {
+				display: none;
+			}
+			.advanced summary::before {
+				content: "▸";
+				color: var(--faint);
+				font-size: 10px;
+				flex: none;
+			}
+			.advanced[open] summary::before {
+				content: "▾";
+			}
+			.advanced p {
+				margin: 9px 0 0 18px;
+				color: var(--faint);
+				font-size: 11.5px;
+			}
+			.order-strip {
+				display: flex;
+				flex-wrap: wrap;
+				align-items: center;
+				gap: 6px;
+			}
+			.order-strip .chip {
+				font-size: 11.5px;
+				color: var(--muted);
+				background: rgba(255, 255, 255, 0.04);
+				border: 1px solid var(--line);
+				border-radius: 7px;
+				padding: 3px 8px;
+			}
+			.order-strip .chip.off {
+				opacity: 0.4;
+				text-decoration: line-through;
+			}
+			.order-strip .arrow {
+				color: var(--faint);
+				font-size: 10px;
+			}
+
+			/* ---------- 方案 B：分组卡片 ---------- */
+			.group {
+				display: flex;
+				flex-direction: column;
+				gap: 9px;
+			}
+			.group-head {
+				display: flex;
+				align-items: baseline;
+				gap: 10px;
+				flex-wrap: wrap;
+			}
+			.group-head .title {
+				color: var(--text);
+				font-size: 12.5px;
+				font-weight: 560;
+			}
+			.group-head .hint {
+				font-size: 11.5px;
+				color: var(--faint);
+			}
+			.grid {
+				display: grid;
+				grid-template-columns: 1fr 1fr;
+				gap: 10px;
+			}
+			.pcard {
+				border: 1px solid var(--line);
+				border-radius: 12px;
+				background: var(--panel);
+				padding: 12px 13px;
+				display: flex;
+				flex-direction: column;
+				gap: 8px;
+				min-width: 0;
+				transition:
+					border-color 0.16s ease,
+					background 0.16s ease;
+			}
+			.pcard:hover {
+				border-color: var(--line-2);
+				background: var(--panel-2);
+			}
+			.pcard.wide {
+				grid-column: span 2;
+			}
+			.pcard-top {
+				display: flex;
+				align-items: center;
+				gap: 9px;
+			}
+			.pcard-name {
+				font-size: 13px;
+				font-weight: 530;
+				flex: 1;
+				min-width: 0;
+			}
+			.pcard.off .pcard-name,
+			.pcard.off .pcard-desc,
+			.pcard.off .editor-label {
+				opacity: 0.42;
+			}
+			.pcard-desc {
+				font-size: 11.8px;
+				color: var(--faint);
+			}
+			.pcard-foot {
+				display: flex;
+				align-items: center;
+				gap: 8px;
+				font-size: 11px;
+				color: var(--faint);
+				font-variant-numeric: tabular-nums;
+			}
+			.pcard.auto {
+				background: linear-gradient(180deg, rgba(255, 255, 255, 0.022), rgba(255, 255, 255, 0.008));
+			}
+			.auto-tag {
+				font-size: 10px;
+				letter-spacing: 0.04em;
+				color: var(--faint);
+				border: 1px solid var(--line);
+				border-radius: 5px;
+				padding: 1px 5px;
+				white-space: nowrap;
+			}
+			.pcard textarea {
+				min-height: 92px;
+			}
+			.pcard.wide textarea {
+				min-height: 76px;
+			}
+
+			/* ---------- 方案 C：流水线 + 检查器 ---------- */
+			.recipe {
+				display: flex;
+				flex-direction: column;
+				gap: 4px;
+				border: 1px solid var(--line);
+				border-radius: 12px;
+				background: var(--panel);
+				padding: 8px;
+			}
+			.seg {
+				display: grid;
+				grid-template-columns: 18px minmax(84px, 1fr) minmax(0, 2fr) 52px 34px;
+				align-items: center;
+				gap: 10px;
+				padding: 7px 9px;
+				border-radius: 8px;
+				border: 1px solid transparent;
+				cursor: pointer;
+				transition: 0.14s ease;
+			}
+			.seg:hover {
+				background: rgba(255, 255, 255, 0.03);
+			}
+			.seg.sel {
+				background: var(--accent-soft);
+				border-color: var(--accent-line);
+			}
+			.seg.off {
+				opacity: 0.42;
+			}
+			.seg .idx {
+				font-size: 10.5px;
+				color: var(--faint);
+				font-variant-numeric: tabular-nums;
+				text-align: right;
+			}
+			.seg .nm {
+				font-size: 12.8px;
+				font-weight: 500;
+				white-space: nowrap;
+				overflow: hidden;
+				text-overflow: ellipsis;
+			}
+			.seg .bar {
+				height: 6px;
+				border-radius: 99px;
+				background: rgba(255, 255, 255, 0.06);
+				overflow: hidden;
+			}
+			.seg .bar > i {
+				display: block;
+				height: 100%;
+				border-radius: 99px;
+				background: linear-gradient(90deg, var(--accent-line), var(--accent));
+				opacity: 0.75;
+			}
+			.seg.auto .bar > i {
+				background: linear-gradient(90deg, rgba(148, 163, 184, 0.5), rgba(203, 213, 225, 0.75));
+			}
+			.seg.off .bar > i {
+				background: rgba(255, 255, 255, 0.12);
+			}
+			.seg .tk {
+				font-size: 11px;
+				color: var(--faint);
+				text-align: right;
+				font-variant-numeric: tabular-nums;
+			}
+			.seg .sw {
+				width: 30px;
+				height: 17px;
+			}
+			.seg .sw i {
+				width: 11px;
+				height: 11px;
+				top: 2.5px;
+				left: 2.5px;
+			}
+			.seg .sw[aria-checked="true"] i {
+				left: 15px;
+			}
+			.total-bar {
+				display: flex;
+				align-items: center;
+				gap: 10px;
+				padding: 10px 12px;
+				border: 1px solid var(--line);
+				border-radius: 11px;
+				background: linear-gradient(90deg, rgba(255, 255, 255, 0.03), rgba(255, 255, 255, 0.012));
+				font-size: 12px;
+				color: var(--muted);
+			}
+			.total-bar b {
+				color: var(--text);
+				font-variant-numeric: tabular-nums;
+				font-weight: 600;
+			}
+			.inspector {
+				border-left: 1px solid var(--line);
+				background: rgba(0, 0, 0, 0.18);
+				padding: 18px 16px;
+				display: flex;
+				flex-direction: column;
+				gap: 12px;
+				min-width: 0;
+			}
+			.inspector .ins-eyebrow {
+				font-size: 10.5px;
+				letter-spacing: 0.09em;
+				color: var(--faint);
+			}
+			.inspector h4 {
+				font-size: 14.5px;
+				font-weight: 600;
+				letter-spacing: -0.01em;
+			}
+			.inspector .ins-desc {
+				font-size: 12px;
+				color: var(--muted);
+				line-height: 1.6;
+			}
+			.ins-meta {
+				display: flex;
+				gap: 8px;
+				flex-wrap: wrap;
+			}
+			.meta-pill {
+				font-size: 10.5px;
+				color: var(--muted);
+				border: 1px solid var(--line-2);
+				border-radius: 999px;
+				padding: 2px 8px;
+				font-variant-numeric: tabular-nums;
+			}
+			.meta-pill.on {
+				color: var(--accent);
+				border-color: var(--accent-line);
+				background: var(--accent-soft);
+			}
+			.ins-divider {
+				height: 1px;
+				background: var(--line);
+			}
+			.ins-auto-note {
+				font-size: 11.5px;
+				color: var(--faint);
+				line-height: 1.6;
+				border-left: 2px solid var(--line-2);
+				padding-left: 10px;
+			}
+			.preview-mini {
+				font-family: var(--mono);
+				font-size: 11px;
+				line-height: 1.65;
+				color: var(--faint);
+				background: #0b0e13;
+				border: 1px solid var(--line);
+				border-radius: 8px;
+				padding: 9px 10px;
+				max-height: 96px;
+				overflow: hidden;
+				white-space: pre-wrap;
+				word-break: break-word;
+			}
+
+			/* ---------- 说明区 ---------- */
+			.notes {
+				display: grid;
+				grid-template-columns: repeat(3, minmax(0, 1fr));
+				gap: 12px;
+			}
+			.note {
+				border: 1px solid var(--line);
+				border-radius: 12px;
+				padding: 13px 14px;
+				background: rgba(255, 255, 255, 0.018);
+			}
+			.note .label {
+				display: block;
+				margin-bottom: 7px;
+				color: var(--text);
+				letter-spacing: 0.01em;
+				font-size: 12px;
+				font-weight: 560;
+			}
+			.note ul {
+				list-style: none;
+				display: flex;
+				flex-direction: column;
+				gap: 6px;
+			}
+			.note li {
+				font-size: 12px;
+				color: var(--muted);
+				line-height: 1.55;
+				padding-left: 13px;
+				position: relative;
+			}
+			.note li::before {
+				content: "·";
+				position: absolute;
+				left: 3px;
+				color: var(--accent);
+				font-weight: 700;
+			}
+			.note li b {
+				color: var(--text);
+				font-weight: 550;
+			}
+			.policy {
+				margin-top: 26px;
+				border: 1px solid var(--line-2);
+				border-radius: 14px;
+				padding: 16px 18px;
+				background: linear-gradient(180deg, rgba(255, 255, 255, 0.03), rgba(255, 255, 255, 0.012));
+			}
+			.policy-head {
+				display: flex;
+				align-items: baseline;
+				gap: 10px;
+				margin-bottom: 10px;
+			}
+			.policy-head h3 {
+				font-size: 13.5px;
+				font-weight: 600;
+			}
+			.policy-head span {
+				font-size: 11.5px;
+				color: var(--faint);
+			}
+			.policy-grid {
+				display: grid;
+				grid-template-columns: repeat(3, minmax(0, 1fr));
+				gap: 14px;
+			}
+			.policy-grid h4 {
+				font-size: 12px;
+				font-weight: 560;
+				color: var(--text);
+				margin-bottom: 5px;
+			}
+			.policy-grid p {
+				font-size: 11.8px;
+				color: var(--muted);
+				line-height: 1.6;
+			}
+			.policy-grid code {
+				font-family: var(--mono);
+				font-size: 11px;
+				background: rgba(255, 255, 255, 0.06);
+				border-radius: 4px;
+				padding: 1px 5px;
+				color: #cbd5e1;
+			}
+			@media (max-width: 1080px) {
+				.topbar {
+					flex-wrap: wrap;
+				}
+				.tabs {
+					flex: 1 1 100%;
+				}
+				.langs {
+					margin-left: auto;
+				}
+				.scheme-head {
+					flex-direction: column;
+					align-items: flex-start;
+					gap: 6px;
+				}
+				.scheme-head p {
+					flex: 0 0 auto;
+				}
+				.grid,
+				.notes,
+				.policy-grid {
+					grid-template-columns: 1fr;
+				}
+				.pcard.wide {
+					grid-column: auto;
+				}
+				.mock-body.wide {
+					grid-template-columns: 56px minmax(0, 1fr);
+				}
+				.inspector {
+					grid-column: 1 / -1;
+					border-left: 0;
+					border-top: 1px solid var(--line);
+				}
+			}
+		</style>
+	</head>
+	<body>
+		<div class="wrap">
+			<header class="show-head" id="showHead"></header>
+			<div class="topbar">
+				<nav class="tabs" id="tabs" role="tablist" aria-label="方案切换"></nav>
+				<div class="langs" id="langs"></div>
+			</div>
+			<main id="schemes"></main>
+			<section class="policy" id="policy"></section>
+		</div>
+
+		<script>
+			/* =========================================================
+			   数据：10 个提示词来源。文案四件套 = 名字 / 说明 / 编辑框小标题 / 空值提示
+			   —— 对应 i18n 键 <id>_name / _desc / _editTitle / _editHint，每个语言各一份。
+			   ========================================================= */
+			const SRC = [
+				{
+					id: "soul",
+					kind: "edit",
+					on: true,
+					w: 92,
+					weight: "1.2k",
+					zh: {
+						name: "灵魂提示词",
+						desc: "AI 的角色与说话风格",
+						editTitle: "人格设定",
+						editHint: "留空 = 用默认设定",
+						value: "你是一个可靠的编码助手，说话直接，先给结论再给理由。",
+					},
+					en: {
+						name: "Soul prompt",
+						desc: "Who the AI is and how it talks",
+						editTitle: "Persona",
+						editHint: "empty = built-in default",
+						value: "You are a dependable coding assistant. Be direct: conclusion first, reasoning after.",
+					},
+					ja: {
+						name: "ソウルプロンプト",
+						desc: "AI の役割と話し方",
+						editTitle: "人格設定",
+						editHint: "空 = 既定値",
+						value: "あなたは信頼できるコーディング助手です。結論から先に、簡潔に話してください。",
+					},
+				},
+				{
+					id: "guidelines",
+					kind: "edit",
+					on: true,
+					w: 34,
+					weight: "420",
+					zh: {
+						name: "行为准则",
+						desc: "怎么用工具、怎么改文件",
+						editTitle: "使用规范",
+						editHint: "留空 = 用默认规范",
+						value: "",
+						ph: "例如：改代码前先读相关文件，不要动无关模块。",
+					},
+					en: {
+						name: "Behavior rules",
+						desc: "How it uses tools and edits files",
+						editTitle: "House rules",
+						editHint: "empty = built-in rules",
+						value: "",
+						ph: "e.g. read the file before editing; never touch unrelated modules.",
+					},
+					ja: {
+						name: "行動ルール",
+						desc: "ツールの使い方・編集の作法",
+						editTitle: "作業ルール",
+						editHint: "空 = 既定ルール",
+						value: "",
+						ph: "例：編集前に必ず対象ファイルを読む。無関係な変更はしない。",
+					},
+				},
+				{
+					id: "append",
+					kind: "edit",
+					on: true,
+					w: 8,
+					weight: "76",
+					changed: true,
+					zh: {
+						name: "追加段",
+						desc: "你自己的补充要求，排在最后",
+						editTitle: "我的补充说明",
+						editHint: "原样放在提示词末尾",
+						value: "使用 uv fnm gh\n任务结束时用通俗易懂的语言总结,并且询问是否提交\n修改插件后 一定要 scripts/plugin-dev-sync.mjs 更新本地插件,不然看不到修改效果",
+					},
+					en: {
+						name: "Your notes",
+						desc: "Anything extra you want said last",
+						editTitle: "My extra notes",
+						editHint: "sent as-is at the end",
+						value: "使用 uv fnm gh\n任务结束时用通俗易懂的语言总结,并且询问是否提交\n修改插件后 一定要 scripts/plugin-dev-sync.mjs 更新本地插件,不然看不到修改效果",
+					},
+					ja: {
+						name: "追加メモ",
+						desc: "最後に伝えたい自分の指示",
+						editTitle: "追加の指示",
+						editHint: "そのまま末尾に付く",
+						value: "使用 uv fnm gh\n任务结束时用通俗易懂的语言总结,并且询问是否提交\n修改插件后 一定要 scripts/plugin-dev-sync.mjs 更新本地插件,不然看不到修改效果",
+					},
+				},
+				{
+					id: "tools",
+					kind: "auto",
+					on: true,
+					w: 50,
+					weight: "620",
+					zh: { name: "工具列表", desc: "这轮能用的工具清单", editTitle: "工具说明", editHint: "留空 = 自动生成" },
+					en: { name: "Tool list", desc: "Tools available this turn", editTitle: "Tool notes", editHint: "empty = auto" },
+					ja: { name: "ツール一覧", desc: "今回使えるツールの一覧", editTitle: "ツール説明", editHint: "空 = 自動" },
+				},
+				{
+					id: "context",
+					kind: "auto",
+					on: true,
+					w: 74,
+					weight: "940",
+					zh: { name: "项目上下文", desc: "AGENTS.md 等项目说明", editTitle: "项目说明", editHint: "留空 = 自动读取" },
+					en: { name: "Project context", desc: "AGENTS.md and friends", editTitle: "Project notes", editHint: "empty = auto-read" },
+					ja: { name: "プロジェクト文脈", desc: "AGENTS.md などの説明", editTitle: "プロジェクト説明", editHint: "空 = 自動読込" },
+				},
+				{
+					id: "skills",
+					kind: "auto",
+					on: true,
+					w: 26,
+					weight: "310",
+					zh: { name: "技能段", desc: "可用技能清单", editTitle: "技能清单", editHint: "留空 = 自动生成" },
+					en: { name: "Skills", desc: "Index of installed skills", editTitle: "Skill list", editHint: "empty = auto" },
+					ja: { name: "スキル一覧", desc: "利用できるスキルの一覧", editTitle: "スキル一覧", editHint: "空 = 自動" },
+				},
+				{
+					id: "piDocs",
+					kind: "auto",
+					on: true,
+					w: 15,
+					weight: "180",
+					zh: { name: "Pi 文档指引", desc: "告诉 AI 去读 pi 的文档", editTitle: "文档指引", editHint: "留空 = 用默认指引" },
+					en: { name: "Pi docs pointer", desc: "Points the AI at pi's docs", editTitle: "Docs pointer", editHint: "empty = default" },
+					ja: { name: "Pi ドキュメント案内", desc: "pi のドキュメントへ誘導", editTitle: "ドキュメント案内", editHint: "空 = 既定" },
+				},
+				{
+					id: "markers",
+					kind: "auto",
+					on: true,
+					w: 20,
+					weight: "240",
+					zh: { name: "标记工具引导", desc: "消息标记的用法说明", editTitle: "标记说明", editHint: "留空 = 用默认说明" },
+					en: { name: "Marker guide", desc: "How to use message markers", editTitle: "Marker notes", editHint: "empty = default" },
+					ja: { name: "マーカーガイド", desc: "メッセージマーカーの使い方", editTitle: "マーカー説明", editHint: "空 = 既定" },
+				},
+				{
+					id: "pluginDev",
+					kind: "auto",
+					on: false,
+					w: 42,
+					weight: "520",
+					zh: { name: "插件开发指南", desc: "写插件时才有用，默认关闭", editTitle: "插件开发规范", editHint: "留空 = 用内置规范" },
+					en: { name: "Plugin dev guide", desc: "Useful only when writing plugins · off by default", editTitle: "Plugin rules", editHint: "empty = built-in" },
+					ja: { name: "プラグイン開発ガイド", desc: "プラグイン作成時のみ有用・既定オフ", editTitle: "プラグイン規約", editHint: "空 = 内蔵" },
+				},
+				{
+					id: "cwd",
+					kind: "auto",
+					on: true,
+					w: 2,
+					weight: "18",
+					zh: { name: "工作目录", desc: "告诉 AI 现在在哪个目录", editTitle: "工作目录行", editHint: "留空 = 自动填" },
+					en: { name: "Working directory", desc: "Tells the AI where it is", editTitle: "Directory line", editHint: "empty = auto" },
+					ja: { name: "作業ディレクトリ", desc: "今どのディレクトリにいるか", editTitle: "ディレクトリ行", editHint: "空 = 自動" },
+				},
+			];
+
+			/* =========================================================
+			   UI 字典：三种语言各一份，键集合完全一致（对应 15 个 locale 文件）
+			   ========================================================= */
+			const T = {
+				zh: {
+					docTitle: "系统提示词页 · 精简方案 A/B/C",
+					h1: "系统提示词页 · 精简方案",
+					lead: "共同前提：不再让用户手写「完整拼装模板」；界面上只出现中文段落名与开关；每个编辑框的小标题都换成一句人话。三套方案都保留现有能力（开关 / 顺序 / 覆盖 / 恢复默认 / 预设），只是把它们藏到该在的位置。",
+					tags: [
+						"删掉 {{token}} 字面量与英文说明",
+						"编辑框小标题 = 简单中文",
+						"模板输入框降级为「高级」",
+						"自动生成的内容默认不给编辑框",
+					],
+					langLabel: "语言",
+					tabs: { a: "清单式 · 小组件最少", b: "分组卡片 · 一眼分清谁自动", c: "流水线 + 检查器 · 看得见拼装结果" },
+					nav: {
+						core: "智能体内核",
+						model: "模型与服务商",
+						prompt: "系统提示词",
+						quick: "随手问",
+						presets: "预设",
+						toolsGroup: "工具与执行",
+						tools: "工具",
+						approval: "审批规则",
+						skills: "技能",
+					},
+					common: { settings: "设置", saved: "已保存", full: "完整提示词", presetsBtn: "预设", reorder: "调整顺序" },
+					btn: { lookDefault: "看看默认内容", reset: "恢复默认", replace: "用我自己的替换", drag: "拖动调整" },
+					flag: { auto: "自动", changed: "已改" },
+					countTpl: (on, total) => `${on} / ${total} 开启 · 约 4.5k tokens`,
+					blocksTpl: (on) => `${on} 段`,
+					totalLabel: "合计",
+					a: {
+						title: "清单式：一列中文名 + 开关，点开就地改",
+						lead: "10 行压成一张卡，默认只显示「名字 / 一句话 / 开关」。要改文字就点行展开，编辑框小标题写人话。",
+						h3: "系统提示词",
+						paneLead: "每次对话开头都告诉 AI 的固定说明。打开需要的部分，点一行就能改成自己的话。",
+						cardLabel: "包含哪些部分",
+						orderLabel: "拼装顺序",
+						advSummary: "高级：自定义拼装顺序或写模板",
+						advNote: "99% 的情况不需要动这里。只有想把某段话插到两个自动段落中间，才需要编辑模板源码 —— 它默认就是上面这个顺序。",
+					},
+					b: {
+						title: "分组卡片：把「你写的」和「自动生成的」分开",
+						lead: "上半区是真正该由你决定的 3 段（人设 / 规范 / 补充）。下半区是运行时自动生成的内容，只给开关和「自写」入口，不再摆空白编辑器。",
+						h3: "系统提示词",
+						paneLead: "你只需要决定三件事：AI 是谁、怎么干活、还有什么要补充。其余部分每次对话都会自动生成。",
+						yours: "你写的部分",
+						yoursHint: "3 段 · 都会排在最前面",
+						autos: "每次自动生成",
+						autosHint: "7 段 · 按当前工具 / 项目 / 技能实时生成，一般不用管",
+						autoFoot: "自动内容可查看",
+					},
+					c: {
+						title: "流水线 + 检查器：直接看见拼出来的样子",
+						lead: "左边是一份「配方」：按顺序的段落名、长度条、开关。点任意一段，右侧就说这一段是什么、能不能改、改哪句人话。",
+						h3: "系统提示词",
+						paneLead: "按顺序拼起来的一段话。关掉的段落不会发出去，点一段可以在右边改写。",
+						willSend: "这次会发出",
+						dragHint: "顺序 = 从上到下。需要换位置时按住段落拖动；不需要改顺序就不用管。",
+						insEyebrow: "这一段",
+						kindYours: "你写的",
+						kindAuto: "自动生成",
+						stateOn: "已开启",
+						stateOff: "已关闭",
+						autoLabel: "现在会发出去的内容",
+						autoPreview: (name) => `（示例）${name}：每次对话按当前状态重新生成…`,
+						autoNote: "这段每次自动生成。想固定成自己的版本，可以点下面的替换。",
+						saved: "已自动保存",
+						emptyHint: "留空 = 不加这段",
+					},
+					notes: {
+						a: [
+							{
+								label: "改动点",
+								items: [
+									"开关行只剩<b>中文名 + 一句话 + 开关</b>，<code>{{soul}}</code> 这类字面量全部消失",
+									"编辑框收进行内展开，小标题从「追加段」变成<b>「我的补充说明」</b>",
+									"模板输入框降级成底部「高级」折叠项，默认不出现",
+								],
+							},
+							{
+								label: "为什么好",
+								items: [
+									"默认状态一屏读完 10 段，不再被英文括号说明挤压",
+									"「已改 / 自动」标签让人一眼看到哪些是自己写的",
+									"行内编辑不跳页，改完即存，与现有自动保存回执一致",
+									"展开区铺满整行：左右不缩进，只在输入框内部留内边距",
+								],
+							},
+							{
+								label: "落地成本",
+								items: ["低：只改 SettingsModal 渲染层与 i18n 文案，服务端协议不动", "顺序区先做只读 chips，之后再接拖拽"],
+							},
+						],
+						b: [
+							{
+								label: "改动点",
+								items: [
+									"按「你写的」/「自动生成」分组，自动段<b>不再出现空编辑框</b>；模板输入框整个移除",
+									"想替换自动内容要显式点<b>「用我自己的替换」</b>，才长出编辑框",
+									"每个编辑框小标题都是短语：人格设定 / 使用规范 / 我的补充说明",
+								],
+							},
+							{
+								label: "为什么好",
+								items: ["语义分组抵消了「来源」这个抽象词，不用解释 token 是什么", "卡片留白更适合触屏与窄栏，未来加新来源不挤"],
+							},
+							{
+								label: "落地成本",
+								items: [
+									"中：需要给 PROMPT_TOKENS 加一份分组映射（可只放渲染层）",
+									"「覆盖」改成「替换」两步交互，需保留已有覆盖的显示逻辑",
+								],
+							},
+						],
+						c: [
+							{
+								label: "改动点",
+								items: [
+									"段落 = 带长度条的流水线，<b>顺序与占比直接可见</b>；没有模板输入框",
+									"编辑永远在右侧检查器，标题只有短语：人格设定 / 我的补充说明",
+									"自动段展示真实内容片段，替换是显式动作，不默认给空框",
+								],
+							},
+							{
+								label: "为什么好",
+								items: ["把「拼装」变成可视结果，用户不需要理解模板语法", "检查器位置稳定，长文本编辑不打断列表阅读"],
+							},
+							{
+								label: "落地成本",
+								items: ["中高：三栏布局在窄窗需塌陷为「列表 → 抽屉」", "顺序拖拽需与现有模板序列化兼容（改动即写入模板）"],
+							},
+						],
+					},
+				},
+				en: {
+					docTitle: "System prompt page · simplified options A/B/C",
+					h1: "System prompt page · simplified options",
+					lead: "Shared premise: nobody types a full assembly template any more. The UI only shows human segment names and switches, and every editor gets a plain-language title. All three options keep today's capabilities (on/off · order · override · reset · presets) — they just move them where they belong.",
+					tags: [
+						"No {{token}} literals, no English-only notes",
+						"Editor titles are plain phrases",
+						"Template input demoted to “Advanced”",
+						"Auto-generated blocks get no empty editor",
+					],
+					langLabel: "Language",
+					tabs: { a: "Compact list · fewest widgets", b: "Grouped cards · yours vs auto", c: "Pipeline + inspector · see the result" },
+					nav: {
+						core: "Agent core",
+						model: "Model & providers",
+						prompt: "System prompt",
+						quick: "Quick ask",
+						presets: "Presets",
+						toolsGroup: "Tools & execution",
+						tools: "Tools",
+						approval: "Approval rules",
+						skills: "Skills",
+					},
+					common: { settings: "Settings", saved: "Saved", full: "Full prompt", presetsBtn: "Presets", reorder: "Reorder" },
+					btn: { lookDefault: "See default", reset: "Reset", replace: "Replace with mine", drag: "Drag to reorder" },
+					flag: { auto: "auto", changed: "edited" },
+					countTpl: (on, total) => `${on} / ${total} on · ≈4.5k tokens`,
+					blocksTpl: (on) => `${on} blocks`,
+					totalLabel: "Total",
+					a: {
+						title: "Compact list: one column of names + switches, edit in place",
+						lead: "Ten rows in one card. By default only the name, a one-liner and the switch are visible; click a row to edit it, with a plain-language title.",
+						h3: "System prompt",
+						paneLead: "Fixed instructions the AI gets at the start of every run. Switch on what you need; click a row to write it your way.",
+						cardLabel: "What's included",
+						orderLabel: "Assembly order",
+						advSummary: "Advanced: custom order or template source",
+						advNote: "You almost never need this. Only when a line must sit between two auto blocks — the template already defaults to the order above.",
+					},
+					b: {
+						title: "Grouped cards: separate what you write from what's generated",
+						lead: "The top half is the three blocks only you can decide (persona / rules / extras). The bottom half is generated live — switch plus an explicit “replace” entry, never an empty editor.",
+						h3: "System prompt",
+						paneLead: "You only decide three things: who the AI is, how it works, and anything extra. Everything else is regenerated each run.",
+						yours: "Written by you",
+						yoursHint: "3 blocks · always first",
+						autos: "Generated every run",
+						autosHint: "7 blocks · live from tools / project / skills",
+						autoFoot: "Auto content available",
+					},
+					c: {
+						title: "Pipeline + inspector: see the assembled result",
+						lead: "On the left, a recipe: ordered names, length bars, switches. Select any block and the right side says what it is, whether you can edit it, and what the editor is called.",
+						h3: "System prompt",
+						paneLead: "One prompt, assembled in order. Switched-off blocks are never sent; select a block to edit it on the right.",
+						willSend: "This run sends",
+						dragHint: "Order reads top to bottom. Drag a block only if you need to move it.",
+						insEyebrow: "Selected block",
+						kindYours: "yours",
+						kindAuto: "auto-generated",
+						stateOn: "on",
+						stateOff: "off",
+						autoLabel: "What gets sent now",
+						autoPreview: (name) => `(sample) ${name}: regenerated from current state every run…`,
+						autoNote: "This block is regenerated every run. Replace it only if you want it frozen.",
+						saved: "Saved automatically",
+						emptyHint: "empty = skip this block",
+					},
+					notes: {
+						a: [
+							{
+								label: "What changes",
+								items: [
+									"Rows keep <b>name + one-liner + switch</b>; <code>{{soul}}</code>-style literals disappear",
+									"Editors collapse inline; “Additions” becomes <b>“My extra notes”</b>",
+									"The template input drops to a bottom “Advanced” disclosure",
+								],
+							},
+							{
+								label: "Why it works",
+								items: [
+									"Ten blocks fit on one screen without English parentheticals",
+									"“edited / auto” tags show at a glance what you wrote",
+									"Inline editing keeps the list in view and matches auto-save",
+									"Editor is full-bleed: no side gutters, padding only inside the field",
+								],
+							},
+							{
+								label: "Cost",
+								items: ["Low: render layer + i18n strings only, server protocol untouched", "Order strip can ship read-only first, drag later"],
+							},
+						],
+						b: [
+							{
+								label: "What changes",
+								items: [
+									"Split into “written by you” and “generated”: auto blocks <b>never show an empty editor</b>, and the template input is gone",
+									"Overriding is explicit: <b>“Replace with mine”</b> reveals the editor",
+									"Titles stay phrases: Persona / House rules / My extra notes",
+								],
+							},
+							{
+								label: "Why it works",
+								items: [
+									"Semantic grouping removes the abstract word “source”",
+									"Card whitespace scales to touch and narrow panes",
+								],
+							},
+							{
+								label: "Cost",
+								items: [
+									"Medium: needs a grouping map for PROMPT_TOKENS (render layer is enough)",
+									"Two-step replace must still surface existing overrides",
+								],
+							},
+						],
+						c: [
+							{
+								label: "What changes",
+								items: [
+									"Blocks form a pipeline with length bars: <b>order and weight are visible</b> — and no template input exists",
+									"Editing lives in the inspector with plain titles",
+									"Auto blocks preview real content; replacement is explicit",
+								],
+							},
+							{
+								label: "Why it works",
+								items: [
+									"Assembly becomes a visible result, not template syntax",
+									"A stable editor pane keeps the list readable",
+								],
+							},
+							{
+								label: "Cost",
+								items: [
+									"Medium-high: three columns must collapse to list → drawer",
+									"Dragging must stay compatible with template serialization",
+								],
+							},
+						],
+					},
+				},
+				ja: {
+					docTitle: "システムプロンプト · 簡素化案 A/B/C",
+					h1: "システムプロンプト画面 · 簡素化案",
+					lead: "共通の前提：完全な組み立てテンプレートを手入力させない。画面には人間向けの段落名とスイッチだけを出し、各入力欄の小見出しは短い言葉にする。既存機能（オン・オフ / 順序 / 上書き / 既定に戻す / プリセット）はすべて残し、置き場所だけを変える。",
+					tags: [
+						"{{token}} 表記と英語説明を削除",
+						"入力欄の小見出しは短い言葉",
+						"テンプレート入力は「詳細」へ",
+						"自動生成の段落に空欄を出さない",
+					],
+					langLabel: "言語",
+					tabs: { a: "リスト · 部品が最少", b: "カード分组 · 自動と手書きを分離", c: "パイプライン + インスペクタ" },
+					nav: {
+						core: "エージェント中核",
+						model: "モデルとプロバイダ",
+						prompt: "システムプロンプト",
+						quick: "クイック質問",
+						presets: "プリセット",
+						toolsGroup: "ツールと実行",
+						tools: "ツール",
+						approval: "承認ルール",
+						skills: "スキル",
+					},
+					common: { settings: "設定", saved: "保存済み", full: "全体を見る", presetsBtn: "プリセット", reorder: "順序を変更" },
+					btn: { lookDefault: "既定を見る", reset: "既定に戻す", replace: "自分の内容に置換", drag: "ドラッグで並べ替え" },
+					flag: { auto: "自動", changed: "変更済" },
+					countTpl: (on, total) => `${on} / ${total} 有効 · 約 4.5k tokens`,
+					blocksTpl: (on) => `${on} 段落`,
+					totalLabel: "合計",
+					a: {
+						title: "リスト：名前とスイッチだけ、その場で編集",
+						lead: "10 行を 1 枚のカードに。既定では名前・一言説明・スイッチのみ表示し、行を押すと短い見出しの入力欄が開く。",
+						h3: "システムプロンプト",
+						paneLead: "毎回の会話の冒頭で AI に伝える固定説明。必要な部分だけオンにし、行を押せば自分の言葉に変えられます。",
+						cardLabel: "含める部分",
+						orderLabel: "組み立て順",
+						advSummary: "詳細：順序の変更やテンプレート編集",
+						advNote: "通常は触る必要はありません。自動段落の間に文章を差し込みたいときだけ使います。",
+					},
+					b: {
+						title: "カード分组：「自分が書く」と「自動生成」を分ける",
+						lead: "上半分は自分が決める 3 段落（人格 / ルール / 追加）。下半分は毎回自動生成される内容で、スイッチと「置換」だけを置き、空欄は出さない。",
+						h3: "システムプロンプト",
+						paneLead: "決めるのは 3 つだけ：AI は誰か、どう働くか、何を補足するか。それ以外は毎回自動で作られます。",
+						yours: "自分が書く部分",
+						yoursHint: "3 段落 · 常に先頭",
+						autos: "毎回自動生成",
+						autosHint: "7 段落 · ツール / プロジェクト / スキルから生成",
+						autoFoot: "自動内容を確認",
+					},
+					c: {
+						title: "パイプライン + インスペクタ：組み上がりが見える",
+						lead: "左は「レシピ」：順番・長さバー・スイッチ。段落を選ぶと右側に、それが何か・編集できるかを短い言葉で示す。",
+						h3: "システムプロンプト",
+						paneLead: "順番に組み上がる 1 つのプロンプト。オフの段落は送信されません。",
+						willSend: "今回送信",
+						dragHint: "順序は上から下。動かす必要があるときだけドラッグ。",
+						insEyebrow: "選択中の段落",
+						kindYours: "手書き",
+						kindAuto: "自動生成",
+						stateOn: "有効",
+						stateOff: "無効",
+						autoLabel: "現在送信される内容",
+						autoPreview: (name) => `（例）${name}：毎回の状態から再生成…`,
+						autoNote: "この段落は毎回生成されます。固定したいときだけ置換してください。",
+						saved: "自動保存済み",
+						emptyHint: "空 = この段落を入れない",
+					},
+					notes: {
+						a: [
+							{
+								label: "変更点",
+								items: [
+									"行は<b>名前 + 一言 + スイッチ</b>だけ。<code>{{soul}}</code> 表記は消える",
+									"入力欄は行内に展開し、見出しは<b>「追加の指示」</b>のような短い言葉",
+									"テンプレート入力は下部の「詳細」へ退避",
+								],
+							},
+							{
+								label: "利点",
+								items: ["10 段落が 1 画面に収まる", "「変更済 / 自動」で自分が書いた部分が分かる", "行内編集で一覧を離れない", "展開部は行いっぱい：左右余白なし、内側だけパディング"],
+							},
+							{
+								label: "実装コスト",
+								items: ["低：描画層と i18n 文言のみ", "順序はまず読み取り専用チップで可"],
+							},
+						],
+						b: [
+							{
+								label: "変更点",
+								items: [
+									"「自分が書く」「自動生成」に分组し、自動段落に<b>空欄を出さない</b>。テンプレート入力は廃止",
+									"置換は<b>明示操作</b>で入力欄が現れる",
+									"見出しは短語：人格設定 / 作業ルール / 追加の指示",
+								],
+							},
+							{
+								label: "利点",
+								items: ["抽象的な「ソース」という語を説明不要に", "カードはタッチ・狭幅に強い"],
+							},
+							{
+								label: "実装コスト",
+								items: ["中：PROMPT_TOKENS の分组マップが必要", "置換 2 段階でも既存の上書き表示を維持"],
+							},
+						],
+						c: [
+							{
+								label: "変更点",
+								items: [
+									"段落が長さバー付きのパイプラインになり、<b>順序と比率が見える</b>。テンプレート入力は無し",
+									"編集は右のインスペクタに固定",
+									"自動段落は実内容をプレビューし、置換は明示",
+								],
+							},
+							{
+								label: "利点",
+								items: ["組み立てが結果として見える", "編集位置が安定し、一覧が読みやすい"],
+							},
+							{
+								label: "実装コスト",
+								items: ["中高：狭い画面では一覧 → ドロワー", "並べ替えはテンプレート直列化と整合が必要"],
+							},
+						],
+					},
+				},
+			};
+
+			const LANGS = [
+				{ id: "zh", label: "中文" },
+				{ id: "en", label: "English" },
+				{ id: "ja", label: "日本語" },
+			];
+
+			const state = { scheme: "a", lang: "zh", on: {}, open: new Set(["append"]), sel: "append" };
+			SRC.forEach((s) => (state.on[s.id] = s.on));
+
+			const esc = (v = "") =>
+				String(v).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]);
+			const L = () => T[state.lang];
+			const onCount = () => SRC.filter((s) => state.on[s.id]).length;
+
+			/* ---------- 头部 / 标签 / 语言 ---------- */
+			function headHTML() {
+				const l = L();
+				return `
+					<h1>${l.h1}</h1>
+					<p>${l.lead}</p>
+					<div class="tag-list">${l.tags.map((t) => `<span class="tag">${esc(t)}</span>`).join("")}</div>`;
+			}
+			function tabsHTML() {
+				const l = L();
+				return ["a", "b", "c"]
+					.map(
+						(id) =>
+							`<button role="tab" data-tab="${id}" aria-selected="${state.scheme === id}"><b>${id.toUpperCase()}</b>${l.tabs[id]}</button>`,
+					)
+					.join("");
+			}
+			function langsHTML() {
+				return `<span class="label" style="padding: 0 6px 0 4px; align-self: center">${esc(L().langLabel)}</span>` +
+					LANGS.map(
+						(x) => `<button data-lang="${x.id}" aria-pressed="${state.lang === x.id}">${x.label}</button>`,
+					).join("");
+			}
+
+			/* ---------- 共用片段 ---------- */
+			function navHTML(rail = false) {
+				const n = L().nav;
+				if (rail)
+					return `<nav class="mock-nav rail">
+						<span class="rail-ico">⚙</span><span class="rail-ico active">▤</span><span class="rail-ico">◌</span>
+						<span class="rail-ico">▦</span><span class="rail-gap"></span><span class="rail-ico">⌗</span>
+						<span class="rail-ico">✓</span><span class="rail-ico">✦</span>
+					</nav>`;
+				return `<nav class="mock-nav">
+					<span class="nav-label">${esc(n.core)}</span>
+					<span class="nav-item"><span class="ico">⚙</span>${esc(n.model)}</span>
+					<span class="nav-item active"><span class="ico">▤</span>${esc(n.prompt)}</span>
+					<span class="nav-item"><span class="ico">◌</span>${esc(n.quick)}</span>
+					<span class="nav-item"><span class="ico">▦</span>${esc(n.presets)}<span class="pill">3</span></span>
+					<span class="nav-label">${esc(n.toolsGroup)}</span>
+					<span class="nav-item"><span class="ico">⌗</span>${esc(n.tools)}<span class="pill">14</span></span>
+					<span class="nav-item"><span class="ico">✓</span>${esc(n.approval)}<span class="pill">15</span></span>
+					<span class="nav-item"><span class="ico">✦</span>${esc(n.skills)}<span class="pill">21</span></span>
+				</nav>`;
+			}
+			function mockBarHTML() {
+				const l = L();
+				return `<div class="mock-bar">
+					<div class="left"><span class="crumb">${esc(l.common.settings)} / <b>${esc(l.nav.prompt)}</b></span></div>
+					<div class="right"><span class="save-pill">✓ ${esc(l.common.saved)}</span><span class="close-x">✕</span></div>
+				</div>`;
+			}
+			function paneHeadHTML(h3, lead, actions) {
+				return `<div class="pane-head">
+					<div class="txt"><h3>${esc(h3)}</h3><p>${esc(lead)}</p></div>
+					<div class="pane-actions">${actions}</div>
+				</div>`;
+			}
+			function swHTML(id, size = "") {
+				return `<button class="sw" role="switch" data-id="${id}" aria-checked="${!!state.on[id]}"><i></i></button>`;
+			}
+			function orderStripHTML() {
+				const l = L();
+				const chips = SRC.map((s) => {
+					const c = s[state.lang];
+					return `<span class="chip${state.on[s.id] ? "" : " off"}">${esc(c.name)}</span>`;
+				});
+				return `<div class="order-strip"><span class="label">${esc(l.a.orderLabel)}</span>${chips.join(
+					'<span class="arrow">›</span>',
+				)}</div>`;
+			}
+
+			/* ---------- 方案 A ---------- */
+			function rowA(s) {
+				const c = s[state.lang];
+				const l = L();
+				const on = state.on[s.id];
+				const flag =
+					s.kind === "auto"
+						? `<span class="row-flag">${esc(l.flag.auto)}</span>`
+						: s.changed
+							? `<span class="row-flag">${esc(l.flag.changed)}</span>`
+							: "";
+				const editor =
+					s.kind === "edit"
+						? `<div class="editor">
+								<div class="editor-label"><span>${esc(c.editTitle)}</span><em>${esc(c.editHint)}</em></div>
+								<textarea spellcheck="false" placeholder="${esc(c.ph || "")}">${esc(c.value || "")}</textarea>
+								<div class="editor-foot">
+									<span>≈${s.weight} tokens</span><span class="spacer"></span>
+									<button class="link">${esc(l.btn.lookDefault)}</button>
+									${s.changed ? `<button class="link">${esc(l.btn.reset)}</button>` : ""}
+								</div>
+							</div>`
+						: `<div class="editor">
+								<div class="editor-label"><span>${esc(c.editTitle)}</span><em>${esc(c.editHint)}</em></div>
+								<textarea spellcheck="false" placeholder="${esc(l.c.autoNote)}"></textarea>
+								<div class="editor-foot">
+									<span>≈${s.weight} tokens · ${esc(l.flag.auto)}</span><span class="spacer"></span>
+									<button class="link">${esc(l.btn.lookDefault)}</button>
+								</div>
+							</div>`;
+				return `<li class="entry${on ? "" : " off"}${state.open.has(s.id) ? " open" : ""}" data-id="${s.id}">
+					<div class="row">
+						${swHTML(s.id)}
+						<button class="row-main"><span class="row-name">${esc(c.name)}</span><span class="row-desc">${esc(c.desc)}</span></button>
+						${flag}<span class="row-meta">≈${s.weight}</span><span class="chev">▾</span>
+					</div>
+					${editor}
+				</li>`;
+			}
+			function schemeA() {
+				const l = L();
+				const a = l.a;
+				return `<section class="scheme${state.scheme === "a" ? " on" : ""}" data-scheme="a">
+					<div class="scheme-head"><h2><span class="num">A</span>${esc(a.title)}</h2><p>${esc(a.lead)}</p></div>
+					<div class="mock">
+						${mockBarHTML()}
+						<div class="mock-body">
+							${navHTML()}
+							<div class="pane">
+								${paneHeadHTML(
+									a.h3,
+									a.paneLead,
+									`<button class="ghost">${esc(l.common.full)}</button><button class="ghost">${esc(l.common.presetsBtn)} ▾</button>`,
+								)}
+								<section class="card">
+									<div class="card-head">
+										<span class="title">${esc(a.cardLabel)}</span>
+										<span class="count" data-count>${esc(l.countTpl(onCount(), SRC.length))}</span>
+										<span class="spacer"></span>
+										<button class="link">${esc(l.common.reorder)}</button>
+									</div>
+									<ul class="rows">${SRC.map(rowA).join("")}</ul>
+								</section>
+								${orderStripHTML()}
+								<details class="advanced">
+									<summary>${esc(a.advSummary)}</summary>
+									<p>${esc(a.advNote)}</p>
+								</details>
+							</div>
+						</div>
+					</div>
+					<div class="notes">${notesHTML("a")}</div>
+				</section>`;
+			}
+
+			/* ---------- 方案 B ---------- */
+			function cardEditB(s, wide) {
+				const c = s[state.lang];
+				const l = L();
+				return `<article class="pcard${wide ? " wide" : ""}${state.on[s.id] ? "" : " off"}" data-id="${s.id}">
+					<div class="pcard-top"><span class="pcard-name">${esc(c.name)}</span>${swHTML(s.id)}</div>
+					<p class="pcard-desc">${esc(c.desc)}</p>
+					<div class="editor-label"><span>${esc(c.editTitle)}</span><em>${esc(c.editHint)}</em></div>
+					<textarea spellcheck="false" placeholder="${esc(c.ph || "")}">${esc(c.value || "")}</textarea>
+					<div class="pcard-foot"><span>≈${s.weight} tokens</span><span class="spacer"></span><button class="link">${
+						s.changed ? esc(l.btn.reset) : esc(l.btn.lookDefault)
+					}</button></div>
+				</article>`;
+			}
+			function cardAutoB(s) {
+				const c = s[state.lang];
+				const l = L();
+				return `<article class="pcard auto${state.on[s.id] ? "" : " off"}" data-id="${s.id}">
+					<div class="pcard-top"><span class="pcard-name">${esc(c.name)}</span><span class="auto-tag">${esc(l.flag.auto)}</span>${swHTML(s.id)}</div>
+					<p class="pcard-desc">${esc(c.desc)}</p>
+					<div class="pcard-foot"><span>≈${s.weight} tokens</span><span class="spacer"></span><button class="link">${esc(l.btn.replace)}</button></div>
+				</article>`;
+			}
+			function schemeB() {
+				const l = L();
+				const b = l.b;
+				const edits = SRC.filter((s) => s.kind === "edit");
+				const autos = SRC.filter((s) => s.kind === "auto");
+				return `<section class="scheme${state.scheme === "b" ? " on" : ""}" data-scheme="b">
+					<div class="scheme-head"><h2><span class="num">B</span>${esc(b.title)}</h2><p>${esc(b.lead)}</p></div>
+					<div class="mock">
+						${mockBarHTML()}
+						<div class="mock-body">
+							${navHTML()}
+							<div class="pane">
+								${paneHeadHTML(
+									b.h3,
+									b.paneLead,
+									`<button class="ghost">${esc(l.common.full)}</button><button class="ghost">${esc(l.common.presetsBtn)} ▾</button>`,
+								)}
+								<div class="group">
+									<div class="group-head"><span class="title">${esc(b.yours)}</span><span class="hint">${esc(b.yoursHint)}</span></div>
+									<div class="grid">${edits.map((s, i) => cardEditB(s, i === edits.length - 1)).join("")}</div>
+								</div>
+								<div class="group">
+									<div class="group-head"><span class="title">${esc(b.autos)}</span><span class="hint">${esc(b.autosHint)}</span></div>
+									<div class="grid">${autos.map(cardAutoB).join("")}</div>
+								</div>
+								<div class="order-strip">
+									<span class="label">${esc(l.a.orderLabel)}</span>
+									${SRC.map((s) => `<span class="chip${state.on[s.id] ? "" : " off"}">${esc(s[state.lang].name)}</span>`).join(
+										'<span class="arrow">›</span>',
+									)}
+									<button class="link" style="margin-left: 6px">${esc(l.btn.drag)}</button>
+								</div>
+							</div>
+						</div>
+					</div>
+					<div class="notes">${notesHTML("b")}</div>
+				</section>`;
+			}
+
+			/* ---------- 方案 C ---------- */
+			function segHTML(s, idx) {
+				const c = s[state.lang];
+				const on = state.on[s.id];
+				return `<div class="seg${on ? "" : " off"}${s.kind === "auto" ? " auto" : ""}${
+					state.sel === s.id ? " sel" : ""
+				}" data-id="${s.id}">
+					<span class="idx">${idx + 1}</span>
+					<span class="nm">${esc(c.name)}</span>
+					<span class="bar"><i style="width:${on ? s.w : 2}%"></i></span>
+					<span class="tk">${s.weight}</span>
+					${swHTML(s.id)}
+				</div>`;
+			}
+			function inspectorHTML() {
+				const l = L();
+				const c = l.c;
+				const s = SRC.find((x) => x.id === state.sel) || SRC[0];
+				const d = s[state.lang];
+				const on = state.on[s.id];
+				const isAuto = s.kind === "auto";
+				const body = isAuto
+					? `<div>
+							<div class="editor-label"><span>${esc(c.autoLabel)}</span></div>
+							<div class="preview-mini">${esc(c.autoPreview(d.name))}</div>
+							<p class="ins-auto-note">${esc(c.autoNote)}</p>
+							<button class="ghost" style="margin-top: 10px">${esc(l.btn.replace)}</button>
+						</div>`
+					: `<div>
+							<div class="editor-label"><span>${esc(d.editTitle)}</span><em>${esc(c.emptyHint)}</em></div>
+							<textarea spellcheck="false" style="min-height: 132px">${esc(d.value || "")}</textarea>
+							<div class="editor-foot"><span>${esc(c.saved)}</span><span class="spacer"></span><button class="link">${esc(
+								l.btn.reset,
+							)}</button></div>
+						</div>`;
+				return `<span class="ins-eyebrow">${esc(c.insEyebrow)}</span>
+					<h4>${esc(d.name)}</h4>
+					<p class="ins-desc">${esc(d.desc)}</p>
+					<div class="ins-meta">
+						<span class="meta-pill">${esc(isAuto ? c.kindAuto : c.kindYours)}</span>
+						<span class="meta-pill">≈${s.weight} tokens</span>
+						<span class="meta-pill${on ? " on" : ""}">${esc(on ? c.stateOn : c.stateOff)}</span>
+					</div>
+					<div class="ins-divider"></div>
+					${body}`;
+			}
+			function schemeC() {
+				const l = L();
+				const c = l.c;
+				return `<section class="scheme${state.scheme === "c" ? " on" : ""}" data-scheme="c">
+					<div class="scheme-head"><h2><span class="num">C</span>${esc(c.title)}</h2><p>${esc(c.lead)}</p></div>
+					<div class="mock">
+						${mockBarHTML()}
+						<div class="mock-body wide">
+							${navHTML(true)}
+							<div class="pane">
+								${paneHeadHTML(c.h3, c.paneLead, `<button class="ghost">${esc(l.common.full)}</button>`)}
+								<div class="total-bar">
+									<span>${esc(c.willSend)}</span><b data-blocks>${esc(l.blocksTpl(onCount()))}</b>
+									<span class="spacer"></span>
+									<span>${esc(l.totalLabel)} <b>≈4.5k</b> tokens</span>
+								</div>
+								<div class="recipe">${SRC.map(segHTML).join("")}</div>
+								<p style="font-size: 11.5px; color: var(--faint)">${esc(c.dragHint)}</p>
+							</div>
+							<aside class="inspector">${inspectorHTML()}</aside>
+						</div>
+					</div>
+					<div class="notes">${notesHTML("c")}</div>
+				</section>`;
+			}
+
+			/* ---------- 说明 / 多语言约定 ---------- */
+			function notesHTML(id) {
+				return L()
+					.notes[id].map((n) => `<div class="note"><span class="label">${esc(n.label)}</span><ul>${n.items.map((i) => `<li>${i}</li>`).join("")}</ul></div>`)
+					.join("");
+			}
+			function policyHTML() {
+				const byLang = {
+					zh: {
+						title: "多语言落地约定",
+						sub: "15 个 locale（zh / en + locales/*.json）共用同一套键",
+						items: [
+							{
+								h: "每段四个键",
+								p: "<code>&lt;id&gt;_name</code> / <code>_desc</code> / <code>_editTitle</code> / <code>_editHint</code>，与现有 <code>promptTok_*</code> 一一对应，缺一个就报错（i18n-catalog 已有守卫）。",
+							},
+							{
+								h: "长度按最长语言留位",
+								p: "名字列 <code>nowrap</code>、说明列 <code>ellipsis</code>；编辑框小标题允许换行。英文比中文长约 1.4×，德语更长，别用固定宽度兜底。",
+							},
+							{
+								h: "技术标识不进文案",
+								p: "<code>{{token}}</code> 只留在服务端与「高级」折叠区，UI 文案里不出现——否则翻译会把它改坏。",
+							},
+						],
+					},
+					en: {
+						title: "i18n contract",
+						sub: "15 locales (zh / en + locales/*.json) share one key set",
+						items: [
+							{
+								h: "Four keys per block",
+								p: "<code>&lt;id&gt;_name</code> / <code>_desc</code> / <code>_editTitle</code> / <code>_editHint</code>, matching today's <code>promptTok_*</code>; a missing key fails the catalog check.",
+							},
+							{
+								h: "Size for the longest language",
+								p: "Name column <code>nowrap</code>, description <code>ellipsis</code>, editor titles may wrap. English runs ~1.4× Chinese, German longer — no fixed widths.",
+							},
+							{
+								h: "No technical tokens in copy",
+								p: "<code>{{token}}</code> stays in the server and the “Advanced” disclosure; translators can't break what they never see.",
+							},
+						],
+					},
+					ja: {
+						title: "多言語の取り決め",
+						sub: "15 ロケール（zh / en + locales/*.json）で同じキー集合を共有",
+						items: [
+							{
+								h: "1 段落 4 キー",
+								p: "<code>&lt;id&gt;_name</code> / <code>_desc</code> / <code>_editTitle</code> / <code>_editHint</code>。既存 <code>promptTok_*</code> と対応し、欠けると検査で落ちる。",
+							},
+							{
+								h: "最長言語に合わせる",
+								p: "名前は <code>nowrap</code>、説明は <code>ellipsis</code>、小見出しは折り返し可。英語は中国語の約 1.4 倍。",
+							},
+							{
+								h: "技術表記は文案に入れない",
+								p: "<code>{{token}}</code> はサーバーと「詳細」だけに置く。",
+							},
+						],
+					},
+				};
+				const p = byLang[state.lang];
+				return `<div class="policy-head"><h3>${esc(p.title)}</h3><span>${esc(p.sub)}</span></div>
+					<div class="policy-grid">${p.items.map((i) => `<div><h4>${esc(i.h)}</h4><p>${i.p}</p></div>`).join("")}</div>`;
+			}
+
+			/* ---------- 渲染与交互 ---------- */
+			function render() {
+				document.documentElement.lang = state.lang === "zh" ? "zh-CN" : state.lang;
+				document.title = L().docTitle;
+				document.getElementById("showHead").innerHTML = headHTML();
+				document.getElementById("tabs").innerHTML = tabsHTML();
+				document.getElementById("langs").innerHTML = langsHTML();
+				document.getElementById("schemes").innerHTML = schemeA() + schemeB() + schemeC();
+				document.getElementById("policy").innerHTML = policyHTML();
+			}
+
+			function refreshCounts() {
+				const l = L();
+				document.querySelectorAll("[data-count]").forEach((el) => (el.textContent = l.countTpl(onCount(), SRC.length)));
+				document.querySelectorAll("[data-blocks]").forEach((el) => (el.textContent = l.blocksTpl(onCount())));
+			}
+
+			document.addEventListener("click", (e) => {
+				const tab = e.target.closest("[data-tab]");
+				if (tab) {
+					state.scheme = tab.dataset.tab;
+					render();
+					return;
+				}
+				const lang = e.target.closest("[data-lang]");
+				if (lang) {
+					state.lang = lang.dataset.lang;
+					render();
+					return;
+				}
+				const sw = e.target.closest(".sw");
+				if (sw) {
+					e.stopPropagation();
+					const id = sw.dataset.id;
+					state.on[id] = !state.on[id];
+					sw.setAttribute("aria-checked", String(state.on[id]));
+					const host = sw.closest(".entry, .pcard, .seg");
+					if (host) host.classList.toggle("off", !state.on[id]);
+					const bar = host && host.querySelector(".bar > i");
+					if (bar) bar.style.width = (state.on[id] ? (SRC.find((s) => s.id === id).w) : 2) + "%";
+					refreshCounts();
+					if (state.scheme === "c") document.querySelector(".inspector").innerHTML = inspectorHTML();
+					return;
+				}
+				const rowMain = e.target.closest(".row-main");
+				if (rowMain) {
+					const entry = rowMain.closest(".entry");
+					const open = entry.classList.toggle("open");
+					if (open) state.open.add(entry.dataset.id);
+					else state.open.delete(entry.dataset.id);
+					return;
+				}
+				const seg = e.target.closest(".seg");
+				if (seg) {
+					state.sel = seg.dataset.id;
+					document.querySelectorAll(".scheme.on .seg").forEach((s) => s.classList.toggle("sel", s === seg));
+					document.querySelector(".inspector").innerHTML = inspectorHTML();
+				}
+			});
+
+			render();
+		</script>
+	</body>
+</html>
