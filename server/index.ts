@@ -1605,6 +1605,7 @@ export interface DispatchSession {
 	setDefaultAgentPreset?(preset: string): Promise<void>;
 	setPermissionPreset?(preset: string): Promise<void>;
 	setDefaultPermissionPreset?(preset: string): Promise<void>;
+	setClaudePermissionMode?(mode: string): Promise<void>;
 	answerQuestion?(
 		id: string,
 		answers: { id: string; selected: string[]; custom?: string }[],

@@ -222,6 +222,9 @@ export function handlePresetAndDshMessage(msg: ClientMessage, cs: DispatchSessio
 		case "dsh_permission_default":
 			void cs.setDefaultPermissionPreset?.(msg.preset);
 			return true;
+		case "claude_permission_mode":
+			void cs.setClaudePermissionMode?.(msg.mode);
+			return true;
 		case "dsh_patches_rescan":
 			void cs.rescanDshPatches?.();
 			return true;

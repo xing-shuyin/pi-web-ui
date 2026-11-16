@@ -102,7 +102,7 @@ export const PRESET_FIELD_GROUPS = {
 		"devNoCache",
 		"autoReload",
 	],
-	engine: ["defaultAgentPreset", "defaultPermissionPreset"],
+	engine: ["defaultAgentPreset", "defaultPermissionPreset", "claudePermissionMode"],
 } as const;
 
 export type PresetFieldName = (typeof PRESET_FIELD_GROUPS)[PresetFieldGroup][number];
@@ -618,6 +618,12 @@ export const PRESET_FIELD_META = {
 		labelEn: "Default Permission Preset",
 		hintZh: "新建会话时默认加载的权限预设",
 		hintEn: "Default permission preset applied to new sessions",
+	},
+	claudePermissionMode: {
+		labelZh: "Claude Code 权限模式",
+		labelEn: "Claude Code Permission Mode",
+		hintZh: "bypassPermissions 跳过全部检查；acceptEdits / manual 等模式会给需要授权的工具弹审批",
+		hintEn: "bypassPermissions skips every check; acceptEdits / manual and friends prompt for tools that need approval",
 	},
 } as const satisfies Record<PresetFieldName, PresetFieldInfo>;
 

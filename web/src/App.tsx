@@ -3295,6 +3295,8 @@ export function App() {
 													}
 													recallDrafts={recallDrafts}
 													dshPermCurrent={chat.state?.permission ?? null}
+													claudePermCurrent={chat.claudePermission?.current ?? null}
+													claudePermModes={chat.claudePermission?.modes}
 													dshPermOptions={chat.dshPermission?.options ?? undefined}
 													dshPermDefault={chat.dshPermission?.defaultPreset}
 													dshPreset={chat.state?.agentPreset ?? null}

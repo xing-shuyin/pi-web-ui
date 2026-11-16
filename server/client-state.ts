@@ -542,6 +542,8 @@ export interface ClientSettings {
 	preserveDraftAcrossConversations: boolean;
 	defaultAgentPreset?: string;
 	defaultPermissionPreset?: string;
+	/** Claude Code engine: permission mode surfaced in Settings (env remains the fallback). */
+	claudePermissionMode?: string;
 }
 
 export const DEFAULT_DARK_MINIMAL_SETTINGS: ClientSettings = Object.freeze({

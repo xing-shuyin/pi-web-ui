@@ -67,6 +67,7 @@ import {
 	type GroupMemberReference,
 } from "../group-member-reference";
 import { DshPresetBar, type DshPresetInfo } from "./DshPresetBar";
+import { ClaudePermissionBar } from "./ClaudePermissionBar";
 import { DshPermissionBar } from "./DshPermissionBar";
 import type { DshPermissionOption, UiAgentPreset } from "../types";
 import { useTemplates } from "./PromptTemplates";
@@ -152,6 +153,8 @@ interface ChatInputProps {
 	quickPhrases: string[];
 	quickPhrasesEnabled: boolean;
 	dshPermCurrent?: string | null;
+	claudePermCurrent?: string | null;
+	claudePermModes?: string[];
 	dshPermOptions?: DshPermissionOption[];
 	dshPermDefault?: string;
 	dshPreset?: DshPresetInfo | null;
@@ -201,6 +204,8 @@ export const ChatInput = memo(function ChatInput({
 	composerActions,
 	onUiAction,
 	dshPermCurrent,
+	claudePermCurrent,
+	claudePermModes,
 	dshPermOptions,
 	dshPermDefault,
 	dshPreset,
@@ -1524,6 +1529,10 @@ export const ChatInput = memo(function ChatInput({
 				compact
 			/>
 		),
+		"host:composer-claude-perm":
+			claudePermModes && claudePermModes.length > 0 && claudePermCurrent ? (
+				<ClaudePermissionBar compact current={claudePermCurrent} modes={claudePermModes} />
+			) : null,
 		"host:composer-dsh-perm":
 			dshPermOptions && dshPermOptions.length > 0 && dshPermDefault !== undefined ? (
 				<DshPermissionBar

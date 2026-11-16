@@ -435,6 +435,7 @@ export interface ChatState {
 	} | null;
 	dshPresets: { presets: UiAgentPreset[]; defaultPreset: string } | null;
 	dshPermission: { options: DshPermissionOption[]; defaultPreset: string } | null;
+	claudePermission: { modes: string[]; current: string } | null;
 	scmDirty: number;
 	extensionInventoryDirty: number;
 	protocolMismatch: boolean;
@@ -763,6 +764,7 @@ type Action =
 	  }
 	| { type: "dsh_presets"; presets: UiAgentPreset[]; defaultPreset: string }
 	| { type: "dsh_permission"; options: DshPermissionOption[]; defaultPreset: string }
+	| { type: "claude_permission"; modes: string[]; current: string }
 	| { type: "sync_cached_sessions"; sessions: SessionSummary[] }
 	| { type: "host_metrics"; metrics?: UiHostMetrics; latencyMs?: number | null }
 	| { type: "sandbox_diff"; diff: SandboxDiffView | null }
@@ -883,6 +885,7 @@ export function reducer(state: ChatState, action: Action): ChatState {
 							dshMarket: null,
 							dshPresets: null,
 							dshPermission: null,
+							claudePermission: null,
 						} satisfies Partial<ChatState>)
 					: {}),
 				...(typeof action.latencyMs === "number" && state.latencyMs == null ? { latencyMs: action.latencyMs } : {}),
@@ -1391,6 +1394,8 @@ export function reducer(state: ChatState, action: Action): ChatState {
 				dshPresets: presets,
 			};
 		}
+		case "claude_permission":
+			return { ...state, claudePermission: { modes: action.modes, current: action.current } };
 		case "dsh_permission": {
 			const permission = { options: action.options, defaultPreset: action.defaultPreset };
 			return {
@@ -1898,6 +1903,7 @@ export function useChat() {
 		skillContentResult: null,
 		dshPresets: null,
 		dshPermission: null,
+		claudePermission: null,
 		protocolMismatch: false,
 		transition: null,
 		sandboxDiff: null,
@@ -2684,6 +2690,7 @@ export function useChat() {
 							...(msg.parentTool ? { parentTool: msg.parentTool } : {}),
 							...(msg.conversationId !== undefined ? { conversationId: msg.conversationId } : {}),
 							...(msg.conversationTitle !== undefined ? { conversationTitle: msg.conversationTitle } : {}),
+							...(msg.scopeless ? { scopeless: true } : {}),
 						},
 					});
 					break;
@@ -3069,6 +3076,9 @@ export function useChat() {
 					break;
 				case "dsh_permission":
 					dispatch({ type: "dsh_permission", options: msg.options, defaultPreset: msg.defaultPreset });
+					break;
+				case "claude_permission":
+					dispatch({ type: "claude_permission", modes: msg.modes, current: msg.current });
 					break;
 				case "plugin_data":
 					if (!ingestPluginLogsData(msg.pluginId, msg.payload)) emitPluginData(msg.pluginId, msg.payload);

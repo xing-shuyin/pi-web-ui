@@ -28,6 +28,7 @@ import { FilesService } from "../files-service.js";
 import { uploadLimitBytes } from "../payload-limits.js";
 import { TerminalManager, makePersistentTerminalTools } from "../terminals.js";
 import { TERMINAL_TOOL_NAMES } from "../tool-manager.js";
+import { unattendedApprovalTimeoutMs } from "../tool-approval.js";
 import type { ToolDefinition } from "@earendil-works/pi-coding-agent";
 import { BgServerTracker } from "../bg-servers.js";
 import { ModelAdminService } from "../model-admin.js";
@@ -169,6 +170,10 @@ export class UniversalSession implements DispatchSession {
 	private deltaSeq = 0;
 	private snapshotTimer: NodeJS.Timeout | null = null;
 	private pendingToolResults: UiMessage[] = [];
+	/** Engine permission requests awaiting a human answer: approval id -> request info. */
+	private readonly pendingApprovals = new Map<string, { requestId: string; toolName: string }>();
+	/** Auto-deny timers for approvals nobody may answer (unattended runs). */
+	private readonly approvalTimers = new Map<string, NodeJS.Timeout>();
 	private readonly sessionDrafts = new Map<string, { text: string; ts: number }>();
 	private followUpQueue: QueuedMessageEntry[] = [];
 
@@ -209,6 +214,11 @@ export class UniversalSession implements DispatchSession {
 		this.store = opts.store;
 		this.stateStore = opts.stateStore;
 		this.driver = opts.driver;
+		// Restore the UI-selected permission mode (env stays the fallback when unset).
+		try {
+			const savedMode = this.stateStore?.getSettings(this.clientId)?.claudePermissionMode;
+			if (savedMode) this.driver.setPermissionMode?.(savedMode);
+		} catch {}
 		this.driverFactory = opts.driverFactory;
 		this.pluginCommandsProvider = opts.pluginCommandsProvider;
 		this.onQuit = opts.onQuit;
@@ -600,6 +610,7 @@ export class UniversalSession implements DispatchSession {
 
 	attachSink(send: (msg: ServerMessage) => void): void {
 		this.sinks.add(send);
+		this.pushClaudePermission();
 		this.pushSettings();
 		void this.pushSlashCommands();
 		const defModel = this.stateStore?.getDefaultModel(this.engine);
@@ -961,14 +972,71 @@ export class UniversalSession implements DispatchSession {
 					this.emitNotice("error", `执行出错: ${errText}`, `Execution error: ${errText}`);
 					this.finalizeTurn();
 				},
+				// Engine permission request (Claude Code `can_use_tool`) -> reuse the same
+				// tool_approval_* messages the pi engine already drives the approval dialog with.
+				// NOTE: do NOT flushSnapshot() here — the frontend merges `approval` from
+				// `snapshot.pendingApproval`, which this session never sets, so a snapshot right
+				// after this message wipes the dialog before it can be shown.
+				// An engine prompt has no durable rule store behind it, so the answer is always
+				// one-shot: "always allow for this conversation" would be a lie (scopeless).
+				onApprovalRequest: (requestId, toolName, params, options) => {
+					const id = `ua-${requestId}`;
+					// Nobody attached (durable / background / plugin-driven run): a dialog would
+					// never be seen, and the engine waits for an answer, so deny instead of hanging.
+					if (this.sinks.size === 0) {
+						void this.driver.respondApproval(requestId, "deny", undefined, "no attached client");
+						this.emitNotice(
+							"warning",
+							`无人可答的审批（该会话没有已连接的界面）：已拒绝工具 ${toolName}。`,
+							`Approval nobody can answer (no attached client): tool ${toolName} was denied.`,
+						);
+						return;
+					}
+					this.pendingApprovals.set(id, { requestId, toolName });
+					// Unattended client ids (plugin:/scheduler:/canvas:) get the same watchdog the
+					// pi engine uses, so a forgotten dialog cannot block a run forever.
+					const timeoutMs = unattendedApprovalTimeoutMs(this.clientId);
+					if (timeoutMs !== null) {
+						const timer = setTimeout(() => {
+							this.approvalTimers.delete(id);
+							const entry = this.pendingApprovals.get(id);
+							if (!entry) return;
+							this.pendingApprovals.delete(id);
+							void this.driver.respondApproval(entry.requestId, "deny", undefined, "unattended timeout");
+							this.send({ type: "tool_approval_resolved", id });
+							this.emitNotice(
+								"warning",
+								`无人值守审批超时（${Math.round(timeoutMs / 1000)}s）：已拒绝工具 ${toolName}。`,
+								`Unattended approval timed out after ${Math.round(timeoutMs / 1000)}s: tool ${toolName} was denied.`,
+							);
+						}, timeoutMs);
+						timer.unref?.();
+						this.approvalTimers.set(id, timer);
+					}
+					this.send({
+						type: "tool_approval_pending",
+						id,
+						toolCallId: `tc-${requestId}`,
+						toolName,
+						params: params && typeof params === "object" ? params : {},
+						reason: "",
+						reasonEn: "",
+						scopeless: true,
+						...(this.turnConvId ? { conversationId: this.turnConvId } : {}),
+						...(options?.suggestions ? { suggestions: options.suggestions } : {}),
+					});
+				},
 			};
 
 			try {
+				// Must return: async sink methods (onApprovalRequest wiring, future ones) rely on
+				// the value/promise; the original form swallowed it, so callers waited forever.
 				const guardedSink = new Proxy(sink, {
 					get:
 						(target, key: keyof AgentEventSink) =>
 						(...args: unknown[]) => {
-							if (isCurrent()) (target[key] as (...args: unknown[]) => void)?.(...args);
+							if (!isCurrent()) return undefined;
+							return (target[key] as (...args: unknown[]) => unknown)?.(...args);
 						},
 				});
 				await this.driver.sendPrompt(
@@ -1102,7 +1170,66 @@ export class UniversalSession implements DispatchSession {
 		}
 	}
 
+	/** UI setting: Claude Code permission mode (env stays the fallback). */
+	async setClaudePermissionMode(mode: string): Promise<void> {
+		const options = this.driver.permissionModeOptions?.() ?? [];
+		if (options.length === 0) return;
+		if (!options.includes(mode)) {
+			this.emitNotice(
+				"warning",
+				`未知权限模式「${mode}」，默认未改`,
+				`Unknown permission mode "${mode}"; setting unchanged`,
+			);
+			return;
+		}
+		this.driver.setPermissionMode?.(mode);
+		await this.stateStore?.saveSettings?.(this.clientId, { claudePermissionMode: mode });
+		this.pushClaudePermission();
+	}
+
+	private pushClaudePermission(): void {
+		const options = this.driver.permissionModeOptions?.();
+		if (!options || options.length === 0) return;
+		this.send({ type: "claude_permission", modes: options, current: this.driver.currentPermissionMode?.() ?? "" });
+	}
+
+	/** Approval reply routed here from dispatch (`tool_approval_response`). */
+	resolveToolApproval(
+		id: string,
+		decision: "approve" | "edit" | "deny",
+		editedParams?: Record<string, unknown>,
+		reason?: string,
+		_scope?: unknown,
+	): boolean {
+		const entry = this.pendingApprovals.get(id);
+		if (!entry) return false;
+		this.pendingApprovals.delete(id);
+		this.clearApprovalTimer(id);
+		void this.driver.respondApproval(entry.requestId, decision, editedParams, reason);
+		this.send({ type: "tool_approval_resolved", id });
+		return true;
+	}
+
+	private clearApprovalTimer(id: string): void {
+		const timer = this.approvalTimers.get(id);
+		if (!timer) return;
+		clearTimeout(timer);
+		this.approvalTimers.delete(id);
+	}
+
+	/** Deny every outstanding approval (turn aborted/ended) so the engine never hangs. */
+	private denyPendingApprovals(reason: string): void {
+		if (this.pendingApprovals.size === 0) return;
+		for (const [id, entry] of this.pendingApprovals) {
+			this.clearApprovalTimer(id);
+			void this.driver.respondApproval(entry.requestId, "deny", undefined, reason);
+			this.send({ type: "tool_approval_resolved", id });
+		}
+		this.pendingApprovals.clear();
+	}
+
 	async abort(): Promise<void> {
+		this.denyPendingApprovals("aborted");
 		if (this.abortPromise) return this.abortPromise;
 		if (!this.isStreaming) return;
 		this.abortPromise = Promise.resolve().then(async () => {

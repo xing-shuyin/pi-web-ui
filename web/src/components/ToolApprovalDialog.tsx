@@ -318,15 +318,17 @@ function ApprovalDialog({ approval, onDefer }: ToolApprovalDialogProps & { onDef
 								{t("toolApprovalAllowCategory")}
 							</button>
 						)}
-						<button
-							type="button"
-							className="btn"
-							title={t("toolApprovalAllowConversationHint")}
-							onClick={() => handleApprove("all")}
-						>
-							<FiCheckCircle />
-							{t("toolApprovalAllowConversation")}
-						</button>
+						{!approval.scopeless && (
+							<button
+								type="button"
+								className="btn"
+								title={t("toolApprovalAllowConversationHint")}
+								onClick={() => handleApprove("all")}
+							>
+								<FiCheckCircle />
+								{t("toolApprovalAllowConversation")}
+							</button>
+						)}
 						<button type="button" className="btn" style={{ color: "var(--red, #ef4444)" }} onClick={handleDeny}>
 							<FiX />
 							{t("toolApprovalDeny")}

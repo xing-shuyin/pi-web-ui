@@ -618,6 +618,15 @@ export const BUILTIN_UI_ITEMS: BuiltinUiItem[] = [
 		align: "start",
 	},
 	{
+		id: "host:composer-claude-perm",
+		slot: "composer.actions",
+		labelKey: "claudePermDefault",
+		icon: "lock",
+		kind: "action",
+		order: 138,
+		align: "start",
+	},
+	{
 		id: "host:composer-dsh-perm",
 		slot: "composer.actions",
 		labelKey: "dshPerm",

@@ -1713,6 +1713,7 @@ export type ClientMessage =
 	| { type: "dsh_preset_default"; preset: string }
 	| { type: "dsh_permission_set"; preset: string }
 	| { type: "dsh_permission_default"; preset: string }
+	| { type: "claude_permission_mode"; mode: string }
 	| { type: "dsh_patches_rescan" }
 	| { type: "dsh_patch_install"; spec: string; id?: string }
 	| { type: "dsh_patch_toggle"; name: string; enabled: boolean }
@@ -2158,6 +2159,10 @@ export interface UiToolApproval {
 	parentTool?: string;
 	conversationId?: string;
 	conversationTitle?: string;
+	/** Engine-issued approval (e.g. Claude Code) that has no durable rule store behind it:
+	 *  the dialog must not offer "always allow for this conversation", because answering it
+	 *  once cannot persist anything. */
+	scopeless?: boolean;
 }
 
 export type PlanStepStatus = "pending" | "in_progress" | "done" | "failed";
@@ -3714,6 +3719,7 @@ export type ServerMessage =
 			defaultPreset: string;
 	  }
 	| { type: "dsh_permission"; options: DshPermissionOption[]; defaultPreset: string }
+	| { type: "claude_permission"; modes: string[]; current: string }
 	| {
 			type: "question_pending";
 			owner?: string;
@@ -3741,6 +3747,7 @@ export type ServerMessage =
 			parentTool?: string;
 			conversationId?: string;
 			conversationTitle?: string;
+			scopeless?: boolean;
 	  }
 	| { type: "tool_approval_resolved"; id: string; owner?: string; global?: boolean }
 	| { type: "global_interactions"; questions: UiPendingQuestion[]; approvals: UiToolApproval[] }

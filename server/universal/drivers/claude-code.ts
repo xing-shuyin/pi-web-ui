@@ -1,6 +1,7 @@
 import { spawn, type ChildProcess } from "node:child_process";
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { createInterface } from "node:readline";
+import type { Writable } from "node:stream";
 import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
 import { probeEngineCliVersion, resolveEngineCliLaunch } from "../../engine-cli.js";
@@ -16,6 +17,53 @@ import {
 import { discoverDiskSkills } from "../../skill-discovery.js";
 import { decodeInlineImage, describeCliAttachment } from "../universal-attachments.js";
 import { collectEnabledMcpServers, toClaudeMcpConfig } from "../engine-mcp.js";
+
+/** Legal values of Claude Code's `--permission-mode` (there is no "default"). */
+const CLAUDE_PERMISSION_MODES = ["acceptEdits", "auto", "manual", "dontAsk", "plan", "bypassPermissions"] as const;
+
+/**
+ * Default mode. Stays `bypassPermissions` on purpose: that is what the engine did before the
+ * permission bridge existed (`--dangerously-skip-permissions`), and anything else would turn
+ * "prompt for a tool" into "deny it" wherever nobody can answer — durable/background runs,
+ * scheduler/plugin-driven conversations, subagents — i.e. the same hang this bridge fixes,
+ * only silent. A prompting mode is opt-in (composer chip or env).
+ */
+const DEFAULT_PERMISSION_MODE = "bypassPermissions";
+
+/**
+ * Build the permission flags for the CLI.
+ *
+ * `--permission-prompt-tool stdio` is what makes the CLI raise `control_request`/`can_use_tool`
+ * for us to answer; without it the CLI silently denies tools itself and a host-side approval
+ * dialog can never appear.
+ *
+ * Env:
+ * - PI_WEB_CLAUDE_PERMISSION_MODE   bypassPermissions (default) | acceptEdits | auto | manual | dontAsk | plan
+ * - PI_WEB_CLAUDE_PERMISSION_PROMPTS host (default) | none  ("none" auto-denies anything that would prompt)
+ */
+let permissionModeOverride: string | null = null;
+
+/** Set by the UI setting (process-wide, which matches the single global setting). */
+export function setClaudePermissionMode(mode: string | null): void {
+	permissionModeOverride = mode;
+}
+
+export const CLAUDE_PERMISSION_MODE_OPTIONS = [...CLAUDE_PERMISSION_MODES];
+
+/** Current effective mode (UI override > env > default). */
+export function currentClaudePermissionMode(): string {
+	const raw = (permissionModeOverride ?? process.env.PI_WEB_CLAUDE_PERMISSION_MODE ?? DEFAULT_PERMISSION_MODE).trim();
+	return (CLAUDE_PERMISSION_MODES as readonly string[]).includes(raw) ? raw : DEFAULT_PERMISSION_MODE;
+}
+
+function buildPermissionArgs(): string[] {
+	const mode = currentClaudePermissionMode();
+	const prompts = (process.env.PI_WEB_CLAUDE_PERMISSION_PROMPTS ?? "host").trim();
+	const args = ["--permission-mode", mode];
+	if (prompts === "none") args.push("--permission-prompts", "none");
+	else args.push("--permission-prompt-tool", "stdio");
+	return args;
+}
 
 export interface ClaudeCodeDriverOptions {
 	executablePath?: string;
@@ -100,7 +148,7 @@ export class ClaudeCodeDriver extends BaseAgentDriver {
 	};
 
 	private readonly executablePath: string | undefined;
-	private readonly extraArgs: string[];
+	private readonly staticExtraArgs: string[];
 	private readonly agentDir: string;
 	private readonly dataDir: string | undefined;
 	private currentModel: string;
@@ -118,14 +166,33 @@ export class ClaudeCodeDriver extends BaseAgentDriver {
 	private nativeSlashCommands: string[] = [];
 	private nativeSkills = new Set<string>();
 	private slashCommandsChanged = false;
+	/** Per-turn stdin: must stay open so we can answer permission requests. */
+	private activeStdin: Writable | null = null;
+	/** control_request id currently waiting for a human answer. */
+	private pendingRequestId: string | null = null;
 
 	constructor(cwd: string, opts?: ClaudeCodeDriverOptions) {
 		super(cwd);
 		this.executablePath = opts?.executablePath;
-		this.extraArgs = opts?.extraArgs ?? ["--dangerously-skip-permissions"];
+		// Only non-permission args are fixed at construction. Permission flags are rebuilt per
+		// turn (see sendPrompt) so switching the mode in the UI applies to the next prompt without
+		// a restart. Building them here once would freeze the mode from construction time.
+		this.staticExtraArgs = opts?.extraArgs ?? [];
 		this.currentModel = normalizeClaudeModelId(opts?.defaultModel ?? "default");
 		this.agentDir = opts?.agentDir || process.env.PI_CODING_AGENT_DIR || join(homedir(), ".pi", "agent");
 		this.dataDir = opts?.dataDir;
+	}
+
+	permissionModeOptions(): string[] {
+		return CLAUDE_PERMISSION_MODE_OPTIONS;
+	}
+
+	currentPermissionMode(): string {
+		return currentClaudePermissionMode();
+	}
+
+	setPermissionMode(mode: string): void {
+		setClaudePermissionMode(mode);
 	}
 
 	async createSession(): Promise<string> {
@@ -185,7 +252,8 @@ export class ClaudeCodeDriver extends BaseAgentDriver {
 			"--output-format",
 			"stream-json",
 			"--verbose",
-			...this.extraArgs,
+			...this.staticExtraArgs,
+			...buildPermissionArgs(),
 		];
 
 		let targetModel = this.currentModel;
@@ -237,8 +305,11 @@ export class ClaudeCodeDriver extends BaseAgentDriver {
 				windowsHide: true,
 			});
 			if (proc.stdin) {
+				// Keep stdin open: in non-bypass modes the CLI asks for permission over stdin and
+				// finishes only after the turn's `result` event closes it (see handleClaudeEvent).
+				this.activeStdin = proc.stdin;
 				proc.stdin.on("error", () => {});
-				proc.stdin.end(`${JSON.stringify(userMessage)}\n`);
+				proc.stdin.write(`${JSON.stringify(userMessage)}\n`);
 			}
 		} catch (err: unknown) {
 			cleanup();
@@ -287,6 +358,8 @@ export class ClaudeCodeDriver extends BaseAgentDriver {
 
 			proc.on("close", (code: number | null) => {
 				cleanup();
+				this.activeStdin = null;
+				this.pendingRequestId = null;
 				if (mySeq !== this.turnSeq) {
 					resolve();
 					return;
@@ -326,6 +399,68 @@ export class ClaudeCodeDriver extends BaseAgentDriver {
 		this.slashCommandsChanged = true;
 	}
 
+	/**
+	 * Claude Code -> host control channel. Permission requests go to the UI; every other
+	 * subtype (e.g. `initialize`) must still be acknowledged or the CLI blocks the turn.
+	 */
+	private handleControlRequest(event: Record<string, unknown>, sink: AgentEventSink): void {
+		const requestId = typeof event.request_id === "string" ? event.request_id : "";
+		if (!requestId) return;
+		const request = (event.request ?? {}) as Record<string, unknown>;
+		const subtype = String(request.subtype ?? "");
+
+		if (subtype !== "can_use_tool") {
+			this.writeControlResponse(requestId, {});
+			return;
+		}
+
+		this.pendingRequestId = requestId;
+		const toolName = String(request.tool_name ?? "tool");
+		const params = request.input && typeof request.input === "object" ? (request.input as Record<string, unknown>) : {};
+		const suggestions = Array.isArray(request.permission_suggestions) ? request.permission_suggestions : undefined;
+
+		if (typeof sink.onApprovalRequest !== "function") {
+			// No UI channel (subagent/headless): deny instead of hanging the turn forever.
+			void this.respondApproval(requestId, "deny", undefined, "no approval channel");
+			return;
+		}
+		sink.onApprovalRequest(requestId, toolName, params, { suggestions });
+	}
+
+	private writeControlResponse(requestId: string, response: Record<string, unknown>): boolean {
+		const stdin = this.activeStdin;
+		if (!stdin || stdin.destroyed) return false;
+		try {
+			stdin.write(
+				`${JSON.stringify({ type: "control_response", response: { subtype: "success", request_id: requestId, response } })}\n`,
+			);
+			return true;
+		} catch {
+			return false;
+		}
+	}
+
+	async respondApproval(
+		requestId: string,
+		decision: "approve" | "edit" | "deny",
+		editedParams?: Record<string, unknown>,
+		reason?: string,
+	): Promise<boolean> {
+		const id = requestId || this.pendingRequestId;
+		if (!id) return false;
+		this.pendingRequestId = null;
+		const allow = decision === "approve" || decision === "edit";
+		const response = allow
+			? {
+					behavior: "allow",
+					...(decision === "edit" && editedParams && typeof editedParams === "object"
+						? { updatedInput: editedParams }
+						: {}),
+				}
+			: { behavior: "deny", message: reason || "User denied this tool use." };
+		return this.writeControlResponse(id, response);
+	}
+
 	private handleClaudeEvent(event: Record<string, unknown>, sink: AgentEventSink): void {
 		if (event.type === "stream_event" && event.event && typeof event.event === "object") {
 			this.handleClaudeEvent(event.event as Record<string, unknown>, sink);
@@ -333,6 +468,11 @@ export class ClaudeCodeDriver extends BaseAgentDriver {
 		}
 
 		const type = String(event.type ?? "");
+
+		if (type === "control_request") {
+			this.handleControlRequest(event, sink);
+			return;
+		}
 
 		if (type === "system") {
 			this.noteSessionId(event.session_id, sink);
@@ -411,6 +551,11 @@ export class ClaudeCodeDriver extends BaseAgentDriver {
 				return;
 			}
 			this.turnCompleteEmitted = true;
+			// In `-p` mode the CLI exits on stdin EOF; close it once the turn's result arrived.
+			try {
+				this.activeStdin?.end();
+			} catch {}
+			this.activeStdin = null;
 			sink.onTurnComplete({
 				usage: usage ? { inputTokens, outputTokens, cacheReadTokens, cacheWriteTokens, costUSD } : undefined,
 				costUSD,
