@@ -752,150 +752,6 @@
 			"reason": "pending"
 		},
 		{
-			"file": "web/src/components/DeviceGroupSection.tsx",
-			"text": "${room.name} · ${isZhLocale(locale) ? \"成员\" : \"Members\"}",
-			"count": 1,
-			"reason": "pending"
-		},
-		{
-			"file": "web/src/components/DeviceGroupSection.tsx",
-			"text": "${room.name} · ${isZhLocale(locale) ? \"添加 Bot\" : \"Add Bot\"}",
-			"count": 1,
-			"reason": "pending"
-		},
-		{
-			"file": "web/src/components/DeviceGroupSection.tsx",
-			"text": "保存",
-			"count": 1,
-			"reason": "pending"
-		},
-		{
-			"file": "web/src/components/DeviceGroupSection.tsx",
-			"text": "删除群组",
-			"count": 1,
-			"reason": "pending"
-		},
-		{
-			"file": "web/src/components/DeviceGroupSection.tsx",
-			"text": "加载中…",
-			"count": 1,
-			"reason": "pending"
-		},
-		{
-			"file": "web/src/components/DeviceGroupSection.tsx",
-			"text": "取消",
-			"count": 1,
-			"reason": "pending"
-		},
-		{
-			"file": "web/src/components/DeviceGroupSection.tsx",
-			"text": "展开群组",
-			"count": 1,
-			"reason": "pending"
-		},
-		{
-			"file": "web/src/components/DeviceGroupSection.tsx",
-			"text": "建群",
-			"count": 1,
-			"reason": "pending"
-		},
-		{
-			"file": "web/src/components/DeviceGroupSection.tsx",
-			"text": "打开设备中心",
-			"count": 1,
-			"reason": "pending"
-		},
-		{
-			"file": "web/src/components/DeviceGroupSection.tsx",
-			"text": "折叠群组",
-			"count": 1,
-			"reason": "pending"
-		},
-		{
-			"file": "web/src/components/DeviceGroupSection.tsx",
-			"text": "无法访问群组，请检查本机访问权限。",
-			"count": 1,
-			"reason": "pending"
-		},
-		{
-			"file": "web/src/components/DeviceGroupSection.tsx",
-			"text": "添加或新建 Bot",
-			"count": 1,
-			"reason": "pending"
-		},
-		{
-			"file": "web/src/components/DeviceGroupSection.tsx",
-			"text": "清空消息",
-			"count": 1,
-			"reason": "pending"
-		},
-		{
-			"file": "web/src/components/DeviceGroupSection.tsx",
-			"text": "确定删除群组“{name}”？",
-			"count": 1,
-			"reason": "pending"
-		},
-		{
-			"file": "web/src/components/DeviceGroupSection.tsx",
-			"text": "确定清空群组“{name}”的全部消息和历史任务记录？此操作无法撤销，群组和成员将保留。",
-			"count": 1,
-			"reason": "pending"
-		},
-		{
-			"file": "web/src/components/DeviceGroupSection.tsx",
-			"text": "管理成员",
-			"count": 1,
-			"reason": "pending"
-		},
-		{
-			"file": "web/src/components/DeviceGroupSection.tsx",
-			"text": "群内仍有排队或运行中的任务，请等待任务结束后再操作。",
-			"count": 1,
-			"reason": "pending"
-		},
-		{
-			"file": "web/src/components/DeviceGroupSection.tsx",
-			"text": "群名称",
-			"count": 1,
-			"reason": "pending"
-		},
-		{
-			"file": "web/src/components/DeviceGroupSection.tsx",
-			"text": "群组",
-			"count": 1,
-			"reason": "pending"
-		},
-		{
-			"file": "web/src/components/DeviceGroupSection.tsx",
-			"text": "群组请求失败，请重试。",
-			"count": 1,
-			"reason": "pending"
-		},
-		{
-			"file": "web/src/components/DeviceGroupSection.tsx",
-			"text": "请先在设备设置中绑定本机，旧版绑定请重新绑定。",
-			"count": 1,
-			"reason": "pending"
-		},
-		{
-			"file": "web/src/components/DeviceGroupSection.tsx",
-			"text": "还没有群组",
-			"count": 1,
-			"reason": "pending"
-		},
-		{
-			"file": "web/src/components/DeviceGroupSection.tsx",
-			"text": "重命名",
-			"count": 1,
-			"reason": "pending"
-		},
-		{
-			"file": "web/src/components/DeviceGroupSection.tsx",
-			"text": "重试",
-			"count": 1,
-			"reason": "pending"
-		},
-		{
 			"file": "web/src/components/DirectoryBrowser.tsx",
 			"text": "${t(\"addWorkspaceRoot\")} · ${isZh ? \"已在工作区根中\" : \"Already a workspace root\"}",
 			"count": 1,
@@ -1486,126 +1342,6 @@
 		{
 			"file": "web/src/components/GroupNativeInteractions.tsx",
 			"text": "模型提问",
-			"count": 1,
-			"reason": "pending"
-		},
-		{
-			"file": "web/src/components/GroupSteerModal.tsx",
-			"text": "任务飞行中实时转向 (In-flight Steering)",
-			"count": 1,
-			"reason": "pending"
-		},
-		{
-			"file": "web/src/components/GroupSteerModal.tsx",
-			"text": "优先检查并补充类型声明",
-			"count": 1,
-			"reason": "pending"
-		},
-		{
-			"file": "web/src/components/GroupSteerModal.tsx",
-			"text": "优先检查并补充缺失的类型声明，确保 strict typecheck 零错误。",
-			"count": 1,
-			"reason": "pending"
-		},
-		{
-			"file": "web/src/components/GroupSteerModal.tsx",
-			"text": "例如：当前步骤已通过，请直接进行单元测试并汇报覆盖率；或者跳过重构，保持既有接口契约。",
-			"count": 1,
-			"reason": "pending"
-		},
-		{
-			"file": "web/src/components/GroupSteerModal.tsx",
-			"text": "先进行自测并展示通过证据",
-			"count": 1,
-			"reason": "pending"
-		},
-		{
-			"file": "web/src/components/GroupSteerModal.tsx",
-			"text": "先进行自测并展示通过证据，包括具体的测试用例与终端运行输出。",
-			"count": 1,
-			"reason": "pending"
-		},
-		{
-			"file": "web/src/components/GroupSteerModal.tsx",
-			"text": "发送转向指令",
-			"count": 1,
-			"reason": "pending"
-		},
-		{
-			"file": "web/src/components/GroupSteerModal.tsx",
-			"text": "取消",
-			"count": 1,
-			"reason": "pending"
-		},
-		{
-			"file": "web/src/components/GroupSteerModal.tsx",
-			"text": "常用纠偏预设（点击快速填入）",
-			"count": 1,
-			"reason": "pending"
-		},
-		{
-			"file": "web/src/components/GroupSteerModal.tsx",
-			"text": "当前目标：",
-			"count": 1,
-			"reason": "pending"
-		},
-		{
-			"file": "web/src/components/GroupSteerModal.tsx",
-			"text": "注入中...",
-			"count": 1,
-			"reason": "pending"
-		},
-		{
-			"file": "web/src/components/GroupSteerModal.tsx",
-			"text": "注入转向指令失败",
-			"count": 1,
-			"reason": "pending"
-		},
-		{
-			"file": "web/src/components/GroupSteerModal.tsx",
-			"text": "目标设备",
-			"count": 1,
-			"reason": "pending"
-		},
-		{
-			"file": "web/src/components/GroupSteerModal.tsx",
-			"text": "直接汇总当前阶段产物并结束",
-			"count": 1,
-			"reason": "pending"
-		},
-		{
-			"file": "web/src/components/GroupSteerModal.tsx",
-			"text": "直接汇总当前阶段产物并结束，保留关键交付物与验证结论。",
-			"count": 1,
-			"reason": "pending"
-		},
-		{
-			"file": "web/src/components/GroupSteerModal.tsx",
-			"text": "精简后续输出，跳过冗余细节，仅汇报核心变更、未决风险与阻碍项。",
-			"count": 1,
-			"reason": "pending"
-		},
-		{
-			"file": "web/src/components/GroupSteerModal.tsx",
-			"text": "精简输出与风险",
-			"count": 1,
-			"reason": "pending"
-		},
-		{
-			"file": "web/src/components/GroupSteerModal.tsx",
-			"text": "请输入转向纠偏指令",
-			"count": 1,
-			"reason": "pending"
-		},
-		{
-			"file": "web/src/components/GroupSteerModal.tsx",
-			"text": "转向指令 (Ctrl+Enter 提交)",
-			"count": 1,
-			"reason": "pending"
-		},
-		{
-			"file": "web/src/components/GroupSteerModal.tsx",
-			"text": "阶段",
 			"count": 1,
 			"reason": "pending"
 		},
@@ -2747,139 +2483,139 @@
 			"file": "web/src/plugin-host.ts",
 			"text": "[plugin-host] onLocale 处理器抛错:",
 			"count": 1,
-			"reason": "pending"
+			"reason": "data"
 		},
 		{
 			"file": "web/src/plugin-host.ts",
 			"text": "[plugin-host] onModelChange 处理器抛错:",
 			"count": 1,
-			"reason": "pending"
+			"reason": "data"
 		},
 		{
 			"file": "web/src/plugin-host.ts",
 			"text": "[plugin-host] onTheme 处理器抛错:",
 			"count": 1,
-			"reason": "pending"
+			"reason": "data"
 		},
 		{
 			"file": "web/src/plugin-host.ts",
 			"text": "[plugin-host] onViewChange 处理器抛错:",
 			"count": 1,
-			"reason": "pending"
+			"reason": "data"
 		},
 		{
 			"file": "web/src/plugin-host.ts",
 			"text": "[plugin-host] 快捷键处理器抛错:",
 			"count": 1,
-			"reason": "pending"
+			"reason": "data"
 		},
 		{
 			"file": "web/src/plugin-host.ts",
 			"text": "[plugin:${pluginId}] 顶栏动作 ${action} 抛错:",
 			"count": 1,
-			"reason": "pending"
+			"reason": "data"
 		},
 		{
 			"file": "web/src/plugin-host.ts",
 			"text": "openSession 需要 cwd / folders / roots（绝对路径）",
 			"count": 1,
-			"reason": "pending"
+			"reason": "data"
 		},
 		{
 			"file": "web/src/plugin-host.ts",
 			"text": "pageCall 需要一个动作名（op）",
 			"count": 1,
-			"reason": "pending"
+			"reason": "data"
 		},
 		{
 			"file": "web/src/plugin-host.ts",
 			"text": "reloadCatalog 需要一个目录来源（http(s) URL 或本地文件路径）",
 			"count": 1,
-			"reason": "pending"
+			"reason": "data"
 		},
 		{
 			"file": "web/src/plugin-host.ts",
 			"text": "sessions.open 需要一个会话 id（先调 list）",
 			"count": 1,
-			"reason": "pending"
+			"reason": "data"
 		},
 		{
 			"file": "web/src/plugin-host.ts",
 			"text": "切换会话超时：${info.title}",
 			"count": 1,
-			"reason": "pending"
+			"reason": "data"
 		},
 		{
 			"file": "web/src/plugin-host.ts",
 			"text": "切换工作目录失败或超时：${info.cwd}",
 			"count": 1,
-			"reason": "pending"
+			"reason": "data"
 		},
 		{
 			"file": "web/src/plugin-host.ts",
 			"text": "切换工作目录失败或超时：${target}",
 			"count": 1,
-			"reason": "pending"
+			"reason": "data"
 		},
 		{
 			"file": "web/src/plugin-host.ts",
 			"text": "尚未连接到服务器（还没有快照）",
 			"count": 3,
-			"reason": "pending"
+			"reason": "data"
 		},
 		{
 			"file": "web/src/plugin-host.ts",
 			"text": "打开并接入会话超时：${info.title}",
 			"count": 1,
-			"reason": "pending"
+			"reason": "data"
 		},
 		{
 			"file": "web/src/plugin-host.ts",
 			"text": "找不到会话：${targetId}",
 			"count": 1,
-			"reason": "pending"
+			"reason": "data"
 		},
 		{
 			"file": "web/src/plugin-host.ts",
 			"text": "未知模型：${model}（先调 models.list() 取可用列表）",
 			"count": 1,
-			"reason": "pending"
+			"reason": "data"
 		},
 		{
 			"file": "web/src/plugin-host.ts",
 			"text": "此桌面版尚未提供原生浏览器桥；请升级到支持 AI Browser 的桌面版，或在系统浏览器中使用 page-picker 扩展。/ Native browser bridge unavailable; upgrade the desktop app or use page-picker in a regular browser.",
 			"count": 1,
-			"reason": "pending"
+			"reason": "data"
 		},
 		{
 			"file": "web/src/plugin-host.ts",
 			"text": "浏览器扩展的页面桥没就绪：确认已安装并启用 page-picker 扩展、本页地址已绑定，然后刷新本页",
 			"count": 1,
-			"reason": "pending"
+			"reason": "data"
 		},
 		{
 			"file": "web/src/plugin-host.ts",
 			"text": "用户拒绝了该目录的访问：${info.cwd}",
 			"count": 1,
-			"reason": "pending"
+			"reason": "data"
 		},
 		{
 			"file": "web/src/plugin-host.ts",
 			"text": "用户拒绝了该目录的访问：${p}",
 			"count": 1,
-			"reason": "pending"
+			"reason": "data"
 		},
 		{
 			"file": "web/src/plugin-host.ts",
 			"text": "目录同步失败",
 			"count": 1,
-			"reason": "pending"
+			"reason": "data"
 		},
 		{
 			"file": "web/src/plugin-host.ts",
 			"text": "目录同步超时（服务端未在等待窗口内回执）",
 			"count": 1,
-			"reason": "pending"
+			"reason": "data"
 		},
 		{
 			"file": "web/src/plugin-loader.ts",
@@ -3418,138 +3154,6 @@
 		{
 			"file": "web/src/template-commands.ts",
 			"text": "自动提取剪贴板文本",
-			"count": 1,
-			"reason": "pending"
-		},
-		{
-			"file": "web/src/thinking-levels.ts",
-			"text": "⚡ Claude 3.7+ 预算型 (1K~64K)",
-			"count": 1,
-			"reason": "pending"
-		},
-		{
-			"file": "web/src/thinking-levels.ts",
-			"text": "⚡ DeepSeek 兼容协议",
-			"count": 1,
-			"reason": "pending"
-		},
-		{
-			"file": "web/src/thinking-levels.ts",
-			"text": "⚡ Gemini 2.0+ 预算型 (0~32K)",
-			"count": 1,
-			"reason": "pending"
-		},
-		{
-			"file": "web/src/thinking-levels.ts",
-			"text": "⚡ OpenAI o 系列档位 (低/中/高)",
-			"count": 1,
-			"reason": "pending"
-		},
-		{
-			"file": "web/src/thinking-levels.ts",
-			"text": "⚡ OpenRouter 规范",
-			"count": 1,
-			"reason": "pending"
-		},
-		{
-			"file": "web/src/thinking-levels.ts",
-			"text": "⚡ Qwen 通义千问协议",
-			"count": 1,
-			"reason": "pending"
-		},
-		{
-			"file": "web/src/thinking-levels.ts",
-			"text": "⚡ 全开模式 (全部 7 档)",
-			"count": 1,
-			"reason": "pending"
-		},
-		{
-			"file": "web/src/thinking-levels.ts",
-			"text": "⚡ 固定深度推理 (不可调)",
-			"count": 1,
-			"reason": "pending"
-		},
-		{
-			"file": "web/src/thinking-levels.ts",
-			"text": "DeepSeek 协议 (thinking: {type: enabled})",
-			"count": 1,
-			"reason": "pending"
-		},
-		{
-			"file": "web/src/thinking-levels.ts",
-			"text": "Gemini Flash Thinking 预算控制",
-			"count": 1,
-			"reason": "pending"
-		},
-		{
-			"file": "web/src/thinking-levels.ts",
-			"text": "OpenAI 档位 (reasoning_effort: low/med/high)",
-			"count": 1,
-			"reason": "pending"
-		},
-		{
-			"file": "web/src/thinking-levels.ts",
-			"text": "OpenRouter 协议 (reasoning: {effort})",
-			"count": 1,
-			"reason": "pending"
-		},
-		{
-			"file": "web/src/thinking-levels.ts",
-			"text": "包含极高与最大，全量开放供自由选择",
-			"count": 1,
-			"reason": "pending"
-		},
-		{
-			"file": "web/src/thinking-levels.ts",
-			"text": "发送 enable_thinking: true 专属参数",
-			"count": 1,
-			"reason": "pending"
-		},
-		{
-			"file": "web/src/thinking-levels.ts",
-			"text": "发送 reasoning: { effort } 跨端归一格式",
-			"count": 1,
-			"reason": "pending"
-		},
-		{
-			"file": "web/src/thinking-levels.ts",
-			"text": "发送 thinking: { type: 'enabled' } 协议对象",
-			"count": 1,
-			"reason": "pending"
-		},
-		{
-			"file": "web/src/thinking-levels.ts",
-			"text": "支持关/开，按 Token 精准预算（1024~64000 tokens）",
-			"count": 1,
-			"reason": "pending"
-		},
-		{
-			"file": "web/src/thinking-levels.ts",
-			"text": "智谱 GLM (zai thinking 对象)",
-			"count": 1,
-			"reason": "pending"
-		},
-		{
-			"file": "web/src/thinking-levels.ts",
-			"text": "标准 effort 档位，不可关闭思考",
-			"count": 1,
-			"reason": "pending"
-		},
-		{
-			"file": "web/src/thinking-levels.ts",
-			"text": "自动检测 (Auto / Default)",
-			"count": 1,
-			"reason": "pending"
-		},
-		{
-			"file": "web/src/thinking-levels.ts",
-			"text": "适用于 DeepSeek R1 / QwQ 等不可控模型",
-			"count": 1,
-			"reason": "pending"
-		},
-		{
-			"file": "web/src/thinking-levels.ts",
-			"text": "通义千问 Qwen (enable_thinking: true)",
 			"count": 1,
 			"reason": "pending"
 		},

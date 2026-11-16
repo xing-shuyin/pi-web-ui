@@ -1728,9 +1728,9 @@ export function ModelConfigModal({
 																				compat: Object.keys(currentCompat).length ? currentCompat : undefined,
 																			});
 																		}}
-																		title={profile.desc}
+																		title={t(profile.descKey)}
 																	>
-																		{profile.name}
+																		{t(profile.nameKey)}
 																	</button>
 																))}
 
@@ -1791,7 +1791,7 @@ export function ModelConfigModal({
 																	>
 																		{THINKING_FORMAT_OPTIONS.map((opt) => (
 																			<option key={opt.value} value={opt.value}>
-																				{opt.label}
+																				{t(opt.labelKey)}
 																			</option>
 																		))}
 																	</select>
