@@ -1869,7 +1869,7 @@
 		"reversePagination": "Carregar mensagens anteriores",
 		"reversePaginationDesc": "Ativado: Mostra apenas mensagens recentes; role para cima ou clique para carregar o histórico anterior.",
 		"showForkedParents": "Mostrar sessões pai ramificadas",
-		"showForkedParentsDesc": "Manter as sessões pai originais visíveis no histórico após editar uma pergunta ou criar um ramo (por padrão apenas o ramo mais recente é exibido)",
+		"showForkedParentsDesc": "Manter as sessões pai originais visíveis no histórico após editar uma pergunta ou criar um ramo (ativado por padrão; desativado, apenas a ramificação mais recente de cada cadeia é exibida)",
 		"retainFinishedConversations": "Manter conversas concluídas ao alternar",
 		"retainFinishedConversationsDesc": "Ativado: conversas concluídas (inativas) permanecem na lista de conversas ativas ao alternar ou criar novos chats até serem removidas manualmente com ✕; Desativado: chats não continuados são removidos automaticamente",
 		"openRecentSessionOnProjectSwitch": "Abrir sessão recente ao alternar de projeto",

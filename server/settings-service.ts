@@ -547,7 +547,7 @@ export class SettingsService {
 				toolImagesEnabled: this.settings.toolImagesEnabled ?? true,
 				keepRecentMessages: normalizeKeepRecentMessages(this.settings.keepRecentMessages),
 				reversePagination: this.settings.reversePagination ?? false,
-				showForkedParentSessions: this.settings.showForkedParentSessions ?? false,
+				showForkedParentSessions: this.settings.showForkedParentSessions ?? true,
 				retainFinishedConversations: this.settings.retainFinishedConversations ?? false,
 				openRecentSessionOnProjectSwitch: this.settings.openRecentSessionOnProjectSwitch ?? true,
 				chatUploadMaxMb: this.settings.chatUploadMaxMb ?? 20,
@@ -891,7 +891,7 @@ export class SettingsService {
 		let sessionsFilterChanged = false;
 		if (partial.showForkedParentSessions !== undefined) {
 			const nextVal = Boolean(partial.showForkedParentSessions);
-			if (nextVal !== (next.showForkedParentSessions ?? false)) {
+			if (nextVal !== (next.showForkedParentSessions ?? true)) {
 				sessionsFilterChanged = true;
 			}
 			next.showForkedParentSessions = nextVal;
@@ -1088,7 +1088,7 @@ export class SettingsService {
 		delete patch.name;
 		delete patch.plugins;
 		for (const k of Object.keys(patch)) if (patch[k] === undefined) delete patch[k];
-		const prevShowForked = this.settings.showForkedParentSessions ?? false;
+		const prevShowForked = this.settings.showForkedParentSessions ?? true;
 		this.commitSettings({
 			...patch,
 			...(hasToolSettings
@@ -1111,7 +1111,7 @@ export class SettingsService {
 			this.host.applyToolGating();
 		}
 		this.push();
-		if ((this.settings.showForkedParentSessions ?? false) !== prevShowForked) {
+		if ((this.settings.showForkedParentSessions ?? true) !== prevShowForked) {
 			this.host.onSessionsFilterChanged?.();
 		}
 		await this.applyRuntime(true, runtimeTarget);

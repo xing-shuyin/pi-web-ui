@@ -1869,7 +1869,7 @@
 		"reversePagination": "Frühere Nachrichten nachladen",
 		"reversePaginationDesc": "Ein: Nur aktuelle Nachrichten anzeigen; nach oben scrollen oder klicken, um früheren Verlauf zu laden.",
 		"showForkedParents": "Verzweigte Elternsitzungen anzeigen",
-		"showForkedParentsDesc": "Ursprüngliche Elternsitzungen nach dem Bearbeiten einer Frage oder dem Verzweigen weiterhin in der Verlaufsliste anzeigen (standardmäßig wird nur der neueste Zweig angezeigt)",
+		"showForkedParentsDesc": "Ursprüngliche Elternsitzungen nach dem Bearbeiten einer Frage oder dem Verzweigen weiterhin in der Verlaufsliste anzeigen (standardmäßig aktiviert; deaktiviert wird nur der neueste Zweig je Kette angezeigt)",
 		"retainFinishedConversations": "Beendete Chats beim Wechsel behalten",
 		"retainFinishedConversationsDesc": "Aktiviert: Beendete (inaktive) Unterhaltungen bleiben beim Wechsel oder Erstellen neuer Chats in der Liste der aktiven Chats, bis sie manuell mit ✕ entfernt werden; Deaktiviert: Nicht fortgesetzte Chats werden automatisch entfernt",
 		"openRecentSessionOnProjectSwitch": "Beim Projektwechsel letzte Sitzung öffnen",

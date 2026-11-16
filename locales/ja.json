@@ -1869,7 +1869,7 @@
 		"reversePagination": "過去メッセージの分割読み込み",
 		"reversePaginationDesc": "有効：最新メッセージのみを表示し、上スクロールまたはタップで過去履歴を読み込みます。プレースホルダーを使わず快適なスクロールを提供します。",
 		"showForkedParents": "分岐元の親セッションを表示",
-		"showForkedParentsDesc": "過去の質問の編集やブランチ派生後も、履歴リストに元の親セッションを残して表示します（デフォルトでは各分岐チェーンの最新セッションのみ表示）",
+		"showForkedParentsDesc": "過去の質問の編集やブランチ派生後も、履歴リストに元の親セッションを残して表示します（デフォルトでオン。オフにすると各分岐チェーンの最新セッションのみ表示）",
 		"retainFinishedConversations": "切替時に終了した会話を保持",
 		"retainFinishedConversationsDesc": "オン：別の会話への切替時や新規会話作成時も、終了（アイドル）状態の会話を実行中リストに残し、✕ で手動削除するまで保持します。オフ：メッセージ送信のないまま離れた会話を自动削除します",
 		"openRecentSessionOnProjectSwitch": "プロジェクト切替時に最近のセッションを開く",

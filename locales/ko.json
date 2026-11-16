@@ -1869,7 +1869,7 @@
 		"reversePagination": "이전 메시지 위로 페이징 불러오기",
 		"reversePaginationDesc": "켜짐: 최근 메시지만 표시하며, 위로 스크롤하거나 클릭하여 이전 기록을 불러옵니다. 동적 플레이스홀더 없이 네이티브한 부드러움을 제공합니다.",
 		"showForkedParents": "분기된 부모 세션 표시",
-		"showForkedParentsDesc": "이전 질문을 수정하거나 분기한 후에도 기록 목록에 원래 부모 세션을 함께 표시합니다 (기본값은 각 분기 체인의 최신 세션만 표시)",
+		"showForkedParentsDesc": "이전 질문을 수정하거나 분기한 후에도 기록 목록에 원래 부모 세션을 함께 표시합니다 (기본값 켜짐, 끄면 각 분기 체인의 최신 세션만 표시)",
 		"retainFinishedConversations": "전환 시 완료된 대화 유지",
 		"retainFinishedConversationsDesc": "켜짐: 다른 대화로 전환하거나 새 대화를 만들 때 완료(대기) 상태의 대화를 실행 중 목록에 유지하며 ✕ 로 직접 닫을 때까지 유지합니다. 꺼짐: 새 메시지 없이 벗어난 대화는 자동으로 제거됩니다",
 		"openRecentSessionOnProjectSwitch": "프로젝트 전환 시 최근 세션 열기",
