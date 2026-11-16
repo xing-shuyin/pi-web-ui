@@ -43,7 +43,19 @@ import { assertPublishIntentScope, validatePublishIntent } from "./publish-inten
 import { readPublicationJournal, loadPublicationJournals } from "./publication-journal.js";
 import { PublicationStopUnconfirmedError } from "./local-publication.js";
 
-type Config = { hubUrl: string; deviceId: string; credential: string; allowExecution: boolean; accountId?: string };
+type Config = {
+	hubUrl: string;
+	deviceId: string;
+	credential: string;
+	allowExecution: boolean;
+	accountId?: string;
+	/**
+	 * 稳定的 Hub 身份串（本机引擎用）。本机 loopback Hub 每次启动换随机端口，
+	 * `hubUrl` 因此不能当作用域键：会话 transcript 绑定、任务恢复、报告 outbox、
+	 * 文件同步目录、工作区锁全都按它分桶，换端口就等于"历史全不认识"。
+	 */
+	hubIdentity?: string;
+};
 type Files = ReturnType<typeof createDeviceFileSync>;
 type Executor = {
 	run(task: DeviceExecutorTask): Promise<string>;
@@ -96,12 +108,14 @@ export function createDeviceRuntime(options: {
 	let generation = new AbortController();
 	const active = new Set<TaskOwner>();
 	const transferOperations = new Set<Promise<unknown>>();
+	// 一切"属于哪个 Hub"的持久化作用域都用稳定身份，不用会变的 URL。
+	const hubKey = config.hubIdentity ?? config.hubUrl;
 	const recovery = new TaskRecoveryManager({
 		dataDir: options.dataDir,
 		deviceId: config.deviceId,
-		hubUrl: config.hubUrl,
+		hubUrl: hubKey,
 	});
-	const reportOutbox = createTaskReportOutbox(options.dataDir, config.deviceId, config.hubUrl);
+	const reportOutbox = createTaskReportOutbox(options.dataDir, config.deviceId, config.hubUrl, config.hubIdentity);
 	const schedulerFile = options.dataDir ? join(options.dataDir, "task-scheduler-state.json") : undefined;
 	let schedulerSaveTimer: ReturnType<typeof setTimeout> | undefined;
 	let schedulerStatePending = false;
@@ -249,7 +263,7 @@ export function createDeviceRuntime(options: {
 			if (!options.dataDir) throw new Error("File synchronization storage unavailable");
 			const canonicalRoot = resolve(lease.root);
 			const scopeToken = createHash("sha256")
-				.update(JSON.stringify([config.hubUrl, config.deviceId, roomId, botId, lease.revision, canonicalRoot]))
+				.update(JSON.stringify([hubKey, config.deviceId, roomId, botId, lease.revision, canonicalRoot]))
 				.digest("hex")
 				.slice(0, 32);
 			const scopedDataDir = join(options.dataDir, "scoped-transfers", scopeToken);
@@ -638,7 +652,7 @@ export function createDeviceRuntime(options: {
 					binding = createHash("sha256")
 						.update(
 							JSON.stringify([
-								config.hubUrl,
+								hubKey,
 								config.deviceId,
 								task.roomId,
 								lease.bot.id,

@@ -120,10 +120,22 @@ function validate(input: LocalBot): LocalBot {
  */
 export const LOCAL_BOT_SCOPE = "local";
 
+/** 候选文件必须是完整合法的 registry（解析 + 每个条目过校验），否则不配当唯一单源。 */
+function parseRegistry(content: string): boolean {
+	try {
+		const parsed: unknown = JSON.parse(content);
+		if (!Array.isArray(parsed)) return false;
+		for (const entry of parsed) validate(entry as LocalBot);
+		return true;
+	} catch {
+		return false;
+	}
+}
+
 /**
- * 一次性迁移：首次运行（本机 scope 文件还不存在）时，把最近修改过的旧 scope 文件搬过来。
- *
- * 旧文件保留不删（可人工回滚）；迁移幂等，已有本机文件时直接返回。
+ * 一次性迁移：首次运行（本机 scope 文件还不存在）时，按修改时间从新到旧找一个**合法**的旧
+ * scope 文件搬过来。坏文件 / 异构文件一律跳过——迁移只是便利，绝不能把启动搞挂
+ * （旧文件全部保留，可人工回滚；迁移幂等）。
  */
 async function adoptLegacyScope(directory: string, target: string): Promise<void> {
 	try {
@@ -132,22 +144,25 @@ async function adoptLegacyScope(directory: string, target: string): Promise<void
 	} catch (error) {
 		if ((error as NodeJS.ErrnoException).code !== "ENOENT") return;
 	}
-	let newest: { path: string; mtime: number } | undefined;
+	const candidates: { path: string; mtime: number }[] = [];
 	try {
 		for (const entry of await readdir(directory, { withFileTypes: true })) {
 			if (!entry.isFile() || !entry.name.endsWith(".json")) continue;
 			const path = join(directory, entry.name);
 			if (path === target) continue;
 			const info = await stat(path).catch(() => undefined);
-			if (info && (!newest || info.mtimeMs > newest.mtime)) newest = { path, mtime: info.mtimeMs };
+			if (info) candidates.push({ path, mtime: info.mtimeMs });
 		}
 	} catch {
 		return;
 	}
-	if (!newest) return;
-	const content = await readFile(newest.path, "utf8").catch(() => undefined);
-	if (!content) return;
-	await writeFile(target, content, { mode: 0o600, flag: "wx" }).catch(() => undefined);
+	candidates.sort((a, b) => b.mtime - a.mtime);
+	for (const candidate of candidates) {
+		const content = await readFile(candidate.path, "utf8").catch(() => undefined);
+		if (!content || !parseRegistry(content)) continue;
+		await writeFile(target, content, { mode: 0o600, flag: "wx" }).catch(() => undefined);
+		return;
+	}
 }
 
 export async function createLocalBotRegistry(dataDir: string): Promise<LocalBotRegistry> {

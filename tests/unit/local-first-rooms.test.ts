@@ -25,7 +25,7 @@ async function listen(server: Server) {
 	return `http://127.0.0.1:${(server.address() as { port: number }).port}`;
 }
 
-async function fixture() {
+async function fixture(hooks: { onConnect?: (config: { hubUrl: string; hubIdentity?: string }) => void } = {}) {
 	const dir = await mkdtemp(join(tmpdir(), "local-first-rooms-"));
 	cleanup.push(() => rm(dir, { recursive: true, force: true }));
 	const dataDir = join(dir, "data");
@@ -74,6 +74,7 @@ async function fixture() {
 		dataDir,
 		bots,
 		connect(config, syncBots) {
+			hooks.onConnect?.(config);
 			const connector = createDeviceConnector({
 				...config,
 				localOrigin: "http://127.0.0.1:8999",
@@ -169,5 +170,24 @@ describe("全本地：直聊与群组不经过远端 Hub", () => {
 		// 4) 远端只收到 Bot 列表镜像，房间类请求一个都没打到它。
 		expect(f.hubHits).toContain("PUT /api/agent/bots");
 		expect(f.hubHits.filter((hit) => hit.includes("/api/device-user/"))).toEqual([]);
+	});
+
+	it("keeps a stable engine identity across restarts so history scope does not follow the random port", async () => {
+		const identities: string[] = [];
+		const urls: string[] = [];
+		const f = await fixture({
+			onConnect: (config) => {
+				identities.push(config.hubIdentity ?? "<none>");
+				urls.push(config.hubUrl);
+			},
+		});
+		await f.request("rooms");
+		// disconnect 会重建本机引擎（新端口），等价于一次重启。
+		expect((await f.request("disconnect", {})).status).toBe(200);
+		expect((await f.request("rooms")).status).toBe(200);
+		// 端口必须真的变了，否则这条测试证明不了什么。
+		expect(new Set(urls).size).toBeGreaterThan(1);
+		// 但用于会话/恢复/锁分桶的身份必须稳定，否则重启后 resume 全部失效。
+		expect(new Set(identities)).toEqual(new Set(["local-device-hub"]));
 	});
 });

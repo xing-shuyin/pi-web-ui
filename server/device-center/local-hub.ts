@@ -98,6 +98,8 @@ export async function createLocalDeviceHub(dataDir: string, getSettings?: () => 
 			credential,
 			uiCredential,
 			allowExecution: true,
+			// 端口每次启动都变，历史/恢复/锁的作用域必须用这个稳定身份（见 runtime 的 hubKey）。
+			hubIdentity: "local-device-hub",
 		};
 		return {
 			config,

@@ -90,6 +90,21 @@ describe("local Bot registry", () => {
 		expect((await createLocalBotRegistry(dataDir)).list()[0].name).toBe("Renamed");
 	});
 
+	it("never promotes a broken legacy scope file to the machine scope", async () => {
+		const dir = await mkdtemp(join(tmpdir(), "device-bots-broken-"));
+		cleanups.push(() => rm(dir, { recursive: true, force: true }));
+		const dataDir = join(dir, "data");
+		const directory = join(dataDir, "device-bots");
+		await mkdir(directory, { recursive: true });
+		// 最新的旧文件是坏的：迁移必须跳过它，而不是把坏内容写成唯一单源（那会让启动直接崩）。
+		const broken = join(directory, `${createHash("sha256").update("newest").digest("hex")}.json`);
+		await writeFile(broken, '{"broken": not-json');
+		await expect(createLocalBotRegistry(dataDir)).resolves.toBeTruthy();
+		expect((await createLocalBotRegistry(dataDir)).list()).toEqual([]);
+		const local = join(directory, `${createHash("sha256").update(LOCAL_BOT_SCOPE).digest("hex")}.json`);
+		await expect(readFile(local, "utf8")).rejects.toThrow();
+	});
+
 	it("rejects scope changes while leases are held and preserves the current scope on invalid or corrupt loads", async () => {
 		const f = await fixture();
 		const bot = await f.registry.upsert(f.input);

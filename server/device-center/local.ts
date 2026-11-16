@@ -36,6 +36,12 @@ export interface LocalDeviceConfig {
 	credential: string;
 	uiCredential?: string;
 	allowExecution: boolean;
+	/**
+	 * 稳定的引擎身份串（只有本机 loopback Hub 会设）。本机 Hub 每次启动换随机端口，
+	 * `hubUrl` 不能当持久化作用域键：会话恢复、任务恢复、报告 outbox、文件同步目录、
+	 * 工作区锁都按它分桶。见 `server/device-center/runtime.ts` 的 `hubKey`。
+	 */
+	hubIdentity?: string;
 }
 interface Connection {
 	close(): void | Promise<void>;

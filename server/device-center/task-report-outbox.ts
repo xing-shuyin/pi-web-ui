@@ -74,8 +74,21 @@ function validEntry(value: unknown): value is TaskReportUploadEntry {
 	);
 }
 
-export function createTaskReportOutbox(dataDir: string | undefined, deviceId: string, hubUrl = "") {
-	const scope = { deviceId, hubUrl: hubUrl ? checkedUrl(hubUrl).href.replace(/\/$/, "") : "" };
+/**
+ * `hubUrl` 在这里只是**作用域判别符**（落盘文档里同样用它比对），不参与任何网络调用。
+ * 本机 loopback Hub 每次启动换端口，所以本机引擎传入稳定的 `scopeIdentity`，
+ * 让 outbox 目录与"重启前后是同一个 Hub"这件事对上（见 runtime 的 `hubKey`）。
+ */
+export function createTaskReportOutbox(
+	dataDir: string | undefined,
+	deviceId: string,
+	hubUrl = "",
+	scopeIdentity?: string,
+) {
+	const scope = {
+		deviceId,
+		hubUrl: scopeIdentity ? scopeIdentity : hubUrl ? checkedUrl(hubUrl).href.replace(/\/$/, "") : "",
+	};
 	const scopeKey = createHash("sha256").update(JSON.stringify(scope)).digest("hex").slice(0, 32);
 	const scopedDir = dataDir ? join(dataDir, "task-report-outboxes", scopeKey) : undefined;
 	const store = scopedDir ? createTaskReportStore(scopedDir, "device") : undefined;
