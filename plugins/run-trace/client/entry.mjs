@@ -1,117 +1,20 @@
+import { esc } from "@pi-web-ui/plugin-sdk/client";
+import { detectLang, makeT } from "./i18n.mjs";
+
 const LANE_FILTER = { input: "input", model: "model", tools: "tools" };
 
-const I18N = {
-	zh: {
-		title: "运行轨迹",
-		live: "实时",
-		current: "当前",
-		search: "搜索分段…",
-		fit: "⤢ 适应",
-		follow: "◎ 跟随",
-		zoomHint: "滚轮缩放 · 拖拽平移 · 点击色块看分析",
-		flowHint: "实时流动 · 刻度固定 · 拖拽暂停跟随",
-		replay: "回放",
-		exitReplay: "退出回放",
-		play: "播放",
-		pause: "暂停",
-		speed: "速度",
-		skipIdle: "跳过空闲",
-		clear: "清空",
-		confirmClear: "确定清空全部轨迹吗？（重拉当前对话恢复）",
-		empty: "暂无对话",
-		emptyHint: "打开一个对话后，这里直接显示它的时间线与分析。",
-		selectHint: "点击时间轴色块或左侧分段查看分析。",
-		loading: "加载中…",
-		noMatch: "没有匹配的分段（检查搜索/筛选）。",
-		copy: "复制",
-		copied: "已复制",
-		lanes: { input: "输入", model: "模型", tools: "工具" },
-		filters: { input: "输入", model: "模型", tools: "工具" },
-		tabs: { overview: "概述", preview: "预览", raw: "原始内容", source: "来源" },
-		status: { done: "已完成", running: "执行中", error: "失败" },
-		f: {
-			source: "来源",
-			status: "状态",
-			dur: "时长",
-			turn: "轮次",
-			len: "长度",
-			pos: "位置",
-			total: "总时长",
-			turns: "轮数",
-			segs: "分段",
-			toolCalls: "工具调用",
-			toolErr: "工具失败",
-			toolTime: "工具耗时",
-			slowest: "最慢工具",
-			files: "文件改动",
-			phase: "阶段分布",
-			calls: "累计调用",
-			avg: "平均",
-			errRate: "失败率",
-			share: "耗时占比",
-			msgKey: "消息",
-			toolCall: "调用",
-			conv: "对话",
-			time: "时间",
-		},
-	},
-	en: {
-		title: "Run Trace",
-		live: "live",
-		current: "active",
-		search: "Search segments…",
-		fit: "⤢ Fit",
-		follow: "◎ Follow",
-		zoomHint: "wheel zoom · drag pan · click a block for analysis",
-		flowHint: "live flow · fixed ruler · drag pauses follow",
-		replay: "Replay",
-		exitReplay: "Exit replay",
-		play: "Play",
-		pause: "Pause",
-		speed: "Speed",
-		skipIdle: "skip idle",
-		clear: "Clear",
-		confirmClear: "Clear all traces? (re-pull restores the open conversation)",
-		empty: "No conversation",
-		emptyHint: "Open a conversation and its timeline + analysis show up here.",
-		selectHint: "Click a ruler block or a left segment for analysis.",
-		loading: "Loading…",
-		noMatch: "No matching segments (check search/filters).",
-		copy: "Copy",
-		copied: "Copied",
-		lanes: { input: "Input", model: "Model", tools: "Tools" },
-		filters: { input: "Input", model: "Model", tools: "Tools" },
-		tabs: { overview: "Overview", preview: "Preview", raw: "Raw", source: "Source" },
-		status: { done: "Done", running: "Running", error: "Failed" },
-		f: {
-			source: "Source",
-			status: "Status",
-			dur: "Duration",
-			turn: "Turn",
-			len: "Length",
-			pos: "Position",
-			total: "Total",
-			turns: "Turns",
-			segs: "Segments",
-			toolCalls: "Tool calls",
-			toolErr: "Tool errors",
-			toolTime: "Tool time",
-			slowest: "Slowest tools",
-			files: "Files changed",
-			phase: "Phases",
-			calls: "Calls",
-			avg: "Avg",
-			errRate: "Error rate",
-			share: "Time share",
-			msgKey: "Message",
-			toolCall: "Call",
-			conv: "Conversation",
-			time: "Time",
-		},
-	},
+/** 泳道 / 页签 / 状态：接口取值 → 词典键（未知取值原样回退）。 */
+const LANE_KEY = { input: "laneInput", model: "laneModel", tools: "laneTools" };
+const TAB_KEY = { overview: "tabOverview", preview: "tabPreview", raw: "tabRaw", source: "tabSource" };
+const STATUS_KEY = { done: "statusDone", running: "statusRunning", error: "statusError" };
+const CHIP_KEY = {
+	user: "chipUser",
+	thinking: "chipThinking",
+	text: "chipText",
+	file: "chipFile",
+	system: "chipSystem",
+	result: "chipResult",
 };
-
-import { esc } from "@pi-web-ui/plugin-sdk/client";
 
 function fmtClock(t) {
 	try {
@@ -127,13 +30,9 @@ function fmtDur(ms) {
 	if (s < 60) return `${s.toFixed(1)}s`;
 	return `${Math.floor(s / 60)}m${Math.round(s % 60)}s`;
 }
-function chipFor(seg, lang) {
-	if (seg.kind === "user") return lang === "zh" ? "用户" : "user";
-	if (seg.kind === "thinking") return lang === "zh" ? "思考" : "think";
-	if (seg.kind === "text") return lang === "zh" ? "回答" : "text";
-	if (seg.kind === "file") return lang === "zh" ? "文件" : "file";
-	if (seg.kind === "system") return lang === "zh" ? "系统" : "sys";
-	if (seg.kind === "result") return lang === "zh" ? "结果" : "done";
+function chipFor(seg, t) {
+	const key = CHIP_KEY[seg.kind];
+	if (key) return t(key);
 	if (seg.kind === "tool") return (seg.meta?.tool ?? "tool").slice(0, 10);
 	return seg.kind;
 }
@@ -189,8 +88,9 @@ function laneColor(seg) {
 
 export default {
 	mount(container, ctx) {
-		let lang = "zh";
-		const t = () => I18N[lang];
+		// 默认跟界面语言；面板内的 EN / 中文 按钮只覆盖本面板。
+		let lang = detectLang();
+		const t = makeT(() => lang);
 		let convs = [];
 		let activeId = null;
 		let lastActiveId = null;
@@ -424,14 +324,14 @@ export default {
 			detailEl = $(".rtr-detail");
 
 		function applyLang() {
-			const L = t();
-			hdTitle.textContent = L.title;
-			hdLive.textContent = `● ${L.live}`;
-			qEl.placeholder = L.search;
-			replayBtn.textContent = replay.on ? `⏹ ${L.exitReplay}` : `▶ ${L.replay}`;
+			hdTitle.textContent = t("title");
+			hdLive.textContent = `● ${t("live")}`;
+			qEl.placeholder = t("search");
+			replayBtn.textContent = replay.on ? `⏹ ${t("exitReplay")}` : `▶ ${t("replay")}`;
 			replayBtn.classList.toggle("on", replay.on);
+			// 目标语言的自称（EN / 中文），不是界面文案。
 			langBtn.textContent = lang === "zh" ? "EN" : "中文";
-			clearBtn.textContent = `🗑 ${L.clear}`;
+			clearBtn.textContent = `🗑 ${t("clear")}`;
 		}
 
 		function convOf(id) {
@@ -451,28 +351,26 @@ export default {
 		}
 
 		function renderConvs() {
-			const L = t();
 			if (!convs.length) {
-				convsEl.innerHTML = `<span style="opacity:.55;font-size:12px">${esc(L.emptyHint)}</span>`;
+				convsEl.innerHTML = `<span style="opacity:.55;font-size:12px">${esc(t("emptyHint"))}</span>`;
 				return;
 			}
 			convsEl.innerHTML = convs
 				.map(
 					(c) =>
-						`<button class="rtr-conv${c.id === selectedConvId ? " sel" : ""}" data-id="${esc(c.id)}">${c.id === activeId ? `<span class="cur">●</span> ` : ""}${esc(c.title || L.empty)}${c.isStreaming ? " ⏳" : ""}</button>`,
+						`<button class="rtr-conv${c.id === selectedConvId ? " sel" : ""}" data-id="${esc(c.id)}">${c.id === activeId ? `<span class="cur">●</span> ` : ""}${esc(c.title || t("empty"))}${c.isStreaming ? " ⏳" : ""}</button>`,
 				)
 				.join("");
 		}
 
 		function renderRuler() {
-			const L = t();
 			const hintEl = rulerEl.querySelector(".hint");
 			const fitBtn = rulerEl.querySelector(".act-fit");
 			const followBtn = rulerEl.querySelector(".act-follow");
-			if (hintEl) hintEl.textContent = flowing ? L.flowHint : L.zoomHint;
-			if (fitBtn) fitBtn.textContent = L.fit;
+			if (hintEl) hintEl.textContent = flowing ? t("flowHint") : t("zoomHint");
+			if (fitBtn) fitBtn.textContent = t("fit");
 			if (followBtn) {
-				followBtn.textContent = L.follow;
+				followBtn.textContent = t("follow");
 				followBtn.classList.toggle("on", followEnabled);
 			}
 			const body = rulerEl.querySelector(".rtr-tlbody");
@@ -489,9 +387,9 @@ export default {
 				body.appendChild(tlDom());
 			}
 			const groups = [
-				{ id: "input", content: esc(L.lanes.input) },
-				{ id: "model", content: esc(L.lanes.model) },
-				{ id: "tools", content: esc(L.lanes.tools) },
+				{ id: "input", content: esc(t(LANE_KEY.input)) },
+				{ id: "model", content: esc(t(LANE_KEY.model)) },
+				{ id: "tools", content: esc(t(LANE_KEY.tools)) },
 			];
 			if (!tl || tlConv !== selectedConvId) {
 				destroyTl();
@@ -843,7 +741,7 @@ export default {
 				flowSpanSeen = flowWin()?.span ?? 0;
 				rulerEl.querySelector(".rtr-tlbody")?.classList.add("flowing");
 				const hintEl = rulerEl.querySelector(".hint");
-				if (hintEl) hintEl.textContent = t().flowHint;
+				if (hintEl) hintEl.textContent = t("flowHint");
 				if (!flowRaf) flowRaf = requestAnimationFrame(flowTick);
 			} else if (!live && flowing) {
 				flowStop();
@@ -873,7 +771,7 @@ export default {
 			flowSig = "";
 			flowPaintSec = -1;
 			const hintEl = rulerEl.querySelector(".hint");
-			if (hintEl) hintEl.textContent = t().zoomHint;
+			if (hintEl) hintEl.textContent = t("zoomHint");
 		}
 
 		function activeWindow(all) {
@@ -943,13 +841,12 @@ export default {
 		}
 
 		function renderRulerFallback(body, all) {
-			const L = t();
 			if (tl) destroyTl();
 			if (!selectedConvId || !all.length) {
 				body.innerHTML = ["input", "model", "tools"]
 					.map(
 						(ln) =>
-							`<div class="rtr-lane"><span class="ln">${esc(L.lanes[ln])}</span><div class="rtr-track"></div></div>`,
+							`<div class="rtr-lane"><span class="ln">${esc(t(LANE_KEY[ln]))}</span><div class="rtr-track"></div></div>`,
 					)
 					.join("");
 				body._vis = null;
@@ -967,7 +864,7 @@ export default {
 ${lanes
 	.map((ln) => {
 		const blocks = all.map((s, i) => ({ s, i })).filter(({ s }) => s.lane === ln);
-		return `<div class="rtr-lane"><span class="ln">${esc(L.lanes[ln])}</span><div class="rtr-track">${blocks
+		return `<div class="rtr-lane"><span class="ln">${esc(t(LANE_KEY[ln]))}</span><div class="rtr-track">${blocks
 			.map(({ s, i }) => {
 				const left = ((s.t - minT) / span) * 100;
 				const realEnd = Math.max(s.end ?? s.t, s.t);
@@ -986,14 +883,13 @@ ${lanes
 		}
 
 		function renderList() {
-			const L = t();
 			const all = visibleSegs();
 			if (!selectedConvId) {
-				listEl.innerHTML = `<div class="rtr-empty">${esc(L.selectHint)}</div>`;
+				listEl.innerHTML = `<div class="rtr-empty">${esc(t("selectHint"))}</div>`;
 				return;
 			}
 			if (!all.length) {
-				listEl.innerHTML = `<div class="rtr-empty">${esc(allSegs().length ? L.noMatch : L.emptyHint)}</div>`;
+				listEl.innerHTML = `<div class="rtr-empty">${esc(allSegs().length ? t("noMatch") : t("emptyHint"))}</div>`;
 				return;
 			}
 			const shown = replay.on ? all.slice(0, replay.idx + 1) : all;
@@ -1008,7 +904,7 @@ ${lanes
 									? MODEL_COLORS[s.kind]
 									: null;
 					return `<button class="rtr-row${s.key === selectedKey ? " sel" : ""}${s.status === "error" ? " err" : ""}" data-key="${esc(s.key)}">
-<span class="rtr-chip"${tc ? ` style="border-color:${tc};color:${tc}"` : ""}>${esc(chipFor(s, lang))}</span>
+<span class="rtr-chip"${tc ? ` style="border-color:${tc};color:${tc}"` : ""}>${esc(chipFor(s, t))}</span>
 <span class="tt">${esc(s.title)}</span>
 <time>${esc(fmtClock(s.t))}${s.dur !== undefined ? ` · ${esc(fmtDur(s.dur))}` : ""}</time>
 </button>`;
@@ -1022,8 +918,8 @@ ${lanes
 			if (!el) return;
 			const vis = visibleSegs();
 			const seen = new Map();
-			if (vis.some((s) => s.kind === "thinking")) seen.set(lang === "zh" ? "思考" : "think", MODEL_COLORS.thinking);
-			if (vis.some((s) => s.kind === "text")) seen.set(lang === "zh" ? "回答" : "text", MODEL_COLORS.text);
+			if (vis.some((s) => s.kind === "thinking")) seen.set(t("chipThinking"), MODEL_COLORS.thinking);
+			if (vis.some((s) => s.kind === "text")) seen.set(t("chipText"), MODEL_COLORS.text);
 			for (const s of vis) {
 				if (s.lane !== "tools" || s.status === "error") continue;
 				const name = s.meta?.tool ?? (s.kind === "file" ? "file" : null);
@@ -1037,7 +933,6 @@ ${lanes
 		}
 
 		function renderReplayBar(all) {
-			const L = t();
 			if (!replay.on || !all.length) {
 				replayBar.hidden = true;
 				replayBar.innerHTML = "";
@@ -1047,11 +942,11 @@ ${lanes
 			const maxIdx = Math.max(0, all.length - 1);
 			const idx = Math.min(replay.idx, maxIdx);
 			replayBar.innerHTML = `
-<button class="rtr-btn act-play">${replay.playing ? `⏸ ${esc(L.pause)}` : `▶ ${esc(L.play)}`}</button>
+<button class="rtr-btn act-play">${replay.playing ? `⏸ ${esc(t("pause"))}` : `▶ ${esc(t("play"))}`}</button>
 <input type="range" min="0" max="${maxIdx}" value="${idx}" />
 <span>${idx + 1}/${all.length}</span>
-<label>${esc(L.speed)} <select class="spd">${[0.5, 1, 2, 4].map((x) => `<option value="${x}"${x === replay.speed ? " selected" : ""}>${x}x</option>`).join("")}</select></label>
-<label class="skip"><input type="checkbox" class="skipcb"${replay.skipIdle ? " checked" : ""} /> ${esc(L.skipIdle)}</label>`;
+<label>${esc(t("speed"))} <select class="spd">${[0.5, 1, 2, 4].map((x) => `<option value="${x}"${x === replay.speed ? " selected" : ""}>${x}x</option>`).join("")}</select></label>
+<label class="skip"><input type="checkbox" class="skipcb"${replay.skipIdle ? " checked" : ""} /> ${esc(t("skipIdle"))}</label>`;
 		}
 
 		function kvRow(k, v) {
@@ -1059,8 +954,6 @@ ${lanes
 		}
 
 		function renderDetail() {
-			const L = t(),
-				F = L.f;
 			const c = convOf(selectedConvId ?? "");
 			const all = visibleSegs();
 			const seg = allSegs().find((s) => s.key === selectedKey) ?? null;
@@ -1068,20 +961,20 @@ ${lanes
 
 			if (!seg || !c) {
 				if (!c?.analysis) {
-					detailEl.innerHTML = `<div class="rtr-empty">${esc(c ? L.selectHint : L.emptyHint)}</div>`;
+					detailEl.innerHTML = `<div class="rtr-empty">${esc(c ? t("selectHint") : t("emptyHint"))}</div>`;
 					return;
 				}
 				const a = c.analysis;
 				const maxMs = Math.max(1, ...a.tools.map((x) => x.ms));
 				detailEl.innerHTML = `
-<h3 style="margin:0 0 8px">📊 ${esc(c.title || L.title)}</h3>
+<h3 style="margin:0 0 8px">📊 ${esc(c.title || t("title"))}</h3>
 <dl class="rtr-kv">
-${kvRow(F.total, esc(fmtDur(a.totalMs)))}${kvRow(F.turns, esc(String(a.turns)))}${kvRow(F.segs, esc(String(c.segCount)))}
-${kvRow(F.toolCalls, esc(`${a.toolCalls}（${F.toolErr} ${a.toolErrs}）`))}${kvRow(F.toolTime, esc(fmtDur(a.toolMs)))}
-${kvRow(F.files, esc(a.filesChanged.length ? `${a.filesChanged.length} 个` : "—"))}
+${kvRow(t("fTotal"), esc(fmtDur(a.totalMs)))}${kvRow(t("fTurns"), esc(String(a.turns)))}${kvRow(t("fSegs"), esc(String(c.segCount)))}
+${kvRow(t("fToolCalls"), esc(t("callsWithErrors", { calls: a.toolCalls, errLabel: t("fToolErr"), errs: a.toolErrs })))}${kvRow(t("fToolTime"), esc(fmtDur(a.toolMs)))}
+${kvRow(t("fFiles"), esc(a.filesChanged.length ? t("unitFiles", { count: a.filesChanged.length }) : "—"))}
 </dl>
-<div class="rtr-sec">${esc(F.phase)} · 💬${a.counts.text} 💭${a.counts.thinking} 🔧${a.counts.tool} 📝${a.counts.file} 👤${a.counts.user}</div>
-<div class="rtr-sec">${esc(F.slowest)}</div>
+<div class="rtr-sec">${esc(t("fPhase"))} · 💬${a.counts.text} 💭${a.counts.thinking} 🔧${a.counts.tool} 📝${a.counts.file} 👤${a.counts.user}</div>
+<div class="rtr-sec">${esc(t("fSlowest"))}</div>
 ${
 	a.tools
 		.slice(0, 5)
@@ -1091,44 +984,45 @@ ${
 		)
 		.join("") || `<div style="opacity:.6;font-size:12px">—</div>`
 }
-${a.filesChanged.length ? `<div class="rtr-sec">${esc(F.files)}</div><pre>${esc(a.filesChanged.slice(0, 20).join("\n"))}</pre>` : ""}`;
+${a.filesChanged.length ? `<div class="rtr-sec">${esc(t("fFiles"))}</div><pre>${esc(a.filesChanged.slice(0, 20).join("\n"))}</pre>` : ""}`;
 				return;
 			}
 
 			const tabs = ["overview", "preview", "raw", "source"]
 				.map(
-					(k) => `<button class="rtr-dtab${detailTab === k ? " on" : ""}" data-tab="${k}">${esc(L.tabs[k])}</button>`,
+					(k) =>
+						`<button class="rtr-dtab${detailTab === k ? " on" : ""}" data-tab="${k}">${esc(t(TAB_KEY[k]))}</button>`,
 				)
 				.join("");
 			let body = "";
 			if (!cached) {
-				body = `<div class="rtr-empty"><span class="rtr-spin">⏳</span> ${esc(L.loading)}</div>`;
+				body = `<div class="rtr-empty"><span class="rtr-spin">⏳</span> ${esc(t("loading"))}</div>`;
 			} else if (detailTab === "overview") {
 				const an = cached.analysis ?? {};
-				const st = L.status[seg.status] ?? seg.status;
+				const st = t(STATUS_KEY[seg.status] ?? seg.status);
 				body = `<dl class="rtr-kv">
-${kvRow(F.source, esc(seg.source ?? "—"))}${kvRow(F.status, esc(st))}${kvRow(F.dur, esc(fmtDur(seg.dur)))}
-${kvRow(F.turn, esc(an.turnText ?? (seg.turn ? `第 ${seg.turn} 轮` : "—")))}${kvRow(F.len, esc(seg.meta?.chars ? `${seg.meta.chars} 字` : `${(cached.detail ?? "").length} 字`))}${kvRow(F.pos, esc(an.position ?? "—"))}
+${kvRow(t("fSource"), esc(seg.source ?? "—"))}${kvRow(t("fStatus"), esc(st))}${kvRow(t("fDur"), esc(fmtDur(seg.dur)))}
+${kvRow(t("fTurn"), esc(an.turnText ?? (seg.turn ? t("turnLabel", { turn: seg.turn }) : "—")))}${kvRow(t("fLen"), esc(seg.meta?.chars ? t("unitChars", { count: seg.meta.chars }) : t("unitChars", { count: (cached.detail ?? "").length })))}${kvRow(t("fPos"), esc(an.position ?? "—"))}
 </dl>`;
 				if (an.tool) {
 					const avg = an.tool.calls ? an.tool.ms / an.tool.calls : 0;
 					const share = an.convToolMs ? (100 * (an.tool.ms / an.convToolMs)).toFixed(0) : "0";
 					body += `<div class="rtr-sec">📈 ${esc(an.tool.name)}</div><dl class="rtr-kv">
-${kvRow(F.calls, esc(`${an.tool.calls}（${F.toolErr} ${an.tool.errs}，${F.errRate} ${an.tool.calls ? Math.round((100 * an.tool.errs) / an.tool.calls) : 0}%）`))}
-${kvRow(F.toolTime, esc(`${fmtDur(an.tool.ms)} · ${F.avg} ${fmtDur(avg)} · ${F.share} ${share}%`))}
+${kvRow(t("fCalls"), esc(t("callsWithErrorsRate", { calls: an.tool.calls, errLabel: t("fToolErr"), errs: an.tool.errs, rateLabel: t("fErrRate"), rate: an.tool.calls ? Math.round((100 * an.tool.errs) / an.tool.calls) : 0 })))}
+${kvRow(t("fToolTime"), esc(`${fmtDur(an.tool.ms)} · ${t("fAvg")} ${fmtDur(avg)} · ${t("fShare")} ${share}%`))}
 </dl>`;
 				}
-				body += `<div class="rtr-sec">${esc(L.tabs.preview)}</div><pre>${esc((cached.detail ?? "").slice(0, 800))}</pre>`;
+				body += `<div class="rtr-sec">${esc(t("tabPreview"))}</div><pre>${esc((cached.detail ?? "").slice(0, 800))}</pre>`;
 			} else if (detailTab === "preview") {
 				body = `<pre>${esc((cached.detail ?? "").slice(0, 2000))}</pre>`;
 			} else if (detailTab === "raw") {
-				body = `<pre>${esc(cached.detail ?? "")}</pre><div style="height:10px"></div><button class="rtr-btn act-copy">📋 ${esc(L.copy)}</button>`;
+				body = `<pre>${esc(cached.detail ?? "")}</pre><div style="height:10px"></div><button class="rtr-btn act-copy">📋 ${esc(t("copy"))}</button>`;
 			} else {
 				const an = cached.analysis ?? {};
 				body = `<dl class="rtr-kv">
-${kvRow(F.msgKey, esc(seg.key))}${seg.meta?.toolCallId ? kvRow(F.toolCall, esc(seg.meta.toolCallId)) : ""}
-${kvRow(F.turn, esc(an.turnText ?? (seg.turn ? `第 ${seg.turn} 轮 · 共 ${an.convTurns ?? "?"} 轮` : "—")))}
-${kvRow(F.conv, esc(`${c.title ?? ""} · ${String(c.id).slice(0, 8)}`))}${kvRow(F.time, esc(fmtClock(seg.t)))}
+${kvRow(t("fMsgKey"), esc(seg.key))}${seg.meta?.toolCallId ? kvRow(t("fToolCall"), esc(seg.meta.toolCallId)) : ""}
+${kvRow(t("fTurn"), esc(an.turnText ?? (seg.turn ? t("turnOfTotal", { turn: seg.turn, total: an.convTurns ?? "?" }) : "—")))}
+${kvRow(t("fConv"), esc(`${c.title ?? ""} · ${String(c.id).slice(0, 8)}`))}${kvRow(t("fTime"), esc(fmtClock(seg.t)))}
 </dl>`;
 			}
 			detailEl.innerHTML = `<h3 style="margin:0 0 8px">${esc(seg.title)}</h3><div class="rtr-dtabs">${tabs}</div>${body}`;
@@ -1386,7 +1280,7 @@ ${kvRow(F.conv, esc(`${c.title ?? ""} · ${String(c.id).slice(0, 8)}`))}${kvRow(
 				if (txt) {
 					navigator.clipboard?.writeText(txt).then(
 						() => {
-							e.target.textContent = `✅ ${t().copied}`;
+							e.target.textContent = `✅ ${t("copied")}`;
 							setTimeout(scheduleRender, 1200);
 						},
 						() => {},
@@ -1463,7 +1357,7 @@ ${kvRow(F.conv, esc(`${c.title ?? ""} · ${String(c.id).slice(0, 8)}`))}${kvRow(
 			scheduleRender();
 		});
 		clearBtn.addEventListener("click", () => {
-			if (window.confirm(t().confirmClear)) ctx.send({ action: "clear" });
+			if (window.confirm(t("confirmClear"))) ctx.send({ action: "clear" });
 		});
 
 		const off = ctx.onData((p) => {

@@ -1,5 +1,9 @@
 import { esc, hostApi } from "@pi-web-ui/plugin-sdk/client";
 import { CSS } from "./styles.mjs";
+import { detectLang, makeT } from "./i18n.mjs";
+
+/** 面板文案：语言解析 / 回退 / 插值都在 SDK 里，这里只按当前界面语言取词。 */
+const t = makeT();
 
 export function resolveApiBase(url) {
 	const parsed = new URL(url);
@@ -8,18 +12,19 @@ export function resolveApiBase(url) {
 }
 
 const API = resolveApiBase(import.meta.url);
+// 第一列是接口入参（`filter=` / `is:` 搜索词取值），不要翻译；第二列是词典键。
 const FILTERS = [
-	["repository", "仓库待办"],
-	["review-requested", "待我评审"],
-	["assigned", "分配给我"],
-	["authored", "我创建的"],
-	["mentioned", "提到我的"],
-	["custom", "自定义搜索"],
+	["repository", "filterRepository"],
+	["review-requested", "filterReviewRequested"],
+	["assigned", "filterAssigned"],
+	["authored", "filterAuthored"],
+	["mentioned", "filterMentioned"],
+	["custom", "filterCustom"],
 ];
 const KINDS = [
-	["all", "全部"],
-	["pr", "PR"],
-	["issue", "Issue"],
+	["all", "kindAll"],
+	["pr", "kindPr"],
+	["issue", "kindIssue"],
 ];
 const PATHS = {
 	github:
@@ -44,14 +49,15 @@ const PATHS = {
 const icon = (name) =>
 	`<svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${PATHS[name] ?? PATHS.inbox}</svg>`;
 const key = (item) => `${item.repo}#${item.number}`;
-const stateLabel = (item) => (item.pr?.merged ? "已合并" : item.state === "open" ? "进行中" : "已关闭");
+const stateLabel = (item) =>
+	item.pr?.merged ? t("stateMerged") : item.state === "open" ? t("stateOpen") : t("stateClosed");
 const empty = (title, hint = "", name = "inbox") =>
 	`<div class="empty"><span class="empty-icon">${icon(name)}</span><strong>${esc(title)}</strong>${hint ? `<span>${esc(hint)}</span>` : ""}</div>`;
 function shortDate(value) {
 	const date = new Date(value);
 	return Number.isNaN(date.getTime())
 		? String(value ?? "")
-		: date.toLocaleDateString("zh-CN", { month: "numeric", day: "numeric" });
+		: date.toLocaleDateString(detectLang() === "zh" ? "zh-CN" : "en-US", { month: "numeric", day: "numeric" });
 }
 
 export function buildReference(item) {
@@ -75,15 +81,15 @@ export function createWorkbench() {
 		mount(container) {
 			const root = container.shadowRoot ?? container.attachShadow({ mode: "open" });
 			root.innerHTML = `<style>${CSS}</style><div class="app" data-view="list">
-				<header class="header"><span class="brand">${icon("github")}</span><div class="heading"><h1>GitHub 工作台</h1><div class="account" data-account><span>正在连接…</span></div></div><button type="button" class="icon-button refresh" data-action="refresh" title="刷新待办" aria-label="刷新待办">${icon("refresh")}</button></header>
-				<form class="toolbar" aria-label="GitHub 待办筛选">
-					<div class="input-field">${icon("repo")}<input name="repo" aria-label="仓库" placeholder="owner/repo · 留空查看个人待办" maxlength="200" spellcheck="false"><button type="submit" class="icon-button" title="加载仓库" aria-label="加载仓库">${icon("arrow")}</button></div>
-					<div class="filter-line"><div class="input-field filter-field">${icon("filter")}<select name="filter" aria-label="待办分类">${FILTERS.map(([value, label]) => `<option value="${value}">${label}</option>`).join("")}</select></div><button type="button" class="icon-button search-toggle" data-action="search" aria-label="展开搜索条件" aria-expanded="false" aria-controls="gh-search">${icon("search")}</button></div>
-					<div class="input-field search-field" id="gh-search" hidden>${icon("search")}<input name="q" aria-label="搜索条件" placeholder="搜索标题、label:bug…" maxlength="1000"><button type="submit" class="icon-button" title="搜索" aria-label="搜索">${icon("arrow")}</button></div>
+				<header class="header"><span class="brand">${icon("github")}</span><div class="heading"><h1>${esc(t("appName"))}</h1><div class="account" data-account><span>${esc(t("connecting"))}</span></div></div><button type="button" class="icon-button refresh" data-action="refresh" title="${esc(t("refreshInbox"))}" aria-label="${esc(t("refreshInbox"))}">${icon("refresh")}</button></header>
+				<form class="toolbar" aria-label="${esc(t("filterFormLabel"))}">
+					<div class="input-field">${icon("repo")}<input name="repo" aria-label="${esc(t("repoLabel"))}" placeholder="${esc(t("repoPlaceholder"))}" maxlength="200" spellcheck="false"><button type="submit" class="icon-button" title="${esc(t("loadRepo"))}" aria-label="${esc(t("loadRepo"))}">${icon("arrow")}</button></div>
+					<div class="filter-line"><div class="input-field filter-field">${icon("filter")}<select name="filter" aria-label="${esc(t("filterLabel"))}">${FILTERS.map(([value, label]) => `<option value="${value}">${esc(t(label))}</option>`).join("")}</select></div><button type="button" class="icon-button search-toggle" data-action="search" aria-label="${esc(t("expandSearch"))}" aria-expanded="false" aria-controls="gh-search">${icon("search")}</button></div>
+					<div class="input-field search-field" id="gh-search" hidden>${icon("search")}<input name="q" aria-label="${esc(t("searchQuery"))}" placeholder="${esc(t("searchPlaceholder"))}" maxlength="1000"><button type="submit" class="icon-button" title="${esc(t("search"))}" aria-label="${esc(t("search"))}">${icon("arrow")}</button></div>
 				</form>
-				<div class="kind-tabs" role="group" aria-label="待办类型">${KINDS.map(([value, label]) => `<button type="button" class="kind-tab" data-kind="${value}" aria-pressed="${value === "all"}">${icon(value === "all" ? "inbox" : value)}${label}</button>`).join("")}</div>
+				<div class="kind-tabs" role="group" aria-label="${esc(t("kindLabel"))}">${KINDS.map(([value, label]) => `<button type="button" class="kind-tab" data-kind="${value}" aria-pressed="${value === "all"}">${icon(value === "all" ? "inbox" : value)}${esc(t(label))}</button>`).join("")}</div>
 				<div class="status" role="status" aria-live="polite"></div>
-				<div class="workspace"><div class="inbox" aria-label="待办列表">${empty("正在加载待办", "正在连接你的 GitHub 账号")}</div><div class="detail" aria-label="待办详情">${empty("选择一条待办", "查看详情、参与讨论，或交给 AI 处理")}</div></div>
+				<div class="workspace"><div class="inbox" aria-label="${esc(t("inboxList"))}">${empty(t("loadingInbox"), t("loadingInboxHint"))}</div><div class="detail" aria-label="${esc(t("detailPane"))}">${empty(t("selectItem"), t("selectItemHint"))}</div></div>
 			</div>`;
 			const app = root.querySelector(".app");
 			const form = root.querySelector(".toolbar");
@@ -149,7 +155,8 @@ export function createWorkbench() {
 						signal: controller.signal,
 					});
 					const result = await response.json();
-					if (!response.ok || !result.ok) throw new Error(result.error || `请求失败 (${response.status})`);
+					if (!response.ok || !result.ok)
+						throw new Error(result.error || t("requestFailed", { status: response.status }));
 					return result;
 				} finally {
 					clearTimeout(timer);
@@ -166,12 +173,12 @@ export function createWorkbench() {
 			function renderList(remember = true) {
 				if (remember && visible(inbox)) listScroll = inbox.scrollTop;
 				inbox.innerHTML =
-					`<div class="list-heading"><span><strong>待办</strong><span class="count">${total}</span></span><span class="sort-label">${icon("clock")}最近更新</span></div>` +
+					`<div class="list-heading"><span><strong>${esc(t("inbox"))}</strong><span class="count">${total}</span></span><span class="sort-label">${icon("clock")}${esc(t("sortRecent"))}</span></div>` +
 					(items.length
 						? items
 								.map((item, index) => {
 									const active = Boolean(selected && key(item) === key(selected));
-									return `<button type="button" class="row${active ? " selected" : ""}" data-index="${index}" aria-pressed="${active}"><span class="item-icon${item.state === "open" ? "" : " closed"}" title="${stateLabel(item)}">${icon(item.kind)}</span><span class="row-body"><span class="row-repo"><span class="repo-name">${esc(item.repo)}</span><span class="item-number">#${item.number}</span></span><div class="row-title">${esc(item.title)}</div><span class="row-footer"><span class="author">@${esc(item.author)}</span><time title="${esc(item.updatedAt)}">${esc(shortDate(item.updatedAt))}</time><span class="comment-count" aria-label="${item.commentCount} 条评论">${icon("comment")}${item.commentCount}</span></span>${
+									return `<button type="button" class="row${active ? " selected" : ""}" data-index="${index}" aria-pressed="${active}"><span class="item-icon${item.state === "open" ? "" : " closed"}" title="${stateLabel(item)}">${icon(item.kind)}</span><span class="row-body"><span class="row-repo"><span class="repo-name">${esc(item.repo)}</span><span class="item-number">#${item.number}</span></span><div class="row-title">${esc(item.title)}</div><span class="row-footer"><span class="author">@${esc(item.author)}</span><time title="${esc(item.updatedAt)}">${esc(shortDate(item.updatedAt))}</time><span class="comment-count" aria-label="${esc(t("commentCountLabel", { count: item.commentCount }))}">${icon("comment")}${item.commentCount}</span></span>${
 										item.labels.length
 											? `<span class="labels">${item.labels
 													.slice(0, 3)
@@ -183,25 +190,25 @@ export function createWorkbench() {
 									}</span></button>`;
 								})
 								.join("")
-						: empty("暂时没有待办", "换个分类，或试试其他搜索条件"));
+						: empty(t("emptyInbox"), t("emptyInboxHint")));
 				if (items.length || page > 1)
 					inbox.insertAdjacentHTML(
 						"beforeend",
-						`<div class="page"><button type="button" data-action="prev" title="上一页" aria-label="上一页" ${page <= 1 || loadingList ? "disabled" : ""}>${icon("left")}</button><span>第 ${page} 页 · ${total} 条待办</span><button type="button" data-action="next" title="下一页" aria-label="下一页" ${!hasMore || loadingList ? "disabled" : ""}>${icon("right")}</button></div>`,
+						`<div class="page"><button type="button" data-action="prev" title="${esc(t("prevPage"))}" aria-label="${esc(t("prevPage"))}" ${page <= 1 || loadingList ? "disabled" : ""}>${icon("left")}</button><span>${esc(t("pageSummary", { page, total }))}</span><button type="button" data-action="next" title="${esc(t("nextPage"))}" aria-label="${esc(t("nextPage"))}" ${!hasMore || loadingList ? "disabled" : ""}>${icon("right")}</button></div>`,
 					);
 				if (visible(inbox)) inbox.scrollTop = listScroll;
 			}
 			function detailNav(item) {
-				return `<div class="detail-nav"><button type="button" class="back" data-action="back">${icon("back")}返回列表</button>${item ? `<a class="url" href="${esc(item.url)}" target="_blank" rel="noopener noreferrer">GitHub ${icon("external")}</a>` : ""}</div>`;
+				return `<div class="detail-nav"><button type="button" class="back" data-action="back">${icon("back")}${esc(t("backToList"))}</button>${item ? `<a class="url" href="${esc(item.url)}" target="_blank" rel="noopener noreferrer">GitHub ${icon("external")}</a>` : ""}</div>`;
 			}
 			function renderDetail(item) {
 				const pr = item.pr;
-				detail.innerHTML = `${detailNav(item)}<div class="meta"><span class="tag state-tag${item.state === "open" ? "" : " closed"}">${icon(item.kind)}${stateLabel(item)}</span><span>${item.kind === "pr" ? "PR" : "Issue"} #${item.number}</span></div><h2>${esc(item.title)}</h2><div class="detail-author">${esc(item.repo)} · @${esc(item.author)} · ${esc(shortDate(item.updatedAt))} 更新</div>
-					<div class="actions"><button type="button" data-action="process" class="primary">${icon("spark")}交给 AI 处理</button><button type="button" data-action="quote" class="quote" title="引用到对话" aria-label="引用到对话">${icon("quote")}</button><button type="button" data-action="state" class="state-action" ${pr?.merged ? "disabled" : ""}>${item.state === "open" ? "关闭" : "重新打开"}</button></div>
-					${pr ? `<div class="summary"><div class="branches">${icon("pr")}<span>${esc(pr.head)}</span>${icon("arrow")}<span>${esc(pr.base)}</span>${pr.draft ? '<span class="tag">草稿</span>' : ""}</div><div>${pr.changedFiles} 个文件 · <span class="diff-added">+${pr.additions}</span> / <span class="diff-deleted">−${pr.deletions}</span></div><div class="hint">合并状态 ${esc(pr.mergeableState ?? "计算中")} · 待评审 ${esc(pr.reviewers.join(", ") || "无指定评审人")}</div><div class="hint">完整 diff、CI 与代码行评审可在 GitHub 查看。</div></div>` : ""}
-					${item.labels.length ? `<div class="labels">${item.labels.map((label) => `<span class="tag">${esc(label)}</span>`).join("")}</div>` : ""}<div class="content">${esc(item.body || "（无正文）")}</div><h3 class="section-title">${icon("comment")}讨论<span class="count">${item.commentCount}</span></h3>
-					${item.commentsTruncated ? '<p class="hint">仅显示最近一页评论，完整讨论可在 GitHub 查看。</p>' : ""}${item.comments.map((comment) => `<div class="comment"><div class="comment-author"><span class="avatar" aria-hidden="true">${esc(comment.author?.slice(0, 1).toUpperCase() || "?")}</span><span>@${esc(comment.author)}</span><span class="hint">${esc(shortDate(comment.createdAt))}</span></div><div class="content">${esc(comment.body)}</div></div>`).join("") || '<div class="hint">还没有评论，来开启讨论。</div>'}
-					<form class="comment-form"><label for="gh-comment">发表评论</label><textarea id="gh-comment" name="comment" maxlength="60000" placeholder="分享你的想法，支持 Markdown">${esc(draftComments.get(key(item)) ?? "")}</textarea><div class="actions"><span class="comment-target">发布到 #${item.number}</span><button type="submit" class="primary">发布评论 ${icon("arrow")}</button></div></form>`;
+				detail.innerHTML = `${detailNav(item)}<div class="meta"><span class="tag state-tag${item.state === "open" ? "" : " closed"}">${icon(item.kind)}${stateLabel(item)}</span><span>${esc(t(item.kind === "pr" ? "kindPr" : "kindIssue"))} #${item.number}</span></div><h2>${esc(item.title)}</h2><div class="detail-author">${esc(item.repo)} · @${esc(item.author)} · ${esc(t("detailUpdated", { date: shortDate(item.updatedAt) }))}</div>
+					<div class="actions"><button type="button" data-action="process" class="primary">${icon("spark")}${esc(t("processWithAi"))}</button><button type="button" data-action="quote" class="quote" title="${esc(t("quoteToChat"))}" aria-label="${esc(t("quoteToChat"))}">${icon("quote")}</button><button type="button" data-action="state" class="state-action" ${pr?.merged ? "disabled" : ""}>${esc(t(item.state === "open" ? "closeItem" : "reopenItem"))}</button></div>
+					${pr ? `<div class="summary"><div class="branches">${icon("pr")}<span>${esc(pr.head)}</span>${icon("arrow")}<span>${esc(pr.base)}</span>${pr.draft ? `<span class="tag">${esc(t("draftTag"))}</span>` : ""}</div><div>${esc(t("changedFiles", { count: pr.changedFiles }))} · <span class="diff-added">+${pr.additions}</span> / <span class="diff-deleted">−${pr.deletions}</span></div><div class="hint">${esc(t("mergeStatus", { state: pr.mergeableState ?? t("mergeComputing") }))} · ${esc(t("reviewStatus", { reviewers: pr.reviewers.join(", ") || t("noReviewers") }))}</div><div class="hint">${esc(t("prExternalHint"))}</div></div>` : ""}
+					${item.labels.length ? `<div class="labels">${item.labels.map((label) => `<span class="tag">${esc(label)}</span>`).join("")}</div>` : ""}<div class="content">${esc(item.body || t("noBody"))}</div><h3 class="section-title">${icon("comment")}${esc(t("discussion"))}<span class="count">${item.commentCount}</span></h3>
+					${item.commentsTruncated ? `<p class="hint">${esc(t("commentsTruncated"))}</p>` : ""}${item.comments.map((comment) => `<div class="comment"><div class="comment-author"><span class="avatar" aria-hidden="true">${esc(comment.author?.slice(0, 1).toUpperCase() || "?")}</span><span>@${esc(comment.author)}</span><span class="hint">${esc(shortDate(comment.createdAt))}</span></div><div class="content">${esc(comment.body)}</div></div>`).join("") || `<div class="hint">${esc(t("noComments"))}</div>`}
+					<form class="comment-form"><label for="gh-comment">${esc(t("postComment"))}</label><textarea id="gh-comment" name="comment" maxlength="60000" placeholder="${esc(t("commentPlaceholder"))}">${esc(draftComments.get(key(item)) ?? "")}</textarea><div class="actions"><span class="comment-target">${esc(t("commentTarget", { number: item.number }))}</span><button type="submit" class="primary">${esc(t("publishComment"))} ${icon("arrow")}</button></div></form>`;
 				setMutationDisabled();
 			}
 			function setMutationDisabled() {
@@ -229,12 +236,12 @@ export function createWorkbench() {
 					selected = null;
 					++detailEpoch;
 					showView("list");
-					detail.innerHTML = empty("选择一条待办", "查看详情、参与讨论，或交给 AI 处理");
+					detail.innerHTML = empty(t("selectItem"), t("selectItemHint"));
 					listScroll = 0;
 					inbox.scrollTop = 0;
 				}
 				message("");
-				if (!items.length) inbox.innerHTML = empty("正在加载待办", "马上就好");
+				if (!items.length) inbox.innerHTML = empty(t("loadingInbox"), t("loadingInboxQuick"));
 				else renderList();
 				try {
 					const result = await request(
@@ -246,7 +253,7 @@ export function createWorkbench() {
 					query = { ...requestedQuery, page };
 					hasMore = result.hasMore;
 					total = result.total;
-					message(result.incomplete ? "搜索结果不完整，可缩小条件后重试。" : "");
+					message(result.incomplete ? t("searchIncomplete") : "");
 				} catch (error) {
 					if (disposed || epoch !== listEpoch) return;
 					items = [];
@@ -269,7 +276,7 @@ export function createWorkbench() {
 				showView("detail");
 				detailScroll = 0;
 				detail.scrollTop = 0;
-				detail.innerHTML = detailNav(item) + empty("正在加载详情", "获取正文与最近讨论");
+				detail.innerHTML = detailNav(item) + empty(t("loadingDetail"), t("loadingDetailHint"));
 				try {
 					const result = await request(
 						`/detail?${new URLSearchParams({ repo: item.repo, number: String(item.number) })}`,
@@ -281,7 +288,7 @@ export function createWorkbench() {
 					if (disposed || epoch !== detailEpoch) return;
 					selected = null;
 					renderList();
-					detail.innerHTML = detailNav() + empty("详情加载失败", "返回列表后点击条目重试");
+					detail.innerHTML = detailNav() + empty(t("detailFailed"), t("detailFailedHint"));
 					message(error.message, true);
 				}
 			}
@@ -293,7 +300,7 @@ export function createWorkbench() {
 					connected = true;
 					account.classList.add("connected");
 					account.querySelector("span").textContent = `@${result.login}`;
-					account.title = "使用服务所在机器的 GitHub CLI 登录";
+					account.title = t("accountHint");
 					if (!initialized) {
 						initialized = true;
 						if (!form.elements.repo.value && result.repo) form.elements.repo.value = result.repo;
@@ -305,9 +312,9 @@ export function createWorkbench() {
 					connected = false;
 					refresh.setAttribute("aria-busy", "false");
 					account.classList.remove("connected");
-					account.querySelector("span").textContent = "尚未连接 GitHub";
+					account.querySelector("span").textContent = t("notConnected");
 					message(error.message, true);
-					inbox.innerHTML = `<div class="help"><h2>连接你的 GitHub</h2><p>在运行服务的机器安装 GitHub CLI，然后在终端执行：</p><p class="code">gh auth login --hostname github.com</p><p>完成后点击右上角刷新，即可查看 PR 与 Issue。</p></div>`;
+					inbox.innerHTML = `<div class="help"><h2>${esc(t("connectTitle"))}</h2><p>${esc(t("connectInstall"))}</p><p class="code">gh auth login --hostname github.com</p><p>${esc(t("connectDone"))}</p></div>`;
 					showView("list");
 				}
 			}
@@ -332,7 +339,7 @@ export function createWorkbench() {
 				mutation = true;
 				mutationNotice = null;
 				setMutationDisabled();
-				message(path === "/comment" ? "正在发布评论…" : "正在更新状态…");
+				message(path === "/comment" ? t("publishingComment") : t("updatingState"));
 				pendingMutation = (async () => {
 					try {
 						await request(path, { repo: item.repo, number: item.number, ...body });
@@ -354,7 +361,7 @@ export function createWorkbench() {
 						if (epoch === detailEpoch) await openItem(item, false);
 					} catch (error) {
 						mutationNotice = {
-							text: `${error.message}；操作结果不确定时请刷新确认后再重试。`,
+							text: `${error.message}${t("mutationUncertain")}`,
 							error: true,
 							deferred: disposed,
 						};
@@ -368,10 +375,9 @@ export function createWorkbench() {
 			}
 			function quote() {
 				if (!selected) return;
-				if (!hostApi()?.compose?.({ attachments: [buildReference(selected)] }))
-					return message("当前没有可用的对话输入框，请先打开一个对话。", true);
+				if (!hostApi()?.compose?.({ attachments: [buildReference(selected)] })) return message(t("noComposer"), true);
 				hostApi()?.setView?.("chat");
-				message("已引用到当前对话，可继续填写处理要求。");
+				message(t("quoted"));
 			}
 			const onSubmit = (event) => {
 				event.preventDefault();
@@ -381,9 +387,9 @@ export function createWorkbench() {
 				}
 				if (event.target.matches(".comment-form")) {
 					const body = event.target.elements.comment.value;
-					if (!body.trim()) return message("请输入评论内容。", true);
+					if (!body.trim()) return message(t("commentEmpty"), true);
 					saveDraft();
-					mutate("/comment", { body }, "评论已发布");
+					mutate("/comment", { body }, t("commentPublished"));
 				}
 			};
 			const onInput = (event) => {
@@ -433,7 +439,7 @@ export function createWorkbench() {
 						quote();
 						break;
 					case "state":
-						if (selected) mutate("/state", { state: selected.state === "open" ? "closed" : "open" }, "状态已更新");
+						if (selected) mutate("/state", { state: selected.state === "open" ? "closed" : "open" }, t("stateUpdated"));
 						break;
 				}
 			};
@@ -451,7 +457,7 @@ export function createWorkbench() {
 			}
 			void (async () => {
 				if (pendingMutation) {
-					message("正在完成上一次操作…");
+					message(t("finishingPrevious"));
 					await pendingMutation;
 					mutation = false;
 					if (disposed) return;
