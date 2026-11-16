@@ -220,6 +220,14 @@ export class BrowserManager {
 		wc.on("context-menu", (_event, params) => {
 			this.options.onContextMenu?.(wc, params);
 		});
+		// F12 / Ctrl+Shift+I：页面拿着键盘焦点时外壳页收不到，所以在这里拦（见 toggleDevTools）
+		wc.on("before-input-event", (event, input) => {
+			if (input.type !== "keyDown") return;
+			const inspect = (input.control || input.meta) && input.shift && input.key.toLowerCase() === "i";
+			if (input.key !== "F12" && !inspect) return;
+			event.preventDefault();
+			this.toggleDevTools(id);
+		});
 		wc.on("did-start-loading", update);
 		wc.on("did-stop-loading", update);
 		wc.on("did-navigate", update);
@@ -329,6 +337,23 @@ export class BrowserManager {
 	}
 	reload(): void {
 		this.activeContents()?.reload();
+	}
+	/**
+	 * 开关某个标签页的开发者工具（默认当前标签，独立窗口打开不影响分栏布局）。
+	 *
+	 * 内置浏览器没有“另开一个真 Chrome”这条退路：网站自己出问题（验证码一直转圈、脚本报错）时，
+	 * 用户的控制台就在这——所以 F12 / Ctrl+Shift+I 由主进程直接接管（页面有焦点时也收得到），
+	 * 不依赖外壳页先拿到键盘事件。只给用户用，不挂到 agent 的浏览器工具上。
+	 */
+	toggleDevTools(tabId?: string): boolean {
+		const wc = tabId ? this.getWebContents(tabId) : this.activeContents();
+		if (!wc || wc.isDestroyed()) return false;
+		if (wc.isDevToolsOpened()) {
+			wc.closeDevTools();
+			return false;
+		}
+		wc.openDevTools({ mode: "detach" });
+		return true;
 	}
 	getTabs(): BrowserTab[] {
 		return [...this.tabs.values()].map(({ state }) => ({ ...state }));

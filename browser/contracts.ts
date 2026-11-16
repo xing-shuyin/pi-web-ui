@@ -111,6 +111,8 @@ export type BrowserShellAction =
 	| "back"
 	| "forward"
 	| "reload"
+	/** 开发工具开关：网站出问题（验证码不通过、脚本报错）时用户能自己看控制台 */
+	| "devtools.toggle"
 	| "mode"
 	| "splitRatio"
 	| "agent.connect"

@@ -31,6 +31,8 @@ BrowserWindow 的 webContents 加载本地 shell.html，标签与专用 Agent �
 
 切换模式复用同一个视图并更新可见性、边界和焦点，不重载页面。隐藏页保留有效尺寸，不缩成 1×1。标签关闭时关闭对应 WebContents；应用关闭时清理标签、下载、Agent 和挂起通道。
 
+**开发者工具是用户的逃生口**：内置浏览器没有「另开一个真 Chrome」这条退路，网站自己出问题（验证码一直转圈、脚本报错）时控制台就在这里。`F12` / `Ctrl+Shift+I` 两条路都开当前标签页的 DevTools（独立窗口，不影响分栏布局）：页面拿着键盘焦点时由 `BrowserManager.createTab` 里的 `before-input-event` 接管（外壳页根本收不到那个键），焦点在外壳（地址栏 / 面板）时由 `shell.ts` 的 keydown 发 `devtools.toggle`；两条最终都落到 `BrowserManager.toggleDevTools()`（空 id 回退当前标签，已开着就关）。**这只给用户用**：agent 的浏览器工具没有这条通道，自动注入脚本也不该借用它。
+
 原生视图不能被普通 DOM 的 z-index 覆盖，所以外壳面板（书签 / 历史 / 下载 / 设置 / 扩展）**不再用 DOM 浮层 + 隐藏内容区**：一块面板 = 一个 `panel.html` 视图（`WebContentsView`），比页面视图晚加入 `contentView` 即盖在它上面，宿主按面板自己回报的尺寸把它摆成工具栏下沿、贴窗口右侧的一块矩形（`desktop/browser-policy.ts` 的 `panelLayerBounds`）。矩形之外的网页与 Agent 分栏照常可见、可点——这正是修「一点开插件列表，页面和聊天全变黑」的地方。
 
 - 开/收走 `panel` 动作（`{ open, panel }`）；同一个面板再点一次就是收起（工具栏按钮本身是开关，不需要前端记状态）。尺寸由面板页回报（`{ size }`），面板自己量、宿主夹进可用区域；量不出来有兜底时长（`PANEL_LAYER_SHOW_DELAY`）。

@@ -38,6 +38,9 @@ vi.mock("electron", async () => {
 		isLoading() {
 			return this.loading;
 		}
+		isDevToolsOpened = vi.fn(() => false);
+		openDevTools = vi.fn();
+		closeDevTools = vi.fn();
 		setWindowOpenHandler(handler: any) {
 			this.windowOpen = handler;
 		}
@@ -151,6 +154,19 @@ describe("browser URL policy", () => {
 });
 
 describe("BrowserManager", () => {
+	it("opens the devtools of the active tab from F12 without letting the page see the key", () => {
+		const { manager } = setup();
+		const wc = manager.getWebContents(manager.getActiveTabId()!) as any;
+		const event = { preventDefault: vi.fn() };
+		wc.emit("before-input-event", event, { type: "keyDown", key: "F12", control: false, shift: false, meta: false });
+		expect(event.preventDefault).toHaveBeenCalled();
+		expect(wc.openDevTools).toHaveBeenCalledWith({ mode: "detach" });
+		// 其他按键不能让页面丢了键盘
+		event.preventDefault.mockClear();
+		wc.emit("before-input-event", event, { type: "keyDown", key: "a", control: false, shift: false, meta: false });
+		expect(event.preventDefault).not.toHaveBeenCalled();
+		expect(manager.toggleDevTools("missing-tab")).toBe(false);
+	});
 	it("creates sandboxed pages in a persistent session and denies permissions by default", () => {
 		const { manager, dataDir } = setup();
 		expect(manager.getTabs()).toHaveLength(1);

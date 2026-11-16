@@ -1087,6 +1087,8 @@ export class DesktopBrowserHost {
 			case "reload":
 				this.browser.reload();
 				return true;
+			case "devtools.toggle":
+				return this.browser.toggleDevTools(text(args.id) || undefined);
 			case "mode":
 				this.setMode(text(args.mode) as BrowserMode);
 				return true;

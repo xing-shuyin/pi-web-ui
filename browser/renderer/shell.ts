@@ -579,6 +579,12 @@ window.addEventListener("keydown", (event) => {
 		void call("mode", { mode: nextMode }).catch(reportError);
 		return;
 	}
+	// F12 / Ctrl+Shift+I：焦点在外壳（地址栏、面板）时也开当前标签页的开发者工具
+	if (event.key === "F12" || ((event.ctrlKey || event.metaKey) && event.shiftKey && event.key.toLowerCase() === "i")) {
+		event.preventDefault();
+		void call("devtools.toggle", { id: state?.activeTabId }).catch(reportError);
+		return;
+	}
 	if (!(event.ctrlKey || event.metaKey) || event.altKey) return;
 	const key = event.key.toLowerCase();
 	if (key === "l" || key === "k") {
