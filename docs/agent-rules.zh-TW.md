@@ -24,11 +24,11 @@
 - **未登入頁口令表單必須原生 POST**（`POST /__pi/auth`，`server/auth-login.ts`）：賬號域 `autocomplete="username"` + 密碼域 `autocomplete="current-password"` + 真實表單提交（禁 JS `preventDefault()` 拼 `?token=` 跳轉），否則瀏覽器密碼管理器不會詢問儲存密碼；回跳地址一律過 `sanitizeNextPath`（禁開放重定向、剔 `token`）（守衛：`tests/unit/auth-login.test.ts` · `tests/unit/unauthorized-page.test.ts`）。
 - **工作區嚴禁使用家目錄根**：禁止設定 `$HOME` 為工作區根，防止遞迴掃描壞掛載造成事件迴圈卡死。
 - **遠期定時器必須使用 `armDelay` 分片**：Node.js 中 `setTimeout` 超過 2^31-1 毫秒（約 24.8 天）會整型溢位被截斷為 1ms 從而引發死迴圈。超過 6 小時任務必須分片（守衛：`plugin-cron-overflow-test.mjs`）。
-- **文本解碼與行號統計規範**：預覽與附件統一使用 `decodeText`（UTF-8 → GBK → latin1）；`countLines` 不計末尾空行，前端需 pop 末尾空串。詳見 [`architecture-attachments.md`](architecture-attachments.zh-TW.md)。
+- **文本解碼與行號統計規範**：預覽與附件統一使用 `decodeText`（UTF-8 → GBK → latin1）；`countLines` 不計末尾空行，前端需 pop 末尾空串。詳見 [`architecture-attachments.md`](architecture-attachments.md)。
 
 ## 二、工具定義與提示詞規範
 
-> 與 [`development.md`](development.zh-TW.md)「編碼約定」、[`tool-context-budget.md`](tool-context-budget.zh-TW.md) 互補：本節是**禁令視角**，那兩處是工作原理。
+> 與 [`development.md`](development.md)「編碼約定」、[`tool-context-budget.md`](tool-context-budget.md) 互補：本節是**禁令視角**，那兩處是工作原理。
 
 - **工具提示詞三處職責分離（嚴禁跨處複述）**：
   1. Tool Schema 的 `description`：僅描述「做什麼與邊界」，≤600 字元；
@@ -37,7 +37,7 @@
      _必須使用精煉純英文，違規會被守衛單測攔截_（守衛：`tests/unit/tool-prompt-hygiene.test.ts`）。`bash` / `edit` 的模型可見文案單源在 `server/tool-prompts.ts`。
 - **編輯能力只有一個工具名**：寬鬆匹配是 `edit` 的引數 `soft: true`（`server/edit-tool.ts`），**禁止**再新增 `edit_soft` 這類第二個編輯工具：同名能力拆成兩個工具會逼模型二選一，並把開關、提示詞、審批規則三處聯動憑空翻倍。舊存檔裡的相關開關只需在歸一化裡折算，不留執行時分支。
 - **工具延遲載入硬約束：絕不破壞字首快取**：
-  供應商 Prompt Cache 依賴系統提示詞字首完全一致。系統提示詞 `{{tools}}` 目錄必須保持完整且不隨已載入狀態變化；新載入工具的要點隨 `load_tools` 回執進入對話；登錄檔僅允許追加（`toolsAdded`），嚴禁就地修改或刪除（守衛：`tests/lazy-tools-test.mjs`，文件：[`tool-context-budget.md`](tool-context-budget.zh-TW.md)）。
+  供應商 Prompt Cache 依賴系統提示詞字首完全一致。系統提示詞 `{{tools}}` 目錄必須保持完整且不隨已載入狀態變化；新載入工具的要點隨 `load_tools` 回執進入對話；登錄檔僅允許追加（`toolsAdded`），嚴禁就地修改或刪除（守衛：`tests/lazy-tools-test.mjs`，文件：[`tool-context-budget.md`](tool-context-budget.md)）。
 - **單工具多執行路徑必須提示詞單源**：以 bash 為例，原生、終端和自適應分流路徑共用 `server/tool-prompts.ts`，禁止在 execute 覆蓋實現中硬編碼或複製描述。
 - **bash / powershell 的預設超時單源在 `server/bash-timeout.ts`**：模型漏傳 `timeout` 時按 `DEFAULT_BASH_TIMEOUT_SEC`（120s，`PI_WEB_BASH_TIMEOUT_SEC` 可改）執行，過大值夾到 `MAX_BASH_TIMEOUT_SEC`（1 小時）—— 不得退回「無超時」只等會話看門狗（預設 20 分鐘）收屍。三條執行路徑（`bash-tool.ts` 本地/SSH、`terminals.ts` 終端接管、`agent-service.ts` 的 powershell）必須都過 `withDefaultBashTimeout()`，禁止各處另寫數值或把 `0` 當「不限」（SDK 對 0/負數直接拋 `Invalid timeout`）（守衛：`tests/unit/bash-timeout.test.ts`）。
 - **Schema 只寫欄位名與型別**：匯出的 JSON Schema 裡不放 `minItems` / `maxItems` / `minimum` / `maximum` / `minLength` / `anyOf` 這類裝飾約束，也不給自解釋的欄位寫 `description`；約束校驗搬到 handler（`readArguments` 一類），候選值寫 `enum`，每個引數能填什麼寫在該引數的**唯一**一句簽名裡（`communicate`、`browser_page` 的 `action`/`op` 就是範例）。少數確實不自解釋的欄位（`read.offset`、`bash.persist`、`edit.soft`、`present_files.items[].focus`、`skill.name`）才留一句短說明。SDK 自帶但文案歸我們的 `write` / `grep` / `find` 用 `withSlimPrompt()` 在 `server/tool-prompts.ts` 裡換文案與 schema，實現仍走 SDK（守衛：`tests/unit/tool-schema-slim.test.ts`，它同時比對欄位名與 SDK 內建定義，SDK 增刪引數會直接報紅）。
@@ -47,12 +47,12 @@
 
 ## 三、UI 佈局與樣式規範
 
-> 共享基線是 `web/src/styles.css`；主題見 [`architecture-core.md`](architecture-core.zh-TW.md)「主題切換」。
+> 共享基線是 `web/src/styles.css`；主題見 [`architecture-core.md`](architecture-core.md)「主題切換」。
 
 - **專案選中態只跟隨當前開啟的專案**：執行中、未讀狀態通過專案徽標表達，不得為其他專案標題新增狀態底色；保留普通懸停反饋。
 
 - **CSS 變數必須先定義後引用**：未定義的 `var(--x)` 會導致整條 CSS 宣告失效；內聯程式碼的 `--link-soft` 在 `--bg` 上須滿足文字令牌的 ≥4:1 對比度門檻（守衛：`tests/unit/css-tokens.test.ts`、`theme-text-contrast.test.ts`；行內程式碼檢查已併入文字令牌守衛）。
-- **桌面殼（Electron）的貼頂浮層必須讓出 macOS 紅黃綠按鈕**：按鈕由原生繪製、浮在 WebView 上不佔佈局（`desktop/main.ts` 的 `trafficLightPosition`），頂欄靠 `padding-left` 讓位；任何 `position: fixed; top: 0` 的貼頂浮層（手機/窄分欄佈局下的 `.panel-drawer`、`.term-commands`）必須用 `var(--desktop-titlebar-h, 0px)` 往下讓（`padding-top` 或 `top: calc(...)`），否則窄分欄時專案列表頭正好壓住關閉按鈕。該令牌只在 `body.is-desktop-mac:not(.is-desktop-fullscreen)` 下為 38px，其他環境為 0。
+- **桌面殼（Electron）的貼頂浮層必須讓出 macOS 紅黃綠按鈕**：按鈕由原生繪製、浮在 WebView 上不佔佈局（`desktop/main.ts` 的 `trafficLightPosition`），頂欄靠 `padding-left` 讓位；任何 `position: fixed; top: 0` 的貼頂浮層（手機/窄分欄佈局下的 `.panel-drawer`）必須用 `var(--desktop-titlebar-h, 0px)` 往下讓（`padding-top` 或 `top: calc(...)`），否則窄分欄時專案列表頭正好壓住關閉按鈕。該令牌只在 `body.is-desktop-mac:not(.is-desktop-fullscreen)` 下為 38px，其他環境為 0。
 - **強調色實底上的文字必須走 `--accent-contrast`**：`background: var(--accent)` 配 `color: #fff` 會在淺色強調主題（`flow`/`wallpaper-flow` 的純白、`wallpaper-obsidian` 的 `#e2e8f0`、`aetheris`/`cyberpunk`/`nord` 等）變成白底白字，按鈕直接隱形。前景一律寫 `var(--accent-contrast, #fff)`；外掛同理：若私設字首別名（如 `--xxx-accent: var(--accent)`）**必須成對宣告** `--xxx-accent-contrast: var(--accent-contrast, #fff)`，推薦直接複用宿主全域性 `.btn.primary`，嚴禁私設單向底色別名而硬編碼白字；半透明 `color-mix(… var(--accent) 30% …)` 染色底則用 `var(--text)`；主題若把 `--accent` 定成淺色，必須同時宣告反色的 `--accent-contrast`（守衛：`tests/unit/accent-contrast.test.ts`、`semantic-contrast.test.ts` 動態符號追蹤別名）。
 - **語義色實底同理走 `--on-*`**：`background: var(--green|--red|--amber|--blue|--send-blue|--stop-red)` 配 `color: #fff` 同樣會隱形（預設主題 `--amber` 白字 1.67:1、`--green` 1.92:1、`--red` 2.77:1）。前景寫 `var(--on-green|--on-red|--on-amber|--on-blue|--on-send-blue|--on-stop-red)`；狀態色按「白/深取對比更高者」派生、動作色（blue/send/stop）白字 ≥3:1 就保留白字，主題側由 `make-light-theme.mjs` 自動派生（守衛：`tests/unit/semantic-contrast.test.ts`）。
 - **主題的「文字令牌」必須有明暗下限**：`--text-faint`（3.05:1）、`--accent`（3.5:1）、`--amber/--green/--red/--blue/--link/--link-soft/--info-blue/--skill-blue/--auth-green/--plugin-purple/--amber-text/--red-text/--err-text/--md-strong/--code-text`（4.5:1）在 `--bg` 與 `--bg-elev2` 上必須夠對比——亮色主題照抄深色預設值會讓警告文字、狀態 chip、連結整體糊掉（曾出現 `--plugin-purple` 1.50:1）。`make-light-theme.mjs` 的 `TEXT_FLOORS` 會自動保持色相壓暗，手寫主題自行宣告（守衛：`tests/unit/theme-text-contrast.test.ts`）。
@@ -73,21 +73,21 @@
 - **拖拽與觸控互動標準**：
   - 圖示編輯與拖拽必須監聽 Pointer 事件，嚴禁使用 HTML5 DnD（移動端觸屏不觸發）；內建圖示須在 `host-icon.tsx` 登記；選單行文字統一 12.5px（守衛：`host-icon.test.ts`、`topbar-overflow-menu.test.ts`）。
   - 手機端橫滑手勢（`swipe-drawer.ts`）必須避開系統側滑區，手勢期間直寫內聯 transform 停用動畫過渡，鬆手後清理內聯值交由 CSS 類過渡；移動端遮罩常駐（守衛：`swipe-drawer.test.ts`）。
-- **訊息操作語義**：提示懸浮即顯且簡短；重新提問和編輯後重問在當前會話截斷原問題及後續內容後重發；分叉包含所選訊息並建立新對話；回退開啟對應使用者問題的編輯框，提交後在當前會話重問，取消不改歷史。詳見 [`architecture-core.md`](architecture-core.zh-TW.md)「訊息操作」。
+- **訊息操作語義**：提示懸浮即顯且簡短；重新提問和編輯後重問在當前會話截斷原問題及後續內容後重發；分叉包含所選訊息並建立新對話；回退開啟對應使用者問題的編輯框，提交後在當前會話重問，取消不改歷史。詳見 [`architecture-core.md`](architecture-core.md)「訊息操作」。
 - **新會話初始化互動**：切換或新建會話須經 `focusComposer()` 聚焦（觸屏除外），非 chat 檢視自動切回，待發附件 chips 隨新會話清空（守衛：`composer-draft.test.ts`）。
 
 ## 四、架構與執行態約束
 
-- **目標模式 2.0 執行鐵律**：主對話作為審查者，服務端另起落盤執行者；輪次、代次與停滯熔斷全由服務端管控，嚴禁模型自行呼叫 wait/spawn；審查指令必須注入執行證據（`goal-evidence.ts`）；會話中止或關閉即停止迴圈，不得無限續輪（守衛：`goal-delegated.test.ts`、`goal-evidence.test.ts`，文件：[`goal-conversation-design.md`](goal-conversation-design.zh-TW.md)）。
+- **目標模式 2.0 執行鐵律**：主對話作為審查者，服務端另起落盤執行者；輪次、代次與停滯熔斷全由服務端管控，嚴禁模型自行呼叫 wait/spawn；審查指令必須注入執行證據（`goal-evidence.ts`）；會話中止或關閉即停止迴圈，不得無限續輪（守衛：`goal-delegated.test.ts`、`goal-evidence.test.ts`，文件：[`goal-conversation-design.md`](goal-conversation-design.md)）。
 - **審查者委派模式（Delegate Mode）**：開啟後主對話只審不幹，使用者輸入自動派發給常駐執行會話；閘門強制攔截寫操作與子代理派發；計劃模式優先順序高於委派（`server/delegate-mode.ts`、`server/plan-mode.ts`）。
-- **預設依賴與部分應用**：交換文件頂層 `plugins` 僅攜帶外掛需求後設資料，不含配置、金鑰、儲存或授權；安裝複用顯式 `plugin_job`。部分預設未攜帶的欄位不得補預設或清空當前設定，`plugins` 不得進入執行設定；儲存、應用、延後載入和應用失敗分別回執（見 [`preset-sharing.md`](preset-sharing.zh-TW.md)）。
-- **預設分享必須白名單嚴格淨化**：匯入外部 JSON 必須通過 `server/preset-share.ts` 白名單校驗（`preset-fields.ts`），丟棄未知欄位，執行 dryRun 確認，嚴禁未經校驗直接攤入 `ClientSettings`（守衛：`preset-share.test.ts`，文件：[`preset-sharing.md`](preset-sharing.zh-TW.md)）。
+- **預設依賴與部分應用**：交換文件頂層 `plugins` 僅攜帶外掛需求後設資料，不含配置、金鑰、儲存或授權；安裝複用顯式 `plugin_job`。部分預設未攜帶的欄位不得補預設或清空當前設定，`plugins` 不得進入執行設定；儲存、應用、延後載入和應用失敗分別回執（見 [`preset-sharing.md`](preset-sharing.md)）。
+- **預設分享必須白名單嚴格淨化**：匯入外部 JSON 必須通過 `server/preset-share.ts` 白名單校驗（`preset-fields.ts`），丟棄未知欄位，執行 dryRun 確認，嚴禁未經校驗直接攤入 `ClientSettings`（守衛：`preset-share.test.ts`，文件：[`preset-sharing.md`](preset-sharing.md)）。
 - **原子寫 / 重試單源在 `server/atomic-file.ts`**：`writeAtomicSync` / `writeAtomic` / `readFileSyncRetry` 自帶 EPERM/EACCES/EBUSY 的**真退避**（20/60/150/400ms）——Windows 上防毒與索引器會短暫佔用剛寫完的檔案，`rename` 的瞬時失敗是常態，空轉重試（無 sleep）等於沒重試。Hub 升級 worker 不能 import TS，故 `bin/lib/atomic-file.mjs` 由 `npm run gen:atomic`（`build:server` 末尾自動跑）從同一份實現生成，禁手改；升級記賬寫失敗**不得**阻斷回滾（先恢復舊服務，後設資料降級為盡力而為）（守衛：`atomic-file.test.ts`、`atomic-file-generated.test.ts`、`hub-upgrade-runtime.test.ts`）。
 - **Windows 最小化通知**：Windows 最小化時頁面 visibility 狀態不準確，必須通過視窗尺寸矩形判斷（`isCollapsedWindow`）；通知禁止攜帶 `tag` 欄位，防止被系統靜默吞併。
 - **壓縮軟上限必須雙層監控，換模型必須走 `applySessionModel`**：SDK 的 `compaction.reserveTokens` 是**回合內**唯一的檢查點（工具呼叫間隙 `_compactBeforeNextAssistantResponse`），必須逐會話算成 `cw - cap`，否則自治長跑（子代理 / 單回合幾十次工具呼叫）全程無空閒態，永不會壓（`#773`）；且 reserve 依賴會話**當前**模型，任何裸 `session.setModel()` 都會讓判定線卡在上一模型的 `W - C` 上，換模型一律走 `applySessionModel`；cap ≤ keepRecent + headroom 時不注射（否則每個工具間隙重壓一次）。`server/soft-cap.ts`。
 - **直連 `ModelRuntime` 必須自帶 `sessionId`**：SDK 只在 AgentSession 內注入 `options.sessionId`；繞過會話直調 `completeSimple` / `streamSimple` 的模組（隨手問、提交資訊生成、視覺轉寫、群路由）必須傳 `modelSessionId()`（`server/model-session.ts`：同一話題傳穩定種子，一次性呼叫不傳），否則 opencode / opencode-go 閘道器缺 `x-opencode-session` 頭會直接 400 `MissingSessionID`（守衛：`tests/unit/model-session.test.ts`）。
 - **模型目錄官方整表替換**：通過 `patch-remote-catalog.ts` 冪等改寫 SDK 目錄，不殘留舊定義，升級後自動重新應用。
-- **DSH 執行態三規則**：shipped 預設使用 `preset-clones.ts` 的 file: 克隆隔離；問卷與過濾鉤子掛 agent scope；統計指標吃直播幀與 assistant/message.usage（`dsh-usage.ts`）。見 [`dsh-engine.md`](dsh-engine.zh-TW.md)。
+- **DSH 執行態三規則**：shipped 預設使用 `preset-clones.ts` 的 file: 克隆隔離；問卷與過濾鉤子掛 agent scope；統計指標吃直播幀與 assistant/message.usage（`dsh-usage.ts`）。見 [`dsh-engine.md`](dsh-engine.md)。
 - **會話過戶與狀態遷移**：`take_over_conversation` 完整搬遷 runtime 本體，且**是事務性的**（源側已摘、目標側接入失敗就原樣搬回，絕不留「還在跑但沒人持有」的幽靈會話，見 `#556` / `tests/takeover-rollback-test.mjs`）；**斷連殘骸的「另一處」行有寬限期**（`PI_WEB_OFFLINE_ROWS_TTL_MS`，預設 30 分鐘，標 `ownerOffline`，仍可過戶——手機 run 途中關頁面後換裝置仍能接管）；`ask_user_question` / `browser_page` 解析建立時的 session 物件（`bridgeTarget`）；跨頁答覆帶 owner。
 - **工作區命令必須序列（`#872`）**：`cs.cwd` / 活動對話 / runtime 繫結是同一組可變狀態，改它們的命令（`set_cwd` / `new_chat` / `new_cli_chat` / `switch_session` / `switch_conversation` / `fork_session` / `rollback_session` / `make_dir(setAsCwd)` / 沙盒切換）一律走 `server/workspace-queue.ts` 的會話級 FIFO（派發層「同步認領 + 入隊」）；建會話可用 `new_chat.cwd` 宣告目標，切不過去就不建（回執 `ok:false`）。**禁止**在前端逐處補 cwd、也禁止把建會話寫成不等 `set_cwd` 的併發呼叫。客戶端意圖單源為 `web/src/pending-workspace.ts`（守衛：`tests/unit/workspace-queue.test.ts`、`tests/unit/pending-workspace.test.ts`）。
 - **宿主提供的包只能宣告在 `peerDependencies`（`"*"`）**：pi 擴充套件載入器只掃 `dependencies`（命中 `@earendil-works/pi-coding-agent` / `typebox` 就告警：巢狀副本會繞開載入器注入、搞出重複執行時模組）。本包同時是擴充套件與獨立服務端，服務端子程序真要這兩個包（`PI_WEB_SDK=bundled` 也要自帶副本）→ 落在 `optionalDependencies`（npm 預設照裝）。守衛 `tests/unit/extension-host-packages.test.ts`。
@@ -103,18 +103,18 @@
 
 這些條目已在專門文件裡詳細維護，`AGENTS.md` 只保留一行指標，新增內容請寫進對應文件：
 
-| 邊界                                                                          | 文件                                                                           |
-| ----------------------------------------------------------------------------- | ------------------------------------------------------------------------------ |
-| 設定同步（`SettingsService.push()` / `refreshSettings()` / `applyRuntime()`） | [`architecture-core.md`](architecture-core.zh-TW.md)「非同步歸屬與持久化邊界」 |
-| pi 請求上下文投影、`context-evidence` 證據、壓縮任務指令                      | [`tool-context-budget.md`](tool-context-budget.zh-TW.md)                       |
-| 跨 await 歸屬、取消訊號、代次、歷史分頁、CSP sandbox、SSH known_hosts         | [`architecture-core.md`](architecture-core.zh-TW.md)「非同步歸屬與持久化邊界」 |
-| WS 限額、attach 佇列、歷史搜尋、壓縮恢復 sidecar、檔案儲存、任務持久化        | [`architecture-core.md`](architecture-core.zh-TW.md)「命令、搜尋與恢復狀態」   |
-| 沙盒身份、基線寫回、生命週期                                                  | [`architecture-sandbox.md`](architecture-sandbox.zh-TW.md)                     |
-| 穩定歸屬、工作樹清理、取消代次                                                | [`root-cause-boundaries.md`](root-cause-boundaries.zh-TW.md)                   |
-| 群組 / Bot / 跨裝置協作                                                       | [`device-collaboration.md`](device-collaboration.zh-TW.md)                     |
-| 畫布版本、執行代次、產物隔離                                                  | [`architecture-canvas.md`](architecture-canvas.zh-TW.md)                       |
-| MCP 專案執行態                                                                | [`architecture-plugins.md`](architecture-plugins.zh-TW.md)「MCP 專案執行時」   |
-| 提示詞模板與 `/命令`                                                          | [`development.md`](development.zh-TW.md)「提示詞模板命令」                     |
+| 邊界                                                                          | 文件                                                                     |
+| ----------------------------------------------------------------------------- | ------------------------------------------------------------------------ |
+| 設定同步（`SettingsService.push()` / `refreshSettings()` / `applyRuntime()`） | [`architecture-core.md`](architecture-core.md)「非同步歸屬與持久化邊界」 |
+| pi 請求上下文投影、`context-evidence` 證據、壓縮任務指令                      | [`tool-context-budget.md`](tool-context-budget.md)                       |
+| 跨 await 歸屬、取消訊號、代次、歷史分頁、CSP sandbox、SSH known_hosts         | [`architecture-core.md`](architecture-core.md)「非同步歸屬與持久化邊界」 |
+| WS 限額、attach 佇列、歷史搜尋、壓縮恢復 sidecar、檔案儲存、任務持久化        | [`architecture-core.md`](architecture-core.md)「命令、搜尋與恢復狀態」   |
+| 沙盒身份、基線寫回、生命週期                                                  | [`architecture-sandbox.md`](architecture-sandbox.md)                     |
+| 穩定歸屬、工作樹清理、取消代次                                                | [`root-cause-boundaries.md`](root-cause-boundaries.md)                   |
+| 群組 / Bot / 跨裝置協作                                                       | [`device-collaboration.md`](device-collaboration.md)                     |
+| 畫布版本、執行代次、產物隔離                                                  | [`architecture-canvas.md`](architecture-canvas.md)                       |
+| MCP 專案執行態                                                                | [`architecture-plugins.md`](architecture-plugins.md)「MCP 專案執行時」   |
+| 提示詞模板與 `/命令`                                                          | [`development.md`](development.md)「提示詞模板命令」                     |
 
 ## 六、原始碼註釋
 

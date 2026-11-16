@@ -53,6 +53,8 @@ Router 只可使用獨立配置中啟用的工具：
 
 ## 工單、事件和執行的關係
 
+> WAL / 事務 / 租約 / fence 的通用定義見 [`device-collaboration.md`](device-collaboration.md) §2 與 §7；本節只寫工單與 Router 的四個集合。
+
 Hub 通過同一 WAL 事務體系持久化四個集合：
 
 | 集合             | 持久事實                                                                   |
@@ -102,7 +104,7 @@ Superagent 隨主程式內建，首次啟動自動準備並載入，**無需額�
 
 內建渠道不作為使用者外掛展示：外掛市場、已安裝列表、外掛選單、佈局編輯、授權列表和數量統計均排除它，普通外掛安裝 / 更新 / 解除安裝入口也拒絕該模組。宿主分類的唯一源為 `server/builtin-modules.ts`，第三方 manifest 不能自報內建身份。
 
-內部複用外掛宿主的隔離與路由能力，隨主程式同步程式碼並保留現有設定與金鑰。必需模組不依賴舊的 `<dataDir>/bundled-plugin-installs.json` 可選預裝記錄；舊解除安裝或外掛停用記錄不會阻止渠道載入，缺失檔案由宿主準備。普通可選預裝外掛仍保留使用者主動移除的選擇。具體宿主要求及欄位見 [Superagent README](../plugins/superagent/README.zh-TW.md)。
+內部複用外掛宿主的隔離與路由能力，隨主程式同步程式碼並保留現有設定與金鑰。必需模組不依賴舊的 `<dataDir>/bundled-plugin-installs.json` 可選預裝記錄；舊解除安裝或外掛停用記錄不會阻止渠道載入，缺失檔案由宿主準備。普通可選預裝外掛仍保留使用者主動移除的選擇。具體宿主要求及欄位見 [Superagent README](../plugins/superagent/README.md)。
 
 在 **裝置中心 → 外部渠道** 配置憑據、模式、作者白名單和房間對映（GitHub `owner/repo=roomId`，飛書 `chat_id=roomId`）。預設 observe；要自動排程，使用現有 auto 配置與允許名單，併為目標群啟用可用 Router。未知渠道返回 ignored，先配置對映。頁面提供工單列表 / 詳情、暫停 / 恢復 / 完成、人工授權 / 撤權及到期回寫重試。
 
@@ -117,7 +119,7 @@ Superagent 隨主程式內建，首次啟動自動準備並載入，**無需額�
 
 這兩條在主站認證之前轉發至外掛對應 webhook 路由，仍必須通過渠道驗籤，不是開放整個外掛 API。宿主儲存驗籤所需的原始位元組 Buffer（`req.rawBody`，rawBuffer 語義），請求上限 **1 MiB**；外掛不可用、原始位元組不可用或驗籤失敗時拒絕，不降級接收。配置、工單管理和手動回寫仍走 `/plugins-api/superagent/*` 的原有主站認證與外掛校驗。
 
-以上是服務端路由表示。UI 請求遵循既有 `appUrl()` / 外掛 `apiBase()` 基線：遠端裝置頁面位於 `/device/<id>/` 等字首下時，保留當前應用根路徑及認證，不硬編碼瀏覽器 origin 根路徑。外部渠道的回撥 URL 使用 Superagent 頁面給出的可達地址，不能把某個遠端頁面的裸 `/api/...` 當作自動中轉承諾。通用群入站 / 出站 webhook 與這兩個渠道專用入口各有用途，參見 [裝置協作](device-collaboration.zh-TW.md#10-群組-webhook-整合)。
+以上是服務端路由表示。UI 請求遵循既有 `appUrl()` / 外掛 `apiBase()` 基線：遠端裝置頁面位於 `/device/<id>/` 等字首下時，保留當前應用根路徑及認證，不硬編碼瀏覽器 origin 根路徑。外部渠道的回撥 URL 使用 Superagent 頁面給出的可達地址，不能把某個遠端頁面的裸 `/api/...` 當作自動中轉承諾。通用群入站 / 出站 webhook 與這兩個渠道專用入口各有用途，參見 [裝置協作](device-collaboration.md#10-群組-webhook-整合)。
 
 ### GitHub
 
@@ -139,6 +141,6 @@ Superagent 隨主程式內建，首次啟動自動準備並載入，**無需額�
 - Router 配置 / plan / lease / fence：`server/device-center/group-router.ts`；Hub 路由與上下文：`server/device-center/hub-orchestration.ts`。
 - 模型工具迴圈：`server/device-center/group-router-runtime.ts`；輪詢、續租與恢復：`server/device-center/group-router-worker.ts`；daemon 模型入口：`server/agent-service-daemon.ts`。
 - 本地 Hub 代理與 DTO 橋：`server/device-center/local.ts`；外掛契約：`plugin-sdk/index.d.ts`；註冊與公開入口：`server/plugins.ts`、`server/index.ts`。
-- UI：統一入口 `web/src/components/DeviceCenter.tsx`，渠道內嵌 `DeviceChannels.tsx`，群組管理 `DeviceGroupManager.tsx`；複用 `GroupRouterSettings.tsx`、`GroupWorkItems.tsx` 及聊天入口 `GroupWorkspaceActions.tsx`；渠道適配與配置：[Superagent README](../plugins/superagent/README.zh-TW.md)。
+- UI：統一入口 `web/src/components/DeviceCenter.tsx`，渠道內嵌 `DeviceChannels.tsx`，群組管理 `DeviceGroupManager.tsx`；複用 `GroupRouterSettings.tsx`、`GroupWorkItems.tsx` 及聊天入口 `GroupWorkspaceActions.tsx`；渠道適配與配置：[Superagent README](../plugins/superagent/README.md)。
 
-對應單測包括 `group-router`、`group-router-runtime`、`group-router-worker`、`group-router-ui`、`work-items`、`hub-orchestration` 和 `superagent-plugin`。渠道測試注入 fetch、使用偽 host 觸發真實外掛路由，覆蓋驗籤、授權、重放、租約與回寫恢復；這些 mock 證據不能替代真實憑據、真實網路和渠道投遞驗證。本文僅補充文件，不宣告本輪重新執行過上述全部測試。
+對應單測包括 `group-router`、`group-router-runtime`、`group-router-worker`、`group-router-ui`、`work-items`、`hub-orchestration` 和 `superagent-plugin`。渠道測試注入 fetch、使用偽 host 觸發真實外掛路由，覆蓋驗籤、授權、重放、租約與回寫恢復；這些 mock 證據不能替代真實憑據、真實網路和渠道投遞驗證。本文僅補充文件，不宣告本輪重新執行過上述全部測試。真實憑據與公網回撥的人工驗收清單見 [`agent-bot-design.md`](agent-bot-design.md) 的「P2 驗收基線（渠道）」。

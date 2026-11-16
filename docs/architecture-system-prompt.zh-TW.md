@@ -136,19 +136,23 @@
         預設通道（preset_export / preset_import / PresetShareModal），匯入的 prompt-only JSON 自動
         進模板庫。「使用中」判定：effectiveTemplate + 規範化覆蓋 map + promptDisabled 集合與服務端
         快照全等。
-    拼裝來源（開關式組合模板，無輸入框）：
-        每行 = 開關（是否進入提示詞）+ {{token}} + 名稱/說明 + ↑↓ 調整順序。
-        模板為空 = 預設模板：開關走 promptDisabled（與舊「啟用」勾選同語義）；
+    提示詞來源（單列表：開關 + 中文名 + 一句話 + ↑↓；點名字就地展開編輯）：
+        每行 = 開關（是否進入提示詞）+ 中文名/一句話說明 + 「已改|自動」標籤 + ≈tokens + ↑↓。
+        點名字展開：可寫來源給編輯區（小標題 promptSec_<token>_edit，提示 _hint，留空 = 自動內容）
+        + 「檢視預設內容」摺疊對照（可一鍵填入）；只讀來源只展示系統生成內容與「恢復預設」。
+        展開區鋪滿整行（左右無留白，只有輸入框自身內邊距）—— .prompt-src-list / .prompt-src-body。
+        模板串語義不變：開關走 promptDisabled（與舊「啟用」勾選同語義）；
         自定義模板：模板串就是唯一事實源（collectTemplateTokens 取序），開關= 增刪 token、
         ↑↓ = 相鄰交換；序列化 join("\n\n")，恰好等於預設串時歸零回 ""（零開銷預設分支）。
         預設順序下首次調整順序 → 物化為自定義模板（預設停用段不進模板，promptDisabled 不動）。
         舊模板含自由文字/未知 token 時展示警示：開關/順序編輯後只保留已啟用的來源段。
         setTemplateValue 與舊編輯框同一套提交紀律（與 serverSettings 不一致才發，回執前保草稿）。
-    每來源覆蓋行：token + 說明 + 覆蓋輸入框（留空 = 自動）
-        單來源「恢復預設」按鈕（清空該覆蓋）；來源被開關停用時行置灰
     整體「恢復預設模板並清空所有覆蓋」按鈕（仍是逐 token 發空串，空物件補丁刪不掉）
     「檢視當前完整提示詞」只讀預覽 = 組合渲染結果
-    文案鍵：promptTok_<token> / promptTok_<token>_desc + promptAssembly* / promptTemplate*（zh/en 同步）
+    文案鍵：promptTok_<token>（名稱）/ promptTok_<token>_desc（一句話）
+        + promptSec_<token>_edit（編輯框小標題）/ promptSec_<token>_hint（留空提示）
+        + promptSecEdited / promptSecShowDefault + promptAssembly* / promptTemplate*
+        （zh/en 同步；其餘 12 個語言包預設回退英文，繁中包單獨寫繁體文案）
 
     儲存與回執（事實源 web/src/settings-sync.ts，迴歸 tests/settings-prompt-save-test.mjs
     + tests/unit/settings-sync.test.ts）—— 改這塊前必須讀懂四條：
