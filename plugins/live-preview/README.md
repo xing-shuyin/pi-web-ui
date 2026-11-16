@@ -1,3 +1,5 @@
+[English](./README.en.md) · **简体中文** · [繁體中文](./README.zh-TW.md)
+
 # live-preview（实时预览）
 
 Live Server 式预览插件，无独立视图 tab——在右栏文件树上点右键用：

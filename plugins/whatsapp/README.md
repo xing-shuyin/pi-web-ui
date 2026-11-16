@@ -1,3 +1,5 @@
+[English](./README.en.md) · **简体中文** · [繁體中文](./README.zh-TW.md)
+
 # WhatsApp 机器人与工作台
 
 基于 Meta WhatsApp Business Cloud API（Graph API v20.0），无第三方运行依赖。插件版本 **0.2.5**。

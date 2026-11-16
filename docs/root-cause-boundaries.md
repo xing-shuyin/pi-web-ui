@@ -1,3 +1,5 @@
+[English](./root-cause-boundaries.en.md) · **简体中文** · [繁體中文](./root-cause-boundaries.zh-TW.md)
+
 # 根因整改：操作身份与提交边界
 
 本文件记录跨模块必须保持的行为约束。具体审查证据见 `audits/root-cause-review-2026-10-29.md`。

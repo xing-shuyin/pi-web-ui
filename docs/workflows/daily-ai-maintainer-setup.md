@@ -1,3 +1,5 @@
+[English](./daily-ai-maintainer-setup.en.md) · **简体中文** · [繁體中文](./daily-ai-maintainer-setup.zh-TW.md)
+
 # 每日 GitHub 维护画布
 
 已保存工程并启用每日任务，未立即运行。

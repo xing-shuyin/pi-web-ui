@@ -1,3 +1,5 @@
+[English](./architecture-tts.en.md) · **简体中文** · [繁體中文](./architecture-tts.zh-TW.md)
+
 # 统一 TTS 中心
 
 TTS 引擎只在服务端 `server/tts-service.ts` 注册。系统播报、插件、QQ 自动回复和 AI 语音工具共用同一份引擎与音色目录，所有音频合成都经过中心。浏览器只负责选择、取音频和播放，不再维护可写的引擎注册表，也不再直接调用 Web Speech。

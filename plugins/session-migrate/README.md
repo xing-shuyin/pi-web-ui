@@ -1,3 +1,5 @@
+[English](./README.en.md) · **简体中文** · [繁體中文](./README.zh-TW.md)
+
 # 会话迁移 Session Migrate 🔄
 
 扫描 `~/.omp/agent/sessions` 与 `~/.pi/agent/sessions` 的历史会话，只读预览后一键导入 pi 会话库（issue 286 Phase 1）；同时提供会话**导出 / 上传导入**，用于备份与跨机器搬运（issue #887）。

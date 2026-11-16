@@ -1,3 +1,5 @@
+[English](./hub-upgrade-release-testing.en.md) · **简体中文** · [繁體中文](./hub-upgrade-release-testing.zh-TW.md)
+
 # Hub 发布包升级验收
 
 发布前测试应安装 npm 将要交付的 `.tgz`，从已发布的 Hub 升级到该包，并使用真实的系统服务和浏览器。只在源码目录启动服务或单测中模拟 `/health`，不能证明打包内容、安装路径、npm 依赖和服务重启正确。

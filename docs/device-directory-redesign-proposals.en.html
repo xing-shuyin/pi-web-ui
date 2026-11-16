@@ -1,0 +1,1288 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Top-left "All devices" popover, restructured · short design proposal</title>
+<style>
+  :root {
+    --bg: #0d0e12;
+    --bg-elev: #14161c;
+    --bg-elev2: #1a1d26;
+    --bg-elev3: #222634;
+    --border: #262a35;
+    --border-soft: #1e2230;
+    --text: #e6e8ef;
+    --text-dim: #9aa1b4;
+    --text-faint: #6b7284;
+    --accent: #8b5cf6;
+    --accent-contrast: #ffffff;
+    --accent-soft: rgba(139, 92, 246, 0.14);
+    --green: #34d399;
+    --green-soft: rgba(52, 211, 153, 0.12);
+    --red-text: #fca5a5;
+    --red: #f87171;
+    --amber: #fbbf24;
+    --link: #a78bfa;
+    --mono: "SF Mono", "JetBrains Mono", ui-monospace, Menlo, Consolas, monospace;
+    --sans: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", Roboto, sans-serif;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    background: #08090c;
+    color: var(--text);
+    font: 13px/1.6 var(--sans);
+    -webkit-font-smoothing: antialiased;
+  }
+  .wrap { max-width: 1080px; margin: 0 auto; padding: 40px 24px 120px; }
+
+  /* ---------- 文档头 ---------- */
+  .kicker {
+    font-size: 11px; letter-spacing: .14em; text-transform: uppercase; color: var(--text-faint);
+    display: flex; align-items: center; gap: 8px; margin-bottom: 14px;
+  }
+  .kicker .pill {
+    padding: 2px 8px; border-radius: 99px; background: var(--accent-soft); color: var(--link);
+    letter-spacing: .04em; text-transform: none; font-size: 11px;
+  }
+  h1 { font-size: 27px; line-height: 1.32; letter-spacing: -.02em; font-weight: 650; margin-bottom: 12px; }
+  .lead { color: var(--text-dim); font-size: 14px; max-width: 720px; }
+  .lead strong { color: var(--text); font-weight: 550; }
+
+  .callout {
+    margin: 22px 0 0; padding: 14px 18px; border: 1px solid rgba(139, 92, 246, 0.28);
+    border-radius: 12px; background: rgba(139, 92, 246, 0.08);
+  }
+  .callout-title {
+    font-size: 11px; letter-spacing: 0.1em; text-transform: uppercase; color: var(--link); margin-bottom: 8px;
+  }
+  .callout ul { margin: 0; padding-left: 18px; color: var(--text-dim); font-size: 12.5px; line-height: 1.75; }
+  .callout li { margin: 3px 0; }
+  .callout b { color: var(--text); font-weight: 600; }
+  .callout code { font: 11.5px/1 var(--mono); background: var(--bg-elev2); border: 1px solid var(--border-soft); border-radius: 4px; padding: 1px 5px; color: var(--text-dim); }
+
+  .kpis { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 10px; margin: 28px 0 8px; list-style: none; }
+  .kpis li { border: 1px solid var(--border); border-radius: 10px; background: var(--bg-elev); padding: 12px 14px; }
+  .kpis .k { font-size: 10.5px; letter-spacing: .08em; text-transform: uppercase; color: var(--text-faint); }
+  .kpis .v { font-size: 19px; font-weight: 600; margin-top: 5px; letter-spacing: -.01em; }
+  .kpis .v em { font-style: normal; color: var(--text-faint); font-size: 13px; font-weight: 400; }
+  .kpis .d { font-size: 11.5px; color: var(--text-dim); margin-top: 2px; }
+  .kpis .up { color: var(--green); }
+
+  h2.sec {
+    font-size: 16px; font-weight: 600; letter-spacing: -.01em; margin: 52px 0 6px;
+    display: flex; align-items: baseline; gap: 10px; scroll-margin-top: 20px;
+  }
+  h2.sec .idx { font: 11px/1 var(--mono); color: var(--accent); }
+  .sec-sub { color: var(--text-dim); font-size: 13px; margin-bottom: 20px; max-width: 760px; }
+  h3 { font-size: 13.5px; font-weight: 600; margin: 26px 0 10px; }
+
+  /* ---------- 诊断 ---------- */
+  .faults { display: grid; gap: 8px; }
+  .fault { display: grid; grid-template-columns: 20px minmax(0, 1fr); gap: 12px; padding: 12px 14px; border: 1px solid var(--border-soft); border-radius: 10px; background: var(--bg-elev); }
+  .fault .n { font: 11px/1.7 var(--mono); color: var(--red); }
+  .fault b { display: block; font-size: 12.5px; font-weight: 600; margin-bottom: 2px; }
+  .fault p { color: var(--text-dim); font-size: 12.5px; }
+  .fault code { font: 11.5px/1 var(--mono); background: var(--bg-elev2); border: 1px solid var(--border-soft); border-radius: 4px; padding: 1px 5px; color: var(--text-dim); }
+
+  /* ---------- 舞台（浮层演示） ---------- */
+  .stage {
+    position: relative; margin: 14px 0 8px; padding: 0 0 270px;
+    border: 1px solid var(--border); border-radius: 14px;
+    background:
+      radial-gradient(circle at 22% 0%, rgba(139,92,246,.08), transparent 46%),
+      repeating-linear-gradient(0deg, #0b0c10 0 23px, #0c0d11 23px 24px),
+      #0b0c10;
+  }
+  .stage.tall { padding-bottom: 340px; }
+  .stage.short { padding-bottom: 210px; }
+  .fake-toolbar {
+    display: flex; align-items: center; gap: 2px; padding: 9px 10px; border-radius: 13px 13px 0 0;
+    border-bottom: 1px solid var(--border-soft); background: rgba(13,14,18,.86); backdrop-filter: blur(6px);
+  }
+  .brand-chip {
+    display: flex; align-items: center; gap: 8px; padding: 2px 10px 2px 3px; border: 0;
+    border-radius: 9px; background: transparent; color: var(--text); font: inherit; cursor: pointer;
+  }
+  .brand-chip .logo {
+    width: 26px; height: 26px; border-radius: 7px; display: grid; place-items: center;
+    background: linear-gradient(160deg, #a78bfa, #7c3aed); color: #fff; font-size: 15px; font-weight: 600;
+    box-shadow: 0 0 0 1px rgba(255,255,255,.1) inset;
+  }
+  .brand-chip .name { font-size: 12.5px; color: var(--text-dim); white-space: nowrap; }
+  .brand-chip[aria-expanded="true"] { background: var(--bg-elev2); }
+  .brand-chip[aria-expanded="true"] .name { color: var(--text); }
+  .tool-sep { width: 1px; height: 16px; background: var(--border); margin: 0 6px; }
+  .tool-btn {
+    width: 26px; height: 26px; display: grid; place-items: center; border: 0; border-radius: 7px;
+    background: transparent; color: var(--text-dim); cursor: default;
+  }
+  .tool-btn svg { width: 15px; height: 15px; stroke: currentColor; fill: none; stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round; }
+  .tool-btn:hover { background: var(--bg-elev2); color: var(--text); }
+  .stage-note {
+    position: absolute; right: 12px; top: 11px; font: 10.5px/1.5 var(--mono); color: var(--text-faint);
+    text-align: right; pointer-events: none;
+  }
+
+  .stage-foot {
+    position: absolute; right: 14px; bottom: 11px; max-width: 46%; text-align: right;
+    font: 10.5px/1.6 var(--mono); color: var(--text-faint); pointer-events: none;
+  }
+  .stage-caption {
+    display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px;
+    margin: 0 0 30px; font-size: 12px; color: var(--text-dim);
+  }
+  .stage-caption .tag {
+    font: 11px/1 var(--mono); color: var(--text-faint); border: 1px solid var(--border);
+    border-radius: 5px; padding: 3px 6px; background: var(--bg-elev);
+  }
+  .stage-caption .tag.hot { color: var(--green); border-color: rgba(52,211,153,.3); background: var(--green-soft); }
+  .stage-caption .tag.bad { color: var(--red-text); border-color: rgba(248,113,113,.28); background: rgba(248,113,113,.08); }
+
+  /* ---------- 方案 0：现状复刻 ---------- */
+  .legacy-panel {
+    position: absolute; left: 12px; top: 48px; width: min(560px, calc(100% - 24px));
+    border: 1px solid var(--border); border-radius: 12px; background: var(--bg);
+    box-shadow: 0 12px 36px #0004;
+  }
+  .legacy-card { padding: 24px; }
+  .legacy-head { display: flex; align-items: flex-start; gap: 12px; margin-bottom: 24px; }
+  .legacy-icon {
+    width: 38px; height: 38px; flex: none; display: grid; place-items: center; color: var(--text);
+    background: var(--bg-elev2); border: 1px solid var(--border); border-radius: 10px;
+  }
+  .legacy-icon svg { width: 18px; height: 18px; stroke: currentColor; fill: none; stroke-width: 1.6; }
+  .legacy-head h2 { font-size: 15px; font-weight: 600; margin-bottom: 4px; }
+  .legacy-head p { font-size: 12px; color: var(--text-dim); }
+  .legacy-refresh {
+    margin-left: auto; width: 34px; height: 34px; display: grid; place-items: center; flex: none;
+    border: 1px solid var(--border); border-radius: 7px; background: var(--bg-elev2); color: var(--text);
+  }
+  .legacy-refresh svg { width: 14px; height: 14px; stroke: currentColor; fill: none; stroke-width: 1.8; }
+  .legacy-row {
+    display: flex; flex-wrap: wrap; align-items: center; gap: 12px;
+    padding: 16px 0; border-top: 1px solid var(--border);
+  }
+  .legacy-row .dc-device-icon {
+    width: 38px; height: 38px; flex: none; display: grid; place-items: center;
+    background: var(--bg-elev2); border: 1px solid var(--border); border-radius: 10px;
+  }
+  .legacy-row .dc-device-icon svg { width: 18px; height: 18px; stroke: currentColor; fill: none; stroke-width: 1.6; }
+  .legacy-identity { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 5px; }
+  .legacy-identity strong { font-size: 13px; font-weight: 550; overflow-wrap: anywhere; }
+  .legacy-identity span { font-size: 11px; color: var(--text-faint); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .legacy-status {
+    flex: none; display: inline-flex; align-items: center; gap: 7px; font-size: 11px; padding: 5px 10px;
+    border: 1px solid var(--border); border-radius: 99px; color: var(--green); background: var(--bg-elev);
+  }
+  .legacy-status::before { content: ""; width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
+  .legacy-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+  .legacy-btn {
+    display: inline-flex; align-items: center; gap: 7px; font-size: 13px; padding: 9px 13px;
+    border: 1px solid var(--border); border-radius: 7px; background: var(--bg-elev2); color: var(--text);
+  }
+  .legacy-btn svg { width: 14px; height: 14px; stroke: currentColor; fill: none; stroke-width: 1.8; }
+
+  /* ---------- 方案 A：紧凑列表（推荐） ---------- */
+  .panel {
+    position: absolute; left: 12px; top: 48px; width: 328px; max-width: calc(100% - 24px);
+    padding: 5px; border: 1px solid var(--border); border-radius: 12px;
+    background: var(--bg-elev);
+    box-shadow: 0 18px 44px -14px #000c, 0 2px 10px #0007;
+    font-size: 12.5px;
+  }
+  .panel.compact { width: 264px; }
+  .p-head { display: flex; align-items: center; gap: 8px; min-height: 30px; padding: 4px 4px 4px 9px; }
+  .p-title { font-size: 11.5px; font-weight: 600; color: var(--text-dim); letter-spacing: .05em; }
+  .p-count { font: 10.5px/1 var(--mono); color: var(--text-faint); padding: 3px 6px; border-radius: 99px; background: var(--bg-elev2); }
+  .p-spacer { flex: 1; }
+  .icon-btn {
+    width: 24px; height: 24px; flex: none; display: grid; place-items: center;
+    border: 0; border-radius: 6px; background: transparent; color: var(--text-dim);
+    cursor: pointer; transition: background .12s, color .12s;
+  }
+  .icon-btn svg { width: 14px; height: 14px; stroke: currentColor; fill: none; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+  .icon-btn:hover { background: var(--bg-elev3); color: var(--text); }
+  .icon-btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+  .icon-btn.spin svg { animation: spin .55s cubic-bezier(.4,0,.2,1); }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  .p-list { display: flex; flex-direction: column; gap: 1px; padding-top: 4px; border-top: 1px solid var(--border-soft); }
+  .row {
+    position: relative; display: grid; grid-template-columns: 14px minmax(0, 1fr) auto auto;
+    align-items: center; gap: 9px; min-height: 44px; padding: 6px 6px 6px 7px;
+    border-radius: 8px; transition: background .12s;
+  }
+  .row:hover { background: var(--bg-elev2); }
+  .row-hit { position: absolute; inset: 0; border-radius: 8px; z-index: 1; outline: none; }
+  .row-hit:focus-visible { box-shadow: 0 0 0 2px var(--accent) inset; }
+  .dot-wrap { display: grid; place-items: center; width: 14px; height: 14px; position: relative; z-index: 2; pointer-events: none; }
+  .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--text-faint); }
+  .dot.on { background: var(--green); box-shadow: 0 0 0 3px var(--green-soft); }
+  .row-main { min-width: 0; position: relative; z-index: 2; pointer-events: none; display: flex; flex-direction: column; gap: 1px; }
+  .row-name { display: flex; align-items: center; gap: 6px; min-width: 0; }
+  .row-name strong {
+    font-size: 12.5px; font-weight: 550; line-height: 1.35;
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0;
+  }
+  .row.off .row-name strong { color: var(--text-dim); font-weight: 500; }
+  .tag-self {
+    flex: none; font-size: 10px; line-height: 1.5; padding: 0 5px; border-radius: 4px;
+    color: var(--link); background: var(--accent-soft);
+  }
+  .row-sub {
+    font: 10.5px/1.4 var(--mono); color: var(--text-faint);
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  }
+  .row-actions { display: flex; align-items: center; gap: 1px; position: relative; z-index: 3; }
+  .row-actions .icon-btn { opacity: .55; transition: opacity .12s, background .12s, color .12s; }
+  .row:hover .row-actions .icon-btn,
+  .row:focus-within .row-actions .icon-btn,
+  .row.editing .row-actions .icon-btn { opacity: 1; }
+  .chev { width: 12px; height: 12px; flex: none; color: var(--text-faint); stroke: currentColor; fill: none; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; opacity: .7; margin-left: 0; }
+  .row:hover .chev { color: var(--text-dim); opacity: 1; }
+
+  /* 行内备注编辑：不换行、不跳高 */
+  .row.editing { padding-top: 3px; padding-bottom: 3px; }
+  .row-input {
+    width: 100%; min-width: 0; height: 20px; padding: 0 6px; font: 11.5px/20px var(--sans);
+    color: var(--text); background: var(--bg); border: 1px solid var(--accent); border-radius: 5px; outline: none;
+  }
+  .row-input::placeholder { color: var(--text-faint); }
+
+  /* ⋯ 菜单 */
+  .p-menu {
+    position: absolute; top: 26px; right: -27px; z-index: 20; width: 172px; padding: 4px;
+    border: 1px solid var(--border); border-radius: 9px; background: var(--bg-elev2);
+    box-shadow: 0 12px 28px -8px #000c;
+  }
+  .p-menu button {
+    display: flex; align-items: center; gap: 8px; width: 100%; padding: 6px 8px; border: 0; border-radius: 6px;
+    background: transparent; color: var(--text); font: 12px/1.5 var(--sans); text-align: left; cursor: pointer;
+  }
+  .p-menu button:hover { background: var(--bg-elev3); }
+  .p-menu button svg { width: 13px; height: 13px; flex: none; stroke: currentColor; fill: none; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; color: var(--text-dim); }
+  .p-menu .sep { height: 1px; margin: 4px 6px; background: var(--border); }
+  .p-menu .danger { color: var(--red-text); }
+  /* 菜单是浮层：允许越出面板边界（与真实弹出层一致） */
+  .p-menu { pointer-events: auto; }
+
+  .p-empty { padding: 18px 10px; text-align: center; color: var(--text-faint); font-size: 12px; }
+  .p-note {
+    display: flex; align-items: flex-start; gap: 6px; margin: 2px 4px 4px; padding: 6px 8px;
+    border-radius: 6px; background: rgba(248,113,113,.08); color: var(--red-text); font-size: 11.5px;
+  }
+  .p-note svg { width: 13px; height: 13px; flex: none; margin-top: 2px; stroke: currentColor; fill: none; stroke-width: 1.8; }
+
+  /* 方案 B：极简单行 */
+  .panel.compact .row { min-height: 30px; padding: 3px 5px 3px 6px; grid-template-columns: 12px minmax(0, 1fr) auto auto; gap: 8px; }
+  .panel.compact .row-sub { display: none; }
+  .panel.compact .row-main { flex-direction: row; align-items: center; gap: 6px; }
+  .panel.compact .p-list { padding-top: 3px; }
+
+  /* ---------- 规格表 ---------- */
+  table { width: 100%; border-collapse: collapse; font-size: 12.5px; }
+  th, td { text-align: left; padding: 9px 12px; border-bottom: 1px solid var(--border-soft); vertical-align: top; }
+  th { font-size: 10.5px; letter-spacing: .08em; text-transform: uppercase; color: var(--text-faint); font-weight: 600; }
+  td.mono, .mono { font-family: var(--mono); font-size: 11.5px; color: var(--text-dim); }
+  td b { font-weight: 600; }
+  .table-wrap { border: 1px solid var(--border); border-radius: 10px; overflow: hidden; background: var(--bg-elev); }
+
+  .cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 10px; }
+  .card { border: 1px solid var(--border); border-radius: 10px; background: var(--bg-elev); padding: 14px 16px; }
+  .card h4 { font-size: 12.5px; font-weight: 600; margin-bottom: 6px; display: flex; align-items: center; gap: 6px; }
+  .card ul { margin: 0; padding-left: 16px; color: var(--text-dim); font-size: 12.5px; }
+  .card li { margin: 3px 0; }
+
+  pre {
+    margin: 0; padding: 14px 16px; border: 1px solid var(--border); border-radius: 10px;
+    background: #0b0d12; color: #c9d1d9; overflow: auto; font: 11.5px/1.65 var(--mono);
+  }
+  pre .c { color: #5f6b85; }
+  pre .k { color: #c084fc; }
+  pre .s { color: #7ee0b8; }
+  pre .a { color: #fcd34d; }
+  .code-block + .code-block { margin-top: 10px; }
+  .code-label { font: 10.5px/1 var(--mono); color: var(--text-faint); margin: 14px 0 6px; letter-spacing: .04em; }
+
+  ol.steps { counter-reset: s; list-style: none; display: grid; gap: 8px; }
+  ol.steps li {
+    counter-increment: s; position: relative; padding: 11px 14px 11px 42px;
+    border: 1px solid var(--border-soft); border-radius: 10px; background: var(--bg-elev); font-size: 12.5px; color: var(--text-dim);
+  }
+  ol.steps li::before {
+    content: counter(s); position: absolute; left: 13px; top: 11px; width: 18px; height: 18px;
+    display: grid; place-items: center; border-radius: 5px; background: var(--accent-soft);
+    color: var(--link); font: 10.5px/1 var(--mono);
+  }
+  ol.steps b { color: var(--text); font-weight: 600; }
+
+  /* toast */
+  #toast {
+    position: fixed; left: 50%; bottom: 26px; transform: translate(-50%, 14px);
+    padding: 8px 14px; border-radius: 8px; border: 1px solid var(--border);
+    background: var(--bg-elev2); color: var(--text); font-size: 12.5px;
+    box-shadow: 0 12px 30px -10px #000c; opacity: 0; pointer-events: none;
+    transition: opacity .16s, transform .16s; z-index: 999;
+  }
+  #toast.on { opacity: 1; transform: translate(-50%, 0); }
+
+  /* ---------- 手机抽屉演示 ---------- */
+  .tag {
+    display: inline-block; font: 10.5px/1.5 var(--mono); padding: 1px 6px; border-radius: 5px;
+    border: 1px solid var(--border); color: var(--text-faint); background: var(--bg-elev);
+  }
+  .tag.hot { color: var(--green); border-color: rgba(52, 211, 153, 0.3); background: var(--green-soft); }
+  .tag.bad { color: var(--red-text); border-color: rgba(248, 113, 113, 0.28); background: rgba(248, 113, 113, 0.08); }
+
+  .ph-grid { display: grid; grid-template-columns: 344px minmax(0, 1fr); gap: 26px; align-items: start; margin: 18px 0 6px; }
+  .ph {
+    position: relative; width: 344px; max-width: 100%; height: 660px; padding: 9px; border-radius: 40px;
+    background: #191c24; border: 1px solid #2f3542;
+    box-shadow: 0 30px 70px -26px #000, inset 0 0 0 1px rgba(255, 255, 255, 0.04);
+  }
+  .ph-screen {
+    position: relative; width: 100%; height: 100%; border-radius: 32px; overflow: hidden;
+    background: var(--bg); display: flex; flex-direction: column;
+  }
+  .ph-topbar { display: flex; align-items: center; justify-content: space-between; padding: 11px 16px 5px; font: 10px/1 var(--mono); color: var(--text-faint); }
+  .ph-bar { display: flex; align-items: center; gap: 8px; padding: 2px 12px 10px; }
+  .ph-chip { display: flex; align-items: center; gap: 7px; padding: 2px 10px 2px 2px; border: 0; border-radius: 9px; background: var(--bg-elev2); color: var(--text); font: inherit; }
+  .ph-chip .logo { width: 26px; height: 26px; display: grid; place-items: center; border-radius: 7px; background: linear-gradient(160deg, #a78bfa, #7c3aed); color: #fff; font-size: 14px; font-weight: 600; }
+  .ph-chip-name { font-size: 12px; color: var(--text-dim); }
+  .ph-tools { display: flex; gap: 2px; margin-left: auto; color: var(--text-faint); font: 12px var(--mono); }
+  .ph-tool { width: 26px; height: 26px; display: grid; place-items: center; border-radius: 7px; }
+  .ph-body { flex: 1; display: flex; flex-direction: column; gap: 8px; padding: 4px 12px; overflow: hidden; }
+  .ph-bubble { max-width: 84%; padding: 8px 11px; border-radius: 12px; border: 1px solid var(--border-soft); background: var(--bg-elev); font-size: 11.5px; line-height: 1.6; color: var(--text-dim); }
+  .ph-bubble.is-me { align-self: flex-end; background: var(--accent-soft); border-color: rgba(139, 92, 246, 0.28); color: #ddd6fe; }
+  .ph-bubble code { font: 10.5px var(--mono); color: var(--text); }
+  .ph-scrim { position: absolute; inset: 0; background: rgba(0, 0, 0, 0.45); }
+  .ph-sheet {
+    position: absolute; left: 0; right: 0; bottom: 0; display: flex; flex-direction: column;
+    border-radius: 16px 16px 0 0; border-top: 1px solid var(--border); background: var(--bg-elev);
+    box-shadow: 0 -16px 36px -12px #000c;
+  }
+  .ph-grab { width: 36px; height: 4px; border-radius: 99px; background: var(--border); margin: 7px auto 4px; }
+  .ph-sheet-head { display: flex; align-items: center; gap: 8px; padding: 0 8px 4px 14px; }
+  .ph-title { font-size: 12px; font-weight: 600; color: var(--text-dim); letter-spacing: 0.04em; }
+  .ph-count { font: 10px/1 var(--mono); color: var(--text-faint); padding: 3px 6px; border-radius: 99px; background: var(--bg-elev2); }
+  .ph-spacer { flex: 1; }
+  .ph-iconbtn { width: 36px; height: 36px; display: grid; place-items: center; border: 0; border-radius: 9px; background: transparent; color: var(--text-dim); font-size: 15px; }
+  .ph-iconbtn:active { background: var(--bg-elev2); }
+  .ph-list { list-style: none; margin: 0; padding: 0 6px; }
+  .ph-row {
+    position: relative; display: grid; grid-template-columns: 10px minmax(0, 1fr) auto; align-items: center; gap: 10px;
+    min-height: 56px; padding-left: 8px; border-radius: 10px;
+  }
+  .ph-row:active { background: var(--bg-elev2); }
+  .ph-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--text-faint); }
+  .ph-dot.on { background: var(--green); box-shadow: 0 0 0 3px var(--green-soft); }
+  .ph-main { display: flex; flex-direction: column; gap: 1px; min-width: 0; }
+  .ph-main strong { display: flex; align-items: center; gap: 6px; font-size: 14px; font-weight: 550; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .ph-row.is-off strong { color: var(--text-dim); font-weight: 500; }
+  .ph-main > span { font: 11px/1.4 var(--mono); color: var(--text-faint); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .ph-taps { position: relative; display: flex; align-items: center; }
+  .ph-tap { width: 44px; height: 44px; display: grid; place-items: center; border: 0; border-radius: 10px; background: transparent; color: var(--text-dim); cursor: pointer; }
+  .ph-tap:active { background: var(--bg-elev3); color: var(--text); }
+  .ph-tap + .ph-tap { border-left: 1px solid var(--border-soft); border-radius: 0 10px 10px 0; }
+  .ph-tap svg { width: 17px; height: 17px; stroke: currentColor; fill: none; stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round; }
+  .ph-menu {
+    position: absolute; right: 4px; top: 50px; z-index: 6; width: 164px; padding: 4px;
+    border: 1px solid var(--border); border-radius: 10px; background: var(--bg-elev2); box-shadow: 0 16px 30px -10px #000c;
+  }
+  .ph-menu.up { top: auto; bottom: 50px; }
+  .ph-menu button { display: flex; align-items: center; width: 100%; padding: 10px 9px; border: 0; border-radius: 7px; background: transparent; color: var(--text); font: 12.5px/1.4 var(--sans); text-align: left; cursor: pointer; }
+  .ph-menu button:active { background: var(--bg-elev3); }
+  .ph-edit { display: flex; gap: 8px; padding: 8px 12px 6px; border-top: 1px solid var(--border-soft); }
+  .ph-edit[hidden] { display: none; }
+  .ph-edit input { flex: 1; min-width: 0; height: 40px; padding: 0 10px; border: 1px solid var(--accent); border-radius: 9px; background: var(--bg); color: var(--text); font: 12.5px var(--sans); outline: none; }
+  .ph-primary { height: 40px; padding: 0 16px; border: 1px solid var(--accent); border-radius: 9px; background: var(--accent); color: var(--accent-contrast); font: 12.5px/1 var(--sans); font-weight: 550; cursor: pointer; }
+  .ph-safe { height: 14px; }
+  .ph-notes h4 { margin: 0 0 8px; font-size: 12.5px; font-weight: 600; }
+  .ph-notes table td:first-child { white-space: nowrap; }
+  .ph-notes table td { font-size: 12px; color: var(--text-dim); }
+  .ph-notes table td b { color: var(--text); }
+  .ph-legend { display: grid; gap: 8px; list-style: none; }
+  .ph-legend li { display: grid; grid-template-columns: 18px minmax(0, 1fr); gap: 9px; font-size: 12.5px; color: var(--text-dim); }
+  .ph-legend .n { width: 18px; height: 18px; display: grid; place-items: center; border-radius: 50%; background: var(--accent-soft); color: var(--link); font: 10px/1 var(--mono); }
+  .ph-legend b { color: var(--text); font-weight: 600; }
+  @media (max-width: 860px) {
+    .ph-grid { grid-template-columns: minmax(0, 1fr); justify-items: center; }
+    .ph-notes { width: 100%; }
+  }
+
+  @media (max-width: 640px) {
+    .stage-note { display: none; }
+    .fake-toolbar { overflow: hidden; }
+    .fake-toolbar .tool-btn:nth-of-type(n + 5) { display: none; }
+    .stage-foot { max-width: 62%; }
+    .kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    * { transition: none !important; animation: none !important; }
+  }
+</style>
+</head>
+<body>
+<div data-docs-i18n-switch style="position:fixed;top:8px;right:12px;z-index:2147483647;font:12px/1.6 -apple-system,system-ui,sans-serif;background:rgba(15,17,22,.78);color:#fff;padding:4px 12px;border-radius:999px;box-shadow:0 2px 10px rgba(0,0,0,.35)"><a href="./device-directory-redesign-proposals.html" style="color:#fff;text-decoration:none">简体中文</a> · <strong>English</strong> · <a href="./device-directory-redesign-proposals.zh-TW.html" style="color:#fff;text-decoration:none">繁體中文</a></div>
+
+
+<div class="wrap">
+
+  <div class="kicker">pi-web-ui · design proposal <span class="pill">Shipped · option B + mobile sheet</span></div>
+  <h1>The top-left 「所有设备」(All devices) popover: structural rebuild</h1>
+  <p class="lead">
+    The problem is not the palette, it is the <strong>structure</strong>: three text buttons squeeze the name column down to 40px and Chinese names end up wrapped one glyph per line; in a 560px-wide card, half the width goes to buttons.
+    After the rebuild: <strong>high-frequency actions stay on the row (open / remote desktop) and only low-frequency ones move into ⋯</strong>, names get the full readable width, the panel goes 560 → 328px, a row 96 → 45px;
+    on narrow screens it becomes a <strong>bottom sheet with 44px touch blocks</strong>, and every frequent action stays at ≤ 2 taps.
+  </p>
+
+  <div class="callout">
+    <div class="callout-title">What shipped</div>
+    <ul>
+      <li>Shipped as <b>option B (minimal single line) + a mobile bottom sheet</b>: <code>web/src/components/DevicePanel.tsx</code> (new), <code>DeviceDirectory.tsx</code> (data + <code>variant="panel"</code>), <code>BrandDeviceMenu.tsx</code> (popover / sheet container), <code>use-coarse-pointer.ts</code> (single source for the breakpoint) and the <code>.dp-*</code> rules in <code>styles.css</code>.</li>
+      <li><b>One deviation from the mock</b>: the second action at the row end shipped as <b>remote desktop</b> (the mock drew ↗ "open in new tab"). The row itself is already the entry point for opening a device, so ↗ duplicated it; remote desktop is the second-most frequent action and does deserve its own entry point. The ⋯ menu therefore only holds "set note / copy device ID".</li>
+      <li>Measured: desktop popover <b>264 × 221px</b> (6 devices), row 30px, icon 24px; mobile row <b>56px</b>, touch block <b>44×44</b>, the sheet scrolls inside <code>62dvh</code>, pull-to-refresh gesture wired up.</li>
+      <li>Tests: <code>tests/unit/device-panel.test.ts</code> (5 cases: compact row / whole-row open / row-end remote desktop / ⋯ menu / touch edit bar) and <code>brand-device-menu.test.ts</code> (new sheet cases: closing via the scrim and Escape).</li>
+    </ul>
+  </div>
+
+  <ul class="kpis">
+    <li>
+      <div class="k">Panel width</div>
+      <div class="v">560 → 328 <em>px</em></div>
+      <div class="d">−41%, and it no longer fills the whole screen on mobile</div>
+    </li>
+    <li>
+      <div class="k">Height, two devices</div>
+      <div class="v">≈300 → 140 <em>px</em></div>
+      <div class="d">Drops the blurb line and 16px of row gap; three devices still fit in 185px</div>
+    </li>
+    <li>
+      <div class="k">Name column width</div>
+      <div class="v">≈56 → 206 <em>px</em></div>
+      <div class="d up">Long names fall back to an ellipsis instead of wrapping per glyph</div>
+    </li>
+    <li>
+      <div class="k">Tap budget</div>
+      <div class="v">≤ 2 <em>taps</em> per action</div>
+      <div class="d up">Remote desktop leaves the submenu; mobile sheet in section 04</div>
+    </li>
+  </ul>
+
+  <!-- ============================================================ -->
+  <h2 class="sec" id="diagnose"><span class="idx">01</span>Diagnosis: 4 structural problems</h2>
+  <p class="sec-sub">Every symptom visible in the screenshot, mapped line by line to the code (<span class="mono">web/src/components/DeviceDirectory.tsx</span>).</p>
+
+  <div class="faults">
+    <div class="fault">
+      <span class="n">01</span>
+      <div>
+        <b>Buttons eat the name column and Chinese names wrap glyph by glyph</b>
+        <p>The row is <code>flex</code>: icon 38 + status pill ~62 + three text buttons ≈ 336 + gaps, ~470px in total, which leaves a few dozen pixels for the name — and <code>.dd-identity strong</code> carries <code>overflow-wrap: anywhere</code> → one glyph per line (that is the <code>cdeMa / c / mini.lo / cal</code> in the screenshot).</p>
+      </div>
+    </div>
+    <div class="fault">
+      <span class="n">02</span>
+      <div>
+        <b>The 「所有设备」(All devices) header eats 1/3 of the height</b>
+        <p>38px icon + two lines of copy (title + "Devices on the same account, reached directly with this machine's binding grant.") + 24px bottom gap ≈ 84px. That sentence is a <strong>one-time explanation</strong>; it has no business living in a popover you reopen every day.</p>
+      </div>
+    </div>
+    <div class="fault">
+      <span class="n">03</span>
+      <div>
+        <b>No hierarchy: one device carries 3 buttons of equal weight</b>
+        <p>「修改备注」(Edit note) / 「打开设备」(Open device) / 「远程桌面」(Remote desktop) carry identical visual weight, and a low-frequency action like editing a note sits right next to the most used one. Real usage is heavily skewed: open ≫ remote desktop ≫ note.</p>
+      </div>
+    </div>
+    <div class="fault">
+      <span class="n">04</span>
+      <div>
+        <b>Note editing splits the row in two and the whole block jumps</b>
+        <p>The form is appended at the end of the row with <code>width:100%</code> + <code>flexWrap:wrap</code>; the input is <code>minWidth:180px</code> and two text buttons ride along, so the editing state doubles the height — the list jumps up and down.</p>
+      </div>
+    </div>
+  </div>
+
+  <!-- ============================================================ -->
+  <h2 class="sec" id="variants"><span class="idx">02</span>Options compared (clickable, hoverable)</h2>
+  <p class="sec-sub">All three options share one structural principle: <b>one device row = one hit area + icons on hover + a ⋯ menu</b>. They differ only in information density.</p>
+
+  <h3>Option 0 · today (reproduced, for comparison only)</h3>
+  <div class="stage tall">
+    <div class="fake-toolbar">
+      <button class="brand-chip" aria-expanded="true"><span class="logo">π</span><span class="name">pi-web-ui</span></button>
+      <span class="tool-sep"></span>
+      <button class="tool-btn" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg></button>
+      <button class="tool-btn" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M4 7l4 4-4 4"/><path d="M12 17h8"/></svg></button>
+      <button class="tool-btn" aria-hidden="true"><svg viewBox="0 0 24 24"><circle cx="6" cy="18" r="2.5"/><circle cx="18" cy="6" r="2.5"/><path d="M8 16c4 0 4-4 8-8"/></svg></button>
+      <button class="tool-btn" aria-hidden="true"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M2 12h2M20 12h2M5 5l1.5 1.5M17.5 17.5L19 19M19 5l-1.5 1.5M6.5 17.5L5 19"/></svg></button>
+      <button class="tool-btn" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M12 3l8 4.5v9L12 21l-8-4.5v-9L12 3z"/><path d="M12 3v18"/></svg></button>
+      <button class="tool-btn" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M12 3l9 5-9 5-9-5 9-5z"/><path d="M3 13l9 5 9-5"/></svg></button>
+      <button class="tool-btn" aria-hidden="true"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 00.3 1.9l.1.1a2 2 0 11-2.8 2.8l-.1-.1a1.7 1.7 0 00-2.9 1.2 2 2 0 11-4 0 1.7 1.7 0 00-2.9-1.2l-.1.1a2 2 0 11-2.8-2.8l.1-.1A1.7 1.7 0 004.6 15a2 2 0 110-4 1.7 1.7 0 001-2.9l-.1-.1a2 2 0 112.8-2.8l.1.1a1.7 1.7 0 001.9.3H11a2 2 0 114 0 1.7 1.7 0 002.9 1l.1-.1a2 2 0 112.8 2.8l-.1.1a1.7 1.7 0 00-.3 1.9v.1a2 2 0 110 4z"/></svg></button>
+      <span class="stage-note">panel 560px<br>row ≈ 96px</span>
+    </div>
+    <span class="stage-foot">For comparison: three text buttons<br>squeeze the name into a vertical stack</span>
+
+    <div class="legacy-panel">
+      <div class="legacy-card">
+        <div class="legacy-head">
+          <span class="legacy-icon"><svg viewBox="0 0 24 24"><rect x="2.5" y="4" width="19" height="13" rx="2"/><path d="M8 21h8M12 17v4"/></svg></span>
+          <div>
+            <h2>All devices · 2</h2>
+            <p>Devices on the same account, reached directly with this machine's binding grant.</p>
+          </div>
+          <span class="legacy-refresh"><svg viewBox="0 0 24 24"><path d="M21 12a9 9 0 11-3-6.7"/><path d="M21 3v6h-6"/></svg></span>
+        </div>
+        <div class="legacy-row">
+          <span class="dc-device-icon"><svg viewBox="0 0 24 24"><rect x="2.5" y="4" width="19" height="13" rx="2"/><path d="M8 21h8M12 17v4"/></svg></span>
+          <div class="legacy-identity"><strong>win</strong><span>DESKTOP-4A3F9C</span></div>
+          <span class="legacy-status">Online</span>
+          <div class="legacy-actions">
+            <span class="legacy-btn"><svg viewBox="0 0 24 24"><path d="M12 20h9"/><path d="M16.5 3.5l4 4L7 21H3v-4L16.5 3.5z"/></svg>Set note</span>
+            <span class="legacy-btn"><svg viewBox="0 0 24 24"><path d="M14 3h7v7"/><path d="M21 3L10 14"/><path d="M19 13v6a2 2 0 01-2 2H5a2 2 0 01-2-2V7a2 2 0 012-2h6"/></svg>Open device</span>
+            <span class="legacy-btn"><svg viewBox="0 0 24 24"><rect x="2.5" y="4" width="19" height="13" rx="2"/><path d="M8 21h8M12 17v4"/></svg>Remote desktop</span>
+          </div>
+        </div>
+        <div class="legacy-row">
+          <span class="dc-device-icon"><svg viewBox="0 0 24 24"><rect x="2.5" y="4" width="19" height="13" rx="2"/><path d="M8 21h8M12 17v4"/></svg></span>
+          <div class="legacy-identity"><strong>cdeMac-mini.local</strong><span>66b0571f</span></div>
+          <span class="legacy-status">Online</span>
+          <div class="legacy-actions">
+            <span class="legacy-btn"><svg viewBox="0 0 24 24"><path d="M12 20h9"/><path d="M16.5 3.5l4 4L7 21H3v-4L16.5 3.5z"/></svg>Set note</span>
+            <span class="legacy-btn"><svg viewBox="0 0 24 24"><path d="M14 3h7v7"/><path d="M21 3L10 14"/><path d="M19 13v6a2 2 0 01-2 2H5a2 2 0 01-2-2V7a2 2 0 012-2h6"/></svg>Open device</span>
+            <span class="legacy-btn"><svg viewBox="0 0 24 24"><rect x="2.5" y="4" width="19" height="13" rx="2"/><path d="M8 21h8M12 17v4"/></svg>Remote desktop</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+  <div class="stage-caption">
+    <span class="tag bad">Today</span>
+    <span>Chinese device names get squeezed into a vertical stack; two devices already push the panel to 300px tall; on mobile the 3 buttons are guaranteed to wrap.</span>
+  </div>
+
+  <h3>Option A · compact list (recommended)</h3>
+  <div class="stage" id="stage-a">
+    <div class="fake-toolbar">
+      <button class="brand-chip" id="chip-a" aria-expanded="true"><span class="logo">π</span><span class="name">pi-web-ui</span></button>
+      <span class="tool-sep"></span>
+      <button class="tool-btn" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg></button>
+      <button class="tool-btn" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M4 7l4 4-4 4"/><path d="M12 17h8"/></svg></button>
+      <button class="tool-btn" aria-hidden="true"><svg viewBox="0 0 24 24"><circle cx="6" cy="18" r="2.5"/><circle cx="18" cy="6" r="2.5"/><path d="M8 16c4 0 4-4 8-8"/></svg></button>
+      <button class="tool-btn" aria-hidden="true"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M2 12h2M20 12h2M5 5l1.5 1.5M17.5 17.5L19 19M19 5l-1.5 1.5M6.5 17.5L5 19"/></svg></button>
+      <button class="tool-btn" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M12 3l8 4.5v9L12 21l-8-4.5v-9L12 3z"/><path d="M12 3v18"/></svg></button>
+      <button class="tool-btn" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M12 3l9 5-9 5-9-5 9-5z"/><path d="M3 13l9 5 9-5"/></svg></button>
+      <button class="tool-btn" aria-hidden="true"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 00.3 1.9l.1.1a2 2 0 11-2.8 2.8l-.1-.1a1.7 1.7 0 00-2.9 1.2 2 2 0 11-4 0 1.7 1.7 0 00-2.9-1.2l-.1.1a2 2 0 11-2.8-2.8l.1-.1A1.7 1.7 0 004.6 15a2 2 0 110-4 1.7 1.7 0 001-2.9l-.1-.1a2 2 0 112.8-2.8l.1.1a1.7 1.7 0 001.9.3H11a2 2 0 114 0 1.7 1.7 0 002.9 1l.1-.1a2 2 0 112.8 2.8l-.1.1a1.7 1.7 0 00-.3 1.9v.1a2 2 0 110 4z"/></svg></button>
+      <span class="stage-note">panel 328px<br>row 45px</span>
+    </div>
+    <div id="panel-a"></div>
+    <span class="stage-foot">Always visible at the row end: remote desktop + ⋯<br>click row = open · ⋯ = note / copy ID<br>mobile swaps in a bottom sheet (section 04)</span>
+  </div>
+  <div class="stage-caption">
+    <span class="tag hot">Recommended</span>
+    <span class="tag" data-size="a">—</span>
+    <span>Click the row = open device; the row end always shows <b>remote desktop + ⋯</b>; ⋯ holds only note / copy ID (frequent actions never go into a menu). <b>Try ⋯ → set note and watch the row edit in place without jumping.</b></span>
+  </div>
+
+  <h3>Option B · minimal single line (many devices)</h3>
+  <div class="stage short" id="stage-b">
+    <div class="fake-toolbar">
+      <button class="brand-chip" id="chip-b" aria-expanded="true"><span class="logo">π</span><span class="name">pi-web-ui</span></button>
+      <span class="stage-note">panel 264px<br>row 30px</span>
+    </div>
+    <div id="panel-b"></div>
+    <span class="stage-foot">30px per row, ID moves into a tooltip<br>6 devices = 233px</span>
+  </div>
+  <div class="stage-caption">
+    <span class="tag">Alternative</span>
+    <span class="tag" data-size="b">—</span>
+    <span>Drops the ID sub-line and keeps only "status dot + name + this-device tag"; 6 devices take 233px. Fits from 5 devices up; the device ID moves into a tooltip and the ⋯ menu.</span>
+  </div>
+
+  <h3>Option C · two-column tiles (not recommended)</h3>
+  <p class="sec-sub" style="margin-bottom:12px">
+    2 columns × 74px tiles look more "presentable", but 4 devices already cost 170px, and each tile can only hold a name + status while actions still depend on hover icons — the space buys no information, so it does not pay off inside a popover. <b>Only worth it with ≤3 devices and thumbnails on the roadmap.</b>
+  </p>
+
+  <!-- ============================================================ -->
+  <h2 class="sec" id="spec"><span class="idx">03</span>Option A spec (write the CSS straight from this)</h2>
+  <p class="sec-sub">Every dimension uses an existing theme token, no new colour values; the light theme follows automatically.</p>
+
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th style="width:150px">Area</th><th style="width:190px">Size / token</th><th>Notes</th></tr></thead>
+      <tbody>
+        <tr><td><b>Panel</b></td><td class="mono">328px · padding 5px<br>radius 12 · --bg-elev</td><td>Mobile <code>min(328px, 100vw − 24px)</code>; keep the existing <code>max-height: calc(100dvh − 16px)</code> and <code>overscroll-behavior: contain</code></td></tr>
+        <tr><td><b>Header</b></td><td class="mono">30px · 11.5px/600</td><td>"Devices" + count pill + refresh icon. <span class="mono">--text-dim</span> for the title, <span class="mono">--text-faint</span> for the count</td></tr>
+        <tr><td><b>Divider</b></td><td class="mono">1px --border-soft</td><td>Keep only the one under the header; no rule between rows, a 4px-radius hover block separates them</td></tr>
+        <tr><td><b>Row</b></td><td class="mono">min-h 44px · radius 8<br>grid 14 / 1fr / auto / auto · gap 9</td><td>hover → <span class="mono">--bg-elev2</span>; the whole row is the hit area (stretched link)</td></tr>
+        <tr><td><b>Status dot</b></td><td class="mono">7px · --green<br>ring 3px --green-soft</td><td>Offline: solid <span class="mono">--text-faint</span>, no halo; colour + position double-encode, never colour alone</td></tr>
+        <tr><td><b>Name</b></td><td class="mono">12.5px/550 · ellipsis</td><td>Single line with ellipsis, full name in <code>title</code>; offline drops to <span class="mono">--text-dim</span></td></tr>
+        <tr><td><b>Sub-line</b></td><td class="mono">10.5px --mono --text-faint</td><td>First 8 chars of the device ID (shows "original name · ID" once a note exists), everything reachable through <code>title</code></td></tr>
+        <tr><td><b>This-device tag</b></td><td class="mono">10px · --accent-soft / --link</td><td>Soft-tinted pale purple text, no solid accent fill (respects the <code>accent-contrast</code> red line)</td></tr>
+        <tr><td><b>Row-end actions</b></td><td class="mono">24×24 (44×44 on touch)<br>radius 6 / 10</td><td><b>Always visible</b>: <code>远程桌面</code> (remote desktop) + <code>⋯</code> (55% opacity on desktop, solid on hover). Remote desktop is the second-most frequent action; hiding it in ⋯ costs an extra tap; under <code>pointer: coarse</code> both blocks grow to 44×44 with a 1px divider between them</td></tr>
+        <tr><td><b>chevron</b></td><td class="mono">12px · --text-faint</td><td>Always visible, hints that "the whole row is clickable" (the only affordance on mobile, where there is no hover)</td></tr>
+        <tr><td><b>⋯ menu</b></td><td class="mono">172px · z from <code>useOverlayZIndex()</code></td><td><b>Low-frequency only</b>: set note / copy device ID. Open and remote desktop already sit on the row and are not repeated in the menu (that would just add a tap)</td></tr>
+        <tr><td><b>Inline edit</b></td><td class="mono">20px-tall input · 1px --accent</td><td>Replaces the sub-line in place, row height unchanged; Enter saves, Esc reverts, ✓/✕ icons sit at the row end</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <h3>Interaction and accessibility</h3>
+  <div class="cards">
+    <div class="card">
+      <h4>Primary vs secondary actions</h4>
+      <ul>
+        <li><b>Primary</b>: click row → open device (most frequent, one step)</li>
+        <li><b>Secondary</b>: ↗ icon → open in a new tab (middle click / Ctrl+click works)</li>
+        <li><b>Low</b>: ⋯ → remote desktop, note, copy ID</li>
+        <li>Offline device: the row stays clickable but carries a <code>title="device offline"</code> hint, and failures show an inline notice rather than a global error</li>
+      </ul>
+    </div>
+    <div class="card">
+      <h4>Semantics / keyboard</h4>
+      <ul>
+        <li>The row is an <code>&lt;li&gt;</code> plus a full-row <code>&lt;a class="row-hit"&gt;</code> (avoids illegal button-inside-button nesting)</li>
+        <li>Icon buttons stack above the <code>a</code> (<code>z-index</code> + <code>position:relative</code>)</li>
+        <li>Tab order: row → ↗ → ⋯; <code>aria-haspopup="menu"</code>, <code>aria-expanded</code></li>
+        <li>focus ring: <code>2px --accent</code>, shown only on <code>:focus-visible</code></li>
+      </ul>
+    </div>
+    <div class="card">
+      <h4>Long text / extreme values</h4>
+      <ul>
+        <li>The trio: <code>min-width:0</code> + <code>overflow:hidden</code> + <code>ellipsis</code> (no more glyph-by-glyph anywhere wrapping)</li>
+        <li>200-char device name → ellipsis on one line, full text in the tooltip</li>
+        <li>Empty note → the sub-line falls back to the ID; note deleted → saving an empty string clears it</li>
+        <li>20 devices → the panel scrolls internally (<code>max-height: min(60vh,420px)</code>)</li>
+      </ul>
+    </div>
+    <div class="card">
+      <h4>Density trade-off</h4>
+      <ul>
+        <li>A: still comfortable at ≥3 devices, complete information (name + ID + status + this device)</li>
+        <li>B: switch to the single line from 5 devices up; same data, only <code>variant</code> changes</li>
+        <li>Both share the row component and its events, so switching costs nothing</li>
+      </ul>
+    </div>
+  </div>
+
+  <!-- ============================================================ -->
+  <h2 class="sec" id="mobile"><span class="idx">04</span>Mobile: a sheet, touch first, frequent actions out of the menu</h2>
+  <p class="sec-sub">
+    Copying the desktop popover onto mobile breaks in two hard ways: <b>there is no hover</b> (a hidden icon is an undiscoverable icon), and <b>the top-left corner is not thumb territory</b> (once the popover opens, neither finger reaches comfortably).
+    So narrow screens change shape: <b>tap the top-left chip → a sheet rises from the bottom</b>, rows are 56px, every frequent action gets a 44px touch block, <b>two taps at most</b>.
+  </p>
+
+  <div class="ph-grid">
+    <div class="ph">
+      <div class="ph-screen">
+        <div class="ph-topbar"><span>9:41</span><span class="ph-net">5G ▮▮▮</span></div>
+        <div class="ph-bar">
+          <button class="ph-chip" type="button"><span class="logo">π</span><span class="ph-chip-name">pi-web-ui</span></button>
+          <span class="ph-tools">
+            <span class="ph-tool">+</span>
+            <span class="ph-tool">&gt;_</span>
+            <span class="ph-tool">⑂</span>
+          </span>
+        </div>
+        <div class="ph-body">
+          <div class="ph-bubble is-me">The session on this machine is still running, check the logs for me</div>
+          <div class="ph-bubble">Sure, reading <code>~/pi-web-ui/logs</code> …</div>
+          <div class="ph-bubble is-me">Switch over to the Mac mini and continue</div>
+        </div>
+        <div class="ph-scrim" id="phScrim"></div>
+        <div class="ph-sheet" id="phSheet" role="dialog" aria-label="Devices">
+          <div class="ph-grab"></div>
+          <div class="ph-sheet-head">
+            <span class="ph-title">Devices</span>
+            <span class="ph-count">3</span>
+            <span class="ph-spacer"></span>
+            <button class="ph-iconbtn" type="button" data-ph="refresh" aria-label="Refresh">⟳</button>
+          </div>
+          <ul class="ph-list" id="phList"></ul>
+          <div class="ph-edit" id="phEdit" hidden>
+            <input id="phInput" type="text" maxlength="80" placeholder="Note (leave empty to clear)" aria-label="Device note" />
+            <button class="ph-primary" type="button" id="phSave">Save</button>
+          </div>
+          <div class="ph-safe"></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="ph-notes">
+      <h4>Tap here → this happens</h4>
+      <ul class="ph-legend">
+        <li><span class="n">①</span><span><b>Whole row (name / whitespace)</b> = open device. One tap; the most frequent action sits behind no menu at all.</span></li>
+        <li><span class="n">②</span><span><b>Monitor icon at the row end (44×44)</b> = remote desktop. Always visible, never hidden in ⋯, never in a submenu.</span></li>
+        <li><span class="n">③</span><span><b>⋯ or a long-press on the row</b> = note, copy ID (low frequency). Long-press focuses the input directly, skipping the "⋯ → note" step.</span></li>
+        <li><span class="n">④</span><span><b>Pull down = refresh (0 taps)</b>; <b>swipe down / tap the scrim = close (1 gesture)</b>.</span></li>
+      </ul>
+
+      <h4 style="margin-top:18px">Mobile spec (breakpoint <span class="mono">max-width: 640px</span> or <span class="mono">pointer: coarse</span>)</h4>
+      <div class="table-wrap" style="margin-top:8px">
+        <table>
+          <tbody>
+            <tr><td><b>Shape</b></td><td>Bottom sheet: flush to the bottom, 16px top radius, <code>max-height: 62dvh</code>, scrim <code>rgba(0,0,0,.45)</code>; the scroll area uses <code>overscroll-behavior: contain</code></td></tr>
+            <tr><td><b>Row height</b></td><td>56px (45px on desktop); name 14px, sub-line 11px; offline drops the whole row to <code>--text-dim</code> and keeps the clickable hint</td></tr>
+            <tr><td><b>Touch target</b></td><td>Two <code>44×44</code> blocks at the row end (iOS HIG minimum); a 1px divider between them reads as a split button, not three loose icons</td></tr>
+            <tr><td><b>No hover</b></td><td>Icons are always visible (55% opacity on desktop, solid on hover); nothing is allowed to appear only on hover</td></tr>
+            <tr><td><b>Gestures</b></td><td>Pull to refresh, swipe down to close (80px threshold); touch feedback uses <code>:active</code>, not <code>:hover</code></td></tr>
+            <tr><td><b>Safe area</b></td><td>Bottom <code>env(safe-area-inset-bottom)</code>; the sheet's <code>z-index</code> goes through <code>useOverlayZIndex()</code></td></tr>
+            <tr><td><b>Responsiveness</b></td><td><code>touch-action: manipulation</code> (kills the 300ms tap delay), <code>-webkit-tap-highlight-color: transparent</code></td></tr>
+            <tr><td><b>Ordering</b></td><td>This device pinned first → the 2 most recently used → the rest with online first. Frequent devices need no hunting (saves taps and scanning)</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <h3>Tap budget: every action ≤ 2 taps (3 only for low-frequency ones)</h3>
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th style="width:26%">Task</th>
+          <th style="width:24%">Today</th>
+          <th style="width:24%">Option A · desktop</th>
+          <th style="width:26%">Option A · mobile (sheet)</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr><td><b>Open this device</b> (most frequent)</td><td>chip → open device <span class="tag">2</span></td><td>chip → row <span class="tag hot">2</span></td><td>chip → first row <span class="tag hot">2</span></td></tr>
+        <tr><td><b>Open another device</b></td><td>chip → open device <span class="tag">2</span></td><td>chip → row <span class="tag hot">2</span></td><td>chip → row <span class="tag hot">2</span></td></tr>
+        <tr><td><b>Remote desktop</b></td><td>chip → remote desktop <span class="tag">2</span></td><td>chip → row-end icon <span class="tag hot">2</span></td><td>chip → 44px row-end icon <span class="tag hot">2</span></td></tr>
+        <tr><td><b>Edit note</b> (low frequency)</td><td>chip → set note → type → save <span class="tag bad">3 + typing</span></td><td>chip → ⋯ → note → <code>Enter</code> <span class="tag">3</span></td><td>chip → <b>long-press row</b> → keyboard "Done" <span class="tag hot">2</span></td></tr>
+        <tr><td><b>Copy device ID</b></td><td>Only the full device-center page can do it</td><td>chip → ⋯ → copy <span class="tag">3</span></td><td>chip → ⋯ → copy <span class="tag">3</span></td></tr>
+        <tr><td><b>Refresh list</b></td><td>chip → ⟳ <span class="tag">2</span></td><td>chip → ⟳ <span class="tag">2</span></td><td>pull inside the sheet <span class="tag hot">1 gesture / 0 taps</span></td></tr>
+        <tr><td><b>Close panel</b></td><td>tap outside the popover <span class="tag">1</span></td><td><code>Esc</code> / tap outside <span class="tag hot">1</span></td><td>swipe down / tap scrim <span class="tag hot">1 gesture</span></td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <p class="sec-sub" style="margin-top:10px;font-size:12px">
+    Note: today's gap is not only the tap count — it comes with wrapping buttons, vertically stacked names and scrolling. The table only compares "can it be done in one go". The same tap count over a shorter path (no need to read three text buttons) is a win too.
+  </p>
+
+  <div class="cards" style="margin-top:18px">
+    <div class="card">
+      <h4>Taps that can be deleted</h4>
+      <ul>
+        <li><b>Remote desktop leaves ⋯</b>: it is the second-most frequent action, and hiding it in a menu turns it into 3 taps</li>
+        <li><b>The note drops its Save button</b>: Done/Enter on the keyboard saves, long-press goes straight into editing</li>
+        <li><b>Refresh becomes a pull</b>: a sheet should pull anyway, so the tap goes away for free</li>
+        <li><b>Closing needs no button hunt</b>: swipe down or tap the scrim, any thumb position works</li>
+      </ul>
+    </div>
+    <div class="card">
+      <h4>What we will not trade away for fewer taps</h4>
+      <ul>
+        <li><b>Never hide a frequent action</b>: an entry point that needs hover or a long-press is only allowed for low-frequency features</li>
+        <li><b>No double-click</b>: it collides with "open", and system-level gestures get eaten by the browser</li>
+        <li><b>No confirmation dialog</b>: opening a device is reversible, it does not need a modal</li>
+        <li><b>No menu inside a menu</b>: ⋯ holds one level, never "⋯ → more → ⋯"</li>
+      </ul>
+    </div>
+    <div class="card">
+      <h4>One more step to save (optional, needs product sign-off)</h4>
+      <ul>
+        <li>If "open this device" dominates: on mobile <b>one tap on the chip = jump straight back to this machine</b>, long-press the chip = open the sheet (1 tap)</li>
+        <li>Focus the first row when the sheet opens (external keyboard: <code>Enter</code> opens it directly)</li>
+        <li>Remember the last choice: <b>the most recently used device sits on row two</b>, so the usual path stays on the thumb's first screen</li>
+      </ul>
+    </div>
+  </div>
+
+  <p class="sec-sub" style="margin-top:16px">
+    Desktop and mobile share one row component and one set of events; only the container (popover / sheet) and the size tokens change. <code>pointer: coarse</code> switches to the touch layout automatically, with no second component to maintain.
+  </p>
+
+  <!-- ============================================================ -->
+  <h2 class="sec" id="code"><span class="idx">05</span>Shipped code skeleton</h2>
+  <p class="sec-sub">Three files touched; <code>DeviceDirectory</code> is also reused by the full device-center page, so a <code>variant</code> branch keeps the page styles at zero regression.</p>
+
+  <div class="code-label">web/src/components/DeviceDirectory.tsx</div>
+  <pre><span class="c">// new variant, defaults to "page" (the device center is untouched)</span>
+<span class="k">export function</span> DeviceDirectory({ hubUrl, currentDeviceId, onRemarkUpdated, variant = <span class="s">"page"</span> }: Props) {
+  <span class="k">return</span> variant === <span class="s">"panel"</span> ? (
+    &lt;DevicePanel devices={devices} error={error} currentDeviceId={currentDeviceId}
+      onRefresh={() =&gt; setRefresh(n =&gt; n + 1)} onRemark={saveRemark} onOpen={openDevice} /&gt;
+  ) : (
+    <span class="c">/* the original full-page structure stays as is */</span>
+  );
+}
+
+<span class="c">// compact panel: one row per device</span>
+&lt;li className={`dd-row${device.online ? <span class="s">""</span> : <span class="s">" is-off"</span>}${isEditing ? <span class="s">" is-editing"</span> : <span class="s">""</span>}&gt;
+  &lt;span className={`dd-dot${device.online ? <span class="s">" is-on"</span> : <span class="s">""</span>}`} /&gt;
+  &lt;a className=<span class="s">"dd-row-hit"</span> href={target(device.id)} aria-label={`Open ${displayName}`}
+     target=<span class="s">"_blank"</span> rel=<span class="s">"noopener noreferrer"</span>
+     onClick={e =&gt; void openDevice(e, device.id)} /&gt;
+  &lt;span className=<span class="s">"dd-row-main"</span>&gt;
+    &lt;span className=<span class="s">"dd-row-name"</span>&gt;
+      &lt;strong title={displayName}&gt;{displayName}&lt;/strong&gt;
+      {device.id === currentDeviceId &amp;&amp; &lt;em className=<span class="s">"dd-tag-self"</span>&gt;{zh ? <span class="s">"本机"</span> : <span class="s">"This"</span>}&lt;/em&gt;}
+    &lt;/span&gt;
+    {isEditing ? (
+      &lt;input className=<span class="s">"dd-row-input"</span> autoFocus maxLength={80} value={remarkInput}
+        onChange={e =&gt; setRemarkInput(e.target.value)}
+        onKeyDown={e =&gt; { <span class="k">if</span> (e.key === <span class="s">"Escape"</span>) setEditingId(<span class="k">null</span>); }}
+        onBlur={() =&gt; void saveRemark(device.id, remarkInput)} /&gt;
+    ) : (
+      &lt;span className=<span class="s">"dd-row-sub"</span> title={device.id}&gt;{hasRemark ? `${device.name} · ${shortId}` : shortId}&lt;/span&gt;
+    )}
+  &lt;/span&gt;
+  &lt;span className=<span class="s">"dd-row-actions"</span>&gt;
+    <span class="c">{/* ↗ / ⋯ as two 24px icon buttons, revealed on hover */}</span>
+  &lt;/span&gt;
+  &lt;svg className=<span class="s">"dd-chev"</span> … /&gt;
+&lt;/li&gt;</pre>
+
+  <div class="code-label">web/src/components/BrandDeviceMenu.tsx</div>
+  <pre>&lt;DeviceDirectory hubUrl={binding.hubUrl} currentDeviceId={binding.deviceId} <b>variant=<span class="s">"panel"</span></b> /&gt;</pre>
+
+  <div class="code-label">web/src/styles.css (adds one .dd-row* group, leaves the .dc-* page styles alone)</div>
+  <pre>.dd-row { position: relative; display: grid; grid-template-columns: 14px minmax(0,1fr) auto auto;
+  align-items: center; gap: 9px; min-height: 44px; padding: 6px 6px 6px 7px; border-radius: 8px; }
+.dd-row:hover { background: var(--bg-elev2); }
+.dd-row-hit { position: absolute; inset: 0; z-index: 1; border-radius: 8px; }
+.dd-row-hit:focus-visible { box-shadow: inset 0 0 0 2px var(--accent); }
+.dd-row-main { position: relative; z-index: 2; min-width: 0; pointer-events: none;
+  display: flex; flex-direction: column; gap: 1px; }
+.dd-row-name { display: flex; align-items: center; gap: 6px; min-width: 0; }
+.dd-row-name strong { font-size: 12.5px; font-weight: 550; min-width: 0;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.dd-row-sub { font: 10.5px/1.4 var(--mono); color: var(--text-faint);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.dd-row-actions { position: relative; z-index: 3; display: flex; align-items: center; gap: 1px; }
+.dd-row-actions .dd-icon-btn { opacity: .55; transition: opacity .12s; }   /* always visible, not hover-only */
+.dd-row:hover .dd-row-actions .dd-icon-btn,
+.dd-row:focus-within .dd-row-actions .dd-icon-btn { opacity: 1; }
+
+/* touch: sheet + 56px rows + 44px targets, frequent actions still on the row */
+@media (max-width: 640px), (pointer: coarse) {
+  .dd-sheet { position: fixed; inset-inline: 0; bottom: 0; max-height: 62dvh; display: flex;
+    flex-direction: column; border-radius: 16px 16px 0 0; border-top: 1px solid var(--border);
+    padding-bottom: env(safe-area-inset-bottom); overscroll-behavior: contain;
+    z-index: var(--overlay-z, 1200); }        /* the real implementation goes through useOverlayZIndex() */
+  .dd-row { min-height: 56px; }
+  .dd-row-name strong { font-size: 14px; }
+  .dd-row-actions .dd-icon-btn { width: 44px; height: 44px; opacity: 1; border-radius: 10px; }
+  .dd-row-actions .dd-icon-btn + .dd-icon-btn { border-left: 1px solid var(--border-soft); }
+}
+@media (prefers-reduced-motion: reduce) { .dd-row-actions .dd-icon-btn { transition: none; } }</pre>
+
+  <!-- ============================================================ -->
+  <h2 class="sec" id="plan"><span class="idx">06</span>Implementation order (about one PR)</h2>
+  <ol class="steps">
+    <li><b>Extract the row component</b>: inside <span class="mono">DeviceDirectory.tsx</span> add a <code>variant="panel"</code> branch plus <code>.dd-row*</code> styles; the full-page branch stays as is (zero regression).</li>
+    <li><b>Wire it up</b>: <span class="mono">BrandDeviceMenu.tsx</span> passes <code>variant="panel"</code>; panel width 560 → 328.</li>
+    <li><b>Fill in the interactions</b>: inline note editing (Enter/Esc/blur), always-visible "remote desktop + ⋯" at the row end, a 2-item ⋯ menu (low frequency), copy ID, 400ms refresh spin.</li>
+    <li><b>Mobile shape</b>: <code>@media (max-width: 640px), (pointer: coarse)</code> switches to the bottom sheet (scrim + swipe-to-close + pull-to-refresh + <code>env(safe-area-inset-bottom)</code>), rows 56px, targets 44px.</li>
+    <li><b>Re-check the tap budget</b>: walk the open / remote desktop / note paths one by one and confirm ≤ 2 taps on a real device, no hover dependency, no menu inside a menu.</li>
+    <li><b>Hold the red lines</b>: the long-name trio, `useOverlayZIndex()` for overlays, soft pale-purple <code>--link</code> (no solid accent fill), <code>prefers-reduced-motion</code>.</li>
+    <li><b>Accept 8 states</b>: default / hover / editing / offline / 20-device scroll / 320px narrow / iPhone SE (375×667) sheet / one-thumb reach; then run <span class="mono">npm run typecheck</span> plus the relevant vitest.</li>
+    <li><b>Optional</b>: auto-switch to <code>compact</code> (the option B variant) from 5 devices up; it only needs one media/threshold check.</li>
+  </ol>
+
+  <p class="sec-sub" style="margin-top:22px">
+    Say the word and I'll implement option A directly (3 files + 1 screenshot comparison).
+  </p>
+</div>
+
+<div id="toast" role="status" aria-live="polite"></div>
+
+<script>
+(() => {
+  const ICON = {
+    monitor: '<svg viewBox="0 0 24 24"><rect x="2.5" y="4" width="19" height="13" rx="2"/><path d="M8 21h8M12 17v4"/></svg>',
+    external: '<svg viewBox="0 0 24 24"><path d="M14 3h7v7"/><path d="M21 3L10 14"/><path d="M19 13v6a2 2 0 01-2 2H5a2 2 0 01-2-2V7a2 2 0 012-2h6"/></svg>',
+    more: '<svg viewBox="0 0 24 24"><circle cx="5" cy="12" r="1.4"/><circle cx="12" cy="12" r="1.4"/><circle cx="19" cy="12" r="1.4"/></svg>',
+    edit: '<svg viewBox="0 0 24 24"><path d="M12 20h9"/><path d="M16.5 3.5l4 4L7 21H3v-4L16.5 3.5z"/></svg>',
+    copy: '<svg viewBox="0 0 24 24"><rect x="9" y="9" width="12" height="12" rx="2"/><path d="M5 15V5a2 2 0 012-2h10"/></svg>',
+    check: '<svg viewBox="0 0 24 24"><path d="M4 12.5l5 5L20 6.5"/></svg>',
+    x: '<svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></svg>',
+    refresh: '<svg viewBox="0 0 24 24"><path d="M21 12a9 9 0 11-3-6.7"/><path d="M21 3v6h-6"/></svg>',
+    alert: '<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 8v5M12 16.5v.5"/></svg>',
+    chev: '<svg class="chev" viewBox="0 0 24 24"><path d="M9 6l6 6-6 6"/></svg>',
+  };
+
+  const DEVICES = [
+    { id: '4f1c9a72-be4d-4e88-9c31-77d1a0b6f2e4', name: 'win', remark: '', online: true, self: true },
+    { id: '66b0571f-3ac9-4a1f-9d73-1c02b8e5a4d0', name: 'cdeMac-mini.local', remark: '', online: true, self: false },
+    { id: 'a71d3e8b-2f45-4c60-8b19-5e0d7c914a2b', name: 'studio-mbp.lan', remark: 'Design team iMac', online: false, self: false },
+    { id: '0c9f2a41-7d63-4e0b-a8f2-3b6d5c9e1a77', name: 'pi-hub-02', remark: '', online: true, self: false },
+    { id: 'de1122aa-0011-4c7e-9a10-5f8b6d3c2211', name: 'Desktop · R&D', remark: '', online: true, self: false },
+    { id: 'ff4433bb-8899-4ddc-8e21-77aa66bb55cc', name: 'Old laptop', remark: 'Backup', online: false, self: false },
+  ];
+
+  // A shows 3 devices (including an offline one and one with a note); B shows the density of 6 devices
+  const state = {
+    a: { devices: structuredClone(DEVICES.slice(0, 3)), editing: null, menu: null, error: '', refreshing: false },
+    b: { devices: structuredClone(DEVICES), editing: null, menu: null, error: '', refreshing: false },
+  };
+
+  const ESCAPES = { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' };
+  const esc = (value) => String(value).replace(/[&<>"]/g, (ch) => ESCAPES[ch]);
+
+  let toastTimer;
+  function toast(text) {
+    const el = document.getElementById('toast');
+    el.textContent = text;
+    el.classList.add('on');
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(() => el.classList.remove('on'), 1600);
+  }
+
+  function displayName(device) {
+    return device.remark && device.remark.trim() ? device.remark.trim() : device.name;
+  }
+
+  function rowMarkup(key, device, index) {
+    const st = state[key];
+    const hasRemark = !!(device.remark && device.remark.trim());
+    const title = displayName(device);
+    const short = device.id.slice(0, 8);
+    const editing = st.editing === index;
+    const menuOpen = st.menu === index;
+    const classes = 'row' + (device.online ? '' : ' off') + (editing ? ' editing' : '');
+
+    const sub = editing
+      ? '<input class="row-input" maxlength="80" placeholder="Add a note (leave empty to clear)" value="' + esc(device.remark || '') + '">'
+      : '<span class="row-sub" title="' + esc(device.id) + '">' +
+        esc(hasRemark ? device.name + ' · ' + short : short) +
+        '</span>';
+
+    const actions = editing
+      ? '<button class="icon-btn" data-act="save" data-i="' + index + '" aria-label="Save note">' + ICON.check + '</button>' +
+        '<button class="icon-btn" data-act="cancel" data-i="' + index + '" aria-label="Cancel">' + ICON.x + '</button>'
+      : '<button class="icon-btn" data-act="open-new" data-i="' + index + '" aria-label="Open in new tab">' + ICON.external + '</button>' +
+        '<button class="icon-btn" data-act="menu" data-i="' + index + '" aria-label="More actions" aria-haspopup="menu" aria-expanded="' +
+        (menuOpen ? 'true' : 'false') + '">' + ICON.more + '</button>';
+
+    const menu = menuOpen
+      ? '<div class="p-menu" role="menu">' +
+        '<button role="menuitem" data-act="remark" data-i="' + index + '">' + ICON.edit +
+        (hasRemark ? 'Edit note' : 'Set note') + '</button>' +
+        '<span class="sep"></span>' +
+        '<button role="menuitem" data-act="copy" data-i="' + index + '">' + ICON.copy + 'Copy device ID</button>' +
+        '</div>'
+      : '';
+
+    return '<li class="' + classes + '" data-i="' + index + '">' +
+      '<span class="dot-wrap"><span class="dot' + (device.online ? ' on' : '') + '"></span></span>' +
+      '<a class="row-hit" href="#" aria-label="Open ' + esc(title) + '" data-act="open" data-i="' + index + '"></a>' +
+      '<span class="row-main">' +
+      '<span class="row-name"><strong title="' + esc(title) + '">' + esc(title) + '</strong>' +
+      (device.self ? '<em class="tag-self">This</em>' : '') +
+      '</span>' + sub +
+      '</span>' +
+      '<span class="row-actions">' + actions + menu + '</span>' +
+      ICON.chev +
+      '</li>';
+  }
+
+  function render(key) {
+    const st = state[key];
+    const mount = document.getElementById('panel-' + key);
+    if (!mount) return;
+    const rows = st.devices.map((device, index) => rowMarkup(key, device, index)).join('');
+
+    mount.innerHTML =
+      '<div class="panel' + (key === 'b' ? ' compact' : '') + '" role="dialog" aria-label="Device list" data-panel="' + key + '">' +
+      '<div class="p-head">' +
+      '<span class="p-title">Devices</span>' +
+      '<span class="p-count">' + st.devices.length + '</span>' +
+      '<span class="p-spacer"></span>' +
+      '<button class="icon-btn' + (st.refreshing ? ' spin' : '') + '" data-act="refresh" aria-label="Refresh devices">' +
+      ICON.refresh + '</button>' +
+      '</div>' +
+      (st.error ? '<div class="p-note">' + ICON.alert + '<span>' + esc(st.error) + '</span></div>' : '') +
+      '<ul class="p-list">' + (rows || '<li class="p-empty">No other devices on this account</li>') + '</ul>' +
+      '</div>';
+
+    const panel = mount.querySelector('.panel');
+    const sizeEl = document.querySelector('[data-size="' + key + '"]');
+    if (sizeEl && panel) sizeEl.textContent = panel.offsetWidth + ' × ' + panel.offsetHeight + 'px';
+    fitStages();
+
+    const input = panel.querySelector('.row-input');
+    if (!input) return;
+    const index = st.editing;
+    input.focus();
+    input.setSelectionRange(input.value.length, input.value.length);
+    input.addEventListener('keydown', (event) => {
+      if (event.key === 'Enter') {
+        event.preventDefault();
+        commitRemark(key, index, input.value);
+      }
+      if (event.key === 'Escape') {
+        event.preventDefault();
+        st.editing = null;
+        render(key);
+      }
+    });
+    input.addEventListener('blur', () => commitRemark(key, index, input.value));
+    input.addEventListener('click', (event) => event.stopPropagation());
+  }
+
+  function commitRemark(key, index, value) {
+    const st = state[key];
+    if (st.editing === null || st.editing !== index) return;
+    const device = st.devices[index];
+    if (!device) return;
+    device.remark = (value || '').trim();
+    st.editing = null;
+    render(key);
+    toast(device.remark ? 'Saved note: ' + device.remark : 'Note cleared');
+  }
+
+  function onClick(event, key) {
+    const st = state[key];
+    const el = event.target.closest('[data-act]');
+    if (!el) {
+      if (st.menu !== null) {
+        st.menu = null;
+        render(key);
+      }
+      return;
+    }
+    const act = el.dataset.act;
+    const index = Number(el.dataset.i);
+    event.preventDefault();
+    st.menu = null;
+
+    if (act === 'refresh') {
+      st.refreshing = true;
+      render(key);
+      setTimeout(() => {
+        st.refreshing = false;
+        render(key);
+      }, 600);
+      toast('Device list refreshed');
+      return;
+    }
+
+    const device = st.devices[index];
+    if (!device) return;
+    const label = displayName(device);
+
+    if (act === 'menu') {
+      st.menu = st.menu === index ? null : index;
+      render(key);
+      return;
+    }
+    if (act === 'remark') {
+      st.editing = index;
+      render(key);
+      return;
+    }
+    if (act === 'save') {
+      const row = el.closest('.row');
+      const input = row && row.querySelector('.row-input');
+      commitRemark(key, index, input ? input.value : device.remark || '');
+      return;
+    }
+    if (act === 'cancel') {
+      st.editing = null;
+      render(key);
+      return;
+    }
+    if (act === 'copy') {
+      toast('Copied device ID: ' + device.id.slice(0, 8) + '…');
+      return;
+    }
+    if (!device.online) {
+      toast('“' + label + '” is offline' + (act === 'open' ? ' · cannot open' : act === 'desktop' ? ' · remote desktop unavailable' : ''));
+      return;
+    }
+    toast((act === 'desktop' ? 'Remote desktop: ' : act === 'open-new' ? 'Open in new tab: ' : 'Open device: ') + label);
+  }
+
+  function fitStages() {
+    document.querySelectorAll('.stage').forEach((stage) => {
+      const panel = stage.querySelector('[data-panel], .legacy-panel');
+      if (!panel) return;
+      const isPanel = panel.hasAttribute('data-panel');
+      stage.style.paddingBottom = 48 + panel.offsetHeight + (isPanel ? 130 : 26) + 'px';
+    });
+  }
+
+  for (const key of ['a', 'b']) {
+    const mount = document.getElementById('panel-' + key);
+    mount.style.position = 'absolute';
+    mount.style.left = '12px';
+    mount.style.right = '12px';
+    mount.style.top = '48px';
+    mount.addEventListener('click', (event) => onClick(event, key));
+    render(key);
+  }
+
+  document.addEventListener('keydown', (event) => {
+    if (event.key !== 'Escape') return;
+    for (const key of ['a', 'b']) {
+      if (state[key].menu !== null || state[key].editing !== null) {
+        state[key].menu = null;
+        state[key].editing = null;
+        render(key);
+      }
+    }
+  });
+
+  document.addEventListener('click', (event) => {
+    if (event.target.closest('.p-menu') || event.target.closest('[data-act="menu"]')) return;
+    for (const key of ['a', 'b']) {
+      if (state[key].menu !== null) {
+        state[key].menu = null;
+        render(key);
+      }
+    }
+  });
+
+  window.addEventListener('resize', fitStages);
+})();
+</script>
+<script>
+(() => {
+  const ICON = {
+    desktop:
+      '<svg viewBox="0 0 24 24"><rect x="2.5" y="4" width="19" height="13" rx="2"/><path d="M8 21h8M12 17v4"/></svg>',
+    more: '<svg viewBox="0 0 24 24"><circle cx="5" cy="12" r="1.4"/><circle cx="12" cy="12" r="1.4"/><circle cx="19" cy="12" r="1.4"/></svg>',
+  };
+
+  const DEVICES = [
+    { name: 'win', id: '4f1c9a72', extra: '', online: true },
+    { name: 'cdeMac-mini.local', id: '66b0571f', extra: 'Recently used', online: true },
+    { name: 'Design team iMac', id: 'a71d3e8b', extra: 'Offline', online: false },
+  ];
+
+  let editIndex = null;
+  let suppressClickUntil = 0;
+  let longPressTimer = null;
+  let pressStart = null;
+
+  const list = document.getElementById('phList');
+  const editBar = document.getElementById('phEdit');
+  const input = document.getElementById('phInput');
+  const toast = (text) => {
+    const el = document.getElementById('toast');
+    el.textContent = text;
+    el.classList.add('on');
+    clearTimeout(el._timer);
+    el._timer = setTimeout(() => el.classList.remove('on'), 1600);
+  };
+
+  function render() {
+    list.innerHTML = DEVICES.map((device, index) => {
+      const last = index === DEVICES.length - 1;
+      return (
+        '<li class="ph-row' + (device.online ? '' : ' is-off') + '" data-i="' + index + '" data-ph="open">' +
+        '<span class="ph-dot' + (device.online ? ' on' : '') + '"></span>' +
+        '<span class="ph-main"><strong>' + device.name +
+        (index === 0 ? '<em class="tag-self">This</em>' : '') + '</strong>' +
+        '<span>' + device.id + (device.extra ? ' · ' + device.extra : '') + '</span></span>' +
+        '<span class="ph-taps">' +
+        '<button class="ph-tap" type="button" data-ph="desktop" data-i="' + index + '" aria-label="Remote desktop">' + ICON.desktop + '</button>' +
+        '<button class="ph-tap" type="button" data-ph="menu" data-i="' + index + '" aria-label="More actions">' + ICON.more + '</button>' +
+        '<div class="ph-menu' + (last ? ' up' : '') + '" hidden>' +
+        '<button type="button" data-ph="remark" data-i="' + index + '">Set note</button>' +
+        '<button type="button" data-ph="copy" data-i="' + index + '">Copy device ID</button>' +
+        '</div>' +
+        '</span>' +
+        '</li>'
+      );
+    }).join('');
+  }
+
+  function closeMenus() {
+    list.querySelectorAll('.ph-menu').forEach((menu) => {
+      menu.hidden = true;
+    });
+  }
+
+  function openEdit(index) {
+    editIndex = index;
+    editBar.hidden = false;
+    const device = DEVICES[index];
+    input.value = '';
+    input.placeholder = 'Add a note for “' + device.name + '” (leave empty to clear)';
+    input.focus();
+    closeMenus();
+    toast('Long-press to edit the note: the keyboard “Done” key saves it');
+  }
+
+  function saveEdit() {
+    if (editIndex === null) return;
+    const text = input.value.trim();
+    editBar.hidden = true;
+    editIndex = null;
+    toast(text ? 'Saved note: ' + text : 'Note cleared');
+  }
+
+  list.addEventListener('click', (event) => {
+    if (Date.now() < suppressClickUntil) return;
+    const el = event.target.closest('[data-ph]');
+    if (!el) return;
+    const act = el.dataset.ph;
+    const index = Number(el.dataset.i);
+    const device = DEVICES[index];
+    if (act === 'menu') {
+      event.stopPropagation();
+      const menu = el.parentElement.querySelector('.ph-menu');
+      const wasHidden = menu.hidden;
+      closeMenus();
+      menu.hidden = !wasHidden;
+      return;
+    }
+    closeMenus();
+    if (act === 'remark') return openEdit(index);
+    if (act === 'copy') return toast('Copied device ID: ' + device.id + '…');
+    if (!device.online) return toast('“' + device.name + '” is offline');
+    toast((act === 'desktop' ? 'Remote desktop: ' : 'Open device: ') + device.name);
+  });
+
+  list.addEventListener('pointerdown', (event) => {
+    const row = event.target.closest('.ph-row');
+    if (!row) return;
+    if (event.target.closest('.ph-tap')) return;
+    pressStart = { x: event.clientX, y: event.clientY };
+    longPressTimer = setTimeout(() => {
+      suppressClickUntil = Date.now() + 700;
+      openEdit(Number(row.dataset.i));
+    }, 450);
+  });
+
+  const cancelPress = (event) => {
+    if (pressStart && event && event.clientX !== undefined) {
+      const moved = Math.abs(event.clientX - pressStart.x) + Math.abs(event.clientY - pressStart.y);
+      if (moved < 12 && event.type === 'pointermove') return;
+    }
+    clearTimeout(longPressTimer);
+    pressStart = null;
+  };
+  list.addEventListener('pointerup', cancelPress);
+  list.addEventListener('pointercancel', cancelPress);
+  list.addEventListener('pointermove', cancelPress);
+
+  document.getElementById('phScrim').addEventListener('click', () => toast('Close the sheet (swipe down / tap the scrim: one gesture)'));
+  document.getElementById('phSave').addEventListener('click', saveEdit);
+  input.addEventListener('keydown', (event) => {
+    if (event.key === 'Enter') saveEdit();
+    if (event.key === 'Escape') {
+      editBar.hidden = true;
+      editIndex = null;
+    }
+  });
+  document.querySelector('[data-ph="refresh"]').addEventListener('click', () => toast('Pull to refresh = 0 taps'));
+
+  render();
+})();
+</script>
+</body>
+</html>
+
+
+

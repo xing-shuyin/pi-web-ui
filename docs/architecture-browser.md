@@ -1,3 +1,5 @@
+[English](./architecture-browser.en.md) · **简体中文** · [繁體中文](./architecture-browser.zh-TW.md)
+
 # 内置浏览器与桌面 Agent
 
 桌面应用将浏览器与现有 pi-web-ui Agent 组合在一个窗口，支持 browser、agent、split 三种模式。启动模式由设置项 `defaultMode` 决定，新用户默认 agent（本地 Agent sidecar 并行启动，就绪前由 shell 显示启动占位）；Agent 失败时可在占位上一键切到浏览器。npm/纯 Web 服务入口继续使用现有路径。

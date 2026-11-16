@@ -1,3 +1,5 @@
+[English](./README.en.md) · **简体中文** · [繁體中文](./README.zh-TW.md)
+
 # Piercer 与 pi-web-ui 的 P2P 接入验证
 
 状态：**本目录保留最初的传输可行性原型**。后续生产实现位于 `native/device-p2p/` 和 `server/device-center/device-p2p.ts`，见[接入文档](../../docs/device-center.md#p2p-设备访问)。原型不连接用户的 Hub，不读设备凭据，不启动真实桌面采集；两个 WebRTC PeerConnection 位于同一个进程，只使用回环 UDP 候选。它验证协议兼容性与既有授权边界，不证明公网打洞成功率或远程满速。

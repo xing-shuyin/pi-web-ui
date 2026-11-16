@@ -1,3 +1,5 @@
+[English](./README.en.md) · **简体中文** · [繁體中文](./README.zh-TW.md)
+
 # 内置外部渠道模块（Superagent 0.1.5）
 
 GitHub / 飞书的内置渠道适配模块。将验证过的外部事件交给宿主工单服务，由**群组独立 AI Router 路由、Bot 执行**，再通过宿主持久 outbox 回写原渠道。插件不包含自己的 LLM、执行器或路由器。

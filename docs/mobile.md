@@ -1,3 +1,5 @@
+[English](./mobile.en.md) · **简体中文** · [繁體中文](./mobile.zh-TW.md)
+
 # 手机客户端：React + Capacitor
 
 手机版使用本地打包的 React 界面和 Capacitor 8，Android / iOS 原生工程位于 `mobile/`。入口支持两种连接方式：登录设备中心 Hub 账号管理多台设备，或用设备地址和访问令牌直连单台设备。两种方式都使用本地 React 访问远端 HTTP / WebSocket，任务继续在原设备执行。

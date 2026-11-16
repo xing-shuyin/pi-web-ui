@@ -1,3 +1,5 @@
+[English](./README.en.md) · **简体中文** · [繁體中文](./README.zh-TW.md)
+
 # AI 响应速度监控插件 (Response Speed)
 
 实时监控并在底部状态栏展示 AI 的最新响应速度与平均响应速度，支持 AI 自循环的每一次循环独立测速。

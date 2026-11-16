@@ -1,3 +1,5 @@
+[English](./README.en.md) · **简体中文** · [繁體中文](./README.zh-TW.md)
+
 # page-picker · 网页元素拾取（浏览器扩展）
 
 在**开发中的网页**上点选元素，把它整理成 AI 能直接动手的上下文，一键注入 pi-web-ui 的对话输入框。

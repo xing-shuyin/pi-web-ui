@@ -1,0 +1,1070 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>pi-web-ui modern settings proposal panorama (6 frontier paradigms)</title>
+  <style>
+    :root {
+      --bg-base: #090b0e;
+      --bg-surface: #12151b;
+      --bg-elevated: #181c24;
+      --bg-elevated-hover: #1f242e;
+      --bg-glass: rgba(18, 21, 27, 0.72);
+      --border-subtle: rgba(255, 255, 255, 0.08);
+      --border-strong: rgba(255, 255, 255, 0.16);
+      --border-focus: rgba(91, 157, 255, 0.55);
+      --accent: #3b82f6;
+      --accent-glow: rgba(59, 130, 246, 0.3);
+      --accent-soft: rgba(59, 130, 246, 0.14);
+      --accent-contrast: #ffffff;
+      --text-main: #f8fafc;
+      --text-muted: #94a3b8;
+      --text-dim: #64748b;
+      --success: #10b981;
+      --success-soft: rgba(16, 185, 129, 0.15);
+      --warning: #f59e0b;
+      --purple: #a855f7;
+      --purple-soft: rgba(168, 85, 247, 0.15);
+      --radius-sm: 8px;
+      --radius-md: 12px;
+      --radius-lg: 16px;
+      --radius-xl: 22px;
+      --radius-full: 9999px;
+      --font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+      --font-mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+      --transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      background: var(--bg-base);
+      color: var(--text-main);
+      font-family: var(--font-sans);
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      padding: 24px 16px;
+      overflow-x: hidden;
+      background-image: 
+        radial-gradient(ellipse 70% 50% at 50% -10%, rgba(59, 130, 246, 0.16), transparent),
+        radial-gradient(ellipse 40% 40% at 90% 70%, rgba(168, 85, 247, 0.12), transparent);
+    }
+
+    .showcase-header {
+      width: 100%;
+      max-width: 1080px;
+      display: flex;
+      flex-direction: column;
+      gap: 14px;
+      margin-bottom: 22px;
+      text-align: center;
+    }
+
+    .showcase-title {
+      font-size: 26px;
+      font-weight: 800;
+      letter-spacing: -0.6px;
+      background: linear-gradient(135deg, #ffffff 30%, #94a3b8 100%);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+    }
+
+    .showcase-subtitle {
+      font-size: 13.5px;
+      color: var(--text-muted);
+      line-height: 1.5;
+    }
+
+    /* 6 大方案平铺切换器 */
+    .proto-switcher {
+      display: flex;
+      flex-wrap: wrap;
+      justify-content: center;
+      gap: 6px;
+      background: rgba(255, 255, 255, 0.04);
+      border: 1px solid var(--border-subtle);
+      border-radius: var(--radius-full);
+      padding: 5px;
+      margin: 4px auto 0;
+      backdrop-filter: blur(14px);
+    }
+
+    .proto-btn {
+      background: transparent;
+      border: none;
+      color: var(--text-muted);
+      font-size: 12.5px;
+      font-weight: 500;
+      padding: 7px 15px;
+      border-radius: var(--radius-full);
+      cursor: pointer;
+      transition: var(--transition);
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      white-space: nowrap;
+    }
+
+    .proto-btn:hover { color: var(--text-main); }
+    .proto-btn.active {
+      background: var(--accent);
+      color: #fff;
+      box-shadow: 0 2px 14px var(--accent-glow);
+    }
+
+    /* 方案主视图区 */
+    .prototype-container {
+      width: 100%;
+      max-width: 1080px;
+      display: none;
+      animation: protoFadeIn 0.28s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+    }
+    .prototype-container.active { display: block; }
+
+    @keyframes protoFadeIn {
+      from { opacity: 0; transform: translateY(10px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+
+    /* 公共 UI 基础件 */
+    .switch {
+      position: relative;
+      display: inline-block;
+      width: 38px;
+      height: 22px;
+      flex-shrink: 0;
+    }
+    .switch input { opacity: 0; width: 0; height: 0; }
+    .slider {
+      position: absolute; cursor: pointer; inset: 0;
+      background-color: rgba(255, 255, 255, 0.15);
+      transition: .2s;
+      border-radius: 22px;
+    }
+    .slider:before {
+      position: absolute; content: "";
+      height: 16px; width: 16px; left: 3px; bottom: 3px;
+      background-color: white;
+      transition: .22s cubic-bezier(0.34, 1.56, 0.64, 1);
+      border-radius: 50%;
+    }
+    input:checked + .slider { background-color: var(--accent); }
+    input:checked + .slider:before { transform: translateX(16px); }
+
+    .segmented {
+      display: inline-flex;
+      background: rgba(0, 0, 0, 0.35);
+      padding: 3px;
+      border-radius: 8px;
+      border: 1px solid var(--border-subtle);
+    }
+    .segmented button {
+      background: transparent;
+      border: none;
+      color: var(--text-muted);
+      font-size: 12px;
+      padding: 4px 10px;
+      border-radius: 6px;
+      cursor: pointer;
+      transition: var(--transition);
+    }
+    .segmented button.active {
+      background: rgba(255, 255, 255, 0.14);
+      color: var(--text-main);
+      font-weight: 500;
+    }
+
+    /* 方案解说卡片 */
+    .scheme-analysis {
+      margin-top: 18px;
+      background: rgba(255, 255, 255, 0.025);
+      border: 1px dashed var(--border-subtle);
+      border-radius: var(--radius-md);
+      padding: 16px 20px;
+      font-size: 13px;
+      color: var(--text-muted);
+      line-height: 1.6;
+    }
+    .scheme-analysis strong { color: var(--text-main); }
+    .scheme-badge {
+      display: inline-block;
+      padding: 2px 8px;
+      border-radius: 4px;
+      font-size: 11px;
+      font-weight: 600;
+      background: var(--accent-soft);
+      color: var(--accent);
+      margin-right: 6px;
+    }
+
+    /* =========================================================================
+       方案一：Linear / Raycast 风格（Command-Driven 极客极简流）
+       ========================================================================= */
+    .scheme-linear {
+      background: var(--bg-surface);
+      border: 1px solid var(--border-subtle);
+      border-radius: var(--radius-lg);
+      box-shadow: 0 24px 60px rgba(0, 0, 0, 0.65);
+      display: flex;
+      flex-direction: column;
+      height: 640px;
+      overflow: hidden;
+    }
+    .linear-cmd-bar {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      padding: 14px 20px;
+      border-bottom: 1px solid var(--border-subtle);
+      background: rgba(18, 21, 27, 0.9);
+    }
+    .cmd-search-wrap {
+      flex: 1;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      background: rgba(255, 255, 255, 0.04);
+      border: 1px solid var(--border-subtle);
+      border-radius: var(--radius-sm);
+      padding: 6px 12px;
+      transition: var(--transition);
+    }
+    .cmd-search-wrap:focus-within {
+      border-color: var(--accent);
+      box-shadow: 0 0 0 2px var(--accent-soft);
+      background: rgba(255, 255, 255, 0.07);
+    }
+    .cmd-search-input {
+      background: transparent;
+      border: none;
+      outline: none;
+      color: var(--text-main);
+      font-size: 13px;
+      width: 100%;
+    }
+    .kbd-shortcut {
+      font-size: 11px;
+      background: rgba(255, 255, 255, 0.08);
+      border: 1px solid var(--border-subtle);
+      color: var(--text-dim);
+      padding: 2px 6px;
+      border-radius: 4px;
+      font-family: var(--font-mono);
+    }
+    .sync-badge {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 12px;
+      color: var(--success);
+      font-weight: 500;
+      padding: 4px 10px;
+      background: var(--success-soft);
+      border-radius: var(--radius-full);
+    }
+    .linear-layout { flex: 1; display: flex; min-height: 0; }
+    .linear-sidebar {
+      width: 220px;
+      border-right: 1px solid var(--border-subtle);
+      padding: 12px 10px;
+      display: flex;
+      flex-direction: column;
+      gap: 3px;
+      background: rgba(14, 16, 21, 0.65);
+    }
+    .linear-nav-group-label {
+      font-size: 11px;
+      font-weight: 600;
+      color: var(--text-dim);
+      text-transform: uppercase;
+      letter-spacing: 0.6px;
+      padding: 8px 10px 4px;
+    }
+    .linear-nav-item {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 8px 10px;
+      border-radius: var(--radius-sm);
+      color: var(--text-muted);
+      font-size: 13px;
+      cursor: pointer;
+      transition: var(--transition);
+      border: none;
+      background: transparent;
+      width: 100%;
+      text-align: left;
+    }
+    .linear-nav-item:hover { background: rgba(255, 255, 255, 0.04); color: var(--text-main); }
+    .linear-nav-item.active { background: rgba(255, 255, 255, 0.08); color: #fff; font-weight: 500; }
+    .linear-content {
+      flex: 1;
+      overflow-y: auto;
+      padding: 28px 36px;
+      display: flex;
+      flex-direction: column;
+      gap: 26px;
+    }
+    .linear-group-card {
+      background: var(--bg-elevated);
+      border: 1px solid var(--border-subtle);
+      border-radius: var(--radius-md);
+      overflow: hidden;
+    }
+    .linear-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 14px 18px;
+    }
+    .linear-row:not(:last-child) { border-bottom: 1px solid var(--border-subtle); }
+    .linear-row:hover { background: rgba(255, 255, 255, 0.015); }
+    .linear-row-info { display: flex; flex-direction: column; gap: 3px; max-width: 70%; }
+    .linear-row-label { font-size: 13.5px; font-weight: 500; color: var(--text-main); }
+    .linear-row-desc { font-size: 12px; color: var(--text-muted); line-height: 1.4; }
+
+    /* =========================================================================
+       方案二：Bento Grid 仪表盘流
+       ========================================================================= */
+    .scheme-bento {
+      background: var(--bg-surface);
+      border: 1px solid var(--border-subtle);
+      border-radius: var(--radius-lg);
+      box-shadow: 0 24px 60px rgba(0, 0, 0, 0.65);
+      height: 640px;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+    .bento-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 16px 28px;
+      border-bottom: 1px solid var(--border-subtle);
+    }
+    .bento-body { flex: 1; overflow-y: auto; padding: 22px 28px; }
+    .bento-grid {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 16px;
+    }
+    .bento-card {
+      background: var(--bg-elevated);
+      border: 1px solid var(--border-subtle);
+      border-radius: var(--radius-md);
+      padding: 18px;
+      display: flex;
+      flex-direction: column;
+      transition: var(--transition);
+    }
+    .bento-card:hover { border-color: rgba(255, 255, 255, 0.15); transform: translateY(-2px); }
+    .bento-card.col-2 { grid-column: span 2; }
+    .bento-card.col-3 { grid-column: span 3; }
+    .bento-card-title {
+      font-size: 12.5px;
+      font-weight: 600;
+      color: var(--text-muted);
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      margin-bottom: 12px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+    .bento-stat-num { font-size: 26px; font-weight: 700; color: #fff; margin-bottom: 4px; }
+    .tool-chip {
+      background: rgba(255, 255, 255, 0.05);
+      border: 1px solid var(--border-subtle);
+      color: var(--text-main);
+      font-size: 12px;
+      padding: 4px 10px;
+      border-radius: 6px;
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .tool-chip.active { border-color: rgba(16, 185, 129, 0.4); background: var(--success-soft); }
+
+    /* =========================================================================
+       方案三：Spatial Glass 悬浮流
+       ========================================================================= */
+    .scheme-spatial {
+      background: var(--bg-glass);
+      backdrop-filter: blur(32px) saturate(180%);
+      border: 1px solid rgba(255, 255, 255, 0.12);
+      border-radius: 24px;
+      box-shadow: 0 32px 80px rgba(0, 0, 0, 0.7), inset 0 1px 0 rgba(255, 255, 255, 0.15);
+      height: 640px;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+    .spatial-topbar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 20px 32px 14px;
+    }
+    .spatial-pill-nav {
+      display: inline-flex;
+      background: rgba(0, 0, 0, 0.4);
+      padding: 4px;
+      border-radius: var(--radius-full);
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      backdrop-filter: blur(16px);
+    }
+    .spatial-nav-btn {
+      background: transparent;
+      border: none;
+      color: var(--text-muted);
+      font-size: 13px;
+      padding: 7px 18px;
+      border-radius: var(--radius-full);
+      cursor: pointer;
+      transition: var(--transition);
+    }
+    .spatial-nav-btn.active {
+      background: rgba(255, 255, 255, 0.18);
+      color: #fff;
+      font-weight: 600;
+    }
+    .spatial-content { flex: 1; overflow-y: auto; padding: 16px 32px 32px; display: flex; flex-direction: column; gap: 18px; }
+    .spatial-glass-card {
+      background: rgba(255, 255, 255, 0.035);
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      border-radius: 18px;
+      padding: 20px;
+      backdrop-filter: blur(16px);
+      display: flex;
+      flex-direction: column;
+      gap: 14px;
+    }
+
+    /* =========================================================================
+       方案四：【Cursor / Linear 风格】非模态分体抽屉流 (Contextual Split Drawer)
+       ========================================================================= */
+    .scheme-drawer {
+      display: flex;
+      height: 640px;
+      background: #0d0f14;
+      border: 1px solid var(--border-subtle);
+      border-radius: var(--radius-lg);
+      overflow: hidden;
+      box-shadow: 0 24px 60px rgba(0, 0, 0, 0.7);
+    }
+    /* 模拟左侧活跃对话流 */
+    .drawer-chat-mock {
+      flex: 1;
+      padding: 20px;
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+      background: rgba(0, 0, 0, 0.2);
+      border-right: 1px solid var(--border-subtle);
+    }
+    .chat-mock-msg {
+      background: rgba(255, 255, 255, 0.04);
+      border: 1px solid var(--border-subtle);
+      border-radius: 10px;
+      padding: 12px 16px;
+      font-size: 13px;
+      color: var(--text-muted);
+      line-height: 1.5;
+    }
+    .chat-mock-input {
+      background: rgba(255, 255, 255, 0.06);
+      border: 1px solid var(--border-subtle);
+      border-radius: 8px;
+      padding: 10px 14px;
+      font-size: 12.5px;
+      color: var(--text-dim);
+    }
+    /* 右侧即时生效设置面板 */
+    .drawer-panel {
+      width: 440px;
+      background: var(--bg-surface);
+      display: flex;
+      flex-direction: column;
+      animation: slideInRight 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+    }
+    @keyframes slideInRight {
+      from { transform: translateX(30px); opacity: 0; }
+      to { transform: translateX(0); opacity: 1; }
+    }
+    .drawer-head {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 16px 20px;
+      border-bottom: 1px solid var(--border-subtle);
+    }
+    .drawer-scroll {
+      flex: 1;
+      overflow-y: auto;
+      padding: 18px 20px;
+      display: flex;
+      flex-direction: column;
+      gap: 20px;
+    }
+    .drawer-card {
+      background: var(--bg-elevated);
+      border: 1px solid var(--border-subtle);
+      border-radius: var(--radius-md);
+      padding: 14px;
+    }
+
+    /* =========================================================================
+       方案五：【Vercel / Notion 风格】Studio 全屏工作台流 (Studio View)
+       ========================================================================= */
+    .scheme-studio {
+      height: 640px;
+      background: var(--bg-surface);
+      border: 1px solid var(--border-subtle);
+      border-radius: var(--radius-lg);
+      display: grid;
+      grid-template-columns: 240px 1fr 280px;
+      overflow: hidden;
+      box-shadow: 0 24px 60px rgba(0, 0, 0, 0.7);
+    }
+    .studio-sidebar {
+      background: #0f1217;
+      border-right: 1px solid var(--border-subtle);
+      padding: 18px 14px;
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+    .studio-main {
+      padding: 24px 32px;
+      overflow-y: auto;
+      display: flex;
+      flex-direction: column;
+      gap: 24px;
+    }
+    .studio-inspector {
+      background: #0f1217;
+      border-left: 1px solid var(--border-subtle);
+      padding: 20px 18px;
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+    }
+    .inspector-title {
+      font-size: 12px;
+      font-weight: 700;
+      text-transform: uppercase;
+      color: var(--text-dim);
+      letter-spacing: 0.5px;
+    }
+    .inspector-box {
+      background: rgba(255, 255, 255, 0.03);
+      border: 1px solid var(--border-subtle);
+      border-radius: var(--radius-sm);
+      padding: 12px;
+      font-size: 12px;
+      color: var(--text-muted);
+      line-height: 1.5;
+    }
+
+    /* =========================================================================
+       方案六：【AI-Native 意图驱动流】生成式意图配置条 (Intent-Driven Settings)
+       ========================================================================= */
+    .scheme-intent {
+      height: 640px;
+      background: var(--bg-surface);
+      border: 1px solid var(--border-subtle);
+      border-radius: var(--radius-lg);
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+      box-shadow: 0 24px 60px rgba(0, 0, 0, 0.7);
+    }
+    .intent-hero {
+      padding: 28px 36px 20px;
+      background: linear-gradient(180deg, rgba(168, 85, 247, 0.08) 0%, transparent 100%);
+      border-bottom: 1px solid var(--border-subtle);
+    }
+    .intent-ai-input-wrap {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      background: rgba(0, 0, 0, 0.4);
+      border: 1px solid var(--purple);
+      box-shadow: 0 0 20px rgba(168, 85, 247, 0.2);
+      border-radius: var(--radius-md);
+      padding: 10px 16px;
+      margin-top: 14px;
+    }
+    .intent-ai-input {
+      flex: 1;
+      background: transparent;
+      border: none;
+      outline: none;
+      color: #fff;
+      font-size: 14px;
+    }
+    .intent-apply-btn {
+      background: var(--purple);
+      color: #fff;
+      border: none;
+      padding: 7px 16px;
+      border-radius: 6px;
+      font-size: 12.5px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: var(--transition);
+    }
+    .intent-apply-btn:hover { opacity: 0.9; }
+    .intent-diff-list {
+      flex: 1;
+      overflow-y: auto;
+      padding: 24px 36px;
+      display: flex;
+      flex-direction: column;
+      gap: 14px;
+    }
+    .diff-item {
+      background: var(--bg-elevated);
+      border: 1px solid var(--border-subtle);
+      border-radius: var(--radius-md);
+      padding: 14px 18px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+    .diff-badge-old {
+      font-size: 11px;
+      padding: 2px 6px;
+      border-radius: 4px;
+      background: rgba(239, 68, 68, 0.15);
+      color: #f87171;
+      text-decoration: line-through;
+    }
+    .diff-badge-new {
+      font-size: 11px;
+      padding: 2px 6px;
+      border-radius: 4px;
+      background: var(--success-soft);
+      color: var(--success);
+      font-weight: 600;
+    }
+  </style>
+</head>
+<body>
+<div data-docs-i18n-switch style="position:fixed;top:8px;right:12px;z-index:2147483647;font:12px/1.6 -apple-system,system-ui,sans-serif;background:rgba(15,17,22,.78);color:#fff;padding:4px 12px;border-radius:999px;box-shadow:0 2px 10px rgba(0,0,0,.35)"><a href="./settings-modern-redesign.html" style="color:#fff;text-decoration:none">简体中文</a> · <strong>English</strong> · <a href="./settings-modern-redesign.zh-TW.html" style="color:#fff;text-decoration:none">繁體中文</a></div>
+
+
+
+  <header class="showcase-header">
+    <h1 class="showcase-title">pi-web-ui settings-page redesign matrix (6 frontier paradigms)</h1>
+    <p class="showcase-subtitle">From "whack-a-mole modals" to a modern upgrade: non-blocking, intent-driven, instrumented</p>
+    
+    <div class="proto-switcher">
+      <button class="proto-btn active" onclick="switchProto('linear')">⚡ 1. Linear command flow</button>
+      <button class="proto-btn" onclick="switchProto('bento')">🍱 2. Bento tile overview</button>
+      <button class="proto-btn" onclick="switchProto('spatial')">🫧 3. Spatial capsule flow</button>
+      <button class="proto-btn" onclick="switchProto('drawer')">🪟 4. Cursor split drawer</button>
+      <button class="proto-btn" onclick="switchProto('studio')">🖥️ 5. Studio workbench</button>
+      <button class="proto-btn" onclick="switchProto('intent')">✨ 6. AI intent-driven flow</button>
+    </div>
+  </header>
+
+  <!-- =======================================================================
+       Scheme 1: Linear command flow
+       ======================================================================= -->
+  <main id="proto-linear" class="prototype-container active">
+    <div class="scheme-linear">
+      <div class="linear-cmd-bar">
+        <div class="cmd-search-wrap">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="color: var(--text-dim);"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
+          <input type="text" class="cmd-search-input" placeholder="Type to jump straight to a setting or toggle (Ctrl K)..." />
+          <span class="kbd-shortcut">Ctrl K</span>
+        </div>
+        <div class="sync-badge">
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><polyline points="20 6 9 17 4 12"></polyline></svg>
+          Synced live
+        </div>
+      </div>
+      <div class="linear-layout">
+        <aside class="linear-sidebar">
+          <div class="linear-nav-group-label">Agent core</div>
+          <button class="linear-nav-item active">Models &amp; gateway</button>
+          <button class="linear-nav-item">System prompt</button>
+          <button class="linear-nav-item">Context soft cap</button>
+          <div class="linear-nav-group-label" style="margin-top: 10px;">Tools &amp; security</div>
+          <button class="linear-nav-item">Tool switchboard (14)</button>
+          <button class="linear-nav-item">Approval rules</button>
+          <button class="linear-nav-item">MCP servers</button>
+          <div class="linear-nav-group-label" style="margin-top: 10px;">Interface &amp; experience</div>
+          <button class="linear-nav-item">Conversation layout</button>
+          <button class="linear-nav-item">Sound &amp; voice</button>
+        </aside>
+        <section class="linear-content">
+          <div>
+            <h2 style="font-size: 18px; font-weight: 600; margin-bottom: 4px;">Models &amp; reasoning</h2>
+            <p style="font-size: 13px; color: var(--text-dim);">Configure the agent's inference engine, prefix cache, and context-budget policy</p>
+          </div>
+          <div class="linear-group-card">
+            <div class="linear-row">
+              <div class="linear-row-info">
+                <span class="linear-row-label">Deferred tool loading (Lazy Loading)</span>
+                <span class="linear-row-desc">Only core tools stay resident; the rest hot-load on demand, keeping the 100% server-side prefix cache intact</span>
+              </div>
+              <label class="switch"><input type="checkbox" checked /><span class="slider"></span></label>
+            </div>
+            <div class="linear-row">
+              <div class="linear-row-info">
+                <span class="linear-row-label">Thinking depth (Thinking Budget)</span>
+                <span class="linear-row-desc">Sets the default thinking depth for reasoning models</span>
+              </div>
+              <div class="segmented"><button class="active">Medium</button><button>Deep</button><button>Max</button></div>
+            </div>
+          </div>
+        </section>
+      </div>
+    </div>
+    <div class="scheme-analysis">
+      <span class="scheme-badge">Scheme 1 · keyboard-first</span><strong>Linear command flow:</strong> a global Ctrl+K search jumps straight to any setting and flips the toggle on the spot; the heavy bottom save bar is gone, and inset-grouped rounded cards aggregate the scattered rows.
+    </div>
+  </main>
+
+  <!-- =======================================================================
+       Scheme 2: Bento tile overview
+       ======================================================================= -->
+  <main id="proto-bento" class="prototype-container">
+    <div class="scheme-bento">
+      <div class="bento-header">
+        <div>
+          <h2 style="font-size: 18px; font-weight: 700;">Control center</h2>
+          <p style="font-size: 12px; color: var(--text-dim);">One glance at the agent's runtime panorama and environment metrics</p>
+        </div>
+        <div class="segmented">
+          <button class="active">Overview</button>
+          <button>Inference engine</button>
+          <button>Plugins</button>
+        </div>
+      </div>
+      <div class="bento-body">
+        <div class="bento-grid">
+          <div class="bento-card col-2">
+            <div class="bento-card-title"><span>Active model</span><span style="font-size: 11px; color: var(--accent); background: var(--accent-soft); padding: 2px 8px; border-radius: 99px;">DeepSeek-R1 (API)</span></div>
+            <div style="display: flex; gap: 36px; margin-top: 6px;">
+              <div><div class="bento-stat-num">128K</div><div style="font-size: 12px; color: var(--text-dim);">Context soft cap</div></div>
+              <div><div class="bento-stat-num" style="color: var(--success);">0.42s</div><div style="font-size: 12px; color: var(--text-dim);">First-token latency</div></div>
+              <div><div class="bento-stat-num">98.2%</div><div style="font-size: 12px; color: var(--text-dim);">Prefix cache hit</div></div>
+            </div>
+          </div>
+          <div class="bento-card">
+            <div class="bento-card-title">Interface mode</div>
+            <div style="display: flex; flex-direction: column; gap: 8px;">
+              <div style="display: flex; justify-content: space-between; align-items: center;"><span style="font-size: 13px;">Wide immersive</span><label class="switch"><input type="checkbox" checked /><span class="slider"></span></label></div>
+              <div style="display: flex; justify-content: space-between; align-items: center;"><span style="font-size: 13px;">Compact layout</span><label class="switch"><input type="checkbox" /><span class="slider"></span></label></div>
+            </div>
+          </div>
+          <div class="bento-card col-3">
+            <div class="bento-card-title">Active tool pool (8 / 12)</div>
+            <div style="display: flex; flex-wrap: wrap; gap: 8px;">
+              <span class="tool-chip active">● bash (persistent)</span>
+              <span class="tool-chip active">● read (directory-aware)</span>
+              <span class="tool-chip active">● edit_soft</span>
+              <span class="tool-chip active">● browser_search</span>
+              <span class="tool-chip" style="opacity: 0.5;">○ remote_term (disabled)</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="scheme-analysis">
+      <span class="scheme-badge">Scheme 2 · information flattening</span><strong>Bento tile overview:</strong> the overview is the first screen. The core metrics buried across a dozen tabs (model, tools, latency, MCP connections) become bento tiles — readable at a glance.
+    </div>
+  </main>
+
+  <!-- =======================================================================
+       Scheme 3: Spatial floating capsule flow
+       ======================================================================= -->
+  <main id="proto-spatial" class="prototype-container">
+    <div class="scheme-spatial">
+      <div class="spatial-topbar">
+        <span style="font-size: 14px; font-weight: 600;">Agent preferences</span>
+        <nav class="spatial-pill-nav">
+          <button class="spatial-nav-btn active">General</button>
+          <button class="spatial-nav-btn">Prompts &amp; models</button>
+          <button class="spatial-nav-btn">Extensions</button>
+        </nav>
+      </div>
+      <div class="spatial-content">
+        <div class="spatial-glass-card">
+          <div style="display: flex; justify-content: space-between; align-items: center;">
+            <div>
+              <div style="font-size: 14px; font-weight: 600;">Send-key mapping</div>
+              <div style="font-size: 12px; color: var(--text-dim); margin-top: 2px;">Controls how a chat message is triggered</div>
+            </div>
+            <div class="segmented"><button class="active">Enter to send</button><button>Ctrl + Enter to send</button></div>
+          </div>
+        </div>
+        <div class="spatial-glass-card">
+          <div>
+            <div style="font-size: 14px; font-weight: 600;">Draft stashing &amp; autofocus</div>
+            <div style="font-size: 12px; color: var(--text-dim); margin-top: 2px;">Keeps your input state when switching conversations</div>
+          </div>
+          <div style="display: flex; gap: 12px;">
+            <div style="flex: 1; background: rgba(0,0,0,0.3); border: 1px solid var(--border-subtle); padding: 12px; border-radius: 12px; display: flex; justify-content: space-between; align-items: center;">
+              <span style="font-size: 13px;">Auto-stash unsent drafts</span>
+              <label class="switch"><input type="checkbox" checked /><span class="slider"></span></label>
+            </div>
+            <div style="flex: 1; background: rgba(0,0,0,0.3); border: 1px solid var(--border-subtle); padding: 12px; border-radius: 12px; display: flex; justify-content: space-between; align-items: center;">
+              <span style="font-size: 13px;">Regain focus on tab return</span>
+              <label class="switch"><input type="checkbox" checked /><span class="slider"></span></label>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="scheme-analysis">
+      <span class="scheme-badge">Scheme 3 · spatial glass</span><strong>Spatial floating capsule flow:</strong> modeled on the frosted-glass floating of Apple VisionOS / macOS Tahoe: centered pill navigation up top, side-by-side two-column cards that sharply cut scroll distance.
+    </div>
+  </main>
+
+  <!-- =======================================================================
+       Scheme 4: Cursor split drawer flow
+       ======================================================================= -->
+  <main id="proto-drawer" class="prototype-container">
+    <div class="scheme-drawer">
+      <!-- Left: keep the conversation context visible -->
+      <div class="drawer-chat-mock">
+        <div style="font-size: 12px; color: var(--text-dim); margin-bottom: 8px;">Live conversation window (background stays visible, context fully preserved)</div>
+        <div style="display: flex; flex-direction: column; gap: 12px;">
+          <div class="chat-mock-msg" style="align-self: flex-end; background: rgba(59, 130, 246, 0.15); border-color: rgba(59, 130, 246, 0.3);">
+            Convert this file to TypeScript for me, then test it with bash.
+          </div>
+          <div class="chat-mock-msg" style="align-self: flex-start;">
+            I've already inspected the directory with read and am writing the matching .ts implementation...
+          </div>
+        </div>
+        <div class="chat-mock-input">Message the agent... (chat on the left, tune settings on the right)</div>
+      </div>
+
+      <!-- Right: unobstructed drawer panel -->
+      <aside class="drawer-panel">
+        <div class="drawer-head">
+          <div style="display: flex; align-items: center; gap: 8px;">
+            <span style="font-size: 14px; font-weight: 700;">Live parameter panel</span>
+            <span style="font-size: 11px; color: var(--success); background: var(--success-soft); padding: 2px 6px; border-radius: 4px;">Live Active</span>
+          </div>
+          <button style="background: none; border: none; color: var(--text-muted); cursor: pointer; font-size: 13px;">✕ Collapse</button>
+        </div>
+
+        <div class="drawer-scroll">
+          <div class="drawer-card">
+            <div style="font-size: 13px; font-weight: 600; margin-bottom: 8px;">Session temperature &amp; budget</div>
+            <div style="display: flex; justify-content: space-between; align-items: center;">
+              <span style="font-size: 12px; color: var(--text-muted);">Thinking depth</span>
+              <div class="segmented"><button class="active">Mid</button><button>High</button></div>
+            </div>
+          </div>
+
+          <div class="drawer-card">
+            <div style="font-size: 13px; font-weight: 600; margin-bottom: 8px;">Tool authorization mode</div>
+            <div style="display: flex; flex-direction: column; gap: 8px;">
+              <div style="display: flex; justify-content: space-between; align-items: center;">
+                <span style="font-size: 12.5px;">Terminal takeover (Terminal Bash)</span>
+                <label class="switch"><input type="checkbox" checked /><span class="slider"></span></label>
+              </div>
+              <div style="display: flex; justify-content: space-between; align-items: center;">
+                <span style="font-size: 12.5px;">Directory-aware read (Read Dir)</span>
+                <label class="switch"><input type="checkbox" checked /><span class="slider"></span></label>
+              </div>
+            </div>
+          </div>
+
+          <div class="drawer-card">
+            <div style="font-size: 13px; font-weight: 600; margin-bottom: 4px;">Live system-prompt override</div>
+            <div style="font-size: 11px; color: var(--text-dim); margin-bottom: 8px;">Edits apply on the very next send</div>
+            <textarea style="width: 100%; height: 70px; background: rgba(0,0,0,0.3); border: 1px solid var(--border-subtle); border-radius: 6px; color: #fff; font-size: 12px; padding: 8px; outline: none; font-family: var(--font-mono); resize: none;">You are a senior full-stack engineer. Always be concise.</textarea>
+          </div>
+        </div>
+      </aside>
+    </div>
+    <div class="scheme-analysis">
+      <span class="scheme-badge">Scheme 4 · zero blocking</span><strong>Cursor split drawer flow (Contextual Split Panel):</strong> drop the centered modal entirely. A 440px drawer glides in from the right instead. While you tweak prompts or tool toggles, the conversation stays readable on the left so you can send a test message on the spot — no more "close the modal, test, reopen the modal" whiplash.
+    </div>
+  </main>
+
+  <!-- =======================================================================
+       Scheme 5: Studio full-screen workbench
+       ======================================================================= -->
+  <main id="proto-studio" class="prototype-container">
+    <div class="scheme-studio">
+      <!-- Left: navigation -->
+      <aside class="studio-sidebar">
+        <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 12px; padding: 4px 6px;">
+          <span style="font-size: 14px; font-weight: 700;">Studio preferences center</span>
+        </div>
+        <button class="linear-nav-item active">Core engine &amp; models</button>
+        <button class="linear-nav-item">MCP protocol &amp; external services</button>
+        <button class="linear-nav-item">Plan &amp; reviewer mode</button>
+        <button class="linear-nav-item">Plugin ecosystem &amp; slots</button>
+        <button class="linear-nav-item">Theme &amp; CSS tokens</button>
+        <div style="margin-top: auto; padding: 8px 6px;">
+          <button style="width: 100%; background: rgba(255,255,255,0.06); border: 1px solid var(--border-subtle); color: var(--text-main); padding: 7px; border-radius: 6px; font-size: 12px; cursor: pointer;">&larr; Back to the conversation workspace</button>
+        </div>
+      </aside>
+
+      <!-- Center: main settings stream -->
+      <main class="studio-main">
+        <div>
+          <h2 style="font-size: 20px; font-weight: 700; margin-bottom: 4px;">MCP cluster &amp; service management</h2>
+          <p style="font-size: 13px; color: var(--text-dim);">Configure Model Context Protocol remote service nodes and local stdio processes</p>
+        </div>
+
+        <div class="linear-group-card">
+          <div class="linear-row">
+            <div class="linear-row-info">
+              <span class="linear-row-label">Automatic heartbeat &amp; reconnect</span>
+              <span class="linear-row-desc">Retries when the background MCP process exits or the network drops, so tool calls never throw ENOENT</span>
+            </div>
+            <label class="switch"><input type="checkbox" checked /><span class="slider"></span></label>
+          </div>
+          <div class="linear-row">
+            <div class="linear-row-info">
+              <span class="linear-row-label">Strict security-audit allowlist filter</span>
+              <span class="linear-row-desc">Only executes remote tool declarations whose safety hash matches the approval rule library</span>
+            </div>
+            <label class="switch"><input type="checkbox" checked /><span class="slider"></span></label>
+          </div>
+        </div>
+
+        <div>
+          <h3 style="font-size: 14px; font-weight: 600; margin-bottom: 10px;">Connected MCP service instances (2)</h3>
+          <div style="display: flex; gap: 12px;">
+            <div style="flex: 1; background: var(--bg-elevated); border: 1px solid var(--border-subtle); border-radius: 8px; padding: 12px;">
+              <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
+                <span style="font-weight: 600; font-size: 13px;">github-mcp</span>
+                <span style="font-size: 10.5px; color: var(--success); background: var(--success-soft); padding: 1px 6px; border-radius: 4px;">Online</span>
+              </div>
+              <div style="font-size: 11.5px; color: var(--text-dim);">Stdio / node dist/index.js (3 tools)</div>
+            </div>
+            <div style="flex: 1; background: var(--bg-elevated); border: 1px solid var(--border-subtle); border-radius: 8px; padding: 12px;">
+              <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
+                <span style="font-weight: 600; font-size: 13px;">filesystem-sandbox</span>
+                <span style="font-size: 10.5px; color: var(--success); background: var(--success-soft); padding: 1px 6px; border-radius: 4px;">Online</span>
+              </div>
+              <div style="font-size: 11.5px; color: var(--text-dim);">SSE / port 9872 (8 tools)</div>
+            </div>
+          </div>
+        </div>
+      </main>
+
+      <!-- Right: inline contextual help -->
+      <aside class="studio-inspector">
+        <div class="inspector-title">Configuration guidance</div>
+        <div class="inspector-box">
+          <strong>What is MCP?</strong>
+          <p style="margin-top: 6px;">The Model Context Protocol is the industry's common integration protocol for wiring external resources into an agent. It exposes tools and resource prompts on demand, locally or remotely.</p>
+        </div>
+        <div class="inspector-box">
+          <strong>Security note:</strong>
+          <p style="margin-top: 6px;">Never expose a root-privileged executor directly to an untrusted agent. Pair it with the three-tier approval rules.</p>
+        </div>
+      </aside>
+    </div>
+    <div class="scheme-analysis">
+      <span class="scheme-badge">Scheme 5 · pro IDE grade</span><strong>Studio full-screen workbench (Vercel / Notion mode):</strong> for when the project ecosystem outgrows a settings panel (MCP, scheduled jobs, subagent template libraries, DSH). Flip to a three-column wide workbench: navigation left, the settings stream in the middle, integrated live docs and runtime diagnostics on the right — free at last of the cramped, suffocating 800px dialog.
+    </div>
+  </main>
+
+  <!-- =======================================================================
+       Scheme 6: AI intent-driven flow (Intent-Driven Settings)
+       ======================================================================= -->
+  <main id="proto-intent" class="prototype-container">
+    <div class="scheme-intent">
+      <div class="intent-hero">
+        <div style="display: flex; align-items: center; gap: 8px;">
+          <span style="font-size: 16px; font-weight: 700; color: #fff;">Generative intent configuration</span>
+          <span style="font-size: 11px; background: var(--purple-soft); color: var(--purple); padding: 2px 8px; border-radius: 4px; font-weight: 600;">AI-Native 2025+</span>
+        </div>
+        <p style="font-size: 12.5px; color: var(--text-dim); margin-top: 4px;">Don't hunt through 100+ options by hand — describe your working context in natural language and the agent computes the config patch</p>
+
+        <div class="intent-ai-input-wrap">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="color: var(--purple);"><path d="M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4M18 12h4M4.93 19.07l2.83-2.83M16.24 7.76l2.83-2.83"/></svg>
+          <input type="text" class="intent-ai-input" id="intent-input" value="I'm refactoring a critical production library — turn on the strictest safety guard, use read-only tools only, and max out thinking depth" />
+          <button class="intent-apply-btn" onclick="simulateIntent()">Analyze &amp; apply</button>
+        </div>
+      </div>
+
+      <div class="intent-diff-list" id="intent-diffs">
+        <div style="font-size: 12.5px; font-weight: 600; color: var(--text-muted); margin-bottom: 2px;">Computed config patch (Diff Preview):</div>
+        
+        <div class="diff-item">
+          <div>
+            <div style="font-size: 13.5px; font-weight: 500;">Thinking budget (Thinking Level)</div>
+            <div style="font-size: 12px; color: var(--text-dim); margin-top: 2px;">Raise to the highest reasoning depth so the refactor logic has no holes</div>
+          </div>
+          <div style="display: flex; align-items: center; gap: 8px;">
+            <span class="diff-badge-old">medium</span>
+            <span style="color: var(--text-dim);">&rarr;</span>
+            <span class="diff-badge-new">max (max depth)</span>
+          </div>
+        </div>
+
+        <div class="diff-item">
+          <div>
+            <div style="font-size: 13.5px; font-weight: 500;">Hard gate on write tools (Write Protection)</div>
+            <div style="font-size: 12px; color: var(--text-dim); margin-top: 2px;">Auto-disables edit / write / terminalBash write operations</div>
+          </div>
+          <div style="display: flex; align-items: center; gap: 8px;">
+            <span class="diff-badge-old">allow all</span>
+            <span style="color: var(--text-dim);">&rarr;</span>
+            <span class="diff-badge-new">safe read-only</span>
+          </div>
+        </div>
+
+        <div class="diff-item">
+          <div>
+            <div style="font-size: 13.5px; font-weight: 500;">Reviewer delegate mode (Delegate Mode)</div>
+            <div style="font-size: 12px; color: var(--text-dim); margin-top: 2px;">The main session acts as a read-only architecture reviewer; code generation is dispatched to an isolated sandbox</div>
+          </div>
+          <div style="display: flex; align-items: center; gap: 8px;">
+            <span class="diff-badge-old">off</span>
+            <span style="color: var(--text-dim);">&rarr;</span>
+            <span class="diff-badge-new">forced on</span>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="scheme-analysis">
+      <span class="scheme-badge">Scheme 6 · intent-driven</span><strong>AI-native intent-driven flow:</strong> "let the agent configure the agent". Type something like "enter geek-minimal mode" or "I'm about to refactor the core module, leave no room for error" and the backend generates and applies a SettingsPatch — one click, many cross-tab settings wired together!
+    </div>
+  </main>
+
+  <script>
+    function switchProto(type) {
+      document.querySelectorAll('.proto-btn').forEach(btn => btn.classList.remove('active'));
+      document.querySelectorAll('.prototype-container').forEach(c => c.classList.remove('active'));
+      
+      const targetBtn = Array.from(document.querySelectorAll('.proto-btn')).find(b => b.getAttribute('onclick').includes(type));
+      if (targetBtn) targetBtn.classList.add('active');
+
+      const targetContainer = document.getElementById('proto-' + type);
+      if (targetContainer) targetContainer.classList.add('active');
+    }
+
+    function simulateIntent() {
+      const input = document.getElementById('intent-input');
+      const diffs = document.getElementById('intent-diffs');
+      diffs.style.opacity = '0.5';
+      setTimeout(() => {
+        diffs.style.opacity = '1';
+        alert('Intent parsed successfully! The settings patch has been applied to the current session.');
+      }, 400);
+    }
+  </script>
+</body>
+</html>
+
+
+

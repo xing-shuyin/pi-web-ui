@@ -1,3 +1,5 @@
+[English](./README.en.md) · **简体中文** · [繁體中文](./README.zh-TW.md)
+
 # 📓 笔记（notes 插件）
 
 前沿闪念速记 · 现代卡片流 · 定时提醒 · 日历视图，装成 pi-web-ui 的界面插件：

@@ -1,3 +1,5 @@
+[English](./README.en.md) · **简体中文** · [繁體中文](./README.zh-TW.md)
+
 # 漫步B站 bili-stroll 0.1（与刷B站 bili-scroll 并存的新版本）
 
 > 旧版「刷B站」（bili-scroll）原样保留：关键词巡检 → 字幕排雷 → 日报，逻辑不动。

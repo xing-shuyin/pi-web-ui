@@ -1,3 +1,5 @@
+[English](./README.en.md) · **简体中文** · [繁體中文](./README.zh-TW.md)
+
 # mermaid 插件（renderer 插件）
 
 把消息里的 ` ```mermaid ` 围栏渲染为 SVG 图表——**fenced-code 渲染插件机制**的第一个实现。

@@ -1,3 +1,5 @@
+[English](./architecture-canvas.en.md) · **简体中文** · [繁體中文](./architecture-canvas.zh-TW.md)
+
 # Canvas 协同：编辑版本、运行与产物
 
 画布入口是 `web/src/components/canvas/CanvasStudio.tsx`，独立 WebSocket 在 `canvas-client.ts`。服务端协议单源为 `server/protocol.ts`；`canvas-dispatch.ts` 处理用户请求，`canvas-agent-tool.ts` 提供 AI 编辑和调试入口。两者共用存储及调度器。

@@ -1,3 +1,5 @@
+[English](./README.en.md) · **简体中文** · [繁體中文](./README.zh-TW.md)
+
 # browser-use · 常驻 Chrome 自动化与智能搜索插件
 
 基于 [DrissionPage](https://www.drissionpage.cn) 的常驻 Chrome 自动化插件，为 AI 注册**单一**原生工具 `browser_use`：页面交互与联网搜索（`action: "search"`）合一，省下一份工具定义与一次决策成本。

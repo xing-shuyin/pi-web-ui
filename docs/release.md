@@ -1,3 +1,5 @@
+[English](./release.en.md) · **简体中文** · [繁體中文](./release.zh-TW.md)
+
 # 发布流程
 
 > npm 发布者账号是 `xingshuyin`（`npm whoami` 验证）。`dist/server/`、`web/dist/` 被 gitignore 不进 git，但 `package.json` 的 `files` 白名单会把它们打进 npm 包；`dist/` 根目录的本地测试文件与桌面产物不进入 npm 包。`prepublishOnly` 会编译 P2P 助手、检查 Windows 桌面编码组件及其源码和重链接材料，再执行 `npm run build`；服务端构建先清理 `dist/server/`，避免已删除源码的旧输出留在发布包。发布前必须先准备下文所述的 Windows 构建产物。

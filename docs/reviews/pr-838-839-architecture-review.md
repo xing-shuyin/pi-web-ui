@@ -1,3 +1,5 @@
+[English](./pr-838-839-architecture-review.en.md) · **简体中文** · [繁體中文](./pr-838-839-architecture-review.zh-TW.md)
+
 # PR #838 / #839 技术审查与架构演进建议
 
 审查对象：[PR #838](https://github.com/xing-shuyin/pi-web-ui/pull/838)，合并提交 `9df07225e4a30b7979d9ffb2a8a9e071b25e4b55`；[PR #839](https://github.com/xing-shuyin/pi-web-ui/pull/839)，合并提交 `d5ee3b203659758652d063d2070423cb4638c15a`。结论以这些提交为准，未将当前工作区的其他改动计入 PR。

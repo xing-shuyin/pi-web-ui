@@ -1,0 +1,901 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>pi-web-ui Plugin Market Modernisation — Redesign Prototypes</title>
+  <style>
+    :root {
+      --bg: #0b0d10;
+      --bg-elev: #13161c;
+      --bg-elev2: #1a1e27;
+      --bg-hover: rgba(255, 255, 255, 0.04);
+      --border-soft: rgba(255, 255, 255, 0.08);
+      --border-focus: #3b82f6;
+      --accent: #3b82f6;
+      --accent-glow: rgba(59, 130, 246, 0.25);
+      --accent-soft: rgba(59, 130, 246, 0.12);
+      --accent-contrast: #ffffff;
+      --text: #f8fafc;
+      --text-dim: #94a3b8;
+      --text-faint: #64748b;
+      --green: #10b981;
+      --green-soft: rgba(16, 185, 129, 0.12);
+      --amber: #f59e0b;
+      --amber-soft: rgba(245, 158, 11, 0.12);
+      --red: #ef4444;
+      --red-soft: rgba(239, 68, 68, 0.12);
+      --radius-sm: 8px;
+      --radius-md: 12px;
+      --radius-lg: 16px;
+      --font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "PingFang SC", sans-serif;
+      --font-mono: ui-monospace, SFMono-Regular, Menlo, Monaco, monospace;
+      --transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: var(--font-sans);
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      padding: 24px 16px;
+      background-image: 
+        radial-gradient(ellipse 60% 40% at 50% 0%, rgba(59, 130, 246, 0.12), transparent),
+        radial-gradient(ellipse 40% 30% at 85% 80%, rgba(139, 92, 246, 0.08), transparent);
+    }
+
+    /* 顶部导航与方案切换 */
+    .header-bar {
+      width: 100%;
+      max-width: 1020px;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+      margin-bottom: 20px;
+      text-align: center;
+    }
+    .header-title {
+      font-size: 24px;
+      font-weight: 800;
+      letter-spacing: -0.5px;
+      background: linear-gradient(135deg, #fff 40%, #94a3b8);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+    }
+    .header-subtitle {
+      font-size: 13px;
+      color: var(--text-dim);
+    }
+
+    .proto-switcher {
+      display: inline-flex;
+      background: rgba(255, 255, 255, 0.05);
+      border: 1px solid var(--border-soft);
+      border-radius: 999px;
+      padding: 4px;
+      margin: 0 auto;
+      backdrop-filter: blur(12px);
+    }
+    .proto-btn {
+      background: transparent;
+      border: none;
+      color: var(--text-dim);
+      font-size: 13px;
+      font-weight: 500;
+      padding: 7px 18px;
+      border-radius: 999px;
+      cursor: pointer;
+      transition: var(--transition);
+    }
+    .proto-btn:hover { color: var(--text); }
+    .proto-btn.active {
+      background: var(--accent);
+      color: #fff;
+      box-shadow: 0 2px 12px var(--accent-glow);
+    }
+
+    .market-container {
+      width: 100%;
+      max-width: 1020px;
+      height: 640px;
+      background: var(--bg-elev);
+      border: 1px solid var(--border-soft);
+      border-radius: var(--radius-lg);
+      box-shadow: 0 24px 60px rgba(0, 0, 0, 0.65);
+      overflow: hidden;
+      display: none;
+      position: relative;
+    }
+    .market-container.active { display: flex; flex-direction: column; }
+
+    /* 通用徽标 */
+    .badge {
+      font-size: 11px;
+      font-weight: 600;
+      padding: 2px 7px;
+      border-radius: 4px;
+      line-height: 1.3;
+      white-space: nowrap;
+    }
+    .badge-builtin { background: rgba(56, 189, 248, 0.12); color: #38bdf8; }
+    .badge-custom { background: var(--amber-soft); color: var(--amber); }
+    .badge-installed { background: var(--green-soft); color: var(--green); }
+
+    /* =========================================================================
+       方案一：【Raycast / Linear 风格】双列 Bento 网格 + 抽屉详情
+       ========================================================================= */
+    .bento-topbar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      padding: 14px 20px;
+      border-bottom: 1px solid var(--border-soft);
+      background: var(--bg-elev);
+    }
+
+    .bento-search-box {
+      flex: 1;
+      max-width: 320px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      background: var(--bg-elev2);
+      border: 1px solid var(--border-soft);
+      border-radius: var(--radius-sm);
+      padding: 6px 12px;
+      transition: var(--transition);
+    }
+    .bento-search-box:focus-within {
+      border-color: var(--border-focus);
+      box-shadow: 0 0 0 2px var(--accent-soft);
+    }
+    .bento-search-input {
+      background: transparent;
+      border: none;
+      outline: none;
+      color: var(--text);
+      font-size: 13px;
+      width: 100%;
+    }
+
+    .bento-tabs {
+      display: flex;
+      gap: 4px;
+      background: rgba(0, 0, 0, 0.3);
+      padding: 3px;
+      border-radius: var(--radius-sm);
+      border: 1px solid var(--border-soft);
+    }
+    .bento-tab {
+      background: transparent;
+      border: none;
+      color: var(--text-dim);
+      font-size: 12.5px;
+      padding: 5px 12px;
+      border-radius: 6px;
+      cursor: pointer;
+      transition: var(--transition);
+    }
+    .bento-tab:hover { color: var(--text); }
+    .bento-tab.active {
+      background: var(--bg-elev2);
+      color: #fff;
+      font-weight: 600;
+    }
+
+    .bento-actions-group {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .bento-action-btn {
+      background: var(--bg-elev2);
+      border: 1px solid var(--border-soft);
+      color: var(--text-dim);
+      font-size: 12.5px;
+      padding: 6px 12px;
+      border-radius: var(--radius-sm);
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      transition: var(--transition);
+    }
+    .bento-action-btn:hover { color: var(--text); border-color: rgba(255,255,255,0.18); }
+
+    /* 网格列表流 */
+    .bento-grid-scroll {
+      flex: 1;
+      overflow-y: auto;
+      padding: 20px;
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 14px;
+      align-content: start;
+    }
+
+    .plugin-bento-card {
+      background: var(--bg-elev2);
+      border: 1px solid var(--border-soft);
+      border-radius: var(--radius-md);
+      padding: 16px;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+      transition: var(--transition);
+      cursor: pointer;
+      position: relative;
+    }
+    .plugin-bento-card:hover {
+      border-color: rgba(255, 255, 255, 0.16);
+      transform: translateY(-1px);
+      box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35);
+    }
+
+    .card-top {
+      display: flex;
+      align-items: flex-start;
+      gap: 12px;
+    }
+    .card-icon {
+      width: 42px;
+      height: 42px;
+      border-radius: 10px;
+      background: rgba(255, 255, 255, 0.05);
+      border: 1px solid var(--border-soft);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 20px;
+      flex-shrink: 0;
+    }
+    .card-title-group {
+      flex: 1;
+      min-width: 0;
+      display: flex;
+      flex-direction: column;
+      gap: 3px;
+    }
+    .card-title {
+      font-size: 14.5px;
+      font-weight: 700;
+      color: var(--text);
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .card-source-sub {
+      font-size: 11px;
+      color: var(--text-faint);
+      font-family: var(--font-mono);
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    /* 描述最多保留 2 行截断 */
+    .card-desc {
+      font-size: 12.5px;
+      color: var(--text-dim);
+      line-height: 1.5;
+      display: -webkit-box;
+      -webkit-line-clamp: 2;
+      -webkit-box-orient: vertical;
+      overflow: hidden;
+      min-height: 38px;
+    }
+
+    .card-footer {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      border-top: 1px solid rgba(255, 255, 255, 0.05);
+      padding-top: 10px;
+      margin-top: auto;
+    }
+
+    .btn-pill {
+      font-size: 12px;
+      font-weight: 600;
+      padding: 5px 14px;
+      border-radius: 999px;
+      cursor: pointer;
+      border: none;
+      transition: var(--transition);
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .btn-install {
+      background: var(--accent);
+      color: #fff;
+    }
+    .btn-install:hover {
+      box-shadow: 0 0 12px var(--accent-glow);
+    }
+    .btn-installed {
+      background: rgba(255, 255, 255, 0.08);
+      color: var(--text-dim);
+    }
+    .btn-installed:hover {
+      background: rgba(255, 255, 255, 0.14);
+      color: var(--text);
+    }
+    .btn-update {
+      background: #38bdf8;
+      color: #0b0d10;
+    }
+
+    /* 右侧滑出的详情抽屉 */
+    .detail-drawer {
+      position: absolute;
+      top: 0; right: 0; bottom: 0;
+      width: 480px;
+      background: #151820;
+      border-left: 1px solid var(--border-soft);
+      box-shadow: -12px 0 40px rgba(0, 0, 0, 0.6);
+      display: flex;
+      flex-direction: column;
+      z-index: 10;
+      animation: slideDrawer 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+    }
+    @keyframes slideDrawer {
+      from { transform: translateX(100%); }
+      to { transform: translateX(0); }
+    }
+    .drawer-head {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 16px 20px;
+      border-bottom: 1px solid var(--border-soft);
+    }
+    .drawer-body {
+      flex: 1;
+      overflow-y: auto;
+      padding: 24px 20px;
+      display: flex;
+      flex-direction: column;
+      gap: 18px;
+    }
+
+    /* =========================================================================
+       方案二：【VSCode / Cursor 风格】主从双栏工作台 (Master-Detail)
+       ========================================================================= */
+    .split-layout {
+      flex: 1;
+      display: grid;
+      grid-template-columns: 360px 1fr;
+      min-height: 0;
+    }
+    .split-master {
+      border-right: 1px solid var(--border-soft);
+      display: flex;
+      flex-direction: column;
+      background: rgba(14, 17, 22, 0.5);
+    }
+    .split-master-search {
+      padding: 12px 14px;
+      border-bottom: 1px solid var(--border-soft);
+    }
+    .split-list {
+      flex: 1;
+      overflow-y: auto;
+      padding: 8px;
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+    }
+    .split-item {
+      padding: 10px 12px;
+      border-radius: var(--radius-sm);
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      cursor: pointer;
+      transition: var(--transition);
+      border: 1px solid transparent;
+    }
+    .split-item:hover {
+      background: var(--bg-hover);
+    }
+    .split-item.active {
+      background: var(--accent-soft);
+      border-color: rgba(59, 130, 246, 0.3);
+    }
+    .split-item-info {
+      flex: 1;
+      min-width: 0;
+    }
+    .split-item-title {
+      font-size: 13.5px;
+      font-weight: 600;
+      color: var(--text);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+    .split-item-desc {
+      font-size: 12px;
+      color: var(--text-dim);
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      margin-top: 2px;
+    }
+
+    .split-detail {
+      flex: 1;
+      overflow-y: auto;
+      padding: 32px 36px;
+      display: flex;
+      flex-direction: column;
+      gap: 24px;
+      background: var(--bg-elev);
+    }
+    .detail-hero {
+      display: flex;
+      align-items: flex-start;
+      gap: 20px;
+    }
+    .detail-hero-icon {
+      width: 64px;
+      height: 64px;
+      border-radius: 14px;
+      background: var(--bg-elev2);
+      border: 1px solid var(--border-soft);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 32px;
+      flex-shrink: 0;
+    }
+    .detail-hero-meta {
+      flex: 1;
+    }
+    .detail-hero-title {
+      font-size: 22px;
+      font-weight: 700;
+      margin-bottom: 4px;
+    }
+
+    /* =========================================================================
+       方案三：【现代单行卡片流】Smart Row（精炼紧凑单行）
+       ========================================================================= */
+    .smart-row-list {
+      flex: 1;
+      overflow-y: auto;
+      padding: 16px 20px;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+    .smart-row {
+      background: var(--bg-elev2);
+      border: 1px solid var(--border-soft);
+      border-radius: var(--radius-md);
+      padding: 12px 18px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 16px;
+      transition: var(--transition);
+    }
+    .smart-row:hover {
+      background: rgba(255, 255, 255, 0.02);
+      border-color: rgba(255, 255, 255, 0.14);
+    }
+    .smart-row-left {
+      display: flex;
+      align-items: center;
+      gap: 14px;
+      flex: 1;
+      min-width: 0;
+    }
+    .smart-row-icon {
+      width: 36px;
+      height: 36px;
+      border-radius: 8px;
+      background: rgba(255, 255, 255, 0.05);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 18px;
+      flex-shrink: 0;
+    }
+    .smart-row-content {
+      flex: 1;
+      min-width: 0;
+    }
+    .smart-row-head {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .smart-row-name {
+      font-size: 14px;
+      font-weight: 600;
+      color: var(--text);
+    }
+    .smart-row-sub {
+      font-size: 12px;
+      color: var(--text-dim);
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      margin-top: 2px;
+    }
+    .smart-row-actions {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      flex-shrink: 0;
+    }
+  </style>
+</head>
+<body>
+<div data-docs-i18n-switch style="position:fixed;top:8px;right:12px;z-index:2147483647;font:12px/1.6 -apple-system,system-ui,sans-serif;background:rgba(15,17,22,.78);color:#fff;padding:4px 12px;border-radius:999px;box-shadow:0 2px 10px rgba(0,0,0,.35)"><a href="./plugin-market-redesign.html" style="color:#fff;text-decoration:none">简体中文</a> · <strong>English</strong> · <a href="./plugin-market-redesign.zh-TW.html" style="color:#fff;text-decoration:none">繁體中文</a></div>
+
+
+
+  <header class="header-bar">
+    <h1 class="header-title">pi-web-ui plugin market redesign</h1>
+    <p class="header-subtitle">Fixes "walls of text, button sprawl, a cluttered top bar": collapse the information hierarchy and give the extension market back its clean, high-signal feel</p>
+
+    <div class="proto-switcher">
+      <button class="proto-btn active" onclick="switchProto('bento')">🍱 Option 1: Raycast two-column grid + detail drawer</button>
+      <button class="proto-btn" onclick="switchProto('split')">🖥️ Option 2: VS Code master-detail workbench</button>
+      <button class="proto-btn" onclick="switchProto('smart')">⚡ Option 3: refined single-row stream (Smart Compact)</button>
+    </div>
+  </header>
+
+  <!-- =======================================================================
+       Option one: Raycast two-column grid + detail drawer
+       ======================================================================= -->
+  <main id="market-bento" class="market-container active">
+    <!-- Aggregated top bar: search + segmented filter + unified management buttons -->
+    <div class="bento-topbar">
+      <div class="bento-search-box">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="color: var(--text-faint);"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
+        <input type="text" class="bento-search-input" placeholder="Search 41 plugins..." />
+      </div>
+
+      <div class="bento-tabs">
+        <button class="bento-tab active">All (41)</button>
+        <button class="bento-tab">Official built-ins (29)</button>
+        <button class="bento-tab">Custom (12)</button>
+      </div>
+
+      <div class="bento-actions-group">
+        <button class="bento-action-btn" title="Add or sync plugins">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14M5 12h14"/></svg>
+          Add / sync
+        </button>
+        <button class="bento-action-btn" title="Open the official GitHub repository">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>
+          Market repo
+        </button>
+      </div>
+    </div>
+
+    <!-- Two-column bento card stream -->
+    <div class="bento-grid-scroll">
+      <!-- Card 1: SFTP (the longest entry in the original) -->
+      <div class="plugin-bento-card" onclick="openDrawer('sftp')">
+        <div class="card-top">
+          <div class="card-icon" style="background: rgba(16, 185, 129, 0.1); color: var(--green);">☁️</div>
+          <div class="card-title-group">
+            <div class="card-title">
+              sftp
+              <span class="badge badge-installed">Installed</span>
+              <span class="badge badge-builtin">Built-in</span>
+            </div>
+            <div class="card-source-sub">pi-web-ui/plugins/sftp</div>
+          </div>
+        </div>
+        <div class="card-desc">
+          Project-level SFTP directory sync: multi-environment profiles, diff-based upload, concurrent streaming transfer, plus native sftp tools registered with the AI.
+        </div>
+        <div class="card-footer">
+          <span style="font-size: 11px; color: var(--text-faint);">Version v1.4.0 · 3 tools</span>
+          <button class="btn-pill btn-installed" onclick="event.stopPropagation();">Manage</button>
+        </div>
+      </div>
+
+      <!-- Card 2: VSCode Editor -->
+      <div class="plugin-bento-card" onclick="openDrawer('vscode')">
+        <div class="card-top">
+          <div class="card-icon" style="background: rgba(59, 130, 246, 0.1); color: var(--accent);">💻</div>
+          <div class="card-title-group">
+            <div class="card-title">
+              vscode-editor
+              <span class="badge badge-custom">Custom</span>
+            </div>
+            <div class="card-source-sub">pi-web-ui/plugins/vscode-editor</div>
+          </div>
+        </div>
+        <div class="card-desc">
+          VS Code-style workbench: multi-root file tree + CodeMirror editor + bottom terminal + Remote-SSH / SFTP sync.
+        </div>
+        <div class="card-footer">
+          <span style="font-size: 11px; color: var(--text-faint);">UI extension · global workbench</span>
+          <button class="btn-pill btn-install" onclick="event.stopPropagation();">Install</button>
+        </div>
+      </div>
+
+      <!-- Card 3: DB Client -->
+      <div class="plugin-bento-card" onclick="openDrawer('db')">
+        <div class="card-top">
+          <div class="card-icon" style="background: rgba(245, 158, 11, 0.1); color: var(--amber);">🗄️</div>
+          <div class="card-title-group">
+            <div class="card-title">
+              db-client
+              <span class="badge badge-custom">Custom</span>
+            </div>
+            <div class="card-source-sub">pi-web-ui/plugins/db-client</div>
+          </div>
+        </div>
+        <div class="card-desc">
+          Database connection manager: browse schemas and run smart SQL queries across MySQL / PostgreSQL / SQLite / MongoDB / Redis.
+        </div>
+        <div class="card-footer">
+          <span style="font-size: 11px; color: var(--text-faint);">Six mainstream databases</span>
+          <button class="btn-pill btn-install" onclick="event.stopPropagation();">Install</button>
+        </div>
+      </div>
+
+      <!-- Card 4: Webmail -->
+      <div class="plugin-bento-card" onclick="openDrawer('webmail')">
+        <div class="card-top">
+          <div class="card-icon" style="background: rgba(168, 85, 247, 0.1); color: #a855f7;">✉️</div>
+          <div class="card-title-group">
+            <div class="card-title">
+              webmail
+              <span class="badge badge-custom">Custom</span>
+            </div>
+            <div class="card-source-sub">pi-web-ui/plugins/webmail</div>
+          </div>
+        </div>
+        <div class="card-desc">
+          Webmail: IMAP inbox + SMTP sending + instant new-mail notifications, and the AI can be authorised to triage the inbox and draft replies directly.
+        </div>
+        <div class="card-footer">
+          <span style="font-size: 11px; color: var(--text-faint);">AI mail assistant</span>
+          <button class="btn-pill btn-install" onclick="event.stopPropagation();">Install</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Slide-in detail drawer (opened from a card; keeps long text out of the grid) -->
+    <div id="drawer" class="detail-drawer" style="display: none;">
+      <div class="drawer-head">
+        <span style="font-size: 14px; font-weight: 700;">Plugin specification</span>
+        <button onclick="closeDrawer()" style="background: none; border: none; color: var(--text-dim); cursor: pointer; font-size: 16px;">✕</button>
+      </div>
+      <div class="drawer-body">
+        <div style="display: flex; align-items: center; gap: 14px;">
+          <div class="card-icon" style="width: 52px; height: 52px; font-size: 26px;">☁️</div>
+          <div>
+            <h3 style="font-size: 18px; font-weight: 700;">sftp (project-level sync)</h3>
+            <div style="font-size: 12px; color: var(--text-faint); margin-top: 2px;">Source: xing-shuyin/pi-web-ui/plugins/sftp</div>
+          </div>
+        </div>
+
+        <div style="display: flex; gap: 10px;">
+          <button class="btn-pill btn-install" style="flex: 1; justify-content: center; height: 34px;">Reinstall / update</button>
+          <button class="btn-pill btn-installed" style="height: 34px; color: var(--red);">Uninstall</button>
+        </div>
+
+        <div>
+          <div style="font-size: 13px; font-weight: 600; margin-bottom: 8px;">Full capability guide and parameter reference</div>
+          <div style="font-size: 12.5px; color: var(--text-dim); line-height: 1.6; background: rgba(0,0,0,0.3); padding: 14px; border-radius: 8px; border: 1px solid var(--border-soft);">
+            <p>• <strong>Config storage</strong>: per-project .pi/sftp.json overrides; diff first, then transfer;</p>
+            <p style="margin-top: 6px;">• <strong>Destructive-op guard</strong>: trash can is reversible, transfers stream concurrently and land atomically;</p>
+            <p style="margin-top: 6px;">• <strong>AI-registered tools</strong>: exposes eight safe actions to the agent — status / sync / plan / search and friends.</p>
+          </div>
+        </div>
+
+        <div>
+          <div style="font-size: 13px; font-weight: 600; margin-bottom: 8px;">Native tools registered with the agent (8)</div>
+          <div style="display: flex; flex-wrap: wrap; gap: 6px;">
+            <span style="font-size: 11px; background: rgba(255,255,255,0.06); padding: 3px 8px; border-radius: 4px; font-family: var(--font-mono);">sftp_sync</span>
+            <span style="font-size: 11px; background: rgba(255,255,255,0.06); padding: 3px 8px; border-radius: 4px; font-family: var(--font-mono);">sftp_diff</span>
+            <span style="font-size: 11px; background: rgba(255,255,255,0.06); padding: 3px 8px; border-radius: 4px; font-family: var(--font-mono);">sftp_upload</span>
+            <span style="font-size: 11px; background: rgba(255,255,255,0.06); padding: 3px 8px; border-radius: 4px; font-family: var(--font-mono);">sftp_ls</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </main>
+
+  <!-- =======================================================================
+       Option two: VS Code two-pane master-detail workbench
+       ======================================================================= -->
+  <main id="market-split" class="market-container">
+    <div class="split-layout">
+      <!-- Left: high-density list -->
+      <aside class="split-master">
+        <div class="split-master-search">
+          <input type="text" class="bento-search-input" style="background: var(--bg-elev2); padding: 6px 10px; border-radius: 6px; border: 1px solid var(--border-soft);" placeholder="Quick filter..." />
+        </div>
+        <div class="split-list">
+          <div class="split-item active">
+            <span style="font-size: 20px;">☁️</span>
+            <div class="split-item-info">
+              <div class="split-item-title">
+                <span>sftp</span>
+                <span class="badge badge-installed">Installed</span>
+              </div>
+              <div class="split-item-desc">Project-level SFTP directory sync with incremental diff upload</div>
+            </div>
+          </div>
+          <div class="split-item">
+            <span style="font-size: 20px;">💻</span>
+            <div class="split-item-info">
+              <div class="split-item-title">
+                <span>vscode-editor</span>
+                <span class="badge badge-custom">Custom</span>
+              </div>
+              <div class="split-item-desc">VS Code-style multi-root file tree and code editor</div>
+            </div>
+          </div>
+          <div class="split-item">
+            <span style="font-size: 20px;">🗄️</span>
+            <div class="split-item-info">
+              <div class="split-item-title">
+                <span>db-client</span>
+                <span class="badge badge-custom">Custom</span>
+              </div>
+              <div class="split-item-desc">Multi-driver database connections and SQL queries</div>
+            </div>
+          </div>
+          <div class="split-item">
+            <span style="font-size: 20px;">✉️</span>
+            <div class="split-item-info">
+              <div class="split-item-title">
+                <span>webmail</span>
+                <span class="badge badge-custom">Custom</span>
+              </div>
+              <div class="split-item-desc">Webmail client with IMAP/SMTP bridge</div>
+            </div>
+          </div>
+        </div>
+      </aside>
+
+      <!-- Right: full-screen markdown-grade detail -->
+      <section class="split-detail">
+        <div class="detail-hero">
+          <div class="detail-hero-icon">☁️</div>
+          <div class="detail-hero-meta">
+            <div class="detail-hero-title">sftp sync service</div>
+            <div style="font-size: 13px; color: var(--text-dim); margin-bottom: 12px;">Official built-in · version 1.4.0 · author: xing-shuyin</div>
+            <div style="display: flex; gap: 10px;">
+              <button class="btn-pill btn-installed">Uninstall</button>
+              <button class="btn-pill" style="background: rgba(255,255,255,0.06); color: var(--text);">Official docs</button>
+            </div>
+          </div>
+        </div>
+
+        <div>
+          <h3 style="font-size: 15px; font-weight: 700; margin-bottom: 8px;">Capabilities and configuration manual</h3>
+          <div style="font-size: 13px; color: var(--text-dim); line-height: 1.6;">
+            Project-level SFTP sync: configuration lives in .pi/sftp.json at the root. Diffs are computed up front, files transfer in parallel and can be stopped at any time. From the panel you can manually upload or download a single file or a whole directory tree, and native sftp tools are registered with the AI.
+          </div>
+        </div>
+      </section>
+    </div>
+  </main>
+
+  <!-- =======================================================================
+       Option three: refined single-row stream (Smart Compact)
+       ======================================================================= -->
+  <main id="market-smart" class="market-container">
+    <div class="bento-topbar">
+      <div class="bento-search-box">
+        <input type="text" class="bento-search-input" placeholder="Search by name or description..." />
+      </div>
+      <div class="bento-tabs">
+        <button class="bento-tab active">All (41)</button>
+        <button class="bento-tab">Built-in (29)</button>
+        <button class="bento-tab">Custom (12)</button>
+      </div>
+    </div>
+
+    <div class="smart-row-list">
+      <div class="smart-row">
+        <div class="smart-row-left">
+          <div class="smart-row-icon">☁️</div>
+          <div class="smart-row-content">
+            <div class="smart-row-head">
+              <span class="smart-row-name">sftp</span>
+              <span class="badge badge-installed">Installed</span>
+              <span class="badge badge-builtin">Built-in</span>
+            </div>
+            <div class="smart-row-sub">Project-level SFTP directory sync: config in .pi/sftp.json, diff first then transfer, streaming and atomic writes</div>
+          </div>
+        </div>
+        <div class="smart-row-actions">
+          <button class="btn-pill btn-installed">Installed</button>
+        </div>
+      </div>
+
+      <div class="smart-row">
+        <div class="smart-row-left">
+          <div class="smart-row-icon">💻</div>
+          <div class="smart-row-content">
+            <div class="smart-row-head">
+              <span class="smart-row-name">vscode-editor</span>
+              <span class="badge badge-custom">Custom</span>
+            </div>
+            <div class="smart-row-sub">VS Code-style workbench: multi-root file tree + CodeMirror editor + bottom terminal + Remote-SSH</div>
+          </div>
+        </div>
+        <div class="smart-row-actions">
+          <button class="btn-pill btn-install">Install</button>
+        </div>
+      </div>
+
+      <div class="smart-row">
+        <div class="smart-row-left">
+          <div class="smart-row-icon">🗄️</div>
+          <div class="smart-row-content">
+            <div class="smart-row-head">
+              <span class="smart-row-name">db-client</span>
+              <span class="badge badge-custom">Custom</span>
+            </div>
+            <div class="smart-row-sub">Database manager: schemas and SQL queries for MySQL / PostgreSQL / SQLite / MongoDB / Redis</div>
+          </div>
+        </div>
+        <div class="smart-row-actions">
+          <button class="btn-pill btn-install">Install</button>
+        </div>
+      </div>
+
+      <div class="smart-row">
+        <div class="smart-row-left">
+          <div class="smart-row-icon">✉️</div>
+          <div class="smart-row-content">
+            <div class="smart-row-head">
+              <span class="smart-row-name">webmail</span>
+              <span class="badge badge-custom">Custom</span>
+            </div>
+            <div class="smart-row-sub">Webmail: IMAP inbox + SMTP sending + instant new-mail notifications, open to AI-side mail management</div>
+          </div>
+        </div>
+        <div class="smart-row-actions">
+          <button class="btn-pill btn-install">Install</button>
+        </div>
+      </div>
+    </div>
+  </main>
+
+  <script>
+    function switchProto(type) {
+      document.querySelectorAll('.proto-btn').forEach(b => b.classList.remove('active'));
+      document.querySelectorAll('.market-container').forEach(c => c.classList.remove('active'));
+
+      const targetBtn = Array.from(document.querySelectorAll('.proto-btn')).find(b => b.getAttribute('onclick').includes(type));
+      if (targetBtn) targetBtn.classList.add('active');
+
+      const targetContainer = document.getElementById('market-' + type);
+      if (targetContainer) targetContainer.classList.add('active');
+    }
+
+    function openDrawer(id) {
+      document.getElementById('drawer').style.display = 'flex';
+    }
+    function closeDrawer() {
+      document.getElementById('drawer').style.display = 'none';
+    }
+  </script>
+</body>
+</html>
+
+
+

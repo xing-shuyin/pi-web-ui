@@ -1,3 +1,5 @@
+[English](./README.en.md) · **简体中文** · [繁體中文](./README.zh-TW.md)
+
 # Live2D 看板娘 (Live2D Companion) 插件
 
 基于 **Live2D Cubism 2 / 3 / 4** 与 **PixiJS** 的页面级智能体桌面陪伴看板娘，为 `pi-web-ui` 注入生动的交互生命力。

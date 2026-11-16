@@ -1,3 +1,5 @@
+[English](./PROGRESS.en.md) · **简体中文** · [繁體中文](./PROGRESS.zh-TW.md)
+
 # pi-tunnel 阶段进展文档
 
 > 更新：2026-10-24 11:00 · 状态：Phase 1 ✅ / Phase 2 ✅（v1.2.0）/ Phase 3a ✅（v1.3.0）/ **Phase 3b ✅ 验收全过（v1.4.0+CLI p15）；设备端 launchd 78 修复待主人跑 xattr**
