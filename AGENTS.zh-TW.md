@@ -4,7 +4,7 @@
 # AGENTS.md — pi-web-ui 關鍵功能 → 事實源 → 文件
 
 > **本檔案只做對映與索引，不寫細則**：想知道某塊能力怎麼改、有哪些禁令，按下表去讀 `docs/` 對應文件。
-> 新規則請寫進對應 `docs/`（紅線細則執行 [`docs/agent-rules.md`](docs/agent-rules.zh-TW.md)），**不要再往本檔案堆段落**——體積與死鏈由 `tests/unit/agents-md.test.ts` 守衛。
+> 新規則請寫進對應 `docs/`（紅線細則執行 [`docs/agent-rules.md`](docs/agent-rules.md)），**不要再往本檔案堆段落**——體積與死鏈由 `tests/unit/agents-md.test.ts` 守衛。
 > 修改本檔案後在 pi 裡 `/reload`。精簡前的全文備份：`AGENTS.md.bak`。
 
 ## 0. 是什麼
@@ -16,48 +16,50 @@ pi 編碼智慧體（`@earendil-works/pi-coding-agent` SDK）的 Web 聊天介�
 
 | 功能 | 事實原始檔（★=唯一單源） | 文件 |
 | --- | --- | --- |
-| **文件總索引**（主題 / 權重 / 按場景閱讀路線） | — | [`docs/README.md`](docs/README.zh-TW.md) |
-| 快照驅動 / 協議單源 / 多對話併發 | `server/protocol.ts`★ · `server/agent-service.ts` · `web/src/app-globals.ts` · `web/src/types.ts`（shim） | [`architecture-core.md`](docs/architecture-core.zh-TW.md) |
-| 側欄會話排序 / 使用者傳送置頂 / 對話↔歷史行歸屬與身份 | `web/src/conversation-order.ts`★ · `server/conversation-rows.ts`★ · `web/src/session-identity.ts`★ · `web/src/components/LeftPanel.tsx` · `web/src/use-chat.ts` | [`architecture-core.md`](docs/architecture-core.zh-TW.md#側欄歷史會話載入) |
-| 安全邊界（loopback/Origin/Cookie/appUrl） | `server/index.ts` · `server/auth-cookie.ts` | [`architecture-core.md`](docs/architecture-core.zh-TW.md) · [`agent-rules.md`](docs/agent-rules.zh-TW.md#一通訊協議與資料安全) |
-| 隨手問 / 選中文字解釋 | `server/quick-ask.ts` · `web/src/quick-ask.ts` · `web/src/components/QuickAskPopover.tsx` | [`architecture-core.md`](docs/architecture-core.zh-TW.md#隨手問獨立小窗) |
-| 系統提示片語裝 / 設定儲存回執 | `server/prompt-composer.ts`★ · `web/src/settings-sync.ts`★（pending overlay + 回執） | [`architecture-system-prompt.md`](docs/architecture-system-prompt.zh-TW.md) |
-| 工具開關 / 工具提示詞 / 內建工具覆蓋 | `server/tool-manager.ts`★ · `server/tool-prompts.ts`★ · `server/tool-overrides.ts` · `server/bash-timeout.ts`（bash/powershell 預設超時單源） | [`agent-rules.md`](docs/agent-rules.zh-TW.md#二工具定義與提示詞規範) · [`tool-context-budget.md`](docs/tool-context-budget.zh-TW.md) |
-| 上下文預算 / 延遲載入 / 證據外接 | `server/soft-cap.ts` · `server/request-context.ts` · `server/evidence-tool-hooks.ts` | [`tool-context-budget.md`](docs/tool-context-budget.zh-TW.md) |
-| 工具審批門禁與規則庫 | `server/tool-approval.ts` | [`architecture-core.md`](docs/architecture-core.zh-TW.md#審批佇列與共享展示) |
-| 內建瀏覽器 / 桌面三模式 / Web 原生橋 | `browser/` · `desktop/browser-host.ts` · `web/src/browser-control.ts` | [`architecture-browser.md`](docs/architecture-browser.zh-TW.md) |
-| 憑據保險庫（密碼 + TOTP，圖示工具條 / 掃碼 / 按站點匹配 / 填碼） | `browser/renderer/vault.ts`★ · `browser/runtime/totp.ts`★ · `browser/runtime/qr.ts` · `browser/runtime/credentials.ts` · `desktop/browser-host.ts`（密碼只下發投影） · `browser/storage/index.ts` | [`architecture-browser.md`](docs/architecture-browser.zh-TW.md#憑據保險庫密碼--totp) |
-| 頁面指令碼注入（臨時 / 永久，`browser_script`） | `browser/runtime/scripts.ts` · `browser/automation/scripts.ts` · `server/browser-script-tool.ts` | [`architecture-browser.md`](docs/architecture-browser.zh-TW.md) |
-| 自定義新標籤頁 / 主題覆蓋（`browser_design`） | `browser/runtime/customize.ts`★ · `browser/runtime/manager.ts` · `desktop/browser-host.ts` · `server/browser-design-tool.ts` | [`architecture-browser.md`](docs/architecture-browser.zh-TW.md#自定義新標籤頁與主題覆蓋使用者改--agent-設計) |
-| 手機 App / 多裝置切換 / 原生通知 | `mobile/` · `web/src/mobile-runtime.ts` · `server/mobile-push.ts` · `server/device-center/hub-mobile.ts` | [`mobile.md`](docs/mobile.zh-TW.md) |
-| 終端 PTY / 原生 CLI / bash 接管 / SCM | `server/terminals.ts` · `server/terminal-query.ts`（終端查詢/回話單源） · `server/native-cli.ts` · `server/engine-catalog.ts`★ · `server/engine-cli.ts` · `web/src/components/NativeCliPanel.tsx` | [`architecture-terminal.md`](docs/architecture-terminal.zh-TW.md) |
-| 命令執行防卡死 / 硬超時 / 後臺託管 | `server/job-runner.ts`★（`bash({background:true})` 程序內 job）· `scripts/safe-exec.mjs`（原始碼倉庫 / CI 執行器）· `server/process-utils.ts`（`killPidTree` 單源） | [`development.md`](docs/development.zh-TW.md#命令執行防卡死) · [`agent-rules.md`](docs/agent-rules.zh-TW.md#七終端命令執行防卡死) |
-| 附件 / 圖片預覽 / OCR / 標註 / 系統截圖 | `server/file-save.ts` · `web/src/components/ImageLightbox.tsx` · `plugins/image-ocr/` · `server/system-screenshot.ts` · `server/system-screenshot-macos.ts` | [`architecture-attachments.md`](docs/architecture-attachments.zh-TW.md) |
-| 外掛體系 / UI 插槽 / MCP 專案執行態 | `server/plugins.ts` · `web/src/ui-slots.ts`★ · `server/mcp-project-runtime.ts` | [`architecture-plugins.md`](docs/architecture-plugins.zh-TW.md) |
-| 外掛物化（程式碼純快取）/ 狀態目錄 | `server/plugin-paths.ts`★ · `server/plugin-materialize.ts`★ · `server/fs-copy.ts`★ | [`architecture-plugins.md`](docs/architecture-plugins.zh-TW.md#外掛目錄程式碼是純快取狀態獨立存放plugin-pathsts--plugin-materializets) |
-| 統一 TTS / 系統語音 / 外掛音色 / QQ 語音回覆 | `server/tts-service.ts`★ · `server/tts-system.ts` · `server/tts-routes.ts` · `web/src/tts-client.ts` · `plugins/qq/voice.mjs` | [`architecture-tts.md`](docs/architecture-tts.zh-TW.md) |
-| 子代理 / 對話通訊 / 工作樹 / 過戶 | `server/subagents.ts` · `server/conversation-identity.ts` · `#take_over_conversation` | [`architecture-core.md`](docs/architecture-core.zh-TW.md) · [`root-cause-boundaries.md`](docs/root-cause-boundaries.zh-TW.md) |
-| 目標模式 2.0 / 委派 / 計劃模式 | `server/goal-service.ts` · `server/delegate-mode.ts` · `server/plan-mode.ts` | [`goal-conversation-design.md`](docs/goal-conversation-design.zh-TW.md) · [`agent-rules.md`](docs/agent-rules.zh-TW.md#四架構與執行態約束) |
-| 無人值守 / 常駐執行者 / `alwaysOn` 外掛 | `server/background-executors.ts`★ · `server/plugins.ts`（`ensureLoaded` scope） · `manifest.alwaysOn` | [`unattended-operation.md`](docs/unattended-operation.zh-TW.md) |
-| DSH 預設 / 問卷 / 底欄統計 | `server/dsh-*.ts` · `server/dsh/dsh-usage.ts` | [`dsh-engine.md`](docs/dsh-engine.zh-TW.md) |
-| 沙盒工作區 | `docs/architecture-sandbox.md` 列出的執行會話身份鏈 | [`architecture-sandbox.md`](docs/architecture-sandbox.zh-TW.md) |
-| 裝置中心 / 群組 Bot / 遠端桌面 / 檔案同步 | `server/device-center/`（`hub-conversations.ts` · `task-recovery.ts` · `desktop*.ts`） | [`device-center.md`](docs/device-center.zh-TW.md) · [`device-collaboration.md`](docs/device-collaboration.zh-TW.md) · [`device-desktop.md`](docs/device-desktop.zh-TW.md) · [`device-file-sync.md`](docs/device-file-sync.md) |
-| Hub 線上升級 / 釋出包驗收 | `bin/hub-upgrade.mjs`★ · `server/device-center/hub-upgrade.ts` · `tests/hub-upgrade-release-test.mjs` | [`device-center.md`](docs/device-center.zh-TW.md#hub-線上升級) · [`hub-upgrade-release-testing.md`](docs/hub-upgrade-release-testing.zh-TW.md) |
-| 畫布協同（版本 / 執行 / 產物） | `server/canvas/` · `server/workspace-handle.ts`（共享工作樹原語） | [`architecture-canvas.md`](docs/architecture-canvas.zh-TW.md) |
-| 預設匯入匯出 / 社群分享 | `server/preset-share.ts` · `server/preset-fields.ts` | [`preset-sharing.md`](docs/preset-sharing.zh-TW.md) |
-| 本地化 / 模組字典 / 語言包同步 | `web/src/i18n/catalog.ts`★ · `web/src/i18n/messages/` · `scripts/lib/i18n-catalog.mjs` | [`i18n.md`](docs/i18n.zh-TW.md) |
-| UI 佈局 / 主題 / 樣式紅線 | `web/src/styles.css` · `themes/` | [`agent-rules.md`](docs/agent-rules.zh-TW.md#三ui-佈局與樣式規範) |
-| 目錄結構與全量檔案清單 | — | [`directory-reference.md`](docs/directory-reference.zh-TW.md) |
+| **文件總索引**（主題 / 權重 / 按場景閱讀路線） | — | [`docs/README.md`](docs/README.md) |
+| 快照驅動 / 協議單源 / 多對話併發 | `server/protocol.ts`★ · `server/agent-service.ts` · `web/src/app-globals.ts` · `web/src/types.ts`（shim） | [`architecture-core.md`](docs/architecture-core.md) |
+| 側欄會話排序 / 使用者傳送置頂 / 對話↔歷史行歸屬與身份 | `web/src/conversation-order.ts`★ · `server/conversation-rows.ts`★ · `web/src/session-identity.ts`★ · `web/src/components/LeftPanel.tsx` · `web/src/use-chat.ts` | [`architecture-core.md`](docs/architecture-core.md#側欄歷史會話載入) |
+| 安全邊界（loopback/Origin/Cookie/appUrl） | `server/index.ts` · `server/auth-cookie.ts` | [`architecture-core.md`](docs/architecture-core.md) · [`agent-rules.md`](docs/agent-rules.md#一通訊協議與資料安全) |
+| 隨手問 / 選中文字解釋 | `server/quick-ask.ts` · `web/src/quick-ask.ts` · `web/src/components/QuickAskPopover.tsx` | [`architecture-core.md`](docs/architecture-core.md#隨手問獨立小窗) |
+| 系統提示片語裝 / 設定儲存回執 | `server/prompt-composer.ts`★ · `web/src/settings-sync.ts`★（pending overlay + 回執） | [`architecture-system-prompt.md`](docs/architecture-system-prompt.md) |
+| 工具開關 / 工具提示詞 / 內建工具覆蓋 | `server/tool-manager.ts`★ · `server/tool-prompts.ts`★ · `server/tool-overrides.ts` · `server/bash-timeout.ts`（bash/powershell 預設超時單源） | [`agent-rules.md`](docs/agent-rules.md#二工具定義與提示詞規範) · [`tool-context-budget.md`](docs/tool-context-budget.md) |
+| 上下文預算 / 延遲載入 / 證據外接 | `server/soft-cap.ts` · `server/request-context.ts` · `server/evidence-tool-hooks.ts` | [`tool-context-budget.md`](docs/tool-context-budget.md) |
+| 工具審批門禁與規則庫 | `server/tool-approval.ts` | [`architecture-core.md`](docs/architecture-core.md#審批佇列與共享展示) |
+| 內建瀏覽器 / 桌面三模式 / Web 原生橋 | `browser/` · `desktop/browser-host.ts` · `web/src/browser-control.ts` | [`architecture-browser.md`](docs/architecture-browser.md) |
+| 憑據保險庫（密碼 + TOTP，圖示工具條 / 掃碼 / 按站點匹配 / 填碼） | `browser/renderer/vault.ts`★ · `browser/runtime/totp.ts`★ · `browser/runtime/qr.ts` · `browser/runtime/credentials.ts` · `desktop/browser-host.ts`（密碼只下發投影） · `browser/storage/index.ts` | [`architecture-browser.md`](docs/architecture-browser.md#憑據保險庫密碼--totp) |
+| 頁面指令碼注入（臨時 / 永久，`browser_script`） | `browser/runtime/scripts.ts` · `browser/automation/scripts.ts` · `server/browser-script-tool.ts` | [`architecture-browser.md`](docs/architecture-browser.md) |
+| 自定義新標籤頁 / 主題覆蓋（`browser_design`） | `browser/runtime/customize.ts`★ · `browser/runtime/manager.ts` · `desktop/browser-host.ts` · `server/browser-design-tool.ts` | [`architecture-browser.md`](docs/architecture-browser.md#自定義新標籤頁與主題覆蓋使用者改--agent-設計) |
+| 左上角裝置浮層（列表 / 手機抽屜） | `web/src/components/DevicePanel.tsx`★ · `BrandDeviceMenu.tsx` · `DeviceDirectory.tsx` · `use-coarse-pointer.ts` · `styles.css`（`.dp-*`） | [`device-center.md`](docs/device-center.md#左上角裝置浮層桌面浮層--手機抽屜) |
+| 手機 App / 多裝置切換 / 原生通知 | `mobile/` · `web/src/mobile-runtime.ts` · `server/mobile-push.ts` · `server/device-center/hub-mobile.ts` | [`mobile.md`](docs/mobile.md) |
+| 終端 PTY / 原生 CLI / bash 接管 / SCM | `server/terminals.ts` · `server/terminal-query.ts`（終端查詢/回話單源） · `server/native-cli.ts` · `server/engine-catalog.ts`★ · `server/engine-cli.ts` · `web/src/components/NativeCliPanel.tsx` · `web/src/components/BottomDock.tsx` · `web/src/components/TerminalPanel.tsx` · `web/src/components/SCMPanel.tsx` | [`architecture-terminal.md`](docs/architecture-terminal.md) |
+| 命令執行防卡死 / 硬超時 / 後臺託管 | `server/job-runner.ts`★（`bash({background:true})` 程序內 job）· `scripts/safe-exec.mjs`（原始碼倉庫 / CI 執行器）· `server/process-utils.ts`（`killPidTree` 單源） | [`development.md`](docs/development.md#命令執行防卡死) · [`agent-rules.md`](docs/agent-rules.md#七終端命令執行防卡死) |
+| 附件 / 圖片預覽 / OCR / 標註 / 系統截圖 | `server/file-save.ts` · `web/src/components/ImageLightbox.tsx` · `plugins/image-ocr/` · `server/system-screenshot.ts` · `server/system-screenshot-macos.ts` | [`architecture-attachments.md`](docs/architecture-attachments.md) |
+| 外掛體系 / UI 插槽 / MCP 專案執行態 | `server/plugins.ts` · `web/src/ui-slots.ts`★ · `server/mcp-project-runtime.ts` | [`architecture-plugins.md`](docs/architecture-plugins.md) |
+| 外掛物化（程式碼純快取）/ 狀態目錄 | `server/plugin-paths.ts`★ · `server/plugin-materialize.ts`★ · `server/fs-copy.ts`★ | [`architecture-plugins.md`](docs/architecture-plugins.md#外掛目錄程式碼是純快取狀態獨立存放plugin-pathsts--plugin-materializets) |
+| 統一 TTS / 系統語音 / 外掛音色 / QQ 語音回覆 | `server/tts-service.ts`★ · `server/tts-system.ts` · `server/tts-routes.ts` · `web/src/tts-client.ts` · `plugins/qq/voice.mjs` | [`architecture-tts.md`](docs/architecture-tts.md) |
+| 子代理 / 對話通訊 / 工作樹 / 過戶 | `server/subagents.ts` · `server/conversation-identity.ts` · `#take_over_conversation` | [`architecture-core.md`](docs/architecture-core.md) · [`root-cause-boundaries.md`](docs/root-cause-boundaries.md) |
+| 目標模式 2.0 / 委派 / 計劃模式 | `server/goal-service.ts` · `server/delegate-mode.ts` · `server/plan-mode.ts` | [`goal-conversation-design.md`](docs/goal-conversation-design.md) · [`agent-rules.md`](docs/agent-rules.md#四架構與執行態約束) |
+| 無人值守 / 常駐執行者 / `alwaysOn` 外掛 | `server/background-executors.ts`★ · `server/plugins.ts`（`ensureLoaded` scope） · `manifest.alwaysOn` | [`unattended-operation.md`](docs/unattended-operation.md) |
+| DSH 預設 / 問卷 / 底欄統計 | `server/dsh-*.ts` · `server/dsh/dsh-usage.ts` | [`dsh-engine.md`](docs/dsh-engine.md) |
+| 沙盒工作區 | `docs/architecture-sandbox.md` 列出的執行會話身份鏈 | [`architecture-sandbox.md`](docs/architecture-sandbox.md) |
+| 裝置中心 / 群組 Bot / 遠端桌面 / 檔案同步 | `server/device-center/`（`hub-conversations.ts` · `task-recovery.ts` · `desktop*.ts`） | [`device-center.md`](docs/device-center.md) · [`device-collaboration.md`](docs/device-collaboration.md) · [`device-desktop.md`](docs/device-desktop.md) · [`device-file-sync.md`](docs/device-file-sync.md) |
+| **Bot 獨立化 / 直聊 / 獨立記憶** | `server/device-center/direct-rooms.ts`★ · `server/device-center/bot-memory.ts`★ · `server/bot-memory-tool.ts` · `web/src/components/AgentBotsSection.tsx` | [`agent-bot-design.md`](docs/agent-bot-design.md) |
+| Hub 線上升級 / 釋出包驗收 | `bin/hub-upgrade.mjs`★ · `server/device-center/hub-upgrade.ts` · `tests/hub-upgrade-release-test.mjs` | [`device-center.md`](docs/device-center.md#hub-線上升級) · [`hub-upgrade-release-testing.md`](docs/hub-upgrade-release-testing.md) |
+| 畫布協同（版本 / 執行 / 產物） | `server/canvas/` · `server/workspace-handle.ts`（共享工作樹原語） | [`architecture-canvas.md`](docs/architecture-canvas.md) |
+| 預設匯入匯出 / 社群分享 | `server/preset-share.ts` · `server/preset-fields.ts` | [`preset-sharing.md`](docs/preset-sharing.md) |
+| 本地化 / 模組字典 / 語言包同步 | `web/src/i18n/catalog.ts`★ · `web/src/i18n/messages/` · `scripts/lib/i18n-catalog.mjs` | [`i18n.md`](docs/i18n.md) |
+| UI 佈局 / 主題 / 樣式紅線 | `web/src/styles.css` · `themes/` | [`agent-rules.md`](docs/agent-rules.md#三ui-佈局與樣式規範) |
+| 目錄結構與全量檔案清單 | — | [`directory-reference.md`](docs/directory-reference.md) |
 
 ## 2. 工程流
 
 | 主題 | 文件 | 常用入口 |
 | --- | --- | --- |
-| 開發工作流 / CI | [`development.md`](docs/development.zh-TW.md) | `npm run dev` · `npm run typecheck` · `npm run lint` · `npm test` · `npm run test:smoke` · `npm run ci:local`（本地復刻 CI 門禁） |
-| 測試規範 | [`development.md`](docs/development.zh-TW.md) | 埠 ≥8900、data-dir `mkdtemp`、禁 `pkill -f`、冒煙停用 `ensure-build.mjs` |
-| 釋出 | [`release.md`](docs/release.zh-TW.md) | `npm run changelog:i18n` → commit → tag `vX.Y.Z`（自動桌面/說明）→ 手機包 `npm run release:local -- vX.Y.Z --skip-desktop` → `npm run release:npm` → `npm run release:check` |
-| 部署 | [`deployment.md`](docs/deployment.zh-TW.md) | `pi-web-ui server install` · `docker compose up -d` |
-| 環境變數全表 | [`env-vars.md`](docs/env-vars.zh-TW.md) | `PI_WEB_PORT` · `PI_WEB_HOST` · `PI_WEB_CWD` · `PI_WEB_DATA_DIR` · `PI_WEB_TOKEN` · `PI_WEB_SDK` |
+| 開發工作流 / CI | [`development.md`](docs/development.md) | `npm run dev` · `npm run typecheck` · `npm run lint` · `npm test` · `npm run test:smoke` · `npm run ci:local`（本地復刻 CI 門禁） |
+| 測試規範 | [`development.md`](docs/development.md) | 埠 ≥8900、data-dir `mkdtemp`、禁 `pkill -f`、冒煙停用 `ensure-build.mjs` |
+| 釋出 | [`release.md`](docs/release.md) | `npm run changelog:i18n` → commit → tag `vX.Y.Z`（自動桌面/說明）→ 手機包 `npm run release:local -- vX.Y.Z --skip-desktop` → `npm run release:npm` → `npm run release:check` |
+| 部署 | [`deployment.md`](docs/deployment.md) | `pi-web-ui server install` · `docker compose up -d` |
+| 環境變數全表 | [`env-vars.md`](docs/env-vars.md) | `PI_WEB_PORT` · `PI_WEB_HOST` · `PI_WEB_CWD` · `PI_WEB_DATA_DIR` · `PI_WEB_TOKEN` · `PI_WEB_SDK` |
 
 ## 3. 紅線（細則見 `docs/agent-rules.md`，守衛均對應 `tests/unit/<守衛>.test.ts`）
 
