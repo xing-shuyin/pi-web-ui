@@ -73,7 +73,7 @@
 			margin: 0 auto;
 		}
 
-		/* 顶部标题栏与控制台 */
+		/* 頂部標題欄與控制台 */
 		.header {
 			background: var(--bg-elev);
 			border: 1px solid var(--border);
@@ -115,7 +115,7 @@
 			flex-wrap: wrap;
 		}
 
-		/* 按钮与控件 */
+		/* 按鈕與控制元件 */
 		.btn {
 			display: inline-flex;
 			align-items: center;
@@ -155,7 +155,7 @@
 			border-right: none;
 		}
 
-		/* 标签页导航 */
+		/* 標籤頁導航 */
 		.tabs {
 			display: flex;
 			gap: 6px;
@@ -182,7 +182,7 @@
 			border-bottom-color: var(--accent);
 		}
 
-		/* 内容区域与卡片 */
+		/* 內容區域與卡片 */
 		.panel {
 			display: none;
 		}
@@ -217,7 +217,7 @@
 			margin-bottom: 16px;
 		}
 
-		/* 对比展示台 */
+		/* 對比展示臺 */
 		.showcase-grid {
 			display: grid;
 			grid-template-columns: 1fr 1fr;
@@ -236,7 +236,7 @@
 			letter-spacing: 0.05em;
 		}
 
-		/* 工具卡模拟器（复刻 pi-web-ui 真实结构） */
+		/* 工具卡模擬器（復刻 pi-web-ui 真實結構） */
 		.toolcall {
 			border: 1px solid var(--border);
 			background: var(--bg-elev);
@@ -332,7 +332,7 @@
 			font-size: 12.5px;
 		}
 
-		/* 原始 JSON 痛点展示 */
+		/* 原始 JSON 痛點展示 */
 		.raw-json-box {
 			background: var(--bg);
 			border: 1px solid var(--border-soft);
@@ -347,7 +347,7 @@
 			overflow-y: auto;
 		}
 
-		/* 差异渲染器组件样式 */
+		/* 差異渲染器元件樣式 */
 		.diff-container {
 			background: var(--bg);
 			border: 1px solid var(--border-soft);
@@ -378,7 +378,7 @@
 			gap: 6px;
 		}
 
-		/* 统一差异 Unified Diff 行 */
+		/* 統一差異 Unified Diff 行 */
 		.diff-table {
 			width: 100%;
 			border-collapse: collapse;
@@ -436,7 +436,7 @@
 			color: var(--green-dim);
 		}
 
-		/* 行内词级高亮（Word-level Highlighting） */
+		/* 行內詞級高亮（Word-level Highlighting） */
 		.char-del {
 			background: rgba(239, 68, 68, 0.35);
 			border-radius: 2px;
@@ -451,7 +451,7 @@
 			font-weight: 600;
 		}
 
-		/* 分屏对照 Split Diff */
+		/* 分屏對照 Split Diff */
 		.split-diff {
 			display: grid;
 			grid-template-columns: 1fr 1fr;
@@ -472,7 +472,7 @@
 			border-bottom: 1px solid var(--border-soft);
 		}
 
-		/* 写文件预览卡片 Write Card */
+		/* 寫檔案預覽卡片 Write Card */
 		.write-box {
 			background: var(--bg);
 			border: 1px solid var(--border-soft);
@@ -526,7 +526,7 @@
 			background: var(--bg-elev3);
 		}
 
-		/* 方案对比表 */
+		/* 方案對比表 */
 		.compare-table {
 			width: 100%;
 			border-collapse: collapse;
@@ -556,7 +556,7 @@
 		.tag-blue { background: var(--accent-soft); color: var(--accent); }
 		.tag-amber { background: var(--amber-soft); color: var(--amber); }
 
-		/* 抽屉演示器 */
+		/* 抽屜演示器 */
 		.drawer-layout {
 			display: grid;
 			grid-template-columns: 280px 1fr;
@@ -602,7 +602,7 @@
 			overflow: hidden;
 		}
 
-		/* 架构流向图 */
+		/* 架構流向圖 */
 		.arch-diagram {
 			background: var(--bg);
 			border: 1px solid var(--border-soft);
@@ -627,6 +627,9 @@
 	</style>
 </head>
 <body>
+<div data-docs-i18n-switch style="position:fixed;top:8px;right:12px;z-index:2147483647;font:12px/1.6 -apple-system,system-ui,sans-serif;background:rgba(15,17,22,.78);color:#fff;padding:4px 12px;border-radius:999px;box-shadow:0 2px 10px rgba(0,0,0,.35)"><a href="./issue-769-file-diff-visualization.html" style="color:#fff;text-decoration:none">简体中文</a> · <a href="./issue-769-file-diff-visualization.en.html" style="color:#fff;text-decoration:none">English</a> · <strong>繁體中文</strong></div>
+
+
 
 <div class="container">
 	<!-- 頂部 Header -->
@@ -1127,13 +1130,13 @@
 </div>
 
 <script>
-	// 状态管理
+	// 狀態管理
 	let currentCase = 'edit';
 	let currentToolState = 'done';
 	let currentViewMode = 'unified';
 	let isCollapsed = false;
 
-	// 测试数据源
+	// 測試資料來源
 	const DEMO_CASES = {
 		edit: {
 			tool: 'edit',
@@ -1181,11 +1184,11 @@
 			rawJson: `{\n  "path": "web/src/components/ToolCallBlock.tsx",\n  "edits": [\n    {\n      "oldText": "import { openToolInfo } from \\"../tool-info-state\\";",\n      "newText": "import { openToolInfo } from \\"../tool-info-state\\";\\nimport { FileChangeCard } from \\"./FileChangeCard\\";"\n    },\n    {\n      "oldText": "<pre>{block.argumentsText}</pre>",\n      "newText": "<FileChangeCard toolName={block.name} argsText={block.argumentsText} details={view.result?.details} />"\n    }\n  ]\n}`,
 			unifiedHtml: `
 				<div class="diff-container">
-					<div class="diff-line hunk-header">@@ -45,4 +45,5 @@ Imports 区域</div>
+					<div class="diff-line hunk-header">@@ -45,4 +45,5 @@ Imports 區域</div>
 					<div class="diff-line"><div class="diff-gutter">45</div><div class="diff-content">&nbsp; import { openToolInfo } from "../tool-info-state";</div></div>
 					<div class="diff-line add"><div class="diff-gutter">46</div><div class="diff-content">+ <span class="char-add">import { FileChangeCard } from "./FileChangeCard";</span></div></div>
 					
-					<div class="diff-line hunk-header">@@ -848,7 +849,7 @@ 参数渲染分支</div>
+					<div class="diff-line hunk-header">@@ -848,7 +849,7 @@ 引數渲染分支</div>
 					<div class="diff-line del"><div class="diff-gutter">848</div><div class="diff-content">- &lt;pre&gt;{block.argumentsText}&lt;/pre&gt;</div></div>
 					<div class="diff-line add"><div class="diff-gutter">848</div><div class="diff-content">+ &lt;<span class="char-add">FileChangeCard toolName={block.name} argsText={block.argumentsText} details={view.result?.details}</span> /&gt;</div></div>
 				</div>
@@ -1214,8 +1217,8 @@
 			unifiedHtml: `
 				<div class="write-box">
 					<div class="write-toolbar">
-						<span>✨ 新建文件 · 86 行代码 (TypeScript React)</span>
-						<button class="btn" onclick="alert('已复制全部文件内容！')">📋 复制全文</button>
+						<span>✨ 新建檔案 · 86 行程式碼 (TypeScript React)</span>
+						<button class="btn" onclick="alert('已複製全部檔案內容！')">📋 複製全文</button>
 					</div>
 					<div class="write-content">
 						<div class="code-line"><div class="code-num">1</div><div class="code-text"><span style="color:#60a5fa;">import</span> React, { useMemo } <span style="color:#60a5fa;">from</span> <span style="color:#34d399;">"react"</span>;</div></div>
@@ -1232,18 +1235,18 @@
 						<div class="code-line"><div class="code-num">12</div><div class="code-text">&nbsp; );</div></div>
 						<div class="code-line"><div class="code-num">13</div><div class="code-text">}</div></div>
 					</div>
-					<div class="write-fold-banner" onclick="alert('已展开剩余 73 行代码！')">
-						🔽 智能保护折叠：显示前 13 行 · 点击展开剩余 73 行
+					<div class="write-fold-banner" onclick="alert('已展開剩餘 73 行程式碼！')">
+						🔽 智慧保護摺疊：顯示前 13 行 · 點選展開剩餘 73 行
 					</div>
 				</div>
 			`,
 			splitHtml: `
 				<div class="write-box">
 					<div class="write-toolbar">
-						<span>✨ 新建文件全览模式 (New File View)</span>
+						<span>✨ 新建檔案全覽模式 (New File View)</span>
 					</div>
 					<div style="padding: 12px; color: var(--text-dim);">
-						该操作为全新创建文件（无历史比对基线），已自动优化为带有行号、语法高亮与智能长度保护的源码视图。
+						該操作為全新建立檔案（無歷史比對基線），已自動最佳化為帶有行號、語法高亮與智慧長度保護的原始碼檢視。
 					</div>
 				</div>
 			`
@@ -1330,7 +1333,7 @@
 		document.getElementById('protoPath').textContent = data.path;
 
 		if (currentToolState === 'running') {
-			document.getElementById('protoStatus').innerHTML = '<span style="color:var(--amber);">⚡ 正在流式编辑...</span>';
+			document.getElementById('protoStatus').innerHTML = '<span style="color:var(--amber);">⚡ 正在流式編輯...</span>';
 		} else {
 			document.getElementById('protoStatus').innerHTML = '<span style="color:var(--green);">✓ 142ms</span>';
 		}
@@ -1344,10 +1347,13 @@
 		renderDiffContent();
 	}
 
-	// 初始触发渲染
+	// 初始觸發渲染
 	updateInteractiveDemo();
 </script>
 
 </body>
 </html>
+
+
+
 

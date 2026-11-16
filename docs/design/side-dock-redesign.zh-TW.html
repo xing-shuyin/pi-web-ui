@@ -6,8 +6,8 @@
 		<title>側欄 Dock 重設計 · 4 個上下貫通方案 · pi-web-ui</title>
 		<style>
 			/* ============================================================
-			   设计研究页。所有 demo 内的配色都复用 pi-web-ui 的 :root token，
-			   只有 --rail-* 是本页新引入的候选规格。
+			   設計研究頁。所有 demo 內的配色都複用 pi-web-ui 的 :root token，
+			   只有 --rail-* 是本頁新引入的候選規格。
 			   ============================================================ */
 			:root {
 				color-scheme: dark;
@@ -121,7 +121,7 @@
 				overflow: hidden;
 			}
 
-			/* ---------- 页面骨架 ---------- */
+			/* ---------- 頁面骨架 ---------- */
 			.page {
 				display: grid;
 				grid-template-columns: 232px minmax(0, 1fr);
@@ -349,7 +349,7 @@
 				font-weight: 600;
 			}
 
-			/* ---------- 现状诊断 ---------- */
+			/* ---------- 現狀診斷 ---------- */
 			.diag {
 				display: grid;
 				grid-template-columns: 268px minmax(0, 1fr);
@@ -389,7 +389,7 @@
 				align-items: center;
 				gap: 4px;
 				padding: 8px 3px;
-				/* 真实 bug：overflow-y:auto 让 overflow-x 计算成 auto */
+				/* 真實 bug：overflow-y:auto 讓 overflow-x 計算成 auto */
 				overflow-y: auto;
 				overflow-x: auto;
 			}
@@ -405,9 +405,9 @@
 			.now-rail .b:first-child {
 				color: var(--amber);
 			}
-			/* 伪 tooltip：向左/右伸出，撑出滚动区域 */
+			/* 偽 tooltip：向左/右伸出，撐出滾動區域 */
 			.now-rail .b::after {
-				content: attr(data-t) " 很长很长的标签";
+				content: attr(data-t) " 很長很長的標籤";
 				position: absolute;
 				left: 100%;
 				white-space: nowrap;
@@ -528,7 +528,7 @@
 				color: var(--green);
 			}
 
-			/* ---------- Demo 舞台 ---------- */
+			/* ---------- Demo 舞臺 ---------- */
 			.stage {
 				container-type: inline-size;
 				border: 1px solid var(--border);
@@ -594,7 +594,7 @@
 				min-width: 0;
 			}
 
-			/* 顶栏 */
+			/* 頂欄 */
 			.tb {
 				flex: none;
 				height: 44px;
@@ -706,7 +706,7 @@
 				flex: none;
 			}
 
-			/* 主体 */
+			/* 主體 */
 			.shell {
 				flex: 1;
 				display: flex;
@@ -839,7 +839,7 @@
 				flex: none;
 			}
 
-			/* 会话区 */
+			/* 會話區 */
 			.chat {
 				flex: 1;
 				min-width: 0;
@@ -975,7 +975,7 @@
 				font-weight: 600;
 			}
 
-			/* 状态栏 */
+			/* 狀態列 */
 			.sb {
 				flex: none;
 				height: 22px;
@@ -1000,7 +1000,7 @@
 				background: var(--green);
 			}
 
-			/* ================= 方案 A：无形之栏 ================= */
+			/* ================= 方案 A：無形之欄 ================= */
 			.rail-a {
 				position: relative;
 				z-index: 4;
@@ -1011,8 +1011,8 @@
 				align-items: center;
 				gap: 3px;
 				padding: 9px 0 9px;
-				/* 贯通：从顶栏底到状态栏顶。与顶栏/面板同底色 → 连成一片 L 形表面，
-				   只留一条 1px 发丝线与面板分界；不画外框、不画阴影。 */
+				/* 貫通：從頂欄底到狀態列頂。與頂欄/面板同底色 → 連成一片 L 形表面，
+				   只留一條 1px 髮絲線與面板分界；不畫外框、不畫陰影。 */
 				background: var(--bg-elev);
 				border-right: 1px solid var(--border-soft);
 			}
@@ -1057,7 +1057,7 @@
 				border-radius: 0 3px 3px 0;
 				background: var(--accent);
 			}
-			/* hover 滑出标签（rail 不设 overflow，所以不会被裁 / 不会撑滚动条） */
+			/* hover 滑出標籤（rail 不設 overflow，所以不會被裁 / 不會撐捲軸） */
 			.rb .lbl {
 				position: absolute;
 				left: calc(100% + 6px);
@@ -1134,7 +1134,7 @@
 				}
 			}
 
-			/* ================= 方案 B：一体双栏 ================= */
+			/* ================= 方案 B：一體雙欄 ================= */
 			.shell-b {
 				gap: 8px;
 				padding: 8px;
@@ -1178,7 +1178,7 @@
 				left: -8px;
 				height: 16px;
 			}
-			/* 右侧镜像：激活竖条贴外缘（卡片右边） */
+			/* 右側映象：啟用豎條貼外緣（卡片右邊） */
 			.rail-b.right .rb.on::before {
 				left: auto;
 				right: -8px;
@@ -1203,7 +1203,7 @@
 				border-radius: 0;
 			}
 
-			/* ================= 方案 C：图标 + 文字宽栏 ================= */
+			/* ================= 方案 C：圖示 + 文字寬欄 ================= */
 			.rail-c {
 				flex: none;
 				width: 204px;
@@ -1274,7 +1274,7 @@
 				padding: 0 6px;
 				line-height: 16px;
 			}
-			/* 软色底 + 语义色字，避免实底白字在深色主题下对比不足 */
+			/* 軟色底 + 語義色字，避免實底白字在深色主題下對比不足 */
 			.navitem .badge.run {
 				background: color-mix(in srgb, var(--amber) 20%, transparent);
 				color: var(--amber);
@@ -1308,7 +1308,7 @@
 				overflow: hidden;
 				text-overflow: ellipsis;
 			}
-			/* 折叠态预览 */
+			/* 摺疊態預覽 */
 			.rail-c.mini {
 				width: 60px;
 				padding: 12px 9px;
@@ -1325,7 +1325,7 @@
 				display: none;
 			}
 
-			/* ================= 方案 D：框架式 · 完全贯通 ================= */
+			/* ================= 方案 D：框架式 · 完全貫通 ================= */
 			.shell-d {
 				display: flex;
 				min-height: 0;
@@ -1344,7 +1344,7 @@
 				position: relative;
 				z-index: 3;
 			}
-			/* 顶部品牌块 + rail 连成一条竖线，直到状态栏 */
+			/* 頂部品牌塊 + rail 連成一條豎線，直到狀態列 */
 			.rail-d .rlogo {
 				width: 30px;
 				height: 30px;
@@ -1393,7 +1393,7 @@
 				min-height: 0;
 			}
 
-			/* 卡片注释 */
+			/* 卡片註釋 */
 			.notes {
 				display: grid;
 				grid-template-columns: repeat(auto-fit, minmax(230px, 1fr));
@@ -1442,7 +1442,7 @@
 				color: var(--amber);
 			}
 
-			/* ================= 手机形态 ================= */
+			/* ================= 手機形態 ================= */
 			.phone-wrap {
 				display: grid;
 				grid-template-columns: 330px minmax(0, 1fr);
@@ -1508,7 +1508,7 @@
 				}
 			}
 
-			/* 对照表 */
+			/* 對照表 */
 			.cmp {
 				width: 100%;
 				border-collapse: separate;
@@ -1559,7 +1559,7 @@
 				background: color-mix(in srgb, var(--accent) 7%, transparent);
 			}
 
-			/* 规格 */
+			/* 規格 */
 			.spec-grid {
 				display: grid;
 				grid-template-columns: minmax(0, 1.25fr) minmax(0, 1fr);
@@ -1620,7 +1620,7 @@
 				color: var(--text);
 			}
 
-			/* 固定 tooltip 层（演示「tooltip 必须离开滚动容器」） */
+			/* 固定 tooltip 層（演示「tooltip 必須離開滾動容器」） */
 			.tip {
 				position: fixed;
 				left: 0;
@@ -1736,6 +1736,9 @@
 		</style>
 	</head>
 	<body>
+<div data-docs-i18n-switch style="position:fixed;top:8px;right:12px;z-index:2147483647;font:12px/1.6 -apple-system,system-ui,sans-serif;background:rgba(15,17,22,.78);color:#fff;padding:4px 12px;border-radius:999px;box-shadow:0 2px 10px rgba(0,0,0,.35)"><a href="./side-dock-redesign.html" style="color:#fff;text-decoration:none">简体中文</a> · <a href="./side-dock-redesign.en.html" style="color:#fff;text-decoration:none">English</a> · <strong>繁體中文</strong></div>
+
+
 		<svg class="sprite" aria-hidden="true">
 			<symbol id="i-chat" viewBox="0 0 24 24">
 				<path
@@ -3070,17 +3073,17 @@
 		<div class="tip" id="tip" role="tooltip"></div>
 
 		<script>
-			/* ---------- 主题 ---------- */
+			/* ---------- 主題 ---------- */
 			const root = document.documentElement;
 			const themeBtn = document.getElementById("themeBtn");
 			const themeLabel = document.getElementById("themeLabel");
 			themeBtn.addEventListener("click", () => {
 				const next = root.dataset.theme === "dark" ? "light" : "dark";
 				root.dataset.theme = next;
-				themeLabel.textContent = next === "dark" ? "切到浅色" : "切到深色";
+				themeLabel.textContent = next === "dark" ? "切到淺色" : "切到深色";
 			});
 
-			/* ---------- 单例 tooltip（演示「tooltip 离开滚动容器」） ---------- */
+			/* ---------- 單例 tooltip（演示「tooltip 離開滾動容器」） ---------- */
 			const tip = document.getElementById("tip");
 			let tipTimer = 0;
 			function place(el) {
@@ -3119,7 +3122,7 @@
 			document.addEventListener("focusout", () => tip.classList.remove("on"));
 			window.addEventListener("scroll", () => tip.classList.remove("on"), { passive: true });
 
-			/* ---------- demo：rail 切激活 ---------- */
+			/* ---------- demo：rail 切啟用 ---------- */
 			document.querySelectorAll(".demo-rail").forEach((rail) => {
 				rail.addEventListener("click", (e) => {
 					const b = e.target.closest(".rb, .navitem");
@@ -3137,7 +3140,7 @@
 				});
 			});
 
-			/* ---------- 滚动高亮 ---------- */
+			/* ---------- 滾動高亮 ---------- */
 			const links = [...document.querySelectorAll(".snav a")];
 			const secs = links.map((a) => document.querySelector(a.getAttribute("href"))).filter(Boolean);
 			const io = new IntersectionObserver(
@@ -3153,4 +3156,7 @@
 		</script>
 	</body>
 </html>
+
+
+
 

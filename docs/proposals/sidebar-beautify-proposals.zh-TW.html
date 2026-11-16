@@ -177,7 +177,7 @@
       gap: 2px;
     }
 
-    /* 树形结构根节点 */
+    /* 樹形結構根節點 */
     .tree-project-group {
       display: flex;
       flex-direction: column;
@@ -210,7 +210,7 @@
     }
     .tree-chevron.collapsed { transform: rotate(-90deg); }
 
-    /* 图标插槽变化（核心对比项） */
+    /* 圖示插槽變化（核心對比項） */
     .custom-proj-icon {
       margin-right: 6px;
       display: flex;
@@ -284,7 +284,7 @@
       color: var(--text);
     }
 
-    /* 子会话容器：文字绝对平整对齐 */
+    /* 子會話容器：文字絕對平整對齊 */
     .tree-children {
       display: flex;
       flex-direction: column;
@@ -479,6 +479,9 @@
   </style>
 </head>
 <body>
+<div data-docs-i18n-switch style="position:fixed;top:8px;right:12px;z-index:2147483647;font:12px/1.6 -apple-system,system-ui,sans-serif;background:rgba(15,17,22,.78);color:#fff;padding:4px 12px;border-radius:999px;box-shadow:0 2px 10px rgba(0,0,0,.35)"><a href="./sidebar-beautify-proposals.html" style="color:#fff;text-decoration:none">简体中文</a> · <a href="./sidebar-beautify-proposals.en.html" style="color:#fff;text-decoration:none">English</a> · <strong>繁體中文</strong></div>
+
+
 
   <header class="top-bar">
     <div class="top-left">
@@ -576,10 +579,10 @@
         runningCount: 1,
         time: '13:18',
         convs: [
-          { id: 'c-p1-1', title: '如果左侧的项目 运行中和历史合并为一个这样的对话标签替代项目的位置如何', category: 'subagent', categoryLabel: '子代理', status: 'running', time: '12:56' },
-          { id: 'c-p1-2', title: '在干嘛', category: 'wechat', categoryLabel: '微信', status: 'idle', time: '11:29' },
-          { id: 'c-p1-3', title: '音频 SDK 逻辑修复与热重载', category: 'fork', categoryLabel: '分支', status: 'idle', time: '11:09' },
-          { id: 'c-p1-4', title: '定时任务顶部去掉多余按钮与布局紧凑化', category: null, status: 'idle', time: '10:56' }
+          { id: 'c-p1-1', title: '如果左側的專案 執行中和歷史合併為一個這樣的對話標籤替代專案的位置如何', category: 'subagent', categoryLabel: '子代理', status: 'running', time: '12:56' },
+          { id: 'c-p1-2', title: '在幹嘛', category: 'wechat', categoryLabel: '微信', status: 'idle', time: '11:29' },
+          { id: 'c-p1-3', title: '音訊 SDK 邏輯修復與熱過載', category: 'fork', categoryLabel: '分支', status: 'idle', time: '11:09' },
+          { id: 'c-p1-4', title: '定時任務頂部去掉多餘按鈕與佈局緊湊化', category: null, status: 'idle', time: '10:56' }
         ],
         moreCount: 42
       },
@@ -589,8 +592,8 @@
         runningCount: 0,
         time: '13:12',
         convs: [
-          { id: 'c-p2-1', title: '清理无用文件与临时构建目录', category: null, status: 'idle', time: '12:08' },
-          { id: 'c-p2-2', title: 'Playwright 会话保持与代理池配置', category: 'wechat', categoryLabel: '微信', status: 'idle', time: '昨天' }
+          { id: 'c-p2-1', title: '清理無用檔案與臨時構建目錄', category: null, status: 'idle', time: '12:08' },
+          { id: 'c-p2-2', title: 'Playwright 會話保持與代理池配置', category: 'wechat', categoryLabel: '微信', status: 'idle', time: '昨天' }
         ]
       },
       {
@@ -599,35 +602,35 @@
         runningCount: 0,
         time: '10/11',
         convs: [
-          { id: 'c-p3-1', title: 'Kafka 与 Canvas 故障状态误报修复', category: 'subagent', categoryLabel: '子代理', status: 'idle', time: '3天前' }
+          { id: 'c-p3-1', title: 'Kafka 與 Canvas 故障狀態誤報修復', category: 'subagent', categoryLabel: '子代理', status: 'idle', time: '3天前' }
         ]
       }
     ];
 
     const iconDocs = {
       'none': {
-        title: '方案 1：彻底去掉图标（纯文字 + Chevron · 最推荐）',
-        desc: '完全还原你第一张截图中那种<strong>大纲式纯净感</strong>：只有折叠箭头 <code>▼</code>，紧接着就是项目名 <code>pi-web-ui</code>！没有任何厚重拟物图标打扰视野，文字更大气、更现代。',
+        title: '方案 1：徹底去掉圖示（純文字 + Chevron · 最推薦）',
+        desc: '完全還原你第一張截圖中那種<strong>大綱式純淨感</strong>：只有摺疊箭頭 <code>▼</code>，緊接著就是專案名 <code>pi-web-ui</code>！沒有任何厚重擬物圖示打擾視野，文字更大氣、更現代。',
         features: [
-          '首图 1:1 纯净质感：文字拥有最开阔的空间，视觉干脆利落。',
-          '与下级文字自然呼应：父级粗体，子级常规体，不靠图标也能清晰分明。',
-          '代码体积最小、DOM 节点最精简。'
+          '首圖 1:1 純淨質感：文字擁有最開闊的空間，視覺乾脆利落。',
+          '與下級文字自然呼應：父級粗體，子級常規體，不靠圖示也能清晰分明。',
+          '程式碼體積最小、DOM 節點最精簡。'
         ]
       },
       'repo': {
-        title: '方案 2：换成极细 Repo 仓库符号（严谨工程感）',
-        desc: '使用类似 GitHub / VS Code 的<strong>极细代码仓库微缩图标（Outline Repo）</strong>，仅 12px 大小，灰淡通透，带有专业的开发工具质感。',
+        title: '方案 2：換成極細 Repo 倉庫符號（嚴謹工程感）',
+        desc: '使用類似 GitHub / VS Code 的<strong>極細程式碼倉庫微縮圖示（Outline Repo）</strong>，僅 12px 大小，灰淡通透，帶有專業的開發工具質感。',
         features: [
-          '工程工具属性：一眼识别出这是一个 Git 代码仓库。',
-          '极细线框质感：采用 1.5px 极细描边，绝不臃肿笨重。'
+          '工程工具屬性：一眼識別出這是一個 Git 程式碼倉庫。',
+          '極細線框質感：採用 1.5px 極細描邊，絕不臃腫笨重。'
         ]
       },
       'slash': {
-        title: '方案 3：代码路径前缀（~/ 或 /）',
-        desc: '使用终端风格的路径前缀 <code>~/</code> 或 <code>/</code>，轻巧现代，带有浓郁的 Hacker / Terminal 美感。',
+        title: '方案 3：程式碼路徑字首（~/ 或 /）',
+        desc: '使用終端風格的路徑字首 <code>~/</code> 或 <code>/</code>，輕巧現代，帶有濃郁的 Hacker / Terminal 美感。',
         features: [
-          'Terminal 极简美学：适合喜欢命令行风格的高级用户。',
-          '字符级轻量：不引入 SVG 图标，纯文字排版。'
+          'Terminal 極簡美學：適合喜歡命令列風格的高階使用者。',
+          '字元級輕量：不引入 SVG 圖示，純文字排版。'
         ]
       }
     };
@@ -680,7 +683,7 @@
         chevron.textContent = '▼';
         head.appendChild(chevron);
 
-        // 图标插槽根据选中的模式渲染
+        // 圖示插槽根據選中的模式渲染
         if (currentIconMode === 'repo') {
           const repoIcon = document.createElement('span');
           repoIcon.className = 'custom-proj-icon';
@@ -695,7 +698,7 @@
           slash.textContent = '~/';
           head.appendChild(slash);
         }
-        // 如果是 'none'，则什么图标都不加，直接接项目名！
+        // 如果是 'none'，則什麼圖示都不加，直接接專案名！
 
         const name = document.createElement('span');
         name.className = 'tree-project-name';
@@ -717,14 +720,14 @@
         const actions = document.createElement('div');
         actions.className = 'project-hover-actions';
         actions.innerHTML = `
-          <button class="head-btn" title="新建对话" onclick="event.stopPropagation(); alert('新建对话')">+</button>
-          <button class="head-btn" title="项目菜单" onclick="event.stopPropagation(); alert('项目菜单')">···</button>
+          <button class="head-btn" title="新建對話" onclick="event.stopPropagation(); alert('新建對話')">+</button>
+          <button class="head-btn" title="專案選單" onclick="event.stopPropagation(); alert('專案選單')">···</button>
         `;
         head.appendChild(actions);
 
         groupEl.appendChild(head);
 
-        // 子项
+        // 子項
         const children = document.createElement('div');
         children.className = 'tree-children';
 
@@ -777,7 +780,7 @@
           const count = p.convs.filter(c => c.status !== 'running').length;
           const tip = document.createElement('div');
           tip.className = 'collapsed-tip';
-          tip.innerHTML = `<span>+ 已收起 ${count} 条历史</span> <span>›</span>`;
+          tip.innerHTML = `<span>+ 已收起 ${count} 條歷史</span> <span>›</span>`;
           tip.onclick = (e) => {
             e.stopPropagation();
             toggleProject(p.id);
@@ -786,8 +789,8 @@
         } else if (!isCollapsed && p.moreCount) {
           const more = document.createElement('div');
           more.className = 'show-more-row';
-          more.textContent = `显示更多 · ${p.moreCount}`;
-          more.onclick = () => alert('加载更多历史');
+          more.textContent = `顯示更多 · ${p.moreCount}`;
+          more.onclick = () => alert('載入更多歷史');
           children.appendChild(more);
         }
 
@@ -808,3 +811,6 @@
   </script>
 </body>
 </html>
+
+
+

@@ -64,7 +64,7 @@
 			margin: 0 auto;
 		}
 
-		/* 顶部标题区 */
+		/* 頂部標題區 */
 		.header {
 			background: var(--bg-elev);
 			border: 1px solid var(--border);
@@ -132,7 +132,7 @@
 			border-right: none;
 		}
 
-		/* 诊断与度量分析条 */
+		/* 診斷與度量分析條 */
 		.diagnosis-bar {
 			display: grid;
 			grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
@@ -165,7 +165,7 @@
 			color: var(--text-dim);
 		}
 
-		/* 弹窗模拟器外壳 */
+		/* 彈窗模擬器外殼 */
 		.modal-mockup-wrap {
 			background: rgba(0, 0, 0, 0.4);
 			border: 1px dashed var(--border);
@@ -213,7 +213,7 @@
 			font-weight: 500;
 		}
 
-		/* 现状中的 Hero Banner */
+		/* 現狀中的 Hero Banner */
 		.hero-banner {
 			display: flex;
 			align-items: center;
@@ -236,7 +236,7 @@
 			margin-top: 2px;
 		}
 
-		/* Diff 组件样式 */
+		/* Diff 元件樣式 */
 		.diff-card {
 			margin: 12px 16px;
 			border: 1px solid var(--border-soft);
@@ -310,7 +310,7 @@
 			font-weight: 600;
 		}
 
-		/* 现状中的 Output 与 Details 区 */
+		/* 現狀中的 Output 與 Details 區 */
 		.section-output {
 			margin: 0 16px 16px;
 			padding: 10px 14px;
@@ -342,7 +342,7 @@
 			color: var(--text-dim);
 		}
 
-		/* 方案 B：IDE 选项卡无缝风格 */
+		/* 方案 B：IDE 選項卡無縫風格 */
 		.ide-tab-header {
 			display: flex;
 			align-items: center;
@@ -374,7 +374,7 @@
 			color: var(--text-dim);
 		}
 
-		/* 方案 C：浮动胶囊风格 */
+		/* 方案 C：浮動膠囊風格 */
 		.floating-diff-wrap {
 			position: relative;
 			background: var(--bg);
@@ -393,7 +393,7 @@
 			box-shadow: 0 4px 12px rgba(0,0,0,0.3);
 		}
 
-		/* 方案对比评估表 */
+		/* 方案對比評估表 */
 		.compare-table {
 			width: 100%;
 			border-collapse: collapse;
@@ -415,6 +415,9 @@
 	</style>
 </head>
 <body>
+<div data-docs-i18n-switch style="position:fixed;top:8px;right:12px;z-index:2147483647;font:12px/1.6 -apple-system,system-ui,sans-serif;background:rgba(15,17,22,.78);color:#fff;padding:4px 12px;border-radius:999px;box-shadow:0 2px 10px rgba(0,0,0,.35)"><a href="./issue-769-diff-compact-ui-proposals.html" style="color:#fff;text-decoration:none">简体中文</a> · <a href="./issue-769-diff-compact-ui-proposals.en.html" style="color:#fff;text-decoration:none">English</a> · <strong>繁體中文</strong></div>
+
+
 
 <div class="container">
 	<!-- 頂部標題 -->
@@ -520,12 +523,12 @@
 
 	const SCHEMES = {
 		orig: {
-			name: '现状：多层臃肿 (用户截图还原)',
+			name: '現狀：多層臃腫 (使用者截圖還原)',
 			ratio: '34%',
-			savedHeight: '0px (无削减)',
-			redundancy: '文件路径重复 3 次 · 按钮重复 3 组',
+			savedHeight: '0px (無削減)',
+			redundancy: '檔案路徑重複 3 次 · 按鈕重複 3 組',
 			render: () => `
-				<!-- 1. 顶栏 -->
+				<!-- 1. 頂欄 -->
 				<div class="mockup-header">
 					<div class="mockup-title-group">
 						<span>✏️</span>
@@ -533,23 +536,23 @@
 						<span class="mockup-badge">完成</span>
 					</div>
 					<div style="display:flex; gap:6px;">
-						<button class="btn" style="font-size:11px;">⚙ 原始参数</button>
+						<button class="btn" style="font-size:11px;">⚙ 原始引數</button>
 						<button class="btn" style="font-size:11px;">⛶</button>
-						<button class="btn" style="font-size:11px;">📋 复制全部</button>
+						<button class="btn" style="font-size:11px;">📋 複製全部</button>
 						<button class="btn" style="font-size:11px;">✕</button>
 					</div>
 				</div>
 
-				<!-- 2. 冗余的 Hero Banner (整整 62px 高度) -->
+				<!-- 2. 冗餘的 Hero Banner (整整 62px 高度) -->
 				<div class="hero-banner">
 					<div>
-						<div class="title">目标文件路径 (TARGET FILE PATH)</div>
+						<div class="title">目標檔案路徑 (TARGET FILE PATH)</div>
 						<div class="path">server/serialize.ts</div>
 					</div>
-					<button class="btn" style="font-size:11px;">📋 复制路径</button>
+					<button class="btn" style="font-size:11px;">📋 複製路徑</button>
 				</div>
 
-				<!-- 3. 第二次出现路径与重复按钮的 Diff 卡片 -->
+				<!-- 3. 第二次出現路徑與重複按鈕的 Diff 卡片 -->
 				<div class="diff-card">
 					<div class="diff-toolbar">
 						<div>
@@ -560,9 +563,9 @@
 						</div>
 						<div style="display:flex; gap:4px;">
 							<div class="btn-group">
-								<button class="btn active" style="font-size:10.5px; padding:2px 6px;">统一差异</button>
-								<button class="btn" style="font-size:10.5px; padding:2px 6px;">分屏对照</button>
-								<button class="btn" style="font-size:10.5px; padding:2px 6px;">原始参数</button>
+								<button class="btn active" style="font-size:10.5px; padding:2px 6px;">統一差異</button>
+								<button class="btn" style="font-size:10.5px; padding:2px 6px;">分屏對照</button>
+								<button class="btn" style="font-size:10.5px; padding:2px 6px;">原始引數</button>
 							</div>
 							<button class="btn" style="font-size:10.5px; padding:2px 6px;">↗</button>
 							<button class="btn" style="font-size:10.5px; padding:2px 6px;">⛶</button>
@@ -578,29 +581,29 @@
 					</div>
 				</div>
 
-				<!-- 4. 冗余单独占块的 Output (75px 高度) -->
+				<!-- 4. 冗餘單獨佔塊的 Output (75px 高度) -->
 				<div class="section-output">
 					<div class="section-output-title">
-						<span>执行输出 (OUTPUT)</span>
-						<span>56 字符 · 1 行</span>
+						<span>執行輸出 (OUTPUT)</span>
+						<span>56 字元 · 1 行</span>
 					</div>
 					<div>Successfully replaced 1 block(s) in server/serialize.ts.</div>
 				</div>
 
-				<!-- 5. 扩展详情条 -->
+				<!-- 5. 擴充套件詳情條 -->
 				<div class="section-details-strip">
-					<span>> ⚙ 扩展详情 (Details)</span>
+					<span>> ⚙ 擴充套件詳情 (Details)</span>
 					<span style="font-size:11px; color:var(--text-faint);">3 keys</span>
 				</div>
 			`
 		},
 		d: {
-			name: '🌟 方案 D：黄金分割精炼 (推荐最佳平衡)',
+			name: '🌟 方案 D：黃金分割精煉 (推薦最佳平衡)',
 			ratio: '76%',
-			savedHeight: '节省 140px 垂直高度',
-			redundancy: '零重复 · 紧凑通透 · 专注代码',
+			savedHeight: '節省 140px 垂直高度',
+			redundancy: '零重複 · 緊湊通透 · 專注程式碼',
 			render: () => `
-				<!-- 1. 顶栏：集中收敛路径与窗口级控制 -->
+				<!-- 1. 頂欄：集中收斂路徑與視窗級控制 -->
 				<div class="mockup-header" style="padding: 10px 16px;">
 					<div class="mockup-title-group">
 						<span>📄</span>
@@ -614,18 +617,18 @@
 					</div>
 					<div style="display:flex; gap:6px;">
 						<div class="btn-group">
-							<button class="btn active" style="font-size:11px; padding:3px 8px;">统一差异</button>
-							<button class="btn" style="font-size:11px; padding:3px 8px;">分屏对照</button>
+							<button class="btn active" style="font-size:11px; padding:3px 8px;">統一差異</button>
+							<button class="btn" style="font-size:11px; padding:3px 8px;">分屏對照</button>
 							<button class="btn" style="font-size:11px; padding:3px 8px;">Raw</button>
 						</div>
-						<button class="btn" title="复制代码" style="font-size:11px; padding:3px 7px;">📋</button>
-						<button class="btn" title="在文件树中打开" style="font-size:11px; padding:3px 7px;">📂</button>
-						<button class="btn" title="全屏查看" style="font-size:11px; padding:3px 7px;">⛶</button>
-						<button class="btn" title="关闭 (ESC)" style="font-size:11px; padding:3px 7px;">✕</button>
+						<button class="btn" title="複製程式碼" style="font-size:11px; padding:3px 7px;">📋</button>
+						<button class="btn" title="在檔案樹中開啟" style="font-size:11px; padding:3px 7px;">📂</button>
+						<button class="btn" title="全屏檢視" style="font-size:11px; padding:3px 7px;">⛶</button>
+						<button class="btn" title="關閉 (ESC)" style="font-size:11px; padding:3px 7px;">✕</button>
 					</div>
 				</div>
 
-				<!-- 2. Diff 核心内容区：无多余包裹卡片，空间直通 -->
+				<!-- 2. Diff 核心內容區：無多餘包裹卡片，空間直通 -->
 				<div style="background:var(--bg); overflow:hidden; font-family:var(--mono); font-size:12px;">
 					<div class="diff-table">
 						<div class="diff-row hunk" style="padding: 2px 14px;">@@ -13,9 +13,9 @@</div>
@@ -634,12 +637,12 @@
 						<div class="diff-row del"><div class="diff-gutter" style="width:34px;">17</div><div class="diff-code">- export const ARGS_CAP = <span class="char-del">20_000</span>;</div></div>
 						<div class="diff-row add"><div class="diff-gutter" style="width:34px;">17</div><div class="diff-code">+ export const ARGS_CAP = <span class="char-add">200_000</span>;</div></div>
 						<div class="diff-row"><div class="diff-gutter" style="width:34px;">18</div><div class="diff-code">&nbsp;/**</div></div>
-						<div class="diff-row"><div class="diff-gutter" style="width:34px;">19</div><div class="diff-code">&nbsp; * toolResult 里单张图片进快照的上限...</div></div>
+						<div class="diff-row"><div class="diff-gutter" style="width:34px;">19</div><div class="diff-code">&nbsp; * toolResult 裡單張圖片進快照的上限...</div></div>
 						<div class="diff-row"><div class="diff-gutter" style="width:34px;">20</div><div class="diff-code">&nbsp; */</div></div>
 					</div>
 				</div>
 
-				<!-- 3. 底部极简状态条：合并 Output 与 Details，高度仅 26px -->
+				<!-- 3. 底部極簡狀態條：合併 Output 與 Details，高度僅 26px -->
 				<div style="display:flex; align-items:center; justify-content:space-between; padding:5px 14px; background:var(--bg-elev2); border-top:1px solid var(--border-soft); font-size:11px; color:var(--text-dim);">
 					<div style="display:flex; align-items:center; gap:8px;">
 						<span style="color:var(--green);">✓</span>
@@ -648,18 +651,18 @@
 					<div style="display:flex; gap:10px; font-family:var(--mono);">
 						<span>details: 3 keys</span>
 						<span style="color:var(--text-faint);">|</span>
-						<a href="#" style="color:var(--accent); text-decoration:none;" onclick="alert('展开全部细节'); return false;">查看完整日志</a>
+						<a href="#" style="color:var(--accent); text-decoration:none;" onclick="alert('展開全部細節'); return false;">檢視完整日誌</a>
 					</div>
 				</div>
 			`
 		},
 		a: {
-			name: '方案 A：流线极简 (去 Banner + 削减边距)',
+			name: '方案 A：流線極簡 (去 Banner + 削減邊距)',
 			ratio: '68%',
-			savedHeight: '节省 120px',
-			redundancy: '去掉了中间最大的 Hero 横幅',
+			savedHeight: '節省 120px',
+			redundancy: '去掉了中間最大的 Hero 橫幅',
 			render: () => `
-				<!-- 顶栏保留 -->
+				<!-- 頂欄保留 -->
 				<div class="mockup-header">
 					<div class="mockup-title-group">
 						<span>✏️</span>
@@ -672,12 +675,12 @@
 					</div>
 				</div>
 
-				<!-- Diff 卡片紧凑贴顶，无中间大横幅 -->
+				<!-- Diff 卡片緊湊貼頂，無中間大橫幅 -->
 				<div class="diff-card" style="margin: 8px 12px;">
 					<div class="diff-toolbar">
 						<span>📄 server/serialize.ts (+1 -1)</span>
 						<div class="btn-group">
-							<button class="btn active" style="font-size:10.5px; padding:2px 6px;">统一差异</button>
+							<button class="btn active" style="font-size:10.5px; padding:2px 6px;">統一差異</button>
 							<button class="btn" style="font-size:10.5px; padding:2px 6px;">分屏</button>
 							<button class="btn" style="font-size:10.5px; padding:2px 6px;">Raw</button>
 						</div>
@@ -691,7 +694,7 @@
 					</div>
 				</div>
 
-				<!-- 底部输出极简单行化 -->
+				<!-- 底部輸出極簡單行化 -->
 				<div style="margin: 0 12px 10px; padding: 6px 10px; background:var(--bg-elev2); border-radius:6px; font-size:11.5px; color:var(--text-dim); display:flex; justify-content:space-between;">
 					<span>✓ Successfully replaced 1 block(s)</span>
 					<span style="font-family:var(--mono);">3 keys</span>
@@ -699,12 +702,12 @@
 			`
 		},
 		b: {
-			name: '方案 B：IDE 标签页融合 (Tab 一体化)',
+			name: '方案 B：IDE 標籤頁融合 (Tab 一體化)',
 			ratio: '82%',
-			savedHeight: '节省 175px 垂直空间',
-			redundancy: '零嵌套边框 · 原汁原味 IDE 体验',
+			savedHeight: '節省 175px 垂直空間',
+			redundancy: '零巢狀邊框 · 原汁原味 IDE 體驗',
 			render: () => `
-				<!-- 仿 VS Code 文件 Tab -->
+				<!-- 仿 VS Code 檔案 Tab -->
 				<div class="ide-tab-header">
 					<div class="ide-tab">
 						<span>📄 server/serialize.ts</span>
@@ -732,7 +735,7 @@
 					</div>
 				</div>
 
-				<!-- 仿 IDE 底部状态栏 -->
+				<!-- 仿 IDE 底部狀態列 -->
 				<div class="ide-statusbar">
 					<span>✓ edit: Successfully replaced 1 block(s)</span>
 					<span>TypeScript · UTF-8 · LF</span>
@@ -740,19 +743,19 @@
 			`
 		},
 		c: {
-			name: '方案 C：悬浮胶囊紧凑 (浮动 Toolbar)',
+			name: '方案 C：懸浮膠囊緊湊 (浮動 Toolbar)',
 			ratio: '88%',
-			savedHeight: '节省 190px (极致空间)',
-			redundancy: '仅留浮层控制胶囊',
+			savedHeight: '節省 190px (極致空間)',
+			redundancy: '僅留浮層控制膠囊',
 			render: () => `
-				<!-- 顶栏精简为一条细线 -->
+				<!-- 頂欄精簡為一條細線 -->
 				<div class="mockup-header" style="padding:6px 14px;">
 					<span style="font-family:var(--mono); font-size:12px;">server/serialize.ts</span>
 					<button class="btn" style="font-size:10px; padding:1px 6px;">✕</button>
 				</div>
 
 				<div class="floating-diff-wrap">
-					<!-- 右上角微型半透明悬浮胶囊 -->
+					<!-- 右上角微型半透明懸浮膠囊 -->
 					<div class="floating-pill">
 						<button class="btn active" style="font-size:10px; padding:1px 5px;">Diff</button>
 						<button class="btn" style="font-size:10px; padding:1px 5px;">Split</button>
@@ -794,19 +797,19 @@
 
 		const diagHtml = `
 			<div class="diag-card ${currentScheme === 'orig' ? 'warn' : 'good'}">
-				<div class="diag-label">代码 Diff 有效可视面积占比</div>
+				<div class="diag-label">程式碼 Diff 有效可視面積佔比</div>
 				<div class="diag-val" style="color:${currentScheme === 'orig' ? 'var(--red)' : 'var(--green)'};">${s.ratio}</div>
-				<div class="diag-label">${currentScheme === 'orig' ? '大量空间被冗余Banner与边框挤占' : '核心代码占据视口绝对主体'}</div>
+				<div class="diag-label">${currentScheme === 'orig' ? '大量空間被冗餘Banner與邊框擠佔' : '核心程式碼佔據視口絕對主體'}</div>
 			</div>
 			<div class="diag-card info">
-				<div class="diag-label">垂直空间节省</div>
+				<div class="diag-label">垂直空間節省</div>
 				<div class="diag-val" style="color:var(--accent);">${s.savedHeight}</div>
-				<div class="diag-label">消除空行、多层 padding 与重复盒子</div>
+				<div class="diag-label">消除空行、多層 padding 與重複盒子</div>
 			</div>
 			<div class="diag-card good">
-				<div class="diag-label">信息冗余度</div>
+				<div class="diag-label">資訊冗餘度</div>
 				<div class="diag-val" style="font-size:15px; margin:7px 0;">${s.redundancy}</div>
-				<div class="diag-label">消除重复出现的路径与重合按钮</div>
+				<div class="diag-label">消除重複出現的路徑與重合按鈕</div>
 			</div>
 		`;
 		document.getElementById('diagContainer').innerHTML = diagHtml;
@@ -817,4 +820,7 @@
 
 </body>
 </html>
+
+
+
 

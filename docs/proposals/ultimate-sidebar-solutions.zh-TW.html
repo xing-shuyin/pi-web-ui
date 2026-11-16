@@ -124,7 +124,7 @@
       align-items: start;
     }
 
-    /* 侧边栏模拟容器 */
+    /* 側邊欄模擬容器 */
     .mock-frame {
       background: var(--bg-sidebar);
       border: 1px solid var(--border);
@@ -176,7 +176,7 @@
     }
 
     /* ========================================================
-       方案 1：无竖条·柔光全药丸高亮（Linear / Zed 现代纯净流）
+       方案 1：無豎條·柔光全藥丸高亮（Linear / Zed 現代純淨流）
        ======================================================== */
     .sol-1 .proj-row {
       display: flex;
@@ -209,11 +209,11 @@
       margin-top: 1px;
       margin-bottom: 4px;
     }
-    /* 核心美学突破：彻底拿掉生硬的左侧插字竖条！采用浑然天成的柔和药丸高亮 */
+    /* 核心美學突破：徹底拿掉生硬的左側插字豎條！採用渾然天成的柔和藥丸高亮 */
     .sol-1 .chat-item {
       display: flex;
       align-items: center;
-      padding: 6px 8px 6px 20px; /* 统一缩进 20px，文字绝对对齐 */
+      padding: 6px 8px 6px 20px; /* 統一縮排 20px，文字絕對對齊 */
       border-radius: 6px;
       cursor: pointer;
       transition: all 0.1s;
@@ -226,7 +226,7 @@
       color: var(--text);
       font-weight: 600;
     }
-    /* 没有 ::before 竖条！文字永远不会被压住，也不会向外跑！ */
+    /* 沒有 ::before 豎條！文字永遠不會被壓住，也不會向外跑！ */
     .sol-1 .chat-title {
       flex: 1;
       overflow: hidden;
@@ -275,7 +275,7 @@
     @keyframes pulse { 0%,100%{opacity:1;} 50%{opacity:0.35;} }
 
     /* ========================================================
-       方案 2：手风琴智能互斥（永远一屏展示，超多项目不滚屏）
+       方案 2：手風琴智慧互斥（永遠一屏展示，超多專案不滾屏）
        ======================================================== */
     .sol-2 .proj-row {
       display: flex;
@@ -291,7 +291,7 @@
     }
 
     /* ========================================================
-       方案 3：工作区顶栏下拉快切（类似 Cursor / Claude 极简纯粹流）
+       方案 3：工作區頂欄下拉快切（類似 Cursor / Claude 極簡純粹流）
        ======================================================== */
     .sol-3 .workspace-select-bar {
       padding: 8px 10px;
@@ -373,6 +373,9 @@
   </style>
 </head>
 <body>
+<div data-docs-i18n-switch style="position:fixed;top:8px;right:12px;z-index:2147483647;font:12px/1.6 -apple-system,system-ui,sans-serif;background:rgba(15,17,22,.78);color:#fff;padding:4px 12px;border-radius:999px;box-shadow:0 2px 10px rgba(0,0,0,.35)"><a href="./ultimate-sidebar-solutions.html" style="color:#fff;text-decoration:none">简体中文</a> · <a href="./ultimate-sidebar-solutions.en.html" style="color:#fff;text-decoration:none">English</a> · <strong>繁體中文</strong></div>
+
+
 
   <header class="nav-header">
     <div class="nav-title">
@@ -453,10 +456,10 @@
         isCurrent: true,
         runningCount: 1,
         convs: [
-          { id: 'c1', title: '如果左侧的项目 运行中和历史合并', category: 'subagent', label: '子代理', running: true, time: '14:37' },
-          { id: 'c2', title: '这些对话平台都有这个报错', category: 'wechat', label: '微信', running: false, time: '11:29' },
-          { id: 'c3', title: '@plugins/lx-music 双击播放逻辑重构', category: null, running: false, time: '11:09' },
-          { id: 'c4', title: '定时任务顶部去掉多余文字', category: null, running: false, time: '10:56' }
+          { id: 'c1', title: '如果左側的專案 執行中和歷史合併', category: 'subagent', label: '子代理', running: true, time: '14:37' },
+          { id: 'c2', title: '這些對話平臺都有這個報錯', category: 'wechat', label: '微信', running: false, time: '11:29' },
+          { id: 'c3', title: '@plugins/lx-music 雙擊播放邏輯重構', category: null, running: false, time: '11:09' },
+          { id: 'c4', title: '定時任務頂部去掉多餘文字', category: null, running: false, time: '10:56' }
         ],
         more: 42
       },
@@ -466,8 +469,8 @@
         isCurrent: false,
         runningCount: 0,
         convs: [
-          { id: 'c5', title: '清理无用文件', running: false, time: '12:08' },
-          { id: 'c6', title: 'Playwright 会话保持', category: 'wechat', label: '微信', running: false, time: '昨天' }
+          { id: 'c5', title: '清理無用檔案', running: false, time: '12:08' },
+          { id: 'c6', title: 'Playwright 會話保持', category: 'wechat', label: '微信', running: false, time: '昨天' }
         ]
       },
       {
@@ -476,37 +479,37 @@
         isCurrent: false,
         runningCount: 0,
         convs: [
-          { id: 'c7', title: 'Kafka 状态误报修复', running: false, time: '3天前' }
+          { id: 'c7', title: 'Kafka 狀態誤報修復', running: false, time: '3天前' }
         ]
       }
     ];
 
     const solDocs = {
       1: {
-        title: '方式 1：无竖条·柔光全药丸高亮（彻底跳出对齐陷阱 · 最推荐）',
-        desc: '<strong>彻底砍掉生硬的左侧 3px 竖条！</strong><br>选中态改为现代最流行的<strong>全行半透明柔光圆角（Soft Pill）</strong>。左侧没有任何留白占用，文字从第一像素完全自然对齐，没有任何被竖条压字、跑出去的风险！',
+        title: '方式 1：無豎條·柔光全藥丸高亮（徹底跳出對齊陷阱 · 最推薦）',
+        desc: '<strong>徹底砍掉生硬的左側 3px 豎條！</strong><br>選中態改為現代最流行的<strong>全行半透明柔光圓角（Soft Pill）</strong>。左側沒有任何留白佔用，文字從第一畫素完全自然對齊，沒有任何被豎條壓字、跑出去的風險！',
         list: [
-          '零竖条压字风险：没有前置伪元素，文字起点从根源上 100% 绝对稳定。',
-          '视觉极其柔和：类似 Linear / Raycast，夜间使用不晃眼、不高突。',
-          '状态全部右置：微信微胶囊、流式 Spinner、时间戳统统整齐靠右。'
+          '零豎條壓字風險：沒有前置偽元素，文字起點從根源上 100% 絕對穩定。',
+          '視覺極其柔和：類似 Linear / Raycast，夜間使用不晃眼、不高突。',
+          '狀態全部右置：微信微膠囊、流式 Spinner、時間戳統統整齊靠右。'
         ]
       },
       2: {
-        title: '方式 2：智能手风琴互斥（超多项目永不长滚）',
-        desc: '点开 <code>ai-browser</code> 时，<code>pi-web-ui</code> 的历史自动收起（正在运行的任务依然常驻露在外面）。<br>无论你有 25 个还是 100 个项目，侧栏永远只有当前激活的项目是完全展开的，高度永远在一屏内！',
+        title: '方式 2：智慧手風琴互斥（超多專案永不長滾）',
+        desc: '點開 <code>ai-browser</code> 時，<code>pi-web-ui</code> 的歷史自動收起（正在執行的任務依然常駐露在外面）。<br>無論你有 25 個還是 100 個專案，側欄永遠只有當前啟用的專案是完全展開的，高度永遠在一屏內！',
         list: [
-          '告别翻滚地狱：再也不用在几十个展开的项目列表里上下拉扯滚动条。',
-          '遵循常驻红线：即使项目收起，只要里面有在跑的 Agent，依然稳稳露在外面。',
-          '极度适合重度多仓库工作流。'
+          '告別翻滾地獄：再也不用在幾十個展開的專案列表裡上下拉扯捲軸。',
+          '遵循常駐紅線：即使專案收起，只要裡面有在跑的 Agent，依然穩穩露在外面。',
+          '極度適合重度多倉庫工作流。'
         ]
       },
       3: {
-        title: '方式 3：顶栏工作区快切（类似 Cursor / Claude 极致专注流）',
-        desc: '把“项目”作为一个醒目的<strong>顶栏工作区选择胶囊</strong>（类似 <code>[ 📁 pi-web-ui ▾ ]</code>），次级侧栏 100% 呈现当前项目的扁平会话流。<br>没有多层树状缩进，像原生聊天应用一样纯粹！',
+        title: '方式 3：頂欄工作區快切（類似 Cursor / Claude 極致專注流）',
+        desc: '把“專案”作為一個醒目的<strong>頂欄工作區選擇膠囊</strong>（類似 <code>[ 📁 pi-web-ui ▾ ]</code>），次級側欄 100% 呈現當前專案的扁平會話流。<br>沒有多層樹狀縮排，像原生聊天應用一樣純粹！',
         list: [
-          '没有文件夹缩进：会话标题享有最宽广的横向空间。',
-          '心智极度专注：当前专心在 pi-web-ui 编码，视线不被其他 24 个项目打扰。',
-          '切换同样快捷：点击顶栏胶囊随时弹出最近项目快切。'
+          '沒有資料夾縮排：會話標題享有最寬廣的橫向空間。',
+          '心智極度專注：當前專心在 pi-web-ui 編碼，視線不被其他 24 個專案打擾。',
+          '切換同樣快捷：點選頂欄膠囊隨時彈出最近專案快切。'
         ]
       }
     };
@@ -539,7 +542,7 @@
           const isCollapsed = currentSol === 2 ? !p.isCurrent : (p.id === 'p3');
           const group = document.createElement('div');
 
-          // 项目头
+          // 專案頭
           const head = document.createElement('div');
           head.className = `proj-row ${p.isCurrent ? 'is-current' : ''}`;
           head.onclick = () => {
@@ -568,7 +571,7 @@
 
           group.appendChild(head);
 
-          // 对话
+          // 對話
           const children = document.createElement('div');
           children.className = 'proj-children';
 
@@ -614,14 +617,14 @@
             tip.style.padding = '4px 8px 4px 20px';
             tip.style.fontSize = '11px';
             tip.style.color = 'var(--text-faint)';
-            tip.textContent = `+ 已收起 ${p.convs.length - 1} 条历史 ›`;
+            tip.textContent = `+ 已收起 ${p.convs.length - 1} 條歷史 ›`;
             children.appendChild(tip);
           } else if (!isCollapsed && p.more) {
             const more = document.createElement('div');
             more.style.padding = '5px 8px 5px 20px';
             more.style.fontSize = '11px';
             more.style.color = 'var(--text-faint)';
-            more.textContent = `显示更多 · ${p.more}`;
+            more.textContent = `顯示更多 · ${p.more}`;
             children.appendChild(more);
           }
 
@@ -629,15 +632,15 @@
           area.appendChild(group);
         });
       } else if (currentSol === 3) {
-        // 方案 3：Cursor 式顶栏快切
+        // 方案 3：Cursor 式頂欄快切
         const selector = document.createElement('div');
         selector.className = 'workspace-select-bar';
         selector.innerHTML = `
           <span>📁</span>
           <strong style="flex:1;">pi-web-ui</strong>
-          <span style="font-size:10px; color:var(--text-dim);">▼ 切换</span>
+          <span style="font-size:10px; color:var(--text-dim);">▼ 切換</span>
         `;
-        selector.onclick = () => alert('点击弹出最近 25 个项目秒切面板');
+        selector.onclick = () => alert('點選彈出最近 25 個專案秒切面板');
         area.appendChild(selector);
 
         const list = document.createElement('div');
@@ -685,3 +688,6 @@
   </script>
 </body>
 </html>
+
+
+

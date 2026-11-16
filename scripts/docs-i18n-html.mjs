@@ -31,22 +31,25 @@ const toTw = req("opencc-js").Converter({ from: "cn", to: "twp" });
 const MODE = process.argv.find((a) => a.startsWith("--")) ?? "--check";
 const MARK = "data-docs-i18n-switch";
 const base = (p) => p.replace(/\.html$/, "");
-const name = (p) => base(p).split("/").pop();
+const name = (p) => base(p).split("/").pop().replace(/\.(en|zh-TW)$/, "");
 
 /** 代码块原样保留，其余部分才做繁简转换。 */
 const CODE = /(<script\b[\s\S]*?<\/script>|<style\b[\s\S]*?<\/style>)/gi;
 
-function convertOutsideCode(html) {
-	return html
-		.split(CODE)
-		.map((seg, i) => (i % 2 === 1 ? seg : toTw(seg)))
-		.join("");
+/**
+ * 整篇转换：设计稿把大半可见文案放在 `<script>` 模板字符串里（面板标题、示例数据、
+ * 提示语），只转静态 HTML 会让读者点到 Tab 就看到简体字。转换只改汉字，JS/CSS 的
+ * 标识符、选择器、JSON 键都是 ASCII，不受影响；HTML 里的 class/id 与脚本里的
+ * 选择器同时被转换，二者仍然一致。
+ */
+function convertDocument(html) {
+	return toTw(html);
 }
 
-function switcher(markup, active) {
-	const zh = `<a href="./${name(markup)}.html" style="color:#fff;text-decoration:none">简体中文</a>`;
-	const en = `<a href="./${name(markup)}.en.html" style="color:#fff;text-decoration:none">English</a>`;
-	const tw = `<a href="./${name(markup)}.zh-TW.html" style="color:#fff;text-decoration:none">繁體中文</a>`;
+function switcher(file, active) {
+	const zh = `<a href="./${name(file)}.html" style="color:#fff;text-decoration:none">简体中文</a>`;
+	const en = `<a href="./${name(file)}.en.html" style="color:#fff;text-decoration:none">English</a>`;
+	const tw = `<a href="./${name(file)}.zh-TW.html" style="color:#fff;text-decoration:none">繁體中文</a>`;
 	const label = (html, key) => (active === key ? `<strong>${html.replace(/<\/?a[^>]*>/g, "")}</strong>` : html);
 	return (
 		`<div ${MARK} style="position:fixed;top:8px;right:12px;z-index:2147483647;font:12px/1.6 -apple-system,system-ui,sans-serif;` +
@@ -55,8 +58,8 @@ function switcher(markup, active) {
 	);
 }
 
-function injectSwitcher(html, active) {
-	const bar = switcher(active, active);
+function injectSwitcher(file, html, active) {
+	const bar = switcher(file, active);
 	// 已有的切换条先删掉，保证幂等
 	const cleaned = html.replace(new RegExp(`<div ${MARK}[\\s\\S]*?</div>`, "g"), "");
 	const m = cleaned.match(/<body\b[^>]*>/i);
@@ -68,7 +71,8 @@ function injectSwitcher(html, active) {
 function reviewFiles() {
 	return execSync("git ls-files 'docs/*.html' 'docs/**/*.html'", { encoding: "utf8" })
 		.split("\n")
-		.filter(Boolean);
+		.filter(Boolean)
+		.filter((file) => !/\.(en|zh-TW)\.html$/.test(file));
 }
 
 const originals = reviewFiles();
@@ -76,6 +80,7 @@ let twWritten = 0;
 let switched = 0;
 const missingEn = [];
 const cjkLeft = [];
+const glossed = [];
 
 for (const file of originals) {
 	const source = readFileSync(file, "utf8");
@@ -83,29 +88,34 @@ for (const file of originals) {
 	const enPath = `${base(file)}.en.html`;
 
 	if (MODE === "--tw") {
-		writeFileSync(twPath, `${convertOutsideCode(source)}\n`, "utf8");
+		writeFileSync(twPath, `${convertDocument(source)}\n`, "utf8");
 		twWritten++;
 	} else if (MODE === "--switchers") {
-		writeFileSync(file, `${injectSwitcher(source, "zh")}\n`, "utf8");
+		writeFileSync(file, `${injectSwitcher(file, source, "zh")}\n`, "utf8");
 		switched++;
 		if (existsSync(twPath)) {
-			writeFileSync(twPath, `${injectSwitcher(readFileSync(twPath, "utf8"), "tw")}\n`, "utf8");
+			writeFileSync(twPath, `${injectSwitcher(twPath, readFileSync(twPath, "utf8"), "tw")}\n`, "utf8");
 			switched++;
 		}
 		if (existsSync(enPath)) {
-			writeFileSync(enPath, `${injectSwitcher(readFileSync(enPath, "utf8"), "en")}\n`, "utf8");
+			writeFileSync(enPath, `${injectSwitcher(enPath, readFileSync(enPath, "utf8"), "en")}\n`, "utf8");
 			switched++;
 		}
 	} else {
 		if (!existsSync(twPath)) missingEn.push(`${twPath} (missing zh-TW)`);
 		if (!existsSync(enPath)) missingEn.push(`${enPath} (missing English)`);
 		if (!source.includes(MARK)) missingEn.push(`${file} (no switcher)`);
-		for (const variant of [enPath, twPath]) {
-			if (!existsSync(variant)) continue;
-			const body = readFileSync(variant, "utf8").replace(CODE, "");
-			const cjk = (body.match(/[\u4e00-\u9fff]/g) || []).length;
-			if (variant.endsWith(".en.html") && cjk > 40) cjkLeft.push(`${variant}: ${cjk} CJK`);
-		}
+		if (!existsSync(enPath)) continue;
+		// 只统计读者看得见的区域：正文 + <script> 里的文案。<style> 里的 CSS 注释
+		// 不渲染，保持原样（与 Markdown 文档不翻译代码注释一致）。
+		const en = readFileSync(enPath, "utf8");
+		const styleCjk = ((en.match(/<style\b[\s\S]*?<\/style>/gi) || []).join("").match(/[\u4e00-\u9fff]/g) || []).length;
+		const visible = en
+			.replace(/<style\b[\s\S]*?<\/style>/gi, "")
+			.replace(new RegExp(`<div ${MARK}[\\s\\S]*?</div>`, "g"), "");
+		const cjk = (visible.match(/[\u4e00-\u9fff]/g) || []).length;
+		if (cjk > 40) cjkLeft.push(`${enPath}: ${cjk} CJK visible (style comments: ${styleCjk})`);
+		else if (cjk > 0) glossed.push(`${enPath}: ${cjk} CJK kept as glossed literals`);
 	}
 }
 
@@ -122,6 +132,7 @@ if (MODE === "--tw") {
 		console.error(`\n英文版本仍有中文残留：${cjkLeft.length}`);
 		for (const line of cjkLeft) console.error("  " + line);
 	}
+	for (const line of glossed) console.log("  · " + line);
 	if (missingEn.length || cjkLeft.length) process.exit(1);
-	console.log(`✓ ${originals.length} 个 HTML 设计稿都有 zh-TW 与 en 版本，英文版无中文残留`);
+	console.log(`✓ ${originals.length} 个 HTML 设计稿都有 zh-TW 与 en 版本；英文版可视区域无未翻译中文`);
 }

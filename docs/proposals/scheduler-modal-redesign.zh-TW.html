@@ -49,7 +49,7 @@
       -webkit-font-smoothing: antialiased;
     }
 
-    /* 顶部 Hero */
+    /* 頂部 Hero */
     .hero {
       background: linear-gradient(180deg, #161821 0%, var(--bg) 100%);
       border-bottom: 1px solid var(--border);
@@ -84,7 +84,7 @@
       line-height: 1.6;
     }
 
-    /* 问题诊断条目 */
+    /* 問題診斷條目 */
     .audit-grid {
       display: grid;
       grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
@@ -121,7 +121,7 @@
       line-height: 1.45;
     }
 
-    /* 方案切换 Tab 栏 */
+    /* 方案切換 Tab 欄 */
     .tab-bar-wrap {
       position: sticky;
       top: 0;
@@ -199,7 +199,7 @@
       border-color: var(--text-dim);
     }
 
-    /* 内容容器 */
+    /* 內容容器 */
     .container {
       max-width: 1280px;
       margin: 0 auto;
@@ -217,7 +217,7 @@
       to { opacity: 1; transform: translateY(0); }
     }
 
-    /* 方案简介卡 */
+    /* 方案簡介卡 */
     .proposal-header {
       margin-bottom: 24px;
       display: flex;
@@ -251,7 +251,7 @@
       line-height: 1.6;
     }
 
-    /* 模拟弹窗容器包装 */
+    /* 模擬彈窗容器包裝 */
     .modal-preview-stage {
       background: radial-gradient(circle at 50% 30%, #1e2230 0%, #0d0f14 85%);
       border: 1px solid var(--border);
@@ -266,7 +266,7 @@
     }
 
     /* ==========================================================================
-       通用弹窗组件库设计系统
+       通用彈窗元件庫設計系統
        ========================================================================== */
     .demo-modal {
       background: var(--bg-elev2);
@@ -362,7 +362,7 @@
       gap: 10px;
     }
 
-    /* 按钮组 */
+    /* 按鈕組 */
     .btn {
       display: inline-flex;
       align-items: center;
@@ -409,7 +409,7 @@
       border-radius: 6px;
     }
 
-    /* 模块卡片 Card Block */
+    /* 模組卡片 Card Block */
     .section-card {
       background: var(--bg-elev);
       border: 1px solid var(--border);
@@ -449,7 +449,7 @@
       border: 1px solid var(--border-soft);
     }
 
-    /* 表单组件 */
+    /* 表單元件 */
     .field-label {
       font-size: 12px;
       font-weight: 500;
@@ -489,7 +489,7 @@
       resize: vertical;
     }
 
-    /* 快捷胶囊 Pill Buttons */
+    /* 快捷膠囊 Pill Buttons */
     .pill-group {
       display: flex;
       flex-wrap: wrap;
@@ -519,7 +519,7 @@
       font-weight: 600;
     }
 
-    /* 自然语言调度预览徽标 */
+    /* 自然語言排程預覽徽標 */
     .schedule-preview-banner {
       background: rgba(52, 211, 153, 0.08);
       border: 1px solid var(--green-border);
@@ -563,7 +563,7 @@
       border: 1px solid var(--border-soft);
     }
 
-    /* 优雅 Switch 开关 */
+    /* 優雅 Switch 開關 */
     .switch-row {
       display: flex;
       align-items: center;
@@ -621,7 +621,7 @@
       background: #fff;
     }
 
-    /* Prompt 模板快捷标签 */
+    /* Prompt 模板快捷標籤 */
     .prompt-toolbar {
       display: flex;
       align-items: center;
@@ -654,7 +654,7 @@
 
 
     /* ==========================================================================
-       方案 A 专属样式 (720px 卡片编排式)
+       方案 A 專屬樣式 (720px 卡片編排式)
        ========================================================================== */
     .modal-plan-a {
       width: 720px;
@@ -673,7 +673,7 @@
 
 
     /* ==========================================================================
-       方案 B 专属样式 (880px 双栏驾驶台)
+       方案 B 專屬樣式 (880px 雙欄駕駛臺)
        ========================================================================== */
     .modal-plan-b {
       width: 880px;
@@ -729,7 +729,7 @@
 
 
     /* ==========================================================================
-       方案 C 专属样式 (640px 步骤引导式)
+       方案 C 專屬樣式 (640px 步驟引導式)
        ========================================================================== */
     .modal-plan-c {
       width: 650px;
@@ -788,7 +788,7 @@
     }
 
 
-    /* 原版对比弹窗 */
+    /* 原版對比彈窗 */
     .old-modal-replica {
       width: 440px;
       background: #1a1d26;
@@ -819,6 +819,9 @@
   </style>
 </head>
 <body>
+<div data-docs-i18n-switch style="position:fixed;top:8px;right:12px;z-index:2147483647;font:12px/1.6 -apple-system,system-ui,sans-serif;background:rgba(15,17,22,.78);color:#fff;padding:4px 12px;border-radius:999px;box-shadow:0 2px 10px rgba(0,0,0,.35)"><a href="./scheduler-modal-redesign.html" style="color:#fff;text-decoration:none">简体中文</a> · <a href="./scheduler-modal-redesign.en.html" style="color:#fff;text-decoration:none">English</a> · <strong>繁體中文</strong></div>
+
+
 
   <!-- 頂部英雄區 -->
   <header class="hero">
@@ -1547,7 +1550,7 @@
 
   <!-- 互動指令碼 -->
   <script>
-    // 方案面板切换
+    // 方案面板切換
     function switchPlan(planId) {
       document.querySelectorAll('.tab-btn').forEach(btn => btn.classList.remove('active'));
       event.currentTarget.classList.add('active');
@@ -1558,7 +1561,7 @@
       document.getElementById(planId).classList.add('active');
     }
 
-    // 方案 A 交互：切换任务目标 (conversation vs canvas)
+    // 方案 A 互動：切換任務目標 (conversation vs canvas)
     function setTargetA(target) {
       const btnConv = document.getElementById('a-tgt-conv');
       const btnCanvas = document.getElementById('a-tgt-canvas');
@@ -1574,7 +1577,7 @@
       }
     }
 
-    // 方案 A 交互：选择调度预设
+    // 方案 A 互動：選擇排程預設
     function selectPresetA(cron, desc, btn) {
       btn.parentElement.querySelectorAll('.pill-btn').forEach(b => b.classList.remove('active'));
       btn.classList.add('active');
@@ -1587,23 +1590,23 @@
 
       if (cron === 'custom') {
         customRow.style.display = 'block';
-        badge.innerText = '自定义 Cron';
-        previewText.innerText = '请在上方输入合法 Cron 表达式';
-        time1.innerText = '实时计算中...';
+        badge.innerText = '自定義 Cron';
+        previewText.innerText = '請在上方輸入合法 Cron 表示式';
+        time1.innerText = '即時計算中...';
         time2.innerText = '—';
       } else if (cron === 'interval') {
         customRow.style.display = 'none';
-        badge.innerText = '固定 60 分钟';
-        previewText.innerText = '每隔 60 分钟触发一次';
-        time1.innerText = '1 小时后';
-        time2.innerText = '2 小时后';
+        badge.innerText = '固定 60 分鐘';
+        previewText.innerText = '每隔 60 分鐘觸發一次';
+        time1.innerText = '1 小時後';
+        time2.innerText = '2 小時後';
       } else {
         customRow.style.display = 'none';
         badge.innerText = cron;
-        previewText.innerText = desc + ' 执行';
+        previewText.innerText = desc + ' 執行';
         if (cron.includes('1-5')) {
           time1.innerText = '明天 09:00';
-          time2.innerText = '后天 09:00';
+          time2.innerText = '後天 09:00';
         } else if (cron.includes('*/30')) {
           time1.innerText = '14:30';
           time2.innerText = '15:00';
@@ -1612,22 +1615,22 @@
           time2.innerText = '16:00';
         } else {
           time1.innerText = '明天 09:00';
-          time2.innerText = '后天 09:00';
+          time2.innerText = '後天 09:00';
         }
       }
     }
 
     function updateCronCustomA(val) {
       document.getElementById('a-cron-raw-badge').innerText = val || '* * * * *';
-      document.getElementById('a-preview-text').innerText = '表达式: ' + (val || '—');
+      document.getElementById('a-preview-text').innerText = '表示式: ' + (val || '—');
     }
 
-    // 方案 A 交互：套用 Prompt 模板
+    // 方案 A 互動：套用 Prompt 模板
     const TEMPLATES = {
-      health: '请对当前项目进行健康与安全性巡检：\n1. 检查 package.json 依赖是否有高危漏洞；\n2. 检查是否有未解决的构建告警；\n3. 输出一份简洁的健康总结并给出升级建议。',
-      test: '执行测试套件与异常排查：\n1. 运行当前项目的自动化测试套件；\n2. 若有失败用例，读取相关代码并定位根因；\n3. 生成测试失败报告并提出修复补丁建议。',
-      git: '日常 Git 仓库状态审计：\n1. 检查是否存在未提交的代码修改或冲突标记；\n2. 查看近 3 天本地分支与远程 main 的差异；\n3. 提示需要清理的废弃分支。',
-      clean: '维护与清理任务：\n1. 检查 node_modules、dist、.cache 等临时目录大小；\n2. 清理过期的构建缓存与临时日志文件；\n3. 报告清理后节省的磁盘空间。'
+      health: '請對當前專案進行健康與安全性巡檢：\n1. 檢查 package.json 依賴是否有高危漏洞；\n2. 檢查是否有未解決的構建告警；\n3. 輸出一份簡潔的健康總結並給出升級建議。',
+      test: '執行測試套件與異常排查：\n1. 運行當前專案的自動化測試套件；\n2. 若有失敗用例，讀取相關程式碼並定位根因；\n3. 生成測試失敗報告並提出修復補丁建議。',
+      git: '日常 Git 倉庫狀態審計：\n1. 檢查是否存在未提交的程式碼修改或衝突標記；\n2. 檢視近 3 天本地分支與遠端 main 的差異；\n3. 提示需要清理的廢棄分支。',
+      clean: '維護與清理任務：\n1. 檢查 node_modules、dist、.cache 等臨時目錄大小；\n2. 清理過期的構建快取與臨時日誌檔案；\n3. 報告清理後節省的磁碟空間。'
     };
 
     function applyTemplateA(key) {
@@ -1636,7 +1639,7 @@
       area.focus();
     }
 
-    // 方案 C 交互：步骤跳转
+    // 方案 C 互動：步驟跳轉
     let currentStepC = 2;
     function jumpStepC(step) {
       currentStepC = step;
@@ -1665,7 +1668,7 @@
       const nextBtn = document.getElementById('c-next-btn');
       prevBtn.style.visibility = currentStepC === 1 ? 'hidden' : 'visible';
       if (currentStepC === 3) {
-        nextBtn.innerText = '立即保存任务 ✓';
+        nextBtn.innerText = '立即儲存任務 ✓';
         nextBtn.className = 'btn primary';
       } else {
         nextBtn.innerText = '下一步 →';
@@ -1674,4 +1677,7 @@
   </script>
 </body>
 </html>
+
+
+
 

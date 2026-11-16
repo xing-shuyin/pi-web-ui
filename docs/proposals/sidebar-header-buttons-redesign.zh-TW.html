@@ -45,7 +45,7 @@
       padding-bottom: 60px;
     }
 
-    /* 顶部导航与总览 */
+    /* 頂部導航與總覽 */
     .top-hero {
       background: linear-gradient(180deg, #181922 0%, var(--bg) 100%);
       border-bottom: 1px solid var(--border);
@@ -82,7 +82,7 @@
       max-width: 820px;
     }
 
-    /* 导航栏固定控制条 */
+    /* 導航欄固定控制條 */
     .sticky-nav {
       position: sticky;
       top: 0;
@@ -195,7 +195,7 @@
     .tag-amber { background: var(--amber-soft); color: #fbbf24; border: 1px solid rgba(245, 158, 11, 0.3); }
     .tag-blue { background: var(--blue-soft); color: #60a5fa; border: 1px solid rgba(59, 130, 246, 0.3); }
 
-    /* 方案展示栅格 */
+    /* 方案展示柵格 */
     .proposals-grid {
       display: grid;
       grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
@@ -241,7 +241,7 @@
       letter-spacing: 0.5px;
     }
 
-    /* 侧边栏仿真组件 */
+    /* 側邊欄模擬元件 */
     .sidebar-mock {
       background: #111318;
       border: 1px solid var(--border);
@@ -329,7 +329,7 @@
       color: #fff;
     }
 
-    /* 弹出菜单仿真 */
+    /* 彈出選單模擬 */
     .mock-dropdown {
       position: absolute;
       top: 32px;
@@ -378,7 +378,7 @@
       margin: 4px 0;
     }
 
-    /* 列表内容仿真 */
+    /* 列表內容模擬 */
     .mock-list {
       padding: 8px 6px;
       min-height: 140px;
@@ -409,7 +409,7 @@
       color: var(--text-faint);
     }
 
-    /* 方案具体描述 */
+    /* 方案具體描述 */
     .proposal-meta {
       font-size: 12.5px;
       color: var(--text-dim);
@@ -437,7 +437,7 @@
       font-weight: 600;
     }
 
-    /* 对比表格 */
+    /* 對比表格 */
     .comparison-table-wrap {
       margin-top: 36px;
       background: var(--bg-panel);
@@ -468,7 +468,7 @@
       background: rgba(255, 255, 255, 0.02);
     }
 
-    /* 代码改动建议 */
+    /* 程式碼改動建議 */
     .code-diff-card {
       margin-top: 36px;
       background: var(--bg-panel);
@@ -492,7 +492,7 @@
     .diff-del { color: #fca5a5; background: rgba(239, 68, 68, 0.1); display: block; margin: 0 -14px; padding: 0 14px; }
     .diff-comment { color: #64748b; }
 
-    /* 工具按钮微型提示框 */
+    /* 工具按鈕微型提示框 */
     .tooltip-tag {
       position: absolute;
       bottom: -24px;
@@ -510,7 +510,7 @@
       opacity: 1;
     }
 
-    /* 方案1细分折叠形态演示 */
+    /* 方案1細分摺疊形態演示 */
     .chevron-demo-box {
       background: var(--bg-elev);
       border: 1px solid var(--border);
@@ -576,7 +576,7 @@
       transform: translateX(0);
     }
 
-    /* 方案3搜索栏 */
+    /* 方案3搜尋欄 */
     .mock-filter-bar {
       padding: 6px 8px;
       background: #161922;
@@ -601,6 +601,9 @@
   </style>
 </head>
 <body>
+<div data-docs-i18n-switch style="position:fixed;top:8px;right:12px;z-index:2147483647;font:12px/1.6 -apple-system,system-ui,sans-serif;background:rgba(15,17,22,.78);color:#fff;padding:4px 12px;border-radius:999px;box-shadow:0 2px 10px rgba(0,0,0,.35)"><a href="./sidebar-header-buttons-redesign.html" style="color:#fff;text-decoration:none">简体中文</a> · <a href="./sidebar-header-buttons-redesign.en.html" style="color:#fff;text-decoration:none">English</a> · <strong>繁體中文</strong></div>
+
+
 
   <!-- 頂部導覽 -->
   <div class="top-hero">
@@ -1202,7 +1205,7 @@
   </div>
 
   <script>
-    // 切换视图选项卡
+    // 切換檢視選項卡
     function switchView(tabKey) {
       document.querySelectorAll('.tab-pill').forEach(btn => btn.classList.remove('active'));
       event.target.classList.add('active');
@@ -1237,7 +1240,7 @@
       }
     }
 
-    // 交互：折叠形态演示切换
+    // 互動：摺疊形態演示切換
     let currentChevronStyle = 'lead';
     let isChevronListCollapsed = false;
 
@@ -1255,51 +1258,51 @@
             <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="6 9 12 15 18 9"></polyline></svg>
           </span>
           <div class="mock-tabs">
-            <span class="mock-tab active" onclick="event.stopPropagation();">📁 项目 <span class="mock-badge">(25)</span></span>
-            <span class="mock-tab" onclick="event.stopPropagation();">👥 群组</span>
+            <span class="mock-tab active" onclick="event.stopPropagation();">📁 專案 <span class="mock-badge">(25)</span></span>
+            <span class="mock-tab" onclick="event.stopPropagation();">👥 群組</span>
           </div>
         `;
         descEl.innerHTML = `
-          <strong>形态 1A（左置前导树状箭头 · 强烈推荐）：</strong><br>
-          将折叠指示器移到最左侧行首（<code>▼ 项目 (25)</code>），展开时箭头向下，折叠时向右旋转 90° 变成 <code>▶</code>。<br>
-          这是 VS Code、Cursor、JetBrains 及所有文件树/大纲列表的通用标准。它将“本区块折叠”明确归位到左侧内容结构区，彻底与右侧的“业务新建 [+]”和“面板折叠 [&lt;]”分离，两边动线互不干扰！
+          <strong>形態 1A（左置前導樹狀箭頭 · 強烈推薦）：</strong><br>
+          將摺疊指示器移到最左側行首（<code>▼ 專案 (25)</code>），展開時箭頭向下，摺疊時向右旋轉 90° 變成 <code>▶</code>。<br>
+          這是 VS Code、Cursor、JetBrains 及所有檔案樹/大綱列表的通用標準。它將“本區塊摺疊”明確歸位到左側內容結構區，徹底與右側的“業務新建 [+]”和“面板摺疊 [&lt;]”分離，兩邊動線互不干擾！
         `;
       } else if (styleKey === 'badge') {
         document.getElementById('st-btn-2').classList.add('active');
         leftEl.innerHTML = `
           <div class="mock-tabs">
-            <span class="mock-tab active" onclick="event.stopPropagation();">📁 项目 <span class="mock-badge">(25)</span></span>
-            <span class="mock-tab" onclick="event.stopPropagation();">👥 群组</span>
+            <span class="mock-tab active" onclick="event.stopPropagation();">📁 專案 <span class="mock-badge">(25)</span></span>
+            <span class="mock-tab" onclick="event.stopPropagation();">👥 群組</span>
           </div>
           <span style="font-size: 10px; color: var(--text-faint); margin-left: 2px; transition: transform 0.15s ease; display: inline-block; transform: ${isChevronListCollapsed ? 'rotate(180deg)' : 'none'};">
             ${isChevronListCollapsed ? '▾' : '▴'}
           </span>
         `;
         descEl.innerHTML = `
-          <strong>形态 1B：微淡角标附着（缩小且降噪）：</strong><br>
-          保留在 Tab 胶囊的后方，但<strong>不再作为独立 24px 大小方块按钮</strong>，而是以 10px 弱化灰度角标出现，点击整行标题任意空白区域均可折叠。<br>
-          让用户明确意识到它“只是标题的从属属性”，不再产生“右边挤了一堆按钮”的工具栏堆叠感。
+          <strong>形態 1B：微淡角標附著（縮小且降噪）：</strong><br>
+          保留在 Tab 膠囊的後方，但<strong>不再作為獨立 24px 大小方塊按鈕</strong>，而是以 10px 弱化灰度角標出現，點選整行標題任意空白區域均可摺疊。<br>
+          讓使用者明確意識到它“只是標題的從屬屬性”，不再產生“右邊擠了一堆按鈕”的工具欄堆疊感。
         `;
       } else if (styleKey === 'hover') {
         document.getElementById('st-btn-3').classList.add('active');
         leftEl.innerHTML = `
           <div class="mock-tabs">
-            <span class="mock-tab active" onclick="event.stopPropagation();">📁 项目 <span class="mock-badge">(25)</span></span>
-            <span class="mock-tab" onclick="event.stopPropagation();">👥 群组</span>
+            <span class="mock-tab active" onclick="event.stopPropagation();">📁 專案 <span class="mock-badge">(25)</span></span>
+            <span class="mock-tab" onclick="event.stopPropagation();">👥 群組</span>
           </div>
           <span class="hover-only-arrow" style="font-size: 10px; color: var(--text-faint); margin-left: 4px; opacity: 0; transition: opacity 0.15s ease;">
-            ${isChevronListCollapsed ? '▾ (点击展开)' : '▴ (点击折叠)'}
+            ${isChevronListCollapsed ? '▾ (點選展開)' : '▴ (點選摺疊)'}
           </span>
         `;
         descEl.innerHTML = `
-          <strong>形态 1C：整行可点 + 悬浮显现提示（极简沉浸）：</strong><br>
-          常态下完全隐藏折叠箭头，视线没有任何杂音。展开列表本身就是最直观的视觉事实。<br>
-          鼠标悬停在标题栏空白处时，淡入微小提示。整行空白区域均可随时点击折叠/展开。
+          <strong>形態 1C：整行可點 + 懸浮顯現提示（極簡沉浸）：</strong><br>
+          常態下完全隱藏摺疊箭頭，視線沒有任何雜音。展開列表本身就是最直觀的視覺事實。<br>
+          滑鼠懸停在標題欄空白處時，淡入微小提示。整行空白區域均可隨時點選摺疊/展開。
         `;
       }
     }
 
-    // 交互：点击标题栏整行触发折叠
+    // 互動：點選標題欄整行觸發摺疊
     function handleHeaderToggle(e) {
       if (e.target.closest('.mock-actions') || e.target.closest('.mock-tab')) {
         return;
@@ -1326,7 +1329,7 @@
       dd.style.display = dd.style.display === 'none' ? 'block' : 'none';
     }
 
-    // 交互：切换下拉菜单
+    // 互動：切換下拉選單
     function toggleDropdown(id) {
       const dd = document.getElementById('dropdown-' + id);
       if (dd.style.display === 'none') {
@@ -1336,7 +1339,7 @@
       }
     }
 
-    // 交互：切换折叠列表
+    // 互動：切換摺疊列表
     function toggleMockCollapse(listId) {
       const list = document.getElementById(listId);
       if (list.style.display === 'none') {
@@ -1346,14 +1349,14 @@
       }
     }
 
-    // 交互：切换 Tab
+    // 互動：切換 Tab
     function toggleMockTab(el, prefix) {
       const parent = el.parentElement;
       parent.querySelectorAll('.mock-tab').forEach(t => t.classList.remove('active'));
       el.classList.add('active');
     }
 
-    // 交互：搜索过滤演示
+    // 互動：搜尋過濾演示
     function filterMockList(query) {
       const items = document.querySelectorAll('#mock-list-3 .mock-item');
       items.forEach(item => {
@@ -1365,7 +1368,7 @@
       });
     }
 
-    // 点击其他地方关闭下拉
+    // 點選其他地方關閉下拉
     window.addEventListener('click', function(e) {
       if (!e.target.closest('#btn-p1-add') && !e.target.closest('#dropdown-p1')) {
         const dd = document.getElementById('dropdown-p1');
@@ -1375,4 +1378,7 @@
   </script>
 </body>
 </html>
+
+
+
 

@@ -40,7 +40,7 @@
     overflow: hidden;
   }
 
-  /* 顶部全局方案控制器 */
+  /* 頂部全域性方案控制器 */
   .control-bar {
     background: #111318;
     border-bottom: 1px solid var(--border);
@@ -111,7 +111,7 @@
     font-weight: 600;
   }
 
-  /* 解释横幅 */
+  /* 解釋橫幅 */
   .explain-banner {
     background: color-mix(in srgb, var(--accent) 9%, var(--bg-elev));
     border-bottom: 1px solid color-mix(in srgb, var(--accent) 30%, var(--border));
@@ -133,7 +133,7 @@
     color: #e2e8f0;
   }
 
-  /* 完整 App 仿真容器 */
+  /* 完整 App 模擬容器 */
   .app-container {
     flex: 1;
     display: flex;
@@ -142,7 +142,7 @@
     background: var(--bg);
   }
 
-  /* 1. 左侧栏 (LeftPanel 仿真) */
+  /* 1. 左側欄 (LeftPanel 模擬) */
   .left-panel {
     width: 240px;
     background: var(--bg-elev);
@@ -197,7 +197,7 @@
     background: var(--green);
   }
 
-  /* 2. 中间主区域 (main) */
+  /* 2. 中間主區域 (main) */
   .center-main {
     flex: 1;
     min-width: 0;
@@ -240,7 +240,7 @@
   }
   .dg-pill-dot { width: 5px; height: 5px; border-radius: 50%; background: var(--green); }
 
-  /* 顶部药丸导航 */
+  /* 頂部藥丸導航 */
   .dg-nav {
     display: flex;
     align-items: center;
@@ -282,7 +282,7 @@
     color: #000;
   }
 
-  /* 任务轻量条 */
+  /* 任務輕量條 */
   .dg-tasks-strip {
     background: #11141a;
     border-bottom: 1px solid var(--border);
@@ -303,7 +303,7 @@
     gap: 6px;
   }
 
-  /* 对话流区域 */
+  /* 對話流區域 */
   .chat-scroll {
     flex: 1;
     overflow-y: auto;
@@ -320,7 +320,7 @@
     gap: 16px;
   }
 
-  /* 消息卡片 */
+  /* 訊息卡片 */
   .msg-row {
     display: flex;
     gap: 12px;
@@ -413,7 +413,7 @@
     cursor: pointer;
   }
 
-  /* 输入区 */
+  /* 輸入區 */
   .chat-composer {
     background: var(--bg-elev);
     border-top: 1px solid var(--border);
@@ -433,7 +433,7 @@
   }
 
   /* =========================================================================
-     3. 方案 A：右栏融合 (RightPanel Tab 切换)
+     3. 方案 A：右欄融合 (RightPanel Tab 切換)
      ========================================================================= */
   .right-panel-a {
     width: 380px;
@@ -491,7 +491,7 @@
     gap: 12px;
   }
 
-  /* 文件树内容卡片 */
+  /* 檔案樹內容卡片 */
   .tree-node {
     display: flex;
     align-items: center;
@@ -508,7 +508,7 @@
   }
   .tree-node.file { padding-left: 20px; }
 
-  /* 待办交付卡片 */
+  /* 待辦交付卡片 */
   .delivery-card {
     background: var(--bg);
     border: 1px solid var(--border);
@@ -522,7 +522,7 @@
   .delivery-card strong { color: var(--text); font-size: 12.5px; }
   .delivery-card p { color: var(--text-dim); font-size: 11.5px; }
 
-  /* Bot 状态卡片 */
+  /* Bot 狀態卡片 */
   .bot-card {
     background: var(--bg);
     border: 1px solid var(--border);
@@ -539,7 +539,7 @@
   }
 
   /* =========================================================================
-     4. 方案 B：吃掉对话区黑边 (main 内部自划分栏 + 互斥)
+     4. 方案 B：吃掉對話區黑邊 (main 內部自劃分欄 + 互斥)
      ========================================================================= */
   .scheme-b-container {
     flex: 1;
@@ -583,7 +583,7 @@
   }
 
   /* =========================================================================
-     5. 方案 C：右侧轻量浮层抽屉 (Drawer Overlay)
+     5. 方案 C：右側輕量浮層抽屜 (Drawer Overlay)
      ========================================================================= */
   .overlay-backdrop {
     position: absolute;
@@ -620,7 +620,7 @@
     to { opacity: 1; }
   }
 
-  /* 提示与高亮标记 */
+  /* 提示與高亮標記 */
   .interaction-hint-box {
     background: #032b43;
     border: 1px solid #0284c7;
@@ -634,7 +634,7 @@
     margin: 8px 14px 0 14px;
   }
 
-  /* 动效与指示 */
+  /* 動效與指示 */
   .click-indicator {
     display: inline-block;
     padding: 1px 5px;
@@ -652,6 +652,9 @@
 </style>
 </head>
 <body>
+<div data-docs-i18n-switch style="position:fixed;top:8px;right:12px;z-index:2147483647;font:12px/1.6 -apple-system,system-ui,sans-serif;background:rgba(15,17,22,.78);color:#fff;padding:4px 12px;border-radius:999px;box-shadow:0 2px 10px rgba(0,0,0,.35)"><a href="./group-sidebar-layout-proposals.html" style="color:#fff;text-decoration:none">简体中文</a> · <a href="./group-sidebar-layout-proposals.en.html" style="color:#fff;text-decoration:none">English</a> · <strong>繁體中文</strong></div>
+
+
 
 <!-- 頂部方案切換器 -->
 <header class="control-bar">
@@ -967,10 +970,10 @@
     if (scheme === 'A') {
       banner.innerHTML = `
         <div>
-          <strong>方案 A 核心逻辑：</strong>
-          <span class="explain-desc">既不覆盖也不挤压对话！直接将群组专有的「👥 Bot 状态 / 📦 交付待办」作为平级 Tab 融入右侧全局面板（与「📁 文件列表」无缝切换）。</span>
+          <strong>方案 A 核心邏輯：</strong>
+          <span class="explain-desc">既不覆蓋也不擠壓對話！直接將群組專有的「👥 Bot 狀態 / 📦 交付待辦」作為平級 Tab 融入右側全局面板（與「📁 檔案列表」無縫切換）。</span>
         </div>
-        <span class="explain-tag">绝不产生第 4 栏 · 屏幕零挤压</span>
+        <span class="explain-tag">絕不產生第 4 欄 · 螢幕零擠壓</span>
       `;
       panelA.style.display = 'flex';
       sideB.classList.add('collapsed');
@@ -980,12 +983,12 @@
     } else if (scheme === 'B') {
       banner.innerHTML = `
         <div>
-          <strong>方案 B 核心逻辑：</strong>
-          <span class="explain-desc">占用 main 对话区原本浪费的两侧大黑边；当打开全局文件树时，群侧栏自动折叠互斥，保持极佳宽度。</span>
+          <strong>方案 B 核心邏輯：</strong>
+          <span class="explain-desc">佔用 main 對話區原本浪費的兩側大黑邊；當開啟全域性檔案樹時，群側欄自動摺疊互斥，保持極佳寬度。</span>
         </div>
         <div style="display:flex; gap:6px;">
-          <button class="btn-sm-secondary" onclick="toggleSchemeBSidebar()">切换群侧栏</button>
-          <button class="btn-sm-primary" onclick="toggleSchemeBGlobalFiles()">展开文件树(看互斥)</button>
+          <button class="btn-sm-secondary" onclick="toggleSchemeBSidebar()">切換群側欄</button>
+          <button class="btn-sm-primary" onclick="toggleSchemeBGlobalFiles()">展開檔案樹(看互斥)</button>
         </div>
       `;
       panelA.style.display = 'none';
@@ -996,10 +999,10 @@
     } else if (scheme === 'C') {
       banner.innerHTML = `
         <div>
-          <strong>方案 C 核心逻辑：</strong>
-          <span class="explain-desc">右滑轻量浮层（Drawer Overlay）！点击顶部药丸按钮滑出，完全不改动底部的任何宽度，点空白即关。</span>
+          <strong>方案 C 核心邏輯：</strong>
+          <span class="explain-desc">右滑輕量浮層（Drawer Overlay）！點選頂部藥丸按鈕滑出，完全不改動底部的任何寬度，點空白即關。</span>
         </div>
-        <button class="btn-sm-primary" onclick="openDrawerC()">打开浮层抽屉 ↗</button>
+        <button class="btn-sm-primary" onclick="openDrawerC()">開啟浮層抽屜 ↗</button>
       `;
       panelA.style.display = 'none';
       sideB.classList.add('collapsed');
@@ -1008,7 +1011,7 @@
     }
   }
 
-  // 方案 A：右栏 Tab 切换
+  // 方案 A：右欄 Tab 切換
   function switchRightTab(tab) {
     document.getElementById('rp-tab-files').classList.toggle('active', tab === 'files');
     document.getElementById('rp-tab-deliveries').classList.toggle('active', tab === 'deliveries');
@@ -1019,7 +1022,7 @@
     document.getElementById('view-bots').style.display = tab === 'bots' ? 'block' : 'none';
   }
 
-  // 顶部药丸导航处理
+  // 頂部藥丸導航處理
   function handleHeadNav(action) {
     if (currentScheme === 'A') {
       switchRightTab(action === 'bots' ? 'bots' : 'deliveries');
@@ -1032,7 +1035,7 @@
     }
   }
 
-  // 方案 B 互斥切换
+  // 方案 B 互斥切換
   function toggleSchemeBSidebar() {
     const sideB = document.getElementById('scheme-b-sidebar');
     sideB.classList.toggle('collapsed');
@@ -1043,7 +1046,7 @@
     const willOpen = filesB.classList.contains('collapsed');
     if (willOpen) {
       filesB.classList.remove('collapsed');
-      // 互斥：文件树打开时，自动收起群侧栏，防止挤压对话
+      // 互斥：檔案樹開啟時，自動收起群側欄，防止擠壓對話
       sideB.classList.add('collapsed');
     } else {
       filesB.classList.add('collapsed');
@@ -1051,7 +1054,7 @@
     }
   }
 
-  // 方案 C 抽屉开闭
+  // 方案 C 抽屜開閉
   function openDrawerC() {
     document.getElementById('drawer-panel-c').classList.add('open');
     document.getElementById('drawer-backdrop-c').classList.add('open');
@@ -1063,4 +1066,7 @@
 </script>
 </body>
 </html>
+
+
+
 

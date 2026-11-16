@@ -36,7 +36,7 @@
   }
   .wrap { max-width: 1080px; margin: 0 auto; padding: 40px 24px 120px; }
 
-  /* ---------- 文档头 ---------- */
+  /* ---------- 文件頭 ---------- */
   .kicker {
     font-size: 11px; letter-spacing: .14em; text-transform: uppercase; color: var(--text-faint);
     display: flex; align-items: center; gap: 8px; margin-bottom: 14px;
@@ -77,7 +77,7 @@
   .sec-sub { color: var(--text-dim); font-size: 13px; margin-bottom: 20px; max-width: 760px; }
   h3 { font-size: 13.5px; font-weight: 600; margin: 26px 0 10px; }
 
-  /* ---------- 诊断 ---------- */
+  /* ---------- 診斷 ---------- */
   .faults { display: grid; gap: 8px; }
   .fault { display: grid; grid-template-columns: 20px minmax(0, 1fr); gap: 12px; padding: 12px 14px; border: 1px solid var(--border-soft); border-radius: 10px; background: var(--bg-elev); }
   .fault .n { font: 11px/1.7 var(--mono); color: var(--red); }
@@ -85,7 +85,7 @@
   .fault p { color: var(--text-dim); font-size: 12.5px; }
   .fault code { font: 11.5px/1 var(--mono); background: var(--bg-elev2); border: 1px solid var(--border-soft); border-radius: 4px; padding: 1px 5px; color: var(--text-dim); }
 
-  /* ---------- 舞台（浮层演示） ---------- */
+  /* ---------- 舞臺（浮層演示） ---------- */
   .stage {
     position: relative; margin: 14px 0 8px; padding: 0 0 270px;
     border: 1px solid var(--border); border-radius: 14px;
@@ -139,7 +139,7 @@
   .stage-caption .tag.hot { color: var(--green); border-color: rgba(52,211,153,.3); background: var(--green-soft); }
   .stage-caption .tag.bad { color: var(--red-text); border-color: rgba(248,113,113,.28); background: rgba(248,113,113,.08); }
 
-  /* ---------- 方案 0：现状复刻 ---------- */
+  /* ---------- 方案 0：現狀復刻 ---------- */
   .legacy-panel {
     position: absolute; left: 12px; top: 48px; width: min(560px, calc(100% - 24px));
     border: 1px solid var(--border); border-radius: 12px; background: var(--bg);
@@ -183,7 +183,7 @@
   }
   .legacy-btn svg { width: 14px; height: 14px; stroke: currentColor; fill: none; stroke-width: 1.8; }
 
-  /* ---------- 方案 A：紧凑列表（推荐） ---------- */
+  /* ---------- 方案 A：緊湊列表（推薦） ---------- */
   .panel {
     position: absolute; left: 12px; top: 48px; width: 328px; max-width: calc(100% - 24px);
     padding: 5px; border: 1px solid var(--border); border-radius: 12px;
@@ -242,7 +242,7 @@
   .chev { width: 12px; height: 12px; flex: none; color: var(--text-faint); stroke: currentColor; fill: none; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; opacity: .7; margin-left: 0; }
   .row:hover .chev { color: var(--text-dim); opacity: 1; }
 
-  /* 行内备注编辑：不换行、不跳高 */
+  /* 行內備註編輯：不換行、不跳高 */
   .row.editing { padding-top: 3px; padding-bottom: 3px; }
   .row-input {
     width: 100%; min-width: 0; height: 20px; padding: 0 6px; font: 11.5px/20px var(--sans);
@@ -250,7 +250,7 @@
   }
   .row-input::placeholder { color: var(--text-faint); }
 
-  /* ⋯ 菜单 */
+  /* ⋯ 選單 */
   .p-menu {
     position: absolute; top: 26px; right: -27px; z-index: 20; width: 172px; padding: 4px;
     border: 1px solid var(--border); border-radius: 9px; background: var(--bg-elev2);
@@ -264,7 +264,7 @@
   .p-menu button svg { width: 13px; height: 13px; flex: none; stroke: currentColor; fill: none; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; color: var(--text-dim); }
   .p-menu .sep { height: 1px; margin: 4px 6px; background: var(--border); }
   .p-menu .danger { color: var(--red-text); }
-  /* 菜单是浮层：允许越出面板边界（与真实弹出层一致） */
+  /* 選單是浮層：允許越出面板邊界（與真實彈出層一致） */
   .p-menu { pointer-events: auto; }
 
   .p-empty { padding: 18px 10px; text-align: center; color: var(--text-faint); font-size: 12px; }
@@ -274,13 +274,13 @@
   }
   .p-note svg { width: 13px; height: 13px; flex: none; margin-top: 2px; stroke: currentColor; fill: none; stroke-width: 1.8; }
 
-  /* 方案 B：极简单行 */
+  /* 方案 B：極簡單行 */
   .panel.compact .row { min-height: 30px; padding: 3px 5px 3px 6px; grid-template-columns: 12px minmax(0, 1fr) auto auto; gap: 8px; }
   .panel.compact .row-sub { display: none; }
   .panel.compact .row-main { flex-direction: row; align-items: center; gap: 6px; }
   .panel.compact .p-list { padding-top: 3px; }
 
-  /* ---------- 规格表 ---------- */
+  /* ---------- 規格表 ---------- */
   table { width: 100%; border-collapse: collapse; font-size: 12.5px; }
   th, td { text-align: left; padding: 9px 12px; border-bottom: 1px solid var(--border-soft); vertical-align: top; }
   th { font-size: 10.5px; letter-spacing: .08em; text-transform: uppercase; color: var(--text-faint); font-weight: 600; }
@@ -327,7 +327,7 @@
   }
   #toast.on { opacity: 1; transform: translate(-50%, 0); }
 
-  /* ---------- 手机抽屉演示 ---------- */
+  /* ---------- 手機抽屜演示 ---------- */
   .tag {
     display: inline-block; font: 10.5px/1.5 var(--mono); padding: 1px 6px; border-radius: 5px;
     border: 1px solid var(--border); color: var(--text-faint); background: var(--bg-elev);
@@ -425,6 +425,9 @@
 </style>
 </head>
 <body>
+<div data-docs-i18n-switch style="position:fixed;top:8px;right:12px;z-index:2147483647;font:12px/1.6 -apple-system,system-ui,sans-serif;background:rgba(15,17,22,.78);color:#fff;padding:4px 12px;border-radius:999px;box-shadow:0 2px 10px rgba(0,0,0,.35)"><a href="./device-directory-redesign-proposals.html" style="color:#fff;text-decoration:none">简体中文</a> · <a href="./device-directory-redesign-proposals.en.html" style="color:#fff;text-decoration:none">English</a> · <strong>繁體中文</strong></div>
+
+
 <div class="wrap">
 
   <div class="kicker">pi-web-ui · 設計提案 <span class="pill">已實現 · 方案 B + 手機抽屜</span></div>
@@ -910,13 +913,13 @@
   const DEVICES = [
     { id: '4f1c9a72-be4d-4e88-9c31-77d1a0b6f2e4', name: 'win', remark: '', online: true, self: true },
     { id: '66b0571f-3ac9-4a1f-9d73-1c02b8e5a4d0', name: 'cdeMac-mini.local', remark: '', online: true, self: false },
-    { id: 'a71d3e8b-2f45-4c60-8b19-5e0d7c914a2b', name: 'studio-mbp.lan', remark: '设计组 iMac', online: false, self: false },
+    { id: 'a71d3e8b-2f45-4c60-8b19-5e0d7c914a2b', name: 'studio-mbp.lan', remark: '設計組 iMac', online: false, self: false },
     { id: '0c9f2a41-7d63-4e0b-a8f2-3b6d5c9e1a77', name: 'pi-hub-02', remark: '', online: true, self: false },
-    { id: 'de1122aa-0011-4c7e-9a10-5f8b6d3c2211', name: '桌面 · 研发', remark: '', online: true, self: false },
-    { id: 'ff4433bb-8899-4ddc-8e21-77aa66bb55cc', name: '旧笔记本', remark: '备用', online: false, self: false },
+    { id: 'de1122aa-0011-4c7e-9a10-5f8b6d3c2211', name: '桌面 · 研發', remark: '', online: true, self: false },
+    { id: 'ff4433bb-8899-4ddc-8e21-77aa66bb55cc', name: '舊筆記本', remark: '備用', online: false, self: false },
   ];
 
-  // A 展示 3 台（含离线、含备注），B 展示 6 台的密度
+  // A 展示 3 臺（含離線、含備註），B 展示 6 臺的密度
   const state = {
     a: { devices: structuredClone(DEVICES.slice(0, 3)), editing: null, menu: null, error: '', refreshing: false },
     b: { devices: structuredClone(DEVICES), editing: null, menu: null, error: '', refreshing: false },
@@ -948,33 +951,33 @@
     const classes = 'row' + (device.online ? '' : ' off') + (editing ? ' editing' : '');
 
     const sub = editing
-      ? '<input class="row-input" maxlength="80" placeholder="输入备注（留空清除）" value="' + esc(device.remark || '') + '">'
+      ? '<input class="row-input" maxlength="80" placeholder="輸入備註（留空清除）" value="' + esc(device.remark || '') + '">'
       : '<span class="row-sub" title="' + esc(device.id) + '">' +
         esc(hasRemark ? device.name + ' · ' + short : short) +
         '</span>';
 
     const actions = editing
-      ? '<button class="icon-btn" data-act="save" data-i="' + index + '" aria-label="保存备注">' + ICON.check + '</button>' +
+      ? '<button class="icon-btn" data-act="save" data-i="' + index + '" aria-label="儲存備註">' + ICON.check + '</button>' +
         '<button class="icon-btn" data-act="cancel" data-i="' + index + '" aria-label="取消">' + ICON.x + '</button>'
-      : '<button class="icon-btn" data-act="open-new" data-i="' + index + '" aria-label="新标签打开">' + ICON.external + '</button>' +
+      : '<button class="icon-btn" data-act="open-new" data-i="' + index + '" aria-label="新標籤開啟">' + ICON.external + '</button>' +
         '<button class="icon-btn" data-act="menu" data-i="' + index + '" aria-label="更多操作" aria-haspopup="menu" aria-expanded="' +
         (menuOpen ? 'true' : 'false') + '">' + ICON.more + '</button>';
 
     const menu = menuOpen
       ? '<div class="p-menu" role="menu">' +
         '<button role="menuitem" data-act="remark" data-i="' + index + '">' + ICON.edit +
-        (hasRemark ? '修改备注' : '设置备注') + '</button>' +
+        (hasRemark ? '修改備註' : '設定備註') + '</button>' +
         '<span class="sep"></span>' +
-        '<button role="menuitem" data-act="copy" data-i="' + index + '">' + ICON.copy + '复制设备 ID</button>' +
+        '<button role="menuitem" data-act="copy" data-i="' + index + '">' + ICON.copy + '複製裝置 ID</button>' +
         '</div>'
       : '';
 
     return '<li class="' + classes + '" data-i="' + index + '">' +
       '<span class="dot-wrap"><span class="dot' + (device.online ? ' on' : '') + '"></span></span>' +
-      '<a class="row-hit" href="#" aria-label="打开 ' + esc(title) + '" data-act="open" data-i="' + index + '"></a>' +
+      '<a class="row-hit" href="#" aria-label="開啟 ' + esc(title) + '" data-act="open" data-i="' + index + '"></a>' +
       '<span class="row-main">' +
       '<span class="row-name"><strong title="' + esc(title) + '">' + esc(title) + '</strong>' +
-      (device.self ? '<em class="tag-self">本机</em>' : '') +
+      (device.self ? '<em class="tag-self">本機</em>' : '') +
       '</span>' + sub +
       '</span>' +
       '<span class="row-actions">' + actions + menu + '</span>' +
@@ -989,16 +992,16 @@
     const rows = st.devices.map((device, index) => rowMarkup(key, device, index)).join('');
 
     mount.innerHTML =
-      '<div class="panel' + (key === 'b' ? ' compact' : '') + '" role="dialog" aria-label="设备列表" data-panel="' + key + '">' +
+      '<div class="panel' + (key === 'b' ? ' compact' : '') + '" role="dialog" aria-label="裝置列表" data-panel="' + key + '">' +
       '<div class="p-head">' +
-      '<span class="p-title">设备</span>' +
+      '<span class="p-title">裝置</span>' +
       '<span class="p-count">' + st.devices.length + '</span>' +
       '<span class="p-spacer"></span>' +
-      '<button class="icon-btn' + (st.refreshing ? ' spin' : '') + '" data-act="refresh" aria-label="刷新设备">' +
+      '<button class="icon-btn' + (st.refreshing ? ' spin' : '') + '" data-act="refresh" aria-label="重新整理裝置">' +
       ICON.refresh + '</button>' +
       '</div>' +
       (st.error ? '<div class="p-note">' + ICON.alert + '<span>' + esc(st.error) + '</span></div>' : '') +
-      '<ul class="p-list">' + (rows || '<li class="p-empty">同一账号下暂无其它设备</li>') + '</ul>' +
+      '<ul class="p-list">' + (rows || '<li class="p-empty">同一賬號下暫無其它裝置</li>') + '</ul>' +
       '</div>';
 
     const panel = mount.querySelector('.panel');
@@ -1034,7 +1037,7 @@
     device.remark = (value || '').trim();
     st.editing = null;
     render(key);
-    toast(device.remark ? '已保存备注：' + device.remark : '已清除备注');
+    toast(device.remark ? '已儲存備註：' + device.remark : '已清除備註');
   }
 
   function onClick(event, key) {
@@ -1059,7 +1062,7 @@
         st.refreshing = false;
         render(key);
       }, 600);
-      toast('已刷新设备列表');
+      toast('已重新整理裝置列表');
       return;
     }
 
@@ -1089,14 +1092,14 @@
       return;
     }
     if (act === 'copy') {
-      toast('已复制设备 ID：' + device.id.slice(0, 8) + '…');
+      toast('已複製裝置 ID：' + device.id.slice(0, 8) + '…');
       return;
     }
     if (!device.online) {
-      toast('「' + label + '」当前离线' + (act === 'open' ? '，无法打开' : act === 'desktop' ? '，远程桌面不可用' : ''));
+      toast('「' + label + '」當前離線' + (act === 'open' ? '，無法開啟' : act === 'desktop' ? '，遠端桌面不可用' : ''));
       return;
     }
-    toast((act === 'desktop' ? '远程桌面：' : act === 'open-new' ? '新标签打开：' : '打开设备：') + label);
+    toast((act === 'desktop' ? '遠端桌面：' : act === 'open-new' ? '新標籤開啟：' : '開啟裝置：') + label);
   }
 
   function fitStages() {
@@ -1153,7 +1156,7 @@
   const DEVICES = [
     { name: 'win', id: '4f1c9a72', extra: '', online: true },
     { name: 'cdeMac-mini.local', id: '66b0571f', extra: '最近使用', online: true },
-    { name: '设计组 iMac', id: 'a71d3e8b', extra: '离线', online: false },
+    { name: '設計組 iMac', id: 'a71d3e8b', extra: '離線', online: false },
   ];
 
   let editIndex = null;
@@ -1179,14 +1182,14 @@
         '<li class="ph-row' + (device.online ? '' : ' is-off') + '" data-i="' + index + '" data-ph="open">' +
         '<span class="ph-dot' + (device.online ? ' on' : '') + '"></span>' +
         '<span class="ph-main"><strong>' + device.name +
-        (index === 0 ? '<em class="tag-self">本机</em>' : '') + '</strong>' +
+        (index === 0 ? '<em class="tag-self">本機</em>' : '') + '</strong>' +
         '<span>' + device.id + (device.extra ? ' · ' + device.extra : '') + '</span></span>' +
         '<span class="ph-taps">' +
-        '<button class="ph-tap" type="button" data-ph="desktop" data-i="' + index + '" aria-label="远程桌面">' + ICON.desktop + '</button>' +
+        '<button class="ph-tap" type="button" data-ph="desktop" data-i="' + index + '" aria-label="遠端桌面">' + ICON.desktop + '</button>' +
         '<button class="ph-tap" type="button" data-ph="menu" data-i="' + index + '" aria-label="更多操作">' + ICON.more + '</button>' +
         '<div class="ph-menu' + (last ? ' up' : '') + '" hidden>' +
-        '<button type="button" data-ph="remark" data-i="' + index + '">设置备注</button>' +
-        '<button type="button" data-ph="copy" data-i="' + index + '">复制设备 ID</button>' +
+        '<button type="button" data-ph="remark" data-i="' + index + '">設定備註</button>' +
+        '<button type="button" data-ph="copy" data-i="' + index + '">複製裝置 ID</button>' +
         '</div>' +
         '</span>' +
         '</li>'
@@ -1205,10 +1208,10 @@
     editBar.hidden = false;
     const device = DEVICES[index];
     input.value = '';
-    input.placeholder = '给「' + device.name + '」写备注（留空清除）';
+    input.placeholder = '給「' + device.name + '」寫備註（留空清除）';
     input.focus();
     closeMenus();
-    toast('长按进入备注：键盘「完成」即保存');
+    toast('長按進入備註：鍵盤「完成」即儲存');
   }
 
   function saveEdit() {
@@ -1216,7 +1219,7 @@
     const text = input.value.trim();
     editBar.hidden = true;
     editIndex = null;
-    toast(text ? '已保存备注：' + text : '已清除备注');
+    toast(text ? '已儲存備註：' + text : '已清除備註');
   }
 
   list.addEventListener('click', (event) => {
@@ -1236,9 +1239,9 @@
     }
     closeMenus();
     if (act === 'remark') return openEdit(index);
-    if (act === 'copy') return toast('已复制设备 ID：' + device.id + '…');
-    if (!device.online) return toast('「' + device.name + '」当前离线');
-    toast((act === 'desktop' ? '远程桌面：' : '打开设备：') + device.name);
+    if (act === 'copy') return toast('已複製裝置 ID：' + device.id + '…');
+    if (!device.online) return toast('「' + device.name + '」當前離線');
+    toast((act === 'desktop' ? '遠端桌面：' : '開啟裝置：') + device.name);
   });
 
   list.addEventListener('pointerdown', (event) => {
@@ -1264,7 +1267,7 @@
   list.addEventListener('pointercancel', cancelPress);
   list.addEventListener('pointermove', cancelPress);
 
-  document.getElementById('phScrim').addEventListener('click', () => toast('关闭抽屉（下滑 / 点遮罩，1 个手势）'));
+  document.getElementById('phScrim').addEventListener('click', () => toast('關閉抽屜（下滑 / 點遮罩，1 個手勢）'));
   document.getElementById('phSave').addEventListener('click', saveEdit);
   input.addEventListener('keydown', (event) => {
     if (event.key === 'Enter') saveEdit();
@@ -1273,11 +1276,14 @@
       editIndex = null;
     }
   });
-  document.querySelector('[data-ph="refresh"]').addEventListener('click', () => toast('下拉刷新 = 0 次点击'));
+  document.querySelector('[data-ph="refresh"]').addEventListener('click', () => toast('下拉重新整理 = 0 次點選'));
 
   render();
 })();
 </script>
 </body>
 </html>
+
+
+
 

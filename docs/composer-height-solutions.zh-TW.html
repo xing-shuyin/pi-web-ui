@@ -60,7 +60,7 @@
       gap: 32px;
     }
 
-    /* 顶栏与背景说明 */
+    /* 頂欄與背景說明 */
     .header {
       display: flex;
       flex-direction: column;
@@ -93,7 +93,7 @@
       line-height: 1.6;
     }
 
-    /* 核心病理诊断卡 */
+    /* 核心病理診斷卡 */
     .diagnosis-card {
       background: var(--bg-surface);
       border: 1px solid var(--border-subtle);
@@ -148,7 +148,7 @@
       color: #fca5a5;
     }
 
-    /* 方案切换 Tabs */
+    /* 方案切換 Tabs */
     .tab-bar {
       display: flex;
       gap: 8px;
@@ -186,7 +186,7 @@
       box-shadow: 0 4px 14px var(--accent-glow);
     }
 
-    /* 方案内容面板 */
+    /* 方案內容面板 */
     .solution-panel {
       display: none;
       flex-direction: column;
@@ -196,7 +196,7 @@
       display: flex;
     }
 
-    /* 原型展示交互沙箱 */
+    /* 原型展示互動沙箱 */
     .sandbox-container {
       display: grid;
       grid-template-columns: 1fr 1fr;
@@ -209,7 +209,7 @@
       }
     }
 
-    /* 模拟窗口屏幕 */
+    /* 模擬視窗螢幕 */
     .screen-mockup {
       background: #0d1117;
       border: 1px solid var(--border-strong);
@@ -246,7 +246,7 @@
     .dot-yellow { background: #f59e0b; }
     .dot-green { background: #10b981; }
 
-    /* 消息区 (正文) */
+    /* 訊息區 (正文) */
     .chat-messages {
       flex: 1 1 auto;
       min-height: 80px;
@@ -285,7 +285,7 @@
       color: #93c5fd;
     }
 
-    /* 输入栏外围 */
+    /* 輸入欄外圍 */
     .composer-area {
       flex: 0 0 auto;
       background: #101622;
@@ -318,7 +318,7 @@
       color: var(--text-main);
     }
 
-    /* 方案沙箱里的真实组件样式 */
+    /* 方案沙箱裡的真實元件樣式 */
     .composer-box {
       background: #171f2e;
       border: 1px solid var(--border-strong);
@@ -358,7 +358,7 @@
       box-shadow: 0 0 8px var(--accent-glow);
     }
 
-    /* 输入文本框 */
+    /* 輸入文本框 */
     .composer-textarea {
       width: 100%;
       background: transparent;
@@ -376,7 +376,7 @@
       color: var(--text-dim);
     }
 
-    /* 底部工具条 */
+    /* 底部工具條 */
     .composer-foot {
       display: flex;
       align-items: center;
@@ -424,7 +424,7 @@
       font-weight: bold;
     }
 
-    /* 侧边分析与代码 */
+    /* 側邊分析與程式碼 */
     .sandbox-guide {
       background: var(--bg-surface);
       border: 1px solid var(--border-subtle);
@@ -484,7 +484,7 @@
     .code-block .hl-num { color: #fbbf24; }
     .code-block .hl-com { color: #64748b; font-style: italic; }
 
-    /* 方案沙箱专用控件 */
+    /* 方案沙箱專用控制元件 */
     .sandbox-ctrls {
       display: flex;
       flex-wrap: wrap;
@@ -528,7 +528,7 @@
       margin-left: auto;
     }
 
-    /* 方案3：全屏沉浸抽屉/模态 */
+    /* 方案3：全屏沉浸抽屜/模態 */
     .zen-overlay {
       position: absolute;
       inset: 0;
@@ -580,7 +580,7 @@
       align-items: center;
     }
 
-    /* 方案对比表 */
+    /* 方案對比表 */
     .compare-table {
       width: 100%;
       border-collapse: collapse;
@@ -603,6 +603,9 @@
   </style>
 </head>
 <body>
+<div data-docs-i18n-switch style="position:fixed;top:8px;right:12px;z-index:2147483647;font:12px/1.6 -apple-system,system-ui,sans-serif;background:rgba(15,17,22,.78);color:#fff;padding:4px 12px;border-radius:999px;box-shadow:0 2px 10px rgba(0,0,0,.35)"><a href="./composer-height-solutions.html" style="color:#fff;text-decoration:none">简体中文</a> · <a href="./composer-height-solutions.en.html" style="color:#fff;text-decoration:none">English</a> · <strong>繁體中文</strong></div>
+
+
 
   <div class="container">
     
@@ -1101,7 +1104,7 @@ ta.style.overflowY = ta.scrollHeight > targetH ? <span class="hl-str">"auto"</sp
   </div>
 
   <script>
-    // 切换方案标签页
+    // 切換方案標籤頁
     function switchTab(index) {
       document.querySelectorAll('.tab-btn').forEach((btn, i) => {
         btn.classList.toggle('active', i === index);
@@ -1111,27 +1114,27 @@ ta.style.overflowY = ta.scrollHeight > targetH ? <span class="hl-str">"auto"</sp
       });
     }
 
-    // 预置文本测试集
+    // 預置文本測試集
     const SAMPLE_TEXTS = {
-      short: "请帮我看看这段代码有什么性能瓶颈？",
+      short: "請幫我看看這段程式碼有什麼效能瓶頸？",
       medium: `function calculateTotal(items) {
   return items.reduce((acc, cur) => {
     return acc + cur.price * cur.count;
   }, 0);
 }`,
-      long: `你是一名资深的系统架构师与前端性能专家。
-请仔细审查以下核心逻辑，并从以下五个维度进行全方位的架构重构：
+      long: `你是一名資深的系統架構師與前端效能專家。
+請仔細審查以下核心邏輯，並從以下五個維度進行全方位的架構重構：
 
-1. 视口与布局防穿透设计（避免 Flex 容器未设置 min-width: 0 导致的撑爆）
-2. 双向拖动手柄与阻尼边界约束（保证正文消息流永远可见）
-3. 文本行号与渲染批处理性能（防止长文本导致的频繁重绘）
-4. localStorage 状态记忆的白名单与容错机制
-5. 模态长文编辑器的键盘快捷键链路（Ctrl+E / Esc / Ctrl+Enter）
+1. 視口與佈局防穿透設計（避免 Flex 容器未設定 min-width: 0 導致的撐爆）
+2. 雙向拖動手柄與阻尼邊界約束（保證正文訊息流永遠可見）
+3. 文本行號與渲染批處理效能（防止長文本導致的頻繁重繪）
+4. localStorage 狀態記憶的白名單與容錯機制
+5. 模態長文編輯器的鍵盤快捷鍵鏈路（Ctrl+E / Esc / Ctrl+Enter）
 
-请严格遵循以上规范，给出详尽的代码重构方案与测试用例验证清单。`
+請嚴格遵循以上規範，給出詳盡的程式碼重構方案與測試用例驗證清單。`
     };
 
-    // 方案 1 交互沙箱逻辑
+    // 方案 1 互動沙箱邏輯
     const ta0 = document.getElementById('ta-0');
     const box0 = document.getElementById('composer-box-0');
     const handle0 = document.getElementById('handle-0');
@@ -1143,7 +1146,7 @@ ta.style.overflowY = ta.scrollHeight > targetH ? <span class="hl-str">"auto"</sp
         updateComposer0();
       } else if (idx === 2) {
         const val = document.getElementById('ta-2').value;
-        document.getElementById('word-count-2').textContent = `${val.length} 字符`;
+        document.getElementById('word-count-2').textContent = `${val.length} 字元`;
         const btn = document.getElementById('zen-btn');
         if (val.split('\n').length >= 4 || val.length > 120) {
           btn.style.color = 'var(--accent)';
@@ -1157,7 +1160,7 @@ ta.style.overflowY = ta.scrollHeight > targetH ? <span class="hl-str">"auto"</sp
 
     function updateComposer0() {
       const screenH = 580;
-      const MAX_SAFE = Math.min(screenH * 0.42, 260); // 最大安全上限 (视口保护)
+      const MAX_SAFE = Math.min(screenH * 0.42, 260); // 最大安全上限 (視口保護)
       const MIN_H = 38;
 
       ta0.style.height = 'auto';
@@ -1167,10 +1170,10 @@ ta.style.overflowY = ta.scrollHeight > targetH ? <span class="hl-str">"auto"</sp
       const isManualFixed = userH0 != null && userH0 > MIN_H + 4;
 
       if (isManualFixed) {
-        // 模式 1：手动拖拽拉高了高度 -> 固定高度不自适应！内容超长内部滚动
+        // 模式 1：手動拖拽拉高了高度 -> 固定高度不自適應！內容超長內部滾動
         h = Math.min(userH0, MAX_SAFE);
       } else {
-        // 模式 2：最低高度开始写 -> 自适应高度！随输入长高，最高到 MAX_SAFE
+        // 模式 2：最低高度開始寫 -> 自適應高度！隨輸入長高，最高到 MAX_SAFE
         h = Math.min(Math.max(scrollH, MIN_H), MAX_SAFE);
       }
 
@@ -1178,11 +1181,11 @@ ta.style.overflowY = ta.scrollHeight > targetH ? <span class="hl-str">"auto"</sp
       ta0.style.overflowY = scrollH > h ? 'auto' : 'hidden';
 
       const pct = Math.round((h / screenH) * 100);
-      const modeStr = isManualFixed ? "手动固定模式 (不自适应)" : "最低高度自适应模式";
+      const modeStr = isManualFixed ? "手動固定模式 (不自適應)" : "最低高度自適應模式";
       metric0.textContent = `${modeStr} · 高度: ${h}px (${pct}%)`;
     }
 
-    // 拖拽手柄逻辑 (方案 1)
+    // 拖拽手柄邏輯 (方案 1)
     let startY = 0;
     let startH = 0;
     let dragging = false;
@@ -1198,12 +1201,12 @@ ta.style.overflowY = ta.scrollHeight > targetH ? <span class="hl-str">"auto"</sp
 
     handle0.addEventListener('pointermove', (e) => {
       if (!dragging) return;
-      const delta = startY - e.clientY; // 往上拉变大，往下拉变小
+      const delta = startY - e.clientY; // 往上拉變大，往下拉變小
       const next = startH + delta;
       if (next <= 38 + 4) {
-        userH0 = null; // 拉到底恢复自适应
+        userH0 = null; // 拉到底恢復自適應
       } else {
-        userH0 = next; // 手动拉高固定高度
+        userH0 = next; // 手動拉高固定高度
       }
       updateComposer0();
     });
@@ -1243,7 +1246,7 @@ ta.style.overflowY = ta.scrollHeight > targetH ? <span class="hl-str">"auto"</sp
       }
     }
 
-    // 方案 2 拖拽分割线
+    // 方案 2 拖拽分割線
     const splitter = document.getElementById('splitter-handle-1');
     let splitDragging = false;
     let splitStartY = 0;
@@ -1273,7 +1276,7 @@ ta.style.overflowY = ta.scrollHeight > targetH ? <span class="hl-str">"auto"</sp
       }
     }
 
-    // 方案 3 Zen 模态
+    // 方案 3 Zen 模態
     const zenOverlay = document.getElementById('zen-overlay');
     const zenTa = document.getElementById('zen-ta');
 
@@ -1292,7 +1295,7 @@ ta.style.overflowY = ta.scrollHeight > targetH ? <span class="hl-str">"auto"</sp
       const len = zenTa.value.length;
       const words = zenTa.value.trim() ? zenTa.value.trim().split(/\s+/).length : 0;
       const estTokens = Math.round(len / 3.5);
-      document.getElementById('zen-stats').textContent = `${len} 字符 · ${words} 词 · 预估 ~${estTokens} tokens`;
+      document.getElementById('zen-stats').textContent = `${len} 字元 · ${words} 詞 · 預估 ~${estTokens} tokens`;
     }
 
     zenTa.addEventListener('input', updateZenStats);
@@ -1303,13 +1306,13 @@ ta.style.overflowY = ta.scrollHeight > targetH ? <span class="hl-str">"auto"</sp
       toggleZen(false);
     }
 
-    // 方案 4 档位切换
+    // 方案 4 檔位切換
     function setPresetTier(tier) {
       const heights = { 1: '48px', 2: '140px', 3: '260px' };
-      const labels = { 1: '1档 (紧凑单行 48px)', 2: '2档 (日常标准 140px)', 3: '3档 (宽适大窗 260px)' };
+      const labels = { 1: '1檔 (緊湊單行 48px)', 2: '2檔 (日常標準 140px)', 3: '3檔 (寬適大窗 260px)' };
       const box = document.getElementById('composer-box-3');
       box.style.height = heights[tier];
-      document.getElementById('metric-3').textContent = `当前档位: ${labels[tier]}`;
+      document.getElementById('metric-3').textContent = `當前檔位: ${labels[tier]}`;
 
       for (let i = 1; i <= 3; i++) {
         const btn = document.getElementById(`tier-btn-${i}`);
@@ -1328,3 +1331,6 @@ ta.style.overflowY = ta.scrollHeight > targetH ? <span class="hl-str">"auto"</sp
   </script>
 </body>
 </html>
+
+
+

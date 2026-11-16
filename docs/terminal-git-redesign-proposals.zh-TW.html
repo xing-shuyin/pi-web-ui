@@ -6,7 +6,7 @@
 <title>pi-web-ui · 終端抽屜 / Git 檢閱抽屜 · 互動設計方案</title>
 <style>
 /* ============================================================
-   0. 设计令牌（与 web/src/styles.css :root 同名，落地可直接复用）
+   0. 設計令牌（與 web/src/styles.css :root 同名，落地可直接複用）
    ============================================================ */
 [data-theme="dark"]{
   color-scheme: dark;
@@ -62,7 +62,7 @@ input,textarea{font:inherit;color:inherit}
 .mono{font-family:var(--mono);font-variant-numeric:tabular-nums}
 
 /* ============================================================
-   1. 文档外壳（仅原型页用，不进产品）
+   1. 文件外殼（僅原型頁用，不進產品）
    ============================================================ */
 .doc-top{
   position:sticky;top:0;z-index:90;
@@ -131,7 +131,7 @@ input,textarea{font:inherit;color:inherit}
 .tag b{font-weight:650;color:var(--text)}
 
 /* ============================================================
-   2. 产品外壳（模拟真实 app）
+   2. 產品外殼（模擬真實 app）
    ============================================================ */
 .stage{
   border:1px solid var(--border);border-radius:16px;overflow:hidden;
@@ -161,7 +161,7 @@ input,textarea{font:inherit;color:inherit}
 
 .app-body{flex:1;display:flex;min-height:0;position:relative}
 
-/* 左侧 dock */
+/* 左側 dock */
 .dock{
   width:46px;flex:none;display:flex;flex-direction:column;align-items:center;gap:3px;
   padding:7px 0;border-right:var(--hair);background:var(--bg);
@@ -181,7 +181,7 @@ input,textarea{font:inherit;color:inherit}
 }
 .dock-sep{width:18px;height:1px;background:var(--border);margin:5px 0}
 .dock-sp{flex:1}
-/* 提示气泡 */
+/* 提示氣泡 */
 .tip{
   position:absolute;left:44px;top:50%;translate:0 -50%;
   background:var(--bg-elev3);color:var(--text);border:1px solid var(--border);
@@ -199,7 +199,7 @@ kbd{
   color:var(--text-faint);white-space:nowrap;
 }
 
-/* 主工作区 */
+/* 主工作區 */
 .work{flex:1;display:flex;flex-direction:column;min-width:0;min-height:0;position:relative}
 .work-main{flex:1;display:flex;flex-direction:column;min-height:0;position:relative}
 .chat-scroll{flex:1;overflow-y:auto;padding:22px 0 10px;position:relative}
@@ -267,7 +267,7 @@ kbd{
 .dot{width:3px;height:3px;border-radius:50%;background:var(--text-faint);opacity:.6}
 
 /* ============================================================
-   3. 底部终端抽屉
+   3. 底部終端抽屜
    ============================================================ */
 .term-drawer{
   flex:none;display:flex;flex-direction:column;
@@ -302,7 +302,7 @@ kbd{
 body.resizing{cursor:ns-resize;user-select:none}
 body.resizing .td-grip::after{background:var(--accent);width:52px}
 
-/* 抽屉头 */
+/* 抽屜頭 */
 .td-head{
   display:flex;align-items:center;gap:8px;height:39px;padding:0 8px 0 10px;
   flex:none;min-width:0;
@@ -357,7 +357,7 @@ body.resizing .td-grip::after{background:var(--accent);width:52px}
   font-family:var(--mono);font-size:10px;background:var(--bg-elev2);color:var(--text-faint);
 }
 
-/* 抽屉主体 */
+/* 抽屜主體 */
 .td-body{flex:1;min-height:0;display:flex;overflow:hidden;position:relative}
 .term-drawer.collapsed .td-body{display:none}
 .td-main{
@@ -397,7 +397,7 @@ body.resizing .td-grip::after{background:var(--accent);width:52px}
 .term-toolbar .fchip:hover{color:var(--text);border-color:color-mix(in srgb,var(--accent) 40%,var(--border))}
 .term-toolbar .fchip svg{width:11px;height:11px}
 
-/* 命令面板（旧版左侧 aside 的新形态：按需浮层） */
+/* 命令面板（舊版左側 aside 的新形態：按需浮層） */
 .cmd-pop{
   position:absolute;left:10px;top:10px;width:266px;z-index:9;
   background:color-mix(in srgb,var(--bg-elev) 96%,transparent);
@@ -429,7 +429,7 @@ body.resizing .td-grip::after{background:var(--accent);width:52px}
 .cmd-item .icon-btn svg{width:11px;height:11px}
 
 /* ============================================================
-   4. Git 检阅抽屉（右侧，非模态）
+   4. Git 檢閱抽屜（右側，非模態）
    ============================================================ */
 .git-drawer{
   position:relative;flex:none;width:0;min-width:0;overflow:hidden;
@@ -496,7 +496,7 @@ body.resizing .td-grip::after{background:var(--accent);width:52px}
 }
 .seg button.on .n{background:var(--accent-soft);color:var(--accent)}
 
-/* 双栏 */
+/* 雙欄 */
 .gd-body{flex:1;display:flex;min-height:0}
 .gd-side{
   width:250px;flex:none;display:flex;flex-direction:column;min-height:0;
@@ -621,7 +621,7 @@ body.resizing .td-grip::after{background:var(--accent);width:52px}
 .cm2{color:var(--text-faint);font-style:italic}
 .dl.add .kw,.dl.del .kw{color:inherit}
 
-/* 底部提交栏 */
+/* 底部提交欄 */
 .gd-commit{
   flex:none;padding:8px 9px 9px;border-top:1px solid var(--border);
   background:color-mix(in srgb,var(--bg-elev) 70%,var(--bg-elev2));
@@ -668,7 +668,7 @@ body.resizing .td-grip::after{background:var(--accent);width:52px}
 .gd-foot .sp{margin-left:auto}
 .stash-pop{display:flex;gap:4px;align-items:center;flex-wrap:wrap;max-width:340px}
 
-/* 抽屉关闭时的浮动操作条（终端折叠后仍可见入口） */
+/* 抽屜關閉時的浮動操作條（終端摺疊後仍可見入口） */
 .rail-pill{
   position:absolute;right:12px;bottom:12px;z-index:14;display:flex;gap:4px;
   padding:4px;border-radius:10px;background:color-mix(in srgb,var(--bg-elev) 90%,transparent);
@@ -691,7 +691,7 @@ body.resizing .td-grip::after{background:var(--accent);width:52px}
 .toast.show{opacity:1;translate:-50% -4px}
 .toast svg{width:12px;height:12px;color:var(--green)}
 
-/* 手机端宿主 */
+/* 手機端宿主 */
 .phones{display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:22px;margin-top:16px}
 .phone-card{display:flex;flex-direction:column;gap:9px}
 .phone-cap{display:flex;align-items:center;gap:7px;font-size:12px;color:var(--text-dim)}
@@ -767,7 +767,7 @@ body.resizing .td-grip::after{background:var(--accent);width:52px}
 .m-commit .commit-box textarea{font-size:11.5px;min-height:30px;padding:6px 8px 2px}
 .m-commit .commit-cta{height:24px;font-size:11px}
 
-/* 简单表格 */
+/* 簡單表格 */
 table.spec{width:100%;border-collapse:collapse;font-size:12px}
 table.spec th{
   text-align:left;font-weight:600;color:var(--text-faint);font-size:10.5px;
@@ -856,6 +856,9 @@ table.spec code{
 </style>
 </head>
 <body>
+<div data-docs-i18n-switch style="position:fixed;top:8px;right:12px;z-index:2147483647;font:12px/1.6 -apple-system,system-ui,sans-serif;background:rgba(15,17,22,.78);color:#fff;padding:4px 12px;border-radius:999px;box-shadow:0 2px 10px rgba(0,0,0,.35)"><a href="./terminal-git-redesign-proposals.html" style="color:#fff;text-decoration:none">简体中文</a> · <a href="./terminal-git-redesign-proposals.en.html" style="color:#fff;text-decoration:none">English</a> · <strong>繁體中文</strong></div>
+
+
 
 <header class="doc-top">
   <div class="doc-brand">
@@ -1543,8 +1546,8 @@ table.spec code{
 
   let termOpen = true;
   let gitOpen = true;
-  let th = 318; // 终端高度
-  let gw = 672; // Git 宽度
+  let th = 318; // 終端高度
+  let gw = 672; // Git 寬度
 
   const clamp = (v, a, b) => Math.min(b, Math.max(a, v));
 
@@ -1573,7 +1576,7 @@ table.spec code{
     say._t = setTimeout(() => toast.classList.remove("show"), 1600);
   }
 
-  /* ---- 终端抽屉：高度拖拽 ---- */
+  /* ---- 終端抽屜：高度拖拽 ---- */
   const grip = $("#tdGrip");
   grip.addEventListener("pointerdown", (e) => {
     e.preventDefault();
@@ -1605,7 +1608,7 @@ table.spec code{
     applyTerm();
   });
 
-  /* ---- Git 抽屉：宽度拖拽 ---- */
+  /* ---- Git 抽屜：寬度拖拽 ---- */
   const gg = $("#gdGrip");
   gg.addEventListener("pointerdown", (e) => {
     e.preventDefault();
@@ -1634,13 +1637,13 @@ table.spec code{
     git.addEventListener("pointercancel", up);
   });
 
-  /* ---- 开关 ---- */
-  $("#termCollapse").addEventListener("click", () => { termOpen = false; applyTerm(); say("终端已收起 · Ctrl+` 重新展开"); });
+  /* ---- 開關 ---- */
+  $("#termCollapse").addEventListener("click", () => { termOpen = false; applyTerm(); say("終端已收起 · Ctrl+` 重新展開"); });
   $("#dockTerm").addEventListener("click", () => { termOpen = !termOpen; applyTerm(); });
   $("#railTerm").addEventListener("click", () => { termOpen = true; applyTerm(); });
   $("#dockGit").addEventListener("click", () => { gitOpen = !gitOpen; applyGit(); });
   $("#railGit").addEventListener("click", () => { gitOpen = true; applyGit(); });
-  $$(".gd-head-actions .icon-btn")[3].addEventListener("click", () => { gitOpen = false; applyGit(); say("Git 已关闭 · Ctrl+G 重开"); });
+  $$(".gd-head-actions .icon-btn")[3].addEventListener("click", () => { gitOpen = false; applyGit(); say("Git 已關閉 · Ctrl+G 重開"); });
 
   /* ---- 命令面板 ---- */
   const toggleCmd = () => cmdPop.classList.toggle("open");
@@ -1648,7 +1651,7 @@ table.spec code{
   $("#cmdBtn2").addEventListener("click", toggleCmd);
   $("#cmdClose").addEventListener("click", () => cmdPop.classList.remove("open"));
 
-  /* ---- tab 切换 ---- */
+  /* ---- tab 切換 ---- */
   const out0 = $("#termOut").innerHTML;
   $$(".td-tab").forEach((b, i) => b.addEventListener("click", () => {
     $$(".td-tab").forEach((x) => x.classList.remove("on"));
@@ -1679,13 +1682,13 @@ table.spec code{
 
   $("#aiGroup").addEventListener("click", (e) => e.currentTarget.classList.toggle("closed"));
 
-  /* ---- Git 文件选择 ---- */
+  /* ---- Git 檔案選擇 ---- */
   $$(".fitem").forEach((b) => b.addEventListener("click", () => {
     $$(".fitem").forEach((x) => x.classList.remove("on"));
     b.classList.add("on");
     const p = $(".fp", b).textContent.split("/").pop();
     $(".diff-head .path b").textContent = p;
-    say("打开 " + p);
+    say("開啟 " + p);
   }));
   $$(".seg button").forEach((b) => b.addEventListener("click", () => {
     $$(".seg button").forEach((x) => x.classList.remove("on"));
@@ -1695,24 +1698,24 @@ table.spec code{
     $$(".diff-head .mode button").forEach((x) => x.classList.remove("on"));
     b.classList.add("on");
   }));
-  $(".commit-cta").addEventListener("click", () => say("已提交 2 个文件 → feat/terminal-drawer"));
+  $(".commit-cta").addEventListener("click", () => say("已提交 2 個檔案 → feat/terminal-drawer"));
 
-  /* ---- 快捷键 ---- */
+  /* ---- 快捷鍵 ---- */
   window.addEventListener("keydown", (e) => {
     if (e.ctrlKey && e.key === "`") { e.preventDefault(); termOpen = !termOpen; applyTerm(); }
     if (e.ctrlKey && (e.key === "g" || e.key === "G") && !e.shiftKey) { e.preventDefault(); gitOpen = !gitOpen; applyGit(); }
     if (e.key === "Escape") { cmdPop.classList.remove("open"); if (gitOpen) { gitOpen = false; applyGit(); } }
   });
 
-  /* ---- 主题 ---- */
+  /* ---- 主題 ---- */
   $("#themeBtn").addEventListener("click", () => {
     const cur = document.documentElement.dataset.theme;
     document.documentElement.dataset.theme = cur === "dark" ? "light" : "dark";
-    say(cur === "dark" ? "浅色主题" : "深色主题");
+    say(cur === "dark" ? "淺色主題" : "深色主題");
   });
-  $("#resetBtn").addEventListener("click", () => { th = 318; gw = 672; termOpen = true; gitOpen = true; applyTerm(); applyGit(); say("已重置布局"); });
+  $("#resetBtn").addEventListener("click", () => { th = 318; gw = 672; termOpen = true; gitOpen = true; applyTerm(); applyGit(); say("已重置佈局"); });
 
-  /* ---- 自适应 ---- */
+  /* ---- 自適應 ---- */
   if (/^#(light|dark)$/.test(location.hash)) document.documentElement.dataset.theme = location.hash.slice(1);
   const ro = new ResizeObserver(() => { if (gitOpen) fitGit(); });
   ro.observe(stage);
@@ -1727,4 +1730,7 @@ table.spec code{
 </script>
 </body>
 </html>
+
+
+
 

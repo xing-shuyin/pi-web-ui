@@ -357,7 +357,7 @@
     }
 
     /* ========================================================
-       方案 1：Linear 风格卡片单选（清晰、大气、层次分明）
+       方案 1：Linear 風格卡片單選（清晰、大氣、層次分明）
        ======================================================== */
     .p1-box {
       width: 540px;
@@ -447,7 +447,7 @@
     }
 
     /* ========================================================
-       方案 2：分段胶囊 Tab 切换（紧凑、专注、无冗余）
+       方案 2：分段膠囊 Tab 切換（緊湊、專注、無冗餘）
        ======================================================== */
     .p2-box {
       width: 500px;
@@ -529,7 +529,7 @@
     }
 
     /* ========================================================
-       方案 3：双栏实时预览（极客、透明、所见即所得）
+       方案 3：雙欄即時預覽（極客、透明、所見即所得）
        ======================================================== */
     .p3-box {
       width: 780px;
@@ -586,6 +586,9 @@
   </style>
 </head>
 <body>
+<div data-docs-i18n-switch style="position:fixed;top:8px;right:12px;z-index:2147483647;font:12px/1.6 -apple-system,system-ui,sans-serif;background:rgba(15,17,22,.78);color:#fff;padding:4px 12px;border-radius:999px;box-shadow:0 2px 10px rgba(0,0,0,.35)"><a href="./webhook-modal-proposals.html" style="color:#fff;text-decoration:none">简体中文</a> · <a href="./webhook-modal-proposals.en.html" style="color:#fff;text-decoration:none">English</a> · <strong>繁體中文</strong></div>
+
+
 
   <!-- Top Proposal Switcher Toolbar -->
   <header class="proposal-nav">
@@ -959,11 +962,11 @@
       const title = document.getElementById('p3-preview-title');
 
       if (p3CurrentType === 'incoming') {
-        title.textContent = '实时调用命令 (cURL)';
+        title.textContent = '即時呼叫命令 (cURL)';
         code.textContent = `curl -X POST "https://hub.example.com/api/rooms/r-101/webhooks/incoming/hook-preview?token=abc..." \\
   -H "Content-Type: application/json" \\
   -d '{
-    "text": "任务构建成功",
+    "text": "任務構建成功",
     "senderName": "${name}"
   }'`;
       } else {
@@ -971,13 +974,13 @@
         code.textContent = `{
   "event": "task_completed",
   "roomId": "room-101",
-  "roomName": "研发协同组",
+  "roomName": "研發協同組",
   "timestamp": ${Date.now()},
   "data": {
     "taskId": "t-808",
     "botId": "bot-frontend",
     "status": "completed",
-    "report": "已完成代码编译与打包",
+    "report": "已完成程式碼編譯與打包",
     "webhook": "${name}"
   }
 }`;
@@ -986,4 +989,7 @@
   </script>
 </body>
 </html>
+
+
+
 

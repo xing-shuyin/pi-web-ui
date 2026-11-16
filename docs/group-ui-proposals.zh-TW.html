@@ -45,7 +45,7 @@
     overflow: hidden;
   }
 
-  /* 顶部全局方案切换器 */
+  /* 頂部全域性方案切換器 */
   .demo-toolbar {
     background: #111318;
     border-bottom: 1px solid var(--border);
@@ -137,7 +137,7 @@
     accent-color: var(--accent);
   }
 
-  /* 方案视口容器 */
+  /* 方案視口容器 */
   .workspace-viewport {
     flex: 1;
     display: flex;
@@ -156,7 +156,7 @@
     display: flex;
   }
 
-  /* 方案亮点与说明横条 */
+  /* 方案亮點與說明橫條 */
   .plan-summary-bar {
     background: color-mix(in srgb, var(--accent) 8%, var(--bg-elev));
     border-bottom: 1px solid color-mix(in srgb, var(--accent) 30%, var(--border));
@@ -183,7 +183,7 @@
     color: var(--text);
   }
 
-  /* 通用群聊顶部 Header (基于真实风格增强) */
+  /* 通用群聊頂部 Header (基於真實風格增強) */
   .dg-head {
     display: flex;
     align-items: center;
@@ -285,7 +285,7 @@
     color: var(--text);
   }
 
-  /* 顶部次级任务/状态条 */
+  /* 頂部次級任務/狀態條 */
   .dg-task-strip {
     background: #11141a;
     border-bottom: 1px solid var(--border);
@@ -349,7 +349,7 @@
     50% { opacity: 0.4; transform: scale(1.2); }
   }
 
-  /* 方案一专属：居中单栏沉浸流 */
+  /* 方案一專屬：居中單欄沉浸流 */
   .chat-stream-single {
     flex: 1;
     overflow-y: auto;
@@ -366,7 +366,7 @@
     gap: 20px;
   }
 
-  /* 消息卡片通用结构 */
+  /* 訊息卡片通用結構 */
   .msg-item {
     display: flex;
     gap: 14px;
@@ -441,7 +441,7 @@
     border-color: color-mix(in srgb, var(--accent) 25%, var(--border));
   }
 
-  /* Mention 标签优化 */
+  /* Mention 標籤最佳化 */
   .mention-chip {
     display: inline-flex;
     align-items: center;
@@ -469,7 +469,7 @@
     opacity: 0.75;
   }
 
-  /* 结构化 Agent 异常/失败卡片 (彻底告别裸错误) */
+  /* 結構化 Agent 異常/失敗卡片 (徹底告別裸錯誤) */
   .bot-error-card {
     background: color-mix(in srgb, var(--red) 7%, var(--bg-elev));
     border: 1px solid color-mix(in srgb, var(--red) 30%, var(--border));
@@ -563,7 +563,7 @@
     background: var(--bg-elev3);
   }
 
-  /* 通用底部输入区 */
+  /* 通用底部輸入區 */
   .composer-wrapper {
     background: var(--bg-elev);
     border-top: 1px solid var(--border);
@@ -667,7 +667,7 @@
     background: var(--accent-hover);
   }
 
-  /* 方案二专属：双栏多智能体协作工作台 */
+  /* 方案二專屬：雙欄多智慧體協作工作臺 */
   .workspace-dual-layout {
     flex: 1;
     display: flex;
@@ -745,7 +745,7 @@
     gap: 14px;
   }
 
-  /* 侧栏卡片：协作 Bot 列表 */
+  /* 側欄卡片：協作 Bot 列表 */
   .bot-status-card {
     background: var(--bg);
     border: 1px solid var(--border);
@@ -805,7 +805,7 @@
     font-family: var(--mono);
   }
 
-  /* 侧栏卡片：待办与交付事项 */
+  /* 側欄卡片：待辦與交付事項 */
   .delivery-item-card {
     background: var(--bg);
     border: 1px solid var(--border);
@@ -840,7 +840,7 @@
     margin-top: 4px;
   }
 
-  /* 方案三专属：任务流水线看板 */
+  /* 方案三專屬：任務流水線看板 */
   .pipeline-header-bar {
     background: #11141c;
     border-bottom: 1px solid var(--border);
@@ -888,7 +888,7 @@
     font-size: 12px;
   }
 
-  /* 标注模式提示标记 */
+  /* 標註模式提示標記 */
   .diff-mark {
     position: relative;
   }
@@ -916,7 +916,7 @@
     display: inline-block;
   }
 
-  /* 方案底部对比卡 */
+  /* 方案底部對比卡 */
   .plans-footer-note {
     background: #090b0e;
     border-top: 1px solid var(--border);
@@ -930,6 +930,9 @@
 </style>
 </head>
 <body class="show-highlights">
+<div data-docs-i18n-switch style="position:fixed;top:8px;right:12px;z-index:2147483647;font:12px/1.6 -apple-system,system-ui,sans-serif;background:rgba(15,17,22,.78);color:#fff;padding:4px 12px;border-radius:999px;box-shadow:0 2px 10px rgba(0,0,0,.35)"><a href="./group-ui-proposals.html" style="color:#fff;text-decoration:none">简体中文</a> · <a href="./group-ui-proposals.en.html" style="color:#fff;text-decoration:none">English</a> · <strong>繁體中文</strong></div>
+
+
 
 <!-- 頂部方案切換導航 -->
 <header class="demo-toolbar">
@@ -1515,7 +1518,7 @@
     const navBots = document.getElementById('nav-btn-bots');
     const navDeliveries = document.getElementById('nav-btn-deliveries');
 
-    // 确保侧栏展开
+    // 確保側欄展開
     const side = document.getElementById('side-col');
     if (side) side.classList.remove('collapsed');
 
@@ -1538,4 +1541,7 @@
 </script>
 </body>
 </html>
+
+
+
 

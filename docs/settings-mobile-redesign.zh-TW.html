@@ -6,13 +6,13 @@
 <title>pi-web-ui · 移動端設定介面重構方案（A/B/C 三套可互動原型）</title>
 <style>
 /* ==========================================================================
-   0. 设计令牌（对齐 web/src/styles.css :root 与 themes/*，light 为新增对照）
+   0. 設計令牌（對齊 web/src/styles.css :root 與 themes/*，light 為新增對照）
    ========================================================================== */
 :root{
   --font-sans:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Hiragino Sans GB","Microsoft YaHei",Roboto,sans-serif;
   --mono:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
 
-  /* 深色（= 宿主默认 :root） */
+  /* 深色（= 宿主預設 :root） */
   --bg:#0d0e12;
   --bg-elev:#14161c;
   --bg-elev2:#1a1d26;
@@ -39,25 +39,25 @@
   --shadow-card:0 1px 0 rgba(255,255,255,.03),0 8px 24px rgba(0,0,0,.28);
   --scrim:rgba(0,0,0,.58);
 
-  /* 尺寸（移动端规范，非桌面值） */
-  --row-h:56px;          /* 列表项主高 */
-  --row-h-sm:48px;       /* 紧凑页（方案 C 全量页） */
-  --touch:44px;          /* 最小触控 */
+  /* 尺寸（移動端規範，非桌面值） */
+  --row-h:56px;          /* 列表項主高 */
+  --row-h-sm:48px;       /* 緊湊頁（方案 C 全量頁） */
+  --touch:44px;          /* 最小觸控 */
   --pad-x:16px;
   --group-gap:16px;
-  --radius:12px;         /* 卡片圆角（需求指定） */
+  --radius:12px;         /* 卡片圓角（需求指定） */
   --radius-sm:8px;
   --radius-lg:16px;
   --icon-tile:28px;
   --chev:16px;
-  --fs-title:30px;       /* 页面大标题 */
-  --fs-nav:17px;         /* 导航栏标题 */
-  --fs-group:13px;       /* 分组标题 */
+  --fs-title:30px;       /* 頁面大標題 */
+  --fs-nav:17px;         /* 導航欄標題 */
+  --fs-group:13px;       /* 分組標題 */
   --fs-label:16px;       /* 列表主文案 */
-  --fs-desc:12.5px;      /* 辅助说明 */
-  --fs-value:13px;       /* 右侧当前值 */
+  --fs-desc:12.5px;      /* 輔助說明 */
+  --fs-value:13px;       /* 右側當前值 */
 
-  /* 设备安全区（原型内以变量模拟 env()） */
+  /* 裝置安全區（原型內以變數模擬 env()） */
   --screen-w:390px;
   --screen-h:844px;
   --safe-top:54px;
@@ -106,7 +106,7 @@ button{font:inherit;color:inherit}
 a{color:var(--accent-text)}
 
 /* ==========================================================================
-   1. 展示页外壳
+   1. 展示頁外殼
    ========================================================================== */
 .wrap{max-width:1180px;margin:0 auto;padding:28px 16px 80px}
 .sc-head{display:flex;flex-direction:column;gap:10px;align-items:center;text-align:center;margin-bottom:18px}
@@ -127,7 +127,7 @@ a{color:var(--accent-text)}
 .seg.small button{padding:7px 11px;font-size:12px;min-height:34px}
 .seg .n{font-variant-numeric:tabular-nums;opacity:.75;font-weight:600}
 
-/* 舞台 */
+/* 舞臺 */
 .stage{display:flex;gap:26px;align-items:flex-start;justify-content:center;flex-wrap:wrap}
 .stage-note{flex:1 1 320px;min-width:290px;max-width:420px;display:flex;flex-direction:column;gap:12px;position:sticky;top:18px}
 .note-card{background:var(--bg-elev);border:1px solid var(--border-soft);border-radius:var(--radius-lg);padding:16px 16px 14px}
@@ -141,7 +141,7 @@ a{color:var(--accent-text)}
 .note-card.rec{border-left:3px solid var(--accent)}
 
 /* ==========================================================================
-   2. 手机外壳 + 安全区
+   2. 手機外殼 + 安全區
    ========================================================================== */
 .device{
   position:relative;flex:none;
@@ -196,7 +196,7 @@ a{color:var(--accent-text)}
 .scroll::-webkit-scrollbar{width:0;height:0}
 
 /* ==========================================================================
-   3. 移动端导航：大标题（首页）/ 紧凑导航栏（二级页）
+   3. 移動端導航：大標題（首頁）/ 緊湊導航欄（二級頁）
    ========================================================================== */
 .nav-large{flex:none;padding:2px var(--pad-x) 10px;background:var(--bg);position:relative;z-index:20}
 .nav-large .nl-top{display:flex;align-items:center;justify-content:space-between;gap:10px;min-height:34px}
@@ -221,7 +221,7 @@ a{color:var(--accent-text)}
 .icon-btn svg{width:21px;height:21px}
 .icon-btn.brand{color:var(--accent-text)}
 
-/* 保存状态（宿主 settings-live-pill 的移动版） */
+/* 儲存狀態（宿主 settings-live-pill 的移動版） */
 .pill{
   display:inline-flex;align-items:center;gap:6px;flex:none;
   height:28px;padding:0 10px;border-radius:999px;
@@ -242,7 +242,7 @@ a{color:var(--accent-text)}
 .save-banner button{margin-left:auto;border:0;background:transparent;color:var(--red-text);font-weight:800;text-decoration:underline;cursor:pointer;padding:4px 2px}
 
 /* ==========================================================================
-   4. 搜索
+   4. 搜尋
    ========================================================================== */
 .search{position:relative;display:flex;align-items:center;gap:8px;margin-top:8px;padding:0 10px;
   min-height:var(--touch);background:var(--bg-elev2);border:1px solid var(--border-soft);border-radius:11px}
@@ -260,7 +260,7 @@ a{color:var(--accent-text)}
 .search.hero input{font-size:16px}
 
 /* ==========================================================================
-   5. 分组卡片与行（三套方案共用基元）
+   5. 分組卡片與行（三套方案共用基元）
    ========================================================================== */
 .scroll-body{padding:2px var(--pad-x) calc(var(--safe-bottom) + 24px);display:flex;flex-direction:column;gap:var(--group-gap)}
 .group{display:flex;flex-direction:column;gap:7px}
@@ -278,10 +278,10 @@ a{color:var(--accent-text)}
 }
 .card.tight{border-radius:var(--radius)}
 .divider{height:1px;background:var(--border-soft);margin-left:calc(var(--pad-x) + var(--icon-tile) + 12px)}
-.card > .row + .divider{/* 首行上方无分隔线由渲染器控制 */}
+.card > .row + .divider{/* 首行上方無分隔線由渲染器控制 */}
 .divider.full{margin-left:0}
 
-/* 行：整行一个可点目标（>= 52px），右侧值 + chevron */
+/* 行：整行一個可點目標（>= 52px），右側值 + chevron */
 .row{
   display:flex;align-items:center;gap:12px;width:100%;
   min-height:var(--row-h);padding:8px var(--pad-x);
@@ -336,11 +336,11 @@ a{color:var(--accent-text)}
 .dot.ok{background:var(--green)}
 .dot.err{background:var(--red)}
 
-/* 危险行：弱化但可识别（不靠颜色单一通道 → 文案 + 图标 + 分组标题） */
+/* 危險行：弱化但可識別（不靠顏色單一通道 → 文案 + 圖示 + 分組標題） */
 .row.danger .row-label{color:var(--red-text);font-weight:600}
 .row.danger .row-ico{--tone:var(--red);--tone-l:var(--red)}
 
-/* 开关：视觉 50×30，命中区跟随整行 56 */
+/* 開關：視覺 50×30，命中區跟隨整行 56 */
 .switch{
   flex:none;position:relative;width:50px;height:30px;border-radius:15px;
   background:var(--track-off);border:1px solid transparent;
@@ -356,7 +356,7 @@ a{color:var(--accent-text)}
 .row:active .switch .knob{width:26px}
 .row[aria-checked="false"]:active .switch .knob{left:2px}
 
-/* 分段控件（主题：窄/宽 等） */
+/* 分段控制元件（主題：窄/寬 等） */
 .segmented{display:flex;gap:2px;padding:3px;background:var(--bg-sunk);border-radius:10px;border:1px solid var(--border-soft)}
 .segmented button{
   flex:1 1 0;min-height:36px;border:0;border-radius:8px;background:transparent;color:var(--text-dim);
@@ -365,11 +365,11 @@ a{color:var(--accent-text)}
 .segmented button[aria-pressed="true"]{background:var(--bg-elev2);color:var(--text);box-shadow:0 1px 3px rgba(0,0,0,.18)}
 [data-theme="light"] .segmented button[aria-pressed="true"]{box-shadow:0 1px 3px rgba(16,18,28,.14);border:1px solid var(--border-soft)}
 
-/* 值预览行（不可点，仅展示当前值） */
+/* 值預覽行（不可點，僅展示當前值） */
 .row-static{cursor:default}
 
 /* ==========================================================================
-   6. 方案 A 专有：身份卡
+   6. 方案 A 專有：身份卡
    ========================================================================== */
 .idcard{
   display:flex;align-items:center;gap:12px;padding:14px;
@@ -395,7 +395,7 @@ a{color:var(--accent-text)}
 .idcard .id-action:active{background:var(--fill-press)}
 
 /* ==========================================================================
-   7. 方案 B 专有：高频磁贴 + 可折叠分组
+   7. 方案 B 專有：高頻磁貼 + 可摺疊分組
    ========================================================================== */
 .tiles{display:grid;grid-template-columns:1fr 1fr;gap:10px}
 .tile{
@@ -436,7 +436,7 @@ a{color:var(--accent-text)}
 .group[data-open="false"] .card{display:none}
 
 /* ==========================================================================
-   8. 方案 C 专有：场景卡 + 底部全量入口
+   8. 方案 C 專有：場景卡 + 底部全量入口
    ========================================================================== */
 .scene{
   border:1px solid var(--border-soft);border-radius:var(--radius);background:var(--bg-elev);
@@ -466,14 +466,14 @@ a{color:var(--accent-text)}
 .bottombar button:active{background:var(--fill-press)}
 .bottombar .bb-count{font-size:12px;color:var(--text-dim);font-weight:600}
 
-/* 全量页（C 的第三级：仍是列表页，不超三级） */
+/* 全量頁（C 的第三級：仍是列表頁，不超三級） */
 .dense .row{min-height:var(--row-h-sm);padding-top:6px;padding-bottom:6px}
 .dense .row-label{font-size:15px}
 .dense .row-ico{width:24px;height:24px;border-radius:7px}
 .dense .row-ico svg{width:14px;height:14px}
 .dense .divider{margin-left:calc(var(--pad-x) + 24px + 12px)}
 
-/* 二级页内的分组间标题 */
+/* 二級頁內的分組間標題 */
 .sub-note{font-size:12px;color:var(--text-faint);line-height:1.6;padding:0 4px}
 .sub-note code{font-family:var(--mono);font-size:11.5px;background:var(--bg-elev);border:1px solid var(--border-soft);
   border-radius:5px;padding:0 4px;overflow-wrap:anywhere}
@@ -482,7 +482,7 @@ a{color:var(--accent-text)}
 .text-btn:active{background:var(--fill-press)}
 
 /* ==========================================================================
-   9. 状态：空 / 加载 / 禁用 / 底部确认面板
+   9. 狀態：空 / 載入 / 停用 / 底部確認面板
    ========================================================================== */
 .empty{padding:40px 20px;display:flex;flex-direction:column;align-items:center;gap:10px;text-align:center}
 .empty .e-ico{width:44px;height:44px;border-radius:14px;display:grid;place-items:center;background:var(--bg-elev2);
@@ -522,7 +522,7 @@ a{color:var(--accent-text)}
 .sheet button:active{transform:scale(.99)}
 
 /* ==========================================================================
-   10. 文档区
+   10. 文件區
    ========================================================================== */
 .docs{margin-top:44px;display:flex;flex-direction:column;gap:16px}
 .doc{
@@ -572,12 +572,12 @@ tr:last-child td{border-bottom:0}
 }
 .figma b{color:var(--text)}
 
-/* 方案对比表 */
+/* 方案對比表 */
 .compare th:nth-child(1){width:130px}
 .compare td{white-space:normal}
 .best{color:var(--green);font-weight:700}
 
-/* 响应式：展示页自身 */
+/* 響應式：展示頁自身 */
 @media (max-width:900px){
   .stage{flex-direction:column;align-items:center}
   .stage-note{position:static;max-width:none;width:100%;order:2}
@@ -593,6 +593,9 @@ tr:last-child td{border-bottom:0}
 </style>
 </head>
 <body>
+<div data-docs-i18n-switch style="position:fixed;top:8px;right:12px;z-index:2147483647;font:12px/1.6 -apple-system,system-ui,sans-serif;background:rgba(15,17,22,.78);color:#fff;padding:4px 12px;border-radius:999px;box-shadow:0 2px 10px rgba(0,0,0,.35)"><a href="./settings-mobile-redesign.html" style="color:#fff;text-decoration:none">简体中文</a> · <a href="./settings-mobile-redesign.en.html" style="color:#fff;text-decoration:none">English</a> · <strong>繁體中文</strong></div>
+
+
 <div class="wrap">
   <header class="sc-head">
     <div class="sc-kicker">pi-web-ui · Mobile Settings · Redesign 2026</div>
@@ -1034,9 +1037,9 @@ const askClearHistory = () =&gt; sheet.confirm({
 
 <script>
 /* ============================================================================
-   pi-web-ui 移动端设置原型引擎
-   数据只使用仓库里真实存在的设置页与字段（见 web/src/components/SettingsModal.tsx 的
-   SettingsTab 联合类型与 i18n settings* 键）；数字/字符串为排版示例值。
+   pi-web-ui 移動端設定原型引擎
+   資料只使用倉庫裡真實存在的設定頁與欄位（見 web/src/components/SettingsModal.tsx 的
+   SettingsTab 聯合型別與 i18n settings* 鍵）；數字/字串為排版示例值。
    ========================================================================== */
 const ICONS = {
   model:'<rect x="7" y="7" width="10" height="10" rx="2"/><path d="M10 3v3M14 3v3M10 18v3M14 18v3M3 10h3M3 14h3M18 10h3M18 14h3"/>',
@@ -1072,285 +1075,285 @@ const ICONS = {
 };
 const icon = (n, cls) => `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"${cls ? ` class="${cls}"` : ""}>${ICONS[n] || ""}</svg>`;
 
-/* ---------- 首页/二级页共用的行描述（真实设置项） ---------- */
+/* ---------- 首頁/二級頁共用的行描述（真實設定項） ---------- */
 const ROWS = {
-  models:   { icon:'model',    tone:'blue',   label:'模型与服务商', desc:'引擎、服务商与默认模型', value:'pi · 12 个', page:'models' },
-  display:  { icon:'chat',     tone:'teal',   label:'对话',         value:'宽屏 · 显示模型', page:'display' },
-  theme:    { icon:'palette',  tone:'violet', label:'主题',         value:'flow-ink · 深色', page:'theme' },
-  locale:   { icon:'globe',    tone:'slate',  label:'语言',         value:'简体中文', page:'locale' },
-  quick:    { icon:'send',     tone:'sky',    label:'快捷短语',     value:'8 条', page:'quick' },
-  prompt:   { icon:'file',     tone:'blue',   label:'系统提示词',   value:'追加模式', page:'prompt' },
-  tools:    { icon:'wrench',   tone:'violet', label:'工具',         value:'3 项已关闭', page:'tools' },
-  skills:   { icon:'sparkles', tone:'amber',  label:'技能',         value:'12 个', page:'skills' },
-  presets:  { icon:'bookmark', tone:'green',  label:'预设',         value:'4 个', page:'presets' },
-  subagents:{ icon:'layers',   tone:'slate',  label:'子代理模板',   value:'6 个', page:'subagents' },
-  quickask: { icon:'message',  tone:'teal',   label:'随手问',       value:'已开启', page:'quickask' },
-  mcp:      { icon:'server',   tone:'sky',    label:'MCP 服务器',   value:'2 个 · 1 异常', bad:true, page:'mcp' },
-  scheduler:{ icon:'calendar', tone:'amber',  label:'定时任务',     value:'3 个', page:'scheduler' },
-  collab:   { icon:'users',    tone:'violet', label:'群组协作与执行', value:'默认配额', page:'collab' },
-  approval: { icon:'shield',   tone:'green',  label:'审批规则',     value:'5 条', page:'approval' },
-  vision:   { icon:'eye',      tone:'slate',  label:'视觉桥',       value:'未配置', page:'vision',
-              desc:'需先在「模型与服务商」里配置视觉模型', disabled:true },
-  extensions:{ icon:'plug',    tone:'slate',  label:'插件（扩展）', value:'4 个', page:'extensions' },
-  pluginui: { icon:'box',      tone:'sky',    label:'界面插件',     value:'6 个 · 1 个有更新', page:'pluginui' },
-  layout:   { icon:'sliders',  tone:'blue',   label:'界面布局',     value:'默认', page:'layout' },
-  history:  { icon:'clock',    tone:'slate',  label:'输入历史',     value:'238 条', page:'history' },
-  review:   { icon:'target',   tone:'amber',  label:'目标审查',     value:'3 个技能', page:'review' },
-  about:    { icon:'info',     tone:'slate',  label:'关于与版本',   value:'v0.119.0', page:'about' },
-  reset:    { icon:'alert',    tone:'red',    label:'重置与危险操作', value:'3 项', page:'reset' },
+  models:   { icon:'model',    tone:'blue',   label:'模型與服務商', desc:'引擎、服務商與預設模型', value:'pi · 12 個', page:'models' },
+  display:  { icon:'chat',     tone:'teal',   label:'對話',         value:'寬屏 · 顯示模型', page:'display' },
+  theme:    { icon:'palette',  tone:'violet', label:'主題',         value:'flow-ink · 深色', page:'theme' },
+  locale:   { icon:'globe',    tone:'slate',  label:'語言',         value:'簡體中文', page:'locale' },
+  quick:    { icon:'send',     tone:'sky',    label:'快捷短語',     value:'8 條', page:'quick' },
+  prompt:   { icon:'file',     tone:'blue',   label:'系統提示詞',   value:'追加模式', page:'prompt' },
+  tools:    { icon:'wrench',   tone:'violet', label:'工具',         value:'3 項已關閉', page:'tools' },
+  skills:   { icon:'sparkles', tone:'amber',  label:'技能',         value:'12 個', page:'skills' },
+  presets:  { icon:'bookmark', tone:'green',  label:'預設',         value:'4 個', page:'presets' },
+  subagents:{ icon:'layers',   tone:'slate',  label:'子代理模板',   value:'6 個', page:'subagents' },
+  quickask: { icon:'message',  tone:'teal',   label:'隨手問',       value:'已開啟', page:'quickask' },
+  mcp:      { icon:'server',   tone:'sky',    label:'MCP 伺服器',   value:'2 個 · 1 異常', bad:true, page:'mcp' },
+  scheduler:{ icon:'calendar', tone:'amber',  label:'定時任務',     value:'3 個', page:'scheduler' },
+  collab:   { icon:'users',    tone:'violet', label:'群組協作與執行', value:'預設配額', page:'collab' },
+  approval: { icon:'shield',   tone:'green',  label:'審批規則',     value:'5 條', page:'approval' },
+  vision:   { icon:'eye',      tone:'slate',  label:'視覺橋',       value:'未配置', page:'vision',
+              desc:'需先在「模型與服務商」裡配置視覺模型', disabled:true },
+  extensions:{ icon:'plug',    tone:'slate',  label:'外掛（擴充套件）', value:'4 個', page:'extensions' },
+  pluginui: { icon:'box',      tone:'sky',    label:'介面外掛',     value:'6 個 · 1 個有更新', page:'pluginui' },
+  layout:   { icon:'sliders',  tone:'blue',   label:'介面佈局',     value:'預設', page:'layout' },
+  history:  { icon:'clock',    tone:'slate',  label:'輸入歷史',     value:'238 條', page:'history' },
+  review:   { icon:'target',   tone:'amber',  label:'目標審查',     value:'3 個技能', page:'review' },
+  about:    { icon:'info',     tone:'slate',  label:'關於與版本',   value:'v0.119.0', page:'about' },
+  reset:    { icon:'alert',    tone:'red',    label:'重置與危險操作', value:'3 項', page:'reset' },
 
-  /* 通知（仅手机安装包：mobile/src/Settings.tsx · NotificationSettings，Web 端隐藏） */
-  pushOn:   { icon:'bell',     tone:'pink',   label:'本机通知', desc:'任务完成、需要回答、审批', type:'toggle', key:'pushOn', on:true },
-  pushKinds:{ icon:'sliders',  tone:'pink',   label:'通知类型',  value:'4 / 5 类', page:'notify' },
-  pushPerm: { icon:'shield',   tone:'green',  label:'系统通知权限', value:'已允许', page:'notify' },
+  /* 通知（僅手機安裝包：mobile/src/Settings.tsx · NotificationSettings，Web 端隱藏） */
+  pushOn:   { icon:'bell',     tone:'pink',   label:'本機通知', desc:'任務完成、需要回答、審批', type:'toggle', key:'pushOn', on:true },
+  pushKinds:{ icon:'sliders',  tone:'pink',   label:'通知型別',  value:'4 / 5 類', page:'notify' },
+  pushPerm: { icon:'shield',   tone:'green',  label:'系統通知許可權', value:'已允許', page:'notify' },
 
-  /* 全局布尔项（只读展示 + 直接切换，无二级页） */
-  soundAlert:{ icon:'volume',  tone:'pink',   label:'提示音', desc:'任务完成、需要你确认时', type:'toggle', key:'soundAlert', on:true },
-  tts:      { icon:'volume',  tone:'pink',   label:'语音播报', desc:'朗读回复（随系统语音）', type:'toggle', key:'tts', on:false }
+  /* 全域性布林項（只讀展示 + 直接切換，無二級頁） */
+  soundAlert:{ icon:'volume',  tone:'pink',   label:'提示音', desc:'任務完成、需要你確認時', type:'toggle', key:'soundAlert', on:true },
+  tts:      { icon:'volume',  tone:'pink',   label:'語音播報', desc:'朗讀回覆（隨系統語音）', type:'toggle', key:'tts', on:false }
 };
 
-/* ---------- 方案 A / B / C 的首页分组 ---------- */
+/* ---------- 方案 A / B / C 的首頁分組 ---------- */
 const HOME = {
   A: [
     { title:'常用', rows:['models','display','soundAlert','quick','theme'] },
     { title:'通知', rows:['pushOn','pushKinds','pushPerm'] },
-    { title:'智能体能力', rows:['prompt','tools','skills','presets','subagents','quickask'] },
-    { title:'连接与自动化', rows:['mcp','scheduler','collab','approval','vision'] },
-    { title:'外观与界面', rows:['layout','pluginui','extensions','locale'] },
+    { title:'智慧體能力', rows:['prompt','tools','skills','presets','subagents','quickask'] },
+    { title:'連線與自動化', rows:['mcp','scheduler','collab','approval','vision'] },
+    { title:'外觀與介面', rows:['layout','pluginui','extensions','locale'] },
     { title:'更多', rows:['history','review','about'] }
   ],
   B: [
-    { key:'notify',  title:'通知', sum:'4 / 5 类', rows:['pushOn','pushKinds','pushPerm'] },
-    { key:'agent',   title:'智能体能力', sum:'6 项', rows:['prompt','tools','skills','presets','subagents','quickask'] },
-    { key:'connect', title:'连接与自动化', sum:'1 处异常', rows:['mcp','scheduler','collab','approval','vision'] },
-    { key:'ui',      title:'外观与界面', sum:'4 项', rows:['layout','pluginui','extensions','locale','history'] },
+    { key:'notify',  title:'通知', sum:'4 / 5 類', rows:['pushOn','pushKinds','pushPerm'] },
+    { key:'agent',   title:'智慧體能力', sum:'6 項', rows:['prompt','tools','skills','presets','subagents','quickask'] },
+    { key:'connect', title:'連線與自動化', sum:'1 處異常', rows:['mcp','scheduler','collab','approval','vision'] },
+    { key:'ui',      title:'外觀與介面', sum:'4 項', rows:['layout','pluginui','extensions','locale','history'] },
     { key:'more',    title:'更多', sum:'', rows:['review','about'] }
   ],
   C: [
-    { key:'smart',   title:'让它更聪明', sub:'模型、提示词、技能与预设', icon:'sparkles', tone:'violet', rows:['models','prompt','skills','presets','subagents'] },
-    { key:'habit',   title:'更像你的习惯', sub:'对话排版、主题、语言、快捷短语', icon:'palette', tone:'teal', rows:['display','theme','locale','quick','quickask'] },
-    { key:'world',   title:'接上外部世界', sub:'MCP、插件与视觉桥', icon:'plug', tone:'sky', rows:['mcp','extensions','pluginui','vision'] },
-    { key:'auto',    title:'提醒与自动化', sub:'通知、定时任务、群组协作、审批门禁', icon:'bell', tone:'amber', rows:['pushOn','pushKinds','pushPerm','scheduler','collab','approval'] },
-    { key:'maint',   title:'界面与维护', sub:'布局、历史、审查与版本', icon:'sliders', tone:'slate', rows:['layout','history','review','about'] }
+    { key:'smart',   title:'讓它更聰明', sub:'模型、提示詞、技能與預設', icon:'sparkles', tone:'violet', rows:['models','prompt','skills','presets','subagents'] },
+    { key:'habit',   title:'更像你的習慣', sub:'對話排版、主題、語言、快捷短語', icon:'palette', tone:'teal', rows:['display','theme','locale','quick','quickask'] },
+    { key:'world',   title:'接上外部世界', sub:'MCP、外掛與視覺橋', icon:'plug', tone:'sky', rows:['mcp','extensions','pluginui','vision'] },
+    { key:'auto',    title:'提醒與自動化', sub:'通知、定時任務、群組協作、審批門禁', icon:'bell', tone:'amber', rows:['pushOn','pushKinds','pushPerm','scheduler','collab','approval'] },
+    { key:'maint',   title:'介面與維護', sub:'佈局、歷史、審查與版本', icon:'sliders', tone:'slate', rows:['layout','history','review','about'] }
   ]
 };
 
-/* ---------- 二级页内容（字段全部来自现有设置页） ---------- */
+/* ---------- 二級頁內容（欄位全部來自現有設定頁） ---------- */
 const PAGES = {
-  models:{ title:'模型与服务商', sections:[
-    { title:'当前引擎', rows:[
+  models:{ title:'模型與服務商', sections:[
+    { title:'當前引擎', rows:[
       { icon:'model', tone:'blue', label:'引擎', value:'pi', type:'static' },
-      { icon:'sliders', tone:'slate', label:'思考等级', value:'中', type:'static' }
+      { icon:'sliders', tone:'slate', label:'思考等級', value:'中', type:'static' }
     ]},
-    { title:'服务商', rows:[
-      { icon:'model', tone:'green', label:'DeepSeek', desc:'已配置 · 3 个模型', type:'static' },
-      { icon:'model', tone:'green', label:'Anthropic', desc:'已配置 · 4 个模型', type:'static' },
-      { icon:'model', tone:'slate', label:'OpenAI', desc:'未配置密钥', value:'去配置', page:'models' }
+    { title:'服務商', rows:[
+      { icon:'model', tone:'green', label:'DeepSeek', desc:'已配置 · 3 個模型', type:'static' },
+      { icon:'model', tone:'green', label:'Anthropic', desc:'已配置 · 4 個模型', type:'static' },
+      { icon:'model', tone:'slate', label:'OpenAI', desc:'未配置金鑰', value:'去配置', page:'models' }
     ]},
-    { title:'密钥', rows:[
-      { icon:'alert', tone:'red', label:'清除全部服务商密钥', type:'danger', confirm:{ title:'清除全部服务商密钥？', body:'会删除服务端 auth.json 中保存的全部密钥，相关模型将从列表消失，直到重新配置。环境变量来源的密钥不受影响。', key:'keys' } }
+    { title:'金鑰', rows:[
+      { icon:'alert', tone:'red', label:'清除全部服務商金鑰', type:'danger', confirm:{ title:'清除全部服務商金鑰？', body:'會刪除服務端 auth.json 中儲存的全部金鑰，相關模型將從列表消失，直到重新配置。環境變數來源的金鑰不受影響。', key:'keys' } }
     ]}
   ]},
   tools:{ title:'工具', sections:[
-    { title:'启用的工具', rows:[
-      { icon:'wrench', tone:'violet', label:'bash（终端命令）', type:'toggle', key:'toolBash', on:true },
-      { icon:'file', tone:'blue', label:'read / write / edit', desc:'文件读写与编辑', type:'toggle', key:'toolFiles', on:true },
+    { title:'啟用的工具', rows:[
+      { icon:'wrench', tone:'violet', label:'bash（終端命令）', type:'toggle', key:'toolBash', on:true },
+      { icon:'file', tone:'blue', label:'read / write / edit', desc:'檔案讀寫與編輯', type:'toggle', key:'toolFiles', on:true },
       { icon:'search', tone:'slate', label:'grep / find', type:'toggle', key:'toolSearch', on:false },
-      { icon:'box', tone:'sky', label:'图片工具', type:'toggle', key:'toolImages', on:true }
+      { icon:'box', tone:'sky', label:'圖片工具', type:'toggle', key:'toolImages', on:true }
     ]},
-    { title:'进阶', rows:[
-      { icon:'sparkles', tone:'amber', label:'工具延迟加载', desc:'长尾工具按需注入，省上下文', type:'toggle', key:'toolLazy', on:true },
-      { icon:'file', tone:'slate', label:'工具提示词覆盖', value:'2 项', page:'tools' }
+    { title:'進階', rows:[
+      { icon:'sparkles', tone:'amber', label:'工具延遲載入', desc:'長尾工具按需注入，省上下文', type:'toggle', key:'toolLazy', on:true },
+      { icon:'file', tone:'slate', label:'工具提示詞覆蓋', value:'2 項', page:'tools' }
     ]}
   ]},
   notify:{ title:'通知', sections:[
-    { title:'接收这些通知', rows:[
-      { icon:'bell', tone:'pink', label:'任务完成', type:'toggle', key:'kindDone', on:true },
-      { icon:'bell', tone:'pink', label:'任务失败', type:'toggle', key:'kindError', on:true },
+    { title:'接收這些通知', rows:[
+      { icon:'bell', tone:'pink', label:'任務完成', type:'toggle', key:'kindDone', on:true },
+      { icon:'bell', tone:'pink', label:'任務失敗', type:'toggle', key:'kindError', on:true },
       { icon:'bell', tone:'pink', label:'需要回答', type:'toggle', key:'kindQuestion', on:true },
-      { icon:'bell', tone:'pink', label:'需要审批', type:'toggle', key:'kindApproval', on:true },
-      { icon:'bell', tone:'slate', label:'子任务完成', type:'toggle', key:'kindSub', on:false }
+      { icon:'bell', tone:'pink', label:'需要審批', type:'toggle', key:'kindApproval', on:true },
+      { icon:'bell', tone:'slate', label:'子任務完成', type:'toggle', key:'kindSub', on:false }
     ]},
-    { title:'系统', rows:[
-      { icon:'shield', tone:'green', label:'系统通知权限', value:'已允许', type:'static' },
-      { icon:'sliders', tone:'slate', label:'打开系统设置', type:'static' },
-      { icon:'bell', tone:'slate', label:'重新检查推送配置', type:'static' }
+    { title:'系統', rows:[
+      { icon:'shield', tone:'green', label:'系統通知許可權', value:'已允許', type:'static' },
+      { icon:'sliders', tone:'slate', label:'開啟系統設定', type:'static' },
+      { icon:'bell', tone:'slate', label:'重新檢查推送配置', type:'static' }
     ]}
   ]},
-  approval:{ title:'审批规则', sections:[
-    { title:'门禁', rows:[
-      { icon:'shield', tone:'green', label:'工具审批总开关', desc:'高危命令执行前必须先确认', type:'toggle', key:'approvalOn', on:true },
-      { icon:'sliders', tone:'slate', label:'呈现方式', value:'队列', type:'static' },
-      { icon:'file', tone:'blue', label:'规则库', value:'5 条', page:'approval' }
+  approval:{ title:'審批規則', sections:[
+    { title:'門禁', rows:[
+      { icon:'shield', tone:'green', label:'工具審批總開關', desc:'高危命令執行前必須先確認', type:'toggle', key:'approvalOn', on:true },
+      { icon:'sliders', tone:'slate', label:'呈現方式', value:'佇列', type:'static' },
+      { icon:'file', tone:'blue', label:'規則庫', value:'5 條', page:'approval' }
     ]}
   ]},
-  mcp:{ title:'MCP 服务器', sections:[
-    { title:'已连接', rows:[
-      { icon:'db', tone:'green', label:'filesystem', desc:'stdio · 12 个工具 · 已连接', type:'static' },
-      { icon:'plug', tone:'red', label:'chrome-devtools', desc:'sse · 连接失败：ECONNREFUSED', value:'重试', type:'static' },
-      { icon:'server', tone:'slate', label:'添加服务器', value:'', type:'static' }
+  mcp:{ title:'MCP 伺服器', sections:[
+    { title:'已連線', rows:[
+      { icon:'db', tone:'green', label:'filesystem', desc:'stdio · 12 個工具 · 已連線', type:'static' },
+      { icon:'plug', tone:'red', label:'chrome-devtools', desc:'sse · 連線失敗：ECONNREFUSED', value:'重試', type:'static' },
+      { icon:'server', tone:'slate', label:'新增伺服器', value:'', type:'static' }
     ]}
   ]},
-  scheduler:{ title:'定时任务', sections:[
-    { title:'任务', rows:[
-      { icon:'calendar', tone:'amber', label:'每日依赖体检', desc:'每天 09:00 · 后台执行', type:'toggle', key:'sch1', on:true },
-      { icon:'calendar', tone:'slate', label:'仓库清理', desc:'每周日 22:00', type:'toggle', key:'sch2', on:false }
+  scheduler:{ title:'定時任務', sections:[
+    { title:'任務', rows:[
+      { icon:'calendar', tone:'amber', label:'每日依賴體檢', desc:'每天 09:00 · 後臺執行', type:'toggle', key:'sch1', on:true },
+      { icon:'calendar', tone:'slate', label:'倉庫清理', desc:'每週日 22:00', type:'toggle', key:'sch2', on:false }
     ]},
-    { title:'', rows:[ { icon:'calendar', tone:'slate', label:'新建定时任务', type:'static' } ]}
+    { title:'', rows:[ { icon:'calendar', tone:'slate', label:'新建定時任務', type:'static' } ]}
   ]},
-  display:{ title:'对话', sections:[
-    { title:'排版', segment:{ key:'chatWidth', options:['窄','宽'] }, rows:[] },
-    { title:'显示', rows:[
-      { icon:'chat', tone:'teal', label:'显示模型名', type:'toggle', key:'showModel', on:true },
-      { icon:'eye', tone:'slate', label:'显示头像', type:'toggle', key:'showAvatar', on:true },
-      { icon:'file', tone:'blue', label:'折叠长消息', desc:'超过 12 行默认折叠', type:'toggle', key:'foldLong', on:true },
-      { icon:'db', tone:'amber', label:'上下文软上限', value:'120k tokens', type:'static' }
+  display:{ title:'對話', sections:[
+    { title:'排版', segment:{ key:'chatWidth', options:['窄','寬'] }, rows:[] },
+    { title:'顯示', rows:[
+      { icon:'chat', tone:'teal', label:'顯示模型名', type:'toggle', key:'showModel', on:true },
+      { icon:'eye', tone:'slate', label:'顯示頭像', type:'toggle', key:'showAvatar', on:true },
+      { icon:'file', tone:'blue', label:'摺疊長訊息', desc:'超過 12 行預設摺疊', type:'toggle', key:'foldLong', on:true },
+      { icon:'db', tone:'amber', label:'上下文軟上限', value:'120k tokens', type:'static' }
     ]}
   ]},
-  sound:{ title:'声音与语音', sections:[
+  sound:{ title:'聲音與語音', sections:[
     { title:'提示', rows:[
-      { icon:'volume', tone:'pink', label:'提示音', desc:'任务完成、需要确认时', type:'toggle', key:'soundAlert', on:true },
-      { icon:'volume', tone:'violet', label:'语音播报（TTS）', type:'toggle', key:'tts', on:false }
+      { icon:'volume', tone:'pink', label:'提示音', desc:'任務完成、需要確認時', type:'toggle', key:'soundAlert', on:true },
+      { icon:'volume', tone:'violet', label:'語音播報（TTS）', type:'toggle', key:'tts', on:false }
     ]},
-    { title:'语音', rows:[
-      { icon:'glob', tone:'slate', label:'音色', value:'系统默认', type:'static' },
-      { icon:'sliders', tone:'slate', label:'语速', type:'range' }
+    { title:'語音', rows:[
+      { icon:'glob', tone:'slate', label:'音色', value:'系統預設', type:'static' },
+      { icon:'sliders', tone:'slate', label:'語速', type:'range' }
     ]}
   ]},
-  quick:{ title:'快捷短语', sections:[
-    { title:'已保存（轻点编辑）', rows:[
-      { icon:'send', tone:'sky', label:'继续', type:'static' },
-      { icon:'send', tone:'sky', label:'跑一下测试', type:'static' },
-      { icon:'send', tone:'sky', label:'先解释再改', type:'static' },
-      { icon:'send', tone:'sky', label:'总结这次改动', type:'static' }
+  quick:{ title:'快捷短語', sections:[
+    { title:'已儲存（輕點編輯）', rows:[
+      { icon:'send', tone:'sky', label:'繼續', type:'static' },
+      { icon:'send', tone:'sky', label:'跑一下測試', type:'static' },
+      { icon:'send', tone:'sky', label:'先解釋再改', type:'static' },
+      { icon:'send', tone:'sky', label:'總結這次改動', type:'static' }
     ]},
     { title:'', rows:[
-      { icon:'send', tone:'slate', label:'新增短语', type:'static' },
-      { icon:'alert', tone:'red', label:'恢复默认短语', desc:'会覆盖当前 8 条', type:'danger', confirm:{ title:'恢复默认短语？', body:'当前自定义的 8 条短语会被默认列表替换，无法撤销。', key:'phrases' } }
+      { icon:'send', tone:'slate', label:'新增短語', type:'static' },
+      { icon:'alert', tone:'red', label:'恢復預設短語', desc:'會覆蓋當前 8 條', type:'danger', confirm:{ title:'恢復預設短語？', body:'當前自定義的 8 條短語會被預設列表替換，無法撤銷。', key:'phrases' } }
     ]}
   ]},
-  theme:{ title:'主题', sections:[
-    { title:'外观', rows:[
-      { icon:'palette', tone:'violet', label:'flow-ink', desc:'深色 · 青绿强调', type:'radio', key:'themeSel', value:'使用中' },
-      { icon:'palette', tone:'teal', label:'flow-light', desc:'浅色', type:'radio', key:'themeSel2' },
+  theme:{ title:'主題', sections:[
+    { title:'外觀', rows:[
+      { icon:'palette', tone:'violet', label:'flow-ink', desc:'深色 · 青綠強調', type:'radio', key:'themeSel', value:'使用中' },
+      { icon:'palette', tone:'teal', label:'flow-light', desc:'淺色', type:'radio', key:'themeSel2' },
       { icon:'palette', tone:'blue', label:'catppuccin', desc:'深色 · 柔和', type:'radio', key:'themeSel3' }
     ]},
-    { title:'', rows:[ { icon:'sliders', tone:'slate', label:'跟随系统深浅色', type:'toggle', key:'followSystem', on:false } ]}
+    { title:'', rows:[ { icon:'sliders', tone:'slate', label:'跟隨系統深淺色', type:'toggle', key:'followSystem', on:false } ]}
   ]},
-  locale:{ title:'语言', sections:[
-    { title:'界面语言', rows:[
-      { icon:'globe', tone:'slate', label:'简体中文', value:'使用中', type:'static' },
+  locale:{ title:'語言', sections:[
+    { title:'介面語言', rows:[
+      { icon:'globe', tone:'slate', label:'簡體中文', value:'使用中', type:'static' },
       { icon:'globe', tone:'slate', label:'English', type:'static' },
       { icon:'globe', tone:'slate', label:'繁體中文', type:'static' }
     ]}
   ]},
-  history:{ title:'输入历史', sections:[
-    { title:'记录', rows:[
-      { icon:'clock', tone:'slate', label:'已保存 238 条', desc:'仅存本机，用于输入框 ↑ 回填', type:'static' },
-      { icon:'chat', tone:'teal', label:'跨对话保留草稿', type:'toggle', key:'keepDraft', on:true }
+  history:{ title:'輸入歷史', sections:[
+    { title:'記錄', rows:[
+      { icon:'clock', tone:'slate', label:'已儲存 238 條', desc:'僅存本機，用於輸入框 ↑ 回填', type:'static' },
+      { icon:'chat', tone:'teal', label:'跨對話保留草稿', type:'toggle', key:'keepDraft', on:true }
     ]},
     { title:'', rows:[
-      { icon:'alert', tone:'red', label:'清空历史', desc:'不可撤销', type:'danger', confirm:{ title:'清空输入历史？', body:'238 条输入记录将被永久删除，不影响对话内容。', key:'history' } }
+      { icon:'alert', tone:'red', label:'清空歷史', desc:'不可撤銷', type:'danger', confirm:{ title:'清空輸入歷史？', body:'238 條輸入記錄將被永久刪除，不影響對話內容。', key:'history' } }
     ]}
   ]},
-  prompt:{ title:'系统提示词', sections:[
-    { title:'模式', segment:{ key:'promptMode', options:['追加','替换'] }, rows:[] },
-    { title:'内容', rows:[
-      { icon:'file', tone:'blue', label:'自定义系统提示词', desc:'已自定义 1,240 字', type:'static', value:'编辑' },
-      { icon:'sliders', tone:'slate', label:'分块覆盖', value:'2 块', type:'static' }
+  prompt:{ title:'系統提示詞', sections:[
+    { title:'模式', segment:{ key:'promptMode', options:['追加','替換'] }, rows:[] },
+    { title:'內容', rows:[
+      { icon:'file', tone:'blue', label:'自定義系統提示詞', desc:'已自定義 1,240 字', type:'static', value:'編輯' },
+      { icon:'sliders', tone:'slate', label:'分塊覆蓋', value:'2 塊', type:'static' }
     ]},
     { title:'', rows:[
-      { icon:'alert', tone:'red', label:'恢复默认模板', desc:'清除全部覆盖', type:'danger', confirm:{ title:'恢复默认提示词模板？', body:'自定义内容与分块覆盖都会被清除，恢复为内置模板。', key:'prompt' } }
+      { icon:'alert', tone:'red', label:'恢復預設模板', desc:'清除全部覆蓋', type:'danger', confirm:{ title:'恢復預設提示詞模板？', body:'自定義內容與分塊覆蓋都會被清除，恢復為內建模板。', key:'prompt' } }
     ]}
   ]},
-  layout:{ title:'界面布局', sections:[
-    { title:'区域', rows:[
-      { icon:'sliders', tone:'blue', label:'顶栏', value:'5 个入口', type:'static' },
-      { icon:'sliders', tone:'slate', label:'底栏', value:'3 个入口', type:'static' },
-      { icon:'chat', tone:'teal', label:'输入框动作', value:'默认', type:'static' }
+  layout:{ title:'介面佈局', sections:[
+    { title:'區域', rows:[
+      { icon:'sliders', tone:'blue', label:'頂欄', value:'5 個入口', type:'static' },
+      { icon:'sliders', tone:'slate', label:'底欄', value:'3 個入口', type:'static' },
+      { icon:'chat', tone:'teal', label:'輸入框動作', value:'預設', type:'static' }
     ]},
     { title:'', rows:[
-      { icon:'alert', tone:'red', label:'恢复默认布局', type:'danger', confirm:{ title:'恢复默认界面布局？', body:'隐藏与排序过的入口都会回到初始状态。', key:'layout' } }
+      { icon:'alert', tone:'red', label:'恢復預設佈局', type:'danger', confirm:{ title:'恢復預設介面佈局？', body:'隱藏與排序過的入口都會回到初始狀態。', key:'layout' } }
     ]}
   ]},
   skills:{ title:'技能', sections:[
-    { title:'已安装', rows:[
-      { icon:'sparkles', tone:'amber', label:'12 个技能', desc:'3 个仅手动触发', type:'static' },
-      { icon:'sparkles', tone:'slate', label:'目录按需加载', type:'toggle', key:'skillLazy', on:true },
-      { icon:'box', tone:'sky', label:'技能市场', type:'static' }
+    { title:'已安裝', rows:[
+      { icon:'sparkles', tone:'amber', label:'12 個技能', desc:'3 個僅手動觸發', type:'static' },
+      { icon:'sparkles', tone:'slate', label:'目錄按需載入', type:'toggle', key:'skillLazy', on:true },
+      { icon:'box', tone:'sky', label:'技能市場', type:'static' }
     ]}
   ]},
-  presets:{ title:'预设', sections:[
-    { title:'本地预设', rows:[
-      { icon:'bookmark', tone:'green', label:'4 个预设', desc:'含内置 1 个', type:'static' },
-      { icon:'layers', tone:'slate', label:'导入 / 导出 JSON', type:'static' }
+  presets:{ title:'預設', sections:[
+    { title:'本地預設', rows:[
+      { icon:'bookmark', tone:'green', label:'4 個預設', desc:'含內建 1 個', type:'static' },
+      { icon:'layers', tone:'slate', label:'匯入 / 匯出 JSON', type:'static' }
     ]}
   ]},
   subagents:{ title:'子代理模板', sections:[
     { title:'模板', rows:[
-      { icon:'users', tone:'violet', label:'6 个模板', type:'static' },
-      { icon:'sliders', tone:'slate', label:'并发上限', value:'3', type:'static' },
-      { icon:'chat', tone:'teal', label:'自动唤醒', type:'toggle', key:'autoWake', on:true }
+      { icon:'users', tone:'violet', label:'6 個模板', type:'static' },
+      { icon:'sliders', tone:'slate', label:'併發上限', value:'3', type:'static' },
+      { icon:'chat', tone:'teal', label:'自動喚醒', type:'toggle', key:'autoWake', on:true }
     ]}
   ]},
-  quickask:{ title:'随手问', sections:[
+  quickask:{ title:'隨手問', sections:[
     { title:'', rows:[
-      { icon:'message', tone:'teal', label:'启用随手问', desc:'选中文字后浮出小窗', type:'toggle', key:'quickaskOn', on:true },
-      { icon:'file', tone:'slate', label:'小窗提示词', value:'默认', type:'static' }
+      { icon:'message', tone:'teal', label:'啟用隨手問', desc:'選中文字後浮出小窗', type:'toggle', key:'quickaskOn', on:true },
+      { icon:'file', tone:'slate', label:'小窗提示詞', value:'預設', type:'static' }
     ]}
   ]},
-  collab:{ title:'群组协作与执行', sections:[
-    { title:'执行', rows:[
-      { icon:'users', tone:'violet', label:'并发上限', value:'3', type:'static' },
-      { icon:'sliders', tone:'slate', label:'任务配额', value:'默认', type:'static' },
-      { icon:'chat', tone:'teal', label:'黑板上下文', value:'开启', type:'static' }
+  collab:{ title:'群組協作與執行', sections:[
+    { title:'執行', rows:[
+      { icon:'users', tone:'violet', label:'併發上限', value:'3', type:'static' },
+      { icon:'sliders', tone:'slate', label:'任務配額', value:'預設', type:'static' },
+      { icon:'chat', tone:'teal', label:'黑板上下文', value:'開啟', type:'static' }
     ]}
   ]},
-  pluginui:{ title:'界面插件', sections:[
-    { title:'已启用', rows:[
-      { icon:'box', tone:'sky', label:'6 个插件', desc:'1 个可更新', value:'更新', type:'static' },
-      { icon:'sliders', tone:'slate', label:'插件市场', type:'static' }
+  pluginui:{ title:'介面外掛', sections:[
+    { title:'已啟用', rows:[
+      { icon:'box', tone:'sky', label:'6 個外掛', desc:'1 個可更新', value:'更新', type:'static' },
+      { icon:'sliders', tone:'slate', label:'外掛市場', type:'static' }
     ]}
   ]},
-  extensions:{ title:'插件（扩展）', sections:[
+  extensions:{ title:'外掛（擴充套件）', sections:[
     { title:'', rows:[
-      { icon:'plug', tone:'slate', label:'4 个扩展', desc:'dsh 补丁 1 个', type:'static' },
-      { icon:'box', tone:'sky', label:'扩展市场', type:'static' }
+      { icon:'plug', tone:'slate', label:'4 個擴充套件', desc:'dsh 補丁 1 個', type:'static' },
+      { icon:'box', tone:'sky', label:'擴充套件市場', type:'static' }
     ]}
   ]},
-  review:{ title:'目标审查', sections:[
+  review:{ title:'目標審查', sections:[
     { title:'', rows:[
-      { icon:'target', tone:'amber', label:'审查技能', value:'3 个', type:'static' },
-      { icon:'shield', tone:'green', label:'提交前必须通过', type:'toggle', key:'reviewGate', on:true }
+      { icon:'target', tone:'amber', label:'審查技能', value:'3 個', type:'static' },
+      { icon:'shield', tone:'green', label:'提交前必須通過', type:'toggle', key:'reviewGate', on:true }
     ]}
   ]},
-  vision:{ title:'视觉桥', sections:[
+  vision:{ title:'視覺橋', sections:[
     { title:'', rows:[
-      { icon:'eye', tone:'slate', label:'视觉桥', desc:'把截图交给视觉模型理解', type:'toggle', key:'visionOn', on:false },
-      { icon:'model', tone:'blue', label:'视觉模型', desc:'需先配置服务商', value:'未设置', type:'static' }
+      { icon:'eye', tone:'slate', label:'視覺橋', desc:'把截圖交給視覺模型理解', type:'toggle', key:'visionOn', on:false },
+      { icon:'model', tone:'blue', label:'視覺模型', desc:'需先配置服務商', value:'未設定', type:'static' }
     ]}
   ]},
-  about:{ title:'关于与版本', sections:[
+  about:{ title:'關於與版本', sections:[
     { title:'', rows:[
       { icon:'info', tone:'slate', label:'版本', value:'v0.119.0', type:'static' },
       { icon:'model', tone:'blue', label:'引擎', value:'pi 0.52.1', type:'static' },
-      { icon:'file', tone:'slate', label:'许可证', value:'MIT', type:'static' },
-      { icon:'globe', tone:'slate', label:'仓库与更新日志', value:'GitHub', type:'static' }
+      { icon:'file', tone:'slate', label:'許可證', value:'MIT', type:'static' },
+      { icon:'globe', tone:'slate', label:'倉庫與更新日誌', value:'GitHub', type:'static' }
     ]},
-    { title:'危险操作', rows:[
-      { icon:'alert', tone:'red', label:'重置与危险操作', desc:'清空历史、清除密钥、恢复布局', type:'danger', page:'reset' }
+    { title:'危險操作', rows:[
+      { icon:'alert', tone:'red', label:'重置與危險操作', desc:'清空歷史、清除金鑰、恢復佈局', type:'danger', page:'reset' }
     ]}
   ]},
-  reset:{ title:'重置与危险操作', sections:[
-    { title:'这些操作不可撤销，仅在本机执行', rows:[
-      { icon:'clock', tone:'red', label:'清空输入历史', desc:'238 条', type:'danger', confirm:{ title:'清空输入历史？', body:'238 条输入记录将被永久删除，不影响对话内容。', key:'history' } },
-      { icon:'alert', tone:'red', label:'清除全部服务商密钥', desc:'8 个服务商', type:'danger', confirm:{ title:'清除全部服务商密钥？', body:'会删除服务端 auth.json 中的密钥，相关模型将从列表消失，直到重新配置。', key:'keys' } },
-      { icon:'sliders', tone:'red', label:'恢复默认界面布局', type:'danger', confirm:{ title:'恢复默认界面布局？', body:'隐藏与排序过的入口都会回到初始状态。', key:'layout' } }
+  reset:{ title:'重置與危險操作', sections:[
+    { title:'這些操作不可撤銷，僅在本機執行', rows:[
+      { icon:'clock', tone:'red', label:'清空輸入歷史', desc:'238 條', type:'danger', confirm:{ title:'清空輸入歷史？', body:'238 條輸入記錄將被永久刪除，不影響對話內容。', key:'history' } },
+      { icon:'alert', tone:'red', label:'清除全部服務商金鑰', desc:'8 個服務商', type:'danger', confirm:{ title:'清除全部服務商金鑰？', body:'會刪除服務端 auth.json 中的金鑰，相關模型將從列表消失，直到重新配置。', key:'keys' } },
+      { icon:'sliders', tone:'red', label:'恢復預設介面佈局', type:'danger', confirm:{ title:'恢復預設介面佈局？', body:'隱藏與排序過的入口都會回到初始狀態。', key:'layout' } }
     ]}
   ]}
 };
 
-/* ---------- 状态 ---------- */
+/* ---------- 狀態 ---------- */
 const S = {
   scheme:'A', demo:'default', query:'', stack:['home'], save:'saved', sheet:null,
   fold:{ 'agent':true, 'connect':false, 'ui':false, 'more':false, smart:true, habit:false, world:false, auto:false, maint:false },
@@ -1403,41 +1406,41 @@ function rowHtml(r, opts) {
   }
   if (r.type === 'danger') {
     const act = r.confirm ? `data-act="confirm" data-title="${esc(r.confirm.title)}" data-body="${esc(r.confirm.body)}"` : `data-act="nav" data-page="${esc(r.page)}"`;
-    return `<button class="row${danger}" ${act} aria-label="${esc(r.label)}${r.desc ? '，' + esc(r.desc) : ''}，危险操作，需二次确认">${ico(r)}${label}${value}<span class="chev" aria-hidden="true">${icon('chev')}</span></button>`;
+    return `<button class="row${danger}" ${act} aria-label="${esc(r.label)}${r.desc ? '，' + esc(r.desc) : ''}，危險操作，需二次確認">${ico(r)}${label}${value}<span class="chev" aria-hidden="true">${icon('chev')}</span></button>`;
   }
   const disabled = r.disabled ? ' aria-disabled="true"' : '';
   return `<button class="row" data-act="nav" data-page="${esc(r.page || '')}"${disabled}
-    aria-label="${esc(r.label)}${r.value ? '，当前 ' + esc(r.value) : ''}${r.desc ? '，' + esc(r.desc) : ''}${r.disabled ? '，不可用' : ''}">${ico(r)}${label}${badge}${value}<span class="chev" aria-hidden="true">${icon('chev')}</span></button>`;
+    aria-label="${esc(r.label)}${r.value ? '，當前 ' + esc(r.value) : ''}${r.desc ? '，' + esc(r.desc) : ''}${r.disabled ? '，不可用' : ''}">${ico(r)}${label}${badge}${value}<span class="chev" aria-hidden="true">${icon('chev')}</span></button>`;
 }
 
 function savePill() {
   const st = S.demo === 'failed' ? 'failed' : S.save;
-  const txt = st === 'saving' ? '保存中…' : st === 'failed' ? '未保存 · 重试' : '已保存';
-  const title = st === 'failed' ? '2 项未保存，点按重试' : '配置实时生效 · 本地已保存';
-  return `<button class="pill" data-state="${st}" data-act="save" title="${title}" aria-label="保存状态：${txt}" ${st === 'failed' ? '' : 'tabindex="-1"'}><i aria-hidden="true"></i>${txt}</button>`;
+  const txt = st === 'saving' ? '儲存中…' : st === 'failed' ? '未儲存 · 重試' : '已儲存';
+  const title = st === 'failed' ? '2 項未儲存，點按重試' : '配置即時生效 · 本地已儲存';
+  return `<button class="pill" data-state="${st}" data-act="save" title="${title}" aria-label="儲存狀態：${txt}" ${st === 'failed' ? '' : 'tabindex="-1"'}><i aria-hidden="true"></i>${txt}</button>`;
 }
 function saveBanner() {
   if (S.demo !== 'failed') return '';
-  return `<div class="save-banner" role="alert"><span aria-hidden="true">!</span>2 项未能保存 <button data-act="retry">重试</button></div>`;
+  return `<div class="save-banner" role="alert"><span aria-hidden="true">!</span>2 項未能儲存 <button data-act="retry">重試</button></div>`;
 }
 
-/* ---------- 首页 ---------- */
+/* ---------- 首頁 ---------- */
 function idCard() {
   return `<div class="idcard">
     <span class="avatar" aria-hidden="true">pi</span>
     <div class="id-main">
-      <span class="id-name"><span>本机 · pi</span></span>
-      <span class="id-sub"><span class="dot ok" aria-hidden="true"></span>已连接 · 本地运行<span class="tag">3 台设备</span></span>
+      <span class="id-name"><span>本機 · pi</span></span>
+      <span class="id-sub"><span class="dot ok" aria-hidden="true"></span>已連線 · 本地執行<span class="tag">3 臺裝置</span></span>
     </div>
-    <button class="id-action" data-act="nav" data-page="models" aria-label="切换引擎，当前 pi">切换引擎</button>
+    <button class="id-action" data-act="nav" data-page="models" aria-label="切換引擎，當前 pi">切換引擎</button>
   </div>`;
 }
 
 function searchBox(hero) {
   return `<div class="search${hero ? ' hero' : ''}" role="search">
     ${icon('search')}
-    <input id="q" type="search" enterkeyhint="search" placeholder="搜索设置项" aria-label="搜索设置项" value="${esc(S.query)}" autocomplete="off">
-    ${S.query ? '<button class="clear" data-act="clearq" aria-label="清除搜索">✕</button>' : ''}
+    <input id="q" type="search" enterkeyhint="search" placeholder="搜尋設定項" aria-label="搜尋設定項" value="${esc(S.query)}" autocomplete="off">
+    ${S.query ? '<button class="clear" data-act="clearq" aria-label="清除搜尋">✕</button>' : ''}
   </div>`;
 }
 
@@ -1448,7 +1451,7 @@ function homeView() {
 }
 
 function headerA() {
-  return `<div class="nav-large"><div class="nl-top"><h1>设置</h1>${savePill()}</div>${searchBox(false)}</div>${saveBanner()}`;
+  return `<div class="nav-large"><div class="nl-top"><h1>設定</h1>${savePill()}</div>${searchBox(false)}</div>${saveBanner()}`;
 }
 
 function homeA() {
@@ -1458,11 +1461,11 @@ function homeA() {
       <div class="card">${rowsHtml(g.rows)}</div>
     </section>`).join('');
   const danger = `<section class="group" aria-labelledby="gAdanger">
-      <h2 class="group-title" id="gAdanger">危险操作</h2>
+      <h2 class="group-title" id="gAdanger">危險操作</h2>
       <div class="card">${rowsHtml(['reset'])}</div>
     </section>`;
   return headerA() + `<div class="scroll" id="scroller" tabindex="0"><div class="scroll-body">${idCard()}${groups}${danger}
-    <p class="sub-note" style="text-align:center">pi-web-ui v0.119.0 · 配置改动实时生效</p>
+    <p class="sub-note" style="text-align:center">pi-web-ui v0.119.0 · 配置改動即時生效</p>
   </div></div>`;
 }
 
@@ -1470,8 +1473,8 @@ function homeB() {
   const tiles = [
     ['models', 'model', 'blue'], ['theme', 'palette', 'violet'], ['display', 'chat', 'teal'], ['sound', 'volume', 'pink']
   ].map(([id, ic, tone]) => {
-    const r = ROWS[id] || { label: '声音与语音', value: '提示音已开', page: 'sound' };
-    return `<button class="tile" data-act="nav" data-page="${r.page || id}" aria-label="${esc(r.label)}，当前 ${esc(r.value || '')}">
+    const r = ROWS[id] || { label: '聲音與語音', value: '提示音已開', page: 'sound' };
+    return `<button class="tile" data-act="nav" data-page="${r.page || id}" aria-label="${esc(r.label)}，當前 ${esc(r.value || '')}">
       <span class="tile-top"><span class="tile-ico tone-${tone}">${icon(ic)}</span><span class="tile-name">${esc(r.label)}</span><span class="tile-chev" aria-hidden="true">${icon('chev')}</span></span>
       <span class="tile-val">${esc(r.value || '')}</span></button>`;
   }).join('');
@@ -1484,12 +1487,12 @@ function homeB() {
       <div class="card">${rowsHtml(g.rows)}</div></section>`;
   }).join('');
   const danger = `<section class="group" data-open="true"><div class="card">${rowsHtml(['reset'])}</div></section>`;
-  return `<div class="nav-large" style="padding-bottom:0"><div class="nl-top"><h1>设置</h1>${savePill()}</div>${searchBox(false)}</div>${saveBanner()}` +
+  return `<div class="nav-large" style="padding-bottom:0"><div class="nl-top"><h1>設定</h1>${savePill()}</div>${searchBox(false)}</div>${saveBanner()}` +
     `<div class="scroll" id="scroller" tabindex="0"><div class="scroll-body">
-      <h2 class="group-title" style="margin-top:2px">高频</h2>
+      <h2 class="group-title" style="margin-top:2px">高頻</h2>
       <div class="tiles">${tiles}</div>
       ${groups}${danger}
-      <p class="sub-note" style="text-align:center">分组默认折叠，点标题行展开 / 收起</p>
+      <p class="sub-note" style="text-align:center">分組預設摺疊，點標題行展開 / 收起</p>
     </div></div>`;
 }
 
@@ -1501,22 +1504,22 @@ function homeC() {
       <button class="scene-head" data-act="fold" data-key="${g.key}" aria-expanded="${open}">
         <span class="row-ico tone-${g.tone}">${icon(g.icon)}</span>
         <span class="row-main"><span class="s-title">${g.title}</span><span class="s-sub">${g.sub}</span></span>
-        <span class="row-badge" aria-label="${g.rows.length} 项">${g.rows.length}</span>
+        <span class="row-badge" aria-label="${g.rows.length} 項">${g.rows.length}</span>
         <span class="gh-chev" aria-hidden="true" style="width:18px;height:18px;color:var(--text-faint);display:grid;place-items:center">${icon('chev')}</span>
       </button>
       <div class="scene-body">${rowsHtml(g.rows, { fullDivider: true })}</div></section>`;
   }).join('');
-  return `<div class="nav-large" style="padding-bottom:0"><div class="nl-top"><h1>设置</h1>${savePill()}</div>${searchBox(true)}</div>${saveBanner()}` +
+  return `<div class="nav-large" style="padding-bottom:0"><div class="nl-top"><h1>設定</h1>${savePill()}</div>${searchBox(true)}</div>${saveBanner()}` +
     `<div class="scroll" id="scroller" tabindex="0"><div class="scroll-body">
-      <h2 class="group-title" style="margin-top:4px">常改的 6 项 <span class="count">按内置推荐顺序，不采集使用数据</span></h2>
+      <h2 class="group-title" style="margin-top:4px">常改的 6 項 <span class="count">按內建推薦順序，不採集使用資料</span></h2>
       ${freq}
-      <h2 class="group-title" style="margin-top:6px">按场景找</h2>
+      <h2 class="group-title" style="margin-top:6px">按場景找</h2>
       ${scenes}
     </div></div>` +
-    `<div class="bottombar"><button data-act="nav" data-page="all">${icon('sliders')} 全部设置 <span class="bb-count">${allCount()} 项 · 含高级</span></button></div>`;
+    `<div class="bottombar"><button data-act="nav" data-page="all">${icon('sliders')} 全部設定 <span class="bb-count">${allCount()} 項 · 含高階</span></button></div>`;
 }
 
-/* ---------- 搜索 ---------- */
+/* ---------- 搜尋 ---------- */
 function searchResults() {
   const q = S.query.trim().toLowerCase();
   const hits = [];
@@ -1536,9 +1539,9 @@ function searchResults() {
   if (!hits.length) {
     return `<div class="scroll"><div class="empty">
       <span class="e-ico">${icon('search')}</span>
-      <span class="e-t">没有匹配「${esc(S.query)}」的设置</span>
-      <span class="e-d">试试更短的关键词，例如「模型」「主题」「审批」「语音」。</span>
-      <button class="e-btn" data-act="clearq">清除搜索</button></div></div>`;
+      <span class="e-t">沒有匹配「${esc(S.query)}」的設定</span>
+      <span class="e-d">試試更短的關鍵詞，例如「模型」「主題」「審批」「語音」。</span>
+      <button class="e-btn" data-act="clearq">清除搜尋</button></div></div>`;
   }
   const rows = hits.slice(0, 24).map(({ r, crumb, page }) => {
     const clone = Object.assign({}, r);
@@ -1547,11 +1550,11 @@ function searchResults() {
     return `<div class="divider" hidden></div>` + rowHtml(Object.assign(clone, { desc: (r.desc ? r.desc + ' · ' : '') + crumb }));
   }).join('');
   return `<div class="scroll"><div class="scroll-body">
-    <h2 class="group-title" style="margin-top:4px">${hits.length} 个结果</h2>
+    <h2 class="group-title" style="margin-top:4px">${hits.length} 個結果</h2>
     <div class="card">${rows}</div></div></div>`;
 }
 
-/* ---------- 二级页 ---------- */
+/* ---------- 二級頁 ---------- */
 function pageView(pid) {
   if (pid === 'all') return allView();
   const p = PAGES[pid];
@@ -1565,7 +1568,7 @@ function pageView(pid) {
     const note = si === 0 && p.sections[0].rows.some((r) => r.type === 'danger') ? '' : '';
     return `<section style="display:flex;flex-direction:column;gap:7px">${head}${seg}${rows}${note}</section>`;
   }).join('');
-  const foot = `<p class="sub-note" style="text-align:center;margin-top:2px">改动即时生效，无需保存</p>`;
+  const foot = `<p class="sub-note" style="text-align:center;margin-top:2px">改動即時生效，無需儲存</p>`;
   return navbar(p.title) + `<div class="scroll" id="scroller" tabindex="0"><div class="scroll-body">${body}${foot}</div></div>`;
 }
 
@@ -1573,28 +1576,28 @@ function allView() {
   const groups = HOME.C.map((g) => `<section class="group">
       <h2 class="group-title">${g.title}<span class="spacer"></span><span class="count">${g.rows.length}</span></h2>
       <div class="card">${rowsHtml(g.rows, { fullDivider: true })}</div></section>`).join('');
-  return navbar('全部设置', true) + `<div class="scroll dense" id="scroller" tabindex="0"><div class="scroll-body">${groups}
-      <section class="group"><h2 class="group-title">危险操作</h2><div class="card">${rowsHtml(['reset'])}</div></section>
+  return navbar('全部設定', true) + `<div class="scroll dense" id="scroller" tabindex="0"><div class="scroll-body">${groups}
+      <section class="group"><h2 class="group-title">危險操作</h2><div class="card">${rowsHtml(['reset'])}</div></section>
     </div></div>`;
 }
 
 function navbar(title, root) {
   return `<div class="navbar">
-    <button class="icon-btn" data-act="${root ? 'home' : 'back'}" aria-label="${root ? '返回设置首页' : '返回上一级'}">${icon(root ? 'back' : 'back')}</button>
+    <button class="icon-btn" data-act="${root ? 'home' : 'back'}" aria-label="${root ? '返回設定首頁' : '返回上一級'}">${icon(root ? 'back' : 'back')}</button>
     <h1>${esc(title)}</h1>${savePill()}</div>${saveBanner()}`;
 }
 
-/* ---------- 状态：加载 / 空 ---------- */
+/* ---------- 狀態：載入 / 空 ---------- */
 function loadingBody() {
   const sk = (n) => Array.from({ length: n }, () => `<div class="sk-row"><span class="sk sk-ico"></span><div style="flex:1"><div class="sk sk-l1"></div><div class="sk sk-l2"></div></div><span class="sk sk-v"></span></div>`).join('');
-  return `<div class="scroll" aria-busy="true" aria-label="正在加载设置"><div class="scroll-body">
+  return `<div class="scroll" aria-busy="true" aria-label="正在載入設定"><div class="scroll-body">
     <div class="idcard"><span class="sk" style="width:46px;height:46px;border-radius:13px"></span><div style="flex:1"><div class="sk sk-l1" style="width:30%"></div><div class="sk sk-l2" style="width:45%"></div></div></div>
     <div class="group"><div class="sk" style="height:12px;width:64px;margin:0 4px 7px"></div><div class="card">${sk(3)}</div></div>
     <div class="group"><div class="sk" style="height:12px;width:88px;margin:0 4px 7px"></div><div class="card">${sk(3)}</div></div>
   </div></div>`;
 }
 
-/* ---------- 二次确认面板 ---------- */
+/* ---------- 二次確認面板 ---------- */
 function sheetHtml() {
   if (!S.sheet) return '';
   const sh = S.sheet;
@@ -1604,7 +1607,7 @@ function sheetHtml() {
       <h3 id="sheetTitle">${esc(sh.title)}</h3>
       <p>${esc(sh.body)}</p>
       <div class="sc-actions">
-        <button class="destructive" data-act="sheet-ok">确认删除</button>
+        <button class="destructive" data-act="sheet-ok">確認刪除</button>
         <button class="cancel" data-act="sheet-close">取消</button>
       </div>
     </div></div>`;
@@ -1627,42 +1630,42 @@ function render(keepScroll) {
 
 function updateNote() {
   const meta = {
-    A:{ t:'方案 A · 分组首页 + 推入二级页', d:'iOS 设置的直接移植：大标题 → 身份卡 → 6 个分组卡，行右侧用「当前值」替代纯箭头。二级页从右滑入，导航栏右侧承接保存状态。' },
-    B:{ t:'方案 B · 值预览 + 可折叠分组', d:'Material 3 取向：2×2 高频磁贴承担 80% 的跳转，其余分组默认折叠、只露标题与摘要；每行都带当前值，多数情况下不必进二级页就能确认。' },
-    C:{ t:'方案 C · 搜索优先 + 场景聚合', d:'面对 21 个页签的过载：搜索框做主角，下面「常改的 6 项」+ 5 个任务场景（默认只展开一个），底部常驻「全部设置」（Web 21 项 / 装了手机包 +通知共 24 项）。适合 Power user 与首次进入就直奔目标的人。' }
+    A:{ t:'方案 A · 分組首頁 + 推入二級頁', d:'iOS 設定的直接移植：大標題 → 身份卡 → 6 個分組卡，行右側用「當前值」替代純箭頭。二級頁從右滑入，導航欄右側承接儲存狀態。' },
+    B:{ t:'方案 B · 值預覽 + 可摺疊分組', d:'Material 3 取向：2×2 高頻磁貼承擔 80% 的跳轉，其餘分組預設摺疊、只露標題與摘要；每行都帶當前值，多數情況下不必進二級頁就能確認。' },
+    C:{ t:'方案 C · 搜尋優先 + 場景聚合', d:'面對 21 個頁籤的過載：搜尋框做主角，下面「常改的 6 項」+ 5 個任務場景（預設只展開一個），底部常駐「全部設定」（Web 21 項 / 裝了手機包 +通知共 24 項）。適合 Power user 與首次進入就直奔目標的人。' }
   }[S.scheme];
   document.querySelector('#noteMain h3').textContent = meta.t;
   document.querySelector('#noteMain p').textContent = meta.d;
   const pros = {
-    A:[['扫读','一屏 7–8 行 + 6 个组标题，视线只在左侧标签上，符合「找功能」而非「读内容」'],
-       ['触控','行高 56px，整行一个命中区，开关不必点准 30px 圆点'],
-       ['心智','与 iOS 设置同构，零学习成本；返回手势天然'],
-       ['成本','最低：现有 tab 状态可直接映射为栈，新增一段移动端样式即可']],
-    B:[['零跳转','每行带当前值，「只是确认一下」的场景 0 次跳转'],
-       ['首屏','磁贴 + 折叠分组把 20+ 项压进 1.3 屏，长列表不再淹没高频项'],
-       ['大触控','磁贴 78px 高、整块可点，拇指区命中率最高'],
-       ['渐进','折叠态只露标题与摘要，新手不被「高级」吓到']],
-    C:[['找得到','搜索是主角且常驻吸顶；中文关键词命中分组与说明'],
-       ['按意图','场景命名（让它更聪明 / 接上外部世界）比「工具与执行」更接近用户心里的问题'],
-       ['兜底','底部「全部设置」永远可达，长尾不缺'],
-       ['省空间','场景默认只展开一个，首屏即看到 6 个高频 + 5 个入口']]
+    A:[['掃讀','一屏 7–8 行 + 6 個組標題，視線只在左側標籤上，符合「找功能」而非「讀內容」'],
+       ['觸控','行高 56px，整行一個命中區，開關不必點準 30px 圓點'],
+       ['心智','與 iOS 設定同構，零學習成本；返回手勢天然'],
+       ['成本','最低：現有 tab 狀態可直接對映為棧，新增一段移動端樣式即可']],
+    B:[['零跳轉','每行帶當前值，「只是確認一下」的場景 0 次跳轉'],
+       ['首屏','磁貼 + 摺疊分組把 20+ 項壓進 1.3 屏，長列表不再淹沒高頻項'],
+       ['大觸控','磁貼 78px 高、整塊可點，拇指區命中率最高'],
+       ['漸進','摺疊態只露標題與摘要，新手不被「高階」嚇到']],
+    C:[['找得到','搜尋是主角且常駐吸頂；中文關鍵詞命中分組與說明'],
+       ['按意圖','場景命名（讓它更聰明 / 接上外部世界）比「工具與執行」更接近使用者心裡的問題'],
+       ['兜底','底部「全部設定」永遠可達，長尾不缺'],
+       ['省空間','場景預設只展開一個，首屏即看到 6 個高頻 + 5 個入口']]
   }[S.scheme];
   const cons = {
-    A:[['跳转','改一个值平均 2 跳；值预览只能救回「只读确认」'],
-       ['长尾','21 个页签仍靠分组承载，新手可能找不到「审批规则」'],
-       ['缓解','搜索吸顶 + 分组计数 + 「最近改动」上浮（本地记录，不采集）']],
-    B:[['密度','信息密度高，值预览在 320px 小屏会被截断成省略号'],
-       ['折叠','折叠会藏起可发现性，需要「全部展开」与搜索兜底'],
-       ['实现','磁贴顺序要人工维护，不能靠排序算法（不采集数据）']],
-    C:[['学习','场景分类需要用户理解产品心智，首次可能找不到「主题」在哪'],
-       ['层级','场景 → 场景内列表 → 二级页，最深仍是三级，但路径更长'],
-       ['维护','新增页签必须归入某个场景，需要一条 lint／单测守住归属']]
+    A:[['跳轉','改一個值平均 2 跳；值預覽只能救回「只讀確認」'],
+       ['長尾','21 個頁籤仍靠分組承載，新手可能找不到「審批規則」'],
+       ['緩解','搜尋吸頂 + 分組計數 + 「最近改動」上浮（本地記錄，不採集）']],
+    B:[['密度','資訊密度高，值預覽在 320px 小屏會被截斷成省略號'],
+       ['摺疊','摺疊會藏起可發現性，需要「全部展開」與搜尋兜底'],
+       ['實現','磁貼順序要人工維護，不能靠排序演算法（不採集資料）']],
+    C:[['學習','場景分類需要使用者理解產品心智，首次可能找不到「主題」在哪'],
+       ['層級','場景 → 場景內列表 → 二級頁，最深仍是三級，但路徑更長'],
+       ['維護','新增頁籤必須歸入某個場景，需要一條 lint／單測守住歸屬']]
   }[S.scheme];
   document.querySelector('#notePros dl').innerHTML = pros.map(([k,v])=>`<dt>${k}</dt><dd>${v}</dd>`).join('');
   document.querySelector('#noteCons dl').innerHTML = cons.map(([k,v])=>`<dt>${k}</dt><dd>${v}</dd>`).join('');
 }
 
-/* ---------- 交互 ---------- */
+/* ---------- 互動 ---------- */
 function push(pid) { S.stack.push(pid); S.query = ''; render(); }
 function back() { if (S.stack.length > 1) S.stack.pop(); render(); }
 let saveTimer = null;
@@ -1724,7 +1727,7 @@ document.addEventListener('keydown', (e) => {
   }
 });
 
-/* 顶部控制条 */
+/* 頂部控制條 */
 document.getElementById('schemeSeg').addEventListener('click', (e) => {
   const b = e.target.closest('button[data-scheme]'); if (!b) return;
   S.scheme = b.dataset.scheme; S.stack = ['home']; S.query = '';
@@ -1746,7 +1749,7 @@ document.getElementById('stateSeg').addEventListener('click', (e) => {
   const b = e.target.closest('button[data-state-set]'); if (!b) return;
   S.demo = b.dataset.stateSet;
   S.save = 'saved';
-  if (S.demo === 'empty') { S.query = '深色模式开关的字体大小'; S.stack = ['home']; }
+  if (S.demo === 'empty') { S.query = '深色模式開關的字型大小'; S.stack = ['home']; }
   else if (S.demo === 'failed') { S.query = ''; S.save = 'failed'; }
   else if (S.demo === 'loading') { S.query = ''; S.stack = ['home']; }
   else { S.query = ''; S.save = 'saved'; }
@@ -1758,7 +1761,7 @@ render();
 </script>
 
 <style>
-/* 页内补充：推入动画、滑杆、方案 B/C 的展开过渡 */
+/* 頁內補充：推入動畫、滑桿、方案 B/C 的展開過渡 */
 .app.push > .scroll{animation:pushIn .22s cubic-bezier(.2,.9,.25,1)}
 @keyframes pushIn{from{transform:translateX(16px);opacity:.5}to{transform:none;opacity:1}}
 .range{-webkit-appearance:none;appearance:none;width:100%;height:28px;background:transparent;margin:0}
@@ -1773,4 +1776,7 @@ render();
 </style>
 </body>
 </html>
+
+
+
 

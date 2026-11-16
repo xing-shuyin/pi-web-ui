@@ -48,7 +48,7 @@
       overflow-x: hidden;
     }
 
-    /* 顶部导航与控制器 */
+    /* 頂部導航與控制器 */
     header.top-header {
       background: rgba(13, 14, 18, 0.92);
       backdrop-filter: blur(14px);
@@ -175,7 +175,7 @@
       background: var(--accent-soft);
     }
 
-    /* 方案导读 Banner */
+    /* 方案導讀 Banner */
     .proposal-banner {
       max-width: 1400px;
       margin: 18px auto 0;
@@ -224,7 +224,7 @@
       border-color: rgba(139, 92, 246, 0.35);
     }
 
-    /* 模拟画布背景视口 */
+    /* 模擬畫布背景視口 */
     .canvas-viewport-stage {
       position: relative;
       max-width: 1540px;
@@ -246,7 +246,7 @@
       justify-content: center;
     }
 
-    /* 模拟节点背板 */
+    /* 模擬節點背板 */
     .bg-node-phantom {
       position: absolute;
       background: #14161c;
@@ -258,7 +258,7 @@
       pointer-events: none;
     }
 
-    /* 弹窗遮罩 */
+    /* 彈窗遮罩 */
     .mock-modal-overlay {
       position: absolute;
       inset: 0;
@@ -276,7 +276,7 @@
       border-radius: 16px;
     }
 
-    /* 弹窗面板基础 */
+    /* 彈窗面板基礎 */
     .modal-frame {
       background: var(--bg-elev);
       border: 1px solid var(--border);
@@ -302,7 +302,7 @@
       border: none !important;
     }
 
-    /* 弹窗公共头部 */
+    /* 彈窗公共頭部 */
     .modal-header {
       padding: 12px 20px;
       background: var(--bg-elev2);
@@ -416,7 +416,7 @@
       border-color: rgba(239, 68, 68, 0.35);
     }
 
-    /* 弹窗底部操作条 */
+    /* 彈窗底部操作條 */
     .modal-footer {
       padding: 12px 20px;
       background: var(--bg-elev2);
@@ -476,7 +476,7 @@
     }
 
     /* ==========================================================================
-       方案 1：工作台场景选项卡 (Workspace Tabs)
+       方案 1：工作臺場景選項卡 (Workspace Tabs)
        ========================================================================== */
     .p1-nav-bar {
       display: flex;
@@ -519,7 +519,7 @@
       color: #c4b5fd;
     }
 
-    /* 方案 1 主视区 */
+    /* 方案 1 主視區 */
     .p1-body {
       flex: 1;
       display: flex;
@@ -663,7 +663,7 @@
       box-shadow: 0 0 0 2px var(--accent-soft);
     }
 
-    /* Tab: 任务指令与提示词 */
+    /* Tab: 任務指令與提示詞 */
     .p1-prompt-view {
       flex: 1;
       display: grid;
@@ -709,7 +709,7 @@
       outline: none;
     }
 
-    /* Tab: 交付审查 (Review Gate) */
+    /* Tab: 交付審查 (Review Gate) */
     .p1-review-view {
       flex: 1;
       padding: 24px;
@@ -746,7 +746,7 @@
     .diff-line-del { color: #f87171; background: rgba(239, 68, 68, 0.08); }
 
     /* ==========================================================================
-       方案 2：IDE 左右双窗格 + 侧栏折叠 (IDE Split Pane)
+       方案 2：IDE 左右雙窗格 + 側欄摺疊 (IDE Split Pane)
        ========================================================================== */
     .p2-container {
       flex: 1;
@@ -819,7 +819,7 @@
     }
 
     /* ==========================================================================
-       方案 3：流式紧凑手风琴 (Smart Accordion Stream)
+       方案 3：流式緊湊手風琴 (Smart Accordion Stream)
        ========================================================================== */
     .p3-container {
       flex: 1;
@@ -878,7 +878,7 @@
     }
 
     /* ==========================================================================
-       方案 4：三栏协同座舱 (Three-Column Cockpit)
+       方案 4：三欄協同座艙 (Three-Column Cockpit)
        ========================================================================== */
     .p4-container {
       flex: 1;
@@ -917,7 +917,7 @@
       gap: 14px;
     }
 
-    /* 方案对比与总结面板 */
+    /* 方案對比與總結面板 */
     .comparison-section {
       max-width: 1400px;
       margin: 40px auto 60px;
@@ -957,7 +957,7 @@
       font-weight: 700;
     }
 
-    /* 通用小型控件 */
+    /* 通用小型控制元件 */
     .mini-field {
       display: flex;
       flex-direction: column;
@@ -984,6 +984,9 @@
   </style>
 </head>
 <body>
+<div data-docs-i18n-switch style="position:fixed;top:8px;right:12px;z-index:2147483647;font:12px/1.6 -apple-system,system-ui,sans-serif;background:rgba(15,17,22,.78);color:#fff;padding:4px 12px;border-radius:999px;box-shadow:0 2px 10px rgba(0,0,0,.35)"><a href="./canvas-node-details-redesign-proposals.html" style="color:#fff;text-decoration:none">简体中文</a> · <a href="./canvas-node-details-redesign-proposals.en.html" style="color:#fff;text-decoration:none">English</a> · <strong>繁體中文</strong></div>
+
+
 
   <!-- 頂欄控制器 -->
   <header class="top-header">
@@ -1185,33 +1188,33 @@
   </section>
 
   <script>
-    // 状态模拟数据
+    // 狀態模擬資料
     let currentProposal = 1;
     let currentNodeState = "running"; // running | waiting | idle
     let isFullscreen = false;
     let p1CurrentTab = "console"; // console | prompt | review | config
 
-    // 方案元信息
+    // 方案元資訊
     const PROPOSAL_METAS = {
       1: {
-        title: "方案 1: 工作台场景选项卡 (Workspace Tabs) —— 极致专注，彻底解决空间割裂",
-        desc: "将原本堆在左侧的「人设指令、参数、契约、交付物」与右侧的「运行日志、插话」按工作场景解耦。每个 Tab 享受弹窗 100% 的宽裕空间，无论几十行 git diff 还是长代码均不折行！",
-        tags: ["首推方案", "代码阅读极佳", "零拥挤感", "信息架构清晰"]
+        title: "方案 1: 工作臺場景選項卡 (Workspace Tabs) —— 極致專注，徹底解決空間割裂",
+        desc: "將原本堆在左側的「人設指令、引數、契約、交付物」與右側的「執行日誌、插話」按工作場景解耦。每個 Tab 享受彈窗 100% 的寬裕空間，無論幾十行 git diff 還是長程式碼均不折行！",
+        tags: ["首推方案", "程式碼閱讀極佳", "零擁擠感", "資訊架構清晰"]
       },
       2: {
-        title: "方案 2: IDE 分屏与侧栏折叠 (IDE Split Pane) —— 专业编码体验，左右自由伸缩",
-        desc: "左侧作为参数导航（可一键折叠为极细图标栏），右侧为开阔的主编辑与日志视区，支持在单屏与分屏对比模式自由切换。",
-        tags: ["类 VS Code 习惯", "侧栏可收缩", "双窗格对照"]
+        title: "方案 2: IDE 分屏與側欄摺疊 (IDE Split Pane) —— 專業編碼體驗，左右自由伸縮",
+        desc: "左側作為引數導航（可一鍵摺疊為極細圖示欄），右側為開闊的主編輯與日誌視區，支援在單屏與分屏對比模式自由切換。",
+        tags: ["類 VS Code 習慣", "側欄可收縮", "雙窗格對照"]
       },
       3: {
-        title: "方案 3: 场景自适应手风琴 (Smart Accordion Stream) —— 智能折叠无用项，聚焦当前动作",
-        desc: "保持上下顺畅的单列流动阅读，但根据节点状态（运行中 / 待审查 / 编辑中）自动展开最核心区域，把已定型的参数收缩为一行胶囊摘要。",
-        tags: ["单列流畅", "状态自适应", "按需展开"]
+        title: "方案 3: 場景自適應手風琴 (Smart Accordion Stream) —— 智慧摺疊無用項，聚焦當前動作",
+        desc: "保持上下順暢的單列流動閱讀，但根據節點狀態（執行中 / 待審查 / 編輯中）自動展開最核心區域，把已定型的引數收縮為一行膠囊摘要。",
+        tags: ["單列流暢", "狀態自適應", "按需展開"]
       },
       4: {
-        title: "方案 4: 全景三栏协同座舱 (Three-Column Cockpit) —— 一眼看透「输入 ➔ 处理 ➔ 输出」全链路",
-        desc: "在宽屏与全屏下，把工作流切为三等分：左侧上游契约、中间当前人设与产出、右侧控制台日志。适合 2K/大屏重度工作流协作。",
-        tags: ["全景沉浸", "高阶座舱感", "契约链路清晰"]
+        title: "方案 4: 全景三欄協同座艙 (Three-Column Cockpit) —— 一眼看透「輸入 ➔ 處理 ➔ 輸出」全鏈路",
+        desc: "在寬屏與全屏下，把工作流切為三等分：左側上游契約、中間當前人設與產出、右側控制台日誌。適合 2K/大屏重度工作流協作。",
+        tags: ["全景沉浸", "高階座艙感", "契約鏈路清晰"]
       }
     };
 
@@ -1246,19 +1249,19 @@
         badge.className = "node-status-badge running";
         badge.innerText = "RUNNING";
         btnStop.style.display = "inline-flex";
-        btnStop.innerText = "⏹ 停止当前任务";
+        btnStop.innerText = "⏹ 停止當前任務";
         btnStop.className = "btn danger";
       } else if (st === "waiting") {
         badge.className = "node-status-badge waiting";
         badge.innerText = "WAITING APPROVAL";
         btnStop.style.display = "inline-flex";
-        btnStop.innerText = "✅ 审查批准合流";
+        btnStop.innerText = "✅ 審查批准合流";
         btnStop.className = "btn success";
       } else {
         badge.className = "node-status-badge done";
         badge.innerText = "IDLE (READY)";
         btnStop.style.display = "inline-flex";
-        btnStop.innerText = "▶ 启动该节点";
+        btnStop.innerText = "▶ 啟動該節點";
         btnStop.className = "btn primary";
       }
       renderProposalView();
@@ -1279,11 +1282,11 @@
         overlay.classList.remove("is-fullscreen");
         frame.className = "modal-frame size-default";
         fsIcon.innerText = "⛶";
-        fsText.innerText = "模拟全屏";
+        fsText.innerText = "模擬全屏";
       }
     }
 
-    // 渲染各个方案的内部 DOM
+    // 渲染各個方案的內部 DOM
     function renderProposalView() {
       const mount = document.getElementById("proposalDynamicMount");
       if (currentProposal === 1) {
@@ -1298,7 +1301,7 @@
     }
 
     /* -------------------------------------------------------------
-       渲染方案 1: 工作台场景选项卡
+       渲染方案 1: 工作臺場景選項卡
        ------------------------------------------------------------- */
     function setP1Tab(tabKey) {
       p1CurrentTab = tabKey;
@@ -1307,60 +1310,60 @@
 
     function renderProposal1(container) {
       container.innerHTML = `
-        <!-- 选项卡导航栏 -->
+        <!-- 選項卡導航欄 -->
         <div class="p1-nav-bar">
           <button class="p1-nav-tab ${p1CurrentTab === 'console' ? 'active' : ''}" onclick="setP1Tab('console')">
-            <span>⚡ 实时运行与控制台</span>
-            <span class="tab-badge">${currentNodeState === 'running' ? '执行中...' : '24 消息'}</span>
+            <span>⚡ 即時執行與控制台</span>
+            <span class="tab-badge">${currentNodeState === 'running' ? '執行中...' : '24 訊息'}</span>
           </button>
           <button class="p1-nav-tab ${p1CurrentTab === 'prompt' ? 'active' : ''}" onclick="setP1Tab('prompt')">
-            <span>📝 AI 任务指令与人设</span>
+            <span>📝 AI 任務指令與人設</span>
           </button>
           <button class="p1-nav-tab ${p1CurrentTab === 'review' ? 'active' : ''}" onclick="setP1Tab('review')">
-            <span>🔍 上下游契约与审查门禁</span>
-            ${currentNodeState === 'waiting' ? '<span class="tab-badge" style="background:#f59e0b; color:#fff;">待审批</span>' : ''}
+            <span>🔍 上下游契約與審查門禁</span>
+            ${currentNodeState === 'waiting' ? '<span class="tab-badge" style="background:#f59e0b; color:#fff;">待審批</span>' : ''}
           </button>
           <button class="p1-nav-tab ${p1CurrentTab === 'config' ? 'active' : ''}" onclick="setP1Tab('config')">
-            <span>⚙️ 沙箱与物理环境</span>
+            <span>⚙️ 沙箱與物理環境</span>
           </button>
         </div>
 
-        <!-- 主体展示区 -->
+        <!-- 主體展示區 -->
         <div class="p1-body">
           ${p1CurrentTab === 'console' ? `
             <div class="p1-console-view">
-              <!-- 左侧小工具调用时间轴 -->
+              <!-- 左側小工具呼叫時間軸 -->
               <div class="p1-step-sidebar">
                 <div class="p1-step-header">
-                  <span>协同事件与步骤 (18)</span>
+                  <span>協同事件與步驟 (18)</span>
                   <span style="cursor:pointer; color:var(--text-faint);">清空</span>
                 </div>
                 <div class="p1-step-list">
                   <div class="p1-step-item active">
                     <div class="p1-step-title"><span style="color:#60a5fa;">🔧 bash</span> grep -n 'updateFortStatus'</div>
-                    <div class="p1-step-time">16:22:15 · 耗时 420ms</div>
+                    <div class="p1-step-time">16:22:15 · 耗時 420ms</div>
                   </div>
                   <div class="p1-step-item">
                     <div class="p1-step-title"><span style="color:#60a5fa;">🔧 read</span> ServiceStateManager.java</div>
-                    <div class="p1-step-time">16:22:08 · 耗时 120ms</div>
+                    <div class="p1-step-time">16:22:08 · 耗時 120ms</div>
                   </div>
                   <div class="p1-step-item">
-                    <div class="p1-step-title"><span style="color:#34d399;">🔗 handoff</span> 接收环境勘察输出</div>
-                    <div class="p1-step-time">16:21:40 · 合流通过</div>
+                    <div class="p1-step-title"><span style="color:#34d399;">🔗 handoff</span> 接收環境勘察輸出</div>
+                    <div class="p1-step-time">16:21:40 · 合流通過</div>
                   </div>
                 </div>
               </div>
 
-              <!-- 右侧宽敞无比的实录对话流与插话输入 -->
+              <!-- 右側寬敞無比的實錄對話流與插話輸入 -->
               <div class="p1-console-stream">
                 <div class="p1-log-scroll">
                   <div class="mock-chat-bubble user">
-                    <b>上游合流任务输入：</b><br>
-                    请完成静态检查，核对 14 组运维脚本状态，并在 .worktrees/canvas-01 中完成代码抽样。
+                    <b>上游合流任務輸入：</b><br>
+                    請完成靜態檢查，核對 14 組運維指令碼狀態，並在 .worktrees/canvas-01 中完成程式碼抽樣。
                   </div>
 
                   <div class="mock-chat-bubble assistant">
-                    <p style="margin-bottom:8px;">正在定位目标服务状态监听实现，已在工程核心代码中执行全局文本检索：</p>
+                    <p style="margin-bottom:8px;">正在定位目標服務狀態監聽實現，已在工程核心程式碼中執行全域性文本檢索：</p>
                     <div class="mock-code-box">
                       <div class="mock-code-header">
                         <span>Terminal Output (bash)</span>
@@ -1372,15 +1375,15 @@ cd /code/git/yth-operation && grep -n 'updateFortStatus\' -r yth-operation-agent
 67:    }
                     </div>
                     <p style="margin-top:10px; color:#a7f3d0;">
-                      ✅ 检索到核心监听器逻辑，所有 30 个改动文件与 2056 行修改已在独立沙箱内对齐。
+                      ✅ 檢索到核心監聽器邏輯，所有 30 個改動檔案與 2056 行修改已在獨立沙箱內對齊。
                     </p>
                   </div>
                 </div>
 
-                <!-- 底部插话 -->
+                <!-- 底部插話 -->
                 <div class="p1-steer-bar">
-                  <input type="text" class="p1-steer-input" placeholder="输入实时纠偏意见 (如: 别修改 styles.css，只在组件内局部改动)..." />
-                  <button class="btn primary">💬 发送插话</button>
+                  <input type="text" class="p1-steer-input" placeholder="輸入即時糾偏意見 (如: 別修改 styles.css，只在元件內區域性改動)..." />
+                  <button class="btn primary">💬 傳送插話</button>
                 </div>
               </div>
             </div>
@@ -1388,23 +1391,23 @@ cd /code/git/yth-operation && grep -n 'updateFortStatus\' -r yth-operation-agent
             <div class="p1-prompt-view">
               <div class="prompt-card">
                 <div class="prompt-card-header">
-                  <span class="prompt-card-title">🎭 角色指令规约 (System Prompt 基座人设)</span>
-                  <small style="color:var(--text-faint);">决定“是谁”</small>
+                  <span class="prompt-card-title">🎭 角色指令規約 (System Prompt 基座人設)</span>
+                  <small style="color:var(--text-faint);">決定“是誰”</small>
                 </div>
-                <textarea class="prompt-textarea" placeholder="输入专属职责人设...">你是一个资深的研发工程师 (Coder)，精通分布式高并发架构与 Java/TypeScript 栈。在编写代码时遵循单元测试先行的严谨规范。</textarea>
+                <textarea class="prompt-textarea" placeholder="輸入專屬職責人設...">你是一個資深的研發工程師 (Coder)，精通分散式高併發架構與 Java/TypeScript 棧。在編寫程式碼時遵循單元測試先行的嚴謹規範。</textarea>
                 <div style="font-size:11.5px; color:var(--text-faint);">
-                  启动优先级：本次手动输入 &gt; 节点 AI 指令 &gt; 角色规约
+                  啟動優先順序：本次手動輸入 &gt; 節點 AI 指令 &gt; 角色規約
                 </div>
               </div>
 
               <div class="prompt-card">
                 <div class="prompt-card-header">
-                  <span class="prompt-card-title">🎯 AI 任务指令 (Instruction 可输入·随图保存)</span>
-                  <small style="color:var(--text-faint);">决定“做什么”</small>
+                  <span class="prompt-card-title">🎯 AI 任務指令 (Instruction 可輸入·隨圖儲存)</span>
+                  <small style="color:var(--text-faint);">決定“做什麼”</small>
                 </div>
-                <textarea class="prompt-textarea" placeholder="输入任务指令...">按照上游交付的勘察报告 {{上游摘要}}，对 14 组组件的健康探针进行逐行审查。如果发现未处理异常，直接在代码中补充容错降级逻辑。</textarea>
+                <textarea class="prompt-textarea" placeholder="輸入任務指令...">按照上游交付的勘察報告 {{上游摘要}}，對 14 組元件的健康探針進行逐行審查。如果發現未處理異常，直接在程式碼中補充容錯降級邏輯。</textarea>
                 <div style="font-size:11.5px; color:var(--text-faint);">
-                  支持模板变量：{{input}}、{{上游摘要}}、{{upstream}}
+                  支援模板變數：{{input}}、{{上游摘要}}、{{upstream}}
                 </div>
               </div>
             </div>
@@ -1412,13 +1415,13 @@ cd /code/git/yth-operation && grep -n 'updateFortStatus\' -r yth-operation-agent
             <div class="p1-review-view">
               <div class="review-status-card">
                 <div style="display:flex; justify-content:space-between; align-items:center;">
-                  <h3 style="color:#fff; font-size:15px;">当前节点交付物产出 (Review Gate)</h3>
+                  <h3 style="color:#fff; font-size:15px;">當前節點交付物產出 (Review Gate)</h3>
                   <span class="node-status-badge ${currentNodeState === 'waiting' ? 'waiting' : 'running'}">
                     ${currentNodeState.toUpperCase()}
                   </span>
                 </div>
                 <p style="font-size:12.5px; color:var(--text-dim);">
-                  以下为本轮执行生成的物理 Git Diff 与测试摘要，审查批准后下游节点方可接收契约并启动：
+                  以下為本輪執行生成的物理 Git Diff 與測試摘要，審查批准後下遊節點方可接收契約並啟動：
                 </p>
                 <div class="diff-preview-box">
                   <div style="color:#94a3b8; margin-bottom:8px;">// Git diff stat: 30 files changed, 2056 insertions(+), 895 deletions(-)</div>
@@ -1427,15 +1430,15 @@ cd /code/git/yth-operation && grep -n 'updateFortStatus\' -r yth-operation-agent
                   <div class="diff-line-add">+    MonitoringLogger.info("Fort health recovered: " + fortId);</div>
                 </div>
                 <div style="display:flex; gap:10px; justify-content:flex-end;">
-                  <button class="btn success" style="padding:8px 18px;">✔ 审查通过并批准合流</button>
-                  <button class="btn" style="color:#f87171;">✖ 驳回修改</button>
+                  <button class="btn success" style="padding:8px 18px;">✔ 審查通過並批准合流</button>
+                  <button class="btn" style="color:#f87171;">✖ 駁回修改</button>
                 </div>
               </div>
             </div>
           ` : `
             <div style="padding:24px; max-width:800px; margin:0 auto; width:100%; display:flex; flex-direction:column; gap:16px;">
               <div class="mini-field">
-                <label class="mini-label">基座模型与思考强度</label>
+                <label class="mini-label">基座模型與思考強度</label>
                 <select class="mini-select">
                   <option>deepseek-flash (高思考模式)</option>
                   <option>claude-3-5-sonnet</option>
@@ -1443,11 +1446,11 @@ cd /code/git/yth-operation && grep -n 'updateFortStatus\' -r yth-operation-agent
                 </select>
               </div>
               <div class="mini-field">
-                <label class="mini-label">工作区沙箱目录 (CWD)</label>
+                <label class="mini-label">工作區沙箱目錄 (CWD)</label>
                 <input type="text" class="mini-input" value="/code/git/yth-operation" />
               </div>
               <label style="display:flex; align-items:center; gap:8px; font-size:12.5px;">
-                <input type="checkbox" checked /> 启用独立 Git Worktree 物理隔离 (.worktrees/canvas-01)
+                <input type="checkbox" checked /> 啟用獨立 Git Worktree 物理隔離 (.worktrees/canvas-01)
               </label>
             </div>
           `}
@@ -1456,7 +1459,7 @@ cd /code/git/yth-operation && grep -n 'updateFortStatus\' -r yth-operation-agent
     }
 
     /* -------------------------------------------------------------
-       渲染方案 2: IDE 分屏与侧栏折叠
+       渲染方案 2: IDE 分屏與側欄摺疊
        ------------------------------------------------------------- */
     let p2SidebarCollapsed = false;
     function toggleP2Sidebar() {
@@ -1467,34 +1470,34 @@ cd /code/git/yth-operation && grep -n 'updateFortStatus\' -r yth-operation-agent
     function renderProposal2(container) {
       container.innerHTML = `
         <div class="p2-container">
-          <!-- 可折叠侧栏 -->
+          <!-- 可摺疊側欄 -->
           <div class="p2-sidebar ${p2SidebarCollapsed ? 'collapsed' : ''}">
             <div class="p2-sidebar-header">
-              <span style="font-weight:700; font-size:12px; ${p2SidebarCollapsed ? 'display:none;' : ''}">📋 配置导航与参数</span>
-              <button class="action-icon-btn" onclick="toggleP2Sidebar()" title="展开/折叠侧栏">
+              <span style="font-weight:700; font-size:12px; ${p2SidebarCollapsed ? 'display:none;' : ''}">📋 配置導航與引數</span>
+              <button class="action-icon-btn" onclick="toggleP2Sidebar()" title="展開/摺疊側欄">
                 ${p2SidebarCollapsed ? '▶' : '◀'}
               </button>
             </div>
             ${!p2SidebarCollapsed ? `
               <div class="p2-sidebar-scroll">
                 <div class="mini-field">
-                  <label class="mini-label">模型选择</label>
+                  <label class="mini-label">模型選擇</label>
                   <select class="mini-select"><option>deepseek-flash</option></select>
                 </div>
                 <div class="mini-field">
-                  <label class="mini-label">工作区目录</label>
+                  <label class="mini-label">工作區目錄</label>
                   <input class="mini-input" value="/code/git/yth-operation" />
                 </div>
                 <div style="border-top:1px solid var(--border); padding-top:10px;">
-                  <div class="mini-label" style="margin-bottom:6px;">上游依赖</div>
+                  <div class="mini-label" style="margin-bottom:6px;">上游依賴</div>
                   <div style="font-size:11.5px; color:#c084fc; background:rgba(192,132,252,0.1); padding:4px 8px; border-radius:4px;">
-                    ⬅ 依赖: 环境勘察 (只读)
+                    ⬅ 依賴: 環境勘察 (只讀)
                   </div>
                 </div>
                 <div style="border-top:1px solid var(--border); padding-top:10px;">
-                  <div class="mini-label" style="margin-bottom:6px;">下游接驳</div>
+                  <div class="mini-label" style="margin-bottom:6px;">下游接駁</div>
                   <div style="font-size:11.5px; color:#34d399; background:rgba(52,211,153,0.1); padding:4px 8px; border-radius:4px;">
-                    ➡ 输出至: 脚本就绪核对
+                    ➡ 輸出至: 指令碼就緒核對
                   </div>
                 </div>
               </div>
@@ -1505,30 +1508,30 @@ cd /code/git/yth-operation && grep -n 'updateFortStatus\' -r yth-operation-agent
             `}
           </div>
 
-          <!-- 主编辑与实录双窗格 -->
+          <!-- 主編輯與實錄雙窗格 -->
           <div class="p2-main">
             <div class="p2-main-toolbar">
-              <span style="font-size:12px; color:var(--text-dim);">左右对比视图：左侧查看任务指令与交付物，右侧查看实时终端实录</span>
+              <span style="font-size:12px; color:var(--text-dim);">左右對比檢視：左側檢視任務指令與交付物，右側檢視即時終端實錄</span>
               <div style="display:flex; gap:6px;">
-                <button class="btn" style="padding:3px 8px; font-size:11px;">单屏最大化</button>
-                <button class="btn primary" style="padding:3px 8px; font-size:11px;">双屏分屏</button>
+                <button class="btn" style="padding:3px 8px; font-size:11px;">單屏最大化</button>
+                <button class="btn primary" style="padding:3px 8px; font-size:11px;">雙屏分屏</button>
               </div>
             </div>
 
             <div class="p2-split-views">
-              <!-- 左窗格：任务定义与交付审核 -->
+              <!-- 左窗格：任務定義與交付稽核 -->
               <div class="p2-pane-left">
                 <div style="background:var(--bg-elev); border:1px solid var(--border); border-radius:8px; padding:12px;">
-                  <h4 style="font-size:12.5px; color:#fff; margin-bottom:6px;">🎯 AI 任务指令</h4>
+                  <h4 style="font-size:12.5px; color:#fff; margin-bottom:6px;">🎯 AI 任務指令</h4>
                   <p style="font-size:12px; color:var(--text-dim); line-height:1.5;">
-                    按照脚本执行抽样结果，修复 ServiceStateManager 的异步重试逻辑，确保健康检查探针在 30 秒内恢复。
+                    按照指令碼執行抽樣結果，修復 ServiceStateManager 的非同步重試邏輯，確保健康檢查探針在 30 秒內恢復。
                   </p>
                 </div>
 
                 <div style="background:var(--bg-elev); border:1px solid var(--border); border-radius:8px; padding:12px; flex:1; display:flex; flex-direction:column;">
                   <div style="display:flex; justify-content:space-between; margin-bottom:8px;">
                     <h4 style="font-size:12.5px; color:#fff;">📦 交付物摘要</h4>
-                    <span style="color:#34d399; font-size:11px; font-weight:600;">已生成 30 个改动</span>
+                    <span style="color:#34d399; font-size:11px; font-weight:600;">已生成 30 個改動</span>
                   </div>
                   <div class="diff-preview-box" style="flex:1; max-height:none;">
                     diff --git a/MonitoringAgent.java<br>
@@ -1539,11 +1542,11 @@ cd /code/git/yth-operation && grep -n 'updateFortStatus\' -r yth-operation-agent
                 </div>
               </div>
 
-              <!-- 右窗格：实录流与插话 -->
+              <!-- 右窗格：實錄流與插話 -->
               <div class="p2-pane-right">
                 <div class="p1-log-scroll" style="flex:1;">
                   <div class="mock-chat-bubble assistant">
-                    <p>正在后台启动 Maven 测试以验证代码修改：</p>
+                    <p>正在後臺啟動 Maven 測試以驗證程式碼修改：</p>
                     <div class="mock-code-box">
                       mvn test -Dtest=MonitoringAgentTest<br>
                       [INFO] Tests run: 4, Failures: 0, Errors: 0, Skipped: 0<br>
@@ -1552,8 +1555,8 @@ cd /code/git/yth-operation && grep -n 'updateFortStatus\' -r yth-operation-agent
                   </div>
                 </div>
                 <div class="p1-steer-bar">
-                  <input type="text" class="p1-steer-input" placeholder="输入插话纠偏..." />
-                  <button class="btn primary">插话</button>
+                  <input type="text" class="p1-steer-input" placeholder="輸入插話糾偏..." />
+                  <button class="btn primary">插話</button>
                 </div>
               </div>
             </div>
@@ -1563,7 +1566,7 @@ cd /code/git/yth-operation && grep -n 'updateFortStatus\' -r yth-operation-agent
     }
 
     /* -------------------------------------------------------------
-       渲染方案 3: 场景自适应手风琴
+       渲染方案 3: 場景自適應手風琴
        ------------------------------------------------------------- */
     let p3OpenSection = "console"; // prompt | review | console | config
     function toggleP3(sec) {
@@ -1575,21 +1578,21 @@ cd /code/git/yth-operation && grep -n 'updateFortStatus\' -r yth-operation-agent
       container.innerHTML = `
         <div class="p3-container">
           
-          <!-- 手风琴 1: 运行实录 (运行中默认高优先级展开) -->
+          <!-- 手風琴 1: 執行實錄 (執行中預設高優先順序展開) -->
           <div class="accordion-card ${p3OpenSection === 'console' ? 'active' : ''}">
             <div class="accordion-header" onclick="toggleP3('console')">
               <div class="accordion-header-left">
                 <span style="font-size:16px;">⚡</span>
-                <span style="font-weight:700; color:#fff;">实时运行与对话实录 (Console & Stream)</span>
-                <span class="accordion-badge-pill" style="background:rgba(59,130,246,0.2); color:#60a5fa;">24 条交互</span>
+                <span style="font-weight:700; color:#fff;">即時執行與對話實錄 (Console & Stream)</span>
+                <span class="accordion-badge-pill" style="background:rgba(59,130,246,0.2); color:#60a5fa;">24 條互動</span>
               </div>
-              <span>${p3OpenSection === 'console' ? '▲ 收起' : '▼ 展开'}</span>
+              <span>${p3OpenSection === 'console' ? '▲ 收起' : '▼ 展開'}</span>
             </div>
             ${p3OpenSection === 'console' ? `
               <div class="accordion-body" style="padding:0;">
                 <div class="p1-log-scroll" style="max-height:360px;">
                   <div class="mock-chat-bubble assistant">
-                    <p>检测到 14 组运维脚本状态探针已完成抽样：</p>
+                    <p>檢測到 14 組運維指令碼狀態探針已完成抽樣：</p>
                     <div class="mock-code-box">
                       grep -n 'updateFortStatus' MonitoringAgent.java<br>
                       65:    public void updateFortStatus(String fortId, FortReport report)
@@ -1597,22 +1600,22 @@ cd /code/git/yth-operation && grep -n 'updateFortStatus\' -r yth-operation-agent
                   </div>
                 </div>
                 <div class="p1-steer-bar">
-                  <input type="text" class="p1-steer-input" placeholder="输入插话纠偏意见..." />
-                  <button class="btn primary">发送插话</button>
+                  <input type="text" class="p1-steer-input" placeholder="輸入插話糾偏意見..." />
+                  <button class="btn primary">傳送插話</button>
                 </div>
               </div>
             ` : ''}
           </div>
 
-          <!-- 手风琴 2: 任务交付物与审查门禁 -->
+          <!-- 手風琴 2: 任務交付物與審查門禁 -->
           <div class="accordion-card ${p3OpenSection === 'review' ? 'active' : ''}">
             <div class="accordion-header" onclick="toggleP3('review')">
               <div class="accordion-header-left">
                 <span style="font-size:16px;">🔍</span>
-                <span style="font-weight:700; color:#fff;">交付物产出与审查门禁 (Review Gate)</span>
+                <span style="font-weight:700; color:#fff;">交付物產出與審查門禁 (Review Gate)</span>
                 <span class="accordion-badge-pill" style="background:rgba(16,185,129,0.2); color:#34d399;">30 files changed</span>
               </div>
-              <span>${p3OpenSection === 'review' ? '▲ 收起' : '▼ 展开'}</span>
+              <span>${p3OpenSection === 'review' ? '▲ 收起' : '▼ 展開'}</span>
             </div>
             ${p3OpenSection === 'review' ? `
               <div class="accordion-body">
@@ -1620,47 +1623,47 @@ cd /code/git/yth-operation && grep -n 'updateFortStatus\' -r yth-operation-agent
                   +    ServiceStateManager.updateAsyncWithRetry(newState, 3);
                 </div>
                 <div style="display:flex; justify-content:flex-end; gap:8px;">
-                  <button class="btn success">审查通过并批准</button>
-                  <button class="btn">驳回修改</button>
+                  <button class="btn success">審查通過並批准</button>
+                  <button class="btn">駁回修改</button>
                 </div>
               </div>
             ` : ''}
           </div>
 
-          <!-- 手风琴 3: AI 任务指令与提示词 -->
+          <!-- 手風琴 3: AI 任務指令與提示詞 -->
           <div class="accordion-card ${p3OpenSection === 'prompt' ? 'active' : ''}">
             <div class="accordion-header" onclick="toggleP3('prompt')">
               <div class="accordion-header-left">
                 <span style="font-size:16px;">📝</span>
-                <span style="font-weight:700; color:#fff;">AI 任务指令与基座人设</span>
-                <span class="accordion-badge-pill">随图保存</span>
+                <span style="font-weight:700; color:#fff;">AI 任務指令與基座人設</span>
+                <span class="accordion-badge-pill">隨圖儲存</span>
               </div>
-              <span>${p3OpenSection === 'prompt' ? '▲ 收起' : '▼ 展开'}</span>
+              <span>${p3OpenSection === 'prompt' ? '▲ 收起' : '▼ 展開'}</span>
             </div>
             ${p3OpenSection === 'prompt' ? `
               <div class="accordion-body">
                 <div class="mini-field">
-                  <label class="mini-label">AI 任务指令</label>
-                  <textarea class="mini-input" style="height:90px;">按照 PRD 完成登录页健康探针容错逻辑 {{input}}...</textarea>
+                  <label class="mini-label">AI 任務指令</label>
+                  <textarea class="mini-input" style="height:90px;">按照 PRD 完成登入頁健康探針容錯邏輯 {{input}}...</textarea>
                 </div>
               </div>
             ` : ''}
           </div>
 
-          <!-- 手风琴 4: 物理环境与参数 -->
+          <!-- 手風琴 4: 物理環境與引數 -->
           <div class="accordion-card ${p3OpenSection === 'config' ? 'active' : ''}">
             <div class="accordion-header" onclick="toggleP3('config')">
               <div class="accordion-header-left">
                 <span style="font-size:16px;">⚙️</span>
-                <span style="font-weight:700; color:#fff;">模型与沙箱环境</span>
+                <span style="font-weight:700; color:#fff;">模型與沙箱環境</span>
                 <span class="accordion-badge-pill">deepseek-flash · Git Worktree</span>
               </div>
-              <span>${p3OpenSection === 'config' ? '▲ 收起' : '▼ 展开'}</span>
+              <span>${p3OpenSection === 'config' ? '▲ 收起' : '▼ 展開'}</span>
             </div>
             ${p3OpenSection === 'config' ? `
               <div class="accordion-body">
                 <div class="mini-field">
-                  <label class="mini-label">沙箱目录</label>
+                  <label class="mini-label">沙箱目錄</label>
                   <input class="mini-input" value="/code/git/yth-operation" />
                 </div>
               </div>
@@ -1672,24 +1675,24 @@ cd /code/git/yth-operation && grep -n 'updateFortStatus\' -r yth-operation-agent
     }
 
     /* -------------------------------------------------------------
-       渲染方案 4: 全景三栏协同座舱
+       渲染方案 4: 全景三欄協同座艙
        ------------------------------------------------------------- */
     function renderProposal4(container) {
       container.innerHTML = `
         <div class="p4-container">
           
-          <!-- 第 1 栏：契约与沙箱 -->
+          <!-- 第 1 欄：契約與沙箱 -->
           <div class="p4-col">
             <div class="p4-col-header">
-              <span>1. 输入契约与环境</span>
+              <span>1. 輸入契約與環境</span>
               <span class="chip">INCOMING</span>
             </div>
             <div class="p4-col-body">
               <div style="background:var(--bg-elev); border:1px solid var(--border); border-radius:8px; padding:12px;">
-                <b style="color:#c084fc; font-size:12px;">上游契约输入：</b>
+                <b style="color:#c084fc; font-size:12px;">上游契約輸入：</b>
                 <p style="font-size:11.5px; color:var(--text-dim); margin-top:6px; line-height:1.45;">
-                  来源: <b>环境勘察 (只读)</b><br>
-                  产出: 已确认 14 组运维探针基线，等待本节点介入静态检查。
+                  來源: <b>環境勘察 (只讀)</b><br>
+                  產出: 已確認 14 組運維探針基線，等待本節點介入靜態檢查。
                 </p>
               </div>
 
@@ -1699,48 +1702,48 @@ cd /code/git/yth-operation && grep -n 'updateFortStatus\' -r yth-operation-agent
               </div>
 
               <div class="mini-field">
-                <label class="mini-label">沙箱目录与 Worktree</label>
+                <label class="mini-label">沙箱目錄與 Worktree</label>
                 <input class="mini-input" value="/code/git/yth-operation" />
-                <label style="font-size:11.5px; margin-top:4px;"><input type="checkbox" checked /> 启用独立 Worktree 隔离</label>
+                <label style="font-size:11.5px; margin-top:4px;"><input type="checkbox" checked /> 啟用獨立 Worktree 隔離</label>
               </div>
             </div>
           </div>
 
-          <!-- 第 2 栏：指令与审查产出 -->
+          <!-- 第 2 欄：指令與審查產出 -->
           <div class="p4-col">
             <div class="p4-col-header">
-              <span>2. 任务指令与审查交付</span>
+              <span>2. 任務指令與審查交付</span>
               <span class="chip" style="color:#34d399;">REVIEW GATE</span>
             </div>
             <div class="p4-col-body">
               <div class="mini-field">
-                <label class="mini-label">AI 任务指令 (随图保存)</label>
-                <textarea class="mini-input" style="height:120px; font-size:12px;">按照探针基线进行逐行静态代码审查，并修复所有并发挂死隐患。</textarea>
+                <label class="mini-label">AI 任務指令 (隨圖儲存)</label>
+                <textarea class="mini-input" style="height:120px; font-size:12px;">按照探針基線進行逐行靜態程式碼審查，並修復所有併發掛死隱患。</textarea>
               </div>
 
               <div style="flex:1; display:flex; flex-direction:column; background:var(--bg-elev); border:1px solid var(--border); border-radius:8px; padding:12px;">
-                <b style="color:#fff; font-size:12px; margin-bottom:8px;">本轮生成交付物：</b>
+                <b style="color:#fff; font-size:12px; margin-bottom:8px;">本輪生成交付物：</b>
                 <div class="diff-preview-box" style="flex:1; max-height:none;">
                   + ServiceStateManager.updateAsyncWithRetry(...);
                 </div>
                 <div style="display:flex; gap:6px; margin-top:10px;">
-                  <button class="btn success" style="flex:1; font-size:11.5px;">通过批准</button>
-                  <button class="btn" style="color:#f87171; font-size:11.5px;">驳回</button>
+                  <button class="btn success" style="flex:1; font-size:11.5px;">通過批准</button>
+                  <button class="btn" style="color:#f87171; font-size:11.5px;">駁回</button>
                 </div>
               </div>
             </div>
           </div>
 
-          <!-- 第 3 栏：执行实录与插话 -->
+          <!-- 第 3 欄：執行實錄與插話 -->
           <div class="p4-col">
             <div class="p4-col-header">
-              <span>3. 协同实录与实时插话</span>
+              <span>3. 協同實錄與即時插話</span>
               <span class="chip" style="color:#60a5fa;">STEER & LOG</span>
             </div>
             <div class="p4-col-body" style="padding:0; display:flex; flex-direction:column;">
               <div class="p1-log-scroll" style="flex:1; padding:14px;">
                 <div class="mock-chat-bubble assistant">
-                  <p style="font-size:12px;">执行全局类依赖关系验证：</p>
+                  <p style="font-size:12px;">執行全域性類依賴關係驗證：</p>
                   <div class="mock-code-box" style="font-size:11.5px;">
                     grep -n 'updateFortStatus' ...<br>
                     65: public void updateFortStatus(...)
@@ -1748,8 +1751,8 @@ cd /code/git/yth-operation && grep -n 'updateFortStatus\' -r yth-operation-agent
                 </div>
               </div>
               <div class="p1-steer-bar">
-                <input type="text" class="p1-steer-input" placeholder="输入插话纠偏..." />
-                <button class="btn primary">插话</button>
+                <input type="text" class="p1-steer-input" placeholder="輸入插話糾偏..." />
+                <button class="btn primary">插話</button>
               </div>
             </div>
           </div>
@@ -1765,4 +1768,7 @@ cd /code/git/yth-operation && grep -n 'updateFortStatus\' -r yth-operation-agent
   </script>
 </body>
 </html>
+
+
+
 
