@@ -31,7 +31,11 @@ const toTw = req("opencc-js").Converter({ from: "cn", to: "twp" });
 const MODE = process.argv.find((a) => a.startsWith("--")) ?? "--check";
 const MARK = "data-docs-i18n-switch";
 const base = (p) => p.replace(/\.html$/, "");
-const name = (p) => base(p).split("/").pop().replace(/\.(en|zh-TW)$/, "");
+const name = (p) =>
+	base(p)
+		.split("/")
+		.pop()
+		.replace(/\.(en|zh-TW)$/, "");
 
 /** 代码块原样保留，其余部分才做繁简转换。 */
 const CODE = /(<script\b[\s\S]*?<\/script>|<style\b[\s\S]*?<\/style>)/gi;
