@@ -6,6 +6,11 @@ RUN apt-get update \
     && apt-get install -y --no-install-recommends python3 make g++ \
     && rm -rf /var/lib/apt/lists/*
 COPY package.json package-lock.json ./
+# `npm ci` runs bin/postinstall.mjs, which imports bin/desktop-bootstrap.mjs. Those
+# two files must be present before the install, otherwise the postinstall throws
+# MODULE_NOT_FOUND and the build fails. The script only registers an optional desktop
+# service (a no-op in a container), but it must not break the install.
+COPY bin/postinstall.mjs bin/desktop-bootstrap.mjs ./bin/
 RUN npm ci
 COPY . .
 RUN npm run build
