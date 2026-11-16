@@ -51,16 +51,7 @@ import {
 } from "../ui-slots";
 import { fitTopbar, MOBILE_ASIDE_TOPBAR_IDS, sortOverflowMenuItems } from "../topbar-fit";
 import { openContextMenu } from "../context-menu-state";
-import {
-	appSend,
-	useAppField,
-	useAppGlobals,
-	useEngineCapabilities,
-	useIsDsh,
-	useIsManaged,
-	useServiceInfo,
-} from "../app-globals";
-import { ProjectPicker } from "./ProjectPicker";
+import { appSend, useAppGlobals, useEngineCapabilities, useIsDsh, useIsManaged, useServiceInfo } from "../app-globals";
 import { PluginMenu } from "./PluginMenu";
 import { LocaleModal } from "./LocaleModal";
 import { focusComposer } from "../composer-bridge";
@@ -192,6 +183,9 @@ interface TopBarProps {
 	zenMode?: boolean;
 	onToggleZenMode?: () => void;
 	onOpenSandboxModal?: () => void;
+	/** 打开项目选择器：由 App 持有单实例，顶栏 / 停靠栏 / cwd chip 共用。 */
+	onOpenProjectPicker: () => void;
+	isProjectPickerOpen?: boolean;
 	onCreateCli?: (cwd?: string) => void;
 }
 
@@ -220,15 +214,14 @@ export function TopBar({
 	zenMode,
 	onToggleZenMode,
 	onOpenSandboxModal,
+	onOpenProjectPicker,
+	isProjectPickerOpen = false,
 	onCreateCli,
 }: TopBarProps) {
 	const { locale, setLocale, t, packs } = useI18n();
 	const [topbarMenuOpen, setTopbarMenuOpen] = useState(false);
 	const [browserPanelOpen, setBrowserPanelOpen] = useState(false);
-	const [projectPickerOpen, setProjectPickerOpen] = useState(false);
 	const [pluginMenuAnchor, setPluginMenuAnchor] = useState<{ rect: DOMRect; el: HTMLElement } | null>(null);
-	const cwd = useAppField("cwd");
-	const workspaceRoots = useAppField("workspaceRoots");
 	const isDsh = useIsDsh();
 	const capabilities = useEngineCapabilities();
 	const supportsEphemeral = Boolean(capabilities.ephemeralChat !== false && !isDsh);
@@ -336,7 +329,7 @@ export function TopBar({
 				onOpenSandboxModal?.();
 				return true;
 			case "host:open-project":
-				setProjectPickerOpen(true);
+				onOpenProjectPicker();
 				return true;
 			case "host:search":
 				onOpenGlobalSearch();
@@ -911,12 +904,7 @@ export function TopBar({
 			</button>
 		) : null,
 		"host:open-project": (
-			<button
-				type="button"
-				className="chip open-project"
-				data-tip={t("openProject")}
-				onClick={() => setProjectPickerOpen(true)}
-			>
+			<button type="button" className="chip open-project" data-tip={t("openProject")} onClick={onOpenProjectPicker}>
 				<FiFolderPlus />
 				<span className="chip-sub">{t("openProject")}</span>
 			</button>
@@ -1302,7 +1290,7 @@ export function TopBar({
 						cwdClickTimerRef.current = null;
 					}
 					cwdClickTimerRef.current = window.setTimeout(() => {
-						setProjectPickerOpen(true);
+						onOpenProjectPicker();
 						cwdClickTimerRef.current = null;
 					}, 220);
 				}}
@@ -1405,8 +1393,8 @@ export function TopBar({
 					onOpenSettings={onOpenSettings}
 					onOpenGlobalSearch={onOpenGlobalSearch}
 					onOpenBgTasks={onOpenBgTasks}
-					onOpenProjectPicker={() => setProjectPickerOpen(true)}
-					isProjectPickerOpen={projectPickerOpen}
+					onOpenProjectPicker={onOpenProjectPicker}
+					isProjectPickerOpen={isProjectPickerOpen}
 					onOpenPluginMenu={(el) =>
 						setPluginMenuAnchor((prev) => (prev?.el === el ? null : { rect: el.getBoundingClientRect(), el }))
 					}
@@ -1695,17 +1683,6 @@ export function TopBar({
 					}}
 					onManagePlugins={onManagePlugins}
 					onClose={() => setPluginMenuAnchor(null)}
-				/>
-			)}
-			{projectPickerOpen && (
-				<ProjectPicker
-					open
-					currentCwd={cwd}
-					pathCompletions={chat.pathCompletions ?? []}
-					workspaceRoots={workspaceRoots}
-					onClose={() => setProjectPickerOpen(false)}
-					onSelectDirectory={(path) => appSend({ type: "set_cwd", path })}
-					onCreateProject={(path) => appSend({ type: "make_dir", path, setAsCwd: true })}
 				/>
 			)}
 		</header>

@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -7,6 +7,7 @@ import { createElement } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { act } from "react-dom/test-utils";
 import { TopBar } from "../../web/src/components/TopBar.js";
+import { ProjectPickerHost } from "../../web/src/components/ProjectPickerHost.js";
 import { LanguageProvider } from "../../web/src/i18n.js";
 import type { ChatState } from "../../web/src/use-chat.js";
 import { setAppSend, setAppGlobals, resetAppGlobals } from "../../web/src/app-globals.js";
@@ -69,6 +70,7 @@ function mount(
 						select: () => {},
 					},
 					view,
+					onOpenProjectPicker: () => {},
 					...topPatch,
 					plugins: plugins ?? [],
 					onViewChange: () => {},
@@ -317,44 +319,97 @@ describe("TopBar 面板抽屉按钮的视图门禁", () => {
 });
 
 describe("TopBar「打开项目」入口（host:open-project）", () => {
+	afterEach(() => resetAppGlobals());
+
+	it("主栏点它就去请求打开选择器（对话框由 App 的 ProjectPickerHost 单实例承载）", () => {
+		setAppGlobals({ cwd: "/test", ready: true, status: "open", workspaceRoots: [] });
+		const onOpenProjectPicker = vi.fn();
+		const { container } = mount(
+			"chat",
+			[hostEntry("host:open-project"), hostEntry("host:chat")],
+			undefined,
+			undefined,
+			undefined,
+			{
+				onOpenProjectPicker,
+			},
+		);
+		const btn = container.querySelector<HTMLButtonElement>("button.open-project");
+		expect(btn).toBeTruthy();
+		act(() => btn!.click());
+		expect(onOpenProjectPicker).toHaveBeenCalledTimes(1);
+	});
+
+	it("被布局页隐藏后仍能从「⋯」溢出菜单打开（隐藏 ≠ 失去入口）", () => {
+		setAppGlobals({ cwd: "/test", ready: true, status: "open", workspaceRoots: [] });
+		setAppSend(() => true);
+		const onOpenProjectPicker = vi.fn();
+		const { container } = mount(
+			"chat",
+			[hostEntry("host:chat")],
+			[hostEntry("host:open-project", true)],
+			undefined,
+			undefined,
+			{
+				onOpenProjectPicker,
+			},
+		);
+		expect(container.querySelector("button.open-project")).toBeNull();
+		act(() => container.querySelector<HTMLButtonElement>(".plugin-topbar-more > button")!.click());
+		const item = document.querySelector<HTMLButtonElement>(
+			".plugin-topbar-menu .plugin-topbar-menu-keep > button.open-project",
+		);
+		expect(item).toBeTruthy();
+		act(() => item!.click());
+		expect(onOpenProjectPicker).toHaveBeenCalledTimes(1);
+	});
+});
+
+/** 对话框本体（单实例宿主）：顶栏 chip、停靠栏条目、cwd chip 打开的都是它。 */
+describe("项目选择器宿主（ProjectPickerHost）", () => {
 	const setInput = (el: HTMLInputElement, value: string) => {
 		Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(el, value);
 		el.dispatchEvent(new Event("input", { bubbles: true }));
 	};
 
-	const mountWithPicker = () => {
+	const mountHost = (open = true) => {
 		setAppGlobals({ cwd: "/test", ready: true, status: "open", workspaceRoots: [] });
 		const sent: { type: string; [k: string]: unknown }[] = [];
 		setAppSend((msg) => {
 			sent.push(msg as { type: string });
 			return true;
 		});
-		const { container } = mount("chat", [hostEntry("host:open-project"), hostEntry("host:chat")]);
-		return { container, sent };
+		const onClose = vi.fn();
+		const container = document.createElement("div");
+		document.body.appendChild(container);
+		root = createRoot(container);
+		act(() => {
+			root!.render(
+				createElement(LanguageProvider, null, createElement(ProjectPickerHost, { open, pathCompletions: [], onClose })),
+			);
+		});
+		return { sent, onClose };
 	};
 
-	afterEach(() => resetAppGlobals());
+	afterEach(() => {
+		resetAppGlobals();
+		if (root) {
+			act(() => root!.unmount());
+			root = null;
+		}
+	});
 
-	it("主栏点它打开项目选择器（与左栏 📁+ 同一个对话框），点遮罩关掉", () => {
-		const { container } = mountWithPicker();
-		const btn = container.querySelector<HTMLButtonElement>("button.open-project");
-		expect(btn).toBeTruthy();
-		expect(document.querySelector(".project-picker")).toBeNull();
-		act(() => btn!.click());
-		expect(document.querySelector(".project-picker")).toBeTruthy();
-		expect(document.querySelector(".project-picker-backdrop")).toBeTruthy();
-		act(() => document.querySelector<HTMLElement>(".project-picker-backdrop")!.click());
+	it("关闭态不渲染对话框", () => {
+		mountHost(false);
 		expect(document.querySelector(".project-picker")).toBeNull();
 	});
 
 	it("选当前目录发 set_cwd，＋新建项目发 make_dir(setAsCwd)", () => {
-		const { sent } = mountWithPicker();
-		const btn = document.querySelector<HTMLButtonElement>("button.open-project")!;
-		act(() => btn.click());
+		const { sent } = mountHost();
+		expect(document.querySelector(".project-picker")).toBeTruthy();
 		act(() => document.querySelector<HTMLButtonElement>(".cwd-toolbar .tool-pick")!.click());
 		expect(sent.filter((m) => m.type === "set_cwd")).toEqual([{ type: "set_cwd", path: "/test" }]);
 
-		act(() => btn.click());
 		act(() => document.querySelector<HTMLButtonElement>(".cwd-toolbar .tool-new")!.click());
 		const nameInput = document.querySelector<HTMLInputElement>(".cwd-newrow input")!;
 		act(() => setInput(nameInput, "my-project"));
@@ -364,21 +419,13 @@ describe("TopBar「打开项目」入口（host:open-project）", () => {
 			path: "/test/my-project",
 			setAsCwd: true,
 		});
-		expect(document.querySelector(".project-picker")).toBeNull();
 	});
 
-	it("被布局页隐藏后仍能从「⋯」溢出菜单打开（隐藏 ≠ 失去入口）", () => {
-		setAppGlobals({ cwd: "/test", ready: true, status: "open", workspaceRoots: [] });
-		setAppSend(() => true);
-		const { container } = mount("chat", [hostEntry("host:chat")], [hostEntry("host:open-project", true)]);
-		expect(container.querySelector("button.open-project")).toBeNull();
-		act(() => container.querySelector<HTMLButtonElement>(".plugin-topbar-more > button")!.click());
-		const item = document.querySelector<HTMLButtonElement>(
-			".plugin-topbar-menu .plugin-topbar-menu-keep > button.open-project",
-		);
-		expect(item).toBeTruthy();
-		act(() => item!.click());
-		expect(document.querySelector(".project-picker")).toBeTruthy();
+	it("点遮罩回调 onClose", () => {
+		const { onClose } = mountHost();
+		expect(document.querySelector(".project-picker-backdrop")).toBeTruthy();
+		act(() => document.querySelector<HTMLElement>(".project-picker-backdrop")!.click());
+		expect(onClose).toHaveBeenCalledTimes(1);
 	});
 });
 

@@ -700,6 +700,12 @@ CLI `install --catalog <url>`（同步列表 + 逐条安装/更新，已安装�
 | SCM 面板                                                     | `SCMPanel.tsx`：头栏（视图 tab/刷新＋插件）与分支行（分支/切换/推送/拉取/提交输入/提交/全部提交）分别按 slot 排序                                                                                                                                                                                                                                                                                                                                                                                                  | 勾掉 / ↑↓ 都生效（分支名展示是纯信息不进槽位；底部「去终端」按钮只跟显隐）                                                                                                                                                                                                                                                                                                   |
 | 终端面板                                                     | `TerminalPanel.tsx`：命令列表头（刷新/新建）与终端 tab 头（新建＋插件）分别按 slot 排序                                                                                                                                                                                                                                                                                                                                                                                                                            | 勾掉 / ↑↓ 都生效（命令/标签行是数据，不动）                                                                                                                                                                                                                                                                                                                                  |
 
+停靠栏里的宿主按钮走**同一份回调**：`SideDock` 不再逐个手抄 `BarItem` 的 props，而是把 `BarHostProps`（App 里的
+`sidebarBarProps`）整份透传给 `BarItem`。漏传的回调会在 `onClick={() => cb?.()}` 处**静默变成空操作**——沙箱、打开项目
+的按钮一旦被布局编辑挪进 `sidebar.left` / `sidebar.right` 就画得出来、点下去没反应（“沙箱按钮放侧边就失效”的来历）。
+同理，项目选择器与沙箱弹窗都是 App 里挂的单实例（顶栏 chip / 停靠栏条目 / cwd chip 打开同一个），
+不在各渲染点各自 `useState`。守卫：`tests/unit/side-dock-host-callbacks.test.ts`。
+
 顶栏没有结构性容器划分：整条按 slot 顺序直排（连续同类才成组裹容器，组间顺序即 slot 顺序），布局页的 ↑↓ 跨
 品牌/视图/工具真实换位（默认顺序号即旧版视觉顺序：history 锁扣首位、new-chat/files 工具组之尾，见
 `BUILTIN_UI_ITEMS` 注释）。面板内部同理按簇划分（SCM 头栏↔分支行、终端双头、目标条四态各行、左栏纵向分区）。

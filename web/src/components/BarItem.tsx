@@ -100,6 +100,14 @@ export interface BarItemProps {
 	};
 }
 
+/**
+ * `entry` / `bar` 之外的宿主回调集合。
+ *
+ * 顶栏、左右停靠栏必须共享同一份：历史上各渲染点手抄 props，漏传的回调会在
+ * `onClick={() => cb?.()}` 处静默变成空操作（沙箱 / 打开项目按钮在侧栏点不动就是这个原因）。
+ */
+export type BarHostProps = Omit<BarItemProps, "entry" | "bar">;
+
 function localeShort(code: string): string {
 	if (code === "zh-TW") return "TW";
 	if (code.startsWith("zh")) return "ZH";

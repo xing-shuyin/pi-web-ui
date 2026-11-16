@@ -1,35 +1,22 @@
 import { useEffect, useRef, useState } from "react";
 import { FiChevronLeft, FiChevronRight } from "react-icons/fi";
-import type { ChatState } from "../use-chat";
 import { groupByAlign, type UiSlotEntry } from "../ui-slots";
 import { ICON_EDIT_ALIGNS } from "../ui-layout-edit";
 import { useI18n } from "../i18n";
 import { useOverlayZIndex } from "../overlay-stack";
 import { useCoarsePointer } from "../use-coarse-pointer";
-import { BarItem, type BarItemProps, type ViewName } from "./BarItem";
+import { BarItem, type BarHostProps } from "./BarItem";
 
 interface SideDockProps {
 	side: "left" | "right";
 	items: UiSlotEntry[];
-	chat: ChatState;
-	view: ViewName;
-	onViewChange: (view: ViewName) => void;
-	onCreateCli?: (cwd?: string) => void;
-	onOpenPanel: (side: "left" | "right") => void;
-	onOpenSettings: (initialSection?: string) => void;
-	onOpenBgTasks: () => void;
-	onOpenGlobalSearch: () => void;
-	onUiAction?: (item: UiSlotEntry, value?: string) => void;
-	uiContextTopbar?: UiSlotEntry[];
-	onOpenProjectPicker?: () => void;
-	onThemeToggle?: () => void;
-	onSoundToggle?: () => void;
-	zenMode?: boolean;
-	onToggleZenMode?: () => void;
-	dropdownProps?: BarItemProps["dropdownProps"];
-	plugins?: BarItemProps["plugins"];
-	onOpenPluginMenu?: (el: HTMLElement) => void;
-	isPluginMenuOpen?: boolean;
+	/**
+	 * 宿主回调整体透传给 `BarItem`（`entry` / `bar` 由本组件补）。
+	 *
+	 * 不要再把回调在这里逐个手抄一遍：漏一个就意味着该宿主按钮移进停靠栏后
+	 * 点下去没有任何反应（旧版就漏了 `onOpenSandboxModal` / `onOpenProjectPicker`）。
+	 */
+	barProps: BarHostProps;
 }
 
 const TIP_DELAY_MS = 220;
@@ -44,30 +31,9 @@ const TIP_DELAY_MS = 220;
  * 那一层为了容纳超量图标是滚动容器（`overflow-y: auto` 会把横向也算成 `auto`），
  * 伪元素 tooltip 往侧向伸出会直接撑出横向滚动条。
  */
-export function SideDock({
-	side,
-	items,
-	chat,
-	view,
-	onViewChange,
-	onCreateCli,
-	onOpenPanel,
-	onOpenSettings,
-	onOpenBgTasks,
-	onOpenGlobalSearch,
-	onUiAction,
-	uiContextTopbar,
-	onOpenProjectPicker,
-	onThemeToggle: _onThemeToggle,
-	onSoundToggle: _onSoundToggle,
-	zenMode,
-	onToggleZenMode,
-	dropdownProps,
-	plugins,
-	onOpenPluginMenu,
-	isPluginMenuOpen,
-}: SideDockProps) {
+export function SideDock({ side, items, barProps }: SideDockProps) {
 	const { t } = useI18n();
+	const chat = barProps.chat;
 	const [collapsed, setCollapsed] = useState(false);
 	const dockRef = useRef<HTMLDivElement>(null);
 	const [tip, setTip] = useState<{ label: string; x: number; y: number } | null>(null);
@@ -141,30 +107,7 @@ export function SideDock({
 
 	const groups = groupByAlign(visibleItems);
 
-	const renderDockItem = (item: UiSlotEntry) => (
-		<BarItem
-			key={item.id}
-			entry={item}
-			bar={side}
-			chat={chat}
-			view={view}
-			plugins={plugins}
-			onViewChange={onViewChange}
-			onCreateCli={onCreateCli}
-			onOpenPanel={onOpenPanel}
-			onOpenSettings={onOpenSettings}
-			onOpenGlobalSearch={onOpenGlobalSearch}
-			onOpenBgTasks={onOpenBgTasks}
-			onOpenProjectPicker={onOpenProjectPicker}
-			onOpenPluginMenu={onOpenPluginMenu}
-			isPluginMenuOpen={isPluginMenuOpen}
-			onUiAction={onUiAction}
-			uiContextEntries={uiContextTopbar}
-			zenMode={zenMode}
-			onToggleZenMode={onToggleZenMode}
-			dropdownProps={dropdownProps}
-		/>
-	);
+	const renderDockItem = (item: UiSlotEntry) => <BarItem key={item.id} entry={item} bar={side} {...barProps} />;
 
 	return (
 		<div

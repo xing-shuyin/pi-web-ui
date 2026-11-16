@@ -19,6 +19,7 @@ import { MessageList } from "./components/MessageList";
 import { ChatInput } from "./components/ChatInput";
 import { GoalBar } from "./components/GoalBar";
 import { SandboxModal } from "./components/SandboxModal";
+import { ProjectPickerHost } from "./components/ProjectPickerHost";
 import { DesktopSplitResizer } from "./components/DesktopSplitResizer";
 import { WorktreeView, useWorktreeRefresh } from "./components/WorktreeBanner";
 import { FiRefreshCw, FiFeather } from "react-icons/fi";
@@ -28,6 +29,7 @@ import { useOverlayZIndex } from "./overlay-stack";
 import { FooterBar } from "./components/FooterBar";
 import { formatSessionHash, parseSessionHash } from "./session-url";
 import { SideDock } from "./components/SideDock";
+import type { BarHostProps } from "./components/BarItem";
 import { Dialog } from "./components/Dialog";
 import { QuestionQueue } from "./components/QuestionQueue";
 import { resolveQuestionQueue, mergeOwnedPending } from "./question-queue";
@@ -1190,6 +1192,9 @@ export function App() {
 	const [settingsInitialSection, setSettingsInitialSection] = useState<"plugins" | undefined>();
 	const [sandboxModalMode, setSandboxModalMode] = useState<"create" | "promote" | "apply" | null>(null);
 	const openSandboxCreateModal = useCallback(() => setSandboxModalMode("create"), []);
+	// 项目选择器由 App 单实例持有：顶栏 chip、侧栏停靠栏、cwd chip 都能打开同一个。
+	const [projectPickerOpen, setProjectPickerOpen] = useState(false);
+	const openProjectPicker = useCallback(() => setProjectPickerOpen(true), []);
 	const transitionKind = chat.transition?.kind;
 	const transitionTarget = chat.transition?.target;
 	const transitionProgress = chat.transition?.progress;
@@ -2532,6 +2537,32 @@ export function App() {
 		else pushNotice("error", t("nativeCliCreateFailed"));
 	};
 
+	// 停靠栏与顶栏共用同一份宿主回调（`BarHostProps`）：少传一个就会变成点不动的按钮。
+	const sidebarBarProps: BarHostProps = {
+		chat,
+		view,
+		termOpen: termDrawerOpen,
+		gitOpen: gitDrawerOpen,
+		plugins: enabledPlugins,
+		onViewChange: handleViewChange,
+		onOpenPanel: setDrawer,
+		onOpenSettings: (sec) => {
+			setSettingsInitialSection(sec as any);
+			setSettingsOpen(true);
+		},
+		onOpenGlobalSearch: () => setGlobalSearchOpen(true),
+		onOpenBgTasks: () => setBgTasksOpen(true),
+		onOpenSandboxModal: openSandboxCreateModal,
+		onOpenProjectPicker: openProjectPicker,
+		isProjectPickerOpen: projectPickerOpen,
+		onCreateCli: openNativeCliCreate,
+		onUiAction,
+		uiContextEntries: uiSlots["contextmenu.topbar"],
+		zenMode,
+		onToggleZenMode: toggleZenMode,
+		dropdownProps: { theme, themes, onThemeChange: switchTheme, reloadThemes },
+	};
+
 	return (
 		<div
 			className={`app${zenMode ? " zen-mode" : ""}`}
@@ -2609,6 +2640,8 @@ export function App() {
 				onOpenGlobalSearch={() => setGlobalSearchOpen(true)}
 				onOpenIconEdit={() => setIconEditOpen(true)}
 				onOpenSandboxModal={() => setSandboxModalMode("create")}
+				onOpenProjectPicker={openProjectPicker}
+				isProjectPickerOpen={projectPickerOpen}
 				themes={themes}
 				theme={theme}
 				onThemeChange={switchTheme}
@@ -2624,6 +2657,11 @@ export function App() {
 					onCreate={createNativeCliConversation}
 				/>
 			)}
+			<ProjectPickerHost
+				open={projectPickerOpen}
+				pathCompletions={chat.pathCompletions ?? []}
+				onClose={() => setProjectPickerOpen(false)}
+			/>
 			{iconEditOpen && (
 				<IconEditor
 					slots={uiSlots}
@@ -2724,34 +2762,7 @@ export function App() {
 					) : (
 						drawer && <div className="drawer-backdrop" onClick={() => setDrawer(null)} />
 					)}
-					<SideDock
-						side="left"
-						onCreateCli={openNativeCliCreate}
-						items={uiSidebarLeft}
-						chat={chat}
-						view={view}
-						plugins={enabledPlugins}
-						dropdownProps={{
-							theme,
-							themes,
-							onThemeChange: switchTheme,
-							reloadThemes,
-						}}
-						onViewChange={handleViewChange}
-						onOpenPanel={setDrawer}
-						onOpenSettings={(sec) => {
-							setSettingsInitialSection(sec as any);
-							setSettingsOpen(true);
-						}}
-						onOpenBgTasks={() => setBgTasksOpen(true)}
-						onOpenGlobalSearch={() => setGlobalSearchOpen(true)}
-						onUiAction={onUiAction}
-						uiContextTopbar={uiSlots["contextmenu.topbar"]}
-						onThemeToggle={() => switchTheme(theme === "light" ? null : "light")}
-						onSoundToggle={() => setSound({ ...sound, enabled: !sound.enabled })}
-						zenMode={zenMode}
-						onToggleZenMode={toggleZenMode}
-					/>
+					<SideDock side="left" items={uiSidebarLeft} barProps={sidebarBarProps} />
 					<div className={`view-pane ${view === "chat" || view === "terminal" || view === "git" ? "" : "hidden"}`}>
 						{!isMobile && leftCollapsed && <PanelRail side="left" onClick={toggleLeft} />}
 						<div
@@ -3414,34 +3425,7 @@ export function App() {
 							failed={failedPluginViews.includes(view.slice("plugin:".length))}
 						/>
 					)}
-					<SideDock
-						side="right"
-						onCreateCli={openNativeCliCreate}
-						items={uiSidebarRight}
-						chat={chat}
-						view={view}
-						plugins={enabledPlugins}
-						dropdownProps={{
-							theme,
-							themes,
-							onThemeChange: switchTheme,
-							reloadThemes,
-						}}
-						onViewChange={handleViewChange}
-						onOpenPanel={setDrawer}
-						onOpenSettings={(sec) => {
-							setSettingsInitialSection(sec as any);
-							setSettingsOpen(true);
-						}}
-						onOpenBgTasks={() => setBgTasksOpen(true)}
-						onOpenGlobalSearch={() => setGlobalSearchOpen(true)}
-						onUiAction={onUiAction}
-						uiContextTopbar={uiSlots["contextmenu.topbar"]}
-						onThemeToggle={() => switchTheme(theme === "light" ? null : "light")}
-						onSoundToggle={() => setSound({ ...sound, enabled: !sound.enabled })}
-						zenMode={zenMode}
-						onToggleZenMode={toggleZenMode}
-					/>
+					<SideDock side="right" items={uiSidebarRight} barProps={sidebarBarProps} />
 				</div>
 				<Suspense fallback={null}>
 					<BottomDock
