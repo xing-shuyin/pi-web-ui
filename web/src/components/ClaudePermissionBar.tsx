@@ -42,13 +42,7 @@ export const ClaudePermissionBar = memo(function ClaudePermissionBar({ current, 
 
 	if (compact) {
 		return (
-			<Dropdown
-				trigger={label}
-				open={open}
-				onOpenChange={setOpen}
-				direction="up"
-				align="left"
-			>
+			<Dropdown trigger={label} open={open} onOpenChange={setOpen} direction="up" align="left">
 				{modes.map((mode) => (
 					<DropdownItem key={mode} active={mode === current} onClick={() => pick(mode)}>
 						<span className="dd-preset-name">

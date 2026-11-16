@@ -22,6 +22,15 @@ import { collectEnabledMcpServers, toClaudeMcpConfig } from "../engine-mcp.js";
 const CLAUDE_PERMISSION_MODES = ["acceptEdits", "auto", "manual", "dontAsk", "plan", "bypassPermissions"] as const;
 
 /**
+ * Default mode. Stays `bypassPermissions` on purpose: that is what the engine did before the
+ * permission bridge existed (`--dangerously-skip-permissions`), and anything else would turn
+ * "prompt for a tool" into "deny it" wherever nobody can answer — durable/background runs,
+ * scheduler/plugin-driven conversations, subagents — i.e. the same hang this bridge fixes,
+ * only silent. A prompting mode is opt-in (composer chip or env).
+ */
+const DEFAULT_PERMISSION_MODE = "bypassPermissions";
+
+/**
  * Build the permission flags for the CLI.
  *
  * `--permission-prompt-tool stdio` is what makes the CLI raise `control_request`/`can_use_tool`
@@ -29,7 +38,7 @@ const CLAUDE_PERMISSION_MODES = ["acceptEdits", "auto", "manual", "dontAsk", "pl
  * dialog can never appear.
  *
  * Env:
- * - PI_WEB_CLAUDE_PERMISSION_MODE   acceptEdits (default) | auto | manual | dontAsk | plan | bypassPermissions
+ * - PI_WEB_CLAUDE_PERMISSION_MODE   bypassPermissions (default) | acceptEdits | auto | manual | dontAsk | plan
  * - PI_WEB_CLAUDE_PERMISSION_PROMPTS host (default) | none  ("none" auto-denies anything that would prompt)
  */
 let permissionModeOverride: string | null = null;
@@ -43,13 +52,12 @@ export const CLAUDE_PERMISSION_MODE_OPTIONS = [...CLAUDE_PERMISSION_MODES];
 
 /** Current effective mode (UI override > env > default). */
 export function currentClaudePermissionMode(): string {
-	const raw = (permissionModeOverride ?? process.env.PI_WEB_CLAUDE_PERMISSION_MODE ?? "acceptEdits").trim();
-	return (CLAUDE_PERMISSION_MODES as readonly string[]).includes(raw) ? raw : "acceptEdits";
+	const raw = (permissionModeOverride ?? process.env.PI_WEB_CLAUDE_PERMISSION_MODE ?? DEFAULT_PERMISSION_MODE).trim();
+	return (CLAUDE_PERMISSION_MODES as readonly string[]).includes(raw) ? raw : DEFAULT_PERMISSION_MODE;
 }
 
 function buildPermissionArgs(): string[] {
-	const rawMode = currentClaudePermissionMode();
-	const mode = (CLAUDE_PERMISSION_MODES as readonly string[]).includes(rawMode) ? rawMode : "acceptEdits";
+	const mode = currentClaudePermissionMode();
 	const prompts = (process.env.PI_WEB_CLAUDE_PERMISSION_PROMPTS ?? "host").trim();
 	const args = ["--permission-mode", mode];
 	if (prompts === "none") args.push("--permission-prompts", "none");

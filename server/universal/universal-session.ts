@@ -28,6 +28,7 @@ import { FilesService } from "../files-service.js";
 import { uploadLimitBytes } from "../payload-limits.js";
 import { TerminalManager, makePersistentTerminalTools } from "../terminals.js";
 import { TERMINAL_TOOL_NAMES } from "../tool-manager.js";
+import { unattendedApprovalTimeoutMs } from "../tool-approval.js";
 import type { ToolDefinition } from "@earendil-works/pi-coding-agent";
 import { BgServerTracker } from "../bg-servers.js";
 import { ModelAdminService } from "../model-admin.js";
@@ -171,6 +172,8 @@ export class UniversalSession implements DispatchSession {
 	private pendingToolResults: UiMessage[] = [];
 	/** Engine permission requests awaiting a human answer: approval id -> request info. */
 	private readonly pendingApprovals = new Map<string, { requestId: string; toolName: string }>();
+	/** Auto-deny timers for approvals nobody may answer (unattended runs). */
+	private readonly approvalTimers = new Map<string, NodeJS.Timeout>();
 	private readonly sessionDrafts = new Map<string, { text: string; ts: number }>();
 	private followUpQueue: QueuedMessageEntry[] = [];
 
@@ -974,9 +977,42 @@ export class UniversalSession implements DispatchSession {
 				// NOTE: do NOT flushSnapshot() here — the frontend merges `approval` from
 				// `snapshot.pendingApproval`, which this session never sets, so a snapshot right
 				// after this message wipes the dialog before it can be shown.
+				// An engine prompt has no durable rule store behind it, so the answer is always
+				// one-shot: "always allow for this conversation" would be a lie (scopeless).
 				onApprovalRequest: (requestId, toolName, params, options) => {
 					const id = `ua-${requestId}`;
+					// Nobody attached (durable / background / plugin-driven run): a dialog would
+					// never be seen, and the engine waits for an answer, so deny instead of hanging.
+					if (this.sinks.size === 0) {
+						void this.driver.respondApproval(requestId, "deny", undefined, "no attached client");
+						this.emitNotice(
+							"warning",
+							`无人可答的审批（该会话没有已连接的界面）：已拒绝工具 ${toolName}。`,
+							`Approval nobody can answer (no attached client): tool ${toolName} was denied.`,
+						);
+						return;
+					}
 					this.pendingApprovals.set(id, { requestId, toolName });
+					// Unattended client ids (plugin:/scheduler:/canvas:) get the same watchdog the
+					// pi engine uses, so a forgotten dialog cannot block a run forever.
+					const timeoutMs = unattendedApprovalTimeoutMs(this.clientId);
+					if (timeoutMs !== null) {
+						const timer = setTimeout(() => {
+							this.approvalTimers.delete(id);
+							const entry = this.pendingApprovals.get(id);
+							if (!entry) return;
+							this.pendingApprovals.delete(id);
+							void this.driver.respondApproval(entry.requestId, "deny", undefined, "unattended timeout");
+							this.send({ type: "tool_approval_resolved", id });
+							this.emitNotice(
+								"warning",
+								`无人值守审批超时（${Math.round(timeoutMs / 1000)}s）：已拒绝工具 ${toolName}。`,
+								`Unattended approval timed out after ${Math.round(timeoutMs / 1000)}s: tool ${toolName} was denied.`,
+							);
+						}, timeoutMs);
+						timer.unref?.();
+						this.approvalTimers.set(id, timer);
+					}
 					this.send({
 						type: "tool_approval_pending",
 						id,
@@ -985,6 +1021,7 @@ export class UniversalSession implements DispatchSession {
 						params: params && typeof params === "object" ? params : {},
 						reason: "",
 						reasonEn: "",
+						scopeless: true,
 						...(this.turnConvId ? { conversationId: this.turnConvId } : {}),
 						...(options?.suggestions ? { suggestions: options.suggestions } : {}),
 					});
@@ -1167,15 +1204,24 @@ export class UniversalSession implements DispatchSession {
 		const entry = this.pendingApprovals.get(id);
 		if (!entry) return false;
 		this.pendingApprovals.delete(id);
+		this.clearApprovalTimer(id);
 		void this.driver.respondApproval(entry.requestId, decision, editedParams, reason);
 		this.send({ type: "tool_approval_resolved", id });
 		return true;
+	}
+
+	private clearApprovalTimer(id: string): void {
+		const timer = this.approvalTimers.get(id);
+		if (!timer) return;
+		clearTimeout(timer);
+		this.approvalTimers.delete(id);
 	}
 
 	/** Deny every outstanding approval (turn aborted/ended) so the engine never hangs. */
 	private denyPendingApprovals(reason: string): void {
 		if (this.pendingApprovals.size === 0) return;
 		for (const [id, entry] of this.pendingApprovals) {
+			this.clearApprovalTimer(id);
 			void this.driver.respondApproval(entry.requestId, "deny", undefined, reason);
 			this.send({ type: "tool_approval_resolved", id });
 		}

@@ -86,7 +86,7 @@ describe("Claude Code CLI launch", () => {
 				"stream-json",
 				"--verbose",
 				"--permission-mode",
-				"acceptEdits",
+				"bypassPermissions",
 				"--permission-prompt-tool",
 				"stdio",
 				"--effort",
@@ -324,7 +324,7 @@ describe("Claude Code permission bridge", () => {
 		const { child, sink, driver } = setup();
 		const first = driver.sendPrompt("turn 1", undefined, sink);
 		let args = spawnMock.mock.calls[0][1];
-		expect(args).toContain("acceptEdits");
+		expect(args).toContain("bypassPermissions");
 		child.emit("close", 0);
 		await first;
 
@@ -335,6 +335,47 @@ describe("Claude Code permission bridge", () => {
 		expect(args).not.toContain("acceptEdits");
 		child.emit("close", 0);
 		await second;
+	});
+
+	it("denies instead of hanging when the sink has no approval channel", async () => {
+		const { child, driver } = setup();
+		let written = "";
+		child.stdin.on("data", (chunk) => {
+			written += chunk.toString();
+		});
+		const strictSink = {
+			onTextDelta: vi.fn(),
+			onThinkingDelta: vi.fn(),
+			onToolStart: vi.fn(),
+			onToolUpdate: vi.fn(),
+			onToolEnd: vi.fn(),
+			onTurnComplete: vi.fn(),
+			onError: vi.fn(),
+		} as unknown as Parameters<typeof driver.sendPrompt>[2];
+		const done = driver.sendPrompt("hi", undefined, strictSink);
+		written = "";
+
+		child.stdout.write(
+			`${JSON.stringify({
+				type: "control_request",
+				request_id: "req-deny",
+				request: { subtype: "can_use_tool", tool_name: "Bash", input: { command: "ls" } },
+			})}
+`,
+		);
+		await new Promise((resolve) => setTimeout(resolve, 20));
+
+		expect(JSON.parse(written.trim())).toEqual({
+			type: "control_response",
+			response: {
+				subtype: "success",
+				request_id: "req-deny",
+				response: { behavior: "deny", message: "no approval channel" },
+			},
+		});
+
+		child.emit("close", 0);
+		await done;
 	});
 
 	it("honours PI_WEB_CLAUDE_PERMISSION_MODE / _PROMPTS", async () => {

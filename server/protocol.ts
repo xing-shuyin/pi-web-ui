@@ -2159,6 +2159,10 @@ export interface UiToolApproval {
 	parentTool?: string;
 	conversationId?: string;
 	conversationTitle?: string;
+	/** Engine-issued approval (e.g. Claude Code) that has no durable rule store behind it:
+	 *  the dialog must not offer "always allow for this conversation", because answering it
+	 *  once cannot persist anything. */
+	scopeless?: boolean;
 }
 
 export type PlanStepStatus = "pending" | "in_progress" | "done" | "failed";
@@ -3743,6 +3747,7 @@ export type ServerMessage =
 			parentTool?: string;
 			conversationId?: string;
 			conversationTitle?: string;
+			scopeless?: boolean;
 	  }
 	| { type: "tool_approval_resolved"; id: string; owner?: string; global?: boolean }
 	| { type: "global_interactions"; questions: UiPendingQuestion[]; approvals: UiToolApproval[] }

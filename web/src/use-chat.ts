@@ -760,7 +760,6 @@ type Action =
 	| { type: "dsh_presets"; presets: UiAgentPreset[]; defaultPreset: string }
 	| { type: "dsh_permission"; options: DshPermissionOption[]; defaultPreset: string }
 	| { type: "claude_permission"; modes: string[]; current: string }
-	| { type: "claude_permission"; modes: string[]; current: string }
 	| { type: "sync_cached_sessions"; sessions: SessionSummary[] }
 	| { type: "host_metrics"; metrics?: UiHostMetrics; latencyMs?: number | null }
 	| { type: "sandbox_diff"; diff: SandboxDiffView | null }
@@ -2686,6 +2685,7 @@ export function useChat() {
 							...(msg.parentTool ? { parentTool: msg.parentTool } : {}),
 							...(msg.conversationId !== undefined ? { conversationId: msg.conversationId } : {}),
 							...(msg.conversationTitle !== undefined ? { conversationTitle: msg.conversationTitle } : {}),
+							...(msg.scopeless ? { scopeless: true } : {}),
 						},
 					});
 					break;
