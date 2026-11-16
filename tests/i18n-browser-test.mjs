@@ -122,9 +122,23 @@ try {
 	}
 } finally {
 	await browser?.close();
-	server.kill();
-	closeSync(log);
-	rmSync(dataDir, { recursive: true, force: true });
+	// 先让服务端真的退出，再删临时目录：直接 rm 会撞上仍在写入的进程（ENOTEMPTY）。
+	server.kill("SIGTERM");
+	await new Promise((resolve) => {
+		const done = setTimeout(resolve, 3000);
+		server.once("exit", () => {
+			clearTimeout(done);
+			resolve();
+		});
+	});
+	try {
+		closeSync(log);
+	} catch {}
+	try {
+		rmSync(dataDir, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
+	} catch {
+		// 临时目录清理失败不该让验收结果变成红灯；操作系统会回收 /tmp。
+	}
 }
 
 if (failures > 0) {
