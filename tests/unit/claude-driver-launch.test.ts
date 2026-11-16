@@ -320,6 +320,23 @@ describe("Claude Code permission bridge", () => {
 		await done;
 	});
 
+	it("re-reads the permission mode per turn, so a UI switch applies without restart", async () => {
+		const { child, sink, driver } = setup();
+		const first = driver.sendPrompt("turn 1", undefined, sink);
+		let args = spawnMock.mock.calls[0][1];
+		expect(args).toContain("acceptEdits");
+		child.emit("close", 0);
+		await first;
+
+		driver.setPermissionMode("manual");
+		const second = driver.sendPrompt("turn 2", undefined, sink);
+		args = spawnMock.mock.calls[1][1];
+		expect(args).toContain("manual");
+		expect(args).not.toContain("acceptEdits");
+		child.emit("close", 0);
+		await second;
+	});
+
 	it("honours PI_WEB_CLAUDE_PERMISSION_MODE / _PROMPTS", async () => {
 		process.env.PI_WEB_CLAUDE_PERMISSION_MODE = "manual";
 		process.env.PI_WEB_CLAUDE_PERMISSION_PROMPTS = "none";

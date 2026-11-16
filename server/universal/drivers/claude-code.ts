@@ -140,7 +140,7 @@ export class ClaudeCodeDriver extends BaseAgentDriver {
 	};
 
 	private readonly executablePath: string | undefined;
-	private readonly extraArgs: string[];
+	private readonly staticExtraArgs: string[];
 	private readonly agentDir: string;
 	private readonly dataDir: string | undefined;
 	private currentModel: string;
@@ -166,7 +166,10 @@ export class ClaudeCodeDriver extends BaseAgentDriver {
 	constructor(cwd: string, opts?: ClaudeCodeDriverOptions) {
 		super(cwd);
 		this.executablePath = opts?.executablePath;
-		this.extraArgs = opts?.extraArgs ?? buildPermissionArgs();
+		// Only non-permission args are fixed at construction. Permission flags are rebuilt per
+		// turn (see sendPrompt) so switching the mode in the UI applies to the next prompt without
+		// a restart. Building them here once would freeze the mode from construction time.
+		this.staticExtraArgs = opts?.extraArgs ?? [];
 		this.currentModel = normalizeClaudeModelId(opts?.defaultModel ?? "default");
 		this.agentDir = opts?.agentDir || process.env.PI_CODING_AGENT_DIR || join(homedir(), ".pi", "agent");
 		this.dataDir = opts?.dataDir;
@@ -241,7 +244,8 @@ export class ClaudeCodeDriver extends BaseAgentDriver {
 			"--output-format",
 			"stream-json",
 			"--verbose",
-			...this.extraArgs,
+			...this.staticExtraArgs,
+			...buildPermissionArgs(),
 		];
 
 		let targetModel = this.currentModel;
