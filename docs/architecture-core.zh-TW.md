@@ -18,7 +18,7 @@ pi 引擎的 `steeringMode` 與 `followUpMode` 預設均為 `all`：在各自交
 
 ## 手機系統通知與多裝置
 
-React + Capacitor 手機客戶端、Hub 賬號隔離推送與裝置切換見 [`mobile.md`](mobile.zh-TW.md)。手機通知由服務端 `onNotificationEvent` 權威事件觸發，不依賴 WebSocket sinks；重試、壓縮、人工等待與子任務依賴未收口時不得提前報告完成。
+React + Capacitor 手機客戶端、Hub 賬號隔離推送與裝置切換見 [`mobile.md`](mobile.md)。手機通知由服務端 `onNotificationEvent` 權威事件觸發，不依賴 WebSocket sinks；重試、壓縮、人工等待與子任務依賴未收口時不得提前報告完成。
 
 通知點選攜帶例項、裝置、session 與 owner / conversation 標識。跨客戶端通過 `open_shared_conversation` 的 `readOnly: true` 檢視原執行物件，快照的 `sharedConversation.readOnly` 驅動只讀 UI；服務端只允許查詢及已有問卷 / 單次審批答覆，拒絕 prompt、終端、設定和工作區寫操作。該模式可檢視 independent / 子代理，但不放寬普通共享入口，也不搬遷 owner 或重新 load 會話。
 
@@ -249,7 +249,7 @@ events.jsonl    追加式生命週期流水（有位元組上限，截斷後只�
 
 `server/engine-catalog.ts` 是引擎 ID、包名、安裝命令和獨立 CLI 能力的單源，供引擎管理、協議型別和 CLI 工作臺使用。`server/engine-cli.ts` 統一解析 PATH、常見安裝目錄和全域性包的 `package.json.bin`，並生成不經過 shell 的 `{file, args}`；版本探針、Claude/Codex 驅動與原生 PTY 都使用這份結果，不再各自維護路徑查詢邏輯。全域性包位置繼續複用 `global-loader.ts`，只安裝庫或殘缺 bin 不代表存在可啟動的 CLI。
 
-引擎的 SDK/執行時可用性與獨立 CLI 能力分別判斷：Pi/DSH/Durable 可通過 SDK 或執行樹工作；Pi Durable 沒有獨立 CLI；DSH 的 `dsh` 需要 profile，不能假設其包含預設終端介面。CLI 工作臺的能力與啟動約束見 [終端架構](architecture-terminal.zh-TW.md#原生-cli-工作臺)。單項和批次引擎探測使用同一登記表與 TTL 快取。
+引擎的 SDK/執行時可用性與獨立 CLI 能力分別判斷：Pi/DSH/Durable 可通過 SDK 或執行樹工作；Pi Durable 沒有獨立 CLI；DSH 的 `dsh` 需要 profile，不能假設其包含預設終端介面。CLI 工作臺的能力與啟動約束見 [終端架構](architecture-terminal.md#原生-cli-工作臺)。單項和批次引擎探測使用同一登記表與 TTL 快取。
 
 ## Codex CLI 引擎
 
@@ -316,12 +316,13 @@ events.jsonl    追加式生命週期流水（有位元組上限，截斷後只�
 - **按鈕狀態契約**：普通按鈕統一用 `--button-bg/fg/border`、`--button-hover-bg/fg/border`；實底主按鈕統一用 `--button-primary-bg/fg` 與 `--button-primary-hover-bg/fg`；危險按鈕用 `--button-danger-bg/fg` 與 `--button-danger-hover-bg/fg`。主題優先覆蓋成對變數，避免重複複製元件選擇器。主按鈕預設保持懸浮文字/底色配對，以外圈提示懸浮，禁止整體 brightness 濾鏡同時改字與底。傳送/停止的懸浮底色分別配 `--on-send-blue-hover` / `--on-stop-red-hover`，不能假設普通狀態前景仍可讀。`node tests/theme-buttons-test.mjs` 無需構建或啟動服務，在真實 Chrome 中逐主題驗證十類按鈕普通/懸浮態的最終層疊與透明背景合成，對比度下限 3:1；無 Chrome 明確 SKIP，已加入全量冒煙。
 - **迴歸**：`theme-test.mjs`（埠 8937，隔離 data-dir）：列表/內建/使用者主題、注入 link、淺色生效、重新整理持久、使用者主題可應用、回預設移除 link。
 
-## CSS 分層（`@layer guard, base, theme;`）
+## CSS 分層（`@layer guard, base, theme, drawer;`）
 
 - **為什麼分層**：`web/src/styles.css` 是共享基線、主題是後加載的完整樣式表，兩者在同一份文件裡爭權重。分層重構前，能跨檔案奪權的唯一手段就是 `!important`（歎號 important）：基線 218 處、主題側 613 處（`bases/obsidian-base.css` 220、`bases/zhujian-base.css` 143、`bases/zhupi-base.css` 132、`aetheris.css` 118），主題要壓住基線只能繼續加碼，越改越沉——典型的軍備競賽。改成顯式分層 + 無層覆蓋區後基線只剩 1 處（mermaid 執行時內聯 style，見下），勝負由**層序**決定，歎號 important 不再是奪權工具。
-- **三層職責**（順序宣告只有一處：`web/src/styles.css` 頂部的 `@layer guard, base, theme;`，早於所有層塊，層序按此固定）：
+- **四層職責**（順序宣告只有一處：`web/src/styles.css` 頂部的 `@layer guard, base, theme, drawer;`，早於所有層塊，層序按此固定）：
   - `@layer base`：整份基線樣式（`web/src/styles.css` 內容）。預設層，正常寫選擇器，不加 `!important`。
   - `@layer theme`：主題樣式。**服務端統一下發**——`server/themes.ts` 的 `readThemeCss()` 內聯展開 `@import` 後把整份文本包進 `@layer theme { … }`（只包最外層一次；遞迴內聯的子檔案原樣返回，否則會變成巢狀層）。`themes/**/*.css` 原始檔因此**不需要**自己寫 `@layer`，也不需要 `!important`：只要寫在主題裡就天然壓過 base。
+  - `@layer drawer`：底部面板與原始碼管理面板（`web/src/drawer.css`，經 `@import … layer(drawer)` 引入）。它排在最後，因此能壓過 base 裡的同名規則，**不必靠複合類提權**；新增元件層只能追加到這個位置之後。
   - `@layer guard`：唯一活口是 mermaid——它用 d3 `.style()` 把字號寫成 SVG 內聯 `style`，任何普通宣告都壓不住，只能留這一處歎號 important（`styles.css` 末尾，寫明原因）。guard 先宣告，層序反轉後它的 important 恆勝。別把普通樣式挪進來偷懶。
 - **無層覆蓋區**（`styles.css` 末尾、所有層塊之後）：需要蓋過主題或未分層三方庫（highlight.js `github-dark.css`，bundle 裡後加載）的結構性復位放這裡——程式碼行清零（同為無層後靠更高權重蓋過 `pre code.hljs`）、摺疊態 `.goalbar.goalbar-collapsed` 抹皮（無層一句蓋住 theme 層面板皮）。**未分層的普通宣告永遠勝過任何層內的普通宣告**，所以這裡不需要歎號 important。分包引入的 CSS（如 `web/src/model-management.css` 經 `@import … layer(base)`）與外掛樣式同樣必須進層，不能裸奔成無層。
 - **層序規則（兩個方向相反，最容易踩）**：普通宣告按**層宣告順序**後者勝（`theme` > `base` > `guard`）；帶歎號 important 的宣告**反向**——先宣告的層勝（`guard` > `base` > `theme`）。所以 guard 層的價值恰在於它**先**宣告：mermaid 那一處例外放進去就能蓋住執行時內聯；而 base/theme 裡寫歎號 important 只會把自己釘死，越寫越糟。另注：**未分層的樣式永遠勝過任何層內的普通宣告**——這正是「無層覆蓋區」能零提權蓋住主題與 highlight.js 的原因。

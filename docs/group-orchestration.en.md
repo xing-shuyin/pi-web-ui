@@ -53,6 +53,8 @@ Model catalog load failures, offline devices, a missing host device / explicit m
 
 ## Work items, events, and execution
 
+> Generic definitions of WAL / transactions / leases / fences live in §2 and §7 of [`device-collaboration.md`](device-collaboration.en.md); this section only covers the four collections of work items and the Router.
+
 The Hub persists four collections through the same WAL transaction system:
 
 | Collection       | Durable facts                                                                                                                |
@@ -141,4 +143,4 @@ Every delivery uses a fixed UUID. Before sending it durably records the first at
 - Local Hub proxy and DTO bridge: `server/device-center/local.ts`; plugin contract: `plugin-sdk/index.d.ts`; registration and public entry: `server/plugins.ts`, `server/index.ts`.
 - UI: unified entry `web/src/components/DeviceCenter.tsx`, embedded channels `DeviceChannels.tsx`, group management `DeviceGroupManager.tsx`; reusing `GroupRouterSettings.tsx`, `GroupWorkItems.tsx` and the chat entry `GroupWorkspaceActions.tsx`; channel adaptation and configuration: [Superagent README](../plugins/superagent/README.en.md).
 
-The corresponding unit tests include `group-router`, `group-router-runtime`, `group-router-worker`, `group-router-ui`, `work-items`, `hub-orchestration` and `superagent-plugin`. Channel tests inject fetch and use a fake host to trigger the real plugin routes, covering signature verification, authorization, replay, leases and write-back recovery; this mock evidence cannot replace real credentials, real network and channel delivery verification. This document only adds documentation and does not claim that all the tests above were re-run in this round.
+The corresponding unit tests include `group-router`, `group-router-runtime`, `group-router-worker`, `group-router-ui`, `work-items`, `hub-orchestration` and `superagent-plugin`. Channel tests inject fetch and use a fake host to trigger the real plugin routes, covering signature verification, authorization, replay, leases and write-back recovery; this mock evidence cannot replace real credentials, real network and channel delivery verification. This document only adds documentation and does not claim that all the tests above were re-run in this round. The manual acceptance checklist for real credentials and public callbacks is the 「P2 acceptance baseline (channels)」 section of [`agent-bot-design.md`](agent-bot-design.en.md#p2-acceptance-baseline-channels).
