@@ -137,10 +137,7 @@ export function DesktopClipboardControl({
 				? t("desktop.connecting")
 				: status === "clipboard-off"
 					? t("desktop.clipboardHint")
-					: (clipboardStatus(status, zh) ??
-						(zh
-							? "连接暂不可用，已保留同步方向。请重新连接或重试。"
-							: "Clipboard connection unavailable. Direction is saved; reconnect or retry."));
+					: (clipboardStatus(status, zh) ?? t("desktopClipboardUnavailable"));
 	return (
 		<>
 			<style>{manualClipboardCss + clipboardDialogCss}</style>
@@ -187,7 +184,7 @@ export function DesktopClipboardControl({
 							!["clipboard-off", "clipboard-ready", "clipboard-connecting"].includes(status) &&
 							!status.startsWith("clipboard-progress:") && (
 								<button type="button" className="btn" onClick={() => bridge.current?.set(mode)}>
-									{zh ? "重试" : "Retry"}
+									{t("retryNow")}
 								</button>
 							)}
 					</label>,

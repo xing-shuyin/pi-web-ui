@@ -17,6 +17,8 @@ import { formatDuration, formatTimeFull, resolveThinkingTimeRange } from "../too
 
 const MAX_PREVIEW_LEN = 300;
 
+// Header words the model writes itself; matched against reply content, never rendered, so they stay
+// verbatim in every UI language (data).
 function stripLeadingGenericHeader(thinking: string): string {
 	const lines = thinking.split("\n");
 	let startIdx = 0;

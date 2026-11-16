@@ -135,7 +135,7 @@ export const FileChangeCard = memo(function FileChangeCard({
 				<div className="file-diff-raw-body">
 					<div className="file-diff-raw-section">
 						<div className="file-diff-raw-title">⚡ {t("toolInspectorArgs")}</div>
-						<pre className="file-diff-pre">{argumentsText || "(无入参参数 / No arguments)"}</pre>
+						<pre className="file-diff-pre">{argumentsText || t("toolInspectorNoArguments")}</pre>
 					</div>
 					{formattedDetails && (
 						<div className="file-diff-raw-section">

@@ -8,7 +8,7 @@ import {
 	type PluginViewModule,
 } from "../plugin-loader";
 import { withPluginScopeAsync } from "../plugin-host";
-import { isZhLocale, useI18n, useT, type Translate } from "../i18n";
+import { useT, type Translate } from "../i18n";
 import type { UiPluginInfo } from "../types";
 
 interface PluginPageProps {
@@ -20,30 +20,28 @@ interface PluginPageProps {
 
 type PageFailure = { kind: "no-client" } | { kind: "load"; detail: string } | { kind: "mount"; detail: string };
 
+// The thrown error and console.error lines below are developer diagnostics (data); only the panel
+// text a user sees goes through the dictionary.
+
 function failureDetail(err: unknown): string {
 	if (err instanceof Error) return err.message;
 	return String(err);
 }
 
-function failureText(failure: PageFailure, name: string, locale: string, t: Translate): string {
-	const zh = isZhLocale(locale);
+function failureText(failure: PageFailure, name: string, t: Translate): string {
 	switch (failure.kind) {
 		case "no-client":
-			return zh
-				? `插件 ${name} 没有客户端脚本（client/entry.mjs），无法显示这一页。`
-				: `Plugin ${name} ships no client bundle (client/entry.mjs), so this page cannot be shown.`;
+			return t("pluginPageNoClient", { name });
 		case "load":
-			return zh
-				? `插件 ${name} 的页面脚本加载失败：${failure.detail}`
-				: `Failed to load plugin ${name}'s page bundle: ${failure.detail}`;
+			return t("pluginPageLoadFailed", { name, detail: failure.detail });
 		case "mount":
-			return `${t("pluginMountFailed", { name })}：${failure.detail}`;
+			return t("pluginPageMountFailed", { name, detail: failure.detail });
 	}
 }
 
 export function PluginPage({ plugin, epoch, send, className }: PluginPageProps): JSX.Element {
 	const ref = useRef<HTMLDivElement>(null);
-	const { locale } = useI18n();
+
 	const t = useT();
 	const [failure, setFailure] = useState<PageFailure | null>(null);
 
@@ -112,7 +110,7 @@ export function PluginPage({ plugin, epoch, send, className }: PluginPageProps):
 			<div className="plugin-page-host" ref={ref} />
 			{failure && (
 				<div className="plugin-page-error" role="alert">
-					{failureText(failure, plugin.name, locale, t)}
+					{failureText(failure, plugin.name, t)}
 				</div>
 			)}
 		</div>

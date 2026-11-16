@@ -4,13 +4,11 @@ import { referenceGroupMember } from "../group-member-reference";
 import { appUrl } from "../base-url";
 import { withToken } from "../auth-token";
 import { openDeviceAccess } from "../device-access";
-import { isZhLocale, useI18n, useT } from "../i18n";
+import { useT } from "../i18n";
 
 type Member = { id: string; deviceId: string; name: string; online?: boolean };
 export function DeviceGroupMembers({ botIds, roomId }: { botIds: string[]; roomId?: string }) {
-	const { locale } = useI18n();
 	const t = useT();
-	const zh = isZhLocale(locale);
 	const [data, setData] = useState<{ bots: Member[]; hubUrl: string; deviceId?: string } | null>(null);
 	const [error, setError] = useState("");
 	const [busy, setBusy] = useState(false);
@@ -53,7 +51,7 @@ export function DeviceGroupMembers({ botIds, roomId }: { botIds: string[]; roomI
 		if (!data || busy) return;
 		setBusy(true);
 		try {
-			await openDeviceAccess(member.deviceId, data.hubUrl, desktop, zh, false, member.name);
+			await openDeviceAccess(member.deviceId, data.hubUrl, desktop, t, false, member.name);
 			setError("");
 		} catch (cause) {
 			setError(cause instanceof Error ? cause.message : String(cause));

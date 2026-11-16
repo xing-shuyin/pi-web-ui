@@ -670,7 +670,7 @@ export const ChatInput = memo(function ChatInput({
 		}
 		let immediatePages: AtHit[] = [];
 		if (capabilities.pageRef) {
-			pokeBrowserControl();
+			pokeBrowserControl(t);
 			immediatePages = mapPageHits(t("browserControl"), getLastBrowserControlPages(), query);
 			jobs.push({
 				id: "host:pages",

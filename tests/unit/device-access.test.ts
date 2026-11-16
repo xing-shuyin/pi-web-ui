@@ -12,6 +12,9 @@ import {
 } from "../../web/src/device-access.js";
 
 import { DesktopPreview } from "../../web/src/components/desktop-preview.js";
+import { en, interpolate, zh, type Translate } from "../../web/src/i18n.js";
+const tEn: Translate = (key, vars) => interpolate(en[key as keyof typeof en] ?? String(key), vars);
+const tZh: Translate = (key, vars) => interpolate(zh[key as keyof typeof zh] ?? String(key), vars);
 
 let root: Root | undefined;
 let host: HTMLDivElement | undefined;
@@ -19,11 +22,11 @@ const hub = "https://hub.example.com";
 it("uses the current app for a verified local group device without a self relay request", async () => {
 	const fetcher = vi.fn();
 	vi.stubGlobal("fetch", fetcher);
-	const preview = await requestDeviceAccessUrl("local-pc", hub, true, false, true, undefined, true);
+	const preview = await requestDeviceAccessUrl("local-pc", hub, true, tEn, true, undefined, true);
 	expect(preview).toMatchObject({ transport: "current" });
 	expect(new URL(preview.url).pathname).toBe("/desktop-preview");
 	expect(fetcher).not.toHaveBeenCalled();
-	await openDeviceAccess("local-pc", hub, true, false, false, "Local PC", {
+	await openDeviceAccess("local-pc", hub, true, tEn, false, "Local PC", {
 		mode: "live",
 		local: true,
 		groupId: "team",
@@ -49,7 +52,7 @@ async function mount(mode: "preview" | "live" = "live") {
 				createElement(RemoteDesktopWindow),
 			),
 		);
-		await openDeviceAccess("mac", hub, true, false);
+		await openDeviceAccess("mac", hub, true, tEn);
 		setDesktopMode(getDesktopAccess()!, mode);
 	});
 }
@@ -107,7 +110,7 @@ it("ignores preview status from unrelated frames", async () => {
 it("keeps origin only for the fixed local desktop and requires matching-origin status messages", async () => {
 	ticket();
 	await mount("preview");
-	await act(async () => openDeviceAccess("self", hub, true, false, false, "This PC", { local: true }));
+	await act(async () => openDeviceAccess("self", hub, true, tEn, false, "This PC", { local: true }));
 	const frame = document.querySelector("iframe")!;
 	expect(frame.getAttribute("sandbox")).toContain("allow-same-origin");
 	expect(new URL(frame.src).pathname).toBe("/desktop-preview");
@@ -295,7 +298,7 @@ it.each([
 	await mount();
 	const access = getDesktopAccess();
 	ticket(url);
-	await expect(requestDeviceAccessUrl("mac", hub, true, false)).rejects.toThrow("Invalid device access URL");
+	await expect(requestDeviceAccessUrl("mac", hub, true, tEn)).rejects.toThrow("Invalid device access URL");
 	expect(getDesktopAccess()).toBe(access);
 });
 it("does not let an old detach completion change a newer desktop", async () => {
@@ -303,7 +306,7 @@ it("does not let an old detach completion change a newer desktop", async () => {
 	await mount();
 	const previous = getDesktopAccess()!;
 	await act(async () => {
-		await openDeviceAccess("mac", hub, true, false);
+		await openDeviceAccess("mac", hub, true, tEn);
 		setDesktopMode(getDesktopAccess()!, "live");
 		setDesktopMode(previous, "preview");
 	});
@@ -364,7 +367,7 @@ it.each(["lan", "p2p"])("opens the entire device UI through the same secure port
 		location: { replace },
 		close: vi.fn(),
 	} as unknown as Window);
-	await openDeviceAccess("mac", hub, false, false);
+	await openDeviceAccess("mac", hub, false, tEn);
 	expect(JSON.parse(String(fetcher.mock.calls[0][1].body))).toMatchObject({ preferLan: true, desktop: false });
 	expect(replace).toHaveBeenCalledWith(`${window.location.origin}${url}`);
 });
@@ -401,5 +404,5 @@ it.each([
 		"fetch",
 		vi.fn(async () => ({ ok: true, json: async () => ({ url, transport: "lan" }) })),
 	);
-	await expect(requestDeviceAccessUrl("mac", hub, true, false)).rejects.toThrow("Invalid device access URL");
+	await expect(requestDeviceAccessUrl("mac", hub, true, tEn)).rejects.toThrow("Invalid device access URL");
 });

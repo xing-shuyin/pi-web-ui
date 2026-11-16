@@ -173,6 +173,7 @@ export function subscribePluginLoadFailed(cb: (ids: string[]) => void): () => vo
 	return () => failedListeners.delete(cb);
 }
 
+// Plugin load diagnostics below are console-only developer output, never localized.
 export async function retryPluginViewLoad(p: UiPluginInfo, epoch: number): Promise<boolean> {
 	failed.delete(p.id);
 	retrySalt.set(p.id, (retrySalt.get(p.id) ?? 0) + 1);

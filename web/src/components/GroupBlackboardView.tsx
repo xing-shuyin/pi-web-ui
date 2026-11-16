@@ -27,6 +27,10 @@ export interface BlackboardSectionDef {
 	aliases: string[];
 }
 
+// `aliases` are bilingual match tokens for the `##` headers the AI writes into the blackboard
+// markdown; they are compared against user/AI content, never rendered. Translating them would
+// break section resolution for existing boards, so they stay verbatim (data), while the tab
+// titles come from `titleKey`.
 export const PRESET_SECTIONS: BlackboardSectionDef[] = [
 	{
 		id: "architecture",

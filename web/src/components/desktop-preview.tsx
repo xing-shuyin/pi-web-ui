@@ -9,7 +9,7 @@ import {
 	subscribeDesktopAccess,
 	type DesktopAccess,
 } from "../device-access";
-import { isZhLocale, useI18n, useT } from "../i18n";
+import { useT } from "../i18n";
 import { DesktopDevicePicker } from "./DesktopDevicePicker";
 import { useActiveGroupState } from "../group-active-context";
 import { GroupDesktopPreview } from "./GroupDesktopPreview";
@@ -17,7 +17,6 @@ import { GroupDesktopPreview } from "./GroupDesktopPreview";
 export function DesktopPreview({ visible }: { visible: boolean }) {
 	const access = useSyncExternalStore(subscribeDesktopAccess, getDesktopAccess);
 	const t = useT();
-	const { locale } = useI18n();
 	const [error, setError] = useState(false);
 	const group = useActiveGroupState();
 	if (group) return <GroupDesktopPreview key={group.roomId} group={group} visible={visible} />;
@@ -29,7 +28,7 @@ export function DesktopPreview({ visible }: { visible: boolean }) {
 				className="btn"
 				onClick={() => {
 					setError(false);
-					void openPageDesktop(isZhLocale(locale), t("desktop.currentDevice")).catch(() => setError(true));
+					void openPageDesktop(t, t("desktop.currentDevice")).catch(() => setError(true));
 				}}
 			>
 				{t("desktop.showCurrent")}

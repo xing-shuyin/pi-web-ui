@@ -3,6 +3,7 @@ import type { FenceRenderContext, FenceRenderer, PluginViewModule } from "./plug
 import { appUrl } from "./base-url";
 import { isMobileRuntime } from "./mobile-runtime";
 
+// Diagnostics below go to the browser console for plugin authors: developer-facing, never localized.
 const PLUGIN_DATA_EVENT = "pi-web-ui:plugin-data";
 
 interface RendererEntry {

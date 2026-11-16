@@ -49,6 +49,7 @@ export interface LocalePackStatus {
 	version: string | null;
 }
 
+// Locale self-names are shown exactly as each language writes them, in every UI language (data).
 export const CORE_LOCALES: { code: string; nativeName: string }[] = [
 	{ code: "zh", nativeName: "简体中文" },
 	{ code: "en", nativeName: "English" },
@@ -68,6 +69,7 @@ export function unregisterLocale(code: string): void {
 	delete PACK_REGISTRY[code];
 }
 
+/** Same convention as the locale picker: the short label is the locale's own name, not translated. */
 export function localeShort(code: string): string {
 	if (code === "zh") return "中文";
 	if (code === "zh-TW") return "台繁";

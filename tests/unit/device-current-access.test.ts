@@ -1,5 +1,9 @@
 // @vitest-environment jsdom
 import { afterEach, expect, it, vi } from "vitest";
+
+import { en, interpolate, zh, type Translate } from "../../web/src/i18n.js";
+const tEn: Translate = (key, vars) => interpolate(en[key as keyof typeof en] ?? String(key), vars);
+const tZh: Translate = (key, vars) => interpolate(zh[key as keyof typeof zh] ?? String(key), vars);
 const state = vi.hoisted(() => ({ base: "/" }));
 vi.mock("../../web/src/base-url.js", () => ({
 	appBase: () => state.base,
@@ -26,7 +30,7 @@ it.each(["/device", "/device-lan", "/apps/pi/device-lan"])(
 		vi.stubGlobal("fetch", fetcher);
 		expect(pageDeviceId()).toBe("mac");
 		for (const preview of [true, false]) {
-			const target = await requestDeviceAccessUrl("mac", "", true, false, preview);
+			const target = await requestDeviceAccessUrl("mac", "", true, tEn, preview);
 			expect(new URL(target.url).pathname).toBe(state.base + (preview ? "desktop-preview" : "desktop"));
 			expect(target.transport).toBe("current");
 		}
@@ -52,7 +56,7 @@ it("loads the host binding before showing its desktop and respects cancellation"
 			},
 		})),
 	);
-	await openPageDesktop(false, "Mac", controller.signal);
+	await openPageDesktop(tEn, "Mac", controller.signal);
 	expect(getDesktopAccess()).toBeNull();
 });
 it("labels the host desktop with its remark and computer name", async () => {
@@ -64,6 +68,6 @@ it("labels the host desktop with its remark and computer name", async () => {
 			json: async () => ({ hubUrl: "https://hub.example", name: "Studio-Mac", remark: "剪辑机" }),
 		})),
 	);
-	await openPageDesktop(true, "当前设备");
+	await openPageDesktop(tZh, "当前设备");
 	expect(getDesktopAccess()?.name).toBe("剪辑机 · Studio-Mac");
 });

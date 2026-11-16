@@ -225,7 +225,7 @@ export function UniversalModelPicker({
 				{!hideTitle && <span className="dd-header-title">{t("availableModels")}</span>}
 				<div className="dd-header-actions" style={hideTitle ? { marginLeft: "auto" } : undefined}>
 					{Boolean(defaultModel) && (
-						<div className="dd-header-default" title={`默认模型: ${defaultModel}`}>
+						<div className="dd-header-default" title={t("defaultModelLabel", { model: defaultModel ?? "" })}>
 							<span className="dd-header-default-star">★</span>
 							<span className="dd-header-default-name">
 								{defaultModel!.includes("/") ? defaultModel!.split("/").slice(1).join("/") : defaultModel}
@@ -233,7 +233,7 @@ export function UniversalModelPicker({
 							<button
 								type="button"
 								className="dd-header-default-clear"
-								title="清除全局默认模型"
+								title={t("clearDefaultModel")}
 								onClick={(e) => {
 									e.stopPropagation();
 									appSend({ type: "clear_default_model" });
@@ -396,7 +396,7 @@ export function UniversalModelPicker({
 										<button
 											type="button"
 											className={`dd-star-btn ${isDefault ? "active" : ""}`}
-											title={isDefault ? "当前全局默认模型（点击取消默认）" : "设为全局默认模型"}
+											title={isDefault ? t("cancelDefaultTooltip") : t("setDefaultTooltip")}
 											onClick={(e) => {
 												e.stopPropagation();
 												onToggleDefault(m, isDefault);

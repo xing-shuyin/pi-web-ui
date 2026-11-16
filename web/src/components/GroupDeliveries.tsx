@@ -4,7 +4,7 @@ import { appUrl } from "../base-url";
 import { withToken } from "../auth-token";
 import { isZhLocale, useI18n, useT } from "../i18n";
 import { randomUuid } from "../uuid";
-import { groupAttention, groupAttentionLabel } from "../group-attention";
+import { groupAttention, groupAttentionKey } from "../group-attention";
 import type { GroupBotConversation, GroupDevice } from "../device-group-messages";
 import type { DeviceDelivery, DeviceIntegration, DeviceReview, DeviceReviewRequest } from "../types";
 import { GroupIntegration } from "./GroupIntegration";
@@ -213,7 +213,7 @@ function ConversationDelivery({
 					{deleteError && <p role="alert">{deleteError}</p>}
 				</>
 			)}
-			{attention && <p role="status">{groupAttentionLabel(attention, zh)}</p>}
+			{attention && <p role="status">{t(groupAttentionKey(attention))}</p>}
 			{conversation.attention && (
 				<HumanAnswer key={conversation.attention.id} roomId={roomId} conversation={conversation} disabled={disabled} />
 			)}

@@ -3,7 +3,7 @@ import { FiCheck, FiEdit2, FiExternalLink, FiMonitor, FiRefreshCw, FiX } from "r
 import { appUrl } from "../base-url";
 import { openDeviceAccess } from "../device-access";
 import { withToken } from "../auth-token";
-import { isZhLocale, useI18n, useT } from "../i18n";
+import { useT } from "../i18n";
 
 export type Device = { id: string; name: string; remark?: string | null; online: boolean; alias?: string };
 export function DeviceDirectory({
@@ -15,9 +15,7 @@ export function DeviceDirectory({
 	currentDeviceId: string;
 	onRemarkUpdated?: (deviceId: string, remark: string) => void;
 }) {
-	const { locale } = useI18n();
 	const t = useT();
-	const zh = isZhLocale(locale);
 	const [devices, setDevices] = useState<Device[]>([]);
 	const [error, setError] = useState("");
 	const [refresh, setRefresh] = useState(0);
@@ -71,7 +69,7 @@ export function DeviceDirectory({
 	async function openDevice(event: React.MouseEvent<HTMLAnchorElement>, id: string, desktop = false) {
 		event.preventDefault();
 		try {
-			await openDeviceAccess(id, hubUrl, desktop, zh, false, devices.find((device) => device.id === id)?.name);
+			await openDeviceAccess(id, hubUrl, desktop, t, false, devices.find((device) => device.id === id)?.name);
 			setError("");
 		} catch (cause) {
 			setError(cause instanceof Error ? cause.message : String(cause));

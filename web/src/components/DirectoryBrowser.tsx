@@ -336,14 +336,17 @@ export function DirectoryBrowser({
 					? { type: "key" as const, privateKeyPath: sshKeyPath }
 					: { type: "agent" as const });
 
-		const res = await requestRemoteProbe({
-			host,
-			port,
-			username: user,
-			auth,
-			saveProfile: sshSaveProfile,
-			profileName: overrideParams?.profileName || sshProfileName.trim() || undefined,
-		});
+		const res = await requestRemoteProbe(
+			{
+				host,
+				port,
+				username: user,
+				auth,
+				saveProfile: sshSaveProfile,
+				profileName: overrideParams?.profileName || sshProfileName.trim() || undefined,
+			},
+			t,
+		);
 
 		setConnecting(false);
 
@@ -414,7 +417,7 @@ export function DirectoryBrowser({
 	const loadRemoteDir = async (connId: string, dirPath: string) => {
 		setLoadingRemoteDir(true);
 		setSshError(null);
-		const res = await requestRemoteListDir(connId, dirPath);
+		const res = await requestRemoteListDir(connId, t, dirPath);
 		setLoadingRemoteDir(false);
 
 		if (res.ok) {
@@ -431,7 +434,7 @@ export function DirectoryBrowser({
 		setInstallingTool(true);
 		setSshError(null);
 
-		const res = await requestRemoteInstallTools(connectionId, [tool]);
+		const res = await requestRemoteInstallTools(connectionId, [tool], t);
 		setInstallingTool(false);
 
 		if (res.ok) {
@@ -952,12 +955,15 @@ export function DirectoryBrowser({
 												disabled={!trustVerified || trusting}
 												onClick={async () => {
 													setTrusting(true);
-													const r = await requestRemoteTrustHost({
-														host: hostTrustOffer.host,
-														port: hostTrustOffer.port,
-														fingerprint: hostTrustOffer.fingerprint,
-														replace: hostTrustOffer.status === "changed",
-													});
+													const r = await requestRemoteTrustHost(
+														{
+															host: hostTrustOffer.host,
+															port: hostTrustOffer.port,
+															fingerprint: hostTrustOffer.fingerprint,
+															replace: hostTrustOffer.status === "changed",
+														},
+														t,
+													);
 													setTrusting(false);
 													if (!r.ok) {
 														setSshError(r.error || t("directoryBrowser.trustFailed"));
