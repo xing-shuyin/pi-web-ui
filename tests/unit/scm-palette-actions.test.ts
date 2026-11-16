@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import {
 	buildScmPaletteActions,
+	matchesScmPaletteAction,
 	type ScmPaletteContext,
 	type ScmPaletteHandlers,
 	type ScmPaletteStatus,
@@ -190,5 +191,45 @@ describe("buildScmPaletteActions", () => {
 			context({ status: { ...cleanStatus, upstream: null }, branches: [{ name: "main", current: true }] }),
 		);
 		expect(byId(noRemote, "remote.tag-push").disabled).toBe(true);
+	});
+});
+
+describe("matchesScmPaletteAction", () => {
+	const actions = buildScmPaletteActions(context());
+	const hit = (query: string) => actions.filter((a) => matchesScmPaletteAction(a, query)).map((a) => a.id);
+
+	it("空查询放行所有动作", () => {
+		expect(hit("")).toHaveLength(actions.length);
+	});
+
+	it("ASCII 查询按词边界匹配：tag 不再命中 sTAGed（提交）", () => {
+		expect(hit("tag").sort()).toEqual(["remote.tag-create", "remote.tag-push"]);
+	});
+
+	it("ASCII 查询仍能命中 id / hint 里的整词", () => {
+		expect(hit("stash").sort()).toEqual(["change.stash", "change.stash-open", "change.stash-untracked"]);
+		expect(hit("push").some((id) => id === "sync.push")).toBe(true);
+		expect(hit("branch").some((id) => id === "branch.rename")).toBe(true);
+		// 分支名的 id（branch.checkout.<name>）也算分支动作，否则切分支只能靠翻列表
+		expect(hit("branch")).toContain("branch.checkout.feat/scm");
+	});
+
+	it("中文查询仍走子串（中文没有词边界，词边界只对 ASCII 生效）", () => {
+		const zhAction = {
+			id: "change.stage-all",
+			group: "更改",
+			label: "全部暂存",
+			hint: "git add -A",
+			run: () => {},
+		};
+		expect(matchesScmPaletteAction(zhAction, "暂存")).toBe(true);
+		expect(matchesScmPaletteAction(zhAction, "部暂")).toBe(true);
+		// 同一行的 ASCII 查询仍然按词边界走，不会因为含中文就退化成子串
+		expect(matchesScmPaletteAction(zhAction, "tag")).toBe(false);
+		expect(matchesScmPaletteAction(zhAction, "add")).toBe(true);
+	});
+
+	it("查询大小写无关", () => {
+		expect(hit("STASH")).toEqual(hit("stash"));
 	});
 });

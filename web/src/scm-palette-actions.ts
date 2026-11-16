@@ -286,3 +286,26 @@ function branchActions(ctx: ScmPaletteContext, limit: number): ScmPaletteAction[
 		run: () => h.branchCheckout(b.name),
 	}));
 }
+
+const ASCII_QUERY = /^[\x20-\x7e]+$/;
+
+/**
+ * 面板搜索：label / hint / group / id 都入选，但 id 是开发者键（`commit.staged`），
+ * 直接子串匹配会让搜 `tag` 命中 `sTAGed`、搜 `stage` 命中 `staged`，把无关行摆到眼前。
+ *
+ * 所以 ASCII 查询按词边界匹配（前一字符不能是字母数字），中文查询仍用子串——
+ * 中文没有词边界，“全部暂存”里搜“暂存”必须能命中。
+ */
+export function matchesScmPaletteAction(action: ScmPaletteAction, query: string): boolean {
+	const q = query.trim().toLowerCase();
+	if (!q) return true;
+	const hay = `${action.label} ${action.hint ?? ""} ${action.group} ${action.id}`.toLowerCase();
+	if (!ASCII_QUERY.test(q)) return hay.includes(q);
+	for (let from = 0; ;) {
+		const at = hay.indexOf(q, from);
+		if (at < 0) return false;
+		const prev = at === 0 ? "" : hay[at - 1];
+		if (!/[a-z0-9]/.test(prev)) return true;
+		from = at + 1;
+	}
+}

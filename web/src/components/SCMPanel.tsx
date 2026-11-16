@@ -148,12 +148,17 @@ interface ScmBlameLine {
 }
 
 function stripAnsiForScm(s: string): string {
-	return s
-		.replace(/\x1b\][^\x07\x1b]*(\x07|\x1b\\)/g, "")
-		.replace(/\x1b\[[0-9;?]*[a-zA-Z]/g, "")
-		.replace(/\x1b\(B/g, "")
-		.replace(/\x1b/g, "")
-		.replace(/\r/g, "");
+	return (
+		s
+			.replace(/\x1b\][^\x07\x1b]*(\x07|\x1b\\)/g, "")
+			.replace(/\x1b\[[0-9;?]*[a-zA-Z]/g, "")
+			.replace(/\x1b\(B/g, "")
+			// bash/readline 会在行首插 DEC 双字符序列（\x1b> = DECKPNM、\x1b= = DECKPAM），
+			// 它们会跟着 git 输出一起进缓冲：不去掉的话 marker 行永远配不上（追溯/储藏列表解析不出东西）。
+			.replace(/\x1b[=>NO78c]/g, "")
+			.replace(/\x1b/g, "")
+			.replace(/\r/g, "")
+	);
 }
 
 function parseStashListText(text: string): ScmStashEntry[] {
@@ -800,12 +805,27 @@ export function ScmPanel({
 						if (done) return;
 						buf += data;
 						if (buf.length > 2_000_000) buf = buf.slice(-2_000_000);
-						const clean = stripAnsiForScm(buf);
-						const si = clean.indexOf(startMarker);
-						const ei = clean.indexOf(endMarker);
-						if (si >= 0 && ei > si) {
-							finish(clean.slice(si + startMarker.length, ei));
+						// marker 必须是“独占一行”：终端会把整条命令回显一遍，两个 marker 就躺在同一行里，
+						// 用 indexOf/includes 会在回显那一刻就收工，把命令行本身当成输出
+						// （追溯 / 储藏列表因此长期解析不出任何行）。真正的 echo 输出是单独一行。
+						const lines = stripAnsiForScm(buf).split("\n");
+						let start = -1;
+						for (let i = lines.length - 1; i >= 0; i--) {
+							if (lines[i].trim() === startMarker) {
+								start = i;
+								break;
+							}
 						}
+						if (start < 0) return;
+						let end = -1;
+						for (let i = start + 1; i < lines.length; i++) {
+							if (lines[i].trim() === endMarker) {
+								end = i;
+								break;
+							}
+						}
+						if (end < 0) return;
+						finish(lines.slice(start + 1, end).join("\n"));
 					},
 					dispose() {},
 				});
@@ -825,10 +845,16 @@ export function ScmPanel({
 	const handleStashList = useCallback(() => {
 		if (notRepo) return;
 		setStashLoading(true);
-		runGitCapture("git stash list", "git stash list", "__SCM_STASH_LIST_START__", "__SCM_STASH_LIST_END__", (text) => {
-			setStashList(parseStashListText(text));
-			setStashLoading(false);
-		});
+		runGitCapture(
+			"git stash list",
+			"git --no-pager stash list",
+			"__SCM_STASH_LIST_START__",
+			"__SCM_STASH_LIST_END__",
+			(text) => {
+				setStashList(parseStashListText(text));
+				setStashLoading(false);
+			},
+		);
 		window.setTimeout(() => setStashLoading(false), 16000);
 	}, [notRepo, runGitCapture]);
 
@@ -955,7 +981,7 @@ export function ScmPanel({
 			setBlameError(null);
 			runGitCapture(
 				"git blame",
-				`git blame --line-porcelain -- ${quotePath(path)}`,
+				`git --no-pager blame --line-porcelain -- ${quotePath(path)}`,
 				"__SCM_BLAME_START__",
 				"__SCM_BLAME_END__",
 				(text) => {
@@ -1038,16 +1064,25 @@ export function ScmPanel({
 		}
 	}, [chat.terminals, active, chat.ready, chat.status, refresh, viewMode, status, loadHistory]);
 
+	const fetchBlameRef = useRef(fetchBlame);
+	useEffect(() => {
+		fetchBlameRef.current = fetchBlame;
+	}, [fetchBlame]);
+
+	const blameTargetPath = selected?.path ?? null;
+	const blameTargetUntracked = !!selected && selected.x === "?" && selected.y === "?";
 	useEffect(() => {
 		if (!showBlame) return;
-		if (!selected || selected.x === "?" || selected.y === "?") {
+		if (!blameTargetPath || blameTargetUntracked) {
 			setBlameLines(null);
 			setBlameLoading(false);
-			setBlameError(selected ? t("scmBlameEmpty") : null);
+			setBlameError(blameTargetPath ? t("scmBlameEmpty") : null);
 			return;
 		}
-		fetchBlame(selected.path);
-	}, [showBlame, selected, fetchBlame, t]);
+		// 依赖里只能放“路径 / 是否未跟踪”：fetchBlame 的身份跟着 chat.terminals 变，
+		// 每次抓取又会新建终端把 terminals 改掉，直接依赖它会无限重渲染（React #185 白屏）。
+		fetchBlameRef.current(blameTargetPath);
+	}, [showBlame, blameTargetPath, blameTargetUntracked, t]);
 
 	useEffect(() => {
 		setStashList(null);
