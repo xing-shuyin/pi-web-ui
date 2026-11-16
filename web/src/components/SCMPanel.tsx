@@ -11,13 +11,16 @@ import {
 	FiArrowDown,
 	FiArrowUp,
 	FiCheck,
+	FiChevronDown,
 	FiChevronLeft,
 	FiCpu,
 	FiGitBranch,
 	FiMoreHorizontal,
 	FiRefreshCw,
 	FiTerminal,
+	FiTrash2,
 	FiX,
+	FiZap,
 } from "react-icons/fi";
 import type { ChatState, TerminalMeta } from "../use-chat";
 import type { ClientMessage, CommandDef, ServerMessage } from "../types";
@@ -36,6 +39,7 @@ import { useT } from "../i18n";
 import { appSend } from "../app-globals";
 import type { UiSlotEntry } from "../ui-slots";
 import { renderMergedToolbar } from "../slot-toolbar";
+import { Dropdown } from "./Dropdown";
 
 interface ScmFile {
 	path: string;
@@ -354,7 +358,7 @@ export function ScmPanel({
 	const t = useT();
 	const [status, setStatus] = useState<ScmStatus | null>(null);
 	const [branches, setBranches] = useState<ScmBranch[]>([]);
-	const [branchSel, setBranchSel] = useState("");
+	const [branchMenuOpen, setBranchMenuOpen] = useState(false);
 	const [statMap, setStatMap] = useState<Map<string, StatInfo>>(new Map());
 	const [viewMode, setViewMode] = useState<"changes" | "history" | "stash">("changes");
 	const [moreOpen, setMoreOpen] = useState(false);
@@ -482,12 +486,6 @@ export function ScmPanel({
 			setStatus(st);
 			setBranches(brs);
 			setStatMap(stats);
-			setBranchSel((prev) => {
-				if (st.detached) return prev || "";
-				if (st.branch && brs.some((x) => x.name === st.branch)) return st.branch;
-				if (prev && brs.some((x) => x.name === prev)) return prev;
-				return brs[0]?.name ?? "";
-			});
 			setFileDiff((prev) => (prev && !st.files.some((f) => f.path === prev.file.path) ? null : prev));
 		} else if (data.reqId === diffReqRef.current) {
 			diffReqRef.current = -1;
@@ -719,16 +717,38 @@ export function ScmPanel({
 		[notRepo, runGitCommand, t],
 	);
 
-	const handleSwitch = useCallback(() => {
-		if (!branchSel || notRepo) return;
-		const entry = branches.find((x) => x.name === branchSel);
-		if (entry?.remote && typeof entry.remote === "string") {
-			const localName = branchSel.slice(entry.remote.length + 1);
-			runGitCommand("git checkout", `git checkout -b ${localName} ${branchSel} || git checkout ${branchSel}`);
-		} else {
-			runGitCommand("git checkout", `git checkout ${branchSel}`);
-		}
-	}, [branchSel, branches, notRepo, runGitCommand]);
+	// 选分支就是切分支：菜单里点一下直接 checkout，不再有“先选中、再点切换”的两步。
+	const switchBranch = useCallback(
+		(name: string) => {
+			if (!name || notRepo) return;
+			setBranchMenuOpen(false);
+			if (status && !status.detached && name === status.branch) return;
+			const entry = branches.find((x) => x.name === name);
+			if (entry?.remote && typeof entry.remote === "string") {
+				const localName = name.slice(entry.remote.length + 1);
+				runGitCommand("git checkout", `git checkout -b ${localName} ${name} || git checkout ${name}`);
+			} else {
+				runGitCommand("git checkout", `git checkout ${name}`);
+			}
+		},
+		[branches, notRepo, runGitCommand, status],
+	);
+
+	const deleteBranch = useCallback(
+		(name: string, force: boolean) => {
+			if (!name || notRepo) return;
+			if (status && !status.detached && name === status.branch) {
+				window.alert(t("scmBranchDeleteCurrent"));
+				return;
+			}
+			if (!window.confirm(force ? t("scmBranchForceDeleteConfirm1", { name }) : t("scmBranchDeleteConfirm", { name })))
+				return;
+			if (force && !window.confirm(t("scmBranchForceDeleteConfirm2", { name }))) return;
+			setBranchMenuOpen(false);
+			runGitCommand("git branch", `git branch ${force ? "-D" : "-d"} ${name}`);
+		},
+		[notRepo, status, runGitCommand, t],
+	);
 
 	const handlePush = useCallback(() => runGitCommand("git push", "git push"), [runGitCommand]);
 	const handlePull = useCallback(() => runGitCommand("git pull", "git pull"), [runGitCommand]);
@@ -914,35 +934,6 @@ export function ScmPanel({
 		if (!window.confirm(t("scmBranchCreateConfirm", { name }))) return;
 		runGitCommand("git checkout", `git checkout -b ${name}`);
 	}, [notRepo, runGitCommand, t]);
-
-	const handleBranchDelete = useCallback(() => {
-		if (notRepo) return;
-		if (!branchSel) {
-			window.alert(t("scmBranchNoSelection"));
-			return;
-		}
-		if (status && !status.detached && branchSel === status.branch) {
-			window.alert(t("scmBranchDeleteCurrent"));
-			return;
-		}
-		if (!window.confirm(t("scmBranchDeleteConfirm", { name: branchSel }))) return;
-		runGitCommand("git branch", `git branch -d ${branchSel}`);
-	}, [notRepo, branchSel, status, runGitCommand, t]);
-
-	const handleBranchForceDelete = useCallback(() => {
-		if (notRepo) return;
-		if (!branchSel) {
-			window.alert(t("scmBranchNoSelection"));
-			return;
-		}
-		if (status && !status.detached && branchSel === status.branch) {
-			window.alert(t("scmBranchDeleteCurrent"));
-			return;
-		}
-		if (!window.confirm(t("scmBranchForceDeleteConfirm1", { name: branchSel }))) return;
-		if (!window.confirm(t("scmBranchForceDeleteConfirm2", { name: branchSel }))) return;
-		runGitCommand("git branch", `git branch -D ${branchSel}`);
-	}, [notRepo, branchSel, status, runGitCommand, t]);
 
 	const handleBranchRename = useCallback(() => {
 		if (notRepo || !status || status.detached) return;
@@ -1199,7 +1190,6 @@ export function ScmPanel({
 		"host:scm-history",
 		"host:scm-refresh",
 		"host:scm-branch",
-		"host:scm-switch",
 		"host:scm-push",
 		"host:scm-pull",
 		"host:scm-input",
@@ -1212,16 +1202,6 @@ export function ScmPanel({
 		uiScmToolbar === undefined
 			? SCM_DEFAULT_ORDER.map((id) => ({ id, source: "host" }) as UiSlotEntry)
 			: uiScmToolbar.filter((e) => !e.hidden);
-	const SCM_ROW_IDS = [
-		"host:scm-branch",
-		"host:scm-switch",
-		"host:scm-push",
-		"host:scm-pull",
-		"host:scm-input",
-		"host:scm-genmsg",
-		"host:scm-commit",
-		"host:scm-commit-all",
-	];
 	const scmZone = (ids: string[], withPlugins: boolean): UiSlotEntry[] => {
 		const set = new Set(ids);
 		return allScmEntries.filter((e) => set.has(e.id) || (withPlugins && e.source !== "host"));
@@ -1232,6 +1212,16 @@ export function ScmPanel({
 		const e = allScmEntries.find((x) => x.id === id);
 		return e?.labelExplicit ? e.label : fallback;
 	};
+	const localBranches = branches.filter((b) => !b.remote);
+	const remoteBranches = branches.filter((b) => b.remote);
+	// 分标签显示当前分支；分离 HEAD / 查询中 / 非仓库都有明确文案（不再靠 select 的 placeholder）。
+	const branchLabel = status
+		? status.detached
+			? t("scmDetached")
+			: status.branch || t("scmSelectBranch")
+		: t("scmSelectBranch");
+	const branchDiagDisabled = notRepo || branches.length === 0;
+
 	const scmHostNodes: Record<string, ReactNode> = {
 		"host:scm-changes": (
 			<button
@@ -1273,47 +1263,80 @@ export function ScmPanel({
 			</button>
 		),
 		"host:scm-branch": (
-			<select
-				className="scm-select"
-				value={branchSel}
-				disabled={notRepo || branches.length === 0}
-				title={scmLabel("host:scm-branch", t("scmSwitchBranch"))}
-				onChange={(e) => setBranchSel(e.target.value)}
+			<Dropdown
+				open={branchMenuOpen}
+				onOpenChange={(next) => setBranchMenuOpen(next && !branchDiagDisabled)}
+				align="left"
+				direction="down"
+				portal
+				caret={false}
+				tip={t("scmCurrentBranch")}
+				triggerClassName="gd-branch"
+				className={`gd-branch-dd${branchDiagDisabled ? " disabled" : ""}`}
+				trigger={
+					<>
+						<FiGitBranch className="gd-branch-glyph" />
+						<span className="gd-branch-name">{branchLabel}</span>
+						<FiChevronDown className={`gd-branch-caret${branchMenuOpen ? " up" : ""}`} />
+					</>
+				}
+				menuClassName="gd-branch-menu"
+				menuStyle={{ width: 288, maxHeight: 380 }}
 			>
-				<option value="" disabled>
-					{t("scmSelectBranch")}
-				</option>
-				{branches
-					.filter((b) => !b.remote)
-					.map((b) => (
-						<option key={b.name} value={b.name}>
-							{b.current ? `* ${b.name}` : b.name}
-						</option>
-					))}
-				{branches.some((b) => b.remote) && (
-					<optgroup label={t("scmRemoteBranches")}>
-						{branches
-							.filter((b) => b.remote)
-							.map((b) => (
-								<option key={b.name} value={b.name}>
-									{b.name}
-								</option>
-							))}
-					</optgroup>
+				<div className="dd-header">{t("scmSwitchBranch")}</div>
+				{localBranches.length === 0 && <div className="gd-branch-empty">{t("scmSelectBranch")}</div>}
+				{localBranches.map((b) => (
+					<div key={b.name} className={`gd-branch-row${b.current ? " current" : ""}`}>
+						<button
+							type="button"
+							className="gd-branch-pick"
+							title={b.current ? t("scmCurrentBranch") : t("scmSwitchBranchTip", { branch: b.name })}
+							onClick={() => switchBranch(b.name)}
+						>
+							<span className="gd-branch-tick">{b.current ? <FiCheck /> : null}</span>
+							<span className="gd-branch-text">{b.name}</span>
+						</button>
+						<button
+							type="button"
+							className="gd-branch-del"
+							title={b.current ? t("scmBranchDeleteCurrent") : t("scmBranchDeleteTip")}
+							aria-label={t("scmBranchDelete")}
+							disabled={b.current}
+							onClick={() => deleteBranch(b.name, false)}
+						>
+							<FiTrash2 />
+						</button>
+						<button
+							type="button"
+							className="gd-branch-del force"
+							title={b.current ? t("scmBranchDeleteCurrent") : t("scmBranchForceDeleteTip")}
+							aria-label={t("scmBranchForceDelete")}
+							disabled={b.current}
+							onClick={() => deleteBranch(b.name, true)}
+						>
+							<FiZap />
+						</button>
+					</div>
+				))}
+				{remoteBranches.length > 0 && (
+					<>
+						<div className="dd-header">{t("scmRemoteBranches")}</div>
+						{remoteBranches.map((b) => (
+							<div key={b.name} className="gd-branch-row">
+								<button
+									type="button"
+									className="gd-branch-pick"
+									title={t("scmSwitchBranchTip", { branch: b.name })}
+									onClick={() => switchBranch(b.name)}
+								>
+									<span className="gd-branch-tick" />
+									<span className="gd-branch-text mono">{b.name}</span>
+								</button>
+							</div>
+						))}
+					</>
 				)}
-			</select>
-		),
-		"host:scm-switch": (
-			<button
-				type="button"
-				className="btn"
-				disabled={!branchSel || branchSel === status?.branch || notRepo}
-				title={t("scmSwitchBranchTip", { branch: branchSel })}
-				onClick={handleSwitch}
-			>
-				<FiGitBranch />
-				{scmLabel("host:scm-switch", t("scmSwitch"))}
-			</button>
+			</Dropdown>
 		),
 		"host:scm-push": (
 			<button
@@ -1413,13 +1436,7 @@ export function ScmPanel({
 		<div className="scm-view">
 			<div className="scm-header">
 				<div className="gd-titlebar">
-					<span className="gd-title">
-						<FiGitBranch />
-						{t("scmTitle")}
-					</span>
-					<span className="gd-branch" title={t("scmCurrentBranch")}>
-						{renderMergedToolbar(scmZone(["host:scm-branch"], false), scmHostNodes, onUiAction)}
-					</span>
+					{renderMergedToolbar(scmZone(["host:scm-branch"], false), scmHostNodes, onUiAction)}
 					{status?.upstream && (
 						<span className={`gd-ab${status.upstreamGone ? " gone" : ""}`}>
 							{status.upstreamGone ? (
@@ -1478,10 +1495,6 @@ export function ScmPanel({
 							onClick={() => setMoreOpen(false)}
 						/>
 						<div className="gd-more">
-							<div className="gd-more-title">{t("scmSwitchBranch")}</div>
-							<div className="gd-more-row">
-								{renderMergedToolbar(scmZone(["host:scm-switch"], false), scmHostNodes, onUiAction)}
-							</div>
 							<div className="gd-more-title">{t("scmBranchNew")}</div>
 							<div className="gd-more-row">
 								<button
@@ -1492,24 +1505,6 @@ export function ScmPanel({
 									onClick={handleBranchCreate}
 								>
 									{t("scmBranchNew")}
-								</button>
-								<button
-									type="button"
-									className="btn"
-									disabled={notRepo || !branchSel}
-									title={t("scmBranchDeleteTip")}
-									onClick={handleBranchDelete}
-								>
-									{t("scmBranchDelete")}
-								</button>
-								<button
-									type="button"
-									className="btn"
-									disabled={notRepo || !branchSel}
-									title={t("scmBranchForceDeleteTip")}
-									onClick={handleBranchForceDelete}
-								>
-									{t("scmBranchForceDelete")}
 								</button>
 								<button
 									type="button"

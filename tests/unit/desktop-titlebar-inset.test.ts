@@ -33,14 +33,12 @@ describe("桌面壳标题栏让位（macOS 红黄绿按钮）", () => {
 		expect(CSS).toMatch(/body\.is-desktop-mac:not\(\.is-desktop-fullscreen\) \.topbar\s*\{[^}]*padding-left/);
 	});
 
-	it("贴顶抽屉（左栏 / 终端）都让出了该高度", () => {
+	it("贴顶抽屉（左栏 / 右栏）都让出了该高度", () => {
 		// 同一个选择器出现两次：桌面宽屏是 display: contents，手机/窄分栏才是 fixed 抽屉
 		const drawer = ruleBodies(CSS, ".panel-drawer {").find((b) => /position:\s*fixed/.test(b));
 		expect(drawer).toBeTruthy();
 		expect(drawer!).toMatch(/padding-top:\s*var\(--desktop-titlebar-h/);
 
-		const termCommands = ruleBodies(CSS, ".term-commands {").find((b) => /position:\s*fixed/.test(b)) ?? "";
-		expect(termCommands).toMatch(/top:\s*calc\([\s\S]*?--desktop-titlebar-h/);
 		const remoteDesktop = ruleBodies(CSS, ".remote-desktop-window.is-fullscreen {")[0] ?? "";
 		expect(remoteDesktop).toMatch(/inset:\s*var\(--desktop-titlebar-h/);
 	});

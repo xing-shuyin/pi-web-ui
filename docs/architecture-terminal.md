@@ -198,9 +198,11 @@ macOS 下若服务由 launchd 拉起（`process.ppid === 1`，LaunchAgent/孤儿
 
 bash 工具本身与 pi CLI 同源：`server/bash-tool.ts` 把 `settings.json` 的 `shellPath`（全局 agent 目录 + 项目 `.pi/settings.json`，`SettingsManager.getShellPath()`）透传给 `createLocalBashOperations`，缺失时才是上面那套 Git Bash / PATH 探测（issue #866）。终端面板不读该配置——它只认 `PI_WEB_SHELL`，两者的差异是故意的：终端是给用户看一眼的可见 shell，bash 工具要跟 CLI 行为对齐。
 
-## 终端与 Git 的界面容器（底部抽屉 / 右侧检阅抽屉）
+## 终端与源码管理的界面容器（底部面板 / 右栏标签）
 
-- 终端与 Git 不再是 `.view-pane` 全页切页：终端挂在聊天主区底部（`.term-drawer`），Git 是主区右侧的检阅抽屉（`.git-drawer`）。两者可以同时打开、互不遮挡——Git 用 `main.git-open` 的 `padding-right` **挤压**内容区而不是覆盖，否则会吃掉底部终端的右半边。
-- 事实源：`web/src/components/TerminalDrawer.tsx`（高度、折叠、拖拽把手、`pi-web-ui:term-drawer-h`）、`web/src/components/GitDrawer.tsx`（宽度、`pi-web-ui:git-drawer-w`）、`web/src/components/TerminalPanel.tsx`（tab 条提到抽屉头，命令列表降级为按需浮层）、`web/src/components/SCMPanel.tsx`（头部收敛为一行 + Changes/History/Stash 分段视图 + 底部常驻提交栏）、`web/src/drawer.css`（整份进 `@layer drawer`，排在层序末尾）。
-- 入口统一在 `App.tsx` 的 `handleViewChange` 里拦截：`terminal` / `git` 不再 `setView`，改为开抽屉（顶栏 tab、左侧 dock、插件事件都走同一个口子）；快捷键 `Ctrl+\`` 开/关终端、`Ctrl+Shift+G` 开/关 Git（`Ctrl+G` 被浏览器查找占用）。窄屏（≤768px）两者都退化为全屏 sheet，Git 走「列表 → 详情」二级下钻，不做左右分栏。
+- **布局是左 / 中 / 右 / 下四块，全部是 flex 兄弟节点**：左栏、聊天区（`.main`）、右栏（`.panel-drawer.drawer-right`）是同一行的三块，底部面板（`.bottom-dock`，类名沿用 `.term-drawer`）是 `.app` 里 `.layout` 之后的全宽一块。谁变宽变窄都由 flex 自己重排，没有 `padding-right` 之类的"让位"补丁——拖动任何一侧，中间聊天区会实时重排，不存在中间空一条或面板盖住正文。
+- **终端是底部面板的一个标签**：宿主标签 `terminal`（`web/src/components/TerminalPanel.tsx`），插件用 `bottomdock.tabs` 注册自己的底部标签。只有一个标签时不画标签条（`SlotTabs` / `BottomDock` 同一条规则），多个才出现标签栏。
+- **源码管理是右栏的一个标签**：右栏标签顺序为「文件 / 源代码管理 / 插件标签」（`rightpanel.tabs`）。顶栏 Git = 展开右栏并切到该标签，再点一次收起右栏；右栏宽度上限 780px，切到源码管理时若当前宽度不足 560px 自动加宽（`SCM_DOCK_MIN_W`）。源码管理面板自身用 `.scm-view` 作用域，不再依赖 `.git-drawer` 包裹层；窄栏退化为「列表 → 详情」二级下钻。
+- 事实源：`web/src/components/BottomDock.tsx`（底部面板：高度、折叠、拖拽把手、`pi-web-ui:bottom-dock-h`、多标签全挂载）、`web/src/components/RightPanel.tsx`（右栏标签：`files` / `scm` / 插件）、`web/src/components/SCMPanel.tsx`（头部收敛为一行 + Changes/History/Stash 分段视图 + 底部常驻提交栏 + 分支浮层菜单）、`web/src/components/TerminalPanel.tsx`（左右分区：左列是常驻命令栏、宽度可拖，右列顶部才是终端 tab 条 + 输出区；窄屏左列退成盖住右列的二级页）、`web/src/drawer.css`（整份进 `@layer drawer`，排在层序末尾）、`web/src/components/SlotTabs.tsx`（"只有一个标签就不画标签条"）。
+- 入口统一在 `App.tsx` 的 `handleViewChange` 里拦截：`terminal` / `git` 不再 `setView`，改为开面板（顶栏 tab、左侧 dock、插件事件都走同一个口子），**同一个按钮再点一次就是收起**；快捷键 `Ctrl+\`` 开/关终端、`Ctrl+Shift+G` 开/关源码管理（`Ctrl+G` 被浏览器查找占用）。窄屏（≤768px）右栏退化为全屏 drawer，源码管理走「列表 → 详情」二级下钻，不做左右分栏。
 - **xterm 实例不因折叠卸载**：折叠只隐藏输出区、保留 tab 条（39px），避免重建 xterm 造成缓冲全量重放闪烁；抽屉关闭时 PTY 仍在服务端继续跑（见上文断线保活边界）。

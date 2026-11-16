@@ -720,6 +720,8 @@ export const UI_SLOT_ALIASES: Readonly<Record<string, string>> = {
 	composer: "composer.actions",
 	message: "message.actions",
 	rightpanel: "rightpanel.tabs",
+	bottomdock: "bottomdock.tabs",
+	bottompanel: "bottomdock.tabs",
 	settings: "settings.pages",
 	modal: "modal.dialog",
 	sidebar: "sidebar.left",

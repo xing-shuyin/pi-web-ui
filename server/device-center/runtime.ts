@@ -19,6 +19,7 @@ import {
 	loadPersistentSessions,
 } from "./device-integration.js";
 import { executionRoot, executionRootsOverlap } from "./execution-workspace.js";
+import { sameBotConflict } from "./bot-queue.js";
 import { createDeviceTaskExecutor, type DeviceExecutorTask, type DeviceTaskExecutorOptions } from "./executor.js";
 import { loadExecutionSettings, saveExecutionSettings, type DeviceExecutionSettings } from "./execution-settings.js";
 import { createDeviceFileSync } from "./file-sync.js";
@@ -135,7 +136,7 @@ export function createDeviceRuntime(options: {
 		onChange: scheduleSchedulerStateSave,
 	});
 	const conflicts = (a: { botId: string; root: string }, b: { botId: string; root: string }) =>
-		a.botId === b.botId || executionRootsOverlap(a.root, b.root);
+		sameBotConflict(a, b) || executionRootsOverlap(a.root, b.root);
 	function drain() {
 		scheduler.drain();
 	}

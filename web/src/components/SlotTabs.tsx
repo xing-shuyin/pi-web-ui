@@ -22,6 +22,8 @@ interface SlotTabsProps {
 	send: (msg: { type: "plugin_message"; pluginId: string; payload: unknown }) => void;
 	extra?: ReactNode;
 	className?: string;
+	/** 通知调用方当前选中的标签（右栏 / 底部面板用它同步顶栏高亮）。 */
+	onActiveChange?: (id: string) => void;
 }
 
 function tabStorageKey(storageKey: string): string {
@@ -54,11 +56,20 @@ function labelOf(tab: SlotTab): string {
 	return page?.entry.label || page?.plugin.name || tab.id;
 }
 
-export function SlotTabs({ storageKey, tabs, epoch, send, extra, className }: SlotTabsProps): JSX.Element | null {
+export function SlotTabs({
+	storageKey,
+	tabs,
+	epoch,
+	send,
+	extra,
+	className,
+	onActiveChange,
+}: SlotTabsProps): JSX.Element | null {
 	const baseId = useId();
 	const [activeId, setActiveId] = useState<string>(() => loadActiveId(storageKey, tabs) ?? tabs[0]?.id ?? "");
 	const tabRefs = useRef<Array<HTMLButtonElement | null>>([]);
 	const savedRef = useRef<string>("");
+	const notifiedRef = useRef<string>("");
 
 	const index = tabs.findIndex((x) => x.id === activeId);
 	const active = index >= 0 ? tabs[index] : tabs[0];
@@ -72,8 +83,11 @@ export function SlotTabs({ storageKey, tabs, epoch, send, extra, className }: Sl
 			savedRef.current = key;
 			saveActiveId(storageKey, active.id);
 		}
-	}, [active, activeId, storageKey]);
-
+		if (notifiedRef.current !== active.id) {
+			notifiedRef.current = active.id;
+			onActiveChange?.(active.id);
+		}
+	}, [active, activeId, storageKey, onActiveChange]);
 	useEffect(() => {
 		const onSelect = (e: Event) => {
 			const detail = (e as CustomEvent).detail;
@@ -113,39 +127,44 @@ export function SlotTabs({ storageKey, tabs, epoch, send, extra, className }: Sl
 
 	const panelId = `${baseId}-panel-${activeIndex}`;
 	const cls = className ? `slot-tabs ${className}` : "slot-tabs";
+	// 只有一个标签时不画标签栏：单面板的抽屉（比如右栏只剩文件、底部只剩终端）
+	// 不该多出一条“只有一个选项”的导航。
+	const showBar = tabs.length > 1 || extra != null;
 	return (
 		<div className={cls}>
-			<div className="slot-tabs-bar" role="tablist">
-				{tabs.map((tab, i) => {
-					const selected = i === activeIndex;
-					return (
-						<button
-							key={tab.id}
-							type="button"
-							role="tab"
-							id={`${baseId}-tab-${i}`}
-							className={selected ? "slot-tab active" : "slot-tab"}
-							title={tab.hint ?? labelOf(tab)}
-							aria-selected={selected}
-							aria-controls={`${baseId}-panel-${i}`}
-							tabIndex={selected ? 0 : -1}
-							ref={(node) => {
-								tabRefs.current[i] = node;
-							}}
-							onClick={() => selectTab(tab)}
-							onKeyDown={(e) => onKeyDown(e, i)}
-						>
-							{tab.iconSvg ? (
-								<PluginIcon iconSvg={tab.iconSvg} className="slot-tab-icon" />
-							) : tab.icon && isGlyphIcon(tab.icon) ? (
-								<span className="slot-tab-icon">{tab.icon}</span>
-							) : null}
-							<span className="slot-tab-label">{labelOf(tab)}</span>
-						</button>
-					);
-				})}
-				{extra ? <div className="slot-tabs-extra">{extra}</div> : null}
-			</div>
+			{showBar ? (
+				<div className="slot-tabs-bar" role="tablist">
+					{tabs.map((tab, i) => {
+						const selected = i === activeIndex;
+						return (
+							<button
+								key={tab.id}
+								type="button"
+								role="tab"
+								id={`${baseId}-tab-${i}`}
+								className={selected ? "slot-tab active" : "slot-tab"}
+								title={tab.hint ?? labelOf(tab)}
+								aria-selected={selected}
+								aria-controls={`${baseId}-panel-${i}`}
+								tabIndex={selected ? 0 : -1}
+								ref={(node) => {
+									tabRefs.current[i] = node;
+								}}
+								onClick={() => selectTab(tab)}
+								onKeyDown={(e) => onKeyDown(e, i)}
+							>
+								{tab.iconSvg ? (
+									<PluginIcon iconSvg={tab.iconSvg} className="slot-tab-icon" />
+								) : tab.icon && isGlyphIcon(tab.icon) ? (
+									<span className="slot-tab-icon">{tab.icon}</span>
+								) : null}
+								<span className="slot-tab-label">{labelOf(tab)}</span>
+							</button>
+						);
+					})}
+					{extra ? <div className="slot-tabs-extra">{extra}</div> : null}
+				</div>
+			) : null}
 			<div className="slot-tabs-body" id={panelId} role="tabpanel" aria-labelledby={`${baseId}-tab-${activeIndex}`}>
 				{active.pluginPage ? (
 					<PluginPage plugin={active.pluginPage.plugin} epoch={epoch} send={send} />

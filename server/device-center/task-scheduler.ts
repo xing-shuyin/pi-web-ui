@@ -1,4 +1,5 @@
 import { executionRoot, executionRootsOverlap } from "./execution-workspace.js";
+import { sameBotConflict } from "./bot-queue.js";
 import { DeviceTaskError } from "./task-error.js";
 import {
 	type DeviceExecutionSettings,
@@ -183,7 +184,7 @@ export class DeviceTaskScheduler {
 	}
 
 	private checkConflict(a: { botId: string; root: string }, b: { botId: string; root: string }): boolean {
-		return a.botId === b.botId || executionRootsOverlap(a.root, b.root);
+		return sameBotConflict(a, b) || executionRootsOverlap(a.root, b.root);
 	}
 
 	private recordRoomDispatch(roomId: string): void {

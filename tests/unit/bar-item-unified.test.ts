@@ -45,6 +45,7 @@ function renderBarItem(
 	entry: UiSlotEntry,
 	bar: "top" | "bottom" | "left" | "right",
 	onViewChange?: (view: import("../../web/src/components/BarItem.js").ViewName) => void,
+	extra?: Record<string, unknown>,
 ) {
 	localStorage.setItem("pi-web-ui:lang", "zh");
 	const container = document.createElement("div");
@@ -61,6 +62,7 @@ function renderBarItem(
 					chat: chatStub,
 					view: "chat",
 					onViewChange,
+					...extra,
 				}),
 			),
 		);
@@ -110,6 +112,44 @@ describe("上下左右四栏通用 BarItem 渲染测试", () => {
 			}
 		} finally {
 			state.worktree = original;
+		}
+	});
+	it("顶栏「新对话」保文字，CLI 是它右侧的独立 chip；其他栏仍用展开式 CLI 快捷区", () => {
+		const onCreateCli = vi.fn();
+		const entry: UiSlotEntry = {
+			id: "host:new-chat",
+			slot: "topbar.primary",
+			source: "host",
+			label: "新对话",
+			kind: "action",
+			order: 96,
+			align: "end",
+			hidden: false,
+			userOverrides: [],
+			arrangedBy: [],
+		};
+		const top = renderBarItem(entry, "top", undefined, { onCreateCli });
+		try {
+			const button = top.container.querySelector<HTMLButtonElement>('[data-bar-item="host:new-chat"]')!;
+			expect(button.querySelector(".bar-item-text")?.textContent).toBe("新对话");
+			const cli = top.container.querySelector<HTMLButtonElement>(".native-cli-inline-button")!;
+			expect(cli.textContent).toBe("CLI");
+			expect(cli.closest(".native-cli-create-entry")?.getAttribute("data-cli-variant")).toBe("inline");
+			expect(top.container.querySelector(".native-cli-create-hover")).toBeNull();
+			act(() => cli.click());
+			expect(onCreateCli).toHaveBeenCalledOnce();
+		} finally {
+			act(() => top.root.unmount());
+			top.container.remove();
+		}
+
+		const left = renderBarItem(entry, "left", undefined, { onCreateCli });
+		try {
+			expect(left.container.querySelector(".native-cli-create-entry")).not.toBeNull();
+			expect(left.container.querySelector(".native-cli-inline-button")).toBeNull();
+		} finally {
+			act(() => left.root.unmount());
+			left.container.remove();
 		}
 	});
 	it.each(["top", "bottom", "left", "right"] as const)("设备中心在 %s 栏显示图标和名称", (bar) => {

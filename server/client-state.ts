@@ -378,7 +378,7 @@ export const DEFAULT_UI_LAYOUT: UiLayoutPrefs = Object.freeze({
 		"office:__view": "end",
 	} as Record<string, UiAlign>,
 	topbarText: false,
-	sideDockFloat: true,
+	sideDockFloat: false,
 	slots: {
 		"host:chat": "topbar.primary",
 		"host:conn": "bottombar",

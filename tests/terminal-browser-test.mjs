@@ -95,9 +95,12 @@ async function main() {
 	await page.waitForSelector(".terminal-view", { timeout: 5000 });
 	check("terminal view renders", true);
 	const initialShell = page.locator(".term-tab", { hasText: "终端 1" });
-	if (await initialShell.count()) await initialShell.locator(".term-tab-close").click();
+	if (await initialShell.count()) await initialShell.locator(".term-tab-close:not(.term-tab-rename)").click();
 	await sleep(300);
 
+	// 命令栏现在常驻在终端左侧，默认就开着；只有被关掉时才需要点开。
+	if (!(await page.locator(".term-commands").isVisible())) await page.click(".term-cmd-toggle");
+	await page.waitForSelector(".term-commands .panel-new", { timeout: 5000 });
 	await page.click(".term-commands .panel-new");
 	await page.fill("#cmd-name", "hello-test");
 	await page.fill("#cmd-command", "echo BROWSER_PTY_OK");
@@ -163,7 +166,7 @@ async function main() {
 	const termText2 = await page.textContent(".term-main");
 	check("typing reaches the PTY", termText2?.includes(workdir));
 
-	await page.click(".term-tabs-block .panel-new");
+	await page.click(".td-head .panel-new");
 	await page.waitForSelector(".term-tab >> nth=1", { timeout: 5000 });
 	await sleep(1500);
 	check("second tab + shell prompt", true);

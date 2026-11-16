@@ -455,6 +455,61 @@ describe("native CLI hover creation entry", () => {
 	});
 });
 
+describe("native CLI entry 的 inline 变体（顶栏独立 chip）", () => {
+	it("把 CLI 做成常驻独立按钮，与新建对话各管各的点击", () => {
+		const onCreateCli = vi.fn();
+		const onNewChat = vi.fn();
+		mount(
+			createElement(
+				NativeCliCreateEntry,
+				{ variant: "inline", cwd: "/project/selected", onCreateCli },
+				createElement("button", { onClick: onNewChat }, "+"),
+			),
+		);
+		const plus = container.querySelector("button")!;
+		const entry = plus.parentElement!;
+		expect(entry.getAttribute("data-cli-variant")).toBe("inline");
+		expect(entry.querySelector(".native-cli-create-hover")).toBeNull();
+		const cli = container.querySelector<HTMLButtonElement>(".native-cli-inline-button")!;
+		expect(cli.textContent).toBe("CLI");
+		expect(cli.getAttribute("aria-label")).toBe("New CLI conversation");
+		click(plus);
+		expect(onNewChat).toHaveBeenCalledOnce();
+		expect(onCreateCli).not.toHaveBeenCalled();
+		click(cli);
+		expect(onCreateCli).toHaveBeenCalledExactlyOnceWith("/project/selected");
+		expect(entry.hasAttribute("data-cli-expanded")).toBe(false);
+	});
+
+	it("不靠悬停展开，鼠标移入也不会位移或占位", () => {
+		mount(
+			createElement(
+				NativeCliCreateEntry,
+				{ variant: "inline", onCreateCli: vi.fn() },
+				createElement("button", null, "+"),
+			),
+		);
+		const plus = container.querySelector("button")!;
+		const entry = plus.parentElement!;
+		act(() => plus.dispatchEvent(new MouseEvent("mouseover", { bubbles: true })));
+		expect(entry.hasAttribute("data-cli-expanded")).toBe(false);
+		expect(container.querySelector(".native-cli-inline-button")).not.toBeNull();
+	});
+
+	it("同样遵守 terminal 功能开关与回调可用性", () => {
+		setAppGlobals({ tabs: ["chat", "git"] });
+		mount(
+			createElement(
+				NativeCliCreateEntry,
+				{ variant: "inline", onCreateCli: vi.fn() },
+				createElement("button", null, "+"),
+			),
+		);
+		expect(container.querySelector(".native-cli-create-entry")).toBeNull();
+		expect(container.querySelector(".native-cli-inline-button")).toBeNull();
+	});
+});
+
 describe("retired CLI view tabs", () => {
 	it("removes the old CLI slot and renders neither legacy tab in any bar", () => {
 		expect(BUILTIN_UI_ITEMS.some((entry) => entry.id === "host:native-cli")).toBe(false);
@@ -486,23 +541,26 @@ describe("retired CLI view tabs", () => {
 		}
 	});
 
+	const chatEntry = {
+		id: "host:chat",
+		slot: "topbar.primary" as const,
+		source: "host" as const,
+		kind: "view" as const,
+		label: "chat",
+		order: 21,
+		align: "end" as const,
+		hidden: false,
+		userOverrides: [],
+		arrangedBy: [],
+	};
+
 	it("keeps a return-to-chat action available from auxiliary views", () => {
 		const onViewChange = vi.fn();
-		for (const view of ["terminal", "git", "canvas", "devices", "worktrees"] as const) {
+		// canvas / 设备 / 工作树是真的换页（聊天区被顶掉了），必须留一个回到对话的入口。
+		for (const view of ["canvas", "devices", "worktrees"] as const) {
 			mount(
 				createElement(BarItem, {
-					entry: {
-						id: "host:chat",
-						slot: "topbar.primary",
-						source: "host",
-						kind: "view",
-						label: "chat",
-						order: 21,
-						align: "end",
-						hidden: false,
-						userOverrides: [],
-						arrangedBy: [],
-					},
+					entry: chatEntry,
 					bar: "top",
 					view,
 					onViewChange,
@@ -513,6 +571,21 @@ describe("retired CLI view tabs", () => {
 			expect(button).not.toBeNull();
 			click(button);
 			expect(onViewChange).toHaveBeenLastCalledWith("chat");
+		}
+	});
+
+	it("hides it for terminal / git: those are toggle panels, chat never left the middle", () => {
+		for (const view of ["terminal", "git"] as const) {
+			mount(
+				createElement(BarItem, {
+					entry: chatEntry,
+					bar: "top",
+					view,
+					onViewChange: vi.fn(),
+					chat: { state: null } as any,
+				}),
+			);
+			expect(container.querySelector("button")).toBeNull();
 		}
 	});
 });

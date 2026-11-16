@@ -14,11 +14,6 @@
 		--td-h: 318px;
 	}
 
-	.git-drawer {
-		--gd-w: 672px;
-	}
-
-	/* 让 Git 抽屉的绝对定位有参照物（main 原本没有 position）。 */
 	.main {
 		position: relative;
 	}
@@ -45,9 +40,10 @@
 		height: 39px;
 	}
 
-	/* 折叠时只收起输出区，保留 tab 条：一眼能看到谁还在跑 */
-	.term-drawer.collapsed .term-main,
-	.term-drawer.collapsed .term-commands {
+	/* 折叠时只收起输出区（和命令栏），保留 tab 条：一眼能看到谁还在跑，也还能再展开 */
+	.term-drawer.collapsed .term-cmd-rail,
+	.term-drawer.collapsed .term-body,
+	.term-drawer.collapsed .bd-panes {
 		display: none;
 	}
 
@@ -485,52 +481,6 @@
 		padding: 1px 4px;
 	}
 
-	/* 命令面板：从常驻左栏降级为按需浮层 */
-	.term-drawer .term-commands {
-		display: none;
-	}
-
-	.term-drawer .term-commands.open {
-		display: flex;
-		flex-direction: column;
-		position: absolute;
-		left: 10px;
-		top: calc(39px + 8px);
-		bottom: 10px;
-		width: min(300px, calc(100% - 20px));
-		z-index: 6;
-		background: var(--bg-elev);
-		border: 1px solid var(--border);
-		border-radius: 10px;
-		box-shadow: 0 22px 50px -22px #000000d9;
-		overflow: hidden;
-	}
-
-	/* 旧的第二份 tab 列表（在 aside 里）隐藏，tab 已提到抽屉头 */
-	.term-drawer .term-commands .term-tabs-block {
-		display: none;
-	}
-
-	.term-drawer .term-commands .panel-body {
-		flex: 1;
-		min-height: 0;
-		overflow-y: auto;
-	}
-
-	/* 旧的浮动菜单按钮由头部取代 */
-	.term-drawer .term-side-toggle {
-		display: none;
-	}
-
-	/* 旧 backdrop 是 fixed 全屏，在抽屉里必须降成局部遮罩，否则会盖住整页 */
-	.term-drawer .drawer-backdrop {
-		position: absolute;
-		inset: 0;
-		z-index: 5;
-		background: color-mix(in srgb, var(--bg) 40%, transparent);
-		animation: none;
-	}
-
 	.term-drawer .td-empty-hint {
 		font-size: 11px;
 		color: var(--text-faint);
@@ -545,16 +495,39 @@
 		flex: none;
 	}
 
-	/* xterm 容器（沿用旧类名，只覆盖布局） */
+	/* xterm 容器（沿用旧类名，只覆盖布局）
+	 * 体内是左右分区：左列命令栏（可拖宽）+ 右列终端（tab 条只属于右列，在它顶部），
+	 * 因此外层从“单列”改成“一行”，tab 条随右列一起排，不横跨左列。
+	 */
 	.term-drawer .term-main {
+		--term-cmd-w: 252px;
+		flex: 1;
+		min-width: 0;
+		min-height: 0;
+		display: flex;
+		flex-direction: row;
+		position: relative;
+		background: var(--bg-elev);
+		overflow: hidden;
+	}
+
+	.term-drawer .term-panes {
 		flex: 1;
 		min-width: 0;
 		min-height: 0;
 		display: flex;
 		flex-direction: column;
-		position: relative;
 		background: var(--term-bg);
-		overflow: hidden;
+	}
+
+	/* 终端列自己的正文区：tab 条在它上面，内边距只给 xterm */
+	.term-drawer .term-body {
+		flex: 1;
+		min-width: 0;
+		min-height: 0;
+		display: flex;
+		flex-direction: column;
+		padding: 10px 8px 8px;
 	}
 
 	.term-drawer .td-empty {
@@ -586,139 +559,150 @@
 		font-size: 10.5px;
 	}
 
-	/* 命令面板：按需浮层，不再常驻占一列 */
-	.td-cmd-pop {
-		position: absolute;
-		left: 10px;
-		top: 10px;
-		bottom: 10px;
-		width: min(280px, calc(100% - 20px));
-		z-index: 6;
-		display: flex;
-		flex-direction: column;
-		background: var(--bg-elev);
-		border: 1px solid var(--border);
-		border-radius: 10px;
-		box-shadow: 0 22px 50px -22px #000000d9;
-		overflow: hidden;
+	/* ============================ 底部抽屉：全宽 + 多标签 ============================ */
+	/* 关掉就是彻底让出空间（不再留一条 39px 的壳）；折叠是“只留标签条”。 */
+	.bottom-dock.closed {
+		display: none;
 	}
 
-	.td-cmd-pop .td-cmd-head {
+	.bottom-dock .bd-head {
 		display: flex;
 		align-items: center;
-		gap: 7px;
-		padding: 7px 8px;
+		gap: 6px;
+		height: 39px;
+		padding: 0 6px 0 10px;
+		flex: none;
 		border-bottom: 1px solid var(--border-soft);
-		font-size: 11px;
+	}
+
+	.bottom-dock .bd-tabs {
+		display: flex;
+		align-items: center;
+		gap: 2px;
+		min-width: 0;
+		overflow-x: auto;
+	}
+
+	.bottom-dock .bd-tab {
+		height: 26px;
+		padding: 0 10px;
+		border: 0;
+		border-radius: 6px;
+		background: transparent;
 		color: var(--text-faint);
+		font-size: 11.5px;
+		white-space: nowrap;
+		cursor: pointer;
+	}
+
+	.bottom-dock .bd-tab:hover {
+		background: var(--bg-elev2);
+		color: var(--text-dim);
+	}
+
+	.bottom-dock .bd-tab.on {
+		background: var(--bg-elev2);
+		color: var(--text);
+		box-shadow: inset 0 0 0 1px var(--border);
+	}
+
+	.bottom-dock .bd-acts {
+		margin-left: auto;
+		display: flex;
+		align-items: center;
+		gap: 2px;
 		flex: none;
 	}
 
-	.td-cmd-pop .td-cmd-head strong {
-		font-size: 11.5px;
-		color: var(--text-dim);
-		font-weight: 600;
-	}
-
-	.td-cmd-pop .td-cmd-head .icon-btn {
-		margin-left: auto;
-		width: 22px;
-		height: 22px;
+	.bottom-dock .bd-acts .icon-btn {
+		width: 24px;
+		height: 24px;
 		border-radius: 5px;
 		display: grid;
 		place-items: center;
 		color: var(--text-faint);
+		background: transparent;
+		border: 0;
+		cursor: pointer;
 	}
 
-	.td-cmd-pop .td-cmd-head .icon-btn:hover {
+	.bottom-dock .bd-acts .icon-btn:hover {
 		background: var(--bg-elev2);
 		color: var(--text);
 	}
 
-	.td-cmd-pop .td-cmd-list {
+	.bottom-dock .bd-acts .icon-btn.danger:hover {
+		background: var(--red-soft);
+		color: var(--red);
+	}
+
+	.bottom-dock .bd-acts .icon-btn svg {
+		width: 13px;
+		height: 13px;
+	}
+
+	/* 所有标签都保持挂载：切走再切回来，xterm 的 scrollback 与 PTY 绑定都还在 */
+	.bottom-dock .bd-panes {
+		flex: 1;
+		min-height: 0;
+		display: flex;
+	}
+
+	.bottom-dock .bd-pane {
+		flex: 1;
+		min-width: 0;
+		min-height: 0;
+		display: flex;
+		flex-direction: column;
+	}
+
+	.bottom-dock .bd-pane.hidden {
+		display: none;
+	}
+
+	/* ============================ 命令栏（终端左侧常驻） ============================ */
+	/* 停靠在终端左边的固定一列，不再是浮层：头部固定、列表自己滚，宽度可拖（双击复位），也不会盖住右侧的终端输出。 */
+	.term-drawer .term-cmd-rail {
+		flex: none;
+		width: var(--term-cmd-w, 252px);
+		max-width: 50%;
+		min-height: 0;
+		display: flex;
+		flex-direction: column;
+		overflow: hidden;
+		background: var(--bg-elev);
+		border-right: 1px solid var(--border-soft);
+	}
+
+	.term-drawer .term-cmd-grip {
+		margin: 0;
+		background: transparent;
+	}
+
+	.term-drawer .td-actions .icon-btn.term-cmd-toggle.on {
+		color: var(--text);
+		background: var(--bg-elev2);
+		box-shadow: inset 0 0 0 1px var(--border);
+	}
+
+	.term-cmd-rail .term-cmd-head {
+		flex: none;
+		display: flex;
+		align-items: center;
+		gap: 6px;
+		padding: 8px 10px 7px;
+		border-bottom: 1px solid var(--border-soft);
+	}
+
+	.term-cmd-rail .term-cmd-body {
 		flex: 1;
 		min-height: 0;
 		overflow-y: auto;
-		padding: 4px;
+		padding: 4px 6px 6px;
 	}
 
-	/* 复用旧 .cmd-item / .cmd-form 外观，只收紧间距 */
-	.td-cmd-pop .cmd-item {
-		border-radius: 6px;
-	}
+	/* ============================ 源代码管理（右栏标签） ============================ */
 
-	.td-cmd-pop .cmd-form {
-		padding: 8px;
-	}
-
-	/* ============================ Git 检阅抽屉 ============================ */
-	.git-drawer {
-		position: absolute;
-		top: 0;
-		right: 0;
-		bottom: 0;
-		width: 0;
-		display: flex;
-		flex-direction: column;
-		background: var(--bg-elev);
-		border-left: 1px solid var(--border);
-		overflow: hidden;
-		opacity: 0;
-		transition:
-			width 0.22s cubic-bezier(0.22, 1, 0.36, 1),
-			opacity 0.22s cubic-bezier(0.22, 1, 0.36, 1);
-		z-index: 3;
-	}
-
-	.git-drawer.open {
-		width: var(--gd-w, 672px);
-		opacity: 1;
-	}
-
-	.git-drawer.dragging {
-		transition: none;
-	}
-
-	.git-drawer > .gd-grip {
-		position: absolute;
-		left: 0;
-		top: 0;
-		bottom: 0;
-		width: 9px;
-		cursor: ew-resize;
-		z-index: 5;
-		touch-action: none;
-	}
-
-	.git-drawer > .gd-grip::after {
-		content: "";
-		position: absolute;
-		top: 50%;
-		left: 2px;
-		transform: translateY(-50%);
-		width: 3px;
-		height: 34px;
-		border-radius: 3px;
-		background: transparent;
-		transition: background 0.13s ease;
-	}
-
-	.git-drawer > .gd-grip:hover::after,
-	.git-drawer.dragging > .gd-grip::after {
-		background: var(--accent);
-	}
-
-	/* 挤压而不是覆盖：内容让出同宽右内边距，两个抽屉可以并存 */
-	.main.git-open {
-		padding-right: var(--gd-w, 672px);
-	}
-
-	.git-drawer .scm-view {
-		min-width: 480px;
-		height: 100%;
-	}
-
-	/* 抽屉头部：一行信息 + 一行分段控件 */
 	.gd-titlebar {
 		display: flex;
 		align-items: center;
@@ -729,53 +713,23 @@
 		overflow: hidden;
 	}
 
-	.gd-title {
-		display: flex;
-		align-items: center;
-		gap: 7px;
-		font-size: 12.5px;
-		font-weight: 650;
-		letter-spacing: -0.01em;
-		min-width: 0;
-		flex: 0 1 auto;
-		overflow: hidden;
-		white-space: nowrap;
-		text-overflow: ellipsis;
-		color: var(--text);
-	}
-
-	.gd-title svg {
-		width: 14px;
-		height: 14px;
-		color: var(--accent);
-	}
-
+	/* 分支选择：按钮 + 浮层菜单（原生 select 的下拉层由系统画，主题跟不进来） */
 	.gd-branch {
 		display: inline-flex;
 		align-items: center;
-		gap: 6px;
+		gap: 5px;
 		height: 24px;
-		padding: 0 6px;
-		border-radius: 5px;
+		padding: 0 7px;
+		border-radius: 6px;
 		background: var(--bg-elev2);
 		border: 1px solid var(--border);
 		font-family: var(--mono);
 		font-size: 11px;
 		color: var(--text-dim);
 		min-width: 0;
+		max-width: 190px;
 		flex: 0 1 auto;
-		overflow: hidden;
-	}
-
-	.gd-branch .scm-select {
-		min-width: 0;
-		max-width: 150px;
-		height: 20px;
-		border: 0;
-		background: transparent;
-		font-family: var(--mono);
-		font-size: 11px;
-		padding: 0;
+		cursor: pointer;
 	}
 
 	.gd-branch:hover {
@@ -783,15 +737,146 @@
 		border-color: color-mix(in srgb, var(--accent) 45%, var(--border));
 	}
 
-	.gd-branch select {
-		background: transparent;
-		border: 0;
-		color: inherit;
-		font: inherit;
-		max-width: 190px;
+	.gd-branch-glyph {
+		width: 12px;
+		height: 12px;
+		color: var(--accent);
+		flex: none;
+	}
+
+	.gd-branch-name {
 		min-width: 0;
-		padding: 0;
+		overflow: hidden;
+		text-overflow: ellipsis;
+		white-space: nowrap;
+	}
+
+	.gd-branch-caret {
+		width: 11px;
+		height: 11px;
+		color: var(--text-faint);
+		flex: none;
+		transition: rotate 0.15s ease;
+	}
+
+	.gd-branch-caret.up {
+		rotate: 180deg;
+	}
+
+	.gd-branch-dd.disabled {
+		opacity: 0.5;
+		pointer-events: none;
+	}
+
+	.gd-branch-menu {
+		padding: 5px;
+	}
+
+	.gd-branch-menu .dd-header {
+		padding: 5px 8px 3px;
+	}
+
+	.gd-branch-row {
+		display: flex;
+		align-items: center;
+		gap: 2px;
+		border-radius: 6px;
+	}
+
+	.gd-branch-row:hover {
+		background: var(--bg-elev2);
+	}
+
+	.gd-branch-pick {
+		flex: 1;
+		min-width: 0;
+		display: flex;
+		align-items: center;
+		gap: 6px;
+		padding: 5px 8px;
+		border: 0;
+		border-radius: 6px;
+		background: none;
+		color: var(--text-dim);
+		text-align: left;
 		cursor: pointer;
+	}
+
+	.gd-branch-row.current .gd-branch-pick {
+		color: var(--text);
+		font-weight: 600;
+	}
+
+	.gd-branch-tick {
+		display: grid;
+		place-items: center;
+		width: 12px;
+		height: 12px;
+		flex: none;
+		color: var(--accent);
+	}
+
+	.gd-branch-tick svg {
+		width: 11px;
+		height: 11px;
+	}
+
+	.gd-branch-text {
+		min-width: 0;
+		overflow: hidden;
+		text-overflow: ellipsis;
+		white-space: nowrap;
+		font-family: var(--mono);
+		font-size: 11.5px;
+	}
+
+	.gd-branch-text.mono {
+		color: var(--text-faint);
+	}
+
+	/* 危险操作只在悬停时露出来，菜单看起来仍然只是“选分支” */
+	.gd-branch-del {
+		display: inline-flex;
+		align-items: center;
+		justify-content: center;
+		width: 22px;
+		height: 22px;
+		flex: none;
+		border: 0;
+		border-radius: 5px;
+		background: transparent;
+		color: var(--text-faint);
+		cursor: pointer;
+		opacity: 0;
+		transition: opacity 0.1s ease;
+	}
+
+	.gd-branch-del svg {
+		width: 11px;
+		height: 11px;
+	}
+
+	.gd-branch-row:hover .gd-branch-del {
+		opacity: 1;
+	}
+
+	.gd-branch-del:hover {
+		background: var(--bg-elev);
+		color: var(--text);
+	}
+
+	.gd-branch-del.force:hover {
+		color: var(--amber);
+	}
+
+	.gd-branch-del:disabled {
+		display: none;
+	}
+
+	.gd-branch-empty {
+		padding: 8px;
+		font-size: 11.5px;
+		color: var(--text-faint);
 	}
 
 	.gd-ab {
@@ -915,34 +1000,34 @@
 	}
 
 	/* header 在抽屉里更紧凑，按旧 padding 会显得拥挤 */
-	.git-drawer .scm-header {
+	.scm-view .scm-header {
 		padding: 0;
 		gap: 0;
 		border-bottom: 1px solid var(--border-soft);
 	}
 
-	.git-drawer .scm-gen-error {
+	.scm-view .scm-gen-error {
 		margin: 0 10px 8px;
 	}
 
 	/* stash 视图占满抽屉主体，不和 diff 分栏 */
-	.git-drawer .scm-body.stash-mode {
+	.scm-view .scm-body.stash-mode {
 		display: block;
 		overflow-y: auto;
 	}
 
-	.git-drawer .scm-body.stash-mode .scm-divider,
-	.git-drawer .scm-body.stash-mode .scm-diff {
+	.scm-view .scm-body.stash-mode .scm-divider,
+	.scm-view .scm-body.stash-mode .scm-diff {
 		display: none;
 	}
 
-	.git-drawer .scm-body.stash-mode .scm-stash {
+	.scm-view .scm-body.stash-mode .scm-stash {
 		display: flex;
 		flex-direction: column;
 		min-height: 100%;
 	}
 
-	.git-drawer .scm-body.stash-mode .scm-files-list {
+	.scm-view .scm-body.stash-mode .scm-files-list {
 		flex: 1;
 	}
 
@@ -964,12 +1049,12 @@
 	}
 
 	/* 底部已有“在终端中打开”，旧提示行隐藏 */
-	.git-drawer .scm-hint {
+	.scm-view .scm-hint {
 		display: none;
 	}
 
 	/* 手机端才出现的“返回列表” */
-	.git-drawer .scm-back {
+	.scm-view .scm-back {
 		display: none;
 		place-items: center;
 		width: 22px;
@@ -982,12 +1067,12 @@
 		cursor: pointer;
 	}
 
-	.git-drawer .scm-back:hover {
+	.scm-view .scm-back:hover {
 		background: var(--bg-elev2);
 		color: var(--text);
 	}
 
-	.git-drawer .scm-back svg {
+	.scm-view .scm-back svg {
 		width: 14px;
 		height: 14px;
 	}
@@ -1102,15 +1187,15 @@
 	}
 
 	/* 抽屉里的变更列表：分组标题 + 紧凑行 */
-	.git-drawer .scm-files-header {
+	.scm-view .scm-files-header {
 		padding: 6px 8px;
 	}
 
-	.git-drawer .scm-file {
+	.scm-view .scm-file {
 		min-height: 26px;
 	}
 
-	.git-drawer .scm-file-path {
+	.scm-view .scm-file-path {
 		font-size: 11px;
 	}
 
@@ -1157,83 +1242,48 @@
 			display: none;
 		}
 
-		.td-cmd-pop,
-		.term-drawer .term-commands.open {
-			left: 6px;
-			right: 6px;
-			top: calc(42px + 6px);
-			bottom: 6px;
-			width: auto;
-		}
-
-		/* 手机上 Git 是全屏 sheet，不挤压聊天 */
-		.git-drawer {
-			width: 100%;
-			right: 0;
-		}
-
-		.git-drawer.open {
-			width: 100%;
-		}
-
-		.main.git-open {
-			padding-right: 0;
-		}
-
-		.git-drawer > .gd-grip {
-			display: none;
-		}
-
-		.git-drawer .scm-view {
-			min-width: 0;
-		}
-
 		/* 手机：列表 → 详情二级下钻，不再左右分栏 */
-		.git-drawer .gd-title {
-			display: none;
-		}
-
-		.git-drawer .scm-body {
+		.scm-view .scm-body {
 			display: block;
 			position: relative;
 		}
 
-		.git-drawer .scm-files,
-		.git-drawer .scm-history {
+		.scm-view .scm-files,
+		.scm-view .scm-history {
 			width: 100%;
 			max-width: 100%;
 			border-right: 0;
 			height: 100%;
 		}
 
-		.git-drawer .scm-diff {
+		.scm-view .scm-diff {
 			display: none;
 		}
 
-		.git-drawer .scm-body.detail-mode .scm-files,
-		.git-drawer .scm-body.detail-mode .scm-history {
+		.scm-view .scm-body.detail-mode .scm-files,
+		.scm-view .scm-body.detail-mode .scm-history {
 			display: none;
 		}
 
-		.git-drawer .scm-body.detail-mode .scm-diff {
+		.scm-view .scm-body.detail-mode .scm-diff {
 			display: flex;
 			height: 100%;
 		}
 
-		.git-drawer .scm-divider {
+		.scm-view .scm-divider {
 			display: none;
 		}
 
-		.git-drawer .scm-file {
+		.scm-view .scm-file {
 			min-height: 34px;
 		}
 
 		/* 批量操作在窄屏占满头部，先把文字按钮收起来 */
-		.git-drawer .scm-files-header .scm-act {
+		.scm-view .scm-files-header .scm-act {
 			display: none;
 		}
 
-		.git-drawer .scm-back {
+		.scm-view .scm-back {
 			display: grid;
 		}
 
@@ -1245,14 +1295,26 @@
 			max-width: 150px;
 		}
 
-		.gd-branch select {
-			max-width: 110px;
+		/* 窄屏不再左右分栏：命令栏改成盖住终端正文的二级页（tab 条留在上面可点开/收起）。 */
+		.term-drawer .term-cmd-rail {
+			position: absolute;
+			top: 42px;
+			bottom: 0;
+			left: 0;
+			right: 0;
+			width: auto;
+			max-width: none;
+			z-index: 4;
+			border-right: 0;
+		}
+
+		.term-drawer .term-cmd-grip {
+			display: none;
 		}
 	}
 
 	@media (prefers-reduced-motion: reduce) {
 		.term-drawer,
-		.git-drawer,
 		.td-tab,
 		.gd-seg button {
 			transition: none;

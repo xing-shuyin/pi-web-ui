@@ -1,16 +1,18 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { FiChevronDown, FiChevronRight, FiCpu } from "react-icons/fi";
+import { FiChevronDown, FiChevronRight, FiCpu, FiSettings } from "react-icons/fi";
 import { isZhLocale, useI18n } from "../i18n";
 import { DEVICE_GROUPS_CHANGED, deviceGroupRequest } from "./DeviceGroupSection";
+import { openBotManagement, openDirectRoom, openRoomView } from "../open-direct-room";
 import { BotMemoryDialog } from "./BotMemoryDialog";
 import "./agent-bots.css";
 
 /**
- * 左栏「智能体」区：把 Bot 当一等对话对象。
+ * 左栏「智能体」区 = 对话入口：把 Bot 当一等对话对象。
  *
  * 直聊不是新系统：每个 Bot 对应一个 `kind: "direct"` 的房间（服务端确定性 id），
  * 点开走的是同一套 `GroupConversation` 房间视图，因此流式、停止、恢复、历史全都免费复用。
- * 这里只负责两件事：列出可对话的 Bot、按下时幂等地拿到房间 id 再打开。
+ * 这里只负责列表与状态（草案确认、导入）；「打开直聊」与「跳转到设备中心管理」的实现
+ * 统一收在 ../open-direct-room.ts，Bot 身份的创建/编辑/权限一律去设备中心。
  */
 
 type DirectRoomBot = {
@@ -71,6 +73,10 @@ const words = {
 		importing: "导入中…",
 		importFailed: "迁移包导入失败",
 		importDone: "已导入 {name}（记忆 {imported} 条，跳过 {skipped} 条）",
+		manage: "管理 Bot",
+		manageTip: "到设备中心创建、编辑 Bot 的身份与权限",
+		triggerReserved: "预留（未接线）",
+		triggerReservedHint: "{trigger} 尚未接线（预留）：确认后 Bot 仍只按需响应私聊。",
 	},
 	en: {
 		title: "Agents",
@@ -96,6 +102,10 @@ const words = {
 		importing: "Importing…",
 		importFailed: "Bundle import failed",
 		importDone: "Imported {name} (memories {imported}, skipped {skipped})",
+		manage: "Manage Bots",
+		manageTip: "Create and edit Bot identities in the device center",
+		triggerReserved: "Reserved (not wired up)",
+		triggerReservedHint: "{trigger} is reserved, not wired up yet; after creation it still only responds on demand.",
 	},
 };
 
@@ -159,34 +169,18 @@ export function AgentBotsSection({
 		};
 	}, [active, load]);
 
-	const openRoom = useCallback((roomId: string) => {
-		window.dispatchEvent(new CustomEvent("pi-web-ui:device-group-open", { detail: { roomId } }));
-	}, []);
-
 	const startChat = useCallback(
 		async (bot: BotRow) => {
-			const existing = rooms.find((room) => room.bot?.id === bot.id);
-			if (existing) {
-				openRoom(existing.id);
-				return;
-			}
-			const controller = new AbortController();
 			setPending(bot.id);
 			try {
-				const created = await deviceGroupRequest<{ room: { id: string } }>(
-					`bots/${encodeURIComponent(bot.id)}/direct-room`,
-					controller.signal,
-					{},
-				);
-				openRoom(created.room.id);
-				await load();
+				await openDirectRoom(bot.id, { knownRoomId: rooms.find((room) => room.bot?.id === bot.id)?.id });
 			} catch (cause) {
 				setError(cause instanceof Error ? cause.message : String(cause));
 			} finally {
 				setPending(null);
 			}
 		},
-		[load, openRoom, rooms],
+		[rooms],
 	);
 
 	const confirmDraft = useCallback(
@@ -207,14 +201,14 @@ export function AgentBotsSection({
 				);
 				window.dispatchEvent(new CustomEvent("pi-web-ui:device-bots-changed"));
 				await load();
-				if (result.roomId) openRoom(result.roomId);
+				if (result.roomId) openRoomView(result.roomId);
 			} catch (cause) {
 				setError(cause instanceof Error ? cause.message : String(cause));
 			} finally {
 				setApproving(null);
 			}
 		},
-		[grants, load, openRoom],
+		[grants, load],
 	);
 	const discardDraft = useCallback(
 		async (draft: BotDraft) => {
@@ -250,14 +244,14 @@ export function AgentBotsSection({
 						.replace("{skipped}", String(result.skipped)),
 				);
 				await load();
-				if (result.roomId) openRoom(result.roomId);
+				if (result.roomId) openRoomView(result.roomId);
 			} catch (cause) {
 				setError(cause instanceof Error ? cause.message : t.importFailed);
 			} finally {
 				setImporting(false);
 			}
 		},
-		[load, openRoom, t],
+		[load, t],
 	);
 
 	if (!bots && !error) {
@@ -289,15 +283,27 @@ export function AgentBotsSection({
 					<span className="lp-bots-title">{t.title}</span>
 					{botCount(bots) > 0 && <span className="lp-bots-count">{botCount(bots)}</span>}
 				</button>
-				<button
-					type="button"
-					className="lp-bots-import"
-					title={t.importBot}
-					disabled={importing}
-					onClick={() => importInput.current?.click()}
-				>
-					{importing ? "…" : "＋"}
-				</button>
+				<div className="lp-bots-actions">
+					<button
+						type="button"
+						className="lp-bots-manage"
+						title={t.manageTip}
+						aria-label={t.manageTip}
+						onClick={openBotManagement}
+					>
+						<FiSettings aria-hidden="true" />
+						<span>{t.manage}</span>
+					</button>
+					<button
+						type="button"
+						className="lp-bots-import"
+						title={t.importBot}
+						disabled={importing}
+						onClick={() => importInput.current?.click()}
+					>
+						{importing ? "…" : "＋"}
+					</button>
+				</div>
 				<input
 					ref={importInput}
 					type="file"
@@ -334,10 +340,13 @@ export function AgentBotsSection({
 										<div className="lp-bot-draft-head">
 											<strong>{draft.name}</strong>
 											<span className="lp-bot-draft-badge">
-												{draft.trigger === "on_demand" ? (zh ? "只响应" : "On demand") : draft.trigger}
+												{draft.trigger === "on_demand" ? (zh ? "只响应" : "On demand") : t.triggerReserved}
 											</span>
 										</div>
 										<p className="lp-bot-draft-desc">{draft.description}</p>
+										{draft.trigger !== "on_demand" && (
+											<p className="lp-bot-draft-meta">{t.triggerReservedHint.replace("{trigger}", draft.trigger)}</p>
+										)}
 										<p className="lp-bot-draft-meta" title={draft.cwd}>
 											{t.workspace}: {draft.cwd}
 										</p>

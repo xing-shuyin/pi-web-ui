@@ -513,3 +513,72 @@
 	padding: 4px 7px;
 	overflow-wrap: anywhere;
 }
+
+/* 入口分层：左栏 header 的「管理 Bot」跳到设备中心，设备中心 Bot 行的「私聊」跳回对话。
+   两者都是行内按钮、不新增叠栈浮层，因此这里不涉及 z-index（浮层统一由 useOverlayZIndex() 提供）。 */
+.lp-bots-actions {
+	display: flex;
+	align-items: center;
+	gap: 2px;
+	flex: none;
+}
+
+.lp-bots-manage {
+	display: inline-flex;
+	align-items: center;
+	gap: 4px;
+	flex: none;
+	border: 1px solid var(--border-soft, var(--border));
+	background: transparent;
+	color: var(--text-dim);
+	font-size: 11px;
+	line-height: 1;
+	padding: 3px 7px;
+	border-radius: 6px;
+	cursor: pointer;
+}
+
+.lp-bots-manage:hover {
+	color: var(--text);
+	border-color: var(--border);
+}
+
+/* 设备中心 Bot 行：身份编辑（管理）与「私聊」（对话入口）并列，互不挤占。 */
+.dc-bot-entry {
+	display: flex;
+	align-items: stretch;
+	gap: 6px;
+	min-width: 0;
+}
+
+.dc-bot-list .dc-bot-entry .dc-bot-item {
+	flex: 1;
+	width: auto;
+	min-width: 0;
+}
+
+.dc-bot-chat {
+	flex: none;
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	border: 1px solid var(--border-soft, var(--border));
+	background: transparent;
+	color: var(--text-dim);
+	font-size: 11px;
+	line-height: 1;
+	padding: 0 8px;
+	border-radius: 12px;
+	cursor: pointer;
+	overflow-wrap: anywhere;
+}
+
+.dc-bot-chat:hover:not(:disabled) {
+	color: var(--text);
+	border-color: var(--border);
+}
+
+.dc-bot-chat:disabled {
+	opacity: 0.55;
+	cursor: default;
+}

@@ -124,6 +124,8 @@ export function normalizeBotDraft(
 						throw new BotDraftError(400, "DRAFT_INVALID", "Invalid model");
 					return { provider: value.provider, modelId: value.modelId };
 				})();
+	// trigger 只作身份留痕（兼容存量草稿 / 人工 API），不是自动调度开关：
+	// 常驻/定时由宿主 alwaysOn 插件与 schedule 工具承接，Bot registry 不按它起任务。
 	const trigger = raw.trigger === undefined ? "on_demand" : raw.trigger;
 	if (trigger !== "on_demand" && trigger !== "always_on" && trigger !== "scheduled")
 		throw new BotDraftError(400, "DRAFT_INVALID", "Invalid trigger");

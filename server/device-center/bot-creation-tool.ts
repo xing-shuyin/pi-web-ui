@@ -36,6 +36,7 @@ export const AGENT_BOT_PROMPT_GUIDELINES = [
 	"Never promise permissions: pick the narrowest tools that fit, and leave high-privilege tools (bash, terminal, browser, mcp, delegate) out unless the user explicitly asked for them.",
 	"cwd must be an absolute path that already exists; reuse the current project when the user did not name one, and say so in rationale.",
 	"After drafting, tell the user it is waiting for confirmation and what needs approval; do not create more drafts for the same request.",
+	"Do not choose a trigger: always-on / scheduled execution belongs to the host's alwaysOn plugins and schedule tool, not to a Bot draft.",
 	"Use op=list to show pending drafts and op=cancel when the user rejects one.",
 ];
 
@@ -51,7 +52,6 @@ const parameters = Type.Object({
 	tools: Type.Optional(Type.Array(Type.String())),
 	skills: Type.Optional(Type.Array(Type.String())),
 	mcpServers: Type.Optional(Type.Array(Type.String())),
-	trigger: Type.Optional(Type.Union([Type.Literal("on_demand"), Type.Literal("always_on"), Type.Literal("scheduled")])),
 	rationale: Type.Optional(Type.String()),
 	bootstrap: Type.Optional(Type.Boolean()),
 	id: Type.Optional(Type.String()),
@@ -81,7 +81,6 @@ export function makeAgentBotTool() {
 					...(input.tools ? { tools: input.tools } : {}),
 					...(input.skills ? { skills: input.skills } : {}),
 					...(input.mcpServers ? { mcpServers: input.mcpServers } : {}),
-					...(input.trigger ? { trigger: input.trigger } : {}),
 					...(input.rationale ? { rationale: input.rationale } : {}),
 					...(input.bootstrap ? { bootstrap: true } : {}),
 				});

@@ -1,11 +1,24 @@
-import { useCallback, useDeferredValue, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import {
+	useCallback,
+	useDeferredValue,
+	useEffect,
+	useMemo,
+	useRef,
+	useState,
+	type MouseEvent,
+	type ReactNode,
+} from "react";
 import { FiFileText, FiFolder, FiMessageSquare, FiPackage, FiSearch, FiX } from "react-icons/fi";
 import type { FileSearchResult, MessageAnchor, ProjectSummary, SessionSearchResult } from "../types";
-import { useT } from "../i18n";
+import { useT, type Translate } from "../i18n";
 import { getPluginSearchProvider, listPluginSearchProviders, triggerPluginUiAction } from "../plugin-host";
 import { appSend, useAppField, useEngineCapabilities } from "../app-globals";
 import { composeToComposer } from "../composer-bridge";
 import { nextSearchReqId } from "../search-req-id";
+import { closeContextMenu, contextMenuItems, getContextMenu, openContextMenu } from "../context-menu-state";
+import { openQuickAsk, type QuickAskReferenceSource } from "../quick-ask";
+import { copyTextToClipboard } from "../use-copy-feedback";
+import type { UiSlotEntry } from "../ui-slots";
 
 interface GlobalSearchModalProps {
 	open: boolean;
@@ -21,11 +34,93 @@ interface GlobalSearchModalProps {
 		ok: boolean;
 		results: SessionSearchResult[];
 	} | null;
+	uiContextSearch?: UiSlotEntry[];
+	quickAskReferenceMenus?: boolean;
 	onClose: () => void;
 	onSwitchSession: (path: string, anchors?: MessageAnchor[]) => void;
 	onSwitchProject: (path: string) => void;
 	onPreviewFile: (path: string, name: string) => void;
 	onOpenFolder?: (path: string) => void;
+}
+
+export type SearchMenuTarget =
+	| { kind: "session"; path: string; title: string; anchors: MessageAnchor[]; pinned: boolean; sessionId?: string }
+	| { kind: "project"; path: string }
+	| { kind: "file" | "folder"; path: string; name: string }
+	| { kind: "plugin"; providerId: string; providerLabel: string; title: string; action: string };
+
+function baseName(path: string): string {
+	return path.split(/[\\/]/).filter(Boolean).pop() ?? path;
+}
+
+function joinWorkspacePath(cwd: string, path: string): string {
+	if (!cwd || !path) return path;
+	if (path.startsWith("/") || /^[A-Za-z]:[\\/]/.test(path)) return path;
+	return `${cwd.replace(/[\\/]+$/, "")}/${path}`;
+}
+
+function menuTargetId(target: SearchMenuTarget): string {
+	return target.kind === "plugin" ? `${target.providerId}:${target.action}` : target.path;
+}
+
+function menuTargetLabel(target: SearchMenuTarget): string {
+	switch (target.kind) {
+		case "session":
+			return target.title;
+		case "plugin":
+			return target.title;
+		case "file":
+		case "folder":
+			return target.name;
+		default:
+			return baseName(target.path);
+	}
+}
+
+/**
+ * 搜索结果的右键菜单条目：内置条目按命中类型显隐/改标签，插件条目原样透传（`when` 判据由右键菜单层评估）。
+ */
+export function buildSearchMenuEntries(
+	entries: readonly UiSlotEntry[],
+	target: SearchMenuTarget,
+	opts: { t: Translate; conversationRef: boolean; quickAskReferenceMenus: boolean },
+): UiSlotEntry[] {
+	const { t } = opts;
+	const openLabel =
+		target.kind === "file"
+			? t("fileOpenPreview")
+			: target.kind === "folder"
+				? t("fileEnterDir")
+				: target.kind === "project"
+					? t("searchMenuSwitchProject")
+					: t("gsOpen");
+	const relative = target.kind === "file" || target.kind === "folder";
+	return entries.map((entry) => {
+		if (entry.source !== "host") return entry;
+		switch (entry.id) {
+			case "host:search-open":
+				return { ...entry, label: openLabel };
+			case "host:search-open-folder":
+				return target.kind === "project" ? entry : { ...entry, hidden: true };
+			case "host:search-reveal":
+				return target.kind === "plugin" ? { ...entry, hidden: true } : entry;
+			case "host:search-pin":
+				if (target.kind !== "session") return { ...entry, hidden: true };
+				return target.pinned ? { ...entry, label: t("unpinConversation") } : entry;
+			case "host:search-quote":
+				return target.kind === "session" && opts.conversationRef ? entry : { ...entry, hidden: true };
+			case "host:search-quick-ask":
+				return opts.quickAskReferenceMenus && target.kind !== "plugin" ? entry : { ...entry, hidden: true };
+			case "host:search-copy-rel":
+				return relative ? entry : { ...entry, hidden: true };
+			case "host:search-copy-path":
+				return target.kind === "plugin" ? { ...entry, hidden: true } : entry;
+			case "host:search-copy-id":
+				return target.kind === "session" && target.sessionId ? entry : { ...entry, hidden: true };
+			default:
+				return entry;
+		}
+	});
 }
 
 function matches(text: string, q: string): boolean {
@@ -37,6 +132,8 @@ export function GlobalSearchModal({
 	projects,
 	fileSearch,
 	sessionSearch,
+	uiContextSearch = [],
+	quickAskReferenceMenus = true,
 	onClose,
 	onSwitchSession,
 	onSwitchProject,
@@ -53,6 +150,27 @@ export function GlobalSearchModal({
 	const [active, setActive] = useState(0);
 	const lastReqRef = useRef(0);
 	const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+	const menuTargetRef = useRef<SearchMenuTarget | null>(null);
+	const flashTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+	const [flash, setFlash] = useState("");
+
+	const flashCopied = useCallback(() => {
+		setFlash(t("copied"));
+		if (flashTimerRef.current) clearTimeout(flashTimerRef.current);
+		flashTimerRef.current = setTimeout(() => setFlash(""), 1600);
+	}, [t]);
+
+	useEffect(
+		() => () => {
+			if (flashTimerRef.current) clearTimeout(flashTimerRef.current);
+		},
+		[],
+	);
+
+	useEffect(() => {
+		if (open) return;
+		if (getContextMenu()?.slot === "contextmenu.search") closeContextMenu();
+	}, [open]);
 
 	const [activeFileSearch, setActiveFileSearch] = useState<{
 		reqId: number;
@@ -275,9 +393,140 @@ export function GlobalSearchModal({
 		[onSwitchSession, onSwitchProject, onPreviewFile, onOpenFolder, deferredQuery],
 	);
 
+	const navItemOf = useCallback((target: SearchMenuTarget): NavItem => {
+		switch (target.kind) {
+			case "session":
+				return { kind: "session", path: target.path, anchors: target.anchors };
+			case "project":
+				return { kind: "project", path: target.path };
+			case "folder":
+				return { kind: "folder", path: target.path };
+			case "file":
+				return { kind: "file", path: target.path, name: target.name };
+			default:
+				return {
+					kind: "plugin",
+					providerId: target.providerId,
+					providerLabel: target.providerLabel,
+					title: target.title,
+					action: target.action,
+				};
+		}
+	}, []);
+
+	const quickAskReferenceOf = useCallback(
+		(target: SearchMenuTarget): QuickAskReferenceSource | undefined => {
+			if (target.kind === "session") return { kind: "conversation", sessionFile: target.path };
+			if (target.kind === "plugin") return undefined;
+			if (target.kind === "project") return { kind: "directory", path: target.path };
+			return { kind: target.kind === "folder" ? "directory" : "file", path: joinWorkspacePath(cwd, target.path) };
+		},
+		[cwd],
+	);
+
+	const searchMenuEntries = useCallback(
+		(target: SearchMenuTarget): UiSlotEntry[] =>
+			buildSearchMenuEntries(uiContextSearch, target, {
+				t,
+				conversationRef: capabilities.conversationRef,
+				quickAskReferenceMenus,
+			}),
+		[uiContextSearch, capabilities.conversationRef, quickAskReferenceMenus, t],
+	);
+
+	const dispatchSearchMenuEntry = useCallback(
+		(entryId: string) => {
+			const target = menuTargetRef.current;
+			if (!target) return;
+			const copy = (text: string) => {
+				void copyTextToClipboard(text).then((ok) => {
+					if (ok) flashCopied();
+				});
+			};
+			switch (entryId) {
+				case "host:search-open":
+					activate(navItemOf(target));
+					return;
+				case "host:search-open-folder":
+					if (target.kind !== "project") return;
+					onOpenFolder?.(target.path);
+					onClose();
+					return;
+				case "host:search-reveal":
+					if (target.kind === "plugin") return;
+					appSend({ type: "file_reveal", path: target.path });
+					return;
+				case "host:search-pin":
+					if (target.kind !== "session") return;
+					appSend({ type: "pin_session", path: target.path, pinned: !target.pinned });
+					return;
+				case "host:search-quote":
+					if (target.kind !== "session") return;
+					composeToComposer({
+						attachments: [
+							{
+								path: "",
+								key: `conv||${target.path}`,
+								name: target.title,
+								mode: "conversation",
+								sessionPath: target.path,
+							},
+						],
+					});
+					return;
+				case "host:search-quick-ask": {
+					const reference = quickAskReferenceOf(target);
+					if (reference) openQuickAsk({ reference });
+					return;
+				}
+				case "host:search-copy-name": {
+					if (target.kind === "session" || target.kind === "plugin") copy(target.title);
+					else if (target.kind === "project") copy(baseName(target.path));
+					else copy(target.name);
+					return;
+				}
+				case "host:search-copy-rel":
+					if (target.kind === "file" || target.kind === "folder") copy(target.path);
+					return;
+				case "host:search-copy-path": {
+					if (target.kind === "session" || target.kind === "project") copy(target.path);
+					else if (target.kind === "file" || target.kind === "folder") copy(joinWorkspacePath(cwd, target.path));
+					return;
+				}
+				case "host:search-copy-id":
+					if (target.kind === "session" && target.sessionId) copy(target.sessionId);
+					return;
+				default:
+					return;
+			}
+		},
+		[activate, cwd, flashCopied, navItemOf, onClose, onOpenFolder, quickAskReferenceOf],
+	);
+
+	const showSearchMenu = useCallback(
+		(e: MouseEvent<HTMLElement>, target: SearchMenuTarget) => {
+			e.preventDefault();
+			e.stopPropagation();
+			menuTargetRef.current = target;
+			const entries = searchMenuEntries(target);
+			if (contextMenuItems(entries).length === 0) return;
+			openContextMenu({
+				x: e.clientX,
+				y: e.clientY,
+				slot: "contextmenu.search",
+				target: { id: menuTargetId(target), kind: target.kind, label: menuTargetLabel(target) },
+				entries,
+				onHostAction: (entry) => dispatchSearchMenuEntry(entry.id),
+			});
+		},
+		[dispatchSearchMenuEntry, searchMenuEntries],
+	);
+
 	useEffect(() => {
 		if (!open) return;
 		const onKey = (e: KeyboardEvent) => {
+			// 菜单打开时键盘归菜单（上下键/回车/Esc 都不该再驱动结果列表）
+			if (getContextMenu()) return;
 			if (e.key === "Escape") {
 				e.preventDefault();
 				e.stopPropagation();
@@ -346,7 +595,21 @@ export function GlobalSearchModal({
 									s.firstMessage?.trim() ||
 									(s.path.split(/[\\/]/).pop() || s.path).replace(/\.jsonl$/i, "");
 								return (
-									<div key={s.path} className="gs-item-wrap">
+									<div
+										key={s.path}
+										className="gs-item-wrap"
+										onContextMenu={(e) => {
+											setActive(idx);
+											showSearchMenu(e, {
+												kind: "session",
+												path: s.path,
+												title,
+												anchors: s.anchors,
+												pinned: Boolean(s.pinned),
+												...(s.sessionId ? { sessionId: s.sessionId } : {}),
+											});
+										}}
+									>
 										<button
 											type="button"
 											className={idx === active ? "gs-item active" : "gs-item"}
@@ -407,6 +670,10 @@ export function GlobalSearchModal({
 										type="button"
 										className={idx === active ? "gs-item active" : "gs-item"}
 										onMouseEnter={() => setActive(idx)}
+										onContextMenu={(e) => {
+											setActive(idx);
+											showSearchMenu(e, { kind: "project", path: p.path });
+										}}
 										onClick={() => activate({ kind: "project", path: p.path })}
 									>
 										<span className="gs-item-title">
@@ -433,6 +700,14 @@ export function GlobalSearchModal({
 										className={idx === active ? "gs-item active" : "gs-item"}
 										title={t("gsOpenPreview")}
 										onMouseEnter={() => setActive(idx)}
+										onContextMenu={(e) => {
+											setActive(idx);
+											showSearchMenu(e, {
+												kind: f.type === "dir" ? "folder" : "file",
+												path: f.path,
+												name: f.name,
+											});
+										}}
 										onClick={() => {
 											if (f.type === "file")
 												activate({
@@ -469,6 +744,16 @@ export function GlobalSearchModal({
 										className={idx === active ? "gs-item active" : "gs-item"}
 										title={h.providerLabel}
 										onMouseEnter={() => setActive(idx)}
+										onContextMenu={(e) => {
+											setActive(idx);
+											showSearchMenu(e, {
+												kind: "plugin",
+												providerId: h.providerId,
+												providerLabel: h.providerLabel,
+												title: h.title,
+												action: h.action,
+											});
+										}}
 										onClick={() =>
 											activate({
 												kind: "plugin",
@@ -492,6 +777,7 @@ export function GlobalSearchModal({
 					<span>↑↓ {t("gsNavigate")}</span>
 					<span>Enter {t("gsOpen")}</span>
 					<span>Esc {t("gsCloseHint")}</span>
+					{flash && <span className="gs-flash">{flash}</span>}
 				</div>
 			</div>
 		</div>

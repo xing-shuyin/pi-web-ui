@@ -67,6 +67,9 @@ export interface BarItemProps {
 	bar: "top" | "bottom" | "left" | "right";
 	chat: ChatState;
 	view?: ViewName;
+	/** 终端 / 源码管理是开关式面板：高亮跟着"开着没有"走（两者可以同时打开）。 */
+	termOpen?: boolean;
+	gitOpen?: boolean;
 	plugins?: { id: string; name?: string; error?: string; icon?: string; iconSvg?: string }[];
 	onViewChange?: (view: ViewName) => void;
 	onOpenPanel?: (side: "left" | "right") => void;
@@ -116,6 +119,8 @@ export function BarItem({
 	bar,
 	chat,
 	view,
+	termOpen,
+	gitOpen,
 	plugins,
 	onViewChange,
 	onOpenPanel,
@@ -865,7 +870,8 @@ export function BarItem({
 
 	switch (id) {
 		case "host:chat":
-			if (!view || view === "chat" || view === "native-cli") return null;
+			// 聊天区一直在中间：终端 / 源码管理只是面板打开（再点一次就收起），不需要"回对话"标签。
+			if (!view || view === "chat" || view === "native-cli" || view === "terminal" || view === "git") return null;
 			iconNode = <FiMessageSquare className="bar-item-icon" />;
 			labelText = named(t("chat"));
 			isTab = true;
@@ -876,7 +882,7 @@ export function BarItem({
 		case "host:terminal":
 			iconNode = <FiTerminal className="bar-item-icon" />;
 			labelText = named(t("terminal"));
-			isActive = view === "terminal";
+			isActive = termOpen ?? view === "terminal";
 			isTab = true;
 			onClick = () => onViewChange?.("terminal");
 			break;
@@ -905,7 +911,7 @@ export function BarItem({
 		case "host:git":
 			iconNode = <FiGitBranch className="bar-item-icon" />;
 			labelText = named(t("scmTab"));
-			isActive = view === "git";
+			isActive = gitOpen ?? view === "git";
 			isTab = true;
 			onClick = () => onViewChange?.("git");
 			break;
@@ -1115,8 +1121,11 @@ export function BarItem({
 			{badgeNode}
 		</button>
 	);
+	// 顶栏的「新对话」带文字，CLI 是它右侧的独立 chip；其余栏沿用展开式 CLI 快捷区。
 	return id === "host:new-chat" ? (
-		<NativeCliCreateEntry onCreateCli={onCreateCli}>{button}</NativeCliCreateEntry>
+		<NativeCliCreateEntry variant={bar === "top" ? "inline" : "hover"} onCreateCli={onCreateCli}>
+			{button}
+		</NativeCliCreateEntry>
 	) : (
 		button
 	);

@@ -15,7 +15,11 @@ export interface LocalBot {
 	mcpServers: string[];
 	enabled: boolean;
 	revision: number;
-	/** 运行形态：只响应（默认，零成本）/ 常驻 / 定时。 */
+	/**
+	 * 身份元数据（存量数据 / 迁移包兼容）：Bot registry 不按它自动调度。
+	 * 常驻由宿主 `plugins.alwaysOn` 承接，定时由 `schedule` 工具承接；这里只留痕，
+	 * 不要在 UI 或工具里把它当成已接线的能力。见 docs/agent-bot-design.md §8.2。
+	 */
 	trigger?: "on_demand" | "always_on" | "scheduled";
 	/** 身份来源与修订：谁写的 systemPrompt、被改写几次。 */
 	identity?: { authoredBy: "human" | "model"; authoredAt: number; modelRevision: number };
