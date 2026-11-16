@@ -7,6 +7,7 @@ import {
 	restoreProtectedUrls,
 	signWebhook,
 } from "../../plugins/feishu/index.mjs";
+import { DICT } from "../../plugins/feishu/client/i18n.mjs";
 
 describe("Feishu 纯函数工具库测试", () => {
 	it("signWebhook 计算合法的 HMAC-SHA256 签名，空密钥返回空串", () => {
@@ -221,7 +222,8 @@ describe("Feishu 插件激活与 AI 工具集成", () => {
 		clientMod.default(mockCtx);
 		expect(registeredView).toBeDefined();
 		expect(registeredView.id).toBe("feishu");
-		expect(registeredView.label).toBe("飞书");
+		// 视图标题跟随界面语言，取词典里的插件名（zh / en 两套）
+		expect([DICT.zh.appName, DICT.en.appName]).toContain(registeredView.label);
 		expect(typeof registeredView.render).toBe("function");
 	});
 });

@@ -1,3 +1,4 @@
+// Theme identity data (mirrors the manifest option labels); the client only reads the colour fields, never `name`.
 export const WALLPAPER_THEMES = {
 	obsidian: {
 		id: "wallpaper-obsidian",
