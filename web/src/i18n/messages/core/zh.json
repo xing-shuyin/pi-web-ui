@@ -2637,7 +2637,7 @@
 	"claimFilesOffHint": "已关闭：AI 不能再认领文件（并行触碰提醒照常工作，只是少了事前意图这一路）",
 	"planUpdateEnabledDesc": "结构化任务计划更新（Plan Mode / Step State Machine）：让模型将复杂任务拆解为步骤并实时更新推进状态。",
 	"planUpdateOffHint": "已关闭：AI 不能再更新结构化计划看板",
-	"compactContextEnabledDesc": "根据当前问题主动压缩上下文：允许 AI 自主指定压缩重点、保留与当前任务相关的核心上下文并去除无关历史细节，自主控制保留范围并在回合后生效。",
+	"compactContextEnabledDesc": "根据当前问题自主压缩上下文：AI 直接写出压缩后的上下文正文（不再额外发一次摘要请求），只保留最近消息原文，回合结束后生效。",
 	"compactContextOffHint": "已关闭：AI 不能主动调用上下文压缩工具（仍可用 /compact 命令或触发软上限自动压缩）",
 	"mcpManageEnabledDesc": "MCP 服务器检测与安装管理（list / check / install / remove / reload）：允许 AI 检查指定 MCP 服务器是否已安装，并便捷地将 npm 包或远端 MCP 写入配置并即时热加载挂载。",
 	"mcpManageOffHint": "已关闭：AI 不能主动调用 mcp_manage 检查或安装 MCP 服务器",

@@ -15,6 +15,70 @@ export function appendCompactionInstructions(instructions?: string): string {
 
 export interface CompactionInstructionsOptions {
 	getEvidenceIndex?: () => Promise<string>;
+	/**
+	 * Context checkpoint the model wrote in-context through `compact_context`.
+	 * Consumed once per compaction: returning a non-empty string skips the
+	 * summarization request entirely.
+	 */
+	takeProvidedSummary?: () => string | undefined;
+}
+
+/** `details` half of the SDK compaction result: which files the folded history touched. */
+interface CompactionFileDetails {
+	readFiles: string[];
+	modifiedFiles: string[];
+}
+
+interface ProvidedPreparation {
+	firstKeptEntryId?: unknown;
+	tokensBefore?: unknown;
+	fileOps?: {
+		read?: Iterable<string>;
+		written?: Iterable<string>;
+		edited?: Iterable<string>;
+	} | null;
+}
+
+/**
+ * Mirror of the SDK's private `computeFileLists`: a file both read and modified
+ * counts as modified only.
+ */
+export function compactionFileDetails(fileOps: ProvidedPreparation["fileOps"]): CompactionFileDetails {
+	const modified = new Set<string>([...(fileOps?.edited ?? []), ...(fileOps?.written ?? [])]);
+	const readFiles = [...(fileOps?.read ?? [])].filter((f) => !modified.has(f)).sort();
+	return { readFiles, modifiedFiles: [...modified].sort() };
+}
+
+/** Mirror of the SDK's private `formatFileOperations` trailer. */
+export function formatFileDetails(details: CompactionFileDetails): string {
+	const sections: string[] = [];
+	if (details.readFiles.length > 0) sections.push(`<read-files>\n${details.readFiles.join("\n")}\n</read-files>`);
+	if (details.modifiedFiles.length > 0)
+		sections.push(`<modified-files>\n${details.modifiedFiles.join("\n")}\n</modified-files>`);
+	return sections.length === 0 ? "" : `\n\n${sections.join("\n\n")}`;
+}
+
+/**
+ * Build the compaction result the SDK would have produced from a model-written
+ * checkpoint. Boundary (`firstKeptEntryId`) and size (`tokensBefore`) come from
+ * the SDK's own preparation, so the kept-tail policy stays the SDK's.
+ */
+export function buildProvidedCompaction(
+	preparation: unknown,
+	summary: string,
+): { summary: string; firstKeptEntryId: string; tokensBefore: number; details: CompactionFileDetails } {
+	const prep = (preparation ?? {}) as ProvidedPreparation;
+	const firstKeptEntryId = prep.firstKeptEntryId;
+	if (typeof firstKeptEntryId !== "string" || !firstKeptEntryId) {
+		throw new Error("Provided compaction has no kept-entry boundary; session may need migration");
+	}
+	const details = compactionFileDetails(prep.fileOps);
+	return {
+		summary: `${summary}${formatFileDetails(details)}`,
+		firstKeptEntryId,
+		tokensBefore: typeof prep.tokensBefore === "number" && Number.isFinite(prep.tokensBefore) ? prep.tokensBefore : 0,
+		details,
+	};
 }
 
 const installedWrappers = new WeakSet<Function>();
@@ -33,6 +97,19 @@ export function installCompactionInstructions(session: unknown, options?: Compac
 		if (installedWrappers.has(original)) return true;
 		if (original.length !== 5) return false;
 		const getEvidenceIndex = options?.getEvidenceIndex;
+		const takeProvidedSummary = options?.takeProvidedSummary;
+
+		const withEvidenceIndex = (result: unknown): unknown | Promise<unknown> => {
+			if (!getEvidenceIndex) return result;
+			return Promise.resolve(result).then(async (compaction: unknown) => {
+				if (!compaction || typeof compaction !== "object" || !("summary" in compaction)) return compaction;
+				if (typeof compaction.summary !== "string") return compaction;
+				const index = await getEvidenceIndex();
+				if (!index.trim()) return compaction;
+				return { ...compaction, summary: `${compaction.summary}\n\n${index}` };
+			});
+		};
+
 		function wrapped(
 			this: unknown,
 			preparation: unknown,
@@ -42,6 +119,13 @@ export function installCompactionInstructions(session: unknown, options?: Compac
 			reason: unknown,
 			...rest: unknown[]
 		) {
+			// Model-written checkpoint: no summarization request, the SDK keeps the rest
+			// of the pipeline (events, projection refresh, appendCompaction).
+			const provided = takeProvidedSummary?.();
+			if (typeof provided === "string" && provided.trim()) {
+				const summary = provided.trim();
+				return Promise.resolve().then(() => withEvidenceIndex(buildProvidedCompaction(preparation, summary)));
+			}
 			const result = original.call(
 				this,
 				preparation,
@@ -53,14 +137,7 @@ export function installCompactionInstructions(session: unknown, options?: Compac
 				reason,
 				...rest,
 			);
-			if (!getEvidenceIndex) return result;
-			return Promise.resolve(result).then(async (compaction: unknown) => {
-				if (!compaction || typeof compaction !== "object" || !("summary" in compaction)) return compaction;
-				if (typeof compaction.summary !== "string") return compaction;
-				const index = await getEvidenceIndex();
-				if (!index.trim()) return compaction;
-				return { ...compaction, summary: `${compaction.summary}\n\n${index}` };
-			});
+			return withEvidenceIndex(result);
 		}
 		Object.defineProperty(session, "_runDefaultCompaction", {
 			...(owner === session ? descriptor : { configurable: true, writable: true, enumerable: false }),

@@ -236,7 +236,7 @@ describe("工具 schema 脱水（只留字段名与类型，说明归唯一归�
 			} as never,
 			plan_update: {},
 			compact_context: {
-				focus: "1) Active goal, 2) context to PRESERVE, 3) history to REMOVE or condense",
+				summary: "Checkpoint you write: ## sections covering goal, constraints, verified facts, changes, next steps",
 				keepRecentTokens: "Recent tokens kept verbatim; omit = auto",
 			},
 			sandbox: { action: expect.any(String) } as never,

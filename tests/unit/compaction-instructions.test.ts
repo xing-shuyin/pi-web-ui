@@ -1,7 +1,10 @@
 import { describe, expect, it, vi } from "vitest";
 import {
 	appendCompactionInstructions,
+	buildProvidedCompaction,
+	compactionFileDetails,
 	COMPACTION_RETENTION_INSTRUCTIONS,
+	formatFileDetails,
 	installCompactionInstructions,
 } from "../../server/compaction-instructions.js";
 import { buildCompactionInstructions } from "../../server/compact-context-tool.js";
@@ -60,6 +63,88 @@ describe("compaction retention instructions", () => {
 		expect(built).toContain(`focus\n\n[Key Points / Summary to Retain]\nunverified note ${ref}`);
 		expect(appendCompactionInstructions(built)).toBe(built);
 		expect(buildCompactionInstructions("  ", "  ")).toBe(COMPACTION_RETENTION_INSTRUCTIONS);
+	});
+});
+
+describe("provided checkpoint compaction (no summarization request)", () => {
+	const prep = {
+		firstKeptEntryId: "entry-42",
+		tokensBefore: 12345,
+		fileOps: {
+			read: new Set(["server/b.ts", "server/a.ts"]),
+			written: new Set(["server/c.ts"]),
+			edited: new Set(["server/a.ts"]),
+		},
+	};
+
+	it("stores the model checkpoint verbatim and never calls the SDK summarizer", async () => {
+		const { session, calls } = fixture();
+		const takeProvidedSummary = vi.fn(() => "## Goal\nship the checkpoint");
+		expect(installCompactionInstructions(session, { takeProvidedSummary })).toBe(true);
+		const result = (await session._runDefaultCompaction(prep, {}, undefined, undefined, "manual")) as any;
+		expect(calls).not.toHaveBeenCalled();
+		expect(takeProvidedSummary).toHaveBeenCalledTimes(1);
+		expect(result.firstKeptEntryId).toBe("entry-42");
+		expect(result.tokensBefore).toBe(12345);
+		expect(result.summary.startsWith("## Goal\nship the checkpoint")).toBe(true);
+		expect(result.summary).toContain("<read-files>\nserver/b.ts\n</read-files>");
+		expect(result.summary).toContain("<modified-files>\nserver/a.ts\nserver/c.ts\n</modified-files>");
+		expect(result.details).toEqual({ readFiles: ["server/b.ts"], modifiedFiles: ["server/a.ts", "server/c.ts"] });
+		expect(result.usage).toBeUndefined();
+	});
+
+	it.each([undefined, "", "   \n "])("falls back to the SDK summarizer for a blank checkpoint %j", async (pending) => {
+		const { session, calls } = fixture();
+		installCompactionInstructions(session, { takeProvidedSummary: () => pending });
+		await session._runDefaultCompaction(prep, {}, undefined, undefined, "manual");
+		expect(calls).toHaveBeenCalledTimes(1);
+	});
+
+	it("consumes the checkpoint once so the next compaction summarizes again", async () => {
+		const { session, calls } = fixture();
+		const takeProvidedSummary = vi.fn().mockReturnValueOnce("## Goal\nonce").mockReturnValue(undefined);
+		installCompactionInstructions(session, { takeProvidedSummary });
+		await session._runDefaultCompaction(prep, {}, undefined, undefined, "manual");
+		expect(calls).not.toHaveBeenCalled();
+		await session._runDefaultCompaction(prep, {}, undefined, undefined, "manual");
+		expect(calls).toHaveBeenCalledTimes(1);
+	});
+
+	it("appends the host evidence index after the checkpoint", async () => {
+		const { session } = fixture();
+		const index = `context-evidence:${"d".repeat(64)}`;
+		installCompactionInstructions(session, {
+			takeProvidedSummary: () => "## Goal\nindexed",
+			getEvidenceIndex: async () => index,
+		});
+		const result = (await session._runDefaultCompaction(prep, {}, undefined, undefined, "manual")) as any;
+		expect(result.summary.endsWith(index)).toBe(true);
+	});
+
+	it.each([{}, { firstKeptEntryId: "" }, { firstKeptEntryId: 7 }])(
+		"rejects a checkpoint without a usable kept-entry boundary %j",
+		async (broken) => {
+			const { session } = fixture();
+			installCompactionInstructions(session, { takeProvidedSummary: () => "## Goal\nx" });
+			await expect(session._runDefaultCompaction(broken, {}, undefined, undefined, "manual")).rejects.toThrow(
+				/kept-entry boundary/,
+			);
+		},
+	);
+
+	it("builds file details with read/modified de-duplication and no trailer when empty", () => {
+		expect(compactionFileDetails(undefined)).toEqual({ readFiles: [], modifiedFiles: [] });
+		expect(formatFileDetails({ readFiles: [], modifiedFiles: [] })).toBe("");
+		expect(buildProvidedCompaction({ firstKeptEntryId: "e", tokensBefore: 1 }, "## Goal")).toEqual({
+			summary: "## Goal",
+			firstKeptEntryId: "e",
+			tokensBefore: 1,
+			details: { readFiles: [], modifiedFiles: [] },
+		});
+	});
+
+	it("defaults tokensBefore when the preparation omits it", () => {
+		expect(buildProvidedCompaction({ firstKeptEntryId: "e" }, "## Goal").tokensBefore).toBe(0);
 	});
 });
 

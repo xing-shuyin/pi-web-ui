@@ -33,7 +33,13 @@ SDK 没有自动压缩指令及权限前别名解析的公开接口，分别用 
 
 软上限自动压缩的自定义指令可通过设置项 `autoCompactionInstructions` 传入（空 = 不传，保持 SDK 默认摘要）：扩展可借此让 `session_before_compact` 钩子接管自动压缩的摘要生成，无需修改宿主源码。只影响自动压缩；手动 `/compact` 与 AI 的 `compact_context` 仍各自传自己的指令。证据目录仍需随转录迁移，旧绝对路径不自动改写。
 
-验证：`tests/unit/request-context.test.ts`、`context-evidence.test.ts`、`compaction-instructions.test.ts`、`evidence-tool-hooks.test.ts`、`context-integration.test.ts`。
+### 模型自主压缩：正文由模型给，宿主不另发摘要请求
+
+`compact_context` 的 `summary` 是必填项，模型必须在本轮回复里自己写出压缩后的上下文正文（≥300 字符、≥2 个 `## ` 分节，不合格直接返回错误要求重写）。turn 结束后 `executePendingCompaction` 把正文交给 `installCompactionInstructions` 的 patch，`_runDefaultCompaction` 直接返回 `{summary, firstKeptEntryId, tokensBefore, details}` 而**不调用任何模型**：边界与大小来自 SDK 自己的 `prepareCompaction`（`preparation.firstKeptEntryId` / `tokensBefore` / `fileOps`），后续 `appendCompaction`、事件与投影刷新仍是 SDK 原流程。因此这条路径不产生额外请求、不消耗摘要输入 token，也不受压缩请求 `cacheRetention: "none"` 影响。
+
+正文只读取一次（`AgentService.providedCompactionSummaries` 是会话对象的 WeakMap，`finally` 清空）：模型没给正文时仍回落 SDK 摘要请求。`details` 与 `<read-files>` / `<modified-files>` 尾注由 `compactionFileDetails` / `formatFileDetails` 复刻（SDK 未导出 `computeFileLists` / `formatFileOperations`），SDK 升级时需与 `core/compaction/utils.ts` 对齐。与独立摘要相比质量风险集中在模型当前上下文压力，故保留长度与分节门禁。
+
+验证：`tests/unit/request-context.test.ts`、`context-evidence.test.ts`、`compaction-instructions.test.ts`（含 provided checkpoint 短路组）、`compact-context-tool.test.ts`、`evidence-tool-hooks.test.ts`、`context-integration.test.ts`。
 
 ## 1. 一块开销有多大
 
@@ -154,7 +160,7 @@ SDK 没有自动压缩指令及权限前别名解析的公开接口，分别用 
 | `lsp`             | 1526 | 803  | 8 条字段说明 → 1 行 action 签名、`minimum/maximum` 清零（handler 已 `Math.min/max`）             |
 | `patch`           | 1295 | 1114 | `minimum/maximum` + 2 条说明清零（description 是 Hashline 语法本体，保留）                       |
 | `plan_update`     | 1121 | 771  | 6 条字段说明清零                                                                                 |
-| `compact_context` | 1065 | 694  | `minimum/maximum` 清零（`calculateEffectiveKeepRecentTokens` 已夹紧）、只留 `focus` 一句         |
+| `compact_context` | 1065 | 694  | `minimum/maximum` 清零、`focus` 说明清零、`summary` 留一句正文格式                               |
 | `eval`            | 882  | 492  | `minimum/maximum` 清零（handler 已夹紧）、只留 `timeout`/`reset` 两句                            |
 | `powershell`      | 590  | 252  | 同 `write`/`grep`/`find`：SDK 实现 + `withSlimPrompt()` 换文案与 schema                          |
 | `ls`              | 422  | 180  | 同上                                                                                             |

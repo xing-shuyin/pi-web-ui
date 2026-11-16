@@ -926,6 +926,8 @@ export class ClientSession {
 	private turnEndWaiters = new Map<string, Set<(o: RoleWaitOutcome) => void>>();
 	private subagentSettleStore?: SubagentSettleRegistry;
 	private subagentSpawnBudgetStore?: SubagentSpawnBudget;
+	/** Model-written checkpoints awaiting the next compaction on that session; consumed once. */
+	private providedCompactionSummaries = new WeakMap<object, string>();
 
 	/**
 	 * 子代理结算边沿：回合结束 / 停止 / 移出 / 问卷变化 都从这里唤醒等待方。
@@ -3630,7 +3632,10 @@ export class ClientSession {
 	}
 
 	private async executePendingCompaction(conv: Conversation, pending: PendingCompaction): Promise<void> {
-		const instructions = buildCompactionInstructions(pending.focus, pending.summary);
+		const provided = pending.summary?.trim();
+		const instructions = provided
+			? buildCompactionInstructions(pending.focus)
+			: buildCompactionInstructions(pending.focus, pending.summary);
 		const session = conv.session;
 		const model = session.model;
 
@@ -3653,14 +3658,25 @@ export class ClientSession {
 				});
 			}
 
-			await session.compact(instructions || undefined);
+			// Hand the checkpoint to the compaction patch: it stores these bytes and skips the
+			// summarization request, while the SDK keeps events, projection refresh and appendCompaction.
+			if (provided) this.providedCompactionSummaries.set(session, provided);
+			try {
+				await session.compact(instructions || undefined);
+			} finally {
+				if (provided) this.providedCompactionSummaries.delete(session);
+			}
 
 			const retainTokens = pending.keepRecentTokens ?? DEFAULT_KEEP_RECENT_TOKENS;
 			this.emit({
 				type: "notice",
 				level: "info",
-				text: `AI 已主动根据当前问题完成上下文压缩（保留 ~${retainTokens.toLocaleString()} tokens 近期上下文，重点保留当前问题相关内容）`,
-				textEn: `Context compacted proactively based on current issue (retained ~${retainTokens.toLocaleString()} tokens, focused on current task)`,
+				text: provided
+					? `AI 已用自己撰写的正文完成上下文压缩（${provided.length.toLocaleString()} 字，保留 ~${retainTokens.toLocaleString()} tokens 近期原文，未产生额外摘要请求）`
+					: `AI 已主动根据当前问题完成上下文压缩（保留 ~${retainTokens.toLocaleString()} tokens 近期上下文，重点保留当前问题相关内容）`,
+				textEn: provided
+					? `Context compacted with the checkpoint the model wrote itself (${provided.length.toLocaleString()} chars, retained ~${retainTokens.toLocaleString()} tokens verbatim, no extra summarization request)`
+					: `Context compacted proactively based on current issue (retained ~${retainTokens.toLocaleString()} tokens, focused on current task)`,
 			});
 		} catch (err) {
 			const msg = err instanceof Error ? err.message : String(err);
@@ -4912,6 +4928,7 @@ export class ClientSession {
 						const file = created.session.sessionManager.getSessionFile();
 						return file ? buildContextEvidenceIndex(file) : "";
 					},
+					takeProvidedSummary: () => this.providedCompactionSummaries.get(created.session),
 				});
 				if (evidenceHooksReady && compactionReady) enableRequestEvidence(created.session.sessionManager);
 				if (noSpawnTools) SPAWN_TOOLS_BARRED.add(created.session);

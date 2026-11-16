@@ -2637,7 +2637,7 @@
 	"claimFilesOffHint": "Disabled: the AI can no longer claim files (post-hoc touch reminders still work, only the up-front intent signal is gone)",
 	"planUpdateEnabledDesc": "Structured task plan updates (Plan Mode / Step State Machine): allows the model to break complex tasks into steps and track progress in real time.",
 	"planUpdateOffHint": "Disabled: AI can no longer update the structured plan board",
-	"compactContextEnabledDesc": "Proactively compact context based on the current issue: allows AI to independently specify compression focus, retain core task context, drop irrelevant history, and control retention scope.",
+	"compactContextEnabledDesc": "Proactively compact context: the model writes the compacted context itself (no extra summarization request), keeps recent messages verbatim, and applies it after the turn settles.",
 	"compactContextOffHint": "Disabled: AI cannot proactively invoke context compaction (you can still use /compact or trigger auto-compaction)",
 	"mcpManageEnabledDesc": "MCP server inspection and installation (list / check / install / remove / reload): allows AI to check whether an MCP server is installed and conveniently install/configure npm or remote MCP servers with live hot-reload.",
 	"mcpManageOffHint": "Disabled: AI cannot invoke mcp_manage to check or install MCP servers",
