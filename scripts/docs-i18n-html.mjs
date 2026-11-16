@@ -25,8 +25,18 @@ import { tmpdir } from "node:os";
 
 const require = createRequire(import.meta.url);
 const openccDir = resolve(process.env.OPENCC_DIR || join(tmpdir(), "zhtw-deps"));
-const req = createRequire(join(openccDir, "package.json"));
-const toTw = req("opencc-js").Converter({ from: "cn", to: "twp" });
+
+/** opencc 只在 `--tw` 生成时需要：`--check` / `--switchers` 在没有装好 opencc 的机器上也要能跑。 */
+function openccToTw() {
+	const req = createRequire(join(openccDir, "package.json"));
+	try {
+		return req("opencc-js").Converter({ from: "cn", to: "twp" });
+	} catch (err) {
+		console.error(`缺少 opencc-js：在 ${openccDir} 里 npm i opencc-js（或用 OPENCC_DIR 指向已装好的目录）`);
+		console.error(`  ${(err && err.message) || err}`);
+		process.exit(1);
+	}
+}
 
 const MODE = process.argv.find((a) => a.startsWith("--")) ?? "--check";
 const MARK = "data-docs-i18n-switch";
@@ -37,17 +47,16 @@ const name = (p) =>
 		.pop()
 		.replace(/\.(en|zh-TW)$/, "");
 
-/** 代码块原样保留，其余部分才做繁简转换。 */
-const CODE = /(<script\b[\s\S]*?<\/script>|<style\b[\s\S]*?<\/style>)/gi;
-
 /**
  * 整篇转换：设计稿把大半可见文案放在 `<script>` 模板字符串里（面板标题、示例数据、
  * 提示语），只转静态 HTML 会让读者点到 Tab 就看到简体字。转换只改汉字，JS/CSS 的
  * 标识符、选择器、JSON 键都是 ASCII，不受影响；HTML 里的 class/id 与脚本里的
  * 选择器同时被转换，二者仍然一致。
  */
+let twConverter = null;
 function convertDocument(html) {
-	return toTw(html);
+	twConverter ??= openccToTw();
+	return twConverter(html);
 }
 
 function switcher(file, active) {
@@ -73,7 +82,7 @@ function injectSwitcher(file, html, active) {
 }
 
 function reviewFiles() {
-	return execSync("git ls-files 'docs/*.html' 'docs/**/*.html'", { encoding: "utf8" })
+	return execSync('git ls-files "docs/*.html" "docs/**/*.html"', { encoding: "utf8" })
 		.split("\n")
 		.filter(Boolean)
 		.filter((file) => !/\.(en|zh-TW)\.html$/.test(file));
