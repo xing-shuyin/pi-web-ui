@@ -1,5 +1,6 @@
 // frp-manager 面板：穿透列表 / 客户端 / 本地 frps / 远端部署 / 日志
 import { esc } from "@pi-web-ui/plugin-sdk/client";
+import { makeT } from "./i18n.mjs";
 
 function resolveApiBase(importMetaUrl) {
 	const base = String(importMetaUrl);
@@ -50,6 +51,7 @@ async function api(path, opts = {}) {
 }
 
 function createApp(root) {
+	const t = makeT();
 	let st = null;
 	let tab = "list";
 	let msg = "";
@@ -64,7 +66,7 @@ function createApp(root) {
 			st = await api("/status");
 			if (!quiet) render();
 		} catch (e) {
-			msg = `连接失败：${e.message}`;
+			msg = t("connectingFailed", { error: e.message });
 			render();
 		}
 	}
@@ -76,17 +78,17 @@ function createApp(root) {
 		} catch {}
 	}
 	async function act(action, extra = {}) {
-		msg = "执行中…";
+		msg = t("working");
 		render();
 		try {
 			const r = await api("/action", { method: "POST", body: JSON.stringify({ action, ...extra }) });
-			if (!r.ok) msg = `失败：${esc(r.error || "未知错误")}`;
+			if (!r.ok) msg = t("failed", { error: esc(r.error || t("unknownError")) });
 			else {
 				st = r.st || st;
-				msg = r.out ? esc(String(r.out).slice(-800)) : "已完成";
+				msg = r.out ? esc(String(r.out).slice(-800)) : t("done");
 			}
 		} catch (e) {
-			msg = `失败：${esc(e.message)}`;
+			msg = t("failed", { error: esc(e.message) });
 		}
 		render();
 	}
@@ -102,38 +104,38 @@ function createApp(root) {
 			...p,
 		};
 		return `
-		<div class="frp-card"><div class="frp-row"><b>${p.name ? `编辑 ${esc(p.name)}` : "新增穿透"}</b></div>
+		<div class="frp-card"><div class="frp-row"><b>${p.name ? t("editProxy", { name: esc(p.name) }) : t("addProxy")}</b></div>
 		<div class="frp-grid">
-			<label>名称</label><input class="frp-in" data-f="name" value="${esc(v.name || "")}" placeholder="如 web-admin" ${p.name ? "disabled" : ""}>
-			<label>类型</label><select class="frp-in" data-f="type">
-				${["tcp", "udp", "http", "https", "stcp", "xtcp"].map((t) => `<option ${v.type === t ? "selected" : ""}>${t}</option>`).join("")}
+			<label>${t("fName")}</label><input class="frp-in" data-f="name" value="${esc(v.name || "")}" placeholder="${t("namePlaceholder")}" ${p.name ? "disabled" : ""}>
+			<label>${t("fType")}</label><select class="frp-in" data-f="type">
+				${["tcp", "udp", "http", "https", "stcp", "xtcp"].map((type) => `<option ${v.type === type ? "selected" : ""}>${type}</option>`).join("")}
 			</select>
-			<label>本地 IP</label><input class="frp-in" data-f="localIP" value="${esc(v.localIP)}">
-			<label>本地端口</label><input class="frp-in" data-f="localPort" value="${esc(v.localPort)}" placeholder="如 3000">
-			<label>远程端口</label><input class="frp-in" data-f="remotePort" value="${esc(v.remotePort || "")}" placeholder="tcp/udp 用，如 6000">
-			<label>域名</label><input class="frp-in" data-f="customDomains" value="${esc(v.customDomains || "")}" placeholder="http/https 用，逗号分隔">
-			<label>subdomain</label><input class="frp-in" data-f="subdomain" value="${esc(v.subdomain || "")}" placeholder="可选，需服务端 subdomainHost">
+			<label>${t("fLocalIp")}</label><input class="frp-in" data-f="localIP" value="${esc(v.localIP)}">
+			<label>${t("fLocalPort")}</label><input class="frp-in" data-f="localPort" value="${esc(v.localPort)}" placeholder="${t("localPortPlaceholder")}">
+			<label>${t("fRemotePort")}</label><input class="frp-in" data-f="remotePort" value="${esc(v.remotePort || "")}" placeholder="${t("remotePortPlaceholder")}">
+			<label>${t("fDomains")}</label><input class="frp-in" data-f="customDomains" value="${esc(v.customDomains || "")}" placeholder="${t("domainsPlaceholder")}">
+			<label>${t("fSubdomain")}</label><input class="frp-in" data-f="subdomain" value="${esc(v.subdomain || "")}" placeholder="${t("subdomainPlaceholder")}">
 		</div>
 		<div class="frp-row" style="margin-top:8px">
-			<button class="frp-btn primary" data-op="save">保存</button>
-			<button class="frp-btn" data-op="cancel">取消</button>
+			<button class="frp-btn primary" data-op="save">${t("save")}</button>
+			<button class="frp-btn" data-op="cancel">${t("cancel")}</button>
 		</div></div>`;
 	}
 
 	function render() {
 		if (destroyed) return;
 		if (!st) {
-			root.innerHTML = `<div class="frp-wrap">正在检测 frp 环境…</div>`;
+			root.innerHTML = `<div class="frp-wrap">${t("probing")}</div>`;
 			return;
 		}
 		const frpcRun = st.frpc?.running;
 		const frpsRun = st.frpsLocal?.running;
 		const tabs = [
-			["list", "穿透列表"],
-			["client", "客户端 frpc"],
-			["frps", "本地 frps"],
-			["remote", "远端部署"],
-			["logs", "日志"],
+			["list", t("tabList")],
+			["client", t("tabClient")],
+			["frps", t("tabFrps")],
+			["remote", t("tabRemote")],
+			["logs", t("tabLogs")],
 		];
 		let body = "";
 		if (tab === "list") {
@@ -144,83 +146,87 @@ function createApp(root) {
 						p.type === "http" || p.type === "https"
 							? esc(p.customDomains || p.subdomain || "-")
 							: `:${esc(p.remotePort || "-")}`;
-					return `<tr style="${off ? "opacity:.55" : ""}"><td class="frp-mono"><b>${esc(p.name)}</b>${off ? ' <span class="frp-dim">已禁用</span>' : ""}</td>
+					return `<tr style="${off ? "opacity:.55" : ""}"><td class="frp-mono"><b>${esc(p.name)}</b>${off ? ` <span class="frp-dim">${t("disabled")}</span>` : ""}</td>
 				<td>${esc(p.type)}</td><td class="frp-mono">${esc(p.localIP || "127.0.0.1")}:${esc(p.localPort)} → ${target}</td>
-				<td style="white-space:nowrap"><button class="frp-btn" data-op="toggle" data-name="${esc(p.name)}">${off ? "启用" : "禁用"}</button>
-				<button class="frp-btn" data-op="edit" data-name="${esc(p.name)}">编辑</button>
-				<button class="frp-btn danger" data-op="del" data-name="${esc(p.name)}">删</button></td></tr>`;
+				<td style="white-space:nowrap"><button class="frp-btn" data-op="toggle" data-name="${esc(p.name)}">${off ? t("enable") : t("disable")}</button>
+				<button class="frp-btn" data-op="edit" data-name="${esc(p.name)}">${t("edit")}</button>
+				<button class="frp-btn danger" data-op="del" data-name="${esc(p.name)}">${t("remove")}</button></td></tr>`;
 				})
 				.join("");
 			body = `
 			<div class="frp-card"><div class="frp-row">
-				<span class="frp-dot ${frpcRun ? "ok" : ""}"></span><b>frpc ${frpcRun ? `运行中 (pid ${st.frpc.pid})` : "未运行"}</b>
-				<span class="frp-dim">服务端 ${esc(st.common.serverAddr || "(未填)")}:${esc(st.common.serverPort)} · ${st.proxies.filter((p) => p.enabled !== false).length} 条启用</span>
+				<span class="frp-dot ${frpcRun ? "ok" : ""}"></span><b>frpc ${frpcRun ? t("runningWithPid", { pid: st.frpc.pid }) : t("notRunning")}</b>
+				<span class="frp-dim">${t("serverSummary", {
+					addr: esc(st.common.serverAddr || t("notFilled")),
+					port: esc(st.common.serverPort),
+					count: st.proxies.filter((p) => p.enabled !== false).length,
+				})}</span>
 				<span style="flex:1"></span>
-				${st.frpcBin ? "" : `<button class="frp-btn primary" data-op="install">一键安装 frp</button>`}
-				<button class="frp-btn ${frpcRun ? "" : "primary"}" data-op="frpc_start">${frpcRun ? "重启" : "启动"}</button>
-				${frpcRun ? `<button class="frp-btn" data-op="frpc_stop">停止</button>` : ""}
-			</div>${st.frpcBin ? "" : `<div class="frp-dim">未检测到 frpc（${esc(st.binDir)}），点一键安装从 GitHub 下载官方版；离线机器可手动放二进制到该目录。</div>`}</div>
-			${editing !== null && editing !== undefined ? proxyForm(editing === "" ? {} : st.proxies.find((p) => p.name === editing) || {}) : `<div class="frp-row"><button class="frp-btn" data-op="new">+ 新增穿透</button><span class="frp-dim">改完点「启动/重启」生效</span></div>`}
-			<div class="frp-card"><table class="frp-table"><tr><th>名称</th><th>类型</th><th>映射</th><th>操作</th></tr>${rows || `<tr><td colspan="4" class="frp-dim">还没有穿透规则，点「新增穿透」把本机服务（如 127.0.0.1:3000）暴露出去。</td></tr>`}</table></div>`;
+				${st.frpcBin ? "" : `<button class="frp-btn primary" data-op="install">${t("installFrp")}</button>`}
+				<button class="frp-btn ${frpcRun ? "" : "primary"}" data-op="frpc_start">${frpcRun ? t("restart") : t("start")}</button>
+				${frpcRun ? `<button class="frp-btn" data-op="frpc_stop">${t("stop")}</button>` : ""}
+			</div>${st.frpcBin ? "" : `<div class="frp-dim">${t("frpcMissing", { dir: esc(st.binDir) })}</div>`}</div>
+			${editing !== null && editing !== undefined ? proxyForm(editing === "" ? {} : st.proxies.find((p) => p.name === editing) || {}) : `<div class="frp-row"><button class="frp-btn" data-op="new">${t("newProxy")}</button><span class="frp-dim">${t("applyHint")}</span></div>`}
+			<div class="frp-card"><table class="frp-table"><tr><th>${t("colName")}</th><th>${t("colType")}</th><th>${t("colMapping")}</th><th>${t("colOps")}</th></tr>${rows || `<tr><td colspan="4" class="frp-dim">${t("emptyProxies")}</td></tr>`}</table></div>`;
 		} else if (tab === "client") {
 			const c = st.common;
-			body = `<div class="frp-card"><div class="frp-row"><b>服务端连接（frpc.toml [common]）</b></div>
+			body = `<div class="frp-card"><div class="frp-row"><b>${t("clientSection")}</b></div>
 			<div class="frp-grid">
-				<label>serverAddr</label><input class="frp-in" data-c="serverAddr" value="${esc(c.serverAddr || "")}" placeholder="公网服务器 IP/域名">
+				<label>serverAddr</label><input class="frp-in" data-c="serverAddr" value="${esc(c.serverAddr || "")}" placeholder="${t("addrPlaceholder")}">
 				<label>serverPort</label><input class="frp-in" data-c="serverPort" value="${esc(c.serverPort ?? 7000)}">
-				<label>token</label><input class="frp-in" data-c="token" value="${esc(c.token || "")}" placeholder="与 frps 一致">
-				<label>TLS</label><select class="frp-in" data-c="tlsEnable"><option value="0">关闭</option><option value="1" ${c.tlsEnable ? "selected" : ""}>开启</option></select>
+				<label>token</label><input class="frp-in" data-c="token" value="${esc(c.token || "")}" placeholder="${t("tokenPlaceholder")}">
+				<label>TLS</label><select class="frp-in" data-c="tlsEnable"><option value="0">${t("tlsOff")}</option><option value="1" ${c.tlsEnable ? "selected" : ""}>${t("tlsOn")}</option></select>
 			</div>
-			<div class="frp-row" style="margin-top:8px"><button class="frp-btn primary" data-op="save_client">保存</button>
-			<span class="frp-dim">保存后重启 frpc 生效 · 配置文件 frpc.toml 在数据目录</span></div></div>`;
+			<div class="frp-row" style="margin-top:8px"><button class="frp-btn primary" data-op="save_client">${t("save")}</button>
+			<span class="frp-dim">${t("clientSavedHint")}</span></div></div>`;
 		} else if (tab === "frps") {
 			const f = st.frps;
 			body = `<div class="frp-card"><div class="frp-row"><span class="frp-dot ${frpsRun ? "ok" : ""}"></span>
-				<b>本地 frps ${frpsRun ? `运行中 (pid ${st.frpsLocal.pid})` : "未运行"}</b>
-				<span class="frp-dim">联调用：本机同时起 frps + frpc 自测</span><span style="flex:1"></span>
-				${frpsRun ? `<button class="frp-btn" data-op="frps_stop">停止</button>` : `<button class="frp-btn primary" data-op="frps_start">启动</button>`}</div>
+				<b>${t("localFrps")} ${frpsRun ? t("runningWithPid", { pid: st.frpsLocal.pid }) : t("notRunning")}</b>
+				<span class="frp-dim">${t("frpsSummary")}</span><span style="flex:1"></span>
+				${frpsRun ? `<button class="frp-btn" data-op="frps_stop">${t("stop")}</button>` : `<button class="frp-btn primary" data-op="frps_start">${t("start")}</button>`}</div>
 			<div class="frp-grid">
 				<label>bindPort</label><input class="frp-in" data-s="bindPort" value="${esc(f.bindPort ?? 7000)}">
 				<label>token</label><input class="frp-in" data-s="token" value="${esc(f.token || "")}">
-				<label>http 穿透端口</label><input class="frp-in" data-s="httpPort" value="${esc(f.httpPort ?? "")}" placeholder="如 8080，空=关闭">
-				<label>dashboard 端口</label><input class="frp-in" data-s="dashboardPort" value="${esc(f.dashboardPort ?? "")}" placeholder="如 7500">
-				<label>dashboard 账号</label><input class="frp-in" data-s="dashboardUser" value="${esc(f.dashboardUser || "admin")}">
-				<label>dashboard 密码</label><input class="frp-in" data-s="dashboardPwd" value="${esc(f.dashboardPwd || "admin")}">
-				<label>subdomainHost</label><input class="frp-in" data-s="subdomainHost" value="${esc(f.subdomainHost || "")}" placeholder="如 frp.example.com">
+				<label>${t("fHttpPort")}</label><input class="frp-in" data-s="httpPort" value="${esc(f.httpPort ?? "")}" placeholder="${t("httpPortPlaceholder")}">
+				<label>${t("fDashboardPort")}</label><input class="frp-in" data-s="dashboardPort" value="${esc(f.dashboardPort ?? "")}" placeholder="${t("dashboardPortPlaceholder")}">
+				<label>${t("fDashboardUser")}</label><input class="frp-in" data-s="dashboardUser" value="${esc(f.dashboardUser || "admin")}">
+				<label>${t("fDashboardPwd")}</label><input class="frp-in" data-s="dashboardPwd" value="${esc(f.dashboardPwd || "admin")}">
+				<label>subdomainHost</label><input class="frp-in" data-s="subdomainHost" value="${esc(f.subdomainHost || "")}" placeholder="${t("subdomainHostPlaceholder")}">
 			</div>
-			<div class="frp-row" style="margin-top:8px"><button class="frp-btn primary" data-op="save_frps">保存</button></div></div>`;
+			<div class="frp-row" style="margin-top:8px"><button class="frp-btn primary" data-op="save_frps">${t("save")}</button></div></div>`;
 		} else if (tab === "remote") {
 			const r = st.remote,
 				f = st.frps;
 			const opts = (r.profiles || [])
 				.map(
 					(h) =>
-						`<option value="${esc(h.name)}" ${r.profile === h.name ? "selected" : ""}>${esc(h.name)}（${esc(h.username)}@${esc(h.host)}:${esc(h.port)}）</option>`,
+						`<option value="${esc(h.name)}" ${r.profile === h.name ? "selected" : ""}>${t("hostOption", { name: esc(h.name), user: esc(h.username), host: esc(h.host), port: esc(h.port) })}</option>`,
 				)
 				.join("");
-			body = `<div class="frp-card"><div class="frp-row"><b>远端公网 frps 一键部署</b></div>
-			<div class="frp-dim">用本机<b>共享 SSH 主机库</b>（与远程工作台/SFTP 同一份：截图里那些已保存连接直接选，不用再填 IP 密码）。主机先去远程工作台加好，回来点刷新。远端需放行 bindPort/tcp（如 7000）+ http/dashboard 端口。</div>
+			body = `<div class="frp-card"><div class="frp-row"><b>${t("remoteSection")}</b></div>
+			<div class="frp-dim">${t("remoteDesc")}</div>
 			<div class="frp-row" style="margin-top:8px">
-				<label class="frp-dim">远端主机</label>
-				<select class="frp-in" data-r="profile">${opts || `<option value="">（主机库为空，先去远程工作台添加）</option>`}</select>
-				<button class="frp-btn" data-op="save_remote">选用该主机</button>
+				<label class="frp-dim">${t("remoteHost")}</label>
+				<select class="frp-in" data-r="profile">${opts || `<option value="">${t("hostLibEmpty")}</option>`}</select>
+				<button class="frp-btn" data-op="save_remote">${t("useThisHost")}</button>
 			</div>
 			<div class="frp-row" style="margin-top:8px">
-				<button class="frp-btn" data-op="probe">测试连通</button>
-				<button class="frp-btn" data-op="copy_script">复制一键脚本</button>
-				<button class="frp-btn primary" data-op="deploy">SSH 直装远端</button>
+				<button class="frp-btn" data-op="probe">${t("probe")}</button>
+				<button class="frp-btn" data-op="copy_script">${t("copyScript")}</button>
+				<button class="frp-btn primary" data-op="deploy">${t("deploy")}</button>
 			</div>
-			<div class="frp-dim">直装成功后 frpc 服务端地址自动同步为所选主机 IP，token 与本地 frps 页一致，重启 frpc 即通。当前远端配置：bindPort ${esc(f.bindPort)} / token ${f.token ? "已设" : "<b>未设（先去本地 frps 页设置）</b>"}。</div></div>`;
+			<div class="frp-dim">${t("remoteDeployHint")}${t("remoteCurrent", { bindPort: esc(f.bindPort) })}${f.token ? t("tokenSet") : t("tokenUnset")}</div></div>`;
 		} else {
 			body = `<div class="frp-card"><div class="frp-row">
-				<button class="frp-tab ${logRole === "frpc" ? "on" : ""}" data-op="log_frpc">frpc 日志</button>
-				<button class="frp-tab ${logRole === "frps" ? "on" : ""}" data-op="log_frps">frps 日志</button>
-				<span style="flex:1"></span><button class="frp-btn" data-op="log_refresh">刷新</button></div>
-				<div class="frp-code">${esc(logLines.join("\n") || "(暂无日志)")}</div></div>`;
+				<button class="frp-tab ${logRole === "frpc" ? "on" : ""}" data-op="log_frpc">${t("logsFrpc")}</button>
+				<button class="frp-tab ${logRole === "frps" ? "on" : ""}" data-op="log_frps">${t("logsFrps")}</button>
+				<span style="flex:1"></span><button class="frp-btn" data-op="log_refresh">${t("refresh")}</button></div>
+				<div class="frp-code">${esc(logLines.join("\n") || t("logsEmpty"))}</div></div>`;
 		}
 		root.innerHTML = `<div class="frp-wrap">
-			<div class="frp-row"><b style="font-size:15px">🚇 内网穿透</b><span class="frp-dim">frpc 穿透列表 · 本地 frps 联调 · 远端一键部署</span>
-			<span style="flex:1"></span><button class="frp-btn" data-op="refresh">刷新</button></div>
+			<div class="frp-row"><b style="font-size:15px">${t("title")}</b><span class="frp-dim">${t("subtitle")}</span>
+			<span style="flex:1"></span><button class="frp-btn" data-op="refresh">${t("refresh")}</button></div>
 			<div class="frp-tabs">${tabs.map(([k, l]) => `<button class="frp-tab ${tab === k ? "on" : ""}" data-op="tab" data-k="${k}">${l}</button>`).join("")}</div>
 			${msg ? `<div class="frp-dim">${msg}</div>` : ""}
 			${body}</div>`;
@@ -250,14 +256,14 @@ function createApp(root) {
 			await refresh();
 			if (tab === "logs") await loadLogs();
 		} else if (op === "install") {
-			msg = "下载安装中（GitHub release，约 10-20MB）…";
+			msg = t("installing");
 			render();
 			try {
 				const r = await api("/install", { method: "POST", body: "{}" });
 				st = r.st || st;
-				msg = r.ok ? `安装完成 ${r.version || ""}` : `失败：${esc(r.error)}`;
+				msg = r.ok ? t("installed", { version: r.version || "" }) : t("failed", { error: esc(r.error) });
 			} catch (err) {
-				msg = `失败：${esc(err.message)}`;
+				msg = t("failed", { error: esc(err.message) });
 			}
 			render();
 		} else if (op === "new") {
@@ -283,7 +289,7 @@ function createApp(root) {
 			editing = null;
 			render();
 		} else if (op === "del") {
-			if (!confirm(`删除穿透 ${b.dataset.name}？`)) return;
+			if (!confirm(t("deleteProxyAsk", { name: b.dataset.name }))) return;
 			await act("proxy_delete", { name: b.dataset.name });
 		} else if (op === "toggle") {
 			await act("proxy_toggle", { name: b.dataset.name });
@@ -319,9 +325,9 @@ function createApp(root) {
 			try {
 				const r = await api("/remote-script");
 				await navigator.clipboard.writeText(r.script || "");
-				msg = "一键脚本已复制，到远端 root 下 bash 粘贴执行即可";
+				msg = t("scriptCopied");
 			} catch {
-				msg = "复制失败，点 SSH 直装或稍后重试";
+				msg = t("copyFailed");
 			}
 			render();
 		} else if (op === "deploy") {
