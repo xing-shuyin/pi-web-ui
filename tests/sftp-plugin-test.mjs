@@ -749,6 +749,16 @@ try {
 		if (proc?.pid) process.kill(proc.pid, "SIGTERM");
 	} catch {}
 	await sleep(500);
-	rmSync(dataDir, { recursive: true, force: true });
+	// Windows 上子进程/服务端刚退出时目录可能仍被占用，rm 会 EPERM；这里重试几次，
+	// 别让「清理临时目录」把一整轮全过的用例顶成失败。
+	for (let i = 0; i < 6; i++) {
+		try {
+			rmSync(dataDir, { recursive: true, force: true, maxRetries: 3, retryDelay: 100 });
+			break;
+		} catch (err) {
+			if (i === 5) console.warn(`清理临时目录失败（忽略）: ${err?.code ?? err?.message}`);
+			else await sleep(300);
+		}
+	}
 }
 process.exit(process.exitCode ?? 0);

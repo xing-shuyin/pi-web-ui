@@ -1110,15 +1110,16 @@ export function createNotesApp(options) {
 						checked: todo.done,
 						onChange: () => void data.op({ op: "todo.save", item: { id: todo.id, done: !todo.done } }),
 					}),
-					el("div", {
-						class: "nt-main",
-						children: [
-							el("div", {
-								class: `nt-title${todo.done ? " nt-done" : ""}`,
-								text: todo.text,
-							}),
-						],
-					}),
+					el(
+						"div",
+						{
+							class: "nt-main",
+						},
+						el("div", {
+							class: `nt-title${todo.done ? " nt-done" : ""}`,
+							text: todo.text,
+						}),
+					),
 				);
 				detail.append(row);
 			}
@@ -1127,13 +1128,14 @@ export function createNotesApp(options) {
 					"div",
 					{ class: "nt-item" },
 					el("span", { text: "⏰" }),
-					el("div", {
-						class: "nt-main",
-						children: [
-							el("div", { class: "nt-title", text: rem.text }),
-							el("div", { class: "nt-meta", text: fmtHM(at) }),
-						],
-					}),
+					el(
+						"div",
+						{
+							class: "nt-main",
+						},
+						el("div", { class: "nt-title", text: rem.text }),
+						el("div", { class: "nt-meta", text: fmtHM(at) }),
+					),
 				);
 				detail.append(row);
 			}

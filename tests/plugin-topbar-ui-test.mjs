@@ -99,7 +99,9 @@ async function main() {
 	});
 
 	await page.goto(`http://localhost:${PORT}/`, { waitUntil: "domcontentloaded" });
-	const pluginBtn = page.locator(".plugin-topbar-item", { hasText: "Ping Me" }).first();
+	// 插件顶栏项现在统一走 bar-item 渲染层（data-bar-item="<pluginId>:<itemId>"），
+	// 旧的 .plugin-topbar-item 只剩「更多」溢出按钮在用（bar-item-unified 守卫）。
+	const pluginBtn = page.locator('.bar-item[data-bar-item="toptest:ping"]').first();
 	await pluginBtn.waitFor({ timeout: 20000 }).catch(() => {});
 	const label = await pluginBtn.textContent().catch(() => "");
 	check("插件声明的顶栏按钮渲染在宿主顶栏", (label ?? "").includes("Ping Me"));
@@ -122,23 +124,28 @@ async function main() {
 		.first();
 	if (await settingsBtn.count()) await settingsBtn.click();
 	await sleep(800);
-	const pluginsTab = page.locator(".settings-tab", { hasText: /界面插件|UI plugins/ }).first();
+	// 设置面板现在是「插件」总页 + 两个 smart-tab 分页：安装的插件 / 插件市场
+	const pluginsTab = page.locator(".settings-tab", { hasText: /^插件|^Plugins/ }).first();
 	if (await pluginsTab.count()) await pluginsTab.click();
 	await sleep(600);
-	check("设置面板出现「界面布局」管理段", (await page.getByText("界面布局", { exact: false }).count()) > 0);
+	check("设置面板出现「插件」页与两个分页", (await page.locator(".smart-tab-pill").count()) >= 2);
+
+	const marketPill = page.locator(".smart-tab-pill", { hasText: /插件市场|Plugin market/ }).first();
+	if (await marketPill.count()) await marketPill.click();
+	await sleep(600);
 	check("插件市场出现「源码构建」勾选项", (await page.getByText("源码构建", { exact: false }).count()) > 0);
-	const installedSub = page
-		.locator(".smart-tab-pill, .set-subtab", { hasText: /插件列表|Plugin list|安装|Installed/ })
-		.first();
+
+	const installedSub = page.locator(".smart-tab-pill", { hasText: /安装的插件|已安装|Installed/ }).first();
 	if (await installedSub.count()) await installedSub.click();
 	await sleep(600);
 
-	const uninstallBtn = page.locator('button[title*="卸载"], button[title*="Uninstall"]').first();
+	// 安装列表现在是独立面板（InstalledPluginsPanel）：卸载按钮是 .ip-btn-danger，两步确认同一按钮改文案
+	const uninstallBtn = page.locator(".ip-btn-danger", { hasText: /卸载|Uninstall/ }).first();
 	check("插件列表有卸载按钮", (await uninstallBtn.count()) > 0);
 	if (await uninstallBtn.count()) {
 		await uninstallBtn.click();
 		await sleep(250);
-		const confirm = page.locator("button.set-uninstall.confirm").first();
+		const confirm = page.locator(".ip-btn-danger", { hasText: /确认卸载|Confirm/ }).first();
 		check("卸载走两步确认", (await confirm.count()) > 0);
 		if (await confirm.count()) await confirm.click();
 		let done = false;
@@ -149,7 +156,7 @@ async function main() {
 		}
 		const sentInstall = jobFrames.some((f) => f.dir === "out" && f.s.includes('"action":"uninstall"'));
 		check("卸载走后台作业（客户端发 plugin_job，服务端回 done:ok）", sentInstall && done);
-		check("设置面板全程没有关闭", (await page.getByText("界面插件", { exact: true }).count()) > 0);
+		check("设置面板全程没有关闭", (await page.locator(".settings-modal, .set-body").count()) > 0);
 		let gone = false;
 		for (let i = 0; i < 40; i++) {
 			if ((await page.getByText("Top Test", { exact: false }).count()) === 0) {

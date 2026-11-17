@@ -1405,6 +1405,9 @@ export class PluginManager {
 	private lifecycleGeneration = 0;
 	private loadingByScope = new Map<PluginLoadScope, Promise<UiPluginInfo[]>>();
 	private reloading: Promise<UiPluginInfo[]> | undefined;
+
+	/** 正在执行插件 deactivate 的同步栈深度（见 runDeactivate / guard） */
+	private deactivating = 0;
 	private activatingEffects = new Set<PluginEffectStack>();
 	private catalogEpoch = 0;
 	private globalCwd!: string;
@@ -2697,13 +2700,26 @@ export class PluginManager {
 	}
 
 	private runDeactivate(id: string, deactivate?: () => void): void {
+		if (!deactivate) return;
+		// 清理期的宿主调用必须放行：dispose() 会先推进 lifecycleGeneration，插件清理随之被
+		// 判成「已失效」，于是在第一句 host.* 上抛「activation has been disposed」，后面的
+		// off*/stop*/drop 全都不再执行（定时器、长连接、轮询就这么漏在 reload 里）。
+		// 只放行 deactivate 的同步段：await 之后仍按失效处理，避免旧激活在后台偷偷写状态。
+		this.deactivating += 1;
 		try {
-			void Promise.resolve(deactivate?.()).catch((err: unknown) => {
+			void Promise.resolve(deactivate()).catch((err: unknown) => {
 				console.error(`[plugin:${id}] deactivate failed:`, err);
 			});
 		} catch (err) {
 			console.error(`[plugin:${id}] deactivate failed:`, err);
+		} finally {
+			this.deactivating -= 1;
 		}
+	}
+
+	/** 是否正在跑插件 deactivate（同步段）：guard 据此放行清理期宿主调用 */
+	private inDeactivate(): boolean {
+		return this.deactivating > 0;
 	}
 
 	private deactivateEntry(id: string, p: LoadedPlugin): void {
@@ -2950,7 +2966,7 @@ export class PluginManager {
 					out.push({
 						id: name,
 						name: typeof m.name === "string" && m.name ? m.name : name,
-						nameEn: typeof m.nameEn === "string" && m.nameEn ? m.nameEn : undefined,
+						nameEn: typeof m.nameEn === "string" && m.nameEn.trim() ? m.nameEn.trim().slice(0, 120) : undefined,
 						hasClient: existsSync(join(dir, "client", "entry.mjs")),
 						error: msg,
 						view: false,
@@ -2977,10 +2993,13 @@ export class PluginManager {
 				out.push({
 					id: name,
 					name: typeof m.name === "string" && m.name ? m.name : name,
-					nameEn: typeof m.nameEn === "string" && m.nameEn ? m.nameEn : undefined,
+					nameEn: typeof m.nameEn === "string" && m.nameEn.trim() ? m.nameEn.trim().slice(0, 120) : undefined,
 					version: typeof m.version === "string" ? m.version : undefined,
 					description: typeof m.description === "string" ? m.description : undefined,
-					descriptionEn: typeof m.descriptionEn === "string" ? m.descriptionEn : undefined,
+					descriptionEn:
+						typeof m.descriptionEn === "string" && m.descriptionEn.trim()
+							? m.descriptionEn.trim().slice(0, 600)
+							: undefined,
 					homepage: typeof m.homepage === "string" && m.homepage.trim() ? m.homepage.trim() : undefined,
 					icon: typeof m.icon === "string" && m.icon.trim() ? m.icon.trim() : undefined,
 					iconSvg: normalizeIconSvg(m.iconSvg),
@@ -4766,7 +4785,7 @@ export class PluginManager {
 					if (typeof value === "function")
 						return (...args: unknown[]) => {
 							if (obj === host && key === "log" && !isCurrent()) return;
-							if (!(obj === host && key === "effect") && !isCurrent())
+							if (!(obj === host && key === "effect") && !isCurrent() && !self.inDeactivate())
 								throw new Error(`Plugin ${info.id} activation has been disposed`);
 							return Reflect.apply(value, obj, args);
 						};

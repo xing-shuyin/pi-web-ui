@@ -23,6 +23,8 @@ describe("plugin lifecycle generations", () => {
 		cleaned: number;
 		lateCleaned: number;
 		deactivated: number;
+		cleanupHostOk: number;
+		cleanupHostBlocked: number;
 		staleRejected: number;
 		fail: boolean;
 		cleanupFails: boolean;
@@ -38,6 +40,8 @@ describe("plugin lifecycle generations", () => {
 			cleaned: 0,
 			lateCleaned: 0,
 			deactivated: 0,
+			cleanupHostOk: 0,
+			cleanupHostBlocked: 0,
 			staleRejected: 0,
 			fail: false,
 			cleanupFails: false,
@@ -72,7 +76,18 @@ export default async function(host) {
 		}
 		if (state.fail) throw new Error("old activation failed");
 	}
-	return async () => { state.deactivated++; if (state.cleanupFails) throw new Error("cleanup failed"); };
+	return async () => {
+		state.deactivated++;
+		// 清理期必须还能碰宿主能力：dispose() 已推进 generation，若不豁免，
+		// 第一句 host.* 就会抛 "activation has been disposed"，后面的清理全部夭折。
+		try {
+			host.log("cleanup ping");
+			state.cleanupHostOk++;
+		} catch {
+			state.cleanupHostBlocked++;
+		}
+		if (state.cleanupFails) throw new Error("cleanup failed");
+	};
 }
 `,
 		);
@@ -137,6 +152,23 @@ export default async function(host) {
 		expect(state.cleaned).toBe(1);
 		expect(state.deactivated).toBe(fail ? 0 : 1);
 		expect(manager["activatingGates"].size).toBe(0);
+	});
+
+	it("deactivate 期间的宿主调用被放行，清理不会在第一句断掉", async () => {
+		const log = vi.spyOn(console, "error").mockImplementation(() => {});
+		try {
+			const loading = manager.ensureLoaded();
+			await state.started.promise;
+			state.resume.resolve();
+			expect((await loading)[0]).toMatchObject({ id: "race", active: true });
+			manager.dispose();
+			expect(state.deactivated).toBe(1);
+			expect(state.cleanupHostBlocked).toBe(0);
+			expect(state.cleanupHostOk).toBe(1);
+			expect(log).not.toHaveBeenCalledWith("[plugin:race] deactivate failed:", expect.anything());
+		} finally {
+			log.mockRestore();
+		}
 	});
 
 	it("observes rejected async cleanup returned by a stale activation", async () => {

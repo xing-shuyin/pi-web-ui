@@ -70,7 +70,7 @@ async function main() {
 	});
 
 	await page.goto(`${BASE}/`, { waitUntil: "domcontentloaded" });
-	const topbarBtn = page.locator(".plugin-topbar-item", { hasText: "笔记" }).first();
+	const topbarBtn = page.locator('.bar-item[data-bar-item="notes:toggle"]', { hasText: "笔记" }).first();
 	await topbarBtn.waitFor({ timeout: 20000 });
 	check("顶栏出现笔记按钮", await topbarBtn.isVisible());
 	const iconInfo = await topbarBtn.evaluate((el) => {
@@ -285,6 +285,9 @@ async function main() {
 	await sleep(200);
 	check("设置覆盖层的 ✕ 能关掉", (await page.locator(".nt-settings-pop.on").count()) === 0);
 
+	// 上一段在「日历」页，卡片只在「笔记」页渲染——先切回来再点置顶
+	await page.locator(".nt-panel .nt-tab", { hasText: "笔记" }).first().click();
+	await sleep(400);
 	await page.locator('.nt-panel .nt-card:has-text("交周报") button[title*="置顶"]').first().click();
 	await sleep(600);
 	s = await store();
@@ -299,7 +302,7 @@ async function main() {
 	await sleep(4000);
 	const panels = await page.locator(".nt-panel").count();
 	check("热重载后只剩一个浮窗（旧实例已拆干净）", panels === 1);
-	await page.locator(".plugin-topbar-item", { hasText: "笔记" }).first().click();
+	await page.locator('.bar-item[data-bar-item="notes:toggle"]', { hasText: "笔记" }).first().click();
 	await sleep(600);
 	check("热重载后顶栏按钮仍能开合浮窗（动作处理器已重注册）", (await page.locator(".nt-panel").count()) === 1);
 	reloadSock.close();
