@@ -73,6 +73,7 @@ import type {
 import { applyMessageDelta, type MessageDeltaMsg } from "./message-delta";
 import {
 	createOptimisticQueueTracker,
+	markOptimisticPromptEchoQueued,
 	reconcileOptimisticPromptEchoes,
 	reconcileOptimisticQueue,
 	recordOptimisticPromptEcho,
@@ -770,6 +771,7 @@ type Action =
 	| { type: "sandbox_diff"; diff: SandboxDiffView | null }
 	| { type: "optimistic_queue_add"; text: string; attachments?: PromptAttachment[]; queue?: boolean }
 	| { type: "optimistic_prompt_echo"; text: string; attachments?: PromptAttachment[] }
+	| { type: "prompt_queued"; conversationId: string; text: string }
 	| { type: "optimistic_queue_remove"; kind: "steer" | "followUp"; text: string; index?: number };
 
 const MAX_LIVE_OUTPUT = 200_000;
@@ -1024,6 +1026,12 @@ export function reducer(state: ChatState, action: Action): ChatState {
 				optimisticQueue: res.tracker,
 				state: res.state,
 			};
+		}
+		case "prompt_queued": {
+			// 服务端确认这条消息已进队列（压缩期间）：回显气泡不再按 TTL 回收。
+			const tracker = markOptimisticPromptEchoQueued(state.optimisticQueue, action.conversationId, action.text);
+			if (tracker === state.optimisticQueue) return state;
+			return { ...state, optimisticQueue: tracker };
 		}
 		case "tool_approval":
 			return {
@@ -2371,6 +2379,10 @@ export function useChat() {
 						type: "notice",
 						notice: { id, level: msg.level, text: msg.text, textEn: msg.textEn },
 					});
+					break;
+				}
+				case "prompt_queued": {
+					dispatch({ type: "prompt_queued", conversationId: msg.conversationId, text: msg.text });
 					break;
 				}
 				case "transition_progress":

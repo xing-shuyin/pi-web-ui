@@ -3391,6 +3391,9 @@ export type ServerMessage =
 	| { type: "commands"; commands: CommandDef[]; path: string }
 	| { type: "slash_commands"; commands: SlashCommandInfo[] }
 	| { type: "notice"; level: "info" | "warning" | "error"; text: string; textEn?: string }
+	/** 压缩期间用户发的文本已进投递队列（issues/929）：客户端据此让乐观回显气泡不再
+	 *  按 TTL 过期，而是等真正的 user 消息进快照时才对账收掉。 */
+	| { type: "prompt_queued"; conversationId: string; text: string }
 	| { type: "scm_changed" }
 	| { type: "extension_inventory_changed" }
 	| { type: "heartbeat"; hostMetrics?: UiHostMetrics; latencyMs?: number }

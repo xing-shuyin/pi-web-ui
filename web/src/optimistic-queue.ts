@@ -5,6 +5,12 @@ import { formatStreamingPrompt, readTextQuote, splitQuotedPrompt } from "../../s
 export const OPTIMISTIC_ADD_TTL_MS = 15_000;
 export const OPTIMISTIC_REMOVE_TTL_MS = 3_000;
 export const OPTIMISTIC_ECHO_TTL_MS = 15_000;
+/**
+ * 已入队回显的「安全上限」：压缩期间服务端回执 `prompt_queued` 后，气泡不能按 15 秒 TTL 消失
+ * （压缩常超过 15 秒，消失再冒出来比直接报错更糟）。真正的回收点是真实 user 消息落账。
+ * 这里只给一个「不会变成永久幽灵」的上限：服务端丢弃排队意图会另有 warning 提示。
+ */
+export const OPTIMISTIC_ECHO_QUEUED_TTL_MS = 10 * 60_000;
 export const OPTIMISTIC_ECHO_ID_PREFIX = "echo-";
 
 export function makeEchoMessageId(seq: number): string {
@@ -40,6 +46,8 @@ export interface PendingPromptEcho {
 	messageId: string;
 	baselineUserMsgMatches: number;
 	createdAt: number;
+	/** 服务端回执「这条消息已进队列」的时刻；有值就不再按 15 秒 TTL 回收。 */
+	queuedAt?: number;
 }
 
 export interface OptimisticQueueTracker {
@@ -200,6 +208,34 @@ export function recordOptimisticPromptEcho(
 
 function echoesOf(tracker: OptimisticQueueTracker): PendingPromptEcho[] {
 	return tracker.echoes ?? [];
+}
+
+/** 回显气泡该不该回收：已入队的从入队时刻起算更长的上限，其余仍是 15 秒 TTL。 */
+function echoExpired(echo: PendingPromptEcho, now: number): boolean {
+	if (echo.queuedAt === undefined) return now - echo.createdAt >= OPTIMISTIC_ECHO_TTL_MS;
+	return now - echo.queuedAt >= OPTIMISTIC_ECHO_QUEUED_TTL_MS;
+}
+
+/**
+ * 服务端确认「这条消息已排队」（压缩期间）。回显气泡从此不再按 TTL 回收：
+ * 它等的是压缩结束时那次真正的落账，而不是几秒钟的确认窗口。
+ */
+export function markOptimisticPromptEchoQueued(
+	tracker: OptimisticQueueTracker,
+	conversationId: string,
+	text: string,
+	now = Date.now(),
+): OptimisticQueueTracker {
+	const target = (text ?? "").trim();
+	if (!target) return tracker;
+	let changed = false;
+	const echoes = echoesOf(tracker).map((echo) => {
+		if (changed || echo.queuedAt !== undefined) return echo;
+		if (echo.conversationId !== conversationId || echo.rawText !== target) return echo;
+		changed = true;
+		return { ...echo, queuedAt: now };
+	});
+	return changed ? { ...tracker, echoes } : tracker;
 }
 
 function nextEchoSeq(tracker: OptimisticQueueTracker): number {
@@ -501,7 +537,7 @@ export function reconcileOptimisticPromptEchoes(
 		const staleIds = new Set<string>();
 		const kept: PendingPromptEcho[] = [];
 		for (const e of echoesOf(tracker)) {
-			if (now - e.createdAt >= OPTIMISTIC_ECHO_TTL_MS) {
+			if (echoExpired(e, now)) {
 				if (e.conversationId === incomingState.conversationId) staleIds.add(e.messageId);
 				continue;
 			}
@@ -522,7 +558,7 @@ export function reconcileOptimisticPromptEchoes(
 	const appendEchoes: UiMessage[] = [];
 
 	for (const echo of echoesOf(tracker)) {
-		if (now - echo.createdAt >= OPTIMISTIC_ECHO_TTL_MS) {
+		if (echoExpired(echo, now)) {
 			if (echo.conversationId === convId) staleEchoIds.add(echo.messageId);
 			continue;
 		}

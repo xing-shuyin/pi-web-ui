@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
 	createOptimisticQueueTracker,
 	formatOptimisticQueuedPrompt,
+	markOptimisticPromptEchoQueued,
 	OPTIMISTIC_ECHO_TTL_MS,
 	reconcileOptimisticPromptEchoes,
 	reconcileOptimisticQueue,
@@ -370,6 +371,52 @@ describe("前端排队与插队消息乐观更新与快照对账 (optimistic-que
 		const afterLanded = reconcileOptimisticPromptEchoes(sent.tracker, landedSnap, 1200);
 		expect(afterLanded.state.messages.map((m) => m.id)).toEqual(["u-1", "u-2"]);
 		expect(afterLanded.tracker.echoes).toHaveLength(0);
+	});
+
+	it("压缩期间入队的回执让回显气泡不再按 TTL 消失，真正的消息落账时才收掉", () => {
+		const tracker0 = createOptimisticQueueTracker();
+		const idle = makeBaseState({ isStreaming: false });
+		const sent = recordOptimisticPromptEcho(tracker0, idle, { text: "压缩时发的话", now: 1000 });
+		expect(sent.state!.messages.map((m) => m.id)).toEqual(["u-1", "echo-1"]);
+
+		const queued = markOptimisticPromptEchoQueued(sent.tracker, "conv-1", "压缩时发的话", 1200);
+		expect(queued.echoes[0].queuedAt).toBe(1200);
+
+		// 压缩远比 15 秒长：过了旧 TTL 气泡也必须在（压缩还没结束，服务端不会有新快照）
+		const stillGated = makeBaseState({ isStreaming: false, rev: 2 });
+		const afterTtl = reconcileOptimisticPromptEchoes(queued, stillGated, 1000 + OPTIMISTIC_ECHO_TTL_MS + 30_000);
+		expect(afterTtl.state.messages.map((m) => m.id)).toEqual(["u-1", "echo-1"]);
+		expect(afterTtl.tracker.echoes).toHaveLength(1);
+
+		// 压缩结束、排空的那条消息真的落账：回显按正文对账收掉，不重复也不幽灵
+		const landed = makeBaseState({
+			isStreaming: false,
+			rev: 3,
+			messages: [
+				{ id: "u-1", role: "user", content: [{ type: "text", text: "初始问题" }], timestamp: 1000 },
+				{ id: "u-2", role: "user", content: [{ type: "text", text: "压缩时发的话" }], timestamp: 1400 },
+			],
+		});
+		const afterLanded = reconcileOptimisticPromptEchoes(afterTtl.tracker, landed, 1500);
+		expect(afterLanded.state.messages.map((m) => m.id)).toEqual(["u-1", "u-2"]);
+		expect(afterLanded.tracker.echoes).toHaveLength(0);
+	});
+
+	it("没有入队回执的回显仍然按 15 秒 TTL 回收（不变成永久幽灵）", () => {
+		const tracker0 = createOptimisticQueueTracker();
+		const idle = makeBaseState({ isStreaming: false });
+		const sent = recordOptimisticPromptEcho(tracker0, idle, { text: "被拒绝的消息", now: 1000 });
+		// 回执对不上正文时不能误标（否则被拒的消息会永久挂在会话里）
+		const unmatched = markOptimisticPromptEchoQueued(sent.tracker, "conv-1", "完全不同的正文", 1100);
+		expect(unmatched).toBe(sent.tracker);
+
+		const expired = reconcileOptimisticPromptEchoes(
+			unmatched,
+			makeBaseState({ isStreaming: false }),
+			1000 + OPTIMISTIC_ECHO_TTL_MS + 1,
+		);
+		expect(expired.state.messages.map((m) => m.id)).toEqual(["u-1"]);
+		expect(expired.tracker.echoes).toHaveLength(0);
 	});
 
 	it("流式启动的快照会剥离残留回显气泡（防幽灵消息）", () => {

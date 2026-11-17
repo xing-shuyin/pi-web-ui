@@ -2582,6 +2582,47 @@ export class ClientSession {
 		return "delivered";
 	}
 
+	/**
+	 * 交互式 `prompt()` 撞上压缩门：文本进意图队列，`compaction_end` 排空时自动开一轮。
+	 * 必须在「当次会话状态」下执行的链路（附件/引用/图片走 `buildAttachmentMessages`、
+	 * 斜杠命令、派活与目标执行者的路由）不排队，仍由调用方如实拒绝。
+	 * 返回 true = 已受理（入队或「积压过多」的提示都已发出），调用方直接 return。
+	 */
+	private parkGatedPrompt(conv: Conversation, text: string, attachments?: PromptAttachment[]): boolean {
+		const rawText = (text ?? "").trim();
+		if (!rawText || rawText.startsWith("/")) return false;
+		if (attachments && attachments.length > 0) return false;
+		if (conv.delegateMode === true || conv.goal?.phase === "executing") return false;
+		const queue = this.deliveryQueue(conv);
+		// tag 用正文：同一份文本重复发送（重连重试 / 手快点两下）只排一条，排空时只发一次。
+		const tag = `user-prompt:${rawText}`;
+		const alreadyQueued = queue.hasTag(tag);
+		if (!queue.park({ tag, kind: "user-prompt", text: rawText, createdAt: Date.now() })) {
+			this.emit({
+				type: "notice",
+				level: "warning",
+				text: "对话待发消息积压过多，这条消息没有排队；等压缩结束后再发一次。",
+				textEn:
+					"Too many queued messages for this conversation, so this one was not queued; send it again once compaction finishes.",
+			});
+			return true;
+		}
+		// 回执：客户端据此让乐观回显气泡不再按 TTL 回收（等真正的 user 消息落账时才对账收掉）。
+		this.emit({ type: "prompt_queued", conversationId: conv.id, text: rawText });
+		this.emit({
+			type: "notice",
+			level: "info",
+			text: alreadyQueued
+				? "上下文压缩进行中：这条消息已经在排队里，压缩结束后只会发送一次。"
+				: "上下文压缩进行中：消息已排队，压缩结束后会自动发送。",
+			textEn: alreadyQueued
+				? "Context compaction is in progress: this message is already queued and will be sent once when compaction finishes."
+				: "Context compaction is in progress: your message is queued and will be sent automatically once compaction finishes.",
+		});
+		void this.drainDeliveries(conv);
+		return true;
+	}
+
 	private async drainDeliveries(conv: Conversation): Promise<void> {
 		const queue = conv.delivery;
 		if (!queue || queue.size === 0 || this.disposed) return;
@@ -2717,6 +2758,15 @@ export class ClientSession {
 		if (intent.kind === "communication") {
 			this.commitCommunication(target, (intent.items ?? [])[0] as CommunicationEnvelope | undefined);
 		}
+		if (intent.kind === "user-prompt") {
+			// 用户亲手发的话真正被 SDK 接下的这一刻，语义等同 `prompt()` 直接发送：
+			// 无人值守的唤醒计数归零，下一次自动唤醒重新计量。
+			target.autonomousTurnsWithoutUser = 0;
+			target.consecutiveIdleWakeTurns = 0;
+			target.recentWakeSubagentIds = [];
+			target.wakeReason = "user";
+			target.wakeTurnHadAction = undefined;
+		}
 		if (changed && this.convs.get(target.id) === target) this.flushSnapshot();
 		this.refreshCompletionState(target.id);
 	}
@@ -2799,6 +2849,16 @@ export class ClientSession {
 			console.warn(`[communication] delivery dropped: ${message}`);
 			const envelope = (intent.items ?? [])[0] as CommunicationEnvelope | undefined;
 			if (envelope?.requestId) target.queuedSteeringRequestIds?.delete(envelope.requestId);
+			return;
+		}
+		if (intent.kind === "user-prompt") {
+			// 用户的话不能静默消失：排队中丢掉也算「没送到」，必须让本人看见并重发。
+			this.emit({
+				type: "notice",
+				level: "warning",
+				text: `排队中的消息未能送出：${message || "对话已关闭"}。请重新发送。`,
+				textEn: `Your queued message was not delivered: ${message || "the conversation was closed"}. Please send it again.`,
+			});
 			return;
 		}
 		console.warn(`[delivery] dropped ${intent.kind}: ${message}`);
@@ -11159,14 +11219,22 @@ export class ClientSession {
 			try {
 				compacting = compacting || conv.session.isCompacting === true;
 			} catch {}
+			// 压缩只是「等一会儿就能投」的门：文本进意图队列，compaction_end 排空时自动开一轮。
+			// 带附件/引用/图片、斜杠命令、派活路由不能在排空时重放，仍然如实拒绝。
+			if (compacting && this.parkGatedPrompt(conv, text, attachments)) return;
+			const needsLiveContext = Boolean(attachments && attachments.length > 0) || (text ?? "").trim().startsWith("/");
 			this.emit({
 				type: "notice",
 				level: "warning",
 				text: compacting
-					? "上下文压缩进行中，这条消息没有送出；等压缩结束后再发一次。"
+					? needsLiveContext
+						? "上下文压缩进行中：带附件、引用或斜杠命令的消息无法排队，请等压缩结束后再发。"
+						: "上下文压缩进行中，这条消息没有送出；等压缩结束后再发一次。"
 					: "这个对话正在等回话或过户，暂时不能接收新消息；稍后再发。",
 				textEn: compacting
-					? "Context compaction is in progress, so this message was not sent. Send it again once compaction finishes."
+					? needsLiveContext
+						? "Context compaction is in progress: messages with attachments, quotes or slash commands cannot be queued — please resend them once compaction finishes."
+						: "Context compaction is in progress, so this message was not sent. Send it again once compaction finishes."
 					: "This conversation is waiting on a reply or being transferred and cannot accept new messages right now; try again shortly.",
 			});
 			return;

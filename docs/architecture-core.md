@@ -177,9 +177,13 @@ pi 的 `schedule` 创建任务时单独持久化创建来源（稳定 SDK 会话
 
 五条不变量（动这里之前先读）：**门关不提交**；**门开必排空**（失败与取消路径同样排空）；「已通知 / 轮次 +1 / 熔断额度 −1」只在投递被接受后写（`commitIntent`，提交点副作用）；`steer` 只投给活轮，其余入队（回执 `queued` 才是承诺）；门相位的写者唯一。
 
-排空点是一个闭集：`compaction_end`、`executeCompaction` 的 `finally`（`compact()` 抛错时兜底开闸）、`agent_settled`、等回话解除（`setConsultWaiting(parent,false)`）、以及 `emitConversations()` 的对账兜底。所以新增压缩来源（软上限自动压缩、SDK 回合内自动压缩、分支摘要）自动被覆盖；新增一种门只需往 `deliveryMode()` 加一个谓词，不必再碰投递点。交互式 `prompt()` 是例外：用户在场，压缩期间直接用人话拒绝并说明原因，不排队（排队会让消息在 15 秒后从乐观回显里消失、又突然出现）。
+排空点是一个闭集：`compaction_end`、`executeCompaction` 的 `finally`（`compact()` 抛错时兜底开闸）、`agent_settled`、等回话解除（`setConsultWaiting(parent,false)`）、以及 `emitConversations()` 的对账兜底。所以新增压缩来源（软上限自动压缩、SDK 回合内自动压缩、分支摘要）自动被覆盖；新增一种门只需往 `deliveryMode()` 加一个谓词，不必再碰投递点。
 
-守卫：`tests/unit/delivery-gate-single-source.test.ts` 禁止别处直读 `isCompacting`、禁止手写 `deliverAs: "steer"`、禁止复活那三个旧字段，并给直连 `sendUserMessage` 的站点设上限；`tests/unit/delivery-gate-929.test.ts` 覆盖两个原始场景（父对话压缩期间子代理完成 → `compaction_end` 后补投一次；子代理压缩期间 `steer` → 门开后开新一轮）。
+交互式 `prompt()` 在压缩期间也不再让人重发：**纯文本进同一条意图队列**（`kind: "user-prompt"`，tag 用正文，重复发送只排一条），`compaction_end` 排空时按「idle → 开新一轮」真送出去。语义跟直接发送对齐：`conv.autonomousTurnsWithoutUser = 0`、`wakeReason = "user"` 这些状态挪到提交点 `commitIntent`，压缩期间不预支；排队意图被丢弃（对话被关掉等）时如实报一条 warning，绝不静默。**带附件 / 引用 / 图片的不排队**：`buildAttachmentMessages`、画布引用、`@` 扫描都依赖当次会话状态，没法在排空时安全重放，仍当场拒绝并写明「等压缩结束后再发」。斜杠命令（要当场执行）与派活、目标执行者的路由同理不排队。
+
+前端因此多一条 ack：服务端入队后发 `{ type: "prompt_queued", conversationId, text }`，`web/src/optimistic-queue.ts` 的 `markOptimisticPromptEchoQueued()` 把对应的乐观回显标记为「已入队」。标记过的回显不再按 15 秒 TTL 回收（压缩常超过 15 秒，气泡先消失再冒出来比直接报错更糟），改由 `reconcileOptimisticPromptEchoes()` 在真正的 user 消息落账时按正文对账收掉；只留一个 10 分钟的安全上限，防止服务端丢意图时留下永久幽灵气泡。
+
+守卫：`tests/unit/delivery-gate-single-source.test.ts` 禁止别处直读 `isCompacting`、禁止手写 `deliverAs: "steer"`、禁止复活那三个旧字段，并给直连 `sendUserMessage` 的站点设上限；`tests/unit/delivery-gate-929.test.ts` 覆盖三个场景（父对话压缩期间子代理完成 → `compaction_end` 后补投一次；子代理压缩期间 `steer` → 门开后开新一轮；用户自己发的文本在压缩期间入队、门开后只发一次，带附件仍拒绝）；`tests/unit/optimistic-queue.test.ts` 覆盖「已入队回显不再按 TTL 消失」。
 
 ## 子代理完成证据、结算边沿与派发预算
 

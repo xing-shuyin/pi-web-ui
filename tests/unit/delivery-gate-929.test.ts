@@ -52,6 +52,12 @@ function fakeSession(opts: { convs: Record<string, any>; lang?: "zh" | "en" }) {
 		startSubagentRound: proto.startSubagentRound,
 		parkSteer: proto.parkSteer,
 		deliverFromOutside: proto.deliverFromOutside,
+		// 交互式 prompt() 走同一道门（压缩期间文本排队）
+		conv: undefined,
+		pendingBotChat: new Map(),
+		botOf: proto.botOf,
+		prompt: proto.prompt,
+		parkGatedPrompt: proto.parkGatedPrompt,
 		resolveExecution: (id: string) => {
 			const conv = cs.convs.get(id);
 			return conv ? { session: cs, convId: id, conv } : undefined;
@@ -303,5 +309,135 @@ describe("issues/929 · 其它入站投递点同一条门", () => {
 
 		expect(await cs.deliverFromOutside(target, "hello")).toBe("closed");
 		expect(target.delivery).toBeUndefined();
+	});
+});
+
+describe("issues/929 · 压缩期间用户自己发的文本改成排队（不再让用户重发）", () => {
+	function gatedPrompt(overrides: Record<string, unknown> = {}) {
+		const { conv: parent, sendUserMessage } = parentConv({
+			compaction: runningCompaction("manual", 1),
+			...overrides,
+		});
+		const cs = fakeSession({ convs: { [parent.id]: parent } });
+		cs.conv = parent;
+		return { parent, sendUserMessage, cs };
+	}
+
+	it("压缩中只入队：不提交、也不预支「用户开口了」的会话状态", async () => {
+		const { parent, sendUserMessage, cs } = gatedPrompt({
+			autonomousTurnsWithoutUser: 3,
+			wakeReason: "subagent_completion",
+		});
+
+		await cs.prompt("构建失败了我先说一句");
+
+		expect(sendUserMessage).not.toHaveBeenCalled();
+		expect(parent.delivery.size).toBe(1);
+		expect(parent.delivery.pending[0]).toMatchObject({
+			kind: "user-prompt",
+			text: "构建失败了我先说一句",
+		});
+		// 状态延到「真正投出去」的提交点：压缩期间不能当成用户已经开过口。
+		expect(parent.autonomousTurnsWithoutUser).toBe(3);
+		expect(parent.wakeReason).toBe("subagent_completion");
+		expect(cs.flushSnapshot).not.toHaveBeenCalled();
+	});
+
+	it("给客户端一条 prompt_queued 回执（乐观回显据此不再按 TTL 消失）", async () => {
+		const { parent, cs } = gatedPrompt();
+
+		await cs.prompt("  压缩完接着修 signup  \n");
+
+		expect(cs.emit).toHaveBeenCalledWith({
+			type: "prompt_queued",
+			conversationId: parent.id,
+			text: "压缩完接着修 signup",
+		});
+		expect(cs.emit).toHaveBeenCalledWith(
+			expect.objectContaining({ type: "notice", level: "info", text: expect.stringContaining("已排队") }),
+		);
+	});
+
+	it("压缩结束（门开）后 drain 只开一轮、正文一致，并在这一刻落「用户开口了」", async () => {
+		const { parent, sendUserMessage, cs } = gatedPrompt({
+			autonomousTurnsWithoutUser: 3,
+			wakeReason: "subagent_completion",
+		});
+
+		await cs.prompt("  压缩完接着修 signup  \n");
+		await settle();
+		expect(sendUserMessage).not.toHaveBeenCalled();
+
+		// compaction_end 里做的事：清门 + 排空
+		parent.compaction = null;
+		await parent.delivery.drain(cs.deliveryHost(parent));
+		await settle();
+
+		expect(sendUserMessage).toHaveBeenCalledTimes(1);
+		expect(sendUserMessage.mock.calls[0]).toEqual(["压缩完接着修 signup"]);
+		expect(parent.delivery.size).toBe(0);
+		expect(parent.autonomousTurnsWithoutUser).toBe(0);
+		expect(parent.wakeReason).toBe("user");
+	});
+
+	it("同一份文本重复发送只排一条，drain 后只发一次", async () => {
+		const { parent, sendUserMessage, cs } = gatedPrompt();
+
+		await cs.prompt("继续");
+		await cs.prompt("继续");
+		await cs.prompt("  继续  ");
+		expect(parent.delivery.size).toBe(1);
+
+		parent.compaction = null;
+		await parent.delivery.drain(cs.deliveryHost(parent));
+		await settle();
+
+		expect(sendUserMessage).toHaveBeenCalledTimes(1);
+		expect(sendUserMessage).toHaveBeenCalledWith("继续");
+	});
+
+	it("带附件仍明确拒绝（附件链路不能在排空时重放），且提示里点名附件", async () => {
+		const { parent, sendUserMessage, cs } = gatedPrompt();
+
+		await cs.prompt("看这张图", [{ name: "shot.png", path: "shot.png", mode: "file" }] as any);
+
+		expect(sendUserMessage).not.toHaveBeenCalled();
+		expect(parent.delivery).toBeUndefined();
+		expect(cs.emit).toHaveBeenCalledWith(
+			expect.objectContaining({
+				type: "notice",
+				level: "warning",
+				text: expect.stringContaining("带附件"),
+			}),
+		);
+	});
+
+	it("斜杠命令与派活路由不排队（必须在当次会话状态下当场执行）", async () => {
+		const slash = gatedPrompt();
+		await slash.cs.prompt("/model gpt");
+		expect(slash.parent.delivery).toBeUndefined();
+		expect(slash.sendUserMessage).not.toHaveBeenCalled();
+		expect(slash.cs.emit).toHaveBeenCalledWith(expect.objectContaining({ type: "notice", level: "warning" }));
+
+		const delegated = gatedPrompt({ delegateMode: true });
+		await delegated.cs.prompt("这条要派给执行对话");
+		expect(delegated.parent.delivery).toBeUndefined();
+		expect(delegated.sendUserMessage).not.toHaveBeenCalled();
+	});
+
+	it("排队期间对话被关掉：消息如实报「没送到」，不静默消失", async () => {
+		const { parent, cs } = gatedPrompt();
+
+		await cs.prompt("别丢了这条");
+		parent.deliveryClosed = true;
+		await parent.delivery.drain(cs.deliveryHost(parent));
+
+		expect(cs.emit).toHaveBeenCalledWith(
+			expect.objectContaining({
+				type: "notice",
+				level: "warning",
+				text: expect.stringContaining("排队中的消息未能送出"),
+			}),
+		);
 	});
 });
