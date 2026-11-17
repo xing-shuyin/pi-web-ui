@@ -6269,6 +6269,7 @@ function LoadedSettingsModal({
 														pluginUpdates={chat.pluginUpdates}
 														pluginJobs={chat.pluginJobs}
 														inventoryEntries={inventoryEntries}
+														pageEntries={uiSlots["settings.pages"]}
 														models={settings?.subagentModels ?? []}
 														epoch={chat.pluginsEpoch}
 														onTogglePlugin={togglePlugin}

@@ -677,6 +677,11 @@ export interface PluginViewModule {
 }
 
 export interface PluginViewContext {
+	/**
+	 * 宿主要求渲染的是哪一页（对应 manifest 的 `ui.settings[].id`）。
+	 * 定在插件详情里点某一个插件页时才有值；器件只有一页（通用「插件页」标签）时为 undefined。
+	 */
+	page?: string;
 	send(payload: unknown): void;
 	onData(handler: (payload: unknown) => void): () => void;
 }

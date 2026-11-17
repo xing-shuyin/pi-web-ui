@@ -7,6 +7,8 @@ import { clearImageOcrProviders, syncImageOcrProviderOwners } from "./image-ocr-
 
 export interface PluginViewContext {
 	pluginId: string;
+	/** 宿主要求渲染的插件页 id（`ui.settings[].id`）；通用「插件页」标签下为 undefined */
+	page?: string;
 	send: (payload: unknown) => void;
 	onData: (cb: (payload: unknown) => void) => () => void;
 }
@@ -343,9 +345,12 @@ export async function syncPluginViews(plugins: UiPluginInfo[], epoch: number): P
 export function makePluginContext(
 	pluginId: string,
 	send: (msg: { type: "plugin_message"; pluginId: string; payload: unknown }) => void,
+	options?: { page?: string },
 ): PluginViewContext {
+	const page = options?.page;
 	return {
 		pluginId,
+		...(page ? { page } : {}),
 		send: (payload) => send({ type: "plugin_message", pluginId, payload }),
 		onData: (cb) =>
 			subscribeAll((pid, payload) => {
