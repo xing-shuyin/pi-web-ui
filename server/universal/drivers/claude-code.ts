@@ -206,6 +206,92 @@ export class ClaudeCodeDriver extends BaseAgentDriver {
 		this.activeSessionId = sessionId || null;
 	}
 
+	/** Fork an existing CLI session into a new session id (for tree-fork in the UI). */
+	async forkSession(sessionId: string): Promise<string> {
+		if (!sessionId) return "";
+		const args = [
+			"-p",
+			"--input-format",
+			"stream-json",
+			"--output-format",
+			"stream-json",
+			"--verbose",
+			"--resume",
+			sessionId,
+			"--fork-session",
+			...this.staticExtraArgs,
+			...buildPermissionArgs(),
+		];
+
+		let isOfficial = true;
+		let targetProvider: string | null = null;
+		if (this.currentModel.includes("/")) {
+			const slash = this.currentModel.indexOf("/");
+			const provider = this.currentModel.slice(0, slash);
+			if (provider !== "claude-code") {
+				isOfficial = false;
+				targetProvider = provider;
+			}
+		}
+		const launch = resolveEngineCliLaunch("claude", { executablePath: this.executablePath, cwd: this.cwd });
+		const proc = spawn(launch.file, [...launch.args, ...args], {
+			cwd: this.cwd,
+			env: this.buildSpawnEnv(isOfficial, targetProvider),
+			detached: process.platform !== "win32",
+			windowsHide: true,
+		});
+
+		return new Promise<string>((resolve) => {
+			let newSid = "";
+			let done = false;
+			const finish = () => {
+				if (done) return;
+				done = true;
+				clearTimeout(timer);
+				resolve(newSid);
+			};
+			const timer = setTimeout(() => {
+				try {
+					proc.kill();
+				} catch {}
+				finish();
+			}, 15_000);
+
+			if (proc.stdout) {
+				const rl = createInterface({ input: proc.stdout, terminal: false });
+				rl.on("line", (line) => {
+					const trimmed = line.trim();
+					if (!trimmed.startsWith("{")) return;
+					try {
+						const event = JSON.parse(trimmed) as Record<string, unknown>;
+						if (
+							event.type === "system" &&
+							event.subtype === "init" &&
+							typeof event.session_id === "string" &&
+							event.session_id
+						) {
+							newSid = event.session_id;
+							// Got the fork target: we don't need the CLI to finish a turn.
+							try {
+								proc.kill();
+							} catch {}
+							finish();
+						}
+					} catch {}
+				});
+			}
+			proc.on("close", finish);
+			proc.on("error", finish);
+			if (proc.stdin) {
+				proc.stdin.on("error", () => {});
+				proc.stdin.write(
+					`${JSON.stringify({ type: "user", message: { role: "user", content: [{ type: "text", text: "fork session" }] } })}\n`,
+				);
+				proc.stdin.end();
+			}
+		});
+	}
+
 	getActiveSessionId(): string | null {
 		return this.activeSessionId;
 	}
