@@ -56,6 +56,14 @@ export interface AgentEventSink {
 	 * The host must eventually call the driver's `respondApproval`; otherwise the engine
 	 * keeps waiting for the answer and the turn never finishes.
 	 */
+	/**
+	 * Explicit opt-in for permission prompts. A `typeof onApprovalRequest === "function"`
+	 * check is not reliable here: the session wraps the sink in a Proxy whose `get` trap
+	 * returns a function for *every* key, so a sink without approval wiring would still
+	 * look like it has one — the call is then silently dropped and the CLI waits forever.
+	 */
+	supportsApproval?: boolean;
+
 	onApprovalRequest?(
 		requestId: string,
 		toolName: string,
