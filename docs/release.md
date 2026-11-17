@@ -128,6 +128,29 @@ git ls-remote --tags origin       # 应能看到 vX.Y.Z
 - **改桌面出包 workflow 先空跑再重推 tag**：`gh workflow run desktop-release.yml --ref main` 先验证三个平台 job 全绿，再重推 tag——重推 tag 会重建并 `--clobber` 覆盖 Release 资产，是正式出包的唯一路径。
 - **发布前检查示例文件不泄密**：`deploy/`、`README` 等随 npm 包（`files` 白名单含 `deploy/`）和 GitHub 分发的文件**绝不放真实 IP / 域名 / 密钥**——用占位符（如 `<LAN_IP>`、`<PUBLIC_IP>:<PUBLIC_PORT>`、`your-host`）。真实环境配置只在本地改，不进仓库。
 
+## 桌面运行时签名（壳 + 运行时双层模型）
+
+运行时归档的信任根是**壳里内置的 ed25519 公钥**（`desktop/runtime-config.ts` 的 `RUNTIME_PUBLIC_KEY_PEM`，当前指纹
+`c144c102c473edbfcbfecafdc1662151`）。配套私钥只存 GitHub Actions secret `DESKTOP_RUNTIME_SIGNING_KEY`（PEM 原文，
+或换行写成 `
+` 的单行都可以），**绝不进仓库**。
+
+```bash
+# 生成新密钥对（只在需要轮换时做）
+npm run build:desktop-runtime -- --keygen
+#   私钥 → GitHub secret DESKTOP_RUNTIME_SIGNING_KEY
+#   公钥 → desktop/runtime-config.ts（要发一次壳才生效）
+
+# 出运行时产物（core 归档 + 清单 + 签名）
+npm run build:desktop-runtime -- --platform <p> --arch <a> --out release/runtime --from <已组装好的 app 目录>
+# 干跑验收（CI 必跑；没有公钥时 verify 会拒绝）
+npm run verify:desktop-runtime -- --manifest … --signature … --public-key … --archive …
+```
+
+- 公钥留空 = **一律拒绝任何运行时更新**（fail closed）；改公钥属于改信任根，必须跟文档与发版一起走。
+- `natives`（ffmpeg / codec / p2p）载荷暂未纳入下载通道，运行时清单目前只带 `core`。
+- 本地实机验证可用 `PI_DESKTOP_UPDATE_FEED=<静态目录 URL>` 配 `PI_DESKTOP_RUNTIME_AUTOCHECK=1`、`PI_DESKTOP_RUNTIME_AUTOAPPLY=1`。
+
 ## 代码及文档不要泄露任何公网IP
 
 ## P2P npm 候选包

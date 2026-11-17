@@ -122,6 +122,8 @@
 		"plugins:unlink": "node scripts/link-plugins.mjs --unlink",
 		"start": "node --import ./dist/server/resolve-global-sdk.js dist/server/index.js",
 		"build:desktop": "tsc -p desktop/tsconfig.json && node scripts/build-browser.mjs",
+		"build:desktop-runtime": "node scripts/build-desktop-runtime.mjs",
+		"verify:desktop-runtime": "node scripts/verify-desktop-runtime.mjs",
 		"desktop:dev": "npm run build:desktop && electron dist/desktop/main.js",
 		"desktop:dist": "npm run build && npm run build:desktop && node scripts/run-electron-builder.mjs -c desktop/electron-builder.yml",
 		"desktop:portable": "npm run build && npm run build:desktop && node scripts/make-portable.mjs",

@@ -2,6 +2,8 @@ import type { IpcRendererEvent } from "electron";
 import electron = require("electron");
 import browserAction = require("electron-chrome-extensions/browser-action");
 const { contextBridge, ipcRenderer } = electron;
+// 更新状态快照的形状由主进程的状态机定义：只 import 类型，不把状态机带进 preload。
+import type { UpdaterState as DesktopUpdaterState } from "./updater.js";
 
 // 工具栏扩展图标（<browser-action-list>）靠这个注入：它把 chrome.action 的状态和点击
 // 变成壳层里的一个自定义元素。只给 shell 页注入——Agent 视图不需要，也不该拿到这个桥。
@@ -40,13 +42,6 @@ void ipcRenderer
 			});
 	})
 	.catch(() => {});
-
-export interface DesktopUpdaterEvent {
-	state: "checking" | "available" | "up-to-date" | "downloading" | "downloaded" | "error";
-	version?: string | null;
-	percent?: number;
-	message?: string;
-}
 
 contextBridge.exposeInMainWorld("piDesktop", {
 	isDesktop: true as const,
@@ -87,11 +82,18 @@ contextBridge.exposeInMainWorld("piDesktop", {
 		},
 	},
 	updater: {
-		check: () => ipcRenderer.invoke("pi-desktop-updater:check"),
-		download: () => ipcRenderer.invoke("pi-desktop-updater:download"),
-		quitAndInstall: () => ipcRenderer.invoke("pi-desktop-updater:quit-install"),
-		onEvent: (cb: (msg: DesktopUpdaterEvent) => void) => {
-			const listener = (_event: IpcRendererEvent, msg: DesktopUpdaterEvent) => cb(msg);
+		getState: (): Promise<DesktopUpdaterState | null> => ipcRenderer.invoke("pi-desktop-updater:state"),
+		check: (options?: { manual?: boolean; channel?: "shell" | "runtime" }): Promise<boolean> =>
+			ipcRenderer.invoke("pi-desktop-updater:check", options ?? {}),
+		download: (channel?: "shell" | "runtime"): Promise<boolean> =>
+			ipcRenderer.invoke("pi-desktop-updater:download", { channel: channel ?? "shell" }),
+		cancel: (channel?: "shell" | "runtime"): Promise<boolean> =>
+			ipcRenderer.invoke("pi-desktop-updater:cancel", { channel: channel ?? "shell" }),
+		applyRuntime: (): Promise<boolean> => ipcRenderer.invoke("pi-desktop-updater:apply-runtime"),
+		skip: (version: string | null): Promise<boolean> => ipcRenderer.invoke("pi-desktop-updater:skip", version),
+		quitAndInstall: (): Promise<boolean> => ipcRenderer.invoke("pi-desktop-updater:quit-install"),
+		onEvent: (cb: (state: DesktopUpdaterState) => void) => {
+			const listener = (_event: IpcRendererEvent, state: DesktopUpdaterState) => cb(state);
 			ipcRenderer.on("pi-desktop-updater:event", listener);
 			return () => ipcRenderer.removeListener("pi-desktop-updater:event", listener);
 		},
