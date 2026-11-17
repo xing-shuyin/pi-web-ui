@@ -9294,6 +9294,7 @@
 	}
 
 	.statusbar-left,
+	.statusbar-center,
 	.statusbar-right {
 		display: flex;
 		align-items: center;
@@ -9304,6 +9305,13 @@
 	.statusbar-left {
 		flex: 1 1 auto;
 		overflow: hidden;
+	}
+
+	/* 中间组也是 flex 行：否则它是个块级行盒，里面的 inline-flex 按钮按基线落位，
+	 * 会比左右两组的状态项整体高半个像素，图标与文字看起来没垂直居中。
+	 * 内容不参与压缩（窄屏先让左侧状态项裁切），搜索这类入口保持完整。 */
+	.statusbar-center {
+		flex: 0 0 auto;
 	}
 
 	.statusbar-right {
@@ -29641,6 +29649,7 @@
 			display: none;
 		}
 		.statusbar-left,
+		.statusbar-center,
 		.statusbar-right {
 			gap: var(--statusbar-gap);
 			flex-shrink: 0;
@@ -29751,6 +29760,7 @@
 				padding: 2px 5px;
 			}
 			.statusbar-left,
+			.statusbar-center,
 			.statusbar-right {
 				gap: var(--statusbar-gap);
 			}
