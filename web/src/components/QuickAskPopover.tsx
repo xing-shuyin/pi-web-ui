@@ -24,6 +24,7 @@ import {
 	readQuickAskResponse,
 	translateSelectionPrompt,
 	QUICK_ASK_LANGUAGE_LABELS,
+	stripQuickAskAttachment,
 	type QuickAskAttachment,
 	type QuickAskReferenceSource,
 	type QuickAskMessage,
@@ -74,6 +75,7 @@ export function QuickAskPopover({
 	const referenceEpoch = useRef(0);
 	const referenceControllers = useRef(new Set<AbortController>());
 	const [referencesLoading, setReferencesLoading] = useState(0);
+	const [contextOn, setContextOn] = useState(false);
 	const [referenceError, setReferenceError] = useState<string | null>(null);
 	const controllerRef = useRef<AbortController | null>(null);
 	const retryRef = useRef<QuickAskMessage[] | null>(null);
@@ -87,6 +89,13 @@ export function QuickAskPopover({
 	const followRef = useRef(true);
 	const scrollTopRef = useRef(0);
 	const openRef = useRef(open);
+	const contextOnRef = useRef(false);
+	const contextAttachmentIds = useRef(new Set<string>());
+	const topicRef = useRef(0);
+	const activeConversationRef = useRef<string | undefined>(
+		currentConversation?.kind === "conversation" ? currentConversation.conversationId : undefined,
+	);
+	const sendPending = useRef(false);
 
 	const close = () => {
 		if (bodyRef.current) scrollTopRef.current = bodyRef.current.scrollTop;
@@ -115,9 +124,95 @@ export function QuickAskPopover({
 		setReferencesLoading(0);
 		setReferenceError(null);
 	};
+	const setAttachmentList = (next: QuickAskAttachment[]) => {
+		attachmentsRef.current = next;
+		setAttachments(next);
+	};
+	const contextScope = settings?.quickAskConversationScope || "recent";
+	const addReferences = async (
+		load: (signal: AbortSignal) => Promise<QuickAskAttachment[]>,
+		mapError?: (error: unknown) => string | undefined,
+	): Promise<QuickAskAttachment[] | undefined> => {
+		const epoch = referenceEpoch.current;
+		const controller = new AbortController();
+		referenceControllers.current.add(controller);
+		setOpen(true);
+		setUnread(false);
+		setMenuOpen(false);
+		setReferencesLoading((count) => count + 1);
+		setReferenceError(null);
+		try {
+			const incoming = await load(controller.signal);
+			if (epoch !== referenceEpoch.current || controller.signal.aborted) return undefined;
+			const next = [...attachmentsRef.current];
+			for (const item of incoming) {
+				const index = next.findIndex((previous) => previous.id === item.id);
+				if (index < 0) next.push(item);
+				else next[index] = item;
+			}
+			if (next.length > QUICK_ASK_MAX_ATTACHMENTS) throw new QuickAskAttachmentError("quickAskTooManyReferences");
+			setAttachmentList(next);
+			setInputExpanded(true);
+			return incoming;
+		} catch (err) {
+			if (epoch === referenceEpoch.current && !controller.signal.aborted) {
+				setReferenceError(
+					mapError?.(err) ??
+						(err instanceof QuickAskAttachmentError ? t(err.code) : err instanceof Error ? err.message : String(err)),
+				);
+			}
+			return undefined;
+		} finally {
+			referenceControllers.current.delete(controller);
+			if (epoch === referenceEpoch.current) setReferencesLoading((count) => Math.max(0, count - 1));
+		}
+	};
+	const attachReference = (source: QuickAskReferenceSource) => {
+		const scope =
+			source.kind === "conversation"
+				? contextScope
+				: source.kind === "directory"
+					? settings?.quickAskFolderScope || "listing"
+					: undefined;
+		return addReferences(async (signal) => [await loadQuickAskReference(source, { scope, clientId, signal })]);
+	};
+	// 「当前对话」开关：每次提问前重新取主对话快照，只作为本轮用户消息里的不可信参考文本（不进 system，也不写入主对话）。
+	const refreshLiveContext = async (): Promise<QuickAskAttachment | undefined> => {
+		if (!currentConversation) return undefined;
+		const incoming = await addReferences(
+			async (signal) => [await loadQuickAskReference(currentConversation, { scope: contextScope, clientId, signal })],
+			(err) =>
+				/no user\/assistant text/i.test(err instanceof Error ? err.message : String(err))
+					? t("quickAskContextEmpty")
+					: undefined,
+		);
+		const live = incoming?.find((item) => item.kind === "conversation");
+		if (live) {
+			contextAttachmentIds.current.add(live.id);
+			// 切了对话：上一个对话的实时快照不再相关，标签一并收起。
+			const stale = [...contextAttachmentIds.current].filter((id) => id !== live.id);
+			if (stale.length) setAttachmentList(attachmentsRef.current.filter((item) => !stale.includes(item.id)));
+		}
+		return live;
+	};
+	const toggleContext = async () => {
+		if (contextOnRef.current) {
+			contextOnRef.current = false;
+			setContextOn(false);
+			setAttachmentList(attachmentsRef.current.filter((item) => !contextAttachmentIds.current.has(item.id)));
+			contextAttachmentIds.current.clear();
+			return;
+		}
+		if (!currentConversation) return;
+		contextOnRef.current = true;
+		setContextOn(true);
+		setInputExpanded(true);
+		await refreshLiveContext();
+	};
 	const reset = () => {
 		cancel();
 		clearReferences();
+		topicRef.current++;
 		setMode("ask");
 		retryRef.current = null;
 		setMessages([]);
@@ -132,6 +227,7 @@ export function QuickAskPopover({
 		followRef.current = true;
 		scrollTopRef.current = 0;
 		inputRef.current?.focus({ preventScroll: true });
+		if (contextOnRef.current) void refreshLiveContext();
 	};
 	const run = async (next: QuickAskMessage[]) => {
 		cancel();
@@ -193,60 +289,32 @@ export function QuickAskPopover({
 			}
 		}
 	};
-	const send = (question = input.trim()) => {
-		if (!question || controllerRef.current || referenceControllers.current.size) return;
-		const next = appendQuickAskQuestion(messages, question, attachmentsRef.current);
-		const budgetError = quickAskBudgetError(next);
-		if (budgetError) {
-			setReferenceError(t(budgetError));
-			return;
-		}
+	const send = async (question = input.trim()) => {
+		if (!question || controllerRef.current || sendPending.current || referenceControllers.current.size) return;
+		const topic = topicRef.current;
+		sendPending.current = true;
 		setMode("ask");
 		setInputExpanded(true);
-		void run(next);
 		setInput("");
-	};
-	const addReferences = async (load: (signal: AbortSignal) => Promise<QuickAskAttachment[]>) => {
-		const epoch = referenceEpoch.current;
-		const controller = new AbortController();
-		referenceControllers.current.add(controller);
-		setOpen(true);
-		setUnread(false);
-		setMenuOpen(false);
-		setReferencesLoading((count) => count + 1);
-		setReferenceError(null);
 		try {
-			const incoming = await load(controller.signal);
-			if (epoch !== referenceEpoch.current || controller.signal.aborted) return;
-			const next = [...attachmentsRef.current];
-			for (const item of incoming) {
-				const index = next.findIndex((previous) => previous.id === item.id);
-				if (index < 0) next.push(item);
-				else next[index] = item;
+			// 开关打开时先刷新当前对话快照，并把旧副本从历史里挤掉，保证每轮只有一份最新上下文。
+			if (contextOnRef.current) await refreshLiveContext();
+			if (topic !== topicRef.current || controllerRef.current) return;
+			const history = [...contextAttachmentIds.current].reduce<QuickAskMessage[]>(
+				(list, id) => stripQuickAskAttachment(list, id),
+				messages,
+			);
+			const next = appendQuickAskQuestion(history, question, attachmentsRef.current);
+			const budgetError = quickAskBudgetError(next);
+			if (budgetError) {
+				setReferenceError(t(budgetError));
+				setInput((current) => current || question);
+				return;
 			}
-			if (next.length > QUICK_ASK_MAX_ATTACHMENTS) throw new QuickAskAttachmentError("quickAskTooManyReferences");
-			attachmentsRef.current = next;
-			setAttachments(next);
-			setInputExpanded(true);
-		} catch (err) {
-			if (epoch === referenceEpoch.current && !controller.signal.aborted) {
-				setReferenceError(
-					err instanceof QuickAskAttachmentError ? t(err.code) : err instanceof Error ? err.message : String(err),
-				);
-			}
+			void run(next);
 		} finally {
-			referenceControllers.current.delete(controller);
-			if (epoch === referenceEpoch.current) setReferencesLoading((count) => Math.max(0, count - 1));
+			sendPending.current = false;
 		}
-	};
-	const attachReference = (source: QuickAskReferenceSource) => {
-		const scope =
-			source.kind === "conversation"
-				? settings?.quickAskConversationScope || "recent"
-				: source.kind === "directory"
-					? settings?.quickAskFolderScope || "listing"
-					: undefined;
-		return addReferences(async (signal) => [await loadQuickAskReference(source, { scope, clientId, signal })]);
 	};
 	const attachFiles = (files: File[]) =>
 		addReferences(async (signal) => {
@@ -270,6 +338,7 @@ export function QuickAskPopover({
 			return;
 		}
 		clearReferences();
+		topicRef.current++;
 		setOpen(true);
 		setMode(action);
 		setTarget(language);
@@ -289,6 +358,15 @@ export function QuickAskPopover({
 			},
 		]);
 	};
+
+	const activeConversationId =
+		currentConversation?.kind === "conversation" ? currentConversation.conversationId : undefined;
+	useEffect(() => {
+		if (activeConversationRef.current === activeConversationId) return;
+		activeConversationRef.current = activeConversationId;
+		if (contextOnRef.current) void refreshLiveContext();
+		// eslint-disable-next-line react-hooks/exhaustive-deps
+	}, [activeConversationId]);
 
 	useEffect(() => {
 		const onOpen = (event: Event) => {
@@ -467,9 +545,12 @@ export function QuickAskPopover({
 					<QuickAskReferenceChips
 						attachments={attachments}
 						onRemove={(id) => {
-							const next = attachmentsRef.current.filter((item) => item.id !== id);
-							attachmentsRef.current = next;
-							setAttachments(next);
+							if (contextAttachmentIds.current.has(id)) {
+								contextOnRef.current = false;
+								setContextOn(false);
+								contextAttachmentIds.current.clear();
+							}
+							setAttachmentList(attachmentsRef.current.filter((item) => item.id !== id));
 						}}
 					/>
 					<div
@@ -549,10 +630,10 @@ export function QuickAskPopover({
 						)}
 						{!loading && !error && !stopped && hasAnswer && (
 							<div className="quick-ask-suggestions">
-								<button type="button" className="quick-ask-chip" onClick={() => send(t("quickAskExample"))}>
+								<button type="button" className="quick-ask-chip" onClick={() => void send(t("quickAskExample"))}>
 									{t("quickAskExample")}
 								</button>
-								<button type="button" className="quick-ask-chip" onClick={() => send(t("quickAskSummarize"))}>
+								<button type="button" className="quick-ask-chip" onClick={() => void send(t("quickAskSummarize"))}>
 									{t("quickAskSummarize")}
 								</button>
 							</div>
@@ -566,6 +647,26 @@ export function QuickAskPopover({
 							onFiles={(files) => void attachFiles(files)}
 							onFolder={(files) => void attachFolder(files)}
 						/>
+						<button
+							type="button"
+							className={`quick-ask-context${contextOn ? " is-active" : ""}`}
+							aria-pressed={contextOn}
+							aria-label={t("quickAskContextCurrent")}
+							disabled={!currentConversation || referencesLoading > 0}
+							title={
+								!currentConversation
+									? t("quickAskContextUnavailable")
+									: contextOn
+										? t("quickAskContextOnHint")
+										: t("quickAskContextOffHint", {
+												scope: t(contextScope === "full" ? "quickAskConversationFull" : "quickAskConversationRecent"),
+											})
+							}
+							onClick={() => void toggleContext()}
+						>
+							<FiMessageCircle size={12} aria-hidden="true" />
+							{t("quickAskContextCurrent")}
+						</button>
 						{messages.length > 0 && (
 							<>
 								<button
@@ -602,7 +703,7 @@ export function QuickAskPopover({
 							className="quick-ask-composer"
 							onSubmit={(event) => {
 								event.preventDefault();
-								send();
+								void send();
 							}}
 						>
 							<div className="quick-ask-input-wrap">

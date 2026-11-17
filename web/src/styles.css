@@ -921,6 +921,22 @@
 		opacity: 0.4;
 		cursor: default;
 	}
+	.quick-ask-actions > .quick-ask-context {
+		flex-shrink: 0;
+		padding: 2px 6px;
+		border: 1px solid transparent;
+		border-radius: 999px;
+		color: var(--text-dim);
+	}
+	.quick-ask-actions > .quick-ask-context.is-active {
+		border-color: color-mix(in srgb, var(--accent) 45%, transparent);
+		background: color-mix(in srgb, var(--accent) 14%, transparent);
+		color: var(--accent);
+	}
+	.quick-ask-context:disabled {
+		opacity: 0.4;
+		cursor: default;
+	}
 	.quick-ask-attachment-menu > button {
 		display: flex;
 		align-items: center;

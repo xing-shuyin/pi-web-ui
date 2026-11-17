@@ -161,6 +161,19 @@ export function appendQuickAskQuestion(
 	return [...history, { role: "user", content, ...(fresh.length ? { attachments: fresh } : {}) }];
 }
 
+/** 实时上下文开关：同一来源（按 attachment id）只保留最新一份快照，避免每轮提问重复占用上下文预算。 */
+export function stripQuickAskAttachment(messages: QuickAskMessage[], attachmentId: string | null): QuickAskMessage[] {
+	if (!attachmentId) return messages;
+	let changed = false;
+	const next = messages.map((message) => {
+		if (!message.attachments?.some((attachment) => attachment.id === attachmentId)) return message;
+		changed = true;
+		const attachments = message.attachments.filter((attachment) => attachment.id !== attachmentId);
+		return attachments.length ? { ...message, attachments } : { role: message.role, content: message.content };
+	});
+	return changed ? next : messages;
+}
+
 export function sameQuickAskAttachment(a: QuickAskAttachment, b: QuickAskAttachment): boolean {
 	return (
 		a.id === b.id &&
