@@ -1697,11 +1697,18 @@ export class AgentService {
 	async navigateQuestion(targetId: string, id: string): Promise<void> {
 		const target = this.clients.get(targetId);
 		if (!target) return;
+		// 本页自己的问卷（包括其他项目里的对话）直接切：不需要过户，也不需要 cwd 相等；
+		// switchConversation 会一并切换工作区。cwd 相等只约束跨页过户。
+		const local = target.getQuestionNavigation(id);
+		if (local) {
+			await target.switchConversation(local.conversationId);
+			return;
+		}
 		for (const [ownerId, source] of this.clients) {
-			if (AgentService.isPseudoClientId(ownerId)) continue;
+			if (source === target || AgentService.isPseudoClientId(ownerId)) continue;
 			const request = source.getQuestionNavigation(id);
 			if (!request || resolve(request.cwd) !== resolve(target.cwd)) continue;
-			if (source !== target) await this.takeOverConversation(targetId, ownerId, request.rootConversationId);
+			await this.takeOverConversation(targetId, ownerId, request.rootConversationId);
 			const moved = target.getQuestionNavigation(id);
 			if (moved) await target.switchConversation(moved.conversationId);
 			return;

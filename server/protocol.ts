@@ -2117,6 +2117,8 @@ export interface UiQueuedQuestion extends UiPendingQuestion {
 	rootConversationId?: string;
 	createdAt: number;
 	audience?: "user" | "parent";
+	/** Project directory of the source conversation; cross-project rows are labelled with it. */
+	cwd?: string;
 }
 
 export interface UiActionSuggestion {

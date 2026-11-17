@@ -1777,7 +1777,7 @@
 	"questionQueueDefer": "Answer later",
 	"pendingQueueDefer": "Handle later",
 	"questionPresentation": "Questionnaire reminders",
-	"questionPresentationDesc": "Current conversation: automatically open its questions and queue the others. All conversations: open questions from the current project one at a time. Queue only: open manually. Answering later preserves the question and your draft.",
+	"questionPresentationDesc": "Current conversation: automatically open its questions and queue the others. All conversations: open questions from every project one at a time. Queue only: open manually. Answering later preserves the question and your draft.",
 	"toolApprovalPresentation": "Tool approval reminders",
 	"toolApprovalPresentationDesc": "Current conversation: automatically open its approvals and queue the others. All conversations: open approvals from the current project one at a time. Queue only: open manually. This only controls reminders; it never approves or rejects operations automatically.",
 	"toolApprovalPresentationAll": "Automatically open approvals from all conversations",

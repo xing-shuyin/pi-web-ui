@@ -2,6 +2,7 @@ import { appSend } from "../app-globals";
 import { useT } from "../i18n";
 import {
 	isCurrentQuestion,
+	questionProjectLabel,
 	questionQueueKey,
 	questionNavigation,
 	type QueueQuestion,
@@ -13,11 +14,13 @@ import { PendingQueue } from "./PendingQueue";
 export interface QuestionQueueProps {
 	questions: QueueQuestion[];
 	activeConversationId?: string | null;
+	currentCwd?: string | null;
 	mode: QuestionQueueMode;
 }
 
-export function QuestionQueue({ questions, activeConversationId, mode }: QuestionQueueProps) {
+export function QuestionQueue({ questions, activeConversationId, currentCwd, mode }: QuestionQueueProps) {
 	const t = useT();
+	const projectOf = (q: QueueQuestion) => questionProjectLabel(q, currentCwd);
 	const navigate = (q: QueueQuestion) => {
 		const message = questionNavigation(q);
 		if (message) appSend(message);
@@ -29,6 +32,7 @@ export function QuestionQueue({ questions, activeConversationId, mode }: Questio
 			title={t("questionQueueTitle")}
 			summary={(q) => (
 				<>
+					{projectOf(q) && <span className="question-conv-title">{projectOf(q)}</span>}
 					{q.conversationTitle && <strong>{q.conversationTitle} · </strong>}
 					{q.questions[0]?.header || q.questions[0]?.question || t("modelQuestion")}
 				</>
@@ -50,6 +54,7 @@ export function QuestionQueue({ questions, activeConversationId, mode }: Questio
 					key={questionQueueKey(selected)}
 					question={selected}
 					owner={selected.owner}
+					project={projectOf(selected)}
 					onDefer={defer}
 					onNavigate={selected.rootConversationId || selected.conversationId ? () => navigate(selected) : undefined}
 				/>

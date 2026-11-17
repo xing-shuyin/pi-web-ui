@@ -7175,11 +7175,16 @@ export class ClientSession {
 	}
 
 	private emitQuestionQueue(): void {
+		// 队列覆盖「本连接的全部项目」：与工具审批同源（审批也遍历 convs，不看 cwd），
+		// 否则在别的项目里跑着的对话一提问就再也提醒不到。
+		// 别人的问卷（其他页面 / 定时任务 / 设备任务）仍只限同项目：跨页过户要求 cwd 相等。
 		const questions: import("./protocol.js").UiQueuedQuestion[] = [];
 		for (const owner of new Set([this, ...(this.allSubagentSessions?.() ?? [])])) {
+			const own = owner === this;
 			for (const request of owner.pendingQuestions.values()) {
 				const conv = owner.convs.get(request.conversationId);
-				if (!conv || request.settled || !sameCwd(conv.cwd, this.cwd)) continue;
+				if (!conv || request.settled) continue;
+				if (!own && !sameCwd(conv.cwd, this.cwd)) continue;
 				let root = conv;
 				const seen = new Set<Conversation>();
 				while (root.parentId && !seen.has(root)) {
@@ -7195,6 +7200,7 @@ export class ClientSession {
 					conversationId: conv.id,
 					conversationTitle: conv.title,
 					rootConversationId: root.id,
+					cwd: conv.cwd,
 					createdAt: request.createdAt,
 					...(request.deadline !== undefined ? { deadline: request.deadline } : {}),
 					audience: request.audience,

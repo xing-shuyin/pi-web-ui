@@ -36,11 +36,20 @@ interface QuestionDialogProps {
 	};
 	owner?: string;
 	conversationTitle?: string;
+	/** 跨项目的问卷标上项目名，对话标题同名时不至于认错项目。 */
+	project?: string;
 	onDefer?: () => void;
 	onNavigate?: () => void;
 }
 
-export function QuestionDialog({ question, owner, conversationTitle, onDefer, onNavigate }: QuestionDialogProps) {
+export function QuestionDialog({
+	question,
+	owner,
+	conversationTitle,
+	project,
+	onDefer,
+	onNavigate,
+}: QuestionDialogProps) {
 	const t = useT();
 	const draftId = question.global ? JSON.stringify([owner, question.id]) : question.id;
 	const convTitle = question.conversationTitle || conversationTitle;
@@ -163,6 +172,7 @@ export function QuestionDialog({ question, owner, conversationTitle, onDefer, on
 			<div className="dialog-inline" data-dialog-kind="select">
 				<div className="dialog-head">
 					<span className="dialog-badge">{t("modelQuestion")}</span>
+					{project && <span className="question-conv-title">{project}</span>}
 					{convTitle && (
 						<span className="question-conv-title" title={convTitle}>
 							{convTitle}
@@ -310,6 +320,7 @@ export function QuestionDialog({ question, owner, conversationTitle, onDefer, on
 		<div className={`dialog-inline${collapsed ? " collapsed" : ""}`} data-dialog-kind="select">
 			<div className="dialog-head" onClick={collapsed ? () => setCollapsed(false) : undefined}>
 				<span className="dialog-badge">{t("modelQuestion")}</span>
+				{project && <span className="question-conv-title">{project}</span>}
 				{convTitle && (
 					<span className="question-conv-title" title={convTitle}>
 						{convTitle}

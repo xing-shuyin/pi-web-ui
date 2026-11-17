@@ -5,6 +5,7 @@ import { createRoot, type Root } from "react-dom/client";
 import {
 	resolveQuestionQueue,
 	automaticQuestion,
+	questionProjectLabel,
 	questionQueueKey,
 	questionNavigation,
 	questionWaitTime,
@@ -81,6 +82,40 @@ describe("question queue compatibility and modes", () => {
 		expect(automaticQuestion([other, current], "active", "all", new Set())).toBe(other);
 		expect(automaticQuestion([current], "active", "manual", new Set())).toBeUndefined();
 		expect(automaticQuestion([current], "active", "queue", new Set([questionQueueKey(current)]))).toBeUndefined();
+	});
+	it("labels a question from another project and only auto-opens it in all mode", () => {
+		const foreign = request({
+			id: "foreign",
+			conversationId: "project-b-conv",
+			conversationTitle: "Ship it",
+			cwd: "E:/proj-b",
+		});
+		expect(questionProjectLabel(foreign, "E:/proj-a/")).toBe("proj-b");
+		expect(questionProjectLabel(foreign, "E:/proj-b")).toBeUndefined();
+		expect(questionProjectLabel(request(), "E:/proj-a")).toBeUndefined();
+
+		const queued = mount(
+			createElement(QuestionQueue, {
+				questions: [foreign],
+				activeConversationId: "project-a-conv",
+				currentCwd: "E:/proj-a",
+				mode: "queue",
+			}),
+		);
+		expect(queued.querySelector(".question-queue-dialog")).toBeNull();
+		expect(queued.querySelector(".question-queue-summary .question-conv-title")?.textContent).toBe("proj-b");
+		act(() => root!.unmount());
+
+		const opened = mount(
+			createElement(QuestionQueue, {
+				questions: [foreign],
+				activeConversationId: "project-a-conv",
+				currentCwd: "E:/proj-a",
+				mode: "all",
+			}),
+		);
+		expect(opened.querySelector(".question-queue-dialog")).not.toBeNull();
+		expect(opened.querySelector(".dialog-head .question-conv-title")?.textContent).toBe("proj-b");
 	});
 	it("defers without cancelling, keeps drafts, and reopens manually with owner-scoped answers", () => {
 		const sent: unknown[] = [];

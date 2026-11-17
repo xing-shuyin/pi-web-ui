@@ -3242,6 +3242,7 @@ export function App() {
 													chat.state?.sharedConversation?.owner,
 												)}
 												activeConversationId={activeConvId}
+												currentCwd={chat.state?.cwd}
 												mode={chat.settings?.questionPresentation ?? "queue"}
 											/>
 											<ToolApprovalDialog

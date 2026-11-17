@@ -44,6 +44,19 @@ describe("question source navigation", () => {
 		expect(service.takeOverConversation).toHaveBeenCalledWith("target", "source", "old-root");
 		expect(target.switchConversation).toHaveBeenCalledWith("new-child");
 	});
+	it("navigates a local question that lives in another project", async () => {
+		const { service, target, source } = setup();
+		target.getQuestionNavigation.mockReturnValue({
+			conversationId: "far-child",
+			rootConversationId: "far-root",
+			cwd: "/other",
+		});
+		await service.navigateQuestion("target", "request");
+		expect(target.switchConversation).toHaveBeenCalledWith("far-child");
+		expect(service.takeOverConversation).not.toHaveBeenCalled();
+		expect(source.getQuestionNavigation).not.toHaveBeenCalled();
+		expect(target.sendNotice).not.toHaveBeenCalled();
+	});
 	it("does not navigate requests from a different project", async () => {
 		const { service, target, source } = setup();
 		source.getQuestionNavigation.mockReturnValue({

@@ -22,6 +22,7 @@ export function questionWaitTime(createdAt: number, now: number): string | undef
 export type QueueQuestion = UiPendingQuestion & {
 	owner?: string;
 	rootConversationId?: string;
+	cwd?: string;
 	createdAt: number;
 	audience?: "user" | "parent";
 };
@@ -82,6 +83,21 @@ export function mergeOwnedPending<T extends { id: string; owner?: string; global
 
 export function questionQueueKey(question: QueueQuestion): string {
 	return JSON.stringify([question.owner ?? "", question.conversationId ?? "", question.id]);
+}
+
+/**
+ * 项目标签：队列会带上其他项目的问卷，界面上必须能看出它来自哪个项目。
+ * 同一个项目（含末尾斜杠、Windows 盘符大小写差异）不重复标，返回 undefined。
+ */
+export function questionProjectLabel(question: { cwd?: string }, currentCwd?: string | null): string | undefined {
+	const strip = (path: string) => {
+		const trimmed = path.replace(/[\\/]+$/, "");
+		return /^[a-zA-Z]:/.test(trimmed) ? trimmed.toLowerCase() : trimmed;
+	};
+	const cwd = question.cwd ? strip(question.cwd) : "";
+	const current = currentCwd ? strip(currentCwd) : "";
+	if (!cwd || !current || cwd === current) return undefined;
+	return cwd.split(/[\\/]/).filter(Boolean).pop() ?? cwd;
 }
 
 export function isCurrentQuestion(question: QueueQuestion, activeConversationId?: string | null): boolean {

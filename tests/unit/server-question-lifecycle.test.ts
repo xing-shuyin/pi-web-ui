@@ -46,11 +46,14 @@ describe("server question ownership and lifetime", () => {
 		expect(result.details).toEqual({ status: "timed_out", timed_out: true });
 		expect(result.content[0].text).toContain("No answer was selected");
 	});
-	it("broadcasts real holder metadata across sessions without crossing project boundaries", () => {
+	it("broadcasts real holder metadata per session and keeps other holders' questions out", () => {
 		const a = holder("a"),
 			b = holder("b"),
 			foreign = holder("foreign", "/other");
-		link(a, b, foreign);
+		link(a, b);
+		// 未与 a/b 关联的持有方（另一个 ClientSession）的问卷不得溢出到它们的队列。
+		foreign.allSubagentSessions = () => [foreign];
+		foreign.findSubagentOwner = () => undefined;
 		b.convs.set("parent", { id: "parent", title: "Root", cwd: "/project" });
 		b.convs.set("child", { id: "child", parentId: "parent", title: "Worker", cwd: "/project" });
 		foreign.convs.set("secret", { id: "secret", cwd: "/other" });
@@ -74,6 +77,7 @@ describe("server question ownership and lifetime", () => {
 					owner: "b",
 					conversationId: "child",
 					rootConversationId: "parent",
+					cwd: "/project",
 					createdAt: request.createdAt,
 					deadline: request.deadline,
 					audience: "parent",
@@ -85,6 +89,38 @@ describe("server question ownership and lifetime", () => {
 				.flatMap((call: any[]) => call[0].questions ?? [])
 				.every((q: any) => q.owner === "foreign"),
 		).toBe(true);
+		expect(
+			a.emit.mock.calls.flatMap((call: any[]) => call[0].questions ?? []).some((q: any) => q.owner === "foreign"),
+		).toBe(false);
+	});
+
+	it("queues questions from every project of the same connection", () => {
+		const cs = holder("owner", "/project-a");
+		cs.convs.set("a-conv", { id: "a-conv", title: "A task", cwd: "/project-a" });
+		cs.convs.set("b-conv", { id: "b-conv", title: "B task", cwd: "/project-b" });
+		cs.registerQuestion(new PendingQuestion(questions, "a-conv", "user", 0));
+		cs.registerQuestion(new PendingQuestion(questions, "b-conv", "user", 0));
+		cs.questionsChanged();
+		const event = cs.emit.mock.calls.findLast((call: any[]) => call[0].type === "question_queue")[0];
+		expect(event.questions).toEqual(
+			expect.arrayContaining([
+				expect.objectContaining({ conversationId: "a-conv", cwd: "/project-a" }),
+				expect.objectContaining({ conversationId: "b-conv", cwd: "/project-b" }),
+			]),
+		);
+		expect(event.questions).toHaveLength(2);
+	});
+
+	it("keeps another page's question out when it belongs to a different project", () => {
+		const mine = holder("mine", "/project-a");
+		const other = holder("other", "/project-b");
+		link(mine, other);
+		other.convs.set("far", { id: "far", title: "Far", cwd: "/project-b" });
+		other.registerQuestion(new PendingQuestion(questions, "far", "user", 0));
+		other.questionsChanged();
+		expect(
+			mine.emit.mock.calls.flatMap((call: any[]) => call[0].questions ?? []).some((q: any) => q.owner === "other"),
+		).toBe(false);
 	});
 
 	it("only advertises live user questions in conversation badges and external running summaries", () => {

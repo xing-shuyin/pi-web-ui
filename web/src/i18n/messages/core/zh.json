@@ -1777,7 +1777,7 @@
 	"questionQueueDefer": "稍后回答",
 	"pendingQueueDefer": "稍后处理",
 	"questionPresentation": "问卷提醒方式",
-	"questionPresentationDesc": "当前对话弹出：只自动打开正在查看的对话的问卷，其他进入队列。全部自动弹出：当前项目所有对话的问卷依次弹出。仅队列：不自动弹出，需要手动打开。稍后回答会保留问卷和草稿。",
+	"questionPresentationDesc": "当前对话弹出：只自动打开正在查看的对话的问卷，其他进入队列。全部自动弹出：所有项目所有对话的问卷依次弹出。仅队列：不自动弹出，需要手动打开。稍后回答会保留问卷和草稿。",
 	"toolApprovalPresentation": "工具审批提醒方式",
 	"toolApprovalPresentationDesc": "当前对话弹出：只自动打开正在查看的对话的审批，其他进入队列。全部自动弹出：当前项目所有对话的审批依次弹出。仅队列：不自动弹出，需要手动打开。此设置只控制提醒，不会自动批准或拒绝操作。",
 	"toolApprovalPresentationAll": "所有对话的审批自动弹出",
