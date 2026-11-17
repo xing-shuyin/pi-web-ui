@@ -71,6 +71,23 @@ export function classifyQuestionAddedScroll(args: {
 	return { shouldScroll: false, reason: "none" };
 }
 
+/**
+ * A disclosure opened inside the transcript (compaction card, compacted-history
+ * panel, tool call, thinking block) grows the list by user action, not by new
+ * content. Pinning to the bottom there yanks the viewport away from the card the
+ * user just opened, so the mutation observer holds off until the hold expires.
+ */
+export function shouldPinOnDomMutation(args: {
+	now: number;
+	holdUntil: number;
+	stuck: boolean;
+	escaped: boolean;
+}): boolean {
+	const { now, holdUntil, stuck, escaped } = args;
+	if (now < holdUntil) return false;
+	return stuck && !escaped;
+}
+
 export function shouldPreloadEarlier(args: {
 	scrollTop: number;
 	scrollHeight: number;

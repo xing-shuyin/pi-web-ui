@@ -3,6 +3,7 @@ import {
 	classifyQuestionAddedScroll,
 	classifyScroll,
 	shouldEscapeOnScroll,
+	shouldPinOnDomMutation,
 	shouldPreloadEarlier,
 	shouldScrollToBottomOnStreamChange,
 } from "../../web/src/components/scroll-classify.js";
@@ -286,5 +287,26 @@ describe("shouldPreloadEarlier — 动态水位线预加载决策", () => {
 
 	it("用户静止不动未向上操作（isMovingUp=false） → 不无端触发翻页（避免停驻阅读时过度请求）", () => {
 		expect(shouldPreloadEarlier({ ...defaultParams, isMovingUp: false })).toBe(false);
+	});
+});
+
+describe("shouldPinOnDomMutation — user-opened disclosures must not yank the viewport", () => {
+	const base = { now: 10_000, holdUntil: 9_000, stuck: true, escaped: false };
+
+	it("[MUTATION-KILL] disclosure hold active → no pin, even while stuck", () => {
+		expect(shouldPinOnDomMutation({ ...base, holdUntil: 10_500 })).toBe(false);
+	});
+
+	it("hold expired, stuck, not escaped → pin (streaming content keeps following)", () => {
+		expect(shouldPinOnDomMutation(base)).toBe(true);
+	});
+
+	it("hold expires exactly at holdUntil → pin resumes", () => {
+		expect(shouldPinOnDomMutation({ ...base, holdUntil: 10_000 })).toBe(true);
+	});
+
+	it("escaped user and detached viewport never pin, hold or not", () => {
+		expect(shouldPinOnDomMutation({ ...base, escaped: true })).toBe(false);
+		expect(shouldPinOnDomMutation({ ...base, stuck: false })).toBe(false);
 	});
 });

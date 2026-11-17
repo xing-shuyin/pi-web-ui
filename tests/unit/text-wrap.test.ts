@@ -214,7 +214,7 @@ describe("卡片头右端按钮列（窄屏对齐 / 不外溢）", () => {
 });
 
 describe("滚动容器防穿透与滚动链放行区分", () => {
-	it.each([".toolcall-output pre", ".toolcall-args pre", ".codemode-code"])(
+	it.each([".toolcall-output pre", ".toolcall-args pre", ".codemode-code", ".compaction-summary"])(
 		"%s 不得声明 overscroll-behavior: contain，防止滚动黑洞锁死外部对话流",
 		(selector) => {
 			const body = bodyOf(selector);

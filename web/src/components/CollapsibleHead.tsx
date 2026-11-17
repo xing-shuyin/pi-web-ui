@@ -31,6 +31,7 @@ export function CollapsibleHead({
 	return (
 		<div
 			className={`chead ${headClassName}`}
+			data-disclosure=""
 			role="button"
 			tabIndex={0}
 			aria-expanded={open}

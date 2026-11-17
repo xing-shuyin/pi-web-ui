@@ -17407,6 +17407,15 @@
 		padding: 8px 12px 10px;
 	}
 
+	/* Long checkpoints stay scannable: the body scrolls, hint/actions stay put.
+	   In-flow scroller on purpose — overscroll-behavior: contain would cut the
+	   wheel chain (see text-wrap guard); stick protection lives in handleWheel. */
+	.compaction-summary {
+		max-height: min(58vh, 520px);
+		overflow-y: auto;
+		min-width: 0;
+	}
+
 	.compaction-hint {
 		margin-top: 8px;
 		padding-top: 8px;

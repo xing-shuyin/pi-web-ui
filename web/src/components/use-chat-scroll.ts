@@ -6,11 +6,15 @@ import {
 	classifyQuestionAddedScroll,
 	classifyScroll,
 	shouldEscapeOnScroll,
+	shouldPinOnDomMutation,
 	shouldPreloadEarlier,
 	shouldScrollToBottomOnStreamChange,
 } from "./scroll-classify";
 
 export const PROGRAMMATIC_SCROLL_GRACE_MS = 250;
+
+/** How long a user-opened disclosure stops stick-to-bottom from pinning. */
+export const DISCLOSURE_PIN_HOLD_MS = 900;
 
 export const PRELOAD_EARLIER_THRESHOLD_PX = 400;
 
@@ -45,6 +49,7 @@ export interface UseChatScrollReturn {
 	pinToBottom: () => void;
 	disengageStick: () => void;
 	pauseForSelection: () => void;
+	suppressAutoPin: (ms?: number) => void;
 	handleWheel: (e: React.WheelEvent<HTMLDivElement>) => void;
 	handleTouchStart: (e: React.TouchEvent<HTMLDivElement>) => void;
 	handleTouchMove: (e: React.TouchEvent<HTMLDivElement>) => void;
@@ -83,6 +88,7 @@ export function useChatScroll(opts: UseChatScrollOptions): UseChatScrollReturn {
 
 	const prevStRef = useRef(0);
 	const prevScrollHeightRef = useRef(0);
+	const holdPinUntilRef = useRef(0);
 	const progUntilRef = useRef(0);
 	const userUpwardGestureTimeRef = useRef(0);
 	const isPointerDownRef = useRef(false);
@@ -101,6 +107,15 @@ export function useChatScroll(opts: UseChatScrollOptions): UseChatScrollReturn {
 		stickRef.current = false;
 		setStickBottom(false);
 	}, [clearScrollTimers]);
+
+	/**
+	 * A disclosure just opened/closes inside the transcript. Its extra height is
+	 * user-driven, so the mutation observer must not treat it as new content and
+	 * jump to the bottom; stick state stays untouched.
+	 */
+	const suppressAutoPin = useCallback((ms = DISCLOSURE_PIN_HOLD_MS) => {
+		holdPinUntilRef.current = Math.max(holdPinUntilRef.current, Date.now() + Math.max(0, ms));
+	}, []);
 
 	const disengageStick = useCallback(() => {
 		clearScrollTimers();
@@ -166,7 +181,9 @@ export function useChatScroll(opts: UseChatScrollOptions): UseChatScrollReturn {
 		(e: React.WheelEvent<HTMLDivElement>) => {
 			if (e.deltaY < 0) {
 				const target = e.target instanceof Element ? e.target : null;
-				const innerScroll = target?.closest<HTMLElement>(".toolcall-output pre, .toolcall-args pre, .codemode-code");
+				const innerScroll = target?.closest<HTMLElement>(
+					".toolcall-output pre, .toolcall-args pre, .codemode-code, .compaction-summary",
+				);
 				if (innerScroll && innerScroll.scrollHeight > innerScroll.clientHeight && innerScroll.scrollTop > 0) {
 					return;
 				}
@@ -215,6 +232,7 @@ export function useChatScroll(opts: UseChatScrollOptions): UseChatScrollReturn {
 
 	const handlePointerDown = useCallback(
 		(e: React.PointerEvent<HTMLDivElement>) => {
+			if (e.target instanceof Element && e.target.closest("[data-disclosure]")) suppressAutoPin();
 			if (e.button === 1) {
 				userUpwardGestureTimeRef.current = Date.now();
 				disengageStick();
@@ -226,7 +244,7 @@ export function useChatScroll(opts: UseChatScrollOptions): UseChatScrollReturn {
 				isPointerDownRef.current = true;
 			}
 		},
-		[disengageStick],
+		[disengageStick, suppressAutoPin],
 	);
 
 	useEffect(() => {
@@ -246,6 +264,10 @@ export function useChatScroll(opts: UseChatScrollOptions): UseChatScrollReturn {
 			if (target && (target.tagName === "INPUT" || target.tagName === "TEXTAREA" || target.isContentEditable)) {
 				return;
 			}
+			if ((e.key === "Enter" || e.key === " ") && target?.closest?.("[data-disclosure]")) {
+				suppressAutoPin();
+				return;
+			}
 			if (e.key === "PageUp" || e.key === "ArrowUp" || e.key === "Home") {
 				disengageStick();
 			} else if (e.key === "End") {
@@ -262,7 +284,7 @@ export function useChatScroll(opts: UseChatScrollOptions): UseChatScrollReturn {
 			window.removeEventListener("pointerdown", onPointerDownGlobal, { capture: true });
 			window.removeEventListener("keydown", onKeyDown);
 		};
-	}, [disengageStick]);
+	}, [disengageStick, suppressAutoPin]);
 
 	const onScroll = useCallback(() => {
 		const el = scrollRef.current;
@@ -429,7 +451,15 @@ export function useChatScroll(opts: UseChatScrollOptions): UseChatScrollReturn {
 			requestAnimationFrame(() => {
 				queued = false;
 				const el2 = scrollRef.current;
-				if (el2 && stickRef.current && !escapedRef.current) {
+				if (!el2) return;
+				if (
+					shouldPinOnDomMutation({
+						now: Date.now(),
+						holdUntil: holdPinUntilRef.current,
+						stuck: stickRef.current,
+						escaped: escapedRef.current,
+					})
+				) {
 					pinToBottom();
 					setStickBottom(true);
 				}
@@ -478,6 +508,7 @@ export function useChatScroll(opts: UseChatScrollOptions): UseChatScrollReturn {
 		pinToBottom,
 		disengageStick,
 		pauseForSelection,
+		suppressAutoPin,
 		handleWheel,
 		handleTouchStart,
 		handleTouchMove,

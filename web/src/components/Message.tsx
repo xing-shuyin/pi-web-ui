@@ -1788,12 +1788,15 @@ function CompactionCard({
 				</CollapsibleHead>
 				{shown && (
 					<div className="compaction-body">
-						<Markdown text={text} />
+						<div className="compaction-summary">
+							<Markdown text={text} />
+						</div>
 						<div className="compaction-hint">{t("compactionKeptHint")}</div>
 						<div className="compacted-history-action">
 							<button
 								type="button"
 								className="compacted-history-toggle-btn"
+								data-disclosure=""
 								onClick={toggleHistory}
 								aria-expanded={historyOpen}
 							>
