@@ -3,6 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { ClientSession } from "../../server/agent-service.js";
+import { runningCompaction } from "../../server/conversation-delivery.js";
 import { fakeClientSession } from "../helpers/fake-session.js";
 
 let dir: string;
@@ -31,7 +32,8 @@ function fixture(persisted = true, sessionFile: string | undefined = file) {
 	};
 	const conv = {
 		session: { sessionFile: sessionFile as string | undefined, sessionManager: manager },
-		compactionState: { reason: "manual", startedAt: 1234 },
+		// 压缩门（唯一真相）：markCompactionPending 从它读 reason / startedAt。
+		compaction: runningCompaction("manual", 1234),
 	};
 	const session = Object.assign(fakeClientSession(), {
 		emit: vi.fn(),

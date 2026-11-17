@@ -15,6 +15,8 @@ describe("empty prompt backend guard", () => {
 			assertSubagentWorktreeAdmission: vi.fn(),
 			// 私聊/设备任务的能力解析：空白 prompt 在解析之前就该返回，取不到能力也无所谓。
 			botOf: () => undefined,
+			// 投递门：空 prompt 在门判定之前就该返回，这里只需要它能被调用。
+			deliveryModeOf: (ClientSession.prototype as any).deliveryModeOf,
 			drafts: { clear: draftsClear },
 			conv: { session: { sessionId: "sid-1" } },
 			session: { prompt: sessionPrompt },

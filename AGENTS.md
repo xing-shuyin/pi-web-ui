@@ -24,6 +24,7 @@ pi 编码智能体（`@earendil-works/pi-coding-agent` SDK）的 Web 聊天界�
 | 系统提示词组装 / 设置保存回执 | `server/prompt-composer.ts`★ · `web/src/settings-sync.ts`★（pending overlay + 回执） | [`architecture-system-prompt.md`](docs/architecture-system-prompt.md) |
 | 工具开关 / 工具提示词 / 内置工具覆盖 | `server/tool-manager.ts`★ · `server/tool-prompts.ts`★ · `server/tool-overrides.ts` · `server/bash-timeout.ts`（bash/powershell 默认超时单源） | [`agent-rules.md`](docs/agent-rules.md#二工具定义与提示词规范) · [`tool-context-budget.md`](docs/tool-context-budget.md) |
 | 上下文预算 / 延迟加载 / 证据外置 | `server/soft-cap.ts` · `server/request-context.ts` · `server/evidence-tool-hooks.ts` · `server/context-recovery.ts`（压缩后可寻址句柄） | [`tool-context-budget.md`](docs/tool-context-budget.md) |
+| **压缩期入站投递（完成通知 / steer / 唤醒）** | `server/conversation-delivery.ts`★ · `server/agent-service.ts`（`deliveryModeOf` / `commitIntent` / `drainDeliveries`） | [`architecture-core.md`](docs/architecture-core.md#压缩期的入站投递一个门一个队列一个排空点issues929) |
 | 工具审批门禁与规则库 | `server/tool-approval.ts` | [`architecture-core.md`](docs/architecture-core.md#审批队列与共享展示) |
 | 内置浏览器 / 桌面三模式 / Web 原生桥 | `browser/` · `desktop/browser-host.ts` · `web/src/browser-control.ts` | [`architecture-browser.md`](docs/architecture-browser.md) |
 | 凭据保险库（密码 + TOTP + Passkey，图标工具条 / 扫码 / 按站点匹配 / 填码 / CSV 导入 / 页面内自动填充下拉） | `browser/renderer/vault.ts`★ · `browser/runtime/totp.ts`★ · `browser/runtime/credentials-csv.ts`★ · `browser/runtime/passkeys.ts`★（CDP 虚拟认证器） · `browser/renderer/autofill.js`★ · `browser/runtime/qr.ts` · `browser/runtime/credentials.ts` · `desktop/browser-host.ts`（密码只下发投影） · `browser/storage/index.ts` | [`architecture-browser.md`](docs/architecture-browser.md#凭据保险库密码--totp) |
@@ -70,6 +71,7 @@ pi 编码智能体（`@earendil-works/pi-coding-agent` SDK）的 Web 聊天界�
 | **提示词/工具** | 新增可开关工具三处联动（catalog / customTools / 注册单测） | `tool-registration` |
 | **提示词/工具** | 提示词 base（SYSTEM.md / APPEND_SYSTEM.md）归属 session 的 loader，禁客户端级「最近一次」字段 | `prompt-base-scope` |
 | **服务端/运行态** | 压缩软上限双层监控；换模型只走 `applySessionModel` | — |
+| **服务端/运行态** | 入站投递只由 `deliveryMode()` 判定、门关入意图队列、门开排空；禁直连 `sendUserMessage`/`session.steer`，禁新增 `isCompacting` 直读 | `delivery-gate-single-source` |
 | **服务端/运行态** | 会话过户必须事务性回滚；跨 await 用稳定身份，禁读 active | `takeover-rollback-test` |
 | **服务端/运行态** | 工作区命令（set_cwd/new_chat/switch_*/沙盒）一律走 `server/workspace-queue.ts` 队列；`new_chat.cwd` 切不过去就不建会话 | `workspace-queue` · `pending-workspace` |
 | **服务端/运行态** | 服务端禁同步子进程（`spawnSync`/`execSync`/`execFileSync`），热路径改异步 spawn 或静态推导 | `sync-child-process-guard` |

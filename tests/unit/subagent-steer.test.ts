@@ -32,11 +32,15 @@ function setup() {
 			[parent.id, parent],
 		]),
 		assertSubagentWorktreeAdmission: vi.fn(),
-		pendingSubagentNotices: new Map(),
-		deliveringSubagentNotices: new Map(),
-		refreshCompletionState: (ClientSession.prototype as any).refreshCompletionState,
-		deliverSubagentCompletionNotice: (ClientSession.prototype as any).deliverSubagentCompletionNotice,
+		subagentNoticeTimers: new Map(),
 		subagentOwnerOf: () => host,
+		parentExecutionKey: (c: any) => c.parentId,
+		parentExecution: (c: any) => {
+			const parentConv = host.convs.get(c.parentId);
+			return parentConv ? { session: host, convId: c.parentId, conv: parentConv } : undefined;
+		},
+		subagentTaskPending: () => false,
+		getLang: () => "en",
 		emit: vi.fn(),
 		emitConversations: vi.fn(),
 		scheduleSubagentCompletionNotice: vi.fn(),
@@ -49,7 +53,7 @@ describe("idle subagent revision rounds (#784)", () => {
 	it("returns before execution finishes, resets consumed/notified state and removes old pending notices", async () => {
 		const { child, parent, host, steer, resolve } = setup();
 		const timer = setTimeout(() => {}, 60_000);
-		host.pendingSubagentNotices.set(conversationIdentity(parent), { timer, subagents: new Set([child]) });
+		host.subagentNoticeTimers.set(child.parentId, { timer, subagents: new Set([child]) });
 		await steer();
 		expect(child.promptInFlight).toBe(true);
 		expect(child.subagentDoneNotified).toBe(false);
@@ -57,7 +61,7 @@ describe("idle subagent revision rounds (#784)", () => {
 		expect(child.subagentError).toBeUndefined();
 		expect(child.subagentErrorNotified).toBeUndefined();
 		expect(parent.suspendedSubagents.size).toBe(0);
-		expect(host.pendingSubagentNotices.size).toBe(0);
+		expect(host.subagentNoticeTimers.size).toBe(0);
 		expect(host.scheduleSubagentCompletionNotice).not.toHaveBeenCalled();
 		resolve();
 		await child.kickoff;
@@ -109,14 +113,13 @@ describe("idle subagent revision rounds (#784)", () => {
 			new Promise<void>((res) => {
 				finalize = res;
 			});
-		host.pendingSubagentNotices.set(conversationIdentity(parent), { timer: null, subagents: new Set([child]) });
-		const delivery = (ClientSession.prototype as any).flushSubagentCompletionNotice.call(
-			host,
-			conversationIdentity(parent),
-		);
+		host.subagentNoticeTimers.set(child.parentId, { timer: null as any, subagents: new Set([child]) });
+		host.flushSubagentNoticeTimer(child.parentId);
+		// 让 drain 走到「worktree 收尾 await 处」再重新开工：旧的完成必须作废。
+		for (let i = 0; i < 12; i++) await Promise.resolve();
 		await steer();
 		finalize();
-		await delivery;
+		for (let i = 0; i < 12; i++) await Promise.resolve();
 		expect(child.subagentDoneNotified).toBe(false);
 		expect(host.emit).not.toHaveBeenCalled();
 		resolve();
@@ -137,7 +140,8 @@ describe("idle subagent revision rounds (#784)", () => {
 			await steer();
 			resolve();
 			await child.kickoff;
-			await (ClientSession.prototype as any).flushSubagentCompletionNotice.call(host, conversationIdentity(parent));
+			host.flushSubagentNoticeTimer(child.parentId);
+			for (let i = 0; i < 12; i++) await Promise.resolve();
 			expect(child.subagentDoneNotified).toBe(true);
 			expect(parent.session.sendUserMessage).toHaveBeenCalledTimes(round);
 			child.subagentConsumedByParent = true;
@@ -145,7 +149,7 @@ describe("idle subagent revision rounds (#784)", () => {
 		child.notifyOnDone = false;
 		await steer();
 		await child.kickoff;
-		expect(host.pendingSubagentNotices.size).toBe(0);
+		expect(host.subagentNoticeTimers.size).toBe(0);
 		expect(parent.session.sendUserMessage).toHaveBeenCalledTimes(2);
 	});
 

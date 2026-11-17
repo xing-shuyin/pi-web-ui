@@ -17,11 +17,14 @@ function client(): any {
 }
 
 function conversation(id: string): any {
-	return {
-		id,
-		isSubagent: false,
-		runtime: { session: { sendUserMessage: vi.fn().mockResolvedValue(undefined) } },
+	// 生产里 conv.session 恒等于 conv.runtime.session（投递门读的就是前者）；假体按同一形状造。
+	const session = {
+		isStreaming: false,
+		isCompacting: false,
+		sendUserMessage: vi.fn().mockResolvedValue(undefined),
+		steer: vi.fn().mockResolvedValue(undefined),
 	};
+	return { id, isSubagent: false, session, runtime: { session } };
 }
 
 function register(session: any, conv: any) {

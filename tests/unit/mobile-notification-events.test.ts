@@ -3,6 +3,7 @@ import { ClientSession } from "../../server/agent-service.js";
 import { PendingQuestion } from "../../server/pending-question.js";
 import type { MobileNotificationEvent } from "../../server/mobile-notification-events.js";
 import { fakeAgentService, fakeClientSession } from "../helpers/fake-session.js";
+import { queuedCompaction, runningCompaction } from "../../server/conversation-delivery.js";
 
 const questions = [{ id: "choice", question: "Private user question" }];
 
@@ -213,12 +214,12 @@ describe("mobile notification events from ClientSession lifecycle", () => {
 		const conv = conversation(cs);
 		start(cs, conv);
 		conv.queueFollowUp.push("queued private task");
-		conv.compactionState = { reason: "manual", startedAt: Date.now() };
+		conv.compaction = runningCompaction("manual", Date.now());
 		end(cs, conv);
 		conv.queueFollowUp = [];
 		cs.emitConversations();
 		expect(events).toEqual([]);
-		conv.compactionState = null;
+		conv.compaction = null;
 		cs.emitConversations();
 		expect(events.map((event) => event.kind)).toEqual(["done"]);
 	});
@@ -227,21 +228,23 @@ describe("mobile notification events from ClientSession lifecycle", () => {
 		const { cs, events } = holder();
 		const conv = conversation(cs);
 		let finishCompaction!: () => void;
-		cs.executePendingCompaction = vi.fn(
+		cs.executeCompaction = vi.fn(
 			() =>
 				new Promise<void>((resolve) => {
 					finishCompaction = resolve;
 				}),
 		);
 		start(cs, conv);
-		conv.pendingCompaction = { reason: "requested" };
+		// 工具请求压缩：门立刻关（这一瞬间 SDK 的 isCompacting 还是 false）。
+		conv.compaction = queuedCompaction({ focus: "", requestedAt: Date.now() });
 		end(cs, conv);
 		expect(events).toEqual([]);
 		await vi.advanceTimersByTimeAsync(50);
-		expect(cs.executePendingCompaction).toHaveBeenCalledOnce();
+		expect(cs.executeCompaction).toHaveBeenCalledOnce();
 		expect(events).toEqual([]);
 		finishCompaction();
-		await Promise.resolve();
+		// 压缩结束 → 开闸 → 排空 → 对账：整条链是异步的，跑完微任务再看。
+		await vi.advanceTimersByTimeAsync(0);
 		expect(events.map((event) => event.kind)).toEqual(["done"]);
 	});
 

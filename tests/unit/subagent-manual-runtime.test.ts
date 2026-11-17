@@ -48,6 +48,8 @@ afterEach(() => vi.useRealTimers());
 describe("manual task runtime", () => {
 	function settled(owner: any, conv: any) {
 		owner.currentBaseTokens = () => undefined;
+		// disposed=true 只用来跳过 agent_end 的软上限压缩分支；settle 时投递必须真的能发。
+		owner.disposed = false;
 		proto.onEvent.call(owner, conv, { type: "agent_settled" });
 	}
 	it.each([true, false])("retries an agent_end while streaming once the SDK settles (manual=%s)", async (manual) => {
@@ -99,7 +101,7 @@ describe("manual task runtime", () => {
 		settled(old, a);
 		await vi.advanceTimersByTimeAsync(500);
 		expect(root.session.sendUserMessage).toHaveBeenCalledOnce();
-		expect(old.pendingSubagentNotices.size).toBe(0);
+		expect(old.subagentNoticeTimers.size).toBe(0);
 	});
 	it.each(["removed", "replaced", "streaming", "prompt in flight"])("settlement ignores a %s task", async (state) => {
 		vi.useFakeTimers();
@@ -125,7 +127,7 @@ describe("manual task runtime", () => {
 		expect(toSubagentSnapshot(a)).toMatchObject({ streaming: false, taskPending: true });
 		expect(countActiveSubagents([a])).toBe(1);
 		owner.scheduleSubagentCompletionNotice(a);
-		expect(owner.pendingSubagentNotices.size).toBe(0);
+		expect(owner.subagentNoticeTimers.size).toBe(0);
 		b.session.isStreaming = false;
 		b.subagentDoneNotified = true;
 		expect(a.subagentTaskPending!()).toBe(false);
@@ -138,7 +140,7 @@ describe("manual task runtime", () => {
 		a.subagentTask!.completionRequested = true;
 		owner.pendingQuestions.set("q", { conversationId: "a", settled: false });
 		owner.scheduleSubagentCompletionNotice(a);
-		expect(owner.pendingSubagentNotices.size).toBe(0);
+		expect(owner.subagentNoticeTimers.size).toBe(0);
 		owner.pendingQuestions.clear();
 		owner.communicationPending = () => true;
 		expect(a.subagentTaskPending!()).toBe(true);
@@ -146,7 +148,8 @@ describe("manual task runtime", () => {
 		a.subagentTask!.completionRequested = false;
 		owner.scheduleSubagentCompletionNotice(a);
 		await vi.advanceTimersByTimeAsync(500);
-		expect(root.session.sendUserMessage).toHaveBeenCalledWith(expect.stringContaining("final output"), undefined);
+		// 投递门统一走 submitText：空闲时不带 deliverAs 参数，只校验正文。
+		expect(root.session.sendUserMessage.mock.calls.at(-1)?.[0]).toContain("final output");
 	});
 	it("B wakes A for verification before A notifies root, preserving completion intent", async () => {
 		vi.useFakeTimers();

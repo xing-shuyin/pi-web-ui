@@ -43,6 +43,34 @@ function makeMockConv(opts: {
 	} as Conversation;
 }
 
+/**
+ * 投递门上线后，完成通知走「入队 → drain → 提交」这条链：
+ * 这里把真实原型方法绑到假会话上，测试覆盖的是真实现，不是重写的一份。
+ */
+function deliveryMethods(): Record<string, unknown> {
+	const proto = ClientSession.prototype as any;
+	return {
+		deliveryModeOf: proto.deliveryModeOf,
+		deliveryQueue: proto.deliveryQueue,
+		deliveryHost: proto.deliveryHost,
+		drainDeliveries: proto.drainDeliveries,
+		deliverIntent: proto.deliverIntent,
+		deliverSubagentNotice: proto.deliverSubagentNotice,
+		commitIntent: proto.commitIntent,
+		dropIntent: proto.dropIntent,
+		reportDroppedIntent: proto.reportDroppedIntent,
+		submitText: proto.submitText,
+		parkSubagentNotice: proto.parkSubagentNotice,
+		flushSubagentNoticeTimer: proto.flushSubagentNoticeTimer,
+		scheduleSubagentCompletionNotice: proto.scheduleSubagentCompletionNotice,
+		subagentNoticeStillWanted: proto.subagentNoticeStillWanted,
+		refreshCompletionState: proto.refreshCompletionState,
+		checkSubagentWakeCircuitBreaker: proto.checkSubagentWakeCircuitBreaker,
+		assertSubagentWorktreeAdmission: () => {},
+		disposed: false,
+	};
+}
+
 describe("subagent-notify (Issue #713)", () => {
 	describe("extractSubagentConclusion", () => {
 		it("空文本时返回可读占位符", () => {
@@ -186,19 +214,16 @@ describe("subagent-notify (Issue #713)", () => {
 
 			const cs: any = {
 				subagentSettle: new SubagentSettleRegistry(),
-				refreshCompletionState: (ClientSession.prototype as any).refreshCompletionState,
-				deliverSubagentCompletionNotice: (ClientSession.prototype as any).deliverSubagentCompletionNotice,
+				...deliveryMethods(),
 				emitConversations: vi.fn(),
 				cwd: "/test",
 				getLang: () => "zh",
 				subagentOwnerOf: () => cs,
 				convs: new Map([["parent-c1", parentConv]]),
-				pendingSubagentNotices: new Map(),
-				deliveringSubagentNotices: new Map(),
+				subagentNoticeTimers: new Map(),
+				deliverySeq: 0,
 				flushSnapshot: vi.fn(),
 				emit: vi.fn(),
-				scheduleSubagentCompletionNotice: (ClientSession.prototype as any).scheduleSubagentCompletionNotice,
-				flushSubagentCompletionNotice: (ClientSession.prototype as any).flushSubagentCompletionNotice,
 			};
 
 			const sa1: any = {
@@ -255,19 +280,16 @@ describe("subagent-notify (Issue #713)", () => {
 
 			const cs: any = {
 				subagentSettle: new SubagentSettleRegistry(),
-				refreshCompletionState: (ClientSession.prototype as any).refreshCompletionState,
-				deliverSubagentCompletionNotice: (ClientSession.prototype as any).deliverSubagentCompletionNotice,
+				...deliveryMethods(),
 				emitConversations: vi.fn(),
 				cwd: "/test",
 				getLang: () => "zh",
 				subagentOwnerOf: () => cs,
 				convs: new Map([["parent-c1", parentConv]]),
-				pendingSubagentNotices: new Map(),
-				deliveringSubagentNotices: new Map(),
+				subagentNoticeTimers: new Map(),
+				deliverySeq: 0,
 				flushSnapshot: vi.fn(),
 				emit: vi.fn(),
-				scheduleSubagentCompletionNotice: (ClientSession.prototype as any).scheduleSubagentCompletionNotice,
-				flushSubagentCompletionNotice: (ClientSession.prototype as any).flushSubagentCompletionNotice,
 			};
 
 			const sa1: any = {
@@ -294,19 +316,16 @@ describe("subagent-notify (Issue #713)", () => {
 
 			const cs: any = {
 				subagentSettle: new SubagentSettleRegistry(),
-				refreshCompletionState: (ClientSession.prototype as any).refreshCompletionState,
-				deliverSubagentCompletionNotice: (ClientSession.prototype as any).deliverSubagentCompletionNotice,
+				...deliveryMethods(),
 				emitConversations: vi.fn(),
 				cwd: "/test",
 				getLang: () => "zh",
 				subagentOwnerOf: () => cs,
 				convs: new Map([["parent-c1", parentConv]]),
-				pendingSubagentNotices: new Map(),
-				deliveringSubagentNotices: new Map(),
+				subagentNoticeTimers: new Map(),
+				deliverySeq: 0,
 				flushSnapshot: vi.fn(),
 				emit: vi.fn(),
-				scheduleSubagentCompletionNotice: (ClientSession.prototype as any).scheduleSubagentCompletionNotice,
-				flushSubagentCompletionNotice: (ClientSession.prototype as any).flushSubagentCompletionNotice,
 			};
 
 			const sa: any = {
@@ -368,15 +387,14 @@ describe("subagent-notify (Issue #713)", () => {
 			const emit = vi.fn();
 			const cs: any = {
 				subagentSettle: new SubagentSettleRegistry(),
-				refreshCompletionState: (ClientSession.prototype as any).refreshCompletionState,
-				deliverSubagentCompletionNotice: (ClientSession.prototype as any).deliverSubagentCompletionNotice,
+				...deliveryMethods(),
 				emitConversations: vi.fn(),
 				cwd: "/test",
 				getLang: () => "zh",
 				subagentOwnerOf: () => cs,
 				convs: new Map([["parent-c1", parentConv]]),
-				pendingSubagentNotices: new Map(),
-				deliveringSubagentNotices: new Map(),
+				subagentNoticeTimers: new Map(),
+				deliverySeq: 0,
 				settingsSvc: {
 					current: {
 						subagentAutoWakeMaxTurns: 2,
@@ -384,9 +402,6 @@ describe("subagent-notify (Issue #713)", () => {
 				},
 				flushSnapshot: vi.fn(),
 				emit,
-				scheduleSubagentCompletionNotice: (ClientSession.prototype as any).scheduleSubagentCompletionNotice,
-				flushSubagentCompletionNotice: (ClientSession.prototype as any).flushSubagentCompletionNotice,
-				checkSubagentWakeCircuitBreaker: (ClientSession.prototype as any).checkSubagentWakeCircuitBreaker,
 			};
 
 			const sa1 = makeMockConv({ id: "sa-breaker-1", output: "产出1" });
@@ -444,15 +459,14 @@ describe("subagent-notify (Issue #713)", () => {
 
 			const cs: any = {
 				subagentSettle: new SubagentSettleRegistry(),
-				refreshCompletionState: (ClientSession.prototype as any).refreshCompletionState,
-				deliverSubagentCompletionNotice: (ClientSession.prototype as any).deliverSubagentCompletionNotice,
+				...deliveryMethods(),
 				emitConversations: vi.fn(),
 				cwd: "/test",
 				getLang: () => "zh",
 				subagentOwnerOf: () => cs,
 				convs: new Map([["parent-c1", parentConv]]),
-				pendingSubagentNotices: new Map(),
-				deliveringSubagentNotices: new Map(),
+				subagentNoticeTimers: new Map(),
+				deliverySeq: 0,
 				settingsSvc: {
 					current: {
 						subagentAutoWakeMaxTurns: 0,
@@ -460,9 +474,6 @@ describe("subagent-notify (Issue #713)", () => {
 				},
 				flushSnapshot: vi.fn(),
 				emit: vi.fn(),
-				scheduleSubagentCompletionNotice: (ClientSession.prototype as any).scheduleSubagentCompletionNotice,
-				flushSubagentCompletionNotice: (ClientSession.prototype as any).flushSubagentCompletionNotice,
-				checkSubagentWakeCircuitBreaker: (ClientSession.prototype as any).checkSubagentWakeCircuitBreaker,
 			};
 
 			const sa = makeMockConv({ id: "sa-progressing-9", output: "第9步完成" });
@@ -493,15 +504,14 @@ describe("subagent-notify (Issue #713)", () => {
 			const emit = vi.fn();
 			const cs: any = {
 				subagentSettle: new SubagentSettleRegistry(),
-				refreshCompletionState: (ClientSession.prototype as any).refreshCompletionState,
-				deliverSubagentCompletionNotice: (ClientSession.prototype as any).deliverSubagentCompletionNotice,
+				...deliveryMethods(),
 				emitConversations: vi.fn(),
 				cwd: "/test",
 				getLang: () => "zh",
 				subagentOwnerOf: () => cs,
 				convs: new Map([["parent-c1", parentConv]]),
-				pendingSubagentNotices: new Map(),
-				deliveringSubagentNotices: new Map(),
+				subagentNoticeTimers: new Map(),
+				deliverySeq: 0,
 				settingsSvc: {
 					current: {
 						subagentAutoWakeMaxTurns: 5,
@@ -509,9 +519,6 @@ describe("subagent-notify (Issue #713)", () => {
 				},
 				flushSnapshot: vi.fn(),
 				emit,
-				scheduleSubagentCompletionNotice: (ClientSession.prototype as any).scheduleSubagentCompletionNotice,
-				flushSubagentCompletionNotice: (ClientSession.prototype as any).flushSubagentCompletionNotice,
-				checkSubagentWakeCircuitBreaker: (ClientSession.prototype as any).checkSubagentWakeCircuitBreaker,
 			};
 
 			const sa = makeMockConv({ id: "sa-idle-check", output: "结果" });
@@ -549,15 +556,14 @@ describe("subagent-notify (Issue #713)", () => {
 			const emit = vi.fn();
 			const cs: any = {
 				subagentSettle: new SubagentSettleRegistry(),
-				refreshCompletionState: (ClientSession.prototype as any).refreshCompletionState,
-				deliverSubagentCompletionNotice: (ClientSession.prototype as any).deliverSubagentCompletionNotice,
+				...deliveryMethods(),
 				emitConversations: vi.fn(),
 				cwd: "/test",
 				getLang: () => "zh",
 				subagentOwnerOf: () => cs,
 				convs: new Map([["parent-c1", parentConv]]),
-				pendingSubagentNotices: new Map(),
-				deliveringSubagentNotices: new Map(),
+				subagentNoticeTimers: new Map(),
+				deliverySeq: 0,
 				settingsSvc: {
 					current: {
 						subagentAutoWakeMaxTurns: 5,
@@ -565,9 +571,6 @@ describe("subagent-notify (Issue #713)", () => {
 				},
 				flushSnapshot: vi.fn(),
 				emit,
-				scheduleSubagentCompletionNotice: (ClientSession.prototype as any).scheduleSubagentCompletionNotice,
-				flushSubagentCompletionNotice: (ClientSession.prototype as any).flushSubagentCompletionNotice,
-				checkSubagentWakeCircuitBreaker: (ClientSession.prototype as any).checkSubagentWakeCircuitBreaker,
 			};
 
 			const sa = makeMockConv({ id: "sa-loop-1", output: "又报错了" });
@@ -739,6 +742,7 @@ describe("subagent-notify (Issue #713)", () => {
 			let recordedDecision: any;
 			const cs: any = {
 				subagentSettle: new SubagentSettleRegistry(),
+				...deliveryMethods(),
 				convs: new Map([["parent-c1", conv]]),
 				pendingApprovals: new Map([
 					[
@@ -780,6 +784,7 @@ describe("subagent-notify (Issue #713)", () => {
 
 			const cs: any = {
 				subagentSettle: new SubagentSettleRegistry(),
+				...deliveryMethods(),
 				convs: new Map([
 					["parent-c1", conv],
 					["sa-consumed-1", sa1],

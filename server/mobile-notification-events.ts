@@ -19,7 +19,6 @@ export interface MobileNotificationTurn {
 	error: boolean;
 	aborted: boolean;
 	notified: boolean;
-	compactionPending?: boolean;
 }
 
 export function mobileNotificationOutcome(messages: readonly unknown[]): { error: boolean; aborted: boolean } {

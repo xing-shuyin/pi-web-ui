@@ -730,7 +730,7 @@ describe("failed persistent spawn rollback", () => {
 			pendingQuestions: new Map(),
 			pendingPageCalls: new Map(),
 			turnEndWaiters: new Map(),
-			pendingSubagentNotices: new Map(),
+			subagentNoticeTimers: new Map(),
 			planManager: { unbindConversation: vi.fn() },
 			markerSvc: { clearConversation: vi.fn() },
 			goalSvc: { notifyConversationRemoved: vi.fn() },

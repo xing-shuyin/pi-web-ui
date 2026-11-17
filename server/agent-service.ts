@@ -371,6 +371,17 @@ import {
 } from "./subagent-security-gate.js";
 import { makePresentFilesTool } from "./present-files-tool.js";
 import {
+	ConversationDelivery,
+	compactionBanner,
+	deliveryMode,
+	isCompactionRejection,
+	runningCompaction,
+	type CompactionGate,
+	type DeliveryHost,
+	type DeliveryIntent,
+	type DeliveryMode,
+} from "./conversation-delivery.js";
+import {
 	makeCompactContextTool,
 	buildCompactionInstructions,
 	DEFAULT_KEEP_RECENT_TOKENS,
@@ -743,8 +754,12 @@ export interface Conversation {
 	toolPendingArgs: Map<string, unknown>;
 	activeToolCalls: Map<string, string>;
 	retryState?: { attempt: number; maxAttempts: number; delayMs: number; errorMessage: string } | null;
-	pendingCompaction?: PendingCompaction | null;
-	compactionState?: { reason: string; startedAt: number } | null;
+	/** 投递门：压缩的「已请求 / 进行中」两相唯一真相（见 conversation-delivery.ts）。 */
+	compaction?: CompactionGate | null;
+	/** 门关时攒下的投递意图（子代理完成通知、steer、协作唤醒…）。 */
+	delivery?: ConversationDelivery;
+	/** 对话已移出 / 已释放：排队中的意图不再有落点。 */
+	deliveryClosed?: boolean;
 	lastCompactionTokens?: number | null;
 	pendingTask?: string;
 	pluginRunId?: string;
@@ -765,6 +780,12 @@ export interface Conversation {
 }
 
 import { mapSessionsConcurrent } from "./session-scan.js";
+
+/** 一条待发的子代理完成通知：带上入队时的轮次，防止「入队后又被 steer 重新开工」的误报。 */
+interface SubagentNoticeItem {
+	conv: Conversation;
+	generation: number;
+}
 import { SessionListDiskIndex } from "./session-list-index.js";
 import {
 	searchSessions as searchSessionTranscripts,
@@ -1048,8 +1069,9 @@ export class ClientSession {
 		});
 		if (opts.event) ledger.event(runId, opts.event);
 	}
-	private pendingSubagentNotices = new Map<string, { timer: NodeJS.Timeout; subagents: Set<Conversation> }>();
-	private deliveringSubagentNotices = new Map<string, number>();
+	/** 子代理完成通知的去抖缓冲：只负责「这一轮是不是真的结束了」，不再代表投递状态。 */
+	private subagentNoticeTimers = new Map<string, { timer: NodeJS.Timeout; subagents: Set<Conversation> }>();
+	private deliverySeq = 0;
 	private pendingCliManagers = new Set<TerminalManager>();
 	private pendingNativeCliConversations = new Map<string, Conversation>();
 
@@ -2313,16 +2335,31 @@ export class ClientSession {
 
 	private async steerSubagentRound(conv: Conversation, message: string): Promise<SubagentSteerReceipt> {
 		this.assertSubagentWorktreeAdmission(conv);
-		const session = conv.session;
-		if (session.isStreaming) {
-			await session.sendUserMessage(message, { deliverAs: "steer" });
+		const mode = this.deliveryModeOf(conv);
+		if (mode === "closed") return { state: "missed" };
+		if (mode === "live") {
+			// 只投给活着的一轮：SDK 的 steering 队列由这一轮自己取走。
+			await this.submitText(conv, message, mode);
 			return { state: "delivered" };
 		}
-		if (conv.promptInFlight || !session.isIdle) {
-			await session.steer(message);
+		if (mode === "gated") {
+			// 门关着（压缩 / 等回话 / 过户）：入队，门一开就按「空闲」路径开新一轮。
+			// 回执 `queued` 从此是承诺，不是把消息丢进一个不会被取走的队列。
+			this.parkSteer(conv, message);
 			return { state: "queued" };
 		}
 
+		this.startSubagentRound(conv, message);
+		return { state: "restarted" };
+	}
+
+	/**
+	 * 真的开新一轮（空闲时直调，门开时由投递队列调）。
+	 * 只在这里写「轮次 +1 / 清已通知」——这些是开轮的因，不是「已通知」的果。
+	 */
+	private startSubagentRound(conv: Conversation, message: string): void {
+		this.detachSubagentNotice(conv);
+		const session = conv.session;
 		const generation = (conv.subagentRunGeneration ?? 0) + 1;
 		conv.subagentRunGeneration = generation;
 		conv.subagentTaskStopped = false;
@@ -2332,25 +2369,21 @@ export class ClientSession {
 		conv.subagentError = undefined;
 		conv.subagentErrorNotified = undefined;
 		this.syncSubagentLedger(conv, { state: "running", event: "steer_restart" });
-		const parentKey = this.parentExecutionKey(conv);
-		if (parentKey) {
-			const pending = this.pendingSubagentNotices.get(parentKey);
-			if (pending) {
-				pending.subagents.delete(conv);
-				if (pending.subagents.size === 0) {
-					clearTimeout(pending.timer);
-					this.pendingSubagentNotices.delete(parentKey);
-				}
-			}
-			this.parentExecution(conv)?.conv.suspendedSubagents?.delete(conv);
-		}
+		this.parentExecution(conv)?.conv.suspendedSubagents?.delete(conv);
 		conv.promptInFlight = true;
 		const isCurrent = () => conv.session === session && conv.subagentRunGeneration === generation;
+		let requeued = false;
 		conv.kickoff = (async () => {
 			try {
 				await session.sendUserMessage(message);
 			} catch (err) {
 				if (!isCurrent()) return;
+				// 门在开轮的瞬间又关上了（例如刚进来一轮压缩）：转回队列，不当作失败。
+				if (isCompactionRejection(err)) {
+					requeued = true;
+					this.parkSteer(conv, message);
+					return;
+				}
 				const error = err instanceof Error ? err.message : String(err);
 				conv.subagentError = error;
 				conv.subagentErrorNotified = error;
@@ -2367,14 +2400,14 @@ export class ClientSession {
 					conv.promptInFlight = false;
 					const holder = this.resolveExecution(conversationIdentity(conv))?.session;
 					if (holder?.convs.get(conv.id) === conv) {
-						holder.scheduleSubagentCompletionNotice(conv);
+						// 没真的开成（转回队列了）就不算一轮结束，别发完成通知。
+						if (!requeued) holder.scheduleSubagentCompletionNotice(conv);
 						holder.emitConversations();
 					}
 				}
 			}
 		})();
 		this.emitConversations();
-		return { state: "restarted" };
 	}
 
 	scheduleSubagentCompletionNotice(conv: Conversation): void {
@@ -2382,18 +2415,20 @@ export class ClientSession {
 		if (!parentId || conv.notifyOnDone === false || this.subagentTaskPending?.(conv)) return;
 		if (conv.subagentDoneNotified || conv.subagentConsumedByParent) return;
 
-		let entry = this.pendingSubagentNotices.get(parentId);
+		let entry = this.subagentNoticeTimers.get(parentId);
 		if (!entry) {
 			entry = {
 				timer: null as any,
 				subagents: new Set(),
 			};
-			this.pendingSubagentNotices.set(parentId, entry);
+			this.subagentNoticeTimers.set(parentId, entry);
 		}
 		entry.subagents.add(conv);
 		if (entry.timer) clearTimeout(entry.timer);
+		// 400ms 去抖只为等这一轮「真的结束」（stop 后紧接重试/续跑不计为完成）。
+		// 之后一律交给投递门：能投就投，不能投就留着，不存在「重试 10 次后放弃」。
 		entry.timer = setTimeout(() => {
-			void this.flushSubagentCompletionNotice(parentId);
+			this.flushSubagentNoticeTimer(parentId);
 		}, 400);
 		this.refreshCompletionState(parentId);
 	}
@@ -2472,168 +2507,442 @@ export class ClientSession {
 		return null;
 	}
 
-	private async flushSubagentCompletionNotice(parentId: string, retryCount = 0): Promise<void> {
-		if (!this.pendingSubagentNotices.has(parentId)) return;
-		this.deliveringSubagentNotices.set(parentId, (this.deliveringSubagentNotices.get(parentId) ?? 0) + 1);
+	// ── 投递门 / 意图队列（issues/929：唯一出口，见 conversation-delivery.ts） ─────────
+
+	/** 门的读侧：全仓唯一一处「现在能不能投递」判定。 */
+	private deliveryModeOf(conv: Conversation): DeliveryMode {
+		let streaming = false;
+		let compacting = false;
 		try {
-			await this.deliverSubagentCompletionNotice(parentId, retryCount);
-		} finally {
-			const remaining = (this.deliveringSubagentNotices.get(parentId) ?? 1) - 1;
-			if (remaining > 0) this.deliveringSubagentNotices.set(parentId, remaining);
-			else this.deliveringSubagentNotices.delete(parentId);
-			this.refreshCompletionState(parentId);
-			const owner = this.subagentOwnerOf(parentId);
-			const parent = owner.convs.get(this.subagentCurrentId?.(parentId) ?? parentId);
-			if (parent?.notifyOnDone === "manual" && !parent.subagentDoneNotified && !parent.subagentConsumedByParent) {
-				owner.scheduleSubagentCompletionNotice(parent);
-			}
+			streaming = conv.session.isStreaming === true;
+			compacting = (conv.session as unknown as { isCompacting?: boolean }).isCompacting === true;
+		} catch {
+			streaming = false;
+			compacting = false;
 		}
+		return deliveryMode({
+			closed: this.disposed === true || conv.deliveryClosed === true,
+			streaming,
+			starting: conv.promptInFlight === true,
+			compacting,
+			gate: conv.compaction ?? null,
+			blocked: consultWaitingParents.has(conv) || conv.transferring === true,
+		});
 	}
 
-	private async deliverSubagentCompletionNotice(parentId: string, retryCount: number): Promise<void> {
-		const entry = this.pendingSubagentNotices.get(parentId);
-		if (!entry) return;
-		this.pendingSubagentNotices.delete(parentId);
-		if (entry.timer) clearTimeout(entry.timer);
+	private deliveryQueue(conv: Conversation): ConversationDelivery {
+		return (conv.delivery ??= new ConversationDelivery());
+	}
 
-		let toNotify = Array.from(entry.subagents).filter(
-			(c) =>
-				!c.subagentConsumedByParent &&
-				!c.subagentDoneNotified &&
-				!c.promptInFlight &&
-				!c.session.isStreaming &&
-				!this.subagentTaskPending?.(c),
-		);
-		const generations = new Map(toNotify.map((c) => [c, c.subagentRunGeneration ?? 0]));
-		const isCurrent = (c: Conversation) =>
-			(c.subagentRunGeneration ?? 0) === generations.get(c) &&
-			!c.subagentConsumedByParent &&
-			!c.subagentDoneNotified &&
-			!c.promptInFlight &&
-			!c.session.isStreaming &&
-			!this.subagentTaskPending?.(c);
-		if (toNotify.length === 0) return;
+	private deliveryHost(conv: Conversation): DeliveryHost {
+		return {
+			mode: () => this.deliveryModeOf(conv),
+			deliver: (intent) => this.deliverIntent(conv, intent),
+			onDelivered: (intent) => this.commitIntent(conv, intent),
+			onDropped: (intent, reason, error) => this.dropIntent(conv, intent, reason, error),
+			onRetryable: (intent, error) => {
+				console.warn(`[delivery] ${intent.kind} 提交点副作用失败`, error);
+			},
+		};
+	}
 
+	/**
+	 * 从对话外部送一段文字进去（角色消息 / 插件 / 审查者 / 系统续跑）。
+	 * 门关就排队，门开自动开一轮——外部调用方不再各自判断 `isStreaming ? steer : ...`。
+	 */
+	private async deliverFromOutside(
+		conv: Conversation,
+		text: string,
+		tag?: string,
+	): Promise<"delivered" | "queued" | "closed" | "rejected"> {
+		const mode = this.deliveryModeOf(conv);
+		if (mode === "closed") return "closed";
+		if (mode === "gated") {
+			const queue = this.deliveryQueue(conv);
+			if (
+				!queue.park({
+					tag: tag ?? `out:${++this.deliverySeq}`,
+					kind: "role-message",
+					text,
+					createdAt: Date.now(),
+				})
+			) {
+				this.emit({
+					type: "notice",
+					level: "warning",
+					text: "对话待发消息积压过多，最新一条未能排队。",
+					textEn: "Too many queued messages for this conversation; the newest one was not queued.",
+				});
+				return "rejected";
+			}
+			void this.drainDeliveries(conv);
+			return "queued";
+		}
+		await this.submitText(conv, text, mode);
+		return "delivered";
+	}
+
+	private async drainDeliveries(conv: Conversation): Promise<void> {
+		const queue = conv.delivery;
+		if (!queue || queue.size === 0 || this.disposed) return;
+		await queue.drain(this.deliveryHost(conv));
+	}
+
+	/** 把一段文字投进对话的唯一实现：live → 当前轮，其余 → 新开一轮。 */
+	private async submitText(
+		conv: Conversation,
+		text: string,
+		mode: DeliveryMode = this.deliveryModeOf(conv),
+	): Promise<void> {
+		if (mode === "live") {
+			// 已经在跑：交给这一轮的 steering 队列；刚要开始（promptInFlight）同样走这里，
+			// 因为那一轮马上会把队列取走——绝不能在这里另开一轮。
+			if (conv.session.isStreaming) await conv.session.sendUserMessage(text, { deliverAs: "steer" });
+			else await conv.session.steer(text);
+			return;
+		}
+		await conv.session.sendUserMessage(text);
+	}
+
+	private async deliverIntent(conv: Conversation, intent: DeliveryIntent): Promise<"delivered" | "gated"> {
+		const mode = this.deliveryModeOf(conv);
+		if (mode === "gated") return "gated";
+		if (mode === "closed") throw new Error("对话已关闭，投递目标不存在");
+		if (intent.kind === "subagent-notice") return await this.deliverSubagentNotice(conv, intent);
+		const text = intent.text ?? "";
+		if (!text.trim()) return "delivered";
+		if (intent.kind === "steer") {
+			if (mode === "live") await this.submitText(conv, text, mode);
+			else this.startSubagentRound(conv, text);
+			return "delivered";
+		}
+		await this.submitText(conv, text, mode);
+		if (this.convs.get(conv.id) === conv) this.flushSnapshot();
+		return "delivered";
+	}
+
+	/**
+	 * 子代理完成通知：投递时才定稿——要等 worktree 收尾、要合并同批、要复核这一轮真的结束了。
+	 * 定稿前一律不动任何「已通知」标记（提交点在 commitIntent）。
+	 */
+	private async deliverSubagentNotice(parent: Conversation, intent: DeliveryIntent): Promise<"delivered" | "gated"> {
+		const items = (intent.items ?? []) as SubagentNoticeItem[];
+		if (items.length === 0) return "delivered";
+		// 先判「这一批还算不算完成」，再收尾 worktree：不该为了作废的通知拆工作树。
+		// intent.items 始终收敛成「这条通知实际覆盖的那一批」：成功则由 commitIntent 记账，
+		// 失败则由 dropIntent 据此报出到底是谁没通知到。
+		let current = items.filter((item) => this.subagentNoticeStillWanted(item.conv, item.generation));
+		intent.items = current;
+		if (current.length === 0) return "delivered";
 		if (typeof this.finalizeSubagentWorktree === "function") {
-			await Promise.all(toNotify.map((c) => this.finalizeSubagentWorktree(c)));
+			await Promise.all(current.map((item) => this.finalizeSubagentWorktree(item.conv)));
 		}
-
-		toNotify = toNotify.filter(isCurrent);
-		if (toNotify.length === 0) return;
-
-		const parentOwner = this.subagentOwnerOf(parentId);
-		const currentParentId = this.subagentCurrentId?.(parentId) ?? parentId;
-		const targetConv = parentOwner.convs.get(currentParentId);
-
-		if (!targetConv || !targetConv.session) {
-			for (const c of toNotify) c.subagentDoneNotified = true;
-			const ids = toNotify.map((c) => c.id.slice(0, 8)).join(", ");
-			this.emit({
-				type: "notice",
-				level: "info",
-				text: `子代理 ${ids} 已执行完毕（原父对话已关闭）。`,
-				textEn: `Subagents ${ids} completed (originating conversation is closed).`,
-			});
-			return;
+		current = current.filter((item) => this.subagentNoticeStillWanted(item.conv, item.generation));
+		intent.items = current;
+		if (current.length === 0) return "delivered";
+		if (parent.subagentTaskStopped) {
+			for (const item of current) item.conv.subagentDoneNotified = true;
+			intent.items = [];
+			return "delivered";
 		}
-
-		if (targetConv.subagentTaskStopped) {
-			for (const child of toNotify) child.subagentDoneNotified = true;
-			return;
-		}
-
 		const checker =
 			this.checkSubagentWakeCircuitBreaker ?? (ClientSession.prototype as any).checkSubagentWakeCircuitBreaker;
-		const circuit = checker.call(this, targetConv, parentOwner, toNotify);
+		const circuit = checker.call(
+			this,
+			parent,
+			this,
+			current.map((item) => item.conv),
+		);
 		if (circuit) {
-			targetConv.suspendedSubagents = targetConv.suspendedSubagents ?? new Set<Conversation>();
-			for (const c of toNotify) {
-				targetConv.suspendedSubagents.add(c);
-			}
-			const count = targetConv.suspendedSubagents.size;
-			parentOwner.emit({
+			parent.suspendedSubagents = parent.suspendedSubagents ?? new Set<Conversation>();
+			for (const item of current) parent.suspendedSubagents.add(item.conv);
+			const count = parent.suspendedSubagents.size;
+			this.emit({
 				type: "notice",
 				level: "warning",
 				text: circuit.messageZh(count),
 				textEn: circuit.messageEn(count),
 			});
-			return;
+			intent.items = [];
+			return "delivered";
 		}
+		const text = formatSubagentsCompletionNotice(
+			current.map((item) => item.conv),
+			this.getLang(),
+		);
+		if (!text.trim()) {
+			intent.items = [];
+			return "delivered";
+		}
+		// worktree 收尾与熔断判定都可能跨 await：门在那一刻可能已经关上。
+		const recheck = this.deliveryModeOf(parent);
+		if (recheck === "gated") return "gated";
+		if (recheck === "closed") throw new Error("父对话已关闭，投递目标不存在");
+		this.assertSubagentWorktreeAdmission(parent);
+		await this.submitText(parent, text, recheck);
+		return "delivered";
+	}
 
-		if ((targetConv.session as unknown as { isCompacting?: boolean }).isCompacting === true) {
-			if (retryCount < 10) {
-				const retryTimer = setTimeout(() => {
-					const current = toNotify.filter(isCurrent);
-					const pending = this.pendingSubagentNotices.get(parentId);
-					if (current.length === 0) {
-						if (pending?.timer === retryTimer) this.pendingSubagentNotices.delete(parentId);
-						this.refreshCompletionState(parentId);
-						return;
-					}
-					if (pending?.timer) clearTimeout(pending.timer);
-					this.pendingSubagentNotices.set(parentId, {
-						timer: retryTimer,
-						subagents: new Set([...(pending?.subagents ?? []), ...current]),
-					});
-					void this.flushSubagentCompletionNotice(parentId, retryCount + 1);
-				}, 800);
-				this.pendingSubagentNotices.set(parentId, { timer: retryTimer, subagents: new Set(toNotify) });
-				return;
+	/** 提交点：只有 SDK 真的接下了这条意图，才允许写这些状态。 */
+	private commitIntent(target: Conversation, intent: DeliveryIntent): void {
+		let changed = true;
+		if (intent.kind === "subagent-notice") {
+			const items = (intent.items ?? []) as SubagentNoticeItem[];
+			// 空集 = 这一批在投递途中已经作废（重新开工 / 被父取走）：什么都没发生。
+			changed = items.length > 0;
+			if (items.length > 0) {
+				for (const item of items) item.conv.subagentDoneNotified = true;
+				if (target.notifyOnDone === "manual") {
+					target.subagentDoneNotified = false;
+					target.subagentConsumedByParent = false;
+					target.subagentRunGeneration = (target.subagentRunGeneration ?? 0) + 1;
+				}
+				target.autonomousTurnsWithoutUser = (target.autonomousTurnsWithoutUser ?? 0) + 1;
+				target.wakeReason = "subagent_completion";
+				target.wakeTurnHadAction = false;
+				target.recentWakeSubagentIds = [
+					...(target.recentWakeSubagentIds ?? []),
+					...items.map((item) => item.conv.id),
+				].slice(-10);
+				if (
+					target.isSubagent &&
+					target.notifyOnDone === "manual" &&
+					!target.subagentDoneNotified &&
+					!target.subagentConsumedByParent
+				) {
+					this.scheduleSubagentCompletionNotice(target);
+				}
 			}
 		}
-
-		if (consultWaitingParents.has(targetConv)) {
-			if (retryCount < 60) {
-				const retryTimer = setTimeout(() => {
-					const current = toNotify.filter(isCurrent);
-					if (current.length === 0) return;
-					const pending = this.pendingSubagentNotices.get(parentId);
-					if (pending?.timer) clearTimeout(pending.timer);
-					this.pendingSubagentNotices.set(parentId, {
-						timer: retryTimer,
-						subagents: new Set([...(pending?.subagents ?? []), ...current]),
-					});
-					void this.flushSubagentCompletionNotice(parentId, retryCount + 1);
-				}, 400);
-				this.pendingSubagentNotices.set(parentId, { timer: retryTimer, subagents: new Set(toNotify) });
-				return;
-			}
+		if (intent.kind === "communication") {
+			this.commitCommunication(target, (intent.items ?? [])[0] as CommunicationEnvelope | undefined);
 		}
+		if (changed && this.convs.get(target.id) === target) this.flushSnapshot();
+		this.refreshCompletionState(target.id);
+	}
 
-		for (const c of toNotify) {
-			c.subagentDoneNotified = true;
-		}
-
-		const noticeText = formatSubagentsCompletionNotice(toNotify, this.getLang());
-		if (targetConv.notifyOnDone === "manual") {
-			targetConv.subagentDoneNotified = false;
-			targetConv.subagentConsumedByParent = false;
-			targetConv.subagentRunGeneration = (targetConv.subagentRunGeneration ?? 0) + 1;
-		}
-
-		const autoTurns = targetConv.autonomousTurnsWithoutUser ?? 0;
-		targetConv.autonomousTurnsWithoutUser = autoTurns + 1;
-		targetConv.wakeReason = "subagent_completion";
-		targetConv.wakeTurnHadAction = false;
-		targetConv.recentWakeSubagentIds = [
-			...(targetConv.recentWakeSubagentIds ?? []),
-			...toNotify.map((c) => c.id),
-		].slice(-10);
-
+	/** 协作消息投递被接受：从收件箱移除并清掉「排队中」标记（收件箱是 durable 记录，提交后才删）。 */
+	private commitCommunication(conv: Conversation, envelope: CommunicationEnvelope | undefined): void {
+		if (!envelope) return;
+		conversationCommunication.acknowledge(conv, envelope.id);
+		if (envelope.requestId) conv.queuedSteeringRequestIds?.delete(envelope.requestId);
 		try {
-			parentOwner.assertSubagentWorktreeAdmission?.(targetConv);
-			await targetConv.session.sendUserMessage(
-				noticeText,
-				targetConv.session.isStreaming ? { deliverAs: "steer" } : undefined,
-			);
-			parentOwner.flushSnapshot();
-		} catch (err) {
-			parentOwner.emit({
+			const home = this.communicationHome(conv);
+			if (conv.notifyOnDone === "manual") home.owner.scheduleSubagentCompletionNotice(conv);
+		} catch {}
+	}
+
+	private dropIntent(
+		target: Conversation,
+		intent: DeliveryIntent,
+		reason: "closed" | "failed" | "superseded",
+		error?: unknown,
+	): void {
+		try {
+			this.reportDroppedIntent(target, intent, reason, error);
+		} finally {
+			// 丢弃同样改变了「还有没有待处理」的可见状态，UI 必须跟着刷新。
+			// superseded 是「这条通知本身作废了、没说出口」：不必惊动快照。
+			if (reason !== "superseded" && this.convs.get(target.id) === target) this.flushSnapshot();
+			this.refreshCompletionState(target.id);
+		}
+	}
+
+	private reportDroppedIntent(
+		target: Conversation,
+		intent: DeliveryIntent,
+		reason: "closed" | "failed" | "superseded",
+		error: unknown,
+	): void {
+		if (reason === "superseded") return;
+		const message = error instanceof Error ? error.message : String(error ?? "");
+		if (intent.kind === "subagent-notice") {
+			const items = (intent.items ?? []) as SubagentNoticeItem[];
+			const ids = items.map((item) => item.conv.id.slice(0, 8)).join(", ");
+			if (!ids) return;
+			if (reason === "closed") {
+				// 父对话已经不在了：通知无处可投，记一笔后收干净，别让它永远悬着。
+				for (const item of items) item.conv.subagentDoneNotified = true;
+				this.emit({
+					type: "notice",
+					level: "info",
+					text: `子代理 ${ids} 已执行完毕（原父对话已关闭）。`,
+					textEn: `Subagents ${ids} completed (originating conversation is closed).`,
+				});
+				return;
+			}
+			// 不写「已通知」：父对话下一轮 settle 时会重新排一次，这里只如实报一次失败。
+			this.emit({
 				type: "notice",
 				level: "warning",
-				text: `向父对话投递子代理完成通知失败：${(err as Error).message}`,
-				textEn: `Failed to deliver subagent completion notice to parent conversation: ${(err as Error).message}`,
+				text: `向父对话投递子代理完成通知失败：${message}（未标记为已通知，下次空闲会重投）`,
+				textEn: `Failed to deliver subagent completion notice: ${message} (not marked as notified; will retry when the parent is idle)`,
 			});
+			return;
+		}
+		if (intent.kind === "steer") {
+			this.emit({
+				type: "notice",
+				level: "warning",
+				text: `子代理返工指令未能送出：${message}`,
+				textEn: `Subagent instruction was not delivered: ${message}`,
+			});
+			return;
+		}
+		if (intent.kind === "communication") {
+			this.emit({
+				type: "notice",
+				level: "warning",
+				text: "协作消息投递失败，已保留在收件箱。",
+				textEn: "Collaboration delivery failed; the message remains in the inbox.",
+			});
+			console.warn(`[communication] delivery dropped: ${message}`);
+			const envelope = (intent.items ?? [])[0] as CommunicationEnvelope | undefined;
+			if (envelope?.requestId) target.queuedSteeringRequestIds?.delete(envelope.requestId);
+			return;
+		}
+		console.warn(`[delivery] dropped ${intent.kind}: ${message}`);
+	}
+
+	/**
+	 * 400ms 去抖到点：把这一批子代理交给投递门。
+	 * 「父对话此刻能不能收」不在这里判断——那是 deliveryMode() 的事。
+	 */
+	private flushSubagentNoticeTimer(parentKey: string): void {
+		const entry = this.subagentNoticeTimers.get(parentKey);
+		if (!entry) return;
+		this.subagentNoticeTimers.delete(parentKey);
+		if (entry.timer) clearTimeout(entry.timer);
+		const owner = this.subagentOwnerOf(parentKey);
+		const parent =
+			owner.convs.get(this.subagentCurrentId?.(parentKey) ?? parentKey) ??
+			owner.convs.get(parentKey) ??
+			owner.resolveExecution?.(parentKey)?.conv;
+		if (!parent) {
+			// 作废的那一批（已重新开工 / 已被父取走）不必再报「完成」。
+			const children = [...entry.subagents].filter((child) =>
+				this.subagentNoticeStillWanted(child, child.subagentRunGeneration ?? 0),
+			);
+			for (const child of children) child.subagentDoneNotified = true;
+			const ids = children.map((child) => child.id.slice(0, 8)).join(", ");
+			if (ids) {
+				this.emit({
+					type: "notice",
+					level: "info",
+					text: `子代理 ${ids} 已执行完毕（原父对话已关闭）。`,
+					textEn: `Subagents ${ids} completed (originating conversation is closed).`,
+				});
+			}
+			return;
+		}
+		owner.parkSubagentNotice(parent, [...entry.subagents]);
+		this.refreshCompletionState(parentKey);
+	}
+
+	private parkSubagentNotice(parent: Conversation, children: Conversation[]): void {
+		if (children.length === 0) return;
+		const queue = this.deliveryQueue(parent);
+		const wrappers: SubagentNoticeItem[] = children.map((conv) => ({
+			conv,
+			generation: conv.subagentRunGeneration ?? 0,
+		}));
+		const existing = queue.pending.find((intent) => intent.kind === "subagent-notice");
+		if (existing) {
+			const items = (existing.items ??= []) as SubagentNoticeItem[];
+			for (const wrapper of wrappers) {
+				const hit = items.find((item) => item.conv === wrapper.conv);
+				if (hit) hit.generation = wrapper.generation;
+				else items.push(wrapper);
+			}
+		} else if (
+			!queue.park({ tag: "subagent-notice", kind: "subagent-notice", items: wrappers, createdAt: Date.now() })
+		) {
+			this.emit({
+				type: "notice",
+				level: "warning",
+				text: "子代理完成通知积压过多，最新一条未能入队。",
+				textEn: "Too many pending subagent notices; the newest one was not queued.",
+			});
+			return;
+		}
+		void this.drainDeliveries(parent);
+	}
+
+	/** 子代理重新开工：它这一轮的「完成」作废，把它从父对话的待发通知里摘掉。 */
+	private detachSubagentNotice(child: Conversation): void {
+		const parentKey = this.parentExecutionKey(child);
+		if (parentKey) {
+			const timer = this.subagentNoticeTimers.get(parentKey);
+			if (timer) {
+				timer.subagents.delete(child);
+				if (timer.subagents.size === 0) {
+					clearTimeout(timer.timer);
+					this.subagentNoticeTimers.delete(parentKey);
+				}
+			}
+		}
+		const parent = this.parentExecution(child)?.conv;
+		if (!parent?.delivery) return;
+		const queue = parent.delivery;
+		for (const intent of queue.pending) {
+			const items = (intent.items ?? []) as SubagentNoticeItem[];
+			if (!items.some((item) => item.conv === child)) continue;
+			intent.items = items.filter((item) => item.conv !== child);
+		}
+		queue.removeKind("subagent-notice", (intent) => ((intent.items ?? []) as SubagentNoticeItem[]).length === 0);
+	}
+
+	private parkSteer(conv: Conversation, message: string): void {
+		const queue = this.deliveryQueue(conv);
+		if (!queue.park({ tag: `steer:${++this.deliverySeq}`, kind: "steer", text: message, createdAt: Date.now() })) {
+			this.emit({
+				type: "notice",
+				level: "warning",
+				text: "返工指令积压过多，最新一条未能排队。",
+				textEn: "Too many queued instructions; the newest one was not queued.",
+			});
+			return;
+		}
+		void this.drainDeliveries(conv);
+	}
+
+	private subagentNoticeStillWanted(child: Conversation, generation: number): boolean {
+		if ((child.subagentRunGeneration ?? 0) !== generation) return false;
+		if (child.subagentConsumedByParent || child.subagentDoneNotified) return false;
+		if (child.promptInFlight) return false;
+		try {
+			if (child.session.isStreaming) return false;
+		} catch {
+			return false;
+		}
+		return !this.subagentTaskPending?.(child);
+	}
+
+	// ── 压缩门（唯一写者） ────────────────────────────────────────────────────────
+
+	/** 这一轮结束后按排队顺序做压缩：门立刻翻到 running，堵住「已请求未开始」的窗口。 */
+	private scheduleQueuedCompaction(conv: Conversation, delayMs: number): void {
+		if (conv.compaction?.phase !== "queued") return;
+		if (delayMs <= 0) {
+			void this.runQueuedCompaction(conv);
+			return;
+		}
+		setTimeout(() => {
+			void this.runQueuedCompaction(conv);
+		}, delayMs);
+	}
+
+	private async runQueuedCompaction(conv: Conversation): Promise<void> {
+		const gate = conv.compaction;
+		if (!gate || gate.phase !== "queued" || !gate.request || this.disposed) return;
+		const request = gate.request;
+		conv.compaction = runningCompaction(gate.reason, gate.startedAt);
+		try {
+			await this.executeCompaction(conv, request);
+		} finally {
+			if (conv.compaction?.phase === "running") conv.compaction = null;
+			await this.drainDeliveries(conv);
+			this.emitConversations();
 		}
 	}
 
@@ -3639,7 +3948,7 @@ export class ClientSession {
 		});
 	}
 
-	private async executePendingCompaction(conv: Conversation, pending: PendingCompaction): Promise<void> {
+	private async executeCompaction(conv: Conversation, pending: PendingCompaction): Promise<void> {
 		const provided = pending.summary?.trim();
 		const instructions = provided
 			? buildCompactionInstructions(pending.focus)
@@ -3706,8 +4015,11 @@ export class ClientSession {
 					}
 				} catch {}
 			}
+			// 门必须在这里兜底打开：compact() 抛错/被取消时也要放行排队中的投递。
+			if (conv.compaction?.phase === "running") conv.compaction = null;
 			this.applyCompactionOverrides();
 			this.flushSnapshot();
+			await this.drainDeliveries(conv);
 		}
 	}
 
@@ -3953,11 +4265,14 @@ export class ClientSession {
 				const conv = this.convs.get(convId);
 				if (!conv?.session) return false;
 				this.assertSubagentWorktreeAdmission(conv);
-				await conv.session.sendUserMessage(
-					message,
-					deliverAs ? { deliverAs } : conv.session.isStreaming ? { deliverAs: "steer" } : undefined,
-				);
-				return true;
+				const mode = this.deliveryModeOf(conv);
+				if (mode === "closed") return false;
+				if (mode === "live" && deliverAs === "followUp") {
+					await conv.session.sendUserMessage(message, { deliverAs: "followUp" });
+					return true;
+				}
+				const outcome = await this.deliverFromOutside(conv, message);
+				return outcome === "delivered" || outcome === "queued";
 			},
 			readRoleAgent: (convId) => {
 				const conv = this.convs.get(convId);
@@ -5414,9 +5729,8 @@ export class ClientSession {
 			!turn.settled ||
 			busy ||
 			conv.retryState ||
-			conv.compactionState ||
-			conv.pendingCompaction ||
-			turn.compactionPending ||
+			// 压缩门（已请求 / 进行中）统一由投递门回答，不再各查一个字段。
+			this.deliveryModeOf(conv) === "gated" ||
 			this.isWaitingOnUser(conv.id) ||
 			this.subagentTaskPending(conv)
 		)
@@ -5778,7 +6092,8 @@ export class ClientSession {
 		const conv = this.convs.get(id);
 		if (!conv?.session) return undefined;
 		this.assertSubagentWorktreeAdmission(conv);
-		await conv.session.sendUserMessage(text, conv.session.isStreaming ? { deliverAs: "steer" } : undefined);
+		const outcome = await this.deliverFromOutside(conv, text);
+		if (outcome === "closed" || outcome === "rejected") return { ok: false, error: "对话无法接收消息" };
 		return { ok: true };
 	}
 
@@ -5843,17 +6158,16 @@ export class ClientSession {
 		text: string,
 	): Promise<{ ok: true } | { ok: false; busy: boolean; error?: string }> {
 		try {
-			try {
-				if ((conv.session as unknown as { isCompacting?: boolean }).isCompacting === true) {
-					return { ok: false, busy: true, error: "上下文压缩进行中，稍后重试" };
-				}
-			} catch {}
+			const mode = this.deliveryModeOf(conv);
+			if (mode === "gated") return { ok: false, busy: true, error: "上下文压缩进行中，稍后重试" };
+			if (mode === "closed") return { ok: false, busy: true, error: "对话已关闭" };
 			this.assertSubagentWorktreeAdmission(conv);
-			await conv.session.sendUserMessage(text, conv.session.isStreaming ? { deliverAs: "steer" } : undefined);
+			await this.submitText(conv, text, mode);
 			return { ok: true };
 		} catch (err) {
 			const msg = String((err as Error)?.message ?? err);
-			if (/compaction is in progress/i.test(msg)) return { ok: false, busy: true, error: msg };
+			// 唯一的压缩文案判定在 conversation-delivery 里：这里只问「是不是撞上门了」。
+			if (isCompactionRejection(msg)) return { ok: false, busy: true, error: msg };
 			return { ok: false, busy: false, error: msg };
 		}
 	}
@@ -6058,7 +6372,7 @@ export class ClientSession {
 				this.emitConversations();
 				break;
 			case "compaction_start": {
-				conv.compactionState = { reason: event.reason, startedAt: Date.now() };
+				conv.compaction = runningCompaction(event.reason, conv.compaction?.startedAt ?? Date.now());
 				conv.lastCompactionTokens = null;
 				this.markCompactionPending(conv);
 				if (conv.id === this.conv.id) this.flushSnapshot();
@@ -6079,7 +6393,10 @@ export class ClientSession {
 									}
 								: undefined,
 				);
-				conv.compactionState = null;
+				// SDK 在 emit compaction_end 之前已经清掉自己的压缩标志，所以这里是
+				// 「一定可以提交」的时刻：开闸并排空排队中的投递（失败/取消同样排空）。
+				conv.compaction = null;
+				void this.drainDeliveries(conv);
 				if (event.errorMessage) {
 					this.emit({
 						type: "notice",
@@ -6248,21 +6565,8 @@ export class ClientSession {
 						void mergeTouchSidecar(file, extractTouches(this.convTranscript(conv)));
 					}
 				} catch {}
-				if (!event.willRetry && !aborted && conv.pendingCompaction && !this.disposed) {
-					const pending = conv.pendingCompaction;
-					const turn = this.notificationTurn(conv);
-					const compactionSession = conv.session;
-					turn.compactionPending = true;
-					conv.pendingCompaction = null;
-					setTimeout(() => {
-						if (!this.disposed) {
-							void this.executePendingCompaction(conv, pending).finally(() => {
-								turn.compactionPending = false;
-								const owner = this.findConversationHome?.(compactionSession)?.session ?? this;
-								owner.emitConversations();
-							});
-						}
-					}, 50);
+				if (!event.willRetry && !aborted && !this.disposed && conv.compaction?.phase === "queued") {
+					this.scheduleQueuedCompaction(conv, 50);
 				} else if (!event.willRetry && !aborted && !this.disposed) {
 					setTimeout(() => {
 						if (!this.disposed) {
@@ -6299,11 +6603,9 @@ export class ClientSession {
 				if (settledBaseTokens != null && this.hasSettledAssistantUsage(conv)) {
 					conv.lastTurnBaseTokens = settledBaseTokens;
 				}
-				if (conv.pendingCompaction && !this.disposed) {
-					const pending = conv.pendingCompaction;
-					conv.pendingCompaction = null;
-					void this.executePendingCompaction(conv, pending);
-				}
+				// settled 之后立刻开压缩（不等 agent_end 的 50ms 定时器），门在 runQueuedCompaction 里翻转。
+				this.scheduleQueuedCompaction(conv, 0);
+				void this.drainDeliveries(conv);
 				break;
 			}
 			case "entry_appended": {
@@ -6623,7 +6925,7 @@ export class ClientSession {
 			},
 			errorMessage: state.errorMessage,
 			retry: conv.retryState ?? null,
-			compaction: conv.compactionState ?? null,
+			compaction: compactionBanner(conv.compaction),
 			pendingQuestion: this.pendingQuestionForSnapshot(conv),
 			actionSuggestions: this.markerSvc.getActionSuggestions(conv.id) ?? null,
 			pendingApproval: this.pendingApprovalForSnapshot(conv),
@@ -7145,11 +7447,8 @@ export class ClientSession {
 		this.communicationHost().authorize(source, conv, envelope.action);
 		if (envelope.action === "request" && consultWaitingParents.has(conv)) return "queued";
 		const circuit = owner.checkSubagentWakeCircuitBreaker(conv, owner, [source]);
-		if (
-			circuit ||
-			owner.isWaitingOnUser(conv.id) ||
-			(conv.session as unknown as { isCompacting?: boolean }).isCompacting
-		) {
+		// 熔断 / 等用户回答：这是「故意不唤醒」，消息留在收件箱等对方读取，不是投递失败。
+		if (circuit || owner.isWaitingOnUser(conv.id)) {
 			if (envelope.requestId)
 				await conversationCommunication.communicate(this.communicationHost(), conv, "escalate", {
 					requestId: envelope.requestId,
@@ -7163,11 +7462,33 @@ export class ClientSession {
 				});
 			return "queued";
 		}
+		const mode = owner.deliveryModeOf(conv);
+		if (mode === "closed") throw new Error("Communication target conversation is gone");
+		const text = formatCommunicationMessage(envelope, source);
+		if (envelope.requestId) {
+			conv.queuedSteeringRequestIds = conv.queuedSteeringRequestIds ?? new Set<string>();
+			conv.queuedSteeringRequestIds.add(envelope.requestId);
+		}
+		if (mode === "gated") {
+			// 压缩 / 等回话 / 过户：不是「不唤醒」，是「现在投不进去」。
+			// 入投递队列，compaction_end 一到自动唤醒；收件箱同时保留原文作 durable 记录。
+			const queue = owner.deliveryQueue(conv);
+			if (
+				!queue.park({
+					tag: `comm:${envelope.id}`,
+					kind: "communication",
+					text,
+					items: [envelope],
+					createdAt: Date.now(),
+				})
+			)
+				throw new Error("Communication target is not accepting messages");
+			void owner.drainDeliveries(conv);
+			return "queued";
+		}
 		owner.assertSubagentWorktreeAdmission(conv);
 		if (conv.subagentTaskStopped) throw new Error("Communication target task was stopped");
-		const busy = conv.session.isStreaming || conv.promptInFlight;
-		const text = formatCommunicationMessage(envelope, source);
-		if (!busy) {
+		if (mode === "idle") {
 			if (conv.isSubagent && (conv.subagentDoneNotified || conv.subagentConsumedByParent)) {
 				conv.subagentDoneNotified = false;
 				conv.subagentConsumedByParent = false;
@@ -7178,32 +7499,18 @@ export class ClientSession {
 			conv.wakeReason = "other";
 			conv.wakeTurnHadAction = false;
 		}
-		if (busy && envelope.requestId) {
-			conv.queuedSteeringRequestIds = conv.queuedSteeringRequestIds ?? new Set<string>();
-			conv.queuedSteeringRequestIds.add(envelope.requestId);
-		}
-		const delivery = conv.session.sendUserMessage(text, busy ? { deliverAs: "steer" } : undefined);
-		void delivery.finally(() => {
-			if (envelope.requestId) conv.queuedSteeringRequestIds?.delete(envelope.requestId);
-		});
-		void delivery.catch((error) => {
-			owner.sendNotice({
-				type: "notice",
-				level: "warning",
-				text: "协作消息投递失败，已保留在收件箱。",
-				textEn: "Collaboration delivery failed; the message remains in the inbox.",
-			});
-			console.warn("[communication] delivery failed", error);
-		});
-		void delivery.then(
-			() => {
-				conversationCommunication.acknowledge(conv, envelope.id);
-				try {
-					const home = this.communicationHome(conv);
-					if (conv.notifyOnDone === "manual") home.owner.scheduleSubagentCompletionNotice(conv);
-				} catch {}
+		void this.submitText(conv, text, mode).then(
+			() => this.commitCommunication(conv, envelope),
+			(error) => {
+				owner.sendNotice({
+					type: "notice",
+					level: "warning",
+					text: "协作消息投递失败，已保留在收件箱。",
+					textEn: "Collaboration delivery failed; the message remains in the inbox.",
+				});
+				console.warn("[communication] delivery failed", error);
+				if (envelope.requestId) conv.queuedSteeringRequestIds?.delete(envelope.requestId);
 			},
-			() => {},
 		);
 		owner.emitConversations();
 		return "queued";
@@ -8464,6 +8771,17 @@ export class ClientSession {
 		emit: (msg) => this.emit(msg),
 		cwd: () => this.cwd,
 		getSession: () => this.session,
+		// /compact 也走同一道门：从请求到 compaction_end 之间不许再投递（含 prompt() 的 abort 窗口）。
+		compact: async (instructions?: string) => {
+			const conv = this.conv;
+			conv.compaction = runningCompaction("manual", Date.now());
+			try {
+				await conv.session.compact(instructions);
+			} finally {
+				if (conv.compaction?.phase === "running") conv.compaction = null;
+				await this.drainDeliveries(conv);
+			}
+		},
 		newChat: () => this.newChat(),
 		prompt: (text) => this.prompt(text),
 		setModel: (id) => this.setModel(id),
@@ -8884,7 +9202,15 @@ export class ClientSession {
 			if (currentTokens < cap) return false;
 
 			const instructions = this.settingsSvc.current.autoCompactionInstructions?.trim() || undefined;
-			await session.compact(instructions);
+			// compact() 是先 await abort() 再发 compaction_start 的：中间这一小段里没有任何信号
+			// 说明「正在压缩」，只有我们自己把门先关上才拦得住抢在这时提交的投递。
+			conv.compaction = runningCompaction("overflow", Date.now());
+			try {
+				await session.compact(instructions);
+			} finally {
+				if (conv.compaction?.phase === "running") conv.compaction = null;
+				await this.drainDeliveries(conv);
+			}
 			return true;
 		} catch (err) {
 			const msg = err instanceof Error ? err.message : String(err);
@@ -10255,10 +10581,8 @@ export class ClientSession {
 			if (!execConv?.session) return false;
 			try {
 				this.assertSubagentWorktreeAdmission(execConv);
-				await execConv.session.sendUserMessage(
-					trimmed,
-					execConv.session.isStreaming ? { deliverAs: "steer" } : undefined,
-				);
+				const outcome = await this.deliverFromOutside(execConv, trimmed);
+				if (outcome === "closed" || outcome === "rejected") return false;
 			} catch (err) {
 				const msg = err instanceof Error ? err.message : String(err);
 				this.emit({
@@ -10321,10 +10645,15 @@ export class ClientSession {
 
 		try {
 			this.assertSubagentWorktreeAdmission(execConv);
-			await execConv.session.sendUserMessage(
-				trimmed,
-				execConv.session.isStreaming ? { deliverAs: queue ? "followUp" : "steer" } : undefined,
-			);
+			const mode = this.deliveryModeOf(execConv);
+			if (mode === "gated") {
+				// 门关着：排队，压缩结束会自动开一轮（目标对话不会因此漏活）。
+				void this.deliverFromOutside(execConv, trimmed);
+			} else if (mode === "live" && queue) {
+				await execConv.session.sendUserMessage(trimmed, { deliverAs: "followUp" });
+			} else {
+				await this.submitText(execConv, trimmed, mode);
+			}
 		} catch (err) {
 			const msg = err instanceof Error ? err.message : String(err);
 			this.emit({
@@ -10650,15 +10979,11 @@ export class ClientSession {
 
 	private completionPending(conv: Conversation): boolean {
 		if (conv.promptInFlight || conv.queueSteering?.length || conv.queueFollowUp?.length) return true;
-		const owners = new Set([this, ...(this.allSubagentSessions?.() ?? [])]);
-		for (const owner of owners) {
-			const key = conversationIdentity(conv);
-			if (owner.pendingSubagentNotices.has(key) || owner.deliveringSubagentNotices.has(key)) return true;
-			if (
-				owner.convs.get(conv.id) === conv &&
-				(owner.pendingSubagentNotices.has(conv.id) || owner.deliveringSubagentNotices.has(conv.id))
-			)
-				return true;
+		// 待发的子代理通知就近挂在父对话上（原来要跨所有 owner 按 execution key 反查）。
+		if (conv.delivery?.hasKind("subagent-notice")) return true;
+		const key = conversationIdentity(conv);
+		for (const owner of new Set([this, ...(this.allSubagentSessions?.() ?? [])])) {
+			if (owner.subagentNoticeTimers.has(key) || owner.subagentNoticeTimers.has(conv.id)) return true;
 		}
 		return false;
 	}
@@ -10826,6 +11151,25 @@ export class ClientSession {
 			throw new Error("Bot transcripts are inspection-only outside their execution capability");
 		if (targetConversation && this.convs.get(conv.id) !== conv) {
 			throw new Error("Prompt conversation is no longer available");
+		}
+		if (this.deliveryModeOf(conv) === "gated") {
+			// 压缩期间 pi 的 prompt() 会直接抛英文异常。这里提前用一句话说清楚，
+			// 不让用户看到 pi 抛出的那句英文异常。
+			let compacting = !!conv.compaction;
+			try {
+				compacting = compacting || conv.session.isCompacting === true;
+			} catch {}
+			this.emit({
+				type: "notice",
+				level: "warning",
+				text: compacting
+					? "上下文压缩进行中，这条消息没有送出；等压缩结束后再发一次。"
+					: "这个对话正在等回话或过户，暂时不能接收新消息；稍后再发。",
+				textEn: compacting
+					? "Context compaction is in progress, so this message was not sent. Send it again once compaction finishes."
+					: "This conversation is waiting on a reply or being transferred and cannot accept new messages right now; try again shortly.",
+			});
+			return;
 		}
 		conv.autonomousTurnsWithoutUser = 0;
 		conv.consecutiveIdleWakeTurns = 0;
@@ -11779,10 +12123,17 @@ export class ClientSession {
 			textEn: "Bash command stopped (conversation continues)",
 		});
 		try {
-			if (ownerConv) this.assertSubagentWorktreeAdmission(ownerConv);
-			await runtime?.session.sendUserMessage(
-				"（系统：用户手动停止了刚才的 bash 命令——命令被中止，终止前已输出的内容在对应工具结果里。请据此继续，不要重跑被中止的命令，除非确实必要。）",
-			);
+			if (ownerConv) {
+				this.assertSubagentWorktreeAdmission(ownerConv);
+				await this.deliverFromOutside(
+					ownerConv,
+					"（系统：用户手动停止了刚才的 bash 命令——命令被中止，终止前已输出的内容在对应工具结果里。请据此继续，不要重跑被中止的命令，除非确实必要。）",
+				);
+			} else {
+				await runtime?.session.sendUserMessage(
+					"（系统：用户手动停止了刚才的 bash 命令——命令被中止，终止前已输出的内容在对应工具结果里。请据此继续，不要重跑被中止的命令，除非确实必要。）",
+				);
+			}
 		} catch {}
 		this.flushSnapshot();
 	}
@@ -12410,8 +12761,8 @@ export class ClientSession {
 	private markCompactionPending(conv: Conversation): void {
 		try {
 			markCompactionState(this.compactionFile(conv), {
-				reason: conv.compactionState?.reason ?? "manual",
-				startedAt: conv.compactionState?.startedAt ?? Date.now(),
+				reason: conv.compaction?.reason ?? "manual",
+				startedAt: conv.compaction?.startedAt ?? Date.now(),
 			});
 		} catch (error) {
 			this.compactionPersistenceFailed(error);
@@ -12430,7 +12781,7 @@ export class ClientSession {
 		try {
 			if (outcome)
 				conv.session.sessionManager.appendCustomEntry("pi-web-ui/compaction-done", {
-					reason: conv.compactionState?.reason ?? "manual",
+					reason: conv.compaction?.reason ?? "manual",
 					...outcome,
 				});
 			finishCompactionState(this.compactionFile(conv));
@@ -12699,7 +13050,7 @@ export class ClientSession {
 				reviewing: conv.goal.reviewing,
 				wizardRunning: conv.wizardRunning,
 				streaming: conv.session.isStreaming,
-				compacting: conv.session.isCompacting,
+				compacting: conv.session.isCompacting || !!conv.compaction,
 				openTerminals: conv.terminals.countBlockingLive(),
 				listed: conv.listed,
 				promptedSinceActive: conv.promptedSinceActive,
@@ -12730,7 +13081,8 @@ export class ClientSession {
 		if (!c.viewOnly || c.id === this.activeId || c.pinned || c.transferring) return false;
 		if (c.isSubagent || c.isEphemeral || c.nativeCli || c.promptInFlight) return false;
 		try {
-			if (c.session.isStreaming || c.session.isCompacting) return false;
+			// 正在跑 / 正在压缩 / 压缩已排队 / 还有待投递意图：一律不驱逐。
+			if (this.deliveryModeOf(c) !== "idle") return false;
 		} catch {
 			return false;
 		}
@@ -12812,18 +13164,18 @@ export class ClientSession {
 		for (const c of this.convs.values()) {
 			c.suspendedSubagents?.delete(conv);
 		}
-		const pendingNotice = this.pendingSubagentNotices.get(id);
-		if (pendingNotice) {
-			clearTimeout(pendingNotice.timer);
-			this.pendingSubagentNotices.delete(id);
-		}
-		for (const [pId, entry] of this.pendingSubagentNotices) {
+		for (const [pId, entry] of this.subagentNoticeTimers) {
 			entry.subagents.delete(conv);
 			if (entry.subagents.size === 0) {
 				clearTimeout(entry.timer);
-				this.pendingSubagentNotices.delete(pId);
+				this.subagentNoticeTimers.delete(pId);
 			}
 		}
+		// 对话没了：还排在它身上的投递意图不再有落点，就地清干净并如实提示。
+		conv.deliveryClosed = true;
+		const deliveryQueue = conv.delivery;
+		conv.delivery = undefined;
+		deliveryQueue?.close(this.deliveryHost(conv));
 		this.pluginModelKeys?.delete(id);
 		this.planManager.unbindConversation(id);
 		this.markerSvc.clearConversation(id);
@@ -13275,7 +13627,11 @@ export class ClientSession {
 	}
 
 	private emitConversations(): void {
-		for (const conv of this.convs.values()) this.notifyConversationCompletion(conv);
+		for (const conv of this.convs.values()) {
+			this.notifyConversationCompletion(conv);
+			// 对账兜底：门开着的对话，把排队中的意图推一把（drain 幂等且自带重入保护）。
+			if (conv.delivery?.size) void this.drainDeliveries(conv);
+		}
 		const conversations: ConversationSummary[] = [];
 		const visibleParents = new Set(
 			[...this.convs.values()]
@@ -13818,7 +14174,8 @@ export class ClientSession {
 				if (stillHeld) {
 					let stillRunning: boolean;
 					try {
-						stillRunning = stillHeld.session.isStreaming || stillHeld.session.isCompacting;
+						// 跑着 / 压缩中 / 还有待投递意图：都算「不是空闲」，别把会话从脚下抽走。
+						stillRunning = this.deliveryModeOf(stillHeld) !== "idle";
 					} catch {
 						stillRunning = true;
 					}
@@ -16369,10 +16726,22 @@ export class ClientSession {
 		this.files.unwatchGit();
 		this.unwatchMcpInventory();
 		this.webUi.dispose();
-		for (const entry of this.pendingSubagentNotices.values()) {
+		for (const entry of this.subagentNoticeTimers.values()) {
 			clearTimeout(entry.timer);
 		}
-		this.pendingSubagentNotices.clear();
+		this.subagentNoticeTimers.clear();
+		for (const conv of this.convs.values()) {
+			conv.deliveryClosed = true;
+			const queue = conv.delivery;
+			conv.delivery = undefined;
+			queue?.close({
+				mode: () => "closed",
+				deliver: async () => "gated",
+				onDelivered: () => {},
+				onDropped: () => {},
+				onRetryable: () => {},
+			});
+		}
 		for (const c of this.convs.values()) {
 			c.suspendedSubagents?.clear();
 		}

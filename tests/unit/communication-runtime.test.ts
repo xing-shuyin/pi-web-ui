@@ -17,8 +17,7 @@ function holder(id: string) {
 		convs: new Map(),
 		pendingQuestions: new Map(),
 		pendingPageCalls: new Map(),
-		pendingSubagentNotices: new Map(),
-		deliveringSubagentNotices: new Map(),
+		subagentNoticeTimers: new Map(),
 		scheduleSubagentCompletionNotice: vi.fn(),
 		turnEndWaiters: new Map(),
 		settingsSvc: { current: {} },
@@ -41,6 +40,11 @@ function holder(id: string) {
 	owners.push(cs);
 	return cs;
 }
+/** 排空是异步的（drain 里 await SDK 投递）：把微任务链跑完再断言。 */
+async function settle(): Promise<void> {
+	for (let i = 0; i < 12; i++) await Promise.resolve();
+}
+
 function endpoint(owner: any, id: string, parentId?: string) {
 	const conv: any = {
 		id,
@@ -49,8 +53,10 @@ function endpoint(owner: any, id: string, parentId?: string) {
 		title: id,
 		session: {
 			isStreaming: false,
+			isCompacting: false,
 			getLastAssistantText: () => "",
 			sendUserMessage: vi.fn().mockResolvedValue(undefined),
+			steer: vi.fn().mockResolvedValue(undefined),
 		},
 		terminals: { killAll: vi.fn() },
 		runtime: { dispose: vi.fn().mockResolvedValue(undefined) },
@@ -257,7 +263,8 @@ describe("ClientSession communication runtime", () => {
 		expect(target.subagentTask).toEqual({ mode: "manual", generation: 4, completionRequested: false });
 		expect(target.subagentDoneNotified).toBe(false);
 		await vi.advanceTimersByTimeAsync(500);
-		expect(root.session.sendUserMessage).toHaveBeenCalledWith(expect.stringContaining("new result"), undefined);
+		// 投递门统一走 submitText（空闲时不带 deliverAs 参数），只关心正文。
+		expect(root.session.sendUserMessage.mock.calls.at(-1)?.[0]).toContain("new result");
 		vi.useRealTimers();
 	});
 	it("user settlement of an escalated request reschedules the idle manual receiver", async () => {
@@ -427,8 +434,9 @@ describe("ClientSession communication runtime", () => {
 		const unrelated = endpoint(a, "c3");
 		const child = endpoint(a, "sa-completed", "c2");
 		child.session.getLastAssistantText = () => "private task result";
-		a.pendingSubagentNotices.set("c2", { subagents: new Set([child]) });
-		await a.flushSubagentCompletionNotice("c2");
+		a.subagentNoticeTimers.set("c2", { timer: undefined as any, subagents: new Set([child]) });
+		a.flushSubagentNoticeTimer("c2");
+		await settle();
 		expect(unrelated.session.sendUserMessage).not.toHaveBeenCalled();
 		expect(child.subagentDoneNotified).toBe(true);
 		expect(a.emit).toHaveBeenCalledWith(expect.objectContaining({ type: "notice", level: "info" }));
@@ -442,8 +450,9 @@ describe("ClientSession communication runtime", () => {
 		child.session.getLastAssistantText = () => "task result";
 		bindConversationParent(child, parent);
 		const address = conversationIdentity(parent);
-		a.pendingSubagentNotices.set(address, { subagents: new Set([child]) });
-		await a.flushSubagentCompletionNotice(address);
+		a.subagentNoticeTimers.set(address, { timer: undefined as any, subagents: new Set([child]) });
+		a.flushSubagentNoticeTimer(address);
+		await settle();
 		expect(parent.session.sendUserMessage).toHaveBeenCalledOnce();
 		expect(parent.session.sendUserMessage.mock.calls[0][0]).toContain("task result");
 		expect(unrelated.session.sendUserMessage).not.toHaveBeenCalled();
@@ -472,8 +481,9 @@ describe("ClientSession communication runtime", () => {
 		expect(a.resolveExecution(address)?.conv).toBe(parent);
 		expect(a.resolveCommunicationTarget(worker.id, "parent")).toBe(parent);
 		worker.session.getLastAssistantText = () => "only for original parent";
-		a.pendingSubagentNotices.set(address, { subagents: new Set([worker]) });
-		await a.flushSubagentCompletionNotice(address);
+		a.subagentNoticeTimers.set(address, { timer: undefined as any, subagents: new Set([worker]) });
+		a.flushSubagentNoticeTimer(address);
+		await settle();
 		expect(parent.session.sendUserMessage).toHaveBeenCalledOnce();
 		expect(replacement.session.sendUserMessage).not.toHaveBeenCalled();
 	});
@@ -488,8 +498,9 @@ describe("ClientSession communication runtime", () => {
 		expect(a.resolveCommunicationTarget(worker.id, "parent")).toBeUndefined();
 		expect(a.resolveExecution(address)).toBeUndefined();
 		worker.session.getLastAssistantText = () => "old result";
-		a.pendingSubagentNotices.set(address, { subagents: new Set([worker]) });
-		await a.flushSubagentCompletionNotice(address);
+		a.subagentNoticeTimers.set(address, { timer: undefined as any, subagents: new Set([worker]) });
+		a.flushSubagentNoticeTimer(address);
+		await settle();
 		expect(replacement.session.sendUserMessage).not.toHaveBeenCalled();
 	});
 	it("rejects ambiguous bare ids and resolves stable addresses to the exact endpoint", () => {

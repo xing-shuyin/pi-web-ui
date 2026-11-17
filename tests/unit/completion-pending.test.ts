@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { ClientSession } from "../../server/agent-service.js";
+import { ConversationDelivery } from "../../server/conversation-delivery.js";
 import { conversationIdentity } from "../../server/conversation-identity.js";
 import { fakeClientSession } from "../helpers/fake-session.js";
 
@@ -7,8 +7,10 @@ function host() {
 	const client: any = fakeClientSession();
 	Object.assign(client, {
 		convs: new Map(),
-		pendingSubagentNotices: new Map(),
-		deliveringSubagentNotices: new Map(),
+		subagentNoticeTimers: new Map(),
+		subagentTaskPending: () => false,
+		emit: vi.fn(),
+		getLang: () => "zh",
 		emitConversations: vi.fn(),
 		flushSnapshot: vi.fn(),
 	});
@@ -30,12 +32,15 @@ describe("completion notification lifecycle", () => {
 		conv.promptInFlight = true;
 		expect(client.completionPending(conv)).toBe(true);
 		conv.promptInFlight = false;
-		other.pendingSubagentNotices.set(conversationIdentity(conv), {});
+		// 待发通知挂在对话本身上：谁触发都能看到，不再靠跨 owner 反查 execution key。
+		conv.delivery = new ConversationDelivery();
+		conv.delivery.park({ tag: "subagent-notice", kind: "subagent-notice", createdAt: 1 });
 		expect(client.completionPending(conv)).toBe(true);
-		other.pendingSubagentNotices.clear();
-		other.deliveringSubagentNotices.set(conversationIdentity(conv), 1);
+		conv.delivery = undefined;
+		// 去抖窗口（400ms）里也要显示「待处理」，否则左栏会闪一下。
+		other.subagentNoticeTimers.set(conversationIdentity(conv), { timer: null as any, subagents: new Set() });
 		expect(client.completionPending(conv)).toBe(true);
-		other.deliveringSubagentNotices.clear();
+		other.subagentNoticeTimers.clear();
 		expect(client.completionPending(conv)).toBe(false);
 	});
 
@@ -43,26 +48,52 @@ describe("completion notification lifecycle", () => {
 		"keeps pending state throughout asynchronous delivery and clears after settlement (reject=%s)",
 		async (reject) => {
 			const client = host();
-			const conv = { id: "parent" };
+			const conv: any = {
+				id: "parent",
+				autonomousTurnsWithoutUser: 0,
+				delivery: new ConversationDelivery(),
+				session: { isStreaming: false, isCompacting: false, sendUserMessage: vi.fn(), steer: vi.fn() },
+			};
 			client.convs.set(conv.id, conv);
 			client.activeId = conv.id;
-			client.pendingSubagentNotices.set(conv.id, {});
+			const child: any = {
+				id: "sa-1",
+				parentId: conv.id,
+				isSubagent: true,
+				title: "子任务",
+				subagentRunGeneration: 0,
+				session: {
+					isStreaming: false,
+					getLastAssistantText: () => "结论",
+					getSessionStats: () => ({ totalMessages: 1 }),
+					model: { provider: "mock", id: "m1" },
+					agent: { state: { messages: [{ role: "assistant", stopReason: "end_turn" }] } },
+				},
+			};
 			let finish!: () => void;
-			client.deliverSubagentCompletionNotice = vi.fn(async () => {
-				client.pendingSubagentNotices.delete(conv.id);
-				await new Promise<void>((resolve) => {
-					finish = resolve;
-				});
+			const hold = new Promise<void>((resolve) => {
+				finish = resolve;
+			});
+			conv.session.sendUserMessage = vi.fn(async () => {
+				await hold;
 				if (reject) throw new Error("delivery failed");
 			});
-			const delivery = client.flushSubagentCompletionNotice(conv.id);
+			client.parkSubagentNotice(conv, [child]);
+			// 投递卡在途：状态必须仍然算「待处理」，不能提前清。
 			expect(client.completionPending(conv)).toBe(true);
+
 			finish();
-			if (reject) await expect(delivery).rejects.toThrow("delivery failed");
-			else await delivery;
-			expect(client.completionPending(conv)).toBe(false);
-			expect(client.emitConversations).toHaveBeenCalledOnce();
-			expect(client.flushSnapshot).toHaveBeenCalledOnce();
+			for (let i = 0; i < 20; i++) await Promise.resolve();
+			expect({
+				pending: client.completionPending(conv),
+				sent: conv.session.sendUserMessage.mock.calls.length,
+				// 失败路径必须留一句人话（而不是静默丢），成功路径不该有 warning。
+				warnings: client.emit.mock.calls.filter((c: any) => c[0]?.level === "warning").length,
+			}).toEqual({ pending: false, sent: 1, warnings: reject ? 1 : 0 });
+			// 失败不写「已通知」：下一轮 settle 会重投；成功后才是提交点。
+			expect(child.subagentDoneNotified).toBe(reject ? undefined : true);
+			expect(client.emitConversations).toHaveBeenCalled();
+			expect(client.flushSnapshot).toHaveBeenCalled();
 		},
 	);
 

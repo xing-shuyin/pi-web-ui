@@ -166,6 +166,21 @@ pi 的 `schedule` 创建任务时单独持久化创建来源（稳定 SDK 会话
 
 任务完成通过 `conversation(action="complete", summary, evidence)` 登记，与发送消息分开；证据与转录对账的规则见下一节。`spawn.notifyOnDone` 保留布尔兼容并支持 `"manual"`。manual 本轮退出但还有运行中下级、问卷、通信或待投递子结果时保持 taskPending，禁止提前通知、消费结果或结算工作树；完成登记不能绕过这些条件。所有依赖收口后使用显式 summary，未登记则以最终正文兜底。错误与取消继续通知，自动唤醒不清除手动完成意图。当前 manual 和通信宿主为 pi 引擎，Universal 明确拒绝不支持的 manual 模式。
 
+## 压缩期的入站投递：一个门、一个队列、一个排空点（issues/929）
+
+往一个对话里塞文字只有四种可能：投进正在跑的一轮、开新一轮、**现在不能投（门关）**、对话没了。压缩是第三种——`session.prompt()` 在压缩期间直接抛错，而 `session.steer()` 只是把消息塞进「只有活轮才会取」的 steering 队列。旧实现让十几个调用点各自判断这件事，于是每多出一种门（压缩、等回话、过户）都会漏掉几处：子代理完成通知重试 8 秒后放弃、先把子代理记成「已通知」，`steer` 塞进一轮永远不会发生的队列，压缩结束后没人再送（issue #929 的两个症状）。
+
+现在只有两处知道这件事：
+
+- `server/conversation-delivery.ts` 是纯逻辑（不 import SDK、不碰 `Conversation`）：`deliveryMode()` 是唯一判定（`live / gated / idle / closed`），`ConversationDelivery` 是门关时唯一的去处（意图队列，按 tag 幂等、按 kind 合并）和门开时唯一的出口（`drain`：FIFO、可重入、撞上新关上的门就留着）。它允许用错误文案判定的**唯一**一处是 `isCompactionRejection()`。
+- `Conversation.compaction` 是门相位的**唯一写者**，事件溯源：工具请求时置 `queued`（此刻 SDK 的 `isCompacting` 还是 false，正是旧实现漏掉的窗口），`compaction_start` 转 `running`，`compaction_end`（含失败/取消）清空。旧的 `pendingCompaction` / `compactionState` / `turn.compactionPending` 三个字段合并成它；UI 横幅与手机通知只读投影（`compactionBanner()`）。
+
+五条不变量（动这里之前先读）：**门关不提交**；**门开必排空**（失败与取消路径同样排空）；「已通知 / 轮次 +1 / 熔断额度 −1」只在投递被接受后写（`commitIntent`，提交点副作用）；`steer` 只投给活轮，其余入队（回执 `queued` 才是承诺）；门相位的写者唯一。
+
+排空点是一个闭集：`compaction_end`、`executeCompaction` 的 `finally`（`compact()` 抛错时兜底开闸）、`agent_settled`、等回话解除（`setConsultWaiting(parent,false)`）、以及 `emitConversations()` 的对账兜底。所以新增压缩来源（软上限自动压缩、SDK 回合内自动压缩、分支摘要）自动被覆盖；新增一种门只需往 `deliveryMode()` 加一个谓词，不必再碰投递点。交互式 `prompt()` 是例外：用户在场，压缩期间直接用人话拒绝并说明原因，不排队（排队会让消息在 15 秒后从乐观回显里消失、又突然出现）。
+
+守卫：`tests/unit/delivery-gate-single-source.test.ts` 禁止别处直读 `isCompacting`、禁止手写 `deliverAs: "steer"`、禁止复活那三个旧字段，并给直连 `sendUserMessage` 的站点设上限；`tests/unit/delivery-gate-929.test.ts` 覆盖两个原始场景（父对话压缩期间子代理完成 → `compaction_end` 后补投一次；子代理压缩期间 `steer` → 门开后开新一轮）。
+
 ## 子代理完成证据、结算边沿与派发预算
 
 子代理自述「做完了」不算证据。`conversation(action="complete")` 除 `summary` 外要求同时给 `evidence`：`{files:[], commands:[]}`（改过的文件、跑过的验证命令）、`{none:true}`（只读任务，声明没有文件改动）或 `{blocked:"原因"}`（做不完，如实报）。归一只在 `server/subagent-evidence.ts`：路径按 `/` 归一、命令压空白、去重并限量（50 文件 / 20 命令 / 单条 400 字符），空对象判非法。
@@ -174,7 +189,7 @@ pi 的 `schedule` 创建任务时单独持久化创建来源（稳定 SDK 会话
 
 `wait_all` 不再轮询。`server/subagent-settle.ts` 的 `SubagentSettleRegistry` 只提供**边沿**：运行 id 变化即唤醒订阅者，等待方醒来重算是否真的收口（并重扫新派生的后代与待交付请示）。`agent-service` 在回合结束、停止、移出、问卷队列变化、完成通知投递状态变化处 `notify/notifyAll`，`dispose` 时 `shutdown`。单次等待切片 30s，等待上限仍由看门狗 cap 决定；通用引擎（`universal-session.ts`）用自身的子代理监听实现同一接口，语义一致。判定「已收口」只有一条：拿不到快照（已移出/已结束回收）或显式终态，等待与「还剩谁」共用 `isSettled`，避免出现「全都完成了却报还有人在跑」。
 
-一次调用可以扇出：`spawn` 的 `tasks[]` 一次派多个，先整批校验（prompt、key 形状与唯一性、模板可用、思考档位、隔离模式）再启动，一个不合法就一个都不启动；单批上限 `SUBAGENT_FANOUT_MAX = 16`，启动并发窗口 4（不与并发上限抢名额）。每个 task 可带 `key`（字母数字与 `_.-`，≤40），工具把 `key → 运行身份` 记在**本对话工具实例**的有界表（256 项）里，`wait_all / get_result / steer / stop` 的 `runIds` 接受 key 或真实 id。`steer` 回执区分 `delivered`（送进当前回合）/ `queued`（排队等回合结束）/ `restarted`（本来空闲，同会话开新一轮）/ `missed`（没有可投递通道），父代理不必猜。
+一次调用可以扇出：`spawn` 的 `tasks[]` 一次派多个，先整批校验（prompt、key 形状与唯一性、模板可用、思考档位、隔离模式）再启动，一个不合法就一个都不启动；单批上限 `SUBAGENT_FANOUT_MAX = 16`，启动并发窗口 4（不与并发上限抢名额）。每个 task 可带 `key`（字母数字与 `_.-`，≤40），工具把 `key → 运行身份` 记在**本对话工具实例**的有界表（256 项）里，`wait_all / get_result / steer / stop` 的 `runIds` 接受 key 或真实 id。`steer` 回执区分 `delivered`（送进当前回合）/ `queued`（门关着，已挂起，门一开必定开新一轮）/ `restarted`（本来空闲，同会话开新一轮）/ `missed`（没有可投递通道），父代理不必猜。
 
 并发与深度挡不住累计成本，所以加了第三道闸：`server/subagent-budget.ts` 按**运行树根**（沿 parent 走到最顶层会话的稳定执行身份）累计派发次数，默认 64（`PI_WEB_SUBAGENT_MAX_SPAWNS_PER_RUN`，`0` 关闭）。预留在启动路径同步完成，失败退还，运行树根移出时 `forget`。子代理用量（`getSessionStats().tokens`）进快照的 `usage`，在列表与等待结果里以 `输入↓输出↑` 呈现，配合上下文软上限一起看成本。
 

@@ -18,8 +18,7 @@ function createFakeSessionContext(conv: any, baseTokensVal = 10000) {
 		c.queueSteering.length === 0 &&
 		c.queueFollowUp.length === 0 &&
 		!c.session.isStreaming;
-	svc.pendingSubagentNotices = new Map();
-	svc.deliveringSubagentNotices = new Set();
+	svc.subagentNoticeTimers = new Map();
 	svc.pendingQuestions = new Map();
 	svc.pendingApprovals = new Map();
 	svc.pendingQuestionForSnapshot = () => null;

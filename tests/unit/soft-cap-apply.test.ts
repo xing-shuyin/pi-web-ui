@@ -199,6 +199,8 @@ describe("triggerSoftCapCompactionIfExceeded", () => {
 			getEffectiveContextTokens: (ClientSession.prototype as unknown as Record<string, (c: unknown) => number>)
 				.getEffectiveContextTokens,
 			emit: vi.fn(),
+			// 软上限压缩现在也走投递门：压完要开闸排空（这里没有排队意图）。
+			drainDeliveries: vi.fn(async () => {}),
 		};
 		return { conv, svc, compact };
 	}

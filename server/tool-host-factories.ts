@@ -9,6 +9,7 @@ import type { ClaimFilesHost } from "./claim-files-tool.js";
 import type { ClaimStore } from "./claim-store.js";
 import { readTouchSidecar } from "./claim-store.js";
 import type { CompactContextHost, PendingCompaction } from "./compact-context-tool.js";
+import { queuedCompaction } from "./conversation-delivery.js";
 import type { SkillToolHost } from "./skill-tool.js";
 import type { AgentMessage } from "./serialize.js";
 import type { Conversation } from "./agent-service.js";
@@ -239,9 +240,9 @@ export function createCompactContextHost(ctx: {
 		},
 		scheduleCompaction: (pending: PendingCompaction) => {
 			const conv = target();
-			if (conv) {
-				conv.pendingCompaction = pending;
-			}
+			// 门立刻关上：从这里到 compaction_end 之间一律不许投递
+			// （这段窗口里 SDK 的 isCompacting 还是 false，只有这道门挡得住）。
+			if (conv) conv.compaction = queuedCompaction(pending);
 		},
 	};
 }
