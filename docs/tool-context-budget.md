@@ -41,6 +41,22 @@ SDK 没有自动压缩指令及权限前别名解析的公开接口，分别用 
 
 验证：`tests/unit/request-context.test.ts`、`context-evidence.test.ts`、`compaction-instructions.test.ts`（含 provided checkpoint 短路组）、`compact-context-tool.test.ts`、`evidence-tool-hooks.test.ts`、`context-integration.test.ts`。
 
+### 压缩后可寻址：`<context-recovery>` 句柄（`server/context-recovery.ts`）
+
+证据外置解决的是「大工具输出还能读回来」，解决不了另一半：**被折叠的对话本身没有地址**。压缩后模型看到的是摘要 + 保留尾巴，此前 `read-files` / `modified-files` 只记文件名，用户原话与模型自己的推理不在任何句柄里。
+
+`installCompactionInstructions` 在两条压缩路径（SDK 摘要 / 模型自写 checkpoint）产出的 summary 后面**确定性追加**一个 `<context-recovery>` 块，内容全部从会话转录推导，不新增工具、不复制转录副本（JSONL 仍是唯一事实源）：
+
+1. **转录路径**：`sessionManager.getSessionFile()` 的绝对路径，并说明用法——`grep({pattern:"\\"id\\":\\"<entryId>\\"", path})` 拿行号，再 `read({path, offset:<line>, limit:1})`。单行超过 50KB 时 `read` 会整行拒绝，那类输出恰好走 `context-evidence` 句柄。
+2. **折叠段用户轮次逐字**：最多 3 条、每条压到 300 字符（`MAX_VERBATIM_USER_TURNS` / `MAX_VERBATIM_CHARS`），带 entry id 与行号——最贵的信息不依赖任何查找。
+3. **更早的用户轮次**：最多 12 条，只列 id + 行号（`MAX_INDEXED_USER_TURNS`）。
+
+约束与不变量：折叠范围由 `firstKeptEntryId` 沿 `parentId` 链回溯（boundary 本身是保留项，不计入）；boundary 尚未落到会话里（retain-none 压缩写入的是压缩自身的 id）时回落到全部 entry，宁可多给地址也不藏历史。行号由流式扫描转录得到，只缓存每行头 256 字符，单行几 MB 也不会把内存打爆（实测一条 4.3MB 的 tool result 仍能正确给出 L 行号）；文件超过 64MB 或不可读时**降级为只给 id**，绝不抛错——索引失败不能让压缩失败。摘要里若有旧块，追加前先 `stripRecoveryBlocks` 剥掉，保证**任何时刻只有一个** `<context-recovery>`；保留指令与 `compact_context` 指引都要求模型不要抄这两个宿主生成的块。证据索引仍然失败即拒绝（`getEvidenceIndex` 的拒绝语义不变），因为静默丢证据比压缩失败更糟。
+
+代价与取舍：每次压缩约 1k–2k 字符（≈300–700 tokens），常态路径零开销；块里只记**用户轮次**的逐字文本（模型自己的结论由摘要承载），并把会话转录的绝对路径交给模型——这与 evidence 目录同一信任边界（同一会话目录、同一读权限），换来的是压缩后仍能定点回读原文。
+
+验证：`tests/unit/context-recovery.test.ts`（句柄构造、行号映射、降级、单块不变量、与 `installCompactionInstructions` 的集成）。
+
 ## 1. 一块开销有多大
 
 以 30 个目录/核心工具为例（设置页「查看工具 schema」能看到实时数字）：

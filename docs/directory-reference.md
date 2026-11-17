@@ -77,6 +77,7 @@ server/
 ├── compact-context-tool.ts # ★ 主动压缩上下文工具（compact_context）：模型自己写压缩正文（必填 summary，长度/分节门禁），回合后生效，不再另发摘要请求
 ├── compaction-markers.ts   # 压缩 transcript 标记 + 修复（issue #235）
 ├── context-budget.ts       # 多级分层上下文预算裁剪（触发 LLM 全文摘要之前的梯度裁剪）
+├── context-recovery.ts     # ★ 压缩后可寻址句柄：给 summary 追加 <context-recovery>（转录路径 + 折叠用户轮次逐字/行号），模型用 grep/read 定点回读原文
 ├── soft-cap.ts             # 自定义上下文压缩软上限（Soft Cap，issue #229/#773；纯函数 normalize/effective/softCapToReserve/softCapReserveFor：后者算出注入 SDK 的 reserve=cw-cap，回合内工具间隙即压）
 ├── dangling-tools.ts       # 悬空 toolCall 检测与修复（issue #280）
 ├── edit-tool.ts            # 覆盖内置 edit：原样转发精确替换，`soft: true` 时改走行核心匹配（原 edit_soft 工具已合并进来，无独立开关）

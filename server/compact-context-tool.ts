@@ -91,6 +91,7 @@ export function makeCompactContextTool(host: CompactContextHost, lang?: () => Se
 			"Cover goal, constraints, verified facts with exact paths/symbols/errors, changes, open items, next steps.",
 			"Needs at least 2 `## ` sections and 300+ characters; unstructured prose is rejected.",
 			"Do not restate the last few turns in detail: recent messages are kept verbatim after your checkpoint, so repeated detail is wasted context.",
+			"Never copy `<context-recovery>` or the `[Context evidence: …]` index into the checkpoint; the host re-issues both from the session on every compaction.",
 			"After calling it, wrap up your turn with a brief note; the compacted context applies from the next turn on.",
 		],
 		parameters: CompactContextParams,

@@ -1,3 +1,5 @@
+import { buildContextRecoveryBlock, stripRecoveryBlocks } from "./context-recovery.js";
+
 export const COMPACTION_RETENTION_INSTRUCTIONS = `Preserve the SDK's default structured checkpoint format. Within its existing sections, always retain the following categories when present; mark missing information as unknown rather than inventing it:
 - Goal: the active user goal, scope, and completion criteria.
 - Constraints & Preferences: explicit user requirements, prohibitions, permissions, and corrections that still apply.
@@ -5,6 +7,7 @@ export const COMPACTION_RETENTION_INSTRUCTIONS = `Preserve the SDK's default str
 - Progress / Done and In Progress: actual changes, affected files, decisions and rationale, and what remains incomplete. Distinguish proposed work from applied changes.
 - Progress / Critical Context: validation commands, observed results, failures, and checks not run; never infer success from a proposed command or an absent error.
 - Blocked / Next Steps: unresolved questions, blockers, and concrete next actions needed to continue.
+Do not copy host-generated blocks into the checkpoint: the <context-recovery> block and the [Context evidence: …] index are re-issued from the session on every compaction, so a copy only adds stale text.
 Preserve all context-evidence:<sha256> references verbatim, including references in earlier summaries, with their associated claim and verification status. A reference alone does not prove a claim; do not invent, rewrite, or expand its contents.
 Treat any supplied summary as candidate notes to verify against the conversation, not as authoritative evidence. Condense redundant exploration without dropping the retained categories or still-applicable user constraints.`;
 
@@ -98,15 +101,29 @@ export function installCompactionInstructions(session: unknown, options?: Compac
 		if (original.length !== 5) return false;
 		const getEvidenceIndex = options?.getEvidenceIndex;
 		const takeProvidedSummary = options?.takeProvidedSummary;
+		const manager = (session as { sessionManager?: { getSessionFile?: unknown } }).sessionManager;
+		/** Recovery needs a persisted transcript to point at. */
+		const canRecover = typeof manager?.getSessionFile === "function";
 
-		const withEvidenceIndex = (result: unknown): unknown | Promise<unknown> => {
-			if (!getEvidenceIndex) return result;
+		/**
+		 * Host-generated enrichment: evidence handles plus the recovery index that makes
+		 * folded turns addressable again. An index failure still rejects (evidence must
+		 * not vanish silently); a missing recovery index just leaves the summary alone.
+		 * With neither source installed the SDK result is returned untouched.
+		 */
+		const withEnrichment = (result: unknown): unknown | Promise<unknown> => {
+			if (!getEvidenceIndex && !canRecover) return result;
 			return Promise.resolve(result).then(async (compaction: unknown) => {
 				if (!compaction || typeof compaction !== "object" || !("summary" in compaction)) return compaction;
 				if (typeof compaction.summary !== "string") return compaction;
-				const index = await getEvidenceIndex();
-				if (!index.trim()) return compaction;
-				return { ...compaction, summary: `${compaction.summary}\n\n${index}` };
+				const [index, recovery] = await Promise.all([
+					getEvidenceIndex ? getEvidenceIndex() : Promise.resolve(""),
+					canRecover ? buildContextRecoveryBlock(session, compaction) : Promise.resolve(""),
+				]);
+				const parts = [index.trim(), recovery.trim()].filter(Boolean);
+				if (!parts.length) return compaction;
+				const base = recovery.trim() ? stripRecoveryBlocks(compaction.summary) : compaction.summary;
+				return { ...compaction, summary: `${base}\n\n${parts.join("\n\n")}` };
 			});
 		};
 
@@ -124,7 +141,7 @@ export function installCompactionInstructions(session: unknown, options?: Compac
 			const provided = takeProvidedSummary?.();
 			if (typeof provided === "string" && provided.trim()) {
 				const summary = provided.trim();
-				return Promise.resolve().then(() => withEvidenceIndex(buildProvidedCompaction(preparation, summary)));
+				return Promise.resolve().then(() => withEnrichment(buildProvidedCompaction(preparation, summary)));
 			}
 			const result = original.call(
 				this,
@@ -137,7 +154,7 @@ export function installCompactionInstructions(session: unknown, options?: Compac
 				reason,
 				...rest,
 			);
-			return withEvidenceIndex(result);
+			return withEnrichment(result);
 		}
 		Object.defineProperty(session, "_runDefaultCompaction", {
 			...(owner === session ? descriptor : { configurable: true, writable: true, enumerable: false }),
