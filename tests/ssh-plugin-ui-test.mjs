@@ -4,7 +4,7 @@ import { waitForStablePage } from "./lib/page-stability.mjs";
 import { startMockSsh, ensurePluginSsh2Dep } from "./lib/mock-ssh.mjs";
 import { chromium } from "playwright-core";
 import { spawn } from "node:child_process";
-import { cpSync, mkdirSync, mkdtempSync, realpathSync, rmSync } from "node:fs";
+import { cpSync, mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { setTimeout as sleep } from "node:timers/promises";
@@ -28,6 +28,12 @@ cpSync(join(REPO, "plugins/vscode-editor/manifest.json"), join(plugDst, "manifes
 cpSync(join(REPO, "plugins/vscode-editor/index.mjs"), join(plugDst, "index.mjs"));
 cpSync(join(REPO, "plugins/vscode-editor/client"), join(plugDst, "client"), { recursive: true });
 ensurePluginSsh2Dep(plugDst, join(REPO, "plugins/vscode-editor"));
+// vscode-editor 在默认 disabledPlugins 里（内置插件默认关闭，要用户在设置里打开）：
+// 这里预先把全局设置写成「已启用」，模拟用户打开过它，否则顶栏插件菜单里根本没有这一行。
+writeFileSync(
+	join(dataDir, "client-state.json"),
+	JSON.stringify({ __settings__: { projects: [], settings: { disabledPlugins: [] } } }),
+);
 
 let server = null;
 let sshServer = null;
@@ -50,11 +56,12 @@ try {
 	await waitForStablePage(page);
 
 	const plugBtn = page.locator('button.chip[aria-haspopup="menu"]').first();
-	await plugBtn.waitFor({ state: "attached", timeout: 15000 }).catch(() => {});
+	// 顶栏插件入口现在走统一 bar-item 层：视口窄时会折叠进「更多功能与布局」溢出菜单，
+	// 插件快照也得等一会儿才到，所以先直接找，找不到就展开溢出菜单再等。
 	if ((await plugBtn.count()) === 0) {
 		await page.locator(".plugin-topbar-more > button").first().click();
-		await plugBtn.waitFor({ state: "attached", timeout: 5000 });
 	}
+	await plugBtn.waitFor({ state: "visible", timeout: 20000 });
 	await plugBtn.click();
 	const row = page.locator(".pm-panel .pm-row-main", { hasText: "编辑器" }).first();
 	await row.waitFor({ timeout: 15000 });
@@ -73,10 +80,13 @@ try {
 	await form.locator('input[name="h-pass"]').fill("secret123");
 	await form.locator(".save-host").click();
 	await page.waitForSelector(".vsc-hrow", { timeout: 8000 });
-	const nm = await page.locator(".vsc-hrow .nm").innerText();
+	// 插件会顺带列出本机 ~/.ssh/config 里的主机，所以必须按 mock-host 定位，不能 .first()
+	const mockRow = page.locator('.vsc-hrow:has(.nm:text-is("mock-host"))').first();
+	await mockRow.waitFor({ state: "visible", timeout: 8000 });
+	const nm = await mockRow.locator(".nm").innerText();
 	check("主机保存后出现在列表", nm.includes("mock-host"), nm);
 
-	await page.locator(".vsc-hrow").first().click();
+	await mockRow.click();
 	await page.waitForSelector('.vsc-sshtree .vsc-row[data-scope^="c"]', { timeout: 25000 });
 	check("连接成功且远端目录树展开", true);
 	const names = await page.locator('.vsc-sshtree .vsc-row[data-scope^="c"] .nm').allInnerTexts();
@@ -125,14 +135,19 @@ try {
 	check("已保存关闭不弹确认框", !dialogFired);
 
 	await page.locator('.vsc-stabs .stab[data-pane="ssh"]').click();
-	await page.locator(".vsc-hrow").first().hover();
-	await page.locator('.vsc-hrow button[data-hop="dis"]').click();
-	await page.waitForSelector(".vsc-empty:not(.vsc-hidden)", { timeout: 8000 }).catch(() => {});
-	const phVisible = await page
-		.locator(".vsc-empty")
-		.isVisible()
-		.catch(() => false);
-	check("断开后回到空视图", phVisible);
+	await mockRow.hover();
+	await mockRow.locator('button[data-hop="dis"]').click();
+	await page
+		.waitForSelector('.vsc-sshtree .vsc-row[data-scope^="c"]', { state: "detached", timeout: 8000 })
+		.catch(() => {});
+	// 断开的语义是「远端树清掉 + 按钮回到 ⇄」；编辑器画布里的 .vsc-empty 是「没开文件」的占位，
+	// 跟连接无关，拿它判断会误报（尤其本机 ~/.ssh/config 还有别的真实主机时）。
+	const backToIdle = await mockRow.locator('button[data-hop="conn"]').count();
+	const treeLeft = await page.locator('.vsc-sshtree .vsc-row[data-scope^="c"]').count();
+	check("断开后回到未连接态（远端树清空、按钮回到连接）", backToIdle > 0 && treeLeft === 0, {
+		backToIdle,
+		treeLeft,
+	});
 
 	await browser.close();
 } catch (err) {
@@ -144,7 +159,16 @@ try {
 		server?.kill("SIGTERM");
 	} catch {}
 	await sleep(400);
-	rmSync(dataDir, { recursive: true, force: true });
+	// Windows 上 mock sshd / 服务端退得慢，临时目录可能还占着：重试几次，别用 EPERM 顶掉整轮结论
+	for (let i = 0; i < 6; i++) {
+		try {
+			rmSync(dataDir, { recursive: true, force: true, maxRetries: 3, retryDelay: 100 });
+			break;
+		} catch (err) {
+			if (i === 5) console.warn(`清理临时目录失败（忽略）: ${err?.code ?? err?.message}`);
+			else await sleep(300);
+		}
+	}
 }
 console.log(failures === 0 ? "\nALL PASS" : `\n${failures} FAILURE(S)`);
 process.exit(failures === 0 ? 0 : 1);

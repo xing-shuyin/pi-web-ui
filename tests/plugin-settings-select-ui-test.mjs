@@ -165,24 +165,26 @@ async function main() {
 
 	check("设置面板打开", await openSettings(page));
 	await page.waitForSelector(".settings-tab", { timeout: 10000 });
-	await tap(page, page.locator(".settings-tab", { hasText: /界面插件|UI plugins/ }).first());
-	await tap(
-		page,
-		page.locator(".smart-tab-pill, .set-subtab", { hasText: /插件列表|Plugin list|安装|Installed/ }).first(),
-	);
+	// 插件设置入口现在是：设置 → 插件 → 安装的插件 → 点行展开 → 「配置项」标签
+	// （旧的「界面插件」页签 + .set-settings-row 折叠行已被 InstalledPluginsPanel 取代）
+	await tap(page, page.locator(".settings-tab", { hasText: /^插件|^Plugins/ }).first());
+	const row = page.locator(".ip-row", { hasText: "Dropdown Test" }).first();
+	check("安装列表里能找到这个插件", await until(async () => (await row.count()) > 0, 40, 250));
+	const pluginItem = page.locator(".ip-item", { hasText: "Dropdown Test" }).first();
+	if (!((await pluginItem.getAttribute("class")) ?? "").includes("open")) await row.click();
 	check(
-		"界面插件配置默认折叠（表单未渲染且存在展开按钮）",
+		"展开后默认落在「概览」，配置表单未渲染（按需）",
 		await until(
 			async () =>
-				(await page.locator(".plugin-settings-form").count()) === 0 &&
-				(await page.locator(".set-settings-row .set-diag-toggle").count()) > 0,
+				(await pluginItem.locator(".ip-body").count()) > 0 &&
+				(await page.locator(".plugin-settings-form").count()) === 0,
 			40,
 			250,
 		),
 	);
-	await tap(page, page.locator(".set-settings-row .set-diag-toggle").first());
+	await tap(page, pluginItem.locator('[data-ip-tab="config"]'));
 	check(
-		"点击展开后，渲染出声明式设置表单",
+		"点「配置项」后渲染出声明式设置表单",
 		await until(async () => (await page.locator(".plugin-settings-form").count()) > 0, 40, 250),
 	);
 

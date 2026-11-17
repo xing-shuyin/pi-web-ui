@@ -8,6 +8,14 @@ import { chromium } from "playwright-core";
 import { CHROME_PATH } from "./lib/chrome.mjs";
 import { freePort } from "./lib/port-utils.mjs";
 
+/**
+ * 插件自定义页（settings.pages / client mount）的挂载口径。
+ *
+ * 入口在 eef1f2973 里换过：旧版把每个 `ui.settings` 页塞进设置面板左侧一级导航
+ * （`plugin-page:*` tab，与「插件」菜单重复），现在统一收进
+ * 设置 → 插件 → 安装的插件 → 点行展开 → 「插件页」标签（`InstalledPluginsPanel` + `PluginPage`）。
+ * 本用例盯的是真正的能力：按需挂载、切走卸载并调 cleanup、切回重新挂载、收起即卸载。
+ */
 const REPO = fileURLToPath(new URL("../", import.meta.url));
 const base = mkdtempSync(join(tmpdir(), "pi-setpage-ui-"));
 const WORK = join(base, "work");
@@ -16,12 +24,12 @@ const PORT = 20000 + Math.floor(Math.random() * 8000);
 mkdirSync(WORK, { recursive: true });
 
 let passed = 0;
-const check = (name, cond) => {
+const check = (name, cond, extra) => {
 	if (cond) {
 		passed++;
 		console.log(`  ✓ ${name}`);
 	} else {
-		console.log(`  ✗ FAIL: ${name}`);
+		console.log(`  ✗ FAIL: ${name}${extra === undefined ? "" : ` — ${JSON.stringify(extra)}`}`);
 		process.exitCode = 1;
 	}
 };
@@ -35,6 +43,7 @@ writeFileSync(
 		version: "0.0.1",
 		view: false,
 		permissions: ["ui"],
+		// 老清单里声明的 settings 页现在已经不占一级导航，但仍必须被接受（不报 manifest 错）
 		ui: {
 			settings: [
 				{ id: "conf", label: "Set Test", labelEn: "Set Test", icon: "🧪", kind: "page" },
@@ -48,7 +57,6 @@ writeFileSync(
 	`export default {
 	mount(container) {
 		globalThis.__setPageMounts = (globalThis.__setPageMounts || 0) + 1;
-		container.dataset.mounts = String(globalThis.__setPageMounts);
 		container.textContent = "SET-PAGE-OK";
 		return () => {
 			globalThis.__setPageCleanups = (globalThis.__setPageCleanups || 0) + 1;
@@ -73,10 +81,6 @@ async function waitServer() {
 	throw new Error("server did not start");
 }
 
-function railTab(page, text) {
-	return page.locator(".settings-tab", { hasText: text }).first();
-}
-
 async function tap(page, locator) {
 	await locator.waitFor({ state: "visible", timeout: 15000 });
 	await locator.scrollIntoViewIfNeeded();
@@ -93,6 +97,13 @@ async function openSettings(page) {
 		.first();
 	for (let attempt = 0; attempt < 6; attempt++) {
 		if ((await page.locator(".settings-modal").count()) > 0) return true;
+		// 设置入口可能被折叠进「更多功能与布局」溢出菜单
+		if ((await btn.count()) === 0)
+			await page
+				.locator(".plugin-topbar-more > button")
+				.first()
+				.click()
+				.catch(() => {});
 		await tap(page, btn).catch(() => {});
 		for (let i = 0; i < 15; i++) {
 			if ((await page.locator(".settings-modal").count()) > 0) return true;
@@ -158,49 +169,63 @@ async function main() {
 	check("设置面板打开", await openSettings(page));
 	await page.waitForSelector(".settings-tab", { timeout: 10000 });
 
-	const appeared = await until(async () => (await railTab(page, "Set Test").count()) > 0, 40, 250);
-	check("manifest 的 settings.pages 条目出现在设置面板导航里", appeared);
-	check("hidden: true 的插件页默认不在导航里", (await railTab(page, "Hidden Page").count()) === 0);
+	const pluginsTab = page.locator(".settings-tab", { hasText: /^插件|^Plugins/ }).first();
+	await tap(page, pluginsTab);
+	check(
+		"插件页分成「安装的插件 / 插件市场」两个分页",
+		(await until(async () => (await page.locator(".smart-tab-pill").count()) >= 2, 40, 250)) &&
+			(await page.locator(".smart-tab-pill", { hasText: /安装的插件|Installed/ }).count()) > 0,
+	);
 
-	await tap(page, railTab(page, "Set Test"));
+	const row = page.locator(".ip-row", { hasText: "Set Page Test" }).first();
+	check("安装列表里有这个插件", await until(async () => (await row.count()) > 0, 40, 250));
+	const pluginBody = page.locator(".ip-item", { hasText: "Set Page Test" }).first();
+	// 列表默认展开第一行；本插件是不是第一行取决于环境，所以按「是否已展开」决定点不点
+	if (!((await pluginBody.getAttribute("class")) ?? "").includes("open")) await row.click();
+
+	check(
+		"展开后默认落在「概览」，插件页还没挂载（按需加载）",
+		await until(
+			async () =>
+				(await pluginBody.locator(".ip-body").count()) > 0 && (await page.locator(".plugin-page-host").count()) === 0,
+			40,
+			250,
+		),
+	);
+
+	await tap(page, pluginBody.locator('[data-ip-tab="page"]'));
 	const mounted = await until(
 		async () =>
 			(await page
-				.locator(".plugin-page-host")
+				.locator(".ip-page-host .plugin-page-host")
 				.first()
 				.textContent()
 				.catch(() => "")) === "SET-PAGE-OK",
 	);
-	check("点开后插件自己的 mount() 渲染到页面画布", mounted);
+	check("点「插件页」后插件自己的 mount() 渲染到画布", mounted);
 
-	await tap(page, page.locator(".settings-tab", { hasText: /系统提示词|System prompt/ }).first());
-	const left = await until(async () => (await page.locator(".plugin-page-host").count()) === 0, 20, 150);
-	check("切走后插件页从 DOM 里卸载", left);
-	const cleanups = await page.evaluate(() => globalThis.__setPageCleanups || 0);
-	check("切走时调用了插件 mount() 返回的 cleanup", cleanups >= 1);
+	await tap(page, pluginBody.locator('[data-ip-tab="config"]'));
+	check(
+		"切到别的标签后插件画布从 DOM 里卸载",
+		await until(async () => (await page.locator(".plugin-page-host").count()) === 0, 20, 150),
+	);
+	check(
+		"切走时调用了插件 mount() 返回的 cleanup",
+		await until(async () => (await page.evaluate(() => globalThis.__setPageCleanups || 0)) >= 1, 20, 150),
+	);
 
-	await tap(page, railTab(page, "Set Test"));
-	const remounted = await until(async () => (await page.evaluate(() => globalThis.__setPageMounts || 0)) >= 2, 40, 150);
-	check("再点回来是重新挂载（不是一直留在 DOM 里）", remounted);
+	await tap(page, pluginBody.locator('[data-ip-tab="page"]'));
+	check(
+		"再点回来是重新挂载（不是一直留在 DOM 里）",
+		await until(async () => (await page.evaluate(() => globalThis.__setPageMounts || 0)) >= 2, 40, 150),
+	);
 
-	await tap(page, page.locator(".settings-tab", { hasText: /界面布局|UI layout/ }).first());
-	const slotRow = page.locator(".set-ui-slot", { hasText: /设置页|Settings pages/ }).first();
-	const pageRow = slotRow.locator(".set-row", { hasText: "Set Test" }).first();
-	const listed = await until(async () => (await pageRow.count()) > 0, 30, 200);
-	check("界面布局页列出了这个插件页（可隐藏/排序）", listed);
-	if (listed) {
-		await tap(page, pageRow.locator('input[type="checkbox"]').first());
-		await until(async () => (await railTab(page, "Set Test").count()) === 0, 20, 200);
-	}
-	check("取消勾选后导航项消失", (await railTab(page, "Set Test").count()) === 0);
-	const activeLabel =
-		(await page
-			.locator(".settings-tab.active")
-			.first()
-			.textContent()
-			.catch(() => "")) ?? "";
-	check("当前分区回落到默认页（不留空白正文）", !activeLabel.includes("Set Test") && activeLabel.trim().length > 0);
-	check("回落后不再挂着插件画布", (await page.locator(".plugin-page-host").count()) === 0);
+	// 收起：行若还展开着就点一下
+	if (((await pluginBody.getAttribute("class")) ?? "").includes("open")) await row.click();
+	check(
+		"收起插件行后画布也卸掉（不留后台画布）",
+		await until(async () => (await page.locator(".plugin-page-host").count()) === 0, 20, 150),
+	);
 
 	check("页面没有 JS 报错", errors.filter((e) => !/favicon|net::ERR/.test(e)).length === 0);
 	if (errors.length)
@@ -230,7 +255,14 @@ try {
 		}
 	}
 	freePort(PORT);
-	rmSync(base, { recursive: true, force: true });
+	for (let i = 0; i < 6; i++) {
+		try {
+			rmSync(base, { recursive: true, force: true, maxRetries: 3, retryDelay: 100 });
+			break;
+		} catch {
+			await sleep(300);
+		}
+	}
 	await sleep(300);
 	process.exit(process.exitCode ?? 0);
 }
