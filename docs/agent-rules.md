@@ -69,6 +69,7 @@
   - 浮层统一使用 `useFloatingPanel`，禁止在 `scroll` 事件中强制关闭浮层（仅重算锚点，通过 mousedown/Escape 关闭）；
   - **叠人式浮层禁写死 z-index**：能盖在另一个浮层之上的浮层（工具详情、文件预览、图片预览、全屏 diff、审批/授权弹窗……）一律用 `web/src/overlay-stack.ts` 的 `useOverlayZIndex()` 取层号，内联 `style.zIndex` 覆盖主题；叠栈从 `var(--z-overlay-stack)`（100000）起、按打开顺序往上排，临时通知固定在 `var(--z-notice)`（100050）永远在最上。**不要再给“比谁高”另挑一个更大的数字**（100001/100005 那类叠上去只会把下一个套娃浮层又盖住）；需要自开 stacking context 的弹窗用 `.overlay-layer` 壳。静态浮层最高 10000（守卫：`tests/unit/overlay-stack.test.ts`）。
   - 侧边停靠栏（`SideDock`）为流内 flex 项目，浮动模式由 `sideDockFloat` 控制，严禁写死 fixed 遮挡侧边按钮。宿主回调一律**整份透传**（`BarHostProps` → `barProps` → `BarItem`），严禁在 `SideDock` 里逐个手抄 `BarItem` 的 props：漏一个的后果就是那条按钮挪进侧栏后画得出来、点下去毫无反应（沙箱 / 打开项目真出过这事，守卫：`tests/unit/side-dock-host-callbacks.test.ts`）。
+- **状态栏三个分区都是 flex 行**：`.statusbar-left` / `.statusbar-center` / `.statusbar-right` 必须同为 `display: flex; align-items: center`，中间组 `flex: 0 0 auto`（窄屏先让左侧状态项裁切，「搜索」这类入口保持完整不被压扁）。中间组一旦退回块级行盒，`align: center` 的入口就在行盒里按基线落位，整体比相邻状态项高半个像素，看着图标与文字都没垂直居中（守卫：`tests/unit/statusbar-center-align.test.ts`）。
 - **输入框上方那条带子属于消息区**：快捷短语行只是浮在它上面，正文从芯片**之间**的缝里透出来（芯片本身是实底小卡片，压在正文上必须压得住字）。带子高度单源在 `.main` 的 `--composer-strip`（= `--composer-pad-top` + ChatInput 实测写入的 `--quick-row-h` + 6px）；改输入区上内边距或短语行留白必须同时顾三处：`.messages-wrap` 的负 margin、`.messages` 的底部留白、以及按容器底缘定位的 `.scroll-bottom` / `.qn-rail`（都要 `+ var(--composer-strip)` 回补），严禁把短语行改回 `position: absolute`（会与药丸/浮标抢同一条带子，折行时必叠）。守卫：`messages-behind-composer.test.ts`。
 - **拖拽与触控交互标准**：
   - 图标编辑与拖拽必须监听 Pointer 事件，严禁使用 HTML5 DnD（移动端触屏不触发）；内置图标须在 `host-icon.tsx` 登记；菜单行文字统一 12.5px（守卫：`host-icon.test.ts`、`topbar-overflow-menu.test.ts`）。
@@ -98,6 +99,7 @@
 - **国际化字面量要求**：`i18n.tsx` 的词条值必须使用字符串字面量（仅允许 `+` 拼接），确保 `scripts/i18n-diff.mjs` 静态解析器正常运行。
 
 - **服务端禁同步子进程调用（`spawnSync` / `execSync` / `execFileSync`）**：这三个 API 在事件循环线程上 fork+exec，并**一直阻塞到子进程结束**。子进程如果卡在 `exec()` 之前（Termux/Android 上实测能稳定复现），主线程就永远停在 spawn 错误管道的 `read()` 上——定时器、socket、`/api/health` 全部停摆，只能靠外部 watchdog 杀进程。异步 `spawn` / `execFile` 不会被拖到子进程结束，`timeout` 也只对异步版有意义（同步版根本回不到超时处理）。两条可行路线：换成异步 spawn + 超时；或者把答案**静态推导**出来（`server/global-loader.ts` 的 npm prefix、`server/dsh/runtime/runtime-root.mjs` 的计算式前缀都是这么改的）。扫描范围包含**插件主进程代码**（`server/plugins.ts` 用 `import()` 把 `plugins/<id>/index.mjs` 载进主进程，与服务器共用事件循环；`bin/`、`assets/`、`build.mjs` 这类独立进程的东西除外）。存量按**次数**登记在守卫的只减不增名单里，新代码请直接走异步或静态推导（守卫：`tests/unit/sync-child-process-guard.test.ts`，来源 `#830`）。
+- **发布出去的 npm 包必须自带 bin 可执行位**：`npm publish <目录>` 内部会重新 `npm pack`，而 Windows 打包机上 fs 没有 x 位，tarball 里的 `bin/` 只有 0644；npm 的 bin 链接只在**新建符号链接**时补 x 位（`bin-links` 的 `fixBin`），链接已存在、目标文件被重新解压时会跳过——用户就 `Permission denied`（`#922`）。所以发布一律走 `npm run release:npm`（= `scripts/pack-npm.mjs`：`npm pack` → 按条目改写 tarball 头的 mode → 复查「声明的 bin 存在 + 有 shebang + 0755」），候选包同样走 `npm run pack:npm`；不要裸 `npm publish`，也不要指望在源码树里 `chmod`（Windows 上不生效、Linux 上又会把权限位交给安装器运气）。单源 `scripts/lib/npm-tarball.mjs`，文档 [`release.md`](release.md)（守卫：`tests/unit/npm-tarball-modes.test.ts`）。
 
 ## 五、其余边界（只在别处维护，见链接）
 

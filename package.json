@@ -70,9 +70,11 @@
 	},
 	"scripts": {
 		"postinstall": "node bin/postinstall.mjs",
-		"prepublishOnly": "npm run build:device-p2p && npm run build:ffmpeg -- --platform=win32-x64 && npm run verify:desktop-codec && npm run build",
+		"prepublishOnly": "npm run build:release",
+		"build:release": "npm run build:device-p2p && npm run build:ffmpeg -- --platform=win32-x64 && npm run verify:desktop-codec && npm run build",
 		"verify:device-p2p": "node scripts/verify-device-p2p.mjs",
-		"pack:p2p": "npm run build:device-p2p && npm run build:ffmpeg -- --platform=win32-x64 && npm run verify:desktop-codec && npm run build && npm run verify:device-p2p && npm pack",
+		"pack:npm": "node scripts/pack-npm.mjs",
+		"pack:p2p": "npm run build:release && npm run verify:device-p2p && node scripts/pack-npm.mjs",
 		"build:device-p2p": "node scripts/build-device-p2p.mjs",
 		"build:ffmpeg": "node scripts/fetch-ffmpeg.mjs",
 		"build:desktop-codec": "node scripts/build-ffmpeg-compat.mjs && node scripts/build-native-desktop-codec.mjs",

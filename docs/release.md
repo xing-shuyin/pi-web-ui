@@ -2,7 +2,7 @@
 
 # 发布流程
 
-> npm 发布者账号是 `xingshuyin`（`npm whoami` 验证）。`dist/server/`、`web/dist/` 被 gitignore 不进 git，但 `package.json` 的 `files` 白名单会把它们打进 npm 包；`dist/` 根目录的本地测试文件与桌面产物不进入 npm 包。`prepublishOnly` 会编译 P2P 助手、检查 Windows 桌面编码组件及其源码和重链接材料，再执行 `npm run build`；服务端构建先清理 `dist/server/`，避免已删除源码的旧输出留在发布包。发布前必须先准备下文所述的 Windows 构建产物。
+> npm 发布者账号是 `xingshuyin`（`npm whoami` 验证）。`dist/server/`、`web/dist/` 被 gitignore 不进 git，但 `package.json` 的 `files` 白名单会把它们打进 npm 包；`dist/` 根目录的本地测试文件与桌面产物不进入 npm 包。`build:release`（也就是 `prepublishOnly`）会编译 P2P 助手、检查 Windows 桌面编码组件及其源码和重链接材料，再执行 `npm run build`；服务端构建先清理 `dist/server/`，避免已删除源码的旧输出留在发布包。发布前必须先准备下文所述的 Windows 构建产物。真正发出去的包由 `scripts/pack-npm.mjs` 打出（`npm pack` → 归一化 bin 可执行位 → 复查），不要裸 `npm publish`。
 
 ## 步骤
 
@@ -53,13 +53,18 @@ node scripts/release-notes.mjs X.Y.Z --base v<上个版本>   # 预览（输出�
 #    若工作流仍不可用，可在本地依赖齐备后手动补发：
 # node scripts/release-notes.mjs X.Y.Z --base v<上个版本> --out /tmp/notes.md --create
 
-# 8) 发布 npm（会自动跑 prepublishOnly 构建）
+# 8) 发布 npm（封装里自带：构建 → 打包归一化 → 带 OTP 发布 → staged 自愈）
 #    账号开了 2FA：用「绕过 2FA 的 granular token」直接 npm publish 会被 registry 降级成
 #    staged 发布（版本几分钟后才落库，期间重试只会 409 Cannot publish over previously
 #    staged version；unpublish / 改 dist-tag 更是直接 403）。走带 OTP 的封装：
-NPM_OTP=123456 npm run release:npm     # 预检脏工作区/账号/tag + 带 OTP 发布 + staged 自愈
-#    等价手工命令：npm publish --otp=123456
-#    只想看会打出什么：npm run release:npm -- --dry-run
+NPM_OTP=123456 npm run release:npm     # 预检脏工作区/账号/tag + 构建 + 打包 + 带 OTP 发布 + staged 自愈
+#    只想看会打出什么（构建 + 打包 + 复查，不上传）：npm run release:npm -- --dry-run
+#    发布重试（复用现有 dist/，不再重复构建）：npm run release:npm -- --skip-build
+#    把待发布 tarball 留在指定目录（可直接喂给 hub 升级验收的 --candidate）：
+#      npm run release:npm -- --out=release/npm
+#    复查已经发出的包：node scripts/pack-npm.mjs --verify-only pi-web-ui-X.Y.Z.tgz
+#    ⚠ 不要裸 npm publish：它会把工作区目录重新打一遍包，Windows 打包机上 bin 脚本的可执行位
+#      又回到 0644，全局安装后 pwu / pi-web-ui 会 `Permission denied`（issue #922）。
 
 # 8.5) 桌面安装包（自动，三平台并行，无需手写）
 #    同一个 tag 也触发 .github/workflows/desktop-release.yml，三个 job 同时跑
@@ -118,6 +123,7 @@ git ls-remote --tags origin       # 应能看到 vX.Y.Z
 - 提交信息不要带 `Co-authored-by`（P1 规则，仓库 hook 会拦）。
 - `.pi/commands.json` 是**每个项目各自**的个人命令（当前 cwd 的 `.pi/ 下），已被 gitignore，永远不会进公开仓库；切换 cwd 时命令列表自动刷新为该项目的命令。
 - CI 绿标守护模式下，必须先完成最终提交的 CI 验证，再展示版本与 Release Notes 请求发布确认；同一次确认涵盖该版本的 tag 推送及 `npm publish`。
+- **npm 包里 bin 入口的可执行位写在 tarball 头里**：npm 的 bin 链接只在「新建符号链接」时补 x 位（`bin-links` 的 `fixBin`），链接已存在而目标文件被重新解压时会跳过，用户拿到 0644 就 `Permission denied`；而 Windows 打包机上 fs 根本没有 x 位，`npm pack` 只能写 0644。所以 `npm run release:npm` / `npm run pack:npm` 在 `npm pack` 之后按条目改写 tarball 头的 mode（`bin/` 下有 shebang 的脚本、linux/darwin 原生助手 → 0755，PE 与许可证之类保持 0644），再复查「声明的 bin 存在 + 有 shebang + 0755」才发布（单源：`scripts/lib/npm-tarball.mjs`，守卫 `npm-tarball-modes.test.ts`）。`bin/` 下没有 shebang 的 `.mjs`（`hub-upgrade.mjs`、`device-hub-cli.mjs`、`frp-manager.mjs`）是被 `node` 拉起的内部入口，不进 `bin` 字段、也不需要 x 位。
 - **升级后的重启**：`npm i -g` 只更新磁盘文件，已运行进程内存里还是旧代码——前端是每次请求实时读盘的（会先变新），但 WS 消息处理是进程内旧逻辑，新旧混跑会表现为「界面是新的、某功能一直加载中」。界面内「立即更新」（顶栏更新下拉）现在是在可见终端 tab 中跑 `npm i -g pi-web-ui@latest`（复用 SCM/插件卸载同款 tab 模式），完成后需手动重启服务生效：`pi-web-ui server restart`（launchd/systemd 由服务管理器拉起；Docker 需 `docker compose restart`）。服务端保留 `PI_WEB_RESTART_CHILD` 端口等待握手（restart-handoff-test 回归），供外部编排的替换子进程使用。
 - **改桌面出包 workflow 先空跑再重推 tag**：`gh workflow run desktop-release.yml --ref main` 先验证三个平台 job 全绿，再重推 tag——重推 tag 会重建并 `--clobber` 覆盖 Release 资产，是正式出包的唯一路径。
 - **发布前检查示例文件不泄密**：`deploy/`、`README` 等随 npm 包（`files` 白名单含 `deploy/`）和 GitHub 分发的文件**绝不放真实 IP / 域名 / 密钥**——用占位符（如 `<LAN_IP>`、`<PUBLIC_IP>:<PUBLIC_PORT>`、`your-host`）。真实环境配置只在本地改，不进仓库。
@@ -126,7 +132,7 @@ git ls-remote --tags origin       # 应能看到 vX.Y.Z
 
 ## P2P npm 候选包
 
-完整候选包通过 `npm run pack:p2p` 生成，需要 Node.js 与 Go ≥1.24。发布者先在 Windows x64 构建机运行 `npm run build:desktop-codec`；如果在 macOS/Linux 打包，须先将该构建机的 `bin/desktop-codec/win32-x64/` 和 `bin/ffmpeg/win32-x64/nvenc-compat/` 一同复制到发布工作区。命令会交叉编译五个平台助手、准备默认 Windows FFmpeg、校验原生组件和材料、构建 Web/服务端并打包。发布前也可单独运行 `npm run verify:desktop-codec`。缺少或篡改必需产物时，`pack:p2p` 和 npm 发布前检查会失败；不要用 `npm pack --ignore-scripts` 绕过检查发布。
+完整候选包通过 `npm run pack:p2p` 生成，需要 Node.js 与 Go ≥1.24。发布者先在 Windows x64 构建机运行 `npm run build:desktop-codec`；如果在 macOS/Linux 打包，须先将该构建机的 `bin/desktop-codec/win32-x64/` 和 `bin/ffmpeg/win32-x64/nvenc-compat/` 一同复制到发布工作区。命令会交叉编译五个平台助手、准备默认 Windows FFmpeg、校验原生组件和材料、构建 Web/服务端，最后走 `scripts/pack-npm.mjs` 打包（与正式发布同一个打包器，所以 Windows 上打出的候选包也带着 linux/darwin 助手的 0755）。发布前也可单独运行 `npm run verify:desktop-codec`。缺少或篡改必需产物时，`pack:p2p` 和 npm 发布前检查会失败；不要用 `npm pack --ignore-scripts` 绕过检查发布。
 
 `bin/device-p2p/` 助手以及 Windows 编码器和重链接材料是生成物，不提交 Git，由 npm 的 `bin/` 文件白名单收录。Windows 桌面安装包的 release workflow 会从源码构建这些组件。源码、许可证与重链接材料随包提供，正式发布前由维护者检查第三方依赖的适用许可要求。
 
