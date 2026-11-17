@@ -40618,7 +40618,6 @@ var b64 = {
   bytes: (b64s) => Uint8Array.from(atob(b64s), (c) => c.charCodeAt(0))
 };
 var shQuote = (s15) => `'${String(s15 ?? "").replace(/'/g, "'\\''")}'`;
-var VSC_LANG_KEY = "vsc-editor-lang";
 var HOST_LANG_KEY = "pi-web-ui:lang";
 var UI_LOCALE_EVENT = "pi-web-ui:locale";
 function normalizeLangTag(v2) {
@@ -40628,34 +40627,23 @@ function normalizeLangTag(v2) {
   if (s15 === "en" || s15.startsWith("en-")) return "en";
   return null;
 }
-function readHostLang() {
+function hostLangRaw() {
   try {
-    return normalizeLangTag(localStorage.getItem(HOST_LANG_KEY));
+    const api = window.__piWebUiHost?.locale;
+    const v2 = typeof api?.current === "function" ? api.current() : "";
+    if (String(v2 ?? "").trim()) return String(v2);
   } catch {
-    return null;
   }
-}
-function hasPluginLangOverride() {
   try {
-    const v2 = localStorage.getItem(VSC_LANG_KEY);
-    return v2 === "zh" || v2 === "en";
+    return localStorage.getItem(HOST_LANG_KEY) ?? "";
   } catch {
-    return false;
+    return "";
   }
 }
 function resolveInitialLang() {
-  try {
-    const saved = localStorage.getItem(VSC_LANG_KEY);
-    if (saved === "zh" || saved === "en") return saved;
-  } catch {
-  }
-  const hostLang = readHostLang();
-  if (hostLang) return hostLang;
-  try {
-    const rawHost = localStorage.getItem(HOST_LANG_KEY);
-    if (rawHost && String(rawHost).trim()) return "en";
-  } catch {
-  }
+  const tag = normalizeLangTag(hostLangRaw());
+  if (tag) return tag;
+  if (String(hostLangRaw()).trim()) return "en";
   try {
     if ((navigator.language || "").toLowerCase().startsWith("en")) return "en";
   } catch {
@@ -40691,7 +40679,6 @@ var STR = {
     saveDirtyTitle: "有未保存的修改 — 保存 (Ctrl+S / Cmd+S)",
     saveReadonlyTitle: "大文件只读，不可保存",
     saveAsTitle: "另存为 (Ctrl+Shift+S / Cmd+Shift+S)",
-    langBtnT: "切换语言 / Switch language",
     emptyMain: "从左侧打开一个文件开始编辑",
     emptyHint: "Ctrl+P 快速打开 · Ctrl+S 保存",
     termTitle: "终端",
@@ -40711,6 +40698,18 @@ var STR = {
     bigReadonlySt: "大文件只读",
     lineCol: "第 {line} 行 · 第 {col} 列",
     closeT: "关闭",
+    tabPin: "固定标签",
+    tabUnpin: "取消固定",
+    tabSplitRight: "向右拆分",
+    tabSplitDown: "向下拆分",
+    tabMovePrevGroup: "移到上一组",
+    tabMoveNextGroup: "移到下一组",
+    tabMergeGroups: "合并分组",
+    tabClose: "关闭标签",
+    tabCloseOthers: "关闭其他标签",
+    tabCloseRight: "关闭右侧标签",
+    splitRightT: "向右拆分编辑器",
+    splitDownT: "向下拆分编辑器",
     connT: "连接",
     disT: "断开",
     editT: "编辑",
@@ -40871,7 +40870,6 @@ var STR = {
     saveDirtyTitle: "Unsaved changes — save (Ctrl+S / Cmd+S)",
     saveReadonlyTitle: "Large file is read-only",
     saveAsTitle: "Save as (Ctrl+Shift+S / Cmd+Shift+S)",
-    langBtnT: "切换语言 / Switch language",
     emptyMain: "Open a file from the left to start editing",
     emptyHint: "Ctrl+P quick open · Ctrl+S save",
     termTitle: "Terminal",
@@ -40891,6 +40889,18 @@ var STR = {
     bigReadonlySt: "Large file read-only",
     lineCol: "Ln {line}, Col {col}",
     closeT: "Close",
+    tabPin: "Pin Tab",
+    tabUnpin: "Unpin Tab",
+    tabSplitRight: "Split Right",
+    tabSplitDown: "Split Down",
+    tabMovePrevGroup: "Move to Previous Group",
+    tabMoveNextGroup: "Move to Next Group",
+    tabMergeGroups: "Merge Groups",
+    tabClose: "Close Tab",
+    tabCloseOthers: "Close Others",
+    tabCloseRight: "Close Tabs to the Right",
+    splitRightT: "Split editor right",
+    splitDownT: "Split editor down",
     connT: "Connect",
     disT: "Disconnect",
     editT: "Edit",
@@ -41029,13 +41039,6 @@ function tr2(key, vars) {
   let s15 = (STR[lang] && STR[lang][key]) ?? STR.zh[key] ?? key;
   if (vars) for (const [k, v2] of Object.entries(vars)) s15 = s15.split(`{${k}}`).join(String(v2));
   return s15;
-}
-function setLang(next) {
-  lang = next === "en" ? "en" : "zh";
-  try {
-    localStorage.setItem(VSC_LANG_KEY, lang);
-  } catch {
-  }
 }
 var THEME_CHANGE_EVENT = "pi-web-ui:theme-change";
 function isLightTheme() {
@@ -41236,22 +41239,42 @@ var client_default = {
 		.vsc-deps button:hover { background: var(--bg-elev2, #20202b); }
 		/* ---- 右侧主区 ---- */
 		.vsc-main { flex: 1; display: flex; flex-direction: column; min-width: 0; }
-		.vsc-tabbar { display: flex; align-items: stretch; border-bottom: 1px solid var(--border, #333);
-			background: var(--bg-elev, #16161d); }
+		.vsc-tabbar { display: flex; align-items: stretch; justify-content: flex-end;
+			border-bottom: 1px solid var(--border, #333); background: var(--bg-elev, #16161d); }
+		/* 编辑组容器：单组时与旧布局一致；多组按 split 树行/列排布 */
+		.vsc-groups { flex: 1; min-width: 0; min-height: 0; display: flex; }
+		/* 单组时组是 .vsc-groups 的直接 flex 子项：必须自己吃掉整行宽度（否则内容宽度塌成 0–200px）。 */
+		.vsc-groups > .vsc-group, .vsc-groups > .vsc-split { flex: 1 1 0; min-width: 0; min-height: 0; }
+		.vsc-split { display: flex; flex: 1 1 0; min-width: 0; min-height: 0; }
+		.vsc-split-row { flex-direction: row; }
+		.vsc-split-column { flex-direction: column; }
+		.vsc-split > * { flex: 1 1 0; min-width: 0; min-height: 0; }
+		.vsc-group { display: flex; flex-direction: column; min-width: 0; min-height: 0; }
+		.vsc-group.drop-target { box-shadow: inset 0 0 0 1px var(--accent, #7c5cff); }
+		.vsc-split-row > .vsc-group + .vsc-group,
+		.vsc-split-row > .vsc-split + .vsc-group,
+		.vsc-split-row > .vsc-group + .vsc-split,
+		.vsc-split-row > .vsc-split + .vsc-split { border-left: 1px solid var(--border, #333); }
+		.vsc-split-column > * + * { border-top: 1px solid var(--border, #333); }
+		.vsc-gtabbar { display: flex; align-items: stretch; min-height: 30px;
+			border-bottom: 1px solid var(--border, #333); background: var(--bg-elev, #16161d); }
+		.vsc-group.active-group .vsc-gtabbar { box-shadow: inset 0 -1px 0 var(--accent, #7c5cff); }
 		.vsc-tabs { flex: 1; display: flex; overflow-x: auto; min-width: 0;
 			background: transparent; scrollbar-width: thin; }
-		.vsc-savebtn, .vsc-saveasbtn, .vsc-langbtn { all: unset; display: inline-flex; align-items: center; gap: 4px; cursor: pointer;
+		.vsc-savebtn, .vsc-saveasbtn, .vsc-splitbtn { all: unset; display: inline-flex; align-items: center; gap: 4px; cursor: pointer;
 			padding: 4px 10px; font-size: 12px; white-space: nowrap; color: var(--text-dim, #9a9ab0);
 			border-left: 1px solid var(--border, #333); }
-		.vsc-savebtn:hover, .vsc-saveasbtn:hover, .vsc-langbtn:hover { background: var(--bg-elev2, #20202b); color: var(--text, #eee); }
+		.vsc-savebtn:hover, .vsc-saveasbtn:hover, .vsc-splitbtn:hover { background: var(--bg-elev2, #20202b); color: var(--text, #eee); }
 		.vsc-savebtn.is-dirty { color: var(--amber, #fbbf24); font-weight: 700; }
 		.vsc-savebtn:disabled, .vsc-saveasbtn:disabled { opacity: .35; cursor: default; }
 		.vsc-tab { display: inline-flex; align-items: center; gap: 6px; padding: 6px 8px 6px 12px;
 			cursor: pointer; border-right: 1px solid var(--border, #333); white-space: nowrap;
 			color: var(--text-dim, #9a9ab0); max-width: 200px; }
+		.vsc-tab.dragging { opacity: .4; }
 		.vsc-tab.active { background: var(--bg, #101016); color: var(--text, #e6e6ef);
 			box-shadow: inset 0 2px 0 var(--accent, #7c5cff); }
 		.vsc-tab .tn { overflow: hidden; text-overflow: ellipsis; }
+		.vsc-tab .pin { font-size: 10px; opacity: .75; }
 		.vsc-tab .dot { color: var(--amber, #fbbf24); }
 		.vsc-tab .x { all: unset; cursor: pointer; padding: 0 3px; border-radius: 4px; opacity: .55; }
 		.vsc-tab .x:hover { opacity: 1; background: var(--bg-elev2, #20202b); }
@@ -41355,6 +41378,9 @@ var client_default = {
 			.vsc-tabs { overflow-x: auto; -webkit-overflow-scrolling: touch; }
 			.vsc-tab { padding: 8px 8px 8px 12px; }
 			.vsc-tab .x { padding: 6px 8px; font-size: 13px; }
+			/* 窄屏分屏：左右拆分自动改上下堆叠，仍可在两组间切换/拖标签 */
+			.vsc-split-row { flex-direction: column; }
+			.vsc-split-row > * + * { border-top: 1px solid var(--border, #333); border-left: none; }
 			.vsc-hrow .ops button { padding: 6px 8px; font-size: 12px; }
 			.vsc-side-head button, .vsc-sect button, .vsc-termbar button { padding: 5px 9px; }
 			/* iOS 聚焦缩放：表单字号提到 16px（CodeMirror 编辑区不动） */
@@ -41415,11 +41441,13 @@ var client_default = {
 			<button class="vsc-burger" title="文件树">☰</button>
 			<span class="vsc-mtitle">文件</span>
 		</div>
-		<div class="vsc-tabbar"><div class="vsc-tabs"></div><button class="vsc-saveasbtn" title="另存为 (Ctrl+Shift+S / Cmd+Shift+S)">💾+</button><button class="vsc-savebtn" title="保存 (Ctrl+S / Cmd+S)">💾 保存</button><button class="vsc-langbtn" title="切换语言 / Switch language">EN</button></div>
-		<div class="vsc-edwrap">
-			<div class="vsc-empty">从左侧打开一个文件开始编辑<br><small>Ctrl+P 快速打开 · Ctrl+S 保存</small></div>
-			<div class="vsc-editor vsc-hidden"></div>
-		</div>
+	<div class="vsc-tabbar">
+		<button class="vsc-splitbtn" data-split="row" title="向右拆分编辑器">◫</button>
+		<button class="vsc-splitbtn" data-split="column" title="向下拆分编辑器">⬓</button>
+		<button class="vsc-saveasbtn" title="另存为 (Ctrl+Shift+S / Cmd+Shift+S)">💾+</button>
+		<button class="vsc-savebtn" title="保存 (Ctrl+S / Cmd+S)">💾 保存</button>
+	</div>
+	<div class="vsc-groups"></div>
 		<div class="vsc-termdrag vsc-hidden"></div>
 		<div class="vsc-termpanel vsc-hidden">
 			<div class="vsc-termbar">
@@ -41472,12 +41500,9 @@ var client_default = {
     const treeEl = root.querySelector(".vsc-tree");
     const hostsEl = root.querySelector(".vsc-hosts");
     const sshTreeEl = root.querySelector(".vsc-sshtree");
-    const tabsEl = root.querySelector(".vsc-tabs");
+    const groupsHost = root.querySelector(".vsc-groups");
     const saveBtnEl = root.querySelector(".vsc-savebtn");
     const saveAsBtnEl = root.querySelector(".vsc-saveasbtn");
-    const langBtnEl = root.querySelector(".vsc-langbtn");
-    const edHost = root.querySelector(".vsc-editor");
-    const emptyEl = root.querySelector(".vsc-empty");
     const stScope = root.querySelector(".vsc-scope");
     const stPath = root.querySelector(".vsc-path");
     const stLang = root.querySelector(".vsc-lang");
@@ -41621,6 +41646,12 @@ var client_default = {
     const flatFiles = /* @__PURE__ */ new Set();
     const tabs = /* @__PURE__ */ new Map();
     let activeTk = null;
+    const groups = /* @__PURE__ */ new Map();
+    let groupSeq = 0;
+    let activeGroupId = null;
+    let layoutRoot = null;
+    let view = null;
+    const pinnedTabs = /* @__PURE__ */ new Set();
     const multiSel = /* @__PURE__ */ new Set();
     function refreshSaveBtn() {
       if (!saveBtnEl) return;
@@ -41635,25 +41666,21 @@ var client_default = {
         saveAsBtnEl.disabled = !tb || !!tb.binary || ro2 || tb.scope !== "local";
         saveAsBtnEl.title = tr2("saveAsTitle");
       }
-      if (langBtnEl) {
-        langBtnEl.textContent = lang === "zh" ? "EN" : "中文";
-        langBtnEl.title = tr2("langBtnT");
-      }
     }
     if (saveBtnEl) saveBtnEl.addEventListener("click", () => void saveActive());
     if (saveAsBtnEl) saveAsBtnEl.addEventListener("click", () => void saveAsActive());
-    if (langBtnEl)
-      langBtnEl.addEventListener("click", () => {
-        setLang(lang === "zh" ? "en" : "zh");
-        applyI18n();
-      });
     const followHostLang = (raw) => {
-      if (hasPluginLangOverride()) return;
-      const mapped = normalizeLangTag(raw);
+      const text = String(raw ?? "").trim();
+      const mapped = text ? normalizeLangTag(text) ?? "en" : null;
       if (!mapped || mapped === lang) return;
       lang = mapped;
       applyI18n();
     };
+    let offHostLocale;
+    try {
+      offHostLocale = window.__piWebUiHost?.locale?.onChange?.(followHostLang);
+    } catch {
+    }
     try {
       window.addEventListener("storage", (ev) => {
         if (ev.key === HOST_LANG_KEY) followHostLang(ev.newValue);
@@ -41717,7 +41744,7 @@ var client_default = {
       if (burger2) burger2.title = tr2("burgerT");
       const mtitle = root.querySelector(".vsc-mtitle");
       if (mtitle) mtitle.textContent = tr2("mobileTitle");
-      if (emptyEl) emptyEl.innerHTML = `${esc(tr2("emptyMain"))}<br><small>${esc(tr2("emptyHint"))}</small>`;
+      for (const g of groups.values()) g.emptyEl.innerHTML = emptyHintHTML();
       const tt = root.querySelector(".vsc-termbar .tt");
       if (tt) tt.textContent = tr2("termTitle");
       const tAdd = root.querySelector(".vsc-termbar .t-add");
@@ -41743,16 +41770,14 @@ var client_default = {
         importCfgEl.textContent = tr2("importCfgB");
         importCfgEl.title = tr2("importCfgT");
       }
+      root.querySelectorAll(".vsc-splitbtn").forEach((b2) => {
+        b2.title = b2.dataset.split === "column" ? tr2("splitDownT") : tr2("splitRightT");
+      });
       refreshSaveBtn();
       renderTabs();
       renderHosts();
       void renderTree();
-      if (activeTk && tabs.has(activeTk)) {
-        try {
-          updateStatus(view.state);
-        } catch {
-        }
-      }
+      if (view) syncStatusForActive();
     }
     const tkey = (scope, p) => `${scope}:${p}`;
     function parseTk(k) {
@@ -41783,7 +41808,8 @@ var client_default = {
     }
     const langComp = new Compartment();
     const themeComp = new Compartment();
-    function makeExtensions() {
+    const roComp = new Compartment();
+    function makeExtensions(g) {
       return [
         lineNumbers(),
         highlightActiveLineGutter(),
@@ -41793,7 +41819,11 @@ var client_default = {
         drawSelection(),
         dropCursor(),
         EditorState.allowMultipleSelections.of(true),
-        EditorState.readOnly.of(!!tabs.get(activeTk)?.readonly),
+        roComp.of([
+          EditorState.readOnly.of(!!tabs.get(g?.active)?.readonly),
+          // 只读文件连 contenteditable 一起关：手机上点进去不会弹键盘（readOnly 本身仍能选中/复制）
+          EditorView.editable.of(!tabs.get(g?.active)?.readonly)
+        ]),
         indentOnInput(),
         indentUnit.of("    "),
         syntaxHighlighting(defaultHighlightStyle, { fallback: true }),
@@ -41839,12 +41869,16 @@ var client_default = {
             ])
           )
         ]),
-        langComp.of(langFor(parseTk(activeTk ?? "local:")?.path ?? "") ?? []),
+        langComp.of(langFor(parseTk(g?.active ?? "local:").path) ?? []),
         themeComp.of(isLightTheme() ? cmLight : oneDark),
         EditorView.updateListener.of((u) => {
-          if (u.docChanged || u.selectionSet) updateStatus(u.state);
+          const g2 = groupOfView(u.view);
+          if (!g2) return;
+          if (u.docChanged || u.selectionSet) {
+            if (g2.id === activeGroupId) updateStatus(u.state);
+          }
           if (u.docChanged) {
-            const t2 = tabs.get(activeTk);
+            const t2 = tabs.get(g2.active);
             if (t2 && !t2.binary && !t2.dirty) {
               t2.dirty = true;
               renderTabs();
@@ -41853,7 +41887,6 @@ var client_default = {
         })
       ];
     }
-    const view = new EditorView({ state: EditorState.create({ extensions: makeExtensions() }), parent: edHost });
     function currentDoc() {
       return view.state.doc.toString();
     }
@@ -41867,6 +41900,363 @@ var client_default = {
         stState.classList.toggle("dirty", !!tb?.dirty || !!tb?.conflict);
       }
       refreshSaveBtn();
+    }
+    const emptyHintHTML = () => `${esc(tr2("emptyMain"))}<br><small>${esc(tr2("emptyHint"))}</small>`;
+    const groupById = (gid) => groups.get(gid) ?? null;
+    const activeGroup = () => groups.get(activeGroupId) ?? [...groups.values()][0] ?? null;
+    function groupOfTab(k) {
+      for (const g of groups.values()) if (g.keys.includes(k)) return g;
+      return null;
+    }
+    function groupOfView(v2) {
+      for (const g of groups.values()) if (g.view === v2) return g;
+      return null;
+    }
+    function flattenGroupIds(node, out = []) {
+      if (!node) return out;
+      if (node.type === "leaf") out.push(node.gid);
+      else for (const child of node.children) flattenGroupIds(child, out);
+      return out;
+    }
+    function insertLeafNode(node, targetGid, dir, newGid) {
+      if (!node) return { type: "leaf", gid: newGid };
+      if (node.type === "leaf") {
+        if (node.gid !== targetGid) return node;
+        return { type: "split", dir, children: [node, { type: "leaf", gid: newGid }] };
+      }
+      if (node.dir === dir) {
+        const idx = node.children.findIndex((c) => c.type === "leaf" && c.gid === targetGid);
+        if (idx >= 0) {
+          const children = [...node.children];
+          children.splice(idx + 1, 0, { type: "leaf", gid: newGid });
+          return { ...node, children };
+        }
+      }
+      return { ...node, children: node.children.map((c) => insertLeafNode(c, targetGid, dir, newGid)) };
+    }
+    function removeLeafNode(node, gid) {
+      if (!node) return null;
+      if (node.type === "leaf") return node.gid === gid ? null : node;
+      const children = node.children.map((c) => removeLeafNode(c, gid)).filter(Boolean);
+      if (!children.length) return null;
+      if (children.length === 1) return children[0];
+      return { ...node, children };
+    }
+    function buildLayoutNode(node) {
+      if (!node) return document.createDocumentFragment();
+      if (node.type === "leaf") {
+        const g = groups.get(node.gid);
+        return g ? g.el : document.createDocumentFragment();
+      }
+      const wrap = document.createElement("div");
+      wrap.className = `vsc-split vsc-split-${node.dir}`;
+      for (const child of node.children) wrap.appendChild(buildLayoutNode(child));
+      return wrap;
+    }
+    function renderLayout() {
+      if (!groupsHost) return;
+      groupsHost.replaceChildren(buildLayoutNode(layoutRoot));
+      setGroupActiveClass();
+      requestAnimationFrame(() => {
+        for (const g of groups.values()) {
+          try {
+            g.view.requestMeasure();
+          } catch {
+          }
+        }
+      });
+    }
+    function setGroupActiveClass() {
+      for (const g of groups.values()) g.el.classList.toggle("active-group", g.id === activeGroupId);
+    }
+    function syncGroupChrome(g) {
+      if (!g) return;
+      g.emptyEl.classList.toggle("vsc-hidden", Boolean(g.active));
+      g.edHost.classList.toggle("vsc-hidden", !g.active);
+    }
+    function clearStatusBar() {
+      stScope.textContent = "";
+      stPath.textContent = "—";
+      stLang.textContent = "";
+      stPos.textContent = "";
+      stState.textContent = "";
+    }
+    function syncStatusForActive() {
+      const g = activeGroup();
+      const t2 = g?.active ? tabs.get(g.active) : null;
+      if (!t2) {
+        clearStatusBar();
+        refreshSaveBtn();
+        return;
+      }
+      stScope.textContent = t2.scope !== "local" ? `🖥 ${connLabel(t2.scope)}` : tr2("localScope");
+      stScope.classList.toggle("remote", t2.scope !== "local");
+      stPath.textContent = t2.path;
+      stLang.textContent = langName(t2.path);
+      updateStatus(g.view.state);
+    }
+    function focusGroup(gid) {
+      const g = groups.get(gid);
+      if (!g) return null;
+      activeGroupId = g.id;
+      view = g.view;
+      activeTk = g.active;
+      setGroupActiveClass();
+      syncGroupChrome(g);
+      syncStatusForActive();
+      return g;
+    }
+    function stashGroupState(g) {
+      if (!g?.active) return;
+      const t2 = tabs.get(g.active);
+      if (t2) t2.state = g.view.state;
+    }
+    function loadGroupActive(g) {
+      const t2 = g?.active ? tabs.get(g.active) : null;
+      if (!t2) {
+        try {
+          g.view.setState(EditorState.create({ extensions: makeExtensions(g) }));
+        } catch {
+        }
+        syncGroupChrome(g);
+        if (g.id === activeGroupId) {
+          activeTk = null;
+          syncStatusForActive();
+        }
+        return;
+      }
+      let state = t2.state;
+      if (!state) state = EditorState.create({ doc: t2.binary ? "" : t2.savedText, extensions: makeExtensions(g) });
+      g.view.setState(state);
+      try {
+        g.view.dispatch({
+          effects: [
+            roComp.reconfigure([EditorState.readOnly.of(!!t2.readonly), EditorView.editable.of(!t2.readonly)]),
+            langComp.reconfigure(langFor(t2.path) ?? [])
+          ]
+        });
+      } catch {
+      }
+      syncGroupChrome(g);
+      if (g.id === activeGroupId) {
+        activeTk = g.active;
+        syncStatusForActive();
+      }
+    }
+    function setGroupTab(g, k, opts = {}) {
+      const t2 = tabs.get(k);
+      if (!g || !t2) return;
+      if (g.active && g.active !== k) stashGroupState(g);
+      g.active = k;
+      if (!g.keys.includes(k)) g.keys.push(k);
+      if (opts.focus) {
+        focusGroup(g.id);
+        loadGroupActive(g);
+      } else loadGroupActive(g);
+    }
+    function createGroup() {
+      const gid = `g${++groupSeq}`;
+      const el2 = document.createElement("div");
+      el2.className = "vsc-group";
+      el2.dataset.gid = gid;
+      const bar = document.createElement("div");
+      bar.className = "vsc-gtabbar";
+      const tabsBox = document.createElement("div");
+      tabsBox.className = "vsc-tabs";
+      bar.appendChild(tabsBox);
+      const wrap = document.createElement("div");
+      wrap.className = "vsc-edwrap";
+      const empty2 = document.createElement("div");
+      empty2.className = "vsc-empty";
+      empty2.innerHTML = emptyHintHTML();
+      const edBox = document.createElement("div");
+      edBox.className = "vsc-editor vsc-hidden";
+      wrap.append(empty2, edBox);
+      el2.append(bar, wrap);
+      const g = { id: gid, keys: [], active: null, el: el2, tabsEl: tabsBox, edHost: edBox, emptyEl: empty2, view: null };
+      g.view = new EditorView({ state: EditorState.create({ extensions: makeExtensions(g) }), parent: edBox });
+      groups.set(gid, g);
+      el2.addEventListener("pointerdown", () => {
+        if (activeGroupId !== g.id) focusGroup(g.id);
+      });
+      g.view.dom.addEventListener("focusin", () => {
+        if (activeGroupId !== g.id) focusGroup(g.id);
+      });
+      return g;
+    }
+    function ensureActiveGroup() {
+      if (groups.has(activeGroupId)) return groups.get(activeGroupId);
+      const first = [...groups.values()][0];
+      if (!first) return null;
+      return focusGroup(first.id);
+    }
+    function removeGroupEl(gid) {
+      const g = groups.get(gid);
+      if (!g || groups.size <= 1) return;
+      groups.delete(gid);
+      layoutRoot = removeLeafNode(layoutRoot, gid);
+      try {
+        g.view.destroy();
+      } catch {
+      }
+      g.el.remove();
+      if (activeGroupId === gid) activeGroupId = [...groups.keys()][0] ?? null;
+      renderLayout();
+      renderTabs();
+      ensureActiveGroup();
+    }
+    function adjacentGroup(gid, delta) {
+      const order = flattenGroupIds(layoutRoot);
+      const idx = order.indexOf(gid);
+      if (idx < 0) return null;
+      const target = order[idx + delta];
+      return target ? groups.get(target) ?? null : null;
+    }
+    function splitGroup(gid, dir, key) {
+      const src = groups.get(gid) ?? activeGroup();
+      if (!src) return;
+      const tabKey = key ?? src.active;
+      const t2 = tabKey ? tabs.get(tabKey) : null;
+      const g = createGroup();
+      layoutRoot = insertLeafNode(layoutRoot, src.id, dir, g.id);
+      if (t2 && tabKey) {
+        if (src.active === tabKey) stashGroupState(src);
+        const idx = src.keys.indexOf(tabKey);
+        if (idx >= 0) src.keys.splice(idx, 1);
+        g.keys.push(tabKey);
+        const wasActive = src.active === tabKey;
+        if (wasActive) src.active = src.keys[Math.min(idx, src.keys.length - 1)] ?? null;
+        if (wasActive) loadGroupActive(src);
+        g.active = tabKey;
+      }
+      renderLayout();
+      syncGroupChrome(src);
+      focusGroup(g.id);
+      loadGroupActive(g);
+      renderTabs();
+    }
+    function mergeGroup(gid) {
+      const g = groups.get(gid);
+      if (!g || groups.size <= 1) return;
+      const target = adjacentGroup(gid, 1) ?? adjacentGroup(gid, -1);
+      if (!target) return;
+      if (g.active) stashGroupState(g);
+      for (const k of [...g.keys]) {
+        if (!target.keys.includes(k)) target.keys.push(k);
+      }
+      if (g.active) target.active = g.active;
+      g.keys = [];
+      g.active = null;
+      groups.delete(gid);
+      layoutRoot = removeLeafNode(layoutRoot, gid);
+      try {
+        g.view.destroy();
+      } catch {
+      }
+      g.el.remove();
+      activeGroupId = target.id;
+      renderLayout();
+      focusGroup(target.id);
+      loadGroupActive(target);
+      renderTabs();
+    }
+    function dropTabKey(k) {
+      tabs.delete(k);
+      pinnedTabs.delete(k);
+      const g = groupOfTab(k);
+      if (!g) return;
+      const idx = g.keys.indexOf(k);
+      if (idx >= 0) g.keys.splice(idx, 1);
+      if (g.active !== k) return;
+      g.active = g.keys[Math.min(idx, g.keys.length - 1)] ?? null;
+      loadGroupActive(g);
+      if (!g.keys.length && groups.size > 1) removeGroupEl(g.id);
+    }
+    function tabDropIndex(box, clientX) {
+      const kids = Array.from(box.querySelectorAll(".vsc-tab"));
+      for (let i = 0; i < kids.length; i++) {
+        const r = kids[i].getBoundingClientRect();
+        if (clientX < r.left + r.width / 2) return i;
+      }
+      return kids.length;
+    }
+    function moveTabToGroup(key, gid, index) {
+      const from = groupOfTab(key);
+      const to = groups.get(gid);
+      if (!from || !to) return;
+      const same = from.id === to.id;
+      const pos = from.keys.indexOf(key);
+      if (pos < 0) return;
+      if (!same && from.active === key) stashGroupState(from);
+      from.keys.splice(pos, 1);
+      let at2 = Number.isFinite(index) ? Math.max(0, Math.min(Number(index), to.keys.length)) : to.keys.length;
+      if (same && pos < at2) at2 -= 1;
+      to.keys.splice(Math.max(0, Math.min(at2, to.keys.length)), 0, key);
+      if (same) {
+        renderTabs();
+        return;
+      }
+      const wasActive = from.active === key;
+      if (wasActive) from.active = from.keys[Math.min(pos, from.keys.length - 1)] ?? null;
+      loadGroupActive(from);
+      setGroupTab(to, key, { focus: true });
+      if (!from.keys.length && groups.size > 1) removeGroupEl(from.id);
+      renderTabs();
+    }
+    function moveTabAdjacent(key, delta) {
+      const from = groupOfTab(key);
+      if (!from) return;
+      const target = adjacentGroup(from.id, delta);
+      if (!target) return;
+      moveTabToGroup(key, target.id, target.keys.length);
+    }
+    function toggleTabPin(key) {
+      const g = groupOfTab(key);
+      const pinned = !pinnedTabs.has(key);
+      if (pinned) pinnedTabs.add(key);
+      else pinnedTabs.delete(key);
+      if (g) {
+        const idx = g.keys.indexOf(key);
+        if (idx >= 0) g.keys.splice(idx, 1);
+        if (pinned) g.keys.unshift(key);
+        else g.keys.push(key);
+      }
+      renderTabs();
+    }
+    function closeOtherTabs(key) {
+      const g = groupOfTab(key);
+      if (!g) return;
+      const keys2 = g.keys.filter((k) => k !== key);
+      let blocked = false;
+      for (const k of keys2) {
+        const t2 = tabs.get(k);
+        if (t2?.dirty && !confirm(tr2("confirmClose", { name: t2.name }))) {
+          blocked = true;
+          continue;
+        }
+        dropTabKey(k);
+      }
+      if (!blocked) awaitActivate(key);
+      renderTabs();
+    }
+    function closeTabsToRight(key) {
+      const g = groupOfTab(key);
+      if (!g) return;
+      const idx = g.keys.indexOf(key);
+      if (idx < 0) return;
+      for (const k of g.keys.slice(idx + 1)) {
+        const t2 = tabs.get(k);
+        if (t2?.dirty && !confirm(tr2("confirmClose", { name: t2.name }))) continue;
+        dropTabKey(k);
+      }
+      awaitActivate(key);
+      renderTabs();
+    }
+    function awaitActivate(key) {
+      const g = groupOfTab(key);
+      if (!g) return;
+      setGroupTab(g, key, { focus: true });
+      renderTreeHighlight();
     }
     async function ensureDir(scope, dirWire) {
       const key = tkey(scope, dirWire ?? "");
@@ -42254,20 +42644,157 @@ var client_default = {
         )
       );
     }
+    let suppressTabClickAt = 0;
+    function beginTabPointerDrag(ev, key, el2) {
+      if (ev.button !== 0 || ev.pointerType === "touch") return;
+      let dropGroup = null;
+      let dropIndex = null;
+      const press = { pointerId: ev.pointerId, active: false, moved: false };
+      const clearTarget = () => {
+        if (dropGroup) dropGroup.classList.remove("drop-target");
+        dropGroup = null;
+        dropIndex = null;
+      };
+      const onMove = (e) => {
+        if (e.pointerId !== press.pointerId) return;
+        if (!press.active) {
+          if (Math.hypot(e.clientX - ev.clientX, e.clientY - ev.clientY) < 6) return;
+          press.active = true;
+          el2.classList.add("dragging");
+        }
+        press.moved = true;
+        e.preventDefault();
+        const groupEl = document.elementFromPoint(e.clientX, e.clientY)?.closest?.(".vsc-group");
+        if (groupEl && groupEl !== dropGroup) {
+          clearTarget();
+          dropGroup = groupEl;
+          groupEl.classList.add("drop-target");
+        }
+        if (groupEl) {
+          const box = groupEl.querySelector(".vsc-tabs");
+          if (box) {
+            const r = box.getBoundingClientRect();
+            const overBar = e.clientY >= r.top && e.clientY <= r.bottom && e.clientX >= r.left && e.clientX <= r.right;
+            dropIndex = overBar ? tabDropIndex(box, e.clientX) : null;
+          }
+        }
+      };
+      const finish = (commit) => {
+        window.removeEventListener("pointermove", onMove);
+        window.removeEventListener("pointerup", onUp);
+        window.removeEventListener("pointercancel", onCancel);
+        el2.classList.remove("dragging");
+        clearTarget();
+        if (!commit || !press.active || !press.moved) return;
+        suppressTabClickAt = Date.now();
+        window.setTimeout(() => {
+          suppressTabClickAt = 0;
+        }, 50);
+      };
+      const onUp = (e) => {
+        if (e.pointerId !== press.pointerId) return;
+        const groupEl = dropGroup;
+        const index = dropIndex;
+        finish(true);
+        if (!groupEl || !press.moved) return;
+        const gid = groupEl.dataset.gid;
+        const target = gid ? groups.get(gid) : null;
+        if (!target) return;
+        moveTabToGroup(key, target.id, index ?? target.keys.length);
+      };
+      const onCancel = (e) => {
+        if (e.pointerId !== press.pointerId) return;
+        finish(false);
+      };
+      window.addEventListener("pointermove", onMove, { passive: false });
+      window.addEventListener("pointerup", onUp);
+      window.addEventListener("pointercancel", onCancel);
+    }
     function renderTabs() {
-      tabsEl.innerHTML = "";
-      for (const [k, t2] of tabs.entries()) {
-        const el2 = document.createElement("div");
-        el2.className = "vsc-tab" + (k === activeTk ? " active" : "");
-        el2.innerHTML = `<span>${t2.scope !== "local" ? "🖥" : iconFor(t2.name, "file")}</span><span class="tn">${esc(t2.name)}</span>` + (t2.conflict ? '<span class="dot">⚠</span>' : "") + (t2.dirty ? '<span class="dot">●</span>' : "") + `<button class="x" title="${tr2("closeT")}">✕</button>`;
-        el2.addEventListener("click", (ev) => {
-          if (ev.target.closest(".x")) return;
-          void activateTab(k);
-        });
-        el2.querySelector(".x").addEventListener("click", () => void closeTab(k));
-        tabsEl.appendChild(el2);
+      for (const g of groups.values()) {
+        const box = g.tabsEl;
+        box.innerHTML = "";
+        const keys2 = [...g.keys].sort((a, b2) => Number(pinnedTabs.has(b2)) - Number(pinnedTabs.has(a)));
+        for (const k of keys2) {
+          const t2 = tabs.get(k);
+          if (!t2) continue;
+          const pinned = pinnedTabs.has(k);
+          const el2 = document.createElement("div");
+          el2.className = "vsc-tab" + (k === g.active ? " active" : "") + (pinned ? " pinned" : "");
+          el2.dataset.key = k;
+          el2.innerHTML = `<span>${t2.scope !== "local" ? "🖥" : iconFor(t2.name, "file")}</span><span class="tn">${esc(t2.name)}</span>` + (pinned ? '<span class="pin">📌</span>' : "") + (t2.conflict ? '<span class="dot">⚠</span>' : "") + (t2.dirty ? '<span class="dot">●</span>' : "") + `<button class="x" title="${tr2("closeT")}">✕</button>`;
+          el2.addEventListener("pointerdown", (ev) => beginTabPointerDrag(ev, k, el2));
+          el2.addEventListener("click", (ev) => {
+            if (ev.target.closest(".x")) return;
+            if (suppressTabClickAt) {
+              suppressTabClickAt = 0;
+              ev.preventDefault();
+              ev.stopPropagation();
+              return;
+            }
+            void activateTab(k);
+          });
+          el2.querySelector(".x").addEventListener("click", (ev) => {
+            ev.stopPropagation();
+            void closeTab(k);
+          });
+          el2.addEventListener("contextmenu", (ev) => {
+            ev.preventDefault();
+            ev.stopPropagation();
+            showTabContextMenu(ev.clientX, ev.clientY, k);
+          });
+          armTabLongPress(el2, k);
+          box.appendChild(el2);
+        }
       }
       refreshSaveBtn();
+    }
+    function armTabLongPress(el2, key) {
+      let timer = null;
+      let origin = null;
+      const cancel = () => {
+        if (timer) {
+          clearTimeout(timer);
+          timer = null;
+        }
+      };
+      el2.addEventListener("pointerdown", (ev) => {
+        if (ev.pointerType === "mouse") return;
+        origin = { x: ev.clientX, y: ev.clientY };
+        cancel();
+        timer = setTimeout(() => {
+          timer = null;
+          showTabContextMenu(origin.x, origin.y, key);
+        }, 520);
+      });
+      el2.addEventListener("pointermove", (ev) => {
+        if (!origin) return;
+        if (Math.hypot(ev.clientX - origin.x, ev.clientY - origin.y) > 10) cancel();
+      });
+      for (const type of ["pointerup", "pointercancel", "pointerleave"]) el2.addEventListener(type, cancel);
+    }
+    function showTabContextMenu(x, y, k) {
+      const t2 = tabs.get(k);
+      const g = groupOfTab(k);
+      if (!t2 || !g) return;
+      const pinned = pinnedTabs.has(k);
+      const idx = g.keys.indexOf(k);
+      const items = [
+        [pinned ? tr2("tabUnpin") : tr2("tabPin"), () => toggleTabPin(k)],
+        [tr2("tabSplitRight"), () => splitGroup(g.id, "row", k)],
+        [tr2("tabSplitDown"), () => splitGroup(g.id, "column", k)]
+      ];
+      if (groups.size > 1) {
+        items.push(
+          [tr2("tabMovePrevGroup"), () => moveTabAdjacent(k, -1)],
+          [tr2("tabMoveNextGroup"), () => moveTabAdjacent(k, 1)],
+          [tr2("tabMergeGroups"), () => mergeGroup(g.id)]
+        );
+      }
+      items.push([tr2("tabClose"), () => void closeTab(k)]);
+      items.push([tr2("tabCloseOthers"), () => closeOtherTabs(k)]);
+      if (idx >= 0 && idx < g.keys.length - 1) items.push([tr2("tabCloseRight"), () => closeTabsToRight(k)]);
+      showMenuItems(x, y, items);
     }
     async function openFile(scope, p) {
       closeDrawer();
@@ -42299,6 +42826,8 @@ var client_default = {
           savedMtime: r.mtimeMs ?? 0,
           crlf: (r.text ?? "").includes("\r\n")
         });
+        const g = activeGroup() ?? ensureActiveGroup();
+        if (g) g.keys.push(k);
         if (r.binary) toast(tr2("binaryNo"));
         else if (readonly) toast(tr2("bigReadonly"));
       }
@@ -42307,28 +42836,20 @@ var client_default = {
     async function activateTab(k) {
       const t2 = tabs.get(k);
       if (!t2) return;
-      if (activeTk && activeTk !== k) {
-        const cur2 = tabs.get(activeTk);
+      let g = groupOfTab(k);
+      if (!g) {
+        g = activeGroup() ?? ensureActiveGroup();
+        if (!g) return;
+        g.keys.push(k);
+      }
+      if (g.active && g.active !== k) {
+        const cur2 = tabs.get(g.active);
         if (cur2 && cur2.dirty && !confirm(tr2("confirmSwitch", { name: cur2.name }))) return;
       }
-      activeTk = k;
-      emptyEl.classList.add("vsc-hidden");
-      edHost.classList.remove("vsc-hidden");
-      view.setState(
-        EditorState.create({
-          doc: t2.binary ? "" : t2.savedText,
-          extensions: makeExtensions()
-        })
-      );
-      t2.dirty = false;
-      view.dispatch({ effects: langComp.reconfigure(langFor(t2.path) ?? []) });
-      stScope.textContent = t2.scope !== "local" ? `🖥 ${connLabel(t2.scope)}` : tr2("localScope");
-      stScope.classList.toggle("remote", t2.scope !== "local");
-      stPath.textContent = t2.path;
-      stLang.textContent = langName(t2.path);
+      focusGroup(g.id);
+      setGroupTab(g, k, { focus: true });
       renderTabs();
       renderTreeHighlight();
-      updateStatus(view.state);
       view.focus();
     }
     async function saveActive() {
@@ -42394,41 +42915,29 @@ var client_default = {
     }
     async function closeTab(k) {
       const t2 = tabs.get(k);
-      if (t2 && t2.dirty && !confirm(tr2("confirmClose", { name: t2.name }))) return;
-      tabs.delete(k);
-      if (activeTk === k) {
-        activeTk = null;
-        if (tabs.size) await activateTab([...tabs.keys()].pop());
-        else {
-          emptyEl.classList.remove("vsc-hidden");
-          edHost.classList.add("vsc-hidden");
-          stScope.textContent = "";
-          stPath.textContent = "—";
-          stLang.textContent = "";
-          stPos.textContent = "";
-          stState.textContent = "";
-          renderTabs();
-        }
-      } else renderTabs();
+      if (!t2) return;
+      if (t2.dirty && !confirm(tr2("confirmClose", { name: t2.name }))) return;
+      const g = groupOfTab(k);
+      const wasActive = g?.active === k;
+      const idx = g ? g.keys.indexOf(k) : -1;
+      const next = g ? g.keys[idx + 1] ?? g.keys[idx - 1] ?? null : null;
+      dropTabKey(k);
+      renderTabs();
+      if (wasActive && next && tabs.has(next)) await activateTab(next);
+      else {
+        ensureActiveGroup();
+        syncStatusForActive();
+      }
+      renderTreeHighlight();
     }
     function closeTabsOfScope(scope) {
       for (const k of [...tabs.keys()]) {
-        if (parseTk(k).scope === scope) tabs.delete(k);
+        if (parseTk(k).scope === scope) dropTabKey(k);
       }
-      if (activeTk && parseTk(activeTk).scope === scope) {
-        activeTk = null;
-        if (tabs.size) void activateTab([...tabs.keys()].pop());
-        else {
-          emptyEl.classList.remove("vsc-hidden");
-          edHost.classList.add("vsc-hidden");
-          stScope.textContent = "";
-          stPath.textContent = "—";
-          stLang.textContent = "";
-          stPos.textContent = "";
-          stState.textContent = "";
-        }
-      }
+      ensureActiveGroup();
       renderTabs();
+      syncStatusForActive();
+      renderTreeHighlight();
     }
     async function applyWorkspace(newRoot) {
       dirCache.clear();
@@ -42513,6 +43022,8 @@ var client_default = {
         renderQuick();
         ev.preventDefault();
       } else if (ev.key === "Enter" && ms2[quickSel] && ms2[quickSel].type !== "dir") {
+        ev.preventDefault();
+        ev.stopPropagation();
         const t2 = ms2[quickSel];
         closeQuickOpen();
         void openFile(t2.scope, t2.path);
@@ -42632,6 +43143,26 @@ var client_default = {
       const s15 = dir.replace(/\/$/, "");
       const idx = s15.lastIndexOf("/");
       return idx <= 0 ? "/" : s15.slice(0, idx);
+    }
+    let menuOpenedAt = 0;
+    function showMenuItems(x, y, items) {
+      menuEl.innerHTML = "";
+      for (const [label, fn2] of items) {
+        const b2 = document.createElement("button");
+        b2.textContent = label;
+        if (!fn2) b2.className = "dim";
+        else
+          b2.addEventListener("click", () => {
+            hideMenu();
+            void fn2();
+          });
+        menuEl.appendChild(b2);
+      }
+      menuEl.classList.remove("vsc-hidden");
+      menuOpenedAt = Date.now();
+      const rect = root.getBoundingClientRect();
+      menuEl.style.left = `${Math.min(x - rect.left, Math.max(0, rect.width - 170))}px`;
+      menuEl.style.top = `${Math.min(y - rect.top, Math.max(0, rect.height - items.length * 32 - 20))}px`;
     }
     function showMenu(x, y, scope, pathW, type) {
       menuEl.innerHTML = "";
@@ -42760,26 +43291,16 @@ var client_default = {
           }
         ]);
       }
-      for (const [label, fn2] of items) {
-        const b2 = document.createElement("button");
-        b2.textContent = label;
-        if (!fn2) b2.className = "dim";
-        else
-          b2.addEventListener("click", () => {
-            hideMenu();
-            void fn2();
-          });
-        menuEl.appendChild(b2);
-      }
-      menuEl.classList.remove("vsc-hidden");
-      const rect = root.getBoundingClientRect();
-      menuEl.style.left = `${Math.min(x - rect.left, rect.width - 170)}px`;
-      menuEl.style.top = `${Math.min(y - rect.top, rect.height - items.length * 32 - 20)}px`;
+      showMenuItems(x, y, items);
     }
     function hideMenu() {
       menuEl.classList.add("vsc-hidden");
     }
-    document.addEventListener("click", hideMenu);
+    const onDocClick = () => {
+      if (Date.now() - menuOpenedAt < 350) return;
+      hideMenu();
+    };
+    document.addEventListener("click", onDocClick);
     async function invalidateScope(scope) {
       for (const key of [...dirCache.keys()]) {
         if (key.startsWith(`${scope}:`)) dirCache.delete(key);
@@ -42824,6 +43345,7 @@ var client_default = {
             t2.crlf = r.text.includes("\r\n");
             t2.dirty = false;
             t2.conflict = false;
+            delete t2.state;
           }
           t2.savedSize = r.size;
           t2.savedMtime = r.mtimeMs;
@@ -43438,9 +43960,11 @@ var client_default = {
       else hideTermPanel();
     }
     function onThemeChange() {
-      try {
-        view.dispatch({ effects: themeComp.reconfigure(isLightTheme() ? cmLight : oneDark) });
-      } catch {
+      for (const g of groups.values()) {
+        try {
+          g.view.dispatch({ effects: themeComp.reconfigure(isLightTheme() ? cmLight : oneDark) });
+        } catch {
+        }
       }
       const th = buildTermTheme();
       for (const [, t2] of terms.entries()) {
@@ -43729,6 +44253,18 @@ var client_default = {
       }
       return { connId: first, dir: conns.get(first).cwd };
     }
+    const firstGroup = createGroup();
+    layoutRoot = { type: "leaf", gid: firstGroup.id };
+    activeGroupId = firstGroup.id;
+    renderLayout();
+    focusGroup(firstGroup.id);
+    renderTabs();
+    for (const btn of root.querySelectorAll(".vsc-splitbtn")) {
+      btn.addEventListener("click", () => {
+        const g = activeGroup();
+        if (g) splitGroup(g.id, btn.dataset.split === "column" ? "column" : "row");
+      });
+    }
     switchPane("files");
     void request({ action: "state" }).then((r) => {
       if (r.ok && r.state) applyState(r.state);
@@ -43737,8 +44273,9 @@ var client_default = {
     return () => {
       container.ownerDocument.removeEventListener("keydown", onGlobalKey, true);
       window.removeEventListener("beforeunload", onBeforeUnload);
-      document.removeEventListener("click", hideMenu);
+      document.removeEventListener("click", onDocClick);
       window.removeEventListener(THEME_CHANGE_EVENT, onThemeChange);
+      if (typeof offHostLocale === "function") offHostLocale();
       for (const [, t2] of terms.entries()) {
         try {
           t2.ro?.disconnect();
@@ -43751,7 +44288,13 @@ var client_default = {
       }
       terms.clear();
       offData();
-      view.destroy();
+      for (const g of groups.values()) {
+        try {
+          g.view.destroy();
+        } catch {
+        }
+      }
+      groups.clear();
       root.remove();
     };
   }

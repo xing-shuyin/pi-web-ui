@@ -1107,7 +1107,7 @@ export default {
 					sshDeps.mod = m.default ?? m;
 					sshDeps.ok = true;
 				} catch {
-					host.notify("info", SLX(uiLang, "installingDeps"));
+					host.notify("info", LS.zh.installingDeps, LS.en.installingDeps);
 					let cli = null;
 					try {
 						cli = createRequire(import.meta.url).resolve("npm/bin/npm-cli.js");
@@ -1128,7 +1128,11 @@ export default {
 								sshDeps.ok = true;
 							} catch {}
 						}
-						host.notify(sshDeps.ok ? "success" : "error", sshDeps.ok ? SLX(uiLang, "depsOk") : SLX(uiLang, "depsFail"));
+						host.notify(
+							sshDeps.ok ? "success" : "error",
+							sshDeps.ok ? LS.zh.depsOk : LS.zh.depsFail,
+							sshDeps.ok ? LS.en.depsOk : LS.en.depsFail,
+						);
 						for (const w of sshDeps.waiters.splice(0)) w(sshDeps.ok ? sshDeps.mod : null);
 						broadcastSshState();
 						res(sshDeps.ok ? sshDeps.mod : null);

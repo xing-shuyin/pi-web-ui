@@ -10167,10 +10167,26 @@
 		flex: 1 1 auto;
 		min-width: 0;
 		flex-wrap: wrap;
+		/* 顶栏标签拖拽换位用 Pointer 事件：横向手势留给拖拽，竖向仍可滚动 */
+		touch-action: pan-y;
 	}
 
 	.topbar-flow > :not(.tb-spacer) {
 		flex-shrink: 0;
+	}
+
+	/* 顶栏标签拖拽换位：源半透明、落点前后画一条强调线（换位本身写入 uiLayout.order） */
+	.topbar-flow.tb-reordering {
+		cursor: grabbing;
+	}
+	.topbar-flow .tb-dragging {
+		opacity: 0.4;
+	}
+	.topbar-flow .tb-drop-before {
+		box-shadow: inset 2px 0 0 var(--accent, #7c5cff);
+	}
+	.topbar-flow .tb-drop-after {
+		box-shadow: inset -2px 0 0 var(--accent, #7c5cff);
 	}
 
 	.tb-spacer {

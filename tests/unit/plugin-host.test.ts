@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { resolveNewChatResult } from "../../web/src/new-chat-request";
 import {
 	createPluginHostApi,
+	emitPluginHostLocale,
 	emitPluginHostModel,
 	PLUGIN_HOST_API_VERSION,
 	type PluginHostSessionInfo,
@@ -436,8 +437,20 @@ describe("openModal/closeModal（宿主 API v10，modal.dialog 槽位）", () =>
 		expect(throwing.api.openModal("plugin:x")).toBe(false);
 		expect(throwing.api.closeModal()).toBe(true);
 	});
-	it("宿主 API 版本已升到 v18（底栏状态槽自带跟随浮层内容渲染）", () => {
-		expect(PLUGIN_HOST_API_VERSION).toBe(18);
+	it("宿主 API 版本已升到 v19（宿主语言 locale API）", () => {
+		expect(PLUGIN_HOST_API_VERSION).toBe(19);
+	});
+	it("locale.current 读宿主全局语言，locale.onChange 随切换触发", () => {
+		const h = harness({ getLocale: () => "en" });
+		expect(h.api.locale.current()).toBe("en");
+		expect(h.api.onLocale).toBeTypeOf("function");
+		const seen: string[] = [];
+		const off = h.api.locale.onChange((v) => seen.push(v));
+		emitPluginHostLocale("zh-Hant");
+		expect(seen).toEqual(["zh-Hant"]);
+		off();
+		emitPluginHostLocale("ja");
+		expect(seen).toEqual(["zh-Hant"]);
 	});
 	it("pickDirectory 与 pickModel 转发调用到 deps", async () => {
 		const h = harness({

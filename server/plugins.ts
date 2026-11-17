@@ -1684,7 +1684,7 @@ export class PluginManager {
 			this.notifyAll(
 				perms.length ? "warning" : "info",
 				`插件「${info.name}」已激活（${prev ? "能力清单变更" : "首次安装"}；声明能力：${list}）——请确认来源可信`,
-				`Plugin "${info.name}" activated (${prev ? "capability list changed" : "first install"}; declared: ${list}) — verify the source is trusted`,
+				`Plugin "${info.nameEn || info.name}" activated (${prev ? "capability list changed" : "first install"}; declared: ${list}) — verify the source is trusted`,
 			);
 			// 状态目录可能还没建（新装/刚迁移），原子写自带 mkdir；直接 writeFileSync 会 ENOENT 且每次都重报
 			writeJsonAtomicSync(markerFile, { v: 1, key, perms });

@@ -1,4 +1,13 @@
-import { Fragment, useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
+import {
+	Fragment,
+	useEffect,
+	useLayoutEffect,
+	useRef,
+	useState,
+	type MouseEvent as ReactMouseEvent,
+	type PointerEvent as ReactPointerEvent,
+	type ReactNode,
+} from "react";
 import { createPortal } from "react-dom";
 import { BrandDeviceMenu } from "./BrandDeviceMenu";
 import {
@@ -38,6 +47,7 @@ import type { ViewName } from "./BarItem";
 import { BrowserControl, BrowserControlModal } from "./BrowserControl";
 import { BROWSER_PAGE_TOOL_NAME } from "../../../server/tool-manager.js";
 import { PluginIcon } from "../plugin-icon";
+import { pluginDisplayName } from "../plugin-name";
 import { formatCostDisplay } from "../cost-format";
 import { isZhLocale, useI18n, localeShort } from "../i18n";
 import {
@@ -50,6 +60,7 @@ import {
 	type UiSlotId,
 } from "../ui-slots";
 import { fitTopbar, MOBILE_ASIDE_TOPBAR_IDS, sortOverflowMenuItems } from "../topbar-fit";
+import { applyIconDrop } from "../ui-layout-edit";
 import { openContextMenu } from "../context-menu-state";
 import { appSend, useAppGlobals, useEngineCapabilities, useIsDsh, useIsManaged, useServiceInfo } from "../app-globals";
 import { PluginMenu } from "./PluginMenu";
@@ -151,10 +162,12 @@ interface TopBarProps {
 	plugins: {
 		id: string;
 		name: string;
+		nameEn?: string;
 		icon?: string;
 		iconSvg?: string;
 		version?: string;
 		description?: string;
+		descriptionEn?: string;
 		error?: string;
 		view?: boolean;
 	}[];
@@ -244,6 +257,7 @@ export function TopBar({
 	const pinnedOverflowItems = [...(uiOverflow ?? [])].filter(
 		(it) => !(it.source === "host" && it.id === "host:brand") && !isPluginViewItem(it),
 	);
+	const pluginMenuRows = plugins.map((p) => ({ ...p, name: pluginDisplayName(p, locale) }));
 	const pinnedPluginIds = new Set(
 		[...(uiPrimary ?? []), ...(uiOverflow ?? [])]
 			.filter((e) => isPluginViewItem(e) && !e.hidden)
@@ -296,7 +310,7 @@ export function TopBar({
 					id: `${p.id}:__view`,
 					slot: "topbar.primary",
 					source: `plugin:${p.id}`,
-					label: p.name,
+					label: pluginDisplayName(p, locale),
 					kind: "view",
 					view: `plugin:${p.id}`,
 					order: 23,
@@ -1457,6 +1471,7 @@ export function TopBar({
 		...fitBase.filter((it) => zoneOf(it) === "end"),
 	];
 	const keptVisual = visualAll.filter((it) => !droppedIds.has(it.id));
+	const dragTagKey = keptVisual.map((it) => it.id).join(",");
 	const visualAllRef = useRef(visualAll);
 	const keptVisualRef = useRef(keptVisual);
 	useLayoutEffect(() => {
@@ -1497,6 +1512,187 @@ export function TopBar({
 	const measureKey = `${keptItems.map((it) => `${it.id}:${it.entry?.label ?? ""}`).join("|")}|${view}|${(
 		chat.tabs ?? []
 	).join(",")}|${isMobile ? "m" : "d"}`;
+
+	// ---- 顶栏标签拖拽换位（Pointer 事件，桌面 + 触屏长按）：落点写回 uiLayout.order ----
+	const dragIdRef = useRef<string | null>(null);
+	const dropHintRef = useRef<{ id: string; before: boolean } | null>(null);
+	const dragPressRef = useRef<{
+		id: string;
+		el: HTMLElement;
+		pointerId: number;
+		startX: number;
+		startY: number;
+		touch: boolean;
+		active: boolean;
+		moved: boolean;
+		timer: number;
+	} | null>(null);
+	const suppressClickAtRef = useRef(0);
+	const [draggingId, setDraggingId] = useState<string | null>(null);
+	const dragKids = (flow: HTMLElement): HTMLElement[] =>
+		Array.from(flow.children).filter((el) => !el.classList.contains("tb-spacer")) as HTMLElement[];
+	const topbarDragNode = (node: EventTarget | null): { el: HTMLElement; entry: UiSlotEntry } | null => {
+		const flow = flowRef.current;
+		if (!flow || !(node instanceof Element)) return null;
+		let el: Element | null = node;
+		while (el && el.parentElement !== flow) el = el.parentElement;
+		if (!el || el.classList.contains("tb-spacer")) return null;
+		const index = dragKids(flow).indexOf(el as HTMLElement);
+		const entry = keptVisualRef.current[index]?.entry;
+		return entry ? { el: el as HTMLElement, entry } : null;
+	};
+	const clearDragMarks = () => {
+		const flow = flowRef.current;
+		if (!flow) return;
+		for (const el of flow.querySelectorAll(".tb-dragging, .tb-drop-before, .tb-drop-after")) {
+			el.classList.remove("tb-dragging", "tb-drop-before", "tb-drop-after");
+		}
+	};
+	const commitTopbarReorder = (id: string, targetId: string, before: boolean) => {
+		const entries = uiPrimary ?? [];
+		const dragged = entries.find((e) => e.id === id);
+		if (!dragged || id === targetId) return;
+		const align = dragged.align ?? "start";
+		const target = entries.find((e) => e.id === targetId);
+		if (!target || (target.align ?? "start") !== align) return;
+		const ids = entries.filter((e) => !e.hidden && (e.align ?? "start") === align && e.id !== id).map((e) => e.id);
+		const at = ids.indexOf(targetId);
+		if (at < 0) return;
+		const index = before ? at : at + 1;
+		const next = applyIconDrop(
+			chat.settings?.uiLayout,
+			{ zones: { "topbar.primary": entries }, tray: [] },
+			{ id, slot: "topbar.primary", align, index },
+		);
+		appSend({ type: "set_settings", uiLayout: next });
+	};
+	const markDropHint = (clientX: number, clientY: number) => {
+		const dragId = dragIdRef.current;
+		if (!dragId) return;
+		const hit = topbarDragNode(document.elementFromPoint(clientX, clientY));
+		if (!hit || hit.entry.id === dragId) return;
+		const dragged = (uiPrimary ?? []).find((x) => x.id === dragId);
+		if (!dragged || (hit.entry.align ?? "start") !== (dragged.align ?? "start")) return;
+		const rect = hit.el.getBoundingClientRect();
+		const before =
+			clientY < rect.top + rect.height * 0.25
+				? true
+				: clientY > rect.bottom - rect.height * 0.25
+					? false
+					: clientX < rect.left + rect.width / 2;
+		const prev = dropHintRef.current;
+		if (prev?.id === hit.entry.id && prev.before === before) return;
+		dropHintRef.current = { id: hit.entry.id, before };
+		for (const el of Array.from(flowRef.current?.querySelectorAll(".tb-drop-before, .tb-drop-after") ?? [])) {
+			el.classList.remove("tb-drop-before", "tb-drop-after");
+		}
+		hit.el.classList.add(before ? "tb-drop-before" : "tb-drop-after");
+	};
+	const beginTopbarDrag = (e: ReactPointerEvent<HTMLDivElement>) => {
+		if (e.button !== 0 || dragPressRef.current) return;
+		if ((e.target as Element).closest?.("input, select, textarea, [contenteditable='true']")) return;
+		const hit = topbarDragNode(e.target);
+		if (!hit) return;
+		const press = {
+			id: hit.entry.id,
+			el: hit.el,
+			pointerId: e.pointerId,
+			startX: e.clientX,
+			startY: e.clientY,
+			touch: e.pointerType === "touch",
+			active: false,
+			moved: false,
+			timer: 0,
+		};
+		dragPressRef.current = press;
+		const THRESHOLD = 6;
+		const detach = () => {
+			if (press.timer) {
+				window.clearTimeout(press.timer);
+				press.timer = 0;
+			}
+			window.removeEventListener("pointermove", onMove);
+			window.removeEventListener("pointerup", onUp);
+			window.removeEventListener("pointercancel", onCancel);
+		};
+		const activate = () => {
+			if (press.active) return;
+			press.active = true;
+			dragIdRef.current = press.id;
+			setDraggingId(press.id);
+			press.el.classList.add("tb-dragging");
+		};
+		const onMove = (ev: PointerEvent) => {
+			if (ev.pointerId !== press.pointerId) return;
+			if (!press.active) {
+				if (Math.hypot(ev.clientX - press.startX, ev.clientY - press.startY) < THRESHOLD) return;
+				// 触屏：先滑动 = 用户想滚动顶栏，放弃拖拽（长按才算拖拽）
+				if (press.touch) {
+					detach();
+					dragPressRef.current = null;
+					return;
+				}
+				activate();
+			}
+			press.moved = true;
+			ev.preventDefault();
+			markDropHint(ev.clientX, ev.clientY);
+		};
+		const finish = (commit: boolean) => {
+			const hint = dropHintRef.current;
+			detach();
+			dragPressRef.current = null;
+			dragIdRef.current = null;
+			dropHintRef.current = null;
+			setDraggingId(null);
+			clearDragMarks();
+			if (commit && press.active) {
+				// 拖完/长按松手会补一个 click：一次拦掉，避免误触该按钮
+				suppressClickAtRef.current = Date.now();
+				// 松手后浏览器会同步补一个 click；只封它一个事件循环，不制造一段「点不动」的窗口
+				window.setTimeout(() => {
+					suppressClickAtRef.current = 0;
+				}, 50);
+				if (press.moved && hint) commitTopbarReorder(press.id, hint.id, hint.before);
+			}
+		};
+		const onUp = (ev: PointerEvent) => {
+			if (ev.pointerId === press.pointerId) finish(true);
+		};
+		const onCancel = (ev: PointerEvent) => {
+			if (ev.pointerId === press.pointerId) finish(false);
+		};
+		window.addEventListener("pointermove", onMove, { passive: false });
+		window.addEventListener("pointerup", onUp);
+		window.addEventListener("pointercancel", onCancel);
+		if (press.touch) {
+			press.timer = window.setTimeout(() => {
+				press.timer = 0;
+				activate();
+			}, 420);
+		}
+	};
+	const suppressTopbarClick = (e: ReactMouseEvent<HTMLDivElement>) => {
+		// 只吞掉拖拽松手后紧跟的那一次 click（600ms 内），不做一段时间的全局点击封锁
+		const at = suppressClickAtRef.current;
+		if (!at) return;
+		suppressClickAtRef.current = 0;
+		e.preventDefault();
+		e.stopPropagation();
+	};
+	useEffect(() => {
+		const flow = flowRef.current;
+		if (!flow) return;
+		const kids = dragKids(flow);
+		const items = keptVisualRef.current;
+		for (const [index, el] of kids.entries()) {
+			const entry = items[index]?.entry;
+			if (entry) el.dataset.uiId = entry.id;
+		}
+		return () => {
+			for (const el of kids) delete el.dataset.uiId;
+		};
+	}, [dragTagKey]);
 	useLayoutEffect(measure, [measureKey]); // eslint-disable-line react-hooks/exhaustive-deps
 	useEffect(() => {
 		const flow = flowRef.current;
@@ -1523,7 +1719,14 @@ export function TopBar({
 	const hideTopbarText = chat.settings?.uiLayout?.topbarText === false;
 	return (
 		<header className={`topbar${hideTopbarText ? " no-labels" : ""}`} data-pi-anchor="topbar">
-			<div className="topbar-flow" ref={flowRef} role="toolbar" aria-label={t("viewSwitch")}>
+			<div
+				className={`topbar-flow${draggingId ? " tb-reordering" : ""}`}
+				ref={flowRef}
+				role="toolbar"
+				aria-label={t("viewSwitch")}
+				onPointerDown={beginTopbarDrag}
+				onClickCapture={suppressTopbarClick}
+			>
 				{segStart.map((it) => (
 					<Fragment key={it.id}>{it.node}</Fragment>
 				))}
@@ -1668,7 +1871,7 @@ export function TopBar({
 				<PluginMenu
 					anchorRect={pluginMenuAnchor.rect}
 					anchorEl={pluginMenuAnchor.el}
-					plugins={plugins}
+					plugins={pluginMenuRows}
 					pinnedIds={pinnedPluginIds}
 					orderedPluginIds={orderedPluginIds}
 					onTogglePin={(id, pinned) =>

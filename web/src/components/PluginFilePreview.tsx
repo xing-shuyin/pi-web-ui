@@ -1,6 +1,8 @@
 import { useEffect, useRef, useState } from "react";
 import { Modal } from "./Modal";
-import { useT } from "../i18n";
+import { useI18n } from "../i18n";
+import { isZhLocale } from "../pick-locale";
+import { pluginDisplayName } from "../plugin-name";
 import { loadFileHandler, type FileHandlerPlugin, type FileHandlerDeclaration } from "../plugin-file-handlers";
 import { makePluginContext, type PluginFile, type PluginFileHandlerContext } from "../plugin-loader";
 import { appUrl } from "../base-url";
@@ -26,13 +28,15 @@ export function PluginFilePreview({
 	onClose,
 	onFallback,
 }: PluginFilePreviewProps) {
-	const t = useT();
+	const { t, locale } = useI18n();
 	const ref = useRef<HTMLDivElement>(null);
 	const [error, setError] = useState<string | null>(null);
 	const [mounted, setMounted] = useState(false);
 	const fallbackRef = useRef(onFallback);
 	fallbackRef.current = onFallback;
-	const label = declaration.label ?? plugin.name;
+	const label =
+		(isZhLocale(locale) ? declaration.label : (declaration.labelEn ?? declaration.label)) ??
+		pluginDisplayName(plugin, locale);
 
 	useEffect(() => {
 		const el = ref.current;

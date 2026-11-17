@@ -836,6 +836,8 @@ export function App() {
 	}, [chat.pluginJobs, chat.ready, t]);
 	const setViewRefForPlugins = useRef(setView);
 	setViewRefForPlugins.current = setView;
+	const localeRefForPlugins = useRef(locale);
+	localeRefForPlugins.current = locale;
 	const uiSlotsRef = useRef(uiSlots);
 	uiSlotsRef.current = uiSlots;
 	useEffect(() => {
@@ -878,6 +880,7 @@ export function App() {
 					];
 				},
 				getConversationId: () => chatRefForPlugins.current.state?.conversationId ?? null,
+				getLocale: () => localeRefForPlugins.current,
 				getConversationOwner: () => chatRefForPlugins.current.state?.sharedConversation?.owner ?? null,
 				isConversationBlank: () => (chatRefForPlugins.current.state?.messages.length ?? 0) === 0,
 				listModels: () =>

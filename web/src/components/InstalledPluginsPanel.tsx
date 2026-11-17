@@ -4,7 +4,8 @@ import { FiChevronDown, FiChevronRight, FiRefreshCw, FiSearch, FiPlus, FiTrash2,
 import type { UiExtensionInfo, UiExtensionInventoryEntry, UiPluginInfo, UiPluginUpdateInfo } from "../types";
 import type { PluginSelectModel } from "../plugin-setting-options";
 import { appSend } from "../app-globals";
-import { useT } from "../i18n";
+import { useI18n } from "../i18n";
+import { pluginDisplayDescription, pluginDisplayName } from "../plugin-name";
 import { PluginIcon } from "../plugin-icon";
 import {
 	getPluginLogs,
@@ -97,7 +98,7 @@ export function InstalledPluginsPanel({
 	onInstallExtension,
 	onUninstallExtension,
 }: InstalledPluginsPanelProps): JSX.Element {
-	const t = useT();
+	const { t, locale } = useI18n();
 	const disabledPluginSet = useMemo(() => new Set(disabledPlugins), [disabledPlugins]);
 	const disabledExtensionSet = useMemo(() => new Set(disabledExtensions), [disabledExtensions]);
 
@@ -115,10 +116,10 @@ export function InstalledPluginsPanel({
 			out.push({
 				uid: `ui:${p.id}`,
 				kind: "ui",
-				name: p.name || p.id,
+				name: pluginDisplayName(p, locale),
 				icon: p.icon,
 				iconSvg: p.iconSvg,
-				desc: p.description || p.source || t("uiPluginNoSource"),
+				desc: pluginDisplayDescription(p, locale) || p.source || t("uiPluginNoSource"),
 				scope: "dataDir",
 				version: p.version,
 				enabled,
@@ -171,7 +172,17 @@ export function InstalledPluginsPanel({
 		const order = { ui: 0, pi: 1 } as const;
 		out.sort((a, b) => order[a.kind] - order[b.kind] || a.name.localeCompare(b.name));
 		return out;
-	}, [plugins, extensions, inventoryEntries, disabledPluginSet, disabledExtensionSet, pluginUpdates, pluginJobs, t]);
+	}, [
+		plugins,
+		extensions,
+		inventoryEntries,
+		disabledPluginSet,
+		disabledExtensionSet,
+		pluginUpdates,
+		pluginJobs,
+		t,
+		locale,
+	]);
 
 	const [expandedUid, setExpandedUid] = useState<string | null>(() => rows[0]?.uid ?? null);
 	const [detailTab, setDetailTab] = useState<DetailTab>("overview");

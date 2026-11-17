@@ -20,7 +20,7 @@ import { randomUuid } from "./uuid";
 import { requestNewChat } from "./new-chat-request";
 
 const PLUGIN_HOST_GLOBAL = "__piWebUiHost";
-export const PLUGIN_HOST_API_VERSION = 18;
+export const PLUGIN_HOST_API_VERSION = 19;
 
 export interface PluginHostPickDirectoryOptions {
 	initialPath?: string;
@@ -286,6 +286,17 @@ interface PluginHostApi {
 		register(provider: ImageOcrProvider): () => void;
 		list(): { id: string; label: string; labelEn?: string }[];
 	};
+	/**
+	 * 宿主当前界面语言（与 Pi Web UI 全局语言完全一致）。
+	 *
+	 * 插件不得自己保存语言偏好：用 `locale.current()` 取首帧语言，
+	 * 用 `locale.onChange()` 订阅切换；插件自带字典按这个 tag 选词。
+	 * `onLocale()` 保留为兼容旧插件的别名。
+	 */
+	locale: {
+		current(): string;
+		onChange(handler: PluginHostLocaleHandler): () => void;
+	};
 	onTheme(handler: PluginHostThemeHandler): () => void;
 	onLocale(handler: PluginHostLocaleHandler): () => void;
 	onViewChange(handler: PluginHostViewHandler): () => void;
@@ -327,6 +338,7 @@ interface PluginHostDeps {
 	getCurrentModelId?: () => string | null;
 	listSessions: () => PluginHostSessionInfo[];
 	getConversationId: () => string | null;
+	getLocale?: () => string;
 	getConversationOwner?: () => string | null;
 	isConversationBlank: () => boolean;
 	pollMs?: number;
@@ -798,6 +810,10 @@ export function createPluginHostApi(deps: PluginHostDeps): PluginHostApi {
 			list: () => listImageOcrProviders().map(({ id, label, labelEn }) => ({ id, label, labelEn })),
 		},
 		onTheme: (handler) => subscribePluginHostTheme(handler),
+		locale: {
+			current: () => String(deps.getLocale?.() ?? ""),
+			onChange: (handler) => subscribePluginHostLocale(handler),
+		},
 		onLocale: (handler) => subscribePluginHostLocale(handler),
 		onViewChange: (handler) => subscribePluginHostView(handler),
 		listProjects: () => deps.listProjects?.() ?? [],

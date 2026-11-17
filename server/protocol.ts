@@ -2479,10 +2479,13 @@ export interface PluginPanelGroup {
 
 export interface UiPluginInfo {
 	id: string;
+	/** Display name from the manifest (source language: usually Chinese). */
 	name: string;
+	/** English display name (`manifest.nameEn`); the client picks by UI locale. */
 	nameEn?: string;
 	version?: string;
 	description?: string;
+	/** English description (`manifest.descriptionEn`); the client picks by UI locale. */
 	descriptionEn?: string;
 	homepage?: string;
 	hasClient: boolean;

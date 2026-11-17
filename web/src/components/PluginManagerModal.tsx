@@ -17,7 +17,8 @@ import {
 } from "react-icons/fi";
 import type { UiPluginInfo } from "../types";
 import { type PluginSelectModel } from "../plugin-setting-options";
-import { useT } from "../i18n";
+import { useI18n } from "../i18n";
+import { pluginDisplayDescription, pluginDisplayName } from "../plugin-name";
 import { appSend } from "../app-globals";
 import { PluginIcon } from "../plugin-icon";
 import { hostEntryIcon } from "../host-icon";
@@ -72,7 +73,7 @@ export function PluginManagerModal({
 	onOpenView,
 	onOpenMarketplace,
 }: PluginManagerModalProps) {
-	const t = useT();
+	const { t, locale } = useI18n();
 	const plugins = useMemo(() => excludeBuiltinModules(allPlugins), [allPlugins]);
 	const [searchQuery, setSearchQuery] = useState("");
 	const [filterTab, setFilterTab] = useState<PluginFilterTab>("all");
@@ -161,15 +162,16 @@ export function PluginManagerModal({
 			if (filterTab === "disabled" && !isDisabled) return false;
 
 			if (q) {
-				const matchName = p.name?.toLowerCase().includes(q);
+				const matchName = pluginDisplayName(p, locale).toLowerCase().includes(q) || p.name?.toLowerCase().includes(q);
 				const matchId = p.id?.toLowerCase().includes(q);
-				const matchDesc = p.description?.toLowerCase().includes(q);
+				const matchDesc =
+					pluginDisplayDescription(p, locale)?.toLowerCase().includes(q) || p.description?.toLowerCase().includes(q);
 				if (!matchName && !matchId && !matchDesc) return false;
 			}
 
 			return true;
 		});
-	}, [plugins, filterTab, searchQuery, disabledSet]);
+	}, [plugins, filterTab, searchQuery, disabledSet, locale]);
 
 	const handleRescan = useCallback(() => {
 		setRescanSpinning(true);
@@ -352,7 +354,7 @@ export function PluginManagerModal({
 											</div>
 											<div className="plugin-mgr-card-names">
 												<div className="plugin-mgr-card-name-row">
-													<span className="plugin-mgr-card-name">{p.name}</span>
+													<span className="plugin-mgr-card-name">{pluginDisplayName(p, locale)}</span>
 													{p.version && <span className="plugin-mgr-card-ver">v{p.version}</span>}
 													<span className="plugin-mgr-card-id">{p.id}</span>
 												</div>
@@ -425,9 +427,9 @@ export function PluginManagerModal({
 										</div>
 									</div>
 
-									{p.description && (
-										<div className="plugin-mgr-card-desc" title={p.description}>
-											{p.description}
+									{pluginDisplayDescription(p, locale) && (
+										<div className="plugin-mgr-card-desc" title={pluginDisplayDescription(p, locale)}>
+											{pluginDisplayDescription(p, locale)}
 										</div>
 									)}
 

@@ -291,9 +291,10 @@ HTTP MCP 卡片的 OAuth 登录通过 `mcp_oauth_start {reqId,name,scope}` 发�
 
 ## manifest 可选字段
 
+- `name` / `nameEn`（插件显示名；`name` 是源语言（中文），`nameEn` 是英文。宿主**按全局界面语言**选词，插件不保存语言偏好 —— 见「插件界面语言」）
 - `icon`（emoji/单字符，顶栏 tab 替代通用拼图图标）
 - `iconSvg`（内联 SVG 字符串，有则优先于 `icon` 渲染：顶栏视图 tab / 右栏 tab / 设置面板列表与市场都画 SVG；服务端只做形状校验（`<svg…</svg>`、≤8KB、无 script/事件处理器，见 `server/icon-svg.ts`），前端渲染前再 sanitize 一次（见 `web/src/plugin-icon.tsx`）；`icon` 保留作旧版回落）
-- `description`（设置面板里的插件介绍；视图 tab 的悬浮提示只用插件名，不用它）
+- `description` / `descriptionEn`（设置面板/市场里的插件介绍；视图 tab 的悬浮提示只用插件名，不用它）
 - `version`
 - `apiVersion`（与 `PLUGIN_API_VERSION` 比较，> 则拒绝激活并提示升级）
 - `permissions`（能力声明数组）
@@ -363,7 +364,7 @@ App 按 chat.plugins 动态 import 各插件的 client bundle（`/* @vite-ignore
 
 | 字段                                                         | 说明                                                                                                                                                                                                                                                                                                                                                                                                            |
 | ------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `version`                                                    | 宿主 API 版本（`PLUGIN_HOST_API_VERSION`，当前 **18**；插件可用它判断宿主能力）                                                                                                                                                                                                                                                                                                                                 |
+| `version`                                                    | 宿主 API 版本（`PLUGIN_HOST_API_VERSION`，当前 **19**；插件可用它判断宿主能力）                                                                                                                                                                                                                                                                                                                                 |
 | `setView(view)`                                              | 切主视图（`"chat"` / `"terminal"` / `"git"` / `"plugin:<id>"`）                                                                                                                                                                                                                                                                                                                                                 |
 | `startChat({ prompt, newChat?, cwd? })`                      | 新建对话（可选切工作目录）并把 prompt 作为用户消息发出；返回"已受理"                                                                                                                                                                                                                                                                                                                                            |
 | `compose({ text?, attachments? })`                           | 把内容放进**输入框草稿**（用户补一句话再自己发），返回是否受理。与 startChat 的差别：**不要求连接就绪**（草稿是本地状态）、输入框没挂载时拒收。实现走 `web/src/composer-bridge.ts` 的模块级 sink（草稿文本在 ChatInput 内部 state、待发附件在 App state，两处各自注册自己那一半）；合并语义复用 `composer-draft.ts`（空则填入、非空追加、绝不覆盖），附件按 path+mode+行区间去重                                |
@@ -371,6 +372,7 @@ App 按 chat.plugins 动态 import 各插件的 client bundle（`/* @vite-ignore
 | `sessions.list()` / `sessions.open(id)`                      | 会话列表与打开：本客户端运行中的对话 + 当前项目的历史会话                                                                                                                                                                                                                                                                                                                                                       |
 | `onUiAction(name, fn)`                                       | 接管 UI 条目的动作（slot 框架；旧名 `onTopbarAction` 保留为别名）                                                                                                                                                                                                                                                                                                                                               |
 | `setFooterStatus(key, value)`                                | 往**宿主内置**的底栏状态槽（`host:cost` 那一格，斜杠接在「当前对话费用」后面）写一段文本；`value.content.render(container)` 可选 —— 给了它，点这段文字时**宿主**弹跟随浮层并把容器交给插件画内容（v18 起）：锚点、上下翻转、滚动跟随、点外/Esc 关闭、层级与主题全归宿主（`components/FooterSlotPopover.tsx` + `use-floating-panel`），插件不写 `position:fixed`、不抢 z-index。传 `null` 清槽（浮层一起消失）。 |
+| `locale`                                                     | **宿主全局语言单源**（v19）：`locale.current()` 返回当前 locale tag（首次挂载即可读，不必猜 localStorage），`locale.onChange(fn)` 订阅切换。插件只维护自己的 ZH/EN 字典，用这个 tag 选词；**不得**保存独立语言偏好。旧名 `onLocale` 保留为别名。见「插件界面语言」                                                                                                                                              |
 | `reloadCatalog(source, opts?)`                               | 插件市场目录同步（issue #148，见「插件市场」）                                                                                                                                                                                                                                                                                                                                                                  |
 
 定义：`web/src/plugin-host.ts`（纯逻辑 `createPluginHostApi`，App 挂载时 `installPluginHostApi`）。
@@ -381,6 +383,19 @@ App 按 chat.plugins 动态 import 各插件的 client bundle（`/* @vite-ignore
 `syncPluginViews(plugins, epoch)` 统一同步注册表：清单消失/被禁用即卸载视图（调 cleanup）、epoch 变化清 failed 重拉 bundle。
 
 设置面板 ⚙ 有「界面插件」开关区（`set_settings.disabledPlugins`，持久化 client-state、纯 UI 隐藏不触发 runtime reload —— 被禁用的插件不算「界面布局」里的条目，它的贡献与 `arrange` 整份丢弃）+ **安装即启用**（`plugin_job` 的 `install` 作业成功后，服务端把该 id 从 `disabledPlugins` 摘掉再重推列表：出厂默认设置把一批可选插件写在禁用清单里，不同步启用就会出现「装好了但界面上找不到」；`update` / `uninstall` 不动这条状态，用户显式禁用过的插件升级后保持禁用——逻辑单源 `enablePluginAfterInstall()` @ `server/plugin-installer.ts`，写入点 `AgentService.enableInstalledPlugin()`）+ **每行「更新/卸载」按钮**（更新需 CLI install 记录的来源 `.pi-source.json` → `UiPluginInfo.source`；两个操作都走**服务端后台作业** `plugin_job`，见下「插件市场」，不占用户终端、不关设置面板）+「界面布局」页（内置条目与插件条目的隐藏 / 排序 / 恢复，见「UI 扩展点（slot 框架）」）+「已授权目录」段（见「目录授权与跨目录 fs」）。
+
+### 插件界面语言（全局语言单源，issue #920）
+
+插件**不保存自己的语言偏好**。界面语言只有一份事实源：宿主传到前端的 locale（`web/src/ui-locale.ts` → `useI18n().locale`），按下面两条使用：
+
+| 位置                                                                | 怎么取值                                                                                                                                                                                                                            |
+| ------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 插件名 / 描述（宿主渲染：顶栏 tab、插件菜单、设置面板、插件页错误） | manifest 同时写 `name`（中文）与 `nameEn`（英文）、`description` / `descriptionEn`；客户端统一走 `web/src/plugin-name.ts` 的 `pluginDisplayName()` / `pluginDisplayDescription()` 按 locale 选词。**不要在组件里直接读 `p.name`。** |
+| 插件自画的界面（按钮 / 菜单 / 提示）                                | `window.__piWebUiHost.locale.current()` 取首帧语言，`locale.onChange(fn)` 订阅切换；插件自带 ZH/EN 字典，非中英宿主语言回落到英文。旧字段 `onLocale` 仍可用。                                                                       |
+
+顶栏自动生成的插件视图条目（`<id>:__view`）由 `web/src/ui-slots.ts` 的 `withPluginViewItems()` 同时填 `label` / `labelEn`，渲染层按 `zh` 选词；插件自己贡献的 `ui.items` 仍用 `label` / `labelEn` 字段。
+
+参考实现：`plugins/vscode-editor/src/client.js` 的 `hostLangRaw()` + `followHostLang()`（删掉了自带的语言开关）。
 
 ## 常驻播放器：红果短剧
 
@@ -700,6 +715,8 @@ CLI `install --catalog <url>`（同步列表 + 逐条安装/更新，已安装�
 | 目标条                                                       | `GoalBar.tsx`：编辑行（设目标/提炼/锁定/收起）/ 选项行（审查模型/轮次）/ 活跃行（清除）/ 收起 pill 四簇分别按 slot 排序，插件跟随同行                                                                                                                                                                                                                                                                                                                                                                              | 勾掉 / ↑↓ 都生效（pill 全藏且无插件条目时整条不占位）                                                                                                                                                                                                                                                                                                                        |
 | SCM 面板                                                     | `SCMPanel.tsx`：头栏（视图 tab/刷新＋插件）与分支行（分支/切换/推送/拉取/提交输入/提交/全部提交）分别按 slot 排序                                                                                                                                                                                                                                                                                                                                                                                                  | 勾掉 / ↑↓ 都生效（分支名展示是纯信息不进槽位；底部「去终端」按钮只跟显隐）                                                                                                                                                                                                                                                                                                   |
 | 终端面板                                                     | `TerminalPanel.tsx`：命令列表头（刷新/新建）与终端 tab 头（新建＋插件）分别按 slot 排序                                                                                                                                                                                                                                                                                                                                                                                                                            | 勾掉 / ↑↓ 都生效（命令/标签行是数据，不动）                                                                                                                                                                                                                                                                                                                                  |
+
+顶栏还支持**直接拖拽换位**（issue #920）：用的是 Pointer 事件（不是 HTML5 DnD，触屏同样可用 —— 见 `docs/agent-rules.md`「拖拽与触控交互标准」）。桌面按住移动过 6px 即拖；触屏先长按 420ms 再拖（未长按就滑动视为滚动，不抢手势）。拖到同 `align` 分区内另一条目前/后松手，等价于布局页的 ↑↓ —— 落点写回 `uiLayout.order`（`TopBar.tsx` 复用 `applyIconDrop` 生成同一份偏好，随即 `set_settings` 持久化），刷新后保持。
 
 停靠栏里的宿主按钮走**同一份回调**：`SideDock` 不再逐个手抄 `BarItem` 的 props，而是把 `BarHostProps`（App 里的
 `sidebarBarProps`）整份透传给 `BarItem`。漏传的回调会在 `onClick={() => cb?.()}` 处**静默变成空操作**——沙箱、打开项目

@@ -8,8 +8,9 @@ import {
 	type PluginViewModule,
 } from "../plugin-loader";
 import { withPluginScopeAsync } from "../plugin-host";
-import { useT, type Translate } from "../i18n";
+import { useI18n, useT, type Translate } from "../i18n";
 import type { UiPluginInfo } from "../types";
+import { pluginDisplayName } from "../plugin-name";
 
 interface PluginPageProps {
 	plugin: UiPluginInfo;
@@ -44,6 +45,7 @@ function failureText(failure: PageFailure, name: string, t: Translate): string {
 export function PluginPage({ plugin, epoch, send, pageId, className }: PluginPageProps): JSX.Element {
 	const ref = useRef<HTMLDivElement>(null);
 
+	const { locale } = useI18n();
 	const t = useT();
 	const [failure, setFailure] = useState<PageFailure | null>(null);
 
@@ -112,7 +114,7 @@ export function PluginPage({ plugin, epoch, send, pageId, className }: PluginPag
 			<div className="plugin-page-host" ref={ref} />
 			{failure && (
 				<div className="plugin-page-error" role="alert">
-					{failureText(failure, plugin.name, t)}
+					{failureText(failure, pluginDisplayName(plugin, locale), t)}
 				</div>
 			)}
 		</div>
