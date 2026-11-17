@@ -794,6 +794,24 @@ export class UniversalSession implements DispatchSession {
 				}
 				try {
 					const { convId } = await this.spawnSubagent(subPrompt, type, this.cwd);
+					// Record the dispatch itself: `/subagent …` is a task instruction, not a pure
+					// settings command, so without it the transcript shows a subagent appearing
+					// out of nowhere (and the notice above is transient).
+					const dispatchNow = Date.now();
+					const dispatchConv = targetConv;
+					if (dispatchConv) {
+						dispatchConv.messages.push({
+							id: `u-${dispatchNow}-${randomUUID().slice(0, 6)}`,
+							role: "user",
+							content: [{ type: "text", text }],
+							timestamp: dispatchNow,
+						});
+						dispatchConv.updatedAt = dispatchNow;
+						if (!dispatchConv.isEphemeral) {
+							this.store.saveConversation(this.cwd, dispatchConv);
+						}
+						this.flushSnapshot();
+					}
 					this.emitNotice(
 						"info",
 						`已派发子代理（ID: ${convId.slice(0, 8)}），可在左侧对话列表查看其流式进展`,
