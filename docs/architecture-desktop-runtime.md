@@ -234,12 +234,16 @@ P3 细节：换包前把 `.app` 移到同卷临时名（`mv` 成功后写新包�
 每个平台的 `desktop-release.yml` job 追加：
 
 1. `npm run build:desktop-runtime -- --platform <p> --arch <a> --out release/runtime --from <已组装好的 app 目录>`
-   → 产出 `core-<ver>-<p>-<a>.tar.zst`、`runtime.json`、`runtime.json.sig`（有私钥时）、`runtime.json.pub.pem`；
+   → 产出 `core-<ver>-<p>-<a>.tar.zst`、`runtime-<p>-<a>.json`、`runtime-<p>-<a>.sig`（有私钥时）、`runtime-<p>-<a>.pub.pem`；
    清单里 `protocol` 从 `dist/server/protocol-version.js` 现读，`minShell` 由 `--min-shell` 给；
 2. 资产上传到同一个 GitHub Release（`--clobber` 可重跑）；
 3. 现有 `latest*.yml`（壳）保持不变，两套并行。
 4. 干跑校验：`npm run verify:desktop-runtime -- --manifest … --signature … --public-key … --archive …`
    —— 清单↔归档↔签名互验 + 条目白名单逐条过（CI 必跑）。
+
+**CI 已接**：`.github/workflows/desktop-release.yml` 的三个 job 在出完安装包后各跑一次
+`build-desktop-runtime` → `verify-desktop-runtime`，把 `release/runtime/*` 一并挂到同一个 Release。
+没有 `DESKTOP_RUNTIME_SIGNING_KEY`（fork / 未配 secret）时该步只打一行 warning 后跳过，不阻塞安装包。
 
 **打包源必须给 `--from`**：默认从仓库根打包会把 devDependencies（electron / vite / oxlint …）一起塞进运行时
 （实测 353 MB），CI 里应指到 electron-builder 的 `win-unpacked/resources/app` 或 `npm ci --omit=dev` 的副本——
@@ -262,7 +266,7 @@ P3 细节：换包前把 `.app` 移到同卷临时名（`mv` 成功后写新包�
 | `scripts/build-desktop-runtime.mjs`（新）                                       | ✅ P1：打归档（tar.zst）、写清单、签名（ed25519）、`--keygen`                                                  |
 | `desktop/runtime-updater.ts`（新）                                              | ✅ P2：清单拉取 + 验签 + 闸门 + 流式下载（进度/取消）+ 摘要校验 + 解包暂存                                     |
 | `desktop/runtime-config.ts`（新）                                               | ✅ P2：内置公钥（留空=拒绝）、`SHELL_CAPABILITY_VERSION`、默认 feed                                            |
-| `scripts/desktop-update-feed.mjs`                                               | 本地 feed 可直接用静态目录喂（`runtime.json`/`.sig`/归档）；专用脚本未加                                       |
+| `scripts/desktop-update-feed.mjs`                                               | 本地 feed 可直接用静态目录喂（`runtime-<p>-<a>.json`/`.sig`/归档）；专用脚本未加                               |
 | `.github/workflows/desktop-release.yml`                                         | 三平台追加 runtime 产物与签名                                                                                  |
 | `docs/env-vars.md`                                                              | ✅ P0/P2：`PI_DESKTOP_RUNTIME_ROOT`（实机测加载）、`PI_DESKTOP_RUNTIME_AUTOCHECK` / `_AUTOAPPLY`（实机测更新） |
 
@@ -300,17 +304,17 @@ P3 细节：换包前把 `.app` 移到同卷临时名（`mv` 成功后写新包�
 
 ### P2 实机验证记录（2026-11-17）
 
-| 场景 | 手段                                                                                                                   | 结果                                                                                                       |
-| ---- | ---------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------- |
-| 换版 | 本地静态 HTTP feed（真 `runtime.json` + `.sig` + 极小 `tar.zst`），私钥签名；真 Electron 带 `AUTOCHECK/AUTOAPPLY` 启动 | ✅ 下载→解包→`current.json` 写 0.200.0→重启服务→`/api/health` 报 `piVersion=0.200.0`（跑的是新运行时那份） |
-| 回滚 | feed 换成「启动即 exit(1)」的 0.201.0                                                                                  | ✅ 健康检查失败 → 指针写回 0.200.0 → 重启旧版 → `/api/health` 回到 0.200.0，服务不断                       |
-| 闸门 | 单测覆盖坏签名 / 空公钥 / 协议不符 / 防降级 / 摘要不符 / 目标目录非空                                                  | ✅ 全部拒绝且不留半成品目录（`downloads/` 也收掉）                                                         |
+| 场景 | 手段                                                                                                                           | 结果                                                                                                       |
+| ---- | ------------------------------------------------------------------------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------- |
+| 换版 | 本地静态 HTTP feed（真 `runtime-<p>-<a>.json` + `.sig` + 极小 `tar.zst`），私钥签名；真 Electron 带 `AUTOCHECK/AUTOAPPLY` 启动 | ✅ 下载→解包→`current.json` 写 0.200.0→重启服务→`/api/health` 报 `piVersion=0.200.0`（跑的是新运行时那份） |
+| 回滚 | feed 换成「启动即 exit(1)」的 0.201.0                                                                                          | ✅ 健康检查失败 → 指针写回 0.200.0 → 重启旧版 → `/api/health` 回到 0.200.0，服务不断                       |
+| 闸门 | 单测覆盖坏签名 / 空公钥 / 协议不符 / 防降级 / 摘要不符 / 目标目录非空                                                          | ✅ 全部拒绝且不留半成品目录（`downloads/` 也收掉）                                                         |
 
 ### P1 实机验证记录（2026-11-17）
 
 | 场景                           | 手段                                                                                                                                  | 结果                                                                                                                                           |
 | ------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------- |
-| 构建 + 签名                    | `npm run build:desktop-runtime -- --from release/win-unpacked/resources/app --include dist/server,web/dist,node_modules,package.json` | ✅ 31.1 MB `.tar.zst` / 18,832 条目；清单 + `runtime.json.sig` + 公钥                                                                          |
+| 构建 + 签名                    | `npm run build:desktop-runtime -- --from release/win-unpacked/resources/app --include dist/server,web/dist,node_modules,package.json` | ✅ 31.1 MB `.tar.zst` / 18,832 条目；清单 + `.sig` + 公钥                                                                                      |
 | 验收                           | `npm run verify:desktop-runtime -- --manifest … --signature … --public-key … --archive …`                                             | ✅ 签名、摘要、白名单、`dist/server/index.js` 全过                                                                                             |
 | 篡改清单                       | 清单尾部加一个空格再验                                                                                                                | ✅ 签名校验失败（exit 1）                                                                                                                      |
 | 缺公钥                         | 只给清单                                                                                                                              | ✅ 拒绝（除非 `--allow-unsigned`）                                                                                                             |

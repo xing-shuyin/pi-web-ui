@@ -141,10 +141,10 @@ npm run build:desktop-runtime -- --keygen
 #   私钥 → GitHub secret DESKTOP_RUNTIME_SIGNING_KEY
 #   公钥 → desktop/runtime-config.ts（要发一次壳才生效）
 
-# 出运行时产物（core 归档 + 清单 + 签名）
+# 出运行时产物（core 归档 + 清单 + 签名）；CI 的三个 job 在出完安装包后自动跑这一步
 npm run build:desktop-runtime -- --platform <p> --arch <a> --out release/runtime --from <已组装好的 app 目录>
 # 干跑验收（CI 必跑；没有公钥时 verify 会拒绝）
-npm run verify:desktop-runtime -- --manifest … --signature … --public-key … --archive …
+npm run verify:desktop-runtime   --manifest release/runtime/runtime-<p>-<a>.json   --signature release/runtime/runtime-<p>-<a>.sig   --public-key release/runtime/runtime-<p>-<a>.pub.pem   --archive release/runtime/core-*-<p>-<a>.tar.zst
 ```
 
 - 公钥留空 = **一律拒绝任何运行时更新**（fail closed）；改公钥属于改信任根，必须跟文档与发版一起走。

@@ -36,7 +36,7 @@ pi-web-ui/
 │   │                           #     context-menu-ui-test（右键菜单槽位）/ ui-layout-ui-test（布局页 ↔ 界面一致性）/ plugin-settings-page-test（插件设置页）/ plugin-settings-select-ui-test（插件设置下拉）/ plugin-topbar-ui-test（顶栏条目 + 面板内后台卸载）/ elsewhere-click-takeover-ui-test（「另一处」行左键两段确认过户）
 │   └── scratch/                # 一次性调试脚本（gitignore，不入库）
 ├── scripts/check-protocol-sync.mjs  # 守护 types.ts shim 单源机制 + protocol.ts 纯类型约束
-├── scripts/build-desktop-runtime.mjs  # 双层模型 P1：打 core tar.zst + 写 runtime.json + ed25519 签名（--keygen 出密钥）
+├── scripts/build-desktop-runtime.mjs  # 双层模型 P1：打 core tar.zst + 写 runtime-<p>-<a>.json + ed25519 签名（--keygen 出密钥）
 ├── scripts/verify-desktop-runtime.mjs # 双层模型 P1：清单↔归档↔签名互验 + 归档条目白名单逐条过（CI 干跑）
 ├── scripts/safe-exec.mjs       # 跨平台防卡死执行器：stdin 接地 + 硬超时/空闲超时杀进程树（复用 killPidTree）+ 日志落盘 + --detach 守护进程托管 + --wait/--status(JSON) 轮询；日志落 .safe-exec/（gitignore）
 ├── .github/workflows/ci.yml    # CI：协议同步 → typecheck → build → vitest → 冒烟

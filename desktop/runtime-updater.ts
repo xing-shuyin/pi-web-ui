@@ -139,6 +139,9 @@ export function createRuntimeUpdater(options: RuntimeUpdaterOptions): RuntimeUpd
 	let checkInFlight: Promise<boolean> | null = null;
 	let downloadInFlight = false;
 
+	// 每平台/架构一个清单（文档 §五）：三个平台的发布 job 并行也不会互相覆盖。
+	const manifestBase = `runtime-${options.shell.platform}-${options.shell.arch}`;
+
 	const publish = (event: RuntimeUpdaterEvent) => {
 		try {
 			options.publish(event);
@@ -202,10 +205,10 @@ export function createRuntimeUpdater(options: RuntimeUpdaterOptions): RuntimeUpd
 			publish({ type: "checking" });
 			const task = (async () => {
 				try {
-					const manifestText = await fetchText(joinFeed(options.feedUrl!, "runtime.json"));
+					const manifestText = await fetchText(joinFeed(options.feedUrl!, `${manifestBase}.json`));
 					let signature = "";
 					try {
-						signature = (await fetchText(joinFeed(options.feedUrl!, "runtime.json.sig"))).trim();
+						signature = (await fetchText(joinFeed(options.feedUrl!, `${manifestBase}.sig`))).trim();
 					} catch (error) {
 						fail("manifest", `签名文件拿不到：${(error as Error).message}`);
 						return false;

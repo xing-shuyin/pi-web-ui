@@ -108,9 +108,9 @@ async function startFeed(options: FeedOptions) {
 `;
 	const signature = sign(null, Buffer.from(manifestText, "utf8"), options.privatePem).toString("base64");
 	if (options.tamperManifest) manifestText = `${manifestText} `;
-	files.set("/runtime.json", Buffer.from(manifestText, "utf8"));
+	files.set("/runtime-win32-x64.json", Buffer.from(manifestText, "utf8"));
 	files.set(
-		"/runtime.json.sig",
+		"/runtime-win32-x64.sig",
 		Buffer.from(
 			`${signature}
 `,

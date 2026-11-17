@@ -27,7 +27,18 @@ const manifestModule = await import(pathToFileURL(join(repoRoot, "dist", "deskto
 if (!manifestModule) throw new Error("缺少 dist/desktop/runtime-manifest.js，先跑 `npm run build:desktop`");
 const { parseRuntimeManifest, RUNTIME_ALLOWED_TOP_LEVEL } = manifestModule;
 
-const DEFAULT_INCLUDE = ["dist/server", "web/dist", "node_modules", "package.json"];
+// 运行时自带的小资源：缺了会"能起来但功能残"（主题、插件市场、插件 SDK、插件文档）。
+// `bin/`（ffmpeg / codec / p2p）属于 natives 载荷，P2 还没下发，见 docs/architecture-desktop-runtime.md。
+const DEFAULT_INCLUDE = [
+	"dist/server",
+	"web/dist",
+	"themes",
+	"plugin-sdk",
+	"plugins/catalog.json",
+	"docs/architecture-plugins.md",
+	"node_modules",
+	"package.json",
+];
 const REQUIRED_ENTRIES = ["dist/server/index.js", "package.json"];
 
 function parseArgs(argv) {
@@ -181,17 +192,19 @@ async function main() {
 		payloads: [payload],
 	};
 	if (!parseRuntimeManifest(manifest)) throw new Error("生成的清单不合规（parseRuntimeManifest 返回 null）");
+	// 每平台/架构一个清单（文档 §五）：三个平台的 job 并行跑也不会互相覆盖同名资产。
+	const manifestBase = `runtime-${platform}-${arch}`;
 	const manifestText = `${JSON.stringify(manifest, null, "\t")}\n`;
-	writeFileSync(join(outDir, "runtime.json"), manifestText);
+	writeFileSync(join(outDir, `${manifestBase}.json`), manifestText);
 
 	const key = loadSigningKey(args.signingKey ?? process.env.DESKTOP_RUNTIME_SIGNING_KEY);
 	if (key) {
 		const signature = sign(null, Buffer.from(manifestText, "utf8"), key);
-		writeFileSync(join(outDir, "runtime.json.sig"), `${signature.toString("base64")}\n`);
+		writeFileSync(join(outDir, `${manifestBase}.sig`), `${signature.toString("base64")}\n`);
 		const publicPem = createPublicKey(key).export({ type: "spki", format: "pem" }).toString();
-		writeFileSync(join(outDir, "runtime.json.pub.pem"), publicPem);
+		writeFileSync(join(outDir, `${manifestBase}.pub.pem`), publicPem);
 	} else {
-		rmSync(join(outDir, "runtime.json.sig"), { force: true });
+		rmSync(join(outDir, `${manifestBase}.sig`), { force: true });
 		console.warn("⚠ 没给签名私钥：清单未签名（verify 会拒绝，除非 --allow-unsigned）");
 	}
 
@@ -199,8 +212,10 @@ async function main() {
 	console.log(
 		`✔ ${archivePath}  ${size(payload.size)}  sha256=${payload.sha256.slice(0, 16)}…  条目 ${entries.length}`,
 	);
-	console.log(`✔ ${join(outDir, "runtime.json")}  version=${version} protocol=${protocol} minShell=${minShell}`);
-	if (key) console.log("✔ 已签名：runtime.json.sig（公钥同目录 runtime.json.pub.pem）");
+	console.log(
+		`✔ ${join(outDir, `${manifestBase}.json`)}  version=${version} protocol=${protocol} minShell=${minShell}`,
+	);
+	if (key) console.log(`✔ 已签名：${manifestBase}.sig（公钥同目录 ${manifestBase}.pub.pem）`);
 }
 
 main().catch((error) => {
