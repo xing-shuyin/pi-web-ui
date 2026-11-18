@@ -24,10 +24,36 @@ describe("normalizeEvidenceInput", () => {
 		});
 	});
 
-	it("拒绝非对象与空数组", () => {
+	it("拒绝非对象；真形状错误要点名出错字段", () => {
 		expect(normalizeEvidenceInput("done")).toEqual({ ok: false, error: "not_object" });
-		expect(normalizeEvidenceInput({ files: [] })).toEqual({ ok: false, error: "invalid_fields" });
-		expect(normalizeEvidenceInput({ commands: [1, null] })).toEqual({ ok: false, error: "invalid_fields" });
+		expect(normalizeEvidenceInput({ commands: [1, null] })).toEqual({
+			ok: false,
+			error: "invalid_fields",
+			fields: ["commands"],
+		});
+		expect(normalizeEvidenceInput({ files: ["a.ts", 2], commands: ["ls"] })).toMatchObject({
+			error: "invalid_fields",
+			fields: ["files"],
+		});
+	});
+
+	// #938：网关强制把可选字段都填满的模型（OpenAI 系）传 `{blocked:"",commands:[],files:[],none:true}`，
+	// 旧实现把“传了空数组”判成 invalid_fields，导致它越按推荐格式填越被拒。
+	it("空数组、空字符串、false 一律当未填写", () => {
+		expect(normalizeEvidenceInput({ blocked: "", commands: [], files: [], none: true })).toEqual({
+			ok: true,
+			value: { files: [], commands: [], none: true, blocked: undefined },
+		});
+		expect(normalizeEvidenceInput({ files: ["a.ts"], commands: [] })).toEqual({
+			ok: true,
+			value: { files: ["a.ts"], commands: [], none: false, blocked: undefined },
+		});
+		expect(normalizeEvidenceInput({ blocked: "   " })).toEqual({ ok: false, error: "empty" });
+	});
+
+	it("四项都空才算 empty", () => {
+		expect(normalizeEvidenceInput({})).toEqual({ ok: false, error: "empty" });
+		expect(normalizeEvidenceInput({ files: [], commands: [], none: false })).toEqual({ ok: false, error: "empty" });
 	});
 
 	it("归一化路径与命令、去重并限量", () => {

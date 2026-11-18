@@ -3,6 +3,7 @@ import { join, resolve } from "node:path";
 import { buildBotMemoryInjection, botMemoryRoot, createBotMemory } from "./bot-memory.js";
 import { registerBotExecution, type BotExecutionCapability } from "./bot-execution.js";
 import type { LocalBot } from "./bots.js";
+import { messageSearchText } from "../session-search.js";
 
 /**
  * 私聊 = 一条普通对话 + 一个常驻的 Bot 身份。单源在这里。
@@ -24,16 +25,34 @@ export interface BotChatBinding {
 	revision?: number;
 }
 
+/**
+ * 转录里的「这个会话属于哪个 Bot 执行」锚点。
+ *
+ * 和 `webui/bot-chat` 的分工：`bot-chat` 是**身份**（这是谁的私聊，重开时据此重建能力），
+ * `device-bot-execution` 是**执行快照**（这份转录当初是按哪一版 Bot 配置授权跑的）。
+ * 两者都由这里读，避免各读各的。
+ */
+export const BOT_EXECUTION_ENTRY = "device-bot-execution";
+
+export interface BotExecutionAnchor {
+	botId: string;
+	revision?: number;
+}
+
 interface SessionEntryLike {
 	type?: string;
 	customType?: string;
 	data?: unknown;
 }
 
-export function readBotChatBinding(entries: readonly SessionEntryLike[] | undefined): BotChatBinding | undefined {
+/** 锚点类 custom 条目一律「最后一条说了算」：重绑/换绑都是追加，不回写历史。 */
+function readAnchor(
+	entries: readonly SessionEntryLike[] | undefined,
+	customType: string,
+): BotExecutionAnchor | undefined {
 	for (let index = (entries?.length ?? 0) - 1; index >= 0; index--) {
 		const entry = entries![index];
-		if (entry?.type !== "custom" || entry.customType !== BOT_CHAT_ENTRY) continue;
+		if (entry?.type !== "custom" || entry.customType !== customType) continue;
 		const data = entry.data as { botId?: unknown; revision?: unknown } | undefined;
 		if (typeof data?.botId === "string" && data.botId)
 			return { botId: data.botId, ...(typeof data.revision === "number" ? { revision: data.revision } : {}) };
@@ -41,11 +60,52 @@ export function readBotChatBinding(entries: readonly SessionEntryLike[] | undefi
 	return undefined;
 }
 
+export function readBotChatBinding(entries: readonly SessionEntryLike[] | undefined): BotChatBinding | undefined {
+	return readAnchor(entries, BOT_CHAT_ENTRY);
+}
+
+export function readBotExecutionAnchor(
+	entries: readonly SessionEntryLike[] | undefined,
+): BotExecutionAnchor | undefined {
+	return readAnchor(entries, BOT_EXECUTION_ENTRY);
+}
+
+/** 当前会话要怎么处理这份转录的 Bot 归属（纯判定，动作留给调用方）。 */
+export type BotBindingDecision =
+	| { action: "accept" }
+	/** 私聊转录：Bot 只是**改了配置**，同一个 Bot 还是同一个主人 → 按新配置重绑并更新锚点。 */
+	| { action: "rebind" }
+	/** 私聊转录但 Bot 已被删除/停用：只当历史会话打开（不能接着当 Bot 说话）。 */
+	| { action: "degrade" }
+	/** `orphan`：执行转录没有主人（不能当普通会话重开）；`owner`：换了 Bot；`revision`：非私聊转录换了配置快照。 */
+	| { action: "reject"; reason: "orphan" | "owner" | "revision" };
+
+export function decideTranscriptBotBinding(input: {
+	execution?: BotExecutionAnchor;
+	chat?: BotChatBinding;
+	current?: { id: string; revision: number };
+}): BotBindingDecision {
+	const { execution, chat, current } = input;
+	if (!execution) return { action: "accept" };
+	// 私聊转录即使 Bot 没了也只是历史：照样能打开看，只是没有 Bot 能力（提示由调用方给）。
+	if (!current) return chat?.botId === execution.botId ? { action: "degrade" } : { action: "reject", reason: "orphan" };
+	if (execution.botId !== current.id) return { action: "reject", reason: "owner" };
+	if (execution.revision === current.revision) return { action: "accept" };
+	// 私聊是「会话 + Bot 身份」：配置升级不换主人，接着聊；
+	// 设备任务转录是按旧快照授权过的执行，换配置等于换权限，只能拒绝。
+	if (chat?.botId === current.id) return { action: "rebind" };
+	return { action: "reject", reason: "revision" };
+}
+
 export interface BotChatHost {
 	/** 按 id 取本机 Bot 注册表里的当前记录（停用/删除返回 undefined）。 */
 	resolve(botId: string): LocalBot | undefined | Promise<LocalBot | undefined>;
 	/** Bot 记忆目录的根：`bot-agents/<id>/memory` 的派生需要数据目录。 */
 	dataDir?: string;
+	/** 这个 Bot 是否正持有执行租约（群/设备任务在跑）：私聊发消息前做可读的忙检查。 */
+	isBusy?(botId: string): boolean;
+	/** 私聊回合持租约：和群任务共用同一把 Bot 锁（同一 Bot 不并发）。 */
+	acquireLease?(botId: string): Promise<{ release(): void }>;
 }
 
 let host: BotChatHost | undefined;
@@ -56,6 +116,22 @@ export function setBotChatHost(next: BotChatHost | undefined): void {
 
 export function botChatAvailable(): boolean {
 	return Boolean(host);
+}
+
+/** 私聊回合开始前取租约：拿不到会抛 BOT_BUSY（由调用方翻译成人话）。 */
+export async function acquireBotChatLease(botId: string): Promise<{ release(): void }> {
+	if (!host?.acquireLease) return { release: () => {} };
+	return host.acquireLease(botId);
+}
+
+/** 这个 Bot 现在是否有执行租约（用于私聊发送前的忙检查；读不到就当作不忙）。 */
+export function botChatBusy(botId: string): boolean {
+	if (!botId || !host?.isBusy) return false;
+	try {
+		return host.isBusy(botId) === true;
+	} catch {
+		return false;
+	}
 }
 
 export async function resolveBotChatBot(botId: string): Promise<LocalBot | undefined> {
@@ -160,6 +236,85 @@ export function latestBotChatTranscript(agentDir: string, botId: string, expecte
 	return undefined;
 }
 
+/** 左栏「历史对话」列表里的一行（只读、按 mtime 倒序）。 */
+export interface BotChatTranscriptSummary {
+	path: string;
+	/** 首条用户消息（截断）；没有就留空，由界面给本地化兜底。 */
+	title?: string;
+	updatedAt: number;
+	bytes: number;
+}
+
+const TRANSCRIPT_TITLE_SCAN_BYTES = 64 * 1024;
+
+function readFileHead(path: string, bytes: number): string {
+	let fd: number | undefined;
+	try {
+		fd = openSync(path, "r");
+		const buffer = Buffer.allocUnsafe(bytes);
+		const read = readSync(fd, buffer, 0, bytes, 0);
+		return buffer.subarray(0, read).toString("utf8");
+	} catch {
+		return "";
+	} finally {
+		if (fd !== undefined) {
+			try {
+				closeSync(fd);
+			} catch {}
+		}
+	}
+}
+
+/** 转录里的第一条用户消息，做列表标题用。 */
+function firstUserTitle(head: string): string | undefined {
+	for (const line of head.split(/\r?\n/)) {
+		if (!line.trim()) continue;
+		let entry: { type?: unknown; message?: { role?: unknown; content?: unknown } };
+		try {
+			entry = JSON.parse(line) as typeof entry;
+		} catch {
+			continue;
+		}
+		if (entry?.type !== "message" || entry.message?.role !== "user") continue;
+		const text = messageSearchText(entry.message).replace(/\s+/g, " ").trim();
+		if (text) return text.length > 80 ? `${text.slice(0, 79)}…` : text;
+	}
+	return undefined;
+}
+
+/**
+ * 这个 Bot 的历史私聊（新的在前）。
+ *
+ * 「点一行只回到最近一份」是默认语义；改成"新开对话"之后旧记录仍在磁盘上，
+ * 这里给界面一个入口把它们列出来（打开仍走 `switch_session`，绑定由锚点重建）。
+ */
+export function listBotChatTranscripts(agentDir: string, botId: string, limit = 30): BotChatTranscriptSummary[] {
+	const dir = botChatSessionDir(agentDir, botId);
+	let names: string[];
+	try {
+		names = readdirSync(dir);
+	} catch {
+		return [];
+	}
+	const rows: { path: string; updatedAt: number; bytes: number }[] = [];
+	for (const name of names) {
+		if (!name.endsWith(".jsonl")) continue;
+		const path = join(dir, name);
+		try {
+			const stat = statSync(path);
+			rows.push({ path, updatedAt: stat.mtimeMs, bytes: stat.size });
+		} catch {}
+	}
+	rows.sort((a, b) => b.updatedAt - a.updatedAt);
+	const out: BotChatTranscriptSummary[] = [];
+	for (const row of rows.slice(0, Math.max(0, limit))) {
+		if (!isBotChatTranscriptOf(row.path, botId)) continue;
+		const title = firstUserTitle(readFileHead(row.path, TRANSCRIPT_TITLE_SCAN_BYTES));
+		out.push({ path: row.path, ...(title ? { title } : {}), updatedAt: row.updatedAt, bytes: row.bytes });
+	}
+	return out;
+}
+
 export interface BotChatConversationRef {
 	id: string;
 	botId?: string;
@@ -207,13 +362,21 @@ export async function createBotChatCapability(botId: string): Promise<
 	let memoryBlock: string | undefined;
 	if (memoryRoot) {
 		try {
-			memoryBlock = (await buildBotMemoryInjection(createBotMemory({ root: memoryRoot }), { cwd: bot.cwd }))?.text;
+			memoryBlock = (
+				await buildBotMemoryInjection(createBotMemory({ root: memoryRoot }), {
+					cwd: bot.cwd,
+					// 没有 memory 工具时不要叫模型“去 search”：提示必须和实际能力一致。
+					searchable: bot.tools.includes("memory"),
+				})
+			)?.text;
 		} catch {
 			memoryBlock = undefined;
 		}
 	}
 	const binding = registerBotExecution(bot, undefined, {
-		primary: true,
+		// 私聊是「一对一直聊」：不是群里的主播，也不注入任何群协作指令。
+		primary: false,
+		chat: true,
 		executionCwd: bot.cwd,
 		executionMode: "chat",
 		memoryRoot,

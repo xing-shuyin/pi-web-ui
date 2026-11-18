@@ -21,7 +21,7 @@ await build({
 	},
 });
 
-const filesToCopy = ["dock.js", "autofill.js", "passkey-gate.js"];
+const filesToCopy = ["dock.js", "autofill.js", "passkey-gate.js", "downloads.js"];
 for (const file of filesToCopy) {
 	const src = resolve(root, file);
 	const dest = resolve(root, "../../dist/browser/renderer", file);

@@ -18,6 +18,7 @@ function fixture(tabs: BrowserTab[] = [tab("one")], active: string | null = tabs
 	const manager: BrowserExecutorManager = {
 		getTabs: () => tabs,
 		getActiveTabId: () => active,
+		activateTab: vi.fn(),
 		getWebContents: (id) => contents[tabs.findIndex((t) => t.id === id)] as unknown as WebContents,
 		createTab: vi.fn(() => "created"),
 		navigate: vi.fn(async () => {}),
@@ -35,6 +36,17 @@ afterEach(() => {
 	document.body.innerHTML = "";
 	vi.useRealTimers();
 });
+
+/** Electron 的 NativeImage 替身：默认给一张 800×600 的"实图"。 */
+function shotImage(options: { empty?: boolean } = {}) {
+	const image = {
+		isEmpty: () => options.empty === true,
+		getSize: () => ({ width: 800, height: 600 }),
+		resize: () => image,
+		toJPEG: () => Buffer.from("jpeg"),
+	};
+	return image;
+}
 
 describe("browser automation target resolution", () => {
 	it("pages/status retain page-picker fields and include native tab references, excluding caller/internal/destroyed tabs", async () => {
@@ -59,6 +71,25 @@ describe("browser automation target resolution", () => {
 			ok: true,
 			result: { installed: true, hasHost: true, aiControl: true, allowEval: false, allowShot: true },
 		});
+	});
+
+	it("shot 在后台标签上先切过去、等出帧后截图，截完切回原标签", async () => {
+		const f = fixture([tab("one"), tab("two")], "one");
+		f.contents[1].capturePage.mockResolvedValueOnce(shotImage({ empty: true })).mockResolvedValueOnce(shotImage());
+		const res = await f.execute({ op: "shot", target: "two" });
+		expect(res.ok).toBe(true);
+		expect(f.manager.activateTab).toHaveBeenNthCalledWith(1, "two");
+		expect(f.manager.activateTab).toHaveBeenLastCalledWith("one");
+		expect(f.contents[1].capturePage).toHaveBeenCalledTimes(2);
+	});
+
+	it("shot 一直拿不到画面时给可读错误，而不是挂到工具超时", async () => {
+		const f = fixture([tab("one"), tab("two")], "one");
+		f.contents[1].capturePage.mockResolvedValue(shotImage({ empty: true }));
+		const res = await f.execute({ op: "shot", target: "two", timeoutMs: 5000 });
+		expect(res.ok).toBe(false);
+		if (!res.ok) expect(res.error).toMatch(/截图需要页面可见/);
+		expect(f.manager.activateTab).toHaveBeenLastCalledWith("one");
 	});
 
 	it("marks the tab the user is viewing and names it in status/pages", async () => {

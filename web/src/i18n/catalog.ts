@@ -1,5 +1,7 @@
 import coreZh from "./messages/core/zh.json";
 import coreEn from "./messages/core/en.json";
+import agentBotsZh from "./messages/agent-bots/zh.json";
+import agentBotsEn from "./messages/agent-bots/en.json";
 import canvasZh from "./messages/canvas/zh.json";
 import canvasEn from "./messages/canvas/en.json";
 import canvasRuntimeZh from "./messages/canvas-runtime/zh.json";
@@ -61,6 +63,7 @@ export function createCatalog<const T extends readonly MessageModule[]>(modules:
 // Tooling discovers all modules through scripts/lib/i18n-catalog.mjs in the same order.
 export const { zh, en } = createCatalog([
 	{ name: "core", zh: coreZh, en: coreEn },
+	{ name: "agent-bots", zh: agentBotsZh, en: agentBotsEn },
 	{ name: "canvas", zh: canvasZh, en: canvasEn },
 	{ name: "canvas-runtime", zh: canvasRuntimeZh, en: canvasRuntimeEn },
 	{ name: "desktop", zh: desktopZh, en: desktopEn },

@@ -4,6 +4,7 @@ import { basename, dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import type { AgentSession } from "@earendil-works/pi-coding-agent";
 import { mergeQuickAskSettings, normalizeQuickAskSettings, type QuickAskSettings } from "./quick-ask-settings.js";
+import { mergeBotDraftSettings, normalizeBotDraftSettings, type BotDraftSettings } from "./bot-draft-settings.js";
 import type {
 	ClientMessage,
 	QueueMode,
@@ -560,6 +561,7 @@ export class SettingsService {
 				scmCommitMsgPromptMode: this.settings.scmCommitMsgPromptMode,
 				scmCommitMsgPrompt: this.settings.scmCommitMsgPrompt,
 				...normalizeQuickAskSettings(this.settings),
+				...normalizeBotDraftSettings(this.settings),
 				planModePromptMode: this.settings.planModePromptMode,
 				planModePrompt: this.settings.planModePrompt,
 				reviewPrompt: this.settings.reviewPrompt,
@@ -709,6 +711,8 @@ export class SettingsService {
 		quickAskEnabled?: QuickAskSettings["quickAskEnabled"];
 		quickAskModel?: QuickAskSettings["quickAskModel"];
 		quickAskThinking?: QuickAskSettings["quickAskThinking"];
+		botDraftModel?: BotDraftSettings["botDraftModel"];
+		botDraftThinking?: BotDraftSettings["botDraftThinking"];
 		quickAskSystemPrompt?: QuickAskSettings["quickAskSystemPrompt"];
 		quickAskExplainPrompt?: QuickAskSettings["quickAskExplainPrompt"];
 		quickAskTranslateEnabled?: QuickAskSettings["quickAskTranslateEnabled"];
@@ -936,6 +940,7 @@ export class SettingsService {
 			next.scmCommitMsgPrompt = partial.scmCommitMsgPrompt;
 		}
 		Object.assign(next, mergeQuickAskSettings(this.settings, partial));
+		Object.assign(next, mergeBotDraftSettings(this.settings, partial));
 		if (partial.planModePromptMode !== undefined) {
 			next.planModePromptMode = partial.planModePromptMode;
 		}

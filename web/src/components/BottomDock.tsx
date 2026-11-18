@@ -161,7 +161,7 @@ export function BottomDock({
 						>
 							{collapsed ? <FiChevronUp /> : <FiChevronDown />}
 						</button>
-						<button type="button" className="icon-btn danger" title={t("close")} onClick={onHide}>
+						<button type="button" className="icon-btn" title={t("termDrawerHide")} onClick={onHide}>
 							<FiX />
 						</button>
 					</div>

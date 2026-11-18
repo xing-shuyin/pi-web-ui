@@ -668,6 +668,18 @@ export interface PluginHostBridge {
 	): boolean;
 	closeModal(): boolean;
 	onUiAction(action: string, handler: (itemId: string, value?: string) => void): () => void;
+	/**
+	 * 宿主当前界面语言（与 Pi Web UI 全局语言完全一致，需宿主 API ≥ 19）。
+	 *
+	 * 插件不得自己保存语言偏好：取词用 `createPluginI18n()`，或直接 `locale.current()` 取首帧、
+	 * `locale.onChange()` 跟随切换；`onLocale()` 是同一件事的旧别名。
+	 */
+	locale?: {
+		current(): string;
+		onChange(handler: (locale: string) => void): () => void;
+	};
+	/** @deprecated 用 `locale.onChange()`（或 `createPluginI18n()` 的 onChange）。 */
+	onLocale?(handler: (locale: string) => void): () => void;
 }
 
 export interface PluginViewModule {
@@ -802,6 +814,40 @@ export declare function withTimeout<T>(promise: Promise<T>, timeoutMs: number, e
 export declare function uuid(): string;
 
 export declare function normalizeRel(p: string): string;
+
+/** 插件界面语言的两种形态：字典里的中文/英文表都归一到这里。 */
+export type PluginI18nLang = "zh" | "en";
+
+export interface PluginI18nOptions {
+	/** 显式指定语言 tag（默认读宿主 `locale.current()`，再退浏览器语言）。单测与截图之类才需要。 */
+	locale?: string;
+}
+
+export interface PluginI18n {
+	/** 当前语言（宿主是 zh-CN / zh-TW 都算 zh，其余一律 en）。 */
+	readonly lang: PluginI18nLang;
+	/** 宿主当前 locale tag（原始形态，如 `zh-CN`）。 */
+	readonly locale: string;
+	current(): string;
+	/** 取词条并插值（`{name}` / `{{name}}` / `${name}`）；缺词回落另一种语言，再回落 key。 */
+	t(key: string, vars?: Record<string, string | number>): string;
+	/** 宿主切语言时通知；返回取消订阅函数。 */
+	onChange(handler: (locale: string, lang: PluginI18nLang) => void): () => void;
+	/** 解除全部订阅（视图卸载时调）。 */
+	destroy(): void;
+}
+
+/**
+ * 插件界面文案：一份 ZH/EN 字典，语言跟随宿主全局设置，不用插件自己存语言偏好。
+ *
+ * 键名可以是 locale tag（`{ "zh-CN": …, "en-US": … }`）或简写（`{ zh, en }`），
+ * 也接受 `createPluginI18n(zhDict, enDict)` 的位置参数写法。
+ */
+export declare function createPluginI18n(
+	dicts: Record<string, Record<string, string>>,
+	options?: PluginI18nOptions,
+): PluginI18n;
+export declare function createPluginI18n(zhDict: Record<string, string>, enDict: Record<string, string>): PluginI18n;
 
 export declare function attachShadowRoot(hostEl: HTMLElement, customCss?: string): ShadowRoot | HTMLElement;
 

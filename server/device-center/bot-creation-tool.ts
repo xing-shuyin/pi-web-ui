@@ -34,6 +34,7 @@ export const AGENT_BOT_PROMPT_SNIPPET = "draft a new Bot for the user to confirm
 export const AGENT_BOT_PROMPT_GUIDELINES = [
 	"Use op=draft only when the user asks for a new Bot or assistant; derive name, role and prompt from their sentence instead of asking them to fill a form.",
 	"Never promise permissions: pick the narrowest tools that fit, and leave high-privilege tools (bash, terminal, browser, mcp, delegate) out unless the user explicitly asked for them.",
+	'Include the "memory" tool when the Bot should remember facts across sessions (most assistants should); it only reads and writes the Bot\'s own memory directory.',
 	"cwd must be an absolute path that already exists; reuse the current project when the user did not name one, and say so in rationale.",
 	"After drafting, tell the user it is waiting for confirmation and what needs approval; do not create more drafts for the same request.",
 	"Do not choose a trigger: always-on / scheduled execution belongs to the host's alwaysOn plugins and schedule tool, not to a Bot draft.",
@@ -53,7 +54,6 @@ const parameters = Type.Object({
 	skills: Type.Optional(Type.Array(Type.String())),
 	mcpServers: Type.Optional(Type.Array(Type.String())),
 	rationale: Type.Optional(Type.String()),
-	bootstrap: Type.Optional(Type.Boolean()),
 	id: Type.Optional(Type.String()),
 });
 
@@ -82,7 +82,6 @@ export function makeAgentBotTool() {
 					...(input.skills ? { skills: input.skills } : {}),
 					...(input.mcpServers ? { mcpServers: input.mcpServers } : {}),
 					...(input.rationale ? { rationale: input.rationale } : {}),
-					...(input.bootstrap ? { bootstrap: true } : {}),
 				});
 				payload = {
 					op,

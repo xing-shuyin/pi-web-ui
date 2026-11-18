@@ -1,10 +1,12 @@
-import { spawn, type ChildProcess } from "node:child_process";
+import type { ChildProcessWithoutNullStreams } from "node:child_process";
 import { existsSync, readFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
+import { describeCommandLaunchFailure, resolveCommandLaunch, type CommandSpawnOptions } from "./command-spawn.js";
 import { getMcpAccessToken, refreshMcpAccessToken } from "./mcp-oauth.js";
 import type { PluginAgentTool } from "./plugins.js";
 import type { UiMcpToolInfo } from "./protocol.js";
+import { spawnChildPiped, type SpawnedChild } from "./spawn-child.js";
 
 export function expandEnvVars(val: string): string {
 	return val.replace(/\$\{([^}]+)\}/g, (_, k) => process.env[k] ?? "");
@@ -85,7 +87,8 @@ interface PendingRequest {
 }
 
 export class McpClient {
-	private child: ChildProcess | null = null;
+	private child: ChildProcessWithoutNullStreams | null = null;
+	private childStop: SpawnedChild["stop"] | null = null;
 	private buffer = "";
 	private pending = new Map<string, PendingRequest>();
 	private log: (...a: unknown[]) => void;
@@ -155,7 +158,6 @@ export class McpClient {
 		if (!command) {
 			throw new Error("MCP 服务器规格未声明 command 启动命令");
 		}
-		this.log(`[mcp:${this.name}] starting: ${command} ${args.join(" ")}`);
 		this.buffer = "";
 		const spawnedEnv: Record<string, string> = { ...(process.env as Record<string, string>) };
 		if (env) {
@@ -163,16 +165,34 @@ export class McpClient {
 				spawnedEnv[k] = expandEnvVars(v);
 			}
 		}
-		const child = spawn(command, args, {
+		// 命令解析用子进程自己的环境：mcp.json 的 env 能改写 PATH，解析就得看同一套，否则会跟旧行为对不上
+		let launch: ReturnType<typeof resolveCommandLaunch>;
+		try {
+			launch = resolveCommandLaunch(command, args, {
+				cwd: cwd ?? undefined,
+				env: spawnedEnv,
+				...this.clientOpts.spawnOptions,
+			});
+		} catch (err) {
+			throw new Error(this.launchFailure(command, err instanceof Error ? err.message : String(err)));
+		}
+		this.log(`[mcp:${this.name}] starting: ${[launch.file, ...launch.args].join(" ")}`);
+		const spawned = spawnChildPiped({
+			cmd: launch.file,
+			args: launch.args,
 			cwd: cwd ?? undefined,
 			env: spawnedEnv,
-			stdio: ["pipe", "pipe", "pipe"],
-			windowsHide: true,
 		});
+		const child = spawned.child;
 		this.child = child;
-		child.stdin?.on("error", () => {});
+		this.childStop = spawned.stop;
+		child.stdin.on("error", () => {});
 		child.stderr.on("data", (d) => this.log(`[mcp:${this.name}] stderr:`, d.toString().trimEnd()));
-		child.on("error", (err) => this.rejectAll(new Error(`[mcp:${this.name}] spawn error: ${err.message}`)));
+		child.on("error", (err) => {
+			// spawn 失败不会有 exit 事件：留着 child 会让后续调用误以为「进程还在」，一路等到超时
+			if (this.child === child) this.child = null;
+			this.rejectAll(new Error(this.launchFailure(command, err.message)));
+		});
 		child.on("exit", (code, sig) => {
 			this.child = null;
 			this.buffer = "";
@@ -205,15 +225,11 @@ export class McpClient {
 			this.tools = Array.isArray(listed.tools) ? listed.tools : [];
 			this.log(`[mcp:${this.name}] ready, ${this.tools.length} tools`);
 			if (this.shuttingDown) {
-				try {
-					child.kill();
-				} catch {}
+				this.stopChild();
 				if (this.child === child) this.child = null;
 			}
 		} catch (err) {
-			try {
-				child.kill();
-			} catch {}
+			this.stopChild();
 			if (this.child === child) this.child = null;
 			throw err;
 		}
@@ -272,6 +288,9 @@ export class McpClient {
 			this.starting = null;
 		});
 		await this.starting;
+		// 懒重启（子进程退出 / HTTP 会话失效）后工具表可能变了：通知桥重新聚合，
+		// 否则界面与工具白名单会一直停留在进程崩溃前的那份快照上。
+		this.onToolsChanged?.();
 	}
 
 	getTools(): McpToolDefinition[] {
@@ -379,9 +398,7 @@ export class McpClient {
 		this.rejectAll(new Error("[mcp] client closed"));
 		for (const controller of this.notificationControllers) controller.abort();
 		if (this.child) {
-			try {
-				this.child.kill();
-			} catch {}
+			this.stopChild();
 			this.child = null;
 		}
 		if (this.isHttp && this.sessionId && this.spec.url) {
@@ -770,11 +787,15 @@ export class McpClient {
 		const child = this.child;
 		this.child = null;
 		this.rejectAll(err);
-		if (child) {
-			try {
-				child.kill();
-			} catch {}
-		}
+		if (child) this.stopChild();
+	}
+
+	/** 关停子进程：整棵树收口到单源 `stop()`；**发起后不等**（退出由 `exit` 事件收场）。 */
+	private stopChild(): void {
+		const stop = this.childStop;
+		this.childStop = null;
+		if (!stop) return;
+		void stop().catch(() => {});
 	}
 
 	private handleProgress(params: { progressToken?: number | string; progress?: number; total?: number }): void {
@@ -825,6 +846,11 @@ export class McpClient {
 			const p = msg.params as { level?: string; message?: string } | undefined;
 			if (p?.message) this.log(`[mcp:${this.name}] ${p.level ?? "message"}:`, p.message);
 		}
+	}
+
+	/** 解析 / spawn 失败统一带上 Windows 上批处理 shim 的常见处置，错误会进 getServerStatus 显示在界面上。 */
+	private launchFailure(command: string, detail: string): string {
+		return `[mcp:${this.name}] ${describeCommandLaunchFailure(command, detail)}`;
 	}
 
 	private rejectAll(err: Error): void {
@@ -956,6 +982,8 @@ export interface McpReloadSummary {
 
 export interface McpClientOptions {
 	agentDir?: string;
+	/** 覆盖命令解析环境（单测注入假 PATH；生产留空走 process.env）。 */
+	spawnOptions?: CommandSpawnOptions;
 }
 
 export interface McpBridgeOptions {

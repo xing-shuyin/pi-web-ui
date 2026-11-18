@@ -47,4 +47,17 @@ describe("桌面窗口拖拽区与 Agent 可见性（启动点不动的回归守
 		// 交互条目仍需逐条 no-drag，否则点击会被拖拽吞掉
 		expect(webCss).toMatch(/\.topbar \.topbar-flow > \*:not\(\.tb-spacer\)[\s\S]{0,200}?-webkit-app-region:\s*no-drag/);
 	});
+
+	it("Agent 顶栏整个盒子都是拖窗区（含自身内边距），不留按不动的死带", () => {
+		// 只把 .topbar-flow 设成 drag 时，顶栏自己的 10px 上下内边距是 no-drag：
+		// 窗口最顶端 4~6px 被 Windows 原生 resize 边框吃掉，再往里那条就什么都不响应，
+		// 表现是「顶栏最上面一小块拖不动窗口，必须往下挪一点」。
+		const topbar = ruleBody("body.is-desktop .topbar", webCss);
+		expect(topbar).not.toBe("");
+		expect(topbar).toMatch(/-webkit-app-region:\s*drag/);
+		expect(topbar).not.toMatch(/-webkit-app-region:\s*no-drag/);
+		// 顶栏里非按钮的直接子节点（溢出菜单外壳、溢出菜单本体）也要挖洞，否则整块变拖拽区
+		for (const sel of [".topbar .plugin-topbar-more", ".topbar .plugin-topbar-menu"])
+			expect(webCss).toMatch(new RegExp(`${sel.replace(/\./g, "\\.")},`));
+	});
 });

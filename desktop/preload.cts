@@ -98,4 +98,19 @@ contextBridge.exposeInMainWorld("piDesktop", {
 			return () => ipcRenderer.removeListener("pi-desktop-updater:event", listener);
 		},
 	},
+	// 系统集成（默认浏览器 / 文件关联）：注册表读写只在主进程，界面只拿状态与开关
+	systemIntegration: {
+		get: (): Promise<unknown> => ipcRenderer.invoke("pi-desktop:system-integration-get"),
+		apply: (payload: { browser: boolean; extensions: string[] }): Promise<unknown> =>
+			ipcRenderer.invoke("pi-desktop:system-integration-apply", payload),
+		openDefaultApps: (): Promise<boolean> => ipcRenderer.invoke("pi-desktop:system-integration-open-defaults"),
+		openWithSystem: (path: string): Promise<boolean> => ipcRenderer.invoke("pi-desktop:open-with-system", path),
+	},
+	// 双击关联文件 / 点链接时主进程推过来的目标
+	onOpenFiles: (cb: (payload: { files: string[] }) => void): (() => void) => {
+		const listener = (_event: IpcRendererEvent, payload: { files?: string[] }) =>
+			cb({ files: Array.isArray(payload?.files) ? payload.files.filter((f) => typeof f === "string") : [] });
+		ipcRenderer.on("pi-desktop:open-file", listener);
+		return () => ipcRenderer.removeListener("pi-desktop:open-file", listener);
+	},
 });

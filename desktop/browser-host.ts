@@ -38,6 +38,7 @@ import {
 } from "../browser/runtime/extension-state.js";
 import { fillCredential, fillTotpCode, publicCredential } from "../browser/runtime/credentials.js";
 import { mergeCredentials, parseCredentialCsv } from "../browser/runtime/credentials-csv.js";
+import { BOOKMARK_FILE_MAX_BYTES, mergeBookmarks, parseBookmarks } from "../browser/runtime/bookmarks-import.js";
 import { publicPasskey } from "../browser/runtime/passkeys.js";
 import { PASSKEY_PROMPT_MS, passkeyPromptDataUrl } from "../browser/runtime/passkey-prompt.js";
 import {
@@ -256,6 +257,8 @@ export class DesktopBrowserHost {
 			browserPreload: string;
 			agentPreload: string;
 			dataDir: string;
+			/** Agent 页就绪（含重新加载）：主进程用它把双击文件/点链接的待打开目标送进界面。 */
+			onAgentReady?: () => void;
 		},
 	) {
 		this.browser = new BrowserManager({
@@ -1103,6 +1106,11 @@ export class DesktopBrowserHost {
 				this.publish();
 				// 启动占位消失在 Agent 模式时，把焦点交给刚就绪的页面，避免用户再点一下
 				if (this.mode === "agent") this.agent.webContents.focus();
+				try {
+					this.options.onAgentReady?.();
+				} catch (error) {
+					console.warn("[desktop] onAgentReady failed:", error);
+				}
 			});
 			this.agent.webContents.on("render-process-gone", (_event, details) =>
 				this.setAgentError(`Agent renderer: ${details.reason}`),
@@ -1142,6 +1150,15 @@ export class DesktopBrowserHost {
 		switch (action) {
 			case "state":
 				return this.getState();
+			case "focus": {
+				// 内部页要键盘焦点（新标签页的搜索框）：只认「自己就是当前活动标签」的请求。
+				// Agent 模式或地址浮层开着时不给——那时用户正在别处打字，抢走就是丢字。
+				if (this.mode === "agent" || this.overlay) return false;
+				const active = this.browser.getWebContents(this.browser.getActiveTabId() ?? "");
+				if (!active || active.isDestroyed() || active !== sender) return false;
+				active.focus();
+				return true;
+			}
 			case "overlay":
 				// 搜索浮层专用：外壳 DOM 盖住整块内容区时，内容视图得让位（原生视图不能被 DOM 覆盖）
 				if (sender === this.window.webContents) {
@@ -1212,6 +1229,35 @@ export class DesktopBrowserHost {
 				this.browser.saveBookmarks({ type: "folder", name: "Bookmarks", children: args.bookmarks });
 				this.publish();
 				return true;
+			case "bookmarks.import": {
+				// 导出文件由宿主读、宿主解析：书签 HTML 可能几 MB，渲染层不需要正文，只要回执里的条数
+				const chosen = await dialog.showOpenDialog(this.window, {
+					properties: ["openFile"],
+					filters: [
+						{ name: "书签文件（HTML / JSON）", extensions: ["html", "htm", "json"] },
+						{ name: "Chrome Bookmarks 数据文件", extensions: ["*"] },
+					],
+				});
+				if (chosen.canceled || !chosen.filePaths[0]) return null;
+				const source = chosen.filePaths[0];
+				const info = await stat(source);
+				if (info.size > BOOKMARK_FILE_MAX_BYTES)
+					throw new Error(`That file is over ${BOOKMARK_FILE_MAX_BYTES / 1024 / 1024} MB`);
+				const parsed = parseBookmarks(await readFile(source, "utf8"));
+				const root = this.browser.listBookmarks();
+				const merged = mergeBookmarks(root.children ?? [], parsed.nodes, {
+					folderName: text(args.folderName),
+				});
+				if (merged.imported) {
+					this.browser.saveBookmarks({ ...root, type: "folder", children: merged.children });
+					this.publish();
+				}
+				return {
+					imported: merged.imported,
+					duplicate: merged.duplicate,
+					skipped: parsed.skipped + merged.skipped,
+				};
+			}
 			case "design.status":
 				return this.browser.designStatuses();
 			case "design.get":

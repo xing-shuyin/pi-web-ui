@@ -6,11 +6,19 @@ import { openBotChat, openBotManagement } from "../bot-chat";
 import { openContextMenu } from "../context-menu-state";
 import type { UiSlotEntry } from "../ui-slots";
 import { referenceBotInComposer } from "../bot-reference";
-import { requestBotEdit } from "../bot-edit";
-import { createBotDraft, requestBotCreate, subscribeBotCreateRequest } from "../bot-create";
+import {
+	botDraftFailureText,
+	createBotDraft,
+	requestBotCreate,
+	subscribeBotCreateRequest,
+	type BotDraftFailure,
+} from "../bot-create";
+import { botDraftActionErrorText, type BotDraftActionFailure } from "../bot-draft-action";
 import { copyTextToClipboard } from "../use-copy-feedback";
 import { BotMemoryDialog } from "./BotMemoryDialog";
+import { BotChatHistoryDialog } from "./BotChatHistoryDialog";
 import { BotCreateDialog } from "./BotCreateDialog";
+import { BotEditDialog } from "./BotEditDialog";
 import "./agent-bots.css";
 
 /**
@@ -20,6 +28,7 @@ import "./agent-bots.css";
  * 不建房间、不派任务。右键菜单的「新开对话」才是另起一条（旧记录保留）。
  * 这里只负责列表与状态：**加号 = 新建智能体**（AI 起草优先、手动填写就地弹窗），
  * 草案确认也在这一块；导入迁移包在设备中心的 Bot 管理页（本区块不再挂导入）。
+ * **建群也在这一行**：「群组」区块空时整块隐藏（`hideWhenEmpty`），入口不能只住在那里。
  */
 
 type BotRow = {
@@ -28,6 +37,10 @@ type BotRow = {
 	enabled: boolean;
 	deviceName?: string;
 	online?: boolean;
+	/** Bot 绑定的工作目录（服务端 `bot-panel` 的投影）；缺失时行提示里不提。 */
+	cwd?: string;
+	/** 正在执行任务；缺失或 false = 空闲（服务端可选投影）。 */
+	busy?: boolean;
 	/** 本机注册表（`device-bots/`）的 Bot；false = 其它设备登记在 Hub 上的 Bot。 */
 	local?: boolean;
 };
@@ -50,10 +63,13 @@ type BotDraft = {
 export function AgentBotsSection({
 	active = true,
 	activeBotId,
+	cwd,
 }: {
 	active?: boolean;
 	/** 当前对话如果是某 Bot 的私聊，这里就是它的 id（私聊 = 普通对话 + Bot 身份）。 */
 	activeBotId?: string | null;
+	/** 当前项目（工作区）：新建 Bot 默认落在它下面，而不是服务端默认目录。 */
+	cwd?: string | null;
 }) {
 	const t = useT();
 	const [bots, setBots] = useState<BotRow[] | null>(null);
@@ -61,6 +77,9 @@ export function AgentBotsSection({
 	const [grants, setGrants] = useState<Record<string, string[]>>({});
 	const [approving, setApproving] = useState<string | null>(null);
 	const [memoryBot, setMemoryBot] = useState<BotRow | null>(null);
+	const [historyBot, setHistoryBot] = useState<BotRow | null>(null);
+	// 编辑就地弹窗（复用设备中心那份编辑器）：只存 id，不在左栏拼一份不完整的 Bot。
+	const [editBotId, setEditBotId] = useState<string | null>(null);
 	const [notice, setNotice] = useState("");
 	// 加号 = 新建智能体：一句话交给服务端 AI 起草（产草案），或切到设备中心手动填写。
 	const [creating, setCreating] = useState(false);
@@ -70,6 +89,10 @@ export function AgentBotsSection({
 	const [createBusy, setCreateBusy] = useState(false);
 	const [createError, setCreateError] = useState("");
 	const [error, setError] = useState("");
+	// 确认/取消失败：与列表加载错误（`error`）分开——草案仍在待确认区，原因要贴在那里并可直接重试。
+	const [draftError, setDraftError] = useState<{ id: string; action: "confirm" | "discard"; text: string } | null>(
+		null,
+	);
 	const [collapsed, setCollapsed] = useState(false);
 	const [pending, setPending] = useState<string | null>(null);
 	const generation = useRef(0);
@@ -142,14 +165,18 @@ export function AgentBotsSection({
 		} finally {
 			setCreateBusy(false);
 		}
-	}, [createText, load, t]);
+	}, [createText, cwd, load, t]);
 
 	const confirmDraft = useCallback(
 		async (draft: BotDraft) => {
 			const approved = grants[draft.id] ?? [];
-			if (draft.highPrivilegeTools.some((tool) => !approved.includes(tool))) return;
+			if (draft.highPrivilegeTools.some((tool) => !approved.includes(tool))) {
+				setDraftError({ id: draft.id, action: "confirm", text: t("agentBotsDraftNeedsApproval") });
+				return;
+			}
 			const controller = new AbortController();
 			setApproving(draft.id);
+			setDraftError(null);
 			try {
 				const result = await deviceGroupRequest<{ bot?: { id: string } }>(
 					`bot-drafts/${encodeURIComponent(draft.id)}/approve`,
@@ -164,32 +191,44 @@ export function AgentBotsSection({
 				await load();
 				if (result.bot?.id) openBotChat(result.bot.id);
 			} catch (cause) {
-				setError(cause instanceof Error ? cause.message : String(cause));
+				setDraftError({
+					id: draft.id,
+					action: "confirm",
+					text: botDraftActionErrorText(cause, draftActionWordTable(t)),
+				});
+				// 服务端失败后草案仍留在待确认列表：重新拉一次，「重试」才有真实草案可点。
+				await load();
 			} finally {
 				setApproving(null);
 			}
 		},
-		[grants, load],
+		[grants, load, t],
 	);
 	const discardDraft = useCallback(
 		async (draft: BotDraft) => {
 			const controller = new AbortController();
 			setApproving(draft.id);
+			setDraftError(null);
 			try {
 				await deviceGroupRequest(`bot-drafts/${encodeURIComponent(draft.id)}/discard`, controller.signal, {});
 				await load();
 			} catch (cause) {
-				setError(cause instanceof Error ? cause.message : String(cause));
+				setDraftError({
+					id: draft.id,
+					action: "discard",
+					text: botDraftActionErrorText(cause, draftActionWordTable(t)),
+				});
+				await load();
 			} finally {
 				setApproving(null);
 			}
 		},
-		[load],
+		[load, t],
 	);
 
 	// 右键菜单：Bot 行本身是「对话入口」，不做成编辑表单的入口。
-	// 菜单只放跳转与轻量动作（开私聊 / @ 引用 / 编辑与权限跳设备中心 / 记忆 / 复制 ID），
-	// 避免左栏和设备中心各写一套 Bot 编辑器。
+	// 菜单只放跳转与轻量动作（开私聊 / @ 引用 / 编辑就地弹窗 / 设备中心 / 记忆 / 复制 ID），
+	// 编辑器只留 `LocalBots` 一份（`BotEditDialog` 复用它），左栏不另写一套表单。
 	const openBotMenu = useCallback(
 		(event: ReactMouseEvent, bot: BotRow) => {
 			event.preventDefault();
@@ -227,9 +266,10 @@ export function AgentBotsSection({
 					if (entry.action === "chat") void startChat(bot);
 					else if (entry.action === "new-chat") void startChat(bot, { fresh: true });
 					else if (entry.action === "reference") referenceBotInComposer({ botId: bot.id, name: bot.name });
-					else if (entry.action === "edit") requestBotEdit(bot.id);
+					else if (entry.action === "edit") setEditBotId(bot.id);
 					else if (entry.action === "manage") openBotManagement();
 					else if (entry.action === "memory") setMemoryBot(bot);
+					else if (entry.action === "history") setHistoryBot(bot);
 					else if (entry.action === "copy-id") void copyTextToClipboard(bot.id);
 				},
 			});
@@ -261,12 +301,24 @@ export function AgentBotsSection({
 					aria-label={collapsed ? t("agentBots.expand") : t("agentBots.collapse")}
 					onClick={() => setCollapsed((value) => !value)}
 				>
-					{collapsed ? <FiChevronRight aria-hidden="true" /> : <FiChevronDown aria-hidden="true" />}
 					<FiCpu aria-hidden="true" />
 					<span className="lp-bots-title">{t("agentBots.title")}</span>
 					{botCount(bots) > 0 && <span className="lp-bots-count">{botCount(bots)}</span>}
+					{/* 与项目 / 群组区块同形：折叠箭头统一在标题尾巴上。 */}
+					<span className="lp-section-chevron" aria-hidden="true">
+						{collapsed ? <FiChevronDown /> : <FiChevronUp />}
+					</span>
 				</button>
 				<div className="lp-bots-actions">
+					<button
+						type="button"
+						className="lp-bots-group"
+						title={t("createGroup")}
+						aria-label={t("createGroup")}
+						onClick={openGroupCreate}
+					>
+						<FiUsers aria-hidden="true" />
+					</button>
 					<button
 						type="button"
 						className="lp-bots-manage"
@@ -464,14 +516,66 @@ export function AgentBotsSection({
 									🧠
 								</button>
 							</div>
-						);
-					})}
-				</div>
+						)}
+						{!error && !bots && <p className="lp-bots-empty">{t("agentBotsLoading")}</p>}
+						{!error && bots && bots.length === 0 && drafts.length === 0 && (
+							<p className="lp-bots-empty">{t("agentBotsEmpty")}</p>
+						)}
+						{(bots ?? []).map((bot) => {
+							// 高亮跟着"当前对话是不是这个 Bot 的私聊"走（普通会话 + Bot 绑定）。
+							const isActive = activeBotId === bot.id;
+							return (
+								<div key={bot.id} className="lp-bot-item" onContextMenu={(event) => openBotMenu(event, bot)}>
+									<button
+										type="button"
+										className={`lp-bot-row${isActive ? " is-active" : ""}`}
+										title={rowHint(bot, t)}
+										aria-pressed={isActive}
+										disabled={pending !== null}
+										onClick={() => void startChat(bot)}
+									>
+										<span className={`lp-bot-avatar${bot.online ? " is-online" : ""}`} aria-hidden="true">
+											{bot.name.slice(0, 1).toUpperCase()}
+										</span>
+										<span className="lp-bot-meta">
+											<span className="lp-bot-name">{bot.name}</span>
+											<span className="lp-bot-sub">
+												{pending === bot.id
+													? t("agentBotsStarting")
+													: bot.online === false
+														? t("agentBotsOffline")
+														: (bot.deviceName ?? "Bot")}
+											</span>
+										</span>
+										{bot.busy === true && (
+											<span className="lp-bot-busy" title={t("agentBotsBusyTip")}>
+												{t("agentBotsBusy")}
+											</span>
+										)}
+									</button>
+									<button
+										type="button"
+										className="lp-bot-memory"
+										title={t("agentBotsMemoryTip")}
+										aria-label={t("agentBotsMemory")}
+										onClick={() => setMemoryBot(bot)}
+									>
+										🧠
+									</button>
+								</div>
+							);
+						})}
+					</div>
+				)}
+			</div>
+			{historyBot && (
+				<BotChatHistoryDialog botId={historyBot.id} botName={historyBot.name} onClose={() => setHistoryBot(null)} />
 			)}
 			{memoryBot && (
 				<BotMemoryDialog botId={memoryBot.id} botName={memoryBot.name} onClose={() => setMemoryBot(null)} />
 			)}
-			{manualOpen && <BotCreateDialog onClose={() => setManualOpen(false)} />}
+			{editBotId && <BotEditDialog botId={editBotId} onClose={() => setEditBotId(null)} />}
+			{manualOpen && <BotCreateDialog cwd={cwd} onClose={() => setManualOpen(false)} />}
 		</section>
 	);
 }

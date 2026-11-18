@@ -1539,6 +1539,12 @@
 		min-height: 0;
 		height: 100%;
 		overflow: hidden;
+		/* 左栏区块标题（智能体 / 群组 / 项目）的左对齐契约：
+		   文字起点 = 左内边距 + 图标盒 + 图标与文字间距，三块必须用同一组令牌，
+		   `agent-bots.css` 里的 `.lp-bots-toggle` 读同名变量（带同一份默认值作兜底）。 */
+		--lp-title-pad: 10px;
+		--lp-title-icon: 13px;
+		--lp-title-gap: 5px;
 	}
 
 	.lp-section {
@@ -1570,6 +1576,13 @@
 
 	.lp-section.panel-projects {
 		border-bottom-width: 2px;
+	}
+
+	/* 与项目树同层的块（群组）：高度跟着内容走，超过上限时自身滚动，
+	   不参与 lp-section 的弹性分配，也不把项目树挤没。 */
+	.lp-panel .lp-section.lp-section-auto {
+		flex: 0 0 auto;
+		max-height: 40%;
 	}
 
 	.lp-sash,
@@ -1647,7 +1660,8 @@
 		flex-shrink: 0;
 	}
 
-	.lp-panel .panel-collapse-btn + .lp-section .lp-section-actions {
+	.lp-panel .panel-collapse-btn + .lp-section .lp-section-actions,
+	.lp-panel .panel-collapse-btn + .lp-bots-section .lp-bots-actions {
 		margin-right: 28px;
 	}
 	.lp-section-action {
@@ -1683,11 +1697,13 @@
 	}
 
 	.lp-workspace-menu {
-		position: absolute;
-		top: calc(100% + 4px);
-		right: 0;
+		/* 定位由 useFloatingPanel 提供（fixed + 翻转），这里只管外观：
+		   左栏区块是 overflow: hidden 的滚动容器，内联下拉必被裁切。 */
 		min-width: 105px;
 		max-width: 140px;
+		max-height: calc(100vh - 16px);
+		overflow-y: auto;
+		overscroll-behavior: contain;
 		background: var(--bg-elev2);
 		border: 1px solid var(--border);
 		border-radius: 8px;
@@ -1737,11 +1753,6 @@
 		color: var(--text-dim);
 		flex-shrink: 0;
 	}
-	.lp-workspace-menu-divider {
-		height: 1px;
-		background: var(--border-subtle, var(--border));
-		margin: 3px 0;
-	}
 
 	.lp-section-title {
 		display: flex;
@@ -1768,7 +1779,7 @@
 		color: var(--text);
 	}
 	.lp-section .panel-section-title {
-		padding: 0 10px;
+		padding: 0 var(--lp-title-pad, 10px);
 	}
 	.lp-section-title-text {
 		flex: 0 1 auto;
@@ -1780,6 +1791,25 @@
 		display: inline-flex;
 		align-items: center;
 		line-height: 1;
+	}
+	/* 左栏顶部三块（智能体 / 群组 / 项目）同层：标题统一成「图标 + 名称 + 数量」的 chip 观感。 */
+	.lp-section-title-text.lp-section-title-chip {
+		gap: var(--lp-title-gap, 5px);
+		font-size: 12px;
+		font-weight: 600;
+		letter-spacing: 0;
+		text-transform: none;
+	}
+	.lp-section-title-chip svg {
+		flex: none;
+		width: var(--lp-title-icon, 13px);
+		height: var(--lp-title-icon, 13px);
+	}
+	.lp-section-count {
+		flex: none;
+		font-size: 11px;
+		font-weight: 500;
+		opacity: 0.85;
 	}
 	.lp-section-chevron {
 		flex-shrink: 0;
@@ -5572,16 +5602,16 @@
 		display: block;
 		color: var(--text-dim);
 	}
-	.dc-bots.is-create-only {
+	.dc-bots.is-solo {
 		padding: 0;
 		border: 0;
 		margin: 0;
-		/* 只剩一个抽屉：不能留一块空卡片背景（左栏弹窗时它就楺在页面上）。 */
+		/* 只剩一个抽屉（新建 / 编辑弹窗）：不能留一块空卡片背景。 */
 		background: transparent;
 	}
-	.dc-bots.is-create-only > .dg-heading,
-	.dc-bots.is-create-only > p,
-	.dc-bots.is-create-only .dc-bot-list {
+	.dc-bots.is-solo > .dg-heading,
+	.dc-bots.is-solo > p,
+	.dc-bots.is-solo .dc-bot-list {
 		display: none;
 	}
 	.dg-side-heading {
@@ -7707,10 +7737,6 @@
 		height: 100%;
 
 		touch-action: none;
-	}
-
-	.term-xterm .xterm .xterm-viewport {
-		background-color: var(--term-bg);
 	}
 
 	.term-empty {
@@ -10060,8 +10086,12 @@
 		--topbar-ctl-h: 28px;
 	}
 
+	/* 顶栏整个盒子都算拖窗区（含自身 10px 上下内边距）：只给 .topbar-flow 供拖拽时，顶栏
+	   最上面那条内边距是 no-drag，按下去什么都不发生——窗口最顶端那 4~6px 又被 Windows
+	   原生 resize 边框吃掉，两条加起来就是一条「按不动也拖不动」的死带，用户必须往下
+	   挪一点才拖得动窗口。交互条目仍由下面的 no-drag 规则逐条挖洞（与 .topbar-flow 同套路）。 */
 	body.is-desktop .topbar {
-		-webkit-app-region: no-drag;
+		-webkit-app-region: drag;
 		user-select: none;
 	}
 
@@ -10089,6 +10119,8 @@
 	body.is-desktop .topbar .bar-item-wrap,
 	body.is-desktop .topbar .tb-tab,
 	body.is-desktop .topbar .plugin-topbar-item,
+	body.is-desktop .topbar .plugin-topbar-more,
+	body.is-desktop .topbar .plugin-topbar-menu,
 	body.is-desktop .topbar .topbar-flow > *:not(.tb-spacer),
 	body.is-desktop .topbar .brand {
 		-webkit-app-region: no-drag;
@@ -12212,6 +12244,81 @@
 	.dd-refresh.accent.armed {
 		color: var(--amber);
 		border-color: rgba(245, 158, 11, 0.5);
+	}
+
+	/* 桌面版应用内更新面板（web/src/components/DesktopUpdatePanel.tsx）：
+	   进度条 + 发布说明。说明沿用聊天 markdown 的渲染，但按下拉面板的字号重排。 */
+	.ddu {
+		display: flex;
+		flex-direction: column;
+		gap: 6px;
+	}
+	.ddu .dd-actions {
+		padding: 0;
+	}
+	.ddu-progress {
+		height: 6px;
+		width: 100%;
+		border-radius: 999px;
+		background: var(--bg-elev);
+		overflow: hidden;
+	}
+	.ddu-progress > i {
+		display: block;
+		height: 100%;
+		background: var(--accent);
+		transition: width 0.2s ease-out;
+	}
+	.ddu-notes {
+		border: 1px solid var(--border-soft);
+		border-radius: 7px;
+		background: var(--bg-elev);
+		padding: 4px 8px;
+	}
+	.ddu-notes > summary {
+		cursor: pointer;
+		font-size: 12px;
+		color: var(--text-dim);
+	}
+	.ddu-notes > summary:hover {
+		color: var(--accent);
+	}
+	.ddu-notes-body {
+		max-height: 240px;
+		overflow-y: auto;
+		padding: 4px 0 2px;
+		font-size: 12px;
+		line-height: 1.55;
+		overflow-wrap: anywhere;
+	}
+	.ddu-notes-body h4 {
+		margin: 8px 0 2px;
+		font-size: 12px;
+		font-weight: 600;
+		color: var(--text);
+	}
+	.ddu-notes-body h4:first-child {
+		margin-top: 0;
+	}
+	.ddu-notes-body ul,
+	.ddu-notes-body ol {
+		margin: 2px 0 6px;
+		padding-left: 18px;
+	}
+	.ddu-notes-body p {
+		margin: 2px 0 6px;
+	}
+	.ddu-notes-body .md {
+		font-size: inherit;
+		line-height: inherit;
+	}
+	.ddu-notes-body .md p:first-child {
+		margin-top: 0;
+	}
+	.ddu-notes-body .md p:last-child,
+	.ddu-notes-body .md ul:last-child,
+	.ddu-notes-body .md ol:last-child {
+		margin-bottom: 0;
 	}
 
 	.protocol-banner {
@@ -35352,6 +35459,16 @@
 	overflow-x: visible;
 	white-space: pre;
 	word-break: normal;
+}
+
+/* ---- 无层覆盖区：xterm.css（三方、未分层）的 #000 视口底色 ----
+ * xterm.css 的 `.xterm .xterm-viewport { background-color: #000 }` 是未分层普通声明——
+ * 未分层永远胜过任何层内声明，所以写在 base / drawer 层里的同属性是空转（旧规则就这样白写了）。
+ * 代价是视口里 scrollable 元素没盖到的那几像素漏成纯黑，看上去就是终端底下一条黑条。
+ * 这里用更高权重（三连类）压掉它，不需要叹号 important。 */
+.term-xterm .xterm .xterm-viewport,
+.tui-overlay-xterm .xterm .xterm-viewport {
+	background-color: var(--term-bg, #0b0d12);
 }
 
 .goalbar.goalbar-collapsed {

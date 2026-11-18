@@ -41,6 +41,9 @@ vi.mock("electron", async () => {
 		isDevToolsOpened = vi.fn(() => false);
 		openDevTools = vi.fn();
 		closeDevTools = vi.fn();
+		// 注入与推送（dock / 下载圆钮 / 页面脚本）都走这一条：假体照真实 API 回一个 Promise
+		executeJavaScript = vi.fn(async (_code: string) => "");
+		insertCSS = vi.fn(async (_css: string) => "");
 		setWindowOpenHandler(handler: any) {
 			this.windowOpen = handler;
 		}
@@ -329,5 +332,35 @@ describe("BrowserManager", () => {
 		manager.dispose();
 		expect(item.cancel).not.toHaveBeenCalled();
 		expect(mock.sessions[0].listenerCount("will-download")).toBe(0);
+	});
+
+	it("pushes download state to the active page only, as a single display-only update()", () => {
+		const { manager } = setup();
+		const backgroundId = manager.getActiveTabId()!;
+		const background = manager.getWebContents(backgroundId) as unknown as { executeJavaScript: any };
+		const activeId = manager.createTab("https://example.com/page2");
+		const active = manager.getWebContents(activeId) as unknown as { executeJavaScript: any };
+		// 建标签本身会推一次（新页面要知道自己该不该显示圆钮），这里只关心下载事件带来的推送
+		background.executeJavaScript.mockClear();
+		active.executeJavaScript.mockClear();
+
+		const item = Object.assign(new EventEmitter(), {
+			getFilename: () => "track.zip",
+			getURL: () => "https://example.com/track.zip",
+			getTotalBytes: () => 900,
+			getReceivedBytes: () => 300,
+			setSavePath: vi.fn(),
+			cancel: vi.fn(),
+		});
+		mock.sessions[0].emit("will-download", { preventDefault: vi.fn() }, item, manager.getWebContents(activeId));
+
+		const code = active.executeJavaScript.mock.calls.at(-1)?.[0] as string;
+		expect(code).toContain("window.__PI_DOWNLOADS__ && window.__PI_DOWNLOADS__.update(");
+		expect(code).toContain("track.zip");
+		// 页面拿到的只能是显示用的字段，方向是单向的（脚本里没有任何反向能力）
+		expect(code).toContain('"state":"progressing"');
+		// 后台标签不推：同一时刻只有活动标签那一块是可见的
+		expect(background.executeJavaScript).not.toHaveBeenCalled();
+		manager.dispose();
 	});
 });

@@ -29,20 +29,46 @@ export class DeviceGroupRequestError extends Error {
 	constructor(
 		readonly status: number,
 		readonly code: string,
+		/**
+		 * 本地接口（目前只有 `bot-drafts`）明确允许展示的原因文本；Hub 上游的 `error` 永远不会落到这里。
+		 * 见 `server/device-center/local.ts` 的 `draftDetail`。
+		 */
+		readonly detail = "",
 	) {
 		super(`Device group request failed (${status})`);
 	}
 }
 
+/** 只有本地草案接口会写 `detail`：路径写死，避免把 Hub 上游文本读上来。 */
+const DETAIL_PATHS = ["bot-drafts"];
+
+/** 普通设备中心请求的默认超时。 */
+const DEVICE_REQUEST_TIMEOUT_MS = 15_000;
+/**
+ * 起草/确认草案要等一次真实模型调用（服务端上限 90s），15s 会先把客户端超时掉：
+ * 界面报"失败"，服务端其实还在跑。这里给足余量，且只对 `bot-drafts` 生效。
+ */
+export const BOT_DRAFT_REQUEST_TIMEOUT_MS = 120_000;
+
+function mayCarryDetail(path: string): boolean {
+	return DETAIL_PATHS.some((prefix) => path === prefix || path.startsWith(`${prefix}/`));
+}
+
 export async function deviceGroupRequest<T>(path: string, signal: AbortSignal, body?: object): Promise<T> {
 	const response = await fetch(withToken(appUrl(`/api/device-center/${path}`)), {
-		signal: AbortSignal.any([signal, AbortSignal.timeout(15_000)]),
+		signal: AbortSignal.any([
+			signal,
+			AbortSignal.timeout(mayCarryDetail(path) ? BOT_DRAFT_REQUEST_TIMEOUT_MS : DEVICE_REQUEST_TIMEOUT_MS),
+		]),
 		...(body === undefined
 			? {}
 			: { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) }),
 	});
 	const data = await response.json().catch(() => ({}));
-	if (!response.ok) throw new DeviceGroupRequestError(response.status, typeof data?.code === "string" ? data.code : "");
+	if (!response.ok) {
+		const detail = mayCarryDetail(path) && typeof data?.detail === "string" ? data.detail.trim() : "";
+		throw new DeviceGroupRequestError(response.status, typeof data?.code === "string" ? data.code : "", detail);
+	}
 	return data as T;
 }
 
@@ -118,16 +144,18 @@ export function DeviceGroupSection({
 	selectedRoomId,
 	flex,
 	onCollapsedChange,
-	hideHeader = false,
-	onRoomCountChange,
+	hideWhenEmpty = false,
+	autoHeight = false,
 }: {
 	active?: boolean;
 	entry?: UiSlotEntry;
 	selectedRoomId?: string | null;
 	flex?: number;
 	onCollapsedChange?: (collapsed: boolean) => void;
-	hideHeader?: boolean;
-	onRoomCountChange?: (count: number) => void;
+	/** 一条群组都没有时不占位（建群入口在「智能体」标题行）。 */
+	hideWhenEmpty?: boolean;
+	/** 与智能体、项目树同层排开：按内容高度排布，超出时自身滚动，不参与弹性分配。 */
+	autoHeight?: boolean;
 }) {
 	const t = useT();
 	const title = entry?.labelExplicit ? entry.label : t("deviceGroups");
@@ -170,7 +198,6 @@ export function DeviceGroupSection({
 			(next) => {
 				setBound(confirmedBound);
 				setRooms(next);
-				onRoomCountChange?.(next.length);
 				setError(null);
 				setLoading(false);
 			},
@@ -259,6 +286,8 @@ export function DeviceGroupSection({
 	};
 
 	if (bound === false || (bound === null && loading)) return null;
+	// 空群组不占位：左栏要的是“有就显示”，不让空态挤着下面的项目树。
+	if (hideWhenEmpty && rooms.length === 0 && !error) return null;
 
 	const body = (
 		<div className="lp-section-body dg-side-body">
@@ -360,22 +389,9 @@ export function DeviceGroupSection({
 		</div>
 	);
 
-	if (hideHeader) {
-		return (
-			<section
-				className="lp-section dg-side-section"
-				aria-label={title}
-				style={flex !== undefined ? { flex: `${flex} 1 0px` } : undefined}
-			>
-				{body}
-				{addingBots && <DeviceGroupBotDialog room={addingBots} onClose={() => setAddingBots(null)} />}
-			</section>
-		);
-	}
-
 	return (
 		<section
-			className={`lp-section dg-side-section ${collapsed ? "collapsed" : ""}`}
+			className={`lp-section dg-side-section${collapsed ? " collapsed" : ""}${autoHeight ? " lp-section-auto" : ""}`}
 			aria-label={title}
 			style={!collapsed && flex !== undefined ? { flex: `${flex} 1 0px` } : undefined}
 		>
@@ -387,8 +403,10 @@ export function DeviceGroupSection({
 					title={collapsed ? t("deviceGroupSectionExpand") : t("deviceGroupSectionCollapse")}
 					onClick={() => setCollapsed(!collapsed)}
 				>
-					<span className="lp-section-title-text">
-						{entry && hostEntryIcon(entry)} {title} ({rooms.length})
+					<span className="lp-section-title-text lp-section-title-chip">
+						{entry && hostEntryIcon(entry)}
+						<span>{title}</span>
+						<span className="lp-section-count">({rooms.length})</span>
 					</span>
 					<span className="lp-section-chevron">{collapsed ? <FiChevronDown /> : <FiChevronUp />}</span>
 				</button>

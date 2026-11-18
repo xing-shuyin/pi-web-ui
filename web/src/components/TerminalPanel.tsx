@@ -51,6 +51,8 @@ interface TerminalPanelProps {
 	onUiAction?: (item: UiSlotEntry) => void;
 	collapsed?: boolean;
 	onToggleCollapse?: () => void;
+	/** 头部 ✕ = 隐藏面板（终端会话继续跑）；杀终端只走每个 tab 自己的 ✕。必传：否则右上角会变成一个点了没反应的按钮。 */
+	onHide: () => void;
 }
 
 interface Draft {
@@ -102,6 +104,7 @@ export function TerminalPanel({
 	onUiAction,
 	collapsed = false,
 	onToggleCollapse,
+	onHide,
 }: TerminalPanelProps) {
 	const activeConversationId = allChat.activeConversationId || allChat.state?.conversationId || "";
 	const shellTerminals = useMemo(
@@ -440,19 +443,6 @@ export function TerminalPanel({
 
 	const runningCount = chat.terminals.filter((item) => item.running).length;
 
-	const closeAllTabs = () => {
-		for (const tab of chat.terminals) {
-			appSend({
-				type: "terminal_kill",
-				terminalId: tab.id,
-				conversationId: tab.conversationId,
-				ownerKind: tab.ownerKind ?? "client",
-			});
-			terminal.close(tab.id, tab.ownerKind ?? "client", tab.conversationId);
-		}
-		setActiveId(null);
-	};
-
 	const commandsBody = editing ? (
 		<div className="cmd-form">
 			<label htmlFor="cmd-name">{t("name")}</label>
@@ -614,13 +604,7 @@ export function TerminalPanel({
 							>
 								{collapsed ? <FiChevronUp /> : <FiChevronDown />}
 							</button>
-							<button
-								type="button"
-								className="icon-btn danger"
-								title={t("closeAllTerminals")}
-								disabled={chat.terminals.length === 0}
-								onClick={closeAllTabs}
-							>
+							<button type="button" className="icon-btn" title={t("termDrawerHide")} onClick={onHide}>
 								<FiX />
 							</button>
 						</div>

@@ -68,7 +68,8 @@ import { LocaleModal } from "./LocaleModal";
 import { focusComposer } from "../composer-bridge";
 import { useFloatingPanel } from "../use-floating-panel";
 import { isDesktopShell } from "../desktop";
-import { desktopReleasesUrl, useDesktopUpdater } from "../desktop-updater";
+import { hasPendingUpdate, useDesktopUpdater } from "../desktop-updater";
+import { DesktopUpdatePanel } from "./DesktopUpdatePanel";
 import { BarItem } from "./BarItem";
 import { EnginePicker } from "./EnginePicker";
 import { WindowControls } from "./WindowControls";
@@ -493,6 +494,16 @@ export function TopBar({
 	const [updateOpen, setUpdateOpen] = useState(false);
 	const inDesktopShell = isDesktopShell();
 	const desktopUpdater = useDesktopUpdater();
+	// 桌面版走应用内更新（desktop/updater.ts 的快照），网页/CLI 走 npm 那条：两者的「当前/最新」
+	// 不能混着显示，否则会出现「npm 说有新版、安装包其实已经是最新」的错位。
+	const shownVersion = inDesktopShell
+		? (desktopUpdater.state?.currentVersion ?? chat.update?.current)
+		: chat.update?.current;
+	const pendingDesktopUpdate = inDesktopShell && hasPendingUpdate(desktopUpdater.state);
+	const updateWaiting = inDesktopShell
+		? pendingDesktopUpdate
+		: Boolean(chat.update && !chat.update.upToDate && chat.update.latest);
+	const waitingVersion = inDesktopShell ? (desktopUpdater.state?.targetVersion ?? null) : (chat.update?.latest ?? null);
 	const [localeModalOpen, setLocaleModalOpen] = useState(false);
 
 	const updateTermIdsRef = useRef<Set<string>>(new Set());
@@ -760,130 +771,59 @@ export function TopBar({
 			</div>
 		</div>
 	);
-	const renderDesktopUpdater = () => {
-		const manualUrl = desktopReleasesUrl(chat.update?.latest ?? desktopUpdater.version);
-		const manual = (
-			<a className="dd-refresh dd-more-link" href={manualUrl} target="_blank" rel="noreferrer noopener">
-				{t("updateDesktopManual")}
-			</a>
-		);
-		if (!desktopUpdater.bridge)
-			return (
-				<>
-					<div className="dd-note warn">{t("updateDesktopNoBridge")}</div>
-					{manual}
-				</>
-			);
-		switch (desktopUpdater.state) {
-			case "checking":
-				return (
-					<>
-						<div className="dd-note">{t("updateDesktopChecking")}</div>
-						{manual}
-					</>
-				);
-			case "available":
-				return (
-					<>
-						<div className="dd-note warn">
-							{t("updateDesktopAvailable", {
-								version: desktopUpdater.version ?? chat.update?.latest ?? "",
-							})}
-						</div>
-						<button type="button" className="dd-refresh accent" onClick={() => desktopUpdater.download()}>
-							{t("updateDesktopDownload")}
-						</button>
-						{manual}
-					</>
-				);
-			case "downloading":
-				return (
-					<>
-						<div className="dd-note">{t("updateDesktopDownloading", { n: desktopUpdater.percent })}</div>
-						{manual}
-					</>
-				);
-			case "downloaded":
-				return (
-					<>
-						<div className="dd-note ok">{t("updateDesktopDownloaded")}</div>
-						<button type="button" className="dd-refresh accent" onClick={() => desktopUpdater.quitAndInstall()}>
-							{t("updateDesktopInstall")}
-						</button>
-						{manual}
-					</>
-				);
-			case "up-to-date":
-				return <div className="dd-note ok">{t("upToDate")}</div>;
-			case "error":
-				return (
-					<>
-						<div className="dd-note warn">{t("updateDesktopError", { error: desktopUpdater.message ?? "" })}</div>
-						<button type="button" className="dd-refresh" onClick={() => desktopUpdater.check()}>
-							{t("updateDesktopCheck")}
-						</button>
-						{manual}
-					</>
-				);
-			default:
-				return (
-					<>
-						<button type="button" className="dd-refresh accent" onClick={() => desktopUpdater.check()}>
-							{t("updateDesktopCheck")}
-						</button>
-						{manual}
-					</>
-				);
-		}
-	};
 	const renderUpdateBody = () => (
 		<>
 			<div className="dd-update">
-				<div className="dd-row">
-					<span>{t("currentVersion")}</span>
-					<b>v{chat.update?.current ?? "…"}</b>
-				</div>
-				<div className="dd-row">
-					<span>{t("latestVersion")}</span>
-					<b>
-						{chat.update === null
-							? t("checkingUpdate")
-							: chat.update.error
-								? chat.update.error
-								: chat.update.latest
-									? `v${chat.update.latest}`
-									: t("checkingUpdate")}
-					</b>
-				</div>
-				{chat.update && chat.update.upToDate && <div className="dd-note ok">{t("upToDate")}</div>}
-				{chat.update && !chat.update.upToDate && chat.update.latest && (
-					<div className="dd-note warn">{t("updateAvailable", { version: chat.update.latest })}</div>
-				)}
-				{chat.update?.latestPublishedAt &&
-					Date.now() - new Date(chat.update.latestPublishedAt).getTime() < 30 * 60_000 && (
-						<div className="dd-note warn">
-							{t("updateJustPublished", {
-								version: chat.update.latest ?? "",
-							})}
+				{inDesktopShell ? (
+					<DesktopUpdatePanel updater={desktopUpdater} busy={chat.status === "open"} />
+				) : (
+					<>
+						<div className="dd-row">
+							<span>{t("currentVersion")}</span>
+							<b>v{chat.update?.current ?? "…"}</b>
 						</div>
-					)}
-				{chat.update && !chat.update.upToDate && chat.update.latest && !inDesktopShell && (
-					<div className="dd-note">{t("updateTerminalHint")}</div>
-				)}
-				{chat.update && !chat.update.upToDate && chat.update.latest && inDesktopShell && (
-					<div className="dd-note">{t("updateDesktopNote")}</div>
+						<div className="dd-row">
+							<span>{t("latestVersion")}</span>
+							<b>
+								{chat.update === null
+									? t("checkingUpdate")
+									: chat.update.error
+										? chat.update.error
+										: chat.update.latest
+											? `v${chat.update.latest}`
+											: t("checkingUpdate")}
+							</b>
+						</div>
+						{chat.update && chat.update.upToDate && <div className="dd-note ok">{t("upToDate")}</div>}
+						{chat.update && !chat.update.upToDate && chat.update.latest && (
+							<div className="dd-note warn">{t("updateAvailable", { version: chat.update.latest })}</div>
+						)}
+						{chat.update?.latestPublishedAt &&
+							Date.now() - new Date(chat.update.latestPublishedAt).getTime() < 30 * 60_000 && (
+								<div className="dd-note warn">
+									{t("updateJustPublished", {
+										version: chat.update.latest ?? "",
+									})}
+								</div>
+							)}
+						{chat.update && !chat.update.upToDate && chat.update.latest && (
+							<div className="dd-note">{t("updateTerminalHint")}</div>
+						)}
+					</>
 				)}
 			</div>
 			<div className="dd-actions">
-				<button type="button" className="dd-refresh" onClick={() => appSend({ type: "check_update" })}>
-					{chat.update === null ? t("checkingUpdate") : t("checkUpdate")}
-				</button>
+				{/* 桌面版的检查 / 下载 / 安装都在 DesktopUpdatePanel 里按状态出现，这里不再放重复按钮。 */}
+				{!inDesktopShell && (
+					<button type="button" className="dd-refresh" onClick={() => appSend({ type: "check_update" })}>
+						{chat.update === null ? t("checkingUpdate") : t("checkUpdate")}
+					</button>
+				)}
 				{chat.update && !chat.update.upToDate && chat.update.latest && !inDesktopShell && (
 					<button type="button" className="dd-refresh accent" onClick={runUpdate}>
 						{t("updateNow")}
 					</button>
 				)}
-				{chat.update && !chat.update.upToDate && chat.update.latest && inDesktopShell && renderDesktopUpdater()}
 				{service && (
 					<button
 						type="button"
@@ -1226,12 +1166,12 @@ export function TopBar({
 				trigger={
 					<>
 						<FiDownload />
-						<span className="chip-sub">v{chat.update?.current ?? "…"}</span>
-						{chat.update && !chat.update.upToDate && (
+						<span className="chip-sub">v{shownVersion ?? "…"}</span>
+						{updateWaiting && (
 							<span
 								className="update-dot"
 								title={t("updateAvailable", {
-									version: chat.update.latest ?? "",
+									version: waitingVersion ?? "",
 								})}
 							/>
 						)}
@@ -1244,7 +1184,9 @@ export function TopBar({
 				onOpenChange={(v) => {
 					setUpdateOpen(v);
 					if (v) {
-						appSend({ type: "check_update" });
+						// 桌面版只回到主进程的快照（不重复打网络），网页/CLI 才去查 npm。
+						if (inDesktopShell) desktopUpdater.refresh();
+						else appSend({ type: "check_update" });
 						appSend({ type: "check_updates_all" });
 					}
 				}}

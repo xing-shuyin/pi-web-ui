@@ -38,9 +38,12 @@ describe("一句话创建的草案层", () => {
 		const draft = await store.create(normalized, "model");
 		expect(draft.status).toBe("pending");
 		expect(draft.highPrivilegeTools).toEqual(["bash"]);
-		await expect(store.approve(draft.id, ["read"])).rejects.toThrow(/explicit approval/);
-		const approved = await store.approve(draft.id, ["read", "bash"]);
-		expect(approved.status).toBe("approved");
+		await expect(store.assertApprovable(draft.id, ["read"])).rejects.toThrow(/explicit approval/);
+		const approved = await store.assertApprovable(draft.id, ["read", "bash"]);
+		expect(approved.status).toBe("pending");
+		// 只校验不落状态：Bot 还没创建成功时草案必须留在列表里（可以重试/取消）。
+		expect(await store.list()).toHaveLength(1);
+		await store.markCreated(draft.id, "bot-1", ["read", "bash"]);
 		expect(await store.list()).toHaveLength(0);
 	});
 
@@ -73,13 +76,13 @@ describe("一句话创建的草案层", () => {
 		const draft = await store.create(normalizeBotDraft(draftInput, allowed, "model"), "model");
 		clock.now += BOT_DRAFT_TTL_MS + 1;
 		expect(await store.list()).toHaveLength(0);
-		await expect(store.approve(draft.id, ["read", "memory"])).rejects.toThrow(/expired/);
+		await expect(store.assertApprovable(draft.id, ["read", "memory"])).rejects.toThrow(/expired/);
 	});
 
 	it("批准后草案不可重复使用", async () => {
 		const { store } = await storeAt();
 		const draft = await store.create(normalizeBotDraft(draftInput, allowed, "model"), "model");
-		await store.approve(draft.id, ["read", "memory"]);
-		await expect(store.approve(draft.id, ["read", "memory"])).rejects.toThrow(/not found or expired/);
+		await store.markCreated(draft.id, "bot-1", ["read", "memory"]);
+		await expect(store.assertApprovable(draft.id, ["read", "memory"])).rejects.toThrow(/not found or expired/);
 	});
 });

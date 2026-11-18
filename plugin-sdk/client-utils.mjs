@@ -270,3 +270,191 @@ export function chunkMarkdownText(text, limit = DEFAULT_CHUNK_LIMIT) {
 
 	return chunks;
 }
+
+/**
+ * 把 `createPluginI18n` 的第一、二个参数收敛成「locale tag → 字典」的表。
+ *
+ * 社区插件里两种写法都在用：`{ zh, en }` / `{ "zh-CN": …, "en-US": … }`，以及
+ * `createPluginI18n(zhDict, enDict)` 这种位置参数。认不出形状就抛错——静默当成空字典
+ * 只会让插件整片界面显示成 key，比直接报错更难查。
+ * @param {unknown} dicts 字典或 zh 字典
+ * @param {unknown} [options] 选项或 en 字典
+ * @returns {{ tables: Record<string, Record<string, string>>, locale: string }}
+ */
+function pluginI18nTables(dicts, options) {
+	const isTable = (v) => typeof v === "object" && v !== null && !Array.isArray(v);
+	const looksPositional =
+		isTable(dicts) && isTable(options) && !("zh" in dicts) && !("en" in dicts) && !isTable(options.zh);
+	const source = looksPositional ? { zh: dicts, en: options } : dicts;
+	if (!isTable(source)) throw new Error("[sdk] createPluginI18n 需要 { zh: {...}, en: {...} } 字典对象");
+	const tables = Object.create(null);
+	for (const [tag, table] of Object.entries(source)) {
+		if (!isTable(table)) continue;
+		const key = String(tag).trim().toLowerCase();
+		if (!key || /[^\w-]/.test(key)) continue;
+		tables[key] = table;
+	}
+	if (Object.keys(tables).length === 0)
+		throw new Error("[sdk] createPluginI18n 至少需要一个 { zh: {...} } 或 { en: {...} } 字典");
+	const extra = looksPositional ? {} : isTable(options) ? options : {};
+	return { tables, locale: typeof extra.locale === "string" ? extra.locale.trim() : "" };
+}
+
+/**
+ * 宿主当前语言 tag：显式 override → 宿主桥 `locale.current()` → 上次收到的切换通知 → 浏览器语言。
+ * 宿主桥还没装好（插件在宿主 API 之前加载）、或宿主没提供 `locale` 而只发了同页事件时，
+ * 都不能用空串当结论，否则首帧会误判成英文、或者切完语言界面不跟着变。
+ * @param {string} override 显式覆盖
+ * @param {() => string} [lastSeen] 读到上次收到的 locale（由 `createPluginI18n` 维护）
+ * @returns {string}
+ */
+function pluginI18nHostLocale(override, lastSeen) {
+	if (override) return override;
+	try {
+		const raw = hostApi()?.locale?.current?.();
+		if (typeof raw === "string" && raw.trim()) return raw.trim();
+	} catch {}
+	const remembered = lastSeen?.();
+	if (remembered) return remembered;
+	try {
+		if (typeof navigator !== "undefined") {
+			const raw = navigator.languages?.[0] ?? navigator.language;
+			if (typeof raw === "string" && raw.trim()) return raw.trim();
+		}
+	} catch {}
+	return "en";
+}
+
+/**
+ * 字典里选词条时命中的表名：`zh-CN` → `zh`（插件的字典只有中英两种，不做第三种分叉）。
+ * @param {Record<string, Record<string, string>>} tables
+ * @param {string} tag
+ * @returns {Record<string, string> | undefined}
+ */
+function pluginI18nPickTable(tables, tag) {
+	const lower = String(tag ?? "")
+		.trim()
+		.toLowerCase();
+	const base = lower.split(/[-_]/)[0] ?? "";
+	return tables[lower] ?? tables[base] ?? (base === "zh" ? tables.zh : undefined) ?? tables.en ?? tables.zh;
+}
+
+/**
+ * 插件界面文案：一份 ZH/EN 字典，语言跟随宿主全局设置。
+ *
+ * 为什么要有它：插件界面语言只有一份事实源（宿主 locale，见 `docs/architecture-plugins.md`
+ * 「插件界面语言」）。每个插件都自己抄一遍「读 `host.locale.current()` + 订阅 `onChange` +
+ * 按 tag 选词 + 插值」很容易漏掉订阅或写错回落，切语言后界面就不跟着变了。
+ *
+ * ```js
+ * const i18n = createPluginI18n({ zh: { title: "笔记" }, en: { title: "Notes" } });
+ * i18n.t("title");                          // 当前语言
+ * i18n.t("hint", { count: 3 });             // 插值：{count} / {{count}} / ${count}
+ * const off = i18n.onChange(() => render()); // 宿主切语言后重画
+ * i18n.lang;                                // "zh" | "en"
+ * i18n.destroy();                           // 视图卸载时解除订阅
+ * ```
+ *
+ * 语言只认中文/英文：宿主是 `zh` / `zh-CN` / `zh-TW` 都取 `zh`，其余（de / ja / ru…）取 `en`。
+ * 缺失的 key 依次回落到另一种语言的同名词条，再回落到 key 本身——界面不会出现空白。
+ * @param {Record<string, Record<string, string>> | Record<string, string>} dicts 字典（或位置参数下的 zh 字典）
+ * @param {Record<string, unknown> | Record<string, string>} [options] `{ locale }` 显式覆盖（或位置参数下的 en 字典）
+ * @returns {{
+ *   readonly lang: "zh" | "en",
+ *   readonly locale: string,
+ *   current(): string,
+ *   t(key: string, vars?: Record<string, string | number>): string,
+ *   onChange(handler: (locale: string, lang: "zh" | "en") => void): () => void,
+ *   destroy(): void,
+ * }}
+ */
+export function createPluginI18n(dicts, options) {
+	const { tables, locale: override } = pluginI18nTables(dicts, options);
+	const listeners = new Set();
+	let detach;
+	// 宿主没提供 `locale.current()`（旧宿主 / 同页事件）时，切语言只靠事件，得自己记住最后收到的 tag。
+	let seen = "";
+	const localeNow = () => pluginI18nHostLocale(override, () => seen);
+	const langOfLocale = (locale) => (String(locale).toLowerCase().startsWith("zh") ? "zh" : "en");
+
+	const tableOf = () => pluginI18nPickTable(tables, localeNow()) ?? {};
+	const langOf = () => langOfLocale(localeNow());
+
+	const t = (key, vars) => {
+		const name = String(key ?? "");
+		const table = tableOf();
+		const raw = table[name] ?? tables.en?.[name] ?? tables.zh?.[name];
+		if (raw === undefined) return name;
+		const text = String(raw);
+		if (!vars) return text;
+		return text.replace(/\$\{(\w+)\}|\{\{(\w+)\}\}|\{\$?(\w+)\}/g, (match, a, b, c) => {
+			const slot = a ?? b ?? c;
+			return slot && Object.prototype.hasOwnProperty.call(vars, slot) ? String(vars[slot]) : match;
+		});
+	};
+
+	const emit = (tag) => {
+		const locale = typeof tag === "string" && tag.trim() ? tag.trim() : localeNow();
+		if (typeof tag === "string" && tag.trim()) seen = locale;
+		const lang = langOfLocale(locale);
+		// 快照后再遍历：handler 里重新订阅（每次切语言新建闭包）会把新函数加入集合，直接迭代 Set 会死循环。
+		for (const handler of [...listeners]) {
+			try {
+				handler(locale, lang);
+			} catch {}
+		}
+	};
+
+	// 订阅一次给全部 handler 复用：桥只在第一次 onChange 时才接，视图没订阅就不留监听。
+	const ensureSubscribed = () => {
+		if (detach) return;
+		const offs = [];
+		try {
+			const bridge = hostApi();
+			const off = bridge?.locale?.onChange?.(emit) ?? bridge?.onLocale?.(emit);
+			if (typeof off === "function") offs.push(off);
+		} catch {}
+		try {
+			if (typeof window !== "undefined" && typeof window.addEventListener === "function") {
+				const onWindow = (event) => emit(event?.detail);
+				window.addEventListener("pi-web-ui:locale", onWindow);
+				offs.push(() => window.removeEventListener("pi-web-ui:locale", onWindow));
+			}
+		} catch {}
+		detach = () => {
+			for (const off of offs) {
+				try {
+					off();
+				} catch {}
+			}
+		};
+	};
+
+	return {
+		get lang() {
+			return langOf();
+		},
+		get locale() {
+			return localeNow();
+		},
+		current() {
+			return localeNow();
+		},
+		t,
+		onChange(handler) {
+			if (typeof handler !== "function") return () => {};
+			listeners.add(handler);
+			ensureSubscribed();
+			return () => {
+				listeners.delete(handler);
+			};
+		},
+		destroy() {
+			listeners.clear();
+			try {
+				detach?.();
+			} catch {}
+			detach = undefined;
+		},
+	};
+}

@@ -8,6 +8,7 @@ function manager(tabs: BrowserTab[] = []): BrowserExecutorManager {
 	return {
 		getTabs: () => tabs,
 		getActiveTabId: () => tabs[0]?.id ?? null,
+		activateTab: () => {},
 		getWebContents: () => undefined as unknown as WebContents,
 		createTab: vi.fn(() => "created"),
 		navigate: vi.fn(async () => {}),

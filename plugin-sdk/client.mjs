@@ -1,4 +1,4 @@
-export const SDK_VERSION = "0.3.0";
+export const SDK_VERSION = "0.4.0";
 
 export function defineView(view) {
 	if (!view || typeof view !== "object") throw new Error("[sdk] defineView 需要一个对象");

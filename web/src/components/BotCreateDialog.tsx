@@ -9,10 +9,11 @@ import { openBotChat } from "../bot-chat";
  * 只写一次；这里只负责「就地弹出 + 建完直接进私聊」。抽屉本身是 `<dialog>`（顶层渲染），
  * 所以挂在左栏的组件树里也不会被侧栏布局裁剪。
  */
-export function BotCreateDialog({ onClose }: { onClose: () => void }) {
+export function BotCreateDialog({ onClose, cwd }: { onClose: () => void; cwd?: string | null }) {
 	return createPortal(
 		<LocalBots
 			createOnly
+			initialCwd={cwd ?? undefined}
 			onCancel={onClose}
 			onCreated={(bot) => {
 				onClose();

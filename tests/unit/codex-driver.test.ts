@@ -4,14 +4,21 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { PassThrough } from "node:stream";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-const { spawnMock, killMock, launchMock, probeMock } = vi.hoisted(() => ({
-	spawnMock: vi.fn(),
-	killMock: vi.fn(async () => {}),
-	launchMock: vi.fn(),
-	probeMock: vi.fn(),
-}));
+const { spawnMock, killMock, pidAliveMock, launchMock, probeMock } = vi.hoisted(() => {
+	const pidAliveMock = vi.fn(() => true);
+	return {
+		spawnMock: vi.fn(),
+		// spawn-child 的 stop() 先看 pidAlive、再 killPidTree：假体让「杀树」把进程标成已退出。
+		killMock: vi.fn(async () => {
+			pidAliveMock.mockReturnValue(false);
+		}),
+		pidAliveMock,
+		launchMock: vi.fn(),
+		probeMock: vi.fn(),
+	};
+});
 vi.mock("node:child_process", () => ({ spawn: spawnMock, execFile: vi.fn() }));
-vi.mock("../../server/process-utils.js", () => ({ killPidTree: killMock }));
+vi.mock("../../server/process-utils.js", () => ({ killPidTree: killMock, pidAlive: pidAliveMock }));
 vi.mock("../../server/engine-cli.js", () => ({
 	resolveEngineCliLaunch: launchMock,
 	probeEngineCliVersion: probeMock,
@@ -44,6 +51,7 @@ const emptyAgentDir = () => mkdtempSync(join(tmpdir(), "pi-codex-agent-"));
 beforeEach(() => {
 	launchMock.mockReset().mockReturnValue({ file: "shared-node", args: ["/cli path/codex.js", "--launcher-flag"] });
 	probeMock.mockReset();
+	pidAliveMock.mockReset().mockReturnValue(true);
 });
 afterEach(() => vi.clearAllMocks());
 describe("Codex CLI driver", () => {

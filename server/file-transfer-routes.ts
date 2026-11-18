@@ -2,10 +2,11 @@ import { type Express, type Request } from "express";
 import { randomUUID } from "node:crypto";
 import { uploadLimitBytes } from "./payload-limits.js";
 import { writeRemoteUploadExclusive } from "./uploads.js";
-import { mkdtemp, mkdir, open, realpath, rm, stat, link } from "node:fs/promises";
+import { mkdtemp, mkdir, open, realpath, rm, stat } from "node:fs/promises";
 import { join, dirname, posix } from "node:path";
 import { tmpdir } from "node:os";
 import { createArchive, extractArchive, safeDestination, safeEntryPath, type ConflictPolicy } from "./file-archives.js";
+import { publishFileExclusive } from "./atomic-file.js";
 import { isAbsoluteWirePath, wireToAbs, workspacePath } from "./files-service.js";
 import {
 	getGlobalRemoteSshService,
@@ -238,7 +239,8 @@ export function registerFileTransferRoutes(
 				handle = undefined;
 				await safeDestination(dir, name);
 				controller.signal.throwIfAborted();
-				await link(temp!, dest);
+				// 独占发布（已存在 → EEXIST/409）；硬链接不可用的文件系统自动降级为排他复制。
+				await publishFileExclusive(temp!, dest);
 			}
 			res.json({ name });
 		} catch (err) {

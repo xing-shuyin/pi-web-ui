@@ -10,13 +10,14 @@ import {
 } from "electron";
 import fs from "node:fs";
 import path from "node:path";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 import { randomUUID } from "node:crypto";
 import type { BrowserTab, BrowserDesignDocument, BrowserDesignKind, BrowserDesignStatus } from "../contracts.js";
 import { BrowserStorage } from "../storage/index.js";
 import { isWebUrl, internalPageName, internalPageUrl, normalizeBrowserUrl, pickTabFavicon, webOrigin } from "./urls.js";
 import { BrowserCustomization } from "./customize.js";
 import { DOCK_SCRIPT, SCROLLBAR_CSS } from "./dock.js";
+import { DOWNLOADS_SCRIPT, scriptLiteral } from "./downloads.js";
 import { AUTOFILL_SCRIPT } from "./autofill.js";
 import { PASSKEY_GATE_SCRIPT } from "./passkey-gate.js";
 import {
@@ -103,6 +104,21 @@ interface PasskeySession {
 	authenticatorId: string | null;
 }
 const messageOf = (error: unknown): string => (error instanceof Error ? error.message : String(error));
+/**
+ * 页面右上角的下载圆钮只展示「进行中」与「刚刚结束」的：留着旧任务会让每打开一个页面
+ * 都把「上次那个已下完」再亮一遍，那就不叫提示了。
+ */
+const DOWNLOAD_NOTICE_MS = 30_000;
+/** 圆钮一次最多列 8 条：再多也看不完，真正的全量列表在「下载」面板里。 */
+const DOWNLOAD_NOTICE_LIMIT = 8;
+/** file:// URL → 本地路径；不是合法 file URL 就返回空串（恢复标签时遇到就丢掉）。 */
+function safeFilePath(url: string): string {
+	try {
+		return fileURLToPath(url);
+	} catch {
+		return "";
+	}
+}
 type Bounds = { x: number; y: number; width: number; height: number };
 
 export class BrowserManager {
@@ -113,7 +129,7 @@ export class BrowserManager {
 	private readonly tabs = new Map<string, TabRecord>();
 	/** 每个标签当前注入的主题覆盖 CSS 的 key：换样式时先撤旧的，不叠层 */
 	private readonly themeKeys = new Map<string, string>();
-	private readonly downloads = new Map<string, { state: BrowserDownload; item?: DownloadItem }>();
+	private readonly downloads = new Map<string, { state: BrowserDownload; item?: DownloadItem; finishedAt?: number }>();
 	private activeTabId: string | null = null;
 	private readonly sessionScripts = new Map<string, PageScript>();
 	private readonly scriptRuns = new Map<string, TabScriptRun>();
@@ -143,7 +159,9 @@ export class BrowserManager {
 		let selected: string | undefined;
 		for (const [index, url] of (saved?.urls ?? []).entries()) {
 			try {
-				const id = this.createTab(url);
+				// 双击打开的本地文件标签是 file://，恢复时不能走 normalizeBrowserUrl（只放行 http(s)）
+				const localFile = /^file:\/\//i.test(url) ? safeFilePath(url) : "";
+				const id = localFile ? this.createTab("", { localFile }) : this.createTab(url);
 				if (index === saved?.activeIndex) selected = id;
 			} catch {}
 		}
@@ -154,9 +172,11 @@ export class BrowserManager {
 		this.persist();
 	}
 
-	createTab(url = ""): string {
+	createTab(url = "", options: { localFile?: string } = {}): string {
 		this.ensureAlive();
-		const target = this.targetUrl(url);
+		// 本地文件（系统里双击的 PDF）直接 file:// 加载：normalizeBrowserUrl 只放行 http(s)，
+		// 这条路径由宿主主动调用，不接受网页传入的任意 file://。
+		const target = options.localFile ? pathToFileURL(path.resolve(options.localFile)).href : this.targetUrl(url);
 		const id = randomUUID();
 		const view = new WebContentsView({
 			webPreferences: {
@@ -168,6 +188,8 @@ export class BrowserManager {
 				webSecurity: true,
 				allowRunningInsecureContent: false,
 				webviewTag: false,
+				// Chromium 内置 PDF 阅读器靠 plugins；不开启时打开 PDF 会变成空白页
+				plugins: true,
 			},
 		});
 		const state: BrowserTab = {
@@ -284,6 +306,8 @@ export class BrowserManager {
 						void wc.executeJavaScript(DOCK_SCRIPT).catch(() => {});
 					}
 				} catch {}
+				// 下载圆钮不受 smartDock 管：它是「文件下来了」的提示，不是导航玩具
+				this.injectDownloads(wc);
 			}
 			void this.applyPageScripts(id).catch(() => {});
 			// passkey：先确保本标签有平台认证器，再把属于这个站点的凭据装回去
@@ -308,6 +332,7 @@ export class BrowserManager {
 							void wc.executeJavaScript(AUTOFILL_SCRIPT).catch(() => {});
 						}
 					} catch {}
+					this.injectDownloads(wc);
 				}
 			}
 		});
@@ -333,6 +358,8 @@ export class BrowserManager {
 		if (contents) this.options.extensionHooks?.selectTab?.(contents);
 		this.mount();
 		this.changed();
+		// 这个页面可能早就加载完了（那时推的是彼时的下载状态），切回来时补推一次
+		if (contents) this.pushDownloads(contents);
 	}
 	closeTab(id: string): void {
 		const record = this.tabs.get(id);
@@ -430,6 +457,37 @@ export class BrowserManager {
 	}
 	getDownloads(): BrowserDownload[] {
 		return [...this.downloads.values()].map(({ state }) => ({ ...state }));
+	}
+	/**
+	 * 注入右上角下载圆钮，并把当前状态补推给它：新文档里它是空的，不喂一次就不知道
+	 * 自己该不该出现（刚下来的文件在新页面上也该看得见）。
+	 */
+	private injectDownloads(contents: WebContents): void {
+		if (!DOWNLOADS_SCRIPT || contents.isDestroyed()) return;
+		void contents
+			.executeJavaScript(DOWNLOADS_SCRIPT)
+			.then(() => this.pushDownloads(contents))
+			.catch(() => {});
+	}
+	/**
+	 * 把下载状态推给页面里的圆钮（`browser/renderer/downloads.js`）。
+	 *
+	 * 只推一块视图：同一时刻只有活动标签的页面是可见的，后台标签等它被激活/重新加载时再补。
+	 * 方向是单向的（主进程 → 页面）：那段脚本跑在网站的主世界里，不给它任何反向能力。
+	 */
+	private pushDownloads(contents = this.activeContents()): void {
+		if (this.disposed || !DOWNLOADS_SCRIPT || !contents || contents.isDestroyed()) return;
+		const now = Date.now();
+		const list = this.getDownloads()
+			.filter((item) => {
+				if (item.state === "progressing") return true;
+				return now - (this.downloads.get(item.id)?.finishedAt ?? 0) < DOWNLOAD_NOTICE_MS;
+			})
+			.slice(-DOWNLOAD_NOTICE_LIMIT)
+			.reverse();
+		void contents
+			.executeJavaScript(`window.__PI_DOWNLOADS__ && window.__PI_DOWNLOADS__.update(${scriptLiteral(list)})`)
+			.catch(() => {});
 	}
 	listBookmarks(): ReturnType<BrowserStorage["listBookmarks"]> {
 		return this.storage.listBookmarks();
@@ -1077,13 +1135,15 @@ export class BrowserManager {
 			receivedBytes: 0,
 			totalBytes: item.getTotalBytes(),
 		};
-		const record = { state, item: item as DownloadItem | undefined };
+		const record = { state, item: item as DownloadItem | undefined, finishedAt: 0 };
 		this.downloads.set(state.id, record);
 		const onUpdate = (_event: Electron.Event, status: "progressing" | "interrupted") => {
 			state.state = status;
 			state.receivedBytes = item.getReceivedBytes();
 			state.totalBytes = item.getTotalBytes();
+			if (status !== "progressing") record.finishedAt = Date.now();
 			this.changed();
+			this.pushDownloads();
 		};
 		item.on("updated", onUpdate);
 		item.once("done", (_event, status) => {
@@ -1092,8 +1152,11 @@ export class BrowserManager {
 			state.state = status;
 			state.receivedBytes = item.getReceivedBytes();
 			state.totalBytes = item.getTotalBytes();
+			record.finishedAt = Date.now();
 			this.changed();
+			this.pushDownloads();
 		});
 		this.changed();
+		this.pushDownloads();
 	};
 }

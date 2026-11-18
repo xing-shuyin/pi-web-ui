@@ -1,6 +1,6 @@
-import { constants } from "node:fs";
-import { access, copyFile, link, lstat, mkdir, readdir, realpath } from "node:fs/promises";
+import { access, lstat, mkdir, readdir, realpath } from "node:fs/promises";
 import { basename, dirname, extname, isAbsolute, join, parse, relative, resolve, sep } from "node:path";
+import { publishFileExclusive } from "../atomic-file.js";
 
 /** Filesystem paths belong to the authenticated machine, never to the relay. */
 export function desktopFilePaths(home: string, restricted: boolean) {
@@ -63,13 +63,9 @@ export async function publishDesktopFiles(root: string, destination: string, pub
 				const path = join(parent, n ? name.slice(0, name.length - extension.length) + ` (${n + 1})` + extension : name);
 				try {
 					if (info.isDirectory()) await mkdir(path);
-					else
-						try {
-							await link(source, path);
-						} catch (error: any) {
-							if (!["ENOTSUP", "EPERM", "EXDEV", "ENOSYS"].includes(error.code)) throw error;
-							await copyFile(source, path, constants.COPYFILE_EXCL);
-						}
+					// 独占发布单源（含不支持硬链接的文件系统的降级，见 issues/933）。
+					// 这里曾经自己抄一份降级码表，漏了 EACCES → Termux /data、外置存储上文件同步照样失败。
+					else await publishFileExclusive(source, path);
 					const created = await lstat(path);
 					saved = { path, ino: created.ino, dev: created.dev, directory: info.isDirectory() };
 					published.set(relativePath, saved);

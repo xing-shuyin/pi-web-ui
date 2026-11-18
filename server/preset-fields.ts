@@ -15,6 +15,9 @@ export const PRESET_EXCLUDED_KEYS = [
 	"quickAskReferenceMenus",
 	"quickAskConversationScope",
 	"quickAskFolderScope",
+	// 「让 AI 起草」的一次性调用参数：跟随手问同类，是视图级偏好，不进预设分享。
+	"botDraftModel",
+	"botDraftThinking",
 ] as const;
 export type PresetExcludedKey = (typeof PRESET_EXCLUDED_KEYS)[number];
 

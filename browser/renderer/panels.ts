@@ -22,7 +22,7 @@ import {
 	type HistoryEntry,
 	type Settings,
 } from "./common.js";
-import { t, type MessageKey } from "./i18n.js";
+import { t, tf, type MessageKey } from "./i18n.js";
 import { vaultPanel, type VaultTab } from "./vault.js";
 import type {
 	BrowserDesignDocument,
@@ -31,6 +31,12 @@ import type {
 	BrowserPanelEvent,
 	BrowserState,
 } from "../contracts.js";
+/** 与主进程 `bookmarks.import` 的回执对齐：只有条数，没有文件正文（正文从不进渲染层）。 */
+interface ImportSummary {
+	imported: number;
+	duplicate: number;
+	skipped: number;
+}
 export type Panel = BrowserPanel;
 let dialog: HTMLDialogElement | undefined;
 let overlayOwned = false;
@@ -403,12 +409,47 @@ async function bookmarksPanel(container: HTMLElement): Promise<void> {
 		query = search.value.trim().toLocaleLowerCase();
 		render();
 	});
+	/**
+	 * 导入其他浏览器导出的书签文件：选文件、读盘、解析、合并在主进程里（`bookmarks.import`），
+	 * 这里只拿回条数。新条目挂在根下（根非空时先套一层带日期的文件夹），所以导完回到根目录看结果。
+	 */
+	const importButton = button(t("bookmarkImport"), () => {
+		void (async () => {
+			importButton.disabled = true;
+			try {
+				const summary = await call<ImportSummary | null>("bookmarks.import", {
+					folderName: `${t("bookmarkImportFolder")} ${new Date().toLocaleDateString()}`,
+				});
+				if (!summary) return;
+				bookmarks = normalizeBookmarks(await call("bookmarks.list"));
+				path = [];
+				query = "";
+				search.value = "";
+				render();
+				panelEvent("pb-bookmarks-changed");
+				if (!summary.imported) {
+					notify(t("bookmarkImportEmpty"), true);
+					return;
+				}
+				notify(
+					tf("bookmarkImportDone", {
+						imported: summary.imported,
+						duplicate: summary.duplicate,
+						skipped: summary.skipped,
+					}),
+				);
+			} finally {
+				importButton.disabled = false;
+			}
+		})().catch(reportError);
+	});
 	container.replaceChildren(
 		element("p", "pb-muted", t("bookmarkHelp")),
 		toolbar(
 			search,
 			button(t("add"), () => showEditor()),
 			button(t("newFolder"), () => showEditor(undefined, true)),
+			importButton,
 		),
 		crumb,
 		editor,

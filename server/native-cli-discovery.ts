@@ -22,7 +22,8 @@ function versions(directory: string): string[] {
 	}
 }
 
-function* installDirectories(options: NativeCliDiscoveryOptions): Generator<string> {
+/** 可能住着 CLI 的安装目录（顺序即优先级）。`node-path.ts` 复用同一份清单，别再写第二份。 */
+export function* installDirectories(options: NativeCliDiscoveryOptions): Generator<string> {
 	const windows = (options.platform ?? process.platform) === "win32";
 	const path = windows ? win32 : posix;
 	const env = options.env ?? process.env;

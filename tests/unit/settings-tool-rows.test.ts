@@ -111,4 +111,38 @@ describe("设置「工具」页覆盖率", () => {
 		const extra = [...LOOP_RENDERED].filter((n) => !known.has(n));
 		expect(extra).toEqual([]);
 	});
+
+	it("工具页文案全部走 i18n：不得再写死中文（issues/939：切英文后工具页仍是中文）", () => {
+		// 写死的中文在英文界面里原样露出（三态标签、批量按钮、搜索框、插件兜底名…）。
+		// 这里只盯那些「曾经真的写死过」的句子：换成常量存一份也不报错，但要经过 t()。
+		const hardcoded = [
+			"常驻<b>",
+			"<span>常驻 ",
+			"全常驻",
+			"全按需",
+			"全开",
+			"全关",
+			"核心常驻",
+			"已全部关闭",
+			"已启用`",
+			"未知插件",
+			"文案已自定义",
+			"改这个工具的提示词",
+			'placeholder="搜索工具名',
+		];
+		const hits = hardcoded.filter((text) => SETTINGS_SRC.includes(text));
+		expect(hits, `设置页又写死了这些文案，英文界面会原样露出：${hits.join("、")}`).toEqual([]);
+	});
+
+	it("工具分类标题只由分类单源给 key，渲染层不再按 id 另写一套", () => {
+		const cats = buildFlowCategories(buildOnDemandOptions({ plugins: null }));
+		const zhKeys = new Set(Object.keys(zh));
+		expect(cats.length).toBeGreaterThan(0);
+		for (const cat of cats) {
+			expect(zhKeys.has(cat.titleKey), `${cat.id} 的 titleKey 不存在：${cat.titleKey}`).toBe(true);
+			if (cat.subKey) expect(zhKeys.has(cat.subKey), `${cat.id} 的 subKey 不存在：${cat.subKey}`).toBe(true);
+		}
+		expect(SETTINGS_SRC, "渲染层又按 id 手写分类标题").toContain("t(cat.titleKey as never)");
+		expect(SETTINGS_SRC, "分类副标题没走 subKey").toContain("cat.subKey ? t(cat.subKey as never)");
+	});
 });

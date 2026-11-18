@@ -10,8 +10,11 @@ import { describe, expect, it, afterEach } from "vitest";
 import type { LocalBot } from "../../server/device-center/bots.js";
 import {
 	BOT_CHAT_ENTRY,
+	BOT_EXECUTION_ENTRY,
 	createBotChatCapability,
+	decideTranscriptBotBinding,
 	readBotChatBinding,
+	readBotExecutionAnchor,
 	resolveBotChatBot,
 	setBotChatHost,
 } from "../../server/device-center/bot-chat.js";
@@ -57,6 +60,65 @@ describe("会话里的 Bot 绑定条目", () => {
 
 	it("没有绑定条目时返回 undefined（普通对话）", () => {
 		expect(readBotChatBinding([entry("webui/independent", { independent: true })])).toBeUndefined();
+	});
+});
+
+describe("转录的 Bot 归属判定（decideTranscriptBotBinding）", () => {
+	const chat = { botId: "bot-1", revision: 1 };
+
+	it("没有执行锚点 → 照常接受（新会话/普通会话）", () => {
+		expect(decideTranscriptBotBinding({ current: { id: "bot-1", revision: 2 } })).toEqual({ action: "accept" });
+	});
+
+	it("同一个 Bot 的同一版配置 → 接受", () => {
+		expect(decideTranscriptBotBinding({ execution: chat, chat, current: { id: "bot-1", revision: 1 } })).toEqual({
+			action: "accept",
+		});
+	});
+
+	it("私聊 + Bot 改过配置 → 重绑（配置升级不换主人，不能把会话锁死）", () => {
+		expect(decideTranscriptBotBinding({ execution: chat, chat, current: { id: "bot-1", revision: 2 } })).toEqual({
+			action: "rebind",
+		});
+	});
+
+	it("非私聊的执行转录 + 版本变了 → 拒绝（那是按旧快照授权过的执行）", () => {
+		expect(decideTranscriptBotBinding({ execution: chat, current: { id: "bot-1", revision: 2 } })).toEqual({
+			action: "reject",
+			reason: "revision",
+		});
+	});
+
+	it("换了 Bot → 拒绝（所有权不符）", () => {
+		expect(decideTranscriptBotBinding({ execution: chat, chat, current: { id: "bot-2", revision: 1 } })).toEqual({
+			action: "reject",
+			reason: "owner",
+		});
+	});
+
+	it("私聊的 Bot 被删/停用 → 降级只读历史，不当普通会话继续说", () => {
+		expect(decideTranscriptBotBinding({ execution: chat, chat })).toEqual({ action: "degrade" });
+		// 不是私聊的执行转录失去能力 → 不能当普通会话重开。
+		expect(decideTranscriptBotBinding({ execution: chat })).toEqual({ action: "reject", reason: "orphan" });
+	});
+});
+
+describe("执行锚点读回（readBotExecutionAnchor）", () => {
+	it("只认 device-bot-execution，且多条时取最后一条（重绑是追加）", () => {
+		const anchor = readBotExecutionAnchor([
+			{ type: "custom", customType: BOT_CHAT_ENTRY, data: { botId: "bot-1", revision: 9 } },
+			{ type: "custom", customType: BOT_EXECUTION_ENTRY, data: { botId: "bot-1", revision: 1 } },
+			{ type: "message" },
+			{ type: "custom", customType: BOT_EXECUTION_ENTRY, data: { botId: "bot-1", revision: 2 } },
+		] as never);
+		expect(anchor).toEqual({ botId: "bot-1", revision: 2 });
+	});
+
+	it("没有锚点或数据不完整时返回 undefined", () => {
+		expect(readBotExecutionAnchor([])).toBeUndefined();
+		expect(
+			readBotExecutionAnchor([{ type: "custom", customType: BOT_EXECUTION_ENTRY, data: {} }] as never),
+		).toBeUndefined();
 	});
 });
 

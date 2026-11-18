@@ -311,4 +311,40 @@ describe("local Bot registry", () => {
 		await writeFile(f.file, JSON.stringify([bot, bot]));
 		await expect(createLocalBotRegistry(f.dataDir)).rejects.toThrow("Duplicate Bot ID");
 	});
+
+	it("模型起草的 Bot 带高权限工具时，必须带上人工确认清单", async () => {
+		const f = await fixture();
+		const modelIdentity = { authoredBy: "model" as const, authoredAt: Date.now(), modelRevision: 1 };
+		await expect(
+			f.registry.upsert({ ...f.input, tools: ["read", "bash"], identity: modelIdentity }),
+		).rejects.toMatchObject({ code: "BOT_NEEDS_APPROVAL" });
+		expect(f.registry.list()).toHaveLength(0);
+		const approved = await f.registry.upsert({
+			...f.input,
+			tools: ["read", "bash"],
+			identity: modelIdentity,
+			approvedTools: ["bash"],
+		});
+		expect(approved.tools).toEqual(["read", "bash"]);
+		// 人工编辑（authoredBy=human）不受此限；approval 清单不落库。
+		const human = await f.registry.upsert({
+			...approved,
+			identity: { authoredBy: "human", authoredAt: Date.now(), modelRevision: 1 },
+		});
+		expect(human.tools).toEqual(["read", "bash"]);
+		expect(JSON.parse(await readFile(f.file, "utf8"))[0]).not.toHaveProperty("approvedTools");
+	});
+
+	it("busy 反映了执行租约（私聊发送前的忙检查靠它）", async () => {
+		const f = await fixture();
+		const bot = await f.registry.upsert(f.input);
+		expect(f.registry.busy(bot.id)).toBe(false);
+		const lease = await f.registry.acquire(bot.id);
+		try {
+			expect(f.registry.busy(bot.id)).toBe(true);
+		} finally {
+			lease.release();
+		}
+		expect(f.registry.busy(bot.id)).toBe(false);
+	});
 });

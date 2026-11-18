@@ -17,6 +17,7 @@ import { DEFAULT_PROMPT_DISABLED } from "./prompt-composer.js";
 import { isPromptOnlyPreset } from "./preset-fields.js";
 import type { EngineId, QueueMode, ThinkingLevel, UiAlign, UiLayoutPrefs, UiSlotId } from "./protocol.js";
 import { mergeQuickAskSettings, normalizeQuickAskSettings, type QuickAskSettings } from "./quick-ask-settings.js";
+import { mergeBotDraftSettings, normalizeBotDraftSettings, type BotDraftSettings } from "./bot-draft-settings.js";
 
 export type PromptMode = "append" | "replace";
 
@@ -496,6 +497,8 @@ export interface ClientSettings {
 	quickAskEnabled: boolean;
 	quickAskModel: string | null;
 	quickAskThinking: ThinkingLevel;
+	botDraftModel: BotDraftSettings["botDraftModel"];
+	botDraftThinking: BotDraftSettings["botDraftThinking"];
 	quickAskSystemPrompt: string;
 	quickAskExplainPrompt: string;
 	quickAskTranslateEnabled: QuickAskSettings["quickAskTranslateEnabled"];
@@ -747,6 +750,8 @@ export const DEFAULT_DARK_MINIMAL_SETTINGS: ClientSettings = Object.freeze({
 	quickAskEnabled: true,
 	quickAskModel: null,
 	quickAskThinking: "off",
+	botDraftModel: null,
+	botDraftThinking: "off",
 	quickAskSystemPrompt: "",
 	quickAskExplainPrompt: "解释下: {{input}}",
 	quickAskTranslateEnabled: true,
@@ -1259,7 +1264,14 @@ export class ClientStateStore {
 		);
 	}
 
-	/** Record discovered projects into global settings cache (without clobbering tombstones). */
+	/**
+	 * 记录扫盘发现的项目到全局设置（不碰墓碑）。
+	 *
+	 * 只负责「发现」：没登记过的项目才插入，`lastUsed` 用磁盘 mtime 当初始排序值。
+	 * 已登记项目的 `lastUsed` **绝不改写**——它是「最近真实对话」时间，只由 `remember(promote)`
+	 * （用户真的发了消息）写。磁盘 mtime 是「会话文件最后写入时间」，流式输出、打开/切换、
+	 * 持久化都会刷新它；拿它去顶 `lastUsed` 会让「切到别的项目的对话」把那个项目顶到最上面。
+	 */
 	mergeDiscoveredProjects(projects: { path: string; lastUsed: number }[]): void {
 		if (!projects.length) return;
 		const all = this.load();
@@ -1273,15 +1285,9 @@ export class ClientStateStore {
 		let changed = false;
 		for (const p of projects) {
 			const key = normalizePathKey(p.path);
-			if (removedKeys.has(key)) continue;
-			const existing = map.get(key);
-			if (!existing) {
-				map.set(key, p);
-				changed = true;
-			} else if (p.lastUsed > existing.lastUsed) {
-				existing.lastUsed = p.lastUsed;
-				changed = true;
-			}
+			if (removedKeys.has(key) || map.has(key)) continue;
+			map.set(key, p);
+			changed = true;
 		}
 		if (changed) {
 			globalState.projects = [...map.values()].sort((a, b) => b.lastUsed - a.lastUsed).slice(0, 50);
@@ -1471,6 +1477,7 @@ export class ClientStateStore {
 			scmCommitMsgPromptMode: stored?.scmCommitMsgPromptMode === "replace" ? "replace" : "append",
 			scmCommitMsgPrompt: stored?.scmCommitMsgPrompt ?? "",
 			...normalizeQuickAskSettings(stored ?? {}),
+			...normalizeBotDraftSettings(stored ?? {}),
 			planModePromptMode: stored?.planModePromptMode === "replace" ? "replace" : "append",
 			planModePrompt: stored?.planModePrompt ?? "",
 			subagentDefaultModel: stored?.subagentDefaultModel ?? null,
@@ -1613,6 +1620,7 @@ export class ClientStateStore {
 			scmCommitMsgPromptMode: settings.scmCommitMsgPromptMode ?? cur.scmCommitMsgPromptMode ?? "append",
 			scmCommitMsgPrompt: settings.scmCommitMsgPrompt ?? cur.scmCommitMsgPrompt ?? "",
 			...mergeQuickAskSettings(cur, settings),
+			...mergeBotDraftSettings(cur, settings),
 			planModePromptMode: settings.planModePromptMode ?? cur.planModePromptMode ?? "append",
 			planModePrompt: settings.planModePrompt ?? cur.planModePrompt ?? "",
 			reviewPrompt: settings.reviewPrompt ?? cur.reviewPrompt ?? "",

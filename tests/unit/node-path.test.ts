@@ -1,0 +1,75 @@
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { delimiter, join } from "node:path";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { augmentNodePath, hasNodeRuntime, resolveNodeDirs, type NodePathOptions } from "../../server/node-path.js";
+
+const windows = process.platform === "win32";
+const nodeBin = windows ? "node.exe" : "node";
+const npmBin = windows ? "npm.cmd" : "npm";
+
+let root: string;
+let options: NodePathOptions;
+
+function install(directory: string, names: string[] = [nodeBin, npmBin]): string {
+	mkdirSync(directory, { recursive: true });
+	for (const name of names) writeFileSync(join(directory, name), "fixture", { mode: 0o755 });
+	return directory;
+}
+
+beforeEach(() => {
+	root = mkdtempSync(join(tmpdir(), "pi-node-path-"));
+	// 只给一份空环境：不读本机真实的 fnm / nvm / 用户 PATH，测试结果与开发机无关。
+	options = { env: { PATH: join(root, "system") }, homeDir: root, nodeExecutable: join(root, "runtime", nodeBin) };
+});
+afterEach(() => rmSync(root, { recursive: true, force: true }));
+
+describe("node PATH augmentation", () => {
+	it("prepends the version-manager node directory the shell profile would have added", () => {
+		// fnm 当前 shell 的目录：只有交互式 shell 里才在 PATH 上（后台任务 `bash -c` 拿不到 → 127）。
+		const multishell = install(join(root, "fnm-multishell"));
+		options.env = { ...options.env, FNM_MULTISHELL_PATH: multishell };
+		expect(augmentNodePath(options)).toEqual([multishell]);
+		expect(options.env!.PATH).toBe([multishell, join(root, "system")].join(delimiter));
+	});
+	it("skips candidate directories that hold no node/npm", () => {
+		install(join(root, ".local", "bin"), ["some-cli"]);
+		expect(augmentNodePath(options)).toEqual([]);
+		expect(options.env!.PATH).toBe(join(root, "system"));
+	});
+	it("never duplicates a directory that is already on PATH", () => {
+		const multishell = install(join(root, "fnm-multishell"));
+		options.env = {
+			PATH: [join(root, "system"), multishell].join(delimiter),
+			FNM_MULTISHELL_PATH: multishell,
+		};
+		expect(augmentNodePath(options)).toEqual([]);
+	});
+	it("is idempotent across repeated startup calls", () => {
+		const multishell = install(join(root, "fnm-multishell"));
+		options.env = { ...options.env, FNM_MULTISHELL_PATH: multishell };
+		expect(augmentNodePath(options)).toHaveLength(1);
+		expect(augmentNodePath(options)).toEqual([]);
+	});
+	it("prefers the persistent fnm versions newest-first when no multishell path is exported", () => {
+		const oldVersion = install(join(root, "fnm", "node-versions", "v18.0.0", "installation"));
+		const newVersion = install(join(root, "fnm", "node-versions", "v22.11.0", "installation"));
+		options.env = { ...options.env, FNM_DIR: join(root, "fnm") };
+		expect(resolveNodeDirs(options).slice(0, 2)).toEqual([newVersion, oldVersion]);
+	});
+	it("finds the runtime directory of the running node without any PATH entry", () => {
+		const runtime = install(join(root, "runtime"));
+		expect(resolveNodeDirs(options)).toContain(runtime);
+	});
+	it("keeps existing PATH entries intact and in order after the prepended dirs", () => {
+		const multishell = install(join(root, "fnm-multishell"));
+		const extra = join(root, "first-on-path");
+		options.env = { PATH: [extra, join(root, "system")].join(delimiter), FNM_MULTISHELL_PATH: multishell };
+		augmentNodePath(options);
+		expect(options.env!.PATH).toBe([multishell, extra, join(root, "system")].join(delimiter));
+	});
+	it("detects node runtimes by file presence, not by directory name", () => {
+		expect(hasNodeRuntime(install(join(root, "anything")))).toBe(true);
+		expect(hasNodeRuntime(install(join(root, "empty"), []))).toBe(false);
+	});
+});

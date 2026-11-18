@@ -119,16 +119,18 @@ describe("插件 ↔ 宿主 SDK 导出契约", () => {
 		expect(problems, problems.join("\n")).toEqual([]);
 	});
 
-	it("负向对照：`createPluginI18n` 这种宿主没有的导出会被抓出来", async () => {
+	it("负向对照：宿主没有的导出仍会被抓出来（`createPluginI18n` 已补上，见 issue #939）", async () => {
 		// 2026-11 线上事故：插件代码开始用 SDK 的 createPluginI18n，宿主还没带上它，
 		// 浏览器直接 SyntaxError: Importing binding name 'createPluginI18n' is not found。
+		// 现在它已经是宿主真实导出（SDK 0.4.0），下面同时用真实导出与一个绝不应存在的名字做对照。
 		const parsed = namedSdkImports('import { createPluginI18n, esc } from "@pi-web-ui/plugin-sdk/client";');
 		expect(parsed).toEqual([{ spec: "@pi-web-ui/plugin-sdk/client", names: ["createPluginI18n", "esc"] }]);
 		const exp = (await exportsOf("@pi-web-ui/plugin-sdk/client"))!;
 		expect(exp.has("esc")).toBe(true);
-		// 宿主确实没有这个导出时，扫描结果必须报错（本题即守卫的负向对照）
-		const missing = parsed[0]!.names.filter((n) => !exp.has(n));
-		expect(missing).toEqual(exp.has("createPluginI18n") ? [] : ["createPluginI18n"]);
+		expect(exp.has("createPluginI18n"), "createPluginI18n 必须由宿主 SDK 真实导出").toBe(true);
+		// 真·负向对照：宿主确实没有的名字，扫描结果必须报错——否则这道门只是摆设。
+		const missing = ["createPluginI18n", "__definitelyNotExported"].filter((n) => !exp.has(n));
+		expect(missing).toEqual(["__definitelyNotExported"]);
 	});
 
 	it("客户端 SDK 不能把 Node 专有模块漏给浏览器（只查 @pi-web-ui/plugin-sdk/client 及其 util）", () => {

@@ -4,7 +4,17 @@ import { mkdtempSync } from "node:fs";
 import { rm } from "node:fs/promises";
 import { documentKey, fileVersion, resolvePreviewPath, safeWorkspacePath, writeDocumentAtomic } from "./runtime.mjs";
 import { registerRemoteCanvas } from "./remote-service.mjs";
-import { existsSync, lstatSync, readFileSync, realpathSync, rmSync, statSync, unlinkSync } from "node:fs";
+import {
+	existsSync,
+	lstatSync,
+	readFileSync,
+	realpathSync,
+	rmSync,
+	statSync,
+	unlinkSync,
+	writeFileSync,
+} from "node:fs";
+import { createHash } from "node:crypto";
 import { createServer } from "node:net";
 import { tmpdir } from "node:os";
 import { basename, delimiter, dirname, extname, join, resolve } from "node:path";
@@ -453,7 +463,7 @@ export default {
 				chunks.push(chunk);
 			}
 			const buf = Buffer.concat(chunks);
-			const outPath = assertInWorkspaceLocal(targetPath ? resolve(host.cwd, targetPath) : absPath);
+			const outPath = await ensureOfficePath(targetPath ? resolve(host.cwd, targetPath) : absPath);
 			if (extname(outPath).toLowerCase() !== extname(absPath).toLowerCase())
 				throw new Error("Save As must preserve the document extension");
 			const newVersion = writeDocumentAtomic(outPath, buf, {
@@ -712,6 +722,55 @@ export default {
 			return assertInWorkspace(absPath, host.cwd);
 		}
 
+		/**
+		 * 工作区外路径（用户双击的「下载」目录文件）先按权限模型请一次授权，再复用原有校验：
+		 * 宿主会弹「插件请求访问某目录」，用户同意后写进 plugin-grants，与工作区同权。
+		 */
+		async function ensureOfficePath(absPath) {
+			try {
+				return assertInWorkspaceLocal(absPath);
+			} catch (error) {
+				if (error?.statusCode !== 403 || typeof host.fs?.requestAccess !== "function") throw error;
+				const granted = await host.fs.requestAccess(dirname(absPath), "Office 文档在工作区外，需要读到并写回");
+				if (!granted) throw error;
+				return assertInWorkspaceLocal(absPath);
+			}
+		}
+
+		const OFFICE_EXTENSIONS = [".xlsx", ".docx", ".pptx", ".csv", ".tsv"];
+		/** URL → 本地缓存路径（同一份远程文档只下一次） */
+		const remoteDocs = new Map();
+
+		function isRemoteDocPath(value) {
+			return /^https?:\/\//i.test(String(value ?? "").trim());
+		}
+
+		/** 远程文档一律只读：下载到插件自己的临时缓存再走同一条转换链，保存仍要求工作区路径。 */
+		async function downloadRemoteDoc(url) {
+			const ext = extname(new URL(url).pathname).toLowerCase();
+			if (!OFFICE_EXTENSIONS.includes(ext)) throw new Error(`远程文档只支持 ${OFFICE_EXTENSIONS.join(" / ")}`);
+			if (typeof host.fetch !== "function") throw new Error("宿主未提供网络能力（manifest 需声明 http）");
+			const response = await host.fetch(url, { timeoutMs: 60_000 });
+			if (!response.ok) throw new Error(`下载远程文档失败：HTTP ${response.status}`);
+			const buffer = Buffer.from(await response.arrayBuffer());
+			if (!buffer.length || buffer.length > MAX_FILE_BYTES) throw new Error("远程文档为空或超过 64 MiB");
+			const hash = createHash("sha256").update(url).digest("hex").slice(0, 32);
+			const local = join(cacheDir, `remote_${hash}${ext}`);
+			writeFileSync(local, buffer);
+			return local;
+		}
+
+		/** path 参数既可以是工作区相对路径、绝对路径，也可以是 http(s) 远程文档。 */
+		async function resolveOfficePath(inputPath) {
+			const value = String(inputPath ?? "").trim();
+			if (!isRemoteDocPath(value)) return await ensureOfficePath(resolve(host.cwd, value));
+			const cached = remoteDocs.get(value);
+			if (cached && existsSync(cached)) return cached;
+			const local = await downloadRemoteDoc(value);
+			remoteDocs.set(value, local);
+			return local;
+		}
+
 		host.route("GET", "/status", async (_req, res) => {
 			const assetStatus = host.assets?.status
 				? host.assets.status(UNIVER_ASSET_SPEC)
@@ -758,7 +817,7 @@ export default {
 				const relPath = String(req.query?.path ?? "").trim();
 				if (!relPath) return void res.status(400).json({ ok: false, error: "缺少 path 参数" });
 
-				const absPath = resolve(host.cwd, relPath);
+				const absPath = await resolveOfficePath(relPath);
 				if (!existsSync(absPath)) return void res.status(404).json({ ok: false, error: "文件不存在" });
 
 				const docInfo = await withDocument(absPath, async (path) => {
@@ -780,7 +839,9 @@ export default {
 			try {
 				const relPath = String(req.body?.path ?? "").trim();
 				if (!relPath) return void res.status(400).json({ ok: false, error: "缺少 path 参数" });
-				const absPath = assertInWorkspaceLocal(resolve(host.cwd, relPath));
+				if (isRemoteDocPath(relPath))
+					return void res.status(400).json({ ok: false, error: "远程文档是只读的：请用「另存为」保存到工作区" });
+				const absPath = await resolveOfficePath(relPath);
 				if (!existsSync(absPath)) return void res.status(404).json({ ok: false, error: "文件不存在" });
 
 				const saved = await saveUniverDoc(absPath, req.body?.targetPath);
@@ -794,7 +855,7 @@ export default {
 			try {
 				const relPath = String(req.body?.path ?? "").trim();
 				if (!relPath) return void res.status(400).json({ ok: false, error: "缺少 path 参数" });
-				const absPath = assertInWorkspaceLocal(resolve(host.cwd, relPath));
+				const absPath = await resolveOfficePath(relPath);
 				if (!existsSync(absPath)) return void res.status(404).json({ ok: false, error: "文件不存在" });
 
 				const result = await inspectUniverDoc(absPath, req.body?.query);
@@ -806,7 +867,7 @@ export default {
 
 		host.route("POST", "/read-sheet", async (req, res) => {
 			try {
-				const path = assertInWorkspaceLocal(resolve(host.cwd, String(req.body?.path || "")));
+				const path = await resolveOfficePath(String(req.body?.path || ""));
 				const result = await readSheetRange(path, { sheet: req.body?.sheet, range: req.body?.range });
 				res.json({ ok: true, result });
 			} catch (error) {
@@ -818,7 +879,9 @@ export default {
 			try {
 				const relPath = String(req.body?.path ?? "").trim();
 				if (!relPath) return void res.status(400).json({ ok: false, error: "缺少 path 参数" });
-				const absPath = assertInWorkspaceLocal(resolve(host.cwd, relPath));
+				if (isRemoteDocPath(relPath))
+					return void res.status(400).json({ ok: false, error: "远程文档是只读的：请用「另存为」保存到工作区" });
+				const absPath = await resolveOfficePath(relPath);
 				if (!existsSync(absPath)) return void res.status(404).json({ ok: false, error: "文件不存在" });
 
 				const autoSave = req.body?.save !== false;
@@ -883,7 +946,8 @@ export default {
 					},
 					path: {
 						type: "string",
-						description: "workspace-relative path to the Office file (.xlsx, .docx, .pptx).",
+						description:
+							"workspace-relative or absolute path, or http(s) URL (read-only), to the Office file (.xlsx, .docx, .pptx).",
 					},
 					sheet: {
 						type: "string",
@@ -919,7 +983,7 @@ export default {
 				if (!relPath) return "Error: path parameter is required.";
 				let absPath;
 				try {
-					absPath = assertInWorkspaceLocal(resolve(host.cwd, relPath));
+					absPath = await resolveOfficePath(relPath);
 				} catch (error) {
 					return `Error: ${error.message}`;
 				}

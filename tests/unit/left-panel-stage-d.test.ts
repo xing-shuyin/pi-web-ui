@@ -9,9 +9,14 @@ import { resetAppGlobals, setAppGlobals } from "../../web/src/app-globals.js";
 import { closeContextMenu } from "../../web/src/context-menu-state.js";
 import { saveProjectOrderManual } from "../../web/src/project-order-settings.js";
 
-vi.mock("../../web/src/components/DeviceGroupSection.js", () => ({
-	DeviceGroupSection: () => createElement("div", { className: "lp-section dg-side-section" }),
-}));
+// 群组/智能体块只是项目的同层邻居：真实实现会去拉设备中心与 Bot 面板，布局用例里固化成空实现。
+vi.mock("../../web/src/components/DeviceGroupSection.js", async () => {
+	const actual = await vi.importActual<typeof import("../../web/src/components/DeviceGroupSection.js")>(
+		"../../web/src/components/DeviceGroupSection.js",
+	);
+	return { ...actual, DeviceGroupSection: () => createElement("div", { className: "lp-section dg-side-section" }) };
+});
+vi.mock("../../web/src/components/AgentBotsSection.js", () => ({ AgentBotsSection: () => null }));
 
 let root: Root | null = null;
 let container: HTMLDivElement;

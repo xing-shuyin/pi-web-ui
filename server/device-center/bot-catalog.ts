@@ -1,13 +1,12 @@
-import { stat } from "node:fs/promises";
 import { isAbsolute, resolve } from "node:path";
 import { DefaultPackageManager, getAgentDir, loadSkills, SettingsManager } from "@earendil-works/pi-coding-agent";
 import type { ModelInfo } from "../protocol.js";
-import { ALL_AGENT_TOOL_ENTRIES, isToolSupportedOnPlatform } from "../tool-manager.js";
+import { ALL_AGENT_TOOL_ENTRIES, BOT_MEMORY_TOOL_NAME, isToolSupportedOnPlatform } from "../tool-manager.js";
 import { discoverDiskSkills, mergeSkillCollections } from "../skill-discovery.js";
 import { listAllMcpServers } from "../mcp-manager.js";
 import { getMcpToolServer, type McpBridge } from "../mcp-bridge.js";
 import { isBotToolHighPrivilege } from "./bot-execution.js";
-import { DeviceWorkspaceError } from "./workspaces.js";
+import { DeviceWorkspaceError, validateDeviceProject } from "./workspaces.js";
 
 export interface BotToolOption {
 	id: string;
@@ -52,11 +51,32 @@ export async function getLocalBotOptions(
 	signal.throwIfAborted();
 	if (requestedCwd !== undefined && (typeof requestedCwd !== "string" || !isAbsolute(requestedCwd)))
 		throw new DeviceWorkspaceError(400, "BOT_CWD_INVALID", "Project path must be absolute");
-	const cwd = resolve((requestedCwd as string | undefined) ?? sources.defaultCwd);
-	if (!(await stat(cwd).catch(() => undefined))?.isDirectory())
-		throw new DeviceWorkspaceError(400, "BOT_CWD_INVALID", "Project directory does not exist");
+	const projectList = (await sources.projects?.()) ?? [];
 	signal.throwIfAborted();
-	const defaultTools = [...(sources.defaultTools?.() ?? [])];
+	// 明确指定（编辑已有 Bot / 表单选目录）按它校验，不静默换目录；
+	// 没指定时用默认工作区，但主目录 / 卷根 / 数据目录内不能当项目——
+	// dev 从 home 启动是常态，直接报错会让"新建 Bot"永远卡住，所以退回最近项目。
+	const cwd = await (async () => {
+		const candidates = [
+			...(typeof requestedCwd === "string" ? [requestedCwd] : []),
+			sources.defaultCwd,
+			...projectList.map((project) => project.path),
+		];
+		for (const candidate of new Set(candidates)) {
+			try {
+				return await validateDeviceProject(resolve(candidate), sources.dataDir);
+			} catch {}
+		}
+		throw new DeviceWorkspaceError(
+			400,
+			"BOT_CWD_INVALID",
+			"Pick a concrete project directory; home and volume roots cannot host a Bot",
+		);
+	})();
+	signal.throwIfAborted();
+	// 记忆是 Bot 的私产：新 Bot 默认就带 `memory`（它只碰自己的 <dataDir>/bot-agents/<id>/memory）。
+	// 全局设置里没有这个开关（defaultOn:false + 不在用户工具页出现），靠这里给默认值。
+	const defaultTools = [...new Set([...(sources.defaultTools?.() ?? []), BOT_MEMORY_TOOL_NAME])];
 	const agentDir = sources.agentDir ?? getAgentDir();
 	const settings = SettingsManager.create(cwd, agentDir);
 	const resources = await new DefaultPackageManager({ cwd, agentDir, settingsManager: settings }).resolve(async () => {
@@ -108,7 +128,7 @@ export async function getLocalBotOptions(
 	const models = (await sources.models?.(signal)) ?? [];
 	signal.throwIfAborted();
 	const defaultModel = sources.defaultModel?.();
-	const projects = (await sources.projects?.()) ?? [{ path: sources.defaultCwd }];
+	const projects = projectList.length > 0 ? projectList : [{ path: cwd }];
 	signal.throwIfAborted();
 	return {
 		cwd,

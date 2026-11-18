@@ -2,6 +2,7 @@ import { createHash, randomUUID } from "node:crypto";
 import { mkdir, readFile, readdir, rename, rm, stat, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { DeviceWorkspaceError, validateDeviceProject } from "./workspaces.js";
+import { isBotToolHighPrivilege } from "./bot-execution.js";
 
 export interface LocalBot {
 	id: string;
@@ -24,7 +25,15 @@ export interface LocalBot {
 	/** 身份来源与修订：谁写的 systemPrompt、被改写几次。 */
 	identity?: { authoredBy: "human" | "model"; authoredAt: number; modelRevision: number };
 }
-export type LocalBotInput = Omit<LocalBot, "id" | "revision"> & { id?: string; revision?: number };
+export type LocalBotInput = Omit<LocalBot, "id" | "revision"> & {
+	id?: string;
+	revision?: number;
+	/**
+	 * 仅用于写入校验、不进注册表：模型起草的 Bot 若带高权限工具，必须在人工确认时逐项列进这里。
+	 * （人通过设备中心编辑时 authoredBy 会被盖成 human，不受此限。）
+	 */
+	approvedTools?: string[];
+};
 export interface LocalBotLease {
 	bot: LocalBot;
 	root: string;
@@ -37,6 +46,8 @@ export interface LocalBotRegistry {
 	get(id: string): LocalBot | undefined;
 	upsert(input: LocalBotInput): Promise<LocalBot>;
 	remove(id: string, revision: number): Promise<void>;
+	/** 是否有执行租约（群/设备任务在跑）。私聊发消息前用它做一次可读的忙检查。 */
+	busy(id: string): boolean;
 	acquire(id: string): Promise<LocalBotLease>;
 }
 function fail(status: number, code: string, message: string): never {
@@ -236,6 +247,18 @@ export async function createLocalBotRegistry(dataDir: string): Promise<LocalBotR
 		upsert: (input) =>
 			enqueue(async () => {
 				if (!input || typeof input !== "object") fail(400, "BOT_INVALID", "Invalid Bot");
+				// 模型只能起草、不能授权：模型 authorship 的 Bot 携带高权限工具时，
+				// 必须由确认卡把每一项列进 approvedTools，否则这里再拒一次（前端漏判也拦得住）。
+				if (input.identity?.authoredBy === "model") {
+					const approved = new Set(input.approvedTools ?? []);
+					const unapproved = (input.tools ?? []).filter((tool) => isBotToolHighPrivilege(tool) && !approved.has(tool));
+					if (unapproved.length)
+						fail(
+							400,
+							"BOT_NEEDS_APPROVAL",
+							`High-privilege tools require explicit human approval: ${unapproved.join(", ")}`,
+						);
+				}
 				const current = input.id ? mutable(input.id, input.revision) : undefined;
 				const bot = validate({ ...input, id: current?.id ?? randomUUID(), revision: (current?.revision ?? 0) + 1 });
 				bot.cwd = await validateDeviceProject(bot.cwd, dataDir);
@@ -251,6 +274,7 @@ export async function createLocalBotRegistry(dataDir: string): Promise<LocalBotR
 				next.delete(id);
 				await commit(next);
 			}),
+		busy: (id) => leases.has(id),
 		acquire: (id) =>
 			enqueue(async () => {
 				const bot = bots.get(id);

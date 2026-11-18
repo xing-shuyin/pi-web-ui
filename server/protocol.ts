@@ -1618,6 +1618,8 @@ export type ClientMessage =
 			quickAskEnabled?: boolean;
 			quickAskModel?: string | null;
 			quickAskThinking?: ThinkingLevel;
+			botDraftModel?: string | null;
+			botDraftThinking?: ThinkingLevel;
 			quickAskSystemPrompt?: string;
 			quickAskExplainPrompt?: string;
 			quickAskTranslateEnabled?: boolean;
@@ -3117,6 +3119,8 @@ export interface UiSettingsState {
 	quickAskEnabled: boolean;
 	quickAskModel: string | null;
 	quickAskThinking: ThinkingLevel;
+	botDraftModel: string | null;
+	botDraftThinking: ThinkingLevel;
 	quickAskSystemPrompt: string;
 	quickAskExplainPrompt: string;
 	quickAskTranslateEnabled: boolean;

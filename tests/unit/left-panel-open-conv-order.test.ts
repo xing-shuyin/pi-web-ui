@@ -13,6 +13,7 @@ import { conversationOrder, recordUserPrompt } from "../../web/src/conversation-
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..", "..");
 const CSS = readFileSync(join(ROOT, "web/src/styles.css"), "utf8");
+const BOTS_CSS = readFileSync(join(ROOT, "web/src/components/agent-bots.css"), "utf8");
 
 let root: Root | null = null;
 afterEach(() => {
@@ -77,6 +78,17 @@ function mountLeftPanel(overrides: Record<string, unknown> = {}) {
 }
 
 describe("左栏会话位置与纯背景高亮守卫", () => {
+	it("左栏三块标题（智能体 / 群组 / 项目）共用同一组左对齐令牌", () => {
+		// 文字起点 = 左内边距 + 图标盒 + 图标与文字间距。两边各写死一份数字就是「智能体文字
+		// 没跟项目对齐」的根因，所以只许引用同一组令牌。
+		for (const token of ["--lp-title-pad", "--lp-title-icon", "--lp-title-gap"]) {
+			expect(CSS, `styles.css 缺 ${token} 定义`).toContain(`${token}:`);
+			expect(BOTS_CSS, `agent-bots.css 未引用 ${token}`).toContain(`var(${token},`);
+		}
+		const toggle = BOTS_CSS.match(/\.lp-bots-toggle\s*\{([^}]*)\}/)?.[1] ?? "";
+		expect(toggle).toContain("var(--lp-title-pad,");
+		expect(toggle).toContain("var(--lp-title-gap,");
+	});
 	it("项目头激活态采用蓝色系背景且无边框线/无内阴影边框", () => {
 		const match = CSS.match(/\.lp-project-head-row\.active[\s\S]*?\{([^}]*)\}/);
 		expect(match).toBeTruthy();
@@ -835,8 +847,10 @@ describe("左栏会话位置与纯背景高亮守卫", () => {
 			plusBtn!.click();
 		});
 
-		const menu = container.querySelector(".lp-workspace-menu");
+		const menu = document.querySelector(".lp-workspace-menu");
 		expect(menu).toBeTruthy();
+		// 菜单必须挂到 body：左栏区块是 overflow: hidden 的滚动容器，内联渲染会被裁掉看不见。
+		expect(container.querySelector(".lp-workspace-menu")).toBeNull();
 		const newChatBtn = menu?.querySelector<HTMLButtonElement>(".lp-new-chat-btn");
 		expect(newChatBtn).toBeTruthy();
 		expect(newChatBtn?.textContent).toContain("新建对话");

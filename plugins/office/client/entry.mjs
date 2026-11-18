@@ -171,13 +171,16 @@ export const fileHandlers = [
 			let disposeCanvas;
 			const hint = find(".office-hint");
 			const editingHint = hint.textContent;
+			// 远程文档（http/https）只下载到插件缓存里渲染：写回原位不可能，只能另存到工作区
+			const readOnly = /^https?:\/\//i.test(String(file.path ?? ""));
+			if (readOnly) hint.textContent = `${editingHint} 远程文档只读：需要保存请用「另存为」写回工作区。`;
 			let loaded = false;
 			let opening = false;
 			let saving = false;
 			let conflict = false;
 
 			function updateButtons() {
-				saveBtn.disabled = !loaded || saving || conflict;
+				saveBtn.disabled = readOnly || !loaded || saving || conflict;
 				copyBtn.disabled = !loaded || saving;
 				copySubmit.disabled = !loaded || saving;
 				targetInput.disabled = saving;
@@ -447,7 +450,7 @@ export const fileHandlers = [
 				targetInput.focus();
 			}
 			async function save(targetPath) {
-				if (!loaded || saving || disposed || (!targetPath && conflict)) return;
+				if (!loaded || saving || disposed || (!targetPath && (conflict || readOnly))) return;
 				const operation = scope;
 				if (!operation.active) return;
 				if (targetPath && targetPath.replaceAll("\\", "/") === file.path.replaceAll("\\", "/")) {

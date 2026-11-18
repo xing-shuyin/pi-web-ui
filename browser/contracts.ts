@@ -86,6 +86,11 @@ export interface BrowserHostBridge {
 
 export type BrowserShellAction =
 	| "state"
+	/**
+	 * 要键盘焦点：内部页（新标签页的搜索框）加载完请宿主把焦点交给自己的视图。
+	 * 宿主只接受「发送方就是当前活动标签」的请求，Agent 模式 / 地址浮层开着时不抢。
+	 */
+	| "focus"
 	| "overlay"
 	/** 面板浮层：`{ open, panel }` 开/收起，`{ size }` 由面板页回煲自己要多大的矩形 */
 	| "panel"
@@ -118,6 +123,8 @@ export type BrowserShellAction =
 	| "agent.connect"
 	| "bookmarks.list"
 	| "bookmarks.save"
+	/** 从别的浏览器导出的书签文件导入：宿主自己开原生选文件对话框、读盘、解析再合并，回执只有条数 */
+	| "bookmarks.import"
 	| "history.list"
 	| "settings.get"
 	| "settings.save"

@@ -63,6 +63,7 @@ import { isOfficeFile, OFFICE_MAX_FILE_BYTES, unzipFiles } from "./office-parse.
 import { startControlServer } from "./control-socket.js";
 import { scheduleUploadCleanup } from "./uploads.js";
 import { ensureWindowsBash, windowsBashDir } from "./ensure-bash.js";
+import { augmentNodePath, augmentNodePathFromShell } from "./node-path.js";
 import { listThemes, readThemeCss, resolveThemeFile } from "./themes.js";
 import { isManaged, managedRefusal } from "./managed.js";
 import { launchOrigin, toServiceInfo } from "./launch-origin.js";
@@ -273,6 +274,23 @@ const proxyInfo = initHttpProxy(getAgentDir());
 if (proxyInfo.active) {
 	console.log(`[proxy] Outbound HTTP proxy enabled: ${proxyInfo.proxyUrl}`);
 }
+
+// node / npm 装在版本管理器（fnm / nvm-windows / Volta / Scoop）下时，目录只由交互式 shell 的
+// profile 注入 PATH；本进程继承的 PATH 里没有它，`bash -c "npm run …"` 就是 127 —— 后台任务面板
+// 的一键启动因此「全部闪退」，而 `bash -i` 终端正常。启动时补一次，所有子进程都跟着有。
+const nodePathDirs = augmentNodePath();
+if (nodePathDirs.length > 0) console.log(`[path] prepended node dirs: ${nodePathDirs.join(delimiter)}`);
+// 还找不到 npm/node 时走机制层：抓一次交互式登录 shell 的真实环境（VS Code resolveShellEnv 同款）。
+// 硬超时可用 PI_WEB_PATH_CAPTURE_TIMEOUT_MS（默认 1500ms，夹 200ms～10s）单独放宽。
+const shellPath = await augmentNodePathFromShell();
+if (shellPath.reason === "merged")
+	console.log(
+		`[path] interactive-shell capture: +${shellPath.added} entries (${shellPath.ms}ms, timeout ${shellPath.timeoutMs}ms)`,
+	);
+else if (shellPath.reason === "failed")
+	console.log(
+		`[path] interactive-shell capture failed after ${shellPath.ms}ms (timeout ${shellPath.timeoutMs}ms, PATH left as-is)`,
+	);
 
 if (process.platform === "win32") {
 	process.env.PATH = `${windowsBashDir()}${delimiter}${process.env.PATH ?? ""}`;
@@ -1015,15 +1033,23 @@ const deviceCenter = await installLocalDeviceCenter({
 	bots: deviceBots,
 	botDrafts: deviceBotDrafts,
 	// 一句话建 Bot：一次模型调用产出草案，创建仍由人在面板上确认。
+	// 模型/思考强度**每次现取**：设置 →「智能体」里可以单独指定，不指定则跟随本机默认模型。
 	draftBotFromRequest: createBotDraftRunner({
 		agentDir: getAgentDir(),
 		cwd: process.env.PI_WEB_CWD ? process.env.PI_WEB_CWD : process.cwd(),
+		model: () => {
+			const settings = sharedStateStore.getSettingsSnapshot("");
+			return settings.botDraftModel ?? sharedStateStore.getDefaultModel("pi");
+		},
+		thinking: () => sharedStateStore.getSettingsSnapshot("").botDraftThinking,
 		allowedTools: new Set(
 			ALL_AGENT_TOOL_ENTRIES.map((tool) => tool.name).filter((name) => isToolSupportedOnPlatform(name)),
 		),
 		create: (input, createdBy) => deviceBotDrafts.create(input, createdBy),
 	}),
 	allowHosts: ALLOW_HOSTS,
+	// dev 的 Vite 代理（页面 origin ≠ 后端 Host）由这里显式放行；生产反向代理通常同源。
+	allowOrigins: ALLOW_ORIGINS,
 	lanAccess: deviceLanAccess,
 	botCatalog: {
 		defaultCwd: CWD,
@@ -1124,6 +1150,9 @@ setBotChatHost({
 	// `get()` 在加载前会给出 undefined，那会把"还没加载"误判成"Bot 不存在"。
 	resolve: async (botId) => (await deviceBots.list()).find((bot) => bot.id === botId),
 	dataDir: DATA_DIR,
+	isBusy: (botId) => deviceBots.busy(botId),
+	// 私聊回合与群任务共用同一把租约：同一 Bot 不并发（任务侧遇 BOT_BUSY 会有界等待）。
+	acquireLease: (botId) => deviceBots.acquire(botId),
 });
 
 setAgentBotHost({
@@ -1607,6 +1636,8 @@ export interface DispatchSession {
 		quickAskEnabled?: boolean;
 		quickAskModel?: string | null;
 		quickAskThinking?: ThinkingLevel;
+		botDraftModel?: string | null;
+		botDraftThinking?: ThinkingLevel;
 		quickAskSystemPrompt?: string;
 		quickAskExplainPrompt?: string;
 		quickAskTranslateEnabled?: import("./quick-ask-settings.js").QuickAskSettings["quickAskTranslateEnabled"];
@@ -3293,7 +3324,16 @@ wss.on("connection", (ws) => {
 						});
 						break;
 					}
-					void cs.prompt(msg.text, msg.attachments, msg.queue);
+					void cs.prompt(msg.text, msg.attachments, msg.queue).catch((err: unknown) => {
+						// `prompt()` 的前置门禁是直接抛的：不接住就只剩一条 Unhandled Rejection，
+						// 用户那边看起来就是「点了发送什么都没发生」。
+						send({
+							type: "notice",
+							level: "error",
+							text: `发送失败：${(err as Error)?.message ?? err}`,
+							textEn: `Failed to send: ${(err as Error)?.message ?? err}`,
+						});
+					});
 					break;
 				}
 				case "queue_remove":
@@ -3766,8 +3806,8 @@ async function shutdown(signal: "SIGINT" | "SIGTERM" = "SIGINT"): Promise<void> 
 					"/c",
 					`timeout /t ${Math.ceil((SHUTDOWN_FORCE_EXIT_MS + 5000) / 1000)} /nobreak >nul && taskkill /F /T /PID ${process.pid}`,
 				],
-				{ stdio: "ignore", windowsHide: true },
-			);
+				stdio: "ignore",
+			}).child;
 			killer.unref();
 			disarmKiller = () => {
 				try {

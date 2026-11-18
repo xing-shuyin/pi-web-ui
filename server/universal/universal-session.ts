@@ -1,5 +1,6 @@
 import { startTurnTiming, finishTurnTiming } from "../turn-timing.js";
 import { normalizeQuickAskSettings } from "../quick-ask-settings.js";
+import { normalizeBotDraftSettings } from "../bot-draft-settings.js";
 import { captureQuickAskConversation } from "../quick-ask-context.js";
 import { randomUUID } from "node:crypto";
 import { existsSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
@@ -2521,6 +2522,7 @@ export class UniversalSession implements DispatchSession {
 		const s = this.stateStore?.getSettings(this.clientId);
 		const settings: UiSettingsState = {
 			...normalizeQuickAskSettings(s ?? {}),
+			...normalizeBotDraftSettings(s ?? {}),
 			steeringMode: s?.steeringMode ?? "all",
 			followUpMode: s?.followUpMode ?? "all",
 			promptMode: s?.promptMode ?? "append",

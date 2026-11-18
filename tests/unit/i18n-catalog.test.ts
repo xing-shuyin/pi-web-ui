@@ -41,6 +41,7 @@ describe("i18n catalog", () => {
 		const catalog = readCatalog({ includeTranslations: false });
 		expect(catalog.modules.map((module: { name: string }) => module.name)).toEqual([
 			"core",
+			"agent-bots",
 			"canvas",
 			"canvas-runtime",
 			"desktop",

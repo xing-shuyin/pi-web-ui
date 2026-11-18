@@ -181,6 +181,18 @@ const query = input("", "search", "输入网址或搜索关键词…");
 query.setAttribute("aria-label", t("address"));
 query.autocomplete = "off";
 
+/**
+ * 新标签页的唯一入口就是这根输入框：开页就把光标放进去，用户不用先点一下再打字。
+ * 只动本页 DOM 的焦点，不碰主进程的键盘焦点——真正的键盘焦点另走 `call("focus")`（见文件末尾），
+ * 否则在地址浮层里打字的用户会被这里抢走。
+ * 另一个输入框正拿着焦点（面板 / 表单）时不动它：那时用户已经在打字了。
+ */
+function focusQuery(): void {
+	const active = document.activeElement;
+	if ((active instanceof HTMLInputElement || active instanceof HTMLTextAreaElement) && active !== query) return;
+	query.focus({ preventScroll: true });
+}
+
 const submit = button("", () => {}, "unified-submit");
 submit.type = "submit";
 submit.setAttribute("aria-label", t("search"));
@@ -243,6 +255,10 @@ const footer = element("footer", "pb-start-footer unified-footer pb-muted", "按
 main.append(top, unifiedContainer, footer);
 app.append(main);
 
+// 光标直接落在输入框里，并且请宿主把键盘焦点交过来：只做 DOM 聚焦的话，按键还是进外壳页
+focusQuery();
+void call("focus").catch(() => {});
+
 function updateTime(): void {
 	const now = new Date();
 	clock.dateTime = now.toISOString();
@@ -275,8 +291,12 @@ listenPanelEvents((name) => {
 });
 
 window.addEventListener("focus", () => {
+	focusQuery();
 	void Promise.all([refreshSettings(), refreshBookmarks()]).catch(reportError);
 });
+
+// 从 bfcache 退回这个标签时也是一样的道理：光标回输入框
+window.addEventListener("pageshow", focusQuery);
 
 window.addEventListener("keydown", (event) => {
 	if (event.key === "/" && !(event.target instanceof HTMLInputElement)) {

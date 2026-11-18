@@ -1,8 +1,9 @@
 import { createHash, randomUUID } from "node:crypto";
 import { constants } from "node:fs";
-import { link, lstat, mkdir, open, readdir, rm, unlink, type FileHandle } from "node:fs/promises";
+import { lstat, mkdir, open, readdir, rm, unlink, type FileHandle } from "node:fs/promises";
 import { join, relative, resolve } from "node:path";
 import type { ToolDefinition } from "@earendil-works/pi-coding-agent";
+import { publishFileExclusive } from "./atomic-file.js";
 
 const MAX_EVIDENCE_BYTES = 1024 * 1024;
 const MAX_SESSION_BYTES = 64 * 1024 * 1024;
@@ -220,7 +221,8 @@ async function inventory(directory: string, signal?: AbortSignal): Promise<Map<s
 async function publish(temporary: string, target: string, session: string, signal?: AbortSignal): Promise<void> {
 	await sessionExists(session, signal);
 	signal?.throwIfAborted();
-	await link(temporary, target);
+	// 独占发布：同一摘要并发写入时只有一方能落地；硬链接不可用的 fs 降级为排他复制，不再 EACCES 卡死证据落盘。
+	await publishFileExclusive(temporary, target);
 	try {
 		signal?.throwIfAborted();
 	} catch (error) {

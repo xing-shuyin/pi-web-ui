@@ -10,9 +10,15 @@ import { conversationOrder } from "../../web/src/conversation-order.js";
 import { resetAppGlobals, setAppGlobals } from "../../web/src/app-globals.js";
 import { getContextMenu, closeContextMenu } from "../../web/src/context-menu-state.js";
 
-vi.mock("../../web/src/components/DeviceGroupSection.js", () => ({
-	DeviceGroupSection: () => createElement("div", { className: "lp-section dg-side-section" }),
-}));
+// 群组/智能体块只是项目的同层邻居：这两个组件的真实实现会去拉设备中心与 Bot 面板，
+// 在左栏布局用例里与断言无关，固化成空实现（其余导出照旧用真模块，避免漏掉常量与错误类）。
+vi.mock("../../web/src/components/DeviceGroupSection.js", async () => {
+	const actual = await vi.importActual<typeof import("../../web/src/components/DeviceGroupSection.js")>(
+		"../../web/src/components/DeviceGroupSection.js",
+	);
+	return { ...actual, DeviceGroupSection: () => createElement("div", { className: "lp-section dg-side-section" }) };
+});
+vi.mock("../../web/src/components/AgentBotsSection.js", () => ({ AgentBotsSection: () => null }));
 
 let root: Root | null = null;
 
@@ -90,13 +96,13 @@ afterEach(() => {
 });
 
 describe("LeftPanel 标题栏操作与项目管理", () => {
-	it("projects=[] 时仍渲染“最近项目”标题栏和项目管理按钮，且不渲染项目滚动区", () => {
+	it("projects=[] 时仍渲染「项目」标题栏和项目管理按钮，且不渲染项目滚动区", () => {
 		setAppGlobals({ cwd: "", ready: true, status: "open", workspaceRoots: [] });
 		const { container } = mountLeftPanel({ projects: [], sessions: [] });
 
 		const projectsSection = container.querySelector(".panel-projects");
 		expect(projectsSection).toBeTruthy();
-		expect(projectsSection?.textContent).toContain("最近项目");
+		expect(projectsSection?.querySelector(".lp-section-title-text")?.textContent).toContain("项目");
 
 		const projectActionBtn = container.querySelector(".lp-project-action");
 		expect(projectActionBtn).toBeTruthy();
@@ -134,7 +140,8 @@ describe("LeftPanel 标题栏操作与项目管理", () => {
 		expect(projectActionBtn).toBeTruthy();
 
 		act(() => projectActionBtn!.click());
-		const manageItem = container.querySelector<HTMLButtonElement>(".lp-manage-projects-btn");
+		// 下拉菜单挂在 body（左栏区块是 overflow: hidden，内联会被裁切）：只能从 document 取。
+		const manageItem = document.querySelector<HTMLButtonElement>(".lp-manage-projects-btn");
 		expect(manageItem).toBeTruthy();
 		act(() => manageItem!.click());
 		const dialog = document.querySelector("[role=dialog]");
@@ -146,7 +153,7 @@ describe("LeftPanel 标题栏操作与项目管理", () => {
 		expect(document.querySelector("[role=dialog]")).toBeNull();
 
 		act(() => projectActionBtn!.click());
-		const manageItem2 = container.querySelector<HTMLButtonElement>(".lp-manage-projects-btn");
+		const manageItem2 = document.querySelector<HTMLButtonElement>(".lp-manage-projects-btn");
 		act(() => manageItem2!.click());
 		expect(document.querySelector("[role=dialog]")).toBeTruthy();
 		const backdrop = document.querySelector(".status-cwd-backdrop, .project-picker-backdrop");
@@ -161,7 +168,7 @@ describe("LeftPanel 标题栏操作与项目管理", () => {
 
 		const projectActionBtn = container.querySelector<HTMLButtonElement>(".lp-project-action");
 		act(() => projectActionBtn!.click());
-		const manageItem = container.querySelector<HTMLButtonElement>(".lp-manage-projects-btn");
+		const manageItem = document.querySelector<HTMLButtonElement>(".lp-manage-projects-btn");
 		act(() => manageItem!.click());
 
 		expect(document.querySelector(".project-picker")?.parentElement).toBe(document.body);
@@ -205,7 +212,7 @@ describe("LeftPanel 标题栏操作与项目管理", () => {
 
 		const projectActionBtn = container.querySelector<HTMLButtonElement>(".lp-project-action");
 		act(() => projectActionBtn!.click());
-		const manageItem = container.querySelector<HTMLButtonElement>(".lp-manage-projects-btn");
+		const manageItem = document.querySelector<HTMLButtonElement>(".lp-manage-projects-btn");
 		act(() => manageItem!.click());
 
 		const chooseBtns = Array.from(
@@ -397,14 +404,14 @@ describe("LeftPanel P2：分区顺序 / 显隐 / 分隔条 / 行内槽位拆分"
 							: "?",
 		);
 
-	it("uiSections 决定可调分区先后，群组始终紧随项目分区", () => {
+	it("uiSections 决定可调分区先后，智能体/群组块固定跟项目树同一层（群组在项目之上）", () => {
 		setAppGlobals({ cwd: "/test", ready: true, status: "open", workspaceRoots: [] });
 		const { container } = mountLeftPanel({
 			projects: oneProject,
 			conversations: runningConv,
 			uiSections: [hostSection("host:lp-history"), hostSection("host:lp-projects"), hostSection("host:lp-running")],
 		});
-		expect(sectionOrder(container)).toEqual(["projects", "groups"]);
+		expect(sectionOrder(container)).toEqual(["groups", "projects"]);
 	});
 
 	it("隐藏项目分区时群组置顶，支持折叠与单独展示", () => {
@@ -427,13 +434,13 @@ describe("LeftPanel P2：分区顺序 / 显隐 / 分隔条 / 行内槽位拆分"
 		expect(sectionOrder(container)).toEqual(["groups"]);
 	});
 
-	it("默认（无 uiSections）显示项目分区（内含对话树）与群组分区", () => {
+	it("默认（无 uiSections）左栏只有项目分区，群组块紧贴在项目树之上", () => {
 		setAppGlobals({ cwd: "/test", ready: true, status: "open", workspaceRoots: [] });
 		const { container } = mountLeftPanel({ projects: oneProject, conversations: runningConv });
-		expect(sectionOrder(container)).toEqual(["projects", "groups"]);
+		expect(sectionOrder(container)).toEqual(["groups", "projects"]);
 	});
 
-	it("隐藏群组分区后不再渲染「群组」tab（tab 与布局开关不再脱节）", () => {
+	it("左栏不再有「项目 / 群组」tab；隐藏群组分区时整块不渲染", () => {
 		setAppGlobals({ cwd: "/test", ready: true, status: "open", workspaceRoots: [] });
 		const { container } = mountLeftPanel({
 			projects: oneProject,
@@ -445,7 +452,8 @@ describe("LeftPanel P2：分区顺序 / 显隐 / 分隔条 / 行内槽位拆分"
 				hostSection("host:lp-history"),
 			],
 		});
-		expect(Array.from(container.querySelectorAll(".lp-conv-tab")).length).toBe(1);
+		expect(Array.from(container.querySelectorAll(".lp-conv-tab")).length).toBe(0);
+		expect(container.querySelector(".dg-side-section")).toBeNull();
 	});
 
 	it("会话行使用自己的行内槽位；leftpanel.sessions 在会话行中渲染", () => {

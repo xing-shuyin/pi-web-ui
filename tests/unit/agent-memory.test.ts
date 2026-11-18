@@ -9,6 +9,7 @@ import {
 	MEMORY_ENTRY_MAX_CHARS,
 	MEMORY_FILE_MAX_ENTRIES,
 	MEMORY_RESIDENT_MAX_BYTES,
+	MEMORY_UNVERIFIED_TTL_MS,
 	type MemorySource,
 } from "../../server/device-center/bot-memory.js";
 
@@ -103,13 +104,27 @@ describe("记忆读取：索引优先、区间读、预算封顶", () => {
 		expect(hits.map((entry) => entry.id)).toContain(scoped.id);
 		const resident = await readFile(join(dir, "MEMORY.md"), "utf8");
 		expect(resident).not.toContain("docker compose");
-		await expect(memory.promote(scoped.id)).rejects.toThrow(/user-stated or twice-reused/);
+		// 未确认的 Bot 推断先卡在"未确认"，不到 hits 这一步。
+		await expect(memory.promote(scoped.id)).rejects.toThrow(/Only confirmed entries/);
+	});
+
+	it("未确认条目 promote 被拒；{ confirm: true } 才晋升并把置信度置为 confirmed", async () => {
+		const { memory, dir } = await memoryAt();
+		const entry = await memory.write({ scope: "user-pref", text: "部署平台是 Zeabur", source: userSource });
+		await expect(memory.promote(entry.id)).rejects.toMatchObject({ code: "MEMORY_PROMOTE_DENIED" });
+		await expect(memory.promote(entry.id)).rejects.toThrow(/confirm it in the memory panel first/);
+		expect(await readFile(join(dir, "MEMORY.md"), "utf8")).not.toContain("Zeabur");
+		const promoted = await memory.promote(entry.id, { confirm: true });
+		expect(promoted.confidence).toBe("confirmed");
+		expect(promoted.resident).toBe(true);
+		expect(promoted.summary).toContain("Zeabur");
+		expect(await readFile(join(dir, "MEMORY.md"), "utf8")).toContain("Zeabur");
 	});
 
 	it("用户来源的条目可 promote，进入常驻并受 2KB 上限约束", async () => {
 		const { memory, dir } = await memoryAt();
 		const entry = await memory.write({ scope: "user-pref", text: "回答用中文", source: userSource });
-		await memory.promote(entry.id);
+		await memory.promote(entry.id, { confirm: true });
 		const resident = await readFile(join(dir, "MEMORY.md"), "utf8");
 		expect(resident).toContain("回答用中文");
 		expect(resident).toContain("1 resident");
@@ -120,7 +135,7 @@ describe("记忆读取：索引优先、区间读、预算封顶", () => {
 				text: `偏好 ${i} ${"很长的偏好内容".repeat(6)}`,
 				source: userSource,
 			});
-			await memory.promote(extra.id).catch(() => undefined);
+			await memory.promote(extra.id, { confirm: true }).catch(() => undefined);
 		}
 		const size = (await readFile(join(dir, "MEMORY.md"), "utf8")).length;
 		expect(size).toBeLessThanOrEqual(MEMORY_RESIDENT_MAX_BYTES + 600);
@@ -150,6 +165,20 @@ describe("记忆读取：索引优先、区间读、预算封顶", () => {
 		expect(injection!.text).toContain("project:repo-1");
 	});
 
+	it("searchable:false 时注入不提 search，超预算仍留 +N more", async () => {
+		const { memory } = await memoryAt();
+		for (let i = 0; i < 60; i++)
+			await memory.write({ scope: `project:repo-${i}`, text: `事实 ${i} ${"内容".repeat(30)}`, source: botSource });
+		const injection = await buildBotMemoryInjection(memory, { cwd: "/work/repo-1", searchable: false });
+		expect(injection).toBeDefined();
+		expect(injection!.bytes).toBeLessThanOrEqual(4096);
+		expect(injection!.text).not.toContain("memory search");
+		expect(injection!.text).not.toContain("Missing memory is expected");
+		expect(injection!.omitted).toBeGreaterThan(0);
+		expect(injection!.text).toMatch(/^\+\d+ more entries$/m);
+		expect(injection!.text).toContain("project:repo-1");
+	});
+
 	it("botMemoryRoot 拒绝越界 Bot id", () => {
 		const dataDir = join(process.cwd(), "data");
 		expect(botMemoryRoot(dataDir, "abc-123")).toBe(join(dataDir, "bot-agents", "abc-123", "memory"));
@@ -157,12 +186,36 @@ describe("记忆读取：索引优先、区间读、预算封顶", () => {
 	});
 });
 
+describe("跨实例串行：同一 root 共用一条写链", () => {
+	it("两个实例并发写入，最终每条都在（不丢更新）", async () => {
+		const dir = await mkdtemp(join(tmpdir(), "pi-bot-memory-shared-"));
+		dirs.push(dir);
+		const clock = { now: Date.UTC(2026, 1, 11) };
+		// 生产形态：私聊、群任务、人侧面板各建一个实例，指向同一份 index.jsonl。
+		const chat = createBotMemory({ root: dir, now: () => clock.now });
+		const panel = createBotMemory({ root: dir, now: () => clock.now });
+		const records = await Promise.all(
+			Array.from({ length: 6 }, (_, i) =>
+				(i % 2 ? chat : panel).write({ scope: "topic:shared", text: `并发条目 ${i}`, source: botSource }),
+			),
+		);
+		const { entries } = await chat.snapshot();
+		expect(entries).toHaveLength(6);
+		expect(entries.map((entry) => entry.id).sort()).toEqual(records.map((record) => record.id).sort());
+	});
+});
+
 describe("记忆衰减：过期、降级、整理、遗忘", () => {
-	it("30 天未被使用的 unverified 条目在 compact 时归档；用户来源保留", async () => {
+	it("30 天未被使用的 unverified 条目在 compact 时归档；confirmed 不受 TTL 影响", async () => {
 		const clock = { now: Date.UTC(2026, 0, 1) };
 		const { memory, dir } = await memoryAt(clock);
 		const unverified = await memory.write({ scope: "topic:news", text: "临时观察", source: botSource });
-		const fromUser = await memory.write({ scope: "user-pref", text: "喜欢简短回答", source: userSource });
+		const fromUser = await memory.write({
+			scope: "user-pref",
+			text: "喜欢简短回答",
+			confidence: "confirmed",
+			source: userSource,
+		});
 		clock.now += 31 * 24 * 60 * 60 * 1000;
 		const result = await memory.compact();
 		expect(result.expired).toBeGreaterThanOrEqual(1);
@@ -170,6 +223,23 @@ describe("记忆衰减：过期、降级、整理、遗忘", () => {
 		expect(remaining.map((entry) => entry.id)).not.toContain(unverified.id);
 		expect((await memory.search("简短")).map((entry) => entry.id)).toContain(fromUser.id);
 		expect(await readFile(join(dir, "REPORT.md"), "utf8")).toContain("never used");
+	});
+
+	it("超过 TTL 的 unverified 条目即使被命中过也归档（不看 hits、不豁免 user）", async () => {
+		const clock = { now: Date.UTC(2026, 1, 11) };
+		const { memory } = await memoryAt(clock);
+		const reused = await memory.write({ scope: "topic:news", text: "反复用过的临时观察", source: botSource });
+		const fromUser = await memory.write({ scope: "person:acc-1", text: "用户提过一次的偏好", source: userSource });
+		await memory.search("临时观察 用户提过");
+		const hitsOf = async (id: string) => (await memory.snapshot()).entries.find((entry) => entry.id === id)?.hits;
+		expect(await hitsOf(reused.id)).toBeGreaterThan(0);
+		expect(await hitsOf(fromUser.id)).toBeGreaterThan(0);
+		clock.now += MEMORY_UNVERIFIED_TTL_MS + 24 * 60 * 60 * 1000;
+		const result = await memory.compact();
+		expect(result.expired).toBe(2);
+		const { entries } = await memory.snapshot();
+		expect(entries.map((entry) => entry.id)).not.toContain(reused.id);
+		expect(entries.map((entry) => entry.id)).not.toContain(fromUser.id);
 	});
 
 	it("forget 真的删掉，并在 audit 留痕", async () => {

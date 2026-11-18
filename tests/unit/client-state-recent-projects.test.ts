@@ -190,4 +190,31 @@ describe("ClientStateStore 最近项目删除全局持久化", () => {
 
 		expect((await store.getRecentProjects("clientA")).map((p) => p.path)).not.toContain(dir);
 	});
+
+	it("扫盘发现的项目不得改写已登记项目的最近对话时间（切到别的项目的对话不该重排项目）", async () => {
+		const fresh = join(dir, "fresh-project");
+		const browsing = join(dir, "browsing-project");
+		mkdirSync(fresh);
+		mkdirSync(browsing);
+		// 老项目只是被看过（promote:false → lastUsed: 0），新项目刚发过消息 → 它该在最上面
+		store.remember("clientA", browsing, { promote: false });
+		store.remember("clientA", fresh);
+		expect((await store.getRecentProjects("clientA")).map((p) => p.path)).toEqual([fresh, browsing]);
+
+		// 跨项目切换对话会触发重新扫盘：磁盘 mtime 更新的是「文件最后写入时间」，不是「最近真实对话」
+		store.mergeDiscoveredProjects([{ path: browsing, lastUsed: Date.now() + 60_000 }]);
+
+		const after = await store.getRecentProjects("clientA");
+		expect(after.map((p) => p.path)).toEqual([fresh, browsing]);
+		expect(after.find((p) => p.path === browsing)?.lastUsed).toBe(0);
+	});
+
+	it("扫盘发现的新项目仍用磁盘时间做初始排序值", async () => {
+		const onlyOnDisk = join(dir, "only-on-disk");
+		mkdirSync(onlyOnDisk);
+
+		store.mergeDiscoveredProjects([{ path: onlyOnDisk, lastUsed: 12345 }]);
+
+		expect(await store.getRecentProjects("clientA")).toEqual([{ path: onlyOnDisk, lastUsed: 12345 }]);
+	});
 });

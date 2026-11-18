@@ -1,5 +1,5 @@
 import { describe, expect, it, beforeEach, afterEach } from "vitest";
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -106,6 +106,20 @@ describe("McpClient 自愈（子进程崩溃后自动重启）", () => {
 		expect(c.getTools().map((t) => t.name)).toContain("crash");
 	});
 
+	it("懒重启后通知桥重新聚合工具（首次启动不通知，崩溃后的下一次调用通知）", async () => {
+		let changes = 0;
+		const c = new McpClient("restart-notify", { command: process.execPath, args: [FIXTURE] }, () => {});
+		c.onToolsChanged = () => {
+			changes += 1;
+		};
+		clients.push(c);
+		await c.start();
+		expect(changes).toBe(0);
+		await expect(c.call("crash", {}, 1000)).rejects.toThrow(/进程退出/);
+		await c.call("echo", { msg: "重启后" });
+		expect(changes).toBe(1);
+	});
+
 	it("启动即退出的服务器：每次调用都快速报「自动重启失败」的明确错误，不挂死", async () => {
 		const c = new McpClient("gone", { command: process.execPath, args: ["-e", "process.exit(7)"] }, () => {});
 		clients.push(c);
@@ -169,6 +183,51 @@ describe("McpBridge 聚合适配", () => {
 		await bridge.load();
 		expect(bridge.getTools().length).toBe(0);
 		bridge.dispose();
+	});
+});
+
+// issue #934：Windows 上 mcp.json 里的 `npx` 实际是 `npx.cmd`，裸 spawn 走 CreateProcess 不查 PATHEXT、
+// 不执行批处理 → ENOENT，服务器一个工具都不贡献。用真实的 npm shim 把它钉成「必须解析成 node + 入口」。
+const npmShim = (entry: string) =>
+	`@ECHO off\r\nGOTO start\r\n:find_dp0\r\nSET dp0=%~dp0\r\nEXIT /b\r\n:start\r\nSETLOCAL\r\nCALL :find_dp0\r\nIF EXIST "%dp0%\\node.exe" (\r\n  SET "_prog=%dp0%\\node.exe"\r\n) ELSE (\r\n  SET _prog=node\r\n)\r\n\r\nendLocal & goto #_undefined_# 2>NUL || title %COMSPEC% & "%_prog%"  "%dp0%\\${entry}" %*\r\n`;
+
+describe.skipIf(process.platform !== "win32")("Windows 批处理 shim 启动 (issue #934)", () => {
+	const dirs: string[] = [];
+	const started: McpClient[] = [];
+	afterEach(() => {
+		for (const c of started.splice(0)) {
+			try {
+				c.close();
+			} catch {}
+		}
+		for (const dir of dirs.splice(0)) rmSync(dir, { recursive: true, force: true });
+	});
+
+	it('command: "npx" 解析成 node + 入口后直启（不是裸 spawn 一个批处理）', async () => {
+		const dir = mkdtempSync(join(tmpdir(), "piweb-mcp-shim-"));
+		dirs.push(dir);
+		// 入口放一个真 MCP 服务器；临时目录没有 package.json，所以复制成 .mjs（.js 会被当成 CJS）
+		const entry = join(dir, "node_modules", "npx", "bin", "npx-cli.mjs");
+		mkdirSync(dirname(entry), { recursive: true });
+		writeFileSync(entry, readFileSync(FIXTURE));
+		writeFileSync(join(dir, "npx.cmd"), npmShim("node_modules\\npx\\bin\\npx-cli.mjs"));
+
+		// PATH 改成「只有这个临时目录」：Git Bash / 桌面壳里同一份环境可能同时有 PATH 与 Path，
+		// 先按大小写不敏感全部剔掉，否则会解析到机器上真实的 npx.cmd（那就测不到我们造的 shim 了）
+		const searchEnv: Record<string, string> = {};
+		for (const [key, value] of Object.entries(process.env)) {
+			if (value !== undefined && key.toLowerCase() !== "path") searchEnv[key] = value;
+		}
+		searchEnv.Path = dir;
+
+		const c = new McpClient("win-npx", { command: "npx", args: [] }, () => {}, {
+			spawnOptions: { env: searchEnv, cwd: dir, autoDetect: false },
+		});
+		started.push(c);
+		await c.start();
+		expect(c.getTools().map((t) => t.name)).toContain("echo");
+		const echo = (await c.call("echo", { msg: "shim" })) as { content: string };
+		expect(JSON.parse(echo.content)).toEqual({ msg: "shim" });
 	});
 });
 

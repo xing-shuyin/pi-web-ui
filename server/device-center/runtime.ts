@@ -7,6 +7,7 @@ import { VerificationStopUnconfirmedError } from "./local-verification.js";
 import { canonicalPath, computeCanonicalRepositoryId, git, verifyRepoRoot } from "../workspace-handle.js";
 import type { LocalBotRegistry } from "./bots.js";
 import { createDeviceCollabService } from "./collab-service.js";
+import { acquireWithBusyWait } from "./bot-lease-wait.js";
 import { botMemoryRoot, buildBotMemoryInjection, createBotMemory } from "./bot-memory.js";
 import type { DeviceCollabExecutionContext } from "./collab-tool.js";
 import {
@@ -222,7 +223,7 @@ export function createDeviceRuntime(options: {
 	async function acquire(botId: string, signal?: AbortSignal, cancellationId?: string) {
 		enabled(signal);
 		await sweep();
-		const lease = await bots.acquire(botId);
+		const lease = await acquireWithBusyWait(() => bots.acquire(botId), { signal });
 		try {
 			enabled(signal);
 			await assertPublicationWorkspaceIdle(botId, lease.root);
@@ -693,6 +694,8 @@ export function createDeviceRuntime(options: {
 					? (
 							await buildBotMemoryInjection(createBotMemory({ root: memoryRoot }), {
 								cwd: executionCwd,
+								// 没有 memory 工具时不要叫模型 "去 search"：提示必须和实际能力一致。
+								searchable: lease.bot.tools.includes("memory"),
 							})
 						)?.text
 					: undefined;

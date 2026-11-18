@@ -158,6 +158,8 @@ function makeCtx(opts: {
 			retryMaxAttempts: 2,
 			softCapTokens: 0,
 			softCapByModel: {},
+			botDraftModel: null,
+			botDraftThinking: "off" as const,
 		},
 		session: { model: null, modelRuntime: null } as unknown as AttachmentContext["session"],
 	};

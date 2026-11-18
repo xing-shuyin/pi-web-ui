@@ -130,6 +130,18 @@ await page.addInitScript(() => {
 					bookmarks = args.bookmarks;
 					return true;
 				}
+				// 书签导入：正文在主进程，渲染层只拿回条数（跟真宿主同一个形状）
+				if (action === "bookmarks.import") {
+					bookmarks = [
+						...bookmarks,
+						{
+							name: args.folderName,
+							type: "folder",
+							children: [{ name: "Imported <b>x</b>", type: "link", url: "https://imported.example.com" }],
+						},
+					];
+					return { imported: 1, duplicate: 2, skipped: 0 };
+				}
 				if (action === "settings.get") return { ...settings };
 				if (action === "settings.save") {
 					settings = { ...settings, ...args.settings };
@@ -422,6 +434,13 @@ try {
 	await panel.getByLabel("URL", { exact: true }).fill("https://new.example.com");
 	await panel.getByRole("button", { name: "Save", exact: true }).click();
 	await panel.getByRole("button", { name: /New bookmark/ }).waitFor();
+	// 导入书签：只发一个动作，回执驱动重新拉取 + 回到根目录，导入的名字仍然只当文本
+	await panel.getByRole("button", { name: "Import bookmarks", exact: true }).click();
+	const imported = panel.getByRole("button", { name: /Imported bookmarks/ });
+	await imported.waitFor();
+	await imported.click();
+	await panel.getByRole("button", { name: /Imported <b>x<\/b>/ }).waitFor();
+	assert.equal(await page.locator("dialog script, dialog img, dialog b").count(), 0);
 	await page.keyboard.press("Escape");
 	assert.ok(
 		await page.evaluate(() => window.__calls.some((call) => call.action === "overlay" && call.args.open === false)),

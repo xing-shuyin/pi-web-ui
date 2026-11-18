@@ -4,10 +4,43 @@
  * 移植自 E:\ai-browser\src\dock.js
  */
 (function () {
-	if (window.__AIB_DOCK__) return;
+	const existingDock = window.__AIB_DOCK__;
+	if (existingDock && existingDock.ready && typeof existingDock.remount === "function") {
+		existingDock.remount();
+		return;
+	}
 	if (location.protocol === "file:" && location.pathname.includes("newtab.html")) return;
 	if (location.pathname.includes("shell.html")) return;
-	window.__AIB_DOCK__ = true;
+	// dom-ready / did-finish-load 都会注入，先占位避免建出两个 Dock。
+	window.__AIB_DOCK__ = { ready: false, remount() {} };
+
+	// 静态模板走 Trusted Types 策略；Gemini 等站点启用了 TrustedHTML，直接写 innerHTML 会抛错。
+	let htmlPolicy = null;
+	function trustedHTML(markup) {
+		if (window.trustedTypes && typeof window.trustedTypes.createPolicy === "function") {
+			try {
+				if (!htmlPolicy) {
+					try {
+						htmlPolicy = window.trustedTypes.createPolicy("pi-browser-dock", { createHTML: (value) => value });
+					} catch (_) {
+						htmlPolicy = window.trustedTypes.createPolicy("pi-browser-dock-" + Date.now(), {
+							createHTML: (value) => value,
+						});
+					}
+				}
+				return htmlPolicy.createHTML(markup);
+			} catch (_) {}
+		}
+		return markup;
+	}
+	function setMarkup(el, markup) {
+		try {
+			el.innerHTML = trustedHTML(markup);
+			return true;
+		} catch (_) {
+			return false;
+		}
+	}
 
 	const host = document.createElement("div");
 	host.id = "ai-browser-dock-host";
@@ -321,7 +354,9 @@
 	dock.style.right = "28px";
 	dock.style.bottom = "28px";
 
-	dock.innerHTML = `
+	setMarkup(
+		dock,
+		`
     <div class="dock-expanded-menu">
       <button id="btn-md" class="dock-sub-btn" title="复制当前页面 Markdown (Ctrl+Shift+C)">
         <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/></svg>
@@ -339,7 +374,8 @@
     <button id="btn-main" class="dock-main-btn" title="刷新页面 / 展开导航 (按住可拖动)">
       <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21.5 2v6h-6M2.5 22v-6h6M2 11.5a10 10 0 0 1 18.8-4.3M22 12.5a10 10 0 0 1-18.8 4.2"/></svg>
     </button>
-  `;
+  `,
+	);
 
 	// 2. 构建优雅提示条 Toast
 	const toast = document.createElement("div");
@@ -350,7 +386,9 @@
 	const modal = document.createElement("div");
 	modal.className = "modal-backdrop";
 	modal.id = "bm-modal";
-	modal.innerHTML = `
+	setMarkup(
+		modal,
+		`
     <div class="modal-dialog">
       <div class="modal-head">
         <div class="modal-title">
@@ -398,7 +436,8 @@
         </div>
       </div>
     </div>
-  `;
+  `,
+	);
 
 	shadow.appendChild(style);
 	shadow.appendChild(dock);
@@ -415,14 +454,25 @@
 		}, 2400);
 	}
 
-	function mount() {
-		if (!document.body) {
-			window.addEventListener("DOMContentLoaded", mount);
-			return;
+	// 站点 SPA（如 Gemini）会清空 body，旧脚本只挂一次就永久消失；这里按 DOM 变化重新挂载同一个 host。
+	let observedBody = null;
+	const dockObserver = new MutationObserver(() => ensureMounted());
+	function ensureMounted() {
+		if (!document.body) return false;
+		if (!host.isConnected) document.body.appendChild(host);
+		if (observedBody !== document.body) {
+			if (observedBody) dockObserver.unobserve(observedBody);
+			observedBody = document.body;
+			dockObserver.observe(observedBody, { childList: true });
 		}
-		document.body.appendChild(host);
+		return true;
 	}
+	function mount() {
+		if (!ensureMounted()) window.addEventListener("DOMContentLoaded", mount, { once: true });
+	}
+	dockObserver.observe(document.documentElement, { childList: true });
 	mount();
+	window.__AIB_DOCK__ = { ready: true, remount: ensureMounted };
 
 	// 恢复拖动位置
 	try {
@@ -529,7 +579,7 @@
 	}
 
 	function renderFolderOptions() {
-		selectFolder.innerHTML = "";
+		selectFolder.replaceChildren();
 		currentFolders.forEach((f) => {
 			const opt = document.createElement("option");
 			opt.value = JSON.stringify(f.path || [f.name]);

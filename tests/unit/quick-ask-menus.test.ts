@@ -10,7 +10,14 @@ import { closeContextMenu, contextMenuItems, getContextMenu } from "../../web/sr
 import { resetAppGlobals, setAppGlobals } from "../../web/src/app-globals.js";
 import { QUICK_ASK_OPEN_EVENT, type QuickAskOpenRequest } from "../../web/src/quick-ask.js";
 
-vi.mock("../../web/src/components/DeviceGroupSection.js", () => ({ DeviceGroupSection: () => null }));
+// 群组/智能体块只是项目的同层邻居：真实实现会去拉设备中心与 Bot 面板，布局用例里固化成空实现。
+vi.mock("../../web/src/components/DeviceGroupSection.js", async () => {
+	const actual = await vi.importActual<typeof import("../../web/src/components/DeviceGroupSection.js")>(
+		"../../web/src/components/DeviceGroupSection.js",
+	);
+	return { ...actual, DeviceGroupSection: () => null };
+});
+vi.mock("../../web/src/components/AgentBotsSection.js", () => ({ AgentBotsSection: () => null }));
 
 let root: Root;
 let container: HTMLDivElement;

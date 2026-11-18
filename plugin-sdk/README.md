@@ -36,6 +36,7 @@ pi-web-ui plugin create my-plugin --template renderer   # view:false + renderers
 | `testing.mjs` / `testing.d.ts` | Node 测试用 `createMockHost`，路径解析直接使用 `node:path` 的 `resolve` / `sep` | `@pi-web-ui/plugin-sdk/testing` |
 
 > 和 `server/plugins.ts` 的全量 `PluginHost` 是**同语义的精简版**：运行时以宿主实际注入为准，宿主版本见 `PLUGIN_API_VERSION`。SDK 只求“写得顺”，不做运行时 polyfill。
+> **SDK 0.4.0 起** `client.mjs` 提供 `createPluginI18n()`（插件界面文案跟随宿主语言，见下「插件界面语言」）。插件代码比宿主新时会直接 `SyntaxError: Importing binding name 'createPluginI18n' is not found`，所以插件要按 `SDK_VERSION` 决定是否用新导出——守卫：`tests/unit/plugin-sdk-export-contract.test.ts`。
 
 ## 怎么用
 
@@ -87,6 +88,40 @@ export default defineView({
 ```
 
 注意 `select` 的切换值是第二个参数：`onUiAction("my-plugin:tone", (itemId, value) => …)`。
+
+## 插件界面语言（跟随宿主，别自己存语言偏好）
+
+界面语言只有一份事实源：宿主全局语言。插件**不要**保存自己的语言偏好，用 `createPluginI18n()` 给出中英两份字典即可：
+
+```js
+import { defineView, createPluginI18n } from "./sdk/client.mjs";
+
+const i18n = createPluginI18n({
+	zh: { title: "笔记", empty: "还没有笔记", count: "共 {count} 条" },
+	en: { title: "Notes", empty: "No notes yet", count: "{count} total" },
+});
+
+export default defineView({
+	mount(el) {
+		render(el);
+		// 宿主切语言后重画；卸载时调 i18n.destroy() 解除订阅。
+		const off = i18n.onChange(() => render(el));
+		return () => {
+			off();
+			i18n.destroy();
+		};
+	},
+});
+
+function render(el) {
+	el.textContent = i18n.t("count", { count: 3 });
+}
+```
+
+- 宿主语言是 `zh` / `zh-CN` / `zh-TW` 都取 `zh`，其余语言（de / ja / ru…）取 `en` —— 插件的字典只有中英两种，不做第三种分叉；
+- 缺词依次回落到另一语言的同名 key，再回落到 key 本身（界面不会空白）；
+- 插值支持 `{name}` / `{{name}}` / `${name}`；
+- 底层就是宿主桥的 `locale.current()` + `locale.onChange()`（需宿主 API ≥ 19），`onLocale()` 是旧别名；要自己写渲染逻辑时也可以直接用这两个 API。
 
 ## 本地单测（createMockHost）
 

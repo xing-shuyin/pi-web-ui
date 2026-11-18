@@ -208,6 +208,28 @@ macOS 下若服务由 launchd 拉起（`process.ppid === 1`，LaunchAgent/孤儿
 
 bash 工具本身与 pi CLI 同源：`server/bash-tool.ts` 把 `settings.json` 的 `shellPath`（全局 agent 目录 + 项目 `.pi/settings.json`，`SettingsManager.getShellPath()`）透传给 `createLocalBashOperations`，缺失时才是上面那套 Git Bash / PATH 探测（issue #866）。终端面板不读该配置——它只认 `PI_WEB_SHELL`，两者的差异是故意的：终端是给用户看一眼的可见 shell，bash 工具要跟 CLI 行为对齐。
 
+### node / npm 的 PATH 补齐（后台任务 127 的真正原因）
+
+`job-runner.ts` 的 `pickJobShell()` 起的是**非交互** shell（`bash -c` / `cmd /c`），不读 `.bashrc`；而 Node 装在版本管理器下（fnm / nvm-windows / Volta / Scoop）时，`node` / `npm` 目录恰恰只由 profile 注入（`eval "$(fnm env --use-on-cd)"`）。桌面壳 / 服务管理器给的 PATH 里没有它，于是顶栏「后台任务」面板里 `npm run …` 全部以 `command not found`（127）秒退，而集成终端（`bash -i`）正常 —— 这个差异以前很容易被误判成 job runner 自身的问题。
+
+修法分两层，启动时依次执行（`server/index.ts` 紧跟代理初始化之后），对 job runner、bash 工具、PTY 终端、插件 spawn 一次生效：
+
+1. **目录探测（快路径）**：`server/node-path.ts` 的 `augmentNodePath()` 把候选安装目录里**真有 `node(.exe)` / `npm(.cmd)`** 的那些前插进 `process.env.PATH`。候选清单复用 `native-cli-discovery.ts` 的 `installDirectories`（与引擎 CLI 检测同一份：`FNM_MULTISHELL_PATH`、fnm 持久版本降序、nvm / Volta / pnpm / Scoop / 当前 `process.execPath` 所在目录），**只收带 node/npm 的目录**，避免 scoop shims 之类无关目录整体挤到 PATH 前面；已在 PATH 上的跳过、重复调用幂等。启动日志 `[path] prepended node dirs: …`。
+2. **交互式登录 shell 捕获（机制层）**：`server/shell-env.ts` 的 `captureShellPath()`。枚举目录永远补不完（fnm / nvm / asdf / mise / volta 布局无穷，同类产品 ekko-studio 连补两次目录仍未解决机制问题），所以这一层直接**问用户自己的 shell**：POSIX `$SHELL -ilc 'printf ‹marker›%s‹marker› "$PATH"'`，Windows 依次试 `pwsh` / `powershell` 的 `-Command '$env:PATH'`（会加载各自的 `$PROFILE`，注册表 `HKCU\Environment\Path` 里只有版本管理器二进制目录、没有 node，所以不能用注册表代替），失败回落 bash `-ilc`。输出用 uuid marker 定位（只认最后一段，profile 的 banner/告警都在前面）、去 ANSI、校验形状，硬超时 1.5s（`PI_WEB_PATH_CAPTURE_TIMEOUT_MS` 可调，夹 200ms～10s），失败安静回落且 PATH 原样不动；只在「PATH 上确实没有 node/npm」时触发（正常机器零成本），`PI_WEB_PATH_CAPTURE=off` 可关。合并时 shell 的条目在前、当前独有条目补后、大小写不敏感去重；**捕获侧的相对条目（`.`、`node_modules/.bin`）直接丢弃**——它们是 cwd 相关的，焊进全局 PATH 会改掉每个 job 的语义。启动日志 `[path] interactive-shell capture: +N entries (Nms, timeout Nms)`。
+
+**`-i` 不能省**：`-lc` 只读 `.zprofile` / `.bash_profile`，读不到 `.zshrc` / `.bashrc`，而 `fnm env` 恰恰写在后者（本机 `~/.bashrc` 第 3 行）。业界同款实现：VS Code `getResolvedShellEnv()`（`src/vs/platform/shell/node/shellEnv.ts`，`['-i','-l','-c']` + marker + 超时 + promise 缓存，**Windows 直接跳过**）、Zed `util::shell_env::capture`（同一思路，Windows 把 `Path` 归一成 `PATH`）、ekko-studio PR #3698（把 `-lc` 改 `-ilc` 并 memoize，否则一次状态查询 spawn 十几个 shell）。本机实测：`bash -ilc` 168ms、`powershell -Command` 179ms（`-NoProfile` 109ms），均有缓存选项。回归：`tests/unit/node-path.test.ts`、`tests/unit/shell-env.test.ts`。
+
+### PATH 冻结语义（补一次就固定到下次启动）
+
+两层都只在 **server 启动时跑一次**：之后 `process.env.PATH` 就是这份快照，job runner（`bash({background:true})`）、bash 工具、新建 PTY、插件 spawn 全部继承它。**运行期不再重新探测**，所以下面这些现象是设计内的，不是 bug：
+
+- **中途换版本不生效**：用户在终端里 `fnm use 20` / `nvm use 20`，集成终端（`bash -i` 会重读 `.bashrc` 的 `fnm env --use-on-cd`）立刻跟着切，但后台任务仍用启动时那份 —— 典型表现是「终端里 `node -v` 是 20，后台任务里是 22」。
+- **重启也不一定听某个终端的**：捕获起的是**新的**交互式登录 shell，它解析的是"这个 shell 的默认版本"（fnm 的 `default` alias / 从 server 继承的会话变量），不是某个已打开终端里的 `fnm use` 状态。要固定版本请用 `fnm default <ver>`（持久化）而不是 `fnm use`（会话级），再重启 server。
+- **目录被删变 127**：`fnm uninstall` / 清理版本目录后，PATH 里留下指向已删目录的死条目，`npm` 又变回 `command not found`（127），直到重启 server 重新探测。
+- **不做的替代方案**：没有"每次 spawn 前重算"或"按 job 的 cwd 重算 `--use-on-cd`"。原因：job 的 cwd 与用户终端的 cwd 不同源，按 cwd 重算等于把"用户在哪儿 cd 过"变成服务端的隐藏状态；每次 spawn 还多一次 shell / stat。宁可要一份可解释的快照。
+
+恢复方式只有重启 server（dev：重启 `npm run dev`；桌面版：退出重开）。启动日志的 `[path] prepended node dirs: …` / `[path] interactive-shell capture: +N entries (Nms, timeout Nms)` 就是这份快照的来源，排查版本问题时先看它。
+
 ## 终端与源码管理的界面容器（底部面板 / 右栏标签）
 
 - **布局是左 / 中 / 右 / 下四块，全部是 flex 兄弟节点**：左栏、聊天区（`.main`）、右栏（`.panel-drawer.drawer-right`）是同一行的三块，底部面板（`.bottom-dock`，类名沿用 `.term-drawer`）是 `.app` 里 `.layout` 之后的全宽一块。谁变宽变窄都由 flex 自己重排，没有 `padding-right` 之类的"让位"补丁——拖动任何一侧，中间聊天区会实时重排，不存在中间空一条或面板盖住正文。
@@ -216,3 +238,6 @@ bash 工具本身与 pi CLI 同源：`server/bash-tool.ts` 把 `settings.json` �
 - 事实源：`web/src/components/BottomDock.tsx`（底部面板：高度、折叠、拖拽把手、`pi-web-ui:bottom-dock-h`、多标签全挂载）、`web/src/components/RightPanel.tsx`（右栏标签：`files` / `scm` / 插件）、`web/src/components/SCMPanel.tsx`（头部收敛为一行 + Changes/History/Stash 分段视图 + 底部常驻提交栏 + 分支浮层菜单）、`web/src/components/TerminalPanel.tsx`（左右分区：左列是常驻命令栏、宽度可拖，右列顶部才是终端 tab 条 + 输出区；窄屏左列退成盖住右列的二级页）、`web/src/drawer.css`（整份进 `@layer drawer`，排在层序末尾）、`web/src/components/SlotTabs.tsx`（"只有一个标签就不画标签条"）。
 - 入口统一在 `App.tsx` 的 `handleViewChange` 里拦截：`terminal` / `git` 不再 `setView`，改为开面板（顶栏 tab、左侧 dock、插件事件都走同一个口子），**同一个按钮再点一次就是收起**；快捷键 `Ctrl+\`` 开/关终端、`Ctrl+Shift+G` 开/关源码管理（`Ctrl+G` 被浏览器查找占用）。窄屏（≤768px）右栏退化为全屏 drawer，源码管理走「列表 → 详情」二级下钻，不做左右分栏。
 - **xterm 实例不因折叠卸载**：折叠只隐藏输出区、保留 tab 条（39px），避免重建 xterm 造成缓冲全量重放闪烁；抽屉关闭时 PTY 仍在服务端继续跑（见上文断线保活边界）。
+- **右列是一整块底色，头部压到最低**：`.term-main` / `.term-body` 在抽屉里 `padding: 0`（base 层那份内边距是给旧单列终端的，留着等于在终端列外套一圈 `--bg-elev` 边框）；两侧分隔条 `.term-cmd-grip` 靠 `.resize-handle` 自带的负外边距骑在边界上，不占布局宽度（否则命令栏与终端之间又多一条别的底色）。tab 条与 xterm 共用 `--term-bg`，`.td-head` 只有 32px、左手不给 tab 留白、不带上下内边距；拖动把手 `.td-grip` 从铺满整宽改成顶部居中 104×8 的小命中区，否则它会盖住 tab 和右上一排按钮，逼着头部再加内边距——抽屉本来就矮，那点留白就是纯浪费（折叠态同步取 32px）。头部右上那一排混着三种来源（`.panel-new` / `.panel-refresh` 宿主键、`.slot-btn` 插件键、`.icon-btn` 面板动作键），统一在 `.term-drawer .td-head` 作用域里归一成 24×24、无底色、无描边、13px 图标；状态（如命令栏开合）只靠颜色深浅，不给单独一个键加底色或亮白。
+- **头部 ✕ 是隐藏面板而不是杀终端**：`TerminalPanel` 的 `onHide`（`App.tsx` 传 `closeDrawer("terminal")`）只把抽屉收起来，PTY 继续跑；杀终端只走每个 tab 自己的 ✕（`closeTerminal` → `terminal_kill`）。抽屉里的多标签头部（`BottomDock` 的 `.bd-acts`）同一个语义、同一个 tooltip。
+- **xterm 视口的黑边只在无层覆盖区修**：`xterm.css` 是未分层三方样式，它的 `.xterm .xterm-viewport { background-color: #000 }` 永远赢过 `@layer base/drawer` 里的同属性（层内普通声明必输给无层普通声明），视口里 scrollable 元素没盖到的像素就会漏成一条纯黑边。修正写在 `styles.css` 末尾的无层覆盖区（`.term-xterm` / `.tui-overlay-xterm` 两处），靠三连类权重取胜，不需要叹号 important。

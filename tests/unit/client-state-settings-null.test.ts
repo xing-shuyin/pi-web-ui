@@ -46,6 +46,22 @@ describe("ClientStateStore.saveSettings null 清除语义", () => {
 		expect(reopened.getSettings("c1").visionBridgeModel).toBeNull();
 	});
 
+	it("起草设置能落盘并在新实例里读回（设置 →「智能体」用的就是这条链路）", () => {
+		expect(store.getSettings("c1").botDraftModel).toBeNull();
+		expect(store.getSettings("c1").botDraftThinking).toBe("off");
+
+		store.saveSettings("c1", { botDraftModel: "opencode-go/glm-5.3-flash", botDraftThinking: "medium" });
+		expect(store.getSettings("c1").botDraftModel).toBe("opencode-go/glm-5.3-flash");
+
+		const reopened = new ClientStateStore(file);
+		expect(reopened.getSettings("c1").botDraftModel).toBe("opencode-go/glm-5.3-flash");
+		expect(reopened.getSettings("c1").botDraftThinking).toBe("medium");
+
+		// `null` = 回到「跟随默认模型」，不能因为 falsy 被旧值复活
+		reopened.saveSettings("c1", { botDraftModel: null });
+		expect(reopened.getSettings("c1").botDraftModel).toBeNull();
+	});
+
 	it("promptDisabled 默认包含 plugin_dev，存量老存档升级默认不开启，显式开启后落盘持久化", () => {
 		expect(store.getSettings("c_new").promptDisabled).toContain("plugin_dev");
 

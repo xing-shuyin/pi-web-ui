@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
-import { spawn } from "node:child_process";
 import { readFile, mkdir } from "node:fs/promises";
 import { readFileRetry, writeAtomic } from "../atomic-file.js";
+import { runProcess } from "../run-process.js";
 import { pathToFileURL } from "node:url";
 import { dirname, join, resolve } from "node:path";
 
@@ -98,32 +98,18 @@ export function createHubUpgradeManager(options: {
 	const launch =
 		options.launch ??
 		((jobPath: string) =>
-			new Promise<void>((done, reject) => {
-				const child = spawn(process.execPath, [options.workerPath, "--launch", jobPath], {
-					windowsHide: true,
-					stdio: ["ignore", "pipe", "pipe"],
+			(async () => {
+				const result = await runProcess({
+					cmd: process.execPath,
+					args: [options.workerPath, "--launch", jobPath],
+					timeoutMs: 35_000,
+					maxBytes: 4096,
 				});
-				let output = "";
-				child.stdout.on("data", (chunk) => {
-					output = (output + chunk).slice(-4096);
-				});
-				child.stderr.on("data", (chunk) => {
-					output = (output + chunk).slice(-4096);
-				});
-				const timer = setTimeout(() => {
-					child.kill();
-					reject(new Error("Hub upgrade worker submission timed out"));
-				}, 35_000);
-				child.once("error", (error) => {
-					clearTimeout(timer);
-					reject(error);
-				});
-				child.once("exit", (code) => {
-					clearTimeout(timer);
-					if (code === 0) done();
-					else reject(new Error(output.trim() || `Hub upgrade worker exited ${code}`));
-				});
-			}));
+				if (result.timedOut) throw new Error("Hub upgrade worker submission timed out");
+				if (result.spawnError) throw new Error(result.spawnError);
+				if (result.code !== 0)
+					throw new Error(`${result.stdout}${result.stderr}`.trim() || `Hub upgrade worker exited ${result.code}`);
+			})());
 	return {
 		status,
 		async start(accountId) {

@@ -92,19 +92,34 @@ function normalizeList(raw: unknown, limit: number, normalize: (s: string) => st
 	return out;
 }
 
-export type NormalizedEvidence =
-	{ ok: true; value: SubagentEvidenceInput } | { ok: false; error: "not_object" | "empty" | "invalid_fields" };
+export type EvidenceErrorCode = "not_object" | "empty" | "invalid_fields";
 
-/** 归一化模型传入的 evidence；不做对账，只保证形状与上限。 */
+export type NormalizedEvidence =
+	{ ok: true; value: SubagentEvidenceInput } | { ok: false; error: EvidenceErrorCode; fields?: string[] };
+
+/** 数组里混进非字符串元素才算真形状错误；空数组只是「这个字段用不到」。 */
+function hasNonStringElement(raw: unknown): boolean {
+	return Array.isArray(raw) && raw.some((item) => typeof item !== "string");
+}
+
+/**
+ * 归一化模型传入的 evidence；不做对账，只保证形状与上限。
+ *
+ * 网关强制填满可选字段的模型（OpenAI 系）会传 `{blocked:"",commands:[],files:[],none:true}`：
+ * 空数组/空字符串/false 一律按「未填写」处理，否则它越照推荐格式填越被判非法（#938）。
+ * 冲突（例如 `none:true` 又带非空 files）不在这一层否决，交给 `verifyEvidence` 拿转录对账。
+ */
 export function normalizeEvidenceInput(raw: unknown): NormalizedEvidence {
 	if (raw === undefined || raw === null) return { ok: true, value: {} };
 	if (!isRecord(raw)) return { ok: false, error: "not_object" };
+	const badFields: string[] = [];
+	if (hasNonStringElement(raw.files)) badFields.push("files");
+	if (hasNonStringElement(raw.commands)) badFields.push("commands");
+	if (badFields.length > 0) return { ok: false, error: "invalid_fields", fields: badFields };
 	const files = normalizeList(raw.files, EVIDENCE_LIMITS.files, normalizeEvidencePath);
 	const commands = normalizeList(raw.commands, EVIDENCE_LIMITS.commands, normalizeCommandText);
 	const none = raw.none === true;
-	const blocked = typeof raw.blocked === "string" ? oneLine(raw.blocked) : undefined;
-	if (Array.isArray(raw.files) && files.length === 0) return { ok: false, error: "invalid_fields" };
-	if (Array.isArray(raw.commands) && commands.length === 0) return { ok: false, error: "invalid_fields" };
+	const blocked = typeof raw.blocked === "string" ? oneLine(raw.blocked) || undefined : undefined;
 	if (!files.length && !commands.length && !none && !blocked) return { ok: false, error: "empty" };
 	return { ok: true, value: { files, commands, none, blocked } };
 }

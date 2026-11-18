@@ -968,6 +968,8 @@ export function handleSettingsMessage(
 				quickAskEnabled: msg.quickAskEnabled,
 				quickAskModel: msg.quickAskModel,
 				quickAskThinking: msg.quickAskThinking,
+				botDraftModel: msg.botDraftModel,
+				botDraftThinking: msg.botDraftThinking,
 				quickAskSystemPrompt: msg.quickAskSystemPrompt,
 				quickAskExplainPrompt: msg.quickAskExplainPrompt,
 				quickAskTranslateEnabled: msg.quickAskTranslateEnabled,

@@ -40,10 +40,13 @@ BrowserWindow 的 webContents 加载本地 shell.html，标签与专用 Agent �
 - 面板里的动作要「先办事再收面板」（导航、开扩展页）：视图销毁会带走后面那次 IPC。
 - 内部标签页（新标签页等）自己的浮层仍用本页 DOM：`dialog.show()` 而不是 `showModal()`——不要 `::backdrop` 遮罩、不把整窗变 inert，点面板外或 Esc 收起（`browser/renderer/panels.ts` 的 `handleOutsidePointer`/`handlePanelEscape`）。
 - `overlay` 动作现在只服务外壳的搜索浮层：那是盖满整块内容区的 DOM 浮层，内容视图得让位，和面板是两回事。
+- **新标签页一打开光标就在搜索框里**：`browser/renderer/newtab.ts` 先在本页 `focus()`，再发 `call("focus")` 请宿主把键盘焦点切过来——只做 DOM 聚焦时按键还是进外壳页。宿主的 `focus` 分支只接受「发送方＝当前活动标签」（`sender === getWebContents(activeTabId)`），agent 模式与地址浮层开着时直接拒：启动恢复是多标签同时加载，后台标签的请求不能把焦点从前台标签抢走。
 
 Agent 可通过 `piDesktop.browser` 与宿主同步模式与标签状态。
 
 窗口拖拽区（`-webkit-app-region`）不能挂在会消失的布局产物上：Agent 顶栏原先只靠 `.tb-spacer` 供拖拽，而窄分栏进手机视图后媒体查询把 spacer 收成 `display: contents`（无盒子＝无拖拽区），整个头部就再也拖不动窗口。现在 `body.is-desktop .topbar-flow` 自身声明 `drag`，交互条目逐条 `no-drag`，与 spacer 是否存在无关；回归守卫见 `tests/unit/desktop-agent-input-regions.test.ts`。
+
+拖拽区还必须覆盖**整个顶栏盒子**：只给 `.topbar-flow`（控件行）供拖拽时，`.topbar` 自己的 `padding: 10px 16px` 是 `no-drag`，窗口最顶端那 4~6px 又被 Windows 原生 resize 边框（无边框窗口保留的可调大小边）吃掉，两条叠起来就是一条按下去毫无反应的死带——用户从窗口上沿按下拖不动，必须往下挪一点。现在 `body.is-desktop .topbar` 是 `drag`，顶栏里非按钮的直接子节点（`.plugin-topbar-more` / `.plugin-topbar-menu`）一并补进 `no-drag` 清单。窗口最顶端那几像素的 resize 边框属于 Electron/Windows 原生行为，CSS 改不了。
 
 ## 本地与远端 Web Agent
 
@@ -109,6 +112,15 @@ Electron 44 的扩展上下文只认 **15 个命名空间**（`action alarms dec
 
 浏览器文件与 session 位于 Electron userData/browser；Agent 原有数据目录继续使用原配置。凭据使用 Electron safeStorage，安全加密后端不可用时拒绝保存。保险箱可由用户明确选择填写当前网站，主进程与页面内都检查精确 origin，不自动提交表单。旧 AI Browser 数据可由用户选择旧目录导入，存在的目标文件不会覆盖；导入错误单列报告。
 
+## 书签导入（其他浏览器 → 内置浏览器）
+
+书签面板工具条的「导入书签」→ `bookmarks.import`。**选文件、读盘、解析、合并全在主进程**（`desktop/browser-host.ts`）：导出文件动辄几 MB，渲染层从来不需要正文，回执只有 `{ imported, duplicate, skipped }` 三个数字，与 `passwords.import` / `data.import` 同一条口径。纯逻辑在 `browser/runtime/bookmarks-import.ts`（`parseBookmarks` / `mergeBookmarks`）。
+
+- **认这些文件**：Chrome / Edge / Firefox / Safari 导出的 Netscape 书签 HTML（`<DL>` 分层、`<H3>` 是文件夹名、`<A HREF>` 是书签，实体与 `<DT>`/`<DD>` 噪声都处理）、Chrome 的 `Bookmarks` 数据文件（`{roots:{bookmark_bar,other,…}}`）、Firefox 的 JSON 备份（`uri` + `text/x-moz-place*`），兼容本仓库自己的 `{name,type,children}` 树。判文件夹只看有没有 `children` 数组、判书签只看有没有 `url`/`uri`——各家的 `type` 取值互不兼容，认它会把另一家的文件读空。首字符是 `[`/`{` 就必须是合法 JSON（解析失败直接报错，不静默读出 0 条）。
+- **只认 http(s)**：`javascript:` / `place:` / `chrome://` / 带内嵌账号密码的 URL 一律计 `skipped`，与 `BrowserStorage.saveBookmarks` 的校验同一口径（`isWebUrl`），导入不是绕过校验的后门。空文件夹随导入一起丢掉（备份里的备份常只剩空壳）。
+- **导入不覆盖、不重排**：树里已有同一 URL（忽略首尾空白与末尾斜杠；文件内自己重复也算）→ `duplicate`，丢弃；根为空时新条目直接成为根内容，根非空时整块套一层带日期的文件夹（名字由渲染层按界面语言传入 `{ folderName }`），用户原有的文件夹不会被拆开或改名。一个能进的都没有就**不写盘**，界面提示「这个文件里没有可导入的书签」。
+- **上限**：文件 8MB、条目 20000 条、目录限深 30 层（`browser/storage/index.ts` 读回时同一条限深）、条目名 512 字符（截断而不是丢掉），超出部分计入 `skipped`。UI 侧回归见 `browser/renderer/verify-ui.mjs`，纯函数与合并策略见 `tests/unit/browser-bookmarks-import.test.ts`。
+
 ## 页面脚本注入（Agent → 网页）
 
 Agent 可以给网页注入脚本：`browser_script` 工具（`server/browser-script-tool.ts`）→ `page_request`（`op: "script.list|status|create|update|remove|enable|disable|run"`）→ `desktop/browser-host.ts` 校验调用方 → `browser/automation/scripts.ts` → `BrowserManager`。线协议不新增字段（`op` 仍是字符串），主进程侧才真正注入。
@@ -141,6 +153,16 @@ Agent 可以给网页注入脚本：`browser_script` 工具（`server/browser-sc
 - **填密码校验同源**：`passwords.fill` → `fillCredential()`，要求当前标签页与条目 `url` 的 **origin 完全相等**，且页面上只有一个可见密码框；填完只发 `input`/`change`，由用户自己点提交。账号框的站位顺序：`autocomplete="username"` → `type=email` → **密码框前面最近的那个文本框**；不能按文档里第一个文本框挑（页头搜索框会被当成账号框）。
 - **点输入框就出下拉（浏览器式自动填充）**：页面注入脚本 `browser/renderer/autofill.js`（`browser/runtime/autofill.ts` 读源码、`manager.ts` 在 `dom-ready`/`did-finish-load` 只对 http(s) 页面注入，与 `dock.js` 同一条路），聚焦账号/密码框时发 `lookup()` → 主进程按**发送方 frame 的 origin** 过滤出候选，只回 `{ id, name, username }`（无明文）；点一条就 `pick(id)` → 主进程用同一个 `fillCredential()` 填。两条口径不破：**明文永不下到页面脚本**（页面只能主动“请主进程填”），且只认 `isTrusted` 的焦点/点击（合成事件一律不弹、不填）。桥在 `browser/preload.cts`（`__piAutofill`）——网页拿到它也只能填自己这个 origin 的凭据，主进程两边都再校一次 session + frame origin。
 - 加密仍然走 `BrowserStorage` 的 `enc:<safeStorage>`，`passwords.available`（= `isEncryptionAvailable()`）为假时面板显示保险库锁定。
+
+### 下载圆钮（页面右上角）
+
+站内点下载时主进程直接落盘，页面上一点反馈都没有：用户既不知道下没下完，也不知道存哪去了。现在每个页面右上角会有一颗下载圆钮：
+
+- **谁注入**：`browser/renderer/downloads.js`（`browser/runtime/downloads.ts` 按 dock 的同一套候选路径读源码，`manager.ts` 在 `dom-ready` / `did-finish-load` 注入）。它**不受 `smartDock` 开关管**——那是导航玩具的开关，这是「文件下来了」的状态提示；内部页（`shell.html` / `newtab.html`）不注入，与 dock 同一口径，`scripts/build-browser.mjs` 的 `filesToCopy` 要带上这份文件，漏了装包后就没有提示。
+- **显示什么**：有任务才出现；角标 = 进行中数量；点开列最近 8 条（文件名 + 进度条 + 已完成/失败/已取消）。新任务出现时自动亮出面板，全部结束后 8 秒自己收走；任务行可拖动改位置（`localStorage.__pi_dl_pos`），因为它压着的就是站点自己的右上角按钮。
+- **状态是单向下推**：`manager.ts` 的 `pushDownloads()` 只推当前活动标签（同一时刻只有它那块视图可见），切标签与「新文档注入完」各补推一次；已结束的任务只在 30 秒内继续推（`DOWNLOAD_NOTICE_MS`），否则每打开一个页面都会把上次那个「已完成」再亮一遍。载体是 `executeJavaScript` 里的一句 `window.__PI_DOWNLOADS__.update(<json>)`，字面量经 `scriptLiteral()` 转义（文件名是网站给的，`\u2028` / `<` 这类字符必须在这里消化）。
+- **能力边界**：脚本跑在网站的主世界，网页任何脚本都能调它，所以它只能是显示面——**不打开文件、不读目录、不碰桥**。已完成项点一下只把保存路径复制到剪贴板（剪贴板被站点策略挡住就把路径摊开显示，不假装成功）。真正的「打开文件」留在「下载」面板（`download.open`）和系统文件管理器里。
+- 回归：`tests/unit/browser-downloads-notice.test.ts`（注入脚本可取 / 打包清单 / 无 innerHTML / 无反向能力 / 只推活动标签 / 字面量转义）。
 
 ### TOTP
 
@@ -177,6 +199,7 @@ Agent 可以给网页注入脚本：`browser_script` 工具（`server/browser-sc
 - **改完立刻生效**：写/删新标签页 → 所有停在新标签页上的标签重载（内置 ↔ 自定义互相拨）；写/删主题 → 已打开的内部页标签先撤旧 key 再 `insertCSS`，**不整页刷新**（Office / 工作区里的未保存编辑不能因为换配色被刷掉）。外壳与面板不是标签，由 `DesktopBrowserHost.applyChromeTheme()` 在各自 `dom-ready` 与写入后注入。
 - **两条入口，一套实现**：设置面板「新标签页 / 主题」（`browser/renderer/panels.ts` 的 `designEditor`：正文框 + 保存 / 预览 / 恢复默认，显示文件绝对路径）与 Agent 工具 `browser_design`（`server/browser-design-tool.ts`）都只说 `design.status|get|save|reset`，落到 `desktop/browser-host.ts` 的 `call()` 与 `BrowserManager` 同一组方法上。
 - **预览必须有可见页面**：Electron 对隐藏 / 未挂载的 `WebContentsView` 调 `capturePage()` 会返回空图或挂住（实测），所以 `design.preview` 会开或激活一块新标签页、必要时把窗口切到 browser 模式，再截图（≤1280px、JPEG）；抓不到就如实报「需要可见页面」，不做假成功。
+- **后台标签截图同样要求可见**：`browser_page shot` 以前直接 `capturePage()`，目标标签在后台时返回空图或直接挂住（`UnknownVizError` / 永不 resolve），工具只能等 30s 超时。现在与预览同一条纪律：先 `activateTab(target)` 让 view 挂上合成器 → 等 120ms 出帧 → 每次 `capturePage` 带 5s 上限、空图最多重试 3 次 → 截完切回原标签；仍拿不到就报「截图需要页面可见（窗口最小化或被完全遮挡）」，不挂住工具调用。外部 Chrome 的 page-picker 路径本来就是「切过去 → `captureVisibleTab` → 切回」，不需要改。
 - **自动化线上不加新字段**：工具仍走既有 `page_request`，`op` 为 `design.status|get|save|reset|preview`（`browser/automation/design.ts` 的 `BrowserDesignHost`），在 `createBrowserExecutor` 里先于「选目标标签」分支处理——浏览器只剩内部页时也照常可用。
 - **写坏了怎么退**：主题是一份任意 CSS，理论上能把外壳藏没。恢复路径只有一条且必须真实可用——删掉 `userData/browser/custom/theme.css`（或 `newtab.html`）后重启，或让 Agent 跑 `design.reset`；设置面板里也直接显示这两个文件的绝对路径，方便外部编辑器处理。
 - 回归：`tests/unit/browser-customize.test.ts`（存储 / 大小 / 原子写 / URL 识别）、`browser-design-tool.test.ts`（工具契约、kind 与 `browser/contracts.ts` 同构、`get` 截断）、`browser-design-ops.test.ts`（executor 分支）。

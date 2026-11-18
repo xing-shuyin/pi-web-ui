@@ -4736,7 +4736,9 @@ export class PluginManager {
 			},
 			resolveInWorkspace: (relOrAbsPath: string) => {
 				const target = resolve(self.cwdValue, String(relOrAbsPath ?? ""));
-				if (!self.isInsideWorkspace(target)) {
+				// 用户在权限弹窗里授权过的目录与工作区同权（见 host.fs.requestAccess）：
+				// 否则「双击下载目录里的 Word」永远只能预览不能保存。
+				if (!self.isInsideWorkspace(target) && !self.grants.has(info.id, target)) {
 					const err: any = new Error("路径超出工作区范围");
 					err.statusCode = 403;
 					throw err;

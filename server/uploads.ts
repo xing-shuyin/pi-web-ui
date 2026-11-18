@@ -1,6 +1,7 @@
 import { readdir, rm, stat } from "node:fs/promises";
-import { existsSync, mkdirSync, writeFileSync, linkSync, rmSync } from "node:fs";
+import { existsSync, mkdirSync, writeFileSync, rmSync } from "node:fs";
 import { randomUUID } from "node:crypto";
+import { publishFileExclusiveSync } from "./atomic-file.js";
 import { shellQuotePosix, type RemoteSshService } from "./remote-ssh-service.js";
 import { homedir } from "node:os";
 import { join, resolve, posix } from "node:path";
@@ -45,7 +46,8 @@ export function writeUploadExclusiveSync(dest: string, data: Buffer): void {
 	const temp = `${dest}.${randomUUID()}.upload`;
 	try {
 		writeFileSync(temp, data, { flag: "wx", mode: 0o600 });
-		linkSync(temp, dest);
+		// 独占发布：硬链接不可用的文件系统（Termux /data、FAT32 …）上降级为排他复制，不再 EACCES 整链断。
+		publishFileExclusiveSync(temp, dest);
 	} finally {
 		rmSync(temp, { force: true });
 	}
@@ -79,15 +81,20 @@ export async function writeRemoteUploadExclusive(
 		operationSignal.throwIfAborted();
 		const target = shellQuotePosix(dest);
 		const stray = shellQuotePosix(posix.join(dest, posix.basename(temp)));
-		const result = await ssh.execInWorkspace(
-			cwd,
-			`if test -e ${target} || test -L ${target}; then exit 17; fi; ln ${shellQuotePosix(temp)} ${target} || exit 17; if test -d ${target}; then rm -f ${stray}; exit 17; fi`,
-			{
-				cwd: "/",
-				timeoutMs: 30_000,
-				signal: operationSignal,
-			},
-		);
+		// 远端也要能降级：硬链接不可用的 fs（Termux /data、FAT32 挂载、SMB）上 `ln` 直接失败，整链会断在最后一步。
+		// 但不能简单地 `cp -n`：目标已存在时它静默成功且不覆盖，等于「假装发布成功」，独占语义就没了。
+		// 所以复制前后各判一次存在：前判给出干净的失败，后判堵住 test 与 cp 之间的竞态（ln 自己不存在这个窗口）。
+		// 已存在一律 exit 17（调用方据此回 EEXIST/409）；复制出错用 exit 18，避开把磁盘满误报成 409。
+		const commit = [
+			`if test -e ${target} || test -L ${target}; then exit 17; fi`,
+			`ln ${shellQuotePosix(temp)} ${target} || { if test -e ${target} || test -L ${target}; then exit 17; fi; cp ${shellQuotePosix(temp)} ${target} || exit 18; }`,
+			`if test -d ${target}; then rm -f ${stray}; exit 17; fi`,
+		].join("; ");
+		const result = await ssh.execInWorkspace(cwd, commit, {
+			cwd: "/",
+			timeoutMs: 30_000,
+			signal: operationSignal,
+		});
 		if (result.exitCode !== 0) {
 			const error = new Error(result.stderr || result.stdout || "Upload commit failed") as NodeJS.ErrnoException;
 			if (result.exitCode === 17) error.code = "EEXIST";

@@ -36,8 +36,9 @@
 		z-index: 2;
 	}
 
+	/* 折叠 = 只剩头部高度（.td-head 32px）；比它高就会在底部多出一条空皮 */
 	.term-drawer.collapsed {
-		height: 39px;
+		height: 32px;
 	}
 
 	/* 折叠时只收起输出区（和命令栏），保留 tab 条：一眼能看到谁还在跑，也还能再展开 */
@@ -51,12 +52,15 @@
 		transition: none;
 	}
 
+	/* 拖动把手：只用顶部中间一小条命中区。铺满整宽会挡住 tab 条和右上那排按钮，
+	 * 逼着头部再加内边距让位——底部抽屉本来就不高，那点留白就是纯浪费。 */
 	.term-drawer .td-grip {
 		position: absolute;
-		left: 0;
-		right: 0;
+		left: 50%;
+		transform: translateX(-50%);
 		top: 0;
-		height: 9px;
+		width: 104px;
+		height: 8px;
 		cursor: ns-resize;
 		z-index: 6;
 		touch-action: none;
@@ -66,7 +70,7 @@
 		content: "";
 		position: absolute;
 		left: 50%;
-		top: 3px;
+		top: 2px;
 		transform: translateX(-50%);
 		width: 36px;
 		height: 3px;
@@ -88,14 +92,58 @@
 		user-select: none;
 	}
 
+	/* 头部贴着抽屉顶部：只装得下一排 24px 按键（26px tab），左边不给 tab 条留白——
+	 * 终端列已经贴边，再留就不是“去掉边距”了。 */
 	.td-head {
 		display: flex;
 		align-items: center;
-		gap: 8px;
-		height: 39px;
-		padding: 0 8px 0 10px;
+		gap: 6px;
+		height: 32px;
+		padding: 0 8px 0 0;
 		flex: none;
 		min-width: 0;
+	}
+
+	/* 头部右上一排按钮统一成同一种图标键：合并工具栏里的宿主键（.panel-new / .panel-refresh）和
+	 * 插件键（.slot-btn）与面板动作键（.icon-btn）并排，不归一就会大小、描边、观感各不相同。 */
+	.term-drawer .td-head .panel-new,
+	.term-drawer .td-head .panel-refresh,
+	.term-drawer .td-head .slot-btn {
+		display: inline-flex;
+		align-items: center;
+		justify-content: center;
+		gap: 4px;
+		height: 24px;
+		min-width: 24px;
+		padding: 0 6px;
+		border: 0;
+		border-radius: 5px;
+		background: transparent;
+		color: var(--text-faint);
+		font-size: 11.5px;
+		cursor: pointer;
+	}
+
+	/* 纯图标键跟 .icon-btn 一模一样大：多 1px 都会让一排按键看起来不齐 */
+	.term-drawer .td-head .panel-new,
+	.term-drawer .td-head .panel-refresh {
+		width: 24px;
+		padding: 0;
+	}
+
+	.term-drawer .td-head .panel-new:hover,
+	.term-drawer .td-head .panel-refresh:hover,
+	.term-drawer .td-head .slot-btn:hover {
+		background: var(--bg-elev2);
+		border-color: transparent;
+		color: var(--text);
+	}
+
+	.term-drawer .td-head .panel-new svg,
+	.term-drawer .td-head .panel-refresh svg,
+	.term-drawer .td-head .slot-btn svg {
+		width: 13px;
+		height: 13px;
 	}
 
 	.td-tabs {
@@ -317,16 +365,17 @@
 		height: 13px;
 	}
 
+	/* 头部右上一排只有字形，不画底也不画描边：有框的键和没框的键并排一定显得参差不齐；
+	 * 状态靠颜色（亮/暗）区分，悬停才给一点底色作为可点反馈。 */
 	.td-badge {
 		display: inline-flex;
 		align-items: center;
-		gap: 4px;
-		height: 20px;
-		padding: 0 6px;
-		border-radius: 5px;
+		gap: 3px;
+		height: 24px;
+		padding: 0 2px;
 		font-family: var(--mono);
 		font-size: 10px;
-		background: var(--bg-elev2);
+		background: transparent;
 		color: var(--text-faint);
 	}
 
@@ -498,7 +547,8 @@
 	/* xterm 容器（沿用旧类名，只覆盖布局）
 	 * 体内是左右分区：左列命令栏（可拖宽）+ 右列终端（tab 条只属于右列，在它顶部），
 	 * 因此外层从“单列”改成“一行”，tab 条随右列一起排，不横跨左列。
-	 */
+	 * 内边距归两侧各自管，容器自己不留（base 里那份 `10px 8px 8px` 是给旧单列终端的，
+	 * 留着会在终端列外面套一圈 `--bg-elev` 边框，看起来就是终端四周的“边距”）。 */
 	.term-drawer .term-main {
 		--term-cmd-w: 252px;
 		flex: 1;
@@ -507,6 +557,7 @@
 		display: flex;
 		flex-direction: row;
 		position: relative;
+		padding: 0;
 		background: var(--bg-elev);
 		overflow: hidden;
 	}
@@ -520,14 +571,14 @@
 		background: var(--term-bg);
 	}
 
-	/* 终端列自己的正文区：tab 条在它上面，内边距只给 xterm */
+	/* 终端列自己的正文区：tab 条在它上面，正文贴边铺满（xterm 自己就是一整块底色，再套内边距只会多出一圈描边） */
 	.term-drawer .term-body {
 		flex: 1;
 		min-width: 0;
 		min-height: 0;
 		display: flex;
 		flex-direction: column;
-		padding: 10px 8px 8px;
+		padding: 0;
 	}
 
 	.term-drawer .td-empty {
@@ -674,15 +725,18 @@
 		border-right: 1px solid var(--border-soft);
 	}
 
+	/* 分隔条骑在边界上：负外边距让 6px 命中区半压进两侧，
+	 * 不占布局宽度——否则命令栏和终端之间会多出一条别的底色，看着就是没去掉的左边距。 */
 	.term-drawer .term-cmd-grip {
-		margin: 0;
 		background: transparent;
 	}
 
+	/* 命令栏开着的状态只靠颜色深浅提示（不开时 --text-faint）：一排按键里单独一个亮白、
+	 * 或单独一个带框，看起来就参差不齐。 */
 	.term-drawer .td-actions .icon-btn.term-cmd-toggle.on {
-		color: var(--text);
-		background: var(--bg-elev2);
-		box-shadow: inset 0 0 0 1px var(--border);
+		color: var(--text-dim);
+		background: transparent;
+		box-shadow: none;
 	}
 
 	.term-cmd-rail .term-cmd-head {

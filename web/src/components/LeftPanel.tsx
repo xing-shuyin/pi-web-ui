@@ -9,6 +9,8 @@ import {
 	Fragment,
 	type ReactNode,
 } from "react";
+import { createPortal } from "react-dom";
+import { useFloatingPanel } from "../use-floating-panel";
 import { useSessionListRequests } from "../use-session-list-requests";
 import { loadProjectClickSwitch } from "../project-click-settings";
 import {
@@ -41,7 +43,6 @@ import {
 	FiServer,
 	FiTrash2,
 	FiTerminal,
-	FiUsers,
 	FiX,
 } from "react-icons/fi";
 import { LuFlaskConical } from "react-icons/lu";
@@ -363,17 +364,6 @@ function loadConvTab(): ConvTabMode {
 	return IS_TEST ? "split" : "stream";
 }
 
-const LS_WORKSPACE_TAB = "pi.leftpanel.workspace_tab";
-type WorkspaceTabMode = "projects" | "groups" | "split";
-
-function loadWorkspaceTab(): WorkspaceTabMode {
-	try {
-		const val = localStorage.getItem(LS_WORKSPACE_TAB);
-		if (val === "projects" || val === "groups" || val === "split") return val;
-	} catch {}
-	return IS_TEST ? "split" : "projects";
-}
-
 interface TimeGroupItem {
 	label: string;
 	key: string;
@@ -589,25 +579,17 @@ export const LeftPanel = memo(function LeftPanel({
 			localStorage.setItem(LS_CONV_TAB, convTab);
 		} catch {}
 	}, [convTab]);
-	const [workspaceTab, setWorkspaceTab] = useState<WorkspaceTabMode>(() => loadWorkspaceTab());
-	useEffect(() => {
-		try {
-			localStorage.setItem(LS_WORKSPACE_TAB, workspaceTab);
-		} catch {}
-	}, [workspaceTab]);
 	const [workspaceMenuOpen, setWorkspaceMenuOpen] = useState(false);
-	const workspaceMenuRef = useRef<HTMLDivElement>(null);
-	useEffect(() => {
-		if (!workspaceMenuOpen) return;
-		const handleClickOutside = (e: MouseEvent) => {
-			if (workspaceMenuRef.current && !workspaceMenuRef.current.contains(e.target as Node)) {
-				setWorkspaceMenuOpen(false);
-			}
-		};
-		window.addEventListener("mousedown", handleClickOutside);
-		return () => window.removeEventListener("mousedown", handleClickOutside);
-	}, [workspaceMenuOpen]);
-	const [groupCount, setGroupCount] = useState<number>(0);
+	// 左栏区块与面板都是 `overflow: hidden`：内联下拉会被裁掉（项目区折叠时整块菜单看不见），
+	// 所以菜单经 `useFloatingPanel` 挂到 body，定位/翻转/点外关闭都交给这一条单源。
+	const workspaceMenuAnchor = useRef<HTMLButtonElement | null>(null);
+	const workspaceMenu = useFloatingPanel({
+		open: workspaceMenuOpen,
+		anchor: workspaceMenuAnchor,
+		onClose: () => setWorkspaceMenuOpen(false),
+		side: "bottom",
+		align: "right",
+	});
 	const [visibleSessionCount, setVisibleSessionCount] = useState(60);
 	useEffect(() => {
 		setVisibleSessionCount(60);
@@ -1649,26 +1631,22 @@ export const LeftPanel = memo(function LeftPanel({
 	const shownPlan = sectionPlan.filter((p) => p.shown);
 	const hasGroupsSection = shownPlan.some((p) => p.key === "groups");
 
-	const effectivePlan = useMemo(() => {
-		return shownPlan.filter((p) => {
-			if (p.key === "convs" || p.key === "sessions") return false;
-			if (workspaceTab !== "split" && shownPlan.some((x) => x.key === "projects") && p.key === "groups") {
-				return false;
-			}
-			return true;
-		});
-	}, [shownPlan, workspaceTab]);
-
-	// 群组分区被隐藏后，「群组」tab 不再渲染；此时若记忆的模式仍停在 groups，
-	// 左栏会落在没有任何 tab 高亮的空态，故把模式归一化回 projects。
-	useEffect(() => {
-		if (!hasGroupsSection && workspaceTab === "groups") setWorkspaceTab("projects");
-	}, [hasGroupsSection, workspaceTab]);
+	// 智能体 / 群组块住在「项目」分区里（三者都是可点开的对象），只有项目分区被 uiSections
+	// 隐藏时，群组才退回成一个可拖动分区自己站住。
+	const effectivePlan = useMemo(
+		() =>
+			shownPlan.filter((p) => {
+				if (p.key === "convs" || p.key === "sessions") return false;
+				if (p.key === "groups" && shownPlan.some((x) => x.key === "projects")) return false;
+				return true;
+			}),
+		[shownPlan],
+	);
 
 	const collapsedOf = useCallback(
 		(k: LpSectionKey): boolean =>
 			k === "projects"
-				? collapseProjects || (workspaceTab === "projects" && projects.length === 0)
+				? collapseProjects
 				: k === "convs"
 					? collapseConvs
 					: k === "sessions"
@@ -1676,7 +1654,7 @@ export const LeftPanel = memo(function LeftPanel({
 						: k === "groups"
 							? collapseGroups
 							: pluginCollapsed.has(k),
-		[collapseProjects, workspaceTab, projects.length, collapseConvs, collapseSessions, collapseGroups, pluginCollapsed],
+		[collapseProjects, collapseConvs, collapseSessions, collapseGroups, pluginCollapsed],
 	);
 
 	const pluginItemCount = (uiPluginRunning ?? []).reduce((n, g) => n + g.items.length, 0);
@@ -1689,17 +1667,8 @@ export const LeftPanel = memo(function LeftPanel({
 	}, [runningCount, convTab]);
 
 	const flexKeys = useMemo(
-		() =>
-			effectivePlan
-				.filter((p) => {
-					if (p.key === "projects") {
-						return workspaceTab !== "split" ? projects.length > 0 || groupCount > 0 : projects.length > 0;
-					}
-					if (p.key === "convs" || p.key === "sessions") return false;
-					return true;
-				})
-				.map((p) => p.key),
-		[effectivePlan, workspaceTab, projects.length, groupCount],
+		() => effectivePlan.filter((p) => p.key !== "convs" && p.key !== "sessions").map((p) => p.key),
+		[effectivePlan],
 	);
 	const renderPluginRunning = () => {
 		const groups = uiPluginRunning ?? [];
@@ -2741,9 +2710,19 @@ export const LeftPanel = memo(function LeftPanel({
 	const sectionNodes: Record<"projects" | "convs" | "sessions", React.ReactNode> = {
 		projects: (
 			<>
-				{}
+				{/* 左栏不再分 tab：智能体、群组、项目树同层排开，各自折叠。 */}
+				<AgentBotsSection active={active} activeBotId={activeBotId} cwd={cwd} />
+				{hasGroupsSection && (
+					<DeviceGroupSection
+						entry={uiSections?.find((entry) => entry.id === "host:lp-groups")}
+						active={active}
+						selectedRoomId={activeGroupId}
+						hideWhenEmpty
+						autoHeight
+					/>
+				)}
 				<div
-					className={`lp-section panel-projects ${collapseProjects || (workspaceTab === "projects" && projects.length === 0) ? "collapsed" : ""}`}
+					className={`lp-section panel-projects ${collapseProjects ? "collapsed" : ""}`}
 					style={!collapseProjects ? { flex: `${effFlex("projects")} 1 0px` } : undefined}
 				>
 					<div className="lp-section-header">
@@ -2753,68 +2732,17 @@ export const LeftPanel = memo(function LeftPanel({
 							onClick={toggleProjects}
 							title={collapseProjects ? t("expandSection") : t("collapseSection")}
 						>
-							<span className="lp-section-title-text" style={{ display: "inline-flex", alignItems: "center" }}>
-								<span style={{ display: "none" }}>{t("recentProjects")}</span>
-								<span
-									className="lp-conv-tabs"
-									style={{
-										display: "inline-flex",
-										gap: "5px",
-										userSelect: "none",
-										alignItems: "center",
-									}}
-									onClick={(e) => e.stopPropagation()}
-								>
-									<span
-										role="button"
-										tabIndex={0}
-										className={`lp-conv-tab ${workspaceTab !== "groups" ? "active" : ""}`}
-										onClick={(e) => {
-											e.stopPropagation();
-											setWorkspaceTab("projects");
-										}}
-										onKeyDown={(e) => {
-											if (e.key === "Enter" || e.key === " ") {
-												e.preventDefault();
-												e.stopPropagation();
-												setWorkspaceTab("projects");
-											}
-										}}
-										title={t("tabProjects")}
-									>
-										<FiFolder style={{ fontSize: "12.5px" }} />
-										<span>{t("tabProjects")}</span>
-										<span style={{ fontSize: "11px", opacity: 0.85 }}>({projects.length})</span>
-									</span>
-									{hasGroupsSection && (
-										<span
-											role="button"
-											tabIndex={0}
-											className={`lp-conv-tab ${workspaceTab === "groups" ? "active" : ""}`}
-											onClick={(e) => {
-												e.stopPropagation();
-												setWorkspaceTab("groups");
-											}}
-											onKeyDown={(e) => {
-												if (e.key === "Enter" || e.key === " ") {
-													e.preventDefault();
-													e.stopPropagation();
-													setWorkspaceTab("groups");
-												}
-											}}
-											title={t("deviceGroups")}
-										>
-											<FiUsers style={{ fontSize: "12.5px" }} />
-											<span>{t("deviceGroups")}</span>
-											{groupCount > 0 && <span style={{ fontSize: "11px", opacity: 0.85 }}>({groupCount})</span>}
-										</span>
-									)}
-								</span>
+							<span className="lp-section-title-text lp-section-title-chip">
+								<FiFolder aria-hidden="true" style={{ fontSize: "12.5px" }} />
+								<span>{t("tabProjects")}</span>
+								<span className="lp-section-count">({projects.length})</span>
 							</span>
+							<span className="lp-section-chevron">{collapseProjects ? <FiChevronDown /> : <FiChevronUp />}</span>
 						</button>
-						<div className="lp-section-actions" ref={workspaceMenuRef} style={{ position: "relative" }}>
+						<div className="lp-section-actions">
 							<button
 								type="button"
+								ref={workspaceMenuAnchor}
 								className={`lp-section-action lp-project-action ${workspaceMenuOpen ? "active" : ""}`}
 								title={workspaceMenuOpen ? undefined : t("openProject")}
 								aria-label={t("openProject")}
@@ -2827,318 +2755,499 @@ export const LeftPanel = memo(function LeftPanel({
 								<FiPlus />
 							</button>
 							{renderInlineEntries(uiProjectsActions, "lp-slot-section")}
-							{workspaceMenuOpen && (
-								<div className="lp-workspace-menu" role="menu" onClick={(e) => e.stopPropagation()}>
-									<button
-										type="button"
-										className="lp-workspace-menu-item lp-new-chat-btn"
-										title={t("newChatInCurrentProjectTip")}
-										onClick={() => {
-											setWorkspaceMenuOpen(false);
-											panelSend({ type: "new_chat" });
-											focusComposer();
-										}}
+							{workspaceMenuOpen &&
+								createPortal(
+									<div
+										ref={workspaceMenu.panelRef}
+										className="lp-workspace-menu"
+										style={workspaceMenu.style}
+										role="menu"
+										onClick={(e) => e.stopPropagation()}
 									>
-										<FiMessageSquare style={{ fontSize: "13px" }} />
-										<span>{t("newChatAction")}</span>
-									</button>
-									{onCreateCli && (!tabs || tabs.includes("terminal")) && (
 										<button
 											type="button"
-											className="lp-workspace-menu-item lp-new-cli-btn"
+											className="lp-workspace-menu-item lp-new-chat-btn"
+											title={t("newChatInCurrentProjectTip")}
 											onClick={() => {
 												setWorkspaceMenuOpen(false);
-												onCreateCli(cwd);
+												panelSend({ type: "new_chat" });
+												focusComposer();
 											}}
 										>
-											<FiTerminal style={{ fontSize: "13px" }} />
-											<span>{t("nativeCliCreate")}</span>
+											<FiMessageSquare style={{ fontSize: "13px" }} />
+											<span>{t("newChatAction")}</span>
 										</button>
-									)}
-									<button
-										type="button"
-										className="lp-workspace-menu-item lp-manage-projects-btn"
-										onClick={() => {
-											setWorkspaceMenuOpen(false);
-											setProjectPickerInitialTab("local");
-											setProjectPickerOpen(true);
-										}}
-									>
-										<FiHardDrive style={{ fontSize: "13px" }} />
-										<span>{t("openLocalProject")}</span>
-									</button>
-									<button
-										type="button"
-										className="lp-workspace-menu-item lp-manage-projects-btn"
-										onClick={() => {
-											setWorkspaceMenuOpen(false);
-											setProjectPickerInitialTab("remote");
-											setProjectPickerOpen(true);
-										}}
-									>
-										<FiServer style={{ fontSize: "13px" }} />
-										<span>{t("openRemoteProject")}</span>
-									</button>
-									{onOpenSandboxModal && (
+										{onCreateCli && (!tabs || tabs.includes("terminal")) && (
+											<button
+												type="button"
+												className="lp-workspace-menu-item lp-new-cli-btn"
+												onClick={() => {
+													setWorkspaceMenuOpen(false);
+													onCreateCli(cwd);
+												}}
+											>
+												<FiTerminal style={{ fontSize: "13px" }} />
+												<span>{t("nativeCliCreate")}</span>
+											</button>
+										)}
 										<button
 											type="button"
-											className="lp-workspace-menu-item"
+											className="lp-workspace-menu-item lp-manage-projects-btn"
 											onClick={() => {
 												setWorkspaceMenuOpen(false);
-												onOpenSandboxModal();
+												setProjectPickerInitialTab("local");
+												setProjectPickerOpen(true);
 											}}
 										>
-											<LuFlaskConical style={{ fontSize: "13px" }} />
-											<span>{t("sandboxNewShort")}</span>
+											<FiHardDrive style={{ fontSize: "13px" }} />
+											<span>{t("openLocalProject")}</span>
 										</button>
-									)}
-									<div className="lp-workspace-menu-divider" />
-									<button
-										type="button"
-										className="lp-workspace-menu-item"
-										onClick={() => {
-											setWorkspaceMenuOpen(false);
-											window.dispatchEvent(
-												new CustomEvent("pi-web-ui:device-group-open", { detail: { create: true } }),
-											);
-										}}
-									>
-										<FiUsers style={{ fontSize: "13px" }} />
-										<span>{t("createGroup")}</span>
-									</button>
-								</div>
-							)}
+										<button
+											type="button"
+											className="lp-workspace-menu-item lp-manage-projects-btn"
+											onClick={() => {
+												setWorkspaceMenuOpen(false);
+												setProjectPickerInitialTab("remote");
+												setProjectPickerOpen(true);
+											}}
+										>
+											<FiServer style={{ fontSize: "13px" }} />
+											<span>{t("openRemoteProject")}</span>
+										</button>
+										{onOpenSandboxModal && (
+											<button
+												type="button"
+												className="lp-workspace-menu-item"
+												onClick={() => {
+													setWorkspaceMenuOpen(false);
+													onOpenSandboxModal();
+												}}
+											>
+												<LuFlaskConical style={{ fontSize: "13px" }} />
+												<span>{t("sandboxNewShort")}</span>
+											</button>
+										)}
+									</div>,
+									document.body,
+								)}
 						</div>
 					</div>
-					{!collapseProjects &&
-						(workspaceTab === "groups" && hasGroupsSection ? (
-							<>
-								{/* 智能体（直聊）在群组同层：两者都是“协作对象”，不需要再开一个 tab。 */}
-								<AgentBotsSection active={active} activeBotId={activeBotId} />
-								<DeviceGroupSection
-									entry={uiSections?.find((entry) => entry.id === "host:lp-groups")}
-									active={active}
-									selectedRoomId={activeGroupId}
-									hideHeader={true}
-									onRoomCountChange={setGroupCount}
-								/>
-							</>
-						) : effectiveProjects.length > 0 ? (
-							<div
-								className="lp-section-body projects-scroll"
-								ref={projectScrollRef}
-								onDoubleClick={handleBlankDoubleClick}
-								role="tree"
-								aria-label={t("lpProjectsTree")}
-								onKeyDown={handleTreeKeyDown}
-							>
-								<div className="lp-filter">
-									<FiSearch aria-hidden="true" />
-									<input
-										type="search"
-										value={filterText}
-										placeholder={t("lpFilterPlaceholder")}
-										aria-label={t("lpFilterPlaceholder")}
-										onChange={(e) => setFilterText(e.target.value)}
-										onKeyDown={(e) => {
-											if (e.key === "Escape" && filterText) {
-												e.stopPropagation();
-												setFilterText("");
-											} else if (e.key === "ArrowDown") {
-												e.preventDefault();
-												focusTreeItem(e.currentTarget, 1);
-											}
-										}}
-									/>
-									{filterText && (
-										<button
-											type="button"
-											className="lp-filter-clear"
-											title={t("lpFilterClear")}
-											aria-label={t("lpFilterClear")}
-											onClick={() => setFilterText("")}
-										>
-											<FiX />
-										</button>
-									)}
-								</div>
-								{(() => {
-									const transitionCwdNorm =
-										transition?.kind === "cwd" ? normalizeSessionPathKey(transition.target) : null;
-									const q = filterText.trim().toLowerCase();
-									const views = projectTreeModel.map((m) => {
-										// 钉住的行不受 maxVisible 截断：它常驻，翻页也不能把它藏起来。
-										const visibleIdle = new Set([
-											...m.idleSessions.slice(0, m.maxVisible),
-											...m.idleSessions.filter((s) => s.pinned),
-										]);
-										const visibleModel = {
-											...m,
-											orderedBlocks: m.orderedBlocks.filter(
-												(block) => block.kind === "conversation" || visibleIdle.has(block.target),
-											),
-										};
-										if (!q) return visibleModel;
-										const sbxName = m.p.sandbox?.name;
-										const name = (sbxName ?? projectName(m.p.path)).toLowerCase();
-										if (name.includes(q) || m.p.path.toLowerCase().includes(q)) return visibleModel;
-										const runRows = m.pRunningRows.filter((r) => (r.c.title ?? "").toLowerCase().includes(q));
-										const idle = m.idleSessions.filter((s) =>
-											(renameOverrides[s.path] ?? displayName(s)).toLowerCase().includes(q),
-										);
-										if (runRows.length === 0 && idle.length === 0) return null;
-										const matchingIds = new Set(runRows.map((row) => row.c.id));
-										const matchingIdle = new Set(idle.slice(0, 50));
-										const orderedBlocks = m.orderedBlocks
-											.map((block) => {
-												if (block.kind === "session") return matchingIdle.has(block.target) ? block : null;
-												const rows = block.rows.filter((row) => matchingIds.has(row.c.id));
-												return rows.length > 0 ? { ...block, rows } : null;
-											})
-											.filter((block) => block !== null);
-										return {
-											...m,
-											isCollapsed: false,
-											pRunningRows: runRows,
-											idleSessions: idle,
-											orderedBlocks,
-											maxVisible: 50,
-											hasMore: false,
-										};
-									});
-									if (q && views.every((v) => v === null)) {
-										return <div className="lp-filter-empty">{t("lpFilterNoMatch")}</div>;
-									}
-									return views.map((m) => {
-										if (!m) return null;
-										const {
-											p,
-											pNorm,
-											active,
-											isCollapsed,
-											isLoadingSessions,
-											pRunningRows,
-											idleSessions,
-											orderedBlocks,
-											maxVisible,
-											hasMore,
-											actuallyRunningCount,
-											unreadCount,
-											serverHasMore,
-										} = m;
-										const switching = transitionCwdNorm !== null && transitionCwdNorm === pNorm;
-										const sbx = p.sandbox;
-										const dispName = sbx ? sbx.name : projectName(p.path);
-										const hasRunning = actuallyRunningCount > 0;
-										const hasHistory = idleSessions.length > 0;
-										const hasUnread = unreadCount > 0;
-
-										if (!isCollapsed) {
-											everExpandedRef.current.add(pNorm);
+					{!collapseProjects && effectiveProjects.length > 0 && (
+						<div
+							className="lp-section-body projects-scroll"
+							ref={projectScrollRef}
+							onDoubleClick={handleBlankDoubleClick}
+							role="tree"
+							aria-label={t("lpProjectsTree")}
+							onKeyDown={handleTreeKeyDown}
+						>
+							<div className="lp-filter">
+								<FiSearch aria-hidden="true" />
+								<input
+									type="search"
+									value={filterText}
+									placeholder={t("lpFilterPlaceholder")}
+									aria-label={t("lpFilterPlaceholder")}
+									onChange={(e) => setFilterText(e.target.value)}
+									onKeyDown={(e) => {
+										if (e.key === "Escape" && filterText) {
+											e.stopPropagation();
+											setFilterText("");
+										} else if (e.key === "ArrowDown") {
+											e.preventDefault();
+											focusTreeItem(e.currentTarget, 1);
 										}
-										const hasPinnedHistory = idleSessions.some((s) => s.pinned);
-										const shouldMountChildren =
-											!isCollapsed ||
-											pRunningRows.length > 0 ||
-											hasUnread ||
-											active ||
-											// 刷新后一直是收起状态、也没展开过的项目：只要里面有钉住的行，
-											// 子节点就得挂上，否则那行永远不出现（要手动展开再收才看得到）。
-											hasPinnedHistory ||
-											everExpandedRef.current.has(pNorm);
+									}}
+								/>
+								{filterText && (
+									<button
+										type="button"
+										className="lp-filter-clear"
+										title={t("lpFilterClear")}
+										aria-label={t("lpFilterClear")}
+										onClick={() => setFilterText("")}
+									>
+										<FiX />
+									</button>
+								)}
+							</div>
+							{(() => {
+								const transitionCwdNorm =
+									transition?.kind === "cwd" ? normalizeSessionPathKey(transition.target) : null;
+								const q = filterText.trim().toLowerCase();
+								const views = projectTreeModel.map((m) => {
+									// 钉住的行不受 maxVisible 截断：它常驻，翻页也不能把它藏起来。
+									const visibleIdle = new Set([
+										...m.idleSessions.slice(0, m.maxVisible),
+										...m.idleSessions.filter((s) => s.pinned),
+									]);
+									const visibleModel = {
+										...m,
+										orderedBlocks: m.orderedBlocks.filter(
+											(block) => block.kind === "conversation" || visibleIdle.has(block.target),
+										),
+									};
+									if (!q) return visibleModel;
+									const sbxName = m.p.sandbox?.name;
+									const name = (sbxName ?? projectName(m.p.path)).toLowerCase();
+									if (name.includes(q) || m.p.path.toLowerCase().includes(q)) return visibleModel;
+									const runRows = m.pRunningRows.filter((r) => (r.c.title ?? "").toLowerCase().includes(q));
+									const idle = m.idleSessions.filter((s) =>
+										(renameOverrides[s.path] ?? displayName(s)).toLowerCase().includes(q),
+									);
+									if (runRows.length === 0 && idle.length === 0) return null;
+									const matchingIds = new Set(runRows.map((row) => row.c.id));
+									const matchingIdle = new Set(idle.slice(0, 50));
+									const orderedBlocks = m.orderedBlocks
+										.map((block) => {
+											if (block.kind === "session") return matchingIdle.has(block.target) ? block : null;
+											const rows = block.rows.filter((row) => matchingIds.has(row.c.id));
+											return rows.length > 0 ? { ...block, rows } : null;
+										})
+										.filter((block) => block !== null);
+									return {
+										...m,
+										isCollapsed: false,
+										pRunningRows: runRows,
+										idleSessions: idle,
+										orderedBlocks,
+										maxVisible: 50,
+										hasMore: false,
+									};
+								});
+								if (q && views.every((v) => v === null)) {
+									return <div className="lp-filter-empty">{t("lpFilterNoMatch")}</div>;
+								}
+								return views.map((m) => {
+									if (!m) return null;
+									const {
+										p,
+										pNorm,
+										active,
+										isCollapsed,
+										isLoadingSessions,
+										pRunningRows,
+										idleSessions,
+										orderedBlocks,
+										maxVisible,
+										hasMore,
+										actuallyRunningCount,
+										unreadCount,
+										serverHasMore,
+									} = m;
+									const switching = transitionCwdNorm !== null && transitionCwdNorm === pNorm;
+									const sbx = p.sandbox;
+									const dispName = sbx ? sbx.name : projectName(p.path);
+									const hasRunning = actuallyRunningCount > 0;
+									const hasHistory = idleSessions.length > 0;
+									const hasUnread = unreadCount > 0;
 
-										const dropClass =
-											dropHint?.path === p.path && dragProject && dragProject !== p.path
-												? dropHint.after
-													? " drop-after"
-													: " drop-before"
-												: "";
-										return (
+									if (!isCollapsed) {
+										everExpandedRef.current.add(pNorm);
+									}
+									const hasPinnedHistory = idleSessions.some((s) => s.pinned);
+									const shouldMountChildren =
+										!isCollapsed ||
+										pRunningRows.length > 0 ||
+										hasUnread ||
+										active ||
+										// 刷新后一直是收起状态、也没展开过的项目：只要里面有钉住的行，
+										// 子节点就得挂上，否则那行永远不出现（要手动展开再收才看得到）。
+										hasPinnedHistory ||
+										everExpandedRef.current.has(pNorm);
+
+									const dropClass =
+										dropHint?.path === p.path && dragProject && dragProject !== p.path
+											? dropHint.after
+												? " drop-after"
+												: " drop-before"
+											: "";
+									return (
+										<div
+											className={`lp-project-node${dragProject === p.path ? " dragging" : ""}${dropClass}`}
+											key={p.path}
+											role="treeitem"
+											aria-expanded={!isCollapsed}
+											aria-selected={active}
+											onDragOver={(e) => {
+												if (!dragProject || dragProject === p.path) return;
+												e.preventDefault();
+												e.dataTransfer.dropEffect = "move";
+												const r = e.currentTarget.getBoundingClientRect();
+												const after = e.clientY > r.top + Math.min(r.height, 32) / 2;
+												if (dropHint?.path !== p.path || dropHint.after !== after) setDropHint({ path: p.path, after });
+											}}
+											onDrop={(e) => {
+												if (!dragProject) return;
+												e.preventDefault();
+												const r = e.currentTarget.getBoundingClientRect();
+												moveProject(dragProject, p.path, e.clientY > r.top + Math.min(r.height, 32) / 2);
+												setDragProject(null);
+												setDropHint(null);
+											}}
+										>
 											<div
-												className={`lp-project-node${dragProject === p.path ? " dragging" : ""}${dropClass}`}
-												key={p.path}
-												role="treeitem"
-												aria-expanded={!isCollapsed}
-												aria-selected={active}
-												onDragOver={(e) => {
-													if (!dragProject || dragProject === p.path) return;
-													e.preventDefault();
-													e.dataTransfer.dropEffect = "move";
-													const r = e.currentTarget.getBoundingClientRect();
-													const after = e.clientY > r.top + Math.min(r.height, 32) / 2;
-													if (dropHint?.path !== p.path || dropHint.after !== after)
-														setDropHint({ path: p.path, after });
+												className={`lp-row lp-project-head-row${active ? " active" : ""}${switching ? " switching" : ""}${isCollapsed ? " is-collapsed" : " is-expanded"}${hasRunning ? " has-running" : ""}${hasUnread ? " has-unread" : ""}`}
+												draggable={!switching}
+												onDragStart={(e) => {
+													e.dataTransfer.effectAllowed = "move";
+													e.dataTransfer.setData("text/plain", p.path);
+													setDragProject(p.path);
 												}}
-												onDrop={(e) => {
-													if (!dragProject) return;
-													e.preventDefault();
-													const r = e.currentTarget.getBoundingClientRect();
-													moveProject(dragProject, p.path, e.clientY > r.top + Math.min(r.height, 32) / 2);
+												onDragEnd={() => {
 													setDragProject(null);
 													setDropHint(null);
 												}}
+												onMouseLeave={() => setConfirmDel((k) => (k === `proj:${p.path}` ? null : k))}
+												onContextMenu={(e) => openProjectMenu(e, p)}
 											>
-												<div
-													className={`lp-row lp-project-head-row${active ? " active" : ""}${switching ? " switching" : ""}${isCollapsed ? " is-collapsed" : " is-expanded"}${hasRunning ? " has-running" : ""}${hasUnread ? " has-unread" : ""}`}
-													draggable={!switching}
-													onDragStart={(e) => {
-														e.dataTransfer.effectAllowed = "move";
-														e.dataTransfer.setData("text/plain", p.path);
-														setDragProject(p.path);
+												<button
+													type="button"
+													className={`lp-project-header-item project-item ${active ? "active" : ""} ${switching ? "switching" : ""}${hasRunning ? " has-running" : ""}${hasUnread ? " has-unread" : ""}`}
+													title={`${
+														sbx?.sourcePath
+															? `${dispName}\n${t("sandboxSourceLabel")}: ${sbx.sourcePath}\n${p.path}`
+															: p.path
+													}\n${t("lpDragToReorder")}`}
+													disabled={switching}
+													data-lp-nav=""
+													data-project-path={p.path}
+													aria-current={active ? "true" : undefined}
+													aria-keyshortcuts="Alt+ArrowUp Alt+ArrowDown"
+													onClick={() => {
+														if (!switching) {
+															if (!active && loadProjectClickSwitch()) {
+																panelSend({ type: "set_cwd", path: p.path });
+																setExpandedProjects((prev) => {
+																	const norm = normalizeSessionPathKey(p.path);
+																	if (prev.has(norm)) return prev;
+																	const next = new Set(prev);
+																	next.add(norm);
+																	return next;
+																});
+															} else {
+																toggleProjectExpand(p.path);
+															}
+														}
 													}}
-													onDragEnd={() => {
-														setDragProject(null);
-														setDropHint(null);
+													onDoubleClick={(e) => {
+														e.stopPropagation();
+														if (switching) return;
+														// 目标项目直接写在 new_chat 上：服务端先切工作区、核验后再建会话（#872），
+														// 不再发「set_cwd + new_chat」两条各自竞速的消息。
+														panelSend({ type: "new_chat", cwd: p.path });
+														focusComposer();
 													}}
-													onMouseLeave={() => setConfirmDel((k) => (k === `proj:${p.path}` ? null : k))}
-													onContextMenu={(e) => openProjectMenu(e, p)}
 												>
+													<span
+														className="lp-project-chevron"
+														aria-hidden="true"
+														onClick={(e) => {
+															e.stopPropagation();
+															toggleProjectExpand(p.path);
+														}}
+														title={isCollapsed ? t("expandSection") : t("collapseSection")}
+													>
+														<svg
+															width="11"
+															height="11"
+															viewBox="0 0 12 12"
+															fill="currentColor"
+															style={{ display: "block" }}
+														>
+															<path d="M2.5 4h7l-3.5 5z" />
+														</svg>
+													</span>
+													{sbx && <LuFlaskConical className="project-icon sandbox-icon" />}
+													<span className="lp-project-name" title={dispName}>
+														{dispName}
+													</span>
+													{sbx && (
+														<span className={`lp-sandbox-badge ${sbx.ephemeral ? "ephemeral" : "permanent"}`}>
+															{sbx.ephemeral ? t("sandboxBadgeEphemeral") : t("sandboxBadgePermanent")}
+														</span>
+													)}
+													<span className="conv-meta-zone">
+														{switching && <HalfRingSpinner className="status-spinner-right" />}
+														{hasRunning && (
+															<span className="lp-project-running-badge" title={t("tabRunning")}>
+																<span className="lp-project-running-dot" />
+																<span>{actuallyRunningCount}</span>
+															</span>
+														)}
+														{hasUnread && (
+															<span className="lp-project-unread-badge" title={t("completedUnreadBadge")}>
+																<span className="lp-project-unread-dot" />
+																<span>{unreadCount}</span>
+															</span>
+														)}
+														<span className={`project-time ${switching ? "switching-pct" : ""}`}>
+															{switching
+																? `${transition?.progress ?? 0}%`
+																: p.lastUsed > 0
+																	? formatModified(p.lastUsed)
+																	: ""}
+														</span>
+													</span>
+												</button>
+
+												<div className="lp-project-actions">
+													<NativeCliCreateEntry cwd={p.path} onCreateCli={onCreateCli}>
+														<button
+															type="button"
+															className="lp-project-btn lp-project-new-chat-btn"
+															title={t("newChat") || "新建对话"}
+															onClick={(e) => {
+																e.stopPropagation();
+																panelSend({ type: "new_chat", cwd: p.path });
+																focusComposer();
+															}}
+														>
+															<FiPlus />
+														</button>
+													</NativeCliCreateEntry>
 													<button
 														type="button"
-														className={`lp-project-header-item project-item ${active ? "active" : ""} ${switching ? "switching" : ""}${hasRunning ? " has-running" : ""}${hasUnread ? " has-unread" : ""}`}
-														title={`${
-															sbx?.sourcePath
-																? `${dispName}\n${t("sandboxSourceLabel")}: ${sbx.sourcePath}\n${p.path}`
-																: p.path
-														}\n${t("lpDragToReorder")}`}
-														disabled={switching}
-														data-lp-nav=""
-														data-project-path={p.path}
-														aria-current={active ? "true" : undefined}
-														aria-keyshortcuts="Alt+ArrowUp Alt+ArrowDown"
-														onClick={() => {
-															if (!switching) {
-																if (!active && loadProjectClickSwitch()) {
-																	panelSend({ type: "set_cwd", path: p.path });
-																	setExpandedProjects((prev) => {
-																		const norm = normalizeSessionPathKey(p.path);
-																		if (prev.has(norm)) return prev;
-																		const next = new Set(prev);
-																		next.add(norm);
-																		return next;
-																	});
-																} else {
-																	toggleProjectExpand(p.path);
-																}
+														className={`lp-project-btn lp-project-del-btn ${confirmDel === `proj:${p.path}` ? "confirm danger" : ""}`}
+														title={
+															confirmDel === `proj:${p.path}`
+																? sbx
+																	? t("sandboxActionDestroy")
+																	: t("deleteProjectConfirm")
+																: sbx
+																	? t("sandboxActionDestroyTip")
+																	: t("deleteProject")
+														}
+														onClick={(e) => {
+															e.stopPropagation();
+															if (confirmDel === `proj:${p.path}`) {
+																setConfirmDel(null);
+																clearLastCwdIfMatches(p.path);
+																clearCachedProject(p.path);
+																panelSend(
+																	sbx
+																		? { type: "destroy_sandbox", path: p.path }
+																		: { type: "remove_project", path: p.path },
+																);
+															} else {
+																setConfirmDel(`proj:${p.path}`);
 															}
 														}}
-														onDoubleClick={(e) => {
-															e.stopPropagation();
-															if (switching) return;
-															// 目标项目直接写在 new_chat 上：服务端先切工作区、核验后再建会话（#872），
-															// 不再发「set_cwd + new_chat」两条各自竞速的消息。
-															panelSend({ type: "new_chat", cwd: p.path });
-															focusComposer();
-														}}
 													>
-														<span
-															className="lp-project-chevron"
-															aria-hidden="true"
+														{confirmDel === `proj:${p.path}` ? <FiCheck /> : <FiTrash2 />}
+													</button>
+													{renderInlineEntries(uiLeftProject, "lp-slot-project", {
+														id: p.path,
+														kind: "project",
+														label: dispName,
+													})}
+												</div>
+											</div>
+
+											{}
+											{shouldMountChildren && (
+												<div
+													className={`lp-project-tree-children${isCollapsed ? " is-collapsed" : " is-expanded"}${pRunningRows.length > 0 ? " has-running-rows" : ""}`}
+												>
+													{}
+													{orderedBlocks.map((block) => {
+														// 钉住的历史行在项目收起时仍然显示 —— 钉住就是让它常驻，
+														// 否则一收起项目它就从左栏消失了，跟没钉一样。
+														const pinnedVisible = isPinnedRowVisible(isCollapsed, block);
+														return (
+															<Fragment key={block.key}>
+																{block.kind === "conversation" ? (
+																	block.rows.map((row) => renderSingleConvRow(row, p.path))
+																) : (
+																	<div
+																		className={`lp-history-collapsible${isCollapsed && !pinnedVisible ? " collapsed" : " expanded"}${pinnedVisible ? " is-pinned-visible" : ""}`}
+																	>
+																		<div className="lp-history-collapsible-inner">
+																			{renderHistorySessionRow(block.target, p.path)}
+																		</div>
+																	</div>
+																)}
+															</Fragment>
+														);
+													})}
+
+													{}
+													<div className={`lp-history-collapsible${isCollapsed ? " collapsed" : " expanded"}`}>
+														<div className="lp-history-collapsible-inner">
+															{}
+															{pRunningRows.length === 0 && idleSessions.length === 0 && !failedProjects.has(pNorm) && (
+																<div className="lp-project-empty-tip">
+																	{isLoadingSessions ? (
+																		<span>{t("loadingSessions") || "正在读取会话…"}</span>
+																	) : (
+																		<span>{t("noSessionsYet") || "暂无历史会话"}</span>
+																	)}
+																</div>
+															)}
+
+															{}
+															{failedProjects.has(pNorm) && (
+																<button
+																	type="button"
+																	className="lp-show-more-row"
+																	disabled={!ready || status !== "open"}
+																	onClick={() =>
+																		requestSessions({
+																			type: "list_sessions",
+																			path: p.path,
+																			limit: serverListLimit(p.path),
+																		})
+																	}
+																>
+																	{t("sessionsLoadFailed")}
+																</button>
+															)}
+															{hasMore && (
+																<button
+																	type="button"
+																	className="lp-show-more-row"
+																	data-lp-nav=""
+																	disabled={loadingMore.has(pNorm)}
+																	onClick={(e) => {
+																		e.stopPropagation();
+																		const nextVisible = maxVisible + SESSION_ROWS_STEP;
+																		setProjectVisibleCounts((prev) => ({
+																			...prev,
+																			[pNorm]: nextVisible,
+																		}));
+																		if (serverHasMore && nextVisible >= idleSessions.length) {
+																			// 多要一页当本地余量；服务端按这个数决定解析多少个文件
+																			const limit = Math.max(SESSION_LIST_FIRST_PAGE, nextVisible + SESSION_ROWS_STEP);
+																			requestSessions({ type: "list_sessions", path: p.path, limit });
+																		}
+																	}}
+																>
+																	<span>
+																		{loadingMore.has(pNorm)
+																			? t("loadingSessions")
+																			: t("lpShowMore", {
+																					n:
+																						idleSessions.length > maxVisible
+																							? `${idleSessions.length - maxVisible}${serverHasMore ? "+" : ""}`
+																							: "…",
+																				})}
+																	</span>
+																</button>
+															)}
+														</div>
+													</div>
+
+													{}
+													{isCollapsed && hasHistory && (pRunningRows.length > 0 || hasUnread) && (
+														<button
+															type="button"
+															className="lp-collapsed-history-tip"
+															data-lp-nav=""
 															onClick={(e) => {
 																e.stopPropagation();
 																toggleProjectExpand(p.path);
 															}}
-															title={isCollapsed ? t("expandSection") : t("collapseSection")}
+															title={t("expandSection")}
 														>
 															<svg
 																width="11"
@@ -3228,12 +3337,7 @@ export const LeftPanel = memo(function LeftPanel({
 														>
 															{confirmDel === `proj:${p.path}` ? <FiCheck /> : <FiTrash2 />}
 														</button>
-														{renderInlineEntries(uiLeftProject, "lp-slot-project", {
-															id: p.path,
-															kind: "project",
-															label: dispName,
-														})}
-													</div>
+													)}
 												</div>
 
 												{}
@@ -3383,20 +3487,8 @@ export const LeftPanel = memo(function LeftPanel({
 		);
 	};
 	const renderSection = (key: LpSectionKey): React.ReactNode => {
+		// 群组块默认住在「项目」分区里；只有项目分区被隐藏时，它才单独成一个可拖动分区。
 		if (key === "groups") {
-			if (workspaceTab !== "split" && shownPlan.some((p) => p.key === "projects")) {
-				return (
-					<section className="lp-section dg-side-section" style={{ display: "none" }}>
-						<DeviceGroupSection
-							entry={uiSections?.find((entry) => entry.id === "host:lp-groups")}
-							active={active}
-							selectedRoomId={activeGroupId}
-							hideHeader={true}
-							onRoomCountChange={setGroupCount}
-						/>
-					</section>
-				);
-			}
 			return (
 				<DeviceGroupSection
 					entry={uiSections?.find((entry) => entry.id === "host:lp-groups")}
@@ -3404,7 +3496,6 @@ export const LeftPanel = memo(function LeftPanel({
 					selectedRoomId={activeGroupId}
 					flex={effFlex("groups")}
 					onCollapsedChange={setCollapseGroups}
-					onRoomCountChange={setGroupCount}
 				/>
 			);
 		}

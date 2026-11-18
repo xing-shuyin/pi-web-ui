@@ -7,6 +7,8 @@ import { runScriptOperation, type BrowserScriptHost } from "./scripts.js";
 export interface BrowserExecutorManager {
 	getTabs(): BrowserTab[];
 	getActiveTabId(): string | null;
+	/** 切到某块标签（Electron 的隐藏 view 截不到图，截图前必须先让它可见）。 */
+	activateTab(id: string): void;
 	getWebContents(id: string): WebContents | undefined;
 	createTab(url?: string): string;
 	navigate(url: string, id?: string): Promise<void>;
@@ -25,6 +27,28 @@ export interface BrowserExecutorOptions {
 
 const MAX_RESULT_CHARS = 512 * 1024;
 const MAX_ARGS_CHARS = 256 * 1024;
+/** 单次 capturePage 的上限：后台/最小化窗口里它会挂住，不能把整次工具调用拖到超时。 */
+const SHOT_CAPTURE_TIMEOUT_MS = 5000;
+const SHOT_RETRIES = 3;
+
+const delay = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
+
+function withTimeout<T>(promise: Promise<T>, ms: number, error: Error): Promise<T> {
+	return new Promise<T>((resolve, reject) => {
+		const timer = setTimeout(() => reject(error), ms);
+		timer.unref?.();
+		promise.then(
+			(value) => {
+				clearTimeout(timer);
+				resolve(value);
+			},
+			(cause) => {
+				clearTimeout(timer);
+				reject(cause);
+			},
+		);
+	});
+}
 
 function originOf(url: string): string {
 	try {
@@ -211,16 +235,49 @@ export function createBrowserExecutor(
 					dpr: number;
 					rect?: { x: number; y: number; w: number; h: number };
 				};
-				let image;
+				let region: { x: number; y: number; width: number; height: number } | undefined;
 				if (metrics.rect) {
 					const x = Math.max(0, Math.floor(metrics.rect.x));
 					const y = Math.max(0, Math.floor(metrics.rect.y));
 					const width = Math.min(metrics.vw, Math.ceil(metrics.rect.x + metrics.rect.w)) - x;
 					const height = Math.min(metrics.vh, Math.ceil(metrics.rect.y + metrics.rect.h)) - y;
 					if (width < 1 || height < 1) throw new Error("Screenshot element is outside the viewport");
-					image = await contents.capturePage({ x, y, width, height });
-				} else image = await contents.capturePage();
-				if (image.isEmpty()) throw new Error("The browser page has no screenshot content");
+					region = { x, y, width, height };
+				}
+				// Electron 只给可见的 WebContentsView 出帧：切到后台标签再截图会拿到空图，
+				// 甚至让 capturePage 挂住（UnknownVizError/永不 resolve）。先切过去、等合成器出帧、
+				// 截完再切回原标签；每次 capture 都加超时，失败重试，绝不让工具调用干等 30s。
+				const previousActive = manager.getActiveTabId();
+				const switched = previousActive !== null && previousActive !== tab.id;
+				if (switched) {
+					try {
+						manager.activateTab(tab.id);
+					} catch {}
+					await delay(120);
+				}
+				const capture = async () => {
+					try {
+						return await withTimeout(
+							contents.capturePage(region),
+							SHOT_CAPTURE_TIMEOUT_MS,
+							new Error("Browser screenshot timed out"),
+						);
+					} catch {
+						return undefined;
+					}
+				};
+				let image = await capture();
+				for (let attempt = 0; (!image || image.isEmpty()) && attempt < SHOT_RETRIES; attempt++) {
+					await delay(attempt === 0 ? 200 : 400);
+					image = await capture();
+				}
+				if (switched && previousActive) {
+					try {
+						manager.activateTab(previousActive);
+					} catch {}
+				}
+				if (!image || image.isEmpty())
+					throw new Error("截图需要页面可见：已切到该标签页但仍拿不到画面（窗口最小化或被完全遮挡时会出现）");
 				const maxEdge =
 					typeof args.maxEdge === "number" && Number.isFinite(args.maxEdge)
 						? Math.min(1568, Math.max(320, Math.round(args.maxEdge)))

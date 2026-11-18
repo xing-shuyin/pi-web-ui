@@ -1,6 +1,7 @@
 import { createHash, randomUUID } from "node:crypto";
-import { link, lstat, mkdir, open, opendir, readFile, rename, unlink } from "node:fs/promises";
+import { lstat, mkdir, open, opendir, readFile, rename, unlink } from "node:fs/promises";
 import { join, resolve } from "node:path";
+import { publishFileExclusive } from "../atomic-file.js";
 import type { DevicePublishIntent, DevicePublishReceipt, DevicePublishStop } from "../protocol.js";
 import { validatePublishIntent } from "./publish-intent.js";
 import { canonicalizeJson } from "./work-contract.js";
@@ -267,7 +268,8 @@ async function writeAtomicJournal(path: string, content: string, exclusive: bool
 			await handle.close();
 		}
 		if (exclusive) {
-			await link(temp, path);
+			// 已有日志时必须失败（不覆盖别家写入）；硬链接不可用的 fs 自动降级为排他复制。
+			await publishFileExclusive(temp, path);
 			await unlink(temp);
 		} else await rename(temp, path);
 		await flushDirectory(resolve(path, ".."));

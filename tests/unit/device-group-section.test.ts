@@ -103,6 +103,7 @@ describe("device group sidebar errors", () => {
 						JSON.stringify({
 							code: "HUB_REJECTED",
 							error: "secret Hub credential",
+							detail: "secret Hub credential",
 						}),
 						{ status: 502 },
 					),
@@ -111,6 +112,31 @@ describe("device group sidebar errors", () => {
 		const error = await deviceGroupRequest("rooms", new AbortController().signal).catch((cause) => cause);
 		expect(error).toBeInstanceOf(DeviceGroupRequestError);
 		expect(String(error)).not.toContain("secret");
+		// hub 通道上的 `detail` 也是上游文本，一律不接。
+		expect((error as InstanceType<typeof DeviceGroupRequestError>).detail).toBe("");
 		expect(deviceGroupErrorKind(error)).toBe("failed");
+	});
+
+	it("keeps the local Bot draft reason so the UI can show why drafting failed", async () => {
+		vi.stubGlobal(
+			"fetch",
+			vi.fn(
+				async () =>
+					new Response(
+						JSON.stringify({
+							code: "DRAFT_FAILED",
+							error: "400: Model cat-jam-free isn't included in OpenCode Go.",
+							detail: "400: Model cat-jam-free isn't included in OpenCode Go.",
+						}),
+						{ status: 502 },
+					),
+			),
+		);
+		const error = await deviceGroupRequest("bot-drafts", new AbortController().signal, { request: "x" }).catch(
+			(cause) => cause,
+		);
+		expect(error).toBeInstanceOf(DeviceGroupRequestError);
+		expect((error as InstanceType<typeof DeviceGroupRequestError>).code).toBe("DRAFT_FAILED");
+		expect((error as InstanceType<typeof DeviceGroupRequestError>).detail).toContain("isn't included in OpenCode Go");
 	});
 });

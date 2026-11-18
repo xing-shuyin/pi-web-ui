@@ -1,13 +1,13 @@
 // 第一条 import：桌面壳（GUI 子系统应用，本来就没有控制台）装上「Windows 不弹控制台」进程级开关，
 // 它对 taskkill / powershell / 更新器等子进程一律建控制台。单一实现见 server/hide-console-windows.ts。
 import "../server/hide-console-windows.js";
-import { app, BrowserWindow, dialog, ipcMain, session, type IpcMainInvokeEvent } from "electron";
+import { app, BrowserWindow, dialog, ipcMain, session, shell, type IpcMainInvokeEvent } from "electron";
 import { ElectronChromeExtensions, setSessionPartitionResolver } from "electron-chrome-extensions";
 import { execFile, spawn, type ChildProcess } from "node:child_process";
 import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { createServer } from "node:net";
 import { homedir } from "node:os";
-import { dirname, join } from "node:path";
+import { dirname, extname, join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { DesktopBrowserHost } from "./browser-host.js";
 import { BROWSER_EXTENSION_PARTITION } from "../browser/contracts.js";
@@ -25,6 +25,17 @@ import {
 	type UpdaterPrefs,
 } from "./updater.js";
 import { buildDesktopLoadUrl, DEFAULT_DESKTOP_PORT, resolveHealthTimeoutMs, waitForHealth } from "./startup.js";
+import {
+	applyRegistryActions,
+	collectOpenTargets,
+	createRegistryRunner,
+	normalizeExtensions,
+	planIntegrationActions,
+	readIntegrationState,
+	refreshStaleRegistration,
+	type OpenTargets,
+	type SystemIntegrationState,
+} from "./system-integration.js";
 import {
 	buildFailurePointer,
 	buildRollbackPointer,
@@ -160,6 +171,202 @@ let lastServerPort: number | null = null;
 let stoppingServer = false;
 let mainWin: BrowserWindow | null = null;
 let browserHost: DesktopBrowserHost | null = null;
+
+/* ── 系统集成：默认浏览器 / 文件关联（注册表细节见 desktop/system-integration.ts） ── */
+
+/** 主进程 → 渲染层：「这个文件被双击了」（路径已解析成绝对路径） */
+const OPEN_TARGET_CHANNEL = "pi-desktop:open-file";
+/** 没有配置记录时先只认 PDF：内置浏览器能原样渲染，不依赖任何插件 */
+const DEFAULT_ASSOCIATION_EXTENSIONS = [".pdf"];
+const registryRunner = createRegistryRunner();
+/** 启动就被双击的文件/链接：此时窗口与 Agent 页还没就绪，先攥着 */
+const startupOpenTargets: OpenTargets = app.isPackaged
+	? collectOpenTargets(process.argv, { cwd: process.cwd() })
+	: { files: [], urls: [] };
+let pendingOpenTargets: OpenTargets = { files: [], urls: [] };
+let systemIntegrationWired = false;
+
+interface StoredIntegrationSelection {
+	browser: boolean;
+	extensions: string[];
+}
+
+interface IntegrationSnapshot extends SystemIntegrationState {
+	selection: StoredIntegrationSelection;
+	canApply: boolean;
+}
+
+function systemIntegrationFile(): string {
+	return join(app.getPath("userData"), "system-integration.json");
+}
+
+function loadIntegrationSelection(): StoredIntegrationSelection {
+	try {
+		const raw = JSON.parse(readFileSync(systemIntegrationFile(), "utf8")) as Record<string, unknown>;
+		const extensions = Array.isArray(raw.extensions)
+			? raw.extensions.filter((value): value is string => typeof value === "string")
+			: [];
+		return { browser: raw.browser === true, extensions: normalizeExtensions(extensions) };
+	} catch {
+		return { browser: false, extensions: [] };
+	}
+}
+
+function saveIntegrationSelection(selection: StoredIntegrationSelection): void {
+	const file = systemIntegrationFile();
+	const tmp = `${file}.tmp`;
+	writeFileSync(tmp, `${JSON.stringify({ schemaVersion: 1, ...selection }, null, 2)}\n`, "utf8");
+	renameSync(tmp, file);
+}
+
+/** 便携版的 process.execPath 指在临时解包目录，写进 ProgId 的必须是用户双击的那个 exe。 */
+function integrationExePath(): string {
+	const portable = process.env.PORTABLE_EXECUTABLE_FILE?.trim();
+	return portable && existsSync(portable) ? portable : process.execPath;
+}
+
+async function integrationSnapshot(): Promise<IntegrationSnapshot> {
+	const selection = loadIntegrationSelection();
+	const extensions = selection.extensions.length ? selection.extensions : DEFAULT_ASSOCIATION_EXTENSIONS;
+	const state = await readIntegrationState({
+		runner: registryRunner,
+		exePath: integrationExePath(),
+		extensions,
+		platform: process.platform,
+		packaged: app.isPackaged,
+	});
+	return { ...state, selection, canApply: state.supported && state.packaged };
+}
+
+function queueOpenTargets(targets: OpenTargets): void {
+	if (!targets.files.length && !targets.urls.length) return;
+	pendingOpenTargets = {
+		files: [...new Set([...pendingOpenTargets.files, ...targets.files])],
+		urls: [...new Set([...pendingOpenTargets.urls, ...targets.urls])],
+	};
+	flushOpenTargets();
+}
+
+/**
+ * 把双击来的目标送进界面：链接进内置浏览器标签，文件交 Agent 页（按扩展名交给插件或预览）。
+ * Agent 页未就绪时文件留在队列里，等 `onAgentReady` 再 flush 一次。
+ */
+function flushOpenTargets(): void {
+	if (!browserHost || !mainWin || mainWin.isDestroyed()) return;
+	let { files, urls } = pendingOpenTargets;
+	if (!files.length && !urls.length) return;
+	if (mainWin.isMinimized()) mainWin.restore();
+
+	// 1) 链接：内置浏览器直接开，不等 Agent 页
+	if (urls.length) {
+		for (const url of urls) {
+			try {
+				// file:// 目标（用 pi 打开本地 html/pdf）走本地文件分支，其它协议不认
+				const localFile = url.toLowerCase().startsWith("file://") ? fileURLToPath(url) : "";
+				if (localFile) browserHost.browser.createTab("", { localFile });
+				else browserHost.browser.createTab(url);
+			} catch (error) {
+				console.warn("[desktop] 打开链接失败：", error);
+			}
+		}
+		urls = [];
+		browserHost.setMode(files.length ? "split" : "browser");
+	}
+
+	// 2) PDF：Chromium 自带阅读器，file:// 标签即可，不依赖 Agent 页
+	const pdfs = files.filter((file) => extname(file).toLowerCase() === ".pdf");
+	if (pdfs.length) {
+		const failed: string[] = [];
+		for (const file of pdfs) {
+			try {
+				browserHost.browser.createTab("", { localFile: file });
+			} catch (error) {
+				console.warn("[desktop] 打开 PDF 失败：", error);
+				failed.push(file);
+			}
+		}
+		files = files.filter((file) => !pdfs.includes(file) || failed.includes(file));
+		if (!files.length) browserHost.setMode("browser");
+	}
+
+	// 3) 其余文件交给 Agent 页：有插件接管的由插件渲染，其余走内置预览
+	if (files.length) {
+		// 文件要等 Agent 页把预加载桥装好；没就绪就先留在队列里，等 onAgentReady 再 flush
+		if (!browserHost.getState().agentReady) {
+			pendingOpenTargets = { files, urls: [] };
+			return;
+		}
+		for (const contents of browserHost.trustedContents()) contents.send(OPEN_TARGET_CHANNEL, { files });
+		browserHost.setMode("split");
+	}
+	pendingOpenTargets = { files: [], urls: [] };
+}
+
+/**
+ * 便携版换了目录 / 升级换了安装位置后 ProgId 会指到一个不存在的 exe：
+ * 启动时对一下命令里的路径，不一致就按用户原来的勾选重写一遍（不弹窗、不抢默认）。
+ */
+async function refreshSystemIntegrationOnStartup(): Promise<void> {
+	if (process.platform !== "win32" || !app.isPackaged) return;
+	const selection = loadIntegrationSelection();
+	if (!selection.browser && selection.extensions.length === 0) return;
+	const state = await readIntegrationState({
+		runner: registryRunner,
+		exePath: integrationExePath(),
+		extensions: selection.extensions,
+		packaged: true,
+	});
+	if (!state.registered || !state.stale) return;
+	const ok = await refreshStaleRegistration(state, registryRunner, { browser: selection.browser });
+	if (!ok) console.warn("[desktop] 刷新系统集成注册失败");
+}
+
+function wireSystemIntegration(): void {
+	if (systemIntegrationWired) return;
+	systemIntegrationWired = true;
+
+	ipcMain.handle("pi-desktop:system-integration-get", async (event) => {
+		assertTrustedDesktopRequest(event);
+		return await integrationSnapshot();
+	});
+
+	ipcMain.handle("pi-desktop:system-integration-apply", async (event, payload: unknown) => {
+		assertTrustedDesktopRequest(event);
+		// dev 下 process.execPath 是 electron.exe：写进去就会把 Electron 插件成默认浏览器
+		if (!app.isPackaged) throw new Error("开发模式不写系统注册表：请先打包");
+		const raw = asRecord(payload);
+		const next: StoredIntegrationSelection = {
+			browser: raw?.browser === true,
+			extensions: normalizeExtensions(
+				Array.isArray(raw?.extensions)
+					? raw.extensions.filter((value): value is string => typeof value === "string")
+					: [],
+			),
+		};
+		const current = loadIntegrationSelection();
+		const result = await applyRegistryActions(
+			planIntegrationActions(current, next, integrationExePath()),
+			registryRunner,
+		);
+		if (result.ok) saveIntegrationSelection(next);
+		const snapshot = await integrationSnapshot();
+		return { ...snapshot, ok: result.ok, error: result.ok ? null : (result.error ?? "注册表写入失败") };
+	});
+
+	ipcMain.handle("pi-desktop:system-integration-open-defaults", async (event) => {
+		assertTrustedDesktopRequest(event);
+		if (process.platform !== "win32") return false;
+		// Win10/11 不允许程序自己设默认应用：只能把用户送到设置页自己确认
+		await shell.openExternal("ms-settings:defaultapps");
+		return true;
+	});
+
+	ipcMain.handle("pi-desktop:open-with-system", async (event, target: unknown) => {
+		assertTrustedDesktopRequest(event);
+		if (typeof target !== "string" || !existsSync(target)) return false;
+		return (await shell.openPath(target)) === "";
+	});
+}
 
 // 浏览器 session 是 `session.fromPath()` 建的，没有 partition 字符串；扩展层（<browser-action-list>、
 // crx:// 图标协议）要按名字反查 session，所以这里给那个 session 一个稳定的别名。
@@ -396,6 +603,8 @@ async function createWindow(): Promise<void> {
 		browserPreload: join(here, "..", "browser", "preload.cjs"),
 		agentPreload: join(here, "preload.cjs"),
 		dataDir: join(app.getPath("userData"), "browser"),
+		// Agent 页就绪（含重新加载）后把疫情期间待打开的文件送进去
+		onAgentReady: () => flushOpenTargets(),
 	});
 	const openHub = createHubBrowser();
 	ipcMain.removeHandler("pi-desktop:open-hub");
@@ -447,11 +656,13 @@ if (!app.requestSingleInstanceLock()) {
 		app.quit();
 	});
 } else {
-	app.on("second-instance", () => {
+	app.on("second-instance", (_event, argv, workingDirectory) => {
 		if (mainWin) {
 			if (mainWin.isMinimized()) mainWin.restore();
 			mainWin.focus();
 		}
+		// 双击关联文件 / 点链接会把目标放在新进程的 argv 里，单实例锁把参数转给这里
+		queueOpenTargets(collectOpenTargets(argv, { cwd: workingDirectory || process.cwd() }));
 	});
 }
 
@@ -459,7 +670,13 @@ void app.whenReady().then(async () => {
 	console.log("[desktop] app ready");
 	try {
 		wireWindowControls();
+		wireSystemIntegration();
 		await createWindow();
+		// 不是从文件/链接启动时这两个数组为空，零成本
+		if (startupOpenTargets.files.length || startupOpenTargets.urls.length) queueOpenTargets(startupOpenTargets);
+		// second-instance 可能在窗口就绪前就把文件塞进队列了，这里补一次冲刷（队列为空时无成本）
+		flushOpenTargets();
+		void refreshSystemIntegrationOnStartup();
 		void enqueueServerStep(() => startServerSidecar())
 			.then(async (url) => {
 				const saved = browserHost?.browser.getSettings().agentUrl;

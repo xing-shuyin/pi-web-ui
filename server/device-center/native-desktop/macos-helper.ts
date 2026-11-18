@@ -1,9 +1,9 @@
 import { createHash } from "node:crypto";
-import { spawn } from "node:child_process";
 import { mkdir, mkdtemp, readFile, writeFile, rename, rm, access, chmod } from "node:fs/promises";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { macDesktopScript } from "./macos.js";
+import { runProcess } from "../../run-process.js";
 
 let building: Promise<string> | undefined;
 /** Permission requests and capture run the identical executable, across reconnects and Node updates. */
@@ -31,33 +31,19 @@ async function build(): Promise<string> {
 		const source = join(stage, "main.swift"),
 			output = join(stage, "PiWebDesktop");
 		await writeFile(source, macDesktopScript, { mode: 0o600 });
-		await new Promise<void>((resolve, reject) => {
-			const child = spawn("/usr/bin/xcrun", ["swiftc", "-O", "-module-name", "PiWebDesktop", source, "-o", output], {
-				stdio: ["ignore", "ignore", "pipe"],
-			});
-			let errors = "";
-			const timeout = setTimeout(() => {
-				child.kill("SIGKILL");
-				reject(
-					new Error(
-						"MAC_DESKTOP_BUILD_FAILED: Desktop helper compilation timed out. Check Apple Command Line Tools on this Mac.",
-					),
-				);
-			}, 120_000);
-			timeout.unref();
-			child.stderr.on("data", (data) => {
-				errors = (errors + data.toString()).slice(-8192);
-			});
-			child.on("error", (error) => {
-				clearTimeout(timeout);
-				reject(error);
-			});
-			child.on("close", (code) => {
-				clearTimeout(timeout);
-				if (code === 0) resolve();
-				else reject(new Error("MAC_DESKTOP_BUILD_FAILED: " + errors.trim()));
-			});
+		const build = await runProcess({
+			cmd: "/usr/bin/xcrun",
+			args: ["swiftc", "-O", "-module-name", "PiWebDesktop", source, "-o", output],
+			timeoutMs: 120_000,
+			maxBytes: 8192,
+			keepColor: true,
 		});
+		if (build.timedOut)
+			throw new Error(
+				"MAC_DESKTOP_BUILD_FAILED: Desktop helper compilation timed out. Check Apple Command Line Tools on this Mac.",
+			);
+		if (build.spawnError) throw new Error(build.spawnError);
+		if (build.code !== 0) throw new Error("MAC_DESKTOP_BUILD_FAILED: " + build.stderr.trim());
 		await chmod(output, 0o700);
 		await rename(output, executable);
 		await writeFile(stamp, hash, { mode: 0o600 });

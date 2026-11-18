@@ -6,6 +6,7 @@ import { ClientSession } from "../../server/agent-service.js";
 import type { LocalBot } from "../../server/device-center/bots.js";
 import {
 	BOT_CHAT_ENTRY,
+	acquireBotChatLease,
 	botChatSessionDir,
 	latestBotChatTranscript,
 	pickBotChatConversation,
@@ -105,6 +106,24 @@ describe("latestBotChatTranscript：磁盘上最近一次的私聊", () => {
 	});
 });
 
+describe("acquireBotChatLease：私聊回合持租约", () => {
+	afterEach(() => setBotChatHost(undefined as never));
+
+	it("host 提供 acquireLease 时原样返回它的租约", async () => {
+		const release = vi.fn();
+		setBotChatHost({ resolve: async () => undefined, acquireLease: async () => ({ release }) });
+		const lease = await acquireBotChatLease("bot-1");
+		lease.release();
+		expect(release).toHaveBeenCalledTimes(1);
+	});
+
+	it("host 不支持租约时给 no-op（内存执行/单测不阻塞）", async () => {
+		setBotChatHost({ resolve: async () => undefined });
+		const lease = await acquireBotChatLease("bot-1");
+		expect(() => lease.release()).not.toThrow();
+	});
+});
+
 describe("ClientSession.openBotChat：点一行就是回到同一个私聊", () => {
 	const openBotChat = protoMethod(ClientSession.prototype, "openBotChat") as unknown as (
 		botId: string,
@@ -124,25 +143,42 @@ describe("ClientSession.openBotChat：点一行就是回到同一个私聊", () 
 		revision: 1,
 	});
 
-	function makeSession(options: { convs?: Array<Record<string, unknown>>; agentDir?: string } = {}) {
+	function makeSession(
+		options: {
+			convs?: Array<Record<string, unknown>>;
+			agentDir?: string;
+			/** 当前客户端工作目录（默认 = 这个 Bot 的 cwd，即"不需要切工作区"）。 */
+			cwd?: string;
+			/** 覆盖 setCwd（默认真的把 cwd 改掉，模拟切成功）。 */
+			setCwd?: (next: string, opts?: { forBotChat?: boolean }) => Promise<void>;
+		} = {},
+	) {
 		const switchConversation = vi.fn(async () => {});
 		const switchSession = vi.fn(async () => {});
 		const newChat = vi.fn(async () => true);
 		const convs = new Map<string, unknown>();
 		for (const conv of options.convs ?? []) convs.set(String(conv.id), conv);
-		const session = fakeClientSession({
+		let session: ReturnType<typeof fakeClientSession>;
+		const setCwd =
+			options.setCwd ??
+			vi.fn(async (next: string) => {
+				session.cwd = next;
+			});
+		session = fakeClientSession({
 			activeId: "active",
+			cwd: options.cwd ?? process.cwd(),
 			agentDir: options.agentDir ?? mkdtempSync(join(tmpdir(), "bot-chat-agent-")),
 			convs,
 			switchConversation,
 			switchSession,
 			newChat,
+			setCwd,
 			emit: vi.fn(),
 			pushSettings: vi.fn(),
 			flushSnapshot: vi.fn(),
 			quiesceBlocked: () => false,
 		});
-		return { session, switchConversation, switchSession, newChat };
+		return { session, switchConversation, switchSession, newChat, setCwd };
 	}
 
 	afterEach(() => setBotChatHost(undefined as never));
@@ -150,7 +186,7 @@ describe("ClientSession.openBotChat：点一行就是回到同一个私聊", () 
 	it("内存里已经开着它的私聊：切过去，不新建、不读磁盘", async () => {
 		setBotChatHost({ resolve: async () => bot() });
 		const { session, switchConversation, switchSession, newChat } = makeSession({
-			convs: [{ id: "conv-bot", botId: "bot-1", lastActiveAt: 1 }],
+			convs: [{ id: "conv-bot", botId: "bot-1", cwd: process.cwd(), lastActiveAt: 1 }],
 		});
 		await expect(openBotChat.call(session, "bot-1")).resolves.toBe(true);
 		expect(switchConversation).toHaveBeenCalledWith("conv-bot");
@@ -161,7 +197,7 @@ describe("ClientSession.openBotChat：点一行就是回到同一个私聊", () 
 	it("当前就停在它的私聊上：什么都不做（不重建会话）", async () => {
 		setBotChatHost({ resolve: async () => bot() });
 		const { session, switchConversation, switchSession, newChat } = makeSession({
-			convs: [{ id: "active", botId: "bot-1" }],
+			convs: [{ id: "active", botId: "bot-1", cwd: process.cwd() }],
 		});
 		await openBotChat.call(session, "bot-1");
 		expect(switchConversation).not.toHaveBeenCalled();
@@ -207,6 +243,26 @@ describe("ClientSession.openBotChat：点一行就是回到同一个私聊", () 
 		expect(newChat).toHaveBeenCalledWith(undefined, false, undefined, true, "bot-1");
 		expect(switchConversation).not.toHaveBeenCalled();
 		expect(switchSession).not.toHaveBeenCalled();
+	});
+
+	it("Bot 的工作目录 != 当前项目：先切工作区，再建私聊", async () => {
+		const botCwd = join(tmpdir(), "bot-workspace-elsewhere");
+		setBotChatHost({ resolve: async () => ({ ...bot(), cwd: botCwd }) });
+		const { session, setCwd, newChat } = makeSession({ cwd: mkdtempSync(join(tmpdir(), "other-project-")) });
+		await expect(openBotChat.call(session, "bot-1")).resolves.toBe(true);
+		expect(setCwd).toHaveBeenCalledWith(botCwd, { forBotChat: true });
+		expect(newChat).toHaveBeenCalledWith(undefined, false, undefined, true, "bot-1");
+	});
+
+	it("切工作区失败：不建会话，给可读提示（不再只报 Bot execution cwd mismatch）", async () => {
+		setBotChatHost({ resolve: async () => ({ ...bot(), cwd: join(tmpdir(), "bot-workspace-unreachable") }) });
+		const { session, newChat } = makeSession({
+			cwd: mkdtempSync(join(tmpdir(), "other-project-")),
+			setCwd: async () => {},
+		});
+		await expect(openBotChat.call(session, "bot-1")).resolves.toBe(false);
+		expect(newChat).not.toHaveBeenCalled();
+		expect(session.emit).toHaveBeenCalledWith(expect.objectContaining({ type: "notice", level: "error" }));
 	});
 
 	it("Bot 被删/停用：不建会话，只给错误提示", async () => {

@@ -1,6 +1,9 @@
 import {
 	closeSync,
+	constants,
+	copyFileSync,
 	fsyncSync,
+	linkSync,
 	mkdirSync,
 	openSync,
 	readFileSync,
@@ -9,7 +12,7 @@ import {
 	statSync,
 	writeFileSync,
 } from "node:fs";
-import { mkdir, open, readFile, rename, rm } from "node:fs/promises";
+import { copyFile, link, mkdir, open, readFile, rename, rm } from "node:fs/promises";
 import { dirname } from "node:path";
 import { randomUUID } from "node:crypto";
 import { setTimeout as delay } from "node:timers/promises";
@@ -31,6 +34,67 @@ export const ATOMIC_RETRY_DELAY_MS = [20, 60, 150, 400] as const;
 
 export function isTransientFsCode(code: string | undefined | null): boolean {
 	return typeof code === "string" && (TRANSIENT_FS_CODES as readonly string[]).includes(code);
+}
+
+/**
+ * 「这个文件系统压根不支持硬链接」的错误码——独占发布据此决定是否降级为排他复制：
+ * - EPERM / EACCES：Android/Termux 的 /data、FAT32/exFAT 外置存储、部分容器 overlay 拒绝 link(2)，但允许写；
+ * - ENOTSUP / EOPNOTSUPP / ENOSYS：SMB/CIFS、部分 FUSE 与网络 fs 直接回「不支持该操作」；
+ * - EXDEV：跨设备硬链接不被允许；
+ * - EMLINK：链接数上限（部分 BSD/网络 fs 对每个文件只允许一个链接）。
+ *
+ * 和上面的 TRANSIENT_FS_CODES 语义完全不同，别合并：那组是「等一会就好」（rename 撞杀毒占用，重试有效、绝不降级），
+ * 这组是「换个实现就好」（重试无效、降级有效）。合并会同时踩两个坑：把瞬时占用误判成不支持，或把「不支持」
+ * 变成无限重试。EPERM/EACCES 同时出现在两组里是事实使然——同一个码在不同原语上含义不同。
+ */
+export const LINK_UNSUPPORTED_CODES = [
+	"EPERM",
+	"EACCES",
+	"ENOTSUP",
+	"EOPNOTSUPP",
+	"ENOSYS",
+	"EXDEV",
+	"EMLINK",
+] as const;
+
+export function isLinkUnsupportedCode(code: string | undefined | null): boolean {
+	return typeof code === "string" && (LINK_UNSUPPORTED_CODES as readonly string[]).includes(code);
+}
+
+/** 发布实际走的方式：`link` 零拷贝，`copy` 是硬链接不可用时的降级路径（日志与测试据此断言）。 */
+export type ExclusivePublishMode = "link" | "copy";
+
+/**
+ * 独占发布：把 `temp` 的内容落到 `dest`；`dest` 已存在则抛 EEXIST，绝不覆盖。
+ *
+ * 为什么不用 rename：rename 会静默覆盖已存在目标，独占语义当场消失；link(2) 自带 EEXIST 且零拷贝，是首选。
+ * 不支持硬链接的文件系统（见 LINK_UNSUPPORTED_CODES）上 link 整链断裂，降级为 copyFile + COPYFILE_EXCL——
+ * 同样是「已存在则 EEXIST」的排他创建，只是多一次数据拷贝。其余错误（ENOENT/ENOSPC/EIO …）原样抛出，
+ * 不让降级掩盖真实故障。
+ *
+ * 成功后不删 `temp`（与裸 link 一致），清理仍归调用方现有的 finally。
+ */
+export function publishFileExclusiveSync(temp: string, dest: string): ExclusivePublishMode {
+	try {
+		linkSync(temp, dest);
+		return "link";
+	} catch (error) {
+		if (!isLinkUnsupportedCode((error as NodeJS.ErrnoException).code)) throw error;
+	}
+	copyFileSync(temp, dest, constants.COPYFILE_EXCL);
+	return "copy";
+}
+
+/** 与 `publishFileExclusiveSync` 同一契约的异步版（四个本地调用点里三个是 async）。 */
+export async function publishFileExclusive(temp: string, dest: string): Promise<ExclusivePublishMode> {
+	try {
+		await link(temp, dest);
+		return "link";
+	} catch (error) {
+		if (!isLinkUnsupportedCode((error as NodeJS.ErrnoException).code)) throw error;
+	}
+	await copyFile(temp, dest, constants.COPYFILE_EXCL);
+	return "copy";
 }
 
 function sleepSync(ms: number): void {

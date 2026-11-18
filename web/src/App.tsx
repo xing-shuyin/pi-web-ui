@@ -97,7 +97,7 @@ import {
 import { setFenceSend, syncFenceRenderers, syncMessageWidgets } from "./plugin-fence";
 import { findFileHandler, syncFileHandlers, type FileHandlerPlugin } from "./plugin-file-handlers";
 const PiSetupModal = lazy(() => import("./components/PiSetupModal").then((m) => ({ default: m.PiSetupModal })));
-import { isDesktopShell } from "./desktop";
+import { getDesktopOpenFilesBridge, isDesktopShell } from "./desktop";
 const ModelConfigModal = lazy(() =>
 	import("./components/ModelConfigModal").then((m) => ({ default: m.ModelConfigModal })),
 );
@@ -153,6 +153,7 @@ import {
 	FiCheck,
 	FiChevronLeft,
 	FiChevronRight,
+	FiCpu,
 	FiInfo,
 	FiTrash2,
 	FiUpload,
@@ -492,6 +493,17 @@ export function App() {
 			isOpen: () => previewOpenRef.current || pluginFileOpenRef.current !== null,
 		});
 		return () => registerFilePreviewHost(null);
+	}, [openFile]);
+	// 桌面壳：系统里双击关联文件（或在终端点链接）→ 主进程把绝对路径推过来，按扩展名派发
+	useEffect(() => {
+		const subscribe = getDesktopOpenFilesBridge();
+		if (!subscribe) return;
+		return subscribe(({ files }) => {
+			for (const path of files) {
+				const name = path.replace(/\\/g, "/").split("/").pop() || path;
+				openFile(path, name);
+			}
+		});
 	}, [openFile]);
 	const [lightboxImage, setLightboxImage] = useState<ImageLightboxTarget | null>(null);
 	const lightboxOpenRef = useRef(false);
@@ -2488,6 +2500,7 @@ export function App() {
 						onUiAction={onUiAction}
 						collapsed={termCollapsed}
 						onToggleCollapse={() => setTermCollapsed((v) => !v)}
+						onHide={() => closeDrawer("terminal")}
 					/>
 				</Suspense>
 			),
@@ -2898,6 +2911,12 @@ export function App() {
 											)}
 											{chat.state ? (
 												<>
+													{!sharedReadOnly && chat.state.bot && (
+														<div className="bot-chat-bar" role="status">
+															<FiCpu aria-hidden />
+															<span>{t("botChatWith", { name: chat.state.bot.name })}</span>
+														</div>
+													)}
 													{!sharedReadOnly && chat.state.sandbox && (
 														<div className="sandbox-banner" role="region" aria-label={chat.state.sandbox.name}>
 															<div className="sandbox-banner-info">

@@ -154,14 +154,20 @@ import { McpBridge, getMcpToolServer } from "./mcp-bridge.js";
 import { getBotExecution, type BotExecutionCapability } from "./device-center/bot-execution.js";
 import {
 	BOT_CHAT_ENTRY,
+	BOT_EXECUTION_ENTRY,
+	acquireBotChatLease,
 	botChatSessionDir,
+	botChatBusy,
 	createBotChatCapability,
+	decideTranscriptBotBinding,
 	latestBotChatTranscript,
 	pickBotChatConversation,
 	readBotChatBinding,
+	readBotExecutionAnchor,
 	resolveBotChatBot,
 } from "./device-center/bot-chat.js";
 import { checkGroupTaskPlanGuard } from "./device-center/group-plan-guard.js";
+import { createMemoryWriteQuota, type MemoryWriteQuota } from "./device-center/bot-memory-quota.js";
 import { prepareBotExecutionSystemPrompt } from "./device-center/execution-system-prompt.js";
 import {
 	extractGroupContextMetrics,
@@ -855,15 +861,15 @@ export interface TakeoverPayload {
 }
 
 import { processTreeKillPlan, resolveCwdTarget } from "./process-utils.js";
+import { runGit } from "./git-run.js";
+import { runProcess } from "./run-process.js";
+import { sleep } from "./async-utils.js";
 export function cleanupOrphanedSessionDirs(agentDir: string, maxAgeMs = 24 * 3600_000): void {
 	const cutoff = Date.now() - maxAgeMs;
 	for (const sub of ["subagent-sessions", "ephemeral-sessions"]) {
 		const root = join(agentDir, sub);
 		if (!existsSync(root)) continue;
 		try {
-import { runGit } from "./git-run.js";
-import { runProcess } from "./run-process.js";
-import { sleep } from "./async-utils.js";
 			const entries = readdirSync(root, { withFileTypes: true });
 			for (const e of entries) {
 				if (!e.isDirectory()) continue;
@@ -4461,17 +4467,32 @@ export class ClientSession {
 		if (conv?.bot) return conv.bot;
 		const pending = this.pendingBotChat.get(id);
 		if (pending) {
-			if (conv) {
-				conv.bot = pending;
-				this.pendingBotChat.delete(id);
-			}
+			// 会话对象还没建好时保留 pending：等 `makeConversation` 认领时再落到会话上。
+			if (conv) this.attachBotBinding(conv, pending);
 			return pending;
 		}
 		return this.botExecution;
 	}
 	private botMcpBridge?: McpBridge;
+	/** 每个私聊会话自己的 Bot MCP 桥：不同 Bot 的 mcpServers 白名单不能互相串用。 */
+	private readonly botMcpByConversation = new Map<string, McpBridge>();
+	/** 每个会话一份记忆写入配额（每回合/每会话），回合在 `prompt()` 开新轮时归零。 */
+	private readonly memoryQuotas = new Map<string, MemoryWriteQuota>();
 
-	private executionMcpBridge(cwd: string): McpBridge | undefined {
+	private memoryQuotaFor(conversationId: string): MemoryWriteQuota {
+		let quota = this.memoryQuotas.get(conversationId);
+		if (!quota) {
+			quota = createMemoryWriteQuota();
+			this.memoryQuotas.set(conversationId, quota);
+		}
+		return quota;
+	}
+
+	private executionMcpBridge(cwd: string, conversationId?: string): McpBridge | undefined {
+		// 私聊是会话级 Bot 能力：MCP 只看这个 Bot 允许的 server，绝不回落到项目的 MCP。
+		// 会话对象还没建好时（运行时工厂先跑）用 pending 槽认领，否则会错用项目桥。
+		if (conversationId && (this.convs.get(conversationId)?.bot || this.pendingBotChat.has(conversationId)))
+			return this.botMcpByConversation.get(conversationId);
 		return this.botExecution ? this.botMcpBridge : ClientSession.mcpProjects?.getBridge(cwd);
 	}
 
@@ -4480,16 +4501,18 @@ export class ClientSession {
 		cwd = this.cwd,
 		params?: unknown,
 		phase: "execute" | "register" = "execute",
+		conversationId?: string,
 	): { allowed: boolean; reason?: string } {
-		// 私聊会话有自己的 Bot 能力；无头设备任务仍然用客户端级能力。
-		const bot = this.botOf();
+		// 身份必须按**执行这次调用的会话**解析：私聊可能在后台跑，活动会话是另一条对话。
+		// 用 `botOf()`（活动会话）会让后台 Bot 套用前台会话的白名单，等于没有白名单。
+		const bot = this.botOf(conversationId);
 		if (!bot) return { allowed: true };
 		bot.assertActive();
 		if (bot.planOnly && phase === "execute") {
 			const denial = checkGroupTaskPlanGuard(name, params ?? {}, true);
 			if (denial) return { allowed: false, reason: denial.reason };
 		}
-		const mcp = this.executionMcpBridge(cwd)?.getTools() ?? [];
+		const mcp = this.executionMcpBridge(cwd, conversationId)?.getTools() ?? [];
 		const matches = mcp.filter((tool) => tool.name === name);
 		if (!(phase === "register" ? bot.allowsToolRegistration(name) : bot.allowsTool(name, params ?? {})))
 			return { allowed: false, reason: "Tool is not authorized for this Bot" };
@@ -4498,12 +4521,12 @@ export class ClientSession {
 		return { allowed: true };
 	}
 
-	private botToolAllowed(name: string, cwd = this.cwd, params?: unknown): boolean {
-		return this.botToolAuthorization(name, cwd, params).allowed;
+	private botToolAllowed(name: string, cwd = this.cwd, params?: unknown, conversationId?: string): boolean {
+		return this.botToolAuthorization(name, cwd, params, "execute", conversationId).allowed;
 	}
 
-	private botToolRegistrationAllowed(name: string, cwd = this.cwd): boolean {
-		return this.botToolAuthorization(name, cwd, undefined, "register").allowed;
+	private botToolRegistrationAllowed(name: string, cwd = this.cwd, conversationId?: string): boolean {
+		return this.botToolAuthorization(name, cwd, undefined, "register", conversationId).allowed;
 	}
 
 	static async create(
@@ -4528,7 +4551,7 @@ export class ClientSession {
 		const cs = new ClientSession(clientId, cwd, agentDir, stateStore);
 		cs.onNotificationEvent = opts?.onNotificationEvent;
 		cs.botExecution = botExecution;
-		botExecution?.captureModel(stateStore.getDefaultModel("pi"));
+		botExecution?.captureModel(stateStore.getDefaultModel("pi") ?? stateStore.getProjectModel(clientId, cwd, "pi"));
 		if (botExecution) opts = { blank: true };
 		if (!getGlobalRemoteSshService()) {
 			setGlobalRemoteSshService(new RemoteSshService(stateStore.dataDir));
@@ -4684,12 +4707,7 @@ export class ClientSession {
 		if (!ownerId) return created.capability;
 		this.pendingBotChat.set(ownerId, created.capability);
 		const conv = this.convs.get(ownerId);
-		if (conv) {
-			conv.bot = created.capability;
-			conv.botId = created.bot.id;
-			conv.botName = created.bot.name;
-			this.pendingBotChat.delete(ownerId);
-		}
+		if (conv) this.attachBotBinding(conv, created.capability);
 		return created.capability;
 	}
 
@@ -4705,33 +4723,45 @@ export class ClientSession {
 			// 会话级 Bot 绑定（私聊）优先；无头设备任务仍走客户端级能力兜底。
 			const botExecution = await this.botExecutionForConversation(ownerId, sessionManager, effectiveCwd);
 			if (botExecution) await botExecution.assertWorkspace(effectiveCwd);
-			const botEntry = sessionManager
-				.getEntries()
-				.find((entry) => entry.type === "custom" && entry.customType === "device-bot-execution");
-			if (botEntry && !botExecution)
-				throw new Error("Bot execution transcripts cannot be resumed as ordinary sessions");
-			if (botEntry?.type === "custom" && botExecution) {
-				const owner = botEntry.data as { botId?: unknown; revision?: unknown } | undefined;
-				if (owner?.botId !== botExecution.bot.id || owner?.revision !== botExecution.bot.revision)
-					throw new Error("Bot execution transcript ownership does not match the active capability");
-			}
-			if (botExecution && !botEntry)
-				sessionManager.appendCustomEntry("device-bot-execution", {
-					botId: botExecution.bot.id,
-					revision: botExecution.bot.revision,
-				});
-			// 私聊会话的持久化锚点：重开/重启后据此把同一个 Bot 重新绑回来。
+			const botEntries = sessionManager.getEntries();
+			const executionAnchor = readBotExecutionAnchor(botEntries);
+			const chatAnchor = readBotChatBinding(botEntries);
+			const transcriptBinding = decideTranscriptBotBinding({
+				execution: executionAnchor,
+				chat: chatAnchor,
+				current: botExecution ? { id: botExecution.bot.id, revision: botExecution.bot.revision } : undefined,
+			});
+			if (transcriptBinding.action === "reject")
+				throw new Error(
+					transcriptBinding.reason === "orphan"
+						? "Bot execution transcripts cannot be resumed as ordinary sessions"
+						: transcriptBinding.reason === "owner"
+							? "Bot execution transcript ownership does not match the active capability"
+							: "Bot execution transcript was authorized for a different Bot revision",
+				);
 			if (botExecution) {
-				const chatEntry = sessionManager
-					.getEntries()
-					.find((entry) => entry.type === "custom" && entry.customType === BOT_CHAT_ENTRY);
-				if (!chatEntry)
+				const revision = botExecution.bot.revision;
+				const rebind = transcriptBinding.action === "rebind";
+				// 锚点只追不改：读者一律取最后一条，所以重绑就是再追加一份当前身份。
+				if (!executionAnchor || rebind)
+					sessionManager.appendCustomEntry(BOT_EXECUTION_ENTRY, { botId: botExecution.bot.id, revision });
+				// 私聊会话的持久化锚点：重开/重启后据此把同一个 Bot 重新绑回来。
+				if (chatAnchor?.botId !== botExecution.bot.id || rebind)
 					sessionManager.appendCustomEntry(BOT_CHAT_ENTRY, {
 						botId: botExecution.bot.id,
-						revision: botExecution.bot.revision,
+						revision,
 						name: botExecution.bot.name,
 					});
 			}
+			// 私聊但 Bot 没了：照样能把历史打开看（prompt 那边会拦住“当成 Bot 说话”）。
+			if (transcriptBinding.action === "degrade")
+				this.emit({
+					type: "notice",
+					level: "warning",
+					text: "这个智能体已停用或删除：这条私聊只能查看历史，不能接着对话。",
+					textEn:
+						"This agent is disabled or deleted: this chat is read-only history and cannot continue the conversation.",
+				});
 			const expectedBotCwd = botExecution?.executionCwd ?? botExecution?.bot.cwd;
 			if (botExecution && expectedBotCwd && resolve(effectiveCwd) !== resolve(expectedBotCwd))
 				throw new Error("Bot cwd is fixed");
@@ -4739,15 +4769,29 @@ export class ClientSession {
 			const releaseMcp = sandboxIdentity || botExecution ? undefined : ClientSession.mcpProjects?.retain(effectiveCwd);
 			try {
 				if (botExecution) {
-					if (!this.botMcpBridge) {
+					// 私聊是会话级能力：每个会话按自己的 Bot 的 mcpServers 白名单建桥，互不串用。
+					// 无头设备任务仍用客户端级那一份（ownerId 在任务里就是它自己的会话）。
+					const clientLevel = this.botExecution === botExecution;
+					if (!clientLevel && ownerId && botExecution.bot.mcpServers.length > 0) {
+						if (!this.botMcpByConversation.has(ownerId)) {
+							const bridge = new McpBridge(this.stateStore.dataDir, undefined, {
+								agentDir: this.agentDir,
+								cwd: effectiveCwd,
+								allowedServers: botExecution.bot.mcpServers,
+							});
+							await bridge.load();
+							this.botMcpByConversation.set(ownerId, bridge);
+						}
+					}
+					if (clientLevel && !this.botMcpBridge) {
 						this.botMcpBridge = new McpBridge(this.stateStore.dataDir, undefined, {
 							agentDir: this.agentDir,
 							cwd: effectiveCwd,
 							allowedServers: botExecution.bot.mcpServers,
 						});
 						await this.botMcpBridge.load();
-						await botExecution.assertWorkspace(effectiveCwd);
 					}
+					await botExecution.assertWorkspace(effectiveCwd);
 				} else if (!sandboxIdentity) await ClientSession.mcpProjects?.prepare(effectiveCwd);
 				const sdkBuiltins = sandboxIdentity || botExecution ? [] : await getSdkBuiltinExtensionFactories();
 				const sandboxRuntimeGate = createSandboxRuntimeGate(
@@ -4847,7 +4891,13 @@ export class ClientSession {
 										if (botExecution) {
 											try {
 												await botExecution.assertWorkspace(effectiveCwd);
-												const auth = this.botToolAuthorization(event.toolName, effectiveCwd, event.input);
+												const auth = this.botToolAuthorization(
+													event.toolName,
+													effectiveCwd,
+													event.input,
+													"execute",
+													ownerId,
+												);
 												if (!auth.allowed)
 													return { block: true, reason: auth.reason ?? "Tool is not authorized for this Bot" };
 											} catch {
@@ -4993,9 +5043,19 @@ export class ClientSession {
 
 				let sessionModel: Parameters<AgentSession["setModel"]>[0] | undefined = initialModel;
 				if (botExecution) {
-					const fixed = botExecution.captureModel(undefined);
+					// 重开私聊（刷新/重启后从转录恢复）走的是这里：能力是新建的，还没钉过模型。
+					// 不传兜底就会把「没给 Bot 配模型」当成致命错误抛在 `newChat` 的 try 之外。
+					let fixed: { provider: string; modelId: string };
+					try {
+						fixed = botExecution.captureModel(this.botFallbackModel(effectiveCwd));
+					} catch (error) {
+						throw new Error(this.botModelUnavailableText(error));
+					}
 					sessionModel = services.modelRuntime.getModel(fixed.provider, fixed.modelId);
-					if (!sessionModel) throw new Error("Configured Bot model is unavailable");
+					if (!sessionModel)
+						throw new Error(
+							`这个智能体配置的模型当前不可用（${fixed.provider}/${fixed.modelId}）：请在设置里重新选择一个模型 / The configured Bot model is unavailable (${fixed.provider}/${fixed.modelId}): pick another model in Settings`,
+						);
 					await this.restoreKeyForModel(`${fixed.provider}/${fixed.modelId}`, effectiveCwd);
 				}
 				if (!sessionModel) {
@@ -5159,7 +5219,7 @@ export class ClientSession {
 						}).map((tool) => withWorkspaceSnapshotGate(tool, () => this.awaitPendingWorkspaceSnapshot(ownerId))),
 						...(sandboxIdentity || (apply && apply.enabledExtensions.length > 0)
 							? []
-							: this.enabledPluginToolDefs(undefined, effectiveCwd)),
+							: this.enabledPluginToolDefs(undefined, effectiveCwd, ownerId)),
 						...(noSpawnTools
 							? []
 							: ownerId
@@ -5275,6 +5335,7 @@ export class ClientSession {
 									makeBotMemoryTool({
 										root: botExecution.memoryRoot,
 										botId: botExecution.bot.id,
+										quota: ownerId ? this.memoryQuotaFor(ownerId) : undefined,
 									}),
 								]
 							: []),
@@ -5544,9 +5605,21 @@ export class ClientSession {
 		const forkedFromSessionPath = parentSessionOfManager(runtime.session.sessionManager);
 		if (forkedFromSessionPath) conv.forkedFromSessionPath = forkedFromSessionPath;
 		if (conv.nativeCli) this.ensureNativeCliBinding(conv);
+		// 从转录重开的私聊：能力是运行时工厂按 `webui/bot-chat` 重建的（当时会话还不存在），
+		// 这里补上身份——否则左栏认不出它属于哪个智能体、`pickBotChatConversation` 也找不到它。
+		const pendingBot = this.pendingBotChat.get(id);
+		if (pendingBot) this.attachBotBinding(conv, pendingBot);
 		conversationIdentity(conv);
 		this.restorePlan(conv);
 		return conv;
+	}
+
+	/** 把一份 Bot 能力落到会话上（Bot 私聊的唯一「身份」入口）。 */
+	private attachBotBinding(conv: Conversation, capability: BotExecutionCapability): void {
+		conv.bot = capability;
+		conv.botId = capability.bot.id;
+		conv.botName = capability.bot.name;
+		this.pendingBotChat.delete(conv.id);
 	}
 
 	private restorePlan(conv: Conversation): void {
@@ -9174,7 +9247,8 @@ export class ClientSession {
 		const bot = this.botOf();
 		if (bot) {
 			const fixed = bot.captureModel(undefined);
-			if (model.provider !== fixed.provider || model.id !== fixed.modelId) throw new Error("Bot model is fixed");
+			if (model.provider !== fixed.provider || model.id !== fixed.modelId)
+				throw new Error("这个智能体的模型由身份固定：请到设备中心改 Bot，或新开一条私聊。 / Bot model is fixed");
 		}
 		await session.setModel(model);
 		this.applyCompactionOverrides();
@@ -9315,6 +9389,8 @@ export class ClientSession {
 		quickAskEnabled?: boolean;
 		quickAskModel?: string | null;
 		quickAskThinking?: ThinkingLevel;
+		botDraftModel?: string | null;
+		botDraftThinking?: ThinkingLevel;
 		quickAskSystemPrompt?: string;
 		quickAskExplainPrompt?: string;
 		quickAskTranslateEnabled?: import("./quick-ask-settings.js").QuickAskSettings["quickAskTranslateEnabled"];
@@ -10229,7 +10305,7 @@ export class ClientSession {
 			session.setActiveToolsByName(
 				session
 					.getAllTools()
-					.filter((tool) => this.botToolRegistrationAllowed(tool.name))
+					.filter((tool) => this.botToolRegistrationAllowed(tool.name, conv?.cwd ?? this.cwd, conv?.id))
 					.map((tool) => tool.name),
 			);
 			return;
@@ -10818,18 +10894,22 @@ export class ClientSession {
 		);
 	}
 
-	private enabledPluginToolDefs(preset?: string, cwd?: string): ToolDefinition[] {
+	private enabledPluginToolDefs(preset?: string, cwd?: string, conversationId?: string): ToolDefinition[] {
 		if (!presetAllowsPluginTools(preset)) return [];
 		const off = new Set(normalizeDisabledPluginTools(this.settingsSvc.current.disabledPluginTools));
 		const disabledPlugins = new Set(this.settingsSvc.current.disabledPlugins ?? []);
-		return (this.botExecution ? (this.botMcpBridge?.getTools() ?? []) : (this.pluginToolsProvider?.(cwd) ?? []))
+		// Bot 会话只暴露这个 Bot 的 MCP server 工具；普通会话才看全局插件目录。
+		const bot = this.botOf(conversationId);
+		const botBridge = bot ? this.executionMcpBridge(cwd ?? this.cwd, conversationId) : undefined;
+		const coreNames = ["bash", "read", "write", "edit", "powershell", "ls", "grep", "find"];
+		return (bot ? (botBridge?.getTools() ?? []) : (this.pluginToolsProvider?.(cwd) ?? []))
 			.filter((t) => {
-				if (this.botExecution) {
-					const mcp = this.executionMcpBridge(cwd ?? this.cwd)?.getTools() ?? [];
+				if (bot) {
+					const mcp = botBridge?.getTools() ?? [];
 					return (
 						mcp.includes(t) &&
-						this.botToolRegistrationAllowed(t.name, cwd) &&
-						!["bash", "read", "write", "edit", "powershell", "ls", "grep", "find"].includes(t.name)
+						this.botToolRegistrationAllowed(t.name, cwd, conversationId) &&
+						!coreNames.includes(t.name)
 					);
 				}
 				if (t.pluginId && disabledPlugins.has(t.pluginId)) return false;
@@ -10837,14 +10917,15 @@ export class ClientSession {
 			})
 			.map((tool) => {
 				const def = pluginToolToDefinition(tool);
-				if (!this.botExecution) return def;
+				if (!bot) return def;
 				const execute = def.execute;
 				return {
 					...def,
 					execute: async (...args: Parameters<typeof execute>) => {
-						await this.botExecution?.assertWorkspace(cwd ?? this.cwd);
-						const current = this.executionMcpBridge(cwd ?? this.cwd)?.getTools() ?? [];
-						if (!current.includes(tool) || !this.botToolAllowed(tool.name, cwd, args[1]))
+						bot.assertActive();
+						await bot.assertWorkspace(cwd ?? this.cwd);
+						const current = botBridge?.getTools() ?? [];
+						if (!current.includes(tool) || !this.botToolAllowed(tool.name, cwd, args[1], conversationId))
 							throw new Error("Bot MCP tool authorization expired");
 						return execute(...args);
 					},
@@ -10866,7 +10947,7 @@ export class ClientSession {
 		try {
 			if (!cwd) return;
 			if (this.sandboxes.getExecutionIdentity(cwd)) return;
-			const defs = this.enabledPluginToolDefs(targetPreset, cwd).map((t) =>
+			const defs = this.enabledPluginToolDefs(targetPreset, cwd, ownerId).map((t) =>
 				this.wrapGenericTool(t, ownerId, undefined, { session }),
 			);
 			const universe = new Set([
@@ -11154,7 +11235,30 @@ export class ClientSession {
 		const conv = targetConversation ?? this.conv;
 		// 私聊会话的能力挂在会话上（`conv.bot`），无头设备任务挂在客户端上：两处都要认。
 		const botCapability = this.botOf(conv.id);
-		if (botCapability && text.trimStart().startsWith("/")) throw new Error("Bot slash commands are disabled");
+		// 已开的私聊也要按"当前注册表"复核：Bot 可能刚被停用/删除，冻结的能力不能继续当授权用。
+		if (conv.bot) {
+			const currentBot = await resolveBotChatBot(conv.bot.bot.id);
+			if (!currentBot) {
+				this.emit({
+					type: "notice",
+					level: "error",
+					text: "这个智能体已停用或删除：这条私聊只能查看历史，不能再发言。",
+					textEn: "This agent is disabled or deleted: this chat is read-only history and cannot continue.",
+				});
+				return;
+			}
+		}
+		// 私聊发消息前做一次忙检查：群/设备任务在跑时让用户看到一句能懂的话，而不是并发抢同一个工作区。
+		// 只查会话级绑定（conv.bot）；无头设备任务本身就是租约持有者，不能拦自己。
+		if (conv.bot && !conv.session.isStreaming) this.memoryQuotaFor(conv.id).beginTurn();
+		if (conv.bot && botChatBusy(conv.bot.bot.id))
+			throw new Error(
+				"这个智能体正在执行任务：等它结束后再发。 / This agent is executing a task; send again after it finishes.",
+			);
+		if (botCapability && text.trimStart().startsWith("/"))
+			throw new Error(
+				"私聊不支持斜杠命令：需要压缩请用上下文压缩按钮，换模型请到设备中心改 Bot。 / Bot slash commands are disabled",
+			);
 		if (conv.nativeCli) {
 			this.emit({
 				type: "notice",
@@ -11164,7 +11268,11 @@ export class ClientSession {
 			});
 			return;
 		}
-		if (botCapability) await botCapability.assertWorkspace(conv.cwd);
+		if (botCapability) {
+			// 长会话里刚 promote/写入的记忆，这一轮就要出现在 system prompt 里（不是等重开）。
+			await botCapability.refreshMemory();
+			await botCapability.assertWorkspace(conv.cwd);
+		}
 		this.assertSubagentWorktreeAdmission(conv);
 		if (
 			!botCapability &&
@@ -11299,7 +11407,22 @@ export class ClientSession {
 			);
 		}
 		const s = conv.session;
+		let botTurnLease: { release(): void } | undefined;
 		try {
+			// 私聊回合与群任务共用同一把 Bot 租约：同一 Bot 不并发。
+			// 群任务侧遇 BOT_BUSY 会有界等待（runtime 最多 2 分钟），所以这里不必排队。
+			if (conv.bot && !s.isStreaming) {
+				try {
+					botTurnLease = await acquireBotChatLease(conv.bot.bot.id);
+				} catch (error) {
+					const busy = (error as { code?: string } | undefined)?.code === "BOT_BUSY";
+					throw new Error(
+						busy
+							? "这个智能体正在执行任务：等它结束后再发。 / This agent is executing a task; send again after it finishes."
+							: (error as Error).message,
+					);
+				}
+			}
 			const slash = parseSlash(text);
 			if (slash && (await this.slash.exec(slash.name, slash.args))) {
 				this.flushSnapshot();
@@ -11704,6 +11827,9 @@ export class ClientSession {
 				textEn: `Failed to send prompt: ${(err as Error).message}`,
 			});
 		} finally {
+			try {
+				botTurnLease?.release();
+			} catch {}
 			conv.promptInFlight = false;
 			if (!conv.session.isStreaming && !conv.retryState) {
 				finishTurnTiming(conv);
@@ -12549,13 +12675,35 @@ export class ClientSession {
 			});
 			return false;
 		}
+		// 私聊属于 Bot 自己的工作目录：从别的项目点这一行，先把工作区切过去。
+		// 否则建会话时会撞 `Bot execution cwd mismatch`，用户只看到「新建对话失败」。
+		if (!this.sameWorkspace(this.cwd, bot.cwd)) {
+			await this.setCwd(bot.cwd, { forBotChat: true });
+			if (!this.sameWorkspace(this.cwd, bot.cwd)) {
+				this.emit({
+					type: "notice",
+					level: "error",
+					text: `无法切换到智能体的工作目录：${bot.cwd}。请确认目录存在，或到设备中心修改 Bot 的工作目录。`,
+					textEn: `Could not switch to the agent workspace: ${bot.cwd}. Check that it exists, or edit the Bot workspace in the device center.`,
+				});
+				return false;
+			}
+		}
 		if (opts?.fresh !== true) {
-			const open = pickBotChatConversation([...this.convs.values()], bot.id, this.activeId);
+			// 只认落在 Bot 当前工作目录里的会话：Bot 改过 cwd 之后，旧会话的 conv.cwd 已经对不上，
+			// 切过去下一轮会被 assertWorkspace 拦住。
+			const open = pickBotChatConversation(
+				[...this.convs.values()].filter((conv) => this.sameWorkspace(conv.cwd, bot.cwd)),
+				bot.id,
+				this.activeId,
+			);
 			if (open) {
 				if (open.id === this.activeId) {
 					this.pushSettings();
 					this.flushSnapshot();
 				} else await this.switchConversation(open.id);
+				// 编辑过 Bot 后，已开的私聊按新配置重绑（工具/提示词/模型/记忆）。
+				await this.rebindBotChatIfStale(open, bot.id);
 				return true;
 			}
 			const latest = latestBotChatTranscript(this.agentDir, bot.id, bot.cwd);
@@ -12564,7 +12712,130 @@ export class ClientSession {
 				return true;
 			}
 		}
-		return this.newChat(undefined, false, undefined, true, bot.id);
+		try {
+			return await this.newChat(undefined, false, undefined, true, bot.id);
+		} catch (error) {
+			this.emit({
+				type: "notice",
+				level: "error",
+				text: `无法打开私聊：${(error as Error).message}`,
+				textEn: `Could not open the private chat: ${(error as Error).message}`,
+			});
+			return false;
+		}
+	}
+
+	/**
+	 * Bot 没配模型时的兜底：本机默认模型 → 这个工作区/项目的模型 → 当前会话正在用的模型。
+	 * 只认「本机默认」会在没设默认模型的客户端上直接抛错（Bot 私聊根本建不出来），
+	 * 而项目模型是用户实际在工作区里用的那个：刷新/重启后重开私聊靠它兜底。
+	 */
+	private botFallbackModel(cwd?: string): string | undefined {
+		const configured = this.stateStore?.getDefaultModel("pi");
+		if (configured) return configured;
+		const workspace = cwd || this.cwd;
+		if (workspace) {
+			try {
+				const forProject = this.stateStore?.getProjectModel(this.clientId, workspace, "pi");
+				if (forProject) return forProject;
+			} catch {}
+		}
+		try {
+			const model = this.conv?.session?.agent?.state?.model as { provider?: string; id?: string } | undefined;
+			if (model?.provider && model.id) return `${model.provider}/${model.id}`;
+		} catch {}
+		return undefined;
+	}
+
+	/** `captureModel` 没有可用兜底时的可读提示（嵌套在「切换会话失败：」后面也要能看懂）。 */
+	private botModelUnavailableText(error: unknown): string {
+		const reason = (error as Error)?.message ?? String(error);
+		return `这个智能体还没有可用模型（${reason}）：请先在设置里选择一个模型，或到设备中心给它配置模型 / This agent has no usable model yet (${reason}): pick one in Settings or set it for the agent in the device center`;
+	}
+
+	/** 两个工作目录是不是同一个（win32 下大小写无意义）。 */
+	private sameWorkspace(a?: string, b?: string): boolean {
+		if (!a || !b) return false;
+		try {
+			const left = resolve(a);
+			const right = resolve(b);
+			return process.platform === "win32" ? left.toLowerCase() === right.toLowerCase() : left === right;
+		} catch {
+			return false;
+		}
+	}
+
+	/**
+	 * 已开的私聊遇到 Bot 改过配置（revision 变了）：按**当前**配置重绑。
+	 *
+	 * 能力是冻结快照（这是白名单不被运行期篡改的前提），所以编辑 Bot 后必须显式换一份，
+	 * 否则用户会看到「改了没生效」。正在跑的轮次不换（会打断工具授权），给一条提示。
+	 */
+	private async rebindBotChatIfStale(conv: Conversation, botId: string): Promise<void> {
+		const current = conv.bot;
+		if (!current) return;
+		const bot = await resolveBotChatBot(botId);
+		if (!bot || bot.revision === current.bot.revision) return;
+		let busy = false;
+		try {
+			busy = conv.session.isIdle === false;
+		} catch {}
+		if (busy) {
+			this.emit({
+				type: "notice",
+				level: "info",
+				text: "这个智能体的配置已更新：本轮结束后再点开它，就会按新配置生效。",
+				textEn: "This agent was updated; open it again after the current turn to apply the new configuration.",
+			});
+			return;
+		}
+		const created = await createBotChatCapability(botId);
+		if (!created) return;
+		try {
+			created.capability.captureModel(this.botFallbackModel(bot.cwd));
+		} catch (error) {
+			this.emit({
+				type: "notice",
+				level: "warning",
+				text: `智能体已更新，但新配置没有可用模型：${(error as Error).message}。先选一个模型后再点开它。`,
+				textEn: `The agent was updated, but its new configuration has no usable model: ${(error as Error).message}. Pick a model, then open it again.`,
+			});
+			return;
+		}
+		current.revoke();
+		this.attachBotBinding(conv, created.capability);
+		// MCP server 白名单也可能改了：旧桥按旧配置连的，必须按新配置重建（否则新 server 要等新开对话）。
+		const staleBridge = this.botMcpByConversation.get(conv.id);
+		if (staleBridge) {
+			this.botMcpByConversation.delete(conv.id);
+			try {
+				staleBridge.dispose();
+			} catch {}
+		}
+		if (created.bot.mcpServers.length > 0) {
+			try {
+				const bridge = new McpBridge(this.stateStore.dataDir, undefined, {
+					agentDir: this.agentDir,
+					cwd: conv.cwd,
+					allowedServers: created.bot.mcpServers,
+				});
+				await bridge.load();
+				this.botMcpByConversation.set(conv.id, bridge);
+			} catch {}
+		}
+		this.applyToolGating(conv.session, conv.agentPreset);
+		const target = bot.model;
+		if (target) {
+			try {
+				await this.setModel(`${target.provider}/${target.modelId}`, conv);
+			} catch {}
+		}
+		this.emit({
+			type: "notice",
+			level: "info",
+			text: "这个智能体已更新：身份、工具与记忆按新配置生效。",
+			textEn: "Agent updated: identity, tools and memory now follow the new configuration.",
+		});
 	}
 
 	async newChat(
@@ -12587,7 +12858,20 @@ export class ClientSession {
 			return false;
 		}
 		// Bot 没配模型时用本机默认模型（与无头设备任务一致：`captureModel` 只认第一次传入的兜底值）。
-		if (botChat) botChat.capability.captureModel(this.stateStore?.getDefaultModel("pi"));
+		// 兜底再退到"当前会话正在用的模型"：没设默认模型的客户端否则会直接抛错，且没人接。
+		if (botChat) {
+			try {
+				botChat.capability.captureModel(this.botFallbackModel(botChat.bot.cwd));
+			} catch (error) {
+				this.emit({
+					type: "notice",
+					level: "error",
+					text: `无法创建私聊：${(error as Error).message}。请先选择一个模型，或到设备中心给这个智能体配置模型。`,
+					textEn: `Could not start the private chat: ${(error as Error).message}. Pick a model first, or set one for this agent in the device center.`,
+				});
+				return false;
+			}
+		}
 		const sameBotChat = (c: Conversation | undefined) => !!botChat && c?.botId === botChat.bot.id;
 		const isBlank = (c: Conversation): boolean => {
 			if (c.transferring || c.nativeCli) return false;
@@ -13173,6 +13457,15 @@ export class ClientSession {
 	private removeConversation(id: string, runtimeDisposed = false): void {
 		const conv = this.convs.get(id);
 		if (!conv || id === this.activeId) return;
+		// 会话关掉就把它专属的 Bot MCP 桥释放掉，避免一个 Bot 一份桥常驻。
+		const botBridge = this.botMcpByConversation.get(id);
+		if (botBridge) {
+			this.botMcpByConversation.delete(id);
+			try {
+				botBridge.dispose();
+			} catch {}
+		}
+		this.memoryQuotas.delete(id);
 		if (conv.nativeCli) conv.nativeCliClosed = true;
 		this.settlePendingsForConv(id);
 		conversationCommunication.close(conv);
@@ -15979,7 +16272,7 @@ export class ClientSession {
 		this.flushSnapshot();
 	}
 
-	async setCwd(newCwd: string): Promise<void> {
+	async setCwd(newCwd: string, options?: { forBotChat?: boolean }): Promise<void> {
 		if (this.botExecution) throw new Error("Bot cwd is fixed");
 		try {
 			const { resolve } = await import("node:path");
@@ -16023,7 +16316,9 @@ export class ClientSession {
 
 			const displaced = this.displaceActive();
 
-			const openRecent = this.settingsSvc?.current.openRecentSessionOnProjectSwitch ?? true;
+			// 打开 Bot 私聊时不要顺带恢复“该项目最近的普通会话”：用户要的是和这个 Bot 说话。
+			const openRecent =
+				options?.forBotChat === true ? false : (this.settingsSvc?.current.openRecentSessionOnProjectSwitch ?? true);
 
 			let target: Conversation | undefined;
 			if (openRecent) {
@@ -16727,6 +17022,13 @@ export class ClientSession {
 		this.settingsSvc.dispose();
 		this.botExecution?.revoke();
 		this.botMcpBridge?.dispose();
+		for (const bridge of this.botMcpByConversation.values()) {
+			try {
+				bridge.dispose();
+			} catch {}
+		}
+		this.botMcpByConversation.clear();
+		this.memoryQuotas.clear();
 		this.sessionSearchController?.abort();
 		this.pluginModelKeys?.clear();
 		this.modelAdmin.dispose();

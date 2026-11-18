@@ -42,7 +42,7 @@ export interface BotDraft {
 	id: string;
 	createdAt: number;
 	updatedAt: number;
-	status: "pending" | "approved" | "discarded";
+	status: "pending" | "approved" | "discarded" | "created";
 	createdBy: "model" | "human";
 	name: string;
 	description: string;
@@ -229,8 +229,15 @@ export function createBotDraftStore(dataDir: string, now: () => number = () => D
 				await save(drafts);
 			});
 		},
-		/** 人的确认：高权限工具必须逐项出现，否则拒绝落库。 */
-		async approve(id: string, approvedTools: string[]): Promise<BotDraft> {
+		/**
+		 * 人的确认（第一阶段）：只校验、不落状态。
+		 *
+		 * 必须先校验后创建：旧实现先把状态写成 `approved` 再 upsert，一旦 upsert 失败
+		 * （工作目录不存在 / Bot 正忙），`live()` 只认 `pending`，草案就从列表里消失了——
+		 * 既不能重试也不能取消，用户只能重新写一句话起草。
+		 * 现在由调用方在 Bot 真正创建成功后调 `markCreated` 收尾。
+		 */
+		async assertApprovable(id: string, approvedTools: string[]): Promise<BotDraft> {
 			return enqueue(async () => {
 				const drafts = await load();
 				const draft = drafts.find((entry) => entry.id === id && live(entry));
@@ -243,19 +250,23 @@ export function createBotDraftStore(dataDir: string, now: () => number = () => D
 						"DRAFT_NEEDS_APPROVAL",
 						`High-privilege tools require explicit approval: ${missing.join(", ")}`,
 					);
-				draft.status = "approved";
+				// 只记录“人批准了哪些工具”，**不改 status**：upsert 失败时草案仍在 pending，
+				// 重试能直接带上同一份授权，不用重新勾。
 				draft.approvedTools = [...approved];
 				draft.updatedAt = now();
 				await save(drafts);
 				return { ...draft };
 			});
 		},
-		async markCreated(id: string, botId: string): Promise<void> {
+		/** 第二阶段：Bot 已经落库，草案才算完成（带上一并授权的高权限工具，便于审计）。 */
+		async markCreated(id: string, botId: string, approvedTools?: string[]): Promise<void> {
 			await enqueue(async () => {
 				const drafts = await load();
 				const draft = drafts.find((entry) => entry.id === id);
 				if (!draft) return;
 				draft.botId = botId;
+				if (approvedTools) draft.approvedTools = [...approvedTools];
+				draft.status = "created";
 				draft.updatedAt = now();
 				await save(drafts);
 			});

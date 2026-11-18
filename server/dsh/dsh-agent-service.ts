@@ -4,6 +4,7 @@ import { DEFAULT_DSH_CAPABILITIES } from "../engine-capabilities.js";
 import { conversationRowKind } from "../conversation-rows.js";
 import type { AgentEngineCapabilities } from "../protocol.js";
 import { mergeQuickAskSettings, normalizeQuickAskSettings, type QuickAskSettings } from "../quick-ask-settings.js";
+import { normalizeBotDraftSettings } from "../bot-draft-settings.js";
 import { captureQuickAskConversation } from "../quick-ask-context.js";
 import { existsSync, mkdirSync, readFileSync, renameSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { basename, dirname, join, resolve, sep } from "node:path";
@@ -3744,6 +3745,7 @@ export class DshClientSession {
 			this.cachedPromptSections.length > 0 ? this.cachedPromptSections : this.buildFallbackPromptSections();
 		const settings: UiSettingsState = {
 			nativeCliInheritModel: { ...this.stateStore.getSettingsSnapshot(this.clientId).nativeCliInheritModel },
+			...normalizeBotDraftSettings(this.stateStore.getSettingsSnapshot(this.clientId)),
 			...normalizeQuickAskSettings(this.stateStore.getSettingsSnapshot(this.clientId)),
 			steeringMode: "all",
 			followUpMode: "all",

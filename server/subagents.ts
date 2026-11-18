@@ -8,6 +8,7 @@ import {
 	evidenceVerdictLabel,
 	formatEvidenceSummary,
 	normalizeEvidenceInput,
+	type EvidenceErrorCode,
 	type SubagentEvidence,
 	type SubagentEvidenceInput,
 } from "./subagent-evidence.js";
@@ -278,9 +279,41 @@ export type SubagentAction = (typeof SUBAGENT_ACTIONS)[number];
 /** Compact action signature: the single place documenting parameters, so field schemas stay prose-free. */
 export const MANAGEMENT_ACTION_SIGNATURE =
 	"spawn(prompt,type?,key? | tasks[{key,prompt,type?,template?,model?,thinking?,isolation?,persist?,notifyOnDone?}]) | " +
-	"steer/answer(runId,message,requestId?) | complete(summary,evidence{files[],commands[],none?,blocked?}) | consult(message) | " +
+	"steer/answer(runId,message,requestId?) | complete(summary,evidence{files?,commands?,none?,blocked?}) | consult(message) | " +
 	"escalate(runId,requestId) | get_result/stop/resume(runId,message?) | wait_all/dismiss(runIds? keys accepted) | " +
 	"handoff(toRunId,payload) | list(kind?) | templates";
+
+/**
+ * evidence 不合规时给模型的修正方向：按错误码分开写，并点名出错字段。
+ * 旧版把所有错误压成同一句“形状不对”，模型只能原样重试直到次数耗尽（#938）；
+ * 这里只说怎么改，并明说已做的工作不用重做，避免模型把证据问题当成任务失败。
+ */
+function evidenceCorrection(lang: ServerLang, problem: { error: EvidenceErrorCode; fields?: string[] }): string {
+	if (problem.error === "not_object") {
+		return pick(
+			lang,
+			'evidence 必须是对象：改过文件给 {files:["路径"]}，只读任务给 {none:true}，没做完给 {blocked:"原因"}。已经做好的工作不用重做，补上 evidence 再 complete 一次。',
+			'evidence must be an object: {files:["path"]} for files you changed, {none:true} for read-only work, {blocked:"reason"} if you could not finish. Keep your existing work; pass evidence and call complete again.',
+			"subagents.complete.evidence.not_object",
+		);
+	}
+	if (problem.error === "invalid_fields") {
+		const fields = problem.fields?.length ? problem.fields.join(", ") : "files, commands";
+		return pick(
+			lang,
+			`evidence 的字段形状不对：${fields} 必须是字符串数组，例如 {files:["路径"]}、{commands:["命令"]}。不适用的字段整个省略，不要填 null、数字或对象。已经做好的工作不用重做，改掉形状再 complete。`,
+			`evidence has the wrong shape: ${fields} must be an array of strings, e.g. {files:["path"]} or {commands:["command"]}. Omit a field that does not apply instead of passing null, a number, or an object. Keep your existing work; fix the shape and call complete again.`,
+			"subagents.complete.evidence.invalid_fields",
+			{ fields },
+		);
+	}
+	return pick(
+		lang,
+		'evidence 里没有任何可核对的凭据。至少给一项，用不到的字段直接省略：改过文件给 {files:["路径"]}，跑过命令给 {commands:["命令"]}；只读任务（没改文件、没跑命令）给 {none:true}；没做完给 {blocked:"原因"}。工作已经做完的话不用重做，补上 evidence 再 complete 一次。',
+		'evidence carries nothing to check. Give at least one item and omit the fields you do not need: files you changed as {files:["path"]}, commands you ran as {commands:["command"]}; read-only work that changed no file and ran no command as {none:true}; unfinished work as {blocked:"reason"}. Do not redo finished work — pass evidence and call complete again.',
+		"subagents.complete.evidence.empty",
+	);
+}
 
 export function makeSubagentTool(
 	host: SubagentToolHost,
@@ -624,15 +657,11 @@ export function makeSubagentTool(
 					if (!summary) throw new Error("complete requires a nonempty summary or message.");
 					const normalized = normalizeEvidenceInput(p.evidence);
 					if (!normalized.ok) {
-						return text(
-							pick(
-								getLang(),
-								'evidence 形状不对：要么给 {files:[], commands:[]}，要么 {none:true}（只读任务），要么 {blocked:"原因"}；空对象不算证据。',
-								'Malformed evidence: pass {files:[], commands:[]}, {none:true} for read-only work, or {blocked:"reason"}. An empty object is not evidence.',
-								"subagents.complete.evidence.invalid",
-							),
-							{ status: "evidence_invalid" },
-						);
+						return text(evidenceCorrection(getLang(), normalized), {
+							status: "evidence_invalid",
+							error: normalized.error,
+							...(normalized.fields ? { fields: normalized.fields } : {}),
+						});
 					}
 					const result = await host.completeSubagent(selfId, summary, normalized.value);
 					if (result.ok === false) {

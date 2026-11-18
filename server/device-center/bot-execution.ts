@@ -8,6 +8,7 @@ import { isAbsolute, resolve } from "node:path";
 import type { ClientMessage } from "../protocol.js";
 import type { LocalBot } from "./bots.js";
 import { getBotExecutionInstructions } from "./execution-instructions.js";
+import { buildBotMemoryInjection, createBotMemory } from "./bot-memory.js";
 import type { GroupTaskContext } from "./group-context.js";
 import { checkGroupTaskPlanGuard, isGroupToolForbiddenInPlanCatalog } from "./group-plan-guard.js";
 
@@ -16,8 +17,13 @@ export interface BotExecutionCapability {
 	readonly instructions: string;
 	/** 记忆目录（私产，跨项目）。缺失 = 本次执行不开放记忆工具。 */
 	readonly memoryRoot?: string;
-	/** 启动时装载的记忆块（常驻 + 目录 + 预取），由 runtime 异步预读后带入。 */
+	/** 启动时装载的记忆块（常驻 + 目录 + 预取），由 runtime 异步预读后带入；每轮前可刷新。 */
 	readonly memoryBlock?: string;
+	/**
+	 * 重新装载记忆块：私聊是长会话，本会话里 promote/新写的条目必须下一轮就出现在 system prompt 里，
+	 * 而不是等重开对话。读失败不抛（记忆不可用也不该阻断对话）。
+	 */
+	refreshMemory(): Promise<void>;
 	/** 直聊（一对一）执行：不是群上下文，不承担群内广播/黑板/主播协调职责。 */
 	readonly direct: boolean;
 	readonly groupContext?: Readonly<GroupTaskContext>;
@@ -76,6 +82,8 @@ export function registerBotExecution(
 	authorizedResumePath?: string,
 	context?: {
 		primary?: boolean;
+		/** 一对一直聊（私聊）：不注入任何群协作指令，也不承担主播职责。 */
+		chat?: boolean;
 		groupContext?: GroupTaskContext;
 		planOnly?: boolean;
 		attenuatedTools?: string[];
@@ -166,16 +174,18 @@ export function registerBotExecution(
 	const blackboardBlock = context?.groupContext?.blackboard
 		? `\n\n[GROUP BLACKBOARD v${context.groupContext.blackboard.version}]${context.groupContext.blackboard.title ? ` ${context.groupContext.blackboard.title}` : ""}\n${context.groupContext.blackboard.content}`
 		: "";
+	let memoryBlock = context?.memoryBlock;
+	// 私聊直接声明 `chat: true`；历史 `kind:"direct"` 房间按同一语义处理。
+	const directChat = context?.chat === true || context?.groupContext?.roomKind === "direct";
 	const capability: BotExecutionCapability = {
 		bot: snapshot,
 		memoryRoot: context?.memoryRoot,
-		memoryBlock: context?.memoryBlock,
-		direct: context?.groupContext?.roomKind === "direct",
+		get memoryBlock() {
+			return memoryBlock;
+		},
+		direct: directChat,
 		instructions:
-			getBotExecutionInstructions(
-				context?.primary === true && context?.groupContext?.roomKind !== "direct",
-				context?.groupContext?.roomKind === "direct",
-			) +
+			getBotExecutionInstructions(context?.primary === true && !directChat, directChat) +
 			(context?.planOnly
 				? "\n\n[PLAN MODE HARD ENFORCEMENT]\nThis task is strictly PLAN ONLY. You are prohibited from mutating files, creating files, running state-changing terminal commands, or dispatching tasks. You must only read, inspect, and draft an executable plan via plan_update. Provide 1–32 steps with unique IDs, nonempty titles (max 200 characters), explicit pending/in_progress/done/failed status, and optional descriptions (max 1000 characters)."
 				: "") +
@@ -190,6 +200,19 @@ export function registerBotExecution(
 		workspaceHandleId: context?.workspaceHandleId,
 		taskId: context?.taskId,
 		attemptId: context?.attemptId,
+		async refreshMemory() {
+			const root = context?.memoryRoot;
+			if (!root) return;
+			try {
+				const injection = await buildBotMemoryInjection(createBotMemory({ root }), {
+					cwd: executionCwd,
+					searchable: tools.has("memory"),
+				});
+				memoryBlock = injection?.text;
+			} catch {
+				memoryBlock = undefined;
+			}
+		},
 		assertActive() {
 			if (!active) throw new Error("Bot execution capability has been revoked");
 			if (code && !isTrustedTaskWorkspaceCapability(workspace))

@@ -5,7 +5,7 @@ import { join } from "node:path";
 import { createDeviceHub } from "./hub.js";
 import { createDeviceRelay } from "./relay.js";
 import { installDeviceTransfers } from "./transfers.js";
-import { hashSecret } from "./store.js";
+import { hashSecret, isTerminal } from "./store.js";
 import { createLocalTaskBridge, isLocalTaskRuntime } from "./local-task-bridge.js";
 import type { LocalDeviceConfig } from "./local.js";
 import type { DeviceExecutionSettings } from "./execution-settings.js";
@@ -104,6 +104,14 @@ export async function createLocalDeviceHub(dataDir: string, getSettings?: () => 
 		};
 		return {
 			config,
+			/**
+			 * 只读忙碌视图：哪些 Bot 现在有未完成的任务（给左栏"执行中"徽标投影用）。
+			 * 不暴露 store，宿主只能读到聚合结果。
+			 */
+			busyBots(): Set<string> {
+				const tasks = hub?.store.snapshot().tasks ?? [];
+				return new Set(tasks.filter((task) => task.botId && !isTerminal(task.status)).map((task) => task.botId));
+			},
 			/**
 			 * 本机设备运行时就绪后接管任务直调（`index.ts` 创建 runtime 之后由 `local.ts` 调用）。
 			 * 直调命中时 Hub 不再把任务经 relay 发出，因此私聊不再依赖 WS 送达/帧回写。
