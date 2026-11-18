@@ -52,11 +52,6 @@ export interface AgentEventSink {
 	onError(err: Error | string): void;
 
 	/**
-	 * The engine asks a human to approve one tool call (Claude Code's `can_use_tool`).
-	 * The host must eventually call the driver's `respondApproval`; otherwise the engine
-	 * keeps waiting for the answer and the turn never finishes.
-	 */
-	/**
 	 * Explicit opt-in for permission prompts. A `typeof onApprovalRequest === "function"`
 	 * check is not reliable here: the session wraps the sink in a Proxy whose `get` trap
 	 * returns a function for *every* key, so a sink without approval wiring would still
@@ -64,6 +59,11 @@ export interface AgentEventSink {
 	 */
 	supportsApproval?: boolean;
 
+	/**
+	 * The engine asks a human to approve one tool call (Claude Code's `can_use_tool`).
+	 * The host must eventually call the driver's `respondApproval`; otherwise the engine
+	 * keeps waiting for the answer and the turn never finishes.
+	 */
 	onApprovalRequest?(
 		requestId: string,
 		toolName: string,
