@@ -118,7 +118,8 @@ describe("Universal Agent 底座体系单测", () => {
 		it("能力声明与模型列表正常", async () => {
 			const driver = new ClaudeCodeDriver(tempDir);
 			expect(driver.id).toBe("claude-code");
-			expect(driver.capabilities.supportsTreeFork).toBe(false);
+			// forkSession 已实现（分叉 CLI 转写尾部）
+			expect(driver.capabilities.supportsTreeFork).toBe(true);
 			expect(driver.capabilities.supportsHistoryEdit).toBe(false);
 
 			const models = await driver.listModels();

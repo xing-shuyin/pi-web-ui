@@ -5,6 +5,7 @@ import type { Writable } from "node:stream";
 import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
 import { probeEngineCliVersion, resolveEngineCliLaunch } from "../../engine-cli.js";
+import { killPidTree } from "../../process-utils.js";
 import { BaseAgentDriver, type AgentCapabilities, type AgentEventSink, type AgentTurnMeta } from "../driver-base.js";
 import type { PromptAttachment, SlashCommandInfo } from "../../protocol.js";
 import {
@@ -20,6 +21,15 @@ import { collectEnabledMcpServers, toClaudeMcpConfig } from "../engine-mcp.js";
 
 /** Legal values of Claude Code's `--permission-mode` (there is no "default"). */
 const CLAUDE_PERMISSION_MODES = ["acceptEdits", "auto", "manual", "dontAsk", "plan", "bypassPermissions"] as const;
+
+/**
+ * How long `forkSession` waits for `system/init` before poking the CLI with a throwaway turn.
+ * CLIs that report the new session id at startup never need the poke, which keeps the forked
+ * transcript free of a meaningless user message.
+ */
+const FORK_PROBE_GRACE_MS = 1_500;
+/** Hard cap for the fork handshake: past this the caller gets "" and forks without an engine id. */
+const FORK_TIMEOUT_MS = 15_000;
 
 /**
  * Default mode. Stays `bypassPermissions` on purpose: that is what the engine did before the
@@ -139,7 +149,9 @@ export class ClaudeCodeDriver extends BaseAgentDriver {
 	readonly name = "Claude Code";
 	readonly maxInlineImageBytes = CLAUDE_MAX_INLINE_IMAGE_BYTES;
 	readonly capabilities: AgentCapabilities = {
-		supportsTreeFork: false,
+		// `forkSession` forks the CLI transcript, so the fork point is the end of it rather than
+		// the message the UI forked from — close enough for the tree-fork entry, hence `true`.
+		supportsTreeFork: true,
 		supportsHistoryEdit: false,
 		supportsToolPromptOverride: false,
 		supportsModelSwitch: true,
@@ -206,7 +218,13 @@ export class ClaudeCodeDriver extends BaseAgentDriver {
 		this.activeSessionId = sessionId || null;
 	}
 
-	/** Fork an existing CLI session into a new session id (for tree-fork in the UI). */
+	/**
+	 * Fork an existing CLI session into a new session id (tree-fork from the UI).
+	 *
+	 * The CLI forks the transcript it resumes, so the fork point is the END of the engine
+	 * history, not the message the UI forked from: forking from an earlier message leaves the
+	 * model with a superset of the cloned UI messages.
+	 */
 	async forkSession(sessionId: string): Promise<string> {
 		if (!sessionId) return "";
 		const args = [
@@ -244,18 +262,28 @@ export class ClaudeCodeDriver extends BaseAgentDriver {
 		return new Promise<string>((resolve) => {
 			let newSid = "";
 			let done = false;
+			let probe: NodeJS.Timeout | null = null;
+			const kill = () => {
+				// The CLI spawns children of its own (MCP servers, hooks), so take the whole tree with
+				// it; the direct handle only covers a spawn that never got a pid.
+				if (proc.pid) void killPidTree(proc.pid);
+				else {
+					try {
+						proc.kill();
+					} catch {}
+				}
+			};
 			const finish = () => {
 				if (done) return;
 				done = true;
 				clearTimeout(timer);
+				if (probe) clearTimeout(probe);
 				resolve(newSid);
 			};
 			const timer = setTimeout(() => {
-				try {
-					proc.kill();
-				} catch {}
+				kill();
 				finish();
-			}, 15_000);
+			}, FORK_TIMEOUT_MS);
 
 			if (proc.stdout) {
 				const rl = createInterface({ input: proc.stdout, terminal: false });
@@ -272,9 +300,7 @@ export class ClaudeCodeDriver extends BaseAgentDriver {
 						) {
 							newSid = event.session_id;
 							// Got the fork target: we don't need the CLI to finish a turn.
-							try {
-								proc.kill();
-							} catch {}
+							kill();
 							finish();
 						}
 					} catch {}
@@ -282,13 +308,18 @@ export class ClaudeCodeDriver extends BaseAgentDriver {
 			}
 			proc.on("close", finish);
 			proc.on("error", finish);
-			if (proc.stdin) {
-				proc.stdin.on("error", () => {});
-				proc.stdin.write(
+			if (!proc.stdin) return;
+			proc.stdin.on("error", () => {});
+			// The fork happens while the CLI loads the resumed session and the new id arrives in
+			// `system/init` — usually before any input, so staying quiet keeps the forked transcript
+			// clean. The probe turn is only for CLIs that report init once a turn starts.
+			probe = setTimeout(() => {
+				if (done) return;
+				proc.stdin?.write(
 					`${JSON.stringify({ type: "user", message: { role: "user", content: [{ type: "text", text: "fork session" }] } })}\n`,
 				);
-				proc.stdin.end();
-			}
+				proc.stdin?.end();
+			}, FORK_PROBE_GRACE_MS);
 		});
 	}
 
