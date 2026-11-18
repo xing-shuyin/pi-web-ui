@@ -1,66 +1,11 @@
-import { execFile, spawn } from "node:child_process";
 import { createHash, randomUUID } from "node:crypto";
-import { copyFile, rm } from "node:fs/promises";
 import { existsSync } from "node:fs";
+import { copyFile, rm } from "node:fs/promises";
 import { join, resolve } from "node:path";
-import { promisify } from "node:util";
+import { gitFailureMessage, runGit, runGitText } from "./git-run.js";
 import { gitDirOf } from "./scm.js";
 
-const exec = promisify(execFile);
-
-const GIT_SNAPSHOT_TIMEOUT_MS = 15_000;
-
 const pendingRestores = new Map<string, Promise<void>>();
-
-async function runGit(cwd: string, args: string[], envExtra?: NodeJS.ProcessEnv): Promise<string> {
-	const { stdout } = await exec("git", ["-c", "core.quotepath=false", ...args], {
-		cwd,
-		env: envExtra ? { ...process.env, ...envExtra } : process.env,
-		timeout: GIT_SNAPSHOT_TIMEOUT_MS,
-		maxBuffer: 16 * 1024 * 1024,
-		windowsHide: true,
-	});
-	return stdout.trim();
-}
-
-function runGitInput(cwd: string, args: string[], input: string, envExtra?: NodeJS.ProcessEnv): Promise<void> {
-	return new Promise((resolvePromise, reject) => {
-		const child = spawn("git", ["-c", "core.quotepath=false", ...args], {
-			cwd,
-			env: envExtra ? { ...process.env, ...envExtra } : process.env,
-			windowsHide: true,
-			stdio: ["pipe", "ignore", "pipe"],
-		});
-		let stderr = "";
-		let settled = false;
-		const timer = setTimeout(() => {
-			if (settled) return;
-			settled = true;
-			child.kill();
-			reject(new Error(`git ${args[0] ?? ""} timed out`));
-		}, GIT_SNAPSHOT_TIMEOUT_MS);
-		child.stdin?.on("error", () => {});
-		child.stderr?.on("data", (chunk: Buffer) => {
-			stderr += chunk.toString();
-		});
-		child.on("error", (err) => {
-			if (settled) return;
-			settled = true;
-			clearTimeout(timer);
-			reject(err);
-		});
-		child.on("close", (code) => {
-			if (settled) return;
-			settled = true;
-			clearTimeout(timer);
-			if (code === 0) resolvePromise();
-			else reject(new Error(stderr.trim() || `git exited ${code}`));
-		});
-		try {
-			child.stdin.end(input);
-		} catch {}
-	});
-}
 
 export interface GitRepoInfo {
 	gitDir: string;
@@ -70,7 +15,7 @@ export interface GitRepoInfo {
 
 export async function probeGitRepo(cwd: string): Promise<GitRepoInfo | null> {
 	try {
-		const out = await runGit(cwd, ["rev-parse", "--git-dir", "--git-path", "index", "--show-prefix"]);
+		const out = await runGitText(["rev-parse", "--git-dir", "--git-path", "index", "--show-prefix"], { cwd });
 		const lines = out.split("\n").map((l) => l.trim());
 		if (lines.length < 2) return null;
 		const rawGitDir = lines[0];
@@ -119,7 +64,7 @@ async function seedSnapshotIndex(
 	const prefixSlash = `${prefix}/`;
 	let listed = "";
 	try {
-		listed = await runGit(cwd, ["ls-files", "-z", "--full-name", "--", ":(top)"], env);
+		listed = await runGitText(["ls-files", "-z", "--full-name", "--", ":(top)"], { cwd, env });
 	} catch {
 		await rm(tempIndex, { force: true }).catch(() => {});
 		return { fromCache: false };
@@ -136,7 +81,8 @@ async function seedSnapshotIndex(
 	if (outside.length > 0) {
 		const info = outside.map((path) => `0 0000000000000000000000000000000000000000\t${path}\n`).join("");
 		try {
-			await runGitInput(cwd, ["update-index", "--index-info"], info, env);
+			const seeded = await runGit(["update-index", "--index-info"], { cwd, env, input: info });
+			if (!seeded.ok) throw new Error(gitFailureMessage(seeded, "git update-index failed"));
 		} catch {
 			await rm(tempIndex, { force: true }).catch(() => {});
 		}
@@ -178,14 +124,14 @@ export async function createWorkspaceSnapshot(cwd: string): Promise<string | nul
 
 		let tree: string | null = null;
 		try {
-			await runGit(cwd, ["add", "-A", "--", "."], env);
-			tree = await runGit(cwd, ["write-tree"], env);
+			await runGitText(["add", "-A", "--", "."], { cwd, env });
+			tree = await runGitText(["write-tree"], { cwd, env });
 		} catch (stageErr) {
 			await rm(tempIndex, { force: true }).catch(() => {});
 			await rm(cachePath, { force: true }).catch(() => {});
 			try {
-				await runGit(cwd, ["add", "-A", "--", "."], env);
-				tree = await runGit(cwd, ["write-tree"], env);
+				await runGitText(["add", "-A", "--", "."], { cwd, env });
+				tree = await runGitText(["write-tree"], { cwd, env });
 			} catch {
 				throw stageErr;
 			}
@@ -202,7 +148,7 @@ export async function createWorkspaceSnapshot(cwd: string): Promise<string | nul
 
 		let hasHead = false;
 		try {
-			await runGit(cwd, ["rev-parse", "--verify", "HEAD"]);
+			await runGitText(["rev-parse", "--verify", "HEAD"], { cwd });
 			hasHead = true;
 		} catch {
 			hasHead = false;
@@ -214,7 +160,7 @@ export async function createWorkspaceSnapshot(cwd: string): Promise<string | nul
 		}
 		commitArgs.push("-m", `pi-web-ui: workspace shadow snapshot ${new Date().toISOString()}`);
 
-		const commitHash = await runGit(cwd, commitArgs, env);
+		const commitHash = await runGitText(commitArgs, { cwd, env });
 		if (commitHash) {
 			lastSnapshotByCwd.set(normCwd, {
 				treeSha: tree,
@@ -273,13 +219,13 @@ async function restoreWorkspaceSnapshotInner(
 	let indexBackedUp = false;
 
 	try {
-		await runGit(cwd, ["rev-parse", "--verify", snapshotRef]);
+		await runGitText(["rev-parse", "--verify", snapshotRef], { cwd });
 
-		const prefix = await runGit(cwd, ["rev-parse", "--show-prefix"]);
+		const prefix = await runGitText(["rev-parse", "--show-prefix"], { cwd });
 
 		if (!prefix) {
-			await runGit(cwd, ["read-tree", "-u", "--reset", snapshotRef]);
-			await runGit(cwd, ["clean", "-fd"]);
+			await runGitText(["read-tree", "-u", "--reset", snapshotRef], { cwd });
+			await runGitText(["clean", "-fd"], { cwd });
 
 			lastSnapshotByCwd.delete(resolve(cwd));
 			const cachePath = snapshotCachePath(gitDir, cwd);
@@ -290,28 +236,24 @@ async function restoreWorkspaceSnapshotInner(
 
 		const pathspec = `:(top)${prefix}`;
 
-		indexRealPath = resolve(cwd, (await runGit(cwd, ["rev-parse", "--git-path", "index"])).trim());
+		indexRealPath = resolve(cwd, await runGitText(["rev-parse", "--git-path", "index"], { cwd }));
 		indexBackup = join(gitDir, `temp-index-backup-${randomUUID()}`);
 		try {
 			await copyFile(indexRealPath, indexBackup);
 			indexBackedUp = true;
 		} catch {}
 
-		await runGit(cwd, ["rm", "-r", "--cached", "--quiet", "--ignore-unmatch", "--", pathspec]);
+		await runGitText(["rm", "-r", "--cached", "--quiet", "--ignore-unmatch", "--", pathspec], { cwd });
 
-		const listed = await runGit(cwd, [
-			"ls-tree",
-			"-r",
-			"--name-only",
-			snapshotRef,
-			"--",
-			`:(top)${prefix.replace(/\/+$/, "")}`,
-		]);
+		const listed = await runGitText(
+			["ls-tree", "-r", "--name-only", snapshotRef, "--", `:(top)${prefix.replace(/\/+$/, "")}`],
+			{ cwd },
+		);
 		if (listed.trim()) {
-			await runGit(cwd, ["checkout", snapshotRef, "--", pathspec]);
+			await runGitText(["checkout", snapshotRef, "--", pathspec], { cwd });
 		}
 
-		await runGit(cwd, ["clean", "-fd", "--", pathspec]);
+		await runGitText(["clean", "-fd", "--", pathspec], { cwd });
 
 		lastSnapshotByCwd.delete(resolve(cwd));
 		const cachePath = snapshotCachePath(gitDir, cwd);

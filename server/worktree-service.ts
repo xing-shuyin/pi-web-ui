@@ -1,14 +1,9 @@
-import { execFile } from "node:child_process";
-import { resolve, normalize } from "node:path";
-import { promisify } from "node:util";
 import { existsSync } from "node:fs";
+import { normalize, resolve } from "node:path";
+import { sleep } from "./async-utils.js";
+import { runGitText } from "./git-run.js";
 import { pick, type ServerLang } from "./i18n.js";
 import type { LinkedWorktreeEntry, WorktreeInfo } from "./protocol.js";
-
-const exec = promisify(execFile);
-
-const GIT_TIMEOUT_MS = 15_000;
-const FAST_GIT_TIMEOUT_MS = 5_000;
 
 export function normalizeWirePath(p: string): string {
 	const resolved = resolve(normalize(p)).replace(/\\/g, "/");
@@ -18,25 +13,9 @@ export function normalizeWirePath(p: string): string {
 	return resolved;
 }
 
-async function runGit(cwd: string, args: string[], timeoutMs = GIT_TIMEOUT_MS): Promise<string> {
-	try {
-		const { stdout } = await exec("git", ["-c", "core.quotepath=false", ...args], {
-			cwd,
-			timeout: timeoutMs,
-			maxBuffer: 8 * 1024 * 1024,
-			windowsHide: true,
-		});
-		return stdout;
-	} catch (err) {
-		const e = err as { message?: string; stderr?: string };
-		const detail = (e.stderr ?? e.message ?? "").trim().split("\n")[0];
-		throw new Error(detail || "Git command failed");
-	}
-}
-
 export async function isInsideGitRepo(cwd: string): Promise<boolean> {
 	try {
-		const out = await runGit(cwd, ["rev-parse", "--is-inside-work-tree"], FAST_GIT_TIMEOUT_MS);
+		const out = await runGitText(["rev-parse", "--is-inside-work-tree"], { cwd, timeoutMs: 5_000 });
 		return out.trim() === "true";
 	} catch {
 		return false;
@@ -114,7 +93,7 @@ async function getUncommittedCount(worktreePath: string): Promise<{ isDirty: boo
 		return { isDirty: true, count: 0, error: `Worktree does not exist: ${worktreePath}` };
 	}
 	try {
-		const out = await runGit(worktreePath, ["status", "--porcelain"], FAST_GIT_TIMEOUT_MS);
+		const out = await runGitText(["status", "--porcelain"], { cwd: worktreePath, timeoutMs: 5_000 });
 		const lines = out
 			.split("\n")
 			.map((l) => l.trim())
@@ -131,13 +110,19 @@ async function getUncommittedCount(worktreePath: string): Promise<{ isDirty: boo
 async function getAheadCount(worktreePath: string, mainBranch = "main"): Promise<number> {
 	if (!existsSync(worktreePath)) return 0;
 	try {
-		const out = await runGit(worktreePath, ["rev-list", "--count", `HEAD`, `^${mainBranch}`], FAST_GIT_TIMEOUT_MS);
+		const out = await runGitText(["rev-list", "--count", `HEAD`, `^${mainBranch}`], {
+			cwd: worktreePath,
+			timeoutMs: 5_000,
+		});
 		const num = Number(out.trim());
 		return Number.isNaN(num) ? 0 : num;
 	} catch {
 		if (mainBranch === "main") {
 			try {
-				const out = await runGit(worktreePath, ["rev-list", "--count", `HEAD`, `^master`], FAST_GIT_TIMEOUT_MS);
+				const out = await runGitText(["rev-list", "--count", `HEAD`, `^master`], {
+					cwd: worktreePath,
+					timeoutMs: 5_000,
+				});
 				const num = Number(out.trim());
 				return Number.isNaN(num) ? 0 : num;
 			} catch {
@@ -152,7 +137,7 @@ export async function listWorktrees(cwd: string): Promise<LinkedWorktreeEntry[]>
 	const inside = await isInsideGitRepo(cwd);
 	if (!inside) return [];
 
-	const rawText = await runGit(cwd, ["worktree", "list", "--porcelain"]);
+	const rawText = await runGitText(["worktree", "list", "--porcelain"], { cwd });
 	const rawItems = parseWorktreePorcelain(rawText);
 	if (rawItems.length === 0) return [];
 
@@ -224,7 +209,7 @@ export async function createWorktree(
 		args.push(opts.branch.trim());
 	}
 
-	await runGit(cwd, args);
+	await runGitText(args, { cwd });
 	return { path: targetPath, branch: branchName };
 }
 
@@ -265,12 +250,12 @@ export async function removeWorktree(
 	let lastErr: unknown;
 	for (let attempt = 0; attempt < 3; attempt++) {
 		try {
-			await runGit(cwd, args);
+			await runGitText(args, { cwd });
 			return;
 		} catch (err) {
 			lastErr = err;
 			if (attempt < 2) {
-				await new Promise((r) => setTimeout(r, 200));
+				await sleep(200);
 			}
 		}
 	}
@@ -328,7 +313,9 @@ export async function withRepoLock<T>(repoPath: string, task: () => Promise<T>):
 
 export async function ensureWorktreeExcluded(repoPath: string): Promise<void> {
 	try {
-		const gitCommonDir = (await runGit(repoPath, ["rev-parse", "--git-common-dir"], FAST_GIT_TIMEOUT_MS)).trim();
+		const gitCommonDir = (
+			await runGitText(["rev-parse", "--git-common-dir"], { cwd: repoPath, timeoutMs: 5_000 })
+		).trim();
 		const absGitCommon = resolve(repoPath, gitCommonDir);
 		const excludeFile = resolve(absGitCommon, "info", "exclude");
 		const { existsSync, readFileSync, appendFileSync, mkdirSync, writeFileSync } = await import("node:fs");
@@ -377,13 +364,13 @@ export async function createSubagentWorktree(
 		);
 	}
 
-	const rawText = await runGit(baseCwd, ["worktree", "list", "--porcelain"]);
+	const rawText = await runGitText(["worktree", "list", "--porcelain"], { cwd: baseCwd });
 	const rawItems = parseWorktreePorcelain(rawText);
 	const mainRepoPath = rawItems[0]?.path || normalizeWirePath(resolve(baseCwd));
 	const worktreeDir = normalizeWirePath(resolve(mainRepoPath, ".worktrees", subagentId));
 	const branchName = `subagent/${subagentId}`;
 
-	const baseCommit = (await runGit(baseCwd, ["rev-parse", "HEAD"])).trim();
+	const baseCommit = (await runGitText(["rev-parse", "HEAD"], { cwd: baseCwd })).trim();
 
 	const normBase = normalizeWirePath(resolve(baseCwd));
 	const normMain = normalizeWirePath(resolve(mainRepoPath));
@@ -398,7 +385,7 @@ export async function createSubagentWorktree(
 		const { mkdirSync, existsSync, symlinkSync } = await import("node:fs");
 		mkdirSync(resolve(mainRepoPath, ".worktrees"), { recursive: true });
 
-		await runGit(mainRepoPath, ["worktree", "add", "-B", branchName, worktreeDir, "HEAD"]);
+		await runGitText(["worktree", "add", "-B", branchName, worktreeDir, "HEAD"], { cwd: mainRepoPath });
 
 		for (const depDir of ["node_modules", ".venv"]) {
 			const src = resolve(mainRepoPath, depDir);
@@ -437,7 +424,7 @@ export async function finalizeSubagentWorktree(
 	try {
 		const { isDirty, count: uncommittedCount, error } = await getUncommittedCount(wt.worktreePath);
 		if (error) throw new Error(`Cannot verify worktree status: ${error}`);
-		const currentHead = (await runGit(wt.worktreePath, ["rev-parse", "HEAD"])).trim();
+		const currentHead = (await runGitText(["rev-parse", "HEAD"], { cwd: wt.worktreePath })).trim();
 		if (!currentHead) throw new Error("Cannot verify worktree HEAD");
 		const aheadCount =
 			currentHead === wt.baseCommit ? 0 : Math.max(1, await getAheadCount(wt.worktreePath, wt.baseCommit));
@@ -459,12 +446,12 @@ export async function finalizeSubagentWorktree(
 						} catch {}
 					}
 				}
-				const head = (await runGit(wt.worktreePath, ["rev-parse", "HEAD"])).trim();
+				const head = (await runGitText(["rev-parse", "HEAD"], { cwd: wt.worktreePath })).trim();
 				if (head !== wt.baseCommit) throw new Error("Worktree HEAD changed during cleanup");
 				if (!canCleanup()) throw new Error("Worktree acquired an active execution during finalization");
 				await removeWorktree(wt.mainRepoPath, wt.worktreePath, false, lang);
 				try {
-					await runGit(wt.mainRepoPath, ["update-ref", "-d", `refs/heads/${wt.branch}`, wt.baseCommit]);
+					await runGitText(["update-ref", "-d", `refs/heads/${wt.branch}`, wt.baseCommit], { cwd: wt.mainRepoPath });
 				} catch {}
 			});
 			wt.cleanedUp = true;
@@ -485,6 +472,6 @@ export async function pruneOrphanSubagentWorktrees(cwd: string): Promise<void> {
 	try {
 		const inside = await isInsideGitRepo(cwd);
 		if (!inside) return;
-		await runGit(cwd, ["worktree", "prune"], FAST_GIT_TIMEOUT_MS);
+		await runGitText(["worktree", "prune"], { cwd, timeoutMs: 5_000 });
 	} catch {}
 }

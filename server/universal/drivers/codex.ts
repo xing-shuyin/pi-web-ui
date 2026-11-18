@@ -1,4 +1,4 @@
-import { spawn, type ChildProcess } from "node:child_process";
+import type { ChildProcessWithoutNullStreams } from "node:child_process";
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
@@ -6,7 +6,7 @@ import { StringDecoder } from "node:string_decoder";
 import { BaseAgentDriver, type AgentCapabilities, type AgentEventSink, type AgentTurnUsage } from "../driver-base.js";
 import type { PromptAttachment } from "../../protocol.js";
 import { probeEngineCliVersion, resolveEngineCliLaunch } from "../../engine-cli.js";
-import { killPidTree } from "../../process-utils.js";
+import { spawnChildPiped, type SpawnedChild } from "../../spawn-child.js";
 import { decodeInlineImage, describeCliAttachment } from "../universal-attachments.js";
 import { collectEnabledMcpServers, toCodexMcpOverrides } from "../engine-mcp.js";
 
@@ -36,10 +36,11 @@ function mcpResultText(item: any): string | undefined {
 }
 
 interface ActiveRun {
-	child: ChildProcess;
+	child: ChildProcessWithoutNullStreams;
+	stop: SpawnedChild["stop"];
 	done: Promise<void>;
 	cancelled: boolean;
-	stop?: Promise<void>;
+	stopped?: Promise<void>;
 }
 
 export class CodexDriver extends BaseAgentDriver {
@@ -143,16 +144,17 @@ export class CodexDriver extends BaseAgentDriver {
 			if (this.model !== "default") args.push("--model", this.model);
 			if (this.sessionId) args.push("resume", this.sessionId);
 			args.push(...imageArgs, "-");
-			const child = spawn(launch.file, args, {
+			const spawned = spawnChildPiped({
+				cmd: launch.file,
+				args,
 				cwd,
-				windowsHide: true,
-				detached: process.platform !== "win32",
-				stdio: ["pipe", "pipe", "pipe"],
-				env: { ...process.env, ...mcp.env, NO_COLOR: "1" },
+				env: mcp.env,
 			});
+			const child = spawned.child;
 			let finish!: () => void;
 			const run: ActiveRun = {
 				child,
+				stop: spawned.stop,
 				cancelled: false,
 				done: new Promise<void>((resolve) => {
 					finish = resolve;
@@ -281,14 +283,15 @@ export class CodexDriver extends BaseAgentDriver {
 	}
 
 	private stopRun(run: ActiveRun): Promise<void> {
-		if (run.stop) return run.stop;
+		if (run.stopped) return run.stopped;
 		run.cancelled = true;
-		run.stop = (async () => {
+		run.stopped = (async () => {
 			if (run.child.pid) {
 				let timer: ReturnType<typeof setTimeout> | undefined;
 				try {
+					// 整棵树收口到单源 stop()；仍保留 3s 上限（超时就往下走，不等确认）。
 					await Promise.race([
-						killPidTree(run.child.pid),
+						run.stop({ timeoutMs: 3000 }).then(() => undefined),
 						new Promise<void>((resolve) => {
 							timer = setTimeout(resolve, 3000);
 						}),
@@ -306,7 +309,7 @@ export class CodexDriver extends BaseAgentDriver {
 				}),
 			]);
 		})();
-		return run.stop;
+		return run.stopped;
 	}
 	async abort(): Promise<void> {
 		if (this.active) await this.stopRun(this.active);

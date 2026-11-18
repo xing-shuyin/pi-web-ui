@@ -1,4 +1,4 @@
-import { spawn, type ChildProcess } from "node:child_process";
+import type { ChildProcessWithoutNullStreams } from "node:child_process";
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { createInterface } from "node:readline";
 import type { Writable } from "node:stream";
@@ -18,6 +18,7 @@ import {
 import { discoverDiskSkills } from "../../skill-discovery.js";
 import { decodeInlineImage, describeCliAttachment } from "../universal-attachments.js";
 import { collectEnabledMcpServers, toClaudeMcpConfig } from "../engine-mcp.js";
+import { spawnChildPiped, type SpawnedChild } from "../../spawn-child.js";
 
 /** Legal values of Claude Code's `--permission-mode` (there is no "default"). */
 const CLAUDE_PERMISSION_MODES = ["acceptEdits", "auto", "manual", "dontAsk", "plan", "bypassPermissions"] as const;
@@ -165,7 +166,8 @@ export class ClaudeCodeDriver extends BaseAgentDriver {
 	private readonly dataDir: string | undefined;
 	private currentModel: string;
 	private activeSessionId: string | null = null;
-	private activeProcess: ChildProcess | null = null;
+	private activeProcess: ChildProcessWithoutNullStreams | null = null;
+	private activeStop: SpawnedChild["stop"] | null = null;
 	private aborted = false;
 	private turnSeq = 0;
 	private lastErrorHint = "";
@@ -403,7 +405,7 @@ export class ClaudeCodeDriver extends BaseAgentDriver {
 			mcpDir = undefined;
 		};
 
-		let proc: ChildProcess;
+		let proc: ChildProcessWithoutNullStreams;
 		try {
 			const servers = collectEnabledMcpServers({ cwd: this.cwd, agentDir: this.agentDir, dataDir: this.dataDir });
 			if (Object.keys(servers).length > 0) {
@@ -415,19 +417,19 @@ export class ClaudeCodeDriver extends BaseAgentDriver {
 			}
 			const userMessage = this.buildUserMessage(prompt, attachments);
 			const launch = resolveEngineCliLaunch("claude", { executablePath: this.executablePath, cwd: this.cwd });
-			proc = spawn(launch.file, [...launch.args, ...args], {
+			const spawned = spawnChildPiped({
+				cmd: launch.file,
+				args: [...launch.args, ...args],
 				cwd: this.cwd,
 				env: this.buildSpawnEnv(isOfficial, targetProvider),
-				detached: process.platform !== "win32",
-				windowsHide: true,
 			});
-			if (proc.stdin) {
-				// Keep stdin open: in non-bypass modes the CLI asks for permission over stdin and
-				// finishes only after the turn's `result` event closes it (see handleClaudeEvent).
-				this.activeStdin = proc.stdin;
-				proc.stdin.on("error", () => {});
-				proc.stdin.write(`${JSON.stringify(userMessage)}\n`);
-			}
+			proc = spawned.child;
+			this.activeStop = spawned.stop;
+			// 保持 stdin 打开：非 bypass 模式下 CLI 通过 stdin 询问权限，
+			// 只有本回合的 result 事件到达后才关闭（见 handleClaudeEvent）。
+			this.activeStdin = proc.stdin;
+			proc.stdin.on("error", () => {});
+			proc.stdin.write(`${JSON.stringify(userMessage)}\n`);
 		} catch (err: unknown) {
 			cleanup();
 			const msg = err instanceof Error ? err.message : String(err);
@@ -466,7 +468,10 @@ export class ClaudeCodeDriver extends BaseAgentDriver {
 					resolve();
 					return;
 				}
-				if (this.activeProcess === proc) this.activeProcess = null;
+				if (this.activeProcess === proc) {
+					this.activeProcess = null;
+					this.activeStop = null;
+				}
 				if (!this.aborted) {
 					sink.onError(`Claude Code 进程启动失败: ${err.message}`);
 				}
@@ -481,7 +486,10 @@ export class ClaudeCodeDriver extends BaseAgentDriver {
 					resolve();
 					return;
 				}
-				if (this.activeProcess === proc) this.activeProcess = null;
+				if (this.activeProcess === proc) {
+					this.activeProcess = null;
+					this.activeStop = null;
+				}
 				if (this.aborted) {
 					resolve();
 					return;
@@ -729,19 +737,25 @@ export class ClaudeCodeDriver extends BaseAgentDriver {
 	async abort(): Promise<void> {
 		this.turnSeq++;
 		this.aborted = true;
-		if (this.activeProcess) {
+		const proc = this.activeProcess;
+		if (proc) {
+			const pid = proc.pid;
+			const stop = this.activeStop;
+			this.activeProcess = null;
+			this.activeStop = null;
 			try {
 				if (process.platform === "win32") {
-					spawn("taskkill", ["/pid", String(this.activeProcess.pid), "/t", "/f"], { windowsHide: true });
+					// 整棵树交给单源 stop()（taskkill /T /F），这里不等它：abort 保持原有的“尽力而为、不抛”语义。
+					if (stop) void stop().catch(() => {});
 				} else {
+					// POSIX：整组 SIGINT 是原有的优雅中断（不是杀树），保持原信号与原兜底。
 					try {
-						process.kill(-this.activeProcess.pid!, "SIGINT");
+						process.kill(-pid!, "SIGINT");
 					} catch {
-						this.activeProcess.kill("SIGINT");
+						proc.kill("SIGINT");
 					}
 				}
 			} catch {}
-			this.activeProcess = null;
 		}
 	}
 

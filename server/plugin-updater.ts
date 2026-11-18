@@ -1,7 +1,7 @@
 import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, cpSync, writeFileSync } from "node:fs";
 import { join, resolve, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
-import { execFile } from "node:child_process";
+import { runGit } from "./git-run.js";
 import { pick, type ServerLang } from "./i18n.js";
 import { parseInstallSpec, manifestCandidateUrls } from "./plugin-install-spec.js";
 import { copyTree } from "./fs-copy.js";
@@ -24,13 +24,16 @@ export function resolveDefaultPkgRoot(): string | undefined {
 
 export type Exec = (cmd: string, args: string[]) => Promise<{ ok: boolean; stdout: string; stderr: string }>;
 
-export const execGit: Exec = (cmd, args) =>
-	new Promise((resolve) => {
-		execFile(cmd, args, { timeout: 15_000, encoding: "utf8" }, (err, stdout, stderr) => {
-			if (err) resolve({ ok: false, stdout: String(stdout ?? ""), stderr: String(stderr ?? "") });
-			else resolve({ ok: true, stdout: String(stdout ?? ""), stderr: String(stderr ?? "") });
-		});
-	});
+/**
+ * `Exec` 的默认实现：单源 `runGit` 的薄封装（超时用 `GIT_DEFAULT_TIMEOUT_MS`，已内置 windowsHide）。
+ * `cmd` 形参是当年直通 `execFile` 留下的；`runGit` 只会跑 git，其他命令一律按失败返回。
+ * 单测通过注入假 `Exec` 覆盖这里（`tests/unit/plugin-updater.test.ts`），签名不能改。
+ */
+export const execGit: Exec = async (cmd, args) => {
+	if (cmd !== "git") return { ok: false, stdout: "", stderr: `unsupported git adapter command: ${cmd}` };
+	const result = await runGit(args, { cwd: process.cwd() });
+	return { ok: result.ok, stdout: result.stdout, stderr: result.stderr };
+};
 
 export function ensureBackup(dataDir: string, id: string, opts?: { source?: string }): string | null {
 	if (!PLUGIN_ID_RE.test(id)) return null;
@@ -101,7 +104,7 @@ export function pruneBackups(dataDir: string, id: string, keep = BACKUP_KEEP): v
 	}
 }
 
-export async function resolveRemoteSha(spec: string, exec: Exec = execGit): Promise<string | null> {
+export async function resolveRemoteSha(spec: string, gitExec: Exec = execGit): Promise<string | null> {
 	const clean = String(spec ?? "").trim();
 	if (!clean) return null;
 	let remote: string | null = null;
@@ -120,7 +123,7 @@ export async function resolveRemoteSha(spec: string, exec: Exec = execGit): Prom
 		remote = `https://github.com/${repo}.git`;
 	}
 	if (!remote) return null;
-	const res = await exec("git", ["ls-remote", remote, "HEAD"]);
+	const res = await gitExec("git", ["ls-remote", remote, "HEAD"]);
 	if (!res.ok) return null;
 	const sha = res.stdout.match(/^([0-9a-f]{40,64})\s+HEAD/m)?.[1] ?? null;
 	return sha ? sha.slice(0, 12) : null;
@@ -266,7 +269,7 @@ async function fetchRemoteVersion(source: string, fetcher?: PluginManifestFetche
 
 export async function checkPluginUpdates(
 	dataDir: string,
-	exec: Exec = execGit,
+	gitExec: Exec = execGit,
 	lang?: () => ServerLang,
 	opts?: CheckPluginUpdatesOptions,
 ): Promise<PluginUpdateInfo[]> {
@@ -338,7 +341,7 @@ export async function checkPluginUpdates(
 			let remoteSha: string | null = null;
 			let error: string | undefined;
 			try {
-				remoteSha = await resolveRemoteSha(source, exec);
+				remoteSha = await resolveRemoteSha(source, gitExec);
 			} catch (err) {
 				error = err instanceof Error ? err.message : String(err);
 				remoteSha = null;

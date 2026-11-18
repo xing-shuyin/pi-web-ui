@@ -1,4 +1,4 @@
-import { execFileSync } from "node:child_process";
+import { runProcess } from "./run-process.js";
 import { createHash } from "node:crypto";
 import { createWriteStream, existsSync, mkdirSync, renameSync, rmSync, unlinkSync } from "node:fs";
 import { basename, dirname, isAbsolute, join, resolve } from "node:path";
@@ -233,10 +233,15 @@ export async function ensurePluginAsset(
 			mkdirSync(stagingDir, { recursive: true });
 
 			try {
-				execFileSync("tar", ["-xzf", `./${basename(tempTar)}`, "-C", resolve(stagingDir)], {
+				// 走异步 runProcess：解包整段阻塞事件循环（单测守卫里点名过“最该优先迁移的一个”）。
+				const extracted = await runProcess({
+					cmd: "tar",
+					args: ["-xzf", `./${basename(tempTar)}`, "-C", resolve(stagingDir)],
 					cwd: dirname(resolve(tempTar)),
-					windowsHide: true,
+					timeoutMs: 120_000,
 				});
+				if (extracted.code !== 0)
+					throw new Error((extracted.spawnError ?? extracted.stderr.slice(0, 500)) || "tar failed");
 
 				const subDir = join(stagingDir, spec.targetDir);
 				const sourceRoot = existsSync(subDir) ? subDir : stagingDir;

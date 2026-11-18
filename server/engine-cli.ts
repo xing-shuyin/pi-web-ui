@@ -1,9 +1,9 @@
-import { execFile } from "node:child_process";
 import { existsSync, readFileSync, realpathSync, statSync } from "node:fs";
 import { posix, resolve, win32 } from "node:path";
 import { ENGINE_CATALOG, type NativeCliEngineId } from "./engine-catalog.js";
 import { probeGlobalPackage } from "./global-loader.js";
 import { findNativeCliExecutable, type NativeCliDiscoveryOptions } from "./native-cli-discovery.js";
+import { firstLine, runProcess } from "./run-process.js";
 
 export interface CliLaunch {
 	file: string;
@@ -118,13 +118,11 @@ export async function probeEngineCliVersion(
 ): Promise<{ available: boolean; version?: string; error?: string }> {
 	try {
 		const launch = resolveEngineCliLaunch(id, { executablePath, args: ["--version"] });
-		return await new Promise((done) => {
-			execFile(launch.file, launch.args, { timeout: 4000, windowsHide: true, maxBuffer: 8192 }, (error, stdout) => {
-				done(
-					error ? { available: false, error: error.message } : { available: true, version: stdout.trim() || undefined },
-				);
-			});
-		});
+		const result = await runProcess({ cmd: launch.file, args: launch.args, timeoutMs: 4000, maxBytes: 8192 });
+		if (result.spawnError) return { available: false, error: result.spawnError };
+		if (result.timedOut) return { available: false, error: "engine CLI --version timed out" };
+		if (result.code !== 0) return { available: false, error: firstLine(result.stderr) || `exit ${result.code}` };
+		return { available: true, version: result.stdout.trim() || undefined };
 	} catch (error) {
 		return { available: false, error: error instanceof Error ? error.message : String(error) };
 	}

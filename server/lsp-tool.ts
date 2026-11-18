@@ -1,4 +1,4 @@
-import { spawn, type ChildProcess } from "node:child_process";
+import type { ChildProcessWithoutNullStreams } from "node:child_process";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { delimiter, extname, isAbsolute, join, relative, resolve, sep } from "node:path";
@@ -6,6 +6,9 @@ import { pathToFileURL, fileURLToPath } from "node:url";
 import { defineTool } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
 import { pick, type ServerLang } from "./i18n.js";
+import { runProcess } from "./run-process.js";
+import { spawnChildPiped, type SpawnedChild } from "./spawn-child.js";
+import { sleep } from "./async-utils.js";
 
 export const LSP_TOOL_NAME = "lsp";
 
@@ -237,46 +240,19 @@ export async function autoInstallLanguageServer(pkg: string): Promise<boolean> {
 			const isWin = process.platform === "win32";
 			const npmCmd = isWin ? "npm.cmd" : "npm";
 
-			let stderr = "";
-			await new Promise<void>((resolve, reject) => {
-				const spawnCmd = isWin ? process.env.ComSpec || "cmd.exe" : npmCmd;
-				const spawnArgs = isWin
-					? ["/d", "/s", "/c", npmCmd, "install", "--no-audit", "--no-fund", "--save-dev", ...pkgs]
-					: ["install", "--no-audit", "--no-fund", "--save-dev", ...pkgs];
-				const proc = spawn(spawnCmd, spawnArgs, {
-					cwd: userLspDir,
-					stdio: ["ignore", "ignore", "pipe"],
-					windowsHide: true,
-				});
-				const timer = setTimeout(() => {
-					if (isWin) {
-						if (typeof proc.pid === "number") {
-							const killer = spawn("taskkill", ["/PID", String(proc.pid), "/T", "/F"], {
-								stdio: "ignore",
-								windowsHide: true,
-							});
-							killer.on("error", () => {});
-						}
-					} else {
-						try {
-							proc.kill("SIGKILL");
-						} catch {}
-					}
-					reject(new Error("npm install timed out"));
-				}, 120_000);
-				proc.stderr?.on("data", (chunk: Buffer) => {
-					stderr += chunk.toString("utf8");
-				});
-				proc.on("error", (err) => {
-					clearTimeout(timer);
-					reject(err);
-				});
-				proc.on("exit", (code) => {
-					clearTimeout(timer);
-					if (code === 0) resolve();
-					else reject(new Error(`npm install exited with code ${code}${stderr ? `: ${stderr.slice(-500)}` : ""}`));
-				});
-			});
+			const spawnCmd = isWin ? process.env.ComSpec || "cmd.exe" : npmCmd;
+			const spawnArgs = isWin
+				? ["/d", "/s", "/c", npmCmd, "install", "--no-audit", "--no-fund", "--save-dev", ...pkgs]
+				: ["install", "--no-audit", "--no-fund", "--save-dev", ...pkgs];
+			// 超时/取消由 runProcess 负责杀掉整棵树（Windows taskkill /T、POSIX 进程组）。
+			const install = await runProcess({ cmd: spawnCmd, args: spawnArgs, cwd: userLspDir, timeoutMs: 120_000 });
+			if (install.spawnError) throw new Error(install.spawnError);
+			if (install.timedOut) throw new Error("npm install timed out");
+			if (install.code !== 0) {
+				throw new Error(
+					`npm install exited with code ${install.code}${install.stderr ? `: ${install.stderr.slice(-500)}` : ""}`,
+				);
+			}
 			console.warn(`[LSP] Language server [${pkg}] installed, resolving binaries…`);
 			clearResolveBinaryCache();
 			installFailedAt.delete(pkg);
@@ -295,7 +271,8 @@ export async function autoInstallLanguageServer(pkg: string): Promise<boolean> {
 }
 
 export class LspClient {
-	private proc: ChildProcess | null = null;
+	private proc: ChildProcessWithoutNullStreams | null = null;
+	private stopProc: SpawnedChild["stop"] | null = null;
 	private nextId = 1;
 	private pendingRequests = new Map<
 		number,
@@ -321,31 +298,33 @@ export class LspClient {
 	async start(): Promise<void> {
 		this.touch();
 		const isWin = process.platform === "win32";
-		const isBatch = isWin && /\.(cmd|bat)$/i.test(this.binPath);
-		const spawnCmd = isBatch ? process.env.ComSpec || "cmd.exe" : this.binPath;
-		const spawnArgs = isBatch ? ["/d", "/s", "/c", this.binPath, ...this.binArgs] : this.binArgs;
-		this.proc = spawn(spawnCmd, spawnArgs, {
+		// `.cmd` / `.bat` 包装器交给单源经 `cmd.exe /d /s /c` 起（windowsShell），其余直启。
+		const spawned = spawnChildPiped({
+			cmd: this.binPath,
+			args: this.binArgs,
 			cwd: this.projectCwd,
-			stdio: ["pipe", "pipe", "pipe"],
-			windowsHide: true,
+			windowsShell: isWin && /\.(cmd|bat)$/i.test(this.binPath),
 		});
+		const child = spawned.child;
+		this.proc = child;
+		this.stopProc = spawned.stop;
 
-		this.proc.stdout?.on("data", (chunk: Buffer) => this.handleData(chunk));
-		this.proc.stderr?.on("data", (_d: Buffer) => {});
+		child.stdout.on("data", (chunk: Buffer) => this.handleData(chunk));
+		child.stderr.on("data", (_d: Buffer) => {});
 
-		this.proc.on("error", (err: Error) => {
+		child.on("error", (err: Error) => {
 			this.proc = null;
 			this.rejectAllPending(new Error(`Language server failed to start: ${err.message}`));
 			this.onEvict();
 		});
 
-		this.proc.stdin?.on("error", (err: Error) => {
+		child.stdin.on("error", (err: Error) => {
 			this.proc = null;
 			this.rejectAllPending(new Error(`Language server stdin error: ${err.message}`));
 			this.onEvict();
 		});
 
-		this.proc.on("exit", (code) => {
+		child.on("exit", (code) => {
 			this.proc = null;
 			this.rejectAllPending(new Error(`Language server exited with code ${code}`));
 			this.onEvict();
@@ -376,21 +355,22 @@ export class LspClient {
 			this.initialized = true;
 		} catch (err) {
 			if (this.proc) {
-				try {
-					if (process.platform === "win32" && typeof this.proc.pid === "number") {
-						const killer = spawn("taskkill", ["/PID", String(this.proc.pid), "/T", "/F"], {
-							stdio: "ignore",
-							windowsHide: true,
-						});
-						killer.on("error", () => {});
-					} else {
-						this.proc.kill();
-					}
-				} catch {}
+				this.stopLanguageServer();
 				this.proc = null;
 			}
 			throw err;
 		}
+	}
+
+	/**
+	 * 尽力而为地停掉语言服务器（不抛）：整棵树收口到单源 `stop()`（Windows `taskkill /T /F`、POSIX 进程组）。
+	 * **强杀发起后不等**：进程退出由 `exit` 事件收场（保持原语义）。
+	 */
+	private stopLanguageServer(): void {
+		const stop = this.stopProc;
+		this.stopProc = null;
+		if (!stop) return;
+		void stop().catch(() => {});
 	}
 
 	touch(): void {
@@ -464,7 +444,7 @@ export class LspClient {
 
 	request(method: string, params: any, timeoutMs = 15000): Promise<any> {
 		this.touch();
-		if (!this.proc || !this.proc.stdin) {
+		if (!this.proc) {
 			return Promise.reject(new Error("Language server is not running"));
 		}
 
@@ -480,7 +460,7 @@ export class LspClient {
 
 			this.pendingRequests.set(id, { resolve: res, reject: rej, timer });
 			try {
-				this.proc!.stdin!.write(wire);
+				this.proc!.stdin.write(wire);
 			} catch (err) {
 				clearTimeout(timer);
 				this.pendingRequests.delete(id);
@@ -491,7 +471,7 @@ export class LspClient {
 
 	notify(method: string, params: any): void {
 		this.touch();
-		if (!this.proc || !this.proc.stdin) return;
+		if (!this.proc) return;
 		const payload = JSON.stringify({ jsonrpc: "2.0", method, params });
 		const wire = `Content-Length: ${Buffer.byteLength(payload, "utf8")}\r\n\r\n${payload}`;
 		try {
@@ -560,17 +540,7 @@ export class LspClient {
 		} catch {}
 
 		if (this.proc) {
-			try {
-				if (process.platform === "win32" && typeof this.proc.pid === "number") {
-					const killer = spawn("taskkill", ["/PID", String(this.proc.pid), "/T", "/F"], {
-						stdio: "ignore",
-						windowsHide: true,
-					});
-					killer.on("error", () => {});
-				} else {
-					this.proc.kill();
-				}
-			} catch {}
+			this.stopLanguageServer();
 			this.proc = null;
 		}
 		this.rejectAllPending(new Error("LSP client shut down"));
@@ -713,7 +683,7 @@ export async function getLiveLspDiagnostics(absPath: string, cwd: string): Promi
 
 	const { client } = res;
 	const uri = await client.syncDocument(absPath);
-	await new Promise((r) => setTimeout(r, 80));
+	await sleep(80);
 
 	const diags = client.getDiagnostics(uri);
 	const errors = diags.filter((d) => d.severity === 1 || !d.severity);
@@ -1172,7 +1142,7 @@ export function makeLspTool(options: LspToolOptions) {
 				}
 
 				if (action === "diagnostics") {
-					await new Promise((r) => setTimeout(r, 120));
+					await sleep(120);
 					const diags = client.getDiagnostics(uri);
 
 					if (diags.length === 0) {
@@ -1457,7 +1427,7 @@ export function makeLspTool(options: LspToolOptions) {
 					const pending = new Set(depUris.filter(Boolean));
 					const deadline = Date.now() + DIAGS_BUDGET_MS;
 					while (pending.size > 0 && Date.now() < deadline) {
-						await new Promise((r) => setTimeout(r, 120));
+						await sleep(120);
 						const known = client.getAllDiagnostics();
 						for (const u of Array.from(pending)) {
 							if (known.has(u)) pending.delete(u);

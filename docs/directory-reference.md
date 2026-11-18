@@ -20,6 +20,7 @@ pi-web-ui/
 │   ├── runtime-manifest.ts     # 双层模型 P1：清单解析 + ed25519 校验 + 四道闸门 + 归档白名单/摘要校验
 │   ├── runtime-updater.ts      # 双层模型 P2：清单拉取→验签→流式下载→校验→解包暂存（切换/回滚由 main 注入）
 │   ├── runtime-config.ts       # 双层模型信任根：内置 ed25519 公钥（留空=拒绝）、壳能力版本、默认 feed
+│   ├── system-integration.ts   # Windows 默认浏览器/文件关联：HKCU 注册表规划、reg 输出解析、argv → 待打开目标
 │   ├── electron-builder.yml    # 打包配置（win nsis / mac dmg / linux AppImage；npmRebuild:false）
 │   └── README.md               # 桌面版说明：跑起来 / 约定 / 发布 / 签名（SignPath）
 ├── deploy/                     # 部署示例：launchd plist / systemd unit / Windows 任务 XML
@@ -68,6 +69,12 @@ server/
 ├── text-sniff.ts           # 文件预览纯函数（previewKind/looksLikeText/decodeText/sniffImageMime/hexDump/countLines）
 ├── queue-utils.ts          # 排队消息纯函数（removeFirstOccurrence：只移除第一条匹配，重复文本不连带删除）
 ├── process-utils.ts        # 进程工具：snapshotListeningPorts/killPidTree/lookupProcessName
+├── hide-console-windows.ts  # ★ Windows 进程级「不弹控制台」开关：patch spawn/spawnSync/exec/execSync/execFile/execFileSync/fork 注入 windowsHide（单源；CLI/桌面壳用生成件 bin/lib/hide-console-windows.mjs，见 docs/agent-rules.md §四）
+├── spawn-child.ts         # ★ 常驻子进程单源：spawn + 统一 options + stop()（先 grace 再杀整棵树）；raw 流给 LSP/MCP/引擎/采集/二进制协议
+├── run-process.ts          # ★ 子进程执行单源：spawn + 超时/取消杀整棵树 + 行回调 + stdin 接地 + NO_COLOR（调用点不再手写 detached/stdio/windowsHide）
+├── git-run.ts              # ★ git 调用单源：runGit/runGitText + gitEnv/stripGitEnv（quotepath=false、禁提示环境、16MB、失败取 stderr 首行）
+├── shell-quote.ts          # ★ shell / PowerShell 引号单源（CLI 侧镜像件 bin/lib/shell-quote.mjs）
+├── async-utils.ts          # sleep（定时器不 unref，避免收尾路径被提前退出截断）
 ├── client-state.ts         # ClientStateStore：<dataDir>/client-state.json 持久化
 ├── uploads.ts              # 文件对话上传 + 保留期清理
 ├── bg-servers.ts           # 后台任务跟踪（bash 前后端口快照 diff + 存活刷新 + 闲置超阈值自动清理/📌钉住）
@@ -151,6 +158,7 @@ server/
 ├── plugin-updater.ts       # 插件更新辅助（代码目录备份/回滚 + 远端 sha 对比；状态目录不参与）
 ├── fs-copy.ts              # ★ 目录复制原语：跳过项按**相对路径**判定（绝对路径含 node_modules 会把整棵树过滤光），附文件清单/清理空目录
 ├── mcp-bridge.ts           # MCP 工具桥（外部 stdio MCP 服务器的工具接入 pi 会话）
+├── command-spawn.ts        # ★ 用户命令 → 可 spawn 的 {file,args}：Windows npm .cmd shim 还原成 node 入口（issues/934）
 ├── mcp-hot-reload.ts       # mcp.json 热加载（改完即生效，不重启）
 ├── icon-svg.ts             # 插件内联 SVG 图标（manifest `iconSvg`）校验与规范化
 ├── host-metrics.ts         # 见文件头注释

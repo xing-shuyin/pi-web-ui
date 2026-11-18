@@ -78,7 +78,7 @@ async function privileged(file, signal) {
 		root
 			? [script, "--apply", file]
 			: [...(process.stdin.isTTY ? [] : ["-n"]), process.execPath, script, "--apply", file],
-		{ stdio: "inherit", signal },
+		{ windowsHide: true, stdio: "inherit", signal },
 	);
 	const timer = setTimeout(() => child.kill("SIGTERM"), 15 * 60_000);
 	try {

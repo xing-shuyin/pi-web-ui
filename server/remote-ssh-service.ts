@@ -7,6 +7,8 @@ import { Readable } from "node:stream";
 import { StringDecoder } from "node:string_decoder";
 import { pathToFileURL } from "node:url";
 import { resolveDefaultPkgRoot } from "./plugin-updater.js";
+// shellQuotePosix 的单源在 shell-quote.ts；这里 re-export 是为了不让 6+ 个既有 import 点全部改一遍。
+import { shellQuotePosix } from "./shell-quote.js";
 import { isAudioFile, previewKind } from "./text-sniff.js";
 import type {
 	RemoteSshDirItem,
@@ -19,6 +21,8 @@ import type {
 
 const IDLE_TIMEOUT_MS = 30 * 60 * 1000;
 const PROBE_TIMEOUT_MS = 25_000;
+
+export { shellQuotePosix } from "./shell-quote.js";
 
 export interface ParsedRemoteUri {
 	username: string;
@@ -159,10 +163,6 @@ export function restoreWorkspaceUriFromSessionDir(dir: string): string {
 		}
 	} catch {}
 	return dir;
-}
-
-export function shellQuotePosix(s: string): string {
-	return `'${String(s).replace(/'/g, `'\\''`)}'`;
 }
 
 export function mapResolvedPathToRemote(

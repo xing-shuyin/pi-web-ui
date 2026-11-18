@@ -1,3 +1,4 @@
+import { sleep } from "./async-utils.js";
 import type { ServerMessage, BgServer } from "./protocol.js";
 import {
 	killPidTree,
@@ -261,7 +262,7 @@ export class BgServerTracker {
 		this.listenBeforeTime = 0;
 		if (!beforePromise) return;
 		const before = await beforePromise;
-		await new Promise((r) => setTimeout(r, BG_BIND_WAIT_MS));
+		await sleep(BG_BIND_WAIT_MS);
 		const after = await snapshotListeningPorts();
 		const fresh: Array<{ port: number; pid: number }> = [];
 		for (const [port, pid] of after) {

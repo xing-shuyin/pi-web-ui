@@ -10,9 +10,9 @@ import {
 } from "node:fs/promises";
 import { dirname, join, relative, resolve } from "node:path";
 import { writeAtomicSync } from "./atomic-file.js";
+import { runProcess } from "./run-process.js";
 import { SETTINGS_SECRETS_KEY } from "./plugin-secrets.js";
 import { createRequire } from "node:module";
-import { spawnSync } from "node:child_process";
 import { isInsideRoot, realPathOfNearest } from "./plugin-project.js";
 
 function atomicWrite(file: string, data: string): void {
@@ -188,25 +188,23 @@ export function ensurePluginDeps(
 			} catch {}
 		}
 		onProgress?.(`正在安装依赖：${missing.join(", ")}…（首次约需几分钟）`);
-		const isWin = process.platform === "win32";
-		const spawnCmd = isWin ? process.env.ComSpec || "cmd.exe" : "npm";
-		const runNpmInstall = (extraFlags: string[]) => {
-			const spawnArgs = isWin
-				? ["/d", "/s", "/c", "npm.cmd", "install", "--no-audit", "--no-fund", ...extraFlags, ...missing]
-				: ["install", "--no-audit", "--no-fund", ...extraFlags, ...missing];
-			return spawnSync(spawnCmd, spawnArgs, {
+		// 走异步 runProcess：npm 装依赖要几分钟，spawnSync 会把整个服务端事件循环卡死。
+		const runNpmInstall = (extraFlags: string[]) =>
+			runProcess({
+				cmd: process.platform === "win32" ? "npm.cmd" : "npm",
+				args: ["install", "--no-audit", "--no-fund", ...extraFlags, ...missing],
 				cwd: pluginDir,
-				timeout: DEP_TIMEOUT_MS,
-				windowsHide: true,
-				encoding: "utf8",
+				timeoutMs: DEP_TIMEOUT_MS,
+				// Windows 上 npm.cmd 是批处理包装器，必须经 cmd.exe /d /s /c 起。
+				windowsShell: true,
+				maxBytes: 64 * 1024,
 			});
-		};
-		let res = runNpmInstall([]);
-		if (res.error || res.status !== 0) {
-			res = runNpmInstall(["--ignore-scripts"]);
+		let res = await runNpmInstall([]);
+		if (res.code !== 0) {
+			res = await runNpmInstall(["--ignore-scripts"]);
 		}
-		if (res.error || res.status !== 0) {
-			console.error(`[plugin-deps] ${join(pluginDir)} npm install 失败:`, res.error ?? res.stderr?.slice(0, 500));
+		if (res.code !== 0) {
+			console.error(`[plugin-deps] ${join(pluginDir)} npm install 失败:`, (res.spawnError ?? res.stderr).slice(0, 500));
 			return false;
 		}
 		const stillMissing = specs.filter((s) => !isDepAvailable(pluginDir, s));

@@ -3,7 +3,6 @@ import { applyQueueModesToSession } from "./queue-modes.js";
 import { startTurnTiming, finishTurnTiming } from "./turn-timing.js";
 import { PendingQuestion, type QuestionResult } from "./pending-question.js";
 import { formatSubagentsCompletionNotice } from "./subagent-notify.js";
-import { spawn } from "node:child_process";
 import { createHash, randomUUID } from "node:crypto";
 import {
 	deliverMobileNotificationEvent,
@@ -862,6 +861,9 @@ export function cleanupOrphanedSessionDirs(agentDir: string, maxAgeMs = 24 * 360
 		const root = join(agentDir, sub);
 		if (!existsSync(root)) continue;
 		try {
+import { runGit } from "./git-run.js";
+import { runProcess } from "./run-process.js";
+import { sleep } from "./async-utils.js";
 			const entries = readdirSync(root, { withFileTypes: true });
 			for (const e of entries) {
 				if (!e.isDirectory()) continue;
@@ -3024,7 +3026,7 @@ export class ClientSession {
 		if (!isStreaming(conv)) {
 			const graceEnd = Date.now() + Math.min(3000, Math.max(0, timeoutMs));
 			while (!isStreaming(conv) && Date.now() < graceEnd) {
-				await new Promise((resolve) => setTimeout(resolve, 50));
+				await sleep(50);
 				const again = this.convs.get(convId);
 				if (!again) return "gone";
 				conv = again;
@@ -4295,12 +4297,11 @@ export class ClientSession {
 				this.updatePlan(steps, undefined, convId);
 			},
 			isGitRepo: async (cwd) => {
-				try {
-					const r = await this.runAsync("git", ["rev-parse", "--is-inside-work-tree"], 5_000, cwd || this.cwd);
-					return r.code === 0;
-				} catch {
-					return false;
-				}
+				const result = await runGit(["rev-parse", "--is-inside-work-tree"], {
+					cwd: cwd || this.cwd,
+					timeoutMs: 5_000,
+				});
+				return result.ok;
 			},
 			spawnRoleAgent: async ({ role, prompt, cwd, model, parentId, title }) => {
 				const baseCwd = cwd || (parentId ? this.convs.get(parentId)?.cwd : undefined) || this.cwd;
@@ -8468,57 +8469,6 @@ export class ClientSession {
 		ClientSession.piCliProbe = null;
 	}
 
-	private runAsync(
-		cmd: string,
-		args: string[],
-		timeoutMs: number,
-		cwd?: string,
-	): Promise<{ code: number | null; out: string }> {
-		return new Promise((resolve) => {
-			let p;
-			try {
-				const isWin = process.platform === "win32";
-				const spawnCmd = isWin ? process.env.ComSpec || "cmd.exe" : cmd;
-				const spawnArgs = isWin ? ["/d", "/s", "/c", cmd, ...args] : args;
-				p = spawn(spawnCmd, spawnArgs, {
-					...(cwd ? { cwd } : {}),
-					stdio: ["ignore", "pipe", "pipe"],
-					windowsHide: true,
-					detached: !isWin,
-				});
-			} catch (err) {
-				resolve({ code: -1, out: String(err) });
-				return;
-			}
-			let out = "";
-			let settled = false;
-			const done = (code: number | null, text?: string) => {
-				if (settled) return;
-				settled = true;
-				clearTimeout(t);
-				resolve({ code, out: text ?? out });
-			};
-			const t = setTimeout(() => {
-				const plan = processTreeKillPlan(process.platform, p.pid);
-				try {
-					if (plan.kind === "taskkill") {
-						spawn(plan.cmd, plan.args, { stdio: "ignore", windowsHide: true });
-					} else if (plan.kind === "group-signal") {
-						process.kill(-p.pid!, plan.signal);
-					} else {
-						p.kill();
-					}
-				} catch {
-					p.kill();
-				}
-			}, timeoutMs);
-			p.stdout?.on("data", (d: Buffer) => (out += d.toString()));
-			p.stderr?.on("data", (d: Buffer) => (out += d.toString()));
-			p.on("error", (err) => done(-1, String(err)));
-			p.on("close", (code) => done(code));
-		});
-	}
-
 	private static currentAppVersion(): string {
 		return getAppVersion() || "0.0.0";
 	}
@@ -8772,7 +8722,15 @@ export class ClientSession {
 				text: "正在安装 pi agent CLI（npm i -g @earendil-works/pi-coding-agent）…",
 				textEn: "Installing pi agent CLI (npm i -g @earendil-works/pi-coding-agent)…",
 			});
-			const { code, out } = await this.runAsync("npm", ["i", "-g", "@earendil-works/pi-coding-agent"], 180_000);
+			const install = await runProcess({
+				cmd: "npm",
+				args: ["i", "-g", "@earendil-works/pi-coding-agent"],
+				timeoutMs: 180_000,
+				// Windows 上 npm 是 .cmd 包装器，必须经 cmd.exe /d /s /c 起。
+				windowsShell: true,
+			});
+			const code = install.code;
+			const out = `${install.stdout}${install.stderr}`;
 			if (code === 0) {
 				this.emit({
 					type: "notice",
@@ -12273,7 +12231,7 @@ export class ClientSession {
 			});
 		}
 		if (!ended && !session.isIdle && !forced) {
-			await new Promise((r) => setTimeout(r, ClientSession.HARD_ABORT_SETTLE_MS));
+			await sleep(ClientSession.HARD_ABORT_SETTLE_MS);
 		}
 		clearTimeout(abortTimer);
 		off();
@@ -16602,14 +16560,10 @@ export class ClientSession {
 
 	private async gitDiff(cwd: string): Promise<string> {
 		try {
-			const { code, out } = await this.runAsync("git", ["diff", "HEAD"], 10_000, cwd);
-			if (code !== 0) return "";
-			let status = "";
-			try {
-				const st = await this.runAsync("git", ["status", "--porcelain"], 10_000, cwd);
-				if (st.code === 0) status = st.out;
-			} catch {}
-			return buildDiffFingerprint(out, status);
+			const diff = await runGit(["diff", "HEAD"], { cwd, timeoutMs: 10_000 });
+			if (!diff.ok) return "";
+			const st = await runGit(["status", "--porcelain"], { cwd, timeoutMs: 10_000 });
+			return buildDiffFingerprint(diff.stdout, st.ok ? st.stdout : "");
 		} catch {
 			return "";
 		}

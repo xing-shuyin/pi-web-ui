@@ -1,4 +1,5 @@
 import http, { type ClientRequest } from "node:http";
+import { sleep } from "../async-utils.js";
 import { desktopDownloadLimit } from "./desktop-files-protocol.js";
 import type { DeviceTaskActivity, DeviceTaskClaim } from "../protocol.js";
 import { projectTaskActivity } from "./task-progress.js";
@@ -723,7 +724,7 @@ export function createDeviceConnector(options: DeviceConnectorOptions) {
 											for (let offset = 0; offset < chunk.length; offset += RELAY_LIMITS.chunk) {
 												while (ws.bufferedAmount > RELAY_LIMITS.queue / 2) {
 													if (!streams.has(id) || ws.readyState !== WebSocket.OPEN) throw new Error("Cancelled");
-													await new Promise((resolve) => setTimeout(resolve, 5));
+													await sleep(5);
 												}
 												if (!streams.has(id) || ws.readyState !== WebSocket.OPEN) throw new Error("Cancelled");
 												await new Promise<void>((resolve, reject) => {

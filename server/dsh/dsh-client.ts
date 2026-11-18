@@ -1,11 +1,13 @@
 import { createRequire } from "node:module";
-import { spawn } from "node:child_process";
+import type { ChildProcess, ChildProcessWithoutNullStreams } from "node:child_process";
 import { existsSync, readFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { bilingual } from "../i18n.js";
 import { resolveProviderCredential } from "../model-resolver.js";
+import { sleep } from "../async-utils.js";
+import { spawnChildPiped, type SpawnedChild } from "../spawn-child.js";
 
 const require = createRequire(import.meta.url);
 
@@ -84,7 +86,8 @@ export class DshRuntime {
 	env: Record<string, string | undefined>;
 	private jsonrpcEntry: string;
 
-	private proc: ReturnType<typeof spawn> | null = null;
+	private proc: ChildProcessWithoutNullStreams | null = null;
+	private stopProc: SpawnedChild["stop"] | null = null;
 	private readonly beforeStart?: (cwd: string) => void;
 	private readonly onStopping?: () => void;
 	private startPromise: Promise<void> | null = null;
@@ -225,18 +228,19 @@ export class DshRuntime {
 		this.pending.clear();
 		this.stderrTail = "";
 
-		this.proc = spawn(process.execPath, [this.launcher], {
+		const child = spawnChildPiped({
+			cmd: process.execPath,
+			args: [this.launcher],
 			env,
-			stdio: ["pipe", "pipe", "pipe"],
-			windowsHide: true,
-			...(process.platform !== "win32" ? { detached: true } : {}),
 		});
-		const spawned = this.proc;
+		this.proc = child.child;
+		this.stopProc = child.stop;
+		const spawned = child.child;
 
-		spawned.stdout!.setEncoding("utf8");
-		spawned.stdout!.on("data", (chunk: string) => this._onData(chunk));
-		spawned.stderr!.setEncoding("utf8");
-		spawned.stderr!.on("data", (chunk: string) => {
+		spawned.stdout.setEncoding("utf8");
+		spawned.stdout.on("data", (chunk: string) => this._onData(chunk));
+		spawned.stderr.setEncoding("utf8");
+		spawned.stderr.on("data", (chunk: string) => {
 			this.stderrTail = (this.stderrTail + chunk).slice(-4000);
 		});
 		spawned.on("error", (err) => {
@@ -345,7 +349,7 @@ export class DshRuntime {
 
 	private _write(msg: unknown): void {
 		const proc = this.proc;
-		if (!proc || !proc.stdin || proc.stdin.destroyed) {
+		if (!proc || proc.stdin.destroyed) {
 			throw new DshTransportError(bilingual("runtime not started", "runtime 未启动"));
 		}
 		const ok = proc.stdin.write(JSON.stringify(msg) + "\n");
@@ -575,7 +579,7 @@ export class DshRuntime {
 			await this._request("shutdown", {}, 2000);
 		} catch {}
 		try {
-			proc.stdin!.end();
+			proc.stdin.end();
 		} catch {}
 		await new Promise<void>((r) => {
 			const t = setTimeout(r, 1500);
@@ -598,7 +602,7 @@ export class DshRuntime {
 		this.proc = null;
 	}
 
-	private _waitExit(proc: ReturnType<typeof spawn>, ms: number): Promise<void> {
+	private _waitExit(proc: ChildProcess, ms: number): Promise<void> {
 		return new Promise((r) => {
 			const t = setTimeout(r, ms);
 			proc.once("exit", () => {
@@ -620,61 +624,35 @@ export class DshRuntime {
 		const pid = proc.pid;
 		if (pid === undefined) {
 			this.proc = null;
+			this.stopProc = null;
 			return;
 		}
 		this.proc = null;
+		const stop = this.stopProc;
+		this.stopProc = null;
 		this.failPending(new DshTransportError(bilingual("runtime killed (interrupt)", "运行时已被终止（中断）")));
 		try {
+			// 整棵树收口到单源 stop()（Windows taskkill /T /F、POSIX 进程组）；仍保留 1.5s 上限。
+			const stopTree = async () => {
+				if (stop) await stop({ timeoutMs: 2000 });
+			};
 			if (process.platform === "win32") {
 				await new Promise<void>((resolve) => {
 					let settled = false;
 					const done = () => {
-						if (!settled) {
-							settled = true;
-							clearTimeout(timer);
-							resolve();
-						}
+						if (settled) return;
+						settled = true;
+						clearTimeout(timer);
+						resolve();
 					};
 					const timer = setTimeout(done, 1500);
-					try {
-						const killer = spawn("taskkill", ["/pid", String(pid), "/T", "/F"], {
-							stdio: "ignore",
-							windowsHide: true,
-						});
-						killer.on("close", (code) => {
-							if (code !== 0) {
-								try {
-									proc.kill("SIGKILL");
-								} catch {}
-							}
-							done();
-						});
-						killer.on("error", () => {
-							try {
-								proc.kill("SIGKILL");
-							} catch {}
-							done();
-						});
-					} catch {
-						try {
-							proc.kill("SIGKILL");
-						} catch {}
-						done();
-					}
+					void stopTree().then(done, done);
 				});
 			} else {
-				try {
-					process.kill(-pid, "SIGKILL");
-				} catch {
-					try {
-						proc.kill("SIGKILL");
-					} catch {}
-				}
+				await stopTree();
 			}
 		} catch {
-			try {
-				proc.kill("SIGKILL");
-			} catch {}
+			// stop() 自己吞掉杀进程的失败；这里只保留「不抛」语义。
 		}
 	}
 
@@ -684,7 +662,7 @@ export class DshRuntime {
 		this.debug("restart", { newModel, newProvider, wasAlive });
 		if (wasAlive) {
 			await this.kill();
-			await new Promise((r) => setTimeout(r, 150));
+			await sleep(150);
 		}
 		if (newModel) {
 			this.model = newModel;

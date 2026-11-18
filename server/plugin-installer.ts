@@ -1,4 +1,4 @@
-import { spawn, type ChildProcess } from "node:child_process";
+import type { ChildProcess } from "node:child_process";
 import { existsSync, realpathSync } from "node:fs";
 import { basename, join, resolve } from "node:path";
 import { isBuiltinModule } from "./builtin-modules.js";
@@ -12,7 +12,7 @@ import {
 	suggestPluginId,
 	type InstallInspect,
 } from "./plugin-install-spec.js";
-import { killPidTree } from "./process-utils.js";
+import { spawnChild, type SpawnedChild } from "./spawn-child.js";
 import type { ServerMessage } from "./protocol.js";
 
 const ID_RE = /^[A-Za-z0-9_-]+$/;
@@ -201,6 +201,7 @@ export interface PluginInstallerDeps {
 
 export class PluginInstaller {
 	private child: ChildProcess | null = null;
+	private childStop: SpawnedChild["stop"] | null = null;
 	private currentJobId: string | null = null;
 
 	constructor(private readonly deps: PluginInstallerDeps) {}
@@ -252,18 +253,20 @@ export class PluginInstaller {
 				hooks.emit(msg);
 			} catch {}
 		};
-		const child = spawn(process.execPath, [binPath, ...built.args], {
-			windowsHide: true,
-			detached: process.platform !== "win32",
+		const spawned = spawnChild({
+			cmd: process.execPath,
+			args: [binPath, ...built.args],
+			// stdin 接空设备：CLI 的交互提示一律读到 EOF
+			stdio: ["ignore", "pipe", "pipe"],
 			env: {
-				...process.env,
 				...(process.versions.electron ? { ELECTRON_RUN_AS_NODE: "1" } : {}),
 				PI_WEB_DATA_DIR: this.deps.dataDir,
 				NO_COLOR: "1",
 			},
-			stdio: ["ignore", "pipe", "pipe"],
 		});
+		const child = spawned.child;
 		this.child = child;
+		this.childStop = spawned.stop;
 		this.currentJobId = jobId;
 
 		let tail = "";
@@ -294,7 +297,7 @@ export class PluginInstaller {
 		const timer = setTimeout(
 			() => {
 				timedOut = true;
-				this.killTree(child);
+				this.killTree();
 			},
 			Math.max(1000, Number(this.deps.timeoutMs ?? DEFAULT_TIMEOUT_MS)),
 		);
@@ -306,6 +309,7 @@ export class PluginInstaller {
 			if (pending.trim()) pushLine(pending);
 			pending = "";
 			this.child = null;
+			this.childStop = null;
 			this.currentJobId = null;
 			const out = tail;
 			emit({
@@ -371,27 +375,23 @@ export class PluginInstaller {
 	cancel(jobId: string): boolean {
 		if (!this.currentJobId || this.currentJobId !== jobId || !this.child) return false;
 		this.cancelFlags.get(jobId)?.();
-		this.killTree(this.child);
+		this.killTree();
 		return true;
 	}
 
-	private killTree(child: ChildProcess): void {
-		const pid = child.pid;
-		if (!pid) return;
-		try {
-			killPidTree(pid);
-		} catch {
-			try {
-				child.kill("SIGKILL");
-			} catch {}
-		}
+	/** 杀整棵树：收口到单源 `stop()`；**发起后不等**（退出由 close 事件收场）。 */
+	private killTree(): void {
+		const stop = this.childStop;
+		this.childStop = null;
+		if (!stop) return;
+		void stop().catch(() => {});
 	}
 
 	dispose(): void {
 		const child = this.child;
 		if (child) {
 			this.cancelFlags.forEach((f) => f());
-			this.killTree(child);
+			this.killTree();
 		}
 		this.child = null;
 		this.currentJobId = null;

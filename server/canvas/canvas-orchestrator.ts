@@ -22,8 +22,8 @@ import {
 	markInterruptedCanvasRuns,
 } from "./canvas-store.js";
 import { prepareCanvasWorkspace, captureCanvasWorkspaceArtifact, type CanvasWorkspace } from "./canvas-workspace.js";
-import { execFile } from "node:child_process";
-import { promisify } from "node:util";
+import { sleep } from "../async-utils.js";
+import { runGitText } from "../git-run.js";
 import { PSTACK_SKILLS_MAP } from "./pstack-skills-data.js";
 import { discoverDiskSkills, readSkillInstruction } from "../skill-discovery.js";
 import { randomUUID } from "node:crypto";
@@ -36,8 +36,6 @@ import {
 } from "./canvas-scheduler.js";
 
 import { CanvasRuntimeError, canvasErrorMessage, canvasRuntimeMessage } from "./canvas-runtime-messages.js";
-
-const exec = promisify(execFile);
 
 export type CanvasEventBroadcaster = (msg: ServerMessage) => void;
 export type EngineServiceGetter = (engine: CanvasEngineId) => any;
@@ -1387,7 +1385,7 @@ export class CanvasOrchestrator {
 			const maxWaitMs = 15 * 60 * 1000;
 
 			while (!signal.aborted) {
-				await new Promise((r) => setTimeout(r, 1200));
+				await sleep(1200);
 				if (signal.aborted) {
 					await cs.abort().catch(() => {});
 					throw new CanvasRuntimeError("任务已被手动中止", "error.aborted");
@@ -1423,11 +1421,8 @@ export class CanvasOrchestrator {
 			let diffSummary = "";
 			try {
 				if (!isRemoteWorkspaceUri(resolvedCwd)) {
-					const { stdout: diffStat } = await exec("git", ["diff", "--stat"], {
-						cwd: resolvedCwd,
-						timeout: 5000,
-						windowsHide: true,
-					});
+					// 5s 探测（旧 exec 的超时值）；失败一律忽略，不影响交付。
+					const diffStat = await runGitText(["diff", "--stat"], { cwd: resolvedCwd, timeoutMs: 5_000 }).catch(() => "");
 					if (diffStat.trim()) {
 						diffSummary = `\n[Code change statistics]:\n${diffStat.trim()}`;
 					}

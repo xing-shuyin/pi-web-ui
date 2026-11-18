@@ -8,7 +8,7 @@
  *   - 子进程 stdin 接空设备（交互确认 / pager / REPL 一律读到 EOF，永不阻塞）
  *   - 原始输出先落盘，只按需回显尾部（不淹没上下文）
  *   - 总时长硬超时 + 空闲看门狗（0 = 关闭）
- *   - 进程树终止复用 `server/process-utils.ts` 的 killPidTree（单源）
+ *   - 进程树终止走 `server/spawn-child.ts` 的 `stop()`（单源）
  *
  * 不做的：日志游标文件、守护进程巡检、孤儿 jobfile 状态机 —— 进程挂在 server 上，正常退出时由
  * dispose() 杀整棵进程树收场；server 被强杀留下的子进程目前只能靠面板 / `killPidTree` 手动清，
@@ -18,11 +18,13 @@
  * detach 守护进程，服务的对象是「调用方不常驻」的 CI 与人工终端；这里吃整行命令字符串，服务的
  * 对象是常驻 server 内的 bash 工具。两者共用 `killPidTree` 单源，其余各自演进，不强行合体。
  */
-import { spawn, type ChildProcess } from "node:child_process";
+import type { ChildProcess } from "node:child_process";
 import { closeSync, createWriteStream, existsSync, mkdirSync, openSync, readSync, statSync } from "node:fs";
 import type { WriteStream } from "node:fs";
 import { join, resolve } from "node:path";
-import { killPidTree, pidAlive } from "./process-utils.js";
+import { sleep } from "./async-utils.js";
+import { pidAlive } from "./process-utils.js";
+import { spawnChild, type SpawnedChild } from "./spawn-child.js";
 import { MAX_BACKGROUND_TIMEOUT_SEC } from "./bash-timeout.js";
 
 const BASH_LIKE_SHELL = /(?:^|[\\/])(?:bash|sh|zsh|dash)(?:\.exe)?$/i;
@@ -68,6 +70,8 @@ export interface JobSnapshot {
 interface JobRecord {
 	id: string;
 	child: ChildProcess;
+	/** 整棵树收场单源（`spawnChild` 的 `stop()`）。 */
+	stop: SpawnedChild["stop"];
 	pid: number;
 	command: string;
 	label: string;
@@ -182,19 +186,22 @@ export class JobRegistry {
 		const logPath = join(dir, `${id}-${slug(label)}.log`);
 		const stream = createWriteStream(logPath, { flags: "a" });
 		const target = bootCommand(command);
-		const child = spawn(target.file, target.args, {
+		const spawned = spawnChild({
+			cmd: target.file,
+			args: target.args,
 			cwd: resolve(spec.cwd),
+			// stdin 接空设备（交互确认 / pager / REPL 一律读到 EOF）
 			stdio: ["ignore", "pipe", "pipe"],
-			windowsHide: true,
-			// POSIX 下建新进程组：kill(-pid) 能带走整棵树，避免漏杀子进程变孤儿；
+			// POSIX 下建新进程组：`stop()` 能一次带走整棵树，避免漏杀子进程变孤儿；
 			// Windows 不用 detached（taskkill /T 负责整棵树，且 detached 会留下独立控制台窗口）。
-			...(process.platform === "win32" ? {} : { detached: true }),
-			env: { ...process.env, PAGER: "cat", GIT_PAGER: "cat", CI: process.env.CI ?? "true" },
+			env: { PAGER: "cat", GIT_PAGER: "cat", CI: process.env.CI ?? "true" },
 		});
+		const child = spawned.child;
 		const now = Date.now();
 		const record: JobRecord = {
 			id,
 			child,
+			stop: spawned.stop,
 			pid: child.pid ?? 0,
 			command,
 			label,
@@ -339,7 +346,7 @@ export class JobRegistry {
 			const text = readTail(record.logPath, TAIL_DEFAULT);
 			if (text) return text;
 			if (record.state === "exited") break;
-			await new Promise((r) => setTimeout(r, 100));
+			await sleep(100);
 		}
 		return readTail(record.logPath, TAIL_DEFAULT);
 	}
@@ -351,7 +358,8 @@ export class JobRegistry {
 		record.killing = true;
 		record.reason ??= "killed";
 		if (record.pid > 1) {
-			void killPidTree(record.pid)
+			void record
+				.stop()
 				.catch(() => {})
 				.finally(() => {
 					// taskkill 是异步的：close 事件到了 finish 会自然收场；
@@ -359,7 +367,7 @@ export class JobRegistry {
 					setTimeout(() => {
 						const cur = this.jobs.get(id);
 						if (cur && cur.state === "running" && cur.killing) {
-							if (cur.pid > 1) void killPidTree(cur.pid).catch(() => {});
+							if (cur.pid > 1) void cur.stop().catch(() => {});
 							setTimeout(() => {
 								const again = this.jobs.get(id);
 								if (again && again.state === "running") this.finish(again, null, "killed");
@@ -386,13 +394,13 @@ export class JobRegistry {
 				while (Date.now() < grace) {
 					const again = this.jobs.get(id);
 					if (!again || again.state !== "running") return { ok: true, exited: true, timedOut: false };
-					await new Promise((r) => setTimeout(r, 200));
+					await sleep(200);
 				}
 				const still = this.jobs.get(id);
 				if (still && still.state === "running") this.finish(still, null, "killed");
 				return { ok: true, exited: true, timedOut: false };
 			}
-			await new Promise((r) => setTimeout(r, 250));
+			await sleep(250);
 		}
 		return { ok: true, exited: false, timedOut: true };
 	}
@@ -408,7 +416,7 @@ export class JobRegistry {
 		this.disposed = true;
 		for (const record of this.jobs.values()) {
 			if (record.timer) clearInterval(record.timer);
-			if (record.pid > 1) void killPidTree(record.pid).catch(() => {});
+			if (record.pid > 1) void record.stop().catch(() => {});
 		}
 		this.jobs.clear();
 	}

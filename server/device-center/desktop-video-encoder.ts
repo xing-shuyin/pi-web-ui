@@ -1,5 +1,6 @@
-import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
+import { spawnChildPiped, type SpawnedChild } from "../spawn-child.js";
 import { resolveFfmpeg } from "./ffmpeg-path.js";
+import { runProcess } from "../run-process.js";
 import { existsSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { createH264Splitter, h264Codec, videoBitrate, type VideoFrame } from "./desktop-video.js";
@@ -47,45 +48,32 @@ export function selectDesktopVideoRuntime(
 		for (const candidate of candidates) {
 			if (rejected.has(candidate.path + ":" + candidate.encoder)) continue;
 			const { encoder } = candidate;
-			const ok = await new Promise<boolean>((resolve) => {
-				const child = spawn(
-					candidate.path,
-					[
-						"-hide_banner",
-						"-loglevel",
-						"error",
-						"-nostdin",
-						"-f",
-						"lavfi",
-						"-i",
-						"color=size=1280x720:rate=10:duration=0.2",
-						"-an",
-						"-c:v",
-						encoder,
-						...encoderArguments(encoder),
-						"-bf",
-						"0",
-						"-f",
-						"null",
-						"-",
-					],
-					{ windowsHide: true, stdio: "ignore" },
-				);
-				const timer = setTimeout(() => {
-					child.kill();
-					resolve(false);
-				}, 3000);
-				timer.unref();
-				child.once("error", () => {
-					clearTimeout(timer);
-					resolve(false);
-				});
-				child.once("exit", (code) => {
-					clearTimeout(timer);
-					resolve(code === 0);
-				});
+			const probeResult = await runProcess({
+				cmd: candidate.path,
+				args: [
+					"-hide_banner",
+					"-loglevel",
+					"error",
+					"-nostdin",
+					"-f",
+					"lavfi",
+					"-i",
+					"color=size=1280x720:rate=10:duration=0.2",
+					"-an",
+					"-c:v",
+					encoder,
+					...encoderArguments(encoder),
+					"-bf",
+					"0",
+					"-f",
+					"null",
+					"-",
+				],
+				timeoutMs: 3000,
+				maxBytes: 4096,
+				keepColor: true,
 			});
-			if (ok) return candidate;
+			if (probeResult.code === 0) return candidate;
 		}
 	};
 	if (rejected.size) return probe();
@@ -161,17 +149,21 @@ export function startEncodedServiceDesktop(
 		applied = "",
 		codec: string | undefined;
 	let source: NativeDesktopHandle | undefined;
-	let encoder: ChildProcessWithoutNullStreams | undefined;
+	let encoder: ReturnType<typeof spawnChildPiped>["child"] | undefined;
+	let stopEncoderChild: SpawnedChild["stop"] | undefined;
 	let drainTimer: ReturnType<typeof setTimeout> | undefined;
 	function stopEncoder() {
 		generation++;
 		clearTimeout(drainTimer);
 		const previous = encoder;
+		const stopPrevious = stopEncoderChild;
 		encoder = undefined;
+		stopEncoderChild = undefined;
 		applied = "";
 		if (previous) {
 			previous.stdin.destroy();
-			previous.kill();
+			// 先 SIGTERM，宽限后由 stop() 收整棵树（原路径只 kill 主进程，孙进程会漏）。
+			void stopPrevious?.({ graceMs: 1500 });
 		}
 	}
 	function close() {
@@ -248,11 +240,13 @@ export function startEncodedServiceDesktop(
 					applied = key;
 					codec = undefined;
 					const id = generation;
-					encoder = spawn(selected.path, rawVideoArguments(selected.encoder, frame.width, frame.height, profile), {
-						windowsHide: true,
-						stdio: ["pipe", "pipe", "pipe"],
+					const spawned = spawnChildPiped({
+						cmd: selected.path,
+						args: rawVideoArguments(selected.encoder, frame.width, frame.height, profile),
 					});
-					const current = encoder;
+					encoder = spawned.child;
+					stopEncoderChild = spawned.stop;
+					const current = spawned.child;
 					let reset = true;
 					const split = createH264Splitter((value) => {
 						if (closed || id !== generation) return;

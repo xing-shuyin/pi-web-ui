@@ -1,4 +1,5 @@
 import { randomBytes, randomUUID } from "node:crypto";
+import { sleep } from "./async-utils.js";
 import { chmodSync, existsSync, readdirSync, realpathSync, statSync } from "node:fs";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { createRequire } from "node:module";
@@ -2154,8 +2155,6 @@ export class TerminalManager {
 		this.emitList();
 	}
 }
-
-const sleep = (ms: number): Promise<void> => new Promise((r) => setTimeout(r, ms));
 
 function lastSentinel(collected: string, nonce: string): RegExpMatchArray | null {
 	const tail = collected.length > 8000 ? collected.slice(-8000) : collected;

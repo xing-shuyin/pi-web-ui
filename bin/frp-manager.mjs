@@ -788,7 +788,7 @@ export function stopLocalFrpc({ dataDir }) {
 
 	try {
 		if (process.platform === "win32") {
-			spawnSync("taskkill", ["/PID", String(pid), "/F", "/T"], { stdio: "ignore" });
+			spawnSync("taskkill", ["/PID", String(pid), "/F", "/T"], { windowsHide: true, stdio: "ignore" });
 		} else {
 			process.kill(pid, "SIGTERM");
 		}
@@ -818,6 +818,7 @@ export async function runLocalFrpcForeground({ dataDir, version }) {
 	console.log(`> ${binPath} -c ${configPath}\n`);
 
 	const child = spawn(binPath, ["-c", configPath], {
+		windowsHide: true,
 		stdio: "inherit",
 	});
 
@@ -919,7 +920,7 @@ export function installLocalFrpcService({ dataDir }) {
 		writeFileSync(vbsPath, "\uFEFF" + vbsContent, "utf16le");
 
 		const regCmd = `reg add "HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Run" /v "pi-web-ui-frpc" /t REG_SZ /d "wscript.exe \\"${vbsPath}\\"" /f`;
-		spawnSync("cmd.exe", ["/c", regCmd], { stdio: "inherit" });
+		spawnSync("cmd.exe", ["/c", regCmd], { windowsHide: true, stdio: "inherit" });
 		console.log(
 			pick(
 				`✔ 已安装 Windows 开机自启项 (HKCU Run 键: pi-web-ui-frpc)`,
@@ -953,8 +954,8 @@ export function installLocalFrpcService({ dataDir }) {
 </plist>
 `;
 		writeFileSync(plistPath, plistContent, "utf8");
-		spawnSync("launchctl", ["unload", plistPath], { stdio: "ignore" });
-		spawnSync("launchctl", ["load", "-w", plistPath], { stdio: "inherit" });
+		spawnSync("launchctl", ["unload", plistPath], { windowsHide: true, stdio: "ignore" });
+		spawnSync("launchctl", ["load", "-w", plistPath], { windowsHide: true, stdio: "inherit" });
 		console.log(
 			pick(
 				`✔ 已安装 macOS launchd 自启服务 (${plistPath})`,
@@ -979,8 +980,11 @@ RestartSec=5s
 WantedBy=default.target
 `;
 		writeFileSync(unitPath, unitContent, "utf8");
-		spawnSync("systemctl", ["--user", "daemon-reload"], { stdio: "inherit" });
-		spawnSync("systemctl", ["--user", "enable", "--now", "pi-web-ui-frpc.service"], { stdio: "inherit" });
+		spawnSync("systemctl", ["--user", "daemon-reload"], { windowsHide: true, stdio: "inherit" });
+		spawnSync("systemctl", ["--user", "enable", "--now", "pi-web-ui-frpc.service"], {
+			windowsHide: true,
+			stdio: "inherit",
+		});
 		console.log(
 			pick(`✔ 已安装 Linux systemd 用户自启服务 (${unitPath})`, `✔ Installed Linux systemd user service (${unitPath})`),
 		);
@@ -995,7 +999,7 @@ export function uninstallLocalFrpcService({ dataDir }) {
 		spawnSync(
 			"reg",
 			["delete", "HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Run", "/v", "pi-web-ui-frpc", "/f"],
-			{ stdio: "ignore" },
+			{ windowsHide: true, stdio: "ignore" },
 		);
 		const vbsPath = join(frpDir, "start-frpc-hidden.vbs");
 		if (existsSync(vbsPath)) rmSync(vbsPath, { force: true });
@@ -1003,16 +1007,19 @@ export function uninstallLocalFrpcService({ dataDir }) {
 	} else if (process.platform === "darwin") {
 		const plistPath = join(homedir(), "Library", "LaunchAgents", "com.xingshuyin.pi-web-ui-frpc.plist");
 		if (existsSync(plistPath)) {
-			spawnSync("launchctl", ["unload", plistPath], { stdio: "ignore" });
+			spawnSync("launchctl", ["unload", plistPath], { windowsHide: true, stdio: "ignore" });
 			rmSync(plistPath, { force: true });
 			console.log(pick(`✔ 已移除 macOS launchd 服务`, `✔ Removed macOS launchd service`));
 		}
 	} else {
 		const unitPath = join(homedir(), ".config", "systemd", "user", "pi-web-ui-frpc.service");
 		if (existsSync(unitPath)) {
-			spawnSync("systemctl", ["--user", "disable", "--now", "pi-web-ui-frpc.service"], { stdio: "ignore" });
+			spawnSync("systemctl", ["--user", "disable", "--now", "pi-web-ui-frpc.service"], {
+				windowsHide: true,
+				stdio: "ignore",
+			});
 			rmSync(unitPath, { force: true });
-			spawnSync("systemctl", ["--user", "daemon-reload"], { stdio: "ignore" });
+			spawnSync("systemctl", ["--user", "daemon-reload"], { windowsHide: true, stdio: "ignore" });
 			console.log(pick(`✔ 已移除 Linux systemd 用户服务`, `✔ Removed Linux systemd user service`));
 		}
 	}

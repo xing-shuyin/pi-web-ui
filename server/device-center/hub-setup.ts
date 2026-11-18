@@ -1,5 +1,5 @@
 import type { Express } from "express";
-import { spawn } from "node:child_process";
+import { spawnChild } from "../spawn-child.js";
 import { isIP } from "node:net";
 import { join } from "node:path";
 import { getPkgRoot, getAppVersion } from "../pkg-info.js";
@@ -93,8 +93,9 @@ export function installHubSetupRoutes(app: Express, dataDir: string, runner?: Ru
 					reject(new Error("Hub operation cancelled"));
 					return;
 				}
-				const child = spawn(process.execPath, [cliPath, ...args], {
-					windowsHide: true,
+				const { child } = spawnChild({
+					cmd: process.execPath,
+					args: [cliPath, ...args],
 					stdio: ["ignore", "pipe", "pipe", "ipc"],
 				});
 				let output = "";

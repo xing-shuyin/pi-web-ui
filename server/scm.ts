@@ -1,12 +1,7 @@
-import { execFile } from "node:child_process";
-import { promisify } from "node:util";
+import { GIT_DEFAULT_TIMEOUT_MS, runGit, type RunGitResult } from "./git-run.js";
 import { pick, type ServerLang } from "./i18n.js";
 import { getGlobalRemoteSshService, isRemoteWorkspaceUri, shellQuotePosix } from "./remote-ssh-service.js";
-
-const exec = promisify(execFile);
-
-const GIT_TIMEOUT_MS = 15_000;
-const MAX_GIT_OUTPUT = 16 * 1024 * 1024;
+import { firstLine } from "./run-process.js";
 
 export interface ScmFileEntry {
 	path: string;
@@ -43,6 +38,26 @@ export interface ScmStatusData {
 	stats: Record<string, [number, number]>;
 }
 
+/**
+ * 本地 git 失败 → 本地化错误：保持旧的 `exec` 分支语义（spawn 失败 / 超时 / stderr 首行 / 兜底文案）。
+ */
+function gitError(result: RunGitResult, l: ServerLang): Error {
+	if (result.spawnError) {
+		return /ENOENT/.test(result.spawnError)
+			? new Error(
+					pick(
+						l,
+						"未找到 git 命令——请确认已安装 Git 并在 PATH 中",
+						"git command not found — make sure Git is installed and on PATH",
+						"scm.git.not.found",
+					),
+				)
+			: new Error(firstLine(result.spawnError));
+	}
+	if (result.timedOut) return new Error(pick(l, "git 命令超时", "git command timed out", "scm.git.timeout"));
+	return new Error(firstLine(result.stderr) || pick(l, "git 命令失败", "git command failed", "scm.git.failed"));
+}
+
 async function git(cwd: string, args: string[], lang?: () => ServerLang): Promise<string> {
 	const l = lang?.() ?? "en";
 	if (isRemoteWorkspaceUri(cwd)) {
@@ -51,50 +66,24 @@ async function git(cwd: string, args: string[], lang?: () => ServerLang): Promis
 			throw new Error("Remote SSH service is not initialized");
 		}
 		const cmd = `git -c core.quotepath=false ${args.map(shellQuotePosix).join(" ")}`;
-		const res = await sshSvc.execInWorkspace(cwd, cmd, { timeoutMs: GIT_TIMEOUT_MS });
+		const res = await sshSvc.execInWorkspace(cwd, cmd, { timeoutMs: GIT_DEFAULT_TIMEOUT_MS });
 		if (res.exitCode !== 0) {
 			const detail = (res.stderr || res.stdout || "").trim().split("\n")[0];
 			throw new Error(detail || pick(l, "git 命令失败", "git command failed", "scm.git.failed"));
 		}
 		return res.stdout;
 	}
-	try {
-		const { stdout } = await exec("git", ["-c", "core.quotepath=false", ...args], {
-			cwd,
-			timeout: GIT_TIMEOUT_MS,
-			maxBuffer: MAX_GIT_OUTPUT,
-			windowsHide: true,
-		});
-		return stdout;
-	} catch (err) {
-		const e = err as { message?: string; stderr?: string; killed?: boolean; code?: string };
-		if (e.code === "ENOENT")
-			throw new Error(
-				pick(
-					l,
-					"未找到 git 命令——请确认已安装 Git 并在 PATH 中",
-					"git command not found — make sure Git is installed and on PATH",
-					"scm.git.not.found",
-				),
-			);
-		if (e.killed) throw new Error(pick(l, "git 命令超时", "git command timed out", "scm.git.timeout"));
-		const detail = (e.stderr ?? e.message ?? "").trim().split("\n")[0];
-		throw new Error(detail || pick(l, "git 命令失败", "git command failed", "scm.git.failed"));
-	}
+	// 默认 15s / 16MB，与旧的本地常量一致；quotepath 由 runGit 统一注入。
+	// trim:false —— 旧 `exec` 分支返回原样 stdout（调用方自己按行解析），不要在这里多剪一刀。
+	const result = await runGit(args, { cwd, trim: false });
+	if (result.ok) return result.stdout;
+	throw gitError(result, l);
 }
 
 export async function gitDirOf(cwd: string): Promise<string | null> {
 	if (isRemoteWorkspaceUri(cwd)) return null;
-	try {
-		const { stdout } = await exec("git", ["rev-parse", "--absolute-git-dir"], {
-			cwd,
-			timeout: 5_000,
-			windowsHide: true,
-		});
-		return stdout.trim() || null;
-	} catch {
-		return null;
-	}
+	const result = await runGit(["rev-parse", "--absolute-git-dir"], { cwd, timeoutMs: 5_000 });
+	return result.ok ? result.stdout || null : null;
 }
 
 export function isNotRepoError(err: unknown): boolean {

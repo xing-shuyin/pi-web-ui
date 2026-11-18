@@ -1,13 +1,27 @@
-import { spawn, execSync } from "node:child_process";
+import { spawn } from "node:child_process";
 import { closeSync, existsSync, mkdirSync, openSync } from "node:fs";
 import { homedir } from "node:os";
-import { dirname, join, resolve } from "node:path";
+import { delimiter, dirname, join, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import net from "node:net";
 import type { ExtensionAPI, ExtensionCommandContext } from "@earendil-works/pi-coding-agent";
 
 const PKG_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const SERVER_ENTRY = join(PKG_ROOT, "dist", "server", "index.js");
+
+/** PATH 里的 node 可执行文件（Windows 认 node.exe / node，POSIX 认 node），按 PATH 顺序。 */
+function nodeExecutablesOnPath(): string[] {
+	const names = process.platform === "win32" ? ["node.exe", "node"] : ["node"];
+	const found: string[] = [];
+	for (const directory of (process.env.PATH ?? "").split(delimiter)) {
+		if (!directory) continue;
+		for (const name of names) {
+			const candidate = join(directory, name);
+			if (existsSync(candidate)) found.push(candidate);
+		}
+	}
+	return found;
+}
 
 function resolveNode(): string {
 	const base = process.execPath.toLowerCase();
@@ -16,14 +30,11 @@ function resolveNode(): string {
 	}
 
 	const candidates: string[] = [];
-	try {
-		const cmd = process.platform === "win32" ? "where node" : "which node";
-		const out = execSync(cmd, { windowsHide: true }).toString().trim();
-		for (const line of out.split(/\r?\n/)) {
-			const p = line.trim();
-			if (p && !/pi[/\\]pi(\.exe)?$/i.test(p)) candidates.push(p);
-		}
-	} catch {}
+	// 等价 `where node` / `which node`，但**不起子进程**：扩展跑在宿主主进程里，
+	// 同步子进程会把整个宿主卡住（同 server 的同步子进程禁令）。
+	for (const p of nodeExecutablesOnPath()) {
+		if (!/pi[/\\]pi(\.exe)?$/i.test(p)) candidates.push(p);
+	}
 
 	const home = homedir();
 	const extra: string[] = [];

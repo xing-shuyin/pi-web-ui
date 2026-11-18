@@ -1,7 +1,7 @@
-import { spawn } from "node:child_process";
 import { mkdtemp, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { spawnChildPiped } from "./spawn-child.js";
 
 export function runAudioProcess(
 	command: string,
@@ -10,7 +10,12 @@ export function runAudioProcess(
 ): Promise<Buffer> {
 	const abortSignal = AbortSignal.any([AbortSignal.timeout(timeoutMs), ...(signal ? [signal] : [])]);
 	return new Promise((resolve, reject) => {
-		const child = spawn(command, args, { windowsHide: true, signal: abortSignal, stdio: ["pipe", "pipe", "pipe"] });
+		// 音频是二进制流（不能走 runProcess 的文本缓冲）：用常驻单源的 raw 流 + stop() 收场。
+		const { child, stop } = spawnChildPiped({ cmd: command, args });
+		const onAbort = () => {
+			void stop({ graceMs: 500, timeoutMs: 2000 });
+		};
+		abortSignal.addEventListener("abort", onAbort, { once: true });
 		const chunks: Buffer[] = [];
 		let size = 0;
 		let stderr = "";
@@ -19,7 +24,7 @@ export function runAudioProcess(
 			size += chunk.length;
 			if (size > 16 * 1024 * 1024) {
 				failure = new Error("语音音频超过 16MB 上限");
-				child.kill();
+				void stop({ graceMs: 500, timeoutMs: 2000 });
 			} else chunks.push(chunk);
 		});
 		child.stderr.on("data", (chunk) => {
@@ -29,6 +34,7 @@ export function runAudioProcess(
 			failure = error;
 		});
 		child.on("close", (code) => {
+			abortSignal.removeEventListener("abort", onAbort);
 			if (abortSignal.aborted) reject(abortSignal.reason);
 			else if (failure) reject(failure);
 			else if (code !== 0) reject(new Error(`${command} 语音处理失败 (${code}): ${stderr.trim()}`));

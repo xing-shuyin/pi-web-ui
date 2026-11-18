@@ -1,5 +1,10 @@
 #!/usr/bin/env node
+// 第一行 import：装上「Windows 不弹控制台」进程级开关（git/npm/tar/powershell 一律不再新建控制台窗口）。
+// 单一实现见 server/hide-console-windows.ts，这里是它的编译产物搬运件。
+import "./lib/hide-console-windows.mjs";
 import { spawn, spawnSync } from "node:child_process";
+// shell / PowerShell 引号单源在 server/shell-quote.ts（生成件 bin/lib/shell-quote.mjs）。
+import { shellQuotePowerShell as psQuote, shellQuotePosix as shQuote } from "./lib/shell-quote.mjs";
 import { createConnection } from "node:net";
 import { get as httpGet } from "node:http";
 import { createInterface } from "node:readline/promises";
@@ -241,6 +246,7 @@ function fail(msg) {
 
 function run(cmd, args, { ignoreError = false, silent = false } = {}) {
 	const res = spawnSync(cmd, args, {
+		windowsHide: true,
 		stdio: silent ? ["inherit", "ignore", "ignore"] : "inherit",
 	});
 	if (!ignoreError && res.status !== 0) process.exit(res.status ?? 1);
@@ -357,11 +363,11 @@ function parseFlags(argv) {
 function openBrowser(url) {
 	let res;
 	if (isMac) {
-		res = spawnSync("open", [url], { stdio: "ignore" });
+		res = spawnSync("open", [url], { windowsHide: true, stdio: "ignore" });
 	} else if (isWin) {
-		res = spawnSync("cmd", ["/c", "start", "", url], { stdio: "ignore" });
+		res = spawnSync("cmd", ["/c", "start", "", url], { windowsHide: true, stdio: "ignore" });
 	} else {
-		res = spawnSync("xdg-open", [url], { stdio: "ignore" });
+		res = spawnSync("xdg-open", [url], { windowsHide: true, stdio: "ignore" });
 	}
 	if (res?.error) {
 		if (res.error.code === "ENOENT") {
@@ -519,7 +525,7 @@ function winLogPath(name) {
 }
 
 function winTaskExists(name) {
-	return spawnSync("schtasks", ["/Query", "/TN", name], { stdio: "ignore" }).status === 0;
+	return spawnSync("schtasks", ["/Query", "/TN", name], { windowsHide: true, stdio: "ignore" }).status === 0;
 }
 
 function winRunKeyName() {
@@ -529,6 +535,7 @@ function winRunKeyName() {
 function winRunKeyInstalled(name) {
 	return (
 		spawnSync("reg", ["query", `HKCU\\${winRunKeyName()}`, "/v", name], {
+			windowsHide: true,
 			stdio: "ignore",
 		}).status === 0
 	);
@@ -555,7 +562,7 @@ function winIcoPath() {
 }
 
 function winPowershell() {
-	const which = spawnSync("where.exe", ["pwsh.exe"], { encoding: "utf8" });
+	const which = spawnSync("where.exe", ["pwsh.exe"], { windowsHide: true, encoding: "utf8" });
 	if (which.status === 0) {
 		const first = (which.stdout ?? "").trim().split(/\r?\n/)[0];
 		if (first) return first;
@@ -608,10 +615,6 @@ function pidAlive(pid) {
 	} catch (err) {
 		return err.code === "EPERM";
 	}
-}
-
-function shQuote(s) {
-	return "'" + s.replace(/'/g, `'\\''`) + "'";
 }
 
 function buildWinShortcutPs1(env, cwd, taskName, url, logPath, pidPath) {
@@ -722,6 +725,7 @@ function installWinShortcut(opts) {
 		`Write-Output (Join-Path $desktop ${psQuote(SHORTCUT_LNK_NAME)})`,
 	].join("\r\n");
 	const res = spawnSync(powershell, ["-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-Command", ps], {
+		windowsHide: true,
 		encoding: "utf8",
 	});
 	if (res.status !== 0) {
@@ -918,7 +922,7 @@ function removeShortcut(name) {
 				"-Command",
 				`$d=[Environment]::GetFolderPath('Desktop');$p=Join-Path $d ${psQuote(SHORTCUT_LNK_NAME)};if(Test-Path $p){Remove-Item $p -Force}`,
 			],
-			{ stdio: "ignore" },
+			{ windowsHide: true, stdio: "ignore" },
 		);
 	} else if (isMac) {
 		const p = join(homedir(), "Desktop", SHORTCUT_MAC_NAME);
@@ -931,10 +935,6 @@ function removeShortcut(name) {
 			force: true,
 		});
 	}
-}
-
-function psQuote(s) {
-	return "'" + s.replace(/'/g, "''") + "'";
 }
 
 function buildWinStartPs1(env, cwd, logPath, pidPath) {
@@ -976,7 +976,10 @@ function launchWinService(vbsPath) {
 const WIN_SERVICE_IMAGE_RE = /^(powershell|pwsh|node)\.exe$/i;
 
 function winPidImageName(pid) {
-	const res = spawnSync("tasklist", ["/FI", `PID eq ${pid}`, "/FO", "CSV", "/NH"], { encoding: "utf8" });
+	const res = spawnSync("tasklist", ["/FI", `PID eq ${pid}`, "/FO", "CSV", "/NH"], {
+		windowsHide: true,
+		encoding: "utf8",
+	});
 	if (res.status !== 0) return null;
 	const line = (res.stdout ?? "").split(/\r?\n/).find((l) => l.trim());
 	if (!line) return null;
@@ -1007,7 +1010,7 @@ function stopWinInstance(name) {
 				});
 				const deadline = Date.now() + 5000;
 				while (Date.now() < deadline && pidAlive(pid)) {
-					spawnSync("ping", ["-n", "2", "127.0.0.1"], { stdio: "ignore" });
+					spawnSync("ping", ["-n", "2", "127.0.0.1"], { windowsHide: true, stdio: "ignore" });
 				}
 			}
 		}
@@ -1097,6 +1100,7 @@ WantedBy=multi-user.target
 function ensureRootForSystemctl() {
 	if (typeof process.getuid === "function" && process.getuid() === 0) return;
 	const res = spawnSync("sudo", [NODE, fileURLToPath(import.meta.url), "server", ...process.argv.slice(3)], {
+		windowsHide: true,
 		stdio: "inherit",
 	});
 	process.exit(res.status ?? 1);
@@ -1216,6 +1220,7 @@ function installLaunchd(opts) {
 function runSystemdRoot(command, args, input) {
 	const root = typeof process.getuid === "function" && process.getuid() === 0;
 	const result = spawnSync(root ? command : "sudo", root ? args : ["--", command, ...args], {
+		windowsHide: true,
 		input,
 		stdio: input === undefined ? "inherit" : ["pipe", "inherit", "inherit"],
 	});
@@ -1323,7 +1328,7 @@ function installWindows(opts) {
 			ignoreError: true,
 			silent: true,
 		});
-		spawnSync("ping", ["-n", "2", "127.0.0.1"], { stdio: "ignore" });
+		spawnSync("ping", ["-n", "2", "127.0.0.1"], { windowsHide: true, stdio: "ignore" });
 		run("schtasks", ["/Delete", "/TN", name, "/F"], {
 			ignoreError: true,
 			silent: true,
@@ -1564,11 +1569,12 @@ function controlService(action, opts) {
 	if (isMac) {
 		const label = serviceLabel(name);
 		const target = `gui/${uid()}/${label}`;
-		const loaded = () => spawnSync("launchctl", ["print", target], { stdio: "ignore" }).status === 0;
+		const loaded = () => spawnSync("launchctl", ["print", target], { windowsHide: true, stdio: "ignore" }).status === 0;
 
 		if (action === "status") {
 			if (loaded()) {
 				const res = spawnSync("launchctl", ["print", target], {
+					windowsHide: true,
 					encoding: "utf8",
 				});
 				const state = (res.stdout.match(/state = (\w+)/) ?? [])[1] ?? "loaded";
@@ -2000,6 +2006,7 @@ async function acquireRepo(src, tmpDir, opts = {}) {
 						: `· Reusing cached repo, incrementally checking out ${normalizedSubpath}…`,
 				);
 				const addRes = spawnSync("git", ["sparse-checkout", "add", normalizedSubpath], {
+					windowsHide: true,
 					cwd: cached.dir,
 					stdio: "inherit",
 					env: { ...process.env, GIT_TERMINAL_PROMPT: "0", GCM_INTERACTIVE: "never" },
@@ -2014,7 +2021,7 @@ async function acquireRepo(src, tmpDir, opts = {}) {
 	}
 
 	const dst = join(tmpDir, "src");
-	const hasGit = spawnSync("git", ["--version"], { stdio: "ignore", timeout: 10_000 }).status === 0;
+	const hasGit = spawnSync("git", ["--version"], { windowsHide: true, stdio: "ignore", timeout: 10_000 }).status === 0;
 	if (hasGit) {
 		const gitTimeout = Number(process.env.PI_WEB_GIT_TIMEOUT_MS) || 45_000;
 		const gitEnv = { ...process.env, GIT_TERMINAL_PROMPT: "0", GCM_INTERACTIVE: "never" };
@@ -2036,12 +2043,14 @@ async function acquireRepo(src, tmpDir, opts = {}) {
 				`· git clone --depth 1 --filter=blob:none --sparse ${src.cloneUrl}${src.ref ? ` (${src.ref})` : ""} [${normalizedSubpath}]`,
 			);
 			const cloneRes = spawnSync("git", sparseArgs, {
+				windowsHide: true,
 				stdio: "inherit",
 				env: gitEnv,
 				timeout: gitTimeout,
 			});
 			if (cloneRes.status === 0 && existsSync(dst)) {
 				const setRes = spawnSync("git", ["sparse-checkout", "set", normalizedSubpath], {
+					windowsHide: true,
 					cwd: dst,
 					stdio: "inherit",
 					env: gitEnv,
@@ -2049,6 +2058,7 @@ async function acquireRepo(src, tmpDir, opts = {}) {
 				});
 				if (setRes.status === 0) {
 					const coRes = spawnSync("git", ["checkout"], {
+						windowsHide: true,
 						cwd: dst,
 						stdio: "inherit",
 						env: gitEnv,
@@ -2082,6 +2092,7 @@ async function acquireRepo(src, tmpDir, opts = {}) {
 		args.push(src.cloneUrl, dst);
 		console.log(`· git clone --depth 1 ${src.cloneUrl}${src.ref ? ` (${src.ref})` : ""}`);
 		const res = spawnSync("git", args, {
+			windowsHide: true,
 			stdio: "inherit",
 			env: gitEnv,
 			timeout: gitTimeout,
@@ -2131,6 +2142,7 @@ async function acquireRepo(src, tmpDir, opts = {}) {
 	const extractTo = join(tmpDir, "tar");
 	mkdirSync(extractTo, { recursive: true });
 	const tarRes = spawnSync("tar", ["-xzf", "src.tar.gz", "-C", "tar"], {
+		windowsHide: true,
 		cwd: tmpDir,
 		stdio: "inherit",
 	});
@@ -2251,6 +2263,7 @@ function listShippedFiles(root) {
 function runBuildCommand(cmd, cwd, label) {
 	console.log(`· ${label}: ${cmd}`);
 	const res = spawnSync(cmd, {
+		windowsHide: true,
 		cwd,
 		stdio: "inherit",
 		shell: true,
@@ -3306,7 +3319,7 @@ async function pluginUpgradeSdkCmd(argv) {
 			for (const f of checkFiles) {
 				const full = join(d, f);
 				if (existsSync(full)) {
-					const r = spawnSync(NODE, ["--check", full], { stdio: "ignore" });
+					const r = spawnSync(NODE, ["--check", full], { windowsHide: true, stdio: "ignore" });
 					if (r.status !== 0) bad.push(full);
 				}
 			}
@@ -3410,7 +3423,7 @@ async function pluginCreateCmd(argv) {
 	const checkFiles = ["index.mjs", "client/entry.mjs"];
 	if (wantTest && useSdk) checkFiles.push("index.test.mjs");
 	for (const rel of checkFiles) {
-		const r = spawnSync(NODE, ["--check", join(target, rel)], { stdio: "ignore" });
+		const r = spawnSync(NODE, ["--check", join(target, rel)], { windowsHide: true, stdio: "ignore" });
 		if (r.status !== 0)
 			warnings.push(
 				ZH

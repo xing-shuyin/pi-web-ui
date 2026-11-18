@@ -1,7 +1,7 @@
-import { spawn } from "node:child_process";
 import { mkdtemp, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { runProcess } from "./run-process.js";
 
 /**
  * macOS capture goes through the native interactive `screencapture` tool: the overlay lets the user drag a
@@ -78,45 +78,18 @@ end run`;
 
 type RunResult = { code: number | null; stdout: string; stderr: string; timedOut: boolean; aborted: boolean };
 
-function runCommand(command: string, args: string[], timeoutMs: number, signal: AbortSignal): Promise<RunResult> {
-	return new Promise((resolve, reject) => {
-		if (signal.aborted) return resolve({ code: null, stdout: "", stderr: "", timedOut: false, aborted: true });
-		const child = spawn(command, args, { stdio: ["ignore", "pipe", "pipe"] });
-		let stdout = "";
-		let stderr = "";
-		let timedOut = false;
-		let settled = false;
-		const finish = (result: RunResult) => {
-			if (settled) return;
-			settled = true;
-			clearTimeout(timer);
-			signal.removeEventListener("abort", cancel);
-			resolve(result);
-		};
-		const cancel = () => {
-			child.kill("SIGTERM");
-			finish({ code: null, stdout, stderr, timedOut, aborted: true });
-		};
-		const timer = setTimeout(() => {
-			timedOut = true;
-			child.kill("SIGTERM");
-			finish({ code: null, stdout, stderr, timedOut, aborted: false });
-		}, timeoutMs);
-		signal.addEventListener("abort", cancel, { once: true });
-		child.stdout.on("data", (chunk: Buffer) => {
-			if (stdout.length < 8192) stdout += chunk.toString();
-		});
-		child.stderr.on("data", (chunk: Buffer) => {
-			stderr = (stderr + chunk.toString()).slice(-8192);
-		});
-		child.once("error", (error) => {
-			settled = true;
-			clearTimeout(timer);
-			signal.removeEventListener("abort", cancel);
-			reject(error);
-		});
-		child.once("close", (code) => finish({ code, stdout, stderr, timedOut, aborted: signal.aborted }));
-	});
+/** 子进程执行统一走 `runProcess`（超时/取消都杀整棵树），这里只保留本模块返回结构。 */
+async function runCommand(command: string, args: string[], timeoutMs: number, signal: AbortSignal): Promise<RunResult> {
+	if (signal.aborted) return { code: null, stdout: "", stderr: "", timedOut: false, aborted: true };
+	const result = await runProcess({ cmd: command, args, timeoutMs, signal });
+	if (result.spawnError) throw new Error(result.spawnError);
+	return {
+		code: result.code,
+		stdout: result.stdout,
+		stderr: result.stderr,
+		timedOut: result.timedOut,
+		aborted: result.aborted,
+	};
 }
 
 const delay = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));

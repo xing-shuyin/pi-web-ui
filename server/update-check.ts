@@ -1,7 +1,6 @@
-import { execFile } from "node:child_process";
 import { readdirSync, readFileSync, realpathSync, existsSync } from "node:fs";
 import { delimiter, dirname, isAbsolute, join } from "node:path";
-import { promisify } from "node:util";
+import { runGitText } from "./git-run.js";
 import { pick, type ServerLang } from "./i18n.js";
 import { sdkCopies, type SdkCopy } from "./sdk-origin.js";
 
@@ -122,9 +121,6 @@ function readLocalPackage(dir: string): LocalPackage | null {
 		return null;
 	}
 }
-
-const execFileAsync = promisify(execFile);
-const GIT_TIMEOUT_MS = 10_000;
 
 export interface GitExtensionSource {
 	host: string;
@@ -273,13 +269,9 @@ export function formatGitVersion(version: string, sha: string): string {
 	return version && version !== "?" ? `${version} (${short})` : short;
 }
 
+/** 本地 git 探测（rev-parse / ls-remote）：原来 10s，ls-remote 要走网络所以显式传。 */
 async function runGit(args: string[], cwd: string): Promise<string> {
-	const { stdout } = await execFileAsync("git", args, {
-		cwd,
-		timeout: GIT_TIMEOUT_MS,
-		env: { ...process.env, GIT_TERMINAL_PROMPT: "0" },
-	});
-	return stdout.trim();
+	return runGitText(args, { cwd, timeoutMs: 10_000 });
 }
 
 export interface GitCheckResult {

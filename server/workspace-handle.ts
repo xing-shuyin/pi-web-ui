@@ -1,7 +1,7 @@
-import { execFile } from "node:child_process";
 import { createHash, randomUUID } from "node:crypto";
 import { lstat, mkdir, readFile, readlink, realpath, rm } from "node:fs/promises";
 import { isAbsolute, join, relative, resolve, sep } from "node:path";
+import { gitFailureMessage, runGit, type RunGitResult } from "./git-run.js";
 
 export function checkSignal(signal?: AbortSignal): void {
 	signal?.throwIfAborted();
@@ -38,7 +38,7 @@ export async function canonicalPath(path: string): Promise<string> {
 	}
 }
 
-/** filter.* override 缓存：key 是「配置文件指纹」，值是要透传给 git 的 `-c` 参数。 */
+/** filter.* override 缓存：key 是「配置文件指纹」，值是要透传给 git 的 `-c` 覆盖项（不含 `-c` 本体）。 */
 const FILTER_OVERRIDE_CACHE = new Map<string, string[]>();
 
 /**
@@ -111,6 +111,27 @@ async function filterConfigFingerprint(cwd: string): Promise<string | undefined>
 	}
 }
 
+/** 本模块的固定硬化参数：hooks / fsmonitor / longpaths / gpgsign 一律被中和。 */
+const GIT_HARDENING = [
+	"core.hooksPath=/dev/null",
+	"core.fsmonitor=false",
+	"core.longpaths=true",
+	"commit.gpgsign=false",
+];
+
+/**
+ * 内部错误：把 git 的退出码带出来（调用方靠 `code === 1` 区分「配置项不存在」与真失败）。
+ */
+function gitCallError(result: RunGitResult): Error & { code: number | null; stdout: string; stderr: string } {
+	// gitFailureMessage 的超时文案绑的是 15s 默认值，这里跑的是 60s 超时，自己写文案。
+	const message = result.timedOut ? "git 命令超时（> 60s）" : gitFailureMessage(result);
+	return Object.assign(new Error(message), {
+		code: result.code,
+		stdout: result.stdout,
+		stderr: result.stderr,
+	});
+}
+
 export async function git(
 	cwd: string,
 	args: string[],
@@ -119,41 +140,27 @@ export async function git(
 	input?: Buffer,
 ): Promise<string> {
 	checkSignal(signal);
-	const env = { ...process.env };
-	for (const key of Object.keys(env)) {
-		if (/^GIT_/i.test(key)) delete env[key];
-	}
-	if (index) env.GIT_INDEX_FILE = index;
 
-	const execute = (command: string[], stdin?: Buffer, overrides: string[] = []) =>
-		new Promise<string>((done, reject) => {
-			const child = execFile(
-				"git",
-				[
-					"-c",
-					"core.hooksPath=/dev/null",
-					"-c",
-					"core.fsmonitor=false",
-					"-c",
-					"core.longpaths=true",
-					"-c",
-					"commit.gpgsign=false",
-					...overrides,
-					...command,
-				],
-				{
-					cwd,
-					signal,
-					windowsHide: true,
-					timeout: 60_000,
-					maxBuffer: 64 * 1024 * 1024,
-					env,
-				},
-				(error, stdout) => (error ? reject(error) : done(stdout)),
-			);
-			child.stdin?.on("error", () => {});
-			child.stdin?.end(stdin);
+	const execute = async (command: string[], stdin?: Buffer, overrides: string[] = []): Promise<string> => {
+		const result = await runGit(command, {
+			cwd,
+			cleanEnv: true,
+			...(index ? { env: { GIT_INDEX_FILE: index } } : {}),
+			config: [...GIT_HARDENING, ...overrides],
+			maxBytes: 64 * 1024 * 1024,
+			timeoutMs: 60_000,
+			...(signal ? { signal } : {}),
+			...(stdin === undefined ? {} : { input: stdin }),
+			// 本模块的调用方自己 trim；保持旧 `execFile` 原样输出。
+			trim: false,
+			// 旧实现不加 core.quotepath=false（路径全部走 -z / trim），保持不变。
+			quotepath: false,
 		});
+		if (result.ok) return result.stdout;
+		// 取消：抛 signal.reason（与旧 `execFile` 的 abort 语义一致），不要伪造成 git 失败。
+		checkSignal(signal);
+		throw gitCallError(result);
+	};
 	// filter.* 中和是安全硬化：每次 git 都先探测一次再跑真命令，等于每次逻辑调用两个子进程。
 	// 实测一条集成管线（3 次 prepare/verify/confirm）要 462 次 git（11.8s），其中一半是这个探测。
 	// 改成按「配置文件指纹」缓存：指纹不变就不重复探测；任何不确定（找不到 .git、配置里有
@@ -186,10 +193,9 @@ export async function git(
 				.map((entry) => entry.slice(0, entry.indexOf("\n")).replace(/\.(clean|smudge|process)$/, "")),
 		);
 		overrides = [...drivers].flatMap((driver) =>
-			["clean", "smudge", "process", "required"].flatMap((setting) => [
-				"-c",
-				`${driver}.${setting}=${setting === "required" ? "false" : ""}`,
-			]),
+			["clean", "smudge", "process", "required"].map(
+				(setting) => `${driver}.${setting}=${setting === "required" ? "false" : ""}`,
+			),
 		);
 		if (fingerprint) {
 			if (FILTER_OVERRIDE_CACHE.size >= 64) FILTER_OVERRIDE_CACHE.clear();

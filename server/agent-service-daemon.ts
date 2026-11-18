@@ -1,4 +1,5 @@
 import { join, resolve } from "node:path";
+import { sleep } from "./async-utils.js";
 import { statSync } from "node:fs";
 import { randomUUID } from "node:crypto";
 import type { MobileNotificationCallback } from "./mobile-notification-events.js";
@@ -1306,7 +1307,7 @@ export class AgentService {
 			});
 			const deadline = Date.now() + 10 * 60 * 1000;
 			for (;;) {
-				await new Promise((r) => setTimeout(r, 2000));
+				await sleep(2000);
 				if (promptError) {
 					return { ok: false, conversationId: conversationId || undefined, error: promptError };
 				}

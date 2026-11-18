@@ -1,4 +1,5 @@
 import { startTurnTiming, finishTurnTiming } from "../turn-timing.js";
+import { sleep } from "../async-utils.js";
 import { DEFAULT_DSH_CAPABILITIES } from "../engine-capabilities.js";
 import { conversationRowKind } from "../conversation-rows.js";
 import type { AgentEngineCapabilities } from "../protocol.js";
@@ -609,7 +610,7 @@ export class DshClientSession {
 			} catch (err) {
 				lastErr = err;
 				if (i === delays.length) break;
-				await new Promise((r) => setTimeout(r, delays[i]!));
+				await sleep(delays[i]!);
 			}
 		}
 		throw lastErr;

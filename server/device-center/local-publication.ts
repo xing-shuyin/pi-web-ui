@@ -1,6 +1,7 @@
-import { spawn, execFile } from "node:child_process";
 import { realpath } from "node:fs/promises";
 import { resolve } from "node:path";
+import { runGit, type RunGitResult } from "../git-run.js";
+import { pidAlive } from "../process-utils.js";
 import type {
 	DevicePublicationResult,
 	DevicePublishIntent,
@@ -37,11 +38,9 @@ const controllers = new Map<string, AbortController>();
 const fences = new Set<string>();
 const operationKey = (dataDir: string, intent: DevicePublishIntent) =>
 	JSON.stringify([resolve(dataDir), intent.accountId, intent.targetDeviceId, intent.integrationId]);
-const gitEnvironment = () => {
-	const env = { ...process.env };
-	for (const key of Object.keys(env)) if (/^GIT_/i.test(key)) delete env[key];
+/** 发布专用的 git 环境**覆盖项**（剥离继承的 GIT_* 由 `runGit({ cleanEnv: true })` 负责）。 */
+const publicationGitEnv = (): NodeJS.ProcessEnv => {
 	return {
-		...env,
 		GIT_CONFIG_NOSYSTEM: "1",
 		GIT_CONFIG_SYSTEM: process.platform === "win32" ? "NUL" : "/dev/null",
 		GIT_CONFIG_GLOBAL: process.platform === "win32" ? "NUL" : "/dev/null",
@@ -54,97 +53,87 @@ const gitEnvironment = () => {
 		GIT_LFS_SKIP_SMUDGE: "1",
 	};
 };
+/**
+ * 发布协议的 git 原语：单源 `runGit` 的特化（不再自带 spawn）。
+ * 它比普通 git 调用严一档，这些差异全部落在 `git-run` 的通用选项上：
+ * - `overflow: "kill"` + `maxBytes`：输出有界，超限杀树（防恶意仓库/过滤器撑爆内存）。
+ * - `stopTimeoutMs`：超时/取消后杀树，再等这么久；进程赖着不走就 `unstopped` → 这里 reject
+ *   `PublicationStopUnconfirmedError`（journal 记 `stopUnconfirmed`，后续操作阻塞成 cleanupPending）。
+ * - `onSpawn`：按 operation key 登记活 pid，并发互斥靠它（`activeChildren`）。
+ * - `cleanEnv` + `publicationGitEnv()`：不读用户/系统 git 配置，不碰 replacement objects / LFS。
+ */
 export function runPublicationGit(
 	cwd: string,
 	args: string[],
 	options: { signal?: AbortSignal; input?: Buffer; key?: string; timeoutMs?: number; stopTimeoutMs?: number } = {},
 ): Promise<PublicationGitExit> {
 	options.signal?.throwIfAborted();
-	return new Promise((resolveExit, reject) => {
-		const child = spawn(
-			"git",
-			[
-				"--no-optional-locks",
-				"-c",
-				"core.hooksPath=/dev/null",
-				"-c",
-				"maintenance.auto=false",
-				"-c",
-				"gc.auto=0",
-				"-c",
-				"core.fsmonitor=false",
-				"-c",
-				"credential.helper=",
-				"-c",
-				"protocol.allow=never",
-				...args,
-			],
-			{
-				cwd,
-				env: gitEnvironment(),
-				windowsHide: true,
-				detached: process.platform !== "win32",
-				stdio: ["pipe", "pipe", "pipe"],
-			},
-		);
-		const children = activeChildren.get(options.key ?? "") ?? new Set<number>();
-		if (options.key && child.pid) {
-			children.add(child.pid);
-			activeChildren.set(options.key, children);
-		}
-		let stdout = "",
-			stderr = "",
-			error: Error | undefined,
-			settled = false;
-		let stopTimer: ReturnType<typeof setTimeout> | undefined;
-		const settle = (result?: PublicationGitExit) => {
-			if (settled) return;
-			settled = true;
-			clearTimeout(timer);
-			clearTimeout(stopTimer);
-			options.signal?.removeEventListener("abort", stop);
-			if (result) resolveExit(result);
-			else reject(new PublicationStopUnconfirmedError());
-		};
-		const stop = () => {
-			if (child.pid) {
-				if (process.platform === "win32")
-					execFile("taskkill", ["/pid", String(child.pid), "/T", "/F"], { timeout: 1500, windowsHide: true }, () => {});
-				else
-					try {
-						process.kill(-child.pid, "SIGKILL");
-					} catch {}
-			}
-			stopTimer ??= setTimeout(() => settle(), options.stopTimeoutMs ?? 2000);
-		};
-		const timer = setTimeout(stop, options.timeoutMs ?? 30_000);
-		options.signal?.addEventListener("abort", stop, { once: true });
-		for (const [stream, target] of [
-			[child.stdout, "stdout"],
-			[child.stderr, "stderr"],
-		] as const)
-			stream.on("data", (chunk: Buffer) => {
-				const remaining = Math.max(0, 256 * 1024 - Buffer.byteLength(stdout) - Buffer.byteLength(stderr));
-				if (target === "stdout") stdout += chunk.subarray(0, remaining).toString();
-				else stderr += chunk.subarray(0, remaining).toString();
-				if (chunk.length > remaining) {
-					error = new Error("Publication Git output exceeded bound");
-					stop();
+	const key = options.key ?? "";
+	const children = activeChildren.get(key) ?? new Set<number>();
+	return runGit(args, {
+		cwd,
+		globalArgs: ["--no-optional-locks"],
+		quotepath: false,
+		trim: false,
+		cleanEnv: true,
+		env: publicationGitEnv(),
+		config: [
+			"core.hooksPath=/dev/null",
+			"maintenance.auto=false",
+			"gc.auto=0",
+			"core.fsmonitor=false",
+			"credential.helper=",
+			"protocol.allow=never",
+		],
+		timeoutMs: options.timeoutMs ?? 30_000,
+		stopTimeoutMs: options.stopTimeoutMs ?? 2_000,
+		overflow: "kill",
+		maxBytes: 256 * 1024,
+		...(options.signal ? { signal: options.signal } : {}),
+		...(options.input === undefined ? {} : { input: options.input }),
+		...(key
+			? {
+					onSpawn: (pid: number) => {
+						children.add(pid);
+						activeChildren.set(key, children);
+					},
 				}
-			});
-		child.on("error", (value) => {
-			error = value;
-		});
-		child.on("close", (code, signal) => {
-			if (child.pid) children.delete(child.pid);
-			if (options.key && !children.size) activeChildren.delete(options.key);
-			settle({ code, signal, stdout, stderr, ...(error ? { error } : {}) });
-		});
-		child.stdin.on("error", () => {});
-		child.stdin.end(options.input);
-		if (options.signal?.aborted) stop();
+			: {}),
+	}).then((result: RunGitResult) => {
+		// 活着的一律留在登记表里：后继操作看到它就是 fail-closed 拒绝（旧实现靠「不清理」达到同样效果，
+		// 但正常结束的 pid 从来没人摘掉，跨操作会越积越多）。
+		if (key) {
+			// 同步遍历中删 Set 是安全的（已删项不会被访问），不用快照。
+			for (const pid of children) if (!pidAlive(pid)) children.delete(pid);
+			if (children.size === 0) activeChildren.delete(key);
+		}
+		return publicationExitFrom(result);
 	});
 }
+
+/**
+ * 把单源执行结果映射成发布协议的结果。三条 fail-closed 规则：
+ * - `unstopped`（杀树后宽限内没停下来）→ 抛 `PublicationStopUnconfirmedError`；
+ * - `overflowed`（输出超限被杀）→ 带回 error；
+ * - `spawnError`（起不来）→ 带回 error。
+ * 导出只为单测锁契约（`tests/unit/local-publication-git-primitive.test.ts`）。
+ */
+export function publicationExitFrom(result: RunGitResult): PublicationGitExit {
+	if (result.unstopped) throw new PublicationStopUnconfirmedError();
+	const error = result.overflowed
+		? new Error("Publication Git output exceeded bound")
+		: result.spawnError
+			? new Error(result.spawnError)
+			: undefined;
+	return {
+		code: result.code,
+		signal: result.signal ?? null,
+		stdout: result.stdout,
+		stderr: result.stderr,
+		...(error ? { error } : {}),
+	};
+}
+
 async function checkedGit(
 	repo: PublicationRepository,
 	args: string[],

@@ -1,4 +1,3 @@
-import { spawn } from "node:child_process";
 import { createHash } from "node:crypto";
 import { readFile, mkdtemp, writeFile } from "node:fs/promises";
 import { unlinkSync, rmdirSync } from "node:fs";
@@ -6,7 +5,7 @@ import { tmpdir } from "node:os";
 import { dirname, isAbsolute, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { isIP } from "node:net";
-import { killPidTree } from "../process-utils.js";
+import { spawnChildPiped } from "../spawn-child.js";
 import { probeDeviceTunnel, type DeviceLanConnection, type createDeviceLanServer } from "./device-lan.js";
 import { createBrowserPeerGateway } from "./browser-peer-gateway.js";
 import {
@@ -230,7 +229,7 @@ export async function diagnoseDeviceP2P() {
 async function startHelper() {
 	const path = await binaryPath();
 	if (!path || running.size >= 16) throw new Error("P2P helper unavailable");
-	const child = spawn(path, [], { stdio: ["pipe", "pipe", "pipe"], windowsHide: true });
+	const { child, stop } = spawnChildPiped({ cmd: path });
 	let stderr = "";
 	child.stderr.setEncoding("utf8");
 	child.stderr.on("data", (text: string) => (stderr = (stderr + text).slice(-2048)));
@@ -238,7 +237,6 @@ async function startHelper() {
 	const waiters = new Set<{ type: string; resolve(event: Event): void; reject(error: Error): void }>();
 	const listeners = new Set<() => void>();
 	let stopped = false;
-	let exited = false;
 	let buffer = "";
 	const close = () => {
 		if (stopped) return;
@@ -249,16 +247,12 @@ async function startHelper() {
 		for (const listener of listeners) listener();
 		listeners.clear();
 		child.stdin.end();
-		const timer = setTimeout(() => {
-			if (!exited && child.pid) void killPidTree(child.pid);
-		}, 2000);
-		timer.unref();
-		child.once("exit", () => clearTimeout(timer));
+		// 先给 2s 让它自己退（stdin 已关），没退就由 stop() 杀整棵树。
+		void stop({ graceMs: 2000, timeoutMs: 5000 });
 	};
 	running.add(close);
 	child.once("error", close);
 	child.once("exit", (code) => {
-		exited = true;
 		if (!stopped && stderr.trim()) console.warn("[device-p2p] helper exit", code, stderr.trim().slice(0, 500));
 		close();
 	});

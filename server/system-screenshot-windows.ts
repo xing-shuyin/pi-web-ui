@@ -1,4 +1,4 @@
-import { spawn } from "node:child_process";
+import { spawnChild, spawnChildPiped } from "./spawn-child.js";
 
 export const WINDOWS_SCREENSHOT_SOURCE = String.raw`
 using System;
@@ -192,9 +192,9 @@ export function captureWindowsScreenshot(
 	if (signal.aborted) return Promise.resolve(null);
 	return new Promise((resolve, reject) => {
 		const script = windowsScreenshotScript(token, locale, process.pid, hideWindow);
-		const child = spawn(
-			"powershell.exe",
-			[
+		const spawned = spawnChildPiped({
+			cmd: "powershell.exe",
+			args: [
 				"-NoLogo",
 				"-NoProfile",
 				"-NonInteractive",
@@ -202,8 +202,8 @@ export function captureWindowsScreenshot(
 				"-EncodedCommand",
 				Buffer.from(script, "utf16le").toString("base64"),
 			],
-			{ windowsHide: true, stdio: ["pipe", "pipe", "pipe"] },
-		);
+		});
+		const child = spawned.child;
 		const chunks: Buffer[] = [];
 		let bytes = 0;
 		let stderr = "";
@@ -215,14 +215,16 @@ export function captureWindowsScreenshot(
 			closing = true;
 			child.stdin.end("cancel\n");
 			forceTimer = setTimeout(() => {
-				child.kill();
+				// 宽限期到：交给 stop() 收整棵进程树（原路径只 kill 主进程，孙进程会漏）。
+				void spawned.stop({ graceMs: 0 });
 				const window = /window:(\d+):(3|9)/.exec(stderr);
 				if (!window) return;
 				const recovery = `Add-Type -TypeDefinition 'using System; using System.Runtime.InteropServices; public class PiRestore { [DllImport("user32.dll")] public static extern bool ShowWindow(IntPtr h, int n); }'; [PiRestore]::ShowWindow([IntPtr]${window[1]}, ${window[2]}) | Out-Null`;
-				const restore = spawn("powershell.exe", ["-NoProfile", "-NonInteractive", "-Command", recovery], {
-					windowsHide: true,
+				const restore = spawnChild({
+					cmd: "powershell.exe",
+					args: ["-NoProfile", "-NonInteractive", "-Command", recovery],
 					stdio: "ignore",
-				});
+				}).child;
 				restore.on("error", () => {});
 			}, 5000);
 		};

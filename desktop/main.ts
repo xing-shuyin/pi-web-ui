@@ -1,3 +1,6 @@
+// 第一条 import：桌面壳（GUI 子系统应用，本来就没有控制台）装上「Windows 不弹控制台」进程级开关，
+// 它对 taskkill / powershell / 更新器等子进程一律建控制台。单一实现见 server/hide-console-windows.ts。
+import "../server/hide-console-windows.js";
 import { app, BrowserWindow, dialog, ipcMain, session, type IpcMainInvokeEvent } from "electron";
 import { ElectronChromeExtensions, setSessionPartitionResolver } from "electron-chrome-extensions";
 import { execFile, spawn, type ChildProcess } from "node:child_process";

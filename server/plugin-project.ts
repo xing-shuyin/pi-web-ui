@@ -1,11 +1,11 @@
-import { spawn } from "node:child_process";
 import { existsSync, mkdirSync, realpathSync, rmSync, statSync, writeFileSync, type Dirent } from "node:fs";
 import { readdir as fspReaddir } from "node:fs/promises";
 import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
-import { StringDecoder } from "node:string_decoder";
-import { killPidTree } from "./process-utils.js";
+import { gitEnv, runGit } from "./git-run.js";
+import { runProcess, type RunProcessResult } from "./run-process.js";
 
-const DEFAULT_GIT_TIMEOUT_MS = 5 * 60_000;
+/** 调用方（`deps.gitTimeoutMs`）缺省值：clone 是慢命令，不能用 git-run 的 15s 默认。 */
+const DEFAULT_CALLER_GIT_TIMEOUT_MS = 5 * 60_000;
 const MAX_FILE_BYTES = 1024 * 1024;
 const MAX_FILES = 32;
 const MAX_LINE_CHARS = 400;
@@ -109,35 +109,10 @@ function errMessage(err: unknown): string {
 	return err instanceof Error ? err.message : String(err);
 }
 
-function gitEnv(): NodeJS.ProcessEnv {
+function gitEnvExtra(): NodeJS.ProcessEnv {
 	return {
-		...process.env,
-		GIT_TERMINAL_PROMPT: "0",
-		GCM_INTERACTIVE: "never",
 		GIT_PAGER: "cat",
 		GIT_SSH_COMMAND: process.env.GIT_SSH_COMMAND ?? "ssh -o BatchMode=yes",
-	};
-}
-
-function makeLineReader(onLine: (line: string) => void) {
-	const decoder = new StringDecoder("utf8");
-	let rest = "";
-	const emit = (raw: string) => {
-		const line = raw.replace(/\r/g, " ").trimEnd();
-		if (line !== "") onLine(line);
-	};
-	return {
-		push(chunk: Buffer) {
-			rest += decoder.write(chunk);
-			const parts = rest.split("\n");
-			rest = parts.pop() ?? "";
-			for (const p of parts) emit(p);
-		},
-		flush() {
-			rest += decoder.end();
-			if (rest !== "") emit(rest);
-			rest = "";
-		},
 	};
 }
 
@@ -148,82 +123,49 @@ interface GitRunResult {
 	stderrTail: string;
 }
 
-async function runGit(
+/**
+ * 跑一条 git 命令：默认走单源 `runGit`（逐行日志走 `onLine` / `onStderrLine`）；
+ * 只有显式注入了 `deps.gitBin`（单测的注入点）才退回 `runProcess`，因为 `runGit` 只会跑 `git`。
+ */
+async function gitRun(
 	bin: string,
 	args: string[],
-	opts: { cwd: string; timeoutMs: number; env: NodeJS.ProcessEnv; onLine: (line: string) => void },
+	opts: { cwd: string; timeoutMs: number; onLine: (line: string) => void },
 ): Promise<GitRunResult> {
-	return await new Promise<GitRunResult>((settle) => {
-		let child;
-		try {
-			child = spawn(bin, args, {
-				cwd: opts.cwd,
-				env: opts.env,
-				detached: process.platform !== "win32",
-				stdio: ["ignore", "pipe", "pipe"],
-				windowsHide: true,
-			});
-		} catch (err) {
-			settle({
-				code: -1,
-				spawnError: `无法启动 git（${bin}）：${errMessage(err)}`,
-				timedOut: false,
-				stderrTail: "",
-			});
-			return;
-		}
-
-		const stderrLines: string[] = [];
-		const stdout = makeLineReader((line) => opts.onLine(`git: ${line}`));
-		const stderr = makeLineReader((line) => {
-			stderrLines.push(line);
-			opts.onLine(`git: ${line}`);
-		});
-		child.stdout?.on("data", (chunk: Buffer) => stdout.push(chunk));
-		child.stderr?.on("data", (chunk: Buffer) => stderr.push(chunk));
-
-		let timedOut = false;
-		let settled = false;
-		let graceTimer: NodeJS.Timeout | undefined;
-		let spawnError: string | undefined;
-		const finish = (code: number | null) => {
-			if (settled) return;
-			settled = true;
-			clearTimeout(timer);
-			if (graceTimer) clearTimeout(graceTimer);
-			stdout.flush();
-			stderr.flush();
-			let tail = stderrLines.join("\n");
-			if (tail.length > MAX_STDERR_TAIL) tail = `…${tail.slice(-MAX_STDERR_TAIL)}`;
-			settle({ code: code ?? -1, timedOut, stderrTail: tail, ...(spawnError ? { spawnError } : {}) });
-		};
-		const timer = setTimeout(() => {
-			timedOut = true;
-			if (typeof child.pid === "number" && child.pid > 0) {
-				void killPidTree(child.pid);
-				try {
-					child.kill("SIGKILL");
-				} catch {}
-			} else {
-				try {
-					child.kill("SIGKILL");
-				} catch {}
-			}
-			graceTimer = setTimeout(() => {
-				try {
-					child.stdout?.destroy();
-					child.stderr?.destroy();
-				} catch {}
-				finish(-1);
-			}, 500);
-		}, opts.timeoutMs);
-
-		child.on("error", (err) => {
-			spawnError = `无法启动 git（${bin}）：${errMessage(err)}`;
-			if (timedOut) finish(-1);
-		});
-		child.on("close", (code) => finish(code));
-	});
+	const stderrLines: string[] = [];
+	// 归一行内残留的 \r（git 进度条），保留旧实现的日志形态。
+	const normalize = (raw: string): string | null => {
+		const line = raw.replace(/\r/g, " ").trimEnd();
+		return line === "" ? null : line;
+	};
+	const onLine = (raw: string) => {
+		const line = normalize(raw);
+		if (line) opts.onLine(`git: ${line}`);
+	};
+	const onStderrLine = (raw: string) => {
+		const line = normalize(raw);
+		if (!line) return;
+		stderrLines.push(line);
+		opts.onLine(`git: ${line}`);
+	};
+	const common = { cwd: opts.cwd, timeoutMs: opts.timeoutMs, onLine, onStderrLine };
+	const result: RunProcessResult =
+		bin === "git"
+			? await runGit(args, { ...common, env: gitEnvExtra() })
+			: await runProcess({
+					cmd: bin,
+					args: ["-c", "core.quotepath=false", ...args],
+					...common,
+					env: gitEnv(gitEnvExtra()),
+				});
+	let tail = stderrLines.join("\n");
+	if (tail.length > MAX_STDERR_TAIL) tail = `…${tail.slice(-MAX_STDERR_TAIL)}`;
+	return {
+		code: result.code ?? -1,
+		timedOut: result.timedOut,
+		stderrTail: tail,
+		...(result.spawnError ? { spawnError: `无法启动 git（${bin}）：${result.spawnError}` } : {}),
+	};
 }
 
 interface PlannedRepo {
@@ -343,8 +285,7 @@ export async function createProject(
 	}
 
 	const gitBin = deps.gitBin && deps.gitBin.trim() !== "" ? deps.gitBin : "git";
-	const timeoutMs = deps.gitTimeoutMs && deps.gitTimeoutMs > 0 ? deps.gitTimeoutMs : DEFAULT_GIT_TIMEOUT_MS;
-	const env = gitEnv();
+	const timeoutMs = deps.gitTimeoutMs && deps.gitTimeoutMs > 0 ? deps.gitTimeoutMs : DEFAULT_CALLER_GIT_TIMEOUT_MS;
 	const gitFailReason = (what: string, res: GitRunResult): string | undefined => {
 		if (res.spawnError) return res.spawnError;
 		if (res.timedOut) return `${what} 超时（> ${Math.round(timeoutMs / 1000)}s）`;
@@ -381,7 +322,7 @@ export async function createProject(
 			const args = ["clone", "--depth", "1"];
 			if (r.ref) args.push("--branch", r.ref);
 			args.push(r.url, r.dest);
-			const res = await runGit(gitBin, args, { cwd: root, timeoutMs, env, onLine: emit });
+			const res = await gitRun(gitBin, args, { cwd: root, timeoutMs, onLine: emit });
 			const why = gitFailReason("git clone", res);
 			if (why) return fail(`${why}${res.stderrTail === "" ? "" : `：${res.stderrTail}`}`);
 		}
@@ -408,7 +349,7 @@ export async function createProject(
 
 		if (spec?.gitInit === true) {
 			emit("git init");
-			const res = await runGit(gitBin, ["init"], { cwd: root, timeoutMs, env, onLine: emit });
+			const res = await gitRun(gitBin, ["init"], { cwd: root, timeoutMs, onLine: emit });
 			const why = gitFailReason("git init", res);
 			if (why) return fail(`${why}${res.stderrTail === "" ? "" : `：${res.stderrTail}`}`);
 		}

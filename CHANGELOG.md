@@ -10,6 +10,22 @@
 
 ## [Unreleased]
 
+### Changed
+
+- **子进程 / git / 引号 / 等待收敛成单源**：新增 `server/run-process.ts`（spawn + 超时与取消杀整棵进程树 + stdin 接地 + 行回调 + 输出上限，`NO_COLOR`/`windowsHide` 一次给全）与 `server/git-run.ts`（`runGit`/`runGitText`、`quotepath` 硬化、`GIT_TERMINAL_PROMPT=0` 环境、失败摘要取 stderr 首行），迁移掉 5 份重复的 `runGit`、6 份各自定义的超时常量与 6 处内联 `taskkill`（含 `eval-tool` 的 `execSync`，服务端同步子进程调用再少一处）；shell / PowerShell 引号收敛到 `server/shell-quote.ts`（CLI 用生成件 `bin/lib/shell-quote.mjs`，镜像件清单 `scripts/lib/bin-mirrors.mjs` + `npm run gen:bin-mirrors`），`sleep` 收敛到 `server/async-utils.ts`。`agent-service` 的自建 `runAsync`（50 行 spawn+超时杀树）与插件运行时依赖安装（`plugin-facilities` 的 `spawnSync` npm install、`plugin-assets` 的 `execFileSync` tar 解包）也一并收口 —— 后者原来会把服务端事件循环整段卡住几分钟；`runProcess` 新增 `windowsShell` 选项，统一「Windows 上 npm 这类 .cmd 包装器必须经 `cmd.exe /d /s /c`」的写法。同步子进程存量名单再缩短两行。连发布协议 `local-publication` 的 `runPublicationGit`（原来自己 spawn）也变成了单源特化：`runProcess` 新增 `stopTimeoutMs`（杀树后宽限内停不下来 → `unstopped`，而不是让 promise 永远挂着）、`overflow: "kill"`（输出超限立刻杀树）、`onSpawn(pid)`（按操作键登记活子进程）三个失败关闭（fail-closed）选项，`runGit` 新增 `globalArgs`（`--no-optional-locks` 这类全局开关）。规则与守卫：`docs/agent-rules.md` §四，`tests/unit/run-process.test.ts` / `git-run.test.ts` / `bin-mirror.test.ts` / `local-publication-git-primitive.test.ts`。
+
+- **同步子进程调用清零**：`plugins/bili-scroll`（2.10.3）的 `uv`/`python` 探测、Linux 桌面采集的 `xdpyinfo`/`xrandr` 尺寸探测都改成异步（插件跑在服务端主进程里，`spawnSync` 会把所有会话一起卡住）；macOS 的 `xcrun --find swift` 换成纯文件系统探测（`xcode-select` 的落点就是文件，顺便去掉「xcrun 卡在 Xcode 许可交互上钉死事件循环」的风险）。同一轮还把 `engine-probe` 的 npm 全局安装/卸载、`shell-env` 的登录 shell PATH 抓取换成 `runProcess`（前者的两段 80 行几乎相同的 spawn/超时/收输出代码合成一个 `runNpmGlobal`），并删掉 pi 扩展里 `execSync("where node")` 的阻塞探测（改纯 PATH 扫描）；再收掉 4 个漏网的一次性命令（`engine-cli` 的 `--version` 探测、hub 升级 worker 提交、macOS `swiftc` 编译 helper、H.264 编码器候选探测），它们原来各自手写「spawn + 超时 + 收输出」。同步子进程守卫的存量名单由此清空，扫描范围从 `server/` + `plugins/` 扩到 **`extensions/`**（pi 扩展跑在宿主主进程里），`tsconfig.extensions.json` 也补进了 `npm run typecheck` 门禁。
+
+- **常驻子进程也收敛成单源**：新增 `server/spawn-child.ts`（`spawnChild` / `spawnChildPiped` → `{ child, stop({graceMs,timeoutMs}) }`），把 LSP、MCP server、codex/claude/dsh 引擎驱动、eval 内核、bash job、插件作业、设备采集与编码、命名管道 supervisor、二进制 PNG 截图协议这些**常驻/交互式**子进程从「各写一遍 spawn + 各写一套杀树」统一到同一个出口；`stop()` 固定「先给 grace 让它自己退 → 再杀整棵树 → 确认 pid 消失」。配套守卫 `tests/unit/spawn-single-source-guard.test.ts` 规定：`server/` 内除两个出口（`run-process` / `spawn-child`）与基座（`process-utils`、node-pty、xdotool 输入队列）外，出现裸 `spawn(` / `execFile(` 直接红。
+
+### Removed
+
+- **内置插件 `bili-stroll`（漫步B站）已下线**：目录、`plugins/catalog.json` 条目与相关测试/守卫登记一并删除；已安装的用户可继续使用旧副本，卸载或重装市场条目后会消失。
+
+### Fixed
+
+- **Windows 桌面版安装/更新插件不再弹 git 黑窗**：桌面壳里跑服务与插件作业的进程没有控制台，Windows 上它 spawn 的每个控制台程序（`git clone`、`git ls-remote`、`tar`、`npm install`、插件构建命令、`taskkill`/`powershell` 等）都会被系统新建一个控制台窗口。现在收敛成一个进程级开关（单源 `server/hide-console-windows.ts`，CLI 侧为生成件 `bin/lib/hide-console-windows.mjs`），在 server / CLI / 桌面壳三个入口各 import 一次即全覆盖（插件代码、`promisify(execFile)` 也吃到），热路径仍逐点显式 `windowsHide` 双保险，并有守卫单测锁住调用点与生成件同源（`tests/unit/windows-hide-guard.test.ts`）。可见终端的场景用显式 `windowsHide: false`，排查时 `PI_WEB_SHOW_CONSOLE=1` 可全局关掉开关。
+
 ## [0.121.0] — 2026-11-14
 
 ### Added

@@ -43,7 +43,12 @@ beforeEach(async () => {
 	mocks.capture.mockReturnValue(source);
 	mocks.spawn.mockImplementation((_path, args) => {
 		const child = childFixture();
-		if (args.includes("lavfi")) queueMicrotask(() => child.emit("exit", args.includes("libx264") ? 0 : 1));
+		if (args.includes("lavfi"))
+			queueMicrotask(() => {
+				const code = args.includes("libx264") ? 0 : 1;
+				child.emit("exit", code);
+				child.emit("close", code);
+			});
 		return child;
 	});
 });
@@ -63,7 +68,11 @@ it("probes actual hardware encoders and caches a software fallback", async () =>
 it.each(["h264_nvenc", "h264_qsv", "h264_amf", "h264_mf"])("selects working %s before CPU", async (encoder) => {
 	mocks.spawn.mockImplementation((_path, args) => {
 		const child = childFixture();
-		queueMicrotask(() => child.emit("exit", args.includes(encoder) ? 0 : 1));
+		queueMicrotask(() => {
+			const code = args.includes(encoder) ? 0 : 1;
+			child.emit("exit", code);
+			child.emit("close", code);
+		});
 		return child;
 	});
 	expect(await api.selectDesktopVideoEncoder("/embedded/ffmpeg.exe")).toBe(encoder);
@@ -77,7 +86,11 @@ it.each(["h264_nvenc", "h264_qsv", "h264_amf", "h264_mf"])(
 		mocks.exists.mockReturnValue(true);
 		mocks.spawn.mockImplementation((path, args) => {
 			const child = childFixture();
-			queueMicrotask(() => child.emit("exit", path.includes("nvenc-compat") && args.includes(encoder) ? 0 : 1));
+			queueMicrotask(() => {
+				const code = path.includes("nvenc-compat") && args.includes(encoder) ? 0 : 1;
+				child.emit("exit", code);
+				child.emit("close", code);
+			});
 			return child;
 		});
 		expect(await api.selectDesktopVideoRuntime("/embedded/ffmpeg.exe")).toEqual({
@@ -91,7 +104,11 @@ it("falls back to the default hardware build when the patched build is incompati
 	mocks.exists.mockReturnValue(true);
 	mocks.spawn.mockImplementation((path, args) => {
 		const child = childFixture();
-		queueMicrotask(() => child.emit("exit", !path.includes("nvenc-compat") && args.includes("h264_nvenc") ? 0 : 1));
+		queueMicrotask(() => {
+			const code = !path.includes("nvenc-compat") && args.includes("h264_nvenc") ? 0 : 1;
+			child.emit("exit", code);
+			child.emit("close", code);
+		});
 		return child;
 	});
 	expect(await api.selectDesktopVideoRuntime("/embedded/ffmpeg.exe")).toEqual({
@@ -111,7 +128,11 @@ it("replaces a hardware encoder that fails on actual desktop pixels without clos
 	mocks.spawn.mockImplementation((_path, args) => {
 		const child = childFixture();
 		if (args.includes("lavfi"))
-			queueMicrotask(() => child.emit("exit", args.includes("h264_amf") || args.includes("libx264") ? 0 : 1));
+			queueMicrotask(() => {
+				const code = args.includes("h264_amf") || args.includes("libx264") ? 0 : 1;
+				child.emit("exit", code);
+				child.emit("close", code);
+			});
 		return child;
 	});
 	const opts = options(),
@@ -170,7 +191,8 @@ it("bounds raw input by encoder consumption and restarts after a profile change"
 	expect(ack).toHaveBeenCalledOnce();
 	handle.configure!({ ...profile, fps: 240 });
 	capture.onRawFrame!(frame, vi.fn());
-	expect(child.kill).toHaveBeenCalledOnce();
+	// 旧编码器在切换时被拆掉（信号与杀树由 spawnChild.stop() 负责，见 tests/unit/spawn-child.test.ts）。
+	expect(child.stdin.destroyed).toBe(true);
 	child.emit("exit", 1);
 	expect(opts.onError).not.toHaveBeenCalled();
 	expect(source.configure).toHaveBeenLastCalledWith({ ...profile, fps: 240 });

@@ -1254,8 +1254,9 @@ export class FilesService {
 				textEn: "Cannot open system file manager: " + detail + " (unsupported on remote/headless hosts)",
 			});
 		try {
-			const { spawn } = await import("node:child_process");
-			const child = spawn(cmd, args, { detached: true, stdio: "ignore" });
+			const { spawnChild } = await import("./spawn-child.js");
+			// 打开文件管理器必须活过本进程：两平台都 detached（原实现就是 detached: true）。
+			const child = spawnChild({ cmd, args, stdio: "ignore", detached: true }).child;
 			if (typeof child.unref === "function") child.unref();
 			const launched = await new Promise<boolean>((resolve) => {
 				let done = false;

@@ -1,9 +1,8 @@
-import { execFile } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import { existsSync } from "node:fs";
 import { lstat, mkdir, readdir, readFile, realpath, rm, unlink, writeFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
-import { promisify } from "node:util";
+import { runGit } from "../git-run.js";
 import type {
 	DeviceArtifact,
 	DevicePublishIntent,
@@ -42,8 +41,8 @@ import {
 	runPublicationGit,
 } from "./local-publication.js";
 
-const exec = promisify(execFile);
-const GIT_TIMEOUT_MS = 30_000;
+/** 隔离 git 的输出上限（与旧 exec 的 maxBuffer 一致）。 */
+const ISOLATED_GIT_MAX_BYTES = 8 * 1024 * 1024;
 const MAX_DIFF_BYTES = 64 * 1024;
 
 export interface DeviceIntegrationSession {
@@ -264,19 +263,13 @@ async function getVerifiedEmptyHooksDir(dataDir: string): Promise<string> {
 
 export async function verifyNoExternalDrivers(repoRoot: string, dataDir: string): Promise<void> {
 	const env = await buildIsolatedEnv(dataDir);
-	try {
-		const { stdout } = await exec(
-			"git",
-			["config", "--get-regexp", "^(merge\\..*\\.driver|filter\\..*\\.(clean|smudge|process)|diff\\..*\\.command)$"],
-			{ cwd: repoRoot, windowsHide: true, timeout: 5000, env },
-		);
-		if (stdout.trim().length > 0) {
-			throw integrationError("INTEGRATION_CUSTOM_DRIVER");
-		}
-	} catch (error) {
-		const err = error as { code?: number | string; message?: string };
-		if (err.code === 1) return;
-		if (err.code === "INTEGRATION_CUSTOM_DRIVER") throw error;
+	// 非零退出（退出码 1 = 没有任何匹配）与其它失败一律放过，只有真的配了自定义 driver 才拒。
+	const result = await runGit(
+		["config", "--get-regexp", "^(merge\\..*\\.driver|filter\\..*\\.(clean|smudge|process)|diff\\..*\\.command)$"],
+		{ cwd: repoRoot, timeoutMs: 5_000, cleanEnv: true, env },
+	);
+	if (result.ok && result.stdout.trim().length > 0) {
+		throw integrationError("INTEGRATION_CUSTOM_DRIVER");
 	}
 }
 
@@ -302,59 +295,43 @@ export async function validateBranchName(cwd: string, branch: string): Promise<s
 	if (!trimmed || trimmed.startsWith("-")) {
 		throw new Error("Invalid branch name");
 	}
-	try {
-		await exec("git", ["check-ref-format", "--branch", trimmed], {
-			cwd,
-			windowsHide: true,
-			timeout: 5000,
-		});
-		return trimmed;
-	} catch {
-		throw new Error(`Invalid branch format: ${trimmed}`);
-	}
+	// check-ref-format 只看格式：非零退出即非法（旧实现靠 execFile 抛错判定）。
+	const check = await runGit(["check-ref-format", "--branch", trimmed], { cwd, timeoutMs: 5_000 });
+	if (!check.ok) throw new Error(`Invalid branch format: ${trimmed}`);
+	return trimmed;
 }
 
 export async function runIsolatedGit(
 	cwd: string,
 	dataDir: string,
 	args: string[],
-	timeoutMs = GIT_TIMEOUT_MS,
+	timeoutMs = 30_000,
 	options?: { signal?: AbortSignal },
 ): Promise<{ stdout: string; stderr: string }> {
 	const emptyHooks = await getVerifiedEmptyHooksDir(dataDir);
 	const env = await buildIsolatedEnv(dataDir);
-	const safeArgs = [
-		"-c",
-		`core.hooksPath=${emptyHooks}`,
-		"-c",
-		"commit.gpgSign=false",
-		"-c",
-		"core.autocrlf=false",
-		"-c",
-		"core.fsmonitor=false",
-		"-c",
-		"core.eol=lf",
-		"-c",
-		"core.quotepath=false",
-		...args,
-	];
-	try {
-		const result = await exec("git", safeArgs, {
-			cwd,
-			timeout: timeoutMs,
-			maxBuffer: 8 * 1024 * 1024,
-			windowsHide: true,
-			env,
-			signal: options?.signal,
-		});
-		return { stdout: result.stdout ?? "", stderr: result.stderr ?? "" };
-	} catch (error) {
-		const err = error as { message?: string; stderr?: string; stdout?: string; code?: number };
-		const sanitized = sanitizeError(err.stderr || err.stdout || err.message);
-		throw Object.assign(new Error(sanitized), {
-			exitCode: err.code,
-		});
-	}
+	// 隔离硬化的 `-c` 交给单源展开（quotepath 由 runGit 默认注入）；env 只走 buildIsolatedEnv 的底（cleanEnv）。
+	const result = await runGit(args, {
+		cwd,
+		timeoutMs,
+		maxBytes: ISOLATED_GIT_MAX_BYTES,
+		cleanEnv: true,
+		env,
+		config: [
+			`core.hooksPath=${emptyHooks}`,
+			"commit.gpgSign=false",
+			"core.autocrlf=false",
+			"core.fsmonitor=false",
+			"core.eol=lf",
+		],
+		trim: false,
+		...(options?.signal ? { signal: options.signal } : {}),
+	});
+	if (result.ok) return { stdout: result.stdout, stderr: result.stderr };
+	const detail = result.spawnError || result.stderr || result.stdout || `git exited ${result.code ?? "unknown"}`;
+	throw Object.assign(new Error(sanitizeError(detail)), {
+		exitCode: result.code,
+	});
 }
 
 export async function getVerifiedWorktreesRoot(dataDir: string): Promise<string> {
@@ -393,13 +370,9 @@ export async function inspectLocalTarget(
 	options?: { signal?: AbortSignal },
 ): Promise<{ headSha: string; isDirty: boolean }> {
 	const validBranch = await validateBranchName(repoRoot, branch);
-	const inside = await runIsolatedGit(
-		repoRoot,
-		dataDir,
-		["rev-parse", "--is-inside-work-tree"],
-		GIT_TIMEOUT_MS,
-		options,
-	).catch(() => null);
+	const inside = await runIsolatedGit(repoRoot, dataDir, ["rev-parse", "--is-inside-work-tree"], 30_000, options).catch(
+		() => null,
+	);
 	if (!inside || inside.stdout.trim() !== "true") {
 		throw new Error("Target workspace is not a valid Git repository");
 	}
@@ -407,14 +380,14 @@ export async function inspectLocalTarget(
 	await verifyNoExternalDrivers(repoRoot, dataDir);
 	await verifyGitAttributesSafe(repoRoot, dataDir);
 
-	const status = await runIsolatedGit(repoRoot, dataDir, ["status", "--porcelain"], GIT_TIMEOUT_MS, options);
+	const status = await runIsolatedGit(repoRoot, dataDir, ["status", "--porcelain"], 30_000, options);
 	const isDirty = status.stdout.trim().length > 0;
 
 	const rev = await runIsolatedGit(
 		repoRoot,
 		dataDir,
 		["rev-parse", "--verify", `refs/heads/${validBranch}`],
-		GIT_TIMEOUT_MS,
+		30_000,
 		options,
 	).catch(() => {
 		throw new Error(`Target branch '${validBranch}' not found in refs/heads/`);
@@ -573,9 +546,9 @@ async function prepareIntegration(
 	let retainedRef: string | undefined;
 	const { headSha: expectedTargetSha, isDirty } = await inspectLocalTarget(repoRoot, dataDir, targetBranch, options);
 	if (isDirty) {
-		const statusRes = await runIsolatedGit(repoRoot, dataDir, ["status", "--porcelain"], GIT_TIMEOUT_MS, options).catch(
-			() => ({ stdout: "" }),
-		);
+		const statusRes = await runIsolatedGit(repoRoot, dataDir, ["status", "--porcelain"], 30_000, options).catch(() => ({
+			stdout: "",
+		}));
 		throw new Error(
 			`Target repository has uncommitted changes (dirty state: ${statusRes.stdout.trim()}); cannot integrate`,
 		);
@@ -632,13 +605,7 @@ async function prepareIntegration(
 		await git(repoRoot, ["update-ref", retainedRef, commit], options?.signal);
 	}
 	if (!commit || !/^[a-f0-9]{40,64}$/i.test(commit)) throw new Error("Delivery commit required");
-	const commitValid = await runIsolatedGit(
-		repoRoot,
-		dataDir,
-		["cat-file", "-e", `${commit}^{commit}`],
-		GIT_TIMEOUT_MS,
-		options,
-	)
+	const commitValid = await runIsolatedGit(repoRoot, dataDir, ["cat-file", "-e", `${commit}^{commit}`], 30_000, options)
 		.then(() => true)
 		.catch(() => false);
 	if (!commitValid) {
@@ -657,7 +624,7 @@ async function prepareIntegration(
 		repoRoot,
 		dataDir,
 		["worktree", "add", "--detach", worktreePath, expectedTargetSha],
-		GIT_TIMEOUT_MS,
+		30_000,
 		options,
 	);
 	await verifyGitAttributesSafe(worktreePath, dataDir);
@@ -692,11 +659,11 @@ async function prepareIntegration(
 	};
 
 	try {
-		await runIsolatedGit(worktreePath, dataDir, ["merge", "--no-commit", "--no-ff", commit], GIT_TIMEOUT_MS, options);
+		await runIsolatedGit(worktreePath, dataDir, ["merge", "--no-commit", "--no-ff", commit], 30_000, options);
 
-		const diffRes = await runIsolatedGit(worktreePath, dataDir, ["diff", "HEAD"], GIT_TIMEOUT_MS, options);
-		const statRes = await runIsolatedGit(worktreePath, dataDir, ["diff", "--stat", "HEAD"], GIT_TIMEOUT_MS, options);
-		const treeRes = await runIsolatedGit(worktreePath, dataDir, ["write-tree"], GIT_TIMEOUT_MS, options);
+		const diffRes = await runIsolatedGit(worktreePath, dataDir, ["diff", "HEAD"], 30_000, options);
+		const statRes = await runIsolatedGit(worktreePath, dataDir, ["diff", "--stat", "HEAD"], 30_000, options);
+		const treeRes = await runIsolatedGit(worktreePath, dataDir, ["write-tree"], 30_000, options);
 		session.preparedTreeSha = treeRes.stdout.trim();
 		if (params.artifactRef && session.preparedTreeSha !== params.artifactRef.outputTree)
 			throw new Error("Prepared tree does not match artifact outputTree");
@@ -717,15 +684,11 @@ async function prepareIntegration(
 			diff,
 		};
 	} catch (mergeError) {
-		const statusRes = await runIsolatedGit(
-			worktreePath,
-			dataDir,
-			["status", "--porcelain"],
-			GIT_TIMEOUT_MS,
-			options,
-		).catch(() => ({
-			stdout: "",
-		}));
+		const statusRes = await runIsolatedGit(worktreePath, dataDir, ["status", "--porcelain"], 30_000, options).catch(
+			() => ({
+				stdout: "",
+			}),
+		);
 		const conflictFiles: string[] = [];
 		for (const line of statusRes.stdout.split("\n")) {
 			const trimmed = line.trim();
@@ -735,11 +698,11 @@ async function prepareIntegration(
 			}
 		}
 		if (conflictFiles.length > 0) {
-			const diffRes = await runIsolatedGit(worktreePath, dataDir, ["diff"], GIT_TIMEOUT_MS, options).catch(() => ({
+			const diffRes = await runIsolatedGit(worktreePath, dataDir, ["diff"], 30_000, options).catch(() => ({
 				stdout: "",
 			}));
 			const diff = diffRes.stdout.slice(0, MAX_DIFF_BYTES);
-			await runIsolatedGit(worktreePath, dataDir, ["merge", "--abort"], GIT_TIMEOUT_MS, options).catch(() => {});
+			await runIsolatedGit(worktreePath, dataDir, ["merge", "--abort"], 30_000, options).catch(() => {});
 			return {
 				status: "conflict",
 				repositoryId,
@@ -771,23 +734,19 @@ async function assertPreparedTree(
 		throw new Error("Integration worktree HEAD changed");
 	if (session.artifactRef) {
 		const tree = (
-			await runIsolatedGit(
-				session.repoRoot,
-				dataDir,
-				["rev-parse", `${session.deliveryCommit}^{tree}`],
-				GIT_TIMEOUT_MS,
-				{ signal },
-			)
+			await runIsolatedGit(session.repoRoot, dataDir, ["rev-parse", `${session.deliveryCommit}^{tree}`], 30_000, {
+				signal,
+			})
 		).stdout.trim();
 		const parent = (
-			await runIsolatedGit(session.repoRoot, dataDir, ["rev-parse", `${session.deliveryCommit}^`], GIT_TIMEOUT_MS, {
+			await runIsolatedGit(session.repoRoot, dataDir, ["rev-parse", `${session.deliveryCommit}^`], 30_000, {
 				signal,
 			})
 		).stdout.trim();
 		const retained =
 			session.retainedRef &&
 			(
-				await runIsolatedGit(session.repoRoot, dataDir, ["rev-parse", session.retainedRef], GIT_TIMEOUT_MS, { signal })
+				await runIsolatedGit(session.repoRoot, dataDir, ["rev-parse", session.retainedRef], 30_000, { signal })
 			).stdout.trim();
 		if (
 			tree !== session.artifactRef.outputTree ||
@@ -796,9 +755,8 @@ async function assertPreparedTree(
 		)
 			throw new Error("Materialized artifact commit or retained ref changed");
 	}
-	const flags = (
-		await runIsolatedGit(session.worktreePath, dataDir, ["ls-files", "-v", "-z"], GIT_TIMEOUT_MS, { signal })
-	).stdout;
+	const flags = (await runIsolatedGit(session.worktreePath, dataDir, ["ls-files", "-v", "-z"], 30_000, { signal }))
+		.stdout;
 	if (flags.split("\0").some((entry) => /^[a-zS] /.test(entry)))
 		throw new Error("Integration index has hidden assume-unchanged or skip-worktree flags");
 	const rawTree = await snapshotTree(
@@ -810,19 +768,17 @@ async function assertPreparedTree(
 	);
 	if (rawTree !== session.preparedTreeSha)
 		throw new Error("Integration prepared tree is dirty or changed (raw working tree byte mismatch)");
-	const unstaged = await runIsolatedGit(session.worktreePath, dataDir, ["diff", "--name-only"], GIT_TIMEOUT_MS, {
+	const unstaged = await runIsolatedGit(session.worktreePath, dataDir, ["diff", "--name-only"], 30_000, {
 		signal,
 	});
 	const untracked = await runIsolatedGit(
 		session.worktreePath,
 		dataDir,
 		["ls-files", "--others", "--exclude-standard"],
-		GIT_TIMEOUT_MS,
+		30_000,
 		{ signal },
 	);
-	const tree = (
-		await runIsolatedGit(session.worktreePath, dataDir, ["write-tree"], GIT_TIMEOUT_MS, { signal })
-	).stdout.trim();
+	const tree = (await runIsolatedGit(session.worktreePath, dataDir, ["write-tree"], 30_000, { signal })).stdout.trim();
 	if (unstaged.stdout.trim() || untracked.stdout.trim() || !session.preparedTreeSha || tree !== session.preparedTreeSha)
 		throw new Error("Integration prepared tree is dirty or changed");
 	await verifyWorktreeIdentity(session.worktreePath, session.repoRoot, signal, session.gitDir, session.commonDir);
@@ -996,7 +952,7 @@ async function confirmIntegration(
 			session.repoRoot,
 			params.dataDir,
 			["worktree", "list", "--porcelain"],
-			GIT_TIMEOUT_MS,
+			30_000,
 			{ signal },
 		);
 		const checkedOut = worktrees.stdout

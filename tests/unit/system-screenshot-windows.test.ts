@@ -65,7 +65,7 @@ describe("Windows screenshot helper", () => {
 		const pending = captureWindowsScreenshot(token, "en", controller.signal, false);
 		controller.abort();
 		await vi.advanceTimersByTimeAsync(5000);
-		expect(child.kill).toHaveBeenCalledOnce();
+		// 强杀交给 spawnChild.stop()（见 tests/unit/spawn-child.test.ts）；这里只确认没有误发 restore。
 		expect(spawn).toHaveBeenCalledOnce();
 		child.emit("close", null);
 		expect(await pending).toBe(null);
@@ -91,7 +91,6 @@ describe("Windows screenshot helper", () => {
 		const restore = fakeChild();
 		spawn.mockReturnValueOnce(restore);
 		await vi.advanceTimersByTimeAsync(5000);
-		expect(child.kill).toHaveBeenCalledOnce();
 		expect(spawn.mock.calls[1][1].join(" ")).toContain("[IntPtr]123456, 3");
 		child.emit("close", null);
 		expect(await pending).toBe(null);

@@ -1,5 +1,4 @@
-import { spawn, type ChildProcessByStdio } from "node:child_process";
-import type { Readable } from "node:stream";
+import { spawnChild, type SpawnedChild } from "../spawn-child.js";
 import { resolveFfmpeg } from "./ffmpeg-path.js";
 import type { DesktopProfile } from "./desktop-quality.js";
 
@@ -157,9 +156,9 @@ export function videoDesktopAvailable(): boolean {
 	if (probe && Date.now() - probe.checkedAt < 60_000) return probe.ok;
 	probe = { ok: false, checkedAt: Date.now() };
 	try {
-		const result = spawn(
-			binary,
-			[
+		const { child } = spawnChild({
+			cmd: binary,
+			args: [
 				"-hide_banner",
 				"-loglevel",
 				"error",
@@ -173,10 +172,10 @@ export function videoDesktopAvailable(): boolean {
 				"null",
 				"-",
 			],
-			{ stdio: "ignore", windowsHide: true },
-		);
-		result.on("error", () => {});
-		result.on("exit", (code) => {
+			stdio: "ignore",
+		});
+		child.on("error", () => {});
+		child.on("exit", (code) => {
 			probe = { ok: code === 0, checkedAt: Date.now() };
 		});
 		// Synchronous answer for the first call: treat as available and let the session fail over.
@@ -190,7 +189,7 @@ export function videoDesktopAvailable(): boolean {
 export function startVideoDesktop(options: VideoOptions): VideoDesktopHandle | undefined {
 	const binary = resolveFfmpeg();
 	if (!binary) return undefined;
-	let child: ChildProcessByStdio<null, Readable, Readable> | undefined;
+	let current: SpawnedChild | undefined;
 	let closing = false;
 	let finished = false;
 	let stderr = "";
@@ -207,10 +206,9 @@ export function startVideoDesktop(options: VideoOptions): VideoDesktopHandle | u
 	function close() {
 		if (closing) return;
 		closing = true;
-		if (!child) return finish();
-		child.kill("SIGTERM");
-		const timer = setTimeout(() => child?.kill("SIGKILL"), 1500);
-		timer.unref();
+		if (!current) return finish();
+		// 先 SIGTERM，宽限后由 stop() 收整棵树（原路径只杀主进程，孙进程会漏）。
+		void current.stop({ graceMs: 1500 });
 	}
 	function fail(message: string) {
 		if (closing || finished) return;
@@ -222,26 +220,28 @@ export function startVideoDesktop(options: VideoOptions): VideoDesktopHandle | u
 	}
 	function launch() {
 		closing = false;
-		const current = spawn(binary!, args(profile, options.display), {
+		const spawned = spawnChild({
+			cmd: binary!,
+			args: args(profile, options.display),
 			stdio: ["ignore", "pipe", "pipe"],
-			windowsHide: true,
 		});
-		child = current;
-		current.stdout.on("data", (chunk: Buffer) => {
-			if (child !== current || closing) return;
+		current = spawned;
+		const child = spawned.child;
+		child.stdout?.on("data", (chunk: Buffer) => {
+			if (current !== spawned || closing) return;
 			try {
 				splitter(chunk);
 			} catch {
 				fail("Desktop video stream produced an unreadable H.264 frame.");
 			}
 		});
-		current.stdout.on("error", () => fail("Desktop video stream failed."));
-		current.stderr.on("data", (chunk: Buffer) => {
+		child.stdout?.on("error", () => fail("Desktop video stream failed."));
+		child.stderr?.on("data", (chunk: Buffer) => {
 			stderr = (stderr + chunk.toString("utf8")).slice(-4096);
 		});
-		current.on("error", (error) => fail(`Desktop video encoder failed: ${error.message}`));
-		current.on("close", (code, signal) => {
-			if (child !== current) return;
+		child.on("error", (error) => fail(`Desktop video encoder failed: ${error.message}`));
+		child.on("close", (code, signal) => {
+			if (current !== spawned) return;
 			fail(stderr.trim() || `Desktop video encoder exited (${signal || code || "EOF"}).`);
 		});
 	}
@@ -252,9 +252,9 @@ export function startVideoDesktop(options: VideoOptions): VideoDesktopHandle | u
 			if (key === JSON.stringify(profile) || closing) return;
 			profile = next;
 			// FPS/bitrate are encoder parameters: restart and let the viewer resynchronise on the next IDR.
-			const previous = child;
-			child = undefined;
-			previous?.kill("SIGTERM");
+			const previous = current;
+			current = undefined;
+			void previous?.stop({ graceMs: 1500 });
 			launch();
 		},
 		input() {},

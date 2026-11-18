@@ -1,4 +1,4 @@
-import { spawn, execSync, type ChildProcess } from "node:child_process";
+import type { ChildProcessWithoutNullStreams } from "node:child_process";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -6,6 +6,8 @@ import readline from "node:readline";
 import { defineTool, type ToolDefinition } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
 import { pick, type ServerLang } from "./i18n.js";
+import { runProcess } from "./run-process.js";
+import { spawnChildPiped, type SpawnedChild } from "./spawn-child.js";
 import { EVAL_TOOL_NAME } from "./tool-manager.js";
 
 export { EVAL_TOOL_NAME };
@@ -22,33 +24,18 @@ export interface EvalWorkerResult {
 	error: string | null;
 }
 
-export function killProcessTree(proc: ChildProcess): void {
-	if (!proc.pid) return;
-	if (process.platform === "win32") {
-		try {
-			execSync(`taskkill /F /T /PID ${proc.pid}`, { stdio: "ignore" });
-		} catch {
-			try {
-				proc.kill("SIGKILL");
-			} catch {}
-		}
-	} else {
-		try {
-			process.kill(-proc.pid, "SIGKILL");
-		} catch {
-			try {
-				proc.kill("SIGKILL");
-			} catch {}
-		}
-	}
+/**
+ * 杀整棵树收口到单源 `stop()`（Windows `taskkill /T /F`、POSIX 进程组 SIGKILL）。
+ * 不抛错；返回的 Promise 用来保留原来“杀完再起新内核 / 再删工作目录”的顺序。
+ */
+export function killProcessTree(spawned: Pick<SpawnedChild, "stop">): Promise<void> {
+	return spawned.stop().then(() => undefined);
 }
 
-function resolvePythonCmd(): string | null {
+async function resolvePythonCmd(): Promise<string | null> {
 	for (const cmd of ["python", "python3", "py"]) {
-		try {
-			const out = execSync(`${cmd} --version`, { stdio: "pipe", encoding: "utf8" });
-			if (out.toLowerCase().includes("python")) return cmd;
-		} catch {}
+		const probe = await runProcess({ cmd, args: ["--version"], timeoutMs: 10_000 });
+		if (probe.code === 0 && probe.stdout.toLowerCase().includes("python")) return cmd;
 	}
 	return null;
 }
@@ -261,7 +248,8 @@ export function toAsciiJson(data: unknown): string {
 }
 
 class EvalKernel {
-	private proc: ChildProcess | null = null;
+	private proc: ChildProcessWithoutNullStreams | null = null;
+	private stopProc: SpawnedChild["stop"] | null = null;
 	private rl: readline.Interface | null = null;
 	private current: PendingRequest | null = null;
 	private queue: PendingRequest[] = [];
@@ -276,41 +264,41 @@ class EvalKernel {
 		this.workdir = mkdtempSync(join(tmpdir(), `pi-eval-${language}-`));
 	}
 
-	private spawn(): void {
+	private async ensureSpawned(): Promise<void> {
 		if (this.proc && !this.proc.killed && this.proc.exitCode === null) {
 			return;
 		}
+		// stop() 是异步的：等上一个内核彻底死掉再起新的（等价于原来 execSync 阻塞到 taskkill 结束）。
+		if (this.killInFlight) {
+			await this.killInFlight;
+			this.killInFlight = null;
+		}
 
-		const spawnOpts = {
-			cwd: this.workdir,
-			stdio: ["pipe", "pipe", "pipe"] as ["pipe", "pipe", "pipe"],
-			detached: process.platform !== "win32",
-			env: {
-				...sanitizeEvalEnv(process.env),
-				PI_EVAL_WORKDIR: this.workdir,
-				PI_EVAL_PROJECT_DIR: this.cwd,
-				PYTHONUTF8: "1",
-				PYTHONIOENCODING: "utf-8",
-			},
+		const env = {
+			PI_EVAL_WORKDIR: this.workdir,
+			PI_EVAL_PROJECT_DIR: this.cwd,
+			PYTHONUTF8: "1",
+			PYTHONIOENCODING: "utf-8",
 		};
 
+		let child: ChildProcessWithoutNullStreams;
 		if (this.language === "py") {
-			const pyCmd = resolvePythonCmd();
+			const pyCmd = await resolvePythonCmd();
 			if (!pyCmd) {
 				throw new Error("Python executable not found in PATH. Please install Python or use language: 'js'.");
 			}
-			this.proc = spawn(pyCmd, ["-X", "utf8", "-u", "-c", PYTHON_DRIVER_SCRIPT], spawnOpts);
+			child = this.startKernel(pyCmd, ["-X", "utf8", "-u", "-c", PYTHON_DRIVER_SCRIPT], env);
 		} else {
 			const nodeArgs =
 				this.language === "ts" ? ["--experimental-strip-types", "-e", NODE_DRIVER_SCRIPT] : ["-e", NODE_DRIVER_SCRIPT];
-			this.proc = spawn(process.execPath, nodeArgs, spawnOpts);
+			child = this.startKernel(process.execPath, nodeArgs, env);
 		}
 
-		this.proc.stderr!.on("data", (chunk: Buffer) => {
+		child.stderr.on("data", (chunk: Buffer) => {
 			this.stderrTail = (this.stderrTail + chunk.toString()).slice(-4000);
 		});
 
-		this.rl = readline.createInterface({ input: this.proc.stdout! });
+		this.rl = readline.createInterface({ input: child.stdout });
 		this.rl.on("line", (line) => {
 			if (!line.startsWith("__PI_EVAL_RES__")) return;
 			const item = this.current;
@@ -331,7 +319,7 @@ class EvalKernel {
 			this.pump();
 		});
 
-		const proc = this.proc;
+		const proc = child;
 		proc.on("error", (err) => {
 			if (this.proc !== proc) return;
 			this.procDied(`Kernel process error: ${err.message}`);
@@ -341,6 +329,23 @@ class EvalKernel {
 			if (this.proc !== proc) return;
 			this.procDied(`Kernel process exited unexpectedly with code ${code}`);
 		});
+	}
+
+	/**
+	 * 起内核：环境白名单作为基底（`inheritEnv`），进程选项与收场交给单源。
+	 * 环境基底故意不是整个 `process.env`：`sanitizeEvalEnv` 的收敛不能被覆盖。
+	 */
+	private startKernel(cmd: string, args: string[], env: NodeJS.ProcessEnv): ChildProcessWithoutNullStreams {
+		const spawned = spawnChildPiped({
+			cmd,
+			args,
+			cwd: this.workdir,
+			inheritEnv: sanitizeEvalEnv(process.env),
+			env,
+		});
+		this.proc = spawned.child;
+		this.stopProc = spawned.stop;
+		return spawned.child;
 	}
 
 	private procDied(message: string): void {
@@ -384,7 +389,7 @@ class EvalKernel {
 				if (item.done) return;
 				if (this.current === item) {
 					this.current = null;
-					this.killProc();
+					void this.killProc();
 					this.pump();
 				}
 				item.reject(new Error(`Execution timed out after ${Math.round(item.timeoutMs / 1000)}s`));
@@ -394,10 +399,28 @@ class EvalKernel {
 		});
 	}
 
+	private pumping = false;
+	private pumpAgain = false;
+	private killInFlight: Promise<void> | null = null;
+
 	private pump(): void {
+		if (this.pumping) {
+			this.pumpAgain = true;
+			return;
+		}
 		if (this.current || this.queue.length === 0) return;
+		this.pumping = true;
+		void this.pumpNext().finally(() => {
+			this.pumping = false;
+			if (!this.pumpAgain) return;
+			this.pumpAgain = false;
+			this.pump();
+		});
+	}
+
+	private async pumpNext(): Promise<void> {
 		try {
-			this.spawn();
+			await this.ensureSpawned();
 		} catch (err) {
 			const item = this.queue.shift();
 			if (item) {
@@ -405,10 +428,11 @@ class EvalKernel {
 			}
 			return;
 		}
-		const item = this.queue.shift()!;
+		const item = this.queue.shift();
+		if (!item) return;
 		this.current = item;
 		try {
-			this.proc!.stdin!.write(toAsciiJson(item.req) + "\n");
+			this.proc!.stdin.write(toAsciiJson(item.req) + "\n");
 		} catch (err) {
 			this.current = null;
 			this.settle(item, {
@@ -429,16 +453,21 @@ class EvalKernel {
 		item.resolve(res);
 	}
 
-	private killProc(): void {
+	private killProc(): Promise<void> {
 		if (this.rl) {
 			this.rl.close();
 			this.rl = null;
 		}
-		if (this.proc) {
-			killProcessTree(this.proc);
+		let killed: Promise<void> = Promise.resolve();
+		const stop = this.stopProc;
+		if (this.proc && stop) {
+			killed = killProcessTree({ stop });
+			this.killInFlight = killed;
 			this.proc = null;
+			this.stopProc = null;
 		}
 		this.stderrTail = "";
+		return killed;
 	}
 
 	dispose(): void {
@@ -452,10 +481,11 @@ class EvalKernel {
 		for (const item of queued) {
 			this.settle(item, { ok: false, stdout: "", stderr: "", result: null, error: "Eval kernel disposed" });
 		}
-		this.killProc();
-		try {
-			rmSync(this.workdir, { recursive: true, force: true });
-		} catch {}
+		this.killProc().then(() => {
+			try {
+				rmSync(this.workdir, { recursive: true, force: true });
+			} catch {}
+		});
 	}
 }
 

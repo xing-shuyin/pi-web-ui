@@ -1,10 +1,13 @@
-import { spawnSync } from "node:child_process";
+import { execFile } from "node:child_process";
 import { createHash } from "node:crypto";
 import { createWriteStream, existsSync, mkdirSync, readdirSync, readFileSync, rmSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 import { Readable } from "node:stream";
 import { pipeline } from "node:stream/promises";
+import { promisify } from "node:util";
+
+const runFile = promisify(execFile);
 
 const ASSETS = {
 	win32: { name: "uv-x86_64-pc-windows-msvc.zip", bin: "uv.exe" },
@@ -12,11 +15,28 @@ const ASSETS = {
 	linux: { name: "uv-x86_64-unknown-linux-gnu.tar.gz", bin: "uv" },
 };
 
-export function findSystemUv() {
+/**
+ * 探测一个可执行文件能否跑起来。
+ * 插件跑在服务端主进程里（与所有会话共用事件循环），所以**一律异步**：
+ * spawnSync 会把整个服务端卡住（Termux/慢盘上实测能卡到 watchdog 重启）。
+ */
+async function probe(cmd, args) {
 	try {
-		const r = spawnSync("uv", ["--version"], { encoding: "utf8", windowsHide: true });
-		if (r.status === 0 && r.stdout) return "uv";
-	} catch {}
+		const { stdout } = await runFile(cmd, args, {
+			encoding: "utf8",
+			windowsHide: true,
+			timeout: 15_000,
+			maxBuffer: 64 * 1024,
+		});
+		return { ok: true, stdout: String(stdout ?? "") };
+	} catch {
+		return { ok: false, stdout: "" };
+	}
+}
+
+export async function findSystemUv() {
+	const direct = await probe("uv", ["--version"]);
+	if (direct.ok && direct.stdout) return "uv";
 
 	if (process.platform === "win32") {
 		const candidates = [
@@ -26,21 +46,15 @@ export function findSystemUv() {
 			join(process.env.APPDATA || "", "uv", "uv.exe"),
 		];
 		for (const c of candidates) {
-			if (existsSync(c)) {
-				try {
-					const r = spawnSync(c, ["--version"], { encoding: "utf8", windowsHide: true });
-					if (r.status === 0) return c;
-				} catch {}
-			}
+			if (!existsSync(c)) continue;
+			if ((await probe(c, ["--version"])).ok) return c;
 		}
 
-		try {
-			const r = spawnSync("where.exe", ["uv"], { encoding: "utf8", windowsHide: true });
-			if (r.status === 0 && r.stdout) {
-				const first = r.stdout.split(/\r?\n/)[0]?.trim();
-				if (first && existsSync(first)) return first;
-			}
-		} catch {}
+		const where = await probe("where.exe", ["uv"]);
+		if (where.ok && where.stdout) {
+			const first = where.stdout.split(/\r?\n/)[0]?.trim();
+			if (first && existsSync(first)) return first;
+		}
 	} else {
 		const candidates = [
 			join(homedir(), ".local", "bin", "uv"),
@@ -49,23 +63,17 @@ export function findSystemUv() {
 			"/usr/bin/uv",
 		];
 		for (const c of candidates) {
-			if (existsSync(c)) {
-				try {
-					const r = spawnSync(c, ["--version"], { encoding: "utf8" });
-					if (r.status === 0) return c;
-				} catch {}
-			}
+			if (!existsSync(c)) continue;
+			if ((await probe(c, ["--version"])).ok) return c;
 		}
 	}
 	return null;
 }
 
-export function findSystemPython() {
+export async function findSystemPython() {
 	for (const cmd of ["python3", "python", "py"]) {
-		try {
-			const r = spawnSync(cmd, ["--version"], { encoding: "utf8", windowsHide: true });
-			if (r.status === 0) return cmd;
-		} catch {}
+		const r = await probe(cmd, ["--version"]);
+		if (r.ok) return cmd;
 	}
 	return null;
 }
@@ -91,26 +99,23 @@ export function findBin(name, dir) {
 	return null;
 }
 
-export function extractArchive(binName, archive, into) {
+export async function extractArchive(binName, archive, into) {
 	mkdirSync(into, { recursive: true });
 	const attempts = [
 		["tar", ["-xf", archive, "-C", into]],
 		["unzip", ["-o", archive, "-d", into]],
 	];
 	for (const [cmd, args] of attempts) {
-		try {
-			const r = spawnSync(cmd, args, { stdio: "ignore" });
-			if (r.status === 0) {
-				const hit = findBin(binName, into);
-				if (hit) return hit;
-			}
-		} catch {}
+		const r = await probe(cmd, args);
+		if (!r.ok) continue;
+		const hit = findBin(binName, into);
+		if (hit) return hit;
 	}
 	return null;
 }
 
 export async function ensureUv({ dir, log = () => {} }) {
-	const sysUv = findSystemUv();
+	const sysUv = await findSystemUv();
 	if (sysUv) {
 		log(`检测到系统已就绪的 uv：${sysUv}`);
 		return sysUv;
@@ -152,7 +157,7 @@ export async function ensureUv({ dir, log = () => {} }) {
 			const out = createWriteStream(s.file);
 			await pipeline(Readable.fromWeb(res.body), out);
 
-			const hit = extractArchive(a.bin, s.file, dir);
+			const hit = await extractArchive(a.bin, s.file, dir);
 			if (hit && existsSync(hit)) {
 				try {
 					rmSync(tmp, { recursive: true, force: true });

@@ -16,6 +16,10 @@
  *   all share one conversation list per project.
  *   PI_CODING_AGENT_DIR  pi config dir (auth/models/skills) — passed to the SDK
  */
+// 必须排在所有 import 之前：先装上「Windows 不弹控制台」进程级开关，后面求值的模块
+// （含 module 作用域里的 `promisify(execFile)` 捕获、插件里的 spawn）才都吃到它。
+import "./hide-console-windows.js";
+import { sleep } from "./async-utils.js";
 import { botExecutionMessageAllowed } from "./device-center/bot-execution.js";
 import { createBotDraftStore, normalizeBotDraft } from "./device-center/bot-drafts.js";
 import { createBotDraftRunner } from "./bot-draft-runner.js";
@@ -3638,7 +3642,7 @@ if (process.env[RESTART_CHILD_ENV] === "1") {
 		});
 	while (Date.now() < deadline) {
 		if (await portFree()) break;
-		await new Promise((r) => setTimeout(r, 300));
+		await sleep(300);
 	}
 }
 
@@ -3755,10 +3759,10 @@ async function shutdown(signal: "SIGINT" | "SIGTERM" = "SIGINT"): Promise<void> 
 	let disarmKiller: (() => void) | null = null;
 	if (process.platform === "win32") {
 		try {
-			const { spawn } = await import("node:child_process");
-			const killer = spawn(
-				"cmd.exe",
-				[
+			const { spawnChild } = await import("./spawn-child.js");
+			const killer = spawnChild({
+				cmd: "cmd.exe",
+				args: [
 					"/c",
 					`timeout /t ${Math.ceil((SHUTDOWN_FORCE_EXIT_MS + 5000) / 1000)} /nobreak >nul && taskkill /F /T /PID ${process.pid}`,
 				],

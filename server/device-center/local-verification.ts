@@ -1,4 +1,5 @@
-import { spawn } from "node:child_process";
+import { spawnChild, type SpawnedChild } from "../spawn-child.js";
+import { sleep } from "../async-utils.js";
 import { createHash, randomBytes, randomUUID } from "node:crypto";
 import { createServer, type Socket } from "node:net";
 import type { DeviceIntegrationVerificationPlan, DeviceIntegrationVerificationResult } from "../protocol.js";
@@ -104,27 +105,38 @@ export async function runVerificationCommand(
 	const env = windows
 		? { ...options.env, PI_LOCAL_VERIFICATION_COMMAND: command, PI_LOCAL_VERIFICATION_PIPE: pipeName }
 		: options.env;
-	let child: ReturnType<typeof spawn>;
+	let child: SpawnedChild["child"];
+	let stopChild: SpawnedChild["stop"];
 	try {
-		child = windows
-			? spawn(
-					"powershell.exe",
-					[
-						"-NoProfile",
-						"-NonInteractive",
-						"-OutputFormat",
-						"Text",
-						"-EncodedCommand",
-						Buffer.from(WINDOWS_VERIFICATION_SUPERVISOR, "utf16le").toString("base64"),
-					],
-					{
+		const spawned = spawnChild(
+			windows
+				? {
+						cmd: "powershell.exe",
+						args: [
+							"-NoProfile",
+							"-NonInteractive",
+							"-OutputFormat",
+							"Text",
+							"-EncodedCommand",
+							Buffer.from(WINDOWS_VERIFICATION_SUPERVISOR, "utf16le").toString("base64"),
+						],
 						cwd: options.cwd,
-						env,
-						windowsHide: true,
+						inheritEnv: env,
+						keepColor: true,
 						stdio: ["pipe", "pipe", "pipe"],
+					}
+				: {
+						// 等价于原来的 `shell: true`（Node 在 POSIX 上用 `/bin/sh -c`），并保留自己的进程组。
+						cmd: "/bin/sh",
+						args: ["-c", command],
+						cwd: options.cwd,
+						inheritEnv: env,
+						keepColor: true,
+						stdio: ["ignore", "pipe", "pipe"],
 					},
-				)
-			: spawn(command, { cwd: options.cwd, env, shell: true, detached: true, stdio: ["ignore", "pipe", "pipe"] });
+		);
+		child = spawned.child;
+		stopChild = spawned.stop;
 	} catch (error) {
 		control?.close();
 		throw error;
@@ -173,20 +185,13 @@ export async function runVerificationCommand(
 		}
 	};
 	const stopPosixGroup = async () => {
-		if (!child.pid) {
-			await done;
-			return;
-		}
-		try {
-			process.kill(-child.pid, "SIGKILL");
-		} catch (error) {
-			if ((error as NodeJS.ErrnoException).code !== "ESRCH") throw error;
-		}
+		const stopped = await stopChild({ graceMs: 0, timeoutMs: stopMs });
 		await done;
+		if (!stopped) throw new VerificationStopUnconfirmedError();
 		const deadline = Date.now() + stopMs;
 		while (groupAlive()) {
 			if (Date.now() >= deadline) throw new VerificationStopUnconfirmedError();
-			await new Promise((resolve) => setTimeout(resolve, 10));
+			await sleep(10);
 		}
 	};
 	let stopReason: string | undefined;
@@ -259,7 +264,7 @@ export async function runVerificationCommand(
 			outputPreview: Buffer.concat(preview).toString("utf8"),
 		};
 	} catch (error) {
-		if (windows && error instanceof VerificationStopUnconfirmedError && !closed) child.kill();
+		if (windows && error instanceof VerificationStopUnconfirmedError && !closed) void stopChild({ graceMs: 0 });
 		throw error;
 	} finally {
 		clearTimeout(timer);

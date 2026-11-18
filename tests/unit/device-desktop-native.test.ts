@@ -12,6 +12,7 @@ const mocks = vi.hoisted(() => ({
 	exec: vi.fn(),
 	release: vi.fn(),
 	exists: vi.fn(),
+	realpath: vi.fn(),
 	write: vi.fn(),
 	remove: vi.fn(),
 	read: vi.fn(),
@@ -20,6 +21,7 @@ vi.mock("node:child_process", () => ({ spawn: mocks.spawn, execFileSync: mocks.e
 vi.mock("node:os", async (original) => ({ ...(await original<typeof import("node:os")>()), release: mocks.release }));
 vi.mock("node:fs", () => ({
 	existsSync: mocks.exists,
+	realpathSync: mocks.realpath,
 	mkdtempSync: () => "/tmp/native-test",
 	writeFileSync: mocks.write,
 	rm: mocks.remove,
@@ -299,23 +301,21 @@ describe("native desktop lifecycle and framed capture", () => {
 		expect(nativeDesktopStatus()).toMatchObject({ supported: false, backend: "unsupported" });
 	});
 
-	it("recognizes full Xcode without a CommandLineTools directory using bounded xcrun discovery", () => {
+	it("recognizes full Xcode without a CommandLineTools directory（纯文件系统探测，不起子进程）", () => {
 		vi.spyOn(process, "platform", "get").mockReturnValue("darwin");
+		// 等价于 `xcrun --find swift` 成功：xcode-select 指向 Xcode.app，CommandLineTools 不存在。
 		mocks.exists.mockReturnValue(false);
-		mocks.exec.mockReturnValue(
-			"/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swift\n",
+		mocks.realpath.mockReturnValue("/Applications/Xcode.app/Contents/Developer");
+		mocks.exists.mockImplementation((path: string) =>
+			// join() 在测试机（Windows）上用反斜杠，按分隔符无关的方式判路径
+			String(path).split(/[\\/]/).join("/").includes("/Applications/Xcode.app/Contents/Developer/"),
 		);
 		expect(nativeDesktopStatus()).toMatchObject({ supported: true, backend: "macos-screencapturekit" });
-		expect(mocks.exec).toHaveBeenCalledWith(
-			"/usr/bin/xcrun",
-			["--find", "swift"],
-			expect.objectContaining({ timeout: 1500, maxBuffer: 4096 }),
-		);
-		mocks.exec.mockImplementation(() => {
-			throw new Error("timeout");
-		});
+		// 关键点：状态探测不再 fork 子进程（xcrun 卡在许可交互上会钉死事件循环）
+		expect(mocks.exec).not.toHaveBeenCalled();
+
+		mocks.exists.mockReturnValue(false);
 		expect(nativeDesktopStatus()).toMatchObject({ supported: false, reason: expect.stringContaining("Xcode") });
-		mocks.exec.mockClear();
 		mocks.release.mockReturnValue("22.0.0");
 		expect(nativeDesktopStatus()).toMatchObject({ supported: false, reason: expect.stringContaining("macOS 14") });
 		expect(mocks.exec).not.toHaveBeenCalled();
@@ -420,8 +420,8 @@ describe("native desktop lifecycle and framed capture", () => {
 		expect(writes).toHaveLength(2);
 		vi.advanceTimersByTime(1499);
 		expect(child.kill).not.toHaveBeenCalled();
+		// 宽限期到后由 spawnChild.stop() 收整棵树（见 tests/unit/spawn-child.test.ts）。
 		vi.advanceTimersByTime(1);
-		expect(child.kill).toHaveBeenCalledTimes(1);
 		child.emit("close", null, "SIGTERM");
 		expect(o.onClose).toHaveBeenCalledTimes(1);
 	});
@@ -535,8 +535,8 @@ describe("Windows service session recovery", () => {
 		expect(o.onError).toHaveBeenCalledWith("WINDOWS_DESKTOP_UNAVAILABLE: Session changed");
 		expect(o.onClose).toHaveBeenCalledTimes(1);
 		expect(second.writes).toContain('{"type":"close"}\n');
+		// 宽限期到后由 spawnChild.stop() 收整棵树（见 tests/unit/spawn-child.test.ts）。
 		vi.advanceTimersByTime(1500);
-		expect(second.child.kill).toHaveBeenCalledOnce();
 		second.child.emit("close", 0);
 		vi.advanceTimersByTime(60000);
 		expect(mocks.spawn).toHaveBeenCalledTimes(2);
@@ -656,10 +656,9 @@ describe("local macOS permission requests", () => {
 		await Promise.resolve();
 		child.stdout.write(Buffer.alloc(4097));
 		await expect(result).rejects.toThrow("exceeds 4 KB");
-		expect(child.kill).toHaveBeenCalledWith("SIGTERM");
+		// 收场（SIGTERM → 宽限 → 杀树）交给 spawnChild.stop()（见 tests/unit/spawn-child.test.ts）。
 		expect(mocks.remove).not.toHaveBeenCalled();
 		vi.advanceTimersByTime(1500);
-		expect(child.kill).toHaveBeenLastCalledWith("SIGKILL");
 		child.emit("close", null, "SIGKILL");
 		expect(mocks.remove).not.toHaveBeenCalled();
 		expect(vi.getTimerCount()).toBe(0);
@@ -672,7 +671,6 @@ describe("local macOS permission requests", () => {
 		await Promise.resolve();
 		controller.abort();
 		await expect(result).rejects.toThrow("aborted");
-		expect(child.kill).toHaveBeenCalledWith("SIGTERM");
 		expect(mocks.remove).not.toHaveBeenCalled();
 		child.stdout.write('{"screen":true,"accessibility":true}');
 		child.emit("close", 0);
@@ -688,7 +686,6 @@ describe("local macOS permission requests", () => {
 		expect(child.kill).not.toHaveBeenCalled();
 		vi.advanceTimersByTime(1);
 		await expect(result).rejects.toThrow("timed out");
-		expect(child.kill).toHaveBeenCalledWith("SIGTERM");
 		child.emit("close", null, "SIGTERM");
 		expect(vi.getTimerCount()).toBe(0);
 	});

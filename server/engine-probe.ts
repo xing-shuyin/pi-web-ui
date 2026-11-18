@@ -1,9 +1,8 @@
-import { spawn } from "node:child_process";
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { VERSION } from "@earendil-works/pi-coding-agent";
 import { runtimeBaseCandidates } from "./dsh/preset-clones.js";
-import { killPidTree } from "./process-utils.js";
+import { runProcess } from "./run-process.js";
 import type { EngineStatus } from "./protocol.js";
 import { probeClaudeCode } from "./universal/drivers/claude-code.js";
 import { probeCodex } from "./universal/drivers/codex.js";
@@ -274,6 +273,25 @@ export function isEngineUninstalling(engineId: string): boolean {
 	return engineRegistry.get(engineId)?.uninstalling ?? false;
 }
 
+/**
+ * 跑一次全局 npm 命令（Windows 上 npm 是 .cmd 包装器 → 经 cmd.exe /d /s /c）。
+ * 原来卸载与更新各写了一遍「spawn + 收输出 + 超时杀树 + close」，两处只差命令与超时文案。
+ */
+async function runNpmGlobal(
+	args: string[],
+	timeoutMs: number,
+	label: "更新" | "卸载",
+): Promise<{ ok: boolean; code: number | null; out: string; error?: string }> {
+	const result = await runProcess({ cmd: "npm", args, windowsShell: true, timeoutMs, maxBytes: 8000 });
+	const out = `${result.stdout}${result.stderr}`;
+	if (result.timedOut) {
+		return { ok: false, code: null, out, error: `${label}超时（超过 ${Math.round(timeoutMs / 1000)} 秒）` };
+	}
+	if (result.spawnError) return { ok: false, code: null, out, error: result.spawnError };
+	if (result.code !== 0) return { ok: false, code: result.code, out, error: `npm 退出码 ${result.code}` };
+	return { ok: true, code: 0, out };
+}
+
 export async function uninstallEngineBackground(
 	engineId: string,
 	options?: { timeoutMs?: number },
@@ -296,57 +314,8 @@ export async function uninstallEngineBackground(
 	if (currentEntry) currentEntry.uninstalling = true;
 	const packages = [meta.packageName, meta.cliPackageName].filter((p): p is string => Boolean(p));
 	const timeoutMs = Math.max(10_000, Number(options?.timeoutMs ?? 180_000));
-	const isWin = process.platform === "win32";
-	const spawnCmd = isWin ? process.env.ComSpec || "cmd.exe" : "npm";
-	const spawnArgs = isWin
-		? ["/d", "/s", "/c", "npm", "uninstall", "-g", ...packages]
-		: ["uninstall", "-g", ...packages];
-
 	try {
-		const child = spawn(spawnCmd, spawnArgs, {
-			windowsHide: true,
-			detached: !isWin,
-			stdio: ["ignore", "pipe", "pipe"],
-			env: {
-				...process.env,
-				NO_COLOR: "1",
-			},
-		});
-
-		let out = "";
-		const appendOut = (chunk: Buffer | string) => {
-			out = (out + chunk.toString()).slice(-8000);
-		};
-		child.stdout?.on("data", appendOut);
-		child.stderr?.on("data", appendOut);
-
-		const res = await new Promise<{ ok: boolean; code: number | null; error?: string }>((resolve) => {
-			let done = false;
-			const timer = setTimeout(() => {
-				if (done) return;
-				done = true;
-				if (child.pid) void killPidTree(child.pid);
-				resolve({ ok: false, code: null, error: `卸载超时（超过 ${Math.round(timeoutMs / 1000)} 秒）` });
-			}, timeoutMs);
-
-			child.on("error", (err) => {
-				if (done) return;
-				done = true;
-				clearTimeout(timer);
-				resolve({ ok: false, code: null, error: err.message });
-			});
-
-			child.on("close", (code) => {
-				if (done) return;
-				done = true;
-				clearTimeout(timer);
-				resolve({
-					ok: code === 0,
-					code,
-					error: code === 0 ? undefined : `npm 退出码 ${code}`,
-				});
-			});
-		});
+		const res = await runNpmGlobal(["uninstall", "-g", ...packages], timeoutMs, "卸载");
 
 		if (res.ok) {
 			for (const p of packages) registryCache.delete(p);
@@ -355,11 +324,7 @@ export async function uninstallEngineBackground(
 			} catch {}
 		}
 
-		return {
-			ok: res.ok,
-			error: res.error,
-			output: out.trim(),
-		};
+		return { ok: res.ok, error: res.error, output: res.out.trim() };
 	} catch (err) {
 		return {
 			ok: false,
@@ -387,56 +352,10 @@ export async function updateEngineBackground(
 	if (currentEntry) currentEntry.updating = true;
 	const packages = [meta.packageName, meta.cliPackageName].filter((p): p is string => Boolean(p));
 	const timeoutMs = Math.max(10_000, Number(options?.timeoutMs ?? 300_000));
-	const isWin = process.platform === "win32";
-	const spawnCmd = isWin ? process.env.ComSpec || "cmd.exe" : "npm";
 	const updatePkgs = packages.map((p) => `${p}@latest`);
-	const spawnArgs = isWin ? ["/d", "/s", "/c", "npm", "i", "-g", ...updatePkgs] : ["i", "-g", ...updatePkgs];
 
 	try {
-		const child = spawn(spawnCmd, spawnArgs, {
-			windowsHide: true,
-			detached: !isWin,
-			stdio: ["ignore", "pipe", "pipe"],
-			env: {
-				...process.env,
-				NO_COLOR: "1",
-			},
-		});
-
-		let out = "";
-		const appendOut = (chunk: Buffer | string) => {
-			out = (out + chunk.toString()).slice(-8000);
-		};
-		child.stdout?.on("data", appendOut);
-		child.stderr?.on("data", appendOut);
-
-		const res = await new Promise<{ ok: boolean; code: number | null; error?: string }>((resolve) => {
-			let done = false;
-			const timer = setTimeout(() => {
-				if (done) return;
-				done = true;
-				if (child.pid) void killPidTree(child.pid);
-				resolve({ ok: false, code: null, error: `更新超时（超过 ${Math.round(timeoutMs / 1000)} 秒）` });
-			}, timeoutMs);
-
-			child.on("error", (err) => {
-				if (done) return;
-				done = true;
-				clearTimeout(timer);
-				resolve({ ok: false, code: null, error: err.message });
-			});
-
-			child.on("close", (code) => {
-				if (done) return;
-				done = true;
-				clearTimeout(timer);
-				resolve({
-					ok: code === 0,
-					code,
-					error: code === 0 ? undefined : `npm 退出码 ${code}`,
-				});
-			});
-		});
+		const res = await runNpmGlobal(["i", "-g", ...updatePkgs], timeoutMs, "更新");
 
 		if (res.ok) {
 			for (const p of packages) registryCache.delete(p);
@@ -445,11 +364,7 @@ export async function updateEngineBackground(
 			} catch {}
 		}
 
-		return {
-			ok: res.ok,
-			error: res.error,
-			output: out.trim(),
-		};
+		return { ok: res.ok, error: res.error, output: res.out.trim() };
 	} catch (err) {
 		return {
 			ok: false,
