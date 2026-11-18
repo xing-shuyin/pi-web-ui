@@ -28,6 +28,8 @@ function setup(executablePath?: string) {
 		stdin: new PassThrough(),
 		stdout: new PassThrough(),
 		stderr: new PassThrough(),
+		// Real ChildProcess has kill(); forkSession relies on it.
+		kill: vi.fn(),
 	});
 	spawnMock.mockReturnValue(child);
 	const sink = {
@@ -394,5 +396,26 @@ describe("Claude Code permission bridge", () => {
 			delete process.env.PI_WEB_CLAUDE_PERMISSION_MODE;
 			delete process.env.PI_WEB_CLAUDE_PERMISSION_PROMPTS;
 		}
+	});
+});
+
+describe("Claude Code session fork", () => {
+	it("resumes with --fork-session and returns the new session id from init", async () => {
+		const { child, driver } = setup();
+		const forkPromise = driver.forkSession("old-session-id");
+		child.stdout.write(`${JSON.stringify({ type: "system", subtype: "init", session_id: "new-session-id" })}\n`);
+		const newSid = await forkPromise;
+
+		expect(newSid).toBe("new-session-id");
+		const [, args] = spawnMock.mock.calls[0];
+		expect(args).toContain("--resume");
+		expect(args).toContain("old-session-id");
+		expect(args).toContain("--fork-session");
+		expect(child.kill).toHaveBeenCalled();
+	});
+
+	it("returns empty string when there is no session id", async () => {
+		const { driver } = setup();
+		await expect(driver.forkSession("")).resolves.toBe("");
 	});
 });
