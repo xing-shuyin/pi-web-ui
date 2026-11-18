@@ -457,6 +457,40 @@ describe("Claude Code session fork", () => {
 		expect(child.kill).toHaveBeenCalled();
 	});
 
+	it("stays quiet when init arrives first, so the fork transcript has no probe turn", async () => {
+		const { child, driver } = setup();
+		let written = "";
+		child.stdin.on("data", (chunk) => {
+			written += chunk.toString();
+		});
+		const forkPromise = driver.forkSession("old-session-id");
+		child.stdout.write(`${JSON.stringify({ type: "system", subtype: "init", session_id: "new-session-id" })}\n`);
+
+		await expect(forkPromise).resolves.toBe("new-session-id");
+		expect(written).toBe("");
+	});
+
+	it("sends a probe turn for CLIs that only report init once a turn starts", async () => {
+		// Fake only the grace timer: readline scheduling rides on setImmediate.
+		vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+		try {
+			const { child, driver } = setup();
+			let written = "";
+			child.stdin.on("data", (chunk) => {
+				written += chunk.toString();
+			});
+			const forkPromise = driver.forkSession("old-session-id");
+			await vi.advanceTimersByTimeAsync(1_500);
+
+			expect(JSON.parse(written.trim())).toMatchObject({ type: "user" });
+
+			child.stdout.write(`${JSON.stringify({ type: "system", subtype: "init", session_id: "new-session-id" })}\n`);
+			await expect(forkPromise).resolves.toBe("new-session-id");
+		} finally {
+			vi.useRealTimers();
+		}
+	});
+
 	it("returns empty string when there is no session id", async () => {
 		const { driver } = setup();
 		await expect(driver.forkSession("")).resolves.toBe("");

@@ -3200,7 +3200,9 @@ export class UniversalSession implements DispatchSession {
 					reason: `子代理请求执行（${title}）`,
 					reasonEn: `Subagent request (${title})`,
 					conversationTitle: title,
-					conversationId: this.activeConvId ?? undefined,
+					// The prompt is answered while the user sits in the parent conversation; `activeConvId`
+					// would send the dialog's "jump to conversation" to whatever tab happens to be open.
+					conversationId: conv.subagentParentId ?? this.activeConvId ?? undefined,
 				});
 			},
 			onSessionStarted: (sessionId) => {
