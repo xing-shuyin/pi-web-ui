@@ -171,7 +171,10 @@ export class UniversalSession implements DispatchSession {
 	private snapshotTimer: NodeJS.Timeout | null = null;
 	private pendingToolResults: UiMessage[] = [];
 	/** Engine permission requests awaiting a human answer: approval id -> request info. */
-	private readonly pendingApprovals = new Map<string, { requestId: string; toolName: string }>();
+	private readonly pendingApprovals = new Map<
+		string,
+		{ requestId: string; toolName: string; driver?: BaseAgentDriver }
+	>();
 	/** Auto-deny timers for approvals nobody may answer (unattended runs). */
 	private readonly approvalTimers = new Map<string, NodeJS.Timeout>();
 	private readonly sessionDrafts = new Map<string, { text: string; ts: number }>();
@@ -794,6 +797,24 @@ export class UniversalSession implements DispatchSession {
 				}
 				try {
 					const { convId } = await this.spawnSubagent(subPrompt, type, this.cwd);
+					// Record the dispatch itself: `/subagent …` is a task instruction, not a pure
+					// settings command, so without it the transcript shows a subagent appearing
+					// out of nowhere (and the notice above is transient).
+					const dispatchNow = Date.now();
+					const dispatchConv = targetConv;
+					if (dispatchConv) {
+						dispatchConv.messages.push({
+							id: `u-${dispatchNow}-${randomUUID().slice(0, 6)}`,
+							role: "user",
+							content: [{ type: "text", text }],
+							timestamp: dispatchNow,
+						});
+						dispatchConv.updatedAt = dispatchNow;
+						if (!dispatchConv.isEphemeral) {
+							this.store.saveConversation(this.cwd, dispatchConv);
+						}
+						this.flushSnapshot();
+					}
 					this.emitNotice(
 						"info",
 						`已派发子代理（ID: ${convId.slice(0, 8)}），可在左侧对话列表查看其流式进展`,
@@ -979,51 +1000,11 @@ export class UniversalSession implements DispatchSession {
 				// after this message wipes the dialog before it can be shown.
 				// An engine prompt has no durable rule store behind it, so the answer is always
 				// one-shot: "always allow for this conversation" would be a lie (scopeless).
+				supportsApproval: true,
 				onApprovalRequest: (requestId, toolName, params, options) => {
-					const id = `ua-${requestId}`;
-					// Nobody attached (durable / background / plugin-driven run): a dialog would
-					// never be seen, and the engine waits for an answer, so deny instead of hanging.
-					if (this.sinks.size === 0) {
-						void this.driver.respondApproval(requestId, "deny", undefined, "no attached client");
-						this.emitNotice(
-							"warning",
-							`无人可答的审批（该会话没有已连接的界面）：已拒绝工具 ${toolName}。`,
-							`Approval nobody can answer (no attached client): tool ${toolName} was denied.`,
-						);
-						return;
-					}
-					this.pendingApprovals.set(id, { requestId, toolName });
-					// Unattended client ids (plugin:/scheduler:/canvas:) get the same watchdog the
-					// pi engine uses, so a forgotten dialog cannot block a run forever.
-					const timeoutMs = unattendedApprovalTimeoutMs(this.clientId);
-					if (timeoutMs !== null) {
-						const timer = setTimeout(() => {
-							this.approvalTimers.delete(id);
-							const entry = this.pendingApprovals.get(id);
-							if (!entry) return;
-							this.pendingApprovals.delete(id);
-							void this.driver.respondApproval(entry.requestId, "deny", undefined, "unattended timeout");
-							this.send({ type: "tool_approval_resolved", id });
-							this.emitNotice(
-								"warning",
-								`无人值守审批超时（${Math.round(timeoutMs / 1000)}s）：已拒绝工具 ${toolName}。`,
-								`Unattended approval timed out after ${Math.round(timeoutMs / 1000)}s: tool ${toolName} was denied.`,
-							);
-						}, timeoutMs);
-						timer.unref?.();
-						this.approvalTimers.set(id, timer);
-					}
-					this.send({
-						type: "tool_approval_pending",
-						id,
-						toolCallId: `tc-${requestId}`,
-						toolName,
-						params: params && typeof params === "object" ? params : {},
-						reason: "",
-						reasonEn: "",
-						scopeless: true,
-						...(this.turnConvId ? { conversationId: this.turnConvId } : {}),
-						...(options?.suggestions ? { suggestions: options.suggestions } : {}),
+					this.requestApproval(requestId, toolName, params, this.driver, {
+						idPrefix: "ua-",
+						suggestions: options?.suggestions,
 					});
 				},
 			};
@@ -1031,14 +1012,7 @@ export class UniversalSession implements DispatchSession {
 			try {
 				// Must return: async sink methods (onApprovalRequest wiring, future ones) rely on
 				// the value/promise; the original form swallowed it, so callers waited forever.
-				const guardedSink = new Proxy(sink, {
-					get:
-						(target, key: keyof AgentEventSink) =>
-						(...args: unknown[]) => {
-							if (!isCurrent()) return undefined;
-							return (target[key] as (...args: unknown[]) => unknown)?.(...args);
-						},
-				});
+				const guardedSink = this.guardSink(sink, isCurrent);
 				await this.driver.sendPrompt(
 					rebuiltContext ? `${rebuiltContext}\n\n${finalPrompt}` : finalPrompt,
 					effectiveAttachments,
@@ -1194,6 +1168,92 @@ export class UniversalSession implements DispatchSession {
 	}
 
 	/** Approval reply routed here from dispatch (`tool_approval_response`). */
+	/**
+	 * Wrap a sink so late callbacks from a superseded turn are dropped.
+	 *
+	 * Only *functions* are wrapped: plain data such as `supportsApproval` must pass through
+	 * unchanged, otherwise `sink.supportsApproval === true` reads as a function and the
+	 * driver concludes there is no approval channel. The wrapper also has to return the
+	 * call's value, or async sink methods never resolve.
+	 */
+	private guardSink(sink: AgentEventSink, isCurrent: () => boolean): AgentEventSink {
+		return new Proxy(sink, {
+			get: (target, key: keyof AgentEventSink) => {
+				const value = target[key];
+				if (typeof value !== "function") return value;
+				return (...args: unknown[]) => {
+					if (!isCurrent()) return undefined;
+					return (value as (...args: unknown[]) => unknown).apply(target, args);
+				};
+			},
+		});
+	}
+
+	/**
+	 * Ask the UI to approve one engine tool call. Shared by the session driver and its
+	 * subagents: subagent prompts are surfaced in the parent conversation so a human can
+	 * answer them, and they keep the same safety rails (deny when nobody is attached,
+	 * watchdog for unattended clients).
+	 */
+	private requestApproval(
+		requestId: string,
+		toolName: string,
+		params: Record<string, unknown>,
+		driver: BaseAgentDriver,
+		opts?: {
+			idPrefix?: string;
+			reason?: string;
+			reasonEn?: string;
+			conversationTitle?: string;
+			suggestions?: unknown[];
+			conversationId?: string;
+		},
+	): void {
+		const id = `${opts?.idPrefix ?? ""}${requestId}`;
+		if (this.sinks.size === 0) {
+			void driver.respondApproval(requestId, "deny", undefined, "no attached client");
+			this.emitNotice(
+				"warning",
+				`无人可答的审批（该会话没有已连接的界面）：已拒绝工具 ${toolName}。`,
+				`Approval nobody can answer (no attached client): tool ${toolName} was denied.`,
+			);
+			return;
+		}
+		this.pendingApprovals.set(id, { requestId, toolName, driver });
+		const timeoutMs = unattendedApprovalTimeoutMs(this.clientId);
+		if (timeoutMs !== null) {
+			const timer = setTimeout(() => {
+				this.approvalTimers.delete(id);
+				const entry = this.pendingApprovals.get(id);
+				if (!entry) return;
+				this.pendingApprovals.delete(id);
+				void (entry.driver ?? driver).respondApproval(entry.requestId, "deny", undefined, "unattended timeout");
+				this.send({ type: "tool_approval_resolved", id });
+				this.emitNotice(
+					"warning",
+					`无人值守审批超时（${Math.round(timeoutMs / 1000)}s）：已拒绝工具 ${toolName}。`,
+					`Unattended approval timed out after ${Math.round(timeoutMs / 1000)}s: tool ${toolName} was denied.`,
+				);
+			}, timeoutMs);
+			timer.unref?.();
+			this.approvalTimers.set(id, timer);
+		}
+		const convId = opts?.conversationId ?? this.turnConvId ?? undefined;
+		this.send({
+			type: "tool_approval_pending",
+			id,
+			toolCallId: `tc-${requestId}`,
+			toolName,
+			params,
+			reason: opts?.reason ?? "",
+			reasonEn: opts?.reasonEn ?? "",
+			scopeless: true,
+			...(opts?.conversationTitle ? { conversationTitle: opts.conversationTitle } : {}),
+			...(convId ? { conversationId: convId } : {}),
+			...(opts?.suggestions ? { suggestions: opts.suggestions } : {}),
+		});
+	}
+
 	resolveToolApproval(
 		id: string,
 		decision: "approve" | "edit" | "deny",
@@ -1205,7 +1265,8 @@ export class UniversalSession implements DispatchSession {
 		if (!entry) return false;
 		this.pendingApprovals.delete(id);
 		this.clearApprovalTimer(id);
-		void this.driver.respondApproval(entry.requestId, decision, editedParams, reason);
+		// A subagent prompt must be answered on the subagent own driver (its own CLI process).
+		void (entry.driver ?? this.driver).respondApproval(entry.requestId, decision, editedParams, reason);
 		this.send({ type: "tool_approval_resolved", id });
 		return true;
 	}
@@ -1222,7 +1283,7 @@ export class UniversalSession implements DispatchSession {
 		if (this.pendingApprovals.size === 0) return;
 		for (const [id, entry] of this.pendingApprovals) {
 			this.clearApprovalTimer(id);
-			void this.driver.respondApproval(entry.requestId, "deny", undefined, reason);
+			void (entry.driver ?? this.driver).respondApproval(entry.requestId, "deny", undefined, reason);
 			this.send({ type: "tool_approval_resolved", id });
 		}
 		this.pendingApprovals.clear();
@@ -3126,6 +3187,22 @@ export class UniversalSession implements DispatchSession {
 		conv.messages.push(assistantMsg);
 
 		const sink: AgentEventSink = {
+			// Subagent prompts surface in the PARENT conversation. Without this the driver
+			// cannot tell it has a channel (see AgentEventSink.supportsApproval) and the CLI
+			// would wait forever on a prompt nobody answers.
+			supportsApproval: true,
+			onApprovalRequest: (requestId, toolName, params) => {
+				const title = conv.title || "子代理";
+				// Same rails as the parent: deny when nobody is attached, watchdog for
+				// unattended clients, and answer on the subagent's own driver.
+				this.requestApproval(requestId, toolName, params, subDriver, {
+					idPrefix: `sa-${conv.id}-`,
+					reason: `子代理请求执行（${title}）`,
+					reasonEn: `Subagent request (${title})`,
+					conversationTitle: title,
+					conversationId: this.activeConvId ?? undefined,
+				});
+			},
 			onSessionStarted: (sessionId) => {
 				conv.driverSessionId = sessionId;
 				if (!conv.isEphemeral) this.store.saveConversation(cwd, conv);
@@ -3235,14 +3312,7 @@ export class UniversalSession implements DispatchSession {
 				conv.driverSessionId = sid;
 			}
 			if (!isCurrent()) return;
-			const guardedSink = new Proxy(sink, {
-				get:
-					(target, key: keyof AgentEventSink) =>
-					(...args: unknown[]) => {
-						if (isCurrent()) (target[key] as (...args: unknown[]) => void)?.(...args);
-					},
-			});
-			await subDriver.sendPrompt(prompt, undefined, guardedSink);
+			await subDriver.sendPrompt(prompt, undefined, this.guardSink(sink, isCurrent));
 		} catch (err: unknown) {
 			if (!isCurrent()) return;
 			const msg = err instanceof Error ? err.message : String(err);

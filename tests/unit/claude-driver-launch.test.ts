@@ -40,6 +40,8 @@ function setup(executablePath?: string) {
 		onTurnComplete: vi.fn(),
 		onError: vi.fn(),
 		onApprovalRequest: vi.fn(),
+		// Explicit opt-in: a bare sink must not be treated as having an approval channel.
+		supportsApproval: true,
 	};
 	const driver = new ClaudeCodeDriver(workspace, { executablePath, agentDir });
 	return { child, sink, driver };
@@ -279,6 +281,47 @@ describe("Claude Code permission bridge", () => {
 		expect(JSON.parse(written.trim())).toEqual({
 			type: "control_response",
 			response: { subtype: "success", request_id: "req-1", response: { behavior: "allow" } },
+		});
+
+		child.emit("close", 0);
+		await done;
+	});
+
+	it("denies instead of hanging when the sink has no approval channel (subagent case)", async () => {
+		const { child, driver } = setup();
+		// A subagent sink: no `supportsApproval`, no `onApprovalRequest`.
+		const bareSink = {
+			onTextDelta: vi.fn(),
+			onThinkingDelta: vi.fn(),
+			onToolStart: vi.fn(),
+			onToolEnd: vi.fn(),
+			onTurnComplete: vi.fn(),
+			onError: vi.fn(),
+		} as unknown as Parameters<typeof driver.sendPrompt>[2];
+		let written = "";
+		child.stdin.on("data", (chunk) => {
+			written += chunk.toString();
+		});
+		const done = driver.sendPrompt("hi", undefined, bareSink);
+		written = "";
+
+		child.stdout.write(
+			`${JSON.stringify({
+				type: "control_request",
+				request_id: "req-bare",
+				request: { subtype: "can_use_tool", tool_name: "Bash", input: { command: "ls" } },
+			})}\n`,
+		);
+		await new Promise((resolve) => setTimeout(resolve, 20));
+
+		// Must auto-deny rather than wait for a human that will never answer.
+		expect(JSON.parse(written.trim())).toEqual({
+			type: "control_response",
+			response: {
+				subtype: "success",
+				request_id: "req-bare",
+				response: { behavior: "deny", message: "no approval channel" },
+			},
 		});
 
 		child.emit("close", 0);

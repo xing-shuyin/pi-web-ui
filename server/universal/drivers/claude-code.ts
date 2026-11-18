@@ -505,7 +505,7 @@ export class ClaudeCodeDriver extends BaseAgentDriver {
 		const params = request.input && typeof request.input === "object" ? (request.input as Record<string, unknown>) : {};
 		const suggestions = Array.isArray(request.permission_suggestions) ? request.permission_suggestions : undefined;
 
-		if (typeof sink.onApprovalRequest !== "function") {
+		if (sink.supportsApproval !== true || typeof sink.onApprovalRequest !== "function") {
 			// No UI channel (subagent/headless): deny instead of hanging the turn forever.
 			void this.respondApproval(requestId, "deny", undefined, "no approval channel");
 			return;
