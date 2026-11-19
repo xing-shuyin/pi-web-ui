@@ -1,5 +1,5 @@
 /**
- * web-inspect —— server entry.
+ * web-capture —— server entry.
  *
  * Left = browser pane (iframe), right = resizable steps sidebar (client/).
  * Step recording works two ways:
@@ -10,8 +10,8 @@
  *
  * Model-facing surface = 6 JSON-Schema agent tools (MCP tool conventions:
  * name / description / input schema), callable directly by any in-chat model:
- * web_inspect_state, web_inspect_log, web_inspect_steps, web_inspect_note,
- * web_inspect_clear, web_inspect_report.
+ * web_capture_state, web_capture_log, web_capture_steps, web_capture_note,
+ * web_capture_clear, web_capture_report.
  */
 import { definePlugin } from "./sdk/index.mjs";
 
@@ -196,7 +196,7 @@ export default definePlugin({
 		const ctx = { state, settings };
 		const broadcast = () => {
 			try {
-				host.broadcast({ kind: "web-inspect", state });
+				host.broadcast({ kind: "web-capture", state });
 			} catch {}
 		};
 		const refreshCtx = () => {
@@ -245,7 +245,7 @@ export default definePlugin({
 				}
 			} else if (p.action === "getSettings" && from) {
 				try {
-					host.sendTo(from, { kind: "web-inspect-settings", settings: host.getSettings?.() ?? {} });
+					host.sendTo(from, { kind: "web-capture-settings", settings: host.getSettings?.() ?? {} });
 				} catch {}
 			}
 		});
@@ -314,7 +314,7 @@ export default definePlugin({
 					resp = await fetch(raw, {
 						signal: ctl.signal,
 						redirect: "follow",
-						headers: { "User-Agent": "pi-web-ui web-inspect", Accept: "text/html,application/xhtml+xml" },
+						headers: { "User-Agent": "pi-web-ui web-capture", Accept: "text/html,application/xhtml+xml" },
 					});
 				} finally {
 					clearTimeout(timer);
@@ -355,11 +355,11 @@ export default definePlugin({
 		});
 
 		async function saveReport(task) {
-			const md = `# Web Inspect report\n\n${toMarkdown(state, task)}\n`;
+			const md = `# Web Capture report\n\n${toMarkdown(state, task)}\n`;
 			const stamp = new Date().toISOString().replace(/[:.]/g, "-").slice(0, 19);
-			const rel = `web-inspect/report-${stamp}.md`;
+			const rel = `web-capture/report-${stamp}.md`;
 			try {
-				await host.fs.mkdir("web-inspect");
+				await host.fs.mkdir("web-capture");
 			} catch {}
 			await host.fs.write(rel, md);
 			return { path: rel, markdown: md };
@@ -376,16 +376,16 @@ export default definePlugin({
 
 		const tools = [
 			{
-				name: "web_inspect_state",
-				label: "Web Inspect State",
+				name: "web_capture_state",
+				label: "Web Capture State",
 				description:
 					"Read the latest page snapshot, picked element and interaction log captured from the user's browser (Markdown). Read this before helping debug a page.",
 				parameters: { type: "object", properties: {} },
 				execute: async () => ({ content: [{ type: "text", text: toMarkdown(state, "") }] }),
 			},
 			{
-				name: "web_inspect_log",
-				label: "Web Inspect Log",
+				name: "web_capture_log",
+				label: "Web Capture Log",
 				description:
 					"Read the tail of the interaction log, filterable by kind: pick (element picks) / snap (snapshots) / click / input / submit / change / note / event / step.",
 				parameters: {
@@ -406,8 +406,8 @@ export default definePlugin({
 				},
 			},
 			{
-				name: "web_inspect_steps",
-				label: "Web Inspect Steps",
+				name: "web_capture_steps",
+				label: "Web Capture Steps",
 				description:
 					"Read the user's recorded step-by-step flow: page visits, clicks, inputs, picks and notes, in order with CSS selectors. Use this to replay or debug what the user did.",
 				parameters: {
@@ -422,9 +422,9 @@ export default definePlugin({
 				},
 			},
 			{
-				name: "web_inspect_note",
-				label: "Web Inspect Note",
-				description: "Append a note to the user's inspection log (visible in the Web Inspect tab).",
+				name: "web_capture_note",
+				label: "Web Capture Note",
+				description: "Append a note to the user's inspection log (visible in the Web Capture tab).",
 				parameters: {
 					type: "object",
 					properties: { text: { type: "string", description: "Note text" } },
@@ -439,8 +439,8 @@ export default definePlugin({
 				},
 			},
 			{
-				name: "web_inspect_clear",
-				label: "Web Inspect Clear",
+				name: "web_capture_clear",
+				label: "Web Capture Clear",
 				description: "Clear the inspection log and recorded steps.",
 				parameters: { type: "object", properties: {} },
 				execute: async () => {
@@ -452,10 +452,10 @@ export default definePlugin({
 				},
 			},
 			{
-				name: "web_inspect_report",
-				label: "Web Inspect Report",
+				name: "web_capture_report",
+				label: "Web Capture Report",
 				description:
-					"Save the current inspection (task + page + steps + picked element + snapshot) as a Markdown file under web-inspect/ in the workspace and return its path. The user attaches it to chat for debugging.",
+					"Save the current inspection (task + page + steps + picked element + snapshot) as a Markdown file under web-capture/ in the workspace and return its path. The user attaches it to chat for debugging.",
 				parameters: {
 					type: "object",
 					properties: {
@@ -471,7 +471,7 @@ export default definePlugin({
 		];
 		const offTools = tools.map((t) => host.registerAgentTool(t));
 
-		host.log("web-inspect ready: browser+steps tab, beacon /collect, 6 agent tools");
+		host.log("web-capture ready: browser+steps tab, beacon /collect, 6 agent tools");
 		return () => {
 			for (const off of [offSettings, offMsg, offBeacon, offPost, offState, offSettingsRoute, offReportRoute, offProxy, ...offTools]) {
 				try {

@@ -41,7 +41,7 @@ function resMock() {
 	};
 }
 
-describe("web-inspect", () => {
+describe("web-capture", () => {
 	it("beacon pick → state tool reads the pick", async () => {
 		const host = createMockHost();
 		const cleanup = await plugin.activate(host);
@@ -50,8 +50,8 @@ describe("web-inspect", () => {
 		const res = resMock();
 		await route.handler({ query: { d: encodeURIComponent(JSON.stringify({ type: "pick", tag: "button", text: "Login", sel: "#login", url: "https://example.com" })) } }, res);
 		assert.equal(res.body.ok, true);
-		const tool = host.mock.agentTools.find((t) => t.name === "web_inspect_state");
-		assert.ok(tool, "web_inspect_state registered");
+		const tool = host.mock.agentTools.find((t) => t.name === "web_capture_state");
+		assert.ok(tool, "web_capture_state registered");
 		const out = await tool.execute("t", {}, null);
 		assert.match(out.content[0].text, /#login/);
 		await cleanup();
@@ -62,7 +62,7 @@ describe("web-inspect", () => {
 		const cleanup = await plugin.activate(host);
 		const post = host.mock.routes.find((r) => r.method === "POST" && r.path === "/collect");
 		await post.handler({ body: { type: "event", ev: "click", text: "submit", sel: "#ok", url: "https://x.test" } }, resMock());
-		const logTool = host.mock.agentTools.find((t) => t.name === "web_inspect_log");
+		const logTool = host.mock.agentTools.find((t) => t.name === "web_capture_log");
 		const out = await logTool.execute("t", { kind: "click", limit: 10 }, null);
 		assert.match(out.content[0].text, /submit/);
 		const empty = await logTool.execute("t", { kind: "pick" }, null);
@@ -78,7 +78,7 @@ describe("web-inspect", () => {
 		const cleanup = await plugin.activate(host);
 		host.mock.emit("onMessage", { action: "step", step: { kind: "visit", label: "visit: https://a.test", url: "https://a.test" } }, "c1");
 		host.mock.emit("onMessage", { action: "step", step: { kind: "click", label: "click: Go", sel: "#go", url: "https://a.test" } }, "c1");
-		const stepsTool = host.mock.agentTools.find((t) => t.name === "web_inspect_steps");
+		const stepsTool = host.mock.agentTools.find((t) => t.name === "web_capture_steps");
 		const out = await stepsTool.execute("t", {}, null);
 		assert.match(out.content[0].text, /1\. \[visit\]/);
 		assert.match(out.content[0].text, /#go/);
@@ -94,18 +94,18 @@ describe("web-inspect", () => {
 		const host = createMockHost({ fs: { mkdir: async () => {}, write: async (p, data) => { written[p] = String(data); } } });
 		const cleanup = await plugin.activate(host);
 		host.mock.emit("onMessage", { action: "step", step: { kind: "visit", label: "visit: https://a.test", url: "https://a.test" } }, "c1");
-		const noteTool = host.mock.agentTools.find((t) => t.name === "web_inspect_note");
+		const noteTool = host.mock.agentTools.find((t) => t.name === "web_capture_note");
 		await noteTool.execute("t", { text: "login ok" }, null);
-		const reportTool = host.mock.agentTools.find((t) => t.name === "web_inspect_report");
+		const reportTool = host.mock.agentTools.find((t) => t.name === "web_capture_report");
 		const out = await reportTool.execute("t", { task: "button does nothing" }, null);
 		const keys = Object.keys(written);
 		assert.equal(keys.length, 1);
-		assert.match(keys[0], /^web-inspect\/report-.*\.md$/);
+		assert.match(keys[0], /^web-capture\/report-.*\.md$/);
 		assert.match(written[keys[0]], /button does nothing/);
-		assert.match(out.content[0].text, /saved: web-inspect\/report-/);
-		const clearTool = host.mock.agentTools.find((t) => t.name === "web_inspect_clear");
+		assert.match(out.content[0].text, /saved: web-capture\/report-/);
+		const clearTool = host.mock.agentTools.find((t) => t.name === "web_capture_clear");
 		await clearTool.execute("t", {}, null);
-		const stepsTool = host.mock.agentTools.find((t) => t.name === "web_inspect_steps");
+		const stepsTool = host.mock.agentTools.find((t) => t.name === "web_capture_steps");
 		const after = await stepsTool.execute("t", {}, null);
 		assert.match(after.content[0].text, /no steps recorded/);
 		await cleanup();
@@ -117,7 +117,7 @@ describe("web-inspect", () => {
 		host.mock.emit("onMessage", { action: "step", step: { kind: "visit", label: "https://a.test", url: "https://a.test" } }, "c1");
 		host.mock.emit("onMessage", { action: "step", step: { kind: "visit", label: "https://a.test", url: "https://a.test" } }, "c1");
 		host.mock.emit("onMessage", { action: "step", step: { kind: "click", label: "", sel: "#go", url: "https://a.test" } }, "c1");
-		const stepsTool = host.mock.agentTools.find((t) => t.name === "web_inspect_steps");
+		const stepsTool = host.mock.agentTools.find((t) => t.name === "web_capture_steps");
 		const out = await stepsTool.execute("t", {}, null);
 		const lines = out.content[0].text.split("\n").filter((l) => /^\d+\. /.test(l));
 		assert.equal(lines.length, 2);
@@ -140,13 +140,13 @@ describe("web-inspect", () => {
 			const route = host.mock.routes.find((r) => r.method === "GET" && r.path === "/proxy");
 			assert.ok(route, "GET /proxy registered");
 			const res = htmlResMock();
-			await route.handler({ query: { url: "https://example.com/a/b", ep: "https://h/plugins-api/web-inspect", msk: "1" } }, res);
+			await route.handler({ query: { url: "https://example.com/a/b", ep: "https://h/plugins-api/web-capture", msk: "1" } }, res);
 			assert.equal(res.statusCode, 200);
 			assert.match(res.headers["Content-Type"] ?? "", /text\/html/);
 			assert.match(res.body, /<base href="https:\/\/example\.com\/a\/">/);
 			assert.doesNotMatch(res.body, /content-security-policy/i);
 			assert.match(res.body, /__WI_LOGGED/);
-			assert.match(res.body, /https:\/\/h\/plugins-api\/web-inspect/);
+			assert.match(res.body, /https:\/\/h\/plugins-api\/web-capture/);
 			const bad = htmlResMock();
 			await route.handler({ query: { url: "ftp://x/y" } }, bad);
 			assert.equal(bad.statusCode, 400);

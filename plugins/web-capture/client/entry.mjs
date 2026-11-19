@@ -9,9 +9,9 @@ function apiBase() {
 		const u = new URL(import.meta.url);
 		const i = u.pathname.indexOf("/plugins/");
 		const root = i > 0 ? u.pathname.slice(0, i) : "";
-		return root + "/plugins-api/web-inspect";
+		return root + "/plugins-api/web-capture";
 	} catch {
-		return "/plugins-api/web-inspect";
+		return "/plugins-api/web-capture";
 	}
 }
 
@@ -72,7 +72,7 @@ export default defineView({
 		const API = apiBase();
 		let state = { page: null, snapshot: null, picked: null, log: [], steps: [] };
 		let settings = { sidebarWidth: 320, maskPasswords: true, autoSnapshot: true, maxSteps: 100 };
-		let sideW = Number(localStorage.getItem("web-inspect:sideW")) || settings.sidebarWidth;
+		let sideW = Number(localStorage.getItem("web-capture:sideW")) || settings.sidebarWidth;
 		let mode = "capture";
 		let browserUrl = "";
 		let proxyMode = false;
@@ -160,7 +160,7 @@ export default defineView({
 				window.removeEventListener("mousemove", mv);
 				window.removeEventListener("mouseup", up);
 				try {
-					localStorage.setItem("web-inspect:sideW", String(sideW));
+					localStorage.setItem("web-capture:sideW", String(sideW));
 				} catch {}
 			};
 			window.addEventListener("mousemove", mv);
@@ -181,7 +181,7 @@ export default defineView({
 				const gu = () => {
 					window.removeEventListener("touchmove", gm);
 					window.removeEventListener("touchend", gu);
-					try { localStorage.setItem("web-inspect:sideW", String(sideW)); } catch {}
+					try { localStorage.setItem("web-capture:sideW", String(sideW)); } catch {}
 				};
 				window.addEventListener("touchmove", gm, { passive: true });
 				window.addEventListener("touchend", gu);
@@ -608,7 +608,7 @@ ${esc((state.log || []).slice(-10).map((l) => `[${(l.t || "").slice(11, 19)}] ${
 					const sj = await s.json();
 					if (sj.ok && sj.settings) {
 						settings = { ...settings, ...sj.settings };
-						if (!localStorage.getItem("web-inspect:sideW") && settings.sidebarWidth) {
+						if (!localStorage.getItem("web-capture:sideW") && settings.sidebarWidth) {
 							sideW = settings.sidebarWidth;
 							side.style.width = sideW + "px";
 						}
@@ -619,7 +619,7 @@ ${esc((state.log || []).slice(-10).map((l) => `[${(l.t || "").slice(11, 19)}] ${
 		}
 
 		const off = ctx.onData((p) => {
-			if (p && p.kind === "web-inspect" && p.state) {
+			if (p && p.kind === "web-capture" && p.state) {
 				state = p.state;
 				render();
 			}

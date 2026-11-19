@@ -1,4 +1,4 @@
-# Web Inspect
+# Web Capture
 
 No-extension page capture for AI debugging — bookmarklet + side-by-side browser/steps tab + 6 agent tools. English only.
 
@@ -33,7 +33,7 @@ No-extension page capture for AI debugging — bookmarklet + side-by-side browse
 2. Click Pick, click an element → `pick` step with CSS selector;
 3. Type in the page → `input` steps (passwords masked);
 4. Write the task in Send → **Final & send to chat**: saves
-   `web-inspect/report-<ts>.md` in the workspace and attaches it to the
+   `web-capture/report-<ts>.md` in the workspace and attaches it to the
    composer as a file reference. Then describe the fix and send.
 
 ## Model protocol (MCP-style JSON-Schema tools)
@@ -44,12 +44,12 @@ agent tools, so no separate MCP server is needed.
 
 | tool | what |
 |---|---|
-| `web_inspect_state` | page + pick + recent log (Markdown) |
-| `web_inspect_log {limit?,kind?}` | log tail: `pick/snap/click/input/submit/change/note/event/step` |
-| `web_inspect_steps {limit?}` | ordered steps with selectors — replay/debug what the user did |
-| `web_inspect_note {text}` | append a note (visible in tab) |
-| `web_inspect_clear` | clear log + steps |
-| `web_inspect_report {task?}` | save Markdown report under `web-inspect/`, return `{path, markdown}` |
+| `web_capture_state` | page + pick + recent log (Markdown) |
+| `web_capture_log {limit?,kind?}` | log tail: `pick/snap/click/input/submit/change/note/event/step` |
+| `web_capture_steps {limit?}` | ordered steps with selectors — replay/debug what the user did |
+| `web_capture_note {text}` | append a note (visible in tab) |
+| `web_capture_clear` | clear log + steps |
+| `web_capture_report {task?}` | save Markdown report under `web-capture/`, return `{path, markdown}` |
 
 ## Settings (manifest `settings` → pi-web-ui settings page)
 
@@ -73,7 +73,7 @@ the page (chunked beacons are v2).
 
 ## Reference mapping
 
-| need | Codex Browser Use | Playwright / chrome-devtools MCP | web-inspect |
+| need | Codex Browser Use | Playwright / chrome-devtools MCP | web-capture |
 |---|---|---|---|
 | snapshot → act by ref | ✅ (own browser/CDP) | ✅ snapshot+ref | snapshot+selector ✅, reverse-act v2 |
 | console log | ✅ | ✅ | click/input/submit log ✅ (page console v2) |
@@ -82,7 +82,7 @@ the page (chunked beacons are v2).
 
 ## Roadmap (v2)
 
-- `web_inspect_act`: agent → page via `sendTo` + on-screen confirm;
+- `web_capture_act`: agent → page via `sendTo` + on-screen confirm;
 - page console-error capture; snapshot chunking (`seq/total`).
 
 ## Files

@@ -477,15 +477,15 @@
 		"homepage": "https://github.com/xing-shuyin/pi-web-ui/tree/main/plugins/frp-manager"
 	}	,
 	{
-		"id": "web-inspect",
+		"id": "web-capture",
 		"name": "网页拾取",
-		"nameEn": "Web Inspect",
+		"nameEn": "Web Capture",
 		"version": "0.1.0",
 		"icon": "🎯",
 		"iconSvg": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><circle cx=\"12\" cy=\"12\" r=\"3\"/><path d=\"M12 2v3m0 14v3M2 12h3m14 0h3\"/><circle cx=\"12\" cy=\"12\" r=\"8\"/></svg>",
-		"description": "免扩展抓页面：收藏夹书签在任意网站点选元素、快照与点击日志实时回传本 Tab，一键送入聊天给 AI 调试；AI 经 web_inspect_state / web_inspect_log 读取。",
-		"descriptionEn": "No-extension page capture: a bookmarklet picks elements on any site; snapshots + interaction logs stream back to this tab, one click sends to chat for AI debugging; AI reads via web_inspect_state / web_inspect_log.",
-		"source": "xing-shuyin/pi-web-ui/plugins/web-inspect",
-		"homepage": "https://github.com/xing-shuyin/pi-web-ui/tree/main/plugins/web-inspect"
+		"description": "免扩展抓页面：收藏夹书签在任意网站点选元素、快照与点击日志实时回传本 Tab，一键送入聊天给 AI 调试；AI 经 web_capture_* 工具读取。",
+		"descriptionEn": "No-extension page capture: a bookmarklet picks elements on any site; snapshots + steps stream back to this tab, one click sends a report to chat; AI reads and saves via 6 web_capture_* tools.",
+		"source": "xing-shuyin/pi-web-ui/plugins/web-capture",
+		"homepage": "https://github.com/xing-shuyin/pi-web-ui/tree/main/plugins/web-capture"
 	}
 ]

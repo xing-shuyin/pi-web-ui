@@ -1,11 +1,11 @@
 {
- "id": "web-inspect",
- "name": "Web Inspect",
- "nameEn": "Web Inspect",
+ "id": "web-capture",
+ "name": "Web Capture",
+ "nameEn": "Web Capture",
  "version": "0.2.0",
  "icon": "🎯",
- "description": "Browser left + steps sidebar right: open pages, record clicks/inputs step by step, one click sends a report attachment to chat; AI reads and saves via 6 web_inspect_* tools.",
- "descriptionEn": "Browser left + steps sidebar right: open pages, record clicks/inputs step by step, one click sends a report attachment to chat; AI reads and saves via 6 web_inspect_* tools.",
+ "description": "Browser left + steps sidebar right: open pages, capture clicks/inputs step by step, one click sends a report attachment to chat; AI reads and saves via 6 web_capture_* tools.",
+ "descriptionEn": "Browser left + steps sidebar right: open pages, capture clicks/inputs step by step, one click sends a report attachment to chat; AI reads and saves via 6 web_capture_* tools.",
  "apiVersion": 2,
  "view": true,
  "permissions": [
