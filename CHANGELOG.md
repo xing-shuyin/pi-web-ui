@@ -10,6 +10,14 @@
 
 ## [Unreleased]
 
+### Added
+
+- **远程桌面可按设备选择鼠标指针**：工具栏「桌面设置 → 鼠标指针」在「显示本机鼠标」（默认）和「显示对方鼠标」之间即时切换，只读连接也能切；设置按被控设备保存。Windows 走授权桌面通道单独传指针热点、图形与位置（`server/device-center/desktop-cursor.ts` 只放行归一化坐标与 ≤128×128、≤32 KiB 且 IHDR 尺寸与热点自洽的 PNG，Mac / Linux X11 用采集器自带的指针开关），旧版被控端缺能力时提示升级，不自动安装组件（#951）。
+
+- **跨系统快捷键转换（默认关闭，按设备记住）**：Windows 控 Mac 时 Ctrl → Command、Windows 键 → Control，Mac 控 Windows 时 Command → Ctrl、Control → Windows 键，左右修饰键分别映射，同平台与未知平台按原键发送。`server/device-center/desktop-keyboard.ts` 记录**实际发出**的键码，专门覆盖 macOS 在 Command 按住时不发 keyup 的情况（换开关、失焦、断开都补发释放，不会把远端按键卡住）。
+
+- **新设备默认跟随被控显示器的刷新率**：画质面板的帧率目标跟着被控屏幕标称刷新率（最高 240 FPS），刷新率未知时先要 60 FPS；已手选过帧率的设备保留原选择。连接信息显示被控显示器的标称刷新率。
+
 ### Changed
 
 - **子进程 / git / 引号 / 等待收敛成单源**：新增 `server/run-process.ts`（spawn + 超时与取消杀整棵进程树 + stdin 接地 + 行回调 + 输出上限，`NO_COLOR`/`windowsHide` 一次给全）与 `server/git-run.ts`（`runGit`/`runGitText`、`quotepath` 硬化、`GIT_TERMINAL_PROMPT=0` 环境、失败摘要取 stderr 首行），迁移掉 5 份重复的 `runGit`、6 份各自定义的超时常量与 6 处内联 `taskkill`（含 `eval-tool` 的 `execSync`，服务端同步子进程调用再少一处）；shell / PowerShell 引号收敛到 `server/shell-quote.ts`（CLI 用生成件 `bin/lib/shell-quote.mjs`，镜像件清单 `scripts/lib/bin-mirrors.mjs` + `npm run gen:bin-mirrors`），`sleep` 收敛到 `server/async-utils.ts`。`agent-service` 的自建 `runAsync`（50 行 spawn+超时杀树）与插件运行时依赖安装（`plugin-facilities` 的 `spawnSync` npm install、`plugin-assets` 的 `execFileSync` tar 解包）也一并收口 —— 后者原来会把服务端事件循环整段卡住几分钟；`runProcess` 新增 `windowsShell` 选项，统一「Windows 上 npm 这类 .cmd 包装器必须经 `cmd.exe /d /s /c`」的写法。同步子进程存量名单再缩短两行。连发布协议 `local-publication` 的 `runPublicationGit`（原来自己 spawn）也变成了单源特化：`runProcess` 新增 `stopTimeoutMs`（杀树后宽限内停不下来 → `unstopped`，而不是让 promise 永远挂着）、`overflow: "kill"`（输出超限立刻杀树）、`onSpawn(pid)`（按操作键登记活子进程）三个失败关闭（fail-closed）选项，`runGit` 新增 `globalArgs`（`--no-optional-locks` 这类全局开关）。规则与守卫：`docs/agent-rules.md` §四，`tests/unit/run-process.test.ts` / `git-run.test.ts` / `bin-mirror.test.ts` / `local-publication-git-primitive.test.ts`。
@@ -23,6 +31,12 @@
 - **内置插件 `bili-stroll`（漫步B站）已下线**：目录、`plugins/catalog.json` 条目与相关测试/守卫登记一并删除；已安装的用户可继续使用旧副本，卸载或重装市场条目后会消失。
 
 ### Fixed
+
+- **远程桌面线路切换不再反复重连**：Hub 浏览器按 WebRTC **实际选中**的线路标记局域网 / P2P / TURN，协商期间保留仍可用的连接，直连丢失回退 Hub，结果未知的写请求交回用户决定是否重试（`server/device-center/browser-peer-client.ts`、`device-lan.ts`、`device-lan-access.ts`、`device-p2p.ts`、`web/src/device-access.ts`）（#951）。
+
+- **远程画面更清晰、动起来更稳**：跟随窗口时按桌面宽高比与浏览器像素密度算有效画面尺寸，有效尺寸达到源画面长边 80% 就采原始像素，清晰模式额外采最多 1.5 倍长边；画面静止 200 ms 后，Windows 原生 GPU 与 macOS VideoToolbox 在均衡及以上质量补编码最多 8 帧细化（间隔 ≥125 ms，有新画面立刻先发，传输暂停时也停）；缩小超过 2:1 时 GPU 对每个输出像素做多点采样，Windows 兼容编码通道的 CPU 缩放显式用 BT.709 矩阵与视频范围，Mac 采集时转 sRGB 并向 VideoToolbox 同时声明像素转换与码流色彩（`desktop-video-flow.ts`、`desktop-video.ts`、`native-desktop/*`、`native/desktop-codec/ffmpeg-bridge.cpp`）。H.264 码率改为按编码尺寸连续推导（1920×1080@60：自动 11.88 Mbps / 清晰 14.4 Mbps，上限 50 Mbps），Windows 原生硬编换帧率时用新参数重开编码器并从关键帧继续。
+
+- **剪贴板与文件传输顺手了**：连续文本复制合并成一次处理、跨系统换行差异归一，对端改成其他内容后可再次复制之前的文本；文件传输两栏各自按名称 / 修改日期 / 大小排序（文件夹在前，再点切换方向），地址栏输入文件路径回车打开所在目录并选中该文件，可直接发送或接收（`desktop-clipboard-*.ts`、`desktop-file-manager.ts`、`desktop-files*.ts`、`desktop-page.ts`）。
 
 - **Windows 桌面版安装/更新插件不再弹 git 黑窗**：桌面壳里跑服务与插件作业的进程没有控制台，Windows 上它 spawn 的每个控制台程序（`git clone`、`git ls-remote`、`tar`、`npm install`、插件构建命令、`taskkill`/`powershell` 等）都会被系统新建一个控制台窗口。现在收敛成一个进程级开关（单源 `server/hide-console-windows.ts`，CLI 侧为生成件 `bin/lib/hide-console-windows.mjs`），在 server / CLI / 桌面壳三个入口各 import 一次即全覆盖（插件代码、`promisify(execFile)` 也吃到），热路径仍逐点显式 `windowsHide` 双保险，并有守卫单测锁住调用点与生成件同源（`tests/unit/windows-hide-guard.test.ts`）。可见终端的场景用显式 `windowsHide: false`，排查时 `PI_WEB_SHOW_CONSOLE=1` 可全局关掉开关。
 
