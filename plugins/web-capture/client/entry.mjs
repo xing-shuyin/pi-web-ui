@@ -488,7 +488,8 @@ export default defineView({
 				body.innerHTML = `<ol class="guide">
 					<li><span class="gn">1</span><div style="flex:1"><b>${esc(t("guide1"))}</b><div class="urlrow" style="margin-top:6px"><input data-a="url" placeholder="${esc(t("urlPh"))}" value="${esc(browserUrl)}">${ibtn("go2", "go", t("tipGo"))}${ibtn("open2", "open", t("tipOpenTab"))}</div></div></li>
 					<li><span class="gn">2</span><div style="flex:1"><b>${esc(t("guide2"))}</b><div class="dim" data-a="pagemode" style="margin-top:4px"></div><div style="margin-top:6px;display:flex;gap:6px">${ibtn("pick2", "pick", t("tipPick"), pickArmed)}${ibtn("snap2", "snap", t("tipSnap"))}</div>
-					<div class="dim" style="margin-top:6px">${esc(t("loginOk"))}</div><div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap"><a class="bm" href="${bm}">${esc(t("bmName"))}</a><button data-a="copybm">${esc(t("copyBm"))}</button></div><div class="dim">${esc(t("bmHint"))}</div></div></li>
+					<div data-a="pxcta" style="margin-top:6px;display:none;gap:6px;flex-wrap:wrap;align-items:center"><button data-a="pxgo2">${esc(t("useProxy"))}</button><button data-a="pxopen2">${esc(t("openReal"))}</button><div class="dim">${esc(t("proxyNote"))}</div></div>
+					<details style="margin-top:6px"><summary class="dim">${esc(t("bmLogin"))}</summary><div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;margin-top:4px"><a class="bm" href="${bm}">${esc(t("bmName"))}</a><button data-a="copybm">${esc(t("copyBm"))}</button></div><div class="dim">${esc(t("bmHint"))}</div></details></div></li>
 					<li><span class="gn">3</span><div><b>${esc(t("guide3"))}</b></div></li></ol>${flash ? `<div class="wi-flash">${esc(flash)}</div>` : ""}`;
 				flash = "";
 				const urlInput = body.querySelector('[data-a="url"]');
@@ -499,10 +500,16 @@ export default defineView({
 				body.querySelector('[data-a="open2"]').addEventListener("click", () => openRealTab(urlInput.value || browserUrl));
 				body.querySelector('[data-a="pick2"]').addEventListener("click", () => (pickArmed ? (disarmPick(), renderSide()) : armPick()));
 				const pm = body.querySelector('[data-a="pagemode"]');
+				const pxcta = body.querySelector('[data-a="pxcta"]');
 				if (pm) {
 					const readable = !!(browserUrl && sameDoc());
 					pm.textContent = !browserUrl ? "" : readable ? "● " + t("modeAuto") : "○ " + t("modeProxy");
+					if (pxcta) pxcta.style.display = browserUrl && !readable ? "flex" : "none";
 				}
+				const pxgo2 = body.querySelector('[data-a="pxgo2"]');
+				if (pxgo2) pxgo2.addEventListener("click", () => visitProxy(browserUrl));
+				const pxopen2 = body.querySelector('[data-a="pxopen2"]');
+				if (pxopen2) pxopen2.addEventListener("click", () => openRealTab(browserUrl));
 				body.querySelector('[data-a="copybm"]').addEventListener("click", async () => {
 					try {
 						await navigator.clipboard.writeText(`javascript:${encodeURIComponent(BOOKMARKLET_SRC.replace("__EP__", API.replace(/'/g, "")).replace("__MSK__", settings.maskPasswords ? "1" : "0"))}`);

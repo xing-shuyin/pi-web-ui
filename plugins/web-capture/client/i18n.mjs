@@ -75,6 +75,7 @@ const dicts = {
 		useProxy: "Reload via auto-proxy",
 		proxyNote: "Proxy drops logins — logged-in pages still need the bookmarklet.",
 		openReal: "Open in real tab",
+		bmLogin: "Logged-in page? Use the bookmarklet instead",
 		dismiss: "Dismiss",
 		tipNewFlow: "Clear steps and start a new capture flow",
 	},
