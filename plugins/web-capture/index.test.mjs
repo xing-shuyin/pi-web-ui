@@ -147,6 +147,7 @@ describe("web-capture", () => {
 			assert.doesNotMatch(res.body, /content-security-policy/i);
 			assert.match(res.body, /__WI_LOGGED/);
 			assert.match(res.body, /https:\/\/h\/plugins-api\/web-capture/);
+			assert.match(res.body, /window\.__WI_PATH="\/a\/b"/);
 			const bad = htmlResMock();
 			await route.handler({ query: { url: "ftp://x/y" } }, bad);
 			assert.equal(bad.statusCode, 400);

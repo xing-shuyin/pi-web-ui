@@ -342,9 +342,10 @@ export default definePlugin({
 				const target = new URL(raw);
 				const dir = target.pathname.endsWith("/") ? target.pathname : `${target.pathname.slice(0, target.pathname.lastIndexOf("/") + 1)}`;
 				const base = `${target.origin}${dir}`;
+				const wiPath = `<script>window.__WI_PATH=${JSON.stringify(target.pathname + target.search)};</script>`;
 				const script = `<script>${RECORDER_SRC.replace("__EP_JSON__", JSON.stringify(ep)).replace("__MSK__", msk ? "1" : "0").replace("__ALERT__", "0").replace("__CANON__", JSON.stringify(raw))}</scr` + `ipt>`;
-				if (/<head[^>]*>/i.test(html)) html = html.replace(/<head[^>]*>/i, (m) => `${m}<base href="${base}">\n${script}`);
-				else html = `<base href="${base}">\n${script}\n${html}`;
+				if (/<head[^>]*>/i.test(html)) html = html.replace(/<head[^>]*>/i, (m) => `${m}<base href="${base}">\n${wiPath}\n${script}`);
+				else html = `<base href="${base}">\n${wiPath}\n${script}\n${html}`;
 				res.setHeader("Content-Type", "text/html; charset=utf-8");
 				res.setHeader("Cache-Control", "no-store");
 				res.send(html);
