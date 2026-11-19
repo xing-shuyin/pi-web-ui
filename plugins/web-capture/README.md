@@ -63,6 +63,18 @@ agent tools, so no separate MCP server is needed.
 English only — one language everywhere (tab, bookmarklet, reports), no mixed
 display. Server/agent strings are English per the repo prompt-hygiene rule.
 
+## Network requirements (read this if the page looks broken)
+
+- The proxy fetches the page **server-side**: `localhost` means the machine
+  running pi-web-ui. Dev server on another box? Use its LAN/Tailscale address
+  in the URL bar, not `localhost`.
+- Assets/API/HMR go **directly from your browser** to the target
+  (absolute URLs resolved via `<base>`). If the browser can't reach the dev
+  server (remote phone vs local dev), the shell loads but data doesn't —
+  open the page in a real tab instead (same network as the dev server).
+- Login cookies are never forwarded by the proxy — logged-in pages must use
+  the bookmarklet.
+
 ## Why bookmarklet instead of iframe/extension
 
 Login pages mostly send `X-Frame-Options: DENY`; the bookmarklet runs in the
