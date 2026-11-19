@@ -41,7 +41,7 @@ function mdOf(s, task) {
 	return out.join("\n");
 }
 
-const CSS = `.wi{font:13px/1.6 system-ui,sans-serif;height:100%;display:flex;flex-direction:column;color:var(--text,inherit);min-height:0}.wi-top{display:flex;gap:4px;align-items:center;padding:6px 8px;border-bottom:1px solid var(--border,#8883)}.wi-top .sp{flex:1}.wi-top .pg{font-size:11.5px;color:var(--text-dim,#999);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:46%}.ibtn{flex:none;width:32px;height:30px;display:inline-flex;align-items:center;justify-content:center;border:1px solid var(--border,#8886);border-radius:7px;background:transparent;color:var(--text,inherit);cursor:pointer;padding:0}.ibtn svg{width:16px;height:16px}.ibtn:hover{background:var(--accent-soft,#8882)}.ibtn.on{color:#fff;background:var(--accent,#4a7dff);border-color:var(--accent,#4a7dff)}.wi-main{flex:1;display:flex;min-height:0}.wi-browser{flex:1;min-width:0;display:flex;flex-direction:column}.wi-browser iframe{flex:1;width:100%;border:0;background:#fff;min-height:0}.wi-framed{font-size:11px;color:var(--text-dim,#999);padding:2px 10px}.wi-grip{flex:none;width:8px;cursor:col-resize}.wi-grip:hover,.wi-grip.on{background:var(--accent-soft,#8883)}.wi-side{flex:none;display:flex;flex-direction:column;min-height:0;border-left:1px solid var(--border,#8883)}.stabs{flex:none;display:flex;gap:4px;padding:8px 8px 0}.stabs button{flex:1;display:flex;align-items:center;justify-content:center;gap:5px;border:1px solid var(--border,#8884);border-bottom:0;border-radius:8px 8px 0 0;padding:6px 2px;background:transparent;color:var(--text-dim,#999);font-size:12px;cursor:pointer}.stabs button svg{width:14px;height:14px}.stabs button.on{color:var(--text-strong,var(--text,inherit));background:var(--bg-elev,transparent);border-color:var(--accent,#4a7dff);font-weight:600}.sbody{flex:1;min-height:0;overflow-y:auto;padding:8px;border-top:1px solid var(--border,#8884);display:flex;flex-direction:column;gap:8px}.sfoot{flex:none;padding:8px;border-top:1px solid var(--border,#8883)}.sfoot button{width:100%;padding:8px;font-size:13px;font-weight:600}.wi .dim{font-size:11.5px;color:var(--text-dim,#999)}.wi .card{border:1px solid var(--border,#8884);border-radius:10px;padding:8px 10px;background:var(--bg-elev,transparent)}.wi .guide{margin:0;padding:0;list-style:none;display:flex;flex-direction:column;gap:8px}.wi .guide li{display:flex;gap:8px;align-items:flex-start}.wi .gn{flex:none;width:20px;height:20px;border-radius:50%;background:var(--accent,#4a7dff);color:#fff;font-size:11px;font-weight:700;display:flex;align-items:center;justify-content:center;margin-top:1px}.wi input[type=text],.wi textarea{width:100%;box-sizing:border-box;background:var(--bg-elev2,#8881);color:var(--text,inherit);border:1px solid var(--border,#8884);border-radius:6px;padding:6px 8px;font-size:12px}.wi textarea{resize:vertical}.wi ol.steps{margin:6px 0;padding-left:20px;font-size:12px}.wi ol.steps li{margin:3px 0}.wi code{font-size:11px;word-break:break-all}.wi a.bm{display:inline-block;margin:4px 0;padding:4px 12px;border:1px dashed var(--accent,#4a7dff);border-radius:8px;text-decoration:none;color:var(--accent,#4a7dff);font-size:12px}.wi-flash{font-size:12px;color:var(--accent,#4a7dff);margin-top:6px}.wi pre{white-space:pre-wrap;font-size:11px;max-height:160px;overflow:auto;background:var(--bg-elev2,#8881);border-radius:6px;padding:6px 8px}.urlrow{display:flex;gap:6px}.urlrow input{flex:1;min-width:0}`;
+const CSS = `.wi{font:13px/1.6 system-ui,sans-serif;height:100%;display:flex;flex-direction:column;color:var(--text,inherit);min-height:0}.wi-sidehead{flex:none;padding:8px 8px 0;font-size:11.5px;color:var(--text-dim,#999);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.wi-empty{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px;padding:20px;background:var(--bg-elev2,#8881)}.wi-empty .urlrow{width:min(480px,90%)}.wi-empty h3{margin:0;font-size:15px}.ibtn{flex:none;width:32px;height:30px;display:inline-flex;align-items:center;justify-content:center;border:1px solid var(--border,#8886);border-radius:7px;background:transparent;color:var(--text,inherit);cursor:pointer;padding:0}.ibtn svg{width:16px;height:16px}.ibtn:hover{background:var(--accent-soft,#8882)}.ibtn.on{color:#fff;background:var(--accent,#4a7dff);border-color:var(--accent,#4a7dff)}.wi-main{flex:1;display:flex;min-height:0}.wi-browser{flex:1;min-width:0;display:flex;flex-direction:column}.wi-browser iframe{flex:1;width:100%;border:0;background:#fff;min-height:0}.wi-framed{font-size:11px;color:var(--text-dim,#999);padding:2px 10px}.wi-grip{flex:none;width:8px;cursor:col-resize}.wi-grip:hover,.wi-grip.on{background:var(--accent-soft,#8883)}.wi-side{flex:none;display:flex;flex-direction:column;min-height:0;border-left:1px solid var(--border,#8883)}.stabs{flex:none;display:flex;gap:4px;padding:8px 8px 0}.stabs button{flex:1;display:flex;align-items:center;justify-content:center;gap:5px;border:1px solid var(--border,#8884);border-bottom:0;border-radius:8px 8px 0 0;padding:6px 2px;background:transparent;color:var(--text-dim,#999);font-size:12px;cursor:pointer}.stabs button svg{width:14px;height:14px}.stabs button.on{color:var(--text-strong,var(--text,inherit));background:var(--bg-elev,transparent);border-color:var(--accent,#4a7dff);font-weight:600}.sbody{flex:1;min-height:0;overflow-y:auto;padding:8px;border-top:1px solid var(--border,#8884);display:flex;flex-direction:column;gap:8px}.sfoot{flex:none;padding:8px;border-top:1px solid var(--border,#8883)}.sfoot button{width:100%;padding:8px;font-size:13px;font-weight:600}.wi .dim{font-size:11.5px;color:var(--text-dim,#999)}.wi .card{border:1px solid var(--border,#8884);border-radius:10px;padding:8px 10px;background:var(--bg-elev,transparent)}.wi .guide{margin:0;padding:0;list-style:none;display:flex;flex-direction:column;gap:8px}.wi .guide li{display:flex;gap:8px;align-items:flex-start}.wi .gn{flex:none;width:20px;height:20px;border-radius:50%;background:var(--accent,#4a7dff);color:#fff;font-size:11px;font-weight:700;display:flex;align-items:center;justify-content:center;margin-top:1px}.wi input[type=text],.wi textarea{width:100%;box-sizing:border-box;background:var(--bg-elev2,#8881);color:var(--text,inherit);border:1px solid var(--border,#8884);border-radius:6px;padding:6px 8px;font-size:12px}.wi textarea{resize:vertical}.wi ol.steps{margin:6px 0;padding-left:20px;font-size:12px}.wi ol.steps li{margin:3px 0}.wi code{font-size:11px;word-break:break-all}.wi a.bm{display:inline-block;margin:4px 0;padding:4px 12px;border:1px dashed var(--accent,#4a7dff);border-radius:8px;text-decoration:none;color:var(--accent,#4a7dff);font-size:12px}.wi-flash{font-size:12px;color:var(--accent,#4a7dff);margin-top:6px}.wi pre{white-space:pre-wrap;font-size:11px;max-height:160px;overflow:auto;background:var(--bg-elev2,#8881);border-radius:6px;padding:6px 8px}.urlrow{display:flex;gap:6px}.urlrow input{flex:1;min-width:0}`;
 
 function cssPath(e) {
 	if (e.id) return "#" + e.id;
@@ -208,17 +208,14 @@ export default defineView({
 		const ibtn = (a, icon, tip, on) => `<button class="ibtn${on ? " on" : ""}" data-a="${a}" title="${esc(tip)}">${IC[icon]}</button>`;
 
 		const render = () => {
-			root.querySelectorAll(".wi-top,.wi-main").forEach((n) => n.remove());
+			root.querySelectorAll(".wi-main").forEach((n) => n.remove());
 			const steps = state.steps || [];
 			const bm = `javascript:${encodeURIComponent(BOOKMARKLET_SRC.replace("__EP__", API.replace(/'/g, "")).replace("__MSK__", settings.maskPasswords ? "1" : "0"))}`;
 
-			const top = document.createElement("div");
-			top.className = "wi-top";
-			top.innerHTML = `${ibtn("go", "go", t("tipGo"))}${ibtn("snap", "snap", t("tipSnap"))}${ibtn("pick", "pick", t("tipPick"), pickArmed)}<span class="sp"></span><span class="pg">${esc(state.page ? `${state.page.title || ""} — ${state.page.url}` : t("noPage"))}</span>`;
 			const main = document.createElement("div");
 			main.className = "wi-main";
 			main.innerHTML = `<div class="wi-browser"></div><div class="wi-grip" title="⇔"></div><div class="wi-side" style="width:${sideW}px"></div>`;
-			root.append(top, main);
+			root.append(main);
 
 			const browserPane = main.querySelector(".wi-browser");
 			if (!frame) {
@@ -232,10 +229,20 @@ export default defineView({
 					}
 				});
 			}
-			const hint = document.createElement("div");
-			hint.className = "wi-framed";
-			hint.textContent = t("framedHint");
-			browserPane.append(frame, hint);
+			browserPane.replaceChildren();
+			if (!browserUrl) {
+				const empty = document.createElement("div");
+				empty.className = "wi-empty";
+				empty.innerHTML = `<h3>${esc(t("mCapture"))}</h3><div class="urlrow"><input data-a="url0" placeholder="${esc(t("urlPh"))}">${ibtn("go0", "go", t("tipGo"))}</div><div class="dim">${esc(t("framedHint"))}</div>`;
+				browserPane.append(empty);
+				const url0 = empty.querySelector('[data-a="url0"]');
+				url0.addEventListener("keydown", (e) => {
+					if (e.key === "Enter") visit(url0.value);
+				});
+				empty.querySelector('[data-a="go0"]').addEventListener("click", () => visit(url0.value));
+			} else {
+				browserPane.append(frame);
+			}
 
 			main.querySelector(".wi-grip").addEventListener("mousedown", (e) => {
 				e.preventDefault();
@@ -260,16 +267,24 @@ export default defineView({
 			});
 
 			const side = main.querySelector(".wi-side");
+			const head = document.createElement("div");
+			head.className = "wi-sidehead";
+			head.textContent = state.page ? `${state.page.title || ""} — ${state.page.url}` : t("noPage");
 			const tabs = document.createElement("div");
 			tabs.className = "stabs";
 			tabs.innerHTML = `<button data-m="capture" class="${mode === "capture" ? "on" : ""}">${IC.cap}<span>${esc(t("mCapture"))}</span></button><button data-m="steps" class="${mode === "steps" ? "on" : ""}">${IC.list}<span>${esc(t("mSteps"))}(${steps.length})</span></button><button data-m="send" class="${mode === "send" ? "on" : ""}">${IC.send}<span>${esc(t("mSend"))}</span></button>`;
 			const body = document.createElement("div");
 			body.className = "sbody";
-			const foot = document.createElement("div");
-			foot.className = "sfoot";
-			foot.innerHTML = `<button data-a="final" class="primary" style="border:0">${esc(t("final"))}</button>${flash ? `<div class="wi-flash">${esc(flash)}</div>` : ""}`;
+			let footHtml = flash ? `<div class="wi-flash">${esc(flash)}</div>` : "";
 			flash = "";
-			side.append(tabs, body, foot);
+			side.append(head, tabs, body);
+			if (flash && mode !== "send") {
+				const fz = document.createElement("div");
+				fz.className = "wi-flash";
+				fz.textContent = flash;
+				flash = "";
+				body.prepend(fz);
+			}
 
 			if (mode === "capture") {
 				body.innerHTML = `<ol class="guide">
@@ -305,33 +320,15 @@ export default defineView({
 			} else {
 				body.innerHTML = `<div class="card"><div class="dim">${esc(t("status"))}: ${esc(state.page ? `${state.page.title || ""} — ${state.page.url}` : t("noPage"))}</div>
 				<div class="dim">${esc(t("mSteps"))}: ${steps.length} · ${esc(t("elements"))}: ${state.snapshot ? state.snapshot.count : 0}</div></div>
-				<div class="card"><textarea data-a="task" rows="5" placeholder="${esc(t("taskPh"))}"></textarea></div>`;
+				<div class="card"><textarea data-a="task" rows="5" placeholder="${esc(t("taskPh"))}"></textarea>
+				<button data-a="final" class="primary" style="width:100%;padding:8px;margin-top:8px;border:0;font-weight:600">${esc(t("final"))}</button>${footHtml}</div>`;
+				body.querySelector('[data-a="final"]').addEventListener("click", onFinal);
 			}
 
-			tabs.querySelectorAll("[data-m]").forEach((b) => b.addEventListener("click", () => {
-				mode = b.dataset.m;
-				render();
-			}));
-			top.querySelector('[data-a="go"]').addEventListener("click", () => {
-				mode = "capture";
-				render();
-				body.querySelector?.('[data-a="url"]')?.focus?.();
-			});
-			top.querySelector('[data-a="snap"]').addEventListener("click", () => {
-				const doc = sameDoc();
-				if (doc && browserUrl) void postCollect(collectSnapshot(doc, browserUrl));
-				else {
-					mode = "capture";
-					flash = t("xorigin");
-					render();
-				}
-			});
-			top.querySelector('[data-a="pick"]').addEventListener("click", () => (pickArmed ? (disarmPick(), render()) : armPick()));
-			foot.querySelector('[data-a="final"]').addEventListener("click", async () => {
-				let task = "";
-				if (mode === "send") task = (body.querySelector('[data-a="task"]')?.value || "").trim();
+			const onFinal = async () => {
+				const ta = body.querySelector('[data-a="task"]');
+				const task = (ta?.value || "").trim();
 				if (!task) {
-					mode = "send";
 					flash = t("needTask");
 					render();
 					return;
@@ -351,7 +348,11 @@ export default defineView({
 					}
 				} catch {}
 				render();
-			});
+			};
+			tabs.querySelectorAll("[data-m]").forEach((b) => b.addEventListener("click", () => {
+				mode = b.dataset.m;
+				render();
+			}));
 		};
 
 		const refresh = async (withSettings) => {
