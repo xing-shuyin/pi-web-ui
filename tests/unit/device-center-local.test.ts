@@ -85,14 +85,23 @@ describe("local device enrollment", () => {
 		expect(status).not.toContain("poll-secret");
 		expect(status).not.toContain("ui-secret");
 		expect(JSON.parse(await readFile(join(dir, "device-center.json"), "utf8")).uiCredential).toBe("ui-secret");
-		// 执行通道只接本机房间引擎（loopback），配对来的远端 Hub 不再是房间/执行的宿主。
+		// 配对后：连接必须带**配对得来的真实设备身份**接远端 Hub —— 设备在线表与任务投递都按它认人；
+		// 只接本机引擎会让远端永远看到"设备离线"（派出去的任务直接判失败）。
 		expect(connectTargets.length).toBeGreaterThan(0);
-		expect(connectTargets.every((target) => target !== hub && target.startsWith("http://127.0.0.1:"))).toBe(true);
+		expect(connectTargets).toContain(hub);
+		// 但房间/执行仍然不落在远端：没有一条设备用户路由被请求。
 		expect(remoteHits.some((hit) => hit.includes("/api/device-user/"))).toBe(false);
 		expect((await post("execution", { allowExecution: true })).status).toBe(200);
 		expect(JSON.parse(await readFile(join(dir, "device-center.json"), "utf8")).allowExecution).toBe(true);
+		const beforeDisconnect = connectTargets.length;
 		expect((await post("disconnect", {})).status).toBe(200);
 		expect(JSON.parse(await readFile(join(dir, "device-center.json"), "utf8"))).toBeNull();
+		// 断开配对后只剩本机引擎：连接退到 loopback，不再碰远端。
+		expect(
+			connectTargets
+				.slice(beforeDisconnect)
+				.every((target) => target !== hub && target.startsWith("http://127.0.0.1:")),
+		).toBe(true);
 	});
 
 	it("manages execution settings and queue snapshot with persistence-first semantics", async () => {

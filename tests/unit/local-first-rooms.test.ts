@@ -8,6 +8,9 @@ import { createLocalBotRegistry } from "../../server/device-center/bots.js";
 import { createDeviceConnector } from "../../server/device-center/connector.js";
 import { installLocalDeviceCenter } from "../../server/device-center/local.js";
 
+/** `installLocalDeviceCenter` 期望的连接形状（本地未导出类型，从参数反推）。 */
+type LocalConnection = Awaited<ReturnType<NonNullable<Parameters<typeof installLocalDeviceCenter>[0]["connect"]>>>;
+
 /**
  * 「全本地」铁律：直聊与群组跑在本机房间引擎上。
  *
@@ -84,7 +87,21 @@ async function fixture(hooks: { onConnect?: (config: { hubUrl: string; hubIdenti
 					return `Completed by ${task.botId}`;
 				},
 			});
-			return { close: connector.close, isConnected: connector.isOnline };
+			// 本机设备靠 runtime 直调（产品里也是这条：Hub 用 `attachLocalDeviceRuntime` 接它），
+			// 不再假设「经 WS 绕一圈」也能把任务送到。
+			const runtime = {
+				onTask: async (task: { botId: string }) => {
+					deliveries.push(task.botId);
+					return `Completed by ${task.botId}`;
+				},
+				cancelScheduledTask: () => false,
+				steerTask: () => false,
+				answerTaskInteraction: () => false,
+				getSchedulerSnapshot: () => ({ entries: [], nextReadyAt: null }),
+				updateExecutionSettings: () => ({ allowExecution: true }),
+			};
+			// 夹具只实现本机直调要用的那几个方法；调度视图对这几条用例没有意义。
+			return { close: connector.close, isConnected: connector.isOnline, runtime } as unknown as LocalConnection;
 		},
 	});
 	cleanup.push(() => local.close());

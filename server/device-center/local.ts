@@ -296,7 +296,9 @@ export async function installLocalDeviceCenter(options: Options) {
 		const paired = config;
 		if (!paired) return options.connect(forAgent(hub.config), syncBots);
 		try {
-			return await options.connect(forAgent(paired), syncBots);
+			// 身份给远端（设备在线表/投递按它认人），但**分桶身份**仍用本机引擎的：
+			// 会话/恢复/锁的键不能跟着远端 URL 或本机随机端口漂（重启后 resume 才不会全丢）。
+			return await options.connect(forAgent({ ...paired, hubIdentity: hub.config.hubIdentity }), syncBots);
 		} catch (error) {
 			// 远端 Hub 暂时连不上不该把本机房间一起拖下水：先用本机身份把运行时拉起来，
 			// 下次 `reconnect()`（轮询/配对/执行开关变化）会再试一次真实身份。
