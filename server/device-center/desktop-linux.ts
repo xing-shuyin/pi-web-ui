@@ -1,3 +1,4 @@
+import type { DesktopCursor, DesktopCursorMode } from "./desktop-cursor.js";
 import { parseDesktopProfile, type DesktopProfile } from "./desktop-quality.js";
 import { accessSync, constants, statSync } from "node:fs";
 import { delimiter, join } from "node:path";
@@ -122,14 +123,21 @@ function keySymbol(code: string): string | undefined {
 }
 
 export function startLinuxDesktop(options: {
+	onCursor?: (cursor: DesktopCursor) => void;
 	onFrame: (jpeg: Buffer) => void;
 	onError: (message: string) => void;
 	onClose: () => void;
 	readOnly?: boolean;
 	preview?: boolean;
-}): { input(event: NativeDesktopInput): void; configure?: (profile: DesktopProfile) => void; close(): void } {
+}): {
+	setCursorMode?(mode: DesktopCursorMode): void;
+	input(event: NativeDesktopInput): void;
+	configure?: (profile: DesktopProfile) => void;
+	close(): void;
+} {
 	let closed = false;
 	let capture: ChildProcess | undefined;
+	let cursorMode: DesktopCursorMode | undefined;
 	let profile: DesktopProfile = { maxEdge: 1600, quality: 65, fps: 15 };
 	let reconfigure: ReturnType<typeof setTimeout> | undefined;
 	let command: ChildProcess | undefined;
@@ -307,6 +315,8 @@ export function startLinuxDesktop(options: {
 					"error",
 					"-f",
 					"x11grab",
+					"-draw_mouse",
+					cursorMode === "local" ? "0" : "1",
 					"-framerate",
 					options.preview ? "1/3" : String(profile.fps),
 					"-video_size",
@@ -329,6 +339,7 @@ export function startLinuxDesktop(options: {
 				{ shell: false, stdio: ["ignore", "pipe", "pipe"], env: process.env },
 			);
 			const current = capture;
+			let announceCursor = cursorMode;
 			const active = () => !closed && capture === current;
 			capture.stdout!.on("data", (chunk: Buffer) => {
 				if (!active()) return;
@@ -353,6 +364,10 @@ export function startLinuxDesktop(options: {
 						const frame = Buffer.from(pending.subarray(0, end + 2));
 						pending = pending.subarray(end + 2);
 						try {
+							if (announceCursor) {
+								options.onCursor?.({ type: "cursor", kind: announceCursor === "remote" ? "embedded" : "local" });
+								announceCursor = undefined;
+							}
 							options.onFrame(frame);
 						} catch (error) {
 							fail(`Desktop frame callback failed: ${String(error)}`);
@@ -378,6 +393,13 @@ export function startLinuxDesktop(options: {
 			queueMicrotask(() => fail(String(error)));
 		}
 	};
+	const scheduleCapture = (delay: number) => {
+		// The first capture reads the latest preferences after its asynchronous size probe.
+		if (!capture) return;
+		clearTimeout(reconfigure);
+		reconfigure = setTimeout(() => void startCapture(), delay);
+		reconfigure.unref();
+	};
 	try {
 		const status = linuxDesktopStatus();
 		if (!status.supported) throw new Error(status.reason);
@@ -392,14 +414,17 @@ export function startLinuxDesktop(options: {
 		close,
 		...(!options.preview
 			? {
+					setCursorMode(mode: DesktopCursorMode) {
+						if (closed || mode === cursorMode) return;
+						cursorMode = mode;
+						scheduleCapture(50);
+					},
 					configure(next: DesktopProfile) {
 						const parsed = parseDesktopProfile(next);
 						if (!parsed || closed) return;
 						if (JSON.stringify(parsed) === JSON.stringify(profile)) return;
 						profile = parsed;
-						clearTimeout(reconfigure);
-						reconfigure = setTimeout(() => void startCapture(), 250);
-						reconfigure.unref();
+						scheduleCapture(250);
 					},
 				}
 			: {}),

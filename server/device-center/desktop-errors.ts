@@ -1,5 +1,17 @@
 /** Stable native failure codes shared by the standalone pages and chat preview. */
 export const DESKTOP_ISSUES = {
+	"Desktop display stopped acknowledging frames. Reconnect to resume.": [
+		"桌面画面确认超时，正在重连…",
+		"Desktop frame acknowledgement timed out. Reconnecting…",
+	],
+	"Desktop video receiver stopped responding. Reconnect to resume.": [
+		"视频接收超时，正在重连…",
+		"Video acknowledgement timed out. Reconnecting…",
+	],
+	"Desktop video stream stalled. Reconnect to resume.": [
+		"桌面视频暂时中断，正在重连…",
+		"The desktop video stream stalled. Reconnecting…",
+	],
 	MAC_SCREEN_PERMISSION_REQUIRED: [
 		"被控 Mac 尚未授予屏幕录制权限。请在那台 Mac 本机打开 pi-web-ui → 设备中心 → 本机远程桌面申请权限，在系统设置中允许实际显示的应用，然后重启 pi-web-ui 服务。授权恢复后会自动重连；反复点击重试不会代替系统授权。",
 		"Screen Recording permission is missing on the controlled Mac. On that Mac, open pi-web-ui → Device Center → Local remote desktop, request permission, allow the app macOS lists, then restart the pi-web-ui server. Capture retries automatically; Retry cannot grant system permission.",

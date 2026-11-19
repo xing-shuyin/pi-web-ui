@@ -966,8 +966,7 @@ export async function installLocalDeviceCenter(options: Options) {
 							connect: async (candidate) => {
 								if (!valid()) return null;
 								const connection = await probeDeviceLan(candidate, { signal: controller.signal });
-								if (connection)
-									return { connection, expiresAt: (candidate as { expiresAt: number }).expiresAt, transport: "lan" };
+								if (connection) return { connection, expiresAt: connection.expiresAt, transport: "lan" };
 								if (!valid()) return null;
 								if (!p2pAvailable) {
 									console.warn(

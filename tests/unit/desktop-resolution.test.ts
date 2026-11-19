@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { desktopResolution } from "../../server/device-center/desktop-resolution.js";
+import { desktopResolution, desktopViewportEdge } from "../../server/device-center/desktop-resolution.js";
 import { parseDesktopPreferences, parseDesktopProfile } from "../../server/device-center/desktop-quality.js";
 describe("live stream resolution", () => {
 	it("fits the selected box without stretching, upscaling or exceeding the channel", () => {
@@ -11,6 +11,13 @@ describe("live stream resolution", () => {
 		expect(desktopResolution("window", 0, 0, 3840, 2160, 900, 4096)).toBe(900);
 		for (const width of [NaN, Infinity, 10000, 1280.5])
 			expect(desktopResolution("custom", width, 720, 1920, 1080, 900)).toBeUndefined();
+	});
+	it("fits letterboxing and retains native text detail near 1:1 without upscaling", () => {
+		expect(desktopViewportEdge(1600, 950, 1, 1920, 1080, "auto", 4096)).toBe(1920);
+		expect(desktopViewportEdge(1600, 950, 1, 1920, 1080, "smooth", 4096)).toBe(1600);
+		expect(desktopViewportEdge(900, 1400, 1, 1920, 1080, "sharp", 4096)).toBe(1350);
+		expect(desktopViewportEdge(850, 600, 2, 1920, 1080, "sharp", 4096)).toBe(1920);
+		expect(desktopViewportEdge(1920, 1080, 2, 3840, 2160, "auto", 2560)).toBe(2560);
 	});
 	it("accepts bounded 4K and SDR ranges while refusing unknown color modes", () => {
 		const profile = { maxEdge: 4096, quality: 70, fps: 60, colorRange: "full" };

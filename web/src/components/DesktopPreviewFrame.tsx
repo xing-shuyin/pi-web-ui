@@ -1,5 +1,12 @@
 import { useEffect, useRef, useState } from "react";
-import { isLocalDesktopAccess, setDesktopMode, type DesktopAccess, type DesktopTransport } from "../device-access";
+import {
+	desktopReportedTransport,
+	desktopTransportLabel,
+	isLocalDesktopAccess,
+	setDesktopMode,
+	type DesktopAccess,
+	type DesktopTransport,
+} from "../device-access";
 import { useDesktopTarget } from "../use-desktop-target";
 import { useDesktopTheme } from "../use-desktop-theme";
 import { useT } from "../i18n";
@@ -63,8 +70,10 @@ export function DesktopPreviewFrame({
 			)
 				return;
 			const data = event.data;
-			if (data?.type === "device-access-transport" && ["lan", "p2p", "hub"].includes(data.transport))
-				setTransport(data.transport);
+			if (data?.type === "device-access-transport") {
+				const next = desktopReportedTransport(data);
+				if (next) setTransport(next);
+			}
 			if (data?.type !== "desktop-preview-state") return;
 			clearTimeout(timeout);
 			if (data.ready === true) sendActive();
@@ -109,19 +118,7 @@ export function DesktopPreviewFrame({
 				</button>
 			</div>
 			<div className="desktop-preview-status">
-				<span>
-					{transport
-						? t(
-								transport === "current"
-									? "desktop.currentConnection"
-									: transport === "lan"
-										? "desktop.lan"
-										: transport === "p2p"
-											? "desktop.p2p"
-											: "desktop.hub",
-							)
-						: t("desktop.connecting")}
-				</span>
+				<span>{desktopTransportLabel(transport, t)}</span>
 				<span>
 					{!active
 						? t("desktop.paused")

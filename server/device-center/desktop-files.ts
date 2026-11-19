@@ -363,39 +363,45 @@ export function createDesktopFiles(options: {
 	router.get(
 		"/list",
 		route(async (req, res) => {
-			const path = typeof req.query.path === "string" ? req.query.path : "",
-				source = await safeSource(path);
-			const entries = await readdir(source, { withFileTypes: true });
+			const target = await safeSource(typeof req.query.path === "string" ? req.query.path : "");
+			const info = await lstat(target);
+			if (!info.isDirectory() && (!info.isFile() || basename(target).startsWith(".incoming-")))
+				throw fail("Not a browsable file or folder");
+			const selected = info.isFile() ? target : undefined;
+			const source = selected ? dirname(target) : target;
+			const entries = (await readdir(source, { withFileTypes: true })).filter(
+				(entry) =>
+					(entry.isFile() || entry.isDirectory()) && !entry.isSymbolicLink() && !entry.name.startsWith(".incoming-"),
+			);
+			const visible = entries.slice(0, 2000);
+			if (selected) {
+				const match = entries.find((entry) => entry.name === basename(selected));
+				if (!match) throw fail("File no longer available", 404);
+				if (!visible.includes(match)) visible[visible.length - 1] = match;
+			}
 			return res.json({
 				path: source,
 				parent: paths.parent(source),
+				selected,
 				entries: (
 					await Promise.all(
-						entries
-							.filter(
-								(entry) =>
-									!entry.isSymbolicLink() &&
-									(entry.isFile() || entry.isDirectory()) &&
-									!entry.name.startsWith(".incoming-"),
-							)
-							.slice(0, 2000)
-							.map(async (entry) => {
-								try {
-									const full = join(source, entry.name),
-										info = await lstat(full);
-									return info.isSymbolicLink()
-										? null
-										: {
-												name: entry.name,
-												path: full,
-												directory: entry.isDirectory(),
-												size: info.size,
-												modified: info.mtimeMs,
-											};
-								} catch {
-									return null;
-								}
-							}),
+						visible.map(async (entry) => {
+							try {
+								const full = join(source, entry.name),
+									info = await lstat(full);
+								return info.isSymbolicLink()
+									? null
+									: {
+											name: entry.name,
+											path: full,
+											directory: entry.isDirectory(),
+											size: info.size,
+											modified: info.mtimeMs,
+										};
+							} catch {
+								return null;
+							}
+						}),
 					)
 				).filter(Boolean),
 				truncated: entries.length > 2000,

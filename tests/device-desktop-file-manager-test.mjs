@@ -137,7 +137,12 @@ try {
 	const destination = join(remoteHome, "selected-destination");
 	await navigate(left, join(localHome, "outgoing"));
 	await navigate(right, destination);
-	await select(left, "archive.zip");
+	await left.locator(".fm-path").fill(archive);
+	await left.locator(".fm-path").press("Enter");
+	await page.waitForFunction(() => document.querySelector('.fm-pane input[aria-label="archive.zip"]')?.checked);
+	assert.equal(await left.locator(".fm-path").inputValue(), join(localHome, "outgoing"));
+	await left.getByRole("button", { name: "修改日期", exact: true }).click();
+	assert(await left.getByRole("checkbox", { name: "archive.zip", exact: true }).isChecked());
 	const started = Date.now();
 	await left.getByRole("button", { name: "发送 →", exact: true }).click();
 	await dialog.locator(".fm-tasks progress").waitFor();
@@ -233,6 +238,10 @@ try {
 		).join("");
 	});
 	assert.equal(savedHash, createHash("sha256").update(block).digest("hex"));
+	await browserLeft.locator(".fm-path").fill("/browser-receive.zip");
+	await browserLeft.locator(".fm-path").press("Enter");
+	await page.waitForFunction(() => document.querySelector('.fm-pane input[aria-label="browser-receive.zip"]')?.checked);
+	assert.equal(await browserLeft.locator(".fm-path").inputValue(), "/");
 	assert.deepEqual(errors, []);
 	console.log(
 		JSON.stringify({

@@ -89,7 +89,7 @@ struct Session {
             option("preset", "p1"); option("tune", "ull"); option("rc", "cbr");
             option("zerolatency", "1"); option("delay", "0"); option("rc-lookahead", "0");
         } else if (desc.VendorId == 0x1002) {
-            option("usage", "ultralowlatency"); option("quality", "speed"); option("rc", "cbr");
+            option("usage", "ultralowlatency"); option("quality", fps <= 60 ? "balanced" : "speed"); option("rc", "cbr");
             option("filler_data", "0"); option("preanalysis", "0");
         } else { option("preset", "veryfast"); option("async_depth", "1"); option("look_ahead", "0"); }
         check(avcodec_open2(codec, encoder, nullptr), "Hardware encoder initialization");
@@ -114,8 +114,21 @@ Vertex vs(uint id : SV_VertexID) {
     Vertex v; v.uv = float2((id << 1) & 2, id & 2);
     v.position = float4(v.uv * float2(2,-2) + float2(-1,1), 0, 1); return v;
 }
+float3 sampleDesktop(float2 uv) {
+    uint width,height; source.GetDimensions(width,height);
+    float2 span = float2(ddx(uv.x),ddy(uv.y));
+    float footprint = max(span.x*width,span.y*height);
+    if(footprint<=2.001) return source.SampleLevel(linearClamp,uv,0).rgb;
+    // The texture has no mip chain. One bilinear tap misses entire glyph strokes
+    // when shrinking more than 2:1, especially on the half-resolution UV plane.
+    int taps = footprint<=4.001 ? 2 : 4;
+    float3 sum = 0;
+    for(int y=0;y<taps;y++) for(int x=0;x<taps;x++)
+        sum += source.SampleLevel(linearClamp,uv+((float2(x,y)+0.5)/taps-0.5)*span,0).rgb;
+    return sum/(taps*taps);
+}
 float4 ps(Vertex v) : SV_Target {
-    float3 rgb = source.Sample(linearClamp, v.uv).rgb;
+    float3 rgb = sampleDesktop(v.uv);
     float y = dot(rgb, float3(0.2126,0.7152,0.0722));
 #ifdef CHROMA
     return float4(float2((rgb.b-y)/1.8556,(rgb.r-y)/1.5748)*range.z+range.w,0,1);
@@ -187,10 +200,14 @@ float4 ps(Vertex v) : SV_Target {
         D3D11_TEXTURE2D_DESC source = {}; texture->GetDesc(&source);
         if (source.Format != DXGI_FORMAT_B8G8R8A8_UNORM || source.SampleDesc.Count != 1 || source.Width > 16384 || source.Height > 16384) throw std::runtime_error("Unsupported capture surface");
         prepareInput(source);
+        context->CopySubresourceRegion(input.Get(), 0, 0, 0, 0, texture, 0, nullptr);
+        encodeCached(callback, opaque, pts);
+    }
+    void encodeCached(Encoded callback, void* opaque, int64_t pts) {
+        if (!input) throw std::runtime_error("No cached desktop surface");
         Frame frame(av_frame_alloc()); if (!frame) throw std::bad_alloc();
         check(av_hwframe_get_buffer(frames, frame.get(), 0), "GPU frame allocation");
         auto output = (ID3D11Texture2D*)frame->data[0];
-        context->CopySubresourceRegion(input.Get(), 0, 0, 0, 0, texture, 0, nullptr);
         convert(output, UINT(uintptr_t(frame->data[1])));
         context->Flush(); frame->pts = pts;
         frame->color_range = codec->color_range; frame->colorspace = codec->colorspace;
@@ -231,12 +248,16 @@ API int pi_codec_encode(void* handle, void* texture, Encoded callback, void* opa
     try { if (!handle || !texture || !callback || pts < 0) return -1; ((Session*)handle)->encode((ID3D11Texture2D*)texture, callback, opaque, pts); return 0; }
     catch (const std::exception& e) { fprintf(stderr, "[native-codec] %s\n", e.what()); return -1; } catch (...) { return -1; }
 }
+API int pi_codec_repeat(void* handle, Encoded callback, void* opaque, int64_t pts) noexcept {
+    try { if (!handle || !callback || pts < 0) return -1; ((Session*)handle)->encodeCached(callback, opaque, pts); return 0; }
+    catch (const std::exception& e) { fprintf(stderr, "[native-codec] %s\n", e.what()); return -1; } catch (...) { return -1; }
+}
 API int pi_codec_configure(void* handle, int kbps, int fps) noexcept {
     if (!handle || kbps < 100 || kbps > 50000 || fps < 5 || fps > 240) return -1;
     auto c = ((Session*)handle)->codec;
-    // This FFmpeg AMF implementation reads these values only during initialization.
-    // Request a clean encoder restart in the caller, preserving the browser connection.
-    if (!strcmp(c->codec->name, "h264_amf") && (c->bit_rate != int64_t(kbps) * 1000 || c->framerate.num != fps)) return 1;
+    // Starting a fresh encoder updates hardware timing, GOP and H.264 headers together.
+    // Updating AVCodecContext alone leaves the initialized driver's old frame rate.
+    if (c->framerate.num != fps || (!strcmp(c->codec->name, "h264_amf") && c->bit_rate != int64_t(kbps) * 1000)) return 1;
     c->bit_rate = int64_t(kbps) * 1000; c->rc_max_rate = c->bit_rate; c->rc_buffer_size = kbps * 1000 / fps;
     c->framerate = AVRational{fps, 1}; return 0;
 }

@@ -25,6 +25,13 @@ export function clipboardDigest(content: ClipboardContent): string {
 	for (const item of content.items) hash.update(JSON.stringify([item.name, item.data.length])).update(item.data);
 	return hash.digest("hex");
 }
+function nativeDigest(content: ClipboardContent): string {
+	if (content.kind !== "text") return clipboardDigest(content);
+	return createHash("sha256")
+		.update("text:")
+		.update(content.items[0].data.toString("utf8").replace(/\r\n/g, "\n"))
+		.digest("hex");
+}
 export function clipboardPng(data: Buffer): boolean {
 	return (
 		data.length >= 33 &&
@@ -48,7 +55,7 @@ export async function createNativeClipboard(): Promise<ClipboardBackend> {
 		fileSelection: string | undefined;
 	let lastApplied = "";
 	let writing = false;
-	let canonicalizing = false;
+	let pendingEvent = false;
 	// Files must remain available after disconnect so a later OS paste still works.
 	// Only directories created by this instance are ever removed; originals are never changed.
 	const staged: { path: string; bytes: number }[] = [];
@@ -71,6 +78,7 @@ export async function createNativeClipboard(): Promise<ClipboardBackend> {
 			const identity = await filesIdentity(paths);
 			await api.setFiles(paths);
 			appliedFiles = identity;
+			lastApplied = "";
 			staged.push({ path: directory, bytes });
 			stagedBytes += bytes;
 			// Keep the current clipboard batch, even when one transfer exceeds the old cache limit.
@@ -91,10 +99,17 @@ export async function createNativeClipboard(): Promise<ClipboardBackend> {
 				if (!paths.length || paths.length > CLIPBOARD_LIMITS.files) throw new Error("clipboard-size");
 				for (const path of paths) if ((await lstat(path)).isDirectory()) throw new Error("clipboard-folder");
 				if ((await filesIdentity(paths)) === appliedFiles) return;
+				lastApplied = appliedFiles = "";
 				return fileClipboardSource(paths, signal, maxBytes);
 			}
 			const content = await backend.read();
-			return content ? bufferClipboardSource(content) : undefined;
+			if (!content) {
+				lastApplied = appliedFiles = "";
+				return;
+			}
+			if (lastApplied && nativeDigest(content) === lastApplied) return;
+			lastApplied = appliedFiles = "";
+			return bufferClipboardSource(content);
 		},
 		async receiveFiles(offer, signal) {
 			const bytes = offer.items.reduce((sum, item) => sum + item.size, 0);
@@ -136,7 +151,6 @@ export async function createNativeClipboard(): Promise<ClipboardBackend> {
 			}
 		},
 		async read() {
-			if (writing && !canonicalizing) return;
 			let content: ClipboardContent | undefined;
 			if (api.hasFiles()) {
 				const paths = await api.getFiles();
@@ -178,12 +192,12 @@ export async function createNativeClipboard(): Promise<ClipboardBackend> {
 				if (data.length > CLIPBOARD_LIMITS.text) throw new Error("clipboard-size");
 				content = { kind: "text", items: [{ name: "text.txt", data }] };
 			}
-			if (content && (canonicalizing || clipboardDigest(content) !== lastApplied)) return content;
+			return content;
 		},
 		async write(content) {
 			writing = true;
 			const previous = lastApplied;
-			lastApplied = clipboardDigest(content);
+			lastApplied = nativeDigest(content);
 			try {
 				if (content.kind === "text") await api.setText(content.items[0].data.toString("utf8"));
 				else if (content.kind === "image") {
@@ -199,7 +213,9 @@ export async function createNativeClipboard(): Promise<ClipboardBackend> {
 							await writeFile(path, item.data, { flag: "wx", mode: 0o600 });
 							paths.push(path);
 						}
+						const identity = await filesIdentity(paths);
 						await api.setFiles(paths);
+						appliedFiles = identity;
 					} catch (error) {
 						await rm(directory, { recursive: true, force: true });
 						throw error;
@@ -213,16 +229,18 @@ export async function createNativeClipboard(): Promise<ClipboardBackend> {
 						await rm(old.path, { recursive: true, force: true }).catch(() => {});
 					}
 				}
-				// OS image encoders and text line endings may normalize the supplied bytes.
-				// Remember what the OS actually exposes so its watcher cannot bounce that normalization back.
-				canonicalizing = true;
-				const normalized = await backend.read();
-				if (normalized) lastApplied = clipboardDigest(normalized);
+				if (content.kind !== "files") appliedFiles = "";
+				// Image encoders may return a different PNG. Text needs only newline normalization:
+				// reading it back here could mistake a newer user copy for our own write.
+				if (content.kind === "image" && api.hasImage() && !api.hasFiles()) {
+					const normalized = await backend.read();
+					if (normalized?.kind === "image") lastApplied = nativeDigest(normalized);
+				}
 			} catch (error) {
 				lastApplied = previous;
 				throw error;
 			} finally {
-				writing = canonicalizing = false;
+				writing = false;
 			}
 		},
 		watch(changed) {
@@ -255,7 +273,11 @@ export async function createNativeClipboard(): Promise<ClipboardBackend> {
 		},
 	};
 	async function checkSelection(event: boolean) {
-		if (polling || !subscribers.size) return;
+		if (!subscribers.size) return;
+		if (polling) {
+			pendingEvent ||= event;
+			return;
+		}
 		polling = true;
 		try {
 			const paths = api.hasFiles() ? await api.getFiles() : [];
@@ -269,6 +291,10 @@ export async function createNativeClipboard(): Promise<ClipboardBackend> {
 			if (event) for (const notify of subscribers) notify();
 		} finally {
 			polling = false;
+			if (pendingEvent) {
+				pendingEvent = false;
+				void checkSelection(true);
+			}
 		}
 	}
 	let operation = Promise.resolve();

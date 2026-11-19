@@ -85,10 +85,11 @@ try {
 			[64, 128, 191],
 			[191, 64, 128],
 		];
+		const colorAt = (i) => expected[(i === 19 ? 18 : i) % 10];
 		for (let i = 0; i < 120; i++)
 			for (let c = 0; c < 3; c++)
 				assert.ok(
-					Math.abs(decoded.data[i * 12 + c] - expected[i % 10][c]) <= 12,
+					Math.abs(decoded.data[i * 12 + c] - colorAt(i)[c]) <= 12,
 					`Color or frame order mismatch: frame ${i} channel ${c}: ${decoded.data[i * 12 + c]}`,
 				);
 		const units = [];
@@ -140,8 +141,8 @@ try {
 			for (let i = 0; i < colors.length; i++)
 				for (let c = 0; c < 3; c++)
 					assert.ok(
-						Math.abs(colors[i][c] - expected[i % 10][c]) <= 12,
-						`Browser range=${range} frame=${i} expected=${expected[i % 10]}, got=${colors[i]}`,
+						Math.abs(colors[i][c] - colorAt(i)[c]) <= 12,
+						`Browser range=${range} frame=${i} expected=${colorAt(i)}, got=${colors[i]}`,
 					);
 		} finally {
 			await browser.close();

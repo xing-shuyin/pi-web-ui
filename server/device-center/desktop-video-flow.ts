@@ -6,6 +6,10 @@ export class DesktopVideoFlow {
 	private pendingBytes = 0;
 	private deliveryAt = 0;
 	private deliveryRate = 0;
+	private rateSince: number | undefined;
+	private rateBytes = 0;
+	private pressureUntil = 0;
+	private nextVideoBytes = 16 * 1024;
 	private progress = 0;
 	private sequence = 0;
 	private baseline = Infinity;
@@ -22,7 +26,7 @@ export class DesktopVideoFlow {
 	ackMs = 0;
 	queueMs = 0;
 	measured = false;
-	constructor(private readonly options: { deliveryBudgetMs?: number } = {}) {}
+	constructor(private readonly options: { deliveryBudgetMs?: number; videoBudgetMs?: number } = {}) {}
 	private window(fps: number) {
 		return Math.min(
 			64,
@@ -30,6 +34,18 @@ export class DesktopVideoFlow {
 		);
 	}
 	blocked(fps: number, bytes = 0) {
+		const videoBudget = this.options.videoBudgetMs;
+		if (videoBudget !== undefined) {
+			if (!this.measured && this.pending.size >= 4) return true;
+			if (
+				this.deliveryRate &&
+				this.progress < this.pressureUntil &&
+				this.pending.size &&
+				this.pendingBytes >=
+					Math.max(2 * this.nextVideoBytes, this.deliveryRate * (this.baseline + videoBudget) + this.nextVideoBytes)
+			)
+				return true;
+		}
 		if (this.options.deliveryBudgetMs !== undefined && bytes > 0) {
 			// A frame's first ACK includes serialization, not just network propagation.
 			// Never multiply that delay by the requested FPS to fill a slow link with
@@ -43,15 +59,22 @@ export class DesktopVideoFlow {
 	get count() {
 		return this.pending.size;
 	}
+	get bytes() {
+		return this.pendingBytes;
+	}
 	get oldest() {
 		return this.pending.values().next().value as number | undefined;
 	}
 	get progressAt() {
 		return this.pending.size ? this.progress : undefined;
 	}
-	frame(now: number, bytes = 0) {
+	frame(now: number, bytes = 0, keyFrame?: boolean) {
 		if (this.pending.size >= 128) throw new Error("Video feedback window exceeded");
-		if (!this.pending.size) this.progress = this.deliveryAt = now;
+		if (!this.pending.size) {
+			if (now - this.deliveryAt > 500) this.rateSince = undefined;
+			this.progress = this.deliveryAt = now;
+		}
+		if (keyFrame === false) this.nextVideoBytes = Math.ceil(this.nextVideoBytes * 0.75 + bytes * 0.25);
 		const id = ++this.sequence;
 		this.pending.set(id, now);
 		this.sizes.set(id, bytes);
@@ -66,6 +89,9 @@ export class DesktopVideoFlow {
 		this.lastSample = undefined;
 		this.samples = this.congested = this.severe = this.healthy = 0;
 		this.bad = this.good = 0;
+		this.rateSince = undefined;
+		this.rateBytes = 0;
+		this.nextVideoBytes = 16 * 1024;
 	}
 	ack(id: number, decodeQueue: number, now: number) {
 		if (!Number.isSafeInteger(id) || !Number.isInteger(decodeQueue) || decodeQueue < 0 || decodeQueue > 128)
@@ -82,7 +108,22 @@ export class DesktopVideoFlow {
 			}
 		}
 		this.pendingBytes -= delivered;
-		if (delivered && now > this.deliveryAt) {
+		if (this.options.videoBudgetMs !== undefined) {
+			// Delta frames and IDRs vary greatly in size. One small ACK is not a bandwidth estimate.
+			if (this.rateSince === undefined || now - this.deliveryAt > 500) {
+				this.rateSince = now;
+				this.rateBytes = 0;
+			} else {
+				this.rateBytes += delivered;
+				const elapsed = now - this.rateSince;
+				if (elapsed >= 120) {
+					const rate = this.rateBytes / elapsed;
+					this.deliveryRate = this.deliveryRate ? this.deliveryRate * 0.6 + rate * 0.4 : rate;
+					this.rateSince = now;
+					this.rateBytes = 0;
+				}
+			}
+		} else if (delivered && now > this.deliveryAt) {
 			const rate = delivered / (now - this.deliveryAt);
 			this.deliveryRate =
 				!this.deliveryRate || rate < this.deliveryRate ? rate : this.deliveryRate * 0.75 + rate * 0.25;
@@ -92,6 +133,8 @@ export class DesktopVideoFlow {
 		this.measured = true;
 		this.baseline = Math.min(this.baseline, this.ackMs);
 		this.queueMs = Math.max(0, this.ackMs - this.baseline);
+		if (this.options.videoBudgetMs !== undefined && (this.queueMs > this.options.videoBudgetMs || decodeQueue > 3))
+			this.pressureUntil = now + 1500;
 		this.samples++;
 		if (this.queueMs > 80 || decodeQueue > 3) this.congested++;
 		if (this.queueMs > 250 || decodeQueue > 8) this.severe++;
@@ -105,12 +148,15 @@ export class DesktopVideoFlow {
 		this.good = this.healthy >= this.samples * 0.9 ? this.good + 1 : 0;
 		this.samples = this.congested = this.severe = this.healthy = 0;
 		if (this.bad >= 2 || severe) {
-			if (this.qualityScale > 0.6) this.qualityScale = Math.max(0.6, this.qualityScale * 0.85);
-			else this.fpsScale = Math.max(0.25, this.fpsScale * 0.8);
+			// Keep text legible through ordinary congestion. Spend fewer frames
+			// before resorting to the lowest image quality on a persistently slow link.
+			if (this.qualityScale > 0.8) this.qualityScale = Math.max(0.8, this.qualityScale * 0.85);
+			else if (this.fpsScale > 0.25) this.fpsScale = Math.max(0.25, this.fpsScale * 0.8);
+			else this.qualityScale = Math.max(0.6, this.qualityScale * 0.85);
 			this.bad = this.good = 0;
 		} else if (this.good >= 30) {
-			if (this.fpsScale < 1) this.fpsScale = Math.min(1, this.fpsScale + 0.1);
-			else this.qualityScale = Math.min(1, this.qualityScale + 0.1);
+			if (this.qualityScale < 1) this.qualityScale = Math.min(1, this.qualityScale + 0.1);
+			else this.fpsScale = Math.min(1, this.fpsScale + 0.1);
 			this.good = 0;
 		}
 		return true;

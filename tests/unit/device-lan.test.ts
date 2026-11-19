@@ -306,7 +306,7 @@ describe("authenticated LAN device transport", () => {
 			{ ...grant, key: "short" },
 			{ ...grant, identity: "short" },
 			{ ...grant, expiresAt: Date.now() - 1 },
-			{ ...grant, expiresAt: Date.now() + 31 * 60_000 },
+			{ ...grant, expiresAt: Date.now() + 32 * 60_000 },
 			{ ...grant, extra: true },
 			...["8.8.8.8", "169.254.169.254", "0.0.0.0", "::1", "127.0.0.1", "localhost", "10.0.0.1/path"].map((address) => ({
 				...grant,
@@ -315,6 +315,20 @@ describe("authenticated LAN device transport", () => {
 		]) {
 			expect(await probeDeviceLan(invalid)).toBeNull();
 		}
+	});
+
+	it("accepts a healthy grant from a device 15 seconds ahead and caps its local expiry", async () => {
+		const { grant } = await fixture();
+		const ahead = { ...grant!, expiresAt: grant!.expiresAt + 15_000 };
+		const started = Date.now();
+		const connection = await connect(ahead);
+		expect(connection.expiresAt).toBeGreaterThanOrEqual(started + 30 * 60_000);
+		expect(connection.expiresAt).toBeLessThanOrEqual(Date.now() + 30 * 60_000);
+		expect(connection.expiresAt).toBeLessThan(ahead.expiresAt);
+		expect((await request(connection, "/api/health")).status).toBe(200);
+		expect(
+			await probeDeviceLan({ ...ahead, key: randomBytes(32).toString("base64url") }, { allowLoopback: true }),
+		).toBeNull();
 	});
 
 	it("applies relay path validation to HTTP and WebSocket upgrades", async () => {

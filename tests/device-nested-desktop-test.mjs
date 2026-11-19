@@ -23,7 +23,8 @@ const compiled = await build({
 		contents: `import React from 'react';import{createRoot}from'react-dom/client';
 import{DesktopPreview}from'./web/src/components/desktop-preview';import{RemoteDesktopWindow}from'./web/src/components/RemoteDesktopWindow';
 import{openPageDesktop,openDeviceAccess}from'./web/src/device-access';
-function App(){React.useEffect(()=>{void openPageDesktop(false,'PC B')},[]);return React.createElement(React.Fragment,null,
+import{useT}from'./web/src/i18n';
+function App(){const t=useT();React.useEffect(()=>{void openPageDesktop(t,'PC B')},[t]);return React.createElement(React.Fragment,null,
 React.createElement('aside',{style:{width:360,marginLeft:'auto'}},React.createElement(DesktopPreview,{visible:true})),React.createElement(RemoteDesktopWindow))}createRoot(document.getElementById('root')).render(React.createElement(App));`,
 		resolveDir: process.cwd(),
 		loader: "tsx",
@@ -172,6 +173,9 @@ try {
 		if (message.type() === "error") console.log(message.text().slice(0, 400));
 	});
 	await page.goto(origin + "/device/pc-b/");
+	// Clipboard operations below use a live desktop. The initial Hub-to-peer
+	// migration intentionally reconnects sockets opened before negotiation.
+	await page.evaluate(() => window.__piBrowserPeerReady);
 	const app = page.frameLocator("body > iframe");
 	await app.getByText(/Updated \d+s ago/).waitFor();
 	await app.getByRole("button", { name: "Expand and control" }).click();
@@ -199,7 +203,12 @@ try {
 		.evaluate(() => parent.postMessage({ type: "desktop-clipboard-available", connected: true, viewOnly: false }, "*"));
 	await page.locator("#clipboard-launcher").waitFor();
 	const legacy = await page.locator("#clipboard-launcher").boundingBox();
-	assert.ok(legacy.x < 20 && legacy.y < 20, "Legacy fallback stays at the top left");
+	const routeBadge = await page.locator("#browser-route").boundingBox();
+	const badgeBottom = routeBadge.y + routeBadge.height;
+	assert.ok(
+		legacy.x < 20 && legacy.y >= badgeBottom && legacy.y < badgeBottom + 20,
+		"Legacy clipboard launcher stays at the top left just below the route indicator",
+	);
 	await currentDesktop
 		.locator("body")
 		.evaluate(() =>
@@ -260,7 +269,11 @@ try {
 	assert.deepEqual(await readFile(join(home, "nested-download.zip")), archiveBytes);
 	assert.equal((await readdir(join(home, "pc-b"))).length, 0, "C selection must never write files to B");
 	await fileDialog.getByRole("button", { name: "Hide", exact: true }).click();
-	assert.equal(await live.locator("#quality-fps").inputValue(), "60", "A different target keeps its own preferences");
+	assert.equal(
+		await live.locator("#quality-fps").inputValue(),
+		"0",
+		"A new target follows its own display refresh rate",
+	);
 	await live.locator("#quality-panel").evaluate((el) => {
 		el.open = true;
 	});

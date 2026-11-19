@@ -5,7 +5,39 @@ import type { Translate } from "./i18n";
 import { getMobileRuntime } from "./mobile-runtime";
 import { randomUuid } from "./uuid";
 
-export type DesktopTransport = "lan" | "p2p" | "hub" | "current";
+export type DesktopTransport = "lan" | "p2p" | "turn" | "peer" | "hub" | "current";
+
+export function desktopReportedTransport(message: {
+	transport?: unknown;
+	route?: unknown;
+	relayed?: unknown;
+}): DesktopTransport | undefined {
+	if (message.transport === "p2p") {
+		if (message.relayed === true) return "turn";
+		if (message.route === "peer") return "peer";
+		return "p2p";
+	}
+	if (message.transport === "lan" || message.transport === "hub") return message.transport;
+}
+
+export function desktopTransportLabel(transport: DesktopTransport | undefined, t: Translate) {
+	switch (transport) {
+		case "lan":
+			return t("desktop.lan");
+		case "p2p":
+			return t("desktop.p2p");
+		case "turn":
+			return "TURN";
+		case "peer":
+			return t("connected");
+		case "hub":
+			return t("desktop.hub");
+		case "current":
+			return t("desktop.currentConnection");
+		default:
+			return t("desktop.connecting");
+	}
+}
 
 export function pageDeviceId(): string | undefined {
 	return appBase().match(/\/(?:device|device-lan)\/([a-z0-9][a-z0-9-]{0,62})\/__relay\/[a-f0-9]{64}\/$/)?.[1];
@@ -117,7 +149,7 @@ export async function requestDeviceAccessUrl(
 	if (desktop) url.searchParams.set("next", preview ? "/desktop-preview" : "/desktop");
 	return {
 		url: url.href,
-		transport: data.transport === "p2p" ? ("p2p" as const) : direct ? ("lan" as const) : ("hub" as const),
+		transport: desktopReportedTransport(data) ?? ("hub" as const),
 		fallbackOrigin: data.fallbackOrigin,
 	};
 }

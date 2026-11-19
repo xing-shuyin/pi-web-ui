@@ -62,6 +62,12 @@ describe("H.264 bitrate profile", () => {
 		expect(videoBitrate({ maxEdge: 1920, quality: 85, fps: 60 })).toBeGreaterThan(base);
 		expect(videoBitrate({ maxEdge: 1920, quality: 70, fps: 120 })).toBeGreaterThan(base);
 		expect(videoBitrate({ maxEdge: 1920, quality: 40, fps: 30 })).toBeLessThan(base);
+		const budget = (maxEdge: number, fps: number, quality = 78) => videoBitrate({ maxEdge, fps, quality });
+		expect(budget(1700, 60) / budget(1698, 60)).toBeLessThan(1.01);
+		expect(budget(1920, 60, 85) / base).toBeCloseTo(1.6);
+		expect(budget(1920, 240)).toBeGreaterThan(budget(1920, 120));
+		expect(budget(1920, 15, 45)).toBeLessThan(base / 3);
+		expect(budget(4096, 240, 85)).toBe(50_000_000);
 		// Well under the JPEG pipeline (~100 Mbps at 1080p60) but enough for a sharp desktop.
 		expect(base).toBeGreaterThan(2_000_000);
 		expect(base).toBeLessThan(20_000_000);

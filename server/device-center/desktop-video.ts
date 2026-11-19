@@ -96,11 +96,11 @@ function outputIndex(display?: string) {
 
 /** Bits per second for the H.264 session; JPEG used ~10x more for the same desktop. */
 export function videoBitrate(profile: DesktopProfile): number {
-	const edge = Math.max(640, profile.maxEdge);
-	const base = edge >= 2400 ? 14_000_000 : edge >= 1700 ? 9_000_000 : edge >= 1200 ? 5_000_000 : 2_500_000;
-	const quality = Math.min(1.25, Math.max(0.6, profile.quality / 70));
-	const highFps = profile.fps >= 90 ? 1.4 : 1;
-	return Math.round((base * quality * highFps) / 100_000) * 100_000;
+	// A continuous budget avoids sudden detail loss when resizing across an old resolution tier.
+	const baseKbps = Math.max(1500, 9000 * (profile.maxEdge / 1920) ** 2);
+	const detail = profile.quality <= 70 ? (profile.quality / 70) ** 2 : 1 + (profile.quality - 70) / 25;
+	const fpsFactor = Math.sqrt(Math.max(15, profile.fps) / 60);
+	return 1000 * Math.round(Math.min(50_000, Math.max(600, baseKbps * detail * fpsFactor)));
 }
 
 function args(profile: DesktopProfile, display?: string) {

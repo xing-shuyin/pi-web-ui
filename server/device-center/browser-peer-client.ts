@@ -88,7 +88,111 @@ function peerSocketClass(open: any) {
 	};
 }
 
-function peerParent(config: { base: string; signal: string }, SocketClass: typeof peerSocketClass) {
+/** Runs in the trusted browser wrapper. Stats are diagnostic only and cannot tear down a working peer. */
+export function watchBrowserPeerRoute(pc: any, report: (route: "lan" | "p2p" | "turn" | "peer") => void, win: any) {
+	const ice = pc.sctp?.transport?.iceTransport;
+	let stopped = false,
+		reading = false,
+		changedDuringRead = false;
+	function route(local: any, remote: any) {
+		const a = local?.candidateType || local?.type,
+			b = remote?.candidateType || remote?.type;
+		if (a === "relay" || b === "relay") return "turn";
+		const directTypes = ["host", "srflx", "prflx"];
+		if (!directTypes.includes(a) || !directTypes.includes(b)) return null;
+		if (a !== "host" || b !== "host") return "p2p";
+		const address = (candidate: any) =>
+			String(candidate.address || candidate.ip || "")
+				.toLowerCase()
+				.replace(/^\[|\]$/g, "")
+				.replace(/%.*$/, "")
+				.replace(/^::ffff:(?=\d+\.)/, "");
+		const dest = address(remote);
+		if (!dest || dest === "0.0.0.0" || dest === "::") return "peer";
+		if (
+			/^(?:10\.|192\.168\.|172\.(?:1[6-9]|2\d|3[01])\.|127\.|169\.254\.|f[cd][\da-f]{2}:|fe[89ab][\da-f]:)|^::1$|\.local\.?$/.test(
+				dest,
+			)
+		)
+			return "lan";
+		// Globally addressed IPv6 peers may also share an on-link /64.
+		const prefix64 = (ip: string) => {
+			if (!/^[23][\da-f]{3}:[\da-f:]+$/.test(ip)) return;
+			const [left, right] = ip.split("::");
+			const head = left.split(":"),
+				tail = right ? right.split(":") : [];
+			const parts =
+				right === undefined ? head : head.concat(Array(Math.max(0, 8 - head.length - tail.length)).fill("0"), tail);
+			if (parts.length === 8)
+				return parts
+					.slice(0, 4)
+					.map((part) => parseInt(part, 16))
+					.join(":");
+		};
+		const prefix = prefix64(dest);
+		if (prefix && !address(local)) return "peer";
+		return prefix && prefix === prefix64(address(local)) ? "lan" : "p2p";
+	}
+	async function read() {
+		let pair;
+		try {
+			pair = ice?.getSelectedCandidatePair?.();
+		} catch {}
+		const known = route(pair?.local, pair?.remote);
+		if (known && known !== "peer") return known;
+		const stats = await pc.getStats?.();
+		if (!stats) return known;
+		let nominated,
+			count = 0;
+		for (const item of stats.values()) {
+			if (item.type === "transport" && item.selectedCandidatePairId) {
+				const selected = stats.get(item.selectedCandidatePairId);
+				return route(stats.get(selected?.localCandidateId), stats.get(selected?.remoteCandidateId)) ?? known;
+			}
+			if (item.type === "candidate-pair" && item.nominated && item.state === "succeeded") {
+				nominated = item;
+				count++;
+			}
+		}
+		return count === 1
+			? (route(stats.get(nominated.localCandidateId), stats.get(nominated.remoteCandidateId)) ?? known)
+			: known;
+	}
+	async function refresh() {
+		if (reading || stopped) return;
+		reading = true;
+		try {
+			const result = await read();
+			if (!stopped && !changedDuringRead && result) report(result);
+		} catch {
+			// A browser can withhold ICE telemetry even after the business health check succeeds.
+		} finally {
+			reading = false;
+			if (changedDuringRead) {
+				changedDuringRead = false;
+				void refresh();
+			}
+		}
+	}
+	const change = () => {
+		if (reading) changedDuringRead = true;
+		else void refresh();
+	};
+	ice?.addEventListener?.("selectedcandidatepairchange", change);
+	const timer = win.setInterval(refresh, 5000);
+	void refresh();
+	return () => {
+		stopped = true;
+		ice?.removeEventListener?.("selectedcandidatepairchange", change);
+		win.clearInterval(timer);
+	};
+}
+
+function peerParent(
+	config: { base: string; signal: string },
+	SocketClass: typeof peerSocketClass,
+	watchRoute: typeof watchBrowserPeerRoute,
+) {
 	const win = Reflect.get(globalThis, "window") as any;
 	const nativeFetch = win.fetch.bind(win),
 		NativeSocket = win.WebSocket;
@@ -102,6 +206,8 @@ function peerParent(config: { base: string; signal: string }, SocketClass: typeo
 		mode = "hub",
 		closing = false,
 		failed = false;
+	let disconnectTimer: number | undefined;
+	let stopMonitoring: (() => void) | undefined;
 	const streams = new Set<any>();
 	const frame = win.document.querySelector("iframe");
 	const badge = win.document.createElement("div");
@@ -129,18 +235,21 @@ function peerParent(config: { base: string; signal: string }, SocketClass: typeo
 			{
 				lan: "局域网直连 / LAN direct",
 				p2p: "P2P 直连 / P2P direct",
+				peer: "设备已连接（线路未确认）/ Peer connected (route unconfirmed)",
 				turn: "TURN 中转 / TURN relay",
 				hub: "服务器中转 / Hub relay",
 			} as any
 		)[mode];
-		const transport = mode === "turn" ? "p2p" : mode;
-		frame?.contentWindow?.postMessage({ type: "device-access-transport", transport, relayed: mode === "turn" }, "*");
-		if (win.parent !== win)
-			win.parent.postMessage({ type: "device-access-transport", transport, relayed: mode === "turn" }, "*");
+		const transport = mode === "turn" || mode === "peer" ? "p2p" : mode;
+		const message = { type: "device-access-transport", transport, route: mode, relayed: mode === "turn" };
+		frame?.contentWindow?.postMessage(message, "*");
+		if (win.parent !== win) win.parent.postMessage(message, "*");
 	};
 	const fallback = () => {
 		if (closing) return;
 		closing = true;
+		stopMonitoring?.();
+		win.clearTimeout(disconnectTimer);
 		failed = true;
 		const wasActive = active;
 		active = false;
@@ -150,6 +259,22 @@ function peerParent(config: { base: string; signal: string }, SocketClass: typeo
 		for (const stream of streams) stream.close();
 		streams.clear();
 		pc?.close();
+	};
+	let checkingPeer = false;
+	// Each request has its own data channel. Verify the shared path before
+	// disconnecting unrelated chat and desktop sockets after a stream error.
+	const checkPeer = async () => {
+		if (!active || closing || checkingPeer) return;
+		checkingPeer = true;
+		try {
+			const response = await directFetch(new URL("api/health", base).href, { signal: win.AbortSignal.timeout(8000) });
+			if (!response.ok) throw new Error("Peer unavailable");
+			await response.arrayBuffer();
+		} catch {
+			fallback();
+		} finally {
+			checkingPeer = false;
+		}
 	};
 	const channel = (meta: any, record: (type: number, data: Uint8Array) => void, failed: () => void) => {
 		if (!pc || streams.size >= 28) throw new Error("P2P stream limit");
@@ -232,18 +357,20 @@ function peerParent(config: { base: string; signal: string }, SocketClass: typeo
 		dc.onerror = () => stream.close();
 		dc.onmessage = (event: any) => {
 			try {
-				const data = new Uint8Array(event.data),
-					next = new Uint8Array(buffer.length + data.length);
-				next.set(buffer);
-				next.set(data, buffer.length);
-				buffer = next;
+				const data = new Uint8Array(event.data);
+				if (buffer.length) {
+					const next = new Uint8Array(buffer.length + data.length);
+					next.set(buffer);
+					next.set(data, buffer.length);
+					buffer = next;
+				} else buffer = data;
 				while (buffer.length >= 5) {
 					const length = new DataView(buffer.buffer, buffer.byteOffset).getUint32(1);
 					if (length > 65536) throw new Error("Invalid P2P frame");
 					if (buffer.length < length + 5) break;
 					const type = buffer[0],
 						payload = buffer.slice(5, length + 5);
-					buffer = buffer.slice(length + 5);
+					buffer = buffer.subarray(length + 5);
 					record(type, payload);
 				}
 			} catch {
@@ -334,7 +461,7 @@ function peerParent(config: { base: string; signal: string }, SocketClass: typeo
 				const error = new Error("Direct connection lost; retry the operation");
 				rejectResponse(error);
 				controller.error(error);
-				fallback();
+				void checkPeer();
 			},
 		);
 		if (request.signal.aborted) cancel();
@@ -372,11 +499,13 @@ function peerParent(config: { base: string; signal: string }, SocketClass: typeo
 					if (bytes > 16 * 1024 * 1024) throw new Error("P2P message too large");
 					parts.push(data);
 				} else if (type === 4) {
-					const message = new Uint8Array(bytes);
-					let offset = 0;
-					for (const part of parts) {
-						message.set(part, offset);
-						offset += part.length;
+					const message = parts.length === 1 ? parts[0] : new Uint8Array(bytes);
+					if (parts.length > 1) {
+						let offset = 0;
+						for (const part of parts) {
+							message.set(part, offset);
+							offset += part.length;
+						}
 					}
 					parts = [];
 					bytes = 0;
@@ -387,7 +516,7 @@ function peerParent(config: { base: string; signal: string }, SocketClass: typeo
 				if (!ended) {
 					ended = true;
 					event("close", { code: 1006 });
-					fallback();
+					void checkPeer();
 				}
 			},
 		);
@@ -434,11 +563,13 @@ function peerParent(config: { base: string; signal: string }, SocketClass: typeo
 				ws.binaryType = "arraybuffer";
 			} catch {
 				port.postMessage({ type: "error" });
+				port.postMessage({ type: "close", code: 1006 });
 				port.close();
 				return;
 			}
 			ws.onopen = () => port.postMessage({ type: "open" });
-			ws.onmessage = (e: any) => port.postMessage({ type: "message", data: e.data });
+			ws.onmessage = (e: any) =>
+				port.postMessage({ type: "message", data: e.data }, e.data instanceof ArrayBuffer ? [e.data] : []);
 			ws.onclose = (e: any) => {
 				port.postMessage({ type: "close", code: e.code });
 				port.close();
@@ -516,8 +647,14 @@ function peerParent(config: { base: string; signal: string }, SocketClass: typeo
 			iceServers: ["stun:stun.miwifi.com:3478", "stun:stun.cloudflare.com:3478"].map((urls) => ({ urls })),
 		});
 		bootstrap = pc.createDataChannel("bootstrap", { ordered: true });
+		bootstrap.onclose = fallback;
 		pc.onconnectionstatechange = () => {
+			win.clearTimeout(disconnectTimer);
 			if (["failed", "closed"].includes(pc.connectionState)) fallback();
+			else if (pc.connectionState === "disconnected")
+				disconnectTimer = win.setTimeout(() => {
+					void checkPeer();
+				}, 8000);
 		};
 		await pc.setLocalDescription(await pc.createOffer());
 		await waitState(() => pc.iceGatheringState === "complete", 7000).catch(() => {});
@@ -538,24 +675,20 @@ function peerParent(config: { base: string; signal: string }, SocketClass: typeo
 		const health = await directFetch(new URL("api/health", base).href, { signal: win.AbortSignal.timeout(8000) });
 		if (!health.ok) throw new Error("P2P health failed");
 		await health.arrayBuffer();
-		active = true;
-		mode = "p2p";
-		const stats = await pc.getStats();
-		for (const item of stats.values())
-			if (item.type === "candidate-pair" && item.state === "succeeded" && item.nominated) {
-				const remote = stats.get(item.remoteCandidateId),
-					local = stats.get(item.localCandidateId);
-				if (remote?.candidateType === "relay" || local?.candidateType === "relay") mode = "turn";
-				else if (
-					remote?.candidateType === "host" &&
-					/^(?:10\.|192\.168\.|172\.(?:1[6-9]|2\d|3[01])\.|127\.|f[cd][\da-f]{2}:)/i.test(
-						remote.address || remote.ip || "",
-					)
-				)
-					mode = "lan";
-			}
 		if (failed) return;
+		mode = "peer";
+		active = true;
 		announce();
+		stopMonitoring = watchRoute(
+			pc,
+			(route) => {
+				if (route !== mode) {
+					mode = route;
+					announce();
+				}
+			},
+			win,
+		);
 		// 页面已经在中转上跑着了：让子页面把长连接重开到直连通道（新的 fetch/WS 本来就走 active 通道）
 		frame?.contentWindow?.postMessage({ type: "device-p2p-upgraded" }, "*");
 	};
@@ -604,6 +737,39 @@ function peerChild(basePath: string, SocketClass: typeof peerSocketClass) {
 		win.parent.postMessage({ type: "pi-browser-peer", ...data }, "*", [channel.port2]);
 		return channel.port1;
 	};
+	// A same-device desktop is embedded directly in the remote chat. Its immediate
+	// parent is this application, one level below the wrapper that owns the peer.
+	const desktopFrames = () =>
+		Array.from(win.document.querySelectorAll("iframe[src]")).filter((frame: any) => {
+			if (!route(frame.src)) return false;
+			const path = new URL(frame.src, base).pathname.slice(base.pathname.length);
+			return path === "desktop" || path === "desktop-preview";
+		}) as any[];
+	win.addEventListener("message", (event: any) => {
+		const message = event.data;
+		if (
+			event.origin !== "null" ||
+			message?.type !== "pi-browser-peer" ||
+			event.ports.length !== 1 ||
+			!desktopFrames().some((frame) => frame.contentWindow === event.source)
+		)
+			return;
+		const port = event.ports[0];
+		const path =
+			typeof message.url === "string" && route(message.url)
+				? new URL(message.url, base).pathname.slice(base.pathname.length)
+				: "";
+		if (
+			!["ws", "fetch"].includes(message.kind) ||
+			!/^(?:desktop(?:-clipboard)?-ws$|api\/device-desktop\/)/.test(path)
+		) {
+			port.postMessage({ type: "error" });
+			port.postMessage({ type: "close", code: 1006 });
+			port.close();
+			return;
+		}
+		win.parent.postMessage(message, "*", [port]);
+	});
 	win.fetch = async (input: any, init?: any) => {
 		if (!route(input)) return nativeFetch(input, init);
 		const request = new win.Request(input, init),
@@ -674,12 +840,17 @@ function peerChild(basePath: string, SocketClass: typeof peerSocketClass) {
 					if (data.type === "fallback") {
 						port.close();
 						socket = new NativeSocket(url, protocols);
+						relaySockets.add(socket);
 						socket.binaryType = "arraybuffer";
 						socket.onopen = () => event("open");
 						socket.onmessage = (e: any) => event("message", e.data);
 						socket.onerror = () => event("error");
-						socket.onclose = (e: any) => event("close", { code: e.code });
+						socket.onclose = (e: any) => {
+							relaySockets.delete(socket);
+							event("close", { code: e.code });
+						};
 						resolve({ send: (value: any) => socket.send(value), close: () => socket.close() });
+						if (upgraded) socket.close();
 					} else if (data.type === "direct")
 						resolve({
 							send: (value: any) => port.postMessage({ type: "send", data: value }),
@@ -695,34 +866,34 @@ function peerChild(basePath: string, SocketClass: typeof peerSocketClass) {
 				});
 			}),
 	);
-	const bridgedSockets = new Set<any>();
+	const relaySockets = new Set<any>();
+	let upgraded = false;
 	win.WebSocket = class extends NativeSocket {
 		constructor(url: string, protocols: any) {
-			if (route(url)) {
-				const socket = new BridgedSocket(url, protocols);
-				bridgedSockets.add(socket);
-				socket.addEventListener("close", () => bridgedSockets.delete(socket));
-				return socket as any;
-			}
+			if (route(url)) return new BridgedSocket(url, protocols) as any;
 			super(url, protocols);
 		}
 	};
-	// 传输切换：关掉现有长连接，由应用自己的重连逻辑用新通道重建（直连 ↔ 中转都走这里）
+	// Only migrate sockets actually using the old route. The parent closes
+	// direct streams itself on loss; relay sockets may already have reconnected.
 	win.addEventListener("message", (event: any) => {
 		if (event.source !== win.parent) return;
 		const type = event.data && event.data.type;
 		if (type !== "device-p2p-upgraded" && type !== "device-p2p-lost") return;
-		for (const socket of [...bridgedSockets]) {
+		upgraded = type === "device-p2p-upgraded";
+		for (const frame of desktopFrames()) frame.contentWindow?.postMessage({ type }, "*");
+		if (!upgraded) return;
+		for (const socket of relaySockets) {
 			try {
 				socket.close();
 			} catch {}
 		}
-		bridgedSockets.clear();
+		relaySockets.clear();
 	});
 }
 
 export function browserPeerParentScript(base: string, signal: string) {
-	return `{const __name=(value)=>value;(${peerParent.toString()})(${JSON.stringify({ base, signal })},${peerSocketClass.toString()});}`;
+	return `{const __name=(value)=>value;(${peerParent.toString()})(${JSON.stringify({ base, signal })},${peerSocketClass.toString()},${watchBrowserPeerRoute.toString()});}`;
 }
 export function browserPeerChildScript(base: string) {
 	return `{const __name=(value)=>value;(${peerChild.toString()})(${JSON.stringify(base)},${peerSocketClass.toString()});}`;

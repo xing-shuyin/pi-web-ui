@@ -7,6 +7,8 @@ export type DesktopPreferences = {
 	height?: number;
 	colorRange?: "limited" | "full";
 	diagnostics?: boolean;
+	mapShortcuts?: boolean;
+	cursor?: "local" | "remote";
 	scale?: boolean;
 	viewOnly?: boolean;
 	clipboard?: "off" | "send" | "receive" | "both";
@@ -20,7 +22,7 @@ export function desktopPreferences(scope: string) {
 			out: DesktopPreferences = {};
 		if (["auto", "smooth", "balanced", "sharp"].includes(v.quality!)) out.quality = v.quality;
 		if ([0, 960, 1280, 1920, 2560].includes(v.edge!)) out.edge = v.edge;
-		if ([10, 15, 30, 60, 120, 240].includes(v.fps!)) out.fps = v.fps;
+		if ([0, 10, 15, 30, 60, 120, 240].includes(v.fps!)) out.fps = v.fps;
 		if (
 			["window", "native", "custom"].includes(v.resolution ?? "") ||
 			(typeof v.resolution === "string" &&
@@ -32,6 +34,8 @@ export function desktopPreferences(scope: string) {
 			if (Number.isInteger(v[k]) && v[k]! >= 320 && v[k]! <= 4096) out[k] = v[k];
 		if (["limited", "full"].includes(v.colorRange ?? "")) out.colorRange = v.colorRange;
 		if (typeof v.diagnostics === "boolean") out.diagnostics = v.diagnostics;
+		if (typeof v.mapShortcuts === "boolean") out.mapShortcuts = v.mapShortcuts;
+		if (v.cursor === "local" || v.cursor === "remote") out.cursor = v.cursor;
 		if (typeof v.scale === "boolean") out.scale = v.scale;
 		if (typeof v.viewOnly === "boolean") out.viewOnly = v.viewOnly;
 		if (["off", "send", "receive", "both"].includes(v.clipboard!)) out.clipboard = v.clipboard;
@@ -82,7 +86,7 @@ export function desktopPreferencesPageScript() {
 const desktopPrefs=(()=>{const __name=fn=>fn;return (${desktopPreferences.toString()})})()('local-desktop');
 let preferencesApplied=false;
 function saveDesktopPreferences(){
- const value={quality:$('quality-mode').value,edge:Number($('quality-edge').value),fps:Number($('quality-fps').value),resolution:$('quality-resolution').value,width:Number($('quality-width').value),height:Number($('quality-height').value),colorRange:$('quality-color').value,diagnostics:!$('statistics').hidden,scale:$('scale').checked,viewOnly:$('viewonly').checked};
+ const value={quality:$('quality-mode').value,edge:Number($('quality-edge').value),fps:Number($('quality-fps').value),resolution:$('quality-resolution').value,width:Number($('quality-width').value),height:Number($('quality-height').value),colorRange:$('quality-color').value,diagnostics:!$('statistics').hidden,mapShortcuts:$('map-shortcuts').checked,cursor:$('cursor-mode').value,scale:$('scale').checked,viewOnly:$('viewonly').checked};
  if(parent===window)desktopPrefs.write(value);else parent.postMessage({type:'desktop-preferences-write',value},'*');
 }
 function applyDesktopPreferences(value){
@@ -96,11 +100,13 @@ function applyDesktopPreferences(value){
  if(v.width!==undefined)$('quality-width').value=String(v.width);if(v.height!==undefined)$('quality-height').value=String(v.height);
  if(v.colorRange!==undefined)$('quality-color').value=v.colorRange;
  if(v.diagnostics!==undefined){$('statistics').hidden=!v.diagnostics;$('diagnostics').setAttribute('aria-pressed',String(v.diagnostics))}
+ if(v.cursor!==undefined){$('cursor-mode').value=v.cursor;requestCursorMode()}
  if(v.scale!==undefined){$('scale').checked=v.scale;screen.classList.toggle('native',!v.scale)}
+ if(v.mapShortcuts!==undefined&&$('map-shortcuts').checked!==v.mapShortcuts){release();$('map-shortcuts').checked=v.mapShortcuts}
  if(v.viewOnly!==undefined)$('viewonly').checked=v.viewOnly;
  updateQuality();if(socket&&oldViewOnly!==$('viewonly').checked)connect();
 }
-for(const id of ['quality-mode','quality-resolution','quality-width','quality-height','quality-color','quality-fps','scale','viewonly'])$(id).addEventListener('change',saveDesktopPreferences);
+for(const id of ['quality-mode','quality-resolution','quality-width','quality-height','quality-color','quality-fps','scale','viewonly','map-shortcuts','cursor-mode'])$(id).addEventListener('change',saveDesktopPreferences);
 addEventListener('message',event=>{if(event.source===parent&&parent!==window&&event.data?.type==='desktop-preferences-value')applyDesktopPreferences(event.data.value)});
 if(parent===window)applyDesktopPreferences(desktopPrefs.read());else parent.postMessage({type:'desktop-preferences-read'},'*');
 `;

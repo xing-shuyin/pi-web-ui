@@ -59,7 +59,7 @@ export class DesktopQuality {
 	}
 	get profile(): DesktopProfile {
 		const p = this.preferences;
-		const quality = { auto: 70, smooth: 50, balanced: 65, sharp: 85 }[p.mode];
+		const quality = { auto: 78, smooth: 50, balanced: 65, sharp: 85 }[p.mode];
 		const edge = p.maxEdge || p.viewportEdge;
 		return {
 			maxEdge: Math.max(640, Math.round(edge / 2) * 2),

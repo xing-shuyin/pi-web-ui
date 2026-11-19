@@ -1,4 +1,4 @@
-export type DesktopDisplay = { id: string; width: number; height: number; primary: boolean };
+export type DesktopDisplay = { id: string; width: number; height: number; primary: boolean; refreshHz?: number };
 export type DesktopDisplays = {
 	type: "displays";
 	displays: DesktopDisplay[];
@@ -48,7 +48,15 @@ export function parseDesktopDisplays(value: unknown): DesktopDisplays | undefine
 		...(v.encoderRuntime === "native-d3d11" && ["limited", "full"].includes(v.colorRange ?? "")
 			? { colorRange: v.colorRange }
 			: {}),
-		displays: v.displays.map(({ id, width, height, primary }) => ({ id, width, height, primary })),
+		displays: v.displays.map(({ id, width, height, primary, refreshHz }) => ({
+			id,
+			width,
+			height,
+			primary,
+			...(typeof refreshHz === "number" && Number.isFinite(refreshHz) && refreshHz >= 5 && refreshHz <= 1000
+				? { refreshHz }
+				: {}),
+		})),
 		selected: v.selected,
 		...(["dxgi", "wgc", "gdi", "screencapturekit"].includes(v.capture ?? "") ? { capture: v.capture } : {}),
 		...(["h264_nvenc", "h264_qsv", "h264_amf", "h264_mf", "libx264"].includes(v.encoder ?? "")

@@ -31,7 +31,7 @@ export function desktopFileManager(options: {
 	style.nonce = doc.querySelector("script[nonce]")?.nonce || "";
 	style.textContent = `
 .pi-files{--fm-bg:var(--bg-elev,var(--bg,#171c23));--fm-line:var(--border,#46505d);box-sizing:border-box;color:var(--text,#e6edf3);background:var(--fm-bg);border:1px solid var(--fm-line);border-radius:12px;width:min(1120px,96vw);height:min(760px,91dvh);max-height:94dvh;padding:0;font:13px system-ui;overflow:hidden;box-shadow:0 20px 70px #0005}
-.pi-files::backdrop{background:#0005}.pi-files *{box-sizing:border-box}.pi-files .fm-shell{height:100%;display:flex;flex-direction:column;min-width:0}.pi-files button,.pi-files input,.pi-files select{font:inherit;color:inherit;background:var(--bg,#171c23);border:1px solid var(--fm-line);border-radius:6px;padding:6px 9px;min-width:0;max-width:100%;line-height:1.4}.pi-files button{cursor:pointer;white-space:nowrap;display:inline-flex;align-items:center;justify-content:center;gap:5px}.pi-files button:disabled{opacity:.45;cursor:default}.pi-files button:hover:not(:disabled){border-color:var(--accent,#8ab4f8)}.pi-files button:focus-visible,.pi-files input:focus-visible,.pi-files select:focus-visible{outline:2px solid var(--accent,#8ab4f8);outline-offset:2px}.pi-files input[type=checkbox]{width:14px;height:14px;accent-color:var(--accent,#8ab4f8)}.pi-files .fm-head{display:flex;justify-content:space-between;align-items:center;padding:14px 18px;border-bottom:1px solid var(--fm-line)}.pi-files .fm-head strong{font-size:16px}.pi-files .fm-muted{color:var(--text-dim,var(--text,#b3bac5));font-size:12px}.pi-files .fm-panes{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:16px;padding:16px 18px 10px;min-height:180px;flex:1.4;overflow:hidden}.pi-files .fm-pane{min-width:0;display:flex;flex-direction:column;overflow:hidden}.pi-files .fm-device{display:flex;align-items:center;gap:8px;margin-bottom:10px;min-width:0}.pi-files .fm-device strong{font-size:15px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.pi-files .fm-badge{font-size:11px;padding:2px 6px;border:1px solid var(--fm-line);border-radius:4px;flex:none}.pi-files .fm-device button{margin-left:auto}.pi-files .fm-nav{display:flex;gap:5px;margin-bottom:6px;min-width:0}.pi-files .fm-path{flex:1;width:0}.pi-files .fm-roots{width:100%;margin-bottom:6px}.pi-files .fm-grid{overflow:auto;min-height:80px;border:1px solid var(--fm-line);border-radius:7px;flex:1;overscroll-behavior:contain}.pi-files table{color:inherit;width:100%;border-collapse:collapse;text-align:left;font-size:12px;table-layout:fixed}.pi-files th{font-weight:500;color:var(--text-dim,var(--text,#b3bac5));position:sticky;top:0;background:var(--fm-bg);z-index:1}.pi-files td,.pi-files th{padding:7px 8px;border-bottom:1px solid var(--fm-line);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.pi-files th:first-child,.pi-files td:first-child{width:30px}.pi-files .fm-name{width:43%}.pi-files .fm-date{width:27%}.pi-files tr[aria-selected=true]{background:color-mix(in srgb,var(--accent,#8ab4f8) 15%,transparent)}.pi-files tbody tr:hover{background:color-mix(in srgb,var(--accent,#8ab4f8) 9%,transparent)}.pi-files .fm-empty{text-align:center;padding:24px;white-space:normal;color:var(--text-dim,var(--text,#b3bac5))}.pi-files .fm-foot{padding:7px 2px;font-size:12px;min-height:30px;overflow-wrap:anywhere;word-break:break-word}.pi-files .fm-actions{display:flex;gap:8px;flex-wrap:wrap}.pi-files .fm-queue{display:flex;flex-direction:column;min-height:140px;flex:1;padding:4px 18px 16px;overflow:hidden}.pi-files .fm-queue-head{display:flex;align-items:center;justify-content:space-between;gap:8px;margin:4px 0 8px;flex-wrap:wrap}.pi-files .fm-tasks th:first-child,.pi-files .fm-tasks td:first-child{width:19%}.pi-files .fm-tasks th:nth-child(2){width:24%}.pi-files .fm-tasks th:nth-child(3){width:10%}.pi-files .fm-tasks th:last-child{width:16%}.pi-files .fm-tasks td{white-space:normal;overflow-wrap:anywhere;word-break:break-word;vertical-align:top}.pi-files progress{display:block;width:100%;height:5px;margin-top:7px;accent-color:var(--accent,#8ab4f8)}.pi-files .fm-note{padding:0 18px 8px;overflow-wrap:anywhere;word-break:break-word;min-height:22px}.pi-files .fm-note[role=alert]{color:var(--red,#ff9a9a)}.pi-files .fm-task-actions{display:flex;gap:4px;flex-wrap:wrap}.pi-files .fm-task-actions button{font-size:11px;padding:3px 6px}.pi-files [hidden]{display:none!important}@media(max-width:700px){.pi-files .fm-panes{gap:8px;padding:10px;}.pi-files .fm-date{display:none}.pi-files .fm-name{width:65%}.pi-files .fm-nav{flex-wrap:wrap}.pi-files .fm-path{flex-basis:100%;width:100%;order:2}.pi-files .fm-device{flex-wrap:wrap}.pi-files .fm-device strong{max-width:100%;font-size:12px}.pi-files .fm-queue{padding:4px 10px 10px}.pi-files .fm-tasks th:nth-child(4),.pi-files .fm-tasks td:nth-child(4),.pi-files .fm-tasks th:nth-child(5),.pi-files .fm-tasks td:nth-child(5){display:none}.pi-files .fm-tasks th:last-child{width:24%}.pi-files .fm-device button{margin-left:0}}
+.pi-files::backdrop{background:#0005}.pi-files *{box-sizing:border-box}.pi-files .fm-shell{height:100%;display:flex;flex-direction:column;min-width:0}.pi-files button,.pi-files input,.pi-files select{font:inherit;color:inherit;background:var(--bg,#171c23);border:1px solid var(--fm-line);border-radius:6px;padding:6px 9px;min-width:0;max-width:100%;line-height:1.4}.pi-files button{cursor:pointer;white-space:nowrap;display:inline-flex;align-items:center;justify-content:center;gap:5px}.pi-files button:disabled{opacity:.45;cursor:default}.pi-files button:hover:not(:disabled){border-color:var(--accent,#8ab4f8)}.pi-files button:focus-visible,.pi-files input:focus-visible,.pi-files select:focus-visible{outline:2px solid var(--accent,#8ab4f8);outline-offset:2px}.pi-files input[type=checkbox]{width:14px;height:14px;accent-color:var(--accent,#8ab4f8)}.pi-files .fm-head{display:flex;justify-content:space-between;align-items:center;padding:14px 18px;border-bottom:1px solid var(--fm-line)}.pi-files .fm-head strong{font-size:16px}.pi-files .fm-muted{color:var(--text-dim,var(--text,#b3bac5));font-size:12px}.pi-files .fm-panes{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:16px;padding:16px 18px 10px;min-height:180px;flex:1.4;overflow:hidden}.pi-files .fm-pane{min-width:0;display:flex;flex-direction:column;overflow:hidden}.pi-files .fm-device{display:flex;align-items:center;gap:8px;margin-bottom:10px;min-width:0}.pi-files .fm-device strong{font-size:15px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.pi-files .fm-badge{font-size:11px;padding:2px 6px;border:1px solid var(--fm-line);border-radius:4px;flex:none}.pi-files .fm-device button{margin-left:auto}.pi-files .fm-nav{display:flex;gap:5px;margin-bottom:6px;min-width:0}.pi-files .fm-path{flex:1;width:0}.pi-files .fm-roots{width:100%;margin-bottom:6px}.pi-files .fm-grid{overflow:auto;min-height:80px;border:1px solid var(--fm-line);border-radius:7px;flex:1;overscroll-behavior:contain}.pi-files table{color:inherit;width:100%;border-collapse:collapse;text-align:left;font-size:12px;table-layout:fixed}.pi-files .fm-sort{width:100%;justify-content:flex-start;padding:2px 0;border:0;background:transparent;color:inherit}.pi-files [aria-sort=ascending] .fm-sort::after{content:"↑"}.pi-files [aria-sort=descending] .fm-sort::after{content:"↓"}.pi-files th{font-weight:500;color:var(--text-dim,var(--text,#b3bac5));position:sticky;top:0;background:var(--fm-bg);z-index:1}.pi-files td,.pi-files th{padding:7px 8px;border-bottom:1px solid var(--fm-line);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.pi-files th:first-child,.pi-files td:first-child{width:30px}.pi-files .fm-name{width:43%}.pi-files .fm-date{width:27%}.pi-files tr[aria-selected=true]{background:color-mix(in srgb,var(--accent,#8ab4f8) 15%,transparent)}.pi-files tbody tr:hover{background:color-mix(in srgb,var(--accent,#8ab4f8) 9%,transparent)}.pi-files .fm-empty{text-align:center;padding:24px;white-space:normal;color:var(--text-dim,var(--text,#b3bac5))}.pi-files .fm-foot{padding:7px 2px;font-size:12px;min-height:30px;overflow-wrap:anywhere;word-break:break-word}.pi-files .fm-actions{display:flex;gap:8px;flex-wrap:wrap}.pi-files .fm-queue{display:flex;flex-direction:column;min-height:140px;flex:1;padding:4px 18px 16px;overflow:hidden}.pi-files .fm-queue-head{display:flex;align-items:center;justify-content:space-between;gap:8px;margin:4px 0 8px;flex-wrap:wrap}.pi-files .fm-tasks th:first-child,.pi-files .fm-tasks td:first-child{width:19%}.pi-files .fm-tasks th:nth-child(2){width:24%}.pi-files .fm-tasks th:nth-child(3){width:10%}.pi-files .fm-tasks th:last-child{width:16%}.pi-files .fm-tasks td{white-space:normal;overflow-wrap:anywhere;word-break:break-word;vertical-align:top}.pi-files progress{display:block;width:100%;height:5px;margin-top:7px;accent-color:var(--accent,#8ab4f8)}.pi-files .fm-note{padding:0 18px 8px;overflow-wrap:anywhere;word-break:break-word;min-height:22px}.pi-files .fm-note[role=alert]{color:var(--red,#ff9a9a)}.pi-files .fm-task-actions{display:flex;gap:4px;flex-wrap:wrap}.pi-files .fm-task-actions button{font-size:11px;padding:3px 6px}.pi-files [hidden]{display:none!important}@media(max-width:700px){.pi-files .fm-panes{gap:8px;padding:10px;}.pi-files .fm-pane table{min-width:320px}.pi-files .fm-nav{flex-wrap:wrap}.pi-files .fm-path{flex-basis:100%;width:100%;order:2}.pi-files .fm-device{flex-wrap:wrap}.pi-files .fm-device strong{max-width:100%;font-size:12px}.pi-files .fm-queue{padding:4px 10px 10px}.pi-files .fm-tasks th:nth-child(4),.pi-files .fm-tasks td:nth-child(4),.pi-files .fm-tasks th:nth-child(5),.pi-files .fm-tasks td:nth-child(5){display:none}.pi-files .fm-tasks th:last-child{width:24%}.pi-files .fm-device button{margin-left:0}}
 `;
 	doc.head.append(style);
 	const dialog = el("dialog", "", "pi-files");
@@ -83,6 +83,7 @@ export function desktopFileManager(options: {
 	);
 	report(help);
 	let sides: any[] = [];
+	const names = new Intl.Collator(win.navigator.language, { numeric: true });
 	function panel(index: number, request: DesktopFileRequest) {
 		const box = el("section", "", "fm-pane"),
 			device = el("div", "", "fm-device"),
@@ -113,12 +114,27 @@ export function desktopFileManager(options: {
 		all.type = "checkbox";
 		all.setAttribute("aria-label", t("全选", "Select all"));
 		first.append(all);
-		row.append(
-			first,
-			el("th", t("名称", "Name"), "fm-name"),
-			el("th", t("修改日期", "Modified"), "fm-date"),
-			el("th", t("大小", "Size")),
-		);
+		row.append(first);
+		let sortKey: "name" | "modified" | "size" = "name";
+		let direction = 1;
+		const headers = new Map<string, any>();
+		for (const [key, caption, cls] of [
+			["name", t("名称", "Name"), "fm-name"],
+			["modified", t("修改日期", "Modified"), "fm-date"],
+			["size", t("大小", "Size"), ""],
+		] as const) {
+			const th = el("th", "", cls),
+				button = el("button", caption, "fm-sort");
+			th.scope = "col";
+			headers.set(key, th);
+			button.onclick = () => {
+				direction = sortKey === key ? -direction : key === "name" ? 1 : -1;
+				sortKey = key;
+				draw();
+			};
+			th.append(button);
+			row.append(th);
+		}
 		thead.append(row);
 		table.append(thead, tbody);
 		grid.append(table);
@@ -150,14 +166,28 @@ export function desktopFileManager(options: {
 			foot.textContent = `${p.entries.length} ${t("项", "items")} · ${t("已选择", "Selected")} ${p.selected.size}`;
 		}
 		p.update = update;
-		function draw() {
+		function draw(reveal?: string) {
+			for (const [key, th] of headers) {
+				if (key === sortKey) th.setAttribute("aria-sort", direction === 1 ? "ascending" : "descending");
+				else th.removeAttribute("aria-sort");
+			}
+			p.entries.sort((a: any, b: any) => {
+				if (a.directory !== b.directory) return a.directory ? -1 : 1;
+				if (sortKey === "name") return direction * names.compare(a.name, b.name);
+				const av = a[sortKey],
+					bv = b[sortKey];
+				if ((av == null) !== (bv == null)) return av == null ? 1 : -1;
+				return (
+					(sortKey === "size" && a.directory ? 0 : direction * ((av ?? 0) - (bv ?? 0))) || names.compare(a.name, b.name)
+				);
+			});
 			tbody.replaceChildren();
 			for (const item of p.entries) {
 				const tr = el("tr"),
 					check = el("input"),
 					cell = el("td"),
 					label = el("td", (item.directory ? "📁 " : "▤ ") + item.name),
-					date = el("td", item.modified ? new Date(item.modified).toLocaleString() : "—", "fm-date");
+					date = el("td", item.modified != null ? new Date(item.modified).toLocaleString() : "—", "fm-date");
 				check.type = "checkbox";
 				check.checked = p.selected.has(item.path);
 				check.setAttribute("aria-label", item.name);
@@ -180,6 +210,7 @@ export function desktopFileManager(options: {
 					if (item.directory) void p.load(item.path);
 				};
 				tbody.append(tr);
+				if (item.path === reveal) tr.scrollIntoView?.({ block: "nearest" });
 			}
 			if (!p.entries.length) {
 				const r = el("tr"),
@@ -195,23 +226,40 @@ export function desktopFileManager(options: {
 			p.loading = true;
 			send.disabled = true;
 			try {
-				const data = await request("list?path=" + encodeURIComponent(next));
+				const list = (value: string) => request("list?path=" + encodeURIComponent(value));
+				let data;
+				try {
+					data = await list(next);
+				} catch (error: any) {
+					// Older device endpoints only accept directories.
+					if (!/\bENOTDIR\b/.test(error.message) || disposed || revision !== p.revision) throw error;
+					const split = /^[A-Za-z]:[\\/]/.test(next)
+						? Math.max(next.lastIndexOf("\\"), next.lastIndexOf("/"))
+						: next.lastIndexOf("/");
+					if (split < 0 || split === next.length - 1) throw error;
+					const parent = await list(next.slice(0, split + 1));
+					const item = parent.entries.find((entry: any) => !entry.directory && entry.name === next.slice(split + 1));
+					if (!item) throw error;
+					data = { ...parent, selected: item.path };
+				}
 				if (disposed || revision !== p.revision) return;
+				if (data.selected && !data.entries.some((item: any) => item.path === data.selected && !item.directory))
+					throw new Error(t("文件已移动或不可读。", "The file was moved or is no longer readable."));
 				if (remember && p.path && p.path !== data.path) p.history.push(p.path);
 				p.path = data.path;
 				p.parent = data.parent;
-				p.entries = data.entries.sort(
-					(a: any, b: any) =>
-						Number(b.directory) - Number(a.directory) || a.name.localeCompare(b.name, undefined, { numeric: true }),
-				);
+				p.entries = data.entries;
 				p.selected.clear();
+				if (data.selected) p.selected.add(data.selected);
 				path.value = p.path;
 				roots.value = p.path;
 				if (roots.selectedIndex < 0) roots.value = "";
-				draw();
+				draw(data.selected);
+				if (remember) report(help);
 				if (data.truncated)
 					report(t("目录只显示前 2000 项，请进入子目录。", "Only the first 2000 entries are shown; open a subfolder."));
 			} catch (error: any) {
+				if (disposed || revision !== p.revision) return;
 				report(error.message, true);
 				path.value = p.path;
 			} finally {
@@ -257,7 +305,16 @@ export function desktopFileManager(options: {
 		};
 		roots.onchange = () => void p.load(roots.value);
 		path.onkeydown = (e: any) => {
-			if (e.key === "Enter") void p.load(path.value);
+			if (e.key !== "Enter" || e.isComposing) return;
+			let value: string = path.value.replace(/^"(.*)"$/, "$1");
+			const windows = /^[A-Za-z]:[\\/]/.test(p.path);
+			if (value && !value.startsWith("/") && !(windows && /^(?:[A-Za-z]:|\\)/.test(value)))
+				value = p.path + (/[\\/]$/.test(p.path) ? "" : windows ? "\\" : "/") + value;
+			if (p.selected.size) {
+				p.selected.clear();
+				draw();
+			}
+			void p.load(value || p.info.home);
 		};
 		refresh.onclick = () => void p.load(p.path, false);
 		up.onclick = () => void p.load(p.parent);

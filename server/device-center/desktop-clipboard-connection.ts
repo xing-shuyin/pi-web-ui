@@ -21,13 +21,14 @@ export function clipboardConnection(ws: WebSocket, backend: ClipboardBackend, wr
 		maxBytes: number = CLIPBOARD_LIMITS.bytes,
 		window = 1;
 	let stopWatch: (() => void) | undefined,
-		lastSent = "",
-		lastApplied = "";
+		mirroredDigest = "",
+		receivedRevision = 0;
 	const lifetime = new AbortController();
 	let incoming: { offer: ClipboardOffer; sink: ClipboardSink; seq: number; bytes: number } | undefined;
 	let outgoing:
 		| {
 				source: ClipboardSource;
+				revision: number;
 				iterator: ReturnType<ClipboardSource["chunks"]>;
 				phase: "offer" | "chunks" | "commit";
 				seq: number;
@@ -103,6 +104,7 @@ export function clipboardConnection(ws: WebSocket, backend: ClipboardBackend, wr
 		error instanceof Error && /^clipboard-[a-z]+$/.test(error.message) ? error.message : fallback;
 	let lastProgress = 0;
 	function progress(direction: "send" | "receive", bytes: number, offer: ClipboardOffer) {
+		if (offer.kind === "text") return;
 		const total = offer.items.reduce((sum, item) => sum + item.size, 0);
 		if (Date.now() - lastProgress < 250 && bytes !== total) return;
 		lastProgress = Date.now();
@@ -174,7 +176,14 @@ export function clipboardConnection(ws: WebSocket, backend: ClipboardBackend, wr
 		}
 		dirty = false;
 		reading = true;
-		send({ type: "clipboard-preparing" });
+		const revision = receivedRevision;
+		let announced = false;
+		const preparing = setTimeout(() => {
+			if (!closed) {
+				announced = true;
+				send({ type: "clipboard-preparing" });
+			}
+		}, 250);
 		let source: ClipboardSource | undefined;
 		try {
 			if (backend.readSource) source = await backend.readSource(lifetime.signal, maxBytes);
@@ -182,14 +191,16 @@ export function clipboardConnection(ws: WebSocket, backend: ClipboardBackend, wr
 				const content = await backend.read();
 				if (content) source = bufferClipboardSource(content);
 			}
-			if (closed || !source || source.digest === lastSent || source.digest === lastApplied) {
+			if (incoming || revision !== receivedRevision) dirty = true;
+			if (closed || incoming || revision !== receivedRevision || !source || source.digest === mirroredDigest) {
 				await source?.close();
-				send({ type: "clipboard-idle" });
+				if (announced) send({ type: "clipboard-idle" });
 				return;
 			}
 			if (!parseClipboardOffer(source.offer, maxBytes)) throw new Error("clipboard-size");
 			outgoing = {
 				source,
+				revision,
 				iterator: source.chunks(),
 				phase: "offer",
 				seq: -1,
@@ -203,6 +214,7 @@ export function clipboardConnection(ws: WebSocket, backend: ClipboardBackend, wr
 			await source?.close();
 			if (!closed) warn(errorCode(error, "clipboard-read"));
 		} finally {
+			clearTimeout(preparing);
 			reading = false;
 			if (dirty && !outgoing && !incoming && !closed)
 				setTimeout(() => {
@@ -222,11 +234,11 @@ export function clipboardConnection(ws: WebSocket, backend: ClipboardBackend, wr
 			if (out.pending.size) armOutgoing();
 			if (out.phase === "offer") out.phase = "chunks";
 			else if (out.phase === "commit") {
-				lastSent = out.source.digest;
+				if (out.revision === receivedRevision) mirroredDigest = out.source.digest;
 				outgoing = undefined;
 				ignore(v.id);
 				await out.source.close();
-				send({ type: "clipboard-complete" });
+				send({ type: out.source.offer.kind === "text" ? "clipboard-idle" : "clipboard-complete" });
 				if (dirty) void publish();
 				return;
 			}
@@ -328,9 +340,10 @@ export function clipboardConnection(ws: WebSocket, backend: ClipboardBackend, wr
 			progress("receive", transfer.bytes, transfer.offer);
 		} else if (v.type === "commit") {
 			clearTimeout(incomingTimer);
-			lastApplied = await transfer.sink.finish();
+			mirroredDigest = await transfer.sink.finish();
+			receivedRevision++;
 			incoming = undefined;
-			send({ type: "clipboard-complete" });
+			send({ type: transfer.offer.kind === "text" ? "clipboard-idle" : "clipboard-complete" });
 		} else throw new Error("clipboard-protocol");
 		send({ type: "ack", id: v.id, ...(stream ? { seq: v.seq } : {}) });
 		if (!incoming && dirty) void publish();

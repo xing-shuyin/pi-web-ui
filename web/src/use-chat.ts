@@ -2213,7 +2213,6 @@ export function useChat() {
 		ws.onopen = () => {
 			if (wsRef.current !== ws) return;
 			dispatch({ type: "status", status: "open" });
-			retryRef.current = 0;
 			lastBeatRef.current = Date.now();
 			helloSentAt = performance.now();
 			ws.send(
@@ -2257,14 +2256,19 @@ export function useChat() {
 			}
 			switch (msg.type) {
 				case "ready": {
+					retryRef.current = 0;
 					const mine = typeof __BUILD_ID__ !== "undefined" ? __BUILD_ID__ : "";
 					const autoReload = chatApi.current.chat.settings?.autoReload ?? true;
 					if (!isMobileRuntime() && autoReload && msg.buildId && mine && msg.buildId !== mine) {
 						const key = `pi-web-ui-reloaded-${msg.buildId}`;
-						if (!sessionStorage.getItem(key)) {
-							sessionStorage.setItem(key, "1");
-							location.reload();
-							return;
+						try {
+							if (!sessionStorage.getItem(key)) {
+								sessionStorage.setItem(key, "1");
+								location.reload();
+								return;
+							}
+						} catch {
+							// Sandboxed device portals can deny storage. Finish the current handshake.
 						}
 					}
 					const prevEngine = chatApi.current.chat.engine;

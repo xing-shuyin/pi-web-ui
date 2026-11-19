@@ -5,6 +5,8 @@ import { afterEach, expect, it, vi } from "vitest";
 import { RemoteDesktopWindow } from "../../web/src/components/RemoteDesktopWindow.js";
 import {
 	closeDesktopAccess,
+	desktopReportedTransport,
+	desktopTransportLabel,
 	getDesktopAccess,
 	openDeviceAccess,
 	requestDeviceAccessUrl,
@@ -19,6 +21,13 @@ const tZh: Translate = (key, vars) => interpolate(zh[key as keyof typeof zh] ?? 
 let root: Root | undefined;
 let host: HTMLDivElement | undefined;
 const hub = "https://hub.example.com";
+it("shows the confirmed route consistently in desktop previews and windows, including older Hub reports", () => {
+	expect(desktopTransportLabel(desktopReportedTransport({ transport: "lan" }), tZh)).toBe("局域网直连");
+	expect(desktopTransportLabel(desktopReportedTransport({ transport: "p2p" }), tEn)).toBe("P2P");
+	expect(desktopTransportLabel(desktopReportedTransport({ transport: "p2p", relayed: true }), tEn)).toBe("TURN");
+	expect(desktopTransportLabel(desktopReportedTransport({ transport: "p2p", route: "peer" }), tEn)).toBe("Connected");
+	expect(desktopReportedTransport({ transport: "unknown" })).toBeUndefined();
+});
 it("uses the current app for a verified local group device without a self relay request", async () => {
 	const fetcher = vi.fn();
 	vi.stubGlobal("fetch", fetcher);

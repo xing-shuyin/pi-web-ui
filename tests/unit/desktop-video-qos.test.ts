@@ -35,7 +35,6 @@ it("reduces bitrate before FPS and recovers gradually, retaining explicit qualit
 	flow.ack(flow.frame(1000), 9, 1400);
 	flow.ack(flow.frame(2400), 9, 2800);
 	flow.ack(flow.frame(3400), 9, 3800);
-	flow.ack(flow.frame(4400), 9, 4800);
 	expect(flow.profile(base, true).quality).toBeLessThan(70);
 	expect(flow.profile(base, true).fps).toBe(120);
 	for (let t = 5000; t < 45000; t += 1000) flow.ack(flow.frame(t), 9, t + 400);
@@ -106,13 +105,20 @@ it("does not let a minority of timely ACKs hide delayed delivery for most frames
 	expect(flow.profile(base, true).quality).toBeLessThan(base.quality);
 });
 
-it("does not impose a five-second cooldown on sustained severe queueing", () => {
+it("reduces frame rate before making text very blurry, and restores detail first when congestion clears", () => {
 	const flow = new DesktopVideoFlow(),
 		base = { fps: 240, quality: 70 };
 	for (let t = 0; t < 1000; t += 100) flow.ack(flow.frame(t), 0, t + 30);
 	for (let t = 1000; t < 7000; t += 100) flow.ack(flow.frame(t), 10, t + 500);
-	expect(flow.profile(base, true).quality).toBe(42);
-	expect(flow.profile(base, true).fps).toBeLessThan(240);
+	const early = flow.profile(base, true);
+	expect(early.quality).toBe(56);
+	expect(early.fps).toBeLessThan(240);
+	for (let t = 7000; t < 24000; t += 100) flow.ack(flow.frame(t), 10, t + 500);
+	const worst = flow.profile(base, true);
+	expect(worst).toMatchObject({ quality: 42, fps: 60 });
+	for (let t = 25000; t < 59000; t += 100) flow.ack(flow.frame(t), 0, t + 30);
+	expect(flow.profile(base, true).quality).toBeGreaterThan(worst.quality);
+	expect(flow.profile(base, true).fps).toBe(worst.fps);
 });
 
 // Deterministic serial link, with independent frame generation and receiver ACKs.
@@ -193,4 +199,39 @@ it("times out lack of valid ACK progress, not old frames while the receiver is s
 	expect(flow.progressAt).toBe(14000);
 	flow.reset();
 	expect(flow.progressAt).toBeUndefined();
+});
+
+it("paces variable-size H.264 before capture and fills a fast long-RTT link", () => {
+	function measure(mbps: number, rtt: number) {
+		const flow = new DesktopVideoFlow({ videoBudgetMs: 45 });
+		const pending: { id: number; sent: number; ack: number }[] = [],
+			ages: number[] = [];
+		let wire = 0,
+			next = 0,
+			seq = 0;
+		for (let now = 0; now < 20000; now++) {
+			while (pending[0]?.ack <= now) {
+				const p = pending.shift()!;
+				flow.ack(p.id, 0, now);
+				if (now >= 2000) ages.push(now - p.sent - rtt / 2);
+			}
+			if (now < next) continue;
+			next += 1000 / 60;
+			if (flow.blocked(60)) continue;
+			const key = seq % 60 === 0;
+			const bytes = key ? 95000 : [7000, 34000, 14000, 33000, 12000][seq % 5];
+			seq++;
+			const id = flow.frame(now, bytes, key);
+			wire = Math.max(wire, now) + (bytes * 8) / (1000 * mbps);
+			pending.push({ id, sent: now, ack: wire + rtt + 2 });
+		}
+		ages.sort((a, b) => a - b);
+		return { fps: ages.length / 18, p95: ages[Math.floor(ages.length * 0.95)] };
+	}
+	const slow = measure(4, 100),
+		fast = measure(100, 140);
+	expect(slow.p95).toBeLessThan(275);
+	expect(slow.fps).toBeGreaterThan(19);
+	expect(fast.p95).toBeLessThan(100);
+	expect(fast.fps).toBeGreaterThan(59);
 });

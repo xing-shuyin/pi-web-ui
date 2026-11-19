@@ -107,11 +107,22 @@ const server = createServer(async (req, res) => {
 const wss = new WebSocketServer({ server });
 wss.on("connection", (socket) => {
 	connections++;
-	socket.send(JSON.stringify({ type: "ready" }));
+	socket.send(JSON.stringify({ type: "ready", cursorModes: true }));
 	const timer = setInterval(() => {
 		if (socket.readyState === 1) socket.send(jpeg);
 	}, 150);
-	socket.on("message", (data) => input.push(JSON.parse(data.toString())));
+	socket.on("message", (data) => {
+		const message = JSON.parse(data.toString());
+		input.push(message);
+		if (message.type === "cursor_mode")
+			socket.send(
+				JSON.stringify(
+					message.mode === "remote"
+						? { type: "cursor", kind: "position", x: 0.2, y: 0.8 }
+						: { type: "cursor", kind: "local" },
+				),
+			);
+	});
 	socket.on("close", () => clearInterval(timer));
 });
 let browser;
@@ -141,6 +152,12 @@ try {
 		const live = app.frameLocator(".remote-desktop-window iframe");
 		await live.getByText("Connected · control enabled", { exact: true }).waitFor();
 		const connectionCount = connections;
+		await live.locator("#settings summary").click();
+		await live.locator("#cursor-mode").selectOption("remote");
+		await live.locator("#cursor-plane").waitFor({ state: "visible" });
+		await live.locator("#cursor-mode").selectOption("local");
+		await live.locator("#cursor-plane").waitFor({ state: "hidden" });
+		assert.equal(connections, connectionCount);
 		for (const theme of ["one-dark", "white", "nord"]) {
 			const appFrame = page.frames().find((frame) => frame.url() === origin + base);
 			await appFrame.evaluate((theme) => window.setTestTheme(theme), theme);
@@ -164,7 +181,8 @@ try {
 		await page.waitForTimeout(100);
 		assert(input.some((item) => item.type === "text" && item.text === "远程输入验证"));
 		await page.setViewportSize({ width: 390, height: 844 });
-		await live.locator("#diagnostics summary").click();
+		await live.locator("#diagnostics").click();
+		if (!(await live.locator("#statistics").isVisible())) await live.locator("#diagnostics").click();
 		await live.locator("#text-form").waitFor({ state: "hidden" });
 		assert.equal(await live.locator("#text-panel").getAttribute("open"), null);
 		const bounds = await live.locator("#statistics").boundingBox();

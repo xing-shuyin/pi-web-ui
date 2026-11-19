@@ -102,6 +102,7 @@ public static class NativeDesktop {
         FrameInfo info; int hr=acquire(duplication,0,out info,out resource);
         if(hr==unchecked((int)0x887A0027)) return false;
         Marshal.ThrowExceptionForHR(hr); acquired=true;
+        if(HasCompositedCursor(info.Mouse,info.Visible,Bounds())) throw new Exception("DXGI desktop includes a software cursor.");
         texture=Query(resource,"6f15aaf2-d208-4e89-9ab4-489535d34f9c");
         TextureDesc desc; Method<DescribeTexture>(texture,10)(texture,out desc);
         if(desc.Width!=bitmap.Width||desc.Height!=bitmap.Height||desc.Format!=87) throw new Exception("Desktop surface changed.");
@@ -140,7 +141,17 @@ public static class NativeDesktop {
   static bool systemDesktop;
   static Stream inputStream, outputStream;
   static Action<string> reportError;
-  sealed class Display { public string Id; public Rectangle Bounds; public bool Primary; }
+  sealed class Display { public string Id; public Rectangle Bounds; public bool Primary; public int? RefreshHz; }
+  // Fixed part of Unicode DEVMODEW. The display query does not request driver-private data.
+  [StructLayout(LayoutKind.Explicit, Size=220)] struct DisplayMode {
+    [FieldOffset(68)] public ushort Size;
+    [FieldOffset(184)] public uint Frequency;
+  }
+  [DllImport("user32.dll",CharSet=CharSet.Unicode)] static extern bool EnumDisplaySettings(string device,int index,ref DisplayMode mode);
+  static int? DisplayRefresh(string device) {
+    var mode=new DisplayMode { Size=(ushort)Marshal.SizeOf(typeof(DisplayMode)) };
+    return EnumDisplaySettings(device,-1,ref mode)&&mode.Frequency>=5&&mode.Frequency<=1000 ? (int?)mode.Frequency : null;
+  }
   [StructLayout(LayoutKind.Sequential,CharSet=CharSet.Unicode)] struct MonitorInfo { public int Size,Left,Top,Right,Bottom,WorkLeft,WorkTop,WorkRight,WorkBottom,Flags; [MarshalAs(UnmanagedType.ByValTStr,SizeConst=32)] public string Device; }
   delegate bool MonitorCallback(IntPtr monitor,IntPtr dc,IntPtr rect,IntPtr data);
   [DllImport("user32.dll")] static extern bool EnumDisplayMonitors(IntPtr dc,IntPtr clip,MonitorCallback callback,IntPtr data);
@@ -160,6 +171,87 @@ public static class NativeDesktop {
   static Rectangle Bounds() { lock(gate) return CurrentDisplay().Bounds; }
   static readonly object outputGate=new object();
   static void SendPacket(byte[] bytes) { lock(outputGate) { int n=bytes.Length; byte[] h={(byte)(n>>24),(byte)(n>>16),(byte)(n>>8),(byte)n}; outputStream.Write(h,0,4); outputStream.Write(bytes,0,n); outputStream.Flush(); } }
+  [StructLayout(LayoutKind.Sequential)] struct CursorInfo { public int Size,Flags; public IntPtr Handle; public Point Position; }
+  [DllImport("user32.dll")] static extern bool GetCursorInfo(ref CursorInfo cursor);
+  static CursorInfo CursorState() {
+    var cursor = new CursorInfo { Size=Marshal.SizeOf(typeof(CursorInfo)) };
+    if(!GetCursorInfo(ref cursor)) cursor.Flags=0;
+    return cursor;
+  }
+  static volatile int cursorMode; // 0 legacy, 1 local, 2 remote
+  static int lastCursorMode, cursorRevision, reportedCursorRevision;
+  static long nextCursorSample;
+  static Point lastCursorPosition;
+  static bool lastCursorVisible;
+  static Rectangle cursorBounds;
+  static IntPtr lastCursorHandle;
+  static string cursorDesktop;
+  static readonly JavaScriptSerializer cursorJson=new JavaScriptSerializer();
+  static void CursorPacket(object value) { SendPacket(Encoding.UTF8.GetBytes(cursorJson.Serialize(value))); }
+  // Some pointers contain only a monochrome AND/XOR mask. Drawing on both
+  // backgrounds recovers transparency as well as the black and white outlines.
+  static object CursorShape(IntPtr handle) {
+    try {
+      using(var cursor=new System.Windows.Forms.Cursor(handle)) {
+        var size=cursor.Size; int w=size.Width,h=size.Height;
+        if(w<1||h<1||w>128||h>128) return null;
+        using(var dark=new Bitmap(w,h)) using(var light=new Bitmap(w,h)) {
+          foreach(var bitmap in new[]{dark,light}) using(var g=Graphics.FromImage(bitmap)) {
+            g.Clear(bitmap==dark?Color.Black:Color.White); cursor.DrawStretched(g,new Rectangle(0,0,w,h));
+          }
+          for(int y=0;y<h;y++) for(int x=0;x<w;x++) {
+            var b=dark.GetPixel(x,y);var l=light.GetPixel(x,y);
+            int alpha=255-Math.Max(0,l.R-b.R);
+            if(alpha==0) dark.SetPixel(x,y,Color.Transparent);
+            else dark.SetPixel(x,y,Color.FromArgb(alpha,Math.Min(255,b.R*255/alpha),Math.Min(255,b.G*255/alpha),Math.Min(255,b.B*255/alpha)));
+          }
+          using(var data=new MemoryStream()) {
+            dark.Save(data,ImageFormat.Png);
+            if(data.Length>32768) return null;
+            var hot=cursor.HotSpot;
+            return new {png=Convert.ToBase64String(data.ToArray()),hotX=Math.Min(w-1,Math.Max(0,hot.X)),hotY=Math.Min(h-1,Math.Max(0,hot.Y))};
+          }
+        }
+      }
+    } catch { return null; }
+  }
+  static void ReportCursor(Rectangle bounds) {
+    int mode=cursorMode;
+    if(mode==0) return;
+    int revision=Interlocked.CompareExchange(ref cursorRevision,0,0);
+    bool changed=revision!=reportedCursorRevision||mode!=lastCursorMode||bounds!=cursorBounds||attachedName!=cursorDesktop;
+    reportedCursorRevision=revision;
+    if(mode==1) {
+      if(changed) CursorPacket(new {type="cursor",kind="local"});
+      lastCursorMode=mode;cursorBounds=bounds;cursorDesktop=attachedName;return;
+    }
+    long now=System.Diagnostics.Stopwatch.GetTimestamp();
+    if(!changed&&now<nextCursorSample) return;
+    nextCursorSample=now+System.Diagnostics.Stopwatch.Frequency/60;
+    var info=CursorState();bool visible=(info.Flags&1)!=0&&bounds.Contains(info.Position);
+    if(changed||visible!=lastCursorVisible||(visible&&(info.Position!=lastCursorPosition||info.Handle!=lastCursorHandle))) {
+      if(!visible) CursorPacket(new {type="cursor",kind="hidden"});
+      else {
+        var packet=new Dictionary<string,object>{{"type","cursor"},{"kind","position"},{"x",(double)(info.Position.X-bounds.Left)/Math.Max(1,bounds.Width-1)},{"y",(double)(info.Position.Y-bounds.Top)/Math.Max(1,bounds.Height-1)}};
+        if(changed||!lastCursorVisible||info.Handle!=lastCursorHandle) {
+          packet["shape"]=CursorShape(info.Handle);
+        }
+        CursorPacket(packet);
+      }
+    }
+    lastCursorMode=mode;lastCursorVisible=visible;lastCursorHandle=info.Handle;lastCursorPosition=info.Position;cursorBounds=bounds;cursorDesktop=attachedName;
+  }
+  // A DXGI pointer explicitly marked invisible can still be visible in the
+  // desktop pixels. In that case use the capture path with cursor exclusion.
+  [ThreadStatic] static Rectangle compositedBounds;
+  [ThreadStatic] static string compositedDesktop;
+  public static bool RequiresCursorExclusion(Rectangle bounds) { return compositedBounds==bounds&&compositedDesktop==attachedName; }
+  public static bool HasCompositedCursor(long mouseTime,int planeVisible,Rectangle bounds) {
+    if(cursorMode==0||mouseTime==0||planeVisible!=0) return false;
+    var info=CursorState();
+    if((info.Flags&1)==0||!bounds.Contains(info.Position)) return false;
+    compositedBounds=bounds;compositedDesktop=attachedName;return true;
+  }
   public sealed class VideoSettings {
     public Rectangle Bounds; public int Edge,Quality,Fps; public string Desktop,DisplayId,ColorRange;
     public string Identity { get { return Bounds.ToString()+":"+Edge+":"+Quality+":"+Fps+":"+Desktop+":"+ColorRange; } }
@@ -168,6 +260,7 @@ public static class NativeDesktop {
   static DateTime videoDisplaysAt=DateTime.MinValue;
   public static VideoSettings ReadVideoSettings() {
     RequireDesktop(); if((DateTime.UtcNow-videoDisplaysAt).TotalSeconds>=1) { ReportDisplays(); videoDisplaysAt=DateTime.UtcNow; }
+    ReportCursor(Bounds());
     lock(gate) return new VideoSettings{Bounds=Bounds(),Edge=maxEdge,Quality=quality,Fps=fps,Desktop=attachedName,DisplayId=selectedDisplay,ColorRange=colorRange};
   }
   public static void InitializeVideo(string display,int edge,int q,int rate,string range="limited") {
@@ -193,11 +286,11 @@ public static class NativeDesktop {
   public static int VideoGeneration { get { return Interlocked.CompareExchange(ref videoGeneration,0,0); } }
   static void ReportDisplays() {
     var items=new List<Display>();
-    EnumDisplayMonitors(IntPtr.Zero,IntPtr.Zero,(monitor,dc,rect,data)=>{var info=new MonitorInfo();info.Size=Marshal.SizeOf(info);if(GetMonitorInfo(monitor,ref info)&&info.Right>info.Left&&info.Bottom>info.Top)items.Add(new Display{Id=info.Device,Bounds=Rectangle.FromLTRB(info.Left,info.Top,info.Right,info.Bottom),Primary=(info.Flags&1)!=0});return items.Count<32;},IntPtr.Zero);
+    EnumDisplayMonitors(IntPtr.Zero,IntPtr.Zero,(monitor,dc,rect,data)=>{var info=new MonitorInfo();info.Size=Marshal.SizeOf(info);if(GetMonitorInfo(monitor,ref info)&&info.Right>info.Left&&info.Bottom>info.Top)items.Add(new Display{Id=info.Device,Bounds=Rectangle.FromLTRB(info.Left,info.Top,info.Right,info.Bottom),Primary=(info.Flags&1)!=0,RefreshHz=DisplayRefresh(info.Device)});return items.Count<32;},IntPtr.Zero);
     lock(gate) {
       displays=items.ToArray(); var selected=CurrentDisplay(); selectedDisplay=selected.Id;
       if(displays.Length==0) displays=new Display[]{selected};
-      var values=new List<object>(); foreach(var display in displays) values.Add(new {id=display.Id,width=display.Bounds.Width,height=display.Bounds.Height,primary=display.Primary});
+      var values=new List<object>(); foreach(var display in displays) values.Add(new {id=display.Id,width=display.Bounds.Width,height=display.Bounds.Height,primary=display.Primary,refreshHz=display.RefreshHz});
       if(reportDisplayMetadata) SendPacket(Encoding.UTF8.GetBytes(new JavaScriptSerializer().Serialize(new {type="displays",displays=values,selected=selected.Id,capture=captureBackend,encoder=videoEncoder,encoderRuntime=videoEncoderRuntime,fallback=videoFallback,maxEdge=videoEncoderRuntime=="native-d3d11"?4096:2560,colorRange=videoColorRange})));
     }
   }
@@ -323,6 +416,7 @@ public static class NativeDesktop {
           if(previousDesktop!=attachedName&&full!=null) { full.Dispose(); full=null; if(surface!=null) {surface.Dispose();surface=null;} }
         }
         var r=Bounds();
+        ReportCursor(r);
         if(r.Width<1||r.Height<1||r.Width>32768||r.Height>32768||(long)r.Width*r.Height>64000000) throw new Exception("Unsupported display size.");
         if(full==null||capturedBounds!=r) {
           if(full!=null) full.Dispose();
@@ -335,7 +429,7 @@ public static class NativeDesktop {
         }
         {
           try {
-            if(!preview && duplicate==null && DateTime.UtcNow>=retryGpu) {
+            if(!preview && duplicate==null && DateTime.UtcNow>=retryGpu && !RequiresCursorExclusion(r)) {
               try { duplicate=new Duplication(r); gpuStarted=DateTime.UtcNow; gpuHasFrame=false; } catch { retryGpu=DateTime.UtcNow.AddSeconds(10); }
             }
             if(duplicate!=null) {
@@ -401,7 +495,9 @@ public static class NativeDesktop {
     // Input-only helpers drive the H.264 capture backend: no frames, no display probing.
     if(captureEnabled) { Thread capture=new Thread(()=>{
       if(videoCapture==null) { Capture(); return; }
+      bool preciseTimer=timeBeginPeriod(1)==0;
       try { videoCapture(); } catch(Exception e) { if(!stopped) { lock(outputGate) reportError("WINDOWS_DESKTOP_UNAVAILABLE: "+e.Message); } stopped=true; Release(); Environment.Exit(1); }
+      finally { if(preciseTimer) timeEndPeriod(1); }
     }); capture.IsBackground=true; capture.Start(); }
     try {
       using(var reader=new StreamReader(inputStream,new UTF8Encoding(false))) {
@@ -414,6 +510,7 @@ public static class NativeDesktop {
           if(type=="ack") { ack.Set(); continue; }
           if(type=="video_flow") { videoPaused=Convert.ToBoolean(e["paused"]); continue; }
           if(type=="video_keyframe") { Interlocked.Increment(ref videoGeneration); continue; }
+          if(type=="cursor_mode"&&!preview) { if(Equals(e["mode"],"local")) cursorMode=1; else if(Equals(e["mode"],"remote")) cursorMode=2; Interlocked.Increment(ref cursorRevision); continue; }
           if(type=="displays") { reportDisplayMetadata=true; continue; }
           if(type=="display") {
             var id=e["id"] as string; if(id==null||id.Length>128||id.IndexOf('\0')>=0) throw new Exception("Invalid display.");

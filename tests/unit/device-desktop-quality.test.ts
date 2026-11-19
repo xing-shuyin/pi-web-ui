@@ -39,7 +39,7 @@ describe("desktop quality", () => {
 		const q = new DesktopQuality();
 		expect(q.set({ mode: "auto", maxEdge: 0, viewportEdge: 1920, fps: 60 })).toEqual({
 			maxEdge: 1920,
-			quality: 70,
+			quality: 78,
 			fps: 60,
 		});
 		expect(q.set({ mode: "auto", maxEdge: 2560, viewportEdge: 960, fps: 120 }).maxEdge).toBe(2560);
