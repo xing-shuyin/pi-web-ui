@@ -64,6 +64,8 @@ const dicts = {
 		tipBack: "Back",
 		tipFwd: "Forward",
 		tipReload: "Reload page",
+		tipOpenTab: "Open in a real browser tab (for login / localhost)",
+		openTab: "Open in new tab",
 		zoom: "Zoom",
 		tipZoomIn: "Zoom in",
 		tipZoomOut: "Zoom out",

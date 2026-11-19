@@ -26,6 +26,7 @@ const IC = {
 	fwd: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14M12 5l7 7-7 7"/></svg>',
 	reload: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-3-6.7"/><path d="M21 3v5h-5"/></svg>',
 	reset: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 1 0 3-6.7"/><path d="M3 4v5h5"/></svg>',
+	open: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><path d="M15 3h6v6M10 14 21 3"/></svg>',
 	cap: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><circle cx="12" cy="12" r="8"/></svg>',
 	list: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01"/></svg>',
 };
@@ -99,7 +100,7 @@ export default defineView({
 		const side = main.querySelector(".wi-side");
 		const nav = document.createElement("div");
 		nav.className = "navrow";
-		nav.innerHTML = `${ibtn("back", "back", t("tipBack"))}${ibtn("fwd", "fwd", t("tipFwd"))}${ibtn("reload", "reload", t("tipReload"))}<input data-a="navurl" placeholder="${esc(t("urlPh"))}">${ibtn("navgo", "go", t("tipGo"))}`;
+		nav.innerHTML = `${ibtn("back", "back", t("tipBack"))}${ibtn("fwd", "fwd", t("tipFwd"))}${ibtn("reload", "reload", t("tipReload"))}<input data-a="navurl" placeholder="${esc(t("urlPh"))}">${ibtn("navgo", "go", t("tipGo"))}${ibtn("navopen", "open", t("tipOpenTab"))}`;
 		const zoomBox = document.createElement("details");
 		zoomBox.className = "card";
 		zoomBox.style.margin = "8px 8px 0";
@@ -114,6 +115,7 @@ export default defineView({
 			if (e.key === "Enter") visit(navInput.value);
 		});
 		nav.querySelector('[data-a="navgo"]').addEventListener("click", () => visit(navInput.value));
+		nav.querySelector('[data-a="navopen"]').addEventListener("click", () => openRealTab(navInput.value || browserUrl));
 		nav.querySelector('[data-a="back"]').addEventListener("click", () => {
 			try { frame?.contentWindow?.history?.back(); } catch {}
 			setTimeout(trackUrl, 400);
@@ -354,6 +356,19 @@ export default defineView({
 			}
 		}
 
+		function normUrl(url) {
+			url = (url || "").trim();
+			if (!url) return "";
+			if (!/^https?:\/\//i.test(url)) url = "http://" + url;
+			return url;
+		}
+
+		function openRealTab(url) {
+			url = normUrl(url);
+			if (!url) return;
+			try { window.open(url, "_blank", "noopener"); } catch {}
+		}
+
 		function visit(url) {
 			url = (url || "").trim();
 			if (!url) return;
@@ -402,13 +417,14 @@ export default defineView({
 			if (!browserUrl) {
 				const empty = document.createElement("div");
 				empty.className = "wi-empty";
-				empty.innerHTML = `<h3>${esc(t("mCapture"))}</h3><div class="urlrow"><input data-a="url0" placeholder="${esc(t("urlPh"))}">${ibtn("go0", "go", t("tipGo"))}</div><div class="dim">${esc(t("framedHint"))}</div>`;
+				empty.innerHTML = `<h3>${esc(t("mCapture"))}</h3><div class="urlrow"><input data-a="url0" placeholder="${esc(t("urlPh"))}">${ibtn("go0", "go", t("tipGo"))}${ibtn("open0", "open", t("tipOpenTab"))}</div><div class="dim">${esc(t("framedHint"))}</div>`;
 				browserPane.append(empty);
 				const url0 = empty.querySelector('[data-a="url0"]');
 				url0.addEventListener("keydown", (e) => {
 					if (e.key === "Enter") visit(url0.value);
 				});
 				empty.querySelector('[data-a="go0"]').addEventListener("click", () => visit(url0.value));
+				empty.querySelector('[data-a="open0"]').addEventListener("click", () => openRealTab(url0.value || browserUrl));
 			} else {
 				browserPane.append(frame);
 			}
@@ -431,7 +447,7 @@ export default defineView({
 			if (mode === "capture") {
 				if (body.querySelector('[data-a="url"]') === document.activeElement) return;
 				body.innerHTML = `<ol class="guide">
-					<li><span class="gn">1</span><div style="flex:1"><b>${esc(t("guide1"))}</b><div class="urlrow" style="margin-top:6px"><input data-a="url" placeholder="${esc(t("urlPh"))}" value="${esc(browserUrl)}">${ibtn("go2", "go", t("tipGo"))}</div></div></li>
+					<li><span class="gn">1</span><div style="flex:1"><b>${esc(t("guide1"))}</b><div class="urlrow" style="margin-top:6px"><input data-a="url" placeholder="${esc(t("urlPh"))}" value="${esc(browserUrl)}">${ibtn("go2", "go", t("tipGo"))}${ibtn("open2", "open", t("tipOpenTab"))}</div></div></li>
 					<li><span class="gn">2</span><div style="flex:1"><b>${esc(t("guide2"))}</b><div class="dim" data-a="pagemode" style="margin-top:4px"></div><div style="margin-top:6px;display:flex;gap:6px">${ibtn("pick2", "pick", t("tipPick"), pickArmed)}${ibtn("snap2", "snap", t("tipSnap"))}</div>
 					<div class="dim" style="margin-top:6px">${esc(t("loginOk"))}</div><div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap"><a class="bm" href="${bm}">${esc(t("bmName"))}</a><button data-a="copybm">${esc(t("copyBm"))}</button></div><div class="dim">${esc(t("bmHint"))}</div></div></li>
 					<li><span class="gn">3</span><div><b>${esc(t("guide3"))}</b></div></li></ol>${flash ? `<div class="wi-flash">${esc(flash)}</div>` : ""}`;
@@ -441,6 +457,7 @@ export default defineView({
 					if (e.key === "Enter") visit(urlInput.value);
 				});
 				body.querySelector('[data-a="go2"]').addEventListener("click", () => visit(urlInput.value));
+				body.querySelector('[data-a="open2"]').addEventListener("click", () => openRealTab(urlInput.value || browserUrl));
 				body.querySelector('[data-a="pick2"]').addEventListener("click", () => (pickArmed ? (disarmPick(), renderSide()) : armPick()));
 				const pm = body.querySelector('[data-a="pagemode"]');
 				if (pm) {
