@@ -128,7 +128,7 @@ export default defineView({
 			setTimeout(trackUrl, 400);
 		});
 		nav.querySelector('[data-a="reload"]').addEventListener("click", () => {
-			if (browserUrl) { pendingVisit = true; frame.src = browserUrl; }
+			if (browserUrl) { pendingVisit = true; frame.src = proxyMode ? proxySrc(browserUrl) : browserUrl; }
 		});
 		zoomBox.querySelector('[data-a="zin"]').addEventListener("click", () => setZoom(zoom + 0.1));
 		zoomBox.querySelector('[data-a="zout"]').addEventListener("click", () => setZoom(zoom - 0.1));
@@ -407,18 +407,9 @@ export default defineView({
 		}
 
 		function visit(url) {
-			url = (url || "").trim();
-			if (!url) return;
-			if (!/^https?:\/\//i.test(url)) url = "http://" + url; // blank defaults to http: localhost breaks on https, public sites upgrade themselves
-			browserUrl = url;
-			pendingVisit = true;
-			proxyMode = false;
-			bannerOff = false;
-			bannerOn = false;
-			disarmPick();
-			sendStep({ kind: "visit", label: url, url });
-			frame.src = url;
-			renderBrowser();
+			// default: auto-proxy (same-origin => full auto record on any
+			// site incl. mobile; login pages still need the bookmarklet)
+			visitProxy(url);
 		}
 
 		function ibtn(a, icon, tip, on) {
