@@ -18,6 +18,17 @@ function apiBase() {
 	}
 }
 
+const IC = {
+	go: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14M13 6l6 6-6 6"/></svg>',
+	snap: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg>',
+	pick: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 3l7 18 2.5-7.5L21 11z"/></svg>',
+	note: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 3a2.8 2.8 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5z"/></svg>',
+	clear: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18M8 6V4a1 1 0 0 1 1-1h6a1 1 0 0 1 1 1v2m3 0v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"/></svg>',
+	send: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 2 11 13M22 2l-7 20-4-9-9-4z"/></svg>',
+	cap: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><circle cx="12" cy="12" r="8"/></svg>',
+	list: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01"/></svg>',
+};
+
 function mdOf(s, task) {
 	const out = [];
 	if (task) out.push(`${t("mdTask")}: ${task}\n`);
@@ -30,7 +41,7 @@ function mdOf(s, task) {
 	return out.join("\n");
 }
 
-const CSS = `.wi{font:13px/1.6 system-ui,sans-serif;height:100%;display:flex;flex-direction:column;color:var(--text,inherit);min-height:0}.wi-bar{display:flex;gap:6px;align-items:center;padding:8px 10px;border-bottom:1px solid var(--border,#8883)}.wi-bar input{flex:1;min-width:0;background:var(--bg-elev2,#8881);color:var(--text,inherit);border:1px solid var(--border,#8884);border-radius:6px;padding:4px 8px;font-size:12px}.wi button{border:1px solid var(--border,#8886);border-radius:7px;padding:3px 12px;background:transparent;color:var(--text,inherit);font-size:12px;cursor:pointer;white-space:nowrap}.wi button:hover{background:var(--accent-soft,#8882)}.wi button.primary{color:var(--accent-contrast,#fff);background:var(--accent,#4a7dff);border-color:var(--accent,#4a7dff)}.wi-main{flex:1;display:flex;min-height:0}.wi-browser{flex:1;min-width:0;display:flex;flex-direction:column}.wi-browser iframe{flex:1;width:100%;border:0;background:#fff}.wi-framed{font-size:11px;color:var(--text-dim,#999);padding:2px 10px}.wi-grip{flex:none;width:8px;cursor:col-resize;background:transparent}.wi-grip:hover,.wi-grip.on{background:var(--accent-soft,#8883)}.wi-side{flex:none;overflow-y:auto;padding:10px;border-left:1px solid var(--border,#8883);display:flex;flex-direction:column;gap:8px}.wi .dim{color:var(--text-dim,#999);font-size:11.5px}.wi .card{border:1px solid var(--border,#8884);border-radius:10px;padding:8px 10px;background:var(--bg-elev,transparent)}.wi ol.steps{margin:6px 0;padding-left:20px;font-size:12px;max-height:260px;overflow-y:auto}.wi ol.steps li{margin:2px 0}.wi code{font-size:11px;word-break:break-all}.wi textarea{width:100%;box-sizing:border-box;background:var(--bg-elev2,#8881);color:var(--text,inherit);border:1px solid var(--border,#8884);border-radius:6px;padding:5px 8px;font-size:12px;resize:vertical}.wi a.bm{display:inline-block;margin:4px 0;padding:4px 12px;border:1px dashed var(--accent,#4a7dff);border-radius:8px;text-decoration:none;color:var(--accent,#4a7dff);font-size:12px}.wi-flash{font-size:12px;color:var(--accent,#4a7dff)}.wi pre{white-space:pre-wrap;font-size:11px;max-height:160px;overflow:auto;background:var(--bg-elev2,#8881);border-radius:6px;padding:6px 8px}`;
+const CSS = `.wi{font:13px/1.6 system-ui,sans-serif;height:100%;display:flex;flex-direction:column;color:var(--text,inherit);min-height:0}.wi-top{display:flex;gap:4px;align-items:center;padding:6px 8px;border-bottom:1px solid var(--border,#8883)}.wi-top .sp{flex:1}.wi-top .pg{font-size:11.5px;color:var(--text-dim,#999);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:46%}.ibtn{flex:none;width:32px;height:30px;display:inline-flex;align-items:center;justify-content:center;border:1px solid var(--border,#8886);border-radius:7px;background:transparent;color:var(--text,inherit);cursor:pointer;padding:0}.ibtn svg{width:16px;height:16px}.ibtn:hover{background:var(--accent-soft,#8882)}.ibtn.on{color:#fff;background:var(--accent,#4a7dff);border-color:var(--accent,#4a7dff)}.wi-main{flex:1;display:flex;min-height:0}.wi-browser{flex:1;min-width:0;display:flex;flex-direction:column}.wi-browser iframe{flex:1;width:100%;border:0;background:#fff;min-height:0}.wi-framed{font-size:11px;color:var(--text-dim,#999);padding:2px 10px}.wi-grip{flex:none;width:8px;cursor:col-resize}.wi-grip:hover,.wi-grip.on{background:var(--accent-soft,#8883)}.wi-side{flex:none;display:flex;flex-direction:column;min-height:0;border-left:1px solid var(--border,#8883)}.stabs{flex:none;display:flex;gap:4px;padding:8px 8px 0}.stabs button{flex:1;display:flex;align-items:center;justify-content:center;gap:5px;border:1px solid var(--border,#8884);border-bottom:0;border-radius:8px 8px 0 0;padding:6px 2px;background:transparent;color:var(--text-dim,#999);font-size:12px;cursor:pointer}.stabs button svg{width:14px;height:14px}.stabs button.on{color:var(--text-strong,var(--text,inherit));background:var(--bg-elev,transparent);border-color:var(--accent,#4a7dff);font-weight:600}.sbody{flex:1;min-height:0;overflow-y:auto;padding:8px;border-top:1px solid var(--border,#8884);display:flex;flex-direction:column;gap:8px}.sfoot{flex:none;padding:8px;border-top:1px solid var(--border,#8883)}.sfoot button{width:100%;padding:8px;font-size:13px;font-weight:600}.wi .dim{font-size:11.5px;color:var(--text-dim,#999)}.wi .card{border:1px solid var(--border,#8884);border-radius:10px;padding:8px 10px;background:var(--bg-elev,transparent)}.wi .guide{margin:0;padding:0;list-style:none;display:flex;flex-direction:column;gap:8px}.wi .guide li{display:flex;gap:8px;align-items:flex-start}.wi .gn{flex:none;width:20px;height:20px;border-radius:50%;background:var(--accent,#4a7dff);color:#fff;font-size:11px;font-weight:700;display:flex;align-items:center;justify-content:center;margin-top:1px}.wi input[type=text],.wi textarea{width:100%;box-sizing:border-box;background:var(--bg-elev2,#8881);color:var(--text,inherit);border:1px solid var(--border,#8884);border-radius:6px;padding:6px 8px;font-size:12px}.wi textarea{resize:vertical}.wi ol.steps{margin:6px 0;padding-left:20px;font-size:12px}.wi ol.steps li{margin:3px 0}.wi code{font-size:11px;word-break:break-all}.wi a.bm{display:inline-block;margin:4px 0;padding:4px 12px;border:1px dashed var(--accent,#4a7dff);border-radius:8px;text-decoration:none;color:var(--accent,#4a7dff);font-size:12px}.wi-flash{font-size:12px;color:var(--accent,#4a7dff);margin-top:6px}.wi pre{white-space:pre-wrap;font-size:11px;max-height:160px;overflow:auto;background:var(--bg-elev2,#8881);border-radius:6px;padding:6px 8px}.urlrow{display:flex;gap:6px}.urlrow input{flex:1;min-width:0}`;
 
 function cssPath(e) {
 	if (e.id) return "#" + e.id;
@@ -60,17 +71,18 @@ export default defineView({
 		let state = { page: null, snapshot: null, picked: null, log: [], steps: [] };
 		let settings = { sidebarWidth: 320, maskPasswords: true, autoSnapshot: true, maxSteps: 100 };
 		let sideW = Number(localStorage.getItem("web-inspect:sideW")) || settings.sidebarWidth;
+		let mode = "capture";
 		let browserUrl = "";
 		let pickArmed = false;
 		let flash = "";
 
 		const root = document.createElement("div");
 		root.className = "wi";
-		const style = document.createElement("style");
-		style.textContent = CSS;
-		root.appendChild(style);
+		root.appendChild(Object.assign(document.createElement("style"), { textContent: CSS }));
 		el.appendChild(root);
 
+		let frame;
+		let pickCleanup = null;
 		const sameDoc = () => {
 			try {
 				const doc = frame?.contentDocument;
@@ -78,7 +90,6 @@ export default defineView({
 			} catch {}
 			return null;
 		};
-
 		const sendStep = (step) => ctx.send({ action: "step", step });
 
 		const collectSnapshot = (doc, url) => {
@@ -108,13 +119,19 @@ export default defineView({
 			} catch {}
 		};
 
-		let frame;
-		let pickCleanup = null;
+		const disarmPick = () => {
+			pickArmed = false;
+			try {
+				pickCleanup?.();
+			} catch {}
+			pickCleanup = null;
+		};
 
 		const armPick = () => {
 			disarmPick();
 			const doc = sameDoc();
 			if (!doc) {
+				mode = "capture";
 				flash = t("xorigin");
 				render();
 				return;
@@ -131,7 +148,10 @@ export default defineView({
 				Object.assign(box.style, { left: r.left + "px", top: r.top + "px", width: r.width + "px", height: r.height + "px" });
 			};
 			const done = (e) => {
-				if (e.key === "Escape") disarmPick();
+				if (e.key === "Escape") {
+					disarmPick();
+					render();
+				}
 			};
 			const pick = (e) => {
 				e.preventDefault();
@@ -153,14 +173,6 @@ export default defineView({
 			render();
 		};
 
-		const disarmPick = () => {
-			pickArmed = false;
-			try {
-				pickCleanup?.();
-			} catch {}
-			pickCleanup = null;
-		};
-
 		const attachFrameListeners = () => {
 			const doc = sameDoc();
 			if (!doc || doc.__WI_WIRED) return;
@@ -174,7 +186,7 @@ export default defineView({
 				if (settings.maskPasswords && (tgt.type === "password" || tgt.getAttribute?.("type") === "password")) return t("masked");
 				return ((tgt.name || tgt.placeholder || tgt.innerText || "") + "").trim().replace(/\s+/g, " ").slice(0, 120);
 			};
-			for (const [ev] of [["click"], ["input"], ["submit"], ["change"]]) {
+			for (const ev of ["click", "input", "submit", "change"]) {
 				doc.addEventListener(
 					ev,
 					(e) => sendStep({ kind: ev === "submit" ? "click" : ev === "change" ? "input" : ev, label: `${ev}: ${val(e)}`.slice(0, 140), sel: sel(e), url: browserUrl }),
@@ -193,15 +205,20 @@ export default defineView({
 			frame.src = url;
 		};
 
+		const ibtn = (a, icon, tip, on) => `<button class="ibtn${on ? " on" : ""}" data-a="${a}" title="${esc(tip)}">${IC[icon]}</button>`;
+
 		const render = () => {
-			root.querySelectorAll(".wi-bar,.wi-main").forEach((n) => n.remove());
-			const bar = document.createElement("div");
-			bar.className = "wi-bar";
-			bar.innerHTML = `<input data-a="url" placeholder="${esc(t("urlPh"))}" value="${esc(browserUrl)}"><button data-a="go">${esc(t("go"))}</button><button data-a="snap">${esc(t("snap"))}</button><button data-a="pick" class="${pickArmed ? "primary" : ""}">${esc(t("pick"))}</button>`;
+			root.querySelectorAll(".wi-top,.wi-main").forEach((n) => n.remove());
+			const steps = state.steps || [];
+			const bm = `javascript:${encodeURIComponent(BOOKMARKLET_SRC.replace("__EP__", API.replace(/'/g, "")).replace("__MSK__", settings.maskPasswords ? "1" : "0"))}`;
+
+			const top = document.createElement("div");
+			top.className = "wi-top";
+			top.innerHTML = `${ibtn("go", "go", t("tipGo"))}${ibtn("snap", "snap", t("tipSnap"))}${ibtn("pick", "pick", t("tipPick"), pickArmed)}<span class="sp"></span><span class="pg">${esc(state.page ? `${state.page.title || ""} — ${state.page.url}` : t("noPage"))}</span>`;
 			const main = document.createElement("div");
 			main.className = "wi-main";
 			main.innerHTML = `<div class="wi-browser"></div><div class="wi-grip" title="⇔"></div><div class="wi-side" style="width:${sideW}px"></div>`;
-			root.append(bar, main);
+			root.append(top, main);
 
 			const browserPane = main.querySelector(".wi-browser");
 			if (!frame) {
@@ -220,9 +237,9 @@ export default defineView({
 			hint.textContent = t("framedHint");
 			browserPane.append(frame, hint);
 
-			const grip = main.querySelector(".wi-grip");
-			grip.addEventListener("mousedown", (e) => {
+			main.querySelector(".wi-grip").addEventListener("mousedown", (e) => {
 				e.preventDefault();
+				const grip = e.currentTarget;
 				grip.classList.add("on");
 				const x0 = e.clientX;
 				const w0 = sideW;
@@ -243,49 +260,80 @@ export default defineView({
 			});
 
 			const side = main.querySelector(".wi-side");
-			const steps = state.steps || [];
-			const bm = `javascript:${encodeURIComponent(BOOKMARKLET_SRC.replace("__EP__", API.replace(/'/g, "")).replace("__MSK__", settings.maskPasswords ? "1" : "0"))}`;
-			side.innerHTML = `
-				<div class="card"><b>${esc(t("status"))}</b><div class="dim">${esc(state.page ? `${state.page.title || ""} — ${state.page.url}` : t("noPage"))}</div>
-				${state.picked ? `<div><b>${esc(t("picked"))} [${esc(state.picked.tag)}]</b> ${esc(state.picked.text)}<br><code>${esc(state.picked.sel)}</code></div>` : ""}</div>
-				<div class="card"><b>${esc(t("steps"))}</b>（${steps.length}）
-				<ol class="steps">${steps.slice(-50).map((s) => `<li><b>${esc(s.kind)}</b> ${esc(s.label)}${s.sel ? `<br><code>${esc(s.sel)}</code>` : ""}</li>`).join("") || `<span class="dim">${esc(t("empty"))}</span>`}</ol>
-				<button data-a="visit">${esc(t("visit"))}</button><button data-a="pick2">${esc(t("pickEl"))}</button><button data-a="note">${esc(t("addNote"))}</button><button data-a="clear">${esc(t("clear"))}</button></div>
-				<div class="card"><a class="bm" href="${bm}">${esc(t("bmName"))}</a><div class="dim">${esc(t("bmHint"))}</div></div>
-				<div class="card"><textarea data-a="task" rows="3" placeholder="${esc(t("taskPh"))}"></textarea><button data-a="final" class="primary">${esc(t("final"))}</button>
-				${flash ? `<div class="wi-flash">${esc(flash)}</div>` : ""}</div>
-				<details class="card"><summary class="dim">${esc(t("elements"))}（${state.snapshot ? state.snapshot.count : 0}）· ${esc(t("recentLog"))}（${state.log.length}）</summary>
-				<pre>${esc((state.snapshot?.elements || []).slice(0, 20).map((e) => `[${e.i}] <${e.tag}> ${e.text || ""} :: ${e.sel}`).join("\n") || `(${t("empty")})`)}</pre></div>`;
+			const tabs = document.createElement("div");
+			tabs.className = "stabs";
+			tabs.innerHTML = `<button data-m="capture" class="${mode === "capture" ? "on" : ""}">${IC.cap}<span>${esc(t("mCapture"))}</span></button><button data-m="steps" class="${mode === "steps" ? "on" : ""}">${IC.list}<span>${esc(t("mSteps"))}(${steps.length})</span></button><button data-m="send" class="${mode === "send" ? "on" : ""}">${IC.send}<span>${esc(t("mSend"))}</span></button>`;
+			const body = document.createElement("div");
+			body.className = "sbody";
+			const foot = document.createElement("div");
+			foot.className = "sfoot";
+			foot.innerHTML = `<button data-a="final" class="primary" style="border:0">${esc(t("final"))}</button>${flash ? `<div class="wi-flash">${esc(flash)}</div>` : ""}`;
 			flash = "";
+			side.append(tabs, body, foot);
 
-			const urlInput = bar.querySelector('[data-a="url"]');
-			urlInput.addEventListener("keydown", (e) => {
-				if (e.key === "Enter") visit(urlInput.value);
+			if (mode === "capture") {
+				body.innerHTML = `<ol class="guide">
+					<li><span class="gn">1</span><div style="flex:1"><b>${esc(t("guide1"))}</b><div class="urlrow" style="margin-top:6px"><input data-a="url" placeholder="${esc(t("urlPh"))}" value="${esc(browserUrl)}">${ibtn("go2", "go", t("tipGo"))}</div></div></li>
+					<li><span class="gn">2</span><div style="flex:1"><b>${esc(t("guide2"))}</b><div style="margin-top:6px;display:flex;gap:6px">${ibtn("pick2", "pick", t("tipPick"), pickArmed)}${ibtn("snap2", "snap", t("tipSnap"))}</div>
+					<div class="dim" style="margin-top:6px">${esc(t("loginOk"))}</div><a class="bm" href="${bm}">${esc(t("bmName"))}</a><div class="dim">${esc(t("bmHint"))}</div></div></li>
+					<li><span class="gn">3</span><div><b>${esc(t("guide3"))}</b></div></li></ol>`;
+				const urlInput = body.querySelector('[data-a="url"]');
+				urlInput.addEventListener("keydown", (e) => {
+					if (e.key === "Enter") visit(urlInput.value);
+				});
+				body.querySelector('[data-a="go2"]').addEventListener("click", () => visit(urlInput.value));
+				body.querySelector('[data-a="pick2"]').addEventListener("click", () => (pickArmed ? (disarmPick(), render()) : armPick()));
+				body.querySelector('[data-a="snap2"]').addEventListener("click", () => {
+					const doc = sameDoc();
+					if (doc && browserUrl) void postCollect(collectSnapshot(doc, browserUrl));
+					else {
+						flash = t("xorigin");
+						render();
+					}
+				});
+			} else if (mode === "steps") {
+				body.innerHTML = `<div class="card"><div style="display:flex;gap:6px;margin-bottom:6px">${ibtn("note", "note", t("tipNote"))}${ibtn("clear", "clear", t("tipClear"))}</div>
+				<ol class="steps">${steps.slice(-50).map((s) => `<li><b>${esc(s.kind)}</b> ${esc(s.label)}${s.sel ? `<br><code>${esc(s.sel)}</code>` : ""}</li>`).join("") || `<span class="dim">${esc(t("empty"))}</span>`}</ol></div>
+				${state.picked ? `<div class="card"><b>${esc(t("picked"))} [${esc(state.picked.tag)}]</b> ${esc(state.picked.text)}<br><code>${esc(state.picked.sel)}</code></div>` : ""}
+				<details class="card"><summary class="dim">${esc(t("elements"))}（${state.snapshot ? state.snapshot.count : 0}）· ${esc(t("recentLog"))}（${state.log.length}）</summary>
+				<pre>${esc((state.snapshot?.elements || []).slice(0, 20).map((e) => `[${e.i}] <${e.tag}> ${e.text || ""} :: ${e.sel}`).join("\n") || `(${t("empty")})`)}</pre></details>`;
+				body.querySelector('[data-a="note"]').addEventListener("click", () => {
+					const v = prompt("note:");
+					if (v?.trim()) ctx.send({ action: "note", text: v.trim() });
+				});
+				body.querySelector('[data-a="clear"]').addEventListener("click", () => ctx.send({ action: "clear" }));
+			} else {
+				body.innerHTML = `<div class="card"><div class="dim">${esc(t("status"))}: ${esc(state.page ? `${state.page.title || ""} — ${state.page.url}` : t("noPage"))}</div>
+				<div class="dim">${esc(t("mSteps"))}: ${steps.length} · ${esc(t("elements"))}: ${state.snapshot ? state.snapshot.count : 0}</div></div>
+				<div class="card"><textarea data-a="task" rows="5" placeholder="${esc(t("taskPh"))}"></textarea></div>`;
+			}
+
+			tabs.querySelectorAll("[data-m]").forEach((b) => b.addEventListener("click", () => {
+				mode = b.dataset.m;
+				render();
+			}));
+			top.querySelector('[data-a="go"]').addEventListener("click", () => {
+				mode = "capture";
+				render();
+				body.querySelector?.('[data-a="url"]')?.focus?.();
 			});
-			bar.querySelector('[data-a="go"]').addEventListener("click", () => visit(urlInput.value));
-			bar.querySelector('[data-a="snap"]').addEventListener("click", () => {
+			top.querySelector('[data-a="snap"]').addEventListener("click", () => {
 				const doc = sameDoc();
 				if (doc && browserUrl) void postCollect(collectSnapshot(doc, browserUrl));
 				else {
+					mode = "capture";
 					flash = t("xorigin");
 					render();
 				}
 			});
-			bar.querySelector('[data-a="pick"]').addEventListener("click", () => (pickArmed ? disarmPick() + render() : armPick()));
-			side.querySelector('[data-a="visit"]').addEventListener("click", () => visit(urlInput.value));
-			side.querySelector('[data-a="pick2"]').addEventListener("click", () => (pickArmed ? disarmPick() + render() : armPick()));
-			side.querySelector('[data-a="note"]').addEventListener("click", () => {
-				const v = prompt("note:");
-				if (v?.trim()) ctx.send({ action: "note", text: v.trim() });
-			});
-			side.querySelector('[data-a="clear"]').addEventListener("click", () => ctx.send({ action: "clear" }));
-			side.querySelector('[data-a="final"]').addEventListener("click", async () => {
-				const ta = side.querySelector('[data-a="task"]');
-				const task = (ta.value || "").trim();
+			top.querySelector('[data-a="pick"]').addEventListener("click", () => (pickArmed ? (disarmPick(), render()) : armPick()));
+			foot.querySelector('[data-a="final"]').addEventListener("click", async () => {
+				let task = "";
+				if (mode === "send") task = (body.querySelector('[data-a="task"]')?.value || "").trim();
 				if (!task) {
+					mode = "send";
 					flash = t("needTask");
 					render();
-					side.querySelector('[data-a="task"]').value = "";
 					return;
 				}
 				try {
