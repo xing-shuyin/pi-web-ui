@@ -1,41 +1,94 @@
-# Web Inspect（网页拾取）
+# Web Inspect（网页拾取 / Web Inspect）
 
-No-extension page capture for AI debugging — bookmarklet + tab + agent tools.
+No-extension page capture for AI debugging — bookmarklet + side-by-side browser/steps tab + 6 agent tools.
 
-## 用法（3 步）
+## Layout
 
-1. 打开 pi-web-ui 的 **🎯 Web Inspect** Tab，把书签 `WI-抓页+日志+点选` 拖到浏览器收藏夹；
-2. 在目标网站（登录态照常用）点书签一次 = 发快照 + 开始记录点击/输入 + 进入点选模式（红框跟随，点中即回传，`Esc` 退出）；
-3. 回 Tab 看日志 → **送入聊天**（经 `compose` 注入输入框）或让 AI 直接读工具。
+```
+┌ address bar ─────────────────────────────┐
+│ [url input____] [Go] [Snap] [Pick]      │
+├──────────────────────────────┬───────────┤
+│                              │ Steps     │
+│  browser (iframe, left)      │ 1. visit… │ sidebar (right,
+│                              │ 2. click… │  resizable, default
+│                              │ [actions] │  320px, remembered)
+│                              │ [task…]   │
+│                              │ [Final &  │
+│                              │  send]    │
+└──────────────────────────────┴───────────┘
+```
 
-## AI 工具（只读，v1）
+- Left: browser pane with address bar. Same-origin pages (localhost dev,
+  liveserver previews) are observed directly: clicks/inputs recorded,
+  Pick mode outlines elements in-page, Snap captures 60 elements.
+- Framing-blocked sites (most logins): open them in your own tab and click
+  the bookmarklet — snapshots/picks/logs stream into the same steps list.
+- Right: resizable steps sidebar (drag `⇔`, width remembered in localStorage,
+  default from settings).
 
-- `web_inspect_state` — 最新页面 + 点选元素 + 近 20 条日志（Markdown）；
-- `web_inspect_log {limit?, kind?}` — kind：`pick / snap / click / input / submit / change / note / event`。
+## Flow (step by step)
 
-## 为什么是书签而不是 iframe/扩展
+1. Open the 🎯 tab, type a URL → `visit` step recorded;
+2. Click **Pick**, click an element → `pick` step with CSS selector;
+3. Type in the page → `input` steps (passwords masked per settings);
+4. Write the task in the box → **Final & send to chat**: saves
+   `web-inspect/report-<ts>.md` in the workspace and attaches it to the
+   composer as a file reference. Then describe the fix and send.
 
-- 登录页普遍 `X-Frame-Options: DENY`，iframe 嵌不进；书签跑在用户自己浏览器里，登录态天然可用（同 OpenCode Browse 的思路）；
-- 跨域回传用无预检 GET 信标（`Image.src`），免 CORS、免装扩展、手机/桌面浏览器都可用；
-- 快照 > 7KB 时信标截断 → 用 Tab 内「手动粘贴快照 JSON」（同源 POST，不受限）。
+## Model protocol (MCP-style JSON-Schema tools)
 
-## 对标
+In-chat models call these directly (description + input schema, like MCP tools).
+No separate MCP server: pi-web-ui exposes plugin functions to models as agent
+tools, which is the same contract.
 
-| 能力 | Codex Browser Use | Playwright / chrome-devtools MCP | web-inspect v1 |
+| tool | what |
+|---|---|
+| `web_inspect_state` | page + pick + recent log (Markdown) |
+| `web_inspect_log {limit?, kind?}` | log tail: `pick/snap/click/input/submit/change/note/event/step` |
+| `web_inspect_steps {limit?}` | ordered steps with selectors — replay/debug what the user did |
+| `web_inspect_note {text}` | append a note (visible in tab) |
+| `web_inspect_clear` | clear log + steps |
+| `web_inspect_report {task?}` | save Markdown report under `web-inspect/`, return `{path, markdown}` |
+
+## Settings (manifest `settings` → pi-web-ui settings page)
+
+- `sidebarWidth` (default 320): steps sidebar width, draggable in-tab;
+- `maskPasswords` (default true): password inputs logged as typed, no values;
+- `autoSnapshot` (default true): auto-capture after opening same-origin pages;
+- `maxSteps` (default 100): oldest steps dropped past the limit.
+
+## i18n
+
+Tab UI: `client/i18n.mjs` (`en` + `zh`), locale follows the global
+`pi-web-ui:lang` via `createPluginI18n` (localStorage → `<html lang>` →
+navigator). Bookmarklet strings pick zh/en via `navigator.language`.
+Server/agent strings are English-only (repo prompt-hygiene rule).
+
+## Why bookmarklet instead of iframe/extension
+
+Login pages mostly send `X-Frame-Options: DENY`; the bookmarklet runs in the
+user's own browser, so login sessions just work (same idea as OpenCode Browse).
+Cross-origin beacons use preflight-free GET (`Image.src`), no CORS, no install,
+phones and desktops both work. Snapshots > 7KB truncate → re-capture or narrow
+the page (chunked beacons are v2).
+
+## Reference mapping
+
+| need | Codex Browser Use | Playwright / chrome-devtools MCP | web-inspect |
 |---|---|---|---|
-| snapshot → 按 ref/selector 操作 | ✅（自带浏览器/CDP） | ✅ snapshot+ref | 快照+selector ✅，反向操作 v2 |
-| console 日志 | ✅ | ✅ | 点击/输入/提交日志 ✅（页面 console v2） |
-| 登录态 | 扩展/自带浏览器 | 自带 profile | 用户真机浏览器 ✅ |
-| Termux（无 Chrome） | ❌ | ❌ | ✅ |
+| snapshot → act by ref | ✅ (own browser/CDP) | ✅ snapshot+ref | snapshot+selector ✅, reverse-act v2 |
+| console log | ✅ | ✅ | click/input/submit log ✅ (page console v2) |
+| login session | extension/own browser | own profile | user's real browser ✅ |
+| no-Chrome hosts (Termux) | ❌ | ❌ | ✅ |
 
-## 路线图（v2）
+## Roadmap (v2)
 
-- `web_inspect_act`：AI 下发点击/填表意图 → `sendTo` 指定 client → Tab 内确认后在书签页执行（pending Map + 超时，人必须在场点确认）；
-- console 错误捕获（书签注入 `window.onerror` 上报）；
-- 快照分片信标（`seq/total`）。
+- `web_inspect_act`: agent → page actions via `sendTo` + on-screen confirm;
+- page console-error capture; snapshot chunking (`seq/total`).
 
 ## Files
 
-- `manifest.json`（`view:true` 顶栏 Tab，权限 `ui/tools/http`）
-- `index.mjs`（信标 `/collect`、`/state`、`/collect POST`、两工具）
-- `client/entry.mjs`（Tab UI + 书签生成 + compose 送入聊天）
+- `manifest.json` (`view:true`, `ui/tools/http/fs/fs:write`, 4 settings)
+- `index.mjs` (beacon `/collect`, `/state`, `/settings`, `/report`, 6 tools)
+- `client/entry.mjs` (browser+steps layout, same-origin observe/pick/snap)
+- `client/i18n.mjs` (en/zh)

@@ -1513,8 +1513,9 @@ function BackgroundJobCard({
 	const t = useT();
 	const { locale } = useI18n();
 	const ok = details.ok ?? details.exitCode === 0;
-	const reason =
-		locale.startsWith("zh") ? (details.reasonText || details.reasonEn || details.reason) : details.reasonEn || details.reasonText || details.reason;
+	const reason = locale.startsWith("zh")
+		? details.reasonText || details.reasonEn || details.reason
+		: details.reasonEn || details.reasonText || details.reason;
 	return (
 		<div className="bashblock">
 			<div className="bashblock-command">

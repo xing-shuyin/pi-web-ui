@@ -2,12 +2,53 @@
 	"id": "web-inspect",
 	"name": "网页拾取",
 	"nameEn": "Web Inspect",
-	"version": "0.1.0",
+	"version": "0.2.0",
 	"icon": "🎯",
-	"iconSvg": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><circle cx=\"12\" cy=\"12\" r=\"3\"/><path d=\"M12 2v3m0 14v3M2 12h3m14 0h3\"/><circle cx=\"12\" cy=\"12\" r=\"8\"/></svg>",
-	"description": "免扩展抓页面：收藏夹书签在任意网站点选元素、快照与点击/输入日志实时回传本 Tab，一键送入聊天给 AI 调试；AI 经 web_inspect_state / web_inspect_log 读取。",
-	"descriptionEn": "No-extension page capture: a bookmarklet picks elements on any site; snapshots + click/input logs stream back to this tab, one click sends them to chat for AI debugging; AI reads via web_inspect_state / web_inspect_log.",
+	"description": "左浏览器 + 右步骤栏：地址栏开页、点选/输入逐步记录，一键生成报告附件送入聊天；AI 经 6 个 web_inspect_* 工具直接读取与落盘。",
+	"descriptionEn": "Browser left + steps sidebar right: open pages, record clicks/inputs step by step, one click sends a report attachment to chat; AI reads and saves via 6 web_inspect_* tools.",
 	"apiVersion": 2,
 	"view": true,
-	"permissions": ["ui", "tools", "http"]
+	"permissions": ["ui", "tools", "http", "fs", "fs:write"],
+	"settings": [
+		{
+			"key": "sidebarWidth",
+			"type": "number",
+			"label": "步骤栏默认宽度",
+			"labelEn": "Steps sidebar default width",
+			"default": 320,
+			"min": 220,
+			"max": 560,
+			"hint": "右侧步骤栏宽度（像素），Tab 内可拖拽调整并记住",
+			"hintEn": "Right steps sidebar width in px; draggable inside the tab, remembered per browser"
+		},
+		{
+			"key": "maskPasswords",
+			"type": "boolean",
+			"label": "密码框脱敏",
+			"labelEn": "Mask password fields",
+			"default": true,
+			"hint": "记录输入步骤时，密码框只记“已输入”不记明文",
+			"hintEn": "When recording input steps, password fields are logged as typed without values"
+		},
+		{
+			"key": "autoSnapshot",
+			"type": "boolean",
+			"label": "访问后自动快照",
+			"labelEn": "Auto snapshot after visit",
+			"default": true,
+			"hint": "左侧地址栏打开同源页面后自动抓一次元素快照",
+			"hintEn": "Automatically capture an element snapshot after opening a same-origin page"
+		},
+		{
+			"key": "maxSteps",
+			"type": "number",
+			"label": "步骤上限",
+			"labelEn": "Max steps kept",
+			"default": 100,
+			"min": 20,
+			"max": 500,
+			"hint": "超过后从最旧的开始丢弃",
+			"hintEn": "Oldest steps are dropped past this limit"
+		}
+	]
 }

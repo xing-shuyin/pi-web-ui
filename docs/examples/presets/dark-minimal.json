@@ -150,7 +150,13 @@
 			"wechat_send",
 			"remote_term",
 			"notes",
-			"frp"
+			"frp",
+			"web_inspect_state",
+			"web_inspect_log",
+			"web_inspect_steps",
+			"web_inspect_note",
+			"web_inspect_clear",
+			"web_inspect_report"
 		],
 		"toolPromptOverrides": {},
 		"toolLazyLoading": false,
