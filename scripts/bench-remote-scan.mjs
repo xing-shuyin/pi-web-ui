@@ -1,7 +1,7 @@
 import { join } from "node:path";
 import { createRequire } from "node:module";
-import { dirs, files, startMockSsh } from "./tests/lib/mock-ssh.mjs";
-import { scanRemote } from "./plugins/sftp/lib/engine.mjs";
+import { dirs, files, startMockSsh } from "../tests/lib/mock-ssh.mjs";
+import { scanRemote } from "../plugins/sftp/lib/engine.mjs";
 
 // 宽树：4 层 × 每层 8 个子目录 = 468 个目录
 let front = ["/home/test"];

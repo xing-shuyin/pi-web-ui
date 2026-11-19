@@ -54,8 +54,8 @@
 - **CSS 變數必須先定義後引用**：未定義的 `var(--x)` 會導致整條 CSS 宣告失效；內聯程式碼的 `--link-soft` 在 `--bg` 上須滿足文字令牌的 ≥4:1 對比度門檻（守衛：`tests/unit/css-tokens.test.ts`、`theme-text-contrast.test.ts`；行內程式碼檢查已併入文字令牌守衛）。
 - **桌面殼（Electron）的貼頂浮層必須讓出 macOS 紅黃綠按鈕**：按鈕由原生繪製、浮在 WebView 上不佔佈局（`desktop/main.ts` 的 `trafficLightPosition`），頂欄靠 `padding-left` 讓位；任何 `position: fixed; top: 0` 的貼頂浮層（手機/窄分欄佈局下的 `.panel-drawer`）必須用 `var(--desktop-titlebar-h, 0px)` 往下讓（`padding-top` 或 `top: calc(...)`），否則窄分欄時專案列表頭正好壓住關閉按鈕。該令牌只在 `body.is-desktop-mac:not(.is-desktop-fullscreen)` 下為 38px，其他環境為 0。
 - **強調色實底上的文字必須走 `--accent-contrast`**：`background: var(--accent)` 配 `color: #fff` 會在淺色強調主題（`flow`/`wallpaper-flow` 的純白、`wallpaper-obsidian` 的 `#e2e8f0`、`aetheris`/`cyberpunk`/`nord` 等）變成白底白字，按鈕直接隱形。前景一律寫 `var(--accent-contrast, #fff)`；外掛同理：若私設字首別名（如 `--xxx-accent: var(--accent)`）**必須成對宣告** `--xxx-accent-contrast: var(--accent-contrast, #fff)`，推薦直接複用宿主全域性 `.btn.primary`，嚴禁私設單向底色別名而硬編碼白字；半透明 `color-mix(… var(--accent) 30% …)` 染色底則用 `var(--text)`；主題若把 `--accent` 定成淺色，必須同時宣告反色的 `--accent-contrast`（守衛：`tests/unit/accent-contrast.test.ts`、`semantic-contrast.test.ts` 動態符號追蹤別名）。
-- **語義色實底同理走 `--on-*`**：`background: var(--green|--red|--amber|--blue|--send-blue|--stop-red)` 配 `color: #fff` 同樣會隱形（預設主題 `--amber` 白字 1.67:1、`--green` 1.92:1、`--red` 2.77:1）。前景寫 `var(--on-green|--on-red|--on-amber|--on-blue|--on-send-blue|--on-stop-red)`；狀態色按「白/深取對比更高者」派生、動作色（blue/send/stop）白字 ≥3:1 就保留白字，主題側由 `make-light-theme.mjs` 自動派生（守衛：`tests/unit/semantic-contrast.test.ts`）。
-- **主題的「文字令牌」必須有明暗下限**：`--text-faint`（3.05:1）、`--accent`（3.5:1）、`--amber/--green/--red/--blue/--link/--link-soft/--info-blue/--skill-blue/--auth-green/--plugin-purple/--amber-text/--red-text/--err-text/--md-strong/--code-text`（4.5:1）在 `--bg` 與 `--bg-elev2` 上必須夠對比——亮色主題照抄深色預設值會讓警告文字、狀態 chip、連結整體糊掉（曾出現 `--plugin-purple` 1.50:1）。`make-light-theme.mjs` 的 `TEXT_FLOORS` 會自動保持色相壓暗，手寫主題自行宣告（守衛：`tests/unit/theme-text-contrast.test.ts`）。
+- **語義色實底同理走 `--on-*`**：`background: var(--green|--red|--amber|--blue|--send-blue|--stop-red)` 配 `color: #fff` 同樣會隱形（預設主題 `--amber` 白字 1.67:1、`--green` 1.92:1、`--red` 2.77:1）。前景寫 `var(--on-green|--on-red|--on-amber|--on-blue|--on-send-blue|--on-stop-red)`；狀態色按「白/深取對比更高者」派生、動作色（blue/send/stop）白字 ≥3:1 就保留白字，主題側由 `scripts/make-light-theme.mjs` 自動派生（守衛：`tests/unit/semantic-contrast.test.ts`）。
+- **主題的「文字令牌」必須有明暗下限**：`--text-faint`（3.05:1）、`--accent`（3.5:1）、`--amber/--green/--red/--blue/--link/--link-soft/--info-blue/--skill-blue/--auth-green/--plugin-purple/--amber-text/--red-text/--err-text/--md-strong/--code-text`（4.5:1）在 `--bg` 與 `--bg-elev2` 上必須夠對比——亮色主題照抄深色預設值會讓警告文字、狀態 chip、連結整體糊掉（曾出現 `--plugin-purple` 1.50:1）。`scripts/make-light-theme.mjs` 的 `TEXT_FLOORS` 會自動保持色相壓暗，手寫主題自行宣告（守衛：`tests/unit/theme-text-contrast.test.ts`）。
 - **長文本與長路徑防溢位標準**：
   - 行容器（flex 容器）必須新增 `min-width: 0` 與 `max-width: 100%`；
   - 可斷行文本（`.md` 內正文、路徑）必須使用 `overflow-wrap: anywhere` 與 `word-break: break-word`；
@@ -149,3 +149,27 @@
 2. **等**：只跑 `node scripts/safe-exec.mjs --wait "<jobfile>" --wait-sec 10 --json`。它內部計時，任務提前結束立刻返回，到點則返回這段時間的 `newOutput`（游標已推進，**不會重複輸出**）。不寫 `sleep`、不拼 `&&`、不依賴 `$?`。
 3. **判**：`status` 為 `RUNNING` 繼續 `--wait`；`SUCCESS` / `FAILED` 看 `exitCode` 與日誌；`ABORTED`（含 `childAlive: true` 的「看門狗寬限後未死透」）說明子程序還在跑，先 `--kill` 再重跑；`TIMEOUT` / `IDLE_TIMEOUT` 禁止原樣重試，先讀日誌改分檔或去掉管道；`pipesForced: true` 說明有孫程序繼承了輸出管道且已強制結算，日誌可能只到 exit 為止。
 4. **收**：`--kill "<jobfile>"` 先殺子程序樹再收守護程序；產物三件套 `.pid` / `.state.json` / `.cursor` 留在日誌旁，終態後可直接刪。`--status` 可以隨手查（只讀，不消費增量），別用 `--status` 代替 `--wait` 做輪詢迴圈。
+
+## 八、檔案落位與暫存產物
+
+**根目錄不是草稿紙。** 倉庫根只放「倉庫級設定 + 說明檔案 + 一級目錄」，其它一切都有歸屬；隨手扔在根目錄的 `.tmp-*` / `debug.log` / `preview-*.html` / 一次性指令碼，最後都會被誤提交（歷史上 `.pi-tmp-inspect14.py`、`.pi-bench-remote.mjs` 就是這樣進的庫）。守衛：`tests/unit/repo-hygiene.test.ts`。
+
+| 你要放的東西                   | 唯一合法位置                                                      | 入庫 |
+| ------------------------------ | ----------------------------------------------------------------- | ---- |
+| 暫存指令碼、試驗程式碼、抓包   | `.scratch/<任務名>/`（gitignore）                                 | 否   |
+| 驗收截圖、主題審計圖、對比證據 | `artifacts/<主題>/`（gitignore）                                  | 否   |
+| 命令日誌 / pidfile             | `.safe-exec/`（由 `scripts/safe-exec.mjs` 寫入，gitignore）       | 否   |
+| 建置產物、安裝包、APK / MSI    | `dist/`、`web/dist/`、`release/`、`mobile/**/build/`（gitignore） | 否   |
+| 應用執行資料                   | `.pi-web/`、`.pi/`、`durable/`（gitignore）                       | 否   |
+| 可複用的開發指令碼             | `scripts/` 並在 `package.json` 給一個入口                         | 是   |
+| 一次性除錯指令碼               | `.scratch/`，用完即刪；要留就搬進 `scripts/`                      | 否   |
+| 文件、設計稿、審查證據         | `docs/`；HTML 提案進 `docs/proposals/`                            | 是   |
+| README 及其譯本                | 倉庫根（只有 `README*`、`AGENTS*`、`CHANGELOG`、`LICENSE`）       | 是   |
+| 測試夾具的暫存目錄             | `mkdtemp(os.tmpdir())`，**不許落進倉庫**                          | —    |
+
+判據與禁令：
+
+- **根目錄白名單制**：根級條目必須命中白名單（`package.json`、`tsconfig.*`、`vitest.*`、`Dockerfile`、`docker-compose.yml`、`.gitignore` 等倉庫級檔案與一級目錄）。新增根級檔案前先問：它能不能進 `docs/`、`scripts/` 或 `.scratch/`？能就進那裡。
+- **禁止樣式**：`*.log`、`debug.*`、`.tmp-*`、`*.bak`、`preview-*.html`、`*.apk`、`*.msi` 一律不許出現在未忽略的未跟蹤清單裡；`.gitignore` 已覆蓋，命中就是位置放錯了。
+- **指令碼搬家要一次改完**：移動指令碼時，`package.json` 入口、測試裡的路徑、`docs/directory-reference*.md` 三語條目必須同一次改掉；指令碼從根搬進 `scripts/` 時，由 `import.meta.url` 推出的倉庫根要上跳一層（`make-light-theme.mjs` 踩過）。
+- **暫存目錄用完即收**：`mkdtemp` 出來的目錄在同一用例 `afterEach` 刪；倉庫內的 `.scratch/` 任務結束就清。

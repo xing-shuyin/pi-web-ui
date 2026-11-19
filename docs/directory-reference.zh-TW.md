@@ -20,7 +20,6 @@ pi-web-ui/
 │   └── README.md               # 桌面版說明：跑起來 / 約定 / 釋出 / 簽名（SignPath）
 ├── deploy/                     # 部署示例：launchd plist / systemd unit / Windows 任務 XML
 ├── themes/                     # 內建主題（完整樣式表：:root 變數 + 任意選擇器/佈局覆蓋皆可，styles.css 只是共享基線）
-├── make-light-theme.mjs        # 主題生成器（從 styles.css 的 :root 變數清單生成純調色盤）
 ├── tests/                      # 全部測試指令碼（自包含：獨立埠 ≥8900 + 臨時 data-dir）
 │   ├── run-smoke.mjs           # 零 token 協議冒煙聚合跑器（ALL 列表；外掛後臺作業/目錄同步 plugin-jobs-test、多根工作區
 │   │                           #   workspace-roots-test 都在裡面）
@@ -33,6 +32,8 @@ pi-web-ui/
 │   └── scratch/                # 一次性除錯指令碼（gitignore，不入庫）
 ├── scripts/check-protocol-sync.mjs  # 守護 types.ts shim 單源機制 + protocol.ts 純型別約束
 ├── scripts/safe-exec.mjs       # 跨平臺防卡死執行器：stdin 接地 + 硬超時/空閒超時殺程序樹（複用 killPidTree）+ 日誌落盤 + --detach 守護程序託管 + --wait/--status(JSON) 輪詢；日誌落 .safe-exec/（gitignore）
+├── scripts/bench-remote-scan.mjs # SFTP 遠端掃描基準（mock SSH 寬樹：層級 × 每層目錄數）
+├── scripts/make-light-theme.mjs # 主題生成器（從 styles.css 的 :root 變數清單生成純調色盤）
 ├── .github/workflows/ci.yml    # CI：協議同步 → typecheck → build → vitest → 冒煙
 ├── .github/workflows/release-notes.yml   # tag 推送 → 按 CHANGELOG 建/更新 GitHub Release
 ├── .github/workflows/desktop-release.yml  # tag 推送 → windows-latest 出 NSIS 安裝包並附到 Release（簽名以後加這裡）

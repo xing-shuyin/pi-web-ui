@@ -50,6 +50,7 @@ Stack: Node (>= 22.19.0) + Express + `ws` backend · React 19 + Vite frontend ·
 | Localization / module dictionaries / language-pack sync | `web/src/i18n/catalog.ts`★ · `web/src/i18n/messages/` · `scripts/lib/i18n-catalog.mjs` | [`i18n.md`](docs/i18n.en.md) |
 | UI layout / theme / style hard rules | `web/src/styles.css` · `themes/` | [`agent-rules.md`](docs/agent-rules.en.md#三ui-layout-and-style-rules) |
 | Directory structure and full file inventory | — | [`directory-reference.md`](docs/directory-reference.en.md) |
+| File placement / scratch artifacts (root allowlist, script homes) | `.gitignore` · `scripts/` | [`agent-rules.md`](docs/agent-rules.en.md#八file-placement-and-scratch-artifacts) |
 
 ## 2. Engineering flow
 

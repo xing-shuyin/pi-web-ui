@@ -1,7 +1,15 @@
-import { describe, expect, it } from "vitest";
+import { tmpdir } from "node:os";
+import { mkdtempSync, rmSync } from "node:fs";
+import { join } from "node:path";
+import { afterAll, describe, expect, it } from "vitest";
 import { registerMarker, unregisterMarker } from "../../server/markers/registry.js";
 import { stripMarkers } from "../../server/markers/marker.js";
 import live2dPlugin from "../../plugins/live2d/index.mjs";
+
+// 插件会按 host.dir 建状态/上传目录：必须给它 OS 临时目录，
+// 用相对路径（曾经的 "fake-dir"）会把目录落进仓库根（守卫：tests/unit/repo-hygiene.test.ts）。
+const pluginDir = mkdtempSync(join(tmpdir(), "pi-live2d-"));
+afterAll(() => rmSync(pluginDir, { recursive: true, force: true }));
 
 describe("Live2D 看板娘心声 Inline Marker", () => {
 	it("通过 host.registerMarker 注册并在反激活时清理", async () => {
@@ -9,7 +17,7 @@ describe("Live2D 看板娘心声 Inline Marker", () => {
 		const broadcastMessages: any[] = [];
 
 		const mockHost = {
-			dir: "fake-dir",
+			dir: pluginDir,
 			log: () => {},
 			route: () => () => {},
 			registerAgentTool: () => () => {},

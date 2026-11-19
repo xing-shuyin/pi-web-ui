@@ -54,6 +54,7 @@ pi 编码智能体（`@earendil-works/pi-coding-agent` SDK）的 Web 聊天界�
 | 本地化 / 模块字典 / 语言包同步 | `web/src/i18n/catalog.ts`★ · `web/src/i18n/messages/` · `scripts/lib/i18n-catalog.mjs` | [`i18n.md`](docs/i18n.md) |
 | UI 布局 / 主题 / 样式红线 | `web/src/styles.css` · `themes/` | [`agent-rules.md`](docs/agent-rules.md#三ui-布局与样式规范) |
 | 目录结构与全量文件清单 | — | [`directory-reference.md`](docs/directory-reference.md) |
+| 文件落位 / 临时产物（根目录白名单、脚本落点） | `.gitignore` · `scripts/` | [`agent-rules.md`](docs/agent-rules.md#八文件落位与临时产物) |
 
 ## 2. 工程流
 

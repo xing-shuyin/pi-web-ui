@@ -20,7 +20,6 @@ pi-web-ui/
 │   └── README.md               # Desktop app notes: getting it running / conventions / release / signing (SignPath)
 ├── deploy/                     # Deployment examples: launchd plist / systemd unit / Windows task XML
 ├── themes/                     # Built-in themes (full stylesheets: :root variables plus arbitrary selector/layout overrides; styles.css is only the shared baseline)
-├── make-light-theme.mjs        # Theme generator (builds a pure palette from the :root variable list in styles.css)
 ├── tests/                      # All test scripts (self-contained: dedicated port ≥8900 + temporary data-dir)
 │   ├── run-smoke.mjs           # Zero-token protocol smoke aggregator runner (ALL list; plugin background jobs / catalog sync plugin-jobs-test, multi-root workspace
 │   │                           #   workspace-roots-test — both are in it)
@@ -33,6 +32,8 @@ pi-web-ui/
 │   └── scratch/                # One-off debug scripts (gitignored, not committed)
 ├── scripts/check-protocol-sync.mjs  # Guards the types.ts shim single-source mechanism + protocol.ts pure-type constraints
 ├── scripts/safe-exec.mjs       # Cross-platform anti-hang executor: stdin grounded + hard timeout/idle timeout kills the process tree (reusing killPidTree) + logs to disk + --detach daemon hosting + --wait/--status(JSON) polling; logs land in .safe-exec/ (gitignored)
+├── scripts/bench-remote-scan.mjs # SFTP remote-scan bench over a mock SSH tree (dirs/files × depth)
+├── scripts/make-light-theme.mjs # Theme generator (builds a pure palette from the :root variable list in styles.css)
 ├── .github/workflows/ci.yml    # CI: protocol sync → typecheck → build → vitest → smoke
 ├── .github/workflows/release-notes.yml   # tag push → create/update the GitHub Release from CHANGELOG
 ├── .github/workflows/desktop-release.yml  # tag push → windows-latest builds the NSIS installer and attaches it to the Release (signing gets added here later)

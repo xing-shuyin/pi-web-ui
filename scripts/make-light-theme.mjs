@@ -3,7 +3,8 @@ import { readFileSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
-const here = dirname(fileURLToPath(import.meta.url));
+// 脚本现在住在 scripts/：仓库根要上跳一层（此前脚本直接在根目录，here 就是根）。
+const here = dirname(dirname(fileURLToPath(import.meta.url)));
 const srcPath = join(here, "web", "src", "styles.css");
 
 const css = readFileSync(srcPath, "utf8").replace(/\r\n/g, "\n");
