@@ -12,6 +12,7 @@ export type QuickAskPatch = Partial<
 		| "quickAskThinking"
 		| "quickAskSystemPrompt"
 		| "quickAskExplainPrompt"
+		| "quickAskTranslateModel"
 		| "quickAskEnabled"
 		| "quickAskTranslateEnabled"
 		| "quickAskTranslateTarget"
@@ -131,6 +132,7 @@ export function QuickAskSettings({
 		setEditing(editing === field ? null : field);
 	}
 	const model = settings.quickAskModel ?? "";
+	const translateModel = settings.quickAskTranslateModel ?? "";
 	const [availableModels, setAvailableModels] = useState<UiSettingsState["subagentModels"] | null>(null);
 	const [catalogError, setCatalogError] = useState("");
 	const models = availableModels ?? settings.subagentModels;
@@ -241,6 +243,28 @@ export function QuickAskSettings({
 						onChange={(e) => onChange({ quickAskTranslateEnabled: e.target.checked })}
 					/>
 				</label>
+				<div className="quick-ask-settings-pair">
+					<label className="quick-ask-settings-field" htmlFor={id + "-translate-model"}>
+						<span>{t("quickAskTranslateModel")}</span>
+						<select
+							id={id + "-translate-model"}
+							aria-label={t("quickAskTranslateModel")}
+							className="quick-ask-settings-select"
+							value={translateModel}
+							onChange={(e) => onChange({ quickAskTranslateModel: e.target.value || null })}
+						>
+							<option value="">{t("quickAskTranslateFollowModel")}</option>
+							{translateModel && !models.some((m) => m.provider + "/" + m.id === translateModel) && (
+								<option value={translateModel}>{translateModel}</option>
+							)}
+							{models.map((m) => (
+								<option key={m.provider + "/" + m.id} value={m.provider + "/" + m.id}>
+									{m.label}
+								</option>
+							))}
+						</select>
+					</label>
+				</div>
 				<div className="quick-ask-settings-pair">
 					<label className="quick-ask-settings-field" htmlFor={id + "-target"}>
 						<span>{t("quickAskTargetLanguage")}</span>

@@ -21,13 +21,26 @@ files:
   - node_modules/jsqr/**
 extraMetadata:
   main: dist/desktop/main.js
-asar: false
+# asar 打包：把 17000+ 散文件（主要是 node_modules）收进 app.asar，
+# MSI/WiX 不再逐文件计价/拷贝/替换，安装与更新只写几个大文件。
+# 注意：dist/server 必须留在 asar 内 —— Node 从 app.asar/dist/server/*.js
+# 向上解析 node_modules 时才能命中 app.asar/node_modules；
+# 一旦把 dist/server 解出来，相对查找会落到 app.asar.unpacked 之外，
+# 反而与包内依赖断链。所以只解压不可进 asar 执行的原生件/可执行文件。
+asar: true
+asarUnpack:
+  - "**/*.node"
+  - "bin/**/*"
+  - "node_modules/node-pty/**"
 npmRebuild: false
 publish:
   provider: github
   owner: xing-shuyin
   repo: pi-web-ui
 win:
+  # 只留 nsis + dir：CI 的 windows job 直接跑 `--win`（.github/workflows/desktop-release.yml），
+  # 把 msi 加进来会让 CI 多打一个包、却不被 upload / attach 名单收（白等几分钟）。
+  # 要 MSI 就显式指定目标：npm run desktop:msi（= `--win msi`）。
   target:
     - nsis
     - dir
@@ -44,3 +57,9 @@ nsis:
   oneClick: false
   allowToChangeInstallationDirectory: true
   artifactName: ${productName}-${version}-setup.${ext}
+# MSI（可选目标，只有显式 `--win msi` 才出）：WiX 4 直接把 win-unpacked 压成安装包，不执行产物，
+# 所以本地 Windows 也能出——NSIS 那步本地要执行刚生成的 setup.exe 去生成卸载器，会被系统拦掉。
+# warningsAsErrors 必须关：msi target 默认带 WiX 的 -wx（警告当错误），一个 ICE 警告就整包失败。
+msi:
+  artifactName: pi-web-ui-desktop-${version}-win-${arch}.${ext}
+  warningsAsErrors: false

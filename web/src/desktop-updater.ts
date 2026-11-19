@@ -65,7 +65,28 @@ export interface DesktopUpdaterBridge {
 	skip?: (version: string | null) => Promise<unknown>;
 	quitAndInstall: () => Promise<unknown>;
 	applyRuntime?: () => Promise<unknown>;
+	/** MSI 本地安装（FilesInUse 绕行）：旧壳没有该方法时面板不显示按钮。 */
+	installLocalMsi?: () => Promise<unknown>;
 	onEvent: (cb: (msg: unknown) => void) => () => void;
+}
+
+/** 主进程 `pi-desktop:update-install-local-msi` 的返回：ok 时应用随即退出，无需处理后续状态。 */
+export interface MsiQuitInstallResult {
+	ok: boolean;
+	cancelled?: boolean;
+	error?: string;
+}
+
+/** 主进程返回校验：形状不对（旧壳 / 半截数据）一律按失败处理。 */
+export function parseMsiQuitInstallResult(raw: unknown): MsiQuitInstallResult {
+	if (!raw || typeof raw !== "object") return { ok: false, error: "bad-response" };
+	const record = raw as Record<string, unknown>;
+	if (record.ok === true) return { ok: true };
+	return {
+		ok: false,
+		cancelled: record.cancelled === true ? true : undefined,
+		error: typeof record.error === "string" ? record.error : "unknown error",
+	};
 }
 
 const PHASES = new Set(["idle", "checking", "available", "downloading", "downloaded", "up-to-date", "error"]);
@@ -232,6 +253,8 @@ export interface DesktopUpdaterController {
 	quitAndInstall: () => void;
 	/** 「立即重启服务」：切换指针 + 重启 + 健康检查（失败自动回滚）。 */
 	applyRuntime: () => void;
+	/** 「退出并安装本地 MSI」：用户取消选包时返回 {ok:false, cancelled:true}；ok 时应用随即退出。 */
+	installLocalMsi: () => Promise<MsiQuitInstallResult>;
 	refresh: () => void;
 }
 
@@ -306,6 +329,27 @@ export function useDesktopUpdater(): DesktopUpdaterController {
 	const skip = useCallback((version: string | null) => run((b) => b.skip?.(version) ?? Promise.resolve(false)), [run]);
 	const quitAndInstall = useCallback(() => run((b) => b.quitAndInstall()), [run]);
 	const applyRuntime = useCallback(() => run((b) => b.applyRuntime?.() ?? Promise.resolve(false)), [run]);
+	// MSI 安装走返回值（ok 即退出），不走广播状态：失败才有文案，成功直接显示「正在退出并安装」。
+	const installLocalMsi = useCallback(async (): Promise<MsiQuitInstallResult> => {
+		if (!bridge?.installLocalMsi) return { ok: false, error: "no-bridge" };
+		try {
+			return parseMsiQuitInstallResult(await bridge.installLocalMsi());
+		} catch (err) {
+			return { ok: false, error: err instanceof Error ? err.message : String(err) };
+		}
+	}, [bridge]);
 
-	return { state, bridge, actionError, check, download, cancel, skip, quitAndInstall, applyRuntime, refresh };
+	return {
+		state,
+		bridge,
+		actionError,
+		check,
+		download,
+		cancel,
+		skip,
+		quitAndInstall,
+		applyRuntime,
+		installLocalMsi,
+		refresh,
+	};
 }

@@ -92,6 +92,8 @@ contextBridge.exposeInMainWorld("piDesktop", {
 		applyRuntime: (): Promise<boolean> => ipcRenderer.invoke("pi-desktop-updater:apply-runtime"),
 		skip: (version: string | null): Promise<boolean> => ipcRenderer.invoke("pi-desktop-updater:skip", version),
 		quitAndInstall: (): Promise<boolean> => ipcRenderer.invoke("pi-desktop-updater:quit-install"),
+		installLocalMsi: (): Promise<{ ok: boolean; cancelled?: boolean; error?: string }> =>
+			ipcRenderer.invoke("pi-desktop:update-install-local-msi"),
 		onEvent: (cb: (state: DesktopUpdaterState) => void) => {
 			const listener = (_event: IpcRendererEvent, state: DesktopUpdaterState) => cb(state);
 			ipcRenderer.on("pi-desktop-updater:event", listener);

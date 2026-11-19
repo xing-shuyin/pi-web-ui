@@ -47,7 +47,12 @@ function ensureStyles() {
 
 async function api(path, opts = {}) {
 	const r = await fetch(`${API}${path}`, { headers: { "Content-Type": "application/json" }, ...opts });
-	return r.json();
+	const text = await r.text();
+	try {
+		return text ? JSON.parse(text) : {};
+	} catch {
+		throw new Error(`接口返回非 JSON（HTTP ${r.status}）：${String(text || "").slice(0, 200)}`);
+	}
 }
 
 function createApp(root) {
@@ -128,6 +133,13 @@ function createApp(root) {
 			root.innerHTML = `<div class="frp-wrap">${t("probing")}</div>`;
 			return;
 		}
+		// 服务端未就绪/接口异常时 st 可能缺字段：用默认值兜底，绝不白屏
+		st.common = st.common || {};
+		st.frps = st.frps || {};
+		st.remote = st.remote || {};
+		st.proxies = Array.isArray(st.proxies) ? st.proxies : [];
+		st.frpc = st.frpc || {};
+		st.frpsLocal = st.frpsLocal || {};
 		const frpcRun = st.frpc?.running;
 		const frpsRun = st.frpsLocal?.running;
 		const tabs = [
@@ -230,6 +242,12 @@ function createApp(root) {
 			<div class="frp-tabs">${tabs.map(([k, l]) => `<button class="frp-tab ${tab === k ? "on" : ""}" data-op="tab" data-k="${k}">${l}</button>`).join("")}</div>
 			${msg ? `<div class="frp-dim">${msg}</div>` : ""}
 			${body}</div>`;
+		} catch (err) {
+			// 渲染异常也要显示错误文案，决不留黑屏
+			try {
+				root.innerHTML = `<div class="frp-wrap"><div class="frp-card">页面渲染失败：${esc(err && err.message ? err.message : String(err))}<div class="frp-row" style="margin-top:8px"><button class="frp-btn" data-op="refresh">重试</button></div></div></div>`;
+			} catch {}
+		}
 	}
 
 	function val(sel, key) {
@@ -364,8 +382,13 @@ function createApp(root) {
 			destroyed = true;
 			if (timer) clearInterval(timer);
 			timer = null;
-			root.removeEventListener("click", onClick);
-			root.remove();
+			try {
+				root.removeEventListener("click", onClick);
+			} catch {}
+			// 注意：container 就是宿主的挂载节点，绝不能 root.remove()（会把宿主节点一起干掉导致面板空白/黑屏）
+			try {
+				root.replaceChildren();
+			} catch {}
 		},
 	};
 }

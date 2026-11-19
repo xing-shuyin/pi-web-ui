@@ -21,7 +21,7 @@ pi-web-ui/
 │   ├── runtime-updater.ts      # 双层模型 P2：清单拉取→验签→流式下载→校验→解包暂存（切换/回滚由 main 注入）
 │   ├── runtime-config.ts       # 双层模型信任根：内置 ed25519 公钥（留空=拒绝）、壳能力版本、默认 feed
 │   ├── system-integration.ts   # Windows 默认浏览器/文件关联：HKCU 注册表规划、reg 输出解析、argv → 待打开目标
-│   ├── electron-builder.yml    # 打包配置（win nsis / mac dmg / linux AppImage；npmRebuild:false）
+│   ├── electron-builder.yml    # 打包配置（win nsis / mac dmg / linux AppImage，可选 msi；npmRebuild:false）
 │   └── README.md               # 桌面版说明：跑起来 / 约定 / 发布 / 签名（SignPath）
 ├── deploy/                     # 部署示例：launchd plist / systemd unit / Windows 任务 XML
 ├── themes/                     # 内置主题（完整样式表：:root 变量 + 任意选择器/布局覆盖皆可，styles.css 只是共享基线）
@@ -92,7 +92,9 @@ server/
 ├── context-budget.ts       # 多级分层上下文预算裁剪（触发 LLM 全文摘要之前的梯度裁剪）
 ├── context-recovery.ts     # ★ 压缩后可寻址句柄：给 summary 追加 <context-recovery>（转录路径 + 折叠用户轮次逐字/行号），模型用 grep/read 定点回读原文
 ├── soft-cap.ts             # 自定义上下文压缩软上限（Soft Cap，issue #229/#773；纯函数 normalize/effective/softCapToReserve/softCapReserveFor：后者算出注入 SDK 的 reserve=cw-cap，回合内工具间隙即压）
-├── dangling-tools.ts       # 悬空 toolCall 检测与修复（issue #280）
+├── dangling-tools.ts       # 悬空 toolCall 检测与修复（issue #280）；尾部窗口探针 probeTailDangling ＋ 追加原语 appendDanglingResults（issue #945 打开快路径）
+├── transcript-prepare.ts   # ★ 打开前修复编排：先流式扫元数据 ＋ 只读尾部，判定不了才整份 readFile（issue #945）
+├── transcript-scan.ts      # ★ 转录元数据流式扫描：只留 id/parentId/marker，判定「修复必然不动文件」（issue #945）
 ├── edit-tool.ts            # 覆盖内置 edit：原样转发精确替换，`soft: true` 时改走行核心匹配（原 edit_soft 工具已合并进来，无独立开关）
 ├── read-tool.ts            # 覆盖内置 read：路径是目录时列目录条目（复用 SDK ls 的口径，其余原样转发内置；行为开关 readDirEnabled 在设置「工具」页，不入 AGENT_TOOL_CATALOG）
 ├── present-files-tool.ts   # ★ AI 展示文件（present_files）：只读探测 stat/未知扩展嗅探/文本摘录 → 结构化 items 走 toolResult 的 details → 前端预览卡片；不自动打开任何窗口

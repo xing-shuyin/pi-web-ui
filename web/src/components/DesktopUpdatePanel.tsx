@@ -1,6 +1,8 @@
+import { useState } from "react";
 import { Markdown } from "./Markdown";
 import { formatSize } from "../format-bytes";
 import { useT } from "../i18n";
+import { getDesktopPlatform } from "../desktop";
 import { desktopReleasesUrl, type DesktopUpdaterController } from "../desktop-updater";
 
 /**
@@ -172,6 +174,44 @@ function RuntimeSection({ updater }: { updater: DesktopUpdaterController }) {
 	);
 }
 
+/**
+ * MSI 本地安装（FilesInUse 绕行）：仅 win32 + 桌面壳 + 新桥才显示。
+ * 二次确认用 window.confirm（与其它危险操作同一范式）；ok 时应用随即退出，
+ * 这里只显示「正在退出并安装…」，无需处理返回后的状态。
+ */
+function MsiQuitInstallSection({ updater }: { updater: DesktopUpdaterController }) {
+	const t = useT();
+	const [leaving, setLeaving] = useState(false);
+	const [error, setError] = useState<string | null>(null);
+	if (getDesktopPlatform() !== "win32") return null;
+	if (typeof updater.installLocalMsi !== "function") return null;
+	if (leaving) return <div className="dd-note warn">{t("msiQuitInstallRunning")}</div>;
+	return (
+		<>
+			<div className="dd-actions">
+				<button
+					type="button"
+					className="dd-refresh"
+					onClick={async () => {
+						if (!window.confirm(t("msiQuitInstallConfirm"))) return;
+						setError(null);
+						const result = await updater.installLocalMsi();
+						if (result.cancelled) return;
+						if (result.ok) {
+							setLeaving(true);
+							return;
+						}
+						setError(result.error ?? "unknown error");
+					}}
+				>
+					{t("msiQuitInstallButton")}
+				</button>
+			</div>
+			{error ? <div className="dd-note err">{t("msiQuitInstallFailed", { error })}</div> : null}
+		</>
+	);
+}
+
 export function DesktopUpdatePanel({ updater, busy = false }: { updater: DesktopUpdaterController; busy?: boolean }) {
 	const t = useT();
 	const state = updater.state;
@@ -211,6 +251,7 @@ export function DesktopUpdatePanel({ updater, busy = false }: { updater: Desktop
 				<div className="dd-note warn">{reasonKey ? t(reasonKey) : t("updateDesktopNoBridge")}</div>
 				{manualLink}
 				{actionError}
+				<MsiQuitInstallSection updater={updater} />
 				<RuntimeSection updater={updater} />
 			</div>
 		);
@@ -361,6 +402,7 @@ export function DesktopUpdatePanel({ updater, busy = false }: { updater: Desktop
 			{versionRows}
 			{body()}
 			{actionError}
+			<MsiQuitInstallSection updater={updater} />
 			<RuntimeSection updater={updater} />
 		</div>
 	);

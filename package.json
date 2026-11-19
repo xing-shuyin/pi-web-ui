@@ -1,6 +1,6 @@
 {
 	"name": "pi-web-ui",
-	"version": "0.121.0",
+	"version": "0.121.3",
 	"description": "Just open your browser to get all your work done — browser cockpit for AI coding agents (chat, code, files, terminal, Git in one tab)",
 	"license": "MIT",
 	"author": {
@@ -125,8 +125,9 @@
 		"build:desktop-runtime": "node scripts/build-desktop-runtime.mjs",
 		"verify:desktop-runtime": "node scripts/verify-desktop-runtime.mjs",
 		"desktop:dev": "npm run build:desktop && electron dist/desktop/main.js",
-		"desktop:dist": "npm run build && npm run build:desktop && node scripts/run-electron-builder.mjs -c desktop/electron-builder.yml",
-		"desktop:portable": "npm run build && npm run build:desktop && node scripts/make-portable.mjs",
+		"desktop:dist": "node scripts/ensure-latest-engine.mjs && npm run build && npm run build:desktop && node scripts/run-electron-builder.mjs -c desktop/electron-builder.yml",
+		"desktop:msi": "node scripts/ensure-latest-engine.mjs && npm run build && npm run build:desktop && node scripts/run-electron-builder.mjs -c desktop/electron-builder.yml --win msi --publish never",
+		"desktop:portable": "node scripts/ensure-latest-engine.mjs && npm run build && npm run build:desktop && node scripts/make-portable.mjs",
 		"desktop:portable:full": "npm run build && npm run build:desktop && node scripts/make-portable.mjs --with-git",
 		"format": "prettier --write server/ web/src/ extensions/ scripts/ bin/ desktop/ tests/*.mjs tests/unit/ *.mjs",
 		"format:check": "prettier --check server/ web/src/ extensions/ scripts/ bin/ desktop/ tests/*.mjs tests/unit/ *.mjs",

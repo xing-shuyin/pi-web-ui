@@ -8,12 +8,13 @@ import {
 	downloadIcon,
 	element,
 	enableCrxDropTarget,
+	folderIcon,
 	gearIcon,
+	hostName,
 	input,
 	listenPanelEvents,
 	listenState,
 	normalizeBookmarks,
-	flattenBookmarks,
 	openUrl,
 	plusIcon,
 	reportError,
@@ -22,7 +23,7 @@ import {
 	type Bookmark,
 	type Settings,
 } from "./common.js";
-import { t } from "./i18n.js";
+import { t, tf } from "./i18n.js";
 import { setPanelState, showPanel } from "./panels.js";
 
 document.body.classList.add("pb-internal");
@@ -169,12 +170,6 @@ window.addEventListener("click", (e) => {
 	}
 });
 
-window.addEventListener("keydown", (e) => {
-	if (e.key === "Escape" && !engineMenu.hidden) {
-		closeEngineMenu();
-	}
-});
-
 engineWrapper.append(engineTrigger, engineMenu);
 
 const query = input("", "search", "输入网址或搜索关键词…");
@@ -213,42 +208,138 @@ search.addEventListener("submit", (event) => {
 	void openUrl(addressUrl(val, settings.searchEngine), openInNewTab()).catch(reportError);
 });
 
-// 单行紧凑流线胶囊
-const flowRow = element("div", "unified-flow-row");
+/**
+ * 首页导航就是书签树本身，排成网格、像文件管理器一样一层层进：
+ * 文件夹 = 可进入的目录，书签 = 可直接打开的条目；面包屑点任意一级就退回那一层。
+ * 与书签面板（`panels.ts` 的 `bookmarksPanel`）读同一棵树、同一套 type 语义，不另开数据源。
+ * 层级只记「文件夹名链」：刷新后重走一遍，被删 / 改名的楼层自动退到最近还能走到的一层。
+ */
+const nav = element("nav", "unified-nav");
+nav.setAttribute("aria-label", t("bookmarks"));
+const crumbs = element("div", "unified-nav-crumbs");
+const grid = element("div", "unified-nav-grid");
+const navEmpty = element("p", "unified-nav-empty", t("empty"));
+nav.append(crumbs, grid, navEmpty);
 
-function linkPill(bookmark: Bookmark): HTMLElement {
-	const pill = button(
-		"",
-		() => openUrl(addressUrl(bookmark.url || "", settings.searchEngine), openInNewTab()),
-		"flow-pill",
-	);
-	pill.title = bookmark.url || bookmark.name;
-	pill.append(
-		element("span", "flow-pill-icon", bookmark.char || bookmark.name.slice(0, 1).toUpperCase()),
-		element("span", "flow-pill-name", bookmark.name),
-	);
-	return pill;
+let tree: Bookmark[] = [];
+let trail: string[] = [];
+
+/** 沿名字链走到那一层；走不到（文件夹被删 / 改名）就返回 undefined，由调用方退回上一层。 */
+function folderAt(names: string[]): Bookmark[] | undefined {
+	let nodes = tree;
+	for (const name of names) {
+		const folder = nodes.find((node) => node.type === "folder" && node.name === name);
+		if (!folder) return undefined;
+		nodes = folder.children ||= [];
+	}
+	return nodes;
 }
 
-const addPill = button(
-	[plusIcon(11), element("span", "", "添加")],
-	() => showPanel("bookmarks"),
-	"flow-pill flow-pill-add pb-panel-toggle",
-);
-addPill.title = "管理或添加收藏书签";
+function currentFolder(): Bookmark[] {
+	return folderAt(trail) ?? tree;
+}
+
+function openFolder(name: string): void {
+	trail = [...trail, name];
+	renderNav();
+}
+
+function goUp(): void {
+	if (!trail.length) return;
+	trail = trail.slice(0, -1);
+	renderNav();
+}
+
+/** 一格导航条目：图标 + 名称 + 一行小字（文件夹是条数，书签是域名）。 */
+function tile(
+	symbol: string | Node,
+	name: string,
+	detail: string,
+	onOpen: () => void | Promise<unknown>,
+	extra = "",
+): HTMLButtonElement {
+	const node = button("", onOpen, `unified-tile ${extra}`.trim());
+	const icon = element("span", "unified-tile-icon");
+	if (typeof symbol === "string") icon.textContent = symbol;
+	else icon.append(symbol);
+	icon.setAttribute("aria-hidden", "true");
+	node.append(icon, element("span", "unified-tile-name", name));
+	if (detail) node.append(element("span", "unified-tile-detail", detail));
+	node.title = detail ? `${name}\n${detail}` : name;
+	return node;
+}
+
+const addTile = tile(plusIcon(14), t("add"), "", () => showPanel("bookmarks"), "unified-tile-add pb-panel-toggle");
+addTile.title = t("bookmarkHelp");
+
+function folderTile(folder: Bookmark): HTMLButtonElement {
+	const count = (folder.children || []).length;
+	return tile(
+		folderIcon(15),
+		folder.name,
+		tf(count === 1 ? "navItemOne" : "navItems", { count }),
+		() => openFolder(folder.name),
+		"unified-tile-folder",
+	);
+}
+
+function linkTile(link: Bookmark): HTMLButtonElement {
+	return tile(
+		link.char || link.name.slice(0, 1).toUpperCase(),
+		link.name,
+		hostName(link.url || ""),
+		() => openUrl(addressUrl(link.url || "", settings.searchEngine), openInNewTab()),
+		"unified-tile-link",
+	);
+}
+
+function renderNav(): void {
+	const nodes = currentFolder();
+	// 面包屑只在进入文件夹后出现：点根或任意一级都直接跳回那一层
+	crumbs.replaceChildren();
+	if (trail.length) {
+		crumbs.append(
+			button(
+				t("root"),
+				() => {
+					trail = [];
+					renderNav();
+				},
+				"unified-crumb",
+			),
+		);
+		for (const [index, name] of trail.entries()) {
+			crumbs.append(element("span", "unified-crumb-sep", "/"));
+			const jump = () => {
+				trail = trail.slice(0, index + 1);
+				renderNav();
+			};
+			crumbs.append(
+				index === trail.length - 1
+					? element("span", "unified-crumb-current", name)
+					: button(name, jump, "unified-crumb"),
+			);
+		}
+	}
+	crumbs.hidden = trail.length === 0;
+	grid.replaceChildren(...nodes.map((node) => (node.type === "folder" ? folderTile(node) : linkTile(node))), addTile);
+	// 空文件夹要说清为什么是空的；根目录为空时只留「添加」这一格
+	navEmpty.textContent = trail.length ? t("bookmarkFolderEmpty") : t("empty");
+	navEmpty.hidden = nodes.length > 0;
+}
 
 async function refreshBookmarks(): Promise<void> {
 	try {
-		// 只展示真实收藏夹；为空时整行隐藏，不再回退到写死的示例图标
-		const bookmarks = flattenBookmarks(normalizeBookmarks(await call("bookmarks.list"))).slice(0, 8);
-		flowRow.replaceChildren(...bookmarks.map(linkPill), addPill);
-		flowRow.hidden = bookmarks.length === 0;
+		tree = normalizeBookmarks(await call("bookmarks.list"));
+		// 刷新后重走名字链：删掉 / 改名的文件夹不会再把人卡在一个不存在的楼层
+		while (trail.length && folderAt(trail) === undefined) trail = trail.slice(0, -1);
+		renderNav();
 	} catch (err) {
 		reportError(err);
 	}
 }
 
-unifiedContainer.append(hero, search, flowRow);
+unifiedContainer.append(hero, search, nav);
 
 const footer = element("footer", "pb-start-footer unified-footer pb-muted", "按 / 键快速搜索 · 回车直达");
 
@@ -299,6 +390,19 @@ window.addEventListener("focus", () => {
 window.addEventListener("pageshow", focusQuery);
 
 window.addEventListener("keydown", (event) => {
+	// Esc 先收搜索引擎菜单；不在菜单里时，它和 Backspace 一样退出一层文件夹（像文件管理器）
+	if (event.key === "Escape" && !engineMenu.hidden) {
+		closeEngineMenu();
+		return;
+	}
+	if (
+		trail.length &&
+		(event.key === "Escape" || (event.key === "Backspace" && !(event.target instanceof HTMLInputElement)))
+	) {
+		event.preventDefault();
+		goUp();
+		return;
+	}
 	if (event.key === "/" && !(event.target instanceof HTMLInputElement)) {
 		event.preventDefault();
 		query.focus();

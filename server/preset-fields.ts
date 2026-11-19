@@ -8,6 +8,7 @@ export const PRESET_EXCLUDED_KEYS = [
 	"quickAskThinking",
 	"quickAskSystemPrompt",
 	"quickAskExplainPrompt",
+	"quickAskTranslateModel",
 	"quickAskTranslateEnabled",
 	"quickAskTranslateTarget",
 	"quickAskTranslateStyle",

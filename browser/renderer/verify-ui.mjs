@@ -404,12 +404,21 @@ try {
 	await page.getByText("No extensions installed yet.", { exact: true }).waitFor();
 	assert.ok(await page.evaluate(() => window.__calls.some((call) => call.action === "extensions.remove")));
 
-	// 新标签页：收藏行不注入外部内容，搜索直达
+	// 新标签页：首页导航就是书签树（文件夹可进、收藏可开），不注入外部内容，搜索直达
 	await page.goto("http://127.0.0.1:8994/newtab.html");
 	// 假体是 +200ms 才挂到 window 上的，先等桥就绪再交互
 	await page.waitForFunction(() => typeof window.piBrowserShell !== "undefined");
 	await page.locator(".unified-bar").waitFor();
-	assert.equal(await page.locator(".unified-flow-row img, .unified-flow-row script").count(), 0);
+	const nav = page.locator(".unified-nav");
+	assert.equal(await nav.locator("img, script").count(), 0);
+	// 文件夹先出一格；点进去看它里面的收藏；面包屑点回根目录
+	await nav.locator(".unified-tile-folder").first().click();
+	await page.locator(".unified-crumb-current").waitFor();
+	assert.equal(await nav.locator(".unified-tile-link").count(), 1);
+	assert.equal(await nav.locator("img, script").count(), 0);
+	await nav.locator(".unified-crumb").first().click();
+	await page.locator(".unified-crumb-current").waitFor({ state: "detached" });
+	assert.equal(await nav.locator(".unified-tile-link").count(), 0);
 	await page.locator(".unified-bar input").fill("hello world");
 	await page.locator(".unified-bar input").press("Enter");
 	await page.waitForFunction(

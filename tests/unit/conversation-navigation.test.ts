@@ -22,6 +22,8 @@ describe("conversation navigation from group view", () => {
 		{ type: "switch_session", sessionId: "session-1" },
 		{ type: "switch_session", path: "/project/session.jsonl" },
 		{ type: "new_chat" },
+		// 左栏「智能体」点一行 = 打开（或回到）这个 Bot 的私聊：也是一次导航。
+		{ type: "open_bot_chat", botId: "bot-1" },
 	])("leaves the group when sending $type", (msg) => {
 		let activeGroupId: string | null = "group-1";
 		const leaveGroup = vi.fn(() => {
@@ -38,6 +40,7 @@ describe("conversation navigation from group view", () => {
 		{ type: "peek_elsewhere_question", owner: "bot-client", id: "question-1" },
 		{ type: "switch_conversation", id: "" },
 		{ type: "switch_session" },
+		{ type: "open_bot_chat", botId: "" },
 	])("keeps the group for $type without a navigation target", (msg) => {
 		const leaveGroup = vi.fn();
 		registerSessionSwitchSink(leaveGroup);

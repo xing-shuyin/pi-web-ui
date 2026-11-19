@@ -1,6 +1,8 @@
-import { memo, useEffect } from "react";
+import { memo, useEffect, useState } from "react";
 import { FiX } from "react-icons/fi";
 import type { GroupDetail, GroupDevice, GroupBotConversation } from "../device-group-messages";
+import { deviceGroupRequest } from "./DeviceGroupSection";
+import { openBotChat } from "../bot-chat";
 import { GroupDeliveries } from "./GroupDeliveries";
 import { DeviceFileTransfer } from "./DeviceFileTransfer";
 import { GroupCanvasBinding } from "./GroupCanvasBinding";
@@ -61,6 +63,23 @@ export const GroupDrawer = memo(function GroupDrawer({
 		window.addEventListener("keydown", handleKeyDown);
 		return () => window.removeEventListener("keydown", handleKeyDown);
 	}, [isOpen, onClose]);
+
+	// 成员卡片上的「打开私聊」只对本机 Bot 成立：私聊是 **本机** 的普通对话 + Bot 绑定，
+	// 远端设备上的 Bot 在 Hub 上只有 id，本机注册表里取不到（`resolveBotChatBot` 会当它不存在），
+	// 所以先用 `chat-status` 拿本机 deviceId，再把远端成员改成一行提示，而不是给个点了报错的按钮。
+	const [localDeviceId, setLocalDeviceId] = useState("");
+	useEffect(() => {
+		if (!isOpen || activeTab !== "bots" || localDeviceId) return;
+		const controller = new AbortController();
+		void deviceGroupRequest<{ deviceId?: string }>("chat-status", controller.signal)
+			.then((status) => {
+				if (controller.signal.aborted) return;
+				if (typeof status?.deviceId === "string" && status.deviceId) setLocalDeviceId(status.deviceId);
+			})
+			// 拿不到身份就按「本机」处理：宁可让服务端回一条准确提示，也不要凭空禁掉入口。
+			.catch(() => {});
+		return () => controller.abort();
+	}, [isOpen, activeTab, localDeviceId]);
 
 	if (!isOpen) return null;
 
@@ -249,6 +268,26 @@ export const GroupDrawer = memo(function GroupDrawer({
 												</div>
 											</div>
 										)}
+										<div className="grp-bot-actions">
+											{localDeviceId && bot.deviceId && bot.deviceId !== localDeviceId ? (
+												<span className="grp-bot-remote">
+													{zh ? "私聊请在它所在的设备上打开" : "Open its private chat on its own device"}
+												</span>
+											) : (
+												<button
+													type="button"
+													className="grp-bot-open"
+													title={
+														zh
+															? `打开 ${bot.name} 的私聊（普通对话 + Bot 身份，不建任务）`
+															: `Open ${bot.name}'s private chat (an ordinary conversation as this Bot)`
+													}
+													onClick={() => openBotChat(bot.id)}
+												>
+													{zh ? "打开私聊" : "Open chat"}
+												</button>
+											)}
+										</div>
 									</div>
 								))}
 							</div>

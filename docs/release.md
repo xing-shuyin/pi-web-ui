@@ -105,6 +105,9 @@ npm run release:local -- vX.Y.Z --portable     # 额外出便携版（内置 Git
 #        生成卸载器，本机被系统拦下：ERR_ELECTRON_BUILDER_CANNOT_EXECUTE / exit code null），
 #        所以本地出的是免安装 zip（release/pi-web-ui-desktop-<版本>-win-x64-portable.zip）；
 #        需要正式安装包时用 CI 的 desktop-release windows job。
+#        本机确实需要安装包时走 MSI：`npm run desktop:msi` → release/pi-web-ui-desktop-<版本>-win-x64.msi
+#        （WiX 4 直接把 win-unpacked 压成 MSI，不执行产物，所以不受上面那条限制；未签名，首启有 SmartScreen 提示）。
+#        MSI 是可选目标，不在 electron-builder.yml 的 win.target 里——CI 的 `--win` 只出 exe，避免白打一个不收的包。
 #      - macOS / Linux 安装包只能在对应系统上打，仍由 .github/workflows/desktop-release.yml 出。
 #    .github/workflows/mobile-release.yml 保留但改成手动触发（Actions 里点），用于云端兜底；
 #    它需要可选的 MOBILE_KEYSTORE_BASE64 等 secrets 才能发出可升级的包。

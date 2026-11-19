@@ -28,6 +28,7 @@ export interface QuickAskSettings {
 	quickAskThinking: ThinkingLevel;
 	quickAskSystemPrompt: string;
 	quickAskExplainPrompt: string;
+	quickAskTranslateModel: string | null;
 	quickAskTranslateEnabled: boolean;
 	quickAskTranslateTarget: QuickAskTranslateTarget;
 	quickAskTranslateStyle: QuickAskTranslateStyle;
@@ -51,6 +52,7 @@ export function isQuickAskModel(value: unknown): value is string {
 
 export function normalizeQuickAskSettings(value: Partial<Record<keyof QuickAskSettings, unknown>>): QuickAskSettings {
 	const model = typeof value.quickAskModel === "string" ? value.quickAskModel.trim() : null;
+	const translateModel = typeof value.quickAskTranslateModel === "string" ? value.quickAskTranslateModel.trim() : null;
 	const explainPrompt = value.quickAskExplainPrompt;
 	const translatePrompt = value.quickAskTranslatePrompt;
 	return {
@@ -67,6 +69,7 @@ export function normalizeQuickAskSettings(value: Partial<Record<keyof QuickAskSe
 			typeof explainPrompt === "string" && explainPrompt.trim() && explainPrompt.length <= MAX_QUICK_ASK_PROMPT_LENGTH
 				? explainPrompt
 				: DEFAULT_QUICK_ASK_EXPLAIN_PROMPT,
+		quickAskTranslateModel: isQuickAskModel(translateModel) ? translateModel : null,
 		quickAskTranslateEnabled:
 			typeof value.quickAskTranslateEnabled === "boolean" ? value.quickAskTranslateEnabled : true,
 		quickAskTranslateTarget: TRANSLATE_TARGETS.has(value.quickAskTranslateTarget as QuickAskTranslateTarget)

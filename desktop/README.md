@@ -125,6 +125,7 @@ Remove-Item Env:PI_WEB_DESKTOP_URL
 | ------------------------------- | --------------------------------------------------------------------------------------------- |
 | `npm run build:desktop`         | 仅用 `desktop/tsconfig.json` 编译桌面壳到 `dist/desktop/`                                     |
 | `npm run desktop:dist`          | 先构建应用与桌面壳，再按 electron-builder 配置生成当前平台产物，输出到 `release/`             |
+| `npm run desktop:msi`           | 先构建应用与桌面壳，再出 Windows MSI 安装包 `release/pi-web-ui-desktop-<版本>-win-x64.msi`    |
 | `npm run desktop:portable`      | 构建应用与桌面壳，再组装 Windows `release/PiWebUI-Portable/`；默认不下载 Git/Node，不生成 ZIP |
 | `npm run desktop:portable:full` | 同上，但增加 `--with-git`；名称中的 full 不表示包含独立 Node.js                               |
 

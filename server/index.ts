@@ -31,9 +31,11 @@ import "./patch-remote-catalog.js";
 import { existsSync, mkdirSync, readFileSync, readdirSync, statSync } from "node:fs";
 import { registerPromptTemplateRoutes } from "./prompt-templates.js";
 import { createQuickAskRuntime, registerQuickAskRoutes } from "./quick-ask.js";
+import { registerTranslateRoutes } from "./browser-translate.js";
 import { QuickAskError, readQuickAskHistoryConversation } from "./quick-ask-context.js";
 import { SandboxManager } from "./sandbox-service.js";
 import { registerSystemScreenshotRoutes } from "./system-screenshot.js";
+import { registerEngineUpdateRoutes } from "./engine-update.js";
 import { readFile, stat } from "node:fs/promises";
 import { createServer, type IncomingMessage } from "node:http";
 import { proxyHttp, type ProxyHit } from "./http-proxy.js";
@@ -593,7 +595,12 @@ registerTtsRoutes(app);
 const sharedStateStore = new ClientStateStore(join(DATA_DIR, "client-state.json"));
 registerPromptTemplateRoutes(app, DATA_DIR);
 registerSystemScreenshotRoutes(app);
+registerEngineUpdateRoutes(app);
 const quickAskSandboxes = new SandboxManager(DATA_DIR);
+registerTranslateRoutes(app, {
+	getSettings: () => sharedStateStore.getSettingsSnapshot(""),
+	agentDir: getAgentDir(),
+});
 registerQuickAskRoutes(app, {
 	getSettings: () => sharedStateStore.getSettingsSnapshot(""),
 	getRuntime: (signal) => createQuickAskRuntime(getAgentDir(), signal),
@@ -1640,6 +1647,7 @@ export interface DispatchSession {
 		botDraftThinking?: ThinkingLevel;
 		quickAskSystemPrompt?: string;
 		quickAskExplainPrompt?: string;
+		quickAskTranslateModel?: import("./quick-ask-settings.js").QuickAskSettings["quickAskTranslateModel"];
 		quickAskTranslateEnabled?: import("./quick-ask-settings.js").QuickAskSettings["quickAskTranslateEnabled"];
 		quickAskTranslateTarget?: import("./quick-ask-settings.js").QuickAskSettings["quickAskTranslateTarget"];
 		quickAskTranslateStyle?: import("./quick-ask-settings.js").QuickAskSettings["quickAskTranslateStyle"];

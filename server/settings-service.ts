@@ -715,6 +715,7 @@ export class SettingsService {
 		botDraftThinking?: BotDraftSettings["botDraftThinking"];
 		quickAskSystemPrompt?: QuickAskSettings["quickAskSystemPrompt"];
 		quickAskExplainPrompt?: QuickAskSettings["quickAskExplainPrompt"];
+		quickAskTranslateModel?: QuickAskSettings["quickAskTranslateModel"];
 		quickAskTranslateEnabled?: QuickAskSettings["quickAskTranslateEnabled"];
 		quickAskTranslateTarget?: QuickAskSettings["quickAskTranslateTarget"];
 		quickAskTranslateStyle?: QuickAskSettings["quickAskTranslateStyle"];

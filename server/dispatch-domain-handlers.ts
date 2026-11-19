@@ -972,6 +972,7 @@ export function handleSettingsMessage(
 				botDraftThinking: msg.botDraftThinking,
 				quickAskSystemPrompt: msg.quickAskSystemPrompt,
 				quickAskExplainPrompt: msg.quickAskExplainPrompt,
+				quickAskTranslateModel: msg.quickAskTranslateModel,
 				quickAskTranslateEnabled: msg.quickAskTranslateEnabled,
 				quickAskTranslateTarget: msg.quickAskTranslateTarget,
 				quickAskTranslateStyle: msg.quickAskTranslateStyle,

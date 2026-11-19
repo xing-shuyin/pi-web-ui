@@ -91,6 +91,7 @@ import {
 	MIN_SPLIT_RATIO,
 	MAX_SPLIT_RATIO,
 } from "./browser-policy.js";
+import { parseTranslateBridgeRequest, translateEndpoint } from "./translate-bridge.js";
 
 const TEXT_EXTENSIONS = new Set([
 	".txt",
@@ -248,6 +249,7 @@ export class DesktopBrowserHost {
 		"pi-desktop:browser-get-state",
 		"pi-desktop:browser-create-tab",
 		"pi-browser:capture-visible-tab",
+		"pi-browser:translate",
 	];
 
 	constructor(
@@ -409,6 +411,24 @@ export class DesktopBrowserHost {
 				.listPasswords()
 				.filter((entry) => webOrigin(entry.url) === origin)
 				.map((entry) => ({ id: entry.id, name: entry.name, username: entry.username }));
+		});
+		// 网页划词/全页翻译：只认 browser session 的 http(s) frame，按 origin 校验，
+		// 目标地址由主进程从 agentUrl 派生，页面传来的任何 URL 一律不接受。
+		ipcMain.handle("pi-browser:translate", async (event, payload: unknown) => {
+			this.autofillOrigin(event);
+			const request = parseTranslateBridgeRequest(payload);
+			if (!this.agentUrl) throw new Error("Agent runtime is not connected yet");
+			const response = await fetch(translateEndpoint(this.agentUrl), {
+				method: "POST",
+				headers: { "Content-Type": "application/json" },
+				body: JSON.stringify(request),
+				signal: AbortSignal.timeout(70_000),
+			});
+			if (!response.ok) {
+				const detail = await response.text().catch(() => "");
+				throw new Error(detail.slice(0, 300) || `Translation failed (HTTP ${response.status})`);
+			}
+			return (await response.json()) as { translations: string[]; model: string };
 		});
 		ipcMain.handle("pi-browser:passkey-confirm", async (event) => {
 			const origin = this.autofillOrigin(event);
@@ -849,7 +869,18 @@ export class DesktopBrowserHost {
 		if (params.isEditable) {
 			template.push({ role: "cut" }, { role: "copy" }, { role: "paste" }, { type: "separator" }, { role: "selectAll" });
 		} else if (params.selectionText.trim()) {
-			template.push({ role: "copy" }, { type: "separator" });
+			template.push({ role: "copy" });
+			// 划词翻译：内容脚本注入了 showSelection，调它弹出译文浮层；
+			// 脚本尚未注入时用 selectionText 兜底，直接把译文塞进浮层做不到——故只在该帧加菜单项。
+			template.push({
+				label: "翻译选中内容 / Translate selection",
+				click: () => {
+					void contents
+						.executeJavaScript("window.__PI_TRANSLATE__ && window.__PI_TRANSLATE__.showSelection()")
+						.catch(() => {});
+				},
+			});
+			template.push({ type: "separator" });
 		}
 		let extensionItems: Electron.MenuItem[] = [];
 		try {

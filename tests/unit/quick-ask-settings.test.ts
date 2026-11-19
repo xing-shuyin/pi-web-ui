@@ -49,6 +49,7 @@ const defaults = {
 	quickAskThinking: "off",
 	quickAskSystemPrompt: "",
 	quickAskExplainPrompt: "解释下: {{input}}",
+	quickAskTranslateModel: null,
 	quickAskTranslateEnabled: true,
 	quickAskTranslateTarget: "auto",
 	quickAskTranslateStyle: "natural",
@@ -94,6 +95,7 @@ describe("quick ask settings wiring", () => {
 						quickAskThinking: "turbo",
 						quickAskSystemPrompt: {},
 						quickAskExplainPrompt: " ",
+						quickAskTranslateModel: "invalid",
 					},
 				},
 			}),
@@ -105,6 +107,7 @@ describe("quick ask settings wiring", () => {
 				quickAskThinking: "turbo",
 				quickAskSystemPrompt: {},
 				quickAskExplainPrompt: " ",
+				quickAskTranslateModel: "invalid",
 			}),
 		).toEqual(defaults);
 		expect(new ClientStateStore(path).getSettings("browser")).toMatchObject(defaults);
@@ -117,6 +120,7 @@ describe("quick ask settings wiring", () => {
 			quickAskThinking: "high" as const,
 			quickAskSystemPrompt: "Only popup instructions",
 			quickAskExplainPrompt: "Explain {{input}} in detail",
+			quickAskTranslateModel: "translation/vendor",
 			...referencePreferences,
 		};
 		await service.set(values);
@@ -152,6 +156,7 @@ describe("quick ask settings wiring", () => {
 		await dispatch({ quickAskThinking: "high" });
 		await dispatch({ quickAskSystemPrompt: "Only the popup system" });
 		await dispatch({ quickAskExplainPrompt: "Custom {{input}}" });
+		await dispatch({ quickAskTranslateModel: "translation/independent" });
 		await dispatch({ quickAskEnabled: false });
 		await dispatch(referencePreferences);
 		await dispatch({ quickPhrasesEnabled: false });
@@ -160,12 +165,17 @@ describe("quick ask settings wiring", () => {
 			quickAskThinking: "high",
 			quickAskSystemPrompt: "Only the popup system",
 			quickAskExplainPrompt: "Custom {{input}}",
+			quickAskTranslateModel: "translation/independent",
 			quickAskEnabled: false,
 			...referencePreferences,
 		};
 		expect(service.current).toMatchObject(expected);
 		expect(new ClientStateStore(path).getSettings("browser")).toMatchObject(expected);
-		store.saveSettings("browser", { quickAskModel: undefined, quickAskThinking: undefined });
+		store.saveSettings("browser", {
+			quickAskModel: undefined,
+			quickAskTranslateModel: undefined,
+			quickAskThinking: undefined,
+		});
 		expect(store.getSettings("browser")).toMatchObject(expected);
 		await dispatch({ quickAskModel: null, quickAskSystemPrompt: "", quickAskEnabled: true });
 		expect(service.current).toMatchObject({
@@ -198,12 +208,19 @@ describe("quick ask settings wiring", () => {
 		for (const quickAskTranslateStyle of ["natural", "literal", "technical"]) {
 			expect(normalizeQuickAskSettings({ quickAskTranslateStyle }).quickAskTranslateStyle).toBe(quickAskTranslateStyle);
 		}
+		expect(normalizeQuickAskSettings({ quickAskTranslateModel: "  vendor/translator  " }).quickAskTranslateModel).toBe(
+			"vendor/translator",
+		);
+		for (const invalid of ["", "  ", "invalid", "vendor/", "/model", null, 42]) {
+			expect(normalizeQuickAskSettings({ quickAskTranslateModel: invalid as never }).quickAskTranslateModel).toBeNull();
+		}
 		expect(
 			normalizeQuickAskSettings({
 				quickAskTranslateEnabled: "false",
 				quickAskReferenceMenus: null,
 				quickAskTranslateTarget: "zh",
 				quickAskTranslateStyle: "fancy",
+				quickAskTranslateModel: "not-a-model",
 				quickAskTranslatePrompt: " ",
 				quickAskConversationScope: "all",
 				quickAskFolderScope: "recursive",
@@ -221,16 +238,19 @@ describe("quick ask settings wiring", () => {
 		}
 		await service.set({
 			quickAskModel: "  vendor/model  ",
+			quickAskTranslateModel: "  vendor/translator  ",
 			quickAskExplainPrompt: " {{input}} + {{input}} $& ",
 			quickAskSystemPrompt: "  custom  ",
 		});
 		expect(service.current).toMatchObject({
 			quickAskModel: "vendor/model",
+			quickAskTranslateModel: "vendor/translator",
 			quickAskExplainPrompt: " {{input}} + {{input}} $& ",
 			quickAskSystemPrompt: "  custom  ",
 		});
 		await service.set({
 			quickAskModel: "",
+			quickAskTranslateModel: "broken",
 			quickAskThinking: "invalid" as any,
 			quickAskExplainPrompt: " ",
 			quickAskSystemPrompt: "x".repeat(MAX_QUICK_ASK_PROMPT_LENGTH + 1),

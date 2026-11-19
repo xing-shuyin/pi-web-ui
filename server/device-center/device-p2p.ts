@@ -6,6 +6,7 @@ import { dirname, isAbsolute, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { isIP } from "node:net";
 import { spawnChildPiped } from "../spawn-child.js";
+import { toUnpackedPath } from "../asar-paths.js";
 import { probeDeviceTunnel, type DeviceLanConnection, type createDeviceLanServer } from "./device-lan.js";
 import { createBrowserPeerGateway } from "./browser-peer-gateway.js";
 import {
@@ -76,7 +77,7 @@ async function binaryPath(): Promise<string | undefined> {
 						const manifest = JSON.parse(await readFile(join(root, "checksums.json"), "utf8"));
 						const bytes = await readFile(path);
 						if (createHash("sha256").update(bytes).digest("hex") === manifest[name]) {
-							if (process.platform === "win32") return path;
+							if (process.platform === "win32") return toUnpackedPath(path);
 							// npm archives made on Windows may not preserve executable mode. Use a private verified copy.
 							const temporary = await mkdtemp(join(tmpdir(), "pi-device-p2p-"));
 							const executable = join(temporary, "helper");
@@ -229,7 +230,7 @@ export async function diagnoseDeviceP2P() {
 async function startHelper() {
 	const path = await binaryPath();
 	if (!path || running.size >= 16) throw new Error("P2P helper unavailable");
-	const { child, stop } = spawnChildPiped({ cmd: path });
+	const { child, stop } = spawnChildPiped({ cmd: toUnpackedPath(path) });
 	let stderr = "";
 	child.stderr.setEncoding("utf8");
 	child.stderr.on("data", (text: string) => (stderr = (stderr + text).slice(-2048)));

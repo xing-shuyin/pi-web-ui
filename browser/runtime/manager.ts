@@ -17,6 +17,7 @@ import { BrowserStorage } from "../storage/index.js";
 import { isWebUrl, internalPageName, internalPageUrl, normalizeBrowserUrl, pickTabFavicon, webOrigin } from "./urls.js";
 import { BrowserCustomization } from "./customize.js";
 import { DOCK_SCRIPT, SCROLLBAR_CSS } from "./dock.js";
+import { TRANSLATE_SCRIPT } from "./translate.js";
 import { DOWNLOADS_SCRIPT, scriptLiteral } from "./downloads.js";
 import { AUTOFILL_SCRIPT } from "./autofill.js";
 import { PASSKEY_GATE_SCRIPT } from "./passkey-gate.js";
@@ -297,19 +298,28 @@ export class BrowserManager {
 			const current = wc.getURL() || "";
 			// 自定义主题也盖内部页：外壳 / 面板在宿主那边注入，标签页归这里
 			if (this.isInternalPage(current)) void this.applyTheme(id, wc).catch(() => {});
-			if (!current.includes("shell.html") && !current.includes("newtab.html")) {
+			// 本地文件（PDF 阅读器是 Chromium 内部文档）不注入 dock / 滚动条 CSS / 下载圆钮：
+			// 这些脚本会挂到它的滚动容器上，实测让 PDF 滚动明显卡顿。
+			const isLocalFile = current.startsWith("file:");
+			const isWebsite = isWebUrl(current);
+			if (!isLocalFile && !current.includes("shell.html") && !current.includes("newtab.html")) {
 				try {
 					if (this.storage.getSettings().customScrollbar !== false) {
 						void wc.insertCSS(SCROLLBAR_CSS).catch(() => {});
 					}
-					if (this.storage.getSettings().smartDock !== false) {
+					// DOCK_SCRIPT 读不到时是空串（见 runtime/dock.ts 的单源说明），别白跑一次注入
+					if (DOCK_SCRIPT && this.storage.getSettings().smartDock !== false) {
 						void wc.executeJavaScript(DOCK_SCRIPT).catch(() => {});
+					}
+					// 翻译脚本只对 http(s) 网站注入；preload 的 __piTranslate 窄桥也只在这些页面可用
+					if (isWebsite && TRANSLATE_SCRIPT) {
+						void wc.executeJavaScript(TRANSLATE_SCRIPT).catch(() => {});
 					}
 				} catch {}
 				// 下载圆钮不受 smartDock 管：它是「文件下来了」的提示，不是导航玩具
 				this.injectDownloads(wc);
 			}
-			void this.applyPageScripts(id).catch(() => {});
+			if (!isLocalFile) void this.applyPageScripts(id).catch(() => {});
 			// passkey：先确保本标签有平台认证器，再把属于这个站点的凭据装回去
 			if (isWebUrl(current)) void this.syncPasskeyCredentials(id, wc).catch(() => {});
 		});
@@ -322,14 +332,18 @@ export class BrowserManager {
 						this.storage.addHistory(current, wc.getTitle());
 					} catch {}
 				}
-				if (!current.includes("shell.html") && !current.includes("newtab.html")) {
+				const isLocalFile = current.startsWith("file:");
+				if (!isLocalFile && !current.includes("shell.html") && !current.includes("newtab.html")) {
 					try {
-						if (this.storage.getSettings().smartDock !== false) {
+						if (DOCK_SCRIPT && this.storage.getSettings().smartDock !== false) {
 							void wc.executeJavaScript(DOCK_SCRIPT).catch(() => {});
 						}
 						// 密码自动填充下拉：只对真网站注入（内部页没有登录表单，也不该拿到那条桥）
 						if (isWebUrl(current) && AUTOFILL_SCRIPT) {
 							void wc.executeJavaScript(AUTOFILL_SCRIPT).catch(() => {});
+						}
+						if (isWebUrl(current) && TRANSLATE_SCRIPT) {
+							void wc.executeJavaScript(TRANSLATE_SCRIPT).catch(() => {});
 						}
 					} catch {}
 					this.injectDownloads(wc);

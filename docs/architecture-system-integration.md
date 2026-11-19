@@ -6,7 +6,7 @@
 
 Windows 10/11 的默认程序由 `HKCU\...\UserChoice` + 哈希保护决定，**任何程序都无法静默改写**。所以「设为默认浏览器」只能拆成两步：
 
-1. pi 把 ProgId 与 `Capabilities` 写进 HKCU（用户级，不需要管理员权限），让自己出现在「默认应用 / 打开方式」列表里；
+1. pi 把 ProgId、`Capabilities` 与 `Clients\StartMenuInternet` 写进 HKCU（用户级，不需要管理员权限）：前两者让它出现在「按协议选择默认应用 / 打开方式」里，`StartMenuInternet` 是「默认应用 → Web 浏览器」下拉的**唯一**来源——只写 `RegisteredApplications` 时 pi 根本不会出现在那个下拉里；
 2. 用户在系统设置里选中 pi 并确认。设置页的按钮只负责把人送到 `ms-settings:defaultapps`。
 
 同理，文件关联只登记 `.ext\OpenWithProgids` 与 `Capabilities\FileAssociations`，**不写 `.ext` 的默认值**：写不进（系统会无视）还会破坏用户现有默认。用户右键「打开方式 → 始终使用 pi」或在「默认应用」里选一次，才算真正绑定。
@@ -20,6 +20,10 @@ Windows 10/11 的默认程序由 `HKCU\...\UserChoice` + 哈希保护决定，**
 ## 2. 注册表布局（HKCU）
 
 ```
+Software\Clients\StartMenuInternet\PiWebUI.Desktop
+  (默认)                                          "Pi Web UI"
+  \DefaultIcon                                   "C:\...\pi-web-ui-desktop.exe",0
+  \shell\open\command                            "C:\...\pi-web-ui-desktop.exe" "%1"
 Software\Classes\PiWebUI.Desktop.Html            (默认)="Pi Web UI"
   \DefaultIcon                                   "C:\...\pi-web-ui-desktop.exe",0
   \shell\open\command                            "C:\...\pi-web-ui-desktop.exe" "%1"
@@ -36,7 +40,17 @@ Software\RegisteredApplications                  Pi Web UI = Software\PiWebUI\Ca
 - 红线：主进程不许同步子进程（`spawnSync` 等），所以执行器一律 `spawn` + Promise；删不存在的键不算失败（`applyRegistryActions` 只把 `set` 失败算错）。
 - 勾选状态存 `<userData>/system-integration.json`；`planIntegrationActions(current, next)` 算出「新增写、去掉删」的幂等动作集，全部取消时连 `RegisteredApplications` 登记与 `Software\PiWebUI` 一起收掉。
 
+### 勾选回显以注册表为准（reconcile）
+
+本地文件只在「点了保存且注册表写入成功」时落盘，用户手动注册、旧版注册、在 Windows 默认应用里确认过，都会让文件落后于注册表，设置页复选框因此一直空着。`desktop/system-integration.ts` 的纯函数 `reconcileIntegrationSelection(stored, state)` 把 `readIntegrationState` 读到的真实注册状态并进 stored selection（`browser.registered` → 勾浏览器，已注册扩展名并入 `extensions`），**只影响显示与保存时的 `current`，不改注册表写入语义**。
+
+- `desktop/main.ts` 的 `readReconciledIntegration()` 是唯一回读口：`integrationSnapshot()`、`system-integration-apply` 的 `current`、启动时的 stale 刷新都走它，所以取消勾选时也能删掉「注册表里有、本地文件没记」的项。
+- 旧版兼容：浏览器 ProgId command 与 StartMenuInternet command 任一存在即 `browser.registered = true`；`stale` 取任一能解出的 exe 与当前 exe 比较；`isDefault` 仍只认 `UserChoice`（注册过 ≠ 用户已设为默认）。
+- 启动时刷新只作用于回读后 selection 里的扩展名，本地文件为空时不会把默认扩展名顺手写进注册表。
+
 ## 3. 双击文件 / 点链接怎么进到界面
+
+新用户默认登记 `.pdf`、`.docx`、`.xlsx`、`.pptx`（`DEFAULT_ASSOCIATION_EXTENSIONS`，与 office 插件的 `fileHandlers` 对齐）；CSV/TSV 等仍可在设置里手动勾选。
 
 ```
 系统双击 .docx / 点 http 链接
@@ -75,14 +89,15 @@ npm run typecheck
 实机验证顺序：
 
 1. `npm run build && npx electron dist/desktop/main.js`（dev 下设置页会提示「未打包不写注册表」）；
-2. 打包安装后：设置 → 桌面应用 → 系统集成，勾选浏览器与 `.pdf/.docx`，保存；
-3. `reg query HKCU\Software\PiWebUI\Capabilities /s` 应看到 `UrlAssociations` 与 `FileAssociations`；
-4. 「打开系统默认应用设置」→ 把 pi 选成默认浏览器；双击 `D:\Downloads\a.docx`（工作区外）应打开 pi 并在插件里渲染，首次保存会弹目录授权；
+2. 打包安装后：设置 → 桌面应用 → 系统集成，勾选浏览器与需要的 `.pdf/.docx/.xlsx/.pptx`，保存；
+3. `reg query HKCU\Software\PiWebUI\Capabilities /s` 应看到 `UrlAssociations` 与 `FileAssociations`；`reg query HKCU\Software\Clients\StartMenuInternet\PiWebUI.Desktop /s` 应看到 `shell\open\command`，这是它出现在「Web 浏览器」下拉的关键；
+4. 「打开系统默认应用设置」→「Web 浏览器」下拉里现在应能看到 **Pi Web UI**（旧版只列 IE/Edge 就是缺 StartMenuInternet）；也可走「按协议选择默认应用」把 `http`/`https` 设给 pi。双击 `D:\Downloads\a.docx`（工作区外）应打开 pi 并在插件里渲染，首次保存会弹目录授权；
 5. 便携版换目录后再启动：控制台无 `刷新系统集成注册失败`，`reg query` 的 command 指向新 exe。
 
 ## 6. 已知限制
 
-- 系统默认的选择权在用户：没有「一键设为默认」的合法实现，注册后仍要用户点一次。
+- 系统默认的选择权在用户：没有「一键设为默认」的合法实现，注册后仍要用户在「Web 浏览器」下拉或「按协议选择默认应用」里点一次。
+- 回显只对 `readIntegrationState` 查过的扩展名生效（本地记录 ∪ 默认扩展名）；完全手工注册且不在默认集合里的扩展名不会被自动发现。
 - 文件关联不会自动抢占已有默认（`UserChoice` 哈希），只能作为「打开方式」候选出现。
 - 远程文档只读；插件缓存随实例销毁（`cacheDir` 在停用时删除），不落盘留存。
 - `file://` 标签与其他标签一样会被持久化，但文件被删除后恢复只会得到空白页（Chromium 的加载失败）。

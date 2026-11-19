@@ -125,7 +125,7 @@ describe("与 pi SDK 的 MCP 口径一致", () => {
 				tool: string,
 			) => string;
 		} | null;
-		if (!sdk) return; // SDK 换了产物布局就跳过，不把安装结构当契约
+		if (!sdk || typeof sdk.mcpNamespace !== "function" || typeof sdk.getMcpToolExposure !== "function") return; // SDK 换了产物布局/导出就跳过，不把安装结构当契约
 		for (const server of ["srv", "cua-driver", "my_server"]) {
 			expect(mcpToolNamespace(server)).toBe(sdk.mcpNamespace(server));
 		}

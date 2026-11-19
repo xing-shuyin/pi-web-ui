@@ -1862,69 +1862,169 @@ body.pb-panel-layer [hidden] {
 	height: 15px;
 }
 
-/* 方案 4：单行紧凑流线胶囊群 */
-.unified-flow-row {
+/* 方案 4：首页导航 = 书签树（文件夹 + 收藏），像文件管理器一样一层层进 */
+.unified-nav {
+	display: flex;
+	flex-direction: column;
+	align-items: center;
+	gap: 10px;
+	width: 100%;
+	min-width: 0;
+}
+
+.unified-nav-crumbs {
 	display: flex;
 	align-items: center;
-	gap: 8px;
+	justify-content: center;
+	flex-wrap: wrap;
+	gap: 2px;
+	max-width: 100%;
+	min-width: 0;
+	font-size: 12px;
+	color: var(--pb-fg-dim);
+}
+
+/* 面包屑只放名字，过长就省略：一屏里再长的文件夹名也不能把搜索条顶变形 */
+.unified-crumb,
+.unified-crumb-current {
+	max-width: 220px;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+	border-radius: 999px;
+	padding: 3px 10px;
+	font-size: 12px;
+}
+
+.unified-crumb {
+	border: 1px solid transparent;
+	background: none;
+	color: var(--pb-fg-dim);
+	cursor: pointer;
+}
+
+.unified-crumb:hover {
+	background: rgba(255, 255, 255, 0.06);
+	color: var(--pb-fg);
+}
+
+.unified-crumb-current {
+	background: rgba(91, 140, 255, 0.14);
+	color: var(--pb-fg);
+}
+
+.unified-crumb-sep {
+	color: var(--pb-fg-muted);
+}
+
+.unified-nav-grid {
+	/* 弹性行 + 固定格宽：每行各自居中，只有一格的那行也不会歪到左边 */
+	display: flex;
 	flex-wrap: wrap;
 	justify-content: center;
+	align-content: flex-start;
+	gap: 8px;
 	width: 100%;
+	/* 收藏很多时网格自己滚：不把时钟和搜索条顶出首屏 */
+	max-height: min(38vh, 320px);
+	overflow-y: auto;
+	padding: 2px;
 }
 
-.flow-pill {
-	background: rgba(255, 255, 255, 0.035);
+.unified-tile {
+	display: flex;
+	flex: 0 0 108px;
+	box-sizing: border-box;
+	flex-direction: column;
+	align-items: center;
+	gap: 5px;
+	min-width: 0;
+	padding: 10px 8px;
 	border: 1px solid rgba(255, 255, 255, 0.07);
+	border-radius: 12px;
+	background: rgba(255, 255, 255, 0.035);
 	color: var(--pb-fg-dim);
-	padding: 6px 14px;
-	border-radius: 20px;
 	font-size: 12.5px;
 	cursor: pointer;
-	display: inline-flex;
-	align-items: center;
-	gap: 6px;
-	transition: all 0.16s cubic-bezier(0.16, 1, 0.3, 1);
 	user-select: none;
-	text-decoration: none;
+	transition: all 0.16s cubic-bezier(0.16, 1, 0.3, 1);
 }
 
-.flow-pill:hover {
+.unified-tile:hover {
 	background: rgba(255, 255, 255, 0.08);
-	color: #fff;
 	border-color: rgba(91, 140, 255, 0.35);
 	transform: translateY(-1.5px);
 	box-shadow: 0 4px 12px rgba(0, 0, 0, 0.25);
 }
 
-.flow-pill-icon {
-	font-size: 12px;
-	display: inline-flex;
-	align-items: center;
-	justify-content: center;
+.unified-tile-icon {
+	display: grid;
+	place-items: center;
+	flex: 0 0 auto;
+	width: 32px;
+	height: 32px;
+	border-radius: 10px;
+	background: var(--pb-card-hover);
+	color: var(--pb-fg);
+	font-size: 13px;
+	font-weight: 600;
+	pointer-events: none;
 }
 
-.flow-pill-name {
-	max-width: 130px;
+/* 文件夹用强调色 + 文件夹图形：一眼区分「能进」和「点开就是网页」 */
+.unified-tile-folder .unified-tile-icon {
+	background: rgba(91, 140, 255, 0.16);
+	color: var(--pb-accent);
+}
+
+.unified-tile-name,
+.unified-tile-detail {
+	max-width: 100%;
 	overflow: hidden;
 	text-overflow: ellipsis;
 	white-space: nowrap;
 }
 
-.flow-pill-add {
+.unified-tile-name {
+	color: var(--pb-fg);
+}
+
+.unified-tile-detail {
+	font-size: 10.5px;
+	color: var(--pb-fg-muted);
+}
+
+.unified-tile-add {
 	border-style: dashed;
 	border-color: rgba(91, 140, 255, 0.45);
+	background: transparent;
 	color: var(--pb-accent);
 }
 
-.flow-pill-add:hover {
+.unified-tile-add:hover {
 	border-color: var(--pb-accent);
 	background: rgba(91, 140, 255, 0.12);
-	color: #9cbaff;
 }
 
-.flow-pill-add svg {
+.unified-tile-add .unified-tile-icon {
+	background: transparent;
+	color: var(--pb-accent);
+}
+
+.unified-tile-add svg {
 	flex-shrink: 0;
 	pointer-events: none;
+}
+
+.unified-nav-empty {
+	margin: 0;
+	font-size: 12px;
+	color: var(--pb-fg-muted);
+}
+
+.unified-nav-empty[hidden],
+.unified-nav-crumbs[hidden] {
+	display: none;
 }
 
 /* 底部极简快捷键提示 */
@@ -1969,14 +2069,27 @@ html[data-theme="light"] .unified-engine-item:hover {
 	color: #1c1e24;
 }
 
-html[data-theme="light"] .flow-pill {
+html[data-theme="light"] .unified-tile {
 	background: rgba(0, 0, 0, 0.03);
 	border-color: rgba(0, 0, 0, 0.07);
+}
+
+html[data-theme="light"] .unified-tile:hover {
+	background: rgba(0, 0, 0, 0.06);
+}
+
+html[data-theme="light"] .unified-tile-icon {
+	background: rgba(0, 0, 0, 0.06);
 	color: #4b5262;
 }
 
-html[data-theme="light"] .flow-pill:hover {
-	background: rgba(0, 0, 0, 0.06);
+html[data-theme="light"] .unified-tile-folder .unified-tile-icon {
+	background: rgba(91, 140, 255, 0.14);
+	color: var(--pb-accent);
+}
+
+html[data-theme="light"] .unified-crumb:hover {
+	background: rgba(0, 0, 0, 0.05);
 	color: #1c1e24;
 }
 
@@ -2504,9 +2617,12 @@ html[data-theme="light"] .flow-pill:hover {
 		padding: 4px 8px;
 		font-size: 11px;
 	}
-	.flow-pill {
-		padding: 5px 10px;
-		font-size: 11.5px;
+	.unified-tile {
+		flex-basis: 88px;
+		padding: 8px 6px;
+	}
+	.unified-nav-grid {
+		gap: 6px;
 	}
 	.pb-start-top .pb-toolbar {
 		gap: 2px;

@@ -22,12 +22,20 @@ export const INTEGRATION_APP_ID = "PiWebUI.Desktop";
 export const BROWSER_PROG_ID = `${INTEGRATION_APP_ID}.Html`;
 export const CAPABILITIES_KEY = "Software\\PiWebUI\\Capabilities";
 export const REGISTERED_APPLICATIONS_KEY = "Software\\RegisteredApplications";
+/**
+ * 「Web 浏览器」聚合列表读的是 StartMenuInternet，不是 RegisteredApplications。
+ * 只写后者 pi 会出现在「按协议选择默认应用」里，但不会出现在 Web 浏览器下拉中。
+ */
+export const BROWSER_CLIENT_KEY = `Software\\Clients\\StartMenuInternet\\${INTEGRATION_APP_ID}`;
 const CLASSES_KEY = "Software\\Classes";
 const URL_CHOICE_KEY = "Software\\Microsoft\\Windows\\Shell\\Associations\\UrlAssociations";
 const FILE_CHOICE_KEY = "Software\\Microsoft\\Windows\\Shell\\Associations\\FileExts";
 
 /** 允许绑定的扩展名（默认值只在 UI 侧用；这里给个上界，防止把注册表写炸）。 */
 export const MAX_ASSOCIATED_EXTENSIONS = 32;
+
+/** 新用户默认登记：内置预览的 PDF + Office 插件接管的三种主流格式。用户自己勾过的以配置文件为准。 */
+export const DEFAULT_ASSOCIATION_EXTENSIONS = [".pdf", ".docx", ".xlsx", ".pptx"] as const;
 
 export type RegistryAction =
 	| { op: "set"; key: string; name: string | null; value: string }
@@ -118,6 +126,10 @@ export function browserRegistrationActions(exePath: string): RegistryAction[] {
 		{ op: "set", key: progIdKey, name: "FriendlyTypeName", value: INTEGRATION_APP_NAME },
 		{ op: "set", key: `${progIdKey}\\DefaultIcon`, name: null, value: icon },
 		{ op: "set", key: `${progIdKey}\\shell\\open\\command`, name: null, value: shellCommand(exePath) },
+		// Windows 10/11 的「默认应用 → Web 浏览器」下拉只列 StartMenuInternet 客户端
+		{ op: "set", key: BROWSER_CLIENT_KEY, name: null, value: INTEGRATION_APP_NAME },
+		{ op: "set", key: `${BROWSER_CLIENT_KEY}\\DefaultIcon`, name: null, value: icon },
+		{ op: "set", key: `${BROWSER_CLIENT_KEY}\\shell\\open\\command`, name: null, value: shellCommand(exePath) },
 		{ op: "set", key: CAPABILITIES_KEY, name: null, value: INTEGRATION_APP_NAME },
 		{ op: "set", key: CAPABILITIES_KEY, name: "ApplicationName", value: INTEGRATION_APP_NAME },
 		{
@@ -157,6 +169,7 @@ export function fileRegistrationActions(exePath: string, extensions: readonly st
 export function browserRemovalActions(): RegistryAction[] {
 	return [
 		{ op: "deleteKey", key: `${CLASSES_KEY}\\${BROWSER_PROG_ID}` },
+		{ op: "deleteKey", key: BROWSER_CLIENT_KEY },
 		{ op: "deleteValue", key: `${CAPABILITIES_KEY}\\UrlAssociations`, name: "http" },
 		{ op: "deleteValue", key: `${CAPABILITIES_KEY}\\UrlAssociations`, name: "https" },
 	];
@@ -191,6 +204,27 @@ export interface IntegrationSelection {
 }
 
 /**
+ * 把注册表读到的真实状态合并进本地文件里的勾选（纯函数，不碰注册表也不改写入语义）。
+ *
+ * `<userData>/system-integration.json` 只在「点了保存且注册表写入成功」时才落盘，
+ * 用户手动注册、旧版本注册、在系统默认应用里确认过，都会让文件落后于注册表。
+ * 这里只做并集：真实注册的一定勾上；文件里记着但当前没读到的（例如命令暂时 stale）保留，
+ * 免得把用户原来的选择丢掉。显示与保存时的 `current` 都必须过这一层。
+ */
+export function reconcileIntegrationSelection(
+	stored: IntegrationSelection,
+	state: SystemIntegrationState,
+): { browser: boolean; extensions: string[] } {
+	return {
+		browser: stored.browser || state.browser.registered,
+		extensions: normalizeExtensions([
+			...stored.extensions,
+			...state.files.filter((file) => file.registered).map((file) => file.ext),
+		]),
+	};
+}
+
+/**
  * 勾选变化 → 注册表动作：新增的写、去掉的删、保留的不动（幂等，重复点“保存”不会抖）。
  * 全部取消时把自己在 RegisteredApplications 的登记也收掉，不在系统列表里留空壳。
  */
@@ -217,12 +251,16 @@ export function planIntegrationActions(
 	return actions;
 }
 
-/** 纯构建：RegistyAction → `reg.exe` 参数数组（不含 "reg.exe" 本身）。 */
+/**
+ * 纯构建：RegistyAction → `reg.exe` 参数数组（不含 "reg.exe" 本身）。
+ * key 一律补 `HKCU\`：queryValue 查询时加，写入/删除也必须加，否则 reg.exe 直接报「无效参数」。
+ */
 export function registryArgs(action: RegistryAction): string[] {
-	if (action.op === "deleteKey") return ["delete", action.key, "/f"];
-	if (action.op === "deleteValue") return ["delete", action.key, "/v", action.name, "/f"];
+	const key = `HKCU\\${action.key}`;
+	if (action.op === "deleteKey") return ["delete", key, "/f"];
+	if (action.op === "deleteValue") return ["delete", key, "/v", action.name, "/f"];
 	const nameArgs = action.name === null ? ["/ve"] : ["/v", action.name];
-	return ["add", action.key, ...nameArgs, "/t", "REG_SZ", "/d", action.value, "/f"];
+	return ["add", key, ...nameArgs, "/t", "REG_SZ", "/d", action.value, "/f"];
 }
 
 /**
@@ -273,6 +311,21 @@ export function samePath(a: string | null, b: string | null): boolean {
 }
 
 /**
+ * Windows 少数启动链路会把中文路径按系统 ANSI(GBK) 字节读进来，显示成 `Ðò±ê.xlsx` 这类 Latin-1 乱码。
+ * 只在明确能解出 CJK 时修复，正常 UTF-8 路径（码点 > U+00FF）不会被误伤。
+ */
+function repairMojibake(value: string): string {
+	if (!/[\u0080-\u00ff]/.test(value)) return value;
+	try {
+		const decoded = new TextDecoder("gbk", { fatal: true }).decode(Buffer.from(value, "latin1"));
+		if (decoded !== value && /[\u4e00-\u9fff]/.test(decoded)) return decoded;
+	} catch {
+		// 解不出来就当它是合法文案，原样返回
+	}
+	return value;
+}
+
+/**
  * 从进程 argv 里挑出「双击文件 / 点链接」带来的目标。
  * 打包后 argv[0] 是 exe 自身，Electron 的开关（`--inspect`、`--pi-browser-embedded`）要排掉，
  * 剩下的才按存在性判定——不存在的路径交给系统提示没意义，静默丢弃。
@@ -285,7 +338,7 @@ export function collectOpenTargets(argv: readonly string[], options: CollectOpen
 	const urls: string[] = [];
 	for (const raw of argv.slice(1)) {
 		if (typeof raw !== "string") continue;
-		const value = raw.trim();
+		const value = repairMojibake(raw.trim());
 		if (!value || value.startsWith("-")) continue;
 		if (/^https?:\/\//i.test(value) || /^file:\/\//i.test(value)) {
 			if (!urls.includes(value)) urls.push(value);
@@ -402,17 +455,24 @@ export async function readIntegrationState(options: ReadStateOptions): Promise<S
 	if (!supported) return state;
 
 	const runner = options.runner;
-	const [command, urlChoice, registeredValue, capabilities] = await Promise.all([
+	const [command, clientCommand, urlChoice, registeredValue, capabilities] = await Promise.all([
 		queryValue(runner, `${CLASSES_KEY}\\${BROWSER_PROG_ID}\\shell\\open\\command`, null),
+		queryValue(runner, `${BROWSER_CLIENT_KEY}\\shell\\open\\command`, null),
 		queryValue(runner, `${URL_CHOICE_KEY}\\https\\UserChoice`, "ProgId"),
 		queryValue(runner, REGISTERED_APPLICATIONS_KEY, INTEGRATION_APP_NAME),
 		runner(["query", `HKCU\\${CAPABILITIES_KEY}`]),
 	]);
-	const registeredExe = extractExeFromCommand(command);
-	state.registeredExe = registeredExe;
-	state.registered = registeredExe !== null || registeredValue !== null || capabilities.ok;
-	state.stale = registeredExe !== null && !samePath(registeredExe, options.exePath);
-	state.browser.registered = command !== null;
+	// 兼容老版本：当年只写了 ProgId command，或只写了 StartMenuInternet command。
+	// 任一处有 command 就算已注册；stale 用第一处能解出来的 exe 跟当前 exe 比。
+	const progIdExe = extractExeFromCommand(command);
+	const clientExe = extractExeFromCommand(clientCommand);
+	const browserExe = progIdExe ?? clientExe;
+	const browserRegistered = command !== null || clientCommand !== null;
+	state.registeredExe = browserExe;
+	state.registered = browserRegistered || registeredValue !== null || capabilities.ok;
+	state.stale = browserExe !== null && !samePath(browserExe, options.exePath);
+	state.browser.registered = browserRegistered;
+	// 注册了我们 ≠ 用户已经在系统里设为默认，后者只认 UserChoice。
 	state.browser.isDefault = urlChoice === BROWSER_PROG_ID;
 
 	const perFile = await Promise.all(

@@ -1617,6 +1617,7 @@ export type ClientMessage =
 			scmCommitMsgPrompt?: string;
 			quickAskEnabled?: boolean;
 			quickAskModel?: string | null;
+			quickAskTranslateModel?: string | null;
 			quickAskThinking?: ThinkingLevel;
 			botDraftModel?: string | null;
 			botDraftThinking?: ThinkingLevel;
@@ -3137,6 +3138,7 @@ export interface UiSettingsState {
 	botDraftThinking: ThinkingLevel;
 	quickAskSystemPrompt: string;
 	quickAskExplainPrompt: string;
+	quickAskTranslateModel: string | null;
 	quickAskTranslateEnabled: boolean;
 	quickAskTranslateTarget: QuickAskTranslateTarget;
 	quickAskTranslateStyle: QuickAskTranslateStyle;

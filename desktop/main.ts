@@ -26,12 +26,14 @@ import {
 } from "./updater.js";
 import { buildDesktopLoadUrl, DEFAULT_DESKTOP_PORT, resolveHealthTimeoutMs, waitForHealth } from "./startup.js";
 import {
+	DEFAULT_ASSOCIATION_EXTENSIONS,
 	applyRegistryActions,
 	collectOpenTargets,
 	createRegistryRunner,
 	normalizeExtensions,
 	planIntegrationActions,
 	readIntegrationState,
+	reconcileIntegrationSelection,
 	refreshStaleRegistration,
 	type OpenTargets,
 	type SystemIntegrationState,
@@ -176,8 +178,6 @@ let browserHost: DesktopBrowserHost | null = null;
 
 /** 主进程 → 渲染层：「这个文件被双击了」（路径已解析成绝对路径） */
 const OPEN_TARGET_CHANNEL = "pi-desktop:open-file";
-/** 没有配置记录时先只认 PDF：内置浏览器能原样渲染，不依赖任何插件 */
-const DEFAULT_ASSOCIATION_EXTENSIONS = [".pdf"];
 const registryRunner = createRegistryRunner();
 /** 启动就被双击的文件/链接：此时窗口与 Agent 页还没就绪，先攥着 */
 const startupOpenTargets: OpenTargets = app.isPackaged
@@ -225,9 +225,16 @@ function integrationExePath(): string {
 	return portable && existsSync(portable) ? portable : process.execPath;
 }
 
-async function integrationSnapshot(): Promise<IntegrationSnapshot> {
-	const selection = loadIntegrationSelection();
-	const extensions = selection.extensions.length ? selection.extensions : DEFAULT_ASSOCIATION_EXTENSIONS;
+/**
+ * 回读注册表并把真实状态并进本地勾选：快照显示、保存时的 current、启动 stale 刷新共用同一份结果。
+ * 本地文件只在保存成功时落盘，手动注册 / 旧版注册 / 系统默认应用里确认过都会让它落后于注册表。
+ */
+async function readReconciledIntegration(): Promise<{
+	state: SystemIntegrationState;
+	selection: StoredIntegrationSelection;
+}> {
+	const stored = loadIntegrationSelection();
+	const extensions = stored.extensions.length ? stored.extensions : DEFAULT_ASSOCIATION_EXTENSIONS;
 	const state = await readIntegrationState({
 		runner: registryRunner,
 		exePath: integrationExePath(),
@@ -235,6 +242,11 @@ async function integrationSnapshot(): Promise<IntegrationSnapshot> {
 		platform: process.platform,
 		packaged: app.isPackaged,
 	});
+	return { state, selection: reconcileIntegrationSelection(stored, state) };
+}
+
+async function integrationSnapshot(): Promise<IntegrationSnapshot> {
+	const { state, selection } = await readReconciledIntegration();
 	return { ...state, selection, canApply: state.supported && state.packaged };
 }
 
@@ -270,7 +282,8 @@ function flushOpenTargets(): void {
 			}
 		}
 		urls = [];
-		browserHost.setMode(files.length ? "split" : "browser");
+		// 不隐藏左侧 Agent：任何来源的浏览器目标都在分栏右侧打开
+		browserHost.setMode("split");
 	}
 
 	// 2) PDF：Chromium 自带阅读器，file:// 标签即可，不依赖 Agent 页
@@ -286,7 +299,7 @@ function flushOpenTargets(): void {
 			}
 		}
 		files = files.filter((file) => !pdfs.includes(file) || failed.includes(file));
-		if (!files.length) browserHost.setMode("browser");
+		if (!files.length) browserHost.setMode("split");
 	}
 
 	// 3) 其余文件交给 Agent 页：有插件接管的由插件渲染，其余走内置预览
@@ -308,16 +321,15 @@ function flushOpenTargets(): void {
  */
 async function refreshSystemIntegrationOnStartup(): Promise<void> {
 	if (process.platform !== "win32" || !app.isPackaged) return;
-	const selection = loadIntegrationSelection();
-	if (!selection.browser && selection.extensions.length === 0) return;
-	const state = await readIntegrationState({
-		runner: registryRunner,
-		exePath: integrationExePath(),
-		extensions: selection.extensions,
-		packaged: true,
-	});
+	const { state, selection } = await readReconciledIntegration();
 	if (!state.registered || !state.stale) return;
-	const ok = await refreshStaleRegistration(state, registryRunner, { browser: selection.browser });
+	if (!selection.browser && selection.extensions.length === 0) return;
+	// 只刷新回读后 selection 里的项：本地文件为空时不能把默认扩展名顺手写进注册表。
+	const refreshState: SystemIntegrationState = {
+		...state,
+		files: state.files.filter((file) => selection.extensions.includes(file.ext)),
+	};
+	const ok = await refreshStaleRegistration(refreshState, registryRunner, { browser: selection.browser });
 	if (!ok) console.warn("[desktop] 刷新系统集成注册失败");
 }
 
@@ -343,7 +355,8 @@ function wireSystemIntegration(): void {
 					: [],
 			),
 		};
-		const current = loadIntegrationSelection();
+		// current 必须回读：注册表里真实存在但本地文件没记的注册，用户取消勾选时也要删掉。
+		const { selection: current } = await readReconciledIntegration();
 		const result = await applyRegistryActions(
 			planIntegrationActions(current, next, integrationExePath()),
 			registryRunner,
@@ -641,20 +654,9 @@ async function createWindow(): Promise<void> {
 }
 
 if (!app.requestSingleInstanceLock()) {
-	// 已有实例在跑：直接 quit 在用户眼里就是“双击没反应”（便携版尤其常见——换了目录又点了一次，
-	// 旧窗口却藏在后面）。这时候必须给一句人话，不然只能被当成“打不开”。
-	void app.whenReady().then(() => {
-		dialog.showMessageBoxSync({
-			type: "info",
-			title: "Pi Web UI",
-			message: "Pi Web UI 已经在运行 / Pi Web UI is already running",
-			detail:
-				"窗口可能被其他窗口播住，或在另一个显示器上。\n" +
-				"The existing window may be behind other windows or on another display.",
-			buttons: ["好 / OK"],
-		});
-		app.quit();
-	});
+	// 已有实例在跑：second-instance 会把 argv（双击的文件/链接）转给主实例，那里负责打开。
+	// 第二个进程静默退出即可，不弹“已经在运行”——用户要的是直接打开，不是被对话框拦一道。
+	void app.whenReady().then(() => app.quit());
 } else {
 	app.on("second-instance", (_event, argv, workingDirectory) => {
 		if (mainWin) {
@@ -957,6 +959,38 @@ async function wireAutoUpdater(): Promise<void> {
 	ipcMain.handle("pi-desktop-updater:quit-install", (event) => {
 		assertTrustedDesktopRequest(event);
 		return controller.quitAndInstall();
+	});
+	// MSI 本地安装（FilesInUse 绕行）：选包 → 起 detached 看门狗等本进程退出 → 跑 msiexec → 应用自己退出。
+	// 任何一步失败都只返回 {ok:false}，不退出；非 win32 直接返回不支持。
+	ipcMain.handle("pi-desktop:update-install-local-msi", async (event) => {
+		assertTrustedDesktopRequest(event);
+		if (process.platform !== "win32") return { ok: false as const, error: "unsupported-platform" };
+		try {
+			const picked = await dialog.showOpenDialog({
+				properties: ["openFile"],
+				filters: [{ name: "MSI", extensions: ["msi"] }],
+			});
+			if (picked.canceled || !picked.filePaths[0]) return { ok: false as const, cancelled: true as const };
+			const { buildMsiQuitInstallScript, validateMsiPath } = await import("./msi-quit-install.js");
+			const msi = validateMsiPath(picked.filePaths[0]);
+			const script = buildMsiQuitInstallScript(msi, process.pid);
+			const { tmpdir } = await import("node:os");
+			const { randomUUID } = await import("node:crypto");
+			const ps1 = join(tmpdir(), `pi-msi-install-${randomUUID()}.ps1`);
+			const tmp = `${ps1}.tmp`;
+			writeFileSync(tmp, script, "utf8");
+			renameSync(tmp, ps1);
+			const child = spawn("powershell.exe", ["-NoProfile", "-ExecutionPolicy", "Bypass", "-File", ps1], {
+				detached: true,
+				stdio: "ignore",
+				windowsHide: true,
+			});
+			child.unref();
+			app.quit();
+			return { ok: true as const };
+		} catch (error) {
+			return { ok: false as const, error: error instanceof Error ? error.message : String(error) };
+		}
 	});
 	// 运行时通道先接上：壳不能自更新（便携版 / dev）也不代表运行时不能更新。
 	await attachRuntimeChannel(controller);

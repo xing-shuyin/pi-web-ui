@@ -46,6 +46,13 @@ npm run test:freeze  # 冻结/重连回归测试（Playwright，需要本机 chr
 
 Electron 相关依赖（`electron` / `electron-builder` 的二进制）走 npmmirror：打包命令（`desktop:dist`、`desktop:portable*`）已由 `scripts/run-electron-builder.mjs` 自动注入 `ELECTRON_MIRROR` / `ELECTRON_BUILDER_BINARIES_MIRROR`（默认值见 `scripts/lib/electron-mirror.mjs`）。这些镜像**禁止**写进 `.npmrc`——npm 11 会对自定义键告警，npm 12 起不再透传。首次 `npm install` 要下载 Electron 二进制，国内网络请先自带 `ELECTRON_MIRROR` 环境变量。
 
+### Pi 引擎版本（打包跟随 + 桌面在线更新）
+
+根因：线上 `@earendil-works/pi-coding-agent` 经常比 package-lock 里钉的版本新，`npm ci` 永远装回旧版，打包带出去的自带副本一直是旧引擎；桌面安装包的 node_modules 不可写、也没有更新入口。出路是现成的：`resolve-global-sdk` 会优先采用机器上**更新**的全局副本（见 `server/resolve-global-sdk.ts` 头部注释）。
+
+- 构建侧：`desktop:dist` / `desktop:msi` / `desktop:portable` 在正式 build 前先跑 `node scripts/ensure-latest-engine.mjs`。该脚本对比自带副本与 registry 最新版，落后则 `npm update @earendil-works/pi-coding-agent`（`>=1.1.0` range 自动升到满足版并更新 lock），只动 package.json / package-lock.json / node_modules；默认永远 exit 0（离线/失败只警告不断构建），CI 卡点用 `--check-only`，跳过用 `--allow-outdated`。
+- 运行侧：`server/engine-update.ts` 提供 `GET /api/engine/status`（`{bundled, inUse, latest}`，失败项为 null）与 `POST /api/engine/update`（`npm i -g …@latest`，复用 `run-process.ts`，300s 超时），错误按超时/权限/网络/缺 npm 给人话；更新后不自动重启。桌面设置「Pi 引擎」section（仅桌面壳）展示三个版本号，成功后提示重启服务生效，重启走既有路径。
+
 ## 更新本地桌面 app（macOS）
 
 改完浏览器/服务端代码，要让 `/Applications/pi-web-ui-desktop.app` 用上新包：

@@ -38084,6 +38084,44 @@
 	border-color: transparent;
 }
 
+/* 成员卡片的「打开私聊」：点一下退出群组视图、落到这个 Bot 的普通对话（私聊入口单源 `../bot-chat.ts`）。 */
+.grp-bot-actions {
+	display: flex;
+	align-items: center;
+	justify-content: flex-end;
+	gap: 6px;
+	margin-top: 2px;
+}
+
+.grp-bot-open {
+	font-size: 11.5px;
+	line-height: 1.4;
+	padding: 3px 10px;
+	border-radius: 6px;
+	border: 1px solid var(--border);
+	background: var(--bg-elev2);
+	color: var(--text);
+	cursor: pointer;
+	white-space: nowrap;
+	transition:
+		border-color 0.15s,
+		color 0.15s;
+}
+
+.grp-bot-open:hover {
+	border-color: color-mix(in srgb, var(--accent) 55%, var(--border));
+	color: var(--accent);
+}
+
+.grp-bot-remote {
+	font-size: 11px;
+	line-height: 1.4;
+	color: var(--text-faint);
+	text-align: right;
+	min-width: 0;
+	overflow-wrap: anywhere;
+}
+
 .group-webhooks-container {
 	display: flex;
 	flex-direction: column;

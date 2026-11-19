@@ -15,6 +15,7 @@ const settings = {
 	quickAskThinking: "off",
 	quickAskSystemPrompt: "Original system prompt",
 	quickAskExplainPrompt: "Original {{input}}",
+	quickAskTranslateModel: null,
 	quickAskTranslateEnabled: true,
 	quickAskTranslateTarget: "auto",
 	quickAskTranslateStyle: "natural",
@@ -26,7 +27,13 @@ const settings = {
 } as any as UiSettingsState;
 
 beforeEach(() => {
-	vi.stubGlobal("fetch", vi.fn().mockResolvedValue({ ok: true, json: async () => ({ models: [] }) }));
+	vi.stubGlobal(
+		"fetch",
+		vi.fn().mockResolvedValue({
+			ok: true,
+			json: async () => ({ models: [{ provider: "vendor", id: "model", label: "Vendor model" }] }),
+		}),
+	);
 });
 afterEach(() => {
 	if (root) act(() => root!.unmount());
@@ -211,7 +218,14 @@ describe("quick ask settings draft flush on close", () => {
 		const onChange = vi.fn();
 		await mount(onChange);
 		click('button[aria-controls$="-scope"]');
+		const quickAskModels = document.querySelector<HTMLSelectElement>('select[id$="-model"]')!;
+		const translateModels = document.querySelector<HTMLSelectElement>('select[id$="-translate-model"]')!;
+		expect([...quickAskModels.options].map((option) => option.value)).toEqual(
+			[...translateModels.options].map((option) => option.value),
+		);
+		expect(translateModels.options[0].textContent).toBe("quickAskTranslateFollowModel");
 		for (const [suffix, value, key] of [
+			["translate-model", "vendor/model", "quickAskTranslateModel"],
 			["target", "zh-TW", "quickAskTranslateTarget"],
 			["style", "technical", "quickAskTranslateStyle"],
 			["thinking", "high", "quickAskThinking"],

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { FiExternalLink, FiMonitor, FiSave } from "react-icons/fi";
+import { FiCpu, FiExternalLink, FiMonitor, FiSave } from "react-icons/fi";
 import {
 	getDesktopSystemIntegrationBridge,
 	getDesktopWindowBridge,
@@ -8,6 +8,7 @@ import {
 	type DesktopSystemIntegrationBridge,
 	type DesktopSystemIntegrationSnapshot,
 } from "../desktop";
+import { appSend } from "../app-globals";
 import type { MessageKey } from "../i18n/catalog";
 import { useT } from "../i18n";
 import type { UiPluginInfo } from "../types";
@@ -132,6 +133,7 @@ export function DesktopAppSettings({ plugins = [] }: { plugins?: UiPluginInfo[] 
 				</div>
 			)}
 			<SystemIntegrationSection candidates={candidates} />
+			<PiEngineSection />
 		</>
 	);
 }
@@ -262,6 +264,121 @@ function SystemIntegrationSection({ candidates }: { candidates: FileTypeOption[]
 					)}
 				</>
 			)}
+		</div>
+	);
+}
+
+interface PiEngineStatus {
+	bundled: string | null;
+	inUse: string | null;
+	latest: string | null;
+}
+
+/**
+ * Pi 引擎（仅桌面壳）：安装包内 node_modules 不可写，这里把本机全局副本升到 @latest。
+ * 更新后不自动重启 —— 复用已有的 `restart_service` 路径，由用户点重启生效。
+ */
+function PiEngineSection() {
+	const t = useT();
+	const inShell = isDesktopShell();
+	const [status, setStatus] = useState<PiEngineStatus | null>(null);
+	const [loadFailed, setLoadFailed] = useState(false);
+	const [updating, setUpdating] = useState(false);
+	const [updatedVersion, setUpdatedVersion] = useState<string | null>(null);
+	const [updateError, setUpdateError] = useState<string | null>(null);
+	const [restarting, setRestarting] = useState(false);
+
+	useEffect(() => {
+		if (!inShell) return;
+		let stopped = false;
+		void fetch("/api/engine/status", { cache: "no-store" })
+			.then((res) => (res.ok ? res.json() : Promise.reject(new Error(`http ${res.status}`))))
+			.then((body: PiEngineStatus) => {
+				if (stopped) return;
+				setStatus({
+					bundled: typeof body?.bundled === "string" ? body.bundled : null,
+					inUse: typeof body?.inUse === "string" ? body.inUse : null,
+					latest: typeof body?.latest === "string" ? body.latest : null,
+				});
+				setLoadFailed(false);
+			})
+			.catch(() => {
+				if (!stopped) setLoadFailed(true);
+			});
+		return () => {
+			stopped = true;
+		};
+	}, [inShell]);
+
+	if (!inShell) return null;
+
+	const upToDate = Boolean(status?.latest && status?.inUse && status.latest === status.inUse);
+	const fmt = (v: string | null | undefined) => (v ? `v${v}` : "—");
+
+	const update = () => {
+		if (updating) return;
+		setUpdating(true);
+		setUpdateError(null);
+		setUpdatedVersion(null);
+		void fetch("/api/engine/update", { method: "POST" })
+			.then((res) => res.json())
+			.then((body: { ok: boolean; version?: unknown; error?: unknown }) => {
+				if (body?.ok) {
+					setUpdatedVersion(typeof body.version === "string" ? body.version : "latest");
+					setStatus((prev) =>
+						prev ? { ...prev, latest: typeof body.version === "string" ? body.version : prev.latest } : prev,
+					);
+				} else {
+					setUpdateError(typeof body?.error === "string" && body.error ? body.error : t("piEngineLoadFailed"));
+				}
+			})
+			.catch((error: unknown) => setUpdateError(error instanceof Error ? error.message : String(error)))
+			.finally(() => setUpdating(false));
+	};
+
+	const restart = () => {
+		if (restarting) return;
+		setRestarting(true);
+		appSend({ type: "restart_service" });
+	};
+
+	return (
+		<div className="set-section">
+			<div className="set-section-title">
+				<FiCpu className="set-section-icon" />
+				{t("piEngineSection")}
+			</div>
+			<div className="set-note">{t("piEngineHint")}</div>
+			{loadFailed && <div className="set-note">{t("piEngineLoadFailed")}</div>}
+			{status && (
+				<>
+					<div className="set-row set-field-row">
+						<span className="set-row-name">{t("piEngineBundled")}</span>
+						<span>{fmt(status.bundled)}</span>
+					</div>
+					<div className="set-row set-field-row">
+						<span className="set-row-name">{t("piEngineInUse")}</span>
+						<span>{fmt(status.inUse)}</span>
+					</div>
+					<div className="set-row set-field-row">
+						<span className="set-row-name">{t("piEngineLatest")}</span>
+						<span>{fmt(status.latest)}</span>
+					</div>
+				</>
+			)}
+			{upToDate && !updatedVersion && <div className="set-note">{t("piEngineUpToDate")}</div>}
+			<div className="set-row-actions">
+				<button type="button" className="set-save-btn" disabled={updating || upToDate} onClick={update}>
+					{updating ? t("piEngineUpdating") : t("piEngineUpdate")}
+				</button>
+				{updatedVersion && (
+					<button type="button" className="set-save-btn" disabled={restarting} onClick={restart}>
+						{restarting ? t("restartingService") : t("restartService")}
+					</button>
+				)}
+			</div>
+			{updatedVersion && <div className="set-note">{t("piEngineUpdated", { version: updatedVersion })}</div>}
+			{updateError && <div className="set-note">{t("piEngineUpdateFailed", { error: updateError })}</div>}
 		</div>
 	);
 }

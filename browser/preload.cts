@@ -43,6 +43,13 @@ void ipcRenderer
 			lookup: () => ipcRenderer.invoke("pi-browser:autofill-lookup"),
 			pick: (id: unknown) => ipcRenderer.invoke("pi-browser:autofill-pick", typeof id === "string" ? id : ""),
 		});
+		// 网页翻译窄桥：只能把待译文本送到主进程拿回译文字符串，
+		// 主进程按发送方 origin 校验、目标地址由 agentUrl 派生，页面碰不到 sidecar 地址或任何凭据。
+		contextBridge.exposeInMainWorld("__piTranslate", {
+			version: 1,
+			translate: (texts: unknown, target?: unknown, style?: unknown) =>
+				ipcRenderer.invoke("pi-browser:translate", { texts, target, style }),
+		});
 	})
 	.catch(() => {});
 

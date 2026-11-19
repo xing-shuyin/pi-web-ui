@@ -148,3 +148,11 @@ PI_DESKTOP_UPDATE_MODE=auto PI_DESKTOP_UPDATE_FEED=http://127.0.0.1:8799 <桌面
 - **安装后自检回滚**：magpie 会在新版本起不来时把旧版本放回去；Electron 这边替换动作在安装器里完成，暂时只能靠「从下载页重装」。
 
 排期时按「用户实际撞到的失败」排序，别为了对齐参考实现而先做回滚。
+
+## 十一、MSI 本地安装（FilesInUse 绕行）
+
+MSI（WiX）安装器不会主动关闭正在运行的旧版应用，用户手动装 MSI 会被 FilesInUse 卡住。修法是「退出并安装本地 MSI」：应用内选包 → 起一个 detached 看门狗等本进程退出 → 跑 `msiexec /passive` → 应用自己退出。事实源：`desktop/msi-quit-install.ts`（纯函数：`validateMsiPath` / `buildMsiQuitInstallScript` / `escapePsSingleQuoted`，不 import electron）· `desktop/main.ts`（`pi-desktop:update-install-local-msi` 接线）。守卫：`tests/unit/msi-quit-install.test.ts`。
+
+- 看门狗 ps1：循环 `Get-Process -Id <pid>`（500ms 一次，最多 120 秒）→ 进程消失后 `Start-Process msiexec.exe -ArgumentList '/i', <msi>, '/passive'` → 结尾自删 ps1（`try/catch` 包住，删不掉不报错）。PowerShell 单引号转义为双写（`'` → `''`）。
+- 主进程：先过 `assertTrustedDesktopRequest`；`dialog.showOpenDialog`（filters 限 `msi`，取消返回 `{ok:false, cancelled:true}`）；`validateMsiPath` 拒绝空 / 超长（>4096）/ 控制字符 / 非 `.msi` 后缀 / 不存在的文件；ps1 原子写（`os.tmpdir()` 下 tmp+rename）；`spawn("powershell.exe", ["-NoProfile", "-ExecutionPolicy", "Bypass", "-File", ps1], {detached:true, stdio:"ignore", windowsHide:true})` 后 `unref()`，成功才 `app.quit()`；任何一步失败只返回 `{ok:false, error}` 且不退出；非 win32 直接返回 `{ok:false, error:"unsupported-platform"}`。
+- 三面对齐（与 §六 同一守卫思路）：`desktop/main.ts` 的通道名 `pi-desktop:update-install-local-msi` ＝ `desktop/preload.cts` 的 `updater.installLocalMsi` ＝ `web/src/desktop-updater.ts` 的桥方法（旧壳缺失时为 `undefined`，面板不显示按钮）。面板在 `web/src/components/DesktopUpdatePanel.tsx`（仅 win32 + 桌面壳）：`window.confirm` 二次确认 → 调用 → ok 即显示「正在退出并安装…」（应用随即退出，无需处理返回后的状态）。

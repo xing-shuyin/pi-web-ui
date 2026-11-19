@@ -225,8 +225,12 @@ interface BotQueueState {
 - **UI 落点**：
   - 左栏「智能体」区每个 Bot 一行；当前会话就是它的私聊时 `activeBotId` 高亮（`UiState.bot` → `App.tsx` → `LeftPanel` → `AgentBotsSection`）。
   - 点开就是普通对话视图（不套 `GroupConversation`），群能力条 / 成员 / 路由 / 转群一律不出现。
+    `open_bot_chat` 和 `new_chat` / `switch_conversation` 一样被 `use-chat.ts` 算作**导航**（`notifySessionSwitch()`），
+    所以人在群组视图（`App.tsx` 的 `activeGroupId`）里点 Bot 行会先退出群组再落到私聊——群里点不开私聊就是这条漏了（守卫：`conversation-navigation`）。
   - **行右键菜单**（槽位 `contextmenu.bot`，`web/src/components/AgentBotsSection.tsx`）：打开私聊 / **新开对话**（`fresh`，默认点行是同一个私聊） / **引用到对话** / 编辑 Bot / 设备中心管理 / 记忆 / 复制 Bot ID。菜单只做跳转与轻量动作，不复制一份 Bot 编辑器：**编辑就地弹 `BotEditDialog`**（`web/src/components/BotEditDialog.tsx` → 按 id 取完整 Bot 后复用 `LocalBots editBot` 打开，**不切设备中心**；“在设备中心管理”才是管理入口）；引用走 `web/src/bot-reference.ts`，由 `ChatInput` 落地——主对话是普通 `@名字` 文本，群组房间必须登记成员引用范围（发送时序列化成 `@名字(id)`，否则不会被派给那个 Bot）。
   - **行归属必须走 `server/conversation-rows.ts` 的 `rowKind` + `web/src/session-identity.ts`**，禁止组件内自造临时键（守卫：`session-identity`、`conversation-row-declared`）。
+  - 群抽屉「成员状态」每张 Bot 卡片也有「打开私聊」（`web/src/components/GroupDrawer.tsx` → `openBotChat(bot.id)`）：点完退出群组视图落到同一个私聊。
+    私聊只存在于**本机**（`resolveBotChatBot` 只查本机 `device-bots/` 注册表），所以先按 `chat-status` 取本机 `deviceId`，`deviceId` 对不上的成员只显示「请在它所在的设备上打开」，不给点了会报「智能体已不可用」的按钮。
 - **历史**：私聊转录落在 `bot-sessions/<botId>/`，**不进**工作区历史列表（私聊属于 Bot 而不是某个项目）；
   重开/重启后靠 `open_bot_chat` 回到这个 Bot 最近一份转录，绑定由 `webui/bot-chat` 条目重新解析
   （Bot 没了就降级成只读历史并给提示，不会报 "Conversation unavailable"）。

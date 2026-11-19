@@ -2030,9 +2030,12 @@ export function useChat() {
 				before: msg.before ?? curState.historyStart,
 			};
 		}
+		// 会换掉「当前这条对话」的命令一律算导航：群组视图（activeGroupId）必须跟着退出，
+		// 否则点左栏某个智能体只是服务端切了会话，用户还停在群里，看起来「点不开」私聊。
 		if (
 			msg.type === "new_chat" ||
 			msg.type === "new_cli_chat" ||
+			(msg.type === "open_bot_chat" && msg.botId) ||
 			(msg.type === "switch_session" && (msg.path || msg.sessionId)) ||
 			((msg.type === "switch_conversation" ||
 				msg.type === "open_shared_conversation" ||

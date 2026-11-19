@@ -501,6 +501,7 @@ export interface ClientSettings {
 	botDraftThinking: BotDraftSettings["botDraftThinking"];
 	quickAskSystemPrompt: string;
 	quickAskExplainPrompt: string;
+	quickAskTranslateModel: QuickAskSettings["quickAskTranslateModel"];
 	quickAskTranslateEnabled: QuickAskSettings["quickAskTranslateEnabled"];
 	quickAskTranslateTarget: QuickAskSettings["quickAskTranslateTarget"];
 	quickAskTranslateStyle: QuickAskSettings["quickAskTranslateStyle"];
@@ -754,6 +755,7 @@ export const DEFAULT_DARK_MINIMAL_SETTINGS: ClientSettings = Object.freeze({
 	botDraftThinking: "off",
 	quickAskSystemPrompt: "",
 	quickAskExplainPrompt: "解释下: {{input}}",
+	quickAskTranslateModel: null,
 	quickAskTranslateEnabled: true,
 	quickAskTranslateTarget: "auto",
 	quickAskTranslateStyle: "natural",

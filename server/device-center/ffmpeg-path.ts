@@ -1,6 +1,7 @@
 import { existsSync } from "node:fs";
 import { dirname, isAbsolute, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { toUnpackedPath } from "../asar-paths.js";
 
 let cached: { path?: string } | undefined;
 
@@ -27,8 +28,10 @@ export function resolveFfmpeg(env: NodeJS.ProcessEnv = process.env): string | un
 	for (const root of [resolve(dir, "../../bin/ffmpeg"), resolve(dir, "../../../bin/ffmpeg")]) {
 		const path = join(root, key, name);
 		if (existsSync(path)) {
-			cached.path = path;
-			return path;
+			// asar 内可读但不可执行：spawn/execFile 必须走 app.asar.unpacked 下的副本。
+			// 存在性探测仍用原路径（查找顺序/回退逻辑不变），只映射最终交出去的路径。
+			cached.path = toUnpackedPath(path);
+			return cached.path;
 		}
 	}
 	cached.path = undefined;

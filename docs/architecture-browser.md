@@ -42,6 +42,8 @@ BrowserWindow 的 webContents 加载本地 shell.html，标签与专用 Agent �
 - `overlay` 动作现在只服务外壳的搜索浮层：那是盖满整块内容区的 DOM 浮层，内容视图得让位，和面板是两回事。
 - **新标签页一打开光标就在搜索框里**：`browser/renderer/newtab.ts` 先在本页 `focus()`，再发 `call("focus")` 请宿主把键盘焦点切过来——只做 DOM 聚焦时按键还是进外壳页。宿主的 `focus` 分支只接受「发送方＝当前活动标签」（`sender === getWebContents(activeTabId)`），agent 模式与地址浮层开着时直接拒：启动恢复是多标签同时加载，后台标签的请求不能把焦点从前台标签抢走。
 
+**新标签页导航就是书签树**：默认页不再把收藏拍平成一排胶囊，而是照书签树的层级画格子（`browser/renderer/newtab.ts` 的 `unified-nav` + `browser.css` 的 `.unified-nav*` / `.unified-tile*`）：文件夹是可进的一格（点进去看它的内容，面包屑与 `Esc` / `Backspace` 逐级退回），书签是一格直达。层级只记「文件夹名链」，刷新后重走一遍，被删 / 改名的文件夹自动退到最近还能走到的一层；数据仍只有 `bookmarks.list` 一个源，与书签面板（`panels.ts` 的 `bookmarksPanel`）读同一棵 `{name,type,children}` 树。
+
 Agent 可通过 `piDesktop.browser` 与宿主同步模式与标签状态。
 
 窗口拖拽区（`-webkit-app-region`）不能挂在会消失的布局产物上：Agent 顶栏原先只靠 `.tb-spacer` 供拖拽，而窄分栏进手机视图后媒体查询把 spacer 收成 `display: contents`（无盒子＝无拖拽区），整个头部就再也拖不动窗口。现在 `body.is-desktop .topbar-flow` 自身声明 `drag`，交互条目逐条 `no-drag`，与 spacer 是否存在无关；回归守卫见 `tests/unit/desktop-agent-input-regions.test.ts`。
@@ -154,6 +156,17 @@ Agent 可以给网页注入脚本：`browser_script` 工具（`server/browser-sc
 - **点输入框就出下拉（浏览器式自动填充）**：页面注入脚本 `browser/renderer/autofill.js`（`browser/runtime/autofill.ts` 读源码、`manager.ts` 在 `dom-ready`/`did-finish-load` 只对 http(s) 页面注入，与 `dock.js` 同一条路），聚焦账号/密码框时发 `lookup()` → 主进程按**发送方 frame 的 origin** 过滤出候选，只回 `{ id, name, username }`（无明文）；点一条就 `pick(id)` → 主进程用同一个 `fillCredential()` 填。两条口径不破：**明文永不下到页面脚本**（页面只能主动“请主进程填”），且只认 `isTrusted` 的焦点/点击（合成事件一律不弹、不填）。桥在 `browser/preload.cts`（`__piAutofill`）——网页拿到它也只能填自己这个 origin 的凭据，主进程两边都再校一次 session + frame origin。
 - 加密仍然走 `BrowserStorage` 的 `enc:<safeStorage>`，`passwords.available`（= `isEncryptionAvailable()`）为假时面板显示保险库锁定。
 
+### 悬浮 Dock（右下角刷新圆钮）
+
+注入在每个页面右下角的一颗圆钮：单击刷新、悬停展开前进/后退/收藏/复制 Markdown，可拖动（位置存 `localStorage.__aib_dock_pos`），`smartDock` 开关可整体关掉。**功能不难，难的是「某些网站上看不见」**——四条底线都写在 `browser/renderer/dock.js` 头部注释里：
+
+- **宿主挂在 top layer**：`popover="manual"` + `showPopover()`，圆钮不参与页面的层叠上下文，所以站点的 z-index 战争（包括同样用 `2147483647` 的全屏遮罩）、祖先 `transform`/`filter`/`contain` 造成的「`position:fixed` 退化成相对定位」、`overflow:hidden` 的裁剪统统影响不到它。UA 给 popover 的 `fit-content`/`margin:auto`/`overflow:auto` 一律用 inline `!important` 盖回「铺满视口 + `pointer-events:none`」；**开不出来就摘掉 `popover` 属性**退回普通 `fixed`（否则 `[popover]:not(:popover-open){display:none}` 反而会把钮藏掉）。
+- **全屏之后重排**：`fullscreenchange` 里 `hidePopover()` / `showPopover()`，圆钮即排到顶层末尾，压在视频/全屏元素之上（看门狗每秒补一次，防页面吞掉事件）。
+- **被摘掉就挂回去**：MutationObserver 盯 `documentElement` 与 `body` 的直接子节点（SPA 清空 body、换掉整个 body），加 1 秒一次的看门狗：页面 `hidePopover()`、`remove()` 宿主、把宿主 inline 样式改成 `display:none`，最迟下一拍自己恢复。
+- **不碰 `innerHTML`、不建 TT policy**：Google 系站点开着 `require-trusted-types-for 'script'` 且限制 policy 名，`createPolicy()` 也建不出来——旧实现 `setMarkup()` 一失败整颗钮连按钮都没有（这才是「某些网站看不见」最常见的原因）。现在整段 DOM 走 `createElement`/`createElementNS`；样式优先 `adoptedStyleSheets`（构造式样式表不吃页面 CSP `style-src`），拿不到才退回 `<style>`。
+- **残留边界**：站点 `showModal()` 的 `<dialog>` 打开期间，页面把其他内容设成 inert——圆钮仍画在它上面，但点不动，`dialog` 一关就恢复；这是 Chromium 的定数，页面注入赢不了。
+- **单源**：注入源码只有 `browser/renderer/dock.js` 一份，`browser/runtime/dock.ts` 只负责按候选路径读文件（读不到返回空串 + 告警），不再留会跑偏的内联复制品；`scripts/build-browser.mjs` 的 `filesToCopy` 必须带上它。回归：`tests/unit/browser-dock.test.ts`。
+
 ### 下载圆钮（页面右上角）
 
 站内点下载时主进程直接落盘，页面上一点反馈都没有：用户既不知道下没下完，也不知道存哪去了。现在每个页面右上角会有一颗下载圆钮：
@@ -203,6 +216,20 @@ Agent 可以给网页注入脚本：`browser_script` 工具（`server/browser-sc
 - **自动化线上不加新字段**：工具仍走既有 `page_request`，`op` 为 `design.status|get|save|reset|preview`（`browser/automation/design.ts` 的 `BrowserDesignHost`），在 `createBrowserExecutor` 里先于「选目标标签」分支处理——浏览器只剩内部页时也照常可用。
 - **写坏了怎么退**：主题是一份任意 CSS，理论上能把外壳藏没。恢复路径只有一条且必须真实可用——删掉 `userData/browser/custom/theme.css`（或 `newtab.html`）后重启，或让 Agent 跑 `design.reset`；设置面板里也直接显示这两个文件的绝对路径，方便外部编辑器处理。
 - 回归：`tests/unit/browser-customize.test.ts`（存储 / 大小 / 原子写 / URL 识别）、`browser-design-tool.test.ts`（工具契约、kind 与 `browser/contracts.ts` 同构、`get` 截断）、`browser-design-ops.test.ts`（executor 分支）。
+
+## 网页翻译（划词 / 全页）
+
+**复用随手问引擎，不另建翻译服务**：服务端 `server/browser-translate.ts` 的 `POST /api/translate` 用 `quickAsk*` 设置 + `createQuickAskRuntime`，输入 `{ texts, target?, style? }` 输出 `{ translations[] }`——无会话历史、无附件、不污染随手问话题。多段文本用 `[[n]]…[[/n]]` 标记一次批量翻译，解析时宽松兜底：漏段/错标记一律回原文，数组长度恒等（防模型幻觉把坏译文写回页面）。长度/条数有硬上限（64 段 / 单段 2000 字 / 总量 16000 字），prompt 明确把段间文本当数据而非指令。
+
+**一条窄桥，不给网页任何多余能力**：`browser/preload.cts` 的 `__piTranslate.translate(texts, target?, style?)` 只把文本送主进程拿译文字符串。`desktop/translate-bridge.ts` 做纯函数校验：目标地址由主进程从 `agentUrl` 派生（`translateEndpoint`：只留 origin + token，丢掉 Agent 的 path/hash），页面传来的任何 URL 一概不接受；`browser-host.ts` 的 `pi-browser:translate` 复用 `autofillOrigin` 那套校验——只认 browser session 里的 http(s) frame，命中不了直接拒绝。页面拿不到 sidecar 地址、模型配置或其它标签的内容。
+
+**页面侧脚本单源**：`browser/renderer/translate.js`（由 `browser/runtime/translate.ts` 读取注入、`scripts/build-browser.mjs` 复制进 dist），只在 http(s) 网站注入——内部页、新标签页、`file://` 全部跳过（`file://` 注入脚本正是之前 PDF 滚动卡的根因）。划词浮层由主进程右键菜单触发；**全页翻译的入口收在悬浮 Dock 的展开菜单里**（`dock.js` 的 `btn-translate`，之前页面右下角的独立徽标按钮已删掉，它和 Dock 重叠还没有进度反馈）：DOM 文本节点按块级元素聚合，跳过 `script/style/code/pre/textarea` 与 `.notranslate/[translate=no]`，按 1200 字分批、最多 3 路并发翻译（翻完一段立刻回填一段，页面边翻边变，不等全翻完；并发数封顶，不打爆模型），原文存 `WeakMap`，点「显示原文」瞬时还原不重新请求。注入靠 `window.__PI_TRANSLATE__` 占位幂等。
+
+**翻译过程看得见**：`translate.js` 用 `getState()` / `onState(cb)` 对外发布 `{ pageState, done, total, failed, model }`，点了按钮立刻 Toast「正在翻译全文（共 N 段）…」；翻译中按钮进呼吸态，悬停 title 实时显示 `done/total`，翻译中再点只报进度不重复开工；完成报模型与失败段数（失败段保留原文），再点一次显示原文。Dock 与翻译脚本同属页面主世界，直接读 `window.__PI_TRANSLATE__`，不经过任何新桥。
+
+**目标语言跟随手问走**：复用 `quickAskTranslateTarget` / `quickAskTranslateStyle` / `quickAskTranslatePrompt`，浏览器不另设一套语言设置；浮层与徽标的文案是注入脚本内的固定中文（与 dock.js 同口径，不进 i18n 字典）。**模型默认跟随手问，可在设置里单独指定**：`quickAskTranslateModel` 为空时跟随 `quickAskModel`，非空时须为 `provider/id`；`POST /api/translate` 按「独立翻译模型 → 随手问模型 → 第一个可用模型」解析。
+
+回归：`tests/unit/browser-translate-server.test.ts`（请求校验、prompt 防注入、解析兜底）、`tests/unit/browser-translate-bridge.test.ts`（URL 派生、桥参数校验）。
 
 ## 构建与验证
 
