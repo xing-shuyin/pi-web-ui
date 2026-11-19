@@ -54,6 +54,9 @@ const dicts = {
 		tipPick: "Pick an element",
 		tipClear: "Clear steps",
 		tipNote: "Add note",
+		tipUp: "Move up",
+		tipDown: "Move down",
+		tipDel: "Remove step",
 	},
 };
 

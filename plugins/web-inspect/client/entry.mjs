@@ -78,18 +78,96 @@ export default defineView({
 		root.appendChild(Object.assign(document.createElement("style"), { textContent: CSS }));
 		el.appendChild(root);
 
-		let frame;
+		let frame = null;
 		let pickCleanup = null;
-		const sameDoc = () => {
+		let pendingVisit = false;
+		let shownBrowser = ""; // "" | "empty" | "frame" — never re-append the iframe
+
+		// Skeleton: built ONCE. Re-appending an iframe reloads it, which used
+		// to cause an infinite load→broadcast→render loop (frozen tabs).
+		const main = document.createElement("div");
+		main.className = "wi-main";
+		main.innerHTML = `<div class="wi-browser"></div><div class="wi-grip" title="⇔"></div><div class="wi-side" style="width:${sideW}px"></div>`;
+		root.append(main);
+		const browserPane = main.querySelector(".wi-browser");
+		const side = main.querySelector(".wi-side");
+		const head = document.createElement("div");
+		head.className = "wi-sidehead";
+		const tabs = document.createElement("div");
+		tabs.className = "stabs";
+		const body = document.createElement("div");
+		body.className = "sbody";
+		side.append(head, tabs, body);
+		main.querySelector(".wi-grip").addEventListener("mousedown", (e) => {
+			e.preventDefault();
+			const grip = e.currentTarget;
+			grip.classList.add("on");
+			const x0 = e.clientX;
+			const w0 = sideW;
+			const mv = (ev) => {
+				sideW = Math.max(200, Math.min(640, w0 - (ev.clientX - x0)));
+				side.style.width = sideW + "px";
+			};
+			const up = () => {
+				grip.classList.remove("on");
+				window.removeEventListener("mousemove", mv);
+				window.removeEventListener("mouseup", up);
+				try {
+					localStorage.setItem("web-inspect:sideW", String(sideW));
+				} catch {}
+			};
+			window.addEventListener("mousemove", mv);
+			window.addEventListener("mouseup", up);
+		});
+
+		frame = document.createElement("iframe");
+		frame.setAttribute("sandbox", "allow-scripts allow-same-origin allow-forms allow-popups");
+		frame.addEventListener("load", () => {
+			trackUrl();
+			attachFrameListeners();
+			if (settings.autoSnapshot) {
+				const doc = sameDoc();
+				if (doc && browserUrl) void postCollect(collectSnapshot(doc, browserUrl));
+			}
+		});
+
+		function sameDoc() {
 			try {
 				const doc = frame?.contentDocument;
 				if (doc && doc.documentElement) return doc;
 			} catch {}
 			return null;
-		};
-		const sendStep = (step) => ctx.send({ action: "step", step });
+		}
 
-		const collectSnapshot = (doc, url) => {
+		function sendStep(step) {
+			ctx.send({ action: "step", step });
+		}
+
+		function syncSteps() {
+			state.steps.forEach((s, i) => (s.n = i + 1));
+			ctx.send({ action: "steps", steps: state.steps });
+		}
+
+		// Follow URL changes inside the iframe (link clicks, redirects).
+		// Cross-origin reads throw → keep the last known URL instead of hanging.
+		function trackUrl() {
+			let actual = "";
+			try {
+				actual = frame?.contentWindow?.location?.href || "";
+				if (actual === "about:blank") actual = "";
+			} catch {
+				actual = "";
+			}
+			if (pendingVisit) pendingVisit = false;
+			else if (actual && actual !== browserUrl) {
+				browserUrl = actual;
+				sendStep({ kind: "nav", label: `nav: ${actual}`, url: actual });
+			}
+			renderBrowser();
+			renderSide();
+		}
+
+		function collectSnapshot(doc, url) {
 			const vis = (e) => {
 				const r = e.getBoundingClientRect();
 				return r.width > 0 && r.height > 0 && r.bottom > 0 && r.right > 0;
@@ -107,30 +185,30 @@ export default defineView({
 					type: e.type,
 				}));
 			return { type: "snapshot", url, title: doc.title, count: els.length, elements: els };
-		};
+		}
 
-		const postCollect = async (obj) => {
+		async function postCollect(obj) {
 			try {
 				const r = await fetch(`${API}/collect`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(obj) });
 				if (r.ok) refresh();
 			} catch {}
-		};
+		}
 
-		const disarmPick = () => {
+		function disarmPick() {
 			pickArmed = false;
 			try {
 				pickCleanup?.();
 			} catch {}
 			pickCleanup = null;
-		};
+		}
 
-		const armPick = () => {
+		function armPick() {
 			disarmPick();
 			const doc = sameDoc();
 			if (!doc) {
 				mode = "capture";
 				flash = t("xorigin");
-				render();
+				renderSide();
 				return;
 			}
 			pickArmed = true;
@@ -147,7 +225,7 @@ export default defineView({
 			const done = (e) => {
 				if (e.key === "Escape") {
 					disarmPick();
-					render();
+					renderSide();
 				}
 			};
 			const pick = (e) => {
@@ -167,10 +245,10 @@ export default defineView({
 				box.remove();
 			};
 			flash = t("armed");
-			render();
-		};
+			renderSide();
+		}
 
-		const attachFrameListeners = () => {
+		function attachFrameListeners() {
 			const doc = sameDoc();
 			if (!doc || doc.__WI_WIRED) return;
 			doc.__WI_WIRED = 1;
@@ -190,42 +268,34 @@ export default defineView({
 					true,
 				);
 			}
-		};
+		}
 
-		const visit = (url) => {
+		function visit(url) {
 			url = (url || "").trim();
 			if (!url) return;
 			if (!/^https?:\/\//i.test(url)) url = "https://" + url;
 			browserUrl = url;
+			pendingVisit = true;
 			disarmPick();
 			sendStep({ kind: "visit", label: `${t("stepVisit")}: ${url}`, url });
 			frame.src = url;
-		};
+			renderBrowser();
+		}
 
-		const ibtn = (a, icon, tip, on) => `<button class="ibtn${on ? " on" : ""}" data-a="${a}" title="${esc(tip)}">${IC[icon]}</button>`;
+		function ibtn(a, icon, tip, on) {
+			return `<button class="ibtn${on ? " on" : ""}" data-a="${a}" title="${esc(tip)}">${IC[icon]}</button>`;
+		}
 
-		const render = () => {
-			root.querySelectorAll(".wi-main").forEach((n) => n.remove());
-			const steps = state.steps || [];
-			const bm = `javascript:${encodeURIComponent(BOOKMARKLET_SRC.replace("__EP__", API.replace(/'/g, "")).replace("__MSK__", settings.maskPasswords ? "1" : "0"))}`;
+		function stepBtns(idx, total) {
+			const b = (mv, ch, tip) =>
+				`<button data-mv="${mv}" data-i="${idx}" title="${esc(tip)}" style="border:1px solid var(--border,#8886);border-radius:5px;background:transparent;color:var(--text-dim,#999);font-size:11px;padding:0 6px;cursor:pointer"${mv !== 0 && ((mv < 0 && idx === 0) || (mv > 0 && idx === total - 1)) ? " disabled style=\"opacity:.35;border:1px solid var(--border,#8886);border-radius:5px;background:transparent;color:var(--text-dim,#999);font-size:11px;padding:0 6px;cursor:default\"" : ""}>${ch}</button>`;
+			return `<span style="display:inline-flex;gap:4px;margin-left:6px">${b(-1, "↑", t("tipUp"))}${b(1, "↓", t("tipDown"))}<button data-del="${idx}" title="${esc(t("tipDel"))}" style="border:1px solid var(--border,#8886);border-radius:5px;background:transparent;color:var(--text-dim,#999);font-size:11px;padding:0 6px;cursor:pointer">×</button></span>`;
+		}
 
-			const main = document.createElement("div");
-			main.className = "wi-main";
-			main.innerHTML = `<div class="wi-browser"></div><div class="wi-grip" title="⇔"></div><div class="wi-side" style="width:${sideW}px"></div>`;
-			root.append(main);
-
-			const browserPane = main.querySelector(".wi-browser");
-			if (!frame) {
-				frame = document.createElement("iframe");
-				frame.setAttribute("sandbox", "allow-scripts allow-same-origin allow-forms allow-popups");
-				frame.addEventListener("load", () => {
-					attachFrameListeners();
-					if (settings.autoSnapshot) {
-						const doc = sameDoc();
-						if (doc && browserUrl) void postCollect(collectSnapshot(doc, browserUrl));
-					}
-				});
-			}
+		function renderBrowser() {
+			const want = browserUrl ? "frame" : "empty";
+			if (want === shownBrowser) return;
+			shownBrowser = want;
 			browserPane.replaceChildren();
 			if (!browserUrl) {
 				const empty = document.createElement("div");
@@ -240,119 +310,112 @@ export default defineView({
 			} else {
 				browserPane.append(frame);
 			}
+		}
 
-			main.querySelector(".wi-grip").addEventListener("mousedown", (e) => {
-				e.preventDefault();
-				const grip = e.currentTarget;
-				grip.classList.add("on");
-				const x0 = e.clientX;
-				const w0 = sideW;
-				const mv = (ev) => {
-					sideW = Math.max(200, Math.min(640, w0 - (ev.clientX - x0)));
-					main.querySelector(".wi-side").style.width = sideW + "px";
-				};
-				const up = () => {
-					grip.classList.remove("on");
-					window.removeEventListener("mousemove", mv);
-					window.removeEventListener("mouseup", up);
-					try {
-						localStorage.setItem("web-inspect:sideW", String(sideW));
-					} catch {}
-				};
-				window.addEventListener("mousemove", mv);
-				window.addEventListener("mouseup", up);
-			});
-
-			const side = main.querySelector(".wi-side");
-			const head = document.createElement("div");
-			head.className = "wi-sidehead";
+		function renderSide() {
+			const steps = state.steps || [];
+			const bm = `javascript:${encodeURIComponent(BOOKMARKLET_SRC.replace("__EP__", API.replace(/'/g, "")).replace("__MSK__", settings.maskPasswords ? "1" : "0"))}`;
 			head.textContent = state.page ? `${state.page.title || ""} — ${state.page.url}` : t("noPage");
-			const tabs = document.createElement("div");
-			tabs.className = "stabs";
 			tabs.innerHTML = `<button data-m="capture" class="${mode === "capture" ? "on" : ""}">${IC.cap}<span>${esc(t("mCapture"))}</span></button><button data-m="steps" class="${mode === "steps" ? "on" : ""}">${IC.list}<span>${esc(t("mSteps"))}(${steps.length})</span></button><button data-m="send" class="${mode === "send" ? "on" : ""}">${IC.send}<span>${esc(t("mSend"))}</span></button>`;
-			const body = document.createElement("div");
-			body.className = "sbody";
-			let footHtml = flash ? `<div class="wi-flash">${esc(flash)}</div>` : "";
-			flash = "";
-			side.append(head, tabs, body);
-			if (flash && mode !== "send") {
-				const fz = document.createElement("div");
-				fz.className = "wi-flash";
-				fz.textContent = flash;
-				flash = "";
-				body.prepend(fz);
-			}
+			tabs.querySelectorAll("[data-m]").forEach((b) =>
+				b.addEventListener("click", () => {
+					mode = b.dataset.m;
+					renderSide();
+				}),
+			);
 
 			if (mode === "capture") {
 				body.innerHTML = `<ol class="guide">
 					<li><span class="gn">1</span><div style="flex:1"><b>${esc(t("guide1"))}</b><div class="urlrow" style="margin-top:6px"><input data-a="url" placeholder="${esc(t("urlPh"))}" value="${esc(browserUrl)}">${ibtn("go2", "go", t("tipGo"))}</div></div></li>
 					<li><span class="gn">2</span><div style="flex:1"><b>${esc(t("guide2"))}</b><div style="margin-top:6px;display:flex;gap:6px">${ibtn("pick2", "pick", t("tipPick"), pickArmed)}${ibtn("snap2", "snap", t("tipSnap"))}</div>
 					<div class="dim" style="margin-top:6px">${esc(t("loginOk"))}</div><a class="bm" href="${bm}">${esc(t("bmName"))}</a><div class="dim">${esc(t("bmHint"))}</div></div></li>
-					<li><span class="gn">3</span><div><b>${esc(t("guide3"))}</b></div></li></ol>`;
+					<li><span class="gn">3</span><div><b>${esc(t("guide3"))}</b></div></li></ol>${flash ? `<div class="wi-flash">${esc(flash)}</div>` : ""}`;
+				flash = "";
 				const urlInput = body.querySelector('[data-a="url"]');
 				urlInput.addEventListener("keydown", (e) => {
 					if (e.key === "Enter") visit(urlInput.value);
 				});
 				body.querySelector('[data-a="go2"]').addEventListener("click", () => visit(urlInput.value));
-				body.querySelector('[data-a="pick2"]').addEventListener("click", () => (pickArmed ? (disarmPick(), render()) : armPick()));
+				body.querySelector('[data-a="pick2"]').addEventListener("click", () => (pickArmed ? (disarmPick(), renderSide()) : armPick()));
 				body.querySelector('[data-a="snap2"]').addEventListener("click", () => {
 					const doc = sameDoc();
 					if (doc && browserUrl) void postCollect(collectSnapshot(doc, browserUrl));
 					else {
 						flash = t("xorigin");
-						render();
+						renderSide();
 					}
 				});
 			} else if (mode === "steps") {
 				body.innerHTML = `<div class="card"><div style="display:flex;gap:6px;margin-bottom:6px">${ibtn("note", "note", t("tipNote"))}${ibtn("clear", "clear", t("tipClear"))}</div>
-				<ol class="steps">${steps.slice(-50).map((s) => `<li><b>${esc(s.kind)}</b> ${esc(s.label)}${s.sel ? `<br><code>${esc(s.sel)}</code>` : ""}</li>`).join("") || `<span class="dim">${esc(t("empty"))}</span>`}</ol></div>
+				<ol class="steps">${steps.map((s, idx) => `<li><b>${esc(s.kind)}</b> ${esc(s.label)}${s.sel ? `<br><code>${esc(s.sel)}</code>` : ""}${stepBtns(idx, steps.length)}</li>`).join("") || `<span class="dim">${esc(t("empty"))}</span>`}</ol></div>
 				${state.picked ? `<div class="card"><b>${esc(t("picked"))} [${esc(state.picked.tag)}]</b> ${esc(state.picked.text)}<br><code>${esc(state.picked.sel)}</code></div>` : ""}
 				<details class="card"><summary class="dim">${esc(t("elements"))}（${state.snapshot ? state.snapshot.count : 0}）· ${esc(t("recentLog"))}（${state.log.length}）</summary>
-				<pre>${esc((state.snapshot?.elements || []).slice(0, 20).map((e) => `[${e.i}] <${e.tag}> ${e.text || ""} :: ${e.sel}`).join("\n") || `(${t("empty")})`)}</pre></details>`;
+				<pre>${esc((state.snapshot?.elements || []).slice(0, 20).map((e) => `[${e.i}] <${e.tag}> ${e.text || ""} :: ${e.sel}`).join("\n") || `(${t("empty")})`)}</pre></details>${flash ? `<div class="wi-flash">${esc(flash)}</div>` : ""}`;
+				flash = "";
 				body.querySelector('[data-a="note"]').addEventListener("click", () => {
 					const v = prompt("note:");
 					if (v?.trim()) ctx.send({ action: "note", text: v.trim() });
 				});
 				body.querySelector('[data-a="clear"]').addEventListener("click", () => ctx.send({ action: "clear" }));
+				body.querySelectorAll("[data-mv]").forEach((b) =>
+					b.addEventListener("click", () => {
+						const i = Number(b.dataset.i);
+						const d = Number(b.dataset.mv);
+						const j = i + d;
+						if (j < 0 || j >= state.steps.length) return;
+						const [s] = state.steps.splice(i, 1);
+						state.steps.splice(j, 0, s);
+						syncSteps();
+					}),
+				);
+				body.querySelectorAll("[data-del]").forEach((b) =>
+					b.addEventListener("click", () => {
+						const i = Number(b.dataset.del);
+						state.steps.splice(i, 1);
+						syncSteps();
+					}),
+				);
 			} else {
 				body.innerHTML = `<div class="card"><div class="dim">${esc(t("status"))}: ${esc(state.page ? `${state.page.title || ""} — ${state.page.url}` : t("noPage"))}</div>
 				<div class="dim">${esc(t("mSteps"))}: ${steps.length} · ${esc(t("elements"))}: ${state.snapshot ? state.snapshot.count : 0}</div></div>
 				<div class="card"><textarea data-a="task" rows="5" placeholder="${esc(t("taskPh"))}"></textarea>
-				<button data-a="final" class="primary" style="width:100%;padding:8px;margin-top:8px;border:0;font-weight:600">${esc(t("final"))}</button>${footHtml}</div>`;
+				<button data-a="final" class="primary" style="width:100%;padding:8px;margin-top:8px;border:0;font-weight:600">${esc(t("final"))}</button>${flash ? `<div class="wi-flash">${esc(flash)}</div>` : ""}</div>`;
+				flash = "";
 				body.querySelector('[data-a="final"]').addEventListener("click", onFinal);
 			}
+		}
 
-			const onFinal = async () => {
-				const ta = body.querySelector('[data-a="task"]');
-				const task = (ta?.value || "").trim();
-				if (!task) {
-					flash = t("needTask");
-					render();
-					return;
-				}
-				try {
-					const r = await fetch(`${API}/report`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ task }) });
-					const j = await r.json();
-					if (j.ok) {
-						const host = window.__piWebUiHost;
-						if (host && typeof host.compose === "function") {
-							host.compose({
-								text: `${t("askPrefix")}${task}\n(report: ${j.path})`,
-								attachments: [{ path: j.path, name: j.path.split("/").pop(), mode: "reference" }],
-							});
-						}
-						flash = t("sent");
+		async function onFinal() {
+			const ta = body.querySelector('[data-a="task"]');
+			const task = (ta?.value || "").trim();
+			if (!task) {
+				flash = t("needTask");
+				renderSide();
+				return;
+			}
+			try {
+				const r = await fetch(`${API}/report`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ task }) });
+				const j = await r.json();
+				if (j.ok) {
+					const host = window.__piWebUiHost;
+					if (host && typeof host.compose === "function") {
+						host.compose({
+							text: `${t("askPrefix")}${task}\n(report: ${j.path})`,
+							attachments: [{ path: j.path, name: j.path.split("/").pop(), mode: "reference" }],
+						});
 					}
-				} catch {}
-				render();
-			};
-			tabs.querySelectorAll("[data-m]").forEach((b) => b.addEventListener("click", () => {
-				mode = b.dataset.m;
-				render();
-			}));
-		};
+					flash = t("sent");
+				}
+			} catch {}
+			renderSide();
+		}
 
-		const refresh = async (withSettings) => {
+		function render() {
+			renderBrowser();
+			renderSide();
+		}
+
+		async function refresh(withSettings) {
 			try {
 				const r = await fetch(`${API}/state`);
 				const j = await r.json();
@@ -362,12 +425,15 @@ export default defineView({
 					const sj = await s.json();
 					if (sj.ok && sj.settings) {
 						settings = { ...settings, ...sj.settings };
-						if (!localStorage.getItem("web-inspect:sideW") && settings.sidebarWidth) sideW = settings.sidebarWidth;
+						if (!localStorage.getItem("web-inspect:sideW") && settings.sidebarWidth) {
+							sideW = settings.sidebarWidth;
+							side.style.width = sideW + "px";
+						}
 					}
 				}
 			} catch {}
 			render();
-		};
+		}
 
 		const off = ctx.onData((p) => {
 			if (p && p.kind === "web-inspect" && p.state) {
