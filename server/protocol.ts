@@ -2956,6 +2956,13 @@ export interface UiVisionBridgeModel {
 
 export type McpScope = "global" | "project";
 
+/**
+ * MCP 工具暴露方式，与 pi 的 `McpExposure` 同口径：
+ * `direct` 内联声明进上下文，`codemode` / `deferred` 不内联（分别走 codemode / tool_search），`hidden` 不可达。
+ * 定义在这里保持 `server/protocol.ts` 不依赖 node 类型（前端也直接消费它）。
+ */
+export type McpExposure = "codemode" | "deferred" | "direct" | "hidden";
+
 export interface UiMcpToolInfo {
 	name: string;
 	description?: string;
@@ -2975,6 +2982,13 @@ export interface UiMcpServer {
 	protocolVersion?: string;
 	enabled?: boolean;
 	description?: string;
+	/**
+	 * 服务器默认的工具暴露方式。`undefined` = 请求里没带（保存时保留文件里的原值），
+	 * `null` = 明确回到缺省（保存时删掉该字段，即 pi 的 `codemode`）。
+	 */
+	exposure?: McpExposure | null;
+	/** 单个工具的暴露方式；`null` 同上表示删掉该字段。 */
+	toolExposure?: Record<string, McpExposure> | null;
 	status?: "running" | "stopped" | "error";
 	overriddenBy?: McpScope;
 	usingPreviousConfig?: boolean;

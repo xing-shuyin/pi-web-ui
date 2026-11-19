@@ -2,6 +2,7 @@ import type { ChildProcessWithoutNullStreams } from "node:child_process";
 import { existsSync, readFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
+import type { McpExposure } from "@earendil-works/pi-coding-agent";
 import { describeCommandLaunchFailure, resolveCommandLaunch, type CommandSpawnOptions } from "./command-spawn.js";
 import { getMcpAccessToken, refreshMcpAccessToken } from "./mcp-oauth.js";
 import type { PluginAgentTool } from "./plugins.js";
@@ -49,6 +50,10 @@ export interface McpServerSpec {
 	protocolVersion?: string;
 	enabled?: boolean;
 	description?: string;
+	/** 服务器默认的工具暴露方式，缺省 `codemode`（与 pi 同口径）。 */
+	exposure?: McpExposure;
+	/** 单个工具的暴露方式，覆盖 `exposure`：exact 名优先，其次书写顺序第一个命中的 `*` 模式。 */
+	toolExposure?: Record<string, McpExposure>;
 }
 
 interface RpcIncoming {
@@ -104,12 +109,20 @@ export class McpClient {
 
 	constructor(
 		name: string,
-		readonly spec: McpServerSpec,
+		public spec: McpServerSpec,
 		log?: (...a: unknown[]) => void,
 		private readonly clientOpts: McpClientOptions = {},
 	) {
 		this.name = name;
 		this.log = log ?? (() => {});
+	}
+
+	/**
+	 * 只换配置投影：`exposure` / `toolExposure` 这类字段不改变连接，热加载时就地刷新，
+	 * 免得为了改一个曝光方式重启服务器进程。
+	 */
+	updateSpec(spec: McpServerSpec): void {
+		this.spec = spec;
 	}
 
 	get isHttp(): boolean {
@@ -868,6 +881,65 @@ export interface McpToolDefinition {
 	inputSchema?: Record<string, unknown>;
 }
 
+/** pi 接受的 MCP 工具暴露方式（与 SDK 的 `McpExposure` 同口径）。 */
+const MCP_EXPOSURES: readonly string[] = ["codemode", "deferred", "direct", "hidden"];
+/** 旧写法：`codemode-deferred` 归一成 `codemode`（pi 读取配置时也这么做）。 */
+const MCP_EXPOSURE_ALIASES: Record<string, McpExposure> = { "codemode-deferred": "codemode" };
+
+export type { McpExposure };
+
+/**
+ * 归一化一个 exposure 取值：别名换成现名，其余非法值返回 `undefined`。
+ * 旧 `mcp.json` 里写坏的值一律忽略，不因此让整个服务器条目失效。
+ */
+export function normalizeMcpExposure(value: unknown): McpExposure | undefined {
+	if (typeof value !== "string") return undefined;
+	const resolved = MCP_EXPOSURE_ALIASES[value] ?? value;
+	return MCP_EXPOSURES.includes(resolved) ? (resolved as McpExposure) : undefined;
+}
+
+/** `toolExposure` 的一项：`*` 匹配任意字符，其余字符按字面匹配（与 pi 的工具名模式同口径）。 */
+function toolPatternRegExp(pattern: string): RegExp {
+	const source = pattern
+		.split("*")
+		.map((part) => part.replace(/[.+?^${}()|[\]\\]/g, "\\$&"))
+		.join(".*");
+	return new RegExp(`^${source}$`);
+}
+
+/** 服务器工具命名空间：`mcp__<server>`，服务器名里的 `-` 换成 `_`（与 pi 生成的工具名一致）。 */
+export function mcpToolNamespace(server: string): string {
+	return `mcp__${server.replace(/-/g, "_")}`;
+}
+
+/** 单个工具的 exposure：exact 名优先，其次书写顺序第一个命中的 `*` 模式，最后服务器默认 `codemode`。 */
+export function resolveMcpToolExposure(spec: McpServerSpec, toolName: string): McpExposure {
+	const overrides = spec.toolExposure ?? {};
+	const exact = overrides[toolName];
+	if (exact !== undefined) return exact;
+	for (const [pattern, exposure] of Object.entries(overrides)) {
+		if (pattern.includes("*") && toolPatternRegExp(pattern).test(toolName)) return exposure;
+	}
+	return spec.exposure ?? "codemode";
+}
+
+/**
+ * 工具注册元数据：命名、namespace、exposure 的唯一来源。
+ * 少了 namespace / exposure，SDK 只能把 MCP 工具当 `direct` 内联声明进上下文。
+ */
+export function mcpToolRegistration(
+	serverName: string,
+	spec: McpServerSpec,
+	toolName: string,
+): { name: string; namespace: { name: string; description?: string }; exposure: McpExposure } {
+	const namespace = mcpToolNamespace(serverName);
+	return {
+		name: `${namespace}__${sanitizeToolName(toolName)}`,
+		namespace: { name: namespace, ...(spec.description ? { description: spec.description } : {}) },
+		exposure: resolveMcpToolExposure(spec, toolName),
+	};
+}
+
 export function parseMcpConfig(text: string): { servers: Record<string, McpServerSpec> } | null {
 	let parsed: unknown;
 	try {
@@ -900,9 +972,22 @@ export function parseMcpConfig(text: string): { servers: Record<string, McpServe
 			enabled: typeof entry.enabled === "boolean" ? entry.enabled : true,
 			description: typeof entry.description === "string" ? entry.description : undefined,
 			protocolVersion: typeof entry.protocolVersion === "string" ? entry.protocolVersion : undefined,
+			exposure: normalizeMcpExposure(entry.exposure),
+			toolExposure: parseToolExposureMap(entry.toolExposure),
 		};
 	}
 	return { servers };
+}
+
+/** 逐个条目归一化 `toolExposure`：写坏的那一条只丢掉自己，其余（含书写顺序）照原样留下。 */
+function parseToolExposureMap(value: unknown): Record<string, McpExposure> | undefined {
+	if (!value || typeof value !== "object" || Array.isArray(value)) return undefined;
+	const out: Record<string, McpExposure> = {};
+	for (const [tool, raw] of Object.entries(value as Record<string, unknown>)) {
+		const exposure = normalizeMcpExposure(raw);
+		if (exposure) out[tool] = exposure;
+	}
+	return Object.keys(out).length > 0 ? out : undefined;
 }
 
 export function readMcpConfig(dataDir: string): { servers: Record<string, McpServerSpec> } {
@@ -930,11 +1015,21 @@ export function mcpServerSnapshot(spec: McpServerSpec): Record<string, unknown> 
 		enabled: spec.enabled !== false,
 		description: spec.description ?? null,
 		protocolVersion: spec.protocolVersion ?? null,
+		exposure: spec.exposure ?? null,
+		toolExposure: spec.toolExposure ?? null,
 	};
 }
 
+/** 连接参数（不含 exposure / toolExposure）：只影响工具注册、不影响连接的差异不该重启子进程。 */
+function connectionSnapshot(spec: McpServerSpec): string {
+	const snapshot = mcpServerSnapshot(spec);
+	delete snapshot.exposure;
+	delete snapshot.toolExposure;
+	return JSON.stringify(snapshot);
+}
+
 function sameMcpSpec(a: McpServerSpec, b: McpServerSpec): boolean {
-	return JSON.stringify(mcpServerSnapshot(a)) === JSON.stringify(mcpServerSnapshot(b));
+	return connectionSnapshot(a) === connectionSnapshot(b);
 }
 
 const mcpToolServers = new WeakMap<object, string>();
@@ -943,12 +1038,14 @@ export function getMcpToolServer(tool: object): string | undefined {
 }
 
 function adaptMcpTool(serverName: string, mcpTool: McpToolDefinition, client: McpClient): PluginAgentTool {
-	const name = sanitizeToolName(mcpTool.name);
+	const registration = mcpToolRegistration(serverName, client.spec, mcpTool.name);
 	const adapted: PluginAgentTool = {
-		name,
+		name: registration.name,
 		label: `${serverName} · ${mcpTool.name}`,
 		description: mcpTool.description ?? `Tool ${mcpTool.name} provided by MCP server "${serverName}"`,
 		promptSnippet: firstSentenceSnippet(mcpTool.description) ?? `MCP tool ${mcpTool.name} (server: ${serverName})`,
+		namespace: registration.namespace,
+		exposure: registration.exposure,
 		parameters: mcpTool.inputSchema ?? {},
 		execute: async (_toolCallId: string, params: Record<string, unknown>, signal?: AbortSignal) => {
 			return client.call(mcpTool.name, params ?? {}, undefined, signal);
@@ -1037,7 +1134,10 @@ export class McpBridge {
 			return {
 				status: "running",
 				...(this.serverErrors.has(name) ? { error: this.serverErrors.get(name), usingPreviousConfig: true } : {}),
-				tools: client.getTools().map((t) => ({ name: t.name, description: t.description })),
+				// 对外一律用注册名（`mcp__<server>__<tool>`）：那才是模型实际要调用的名字（issue #941）。
+				tools: client
+					.getTools()
+					.map((t) => ({ name: mcpToolRegistration(name, client.spec, t.name).name, description: t.description })),
 			};
 		}
 		if (this.serverErrors.has(name)) {
@@ -1127,6 +1227,7 @@ export class McpBridge {
 			const spec = cfg.servers[client.name];
 			if (!spec || spec.enabled === false || !sameMcpSpec(spec, client.spec)) continue;
 			next.set(client.name, client);
+			client.updateSpec(spec);
 			this.serverErrors.delete(client.name);
 			kept++;
 		}

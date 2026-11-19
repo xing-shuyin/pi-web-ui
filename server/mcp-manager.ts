@@ -6,8 +6,10 @@ import type { McpScope, UiMcpServer, UiMcpToolInfo } from "./protocol.js";
 import {
 	getGlobalMcpPath,
 	getProjectMcpPath,
+	normalizeMcpExposure,
 	parseMcpConfig,
 	type McpBridge,
+	type McpExposure,
 	type McpServerSpec,
 } from "./mcp-bridge.js";
 
@@ -95,6 +97,65 @@ function mutationError(error: unknown): { ok: false; error: string } {
 	return { ok: false, error: error instanceof Error ? error.message : String(error) };
 }
 
+/**
+ * 保存前取出该服务器在文件里的原始条目：重命名 / 跨作用域移动时取源条目，否则取目标同名条目。
+ * 源文件读不到就当没有（真正的错误由迁移事务报出，不在这里换一套报错）。
+ */
+function previousServerEntry(opts: {
+	moving: boolean;
+	targetCfg: ReturnType<typeof editableConfig>;
+	sameFile: boolean;
+	oldPath: string;
+	name: string;
+	prevName?: string;
+}): Record<string, unknown> | undefined {
+	const key = opts.moving ? (opts.prevName ?? opts.name) : opts.name;
+	if (!opts.moving || opts.sameFile) return opts.targetCfg.servers[key] as Record<string, unknown> | undefined;
+	try {
+		return editableConfig(opts.oldPath).servers[key] as Record<string, unknown> | undefined;
+	} catch {
+		return undefined;
+	}
+}
+
+/**
+ * `exposure` / `toolExposure` 的保存规则：请求里没带就原样保留文件里的值（手写配置不会被界面擦掉）；
+ * `null` 删字段；合法值写归一后的结果；非法值忽略（既不写也不删）。
+ */
+function exposureFields(
+	server: UiMcpServer,
+	previous: Record<string, unknown> | undefined,
+): Pick<McpServerSpec, "exposure" | "toolExposure"> {
+	const out: Record<string, unknown> = {};
+	if (previous?.exposure !== undefined) out.exposure = previous.exposure;
+	if (previous?.toolExposure !== undefined) out.toolExposure = previous.toolExposure;
+	if (Object.hasOwn(server, "exposure")) {
+		if (server.exposure === null || server.exposure === undefined) delete out.exposure;
+		else {
+			const exposure = normalizeMcpExposure(server.exposure);
+			if (exposure) out.exposure = exposure;
+		}
+	}
+	if (Object.hasOwn(server, "toolExposure")) {
+		if (server.toolExposure === null || server.toolExposure === undefined) delete out.toolExposure;
+		else {
+			const toolExposure = normalizeToolExposure(server.toolExposure);
+			if (toolExposure) out.toolExposure = toolExposure;
+		}
+	}
+	return out as Pick<McpServerSpec, "exposure" | "toolExposure">;
+}
+
+function normalizeToolExposure(value: unknown): Record<string, McpExposure> | undefined {
+	if (!value || typeof value !== "object" || Array.isArray(value)) return undefined;
+	const out: Record<string, McpExposure> = {};
+	for (const [tool, raw] of Object.entries(value as Record<string, unknown>)) {
+		const exposure = normalizeMcpExposure(raw);
+		if (exposure) out[tool] = exposure;
+	}
+	return Object.keys(out).length > 0 ? out : undefined;
+}
+
 export function isValidMcpServerName(name: string): boolean {
 	return /^[a-zA-Z0-9_-]+$/.test(name.trim());
 }
@@ -136,6 +197,8 @@ export function listAllMcpServers(opts: { agentDir?: string; cwd?: string; dataD
 			protocolVersion: spec.protocolVersion,
 			enabled: spec.enabled !== false,
 			description: spec.description,
+			exposure: spec.exposure,
+			toolExposure: spec.toolExposure,
 			...status,
 		});
 	}
@@ -156,6 +219,8 @@ export function listAllMcpServers(opts: { agentDir?: string; cwd?: string; dataD
 			protocolVersion: spec.protocolVersion,
 			enabled: spec.enabled !== false,
 			description: spec.description,
+			exposure: spec.exposure,
+			toolExposure: spec.toolExposure,
 			...status,
 		});
 	}
@@ -197,6 +262,10 @@ export function saveMcpServer(opts: {
 
 	try {
 		const targetCfg = editableConfig(targetPath);
+		const prevName = opts.prevName?.trim();
+		const oldPath = opts.prevScope === "global" ? globalPath : projectPath;
+		const sameFile = resolve(oldPath) === resolve(targetPath);
+		const moving = prevName && opts.prevScope && (prevName !== name || !sameFile);
 		const spec: McpServerSpec = {
 			command: opts.server.command?.trim() || undefined,
 			args: Array.isArray(opts.server.args) && opts.server.args.length > 0 ? opts.server.args.map(String) : undefined,
@@ -215,13 +284,14 @@ export function saveMcpServer(opts: {
 			protocolVersion: opts.server.protocolVersion?.trim() || undefined,
 			enabled: opts.server.enabled !== false,
 			description: opts.server.description?.trim() || undefined,
+			...exposureFields(
+				opts.server,
+				previousServerEntry({ moving: Boolean(moving), targetCfg, sameFile, oldPath, name, prevName }),
+			),
 		};
 
-		const prevName = opts.prevName?.trim();
-		const oldPath = opts.prevScope === "global" ? globalPath : projectPath;
-		const moving = prevName && opts.prevScope && (prevName !== name || resolve(oldPath) !== resolve(targetPath));
 		if (moving) {
-			if (resolve(oldPath) !== resolve(targetPath)) return migrateMcpServer(oldPath, targetPath, prevName, name, spec);
+			if (!sameFile) return migrateMcpServer(oldPath, targetPath, prevName, name, spec);
 			if (!Object.hasOwn(targetCfg.servers, prevName)) throw new Error(`源服务器 ${prevName} 不存在`);
 			if (Object.hasOwn(targetCfg.servers, name)) throw new Error(`目标服务器 ${name} 已存在`);
 			delete targetCfg.servers[prevName];

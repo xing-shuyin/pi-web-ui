@@ -24,11 +24,19 @@ import { appSend } from "../app-globals";
 import { CopyButton } from "./copy-button";
 import { HintTip } from "./HintTip";
 import { isZhLocale, useI18n, useT } from "../i18n";
-import type { McpScope, UiMcpServer, UiMcpToolInfo, UiSettingsState } from "../types";
+import type { McpExposure, McpScope, UiMcpServer, UiMcpToolInfo, UiSettingsState } from "../types";
 import { MCP_MARKETS } from "../mcp-catalog";
 import { createMcpDraft, getMcpServerDisplayState, serializeMcpDraft, type McpDraft } from "../mcp-server-draft";
 
 export type McpMarketCategoryFilter = "all" | "cn" | "marketplace" | "community" | "official";
+
+/** 下拉里可选的服务器默认暴露方式：空串 = 不写字段（pi 的 codemode 缺省）。 */
+type McpExposureChoice = "" | Exclude<McpExposure, "codemode">;
+
+function exposureChoice(server: UiMcpServer | undefined): McpExposureChoice {
+	const exposure = server?.exposure;
+	return exposure === "direct" || exposure === "deferred" || exposure === "hidden" ? exposure : "";
+}
 
 export interface McpServersPanelProps {
 	settings: UiSettingsState;
@@ -150,6 +158,7 @@ export function McpServersPanel({ settings, chat }: McpServersPanelProps) {
 	const [expandedTools, setExpandedTools] = useState<Record<string, boolean>>({});
 	const [reloading, setReloading] = useState(false);
 	const [draft, setDraft] = useState<McpDraft | null>(null);
+	const [draftExposure, setDraftExposure] = useState<McpExposureChoice>("");
 	const [deleteConfirm, setDeleteConfirm] = useState<{ name: string; scope: McpScope } | null>(null);
 	const [selectedPresetId, setSelectedPresetId] = useState<string>("custom");
 
@@ -225,6 +234,7 @@ export function McpServersPanel({ settings, chat }: McpServersPanelProps) {
 	const openNewServerModal = (scope: McpScope = "global", presetId = "custom") => {
 		const preset = MCP_PRESETS.find((p) => p.id === presetId) || MCP_PRESETS[0];
 		setSelectedPresetId(preset.id);
+		setDraftExposure("");
 		setDraft({
 			name: preset.id === "custom" ? "" : preset.id,
 			scope,
@@ -244,6 +254,7 @@ export function McpServersPanel({ settings, chat }: McpServersPanelProps) {
 
 	const openEditServerModal = (s: UiMcpServer) => {
 		setSelectedPresetId("custom");
+		setDraftExposure(exposureChoice(s));
 		setDraft(createMcpDraft(s));
 	};
 
@@ -271,7 +282,8 @@ export function McpServersPanel({ settings, chat }: McpServersPanelProps) {
 		const name = draft.name.trim();
 		if (!name) return;
 
-		const server = serializeMcpDraft(draft);
+		// exposure 单独传：空串交给服务端删掉该字段（回到 pi 的 codemode 缺省），不传则保留文件里的原值。
+		const server = { ...serializeMcpDraft(draft), exposure: draftExposure || null };
 
 		appSend({
 			type: "save_mcp_server",
@@ -1093,6 +1105,24 @@ export function McpServersPanel({ settings, chat }: McpServersPanelProps) {
 									value={draft.description}
 									onChange={(e) => setDraft((d) => (d ? { ...d, description: e.target.value } : null))}
 								/>
+							</div>
+
+							<div className="set-field">
+								<label className="set-field-label" htmlFor="mcp-exposure-select">
+									{t("mcpExposureLabel")}
+								</label>
+								<select
+									id="mcp-exposure-select"
+									className="set-select"
+									value={draftExposure}
+									onChange={(e) => setDraftExposure(e.target.value as McpExposureChoice)}
+								>
+									<option value="">{t("mcpExposureDefault")}</option>
+									<option value="direct">{t("mcpExposureDirect")}</option>
+									<option value="deferred">{t("mcpExposureDeferred")}</option>
+									<option value="hidden">{t("mcpExposureHidden")}</option>
+								</select>
+								<div className="mcp-radio-hint">{t("mcpExposureHint")}</div>
 							</div>
 
 							<div className="set-row">

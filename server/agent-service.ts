@@ -231,6 +231,13 @@ import {
 	hasConversationParentBinding,
 	conversationParent,
 	parentConversationIdentity,
+	conversationHomeByIdentity,
+	conversationHomeOf,
+	registerConversationHome,
+	forgetConversationHome,
+	hasConversationChildren,
+	indexConversationChild,
+	unindexConversationChild,
 } from "./conversation-identity.js";
 
 /**
@@ -563,6 +570,15 @@ export const OFFLINE_ROW_TTL_MS = (() => {
 	return Math.min(ms, 6 * 60 * 60_000);
 })();
 const UI_MESSAGE_CACHE_CAP = 4096;
+/** 自动收起闲置对话的最小空闲时长：刚切走的对话不立即收，给「切回去接着写」留出窗口。 */
+const EVICT_MIN_IDLE_MS = 120_000;
+/** 已结束子代理的回收节流：扫一次的开销很小，但没必要更密。 */
+const SUBAGENT_RECYCLE_INTERVAL_MS = (() => {
+	const raw = Number(process.env.PI_WEB_SUBAGENT_RECYCLE_MS);
+	return Number.isFinite(raw) && raw >= 0 ? raw : 5 * 60_000;
+})();
+/** 已结束子代理空闲多久后可回收 runtime（issue #944：此前永不回收，只能手动清）。 */
+const SUBAGENT_RECYCLE_IDLE_MS = 15 * 60_000;
 
 export class QuiesceRejectedError extends Error {
 	readonly code = "QUIESCED";
@@ -1577,11 +1593,16 @@ export class ClientSession {
 
 	private spawningSubagents = 0;
 	private creatingConversations = new Map<string, number>();
+	/**
+	 * 正在打开中的 transcript（键 = 归一化绝对路径）：同一份记录的并发打开共用一次创建。
+	 * issue #943：去重扫描在任何 await 之前，若只靠 convs 扫描，创建完成前两边都看不见对方 → 两份 runtime 双写。
+	 */
+	private openingSessions = new Map<string, Promise<string | undefined>>();
 
 	private reserveConversationSlot(cwd: string): () => void {
 		const pending = this.creatingConversations.get(cwd) ?? 0;
-		const open = [...this.convs.values()].filter((c) => c.cwd === cwd && !c.isSubagent && !c.isEphemeral).length;
-		if (open + pending >= getMaxOpenConversations()) throw new Error("Project conversation limit reached");
+		if (this.countOpenConversations(cwd) + pending >= getMaxOpenConversations())
+			throw new Error("Project conversation limit reached");
 		this.creatingConversations.set(cwd, pending + 1);
 		let released = false;
 		return () => {
@@ -1635,9 +1656,7 @@ export class ClientSession {
 		if (persist) {
 			const baseCwdForLimit = parentId ? (this.convs.get(parentId)?.cwd ?? this.cwd) : this.cwd;
 			const resolvedCwdForLimit = cwd ? resolve(baseCwdForLimit, cwd) : baseCwdForLimit;
-			const openInProject = [...this.convs.values()].filter(
-				(c) => c.cwd === resolvedCwdForLimit && !c.isSubagent && !c.isEphemeral,
-			).length;
+			const openInProject = this.countOpenConversations(resolvedCwdForLimit);
 			const maxOpenConversations = getMaxOpenConversations();
 			if (openInProject >= maxOpenConversations) {
 				throw new Error(
@@ -2000,6 +2019,15 @@ export class ClientSession {
 	private resolveExecution(id: string): { session: ClientSession; convId: string; conv: Conversation } | undefined {
 		const owners = new Set([this, ...(this.allSubagentSessions?.() ?? [])]);
 		if (id.startsWith("exec-")) {
+			// 快路径：身份 → 持有会话的登记表（issue #946）。命中后仍校验，过户后自动回退到扫描。
+			const home = conversationHomeByIdentity(id) as ClientSession | undefined;
+			if (home && (home === this || owners.has(home))) {
+				for (const conv of home.convs.values()) {
+					if (conversationIdentity(conv) !== id) continue;
+					if (home.convs.get(conv.id) !== conv) break;
+					return { session: home, convId: conv.id, conv };
+				}
+			}
 			for (const session of owners) {
 				for (const conv of session.convs.values()) {
 					if (conversationIdentity(conv) === id) return { session, convId: conv.id, conv };
@@ -2027,7 +2055,14 @@ export class ClientSession {
 			bindConversationParent(child, parent);
 		}
 		const parent = conversationParent(child) as Conversation | undefined;
-		return parent ? this.resolveExecution(conversationIdentity(parent)) : undefined;
+		if (!parent) return undefined;
+		// 快路径：同一会话内的父对话不必再跑身份解析（issue #946：此函数在淘汰判定上被逐候选调用）。
+		if (this.convs.get(parent.id) === parent) return { session: this, convId: parent.id, conv: parent };
+		const home = conversationHomeOf(parent) as ClientSession | undefined;
+		if (home && home !== this && home.convs.get(parent.id) === parent) {
+			return { session: home, convId: parent.id, conv: parent };
+		}
+		return this.resolveExecution(conversationIdentity(parent));
 	}
 
 	private parentExecutionKey(child: Conversation): string | undefined {
@@ -5610,6 +5645,8 @@ export class ClientSession {
 		const pendingBot = this.pendingBotChat.get(id);
 		if (pendingBot) this.attachBotBinding(conv, pendingBot);
 		conversationIdentity(conv);
+		// issue #946：登记持有会话，让父链/执行身份解析走 O(1) 快路径（移除时 forget）。
+		registerConversationHome(conv, this);
 		this.restorePlan(conv);
 		return conv;
 	}
@@ -5936,6 +5973,59 @@ export class ClientSession {
 		this.webUi.refresh();
 		this.startWidgetsTimer();
 		this.startStallTimer();
+		this.startSubagentRecycleTimer();
+	}
+
+	private subagentRecycleTimer: ReturnType<typeof setInterval> | null = null;
+
+	private startSubagentRecycleTimer(): void {
+		if (this.subagentRecycleTimer || SUBAGENT_RECYCLE_INTERVAL_MS <= 0) return;
+		this.subagentRecycleTimer = setInterval(() => {
+			if (this.disposed) return;
+			this.recycleFinishedSubagents();
+		}, SUBAGENT_RECYCLE_INTERVAL_MS);
+	}
+
+	/**
+	 * issue #944 根因 3：子代理结束后永不回收——每个子代理是一整份 AgentSession + 终端 + 扩展绑定。
+	 * 这里只回收「完全落定且空闲够久」的：无流式/压缩/投递/终端/存活后代，任务已结算且结果已交付或消费。
+	 * 已持久化的转录与左栏历史行不受影响，点一下就能重新打开。
+	 */
+	recycleFinishedSubagents(now = Date.now()): number {
+		const removed: string[] = [];
+		const withChildren = this.conversationsWithChildren();
+		for (const conv of [...this.convs.values()]) {
+			if (!conv.isSubagent || conv.id === this.activeId || conv.pinned) continue;
+			if (now - (conv.lastSdkEventAt || conv.lastActiveAt || 0) < SUBAGENT_RECYCLE_IDLE_MS) continue;
+			if (conv.promptInFlight) continue;
+			try {
+				if (conv.session.isStreaming) continue;
+			} catch {
+				continue;
+			}
+			try {
+				if (this.deliveryModeOf(conv) !== "idle") continue;
+			} catch {
+				continue;
+			}
+			if (conv.terminals.countBlockingLive() > 0) continue;
+			if (this.hasLiveSubagentChild(conv, withChildren)) continue;
+			// 完成结果还没送到父对话：继续留着，别让父代理等一个已被回收的执行体。
+			if (conv.notifyOnDone !== false && !conv.subagentDoneNotified && !conv.subagentConsumedByParent) continue;
+			if (this.subagentTaskPending(conv)) continue;
+			this.removeConversation(conv.id);
+			removed.push(conv.title || conv.id);
+		}
+		if (removed.length > 0) {
+			this.emitConversations();
+			this.emit({
+				type: "notice",
+				level: "info",
+				text: `已自动回收 ${removed.length} 个结束很久的子代理运行（已持久化的转录与历史行保留，可在左栏重新打开）`,
+				textEn: `Auto-released ${removed.length} long-finished subagent runtime(s); persisted transcripts and history rows stay available.`,
+			});
+		}
+		return removed.length;
 	}
 
 	private startWidgetsTimer(): void {
@@ -12910,9 +13000,7 @@ export class ClientSession {
 		}
 		if (!ephemeral) {
 			this.makeRoomForConversation(this.cwd, 1);
-			const openInProject = [...this.convs.values()].filter(
-				(c) => c.cwd === this.cwd && !c.isSubagent && !c.isEphemeral,
-			).length;
+			const openInProject = this.countOpenConversations(this.cwd);
 			const maxOpenConversations = getMaxOpenConversations();
 			if (openInProject >= maxOpenConversations) {
 				const notice = this.maxOpenConversationsNotice(maxOpenConversations);
@@ -13347,10 +13435,28 @@ export class ClientSession {
 		return conv;
 	}
 
-	private hasLiveSubagentChild(conv: Conversation): boolean {
-		return [...new Set([this, ...(this.allSubagentSessions?.() ?? [])])].some((owner) =>
-			[...owner.convs.values()].some((child) => owner.parentExecution(child)?.conv === conv),
-		);
+	/**
+	 * 有子对话的对话集合：一次全量父链解析得出。
+	 * issue #946：原先 `hasLiveSubagentChild` 在 `makeRoomForConversation` 里被逐候选调用，内部又是 S×C 全扫
+	 * → 合计 O((S·C)²)。现在每轮只算一次，候选判定降为 O(1)。
+	 */
+	private conversationsWithChildren(): Set<Conversation> {
+		const owners = new Set([this, ...(this.allSubagentSessions?.() ?? [])]);
+		const withChildren = new Set<Conversation>();
+		for (const owner of owners) {
+			for (const child of owner.convs.values()) {
+				const parent = owner.parentExecution(child)?.conv;
+				if (parent) withChildren.add(parent);
+			}
+		}
+		return withChildren;
+	}
+
+	private hasLiveSubagentChild(conv: Conversation, withChildren?: ReadonlySet<Conversation>): boolean {
+		if (withChildren) return withChildren.has(conv);
+		// 绑定是 spawn / 过户时做的（`bindConversationParent` 是唯一入口），反向索引即权威。
+		if (hasConversationChildren(conv)) return true;
+		return this.conversationsWithChildren().has(conv);
 	}
 
 	private isRetainedOnDisplace(conv: Conversation): boolean {
@@ -13387,15 +13493,43 @@ export class ClientSession {
 		return !this.isRetainedOnDisplace(conv);
 	}
 
-	private countProjectSlots(cwd: string): number {
+	/**
+	 * 计入名额的对话：本项目的普通对话。钉住的是用户明确要求常驻，不占自动名额
+	 * （否则「钉满 12 个」就会把历史会话彻底锁死，issue #944）。
+	 */
+	private countOpenConversations(cwd: string): number {
 		let open = 0;
-		for (const c of this.convs.values()) if (c.cwd === cwd && !c.isSubagent && !c.isEphemeral) open++;
-		return open + (this.creatingConversations.get(cwd) ?? 0);
+		for (const c of this.convs.values()) {
+			if (c.cwd === cwd && !c.isSubagent && !c.isEphemeral && !c.pinned) open++;
+		}
+		return open;
 	}
 
-	private isEvictableViewedConversation(c: Conversation): boolean {
-		if (!c.viewOnly || c.id === this.activeId || c.pinned || c.transferring) return false;
+	private countProjectSlots(cwd: string): number {
+		return this.countOpenConversations(cwd) + (this.creatingConversations.get(cwd) ?? 0);
+	}
+
+	/** 新建 / 打开一个对话后本项目将占用多少个名额（含即将切走释放的当前对话）。 */
+	private projectedOpenSlots(cwd: string, displaced?: Conversation | null): number {
+		const freed =
+			displaced && displaced.cwd === cwd && !displaced.isSubagent && !displaced.isEphemeral && !displaced.pinned
+				? 1
+				: 0;
+		return this.countOpenConversations(cwd) + (this.creatingConversations.get(cwd) ?? 0) + 1 - freed;
+	}
+
+	/**
+	 * 可被 LRU 自动收起的对话：空闲、非当前、非钉住、无任何活（流式/压缩/投递/终端/子代理/后台任务）。
+	 * issue #944：不再限制必须是 `viewOnly`——跟你在里面说过话的对话一样可以收起，转录在磁盘上、
+	 * 左栏历史行保留，点一下就能重新打开；否则「从历史打开过并发过消息」的对话会永久常驻（实测每份几百 MB）。
+	 */
+	private isEvictableViewedConversation(c: Conversation, withChildren?: ReadonlySet<Conversation>): boolean {
+		if (c.id === this.activeId || c.pinned || c.transferring) return false;
 		if (c.isSubagent || c.isEphemeral || c.nativeCli || c.promptInFlight) return false;
+		// 用户显式选择「保留已结束的对话」时不自动收起（这是用户自己的选择）。
+		if (this.settingsSvc?.current.retainFinishedConversations) return false;
+		// 刚切走的对话留一个冷却期：避免「点错一下就把我刚在写的对话收掉」。
+		if (Date.now() - (c.lastActiveAt || 0) < EVICT_MIN_IDLE_MS) return false;
 		try {
 			// 正在跑 / 正在压缩 / 压缩已排队 / 还有待投递意图：一律不驱逐。
 			if (this.deliveryModeOf(c) !== "idle") return false;
@@ -13403,7 +13537,7 @@ export class ClientSession {
 			return false;
 		}
 		if (c.terminals.countBlockingLive() > 0) return false;
-		if (this.hasLiveSubagentChild(c)) return false;
+		if (this.hasLiveSubagentChild(c, withChildren)) return false;
 		return !shouldRetainActive({
 			reviewing: c.goal.reviewing,
 			wizardRunning: c.wizardRunning,
@@ -13428,16 +13562,18 @@ export class ClientSession {
 		if (this.countProjectSlots(cwd) + needed <= max) return true;
 		const active = this.convs.size > 0 ? this.conv : null;
 		const freed = typeof activeWillBeFreed === "function" ? activeWillBeFreed() : activeWillBeFreed;
-		const activeCredit = freed && active && active.cwd === cwd && !active.isSubagent && !active.isEphemeral ? 1 : 0;
+		const activeCredit =
+			freed && active && active.cwd === cwd && !active.isSubagent && !active.isEphemeral && !active.pinned ? 1 : 0;
 		const over = () => this.countProjectSlots(cwd) + needed - activeCredit > max;
 		if (!over()) return true;
 		const candidates = [...this.convs.values()]
 			.filter((c) => c.cwd === cwd)
 			.sort((a, b) => a.lastActiveAt - b.lastActiveAt);
+		const withChildren = this.conversationsWithChildren();
 		const evicted: string[] = [];
 		for (const c of candidates) {
 			if (!over()) break;
-			if (!this.isEvictableViewedConversation(c)) continue;
+			if (!this.isEvictableViewedConversation(c, withChildren)) continue;
 			evicted.push(c.title || basename(c.session.sessionFile ?? "") || c.id);
 			this.removeConversation(c.id);
 		}
@@ -13446,8 +13582,8 @@ export class ClientSession {
 			this.emit({
 				type: "notice",
 				level: "info",
-				text: `运行的对话已达上限（${max} 个），已自动收起较早仅查看过的对话 ${names}，可在历史对话中重新打开`,
-				textEn: `Running chats reached the limit (${max}); closed ${evicted.length} earlier view-only chat(s) to make room. Reopen them from history anytime.`,
+				text: `运行的对话已达上限（${max} 个），已自动收起较早的对话 ${names}，可在历史对话中重新打开`,
+				textEn: `Running chats reached the limit (${max}); closed ${evicted.length} earlier chat(s) to make room. Reopen them from history anytime.`,
 			});
 			this.emitConversations();
 		}
@@ -13485,6 +13621,9 @@ export class ClientSession {
 			this.getClaimStore?.().releaseByOwner(id);
 		} catch {}
 		this.convs.delete(id);
+		forgetConversationHome(conv);
+		// 反向索引不能把已 dispose 的子对话吊在父对话上（否则那份 runtime 永远回收不掉）。
+		unindexConversationChild(conv);
 		conv.suspendedSubagents?.clear();
 		for (const c of this.convs.values()) {
 			c.suspendedSubagents?.delete(conv);
@@ -13652,7 +13791,11 @@ export class ClientSession {
 		// 按对象身份摘，不按 id：`insertTakeoverConvs` 在目标页撞号时会把 conv.id 重编，
 		// 那时来源页 map 的 key 还是旧 id，按 id 删会漏（留下一条「已搬走却还在」的幽灵行）。
 		const moved = new Set(payload.convs);
-		for (const [id, conv] of this.convs) if (moved.has(conv)) this.convs.delete(id);
+		for (const [id, conv] of this.convs) {
+			if (!moved.has(conv)) continue;
+			this.convs.delete(id);
+			forgetConversationHome(conv);
+		}
 		if (!this.convs.has(this.activeId)) {
 			const fallback = [...this.convs.values()].find((c) => !c.isSubagent) ?? [...this.convs.values()][0];
 			if (fallback) this.activeId = fallback.id;
@@ -13743,6 +13886,8 @@ export class ClientSession {
 			}
 
 			this.convs.set(conv.id, conv);
+			registerConversationHome(conv, this);
+			indexConversationChild(conv);
 		}
 		if (!mainId) mainId = payload.convs[0]?.id ?? "";
 		for (const q of payload.questions) {
@@ -13806,7 +13951,9 @@ export class ClientSession {
 			}
 		}
 		for (const [id, conv] of this.convs) {
-			if (moved.has(conv)) this.convs.delete(id);
+			if (!moved.has(conv)) continue;
+			this.convs.delete(id);
+			forgetConversationHome(conv);
 		}
 		if (!this.convs.has(this.activeId)) {
 			const fallback = [...this.convs.values()].find((c) => !c.isSubagent) ?? [...this.convs.values()][0];
@@ -14062,7 +14209,7 @@ export class ClientSession {
 	 */
 	private sessionsPushTimers = new Map<string, ReturnType<typeof setTimeout>>();
 
-	private static projectsCache: { at: number; projects: ProjectSummary[] } | null = null;
+	private static projectsCache: { at: number; projects: ProjectSummary[]; stale?: boolean } | null = null;
 	private static readonly PROJECTS_CACHE_TTL = 60_000;
 	private static projectsInFlight: Promise<ProjectSummary[] | null> | null = null;
 
@@ -15236,6 +15383,11 @@ export class ClientSession {
 		let outcome: "loaded" | "reused" | "stopped" | "error" = "stopped";
 		let openedRuntime: AgentSessionRuntime | null = null;
 		let openedTerminals: TerminalManager | null = null;
+		// issue #943：同一份 transcript 的并发打开必须共用一次创建，否则两个请求各建一份 runtime、双写同一份记录。
+		let openingKey: string | null = null;
+		let openingPromise: Promise<string | undefined> | null = null;
+		let settleOpening: (conversationId?: string) => void = () => {};
+		let openedConversationId: string | undefined;
 		try {
 			const wantSid = sessionId?.trim() ?? "";
 			if (!path.trim() && wantSid) {
@@ -15303,6 +15455,43 @@ export class ClientSession {
 					return;
 				}
 			}
+
+			// 正在打开同一份 transcript：等第一次创建的结果直接复用，绝不进第二遍创建（issue #943）。
+			const inflight = this.openingSessions.get(targetPath);
+			if (inflight) {
+				const ongoingId = await inflight.catch(() => undefined);
+				const ongoing = ongoingId ? this.convs.get(ongoingId) : undefined;
+				if (ongoing) {
+					if (independent !== undefined) this.setConversationIndependent(ongoing.id, independent);
+					if (ongoing.id !== this.activeId) await this.switchConversation(ongoing.id);
+					outcome = "reused";
+					this.emit({
+						type: "transition_progress",
+						kind: "session",
+						target: targetPath,
+						phase: "done",
+						progress: 100,
+						text: "会话加载完成",
+						textEn: "Session loaded",
+					});
+					this.flushSnapshot();
+					return;
+				}
+				// 第一份没打开成功：不再重复一轮长耗时创建，让用户重试即可。
+				this.emit({
+					type: "notice",
+					level: "warning",
+					text: "该会话刚刚打开失败，请重试",
+					textEn: "Opening this session just failed — please retry",
+				});
+				this.flushSnapshot();
+				return;
+			}
+			openingKey = targetPath;
+			openingPromise = new Promise<string | undefined>((resolveOpening) => {
+				settleOpening = resolveOpening;
+			});
+			this.openingSessions.set(targetPath, openingPromise);
 
 			if (this.botExecution) {
 				this.botExecution.assertActive();
@@ -15405,15 +15594,15 @@ export class ClientSession {
 
 			const oldListed = this.conv.listed;
 			const displaced = this.displaceActive();
-			const openInProject =
-				[...this.convs.values()].filter((c) => c.cwd === targetCwd && !c.isSubagent && !c.isEphemeral).length +
-				(this.creatingConversations?.get(targetCwd) ?? 0) +
-				1 -
-				(displaced?.cwd === targetCwd && !displaced?.isSubagent && !displaced?.isEphemeral ? 1 : 0);
+			const openInProject = this.projectedOpenSlots(targetCwd, displaced);
 			const maxOpenConversations = getMaxOpenConversations();
 			if (
 				openInProject > maxOpenConversations &&
-				!this.makeRoomForConversation(targetCwd, 1, displaced?.cwd === targetCwd && !displaced?.isSubagent)
+				!this.makeRoomForConversation(
+					targetCwd,
+					1,
+					displaced?.cwd === targetCwd && !displaced?.isSubagent && !displaced?.pinned,
+				)
 			) {
 				this.conv.listed = oldListed;
 				openedTerminals.killAll();
@@ -15441,6 +15630,7 @@ export class ClientSession {
 			this.noticeInterruptedCompaction(conv);
 			this.convs.set(conv.id, conv);
 			this.activeId = conv.id;
+			openedConversationId = conv.id;
 			openedRuntime = null;
 			openedTerminals = null;
 			if (displaced) this.removeConversation(displaced.id);
@@ -15502,6 +15692,10 @@ export class ClientSession {
 				textEn: `Failed to switch session: ${(err as Error).message}`,
 			});
 		} finally {
+			settleOpening(openedConversationId);
+			if (openingKey && openingPromise && this.openingSessions.get(openingKey) === openingPromise) {
+				this.openingSessions.delete(openingKey);
+			}
 			timing.finish(outcome);
 		}
 		if (outcome !== "loaded") this.flushSnapshot();
@@ -15630,11 +15824,7 @@ export class ClientSession {
 
 			const oldListed = this.conv.listed;
 			const displaced = this.displaceActive();
-			const openInProject =
-				[...this.convs.values()].filter((c) => c.cwd === targetConv.cwd && !c.isSubagent && !c.isEphemeral).length +
-				(this.creatingConversations?.get(targetConv.cwd) ?? 0) +
-				1 -
-				(displaced?.cwd === targetConv.cwd && !displaced?.isSubagent && !displaced?.isEphemeral ? 1 : 0);
+			const openInProject = this.projectedOpenSlots(targetConv.cwd, displaced);
 			const maxOpenConversations = getMaxOpenConversations();
 			if (openInProject > maxOpenConversations) {
 				this.conv.listed = oldListed;
@@ -16003,8 +16193,9 @@ export class ClientSession {
 			const cache = ClientSession.projectsCache;
 			if (!cache) {
 				await this.ensureProjectsCache(false);
-			} else if (now - cache.at >= ClientSession.PROJECTS_CACHE_TTL) {
-				void this.ensureProjectsCache(false).catch(() => {});
+			} else if (cache.stale || now - cache.at >= ClientSession.PROJECTS_CACHE_TTL) {
+				// stale-while-revalidate（issue #946）：先用现有列表渲染，后台重扫，扫完再推。
+				void this.ensureProjectsCache(true).catch(() => {});
 			}
 			const recent = await this.stateStore.getRecentProjects(this.clientId);
 			this.emit({ type: "projects", projects: this.withCurrentCwd(recent, now) });
@@ -16090,7 +16281,10 @@ export class ClientSession {
 	}
 
 	private invalidateProjectsCache(): void {
-		ClientSession.projectsCache = null;
+		// 标脏而非置空（issue #946）：`applyCwdSideEffects` 每次跨项目切换都会走到这里，
+		// 置空会让紧接着的 `pushProjects` 同步 `await` 一次全盘 session 根扫描（并阻塞切换）。
+		// 列表权威数据在 stateStore，`pushProjects` 每次都会重读，旧缓存只是不再代表「刚刚扫过」。
+		if (ClientSession.projectsCache) ClientSession.projectsCache = { ...ClientSession.projectsCache, stale: true };
 	}
 
 	async listFiles(relPath?: string): Promise<void> {
@@ -17051,6 +17245,10 @@ export class ClientSession {
 		if (this.stallTimer) {
 			clearInterval(this.stallTimer);
 			this.stallTimer = null;
+		}
+		if (this.subagentRecycleTimer) {
+			clearInterval(this.subagentRecycleTimer);
+			this.subagentRecycleTimer = null;
 		}
 		this.files.unwatchDir();
 		this.files.unwatchGit();

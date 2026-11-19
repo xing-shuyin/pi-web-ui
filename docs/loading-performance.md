@@ -111,10 +111,19 @@ fork 基准的旧算法针对预归一化单链重现原固定点传播，不包
 
 - 从历史打开的对话标记为 `viewOnly`；在其中发消息（开始投递 / 重试）即清除。
 - 打开历史对话时，名额预检移到构建 agent runtime **之前**：原先达上限要先完整构建 runtime（扩展、技能、MCP）再 dispose，白白耗时。
-- 超额时按 `lastActiveAt` 从旧到新收起 `viewOnly` 对话（不收当前对话、钉住、流式/压缩/投递中、终端在用、有存活子代理、有后台 run/唤醒订阅/后台任务的对话），仍腾不出才拒绝；收起会提示具体对话，转录在磁盘上，可从历史重新打开。新建对话走同一逻辑。
+- 超额时按 `lastActiveAt` 从旧到新收起空闲对话（不收当前对话、钉住、流式/压缩/投递中、终端在用、有存活子代理、有后台 run/唤醒订阅/后台任务、空闲不足 2 分钟的对话），仍腾不出才拒绝；收起会提示具体对话，转录在磁盘上，可从历史重新打开。新建对话走同一逻辑。
 - 当前对话随后会被切走释放时（`wouldDisplaceActive`，与 `displaceActive` 共用 `isRetainedOnDisplace` 判定）计入一个名额；该判定只在确实超额时才评估（涉及磁盘探测）。
 
-测试：`tests/unit/open-conversation-lru.test.ts`。
+### 会话驻留与淘汰（issue #943 / #944 / #946 修正）
+
+- **上限不再是无限。** `MAX_OPEN_CONVERSATIONS` 默认 12（`PI_WEB_MAX_OPEN_CONVERSATIONS` 覆盖）。此前是 `Number.POSITIVE_INFINITY`，导致 `makeRoomForConversation` 的 LRU 分支成为死代码：打开的会话永不淘汰，进程 RSS 随「打开过多少个会话」线性增长（实测单份 74MB 转录常驻 ≈ 268MB 堆）。
+- **淘汰面放宽。** 不再要求 `viewOnly`：跟你在里面说过话的对话空闲后同样可以收起（转录在磁盘、左栏历史行保留，点一下就回来）；否则「从历史打开过并发过消息」的对话会永久常驻。`retainFinishedConversations` 打开时整段不自动收起。钉住的对话不占名额（`countProjectSlots` 已排除），避免「钉满名额后打不开历史」。
+- **子代理自动回收。** 已结束子代理不再只能手动 dismiss：空闲 ≥ 15 分钟、无流式/压缩/投递/终端/存活后代、任务已结算且结果已交付或消费的，定时（5 分钟一轮，`PI_WEB_SUBAGENT_RECYCLE_MS`）释放 runtime。已持久化的转录与历史行保留。
+- **同一转录不再能被并发打开两份。** `switchSession` 在任何 `await` 之前用 `openingSessions`（归一化绝对路径 → 创建 promise）占位；冲突请求等第一份的结果复用，第一份失败则不重复再来一轮。前端在同一行点击上加 1.5s 抑制，避开「切换慢 → 以为没点上 → 再点」。
+- **父链解析去 O((S·C)²)。** `parentExecution` 增加「同一会话直接命中 → 持有会话登记表（`WeakRef`）→ 兜底扫描」三级快路径；`hasLiveSubagentChild` 改为一次算出「有子对话集合」后逐候选查表，不再每个候选全量扫所有会话的所有对话。反向索引在 `bindConversationParent`（唯一绑定入口）维护，对话真正移除时同步 unindex，避免把已 dispose 的 runtime 吊在父对话上。
+- **跨项目切换不再同步全盘扫描项目列表。** `invalidateProjectsCache` 改为标脏：`pushProjects` 先用现有列表渲染，后台重扫完成后补推（stale-while-revalidate）。列表权威数据本就在 `stateStore`，每次推送都会重读。另给「确认不存在的 cwd」加了 10 分钟负缓存，避免每次切换都重新 `access` 已删目录。
+
+测试：`tests/unit/open-conversation-lru.test.ts`、`tests/unit/concurrent-session-open.test.ts`。
 
 ## 第七轮：预览→快照不再重挂载消息列表
 
@@ -212,3 +221,49 @@ fork 基准的旧算法针对预归一化单链重现原固定点传播，不包
 | 重启后命中磁盘索引        |          20 ms |   4 ms |  24 ms |
 
 测试：`tests/unit/session-list-index.test.ts`（落盘后重启免解析：内容被换掉但 mtime + size 不变仍给出原元信息；文件变了才重扫；增量续扫补齐条数；删文件后条目消失；无 dataDir 时不落盘）。
+
+## 第十一轮：打开大会话不再把整份 jsonl 读两遍（issue #945）
+
+### 打开前修复改成「流式元数据扫描 + 只读尾部」
+
+`server/transcript-prepare.ts` 的冷路径原先 `readFile` 读整份转录，然后在这个大字符串上跑两段同步计算：`repairSessionTranscript`（把每行的完整 entry 攒进内存做链修复）和 `healDanglingToolCallsInText`（再逐行解析一遍查悬空工具调用）。74 MB 会话实测 ≈ 450 ms、堆 +50 MB 以上（与 issue 数据一致），紧接着 SDK 打开又把同一份文件完整解析一遍。
+
+现在冷路径分两步，两步都只做「判定」，不物化 entry 实体：
+
+- **`server/transcript-scan.ts` 的 `scanTranscriptForRepair`**：按 512 KB 分片流式读、按行套与修复本体同一个行分类口径（`classifyTranscriptLine`：空行 / 坏行不产生实体，`> 512` 字符的长行只扫行首 260 字符）。状态里只保留 `id → parentId`、parentId 集合、header id 集合和最后一条 id —— 内存随条目数线性、与正文大小无关。判定条件与修复本体一一对应：pending 压缩标记、重复 id、父链成环、「叶子不是最后一条」（分支顺序需要重排）；发现异常立即提前结束扫描。
+- **`dangling-tools.ts` 的 `probeTailDangling`**：悬空工具调用本来只需要文件尾部。从末尾读 256 KB（不够逐级放大到 1/4/16 MB），丢掉窗口首行残片，沿 parentId 回溯找尾部 assistant 与它的工具调用 id，再在窗口内匹配 toolResult —— 与整份算法共用 `scanTailChain` / `danglingCallsOf`，不是第二套实现。
+- 两步都通过才走快路径：`repair` 返回 `healthyRepairResult`（changed=false），命中悬空调用时只 `appendDanglingResults` 追加合成结果，随后按最终文件状态刷新两份健康指纹。
+- 任何一步判定不了（有分支重排 / 重复 id / pending 标记 / 父链走出窗口 / 文件读不了）都回退到原来的整份 `readFile` 流程，语义与旧流程逐项相同。
+
+### 为什么「唯一叶子 = 最后一条」就足以跳过整份读取
+
+`reorderEntriesForMainBranch` 是唯一需要全部 entry 实体的步骤，但它先跑 `selectBestSessionLeaf(nonHeader, tail.id)`：只有一个叶子时候选集长度就是 1，函数直接返回 `changed = (tail.id !== 该叶子)`。所以「叶子恰好是最后一条」⇒ `changed=false` ⇒ 重排在拿到实体之前就返回。再叠上「无重复 id」「无环」「session 文件头都在最前」，修复必然不动文件。反过来也成立：有旁支就一定不止一个叶子（每个条目只有一个 parentId，唯一叶子意味着所有条目都在它到根的这条链上），于是保守回退整份读取。
+
+`server/dangling-tools.ts` 里 `lastId` / 尾部 assistant / 悬空列表的算法抽成了 `scanTailChain`（整份文本与尾部窗口共用），窗口模式下父链走出窗口会标 `escaped` 让调用方扩窗或回退，不会把「窗口里没找到」当成「文件里没有」。
+
+### 基准
+
+`node --import tsx scripts/benchmark-transcript-open.mjs 74`（合成转录，本机 Node v26.13.1，7 次中位数；机器负载会让绝对值上下浮动 30% 左右）：
+
+| 场景                                    |   10 MB |    50 MB |    74 MB |
+| --------------------------------------- | ------: | -------: | -------: |
+| 原：整份 readFile + 全量修复 + 悬空检查 | 25.6 ms | 148.6 ms | 203.6 ms |
+| 新：冷路径（元数据扫描 + 尾部检查）     | 18.0 ms |  81.1 ms | 120.1 ms |
+| 新：健康指纹命中                        | 0.14 ms |  0.37 ms |  0.37 ms |
+
+| 最长事件循环停顿 | 10 MB |  50 MB |  74 MB |
+| ---------------- | ----: | -----: | -----: |
+| 原               | 26 ms | 149 ms | 204 ms |
+| 新               |  2 ms |  10 ms |  13 ms |
+
+「最长停顿」用 1 ms 定时器采样：原来的 `repairSessionTranscript` + `healDanglingToolCallsInText` 同步跑完整份文本，一次性卡住事件循环（同一时间段内其他客户端的流式输出、心跳全部排队）；新的分片扫描每片让出一次 `setImmediate`，单次停顿只与分片大小相关。
+
+内存结构上的差别比数字更硬：旧路径在一次调用里同时持有「整份转录字符串 + 全部 entry 实体 + 槽位/行走图」，新路径只留 `id → parentId`、parentId 集合、header id 集合三份元数据，分片把瞬时字符串内存压在 512 KB 量级（单行本身超长时仍会整行物化一次，与旧路径同量级）。issue #945 里那个 73.6 MB 会话的 268 MB 堆主要就来自前者的实体留存。
+
+### 仍然存在的成本与后续
+
+- SDK `openSessionManagerAsync` 仍会完整读 + 解析一遍（打开本来就要拿到全部条目），这段没动。issue #945 的两遍读里，第一遍（打开前修复）现在降级成一遍低内存流式扫描。
+- 健康指纹仍是进程内缓存：**服务重启后第一次**打开老会话仍要走一次流式扫描。要连这一遍也省掉，可以把 `(path, size, mtimeMs) → healthy` 落盘到 `<file>.health.json` 或 stateStore（issue 建议 2），代价是多一份需要失效判定的状态文件 —— 本次没做。
+- 观测：设置 `PI_WEB_LOAD_TIMING=1` 后，`repair` 阶段就是这一步的耗时；`sdk-open` 仍是 SDK 解析。`PreparedTranscript.path` 直接告诉你这次走了 `fast`（扫描 + 尾部）还是 `full`（整份读）。
+
+测试：`tests/unit/transcript-scan.test.ts`（400 个随机转录「判定无操作 ⇒ 修复确实不动文件」永不误判；300 个真实形态单链转录必须走快路径；pending / 重复 id / 环 / 分支重排 / 中途 session 头 / 超长行 id 落在行首窗口之外 / 尾部探针与整份算法同结果、窗口放大、空文件与缺文件回退；`PreparedTranscript.path` 证明健康会话走 `fast`、需重排的分支走 `full`）。既有 `transcript-prepare` / `compaction-markers` / `dangling-tools` 单测全绿（语义未变）；111 个本机真实会话文件上，新旧两条路径对「是否改写、追加几条、改写后的字节」完全一致。

@@ -188,7 +188,9 @@ describe("mcp.json 热加载：端到端（真桥 + 真文件）", () => {
 		const bridge = new McpBridge(dir, () => {});
 		disposables.push(() => bridge.dispose());
 		await bridge.load();
-		expect(bridge.getTools().map((t) => t.name)).toContain("pid");
+		// 工具名带 mcp__<server>__ 前缀，且默认 exposure 是 codemode（不内联声明到上下文）。
+		const pid = bridge.getTools().find((t) => t.name === "mcp__srv__pid");
+		expect(pid).toMatchObject({ namespace: { name: "mcp__srv" }, exposure: "codemode" });
 
 		const hot = createMcpHotReload({ dataDir: dir, reload: () => bridge.reload(), debounceMs: 40 });
 		disposables.push(() => hot.dispose());

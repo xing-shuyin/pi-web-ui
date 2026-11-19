@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createAgentSessionRuntime, SessionManager } from "@earendil-works/pi-coding-agent";
 import { ClientSession } from "../../server/agent-service.js";
+import { getMaxOpenConversations } from "../../server/agent-formatters.js";
 import type { ApprovalRule } from "../../server/approval-rules.js";
 import { fakeClientSession } from "../helpers/fake-session.js";
 
@@ -541,18 +542,21 @@ describe("toolOverrideSpecs approval ownership after takeover", () => {
 });
 
 describe("conversation quota reservations", () => {
-	it("allows concurrent creation beyond 8 resident conversations by default", () => {
+	it("默认上限是有限值：名额预占只到默认上限，超过就拒绝（issue #944）", () => {
 		vi.stubEnv("PI_WEB_MAX_OPEN_CONVERSATIONS", undefined);
 		const cs = client();
 		const cwd = conversation("A").cwd;
-		for (let i = 0; i < 16; i++) {
+		for (let i = 0; i < 4; i++) {
 			const conv = conversation(`existing-${i}`);
 			cs.convs.set(conv.id, conv);
 		}
 
-		const releaseSlots = Array.from({ length: 16 }, () => cs.reserveConversationSlot(cwd));
-		expect(cs.creatingConversations.get(cwd)).toBe(16);
-		expect(cs.convs.size).toBe(16);
+		const room = getMaxOpenConversations() - 4;
+		expect(room).toBeGreaterThan(0);
+		const releaseSlots = Array.from({ length: room }, () => cs.reserveConversationSlot(cwd));
+		expect(cs.creatingConversations.get(cwd)).toBe(room);
+		expect(() => cs.reserveConversationSlot(cwd)).toThrow(/limit/i);
+		expect(cs.convs.size).toBe(4);
 		for (const release of releaseSlots) release();
 		expect(cs.creatingConversations.size).toBe(0);
 	});

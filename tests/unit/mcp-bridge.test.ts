@@ -154,8 +154,11 @@ describe("McpBridge 聚合适配", () => {
 		await bridge.load();
 		const tools = bridge.getTools();
 		expect(tools.length).toBe(10);
-		const add = tools.find((t) => t.name === "add")!;
+		// 适配后的名字带命名空间，且默认 exposure 是 codemode（此前它们裸名直联、占满上下文）
+		const add = tools.find((t) => t.name === "mcp__csrv__add")!;
 		expect(add.label).toContain("csrv");
+		expect(add.namespace).toEqual({ name: "mcp__csrv" });
+		expect(add.exposure).toBe("codemode");
 		expect(typeof add.execute).toBe("function");
 		const res = (await add.execute("id", { a: 10, b: 20 })) as { content: string };
 		expect(JSON.parse(res.content)).toBe(30);
@@ -168,9 +171,9 @@ describe("McpBridge 聚合适配", () => {
 		});
 		await bridge.load();
 		const tools = bridge.getTools();
-		const crash = tools.find((t) => t.name === "crash")!;
+		const crash = tools.find((t) => t.name === "mcp__csrv__crash")!;
 		await expect(crash.execute("id", {})).rejects.toThrow(/进程退出/);
-		const add = tools.find((t) => t.name === "add")!;
+		const add = tools.find((t) => t.name === "mcp__csrv__add")!;
 		const res = (await add.execute("id", { a: 10, b: 20 })) as { content: string };
 		expect(JSON.parse(res.content)).toBe(30);
 		bridge.dispose();
@@ -294,12 +297,31 @@ describe("McpBridge.reload（mcp.json 热替换）", () => {
 		writeMcpConfig(dir, { srv: { command: process.execPath, args: [FIXTURE] } });
 		const b = bridge(dir);
 		await b.load();
-		const pid = await callBridge(b, "pid");
+		const pid = await callBridge(b, "mcp__srv__pid");
 
 		const summary = await b.reload();
 		expect(summary).toEqual({ kept: 1, started: 0, stopped: 0, failed: 0, servers: 1, tools: 10 });
-		expect(await callBridge(b, "pid")).toBe(pid);
-		expect(JSON.parse(await callBridge(b, "add", { a: 20, b: 22 }))).toBe(42);
+		expect(await callBridge(b, "mcp__srv__pid")).toBe(pid);
+		expect(JSON.parse(await callBridge(b, "mcp__srv__add", { a: 20, b: 22 }))).toBe(42);
+	});
+
+	it("只改 exposure → 不重启进程，工具就地换曝光方式", async () => {
+		const dir = tempDir();
+		writeMcpConfig(dir, { srv: { command: process.execPath, args: [FIXTURE] } });
+		const b = bridge(dir);
+		await b.load();
+		const pid = await callBridge(b, "mcp__srv__pid");
+		expect(b.getTools().find((t) => t.name === "mcp__srv__add")?.exposure).toBe("codemode");
+
+		writeMcpConfig(dir, {
+			srv: { command: process.execPath, args: [FIXTURE], exposure: "direct", toolExposure: { add: "hidden" } },
+		});
+		const summary = await b.reload();
+		expect(summary).toEqual({ kept: 1, started: 0, stopped: 0, failed: 0, servers: 1, tools: 10 });
+		expect(await callBridge(b, "mcp__srv__pid")).toBe(pid);
+		const tools = b.getTools();
+		expect(tools.find((t) => t.name === "mcp__srv__pid")?.exposure).toBe("direct");
+		expect(tools.find((t) => t.name === "mcp__srv__add")?.exposure).toBe("hidden");
 	});
 
 	it("规格变了 → 只换掉它自己：旧进程真的退出，新进程顶上", async () => {
@@ -307,12 +329,12 @@ describe("McpBridge.reload（mcp.json 热替换）", () => {
 		writeMcpConfig(dir, { srv: { command: process.execPath, args: [FIXTURE] } });
 		const b = bridge(dir);
 		await b.load();
-		const before = await callBridge(b, "pid");
+		const before = await callBridge(b, "mcp__srv__pid");
 
 		writeMcpConfig(dir, { srv: { command: process.execPath, args: [FIXTURE], env: { MCP_SLOW_MS: "0" } } });
 		const summary = await b.reload();
 		expect(summary).toEqual({ kept: 0, started: 1, stopped: 1, failed: 0, servers: 1, tools: 10 });
-		expect(await callBridge(b, "pid")).not.toBe(before);
+		expect(await callBridge(b, "mcp__srv__pid")).not.toBe(before);
 		await waitUntil(() => !isAlive(before));
 	});
 
@@ -321,12 +343,12 @@ describe("McpBridge.reload（mcp.json 热替换）", () => {
 		writeMcpConfig(dir, { srv: { command: process.execPath, args: [FIXTURE] } });
 		const b = bridge(dir);
 		await b.load();
-		const before = await callBridge(b, "pid");
+		const before = await callBridge(b, "mcp__srv__pid");
 
 		writeMcpConfig(dir, { srv: { command: "definitely-not-a-real-cmd-xyz", args: [] } });
 		const summary = await b.reload();
 		expect(summary).toEqual({ kept: 1, started: 0, stopped: 0, failed: 1, servers: 1, tools: 10 });
-		expect(await callBridge(b, "pid")).toBe(before);
+		expect(await callBridge(b, "mcp__srv__pid")).toBe(before);
 		expect(b.getServerStatus("srv")).toMatchObject({
 			status: "running",
 			usingPreviousConfig: true,
@@ -335,7 +357,7 @@ describe("McpBridge.reload（mcp.json 热替换）", () => {
 
 		writeMcpConfig(dir, { srv: { command: process.execPath, args: [FIXTURE] } });
 		await b.reload();
-		expect(await callBridge(b, "pid")).toBe(before);
+		expect(await callBridge(b, "mcp__srv__pid")).toBe(before);
 		expect(b.getServerStatus("srv").usingPreviousConfig).toBeUndefined();
 		expect(b.getServerStatus("srv").error).toBeUndefined();
 	});
@@ -372,7 +394,7 @@ describe("McpBridge.reload（mcp.json 热替换）", () => {
 		writeMcpConfig(dir, { srv: { command: process.execPath, args: [FIXTURE] } });
 		const b = bridge(dir);
 		await b.load();
-		const before = await callBridge(b, "pid");
+		const before = await callBridge(b, "mcp__srv__pid");
 
 		writeMcpConfig(dir, {});
 		const summary = await b.reload();
@@ -710,7 +732,7 @@ describe("HTTP / streamable-http MCP 服务器支持 (Issue #641)", () => {
 		await bridge.load();
 		const tools = bridge.getTools();
 		expect(tools.length).toBe(3);
-		const echoTool = tools.find((t) => t.name === "http_echo")!;
+		const echoTool = tools.find((t) => t.name === "mcp__remote_srv__http_echo")!;
 		expect(echoTool.label).toContain("remote_srv");
 
 		const res = (await echoTool.execute("id", { val: "bridge_ok" })) as { content: string };
@@ -733,7 +755,7 @@ describe("HTTP / streamable-http MCP 服务器支持 (Issue #641)", () => {
 		await client.call("trigger_refresh", {});
 
 		await waitUntil(() => bridge.getTools().length === 4, 2000);
-		expect(bridge.getTools().map((t) => t.name)).toContain("dynamic_tool_v2");
+		expect(bridge.getTools().map((t) => t.name)).toContain("mcp__remote_srv__dynamic_tool_v2");
 		expect(toolsChangedCount).toBeGreaterThanOrEqual(1);
 		bridge.dispose();
 	});

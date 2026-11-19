@@ -998,6 +998,18 @@ export const LeftPanel = memo(function LeftPanel({
 
 	const sessionMenuRef = useRef<{ x: number; y: number; target: SessionMenuTarget } | null>(null);
 	const forceArmedRef = useRef<string | null>(null);
+	/**
+	 * issue #943：服务端已对同一 transcript 的并发打开去重，这里再抑制 1.5s 内的重复点击，
+	 * 避开「切换慢 → 以为没点上 → 再点一次」的重复请求（服务端 transition 状态回来得比第二次点击晚）。
+	 */
+	const lastSessionOpenRef = useRef<{ path: string; at: number } | null>(null);
+	const openSessionOnce = useCallback((path: string, send: () => void) => {
+		const now = Date.now();
+		const last = lastSessionOpenRef.current;
+		if (last && last.path === path && now - last.at < 1500) return;
+		lastSessionOpenRef.current = { path, at: now };
+		send();
+	}, []);
 	const hostActionRef = useRef<(entry: UiSlotEntry, target: ContextMenuRequest["target"]) => void | boolean>(() => {});
 
 	const sessionMenuAvailable =
@@ -2019,7 +2031,7 @@ export const LeftPanel = memo(function LeftPanel({
 							if (!active) panelSend({ type: "switch_conversation", id: runInfo.conv.id });
 							return;
 						}
-						if (!active) panelSend({ type: "switch_session", path: s.path });
+						if (!active) openSessionOnce(s.path, () => panelSend({ type: "switch_session", path: s.path }));
 					}}
 				>
 					{active && <span className="conv-current-badge">{t("current")}</span>}

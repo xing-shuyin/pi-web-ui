@@ -45,21 +45,99 @@ afterEach(() => {
 	vi.restoreAllMocks();
 });
 
+describe("recycleFinishedSubagents（issue #944 根因 3）", () => {
+	function recycleClient() {
+		const cs: any = client();
+		cs.conversationsWithChildren = () => new Set();
+		cs.deliveryModeOf = () => "idle";
+		cs.subagentTaskPending = () => false;
+		return cs;
+	}
+
+	function subagent(id: string, opts: Record<string, unknown> = {}): any {
+		return conv(id, {
+			isSubagent: true,
+			lastActiveAt: 0,
+			lastSdkEventAt: 0,
+			notifyOnDone: true,
+			subagentDoneNotified: true,
+			...opts,
+		});
+	}
+
+	it("回收空闲够久且结果已交付的子代理，保留活着的 / 等结果的 / 钉住的 / 刚结束的", () => {
+		const cs = recycleClient();
+		const now = 60 * 60_000;
+		add(
+			cs,
+			conv("A"),
+			subagent("done-long-ago"),
+			subagent("still-streaming", { session: { isStreaming: true, isCompacting: false } }),
+			subagent("awaiting-delivery", { subagentDoneNotified: false, subagentConsumedByParent: false }),
+			subagent("pinned", { pinned: true }),
+			subagent("just-finished", { lastActiveAt: now - 60_000, lastSdkEventAt: now - 60_000 }),
+		);
+
+		expect(cs.recycleFinishedSubagents(now)).toBe(1);
+		expect(cs.removeConversation.mock.calls.map((c: unknown[]) => c[0])).toEqual(["done-long-ago"]);
+		expect(cs.emit).toHaveBeenCalledWith(expect.objectContaining({ type: "notice", level: "info" }));
+	});
+
+	it("空闲时长不够的一个也不回收", () => {
+		const cs = recycleClient();
+		const now = 60_000;
+		add(cs, conv("A"), subagent("fresh", { lastActiveAt: now - 1000, lastSdkEventAt: now - 1000 }));
+		expect(cs.recycleFinishedSubagents(now)).toBe(0);
+		expect(cs.removeConversation).not.toHaveBeenCalled();
+	});
+
+	it("有存活子代的父级不被回收（反向索引一次算出）", () => {
+		const cs = recycleClient();
+		const now = 60 * 60_000;
+		const parent = subagent("parent");
+		add(cs, conv("A"), parent);
+		cs.conversationsWithChildren = () => new Set([parent]);
+		expect(cs.recycleFinishedSubagents(now)).toBe(0);
+		expect(cs.removeConversation).not.toHaveBeenCalled();
+	});
+});
+
 describe("makeRoomForConversation", () => {
-	it("默认超过 8 个驻留对话仍可打开历史，不自动收起已有对话", () => {
+	it("默认上限有限：超过默认值后自动收起空闲对话，而不是无限常驻（issue #944）", () => {
 		vi.stubEnv("PI_WEB_MAX_OPEN_CONVERSATIONS", undefined);
 		const cs = client();
-		add(cs, conv("A"), ...Array.from({ length: 16 }, (_, i) => conv(`history-${i}`)));
+		add(cs, conv("A"), ...Array.from({ length: 16 }, (_, i) => conv(`history-${i}`, { lastActiveAt: i + 1 })));
 		const predict = vi.fn(() => false);
 
 		expect(cs.makeRoomForConversation(CWD, 1, predict)).toBe(true);
-		expect(cs.convs.size).toBe(17);
-		expect(cs.removeConversation).not.toHaveBeenCalled();
-		expect(predict).not.toHaveBeenCalled();
-		expect(cs.emit).not.toHaveBeenCalled();
+		// 默认 12 个名额：17 个对话 + 新建 1 个 = 18，超 6 个，收起 6 个最旧的（剩 11 + 新建 = 12）。
+		expect(cs.convs.size).toBe(11);
+		expect(cs.removeConversation.mock.calls.map((c: unknown[]) => c[0])).toEqual([
+			"history-0",
+			"history-1",
+			"history-2",
+			"history-3",
+			"history-4",
+			"history-5",
+		]);
+		expect(cs.emit).toHaveBeenCalledWith(expect.objectContaining({ type: "notice", level: "info" }));
 	});
 
-	it("按 lastActiveAt 从旧到新收起只查看过的对话，跳过钉住 / 流式 / 当前 / 已发言的", () => {
+	it("钉住的对话不占自动名额，也不会被收起", () => {
+		vi.stubEnv("PI_WEB_MAX_OPEN_CONVERSATIONS", "2");
+		const cs = client();
+		add(
+			cs,
+			conv("A"),
+			conv("pinned-1", { pinned: true, lastActiveAt: 1 }),
+			conv("pinned-2", { pinned: true, lastActiveAt: 2 }),
+			conv("pinned-3", { pinned: true, lastActiveAt: 3 }),
+		);
+		expect(cs.makeRoomForConversation(CWD, 1)).toBe(true);
+		expect(cs.removeConversation).not.toHaveBeenCalled();
+	});
+
+	it("按 lastActiveAt 从旧到新收起空闲对话，跳过钉住 / 流式 / 当前", () => {
 		vi.stubEnv("PI_WEB_MAX_OPEN_CONVERSATIONS", "4");
 		const cs = client();
 		add(
@@ -67,13 +145,14 @@ describe("makeRoomForConversation", () => {
 			conv("A", { lastActiveAt: 1, viewOnly: true }),
 			conv("pinned", { lastActiveAt: 2, pinned: true }),
 			conv("streaming", { lastActiveAt: 3, session: { isStreaming: true, isCompacting: false } }),
+			// issue #944：跟你在里面说过话的对话不再永久常驻，空闲了同样可进 LRU（转录在磁盘、历史行保留）。
 			conv("chatted", { lastActiveAt: 4, viewOnly: false }),
 			conv("old", { lastActiveAt: 5 }),
 			conv("newer", { lastActiveAt: 6 }),
 			conv("newest", { lastActiveAt: 7 }),
 		);
-		expect(cs.makeRoomForConversation(CWD, 1)).toBe(false);
-		expect(cs.removeConversation.mock.calls.map((c: unknown[]) => c[0])).toEqual(["old", "newer", "newest"]);
+		expect(cs.makeRoomForConversation(CWD, 1)).toBe(true);
+		expect(cs.removeConversation.mock.calls.map((c: unknown[]) => c[0])).toEqual(["chatted", "old", "newer"]);
 	});
 
 	it("只收起够用的数量，并发出一条提示", () => {

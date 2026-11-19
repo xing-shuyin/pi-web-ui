@@ -451,4 +451,66 @@ describe("mcp-manager", () => {
 			rmSync(cwd, { recursive: true, force: true });
 		}
 	});
+
+	it("exposure / toolExposure 经 listAllMcpServers → saveMcpServer 原样保留", () => {
+		const agentDir = makeTempDir("mcp-agent-");
+		const cwd = makeTempDir("mcp-proj-");
+		const file = join(agentDir, "mcp.json");
+		try {
+			writeFileSync(
+				file,
+				JSON.stringify({
+					mcpServers: {
+						srv: {
+							command: "node",
+							exposure: "direct",
+							toolExposure: { click: "hidden", "list_*": "deferred" },
+						},
+					},
+				}),
+			);
+
+			const listed = listAllMcpServers({ agentDir, cwd }).servers.find((s) => s.name === "srv");
+			expect(listed?.exposure).toBe("direct");
+			expect(listed?.toolExposure).toEqual({ click: "hidden", "list_*": "deferred" });
+
+			// 请求里不带 exposure：文件里的原值一个字都不动。
+			const { exposure: _exposure, toolExposure: _toolExposure, ...withoutExposure } = listed!;
+			expect(saveMcpServer({ agentDir, cwd, server: withoutExposure }).ok).toBe(true);
+			const kept = JSON.parse(readFileSync(file, "utf8")).mcpServers.srv;
+			expect(kept.exposure).toBe("direct");
+			expect(kept.toolExposure).toEqual({ click: "hidden", "list_*": "deferred" });
+
+			// 显式传值只改 exposure，toolExposure 继续保留。
+			expect(saveMcpServer({ agentDir, cwd, server: { ...withoutExposure, exposure: "hidden" } }).ok).toBe(true);
+			const updated = JSON.parse(readFileSync(file, "utf8")).mcpServers.srv;
+			expect(updated.exposure).toBe("hidden");
+			expect(updated.toolExposure).toEqual({ click: "hidden", "list_*": "deferred" });
+
+			// null = 回到缺省，字段删掉；toolExposure 仍不动。
+			expect(saveMcpServer({ agentDir, cwd, server: { ...withoutExposure, exposure: null } }).ok).toBe(true);
+			const cleared = JSON.parse(readFileSync(file, "utf8")).mcpServers.srv;
+			expect(cleared.exposure).toBeUndefined();
+			expect(cleared.toolExposure).toEqual({ click: "hidden", "list_*": "deferred" });
+
+			// 重命名搬作用域也不丢：exposure 跟着条目走。
+			const withExposure = { ...withoutExposure, exposure: "deferred" as const };
+			expect(saveMcpServer({ agentDir, cwd, server: withExposure }).ok).toBe(true);
+			expect(
+				saveMcpServer({
+					agentDir,
+					cwd,
+					server: { ...withExposure, name: "moved", scope: "project" },
+					prevName: "srv",
+					prevScope: "global",
+				}).ok,
+			).toBe(true);
+			const movedFile = readMcpConfigFile(join(cwd, ".pi", "mcp.json"));
+			expect(movedFile.servers.moved.exposure).toBe("deferred");
+			expect(movedFile.servers.moved.toolExposure).toEqual({ click: "hidden", "list_*": "deferred" });
+		} finally {
+			rmSync(agentDir, { recursive: true, force: true });
+			rmSync(cwd, { recursive: true, force: true });
+		}
+	});
 });

@@ -26,7 +26,7 @@ describe("Bot MCP execution", () => {
 			description: "",
 			systemPrompt: "",
 			cwd: resolve("."),
-			tools: ["echo", "read"],
+			tools: ["mcp__allowed__echo", "read"],
 			skills: [],
 			mcpServers: ["allowed"],
 			enabled: true,
@@ -46,7 +46,7 @@ describe("Bot MCP execution", () => {
 			expect(getMcpToolServer(bridge.getTools()[0])).toBe("allowed");
 			expect(getMcpToolServer({ label: "allowed · echo" })).toBeUndefined();
 			const defs = client.enabledPluginToolDefs("standard", resolve("."));
-			expect(defs.map((tool: any) => tool.name)).toEqual(["echo"]);
+			expect(defs.map((tool: any) => tool.name)).toEqual(["mcp__allowed__echo"]);
 			expect(await defs[0].execute("call", { text: "hello" })).toMatchObject({ content: expect.any(Array) });
 			expect(client.botToolAllowed("add")).toBe(false);
 			await bridge.reload();
@@ -58,6 +58,37 @@ describe("Bot MCP execution", () => {
 			binding.release();
 			bridge.dispose();
 			rmSync(dataDir, { recursive: true, force: true });
+		}
+	});
+
+	/**
+	 * issue #941：MCP 工具改成 `mcp__<server>__<tool>` 后，老 Bot 存档里的裸名（`echo`）仍要能用——
+	 * 但只限该 Bot 已允许的服务器，且不能变成任意服务器的后门。
+	 */
+	it("老 Bot 存档里的裸 MCP 工具名只对已允许的服务器兼容生效", () => {
+		const binding = registerBotExecution({
+			id: "legacy-bot",
+			name: "legacy-bot",
+			description: "",
+			systemPrompt: "",
+			cwd: resolve("."),
+			tools: ["echo", "read"],
+			skills: [],
+			mcpServers: ["allowed"],
+			enabled: true,
+			revision: 1,
+		});
+		try {
+			const capability = binding.capability;
+			expect(capability.allowsTool("mcp__allowed__echo")).toBe(true);
+			expect(capability.allowsToolRegistration("mcp__allowed__echo")).toBe(true);
+			// 未授权服务器不能靠裸名蹭进来。
+			expect(capability.allowsTool("mcp__denied__echo")).toBe(false);
+			// 裸名原值仍可用（非 MCP 工具路径不变）。
+			expect(capability.allowsTool("echo")).toBe(true);
+			expect(capability.allowsTool("mcp__allowed__other")).toBe(false);
+		} finally {
+			binding.release();
 		}
 	});
 

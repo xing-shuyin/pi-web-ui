@@ -8,6 +8,33 @@ import type { ProjectSummary } from "./protocol.js";
 import { normalizePathKey } from "./client-state.js";
 import { MAX_SEARCH_TEXT_CHARS, readCwdFromSessionHeader, piSessionsRoot } from "./session-search.js";
 
+/** 近 10 分钟内确认不存在的 cwd：避免每次跨项目切换都重新 access 一遍已删目录（issue #946）。 */
+const MISSING_CWD_TTL_MS = 10 * 60_000;
+const MISSING_CWD_CACHE_MAX = 512;
+const missingCwds = new Map<string, number>();
+
+async function cwdExists(cwd: string): Promise<boolean> {
+	const key = normalizePathKey(cwd);
+	const now = Date.now();
+	const until = missingCwds.get(key);
+	if (until !== undefined) {
+		if (until > now) return false;
+		missingCwds.delete(key);
+	}
+	try {
+		await fsPromises.access(cwd);
+		return true;
+	} catch {
+		missingCwds.set(key, now + MISSING_CWD_TTL_MS);
+		while (missingCwds.size > MISSING_CWD_CACHE_MAX) {
+			const oldest = missingCwds.keys().next();
+			if (oldest.done) break;
+			missingCwds.delete(oldest.value);
+		}
+		return false;
+	}
+}
+
 export async function discoverRecentProjectsFromDisk(sessionRoots: string[], limit = 30): Promise<ProjectSummary[]> {
 	const projects = new Map<string, ProjectSummary>();
 
@@ -40,11 +67,8 @@ export async function discoverRecentProjectsFromDisk(sessionRoots: string[], lim
 					const cwd = await readCwdFromSessionHeader(s.path);
 					if (cwd) {
 						const key = normalizePathKey(cwd);
-						if (!projects.has(key)) {
-							try {
-								await fsPromises.access(cwd);
-								projects.set(key, { path: cwd, lastUsed: s.mtime });
-							} catch {}
+						if (!projects.has(key) && (await cwdExists(cwd))) {
+							projects.set(key, { path: cwd, lastUsed: s.mtime });
 						}
 					}
 				}
@@ -111,12 +135,7 @@ export async function discoverRecentProjectsFromDisk(sessionRoots: string[], lim
 					for (const r of batchRes) {
 						if (!r) continue;
 						const key = normalizePathKey(r.path);
-						if (!projects.has(key)) {
-							try {
-								await fsPromises.access(r.path);
-								projects.set(key, r);
-							} catch {}
-						}
+						if (!projects.has(key) && (await cwdExists(r.path))) projects.set(key, r);
 					}
 				}
 			}

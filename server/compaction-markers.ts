@@ -8,7 +8,10 @@ export const COMPACTION_DONE_TYPE = "pi-web-ui/compaction-done";
 const LEGACY_PENDING_ID = "pi-web-ui-compaction-pending";
 const LEGACY_DONE_ID = "pi-web-ui-compaction-done";
 
-type MarkerKind = "pending" | "done";
+export type MarkerKind = "pending" | "done";
+
+/** 长行快路径只扫行首这么多字符（修复与打开前扫描共用同一口径） */
+const TRANSCRIPT_LINE_HEAD_CHARS = 260;
 
 export function makeCompactionMarkerId(kind: MarkerKind): string {
 	return `pi-web-ui-compaction-${kind}-${Date.now().toString(36)}-${randomUUID().slice(0, 8)}`;
@@ -51,9 +54,7 @@ function parentIdOf(entry: Record<string, unknown>): string | null {
 	return typeof p === "string" ? p : null;
 }
 
-function parseFastMessageSlotHeader(line: string): Record<string, unknown> | null {
-	if (line.length <= 512) return null;
-	const head = line.slice(0, 260);
+function parseFastMessageHead(head: string): Record<string, unknown> | null {
 	if (!/"type"\s*:\s*"message"/.test(head)) return null;
 	const idMatch = /"id"\s*:\s*"([^"\\]+)"/.exec(head);
 	if (!idMatch) return null;
@@ -71,6 +72,56 @@ function parseFastMessageSlotHeader(line: string): Record<string, unknown> | nul
 		parentId,
 		...(tsMatch ? { timestamp: tsMatch[1] } : {}),
 	};
+}
+
+function parseFastMessageSlotHeader(line: string): Record<string, unknown> | null {
+	if (line.length <= 512) return null;
+	return parseFastMessageHead(line.slice(0, TRANSCRIPT_LINE_HEAD_CHARS));
+}
+
+/**
+ * 一行在 `repairSessionTranscript` 眼里会变成什么。
+ *
+ * 打开前的流式扫描（`server/transcript-scan.ts`）靠这份口径判断「这次修复会不会动文件」，
+ * 必须与修复本体的槽位分类逐字一致：空行 / 坏行不产生实体，长行只看行首 260 字符。
+ */
+export interface TranscriptLineMeta {
+	/** repair 会为这一行建立实体（槽位 entry !== null） */
+	entity: boolean;
+	id: string | null;
+	parentId: string | null;
+	marker: MarkerKind | null;
+	header: boolean;
+}
+
+const NO_ENTITY_META: TranscriptLineMeta = {
+	entity: false,
+	id: null,
+	parentId: null,
+	marker: null,
+	header: false,
+};
+
+function metaOfEntry(entry: Record<string, unknown>): TranscriptLineMeta {
+	return {
+		entity: true,
+		id: typeof entry.id === "string" ? entry.id : null,
+		parentId: parentIdOf(entry),
+		marker: markerKindOf(entry),
+		header: entry.type === "session",
+	};
+}
+
+/** 整行元信息（与修复的槽位分类等价；不做实体保留）。 */
+export function classifyTranscriptLine(line: string): TranscriptLineMeta {
+	if (!line.trim()) return NO_ENTITY_META;
+	const fast = parseFastMessageSlotHeader(line);
+	if (fast) return metaOfEntry(fast);
+	try {
+		const parsed: unknown = JSON.parse(line);
+		if (typeof parsed === "object" && parsed !== null) return metaOfEntry(parsed as Record<string, unknown>);
+	} catch {}
+	return NO_ENTITY_META;
 }
 
 export function repairSessionTranscript(raw: string): TranscriptRepairResult {

@@ -7,7 +7,14 @@ export const RUN_TASK_CAP = 500;
 export const RUN_ARGS_CAP = 4000;
 export const RUN_RESULT_CAP = 4000;
 
-export const MAX_OPEN_CONVERSATIONS = Number.POSITIVE_INFINITY;
+/**
+ * 同一项目默认驻留（已建好 runtime）的对话上限。
+ * issue #944：这里曾经是 `Infinity`，使 `makeRoomForConversation` 的 LRU 摊销分支成为死代码，
+ * 进程内存随“打开过多少个会话”线性增长（实测单份 74MB 转录常驻 ≈ 268MB 堆）。
+ * 上限只管“自动管理的驻留名额”，钉住的对话不计入（见 `countProjectSlots`）；
+ * `PI_WEB_MAX_OPEN_CONVERSATIONS` 仍可覆盖。
+ */
+export const MAX_OPEN_CONVERSATIONS = 12;
 export const MAX_SUBAGENTS = 16;
 
 export function getMaxSubagents(): number {
@@ -113,6 +120,9 @@ export function pluginToolToDefinition(tool: PluginAgentTool): ToolDefinition {
 		description: tool.description,
 		promptSnippet: tool.promptSnippet,
 		promptGuidelines: tool.promptGuidelines,
+		// namespace / exposure 必须透传：丢了它们，MCP 工具就一律按 direct 直接声明进上下文。
+		...(tool.namespace ? { namespace: tool.namespace } : {}),
+		...(tool.exposure ? { exposure: tool.exposure } : {}),
 		parameters: (tool.parameters ?? {
 			type: "object",
 			properties: {},

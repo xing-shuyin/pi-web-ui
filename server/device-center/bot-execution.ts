@@ -163,6 +163,22 @@ export function registerBotExecution(
 	let active = true;
 	let model = snapshot.model;
 	const tools = new Set(snapshot.tools);
+	/**
+	 * issue #941：MCP 工具从裸名（`echo`）改成注册名 `mcp__<server>__echo`，
+	 * 而老 Bot 存档里存的还是裸名。这里保留一层只读兼容：裸名只对「该 Bot 已允许的 MCP 服务器」
+	 * 注册的工具生效（不做存档数据迁移，也不被未授权服务器借用）。
+	 */
+	const allowsToolName = (name: string): boolean => {
+		if (tools.has(name)) return true;
+		if (!name.startsWith("mcp__")) return false;
+		const sep = name.indexOf("__", 5);
+		if (sep < 0) return false;
+		const server = name.slice(5, sep);
+		const bare = name.slice(sep + 2);
+		if (!bare) return false;
+		const allowedServer = snapshot.mcpServers.some((s) => s.replace(/-/g, "_") === server);
+		return allowedServer && tools.has(bare);
+	};
 	const skills = new Set(snapshot.skills);
 	const attenuatedList = context?.attenuatedTools ? Array.from(new Set(context.attenuatedTools)) : undefined;
 	const attenuatedSet = attenuatedList && attenuatedList.length > 0 ? new Set(attenuatedList) : undefined;
@@ -230,17 +246,17 @@ export function registerBotExecution(
 		},
 		allowsToolRegistration(name) {
 			if (attenuatedSet?.has(name)) return false;
-			return active && tools.has(name) && !isGroupToolForbiddenInPlanCatalog(name, context?.planOnly === true);
+			return active && allowsToolName(name) && !isGroupToolForbiddenInPlanCatalog(name, context?.planOnly === true);
 		},
 		allowsTool(name, params) {
 			if (!active) return false;
 			if (attenuatedSet?.has(name)) return false;
 			if (context?.planOnly) {
-				if (name === "plan_update") return tools.has(name) && !checkGroupTaskPlanGuard(name, params, true);
+				if (name === "plan_update") return allowsToolName(name) && !checkGroupTaskPlanGuard(name, params, true);
 				const denial = checkGroupTaskPlanGuard(name, params, true);
 				if (denial) return false;
 			}
-			return tools.has(name);
+			return allowsToolName(name);
 		},
 		filterSkills(items) {
 			this.assertActive();

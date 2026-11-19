@@ -1,4 +1,4 @@
-import { appendFileSync, existsSync, readFileSync, statSync } from "node:fs";
+import { appendFileSync, existsSync, readFileSync, statSync, promises as fsPromises } from "node:fs";
 import { randomUUID } from "node:crypto";
 
 export type DanglingCause = "restart" | "generic";
@@ -229,6 +229,29 @@ function lineHeader(line: string): LineHeader | null {
 
 export function healDanglingToolCallsInText(filePath: string, raw: string, cause: DanglingCause = "generic"): number {
 	const lines = raw.split("\n");
+	const chain = scanTailChain(lines, true);
+	const dangling = danglingCallsOf(chain, lines);
+	if (dangling.length === 0 || !chain.lastId) return 0;
+	return appendDanglingResults(filePath, chain.lastId, dangling, cause);
+}
+
+interface TailChain {
+	/** 最后一条带字符串 id 的条目（追加合成结果的 parentId 起点） */
+	lastId: string | null;
+	/** 尾部 assistant 消息的下标（-1 = 没有） */
+	tailIndex: number;
+	tailIds: Set<string>;
+	/** 父链走出窗口（窗口没覆盖文件开头时可能只是窗口太小，需要更大窗口） */
+	escaped: boolean;
+}
+
+/**
+ * 沿 parentId 从最后一条回溯，找出「尾部 assistant 消息 + 它的工具调用 id」。
+ *
+ * `atFileStart` 为 false 时 `lines` 只是文件尾部的窗口：链走出窗口会标 `escaped`，
+ * 由调用方决定扩大窗口还是回退整份读取。
+ */
+function scanTailChain(lines: string[], atFileStart: boolean): TailChain {
 	const headers: (LineHeader | null)[] = new Array(lines.length).fill(null);
 	const byId = new Map<string, number>();
 	for (let i = 0; i < lines.length; i++) {
@@ -258,7 +281,7 @@ export function healDanglingToolCallsInText(filePath: string, raw: string, cause
 			break;
 		}
 	}
-	if (!lastId) return 0;
+	if (!lastId) return { lastId: null, tailIndex: -1, tailIds: new Set(), escaped: !atFileStart };
 
 	let tailIndex = -1;
 	let tailIds = new Set<string>();
@@ -267,7 +290,7 @@ export function healDanglingToolCallsInText(filePath: string, raw: string, cause
 	while (cursor && !seen.has(cursor)) {
 		seen.add(cursor);
 		const idx = byId.get(cursor);
-		if (idx === undefined) break;
+		if (idx === undefined) return { lastId, tailIndex, tailIds, escaped: !atFileStart };
 		const entry = fullEntry(idx);
 		if (!entry) break;
 		const msg = typeof entry.message === "object" && entry.message !== null ? entry.message : null;
@@ -284,14 +307,26 @@ export function healDanglingToolCallsInText(filePath: string, raw: string, cause
 		}
 		cursor = typeof entry.parentId === "string" ? entry.parentId : null;
 	}
-	if (tailIds.size === 0 || tailIndex < 0) return 0;
+	return { lastId, tailIndex, tailIds, escaped: false };
+}
 
+function danglingCallsOf(chain: TailChain, lines: string[]): DanglingToolCall[] {
+	if (chain.tailIds.size === 0 || chain.tailIndex < 0) return [];
 	const after: unknown[] = [];
-	for (let i = tailIndex; i < lines.length; i++) {
-		const e = fullEntry(i);
+	for (let i = chain.tailIndex; i < lines.length; i++) {
+		const e = parseLineFully(lines[i]);
 		if (e) after.push(e);
 	}
-	const dangling = findDanglingToolCalls(after).filter((d) => tailIds.has(d.toolCallId));
+	return findDanglingToolCalls(after).filter((d) => chain.tailIds.has(d.toolCallId));
+}
+
+/** 为悬空工具调用追加合成结果（一条一条串到 `lastId` 后面），返回追加条数；失败 -1。 */
+export function appendDanglingResults(
+	filePath: string,
+	lastId: string,
+	dangling: DanglingToolCall[],
+	cause: DanglingCause = "generic",
+): number {
 	if (dangling.length === 0) return 0;
 	try {
 		let parentId = lastId;
@@ -319,5 +354,54 @@ export function healDanglingToolCallsInText(filePath: string, raw: string, cause
 		return dangling.length;
 	} catch {
 		return -1;
+	}
+}
+
+/** 尾部窗口逐级放大：绝大多数转录第一个窗口就能判定 */
+const TAIL_WINDOWS = [256 * 1024, 1024 * 1024, 4 * 1024 * 1024, 16 * 1024 * 1024];
+
+export interface TailDanglingProbe {
+	/** 文件末尾最后一条带 id 的条目（`dangling` 非空时必有） */
+	lastId: string | null;
+	dangling: DanglingToolCall[];
+}
+
+/**
+ * 只读文件尾部判定尾部悬空工具调用（打开前快路径，issue #945）。
+ *
+ * 返回 `null` = 窗口内无法判定（父链走出最大窗口），调用方应回退到整份读取。
+ * 只在「修复必然不动文件」的转录上使用：那时没有重复 id，窗口内按 id 回溯与整份读取等价。
+ */
+export async function probeTailDangling(filePath: string): Promise<TailDanglingProbe | null> {
+	let fh: fsPromises.FileHandle;
+	try {
+		fh = await fsPromises.open(filePath, "r");
+	} catch {
+		return null;
+	}
+	try {
+		const size = (await fh.stat()).size;
+		if (size <= 0) return null;
+		for (const windowBytes of TAIL_WINDOWS) {
+			const take = Math.min(size, windowBytes);
+			const atFileStart = take >= size;
+			const buf = Buffer.allocUnsafe(take);
+			const { bytesRead } = await fh.read(buf, 0, take, size - take);
+			let text = buf.subarray(0, bytesRead).toString("utf8");
+			if (!atFileStart) {
+				const nl = text.indexOf("\n");
+				if (nl < 0) continue; // 整窗都是一行（超长行），换更大窗口
+				text = text.slice(nl + 1); // 丢掉窗口首行残片
+			}
+			const lines = text.split("\n");
+			const chain = scanTailChain(lines, atFileStart);
+			if (chain.escaped) continue;
+			return { lastId: chain.lastId, dangling: danglingCallsOf(chain, lines) };
+		}
+		return null;
+	} catch {
+		return null;
+	} finally {
+		await fh.close().catch(() => {});
 	}
 }

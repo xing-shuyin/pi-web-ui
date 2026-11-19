@@ -235,6 +235,13 @@ export interface PluginAgentTool {
 	promptSnippet?: string;
 	promptGuidelines?: string[];
 	parameters?: Record<string, unknown>;
+	/**
+	 * Group the tool belongs to（MCP 服务器就是 `mcp__<server>`）。原样透传给 SDK 的 ToolDefinition，
+	 * 门控与提示词按 namespace + exposure 判定 MCP / 延迟工具，缺了它就只能当直接工具下发。
+	 */
+	namespace?: { name: string; description?: string; instructions?: string };
+	/** 模型怎么拿到这个工具：`direct`（默认）/ `codemode` / `deferred` / `model-only` / `hidden`。 */
+	exposure?: "direct" | "model-only" | "codemode" | "deferred" | "hidden";
 	execute(
 		toolCallId: string,
 		params: Record<string, unknown>,
