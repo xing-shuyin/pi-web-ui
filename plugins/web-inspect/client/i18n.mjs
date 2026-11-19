@@ -1,9 +1,8 @@
 import { createPluginI18n } from "./sdk/client.mjs";
 
 /**
- * Tab UI 文案：en / zh 全量，语言跟随全局
- *（createPluginI18n 读 localStorage["pi-web-ui:lang"] → <html lang> → navigator，
- * 与宿主设置页同一来源；缺 key 回退 en）。
+ * Tab UI copy — English only (single language, no mixed display).
+ * createPluginI18n kept as the lookup mechanism with en fallback.
  */
 const dicts = {
 	en: {
@@ -43,6 +42,7 @@ const dicts = {
 		mdSteps: "steps",
 		mdTask: "task",
 		askPrefix: "Help me with this page:\n",
+		loginOk: "login sessions just work, no extension needed",
 		mCapture: "Capture",
 		mSteps: "Steps",
 		mSend: "Send",
@@ -54,55 +54,6 @@ const dicts = {
 		tipPick: "Pick an element",
 		tipClear: "Clear steps",
 		tipNote: "Add note",
-	},
-	zh: {
-		go: "打开",
-		urlPh: "https://…（回车打开）",
-		snap: "快照",
-		pick: "点选",
-		framedHint: "空白？该站禁止被嵌——在自己浏览器打开它，用下面的书签回传。",
-		bmName: "WI-抓页+日志+点选",
-		bmHint: "点一次 = 快照 + 记录点击/输入 + 点选（红框跟随；Esc 退出）。登录态照常用。",
-		steps: "步骤",
-		empty: "空——先开一页，再记录",
-		visit: "访问地址",
-		pickEl: "点选元素",
-		addNote: "记一条",
-		clear: "清空",
-		taskPh: "描述要做的事 / 哪里坏了…",
-		final: "定稿并送入聊天",
-		sent: "已发送——报告已挂到输入框",
-		needTask: "先写任务描述",
-		status: "状态",
-		noPage: "尚未打开页面",
-		picked: "点选",
-		elements: "元素",
-		recentLog: "近况日志",
-		armed: "点选中：点页面里的一个元素",
-		xorigin: "跨域页面——请在自己浏览器里用书签",
-		masked: "（已输入，已脱敏）",
-		stepVisit: "访问",
-		notePh: "回车追加一条备注…",
-		mdPage: "页面",
-		mdNoSnap: "(尚无快照)",
-		mdPicked: "点选",
-		mdElements: "元素",
-		mdTotal: "共，列",
-		mdLog: "近况日志",
-		mdSteps: "步骤",
-		mdTask: "任务",
-		askPrefix: "帮我看这个页面：\n",
-		mCapture: "采集",
-		mSteps: "步骤",
-		mSend: "发送",
-		guide1: "1. 打开页面",
-		guide2: "2. 点选元素，输入自动记录",
-		guide3: "3. 去发送页写任务，点定稿",
-		tipGo: "打开地址",
-		tipSnap: "抓元素快照",
-		tipPick: "点选元素",
-		tipClear: "清空步骤",
-		tipNote: "记一条",
 	},
 };
 

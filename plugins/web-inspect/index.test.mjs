@@ -19,7 +19,7 @@ function resMock() {
 }
 
 describe("web-inspect", () => {
-	it("beacon pick → state 工具读到点选", async () => {
+	it("beacon pick → state tool reads the pick", async () => {
 		const host = createMockHost();
 		const cleanup = await plugin.activate(host);
 		const route = host.mock.routes.find((r) => r.method === "GET" && r.path === "/collect");
@@ -34,7 +34,7 @@ describe("web-inspect", () => {
 		await cleanup();
 	});
 
-	it("log 工具按 kind 过滤 + clear 生效", async () => {
+	it("log tool filters by kind + clear works", async () => {
 		const host = createMockHost();
 		const cleanup = await plugin.activate(host);
 		const post = host.mock.routes.find((r) => r.method === "POST" && r.path === "/collect");
@@ -50,7 +50,7 @@ describe("web-inspect", () => {
 		await cleanup();
 	});
 
-	it("单步上报 + steps 工具 + settings 路由", async () => {
+	it("single step report + steps tool + settings route", async () => {
 		const host = createMockHost({ settings: { maxSteps: 50 } });
 		const cleanup = await plugin.activate(host);
 		host.mock.emit("onMessage", { action: "step", step: { kind: "visit", label: "visit: https://a.test", url: "https://a.test" } }, "c1");
@@ -66,7 +66,7 @@ describe("web-inspect", () => {
 		await cleanup();
 	});
 
-	it("report 工具落盘 + note/clear 工具", async () => {
+	it("report tool writes file + note/clear tools", async () => {
 		const written = {};
 		const host = createMockHost({ fs: { mkdir: async () => {}, write: async (p, data) => { written[p] = String(data); } } });
 		const cleanup = await plugin.activate(host);

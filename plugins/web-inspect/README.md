@@ -1,6 +1,6 @@
-# Web Inspect（网页拾取 / Web Inspect）
+# Web Inspect
 
-No-extension page capture for AI debugging — bookmarklet + side-by-side browser/steps tab + 6 agent tools.
+No-extension page capture for AI debugging — bookmarklet + side-by-side browser/steps tab + 6 agent tools. English only.
 
 ## Layout
 
@@ -10,39 +10,42 @@ No-extension page capture for AI debugging — bookmarklet + side-by-side browse
 │                              │ Capture | Steps | Send   │
 │  browser (iframe, left)      │ ① guide / URL+Go         │ sidebar (right,
 │                              │ ② pick/snap/bookmarklet  │  resizable, default
-│                              │ ③ task → Send tab        │  320px, remembered)
-│                              ├───────────┤
-│                              │ [Final & send to chat]  │ pinned bottom
+│  (URL input centered when     │ ③ task → Send tab        │  320px, remembered)
+│   no page yet)               ├───────────┤
+│                              │ [Final & send to chat]  │ Send tab only
 └──────────────────────────────┴───────────┘
 ```
 
-- Left: browser pane with address bar. Same-origin pages (localhost dev,
-  liveserver previews) are observed directly: clicks/inputs recorded,
-  Pick mode outlines elements in-page, Snap captures 60 elements.
+- Left: browser pane (iframe, max height, no header bar). Same-origin pages
+  (localhost dev, liveserver previews) are observed directly: clicks/inputs
+  recorded, **Pick** outlines elements in-page, **Snap** captures 60 elements.
+  Empty state shows a centered URL input instead of a blank page.
+- Right: resizable steps sidebar (`⇔` drag, width remembered, default from
+  settings). Three tabs: **Capture** (numbered 1-2-3 guide) / **Steps**
+  (list + note/clear) / **Send** (task box + **Final & send** at its bottom).
 - Framing-blocked sites (most logins): open them in your own tab and click
-  the bookmarklet — snapshots/picks/logs stream into the same steps list.
-- Right: resizable steps sidebar (drag `⇔`, width remembered in localStorage,
-  default from settings).
+  the bookmarklet — snapshot/pick/click/input logs stream into the same steps
+  (preflight-free GET beacon, no CORS; passwords masked per settings).
 
-## Flow (step by step)
+## Flow
 
-1. Open the 🎯 tab, type a URL → `visit` step recorded;
-2. Click **Pick**, click an element → `pick` step with CSS selector;
-3. Type in the page → `input` steps (passwords masked per settings);
-4. Write the task in the box → **Final & send to chat**: saves
+1. Open the 🎯 tab, type a URL (or pick one from Capture) → `visit` step;
+2. Click Pick, click an element → `pick` step with CSS selector;
+3. Type in the page → `input` steps (passwords masked);
+4. Write the task in Send → **Final & send to chat**: saves
    `web-inspect/report-<ts>.md` in the workspace and attaches it to the
    composer as a file reference. Then describe the fix and send.
 
 ## Model protocol (MCP-style JSON-Schema tools)
 
-In-chat models call these directly (description + input schema, like MCP tools).
-No separate MCP server: pi-web-ui exposes plugin functions to models as agent
-tools, which is the same contract.
+In-chat models call these directly (name + description + input schema, the
+same contract as MCP tools). pi-web-ui exposes plugin functions to models as
+agent tools, so no separate MCP server is needed.
 
 | tool | what |
 |---|---|
 | `web_inspect_state` | page + pick + recent log (Markdown) |
-| `web_inspect_log {limit?, kind?}` | log tail: `pick/snap/click/input/submit/change/note/event/step` |
+| `web_inspect_log {limit?,kind?}` | log tail: `pick/snap/click/input/submit/change/note/event/step` |
 | `web_inspect_steps {limit?}` | ordered steps with selectors — replay/debug what the user did |
 | `web_inspect_note {text}` | append a note (visible in tab) |
 | `web_inspect_clear` | clear log + steps |
@@ -57,10 +60,8 @@ tools, which is the same contract.
 
 ## i18n
 
-Tab UI: `client/i18n.mjs` (`en` + `zh`), locale follows the global
-`pi-web-ui:lang` via `createPluginI18n` (localStorage → `<html lang>` →
-navigator). Bookmarklet strings pick zh/en via `navigator.language`.
-Server/agent strings are English-only (repo prompt-hygiene rule).
+English only — one language everywhere (tab, bookmarklet, reports), no mixed
+display. Server/agent strings are English per the repo prompt-hygiene rule.
 
 ## Why bookmarklet instead of iframe/extension
 
@@ -81,7 +82,7 @@ the page (chunked beacons are v2).
 
 ## Roadmap (v2)
 
-- `web_inspect_act`: agent → page actions via `sendTo` + on-screen confirm;
+- `web_inspect_act`: agent → page via `sendTo` + on-screen confirm;
 - page console-error capture; snapshot chunking (`seq/total`).
 
 ## Files
@@ -89,4 +90,4 @@ the page (chunked beacons are v2).
 - `manifest.json` (`view:true`, `ui/tools/http/fs/fs:write`, 4 settings)
 - `index.mjs` (beacon `/collect`, `/state`, `/settings`, `/report`, 6 tools)
 - `client/entry.mjs` (browser+steps layout, same-origin observe/pick/snap)
-- `client/i18n.mjs` (en/zh)
+- `client/i18n.mjs` (en)
