@@ -43,7 +43,7 @@ import { appResourceCrossOrigin, appResourceUrl } from "../base-url";
 import type { EditPromptAttachment } from "../question-attachments";
 import { ThinkingBlock } from "./ThinkingBlock";
 import { ToolCallBlock, type ToolView } from "./ToolCallBlock";
-import { useT, type Translate } from "../i18n";
+import { useI18n, useT, type Translate } from "../i18n";
 import { buildSessionDeepLink, parseSessionHash } from "../session-url";
 import { fetchCompactedHistory, useCompactedHistory } from "../compacted-history-state";
 import { parseSkillBlock, type SkillBlock } from "../skill-block";
@@ -362,6 +362,18 @@ export const Message = memo(function Message({
 	if (message.role === "compactionSummary") {
 		return <CompactionCard message={message} forceOpen={searchActive} autoExpand={autoExpand} />;
 	}
+	const isBgJobDone = message.role === "custom" && message.customType === "background-job-done";
+	const bgJobDetails = (isBgJobDone ? (message.details ?? null) : null) as {
+		jobId?: string;
+		ok?: boolean;
+		exitCode?: number | null;
+		reason?: string;
+		reasonText?: string;
+		reasonEn?: string;
+		command?: string;
+		logPath?: string;
+		tail?: string;
+	} | null;
 	const isFileAttachment = message.role === "custom" && message.customType === "file";
 	const fileQuote =
 		isFileAttachment && (message.details as { mode?: string })?.mode === "quote"
@@ -1091,7 +1103,9 @@ export const Message = memo(function Message({
 								? t("goalBarTitle")
 								: message.customType === "file"
 									? t("attachment")
-									: `${t("plugin")} · ${message.customType ?? t("unknown")}`
+									: message.customType === "background-job-done"
+										? t("bgTaskJobKind")
+										: `${t("plugin")} · ${message.customType ?? t("unknown")}`
 						: collabMeta
 							? collabMeta.isNotice
 								? `${t("subagentBadge")} · ${t("subagentCompletionNotice")}`
@@ -1357,6 +1371,8 @@ export const Message = memo(function Message({
 						)}
 						{fileQuote ? (
 							<TextQuoteCard quote={fileQuote} forceOpen={searchActive} />
+						) : isBgJobDone && bgJobDetails?.jobId ? (
+							<BackgroundJobCard details={bgJobDetails} />
 						) : isFileAttachment ? (
 							<AttachmentCard message={message} forceOpen={searchActive} />
 						) : skillBlock ? (
@@ -1478,6 +1494,43 @@ export const Message = memo(function Message({
 		</div>
 	);
 });
+
+function BackgroundJobCard({
+	details,
+}: {
+	details: {
+		jobId?: string;
+		ok?: boolean;
+		exitCode?: number | null;
+		reason?: string;
+		reasonText?: string;
+		reasonEn?: string;
+		command?: string;
+		logPath?: string;
+		tail?: string;
+	};
+}) {
+	const t = useT();
+	const { locale } = useI18n();
+	const ok = details.ok ?? details.exitCode === 0;
+	const reason =
+		locale.startsWith("zh") ? (details.reasonText || details.reasonEn || details.reason) : details.reasonEn || details.reasonText || details.reason;
+	return (
+		<div className="bashblock">
+			<div className="bashblock-command">
+				<span className="bashblock-prompt">$</span>
+				<code>{details.command || details.jobId}</code>
+				<span className={`bashblock-exit ${ok ? "ok" : "err"}`}>{ok ? t("done") : t("error")}</span>
+				{details.exitCode !== undefined && details.exitCode !== null && (
+					<span className={`bashblock-exit ${ok ? "ok" : "err"}`}>{t("exitCode", { code: details.exitCode })}</span>
+				)}
+			</div>
+			{reason && <div className="trunc-note">{reason}</div>}
+			{details.tail && <pre className="bashblock-output">{details.tail}</pre>}
+			{details.logPath && <div className="trunc-note mono">{details.logPath}</div>}
+		</div>
+	);
+}
 
 function AttachmentCard({ message, forceOpen = false }: { message: UiMessage; forceOpen?: boolean }) {
 	const t = useT();
