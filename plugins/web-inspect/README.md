@@ -5,16 +5,14 @@ No-extension page capture for AI debugging — bookmarklet + side-by-side browse
 ## Layout
 
 ```
-┌ address bar ─────────────────────────────┐
-│ [url input____] [Go] [Snap] [Pick]      │
+┌ icon toolbar: [→] [snap] [pick]      page ────────┐
 ├──────────────────────────────┬───────────┤
-│                              │ Steps     │
-│  browser (iframe, left)      │ 1. visit… │ sidebar (right,
-│                              │ 2. click… │  resizable, default
-│                              │ [actions] │  320px, remembered)
-│                              │ [task…]   │
-│                              │ [Final &  │
-│                              │  send]    │
+│                              │ Capture | Steps | Send   │
+│  browser (iframe, left)      │ ① guide / URL+Go         │ sidebar (right,
+│                              │ ② pick/snap/bookmarklet  │  resizable, default
+│                              │ ③ task → Send tab        │  320px, remembered)
+│                              ├───────────┤
+│                              │ [Final & send to chat]  │ pinned bottom
 └──────────────────────────────┴───────────┘
 ```
 
