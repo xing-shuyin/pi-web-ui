@@ -220,6 +220,28 @@ export default defineView({
 
 		// Follow URL changes inside the iframe (link clicks, redirects).
 		// Cross-origin reads throw → keep the last known URL instead of hanging.
+		function sameOrigin(a, b) {
+			try {
+				return new URL(a).origin === new URL(b).origin;
+			} catch {
+				return true;
+			}
+		}
+
+		function handleNewUrl(actual) {
+			if (!actual || actual === browserUrl) return;
+			if (browserUrl && !sameOrigin(actual, browserUrl)) {
+				ctx.send({ action: "clear" });
+				state.steps = [];
+				state.picked = null;
+				state.snapshot = null;
+			}
+			browserUrl = actual;
+			sendStep({ kind: "nav", label: actual, url: actual });
+			renderBrowser();
+			renderSide();
+		}
+
 		function trackUrl() {
 			let actual = "";
 			try {
@@ -240,12 +262,13 @@ export default defineView({
 				// left the proxy (a link led out): back to direct mode
 				proxyMode = false;
 				bannerOff = false;
+				ctx.send({ action: "clear" });
+				state.steps = [];
+				state.picked = null;
+				state.snapshot = null;
 			}
 			if (pendingVisit) pendingVisit = false;
-			else if (actual && actual !== browserUrl) {
-				browserUrl = actual;
-				sendStep({ kind: "nav", label: actual, url: actual });
-			}
+			else handleNewUrl(actual);
 			renderBrowser();
 			renderSide();
 		}
@@ -632,12 +655,7 @@ ${esc((state.log || []).slice(-10).map((l) => `[${(l.t || "").slice(11, 19)}] ${
 			if (!browserUrl || proxyMode || pickArmed) return;
 			try {
 				const href = frame?.contentWindow?.location?.href || "";
-				if (href && href !== "about:blank" && href !== browserUrl && sameDoc()) {
-					browserUrl = href;
-					sendStep({ kind: "nav", label: href, url: href });
-					renderBrowser();
-					renderSide();
-				}
+				if (href && href !== "about:blank" && sameDoc()) handleNewUrl(href);
 			} catch {}
 		}, 1500);
 

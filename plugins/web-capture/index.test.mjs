@@ -150,6 +150,7 @@ describe("web-capture", () => {
 			const bad = htmlResMock();
 			await route.handler({ query: { url: "ftp://x/y" } }, bad);
 			assert.equal(bad.statusCode, 400);
+			assert.match(bad.body, /Bad URL/);
 			globalThis.fetch = async () => ({
 				headers: { get: () => "application/pdf" },
 				arrayBuffer: async () => new Uint8Array(10).buffer,
@@ -157,6 +158,7 @@ describe("web-capture", () => {
 			const pdf = htmlResMock();
 			await route.handler({ query: { url: "https://example.com/f.pdf" } }, pdf);
 			assert.equal(pdf.statusCode, 415);
+			assert.match(pdf.body, /Not an HTML page/);
 			await cleanup();
 		} finally {
 			globalThis.fetch = realFetch;

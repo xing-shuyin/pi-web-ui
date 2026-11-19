@@ -298,13 +298,21 @@ export default definePlugin({
 		// inject <base> + recorder. Makes localhost (and mobile) fully recordable
 		// in-tab with one tap. Login cookies are NOT forwarded — logged-in pages
 		// must still use the bookmarklet.
+		const proxyFail = (res, code, title, hint, target) => {
+			res.setHeader("Content-Type", "text/html; charset=utf-8");
+			res.setHeader("Cache-Control", "no-store");
+			res.status(code).send(`<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Web Capture: ${title}</title><style>body{font:14px/1.7 system-ui,sans-serif;max-width:640px;margin:40px auto;padding:0 16px;color:#333}code{background:#f0f0f0;padding:1px 6px;border-radius:4px}.card{border:1px solid #ccc;border-radius:10px;padding:12px 16px;margin:12px 0}a{color:#1a73e8}</style></head><body><h3>⚠ ${title}</h3><div class="card">${hint}</div><p><a href="${target}" target="_blank" rel="noopener">Open the page in a real tab instead</a> (then use the bookmarklet for logged-in pages).</p></body></html>`);
+		};
+
 		const offProxy = host.route("GET", "/proxy", async (req, res) => {
+			let targetSafe = "#";
 			try {
 				const raw = String(req.query?.url ?? "");
+				try { targetSafe = new URL(raw).href; } catch {}
 				const ep = String(req.query?.ep ?? "").slice(0, 500);
 				const msk = String(req.query?.msk ?? "1") === "1";
 				if (!/^https?:\/\//i.test(raw) || raw.length > 2000) {
-					res.status(400).json({ ok: false, error: "bad url (absolute http(s) required)" });
+					proxyFail(res, 400, "Bad URL", "The address must be an absolute <code>http(s)://</code> URL. Check what you typed in the address bar.", "#");
 					return;
 				}
 				const ctl = new AbortController();
@@ -321,12 +329,12 @@ export default definePlugin({
 				}
 				const ct = resp.headers.get("content-type") || "";
 				if (!/html/i.test(ct)) {
-					res.status(415).json({ ok: false, error: `not an HTML page (${ct || "unknown type"})` });
+					proxyFail(res, 415, "Not an HTML page", `This URL serves <code>${ct || "an unknown type"}</code>, not a web page. The proxy only renders HTML.`, targetSafe);
 					return;
 				}
 				const buf = new Uint8Array(await resp.arrayBuffer());
 				if (buf.length > 2 * 1024 * 1024) {
-					res.status(413).json({ ok: false, error: "page too large (>2MB)" });
+					proxyFail(res, 413, "Page too large", "This page is over 2MB — too heavy to proxy. Open it in a real tab and use the bookmarklet.", targetSafe);
 					return;
 				}
 				let html = new TextDecoder().decode(buf);
@@ -342,7 +350,8 @@ export default definePlugin({
 				res.send(html);
 			} catch (err) {
 				const code = err?.name === "AbortError" ? 504 : 502;
-				res.status(code).json({ ok: false, error: String(err?.message ?? err).slice(0, 200) });
+				const why = err?.name === "AbortError" ? "timed out after 15s" : "connection failed";
+				proxyFail(res, code, "Cannot reach the page", `The pi-web-ui <b>server</b> could not fetch this URL (${why}). Note: <code>localhost</code> here means <b>the server machine</b> — if your dev server runs on another device, open pi-web-ui on that same device or expose the dev server on the network. Technical detail: <code>${String(err?.message ?? err).slice(0, 160)}</code>`, targetSafe);
 			}
 		});
 
