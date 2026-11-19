@@ -57,6 +57,15 @@ const dicts = {
 		tipUp: "Move up",
 		tipDown: "Move down",
 		tipDel: "Remove step",
+		tipBack: "Back",
+		tipFwd: "Forward",
+		tipReload: "Reload page",
+		zoom: "Zoom",
+		tipZoomIn: "Zoom in",
+		tipZoomOut: "Zoom out",
+		tipZoomReset: "Reset zoom",
+		newFlow: "New flow",
+		tipNewFlow: "Clear steps and start a new capture flow",
 	},
 };
 

@@ -22,6 +22,10 @@ const IC = {
 	note: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 3a2.8 2.8 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5z"/></svg>',
 	clear: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18M8 6V4a1 1 0 0 1 1-1h6a1 1 0 0 1 1 1v2m3 0v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"/></svg>',
 	send: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 2 11 13M22 2l-7 20-4-9-9-4z"/></svg>',
+	back: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 12H5M12 19l-7-7 7-7"/></svg>',
+	fwd: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14M12 5l7 7-7 7"/></svg>',
+	reload: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-3-6.7"/><path d="M21 3v5h-5"/></svg>',
+	reset: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 1 0 3-6.7"/><path d="M3 4v5h5"/></svg>',
 	cap: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><circle cx="12" cy="12" r="8"/></svg>',
 	list: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01"/></svg>',
 };
@@ -38,7 +42,7 @@ function mdOf(s, task) {
 	return out.join("\n");
 }
 
-const CSS = `.wi{font:13px/1.6 system-ui,sans-serif;height:100%;display:flex;flex-direction:column;color:var(--text,inherit);min-height:0}.wi-sidehead{flex:none;padding:8px 8px 0;font-size:11.5px;color:var(--text-dim,#999);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.wi-empty{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px;padding:20px;background:var(--bg-elev2,#8881)}.wi-empty .urlrow{width:min(480px,90%)}.wi-empty h3{margin:0;font-size:15px}.ibtn{flex:none;width:32px;height:30px;display:inline-flex;align-items:center;justify-content:center;border:1px solid var(--border,#8886);border-radius:7px;background:transparent;color:var(--text,inherit);cursor:pointer;padding:0}.ibtn svg{width:16px;height:16px}.ibtn:hover{background:var(--accent-soft,#8882)}.ibtn.on{color:var(--accent-contrast,#fff);background:var(--accent,#4a7dff);border-color:var(--accent,#4a7dff)}.wi-main{flex:1;display:flex;min-height:0}.wi-browser{flex:1;min-width:0;display:flex;flex-direction:column}.wi-browser iframe{flex:1;width:100%;border:0;background:#fff;min-height:0}.wi-framed{font-size:11px;color:var(--text-dim,#999);padding:2px 10px}.wi-grip{flex:none;width:8px;cursor:col-resize}.wi-grip:hover,.wi-grip.on{background:var(--accent-soft,#8883)}.wi-side{flex:none;display:flex;flex-direction:column;min-height:0;border-left:1px solid var(--border,#8883)}.stabs{flex:none;display:flex;gap:4px;padding:8px 8px 0}.stabs button{flex:1;display:flex;align-items:center;justify-content:center;gap:5px;border:1px solid var(--border,#8884);border-bottom:0;border-radius:8px 8px 0 0;padding:6px 2px;background:transparent;color:var(--text-dim,#999);font-size:12px;cursor:pointer}.stabs button svg{width:14px;height:14px}.stabs button.on{color:var(--text-strong,var(--text,inherit));background:var(--bg-elev,transparent);border-color:var(--accent,#4a7dff);font-weight:600}.sbody{flex:1;min-height:0;overflow-y:auto;padding:8px;border-top:1px solid var(--border,#8884);display:flex;flex-direction:column;gap:8px}.sfoot{flex:none;padding:8px;border-top:1px solid var(--border,#8883)}.sfoot button{width:100%;padding:8px;font-size:13px;font-weight:600}.wi .dim{font-size:11.5px;color:var(--text-dim,#999)}.wi .card{border:1px solid var(--border,#8884);border-radius:10px;padding:8px 10px;background:var(--bg-elev,transparent)}.wi .guide{margin:0;padding:0;list-style:none;display:flex;flex-direction:column;gap:8px}.wi .guide li{display:flex;gap:8px;align-items:flex-start}.wi .gn{flex:none;width:20px;height:20px;border-radius:50%;background:var(--accent,#4a7dff);color:var(--accent-contrast,#fff);font-size:11px;font-weight:700;display:flex;align-items:center;justify-content:center;margin-top:1px}.wi input[type=text],.wi textarea{width:100%;box-sizing:border-box;background:var(--bg-elev2,#8881);color:var(--text,inherit);border:1px solid var(--border,#8884);border-radius:6px;padding:6px 8px;font-size:12px}.wi textarea{resize:vertical}.wi ol.steps{margin:6px 0;padding-left:20px;font-size:12px}.wi ol.steps li{margin:3px 0}.wi code{font-size:11px;word-break:break-all}.wi a.bm{display:inline-block;margin:4px 0;padding:4px 12px;border:1px dashed var(--accent,#4a7dff);border-radius:8px;text-decoration:none;color:var(--accent,#4a7dff);font-size:12px}.wi-flash{font-size:12px;color:var(--accent,#4a7dff);margin-top:6px}.wi pre{white-space:pre-wrap;font-size:11px;max-height:160px;overflow:auto;background:var(--bg-elev2,#8881);border-radius:6px;padding:6px 8px}.urlrow{display:flex;gap:6px}.urlrow input{flex:1;min-width:0}`;
+const CSS = `.wi{font:13px/1.6 system-ui,sans-serif;height:100%;display:flex;flex-direction:column;color:var(--text,inherit);min-height:0}.wi-sidehead{flex:none;padding:8px 8px 0;font-size:11.5px;color:var(--text-dim,#999);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.wi-empty{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px;padding:20px;background:var(--bg-elev2,#8881)}.wi-empty .urlrow{width:min(480px,90%)}.wi-empty h3{margin:0;font-size:15px}.ibtn{flex:none;width:32px;height:30px;display:inline-flex;align-items:center;justify-content:center;border:1px solid var(--border,#8886);border-radius:7px;background:transparent;color:var(--text,inherit);cursor:pointer;padding:0}.ibtn svg{width:16px;height:16px}.ibtn:hover{background:var(--accent-soft,#8882)}.ibtn.on{color:var(--accent-contrast,#fff);background:var(--accent,#4a7dff);border-color:var(--accent,#4a7dff)}.wi-main{flex:1;display:flex;min-height:0}.wi-browser{flex:1;min-width:0;display:flex;flex-direction:column}.wi-browser iframe{flex:1;width:100%;border:0;background:#fff;min-height:0}.wi-framed{font-size:11px;color:var(--text-dim,#999);padding:2px 10px}.wi-grip{flex:none;width:8px;cursor:col-resize}.wi-grip:hover,.wi-grip.on{background:var(--accent-soft,#8883)}.wi-side{flex:none;display:flex;flex-direction:column;min-height:0;border-left:1px solid var(--border,#8883)}.stabs{flex:none;display:flex;gap:4px;padding:8px 8px 0}.stabs button{flex:1;display:flex;align-items:center;justify-content:center;gap:5px;border:1px solid var(--border,#8884);border-bottom:0;border-radius:8px 8px 0 0;padding:6px 2px;background:transparent;color:var(--text-dim,#999);font-size:12px;cursor:pointer}.stabs button svg{width:14px;height:14px}.stabs button.on{color:var(--text-strong,var(--text,inherit));background:var(--bg-elev,transparent);border-color:var(--accent,#4a7dff);font-weight:600}.sbody{flex:1;min-height:0;overflow-y:auto;padding:8px;border-top:1px solid var(--border,#8884);display:flex;flex-direction:column;gap:8px}.sfoot{flex:none;padding:8px;border-top:1px solid var(--border,#8883)}.sfoot button{width:100%;padding:8px;font-size:13px;font-weight:600}.wi .dim{font-size:11.5px;color:var(--text-dim,#999)}.wi .card{border:1px solid var(--border,#8884);border-radius:10px;padding:8px 10px;background:var(--bg-elev,transparent)}.wi .guide{margin:0;padding:0;list-style:none;display:flex;flex-direction:column;gap:8px}.wi .guide li{display:flex;gap:8px;align-items:flex-start}.wi .gn{flex:none;width:20px;height:20px;border-radius:50%;background:var(--accent,#4a7dff);color:var(--accent-contrast,#fff);font-size:11px;font-weight:700;display:flex;align-items:center;justify-content:center;margin-top:1px}.wi input[type=text],.wi textarea{width:100%;box-sizing:border-box;background:var(--bg-elev2,#8881);color:var(--text,inherit);border:1px solid var(--border,#8884);border-radius:6px;padding:6px 8px;font-size:12px}.wi textarea{resize:vertical}.wi ol.steps{margin:6px 0;padding-left:20px;font-size:12px}.wi ol.steps li{margin:3px 0}.wi code{font-size:11px;word-break:break-all}.wi a.bm{display:inline-block;margin:4px 0;padding:4px 12px;border:1px dashed var(--accent,#4a7dff);border-radius:8px;text-decoration:none;color:var(--accent,#4a7dff);font-size:12px}.wi-flash{font-size:12px;color:var(--accent,#4a7dff);margin-top:6px}.wi pre{white-space:pre-wrap;font-size:11px;max-height:160px;overflow:auto;background:var(--bg-elev2,#8881);border-radius:6px;padding:6px 8px}.urlrow{display:flex;gap:6px}.urlrow input{flex:1;min-width:0}.navrow{flex:none;display:flex;gap:4px;align-items:center;padding:8px 8px 0}.navrow input{flex:1;min-width:0;background:var(--bg-elev2,#8881);color:var(--text,inherit);border:1px solid var(--border,#8884);border-radius:6px;padding:4px 8px;font-size:12px}.zoomrow{display:flex;gap:6px;align-items:center}.zoomrow .zv{min-width:44px;text-align:center;font-size:12px}`;
 
 function cssPath(e) {
 	if (e.id) return "#" + e.id;
@@ -72,6 +76,8 @@ export default defineView({
 		let browserUrl = "";
 		let pickArmed = false;
 		let flash = "";
+		let zoom = 1;
+		let taskDraft = "";
 
 		const root = document.createElement("div");
 		root.className = "wi";
@@ -91,13 +97,37 @@ export default defineView({
 		root.append(main);
 		const browserPane = main.querySelector(".wi-browser");
 		const side = main.querySelector(".wi-side");
-		const head = document.createElement("div");
-		head.className = "wi-sidehead";
+		const nav = document.createElement("div");
+		nav.className = "navrow";
+		nav.innerHTML = `${ibtn("back", "back", t("tipBack"))}${ibtn("fwd", "fwd", t("tipFwd"))}${ibtn("reload", "reload", t("tipReload"))}<input data-a="navurl" placeholder="${esc(t("urlPh"))}">${ibtn("navgo", "go", t("tipGo"))}`;
+		const zoomBox = document.createElement("details");
+		zoomBox.className = "card";
+		zoomBox.style.margin = "8px 8px 0";
+		zoomBox.innerHTML = `<summary class="dim">${esc(t("zoom"))} <span data-a="zoomv">100%</span></summary><div class="zoomrow" style="margin-top:6px"><button data-a="zout">−</button><button data-a="zin">+</button><button data-a="zreset">${esc(t("tipZoomReset"))}</button></div>`;
 		const tabs = document.createElement("div");
 		tabs.className = "stabs";
 		const body = document.createElement("div");
 		body.className = "sbody";
-		side.append(head, tabs, body);
+		side.append(nav, zoomBox, tabs, body);
+		const navInput = nav.querySelector('[data-a="navurl"]');
+		navInput.addEventListener("keydown", (e) => {
+			if (e.key === "Enter") visit(navInput.value);
+		});
+		nav.querySelector('[data-a="navgo"]').addEventListener("click", () => visit(navInput.value));
+		nav.querySelector('[data-a="back"]').addEventListener("click", () => {
+			try { frame?.contentWindow?.history?.back(); } catch {}
+			setTimeout(trackUrl, 400);
+		});
+		nav.querySelector('[data-a="fwd"]').addEventListener("click", () => {
+			try { frame?.contentWindow?.history?.forward(); } catch {}
+			setTimeout(trackUrl, 400);
+		});
+		nav.querySelector('[data-a="reload"]').addEventListener("click", () => {
+			if (browserUrl) { pendingVisit = true; frame.src = browserUrl; }
+		});
+		zoomBox.querySelector('[data-a="zin"]').addEventListener("click", () => setZoom(zoom + 0.1));
+		zoomBox.querySelector('[data-a="zout"]').addEventListener("click", () => setZoom(zoom - 0.1));
+		zoomBox.querySelector('[data-a="zreset"]').addEventListener("click", () => setZoom(1));
 		main.querySelector(".wi-grip").addEventListener("mousedown", (e) => {
 			e.preventDefault();
 			const grip = e.currentTarget;
@@ -292,6 +322,24 @@ export default defineView({
 			return `<span style="display:inline-flex;gap:4px;margin-left:6px">${b(-1, "↑", t("tipUp"))}${b(1, "↓", t("tipDown"))}<button data-del="${idx}" title="${esc(t("tipDel"))}" style="border:1px solid var(--border,#8886);border-radius:5px;background:transparent;color:var(--text-dim,#999);font-size:11px;padding:0 6px;cursor:pointer">×</button></span>`;
 		}
 
+		function setZoom(z) {
+			zoom = Math.max(0.5, Math.min(2.5, Math.round(z * 10) / 10));
+			try { frame.style.zoom = String(zoom); } catch {}
+			const zv = zoomBox.querySelector('[data-a="zoomv"]');
+			if (zv) zv.textContent = Math.round(zoom * 100) + "%";
+		}
+
+		function resetFlow() {
+			disarmPick();
+			ctx.send({ action: "clear" });
+			browserUrl = "";
+			pendingVisit = false;
+			taskDraft = "";
+			state = { page: null, snapshot: null, picked: null, log: [], steps: [] };
+			mode = "capture";
+			render();
+		}
+
 		function renderBrowser() {
 			const want = browserUrl ? "frame" : "empty";
 			if (want === shownBrowser) return;
@@ -315,7 +363,9 @@ export default defineView({
 		function renderSide() {
 			const steps = state.steps || [];
 			const bm = `javascript:${encodeURIComponent(BOOKMARKLET_SRC.replace("__EP__", API.replace(/'/g, "")).replace("__MSK__", settings.maskPasswords ? "1" : "0"))}`;
-			head.textContent = state.page ? `${state.page.title || ""} — ${state.page.url}` : t("noPage");
+			if (document.activeElement !== navInput) navInput.value = browserUrl;
+			const zv = zoomBox.querySelector('[data-a="zoomv"]');
+			if (zv) zv.textContent = Math.round(zoom * 100) + "%";
 			tabs.innerHTML = `<button data-m="capture" class="${mode === "capture" ? "on" : ""}">${IC.cap}<span>${esc(t("mCapture"))}</span></button><button data-m="steps" class="${mode === "steps" ? "on" : ""}">${IC.list}<span>${esc(t("mSteps"))}(${steps.length})</span></button><button data-m="send" class="${mode === "send" ? "on" : ""}">${IC.send}<span>${esc(t("mSend"))}</span></button>`;
 			tabs.querySelectorAll("[data-m]").forEach((b) =>
 				b.addEventListener("click", () => {
@@ -325,6 +375,7 @@ export default defineView({
 			);
 
 			if (mode === "capture") {
+				if (body.querySelector('[data-a="url"]') === document.activeElement) return;
 				body.innerHTML = `<ol class="guide">
 					<li><span class="gn">1</span><div style="flex:1"><b>${esc(t("guide1"))}</b><div class="urlrow" style="margin-top:6px"><input data-a="url" placeholder="${esc(t("urlPh"))}" value="${esc(browserUrl)}">${ibtn("go2", "go", t("tipGo"))}</div></div></li>
 					<li><span class="gn">2</span><div style="flex:1"><b>${esc(t("guide2"))}</b><div style="margin-top:6px;display:flex;gap:6px">${ibtn("pick2", "pick", t("tipPick"), pickArmed)}${ibtn("snap2", "snap", t("tipSnap"))}</div>
@@ -346,7 +397,7 @@ export default defineView({
 					}
 				});
 			} else if (mode === "steps") {
-				body.innerHTML = `<div class="card"><div style="display:flex;gap:6px;margin-bottom:6px">${ibtn("note", "note", t("tipNote"))}${ibtn("clear", "clear", t("tipClear"))}</div>
+				body.innerHTML = `<div class="card"><div style="display:flex;gap:6px;margin-bottom:6px">${ibtn("note", "note", t("tipNote"))}${ibtn("clear", "clear", t("tipClear"))}${ibtn("newflow", "reset", t("tipNewFlow"))}</div>
 				<ol class="steps">${steps.map((s, idx) => `<li><b>${esc(s.kind)}</b> ${esc(s.label)}${s.sel ? `<br><code>${esc(s.sel)}</code>` : ""}${stepBtns(idx, steps.length)}</li>`).join("") || `<span class="dim">${esc(t("empty"))}</span>`}</ol></div>
 				${state.picked ? `<div class="card"><b>${esc(t("picked"))} [${esc(state.picked.tag)}]</b> ${esc(state.picked.text)}<br><code>${esc(state.picked.sel)}</code></div>` : ""}
 				<details class="card"><summary class="dim">${esc(t("elements"))}（${state.snapshot ? state.snapshot.count : 0}）· ${esc(t("recentLog"))}（${state.log.length}）</summary>
@@ -357,6 +408,7 @@ export default defineView({
 					if (v?.trim()) ctx.send({ action: "note", text: v.trim() });
 				});
 				body.querySelector('[data-a="clear"]').addEventListener("click", () => ctx.send({ action: "clear" }));
+				body.querySelector('[data-a="newflow"]').addEventListener("click", resetFlow);
 				body.querySelectorAll("[data-mv]").forEach((b) =>
 					b.addEventListener("click", () => {
 						const i = Number(b.dataset.i);
@@ -376,18 +428,25 @@ export default defineView({
 					}),
 				);
 			} else {
+				const wasEditing = body.querySelector('[data-a="task"]') === document.activeElement;
 				body.innerHTML = `<div class="card"><div class="dim">${esc(t("status"))}: ${esc(state.page ? `${state.page.title || ""} — ${state.page.url}` : t("noPage"))}</div>
 				<div class="dim">${esc(t("mSteps"))}: ${steps.length} · ${esc(t("elements"))}: ${state.snapshot ? state.snapshot.count : 0}</div></div>
-				<div class="card"><textarea data-a="task" rows="5" placeholder="${esc(t("taskPh"))}"></textarea>
-				<button data-a="final" class="primary" style="width:100%;padding:8px;margin-top:8px;border:0;font-weight:600">${esc(t("final"))}</button>${flash ? `<div class="wi-flash">${esc(flash)}</div>` : ""}</div>`;
+				<div class="card"><textarea data-a="task" rows="5" placeholder="${esc(t("taskPh"))}">${esc(taskDraft)}</textarea>
+				<button data-a="final" class="primary" style="width:100%;padding:8px;margin-top:8px;border:0;font-weight:600">${esc(t("final"))}</button>
+				<button data-a="resetflow" style="width:100%;padding:6px;margin-top:6px">${esc(t("newFlow"))}</button>${flash ? `<div class="wi-flash">${esc(flash)}</div>` : ""}</div>`;
 				flash = "";
+				const ta = body.querySelector('[data-a="task"]');
+				ta.addEventListener("input", () => { taskDraft = ta.value; });
+				if (wasEditing) { ta.focus(); try { ta.setSelectionRange(ta.value.length, ta.value.length); } catch {} }
 				body.querySelector('[data-a="final"]').addEventListener("click", onFinal);
+				body.querySelector('[data-a="resetflow"]').addEventListener("click", resetFlow);
 			}
 		}
 
 		async function onFinal() {
 			const ta = body.querySelector('[data-a="task"]');
-			const task = (ta?.value || "").trim();
+			if (ta) taskDraft = ta.value || "";
+			const task = (taskDraft || "").trim();
 			if (!task) {
 				flash = t("needTask");
 				renderSide();
