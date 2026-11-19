@@ -71,6 +71,11 @@ const dicts = {
 		tipZoomOut: "Zoom out",
 		tipZoomReset: "Reset zoom",
 		newFlow: "New flow",
+		proxyBar: "Auto-record is off on this page.",
+		useProxy: "Reload via auto-proxy",
+		proxyNote: "Proxy drops logins — logged-in pages still need the bookmarklet.",
+		openReal: "Open in real tab",
+		dismiss: "Dismiss",
 		tipNewFlow: "Clear steps and start a new capture flow",
 	},
 };

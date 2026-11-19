@@ -43,7 +43,7 @@ function mdOf(s, task) {
 	return out.join("\n");
 }
 
-const CSS = `.wi{font:13px/1.6 system-ui,sans-serif;height:100%;display:flex;flex-direction:column;color:var(--text,inherit);min-height:0}.wi-sidehead{flex:none;padding:8px 8px 0;font-size:11.5px;color:var(--text-dim,#999);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.wi-empty{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px;padding:20px;background:var(--bg-elev2,#8881)}.wi-empty .urlrow{width:min(480px,90%)}.wi-empty h3{margin:0;font-size:15px}.ibtn{flex:none;width:32px;height:30px;display:inline-flex;align-items:center;justify-content:center;border:1px solid var(--border,#8886);border-radius:7px;background:transparent;color:var(--text,inherit);cursor:pointer;padding:0}.ibtn svg{width:16px;height:16px}.ibtn:hover{background:var(--accent-soft,#8882)}.ibtn.on{color:var(--accent-contrast,#fff);background:var(--accent,#4a7dff);border-color:var(--accent,#4a7dff)}.wi-main{flex:1;display:flex;min-height:0}.wi-browser{flex:1;min-width:0;display:flex;flex-direction:column}.wi-browser iframe{flex:1;width:100%;border:0;background:#fff;min-height:0}.wi-framed{font-size:11px;color:var(--text-dim,#999);padding:2px 10px}.wi-grip{flex:none;width:8px;cursor:col-resize}.wi-grip:hover,.wi-grip.on{background:var(--accent-soft,#8883)}.wi-grip{touch-action:none}@media (pointer:coarse){.wi-grip{width:14px}.ibtn{width:40px;height:36px}}.wi-side{flex:none;display:flex;flex-direction:column;min-height:0;border-left:1px solid var(--border,#8883)}.stabs{flex:none;display:flex;gap:4px;padding:8px 8px 0}.stabs button{flex:1;display:flex;align-items:center;justify-content:center;gap:5px;border:1px solid var(--border,#8884);border-bottom:0;border-radius:8px 8px 0 0;padding:6px 2px;background:transparent;color:var(--text-dim,#999);font-size:12px;cursor:pointer}.stabs button svg{width:14px;height:14px}.stabs button.on{color:var(--text-strong,var(--text,inherit));background:var(--bg-elev,transparent);border-color:var(--accent,#4a7dff);font-weight:600}.sbody{flex:1;min-height:0;overflow-y:auto;padding:8px;border-top:1px solid var(--border,#8884);display:flex;flex-direction:column;gap:8px}.sfoot{flex:none;padding:8px;border-top:1px solid var(--border,#8883)}.sfoot button{width:100%;padding:8px;font-size:13px;font-weight:600}.wi .dim{font-size:11.5px;color:var(--text-dim,#999)}.wi .card{border:1px solid var(--border,#8884);border-radius:10px;padding:8px 10px;background:var(--bg-elev,transparent)}.wi .guide{margin:0;padding:0;list-style:none;display:flex;flex-direction:column;gap:8px}.wi .guide li{display:flex;gap:8px;align-items:flex-start}.wi .gn{flex:none;width:20px;height:20px;border-radius:50%;background:var(--accent,#4a7dff);color:var(--accent-contrast,#fff);font-size:11px;font-weight:700;display:flex;align-items:center;justify-content:center;margin-top:1px}.wi input[type=text],.wi textarea{width:100%;box-sizing:border-box;background:var(--bg-elev2,#8881);color:var(--text,inherit);border:1px solid var(--border,#8884);border-radius:6px;padding:6px 8px;font-size:12px}.wi textarea{resize:vertical}.wi ol.steps{margin:6px 0;padding-left:20px;font-size:12px}.wi ol.steps li{margin:3px 0}.step-row{display:flex;align-items:flex-start;gap:6px}.step-row .sl{flex:1;min-width:0}.step-btns{margin-left:auto;flex:none;display:inline-flex;gap:4px}.wi code{font-size:11px;word-break:break-all}.wi a.bm{display:inline-block;margin:4px 0;padding:4px 12px;border:1px dashed var(--accent,#4a7dff);border-radius:8px;text-decoration:none;color:var(--accent,#4a7dff);font-size:12px}.wi-flash{font-size:12px;color:var(--accent,#4a7dff);margin-top:6px}.wi pre{white-space:pre-wrap;font-size:11px;max-height:160px;overflow:auto;background:var(--bg-elev2,#8881);border-radius:6px;padding:6px 8px}.urlrow{display:flex;gap:6px}.urlrow input{flex:1;min-width:0}.navrow{flex:none;display:flex;gap:4px;align-items:center;padding:8px 8px 0}.navrow input{flex:1;min-width:0;background:var(--bg-elev2,#8881);color:var(--text,inherit);border:1px solid var(--border,#8884);border-radius:6px;padding:4px 8px;font-size:12px}.zoomrow{display:flex;gap:6px;align-items:center}.zoomrow .zv{min-width:44px;text-align:center;font-size:12px}`;
+const CSS = `.wi{font:13px/1.6 system-ui,sans-serif;height:100%;display:flex;flex-direction:column;color:var(--text,inherit);min-height:0}.wi-sidehead{flex:none;padding:8px 8px 0;font-size:11.5px;color:var(--text-dim,#999);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.wi-empty{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px;padding:20px;background:var(--bg-elev2,#8881)}.wi-empty .urlrow{width:min(480px,90%)}.wi-empty h3{margin:0;font-size:15px}.ibtn{flex:none;width:32px;height:30px;display:inline-flex;align-items:center;justify-content:center;border:1px solid var(--border,#8886);border-radius:7px;background:transparent;color:var(--text,inherit);cursor:pointer;padding:0}.ibtn svg{width:16px;height:16px}.ibtn:hover{background:var(--accent-soft,#8882)}.ibtn.on{color:var(--accent-contrast,#fff);background:var(--accent,#4a7dff);border-color:var(--accent,#4a7dff)}.wi-main{flex:1;display:flex;min-height:0}.wi-browser{flex:1;min-width:0;display:flex;flex-direction:column}.wi-browser iframe{flex:1;width:100%;border:0;background:#fff;min-height:0}.wi-framed{font-size:11px;color:var(--text-dim,#999);padding:2px 10px}.pxbar{display:flex;gap:6px;align-items:center;flex-wrap:wrap;background:var(--accent-soft,#8882);border-bottom:1px solid var(--border,#8884);padding:6px 10px;font-size:12px}.wi-grip{flex:none;width:8px;cursor:col-resize}.wi-grip:hover,.wi-grip.on{background:var(--accent-soft,#8883)}.wi-grip{touch-action:none}@media (pointer:coarse){.wi-grip{width:14px}.ibtn{width:40px;height:36px}}.wi-side{flex:none;display:flex;flex-direction:column;min-height:0;border-left:1px solid var(--border,#8883)}.stabs{flex:none;display:flex;gap:4px;padding:8px 8px 0}.stabs button{flex:1;display:flex;align-items:center;justify-content:center;gap:5px;border:1px solid var(--border,#8884);border-bottom:0;border-radius:8px 8px 0 0;padding:6px 2px;background:transparent;color:var(--text-dim,#999);font-size:12px;cursor:pointer}.stabs button svg{width:14px;height:14px}.stabs button.on{color:var(--text-strong,var(--text,inherit));background:var(--bg-elev,transparent);border-color:var(--accent,#4a7dff);font-weight:600}.sbody{flex:1;min-height:0;overflow-y:auto;padding:8px;border-top:1px solid var(--border,#8884);display:flex;flex-direction:column;gap:8px}.sfoot{flex:none;padding:8px;border-top:1px solid var(--border,#8883)}.sfoot button{width:100%;padding:8px;font-size:13px;font-weight:600}.wi .dim{font-size:11.5px;color:var(--text-dim,#999)}.wi .card{border:1px solid var(--border,#8884);border-radius:10px;padding:8px 10px;background:var(--bg-elev,transparent)}.wi .guide{margin:0;padding:0;list-style:none;display:flex;flex-direction:column;gap:8px}.wi .guide li{display:flex;gap:8px;align-items:flex-start}.wi .gn{flex:none;width:20px;height:20px;border-radius:50%;background:var(--accent,#4a7dff);color:var(--accent-contrast,#fff);font-size:11px;font-weight:700;display:flex;align-items:center;justify-content:center;margin-top:1px}.wi input[type=text],.wi textarea{width:100%;box-sizing:border-box;background:var(--bg-elev2,#8881);color:var(--text,inherit);border:1px solid var(--border,#8884);border-radius:6px;padding:6px 8px;font-size:12px}.wi textarea{resize:vertical}.wi ol.steps{margin:6px 0;padding-left:20px;font-size:12px}.wi ol.steps li{margin:3px 0}.step-row{display:flex;align-items:flex-start;gap:6px}.step-row .sl{flex:1;min-width:0}.step-btns{margin-left:auto;flex:none;display:inline-flex;gap:4px}.wi code{font-size:11px;word-break:break-all}.wi a.bm{display:inline-block;margin:4px 0;padding:4px 12px;border:1px dashed var(--accent,#4a7dff);border-radius:8px;text-decoration:none;color:var(--accent,#4a7dff);font-size:12px}.wi-flash{font-size:12px;color:var(--accent,#4a7dff);margin-top:6px}.wi pre{white-space:pre-wrap;font-size:11px;max-height:160px;overflow:auto;background:var(--bg-elev2,#8881);border-radius:6px;padding:6px 8px}.urlrow{display:flex;gap:6px}.urlrow input{flex:1;min-width:0}.navrow{flex:none;display:flex;gap:4px;align-items:center;padding:8px 8px 0}.navrow input{flex:1;min-width:0;background:var(--bg-elev2,#8881);color:var(--text,inherit);border:1px solid var(--border,#8884);border-radius:6px;padding:4px 8px;font-size:12px}.zoomrow{display:flex;gap:6px;align-items:center}.zoomrow .zv{min-width:44px;text-align:center;font-size:12px}`;
 
 function cssPath(e) {
 	if (e.id) return "#" + e.id;
@@ -75,6 +75,9 @@ export default defineView({
 		let sideW = Number(localStorage.getItem("web-inspect:sideW")) || settings.sidebarWidth;
 		let mode = "capture";
 		let browserUrl = "";
+		let proxyMode = false;
+		let bannerOff = false;
+		let bannerOn = false;
 		let pickArmed = false;
 		let flash = "";
 		let zoom = 1;
@@ -225,6 +228,7 @@ export default defineView({
 			} catch {
 				actual = "";
 			}
+			if (proxyMode) { pendingVisit = false; return; }
 			if (pendingVisit) pendingVisit = false;
 			else if (actual && actual !== browserUrl) {
 				browserUrl = actual;
@@ -358,6 +362,25 @@ export default defineView({
 			}
 		}
 
+		function proxySrc(target) {
+			const absEp = new URL(API, location.href).href;
+			return `${API}/proxy?url=${encodeURIComponent(target)}&ep=${encodeURIComponent(absEp)}&msk=${settings.maskPasswords ? "1" : "0"}`;
+		}
+
+		function visitProxy(target) {
+			target = normUrl(target);
+			if (!target) return;
+			browserUrl = target;
+			pendingVisit = true;
+			proxyMode = true;
+			bannerOff = true;
+			bannerOn = false;
+			disarmPick();
+			sendStep({ kind: "visit", label: `${target} (proxied)`, url: target });
+			frame.src = proxySrc(target);
+			renderBrowser();
+		}
+
 		function normUrl(url) {
 			url = (url || "").trim();
 			if (!url) return "";
@@ -377,6 +400,9 @@ export default defineView({
 			if (!/^https?:\/\//i.test(url)) url = "http://" + url; // blank defaults to http: localhost breaks on https, public sites upgrade themselves
 			browserUrl = url;
 			pendingVisit = true;
+			proxyMode = false;
+			bannerOff = false;
+			bannerOn = false;
 			disarmPick();
 			sendStep({ kind: "visit", label: url, url });
 			frame.src = url;
@@ -413,9 +439,9 @@ export default defineView({
 
 		function renderBrowser() {
 			const want = browserUrl ? "frame" : "empty";
-			if (want === shownBrowser) return;
-			shownBrowser = want;
-			browserPane.replaceChildren();
+			if (want !== shownBrowser) {
+				shownBrowser = want;
+				browserPane.replaceChildren();
 			if (!browserUrl) {
 				const empty = document.createElement("div");
 				empty.className = "wi-empty";
@@ -429,6 +455,17 @@ export default defineView({
 				empty.querySelector('[data-a="open0"]').addEventListener("click", () => openRealTab(url0.value || browserUrl));
 			} else {
 				browserPane.append(frame);
+			}
+			}
+			browserPane.querySelectorAll(".pxbar").forEach((n) => n.remove());
+			if (shownBrowser === "frame" && bannerOn && !proxyMode) {
+				const bar = document.createElement("div");
+				bar.className = "pxbar";
+				bar.innerHTML = `<span>${esc(t("proxyBar"))}</span><button data-a="pxgo">${esc(t("useProxy"))}</button><button data-a="pxopen">${esc(t("openReal"))}</button><button data-a="pxx">${esc(t("dismiss"))}</button><span class="dim">${esc(t("proxyNote"))}</span>`;
+				browserPane.append(bar);
+				bar.querySelector('[data-a="pxgo"]').addEventListener("click", () => visitProxy(browserUrl));
+				bar.querySelector('[data-a="pxopen"]').addEventListener("click", () => openRealTab(browserUrl));
+				bar.querySelector('[data-a="pxx"]').addEventListener("click", () => { bannerOff = true; bannerOn = false; renderBrowser(); });
 			}
 		}
 
