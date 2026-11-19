@@ -5994,7 +5994,8 @@ export class ClientSession {
 	recycleFinishedSubagents(now = Date.now()): number {
 		const removed: string[] = [];
 		const withChildren = this.conversationsWithChildren();
-		for (const conv of [...this.convs.values()]) {
+		// 直接遍历 map：删除当前项在 Map 迭代中是安全的（已删的不再被访问）。
+		for (const conv of this.convs.values()) {
 			if (!conv.isSubagent || conv.id === this.activeId || conv.pinned) continue;
 			if (now - (conv.lastSdkEventAt || conv.lastActiveAt || 0) < SUBAGENT_RECYCLE_IDLE_MS) continue;
 			if (conv.promptInFlight) continue;
