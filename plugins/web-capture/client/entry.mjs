@@ -228,7 +228,19 @@ export default defineView({
 			} catch {
 				actual = "";
 			}
-			if (proxyMode) { pendingVisit = false; return; }
+			if (proxyMode) {
+				pendingVisit = false;
+				let stillProxied = false;
+				try {
+					stillProxied = !!actual && new URL(actual, location.href).pathname.indexOf(API + "/proxy") === 0;
+				} catch {
+					stillProxied = false;
+				}
+				if (stillProxied) return;
+				// left the proxy (a link led out): back to direct mode
+				proxyMode = false;
+				bannerOff = false;
+			}
 			if (pendingVisit) pendingVisit = false;
 			else if (actual && actual !== browserUrl) {
 				browserUrl = actual;
@@ -625,6 +637,19 @@ ${esc((state.log || []).slice(-10).map((l) => `[${(l.t || "").slice(11, 19)}] ${
 			render();
 		}
 
+		const pollTimer = setInterval(() => {
+			if (!browserUrl || proxyMode || pickArmed) return;
+			try {
+				const href = frame?.contentWindow?.location?.href || "";
+				if (href && href !== "about:blank" && href !== browserUrl && sameDoc()) {
+					browserUrl = href;
+					sendStep({ kind: "nav", label: href, url: href });
+					renderBrowser();
+					renderSide();
+				}
+			} catch {}
+		}, 1500);
+
 		const off = ctx.onData((p) => {
 			if (p && p.kind === "web-capture" && p.state) {
 				state = p.state;
@@ -635,6 +660,9 @@ ${esc((state.log || []).slice(-10).map((l) => `[${(l.t || "").slice(11, 19)}] ${
 		render();
 		void refresh(true);
 		return () => {
+			try {
+				clearInterval(pollTimer);
+			} catch {}
 			try {
 				off?.();
 			} catch {}
