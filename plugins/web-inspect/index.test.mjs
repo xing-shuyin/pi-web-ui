@@ -87,4 +87,19 @@ describe("web-inspect", () => {
 		assert.match(after.content[0].text, /no steps recorded/);
 		await cleanup();
 	});
+
+	it("drops consecutive duplicate steps; empty labels fall back", async () => {
+		const host = createMockHost();
+		const cleanup = await plugin.activate(host);
+		host.mock.emit("onMessage", { action: "step", step: { kind: "visit", label: "https://a.test", url: "https://a.test" } }, "c1");
+		host.mock.emit("onMessage", { action: "step", step: { kind: "visit", label: "https://a.test", url: "https://a.test" } }, "c1");
+		host.mock.emit("onMessage", { action: "step", step: { kind: "click", label: "", sel: "#go", url: "https://a.test" } }, "c1");
+		const stepsTool = host.mock.agentTools.find((t) => t.name === "web_inspect_steps");
+		const out = await stepsTool.execute("t", {}, null);
+		const lines = out.content[0].text.split("\n").filter((l) => /^\d+\. /.test(l));
+		assert.equal(lines.length, 2);
+		assert.match(lines[0], /1\. \[visit\] https:\/\/a\.test/);
+		assert.match(lines[1], /2\. \[click\]/);
+		await cleanup();
+	});
 });

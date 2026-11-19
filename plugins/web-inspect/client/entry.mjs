@@ -205,6 +205,8 @@ export default defineView({
 		}
 
 		function sendStep(step) {
+			const last = state.steps[state.steps.length - 1];
+			if (last && last.kind === step.kind && (last.label || "") === (step.label || "") && (last.sel || "") === (step.sel || "") && (last.url || "") === (step.url || "")) return;
 			ctx.send({ action: "step", step });
 		}
 
@@ -484,7 +486,9 @@ export default defineView({
 				<ol class="steps">${steps.map((s, idx) => `<li><div class="step-row"><div class="sl"><b>${esc(s.kind)}</b> ${esc(s.label)}${s.sel ? `<br><code>${esc(s.sel)}</code>` : ""}</div>${stepBtns(idx, steps.length)}</div></li>`).join("") || `<span class="dim">${esc(t("empty"))}</span>`}</ol></div>
 				${state.picked ? `<div class="card"><b>${esc(t("picked"))} [${esc(state.picked.tag)}]</b> ${esc(state.picked.text)}<br><code>${esc(state.picked.sel)}</code></div>` : ""}
 				<details class="card"><summary class="dim">${esc(t("elements"))}（${state.snapshot ? state.snapshot.count : 0}）· ${esc(t("recentLog"))}（${state.log.length}）</summary>
-				<pre>${esc((state.snapshot?.elements || []).slice(0, 20).map((e) => `[${e.i}] <${e.tag}> ${e.text || ""} :: ${e.sel}`).join("\n") || `(${t("empty")})`)}</pre></details>${flash ? `<div class="wi-flash">${esc(flash)}</div>` : ""}`;
+				<pre>${esc((state.snapshot?.elements || []).slice(0, 20).map((e) => `[${e.i}] <${e.tag}> ${e.text || ""} :: ${e.sel}`).join("\n") || `(${t("empty")})`)}
+
+${esc((state.log || []).slice(-10).map((l) => `[${(l.t || "").slice(11, 19)}] ${l.kind}: ${l.text}`).join("\n"))}</pre></details>${flash ? `<div class="wi-flash">${esc(flash)}</div>` : ""}`;
 				flash = "";
 				body.querySelector('[data-a="note"]').addEventListener("click", () => {
 					const v = prompt("note:");
