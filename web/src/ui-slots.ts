@@ -1580,6 +1580,7 @@ export function withPluginViewItems(plugins: UiPluginInfo[]): UiPluginInfo[] {
 			id: PLUGIN_VIEW_ITEM_ID,
 			slot: "topbar.primary",
 			label: p.name,
+			...(p.nameEn ? { labelEn: p.nameEn } : {}),
 			...(p.icon ? { icon: p.icon } : {}),
 			...(p.iconSvg ? { iconSvg: p.iconSvg } : {}),
 			kind: "view",

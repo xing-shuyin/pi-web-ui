@@ -1467,10 +1467,11 @@ export class ClientSession {
 							: "exited";
 		const cmdShort = job.command.length > 120 ? `${job.command.slice(0, 120)}…` : job.command;
 		const tail = (job.tail ?? "").trim() || "（无输出）";
+		const ok = job.exitCode === 0 || job.reason === "killed";
 		// 先发一条可见 notice（面板/提示区），再在有归属对话时补一条系统消息。
 		this.emit({
 			type: "notice",
-			level: job.exitCode === 0 || job.reason === "killed" ? "info" : "warning",
+			level: ok ? "info" : "warning",
 			text: `后台任务 ${job.id} 已结束（${reasonText}，退出码 ${job.exitCode ?? "null"}）：${cmdShort}`,
 			textEn: `Background job ${job.id} ended (${reasonEn}, exit ${job.exitCode ?? "null"}): ${cmdShort}`,
 		});
@@ -1488,6 +1489,18 @@ export class ClientSession {
 						customType: "background-job-done",
 						content: [{ type: "text", text }],
 						display: true,
+						// 聊天卡片渲染用结构化字段（无 details 的老会话回落到纯文本）。
+						details: {
+							jobId: job.id,
+							ok,
+							exitCode: job.exitCode,
+							reason: job.reason ?? "exit",
+							reasonText,
+							reasonEn,
+							command: cmdShort,
+							logPath: job.logPath,
+							tail: (job.tail ?? "").trim(),
+						},
 					},
 					{ deliverAs: "nextTurn" },
 				)

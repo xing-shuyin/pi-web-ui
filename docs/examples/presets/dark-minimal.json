@@ -150,7 +150,13 @@
 			"wechat_send",
 			"remote_term",
 			"notes",
-			"frp"
+			"frp",
+			"web_capture_state",
+			"web_capture_log",
+			"web_capture_steps",
+			"web_capture_note",
+			"web_capture_clear",
+			"web_capture_report"
 		],
 		"toolPromptOverrides": {},
 		"toolLazyLoading": false,

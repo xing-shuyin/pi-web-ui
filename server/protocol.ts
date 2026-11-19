@@ -2461,8 +2461,10 @@ export interface PluginPanelGroup {
 export interface UiPluginInfo {
 	id: string;
 	name: string;
+	nameEn?: string;
 	version?: string;
 	description?: string;
+	descriptionEn?: string;
 	homepage?: string;
 	hasClient: boolean;
 	icon?: string;

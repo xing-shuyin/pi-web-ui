@@ -2903,8 +2903,10 @@ export class PluginManager {
 				const m = JSON.parse(raw) as {
 					id?: string;
 					name?: string;
+					nameEn?: string;
 					version?: string;
 					description?: string;
+					descriptionEn?: string;
 					homepage?: string;
 					icon?: string;
 					iconSvg?: string;
@@ -2948,6 +2950,7 @@ export class PluginManager {
 					out.push({
 						id: name,
 						name: typeof m.name === "string" && m.name ? m.name : name,
+						nameEn: typeof m.nameEn === "string" && m.nameEn ? m.nameEn : undefined,
 						hasClient: existsSync(join(dir, "client", "entry.mjs")),
 						error: msg,
 						view: false,
@@ -2974,8 +2977,10 @@ export class PluginManager {
 				out.push({
 					id: name,
 					name: typeof m.name === "string" && m.name ? m.name : name,
+					nameEn: typeof m.nameEn === "string" && m.nameEn ? m.nameEn : undefined,
 					version: typeof m.version === "string" ? m.version : undefined,
 					description: typeof m.description === "string" ? m.description : undefined,
+					descriptionEn: typeof m.descriptionEn === "string" ? m.descriptionEn : undefined,
 					homepage: typeof m.homepage === "string" && m.homepage.trim() ? m.homepage.trim() : undefined,
 					icon: typeof m.icon === "string" && m.icon.trim() ? m.icon.trim() : undefined,
 					iconSvg: normalizeIconSvg(m.iconSvg),
