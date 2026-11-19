@@ -253,8 +253,8 @@ describe("native desktop lifecycle and framed capture", () => {
 			{ type: "display", id: "secondary" },
 		]);
 		const displays = [
-			{ id: "primary", width: 1920, height: 1080, primary: true },
-			{ id: "secondary", width: 2560, height: 1440, primary: false },
+			{ id: "primary", width: 1920, height: 1080, primary: true, refreshHz: 0 },
+			{ id: "secondary", width: 2560, height: 1440, primary: false, refreshHz: 143.98 },
 		];
 		child.stdout.write(packet(Buffer.from(JSON.stringify({ type: "displays", displays, selected: "primary" }))));
 		child.stdout.write(packet());
@@ -268,6 +268,9 @@ describe("native desktop lifecycle and framed capture", () => {
 		vi.advanceTimersByTime(10_000);
 		expect(opts.onError).not.toHaveBeenCalled();
 		expect(onDisplays).toHaveBeenCalledTimes(3);
+		const reported = onDisplays.mock.calls.at(-1)![0].displays;
+		expect(reported[0]).not.toHaveProperty("refreshHz");
+		expect(reported[1].refreshHz).toBe(143.98);
 		session.close();
 		child.emit("close", 0);
 	});
@@ -335,6 +338,38 @@ describe("native desktop lifecycle and framed capture", () => {
 		expect(o.onClose).toHaveBeenCalledTimes(1);
 		vi.advanceTimersByTime(60000);
 		expect(o.onError).toHaveBeenCalledTimes(1);
+	});
+
+	it("recognizes idle Mac video heartbeats and decodes the stream's actual H.264 profile in view-only mode", async () => {
+		vi.spyOn(process, "platform", "get").mockReturnValue("darwin");
+		mocks.exec.mockReturnValue("/usr/bin/swift\n");
+		const { child, writes } = processFixture();
+		const opts = { ...options(true), video: true, onVideo: vi.fn(), onVideoAlive: vi.fn() };
+		const capture = startNativeDesktop(opts);
+		await Promise.resolve();
+		expect(mocks.spawn.mock.calls[0][1]).toEqual(["video-view"]);
+		child.stdout.write(packet(Buffer.from([2, 3, 0, 0, 1, 7, 66, 192, 31, 128, 0, 0, 1, 5, 128])));
+		expect(opts.onVideo).toHaveBeenCalledWith(
+			expect.objectContaining({ key: true, reset: true, codec: "avc1.42c01f" }),
+		);
+		for (let n = 0; n < 30; n++) {
+			vi.advanceTimersByTime(2000);
+			child.stdout.write(packet(Buffer.from([5])));
+		}
+		expect(opts.onVideo).toHaveBeenCalledTimes(1);
+		expect(opts.onVideoAlive).toHaveBeenCalledTimes(30);
+		expect(opts.onError).not.toHaveBeenCalled();
+		capture.videoFeedback?.(true);
+		capture.videoFeedback?.(false);
+		capture.requestKeyframe?.();
+		capture.input({ type: "text", text: "view only" });
+		expect(writes.map((line) => JSON.parse(line))).toEqual([
+			{ type: "video_flow", paused: true },
+			{ type: "video_flow", paused: false },
+			{ type: "video_keyframe" },
+		]);
+		capture.close();
+		child.emit("close", 0);
 	});
 
 	it("reassembles arbitrary header/payload splits and coalesced frames using one persistent process", () => {

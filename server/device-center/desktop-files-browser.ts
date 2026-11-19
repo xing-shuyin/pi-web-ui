@@ -76,8 +76,20 @@ export function desktopBrowserFiles(crc: (data: Uint8Array, previous?: number) =
 				roots: [{ name: handle?.name || "Selected files / 已选择的文件", path: "/" }],
 			};
 		if (route === "list") {
-			const path = url.searchParams.get("path") || "/";
-			return { path, parent: "/" + parts(path).slice(0, -1).join("/"), entries: await entries(path) };
+			const path = "/" + parts(url.searchParams.get("path") || "/").join("/");
+			const parent = (p: string) => p.slice(0, p.lastIndexOf("/")) || "/";
+			if (path !== "/" && !handle && !virtual.has(path)) throw new Error("File or folder not found");
+			if (!virtual.get(path)?.file) {
+				try {
+					return { path, parent: parent(path), entries: await entries(path) };
+				} catch (error: any) {
+					if (!handle || error.name !== "TypeMismatchError") throw error;
+				}
+			}
+			const folder = parent(path);
+			const items = await entries(folder);
+			if (!items.some((item) => item.path === path && !item.directory)) throw new Error("File not found");
+			return { path: folder, parent: parent(folder), entries: items, selected: path };
 		}
 		if (route === "mkdir") {
 			const name = parts(body.name);

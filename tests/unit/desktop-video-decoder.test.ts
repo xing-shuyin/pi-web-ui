@@ -163,22 +163,26 @@ it("keeps the previous desktop visible until the resized JPEG can be painted, an
 	}
 });
 describe("browser hardware decoder selection", () => {
-	it("acknowledges complete video only after drawing and preserves the source timestamp", async () => {
-		const { context: c } = viewer();
-		c.startVideo("avc1.42001f", false, true);
-		await c.videoState.ready;
-		const h = Buffer.alloc(20);
-		h.write("PIV1");
-		h.writeUInt32BE(17, 4);
-		h.writeDoubleBE(123.5, 8);
-		h.writeUInt32BE(1, 16);
-		c.decodeVideo(new Blob([h, await key.arrayBuffer()]));
-		await c.videoState.queue;
-		expect(c.videoTime).toBe(123500);
-		expect(c.context.drawImage).toHaveBeenCalledOnce();
-		expect(c.socket.send).toHaveBeenCalledWith(JSON.stringify({ type: "video_ack", id: 17, queue: 0 }));
-		expect(c.videoState.frames.size).toBe(0);
-	});
+	it.each(["blob", "arraybuffer"])(
+		"acknowledges %s video after drawing and preserves the source timestamp",
+		async (kind) => {
+			const { context: c } = viewer();
+			c.startVideo("avc1.42001f", false, true);
+			await c.videoState.ready;
+			const h = Buffer.alloc(20);
+			h.write("PIV1");
+			h.writeUInt32BE(17, 4);
+			h.writeDoubleBE(123.5, 8);
+			h.writeUInt32BE(1, 16);
+			const packet = new Blob([h, await key.arrayBuffer()]);
+			c.decodeVideo(kind === "blob" ? packet : await packet.arrayBuffer());
+			await c.videoState.queue;
+			expect(c.videoTime).toBe(123500);
+			expect(c.context.drawImage).toHaveBeenCalledOnce();
+			expect(c.socket.send).toHaveBeenCalledWith(JSON.stringify({ type: "video_ack", id: 17, queue: 0 }));
+			expect(c.videoState.frames.size).toBe(0);
+		},
+	);
 	it("selects supported hardware before software and renders its frames", async () => {
 		const { context: c, probes, configured } = viewer();
 		expect(c.startVideo("avc1.42001f")).toBe(true);

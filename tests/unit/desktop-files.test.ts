@@ -62,6 +62,9 @@ describe("desktop file transfer", () => {
 			size: bytes.length,
 			directory: false,
 		});
+		const located = await (await request("list?path=" + encodeURIComponent(join(source, "archive.zip")))).json();
+		expect(located).toMatchObject({ path: source, selected: join(source, "archive.zip"), entries: listed.entries });
+		expect((await request("list?path=" + encodeURIComponent(join(source, "missing.zip")))).ok).toBe(false);
 		const exported = await (
 			await request("exports", json({ paths: [join(source, "archive.zip"), join(source, "empty")] }))
 		).json();

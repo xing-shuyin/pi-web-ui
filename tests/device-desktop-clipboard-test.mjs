@@ -41,6 +41,10 @@ function memory() {
 }
 const local = memory(),
 	remote = memory();
+const input = [];
+let frameAcks = 0,
+	connections = 0,
+	remoteOS = "win32";
 const wss = new WebSocketServer({ noServer: true, maxPayload: 49152 });
 const jpeg = Buffer.from(
 	(await readFile(new URL("unit/device-center-desktop.test.ts", import.meta.url), "utf8")).match(
@@ -63,6 +67,16 @@ const server = await createServer({
 						if (path.endsWith("clipboard-ws"))
 							clipboardConnection(ws, path.startsWith("/fixture/") ? remote.backend : local.backend, true);
 						else {
+							connections++;
+							const timer = setInterval(() => {
+								if (ws.readyState === 1) ws.send(jpeg, { binary: true });
+							}, 60);
+							ws.once("close", () => clearInterval(timer));
+							ws.on("message", (data) => {
+								const packet = JSON.parse(data.toString());
+								if (packet.type === "ack") frameAcks++;
+								if (packet.type === "key" || packet.type === "release") input.push(packet);
+							});
 							ws.send(JSON.stringify({ type: "ready", dynamicQuality: true }));
 							ws.send(
 								JSON.stringify({
@@ -103,17 +117,24 @@ let browser;
 try {
 	await server.listen();
 	browser = await chromium.launch({ executablePath: CHROME_PATH, headless: true });
-	const page = await browser.newPage({ viewport: { width: 1280, height: 850 } }),
+	const browserContext = await browser.newContext({ viewport: { width: 1280, height: 850 } });
+	const page = await browserContext.newPage(),
 		errors = [];
+	await page.addInitScript(() => {
+		Object.defineProperty(navigator, "platform", { value: "MacIntel" });
+		Object.defineProperty(navigator, "userAgentData", { value: undefined });
+	});
 	await page.context().grantPermissions(["local-network-access"]);
 	page.on("pageerror", (error) => errors.push(error.message));
 	page.on("console", (message) => {
 		if (message.type() === "error") console.log("browser:", message.text().slice(0, 240));
 	});
-	await page.route("**/api/device-center/devices/test-host/open", (route) =>
-		route.fulfill({ json: { url: origin + "/device/test-host/__open?ticket=test" } }),
-	);
-	await page.route("**/device/test-host/__open?*", (route) => {
+	await page
+		.context()
+		.route("**/api/device-center/devices/test-host/open", (route) =>
+			route.fulfill({ json: { url: origin + "/device/test-host/__open?ticket=test" } }),
+		);
+	await page.context().route("**/device/test-host/__open?*", (route) => {
 		const wrapper = wrapperHtml(
 			"/fixture/",
 			"desktop",
@@ -132,7 +153,7 @@ try {
 			body: wrapper.html,
 		});
 	});
-	await page.route("**/fixture/**", (route) => {
+	await page.context().route("**/fixture/**", (route) => {
 		const headers = portalHeaders(new URL(origin), "/fixture/");
 		if (route.request().url().endsWith("/desktop"))
 			return route.fulfill({
@@ -143,7 +164,7 @@ try {
 		if (route.request().url().includes("/api/device-desktop/"))
 			return route.fulfill({
 				headers,
-				json: { enabled: true, supported: true, available: true, environmentEnabled: false },
+				json: { enabled: true, supported: true, available: true, environmentEnabled: false, os: remoteOS },
 			});
 		return route.fulfill({ status: 404, headers });
 	});
@@ -198,7 +219,11 @@ try {
 	});
 	await desktop.locator("#quality-mode").selectOption("sharp");
 	await desktop.locator("#quality-fps").selectOption("120");
-	await desktop.locator("#quality-edge").selectOption("1280");
+	await desktop.locator("#quality-resolution").selectOption("1280x720");
+	await desktop.locator("#settings").evaluate((el) => {
+		el.open = true;
+	});
+	await desktop.locator("#map-shortcuts").check();
 	await desktop.locator("#scale").uncheck();
 	await page.waitForFunction(() =>
 		Object.keys(localStorage)
@@ -214,7 +239,8 @@ try {
 	desktop = page.frames().find((f) => f.url().endsWith("/fixture/desktop"));
 	await desktop.waitForFunction(() => document.querySelector("#quality-fps").value === "120");
 	assert.equal(await desktop.locator("#quality-mode").inputValue(), "sharp");
-	assert.equal(await desktop.locator("#quality-edge").inputValue(), "1280");
+	assert.equal(await desktop.locator("#quality-resolution").inputValue(), "1280x720");
+	assert.equal(await desktop.locator("#map-shortcuts").isChecked(), true);
 	assert.equal(await desktop.locator("#scale").isChecked(), false);
 	await desktop.getByRole("button", { name: "Clipboard", exact: true }).click();
 	assert.equal(await select.inputValue(), "both");
@@ -287,8 +313,100 @@ try {
 	assert.equal(await standalone.inputValue(), "receive");
 	remote.copy(files);
 	await wait(() => local.writes.length === 2);
+	await standalone.selectOption("both");
+	await page.getByRole("button", { name: "Close", exact: true }).click();
+	desktop = page.frames().find((f) => f.url().endsWith("/fixture/desktop"));
+	await desktop.locator("#canvas").focus();
+	await desktop.evaluate(() => {
+		const screen = document.querySelector("#screen"),
+			canvas = document.querySelector("#canvas");
+		window.originalScreen = screen.getBoundingClientRect().toJSON();
+		window.shifted = false;
+		const observer = new MutationObserver(() => {
+			const rect = screen.getBoundingClientRect();
+			if (rect.y !== window.originalScreen.y || rect.height !== window.originalScreen.height) window.shifted = true;
+		});
+		observer.observe(document.querySelector("main"), { childList: true, subtree: true, attributes: true });
+		window.originalCanvas = canvas;
+	});
+	const opened = connections,
+		acks = frameAcks;
+	const before = input.length;
+	await wait(() => local.listeners.size === 1 && remote.listeners.size === 1);
+	for (let i = 0; i < 12; i++) {
+		const value = { kind: "text", items: [{ name: "text.txt", data: Buffer.from("copy " + i) }] };
+		const [from, to] = i % 2 ? [remote, local] : [local, remote];
+		const count = to.writes.length;
+		await page.keyboard.press("Meta+c");
+		from.copy(value);
+		await wait(() => to.writes.length === count + 1);
+		assert.deepEqual(to.writes.at(-1), value);
+		await page.keyboard.press("Meta+v");
+	}
+	await wait(
+		() =>
+			input.slice(before).filter((p) => p.type === "key" && p.action === "up" && p.code === "ControlLeft").length ===
+			24,
+	);
+	const keys = input.slice(before).filter((p) => p.type === "key");
+	assert.equal(
+		keys.some((p) => p.code.startsWith("Meta")),
+		false,
+	);
+	assert.equal(keys.filter((p) => p.action === "down" && p.code === "KeyC").length, 12);
+	assert.equal(keys.filter((p) => p.action === "down" && p.code === "KeyV").length, 12);
+	local.copy({ error: "clipboard-folder" });
+	await desktop
+		.locator("#clipboard-transfer-status")
+		.getByText(/Folder not synced/)
+		.waitFor();
+	assert.equal(
+		await desktop.evaluate(
+			() =>
+				!window.shifted &&
+				window.originalCanvas === document.querySelector("#canvas") &&
+				document.activeElement === window.originalCanvas,
+		),
+		true,
+	);
+	assert.equal(connections, opened, "clipboard changes must not reconnect the desktop");
+	assert.ok(frameAcks > acks + 4, "video kept painting and acknowledging frames during copies");
 	await page.close();
 	await wait(() => !local.listeners.size && !remote.listeners.size);
+	remoteOS = "darwin";
+	const winViewer = await page.context().newPage();
+	await winViewer.addInitScript(() => {
+		Object.defineProperty(navigator, "platform", { value: "Win32" });
+		Object.defineProperty(navigator, "userAgentData", { value: undefined });
+	});
+	await winViewer.goto(origin + "/device/test-host/__open?ticket=standalone");
+	const mac = winViewer.frameLocator("iframe");
+	await mac.locator("#canvas").waitFor();
+	await mac.locator("#status[data-connected=true]").waitFor();
+	for (const enabled of [false, true]) {
+		await mac.locator("#settings").evaluate((el) => {
+			el.open = true;
+		});
+		await mac.locator("#map-shortcuts").setChecked(enabled);
+		await mac.locator("#canvas").focus();
+		const i = input.length;
+		await winViewer.keyboard.press("Control+v");
+		await wait(() => input.slice(i).filter((k) => k.type === "key").length >= 4);
+		const modifier = enabled ? "MetaLeft" : "ControlLeft";
+		assert.deepEqual(
+			input
+				.slice(i)
+				.filter((k) => k.type === "key")
+				.map((k) => [k.action, k.code]),
+			[
+				["down", modifier],
+				["down", "KeyV"],
+				["up", "KeyV"],
+				["up", modifier],
+			],
+		);
+	}
+	await winViewer.close();
 	assert.deepEqual(errors, []);
 	console.log(
 		"Clipboard browser passed: floating and standalone, both directions, files, mode changes, cleanup, opaque frames.",

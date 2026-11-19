@@ -57,6 +57,10 @@ if (process.platform !== "win32") {
 		].map((file) => resolve("bin/desktop-service", file)),
 	]);
 	const cases = [
+		['{"type":"cursor_mode","mode":"local"}', false, true],
+		['{"type":"cursor_mode","mode":"remote"}', false, true],
+		['{"type":"cursor_mode","mode":"both"}', true, false],
+		['{"type":"cursor_mode","mode":"remote","extra":1}', true, false],
 		['{"type":"configure","maxEdge":4096,"quality":70,"fps":60,"colorRange":"full"}', false, true],
 		['{"type":"configure","maxEdge":4097,"quality":70,"fps":60}', false, false],
 		['{"type":"configure","maxEdge":1920,"quality":70,"fps":60,"colorRange":"hdr"}', false, false],
@@ -96,6 +100,23 @@ if (process.platform !== "win32") {
 		`$ErrorActionPreference='Stop'
 $assembly=[Reflection.Assembly]::LoadFile('${exe.replaceAll("'", "''")}')
 $method=$assembly.GetType('PiDesktopService').GetMethod('Allowed',[Reflection.BindingFlags]'Static,NonPublic')
+Add-Type -AssemblyName System.Windows.Forms,System.Drawing
+$cursorMethod=$assembly.GetType('NativeDesktop').GetMethod('CursorShape',[Reflection.BindingFlags]'Static,NonPublic')
+$shapes=@()
+foreach($nativeCursor in @([Windows.Forms.Cursors]::Arrow,[Windows.Forms.Cursors]::IBeam)) {
+    $shape=$cursorMethod.Invoke($null,@($nativeCursor.Handle))
+    if(!$shape){throw 'Missing native cursor bitmap'}
+    $png=[Convert]::FromBase64String($shape.png); $stream=[IO.MemoryStream]::new($png)
+    $bitmap=[Drawing.Bitmap]::new($stream)
+    try {
+        if($shape.hotX -lt 0 -or $shape.hotX -ge $bitmap.Width -or $shape.hotY -lt 0 -or $shape.hotY -ge $bitmap.Height){throw 'Invalid cursor hotspot'}
+        $transparent=$false; $ink=$false
+        for($y=0;$y -lt $bitmap.Height;$y++){for($x=0;$x -lt $bitmap.Width;$x++){$alpha=$bitmap.GetPixel($x,$y).A; if($alpha -eq 0){$transparent=$true}; if($alpha -gt 0){$ink=$true}}}
+        if(!$transparent -or !$ink){throw 'Cursor transparency or shape lost'}
+        $shapes+=$shape.png
+    } finally {$bitmap.Dispose();$stream.Dispose()}
+}
+if($shapes[0] -eq $shapes[1]){throw 'System pointer shapes collapsed to one bitmap'}
 $cases=ConvertFrom-Json @'
 ${JSON.stringify(cases)}
 '@

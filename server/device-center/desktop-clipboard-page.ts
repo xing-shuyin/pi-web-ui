@@ -6,9 +6,9 @@ import { clipboardStatus } from "./desktop-clipboard-status.js";
 export function desktopClipboardPageScript() {
 	return String.raw`
 let clipboardSocket=null,clipboardChannel='',clipboardActive=false;
-let standaloneClipboard,standaloneClipboardPopup;
+let standaloneClipboard,standaloneClipboardPopup,clipboardStatusTimer;
 function clipboardPost(payload){const data={type:'desktop-clipboard',channel:clipboardChannel,payload};if(parent!==window)parent.postMessage(data,'*');else queueMicrotask(()=>standaloneClipboard?.receive(data))}
-function stopClipboard(){const previous=clipboardSocket;clipboardSocket=null;if(previous){previous.onmessage=previous.onclose=previous.onerror=null;previous.close()}if(clipboardActive)clipboardPost({type:'clipboard-stopped'});clipboardActive=false;clipboardChannel=''}
+function stopClipboard(){clearTimeout(clipboardStatusTimer);$('clipboard-transfer-status').hidden=true;const previous=clipboardSocket;clipboardSocket=null;if(previous){previous.onmessage=previous.onclose=previous.onerror=null;previous.close()}if(clipboardActive)clipboardPost({type:'clipboard-stopped'});clipboardActive=false;clipboardChannel=''}
 function clipboardAvailable(){const data={type:'desktop-clipboard-available',viewOnly:connectionViewOnly,connected:ready,toolbar:true};if(parent!==window)parent.postMessage(data,'*');else standaloneClipboard?.receive(data)}
 $('clipboard').onclick=()=>{
  if(parent!==window){parent.postMessage({type:'desktop-clipboard-show'},'*');return}
@@ -20,7 +20,7 @@ $('clipboard').onclick=()=>{
 };
 addEventListener('message',event=>{if(event.source===parent&&parent!==window)receiveClipboard(event.data)});
 function receiveClipboard(data){
- if(data?.type==='desktop-clipboard-status'&&typeof data.code==='string'&&data.code.length<160){let banner=$('clipboard-transfer-status');if(!banner){banner=document.createElement('p');banner.id='clipboard-transfer-status';banner.setAttribute('role','status');banner.style.cssText='padding:6px 12px;background:var(--bg-elev);color:var(--text);border-bottom:1px solid var(--border);flex:none';$('toolbar').after(banner)}const text=(()=>{const __name=fn=>fn;return (${clipboardStatus.toString()})})()(data.code,zh);banner.textContent=text||'';banner.hidden=!text;return}
+ if(data?.type==='desktop-clipboard-status'&&typeof data.code==='string'&&data.code.length<160){const banner=$('clipboard-transfer-status');const text=(()=>{const __name=fn=>fn;return (${clipboardStatus.toString()})})()(data.code,zh);if(banner.textContent!==(text||''))banner.textContent=text||'';clearTimeout(clipboardStatusTimer);banner.hidden=!text;if(data.code==='clipboard-complete')clipboardStatusTimer=setTimeout(()=>{banner.hidden=true},2200);return}
  if(data?.type!=='desktop-clipboard'||typeof data.channel!=='string'||!/^[a-f0-9-]{36}$/.test(data.channel))return;
  const value=data.payload;if(!value||typeof value!=='object')return;
  if(value.type==='bridge-start'||value.type==='bridge-text-start'){

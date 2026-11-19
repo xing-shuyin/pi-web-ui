@@ -48,7 +48,7 @@ foreach($name in @('pi-desktop-codec.dll','pi-desktop-codec.new.dll','pi-desktop
     $path=Join-Path $installDir $name
     if((Test-Path -LiteralPath $path) -and ((Get-Item -LiteralPath $path -Force).Attributes -band [IO.FileAttributes]::ReparsePoint)) { throw 'Refusing a linked codec installation file' }
 }
-foreach($name in @('PiDesktopService.exe','PiDesktopService.new.exe','PiDesktopService.previous.exe','owner.sid','owner.new.sid','ffmpeg.exe','ffmpeg.new.exe','ffmpeg.previous.exe','encoder.sha256','encoder.sha256.new','encoder.sha256.previous','video-v1','video-v1.new','ffmpeg-nvenc-compat.exe','ffmpeg-nvenc-compat.new.exe','ffmpeg-nvenc-compat.previous.exe','encoder-nvenc-compat.sha256','encoder-nvenc-compat.sha256.new','encoder-nvenc-compat.sha256.previous','source.sha256','source.sha256.new','auto-disabled','enabled','enabled.new','profile-v2','profile-v2.new','raw-v1','raw-v1.new')) {
+foreach($name in @('PiDesktopService.exe','PiDesktopService.new.exe','PiDesktopService.previous.exe','owner.sid','owner.new.sid','ffmpeg.exe','ffmpeg.new.exe','ffmpeg.previous.exe','encoder.sha256','encoder.sha256.new','encoder.sha256.previous','video-v1','video-v1.new','ffmpeg-nvenc-compat.exe','ffmpeg-nvenc-compat.new.exe','ffmpeg-nvenc-compat.previous.exe','encoder-nvenc-compat.sha256','encoder-nvenc-compat.sha256.new','encoder-nvenc-compat.sha256.previous','source.sha256','source.sha256.new','auto-disabled','enabled','enabled.new','profile-v2','profile-v2.new','cursor-v1','cursor-v1.new','raw-v1','raw-v1.new')) {
     $path=Join-Path $installDir $name
     if ((Test-Path -LiteralPath $path) -and ((Get-Item -LiteralPath $path -Force).Attributes -band [IO.FileAttributes]::ReparsePoint)) { throw 'Refusing a linked installation file' }
 }
@@ -190,6 +190,10 @@ if($hasEncoder) {
 $displayStaged=Join-Path $installDir 'display-options-v1.new'
 [IO.File]::WriteAllText($displayStaged,(Get-FileHash -LiteralPath $target -Algorithm SHA256).Hash,[Text.Encoding]::ASCII)
 Move-Item -LiteralPath $displayStaged -Destination (Join-Path $installDir 'display-options-v1') -Force
+$cursorStaged=Join-Path $installDir 'cursor-v1.new'
+if(Test-Path -LiteralPath $cursorStaged) { Remove-Item -LiteralPath $cursorStaged -Force }
+[IO.File]::WriteAllText($cursorStaged,(Get-FileHash -LiteralPath $target -Algorithm SHA256).Hash,[Text.Encoding]::ASCII)
+Move-Item -LiteralPath $cursorStaged -Destination (Join-Path $installDir 'cursor-v1') -Force
 $sourceStaged=Join-Path $installDir 'source.sha256.new'
 $flowStaged=Join-Path $installDir 'video-flow-v1.new'
 if(Test-Path -LiteralPath $flowStaged) { Remove-Item -LiteralPath $flowStaged -Force }

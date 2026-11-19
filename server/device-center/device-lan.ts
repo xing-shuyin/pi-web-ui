@@ -16,7 +16,7 @@ export type DeviceLanGrant = {
 	key: string;
 	expiresAt: number;
 };
-export type DeviceLanConnection = { origin: string; agent: https.Agent; close(): void };
+export type DeviceLanConnection = { origin: string; agent: https.Agent; expiresAt: number; close(): void };
 
 type Options = {
 	localOrigin: string;
@@ -26,6 +26,7 @@ type Options = {
 };
 const CIPHER = "PSK-AES128-GCM-SHA256";
 const TTL = 30 * 60_000;
+const GRANT_CLOCK_SKEW = 60_000;
 const INPUT = 16 * 1024;
 const OUTPUT = 4 * 1024 * 1024;
 const STATUS = "/api/health";
@@ -52,7 +53,7 @@ function addresses() {
 		),
 	].slice(0, 16);
 }
-function validGrant(value: unknown, allowLoopback: boolean): value is DeviceLanGrant {
+function validGrant(value: unknown, allowLoopback: boolean, now: number): value is DeviceLanGrant {
 	if (!value || typeof value !== "object" || Array.isArray(value)) return false;
 	const g = value as DeviceLanGrant;
 	return (
@@ -71,8 +72,8 @@ function validGrant(value: unknown, allowLoopback: boolean): value is DeviceLanG
 		/^[A-Za-z0-9_-]{43}$/.test(g.key) &&
 		Buffer.from(g.key, "base64url").toString("base64url") === g.key &&
 		Number.isSafeInteger(g.expiresAt) &&
-		g.expiresAt > Date.now() &&
-		g.expiresAt <= Date.now() + TTL
+		g.expiresAt > now &&
+		g.expiresAt <= now + TTL + GRANT_CLOCK_SKEW
 	);
 }
 function httpPath(req: IncomingMessage) {
@@ -447,7 +448,10 @@ async function probeDeviceConnection(
 	options: { timeoutMs?: number; allowLoopback?: boolean; signal?: AbortSignal },
 	tunnelPort?: number,
 ): Promise<DeviceLanConnection | null> {
-	if (!validGrant(grant, options.allowLoopback === true) || options.signal?.aborted) return null;
+	const now = Date.now();
+	if (!validGrant(grant, options.allowLoopback === true, now) || options.signal?.aborted) return null;
+	// The issuing device and the controller each enforce the 30-minute lifetime on their own clock.
+	const expiresAt = Math.min(grant.expiresAt, now + TTL);
 	const timeout = options.timeoutMs ?? 800;
 	if (!Number.isFinite(timeout) || timeout <= 0 || timeout > 30_000) return null;
 	return new Promise((resolve) => {
@@ -495,10 +499,10 @@ async function probeDeviceConnection(
 				res.on("end", () => {
 					if (finished || settled) return;
 					try {
-						if (res.statusCode !== 200 || grant.expiresAt <= Date.now()) return fail();
+						if (res.statusCode !== 200 || expiresAt <= Date.now()) return fail();
 						finished = true;
 						clearTimeout(timer);
-						finish({ origin, agent, close: () => agent.destroy() });
+						finish({ origin, agent, expiresAt, close: () => agent.destroy() });
 					} catch {
 						fail();
 					}
@@ -506,7 +510,7 @@ async function probeDeviceConnection(
 			});
 			const candidate = { agent, cancel: fail };
 			candidates.add(candidate);
-			const timer = setTimeout(fail, Math.min(timeout, grant.expiresAt - Date.now()));
+			const timer = setTimeout(fail, Math.min(timeout, expiresAt - Date.now()));
 			request.on("error", fail);
 		}
 	});

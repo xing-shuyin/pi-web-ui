@@ -438,7 +438,7 @@ export async function connectDeviceP2P(
 					worker.close();
 				},
 			},
-			expiresAt: (answer.grant as { expiresAt: number }).expiresAt,
+			expiresAt: peer.expiresAt,
 			transport: "p2p",
 			...(ready.relayed === true ? { relayed: true } : {}),
 		};

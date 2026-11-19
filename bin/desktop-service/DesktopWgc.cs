@@ -50,6 +50,11 @@ internal sealed class DesktopWgc : IDisposable {
             stage="frame pool";
             pool=Direct3D11CaptureFramePool.CreateFreeThreaded(projected,DirectXPixelFormat.B8G8R8A8UIntNormalized,2,item.Size);
             stage="session";session=pool.CreateCaptureSession(item);
+            stage="cursor exclusion";
+            // Resolve against the installed WinRT metadata; older SDKs still compile.
+            var cursor=typeof(GraphicsCaptureSession).GetProperty("IsCursorCaptureEnabled");
+            if(cursor==null) throw new IOException("WGC cursor exclusion is unavailable");
+            cursor.SetValue(session,false,null);
             stage="start";session.StartCapture();
         } catch(Exception error) { Dispose();throw new IOException(stage+" 0x"+Marshal.GetHRForException(error).ToString("X8")+": "+error.Message,error); }
         finally { Drop(ref itemPtr);Drop(ref factory);Drop(ref inspectable);Drop(ref dxgi);Drop(ref multithread);if(name!=IntPtr.Zero)WindowsDeleteString(name); }

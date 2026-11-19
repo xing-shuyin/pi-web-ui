@@ -26,6 +26,8 @@ it("keeps source FPS stable across delayed delivery without inventing video ACK 
 		//   resolutionStatus —— 每次刷统计顺带刷「当前画面」标签的无关 DOM 副作用，
 		//   这里中和掉，避免用例随另一块 UI 的改动变红（下方仍校验页面里真有定义）。
 		colorSupported: false,
+		sourceRefreshHz: 144,
+		targetFps: () => 240,
 		actualColorRange: "limited",
 		resolutionStatus: () => true,
 	};
@@ -35,6 +37,7 @@ it("keeps source FPS stable across delayed delivery without inventing video ACK 
 	const stats = { captured: 120, sent: 120, replaced: 0, ackMs: 0, queued: 0, elapsedMs: 2000, ackMeasured: false };
 	context.updateStatistics(stats);
 	expect(elements.statistics.textContent).toContain("60.0/60.0; draw=48.0; ack=—");
+	expect(elements.statistics.textContent).toContain("144 Hz");
 	now = 4000;
 	context.rendered = 120;
 	context.updateStatistics({ ...stats, captured: 240, sent: 240, elapsedMs: 4000 });

@@ -9,6 +9,8 @@ import {
 	pageDeviceId,
 	type DesktopAccess,
 	type DesktopTransport,
+	desktopReportedTransport,
+	desktopTransportLabel,
 } from "../device-access";
 
 import { useDesktopTarget } from "../use-desktop-target";
@@ -88,8 +90,8 @@ function DesktopWindow({ access }: { access: DesktopAccess }) {
 				event.data?.type !== "device-access-transport"
 			)
 				return;
-			if (event.data.transport === "lan" || event.data.transport === "p2p" || event.data.transport === "hub")
-				setTransport(event.data.transport);
+			const next = desktopReportedTransport(event.data);
+			if (next) setTransport(next);
 		};
 		window.addEventListener("message", receive);
 		return () => window.removeEventListener("message", receive);
@@ -192,18 +194,7 @@ function DesktopWindow({ access }: { access: DesktopAccess }) {
 		>
 			<div className="remote-desktop-titlebar" onPointerDown={(e) => start(e, false)}>
 				<strong>
-					{title} · {access.name || access.id} ·{" "}
-					{transport
-						? t(
-								transport === "current"
-									? "desktop.currentConnection"
-									: transport === "lan"
-										? "desktop.lan"
-										: transport === "p2p"
-											? "desktop.p2p"
-											: "desktop.hub",
-							)
-						: t("desktop.connecting")}
+					{title} · {access.name || access.id} · {desktopTransportLabel(transport, t)}
 				</strong>
 				<DesktopDevicePicker access={access} visible />
 				<button type="button" className="btn" disabled={busy} onClick={() => void detach()}>

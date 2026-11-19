@@ -12,6 +12,7 @@ import { wrapperHtml } from "../server/device-center/path-portal.ts";
 const origin = "http://127.0.0.1:8995";
 let failing = true,
 	connections = 0,
+	requestedVideo = "",
 	requests = 0,
 	jpeg,
 	browser;
@@ -41,8 +42,9 @@ const server = createServer(async (req, res) => {
 	res.writeHead(404).end();
 });
 const wss = new WebSocketServer({ server });
-wss.on("connection", (socket) => {
+wss.on("connection", (socket, req) => {
 	connections++;
+	requestedVideo = new URL(req.url, origin).searchParams.get("video");
 	if (failing)
 		return socket.send(
 			JSON.stringify({
@@ -94,6 +96,33 @@ try {
 	await page.clock.fastForward(10001);
 	await page.getByText("已连接 · 可控制", { exact: true }).waitFor();
 	assert.equal(connections, stoppedAt + 2);
+	for (const socket of wss.clients) socket.terminate();
+	await page.getByText(/正在重连/).waitFor();
+	await page.clock.fastForward(1100);
+	await page.getByText("已连接 · 可控制", { exact: true }).waitFor();
+	assert.equal(connections, stoppedAt + 3, "a transport loss recovers in the existing viewer");
+	for (const socket of wss.clients) socket.terminate();
+	await page.getByText(/正在重连/).waitFor();
+	await page.getByRole("button", { name: "断开", exact: true }).click();
+	await page.clock.fastForward(20000);
+	assert.equal(connections, stoppedAt + 3, "manual disconnect cancels a pending network retry");
+	const delayed = await browser.newPage();
+	await delayed.addInitScript(() => {
+		window.VideoDecoder = class {
+			static async isConfigSupported() {
+				await new Promise((r) => setTimeout(r, 300));
+				return { supported: true };
+			}
+		};
+		window.EncodedVideoChunk = class {};
+	});
+	await delayed.goto(origin + "/desktop");
+	await delayed.waitForFunction(() => document.querySelector("#status").dataset.connected === "true");
+	assert.equal(requestedVideo, "1", "fast status responses must not silently select JPEG ahead of a decoder probe");
+	for (const socket of wss.clients) socket.close(1008, "Control revoked");
+	await delayed.getByText(/1008/).waitFor();
+	assert.equal(await delayed.locator("#disconnect").isDisabled(), true, "policy closure must not enter network retry");
+	await delayed.close();
 	await page.goto(origin + "/wrapper");
 	assert.equal(await page.title(), "办公室 · DESKTOP-TEST · pi-web-ui");
 	const icon = await page.locator('link[rel="icon"]').getAttribute("href");

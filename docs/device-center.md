@@ -269,6 +269,8 @@ Hub 等待绑定当前设备 WS 的 executor ACK 才移除交互；拒绝或 5 �
 
 ## 局域网优先访问
 
+被控设备签发的 30 分钟授权允许设备时钟比控制端快至多 60 秒。控制端以本机时间将授权上限限制在 30 分钟，并验证 TLS 身份和健康响应。
+
 从本机 pi-web-ui 的设备卡选择「打开设备」或「远程桌面」时，两者共用局域网优先协商。Hub 先校验账号与设备归属，再通过已认证连接器的 `device_lan` RPC 签发短期设备通道授权。被访问设备按需监听一个随机 TCP 端口，发布最多 16 个 RFC1918 IPv4 候选地址；本机服务并行执行有总时限的真实 TLS 握手及健康请求，选择首个通过身份验证的地址。是否直连以实际可达和密钥验证为准，不按 IP 文本前缀或同网段猜测。
 
 直连成功后，页面资源、对话 WebSocket、上传和桌面 JPEG/输入均经局域网传输，不再绕 Hub，也不经中继 JSON/base64 分片。Hub 仍负责授权。通道使用 TLS 1.2 PSK 与每次授权的 32 字节随机密钥，密钥只存在于 Hub 和两端服务进程，不传给浏览器。随机监听端口仅接受有效 PSK，并复用连接器的路径白名单、本机 Host/Origin 重写和凭据注入；本机配置与系统权限申请接口仍不能从远端访问。无需把主 Web 服务改为局域网监听。
@@ -292,6 +294,8 @@ Go/Pion 助手通过 stdio 受 Node 管理，使用 UDP IPv4/IPv6 ICE、STUN 和
 设备侧设置：`PI_DEVICE_P2P=0` 禁用；`PI_DEVICE_P2P_STUN` 为最多 4 个逗号分隔的 `stun:host:port`，默认 `stun:stun.l.google.com:19302,stun:stun.miwifi.com:3478,stun:stun.cloudflare.com:3478`，助手并行探测。默认值给多个服务器的原因：只写一个 STUN 时，该服务器被墙或黑洞（曾在国内网络实测 `stun.cloudflare.com:3478` 超时）就收集不到 srflx 候选，打洞必然失败且界面上只显示中继。打洞失败按阶段记录一行日志（`helper-missing` / `ice-config` / `gather-failed` / `signal-rejected` / `ice-failed` / `tunnel-failed` / `cancelled`），前缀 `[DeviceCenter] Device <id> P2P failed: <reason>; using Hub relay`；目标端不报能力时记录 `target reports no helper`。Hub 浏览器入口使用下述浏览器协商流程。可使用自建 coturn 的 STUN 服务；无法直连时走原 Hub。
 
 ### 纯浏览器访问 Hub 的直连通道
+
+页面根据数据通道实际选中的 ICE 地址对显示线路。局域网常见的私网地址、链路本地地址、mDNS 主机名，以及两端处于同一 IPv6 /64 的主机候选都可识别。浏览器隐藏线路信息时，页面显示「设备已连接（线路未确认）」。连接期间线路发生变化会更新标签，桌面和文件传输可以继续使用同一条数据通道。这里的局域网也可能是经 VPN 路由的私网。
 
 控制端无需安装 pi-web-ui、RustDesk 或浏览器扩展，只需浏览器登录 Hub；被控端运行带 P2P 助手的新版本。Hub 包装页用浏览器 `RTCPeerConnection` 与目标助手协商，ICE 在同局域网可选 host 通路、跨网可选打洞通路。**首屏不等协商**：包装页一打开就把 Hub 中转地址挂到子框架（约 2 秒出页面），直连在后台继续协商，连上后新请求自动走直连、页面长连接由应用自身重连切过去（会重开一次 WebSocket），协商失败或直连中断则保持/回到中转。顶部状态先显示「服务器中转（后台尝试直连…）」，切换后按实际选中的候选显示「局域网直连」「P2P 直连」「TURN 中转」或「服务器中转」，不会用 ICE connected 代替业务健康检查。浏览器的默认 STUN 为小米与 Cloudflare；设备助手继续使用设备端配置。选中 TURN 时仍是中转，不能称为直连。
 

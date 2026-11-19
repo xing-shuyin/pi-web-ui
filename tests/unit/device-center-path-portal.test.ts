@@ -387,6 +387,7 @@ describe("single-port device path portal", () => {
 			const context = await browser.newContext();
 			await context.addCookies([{ name: "hub", value: "secret", url: f.origin }]);
 			const page = await context.newPage();
+			await page.clock.install();
 			await page.goto(JSON.parse(fresh.body).url + "#s=initial");
 			const frame = page.frames().find((frame) => frame !== page.mainFrame())!;
 			await vi.waitFor(async () => expect(await frame.locator("body").textContent()).toContain('"ws":true'), {
@@ -394,15 +395,31 @@ describe("single-port device path portal", () => {
 			});
 			const result = JSON.parse((await frame.locator("body").textContent())!);
 			expect(result).toEqual({ module: "loaded", opaque: true, fetch: true, ws: true, hubBlocked: true });
-			await frame.evaluate(() => {
-				document.body.innerHTML = '<div id="root"><span class="status-conn">Connecting</span></div>';
+			await page.evaluate(() => {
+				(window as any).disconnects = 0;
+				addEventListener("message", (event) => {
+					if (event.data?.type === "device-portal-disconnected") (window as any).disconnects++;
+				});
 			});
+			await frame.evaluate(() => {
+				document.body.innerHTML = '<div id="root"><span class="status-conn busy">Connecting</span></div>';
+			});
+			await page.clock.fastForward(21000);
 			await expect.poll(() => page.locator("#loading").isHidden()).toBe(true);
-			await expect.poll(() => frame.getByRole("status").isVisible()).toBe(true);
+			expect(await frame.getByRole("status").isVisible()).toBe(false);
+			expect(await page.evaluate(() => (window as any).disconnects)).toBe(0);
 			await frame.evaluate(() => document.querySelector(".status-conn")!.classList.add("ok"));
-			await expect.poll(() => frame.getByRole("status").isHidden()).toBe(true);
+			await page.clock.fastForward(250);
 			await frame.evaluate(() => document.querySelector(".status-conn")!.classList.remove("ok"));
+			await page.clock.fastForward(250);
+			await page.clock.fastForward(7000);
 			await expect.poll(() => frame.getByRole("status").isVisible()).toBe(true);
+			expect(await page.evaluate(() => (window as any).disconnects)).toBe(0);
+			await page.clock.fastForward(14000);
+			await expect.poll(() => page.evaluate(() => (window as any).disconnects)).toBe(1);
+			await frame.evaluate(() => document.querySelector(".status-conn")!.classList.add("ok"));
+			await page.clock.fastForward(500);
+			await expect.poll(() => frame.getByRole("status").isHidden()).toBe(true);
 			expect(f.hubHits()).toBe(0);
 			await expect.poll(() => page.url()).toContain("#s=synced");
 			expect(frame.url()).toContain("#s=initial");

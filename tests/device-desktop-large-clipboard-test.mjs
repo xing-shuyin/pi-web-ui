@@ -101,7 +101,10 @@ try {
 		id: () => randomUUID(),
 		state: (code) => {
 			if (code === "clipboard-ready") readyResolve();
-			else if (code !== "clipboard-connecting" && !code.startsWith("clipboard-progress:")) {
+			else if (
+				!["clipboard-connecting", "clipboard-preparing", "clipboard-complete"].includes(code) &&
+				!code.startsWith("clipboard-progress:")
+			) {
 				errors.push(code);
 				rejectReceived(new Error(code));
 			}

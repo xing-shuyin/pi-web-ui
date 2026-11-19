@@ -112,6 +112,7 @@ public sealed class PiDesktopService : ServiceBase {
         if(type=="close"||type=="ack") return e.Count==1;
         if(type=="video_keyframe") return e.Count==1;
         if(type=="video_flow") return e.Count==2&&e.ContainsKey("paused")&&e["paused"] is bool;
+        if(type=="cursor_mode") return e.Count==2&&e.ContainsKey("mode")&&(Equals(e["mode"],"local")||Equals(e["mode"],"remote"));
         if(type=="configure") return (e.Count==4 || (e.Count==5&&e.ContainsKey("colorRange")&&(Equals(e["colorRange"],"limited")||Equals(e["colorRange"],"full"))))&&Number(e,"maxEdge",640,4096)&&Number(e,"quality",35,85)&&Number(e,"fps",5,240);
         if(type=="display") return e.Count==2&&e.ContainsKey("id")&&e["id"] is string&&((string)e["id"]).Length<=128&&((string)e["id"]).IndexOf('\0')<0;
         if(type=="displays") return e.Count==1;

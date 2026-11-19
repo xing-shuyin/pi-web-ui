@@ -37,12 +37,16 @@ let writes = 0,
 	hubData = 0,
 	relay;
 const html = `<!doctype html><meta charset="utf-8"><div id="root">Browser transport fixture</div><script>
-window.testReady=(async()=>{
- const response=await fetch(new URL('api/echo',document.baseURI));window.echo=await response.json();
+window.openTestSocket=async()=>{
+ window.testSocket?.close();
  const url=new URL('ws',document.baseURI);url.protocol=url.protocol.replace('http','ws');
  const ws=new WebSocket(url.href);ws.binaryType='arraybuffer';window.testSocket=ws;
  await new Promise((r,j)=>{ws.onopen=r;ws.onerror=j});
  window.socketEcho=await new Promise(r=>{ws.onmessage=e=>r(e.data);ws.send('browser-p2p')});
+};
+window.testReady=(async()=>{
+ const response=await fetch(new URL('api/echo',document.baseURI));window.echo=await response.json();
+ await window.openTestSocket();
  document.getElementById('root').textContent='ready';
 })();window.testReady.catch(e=>document.getElementById('root').textContent='error:'+e.message);
 </script>`;
@@ -96,7 +100,12 @@ try {
 	});
 	const targetOrigin = await listen(target),
 		wss = new WebSocketServer({ server: target });
-	wss.on("connection", (ws) => ws.on("message", (data, binary) => ws.send(data, { binary })));
+	wss.on("connection", (ws) =>
+		ws.on("message", (data, binary) => {
+			if (!binary && data.toString() === "large-snapshot") ws.send("s".repeat(9 * 1024 * 1024));
+			else ws.send(data, { binary });
+		}),
+	);
 	cleanup.push(() => {
 		for (const ws of wss.clients) ws.terminate();
 		wss.close();
@@ -179,10 +188,23 @@ try {
 		});
 	const frame = page.frames().find((f) => f !== page.mainFrame());
 	assert(frame);
+	console.log("Healthy browser data channel:", await page.locator("#browser-route").textContent());
 	await frame.waitForFunction(() => document.getElementById("root")?.textContent === "ready", {}, { timeout: 15000 });
 	assert.deepEqual(await frame.evaluate(() => window.echo), { device: "target" });
 	assert.equal(await frame.evaluate(() => window.socketEcho), "browser-p2p");
-	assert.equal(hubData, 0, "direct fetch and websocket must not use Hub data relay");
+	// Initial page load may intentionally use the relay while ICE is still negotiating.
+	const initialRelayRequests = hubData;
+	await frame.evaluate(() => window.openTestSocket());
+	assert.equal(
+		await frame.evaluate(
+			() =>
+				new Promise((resolve) => {
+					window.testSocket.onmessage = (e) => resolve(e.data.length);
+					window.testSocket.send("large-snapshot");
+				}),
+		),
+		9 * 1024 * 1024,
+	);
 	const stream = await frame.evaluate(async () => {
 		const r = await fetch(new URL("api/stream", document.baseURI));
 		const reader = r.body.getReader();
@@ -218,6 +240,7 @@ try {
 		true,
 	);
 	console.log("Binary socket verified");
+	assert.equal(hubData, initialRelayRequests, "confirmed direct traffic must not traverse the Hub");
 	assert.equal(
 		await frame.evaluate(async () => {
 			const controller = new AbortController();
@@ -241,7 +264,6 @@ try {
 	);
 	assert.equal(writes, 1);
 	const base = await frame.evaluate(() => document.baseURI);
-	const previousData = hubData;
 	await frame.evaluate(() => {
 		const nested = document.createElement("iframe");
 		nested.id = "nested";
@@ -254,7 +276,9 @@ try {
 	const nestedApp = nested.childFrames()[0];
 	await nestedApp.waitForFunction(() => document.getElementById("root")?.textContent === "ready");
 	assert.deepEqual(await nestedApp.evaluate(() => window.echo), { device: "other" });
-	assert.equal(hubData, previousData, "nested device also connects directly from the browser");
+	const nestedRelayRequests = hubData;
+	await nestedApp.evaluate(() => window.openTestSocket());
+	assert.equal(hubData, nestedRelayRequests, "nested device uses direct transport after negotiation");
 	console.log("Nested device verified");
 	await frame.evaluate(() => document.getElementById("nested").remove());
 	assert.equal(
@@ -297,10 +321,17 @@ try {
 		method: "POST",
 		headers: { Authorization: "Bearer fixture-ui", Origin: hubOrigin },
 	});
+	await page.addInitScript(() => {
+		RTCPeerConnection.prototype.getStats = async () => {
+			throw new Error("ICE stats withheld");
+		};
+		if (window.RTCIceTransport) window.RTCIceTransport.prototype.getSelectedCandidatePair = () => null;
+	});
 	await page.goto((await retryOpen.json()).url);
-	await page.waitForFunction(() => ["lan", "p2p"].includes(window.__piBrowserTransport));
+	await page.waitForFunction(() => window.__piBrowserTransport === "peer");
 	const retryFrame = page.frames()[1];
 	await retryFrame.waitForFunction(() => document.getElementById("root")?.textContent === "ready");
+	await retryFrame.evaluate(() => window.openTestSocket());
 	assert.equal(
 		await retryFrame.evaluate(async () => {
 			try {
@@ -313,6 +344,17 @@ try {
 		true,
 	);
 	assert.equal(lostWrites, 1);
+	assert.equal(
+		await retryFrame.evaluate(
+			() =>
+				new Promise((resolve) => {
+					window.testSocket.onmessage = (e) => resolve(e.data);
+					window.testSocket.send("same socket after failed upload");
+				}),
+		),
+		"same socket after failed upload",
+	);
+	assert.equal(await page.evaluate(() => window.__piBrowserTransport), "peer");
 	const fallbackPage = await browser.newPage();
 	await fallbackPage.addInitScript(() => {
 		window.RTCPeerConnection = undefined;

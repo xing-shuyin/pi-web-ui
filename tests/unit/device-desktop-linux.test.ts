@@ -135,6 +135,41 @@ describe("Linux X11 desktop", () => {
 		session.close();
 		expect(capture.kill).toHaveBeenCalled();
 	});
+	it("applies preferences during the size probe and acknowledges each X11 pointer switch on its first frame", async () => {
+		const onCursor = vi.fn();
+		const session = startLinuxDesktop({ onCursor, onFrame, onClose, onError, readOnly: true });
+		const jpeg = Buffer.from([255, 216, 1, 2, 255, 217]);
+		session.configure?.({ maxEdge: 1280, quality: 65, fps: 30 });
+		session.setCursorMode?.("local");
+		vi.advanceTimersByTime(300);
+		await flush();
+		const calls = ffmpegCalls();
+		expect(calls).toHaveLength(1);
+		const initialArgs = calls[0][1];
+		expect(initialArgs[initialArgs.indexOf("-draw_mouse") + 1]).toBe("0");
+		expect(initialArgs[initialArgs.indexOf("-framerate") + 1]).toBe("30");
+		capture.stdout.write(jpeg);
+		expect(onCursor).toHaveBeenCalledWith({ type: "cursor", kind: "local" });
+		for (const [mode, arg, kind] of [
+			["remote", "1", "embedded"],
+			["local", "0", "local"],
+		] as const) {
+			const previous = capture;
+			capture = child();
+			mocks.spawn.mockReturnValue(capture);
+			session.setCursorMode?.(mode);
+			vi.advanceTimersByTime(100);
+			const args = ffmpegCalls().at(-1)![1];
+			expect(args[args.indexOf("-draw_mouse") + 1]).toBe(arg);
+			onCursor.mockClear();
+			previous.stdout.write(jpeg);
+			expect(onCursor).not.toHaveBeenCalled();
+			capture.stdout.write(jpeg);
+			expect(onCursor).toHaveBeenCalledWith({ type: "cursor", kind });
+		}
+		expect(mocks.execFile).not.toHaveBeenCalled();
+		session.close();
+	});
 	it("preserves numeric keypad identity through xdotool press and release", async () => {
 		const handle = await started(false);
 		const keys = [

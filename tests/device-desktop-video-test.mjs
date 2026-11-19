@@ -48,12 +48,12 @@ async function encode(width, height, fps, color) {
 	split(Buffer.from([0, 0, 1, 9, 0xf0, 0, 0, 1, 9, 0xf0]));
 	assert.ok(frames.length >= 10, `Only ${frames.length} encoded frames`);
 	assert.ok(frames[0].key);
-	return { frames, codec: h264Codec(frames[0].data), width, height, fps };
+	return { frames, codec: h264Codec(frames[0].data), width, height, fps, color };
 }
 const samples = [
-	await encode(640, 360, 60, [255, 0, 0]),
-	await encode(960, 540, 120, [0, 255, 0]),
-	await encode(1280, 720, 240, [0, 0, 255]),
+	await encode(640, 360, 60, [230, 40, 30]),
+	await encode(960, 540, 120, [45, 70, 230]),
+	await encode(1280, 720, 240, [20, 210, 40]),
 ];
 let socket,
 	requestedVideo = false;
@@ -114,6 +114,13 @@ try {
 			},
 			sample,
 			{ timeout: 5000 },
+		);
+		const rgb = await page
+			.locator("#canvas")
+			.evaluate((canvas) => [...canvas.getContext("2d").getImageData(32, 32, 1, 1).data].slice(0, 3));
+		assert.ok(
+			rgb.every((value, i) => Math.abs(value - sample.color[i]) <= 6),
+			`SDR color mismatch: expected ${sample.color}, got ${rgb}`,
 		);
 	}
 	assert.deepEqual(errors, []);

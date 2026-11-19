@@ -131,12 +131,13 @@ export async function createBrowserPeerGateway(connection: DeviceLanConnection) 
 			} else {
 				if (value.method !== "GET") throw new Error("Invalid WebSocket method");
 				inputLimit = url.pathname === "/desktop-ws" ? 16384 : WS_MESSAGE_BYTES;
+				const maxPayload = url.pathname === "/desktop-ws" ? 4 * 1024 * 1024 : WS_MESSAGE_BYTES;
 				url.protocol = "wss:";
 				ws = new WebSocket(url, {
 					agent: connection.agent,
 					headers,
 					perMessageDeflate: false,
-					maxPayload: url.pathname === "/desktop-ws" ? 4 * 1024 * 1024 : WS_MESSAGE_BYTES,
+					maxPayload,
 					handshakeTimeout: 8000,
 				});
 				ws.on("error", stop);
@@ -149,7 +150,7 @@ export async function createBrowserPeerGateway(connection: DeviceLanConnection) 
 				ws.on("message", (raw, binary) => {
 					const data = Array.isArray(raw) ? Buffer.concat(raw) : Buffer.from(raw as Buffer);
 					queued += data.length;
-					if (queued > 8 * 1024 * 1024) return stop();
+					if (queued > 2 * maxPayload) return stop();
 					ws!.pause();
 					sending = sending
 						.then(async () => {

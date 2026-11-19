@@ -31,10 +31,11 @@ interface Access {
 	base: string;
 	connection: LanConnection;
 	transport: "lan" | "p2p";
+	relayed?: boolean;
 	grantExpires: number;
 	renewing?: Promise<void>;
 	openingDesktop?: boolean;
-	recovering?: Promise<{ url: string; transport: "lan" | "p2p" | "hub" }>;
+	recovering?: Promise<{ url: string; transport: "lan" | "p2p" | "hub"; relayed?: boolean }>;
 	expires: number;
 	touched: number;
 	ticket?: string;
@@ -64,7 +65,7 @@ export function createDeviceLanAccess(options: { allowLoopback?: boolean } = {})
 	async function dial(grant: unknown, accessOptions: DeviceLanAccessOptions): Promise<DeviceDirectConnection | null> {
 		if (accessOptions.connect) return accessOptions.connect(grant);
 		const connection = await probeDeviceLan(grant, { allowLoopback: options.allowLoopback });
-		return connection ? { connection, expiresAt: (grant as { expiresAt: number }).expiresAt, transport: "lan" } : null;
+		return connection ? { connection, expiresAt: connection.expiresAt, transport: "lan" } : null;
 	}
 	const sessions = new Map<string, Access>();
 	const browsers = new WebSocketServer({ noServer: true, maxPayload: WS_MESSAGE_BYTES, perMessageDeflate: false });
@@ -132,6 +133,7 @@ export function createDeviceLanAccess(options: { allowLoopback?: boolean } = {})
 				access.connection.close();
 				access.connection = next.connection;
 				access.transport = next.transport;
+				access.relayed = next.relayed;
 				access.grantExpires = next.expiresAt;
 			})().finally(() => {
 				access.renewing = undefined;
@@ -215,7 +217,7 @@ export function createDeviceLanAccess(options: { allowLoopback?: boolean } = {})
 				access.options.deviceLabel || access.options.deviceId,
 				JSON.stringify([access.options.hubUrl, access.options.deviceId]),
 				access.origin.origin + access.base + "__lan_fallback",
-				access.transport,
+				access.relayed ? "turn" : access.transport,
 				access.origin.origin + access.base + "__lan_close?view=" + access.view,
 				access.origin.origin + access.base + "__desktop_open",
 				access.origin.origin + access.base.replace(/device-lan\/.*$/, "") + "api/device-desktop/local/clipboard-ws",
@@ -341,13 +343,14 @@ export function createDeviceLanAccess(options: { allowLoopback?: boolean } = {})
 					? {
 							url: new URL((fallback.options.basePath ?? "/") + direct.url.slice(1), fallback.origin).href,
 							transport: direct.transport,
+							relayed: direct.relayed,
 						}
 					: { url: await fallback.options.fallback(), transport: "hub" as const };
 			})().finally(() => {
 				fallback.recovering = undefined;
 			});
 			void fallback.recovering
-				.then(({ url, transport }) => {
+				.then(({ url, transport, relayed }) => {
 					if (!live(path.token!, fallback)) throw new Error("Device binding changed");
 					if (fallback.preview) {
 						const target = new URL(url);
@@ -356,7 +359,7 @@ export function createDeviceLanAccess(options: { allowLoopback?: boolean } = {})
 					}
 					res
 						.writeHead(200, { "content-type": "application/json", "access-control-allow-origin": "null" })
-						.end(JSON.stringify({ url, transport }));
+						.end(JSON.stringify({ url, transport, relayed }));
 					dispose(path.token!);
 				})
 				.catch(() => {
@@ -385,6 +388,7 @@ export function createDeviceLanAccess(options: { allowLoopback?: boolean } = {})
 					hubUrl: access.options.hubUrl,
 					deviceId: access.options.deviceId,
 					transport: access.transport,
+					relayed: access.relayed,
 				}),
 			);
 			return true;
@@ -579,6 +583,7 @@ export function createDeviceLanAccess(options: { allowLoopback?: boolean } = {})
 			base: `${basePath}device-lan/${accessOptions.deviceId}/__relay/${token}/`,
 			connection: peer,
 			transport: direct!.transport,
+			relayed: direct!.relayed,
 			grantExpires: direct!.expiresAt,
 			expires: Date.now() + 8 * 60 * 60_000,
 			touched: Date.now(),
@@ -586,7 +591,11 @@ export function createDeviceLanAccess(options: { allowLoopback?: boolean } = {})
 			ticketExpires: Date.now() + 30_000,
 			streams: new Set(),
 		});
-		return { url: `/device-lan/${accessOptions.deviceId}/__open?ticket=${ticket}`, transport: direct!.transport };
+		return {
+			url: `/device-lan/${accessOptions.deviceId}/__open?ticket=${ticket}`,
+			transport: direct!.transport,
+			relayed: direct!.relayed,
+		};
 	}
 	return {
 		open,

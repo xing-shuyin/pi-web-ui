@@ -64,8 +64,20 @@ it("paces negotiated H264 from drawn-frame feedback without granting control to 
 		client.send(JSON.stringify({ type: "video_ack", id: frames[5].readUInt32BE(4), queue: 0 }));
 		await vi.waitFor(() => expect(capture.videoFeedback).toHaveBeenLastCalledWith(false));
 		client.send(JSON.stringify({ type: "text", text: "viewers cannot type" }));
-		client.send(JSON.stringify({ type: "video_recover" }));
+		const large = Buffer.alloc(DESKTOP_LIMITS.queue / 2);
+		captureOptions.onVideo({ data: large, key: true });
+		await vi.waitFor(() => expect(frames).toHaveLength(7));
+		captureOptions.onVideo({ data: large, key: false });
+		captureOptions.onVideo({ data: Buffer.alloc(10), key: false });
+		client.send(JSON.stringify({ type: "video_ack", id: frames[6].readUInt32BE(4), queue: 0 }));
 		await vi.waitFor(() => expect(capture.requestKeyframe).toHaveBeenCalledOnce());
+		captureOptions.onVideo({ data: Buffer.alloc(10), key: false });
+		captureOptions.onVideo({ data: Buffer.alloc(10), key: true });
+		await vi.waitFor(() => expect(frames).toHaveLength(8));
+		expect(frames[7].readUInt32BE(16)).toBe(1);
+		await new Promise((resolve) => setTimeout(resolve, 1050));
+		client.send(JSON.stringify({ type: "video_recover" }));
+		await vi.waitFor(() => expect(capture.requestKeyframe).toHaveBeenCalledTimes(2));
 		expect(capture.input).not.toHaveBeenCalled();
 		expect(captureOptions.readOnly).toBe(true);
 	} finally {

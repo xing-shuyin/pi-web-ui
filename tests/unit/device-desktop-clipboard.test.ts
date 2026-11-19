@@ -6,6 +6,7 @@ import { WebSocket, WebSocketServer } from "ws";
 import { clipboardConnection } from "../../server/device-center/desktop-clipboard.js";
 import {
 	clipboardDigest,
+	createNativeClipboard,
 	clipboardPng,
 	type ClipboardBackend,
 	type ClipboardContent,
@@ -93,6 +94,32 @@ describe("native clipboard protocol", () => {
 		source.copy(text("next copy"));
 		await vi.waitFor(() => expect(ep.packets.some((p) => p.type === "offer")).toBe(true));
 	});
+	it("reads the actual text after a native write and suppresses only the current OS-normalized echo", async () => {
+		let value = "";
+		vi.doMock("@crosscopy/clipboard", () => ({
+			hasFiles: () => false,
+			hasImage: () => false,
+			hasText: () => true,
+			setText: async (raw: string) => {
+				value = raw.replace(/\r?\n/g, "\r\n");
+			},
+			getText: async () => value,
+		}));
+		try {
+			const backend = await createNativeClipboard();
+			const signal = new AbortController().signal;
+			await backend.write(text("a\nb"));
+			expect(await backend.read()).toEqual(text("a\r\nb"));
+			expect(await backend.readSource!(signal, 1024)).toBeUndefined();
+			value = "new";
+			const changed = await backend.readSource!(signal, 1024);
+			expect(changed?.digest).toBe(clipboardDigest(text("new")));
+			value = "a\r\nb";
+			expect((await backend.readSource!(signal, 1024))?.digest).toBe(clipboardDigest(text(value)));
+		} finally {
+			vi.doUnmock("@crosscopy/clipboard");
+		}
+	});
 	it("supports explicit browser text transfer without a clipboard watcher", async () => {
 		const source = memory(),
 			ep = await endpoint(source.backend);
@@ -137,6 +164,11 @@ describe("native clipboard protocol", () => {
 		a.copy(text("中文 from Windows"));
 		await vi.waitFor(() => expect(b.backend.write).toHaveBeenCalledTimes(1));
 		expect(clipboardDigest((b.backend.write as any).mock.calls[0][0])).toBe(clipboardDigest(text("中文 from Windows")));
+		expect(
+			[...left.packets, ...right.packets].some((p) =>
+				["clipboard-preparing", "clipboard-progress", "clipboard-complete"].includes(p.type),
+			),
+		).toBe(false);
 		const image: ClipboardContent = { kind: "image", items: [{ name: "image.png", data: Buffer.alloc(70000, 7) }] };
 		b.copy(image);
 		await vi.waitFor(() => expect(a.backend.write).toHaveBeenCalledTimes(1));
@@ -156,6 +188,13 @@ describe("native clipboard protocol", () => {
 				.filter((p) => p.type === "chunk")
 				.every((p) => Buffer.from(p.data, "base64").length <= CLIPBOARD_LIMITS.chunk),
 		).toBe(true);
+		// Re-copy the earlier text after a change arriving from the other end.
+		b.copy(text("other direction"));
+		await vi.waitFor(() => expect(a.backend.write).toHaveBeenCalledTimes(2));
+		a.copy(files);
+		await vi.waitFor(() => expect(b.backend.write).toHaveBeenCalledTimes(3));
+		b.copy(text("other direction"));
+		await vi.waitFor(() => expect(a.backend.write).toHaveBeenCalledTimes(3));
 		left.client.close();
 		right.client.close();
 		await vi.waitFor(() => expect(a.listeners.size + b.listeners.size).toBe(0));
