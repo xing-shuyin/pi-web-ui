@@ -254,12 +254,12 @@ export class ClaudeCodeDriver extends BaseAgentDriver {
 			}
 		}
 		const launch = resolveEngineCliLaunch("claude", { executablePath: this.executablePath, cwd: this.cwd });
-		const proc = spawn(launch.file, [...launch.args, ...args], {
+		const proc = spawnChildPiped({
+			cmd: launch.file,
+			args: [...launch.args, ...args],
 			cwd: this.cwd,
 			env: this.buildSpawnEnv(isOfficial, targetProvider),
-			detached: process.platform !== "win32",
-			windowsHide: true,
-		});
+		}).child;
 
 		return new Promise<string>((resolve) => {
 			let newSid = "";

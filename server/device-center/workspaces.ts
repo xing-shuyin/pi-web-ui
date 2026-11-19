@@ -29,7 +29,13 @@ export async function validateDeviceProject(input: string, dataDir: string): Pro
 				invalid("Project path must contain directories without symbolic links");
 			if (dirname(current) === current) break;
 		}
-		const [root, home, dataRoot] = await Promise.all([realpath(selected), realpath(homedir()), realpath(dataDir)]);
+		const [root, home, dataRoot] = await Promise.all([
+			realpath(selected),
+			realpath(homedir()).catch(() => resolve(homedir())),
+			// 数据目录还没建起来是常态（首启 / 测试夹具）：它不可能「包含」项目，
+			// 用字面路径参与判定，别让 ENOENT 把合法的项目判成不可用。
+			realpath(dataDir).catch(() => resolve(dataDir)),
+		]);
 		if (root === parse(root).root || relative(home, root) === "") invalid("Home and volume roots cannot be projects");
 		if (contains(root, dataRoot)) invalid("Device data directory must be outside the project");
 		return root;

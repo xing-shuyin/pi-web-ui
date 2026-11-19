@@ -139,10 +139,13 @@ describe("设置「工具」页覆盖率", () => {
 		const zhKeys = new Set(Object.keys(zh));
 		expect(cats.length).toBeGreaterThan(0);
 		for (const cat of cats) {
-			expect(zhKeys.has(cat.titleKey), `${cat.id} 的 titleKey 不存在：${cat.titleKey}`).toBe(true);
+			expect(cat.titleKeys.length, `${cat.id} 没有分类标题`).toBeGreaterThan(0);
+			for (const key of cat.titleKeys) {
+				expect(zhKeys.has(key), `${cat.id} 的 titleKeys 含未知 key：${key}`).toBe(true);
+			}
 			if (cat.subKey) expect(zhKeys.has(cat.subKey), `${cat.id} 的 subKey 不存在：${cat.subKey}`).toBe(true);
 		}
-		expect(SETTINGS_SRC, "渲染层又按 id 手写分类标题").toContain("t(cat.titleKey as never)");
-		expect(SETTINGS_SRC, "分类副标题没走 subKey").toContain("cat.subKey ? t(cat.subKey as never)");
+		expect(SETTINGS_SRC, "渲染层又按 id 手写分类标题").toContain("cat.titleKeys.map((key) => t(key))");
+		expect(SETTINGS_SRC, "分类副标题没走 subKey").toContain("t(cat.subKey)");
 	});
 });

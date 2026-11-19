@@ -40,7 +40,12 @@ describe("P2P 助手必须随桌面安装包分发", () => {
 
 	it("npm 发布链路同样构建助手并校验哈希", () => {
 		const pkg = JSON.parse(read("package.json")) as { scripts: Record<string, string> };
-		expect(pkg.scripts["prepublishOnly"]).toContain("build:device-p2p");
+		// 构建链收敛到 `build:release` 单源（`prepublishOnly` 只引用它）：
+		// 助手构建写在单源里，两条入口都不再各自抄一遍命令。
+		const build = pkg.scripts["build:release"] ?? "";
+		expect(build).toContain("build:device-p2p");
+		expect(pkg.scripts["prepublishOnly"]).toMatch(/build:release|build:device-p2p/);
+		expect(pkg.scripts["pack:p2p"]).toMatch(/build:release|build:device-p2p/);
 		expect(pkg.scripts["pack:p2p"]).toContain("verify:device-p2p");
 	});
 });

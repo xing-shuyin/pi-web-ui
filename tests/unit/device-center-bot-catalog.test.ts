@@ -26,11 +26,14 @@ describe("local Bot catalog", () => {
 		let selected = ["read", "device_collab", "conversation"];
 		const configured = { ...sources, defaultTools: () => selected };
 		const first = await getLocalBotOptions(configured, undefined, new AbortController().signal);
-		expect(first.defaultTools).toEqual(selected);
+		// `memory` 是 Bot 的私产，新 Bot 默认就带（不受全局默认工具影响）。
+		expect(first.defaultTools).toEqual([...selected, "memory"]);
 		selected.push("write");
 		expect(first.defaultTools).not.toContain("write");
 		selected = [];
-		expect((await getLocalBotOptions(configured, undefined, new AbortController().signal)).defaultTools).toEqual([]);
+		expect((await getLocalBotOptions(configured, undefined, new AbortController().signal)).defaultTools).toEqual([
+			"memory",
+		]);
 	});
 	it("inspects unknown project MCP state without constructing a bridge", async () => {
 		const sources = await fixture();

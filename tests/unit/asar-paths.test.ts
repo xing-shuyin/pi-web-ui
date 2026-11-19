@@ -141,7 +141,7 @@ describe("device-p2p spawn 落点", () => {
 		child["stdout"] = stdout;
 		child["stderr"] = stderr;
 		child["stdin"] = stdin;
-		queueMicrotask(() => (stdout as EventEmitter).emit("data", `${JSON.stringify({ type: "sdp", sdp })}\n`));
+		queueMicrotask(() => (stdout as unknown as EventEmitter).emit("data", `${JSON.stringify({ type: "sdp", sdp })}\n`));
 		return { child, stop: async () => true };
 	}
 	beforeEach(() => {

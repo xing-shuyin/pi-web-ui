@@ -171,7 +171,6 @@ function RowMain({
 }
 
 type CategoryTag = { key: string; label: string };
-// Persisted conversation titles carry these literal channel prefixes; match them as data.
 const CHANNEL_PREFIX_RE = /^\[(微信|feishu|飞书|dingtalk|钉钉|wechat|qq|telegram)[^\]]*\]\s*(.*)$/i;
 
 function categorizeTitle(
@@ -998,18 +997,6 @@ export const LeftPanel = memo(function LeftPanel({
 
 	const sessionMenuRef = useRef<{ x: number; y: number; target: SessionMenuTarget } | null>(null);
 	const forceArmedRef = useRef<string | null>(null);
-	/**
-	 * issue #943：服务端已对同一 transcript 的并发打开去重，这里再抑制 1.5s 内的重复点击，
-	 * 避开「切换慢 → 以为没点上 → 再点一次」的重复请求（服务端 transition 状态回来得比第二次点击晚）。
-	 */
-	const lastSessionOpenRef = useRef<{ path: string; at: number } | null>(null);
-	const openSessionOnce = useCallback((path: string, send: () => void) => {
-		const now = Date.now();
-		const last = lastSessionOpenRef.current;
-		if (last && last.path === path && now - last.at < 1500) return;
-		lastSessionOpenRef.current = { path, at: now };
-		send();
-	}, []);
 	const hostActionRef = useRef<(entry: UiSlotEntry, target: ContextMenuRequest["target"]) => void | boolean>(() => {});
 
 	const sessionMenuAvailable =
@@ -2031,7 +2018,7 @@ export const LeftPanel = memo(function LeftPanel({
 							if (!active) panelSend({ type: "switch_conversation", id: runInfo.conv.id });
 							return;
 						}
-						if (!active) openSessionOnce(s.path, () => panelSend({ type: "switch_session", path: s.path }));
+						if (!active) panelSend({ type: "switch_session", path: s.path });
 					}}
 				>
 					{active && <span className="conv-current-badge">{t("current")}</span>}
@@ -3108,7 +3095,7 @@ export const LeftPanel = memo(function LeftPanel({
 														<button
 															type="button"
 															className="lp-project-btn lp-project-new-chat-btn"
-															title={t("newChat") || "新建对话"}
+															title={t("newChat")}
 															onClick={(e) => {
 																e.stopPropagation();
 																panelSend({ type: "new_chat", cwd: p.path });
@@ -3190,9 +3177,9 @@ export const LeftPanel = memo(function LeftPanel({
 															{pRunningRows.length === 0 && idleSessions.length === 0 && !failedProjects.has(pNorm) && (
 																<div className="lp-project-empty-tip">
 																	{isLoadingSessions ? (
-																		<span>{t("loadingSessions") || "正在读取会话…"}</span>
+																		<span>{t("loadingSessions")}</span>
 																	) : (
-																		<span>{t("noSessionsYet") || "暂无历史会话"}</span>
+																		<span>{t("noSessionsYet")}</span>
 																	)}
 																</div>
 															)}
@@ -3261,220 +3248,19 @@ export const LeftPanel = memo(function LeftPanel({
 															}}
 															title={t("expandSection")}
 														>
-															<svg
-																width="11"
-																height="11"
-																viewBox="0 0 12 12"
-																fill="currentColor"
-																style={{ display: "block" }}
-															>
-																<path d="M2.5 4h7l-3.5 5z" />
-															</svg>
-														</span>
-														{sbx && <LuFlaskConical className="project-icon sandbox-icon" />}
-														<span className="lp-project-name" title={dispName}>
-															{dispName}
-														</span>
-														{sbx && (
-															<span className={`lp-sandbox-badge ${sbx.ephemeral ? "ephemeral" : "permanent"}`}>
-																{sbx.ephemeral ? t("sandboxBadgeEphemeral") : t("sandboxBadgePermanent")}
-															</span>
-														)}
-														<span className="conv-meta-zone">
-															{switching && <HalfRingSpinner className="status-spinner-right" />}
-															{hasRunning && (
-																<span className="lp-project-running-badge" title={t("tabRunning")}>
-																	<span className="lp-project-running-dot" />
-																	<span>{actuallyRunningCount}</span>
-																</span>
-															)}
-															{hasUnread && (
-																<span className="lp-project-unread-badge" title={t("completedUnreadBadge")}>
-																	<span className="lp-project-unread-dot" />
-																	<span>{unreadCount}</span>
-																</span>
-															)}
-															<span className={`project-time ${switching ? "switching-pct" : ""}`}>
-																{switching
-																	? `${transition?.progress ?? 0}%`
-																	: p.lastUsed > 0
-																		? formatModified(p.lastUsed)
-																		: ""}
-															</span>
-														</span>
-													</button>
-
-													<div className="lp-project-actions">
-														<NativeCliCreateEntry cwd={p.path} onCreateCli={onCreateCli}>
-															<button
-																type="button"
-																className="lp-project-btn lp-project-new-chat-btn"
-																title={t("newChat")}
-																onClick={(e) => {
-																	e.stopPropagation();
-																	panelSend({ type: "new_chat", cwd: p.path });
-																	focusComposer();
-																}}
-															>
-																<FiPlus />
-															</button>
-														</NativeCliCreateEntry>
-														<button
-															type="button"
-															className={`lp-project-btn lp-project-del-btn ${confirmDel === `proj:${p.path}` ? "confirm danger" : ""}`}
-															title={
-																confirmDel === `proj:${p.path}`
-																	? sbx
-																		? t("sandboxActionDestroy")
-																		: t("deleteProjectConfirm")
-																	: sbx
-																		? t("sandboxActionDestroyTip")
-																		: t("deleteProject")
-															}
-															onClick={(e) => {
-																e.stopPropagation();
-																if (confirmDel === `proj:${p.path}`) {
-																	setConfirmDel(null);
-																	clearLastCwdIfMatches(p.path);
-																	clearCachedProject(p.path);
-																	panelSend(
-																		sbx
-																			? { type: "destroy_sandbox", path: p.path }
-																			: { type: "remove_project", path: p.path },
-																	);
-																} else {
-																	setConfirmDel(`proj:${p.path}`);
-																}
-															}}
-														>
-															{confirmDel === `proj:${p.path}` ? <FiCheck /> : <FiTrash2 />}
+															<span>{t("lpCollapsedHistory", { n: idleSessions.length })}</span>
+															<span aria-hidden="true">›</span>
 														</button>
 													)}
 												</div>
-
-												{}
-												{shouldMountChildren && (
-													<div
-														className={`lp-project-tree-children${isCollapsed ? " is-collapsed" : " is-expanded"}${pRunningRows.length > 0 ? " has-running-rows" : ""}`}
-													>
-														{}
-														{orderedBlocks.map((block) => {
-															// 钉住的历史行在项目收起时仍然显示 —— 钉住就是让它常驻，
-															// 否则一收起项目它就从左栏消失了，跟没钉一样。
-															const pinnedVisible = isPinnedRowVisible(isCollapsed, block);
-															return (
-																<Fragment key={block.key}>
-																	{block.kind === "conversation" ? (
-																		block.rows.map((row) => renderSingleConvRow(row, p.path))
-																	) : (
-																		<div
-																			className={`lp-history-collapsible${isCollapsed && !pinnedVisible ? " collapsed" : " expanded"}${pinnedVisible ? " is-pinned-visible" : ""}`}
-																		>
-																			<div className="lp-history-collapsible-inner">
-																				{renderHistorySessionRow(block.target, p.path)}
-																			</div>
-																		</div>
-																	)}
-																</Fragment>
-															);
-														})}
-
-														{}
-														<div className={`lp-history-collapsible${isCollapsed ? " collapsed" : " expanded"}`}>
-															<div className="lp-history-collapsible-inner">
-																{}
-																{pRunningRows.length === 0 &&
-																	idleSessions.length === 0 &&
-																	!failedProjects.has(pNorm) && (
-																		<div className="lp-project-empty-tip">
-																			{isLoadingSessions ? (
-																				<span>{t("loadingSessions")}</span>
-																			) : (
-																				<span>{t("noSessionsYet")}</span>
-																			)}
-																		</div>
-																	)}
-
-																{}
-																{failedProjects.has(pNorm) && (
-																	<button
-																		type="button"
-																		className="lp-show-more-row"
-																		disabled={!ready || status !== "open"}
-																		onClick={() =>
-																			requestSessions({
-																				type: "list_sessions",
-																				path: p.path,
-																				limit: serverListLimit(p.path),
-																			})
-																		}
-																	>
-																		{t("sessionsLoadFailed")}
-																	</button>
-																)}
-																{hasMore && (
-																	<button
-																		type="button"
-																		className="lp-show-more-row"
-																		data-lp-nav=""
-																		disabled={loadingMore.has(pNorm)}
-																		onClick={(e) => {
-																			e.stopPropagation();
-																			const nextVisible = maxVisible + SESSION_ROWS_STEP;
-																			setProjectVisibleCounts((prev) => ({
-																				...prev,
-																				[pNorm]: nextVisible,
-																			}));
-																			if (serverHasMore && nextVisible >= idleSessions.length) {
-																				// 多要一页当本地余量；服务端按这个数决定解析多少个文件
-																				const limit = Math.max(
-																					SESSION_LIST_FIRST_PAGE,
-																					nextVisible + SESSION_ROWS_STEP,
-																				);
-																				requestSessions({ type: "list_sessions", path: p.path, limit });
-																			}
-																		}}
-																	>
-																		<span>
-																			{loadingMore.has(pNorm)
-																				? t("loadingSessions")
-																				: t("lpShowMore", {
-																						n:
-																							idleSessions.length > maxVisible
-																								? `${idleSessions.length - maxVisible}${serverHasMore ? "+" : ""}`
-																								: "…",
-																					})}
-																		</span>
-																	</button>
-																)}
-															</div>
-														</div>
-
-														{}
-														{isCollapsed && hasHistory && (pRunningRows.length > 0 || hasUnread) && (
-															<button
-																type="button"
-																className="lp-collapsed-history-tip"
-																data-lp-nav=""
-																onClick={(e) => {
-																	e.stopPropagation();
-																	toggleProjectExpand(p.path);
-																}}
-																title={t("expandSection")}
-															>
-																<span>{t("lpCollapsedHistory", { n: idleSessions.length })}</span>
-																<span aria-hidden="true">›</span>
-															</button>
-														)}
-													</div>
-												)}
-											</div>
-										);
-									});
-								})()}
-								{renderPluginRunning()}
-							</div>
-						) : null)}
+											)}
+										</div>
+									);
+								});
+							})()}
+							{renderPluginRunning()}
+						</div>
+					)}
 				</div>
 			</>
 		),

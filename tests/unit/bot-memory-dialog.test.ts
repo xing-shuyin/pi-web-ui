@@ -103,7 +103,7 @@ describe("Bot 记忆面板", () => {
 		expect(host.querySelectorAll(".lp-memory-entry")).toHaveLength(3);
 		const first = card("候选模型只读")!;
 		expect(first.textContent).toContain(
-			en.agentBotsMemoryCreated.replace("{date}", new Date(CREATED).toLocaleDateString()),
+			en["botMemory.created"].replace("{date}", new Date(CREATED).toLocaleDateString()),
 		);
 		expect(first.querySelector(".lp-memory-badge")?.textContent).toBe("unverified");
 
@@ -120,7 +120,7 @@ describe("Bot 记忆面板", () => {
 			search.dispatchEvent(new Event("input", { bubbles: true }));
 		});
 		expect(host.querySelectorAll(".lp-memory-entry")).toHaveLength(0);
-		expect(host.textContent).toContain(en.agentBotsMemorySearchEmpty.replace("{query}", "没有这一条"));
+		expect(host.textContent).toContain(en["botMemory.searchEmpty"].replace("{query}", "没有这一条"));
 	});
 
 	it("未确认条目「确认并晋升」带 confirm:true，已确认条目直接晋升", async () => {
@@ -141,7 +141,7 @@ describe("Bot 记忆面板", () => {
 		await render();
 		const blocked = promoteButton("刚写下的猜测")!;
 		expect(blocked.disabled).toBe(true);
-		expect(blocked.getAttribute("title")).toBe(en.agentBotsMemoryPromoteBlocked);
+		expect(blocked.getAttribute("title")).toBe(en["botMemory.promoteBlocked"]);
 	});
 
 	it("晋升失败原因显示在面板内（不是只塞 title）", async () => {

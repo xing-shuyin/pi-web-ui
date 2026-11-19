@@ -104,6 +104,8 @@ export function LocalBots({
 	const [catalogTab, setCatalogTab] = useState<"tools" | "skills" | "mcpServers">("tools");
 	const [tab, setTab] = useState<"identity" | "runtime" | "permissions">("identity");
 	const controller = useRef<AbortController | null>(null);
+	// 就地弹窗形态（`BotCreateDialog` / `BotEditDialog` 复用本编辑器）：只渲染编辑器，不渲染列表。
+	const solo = createOnly;
 	const baseCwd = useRef("");
 	const drawer = useRef<HTMLDialogElement>(null);
 	const drawerOpen = draft !== null;

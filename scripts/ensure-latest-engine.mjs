@@ -111,10 +111,7 @@ function run(argv, timeoutMs) {
 
 async function queryLatest() {
 	for (let attempt = 0; attempt < 2; attempt += 1) {
-		const res = await run(
-			["npm", "view", `${PKG}@latest`, "version", "--fetch-retries=1"],
-			VIEW_TIMEOUT_MS,
-		);
+		const res = await run(["npm", "view", `${PKG}@latest`, "version", "--fetch-retries=1"], VIEW_TIMEOUT_MS);
 		if (!res.timedOut && res.code === 0) {
 			const version = String(res.stdout ?? "")
 				.split(/\r?\n/)

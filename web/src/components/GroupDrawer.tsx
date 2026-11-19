@@ -270,21 +270,15 @@ export const GroupDrawer = memo(function GroupDrawer({
 										)}
 										<div className="grp-bot-actions">
 											{localDeviceId && bot.deviceId && bot.deviceId !== localDeviceId ? (
-												<span className="grp-bot-remote">
-													{zh ? "私聊请在它所在的设备上打开" : "Open its private chat on its own device"}
-												</span>
+												<span className="grp-bot-remote">{t("groupBotChatRemoteHint")}</span>
 											) : (
 												<button
 													type="button"
 													className="grp-bot-open"
-													title={
-														zh
-															? `打开 ${bot.name} 的私聊（普通对话 + Bot 身份，不建任务）`
-															: `Open ${bot.name}'s private chat (an ordinary conversation as this Bot)`
-													}
+													title={t("groupBotChatOpenTip", { name: bot.name })}
 													onClick={() => openBotChat(bot.id)}
 												>
-													{zh ? "打开私聊" : "Open chat"}
+													{t("groupBotChatOpen")}
 												</button>
 											)}
 										</div>

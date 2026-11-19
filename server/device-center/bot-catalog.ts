@@ -53,15 +53,13 @@ export async function getLocalBotOptions(
 		throw new DeviceWorkspaceError(400, "BOT_CWD_INVALID", "Project path must be absolute");
 	const projectList = (await sources.projects?.()) ?? [];
 	signal.throwIfAborted();
-	// 明确指定（编辑已有 Bot / 表单选目录）按它校验，不静默换目录；
+	// 明确指定（编辑已有 Bot / 表单选目录）就按它严格校验：选了不可用的目录宁可报错，
+	// 也不静默换一个目录，否则保存下去的 Bot 会指向跟用户选择不一致的工作区。
 	// 没指定时用默认工作区，但主目录 / 卷根 / 数据目录内不能当项目——
-	// dev 从 home 启动是常态，直接报错会让"新建 Bot"永远卡住，所以退回最近项目。
+	// dev 从 home 启动是常态，直接报错会让「新建 Bot」永远卡住，所以退回最近项目。
 	const cwd = await (async () => {
-		const candidates = [
-			...(typeof requestedCwd === "string" ? [requestedCwd] : []),
-			sources.defaultCwd,
-			...projectList.map((project) => project.path),
-		];
+		if (typeof requestedCwd === "string") return validateDeviceProject(resolve(requestedCwd), sources.dataDir);
+		const candidates = [sources.defaultCwd, ...projectList.map((project) => project.path)];
 		for (const candidate of new Set(candidates)) {
 			try {
 				return await validateDeviceProject(resolve(candidate), sources.dataDir);

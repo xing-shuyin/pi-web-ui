@@ -238,15 +238,10 @@ export function BotMemoryDialog({ botId, botName, onClose }: { botId: string; bo
 							<article key={entry.id} className="lp-memory-entry">
 								<div className="lp-memory-entry-head">
 									<span className="lp-memory-scope">{entry.scope}</span>
-									<span
-										className="lp-memory-badge"
-										title={t("botMemory.confidenceTip", { value: entry.confidence })}
-									>
+									<span className="lp-memory-badge" title={t("botMemory.confidenceTip", { value: entry.confidence })}>
 										{entry.confidence}
 									</span>
-									{entry.resident && (
-										<span className="lp-memory-badge is-resident">{t("botMemory.resident")}</span>
-									)}
+									{entry.resident && <span className="lp-memory-badge is-resident">{t("botMemory.resident")}</span>}
 									{created && <span className="lp-memory-meta">{t("botMemory.created", { date: created })}</span>}
 									<span className="lp-memory-meta" title={`${entry.source}:${entry.sourceId}`}>
 										{entry.source}:{entry.sourceId} · {t("botMemory.hits", { count: entry.hits })}
@@ -261,9 +256,7 @@ export function BotMemoryDialog({ botId, botName, onClose }: { botId: string; bo
 											title={blocked ? t("botMemory.promoteBlocked") : undefined}
 											onClick={() => void promote(entry)}
 										>
-											{entry.confidence === "confirmed"
-												? t("botMemory.promote")
-												: t("botMemory.promoteConfirm")}
+											{entry.confidence === "confirmed" ? t("botMemory.promote") : t("botMemory.promoteConfirm")}
 										</button>
 									)}
 									<button
