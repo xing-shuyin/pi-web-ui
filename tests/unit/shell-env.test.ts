@@ -35,8 +35,8 @@ describe("交互式登录 shell 的 PATH 捕获", () => {
 		expect(parseCapturedPath("m1 m1", "m1", "linux")).toBeNull(); // 空串
 	});
 	it("合并时 shell 顺序在前、去重、保留当前独有条目", () => {
-		const merged = mergeShellPath(["/a", "/b"].join(delimiter), ["/b", "/c"].join(delimiter), "linux");
-		expect(merged.split(delimiter)).toEqual(["/a", "/b", "/c"]);
+		const merged = mergeShellPath("/a:/b", "/b:/c", "linux");
+		expect(merged.split(":")).toEqual(["/a", "/b", "/c"]);
 	});
 	it("Windows 合并按大小写不敏感去重", () => {
 		const merged = mergeShellPath("C:\\Node;D:\\tools", "c:\\node;C:\\Other", "win32");
@@ -103,9 +103,8 @@ describe("交互式登录 shell 的 PATH 捕获", () => {
 		});
 	});
 	it("相对 / cwd 相关条目不会焊进全局 PATH（捕获侧过滤，当前 PATH 不动）", () => {
-		const captured = ["relative/bin", ".", "/abs/one"].join(delimiter);
-		const current = [".", "/abs/two"].join(delimiter);
-		expect(mergeShellPath(captured, current, "linux").split(delimiter)).toEqual(["/abs/one", ".", "/abs/two"]);
+		const merged = mergeShellPath("relative/bin:.:/abs/one", ".:/abs/two", "linux");
+		expect(merged.split(":")).toEqual(["/abs/one", ".", "/abs/two"]);
 		expect(isAbsolutePathEntry("node_modules/.bin", "linux")).toBe(false);
 		expect(isAbsolutePathEntry("C:\\tools", "win32")).toBe(true);
 		expect(isAbsolutePathEntry("tools", "win32")).toBe(false);

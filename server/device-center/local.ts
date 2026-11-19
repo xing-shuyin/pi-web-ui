@@ -266,7 +266,7 @@ export async function installLocalDeviceCenter(options: Options) {
 				const hub = await createLocalDeviceHub(options.dataDir, () => loadExecutionSettings(options.dataDir));
 				try {
 					localHub = hub;
-					connection = await options.connect(forAgent(hub.config), syncBots);
+					connection = await connectRuntime(hub);
 					// 本机设备：任务直调（不绕 WS + 本地调度）。远程设备仍然走 relay。
 					if (connection.runtime && isLocalTaskRuntime(connection.runtime))
 						hub.attachLocalDeviceRuntime(connection.runtime);
@@ -283,6 +283,26 @@ export async function installLocalDeviceCenter(options: Options) {
 			});
 		}
 		await localStarting;
+	}
+	/**
+	 * 拉起运行时并把「本机」接到它该接的那台 Hub 上。
+	 *
+	 * 已配对 → 必须用**配对得来的设备身份**（`config`）接远端 Hub：设备在线表、任务投递、
+	 * LAN/P2P/升级都按那个 deviceId 认人；拿本机 Hub 的占位身份（`local-device`）去接，
+	 * 远端永远看到“设备不在线”，派出去的任务直接判失败。
+	 * 未配对 → 接本机 Hub（只为了让房间引擎拿到运行时，不涉及任何远端协作）。
+	 */
+	async function connectRuntime(hub: { config: LocalDeviceConfig }) {
+		const paired = config;
+		if (!paired) return options.connect(forAgent(hub.config), syncBots);
+		try {
+			return await options.connect(forAgent(paired), syncBots);
+		} catch (error) {
+			// 远端 Hub 暂时连不上不该把本机房间一起拖下水：先用本机身份把运行时拉起来，
+			// 下次 `reconnect()`（轮询/配对/执行开关变化）会再试一次真实身份。
+			console.warn("[device-center] Hub connection failed; local rooms stay available", error);
+			return options.connect(forAgent(hub.config), syncBots);
+		}
 	}
 	let pending: { hubUrl: string; name: string; pollToken: string; expiresAt: number; generation: number } | undefined;
 	let generation = 0;

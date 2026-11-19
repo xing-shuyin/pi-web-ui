@@ -13,7 +13,7 @@
  * 只收「目录里真有 node/npm」的候选，避免 scoop shims 之类的杂目录整体挤到 PATH 前面。
  */
 import { statSync } from "node:fs";
-import { delimiter, join } from "node:path";
+import { join, posix, win32 } from "node:path";
 import { installDirectories, type NativeCliDiscoveryOptions } from "./native-cli-discovery.js";
 import { DEFAULT_CAPTURE_TIMEOUT_MS, captureShellPath, mergeShellPath } from "./shell-env.js";
 
@@ -43,6 +43,11 @@ function normalizeEntry(entry: string, windows: boolean): string {
 	return windows ? trimmed.toLowerCase() : trimmed;
 }
 
+/** PATH 分隔符跟着「被模拟的平台」走（宿主 delimiter 在跨平台调用时会串味）。 */
+function pathDelimiter(windows: boolean): string {
+	return (windows ? win32 : posix).delimiter;
+}
+
 function pathKey(env: NodeJS.ProcessEnv, windows: boolean): string {
 	if (!windows) return "PATH";
 	return Object.keys(env).find((key) => key.toLowerCase() === "path") ?? "PATH";
@@ -53,6 +58,7 @@ export function resolveNodeDirs(options: NodePathOptions = {}): string[] {
 	const platform = options.platform ?? process.platform;
 	const windows = platform === "win32";
 	const env = options.env ?? process.env;
+	const delimiter = pathDelimiter(windows);
 	const present = new Set(
 		(env[pathKey(env, windows)] ?? "")
 			.split(delimiter)
@@ -80,6 +86,7 @@ export function augmentNodePath(options: NodePathOptions = {}): string[] {
 	const env = options.env ?? process.env;
 	const added = resolveNodeDirs({ ...options, env });
 	if (added.length === 0) return [];
+	const delimiter = pathDelimiter(windows);
 	const key = pathKey(env, windows);
 	const current = env[key] ?? "";
 	env[key] = [...added, ...(current ? [current] : [])].join(delimiter);
@@ -88,6 +95,7 @@ export function augmentNodePath(options: NodePathOptions = {}): string[] {
 
 function binOnPath(name: string, env: NodeJS.ProcessEnv, platform: NodeJS.Platform): boolean {
 	const windows = platform === "win32";
+	const delimiter = pathDelimiter(windows);
 	const names = windows ? [`${name}.exe`, `${name}.cmd`, `${name}.bat`, name] : [name];
 	for (const entry of (env[pathKey(env, windows)] ?? "").split(delimiter)) {
 		const directory = entry.trim().replace(/^"(.*)"$/, "$1");
@@ -151,6 +159,7 @@ export async function augmentNodePathFromShell(
 	const captured = await captureShellPath({ platform, env, timeoutMs });
 	if (!captured) return { reason: "failed", added: 0, ms: Date.now() - startedAt, timeoutMs };
 	const key = pathKey(env, platform === "win32");
+	const delimiter = pathDelimiter(platform === "win32");
 	const before = new Set(
 		(env[key] ?? "")
 			.split(delimiter)

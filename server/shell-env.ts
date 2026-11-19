@@ -19,7 +19,7 @@
  * 校验形状，硬超时后放弃。抓不到就安静回落 —— 目录探测（`node-path.ts`）仍在那里兜底。
  */
 import { randomUUID } from "node:crypto";
-import { delimiter } from "node:path";
+import { posix, win32 } from "node:path";
 import { runProcess } from "./run-process.js";
 
 const DEFAULT_TIMEOUT_MS = 1500;
@@ -99,6 +99,8 @@ export function mergeShellPath(
 	platform: NodeJS.Platform = process.platform,
 ): string {
 	const windows = platform === "win32";
+	// 分隔符跟着「被模拟的平台」走：用宿主 delimiter 在跨平台调用（含单测）时会把整串当成一条。
+	const delimiter = (windows ? win32 : posix).delimiter;
 	const key = (entry: string) => (windows ? entry.replace(/[\\/]+$/, "").toLowerCase() : entry.replace(/\/+$/, ""));
 	const seen = new Set<string>();
 	const out: string[] = [];

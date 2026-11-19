@@ -68,10 +68,13 @@ describe("restart continuation", () => {
 			await client.continueResumedConversation(session.sessionFile);
 
 			expect(client.prompt).not.toHaveBeenCalled();
-			expect(captured).toHaveLength(1);
-			expect(captured[0]).toMatchObject({ role: "custom", customType: "restart-resume", display: false });
-			expect(serializeMessage(captured[0], 1)).toBeNull();
-			expect(serializeMessage(JSON.parse(JSON.stringify(captured[0])), 1)).toBeNull();
+			// 新版 SDK 的 `triggerTurn` 会把系统提示词与自定义消息一起交给 `agent.prompt`，
+			// 所以这里不再假设“只有一条”，只钉住：标记确存在、且历史里不出现第二种 custom 消息。
+			const markers = captured.filter((message) => message?.role === "custom");
+			expect(markers).toHaveLength(1);
+			expect(markers[0]).toMatchObject({ role: "custom", customType: "restart-resume", display: false });
+			expect(serializeMessage(markers[0], 1)).toBeNull();
+			expect(serializeMessage(JSON.parse(JSON.stringify(markers[0])), 1)).toBeNull();
 			expect(conv.promptedSinceActive).toBe(true);
 			expect(conv.viewOnly).toBe(false);
 		} finally {

@@ -13,7 +13,7 @@
  */
 import { spawn } from "node:child_process";
 import { existsSync, statSync } from "node:fs";
-import { isAbsolute, resolve as resolvePath } from "node:path";
+import { win32 } from "node:path";
 
 /** 出现在「默认应用」列表里的名字，同时是 RegisteredApplications 的值名。 */
 export const INTEGRATION_APP_NAME = "Pi Web UI";
@@ -344,7 +344,9 @@ export function collectOpenTargets(argv: readonly string[], options: CollectOpen
 			if (!urls.includes(value)) urls.push(value);
 			continue;
 		}
-		const absolute = isAbsolute(value) ? value : resolvePath(cwd, value);
+		// 单平台（Windows 文件关联）专用：必须用 win32 语义。
+		// 用宿主 path 时，在 Linux/macOS 上（含 CI）`C:\...` 不算绝对路径，会被拼成怪路径。
+		const absolute = win32.isAbsolute(value) ? value : win32.resolve(cwd, value);
 		if (!exists(absolute) || !isFile(absolute)) continue;
 		if (!files.includes(absolute)) files.push(absolute);
 	}
