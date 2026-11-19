@@ -303,7 +303,7 @@ export default defineView({
 		function visit(url) {
 			url = (url || "").trim();
 			if (!url) return;
-			if (!/^https?:\/\//i.test(url)) url = "https://" + url;
+			if (!/^https?:\/\//i.test(url)) url = "http://" + url; // blank defaults to http: localhost breaks on https, public sites upgrade themselves
 			browserUrl = url;
 			pendingVisit = true;
 			disarmPick();
