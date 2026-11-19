@@ -42,7 +42,7 @@ function mdOf(s, task) {
 	return out.join("\n");
 }
 
-const CSS = `.wi{font:13px/1.6 system-ui,sans-serif;height:100%;display:flex;flex-direction:column;color:var(--text,inherit);min-height:0}.wi-sidehead{flex:none;padding:8px 8px 0;font-size:11.5px;color:var(--text-dim,#999);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.wi-empty{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px;padding:20px;background:var(--bg-elev2,#8881)}.wi-empty .urlrow{width:min(480px,90%)}.wi-empty h3{margin:0;font-size:15px}.ibtn{flex:none;width:32px;height:30px;display:inline-flex;align-items:center;justify-content:center;border:1px solid var(--border,#8886);border-radius:7px;background:transparent;color:var(--text,inherit);cursor:pointer;padding:0}.ibtn svg{width:16px;height:16px}.ibtn:hover{background:var(--accent-soft,#8882)}.ibtn.on{color:var(--accent-contrast,#fff);background:var(--accent,#4a7dff);border-color:var(--accent,#4a7dff)}.wi-main{flex:1;display:flex;min-height:0}.wi-browser{flex:1;min-width:0;display:flex;flex-direction:column}.wi-browser iframe{flex:1;width:100%;border:0;background:#fff;min-height:0}.wi-framed{font-size:11px;color:var(--text-dim,#999);padding:2px 10px}.wi-grip{flex:none;width:8px;cursor:col-resize}.wi-grip:hover,.wi-grip.on{background:var(--accent-soft,#8883)}.wi-side{flex:none;display:flex;flex-direction:column;min-height:0;border-left:1px solid var(--border,#8883)}.stabs{flex:none;display:flex;gap:4px;padding:8px 8px 0}.stabs button{flex:1;display:flex;align-items:center;justify-content:center;gap:5px;border:1px solid var(--border,#8884);border-bottom:0;border-radius:8px 8px 0 0;padding:6px 2px;background:transparent;color:var(--text-dim,#999);font-size:12px;cursor:pointer}.stabs button svg{width:14px;height:14px}.stabs button.on{color:var(--text-strong,var(--text,inherit));background:var(--bg-elev,transparent);border-color:var(--accent,#4a7dff);font-weight:600}.sbody{flex:1;min-height:0;overflow-y:auto;padding:8px;border-top:1px solid var(--border,#8884);display:flex;flex-direction:column;gap:8px}.sfoot{flex:none;padding:8px;border-top:1px solid var(--border,#8883)}.sfoot button{width:100%;padding:8px;font-size:13px;font-weight:600}.wi .dim{font-size:11.5px;color:var(--text-dim,#999)}.wi .card{border:1px solid var(--border,#8884);border-radius:10px;padding:8px 10px;background:var(--bg-elev,transparent)}.wi .guide{margin:0;padding:0;list-style:none;display:flex;flex-direction:column;gap:8px}.wi .guide li{display:flex;gap:8px;align-items:flex-start}.wi .gn{flex:none;width:20px;height:20px;border-radius:50%;background:var(--accent,#4a7dff);color:var(--accent-contrast,#fff);font-size:11px;font-weight:700;display:flex;align-items:center;justify-content:center;margin-top:1px}.wi input[type=text],.wi textarea{width:100%;box-sizing:border-box;background:var(--bg-elev2,#8881);color:var(--text,inherit);border:1px solid var(--border,#8884);border-radius:6px;padding:6px 8px;font-size:12px}.wi textarea{resize:vertical}.wi ol.steps{margin:6px 0;padding-left:20px;font-size:12px}.wi ol.steps li{margin:3px 0}.wi code{font-size:11px;word-break:break-all}.wi a.bm{display:inline-block;margin:4px 0;padding:4px 12px;border:1px dashed var(--accent,#4a7dff);border-radius:8px;text-decoration:none;color:var(--accent,#4a7dff);font-size:12px}.wi-flash{font-size:12px;color:var(--accent,#4a7dff);margin-top:6px}.wi pre{white-space:pre-wrap;font-size:11px;max-height:160px;overflow:auto;background:var(--bg-elev2,#8881);border-radius:6px;padding:6px 8px}.urlrow{display:flex;gap:6px}.urlrow input{flex:1;min-width:0}.navrow{flex:none;display:flex;gap:4px;align-items:center;padding:8px 8px 0}.navrow input{flex:1;min-width:0;background:var(--bg-elev2,#8881);color:var(--text,inherit);border:1px solid var(--border,#8884);border-radius:6px;padding:4px 8px;font-size:12px}.zoomrow{display:flex;gap:6px;align-items:center}.zoomrow .zv{min-width:44px;text-align:center;font-size:12px}`;
+const CSS = `.wi{font:13px/1.6 system-ui,sans-serif;height:100%;display:flex;flex-direction:column;color:var(--text,inherit);min-height:0}.wi-sidehead{flex:none;padding:8px 8px 0;font-size:11.5px;color:var(--text-dim,#999);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.wi-empty{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px;padding:20px;background:var(--bg-elev2,#8881)}.wi-empty .urlrow{width:min(480px,90%)}.wi-empty h3{margin:0;font-size:15px}.ibtn{flex:none;width:32px;height:30px;display:inline-flex;align-items:center;justify-content:center;border:1px solid var(--border,#8886);border-radius:7px;background:transparent;color:var(--text,inherit);cursor:pointer;padding:0}.ibtn svg{width:16px;height:16px}.ibtn:hover{background:var(--accent-soft,#8882)}.ibtn.on{color:var(--accent-contrast,#fff);background:var(--accent,#4a7dff);border-color:var(--accent,#4a7dff)}.wi-main{flex:1;display:flex;min-height:0}.wi-browser{flex:1;min-width:0;display:flex;flex-direction:column}.wi-browser iframe{flex:1;width:100%;border:0;background:#fff;min-height:0}.wi-framed{font-size:11px;color:var(--text-dim,#999);padding:2px 10px}.wi-grip{flex:none;width:8px;cursor:col-resize}.wi-grip:hover,.wi-grip.on{background:var(--accent-soft,#8883)}.wi-grip{touch-action:none}@media (pointer:coarse){.wi-grip{width:14px}.ibtn{width:40px;height:36px}}.wi-side{flex:none;display:flex;flex-direction:column;min-height:0;border-left:1px solid var(--border,#8883)}.stabs{flex:none;display:flex;gap:4px;padding:8px 8px 0}.stabs button{flex:1;display:flex;align-items:center;justify-content:center;gap:5px;border:1px solid var(--border,#8884);border-bottom:0;border-radius:8px 8px 0 0;padding:6px 2px;background:transparent;color:var(--text-dim,#999);font-size:12px;cursor:pointer}.stabs button svg{width:14px;height:14px}.stabs button.on{color:var(--text-strong,var(--text,inherit));background:var(--bg-elev,transparent);border-color:var(--accent,#4a7dff);font-weight:600}.sbody{flex:1;min-height:0;overflow-y:auto;padding:8px;border-top:1px solid var(--border,#8884);display:flex;flex-direction:column;gap:8px}.sfoot{flex:none;padding:8px;border-top:1px solid var(--border,#8883)}.sfoot button{width:100%;padding:8px;font-size:13px;font-weight:600}.wi .dim{font-size:11.5px;color:var(--text-dim,#999)}.wi .card{border:1px solid var(--border,#8884);border-radius:10px;padding:8px 10px;background:var(--bg-elev,transparent)}.wi .guide{margin:0;padding:0;list-style:none;display:flex;flex-direction:column;gap:8px}.wi .guide li{display:flex;gap:8px;align-items:flex-start}.wi .gn{flex:none;width:20px;height:20px;border-radius:50%;background:var(--accent,#4a7dff);color:var(--accent-contrast,#fff);font-size:11px;font-weight:700;display:flex;align-items:center;justify-content:center;margin-top:1px}.wi input[type=text],.wi textarea{width:100%;box-sizing:border-box;background:var(--bg-elev2,#8881);color:var(--text,inherit);border:1px solid var(--border,#8884);border-radius:6px;padding:6px 8px;font-size:12px}.wi textarea{resize:vertical}.wi ol.steps{margin:6px 0;padding-left:20px;font-size:12px}.wi ol.steps li{margin:3px 0}.step-row{display:flex;align-items:flex-start;gap:6px}.step-row .sl{flex:1;min-width:0}.step-btns{margin-left:auto;flex:none;display:inline-flex;gap:4px}.wi code{font-size:11px;word-break:break-all}.wi a.bm{display:inline-block;margin:4px 0;padding:4px 12px;border:1px dashed var(--accent,#4a7dff);border-radius:8px;text-decoration:none;color:var(--accent,#4a7dff);font-size:12px}.wi-flash{font-size:12px;color:var(--accent,#4a7dff);margin-top:6px}.wi pre{white-space:pre-wrap;font-size:11px;max-height:160px;overflow:auto;background:var(--bg-elev2,#8881);border-radius:6px;padding:6px 8px}.urlrow{display:flex;gap:6px}.urlrow input{flex:1;min-width:0}.navrow{flex:none;display:flex;gap:4px;align-items:center;padding:8px 8px 0}.navrow input{flex:1;min-width:0;background:var(--bg-elev2,#8881);color:var(--text,inherit);border:1px solid var(--border,#8884);border-radius:6px;padding:4px 8px;font-size:12px}.zoomrow{display:flex;gap:6px;align-items:center}.zoomrow .zv{min-width:44px;text-align:center;font-size:12px}`;
 
 function cssPath(e) {
 	if (e.id) return "#" + e.id;
@@ -132,14 +132,26 @@ export default defineView({
 			e.preventDefault();
 			const grip = e.currentTarget;
 			grip.classList.add("on");
+			const veil = document.createElement("div");
+			veil.style.cssText = "position:fixed;inset:0;z-index:2147483647;cursor:col-resize;user-select:none";
+			document.body.appendChild(veil);
 			const x0 = e.clientX;
 			const w0 = sideW;
-			const mv = (ev) => {
-				sideW = Math.max(200, Math.min(640, w0 - (ev.clientX - x0)));
+			let raf = 0;
+			let nx = x0;
+			const apply = () => {
+				raf = 0;
+				sideW = Math.max(200, Math.min(640, w0 - (nx - x0)));
 				side.style.width = sideW + "px";
 			};
+			const mv = (ev) => {
+				nx = ev.clientX;
+				if (!raf) raf = requestAnimationFrame(apply);
+			};
 			const up = () => {
+				if (raf) cancelAnimationFrame(raf);
 				grip.classList.remove("on");
+				veil.remove();
 				window.removeEventListener("mousemove", mv);
 				window.removeEventListener("mouseup", up);
 				try {
@@ -149,6 +161,27 @@ export default defineView({
 			window.addEventListener("mousemove", mv);
 			window.addEventListener("mouseup", up);
 		});
+		{
+			const gripEl = main.querySelector(".wi-grip");
+			gripEl.addEventListener("touchstart", (te) => {
+				te.preventDefault();
+				const tc0 = te.touches[0];
+				const gx0 = tc0.clientX;
+				const gw0 = sideW;
+				const gm = (e2) => {
+					const tc = e2.touches[0];
+					sideW = Math.max(200, Math.min(640, gw0 - (tc.clientX - gx0)));
+					side.style.width = sideW + "px";
+				};
+				const gu = () => {
+					window.removeEventListener("touchmove", gm);
+					window.removeEventListener("touchend", gu);
+					try { localStorage.setItem("web-inspect:sideW", String(sideW)); } catch {}
+				};
+				window.addEventListener("touchmove", gm, { passive: true });
+				window.addEventListener("touchend", gu);
+			}, { passive: false });
+		}
 
 		frame = document.createElement("iframe");
 		frame.setAttribute("sandbox", "allow-scripts allow-same-origin allow-forms allow-popups");
@@ -191,7 +224,7 @@ export default defineView({
 			if (pendingVisit) pendingVisit = false;
 			else if (actual && actual !== browserUrl) {
 				browserUrl = actual;
-				sendStep({ kind: "nav", label: `nav: ${actual}`, url: actual });
+				sendStep({ kind: "nav", label: actual, url: actual });
 			}
 			renderBrowser();
 			renderSide();
@@ -265,12 +298,33 @@ export default defineView({
 				disarmPick();
 				void postCollect({ type: "pick", url: browserUrl, tag: tgt.tagName.toLowerCase(), text: elText(tgt, settings.maskPasswords), sel: cssPath(tgt), path: cssPath(tgt) });
 			};
+			const mvt = (e) => {
+				const tc = e.touches?.[0];
+				if (!tc) return;
+				const tgt = doc.elementFromPoint(tc.clientX, tc.clientY)?.closest("a,button,input,select,textarea,[role=button],div,span,li,td,h1,h2,h3,p");
+				if (!tgt) return;
+				window.__WI_T = tgt;
+				const r = tgt.getBoundingClientRect();
+				Object.assign(box.style, { left: r.left + "px", top: r.top + "px", width: r.width + "px", height: r.height + "px" });
+			};
+			const pickt = (e) => {
+				const tc = e.touches?.[0];
+				const tgt = (tc && doc.elementFromPoint(tc.clientX, tc.clientY)) || e.target;
+				e.preventDefault();
+				e.stopPropagation();
+				disarmPick();
+				if (tgt && tgt.tagName) void postCollect({ type: "pick", url: browserUrl, tag: tgt.tagName.toLowerCase(), text: elText(tgt, settings.maskPasswords), sel: cssPath(tgt), path: cssPath(tgt) });
+			};
 			doc.addEventListener("mousemove", mv, true);
 			doc.addEventListener("click", pick, true);
+			doc.addEventListener("touchmove", mvt, { capture: true, passive: true });
+			doc.addEventListener("touchstart", pickt, { capture: true, passive: false });
 			doc.addEventListener("keydown", done, true);
 			pickCleanup = () => {
 				doc.removeEventListener("mousemove", mv, true);
 				doc.removeEventListener("click", pick, true);
+				doc.removeEventListener("touchmove", mvt, true);
+				doc.removeEventListener("touchstart", pickt, true);
 				doc.removeEventListener("keydown", done, true);
 				box.remove();
 			};
@@ -294,7 +348,7 @@ export default defineView({
 			for (const ev of ["click", "input", "submit", "change"]) {
 				doc.addEventListener(
 					ev,
-					(e) => sendStep({ kind: ev === "submit" ? "click" : ev === "change" ? "input" : ev, label: `${ev}: ${val(e)}`.slice(0, 140), sel: sel(e), url: browserUrl }),
+					(e) => sendStep({ kind: ev === "submit" ? "click" : ev === "change" ? "input" : ev, label: `${val(e)}`.slice(0, 140) || ev, sel: sel(e), url: browserUrl }),
 					true,
 				);
 			}
@@ -307,7 +361,7 @@ export default defineView({
 			browserUrl = url;
 			pendingVisit = true;
 			disarmPick();
-			sendStep({ kind: "visit", label: `${t("stepVisit")}: ${url}`, url });
+			sendStep({ kind: "visit", label: url, url });
 			frame.src = url;
 			renderBrowser();
 		}
@@ -319,7 +373,7 @@ export default defineView({
 		function stepBtns(idx, total) {
 			const b = (mv, ch, tip) =>
 				`<button data-mv="${mv}" data-i="${idx}" title="${esc(tip)}" style="border:1px solid var(--border,#8886);border-radius:5px;background:transparent;color:var(--text-dim,#999);font-size:11px;padding:0 6px;cursor:pointer"${mv !== 0 && ((mv < 0 && idx === 0) || (mv > 0 && idx === total - 1)) ? " disabled style=\"opacity:.35;border:1px solid var(--border,#8886);border-radius:5px;background:transparent;color:var(--text-dim,#999);font-size:11px;padding:0 6px;cursor:default\"" : ""}>${ch}</button>`;
-			return `<span style="display:inline-flex;gap:4px;margin-left:6px">${b(-1, "↑", t("tipUp"))}${b(1, "↓", t("tipDown"))}<button data-del="${idx}" title="${esc(t("tipDel"))}" style="border:1px solid var(--border,#8886);border-radius:5px;background:transparent;color:var(--text-dim,#999);font-size:11px;padding:0 6px;cursor:pointer">×</button></span>`;
+			return `<span class="step-btns">${b(-1, "↑", t("tipUp"))}${b(1, "↓", t("tipDown"))}<button data-del="${idx}" title="${esc(t("tipDel"))}" style="border:1px solid var(--border,#8886);border-radius:5px;background:transparent;color:var(--text-dim,#999);font-size:11px;padding:0 6px;cursor:pointer">×</button></span>`;
 		}
 
 		function setZoom(z) {
@@ -398,7 +452,7 @@ export default defineView({
 				});
 			} else if (mode === "steps") {
 				body.innerHTML = `<div class="card"><div style="display:flex;gap:6px;margin-bottom:6px">${ibtn("note", "note", t("tipNote"))}${ibtn("clear", "clear", t("tipClear"))}${ibtn("newflow", "reset", t("tipNewFlow"))}</div>
-				<ol class="steps">${steps.map((s, idx) => `<li><b>${esc(s.kind)}</b> ${esc(s.label)}${s.sel ? `<br><code>${esc(s.sel)}</code>` : ""}${stepBtns(idx, steps.length)}</li>`).join("") || `<span class="dim">${esc(t("empty"))}</span>`}</ol></div>
+				<ol class="steps">${steps.map((s, idx) => `<li><div class="step-row"><div class="sl"><b>${esc(s.kind)}</b> ${esc(s.label)}${s.sel ? `<br><code>${esc(s.sel)}</code>` : ""}</div>${stepBtns(idx, steps.length)}</div></li>`).join("") || `<span class="dim">${esc(t("empty"))}</span>`}</ol></div>
 				${state.picked ? `<div class="card"><b>${esc(t("picked"))} [${esc(state.picked.tag)}]</b> ${esc(state.picked.text)}<br><code>${esc(state.picked.sel)}</code></div>` : ""}
 				<details class="card"><summary class="dim">${esc(t("elements"))}（${state.snapshot ? state.snapshot.count : 0}）· ${esc(t("recentLog"))}（${state.log.length}）</summary>
 				<pre>${esc((state.snapshot?.elements || []).slice(0, 20).map((e) => `[${e.i}] <${e.tag}> ${e.text || ""} :: ${e.sel}`).join("\n") || `(${t("empty")})`)}</pre></details>${flash ? `<div class="wi-flash">${esc(flash)}</div>` : ""}`;
