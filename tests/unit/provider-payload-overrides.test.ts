@@ -68,16 +68,12 @@ describe("provider payload sampling overrides", () => {
 		});
 	});
 
-	it("applies conversation sampling values over model and request defaults", () => {
+	it("applies conversation reasoning controls without overriding model sampler settings", () => {
 		const payload = { messages: [], temperature: 0.8, top_p: 0.9 };
 		const result = mergeModelSamplingParamsIntoProviderPayload(payload, {
 			api: "openai-completions",
 			samplingParams: { top_k: 32 },
 		}, {
-			temperature: 0.4,
-			min_p: 0.05,
-			top_p: 0.95,
-			top_k: 48,
 			profile: "gemma4",
 			thinkingEnabled: true,
 			thinkingEffort: "high",
@@ -85,10 +81,9 @@ describe("provider payload sampling overrides", () => {
 		});
 		expect(result).toEqual({
 			messages: [],
-			temperature: 0.4,
-			top_p: 0.95,
-			top_k: 48,
-			min_p: 0.05,
+			temperature: 0.8,
+			top_p: 0.9,
+			top_k: 32,
 			chat_template_kwargs: {
 				enable_thinking: true,
 				reasoning_effort: "high",
@@ -118,14 +113,12 @@ describe("provider payload sampling overrides", () => {
 		});
 	});
 
-	it("applies standard sampling overrides to non-OpenAI payloads without chat-template fields", () => {
+	it("does not inject conversation sampler defaults into non-OpenAI payloads", () => {
 		const payload = { input: "Hello" };
 		const result = mergeModelSamplingParamsIntoProviderPayload(payload, { api: "anthropic-messages" }, {
-			temperature: 0.2,
-			top_p: 0.8,
 			thinkingEnabled: true,
 		});
-		expect(result).toEqual({ input: "Hello", temperature: 0.2, top_p: 0.8 });
+		expect(result).toEqual({ input: "Hello" });
 	});
 
 	it("leaves non-record payloads unchanged", () => {
