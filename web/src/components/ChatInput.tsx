@@ -86,6 +86,25 @@ const COMPOSER_MIN_H = 40;
 const COMPOSER_MAX_H = 320;
 const COMPOSER_H_KEY = "pi-web-ui:composer-height";
 
+const DEFAULT_SAMPLING_OVERRIDES: import("../types").SamplingOverrides = {
+	profile: "default",
+	thinkingEnabled: false,
+	thinkingEffort: "medium",
+	preserveThinking: true,
+};
+
+function normalizeSamplingOverrides(value: unknown): import("../types").SamplingOverrides {
+	const saved = value && typeof value === "object" && !Array.isArray(value)
+		? value as Record<string, unknown>
+		: {};
+	return {
+		profile: saved.profile === "gemma4" ? "gemma4" : "default",
+		thinkingEnabled: typeof saved.thinkingEnabled === "boolean" ? saved.thinkingEnabled : false,
+		thinkingEffort: saved.thinkingEffort === "low" || saved.thinkingEffort === "high" ? saved.thinkingEffort : "medium",
+		preserveThinking: typeof saved.preserveThinking === "boolean" ? saved.preserveThinking : true,
+	};
+}
+
 function getComposerSafeMaxH(): number {
 	if (typeof window === "undefined") return COMPOSER_MAX_H;
 	return Math.max(160, Math.min(COMPOSER_MAX_H, Math.floor(window.innerHeight * 0.42)));
@@ -286,6 +305,30 @@ export const ChatInput = memo(function ChatInput({
 	const historyIndexRef = useRef(-1);
 	const draftRef = useRef("");
 	const [groupPlanOnly, setGroupPlanOnly] = useState(false);
+	const samplingStorageKey = conversationId ? `pi-web-ui:sampling:${conversationId}` : null;
+	const [samplingLoadedForKey, setSamplingLoadedForKey] = useState<string | null>(samplingStorageKey);
+	const [samplingOverrides, setSamplingOverrides] = useState<import("../types").SamplingOverrides>(() => {
+		try {
+			const key = conversationId ? `pi-web-ui:sampling:${conversationId}` : null;
+			const raw = key ? localStorage.getItem(key) : null;
+			return raw ? normalizeSamplingOverrides(JSON.parse(raw)) : { ...DEFAULT_SAMPLING_OVERRIDES };
+		} catch {
+			return { ...DEFAULT_SAMPLING_OVERRIDES };
+		}
+	});
+	useEffect(() => {
+		try {
+			const raw = samplingStorageKey ? localStorage.getItem(samplingStorageKey) : null;
+			setSamplingOverrides(raw ? normalizeSamplingOverrides(JSON.parse(raw)) : { ...DEFAULT_SAMPLING_OVERRIDES });
+		} catch {
+			setSamplingOverrides({ ...DEFAULT_SAMPLING_OVERRIDES });
+		}
+		setSamplingLoadedForKey(samplingStorageKey);
+	}, [samplingStorageKey]);
+	useEffect(() => {
+		if (!samplingStorageKey || samplingLoadedForKey !== samplingStorageKey) return;
+		try { localStorage.setItem(samplingStorageKey, JSON.stringify(samplingOverrides)); } catch {}
+	}, [samplingStorageKey, samplingLoadedForKey, samplingOverrides]);
 
 	const lastRecallSeqRef = useRef(0);
 	useEffect(() => {
@@ -1270,6 +1313,7 @@ export const ChatInput = memo(function ChatInput({
 		if (
 			appSend({
 				type: "prompt",
+				samplingOverrides,
 				text: expandTemplateCommand(trimmed, commandTemplates),
 				queue,
 				attachments: buildPromptAttachments(),
@@ -1301,7 +1345,7 @@ export const ChatInput = memo(function ChatInput({
 			onNotice("warning", t("sessionInitializingNotice"));
 			return;
 		}
-		if (appSend({ type: "prompt", text: trimmed, queue, attachments: buildPromptAttachments() })) {
+		if (appSend({ type: "prompt", text: trimmed, queue, samplingOverrides, attachments: buildPromptAttachments() })) {
 			if (trimmed) pushPromptHistory(trimmed);
 			historyIndexRef.current = -1;
 			draftRef.current = "";
@@ -1991,6 +2035,15 @@ export const ChatInput = memo(function ChatInput({
 						e.target.value = "";
 					}}
 				/>
+				<details className="sampling-controls">
+					<summary>Generation settings</summary>
+					<div className="sampling-controls-grid">
+						<label>Profile <select value={samplingOverrides.profile ?? "default"} onChange={(e) => setSamplingOverrides((v) => e.target.value === "gemma4" ? { ...v, profile: "gemma4", thinkingEnabled: true, thinkingEffort: "medium", preserveThinking: true } : { profile: "default", thinkingEnabled: false, thinkingEffort: "medium", preserveThinking: true })}><option value="default">Default</option><option value="gemma4">Gemma 4</option></select></label>
+						<label className="sampling-thinking-toggle"><input type="checkbox" checked={samplingOverrides.thinkingEnabled ?? false} onChange={(e) => setSamplingOverrides((v) => ({ ...v, thinkingEnabled: e.target.checked }))} /> Thinking</label>
+						<label>Effort <select value={samplingOverrides.thinkingEffort ?? "medium"} onChange={(e) => setSamplingOverrides((v) => ({ ...v, thinkingEffort: e.target.value as "low" | "medium" | "high" }))}><option value="low">Low</option><option value="medium">Medium</option><option value="high">High</option></select></label>
+						<label className="sampling-thinking-toggle"><input type="checkbox" checked={samplingOverrides.preserveThinking ?? true} onChange={(e) => setSamplingOverrides((v) => ({ ...v, preserveThinking: e.target.checked }))} /> Preserve thinking</label>
+					</div>
+				</details>
 				<textarea
 					ref={taRef}
 					value={text}

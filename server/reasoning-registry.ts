@@ -40,6 +40,20 @@ const KNOWN_REASONING_SPECS: {
 	spec: ReasoningSpec;
 }[] = [
 	{
+		pattern: /(?:^|[-_/])gemma[-_]?4(?:[-_/]|$)/i,
+		spec: {
+			type: "effort",
+			thinkingLevelMap: STANDARD_EFFORT_MAP,
+			defaultLevel: "medium",
+			options: [
+				{ level: "off", label: "Off", value: "none" },
+				{ level: "low", label: "Low", value: "low" },
+				{ level: "medium", label: "Medium", value: "medium" },
+				{ level: "high", label: "High", value: "high" },
+			],
+		},
+	},
+	{
 		pattern: /(?:^|[-_/])claude[-_]3[-_.]7[-_]sonnet/i,
 		spec: {
 			type: "budget",

@@ -39935,3 +39935,41 @@
 		}
 	}
 }
+
+.sampling-controls {
+	border-top: 1px solid var(--border);
+	padding: 7px 10px 8px;
+	color: var(--text-dim);
+	font-size: 11px;
+}
+.sampling-controls summary {
+	width: fit-content;
+	cursor: pointer;
+	user-select: none;
+	color: var(--text-dim);
+}
+.sampling-controls-grid {
+	display: flex;
+	flex-wrap: wrap;
+	align-items: center;
+	gap: 7px 12px;
+	padding-top: 9px;
+}
+.sampling-controls-grid label {
+	display: inline-flex;
+	align-items: center;
+	gap: 5px;
+	white-space: nowrap;
+}
+.sampling-controls-grid input[type="number"],
+.sampling-controls-grid select {
+	width: 68px;
+	min-height: 26px;
+	border: 1px solid var(--border);
+	border-radius: 5px;
+	background: var(--bg-elev);
+	color: var(--text);
+	padding: 3px 5px;
+	font: inherit;
+}
+.sampling-controls-grid select { width: 84px; }

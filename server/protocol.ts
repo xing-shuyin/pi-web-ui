@@ -1268,6 +1268,13 @@ export interface CanvasGraphSummary {
 	updatedAt: number;
 }
 
+export interface SamplingOverrides {
+	profile?: "default" | "gemma4";
+	thinkingEnabled?: boolean;
+	thinkingEffort?: "low" | "medium" | "high";
+	preserveThinking?: boolean;
+}
+
 export type ClientMessage =
 	| { type: "hello"; clientId: string; protocolVersion?: number; locale?: string }
 	| { type: "canvas_list" }
@@ -1290,6 +1297,7 @@ export type ClientMessage =
 	| {
 			type: "prompt";
 			text: string;
+			samplingOverrides?: SamplingOverrides;
 			targetConversationId?: string;
 			queue?: boolean;
 			steer?: boolean;
