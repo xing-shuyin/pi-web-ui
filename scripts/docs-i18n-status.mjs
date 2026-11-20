@@ -6,9 +6,12 @@
  * `<name>.zh-TW.md`，三份文件顶部互相切换语言。本脚本检查这条约定是否被遵守，
  * 并显式列出「按政策不翻译」的文件，避免它们看起来像漏翻。
  *
+ * 政策：**中文原稿是唯一事实源，英文 / 繁体中文译本都是可选的尽力而为**（2026-11 起不再要求英文版）。
+ * 因此本脚本只做信息报告，`--check` 与不带参数都是**退出 0**：缺译本、译本落后都不会阻塞任何门禁。
+ *
  * 用法：
- *   node scripts/docs-i18n-status.mjs            # 报告（始终退出 0）
- *   node scripts/docs-i18n-status.mjs --check    # 有缺失或过期的对照页时退出 1
+ *   node scripts/docs-i18n-status.mjs            # 报告
+ *   node scripts/docs-i18n-status.mjs --check    # 同上（保留参数以兼容旧调用）
  */
 import { execSync } from "node:child_process";
 import { readFileSync, existsSync } from "node:fs";
@@ -74,7 +77,7 @@ for (const file of tracked) {
 	}
 	const en = variant(file, ".en.md");
 	const tw = variant(file, ".zh-TW.md");
-	// 英文译本必填且必须与原稿结构一致（门禁）。
+	// 英文译本同样是可选的尽力而为；这里只统计落后多少（不计入退出码）。
 	if (!existsSync(en)) {
 		missing.push({ file, lacks: [".en.md"] });
 		continue;
@@ -100,7 +103,7 @@ const htmlDocs = execSync('git ls-files "docs/*.html" "docs/**/*.html"', { encod
 	.filter(Boolean);
 
 console.log(`文档翻译覆盖度：`);
-console.log(`  中文原稿（英文译本齐全且结构一致）：${translated.length}`);
+console.log(`  中文原稿（共 ${translated.length} 份；译本均按可选处理）`);
 console.log(`  英文原稿（无需译本）：${englishOnly.length}`);
 console.log(
 	`  按政策不翻译：${excluded.length}（${excluded
@@ -117,7 +120,7 @@ if (missing.length) {
 	for (const m of missing) console.log(`  ${m.file}  缺少 ${m.lacks.join(" / ")}`);
 }
 if (stale.length) {
-	console.log(`\n英文译本结构落后于原稿（门禁）：${stale.length}`);
+	console.log(`\n英文译本结构落后于原稿（可选，仅报告）：${stale.length}`);
 	for (const s of stale) console.log(`  ${s.file}  -> ${s.variant}（${s.drift.join(", ")}）`);
 }
 if (optionalMissing.length || optionalStale.length) {
@@ -126,7 +129,9 @@ if (optionalMissing.length || optionalStale.length) {
 	for (const s of optionalStale) console.log(`  ${s.file}  结构落后（${s.drift.join(", ")}，可延后）`);
 }
 if (!missing.length && !stale.length) {
-	console.log("\n✓ 所有中文原稿都有结构一致的英文译本（繁体中文为可选）");
+	console.log("\n✓ 所有中文原稿都有结构一致的英文译本（形态仅供参照）");
 }
 
-if (checkMode && (missing.length || stale.length)) process.exit(1);
+if (checkMode) {
+	console.log("\n（信息报告：文档译本均为可选，缺失或落后不构成门禁失败）");
+}

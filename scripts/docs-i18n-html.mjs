@@ -146,6 +146,8 @@ if (MODE === "--tw") {
 		for (const line of cjkLeft) console.error("  " + line);
 	}
 	for (const line of glossed) console.log("  · " + line);
-	if (missingEn.length || cjkLeft.length) process.exit(1);
-	console.log(`✓ ${originals.length} 个 HTML 设计稿都有 zh-TW 与 en 版本；英文版可视区域无未翻译中文`);
+	// 文档英文版同 md 一样是**可选**的：缺变体 / 有中文残留只报告，不进退出码。
+	if (missingEn.length || cjkLeft.length)
+		console.log("\n（信息报告：HTML 设计稿的 en / zh-TW 变体均为可选，不构成门禁失败）");
+	else console.log(`✓ ${originals.length} 个 HTML 设计稿都有 zh-TW 与 en 版本；英文版可视区域无未翻译中文`);
 }
