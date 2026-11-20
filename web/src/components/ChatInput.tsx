@@ -86,23 +86,6 @@ const COMPOSER_MIN_H = 40;
 const COMPOSER_MAX_H = 320;
 const COMPOSER_H_KEY = "pi-web-ui:composer-height";
 
-const DEFAULT_SAMPLING_OVERRIDES: import("../types").SamplingOverrides = {
-	profile: "default",
-	thinkingEnabled: false,
-	thinkingEffort: "medium",
-	preserveThinking: true,
-};
-
-function normalizeSamplingOverrides(value: unknown): import("../types").SamplingOverrides {
-	const saved = value && typeof value === "object" && !Array.isArray(value) ? (value as Record<string, unknown>) : {};
-	return {
-		profile: saved.profile === "gemma4" ? "gemma4" : "default",
-		thinkingEnabled: typeof saved.thinkingEnabled === "boolean" ? saved.thinkingEnabled : false,
-		thinkingEffort: saved.thinkingEffort === "low" || saved.thinkingEffort === "high" ? saved.thinkingEffort : "medium",
-		preserveThinking: typeof saved.preserveThinking === "boolean" ? saved.preserveThinking : true,
-	};
-}
-
 function getComposerSafeMaxH(): number {
 	if (typeof window === "undefined") return COMPOSER_MAX_H;
 	return Math.max(160, Math.min(COMPOSER_MAX_H, Math.floor(window.innerHeight * 0.42)));
@@ -303,62 +286,6 @@ export const ChatInput = memo(function ChatInput({
 	const historyIndexRef = useRef(-1);
 	const draftRef = useRef("");
 	const [groupPlanOnly, setGroupPlanOnly] = useState(false);
-	const samplingStorageKey = conversationId ? `pi-web-ui:sampling:${conversationId}` : null;
-	const [samplingLoadedForKey, setSamplingLoadedForKey] = useState<string | null>(samplingStorageKey);
-	const [samplingOverrides, setSamplingOverrides] = useState<import("../types").SamplingOverrides>(() => {
-		try {
-			const key = conversationId ? `pi-web-ui:sampling:${conversationId}` : null;
-			const raw = key ? localStorage.getItem(key) : null;
-			return raw ? normalizeSamplingOverrides(JSON.parse(raw)) : { ...DEFAULT_SAMPLING_OVERRIDES };
-		} catch {
-			return { ...DEFAULT_SAMPLING_OVERRIDES };
-		}
-	});
-	useEffect(() => {
-		try {
-			const raw = samplingStorageKey ? localStorage.getItem(samplingStorageKey) : null;
-			const nextOverrides = raw ? normalizeSamplingOverrides(JSON.parse(raw)) : { ...DEFAULT_SAMPLING_OVERRIDES };
-			setSamplingOverrides(nextOverrides);
-		} catch {
-			setSamplingOverrides({ ...DEFAULT_SAMPLING_OVERRIDES });
-		}
-		setSamplingLoadedForKey(samplingStorageKey);
-	}, [samplingStorageKey]);
-	useEffect(() => {
-		if (!samplingStorageKey || samplingLoadedForKey !== samplingStorageKey) return;
-		try {
-			localStorage.setItem(samplingStorageKey, JSON.stringify(samplingOverrides));
-		} catch {}
-	}, [samplingStorageKey, samplingLoadedForKey, samplingOverrides]);
-
-	const toggleSamplingProfile = () => {
-		setSamplingOverrides((current) => {
-			if (current.profile === "gemma4") {
-				return { ...current, profile: "default", thinkingEnabled: false };
-			}
-			return {
-				...current,
-				profile: "gemma4",
-				thinkingEnabled: true,
-				thinkingEffort: "medium",
-				preserveThinking: true,
-			};
-		});
-	};
-	const cycleSamplingEffort = () => {
-		setSamplingOverrides((current) => {
-			const nextEffort =
-				current.thinkingEffort === "low" ? "medium" : current.thinkingEffort === "medium" ? "high" : "low";
-			return { ...current, thinkingEffort: nextEffort };
-		});
-	};
-	const updateThinkingEnabled = (thinkingEnabled: boolean) => {
-		setSamplingOverrides((current) => ({ ...current, thinkingEnabled }));
-	};
-	const updatePreserveThinking = (preserveThinking: boolean) => {
-		setSamplingOverrides((current) => ({ ...current, preserveThinking }));
-	};
-
 	const lastRecallSeqRef = useRef(0);
 	useEffect(() => {
 		if (!recallDrafts || recallDrafts.length === 0) return;
@@ -1342,7 +1269,6 @@ export const ChatInput = memo(function ChatInput({
 		if (
 			appSend({
 				type: "prompt",
-				samplingOverrides,
 				text: expandTemplateCommand(trimmed, commandTemplates),
 				queue,
 				attachments: buildPromptAttachments(),
@@ -1379,7 +1305,6 @@ export const ChatInput = memo(function ChatInput({
 				type: "prompt",
 				text: trimmed,
 				queue,
-				samplingOverrides,
 				attachments: buildPromptAttachments(),
 			})
 		) {
@@ -2072,33 +1997,6 @@ export const ChatInput = memo(function ChatInput({
 						e.target.value = "";
 					}}
 				/>
-				<details className="sampling-controls">
-					<summary>Generation settings</summary>
-					<div className="sampling-controls-grid">
-						<button type="button" className="sampling-controls-choice" onClick={toggleSamplingProfile}>
-							Profile: {samplingOverrides.profile === "gemma4" ? "Gemma 4" : "Default"}
-						</button>
-						<label className="sampling-thinking-toggle">
-							<input
-								type="checkbox"
-								checked={samplingOverrides.thinkingEnabled ?? false}
-								onChange={(e) => updateThinkingEnabled(e.target.checked)}
-							/>
-							Thinking
-						</label>
-						<button type="button" className="sampling-controls-choice" onClick={cycleSamplingEffort}>
-							Effort: {(samplingOverrides.thinkingEffort ?? "medium").toUpperCase()}
-						</button>
-						<label className="sampling-thinking-toggle">
-							<input
-								type="checkbox"
-								checked={samplingOverrides.preserveThinking ?? true}
-								onChange={(e) => updatePreserveThinking(e.target.checked)}
-							/>
-							Preserve thinking
-						</label>
-					</div>
-				</details>
 				<textarea
 					ref={taRef}
 					value={text}
