@@ -3562,6 +3562,7 @@
 	"thinkingFormat.deepseek": "DeepSeek 协议 (thinking: {type: enabled})",
 	"thinkingFormat.openrouter": "OpenRouter 协议 (reasoning: {effort})",
 	"thinkingFormat.zai": "智谱 GLM (zai thinking 对象)",
+	"thinkingFormat.chatTemplate": "自定义 chat_template_kwargs",
 	"thinkingPreset.claudeBudget.name": "⚡ Claude 3.7+ 预算型 (1K~64K)",
 	"thinkingPreset.claudeBudget.desc": "支持关/开，按 Token 精准预算（1024~64000 tokens）",
 	"thinkingPreset.openaiEffort.name": "⚡ OpenAI o 系列档位 (低/中/高)",
