@@ -78,6 +78,7 @@ describe("provider payload sampling overrides", () => {
 			min_p: 0.05,
 			top_p: 0.95,
 			top_k: 48,
+			profile: "gemma4",
 			thinkingEnabled: true,
 			thinkingEffort: "high",
 			preserveThinking: true,
