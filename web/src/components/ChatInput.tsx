@@ -88,14 +88,22 @@ const COMPOSER_H_KEY = "pi-web-ui:composer-height";
 
 const DEFAULT_SAMPLING_OVERRIDES: import("../types").SamplingOverrides = {
 	profile: "default",
-	temperature: 0.8,
-	min_p: 0.03,
-	top_p: 0.95,
-	top_k: 64,
 	thinkingEnabled: false,
 	thinkingEffort: "medium",
 	preserveThinking: true,
 };
+
+function normalizeSamplingOverrides(value: unknown): import("../types").SamplingOverrides {
+	const saved = value && typeof value === "object" && !Array.isArray(value)
+		? value as Record<string, unknown>
+		: {};
+	return {
+		profile: saved.profile === "gemma4" ? "gemma4" : "default",
+		thinkingEnabled: typeof saved.thinkingEnabled === "boolean" ? saved.thinkingEnabled : false,
+		thinkingEffort: saved.thinkingEffort === "low" || saved.thinkingEffort === "high" ? saved.thinkingEffort : "medium",
+		preserveThinking: typeof saved.preserveThinking === "boolean" ? saved.preserveThinking : true,
+	};
+}
 
 function getComposerSafeMaxH(): number {
 	if (typeof window === "undefined") return COMPOSER_MAX_H;
@@ -296,7 +304,7 @@ export const ChatInput = memo(function ChatInput({
 		try {
 			const key = conversationId ? `pi-web-ui:sampling:${conversationId}` : null;
 			const raw = key ? localStorage.getItem(key) : null;
-			return raw ? { ...DEFAULT_SAMPLING_OVERRIDES, ...JSON.parse(raw) } : { ...DEFAULT_SAMPLING_OVERRIDES };
+			return raw ? normalizeSamplingOverrides(JSON.parse(raw)) : { ...DEFAULT_SAMPLING_OVERRIDES };
 		} catch {
 			return { ...DEFAULT_SAMPLING_OVERRIDES };
 		}
@@ -304,9 +312,9 @@ export const ChatInput = memo(function ChatInput({
 	useEffect(() => {
 		try {
 			const raw = samplingStorageKey ? localStorage.getItem(samplingStorageKey) : null;
-			setSamplingOverrides(raw ? { ...DEFAULT_SAMPLING_OVERRIDES, ...JSON.parse(raw) } : { ...DEFAULT_SAMPLING_OVERRIDES });
+			setSamplingOverrides(raw ? normalizeSamplingOverrides(JSON.parse(raw)) : { ...DEFAULT_SAMPLING_OVERRIDES });
 		} catch {
-			setSamplingOverrides({ thinkingEnabled: false, thinkingEffort: "medium", preserveThinking: true });
+			setSamplingOverrides({ ...DEFAULT_SAMPLING_OVERRIDES });
 		}
 		setSamplingLoadedForKey(samplingStorageKey);
 	}, [samplingStorageKey]);
@@ -2023,11 +2031,7 @@ export const ChatInput = memo(function ChatInput({
 				<details className="sampling-controls">
 					<summary>Generation settings</summary>
 					<div className="sampling-controls-grid">
-						<label>Profile <select value={samplingOverrides.profile ?? "default"} onChange={(e) => setSamplingOverrides((v) => e.target.value === "gemma4" ? { ...v, profile: "gemma4", temperature: 0.8, min_p: 0.03, top_p: 0.95, top_k: 64, thinkingEnabled: true, thinkingEffort: "medium", preserveThinking: true } : { profile: "default", temperature: 0.8, min_p: 0.03, top_p: 0.95, top_k: 64, thinkingEnabled: false, thinkingEffort: "medium", preserveThinking: true })}><option value="default">Default</option><option value="gemma4">Gemma 4</option></select></label>
-						<label>Temperature <input type="number" min="0" max="2" step="0.05" value={samplingOverrides.temperature ?? 0.8} onChange={(e) => setSamplingOverrides((v) => ({ ...v, temperature: Number(e.target.value) }))} /></label>
-						<label>Min P <input type="number" min="0" max="1" step="0.01" value={samplingOverrides.min_p ?? 0.03} onChange={(e) => setSamplingOverrides((v) => ({ ...v, min_p: Number(e.target.value) }))} /></label>
-						<label>Top P <input type="number" min="0" max="1" step="0.01" value={samplingOverrides.top_p ?? 0.95} onChange={(e) => setSamplingOverrides((v) => ({ ...v, top_p: Number(e.target.value) }))} /></label>
-						<label>Top K <input type="number" min="0" max="200" step="1" value={samplingOverrides.top_k ?? 64} onChange={(e) => setSamplingOverrides((v) => ({ ...v, top_k: Number(e.target.value) }))} /></label>
+						<label>Profile <select value={samplingOverrides.profile ?? "default"} onChange={(e) => setSamplingOverrides((v) => e.target.value === "gemma4" ? { ...v, profile: "gemma4", thinkingEnabled: true, thinkingEffort: "medium", preserveThinking: true } : { profile: "default", thinkingEnabled: false, thinkingEffort: "medium", preserveThinking: true })}><option value="default">Default</option><option value="gemma4">Gemma 4</option></select></label>
 						<label className="sampling-thinking-toggle"><input type="checkbox" checked={samplingOverrides.thinkingEnabled ?? false} onChange={(e) => setSamplingOverrides((v) => ({ ...v, thinkingEnabled: e.target.checked }))} /> Thinking</label>
 						<label>Effort <select value={samplingOverrides.thinkingEffort ?? "medium"} onChange={(e) => setSamplingOverrides((v) => ({ ...v, thinkingEffort: e.target.value as "low" | "medium" | "high" }))}><option value="low">Low</option><option value="medium">Medium</option><option value="high">High</option></select></label>
 						<label className="sampling-thinking-toggle"><input type="checkbox" checked={samplingOverrides.preserveThinking ?? true} onChange={(e) => setSamplingOverrides((v) => ({ ...v, preserveThinking: e.target.checked }))} /> Preserve thinking</label>
