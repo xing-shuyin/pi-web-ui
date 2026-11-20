@@ -40,6 +40,20 @@ const KNOWN_REASONING_SPECS: {
 	spec: ReasoningSpec;
 }[] = [
 	{
+		pattern: /(?:^|[-_/])gemma[-_]?4(?:[-_/]|$)/i,
+		spec: {
+			type: "effort",
+			thinkingLevelMap: STANDARD_EFFORT_MAP,
+			defaultLevel: "medium",
+			options: [
+				{ level: "off", label: "关闭", value: "none" },
+				{ level: "low", label: "低强度 (low)", value: "low" },
+				{ level: "medium", label: "中强度 (medium)", value: "medium" },
+				{ level: "high", label: "高强度 (high)", value: "high" },
+			],
+		},
+	},
+	{
 		pattern: /(?:^|[-_/])claude[-_]3[-_.]7[-_]sonnet/i,
 		spec: {
 			type: "budget",

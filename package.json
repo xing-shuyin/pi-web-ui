@@ -152,7 +152,8 @@
 		"tar": "^7.5.22",
 		"undici": "^8.9.0",
 		"ws": "^8.21.3",
-		"yauzl": "^3.4.0"
+		"yauzl": "^3.4.0",
+		"@earendil-works/pi-tui": "1.5.2"
 	},
 	"optionalDependencies": {
 		"@crosscopy/clipboard": "0.3.6",
