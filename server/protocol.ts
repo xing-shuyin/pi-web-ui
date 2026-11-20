@@ -1268,6 +1268,16 @@ export interface CanvasGraphSummary {
 	updatedAt: number;
 }
 
+export interface SamplingOverrides {
+	temperature?: number;
+	min_p?: number;
+	top_p?: number;
+	top_k?: number;
+	thinkingEnabled?: boolean;
+	thinkingEffort?: "low" | "medium" | "high";
+	preserveThinking?: boolean;
+}
+
 export type ClientMessage =
 	| { type: "hello"; clientId: string; protocolVersion?: number; locale?: string }
 	| { type: "canvas_list" }
@@ -1290,6 +1300,7 @@ export type ClientMessage =
 	| {
 			type: "prompt";
 			text: string;
+			samplingOverrides?: SamplingOverrides;
 			targetConversationId?: string;
 			queue?: boolean;
 			steer?: boolean;
