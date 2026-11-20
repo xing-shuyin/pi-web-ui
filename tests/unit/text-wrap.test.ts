@@ -89,7 +89,6 @@ const SINGLE_LINE_IN_ROW = [
 	".attachcard-path",
 	".msg-editor-file-name",
 	".bashblock-command code",
-	".goalbar-lock-hint",
 	".goalbar-chip",
 	".goalbar-hint span",
 	".toolcall-timeout",
