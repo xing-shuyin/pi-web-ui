@@ -1,6 +1,7 @@
 import { tmpdir } from "node:os";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { GoalService, type GoalConversation, type GoalHost } from "../../server/goal-service.js";
+import { fakeWebUi } from "../helpers/fake-session.js";
 import { SettingsService, type SettingsHost, type SettingsRuntimeTarget } from "../../server/settings-service.js";
 import type { SubagentTemplatesStore } from "../../server/subagent-templates.js";
 
@@ -31,7 +32,8 @@ function goalSetup() {
 		clientId: "test",
 		agentDir: tmpdir(),
 		stateStore: { getGoalPrefs: () => null, saveGoalPrefs: vi.fn() },
-		webUi: { forConversation: vi.fn(() => ({})), cancelPendingDialogs: vi.fn() },
+		// Conversation-bound UI context is provided by the shared fake facade.
+		webUi: fakeWebUi(),
 		emit: vi.fn(),
 		flushSnapshot: vi.fn(),
 		isDisposed: () => false,
