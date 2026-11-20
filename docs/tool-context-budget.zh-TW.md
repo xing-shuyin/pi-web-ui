@@ -35,6 +35,30 @@ SDK 沒有自動壓縮指令及許可權前別名解析的公開介面，分別�
 
 驗證：`tests/unit/request-context.test.ts`、`context-evidence.test.ts`、`compaction-instructions.test.ts`、`evidence-tool-hooks.test.ts`、`context-integration.test.ts`。
 
+### 模型自主壓縮：正文由模型給，宿主不另發摘要請求
+
+`compact_context` 的 `summary` 是必填項，模型必須在本輪回覆裡自己寫出壓縮後的上下文正文（≥300 字元、≥2 個 `## ` 分節，不合格直接回傳錯誤要求重寫）。turn 結束後 `executePendingCompaction` 把正文交給 `installCompactionInstructions` 的 patch，`_runDefaultCompaction` 直接回傳 `{summary, firstKeptEntryId, tokensBefore, details}` 而**不呼叫任何模型**：邊界與大小來自 SDK 自己的 `prepareCompaction`（`preparation.firstKeptEntryId` / `tokensBefore` / `fileOps`），後續 `appendCompaction`、事件與投影重新整理仍是 SDK 原流程。因此這條路徑不產生額外請求、不消耗摘要輸入 token，也不受壓縮請求 `cacheRetention: "none"` 影響。
+
+正文只讀取一次（`AgentService.providedCompactionSummaries` 是會話物件的 WeakMap，`finally` 清空）：模型沒給正文時仍回落 SDK 摘要請求。`details` 與 `<read-files>` / `<modified-files>` 尾註由 `compactionFileDetails` / `formatFileDetails` 複刻（SDK 未匯出 `computeFileLists` / `formatFileOperations`），SDK 升級時需與 `core/compaction/utils.ts` 對齊。與獨立摘要相比質量風險集中在模型當前上下文壓力，故保留長度與分節門檻。
+
+驗證：`tests/unit/request-context.test.ts`、`context-evidence.test.ts`、`compaction-instructions.test.ts`（含 provided checkpoint 短路組）、`compact-context-tool.test.ts`、`evidence-tool-hooks.test.ts`、`context-integration.test.ts`。
+
+### 壓縮後可定址：`<context-recovery>` 控制代碼（`server/context-recovery.ts`）
+
+證據外置解決的是「大工具輸出還能讀回來」，解決不了另一半：**被折疊的對話本身沒有地址**。壓縮後模型看到的是摘要 + 保留尾巴，此前 `read-files` / `modified-files` 只記檔名，使用者原話與模型自己的推理不在任何控制代碼裡。
+
+`installCompactionInstructions` 在兩條壓縮路徑（SDK 摘要 / 模型自寫 checkpoint）產出的 summary 後面**確定性追加**一個 `<context-recovery>` 塊，內容全部從會話轉錄推導，不新增工具、不複製轉錄副本（JSONL 仍是唯一事實源）：
+
+1. **轉錄路徑**：`sessionManager.getSessionFile()` 的絕對路徑，並說明用法——`grep({pattern:"\\"id\\":\\"<entryId>\\"", path})` 拿行號，再 `read({path, offset:<line>, limit:1})`。單行超過 50KB 時 `read` 會整行拒絕，那類輸出恰好走 `context-evidence` 控制代碼。
+2. **折疊段使用者輪次逐字**：最多 3 條、每條壓到 300 字元（`MAX_VERBATIM_USER_TURNS` / `MAX_VERBATIM_CHARS`），帶 entry id 與行號——最貴的資訊不依賴任何查找。
+3. **更早的使用者輪次**：最多 12 條，只列 id + 行號（`MAX_INDEXED_USER_TURNS`）。
+
+約束與不變量：折疊範圍由 `firstKeptEntryId` 沿 `parentId` 鏈回溯（boundary 本身是保留項，不計入）；boundary 尚未落到會話裡（retain-none 壓縮寫入的是壓縮自身的 id）時回落到全部 entry，寧可多給地址也不藏歷史。行號由流式掃描轉錄得到，只快取每行頭 256 字元，單行幾 MB 也不會把記憶體打爆（實測一條 4.3MB 的 tool result 仍能正確給出 L 行號）；檔案超過 64MB 或不可讀時**降級為只給 id**，絕不拋錯——索引失敗不能讓壓縮失敗。摘要裡若有舊塊，追加前先 `stripRecoveryBlocks` 剝掉，保證**任何時刻只有一個** `<context-recovery>`；保留指令與 `compact_context` 指引都要求模型不要抄這兩個宿主生成的塊。證據索引仍然失敗即拒絕（`getEvidenceIndex` 的拒絕語義不變），因為靜默丟證據比壓縮失敗更糟。
+
+代價與取捨：每次壓縮約 1k–2k 字元（≈300–700 tokens），常態路徑零開銷；塊裡只記**使用者輪次**的逐字文字（模型自己的結論由摘要承載），並把會話轉錄的絕對路徑交給模型——這與 evidence 目錄同一信任邊界（同一會話目錄、同一讀許可權），換來的是壓縮後仍能定點回讀原文。
+
+驗證：`tests/unit/context-recovery.test.ts`（控制代碼構造、行號對映、降級、單塊不變量、與 `installCompactionInstructions` 的整合）。
+
 ## 1. 一塊開銷有多大
 
 以 30 個目錄/核心工具為例（設定頁「檢視工具 schema」能看到即時數字）：

@@ -35,6 +35,30 @@ Custom instructions for soft-cap automatic compaction can be passed through the 
 
 Verification: `tests/unit/request-context.test.ts`, `context-evidence.test.ts`, `compaction-instructions.test.ts`, `evidence-tool-hooks.test.ts`, `context-integration.test.ts`.
 
+### Model-authored compaction: the model writes the body, the host issues no separate summary request
+
+`compact_context`'s `summary` is required: the model must write the compacted context body itself in this turn (≥300 characters, at least two `## ` sections, otherwise the call returns an error and asks for a rewrite). Once the turn ends, `executePendingCompaction` hands the body to the patch installed by `installCompactionInstructions`, and `_runDefaultCompaction` returns `{summary, firstKeptEntryId, tokensBefore, details}` **without calling any model**: the boundary and sizes come from the SDK's own `prepareCompaction` (`preparation.firstKeptEntryId` / `tokensBefore` / `fileOps`), while `appendCompaction`, events and projection refreshes stay on the SDK's original path. This path therefore issues no extra request, spends no tokens on summary input, and is unaffected by the compaction request's `cacheRetention: "none"`.
+
+The body is read exactly once (`AgentService.providedCompactionSummaries` is a per-conversation-object WeakMap cleared in `finally`); when the model supplies nothing, the SDK summary request still runs as a fallback. `details` and the `<read-files>` / `<modified-files>` footer are reproduced by `compactionFileDetails` / `formatFileDetails` (the SDK does not export `computeFileLists` / `formatFileOperations`), so an SDK upgrade has to stay aligned with `core/compaction/utils.ts`. Compared with a standalone summary, the quality risk concentrates on the model's current context pressure, which is why the length and section gates stay.
+
+Verification: `tests/unit/request-context.test.ts`, `context-evidence.test.ts`, `compaction-instructions.test.ts` (including the provided-checkpoint short-circuit group), `compact-context-tool.test.ts`, `evidence-tool-hooks.test.ts`, `context-integration.test.ts`.
+
+### Addressable after compaction: the `<context-recovery>` handle (`server/context-recovery.ts`)
+
+Externalised evidence answers "large tool output can still be read back", but not the other half: **folded conversation turns themselves have no address**. After compaction the model sees a summary plus the retained tail, and `read-files` / `modified-files` only record file names — what the user actually said and what the model itself reasoned live in no handle at all.
+
+`installCompactionInstructions` **deterministically appends** a `<context-recovery>` block after the summary produced by either compaction path (SDK summary / model-authored checkpoint). Everything in it is derived from the conversation transcript; it adds no tool and copies no transcript (the JSONL stays the single source of truth):
+
+1. **Transcript path**: the absolute path from `sessionManager.getSessionFile()`, plus how to use it — `grep({pattern:"\\"id\\":\\"<entryId>\\"", path})` for the line number, then `read({path, offset:<line>, limit:1})`. A single line above 50KB is rejected wholesale by `read`, and that kind of output belongs to the `context-evidence` handle instead.
+2. **Folded user turns, verbatim**: at most 3, each truncated to 300 characters (`MAX_VERBATIM_USER_TURNS` / `MAX_VERBATIM_CHARS`), with entry id and line number — the most expensive information needs no lookup.
+3. **Earlier user turns**: at most 12, ids and line numbers only (`MAX_INDEXED_USER_TURNS`).
+
+Constraints and invariants: the folded range is walked back along the `parentId` chain from `firstKeptEntryId` (the boundary itself is a retained entry and does not count); when the boundary has not landed in the session yet (retain-none compaction writes the compaction's own id) it falls back to every entry — better to hand out extra addresses than to hide history. Line numbers come from a streaming scan of the transcript that caches only each line's first 256 characters, so a multi-megabyte single line cannot blow up memory (a 4.3MB tool result still resolves to the right `L` line number); a file above 64MB or one that cannot be read **degrades to ids only** and never throws — an index failure must not fail compaction. If the summary already carries an old block, `stripRecoveryBlocks` strips it before appending, guaranteeing **exactly one** `<context-recovery>` at any moment; the retained instructions and the `compact_context` guidance both tell the model not to copy either host-generated block. Evidence indexing still fails closed (the rejection semantics of `getEvidenceIndex` are unchanged): silently dropping evidence is worse than failing the compaction.
+
+Cost and trade-off: about 1k–2k characters (≈300–700 tokens) per compaction with zero overhead on the normal path; the block carries only **user turns** verbatim (the model's own conclusions are the summary's job) and hands the model the transcript's absolute path — the same trust boundary as the evidence directory (same conversation directory, same read permission), in exchange for being able to read the original text back after compaction.
+
+Verification: `tests/unit/context-recovery.test.ts` (handle construction, line-number mapping, degradation, the single-block invariant, and the integration with `installCompactionInstructions`).
+
 ## 1. How big the overhead is
 
 Taking 30 catalog/core tools as an example (the settings page's "View tool schema" shows the live numbers):

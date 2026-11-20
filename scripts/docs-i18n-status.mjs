@@ -26,7 +26,14 @@ const ENGLISH_SOURCES = [
 	/^native\/desktop-codec\/README\.md$/,
 	/^bin\/desktop-codec\/win32-x64\/README\.md$/,
 	/^plugins\/telegram\/README\.md$/,
+	/^plugins\/web-capture\/README\.md$/,
 	/^docs\/device-file-sync\.md$/,
+	// 设计稿 / 规划书 / 提案：从第一稿起就是英文原稿（正文无中文），不设中文或繁中译本。
+	/^docs\/architecture-desktop-runtime\.md$/,
+	/^docs\/architecture-desktop-update\.md$/,
+	/^docs\/architecture-system-integration\.md$/,
+	/^docs\/planning\/.+\.md$/,
+	/^docs\/proposals\/[^/]+\.md$/,
 ];
 
 const variant = (file, ext) => file.replace(/\.md$/, ext);
