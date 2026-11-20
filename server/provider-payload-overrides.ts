@@ -8,8 +8,9 @@ export function setConversationSamplingOverrides(conversationId: string, overrid
 	conversationSamplingOverrides.set(conversationId, { ...overrides });
 }
 
-export function getConversationSamplingOverrides(conversationId?: string): SamplingOverrides | undefined {
-	return conversationId ? conversationSamplingOverrides.get(conversationId) : undefined;
+export function getConversationSamplingOverrides(conversationId?: string, parentConversationId?: string): SamplingOverrides | undefined {
+	return (conversationId ? conversationSamplingOverrides.get(conversationId) : undefined)
+		?? (parentConversationId ? conversationSamplingOverrides.get(parentConversationId) : undefined);
 }
 
 type ProviderModelLike = {
@@ -26,7 +27,7 @@ export function mergeModelSamplingParamsIntoProviderPayload(
 	model: ProviderModelLike,
 	overrides?: SamplingOverrides,
 ): unknown {
-	if (model?.api !== "openai-completions" || !isRecord(payload) || !Array.isArray(payload.messages)) {
+	if (!isRecord(payload)) {
 		return payload;
 	}
 
@@ -36,7 +37,7 @@ export function mergeModelSamplingParamsIntoProviderPayload(
 	if (typeof overrides?.min_p === "number") overrideParams.min_p = overrides.min_p;
 	if (typeof overrides?.top_p === "number") overrideParams.top_p = overrides.top_p;
 	if (typeof overrides?.top_k === "number") overrideParams.top_k = overrides.top_k;
-	if (overrides?.thinkingEnabled !== undefined) {
+	if (model?.api === "openai-completions" && overrides?.thinkingEnabled !== undefined) {
 		overrideParams.chat_template_kwargs = {
 			enable_thinking: overrides.thinkingEnabled,
 			...(overrides.thinkingEnabled && overrides.thinkingEffort ? { reasoning_effort: overrides.thinkingEffort } : {}),
