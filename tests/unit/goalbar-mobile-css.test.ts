@@ -108,31 +108,41 @@ describe("目标条窄屏排版", () => {
 		}
 	});
 
-	it("偏好行里的模型下拉整块不收缩（放不下就换行，不压成空盒子）", () => {
-		expect(bodyOf(".goalbar-opts > .dropdown")).toMatch(/flex:\s*0 0 auto/);
-		expect(bodyOf(".goalbar-opts > .dropdown > .chip")).toMatch(/text-align:\s*left/);
+	it("单行里模型 chip 不收缩（放不下就换行，不压成空盒子）", () => {
 		expect(bodyOf(".goalbar-opt b")).toMatch(/text-overflow:\s*ellipsis/);
 		expect(bodyOf(".goalbar-opt-label")).toMatch(/flex:\s*0 0 auto/);
 	});
 
-	it("手机：输入框独占一行 + 按钮行平分宽度", () => {
-		expect(bodyOf(".goalbar-input", true)).toMatch(/flex:\s*1 1 calc\(/);
-		expect(bodyOf(".goalbar-row > .goalbar-btn", true)).toMatch(/flex:\s*1 1 auto/);
+	it("单行结构：标题左、分隔线、问号在最右", () => {
+		expect(bodyOf(".goalbar-lead")).toMatch(/margin-right:\s*auto/);
+		expect(bodyOf(".goalbar-lead")).toMatch(/white-space:\s*nowrap/);
+		expect(bodyOf(".goalbar-sep")).toMatch(/width:\s*1px/);
 	});
 
-	it("手机：两个模型下拉 + 最大轮数并排一行（三只同款方框，行宽填满）", () => {
-		expect(bodyOf(".goalbar-opts > .dropdown", true)).toMatch(/flex:\s*1 1 0;/);
+	it("轮数是紧凑 chip（数值 + 单位，输入框不再单独占位）", () => {
+		const round = bodyOf(".goalbar-round");
+		expect(round).toMatch(/border:\s*1px solid var\(--border\)/);
+		expect(round).toMatch(/border-radius:\s*999px/);
+		expect(round).toMatch(/height:\s*24px/);
+		expect(bodyOf(".goalbar-round input")).toMatch(/border:\s*none/);
+		expect(bodyOf(".goalbar-round > span")).toMatch(/color:\s*var\(--text-faint\)/);
+	});
+
+	it("手机：标题独占首行 + 动作按钮平分宽度", () => {
+		expect(bodyOf(".goalbar-lead", true)).toMatch(/flex:\s*1 1 100%/);
+		expect(bodyOf(".goalbar-row > .goalbar-btn", true)).toMatch(/flex:\s*1 1 auto/);
+		expect(bodyOf(".goalbar-lead", true)).toMatch(/font-size:\s*12\.5px/);
+	});
+
+	it("手机：配置 chip 并排一行（模型/轮数同款方框，分隔线隐藏）", () => {
+		expect(bodyOf(".goalbar-sep", true)).toMatch(/display:\s*none/);
+		expect(bodyOf(".goalbar-row > .dropdown", true)).toMatch(/flex:\s*1 1 0/);
 		expect(bodyOf(".goalbar-opt", true)).toMatch(/align-items:\s*stretch/);
 		const round = bodyOf(".goalbar-round", true);
 		expect(round).toMatch(/flex:\s*0 0 \d+px/);
 		expect(round).toMatch(/flex-direction:\s*column/);
-		expect(round).toMatch(/border:\s*1px solid var\(--border\)/);
-		expect(round).toMatch(/border-radius:/);
-		expect(bodyOf(".goalbar-round input", true)).toMatch(/border:\s*none/);
 		expect(round).toMatch(/height:\s*33px/);
-		expect(bodyOf(".goalbar-opts > .dropdown > .chip", true)).toMatch(/min-height:\s*33px/);
-		expect(bodyOf(".goalbar-opt", true)).toMatch(/padding:\s*0/);
-		expect(bodyOf(".goalbar-lock-hint", true)).toMatch(/flex:\s*1 1 100%/);
+		expect(bodyOf(".goalbar-row > .dropdown > .chip", true)).toMatch(/min-height:\s*33px/);
 	});
 
 	it("手机：活动态分行 + order（✕ 留在标题行，不被 chip 一起带下去）", () => {

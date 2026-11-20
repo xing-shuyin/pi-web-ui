@@ -234,6 +234,13 @@ export const ChatInput = memo(function ChatInput({
 	const goalPlan = useGoalPlan();
 	const goalActive = Boolean(goal?.goal) || Boolean(goal?.wizard?.active);
 	const goalMode = !groupDevices && goalCompose && !goalActive;
+	// 目标已在跑 / 换对话时退出撰写态，否则占位符会一直挂着「输入要达成的目标…」
+	useEffect(() => {
+		if (goalActive) setGoalCompose(false);
+	}, [goalActive]);
+	useEffect(() => {
+		setGoalCompose(false);
+	}, [conversationId]);
 	const { locale } = useI18n();
 	const effectiveSendKey = useEffectiveSendKey(IS_TOUCH);
 	const isModEnter = effectiveSendKey === "mod-enter";

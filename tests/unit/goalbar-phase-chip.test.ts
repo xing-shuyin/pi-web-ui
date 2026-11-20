@@ -177,3 +177,40 @@ describe("目标条历史下拉", () => {
 		expect(isGoalCompose()).toBe(true);
 	});
 });
+
+describe("目标条收起 = 退出撰写态", () => {
+	function mountEdit() {
+		window.localStorage.setItem("pi-web-ui:lang", "zh");
+		const container = document.createElement("div");
+		document.body.appendChild(container);
+		root = createRoot(container);
+		act(() => {
+			root!.render(
+				createElement(
+					LanguageProvider,
+					null,
+					createElement(GoalBar, {
+						goal: { conversationId: "c-1", goal: null, maxRounds: 0, locked: true, wizard: { active: false } },
+						models: [],
+						modelsLoading: false,
+						activeConversationId: "c-1",
+					} as unknown as Parameters<typeof GoalBar>[0]),
+				),
+			);
+		});
+		return container;
+	}
+
+	it("点药丸进入撰写 → 点收起退出（占位符不能一直挂着）", () => {
+		const container = mountEdit();
+		act(() => (container.querySelector(".goalbar-hint") as HTMLElement).click());
+		expect(isGoalCompose()).toBe(true);
+		const collapse = [...container.querySelectorAll(".goalbar-icon-btn")].find((b) =>
+			(b.getAttribute("aria-label") ?? "").includes("收起"),
+		) as HTMLElement;
+		expect(collapse).toBeTruthy();
+		act(() => collapse.click());
+		expect(isGoalCompose()).toBe(false);
+		expect(container.querySelector(".goalbar-collapsed")).toBeTruthy();
+	});
+});

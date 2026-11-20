@@ -1,5 +1,5 @@
 import { Fragment, memo, useEffect, useState, type ReactNode } from "react";
-import { FiTarget, FiLock, FiUnlock, FiX, FiChevronUp, FiArrowUpRight, FiSquare } from "react-icons/fi";
+import { FiTarget, FiLock, FiUnlock, FiX, FiChevronUp, FiArrowUpRight, FiSquare, FiClock } from "react-icons/fi";
 import type { GoalStatus, ModelInfo } from "../types";
 import { isZhLocale, useT, useI18n } from "../i18n";
 import { appSend, useIsDsh, useEngineCapabilities } from "../app-globals";
@@ -13,6 +13,7 @@ import {
 	useGoalRefine,
 } from "../goal-compose";
 import { Dropdown, DropdownItem } from "./Dropdown";
+import { TipButton } from "./HintTip";
 import { UniversalModelPicker, matchesModelId } from "./UniversalModelPicker";
 import type { UiSlotEntry } from "../ui-slots";
 import { renderMergedToolbar } from "../slot-toolbar";
@@ -92,7 +93,7 @@ export const GoalBar = memo(function GoalBar({
 	}, [models.length]);
 
 	const reviewModelName = (): string => {
-		if (!reviewModel) return t("goalBarUseMainModel");
+		if (!reviewModel) return t("goalBarMainModelShort");
 		return models.find((m) => m.id === reviewModel)?.name ?? reviewModel;
 	};
 	const enterCompose = () => {
@@ -132,10 +133,9 @@ export const GoalBar = memo(function GoalBar({
 			</button>
 		),
 		"host:goal-set": (
-			<button
-				type="button"
-				className={`goalbar-btn${goalCompose ? " mode active" : ""}`}
-				title={t("goalComposeHint")}
+			<TipButton
+				tip={t("goalBarHelp")}
+				className={`goalbar-btn mode${goalCompose ? " active" : ""}`}
 				aria-pressed={goalCompose}
 				onClick={() => {
 					if (goalCompose) setGoalCompose(false);
@@ -143,37 +143,33 @@ export const GoalBar = memo(function GoalBar({
 				}}
 			>
 				{goalLabel("host:goal-set", t("goalComposeEnter"))}
-			</button>
+			</TipButton>
 		),
 		"host:goal-wizard": (
-			<button
-				type="button"
-				className={`goalbar-btn action wizard${goalRefine ? " mode active" : ""}`}
-				title={t("goalWizardTip")}
+			<TipButton
+				tip={t("goalWizardTip")}
+				className={`goalbar-btn action wizard${goalRefine ? " active" : ""}`}
 				aria-pressed={goalRefine}
 				onClick={() => setGoalRefine(!goalRefine)}
 			>
 				{goalLabel("host:goal-wizard", t("goalWizardBtn"))}
-				{goalRefine ? " ✓" : ""}
-			</button>
+			</TipButton>
 		),
 		"host:goal-plan": !capabilities.planMode ? null : (
-			<button
-				type="button"
-				className={`goalbar-btn action plan${goalPlan ? " mode active" : ""}`}
-				title={t("planActionTip")}
+			<TipButton
+				tip={t("planActionTip")}
+				className={`goalbar-btn action plan${goalPlan ? " active" : ""}`}
 				aria-pressed={goalPlan}
 				onClick={() => setGoalPlan(!goalPlan)}
 			>
 				{goalLabel("host:goal-plan", t("planActionBtn"))}
-				{goalPlan ? " ✓" : ""}
-			</button>
+			</TipButton>
 		),
 		"host:goal-lock": (
-			<button
-				type="button"
-				className="goalbar-icon-btn"
-				title={locked ? t("goalBarLocked") : t("goalBarUnlocked")}
+			<TipButton
+				tip={locked ? t("goalBarLocked") : t("goalBarUnlocked")}
+				className={`goalbar-icon-btn${locked ? " on" : ""}`}
+				aria-pressed={locked}
 				onClick={() =>
 					setLocked((v) => {
 						appSend({ type: "set_goal_prefs", locked: !v });
@@ -182,12 +178,20 @@ export const GoalBar = memo(function GoalBar({
 				}
 			>
 				{locked ? <FiLock /> : <FiUnlock />}
-			</button>
+			</TipButton>
 		),
 		"host:goal-collapse": (
-			<button type="button" className="goalbar-icon-btn" title={t("goalBarClear")} onClick={() => setCollapsed(true)}>
+			<TipButton
+				tip={t("goalBarCollapse")}
+				className="goalbar-icon-btn"
+				onClick={() => {
+					setCollapsed(true);
+					// 收起面板 = 不再写目标，否则输入框会一直挂着「输入要达成的目标…」
+					setGoalCompose(false);
+				}}
+			>
 				<FiChevronUp />
-			</button>
+			</TipButton>
 		),
 		"host:goal-model": isDsh ? (
 			<p className="goalbar-dsh-note">{t("dshNoReviewModel")}</p>
@@ -195,7 +199,7 @@ export const GoalBar = memo(function GoalBar({
 			<Dropdown
 				trigger={
 					<span className="goalbar-opt" title={`${t("goalBarReviewModel")}: ${reviewModelName()}`}>
-						<span className="goalbar-opt-label">{`${goalLabel("host:goal-model", t("goalBarReviewModel"))}:`}</span>
+						<span className="goalbar-opt-label">{goalLabel("host:goal-model", t("goalBarReviewShort"))}</span>
 						<b>{reviewModelName()}</b>
 					</span>
 				}
@@ -239,7 +243,6 @@ export const GoalBar = memo(function GoalBar({
 		),
 		"host:goal-rounds": (
 			<label className="goalbar-round" title={t("goalBarMaxRoundsTip")}>
-				<span>{goalLabel("host:goal-rounds", t("goalBarMaxRounds"))}</span>
 				<input
 					type="number"
 					min={0}
@@ -262,6 +265,7 @@ export const GoalBar = memo(function GoalBar({
 						}
 					}}
 				/>
+				<span>{goalLabel("host:goal-rounds", t("goalBarRoundsUnit"))}</span>
 			</label>
 		),
 	};
@@ -393,39 +397,26 @@ export const GoalBar = memo(function GoalBar({
 	return (
 		<div className="goalbar">
 			<div className="goalbar-row">
-				<span className="goalbar-icon">
+				<span className="goalbar-lead">
 					<FiTarget />
-				</span>
-				<button
-					type="button"
-					className="goalbar-icon-btn"
-					title={t("goalBarHelp")}
-					aria-label={t("goalBarHelp")}
-					onClick={() => focusComposer()}
-				>
-					?
-				</button>
-				<span className="goalbar-lock-hint" title={t("goalBarHelp")}>
-					{goalCompose ? t("goalComposeHint") : t("goalBarHelp")}
+					<span>{goalLabel("host:goal-pill", t("goalBarTitle"))}</span>
 				</span>
 				{renderMergedToolbar(
 					goalZone(["host:goal-set", "host:goal-wizard", "host:goal-plan", "host:goal-lock", "host:goal-collapse"]),
 					goalHostNodes,
 					onUiAction,
 				)}
-			</div>
-			<div className="goalbar-opts">
+				<span className="goalbar-sep" />
 				{goalZone(["host:goal-model", "host:goal-rounds"])
 					.filter((e) => e.source === "host")
 					.map((e) => (
 						<Fragment key={e.id}>{goalHostNodes[e.id]}</Fragment>
 					))}
-
 				{goal.history && goal.history.length > 0 && (
 					<Dropdown
 						trigger={
-							<span className="goalbar-opt" title={t("goalHistory")}>
-								<span className="goalbar-opt-label">{`${t("goalHistory")}:`}</span>
+							<span className="goalbar-opt">
+								<span className="goalbar-opt-label">{t("goalHistory")}</span>
 								<b>{goal.history.length}</b>
 							</span>
 						}
@@ -459,8 +450,10 @@ export const GoalBar = memo(function GoalBar({
 						))}
 					</Dropdown>
 				)}
-				<span className="goalbar-lock-hint">{locked ? t("goalBarLocked") : t("goalBarUnlocked")}</span>
 				{staleBackend && <span className="goalbar-stale">{t("goalBarStaleBackend")}</span>}
+				<TipButton tip={t("goalBarHelp")} className="goalbar-icon-btn" onClick={() => focusComposer()}>
+					?
+				</TipButton>
 			</div>
 		</div>
 	);
