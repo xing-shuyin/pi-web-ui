@@ -280,6 +280,7 @@ export const ChatInput = memo(function ChatInput({
 	const draftRef = useRef("");
 	const [groupPlanOnly, setGroupPlanOnly] = useState(false);
 	const samplingStorageKey = conversationId ? `pi-web-ui:sampling:${conversationId}` : null;
+	const [samplingLoadedForKey, setSamplingLoadedForKey] = useState<string | null>(samplingStorageKey);
 	const [samplingOverrides, setSamplingOverrides] = useState<import("../types").SamplingOverrides>(() => {
 		try {
 			const key = conversationId ? `pi-web-ui:sampling:${conversationId}` : null;
@@ -296,11 +297,12 @@ export const ChatInput = memo(function ChatInput({
 		} catch {
 			setSamplingOverrides({ thinkingEnabled: false, thinkingEffort: "medium", preserveThinking: true });
 		}
+		setSamplingLoadedForKey(samplingStorageKey);
 	}, [samplingStorageKey]);
 	useEffect(() => {
-		if (!samplingStorageKey) return;
+		if (!samplingStorageKey || samplingLoadedForKey !== samplingStorageKey) return;
 		try { localStorage.setItem(samplingStorageKey, JSON.stringify(samplingOverrides)); } catch {}
-	}, [samplingStorageKey, samplingOverrides]);
+	}, [samplingStorageKey, samplingLoadedForKey, samplingOverrides]);
 
 	const lastRecallSeqRef = useRef(0);
 	useEffect(() => {
