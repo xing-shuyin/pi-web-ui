@@ -279,6 +279,28 @@ export const ChatInput = memo(function ChatInput({
 	const historyIndexRef = useRef(-1);
 	const draftRef = useRef("");
 	const [groupPlanOnly, setGroupPlanOnly] = useState(false);
+	const samplingStorageKey = conversationId ? `pi-web-ui:sampling:${conversationId}` : null;
+	const [samplingOverrides, setSamplingOverrides] = useState<import("../types").SamplingOverrides>(() => {
+		try {
+			const key = conversationId ? `pi-web-ui:sampling:${conversationId}` : null;
+			const raw = key ? localStorage.getItem(key) : null;
+			return raw ? JSON.parse(raw) as import("../types").SamplingOverrides : { thinkingEnabled: false, thinkingEffort: "medium", preserveThinking: true };
+		} catch {
+			return { thinkingEnabled: false, thinkingEffort: "medium", preserveThinking: true };
+		}
+	});
+	useEffect(() => {
+		try {
+			const raw = samplingStorageKey ? localStorage.getItem(samplingStorageKey) : null;
+			setSamplingOverrides(raw ? JSON.parse(raw) as import("../types").SamplingOverrides : { thinkingEnabled: false, thinkingEffort: "medium", preserveThinking: true });
+		} catch {
+			setSamplingOverrides({ thinkingEnabled: false, thinkingEffort: "medium", preserveThinking: true });
+		}
+	}, [samplingStorageKey]);
+	useEffect(() => {
+		if (!samplingStorageKey) return;
+		try { localStorage.setItem(samplingStorageKey, JSON.stringify(samplingOverrides)); } catch {}
+	}, [samplingStorageKey, samplingOverrides]);
 
 	const lastRecallSeqRef = useRef(0);
 	useEffect(() => {
@@ -1263,6 +1285,7 @@ export const ChatInput = memo(function ChatInput({
 		if (
 			appSend({
 				type: "prompt",
+				samplingOverrides,
 				text: expandTemplateCommand(trimmed, commandTemplates),
 				queue,
 				attachments: buildPromptAttachments(),
@@ -1294,7 +1317,7 @@ export const ChatInput = memo(function ChatInput({
 			onNotice("warning", t("sessionInitializingNotice"));
 			return;
 		}
-		if (appSend({ type: "prompt", text: trimmed, queue, attachments: buildPromptAttachments() })) {
+		if (appSend({ type: "prompt", text: trimmed, queue, samplingOverrides, attachments: buildPromptAttachments() })) {
 			if (trimmed) pushPromptHistory(trimmed);
 			historyIndexRef.current = -1;
 			draftRef.current = "";
@@ -1984,6 +2007,18 @@ export const ChatInput = memo(function ChatInput({
 						e.target.value = "";
 					}}
 				/>
+				<details className="sampling-controls">
+					<summary>Generation settings</summary>
+					<div className="sampling-controls-grid">
+						<label>Temperature <input type="number" min="0" max="2" step="0.05" value={samplingOverrides.temperature ?? 0.8} onChange={(e) => setSamplingOverrides((v) => ({ ...v, temperature: Number(e.target.value) }))} /></label>
+						<label>Min P <input type="number" min="0" max="1" step="0.01" value={samplingOverrides.min_p ?? 0.03} onChange={(e) => setSamplingOverrides((v) => ({ ...v, min_p: Number(e.target.value) }))} /></label>
+						<label>Top P <input type="number" min="0" max="1" step="0.01" value={samplingOverrides.top_p ?? 0.95} onChange={(e) => setSamplingOverrides((v) => ({ ...v, top_p: Number(e.target.value) }))} /></label>
+						<label>Top K <input type="number" min="0" max="200" step="1" value={samplingOverrides.top_k ?? 64} onChange={(e) => setSamplingOverrides((v) => ({ ...v, top_k: Number(e.target.value) }))} /></label>
+						<label className="sampling-thinking-toggle"><input type="checkbox" checked={samplingOverrides.thinkingEnabled ?? false} onChange={(e) => setSamplingOverrides((v) => ({ ...v, thinkingEnabled: e.target.checked }))} /> Thinking</label>
+						<label>Effort <select value={samplingOverrides.thinkingEffort ?? "medium"} onChange={(e) => setSamplingOverrides((v) => ({ ...v, thinkingEffort: e.target.value as "low" | "medium" | "high" }))}><option value="low">Low</option><option value="medium">Medium</option><option value="high">High</option></select></label>
+						<label className="sampling-thinking-toggle"><input type="checkbox" checked={samplingOverrides.preserveThinking ?? true} onChange={(e) => setSamplingOverrides((v) => ({ ...v, preserveThinking: e.target.checked }))} /> Preserve thinking</label>
+					</div>
+				</details>
 				<textarea
 					ref={taRef}
 					value={text}
