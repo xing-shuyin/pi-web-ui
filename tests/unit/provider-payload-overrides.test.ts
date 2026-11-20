@@ -97,6 +97,27 @@ describe("provider payload sampling overrides", () => {
 		});
 	});
 
+
+	it("detects Gemma 4 from the provider model and explicitly sends thinking off", () => {
+		const result = mergeModelSamplingParamsIntoProviderPayload({ model: "gemma-4", messages: [] }, {
+			id: "gemma-4-it",
+			api: "openai-completions",
+		}, {
+			thinkingEnabled: false,
+			thinkingEffort: "medium",
+			preserveThinking: true,
+		});
+		expect(result).toEqual({
+			model: "gemma-4",
+			messages: [],
+			chat_template_kwargs: {
+				enable_thinking: false,
+				reasoning_effort: "medium",
+				preserve_thinking: true,
+			},
+		});
+	});
+
 	it("applies standard sampling overrides to non-OpenAI payloads without chat-template fields", () => {
 		const payload = { input: "Hello" };
 		const result = mergeModelSamplingParamsIntoProviderPayload(payload, { api: "anthropic-messages" }, {
