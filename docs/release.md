@@ -113,7 +113,8 @@ npm run release:local -- vX.Y.Z --portable     # 额外出便携版（内置 Git
 #    它需要可选的 MOBILE_KEYSTORE_BASE64 等 secrets 才能发出可升级的包。
 
 # 9) 验证
-npm run release:check -- vX.Y.Z  # Release 资产是否齐全：桌面 3 平台 + 扩展 + 手机 APK + SHA256SUMS
+npm run release:check -- vX.Y.Z  # npm 版本是否已发 + Release 资产是否齐全（桌面 3 平台 + 扩展 + 手机 APK + SHA256SUMS）
+npm run release:check:npm       # 只核 npm：registry 上有没有 package.json 当前版本、latest 是否指着它
 npm view pi-web-ui version        # 应显示新版本（registry 有缓存延迟属正常）
 curl -s https://registry.npmjs.org/pi-web-ui/latest | jq .version
 git ls-remote --tags origin       # 应能看到 vX.Y.Z
@@ -122,6 +123,10 @@ git ls-remote --tags origin       # 应能看到 vX.Y.Z
 ## 注意事项
 
 - 版本号**必须**高于 npm registry 上已有的（用 `npm view pi-web-ui version` 查当前值）。
+- **发完 npm 必须看得见（issue #949）**：第 8 步是整条流程里唯一必须本地带 OTP 手动跑的步骤，tag 推送会自动出 Release / 桌面包 / 扩展，手机包也有 `release:check` 盯着 —— 唯独 npm 落后时全绿，用户 `npm i -g` 拿到几周前的旧包（#949 报的就是这个：registry 停在 0.120.0，仓库已经 0.121.3）。所以：
+  - `npm run release:check` 现在**先核 npm**（`scripts/check-npm-version.mjs`，纯读 registry，不需要登录态），缺版本 / `latest` 指向旧版 / registry 比本地新都直接 exit 1；只差 npm 时先跑 `npm run release:check:npm` 就能确认。
+  - `.github/workflows/npm-drift.yml` 每天 03:17 UTC 跑一次同样的校验，漂移就红（红叉 + GitHub 通知），不需要任何人想起来手查。
+  - 漏发了补就是 `NPM_OTP=<验证码> npm run release:npm`（脚本自带「registry 已有该版本就跳过」的幂等预检），补完再跑一次 `release:check`。
 - 版本号格式：npm 不带 `v` 前缀（`0.70.0`），git tag / GitHub Release 带 `v` 前缀（`v0.70.0`）。
 - 提交信息不要带 `Co-authored-by`（P1 规则，仓库 hook 会拦）。
 - `.pi/commands.json` 是**每个项目各自**的个人命令（当前 cwd 的 `.pi/ 下），已被 gitignore，永远不会进公开仓库；切换 cwd 时命令列表自动刷新为该项目的命令。

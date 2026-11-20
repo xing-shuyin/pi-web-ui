@@ -1,10 +1,14 @@
 // scripts/check-release-assets.mjs
-// 发版自检：某个 tag 的 GitHub Release 资产是否齐全（桌面包 3 平台 + 浏览器扩展 + 手机 APK + 校验和）。
+// 发版自检：某个 tag 的 GitHub Release 资产是否齐全（桌面包 3 平台 + 浏览器扩展 + 手机 APK + 校验和），
+// 以及这个版本到底发了 npm 没有（issue #949）。
 //
 // 存在的原因：打 tag 只会自动出桌面 / 扩展 / Release 说明，手机 APK 必须本地跑一次
 // `npm run release:local -- vX.Y.Z --skip-desktop` 才会上传（mobile-release 是手动 workflow）。
 // 这一步最容易在发完 tag 后忘掉，忘了就是「Release 里没手机包」，肉眼很难立刻发现。
 // 所以把它做成一条命令：任何会话 / 任何人跑一下就知道缺什么。
+//
+// npm 那一节同理（issue #949）：npm 发布是唯一必须本地带 OTP 手动跑的步骤，漏了没人看得见，
+// 而用户 `npm i -g` 就只能拿到旧包。现在这条命令一并把 registry 版本核一遍。
 //
 // 用法：
 //   npm run release:check                 # 检查最新 tag
@@ -16,8 +20,10 @@ import { fileURLToPath } from "node:url";
 
 const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const version = JSON.parse(readFileSync(join(repoRoot, "package.json"), "utf8")).version;
-const tagArg = process.argv.slice(2).find((a) => !a.startsWith("--"));
+const argv = process.argv.slice(2);
+const tagArg = argv.find((a) => !a.startsWith("--"));
 const tag = tagArg ?? `v${version}`;
+const skipNpm = argv.includes("--skip-npm");
 
 /** 资产分组：每组至少命中一条；手机包额外要求版本号对得上。 */
 const REQUIRED = [
@@ -39,6 +45,15 @@ function gh(args) {
 }
 
 console.log(`==> 检查 ${tag} 的 Release 资产`);
+
+// npm 先查：它不需要 gh 登录，且漏发时比缺一个安装包严重得多（用户拿到的是旧包）
+if (!skipNpm) {
+	const npmCheck = spawnSync(process.execPath, [join(repoRoot, "scripts", "check-npm-version.mjs"), "--tag", tag], {
+		cwd: repoRoot,
+		stdio: "inherit",
+	});
+	if (npmCheck.status !== 0) process.exit(npmCheck.status ?? 1);
+}
 
 let assets = gh(["release", "view", tag, "--json", "assets", "--jq", ".assets[].name"])
 	.split("\n")

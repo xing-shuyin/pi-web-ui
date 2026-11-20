@@ -1,0 +1,29 @@
+name: npm drift
+
+# 为什么存在（issue #949）：发 npm 是发布流程里唯一必须本地带 OTP 手动跑的步骤，
+# tag 一推会自动出 Release 说明 / 桌面包 / 扩展，手机包有 release:check 盯着 ——
+# 唯独 npm 落后时全绿，没人发现，用户 `npm i -g pi-web-ui` 拿到的是几周前的包。
+# 这里每天核一次 registry 版本，漂移就当失败暴露出来（红叉 + GitHub 通知），
+# 人工发完包后自然转绿。
+on:
+  schedule:
+    - cron: "17 3 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+
+      # 只读 registry，不需要 npm 登录态、不需要 npm ci：脚本只用 node 内置 fetch
+      - name: Check npm registry has the repo version
+        run: node scripts/check-npm-version.mjs
