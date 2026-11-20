@@ -16,6 +16,16 @@ describe("reasoning-registry (权威模型推理规格与识别)", () => {
 		expect(spec?.thinkingLevelMap.max).toBe("64000");
 	});
 
+	it("recognizes Gemma 4 as an effort-based reasoning model", () => {
+		const gemma = resolveModelReasoningSpec("local/gemma-4-it");
+		expect(gemma).toBeDefined();
+		expect(gemma?.type).toBe("effort");
+		expect(gemma?.defaultLevel).toBe("medium");
+		expect(gemma?.thinkingLevelMap.off).toBe("none");
+		expect(gemma?.thinkingLevelMap.medium).toBe("medium");
+		expect(gemma?.thinkingLevelMap.high).toBe("high");
+	});
+
 	it("精准识别 OpenAI o1/o3/o4 系列为 Effort 档位模式", () => {
 		const o3 = resolveModelReasoningSpec("o3-mini");
 		expect(o3).toBeDefined();
