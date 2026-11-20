@@ -3332,7 +3332,7 @@ wss.on("connection", (ws) => {
 						});
 						break;
 					}
-					void cs.prompt(msg.text, msg.attachments, msg.queue).catch((err: unknown) => {
+					void cs.prompt(msg.text, msg.attachments, msg.queue, undefined, msg.samplingOverrides).catch((err: unknown) => {
 						// `prompt()` 的前置门禁是直接抛的：不接住就只剩一条 Unhandled Rejection，
 						// 用户那边看起来就是「点了发送什么都没发生」。
 						send({
