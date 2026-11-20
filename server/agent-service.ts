@@ -4932,7 +4932,7 @@ export class ClientSession {
 								hidden: true,
 								factory: (pi) => {
 									pi.on("before_provider_request", (event, ctx) =>
-										mergeModelSamplingParamsIntoProviderPayload(event.payload, ctx.model, getConversationSamplingOverrides(ownerId)),
+										mergeModelSamplingParamsIntoProviderPayload(event.payload, ctx.model, getConversationSamplingOverrides(ownerId, this.convs.get(ownerId ?? "")?.parentId)),
 									);
 								},
 							},
