@@ -225,6 +225,23 @@ function buildFake(proto: object, defaults: Record<string, unknown>, overrides: 
 	return target;
 }
 
+/**
+ * 扩展 UI 门面的假体：字段按真实 `WebUIContext` 里**测试真会用到的那些**给。
+ * 新加一个被生产代码调用的方法（如 `forConversation`）就补在这里，
+ * 别让每个用例各自手搓 `{ refresh: vi.fn() }` —— 那正是「生产改一行、十个测试文件一起红」的来源。
+ */
+export function fakeWebUi(overrides: Loose = {}): Loose {
+	const ui: Loose = {
+		refresh: () => {},
+		dispose: () => {},
+		snapshot: () => [],
+		statusSnapshot: () => [],
+		cancelPendingDialogs: () => {},
+	};
+	ui.forConversation = () => ui;
+	return { ...ui, ...overrides };
+}
+
 export function fakeClientSession(overrides: Loose = {}): FakeSession {
 	return buildFake(ClientSession.prototype, instanceFieldDefaults("ClientSession"), overrides) as FakeSession;
 }
