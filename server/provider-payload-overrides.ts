@@ -31,7 +31,7 @@ export function mergeModelSamplingParamsIntoProviderPayload(
 		return payload;
 	}
 
-	const modelParams = model.samplingParams;
+	const modelParams = model?.samplingParams;
 	const overrideParams: Record<string, unknown> = {};
 	if (typeof overrides?.temperature === "number") overrideParams.temperature = overrides.temperature;
 	if (typeof overrides?.min_p === "number") overrideParams.min_p = overrides.min_p;
