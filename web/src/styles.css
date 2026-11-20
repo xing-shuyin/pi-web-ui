@@ -19184,18 +19184,12 @@
 	}
 
 	.goalbar-round > span {
-		flex: 0 0 auto;
+		flex: 0 1 auto;
 		min-width: 0;
-		color: var(--text-faint);
-		overflow-wrap: anywhere;
-		word-break: break-word;
-	}
-
-	.goalbar-lock-hint {
-		min-width: 0;
-		white-space: nowrap;
 		overflow: hidden;
 		text-overflow: ellipsis;
+		white-space: nowrap;
+		color: var(--text-faint);
 	}
 
 	.goalbar-round input {
