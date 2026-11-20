@@ -4940,14 +4940,14 @@ export class ClientSession {
 								name: "pi-webui-provider-payload-overrides",
 								hidden: true,
 								factory: (pi) => {
-									const parentConversationId = this.convs.get(ownerId ?? "")?.parentId;
-									pi.on("before_provider_request", (event, ctx) =>
-										mergeModelSamplingParamsIntoProviderPayload(
+									pi.on("before_provider_request", (event, ctx) => {
+										const parentConversationId = this.convs.get(ownerId ?? "")?.parentId;
+										return mergeModelSamplingParamsIntoProviderPayload(
 											event.payload,
 											ctx.model,
 											getConversationSamplingOverrides(ownerId, parentConversationId),
-										),
-									);
+										);
+									});
 								},
 							},
 							{
