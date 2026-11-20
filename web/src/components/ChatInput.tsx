@@ -319,7 +319,10 @@ export const ChatInput = memo(function ChatInput({
 	useEffect(() => {
 		try {
 			const raw = samplingStorageKey ? localStorage.getItem(samplingStorageKey) : null;
-			setSamplingOverrides(raw ? normalizeSamplingOverrides(JSON.parse(raw)) : { ...DEFAULT_SAMPLING_OVERRIDES });
+			const nextOverrides = raw
+				? normalizeSamplingOverrides(JSON.parse(raw))
+				: { ...DEFAULT_SAMPLING_OVERRIDES };
+			setSamplingOverrides(nextOverrides);
 		} catch {
 			setSamplingOverrides({ ...DEFAULT_SAMPLING_OVERRIDES });
 		}
