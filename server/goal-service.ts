@@ -908,7 +908,7 @@ export class GoalService {
 			await wizard.bindExtensions({
 				mode: "rpc",
 				// 向导 widget 属于发起它的那个对话：打上固定归属，用户中途切到别的对话也不会混过去
-				uiContext: this.host.webUi.forConversation(this.host.activeConvId()),
+				uiContext: this.host.webUi.forConversation(wizardConversationId),
 			});
 
 			const unsubscribe = wizard.subscribe((event) => {

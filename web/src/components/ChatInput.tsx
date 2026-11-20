@@ -286,7 +286,6 @@ export const ChatInput = memo(function ChatInput({
 	const historyIndexRef = useRef(-1);
 	const draftRef = useRef("");
 	const [groupPlanOnly, setGroupPlanOnly] = useState(false);
-
 	const lastRecallSeqRef = useRef(0);
 	useEffect(() => {
 		if (!recallDrafts || recallDrafts.length === 0) return;
@@ -1301,7 +1300,14 @@ export const ChatInput = memo(function ChatInput({
 			onNotice("warning", t("sessionInitializingNotice"));
 			return;
 		}
-		if (appSend({ type: "prompt", text: trimmed, queue, attachments: buildPromptAttachments() })) {
+		if (
+			appSend({
+				type: "prompt",
+				text: trimmed,
+				queue,
+				attachments: buildPromptAttachments(),
+			})
+		) {
 			if (trimmed) pushPromptHistory(trimmed);
 			historyIndexRef.current = -1;
 			draftRef.current = "";

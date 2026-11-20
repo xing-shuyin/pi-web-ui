@@ -37,6 +37,11 @@ import {
 	type ToolDefinition,
 } from "@earendil-works/pi-coding-agent";
 import { getSdkBuiltinExtensionFactories, SDK_DISABLED_BUILTIN_EXTENSIONS } from "./sdk-builtin-extensions.js";
+import {
+	getConversationSamplingOverrides,
+	mergeModelSamplingParamsIntoProviderPayload,
+	setConversationSamplingOverrides,
+} from "./provider-payload-overrides.js";
 import { BG_CLEANUP_FALLBACK_MIN, BgServerTracker } from "./bg-servers.js";
 import { JobRegistry, JOB_TASK_PREFIX, type JobSnapshot } from "./job-runner.js";
 import { resolveProjectScripts } from "./project-scripts.js";
@@ -4931,6 +4936,20 @@ export class ClientSession {
 						extensionFactories: [
 							...sdkBuiltins,
 							requestContextExtension,
+							{
+								name: "pi-webui-provider-payload-overrides",
+								hidden: true,
+								factory: (pi) => {
+									pi.on("before_provider_request", (event, ctx) => {
+										const parentConversationId = this.convs.get(ownerId ?? "")?.parentId;
+										return mergeModelSamplingParamsIntoProviderPayload(
+											event.payload,
+											ctx.model,
+											getConversationSamplingOverrides(ownerId, parentConversationId),
+										);
+									});
+								},
+							},
 							{
 								name: "pi-webui-sandbox-final-gate",
 								hidden: true,
@@ -11338,10 +11357,12 @@ export class ClientSession {
 		attachments?: PromptAttachment[],
 		queue = false,
 		targetConversation?: Conversation,
+		samplingOverrides?: import("./protocol.js").SamplingOverrides,
 	): Promise<void> {
 		// 私聊会话的能力挂在会话上（`conv.bot`）；无头设备任务才有客户端级能力。
 		(this.botOf(targetConversation?.id) ?? this.botExecution)?.assertActive();
 		const conv = targetConversation ?? this.conv;
+		if (samplingOverrides) setConversationSamplingOverrides(conv.id, samplingOverrides);
 		// 私聊会话的能力挂在会话上（`conv.bot`），无头设备任务挂在客户端上：两处都要认。
 		const botCapability = this.botOf(conv.id);
 		// 已开的私聊也要按"当前注册表"复核：Bot 可能刚被停用/删除，冻结的能力不能继续当授权用。

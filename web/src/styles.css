@@ -19185,7 +19185,6 @@
 
 	.goalbar-round > span {
 		flex: 0 1 auto;
-		/* 单位标签跟着界面语言变（「轮」/“rounds”/“Runden”）：长词只能收寄，不能把胶囊顶破 */
 		min-width: 0;
 		overflow: hidden;
 		text-overflow: ellipsis;
@@ -39939,4 +39938,41 @@
 			flex-basis: 100%;
 		}
 	}
+}
+
+.sampling-controls {
+	border-top: 1px solid var(--border);
+	padding: 7px 10px 8px;
+	color: var(--text-dim);
+	font-size: 11px;
+}
+.sampling-controls summary {
+	width: fit-content;
+	cursor: pointer;
+	user-select: none;
+	color: var(--text-dim);
+}
+.sampling-controls-grid {
+	display: flex;
+	flex-wrap: wrap;
+	align-items: center;
+	gap: 7px 12px;
+	padding-top: 9px;
+}
+.sampling-controls-grid label {
+	display: inline-flex;
+	align-items: center;
+	gap: 5px;
+	white-space: nowrap;
+}
+.sampling-controls-grid input[type="number"],
+.sampling-controls-grid button {
+	min-height: 26px;
+	border: 1px solid var(--border);
+	border-radius: 5px;
+	background: var(--bg-elev);
+	color: var(--text);
+	padding: 3px 7px;
+	font: inherit;
+	cursor: pointer;
 }

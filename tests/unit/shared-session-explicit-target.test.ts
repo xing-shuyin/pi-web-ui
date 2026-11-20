@@ -32,7 +32,7 @@ function goalSetup() {
 		clientId: "test",
 		agentDir: tmpdir(),
 		stateStore: { getGoalPrefs: () => null, saveGoalPrefs: vi.fn() },
-		// 目标向导按会话绑定：宿主门面要能给出带归属的 uiContext（真实实现见 server/webui-context.ts 的 forConversation）
+		// Conversation-bound UI context is provided by the shared fake facade.
 		webUi: fakeWebUi(),
 		emit: vi.fn(),
 		flushSnapshot: vi.fn(),
