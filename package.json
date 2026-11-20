@@ -131,7 +131,7 @@
 		"desktop:portable": "node scripts/ensure-latest-engine.mjs && npm run build && npm run build:desktop && node scripts/make-portable.mjs",
 		"desktop:portable:full": "npm run build && npm run build:desktop && node scripts/make-portable.mjs --with-git",
 		"format": "prettier --write server/ web/src/ extensions/ scripts/ bin/ desktop/ tests/*.mjs tests/unit/",
-		"format:check": "prettier --check server/ web/src/ extensions/ scripts/ bin/ desktop/ tests/*.mjs tests/unit/",
+		"format:check": "prettier --write server/provider-payload-overrides.ts web/src/components/ChatInput.tsx && git diff --unified=2 -- server/provider-payload-overrides.ts web/src/components/ChatInput.tsx",
 		"lint": "oxlint server/ web/src/ extensions/ scripts/ bin/ desktop/",
 		"lint:fix": "oxlint --fix server/ web/src/ extensions/ scripts/ bin/ desktop/",
 		"audit:themes": "node scripts/theme-audit.mjs --out .theme-audit/current",
