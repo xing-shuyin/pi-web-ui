@@ -94,13 +94,11 @@ const DEFAULT_SAMPLING_OVERRIDES: import("../types").SamplingOverrides = {
 };
 
 function normalizeSamplingOverrides(value: unknown): import("../types").SamplingOverrides {
-	const saved =
-		value && typeof value === "object" && !Array.isArray(value) ? (value as Record<string, unknown>) : {};
+	const saved = value && typeof value === "object" && !Array.isArray(value) ? (value as Record<string, unknown>) : {};
 	return {
 		profile: saved.profile === "gemma4" ? "gemma4" : "default",
 		thinkingEnabled: typeof saved.thinkingEnabled === "boolean" ? saved.thinkingEnabled : false,
-		thinkingEffort:
-			saved.thinkingEffort === "low" || saved.thinkingEffort === "high" ? saved.thinkingEffort : "medium",
+		thinkingEffort: saved.thinkingEffort === "low" || saved.thinkingEffort === "high" ? saved.thinkingEffort : "medium",
 		preserveThinking: typeof saved.preserveThinking === "boolean" ? saved.preserveThinking : true,
 	};
 }
@@ -319,9 +317,7 @@ export const ChatInput = memo(function ChatInput({
 	useEffect(() => {
 		try {
 			const raw = samplingStorageKey ? localStorage.getItem(samplingStorageKey) : null;
-			const nextOverrides = raw
-				? normalizeSamplingOverrides(JSON.parse(raw))
-				: { ...DEFAULT_SAMPLING_OVERRIDES };
+			const nextOverrides = raw ? normalizeSamplingOverrides(JSON.parse(raw)) : { ...DEFAULT_SAMPLING_OVERRIDES };
 			setSamplingOverrides(nextOverrides);
 		} catch {
 			setSamplingOverrides({ ...DEFAULT_SAMPLING_OVERRIDES });
@@ -352,11 +348,7 @@ export const ChatInput = memo(function ChatInput({
 	const cycleSamplingEffort = () => {
 		setSamplingOverrides((current) => {
 			const nextEffort =
-				current.thinkingEffort === "low"
-					? "medium"
-					: current.thinkingEffort === "medium"
-						? "high"
-						: "low";
+				current.thinkingEffort === "low" ? "medium" : current.thinkingEffort === "medium" ? "high" : "low";
 			return { ...current, thinkingEffort: nextEffort };
 		});
 	};

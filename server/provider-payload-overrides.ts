@@ -21,11 +21,13 @@ export function getConversationSamplingOverrides(
 	);
 }
 
-type ProviderModelLike = {
-	id?: string;
-	api?: string;
-	samplingParams?: Record<string, unknown>;
-} | undefined;
+type ProviderModelLike =
+	| {
+			id?: string;
+			api?: string;
+			samplingParams?: Record<string, unknown>;
+	  }
+	| undefined;
 
 function isRecord(value: unknown): value is Record<string, unknown> {
 	return value !== null && typeof value === "object" && !Array.isArray(value);
@@ -58,10 +60,7 @@ export function mergeModelSamplingParamsIntoProviderPayload(
 		};
 	}
 
-	if (
-		(!isRecord(modelParams) || Object.keys(modelParams).length === 0) &&
-		Object.keys(overrideParams).length === 0
-	) {
+	if ((!isRecord(modelParams) || Object.keys(modelParams).length === 0) && Object.keys(overrideParams).length === 0) {
 		return payload;
 	}
 
