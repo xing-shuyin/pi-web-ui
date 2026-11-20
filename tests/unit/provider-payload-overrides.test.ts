@@ -70,15 +70,19 @@ describe("provider payload sampling overrides", () => {
 
 	it("applies conversation reasoning controls without overriding model sampler settings", () => {
 		const payload = { messages: [], temperature: 0.8, top_p: 0.9 };
-		const result = mergeModelSamplingParamsIntoProviderPayload(payload, {
-			api: "openai-completions",
-			samplingParams: { top_k: 32 },
-		}, {
-			profile: "gemma4",
-			thinkingEnabled: true,
-			thinkingEffort: "high",
-			preserveThinking: true,
-		});
+		const result = mergeModelSamplingParamsIntoProviderPayload(
+			payload,
+			{
+				api: "openai-completions",
+				samplingParams: { top_k: 32 },
+			},
+			{
+				profile: "gemma4",
+				thinkingEnabled: true,
+				thinkingEffort: "high",
+				preserveThinking: true,
+			},
+		);
 		expect(result).toEqual({
 			messages: [],
 			temperature: 0.8,
@@ -93,14 +97,18 @@ describe("provider payload sampling overrides", () => {
 	});
 
 	it("detects Gemma 4 from the provider model and explicitly sends thinking off", () => {
-		const result = mergeModelSamplingParamsIntoProviderPayload({ model: "gemma-4", messages: [] }, {
-			id: "gemma-4-it",
-			api: "openai-completions",
-		}, {
-			thinkingEnabled: false,
-			thinkingEffort: "medium",
-			preserveThinking: true,
-		});
+		const result = mergeModelSamplingParamsIntoProviderPayload(
+			{ model: "gemma-4", messages: [] },
+			{
+				id: "gemma-4-it",
+				api: "openai-completions",
+			},
+			{
+				thinkingEnabled: false,
+				thinkingEffort: "medium",
+				preserveThinking: true,
+			},
+		);
 		expect(result).toEqual({
 			model: "gemma-4",
 			messages: [],
@@ -114,9 +122,11 @@ describe("provider payload sampling overrides", () => {
 
 	it("does not inject conversation sampler defaults into non-OpenAI payloads", () => {
 		const payload = { input: "Hello" };
-		const result = mergeModelSamplingParamsIntoProviderPayload(payload, { api: "anthropic-messages" }, {
-			thinkingEnabled: true,
-		});
+		const result = mergeModelSamplingParamsIntoProviderPayload(
+			payload,
+			{ api: "anthropic-messages" },
+			{ thinkingEnabled: true },
+		);
 		expect(result).toEqual({ input: "Hello" });
 	});
 

@@ -332,6 +332,38 @@ export const ChatInput = memo(function ChatInput({
 		} catch {}
 	}, [samplingStorageKey, samplingLoadedForKey, samplingOverrides]);
 
+	const toggleSamplingProfile = () => {
+		setSamplingOverrides((current) => {
+			if (current.profile === "gemma4") {
+				return { ...current, profile: "default", thinkingEnabled: false };
+			}
+			return {
+				...current,
+				profile: "gemma4",
+				thinkingEnabled: true,
+				thinkingEffort: "medium",
+				preserveThinking: true,
+			};
+		});
+	};
+	const cycleSamplingEffort = () => {
+		setSamplingOverrides((current) => {
+			const nextEffort =
+				current.thinkingEffort === "low"
+					? "medium"
+					: current.thinkingEffort === "medium"
+						? "high"
+						: "low";
+			return { ...current, thinkingEffort: nextEffort };
+		});
+	};
+	const updateThinkingEnabled = (thinkingEnabled: boolean) => {
+		setSamplingOverrides((current) => ({ ...current, thinkingEnabled }));
+	};
+	const updatePreserveThinking = (preserveThinking: boolean) => {
+		setSamplingOverrides((current) => ({ ...current, preserveThinking }));
+	};
+
 	const lastRecallSeqRef = useRef(0);
 	useEffect(() => {
 		if (!recallDrafts || recallDrafts.length === 0) return;
@@ -2048,65 +2080,25 @@ export const ChatInput = memo(function ChatInput({
 				<details className="sampling-controls">
 					<summary>Generation settings</summary>
 					<div className="sampling-controls-grid">
-						<button
-							type="button"
-							className="sampling-controls-choice"
-							onClick={() =>
-								setSamplingOverrides((current) =>
-									current.profile === "gemma4"
-										? { ...current, profile: "default", thinkingEnabled: false }
-										: {
-											...current,
-											profile: "gemma4",
-											thinkingEnabled: true,
-											thinkingEffort: "medium",
-											preserveThinking: true,
-										},
-								)
-							}
-						>
+						<button type="button" className="sampling-controls-choice" onClick={toggleSamplingProfile}>
 							Profile: {samplingOverrides.profile === "gemma4" ? "Gemma 4" : "Default"}
 						</button>
 						<label className="sampling-thinking-toggle">
 							<input
 								type="checkbox"
 								checked={samplingOverrides.thinkingEnabled ?? false}
-								onChange={(e) =>
-									setSamplingOverrides((current) => ({
-										...current,
-										thinkingEnabled: e.target.checked,
-									}))
-								}
+								onChange={(e) => updateThinkingEnabled(e.target.checked)}
 							/>
 							Thinking
 						</label>
-						<button
-							type="button"
-							className="sampling-controls-choice"
-							onClick={() =>
-								setSamplingOverrides((current) => ({
-									...current,
-									thinkingEffort:
-										current.thinkingEffort === "low"
-											? "medium"
-											: current.thinkingEffort === "medium"
-												? "high"
-												: "low",
-								}))
-							}
-						>
+						<button type="button" className="sampling-controls-choice" onClick={cycleSamplingEffort}>
 							Effort: {(samplingOverrides.thinkingEffort ?? "medium").toUpperCase()}
 						</button>
 						<label className="sampling-thinking-toggle">
 							<input
 								type="checkbox"
 								checked={samplingOverrides.preserveThinking ?? true}
-								onChange={(e) =>
-									setSamplingOverrides((current) => ({
-										...current,
-										preserveThinking: e.target.checked,
-									}))
-								}
+								onChange={(e) => updatePreserveThinking(e.target.checked)}
 							/>
 							Preserve thinking
 						</label>
