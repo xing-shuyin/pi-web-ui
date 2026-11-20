@@ -3562,6 +3562,7 @@
 	"thinkingFormat.deepseek": "DeepSeek protocol (thinking: {type: enabled})",
 	"thinkingFormat.openrouter": "OpenRouter protocol (reasoning: {effort})",
 	"thinkingFormat.zai": "Zhipu GLM (zai thinking object)",
+	"thinkingFormat.chatTemplate": "Custom chat_template_kwargs",
 	"thinkingPreset.claudeBudget.name": "⚡ Claude 3.7+ budget (1K~64K)",
 	"thinkingPreset.claudeBudget.desc": "Toggles off/on with a precise Token budget (1024~64000 tokens)",
 	"thinkingPreset.openaiEffort.name": "⚡ OpenAI o-series levels (low/medium/high)",
