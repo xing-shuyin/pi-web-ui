@@ -35,6 +35,7 @@
 | [`architecture-browser.md`](architecture-browser.md)                       | 内置浏览器模块、桌面 browser/agent/split、可信原生页面桥、数据与打包                                                 | 动浏览器、桌面组合、Web 原生操作                 |
 | [`architecture-desktop-update.md`](architecture-desktop-update.md)         | 桌面应用内更新：主进程状态机、能力判定（dev/便携/无 feed）、失败分类、发布说明、IPC 三面对齐                         | 动桌面更新、更新面板、发布说明                   |
 | [`architecture-desktop-runtime.md`](architecture-desktop-runtime.md)       | 桌面更新演进方案（设计稿）：壳/运行时双层、自有密钥签名、版本闸门、三平台矩阵、切换与回滚、分阶段落地                | 规划桌面运行时自更新、免证书路线、发布产物改造   |
+| [`architecture-kernel.md`](architecture-kernel.md)                         | 内核与客户端：一份运行时/一个内核、数据目录单实例锁、壳的内核判定、一键装系统服务、`/api/health.kernel`              | 动内核启动、桌面拉起内核、服务安装、单实例约束   |
 | [`architecture-system-integration.md`](architecture-system-integration.md) | Windows 系统集成：默认浏览器/文件关联注册表布局、UserChoice 限制、argv/单实例打开链路、office 插件工作区外与远程文档 | 动桌面默认应用、双击打开、文件关联               |
 | [`plugin-hongguo.md`](plugin-hongguo.md)                                   | hongguo 插件：悬浮 / 分屏播放、选集续播、媒体代理、FFmpeg、缓存与常驻生命周期                                        | 动短剧播放器、播放布局或媒体接口                 |
 | [`mobile.md`](mobile.md)                                                   | React + Capacitor 手机客户端、设备中心登录与多设备切换、极光 / APNs 通知与构建验收                                   | 动手机 App、后台通知、native 设备连接            |

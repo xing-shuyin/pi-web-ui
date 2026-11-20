@@ -23,6 +23,8 @@ import {
 	type Settings,
 } from "./common.js";
 import { t, tf, type MessageKey } from "./i18n.js";
+import { describeKernelState, kernelPersistenceHint } from "../kernel-view.js";
+import type { BrowserKernelState } from "../contracts.js";
 import { vaultPanel, type VaultTab } from "./vault.js";
 import type {
 	BrowserDesignDocument,
@@ -480,6 +482,60 @@ async function historyPanel(container: HTMLElement): Promise<void> {
 	container.replaceChildren(search, list);
 	render();
 }
+/**
+ * 内核小节：状态一行 + “装成系统服务 / 重启”两个按钮。
+ * 重要不是控件而是那句话：“关掉本窗口之后它还在不在”（kernelPersistenceHint）。
+ */
+async function kernelSectionView(): Promise<HTMLElement> {
+	const section = element("section", "pb-section");
+	const status = element("p", "pb-muted");
+	const detail = element("p", "pb-muted");
+	const show = (state: BrowserKernelState | null): void => {
+		if (!state) {
+			status.textContent = t("disconnected");
+			detail.textContent = "";
+			return;
+		}
+		status.textContent = describeKernelState(state);
+		detail.textContent = kernelPersistenceHint(state);
+	};
+	const refresh = async (): Promise<void> => {
+		try {
+			show(await call<BrowserKernelState | null>("kernel.status"));
+		} catch (error) {
+			reportError(error);
+		}
+	};
+	let busy = false;
+	const runAction = async (action: "kernel.install" | "kernel.restart"): Promise<void> => {
+		if (busy) return;
+		busy = true;
+		detail.textContent = t("kernelBusy");
+		try {
+			const result = await call<{ ok: boolean; message: string }>(action);
+			if (result?.ok) notify(action === "kernel.install" ? t("kernelInstalled") : t("kernelRestarted"));
+			else detail.textContent = [t("kernelFailed"), String(result?.message ?? "")].filter(Boolean).join("：");
+		} catch (error) {
+			detail.textContent = [t("kernelFailed"), error instanceof Error ? error.message : ""].filter(Boolean).join("：");
+		} finally {
+			busy = false;
+			await refresh();
+		}
+	};
+	section.append(
+		element("h3", "", t("kernelTitle")),
+		element("p", "pb-muted", t("kernelHelp")),
+		status,
+		detail,
+		toolbar(
+			button(t("kernelInstall"), () => void runAction("kernel.install")),
+			button(t("kernelRestart"), () => void runAction("kernel.restart")),
+		),
+	);
+	await refresh();
+	return section;
+}
+
 async function settingsPanel(container: HTMLElement): Promise<void> {
 	const settings = await call<Settings>("settings.get");
 	const form = element("form", "pb-form");
@@ -592,6 +648,7 @@ async function settingsPanel(container: HTMLElement): Promise<void> {
 		),
 		connection,
 	);
+	const kernelSection = await kernelSectionView();
 	const importing = element("section", "pb-section");
 	importing.append(
 		element("h3", "", t("importData")),
@@ -623,6 +680,7 @@ async function settingsPanel(container: HTMLElement): Promise<void> {
 	container.replaceChildren(
 		form,
 		agentSection,
+		kernelSection,
 		vault,
 		design,
 		extensions,

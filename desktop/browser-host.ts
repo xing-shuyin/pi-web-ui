@@ -73,6 +73,7 @@ import {
 	BROWSER_PANELS,
 	type BrowserDesignKind,
 	type BrowserDesignStatus,
+	type BrowserKernelState,
 	type BrowserMode,
 	type BrowserPageRequest,
 	type BrowserState,
@@ -191,6 +192,13 @@ async function fitBrowserActionPopup(popup: BrowserActionPopup): Promise<void> {
 	if (!win.isDestroyed()) win.focus();
 }
 
+/** 内核运维动作（主进程注入；宿主只负责转发渲染层请求）。 */
+export interface KernelBridge {
+	refresh: () => Promise<BrowserKernelState | undefined>;
+	install: () => Promise<{ ok: boolean; message: string }>;
+	restart: () => Promise<{ ok: boolean; message: string }>;
+}
+
 export class DesktopBrowserHost {
 	readonly browser: BrowserManager;
 	private agent: WebContentsView | null = null;
@@ -215,6 +223,12 @@ export class DesktopBrowserHost {
 	private agentReady = false;
 	private agentGeneration = 0;
 	private agentError: string | undefined;
+	/**
+	 * 内核状态与运维动作（`docs/architecture-kernel.md`）：壳只负责展示与转发，
+	 * 判定/安装逻辑全在 `desktop/kernel-mode.ts` / `kernel-install.ts`，主进程注入。
+	 */
+	private kernelState: BrowserKernelState | undefined;
+	private kernelBridge: KernelBridge | null = null;
 	/** 搜索浮层：外壳自己的 DOM 浮层盖住整块内容区时，临时把内容视图藏起来 */
 	private overlay = false;
 	/**
@@ -928,7 +942,20 @@ export class DesktopBrowserHost {
 			agentUrl: this.agentUrl,
 			agentReady: this.agentReady,
 			...(this.agentError ? { agentError: this.agentError } : {}),
+			...(this.kernelState ? { kernel: this.kernelState } : {}),
 		};
+	}
+
+	/** 主进程算好内核状态后推过来（面板与 `pi-browser:state` 都用这一个字段）。 */
+	setKernelState(state: BrowserKernelState | undefined): void {
+		if (JSON.stringify(this.kernelState) === JSON.stringify(state)) return;
+		this.kernelState = state;
+		this.publish();
+	}
+
+	/** 内核运维动作的注入口：宿主不知道内核怎么装/怎么重启，那些都在主进程。 */
+	setKernelBridge(bridge: KernelBridge | null): void {
+		this.kernelBridge = bridge;
 	}
 
 	private publish(): void {
@@ -1265,6 +1292,15 @@ export class DesktopBrowserHost {
 			case "agent.connect":
 				await this.connectAgent(text(args.url));
 				return true;
+			case "kernel.status":
+				if (!this.kernelBridge) return this.kernelState ?? null;
+				return (await this.kernelBridge.refresh()) ?? this.kernelState ?? null;
+			case "kernel.install":
+				if (!this.kernelBridge) throw new Error("Kernel actions are unavailable");
+				return await this.kernelBridge.install();
+			case "kernel.restart":
+				if (!this.kernelBridge) throw new Error("Kernel actions are unavailable");
+				return await this.kernelBridge.restart();
 			case "bookmarks.list":
 				return this.browser.listBookmarks().children ?? [];
 			case "bookmarks.save":

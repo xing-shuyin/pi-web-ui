@@ -69,6 +69,8 @@ import { augmentNodePath, augmentNodePathFromShell } from "./node-path.js";
 import { listThemes, readThemeCss, resolveThemeFile } from "./themes.js";
 import { isManaged, managedRefusal } from "./managed.js";
 import { launchOrigin, toServiceInfo } from "./launch-origin.js";
+import { acquireKernelLock, formatLockDenied, releaseKernelLock } from "./instance-lock.js";
+import { buildKernelInfo, classifyKernelInstall, describeKernelInstall } from "./kernel-identity.js";
 import { isTabAllowed, parseTabs, tabsRefusal } from "./tabs.js";
 import { nativeCliDiscoveryHandler } from "./native-cli-routes.js";
 import { recordUnknownWsType } from "./ws-unknown-types.js";
@@ -686,6 +688,45 @@ function setClientEngine(clientId: string, engine: EngineId): void {
 const MANAGED = isManaged();
 const ORIGIN = launchOrigin();
 const SERVICE_INFO = toServiceInfo(ORIGIN);
+
+/**
+ * 内核身份与单实例约束（`docs/architecture-kernel.md`）：
+ * 快照里的 uptime 基准 + 数据目录锁。锁被活进程占着就拒绝启动——
+ * 会话转录 / plugin-data / schedules / 设备身份都是单写者语义，双内核无法正确合并。
+ */
+const KERNEL_STARTED_AT = Date.now();
+const KERNEL_LOCK = acquireKernelLock({
+	dataDir: DATA_DIR,
+	version: appVersion(),
+	cwd: CWD,
+	port: PORT,
+	now: KERNEL_STARTED_AT,
+});
+if (KERNEL_LOCK.state === "denied") {
+	console.error("");
+	console.error("  [FATAL] 已有内核占用这份数据目录，已拒绝启动。");
+	for (const line of formatLockDenied(KERNEL_LOCK.holder, KERNEL_LOCK.path)) console.error(line);
+	console.error("");
+	process.exit(1);
+}
+if (KERNEL_LOCK.state === "held") {
+	// 只挂 exit：SIGINT/SIGTERM 在别处已有处理器，它们走 process.exit 时也会触发这里。
+	process.once("exit", () => releaseKernelLock(DATA_DIR));
+	console.log(`[kernel] data dir lock held: ${KERNEL_LOCK.path}`);
+}
+
+/** `/api/health` 里的内核块：每次请求现算，uptime 才是活的。 */
+function kernelInfo() {
+	return buildKernelInfo({
+		version: appVersion(),
+		packageRoot: getPkgRoot(),
+		startedAt: KERNEL_STARTED_AT,
+		now: Date.now(),
+		supervisor: ORIGIN.supervisor,
+		serviceName: ORIGIN.name ?? null,
+		lock: KERNEL_LOCK.state === "disabled" ? "disabled" : "held",
+	});
+}
 const TABS = parseTabs();
 
 app.get(
@@ -708,6 +749,9 @@ app.get("/api/health", (_req, res) => {
 		engine: currentDefaultEngine,
 		instanceName: process.env.PI_WEB_INSTANCE_NAME?.trim() || undefined,
 		faviconColor: process.env.PI_WEB_FAVICON_COLOR?.trim() || undefined,
+		// 内核身份（客户端据此判断"关掉桌面壳后这个内核还在不在、归谁托管"）。
+		// 免鉴权端点上只给"形态"，不给 pid/路径：见 server/kernel-identity.ts 的注释。
+		kernel: kernelInfo(),
 		executors: backgroundExecutors.snapshotLive(),
 		unhealthy: backgroundExecutors.unhealthy(),
 	});
@@ -3785,6 +3829,12 @@ httpServer.listen(PORT, HOST, () => {
 		sessionDir: SESSION_DIR_ROOT,
 		version: VERSION,
 		sdkNote,
+		kernelNote: [
+			`v${appVersion()}`,
+			describeKernelInstall(classifyKernelInstall(getPkgRoot())),
+			ORIGIN.supervisor ?? "standalone",
+			`lock ${KERNEL_LOCK.state}`,
+		].join(" · "),
 	});
 	for (const line of bannerLines) {
 		console.log(line);

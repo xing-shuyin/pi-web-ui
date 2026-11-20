@@ -11,7 +11,7 @@ import { dirname, extname, join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { DesktopBrowserHost } from "./browser-host.js";
 import { DEFAULT_THEME_BACKGROUND } from "../browser/runtime/palette.js";
-import { BROWSER_EXTENSION_PARTITION } from "../browser/contracts.js";
+import { BROWSER_EXTENSION_PARTITION, type BrowserKernelState } from "../browser/contracts.js";
 import { createHubBrowser } from "./hub-browser.js";
 import { setupPortableMode } from "./portable.js";
 import {
@@ -26,6 +26,8 @@ import {
 	type UpdaterPrefs,
 } from "./updater.js";
 import { buildDesktopLoadUrl, DEFAULT_DESKTOP_PORT, resolveHealthTimeoutMs, waitForHealth } from "./startup.js";
+import { decideKernelMode, probeKernel, toKernelState, type KernelMode } from "./kernel-mode.js";
+import { buildServiceInstallArgs, buildServiceLifecycleArgs, runKernelCli } from "./kernel-install.js";
 import {
 	DEFAULT_ASSOCIATION_EXTENSIONS,
 	applyRegistryActions,
@@ -558,6 +560,155 @@ async function restartServerSidecar(expectedVersion?: string | null): Promise<st
 	});
 }
 
+// ── 内核：谁是内核、壳要不要自己拉一份（docs/architecture-kernel.md） ───────────────
+
+/** 最近一次算出的内核状态（面板读它，`pi-browser:state` 也带它）。 */
+let kernelState: BrowserKernelState | null = null;
+let kernelMode: KernelMode = "local";
+
+/** 当前shell 认为应在的内核地址：外部模式就是配置的地址，本地模式就是 sidecar 地址。 */
+function currentKernelUrl(): string {
+	return kernelState?.url ?? browserHost?.getState().agentUrl ?? "";
+}
+
+function currentKernelPort(): number | null {
+	const url = currentKernelUrl();
+	try {
+		const parsed = new URL(url);
+		return Number(parsed.port) || (parsed.protocol === "https:" ? 443 : 80);
+	} catch {
+		return null;
+	}
+}
+
+/** 把探测结果记下来并推给渲染层：面板/顶栏都靠这一个字段说话。 */
+async function refreshKernelState(
+	url: string,
+	mode: KernelMode,
+	reason?: BrowserKernelState["reason"],
+	errorNote?: string,
+): Promise<void> {
+	const probe = url ? await probeKernel(url) : null;
+	kernelMode = mode;
+	kernelState = toKernelState({
+		decision: { mode, reason: reason ?? (mode === "external" ? "external-reachable" : "no-external-configured") },
+		url,
+		probe: probe && errorNote && !probe.reachable ? { ...probe, error: probe.error ?? errorNote } : probe,
+	});
+	browserHost?.setKernelState(kernelState);
+}
+
+/**
+ * 启动时的内核判定：
+ * - 配置的内核活着 → **只连不拉**（“关掉壳内核还在跑”的前提）
+ * - 没配 → 拉本地 sidecar（既有行为）
+ * - 配了但不可达 → 回退本地，同时把原因透给面板（不能白屏）
+ */
+async function startKernel(): Promise<void> {
+	const saved = (browserHost?.browser.getSettings().agentUrl ?? "").trim();
+	const probe = saved ? await probeKernel(saved) : null;
+	const decision = decideKernelMode({ externalUrl: saved, probe });
+	if (decision.mode === "external") {
+		console.log(`[desktop] kernel: 复用外部内核 ${saved}（本次不启动本地 sidecar）`);
+		if (browserHost && browserHost.getState().agentUrl !== saved) await browserHost.connectAgent(saved, false);
+		kernelMode = "external";
+		kernelState = toKernelState({ decision, url: saved, probe });
+		browserHost?.setKernelState(kernelState);
+		return;
+	}
+	if (decision.reason === "external-unreachable")
+		console.warn(`[desktop] kernel: 配置的内核不可达（${probe?.error ?? "未知原因"}），回退本地 sidecar`);
+	const url = await enqueueServerStep(() => startServerSidecar());
+	const target = buildDesktopLoadUrl(url, process.env);
+	if (browserHost?.getState().agentUrl !== target) await browserHost?.connectAgent(target, false);
+	await refreshKernelState(target, "local", decision.reason, probe?.error);
+}
+
+/** 挂着的内核包根：优先进当前运行时目录，其次包内自带（dev 下就是仓库根）。 */
+function resolveKernelPkgRoot(): string {
+	const candidates: string[] = [];
+	if (activeRuntimeVersion) candidates.push(join(desktopRuntimeRootDir(), activeRuntimeVersion));
+	candidates.push(bundledAppRoot());
+	for (const root of candidates) {
+		if (existsSync(join(root, "bin", "pi-web-ui.mjs"))) return root;
+	}
+	return candidates[candidates.length - 1] ?? bundledAppRoot();
+}
+
+/** 内核当前用的数据目录/工作目录（与服务安装保持同一份，避免装完看不到旧会话）。 */
+function currentKernelDataDir(): string {
+	return process.env.PI_WEB_DATA_DIR ?? join(app.getPath("userData"), "data");
+}
+
+function currentKernelCwd(): string {
+	return process.env.PI_WEB_CWD ?? homedir();
+}
+
+/**
+ * 「安装为系统服务」：把**当前内核**的数据目录/工作目录原样焙进服务配置，然后把壳交棒给服务。
+ *
+ * 顺序是有原因的：本地 sidecar 正持着数据目录锁，服务启动会被单实例锁拒绝。
+ * 所以先停本地内核 → 装并启动服务 → 壳改连服务地址；任何一步失败都回滚到本地内核，
+ * 不能让用户点完按钮反而没内核了。
+ */
+async function installKernelService(): Promise<{ ok: boolean; message: string }> {
+	const runningPort = currentKernelPort();
+	const port = kernelMode === "external" && runningPort ? runningPort : DEFAULT_DESKTOP_PORT;
+	const serviceUrl = `http://127.0.0.1:${port}`;
+	const wasLocal = kernelMode === "local";
+	if (wasLocal) await stopServerSidecar();
+	const result = await runKernelCli(
+		buildServiceInstallArgs({
+			port,
+			dataDir: currentKernelDataDir(),
+			cwd: currentKernelCwd(),
+			engine: process.env.PI_WEB_ENGINE ?? null,
+		}),
+		{ pkgRoot: resolveKernelPkgRoot() },
+	);
+	const message = [result.stdout.trim(), result.stderr.trim()].filter(Boolean).join("\n").slice(-2000);
+	if (result.code !== 0) {
+		// 回滚：服务没装成，至少把本地内核还给用户。
+		if (wasLocal) {
+			try {
+				const url = await enqueueServerStep(() => startServerSidecar());
+				await syncAgentUrl(url);
+				await refreshKernelState(url, "local");
+			} catch (error) {
+				console.error("[desktop] 安装失败后回退本地内核也失败了：", error);
+			}
+		}
+		return {
+			ok: false,
+			message: result.timedOut ? `安装超时\n${message}` : message || `安装失败（退出码 ${result.code}）`,
+		};
+	}
+	// 交棒：把 Agent 地址改成服务地址，下次启动就不再拉起本地 sidecar。
+	const settings = browserHost?.browser.getSettings();
+	if (browserHost && settings) browserHost.browser.saveSettings({ ...settings, agentUrl: serviceUrl });
+	if (browserHost && browserHost.getState().agentUrl !== serviceUrl) await browserHost.connectAgent(serviceUrl, false);
+	await refreshKernelState(serviceUrl, "external");
+	return { ok: true, message: message || `已安装并启动系统服务：${serviceUrl}` };
+}
+
+/** 「重启内核」：服务托管时交给服务管理器，本地 sidecar 才自己杀重生。 */
+async function restartKernel(): Promise<{ ok: boolean; message: string }> {
+	if (kernelMode === "external") {
+		const result = await runKernelCli(buildServiceLifecycleArgs("restart"), { pkgRoot: resolveKernelPkgRoot() });
+		const message = [result.stdout.trim(), result.stderr.trim()].filter(Boolean).join("\n").slice(-2000);
+		if (result.code !== 0) return { ok: false, message: message || `重启失败（退出码 ${result.code}）` };
+		await refreshKernelState(currentKernelUrl(), "external");
+		return { ok: true, message };
+	}
+	try {
+		const url = await restartServerSidecar();
+		await refreshKernelState(url, "local");
+		return { ok: true, message: "本地内核已重启" };
+	} catch (error) {
+		return { ok: false, message: (error as Error).message };
+	}
+}
+
 /**
  * 切换运行时（P2）：写指针 → 重启服务 → 健康检查；任何一步失败立刻把指针写回上一版并重启旧版。
  * 回滚本身也失败时，只记录日志——下次启动 P0 会因为 directory/entry 校验或连续失败计数退回包内。
@@ -623,6 +774,15 @@ async function createWindow(): Promise<void> {
 		// Agent 页就绪（含重新加载）后把疫情期间待打开的文件送进去
 		onAgentReady: () => flushOpenTargets(),
 	});
+	// 内核状态的唯一来源在主进程：宿主只转发面板的查询/安装/重启请求。
+	browserHost.setKernelBridge({
+		refresh: async () => {
+			await refreshKernelState(currentKernelUrl(), kernelMode);
+			return kernelState ?? undefined;
+		},
+		install: installKernelService,
+		restart: restartKernel,
+	});
 	const openHub = createHubBrowser();
 	ipcMain.removeHandler("pi-desktop:open-hub");
 	ipcMain.handle("pi-desktop:open-hub", (event, target: unknown) => {
@@ -683,29 +843,23 @@ void app.whenReady().then(async () => {
 		// second-instance 可能在窗口就绪前就把文件塞进队列了，这里补一次冲刷（队列为空时无成本）
 		flushOpenTargets();
 		void refreshSystemIntegrationOnStartup();
-		void enqueueServerStep(() => startServerSidecar())
-			.then(async (url) => {
-				const saved = browserHost?.browser.getSettings().agentUrl;
-				const savedUrl = typeof saved === "string" ? saved : "";
-				const target = savedUrl || buildDesktopLoadUrl(url, process.env);
-				if (browserHost?.getState().agentUrl !== target) await browserHost?.connectAgent(target, false);
-			})
-			.catch(async (error: unknown) => {
-				console.error("[desktop] Agent startup failed; browser remains available:", error);
-				// 运行时报废时本次启动立刻退回包内自带那份，别让用户只看到报错（文档 §十六 兜底原则）。
-				if (activeRuntimeVersion && !bypassRuntimeForThisBoot) {
-					bypassRuntimeForThisBoot = true;
-					try {
-						const url = await enqueueServerStep(() => startServerSidecar());
-						await syncAgentUrl(url);
-						return;
-					} catch (fallbackError) {
-						console.error("[desktop] 退回安装包内运行时也失败了：", fallbackError);
-					}
+		void startKernel().catch(async (error: unknown) => {
+			console.error("[desktop] Agent startup failed; browser remains available:", error);
+			// 运行时报废时本次启动立刻退回包内自带那份，别让用户只看到报错（文档 §十六 兜底原则）。
+			if (activeRuntimeVersion && !bypassRuntimeForThisBoot) {
+				bypassRuntimeForThisBoot = true;
+				try {
+					const url = await enqueueServerStep(() => startServerSidecar());
+					await syncAgentUrl(url);
+					await refreshKernelState(url, "local");
+					return;
+				} catch (fallbackError) {
+					console.error("[desktop] 退回安装包内运行时也失败了：", fallbackError);
 				}
-				if (!browserHost?.browser.getSettings().agentUrl)
-					browserHost?.setAgentError(error instanceof Error ? error.message : String(error));
-			});
+			}
+			if (!browserHost?.browser.getSettings().agentUrl)
+				browserHost?.setAgentError(error instanceof Error ? error.message : String(error));
+		});
 		void wireAutoUpdater().catch((error: unknown) => console.warn("[desktop] updater unavailable:", error));
 	} catch (err) {
 		console.error("✖ 桌面版启动失败：", err);

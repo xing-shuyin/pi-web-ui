@@ -1,4 +1,7 @@
-import type { ServerMessage } from "../server/protocol.js";
+import type { KernelInstallKind, ServerMessage } from "../server/protocol.js";
+
+/** 安装形态是内核报的（`/api/health` 的 `kernel.installKind`），形状单源在 server/protocol.ts。 */
+export type { KernelInstallKind };
 
 export type BrowserPageRequest = Omit<Extract<ServerMessage, { type: "page_request" }>, "type" | "id">;
 export type BrowserPageResult = { ok: true; result?: unknown } | { ok: false; error: string };
@@ -34,6 +37,24 @@ export interface BrowserState {
 	agentUrl: string;
 	agentReady: boolean;
 	agentError?: string;
+	/** 内核状态：这个地址上跑的是谁、关掉壳之后还在不在（见 docs/architecture-kernel.md）。 */
+	kernel?: BrowserKernelState;
+}
+
+/**
+ * 内核（唯一的 pi-web-ui 服务进程）在壳里的视图。
+ * 判定与文案都在 `desktop/kernel-mode.ts`；这里只定义跨层形状。
+ */
+export interface BrowserKernelState {
+	mode: "external" | "local";
+	reason: "external-reachable" | "no-external-configured" | "external-unreachable";
+	url: string;
+	reachable: boolean;
+	version?: string;
+	installKind?: KernelInstallKind;
+	supervisor: string | null;
+	uptimeMs?: number;
+	error?: string;
 }
 
 /**
@@ -121,6 +142,10 @@ export type BrowserShellAction =
 	| "mode"
 	| "splitRatio"
 	| "agent.connect"
+	/** 内核（唯一服务进程）：查状态、一键装为系统服务、重启（见 docs/architecture-kernel.md） */
+	| "kernel.status"
+	| "kernel.install"
+	| "kernel.restart"
 	| "bookmarks.list"
 	| "bookmarks.save"
 	/** 从别的浏览器导出的书签文件导入：宿主自己开原生选文件对话框、读盘、解析再合并，回执只有条数 */
