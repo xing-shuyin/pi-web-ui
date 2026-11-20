@@ -14,7 +14,7 @@ const HOST_PROVIDED = [
 	"typebox",
 ];
 
-const USED = ["@earendil-works/pi-coding-agent", "typebox"];
+const USED = ["@earendil-works/pi-coding-agent", "@earendil-works/pi-tui", "typebox"];
 
 const manifest = JSON.parse(readFileSync(new URL("../../package.json", import.meta.url), "utf8")) as {
 	dependencies?: Record<string, string>;

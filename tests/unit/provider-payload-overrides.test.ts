@@ -92,7 +92,6 @@ describe("provider payload sampling overrides", () => {
 		});
 	});
 
-
 	it("detects Gemma 4 from the provider model and explicitly sends thinking off", () => {
 		const result = mergeModelSamplingParamsIntoProviderPayload({ model: "gemma-4", messages: [] }, {
 			id: "gemma-4-it",
@@ -122,15 +121,12 @@ describe("provider payload sampling overrides", () => {
 	});
 
 	it("leaves non-record payloads unchanged", () => {
-		const payload = "Hello";
-		const params = { api: "anthropic-messages", samplingParams: { top_k: 64 } };
-		expect(mergeModelSamplingParamsIntoProviderPayload(payload, params)).toBe(payload);
-		expect(
-			mergeModelSamplingParamsIntoProviderPayload({ prompt: "Hello" }, {
-				api: "openai-completions",
-				samplingParams: { top_k: 64 },
-			}),
-		).toEqual({ prompt: "Hello" });
+		const params = { api: "openai-completions", samplingParams: { top_k: 64 } };
+		const stringPayload = "Hello";
+		const arrayPayload = ["Hello"];
+
+		expect(mergeModelSamplingParamsIntoProviderPayload(stringPayload, params)).toBe(stringPayload);
+		expect(mergeModelSamplingParamsIntoProviderPayload(arrayPayload, params)).toBe(arrayPayload);
 	});
 
 	it("leaves the original payload and model parameters untouched", () => {

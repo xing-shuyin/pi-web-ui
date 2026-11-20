@@ -39962,14 +39962,13 @@
 	white-space: nowrap;
 }
 .sampling-controls-grid input[type="number"],
-.sampling-controls-grid select {
-	width: 68px;
+.sampling-controls-grid button {
 	min-height: 26px;
 	border: 1px solid var(--border);
 	border-radius: 5px;
 	background: var(--bg-elev);
 	color: var(--text);
-	padding: 3px 5px;
+	padding: 3px 7px;
 	font: inherit;
+	cursor: pointer;
 }
-.sampling-controls-grid select { width: 84px; }

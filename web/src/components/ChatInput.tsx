@@ -94,13 +94,13 @@ const DEFAULT_SAMPLING_OVERRIDES: import("../types").SamplingOverrides = {
 };
 
 function normalizeSamplingOverrides(value: unknown): import("../types").SamplingOverrides {
-	const saved = value && typeof value === "object" && !Array.isArray(value)
-		? value as Record<string, unknown>
-		: {};
+	const saved =
+		value && typeof value === "object" && !Array.isArray(value) ? (value as Record<string, unknown>) : {};
 	return {
 		profile: saved.profile === "gemma4" ? "gemma4" : "default",
 		thinkingEnabled: typeof saved.thinkingEnabled === "boolean" ? saved.thinkingEnabled : false,
-		thinkingEffort: saved.thinkingEffort === "low" || saved.thinkingEffort === "high" ? saved.thinkingEffort : "medium",
+		thinkingEffort:
+			saved.thinkingEffort === "low" || saved.thinkingEffort === "high" ? saved.thinkingEffort : "medium",
 		preserveThinking: typeof saved.preserveThinking === "boolean" ? saved.preserveThinking : true,
 	};
 }
@@ -327,7 +327,9 @@ export const ChatInput = memo(function ChatInput({
 	}, [samplingStorageKey]);
 	useEffect(() => {
 		if (!samplingStorageKey || samplingLoadedForKey !== samplingStorageKey) return;
-		try { localStorage.setItem(samplingStorageKey, JSON.stringify(samplingOverrides)); } catch {}
+		try {
+			localStorage.setItem(samplingStorageKey, JSON.stringify(samplingOverrides));
+		} catch {}
 	}, [samplingStorageKey, samplingLoadedForKey, samplingOverrides]);
 
 	const lastRecallSeqRef = useRef(0);
@@ -1345,7 +1347,15 @@ export const ChatInput = memo(function ChatInput({
 			onNotice("warning", t("sessionInitializingNotice"));
 			return;
 		}
-		if (appSend({ type: "prompt", text: trimmed, queue, samplingOverrides, attachments: buildPromptAttachments() })) {
+		if (
+			appSend({
+				type: "prompt",
+				text: trimmed,
+				queue,
+				samplingOverrides,
+				attachments: buildPromptAttachments(),
+			})
+		) {
 			if (trimmed) pushPromptHistory(trimmed);
 			historyIndexRef.current = -1;
 			draftRef.current = "";
@@ -2038,10 +2048,62 @@ export const ChatInput = memo(function ChatInput({
 				<details className="sampling-controls">
 					<summary>Generation settings</summary>
 					<div className="sampling-controls-grid">
-						<label>Profile <select value={samplingOverrides.profile ?? "default"} onChange={(e) => setSamplingOverrides((v) => e.target.value === "gemma4" ? { ...v, profile: "gemma4", thinkingEnabled: true, thinkingEffort: "medium", preserveThinking: true } : { profile: "default", thinkingEnabled: false, thinkingEffort: "medium", preserveThinking: true })}><option value="default">Default</option><option value="gemma4">Gemma 4</option></select></label>
-						<label className="sampling-thinking-toggle"><input type="checkbox" checked={samplingOverrides.thinkingEnabled ?? false} onChange={(e) => setSamplingOverrides((v) => ({ ...v, thinkingEnabled: e.target.checked }))} /> Thinking</label>
-						<label>Effort <select value={samplingOverrides.thinkingEffort ?? "medium"} onChange={(e) => setSamplingOverrides((v) => ({ ...v, thinkingEffort: e.target.value as "low" | "medium" | "high" }))}><option value="low">Low</option><option value="medium">Medium</option><option value="high">High</option></select></label>
-						<label className="sampling-thinking-toggle"><input type="checkbox" checked={samplingOverrides.preserveThinking ?? true} onChange={(e) => setSamplingOverrides((v) => ({ ...v, preserveThinking: e.target.checked }))} /> Preserve thinking</label>
+						<button
+							type="button"
+							className="sampling-controls-choice"
+							onClick={() =>
+								setSamplingOverrides((current) =>
+									current.profile === "gemma4"
+										? { ...current, profile: "default", thinkingEnabled: false }
+										: {
+											...current,
+											profile: "gemma4",
+											thinkingEnabled: true,
+											thinkingEffort: "medium",
+											preserveThinking: true,
+										},
+								),
+							}
+						>
+							Profile: {samplingOverrides.profile === "gemma4" ? "Gemma 4" : "Default"}
+						</button>
+						<label className="sampling-thinking-toggle">
+							<input
+								type="checkbox"
+								checked={samplingOverrides.thinkingEnabled ?? false}
+								onChange={(e) =>
+									setSamplingOverrides((current) => ({ ...current, thinkingEnabled: e.target.checked }))
+								}
+							/>
+							Thinking
+						</label>
+						<button
+							type="button"
+							className="sampling-controls-choice"
+							onClick={() =>
+								setSamplingOverrides((current) => ({
+									...current,
+									thinkingEffort:
+										current.thinkingEffort === "low"
+											? "medium"
+											: current.thinkingEffort === "medium"
+												? "high"
+												: "low",
+								}))
+							}
+						>
+							Effort: {(samplingOverrides.thinkingEffort ?? "medium").toUpperCase()}
+						</button>
+						<label className="sampling-thinking-toggle">
+							<input
+								type="checkbox"
+								checked={samplingOverrides.preserveThinking ?? true}
+								onChange={(e) =>
+									setSamplingOverrides((current) => ({ ...current, preserveThinking: e.target.checked }))
+								}
+							/>
+							Preserve thinking
+						</label>
 					</div>
 				</details>
 				<textarea

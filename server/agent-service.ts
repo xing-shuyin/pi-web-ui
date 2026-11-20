@@ -37,7 +37,11 @@ import {
 	type ToolDefinition,
 } from "@earendil-works/pi-coding-agent";
 import { getSdkBuiltinExtensionFactories, SDK_DISABLED_BUILTIN_EXTENSIONS } from "./sdk-builtin-extensions.js";
-import { mergeModelSamplingParamsIntoProviderPayload, getConversationSamplingOverrides, setConversationSamplingOverrides } from "./provider-payload-overrides.js";
+import {
+	getConversationSamplingOverrides,
+	mergeModelSamplingParamsIntoProviderPayload,
+	setConversationSamplingOverrides,
+} from "./provider-payload-overrides.js";
 import { BG_CLEANUP_FALLBACK_MIN, BgServerTracker } from "./bg-servers.js";
 import { JobRegistry, JOB_TASK_PREFIX, type JobSnapshot } from "./job-runner.js";
 import { resolveProjectScripts } from "./project-scripts.js";
@@ -4937,8 +4941,15 @@ export class ClientSession {
 								hidden: true,
 								factory: (pi) => {
 									pi.on("before_provider_request", (event, ctx) =>
-										mergeModelSamplingParamsIntoProviderPayload(event.payload, ctx.model, getConversationSamplingOverrides(ownerId, this.convs.get(ownerId ?? "")?.parentId)),
-									);
+									mergeModelSamplingParamsIntoProviderPayload(
+										event.payload,
+										ctx.model,
+										getConversationSamplingOverrides(
+											ownerId,
+											this.convs.get(ownerId ?? "")?.parentId,
+										),
+									),
+								);
 								},
 							},
 							{

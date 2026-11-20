@@ -11,9 +11,14 @@ export function setConversationSamplingOverrides(conversationId: string, overrid
 	conversationSamplingOverrides.set(conversationId, { ...overrides });
 }
 
-export function getConversationSamplingOverrides(conversationId?: string, parentConversationId?: string): SamplingOverrides | undefined {
-	return (conversationId ? conversationSamplingOverrides.get(conversationId) : undefined)
-		?? (parentConversationId ? conversationSamplingOverrides.get(parentConversationId) : undefined);
+export function getConversationSamplingOverrides(
+	conversationId?: string,
+	parentConversationId?: string,
+): SamplingOverrides | undefined {
+	return (
+		(conversationId ? conversationSamplingOverrides.get(conversationId) : undefined) ??
+		(parentConversationId ? conversationSamplingOverrides.get(parentConversationId) : undefined)
+	);
 }
 
 type ProviderModelLike = {
@@ -41,9 +46,10 @@ export function mergeModelSamplingParamsIntoProviderPayload(
 	// chat_template_kwargs, including reasoning_effort while thinking is disabled.
 	const isGemma4Model = /(?:^|[-_/])gemma[-_]?4(?:[-_/]|$)/i.test(model?.id ?? "");
 	const hasModelChatTemplate = isRecord(modelParams) && isRecord(modelParams.chat_template_kwargs);
-	const usesChatTemplateThinking = model?.api === "openai-completions"
-		&& (overrides?.profile === "gemma4" || isGemma4Model || hasModelChatTemplate)
-		&& typeof overrides?.thinkingEnabled === "boolean";
+	const usesChatTemplateThinking =
+		model?.api === "openai-completions" &&
+		(overrides?.profile === "gemma4" || isGemma4Model || hasModelChatTemplate) &&
+		typeof overrides?.thinkingEnabled === "boolean";
 	if (usesChatTemplateThinking) {
 		overrideParams.chat_template_kwargs = {
 			enable_thinking: overrides.thinkingEnabled,
@@ -52,18 +58,28 @@ export function mergeModelSamplingParamsIntoProviderPayload(
 		};
 	}
 
-	if ((!isRecord(modelParams) || Object.keys(modelParams).length === 0) && Object.keys(overrideParams).length === 0) {
+	if (
+		(!isRecord(modelParams) || Object.keys(modelParams).length === 0) &&
+		Object.keys(overrideParams).length === 0
+	) {
 		return payload;
 	}
 
-	const merged: Record<string, unknown> = { ...(isRecord(modelParams) ? modelParams : {}), ...payload, ...overrideParams };
-	const modelChatTemplateKwargs = isRecord(modelParams) && isRecord(modelParams.chat_template_kwargs)
-		? modelParams.chat_template_kwargs
-		: {};
+	const merged: Record<string, unknown> = {
+		...(isRecord(modelParams) ? modelParams : {}),
+		...payload,
+		...overrideParams,
+	};
+	const modelChatTemplateKwargs =
+		isRecord(modelParams) && isRecord(modelParams.chat_template_kwargs) ? modelParams.chat_template_kwargs : {};
 	const requestChatTemplateKwargs = payload.chat_template_kwargs;
 	const overrideChatTemplateKwargs = overrideParams.chat_template_kwargs;
 
-	if (Object.keys(modelChatTemplateKwargs).length > 0 || isRecord(requestChatTemplateKwargs) || isRecord(overrideChatTemplateKwargs)) {
+	if (
+		Object.keys(modelChatTemplateKwargs).length > 0 ||
+		isRecord(requestChatTemplateKwargs) ||
+		isRecord(overrideChatTemplateKwargs)
+	) {
 		merged.chat_template_kwargs = {
 			...modelChatTemplateKwargs,
 			...(isRecord(requestChatTemplateKwargs) ? requestChatTemplateKwargs : {}),
