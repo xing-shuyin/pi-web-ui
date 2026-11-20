@@ -37,6 +37,7 @@ import {
 	type ToolDefinition,
 } from "@earendil-works/pi-coding-agent";
 import { getSdkBuiltinExtensionFactories, SDK_DISABLED_BUILTIN_EXTENSIONS } from "./sdk-builtin-extensions.js";
+import { mergeModelSamplingParamsIntoProviderPayload } from "./provider-payload-overrides.js";
 import { BG_CLEANUP_FALLBACK_MIN, BgServerTracker } from "./bg-servers.js";
 import { JobRegistry, JOB_TASK_PREFIX, type JobSnapshot } from "./job-runner.js";
 import { resolveProjectScripts } from "./project-scripts.js";
@@ -4926,6 +4927,15 @@ export class ClientSession {
 						extensionFactories: [
 							...sdkBuiltins,
 							requestContextExtension,
+							{
+								name: "pi-webui-provider-payload-overrides",
+								hidden: true,
+								factory: (pi) => {
+									pi.on("before_provider_request", (event, ctx) =>
+										mergeModelSamplingParamsIntoProviderPayload(event.payload, ctx.model),
+									);
+								},
+							},
 							{
 								name: "pi-webui-sandbox-final-gate",
 								hidden: true,
