@@ -30,6 +30,7 @@ export interface ThinkingPresetProfile {
 	descKey: MessageKey;
 	type: "budget" | "effort" | "fixed" | "full";
 	thinkingFormat?: string;
+	chatTemplateKwargs?: Record<string, unknown>;
 	map: Partial<Record<ThinkingValue, string | null>>;
 }
 
@@ -40,6 +41,7 @@ export const THINKING_FORMAT_OPTIONS = [
 	{ value: "deepseek", labelKey: "thinkingFormat.deepseek" },
 	{ value: "openrouter", labelKey: "thinkingFormat.openrouter" },
 	{ value: "zai", labelKey: "thinkingFormat.zai" },
+	{ value: "chat-template", labelKey: "thinkingFormat.chatTemplate" },
 ] as const satisfies readonly { value: string; labelKey: MessageKey }[];
 
 export const THINKING_PRESET_PROFILES: ThinkingPresetProfile[] = [
@@ -120,6 +122,24 @@ export const THINKING_PRESET_PROFILES: ThinkingPresetProfile[] = [
 			high: "high",
 			xhigh: null,
 			max: null,
+		},
+	},
+	{
+		id: "gemma4-chat-template",
+		nameKey: "thinkingPreset.gemma4ChatTemplate.name",
+		descKey: "thinkingPreset.gemma4ChatTemplate.desc",
+		type: "effort",
+		thinkingFormat: "chat-template",
+		chatTemplateKwargs: {
+			enable_thinking: { $var: "thinking.enabled" },
+			reasoning_effort: { $var: "thinking.effort", omitWhenOff: true },
+			preserve_thinking: true,
+		},
+		map: {
+			off: "none",
+			low: "low",
+			medium: "medium",
+			high: "high",
 		},
 	},
 	{
