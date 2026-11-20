@@ -9,7 +9,7 @@ import { normalizePathKey } from "../../server/client-state.js";
 import { handleSessionLifecycleMessage, handleTerminalMessage } from "../../server/dispatch-domain-handlers.js";
 import { persistNativeCliConfig, readNativeCliConfig } from "../../server/native-cli.js";
 import type { NativeCliConfig } from "../../server/protocol.js";
-import { fakeClientSession } from "../helpers/fake-session.js";
+import { fakeClientSession, fakeWebUi } from "../helpers/fake-session.js";
 import * as remoteCli from "../../server/remote-native-cli.js";
 import {
 	getGlobalRemoteSshService,
@@ -84,7 +84,7 @@ function client(overrides: Record<string, unknown> = {}): any {
 		applyCwdSideEffects: vi.fn(),
 		startWidgetsTimer: vi.fn(),
 		startStallTimer: vi.fn(),
-		webUi: { refresh: vi.fn() },
+		webUi: fakeWebUi(),
 		notifyConversationChanged: vi.fn(),
 		pushSettings: vi.fn(),
 		pushSlashCommands: vi.fn(async () => {}),
@@ -290,7 +290,7 @@ describe("native CLI conversations", () => {
 			modelAdmin: { dispose: vi.fn() },
 			bg: { stop: vi.fn() },
 			files: { unwatchDir: vi.fn(), unwatchGit: vi.fn() },
-			webUi: { refresh: vi.fn(), dispose: vi.fn() },
+			webUi: fakeWebUi(),
 			settingsSvc: { current: {}, dispose: vi.fn() },
 			cancelPendingQuestions: vi.fn(),
 			cancelPendingPageCalls: vi.fn(),
