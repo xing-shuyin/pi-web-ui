@@ -19,5 +19,10 @@ describe("Gemma 4 chat-template preset", () => {
 			reasoning_effort: { $var: "thinking.effort", omitWhenOff: true },
 			preserve_thinking: true,
 		});
+		expect(JSON.parse(profile?.customExtraBody ?? "{}")).toEqual({
+			temperature: 0.8,
+			top_k: 64,
+			top_p: 0.95,
+		});
 	});
 });
