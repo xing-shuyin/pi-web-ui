@@ -905,7 +905,11 @@ export class GoalService {
 			srvSession = srv.session;
 			const wizard = srv.session;
 			this.wizardSession = wizard;
-			await wizard.bindExtensions({ mode: "rpc", uiContext: this.host.webUi });
+			await wizard.bindExtensions({
+				mode: "rpc",
+				// 向导 widget 属于发起它的那个对话：打上固定归属，用户中途切到别的对话也不会混过去
+				uiContext: this.host.webUi.forConversation(this.host.activeConvId()),
+			});
 
 			const unsubscribe = wizard.subscribe((event) => {
 				if (event.type === "tool_execution_start" && event.toolName !== "goal_ask") {

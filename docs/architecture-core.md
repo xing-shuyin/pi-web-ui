@@ -595,6 +595,8 @@ pointer-events:none、2.2s 淡出），避免用户以为页面自己在动。�
 
 扩展的 `setWidget/setStatus/notify/select/confirm/input` → `widgets/statuses/notice/dialog` 消息；对话框经 `dialog_response` 回传，Esc 视为取消。`Dialog.tsx`（扩展对话框）与 `QuestionDialog.tsx`（共用模型问卷）的正文/选项/详情/预览都走 `Markdown(rawHtml)` 富渲染（markdown + 原始 HTML 混排，模型自选、信任模型；默认 `rawHtml=false` 的聊天正文渲染不受影响），可选项 `preview` 展示「选项预览」框。
 
+**widget / status 按会话归属（issue #952）**：整个进程只有一个 `WebUIContext`，所有会话的扩展都往它上面 `setWidget`，早先只按 key 存 → 同名 key last-writer-wins，切会话时 `refresh()` 又是「内容没变就不发」，于是右侧面板会一直挂着上一个会话的清单（issue 报的「Todo list 不同步」就是这个）。现在：条目带 `convId`（`null` = 全局，只有内置 `markers` 这类渲染时自读 `activeId` 的组件用），每个会话的扩展经 `webUi.forConversation(conv.id)` 拿到打了归属的门面（必须是 own 属性覆盖：SDK 拿到 uiContext 会 `{...ui}` 复制一遍，Proxy 的拦截会被 spread 抹掉）；`snapshot()/refresh()` 只渲染当前会话 + 全局条目，**切换会话时强制重推一次 widgets + statuses**（切到没有 widget 的会话也要把面板清空），轮询里顺手清掉已关闭会话的条目（`isConversationAlive`）。根 context 上的 `setWidget` 归属「当前会话」，不再当全局。回归：`tests/unit/webui-context.test.ts`（「跨会话 widget / status 隔离」7 条）。
+
 `snapshot` 里 `streamingMessage` 是进行中的消息（60ms 粒度流式），`messages` 是已落盘的。
 
 ### Durable 引擎的数据来源：只认 AgentEvent，不读 `pi.live` 槽位（`server/durable/durable-event-projector.ts`）

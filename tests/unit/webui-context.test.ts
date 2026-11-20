@@ -196,3 +196,132 @@ describe("mockThemeProxy 返回装饰函数的方法（0.103 审计，#592 同�
 		expect(bashBorder("命令")).toBe("命令");
 	});
 });
+
+describe("跨会话 widget / status 隔离（issue #952：切对话后还挂着上一个会话的清单）", () => {
+	function harness() {
+		let active = "conv-a";
+		const alive = new Set(["conv-a", "conv-b"]);
+		const msgs: ServerMessage[] = [];
+		const ui = new WebUIContext((msg) => msgs.push(msg), {
+			activeConversationId: () => active,
+			isConversationAlive: (id) => alive.has(id),
+		});
+		const lastWidgets = () => {
+			for (let i = msgs.length - 1; i >= 0; i--) {
+				const m = msgs[i];
+				if (m.type === "widgets") return m.widgets;
+			}
+			return undefined;
+		};
+		const lastStatuses = () => {
+			for (let i = msgs.length - 1; i >= 0; i--) {
+				const m = msgs[i];
+				if (m.type === "statuses") return m.statuses;
+			}
+			return undefined;
+		};
+		return {
+			ui,
+			msgs,
+			lastWidgets,
+			lastStatuses,
+			switchTo: (id: string) => {
+				active = id;
+				ui.refresh();
+			},
+			close: (id: string) => alive.delete(id),
+		};
+	}
+
+	it("会话 A 的 widget 不进会话 B 的快照，切回来又在", () => {
+		const h = harness();
+		h.ui.forConversation("conv-a").setWidget("todos", ["○ 写代码"]);
+		expect(h.lastWidgets()).toEqual([{ key: "todos", lines: ["○ 写代码"] }]);
+
+		h.switchTo("conv-b");
+		// 关键：切到没有任何 widget 的会话也必须推一次空数组，否则前端保留上一份
+		expect(h.lastWidgets()).toEqual([]);
+		expect(h.ui.snapshot()).toEqual([]);
+
+		h.switchTo("conv-a");
+		expect(h.lastWidgets()).toEqual([{ key: "todos", lines: ["○ 写代码"] }]);
+	});
+
+	it("两个会话各写同名 key，互不覆盖（last-writer-wins 才是串台的根）", () => {
+		const h = harness();
+		h.ui.forConversation("conv-a").setWidget("todos", ["A 的任务"]);
+		h.ui.forConversation("conv-b").setWidget("todos", ["B 的任务"]);
+		expect(h.ui.snapshot()).toEqual([{ key: "todos", lines: ["A 的任务"] }]);
+		h.switchTo("conv-b");
+		expect(h.ui.snapshot()).toEqual([{ key: "todos", lines: ["B 的任务"] }]);
+	});
+
+	it("SDK 的 {...uiContext} 复制不会丢归属（必须 own 属性覆盖，Proxy 会被 spread 抹掉）", () => {
+		const h = harness();
+		const facade = h.ui.forConversation("conv-b");
+		const copied = { ...facade } as typeof facade;
+		copied.setWidget("todos", ["B 的任务"]);
+		expect(h.lastWidgets()).toEqual([]);
+		h.switchTo("conv-b");
+		expect(h.ui.snapshot()).toEqual([{ key: "todos", lines: ["B 的任务"] }]);
+	});
+
+	it("真 SDK 的 wrapUIPromptContext（会再 spread 一次）之后归属仍在", () => {
+		const h = harness();
+		const proto = ExtensionRunner.prototype as unknown as {
+			wrapUIPromptContext?: (ui: unknown) => unknown;
+		};
+		const wrap = proto.wrapUIPromptContext;
+		if (typeof wrap !== "function") return;
+		const wrapped = wrap.call(
+			{ withUIPrompt: (_k: string, _t: unknown, run: () => unknown) => run() },
+			h.ui.forConversation("conv-b"),
+		) as { setWidget: (key: string, lines: string[]) => void };
+		wrapped.setWidget("todos", ["B 的任务"]);
+		// 落在 conv-b，而不是当前会话 conv-a
+		expect(h.lastWidgets()).toEqual([]);
+		h.switchTo("conv-b");
+		expect(h.ui.snapshot()).toEqual([{ key: "todos", lines: ["B 的任务"] }]);
+	});
+
+	it("根 context 上的 setWidget 归属当前会话，不是全局条目", () => {
+		const h = harness();
+		h.ui.setWidget("todos", ["A 的任务"]);
+		h.switchTo("conv-b");
+		expect(h.ui.snapshot()).toEqual([]);
+	});
+
+	it("全局 widget（内置 markers）每个会话都下发", () => {
+		const h = harness();
+		h.ui.setDynamicWidget("markers", () => ["● 运行中"]);
+		expect(h.ui.snapshot()).toEqual([{ key: "markers", lines: ["● 运行中"] }]);
+		h.switchTo("conv-b");
+		expect(h.ui.snapshot()).toEqual([{ key: "markers", lines: ["● 运行中"] }]);
+	});
+
+	it("已关闭会话的 widget 在轮询里被清掉（含 dispose），不留到别的会话", () => {
+		const h = harness();
+		let disposed = 0;
+		h.ui.forConversation("conv-b").setWidget("todos", (() => ({
+			render: () => ["B"],
+			invalidate: () => {},
+			dispose: () => {
+				disposed++;
+			},
+		})) as unknown as Parameters<WebUIContext["setWidget"]>[1]);
+		h.switchTo("conv-b");
+		h.switchTo("conv-a");
+		h.close("conv-b");
+		h.ui.refresh();
+		expect(disposed).toBe(1);
+		expect(h.ui.hasWidgets()).toBe(false);
+	});
+
+	it("statuses 同样按会话隔离（footer 上的状态行不能串台）", () => {
+		const h = harness();
+		h.ui.forConversation("conv-a").setStatus("quota", "5h 19%");
+		expect(h.lastStatuses()).toEqual([{ key: "quota", text: "5h 19%" }]);
+		h.switchTo("conv-b");
+		expect(h.lastStatuses()).toEqual([]);
+	});
+});

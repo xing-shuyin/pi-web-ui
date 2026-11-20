@@ -3799,7 +3799,12 @@ export class ClientSession {
 		return estimateNonSystemTokens(conv.session.agent.state.messages, conv.session.agent.state.streamingMessage);
 	}
 
-	private webUi = new WebUIContext((msg) => this.emit(msg));
+	private webUi = new WebUIContext((msg) => this.emit(msg), {
+		// widget / status 都带会话归属（issue #952）：快照只发当前会话的 + 全局的，
+		// 切会话时 refresh() 会因会话变化强推一次（切到没有 widget 的会话也要清空面板）。
+		activeConversationId: () => this.activeId,
+		isConversationAlive: (id) => this.convs.has(id),
+	});
 
 	private subagentHandoffs: SubagentHandoffRecord[] = [];
 
@@ -5962,7 +5967,7 @@ export class ClientSession {
 		}
 		await conv.session.bindExtensions({
 			mode: "rpc",
-			uiContext: this.webUi,
+			uiContext: this.webUi.forConversation(conv.id),
 			onError: this.makeExtensionErrorReporter(
 				conv.isEphemeral ? { text: `临时对话 ${conv.id}：`, textEn: `Ephemeral chat ${conv.id}: ` } : undefined,
 			),
