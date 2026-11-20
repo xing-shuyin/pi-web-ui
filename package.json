@@ -215,7 +215,12 @@
 		"typescript": "^7.0.2",
 		"vis-timeline": "^8.5.4",
 		"vite": "^8.3.0",
-		"vitest": "^5.0.1"
+		"vitest": "^5.0.1",
+		"mdast-util-from-markdown": "^2.0.3",
+		"mdast-util-math": "^3.0.0",
+		"micromark-util-types": "^2.0.2",
+		"remark-parse": "^11.0.0",
+		"unified": "^11.0.5"
 	},
 	"allowScripts": {
 		"node-pty@1.1.0": true
