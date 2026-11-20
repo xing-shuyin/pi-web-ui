@@ -19185,7 +19185,17 @@
 
 	.goalbar-round > span {
 		flex: 0 0 auto;
+		min-width: 0;
 		color: var(--text-faint);
+		overflow-wrap: anywhere;
+		word-break: break-word;
+	}
+
+	.goalbar-lock-hint {
+		min-width: 0;
+		white-space: nowrap;
+		overflow: hidden;
+		text-overflow: ellipsis;
 	}
 
 	.goalbar-round input {
