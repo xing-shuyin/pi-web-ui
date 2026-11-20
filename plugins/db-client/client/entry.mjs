@@ -1,6 +1,6 @@
 /* db-client 客户端 bundle —— 由 npm run build 生成，源码在 src/client.js */
 
-// plugins/db-client/src/client.js
+// src/client.js
 import { makeT } from "../client/i18n.mjs";
 function esc(s) {
   return String(s ?? "").replace(

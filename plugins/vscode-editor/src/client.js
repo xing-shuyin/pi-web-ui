@@ -850,37 +850,37 @@ export default {
 	</style>
 	<div class="vsc-side">
 		<div class="vsc-stabs">
-			<button class="stab active" data-pane="files">📁 文件</button>
-			<button class="stab" data-pane="ssh">🖥 SSH</button>
+			<button class="stab active" data-pane="files">${tr("filesTab")}</button>
+			<button class="stab" data-pane="ssh">${tr("sshTab")}</button>
 		</div>
 		<div class="vsc-pane" data-pane="files">
 			<div class="vsc-side-head">
 				<span style="flex:1"></span>
-				<button data-act="new-file" title="新建文件（当前选中的目录）">📄</button>
-				<button data-act="new-dir" title="新建文件夹（当前选中的目录）">📁</button>
-				<button data-act="upload" title="上传文件到工作区根目录（也可拖拽到文件树）">⬆</button>
-				<button data-act="upload-folder" title="上传文件夹（含子目录结构）">📂</button>
-				<button data-act="zip" title="下载为 ZIP（多选：按住 Ctrl/Cmd 点选）">🗜</button>
-				<button data-act="extract" title="解压 ZIP 到当前目录…">📦</button>
-				<button data-act="search" title="按文件名搜索（本地工作区）">🔍</button>
-				<button data-act="refresh" title="刷新">⟳</button>
+				<button data-act="new-file" title="${tr("newFileT")}">📄</button>
+				<button data-act="new-dir" title="${tr("newDirT")}">📁</button>
+				<button data-act="upload" title="${tr("uploadT")}">⬆</button>
+				<button data-act="upload-folder" title="${tr("uploadFolderT")}">📂</button>
+				<button data-act="zip" title="${tr("zipT")}">🗜</button>
+				<button data-act="extract" title="${tr("extractT")}">📦</button>
+				<button data-act="search" title="${tr("searchLocalT")}">🔍</button>
+				<button data-act="refresh" title="${tr("refreshT")}">⟳</button>
 			</div>
 			<div class="vsc-tree"></div>
 		</div>
 		<div class="vsc-pane vsc-hidden" data-pane="ssh">
 			<div class="vsc-side-head">
 				<span style="flex:1"></span>
-				<button data-act="add-host" title="添加主机">🏠</button>
-				<button data-act="deps" class="vsc-hidden" title="安装 ssh2 依赖">⚠ssh2</button>
-				<button data-act="new-term" title="新建远程终端">🖥</button>
-				<button data-act="r-new-file" title="新建文件（当前选中的目录）">📄</button>
-				<button data-act="r-new-dir" title="新建文件夹（当前选中的目录）">📁</button>
-				<button data-act="r-upload" title="上传文件到当前选中目录">⬆</button>
-				<button data-act="r-upload-folder" title="上传文件夹到当前选中目录（含子目录结构）">📂</button>
-				<button data-act="r-zip" title="下载为 ZIP（多选：按住 Ctrl/Cmd 点选）">🗜</button>
-				<button data-act="r-extract" title="解压 ZIP 到当前目录…">📦</button>
-				<button data-act="r-search" title="按文件名搜索（远端）">🔍</button>
-				<button data-act="r-refresh" title="刷新远端目录">⟳</button>
+				<button data-act="add-host" title="${tr("addHostT")}">🏠</button>
+				<button data-act="deps" class="vsc-hidden" title="${tr("depsT")}">⚠ssh2</button>
+				<button data-act="new-term" title="${tr("newTermT")}">🖥</button>
+				<button data-act="r-new-file" title="${tr("newFileT")}">📄</button>
+				<button data-act="r-new-dir" title="${tr("newDirT")}">📁</button>
+				<button data-act="r-upload" title="${tr("uploadRemoteT")}">⬆</button>
+				<button data-act="r-upload-folder" title="${tr("uploadFolderRemoteT")}">📂</button>
+				<button data-act="r-zip" title="${tr("zipT")}">🗜</button>
+				<button data-act="r-extract" title="${tr("extractT")}">📦</button>
+				<button data-act="r-search" title="${tr("searchRemoteT")}">🔍</button>
+				<button data-act="r-refresh" title="${tr("refreshRemoteT")}">⟳</button>
 			</div>
 			<div class="vsc-hosts"></div>
 			<div class="vsc-sshtree"></div>
@@ -889,24 +889,24 @@ export default {
 	<div class="vsc-backdrop"></div>
 	<div class="vsc-main">
 		<div class="vsc-mobilebar">
-			<button class="vsc-burger" title="文件树">☰</button>
-			<span class="vsc-mtitle">文件</span>
+			<button class="vsc-burger" title="${tr("burgerT")}">☰</button>
+			<span class="vsc-mtitle">${tr("mobileTitle")}</span>
 		</div>
 	<div class="vsc-tabbar">
-		<button class="vsc-splitbtn" data-split="row" title="向右拆分编辑器">◫</button>
-		<button class="vsc-splitbtn" data-split="column" title="向下拆分编辑器">⬓</button>
-		<button class="vsc-saveasbtn" title="另存为 (Ctrl+Shift+S / Cmd+Shift+S)">💾+</button>
-		<button class="vsc-savebtn" title="保存 (Ctrl+S / Cmd+S)">💾 保存</button>
+		<button class="vsc-splitbtn" data-split="row" title="${tr("splitRightT")}">◫</button>
+		<button class="vsc-splitbtn" data-split="column" title="${tr("splitDownT")}">⬓</button>
+		<button class="vsc-saveasbtn" title="${tr("saveAsTitle")}">💾+</button>
+		<button class="vsc-savebtn" title="${tr("saveTitle")}">${tr("saveBtn")}</button>
 	</div>
 	<div class="vsc-groups"></div>
 		<div class="vsc-termdrag vsc-hidden"></div>
 		<div class="vsc-termpanel vsc-hidden">
 			<div class="vsc-termbar">
-				<span class="tt">终端</span>
+				<span class="tt">${tr("termTitle")}</span>
 				<span class="tts"></span>
-				<button class="t-add" title="新建终端">＋</button>
+				<button class="t-add" title="${tr("newTermBtnT")}">＋</button>
 				<span class="grow"></span>
-				<button class="t-hide" title="收起面板">▾</button>
+				<button class="t-hide" title="${tr("hidePanelT")}">▾</button>
 			</div>
 			<div class="vsc-termarea"></div>
 		</div>
@@ -921,7 +921,7 @@ export default {
 		</div>
 	</div>
 	<div class="vsc-quickopen vsc-hidden">
-		<input placeholder="输入文件名筛选…（Esc 关闭）" />
+		<input placeholder="${tr("quickPh")}" />
 		<ul></ul>
 	</div>
 	<input type="file" multiple class="vsc-filepick vsc-hidden" />
@@ -929,21 +929,21 @@ export default {
 	<div class="vsc-menu vsc-hidden"></div>
 	<div class="vsc-modal-bg vsc-host-bg vsc-hidden">
 		<div class="vsc-modal">
-			<h3 class="h-title">新建主机</h3>
-			<label>名称（可选）</label><input name="h-name" placeholder="my-server" />
+			<h3 class="h-title">${tr("hostNew")}</h3>
+			<label>${tr("hostNameL")}</label><input name="h-name" placeholder="my-server" />
 			<div class="grid2">
-				<span><label>主机地址 *</label><input name="h-host" placeholder="192.168.1.10" /></span>
-				<span><label>端口</label><input name="h-port" value="22" /></span>
+				<span><label>${tr("hostHostL")}</label><input name="h-host" placeholder="192.168.1.10" /></span>
+				<span><label>${tr("hostPortL")}</label><input name="h-port" value="22" /></span>
 			</div>
-			<label>用户名</label><input name="h-user" value="root" />
-			<label>密码（编辑时留空 = 保持不变）</label><input name="h-pass" type="password" autocomplete="off" />
-			<label>私钥（PEM，可选）</label><textarea name="h-key" rows="3" placeholder="-----BEGIN OPENSSH PRIVATE KEY-----"></textarea>
-			<label>私钥路径（可选，支持 ~ 展开如 ~/.ssh/id_rsa；填写则优先使用，不必粘贴私钥全文）</label><input name="h-keypath" placeholder="~/.ssh/id_rsa" />
-			<label>私钥口令 passphrase（可选，带口令的私钥用）</label><input name="h-pp" type="password" autocomplete="off" />
-			<label>SSH agent socket（可选，如 $SSH_AUTH_SOCK；与密码/私钥二选一）</label><input name="h-agent" placeholder="$SSH_AUTH_SOCK" />
-			<div class="hint">凭据只保存在本机插件目录（ssh-hosts.json），不会上传。密码 / 私钥 / 私钥路径 / agent 四选一即可。<br>已有 ~/.ssh/config 的无需导入——SSH 面板「⚙ ssh config」自动加载（与 VSCode Remote-SSH 同源，支持 Include / ProxyJump / ProxyCommand），点别名直连。</div>
+			<label>${tr("hostUserL")}</label><input name="h-user" value="root" />
+			<label>${tr("hostPassL")}</label><input name="h-pass" type="password" autocomplete="off" />
+			<label>${tr("hostKeyL")}</label><textarea name="h-key" rows="3" placeholder="-----BEGIN OPENSSH PRIVATE KEY-----"></textarea>
+			<label>${tr("hostKeyPathL")}</label><input name="h-keypath" placeholder="~/.ssh/id_rsa" />
+			<label>${tr("hostPpL")}</label><input name="h-pp" type="password" autocomplete="off" />
+			<label>${tr("hostAgentL")}</label><input name="h-agent" placeholder="$SSH_AUTH_SOCK" />
+			<div class="hint">${tr("hostHint")}</div>
 			<div class="sshcfg-import vsc-hidden"></div>
-			<div class="btns"><button class="cancel">取消</button><button class="import-cfg" title="从 ~/.ssh/config 批量导入主机">从 ssh config 导入</button><button class="primary save-host">保存</button></div>
+			<div class="btns"><button class="cancel">${tr("cancelB")}</button><button class="import-cfg" title="${tr("importCfgT")}">${tr("importCfgB")}</button><button class="primary save-host">${tr("saveB")}</button></div>
 		</div>
 	</div>
 </div>`;
