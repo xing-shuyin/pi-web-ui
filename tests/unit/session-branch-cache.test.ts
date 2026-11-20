@@ -122,8 +122,9 @@ function legacySelectBestSessionLeaf(
 	}
 
 	const sorted = [...candidates].sort((a, b) => {
-		if (b.messageCount !== a.messageCount) return b.messageCount - a.messageCount;
+		// 与生产实现同步：先比最后一条消息的时间（#953），再比消息数
 		if (b.lastMessageTimestamp !== a.lastMessageTimestamp) return b.lastMessageTimestamp - a.lastMessageTimestamp;
+		if (b.messageCount !== a.messageCount) return b.messageCount - a.messageCount;
 		if (b.totalEntries !== a.totalEntries) return b.totalEntries - a.totalEntries;
 		return b.tailTimestamp - a.tailTimestamp;
 	});
@@ -189,12 +190,25 @@ function legacySelectBestSessionLeaf(
 		};
 	}
 
-	if (bestCandidate.messageCount > currentCandidate.messageCount) {
+	if (bestCandidate.lastMessageTimestamp > currentCandidate.lastMessageTimestamp) {
 		return {
 			bestLeafId: bestCandidate.leafId,
 			currentLeafId,
 			changed: true,
-			reason: `Main branch has ${bestCandidate.messageCount} messages vs current branch's ${currentCandidate.messageCount}`,
+			reason: `Main branch's last message is newer (${bestCandidate.lastMessageTimestamp} > ${currentCandidate.lastMessageTimestamp})`,
+		};
+	}
+
+	if (
+		bestCandidate.lastMessageTimestamp === 0 &&
+		currentCandidate.lastMessageTimestamp === 0 &&
+		bestCandidate.messageCount > currentCandidate.messageCount
+	) {
+		return {
+			bestLeafId: bestCandidate.leafId,
+			currentLeafId,
+			changed: true,
+			reason: `No timestamps available; main branch has ${bestCandidate.messageCount} messages vs current branch's ${currentCandidate.messageCount}`,
 		};
 	}
 

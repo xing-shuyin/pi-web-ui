@@ -185,3 +185,82 @@ describe("session-branch (issue #567)", () => {
 		expect(nonHeaderWithId[nonHeaderWithId.length - 1]?.id).toBe("m3");
 	});
 });
+
+describe("fork 之后继续聊天不能被「更长但更旧」的老分支顶掉（issue #953）", () => {
+	/** fork 点之后两条支线：老的 pre-fork 段很长、新写的段更短但更晚。 */
+	function forkedTimeline() {
+		const entries: AnySessionEntry[] = [{ id: "h1", type: "session" }];
+		entries.push({ id: "root", parentId: null, type: "message", timestamp: "2026-11-19T07:00:00.000Z" });
+		// fork 前那段（长、旧）：91 条消息，最后一条 2026-11-19T08:12
+		let prev = "root";
+		for (let i = 0; i < 90; i++) {
+			const id = `old_${i}`;
+			entries.push({
+				id,
+				parentId: prev,
+				type: "message",
+				timestamp: `2026-11-19T08:${String(i % 60).padStart(2, "0")}:00.000Z`,
+			});
+			prev = id;
+		}
+		const preForkLeaf = prev;
+		// fork 之后用户真正继续的那段（短、新）：35 条消息，最后一条 2026-11-20T07:30
+		prev = "root";
+		for (let i = 0; i < 35; i++) {
+			const id = `post_${i}`;
+			entries.push({
+				id,
+				parentId: prev,
+				type: "message",
+				timestamp: `2026-11-20T0${i < 10 ? 1 : 2}:${String(i % 60).padStart(2, "0")}:00.000Z`,
+			});
+			prev = id;
+		}
+		return { entries, preForkLeaf, liveLeaf: prev };
+	}
+
+	it("当前叶子是后写的那支（文件尾）→ 不动，也不再重写文件", () => {
+		const { entries, liveLeaf } = forkedTimeline();
+		const calibrated = selectBestSessionLeaf(entries, liveLeaf);
+		expect(calibrated?.changed).toBe(false);
+		expect(calibrated?.bestLeafId).toBe(liveLeaf);
+
+		const reordered = reorderEntriesForMainBranch(entries);
+		expect(reordered.changed).toBe(false);
+		expect(reordered.entries[reordered.entries.length - 1].id).toBe(liveLeaf);
+	});
+
+	it("文件尾错落在老的 pre-fork 分支上（历史损坏）→ 重排回最新消息所在的分支", () => {
+		const { entries, preForkLeaf, liveLeaf } = forkedTimeline();
+		// 人为制造「老分支排在最后」的损坏顺序，模拟被旧版本写坏的文件
+		const header = entries.filter((e) => e.type === "session");
+		const oldBranch = entries.filter((e) => typeof e.id === "string" && String(e.id).startsWith("old_"));
+		const rest = entries.filter((e) => !header.includes(e) && !oldBranch.includes(e));
+		const staleOrder = [...header, ...rest, ...oldBranch];
+		expect(staleOrder[staleOrder.length - 1].id).toBe(preForkLeaf);
+
+		const calibrated = selectBestSessionLeaf(staleOrder, preForkLeaf);
+		expect(calibrated?.changed).toBe(true);
+		expect(calibrated?.bestLeafId).toBe(liveLeaf);
+		expect(calibrated?.reason).toContain("newer");
+
+		const reordered = reorderEntriesForMainBranch(staleOrder);
+		expect(reordered.changed).toBe(true);
+		const nonHeader = reordered.entries.filter((e) => e.type !== "session");
+		expect(nonHeader[nonHeader.length - 1].id).toBe(liveLeaf);
+	});
+
+	it("老文件没有时间戳 → 退回按消息数判断（保持既有修复语义）", () => {
+		const entries: AnySessionEntry[] = [
+			{ id: "h1", type: "session" },
+			{ id: "root", parentId: null, type: "message" },
+			{ id: "short", parentId: "root", type: "message" },
+			{ id: "long_1", parentId: "root", type: "message" },
+			{ id: "long_2", parentId: "long_1", type: "message" },
+		];
+		const calibrated = selectBestSessionLeaf(entries, "short");
+		expect(calibrated?.changed).toBe(true);
+		expect(calibrated?.bestLeafId).toBe("long_2");
+		expect(calibrated?.reason).toContain("No timestamps available");
+	});
+});

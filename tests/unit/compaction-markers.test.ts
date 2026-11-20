@@ -364,3 +364,41 @@ describe("repairSessionFile", () => {
 		expect(afterSm.getEntry("plan-2")).toBeDefined();
 	});
 });
+
+describe("repairSessionFile：fork 后继续聊天的会话打开即被重写（issue #953）", () => {
+	const line = (id: string, parentId: string | null, at: string) =>
+		JSON.stringify({
+			type: "message",
+			id,
+			parentId,
+			timestamp: at,
+			message: { role: "user", content: id },
+		});
+
+	it("文件尾是最新那支时，打开不重写、不留 .bak", () => {
+		const dir = mkdtempSync(join(tmpdir(), "session-repair-"));
+		const file = join(dir, "s.jsonl");
+		const rows = [HEADER, line("root", null, "2026-11-19T07:00:00.000Z")];
+		// fork 前那段：更长但更旧
+		let prev = "root";
+		for (let i = 0; i < 40; i++) {
+			const id = `old_${i}`;
+			rows.push(line(id, prev, `2026-11-19T08:${String(i).padStart(2, "0")}:00.000Z`));
+			prev = id;
+		}
+		// fork 之后真正续写的那段：更短但更新，且排在文件末尾
+		prev = "root";
+		for (let i = 0; i < 12; i++) {
+			const id = `post_${i}`;
+			rows.push(line(id, prev, `2026-11-20T0${i < 10 ? 1 : 2}:${String(i).padStart(2, "0")}:00.000Z`));
+			prev = id;
+		}
+		const raw = rows.join("\n") + "\n";
+		writeFileSync(file, raw, "utf8");
+
+		const r = repairSessionFile(file);
+		expect(r?.changed).toBe(false);
+		expect(existsSync(`${file}.bak`)).toBe(false);
+		expect(readFileSync(file, "utf8")).toBe(raw);
+	});
+});
