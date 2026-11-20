@@ -160,6 +160,35 @@ describe("SubagentTemplatesStore", () => {
 		expect(raw).toHaveLength(DEFAULT_TEMPLATES.length + 1);
 	});
 
+	it("securityMode 落盘往返：合法三档原样保留，缺省/脏值一律归一成 undefined（继续走名字启发式）", () => {
+		const dir = mkdtempSync(join(tmpdir(), "satpl-"));
+		dirs.push(dir);
+		const file = join(dir, "subagent-templates.json");
+		writeFileSync(
+			file,
+			JSON.stringify([
+				{ name: "ro", systemPrompt: "x", securityMode: "readonly" },
+				{ name: "vf", systemPrompt: "x", securityMode: "verify" },
+				{ name: "nm", systemPrompt: "x", securityMode: "normal" },
+				{ name: "unset", systemPrompt: "x" },
+				{ name: "dirty", systemPrompt: "x", securityMode: "superuser" },
+			]),
+		);
+		const store = new SubagentTemplatesStore(file);
+		expect(store.get("ro")!.securityMode).toBe("readonly");
+		expect(store.get("vf")!.securityMode).toBe("verify");
+		expect(store.get("nm")!.securityMode).toBe("normal");
+		expect(store.get("unset")!.securityMode).toBeUndefined();
+		expect(store.get("dirty")!.securityMode).toBeUndefined();
+
+		// 设置页保存 = 整包 upsert：声明的模式必须能穿过保存再重载（之前 normalize 直接丢掉了）
+		expect(store.upsert({ ...base, securityMode: "readonly" })).toBeNull();
+		const reloaded = new SubagentTemplatesStore(file);
+		expect(reloaded.get("reviewer")!.securityMode).toBe("readonly");
+		expect(reloaded.get("ro")!.securityMode).toBe("readonly");
+		expect(reloaded.get("unset")!.securityMode).toBeUndefined();
+	});
+
 	it("容忍脏数据：非法条目丢弃、字段缺失补默认", () => {
 		const dir = mkdtempSync(join(tmpdir(), "satpl-"));
 		dirs.push(dir);

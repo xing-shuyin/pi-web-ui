@@ -564,6 +564,18 @@ export function canonicalizeTemplate<T extends TemplateText>(t: T): T {
 	return { ...t, description, systemPrompt };
 }
 
+const SECURITY_MODES: readonly SubagentSecurityMode[] = ["normal", "readonly", "verify"];
+
+/**
+ * 旧数据 / 脏数据：只认三个枚举值。缺省返回 undefined（语义是「没声明过，走模板名启发式」），
+ * 不能归一成 "normal"，否则升级后名字里带 explore/review 的老模板会被静默放宽。
+ */
+function normalizeSecurityMode(raw: unknown): SubagentSecurityMode | undefined {
+	return typeof raw === "string" && (SECURITY_MODES as readonly string[]).includes(raw)
+		? (raw as SubagentSecurityMode)
+		: undefined;
+}
+
 function normalize(raw: unknown): SubagentTemplate | null {
 	if (!raw || typeof raw !== "object") return null;
 	const o = raw as Record<string, unknown>;
@@ -588,6 +600,7 @@ function normalize(raw: unknown): SubagentTemplate | null {
 				? o.thinkingLevel.trim()
 				: "",
 		enabled: o.enabled !== false,
+		securityMode: normalizeSecurityMode(o.securityMode),
 	};
 }
 

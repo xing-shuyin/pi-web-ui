@@ -2942,6 +2942,12 @@ export interface UiPresetImportPreview {
 	promptDisabled: string[];
 }
 
+/**
+ * 子代理权限模式（协议单源，服务端闸门与设置页共用）：
+ * `normal` 不加限制；`readonly` 只放行只读工具与只读 bash 命令；`verify` 在只读之上再放行测试套件。
+ */
+export type SubagentSecurityMode = "normal" | "readonly" | "verify";
+
 export interface UiSubagentTemplate {
 	name: string;
 	description: string;
@@ -2954,6 +2960,11 @@ export interface UiSubagentTemplate {
 	model: string;
 	thinkingLevel: string;
 	enabled: boolean;
+	/**
+	 * 权限模式。设置快照下发的**永远是生效值**（服务端已按模板名算过启发式），
+	 * 页面保存时原样回传 → 从此该模板显式固定，不再受名称关键字推断影响。
+	 */
+	securityMode?: SubagentSecurityMode;
 }
 
 export interface UiVisionBridgeModel {

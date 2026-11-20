@@ -7,8 +7,10 @@ import {
 	conversationToolAllowed,
 	isConversationTool,
 } from "./conversation-tool-names.js";
+import type { SubagentSecurityMode } from "./protocol.js";
 
-export type SubagentSecurityMode = "normal" | "readonly" | "verify";
+// 协议单源：类型定义在 protocol.ts（前端也要用），这里只做转出沿用既有 import 路径。
+export type { SubagentSecurityMode };
 
 export interface SubagentSpawnExtra {
 	allowedTools?: string[];
@@ -23,7 +25,9 @@ export function resolveSecurityMode(
 	nameOrType?: string,
 	template?: { securityMode?: SubagentSecurityMode; name?: string },
 ): SubagentSecurityMode {
-	if (template?.securityMode && template.securityMode !== "normal") {
+	// 显式配置（含 normal）是权威声明：用户在设置页把「只读」关掉，就不能被模板名里的
+	// explore / review 这类关键字再推回去。启发式只服务「从未声明过」的模板。
+	if (template?.securityMode) {
 		return template.securityMode;
 	}
 	const candidate = `${template?.name ?? ""} ${nameOrType ?? ""}`.trim().toLowerCase();

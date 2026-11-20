@@ -46,6 +46,7 @@ import { findVisionModels, SYSTEM_PROMPT } from "./vision-bridge.js";
 import { COMMITMSG_SYSTEM_PROMPT } from "./scm-commitmsg.js";
 import { PLAN_MODE_SYSTEM_PROMPT } from "./plan-mode.js";
 import { DEFAULT_TEMPLATES, localizeTemplate, type SubagentTemplatesStore } from "./subagent-templates.js";
+import { resolveSecurityMode } from "./subagent-security-gate.js";
 import { discoverDiskSkills, isSkillStillOnDisk, type DiscoveredSkill } from "./skill-discovery.js";
 import type { ApprovalRulesStore } from "./approval-rules.js";
 import {
@@ -593,7 +594,12 @@ export class SettingsService {
 							disabledMarkers: [] as string[],
 							markers: [] as import("./protocol.js").UiMarkerInfo[],
 						}),
-				subagentTemplates: this.templates.list().map((t) => localizeTemplate(t, this.host.getLocale?.())),
+				subagentTemplates: this.templates.list().map((t) => ({
+					...localizeTemplate(t, this.host.getLocale?.()),
+					// 下发生效值：模板从未声明权限时也要让设置页看见启发式的真实结果，
+					// 否则用户以为「常规」、实际按名字被当成 readonly。
+					securityMode: resolveSecurityMode(t.name, t),
+				})),
 				subagentDefaultTemplates: DEFAULT_TEMPLATES.map((t) => t.name),
 				subagentDefaultModel: this.settings.subagentDefaultModel ?? null,
 				subagentMaxDepth: this.settings.subagentMaxDepth ?? 0,

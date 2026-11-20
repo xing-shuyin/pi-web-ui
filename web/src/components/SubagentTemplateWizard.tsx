@@ -3,7 +3,13 @@ import { FiCheck, FiChevronDown, FiSearch, FiUsers, FiX } from "react-icons/fi";
 import { useI18n, useT } from "../i18n";
 import { isZhLocale } from "../pick-locale.js";
 import { THINKING_VALUES } from "../thinking-levels";
-import type { UiExtensionInfo, UiSkillInfo, UiSubagentTemplate, UiVisionBridgeModel } from "../types";
+import type {
+	SubagentSecurityMode,
+	UiExtensionInfo,
+	UiSkillInfo,
+	UiSubagentTemplate,
+	UiVisionBridgeModel,
+} from "../types";
 import { HintTip } from "./HintTip";
 
 export interface SubagentTemplateWizardProps {
@@ -16,6 +22,13 @@ export interface SubagentTemplateWizardProps {
 	onClose: () => void;
 	onSave: (draft: UiSubagentTemplate) => void;
 }
+
+/** 权限模式三档：顺序 = 放宽程度，与 server/subagent-security-gate.ts 的闸门一一对应。 */
+const SECURITY_MODES: { value: SubagentSecurityMode; label: string; hint: string }[] = [
+	{ value: "normal", label: "tplSecurityNormal", hint: "tplSecurityNormalHint" },
+	{ value: "readonly", label: "tplSecurityReadonly", hint: "tplSecurityReadonlyHint" },
+	{ value: "verify", label: "tplSecurityVerify", hint: "tplSecurityVerifyHint" },
+];
 
 const STEP_COUNT = 4;
 const stepMeta = (step: number) => {
@@ -71,16 +84,12 @@ export function SubagentTemplateWizard({
 	const extLimited = draft.enabledExtensions.length > 0;
 	const modelLabel = models.find((m) => `${m.provider}/${m.id}` === draft.model)?.label ?? draft.model;
 	const modeText = draft.promptMode === "replace" ? t("promptModeReplace") : t("promptModeAppend");
+	const securityMode = draft.securityMode ?? "normal";
+	const securityMeta = SECURITY_MODES.find((m) => m.value === securityMode);
+	const securityModeText = tt(securityMeta?.label ?? "tplSecurityNormal");
+	const securityModeHintKey = securityMeta?.hint ?? "tplSecurityNormalHint";
 	const introText = draft.description.trim() || t("tplEnEmpty");
 	const thinkingText = draft.thinkingLevel ? tt(`thinking.${draft.thinkingLevel}`) : t("tplThinkingFollowMain");
-
-	const spawnCode = (() => {
-		const parts: string[] = [];
-		if (draft.name.trim()) parts.push(`template="${draft.name.trim()}"`);
-		if (draft.model) parts.push(`model="${draft.model}"`);
-		if (draft.thinkingLevel) parts.push(`thinking="${draft.thinkingLevel}"`);
-		return `subagent_spawn(${parts.join(", ")})`;
-	})();
 
 	const patch = (partial: Partial<UiSubagentTemplate>) => onChange({ ...draft, ...partial });
 	const toggleIn = (list: string[], value: string, on: boolean) =>
@@ -245,6 +254,23 @@ export function SubagentTemplateWizard({
 
 							{step === 2 && (
 								<div className="tpl-panel">
+									<div className="set-mode-row">
+										<label className="set-field-label">
+											{t("tplSecurityLabel")} <HintTip text={t("tplSecurityHint")} />
+										</label>
+										<select
+											className="set-select"
+											value={securityMode}
+											onChange={(e) => patch({ securityMode: e.target.value as SubagentSecurityMode })}
+										>
+											{SECURITY_MODES.map((m) => (
+												<option key={m.value} value={m.value}>
+													{tt(m.label)}
+												</option>
+											))}
+										</select>
+									</div>
+									<p className="set-hint">{tt(securityModeHintKey)}</p>
 									<div className="tpl-search">
 										<FiSearch className="tpl-search-icon" />
 										<input
@@ -348,6 +374,10 @@ export function SubagentTemplateWizard({
 											<div className="tpl-sum-row">
 												<span className="tpl-sum-k">{t("tplSumThinking")}</span>
 												<span className="tpl-sum-v">{thinkingText}</span>
+											</div>
+											<div className="tpl-sum-row">
+												<span className="tpl-sum-k">{t("tplSumSecurity")}</span>
+												<span className="tpl-sum-v">{securityModeText}</span>
 											</div>
 											<div className="tpl-sum-row">
 												<span className="tpl-sum-k">{t("tplSumSkills")}</span>

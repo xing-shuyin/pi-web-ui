@@ -27434,6 +27434,12 @@
 		border-color: var(--accent);
 		background: color-mix(in srgb, var(--accent) 10%, transparent);
 	}
+	/* 只读 / 校验：模板列表里要一眼看出这个子代理被限了工具，别等派单被拒才发现 */
+	.tpl-badge.secure {
+		color: var(--amber);
+		border-color: var(--amber);
+		background: color-mix(in srgb, var(--amber) 10%, transparent);
+	}
 
 	.rule-editor {
 		border: 1px solid var(--border-soft);

@@ -6743,6 +6743,8 @@ function LoadedSettingsModal({
 												model: "",
 												thinkingLevel: "",
 												enabled: true,
+												// 新建模板显式定为常规：不让名字里的 explore / review 把用户新写的模板悄悄锁成只读
+												securityMode: "normal" as const,
 											});
 											setTplIsNew(true);
 										}}
@@ -6833,6 +6835,12 @@ function LoadedSettingsModal({
 															<span className="tpl-badge default">{t("tplDefaultBadge")}</span>
 														)}
 														{!tp.enabled && <span className="tpl-badge">{t("subagentTemplateClosed")}</span>}
+														{tp.securityMode === "readonly" && (
+															<span className="tpl-badge secure">{t("tplSecurityBadgeReadonly")}</span>
+														)}
+														{tp.securityMode === "verify" && (
+															<span className="tpl-badge secure">{t("tplSecurityBadgeVerify")}</span>
+														)}
 													</div>
 													<div className="set-row-desc">
 														{(!isZhLocale(locale) && tp.descriptionEn ? tp.descriptionEn : tp.description) ||

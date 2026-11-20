@@ -28,6 +28,12 @@ describe("subagent-security-gate", () => {
 			expect(resolveSecurityMode("general", { securityMode: "normal" })).toBe("normal");
 		});
 
+		it("explicit normal wins over the name heuristic (关掉只读就真的关掉)", () => {
+			expect(resolveSecurityMode("explore-e2e", { name: "explore-e2e", securityMode: "normal" })).toBe("normal");
+			expect(resolveSecurityMode("review", { name: "review", securityMode: "normal" })).toBe("normal");
+			expect(resolveSecurityMode("audit", { name: "audit", securityMode: "normal" })).toBe("normal");
+		});
+
 		it("infers verify mode from keywords in template name or type", () => {
 			expect(resolveSecurityMode("review")).toBe("verify");
 			expect(resolveSecurityMode("code-review")).toBe("verify");
