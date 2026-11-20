@@ -43,7 +43,8 @@ export function mergeModelSamplingParamsIntoProviderPayload(
 	// Gemma's llama.cpp chat template expects all three controls inside
 	// chat_template_kwargs, including reasoning_effort while thinking is disabled.
 	const usesChatTemplateThinking = model?.api === "openai-completions"
-		&& typeof overrides?.thinkingEnabled === "boolean";
+		&& overrides?.profile === "gemma4"
+		&& typeof overrides.thinkingEnabled === "boolean";
 	if (usesChatTemplateThinking) {
 		overrideParams.chat_template_kwargs = {
 			enable_thinking: overrides.thinkingEnabled,
