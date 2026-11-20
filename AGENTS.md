@@ -76,6 +76,7 @@ pi 编码智能体（`@earendil-works/pi-coding-agent` SDK）的 Web 聊天界�
 | **提示词/工具** | 新增可开关工具三处联动（catalog / customTools / 注册单测） | `tool-registration` |
 | **提示词/工具** | 提示词 base（SYSTEM.md / APPEND_SYSTEM.md）归属 session 的 loader，禁客户端级「最近一次」字段 | `prompt-base-scope` |
 | **服务端/运行态** | 压缩软上限双层监控；换模型只走 `applySessionModel` | — |
+| **内核/客户端** | 权威链只由 `desktop/kernel-authority.ts` 决定（npm-global → userData runtime → 包内自带）、元数据只由 `server/kernel-identity.ts` 推导；壳的内核判定只走 `desktop/kernel-mode.ts` | `kernel-single-source` |
 | **内核/客户端** | 一个数据目录只允许一个内核（锁只住 `server/instance-lock.ts`）；壳要不要自拉内核只由 `desktop/kernel-mode.ts` 裁定；内核身份/形态只由 `server/kernel-identity.ts` 推导，`/api/health.kernel` 不带 pid/路径 | `kernel-single-source` |
 | **服务端/运行态** | Bot 私聊按“一对一”执行：固定指令走 chat 分支、工具授权按**执行会话**解析；同一 Bot 不并发（私聊回合持租约、任务遇 BOT_BUSY 有界等待）；禁把私聊当群任务 | `bot-private-execution` · `bot-lease-wait` |
 | **服务端/运行态** | 入站投递只由 `deliveryMode()` 判定、门关入意图队列、门开排空；禁直连 `sendUserMessage`/`session.steer`，禁新增 `isCompacting` 直读 | `delivery-gate-single-source` |

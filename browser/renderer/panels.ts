@@ -23,7 +23,7 @@ import {
 	type Settings,
 } from "./common.js";
 import { t, tf, type MessageKey } from "./i18n.js";
-import { describeKernelState, kernelPersistenceHint } from "../kernel-view.js";
+import { describeKernelState, kernelActions, kernelPersistenceHint, SHELL_CAPABILITY } from "../kernel-view.js";
 import type { BrowserKernelState } from "../contracts.js";
 import { vaultPanel, type VaultTab } from "./vault.js";
 import type {
@@ -490,14 +490,44 @@ async function kernelSectionView(): Promise<HTMLElement> {
 	const section = element("section", "pb-section");
 	const status = element("p", "pb-muted");
 	const detail = element("p", "pb-muted");
+	const warning = element("p", "pb-muted");
+	warning.hidden = true;
+	const platform = window.piDesktop?.platform ?? "win32";
+	let current: BrowserKernelState | null = null;
+
+	const installButton = button(t("kernelInstall"), () => void runAction("kernel.install"));
+	const terminalHint = element("p", "pb-muted");
+	terminalHint.hidden = true;
+	const terminalCommand = element("code", "pb-muted");
+	terminalCommand.hidden = true;
+	const restartButton = button(t("kernelRestart"), () => void runAction("kernel.restart"));
+
+	const applyActions = (state: BrowserKernelState | null): void => {
+		const actions = kernelActions({ state, platform, shellCapability: SHELL_CAPABILITY });
+		installButton.hidden = actions.install.kind !== "enabled";
+		restartButton.hidden = actions.restart.kind !== "enabled";
+		const terminal = actions.install.kind === "terminal";
+		terminalHint.hidden = !terminal;
+		terminalCommand.hidden = !terminal;
+		if (terminal) {
+			terminalHint.textContent = t("kernelTerminalHint");
+			terminalCommand.textContent = actions.install.command ?? "";
+		}
+		warning.hidden = actions.warning !== "min-shell-above";
+		if (!warning.hidden) warning.textContent = t("kernelMinShellWarning");
+	};
+
 	const show = (state: BrowserKernelState | null): void => {
+		current = state;
 		if (!state) {
 			status.textContent = t("disconnected");
 			detail.textContent = "";
+			applyActions(null);
 			return;
 		}
 		status.textContent = describeKernelState(state);
 		detail.textContent = kernelPersistenceHint(state);
+		applyActions(state);
 	};
 	const refresh = async (): Promise<void> => {
 		try {
@@ -527,11 +557,12 @@ async function kernelSectionView(): Promise<HTMLElement> {
 		element("p", "pb-muted", t("kernelHelp")),
 		status,
 		detail,
-		toolbar(
-			button(t("kernelInstall"), () => void runAction("kernel.install")),
-			button(t("kernelRestart"), () => void runAction("kernel.restart")),
-		),
+		warning,
+		toolbar(installButton, restartButton),
+		terminalHint,
+		terminalCommand,
 	);
+	void current;
 	await refresh();
 	return section;
 }

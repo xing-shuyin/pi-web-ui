@@ -36,6 +36,13 @@ export interface KernelInfoInput {
 }
 
 /**
+ * 内核要求的最低壳能力版本（与 `desktop/runtime-config.ts` 的 `SHELL_CAPABILITY_VERSION` 对表）。
+ * `/api/health.kernel.minShell` 高于客户端的值 → 客户端提示"先更新桌面应用"，而不是白屏或协议错乱。
+ * 改这里等同于提高内核侧兼容线，要跟文档一起走。
+ */
+export const KERNEL_MIN_SHELL = 1;
+
+/**
  * 公开快照。刻意不含 pid / 数据目录 / node 路径：
  * `/api/health` 是免鉴权端点（page-picker 扩展靠它探测"这是不是 pi-web-ui"），
  * 把本机路径暴露给公网绑定场景是没必要的风险。要路径的排障走日志与 `pi-web-ui server status`。
@@ -49,6 +56,7 @@ export function buildKernelInfo(input: KernelInfoInput): KernelPublicInfo {
 		installKind: classifyKernelInstall(input.packageRoot),
 		startedAt: input.startedAt,
 		uptimeMs: Math.max(0, Math.floor(input.now - input.startedAt)),
+		minShell: KERNEL_MIN_SHELL,
 		lock: input.lock,
 	};
 }

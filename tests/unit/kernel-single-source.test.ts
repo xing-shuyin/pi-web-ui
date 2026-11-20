@@ -47,6 +47,19 @@ describe("内核单源", () => {
 		expect(read("browser/kernel-view.ts")).toContain("systemd 托管");
 	});
 
+	it("权威链只有一处：main.ts 用 pickKernelSource，不自己排优先级", () => {
+		const main = read("desktop/main.ts");
+		expect(main).toMatch(/pickKernelSource\(/);
+		expect(main).toMatch(/KERNEL_AUTHORITY/);
+		expect(read("desktop/runtime-config.ts")).toMatch(/export const KERNEL_AUTHORITY/);
+	});
+
+	it("权威链停用运行时自更新（两条链不能同时活着）", () => {
+		const config = read("desktop/runtime-config.ts");
+		expect(config).toMatch(/RUNTIME_SELF_UPDATE_ENABLED/);
+		expect(read("desktop/main.ts")).toContain("if (!RUNTIME_SELF_UPDATE_ENABLED)");
+	});
+
 	it("装服务的子进程不经 shell，参数由 kernel-install 单源拼装", () => {
 		const install = read("desktop/kernel-install.ts");
 		expect(install).toMatch(/spawnImpl\(/);

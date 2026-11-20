@@ -22,6 +22,7 @@ export interface HealthProbeBody {
 		version?: unknown;
 		installKind?: unknown;
 		uptimeMs?: unknown;
+		minShell?: unknown;
 		lock?: unknown;
 	};
 }
@@ -31,7 +32,10 @@ export interface KernelProbeResult {
 	version?: string;
 	installKind?: KernelInstallKind;
 	supervisor?: string | null;
+	serviceName?: string | null;
 	uptimeMs?: number;
+	/** 内核要求的最低壳能力版本（高过本壳就提示先更新壳）。 */
+	minShell?: number;
 	/** 不可达时的原因（展示给用户，不要吞掉）。 */
 	error?: string;
 }
@@ -80,7 +84,9 @@ export async function probeKernel(
 			version: typeof kernel.version === "string" ? kernel.version : undefined,
 			installKind: isInstallKind(kernel.installKind) ? kernel.installKind : undefined,
 			supervisor: typeof kernel.supervisor === "string" ? kernel.supervisor : null,
+			serviceName: typeof kernel.serviceName === "string" ? kernel.serviceName : null,
 			uptimeMs: typeof kernel.uptimeMs === "number" ? kernel.uptimeMs : undefined,
+			minShell: typeof kernel.minShell === "number" ? kernel.minShell : undefined,
 		};
 	} catch (error) {
 		const message = (error as Error)?.name === "AbortError" ? "探测超时" : ((error as Error)?.message ?? "连接失败");
@@ -129,7 +135,9 @@ export function toKernelState(input: {
 		...(probe?.version ? { version: probe.version } : {}),
 		...(probe?.installKind ? { installKind: probe.installKind } : {}),
 		supervisor: probe?.supervisor ?? null,
+		...(probe?.serviceName ? { serviceName: probe.serviceName } : {}),
 		...(typeof probe?.uptimeMs === "number" ? { uptimeMs: probe.uptimeMs } : {}),
+		...(typeof probe?.minShell === "number" ? { minShell: probe.minShell } : {}),
 		...(probe?.error ? { error: probe.error } : {}),
 	};
 }

@@ -24,15 +24,17 @@
 
 ## 2. 事实源
 
-| 关注点                                  | 唯一事实源                                       | 说明                                                 |
-| --------------------------------------- | ------------------------------------------------ | ---------------------------------------------------- |
-| 内核身份（版本/安装形态/托管者/uptime） | `server/kernel-identity.ts`                      | 纯推导，无 I/O；`/api/health` 的 `kernel` 块由它产出 |
-| 数据目录单实例                          | `server/instance-lock.ts`                        | pid 文件 + 探活 + 陈旧接管                           |
-| 内核公开快照的形状                      | `server/protocol.ts` 的 `KernelPublicInfo`       | 客户端与内核之间的线形状                             |
-| 壳要不要自己拉内核                      | `desktop/kernel-mode.ts` 的 `decideKernelMode()` | main.ts 里不许再写第二份 if                          |
-| 一键装成系统服务                        | `desktop/kernel-install.ts`                      | 只拼参数 + 起子进程，判断在 kernel-mode              |
-| 状态文案（人话）                        | `browser/kernel-view.ts`                         | 面板与未来设备页共用                                 |
-| 跨层视图形状                            | `browser/contracts.ts` 的 `BrowserKernelState`   | 进 `pi-browser:state`，面板读 `kernel.status`        |
+| 关注点                                  | 唯一事实源                                       | 说明                                                                               |
+| --------------------------------------- | ------------------------------------------------ | ---------------------------------------------------------------------------------- |
+| 内核身份（版本/安装形态/托管者/uptime） | `server/kernel-identity.ts`                      | 纯推导，无 I/O；`/api/health` 的 `kernel` 块由它产出                               |
+| 数据目录单实例                          | `server/instance-lock.ts`                        | pid 文件 + 探活 + 陈旧接管                                                         |
+| 内核公开快照的形状                      | `server/protocol.ts` 的 `KernelPublicInfo`       | 客户端与内核之间的线形状                                                           |
+| 权威链（哪份代码是内核）                | `desktop/kernel-authority.ts`                    | 全局 npm 包 > `<userData>/runtime`（离线兜底）> 包内自带；`npm prefix -g` 缓存一天 |
+| 环境探测（node/服务/安装指引）          | `desktop/kernel-env.ts`                          | 纯函数 + 可注入 `exists`/`env`；不读注册表、不 spawn                               |
+| 壳要不要自己拉内核                      | `desktop/kernel-mode.ts` 的 `decideKernelMode()` | main.ts 里不许再写第二份 if                                                        |
+| 一键装成系统服务                        | `desktop/kernel-install.ts`                      | 只拼参数 + 起子进程，判断在 kernel-mode                                            |
+| 状态文案（人话）                        | `browser/kernel-view.ts`                         | 面板与未来设备页共用                                                               |
+| 跨层视图形状                            | `browser/contracts.ts` 的 `BrowserKernelState`   | 进 `pi-browser:state`，面板读 `kernel.status`                                      |
 
 ## 3. `/api/health` 的 `kernel` 块
 
@@ -47,6 +49,7 @@
 		"installKind": "global-npm", // global-npm / packaged / source
 		"startedAt": 1762400000000,
 		"uptimeMs": 10800000,
+		"minShell": 1, // 内核要求的最低壳能力（与 SHELL_CAPABILITY_VERSION 对表）
 		"lock": "held", // held / disabled（PI_WEB_ALLOW_MULTI_INSTANCE=1）
 	},
 }
@@ -131,16 +134,54 @@ pi-web-ui server status                          # 服务装没装、起没起
 | `desktop/desktop`、`podman-desktop/podman-desktop`            | 环境检测 + 引导安装的 UX：先说清缺什么，再给按钮             |
 | `microsoft/vscode`                                            | 壳/运行时双层 + 版本闸门 + 下载校验                          |
 
-## 9. 还没做（明确的缺口，不当 bug 修）
+## 9. 权威链、环境探测与收敛
 
-| 缺口              | 现状                                                              | 方向                                                                          |
-| ----------------- | ----------------------------------------------------------------- | ----------------------------------------------------------------------------- |
-| 内核自更新链退役  | `desktop/runtime-updater.ts`（签名清单）与全局 npm 包是两条权威链 | 定一条（建议全局 npm），另一条降级为离线兜底                                  |
-| 「安装 Node」按钮 | 现在只读 `process.execPath`，缺 Node 时只能靠用户自己装           | `node-downloader-helper` + 官方 `SHASUMS256.txt` 校验，或调 `winget` / `brew` |
-| npm 全局前缀检测  | 未检测用户是否已装全局包                                          | 缓存 `npm prefix -g` 结果，面板显示"已装 vX，可一键升级"                      |
-| 双内核的自动收敛  | 锁只负责拒绝，不负责"帮你停掉旧那个"                              | 面板给"停掉另一个内核"按钮（`server stop`）                                   |
+### 9.1 只有一条权威链
 
-## 10. Windows 的现实约束
+`desktop/runtime-config.ts` 的 `KERNEL_AUTHORITY`：
+
+| 取值                 | 内核以谁为准                  | 运行时自更新                                                     |
+| -------------------- | ----------------------------- | ---------------------------------------------------------------- |
+| `npm-global`（默认） | 全局 npm 包                   | 停用（`RUNTIME_SELF_UPDATE_ENABLED=false`，壳不再下载/切换内核） |
+| `bundled-runtime`    | `<userData>/runtime` 签名清单 | 启用（旧双层模型，留着便于回退）                                 |
+
+解析优先级在 `desktop/kernel-authority.ts`：**全局 npm 包 → `<userData>/runtime`（离线兜底）→ 包内自带**。
+包内自带永远兜底（"永远能起来"这条活路不变），但它随壳更新，所以排在最后。
+`npm prefix -g` 要起子进程（几百毫秒），结果缓存在 `<userData>/kernel-authority.json`，有效期一天。
+
+用全局包当内核时，**内核进程用系统 node 启动**（不是 Electron 的 node）：全局包里的原生模块按系统 node ABI 编译，
+塞进 `ELECTRON_RUN_AS_NODE` 可能加载失败；找不到 node 才退回 Electron 自带运行时并在日志里说清。
+
+### 9.2 环境探测只回答"缺什么、怎么办"
+
+`desktop/kernel-env.ts` 答三件事：node 够不够新（≥22）、服务配置装没装（三平台各一处路径）、
+缺 node 时该跑哪条命令（`winget install OpenJS.NodeJS.LTS` / `brew install node@22` / `apt install nodejs npm`）。
+**不替用户下载**：这些命令一律标 `needsTerminal`，因为 GUI 里没有 TTY，交互式安装必然失败。
+
+Linux 上「安装为系统服务」直接返回命令而不是硬跑：`server install` 在 Linux 要写 `/etc/systemd/system`，
+GUI 里 `sudo` 拿不到终端（`a terminal is required`），硬跑只会得到一条没用的失败。面板那边同样只给命令行。
+
+### 9.3 撞锁不再只是报错：自动收敛
+
+壳在拉本地内核前先读 `<dataDir>/kernel.lock`：持有者 pid 还活着、且它的端口 `/api/health` 可达 → **直接连它**
+（通常是上次壳退出遗留的 sidecar，或用户刚装好的服务），而不是再拉一份然后被锁拒掉。
+
+```text
+[desktop] kernel: 直接复用数据目录里已在内核（http://127.0.0.1:8907）
+```
+
+锁负责"拒绝第二个写者"，收敛负责"把你接回已有的那个"——两者缺一不可。
+
+## 10. 还没做（明确的缺口，不当 bug 修）
+
+| 缺口                  | 现状                                  | 方向                                                                                 |
+| --------------------- | ------------------------------------- | ------------------------------------------------------------------------------------ |
+| 「安装 Node」自动下载 | 只给命令与官网链接（`needsTerminal`） | `node-downloader-helper` + 官方 `SHASUMS256.txt` 校验后装到 `<userData>/kernel/node` |
+| 全局包升级入口        | 能显示版本，升级仍靠 `npm i -g`       | 面板给"升级内核"按钮 → 跑同一个 CLI                                                  |
+| Web 端只读状态卡      | 只有桌面壳面板                        | 复用 `/api/health.kernel`，在设置里加一行                                            |
+| 多用户同机            | 锁按数据目录，不按用户                | 每用户独立 `--data-dir`（本文已按此约定）                                            |
+
+## 11. Windows 的现实约束
 
 `pi-web-ui server install` 在 Windows 是 **HKCU Run 键 + wscript 隐藏启动 + PS1 看门狗**（不是 session-0 服务）：
 

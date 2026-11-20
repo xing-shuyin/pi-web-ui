@@ -57,7 +57,17 @@ describe("buildKernelInfo", () => {
 			expect(info).not.toHaveProperty(forbidden);
 		}
 		expect(Object.keys(info).sort()).toEqual(
-			["installKind", "lock", "mode", "serviceName", "startedAt", "supervisor", "uptimeMs", "version"].sort(),
+			[
+				"installKind",
+				"lock",
+				"minShell",
+				"mode",
+				"serviceName",
+				"startedAt",
+				"supervisor",
+				"uptimeMs",
+				"version",
+			].sort(),
 		);
 	});
 

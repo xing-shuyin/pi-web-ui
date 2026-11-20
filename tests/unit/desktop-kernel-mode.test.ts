@@ -59,7 +59,9 @@ describe("probeKernel", () => {
 			version: "0.121.3",
 			installKind: "global-npm",
 			supervisor: "systemd",
+			serviceName: null,
 			uptimeMs: 9000,
+			minShell: undefined,
 		});
 	});
 

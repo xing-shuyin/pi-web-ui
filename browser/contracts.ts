@@ -53,7 +53,11 @@ export interface BrowserKernelState {
 	version?: string;
 	installKind?: KernelInstallKind;
 	supervisor: string | null;
+	/** 托管者注册的服务名（launchd label / systemd unit / Windows 看门狗名）。 */
+	serviceName?: string | null;
 	uptimeMs?: number;
+	/** 内核要求的最低壳能力版本（`SHELL_CAPABILITY_VERSION` 对比用，见 version-gate）。 */
+	minShell?: number;
 	error?: string;
 }
 

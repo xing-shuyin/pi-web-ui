@@ -41,3 +41,42 @@ export function kernelPersistenceHint(state: BrowserKernelState): string {
 	if (state.mode === "external") return "连的是外部内核：关掉本窗口不影响它，但请确认它自己常驻。";
 	return "当前内核随本窗口退出而停止：定时任务与 QQ 等渠道会一起停。";
 }
+
+/**
+ * 壳能力的渲染层副本：必须等于 `desktop/runtime-config.ts` 的 `SHELL_CAPABILITY_VERSION`
+ * （渲染层不许 import `desktop/**`，所以复制一份，并由 `kernel-panel-state.test.ts` 守住相等）。
+ */
+export const SHELL_CAPABILITY = 1;
+
+/** Linux 上装服务要 root（systemd 系统单元）：GUI 里没有 TTY，只能把命令交给用户去终端跑。 */
+export const KERNEL_LINUX_INSTALL_COMMAND = "pi-web-ui server install";
+
+export interface KernelActions {
+	install: { kind: "enabled" | "hidden" | "terminal"; command?: string };
+	restart: { kind: "enabled" };
+	/** 内核要求的最低壳能力高于本壳：先更新桌面应用，而不是继续点按钮。 */
+	warning?: "min-shell-above";
+}
+
+/**
+ * 按钮该不该给、给了能不能点。判定集中在这里，面板只负责渲染 ——
+ * 否则"已托管还显示安装""Linux 上点了必然失败"这类事会各写一遍再各错一遍。
+ */
+export function kernelActions(input: {
+	state: BrowserKernelState | null;
+	platform: string;
+	shellCapability: number;
+}): KernelActions {
+	const { state, platform, shellCapability } = input;
+	const warning =
+		state && typeof state.minShell === "number" && state.minShell > shellCapability ? "min-shell-above" : undefined;
+	let install: KernelActions["install"] = { kind: "hidden" };
+	if (state) {
+		// 已经由系统托管 = 已经满足"关掉客户端也继续跑"，不需要再装一次。
+		const supervised = state.mode === "external" && Boolean(state.supervisor);
+		if (supervised) install = { kind: "hidden" };
+		else if (platform === "linux") install = { kind: "terminal", command: KERNEL_LINUX_INSTALL_COMMAND };
+		else if (platform === "darwin" || platform === "win32") install = { kind: "enabled" };
+	}
+	return { install, restart: { kind: "enabled" }, ...(warning ? { warning } : {}) };
+}
