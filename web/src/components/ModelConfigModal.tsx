@@ -1731,6 +1731,7 @@ export function ModelConfigModal({
 																			setModelRow(idx, {
 																				thinkingLevelMap: profile.map,
 																				compat: Object.keys(currentCompat).length ? currentCompat : undefined,
+																				...(profile.customExtraBody !== undefined ? { customExtraBody: profile.customExtraBody } : {}),
 																			});
 																		}}
 																		title={t(profile.descKey)}
