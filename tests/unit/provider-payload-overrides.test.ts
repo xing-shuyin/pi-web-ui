@@ -68,8 +68,46 @@ describe("provider payload sampling overrides", () => {
 		});
 	});
 
-	it("does not modify non-OpenAI APIs or non-chat payloads", () => {
-		const payload = { messages: [], temperature: 0.8 };
+	it("applies conversation sampling values while retaining request-level precedence", () => {
+		const payload = { messages: [], temperature: 0.8, top_p: 0.9 };
+		const result = mergeModelSamplingParamsIntoProviderPayload(payload, {
+			api: "openai-completions",
+			samplingParams: { top_k: 32 },
+		}, {
+			temperature: 0.4,
+			min_p: 0.05,
+			top_p: 0.95,
+			top_k: 48,
+			thinkingEnabled: true,
+			thinkingEffort: "high",
+			preserveThinking: true,
+		});
+		expect(result).toEqual({
+			messages: [],
+			temperature: 0.8,
+			top_p: 0.9,
+			top_k: 48,
+			min_p: 0.05,
+			chat_template_kwargs: {
+				enable_thinking: true,
+				reasoning_effort: "high",
+				preserve_thinking: true,
+			},
+		});
+	});
+
+	it("applies standard sampling overrides to non-OpenAI payloads without chat-template fields", () => {
+		const payload = { input: "Hello" };
+		const result = mergeModelSamplingParamsIntoProviderPayload(payload, { api: "anthropic-messages" }, {
+			temperature: 0.2,
+			top_p: 0.8,
+			thinkingEnabled: true,
+		});
+		expect(result).toEqual({ input: "Hello", temperature: 0.2, top_p: 0.8 });
+	});
+
+	it("leaves non-record payloads unchanged", () => {
+		const payload = "Hello";
 		const params = { api: "anthropic-messages", samplingParams: { top_k: 64 } };
 		expect(mergeModelSamplingParamsIntoProviderPayload(payload, params)).toBe(payload);
 		expect(
