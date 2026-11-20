@@ -2062,7 +2062,7 @@ export const ChatInput = memo(function ChatInput({
 											thinkingEffort: "medium",
 											preserveThinking: true,
 										},
-								),
+								)
 							}
 						>
 							Profile: {samplingOverrides.profile === "gemma4" ? "Gemma 4" : "Default"}
