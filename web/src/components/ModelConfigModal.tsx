@@ -1723,6 +1723,11 @@ export function ModelConfigModal({
 																			} else if (profile.id === "fixed-deepseek" || profile.id === "claude-budget") {
 																				delete currentCompat.thinkingFormat;
 																			}
+																			if (profile.chatTemplateKwargs) {
+																				currentCompat.chatTemplateKwargs = profile.chatTemplateKwargs;
+																			} else {
+																				delete currentCompat.chatTemplateKwargs;
+																			}
 																			setModelRow(idx, {
 																				thinkingLevelMap: profile.map,
 																				compat: Object.keys(currentCompat).length ? currentCompat : undefined,
