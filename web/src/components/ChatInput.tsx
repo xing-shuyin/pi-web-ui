@@ -2012,6 +2012,7 @@ export const ChatInput = memo(function ChatInput({
 				<details className="sampling-controls">
 					<summary>Generation settings</summary>
 					<div className="sampling-controls-grid">
+						<label>Profile <select value={samplingOverrides.profile ?? "default"} onChange={(e) => setSamplingOverrides((v) => e.target.value === "gemma4" ? { ...v, profile: "gemma4", temperature: 0.8, min_p: 0.03, top_p: 0.95, top_k: 64, thinkingEnabled: true, thinkingEffort: "medium", preserveThinking: true } : { profile: "default", temperature: 0.8, min_p: 0.03, top_p: 0.95, top_k: 64, thinkingEnabled: false, thinkingEffort: "medium", preserveThinking: true })}><option value="default">Default</option><option value="gemma4">Gemma 4</option></select></label>
 						<label>Temperature <input type="number" min="0" max="2" step="0.05" value={samplingOverrides.temperature ?? 0.8} onChange={(e) => setSamplingOverrides((v) => ({ ...v, temperature: Number(e.target.value) }))} /></label>
 						<label>Min P <input type="number" min="0" max="1" step="0.01" value={samplingOverrides.min_p ?? 0.03} onChange={(e) => setSamplingOverrides((v) => ({ ...v, min_p: Number(e.target.value) }))} /></label>
 						<label>Top P <input type="number" min="0" max="1" step="0.01" value={samplingOverrides.top_p ?? 0.95} onChange={(e) => setSamplingOverrides((v) => ({ ...v, top_p: Number(e.target.value) }))} /></label>
